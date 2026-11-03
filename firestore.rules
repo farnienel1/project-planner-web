@@ -207,6 +207,15 @@ service cloud.firestore {
   //     users/{uid}/orgMemberships/{orgId}.accountActive (else isActive) false.
   // Only an explicit false deactivates; a missing document or flag is active (older data, founder bootstrap). A
   // deactivated person still reads their own users document and memberships (the apps show the deactivated screen).
+  // Rulebook 1.12.1 §17/§18: the job and booking read scoping of 1.10.0 / 1.11.0 applies only once the platform owner
+  // has set `platformConfig/app.enforcedReads` to true (after both backfills and an app release with
+  // ENFORCED_READS_ACTIVE true). Until then every member of the organisation reads its jobs and bookings as before
+  // 1.10.0. One document read, shared by every rule that asks. Writes are never switched by it.
+  function enforcedReadsOn() {
+    let config = /databases/(default)/documents/platformConfig/app;
+    return exists(config) && get(config).data.get('enforcedReads', false) == true;
+  }
+
   function callerHomeInactiveIn(organizationId) {
     let home = callerHomeData();
     return home.get('isActive', true) == false && homeOrgIs(home, organizationId);
@@ -1269,9 +1278,15 @@ service cloud.firestore {
       // A single job document: every-job viewers; a manager listed on it (`isJobManager`); operatives and other
       // non-staff members of this organisation by id only (the jobs of their own bookings — the rules cannot see
       // which jobs those are, so `list` is refused to them).
+      // 1.12.0: before `enforcedReads` (enforcedReadsOn), every member of this organisation reads every job, as
+      // before 1.10.0 (`legacyMemberRead`).
+      function legacyMemberRead(role) {
+        return role != '' || canAccessOrganization(organizationId);
+      }
       function jobGetAllowed(kind) {
         let role = callerOrgRole(organizationId);
         return role in ['operative', 'member'] ||
+          (!enforcedReadsOn() && legacyMemberRead(role)) ||
           (role == 'manager' && resource != null && jobListsCaller(resource.data)) ||
           callerSeesEveryJob(role, kind);
       }
@@ -1279,7 +1294,8 @@ service cloud.firestore {
       function jobListAllowed(kind) {
         let role = callerOrgRole(organizationId);
         return callerSeesEveryJob(role, kind) ||
-          (role == 'manager' && request.auth.uid in resource.data.get('managerUserIds', []));
+          (role == 'manager' && request.auth.uid in resource.data.get('managerUserIds', [])) ||
+          (!enforcedReadsOn() && legacyMemberRead(role));
       }
       function jobCreateAllowed(kind) {
         return callerSeesEveryJob(callerOrgRole(organizationId), kind);
@@ -1299,6 +1315,7 @@ service cloud.firestore {
         let role = callerOrgRole(organizationId);
         let path = /databases/(default)/documents/organizations/$(organizationId)/$(kind)/$(jobId);
         return role in ['operative', 'member'] ||
+          (!enforcedReadsOn() && legacyMemberRead(role)) ||
           (role == 'manager' && exists(path) && jobListsCaller(get(path).data)) ||
           callerSeesEveryJob(role, kind);
       }
@@ -1505,7 +1522,9 @@ service cloud.firestore {
       // and the people it books.
       function bookingReadAllowed(collection) {
         let role = callerOrgRole(organizationId);
+        // 1.12.0: before `enforcedReads`, every member of this organisation reads every booking (as before 1.10.0).
         return role == 'admin' ||
+          (!enforcedReadsOn() && (role != '' || canAccessOrganization(organizationId))) ||
           (role == 'manager' && resource.data.get('jobCollection', '') in ['projects', 'smallWorks'] &&
             callerJobToggle(role, resource.data.get('jobCollection', ''))) ||
           (collection == 'managerSiteBookings' && role == 'manager' && resource.data.userId == request.auth.uid) ||

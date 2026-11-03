@@ -54,6 +54,9 @@ test.before(async () => {
 
   await env.withSecurityRulesDisabled(async (ctx) => {
     const db = ctx.firestore()
+    // 1.12.0: the 1.10.0 / 1.11.0 read-scoping tests below run with the owner's switch on; the "enforcedReads absent"
+    // test turns it off and back on.
+    await setDoc(doc(db, 'platformConfig', 'app'), { enforcedReads: true })
     await setDoc(doc(db, 'organizations', ORG_A), {
       name: 'Company A',
       members: { [ADMIN_A]: 'admin', [OP_A]: 'member' },
@@ -3033,7 +3036,7 @@ test('1.12.0 M3: the qualification and skills catalogues are staff only', async 
 test('1.12.0 platformConfig/app: anyone reads it (the forced-update gate runs before sign-in); only the verified owner writes', async () => {
   await env.withSecurityRulesDisabled(async (ctx) => {
     const db = ctx.firestore()
-    await setDoc(doc(db, 'platformConfig', 'app'), { minimumIosBuild: 120 })
+    await setDoc(doc(db, 'platformConfig', 'app'), { minimumIosBuild: 120 }, { merge: true })
     await setDoc(doc(db, 'platformConfig', 'toolboxLibrary'), { items: [] })
   })
   const signedOut = env.unauthenticatedContext().firestore()
@@ -3042,5 +3045,51 @@ test('1.12.0 platformConfig/app: anyone reads it (the forced-update gate runs be
   await assertSucceeds(getDoc(doc(authDb(OP_A, 'op-a@test.com'), 'platformConfig', 'toolboxLibrary')))
   await assertFails(setDoc(doc(authDb(ADMIN_A, 'admin-a@test.com'), 'platformConfig', 'app'), { minimumIosBuild: 1 }))
   await assertFails(setDoc(doc(verifiedDb('owner-unverified', OWNER_EMAIL, false), 'platformConfig', 'app'), { minimumIosBuild: 1 }))
-  await assertSucceeds(setDoc(doc(verifiedDb('owner-verified', OWNER_EMAIL, true), 'platformConfig', 'app'), { minimumIosBuild: 121 }))
+  await assertSucceeds(setDoc(doc(verifiedDb('owner-verified', OWNER_EMAIL, true), 'platformConfig', 'app'), { minimumIosBuild: 121 }, { merge: true }))
+})
+
+test('1.12.1 enforcedReads: absent, a manager without toggles reads every job and booking (apps as today); on, only theirs', async () => {
+  await seed112()
+  const setSwitch = async (value: boolean | null) =>
+    env.withSecurityRulesDisabled(async (ctx) => {
+      const db = ctx.firestore()
+      if (value == null) await deleteDoc(doc(db, 'platformConfig', 'app'))
+      else await setDoc(doc(db, 'platformConfig', 'app'), { enforcedReads: value }, { merge: true })
+    })
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    await setDoc(doc(db, 'organizations', ORG_H, 'smallWorks', 'h-sw1'), { name: 'SW1', managerUserIds: [H_MGR2] })
+    await setDoc(doc(db, 'organizations', ORG_H, 'managerSiteBookings', 'h-msb1'), { userId: H_MGR2, locationType: 'office', date: '2026-11-03' })
+    await setDoc(doc(db, 'organizations', ORG_H, 'subcontractorBookings', 'h-sub1'), { projectId: 'h-p1', date: '2026-11-03' })
+  })
+  // H_MGR manages nothing and has no Projects / Small works toggle.
+  const mgr = authDb(H_MGR, 'h-mgr@test.com')
+  const reads = () => [
+    getDoc(doc(mgr, 'organizations', ORG_H, 'projects', 'h-p1')),
+    getDocs(collection(mgr, 'organizations', ORG_H, 'projects')),
+    getDocs(collection(mgr, 'organizations', ORG_H, 'smallWorks')),
+    getDoc(doc(mgr, 'organizations', ORG_H, 'bookings', 'h-bk-op2')),
+    getDocs(collection(mgr, 'organizations', ORG_H, 'bookings')),
+    getDocs(collection(mgr, 'organizations', ORG_H, 'managerSiteBookings')),
+    getDocs(collection(mgr, 'organizations', ORG_H, 'subcontractorBookings')),
+  ]
+  try {
+    for (const value of [null, false] as const) {
+      await setSwitch(value)
+      for (const read of reads()) await assertSucceeds(read)
+      // Every 1.12.0 fix stays on: a deactivated person, another company and writes are unaffected by the switch.
+      await assertFails(getDoc(doc(authDb(H_INACTIVE, 'h-inactive@test.com'), 'organizations', ORG_H, 'bookings', 'h-bk-op2')))
+      await assertFails(getDocs(collection(authDb('h2-admin', 'h2-admin@test.com'), 'organizations', ORG_H, 'projects')))
+      await assertFails(setDoc(doc(mgr, 'organizations', ORG_H, 'bookings', 'h-new-legacy'), { projectId: 'h-p1', operativeId: H_OP, date: '2026-11-04' }))
+      await assertFails(updateDoc(doc(mgr, 'organizations', ORG_H, 'projects', 'h-p1'), { name: 'renamed' }))
+    }
+    await setSwitch(true)
+    for (const read of reads()) await assertFails(read)
+    // Their own managed job still reads (H_MGR2 manages h-sw1 and h-p1 through the managers row).
+    const mgr2 = authDb(H_MGR2, 'h-mgr2@test.com')
+    await assertSucceeds(getDoc(doc(mgr2, 'organizations', ORG_H, 'smallWorks', 'h-sw1')))
+    await assertSucceeds(getDoc(doc(mgr2, 'organizations', ORG_H, 'projects', 'h-p1')))
+  } finally {
+    await setSwitch(true)
+  }
 })
