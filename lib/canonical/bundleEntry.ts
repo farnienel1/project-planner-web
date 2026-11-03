@@ -1065,3 +1065,28 @@ export type {
   WorksTab,
   WorksTabCounts,
 } from './worksLists'
+
+// Rulebook 1.22.0 (§6–§9, §22): money and leave-report rules (audit findings 6, 7, 8, 15).
+export { timesheetTotals } from './timesheetTotals'
+export type { TimesheetTotals, TimesheetTotalsInput, TimesheetTotalsLine } from './timesheetTotals'
+export { leaveReportDayCount, leaveReportRows, leaveReportYears } from './leaveReport'
+export type { LeaveReport, LeaveReportInput, LeaveReportRecord, LeaveReportRow } from './leaveReport'
+export {
+  mergeTimesheetFeedWeeks,
+  timesheetFeedCovers,
+  timesheetFeedLabourLines,
+  timesheetFeedMoneyLines,
+  weeklyReportTimesheetFeed,
+} from './weeklyReportTimesheetFeed'
+export type { FeedLabourLine, FeedMoneyLine, FeedPerson, FeedRange, FeedWeek } from './weeklyReportTimesheetFeed'
+export {
+  DEFAULT_VARIATION_PADDING,
+  DEFAULT_VARIATION_PREFIX,
+  formatVariationNumber,
+  nextVariationNumber,
+  variationNumberTaken,
+  variationNumberValue,
+} from './variationNumbers'
+export type { VariationNumberRow } from './variationNumbers'
+export { managerCoverageHours } from './managerCoverage'
+export type { CoverageBooking, ManagerCoverageHours } from './managerCoverage'

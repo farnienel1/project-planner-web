@@ -14942,6 +14942,1954 @@
         "createdAtMs": null,
         "updatedAtMs": null
       }
+    },
+    {
+      "name": "1.22.0 timesheet totals: declined expense, revised price work, stale review, PAYE day — equals the invoice",
+      "function": "timesheetTotals",
+      "args": [
+        {
+          "sheet": {
+            "managerSignedAt": "2026-10-25T10:00:00Z",
+            "priceWorkEntries": [
+              {
+                "id": "PW-1",
+                "title": "Tiling",
+                "amount": 300,
+                "startDate": "2026-10-20"
+              }
+            ],
+            "expenseEntries": [
+              {
+                "id": "EX-1",
+                "title": "Skip",
+                "amount": 40,
+                "date": "2026-10-21"
+              },
+              {
+                "id": "EX-2",
+                "title": "Parking",
+                "amount": 25,
+                "date": "2026-10-22"
+              }
+            ],
+            "extraEntryReviews": {
+              "pw-1": {
+                "decision": "edited",
+                "revisedAmount": 250,
+                "reviewedAmount": 300,
+                "reviewedByUserId": "MGR",
+                "reviewedAtMs": 1
+              },
+              "EX-1": {
+                "decision": "declined",
+                "revisedAmount": null,
+                "reviewedAmount": 40,
+                "reviewedByUserId": "MGR",
+                "reviewedAtMs": 1
+              },
+              "EX-2": {
+                "decision": "approved",
+                "revisedAmount": null,
+                "reviewedAmount": 20,
+                "reviewedByUserId": "MGR",
+                "reviewedAtMs": 1
+              }
+            }
+          },
+          "payrollLines": [
+            {
+              "id": "op-B1-normal",
+              "amount": 200,
+              "dayKey": "2026-10-20",
+              "paidHours": 8,
+              "bookingPaidHours": 9.5,
+              "bookingOvertimeHours": 1,
+              "isOvertimeLine": false
+            },
+            {
+              "id": "op-B1-ot",
+              "amount": 37.5,
+              "dayKey": "2026-10-20",
+              "paidHours": 1,
+              "otMultiplier": 1.5,
+              "isOvertimeLine": true
+            },
+            {
+              "id": "op-B2-normal",
+              "amount": 0,
+              "dayKey": "2026-10-23",
+              "paidHours": 8,
+              "bookingPaidHours": 8,
+              "bookingOvertimeHours": 0,
+              "isOvertimeLine": false,
+              "isPayeDay": true
+            }
+          ],
+          "extrasMode": "decided",
+          "timesheetDays": [
+            "2026-10-20",
+            "2026-10-21",
+            "2026-10-22"
+          ],
+          "timeZone": "Europe/London"
+        }
+      ],
+      "expected": {
+        "hours": 9.5,
+        "standardHours": 8,
+        "overtimeHours": 1,
+        "labour": 237.5,
+        "standardLabour": 200,
+        "overtimeLabour": 37.5,
+        "priceWork": 250,
+        "expenses": 25,
+        "extras": 275,
+        "total": 512.5,
+        "submittedPriceWork": 300,
+        "submittedExpenses": 65,
+        "submittedExtras": 365,
+        "pendingEntries": 1,
+        "source": "live",
+        "invoiceRowCount": 4
+      }
+    },
+    {
+      "name": "1.22.0 timesheet totals: the owner draft before review counts every entry at its own amount",
+      "function": "timesheetTotals",
+      "args": [
+        {
+          "sheet": {
+            "managerSignedAt": null,
+            "priceWorkEntries": [
+              {
+                "id": "PW-1",
+                "title": "Tiling",
+                "amount": 300,
+                "startDate": "2026-10-20"
+              }
+            ],
+            "expenseEntries": [
+              {
+                "id": "EX-1",
+                "title": "Skip",
+                "amount": 40,
+                "date": "2026-10-21"
+              },
+              {
+                "id": "EX-2",
+                "title": "Parking",
+                "amount": 25,
+                "date": "2026-10-22"
+              }
+            ],
+            "extraEntryReviews": null
+          },
+          "payrollLines": [
+            {
+              "id": "op-B1-normal",
+              "amount": 200,
+              "dayKey": "2026-10-20",
+              "paidHours": 8,
+              "bookingPaidHours": 9.5,
+              "bookingOvertimeHours": 1,
+              "isOvertimeLine": false
+            },
+            {
+              "id": "op-B1-ot",
+              "amount": 37.5,
+              "dayKey": "2026-10-20",
+              "paidHours": 1,
+              "otMultiplier": 1.5,
+              "isOvertimeLine": true
+            },
+            {
+              "id": "op-B2-normal",
+              "amount": 0,
+              "dayKey": "2026-10-23",
+              "paidHours": 8,
+              "bookingPaidHours": 8,
+              "bookingOvertimeHours": 0,
+              "isOvertimeLine": false,
+              "isPayeDay": true
+            }
+          ],
+          "extrasMode": "raw",
+          "timesheetDays": [
+            "2026-10-20",
+            "2026-10-21",
+            "2026-10-22"
+          ],
+          "timeZone": "Europe/London"
+        }
+      ],
+      "expected": {
+        "hours": 9.5,
+        "standardHours": 8,
+        "overtimeHours": 1,
+        "labour": 237.5,
+        "standardLabour": 200,
+        "overtimeLabour": 37.5,
+        "priceWork": 300,
+        "expenses": 65,
+        "extras": 365,
+        "total": 602.5,
+        "submittedPriceWork": 300,
+        "submittedExpenses": 65,
+        "submittedExtras": 365,
+        "pendingEntries": 0,
+        "source": "live",
+        "invoiceRowCount": 5
+      }
+    },
+    {
+      "name": "1.22.0 timesheet totals: a signed snapshot wins, declined and zero rows left out",
+      "function": "timesheetTotals",
+      "args": [
+        {
+          "sheet": {
+            "managerSignedAt": "2026-10-25T10:00:00Z",
+            "priceWorkEntries": [
+              {
+                "id": "PW-1",
+                "title": "Tiling",
+                "amount": 300,
+                "startDate": "2026-10-20"
+              }
+            ],
+            "expenseEntries": [
+              {
+                "id": "EX-1",
+                "title": "Skip",
+                "amount": 40,
+                "date": "2026-10-21"
+              },
+              {
+                "id": "EX-2",
+                "title": "Parking",
+                "amount": 25,
+                "date": "2026-10-22"
+              }
+            ],
+            "extraEntryReviews": {
+              "pw-1": {
+                "decision": "edited",
+                "revisedAmount": 250,
+                "reviewedAmount": 300,
+                "reviewedByUserId": "MGR",
+                "reviewedAtMs": 1
+              },
+              "EX-1": {
+                "decision": "declined",
+                "revisedAmount": null,
+                "reviewedAmount": 40,
+                "reviewedByUserId": "MGR",
+                "reviewedAtMs": 1
+              },
+              "EX-2": {
+                "decision": "approved",
+                "revisedAmount": null,
+                "reviewedAmount": 20,
+                "reviewedByUserId": "MGR",
+                "reviewedAtMs": 1
+              }
+            },
+            "weeklyReportOverride": {
+              "lines": [
+                {
+                  "id": "op-B1-normal",
+                  "amount": 200,
+                  "isOvertime": false,
+                  "decision": "approved",
+                  "date": "2026-10-20"
+                },
+                {
+                  "id": "op-B1-ot",
+                  "amount": 37.5,
+                  "isOvertime": true,
+                  "decision": "approved",
+                  "date": "2026-10-20"
+                },
+                {
+                  "id": "op-B9-normal",
+                  "amount": 150,
+                  "isOvertime": false,
+                  "decision": "declined",
+                  "date": "2026-10-21"
+                }
+              ],
+              "priceWork": [
+                {
+                  "id": "PW-1",
+                  "amount": 250,
+                  "decision": "edited",
+                  "date": "2026-10-20"
+                }
+              ],
+              "expenses": [
+                {
+                  "id": "EX-1",
+                  "amount": 0,
+                  "decision": "declined",
+                  "date": "2026-10-21"
+                }
+              ]
+            }
+          },
+          "payrollLines": [
+            {
+              "id": "op-B1-normal",
+              "amount": 200,
+              "dayKey": "2026-10-20",
+              "paidHours": 8,
+              "bookingPaidHours": 9.5,
+              "bookingOvertimeHours": 1,
+              "isOvertimeLine": false
+            },
+            {
+              "id": "op-B1-ot",
+              "amount": 37.5,
+              "dayKey": "2026-10-20",
+              "paidHours": 1,
+              "otMultiplier": 1.5,
+              "isOvertimeLine": true
+            },
+            {
+              "id": "op-B2-normal",
+              "amount": 0,
+              "dayKey": "2026-10-23",
+              "paidHours": 8,
+              "bookingPaidHours": 8,
+              "bookingOvertimeHours": 0,
+              "isOvertimeLine": false,
+              "isPayeDay": true
+            }
+          ],
+          "extrasMode": "decided",
+          "timesheetDays": [
+            "2026-10-20",
+            "2026-10-21",
+            "2026-10-22"
+          ],
+          "timeZone": "Europe/London"
+        }
+      ],
+      "expected": {
+        "hours": 9.5,
+        "standardHours": 8,
+        "overtimeHours": 1,
+        "labour": 237.5,
+        "standardLabour": 200,
+        "overtimeLabour": 37.5,
+        "priceWork": 250,
+        "expenses": 0,
+        "extras": 250,
+        "total": 487.5,
+        "submittedPriceWork": 300,
+        "submittedExpenses": 65,
+        "submittedExtras": 365,
+        "pendingEntries": 1,
+        "source": "override",
+        "invoiceRowCount": 3
+      }
+    },
+    {
+      "name": "1.22.0 timesheet totals: a reviewer before signing applies their labour review",
+      "function": "timesheetTotals",
+      "args": [
+        {
+          "sheet": {
+            "payrollLineReviews": {
+              "OP-B1-NORMAL": {
+                "decision": "edited",
+                "revisedAmount": 180
+              }
+            }
+          },
+          "payrollLines": [
+            {
+              "id": "op-B1-normal",
+              "amount": 200,
+              "dayKey": "2026-10-20",
+              "paidHours": 8,
+              "bookingPaidHours": 9.5,
+              "bookingOvertimeHours": 1,
+              "isOvertimeLine": false
+            },
+            {
+              "id": "op-B1-ot",
+              "amount": 37.5,
+              "dayKey": "2026-10-20",
+              "paidHours": 1,
+              "otMultiplier": 1.5,
+              "isOvertimeLine": true
+            }
+          ],
+          "extrasMode": "decided",
+          "applyLabourReviews": true
+        }
+      ],
+      "expected": {
+        "hours": 9.5,
+        "standardHours": 8,
+        "overtimeHours": 1,
+        "labour": 217.5,
+        "standardLabour": 180,
+        "overtimeLabour": 37.5,
+        "priceWork": 0,
+        "expenses": 0,
+        "extras": 0,
+        "total": 217.5,
+        "submittedPriceWork": 0,
+        "submittedExpenses": 0,
+        "submittedExtras": 0,
+        "pendingEntries": 0,
+        "source": "live",
+        "invoiceRowCount": 2
+      }
+    },
+    {
+      "name": "1.22.0 leave report: leave year, weekends and bank holidays out, half days 0.5, ids without case",
+      "function": "leaveReportRows",
+      "args": [
+        {
+          "records": [
+            {
+              "id": "H1",
+              "userId": "USER-A",
+              "startDayKey": "2026-12-21",
+              "endDayKey": "2027-01-08",
+              "timeSlot": "FULL DAY",
+              "status": "approved"
+            },
+            {
+              "id": "H2",
+              "userId": "user-a",
+              "startDayKey": "2027-02-05",
+              "endDayKey": "2027-02-05",
+              "timeSlot": "AM",
+              "status": "approved"
+            },
+            {
+              "id": "H3",
+              "operativeId": "OP-A",
+              "startDayKey": "2027-03-01",
+              "endDayKey": "2027-03-03",
+              "timeSlot": "PM",
+              "status": "approved"
+            },
+            {
+              "id": "H4",
+              "userId": "USER-A",
+              "startDayKey": "2027-03-10",
+              "endDayKey": "2027-03-10",
+              "status": "pending"
+            },
+            {
+              "id": "H5",
+              "userId": "USER-B",
+              "startDayKey": "2027-03-10",
+              "endDayKey": "2027-03-12",
+              "status": "approved"
+            }
+          ],
+          "personIds": [
+            "user-a",
+            "op-a"
+          ],
+          "onDayKey": "2027-02-01",
+          "startMonth": 4,
+          "timeZone": "Europe/London",
+          "nonWorkingDayKeys": [
+            "2026-12-25",
+            "2026-12-28",
+            "2027-01-01"
+          ]
+        }
+      ],
+      "expected": {
+        "startDayKey": "2026-04-01",
+        "endDayKey": "2027-03-31",
+        "yearKey": "2026-04-01",
+        "rows": [
+          {
+            "id": "H3",
+            "startDayKey": "2027-03-01",
+            "endDayKey": "2027-03-03",
+            "timeSlot": "PM",
+            "status": "approved",
+            "days": 1.5
+          },
+          {
+            "id": "H2",
+            "startDayKey": "2027-02-05",
+            "endDayKey": "2027-02-05",
+            "timeSlot": "AM",
+            "status": "approved",
+            "days": 0.5
+          },
+          {
+            "id": "H1",
+            "startDayKey": "2026-12-21",
+            "endDayKey": "2027-01-08",
+            "timeSlot": "FULL DAY",
+            "status": "approved",
+            "days": 12
+          }
+        ],
+        "totalDays": 14
+      }
+    },
+    {
+      "name": "1.22.0 leave report: a record across the leave year counts only its days inside the year",
+      "function": "leaveReportRows",
+      "args": [
+        {
+          "records": [
+            {
+              "id": "H1",
+              "userId": "USER-A",
+              "startDayKey": "2026-12-21",
+              "endDayKey": "2027-01-08",
+              "timeSlot": "FULL DAY",
+              "status": "approved"
+            },
+            {
+              "id": "H2",
+              "userId": "user-a",
+              "startDayKey": "2027-02-05",
+              "endDayKey": "2027-02-05",
+              "timeSlot": "AM",
+              "status": "approved"
+            },
+            {
+              "id": "H3",
+              "operativeId": "OP-A",
+              "startDayKey": "2027-03-01",
+              "endDayKey": "2027-03-03",
+              "timeSlot": "PM",
+              "status": "approved"
+            },
+            {
+              "id": "H4",
+              "userId": "USER-A",
+              "startDayKey": "2027-03-10",
+              "endDayKey": "2027-03-10",
+              "status": "pending"
+            },
+            {
+              "id": "H5",
+              "userId": "USER-B",
+              "startDayKey": "2027-03-10",
+              "endDayKey": "2027-03-12",
+              "status": "approved"
+            }
+          ],
+          "personIds": [
+            "USER-A"
+          ],
+          "onDayKey": "2027-02-01",
+          "startMonth": 1,
+          "timeZone": "Europe/London",
+          "nonWorkingDayKeys": [
+            "2026-12-25",
+            "2026-12-28",
+            "2027-01-01"
+          ]
+        }
+      ],
+      "expected": {
+        "startDayKey": "2027-01-01",
+        "endDayKey": "2027-12-31",
+        "yearKey": "2027-01-01",
+        "rows": [
+          {
+            "id": "H2",
+            "startDayKey": "2027-02-05",
+            "endDayKey": "2027-02-05",
+            "timeSlot": "AM",
+            "status": "approved",
+            "days": 0.5
+          },
+          {
+            "id": "H1",
+            "startDayKey": "2026-12-21",
+            "endDayKey": "2027-01-08",
+            "timeSlot": "FULL DAY",
+            "status": "approved",
+            "days": 5
+          }
+        ],
+        "totalDays": 5.5
+      }
+    },
+    {
+      "name": "1.22.0 leave report: pending requests listed when asked",
+      "function": "leaveReportRows",
+      "args": [
+        {
+          "records": [
+            {
+              "id": "H1",
+              "userId": "USER-A",
+              "startDayKey": "2026-12-21",
+              "endDayKey": "2027-01-08",
+              "timeSlot": "FULL DAY",
+              "status": "approved"
+            },
+            {
+              "id": "H2",
+              "userId": "user-a",
+              "startDayKey": "2027-02-05",
+              "endDayKey": "2027-02-05",
+              "timeSlot": "AM",
+              "status": "approved"
+            },
+            {
+              "id": "H3",
+              "operativeId": "OP-A",
+              "startDayKey": "2027-03-01",
+              "endDayKey": "2027-03-03",
+              "timeSlot": "PM",
+              "status": "approved"
+            },
+            {
+              "id": "H4",
+              "userId": "USER-A",
+              "startDayKey": "2027-03-10",
+              "endDayKey": "2027-03-10",
+              "status": "pending"
+            },
+            {
+              "id": "H5",
+              "userId": "USER-B",
+              "startDayKey": "2027-03-10",
+              "endDayKey": "2027-03-12",
+              "status": "approved"
+            }
+          ],
+          "personIds": [
+            "USER-A"
+          ],
+          "onDayKey": "2027-03-10",
+          "startMonth": 1,
+          "timeZone": "Europe/London",
+          "statuses": [
+            "pending"
+          ]
+        }
+      ],
+      "expected": {
+        "startDayKey": "2027-01-01",
+        "endDayKey": "2027-12-31",
+        "yearKey": "2027-01-01",
+        "rows": [
+          {
+            "id": "H4",
+            "startDayKey": "2027-03-10",
+            "endDayKey": "2027-03-10",
+            "timeSlot": "FULL DAY",
+            "status": "pending",
+            "days": 1
+          }
+        ],
+        "totalDays": 1
+      }
+    },
+    {
+      "name": "1.22.0 leave report day count: a half day is 0.5 per working day",
+      "function": "leaveReportDayCount",
+      "args": [
+        {
+          "startDayKey": "2027-03-01",
+          "endDayKey": "2027-03-07",
+          "timeSlot": "PM"
+        },
+        {
+          "startDayKey": "2027-01-01",
+          "endDayKey": "2027-12-31"
+        },
+        "Europe/London",
+        []
+      ],
+      "expected": 2.5
+    },
+    {
+      "name": "1.22.0 leave report years: newest first from the first day",
+      "function": "leaveReportYears",
+      "args": [
+        {
+          "firstDayKey": "2025-06-01",
+          "todayDayKey": "2027-02-01",
+          "startMonth": 4
+        }
+      ],
+      "expected": [
+        {
+          "startDayKey": "2026-04-01",
+          "endDayKey": "2027-03-31",
+          "yearKey": "2026-04-01"
+        },
+        {
+          "startDayKey": "2025-04-01",
+          "endDayKey": "2026-03-31",
+          "yearKey": "2025-04-01"
+        }
+      ]
+    },
+    {
+      "name": "1.22.0 weekly feed: same-email weeks merge, a shared booking once",
+      "function": "mergeTimesheetFeedWeeks",
+      "args": [
+        [
+          {
+            "userId": "U-NAMED",
+            "weekStart": "2026-10-01",
+            "weekEnd": "2026-10-15",
+            "override": {
+              "lines": [
+                {
+                  "id": "a",
+                  "bookingId": "book-shared",
+                  "date": "2026-10-08",
+                  "amount": 200,
+                  "paidHours": 8,
+                  "days": 1,
+                  "decision": "approved"
+                },
+                {
+                  "id": "b",
+                  "bookingId": "book-named",
+                  "date": "2026-10-09",
+                  "amount": 100,
+                  "paidHours": 4,
+                  "days": 0.5,
+                  "decision": "approved"
+                },
+                {
+                  "id": "x",
+                  "bookingId": "",
+                  "date": "2026-10-10",
+                  "jobNumber": "C1",
+                  "amount": 50,
+                  "paidHours": 2,
+                  "days": 0.25,
+                  "decision": "declined"
+                }
+              ],
+              "priceWork": [
+                {
+                  "id": "p1",
+                  "date": "2026-10-08",
+                  "amount": 40,
+                  "decision": "approved"
+                }
+              ],
+              "expenses": [
+                {
+                  "id": "e0",
+                  "date": "2026-10-08",
+                  "amount": 0,
+                  "decision": "approved"
+                }
+              ]
+            }
+          },
+          {
+            "userId": "U-BLANK",
+            "weekStart": "2026-10-01",
+            "weekEnd": "2026-10-15",
+            "override": {
+              "lines": [
+                {
+                  "id": "a2",
+                  "bookingId": "book-shared",
+                  "date": "2026-10-08",
+                  "amount": 200,
+                  "paidHours": 8,
+                  "days": 1,
+                  "decision": "approved"
+                },
+                {
+                  "id": "c",
+                  "bookingId": "book-blank",
+                  "date": "2026-10-20",
+                  "amount": 200,
+                  "paidHours": 8,
+                  "days": 1,
+                  "decision": "approved"
+                }
+              ],
+              "priceWork": [
+                {
+                  "id": "p1",
+                  "date": "2026-10-08",
+                  "amount": 40,
+                  "decision": "approved"
+                }
+              ],
+              "expenses": []
+            }
+          },
+          {
+            "userId": "U-OTHER",
+            "weekStart": "2026-10-01",
+            "weekEnd": "2026-10-15",
+            "override": {
+              "lines": [
+                {
+                  "id": "d",
+                  "bookingId": "book-shared",
+                  "date": "2026-10-08",
+                  "amount": 200,
+                  "paidHours": 8,
+                  "days": 1,
+                  "decision": "approved"
+                }
+              ],
+              "priceWork": [],
+              "expenses": []
+            }
+          }
+        ],
+        [
+          {
+            "id": "U-BLANK",
+            "email": "boss@site.test"
+          },
+          {
+            "id": "U-NAMED",
+            "email": "BOSS@site.test"
+          },
+          {
+            "id": "U-OTHER",
+            "email": "op@site.test"
+          }
+        ],
+        "Europe/London"
+      ],
+      "expected": [
+        {
+          "userId": "U-NAMED",
+          "weekStart": "2026-10-01",
+          "weekEnd": "2026-10-15",
+          "override": {
+            "lines": [
+              {
+                "id": "a",
+                "bookingId": "book-shared",
+                "date": "2026-10-08",
+                "amount": 200,
+                "paidHours": 8,
+                "days": 1,
+                "decision": "approved"
+              },
+              {
+                "id": "b",
+                "bookingId": "book-named",
+                "date": "2026-10-09",
+                "amount": 100,
+                "paidHours": 4,
+                "days": 0.5,
+                "decision": "approved"
+              },
+              {
+                "id": "x",
+                "bookingId": "",
+                "date": "2026-10-10",
+                "jobNumber": "C1",
+                "amount": 50,
+                "paidHours": 2,
+                "days": 0.25,
+                "decision": "declined"
+              },
+              {
+                "id": "c",
+                "bookingId": "book-blank",
+                "date": "2026-10-20",
+                "amount": 200,
+                "paidHours": 8,
+                "days": 1,
+                "decision": "approved"
+              }
+            ],
+            "priceWork": [
+              {
+                "id": "p1",
+                "date": "2026-10-08",
+                "amount": 40,
+                "decision": "approved"
+              }
+            ],
+            "expenses": [
+              {
+                "id": "e0",
+                "date": "2026-10-08",
+                "amount": 0,
+                "decision": "approved"
+              }
+            ]
+          }
+        },
+        {
+          "userId": "U-OTHER",
+          "weekStart": "2026-10-01",
+          "weekEnd": "2026-10-15",
+          "override": {
+            "lines": [
+              {
+                "id": "d",
+                "bookingId": "book-shared",
+                "date": "2026-10-08",
+                "amount": 200,
+                "paidHours": 8,
+                "days": 1,
+                "decision": "approved"
+              }
+            ],
+            "priceWork": [],
+            "expenses": []
+          }
+        }
+      ]
+    },
+    {
+      "name": "1.22.0 weekly feed: covers the approved week days for the listed ids",
+      "function": "timesheetFeedCovers",
+      "args": [
+        [
+          {
+            "userId": "U-NAMED",
+            "weekStart": "2026-10-01",
+            "weekEnd": "2026-10-15",
+            "override": {
+              "lines": [
+                {
+                  "id": "a",
+                  "bookingId": "book-shared",
+                  "date": "2026-10-08",
+                  "amount": 200,
+                  "paidHours": 8,
+                  "days": 1,
+                  "decision": "approved"
+                },
+                {
+                  "id": "b",
+                  "bookingId": "book-named",
+                  "date": "2026-10-09",
+                  "amount": 100,
+                  "paidHours": 4,
+                  "days": 0.5,
+                  "decision": "approved"
+                },
+                {
+                  "id": "x",
+                  "bookingId": "",
+                  "date": "2026-10-10",
+                  "jobNumber": "C1",
+                  "amount": 50,
+                  "paidHours": 2,
+                  "days": 0.25,
+                  "decision": "declined"
+                },
+                {
+                  "id": "c",
+                  "bookingId": "book-blank",
+                  "date": "2026-10-20",
+                  "amount": 200,
+                  "paidHours": 8,
+                  "days": 1,
+                  "decision": "approved"
+                }
+              ],
+              "priceWork": [
+                {
+                  "id": "p1",
+                  "date": "2026-10-08",
+                  "amount": 40,
+                  "decision": "approved"
+                }
+              ],
+              "expenses": [
+                {
+                  "id": "e0",
+                  "date": "2026-10-08",
+                  "amount": 0,
+                  "decision": "approved"
+                }
+              ]
+            }
+          },
+          {
+            "userId": "U-OTHER",
+            "weekStart": "2026-10-01",
+            "weekEnd": "2026-10-15",
+            "override": {
+              "lines": [
+                {
+                  "id": "d",
+                  "bookingId": "book-shared",
+                  "date": "2026-10-08",
+                  "amount": 200,
+                  "paidHours": 8,
+                  "days": 1,
+                  "decision": "approved"
+                }
+              ],
+              "priceWork": [],
+              "expenses": []
+            }
+          }
+        ],
+        [
+          "U-NAMED"
+        ],
+        "2026-10-15",
+        "Europe/London"
+      ],
+      "expected": true
+    },
+    {
+      "name": "1.22.0 weekly feed: a day after the week is not covered",
+      "function": "timesheetFeedCovers",
+      "args": [
+        [
+          {
+            "userId": "U-NAMED",
+            "weekStart": "2026-10-01",
+            "weekEnd": "2026-10-15",
+            "override": {
+              "lines": [
+                {
+                  "id": "a",
+                  "bookingId": "book-shared",
+                  "date": "2026-10-08",
+                  "amount": 200,
+                  "paidHours": 8,
+                  "days": 1,
+                  "decision": "approved"
+                },
+                {
+                  "id": "b",
+                  "bookingId": "book-named",
+                  "date": "2026-10-09",
+                  "amount": 100,
+                  "paidHours": 4,
+                  "days": 0.5,
+                  "decision": "approved"
+                },
+                {
+                  "id": "x",
+                  "bookingId": "",
+                  "date": "2026-10-10",
+                  "jobNumber": "C1",
+                  "amount": 50,
+                  "paidHours": 2,
+                  "days": 0.25,
+                  "decision": "declined"
+                },
+                {
+                  "id": "c",
+                  "bookingId": "book-blank",
+                  "date": "2026-10-20",
+                  "amount": 200,
+                  "paidHours": 8,
+                  "days": 1,
+                  "decision": "approved"
+                }
+              ],
+              "priceWork": [
+                {
+                  "id": "p1",
+                  "date": "2026-10-08",
+                  "amount": 40,
+                  "decision": "approved"
+                }
+              ],
+              "expenses": [
+                {
+                  "id": "e0",
+                  "date": "2026-10-08",
+                  "amount": 0,
+                  "decision": "approved"
+                }
+              ]
+            }
+          },
+          {
+            "userId": "U-OTHER",
+            "weekStart": "2026-10-01",
+            "weekEnd": "2026-10-15",
+            "override": {
+              "lines": [
+                {
+                  "id": "d",
+                  "bookingId": "book-shared",
+                  "date": "2026-10-08",
+                  "amount": 200,
+                  "paidHours": 8,
+                  "days": 1,
+                  "decision": "approved"
+                }
+              ],
+              "priceWork": [],
+              "expenses": []
+            }
+          }
+        ],
+        [
+          "U-NAMED"
+        ],
+        "2026-10-16",
+        "Europe/London"
+      ],
+      "expected": false
+    },
+    {
+      "name": "1.22.0 weekly feed: labour lines in range, declined left out",
+      "function": "timesheetFeedLabourLines",
+      "args": [
+        [
+          {
+            "userId": "U-NAMED",
+            "weekStart": "2026-10-01",
+            "weekEnd": "2026-10-15",
+            "override": {
+              "lines": [
+                {
+                  "id": "a",
+                  "bookingId": "book-shared",
+                  "date": "2026-10-08",
+                  "amount": 200,
+                  "paidHours": 8,
+                  "days": 1,
+                  "decision": "approved"
+                },
+                {
+                  "id": "b",
+                  "bookingId": "book-named",
+                  "date": "2026-10-09",
+                  "amount": 100,
+                  "paidHours": 4,
+                  "days": 0.5,
+                  "decision": "approved"
+                },
+                {
+                  "id": "x",
+                  "bookingId": "",
+                  "date": "2026-10-10",
+                  "jobNumber": "C1",
+                  "amount": 50,
+                  "paidHours": 2,
+                  "days": 0.25,
+                  "decision": "declined"
+                },
+                {
+                  "id": "c",
+                  "bookingId": "book-blank",
+                  "date": "2026-10-20",
+                  "amount": 200,
+                  "paidHours": 8,
+                  "days": 1,
+                  "decision": "approved"
+                }
+              ],
+              "priceWork": [
+                {
+                  "id": "p1",
+                  "date": "2026-10-08",
+                  "amount": 40,
+                  "decision": "approved"
+                }
+              ],
+              "expenses": [
+                {
+                  "id": "e0",
+                  "date": "2026-10-08",
+                  "amount": 0,
+                  "decision": "approved"
+                }
+              ]
+            }
+          },
+          {
+            "userId": "U-OTHER",
+            "weekStart": "2026-10-01",
+            "weekEnd": "2026-10-15",
+            "override": {
+              "lines": [
+                {
+                  "id": "d",
+                  "bookingId": "book-shared",
+                  "date": "2026-10-08",
+                  "amount": 200,
+                  "paidHours": 8,
+                  "days": 1,
+                  "decision": "approved"
+                }
+              ],
+              "priceWork": [],
+              "expenses": []
+            }
+          }
+        ],
+        {
+          "start": "2026-10-01",
+          "end": "2026-10-15"
+        },
+        "Europe/London"
+      ],
+      "expected": [
+        {
+          "weekIndex": 0,
+          "line": {
+            "id": "a",
+            "bookingId": "book-shared",
+            "date": "2026-10-08",
+            "amount": 200,
+            "paidHours": 8,
+            "days": 1,
+            "decision": "approved"
+          }
+        },
+        {
+          "weekIndex": 0,
+          "line": {
+            "id": "b",
+            "bookingId": "book-named",
+            "date": "2026-10-09",
+            "amount": 100,
+            "paidHours": 4,
+            "days": 0.5,
+            "decision": "approved"
+          }
+        },
+        {
+          "weekIndex": 1,
+          "line": {
+            "id": "d",
+            "bookingId": "book-shared",
+            "date": "2026-10-08",
+            "amount": 200,
+            "paidHours": 8,
+            "days": 1,
+            "decision": "approved"
+          }
+        }
+      ]
+    },
+    {
+      "name": "1.22.0 weekly feed: money lines, zero amounts left out",
+      "function": "timesheetFeedMoneyLines",
+      "args": [
+        [
+          {
+            "userId": "U-NAMED",
+            "weekStart": "2026-10-01",
+            "weekEnd": "2026-10-15",
+            "override": {
+              "lines": [
+                {
+                  "id": "a",
+                  "bookingId": "book-shared",
+                  "date": "2026-10-08",
+                  "amount": 200,
+                  "paidHours": 8,
+                  "days": 1,
+                  "decision": "approved"
+                },
+                {
+                  "id": "b",
+                  "bookingId": "book-named",
+                  "date": "2026-10-09",
+                  "amount": 100,
+                  "paidHours": 4,
+                  "days": 0.5,
+                  "decision": "approved"
+                },
+                {
+                  "id": "x",
+                  "bookingId": "",
+                  "date": "2026-10-10",
+                  "jobNumber": "C1",
+                  "amount": 50,
+                  "paidHours": 2,
+                  "days": 0.25,
+                  "decision": "declined"
+                },
+                {
+                  "id": "c",
+                  "bookingId": "book-blank",
+                  "date": "2026-10-20",
+                  "amount": 200,
+                  "paidHours": 8,
+                  "days": 1,
+                  "decision": "approved"
+                }
+              ],
+              "priceWork": [
+                {
+                  "id": "p1",
+                  "date": "2026-10-08",
+                  "amount": 40,
+                  "decision": "approved"
+                }
+              ],
+              "expenses": [
+                {
+                  "id": "e0",
+                  "date": "2026-10-08",
+                  "amount": 0,
+                  "decision": "approved"
+                }
+              ]
+            }
+          },
+          {
+            "userId": "U-OTHER",
+            "weekStart": "2026-10-01",
+            "weekEnd": "2026-10-15",
+            "override": {
+              "lines": [
+                {
+                  "id": "d",
+                  "bookingId": "book-shared",
+                  "date": "2026-10-08",
+                  "amount": 200,
+                  "paidHours": 8,
+                  "days": 1,
+                  "decision": "approved"
+                }
+              ],
+              "priceWork": [],
+              "expenses": []
+            }
+          }
+        ],
+        "expenses",
+        {
+          "start": "2026-10-01",
+          "end": "2026-10-31"
+        },
+        "Europe/London"
+      ],
+      "expected": []
+    },
+    {
+      "name": "1.22.0 weekly feed: the whole feed in one call",
+      "function": "weeklyReportTimesheetFeed",
+      "args": [
+        {
+          "weeks": [
+            {
+              "userId": "U-NAMED",
+              "weekStart": "2026-10-01",
+              "weekEnd": "2026-10-15",
+              "override": {
+                "lines": [
+                  {
+                    "id": "a",
+                    "bookingId": "book-shared",
+                    "date": "2026-10-08",
+                    "amount": 200,
+                    "paidHours": 8,
+                    "days": 1,
+                    "decision": "approved"
+                  },
+                  {
+                    "id": "b",
+                    "bookingId": "book-named",
+                    "date": "2026-10-09",
+                    "amount": 100,
+                    "paidHours": 4,
+                    "days": 0.5,
+                    "decision": "approved"
+                  },
+                  {
+                    "id": "x",
+                    "bookingId": "",
+                    "date": "2026-10-10",
+                    "jobNumber": "C1",
+                    "amount": 50,
+                    "paidHours": 2,
+                    "days": 0.25,
+                    "decision": "declined"
+                  }
+                ],
+                "priceWork": [
+                  {
+                    "id": "p1",
+                    "date": "2026-10-08",
+                    "amount": 40,
+                    "decision": "approved"
+                  }
+                ],
+                "expenses": [
+                  {
+                    "id": "e0",
+                    "date": "2026-10-08",
+                    "amount": 0,
+                    "decision": "approved"
+                  }
+                ]
+              }
+            },
+            {
+              "userId": "U-BLANK",
+              "weekStart": "2026-10-01",
+              "weekEnd": "2026-10-15",
+              "override": {
+                "lines": [
+                  {
+                    "id": "a2",
+                    "bookingId": "book-shared",
+                    "date": "2026-10-08",
+                    "amount": 200,
+                    "paidHours": 8,
+                    "days": 1,
+                    "decision": "approved"
+                  },
+                  {
+                    "id": "c",
+                    "bookingId": "book-blank",
+                    "date": "2026-10-20",
+                    "amount": 200,
+                    "paidHours": 8,
+                    "days": 1,
+                    "decision": "approved"
+                  }
+                ],
+                "priceWork": [
+                  {
+                    "id": "p1",
+                    "date": "2026-10-08",
+                    "amount": 40,
+                    "decision": "approved"
+                  }
+                ],
+                "expenses": []
+              }
+            },
+            {
+              "userId": "U-OTHER",
+              "weekStart": "2026-10-01",
+              "weekEnd": "2026-10-15",
+              "override": {
+                "lines": [
+                  {
+                    "id": "d",
+                    "bookingId": "book-shared",
+                    "date": "2026-10-08",
+                    "amount": 200,
+                    "paidHours": 8,
+                    "days": 1,
+                    "decision": "approved"
+                  }
+                ],
+                "priceWork": [],
+                "expenses": []
+              }
+            }
+          ],
+          "people": [
+            {
+              "id": "U-BLANK",
+              "email": "boss@site.test"
+            },
+            {
+              "id": "U-NAMED",
+              "email": "BOSS@site.test"
+            },
+            {
+              "id": "U-OTHER",
+              "email": "op@site.test"
+            }
+          ],
+          "range": {
+            "start": "2026-10-01",
+            "end": "2026-10-31"
+          },
+          "timeZone": "Europe/London"
+        }
+      ],
+      "expected": {
+        "weeks": [
+          {
+            "userId": "U-NAMED",
+            "weekStart": "2026-10-01",
+            "weekEnd": "2026-10-15",
+            "override": {
+              "lines": [
+                {
+                  "id": "a",
+                  "bookingId": "book-shared",
+                  "date": "2026-10-08",
+                  "amount": 200,
+                  "paidHours": 8,
+                  "days": 1,
+                  "decision": "approved"
+                },
+                {
+                  "id": "b",
+                  "bookingId": "book-named",
+                  "date": "2026-10-09",
+                  "amount": 100,
+                  "paidHours": 4,
+                  "days": 0.5,
+                  "decision": "approved"
+                },
+                {
+                  "id": "x",
+                  "bookingId": "",
+                  "date": "2026-10-10",
+                  "jobNumber": "C1",
+                  "amount": 50,
+                  "paidHours": 2,
+                  "days": 0.25,
+                  "decision": "declined"
+                },
+                {
+                  "id": "c",
+                  "bookingId": "book-blank",
+                  "date": "2026-10-20",
+                  "amount": 200,
+                  "paidHours": 8,
+                  "days": 1,
+                  "decision": "approved"
+                }
+              ],
+              "priceWork": [
+                {
+                  "id": "p1",
+                  "date": "2026-10-08",
+                  "amount": 40,
+                  "decision": "approved"
+                }
+              ],
+              "expenses": [
+                {
+                  "id": "e0",
+                  "date": "2026-10-08",
+                  "amount": 0,
+                  "decision": "approved"
+                }
+              ]
+            }
+          },
+          {
+            "userId": "U-OTHER",
+            "weekStart": "2026-10-01",
+            "weekEnd": "2026-10-15",
+            "override": {
+              "lines": [
+                {
+                  "id": "d",
+                  "bookingId": "book-shared",
+                  "date": "2026-10-08",
+                  "amount": 200,
+                  "paidHours": 8,
+                  "days": 1,
+                  "decision": "approved"
+                }
+              ],
+              "priceWork": [],
+              "expenses": []
+            }
+          }
+        ],
+        "labour": [
+          {
+            "weekIndex": 0,
+            "line": {
+              "id": "a",
+              "bookingId": "book-shared",
+              "date": "2026-10-08",
+              "amount": 200,
+              "paidHours": 8,
+              "days": 1,
+              "decision": "approved"
+            }
+          },
+          {
+            "weekIndex": 0,
+            "line": {
+              "id": "b",
+              "bookingId": "book-named",
+              "date": "2026-10-09",
+              "amount": 100,
+              "paidHours": 4,
+              "days": 0.5,
+              "decision": "approved"
+            }
+          },
+          {
+            "weekIndex": 0,
+            "line": {
+              "id": "c",
+              "bookingId": "book-blank",
+              "date": "2026-10-20",
+              "amount": 200,
+              "paidHours": 8,
+              "days": 1,
+              "decision": "approved"
+            }
+          },
+          {
+            "weekIndex": 1,
+            "line": {
+              "id": "d",
+              "bookingId": "book-shared",
+              "date": "2026-10-08",
+              "amount": 200,
+              "paidHours": 8,
+              "days": 1,
+              "decision": "approved"
+            }
+          }
+        ],
+        "priceWork": [
+          {
+            "weekIndex": 0,
+            "line": {
+              "id": "p1",
+              "date": "2026-10-08",
+              "amount": 40,
+              "decision": "approved"
+            }
+          }
+        ],
+        "expenses": []
+      }
+    },
+    {
+      "name": "1.22.0 variation number: trailing digits only (V2-003 → V2-004)",
+      "function": "nextVariationNumber",
+      "args": [
+        [
+          "V2-001",
+          "V2-003",
+          "V2-002"
+        ],
+        "V2-",
+        3
+      ],
+      "expected": "V2-004"
+    },
+    {
+      "name": "1.22.0 variation number: deleted numbers are never reused, gaps stay",
+      "function": "nextVariationNumber",
+      "args": [
+        [
+          "VO-001",
+          "VO-007"
+        ],
+        "VO-",
+        3
+      ],
+      "expected": "VO-008"
+    },
+    {
+      "name": "1.22.0 variation number: first number",
+      "function": "nextVariationNumber",
+      "args": [
+        [],
+        "VO-",
+        3
+      ],
+      "expected": "VO-001"
+    },
+    {
+      "name": "1.22.0 variation number value: trailing digits",
+      "function": "variationNumberValue",
+      "args": [
+        "V2-003"
+      ],
+      "expected": 3
+    },
+    {
+      "name": "1.22.0 variation number taken: a deleted variation counts, without case",
+      "function": "variationNumberTaken",
+      "args": [
+        [
+          {
+            "id": "A",
+            "voNumber": "VO-004",
+            "isDeleted": true
+          }
+        ],
+        " vo-004 "
+      ],
+      "expected": true
+    },
+    {
+      "name": "1.22.0 variation number taken: the variation itself is skipped by id without case",
+      "function": "variationNumberTaken",
+      "args": [
+        [
+          {
+            "id": "ABC",
+            "voNumber": "VO-004"
+          }
+        ],
+        "VO-004",
+        "abc"
+      ],
+      "expected": false
+    },
+    {
+      "name": "1.22.0 coverage: two bookings either side of lunch cover the day, break taken once",
+      "function": "managerCoverageHours",
+      "args": [
+        {
+          "bookings": [
+            {
+              "timeSlot": "CUSTOM",
+              "workStartTime": "07:30",
+              "workEndTime": "12:00"
+            },
+            {
+              "timeSlot": "CUSTOM",
+              "workStartTime": "12:30",
+              "workEndTime": "16:00"
+            }
+          ],
+          "dayKey": "2026-11-02",
+          "policy": {
+            "standardDayStart": "07:30",
+            "standardDayEnd": "16:00",
+            "unpaidBreakMinutes": 30,
+            "standardPaidHours": 8,
+            "breakWindowStart": "12:00",
+            "breakWindowEnd": "12:30",
+            "weekdayOutsideStandardMultiplier": 1.5,
+            "saturday": {
+              "allHoursAtMultiplierMode": false,
+              "allHoursMultiplier": 2,
+              "definedWindowStart": "07:30",
+              "definedWindowEnd": "13:00",
+              "countsAsStandardHours": 8,
+              "outsideWindowMultiplier": 2,
+              "sameAsSaturday": false,
+              "breakPaid": true
+            },
+            "sunday": {
+              "allHoursAtMultiplierMode": true,
+              "allHoursMultiplier": 2,
+              "definedWindowStart": "07:30",
+              "definedWindowEnd": "16:00",
+              "countsAsStandardHours": 8,
+              "outsideWindowMultiplier": 2,
+              "sameAsSaturday": false,
+              "breakPaid": true
+            },
+            "breakPaid": false
+          },
+          "timeZone": "Europe/London"
+        }
+      ],
+      "expected": {
+        "paidDayHours": 8,
+        "blocks": [
+          {
+            "start": 450,
+            "end": 720
+          },
+          {
+            "start": 750,
+            "end": 960
+          }
+        ],
+        "requiredHours": 8,
+        "coveredHours": 8,
+        "missingHours": 0,
+        "covered": true,
+        "paidHours": 8
+      }
+    },
+    {
+      "name": "1.22.0 coverage: overlapping bookings count once and the break comes off the block that covers it",
+      "function": "managerCoverageHours",
+      "args": [
+        {
+          "bookings": [
+            {
+              "timeSlot": "CUSTOM",
+              "workStartTime": "08:00",
+              "workEndTime": "13:00"
+            },
+            {
+              "timeSlot": "CUSTOM",
+              "workStartTime": "11:00",
+              "workEndTime": "14:00"
+            }
+          ],
+          "dayKey": "2026-11-02",
+          "policy": {
+            "standardDayStart": "07:30",
+            "standardDayEnd": "16:00",
+            "unpaidBreakMinutes": 30,
+            "standardPaidHours": 8,
+            "breakWindowStart": "12:00",
+            "breakWindowEnd": "12:30",
+            "weekdayOutsideStandardMultiplier": 1.5,
+            "saturday": {
+              "allHoursAtMultiplierMode": false,
+              "allHoursMultiplier": 2,
+              "definedWindowStart": "07:30",
+              "definedWindowEnd": "13:00",
+              "countsAsStandardHours": 8,
+              "outsideWindowMultiplier": 2,
+              "sameAsSaturday": false,
+              "breakPaid": true
+            },
+            "sunday": {
+              "allHoursAtMultiplierMode": true,
+              "allHoursMultiplier": 2,
+              "definedWindowStart": "07:30",
+              "definedWindowEnd": "16:00",
+              "countsAsStandardHours": 8,
+              "outsideWindowMultiplier": 2,
+              "sameAsSaturday": false,
+              "breakPaid": true
+            },
+            "breakPaid": false
+          },
+          "timeZone": "Europe/London"
+        }
+      ],
+      "expected": {
+        "paidDayHours": 8,
+        "blocks": [
+          {
+            "start": 480,
+            "end": 840
+          }
+        ],
+        "requiredHours": 8,
+        "coveredHours": 5.5,
+        "missingHours": 2.5,
+        "covered": false,
+        "paidHours": 5.5
+      }
+    },
+    {
+      "name": "1.22.0 coverage: an early block before lunch keeps every hour",
+      "function": "managerCoverageHours",
+      "args": [
+        {
+          "bookings": [
+            {
+              "timeSlot": "CUSTOM",
+              "workStartTime": "06:00",
+              "workEndTime": "09:00"
+            }
+          ],
+          "dayKey": "2026-11-02",
+          "policy": {
+            "standardDayStart": "07:30",
+            "standardDayEnd": "16:00",
+            "unpaidBreakMinutes": 30,
+            "standardPaidHours": 8,
+            "breakWindowStart": "12:00",
+            "breakWindowEnd": "12:30",
+            "weekdayOutsideStandardMultiplier": 1.5,
+            "saturday": {
+              "allHoursAtMultiplierMode": false,
+              "allHoursMultiplier": 2,
+              "definedWindowStart": "07:30",
+              "definedWindowEnd": "13:00",
+              "countsAsStandardHours": 8,
+              "outsideWindowMultiplier": 2,
+              "sameAsSaturday": false,
+              "breakPaid": true
+            },
+            "sunday": {
+              "allHoursAtMultiplierMode": true,
+              "allHoursMultiplier": 2,
+              "definedWindowStart": "07:30",
+              "definedWindowEnd": "16:00",
+              "countsAsStandardHours": 8,
+              "outsideWindowMultiplier": 2,
+              "sameAsSaturday": false,
+              "breakPaid": true
+            },
+            "breakPaid": false
+          },
+          "timeZone": "Europe/London"
+        }
+      ],
+      "expected": {
+        "paidDayHours": 8,
+        "blocks": [
+          {
+            "start": 360,
+            "end": 540
+          }
+        ],
+        "requiredHours": 8,
+        "coveredHours": 1.5,
+        "missingHours": 6.5,
+        "covered": false,
+        "paidHours": 3
+      }
+    },
+    {
+      "name": "1.22.0 coverage: a plain FULL DAY is the paid day",
+      "function": "managerCoverageHours",
+      "args": [
+        {
+          "bookings": [
+            {
+              "timeSlot": "FULL DAY"
+            }
+          ],
+          "dayKey": "2026-11-02",
+          "policy": {
+            "standardDayStart": "07:30",
+            "standardDayEnd": "16:00",
+            "unpaidBreakMinutes": 30,
+            "standardPaidHours": 8,
+            "breakWindowStart": "12:00",
+            "breakWindowEnd": "12:30",
+            "weekdayOutsideStandardMultiplier": 1.5,
+            "saturday": {
+              "allHoursAtMultiplierMode": false,
+              "allHoursMultiplier": 2,
+              "definedWindowStart": "07:30",
+              "definedWindowEnd": "13:00",
+              "countsAsStandardHours": 8,
+              "outsideWindowMultiplier": 2,
+              "sameAsSaturday": false,
+              "breakPaid": true
+            },
+            "sunday": {
+              "allHoursAtMultiplierMode": true,
+              "allHoursMultiplier": 2,
+              "definedWindowStart": "07:30",
+              "definedWindowEnd": "16:00",
+              "countsAsStandardHours": 8,
+              "outsideWindowMultiplier": 2,
+              "sameAsSaturday": false,
+              "breakPaid": true
+            },
+            "breakPaid": false
+          },
+          "timeZone": "Europe/London"
+        }
+      ],
+      "expected": {
+        "paidDayHours": 8,
+        "blocks": [
+          {
+            "start": 450,
+            "end": 960
+          }
+        ],
+        "requiredHours": 8,
+        "coveredHours": 8,
+        "missingHours": 0,
+        "covered": true,
+        "paidHours": 8
+      }
     }
   ]
 }

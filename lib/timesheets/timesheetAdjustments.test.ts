@@ -72,14 +72,16 @@ test('managerAdjustmentRows lists declined and edited extras and days', () => {
 })
 
 test('payroll line reviews are found without case, as on the invoice (payrollLineReview)', async () => {
-  const { effectivePayrollAmount, isPayrollLineRemoved, payrollTotal } = await import('./timesheetAdjustments.ts')
+  const { effectivePayrollAmount, isPayrollLineRemoved, draftTimesheetTotals } = await import('./timesheetAdjustments.ts')
   const line = { id: 'booking-abc-line', amount: 200, isOvertimeLine: false } as never
   const edited = {
     ...emptyTimesheetDraft(),
     payrollLineReviews: { 'BOOKING-ABC-LINE': { decision: 'edited' as const, revisedAmount: 150 } },
   }
   assert.equal(effectivePayrollAmount(line, edited, true), 150)
-  assert.equal(payrollTotal([line], edited, true, false), 150)
+  assert.equal(draftTimesheetTotals({ lines: [line], draft: { ...edited, managerSignedAt: new Date('2026-11-01T12:00:00Z') }, decided: true }).labour, 150)
+  assert.equal(draftTimesheetTotals({ lines: [line], draft: edited, decided: true, reviewing: true }).labour, 150)
+  assert.equal(draftTimesheetTotals({ lines: [line], draft: edited, decided: false }).labour, 200)
   const declined = {
     ...emptyTimesheetDraft(),
     payrollLineReviews: { 'BOOKING-ABC-LINE': { decision: 'declined' as const, revisedAmount: null } },

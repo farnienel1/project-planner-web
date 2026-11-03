@@ -111,13 +111,6 @@ export function emptyTimesheetDraft(): TimesheetDraft {
   }
 }
 
-export function draftAdditionalTotal(draft: TimesheetDraft): number {
-  return (
-    draft.expenseEntries.reduce((sum, item) => sum + item.amount, 0) +
-    draft.priceWorkEntries.reduce((sum, item) => sum + item.amount, 0)
-  )
-}
-
 export function decisionLabel(decision: TimesheetManagerDecision): string {
   switch (decision) {
     case 'pending':

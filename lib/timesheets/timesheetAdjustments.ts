@@ -9,7 +9,14 @@ import type {
 } from '@/lib/timesheets/timesheetDraft'
 import type { TimesheetPayrollLineItem } from '@/lib/timesheets/timesheetPayrollCollector'
 import { formatMoney } from '@/lib/canonical/money'
-import { payrollLineReview, type PayrollLineReview } from '@/lib/canonical/timesheetEntryReviews'
+import {
+  payrollLineReview,
+  timesheetEntryEffectiveAmount,
+  timesheetEntryReviewWriteFields,
+  timesheetEntryReviewsAfterWrite,
+  type PayrollLineReview,
+} from '@/lib/canonical/timesheetEntryReviews'
+import { timesheetTotals, type TimesheetTotals } from '@/lib/canonical/timesheetTotals'
 
 /**
  * The line manager's review of a payroll line (canonical `payrollLineReview`): the line id as stored, then without
@@ -35,14 +42,7 @@ export function effectivePayrollAmount(
   if (!applyDecisions) return line.amount
   const review = draftPayrollLineReview(draft, line.id)
   if (!review) return line.amount
-  switch (review.decision) {
-    case 'declined':
-      return 0
-    case 'edited':
-      return review.revisedAmount ?? line.amount
-    default:
-      return line.amount
-  }
+  return timesheetEntryEffectiveAmount(review.decision, review.revisedAmount, line.amount)
 }
 
 export function isPayrollLineRemoved(
@@ -62,14 +62,7 @@ export function effectiveExpenseAmount(
   applyLiveReview = false
 ): number {
   if (!(managerHasSigned || applyLiveReview)) return entry.amount
-  switch (entry.managerDecision) {
-    case 'declined':
-      return 0
-    case 'edited':
-      return entry.managerRevisedAmount ?? entry.amount
-    default:
-      return entry.amount
-  }
+  return timesheetEntryEffectiveAmount(entry.managerDecision, entry.managerRevisedAmount, entry.amount)
 }
 
 export function effectivePriceWorkAmount(
@@ -78,14 +71,7 @@ export function effectivePriceWorkAmount(
   applyLiveReview = false
 ): number {
   if (!(managerHasSigned || applyLiveReview)) return entry.amount
-  switch (entry.managerDecision) {
-    case 'declined':
-      return 0
-    case 'edited':
-      return entry.managerRevisedAmount ?? entry.amount
-    default:
-      return entry.amount
-  }
+  return timesheetEntryEffectiveAmount(entry.managerDecision, entry.managerRevisedAmount, entry.amount)
 }
 
 export function extrasPendingReview(draft: TimesheetDraft): boolean {
@@ -95,43 +81,54 @@ export function extrasPendingReview(draft: TimesheetDraft): boolean {
   )
 }
 
-export function payrollTotal(
-  lines: TimesheetPayrollLineItem[],
-  draft: TimesheetDraft,
-  managerHasSigned: boolean,
-  applyLiveReview = false
-): number {
-  return lines.reduce(
-    (sum, line) => sum + effectivePayrollAmount(line, draft, managerHasSigned, applyLiveReview),
-    0
-  )
+/**
+ * The stored-sheet shape of a draft, as the rulebook reads it (`timesheetInvoiceRows`, `timesheetTotals`).
+ * `reviewerPreview`: the line manager's screen before their save lands — the entry decisions on screen are laid over
+ * the stored reviews exactly as their save will write them (`timesheetEntryReviewWriteFields`).
+ */
+export function timesheetSheetFields(draft: TimesheetDraft, options: { reviewerPreview?: boolean } = {}): Record<string, unknown> {
+  let extraEntryReviews = draft.extraEntryReviews ?? null
+  if (options.reviewerPreview) {
+    const written = timesheetEntryReviewWriteFields({
+      stored: extraEntryReviews,
+      entries: [...draft.priceWorkEntries, ...draft.expenseEntries],
+      reviewedByUserId: '',
+      reviewedAtMs: 0,
+    })
+    extraEntryReviews = timesheetEntryReviewsAfterWrite(extraEntryReviews, written)
+  }
+  return {
+    weeklyReportOverride: draft.weeklyReportOverride ?? null,
+    payrollLineReviews: draft.payrollLineReviews,
+    extraEntryReviews,
+    priceWorkEntries: draft.priceWorkEntries,
+    expenseEntries: draft.expenseEntries,
+    managerSignedAt: draft.managerSignedAt ?? null,
+  }
 }
 
-export function expensesTotal(draft: TimesheetDraft, managerHasSigned: boolean, applyLiveReview = false): number {
-  return draft.expenseEntries.reduce(
-    (sum, entry) => sum + effectiveExpenseAmount(entry, managerHasSigned, applyLiveReview),
-    0
-  )
-}
-
-export function priceWorkTotal(draft: TimesheetDraft, managerHasSigned: boolean, applyLiveReview = false): number {
-  return draft.priceWorkEntries.reduce(
-    (sum, entry) => sum + effectivePriceWorkAmount(entry, managerHasSigned, applyLiveReview),
-    0
-  )
-}
-
-export function grandTotal(
-  lines: TimesheetPayrollLineItem[],
-  draft: TimesheetDraft,
-  managerHasSigned: boolean,
-  applyLiveReview = false
-): number {
-  return (
-    payrollTotal(lines, draft, managerHasSigned, applyLiveReview) +
-    expensesTotal(draft, managerHasSigned, applyLiveReview) +
-    priceWorkTotal(draft, managerHasSigned, applyLiveReview)
-  )
+/**
+ * Rulebook 1.22.0 (§8): the totals of one sheet — `timesheetTotals`, the sum of its invoice rows. `decided` is
+ * whether review decisions apply on this screen (the line manager has signed, or the viewer is reviewing it); a
+ * reviewer's screen also applies their labour reviews before they sign. List rows pass `decided: true` (the export
+ * invoice). `timesheetDays` (`timesheetDayKeysForPeriod`) leaves out rows on PAYE days, as the invoice does.
+ */
+export function draftTimesheetTotals(input: {
+  lines: TimesheetPayrollLineItem[]
+  draft: TimesheetDraft
+  decided: boolean
+  reviewing?: boolean
+  timesheetDays?: ReadonlyArray<string> | null
+  timeZone?: string
+}): TimesheetTotals {
+  return timesheetTotals({
+    sheet: timesheetSheetFields(input.draft, { reviewerPreview: input.reviewing === true }),
+    payrollLines: input.lines,
+    extrasMode: input.decided ? 'decided' : 'raw',
+    applyLabourReviews: input.reviewing === true ? true : null,
+    timesheetDays: input.timesheetDays ?? null,
+    timeZone: input.timeZone ?? null,
+  })
 }
 
 export function managerAdjustmentCount(draft: TimesheetDraft): number {

@@ -1,6 +1,7 @@
 /**
  * iOS parity: InvoicingView.TimesheetExportHelper / ResendEmailService.sendTimesheetExportEmail.
  */
+import { timesheetSheetFields } from '@/lib/timesheets/timesheetAdjustments'
 import type { TimesheetDraft } from '@/lib/timesheets/timesheetDraft'
 import type { TimesheetPayrollSummary } from '@/lib/timesheets/timesheetPayrollCollector'
 import { timesheetLabourDetails } from '@/lib/timesheets/timesheetPayrollCollector'
@@ -164,14 +165,7 @@ export function invoiceLinesForTimesheet({
 }): TimesheetInvoiceLine[] {
   // Rulebook 1.10.0 (H1): which rows and amounts are the rulebook's `timesheetInvoiceRows` — the signed snapshot
   // first, then live lines with their reviews and entry decisions; this function only formats them.
-  const sheet: Record<string, unknown> = {
-    weeklyReportOverride: draft.weeklyReportOverride ?? null,
-    payrollLineReviews: draft.payrollLineReviews,
-    extraEntryReviews: draft.extraEntryReviews ?? null,
-    priceWorkEntries: draft.priceWorkEntries,
-    expenseEntries: draft.expenseEntries,
-    managerSignedAt: draft.managerSignedAt ?? null,
-  }
+  const sheet = timesheetSheetFields(draft)
   const decided = timesheetInvoiceRows({
     sheet,
     payrollLines: payroll.lineItems,

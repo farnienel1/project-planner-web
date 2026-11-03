@@ -48,14 +48,11 @@ import {
   effectiveExpenseAmount,
   effectivePayrollAmount,
   effectivePriceWorkAmount,
-  expensesTotal,
+  draftTimesheetTotals,
   extrasPendingReview,
-  grandTotal,
   isPayrollLineRemoved,
   managerAdjustmentCount,
   managerAdjustmentRows,
-  payrollTotal,
-  priceWorkTotal,
   showsTimesheetAdjustment,
   draftPayrollLineReview,
 } from '@/lib/timesheets/timesheetAdjustments'
@@ -78,7 +75,6 @@ import { emptyDayRateHistory, type OperativeDayRateHistoryCollection } from '@/l
 import {
   decisionLabel,
   decisionTint,
-  draftAdditionalTotal,
   emptyTimesheetDraft,
   reviewSelection,
   type TimesheetDraft,
@@ -303,21 +299,21 @@ export function TimesheetPeriodPage({
   })()
   const managerHasSigned = Boolean(draft.managerSignedAt)
   const fullyApproved = isTimesheetFullyApproved(draft, subjectUser, users)
-  const extrasTotal = priceWorkTotal(draft, managerHasSigned, canManagerReview)
-  const expensesAmount = expensesTotal(draft, managerHasSigned, canManagerReview)
-  const total = grandTotal(payroll.lineItems, draft, managerHasSigned, canManagerReview)
-  const overtimeAmount = payrollTotal(
-    payroll.lineItems.filter((line) => line.isOvertimeLine),
+  // Rulebook 1.22.0 (§8): every figure below is `timesheetTotals` — the invoice rows summed — never an app sum.
+  const sheetDays = subjectUser ? timesheetDayKeysForPeriod(subjectUser, periodStart, periodEnd, timeZone) : null
+  const totals = draftTimesheetTotals({
+    lines: payroll.lineItems,
     draft,
-    managerHasSigned,
-    canManagerReview
-  )
-  const hoursSubtotal = payrollTotal(
-    payroll.lineItems.filter((line) => !line.isOvertimeLine),
-    draft,
-    managerHasSigned,
-    canManagerReview
-  )
+    decided: managerHasSigned || canManagerReview,
+    reviewing: canManagerReview,
+    timesheetDays: sheetDays,
+    timeZone,
+  })
+  const extrasTotal = totals.priceWork
+  const expensesAmount = totals.expenses
+  const total = totals.total
+  const overtimeAmount = totals.overtimeLabour
+  const hoursSubtotal = totals.standardLabour
 
   const persist = useCallback(
     async (next: TimesheetDraft) => {
@@ -767,9 +763,17 @@ export function TimesheetPeriodPage({
   if (loading) return <LoadingSpinner />
 
   if (signOpen || managerSignOpen) {
-    const hoursAmount = payrollTotal(payroll.lineItems, draft, managerHasSigned, managerSignOpen)
-    const priceWorkAmount = priceWorkTotal(draft, managerHasSigned, managerSignOpen)
-    const expenses = expensesTotal(draft, managerHasSigned, managerSignOpen)
+    const signTotals = draftTimesheetTotals({
+      lines: payroll.lineItems,
+      draft,
+      decided: managerHasSigned || managerSignOpen,
+      reviewing: managerSignOpen,
+      timesheetDays: sheetDays,
+      timeZone,
+    })
+    const hoursAmount = signTotals.labour
+    const priceWorkAmount = signTotals.priceWork
+    const expenses = signTotals.expenses
     const signerName = `${viewer?.firstName || ''} ${viewer?.surname || ''}`.trim() || viewer?.email || 'User'
     return (
       <SignSheet
@@ -884,16 +888,16 @@ export function TimesheetPeriodPage({
               {extrasTotal + expensesAmount > 0 ? (
                 <div className="flex justify-between text-[15px]">
                   <span>{managerHasSigned ? 'Approved extras' : 'Extras (price work & expenses)'}</span>
-                  {managerHasSigned && extrasTotal + expensesAmount !== draftAdditionalTotal(draft) ? (
+                  {managerHasSigned && totals.extras !== totals.submittedExtras ? (
                     <span className="text-right">
                       <span className="block text-[12px] text-[var(--ink3)] line-through">
-                        {money(draftAdditionalTotal(draft), currency)}
+                        {money(totals.submittedExtras, currency)}
                       </span>
-                      <span className="font-semibold text-[#34C759]">{money(extrasTotal + expensesAmount, currency)}</span>
+                      <span className="font-semibold text-[#34C759]">{money(totals.extras, currency)}</span>
                     </span>
                   ) : (
                     <span className="font-semibold">
-                      {money(managerHasSigned ? extrasTotal + expensesAmount : draftAdditionalTotal(draft), currency)}
+                      {money(totals.extras, currency)}
                     </span>
                   )}
                 </div>

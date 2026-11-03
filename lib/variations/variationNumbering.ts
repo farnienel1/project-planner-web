@@ -1,28 +1,32 @@
 import type { VariationStatus } from '@/lib/variations/variationModel'
+import {
+  formatVariationNumber,
+  nextVariationNumber,
+  variationNumberTaken,
+  variationNumberValue,
+} from '@/lib/canonical/variationNumbers'
 
+/** Rulebook 1.22.0 (§22): the trailing digits of a VO label (`variationNumberValue`). */
 export function voNumeric(voNumber: string): number {
-  const match = /(\d+)\s*$/.exec(voNumber.trim())
-  return match ? Number(match[1]) : 0
+  return variationNumberValue(voNumber)
 }
 
 export function formatVoNumber(sequence: number, prefix = 'VO-', padding = 3): string {
-  const safe = Math.max(0, Math.floor(sequence))
-  return `${prefix}${String(safe).padStart(Math.max(1, padding), '0')}`
+  return formatVariationNumber(sequence, prefix, padding)
 }
 
-/** Next label is one higher than any number already used, including closed and deleted. Gaps stay empty. */
+/** Rulebook 1.22.0 (§22): `nextVariationNumber` over every variation of the job, deleted included. */
 export function nextFreeVoNumber(
   existing: Array<{ voNumber: string }>,
   prefix = 'VO-',
   padding = 3
 ): string {
-  const max = existing.reduce((highest, row) => Math.max(highest, voNumeric(row.voNumber)), 0)
-  return formatVoNumber(max + 1, prefix, padding)
+  return nextVariationNumber(existing.map((row) => row.voNumber), prefix, padding)
 }
 
+/** Rulebook 1.22.0 (§22): `variationNumberTaken` — deleted variations count, so a number is never reused. */
 export function voNumberTaken(existing: Array<{ id?: string; voNumber: string }>, voNumber: string, exceptId?: string): boolean {
-  const needle = voNumber.trim().toLowerCase()
-  return existing.some((row) => row.id !== exceptId && row.voNumber.trim().toLowerCase() === needle)
+  return variationNumberTaken(existing, voNumber, exceptId ?? null)
 }
 
 export function orderForTrackerEnable<T extends { voNumber: string; createdAt: Date }>(rows: T[]): T[] {

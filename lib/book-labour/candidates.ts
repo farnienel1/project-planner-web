@@ -7,7 +7,7 @@
 
 import type { Booking, HolidayBooking, Operative, User } from '@/types'
 import { UserRole } from '@/types'
-import { bookingIdsForAccount, bookingOccupiesDay, standardDayCoverage } from '@/lib/canonical'
+import { bookingIdsForAccount, bookingOccupiesDay, managerCoverageHours } from '@/lib/canonical'
 import { dayKey, londonIsoWeekday, londonMidnight } from '@/lib/ios-parity/londonTime'
 import { displayTradeType } from '@/lib/staff/staffTradeTypes'
 import { isCurrentLabourUser, rosterDisplayName } from '@/lib/staff/userRosterUtils'
@@ -207,7 +207,8 @@ function identityIds(
 }
 
 /**
- * True when the person's bookings that day cover the standard day (`standardDayCoverage`),
+ * True when the person's bookings that day cover the standard day (`managerCoverageHours(...).covered`, which is
+ * `standardDayCoverage`),
  * across every user and operative profile that shares the email. The same rule as
  * `unbookedLabourRowsOnDay`, so nobody is offered here who Daily Overview shows as booked.
  */
@@ -229,11 +230,12 @@ function coversStandardDay(
     ...managerSiteBookings.filter((booking) => userIds.has(booking.userId) && sameDay(booking.date, day)),
   ].map((booking) => ({
     timeSlot: String(booking.timeSlot ?? ''),
-    workStart: booking.workStartTime,
-    workEnd: booking.workEndTime,
+    workStartTime: booking.workStartTime,
+    workEndTime: booking.workEndTime,
+    isBreakRemoved: booking.isBreakRemoved,
   }))
-  if (slots.length === 0) return false
-  return standardDayCoverage(policy, slots).missingHours <= 0.001
+  // Rulebook 1.22.0 (§6): `managerCoverageHours` — covered is `standardDayCoverage`, the Daily Overview rule.
+  return managerCoverageHours({ bookings: slots, dayKey: dayKey(day), policy }).covered
 }
 
 export function buildBookLabourCandidates(input: {

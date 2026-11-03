@@ -10642,3 +10642,134 @@ test('1.21.0 a numeric job number is read as its text', () => {
   assert.equal(parseJobDocument121('J2', { jobNumber: ' C646 ' })?.jobNumber, 'C646')
   assert.equal(parseJobDocument121('J3', { jobNumber: Number.NaN })?.jobNumber, '')
 })
+
+// MARK: - Rulebook 1.22.0: money and leave-report rules (audit findings 6, 7, 8, 15)
+
+test('1.22.0 timesheetTotals: declined expense, revised price work, stale review and a PAYE day — summary equals the invoice', () => {
+  const sheet = {
+    managerSignedAt: '2026-10-25T10:00:00Z',
+    priceWorkEntries: [{ id: 'PW-1', title: 'Tiling', amount: 300, startDate: '2026-10-20' }],
+    expenseEntries: [
+      { id: 'EX-1', title: 'Skip', amount: 40, date: '2026-10-21' },
+      { id: 'EX-2', title: 'Parking', amount: 25, date: '2026-10-22' },
+    ],
+    extraEntryReviews: {
+      'pw-1': { decision: 'edited', revisedAmount: 250, reviewedAmount: 300, reviewedByUserId: 'MGR', reviewedAtMs: 1 },
+      'EX-1': { decision: 'declined', revisedAmount: null, reviewedAmount: 40, reviewedByUserId: 'MGR', reviewedAtMs: 1 },
+      'EX-2': { decision: 'approved', revisedAmount: null, reviewedAmount: 20, reviewedByUserId: 'MGR', reviewedAtMs: 1 },
+    },
+  }
+  const payrollLines = [
+    { id: 'op-B1-normal', amount: 200, dayKey: '2026-10-20', paidHours: 8, bookingPaidHours: 9.5, bookingOvertimeHours: 1, isOvertimeLine: false },
+    { id: 'op-B1-ot', amount: 37.5, dayKey: '2026-10-20', paidHours: 1, otMultiplier: 1.5, isOvertimeLine: true },
+    { id: 'op-B2-normal', amount: 0, dayKey: '2026-10-23', paidHours: 8, bookingPaidHours: 8, isOvertimeLine: false, isPayeDay: true },
+  ]
+  const input = {
+    sheet,
+    payrollLines,
+    extrasMode: 'decided' as const,
+    timesheetDays: ['2026-10-20', '2026-10-21', '2026-10-22'],
+    timeZone: 'Europe/London',
+  }
+  const totals = R112.timesheetTotals(input)
+  // Declined expense 0; revised price work at 250; the stale review (reviewed at 20, now 25) pending at 25; PAYE day out.
+  assert.equal(totals.priceWork, 250)
+  assert.equal(totals.expenses, 25)
+  assert.equal(totals.labour, 237.5)
+  assert.equal(totals.total, 512.5)
+  assert.equal(totals.submittedExtras, 365)
+  assert.equal(totals.pendingEntries, 1)
+  assert.equal(totals.hours, 9.5)
+  assert.equal(totals.overtimeHours, 1)
+  const invoice = R112.timesheetInvoiceRows(input).reduce((sum, row) => sum + row.amount, 0)
+  assert.equal(totals.total, invoice)
+  // The owner's draft before review: every entry at its own amount.
+  const raw = R112.timesheetTotals({ ...input, sheet: { ...sheet, managerSignedAt: null, extraEntryReviews: null }, extrasMode: 'raw' })
+  assert.equal(raw.extras, 365)
+  // A signed snapshot wins over the live entries.
+  const signed = R112.timesheetTotals({
+    ...input,
+    sheet: {
+      ...sheet,
+      weeklyReportOverride: {
+        lines: [{ id: 'op-B1-normal', amount: 200, isOvertime: false }, { id: 'op-B1-ot', amount: 37.5, isOvertime: true }],
+        priceWork: [{ id: 'PW-1', amount: 250, decision: 'edited' }],
+        expenses: [{ id: 'EX-1', amount: 40, decision: 'declined' }],
+      },
+    },
+  })
+  assert.equal(signed.source, 'override')
+  assert.equal(signed.total, 487.5)
+})
+
+test('1.22.0 timesheetTotals: a reviewer before signing sees their labour review; the invoice waits for the signature', () => {
+  const sheet = { payrollLineReviews: { 'OP-B1-NORMAL': { decision: 'edited', revisedAmount: 180 } } }
+  const payrollLines = [{ id: 'op-B1-normal', amount: 200, paidHours: 8 }]
+  assert.equal(R112.timesheetTotals({ sheet, payrollLines, extrasMode: 'decided', applyLabourReviews: true }).labour, 180)
+  assert.equal(R112.timesheetTotals({ sheet, payrollLines, extrasMode: 'decided' }).labour, 200)
+})
+
+test('1.22.0 leaveReportRows: organisation leave year, weekends and bank holidays out, half days 0.5, ids without case', () => {
+  const records = [
+    { id: 'H1', userId: 'USER-A', startDayKey: '2026-12-21', endDayKey: '2027-01-08', timeSlot: 'FULL DAY', status: 'approved' },
+    { id: 'H2', userId: 'user-a', startDayKey: '2027-02-05', timeSlot: 'AM', status: 'approved' },
+    { id: 'H3', operativeId: 'OP-A', startDayKey: '2027-03-01', endDayKey: '2027-03-03', timeSlot: 'PM', status: 'approved' },
+    { id: 'H4', userId: 'USER-A', startDayKey: '2027-03-10', status: 'pending' },
+    { id: 'H5', userId: 'USER-B', startDayKey: '2027-03-10', endDayKey: '2027-03-12', status: 'approved' },
+  ]
+  const bank = ['2026-12-25', '2026-12-28', '2027-01-01']
+  const april = R112.leaveReportRows({ records, personIds: ['user-a', 'op-a'], onDayKey: '2027-02-01', startMonth: 4, timeZone: 'Europe/London', nonWorkingDayKeys: bank })
+  assert.equal(april.startDayKey, '2026-04-01')
+  assert.deepEqual(april.rows.map((row) => [row.id, row.days]), [['H3', 1.5], ['H2', 0.5], ['H1', 12]])
+  assert.equal(april.totalDays, 14)
+  const january = R112.leaveReportRows({ records, personIds: ['USER-A'], onDayKey: '2027-02-01', startMonth: 1, timeZone: 'Europe/London', nonWorkingDayKeys: bank })
+  assert.equal(january.totalDays, 5.5)
+  // The report agrees with the balance the person sees.
+  const balance = R112.annualLeaveBalance({
+    onDayKey: '2027-02-01',
+    orgStartMonth: 1,
+    timeZone: 'Europe/London',
+    nonWorkingDayKeys: bank,
+    bookings: records.filter((row) => row.userId?.toLowerCase() === 'user-a').map((row) => ({ startDayKey: row.startDayKey, endDayKey: row.endDayKey, timeSlot: row.timeSlot, status: row.status })),
+  })
+  assert.equal(balance.taken, january.totalDays)
+})
+
+test('1.22.0 variation numbers: trailing digits only, deleted numbers never reused', () => {
+  assert.equal(R112.nextVariationNumber(['V2-001', 'V2-003'], 'V2-', 3), 'V2-004')
+  assert.equal(R112.nextVariationNumber(['VO-001', 'VO-007'], 'VO-', 3), 'VO-008')
+  assert.equal(R112.variationNumberValue('V2-003'), 3)
+  assert.equal(R112.variationNumberTaken([{ id: 'A', voNumber: 'VO-004', isDeleted: true }], 'vo-004'), true)
+  assert.equal(R112.variationNumberTaken([{ id: 'ABC', voNumber: 'VO-004' }], 'VO-004', 'abc'), false)
+  assert.equal(R112.variationNumberTaken([{ id: 'A', voNumber: 'VO-004' }], '  '), false)
+})
+
+test('1.22.0 weeklyReportTimesheetFeed: same-email weeks merge, coverage and line selection unchanged', () => {
+  const line = (id: string, bookingId: string, date: string, decision = 'approved') => ({ id, bookingId, date, amount: 200, paidHours: 8, days: 1, decision })
+  const weeks = [
+    { userId: 'U-NAMED', weekStart: '2026-10-01', weekEnd: '2026-10-15', override: { lines: [line('a', 'shared', '2026-10-08'), line('x', 'gone', '2026-10-09', 'declined')], priceWork: [], expenses: [] } },
+    { userId: 'U-BLANK', weekStart: '2026-10-01', weekEnd: '2026-10-15', override: { lines: [line('a2', 'shared', '2026-10-08'), line('c', 'own', '2026-10-10')], priceWork: [], expenses: [{ id: 'e', date: '2026-10-08', amount: 0 }] } },
+  ]
+  const people = [{ id: 'U-NAMED', email: 'boss@site.test' }, { id: 'U-BLANK', email: 'Boss@Site.test' }]
+  const feed = R112.weeklyReportTimesheetFeed({ weeks, people, range: { start: '2026-10-01', end: '2026-10-31' }, timeZone: 'Europe/London' })
+  assert.equal(feed.weeks.length, 1)
+  assert.deepEqual(feed.labour.map((row) => row.line.id), ['a', 'c'])
+  assert.equal(feed.expenses.length, 0)
+  assert.equal(R112.timesheetFeedCovers(feed.weeks, 'U-NAMED', '2026-10-15', 'Europe/London'), true)
+  assert.equal(R112.timesheetFeedCovers(feed.weeks, 'U-NAMED', '2026-10-16', 'Europe/London'), false)
+})
+
+test('1.22.0 managerCoverageHours: merged blocks, break once by the pay rule, covered is standardDayCoverage', () => {
+  const policy = { ...R112.DEFAULT_PAYROLL_POLICY, standardDayStart: '07:30', standardDayEnd: '16:00', breakWindowStart: '12:00', breakWindowEnd: '12:30', unpaidBreakMinutes: 30, breakPaid: false }
+  const run = (bookings: Array<Record<string, string>>) => R112.managerCoverageHours({ bookings, dayKey: '2026-11-02', policy, timeZone: 'Europe/London' })
+  const split = run([{ timeSlot: 'CUSTOM', workStartTime: '07:30', workEndTime: '12:00' }, { timeSlot: 'CUSTOM', workStartTime: '12:30', workEndTime: '16:00' }])
+  assert.equal(split.covered, true)
+  assert.equal(split.paidHours, 8)
+  const overlap = run([{ timeSlot: 'CUSTOM', workStartTime: '08:00', workEndTime: '13:00' }, { timeSlot: 'CUSTOM', workStartTime: '11:00', workEndTime: '14:00' }])
+  assert.equal(overlap.paidHours, 5.5)
+  assert.equal(overlap.covered, false)
+  // iOS took the standard break off any block before 1.22.0 (2.5h here).
+  assert.equal(run([{ timeSlot: 'CUSTOM', workStartTime: '06:00', workEndTime: '09:00' }]).paidHours, 3)
+  assert.equal(run([{ timeSlot: 'FULL DAY' }]).paidHours, 8)
+  assert.equal(run([]).covered, false)
+})

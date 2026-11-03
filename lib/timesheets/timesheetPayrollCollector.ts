@@ -49,6 +49,13 @@ export type TimesheetPayrollLineItem = {
    */
   otClockHours?: number
   otBreakHours?: number
+  /**
+   * Rulebook 1.22.0 (`timesheetTotals`), on a booking's standard line only: the booking's weighted paid hours
+   * (`payrollHoursResult.totalPaidHours`) and its overtime clock hours, so the sheet's Hours and Overtime figures are
+   * the rulebook's sum of its lines.
+   */
+  bookingPaidHours?: number
+  bookingOvertimeHours?: number
   amount: number
   isPayeDay: boolean
   isOvertimeLine: boolean
@@ -282,6 +289,8 @@ export function collectTimesheetPayroll({
       dayRate: resolved.dayRate ?? 0,
       hourlyRate: resolved.hourlyRate,
       standardDayHours,
+      bookingPaidHours: paidHours,
+      bookingOvertimeHours: multiplied ? multiplied.clockHours : otHours,
       amount: normalAmount,
       isPayeDay: isPaye,
       isOvertimeLine: false,
