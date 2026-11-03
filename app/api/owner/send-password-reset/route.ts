@@ -7,7 +7,7 @@ import { maskEmail } from '@/lib/auth/maskEmail'
 import { sendProjectPlannerEmail } from '@/lib/email/resendClient'
 import { adminLookupAuthEmail, adminPasswordResetLink, firebaseAdminConfigured } from '@/lib/owner/identityToolkitAdmin'
 import { bearerToken, firestoreGet, readString } from '@/lib/owner/firestoreRest'
-import { escapeHtml } from '@/lib/security/htmlEscape'
+import { buildOwnerPasswordResetEmailHtml } from '@/lib/email/ownerPasswordResetEmail'
 
 export const runtime = 'nodejs'
 
@@ -80,7 +80,7 @@ export async function POST(request: NextRequest) {
           to: email,
           subject: 'Reset your Project Planner password',
           // Transactional: no marketing content
-          html: `<p>A password reset was requested by Project Planner support.</p><p><a href="${escapeHtml(link)}">Choose a new password</a></p><p>This link expires after one hour.</p>`,
+          html: buildOwnerPasswordResetEmailHtml(link),
           idToken: token,
         })
         sent = true

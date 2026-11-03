@@ -13,10 +13,10 @@ import { sendProjectPlannerEmail } from '@/lib/email/resendClient'
 import {
   billingPurchaseEmailSubject,
   buildBillingPurchaseEmailHtml,
+  buildPaymentFailedEmailHtml,
   buildTrialWillEndEmailHtml,
 } from '@/lib/email/billingPurchaseEmail'
 import { createBillingPortalSession } from '@/lib/stripe/billingPortal'
-import { escapeHtml } from '@/lib/security/htmlEscape'
 import { readString } from '@/lib/owner/firestoreRest'
 import {
   billingIntervalFromPlanKey,
@@ -250,7 +250,7 @@ export async function POST(request: NextRequest) {
               synced.organizationId,
               'Project Planner payment failed',
               // Transactional: no marketing content
-              `<p>We could not take the latest Project Planner payment.</p><p><a href="${escapeHtml(link)}">Update your payment method</a></p><p>Access stays open for 7 days.</p>`
+              buildPaymentFailedEmailHtml(link)
             )
           }
         }

@@ -73,7 +73,7 @@ test('invite email HTML fills pack tokens from the supplied name, org, and setup
   assert.equal(html.includes('{{CompanyName}}'), false)
   assert.equal(html.includes('{{SetupLink}}'), false)
   assert.equal(html.includes('{{RecipientEmail}}'), false)
-  assert.equal(html.includes('https://www.projectplanner.us/email-assets/pp-email-logo.png'), true)
+  assert.equal(html.includes('https://www.projectplanner.us/email-assets/pp-email-logo-on-navy.png'), true)
   assert.equal(html.includes('Set up your password'), true)
 })
 

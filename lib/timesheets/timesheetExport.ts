@@ -14,6 +14,7 @@ import { findOperativeForUser } from '@/lib/operatives/operativeRosterUtils'
 import type { OperativeDayRateHistoryCollection } from '@/lib/timesheets/dayRateHistoryStorage'
 import { formatMoney } from '@/lib/canonical/money'
 import { timesheetInvoiceRows } from '@/lib/canonical/reportPay'
+import { emailDocument, emailHeading, emailLink, emailList, emailStrong, emailText } from '@/lib/email/emailTheme'
 
 export function paymentRunDateStamp(start: Date, end: Date, timeZone: string): string {
   const format = (date: Date) => {
@@ -235,27 +236,30 @@ export function managerExportEmailHTML({
 }): string {
   const list =
     downloadLinks.length === 0
-      ? attachmentNames.map((name) => `<li>${escapeHtml(name)}</li>`).join('')
-      : downloadLinks
-          .map(
-            (link) =>
-              `<li><a href="${escapeHtml(link.url)}">${escapeHtml(link.fileName)}</a></li>`
-          )
-          .join('')
+      ? attachmentNames.map((name) => escapeHtml(name))
+      : downloadLinks.map((link) => emailLink(escapeHtml(link.url), escapeHtml(link.fileName)))
   const noun = timesheetCount === 1 ? 'is' : 'are'
   const pdfWord = timesheetCount === 1 ? '' : 's'
   const attachNote =
     downloadLinks.length === 0
-      ? `${timesheetCount} signed-off timesheet PDF${pdfWord} for payment run <strong>${escapeHtml(paymentRunStamp)}</strong> (${escapeHtml(weekTitle)}) from <strong>${escapeHtml(organizationName)}</strong> ${noun} attached for your records.`
-      : `${timesheetCount} signed-off timesheet PDF${pdfWord} for payment run <strong>${escapeHtml(paymentRunStamp)}</strong> (${escapeHtml(weekTitle)}) from <strong>${escapeHtml(organizationName)}</strong> ${noun} attached, with backup download links below.`
-  return `<html><body style="font-family:Arial,sans-serif;max-width:720px;margin:0 auto;padding:20px;">
-<h2 style="color:#0D67ED;">Signed timesheets for filing</h2>
-<p>Hello ${escapeHtml(recipientName)},</p>
-<p>${attachNote}</p>
-<p>Each file is named: <em>User Name timesheet for payment run date ${escapeHtml(paymentRunStamp)}</em>.</p>
-<ul>${list}</ul>
-<p style="color:#666;font-size:13px;">These timesheets were counter-signed and exported from Operative Timesheets → Signed off.</p>
-</body></html>`
+      ? `${timesheetCount} signed-off timesheet PDF${pdfWord} for payment run ${emailStrong(escapeHtml(paymentRunStamp), 'ink')} (${escapeHtml(weekTitle)}) from ${emailStrong(escapeHtml(organizationName), 'ink')} ${noun} attached for your records.`
+      : `${timesheetCount} signed-off timesheet PDF${pdfWord} for payment run ${emailStrong(escapeHtml(paymentRunStamp), 'ink')} (${escapeHtml(weekTitle)}) from ${emailStrong(escapeHtml(organizationName), 'ink')} ${noun} attached, with backup download links below.`
+  return emailDocument({
+    title: 'Signed timesheets for filing',
+    maxWidth: 720,
+    body: [
+      emailHeading('Signed timesheets for filing'),
+      emailText(`Hello ${escapeHtml(recipientName)},`),
+      emailText(attachNote),
+      emailText(`Each file is named: <em>User Name timesheet for payment run date ${escapeHtml(paymentRunStamp)}</em>.`),
+      emailList(list),
+      emailText(
+        'These timesheets were counter-signed and exported from Operative Timesheets → Signed off.',
+        'muted',
+        'margin:0;'
+      ),
+    ].join('\n'),
+  })
 }
 
 /** Browser/Node helper so Email and export can send the same PDF bytes iOS attaches. */
