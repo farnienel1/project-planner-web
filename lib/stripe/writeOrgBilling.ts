@@ -188,3 +188,14 @@ export async function adminFirestoreCreateNamed(
   }
   return 'created'
 }
+
+export async function adminFirestoreDelete(path: string): Promise<void> {
+  const { token, projectId } = await adminGoogleAccessToken(['https://www.googleapis.com/auth/datastore'])
+  const url = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/databases/(default)/documents/${path}`
+  const response = await fetch(url, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } })
+  if (response.status === 404) return
+  if (!response.ok) {
+    const text = await response.text()
+    throw new Error(text || `Could not delete ${path}`)
+  }
+}
