@@ -463,3 +463,146 @@ test('server mode: a provider refusal names its reason in the 502', async () => 
   assert.equal(res.code, 502)
   assert.match(res.payload.error, /provider down/)
 })
+
+// ---------------------------------------------------------------------------------------------------------------
+// Caller envelope for app callers (templates with `callerEnvelope: true`, e.g. iOS material_request)
+
+const iosMaterialBody = (overrides = {}) => ({
+  orgId: ORG,
+  template: 'material_request',
+  to: ['wendy@pipes.example'],
+  data: {
+    requestType: 'order',
+    jobNumber: 'J-200',
+    deliveryRequiredAt: '2026-11-04T08:00:00Z',
+    materials: [{ material: '22mm pipe', quantity: 4, unit: 'length' }],
+    fromCaller: true,
+    ccCaller: true,
+    ...overrides,
+  },
+})
+
+test('app caller envelope: material_request opts in; other app templates do not', () => {
+  assert.equal(TEMPLATES.material_request.callerEnvelope, true)
+  for (const name of ['invite_setup', 'password_reset_link', 'timesheet_export', 'leave_cancelled']) {
+    assert.notEqual(TEMPLATES[name].callerEnvelope, true, name)
+  }
+})
+
+test('app caller envelope: From "<users doc name> via Project Planner", Reply-To and CC the verified caller, one message per wholesaler', async () => {
+  const { handler, sent, rateCalls } = makeHandler()
+  const res = await call(handler, { headers: { ...auth('M'), 'X-Firebase-AppCheck': 'good-app-check' }, body: iosMaterialBody() })
+  assert.equal(res.code, 200, JSON.stringify(res.payload))
+  assert.equal(sent.length, 1)
+  assert.equal(sent[0].from, '"Max Manager via Project Planner" <info@projectplanner.us>')
+  assert.deepEqual(sent[0].to, ['wendy@pipes.example'])
+  assert.deepEqual(sent[0].cc, ['manager@example.com'])
+  assert.equal(sent[0].reply_to, 'manager@example.com')
+  assert.equal(sent[0].subject, 'Material order request — J-200 — Acme <Builders> Ltd')
+  assert.equal(res.payload.ccSupported, true)
+  assert.deepEqual(res.payload.results, [{ to: 'wendy@pipes.example', id: 'msg-1', cc: ['manager@example.com'] }])
+  // Existing per-user limits, one count per wholesaler message.
+  assert.deepEqual(rateCalls, [{ key: 'M', count: 1, limits: USER_LIMITS }])
+})
+
+test('app caller envelope: a spoofed fromName, cc, replyTo or sender in the body is ignored', async () => {
+  const { handler, sent } = makeHandler()
+  const res = await call(handler, {
+    headers: auth('M'),
+    body: {
+      ...iosMaterialBody({
+        fromName: 'PayPal',
+        senderName: 'PayPal Security',
+        senderEmail: 'attacker@evil.example',
+        cc: ['all@example.com'],
+        replyTo: 'attacker@evil.example',
+      }),
+      fromName: 'PayPal',
+      cc: ['all@example.com'],
+      replyTo: 'attacker@evil.example',
+    },
+  })
+  assert.equal(res.code, 200, JSON.stringify(res.payload))
+  assert.equal(sent.length, 1)
+  assert.equal(sent[0].from, '"Max Manager via Project Planner" <info@projectplanner.us>')
+  assert.deepEqual(sent[0].cc, ['manager@example.com'])
+  assert.equal(sent[0].reply_to, 'manager@example.com')
+  assert.equal(sent[0].bcc, undefined)
+  assert.ok(!JSON.stringify(sent[0]).includes('evil.example'))
+  assert.ok(!JSON.stringify(sent[0]).includes('PayPal'))
+})
+
+test("app caller envelope: the sender's own address in `to` is dropped when they are CC'd (no separate Copy: email)", async () => {
+  const { handler, sent, rateCalls } = makeHandler()
+  const res = await call(handler, {
+    headers: auth('M'),
+    body: { ...iosMaterialBody(), to: ['wendy@pipes.example', 'Manager@Example.com'] },
+  })
+  assert.equal(res.code, 200, JSON.stringify(res.payload))
+  assert.equal(sent.length, 1)
+  assert.deepEqual(sent[0].to, ['wendy@pipes.example'])
+  assert.ok(!sent.some((message) => /^Copy: /.test(message.subject)))
+  assert.equal(rateCalls[0].count, 1)
+  // materialOrderRecipientCheck still runs on the full list: only the sender is still refused.
+  const selfOnly = await call(handler, { headers: auth('M'), body: { ...iosMaterialBody(), to: ['manager@example.com'] } })
+  assert.equal(selfOnly.code, 400)
+  // canSendMaterialOrders is unchanged: an operative is refused even with the envelope flags.
+  assert.equal((await call(handler, { headers: auth('O'), body: iosMaterialBody() })).code, 403)
+  // A caller of another organisation is refused before anything is sent.
+  assert.equal((await call(handler, { headers: auth('S'), body: iosMaterialBody() })).code, 403)
+  assert.equal(sent.length, 1)
+})
+
+test('app caller envelope: without the flags, material_request keeps the organisation From, no CC and the Copy: message', async () => {
+  const { handler, sent } = makeHandler()
+  const res = await call(handler, {
+    headers: auth('M'),
+    body: { ...iosMaterialBody({ fromCaller: undefined, ccCaller: undefined }), to: ['wendy@pipes.example', 'manager@example.com'] },
+  })
+  assert.equal(res.code, 200, JSON.stringify(res.payload))
+  assert.equal(sent.length, 2)
+  assert.equal(sent[0].from, '"Acme Builders Ltd" <info@projectplanner.us>')
+  assert.equal(sent[0].cc, undefined)
+  assert.equal(sent[0].reply_to, 'manager@example.com')
+  assert.match(sent[1].subject, /^Copy: /)
+})
+
+test('app caller envelope: with no users-document name the From falls back to the organisation, CC still the verified email', async () => {
+  const { handler, sent } = makeHandler({ fixture: { users: { M: { email: 'manager@example.com', organizationId: ORG, role: 'manager', manager: true } } } })
+  const res = await call(handler, { headers: auth('M'), body: iosMaterialBody() })
+  assert.equal(res.code, 200, JSON.stringify(res.payload))
+  assert.equal(sent[0].from, '"Acme Builders Ltd" <info@projectplanner.us>')
+  assert.deepEqual(sent[0].cc, ['manager@example.com'])
+})
+
+test('app caller envelope: a template without the opt-in still ignores fromCaller / ccCaller', async () => {
+  const { handler, sent } = makeHandler()
+  const res = await call(handler, {
+    headers: auth('M'),
+    body: { ...inviteBody, data: { ...inviteBody.data, fromCaller: true, ccCaller: true } },
+  })
+  assert.equal(res.code, 200, JSON.stringify(res.payload))
+  assert.equal(sent[0].from, '"Acme Builders Ltd" <info@projectplanner.us>')
+  assert.equal(sent[0].cc, undefined)
+  assert.equal(sent[0].reply_to, 'info@projectplanner.us')
+})
+
+test('server mode is unchanged by the app envelope: web_rendered keeps its caller From, CC and the route replyTo', async () => {
+  const { handler, sent } = makeHandler()
+  const res = await call(handler, {
+    headers: { 'X-Project-Planner-Server-Key': 'server-secret', ...auth('M') },
+    body: { ...webBody, orgId: ORG, to: ['wendy@pipes.example'], data: { ...webBody.data, replyTo: 'route@example.com', fromCaller: true, ccCaller: true } },
+  })
+  assert.equal(res.code, 200, JSON.stringify(res.payload))
+  assert.equal(sent[0].from, '"Max Manager via Project Planner" <info@projectplanner.us>')
+  assert.deepEqual(sent[0].cc, ['manager@example.com'])
+  assert.equal(sent[0].reply_to, 'route@example.com')
+  // A server send to the caller's own address is still sent (the web route's old-deploy copy), without CC to itself.
+  await call(handler, {
+    headers: { 'X-Project-Planner-Server-Key': 'server-secret', ...auth('M') },
+    body: { ...webBody, orgId: ORG, to: ['manager@example.com'], data: { ...webBody.data, subject: 'Copy: x', replyTo: 'manager@example.com' } },
+  })
+  assert.deepEqual(sent[1].to, ['manager@example.com'])
+  assert.equal(sent[1].cc, undefined)
+  assert.equal(sent[1].from, '"Acme Builders Ltd" <info@projectplanner.us>')
+})

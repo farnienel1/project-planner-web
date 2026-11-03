@@ -16,9 +16,9 @@
  *     Secret Manager, never in an app.
  *
  * Every message: from `"<organisation name>" <info@projectplanner.us>` (or "Project Planner"), never a caller-chosen
- * name or address — except web server mail with `data.fromCaller`, which is `"<the signed-in caller's own profile
- * name> via Project Planner" <info@projectplanner.us>`, and `data.ccCaller`, which copies that caller (CC) on the same
- * message; PDF / XLSX / CSV attachments only, 10 MB in total; one message per recipient; rate limited per
+ * name or address — except with `data.fromCaller`, which is `"<the signed-in caller's own profile name> via Project
+ * Planner" <info@projectplanner.us>`, and `data.ccCaller`, which copies that caller (CC) on the same message, for web
+ * server mail and for app templates that opt in (`callerEnvelope`, `callerEnvelopeFields`); PDF / XLSX / CSV attachments only, 10 MB in total; one message per recipient; rate limited per
  * sender (rateLimit.js).
  *
  * Dependencies are injected (index.js wires Firebase and Resend) so the rules are tested without either.
@@ -104,6 +104,9 @@ function callerProfile(decoded, user) {
     uid: decoded.uid,
     email,
     displayName: name || clamp(decoded.name, 120) || email || 'A Project Planner user',
+    // Caller envelope for app callers (`callerEnvelopeFields`): only the users document name and the ID token email.
+    profileName: name,
+    tokenEmail: normalizeEmail(decoded.email),
     phone: clamp(profile.mobileNumber || profile.phone, 40),
   }
 }
@@ -122,6 +125,37 @@ function callerFromHeader(caller) {
   const name = sanitizeDisplayName(caller && caller.displayName, 60)
   if (!name || name === normalizeEmail(caller && caller.email)) return ''
   return `"${name} via ${DEFAULT_FROM_NAME}" <${FROM_ADDRESS}>`
+}
+
+/**
+ * Who the message is "from" and who is copied, when the caller asks for it (`data.fromCaller` / `data.ccCaller`):
+ *   - web server mail (server key): as before — the signed-in caller's profile name (`callerFromHeader`) and their
+ *     email in CC;
+ *   - an app caller, only on a template that opts in (`callerEnvelope: true`, e.g. `material_request`): From
+ *     `"<users document firstName surname> via Project Planner" <info@projectplanner.us>`, Reply-To and CC the ID
+ *     token's email. A name or address in the request body is never read.
+ * Every other app template ignores both flags.
+ * @returns {{ from: string, cc: string[], replyTo: string }} '' / [] when not applied
+ */
+function callerEnvelopeFields({ serverMode, template, data, caller }) {
+  const none = { from: '', cc: [], replyTo: '' }
+  if (!caller) return none
+  if (serverMode) {
+    return {
+      from: data.fromCaller === true ? callerFromHeader(caller) : '',
+      cc: data.ccCaller === true && isValidEmail(caller.email) ? [normalizeEmail(caller.email)] : [],
+      replyTo: '',
+    }
+  }
+  if (!template || template.callerEnvelope !== true) return none
+  const email = isValidEmail(caller.tokenEmail) ? caller.tokenEmail : ''
+  const wantsFrom = data.fromCaller === true
+  const wantsCc = data.ccCaller === true
+  return {
+    from: wantsFrom ? callerFromHeader({ displayName: caller.profileName, email }) : '',
+    cc: wantsCc && email ? [email] : [],
+    replyTo: (wantsFrom || wantsCc) && email ? email : '',
+  }
 }
 
 function serverHeaders(raw) {
@@ -229,13 +263,22 @@ function createSendEmailHandler(deps) {
     }
 
     const attachments = parseAttachments(body.attachments, template.attachments)
-    const recipients = await resolveRecipients(template, body.to, {
+    const resolved = await resolveRecipients(template, body.to, {
       orgId,
       org,
       data,
       caller: caller || {},
       reader: deps.reader,
     })
+    // Web server mail may ask for the signed-in caller as the display name (`fromCaller`) and as CC (`ccCaller`): one
+    // message, the recipient in To and the sender in CC. App callers get the same on templates that opt in
+    // (`callerEnvelope`). Only the verified caller's own name and address are used.
+    const envelope = callerEnvelopeFields({ serverMode, template, data, caller })
+    const cc = envelope.cc
+    // The caller is already copied on every message: their own "Copy:" message (`isSelf`) is dropped, so they get one
+    // email per recipient, not two. Recipient checks (`materialOrderRecipientCheck`) ran on the full list above.
+    const recipients = !serverMode && cc.length ? resolved.filter((row) => !row.isSelf) : resolved
+    if (recipients.length === 0) throw new HttpError(400, 'At least one recipient other than yourself is required')
 
     const sentAt = now()
     const firstContactName = (recipients.find((row) => row.contactName) || {}).contactName || ''
@@ -251,13 +294,9 @@ function createSendEmailHandler(deps) {
 
     let replyTo = FROM_ADDRESS
     if (template.replyToCaller && caller && isValidEmail(caller.email)) replyTo = caller.email
+    if (envelope.replyTo) replyTo = envelope.replyTo
     if (serverMode && isValidEmail(data.replyTo)) replyTo = normalizeEmail(data.replyTo)
-    // Web server mail may ask for the signed-in caller as the display name (`fromCaller`) and as CC (`ccCaller`): one
-    // message, the recipient in To and the sender in CC. Only the verified caller's own name and address are used.
-    const callerFrom = serverMode && data.fromCaller === true && caller ? callerFromHeader(caller) : ''
-    const from = callerFrom || fromHeader(orgName)
-    const cc =
-      serverMode && data.ccCaller === true && caller && isValidEmail(caller.email) ? [normalizeEmail(caller.email)] : []
+    const from = envelope.from || fromHeader(orgName)
     const extraHeaders = serverMode ? serverHeaders(data.headers) : undefined
 
     const results = []
@@ -355,6 +394,7 @@ function resendSender(apiKey, fetchImpl = fetch) {
 
 module.exports = {
   ALLOWED_SERVER_HEADERS,
+  callerEnvelopeFields,
   callerFromHeader,
   APP_CHECK_HEADER,
   FROM_ADDRESS,
