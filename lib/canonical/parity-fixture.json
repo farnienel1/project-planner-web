@@ -14475,7 +14475,7 @@
       ]
     },
     {
-      "name": "1.21.0 bookable: not inactive, running on the day, and writable (a toggle does not make another job writable)",
+      "name": "1.21.0 bookable: not inactive and writable; dates never checked (a job past its end date and one with no end date are bookable)",
       "function": "bookableJobs",
       "args": [
         [
@@ -14518,6 +14518,15 @@
             ],
             "startDayKey": "2026-10-01",
             "endDayKey": "2026-11-02"
+          },
+          {
+            "id": "NO-END",
+            "collection": "smallWorks",
+            "isLive": true,
+            "managerUserIds": [
+              "U-M"
+            ],
+            "startDayKey": "2026-01-05"
           }
         ],
         {
@@ -14553,11 +14562,30 @@
           ],
           "startDayKey": "2026-11-01",
           "endDayKey": "2026-11-30"
+        },
+        {
+          "id": "ENDED",
+          "collection": "projects",
+          "isLive": true,
+          "managerUserIds": [
+            "U-M"
+          ],
+          "startDayKey": "2026-10-01",
+          "endDayKey": "2026-11-02"
+        },
+        {
+          "id": "NO-END",
+          "collection": "smallWorks",
+          "isLive": true,
+          "managerUserIds": [
+            "U-M"
+          ],
+          "startDayKey": "2026-01-05"
         }
       ]
     },
     {
-      "name": "1.21.0 bookable with no day chosen keeps a job that ended",
+      "name": "1.21.0 bookable with no day given is the same list",
       "function": "bookableJobs",
       "args": [
         [
@@ -14600,6 +14628,15 @@
             ],
             "startDayKey": "2026-10-01",
             "endDayKey": "2026-11-02"
+          },
+          {
+            "id": "NO-END",
+            "collection": "smallWorks",
+            "isLive": true,
+            "managerUserIds": [
+              "U-M"
+            ],
+            "startDayKey": "2026-01-05"
           }
         ],
         {
@@ -14643,6 +14680,15 @@
           ],
           "startDayKey": "2026-10-01",
           "endDayKey": "2026-11-02"
+        },
+        {
+          "id": "NO-END",
+          "collection": "smallWorks",
+          "isLive": true,
+          "managerUserIds": [
+            "U-M"
+          ],
+          "startDayKey": "2026-01-05"
         }
       ]
     },

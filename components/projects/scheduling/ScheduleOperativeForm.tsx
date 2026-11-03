@@ -12,7 +12,6 @@ import { useHolidayStore } from '@/lib/stores/holidayStore'
 import { DEFAULT_PAYROLL_POLICY, loadOrganizationDetails, type OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 import { bookableWorks } from '@/lib/access/workAccess'
-import { bookingDayKey } from '@/lib/scheduling/bookingSlotRules'
 import { mergeProjectsAndSmallWorks } from '@/lib/projects/workStatus'
 import { isExactDuplicateBooking } from '@/lib/scheduling/bookingClashUtils'
 import {
@@ -115,8 +114,8 @@ export function ScheduleOperativeForm({
   }, [projects, smallWorks, project])
 
   const slotsList = useMemo(() => sortedDateSlots(dateSlots), [dateSlots])
-  // Rulebook 1.21.0 §21 (`bookableJobs`): this job must be bookable on every chosen day — not inactive, running that
-  // day in the organisation zone, and writable by this user (`canWriteBooking`).
+  // Rulebook 1.21.0 §21 (`bookableJobs`): this job must be bookable — not inactive and writable by this user
+  // (`canWriteBooking`). The job's dates are never checked.
   const jobBookable = useMemo(
     () =>
       bookableWorks({
@@ -126,10 +125,8 @@ export function ScheduleOperativeForm({
         managers,
         bookings: [],
         managerBookings: [],
-        dayKeys: slotsList.map((slot) => bookingDayKey(slot.date)),
-        timeZone,
       }).length > 0,
-    [project, user, operatives, managers, slotsList, timeZone]
+    [project, user, operatives, managers]
   )
   const canConfirm = allDraftPeopleResolved(draftPeople) && slotsList.length > 0 && jobBookable
 
@@ -441,8 +438,8 @@ export function ScheduleOperativeForm({
       )}
 
       {error && <ErrorBanner message={error} />}
-      {!jobBookable && slotsList.length > 0 ? (
-        <ErrorBanner message="This job can't be booked on every chosen day: it is inactive, a day is outside its start and end dates, or you don't manage it." />
+      {!jobBookable ? (
+        <ErrorBanner message="This job can't be booked: it is inactive, or you don't manage it." />
       ) : null}
 
       <div className="fixed bottom-0 left-0 right-0 border-t border-[var(--line)] bg-[var(--card)]/95 p-4 backdrop-blur md:pl-64">

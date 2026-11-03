@@ -39,7 +39,6 @@ import { AddWeekToCalendarButton } from '@/components/schedule/AddWeekToCalendar
 import { myScheduleStripeClass } from '@/components/schedule/MyScheduleLooks'
 import { HoursTimelinePicker } from '@/components/scheduling/HoursTimelinePicker'
 import {
-  bookingDayKey,
   confirmCustomHoursBreak,
   policyForBookingDate,
   slotOfferedOnDate,
@@ -550,18 +549,15 @@ export function MyScheduleSelfBookingScreen({
 
   const otherQueryText = otherQuery.trim().toLowerCase()
   const filteredOther = selfLocations.filter((loc) => loc.name.toLowerCase().includes(otherQueryText))
-  // Rulebook 1.21.0 §21 (`bookableJobs`): jobs the signed-in user may book onto on every chosen day — visible, not
-  // inactive, running on those days (organisation zone) and writable for a manager site booking (`canWriteBooking`:
-  // a job they manage). The tabs only sort that list (`worksInTab` / `worksTabCounts`).
-  const bookingDayKeys = targetDays().map((day) => bookingDayKey(day))
+  // Rulebook 1.21.0 §21 (`bookableJobs`): jobs the signed-in user may book onto — visible, not inactive and writable
+  // for a manager site booking (`canWriteBooking`: a job they manage); the job's dates are never checked. The tabs
+  // only sort that list (`worksInTab` / `worksTabCounts`).
   const bookableAccess = {
     user: authUser,
     operatives: rosterOperatives,
     managers: rosterManagers,
     bookings: [],
     managerBookings: managerSiteBookings,
-    dayKeys: bookingDayKeys,
-    timeZone,
     bookingCollection: 'managerSiteBookings' as const,
   }
   const bookableProjects = bookableWorks({ ...bookableAccess, projects, catalogue: 'projects' })

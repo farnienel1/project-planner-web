@@ -221,9 +221,8 @@ export function BookLabourFlowScreen({
   )
 
   const allWorks = useMemo(() => [...projects, ...smallWorks], [projects, smallWorks])
-  // Rulebook 1.21.0 §21 (`bookableJobs`): the jobs this user may book onto on this day — visible, not inactive,
-  // running on the day (organisation zone) and writable (`canWriteBooking`; before 1.21.0 web skipped it).
-  const bookingDayKey = orgDayKey(day, organizationZoneOr())
+  // Rulebook 1.21.0 §21 (`bookableJobs`): the jobs this user may book onto — visible, not inactive and writable
+  // (`canWriteBooking`; before 1.21.0 web skipped it). The job's dates are never checked.
   const liveProjects = useMemo(
     () =>
       bookableWorks({
@@ -235,10 +234,8 @@ export function BookLabourFlowScreen({
         bookings,
         managerBookings: managerSiteBookings,
         deadlineAssignedProjectIds,
-        dayKeys: [bookingDayKey],
-        timeZone: organizationZoneOr(),
       }),
-    [allWorks, user, operatives, managers, bookings, managerSiteBookings, deadlineAssignedProjectIds, bookingDayKey]
+    [allWorks, user, operatives, managers, bookings, managerSiteBookings, deadlineAssignedProjectIds]
   )
   const liveSmallWorks = useMemo(
     () =>
@@ -251,10 +248,8 @@ export function BookLabourFlowScreen({
         bookings,
         managerBookings: managerSiteBookings,
         deadlineAssignedProjectIds,
-        dayKeys: [bookingDayKey],
-        timeZone: organizationZoneOr(),
       }),
-    [allWorks, user, operatives, managers, bookings, managerSiteBookings, deadlineAssignedProjectIds, bookingDayKey]
+    [allWorks, user, operatives, managers, bookings, managerSiteBookings, deadlineAssignedProjectIds]
   )
 
   const otherPicks = enabledScheduleLocationPicks(scheduleOpts)

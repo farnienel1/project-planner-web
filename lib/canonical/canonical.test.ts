@@ -10591,18 +10591,28 @@ test('1.21.0 a manager without the toggle sees only the jobs they manage', () =>
   assert.deepEqual(visibleJobs121(jobs, toggled, context).map((j) => j.id), ['MINE', 'BY-ROW', 'OTHER'])
 })
 
-test('1.21.0 bookable jobs exclude inactive and non-writable jobs and days outside the job', () => {
+test('1.21.0 bookable jobs exclude inactive and non-writable jobs, never by dates', () => {
   const viewer = { role: role121({ isManager: true }), ids: ['U-M'], email: 'm@x.com', toggles: { projects: true, smallWorks: true } }
   const jobs = [
     { id: 'LIVE', collection: 'projects', managerUserIds: ['U-M'], startDayKey: '2026-11-01', endDayKey: '2026-11-30' },
     { id: 'INACTIVE', collection: 'projects', isLive: false, managerUserIds: ['U-M'], startDayKey: '2026-11-01', endDayKey: '2026-11-30' },
     { id: 'NOT-MINE', collection: 'projects', managerUserIds: ['U-X'], startDayKey: '2026-11-01', endDayKey: '2026-11-30' },
     { id: 'ENDED', collection: 'projects', managerUserIds: ['U-M'], startDayKey: '2026-10-01', endDayKey: '2026-11-02' },
+    { id: 'NO-END', collection: 'smallWorks', managerUserIds: ['U-M'], startDayKey: '2026-01-05' },
+    { id: 'NO-DATES', collection: 'smallWorks', managerUserIds: ['U-M'] },
   ]
-  assert.deepEqual(bookableJobs121(jobs, viewer, {}, ['2026-11-03'], 'Europe/London').map((j) => j.id), ['LIVE'])
-  assert.deepEqual(bookableJobs121(jobs, viewer, {}, null, 'Europe/London').map((j) => j.id), ['LIVE', 'ENDED'])
+  const expected = ['LIVE', 'ENDED', 'NO-END', 'NO-DATES']
+  assert.deepEqual(bookableJobs121(jobs, viewer, {}).map((j) => j.id), expected)
+  // Day keys are accepted and ignored: a job past its end date stays bookable on a later day.
+  assert.deepEqual(bookableJobs121(jobs, viewer, {}, ['2026-11-03'], 'Europe/London').map((j) => j.id), expected)
   const admin = { role: role121({ isAdmin: true }), ids: ['U-A'], email: 'a@x.com', toggles: noToggles121 }
-  assert.deepEqual(bookableJobs121(jobs, admin, {}, ['2026-11-03'], 'Europe/London').map((j) => j.id), ['LIVE', 'NOT-MINE'])
+  assert.deepEqual(bookableJobs121(jobs, admin, {}, ['2026-11-03'], 'Europe/London').map((j) => j.id), [
+    'LIVE',
+    'NOT-MINE',
+    'ENDED',
+    'NO-END',
+    'NO-DATES',
+  ])
 })
 
 test('1.21.0 a job day is the organisation zone day: 23:30 London vs Auckland', () => {

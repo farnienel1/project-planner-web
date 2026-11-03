@@ -181,9 +181,9 @@ export function ProjectScheduleWeekOverview({
   const canQuickAdd =
     canBookWork(currentUser) &&
     userCanWriteBooking(currentUser, { collection: 'bookings', projectId: project.id }, project, managers)
-  // Rulebook 1.21.0 §21 (`bookableJobs`): a new booking only on a day this job is bookable — not inactive and running
-  // that day in the organisation zone. Editing existing bookings is not gated by it.
-  const quickAddOnDay = (day: Date) =>
+  // Rulebook 1.21.0 §21 (`bookableJobs`): a new booking only when this job is bookable — not inactive and writable;
+  // the job's dates are never checked. Editing existing bookings is not gated by it.
+  const jobBookable =
     bookableWorks({
       projects: [project],
       user: currentUser,
@@ -191,8 +191,6 @@ export function ProjectScheduleWeekOverview({
       managers,
       bookings: [],
       managerBookings: [],
-      dayKeys: [bookingDayKey(day)],
-      timeZone: organizationZoneOr(),
     }).length > 0
   const { users, userIdAliases, loadUsers } = useOrgUserStore()
   const { subcontractors, loadSubcontractors } = useSubcontractorStore()
@@ -669,8 +667,7 @@ export function ProjectScheduleWeekOverview({
                   weekDays={weekDays}
                   expanded={expanded}
                   onEdit={canQuickAdd ? setEditingRow : () => undefined}
-                  onQuickAdd={canQuickAdd ? (target, date) => setQuickAdd({ person: target, date }) : undefined}
-                  quickAddOnDay={quickAddOnDay}
+                  onQuickAdd={canQuickAdd && jobBookable ? (target, date) => setQuickAdd({ person: target, date }) : undefined}
                 />
               ))}
             </div>
@@ -746,14 +743,12 @@ function PersonRow({
   expanded,
   onEdit,
   onQuickAdd,
-  quickAddOnDay,
 }: {
   person: PersonWeek
   weekDays: Date[]
   expanded: boolean
   onEdit: (row: DayRow) => void
   onQuickAdd?: (person: PersonWeek, date: Date) => void
-  quickAddOnDay?: (day: Date) => boolean
 }) {
   return (
     <>
@@ -780,7 +775,7 @@ function PersonRow({
             className={`border-l border-t border-slate-100 p-1.5 ${isTodayDay ? 'bg-blue-50/40' : 'bg-white'}`}
           >
             {cell.length === 0 ? (
-              onQuickAdd && person.quickAdd && (quickAddOnDay?.(day) ?? true) ? (
+              onQuickAdd && person.quickAdd ? (
                 <button
                   type="button"
                   onClick={() => onQuickAdd(person, day)}

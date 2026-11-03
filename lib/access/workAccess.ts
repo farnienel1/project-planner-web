@@ -136,23 +136,17 @@ export function visibleWorks(params: WorkAccessParams): Project[] {
 }
 
 /**
- * The jobs the signed-in user may book a person onto (rulebook 1.21.0 `bookableJobs`): visible, not inactive, live
- * on every day in `dayKeys` (organisation zone; null when no day is chosen yet) and writable (`canWriteBooking`).
+ * The jobs the signed-in user may book a person onto (rulebook 1.21.0 `bookableJobs`): visible, not inactive and
+ * writable (`canWriteBooking`). The job's start and end dates are never checked (owner decision).
  */
 export function bookableWorks(
-  params: WorkAccessParams & {
-    dayKeys: ReadonlyArray<string> | null
-    timeZone: string
-    bookingCollection?: 'bookings' | 'managerSiteBookings' | 'subcontractorBookings'
-  }
+  params: WorkAccessParams & { bookingCollection?: 'bookings' | 'managerSiteBookings' | 'subcontractorBookings' }
 ): Project[] {
   const viewer = jobAccessViewer(params.user)
   return bookableJobs(
     catalogueJobs(params.projects, params.catalogue ?? 'all'),
     viewer,
-    { ...worksListContext(params), bookingCollection: params.bookingCollection ?? 'bookings' },
-    params.dayKeys,
-    params.timeZone
+    { ...worksListContext(params), bookingCollection: params.bookingCollection ?? 'bookings' }
   )
 }
 

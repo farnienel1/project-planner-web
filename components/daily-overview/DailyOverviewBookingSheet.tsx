@@ -153,10 +153,9 @@ export function DailyOverviewBookingSheet({
   }, [row.bookingId, row.workStartTime, row.workEndTime, prefill.start, prefill.end])
 
   const catalogues = useMemo(() => splitBookingMoveCatalogues(projects, smallWorks), [projects, smallWorks])
-  // Rulebook 1.21.0 §21 (`bookableJobs`): the jobs this viewer may book onto this day — visible, not inactive, running
-  // on the day (organisation zone) and writable (`canWriteBooking`). The tabs below only sort that list.
+  // Rulebook 1.21.0 §21 (`bookableJobs`): the jobs this viewer may book onto — visible, not inactive and writable
+  // (`canWriteBooking`); the job's dates are never checked. The tabs below only sort that list.
   const timeZone = useOrganizationTimeZone()
-  const sheetDayKey = bookingDayKey(day)
   const accessInput = {
     user,
     operatives,
@@ -164,18 +163,16 @@ export function DailyOverviewBookingSheet({
     bookings,
     managerBookings: managerSiteBookings,
     deadlineAssignedProjectIds,
-    dayKeys: [sheetDayKey],
-    timeZone,
   }
   const visibleProjects = useMemo(
     () => bookableWorks({ ...accessInput, projects: catalogues.projects, catalogue: 'projects' }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [catalogues.projects, user, operatives, managers, bookings, managerSiteBookings, deadlineAssignedProjectIds, sheetDayKey, timeZone]
+    [catalogues.projects, user, operatives, managers, bookings, managerSiteBookings, deadlineAssignedProjectIds]
   )
   const visibleSmallWorks = useMemo(
     () => bookableWorks({ ...accessInput, projects: catalogues.smallWorks, catalogue: 'smallWorks' }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [catalogues.smallWorks, user, operatives, managers, bookings, managerSiteBookings, deadlineAssignedProjectIds, sheetDayKey, timeZone]
+    [catalogues.smallWorks, user, operatives, managers, bookings, managerSiteBookings, deadlineAssignedProjectIds]
   )
   const otherPicks = enabledScheduleLocationPicks(scheduleOpts)
   const catalogue = tab === 'smallWorks' ? visibleSmallWorks : visibleProjects

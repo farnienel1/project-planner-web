@@ -310,28 +310,25 @@ export function visibleJobs<T extends WorksListJob>(
 }
 
 /**
- * The jobs a viewer may book a person onto (§21): jobs they see (`visibleJobs`), not inactive, live on every day in
- * `dayKeys` (`isWorkLiveOn`: on or between the job's start and end day in the organisation zone; `null` or empty when
- * no day is chosen yet), and whose booking the viewer may write (`canWriteBooking` for `context.bookingCollection`,
- * default `bookings`). Operatives book onto no job.
+ * The jobs a viewer may book a person onto (§21, owner decision 1.21.0): jobs they see (`visibleJobs`), not inactive
+ * (`isLive` not stored false) and whose booking the viewer may write (`canWriteBooking` for `context.bookingCollection`,
+ * default `bookings`). The job's start and end dates are never checked: a job past its end date, or with no end date,
+ * stays bookable. `dayKeys` and `timeZone` are accepted for a stable signature and ignored. Operatives book onto no job.
  */
 export function bookableJobs<T extends WorksListJob>(
   jobs: ReadonlyArray<T> | null | undefined,
   viewer: JobAccessViewer | null | undefined,
   context: WorksListContext | null | undefined,
-  dayKeys: ReadonlyArray<string> | string | null | undefined,
-  timeZone: string
+  dayKeys?: ReadonlyArray<string> | string | null,
+  timeZone?: string | null
 ): T[] {
-  const days = (Array.isArray(dayKeys) ? dayKeys : typeof dayKeys === 'string' ? [dayKeys] : [])
-    .map((key) => String(key ?? '').trim())
-    .filter((key) => DAY_KEY.test(key))
+  void dayKeys
+  void timeZone
   const collection = context?.bookingCollection ?? 'bookings'
   const managers = context?.managers ?? null
   const uid = viewer ? viewer.uid || viewer.ids?.[0] || null : null
   return visibleJobs(jobs, viewer, context).filter((job) => {
     if (job.isLive === false) return false
-    const window = { isLive: job.isLive ?? null, ...jobDayKeys(job, timeZone) }
-    if (days.some((day) => workStatusOn(window, day) !== 'active')) return false
     const small = jobKind(job, job.collection ?? null) === 'smallWorks'
     return canWriteBooking(
       viewer,
