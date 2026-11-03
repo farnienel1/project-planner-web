@@ -5,6 +5,7 @@ import {
   customHoursPrefillForDate,
   isWeekendDate,
   slotOfferedOnDate,
+  weekendBreakdownForDates,
   weekendNotesForDates,
 } from '@/lib/scheduling/bookingSlotRules'
 import { useMemo, useState } from 'react'
@@ -36,7 +37,6 @@ export function QuickAddBookingSheet({
   roleLabel,
   projectName,
   date,
-  existingToday = [],
   showNotes = true,
   saving,
   payroll = DEFAULT_PAYROLL_POLICY,
@@ -48,8 +48,6 @@ export function QuickAddBookingSheet({
   roleLabel?: string
   projectName: string
   date: Date
-  /** Other bookings this person already has on the day, for an at-a-glance clash hint. */
-  existingToday?: string[]
   showNotes?: boolean
   saving?: boolean
   payroll?: OrgPayrollTimePolicy
@@ -159,12 +157,6 @@ export function QuickAddBookingSheet({
         <div className="space-y-4 px-5 py-4">
           {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-xs font-medium text-red-700">{error}</p>}
 
-          {existingToday.length > 0 ? (
-            <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
-              Already booked this day: {existingToday.join(' · ')}. Overlapping hours will show as a clash.
-            </p>
-          ) : null}
-
           <div>
             <label className="mb-1 block text-xs font-semibold text-slate-600">Time slot</label>
             <select
@@ -199,7 +191,10 @@ export function QuickAddBookingSheet({
             />
           )}
 
-          <HoursBreakdownCard breakdown={breakdown} />
+          <HoursBreakdownCard
+            breakdown={breakdown}
+            dayRows={slot === 'CUSTOM' ? weekendBreakdownForDates([date], workStartTime, workEndTime, breakRemoved, payroll) : []}
+          />
 
           {showNotes ? (
             <div>

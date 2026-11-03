@@ -1,11 +1,16 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { organizationTimeZone, parsePayrollTimePolicyState, payrollTimePolicyTimeline } from '@/lib/canonical'
 import { useOrganizationDocument } from '@/lib/stores/organizationDocumentStore'
 import { dayKeyInZone } from '@/lib/orgTime/zoneTime'
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
-import { customHoursPrefillForDate, isWeekendDate, weekendWeekdayMixMessage } from '@/lib/scheduling/bookingSlotRules'
+import {
+  customHoursPrefillForDate,
+  customHoursPrefillForDates,
+  isWeekendDate,
+  weekendWeekdayMixMessage,
+} from '@/lib/scheduling/bookingSlotRules'
 
 /**
  * The open organisation's working hours in effect today, from its live document (subscribed here, so a picker opened
@@ -34,4 +39,31 @@ export function useScheduleDateRules() {
     }),
     [policy]
   )
+}
+
+/**
+ * Rulebook 1.18.0 (`customHoursPrefillForDays`): a picker that holds one custom-hours pair for its whole selection
+ * calls `apply` with the selection's prefill whenever the selection changes kind (weekend only ↔ weekday only) or the
+ * working hours load or change — not on every click within the same kind, so the person's own edit survives adding
+ * another day of the same kind. A refused weekday + weekend mix (`kind: 'none'`) and an empty selection change nothing.
+ */
+export function useCustomHoursPrefillOnKindChange(
+  dates: ReadonlyArray<Date>,
+  policy: OrgPayrollTimePolicy | null | undefined,
+  apply: (hours: { start: string; end: string }) => void
+): void {
+  const applied = useRef<{ kind: string; policy: unknown } | null>(null)
+  const applyRef = useRef(apply)
+  applyRef.current = apply
+  const datesKey = dates.map((date) => date.getTime()).join('|')
+  useEffect(() => {
+    const prefill = customHoursPrefillForDates(dates, policy)
+    if (!prefill || prefill.kind === 'none') return
+    const last = applied.current
+    if (last && last.kind === prefill.kind && last.policy === policy) return
+    applied.current = { kind: prefill.kind, policy }
+    applyRef.current({ start: prefill.start, end: prefill.end })
+    // `dates` is read through `datesKey` so a new array with the same days does not re-apply.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [datesKey, policy])
 }

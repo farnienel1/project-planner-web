@@ -6,7 +6,7 @@ import { LONDON_TIME_ZONE, formatAbbreviatedDayInZone } from '@/lib/orgTime/zone
 import { FilterChip } from '@/components/ios/primitives'
 import { HoursBreakdownCard } from '@/components/schedule/HoursBreakdownCard'
 import { HoursTimelinePicker } from '@/components/scheduling/HoursTimelinePicker'
-import { confirmCustomHoursBreak } from '@/lib/scheduling/bookingSlotRules'
+import { confirmCustomHoursBreak, weekendBreakdownForDates } from '@/lib/scheduling/bookingSlotRules'
 import { CustomOtherLocationField } from '@/components/scheduling/CustomOtherLocationField'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useBookingStore } from '@/lib/stores/bookingStore'
@@ -244,7 +244,8 @@ export function DailyOverviewBookingSheet({
         email: operatives.find((entry) => entry.id === operativeId)?.email ?? null,
         name: row.name,
       },
-      day
+      day,
+      row.bookingId ? [row.bookingId] : []
     )(hoursFields())
     const dropped = await leaveGate.check(rows)
     if (dropped === null) return false
@@ -487,7 +488,10 @@ export function DailyOverviewBookingSheet({
             }}
           />
           {!hoursValid ? <p className="muted small">Finish needs to be after the start.</p> : null}
-          <HoursBreakdownCard breakdown={breakdown} />
+          <HoursBreakdownCard
+            breakdown={breakdown}
+            dayRows={weekendBreakdownForDates([day], workStartTime, workEndTime, breakRemoved, payroll)}
+          />
           <button type="button" className="btn primary" disabled={saving || !hoursValid} onClick={() => void saveHoursOnly()}>
             Save hours on this booking
           </button>

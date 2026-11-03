@@ -1328,6 +1328,8 @@ export {
   timeSlotAllowedOnDay,
   weekendBookingNote,
   weekendBookingNotes,
+  customHoursPrefillForDays,
+  weekendBookingBreakdown,
   weekendCustomHoursDefault,
 } from './bookingSlots'
 export { weekendFullDayWindow, weekendRuleForIsoWeekday } from './payrollHours'
@@ -1352,7 +1354,7 @@ export {
   payProfilePath,
   payProfileWriteFieldsFromProfileWrite,
 } from './payProfile'
-export type { BookingSlotChoice, CustomHoursBreakBooking } from './bookingSlots'
+export type { BookingSlotChoice, CustomHoursBreakBooking, CustomHoursPrefill, CustomHoursPrefillKind, BookingDayBreakdownRow } from './bookingSlots'
 export type { SubscriptionAccess } from './billingAccess'
 export type { PayProfileDocument, PayProfileField, PaySubject, PayViewer } from './payProfile'
 export { parseAnnualLeaveDefaults } from './organizationSettings'

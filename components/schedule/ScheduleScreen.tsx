@@ -128,7 +128,8 @@ function LeaveCheckedBookingEditSheet(props: Parameters<typeof BookingEditSheet>
   const conflictsFor = personId
     ? leaveCheck.checkFor(
         { id: personId, userId: personId, operativeIds: [personId], name: props.operativeName || 'This person' },
-        new Date(props.booking.date)
+        new Date(props.booking.date),
+        [props.booking.id]
       )
     : undefined
   return <BookingEditSheet {...props} conflictsFor={conflictsFor} />

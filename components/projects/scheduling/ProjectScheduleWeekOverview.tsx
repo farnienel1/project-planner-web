@@ -1,6 +1,5 @@
 'use client'
 
-import { samePersonBookingIds } from '@/lib/bookings/bookingPeople'
 import Link from 'next/link'
 import { addDays, endOfWeek, format, isToday as dateFnsIsToday, startOfWeek } from 'date-fns'
 import { useEffect, useMemo, useState } from 'react'
@@ -487,29 +486,6 @@ export function ProjectScheduleWeekOverview({
   const isSmallWork = scheduleBasePath.includes('/small-works/')
   const projectLabel = `${project.jobNumber} ${project.siteName}`.trim()
 
-  const existingBookingsForQuickAdd = useMemo(() => {
-    if (!quickAdd) return []
-    const target = quickAdd.person.quickAdd
-    const day = quickAdd.date
-    const labels: string[] = []
-    const personUserId = quickAdd.person.key.startsWith('user:') ? quickAdd.person.key.slice(5) : null
-    // Bookings under any id this person has had (`bookingIdsForPerson`).
-    const personIds = target?.kind === 'operative' ? samePersonBookingIds(target.operativeId, users, operatives) : new Set<string>()
-    for (const b of bookings) {
-      if (!coversCalendarDay(new Date(b.date), day, organizationZoneOr())) continue
-      const sameOperative = personIds.has(String(b.operativeId || '').toLowerCase())
-      if (!sameOperative) continue
-      labels.push(`${idsMatch(b.projectId, project.id) ? 'This job' : 'Another job'} ${namedSlotLabel(String(b.timeSlot))}`)
-    }
-    for (const b of managerSiteBookings) {
-      if (!coversCalendarDay(new Date(b.date), day, organizationZoneOr())) continue
-      const sameUser = (target?.kind === 'manager' && b.userId === target.userId) || (personUserId && b.userId === personUserId)
-      if (!sameUser) continue
-      labels.push(`${idsMatch(b.locationId || '', project.id) ? 'This job' : 'Elsewhere'} ${namedSlotLabel(String(b.timeSlot))}`)
-    }
-    return labels
-  }, [quickAdd, bookings, managerSiteBookings, project.id, users, operatives])
-
   const saveQuickAdd = async (values: QuickAddBookingValues) => {
     if (!quickAdd?.person.quickAdd || !currentUser) return
     const target = quickAdd.person.quickAdd
@@ -712,7 +688,6 @@ export function ProjectScheduleWeekOverview({
           roleLabel={quickAdd.person.roleLabel === 'Op' ? 'Operative' : quickAdd.person.roleLabel === 'Mgr' ? 'Manager' : quickAdd.person.roleLabel}
           projectName={projectLabel}
           date={quickAdd.date}
-          existingToday={existingBookingsForQuickAdd}
           showNotes={quickAdd.person.quickAdd.kind === 'operative'}
           saving={savingQuickAdd}
           payroll={payroll}
@@ -733,7 +708,7 @@ export function ProjectScheduleWeekOverview({
           payroll={payroll}
           conflictsFor={(() => {
             const person = leavePersonFor(editingRow.name, editingRow.quickAdd)
-            return person ? leaveCheck.checkFor(person, new Date(editingBooking.date)) : undefined
+            return person ? leaveCheck.checkFor(person, new Date(editingBooking.date), [editingBooking.id]) : undefined
           })()}
           onSave={saveEditing}
           onDelete={!editingRow.booking || canDeleteLabourBooking ? deleteEditing : undefined}

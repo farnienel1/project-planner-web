@@ -1,6 +1,19 @@
 import type { HoursBreakdown } from '@/lib/scheduling/paidHours'
+import type { BookingDayBreakdownRow } from '@/lib/canonical'
+import { BookingDayBreakdownRows } from '@/components/scheduling/BookingDayBreakdownRows'
 
-export function HoursBreakdownCard({ breakdown }: { breakdown: HoursBreakdown }) {
+/**
+ * The hours breakdown of one booking. Rulebook 1.18.0: on a Saturday or Sunday, `dayRows`
+ * (`weekendBookingBreakdown`) replace the weekday summary, so the day's own rule is shown.
+ */
+export function HoursBreakdownCard({
+  breakdown,
+  dayRows,
+}: {
+  breakdown: HoursBreakdown
+  dayRows?: ReadonlyArray<BookingDayBreakdownRow>
+}) {
+  if (dayRows && dayRows.length > 0) return <BookingDayBreakdownRows rows={dayRows} title="Hours breakdown" />
   return (
     <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
       <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Hours breakdown</p>
