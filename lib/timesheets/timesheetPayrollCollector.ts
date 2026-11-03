@@ -26,7 +26,8 @@ import {
 } from '@/lib/timesheets/payrollRateResolver'
 import { isClockSpanLabel, orgDayHours, payLineDisplay, quantityText } from '@/lib/timesheets/payBasis'
 import { bookingHoursOnDay, formatTimesheetHours, scheduleLabel } from '@/lib/timesheets/timesheetHours'
-import { dayKey } from '@/lib/ios-parity/londonTime'
+import { LONDON_TIME_ZONE, dayKey } from '@/lib/ios-parity/londonTime'
+import { timesheetDaysForPerson } from '@/lib/canonical/peopleDocuments'
 
 export type { PayrollRateBasis }
 
@@ -175,6 +176,20 @@ export function collectTimesheetPayroll({
     ).map((id) => id.toLowerCase())
   )
   if (linked) operativeIds.add(linked.id.toLowerCase())
+  // Rulebook 1.11.0 `timesheetDaysForPerson`: only the days the person is self-employed count. A PAYE day never
+  // produces a timesheet line (it stays a booking for warnings, Daily Overview and Weekly Report hours).
+  const zone = timeZone || LONDON_TIME_ZONE
+  const countedDays = new Set(
+    timesheetDaysForPerson(
+      {
+        employmentType: user.employmentType,
+        employmentTypeTransitionFrom: user.employmentTypeTransitionFrom,
+        employmentTypeEffectiveAt: user.employmentTypeEffectiveAt,
+      },
+      { startDayKey: dayKey(periodStart, zone), endDayKey: dayKey(periodEnd, zone) },
+      zone
+    )
+  )
   const lineItems: TimesheetPayrollLineItem[] = []
   let shiftCount = 0
   let totalHours = 0
@@ -202,6 +217,7 @@ export function collectTimesheetPayroll({
     otMultiplierOverride?: number | null
   ) => {
     if (!isDateInPeriod(date, periodStart, periodEnd, timeZone)) return
+    if (!countedDays.has(dayKey(date, zone))) return
     const policy = orgPayrollPolicyForDay(
       date,
       currentPolicy,

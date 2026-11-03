@@ -32,6 +32,8 @@ export interface Project {
   createdAt: Date;
   updatedAt: Date;
   organizationId?: string;
+  /** Rulebook 1.11.0 `jobKind`: the collection the document was read from (projects or smallWorks). */
+  collection?: 'projects' | 'smallWorks';
 }
 
 export interface Client {
@@ -118,6 +120,8 @@ export interface Booking {
   displayTitle?: string;
   /** `manager` = organizations/{orgId}/managerSiteBookings; default operative bookings. */
   source?: 'operative' | 'manager';
+  /** Rulebook 1.11.0: the collection the booking's job is stored in (`jobCollection`). */
+  jobCollection?: 'projects' | 'smallWorks';
 }
 
 export interface Qualification {

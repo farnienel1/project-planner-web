@@ -40,8 +40,15 @@ import { removeFutureBookingsForProject } from '@/lib/bookings/removeBookingsOnD
  * A job document as the web `Project`. Reading is the rulebook's `parseJobDocument` (§1): ids in stored case,
  * the client id as stored (never a fresh id), start day `startDate` else `createdAt`, end day `endDate` else the start.
  */
-export function mapProjectDoc(docId: string, data: Record<string, unknown>, organizationId: string): Project {
-  return projectFromJobDocument(docId, data, organizationId)
+export function mapProjectDoc(
+  docId: string,
+  data: Record<string, unknown>,
+  organizationId: string,
+  collection?: 'projects' | 'smallWorks'
+): Project {
+  const project = projectFromJobDocument(docId, data, organizationId)
+  // Rulebook 1.11.0 `jobKind`: the collection decides the kind, never `jobType`.
+  return collection ? { ...project, collection } : project
 }
 
 interface ProjectState {
@@ -84,8 +91,9 @@ export function setJobPlanDocumentIds(ids: ReadonlyArray<string>): boolean {
   return true
 }
 
-export function loadedJobIds(): string[] {
-  return [...loadedJobIdsByKind.projects, ...loadedJobIdsByKind.smallWorks]
+/** Loaded job ids, optionally only of the given kinds (1.11.0: the kinds a manager has no toggle for). */
+export function loadedJobIds(kinds: ReadonlyArray<'projects' | 'smallWorks'> = ['projects', 'smallWorks']): string[] {
+  return kinds.flatMap((kind) => loadedJobIdsByKind[kind])
 }
 
 /**
@@ -144,7 +152,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         if (!liveResultStillCurrent(organizationId)) return
         let projects = docs
           .filter((entry) => !isLegacyPlaceholderDocumentId(entry.id))
-          .map((entry) => mapProjectDoc(entry.id, entry.data, organizationId))
+          .map((entry) => mapProjectDoc(entry.id, entry.data, organizationId, 'projects'))
         if (!projectsIncludeInactive) projects = projects.filter((p) => p.isLive)
         const previous = projectsOrgId === organizationId ? get().projects : []
         // A plan's parts are exact queries: a job that left them (manager removed) leaves the list now.
@@ -172,7 +180,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         if (!liveResultStillCurrent(organizationId)) return
         const mapped = docs
           .filter((entry) => !isLegacyPlaceholderDocumentId(entry.id))
-          .map((entry) => mapProjectDoc(entry.id, entry.data, organizationId))
+          .map((entry) => mapProjectDoc(entry.id, entry.data, organizationId, 'smallWorks'))
         const previous = smallWorksOrgId === organizationId ? get().smallWorks : []
         const smallWorks = withoutLegacyPlaceholderDocuments(
           planMode ? mapped : retainScopedRows(`smallWorks:${organizationId}`, previous, mapped)
@@ -222,14 +230,16 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       const other = collectionName === 'smallWorks' ? get().projects : get().smallWorks
       return other.find((row) => row.id.toLowerCase() === needle && !isLegacyPlaceholderDocumentId(row.id)) || null
     }
-    return mapProjectDoc(snap.id, snap.data() as Record<string, unknown>, organizationId)
+    return mapProjectDoc(snap.id, snap.data() as Record<string, unknown>, organizationId, collectionName)
   },
 
   saveProject: async (input, collectionOverride) => {
     if (isLegacyPlaceholderDocumentId(input.id)) {
       throw new Error('Cannot save the legacy starter placeholder. Create a project with a job number and site name.')
     }
-    const collectionName = collectionOverride || projectCollectionName(input.jobType)
+    // Rulebook 1.11.0 `jobKind`: an existing job stays in the collection it was read from, whatever its job type.
+    const existingRow = [...get().projects, ...get().smallWorks].find((row) => row.id === input.id)
+    const collectionName = collectionOverride || existingRow?.collection || projectCollectionName(input.jobType)
     const id = input.id || newUuid()
     const isNew = ![...get().projects, ...get().smallWorks].some((row) => row.id === id)
     const built = buildProjectFirestorePayload({ ...input, id })
@@ -245,7 +255,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       // Rulebook 1.9.0: an edit of a job deleted on another device is refused, never re-created.
       missing: isNew ? 'create' : 'refuse',
     })
-    const saved = mapProjectDoc(id, payload as Record<string, unknown>, input.organizationId)
+    const saved = mapProjectDoc(id, payload as Record<string, unknown>, input.organizationId, collectionName)
     if (collectionName === 'smallWorks') {
       const { smallWorks } = get()
       set({ smallWorks: [...smallWorks.filter((p) => p.id !== id), saved] })

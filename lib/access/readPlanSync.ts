@@ -5,7 +5,7 @@
  * each other. Admins and managers with a job toggle read whole collections and never re-plan here.
  */
 import { ownBookingIdsFor, setBookingPlanInputs, webJobAccessViewer } from '@/lib/access/readPlan'
-import { bookingJobId, readsEveryBooking } from '@/lib/canonical'
+import { bookingJobId, readsEveryBooking, seesEveryJob } from '@/lib/canonical'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { bookingsOrganizationId, useBookingStore } from '@/lib/stores/bookingStore'
 import { managerSiteBookingsOrganizationId, useManagerScheduleStore } from '@/lib/stores/managerScheduleStore'
@@ -17,7 +17,10 @@ let started = false
 function replanBookings(): void {
   const viewer = webJobAccessViewer(useAuthStore.getState().user)
   if (!viewer || readsEveryBooking(viewer)) return
-  const changed = setBookingPlanInputs(loadedJobIds(), ownBookingIdsFor(useAuthStore.getState().user, useOperativeStore.getState().operatives))
+  // 1.11.0: a kind the manager has the toggle for is read by `jobCollection`; only the other kind's jobs (their
+  // managed jobs) get per-job booking queries.
+  const untoggled = (['projects', 'smallWorks'] as const).filter((kind) => !seesEveryJob(viewer.role, kind, viewer.toggles ?? null))
+  const changed = setBookingPlanInputs(loadedJobIds(untoggled), ownBookingIdsFor(useAuthStore.getState().user, useOperativeStore.getState().operatives))
   if (!changed) return
   const bookingsOrg = bookingsOrganizationId()
   if (bookingsOrg) void useBookingStore.getState().loadBookings(bookingsOrg).catch(() => undefined)

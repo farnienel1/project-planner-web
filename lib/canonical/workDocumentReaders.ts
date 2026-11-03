@@ -22,6 +22,9 @@
 
 import { dayKeyInZone } from '../orgTime/zoneTime'
 import {
+  bookingJobCollectionFields,
+  normalizeBookingJobCollection,
+  type BookingJobCollection,
   isLegacyPlaceholderDocumentId,
   normalizeBookingStatus,
   normalizeBookingTimeSlot,
@@ -308,6 +311,8 @@ export function jobWriteFields(
 
 /** The slot and its clock times are one choice. */
 export const BOOKING_SLOT_WRITE_GROUP = ['timeSlot', 'workStartTime', 'workEndTime', 'isBreakRemoved'] as const
+/** A booking's job and the collection it is stored in (1.11.0 `jobCollection`) are one choice. */
+export const BOOKING_JOB_WRITE_GROUP = ['projectId', 'jobCollection'] as const
 
 /**
  * Partial update of an existing `bookings/{id}` (§1, §2): `next` is the `bookingWriteFields` shape (each app's
@@ -322,13 +327,13 @@ export function bookingUpdateWriteFields(
 ): DocumentWriteFields {
   if (!before) return { set: {}, remove: [] }
   return documentWriteFields(before, next, {
-    together: [BOOKING_SLOT_WRITE_GROUP],
+    together: [BOOKING_SLOT_WRITE_GROUP, BOOKING_JOB_WRITE_GROUP],
     createOnly: [...WRITE_CREATE_ONLY, 'bookedBy'],
   })
 }
 
 /** A manager site booking's place: the kind with its id or custom name, written together (1.9.0). */
-export const MANAGER_SITE_BOOKING_LOCATION_WRITE_GROUP = ['locationType', 'locationId', 'customLocationName'] as const
+export const MANAGER_SITE_BOOKING_LOCATION_WRITE_GROUP = ['locationType', 'locationId', 'customLocationName', 'jobCollection'] as const
 
 /**
  * 1.9.0 (§1, §2): partial update of an existing `managerSiteBookings/{id}` — only changed fields; the slot with its
@@ -375,6 +380,8 @@ export type SubcontractorBookingDocument = {
   bookedOperativeNames: string[]
   createdAtMs: number | null
   updatedAtMs: number | null
+  /** The job's collection (1.11.0 `jobCollection`); null on an older booking. */
+  jobCollection: BookingJobCollection | null
   /** False when an id is not a UUID (older iOS builds cannot hold it). */
   idsAreUuid: boolean
 }
@@ -426,6 +433,7 @@ export function parseSubcontractorBookingDocument(
     bookedOperativeNames: nameList(firstPresent(row, SUBCONTRACTOR_BOOKING_DOCUMENT_KEYS.bookedOperativeNames)),
     createdAtMs: documentInstantMs(row.createdAt),
     updatedAtMs: documentInstantMs(row.updatedAt),
+    jobCollection: normalizeBookingJobCollection(row.jobCollection),
     idsAreUuid: [id, subcontractorId, projectId, ...bookedContactIds].every((value) => isBookingUuid(value)),
   }
 }
@@ -443,6 +451,8 @@ export type SubcontractorBookingCreateInput = {
   status?: string | null
   bookedContactIds?: readonly string[] | null
   bookedOperativeNames?: readonly string[] | null
+  /** The job's collection (`projects` | `smallWorks`), 1.11.0 — written as `jobCollection`. */
+  jobCollection?: string | null
   createdAtMs: number
 }
 
@@ -494,6 +504,7 @@ export function subcontractorBookingCreateFields(input: SubcontractorBookingCrea
   const end = bookingClock(input.workEndTime)
   if (start) fields.workStartTime = start
   if (end) fields.workEndTime = end
+  Object.assign(fields, bookingJobCollectionFields({ collection: 'subcontractorBookings', jobCollection: input.jobCollection }))
   return { ok: true, fields }
 }
 
@@ -511,7 +522,7 @@ export function subcontractorBookingWriteFields(
 ): DocumentWriteFields {
   if (!before) return { set: {}, remove: [] }
   return documentWriteFields(before, next, {
-    together: [BOOKING_SLOT_WRITE_GROUP, SUBCONTRACTOR_BOOKING_PEOPLE_WRITE_GROUP],
+    together: [BOOKING_SLOT_WRITE_GROUP, SUBCONTRACTOR_BOOKING_PEOPLE_WRITE_GROUP, BOOKING_JOB_WRITE_GROUP],
     createOnly: [...WRITE_CREATE_ONLY, 'bookedBy'],
   })
 }

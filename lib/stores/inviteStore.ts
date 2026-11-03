@@ -13,6 +13,8 @@ export type InviteUserInput = {
   surname: string
   mobileNumber?: string
   permissions: UserPermissions
+  /** Rulebook 1.11.0: the Add User level, stored on the invitation (`invitationCreateFields` `role`). */
+  role?: 'admin' | 'manager' | 'operative'
   assignedManagerUserId?: string
   assignedManagerUserIds?: string[]
   dayRate?: number

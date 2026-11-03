@@ -18,6 +18,7 @@ import { newUppercaseUuid } from '@/lib/ios-parity/uuid'
 import { londonMidnight } from '@/lib/ios-parity/londonTime'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 import { logSkippedDocument, parseBooking, serializeBooking } from '@/lib/ios-parity/converters'
+import { resolveBookingJobCollection } from '@/lib/bookings/jobCollection'
 import type { Booking } from '@/types'
 import {
   bookingDownloadConstraints,
@@ -145,6 +146,8 @@ export const useBookingStore = create<BookingState>((set, get) => ({
     if (!organizationId) throw new Error('Missing organisation for booking')
     const id = (bookingData.id?.trim() || newUppercaseUuid()).toUpperCase()
     const now = new Date()
+    // Rulebook 1.11.0: every booking carries its job's collection (`jobCollection`).
+    const jobCollection = bookingData.jobCollection ?? (await resolveBookingJobCollection(organizationId, bookingData.projectId)) ?? undefined
     const booking: Booking = {
       ...bookingData,
       id,
@@ -152,6 +155,7 @@ export const useBookingStore = create<BookingState>((set, get) => ({
       createdAt: now,
       updatedAt: now,
       organizationId,
+      ...(jobCollection ? { jobCollection } : {}),
     }
     const payload = serializeBooking(booking)
     const captured = captureOrganizationContext()
@@ -196,12 +200,20 @@ export const useBookingStore = create<BookingState>((set, get) => ({
     if (!booking) return
     const organizationId = booking.organizationId || ''
     if (!organizationId) throw new Error('Missing organisation for booking')
+    const nextJobId = updates.projectId ?? booking.projectId
+    const jobChanged = String(nextJobId).toLowerCase() !== String(booking.projectId).toLowerCase()
+    // Rulebook 1.11.0: an edit writes the job's collection too (adds it to a booking saved before 1.11.0).
+    const jobCollection =
+      (jobChanged ? updates.jobCollection : updates.jobCollection ?? booking.jobCollection) ??
+      (await resolveBookingJobCollection(organizationId, nextJobId)) ??
+      undefined
     const next: Booking = {
       ...booking,
       ...updates,
       id,
       date: londonMidnight((updates.date as Date | undefined) || booking.date, organizationZoneOr()),
       updatedAt: new Date(),
+      ...(jobCollection ? { jobCollection } : {}),
     }
     const payload = serializeBooking(next)
     const captured = captureOrganizationContext()

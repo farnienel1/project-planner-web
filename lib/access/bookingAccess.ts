@@ -3,6 +3,7 @@
  * `canSeeJob` / `canWriteBooking` / `canDeleteBooking` in `lib/canonical/staffAccess.ts`; this file only turns the
  * signed-in user, the job and the managers list into its inputs.
  */
+import { effectivePermissions } from '@/lib/canonical/permissionLevels'
 import {
   canChangeJobManagers,
   canCreateJob,
@@ -24,7 +25,9 @@ export function jobAccessViewer(user: PermissionUser): JobAccessViewer | null {
   const ids = [user.id, ...(user.formerUserIds ?? [])].filter(Boolean)
   // 1.10.0 round 2: the Projects / Small works add-edit-manage permissions (`USER_PERMISSION_FIELDS`
   // `projects`, `smallWorks`) for the open organisation.
-  const toggles = { projects: user.permissions?.projects === true, smallWorks: user.permissions?.smallWorks === true }
+  // 1.11.0: the values in effect (`effectivePermissions`): an admin's toggles read on whatever is stored.
+  const effective = effectivePermissions(user)
+  const toggles = { projects: effective.projects === true, smallWorks: effective.smallWorks === true }
   return { role: staffAccountRole(user), ids, email: user.email ?? null, toggles, uid: user.id }
 }
 

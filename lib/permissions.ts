@@ -14,6 +14,8 @@ import {
   type UserTimesheetSubjectsInput,
 } from '@/lib/canonical'
 import { parseAppUserDocument } from '@/lib/ios-parity/converters'
+import { effectivePermissions, permissionLevelOf } from '@/lib/canonical/permissionLevels'
+import type { UserPermissionField } from '@/lib/canonical/userProfile'
 import { normalizeEmploymentType } from '@/lib/ios-parity/enums'
 import { isPlatformOwnerEmail } from '@/lib/platform/owner'
 
@@ -51,8 +53,14 @@ export function parseUserPermissions(
   }
 }
 
+/**
+ * A permission in effect (rulebook 1.11.0 `effectivePermissions`): an admin's locked toggles read on and their
+ * operative mode off; a manager's Materials and Site audit read on. Every check below reads this, never the stored flag.
+ */
 function flag(user: PermissionUser, key: keyof UserPermissions): boolean {
-  return user?.permissions?.[key] === true
+  if (!user) return false
+  if (key === 'developerAccess') return user.permissions?.developerAccess === true
+  return effectivePermissions(user)[key as UserPermissionField] === true
 }
 
 /** iOS staff check: manager flag, admin flag, or a manager/admin role. Super admin is handled by callers. */
@@ -102,18 +110,16 @@ export function canOpenWarningSettings(user: PermissionUser): boolean {
   return canAccessOrganisationSettingsHub(user)
 }
 
-/** UserStore.hasAdminAccess — operativeMode flag (not isOperativeMode) blocks. */
+/** Admin or super admin (`permissionLevelOf`). 1.11.0: an admin has no operative mode, so a stray flag never blocks. */
 export function hasAdminAccess(user: PermissionUser): boolean {
   if (!user) return false
-  if (user.permissions?.operativeMode) return false
-  return user.isSuperAdmin === true || flag(user, 'adminAccess') || user.role === 'admin'
+  return permissionLevelOf(user) === 'admin'
 }
 
-/** UserStore.isOperativeMode — admins are never operative. */
+/** Operative level (`permissionLevelOf`) — admins are never operative. */
 export function isOperativeMode(user: PermissionUser): boolean {
   if (!user) return false
-  if (hasAdminAccess(user)) return false
-  return flag(user, 'operativeMode') || user.role === 'operative'
+  return permissionLevelOf(user) === 'operative'
 }
 
 /** Holiday stays available for every account. The user toggle is allowance, not access. */
@@ -281,7 +287,7 @@ export function canViewWeeklyReports(user: PermissionUser, profileLoading = fals
 export function canViewDailyOverview(user: PermissionUser, profileLoading = false): boolean {
   if (isOperativeMode(user)) return false
   if (profileLoading || !user) return true
-  return user.permissions.dailyOverview !== false
+  return flag(user, 'dailyOverview')
 }
 
 export function canManageSiteAuditOperativeVisibility(user: PermissionUser): boolean {

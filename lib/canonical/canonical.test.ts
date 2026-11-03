@@ -82,12 +82,12 @@ import {
   starterCollectionShouldSeed,
   missingStarterQualificationCodes,
 } from './organizationSettings.ts'
+import { MANAGER_PERMISSION_TOGGLES } from './permissionLevels.ts'
 import {
   accountKindFromFlags,
   applyEmploymentTypeChange,
   employmentEffectiveLabel,
   employmentTypeOnDay,
-  MANAGER_PERMISSION_TOGGLES,
   USER_DOCUMENT_FIELDS,
   USER_FORMER_IDS_FIELD,
   USER_SELF_CREATE_AGE_FIELDS,
@@ -5598,10 +5598,11 @@ test('1.3.0 A: every operative and manager needs a line manager; only admins out
   // A manager without a line manager is refused, self-book permission or not.
   assert.equal(rulebook.lineManagerRequiredError(roster130[6], roster130), msg)
   assert.equal(rulebook.lineManagerRequiredError({ id: 'M', role: 'manager', annualLeaveSelfBook: true }), msg)
-  // An admin without one is fine; an admin with one too; an admin in operative mode is not exempt.
+  // An admin without one is fine; an admin with one too; 1.11.0: an admin has no operative mode, so a stray flag
+  // does not make one required.
   assert.equal(rulebook.lineManagerRequiredError(roster130[0], roster130), null)
   assert.equal(rulebook.lineManagerRequiredError(roster130[1], roster130), null)
-  assert.equal(rulebook.lineManagerRequiredError({ id: 'A', role: 'admin', operativeMode: true }), msg)
+  assert.equal(rulebook.lineManagerRequiredError({ id: 'A', role: 'admin', operativeMode: true }), null)
   assert.equal(rulebook.lineManagerRequired({ id: 'O', role: 'operative', isActive: false }), false)
   assert.deepEqual(rulebook.usersMissingLineManager(roster130), ['MGR', 'OP-STUB', 'LEGACY'])
 })
@@ -5740,9 +5741,10 @@ test('1.4.0: company activity goes to active admins outside operative mode, neve
     { id: 'M1', email: 'm1@x', isActive: true, role: 'manager', manager: true },
     { id: 'O1', email: 'o1@x', isActive: true, role: 'operative', operativeMode: true },
   ]
+  // 1.11.0: A4 (an admin with a stray operative-mode flag) is an admin — admins have no operative mode.
   const recipients = rulebook.companyActivityRecipients('A1', roster as never)
-  assert.deepEqual(recipients, ['A2'])
-  assert.deepEqual(rulebook.companyActivityRecipients('M1', roster as never), ['A1', 'A2'])
+  assert.deepEqual(recipients, ['A2', 'A4'])
+  assert.deepEqual(rulebook.companyActivityRecipients('M1', roster as never), ['A1', 'A2', 'A4'])
   assert.deepEqual([...rulebook.COMPANY_ACTIVITY_NOTICE_TYPES].sort(), ['client_created', 'manager_created', 'operative_created', 'project_created', 'small_works_created', 'warning_removed'])
   for (const type of rulebook.COMPANY_ACTIVITY_NOTICE_TYPES) {
     assert.equal(rulebook.notificationPreferenceKeyForType(type), 'companyActivity', type)
@@ -6192,7 +6194,7 @@ test('parseUserDocument reads an iOS-written user: upper-case ids, legacy keys, 
   assert.equal(parsed.timesheetsEnabled, true)
 })
 
-test('parseUserDocument: an admin with a stray operativeMode flag stays an admin on lists; the approval rules see the flag', () => {
+test('parseUserDocument: an admin with a stray operativeMode flag stays an admin on lists and (1.11.0) in the approval rules', () => {
   const parsed = parseUserDocument('admin1', {
     email: 'a@example.com',
     organizationId: 'ORG',
@@ -6205,7 +6207,8 @@ test('parseUserDocument: an admin with a stray operativeMode flag stays an admin
   assert.equal(parsed.operativeMode, false)
   assert.equal(parsed.accountKind, 'admin')
   assert.equal(parsed.permissions.adminAccess, true)
-  assert.equal(parsed.adminOutsideOperativeMode, false)
+  assert.equal(parsed.permissions.operativeMode, false)
+  assert.equal(parsed.adminOutsideOperativeMode, true)
   const plain = parseUserDocument('admin2', { email: 'b@example.com', role: 'admin', isSuperAdmin: true })
   assert.equal(plain?.adminOutsideOperativeMode, true)
 })
@@ -7327,7 +7330,7 @@ test('1.9.0 create shapes for invitations, organisations and tax ids', async () 
   })!
   assert.deepEqual(invite, {
     email: 'new@example.com', organizationId: 'O', invitedBy: 'a', firstName: 'Ann', surname: 'Lee', employmentType: 'paye',
-    permissions: { manager: true }, inviteType: 'new_user', createdAt: 1, isUsed: false,
+    permissions: { manager: true }, role: 'manager', inviteType: 'new_user', createdAt: 1, isUsed: false,
     assignedManagerUserIds: ['m1', 'm2'], assignedManagerUserId: 'm1', hasNoLineManager: false,
     payBasis: 'hourly', hourlyRate: 20, timesheetsEnabled: true, annualLeaveDaysPerYear: 25,
   })
@@ -7794,9 +7797,18 @@ test('1.10.0 r2: jobQueryPlan — whole collections, managerUserIds array-contai
   assert.deepEqual(r2JobIdQueryValues(['123']), ['123'])
 })
 
-test('1.10.0 r2: bookingQueryPlan — whole collections for admins and toggle managers, one query per job otherwise, plus own', () => {
+test('1.10.0 r2 / 1.11.0: bookingQueryPlan — whole collections for admins, by kind for toggle managers, one query per job otherwise, plus own', () => {
   assert.equal(r2ReadsEveryBooking({ role: admin, ids: ['a'] }), true)
-  assert.equal(r2ReadsEveryBooking({ role: manager, ids: ['m'], toggles: r2Projects }), true)
+  // 1.11.0: a toggle manager reads their kind by jobCollection, never a whole collection.
+  assert.equal(r2ReadsEveryBooking({ role: manager, ids: ['m'], toggles: r2Projects }), false)
+  const byKind = r2BookingQueryPlan({ role: manager, ids: ['m'], uid: 'm', toggles: r2Projects }, ['sw-1'], { ownBookingIds: ['m'] })
+  assert.equal(byKind.readsEveryBooking, false)
+  assert.deepEqual(byKind.queries.slice(0, 3), [
+    { collection: 'bookings', kind: 'jobCollection', field: 'jobCollection', op: '==', value: 'projects' },
+    { collection: 'managerSiteBookings', kind: 'jobCollection', field: 'jobCollection', op: '==', value: 'projects' },
+    { collection: 'subcontractorBookings', kind: 'jobCollection', field: 'jobCollection', op: '==', value: 'projects' },
+  ])
+  assert.deepEqual(byKind.queries.filter((q) => q.kind === 'job').map((q) => q.jobId), ['sw-1', 'sw-1', 'sw-1'])
   assert.equal(r2ReadsEveryBooking({ role: manager, ids: ['m'] }), false)
   assert.equal(r2ReadsEveryBooking({ role: operative, ids: ['o'], toggles: r2Both }), false)
   const all = r2BookingQueryPlan({ role: admin, ids: ['a'] }, ['x'])
@@ -8005,19 +8017,23 @@ test('1.10.0 hunt C H3: inviteAcceptWrites — role from the invitation; an exis
   assert.equal(fresh.pay, null)
 })
 
-test('1.10.0 hunt C M6/M12: timesheetParticipant', () => {
+test('1.10.0 hunt C M6/M12, 1.11.0: timesheetParticipant — self-employed only; PAYE never, whatever the toggle', () => {
   const day = new Date('2026-11-02T12:00:00Z')
-  assert.equal(hcParticipant({ timesheetsEnabled: true, employmentType: 'paye' }, day), true)
+  assert.equal(hcParticipant({ timesheetsEnabled: true, employmentType: 'paye' }, day), false)
   assert.equal(hcParticipant({ timesheetsEnabled: false, employmentType: 'self_employed' }, day), true)
-  assert.equal(hcParticipant({ employmentType: 'paye', operativeMode: true }, day), true)
+  assert.equal(hcParticipant({ employmentType: 'paye', operativeMode: true }, day), false)
+  assert.equal(hcParticipant({ timesheetsEnabled: true, employmentType: 'self_employed' }, day), true)
   assert.equal(hcParticipant({ employmentType: 'paye', permissions: { operativeMode: true }, timesheetsEnabled: false }, day), false)
   assert.equal(hcParticipant({ employmentType: 'paye' }, day), false)
-  assert.equal(hcParticipant({ timesheetsEnabled: true, isActive: false }, day), false)
-  assert.equal(hcParticipant({ timesheetsEnabled: true, email: '', name: 'Deleted user' }, day), false)
+  assert.equal(hcParticipant({ timesheetsEnabled: true, employmentType: 'self_employed', isActive: false }, day), false)
+  assert.equal(hcParticipant({ timesheetsEnabled: true, employmentType: 'self_employed', email: '', name: 'Deleted user' }, day), false)
   // Effective-dated: PAYE until Wednesday, self-employed from then.
   const changing = { employmentType: 'self_employed', employmentTypeTransitionFrom: 'paye', employmentTypeEffectiveAt: '2026-11-04T00:00:00Z' }
   assert.equal(hcParticipant(changing, day, 'Europe/London'), false)
   assert.equal(hcParticipant(changing, new Date('2026-11-05T12:00:00Z'), 'Europe/London'), true)
+  // Given a period: self-employed on at least one day of it.
+  assert.equal(hcParticipant(changing, { startDayKey: '2026-11-01', endDayKey: '2026-11-15' } as never, 'Europe/London'), true)
+  assert.equal(hcParticipant(changing, { startDayKey: '2026-10-16', endDayKey: '2026-10-31' } as never, 'Europe/London'), false)
   assert.equal(hcParticipant(null, day), false)
 })
 
@@ -8058,4 +8074,255 @@ test('1.10.1: enforced reads stay off until the backfill — restricted managers
   assert.deepEqual(r2JobQueryPlanRaw(viewer).queries.map((q: any) => q.kind), ['all', 'all'])
   assert.equal(r2ReadsEveryBookingRaw(viewer), true)
   assert.equal(r2BookingQueryPlanRaw(viewer, ['job-a']).readsEveryBooking, true)
+})
+
+// MARK: - 1.11.0 (owner decisions round 3)
+
+import * as r3Levels from './permissionLevels.ts'
+import { showsMyTimesheets as r3Shows, timesheetDaysForPerson as r3Days, userProfileWriteFields as r3ProfileWrite } from './peopleDocuments.ts'
+import { invitationProfileFields as r3InviteProfile, invitationRole as r3InviteRole, inviteMembershipWrites as r3InviteMembership } from './inviteAccept.ts'
+import { bookingJobCollectionFields as r3BookingKind, bookingWriteFields as r3BookingWrite, jobCollectionForJobId as r3KindFor, normalizeBookingJobCollection as r3NormKind, parseBookingDocument as r3ParseBooking } from './bookings.ts'
+import { bookingQueryPlan as r3BookingPlan, jobIdsInBothCollections as r3BothKinds, jobKind as r3JobKind } from './staffAccess.ts'
+import { lineManagerCandidates as r3Candidates, lineManagerOptions as r3Options, lineManagerSummary as r3Summary } from './lineManagers.ts'
+import { timesheetInvoiceRows as r3InvoiceRows } from './reportPay.ts'
+import { USER_PERMISSION_FIELDS as R3_FIELDS } from './userProfile.ts'
+
+test('1.11.0 effectivePermissions / lockedPermissionFields: admins every toggle on and locked except Annual Leave Management', () => {
+  const admin = { role: 'admin', adminAccess: true, operatives: false, weeklyReports: false, operativeMode: true, permissions: { projects: false, annualLeaveSelfBook: true } }
+  const effective = r3Levels.effectivePermissions(admin)
+  for (const key of R3_FIELDS) {
+    if (key === 'operativeMode') assert.equal(effective[key], false, key)
+    else assert.equal(effective[key], true, key)
+  }
+  assert.deepEqual(r3Levels.lockedPermissionFields(admin), R3_FIELDS.filter((key) => key !== 'annualLeaveSelfBook'))
+  assert.equal(r3Levels.effectivePermissions({ ...admin, permissions: { annualLeaveSelfBook: false } }).annualLeaveSelfBook, false)
+  assert.equal(r3Levels.permissionLevelOf({ isSuperAdmin: true, operativeMode: true }), 'admin')
+  // Managers: stored toggles; Materials and Site audit always on and locked; Wholesalers stays editable (can be off).
+  const manager = { role: 'manager', manager: true, materials: false, siteAudit: false, wholesalersOrderHistory: false, projects: true }
+  const m = r3Levels.effectivePermissions(manager)
+  assert.equal(m.materials, true)
+  assert.equal(m.siteAudit, true)
+  assert.equal(m.wholesalersOrderHistory, false)
+  assert.equal(m.projects, true)
+  assert.equal(m.smallWorks, false)
+  assert.equal(m.adminAccess, false)
+  assert.deepEqual(r3Levels.lockedPermissionFields(manager), ['materials', 'siteAudit'])
+  // Operatives: stored Materials / Site audit, editable.
+  const op = r3Levels.effectivePermissions({ role: 'operative', operativeMode: true, materials: true, siteAudit: false })
+  assert.equal(op.materials, true)
+  assert.equal(op.siteAudit, false)
+  assert.equal(op.operativeMode, true)
+  assert.deepEqual(r3Levels.lockedPermissionFields({ role: 'operative' }), [])
+  // Operatives toggle: managing operatives vs scheduling them.
+  assert.equal(r3Levels.canManageOperatives({ role: 'manager', manager: true, operatives: false }), false)
+  assert.equal(r3Levels.canScheduleOperatives({ role: 'manager', manager: true, operatives: false }), true)
+  assert.equal(r3Levels.canManageOperatives({ role: 'admin', adminAccess: true, operatives: false }), true)
+  assert.equal(r3Levels.canScheduleOperatives({ role: 'operative', operativeMode: true }), false)
+})
+
+test('1.11.0 userProfileWriteFields never writes a locked toggle and never rewrites stored toggles', () => {
+  const stored = { role: 'admin', adminAccess: true, operatives: false, permissions: { operatives: false, annualLeaveSelfBook: false } }
+  const write = r3ProfileWrite(stored, { operatives: true, weeklyReports: false, permissions: { operatives: true, annualLeaveSelfBook: true }, firstName: 'A' })
+  assert.equal('operatives' in write.set, false)
+  assert.equal('weeklyReports' in write.set, false)
+  assert.deepEqual(write.set.permissions, { operatives: false, annualLeaveSelfBook: true })
+  assert.equal(write.set.firstName, 'A')
+  // Only locked toggles changed: nothing at all.
+  assert.deepEqual(r3ProfileWrite(stored, { weeklyReports: false, materials: false }).set, {})
+  // A manager's Materials / Site audit are locked too.
+  assert.deepEqual(r3ProfileWrite({ role: 'manager', manager: true }, { materials: false, siteAudit: false }).set, {})
+  // Change user type (manager → admin) is not stripped.
+  const promote = r3ProfileWrite({ role: 'manager', manager: true }, { role: 'admin', adminAccess: true, operatives: true })
+  assert.equal(promote.set.adminAccess, true)
+  assert.equal(promote.set.operatives, true)
+})
+
+test('1.11.0 permissionToggleRows: one catalogue for Add User, its summary and Edit User', () => {
+  const visible = (level: 'admin' | 'manager' | 'operative', mode: 'add' | 'edit' | 'summary', user?: unknown) =>
+    r3Levels.permissionToggleRows({ level, mode, user }).filter((row) => row.visible)
+  const admin = visible('admin', 'edit', { role: 'admin', adminAccess: true })
+  assert.deepEqual(admin.filter((row) => row.editable).map((row) => row.field), ['annualLeaveSelfBook'])
+  assert.ok(admin.every((row) => row.field === 'annualLeaveSelfBook' || row.value === true))
+  assert.ok(admin.some((row) => row.field === 'adminAccess'))
+  const manager = visible('manager', 'add')
+  assert.deepEqual(manager.map((row) => row.field), [
+    'projects', 'smallWorks', 'weeklyReports', 'dailyOverview', 'subContractors', 'annualLeaveSelfBook', 'operatives',
+    'qualifications', 'wholesalersOrderHistory', 'materials', 'siteAudit',
+  ])
+  assert.deepEqual(manager.filter((row) => !row.editable).map((row) => row.field), ['materials', 'siteAudit'])
+  assert.deepEqual(manager.filter((row) => row.value).map((row) => row.field), ['dailyOverview', 'qualifications', 'wholesalersOrderHistory', 'materials', 'siteAudit'])
+  // The summary shows the same rows, none editable.
+  const summary = visible('manager', 'summary')
+  assert.deepEqual(summary.map((row) => row.field), manager.map((row) => row.field))
+  assert.ok(summary.every((row) => !row.editable))
+  const operative = visible('operative', 'add')
+  assert.deepEqual(operative.map((row) => [row.field, row.value, row.editable]), [['materials', false, true], ['siteAudit', true, true]])
+  assert.deepEqual(r3Levels.MANAGER_PERMISSION_TOGGLES.map((row) => row.key).slice(0, 4), ['adminAccess', 'projects', 'smallWorks', 'weeklyReports'])
+})
+
+test('1.11.0 accountTypeChangeWrites: every document that decides the type; refused for another company', () => {
+  const person = { id: 'u1', email: 'u@x.com', organizationId: 'ORG', role: 'manager', manager: true, projects: true }
+  const plan = r3Levels.accountTypeChangeWrites({
+    person,
+    kind: 'admin',
+    organizationId: 'ORG',
+    roster: [{ id: 'u1-old', email: 'U@x.com', organizationId: 'ORG' }, { id: 'u1-b', email: 'u@x.com', organizationId: 'OTHER' }],
+  })
+  assert.ok(plan.ok)
+  if (!plan.ok) return
+  assert.deepEqual(plan.writes.map((write) => write.path), ['users/u1', 'users/u1-old', 'organizations/ORG', 'users/u1/orgMemberships/ORG'])
+  const profile = plan.writes[0] as { fields: Record<string, unknown> }
+  assert.equal(profile.fields.role, 'admin')
+  assert.equal(profile.fields.adminAccess, true)
+  assert.equal(profile.fields['permissions.operativeMode'], false)
+  assert.deepEqual((plan.writes[2] as { fields: Record<string, unknown> }).fields, { 'members.u1': 'admin' })
+  const down = r3Levels.accountTypeChangeWrites({ person, kind: 'operative', organizationId: 'ORG' })
+  assert.ok(down.ok && down.permissions.operativeMode === true && down.permissions.manager === false)
+  const manager = r3Levels.accountTypePermissions('manager', { role: 'operative', operativeMode: true })
+  assert.equal(manager.projects, false)
+  assert.equal(manager.operatives, true)
+  // A profile of another company: only this organisation's members entry and membership are written.
+  const other = r3Levels.accountTypeChangeWrites({ person: { ...person, organizationId: 'organizations/OTHER' }, kind: 'admin', organizationId: 'ORG' })
+  assert.ok(other.ok)
+  if (other.ok) {
+    assert.deepEqual(other.writes.map((write) => write.path), ['organizations/ORG', 'users/u1/orgMemberships/ORG'])
+    assert.equal(other.note, r3Levels.ACCOUNT_TYPE_OTHER_COMPANY_NOTE)
+  }
+  const superAdmin = r3Levels.accountTypeChangeWrites({ person: { ...person, isSuperAdmin: true }, kind: 'manager', organizationId: 'ORG' })
+  assert.deepEqual(superAdmin.ok ? null : superAdmin.reason, 'super_admin')
+})
+
+test('1.11.0 PAYE: a timesheet exists only for self-employed days; reminders and the invoice follow', () => {
+  const period = { startDayKey: '2026-11-01', endDayKey: '2026-11-07' }
+  assert.deepEqual(r3Days({ employmentType: 'paye' }, period, 'Europe/London'), [])
+  assert.equal(r3Shows({ employmentType: 'paye', timesheetsEnabled: true }, period, 'Europe/London'), false)
+  assert.equal(r3Days({ employmentType: 'self_employed' }, period, 'Europe/London').length, 7)
+  // PAYE until Thursday 5 Nov, self-employed from then: only 5–7 Nov count.
+  const switching = { employmentType: 'self_employed', employmentTypeTransitionFrom: 'paye', employmentTypeEffectiveAt: '2026-11-05T00:00:00Z' }
+  assert.deepEqual(r3Days(switching, period, 'Europe/London'), ['2026-11-05', '2026-11-06', '2026-11-07'])
+  assert.equal(r3Shows({ ...switching, isActive: false }, period, 'Europe/London'), false)
+  // The other way round: self-employed until the 3rd.
+  const leaving = { employmentType: 'paye', employmentTypeTransitionFrom: 'self_employed', employmentTypeEffectiveAt: '2026-11-03T00:00:00Z' }
+  assert.deepEqual(r3Days(leaving, period, 'Europe/London'), ['2026-11-01', '2026-11-02'])
+  // Invoice: lines and entries on PAYE days never become rows.
+  const rows = r3InvoiceRows({
+    sheet: {
+      priceWorkEntries: [{ id: 'P1', title: 'x', amount: 50, startDate: '2026-11-02T10:00:00Z' }, { id: 'P2', title: 'y', amount: 60, startDate: '2026-11-06T10:00:00Z' }],
+      expenseEntries: [{ id: 'E1', title: 'z', amount: 5, date: '2026-11-01T10:00:00Z' }],
+    },
+    payrollLines: [{ id: 'L1', amount: 100, dayKey: '2026-11-02' }, { id: 'L2', amount: 120, dayKey: '2026-11-06' }],
+    extrasMode: 'raw',
+    timesheetDays: r3Days(switching, period, 'Europe/London'),
+    timeZone: 'Europe/London',
+  })
+  assert.deepEqual(rows.map((row) => row.id), ['L2', 'P2'])
+  assert.deepEqual(r3InvoiceRows({ sheet: {}, payrollLines: [{ id: 'L1', amount: 100, dayKey: '2026-11-02' }], extrasMode: 'raw', timesheetDays: [] }), [])
+})
+
+test('1.11.0 invites: the invitation is the only source of role, permissions, pay and line manager', () => {
+  const invitation = { organizationId: 'ORG-B', email: 'x@y.com', role: 'manager', permissions: { manager: true, projects: true }, invitedBy: 'adm', payBasis: 'day', dayRate: 200, hourlyRate: 9, assignedManagerUserIds: ['m1', 'm2'] }
+  assert.equal(r3InviteRole(invitation), 'manager')
+  assert.equal(r3InviteRole({ permissions: { adminAccess: true } }), 'admin')
+  assert.equal(r3InviteRole({ permissions: {} }), 'member')
+  assert.deepEqual(r3InviteProfile(invitation), {
+    role: 'manager', permissions: { manager: true, projects: true }, manager: true, projects: true,
+    payBasis: 'day', dayRate: 200, assignedManagerUserIds: ['m1', 'm2'], assignedManagerUserId: 'm1', hasNoLineManager: false,
+  })
+  const writes = r3InviteMembership({ invitation, invitationId: 'inv-1', authUid: 'u-1', now: 5 })!
+  assert.deepEqual(writes.membership, {
+    organizationId: 'ORG-B', role: 'manager', status: 'active', isSuperAdmin: false, accountActive: true,
+    permissions: { manager: true, projects: true }, invitationId: 'inv-1', invitedAt: 5, acceptedAt: 5, updatedAt: 5, invitedBy: 'adm',
+  })
+  assert.equal(writes.membersField, 'members.u-1')
+  assert.equal(r3InviteMembership({ invitation: {}, invitationId: 'inv', authUid: 'u', now: 1 }), null)
+})
+
+test('1.11.0 job kind: the collection decides; bookings carry jobCollection; reads by kind', () => {
+  assert.equal(r3JobKind({ jobType: 'Small Works' }, 'projects'), 'projects')
+  assert.equal(r3JobKind({ jobType: 'CAT A' }, 'smallWorks'), 'smallWorks')
+  assert.equal(r3JobKind({ jobType: 'small_works' }, null), 'smallWorks')
+  assert.deepEqual(r3BothKinds(['A', 'b', 'C'], ['B', 'c', 'd']), ['b', 'C'])
+  assert.equal(r3NormKind('small_work'), 'smallWorks')
+  assert.equal(r3NormKind('Projects'), 'projects')
+  assert.equal(r3NormKind('jobs'), null)
+  assert.equal(r3KindFor('JOB-1', { projects: ['job-1'], smallWorks: [] }), 'projects')
+  assert.equal(r3KindFor('X', { projects: ['x'], smallWorks: ['X'] }), null)
+  assert.deepEqual(r3BookingKind({ collection: 'managerSiteBookings', locationType: 'office', jobCollection: 'projects' }), {})
+  assert.deepEqual(r3BookingKind({ collection: 'managerSiteBookings', locationType: 'small_work' }), { jobCollection: 'smallWorks' })
+  const written = r3BookingWrite({ id: 'B', operativeId: 'o', projectId: 'p', dateMs: 0, timeSlot: 'AM', status: 'Confirmed', bookedBy: 'x', jobCollection: 'small_works', createdAtMs: 0, updatedAtMs: 0 })
+  assert.ok(written.ok && written.fields.jobCollection === 'smallWorks')
+  const parsed = r3ParseBooking('B', { operativeId: 'o', projectId: 'p', date: 0, timeSlot: 'AM', status: 'Confirmed', jobCollection: 'projects' })
+  assert.ok(parsed.ok && parsed.booking.jobCollection === 'projects')
+  // A single-toggle manager reads that kind by jobCollection and the other kind's managed jobs one by one.
+  const viewer = { role: { isSuperAdmin: false, isAdmin: false, isManager: true, isOperativeMode: false }, uid: 'm', ids: ['m'], toggles: { projects: false, smallWorks: true } }
+  const plan = r3BookingPlan(viewer, ['P-1'], { enforced: true })
+  assert.deepEqual(plan.queries.filter((q) => q.kind === 'jobCollection').map((q) => [q.collection, q.kind === 'jobCollection' ? q.value : '']), [
+    ['bookings', 'smallWorks'], ['managerSiteBookings', 'smallWorks'], ['subcontractorBookings', 'smallWorks'],
+  ])
+  assert.ok(plan.queries.some((q) => q.kind === 'job' && q.jobId === 'P-1'))
+  // Still switched off (1.10.1): every manager reads whole collections until the backfills.
+  assert.equal(r3BookingPlan(viewer, ['P-1']).readsEveryBooking, true)
+})
+
+test('1.11.0 line managers: candidates, "No line manager" only for admins, a summary never negative', () => {
+  const roster = [
+    { id: 'ADM', email: 'adm@x', firstName: 'Ada', surname: 'Admin', role: 'admin', adminAccess: true },
+    { id: 'SA', email: 'sa@x', firstName: 'Sam', surname: 'Super', isSuperAdmin: true },
+    { id: 'MGR', email: 'mgr@x', firstName: 'Max', surname: 'Manager', role: 'manager', manager: true },
+    { id: 'MGR-OLD', email: 'mgr@x', firstName: 'Max', surname: 'Manager', role: 'manager', manager: true, isActive: false },
+    { id: 'OP', email: 'op@x', firstName: 'Olly', surname: 'Op', role: 'operative', operativeMode: true },
+    { id: 'PEND', email: 'pend@x', firstName: 'Pat', surname: 'Pending', role: 'manager', manager: true, passwordSet: false },
+    { id: 'DEL', email: '', firstName: 'Deleted', surname: 'user', role: 'manager', manager: true },
+  ]
+  // The manager themself is never a candidate, under any id.
+  assert.deepEqual(r3Candidates({ id: 'MGR', email: 'mgr@x', role: 'manager' }, roster).map((row) => row.id), ['ADM', 'SA'])
+  assert.deepEqual(r3Candidates({ id: 'NEW' }, roster).map((row) => [row.id, row.level]), [['ADM', 'admin'], ['MGR', 'manager'], ['SA', 'admin']])
+  assert.equal(r3Options({ role: 'manager' }).allowsNoLineManager, false)
+  assert.equal(r3Options({ role: 'operative', operativeMode: true }).allowsNoLineManager, false)
+  assert.equal(r3Options({ role: 'admin', adminAccess: true }).allowsNoLineManager, true)
+  assert.deepEqual(r3Summary({ assignedManagerUserIds: ['MGR', 'ADM', 'GONE'] }, roster), {
+    label: 'Max Manager +2 more',
+    ids: [
+      { id: 'MGR', name: 'Max Manager', resolved: true },
+      { id: 'ADM', name: 'Ada Admin', resolved: true },
+      { id: 'GONE', name: 'Unknown person', resolved: false },
+    ],
+    moreCount: 2,
+  })
+  // One entry: no "+N more" (never "+0" or "+-1").
+  assert.equal(r3Summary({ assignedManagerUserIds: ['MGR', 'mgr'] }, roster).label, 'Max Manager')
+  assert.equal(r3Summary({ assignedManagerUserId: 'GONE' }, roster).label, 'Unknown person')
+  assert.equal(r3Summary({ assignedManagerUserIds: [] }, roster).label, 'Not set')
+  assert.equal(r3Summary({ hasNoLineManager: true }, roster).label, 'No line manager')
+})
+
+import { organizationLevelFor as r3OrgLevel, rosterMembersForOrganization as r3RosterMembers } from './orgRoster.ts'
+
+test('1.11.0 rosterMembersForOrganization: anchored people stay; level in this organisation, never another company\'s flags', () => {
+  const users = [
+    { id: 'A', email: 'a@x', organizationId: 'ORG', role: 'admin', adminAccess: true },
+    { id: 'SA', email: 'sa@x', organizationId: 'OTHER', role: 'manager', manager: true },
+    { id: 'M2', email: 'm2@x', organizationId: 'organizations/OTHER', role: 'admin', adminAccess: true },
+    { id: 'STRANGER', email: 's@x', organizationId: 'OTHER', role: 'admin', adminAccess: true },
+  ]
+  const result = r3RosterMembers({
+    organizationId: 'ORG',
+    users,
+    members: { A: 'admin', SA: 'admin', M2: 'manager', GONE: 'manager', DENIED: 'operative' },
+    creatorUserId: 'SA',
+    signedInUserId: 'A',
+    memberships: { M2: { role: 'manager', permissions: { manager: true } } },
+    missingIds: ['GONE'],
+  })
+  assert.deepEqual(result.anchoredIds, ['A', 'SA', 'M2', 'GONE', 'DENIED'])
+  assert.deepEqual(result.people.map((row) => row.id), ['A', 'SA', 'M2'])
+  const level = (id: string) => result.people.find((row) => row.id === id)!.organizationLevel
+  assert.deepEqual(level('A'), { level: 'admin', isSuperAdmin: false, source: 'users' })
+  assert.deepEqual(level('SA'), { level: 'admin', isSuperAdmin: true, source: 'creator' })
+  assert.deepEqual(level('M2'), { level: 'manager', isSuperAdmin: false, source: 'membership' })
+  // A denied read keeps the person (the app keeps their last row); a confirmed-missing one leaves.
+  assert.deepEqual(result.unreadIds, ['DENIED'])
+  assert.deepEqual(r3OrgLevel({ organizationId: 'ORG', userId: 'X', user: { organizationId: 'OTHER', adminAccess: true }, membersRole: 'operative' }), {
+    level: 'operative', isSuperAdmin: false, source: 'members',
+  })
 })

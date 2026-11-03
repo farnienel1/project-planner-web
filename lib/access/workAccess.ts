@@ -6,10 +6,10 @@
 import type { Booking, Manager, Operative, Project, ProjectTask, User } from '@/types'
 import { bookingIdsForAccount, bookingOccupiesDay } from '@/lib/canonical'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
-import { seesEveryJob } from '@/lib/canonical'
+import { jobKind, seesEveryJob } from '@/lib/canonical'
 import { userCanSeeJob } from '@/lib/access/bookingAccess'
 import { isOperativeMode, staffAccountRole, type WorkCatalogueKind } from '@/lib/permissions'
-import { isSmallWorksJobType, normalizeBookingStatus } from '@/lib/ios-parity/enums'
+import { normalizeBookingStatus } from '@/lib/ios-parity/enums'
 
 export type JobCatalogue = WorkCatalogueKind
 
@@ -18,7 +18,8 @@ function normalizedEmail(value?: string | null): string {
 }
 
 function catalogueIncludes(project: Project, catalogue: JobCatalogue): boolean {
-  const small = isSmallWorksJobType(project.jobType)
+  // Rulebook 1.11.0 `jobKind`: the collection decides, never `jobType`.
+  const small = jobKind(project, project.collection) === 'smallWorks'
   if (catalogue === 'projects') return !small
   if (catalogue === 'smallWorks') return small
   return true
@@ -256,7 +257,7 @@ export function visibleWorks(params: {
       (project) =>
         !(project.hiddenManagerUserIds ?? []).includes(user.id) &&
         // 1.10.0 round 2: a manager with the toggle for the job's kind sees every job of that kind.
-        userCanSeeJob(user, project, managers, isSmallWorksJobType(project.jobType) ? 'smallWorks' : 'projects')
+        userCanSeeJob(user, project, managers, jobKind(project, project.collection))
     )
   }
 

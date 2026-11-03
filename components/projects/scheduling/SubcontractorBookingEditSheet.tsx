@@ -20,6 +20,8 @@ export type DiarySubBooking = {
   isBreakRemoved?: boolean
   bookedContactIds?: string[]
   bookedOperativeNames?: string[]
+  /** The job the booking is on (1.11.0: its `jobCollection` is written with an edit). */
+  projectId?: string
 }
 
 export function SubcontractorBookingEditSheet({
@@ -97,7 +99,8 @@ export function SubcontractorBookingEditSheet({
           bookedContactIds: selectedIds,
           bookedOperativeNames: names,
         },
-        { userId: auth?.currentUser?.uid ?? null }
+        { userId: auth?.currentUser?.uid ?? null },
+        booking.projectId
       )
       onSaved(next)
     } catch (err: unknown) {

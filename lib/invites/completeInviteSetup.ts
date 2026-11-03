@@ -1,10 +1,10 @@
-import { inviteAcceptWrites } from '@/lib/canonical/inviteAccept'
+import { inviteAcceptWrites, inviteMembershipWrites, invitationProfileFields } from '@/lib/canonical/inviteAccept'
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   type UserCredential,
 } from 'firebase/auth'
-import { deleteDoc, doc, getDoc, setDoc, Timestamp, updateDoc } from 'firebase/firestore'
+import { deleteDoc, doc, getDoc, setDoc, Timestamp, updateDoc, writeBatch } from 'firebase/firestore'
 import { getFirebaseAuth, getFirebaseDb } from '@/lib/firebase/ensureFirebase'
 import { isValidUuid } from '@/lib/security/validation'
 import { ensurePrimaryOrgMembership } from '@/lib/orgMembership/membershipService'
@@ -30,6 +30,8 @@ type InvitationRecord = InvitationSummary & {
   payBasis?: string
   dayRate?: number
   hourlyRate?: number
+  /** The stored invitation (rulebook 1.11.0: accepting applies exactly what it stores). */
+  raw: Record<string, unknown>
 }
 
 function asRecord(data: unknown): Record<string, unknown> {
@@ -105,6 +107,7 @@ async function loadInvitationRecord(invitationId: string): Promise<InvitationRec
     payBasis: stringField(invitation, 'payBasis') || undefined,
     dayRate: typeof invitation.dayRate === 'number' ? invitation.dayRate : undefined,
     hourlyRate: typeof invitation.hourlyRate === 'number' ? invitation.hourlyRate : undefined,
+    raw: invitation,
   }
 }
 
@@ -169,38 +172,34 @@ function userDocFromInvitation(record: InvitationRecord, now: Timestamp): Record
     updatedAt: now,
     ...ageConfirmationWriteFields(now),
   }
-  if (record.permissions) {
-    payload.permissions = record.permissions
-    Object.assign(payload, record.permissions)
-  }
-  if (record.role) payload.role = record.role
-  if (record.employmentType) payload.employmentType = record.employmentType
-  if (record.payBasis === 'hourly' && record.hourlyRate != null) {
-    payload.payBasis = 'hourly'
-    payload.hourlyRate = record.hourlyRate
-  } else if (record.payBasis === 'day' && record.dayRate != null) {
-    payload.payBasis = 'day'
-    payload.dayRate = record.dayRate
-  }
+  // Rulebook 1.11.0 `invitationProfileFields`: exactly what Add User stored — role, permissions, pay, line manager.
+  Object.assign(payload, invitationProfileFields(record.raw))
   return payload
 }
 
 /**
- * Rulebook 1.10.0 (H3, `inviteAcceptWrites` mode `existingAccount`): an account that already exists in another
- * company. Its profile is never rewritten and the placeholder (the in-organisation row with the invited pay) stays;
- * the role in this organisation goes on its membership. The security rules let only an admin of this organisation
- * grant a role, so a refusal tells the person to ask one.
+ * Rulebook 1.10.0 (H3, `inviteAcceptWrites` mode `existingAccount`) and 1.11.0 (`inviteMembershipWrites`): an account
+ * that already exists in another company. Its profile is never rewritten and the placeholder (the in-organisation row
+ * with the invited pay and line manager) stays. One batch creates the membership with exactly the invitation's role
+ * and permissions, adds `members.{uid}` with that role and marks the invitation used; the security rules accept it
+ * only for this genuine, unused invitation to the signed-in email.
  */
-async function acceptIntoAnotherCompany(authUid: string, organizationId: string, role: string, invitationId: string) {
+async function acceptIntoAnotherCompany(authUid: string, record: InvitationRecord, invitationId: string) {
   const db = getFirebaseDb()
+  const now = Timestamp.now()
+  const writes = inviteMembershipWrites({ invitation: record.raw, invitationId, authUid, now })
+  if (!writes) throw new Error('Invitation not found')
+  const batch = writeBatch(db)
+  batch.set(doc(db, 'users', authUid, 'orgMemberships', writes.organizationId), writes.membership)
+  batch.update(doc(db, 'organizations', writes.organizationId), { [writes.membersField]: writes.role })
+  batch.update(doc(db, 'invitations', invitationId), invitationUsedWriteFields(now).set)
   try {
-    await ensurePrimaryOrgMembership(authUid, organizationId, role)
+    await batch.commit()
   } catch {
     throw new Error(
-      'This email already has a Project Planner account. Sign in with it, and ask an admin of the inviting company to add your account to the company.'
+      'This email already has a Project Planner account, but the invitation could not be accepted. Ask an admin of the inviting company to send a new invitation.'
     )
   }
-  await updateDoc(doc(db, 'invitations', invitationId), invitationUsedWriteFields(Timestamp.now()).set)
   const { grantMfaSkip } = await import('@/lib/auth/mfa/mfaClient')
   await grantMfaSkip({ invitationId })
 }
@@ -243,7 +242,7 @@ export async function completeInvitationPasswordSetup(params: {
   const migrating = plan.movePlaceholder && ownPlaceholder
 
   if (plan.mode === 'existingAccount' && plan.joinsAnotherCompany) {
-    await acceptIntoAnotherCompany(authUid, record.organizationId, plan.role, params.invitationId)
+    await acceptIntoAnotherCompany(authUid, record, params.invitationId)
     return
   }
 

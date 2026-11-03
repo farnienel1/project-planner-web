@@ -51,12 +51,14 @@ test('operatives do not get a + New menu', () => {
 
 test('admins see + New items their toggles allow', () => {
   const admin = user({ role: UserRole.ADMIN, permissions: { adminAccess: true, manager: true } })
-  // 1.10.0 round 2: admins always add projects and small works.
+  // 1.10.0 round 2: admins always add projects and small works. 1.11.0: every admin toggle reads on
+  // (`effectivePermissions`), Manage Qualifications included.
   assert.deepEqual(createMenuItems(admin).map((row) => row.id), [
     'project',
     'small-works',
     'user',
     'client',
+    'qualification',
     'job-type',
     'sub-contractor',
     'wholesaler',

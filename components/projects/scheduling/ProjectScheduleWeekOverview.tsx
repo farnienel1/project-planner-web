@@ -698,7 +698,7 @@ export function ProjectScheduleWeekOverview({
       {editingRow?.subBooking ? (
         <SubcontractorBookingEditSheet
           organizationId={organizationId}
-          booking={editingRow.subBooking}
+          booking={{ ...editingRow.subBooking, projectId: project.id }}
           subcontractor={findSubcontractorFirm(subcontractors, editingRow.subBooking.subcontractorId) || null}
           payroll={payroll}
           onClose={() => setEditingRow(null)}

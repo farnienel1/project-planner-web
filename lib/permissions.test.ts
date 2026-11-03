@@ -77,10 +77,10 @@ function user(partial: Omit<Partial<User>, 'permissions'> & { permissions?: Part
   }
 }
 
-test('hasAdminAccess is false when operativeMode is on, even for super admin', () => {
+test('1.11.0: an admin has no operative mode — a stray operativeMode flag never blocks admin access', () => {
   const u = user({ isSuperAdmin: true, permissions: { operativeMode: true, adminAccess: true } })
-  assert.equal(hasAdminAccess(u), false)
-  assert.equal(isOperativeMode(u), true)
+  assert.equal(hasAdminAccess(u), true)
+  assert.equal(isOperativeMode(u), false)
 })
 
 test('hasAdminAccess is true for role admin without adminAccess flag', () => {
@@ -121,17 +121,17 @@ test('canViewOperatives: manager needs operatives flag', () => {
   assert.equal(canViewOperatives(withFlag), true)
 })
 
-test('operatives, wholesalers and qualifications follow the toggle for an admin; jobs never do (1.10.0 round 2)', () => {
+test('1.11.0: an admin\'s toggles are locked on — operatives, wholesalers, qualifications and jobs whatever is stored', () => {
   const admin = user({
     role: UserRole.ADMIN,
     permissions: { adminAccess: true, manager: true, wholesalersOrderHistory: false, qualifications: false },
   })
-  assert.equal(canViewOperatives(admin), false)
+  assert.equal(canViewOperatives(admin), true)
   // 1.10.0 round 2 (`canCreateJob`): admins always add and edit jobs, whatever the Projects / Small works toggles.
   assert.equal(canManageWorkCatalogue(admin, 'projects'), true)
   assert.equal(canManageWorkCatalogue(admin, 'smallWorks'), true)
-  assert.equal(canAccessWholesalers(admin), false)
-  assert.equal(canManageOrganisationQualifications(admin), false)
+  assert.equal(canAccessWholesalers(admin), true)
+  assert.equal(canManageOrganisationQualifications(admin), true)
   const flagged = user({
     role: UserRole.ADMIN,
     permissions: {
@@ -171,7 +171,8 @@ test('qualifications hub stays open when the manage toggle is off', () => {
   })
   const manager = user({ role: UserRole.MANAGER, permissions: { manager: true, qualifications: false } })
   const operative = user({ role: UserRole.OPERATIVE, permissions: { operativeMode: true, qualifications: true } })
-  assert.equal(canManageOrganisationQualifications(admin), false)
+  // 1.11.0: Manage Qualifications is locked on for an admin.
+  assert.equal(canManageOrganisationQualifications(admin), true)
   assert.equal(canAccessQualificationsHub(admin), true)
   assert.equal(canAccessQualificationsHub(manager), true)
   assert.equal(canAccessQualificationsHub(operative), false)
@@ -194,9 +195,10 @@ test('project and wholesaler toggles do not apply to a non-staff account', () =>
   assert.equal(canManageWorkCatalogue(founder, 'smallWorks'), true)
 })
 
-test('canViewWeeklyReports is the flag, not admin-always', () => {
+test('canViewWeeklyReports is the flag for a manager; 1.11.0 always on for an admin', () => {
   const admin = user({ role: UserRole.ADMIN, permissions: { adminAccess: true } })
-  assert.equal(canViewWeeklyReports(admin), false)
+  assert.equal(canViewWeeklyReports(admin), true)
+  assert.equal(canViewWeeklyReports(user({ role: UserRole.MANAGER, permissions: { manager: true } })), false)
   const flagged = user({ role: UserRole.ADMIN, permissions: { adminAccess: true, weeklyReports: true } })
   assert.equal(canViewWeeklyReports(flagged), true)
 })

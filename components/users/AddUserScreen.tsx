@@ -6,7 +6,14 @@ import { useAuthStore } from '@/lib/stores/authStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { useInviteStore } from '@/lib/stores/inviteStore'
 import { canInviteOperatives, canManageOperativesOnly, canManageUsers, getAddUserLabel } from '@/lib/navigation/menuPermissions'
-import { permissionsForAccountType, timesheetsEnabledForAccount } from '@/lib/orgSetup/accountPermissions'
+import { timesheetsEnabledForAccount } from '@/lib/orgSetup/accountPermissions'
+import {
+  addUserPermissionDefaults,
+  permissionToggleRows,
+  permissionsWriteMap,
+  PAYE_RATE_NOT_USED_NOTE,
+  type PermissionToggleRow as RulebookPermissionRow,
+} from '@/lib/canonical/permissionLevels'
 import { staffAccountRole } from '@/lib/permissions'
 import {
   ANNUAL_LEAVE_ALLOWANCE_COPY,
@@ -14,7 +21,6 @@ import {
   CANONICAL_TIME_ZONE,
   canViewSensitiveProfile,
   leaveYearBounds,
-  lineManagerRequired,
   lineManagerRequiredError,
   snapLeaveDays,
 } from '@/lib/canonical'
@@ -22,10 +28,9 @@ import { dayKeyInZone } from '@/lib/orgTime/zoneTime'
 import { DEFAULT_ANNUAL_LEAVE } from '@/lib/settings/organizationSettings'
 import { STAFF_TRADE_TYPES } from '@/lib/staff/staffTradeTypes'
 import { lineManagerChoices } from '@/lib/staff/userRosterUtils'
+import { lineManagerOptions } from '@/lib/canonical/lineManagers'
 import { rulebookRoster } from '@/lib/staff/rulebookPeople'
 import {
-  MANAGER_PERMISSION_TOGGLES,
-  OPERATIVE_PERMISSION_TOGGLES,
   type PermissionToggleDef,
 } from '@/lib/staff/userPermissionDescriptions'
 import { loadOrganizationDetails } from '@/lib/settings/organizationSettings'
@@ -159,7 +164,7 @@ export function AddUserScreen() {
   const [accountType, setAccountType] = useState<AccountType>(
     canInviteAdmins ? 'manager' : 'operative'
   )
-  const [permissions, setPermissions] = useState<UserPermissions>(() => permissionsForAccountType('manager'))
+  const [permissions, setPermissions] = useState<UserPermissions>(() => addUserPermissionDefaults('manager') as UserPermissions)
   const [form, setForm] = useState({
     firstName: '',
     surname: '',
@@ -215,57 +220,42 @@ export function AddUserScreen() {
     return ACCOUNT_TYPES.filter((type) => type.id === 'operative')
   }, [canInviteAdmins])
 
-  const permissionDefs = useMemo(() => {
-    if (accountType === 'operative') return OPERATIVE_PERMISSION_TOGGLES
-    return MANAGER_PERMISSION_TOGGLES.filter((def) => def.key !== 'adminAccess')
-  }, [accountType])
-
-  const adminPermissionDefs = useMemo(() => MANAGER_PERMISSION_TOGGLES, [])
+  // Rulebook 1.11.0 `permissionToggleRows`: the same rows, values and locks as iOS Add User, its summary and Edit User.
+  const permissionLevel: AccountType = operativeInviteOnly ? 'operative' : accountType
+  const permissionRows = useMemo(
+    () => permissionToggleRows({ level: permissionLevel, user: { permissions }, mode: 'add' }).filter((row) => row.visible),
+    [permissionLevel, permissions]
+  )
+  const summaryRows = useMemo(
+    () => permissionToggleRows({ level: permissionLevel, user: { permissions }, mode: 'summary' }).filter((row) => row.visible),
+    [permissionLevel, permissions]
+  )
 
   const showSetup = true
-  const showPermissions = accountType !== 'admin'
-  const showAdminPermissions = accountType === 'admin'
 
   function selectAccountType(next: AccountType) {
     setAccountType(next)
-    setPermissions(permissionsForAccountType(next))
+    setPermissions(addUserPermissionDefaults(next) as UserPermissions)
   }
 
-  function updatePermission(patch: Partial<UserPermissions>) {
-    if (accountType === 'admin' && patch.adminAccess === false) return
-    setPermissions((prev) => ({ ...prev, ...patch }))
+  function updatePermission(row: RulebookPermissionRow, checked: boolean) {
+    if (!row.editable) return
+    setPermissions((prev) => ({ ...prev, [row.field]: checked }))
   }
 
-  function permissionChecked(key: keyof UserPermissions): boolean {
-    if (accountType === 'admin' && key === 'adminAccess') return true
-    return permissions[key] === true || (key === 'dailyOverview' && permissions.dailyOverview !== false)
-  }
+  // What the invitation and placeholder store (`permissionsWriteMap`): the effective values for the level.
+  const invitePermissions = useMemo(
+    () => permissionsWriteMap({ permissions }, permissionLevel) as UserPermissions,
+    [permissionLevel, permissions]
+  )
 
-  const invitePermissions = useMemo(() => {
-    if (accountType === 'admin') {
-      return {
-        ...permissions,
-        adminAccess: true,
-        manager: true,
-        operativeMode: false,
-        skills: false,
-        materials: true,
-        siteAudit: true,
-      }
-    }
-    if (operativeInviteOnly || accountType === 'operative') {
-      return { ...permissions, operativeMode: true, manager: false, adminAccess: false, skills: false }
-    }
-    return { ...permissions, manager: true, operativeMode: false, adminAccess: false, skills: false, materials: true, siteAudit: true }
-  }, [accountType, operativeInviteOnly, permissions])
-
-  // "No line manager" only when `lineManagerRequired` is false: an admin or super admin outside operative mode.
-  const mayHaveNoLineManager = !lineManagerRequired({
+  // Rulebook 1.11.0 `lineManagerOptions`: "No line manager" only when `lineManagerRequired` is false (admins).
+  const mayHaveNoLineManager = lineManagerOptions({
     isActive: true,
-    role: accountType,
+    role: permissionLevel,
     adminAccess: invitePermissions.adminAccess === true,
     operativeMode: invitePermissions.operativeMode === true,
-  })
+  }).allowsNoLineManager
 
   const handleSubmit = async (e?: FormEvent) => {
     e?.preventDefault()
@@ -327,6 +317,7 @@ export function AddUserScreen() {
         surname,
         mobileNumber: form.mobileNumber.trim() || undefined,
         permissions: invitePermissions,
+        role: permissionLevel,
         assignedManagerUserId: form.hasNoLineManager ? undefined : form.assignedManagerUserIds[0],
         assignedManagerUserIds:
           form.hasNoLineManager || form.assignedManagerUserIds.length === 0 ? undefined : form.assignedManagerUserIds,
@@ -512,21 +503,30 @@ export function AddUserScreen() {
       </SettingsCard>
       </FormSection>
 
-      {showAdminPermissions && (
-        <FormSection label="Administrator permissions">
+      {permissionRows.length > 0 && (
+        <FormSection
+          label={
+            permissionLevel === 'admin'
+              ? 'Administrator permissions'
+              : `${permissionLevel === 'operative' ? 'Operative' : 'Manager'} permissions`
+          }
+        >
           <SettingsCard>
             <div className="border-b border-slate-100 px-4 py-3 text-sm text-slate-600">
-              Administrator sets their role. Projects, small works, weekly report, and daily overview stay as chosen
-              here. Materials and site audit stay on.
+              {permissionLevel === 'admin'
+                ? 'Administrators have every permission. Only Annual Leave Management can be changed.'
+                : permissionLevel === 'manager'
+                  ? 'Materials and Site audit are always on for managers. Anything left off can be turned on later in Manage Users.'
+                  : 'Choose what this operative can open. Anything left off can be turned on later in Manage Users.'}
             </div>
             <div className="divide-y divide-slate-100">
-              {adminPermissionDefs.map((def) => (
+              {permissionRows.map((row) => (
                 <PermToggleRow
-                  key={def.key}
-                  def={def}
-                  checked={permissionChecked(def.key)}
-                  onChange={(checked) => updatePermission({ [def.key]: checked } as Partial<UserPermissions>)}
-                  disabled={def.key === 'adminAccess'}
+                  key={row.field}
+                  def={{ key: row.field, title: row.label, description: row.help }}
+                  checked={row.value}
+                  onChange={(checked) => updatePermission(row, checked)}
+                  disabled={!row.editable}
                 />
               ))}
             </div>
@@ -534,25 +534,31 @@ export function AddUserScreen() {
         </FormSection>
       )}
 
-      {showPermissions && permissionDefs.length > 0 && (
-        <FormSection label={`${accountType === 'operative' ? 'Operative' : 'Manager'} permissions`}>
-          <SettingsCard>
-            <div className="border-b border-slate-100 px-4 py-3 text-sm text-slate-600">
-              All permissions start turned off — switch on only what this person needs.
+      <FormSection label="Permissions summary">
+        <SettingsCard>
+          <div className="grid grid-cols-1 gap-4 p-4 text-sm sm:grid-cols-2">
+            <div>
+              <div className="mb-2 font-semibold text-slate-900">Can access</div>
+              <ul className="space-y-1 text-slate-700">
+                {summaryRows.filter((row) => row.value).map((row) => (
+                  <li key={row.field}>{row.label}</li>
+                ))}
+              </ul>
             </div>
-            <div className="divide-y divide-slate-100">
-              {permissionDefs.map((def) => (
-                <PermToggleRow
-                  key={def.key}
-                  def={def}
-                  checked={permissionChecked(def.key)}
-                  onChange={(checked) => updatePermission({ [def.key]: checked } as Partial<UserPermissions>)}
-                />
-              ))}
+            <div>
+              <div className="mb-2 font-semibold text-slate-900">Can&apos;t access</div>
+              <ul className="space-y-1 text-slate-500">
+                {summaryRows.filter((row) => !row.value).map((row) => (
+                  <li key={row.field}>{row.label}</li>
+                ))}
+              </ul>
             </div>
-          </SettingsCard>
-        </FormSection>
-      )}
+          </div>
+          {form.employmentType === 'paye' && form.rateAmount.trim() ? (
+            <p className="border-t border-slate-100 px-4 py-3 text-xs text-slate-500">Rate: {PAYE_RATE_NOT_USED_NOTE}</p>
+          ) : null}
+        </SettingsCard>
+      </FormSection>
 
       {canEnterTaxIds ? (
       <FormSection label="Tax details">

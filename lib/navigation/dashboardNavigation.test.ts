@@ -205,6 +205,13 @@ test('menu matrix covers each level and each permission toggle', () => {
     annualLeaveSelfBook: [],
   }
   for (const [key, added] of Object.entries(managerToggleAdds)) {
+    // 1.11.0: Admin Access makes the person an admin, whose every toggle reads on (`effectivePermissions`).
+    if (key === 'adminAccess') {
+      const admin = user({ ...managerBase, permissions: { ...staffOff, adminAccess: true } })
+      for (const id of added) assert.equal(has(admin, id), true, `adminAccess should show ${id}`)
+      assert.equal(has(admin, 'dashboard_weekly_report'), true)
+      continue
+    }
     const flipped = user({
       ...managerBase,
       permissions: { ...staffOff, [key]: true },
@@ -225,9 +232,10 @@ test('menu matrix covers each level and each permission toggle', () => {
     permissions: { ...staffOff, adminAccess: false },
   })
   assert.equal(has(adminOff, 'dashboard_manage_users'), true)
-  assert.equal(has(adminOff, 'dashboard_weekly_report'), false)
-  assert.equal(has(adminOff, 'dashboard_operatives'), false)
-  assert.equal(has(adminOff, 'dashboard_wholesalers'), false)
+  // 1.11.0: an admin's toggles are locked on, whatever is stored.
+  assert.equal(has(adminOff, 'dashboard_weekly_report'), true)
+  assert.equal(has(adminOff, 'dashboard_operatives'), true)
+  assert.equal(has(adminOff, 'dashboard_wholesalers'), true)
   assert.equal(has(adminOff, 'dashboard_qualifications'), true)
   assert.equal(has(adminOff, 'dashboard_my_qualifications'), false)
   const adminOn = user({
@@ -267,8 +275,9 @@ test('menu matrix covers each level and each permission toggle', () => {
   assert.equal(has(superOff, 'dashboard_wholesalers'), true)
   assert.equal(has(superOff, 'dashboard_qualifications'), true)
   assert.equal(has(superOff, 'dashboard_my_qualifications'), false)
-  assert.equal(has(superOff, 'dashboard_weekly_report'), false)
-  assert.equal(has(superOff, 'dashboard_daily_overview'), false)
+  // 1.11.0: a super admin's toggles are locked on too.
+  assert.equal(has(superOff, 'dashboard_weekly_report'), true)
+  assert.equal(has(superOff, 'dashboard_daily_overview'), true)
   assert.equal(has(superOff, 'dashboard_projects'), true)
   const superOperative = user({
     role: UserRole.ADMIN,
@@ -276,8 +285,9 @@ test('menu matrix covers each level and each permission toggle', () => {
     employmentType: 'self_employed',
     permissions: { adminAccess: true, operativeMode: true, siteAudit: true, materials: true },
   })
-  assert.equal(has(superOperative, 'dashboard_manage_users'), false)
-  assert.equal(has(superOperative, 'dashboard_warnings'), false)
+  // 1.11.0: an admin has no operative mode — a super admin with a stray flag keeps the admin menu.
+  assert.equal(has(superOperative, 'dashboard_manage_users'), true)
+  assert.equal(has(superOperative, 'dashboard_warnings'), true)
   assert.equal(has(superOperative, 'dashboard_my_qualifications'), false)
   assert.equal(has(superOperative, 'dashboard_wholesalers'), true)
 })

@@ -114,16 +114,18 @@ test('no line manager clears a leftover manager id on save', () => {
   assert.equal(typeof payload.assignedManagerUserId, 'object')
 })
 
-test('change user type sets role and does not turn the four page toggles on', () => {
+test('change user type sets role; a manager keeps the four page toggles as they were; 1.11.0 an admin has every toggle', () => {
   const manager = user({ id: 'mgr', email: 'sam@site.com' })
   const admin = applyAccountTypeChange(manager, 'admin')
   assert.equal(admin.role, UserRole.ADMIN)
   assert.equal(admin.permissions.adminAccess, true)
-  assert.equal(admin.permissions.projects, false)
-  assert.equal(admin.permissions.smallWorks, false)
-  assert.equal(admin.permissions.weeklyReports, false)
-  assert.equal(admin.permissions.dailyOverview, false)
+  assert.equal(admin.permissions.projects, true)
+  assert.equal(admin.permissions.weeklyReports, true)
+  assert.equal(admin.permissions.operativeMode, false)
   assert.equal(admin.isSuperAdmin, false)
+  const back = applyAccountTypeChange({ ...manager, permissions: { ...manager.permissions, projects: false, weeklyReports: false } }, 'manager')
+  assert.equal(back.permissions.projects, false)
+  assert.equal(back.permissions.weeklyReports, false)
 })
 
 test('the super admin picker lists another active administrator only', () => {

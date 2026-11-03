@@ -3,6 +3,7 @@
 import { create } from 'zustand'
 import { doc, setDoc } from 'firebase/firestore'
 import { deleteBookingWithTombstone } from '@/lib/bookings/bookingTombstoneWrite'
+import { resolveBookingJobCollection } from '@/lib/bookings/jobCollection'
 import { auth, db } from '@/lib/firebase/config'
 import { MissingDocumentError, savePartialDocument } from '@/lib/firebase/partialWrite'
 import { BOOKING_REPLAY_REFUSED_MESSAGE, writeMetadataFields } from '@/lib/canonical'
@@ -86,6 +87,8 @@ export type SaveManagerSiteBookingInput = {
   workStartTime?: string
   workEndTime?: string
   isBreakRemoved?: boolean
+  /** Rulebook 1.11.0: the job's collection for a job-linked booking; resolved from the job when not given. */
+  jobCollection?: 'projects' | 'smallWorks'
 }
 
 interface ManagerScheduleState {
@@ -176,6 +179,10 @@ export const useManagerScheduleStore = create<ManagerScheduleState>((set, get) =
       updatedAt: now,
       organizationId,
     }
+    // Rulebook 1.11.0: a job-linked manager booking carries its job's collection (`jobCollection`).
+    if (booking.locationType === 'project' || booking.locationType === 'small_work') {
+      next.jobCollection = booking.jobCollection ?? (await resolveBookingJobCollection(organizationId, booking.locationId)) ?? undefined
+    }
     const payload = serializeManagerSiteBooking({ ...next, organizationId })
     // Rulebook §1 / 1.9.0: a create carries write metadata (`writeMetadataFields`).
     await setDoc(
@@ -198,6 +205,15 @@ export const useManagerScheduleStore = create<ManagerScheduleState>((set, get) =
       date: londonMidnight(updates.date || existing.date, organizationZoneOr()),
       updatedAt: new Date(),
       organizationId,
+    }
+    if (next.locationType === 'project' || next.locationType === 'small_work') {
+      const sameJob = String(next.locationId ?? '').toLowerCase() === String(existing.locationId ?? '').toLowerCase()
+      next.jobCollection =
+        (sameJob ? updates.jobCollection ?? existing.jobCollection : updates.jobCollection) ??
+        (await resolveBookingJobCollection(organizationId, next.locationId)) ??
+        undefined
+    } else {
+      next.jobCollection = undefined
     }
     const payload = serializeManagerSiteBooking({ ...next, organizationId })
     // Rulebook 1.9.0 `managerSiteBookingUpdateWriteFields`: only the changed fields, with write metadata; an edit of

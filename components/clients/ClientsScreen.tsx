@@ -5,6 +5,7 @@
 
 'use client'
 
+import { jobKind } from '@/lib/canonical/staffAccess'
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
@@ -24,7 +25,6 @@ import { useTaskStore } from '@/lib/stores/taskStore'
 import { canViewClients, hasAdminAccess, isOperativeMode } from '@/lib/permissions'
 import { consumeCreateQuery } from '@/lib/navigation/createMenu'
 import { visibleWorks } from '@/lib/access/workAccess'
-import { isSmallWorksJobType } from '@/lib/ios-parity/enums'
 import { useDeadlineAssignedProjectIds } from '@/lib/deadlines/useDeadlineAssignedProjectIds'
 import { notifyClientCreated } from '@/lib/firebase/notifyInbox'
 import { EmptyState, IosFormModal, PageHeader } from '@/components/ios/primitives'
@@ -333,7 +333,7 @@ export function ClientsScreen({ selectedId }: { selectedId?: string }) {
                 key={project.id}
                 project={project}
                 href={
-                  isSmallWorksJobType(project.jobType || '')
+                  jobKind(project, project.collection) === 'smallWorks'
                     ? `/dashboard/small-works/${project.id}`
                     : `/dashboard/projects/${project.id}`
                 }

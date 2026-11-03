@@ -1,6 +1,6 @@
 import { Timestamp } from 'firebase/firestore'
 import type { Client, Project } from '@/types'
-import { isSmallWorksJobType } from '@/lib/ios-parity/enums'
+import { jobKind } from '@/lib/canonical/staffAccess'
 
 export type ProjectSaveInput = {
   id: string
@@ -80,10 +80,13 @@ export function buildProjectFirestorePayload(input: ProjectSaveInput): Record<st
   return payload
 }
 
+/**
+ * The collection a NEW job is saved to when the screen did not say (rulebook 1.11.0 `jobKind` with no collection
+ * known). An existing job is always saved back to the collection it was read from (`Project.collection`).
+ */
 export function projectCollectionName(jobType: string, isSmallWorksCollection?: boolean): 'projects' | 'smallWorks' {
   if (isSmallWorksCollection) return 'smallWorks'
-  if (isSmallWorksJobType(jobType)) return 'smallWorks'
-  return 'projects'
+  return jobKind({ jobType }, null)
 }
 
 export function projectToSaveInput(project: Project, organizationId: string): ProjectSaveInput {

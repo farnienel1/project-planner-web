@@ -323,15 +323,39 @@ service cloud.firestore {
       (v is path && string(v).lower().matches('.*/organizations/' + org + '$'));
   }
   // The caller's role in THIS organisation: 'admin' | 'manager' | 'operative' | 'member' | the listed role | ''.
-  // Operative mode wins (lib/canonical staffAccess: operative mode is never staff).
+  // 1.11.0: an admin is an admin (no operative mode, permissionLevelOf); otherwise operative mode wins
+  // (lib/canonical staffAccess: operative mode is never staff).
   function callerOrgRole(organizationId) {
     let listed = callerListedRole(organizationId);
     let home = callerHomeData();
     return homeOrgIs(home, organizationId) ? (
-      isOperativeProfile(home) ? 'operative' : (
-        (listed == 'admin' || adminLikeUser(home)) ? 'admin' : (materialManagerLikeUser(home) ? 'manager' : 'member')
+      (listed == 'admin' || adminLikeUser(home)) ? 'admin' : (
+        isOperativeProfile(home) ? 'operative' : (materialManagerLikeUser(home) ? 'manager' : 'member')
       )
     ) : listed;
+  }
+
+  // Rulebook 1.11.0 (lib/canonical/inviteAccept.ts invitationRole): the role an invitation gives — its `role`, else
+  // the kind its permissions give, else 'member'.
+  function invitationRole(inv) {
+    let perms = inv.get('permissions', {});
+    return inv.get('role', '') in ['admin', 'manager', 'operative', 'member'] ? inv.get('role', '') : (
+      !(perms is map) || perms.size() == 0 ? 'member' : (
+        perms.get('adminAccess', false) == true ? 'admin' : (perms.get('operativeMode', false) == true ? 'operative' : 'manager')
+      )
+    );
+  }
+
+  // A genuine, unused invitation (`invitations/{invId}`) to the signed-in email for this organisation, marked used in
+  // the same batch (inviteMembershipWrites). The one source of an accepting person's access in that organisation.
+  function inviteBeingAccepted(invId, organizationId) {
+    let path = /databases/(default)/documents/invitations/$(invId);
+    return invId is string && invId.size() > 0 && !invId.matches('.*/.*') && exists(path) &&
+      get(path).data.get('isUsed', false) != true &&
+      getAfter(path).data.get('isUsed', false) == true &&
+      get(path).data.get('organizationId', '') == organizationId &&
+      request.auth.token.email is string &&
+      string(get(path).data.get('email', '')).lower() == request.auth.token.email.lower();
   }
   // Admin or manager of THIS organisation, never operative mode (lib/canonical/staffAccess.ts isStaffAccount).
   function isOrgManagerOrAdmin(organizationId) {
@@ -677,6 +701,25 @@ service cloud.firestore {
   }
 
 
+  // Rulebook 1.11.0 (rosterMembersForOrganization): the reader's own company, from their users document
+  // (`organizationId` as an id, an "organizations/<id>" string or a reference).
+  function callerHomeOrgId() {
+    let v = callerHomeData().get('organizationId', '');
+    let raw = v is path ? string(v) : (v is string ? v : '');
+    let parts = raw.split('/');
+    return parts.size() > 0 ? parts[parts.size() - 1].trim() : '';
+  }
+  // The person is anchored on the reader's company: a key of its `members` map or its creator. Lets co-members read a
+  // member whose own users document names another company (a super admin who last opened another one).
+  function anchoredInCallerCompany(userId) {
+    let org = callerHomeOrgId();
+    let path = /databases/(default)/documents/organizations/$(org);
+    return org != '' && !org.matches('.*[.].*') && exists(path) && (
+      get(path).data.get('members', {}).get(userId, null) != null ||
+      get(path).data.get('creatorUserId', '') == userId
+    );
+  }
+
   function canReadUserDocument(userId) {
     return request.auth != null && (
       isPlatformOwner() ||
@@ -687,7 +730,8 @@ service cloud.firestore {
        resource.data.email.lower() == request.auth.token.email.lower()) ||
       (resource != null &&
        'organizationId' in resource.data &&
-       canAccessOrganization(resource.data.organizationId))
+       canAccessOrganization(resource.data.organizationId)) ||
+      anchoredInCallerCompany(userId)
     );
   }
   
@@ -911,11 +955,29 @@ service cloud.firestore {
             (!('status' in membershipChangedKeys()) || request.resource.data.status == 'active') &&
             writeMetadataValidWhenPresent();
         }
+        // 1.11.0 (inviteMembershipWrites): accepting a genuine, unused invitation creates the membership with exactly
+        // the invitation's role and permissions — nothing more.
+        function membershipFromInvitation() {
+          let next = request.resource.data;
+          let inv = get(/databases/(default)/documents/invitations/$(next.get('invitationId', ''))).data;
+          return resource == null && request.auth.uid == userId &&
+            next.keys().hasOnly(['organizationId', 'role', 'status', 'isSuperAdmin', 'accountActive', 'permissions',
+              'invitationId', 'invitedBy', 'invitedAt', 'acceptedAt', 'updatedAt']) &&
+            inviteBeingAccepted(next.get('invitationId', ''), membershipOrgId) &&
+            next.get('organizationId', membershipOrgId) == membershipOrgId &&
+            next.get('role', '') == invitationRole(inv) &&
+            next.get('permissions', {}) == inv.get('permissions', {}) &&
+            next.get('isSuperAdmin', false) == false &&
+            next.get('accountActive', true) == true &&
+            next.get('status', 'active') == 'active' &&
+            next.get('invitedBy', inv.get('invitedBy', '')) == inv.get('invitedBy', '');
+        }
         allow read: if request.auth != null && request.auth.uid == userId;
         allow create, update: if request.auth != null && (
           isOrgAdminViaMembersMap(membershipOrgId) ||
           isOrganizationAdmin(membershipOrgId) ||
-          (request.auth.uid == userId && membershipSelfWriteAllowed())
+          (request.auth.uid == userId && membershipSelfWriteAllowed()) ||
+          membershipFromInvitation()
         );
         allow delete: if request.auth != null && (
           request.auth.uid == userId ||
@@ -1004,6 +1066,19 @@ service cloud.firestore {
           userOrgIdMatchesPath(organizationId)
         );
       }
+      // 1.11.0 (inviteMembershipWrites): the person accepting an invitation adds only `members.{their uid}`, with the
+      // invitation's role, in the batch that creates their membership from it and marks it used.
+      function orgRootInviteJoin() {
+        let membership = /databases/(default)/documents/users/$(request.auth.uid)/orgMemberships/$(organizationId);
+        let invId = getAfter(membership).data.get('invitationId', '');
+        let inv = get(/databases/(default)/documents/invitations/$(invId)).data;
+        return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members']) &&
+          request.resource.data.get('members', {}).diff(resource.data.get('members', {})).affectedKeys()
+            .hasOnly([request.auth.uid]) &&
+          resource.data.get('members', {}).get(request.auth.uid, null) == null &&
+          inviteBeingAccepted(invId, organizationId) &&
+          request.resource.data.members[request.auth.uid] == invitationRole(inv);
+      }
       allow update: if billingUnchanged() && (
                      isPlatformOwner() || (
                        request.auth != null &&
@@ -1011,6 +1086,8 @@ service cloud.firestore {
                          orgRootCreatorUnchanged() ||
                          (orgRootCallerIsSuperAdmin() && orgRootNewCreatorIsAdmin())
                        )
+                     ) || (
+                       request.auth != null && orgRootInviteJoin()
                      )
                    );
       
@@ -1171,6 +1248,18 @@ service cloud.firestore {
           (jobId != jobId.lower() && callerManagesJobAt(jobId.lower()))
         );
       }
+      // 1.11.0: the job in one collection (`jobCollection` on the booking), any spelling of its id.
+      function callerManagesJobInAt(kind, jobId) {
+        let path = /databases/(default)/documents/organizations/$(organizationId)/$(kind)/$(jobId);
+        return exists(path) && jobListsCaller(get(path).data);
+      }
+      function callerManagesJobIn(kind, jobId) {
+        return jobId is string && jobId.size() > 0 && !jobId.matches('.*/.*') && kind in ['projects', 'smallWorks'] && (
+          callerManagesJobInAt(kind, jobId) ||
+          (jobId != jobId.upper() && callerManagesJobInAt(kind, jobId.upper())) ||
+          (jobId != jobId.lower() && callerManagesJobInAt(kind, jobId.lower()))
+        );
+      }
       function bookingJobId(collection, data) {
         return collection == 'managerSiteBookings'
           ? data.get('locationId', '')
@@ -1179,29 +1268,39 @@ service cloud.firestore {
       function bookingHasJob(collection, data) {
         return collection != 'managerSiteBookings' || data.get('locationType', '') in ['project', 'small_work'];
       }
-      // The job part of canWriteBooking for a manager: the booking's job is one they manage; a manager site booking
-      // with no job is their own.
+      // 1.11.0 (bookingJobCollection): `jobCollection` is 'projects' or 'smallWorks', only on a booking with a job.
+      function bookingJobCollectionValid(collection, data) {
+        return !('jobCollection' in data) ||
+          (data.jobCollection in ['projects', 'smallWorks'] && bookingHasJob(collection, data));
+      }
+      // The job part of canWriteBooking for a manager: the booking's job is one they manage (in the collection its
+      // `jobCollection` names, when it carries one); a manager site booking with no job is their own.
       function managerMayWriteBookingData(collection, data) {
         return bookingHasJob(collection, data)
-          ? callerManagesJob(bookingJobId(collection, data))
+          ? ('jobCollection' in data
+              ? callerManagesJobIn(data.jobCollection, bookingJobId(collection, data))
+              : callerManagesJob(bookingJobId(collection, data)))
           : data.get('userId', '') == request.auth.uid;
       }
       // `op`: 'create' (request.resource), 'update' (stored and written), 'delete' (stored).
       function bookingWriteAllowed(collection, op) {
         let role = callerOrgRole(organizationId);
-        return role == 'admin' || (
-          role == 'manager' && (
-            op == 'create' ? managerMayWriteBookingData(collection, request.resource.data) : (
-              managerMayWriteBookingData(collection, resource.data) && (
-                op != 'update' ||
-                (bookingJobId(collection, request.resource.data) == bookingJobId(collection, resource.data) &&
-                 bookingHasJob(collection, request.resource.data) == bookingHasJob(collection, resource.data) &&
-                 request.resource.data.get('userId', '') == resource.data.get('userId', '')) ||
-                managerMayWriteBookingData(collection, request.resource.data)
+        return (op == 'delete' || bookingJobCollectionValid(collection, request.resource.data)) && (
+          role == 'admin' || (
+            role == 'manager' && (
+              op == 'create' ? managerMayWriteBookingData(collection, request.resource.data) : (
+                managerMayWriteBookingData(collection, resource.data) && (
+                  op != 'update' ||
+                  (bookingJobId(collection, request.resource.data) == bookingJobId(collection, resource.data) &&
+                   bookingHasJob(collection, request.resource.data) == bookingHasJob(collection, resource.data) &&
+                   request.resource.data.get('jobCollection', '') == resource.data.get('jobCollection', '') &&
+                   request.resource.data.get('userId', '') == resource.data.get('userId', '')) ||
+                  managerMayWriteBookingData(collection, request.resource.data)
+                )
               )
             )
-          )
-        ) || isPlatformOwner();
+          ) || isPlatformOwner()
+        );
       }
       // The tombstone of a stored booking: the people who may delete it (read as it was before the batch).
       function bookingTombstoneAllowed(collection, bookingId) {
@@ -1232,10 +1331,15 @@ service cloud.firestore {
       }
       // Cheap tests first: when the rules cannot prove a query from its filters, they are evaluated document by
       // document against the 1000-expression budget, so a toggle or own-booking match must not pay for a job lookup.
+      // 1.11.0 (owner decisions round 3): reads are limited by job kind. A manager with the Projects / Small works
+      // toggle reads the bookings whose `jobCollection` is that kind (apps query `jobCollection == <kind>`); a booking
+      // without `jobCollection` (written before 1.11.0, until the backfill) is read only by admins, the job's managers
+      // and the people it books.
       function bookingReadAllowed(collection) {
         let role = callerOrgRole(organizationId);
         return role == 'admin' ||
-          (role == 'manager' && (callerJobToggle(role, 'projects') || callerJobToggle(role, 'smallWorks'))) ||
+          (role == 'manager' && resource.data.get('jobCollection', '') in ['projects', 'smallWorks'] &&
+            callerJobToggle(role, resource.data.get('jobCollection', ''))) ||
           (collection == 'managerSiteBookings' && role == 'manager' && resource.data.userId == request.auth.uid) ||
           (collection == 'bookings' && role != '' && callerOwnsBookingId(resource.data.operativeId)) ||
           (role == 'manager' && callerManagesJob(
@@ -1575,10 +1679,11 @@ service cloud.firestore {
           return hbRequesterUid(data) == request.auth.uid ||
             data.get('operativeId', null) == request.auth.uid;
         }
-        // The caller's own users document says operative mode (no document: not operative).
+        // The caller's own users document says operative mode (no document: not operative). 1.11.0: an admin has
+        // no operative mode (permissionLevelOf), so a stray flag on an admin does not count.
         function hbCallerIsOperative() {
           return exists(/databases/(default)/documents/users/$(request.auth.uid)) &&
-            isOperativeProfile(hbCaller());
+            isOperativeProfile(hbCaller()) && !adminLikeUser(hbCaller());
         }
         // lib/canonical/leaveRequests.ts canDecideLeave: never the requester's own request (admins
         // included). The requester's line manager; otherwise an admin not in operative mode. With no
@@ -1593,7 +1698,7 @@ service cloud.firestore {
         // super admin outside operative mode with no current line manager (self-approved). Having no line
         // manager does not self-book an operative or manager (their request waits for an admin).
         function hbCallerSelfBooks() {
-          return !isOperativeProfile(hbCaller()) && (
+          return !hbCallerIsOperative() && (
             staffFlag(hbCaller(), 'annualLeaveSelfBook') ||
             (hbIsAdmin() && !hasCurrentLineManager(request.auth.uid, hbCaller()))
           );

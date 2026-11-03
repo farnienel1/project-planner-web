@@ -132,3 +132,127 @@ export function inviteAcceptWrites(input: {
     joinsAnotherCompany: false,
   }
 }
+
+// MARK: - What accepting applies (1.11.0, owner decisions round 3)
+
+function idList(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  const out: string[] = []
+  for (const item of value) {
+    const id = text(item)
+    if (id && !out.includes(id)) out.push(id)
+  }
+  return out
+}
+
+/**
+ * The role an invitation gives in its organisation (§11, §14): its `role` (`admin` | `manager` | `operative` |
+ * `member`); else, for an older invitation without one, the kind its `permissions` give (`adminAccess` → admin,
+ * `operativeMode` → operative, else manager); with no permissions either, `member`. The security rules compute the
+ * same (`invitationRole`).
+ */
+export function invitationRole(invitation: Record<string, unknown> | null | undefined): 'admin' | 'manager' | 'operative' | 'member' {
+  const row = record(invitation) ?? {}
+  const stored = text(row.role).toLowerCase()
+  if (stored === 'admin' || stored === 'manager' || stored === 'operative' || stored === 'member') return stored
+  const permissions = record(row.permissions) ?? {}
+  if (Object.keys(permissions).length === 0) return 'member'
+  if (permissions.adminAccess === true) return 'admin'
+  if (permissions.operativeMode === true) return 'operative'
+  return 'manager'
+}
+
+/**
+ * The fields accepting writes from the invitation onto a new `users/{authUid}` (mode `newProfile`; rulebook §11,
+ * 1.11.0): exactly what Add User stored on it — `role`, the `permissions` map (and its flags at the top level, as
+ * both apps read them), `employmentType`, one pay basis with its rate, and the line manager (`assignedManagerUserIds`
+ * with `assignedManagerUserId`, or `hasNoLineManager: true`). Nothing from another company's profile.
+ */
+export function invitationProfileFields(invitation: Record<string, unknown> | null | undefined): Record<string, unknown> {
+  const row = record(invitation) ?? {}
+  const out: Record<string, unknown> = { role: invitationRole(row) }
+  const permissions = record(row.permissions)
+  if (permissions) {
+    out.permissions = { ...permissions }
+    for (const [key, value] of Object.entries(permissions)) if (typeof value === 'boolean') out[key] = value
+  }
+  const employment = text(row.employmentType)
+  if (employment) out.employmentType = employment === 'paye' ? 'paye' : 'self_employed'
+  const basis = text(row.payBasis)
+  if (basis === 'hourly' && finite(row.hourlyRate) != null) {
+    out.payBasis = 'hourly'
+    out.hourlyRate = finite(row.hourlyRate)
+  } else if (basis === 'day' && finite(row.dayRate) != null) {
+    out.payBasis = 'day'
+    out.dayRate = finite(row.dayRate)
+  }
+  if (row.hasNoLineManager === true) {
+    out.hasNoLineManager = true
+  } else {
+    let managers = idList(row.assignedManagerUserIds)
+    if (managers.length === 0 && text(row.assignedManagerUserId)) managers = [text(row.assignedManagerUserId)]
+    if (managers.length > 0) {
+      out.assignedManagerUserIds = managers
+      out.assignedManagerUserId = managers[0]
+      out.hasNoLineManager = false
+    }
+  }
+  return out
+}
+
+/** Membership keys an accepted invitation writes (and the security rules allow on that create). */
+export const INVITE_MEMBERSHIP_FIELDS = [
+  'organizationId',
+  'role',
+  'status',
+  'isSuperAdmin',
+  'accountActive',
+  'permissions',
+  'invitationId',
+  'invitedBy',
+  'invitedAt',
+  'acceptedAt',
+  'updatedAt',
+] as const
+
+/**
+ * The writes that make an accepted invitation the person's access in the inviting organisation (rulebook §11, §14,
+ * §16; 1.11.0), for an account that already exists in another company (`inviteAcceptWrites` `joinsAnotherCompany`):
+ * one batch of
+ *   - `users/{authUid}/orgMemberships/{orgId}` created with `membership` — the invitation's role
+ *     (`invitationRole`) and its `permissions` map exactly as stored, `status: 'active'`, not super admin, active,
+ *     and `invitationId` naming the invitation;
+ *   - `organizations/{orgId}` `members.{authUid}` = that role (`membersField`, `role`);
+ *   - `invitations/{id}` marked used (`invitationUsedWriteFields`).
+ * The security rules accept it only for a genuine, unused invitation to the signed-in email, with exactly these values
+ * and the invitation marked used in the same batch. Pay and the line manager stay on the placeholder Add User wrote
+ * (the in-organisation row). Null without an organisation, invitation id or account id.
+ */
+export function inviteMembershipWrites(input: {
+  invitation: Record<string, unknown> | null | undefined
+  invitationId: string
+  authUid: string
+  now: unknown
+}): { organizationId: string; membership: Record<string, unknown>; membersField: string; role: string } | null {
+  const row = record(input?.invitation) ?? {}
+  const organizationId = text(row.organizationId)
+  const invitationId = text(input?.invitationId)
+  const authUid = text(input?.authUid)
+  if (!organizationId || !invitationId || !authUid) return null
+  const role = invitationRole(row)
+  const membership: Record<string, unknown> = {
+    organizationId,
+    role,
+    status: 'active',
+    isSuperAdmin: false,
+    accountActive: true,
+    permissions: { ...(record(row.permissions) ?? {}) },
+    invitationId,
+    invitedAt: input.now,
+    acceptedAt: input.now,
+    updatedAt: input.now,
+  }
+  const invitedBy = text(row.invitedBy)
+  if (invitedBy) membership.invitedBy = invitedBy
+  return { organizationId, membership, membersField: `members.${authUid}`, role }
+}

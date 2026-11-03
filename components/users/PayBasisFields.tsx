@@ -1,5 +1,6 @@
 'use client'
 
+import { PAY_BASIS_DAY_HELP, PAY_BASIS_HOURLY_HELP, PAY_BASIS_SAVE_NOTE } from '@/lib/canonical/payRate'
 import { FormInput } from '@/components/forms/FormShell'
 import { SegmentedControl } from '@/components/ui/controls'
 import { MONEY_SAVE_MAX, parseBoundedNumber } from '@/lib/security/boundedValue'
@@ -7,10 +8,9 @@ import { readStoredRates } from '@/lib/timesheets/payBasis'
 import { currencySymbol } from '@/lib/canonical'
 import { useOrganizationCurrency } from '@/lib/stores/organizationDocumentStore'
 
-const DAY_HELP =
-  'Day rate pays a share of the standard day. This person cannot also have an hourly rate. Other people can still be paid hourly.'
-const HOURLY_HELP =
-  'Hourly pay is worked hours × this rate, including 15-minute blocks. This person cannot also have a day rate. Other people can still be on a day rate.'
+// Rulebook 1.11.0 §8: the pay copy is the rulebook's, so web and iOS say the same (one basis; saving one removes the other).
+const DAY_HELP = PAY_BASIS_DAY_HELP
+const HOURLY_HELP = PAY_BASIS_HOURLY_HELP
 
 export function PayBasisFields({
   payBasis,
@@ -60,6 +60,7 @@ export function PayBasisFields({
         <span className="text-sm font-semibold text-[var(--ink2)]">{hourly ? '/hr' : '/day'}</span>
       </div>
       <p className="text-[12.5px] leading-relaxed text-[var(--ink3)]">{hourly ? HOURLY_HELP : DAY_HELP}</p>
+      <p className="text-[12.5px] leading-relaxed text-[var(--ink3)]">{PAY_BASIS_SAVE_NOTE}</p>
     </div>
   )
 }

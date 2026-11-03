@@ -18,15 +18,15 @@ import { emptyDayRateHistory, type OperativeDayRateHistoryCollection } from '@/l
 import { findUserAndOperative, resolveDisplayName, resolvePersonRole, resolvePersonTrade } from '@/lib/weekly-report/weeklyReportPayroll'
 import { mergeDuplicatePersonWeeks, type ApprovedTimesheetWeek } from '@/lib/weekly-report/timesheetFeed'
 
-/** Rulebook 1.10.0 (M6): `timesheetParticipant` on the period's first day — the same people as the reminders. */
-function participatesInPeriod(user: User, day: Date, timeZone: string): boolean {
+/** Rulebook 1.11.0: `timesheetParticipant` over the whole period (`showsMyTimesheets`) — self-employed on a day of it. */
+function participatesInPeriod(user: User, period: { start: Date; end: Date }, timeZone: string): boolean {
   return timesheetParticipant(
     {
       ...user,
       name: `${user.firstName ?? ''} ${user.surname ?? ''}`.trim(),
       operativeMode: user.permissions?.operativeMode === true,
     },
-    day,
+    { startDayKey: dayKey(period.start, timeZone), endDayKey: dayKey(period.end, timeZone) },
     timeZone
   )
 }
@@ -70,7 +70,7 @@ export async function loadWeeklyReportTimesheetFeed({
   const weeks: ApprovedTimesheetWeek[] = []
 
   for (const user of users) {
-    if (!periods.some((period) => participatesInPeriod(user, period.start, timeZone))) continue
+    if (!periods.some((period) => participatesInPeriod(user, period, timeZone))) continue
     const rows = await listTimesheetStates(organizationId, user.id, 80)
     const byStart = new Map(rows.map((row) => [dayKey(row.weekStart, timeZone), row.draft]))
     const { operative } = findUserAndOperative(users, operatives, { userId: user.id })

@@ -26,6 +26,7 @@ import { useAuthStore } from '@/lib/stores/authStore'
 import { parseOrgUser } from '@/lib/firebase/parseUser'
 import { operativeRecordForUser } from '@/lib/operatives/operativeRosterUtils'
 import { applyAccountTypeChange } from '@/lib/staff/accountTypeChange'
+import { accountTypeChangeWrites } from '@/lib/canonical/permissionLevels'
 import { parseFormerUserIds } from '@/lib/canonical'
 import { savePartialDocument } from '@/lib/firebase/partialWrite'
 import { operativeRowWriteFields } from '@/lib/canonical/peopleDocuments'
@@ -53,6 +54,17 @@ interface UserStoreState {
   deleteUser: (userId: string, opts?: { organizationId?: string; email?: string }) => Promise<void>
   sendPasswordReset: (email: string) => Promise<void>
   applyAccountType: (user: User, accountType: 'operative' | 'manager' | 'admin') => User
+  /**
+   * Rulebook 1.11.0 `accountTypeChangeWrites`: write the new user type to every document that decides it in this
+   * organisation (users docs, `members.{uid}`, the membership). Throws the rulebook's message when refused.
+   */
+  changeAccountType: (
+    user: User,
+    accountType: 'operative' | 'manager' | 'admin',
+    organizationId: string,
+    roster: ReadonlyArray<User>,
+    permissions?: object | null
+  ) => Promise<string | null>
   syncLinkedOperative: (organizationId: string, user: User, operatives: Operative[]) => Promise<void>
 }
 
@@ -387,6 +399,32 @@ export const useUserStore = create<UserStoreState>(() => ({
   },
 
   applyAccountType: (user, accountType) => applyAccountTypeChange(user, accountType),
+
+  changeAccountType: async (user, accountType, organizationId, roster, permissions) => {
+    const stored = await getDoc(doc(db, 'users', user.id))
+    const person = { ...(stored.exists() ? (stored.data() as Record<string, unknown>) : {}), id: user.id, email: user.email }
+    const plan = accountTypeChangeWrites({
+      person,
+      kind: accountType,
+      organizationId,
+      roster: roster.map((row) => ({ id: row.id, email: row.email, organizationId: row.organizationId })),
+      permissions: (permissions as Record<string, unknown> | null | undefined) ?? null,
+    })
+    if (!plan.ok) throw new Error(plan.message)
+    const batch = writeBatch(db)
+    const metadata = writeMetadataFields(auth?.currentUser?.uid, 'web') ?? {}
+    for (const write of plan.writes) {
+      if (write.kind === 'membership') continue
+      const ref = doc(db, ...(write.path.split('/') as [string, ...string[]]))
+      batch.update(ref, write.kind === 'userProfile' ? { ...write.fields, ...metadata, updatedAt: serverTimestamp() } : write.fields)
+    }
+    await batch.commit()
+    for (const write of plan.writes) {
+      if (write.kind !== 'membership') continue
+      await writeMembershipFlags(user.id, organizationId, { role: write.role, ...write.permissions })
+    }
+    return plan.note
+  },
 
   syncLinkedOperative: async (organizationId, user, operatives) => {
     if (!user.permissions.operativeMode) return

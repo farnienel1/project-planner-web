@@ -1,29 +1,54 @@
 /**
- * iOS parity: Core/TimesheetPayrollPolicy.swift canAccessMyTimesheets /
- * shouldAppearInOperativeTimesheetRoster
+ * My Timesheets and the User Timesheets roster for a payment run. Rulebook 1.11.0 (owner decisions round 3): a person
+ * has a timesheet for a period only when they are self-employed on at least one day of it — canonical
+ * `showsMyTimesheets` / `timesheetDaysForPerson`. A PAYE person never has My Timesheets; their PAYE days are not
+ * timesheet lines.
  */
 import type { User } from '@/types'
 import type { OrgInvoicingSettings } from '@/lib/settings/organizationSettings'
 import { LONDON_TIME_ZONE, addLondonDays, dayKey, londonMidnight } from '@/lib/ios-parity/londonTime'
-import { employmentTypeOnDay, isBillableSelfEmployedDay } from '@/lib/ios-parity/employmentType'
-import { computeInvoicingPeriod, eachLondonDay } from '@/lib/warnings/warningLookahead'
-import { payDateForPeriodEnd } from '@/lib/timesheets/paymentRunCopy'
+import { computeInvoicingPeriod } from '@/lib/warnings/warningLookahead'
+import { showsMyTimesheets, timesheetDaysForPerson, type TimesheetPerson } from '@/lib/canonical/peopleDocuments'
 
+function timesheetPerson(
+  user: Pick<User, 'employmentType' | 'employmentTypeTransitionFrom' | 'employmentTypeEffectiveAt'> &
+    Partial<Pick<User, 'isActive' | 'email' | 'firstName' | 'surname'>>
+): TimesheetPerson {
+  return {
+    isActive: user.isActive,
+    email: user.email,
+    name: `${user.firstName ?? ''} ${user.surname ?? ''}`.trim(),
+    employmentType: user.employmentType,
+    employmentTypeTransitionFrom: user.employmentTypeTransitionFrom,
+    employmentTypeEffectiveAt: user.employmentTypeEffectiveAt,
+  }
+}
+
+function periodDays(start: Date, end: Date, timeZone: string) {
+  return { startDayKey: dayKey(start, timeZone), endDayKey: dayKey(end, timeZone) }
+}
+
+/** My Timesheets for the active payment run (canonical `showsMyTimesheets`). */
 export function canAccessMyTimesheetsWithPolicy(
-  user: Pick<User, 'employmentType' | 'employmentTypeTransitionFrom' | 'employmentTypeEffectiveAt'>,
+  user: Pick<User, 'employmentType' | 'employmentTypeTransitionFrom' | 'employmentTypeEffectiveAt'> &
+    Partial<Pick<User, 'isActive' | 'email' | 'firstName' | 'surname'>>,
   invoicing: OrgInvoicingSettings,
   referenceDate: Date = new Date(),
   timeZone: string = LONDON_TIME_ZONE
 ): boolean {
-  if (employmentTypeOnDay(user, referenceDate, timeZone) === 'self_employed') return true
   const period = computeInvoicingPeriod(referenceDate, invoicing, timeZone)
-  const hasSelfEmployedDays = eachLondonDay(period.start, period.end, timeZone).some((day) =>
-    isBillableSelfEmployedDay(user, day, timeZone)
-  )
-  if (!hasSelfEmployedDays) return false
-  const payDate = payDateForPeriodEnd(period.end, invoicing, timeZone)
-  if (!payDate) return true
-  return dayKey(referenceDate, timeZone) <= dayKey(payDate, timeZone)
+  return showsMyTimesheets(timesheetPerson(user), periodDays(period.start, period.end, timeZone), timeZone)
+}
+
+/** The days of a period that count on the person's sheet (canonical `timesheetDaysForPerson`). */
+export function timesheetDayKeysForPeriod(
+  user: Pick<User, 'employmentType' | 'employmentTypeTransitionFrom' | 'employmentTypeEffectiveAt'> &
+    Partial<Pick<User, 'isActive' | 'email' | 'firstName' | 'surname'>>,
+  periodStart: Date,
+  periodEnd: Date,
+  timeZone: string = LONDON_TIME_ZONE
+): string[] {
+  return timesheetDaysForPerson(timesheetPerson(user), periodDays(periodStart, periodEnd, timeZone), timeZone)
 }
 
 /** Pay runs whose calendar window overlaps a weekly-report range. iOS payPeriodsOverlapping. */
@@ -50,31 +75,14 @@ export function payPeriodsOverlapping(
   return periods
 }
 
-export function participatesInTimesheets(
-  user: Pick<User, 'timesheetsEnabled' | 'employmentType' | 'employmentTypeTransitionFrom' | 'employmentTypeEffectiveAt'>,
-  referenceDate: Date = new Date(),
-  timeZone: string = LONDON_TIME_ZONE
-): boolean {
-  if (user.timesheetsEnabled === true) return true
-  return employmentTypeOnDay(user, referenceDate, timeZone) === 'self_employed'
-}
-
+/** A row on User Timesheets for this period (canonical `showsMyTimesheets`; PAYE for the whole period: no row). */
 export function shouldAppearInOperativeTimesheetRoster(
   user: User,
   periodStart: Date,
   periodEnd: Date,
-  invoicing: OrgInvoicingSettings,
-  referenceDate: Date = new Date(),
+  _invoicing: OrgInvoicingSettings,
+  _referenceDate: Date = new Date(),
   timeZone: string = LONDON_TIME_ZONE
 ): boolean {
-  if (!user.isActive) return false
-  if (participatesInTimesheets(user, referenceDate, timeZone)) return true
-  if (employmentTypeOnDay(user, referenceDate, timeZone) === 'self_employed') return true
-  const hasSelfEmployedDays = eachLondonDay(periodStart, periodEnd, timeZone).some((day) =>
-    isBillableSelfEmployedDay(user, day, timeZone)
-  )
-  if (!hasSelfEmployedDays) return false
-  const payDate = payDateForPeriodEnd(periodEnd, invoicing, timeZone)
-  if (!payDate) return true
-  return dayKey(londonMidnight(referenceDate, timeZone), timeZone) <= dayKey(payDate, timeZone)
+  return showsMyTimesheets(timesheetPerson(user), periodDays(periodStart, periodEnd, timeZone), timeZone)
 }

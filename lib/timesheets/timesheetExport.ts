@@ -135,6 +135,7 @@ export function invoiceLinesForTimesheet({
   extrasMode,
   standardDayHours = 8,
   currencyCode,
+  timesheetDays,
 }: {
   payroll: TimesheetPayrollSummary
   draft: TimesheetDraft
@@ -143,6 +144,8 @@ export function invoiceLinesForTimesheet({
   standardDayHours?: number
   /** Organisation currency (`formatMoney`). Leave rows are never on the invoice. */
   currencyCode?: string
+  /** Rulebook 1.11.0 `timesheetDaysForPerson`: rows on another (PAYE) day are left out. */
+  timesheetDays?: ReadonlyArray<string> | null
 }): TimesheetInvoiceLine[] {
   // Rulebook 1.10.0 (H1): which rows and amounts are the rulebook's `timesheetInvoiceRows` — the signed snapshot
   // first, then live lines with their reviews and entry decisions; this function only formats them.
@@ -158,6 +161,8 @@ export function invoiceLinesForTimesheet({
     sheet,
     payrollLines: payroll.lineItems,
     extrasMode: extrasMode === 'export' ? 'decided' : 'raw',
+    timesheetDays: timesheetDays ?? null,
+    timeZone,
   })
   const rows: TimesheetInvoiceLine[] = []
   for (const row of decided) {
