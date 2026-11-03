@@ -891,6 +891,11 @@ export function MyScheduleSelfBookingScreen({
           projectName={locationName(editingManagerBooking)}
           saving={savingEdit}
           payroll={payrollPolicy}
+          // 1.16.0 §5 (`bookingLeaveConflicts`): moving your own booking onto a day you have leave asks first.
+          conflictsFor={leaveCheck.checkFor(
+            { id: userId, userId, name: 'You' },
+            managerSiteBookingToScheduleBooking(editingManagerBooking, projectsById, organizationId).date
+          )}
           onSave={(updates) => saveEditedBooking(editingManagerBooking, updates)}
           onDelete={() => deleteEditedBooking(editingManagerBooking)}
           onClose={() => setEditingBookingId(null)}

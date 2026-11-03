@@ -21,6 +21,7 @@ import {
 import { isRoleOnlyPersonName } from '@/lib/staff/userRosterUtils'
 import { BookingStatus, type Booking } from '@/types'
 import { BookingEditSheet } from '@/components/schedule/BookingEditSheet'
+import { useLeaveConflictCheck } from '@/components/scheduling/useLeaveConflictCheck'
 import { AddWeekToCalendarButton } from '@/components/schedule/AddWeekToCalendarButton'
 import {
   MyScheduleTotalHoursCard,
@@ -115,6 +116,22 @@ function SlotPill({ slot }: { slot: string }) {
       {slotLabel(slot)}
     </span>
   )
+}
+
+/**
+ * Rulebook 1.16.0 §5 (`bookingLeaveConflicts`): editing a booking from the schedule asks about the person's annual
+ * leave when the slot or times change, like every other booking flow (purple rows, tick or ✕).
+ */
+function LeaveCheckedBookingEditSheet(props: Parameters<typeof BookingEditSheet>[0]) {
+  const leaveCheck = useLeaveConflictCheck()
+  const personId = String(props.booking.operativeId || '')
+  const conflictsFor = personId
+    ? leaveCheck.checkFor(
+        { id: personId, userId: personId, operativeIds: [personId], name: props.operativeName || 'This person' },
+        new Date(props.booking.date)
+      )
+    : undefined
+  return <BookingEditSheet {...props} conflictsFor={conflictsFor} />
 }
 
 function BookingCard({
@@ -251,7 +268,7 @@ function BookingCard({
     </div>
     {/* Deleting a labour booking is admin only (rulebook §2, §16): without onDelete the sheet cancels it. */}
     {editing && onSave && (
-      <BookingEditSheet
+      <LeaveCheckedBookingEditSheet
         booking={booking}
         operativeName={operativeName}
         projectName={projectName}
