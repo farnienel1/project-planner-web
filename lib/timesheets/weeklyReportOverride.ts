@@ -15,6 +15,7 @@ import {
   effectivePayrollAmount,
   effectivePriceWorkAmount,
   isPayrollLineRemoved,
+  draftPayrollLineReview,
 } from '@/lib/timesheets/timesheetAdjustments'
 import { bookingIdFromLineId } from '@/lib/timesheets/payrollLineBookingLookup'
 import {
@@ -163,7 +164,7 @@ function makeOverride(input: WeeklyReportOverrideInput): WeeklyReportOverride {
   const managerHasSigned = Boolean(input.draft.managerSignedAt)
   const lines: WeeklyReportLabourLine[] = []
   for (const line of summary.lineItems) {
-    const review = input.draft.payrollLineReviews[line.id]
+    const review = draftPayrollLineReview(input.draft, line.id)
     if (isPayrollLineRemoved(line, input.draft, managerHasSigned, true)) {
       lines.push(labourLine(line, 'declined', 0, 0, input.managerSiteBookings))
       continue
@@ -196,7 +197,7 @@ function reapplyReviews(existing: WeeklyReportOverride, input: WeeklyReportOverr
   const money = moneyLines(input.draft, managerHasSigned)
   const viewerName = personName(input.viewer)
   const lines = existing.lines.map((line) => {
-    const review = input.draft.payrollLineReviews[line.id]
+    const review = draftPayrollLineReview(input.draft, line.id)
     const decision = review?.decision ?? line.decision
     if (decision === 'declined') {
       return { ...line, amount: 0, days: 0, decision: 'declined' as const }

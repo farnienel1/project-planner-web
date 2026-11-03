@@ -66,6 +66,7 @@ import {
 } from '@/lib/settings/settingsNav'
 import { openAnalyticsConsentSettings } from '@/lib/analytics/analyticsConsent'
 import { DeleteAccountRow } from '@/components/settings/DeleteAccountDialog'
+import { appVersionLabel } from '@/lib/app/appVersion'
 
 // ─── Subpanels ────────────────────────────────────────────────────────────────
 type Panel = SettingsPanel
@@ -671,7 +672,7 @@ export default function SettingsScreen({ initialPanel = 'main' }: { initialPanel
         </button>
       </SettingsCard>
 
-      <p className="text-center text-[11px] text-slate-400">Project Planner · v1.0</p>
+      <p className="text-center text-[11px] text-slate-400">{appVersionLabel(process.env.NEXT_PUBLIC_APP_VERSION)}</p>
     </div>
   )
 }

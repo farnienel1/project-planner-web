@@ -454,15 +454,20 @@ export async function loadVariationTracker(organizationId: string, parentId: str
 export function subscribeVariationTracker(
   organizationId: string,
   parentId: string,
-  onTracker: (tracker: VariationTracker) => void
+  onTracker: (tracker: VariationTracker) => void,
+  onError?: (error: unknown) => void
 ): Unsubscribe {
   if (!db) {
     onTracker(emptyTracker(parentId, 'project'))
     return () => {}
   }
-  return onSnapshot(trackerRef(organizationId, parentId), (snap) => {
-    onTracker(trackerFromFirestore(parentId, snap.exists() ? (snap.data() as Record<string, unknown>) : undefined))
-  })
+  return onSnapshot(
+    trackerRef(organizationId, parentId),
+    (snap) => {
+      onTracker(trackerFromFirestore(parentId, snap.exists() ? (snap.data() as Record<string, unknown>) : undefined))
+    },
+    (error) => onError?.(error)
+  )
 }
 
 async function listParentVariations(organizationId: string, parentId: string): Promise<Variation[]> {

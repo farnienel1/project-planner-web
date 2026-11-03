@@ -4,7 +4,7 @@
  */
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { CheckCircleIcon } from '@heroicons/react/24/solid'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
@@ -57,6 +57,9 @@ export function ProjectVisibilityPage({
     () => new Set(project.hiddenOperativeUserIds ?? [])
   )
   const [saving, setSaving] = useState(false)
+  // The job as this screen opened it (the base the save diffs against).
+  const openedJob = useRef(project)
+  if (openedJob.current.id !== project.id) openedJob.current = project
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -126,7 +129,7 @@ export function ProjectVisibilityPage({
         },
         organization.id
       )
-      await saveProject(input, collection)
+      await saveProject(input, collection, { base: openedJob.current })
       setSaved(true)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to save visibility')

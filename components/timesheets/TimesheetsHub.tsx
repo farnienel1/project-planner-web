@@ -66,9 +66,14 @@ import {
 } from '@/lib/timesheets/timesheetRoutes'
 import {
   emptyDayRateHistory,
-  loadOperativeDayRateHistory,
+  loadOperativeDayRateHistoryOrNull,
   type OperativeDayRateHistoryCollection,
 } from '@/lib/timesheets/dayRateHistoryStorage'
+import {
+  timesheetInputsStatus,
+  type TimesheetInputLoad,
+  type TimesheetInputsState,
+} from '@/lib/timesheets/timesheetInputs'
 import type { User } from '@/types'
 
 const PAYE_DISABLED_BODY =
@@ -115,6 +120,10 @@ export function TimesheetsHub() {
   const [scheduleOptions, setScheduleOptions] = useState<MyScheduleOptions>(DEFAULT_MY_SCHEDULE)
   const [timeZone, setTimeZone] = useState(ianaTimeZoneForCountry('GB'))
   const [history, setHistory] = useState<OperativeDayRateHistoryCollection>(emptyDayRateHistory())
+  // Pay inputs: never price from the defaults or an empty history after a failed or unfinished load.
+  const [detailsLoad, setDetailsLoad] = useState<TimesheetInputLoad>('loading')
+  const [historyLoad, setHistoryLoad] = useState<TimesheetInputLoad>('loading')
+  const [inputsAttempt, setInputsAttempt] = useState(0)
 
   const showMine = user ? canAccessMyTimesheetsWithPolicy(user, invoicing, new Date(), timeZone) : false
   const showTeam = canAccessOperativeTimesheets(user, usersLoading, users)
@@ -136,23 +145,40 @@ export function TimesheetsHub() {
   useEffect(() => {
     if (!organization?.id) return
     let cancelled = false
+    let settled = false
     loadUsers(organization.id)
+    setDetailsLoad('loading')
     const detailsPromise = loadOrganizationDetails(organization.id)
     const applyDetails = (details: Awaited<ReturnType<typeof loadOrganizationDetails>>) => {
-      if (cancelled || !details) return
+      if (cancelled) return
+      if (!details) {
+        setDetailsLoad('failed')
+        return
+      }
+      settled = true
       if (details.payrollTimePolicy) setPayrollPolicy(details.payrollTimePolicy)
       setPayrollPolicyPrior(details.payrollTimePolicyPrior ?? null)
       setPayrollPolicyEffectiveFrom(details.payrollTimePolicyEffectiveFrom ?? null)
       if (details.invoicing) setInvoicing(details.invoicing)
       if (details.myScheduleOptions) setScheduleOptions(details.myScheduleOptions)
       setTimeZone(ianaTimeZoneForCountry(details.countryCode))
+      setDetailsLoad('loaded')
     }
-    void withTimeoutFallback(detailsPromise, 8_000, null).then((details) => applyDetails(details)).catch(() => {})
-    void detailsPromise.then((details) => applyDetails(details)).catch(() => {})
+    // A slow read shows the error with Retry after 8 s; the read keeps running and still applies when it lands.
+    void withTimeoutFallback(detailsPromise, 8_000, null)
+      .then((details) => {
+        if (!cancelled && !settled && !details) setDetailsLoad('failed')
+      })
+      .catch(() => {})
+    void detailsPromise
+      .then((details) => applyDetails(details))
+      .catch(() => {
+        if (!cancelled) setDetailsLoad('failed')
+      })
     return () => {
       cancelled = true
     }
-  }, [organization?.id, loadUsers])
+  }, [organization?.id, loadUsers, inputsAttempt])
 
   const needsNestedCatalogue = surface === 'mine' || surface === 'team'
 
@@ -164,17 +190,27 @@ export function TimesheetsHub() {
     loadOperatives(organization.id)
     loadProjects(organization.id, true)
     loadSmallWorks(organization.id)
-    loadOperativeDayRateHistory(organization.id)
+    setHistoryLoad('loading')
+    loadOperativeDayRateHistoryOrNull(organization.id)
       .then((rows) => {
-        if (!cancelled) setHistory(rows)
+        if (cancelled) return
+        if (rows) {
+          setHistory(rows)
+          setHistoryLoad('loaded')
+        } else {
+          setHistoryLoad('failed')
+        }
       })
-      .catch(() => {})
+      .catch(() => {
+        if (!cancelled) setHistoryLoad('failed')
+      })
     return () => {
       cancelled = true
     }
   }, [
     organization?.id,
     needsNestedCatalogue,
+    inputsAttempt,
     loadBookings,
     loadManagerSiteBookings,
     loadOperatives,
@@ -225,7 +261,14 @@ export function TimesheetsHub() {
     )
   }
 
+  const inputsStatus = timesheetInputsStatus({ details: detailsLoad, history: historyLoad })
+  const payInputs: TimesheetInputsState = {
+    ...inputsStatus,
+    retry: () => setInputsAttempt((value) => value + 1),
+  }
+
   const periodPageProps = {
+    payInputs,
     periodStart: selectedPeriod.start,
     periodEnd: selectedPeriod.end,
     invoicing,
@@ -332,6 +375,7 @@ export function TimesheetsHub() {
               timeZone={timeZone}
               history={history}
               scheduleOptions={scheduleOptions}
+              payInputs={payInputs}
             />
           </>
         )}

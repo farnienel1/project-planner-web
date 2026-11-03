@@ -45,6 +45,10 @@ const deploymentId = process.env.COMMIT_REF || process.env.NEXT_DEPLOYMENT_ID ||
 const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
+  // The version label in Settings comes from package.json, never a hard-coded string.
+  env: {
+    NEXT_PUBLIC_APP_VERSION: require('./package.json').version,
+  },
   ...(deploymentId ? { deploymentId } : {}),
   experimental: {
     optimizePackageImports: ['date-fns'],

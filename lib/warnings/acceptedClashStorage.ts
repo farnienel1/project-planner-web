@@ -37,8 +37,14 @@ export async function loadAcceptedBookingClashes(organizationId: string): Promis
 }
 
 /** Rulebook 1.9.0 §1 (`LIVE_COLLECTIONS`): Warnings and the Home count listen to `acceptedBookingClashes` while open. */
-export function watchAcceptedBookingClashes(organizationId: string, onRows: (rows: AcceptedBookingClash[]) => void): Unsubscribe {
-  return watchOrgCollection(organizationId, 'acceptedBookingClashes', (docs) => onRows(docs.map(acceptedClashFromDoc)))
+export function watchAcceptedBookingClashes(
+  organizationId: string,
+  onRows: (rows: AcceptedBookingClash[]) => void,
+  onError?: (error: unknown) => void
+): Unsubscribe {
+  return watchOrgCollection(organizationId, 'acceptedBookingClashes', (docs) => onRows(docs.map(acceptedClashFromDoc)), {
+    onError: (error) => onError?.(error),
+  })
 }
 
 export type ClashApproval = {

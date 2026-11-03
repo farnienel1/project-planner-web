@@ -8,6 +8,7 @@ import {
   setDoc,
   Timestamp,
   updateDoc,
+  writeBatch,
 } from 'firebase/firestore'
 import { auth, db } from '@/lib/firebase/config'
 import {
@@ -143,14 +144,14 @@ export const useHolidayStore = create<HolidayState>((set, get) => ({
     if (!organizationId) return
     if (get().loadedOrgId !== organizationId) set({ loading: true, error: null })
     try {
-      await subscribeOrgCollectionLoaded(HOLIDAY_LISTENER_KEY, organizationId, 'holidayBookings', (docs) => {
+      await subscribeOrgCollectionLoaded(HOLIDAY_LISTENER_KEY, organizationId, 'holidayBookings', (docs, meta) => {
         if (!liveResultStillCurrent(organizationId)) return
         const bookings = docs
           .map((entry) => mapHolidayBooking(entry.id, entry.data, organizationId))
           .filter((item): item is HolidayBooking => item !== null)
           .sort((a, b) => b.startDate.getTime() - a.startDate.getTime())
         const previous = holidayOrgId === organizationId ? get().bookings : []
-        const kept = retainScopedRows(`holidayBookings:${organizationId}`, previous, bookings)
+        const kept = retainScopedRows(`holidayBookings:${organizationId}`, previous, bookings, meta)
         holidayOrgId = organizationId
         set({ bookings: kept, loading: false, error: null, loadedOrgId: organizationId })
       })
@@ -205,6 +206,10 @@ export const useHolidayStore = create<HolidayState>((set, get) => ({
 
   createRequests: async (organizationId, requests, timeZone) => {
     const saved: HolidayBooking[] = []
+    // One request of several ranges (rulebook §9 `holidayRequestRanges`) is written in one batch: all of it or none,
+    // never half a request.
+    const batch = writeBatch(db)
+    let batched = 0
     for (const request of requests) {
       const id = newUuid()
       const fields = holidayRequestWriteFields({ ...request, id, organizationId, timeZone })
@@ -222,7 +227,8 @@ export const useHolidayStore = create<HolidayState>((set, get) => ({
         createdAt: Timestamp.fromDate(now),
         ...holidayWriteMetadata(),
       }
-      await setDoc(doc(db, 'organizations', organizationId, 'holidayBookings', id), payload, { merge: true })
+      batch.set(doc(db, 'organizations', organizationId, 'holidayBookings', id), payload, { merge: true })
+      batched += 1
       const mapped = mapHolidayBooking(
         id,
         { ...payload, updatedAt: Timestamp.fromDate(now) } as unknown as Record<string, unknown>,
@@ -231,6 +237,7 @@ export const useHolidayStore = create<HolidayState>((set, get) => ({
       )
       if (mapped) saved.push(mapped)
     }
+    if (batched > 0) await batch.commit()
     if (saved.length > 0 && liveResultStillCurrent(organizationId)) {
       const ids = new Set(saved.map((row) => row.id))
       set({

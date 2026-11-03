@@ -4,7 +4,7 @@
  * offline device cannot bring the booking back by replaying a queued save.
  */
 
-import { doc, serverTimestamp, writeBatch, type Firestore, type WriteBatch } from 'firebase/firestore'
+import { deleteDoc, doc, getDoc, serverTimestamp, writeBatch, type Firestore, type WriteBatch } from 'firebase/firestore'
 import { auth } from '@/lib/firebase/config'
 import {
   BOOKING_TOMBSTONE_BATCH_DELETE_LIMIT,
@@ -39,13 +39,47 @@ export function addBookingDeleteWithTombstone(
   })
 }
 
+/**
+ * Commit a booking delete, treating "already deleted elsewhere" as done. A tombstone is never updated (rules
+ * `allow update: if false`), so deleting a booking another device already deleted — a row still on screen — fails
+ * the batch. Only when the tombstone already exists: a booking document that is gone is a no-op success, and one
+ * still there is deleted alone (it is already tombstoned). Without a tombstone the original error stands, so a
+ * booking is never deleted without one.
+ */
+export async function commitBookingDeleteTolerantly(steps: {
+  commit: () => Promise<void>
+  tombstoneExists: () => Promise<boolean>
+  bookingExists: () => Promise<boolean>
+  deleteAlone: () => Promise<void>
+}): Promise<'deleted' | 'alreadyDeleted'> {
+  try {
+    await steps.commit()
+    return 'deleted'
+  } catch (error) {
+    try {
+      if (!(await steps.tombstoneExists())) throw error
+      if (await steps.bookingExists()) await steps.deleteAlone()
+      return 'alreadyDeleted'
+    } catch {
+      throw error
+    }
+  }
+}
+
 export async function deleteBookingWithTombstone(
   db: Firestore,
   input: { organizationId: string; collection: TombstonedBookingCollection; bookingId: string }
 ): Promise<void> {
   const batch = writeBatch(db)
   addBookingDeleteWithTombstone(db, batch, { ...input, deletedBy: signedInUserId() })
-  await batch.commit()
+  const bookingRef = doc(db, 'organizations', input.organizationId, input.collection, input.bookingId)
+  const tombstoneRef = doc(db, 'organizations', input.organizationId, BOOKING_TOMBSTONE_COLLECTION, input.bookingId)
+  await commitBookingDeleteTolerantly({
+    commit: () => batch.commit(),
+    tombstoneExists: async () => (await getDoc(tombstoneRef)).exists(),
+    bookingExists: async () => (await getDoc(bookingRef)).exists(),
+    deleteAlone: () => deleteDoc(bookingRef),
+  })
 }
 
 /** Many deletes in one collection, chunked so each batch stays under 500 writes. */
@@ -65,6 +99,14 @@ export async function deleteBookingsWithTombstones(
         deletedBy,
       })
     }
-    await batch.commit()
+    try {
+      await batch.commit()
+    } catch {
+      // One booking in the chunk was already deleted elsewhere (its tombstone cannot be rewritten): delete the
+      // chunk one by one, each tolerating "already deleted".
+      for (const bookingId of input.bookingIds.slice(i, i + BOOKING_TOMBSTONE_BATCH_DELETE_LIMIT)) {
+        await deleteBookingWithTombstone(db, { organizationId: input.organizationId, collection: input.collection, bookingId })
+      }
+    }
   }
 }

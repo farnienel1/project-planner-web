@@ -213,3 +213,18 @@ test('an inactive account stays inactive', () => {
   assert.equal(parsed.value.permissions.operativeMode, true)
   assert.equal(classifyManageUsersTab(parsed.value), 'operatives')
 })
+
+test('retainLoadedRows: a server snapshot is authoritative, even when it empties the list', () => {
+  // The only pending leave request was deleted on iOS: the server answer has no rows.
+  assert.deepEqual(retainLoadedRows([{ id: 'h1' }], [], { authoritative: true }), [])
+  assert.deepEqual(retainLoadedRows([{ id: 'h1' }, { id: 'h2' }], [{ id: 'h2' }], { authoritative: true }), [{ id: 'h2' }])
+  // A cache (or partial) snapshot still keeps what is on screen.
+  assert.deepEqual(retainLoadedRows([{ id: 'h1' }], [], { authoritative: false }), [{ id: 'h1' }])
+  assert.deepEqual(retainLoadedRows([{ id: 'h1' }], [], null), [{ id: 'h1' }])
+})
+
+test('retainScopedRows: an authoritative empty snapshot removes the last row', async () => {
+  const { retainScopedRows } = await import('./rosterRetain.ts')
+  assert.deepEqual(retainScopedRows('test:authoritative', [{ id: 'a' }], [], { authoritative: true }), [])
+  assert.deepEqual(retainScopedRows('test:authoritative', [{ id: 'a' }], []), [{ id: 'a' }])
+})

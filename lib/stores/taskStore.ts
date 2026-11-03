@@ -111,13 +111,13 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     if (!organizationId) return
     if (tasksOrgId !== organizationId || get().tasks.length === 0) set({ loading: true, error: null })
     try {
-      await subscribeOrgCollectionLoaded(TASKS_KEY, organizationId, 'tasks', (docs) => {
+      await subscribeOrgCollectionLoaded(TASKS_KEY, organizationId, 'tasks', (docs, meta) => {
         if (!liveResultStillCurrent(organizationId)) return
         const mapped = docs
           .map((entry) => mapTask(entry.id, entry.data, organizationId))
           .filter((task): task is ProjectTask => task !== null)
         const previous = tasksOrgId === organizationId ? get().tasks : []
-        const tasks = retainScopedRows(`tasks:${organizationId}`, previous, mapped)
+        const tasks = retainScopedRows(`tasks:${organizationId}`, previous, mapped, meta)
         tasksOrgId = organizationId
         set({ tasks, loading: false, tasksLoadedOrgId: organizationId })
       })

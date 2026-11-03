@@ -38,6 +38,12 @@ import { activePaymentRunSummary } from '@/lib/canonical'
 import { useOrganizationDocument } from '@/lib/stores/organizationDocumentStore'
 import { useOrganizationDayKey } from '@/lib/warnings/useOrganizationDayKey'
 import { warningLookaheadFallbackNotice } from '@/lib/warnings/warningLookahead'
+import {
+  NO_WARNING_DECISION_FAILURES,
+  WARNING_DECISIONS_FAILED_MESSAGE,
+  warningDecisionsFailed,
+  type WarningDecisionFailures,
+} from '@/lib/warnings/warningDecisionsLoad'
 import { activeOrgWarnings, generateOrgWarnings } from '@/lib/warnings/generateOrgWarnings'
 import { loadResolvedWarningKeys, watchResolvedWarningKeys } from '@/lib/warnings/warningResolutionStorage'
 import {
@@ -75,6 +81,12 @@ export default function WarningsPage() {
   const [resolvedKeys, setResolvedKeys] = useState<string[]>([])
   // Approvals and removals from any device: the list waits for them so the total never shows rows they hide.
   const [decisionsOrgId, setDecisionsOrgId] = useState<string | null>(null)
+  // Which approval sources failed to load. While any has, approved and dismissed warnings are never shown as open.
+  const [decisionFailures, setDecisionFailures] = useState<WarningDecisionFailures>(NO_WARNING_DECISION_FAILURES)
+  const [decisionsAttempt, setDecisionsAttempt] = useState(0)
+  const markDecision = useCallback((source: keyof WarningDecisionFailures, failed: boolean) => {
+    setDecisionFailures((current) => (current[source] === failed ? current : { ...current, [source]: failed }))
+  }, [])
   const [orgDetails, setOrgDetails] = useState<OrganizationDetails | null>(null)
   const [detectionSettled, setDetectionSettled] = useState(false)
   const [liveOrgReadSettled, setLiveOrgReadSettled] = useState(false)
@@ -139,14 +151,6 @@ export default function WarningsPage() {
       void loadHolidayBookings(orgId).finally(() => {
         if (!cancelled) setHolidaysReady(true)
       })
-      setDecisionsOrgId(null)
-      void Promise.all([
-        loadAcceptedBookingClashes(orgId).then(setAcceptedClashes).catch(() => setAcceptedClashes([])),
-        loadDismissedWarnings(orgId).then(setDismissedWarnings).catch(() => setDismissedWarnings([])),
-        loadResolvedWarningKeys(orgId).then(setResolvedKeys).catch(() => setResolvedKeys([])),
-      ]).finally(() => {
-        if (!cancelled) setDecisionsOrgId(orgId)
-      })
       let settled = false
       const settle = () => {
         if (cancelled || settled) return
@@ -195,25 +199,80 @@ export default function WarningsPage() {
     loadHolidayBookings,
   ])
 
+  // Approvals and removals (accepted clashes, dismissed warnings, resolutions). Retry re-runs only this load.
+  useEffect(() => {
+    const orgId = organization?.id
+    if (!orgId) return
+    let cancelled = false
+    setDecisionsOrgId(null)
+    setDecisionFailures(NO_WARNING_DECISION_FAILURES)
+    void Promise.all([
+      loadAcceptedBookingClashes(orgId)
+        .then((rows) => {
+          setAcceptedClashes(rows)
+          markDecision('accepted', false)
+        })
+        .catch(() => markDecision('accepted', true)),
+      loadDismissedWarnings(orgId)
+        .then((rows) => {
+          setDismissedWarnings(rows)
+          markDecision('dismissed', false)
+        })
+        .catch(() => markDecision('dismissed', true)),
+      loadResolvedWarningKeys(orgId)
+        .then((keys) => {
+          setResolvedKeys(keys)
+          markDecision('resolved', false)
+        })
+        .catch(() => markDecision('resolved', true)),
+    ]).finally(() => {
+      if (!cancelled) setDecisionsOrgId(orgId)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [organization?.id, decisionsAttempt, markDecision])
+
   // Rulebook 1.8.0 §5: an approval or removal on any device updates this page live.
   useEffect(() => {
     const orgId = organization?.id
     if (!orgId) return
-    return watchResolvedWarningKeys(orgId, setResolvedKeys)
-  }, [organization?.id])
+    return watchResolvedWarningKeys(
+      orgId,
+      (keys) => {
+        setResolvedKeys(keys)
+        markDecision('resolved', false)
+      },
+      () => markDecision('resolved', true)
+    )
+  }, [organization?.id, decisionsAttempt, markDecision])
 
   // Rulebook 1.9.0 §1 (`LIVE_COLLECTIONS`): accepted clashes and dismissed warnings are live too, so an approval or a
   // dismissal on iOS clears the row here without reopening the page.
   useEffect(() => {
     const orgId = organization?.id
     if (!orgId) return
-    const stopAccepted = watchAcceptedBookingClashes(orgId, setAcceptedClashes)
-    const stopDismissed = watchDismissedWarnings(orgId, setDismissedWarnings)
+    const stopAccepted = watchAcceptedBookingClashes(
+      orgId,
+      (rows) => {
+        setAcceptedClashes(rows)
+        markDecision('accepted', false)
+      },
+      () => markDecision('accepted', true)
+    )
+    const stopDismissed = watchDismissedWarnings(
+      orgId,
+      (rows) => {
+        setDismissedWarnings(rows)
+        markDecision('dismissed', false)
+      },
+      () => markDecision('dismissed', true)
+    )
     return () => {
       stopAccepted()
       stopDismissed()
     }
-  }, [organization?.id])
+  }, [organization?.id, decisionsAttempt, markDecision])
 
   // Global Refresh: stores reload themselves; this page also re-reads what it keeps locally.
   useEffect(() => {
@@ -384,16 +443,17 @@ export default function WarningsPage() {
   }, [generated, lanes, orgId, scheduleReady])
 
   const decisionsReady = Boolean(orgId) && decisionsOrgId === orgId
+  const decisionsFailed = warningDecisionsFailed(decisionFailures)
   const dismissedKeys = useMemo(
     () => new Set(dismissedWarnings.map((warning) => warning.dismissKey)),
     [dismissedWarnings]
   )
   const active = useMemo(
     () =>
-      visible && decisionsReady
+      visible && decisionsReady && !decisionsFailed
         ? activeOrgWarnings(visible, { resolvedKeys, acceptedClashes, dismissedQualificationKeys: dismissedKeys })
         : null,
-    [visible, decisionsReady, resolvedKeys, acceptedClashes, dismissedKeys]
+    [visible, decisionsReady, decisionsFailed, resolvedKeys, acceptedClashes, dismissedKeys]
   )
 
   const shown = active ?? {
@@ -500,6 +560,15 @@ export default function WarningsPage() {
         {scanNotice}
       </div>
     ) : null}
+    {decisionsFailed ? (
+      <div className="mb-3 flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800" role="alert">
+        <p className="grow">{WARNING_DECISIONS_FAILED_MESSAGE}</p>
+        <button type="button" className="btn" onClick={() => setDecisionsAttempt((value) => value + 1)}>
+          Retry
+        </button>
+      </div>
+    ) : null}
+    {decisionsFailed ? null : (
     <WarningsScreen
       organizationName={organization?.name || 'your organisation'}
       clashWarnings={shown.clashWarnings}
@@ -521,6 +590,7 @@ export default function WarningsPage() {
       sortDirection={sortDirection}
       onSortDirectionChange={setSortDirection}
     />
+    )}
     </>
   )
 }

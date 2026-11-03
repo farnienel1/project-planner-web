@@ -272,9 +272,10 @@ test('parseOperative reads qualification expiry and certificate maps', () => {
   }
 })
 
-test('parseBooking reads custom hours from Timestamp clock values', () => {
-  const start = new Date('2026-09-16T06:00:00')
-  const end = new Date('2026-09-16T22:00:00')
+test('parseBooking reads custom hours from Timestamp clock values (organisation zone, not the host zone)', () => {
+  // 06:00 and 22:00 BST (Europe/London, the default organisation zone) on 16 Sep 2026, as fixed instants.
+  const start = new Date('2026-09-16T05:00:00Z')
+  const end = new Date('2026-09-16T21:00:00Z')
   const result = parseBooking('ID', {
     operativeId: 'AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA',
     projectId: 'BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB',
@@ -287,8 +288,8 @@ test('parseBooking reads custom hours from Timestamp clock values', () => {
   })
   assert.equal(result.ok, true)
   if (result.ok) {
-    assert.equal(result.value.workStartTime, `${String(start.getHours()).padStart(2, '0')}:${String(start.getMinutes()).padStart(2, '0')}`)
-    assert.equal(result.value.workEndTime, `${String(end.getHours()).padStart(2, '0')}:${String(end.getMinutes()).padStart(2, '0')}`)
+    assert.equal(result.value.workStartTime, '06:00')
+    assert.equal(result.value.workEndTime, '22:00')
   }
 })
 

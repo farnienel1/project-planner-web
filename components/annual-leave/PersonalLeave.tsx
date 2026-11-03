@@ -163,6 +163,7 @@ export function PersonalLeave({
     user,
     bookings: bookingsForPerson(myBookings, user?.id),
     orgDefaults: orgLeaveDefaults ?? DEFAULT_ANNUAL_LEAVE,
+    timeZone,
   })
   const leaveYear = {
     start: dateFromDayKey(balance.startDayKey),

@@ -226,3 +226,69 @@ test('rulebook 1.10.0 §5: a dismissed clash is not open on the weekly report; a
   assert.equal(approved.warnings.filter((row) => row.type === 'Booking clash').length, 0)
   assert.equal(approved.approvedClashes.length, 1)
 })
+
+test('pay uses the working hours in effect on each booking day, not today\'s (orgPayrollPolicyForDay)', async () => {
+  const { DEFAULT_PAYROLL_POLICY } = await import('../settings/organizationSettings.ts')
+  const nineHourDay = { ...DEFAULT_PAYROLL_POLICY, standardDayEnd: '17:00', standardPaidHours: 9 }
+  const custom = { ...booking('c1', day), timeSlot: 'Custom', workStartTime: '07:30', workEndTime: '17:00' } as Booking
+  const base = {
+    organizationName: 'Acme',
+    period: { start: new Date('2026-10-05T00:00:00Z'), end: new Date('2026-10-11T00:00:00Z'), label: 'week' },
+    bookings: [custom],
+    managerSiteBookings: [],
+    subcontractorBookings: [],
+    subcontractors: [],
+    operatives: [operative],
+    users: [person()],
+    projects: [project],
+    smallWorks: [],
+    holidays: [],
+  }
+  const before = buildWeeklyReportData({
+    ...base,
+    orgDetails: { countryCode: 'GB', payrollTimePolicy: DEFAULT_PAYROLL_POLICY } as never,
+  })
+  // The 9-hour day applies from 20 Oct; the 8 Oct booking keeps the prior 8-hour rules.
+  const changedLater = buildWeeklyReportData({
+    ...base,
+    orgDetails: {
+      countryCode: 'GB',
+      payrollTimePolicy: nineHourDay,
+      payrollTimePolicyPrior: DEFAULT_PAYROLL_POLICY,
+      payrollTimePolicyEffectiveFrom: '2026-10-20',
+    } as never,
+  })
+  const appliedBefore = buildWeeklyReportData({
+    ...base,
+    orgDetails: {
+      countryCode: 'GB',
+      payrollTimePolicy: nineHourDay,
+      payrollTimePolicyPrior: DEFAULT_PAYROLL_POLICY,
+      payrollTimePolicyEffectiveFrom: '2026-10-01',
+    } as never,
+  })
+  assert.equal(changedLater.grandTotal, before.grandTotal)
+  assert.notEqual(appliedBefore.grandTotal, before.grandTotal)
+})
+
+test('pay rows are grouped by person, not by display name', () => {
+  const twin = { ...person(), id: 'u9', email: 'other.ada@x.com' } as User
+  const twinOperative: Operative = { ...operative, id: 'op9', email: 'other.ada@x.com', dayRate: 100 }
+  const report = buildWeeklyReportData({
+    organizationName: 'Acme',
+    period: { start: new Date('2026-10-05T00:00:00Z'), end: new Date('2026-10-11T00:00:00Z'), label: 'week' },
+    bookings: [booking('b1', day), { ...booking('b9', day), operativeId: 'op9' }],
+    managerSiteBookings: [],
+    subcontractorBookings: [],
+    subcontractors: [],
+    operatives: [operative, twinOperative],
+    users: [person(), { ...twin, dayRate: 100 } as User],
+    projects: [project],
+    smallWorks: [],
+    holidays: [],
+    orgDetails: null,
+  })
+  const named = report.paySummary.filter((row) => row.person === 'Ada Booked')
+  assert.equal(named.length, 2)
+  assert.deepEqual(named.map((row) => row.personTotal).sort((a, b) => a - b), [100, 200])
+})

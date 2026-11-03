@@ -88,14 +88,14 @@ export const useSubcontractorStore = create<SubcontractorState>((set, get) => ({
     if (get().subcontractors.length === 0 || subcontractorOrgId !== organizationId) set({ loading: true, error: null })
     else set({ error: null })
     try {
-      await subscribeOrgCollectionLoaded(SUBCONTRACTOR_LOAD_KEY, organizationId, 'subcontractors', (docs) => {
+      await subscribeOrgCollectionLoaded(SUBCONTRACTOR_LOAD_KEY, organizationId, 'subcontractors', (docs, meta) => {
         if (!liveResultStillCurrent(organizationId)) return
         const subcontractors = docs
           .map((entry) => mapSubcontractor(entry.id, entry.data))
           .filter((item): item is Subcontractor => item !== null)
           .sort((a, b) => a.name.localeCompare(b.name))
         const previous = subcontractorOrgId === organizationId ? get().subcontractors : []
-        const kept = retainScopedRows(`subcontractors:${organizationId}`, previous, subcontractors)
+        const kept = retainScopedRows(`subcontractors:${organizationId}`, previous, subcontractors, meta)
         subcontractorOrgId = organizationId
         set({ subcontractors: kept, loading: false })
       })

@@ -81,14 +81,14 @@ export const useWholesalerStore = create<WholesalerState>((set, get) => ({
     if (wholesalerOrgId !== organizationId || get().wholesalers.length === 0) set({ loading: true, error: null })
     try {
       // Rulebook 1.9.0 §1 (`LIVE_COLLECTIONS`): a live listener; the load resolves on its first snapshot.
-      await subscribeOrgCollectionLoaded('wholesalerStore:wholesalers', organizationId, 'wholesalers', (docs) => {
+      await subscribeOrgCollectionLoaded('wholesalerStore:wholesalers', organizationId, 'wholesalers', (docs, meta) => {
         if (!liveResultStillCurrent(organizationId)) return
         const mapped = docs
           .map((entry) => mapWholesaler(entry.id, entry.data))
           .filter((item): item is Wholesaler => item !== null)
           .sort((a, b) => a.name.localeCompare(b.name))
         const previous = wholesalerOrgId === organizationId ? get().wholesalers : []
-        const kept = retainScopedRows(`wholesalers:${organizationId}`, previous, mapped)
+        const kept = retainScopedRows(`wholesalers:${organizationId}`, previous, mapped, meta)
         wholesalerOrgId = organizationId
         set({ wholesalers: kept, loading: false })
       })

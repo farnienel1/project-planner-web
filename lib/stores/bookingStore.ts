@@ -223,6 +223,9 @@ export const useBookingStore = create<BookingState>((set, get) => ({
       await savePartialDocument(doc(firestore, 'organizations', organizationId, 'bookings', id), payload, bookingUpdateWriteFields, {
         userId: auth?.currentUser?.uid ?? null,
         missing: 'refuse',
+        // Diff against the booking this edit started from, so only `updates` are written (never a stale field
+        // over another device's change).
+        base: serializeBooking(booking),
       })
     } catch (error: unknown) {
       if (error instanceof MissingDocumentError) {

@@ -70,3 +70,20 @@ test('managerAdjustmentRows lists declined and edited extras and days', () => {
   assert.equal(rows[1]?.detail, '£80.00 → £60.00')
   assert.match(rows[2]?.title || '', /Day adjusted/)
 })
+
+test('payroll line reviews are found without case, as on the invoice (payrollLineReview)', async () => {
+  const { effectivePayrollAmount, isPayrollLineRemoved, payrollTotal } = await import('./timesheetAdjustments.ts')
+  const line = { id: 'booking-abc-line', amount: 200, isOvertimeLine: false } as never
+  const edited = {
+    ...emptyTimesheetDraft(),
+    payrollLineReviews: { 'BOOKING-ABC-LINE': { decision: 'edited' as const, revisedAmount: 150 } },
+  }
+  assert.equal(effectivePayrollAmount(line, edited, true), 150)
+  assert.equal(payrollTotal([line], edited, true, false), 150)
+  const declined = {
+    ...emptyTimesheetDraft(),
+    payrollLineReviews: { 'BOOKING-ABC-LINE': { decision: 'declined' as const, revisedAmount: null } },
+  }
+  assert.equal(isPayrollLineRemoved(line, declined, true), true)
+  assert.equal(effectivePayrollAmount(line, declined, true), 0)
+})

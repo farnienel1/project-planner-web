@@ -99,8 +99,14 @@ export function VariationsWorkspace({
     }
     loadUsers(organization.id)
     loadManagers(organization.id)
-    loadCustomTrades(organization.id).then(setTrades).catch(() => {})
-    loadVariationTracker(organization.id, project.id).then(setTracker).catch(() => {})
+    // Trades are picker suggestions only; a failed read leaves the picker without them.
+    loadCustomTrades(organization.id)
+      .then(setTrades)
+      .catch((err) => console.warn('[variations] trades did not load', err))
+    // The tracker decides numbering: a failed read is shown, never treated as "no tracker".
+    const trackerFailed = () =>
+      setError('Variation numbering settings did not load. Check the connection and reload before adding variations.')
+    loadVariationTracker(organization.id, project.id).then(setTracker).catch(trackerFailed)
     const unsubRows = subscribeParentVariations(
       organization.id,
       project.id,
@@ -113,7 +119,7 @@ export function VariationsWorkspace({
         setLoading(false)
       }
     )
-    const unsubTracker = subscribeVariationTracker(organization.id, project.id, setTracker)
+    const unsubTracker = subscribeVariationTracker(organization.id, project.id, setTracker, trackerFailed)
     return () => {
       unsubRows()
       unsubTracker()

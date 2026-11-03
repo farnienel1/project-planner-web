@@ -327,8 +327,9 @@ export function VariationTrackerScreen({
                 onClick={async () => {
                   if (!organization?.id || !user) return
                   setBusy(true)
-                  const fresh = await loadVariationTracker(organization.id, project.id)
                   try {
+                    // Inside the try: a failed read must not leave the button stuck on busy.
+                    const fresh = await loadVariationTracker(organization.id, project.id)
                     await applyNumbering({
                       organizationId: organization.id,
                       parentId: project.id,
