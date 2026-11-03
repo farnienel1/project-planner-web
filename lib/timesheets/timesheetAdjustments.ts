@@ -9,6 +9,15 @@ import type {
 } from '@/lib/timesheets/timesheetDraft'
 import type { TimesheetPayrollLineItem } from '@/lib/timesheets/timesheetPayrollCollector'
 import { formatMoney } from '@/lib/canonical/money'
+import { payrollLineReview, type PayrollLineReview } from '@/lib/canonical/timesheetEntryReviews'
+
+/**
+ * The line manager's review of a payroll line (canonical `payrollLineReview`): the line id as stored, then without
+ * case, so a review iOS keyed by an upper-case id counts on screen exactly as it does on the invoice.
+ */
+export function draftPayrollLineReview(draft: TimesheetDraft, lineId: string | null | undefined): PayrollLineReview | null {
+  return payrollLineReview(draft as unknown as Record<string, unknown>, lineId)
+}
 
 export type ManagerAdjustmentRow = {
   title: string
@@ -24,7 +33,7 @@ export function effectivePayrollAmount(
 ): number {
   const applyDecisions = managerHasSigned || applyLiveReview
   if (!applyDecisions) return line.amount
-  const review = draft.payrollLineReviews[line.id]
+  const review = draftPayrollLineReview(draft, line.id)
   if (!review) return line.amount
   switch (review.decision) {
     case 'declined':
@@ -44,7 +53,7 @@ export function isPayrollLineRemoved(
 ): boolean {
   const applyDecisions = managerHasSigned || applyLiveReview
   if (!applyDecisions) return false
-  return draft.payrollLineReviews[line.id]?.decision === 'declined'
+  return draftPayrollLineReview(draft, line.id)?.decision === 'declined'
 }
 
 export function effectiveExpenseAmount(

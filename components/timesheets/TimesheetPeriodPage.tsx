@@ -56,6 +56,7 @@ import {
   payrollTotal,
   priceWorkTotal,
   showsTimesheetAdjustment,
+  draftPayrollLineReview,
 } from '@/lib/timesheets/timesheetAdjustments'
 import { timesheetDayKeysForPeriod } from '@/lib/timesheets/timesheetPayrollPolicy'
 import {
@@ -511,7 +512,7 @@ export function TimesheetPeriodPage({
       breakRemoved: hoursBreakRemoved,
       policy: payrollPolicy,
     })
-    const prior = draft.payrollLineReviews[editingLineId]?.decision
+    const prior = draftPayrollLineReview(draft, editingLineId)?.decision
     const review = payrollReviewAfterSave(prior, row.amount, amount)
     void persistOrReport({
       ...draft,
@@ -1381,7 +1382,7 @@ function PayrollLine({
   const currency = useOrganizationCurrency()
   const removed = isPayrollLineRemoved(line, draft, managerHasSigned, canReview)
   const effective = effectivePayrollAmount(line, draft, managerHasSigned, canReview)
-  const decision = draft.payrollLineReviews[line.id]?.decision || 'approved'
+  const decision = draftPayrollLineReview(draft, line.id)?.decision || 'approved'
   const orange = line.isPayeDay || (line.dayRate <= 0 && !line.hourlyRate)
   // `overlappingBookingIds`: still paid, shown amber for the person and their line manager.
   const overlapping = line.isOverlapping === true
