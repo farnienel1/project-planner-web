@@ -127,7 +127,20 @@ export function MaterialsSendListSheet({
   }, [organization?.id])
 
   const siteAddress = formatSiteAddress(project)
-  const recipientCount = selectedContactIds.size + oneOffRecipients.length
+  // A filled-in one-off row counts without pressing Add, so Quote / Order enable as soon as it is valid.
+  const pendingOneOff = useMemo(() => {
+    const parsed = parseOneOffRecipient(newRecipientName, newEmail, newPhone)
+    if (!parsed) return null
+    if (oneOffRecipients.some((row) => row.email.toLowerCase() === parsed.email.toLowerCase())) return null
+    if (oneOffRecipients.length >= MATERIAL_ORDER_TYPED_RECIPIENTS_MAX) return null
+    return parsed
+  }, [newRecipientName, newEmail, newPhone, oneOffRecipients])
+  const effectiveOneOffRecipients = useMemo(
+    () => (pendingOneOff ? [...oneOffRecipients, pendingOneOff] : oneOffRecipients),
+    [oneOffRecipients, pendingOneOff]
+  )
+  const oneOffNeedsName = newEmail.trim().includes('@') && !newRecipientName.trim()
+  const recipientCount = selectedContactIds.size + effectiveOneOffRecipients.length
   const selectedMaterials = useMemo(
     () => materials.filter((item) => selectedMaterialIds.has(item.id)),
     [materials, selectedMaterialIds]
@@ -168,8 +181,8 @@ export function MaterialsSendListSheet({
   }
 
   const whatsAppRecipients = useMemo(
-    () => buildRecipientSnapshots(wholesalers, selectedContactIds, oneOffRecipients),
-    [wholesalers, selectedContactIds, oneOffRecipients]
+    () => buildRecipientSnapshots(wholesalers, selectedContactIds, effectiveOneOffRecipients),
+    [wholesalers, selectedContactIds, effectiveOneOffRecipients]
   )
 
   const activeWhatsAppRecipient =
@@ -304,7 +317,7 @@ export function MaterialsSendListSheet({
     setIsSending(true)
     setError(null)
     const items = materials.filter((item) => materialIds.includes(item.id))
-    const recipients = buildRecipientSnapshots(wholesalers, selectedContactIds, oneOffRecipients)
+    const recipients = buildRecipientSnapshots(wholesalers, selectedContactIds, effectiveOneOffRecipients)
     const senderName = `${user.firstName || ''} ${user.surname || ''}`.trim() || user.email
     try {
       const headers = await jsonAuthHeaders()
@@ -721,6 +734,9 @@ export function MaterialsSendListSheet({
                   onChange={(e) => setNewPhone(e.target.value)}
                   placeholder="Mobile (for WhatsApp)"
                 />
+                {oneOffNeedsName ? (
+                  <p className="text-[11px] text-amber-700">Add a name to include this email.</p>
+                ) : null}
                 <div className="flex justify-end">
                   <button
                     type="button"

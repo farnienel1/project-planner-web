@@ -33,6 +33,8 @@ import {
 import type { Deadline, DeadlineUrgency } from '@/lib/deadlines/types'
 import type { SiteAudit } from '@/types'
 import { ReportFileLink } from '@/components/fileReports/ReportFileLink'
+import { StoredFileLink } from '@/components/projects/features/StoredFileLink'
+import { storedFileDirectHref } from '@/lib/healthSafety/storedFile'
 
 export type DeadlinePerson = { id: string; name: string; subtitle: string; isLive: boolean }
 
@@ -240,12 +242,12 @@ export function DetailSheet({
             <div className="card divide-y divide-[var(--line)]">
               {item.fileURL ? (
                 <div className="px-4 py-3">
-                  <a className="block text-sm font-semibold" href={item.fileURL} target="_blank" rel="noreferrer">
+                  <StoredFileLink className="block text-sm font-semibold" fileRef={item.fileURL}>
                     {item.fileName || 'Attached file'}
-                    {/\.(png|jpe?g|webp|gif|heic)$/i.test(item.fileName || item.fileURL) ? (
-                      <img src={item.fileURL} alt="" className="mt-2 max-h-48 rounded-lg object-cover" />
+                    {storedFileDirectHref(item.fileURL) && /\.(png|jpe?g|webp|gif|heic)$/i.test(item.fileName || item.fileURL) ? (
+                      <img src={storedFileDirectHref(item.fileURL) ?? undefined} alt="" className="mt-2 max-h-48 rounded-lg object-cover" />
                     ) : null}
-                  </a>
+                  </StoredFileLink>
                   <ReportFileLink fileRef={item.fileURL} surface="deadline" parentId={item.id} fileName={item.fileName} />
                 </div>
               ) : item.fileName ? (
