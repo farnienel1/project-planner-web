@@ -2,6 +2,9 @@ import assert from 'node:assert/strict'
 import { existsSync, readFileSync } from 'node:fs'
 import test from 'node:test'
 import { createContext, runInContext } from 'node:vm'
+import * as R112 from './index'
+import { dateFromDayKeyInZone as zoneMidnight112, dayKeyInZone as zoneDayKey112 } from '../orgTime/zoneTime'
+import { parsePayrollPolicy as parsePolicy112 } from './organizationSettings'
 import {
   adoptCurrentOrganization,
   bookingBelongsToOrganization,
@@ -8325,4 +8328,187 @@ test('1.11.0 rosterMembersForOrganization: anchored people stay; level in this o
   assert.deepEqual(r3OrgLevel({ organizationId: 'ORG', userId: 'X', user: { organizationId: 'OTHER', adminAccess: true }, membersRole: 'operative' }), {
     level: 'operative', isSuperAdmin: false, source: 'members',
   })
+})
+
+// ---------------------------------------------------------------------------
+// Rulebook 1.12.0: organisation-zone days east of UTC+12, break overlap, policy limits, leave year, security helpers.
+// ---------------------------------------------------------------------------
+
+const ZONES_112 = ['Pacific/Auckland', 'Pacific/Kiritimati', 'Pacific/Chatham', 'America/Los_Angeles', 'Europe/London']
+
+test('1.12.0 day keys: dateFromDayKeyInZone is that local midnight in every zone, BST and GMT included', () => {
+  const keys = ['2026-11-06', '2026-11-07', '2026-03-29', '2026-10-25', '2026-04-05', '2026-09-27', '2026-03-08', '2026-11-01', '2026-01-01', '2028-02-29']
+  for (const zone of ZONES_112) {
+    for (const key of keys) {
+      const midnight = zoneMidnight112(key, zone)
+      assert.equal(zoneDayKey112(midnight, zone), key, `${zone} ${key}`)
+      // One minute earlier is the previous day: this is the first instant of the day.
+      assert.notEqual(zoneDayKey112(new Date(midnight.getTime() - 60_000), zone), key, `${zone} ${key} start`)
+    }
+  }
+  // Known instants: Auckland NZDT (UTC+13), Kiritimati UTC+14, Chatham UTC+13:45, Los Angeles PST, London BST / GMT.
+  assert.equal(zoneMidnight112('2026-11-06', 'Pacific/Auckland').toISOString(), '2026-11-05T11:00:00.000Z')
+  assert.equal(zoneMidnight112('2026-11-06', 'Pacific/Kiritimati').toISOString(), '2026-11-05T10:00:00.000Z')
+  assert.equal(zoneMidnight112('2026-11-06', 'Pacific/Chatham').toISOString(), '2026-11-05T10:15:00.000Z')
+  assert.equal(zoneMidnight112('2026-11-06', 'America/Los_Angeles').toISOString(), '2026-11-06T08:00:00.000Z')
+  assert.equal(zoneMidnight112('2026-07-10', 'Europe/London').toISOString(), '2026-07-09T23:00:00.000Z')
+  assert.equal(zoneMidnight112('2026-11-06', 'Europe/London').toISOString(), '2026-11-06T00:00:00.000Z')
+})
+
+test('1.12.0 payrollHoursResult: a Friday is a weekday and a Saturday a Saturday in every zone', () => {
+  const policy = parsePolicy112(undefined)
+  for (const zone of ZONES_112) {
+    const friday = R112.payrollHoursResult({ booking: { timeSlot: 'FULL DAY' }, dayKey: '2026-11-06', policy, timeZone: zone })
+    assert.equal(friday.totalPaidHours, 8, `${zone} Friday`)
+    const fridayJuly = R112.payrollHoursResult({ booking: { timeSlot: 'FULL DAY' }, dayKey: '2026-07-10', policy, timeZone: zone })
+    assert.equal(fridayJuly.totalPaidHours, 8, `${zone} Friday (July)`)
+    const saturday = R112.payrollHoursResult({ booking: { timeSlot: 'FULL DAY' }, dayKey: '2026-11-07', policy, timeZone: zone })
+    const londonSaturday = R112.payrollHoursResult({ booking: { timeSlot: 'FULL DAY' }, dayKey: '2026-11-07', policy, timeZone: 'Europe/London' })
+    assert.equal(saturday.totalPaidHours, londonSaturday.totalPaidHours, `${zone} Saturday`)
+  }
+})
+
+test('1.12.0 leaveRecordDayKeys: Mon–Fri is five days and Fri–Mon two in every zone', () => {
+  for (const zone of ZONES_112) {
+    assert.deepEqual(
+      R112.leaveRecordDayKeys({ startDayKey: '2026-11-09', endDayKey: '2026-11-13' }, zone),
+      ['2026-11-09', '2026-11-10', '2026-11-11', '2026-11-12', '2026-11-13'],
+      zone
+    )
+    assert.deepEqual(R112.leaveRecordDayKeys({ startDayKey: '2026-11-06', endDayKey: '2026-11-09' }, zone), ['2026-11-06', '2026-11-09'], zone)
+  }
+})
+
+test('1.12.0 payRateHistoryWriteFields: effectiveAt is midnight of the effective day in the organisation zone', () => {
+  for (const zone of ZONES_112) {
+    const row = R112.payRateHistoryWriteFields({ userId: 'U1', rate: 200, payBasis: 'day', effective: '2026-11-10', timeZone: zone })
+    assert.ok(row)
+    assert.equal(row!.effectiveDayKey, '2026-11-10')
+    assert.equal(zoneDayKey112(new Date(row!.effectiveAtMs), zone), '2026-11-10', zone)
+    assert.equal(row!.effectiveAtMs, zoneMidnight112('2026-11-10', zone).getTime(), zone)
+  }
+})
+
+test('1.12.0 activePaymentRunSummary: runs keep their days in every zone', () => {
+  const recurring = {
+    paymentRunMode: 'recurring_timeframe', paymentDateMode: 'weekday',
+    recurringRunStartDay: 'monday', recurringRunEndDay: 'sunday', recurringPaymentDay: 'friday',
+  }
+  const ranges = {
+    paymentRunMode: 'date_ranges', paymentDateMode: 'specific_dates',
+    paymentRunDateRanges: [{ startDay: 1, endDay: 15 }, { startDay: 16, endDay: 31 }], paymentDates: [20, 5],
+  }
+  for (const zone of ZONES_112) {
+    // Noon on Wednesday 4 November in the zone.
+    const now = new Date(zoneMidnight112('2026-11-04', zone).getTime() + 12 * 3600_000).toISOString()
+    const weekly = R112.activePaymentRunSummary(recurring as never, now, zone) as { start: string; end: string; label: string }
+    assert.match(weekly.label, /^Mon 2 Nov – Sun 8 Nov · paid Fri 13 Nov$/, zone)
+    const half = R112.activePaymentRunSummary(ranges as never, now, zone) as { label: string }
+    assert.match(half.label, /^Sun 1 Nov – Sun 15 Nov/, zone)
+  }
+})
+
+test('1.12.0 break: only the covered part of the unpaid break comes off; a booking all inside it pays 0, never a full day', () => {
+  const policy = parsePolicy112(undefined) // 07:30–16:00, break 12:00–12:30 unpaid 30 minutes, 8 paid hours
+  const custom = (start: string, end: string) =>
+    R112.payrollHoursResult({ booking: { timeSlot: 'CUSTOM', workStartTime: start, workEndTime: end }, dayKey: '2026-11-04', policy, timeZone: 'Europe/London' })
+  for (const [start, end] of [['12:00', '12:30'], ['12:05', '12:25']]) {
+    const r = custom(start, end)
+    assert.equal(r.totalPaidHours, 0, `${start}–${end}`)
+    assert.equal(r.workedHours, 0, `${start}–${end}`)
+  }
+  assert.ok(Math.abs(custom('11:50', '12:20').totalPaidHours - 10 / 60) < 1e-9)
+  assert.ok(Math.abs(custom('11:00', '12:10').totalPaidHours - 1) < 1e-9)
+  assert.equal(custom('07:30', '16:00').totalPaidHours, 8)
+  assert.equal(R112.payrollHoursResult({ booking: { timeSlot: 'FULL DAY' }, dayKey: '2026-11-04', policy, timeZone: 'Europe/London' }).totalPaidHours, 8)
+  // A paid break or a removed break deducts nothing.
+  const paidBreak = R112.payrollHoursResult({ booking: { timeSlot: 'CUSTOM', workStartTime: '12:00', workEndTime: '12:30' }, dayKey: '2026-11-04', policy: { ...policy, breakPaid: true }, timeZone: 'Europe/London' })
+  assert.equal(paidBreak.totalPaidHours, 0.5)
+})
+
+test('1.12.0 parsePayrollPolicy: stored numbers are read into PAYROLL_POLICY_LIMITS; payForHours refuses a paid day below 1', () => {
+  const bad = parsePolicy112({
+    standardPaidHours: 0, unpaidBreakMinutes: 500, weekdayOutsideStandardMultiplier: 'abc',
+    saturday: { allHoursMultiplier: 9, countsAsHours: 0, outsideStandardWindowMultiplier: -1 },
+  })
+  assert.equal(bad.standardPaidHours, 8)
+  assert.equal(bad.unpaidBreakMinutes, 120)
+  assert.equal(bad.weekdayOutsideStandardMultiplier, 1.5)
+  assert.equal(bad.saturday.allHoursMultiplier, 3)
+  assert.equal(bad.saturday.countsAsStandardHours, 0)
+  assert.equal(bad.saturday.outsideWindowMultiplier, 1)
+  assert.equal(parsePolicy112({ standardPaidHours: '' }).standardPaidHours, 8)
+  assert.equal(parsePolicy112({ standardPaidHours: 20 }).standardPaidHours, 12)
+  assert.equal(parsePolicy112({ standardPaidHours: 7.5 }).standardPaidHours, 7.5)
+  assert.equal(R112.payForHours({ payBasis: 'day', dayRate: 200, paidHours: 8, standardDayHours: 0 }), 0)
+  assert.equal(R112.payForHours({ payBasis: 'day', dayRate: 200, paidHours: 8, standardDayHours: Number.NaN }), 0)
+  assert.equal(R112.payForHours({ payBasis: 'day', dayRate: 200, paidHours: 8, standardDayHours: 8 }), 200)
+  assert.equal(R112.payForHours({ payBasis: 'day', dayRate: 200, paidHours: 2, standardDayHours: 8, otMultiplier: Number.NaN }), 50)
+  assert.equal(R112.payForHours({ payBasis: 'hourly', hourlyRate: 20, paidHours: 8, standardDayHours: 0 }), 160)
+})
+
+test('1.12.0 leave year: always 12 months; the end month follows the start and a mismatch is refused', () => {
+  assert.equal(R112.leaveYearEndMonth(1), 12)
+  assert.equal(R112.leaveYearEndMonth(4), 3)
+  assert.equal(R112.validateLeaveYearMonths(4, 3), null)
+  assert.equal(R112.validateLeaveYearMonths(1, 12), null)
+  assert.equal(R112.validateLeaveYearMonths(4, 12), R112.LEAVE_YEAR_MONTHS_MESSAGE)
+  assert.equal(R112.validateLeaveYearMonths(1, 1), R112.LEAVE_YEAR_MONTHS_MESSAGE)
+  assert.equal(R112.validateAnnualLeaveDefaults({ startMonth: 4, endMonth: 3 }), null)
+  assert.notEqual(R112.validateAnnualLeaveDefaults({ startMonth: 13, endMonth: 12 }), null)
+  // A stored mismatch reads as 12 months from the start: February leave in an April year is counted.
+  assert.deepEqual(R112.leaveYearBounds({ startMonth: 4, endMonth: 12, onDayKey: '2027-02-10' }), {
+    startDayKey: '2026-04-01', endDayKey: '2027-03-31', yearKey: '2026-04-01',
+  })
+  assert.deepEqual(R112.leaveYearBounds({ startMonth: 1, endMonth: 1, onDayKey: '2026-11-03' }), {
+    startDayKey: '2026-01-01', endDayKey: '2026-12-31', yearKey: '2026-01-01',
+  })
+})
+
+test('1.12.0 invitationIsOperativeOnly: the only invitation a manager with operatives access may write', () => {
+  assert.equal(R112.invitationIsOperativeOnly({ role: 'operative', permissions: { operativeMode: true, siteAudit: true, projects: true } }), true)
+  assert.equal(R112.invitationIsOperativeOnly({ permissions: { operativeMode: true } }), true)
+  assert.equal(R112.invitationIsOperativeOnly({ role: 'admin', permissions: { adminAccess: true } }), false)
+  assert.equal(R112.invitationIsOperativeOnly({ permissions: { adminAccess: true, operativeMode: true } }), false)
+  assert.equal(R112.invitationIsOperativeOnly({ role: 'operative', permissions: { operativeMode: true, operatives: true } }), false)
+  assert.equal(R112.invitationIsOperativeOnly({ role: 'operative', permissions: { operativeMode: true }, isSuperAdmin: true }), false)
+  assert.equal(R112.invitationIsOperativeOnly({ role: 'manager', permissions: { manager: true } }), false)
+})
+
+test('1.12.0 organizationMemberActive: members, creator, own company or a membership; explicit false deactivates', () => {
+  const organization = { members: { U1: 'member' }, creatorUserId: 'FOUNDER' }
+  const check = (userId: string, user: Record<string, unknown> | null, membership: Record<string, unknown> | null = null) =>
+    R112.organizationMemberActive({ organizationId: 'org-a', userId, organization, user, membership })
+  assert.deepEqual(check('U1', { organizationId: 'org-a' }), { member: true, active: true })
+  assert.deepEqual(check('FOUNDER', null), { member: true, active: true })
+  assert.deepEqual(check('U2', { organizationId: 'organizations/ORG-A' }), { member: true, active: true })
+  assert.deepEqual(check('U3', { organizationId: 'org-b' }, { role: 'manager' }), { member: true, active: true })
+  assert.deepEqual(check('STRANGER', { organizationId: 'org-b' }), { member: false, active: false })
+  assert.deepEqual(check('U1', { organizationId: 'org-a', isActive: false }), { member: true, active: false })
+  assert.deepEqual(check('U1', { organizationId: 'org-b', isActive: false }), { member: true, active: true })
+  assert.deepEqual(check('U3', { organizationId: 'org-b' }, { accountActive: false }), { member: true, active: false })
+  assert.deepEqual(check('U3', { organizationId: 'org-b' }, { isActive: false }), { member: true, active: false })
+})
+
+test('1.12.0 appUpdateRequired: platformConfig/app minimums; missing or malformed config never blocks', () => {
+  assert.equal(R112.PLATFORM_CONFIG_APP_PATH, 'platformConfig/app')
+  assert.equal(R112.appUpdateRequired({ platform: 'ios', runningBuild: 119 }, { minimumIosBuild: 120 }), true)
+  assert.equal(R112.appUpdateRequired({ platform: 'ios', runningBuild: '120' }, { minimumIosBuild: 120 }), false)
+  assert.equal(R112.appUpdateRequired({ platform: 'ios', runningBuild: 121 }, { minimumIosBuild: 120 }), false)
+  assert.equal(R112.appUpdateRequired({ platform: 'ios', runningBuild: 1 }, null), false)
+  assert.equal(R112.appUpdateRequired({ platform: 'ios', runningBuild: 1 }, {}), false)
+  assert.equal(R112.appUpdateRequired({ platform: 'ios', runningBuild: 1 }, { minimumIosBuild: 'soon' }), false)
+  assert.equal(R112.appUpdateRequired({ platform: 'ios', runningBuild: 'x' }, { minimumIosBuild: 120 }), false)
+  assert.equal(R112.appUpdateRequired({ platform: 'web', runningBuild: '1.11.0' }, { minimumWebVersion: '1.12.0' }), true)
+  assert.equal(R112.appUpdateRequired({ platform: 'web', runningBuild: '1.12.0' }, { minimumWebVersion: '1.12' }), false)
+  assert.equal(R112.appUpdateRequired({ platform: 'web', runningBuild: '1.12.1' }, { minimumWebVersion: '1.12.0' }), false)
+  assert.equal(R112.appUpdateRequired({ platform: 'web', runningBuild: '1.2.0' }, { minimumIosBuild: 500 }), false)
+  assert.equal(R112.appUpdateRequired({ platform: 'android', runningBuild: 1 }, { minimumIosBuild: 500 }), false)
+})
+
+test('1.12.0 isVerifiedPlatformOwner: the owner email and a verified token, never the email alone', () => {
+  assert.equal(R112.isVerifiedPlatformOwner({ email: 'Info@ProjectPlanner.us', emailVerified: true }), true)
+  assert.equal(R112.isVerifiedPlatformOwner({ email: 'info@projectplanner.us', emailVerified: false }), false)
+  assert.equal(R112.isVerifiedPlatformOwner({ email: 'info@projectplanner.us' }), false)
+  assert.equal(R112.isVerifiedPlatformOwner({ email: 'someone@test.com', emailVerified: true }), false)
 })

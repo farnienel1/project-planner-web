@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { isPlatformOwnerEmail } from '@/lib/platform/owner'
+import { isVerifiedPlatformOwner } from '@/lib/canonical/passwordPolicy'
 import {
   isFirebaseUser,
   jsonError,
@@ -13,7 +13,10 @@ const projectId = () => process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || ''
 export async function requireOwner(request: NextRequest): Promise<FirebaseAuthUser | NextResponse> {
   const user = await requireFirebaseUser(request)
   if (!isFirebaseUser(user)) return user
-  if (!isPlatformOwnerEmail(user.email)) return jsonError('Owner access required', 403)
+  // Rulebook 1.12.0: the verified owner token, the same test as the security rules' isPlatformOwner.
+  if (!isVerifiedPlatformOwner({ email: user.email, emailVerified: user.emailVerified })) {
+    return jsonError('Owner access required', 403)
+  }
   return user
 }
 

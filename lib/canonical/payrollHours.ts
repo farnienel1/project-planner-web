@@ -5,9 +5,10 @@
  * this one result on web and iOS. It is the iOS `PayrollHoursEngine` rule,
  * moved here so neither app keeps its own copy.
  *
- * Weekday: hours inside the standard day count once, less the unpaid break
- * when the booking spans the break window (not for AM/PM, not when the break
- * is paid or removed). Hours before or after the standard day are paid at the
+ * Weekday: hours inside the standard day count once, less the part of the unpaid
+ * break window the booking covers, up to the unpaid break length (not for AM/PM,
+ * not when the break is paid or removed); a booking whose clock time is all in the
+ * break pays 0 (1.12.0). Hours before or after the standard day are paid at the
  * weekday multiplier (or the booking's override). AM, PM, and custom hours
  * within 20 minutes of an AM/PM half pay half the standard paid hours.
  * Saturday / Sunday: the weekend day's own rule — every hour at the
@@ -214,11 +215,24 @@ function wallHours(booking: PayrollHoursBooking, policy: OrgPayrollTimePolicy): 
   return standardPaid(policy)
 }
 
+/**
+ * Rulebook 1.12.0 §8: the unpaid break taken off a booking is the part of the break window the booking covers, up to
+ * the unpaid break length — a booking across the whole window loses the whole break, one that covers 10 minutes of it
+ * loses 10 minutes (it used to lose the whole break for any overlap).
+ */
 function breakDeductionMinutes(policy: OrgPayrollTimePolicy, span: MinuteInterval): number {
   const start = parseClockMinutes(policy.breakWindowStart)
   const end = parseClockMinutes(policy.breakWindowEnd)
   if (start == null || end == null || end <= start) return 0
-  return Math.min(span.end, end) > Math.max(span.start, start) ? Number(policy.unpaidBreakMinutes) || 0 : 0
+  const overlap = Math.min(span.end, end) - Math.max(span.start, start)
+  if (!(overlap > 0)) return 0
+  const unpaid = Math.max(Number(policy.unpaidBreakMinutes) || 0, 0)
+  return Math.min(overlap, unpaid)
+}
+
+/** A booking with clock times that pays nothing (all of it inside the unpaid break): 0 hours, never a full day. */
+function nothingPaid(span: MinuteInterval, multiplier: number): PayrollHoursResult {
+  return result([segment('standardWindow', 0, 1, span.start, span.end, 0)], multiplier)
 }
 
 function outsideSegments(span: MinuteInterval, windowStart: number, windowEnd: number, multiplier: number): PayrollHoursSegment[] {
@@ -259,7 +273,8 @@ function weekday(booking: PayrollHoursBooking, policy: OrgPayrollTimePolicy, mul
     if (hours > 0.001) rows.push(segment('standardWindow', hours, 1, insideStart, insideEnd))
   }
   rows.push(...outsideSegments(span, ds, de, multiplier))
-  if (rows.length === 0) return legacySlot(booking, policy, multiplier)
+  // 1.12.0: clock times are present (a span), so an empty result is 0 hours — never the full standard day.
+  if (rows.length === 0) return nothingPaid(span, multiplier)
   return result(rows, multiplier)
 }
 
@@ -289,7 +304,7 @@ function weekendDay(booking: PayrollHoursBooking, policy: OrgPayrollTimePolicy, 
     rows.push(segment('standardWindow', credited, 1, overlapStart, overlapEnd, (overlapEnd - overlapStart) / 60))
   }
   rows.push(...outsideSegments(span, ws, we, multiplier))
-  if (rows.length === 0) return legacySlot(booking, policy, multiplier)
+  if (rows.length === 0) return nothingPaid(span, multiplier)
   return result(rows, multiplier)
 }
 

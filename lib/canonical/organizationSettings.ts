@@ -406,27 +406,58 @@ function stringIdList(value: unknown): string[] {
 }
 
 /** A missing day map is that day's default; a saved map fills a missing field from `WEEKEND_FIELD_FALLBACK`. */
+/** Limits for every platform (rulebook §4.3; `validatePayrollTimePolicy` on save, `parsePayrollPolicy` on read). */
+export const PAYROLL_POLICY_LIMITS = {
+  paidHours: { min: 1, max: 12 },
+  breakMinutes: { min: 0, max: 120 },
+  multiplier: { min: 1, max: 3 },
+} as const
+
+/**
+ * Rulebook 1.12.0 §4.3: a stored policy number read into the limits. Missing, blank or not a number → the default;
+ * otherwise clamped to `[min, max]`. `zeroIsMissing`: 0 or less also reads as missing (a standard paid day of 0
+ * would multiply day-rate pay by up to 800×). `allowZero`: 0 is kept (weekend "counts as" 0 hours, §5).
+ */
+function policyNumber(
+  raw: unknown,
+  fallback: number,
+  limits: { min: number; max: number },
+  options: { zeroIsMissing?: boolean; allowZero?: boolean } = {}
+): number {
+  if (raw == null || (typeof raw === 'string' && raw.trim() === '') || typeof raw === 'boolean') return fallback
+  const n = Number(raw)
+  if (!Number.isFinite(n)) return fallback
+  if (options.zeroIsMissing && n <= 0) return fallback
+  if (options.allowZero && n === 0) return 0
+  return Math.min(Math.max(n, limits.min), limits.max)
+}
+
 function parseWeekend(data: Record<string, unknown> | undefined, dayDefault: WeekendPayrollSettings): WeekendPayrollSettings {
   if (!data || typeof data !== 'object') return { ...dayDefault }
   const fallback = WEEKEND_FIELD_FALLBACK
   return {
     allHoursAtMultiplierMode: data.allHoursAtMultiplierMode === true,
-    allHoursMultiplier: Number(data.allHoursMultiplier ?? fallback.allHoursMultiplier),
+    allHoursMultiplier: policyNumber(data.allHoursMultiplier, fallback.allHoursMultiplier, PAYROLL_POLICY_LIMITS.multiplier),
     definedWindowStart: String(
       firstPresent(data, ['customStandardStart', 'definedWindowStart'], fallback.definedWindowStart ?? '07:30')
     ),
     definedWindowEnd: String(
       firstPresent(data, ['customStandardEnd', 'definedWindowEnd'], fallback.definedWindowEnd ?? '16:00')
     ),
-    countsAsStandardHours: Number(
-      firstPresent(data, ['countsAsHours', 'countsAsStandardHours'], fallback.countsAsStandardHours ?? 8)
+    countsAsStandardHours: policyNumber(
+      firstPresent(data, ['countsAsHours', 'countsAsStandardHours'], fallback.countsAsStandardHours ?? 8),
+      fallback.countsAsStandardHours ?? 8,
+      PAYROLL_POLICY_LIMITS.paidHours,
+      { allowZero: true }
     ),
-    outsideWindowMultiplier: Number(
+    outsideWindowMultiplier: policyNumber(
       firstPresent(
         data,
         ['outsideStandardWindowMultiplier', 'outsideWindowMultiplier'],
         fallback.outsideWindowMultiplier ?? 1.5
-      )
+      ),
+      fallback.outsideWindowMultiplier ?? 1.5,
+      PAYROLL_POLICY_LIMITS.multiplier
     ),
     sameAsSaturday: false,
   }
@@ -451,12 +482,24 @@ export function parsePayrollPolicy(data: Record<string, unknown> | undefined): O
   return {
     standardDayStart: String(data.standardDayStart ?? DEFAULT_PAYROLL_POLICY.standardDayStart),
     standardDayEnd: String(data.standardDayEnd ?? DEFAULT_PAYROLL_POLICY.standardDayEnd),
-    unpaidBreakMinutes: Number(data.unpaidBreakMinutes ?? DEFAULT_PAYROLL_POLICY.unpaidBreakMinutes),
-    standardPaidHours: Number(data.standardPaidHours ?? DEFAULT_PAYROLL_POLICY.standardPaidHours),
+    // 1.12.0 §4.3: numbers are read into PAYROLL_POLICY_LIMITS (missing / blank / not a number → the default).
+    unpaidBreakMinutes: policyNumber(
+      data.unpaidBreakMinutes,
+      DEFAULT_PAYROLL_POLICY.unpaidBreakMinutes,
+      PAYROLL_POLICY_LIMITS.breakMinutes
+    ),
+    standardPaidHours: policyNumber(
+      data.standardPaidHours,
+      DEFAULT_PAYROLL_POLICY.standardPaidHours,
+      PAYROLL_POLICY_LIMITS.paidHours,
+      { zeroIsMissing: true }
+    ),
     breakWindowStart: String(data.breakWindowStart ?? DEFAULT_PAYROLL_POLICY.breakWindowStart),
     breakWindowEnd: String(data.breakWindowEnd ?? DEFAULT_PAYROLL_POLICY.breakWindowEnd),
-    weekdayOutsideStandardMultiplier: Number(
-      data.weekdayOutsideStandardMultiplier ?? DEFAULT_PAYROLL_POLICY.weekdayOutsideStandardMultiplier
+    weekdayOutsideStandardMultiplier: policyNumber(
+      data.weekdayOutsideStandardMultiplier,
+      DEFAULT_PAYROLL_POLICY.weekdayOutsideStandardMultiplier,
+      PAYROLL_POLICY_LIMITS.multiplier
     ),
     saturday: parseWeekend(data.saturday as Record<string, unknown> | undefined, DEFAULT_SATURDAY_PAYROLL),
     sunday: (() => {
