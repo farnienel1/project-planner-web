@@ -34,6 +34,17 @@ export function firestoreUpdateFields(write: DocumentWriteFields): Record<string
   return out
 }
 
+/** The base an edit is diffed against: the editor's loaded copy when given, else the stored copy. */
+export function changeBase(
+  base: Record<string, unknown> | null | undefined,
+  stored: Record<string, unknown>
+): Record<string, unknown> {
+  if (!base) return stored
+  const plain = plainWritePayload(base)
+  delete plain.updatedAt
+  return plain
+}
+
 /** The document an edit was aimed at is gone (deleted elsewhere); the edit is not turned into a create. */
 export class MissingDocumentError extends Error {
   readonly code = 'not-found'
@@ -47,9 +58,13 @@ export class MissingDocumentError extends Error {
 }
 
 /**
- * Save a document as a partial update: read the stored copy, ask the rulebook helper what changed, write only
- * that (plus `updatedAt` and write metadata). A missing document is created from the payload. Returns whether
- * anything was written.
+ * Save a document as a partial update: ask the rulebook helper what changed, write only that (plus `updatedAt`
+ * and write metadata). A missing document is created from the payload. Returns whether anything was written.
+ *
+ * `base` is the copy the editor opened with (serialized like `payload`). When given, the change is diffed against
+ * it — the fields this editor changed — never against a fresh server read, so a field changed on another device
+ * after the editor opened (and untouched here) is not written back (rulebook §1 "Never re-save what you didn't
+ * change", as `timesheetChangedFields` does for timesheets). Without `base`, the stored copy is the base.
  */
 export async function savePartialDocument(
   ref: DocumentReference,
@@ -59,6 +74,8 @@ export async function savePartialDocument(
     userId?: string | null
     /** `refuse`: an edit of a document that no longer exists throws `MissingDocumentError` instead of creating it. */
     missing?: 'create' | 'refuse'
+    /** The copy the editor loaded, serialized like `payload`. */
+    base?: Record<string, unknown> | null
   }
 ): Promise<boolean> {
   const metadata = writeMetadataFields(options?.userId, 'web')
@@ -71,7 +88,7 @@ export async function savePartialDocument(
     await setDoc(ref, { ...create.set, updatedAt: serverTimestamp(), ...(metadata ?? {}) })
     return true
   }
-  const write = writeFields(snap.data() as Record<string, unknown>, next)
+  const write = writeFields(changeBase(options?.base, snap.data() as Record<string, unknown>), next)
   if (Object.keys(write.set).length === 0 && write.remove.length === 0) return false
   await updateDoc(ref, { ...firestoreUpdateFields(write), updatedAt: serverTimestamp(), ...(metadata ?? {}) })
   return true

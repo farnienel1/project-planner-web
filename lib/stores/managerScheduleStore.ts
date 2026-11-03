@@ -223,7 +223,12 @@ export const useManagerScheduleStore = create<ManagerScheduleState>((set, get) =
         doc(firestore, 'organizations', organizationId, 'managerSiteBookings', bookingId),
         payload,
         managerSiteBookingUpdateWriteFields,
-        { userId: auth?.currentUser?.uid ?? null, missing: 'refuse' }
+        {
+          userId: auth?.currentUser?.uid ?? null,
+          missing: 'refuse',
+          // Diff against the booking this edit started from: only `updates` are written.
+          base: serializeManagerSiteBooking({ ...existing, organizationId }),
+        }
       )
     } catch (error: unknown) {
       if (error instanceof MissingDocumentError) {

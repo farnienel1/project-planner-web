@@ -73,7 +73,7 @@ export function SetSitePinButton({
       updatedAt: new Date(),
     }
 
-    await saveProject(input, collection)
+    await saveProject(input, collection, { base: project })
     onUpdated?.({
       ...project,
       addressLine1: payload.addressLine1,

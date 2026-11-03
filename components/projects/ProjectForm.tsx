@@ -64,6 +64,10 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
   const [newClientName, setNewClientName] = useState('')
   const managersFieldRef = useRef<HTMLDivElement>(null)
   const managerSelectionEdited = useRef(false)
+  // The job as this form opened it: the save diffs against it, so a field changed on another device while the
+  // form was open (and not touched here) is not written back.
+  const openedJob = useRef<Project | null>(initial ?? null)
+  if ((openedJob.current?.id ?? null) !== (initial?.id ?? null)) openedJob.current = initial ?? null
 
   const [jobTypes, setJobTypes] = useState<string[]>([...DEFAULT_JOB_TYPES])
   const blankIdentity = emptyProjectCreateIdentity()
@@ -305,7 +309,7 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
         ),
         createdAt: initial?.createdAt,
       }
-      const id = await saveProject(input, collection)
+      const id = await saveProject(input, collection, { base: openedJob.current })
       onSaved(id)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to save project')

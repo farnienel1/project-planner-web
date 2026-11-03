@@ -13,6 +13,7 @@ import { auth, db } from '@/lib/firebase/config'
 import type { Project, Client } from '@/types'
 import {
   buildProjectFirestorePayload,
+  projectToSaveInput,
   projectCollectionName,
   type ProjectSaveInput,
 } from '@/lib/firebase/projectPayload'
@@ -64,7 +65,12 @@ interface ProjectState {
   loadSmallWorks: (organizationId: string, options?: { force?: boolean }) => Promise<void>
   loadClients: (organizationId: string, options?: { force?: boolean }) => Promise<void>
   getProject: (organizationId: string, projectId: string, collection?: 'projects' | 'smallWorks') => Promise<Project | null>
-  saveProject: (input: ProjectSaveInput, collection?: 'projects' | 'smallWorks') => Promise<string>
+  saveProject: (
+    input: ProjectSaveInput,
+    collection?: 'projects' | 'smallWorks',
+    /** `base`: the job as the editor opened it. */
+    options?: { base?: Project | null }
+  ) => Promise<string>
   deleteProject: (id: string, organizationId: string, collection?: 'projects' | 'smallWorks') => Promise<void>
   createClient: (client: Omit<Client, 'id' | 'createdAt' | 'updatedAt'>) => Promise<Client>
   updateClient: (
@@ -233,7 +239,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     return mapProjectDoc(snap.id, snap.data() as Record<string, unknown>, organizationId, collectionName)
   },
 
-  saveProject: async (input, collectionOverride) => {
+  saveProject: async (input, collectionOverride, options) => {
     if (isLegacyPlaceholderDocumentId(input.id)) {
       throw new Error('Cannot save the legacy starter placeholder. Create a project with a job number and site name.')
     }
@@ -249,11 +255,21 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     const mayChangeManagers = userCanChangeJobManagers(useAuthStore.getState().user, kind)
     const payload: Record<string, unknown> = mayChangeManagers ? built : jobWriteWithoutManagerList(built)
     if (!mayChangeManagers) delete payload.manager
+    // The job as the editor opened it (else the store copy): the save writes what this editor changed, never a stale
+    // field over another device's edit.
+    const opened = isNew ? null : options?.base ?? existingRow ?? null
+    let base: Record<string, unknown> | null = null
+    if (opened) {
+      const openedBuilt = buildProjectFirestorePayload(projectToSaveInput(opened, input.organizationId))
+      base = mayChangeManagers ? openedBuilt : jobWriteWithoutManagerList(openedBuilt)
+      if (!mayChangeManagers) delete base.manager
+    }
     // Rulebook §1: a partial update of the changed fields (`jobWriteFields`), never a merge-set of the whole job.
     await savePartialDocument(doc(db, 'organizations', input.organizationId, collectionName, id), payload, jobWriteFields, {
       userId: auth.currentUser?.uid ?? null,
       // Rulebook 1.9.0: an edit of a job deleted on another device is refused, never re-created.
       missing: isNew ? 'create' : 'refuse',
+      base,
     })
     const saved = mapProjectDoc(id, payload as Record<string, unknown>, input.organizationId, collectionName)
     if (collectionName === 'smallWorks') {
@@ -311,6 +327,13 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     const existing = get().clients.find((c) => c.id === clientId)
     if (!existing) throw new Error('Client not found')
 
+    const base: Record<string, unknown> = {
+      name: existing.name,
+      email: existing.email ?? '',
+      phone: existing.phone ?? '',
+      contactPerson: existing.contactPerson ?? '',
+      address: existing.address ?? '',
+    }
     const payload: Record<string, unknown> = {
       name: updates.name?.trim() ?? existing.name,
       email: updates.email?.trim() ?? existing.email ?? '',
@@ -324,6 +347,8 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     await savePartialDocument(doc(db, 'organizations', organizationId, 'clients', clientId), payload, clientWriteFields, {
       userId: auth?.currentUser?.uid,
       missing: 'refuse',
+      // Only the fields this edit changed from the client it started from.
+      base,
     })
 
     const updated: Client = {
