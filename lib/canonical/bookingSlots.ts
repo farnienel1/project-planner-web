@@ -7,8 +7,9 @@
  *   day's rule is a set window ("standard window + overtime"), the custom-hours editor opens prefilled with that window
  *   (`weekendCustomHoursDefault`); the person can change it. Pay is the custom hours under that day's rule
  *   (`payrollHoursResult`). Stored weekend FULL DAY / AM / PM bookings are never rewritten and keep their pay.
- *   `weekendBookingNote` is the line shown under the picker. A booking request never mixes weekdays and weekend days
- *   (`bookingDaysMixWeekdayAndWeekend`, `WEEKEND_WEEKDAY_MIX_MESSAGE`).
+ *   `weekendBookingNote` is the line shown under the picker; for a selection of days, `weekendBookingNotes` (1.17.0:
+ *   one "Saturday/Sunday" line when both days follow the same rule, else Saturday then Sunday). A booking request never
+ *   mixes weekdays and weekend days (`bookingDaysMixWeekdayAndWeekend`, `WEEKEND_WEEKDAY_MIX_MESSAGE`).
  * - Lunch warning: `customHoursBreakWarning` is the message shown before a custom-hours booking is saved when the
  *   organisation break is unpaid, the booking's "Unpaid break" toggle is on and the hours cover the break window. Pay
  *   is unchanged (§8: break minutes come off only while the toggle is on).
@@ -18,6 +19,7 @@ import { formatClockMinutes, intervalsOverlap, namedSlotKind, parseClockMinutes,
 import type { OrgPayrollTimePolicy } from './organizationSettings'
 import { weekendFullDayWindow, weekendRuleForIsoWeekday } from './payrollHours'
 import { isoWeekdayOfDayKey, zoneOrLondon } from './dayKeys'
+import { payrollTimePolicyForDayFromState, type PayrollTimePolicyState } from './payrollPolicySchedule'
 
 /** The slot values a booking picker may offer, in picker order. Stored spellings stay each collection's own. */
 export type BookingSlotChoice = 'FULL DAY' | 'AM' | 'PM' | 'CUSTOM'
@@ -112,32 +114,78 @@ function multiplierText(multiplier: number): string {
   return `${rounded}×`
 }
 
-/**
- * The line under a weekend booking picker. Set window: "Saturday is paid on the hours you enter: 07:30–13:00 counts as
- * 8h, hours outside it at 2×. Change it in Working hours." Every hour at one rate: "Sunday is paid on the hours you
- * enter, every hour at 2×. Change it in Working hours." `weekday` is an ISO weekday (6, 7), "saturday" / "sunday" or a
- * day key. Null on a weekday or when the window is not set.
- */
-export function weekendBookingNote(
-  policy: OrgPayrollTimePolicy | null | undefined,
-  weekday: string | number,
-  timeZone?: string | null
-): string | null {
-  if (!policy) return null
-  const iso = isoWeekdayOf(weekday, timeZone)
-  if (iso !== 6 && iso !== 7) return null
+/** The part of a weekend note after the day name, e.g. " is paid on the hours you enter, every hour at 2×. …". */
+function weekendNoteBody(policy: OrgPayrollTimePolicy | null | undefined, iso: number): string | null {
+  if (!policy || (iso !== 6 && iso !== 7)) return null
   const weekend = weekendRuleForIsoWeekday(iso, policy)
   if (!weekend) return null
-  const dayName = iso === 6 ? 'Saturday' : 'Sunday'
   if (weekend.allHoursAtMultiplierMode) {
-    return `${dayName} is paid on the hours you enter, every hour at ${multiplierText(weekend.allHoursMultiplier)}. Change it in Working hours.`
+    return ` is paid on the hours you enter, every hour at ${multiplierText(weekend.allHoursMultiplier)}. Change it in Working hours.`
   }
   const window = weekendFullDayWindow(policy, weekend)
   if (!window) return null
   const range = `${formatClockMinutes(window.start)}–${formatClockMinutes(window.end)}`
   const countsAs = Number(weekend.countsAsStandardHours ?? policy.standardPaidHours)
   const outside = Number(weekend.outsideWindowMultiplier ?? 1.5)
-  return `${dayName} is paid on the hours you enter: ${range} counts as ${hoursText(Number.isFinite(countsAs) ? countsAs : 0)}, hours outside it at ${multiplierText(outside)}. Change it in Working hours.`
+  return ` is paid on the hours you enter: ${range} counts as ${hoursText(Number.isFinite(countsAs) ? countsAs : 0)}, hours outside it at ${multiplierText(outside)}. Change it in Working hours.`
+}
+
+/**
+ * The line under a weekend booking picker. Set window: "Saturday is paid on the hours you enter: 07:30–13:00 counts as
+ * 8h, hours outside it at 2×. Change it in Working hours." Every hour at one rate: "Sunday is paid on the hours you
+ * enter, every hour at 2×. Change it in Working hours." `weekday` is an ISO weekday (6, 7), "saturday" / "sunday" or a
+ * day key. Null on a weekday or when the window is not set. A picker whose selection can hold several days uses
+ * `weekendBookingNotes`.
+ */
+export function weekendBookingNote(
+  policy: OrgPayrollTimePolicy | null | undefined,
+  weekday: string | number,
+  timeZone?: string | null
+): string | null {
+  const iso = isoWeekdayOf(weekday, timeZone)
+  const body = weekendNoteBody(policy, iso)
+  if (!body) return null
+  return `${iso === 6 ? 'Saturday' : 'Sunday'}${body}`
+}
+
+function isPolicyState(value: unknown): value is PayrollTimePolicyState {
+  return Boolean(value && typeof value === 'object' && 'current' in (value as object) && 'scheduled' in (value as object))
+}
+
+/**
+ * Rulebook 1.17.0: the lines under a weekend booking picker for the whole selection (`dayKeys`, organisation-zone day
+ * keys; weekdays are ignored). Only Saturdays or only Sundays: that day's `weekendBookingNote`. Saturday and Sunday
+ * with the same rule (same window, counts-as hours and rate outside it, or both every hour at the same rate): one line,
+ * "Saturday/Sunday is paid on the hours you enter: …". Different rules: the Saturday line, then the Sunday line. No
+ * weekend day (or no rule set): `[]`.
+ *
+ * `policy` is the working-hours policy in effect for the request, or the organisation's policy state
+ * (`parsePayrollTimePolicyState` / `payrollTimePolicyTimeline`), in which case each day uses the policy in effect on
+ * that day (`effectivePayrollTimePolicy`). Lines are never repeated.
+ */
+export function weekendBookingNotes(
+  policy: OrgPayrollTimePolicy | PayrollTimePolicyState | null | undefined,
+  dayKeys: ReadonlyArray<string> | null | undefined,
+  timeZone?: string | null
+): string[] {
+  if (!policy) return []
+  const keys = Array.from(
+    new Set(
+      (dayKeys || []).map((key) => String(key || '').trim()).filter((key) => /^\d{4}-\d{2}-\d{2}$/.test(key))
+    )
+  ).sort()
+  const bodies: Record<6 | 7, string[]> = { 6: [], 7: [] }
+  for (const key of keys) {
+    const iso = isoWeekdayOf(key, timeZone)
+    if (iso !== 6 && iso !== 7) continue
+    const dayPolicy = isPolicyState(policy) ? payrollTimePolicyForDayFromState(policy, key) : policy
+    const body = weekendNoteBody(dayPolicy, iso)
+    if (body && !bodies[iso].includes(body)) bodies[iso].push(body)
+  }
+  if (bodies[6].length === 1 && bodies[7].length === 1 && bodies[6][0] === bodies[7][0]) {
+    return [`Saturday/Sunday${bodies[6][0]}`]
+  }
+  return [...bodies[6].map((body) => `Saturday${body}`), ...bodies[7].map((body) => `Sunday${body}`)]
 }
 
 export const CUSTOM_HOURS_BREAK_WARNING =

@@ -8,7 +8,8 @@ import { HoursTimelinePicker } from '@/components/scheduling/HoursTimelinePicker
 import { hoursBreakdown } from '@/lib/scheduling/paidHours'
 import { HoursBreakdownCard } from '@/components/schedule/HoursBreakdownCard'
 import { DEFAULT_PAYROLL_POLICY, type OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
-import { confirmCustomHoursBreak, customHoursPrefillForDate, slotOfferedOnDate, weekendNoteForDate } from '@/lib/scheduling/bookingSlotRules'
+import { confirmCustomHoursBreak, customHoursPrefillForDate, slotOfferedOnDate, weekendNotesForDates } from '@/lib/scheduling/bookingSlotRules'
+import { useOrganizationDocument } from '@/lib/stores/organizationDocumentStore'
 
 const SLOT_OPTIONS: { value: ScheduleSlotChoice; label: string }[] = [
   { value: 'AM', label: 'Morning (AM)' },
@@ -56,6 +57,9 @@ export function BookingEditSheet({
   conflictsFor?: BookingSlotConflictCheck
 }) {
   const conflictGate = useBookingConflictGate()
+  // Rulebook 1.17.0 §4.3: the live organisation document, so the weekend note, prefill and break check read the
+  // working hours in effect on the booking day (`effectivePayrollTimePolicy` in bookingSlotRules).
+  useOrganizationDocument()
   const [slot, setSlot] = useState<ScheduleSlotChoice>(firestoreSlotToChoice(String(booking.timeSlot)))
   // Rulebook 1.13.0 (Q2): a weekend day opens custom hours with that day's window (`weekendCustomHoursDefault`).
   const prefill = customHoursPrefillForDate(booking.date, payroll)
@@ -81,7 +85,7 @@ export function BookingEditSheet({
   // Rulebook 1.13.0 (Q2): Saturday and Sunday are custom hours only; a stored weekend FULL DAY / AM / PM is kept and shown.
   const storedChoice = firestoreSlotToChoice(String(booking.timeSlot))
   const slotOptions = SLOT_OPTIONS.filter((opt) => slotOfferedOnDate(opt.value, booking.date, payroll, storedChoice))
-  const weekendNote = weekendNoteForDate(booking.date, payroll)
+  const weekendNotes = weekendNotesForDates([booking.date], payroll)
 
   const handleSave = async () => {
     setError(null)
@@ -178,7 +182,11 @@ export function BookingEditSheet({
                 </option>
               ))}
             </select>
-            {weekendNote ? <p className="mt-1 text-xs text-slate-500">{weekendNote}</p> : null}
+            {weekendNotes.map((note) => (
+              <p key={note} className="mt-1 text-xs text-slate-500">
+                {note}
+              </p>
+            ))}
           </div>
 
           {slot === 'CUSTOM' && (

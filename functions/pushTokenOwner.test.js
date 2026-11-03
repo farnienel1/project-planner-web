@@ -36,6 +36,21 @@ test('a newly registered token is removed from every other account', async () =>
   assert.equal(db.updates[0].path, 'users/OLD')
 })
 
+test('1.17.0: a placeholder users document never owns a token; real accounts keep it', async () => {
+  const PLACEHOLDER = '463952DE-0375-435D-8AB3-67570C902C56'
+  const REAL = ['8Qnz190EABWbS0t5Oaj0TZaOyfO2', 'Zk3pQ9aLmN0bVc7XyT2rS5uW1eF4', 'Hj6gR2tY8uI0oP4aS1dF3gH5jK7l']
+  const docs = { [PLACEHOLDER]: { pushTokens: ['tok'] } }
+  for (const id of REAL) docs[id] = { pushTokens: ['tok'] }
+  const db = fakeDb(docs)
+  const writes = await removeTokenFromOtherAccounts({ db, canonical, token: 'tok', ownerUid: PLACEHOLDER, fieldValue: fakeFieldValue })
+  assert.deepEqual(JSON.parse(JSON.stringify(writes)), [{ userId: PLACEHOLDER, remove: ['tok'] }])
+  assert.deepEqual(db.updates.map((u) => u.path), [`users/${PLACEHOLDER}`])
+  // A real account registering the token takes it from the placeholder too.
+  const db2 = fakeDb(docs)
+  const writes2 = await removeTokenFromOtherAccounts({ db: db2, canonical, token: 'tok', ownerUid: REAL[0], fieldValue: fakeFieldValue })
+  assert.deepEqual(JSON.parse(JSON.stringify(writes2)).map((w) => w.userId), [PLACEHOLDER, REAL[1], REAL[2]])
+})
+
 test('nothing is written when only the owner holds the token', async () => {
   const db = fakeDb({ ME: { pushTokens: ['tok'] } })
   assert.equal((await removeTokenFromOtherAccounts({ db, canonical, token: "tok", ownerUid: "ME" })).length, 0)

@@ -39,10 +39,10 @@ import { myScheduleStripeClass } from '@/components/schedule/MyScheduleLooks'
 import { HoursTimelinePicker } from '@/components/scheduling/HoursTimelinePicker'
 import {
   confirmCustomHoursBreak,
-  customHoursPrefillForDate,
+  customHoursPrefillForDates,
   isWeekendDate,
   slotOfferedOnDate,
-  weekendNoteForDate,
+  weekendNotesForDates,
   weekendWeekdayMixMessage,
 } from '@/lib/scheduling/bookingSlotRules'
 import { BookingEditSheet } from '@/components/schedule/BookingEditSheet'
@@ -58,6 +58,7 @@ import { useAuthStore } from '@/lib/stores/authStore'
 import { useHolidayStore } from '@/lib/stores/holidayStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { myScheduleAnnualLeaveLabel, myScheduleLeaveRecords } from '@/lib/schedule/myScheduleLeave'
+import { useOrganizationDocument } from '@/lib/stores/organizationDocumentStore'
 
 /** Labour booked onto this person from Book labour. Shown on the week, not removed from here. */
 export type AssignedScheduleBooking = {
@@ -236,6 +237,9 @@ export function MyScheduleSelfBookingScreen({
   const { users, userIdAliases, loadUsers } = useOrgUserStore()
   // Rulebook 1.16.0 §5: booking yourself onto a day of your own annual leave asks first.
   const leaveCheck = useLeaveConflictCheck(payrollPolicy)
+  // Rulebook 1.17.0 §4.3: the live organisation document, so the weekend note, prefill and break check read the
+  // working hours in effect on the booking day (`effectivePayrollTimePolicy` in bookingSlotRules).
+  useOrganizationDocument()
   const leaveGate = useBookingConflictGate()
 
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: 1 }))
@@ -329,7 +333,8 @@ export function MyScheduleSelfBookingScreen({
   useEffect(() => {
     const days = targetDays()
     if (days.length === 0 || !days.every((day) => isWeekendDate(day))) return
-    const prefill = customHoursPrefillForDate(days[0], payrollPolicy)
+    // One time pair for the whole request: the first selected Saturday's window (`customHoursPrefillForDates`).
+    const prefill = customHoursPrefillForDates(days, payrollPolicy)
     setCustomStart(prefill.start)
     setCustomEnd(prefill.end)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -575,14 +580,12 @@ export function MyScheduleSelfBookingScreen({
             onBreak={setBreakRemoved}
           />
           <p className="mt-2 muted xs">Custom hours uses the times on this 00:00–24:00 bar.</p>
-          {targetDays()
-            .map((day) => weekendNoteForDate(day, payrollPolicy))
-            .filter((note, index, all): note is string => Boolean(note) && all.indexOf(note) === index)
-            .map((note) => (
-              <p key={note} className="mt-1 muted xs">
-                {note}
-              </p>
-            ))}
+          {/* Rulebook 1.17.0 (`weekendBookingNotes`): one Saturday/Sunday line when both follow the same rule. */}
+          {weekendNotesForDates(targetDays(), payrollPolicy).map((note) => (
+            <p key={note} className="mt-1 muted xs">
+              {note}
+            </p>
+          ))}
         </div>
       </div>
     )

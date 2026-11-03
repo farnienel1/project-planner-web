@@ -2,7 +2,7 @@
 
 import { formatScheduleDay, type ScheduleDateSlot, type ScheduleSlotChoice } from '@/lib/scheduling/scheduleUtils'
 import { HoursTimelinePicker } from '@/components/scheduling/HoursTimelinePicker'
-import { slotOfferedOnDate, weekendNoteForDate } from '@/lib/scheduling/bookingSlotRules'
+import { slotOfferedOnDate, weekendNotesForDates } from '@/lib/scheduling/bookingSlotRules'
 import { useOrganizationPayrollPolicy } from '@/lib/scheduling/useOrganizationPayrollPolicy'
 
 const SLOT_OPTIONS: ScheduleSlotChoice[] = ['AM', 'PM', 'FULL DAY', 'CUSTOM']
@@ -74,9 +74,12 @@ export function ScheduleSelectedDates({
             ))}
           </div>
 
-          {weekendNoteForDate(entry.date, policy) ? (
-            <p className="mt-2 text-xs text-slate-500">{weekendNoteForDate(entry.date, policy)}</p>
-          ) : null}
+          {/* Rulebook 1.17.0 (`weekendBookingNotes`): each selected date row shows its own day's note. */}
+          {weekendNotesForDates([entry.date], policy).map((note) => (
+            <p key={note} className="mt-2 text-xs text-slate-500">
+              {note}
+            </p>
+          ))}
 
           {entry.slot === 'CUSTOM' && (
             <div className="mt-3">
