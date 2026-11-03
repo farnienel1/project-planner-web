@@ -559,8 +559,9 @@ function chunk<T>(values: ReadonlyArray<T>, size: number): T[][] {
  */
 export function jobQueryPlan(
   viewer: JobAccessViewer | null | undefined,
-  options?: { documentIds?: ReadonlyArray<string> | null } | null
+  options?: { documentIds?: ReadonlyArray<string> | null; enforced?: boolean } | null
 ): JobQueryPlan {
+  const enforced = options?.enforced ?? ENFORCED_READS_ACTIVE
   const none: JobQueryPlan = { seesEvery: { projects: false, smallWorks: false }, queries: [] }
   if (!viewer || !viewer.role) return none
   const uid = viewerUid(viewer)
@@ -577,7 +578,7 @@ export function jobQueryPlan(
     smallWorks: seesEveryJob(role, 'smallWorks', viewer.toggles ?? null),
   }
   const queries: JobQuery[] = JOB_QUERY_COLLECTIONS.map((collection) =>
-    seesEvery[collection]
+    seesEvery[collection] || !enforced
       ? { collection, kind: 'all' }
       : { collection, kind: 'managed', field: 'managerUserIds', op: 'array-contains', value: uid }
   )
@@ -600,15 +601,30 @@ export type BookingQueryPlan = {
 }
 
 /**
+ * Rulebook 1.10.1: whether the 1.10.0 enforced job/booking reads (§17) are live. While false, staff read whole job and
+ * booking collections (as before 1.10.0) and every app still shows only the jobs `canSeeJob` allows; the restricted
+ * query plan is used only once this is true. It becomes true in the release that ships after the owner has run the
+ * `managerUserIds` / `jobCollection` backfills, and that release goes out before the Firestore rules deploy
+ * (docs/DEPLOY_1.10.0.md). Jobs saved before 1.10.0 have no `managerUserIds`, so a restricted plan before the
+ * backfill would show those managers no jobs.
+ */
+export const ENFORCED_READS_ACTIVE = false
+
+/**
  * Who reads every booking: admins and super admins outside operative mode, and managers with either job toggle (a
  * booking does not say which kind its job is, and the rules cannot look up every job of a kind per query).
  */
-export function readsEveryBooking(viewer: JobAccessViewer | null | undefined): boolean {
+export function readsEveryBooking(
+  viewer: JobAccessViewer | null | undefined,
+  options?: { enforced?: boolean } | null
+): boolean {
+  const enforced = options?.enforced ?? ENFORCED_READS_ACTIVE
   if (!viewer || !viewer.role) return false
   const role = viewer.role
   if (role.isOperativeMode) return false
   if (role.isSuperAdmin || role.isAdmin) return true
   if (!role.isManager) return false
+  if (!enforced) return true
   return viewer.toggles?.projects === true || viewer.toggles?.smallWorks === true
 }
 
@@ -625,12 +641,12 @@ export function readsEveryBooking(viewer: JobAccessViewer | null | undefined): b
 export function bookingQueryPlan(
   viewer: JobAccessViewer | null | undefined,
   visibleJobIds: ReadonlyArray<string> | null | undefined,
-  options?: { ownBookingIds?: ReadonlyArray<string> | null } | null
+  options?: { ownBookingIds?: ReadonlyArray<string> | null; enforced?: boolean } | null
 ): BookingQueryPlan {
   if (!viewer || !viewer.role) return { readsEveryBooking: false, queries: [] }
   const uid = viewerUid(viewer)
   if (!uid) return { readsEveryBooking: false, queries: [] }
-  if (readsEveryBooking(viewer)) {
+  if (readsEveryBooking(viewer, { enforced: options?.enforced })) {
     return {
       readsEveryBooking: true,
       queries: BOOKING_PERMISSION_COLLECTIONS.map((collection) => ({ collection, kind: 'all' as const })),
@@ -694,6 +710,8 @@ export function warningScopeFor(input: {
   managerBookings?: ReadonlyArray<{ userId?: string | null; locationType?: string | null; locationId?: string | null }> | null
   people?: ReadonlyArray<{ id: string; email?: string | null; formerIds?: ReadonlyArray<string> | null }> | null
   operatives?: ReadonlyArray<{ id: string; email?: string | null }> | null
+  /** Overrides `ENFORCED_READS_ACTIVE` (tests and the release that switches reads on). */
+  enforced?: boolean
 }): WarningScope {
   const viewer = input?.viewer
   if (!viewer || !viewer.role) return { kind: 'jobs', jobIds: [], personIds: [], personEmails: [], unbookedLabour: false }
@@ -727,7 +745,7 @@ export function warningScopeFor(input: {
     jobIds: [...jobKeys],
     personIds: [...ids],
     personEmails: [...emails],
-    unbookedLabour: readsEveryBooking(viewer),
+    unbookedLabour: readsEveryBooking(viewer, { enforced: input.enforced }),
   }
 }
 

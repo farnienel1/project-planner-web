@@ -1,7 +1,7 @@
 # Project Planner Rulebook
 
-Version: 1.10.0
-Updated: 2026-11-02
+Version: 1.10.1
+Updated: 2026-11-03
 
 This is the one rulebook for every Project Planner platform: web, iOS and (later) Android. It is written platform-neutral. Each rule names the shared function in `lib/canonical` that implements it; platforms call that function (web `@/lib/canonical`, iOS `CanonicalBusinessEngine`, Android the same packed script) and never keep a second copy.
 
@@ -325,6 +325,7 @@ Reads are enforced by the security rules, not only filtered on screen. Firestore
 - **Rules limits.** A query may look up 10 documents (`get` / `exists`) in total across all its `in` values, and a rule evaluation stops at 1000 expressions, so a booking query carries one job (`JOBS_PER_BOOKING_QUERY` = 1) and the rules compute the caller's role once per rule. `FIRESTORE_IN_QUERY_LIMIT` (30) is Firestore's own cap, not the plan's chunk.
 - **Daily Overview and warnings** for a viewer who does not see every job cover only their jobs and the people booked on them (`warningScopeFor`, §5, §6).
 - A viewer whose role changes, or a manager added to or removed from a job, re-plans on the next snapshot: the job leaves or joins their lists and its bookings' queries are closed or opened.
+- **Switched off until the backfill** (1.10.1): `ENFORCED_READS_ACTIVE` is false. While false, `jobQueryPlan` returns whole-collection job queries for staff and `readsEveryBooking` is true for every manager, so reads are as before 1.10.0; each app still shows a manager only the jobs `canSeeJob` allows. It becomes true in the release after the owner has run the backfills, and that release ships before the rules deploy.
 - Known limit: an operative can read a job document by id without the rules knowing whether they are booked on it (the rules cannot query their bookings); listing jobs is refused to them.
 
 ---
@@ -345,6 +346,9 @@ Reads are enforced by the security rules, not only filtered on screen. Firestore
 **1.10.0** (full order and checks in `docs/DEPLOY_1.10.0.md`): 1. merge the web change; 2. `node scripts/backfill-job-manager-user-ids.mjs --project <id> --all` (dry run, the default) and review the per-job diff; 3. the same with `--apply` (writes only `managerUserIds`, partial updates, idempotent, no write metadata — `updatedFrom` takes only `web` / `ios` / `android`); 4. `firebase deploy --only firestore:rules,firestore:indexes,functions`; 5. release iOS 1.10.0. The read rules (§17) refuse whole-collection job and booking queries for managers without a job toggle and for operatives, so app builds that predate 1.10.0 lose those lists for them until they update.
 
 ## Changelog
+
+### 1.10.1 — 2026-11-03
+- Enforced reads (§17) are off until the backfill has run: `ENFORCED_READS_ACTIVE` = false. With 1.10.0 merged and no backfill yet, web asked restricted managers' jobs by `managerUserIds array-contains`, a field jobs saved before 1.10.0 do not have, so managers without the Projects / Small works toggle saw no jobs. While false, staff read whole job and booking collections as before 1.10.0 and the screens filter with `canSeeJob`. Deploy order: backfills → release with the flag true → rules deploy.
 
 ### 1.10.0 — 2026-11-02
 - Owner decisions round 2 — jobs (§16): admins add and edit every job; managers add jobs, edit any job and change a job's manager list only with that kind's Projects / Small works add/edit/manage permission (`canCreateJob`, `canChangeJobManagers`, `canEditJob`, `JOB_MANAGER_LIST_FIELDS`, `jobWriteWithoutManagerList`); a manager without it edits the details of jobs they manage. `seesEveryJob` and `canSeeJob` take the kind and the toggles: a toggle shows every job of that kind. `canEditWorkCatalogue` no longer gates admins. Enforced by the rules on job create and update.

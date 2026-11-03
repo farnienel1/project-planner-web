@@ -7713,16 +7713,24 @@ test('1.10.0 the warning-key migration is the one idempotent write allowed outsi
 
 import {
   JOB_MANAGER_LIST_FIELDS as r2ManagerListFields,
-  bookingQueryPlan as r2BookingQueryPlan,
+  bookingQueryPlan as r2BookingQueryPlanRaw,
   canChangeJobManagers as r2CanChangeJobManagers,
   canCreateJob as r2CanCreateJob,
   canEditJob as r2CanEditJob,
   jobIdQueryValues as r2JobIdQueryValues,
-  jobQueryPlan as r2JobQueryPlan,
+  jobQueryPlan as r2JobQueryPlanRaw,
   jobWriteWithoutManagerList as r2WithoutManagerList,
-  readsEveryBooking as r2ReadsEveryBooking,
-  warningScopeFor as r2WarningScopeFor,
+  readsEveryBooking as r2ReadsEveryBookingRaw,
+  warningScopeFor as r2WarningScopeForRaw,
+  ENFORCED_READS_ACTIVE as ENFORCED_READS_ACTIVE_110,
 } from './staffAccess.ts'
+// The 1.10.0 r2 tests check enforced reads (§17); 1.10.1 keeps them switched off (`ENFORCED_READS_ACTIVE`) until the
+// backfill, so these wrappers ask for the enforced behaviour explicitly.
+const r2JobQueryPlan = (viewer: any, options?: any) => r2JobQueryPlanRaw(viewer, { ...(options || {}), enforced: true })
+const r2BookingQueryPlan = (viewer: any, ids: any, options?: any) =>
+  r2BookingQueryPlanRaw(viewer, ids, { ...(options || {}), enforced: true })
+const r2ReadsEveryBooking = (viewer: any) => r2ReadsEveryBookingRaw(viewer, { enforced: true })
+const r2WarningScopeFor = (input: any) => r2WarningScopeForRaw({ ...input, enforced: true })
 import { taskCompletedRecipients as r2TaskCompletedRecipients } from './notificationRecipients.ts'
 import { parseTaskDocument as r2ParseTask, taskFields as r2TaskFields, taskWriteFields as r2TaskWriteFields } from './operationsDocuments.ts'
 
@@ -8037,4 +8045,17 @@ test('1.10.0 hunt C H4: payRateOnDay matches history under every id of the perso
   assert.equal(withPerson.source, 'history')
   const onlyOwn = hcPayRateOnDay({ user, history, dayKey: '2026-10-25', timeZone: 'Europe/London' })
   assert.equal(onlyOwn.rate, 120)
+})
+
+test('1.10.1: enforced reads stay off until the backfill — restricted managers read every job and booking', () => {
+  const viewer = {
+    role: { isSuperAdmin: false, isAdmin: false, isManager: true, isOperativeMode: false },
+    uid: 'mgr-1',
+    ids: ['mgr-1'],
+    toggles: { projects: false, smallWorks: false },
+  } as any
+  assert.equal(ENFORCED_READS_ACTIVE_110, false)
+  assert.deepEqual(r2JobQueryPlanRaw(viewer).queries.map((q: any) => q.kind), ['all', 'all'])
+  assert.equal(r2ReadsEveryBookingRaw(viewer), true)
+  assert.equal(r2BookingQueryPlanRaw(viewer, ['job-a']).readsEveryBooking, true)
 })
