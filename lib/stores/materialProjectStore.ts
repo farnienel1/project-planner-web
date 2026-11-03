@@ -163,10 +163,11 @@ function isPermissionDenied(error: unknown): boolean {
 function keepMaterialRows(
   organizationId: string,
   previous: ProjectMaterialLine[],
-  loaded: ProjectMaterialLine[]
+  loaded: ProjectMaterialLine[],
+  options?: { authoritative?: boolean }
 ): ProjectMaterialLine[] {
   const prior = materialsOrgId === organizationId ? previous : []
-  return retainScopedRows(`materials:${organizationId}`, prior, loaded)
+  return retainScopedRows(`materials:${organizationId}`, prior, loaded, options)
 }
 
 let allMaterialsUnsub: (() => void) | null = null
@@ -237,7 +238,11 @@ export const useMaterialProjectStore = create<MaterialProjectState>((set, get) =
           collection(db, 'organizations', organizationId, 'materials'),
           (snap) => {
             if (allMaterialsWatchOrgId !== organizationId) return
-            set({ materials: keepMaterialRows(organizationId, get().materials, mapMaterialLines(snap.docs)) })
+            set({
+              materials: keepMaterialRows(organizationId, get().materials, mapMaterialLines(snap.docs), {
+                authoritative: !snap.metadata.fromCache,
+              }),
+            })
           },
           () => undefined
         )

@@ -143,14 +143,14 @@ export const useHolidayStore = create<HolidayState>((set, get) => ({
     if (!organizationId) return
     if (get().loadedOrgId !== organizationId) set({ loading: true, error: null })
     try {
-      await subscribeOrgCollectionLoaded(HOLIDAY_LISTENER_KEY, organizationId, 'holidayBookings', (docs) => {
+      await subscribeOrgCollectionLoaded(HOLIDAY_LISTENER_KEY, organizationId, 'holidayBookings', (docs, meta) => {
         if (!liveResultStillCurrent(organizationId)) return
         const bookings = docs
           .map((entry) => mapHolidayBooking(entry.id, entry.data, organizationId))
           .filter((item): item is HolidayBooking => item !== null)
           .sort((a, b) => b.startDate.getTime() - a.startDate.getTime())
         const previous = holidayOrgId === organizationId ? get().bookings : []
-        const kept = retainScopedRows(`holidayBookings:${organizationId}`, previous, bookings)
+        const kept = retainScopedRows(`holidayBookings:${organizationId}`, previous, bookings, meta)
         holidayOrgId = organizationId
         set({ bookings: kept, loading: false, error: null, loadedOrgId: organizationId })
       })

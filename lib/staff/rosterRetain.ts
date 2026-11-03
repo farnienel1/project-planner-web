@@ -126,8 +126,16 @@ export function mergeRetainedRoster(
   return dedupeUsersByEmail(kept)
 }
 
-/** An empty refresh must not wipe rows already loaded. The first load may still be empty. */
-export function retainLoadedRows<T>(previous: readonly T[], next: readonly T[]): T[] {
+/** How a snapshot was read: `authoritative` is a server answer (not the local cache, not a partial read). */
+export type RetainOptions = { authoritative?: boolean } | null | undefined
+
+/**
+ * An empty cache or partial refresh must not wipe rows already loaded. The first load may still be empty.
+ * A server (non-cache) snapshot is authoritative: rows missing from it are gone — deleted or moved elsewhere —
+ * and are removed, even when that empties the list.
+ */
+export function retainLoadedRows<T>(previous: readonly T[], next: readonly T[], options?: RetainOptions): T[] {
+  if (options?.authoritative) return [...next]
   if (next.length === 0 && previous.length > 0) return [...previous]
   return [...next]
 }
@@ -156,11 +164,12 @@ export function markRowsRemoved(scope: string, ids: readonly string[]): void {
 export function retainScopedRows<T extends { id: string }>(
   scope: string,
   previous: readonly T[],
-  next: readonly T[]
+  next: readonly T[],
+  options?: RetainOptions
 ): T[] {
   const gone = removedIdsByScope.get(scope)
   const withoutRemoved = (rows: readonly T[]) =>
     gone && gone.size > 0 ? rows.filter((row) => !gone.has(row.id)) : [...rows]
-  return retainLoadedRows(withoutRemoved(previous), withoutRemoved(next))
+  return retainLoadedRows(withoutRemoved(previous), withoutRemoved(next), options)
 }
 

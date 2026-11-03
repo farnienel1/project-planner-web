@@ -42,10 +42,17 @@ const removedDocIds = new Map<string, Set<string>>()
 /** `{orgId}|{queryId}` of the listener that has delivered at least one snapshot, per key. */
 const delivered = new Map<string, string>()
 const firstSnapshotWaiters = new Map<string, Array<{ resolve: () => void; reject: (error: unknown) => void }>>()
+/**
+ * How a published list was read. `authoritative` is true for a server snapshot or a server re-read: rows missing
+ * from it are gone. A cache snapshot (or the remembered list replayed on re-attach) is not.
+ */
+export type OrgCollectionSnapshotMeta = { authoritative: boolean }
+export type OrgCollectionDocsHandler = (docs: OrgCollectionDoc[], meta?: OrgCollectionSnapshotMeta) => void
+
 const listeners = new Map<
   string,
   {
-    onDocs: (docs: OrgCollectionDoc[]) => void
+    onDocs: OrgCollectionDocsHandler
     onError?: (error: FirestoreError) => void
   }
 >()
@@ -56,7 +63,7 @@ function cacheKey(key: string, organizationId: string): string {
 
 function emitDocs(
   snap: { docs: { id: string; data: () => Record<string, unknown> }[] },
-  onDocs: (docs: OrgCollectionDoc[]) => void
+  onDocs: OrgCollectionDocsHandler
 ) {
   onDocs(snap.docs.map((entry) => ({ id: entry.id, data: entry.data() as Record<string, unknown> })))
 }
@@ -101,7 +108,7 @@ export function subscribeOrgCollection(
   key: string,
   organizationId: string,
   collectionName: string,
-  onDocs: (docs: OrgCollectionDoc[]) => void,
+  onDocs: OrgCollectionDocsHandler,
   onError?: (error: FirestoreError) => void,
   options?: SubscribeOrgCollectionOptions
 ): void {
@@ -113,7 +120,7 @@ export function subscribeOrgCollection(
   const storedKey = cacheKey(key, organizationId)
   const cached = lastDocs.get(storedKey)
   if (cached) {
-    onDocs(cached)
+    onDocs(cached, { authoritative: false })
   }
 
   if (!db) return
@@ -136,11 +143,12 @@ export function subscribeOrgCollection(
         data: entry.data() as Record<string, unknown>,
       }))
     const previous = (lastDocs.get(storedKey) ?? []).filter((entry) => !removed?.has(entry.id))
-    // An empty snapshot must not wipe bookings or the other live org collections.
-    // A real delete is recorded with forgetOrgCollectionDoc first.
-    const kept = retainLoadedRows(previous, docs)
+    // An empty cache snapshot must not wipe bookings or the other live org collections. A server snapshot is
+    // the collection: a row deleted on another device (even the last one) leaves the list.
+    const authoritative = snap.metadata ? !snap.metadata.fromCache : false
+    const kept = retainLoadedRows(previous, docs, { authoritative })
     lastDocs.set(storedKey, kept)
-    current.onDocs(kept)
+    current.onDocs(kept, { authoritative })
   }
 
   if (isOrgCollectionSubscribed(key, organizationId, queryId)) {
@@ -220,7 +228,7 @@ export async function refreshOrgCollections(organizationId: string): Promise<voi
             .filter((entry) => !removed?.has(entry.id))
             .map((entry) => ({ id: entry.id, data: entry.data() as Record<string, unknown> }))
           lastDocs.set(storedKey, docs)
-          activeCallback(key)?.onDocs(docs)
+          activeCallback(key)?.onDocs(docs, { authoritative: true })
         })
         .catch(() => {
           /* The live listener keeps what it has. */
@@ -266,7 +274,7 @@ export function subscribeOrgCollectionLoaded(
   key: string,
   organizationId: string,
   collectionName: string,
-  onDocs: (docs: OrgCollectionDoc[]) => void,
+  onDocs: OrgCollectionDocsHandler,
   options?: SubscribeOrgCollectionOptions
 ): Promise<void> {
   if (!organizationId) return Promise.resolve()

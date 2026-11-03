@@ -84,14 +84,14 @@ export const useMaterialCatalogStore = create<MaterialCatalogState>((set, get) =
     if (materialCatalogOrgId !== organizationId || get().items.length === 0) set({ loading: true, error: null })
     try {
       // Rulebook 1.9.0 §1 (`LIVE_COLLECTIONS`): a live listener; the load resolves on its first snapshot.
-      await subscribeOrgCollectionLoaded('materialCatalogStore:items', organizationId, 'materialCatalogue', (docs) => {
+      await subscribeOrgCollectionLoaded('materialCatalogStore:items', organizationId, 'materialCatalogue', (docs, meta) => {
         if (!liveResultStillCurrent(organizationId)) return
         const mapped = docs
           .map((entry) => mapMaterialCatalogItem(entry.id, entry.data))
           .filter((item): item is MaterialCatalogItem => item !== null)
           .sort((a, b) => a.name.localeCompare(b.name))
         const previous = materialCatalogOrgId === organizationId ? get().items : []
-        const kept = retainScopedRows(`materialCatalogue:${organizationId}`, previous, mapped)
+        const kept = retainScopedRows(`materialCatalogue:${organizationId}`, previous, mapped, meta)
         materialCatalogOrgId = organizationId
         set({ items: kept, loading: false })
       })

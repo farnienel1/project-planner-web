@@ -16,7 +16,7 @@ import {
   projectCollectionName,
   type ProjectSaveInput,
 } from '@/lib/firebase/projectPayload'
-import { subscribeOrgCollectionLoaded, forgetOrgCollectionDoc, unsubscribeOrgCollection, type OrgCollectionDoc } from '@/lib/firebase/subscribeOrgCollection'
+import { subscribeOrgCollectionLoaded, forgetOrgCollectionDoc, unsubscribeOrgCollection, type OrgCollectionDoc, type OrgCollectionSnapshotMeta } from '@/lib/firebase/subscribeOrgCollection'
 import { forgetOrgPlanDoc, subscribeOrgPlan, unsubscribeOrgPlan } from '@/lib/firebase/subscribeOrgPlan'
 import { jobPlanParts, webJobAccessViewer } from '@/lib/access/readPlan'
 import { userCanChangeJobManagers } from '@/lib/access/bookingAccess'
@@ -105,12 +105,12 @@ function subscribeJobs(
   key: string,
   organizationId: string,
   kind: 'projects' | 'smallWorks',
-  onDocs: (docs: OrgCollectionDoc[]) => void
+  onDocs: (docs: OrgCollectionDoc[], meta?: OrgCollectionSnapshotMeta) => void
 ): Promise<void> {
   const parts = jobPlanParts(webJobAccessViewer(useAuthStore.getState().user), kind, jobPlanDocumentIds)
-  const handle = (docs: OrgCollectionDoc[]) => {
+  const handle = (docs: OrgCollectionDoc[], meta?: OrgCollectionSnapshotMeta) => {
     loadedJobIdsByKind[kind] = docs.map((entry) => entry.id)
-    onDocs(docs)
+    onDocs(docs, meta)
     void import('@/lib/access/readPlanSync').then((sync) => sync.jobsChanged()).catch(() => undefined)
   }
   if (parts === null) {
@@ -148,7 +148,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     else set({ error: null })
     try {
       const planMode = jobPlanParts(webJobAccessViewer(useAuthStore.getState().user), 'projects', jobPlanDocumentIds) !== null
-      await subscribeJobs('projectStore:projects', organizationId, 'projects', (docs) => {
+      await subscribeJobs('projectStore:projects', organizationId, 'projects', (docs, meta) => {
         if (!liveResultStillCurrent(organizationId)) return
         let projects = docs
           .filter((entry) => !isLegacyPlaceholderDocumentId(entry.id))
@@ -157,7 +157,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         const previous = projectsOrgId === organizationId ? get().projects : []
         // A plan's parts are exact queries: a job that left them (manager removed) leaves the list now.
         projects = withoutLegacyPlaceholderDocuments(
-          planMode ? projects : retainScopedRows(`projects:${organizationId}`, previous, projects)
+          planMode ? projects : retainScopedRows(`projects:${organizationId}`, previous, projects, meta)
         )
         projectsOrgId = organizationId
         set({ projects, loading: false, projectsLoadedOrgId: organizationId })
@@ -176,14 +176,14 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     else set({ error: null })
     try {
       const planMode = jobPlanParts(webJobAccessViewer(useAuthStore.getState().user), 'smallWorks', jobPlanDocumentIds) !== null
-      await subscribeJobs('projectStore:smallWorks', organizationId, 'smallWorks', (docs) => {
+      await subscribeJobs('projectStore:smallWorks', organizationId, 'smallWorks', (docs, meta) => {
         if (!liveResultStillCurrent(organizationId)) return
         const mapped = docs
           .filter((entry) => !isLegacyPlaceholderDocumentId(entry.id))
           .map((entry) => mapProjectDoc(entry.id, entry.data, organizationId, 'smallWorks'))
         const previous = smallWorksOrgId === organizationId ? get().smallWorks : []
         const smallWorks = withoutLegacyPlaceholderDocuments(
-          planMode ? mapped : retainScopedRows(`smallWorks:${organizationId}`, previous, mapped)
+          planMode ? mapped : retainScopedRows(`smallWorks:${organizationId}`, previous, mapped, meta)
         )
         smallWorksOrgId = organizationId
         set({ smallWorks, loading: false, smallWorksLoadedOrgId: organizationId })
@@ -199,7 +199,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     void _options
     if (!organizationId) return
     try {
-      await subscribeOrgCollectionLoaded('projectStore:clients', organizationId, 'clients', (docs) => {
+      await subscribeOrgCollectionLoaded('projectStore:clients', organizationId, 'clients', (docs, meta) => {
         if (!liveResultStillCurrent(organizationId)) return
         const clients: Client[] = []
         for (const entry of docs) {
@@ -209,7 +209,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
           clients.push(parsed.value)
         }
         const previous = clientsOrgId === organizationId ? get().clients : []
-        const kept = withoutLegacyPlaceholderDocuments(retainScopedRows(`clients:${organizationId}`, previous, clients))
+        const kept = withoutLegacyPlaceholderDocuments(retainScopedRows(`clients:${organizationId}`, previous, clients, meta))
         clientsOrgId = organizationId
         set({ clients: kept })
       })

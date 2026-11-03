@@ -155,14 +155,14 @@ export const useSiteAuditStore = create<SiteAuditState>((set, get) => ({
     else set({ error: null })
     try {
       // Rulebook 1.9.0 §1 (`LIVE_COLLECTIONS`): a live listener; the load resolves on its first snapshot.
-      await subscribeOrgCollectionLoaded('siteAuditStore:audits', organizationId, 'siteAudits', (docs) => {
+      await subscribeOrgCollectionLoaded('siteAuditStore:audits', organizationId, 'siteAudits', (docs, meta) => {
         if (!liveResultStillCurrent(organizationId)) return
         const mapped = docs
           .map((entry) => mapSiteAudit(entry.id, entry.data))
           .filter((item): item is SiteAudit => item !== null)
           .sort((a, b) => b.date.getTime() - a.date.getTime())
         const previous = siteAuditOrgId === organizationId ? get().audits : []
-        const audits = retainScopedRows(`siteAudits:${organizationId}`, previous, mapped)
+        const audits = retainScopedRows(`siteAudits:${organizationId}`, previous, mapped, meta)
         siteAuditOrgId = organizationId
         set({ audits, loading: false })
       })

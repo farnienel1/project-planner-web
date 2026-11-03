@@ -81,14 +81,14 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
     if (get().operatives.length === 0 || operativesOrgId !== organizationId) set({ loading: true, error: null })
     else set({ error: null })
     try {
-      await subscribeOrgCollectionLoaded(OPERATIVES_KEY, organizationId, 'operatives', (docs) => {
+      await subscribeOrgCollectionLoaded(OPERATIVES_KEY, organizationId, 'operatives', (docs, meta) => {
         if (!liveResultStillCurrent(organizationId)) return
         const mapped = docs.flatMap((entry) => {
           const parsed = parseOperative(entry.id, entry.data, organizationId)
           return parsed.ok ? [parsed.value] : []
         })
         const previous = operativesOrgId === organizationId ? get().operatives : []
-        const operatives = retainScopedRows(`operatives:${organizationId}`, previous, mapped)
+        const operatives = retainScopedRows(`operatives:${organizationId}`, previous, mapped, meta)
         operativesOrgId = organizationId
         set({ operatives, loading: false, operativesLoadedOrgId: organizationId })
       })
@@ -102,7 +102,7 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
   loadManagers: async (organizationId: string) => {
     if (!organizationId) return
     try {
-      await subscribeOrgCollectionLoaded(MANAGERS_KEY, organizationId, 'managers', (docs) => {
+      await subscribeOrgCollectionLoaded(MANAGERS_KEY, organizationId, 'managers', (docs, meta) => {
         if (!liveResultStillCurrent(organizationId)) return
         const allManagers = docs.flatMap((entry) => {
           const parsed = parseManager(entry.id, entry.data, organizationId)
@@ -110,7 +110,7 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
         })
         const realManagers = filterRealManagers(allManagers)
         const previous = managersOrgId === organizationId ? get().managers : []
-        const managers = retainScopedRows(`managers:${organizationId}`, previous, realManagers)
+        const managers = retainScopedRows(`managers:${organizationId}`, previous, realManagers, meta)
         managersOrgId = organizationId
         set({
           managers,
@@ -127,7 +127,7 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
   loadSkills: async (organizationId: string) => {
     if (!organizationId) return
     try {
-      await subscribeOrgCollectionLoaded('operativeStore:skills', organizationId, 'skills', (docs) => {
+      await subscribeOrgCollectionLoaded('operativeStore:skills', organizationId, 'skills', (docs, meta) => {
         if (!liveResultStillCurrent(organizationId)) return
         // `parseSkillDocument` (rulebook 1.6.0): id as stored, a row without a name is skipped.
         const skills: Skill[] = docs.flatMap((entry) => {
@@ -144,7 +144,7 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
           ]
         })
         const previous = skillsOrgId === organizationId ? get().skills : []
-        const kept = retainScopedRows(`skills:${organizationId}`, previous, skills)
+        const kept = retainScopedRows(`skills:${organizationId}`, previous, skills, meta)
         skillsOrgId = organizationId
         set({ skills: kept })
       })
@@ -156,7 +156,7 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
   loadQualifications: async (organizationId: string) => {
     if (!organizationId) return
     try {
-      await subscribeOrgCollectionLoaded('operativeStore:qualifications', organizationId, 'qualifications', (docs) => {
+      await subscribeOrgCollectionLoaded('operativeStore:qualifications', organizationId, 'qualifications', (docs, meta) => {
         if (!liveResultStillCurrent(organizationId)) return
         const qualifications = docs.map((entry) => {
           const data = entry.data as Record<string, any>
@@ -169,7 +169,7 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
           } as Qualification
         })
         const previous = qualificationsOrgId === organizationId ? get().qualifications : []
-        const kept = retainScopedRows(`qualifications:${organizationId}`, previous, qualifications)
+        const kept = retainScopedRows(`qualifications:${organizationId}`, previous, qualifications, meta)
         qualificationsOrgId = organizationId
         set({ qualifications: kept })
       })
