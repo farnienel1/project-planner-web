@@ -123,8 +123,9 @@ function fromHeader(orgName) {
  */
 function callerFromHeader(caller) {
   const name = sanitizeDisplayName(caller && caller.displayName, 60)
-  if (!name || name === normalizeEmail(caller && caller.email)) return ''
-  return `"${name} via ${DEFAULT_FROM_NAME}" <${FROM_ADDRESS}>`
+  // Rulebook 1.24.0 `materialRequestEmailEnvelope` builds the "<name> via Project Planner" display name.
+  const { fromName } = canonical.materialRequestEmailEnvelope({ caller: { name, email: caller && caller.email } })
+  return fromName ? `"${fromName}" <${FROM_ADDRESS}>` : ''
 }
 
 /**
@@ -140,21 +141,25 @@ function callerFromHeader(caller) {
 function callerEnvelopeFields({ serverMode, template, data, caller }) {
   const none = { from: '', cc: [], replyTo: '' }
   if (!caller) return none
+  // Rulebook 1.24.0 `materialRequestEmailEnvelope`: the From name, CC and Reply-To of the verified caller.
   if (serverMode) {
+    const email = isValidEmail(caller.email) ? caller.email : ''
+    const envelope = canonical.materialRequestEmailEnvelope({ caller: { email } })
     return {
       from: data.fromCaller === true ? callerFromHeader(caller) : '',
-      cc: data.ccCaller === true && isValidEmail(caller.email) ? [normalizeEmail(caller.email)] : [],
+      cc: data.ccCaller === true ? [...envelope.cc] : [],
       replyTo: '',
     }
   }
   if (!template || template.callerEnvelope !== true) return none
   const email = isValidEmail(caller.tokenEmail) ? caller.tokenEmail : ''
+  const envelope = canonical.materialRequestEmailEnvelope({ caller: { email } })
   const wantsFrom = data.fromCaller === true
   const wantsCc = data.ccCaller === true
   return {
     from: wantsFrom ? callerFromHeader({ displayName: caller.profileName, email }) : '',
-    cc: wantsCc && email ? [email] : [],
-    replyTo: (wantsFrom || wantsCc) && email ? email : '',
+    cc: wantsCc ? [...envelope.cc] : [],
+    replyTo: wantsFrom || wantsCc ? envelope.replyTo : '',
   }
 }
 
@@ -183,6 +188,14 @@ function serverHeaders(raw) {
 function createSendEmailHandler(deps) {
   const now = deps.now || (() => new Date())
   const logger = deps.logger
+
+  async function checkJobInOrganization(rawJobId, orgId) {
+    if (rawJobId == null || rawJobId === '') return
+    const jobId = typeof rawJobId === 'string' ? rawJobId.trim() : ''
+    if (!jobId || jobId.length > 128 || !/^[A-Za-z0-9_-]+$/.test(jobId)) throw new HttpError(400, 'jobId is not valid')
+    const job = await deps.reader.getJob(orgId, jobId)
+    if (!job) throw new HttpError(404, 'Job not found in this organisation')
+  }
 
   async function handle(req) {
     if (req.method !== 'POST') throw new HttpError(405, 'Use POST')
@@ -261,6 +274,11 @@ function createSendEmailHandler(deps) {
         }
       }
     }
+
+    // Rulebook 1.24.0 (§16): a template that names a job (`jobCheck`) and a request that sends `data.jobId` — the job
+    // must be a project or small works of this organisation (`organizations/{orgId}/projects|smallWorks/{jobId}`).
+    // A request without `jobId` is still accepted (iOS sends only the job number today).
+    if (template.jobCheck === true && !serverMode) await checkJobInOrganization(data.jobId, orgId)
 
     const attachments = parseAttachments(body.attachments, template.attachments)
     const resolved = await resolveRecipients(template, body.to, {

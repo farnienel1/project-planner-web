@@ -12,6 +12,7 @@ import {
   MATERIAL_ORDER_SEND_REFUSED_MESSAGE,
   canSendMaterialOrders,
   materialOrderRecipientCheck,
+  materialRequestEmailEnvelope,
 } from '@/lib/canonical/materialOrderAccess'
 import {
   clientSafeMessage,
@@ -161,6 +162,15 @@ export async function POST(request: NextRequest) {
   // "<user> via Project Planner" from the verified address with Reply-To the user (the email function decides the
   // name and CC from the verified caller). All recipients are sent at once, not one after another. A function
   // deployed before CC support ignores `ccCaller`; the route then sends the user's copy as before.
+  // Rulebook 1.24.0 `materialRequestEmailEnvelope`: the subject and Reply-To / CC address, shared with the email
+  // function's `material_request`. The From name ("<user> via Project Planner") and the CC are applied by the email
+  // function from the verified caller (`fromCaller` / `ccCaller`), never from this request.
+  const envelope = materialRequestEmailEnvelope({
+    requestType,
+    jobNumber,
+    companyName: senderCompany,
+    caller: { name: senderName, email: senderEmail },
+  })
   const idToken = bearerToken(request)
   const failed: string[] = []
   const failures: Array<{ email: string; reason: string }> = []
@@ -170,7 +180,7 @@ export async function POST(request: NextRequest) {
 
   const outcomes = await Promise.all(
     recipients.map(async (recipient) => {
-      const { subject, html } = buildMaterialRequestEmail({
+      const { html } = buildMaterialRequestEmail({
         context: {
           supplierName: recipient.name,
           userName: senderName,
@@ -189,12 +199,13 @@ export async function POST(request: NextRequest) {
         sendAsPlainText,
         contactName: recipient.name,
       })
+      const subject = envelope.subject
       try {
         const result = await sendProjectPlannerEmail({
           to: recipient.email,
           subject,
           html,
-          replyTo: senderEmail.toLowerCase(),
+          replyTo: envelope.replyTo,
           orgId: access.organizationId,
           idToken,
           fromCaller: true,
@@ -234,7 +245,7 @@ export async function POST(request: NextRequest) {
         to: senderEmail.toLowerCase(),
         subject: `Copy: ${outcome.subject}`,
         html: outcome.html,
-        replyTo: senderEmail.toLowerCase(),
+        replyTo: envelope.replyTo,
         orgId: access.organizationId,
         idToken,
       })

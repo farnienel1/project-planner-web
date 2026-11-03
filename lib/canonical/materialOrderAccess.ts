@@ -85,3 +85,55 @@ export function materialOrderRecipientCheck(input: {
   }
   return { ok: true, saved: savedOut, typed, self: includesSelf }
 }
+
+/** The From display name suffix on mail sent for a signed-in user: `"<name> via Project Planner"`. */
+export const MATERIAL_REQUEST_FROM_SUFFIX = ' via Project Planner'
+
+/**
+ * The subject of a material quote or order email (rulebook §16, 1.24.0): `Quote request — <job number> — <company>`
+ * for a quote, `Material order request — <job number> — <company>` otherwise. The values are used as given (callers
+ * pass them trimmed); the em dashes are part of the subject.
+ */
+export function materialRequestEmailSubject(requestType: unknown, jobNumber: unknown, companyName: unknown): string {
+  const job = jobNumber == null ? '' : String(jobNumber)
+  const company = companyName == null ? '' : String(companyName)
+  return requestType === 'quote' ? `Quote request — ${job} — ${company}` : `Material order request — ${job} — ${company}`
+}
+
+export type MaterialRequestEmailEnvelope = {
+  subject: string
+  /** `"<caller name> via Project Planner"`, or '' — the sender then uses the organisation From. */
+  fromName: string
+  /** The caller's email (lower case), or '' when it is not an email. */
+  replyTo: string
+  /** The caller's email in CC (one message per recipient, the sender copied), or [] when it is not an email. */
+  cc: string[]
+}
+
+/**
+ * The envelope of one material quote / order email (rulebook §16, 1.24.0), shared by the web send route and the email
+ * function's `material_request` template so both build the same subject, From name, Reply-To and CC:
+ *   - `subject`: `materialRequestEmailSubject(requestType, jobNumber, companyName)`;
+ *   - `fromName`: `<caller.name> via Project Planner` — the caller's own verified profile name, never a name from the
+ *     request; '' when the name is blank or is just the caller's email (the organisation From is used instead);
+ *   - `replyTo` and `cc`: the caller's verified email (lower case); '' / [] when it is not an email.
+ * The address the message is sent from is never the caller's (the sending service's verified address). The sender
+ * decides whether to apply `fromName` / `cc` (the request's `fromCaller` / `ccCaller`); this only builds them.
+ */
+export function materialRequestEmailEnvelope(input: {
+  requestType: unknown
+  jobNumber: unknown
+  companyName: unknown
+  caller?: { name?: unknown; email?: unknown } | null
+}): MaterialRequestEmailEnvelope {
+  const name = typeof input?.caller?.name === 'string' ? input.caller.name.trim() : ''
+  const email = normalizedEmail(input?.caller?.email)
+  const validEmail = email && looksLikeEmail(email) ? email : ''
+  const fromName = name && name.toLowerCase() !== email ? `${name}${MATERIAL_REQUEST_FROM_SUFFIX}` : ''
+  return {
+    subject: materialRequestEmailSubject(input?.requestType, input?.jobNumber, input?.companyName),
+    fromName,
+    replyTo: validEmail,
+    cc: validEmail ? [validEmail] : [],
+  }
+}

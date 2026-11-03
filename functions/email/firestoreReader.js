@@ -14,6 +14,11 @@ function createFirestoreReader(db) {
     getUser: (uid) => getData(`users/${uid}`),
     getMembership: (uid, orgId) => (orgId ? getData(`users/${uid}/orgMemberships/${orgId}`) : Promise.resolve(null)),
     getInvitation: (id) => getData(`invitations/${id}`),
+    /** A job of this organisation: its project, else its small works document; null when neither exists. */
+    async getJob(orgId, jobId) {
+      if (!orgId || !jobId) return null
+      return (await getData(`organizations/${orgId}/projects/${jobId}`)) || (await getData(`organizations/${orgId}/smallWorks/${jobId}`))
+    },
     async usersByEmail(email, orgId) {
       const wanted = normalizeEmail(email)
       const exact = await db.collection('users').where('email', '==', wanted).limit(10).get()

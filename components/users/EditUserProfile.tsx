@@ -19,7 +19,7 @@ import {
   roleLabel,
   setupSectionTitle,
 } from '@/lib/staff/userEditPermissions'
-import { lineManagerChoices, rosterStatusLabel } from '@/lib/staff/userRosterUtils'
+import { rosterStatusLabel } from '@/lib/staff/userRosterUtils'
 import { userLineManagerRequiredError, userMayHaveNoLineManager } from '@/lib/annualLeave/holidayApprovalUtils'
 import { userTimesheetSelfSigned } from '@/lib/timesheets/timesheetApprovalPolicy'
 import { UserAvatar } from '@/components/users/UserAvatar'
@@ -73,7 +73,7 @@ import {
 import { loadOrganisationQualificationsEnsuringStarter } from '@/lib/qualifications/starterLibrary'
 import { canonicalCertificateUrls, formatCertificateSaveError } from '@/lib/qualifications/certificateUpload'
 import { canManageOrganisationQualifications, staffAccountRole } from '@/lib/permissions'
-import { canDeleteUser, lineManagerSelectedIds, SELF_EMAIL_INVALID_MESSAGE, selfEmailChangeAction, selfEmailChangeSentMessage } from '@/lib/canonical'
+import { canDeleteUser, lineManagerCandidates, lineManagerSelectedIds, SELF_EMAIL_INVALID_MESSAGE, selfEmailChangeAction, selfEmailChangeSentMessage } from '@/lib/canonical'
 import { PermissionRowsList } from '@/components/users/ProfileExpandablePermissionToggle'
 import { useOrganizationDocument } from '@/lib/stores/organizationDocumentStore'
 import { accountTypeSubject } from '@/lib/staff/accountTypeChange'
@@ -383,7 +383,14 @@ export function EditUserProfile({
     )
   }, [target, leaveBalance.remaining, remainingTouched])
 
-  const managers = useMemo(() => lineManagerChoices(users, target?.id), [users, target?.id])
+  // Rulebook §11 `lineManagerCandidates(person, roster)`: the picker list, never the person under any of their ids.
+  const managers = useMemo(() => {
+    const byId = new Map(users.map((row) => [row.id, row]))
+    const subject = target?.id ? users.find((row) => row.id === target.id) ?? { id: target.id } : null
+    return lineManagerCandidates(subject as never, users as never)
+      .map((candidate) => byId.get(candidate.id))
+      .filter((row): row is (typeof users)[number] => Boolean(row))
+  }, [users, target?.id])
 
   const previousRateEntries = useMemo(() => {
     if (!target) return []

@@ -99,11 +99,12 @@ function brandMark() {
     </td>
   </tr></table>`;
 }
+// Rulebook 1.24.0 `materialRequestEmailSubject` (the subject of `materialRequestEmailEnvelope`).
 function quoteSubject(jobNumber, company) {
-  return `Quote request \u2014 ${jobNumber} \u2014 ${company}`;
+  return canonical.materialRequestEmailSubject('quote', jobNumber, company);
 }
 function orderSubject(jobNumber, company) {
-  return `Material order request \u2014 ${jobNumber} \u2014 ${company}`;
+  return canonical.materialRequestEmailSubject('order', jobNumber, company);
 }
 function buildPlainTextEmail(context, isQuote) {
   const contact = trim(context.supplierName) || "there";

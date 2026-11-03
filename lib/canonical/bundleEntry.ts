@@ -903,9 +903,10 @@ export {
   lineManagerCandidates,
   lineManagerOptions,
   lineManagerSelectedIds,
+  lineManagerSelectionAfterLevelChange,
   lineManagerSummary,
 } from './lineManagers'
-export type { LineManagerCandidate, LineManagerRosterPerson, LineManagerSubject } from './lineManagers'
+export type { LineManagerCandidate, LineManagerPicks, LineManagerRosterPerson, LineManagerSubject } from './lineManagers'
 export { PAY_BASIS_DAY_HELP, PAY_BASIS_HOURLY_HELP, PAY_BASIS_SAVE_NOTE } from './payRate'
 export { PAY_RATE_REQUIRED_MESSAGE, payRateRequiredError, usersMissingPayRate } from './payRate'
 export {
@@ -996,8 +997,11 @@ export {
   MATERIAL_ORDER_SEND_REFUSED_MESSAGE,
   MATERIAL_ORDER_TYPED_RECIPIENTS_MAX,
   MATERIAL_ORDER_TYPED_RECIPIENTS_MESSAGE,
+  MATERIAL_REQUEST_FROM_SUFFIX,
   canSendMaterialOrders,
   materialOrderRecipientCheck,
+  materialRequestEmailEnvelope,
+  materialRequestEmailSubject,
 } from './materialOrderAccess'
 export {
   ACCOUNT_DELETE_WITH_COMPANY_MESSAGE,
