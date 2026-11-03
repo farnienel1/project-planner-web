@@ -11112,3 +11112,81 @@ test('1.23.1 weekend named slots: a Saturday Full day is that Saturday\'s own wi
   })
   assert.deepEqual(cover[0].workingWindow, { start: 10 * 60 + 15, end: 13 * 60 })
 })
+
+// ---------------------------------------------------------------------------------------------------------------
+// 1.24.0 — line-manager picks after a level change; material email envelope
+// ---------------------------------------------------------------------------------------------------------------
+import {
+  lineManagerCandidates as r124Candidates,
+  lineManagerSelectionAfterLevelChange as r124AfterLevel,
+} from './lineManagers.ts'
+import {
+  MATERIAL_REQUEST_FROM_SUFFIX as r124FromSuffix,
+  materialRequestEmailEnvelope as r124Envelope,
+  materialRequestEmailSubject as r124Subject,
+} from './materialOrderAccess.ts'
+
+const r124Roster = [
+  { id: 'adm', email: 'adm@x.com', firstName: 'Ann', surname: 'Admin', isActive: true, passwordSet: true, role: 'admin', adminAccess: true },
+  { id: 'mgr', email: 'mgr@x.com', firstName: 'Max', surname: 'Manager', isActive: true, passwordSet: true, role: 'manager', manager: true },
+  { id: 'MGR-OLD', email: 'MGR@x.com', firstName: 'Max', surname: 'Manager', isActive: false, passwordSet: true, role: 'manager', manager: true },
+  { id: 'gone', email: 'gone@x.com', firstName: 'Gil', surname: 'Gone', isActive: false, passwordSet: true, role: 'manager', manager: true },
+  { id: 'pend', email: 'pend@x.com', firstName: 'Pat', surname: 'Pending', isActive: true, passwordSet: false, role: 'manager', manager: true },
+  { id: 'op', email: 'op@x.com', firstName: 'Oli', surname: 'Operative', isActive: true, passwordSet: true, role: 'operative', operativeMode: true },
+]
+
+test('1.24.0 lineManagerSelectionAfterLevelChange: keeps the picks that are still candidates, drops the rest', () => {
+  const picks = { lineManagerIds: ['mgr', 'gone', 'pend', 'op', 'nobody', 'adm'], hasNoLineManager: false }
+  for (const level of ['operative', 'manager', 'admin'] as const) {
+    const out = r124AfterLevel(picks, level, r124Roster)
+    assert.deepEqual(out.lineManagerIds, ['mgr', 'adm'], level)
+    assert.deepEqual(out.dropped, ['gone', 'pend', 'op', 'nobody'], level)
+    assert.equal(out.hasNoLineManager, false)
+    // Every kept pick is a candidate.
+    const ids = r124Candidates(null, r124Roster).map((row) => row.id)
+    for (const id of out.lineManagerIds) assert.ok(ids.includes(id))
+  }
+})
+
+test('1.24.0 lineManagerSelectionAfterLevelChange: an alias id or another letter case keeps the person once, as the candidate id', () => {
+  const out = r124AfterLevel({ lineManagerIds: ['MGR-OLD', 'mgr', 'ADM'] }, 'operative', r124Roster)
+  assert.deepEqual(out.lineManagerIds, ['mgr', 'adm'])
+  assert.deepEqual(out.dropped, [])
+})
+
+test('1.24.0 lineManagerSelectionAfterLevelChange: "No line manager" stays only for an admin', () => {
+  assert.equal(r124AfterLevel({ lineManagerIds: [], hasNoLineManager: true }, 'admin', r124Roster).hasNoLineManager, true)
+  assert.equal(r124AfterLevel({ lineManagerIds: [], hasNoLineManager: true }, 'manager', r124Roster).hasNoLineManager, false)
+  assert.equal(r124AfterLevel({ lineManagerIds: [], hasNoLineManager: true }, 'operative', r124Roster).hasNoLineManager, false)
+  assert.deepEqual(r124AfterLevel(null, 'manager', r124Roster), { lineManagerIds: [], hasNoLineManager: false, dropped: [] })
+})
+
+test('1.24.0 lineManagerSelectionAfterLevelChange: the person being added is never kept as their own line manager', () => {
+  const out = r124AfterLevel({ lineManagerIds: ['mgr', 'adm'] }, 'manager', r124Roster, { id: 'invite-draft', email: 'MGR@x.com' })
+  assert.deepEqual(out.lineManagerIds, ['adm'])
+  assert.deepEqual(out.dropped, ['mgr'])
+})
+
+test('1.24.0 materialRequestEmailSubject: the subjects are unchanged', () => {
+  assert.equal(r124Subject('quote', 'J-101', 'Acme Ltd'), 'Quote request — J-101 — Acme Ltd')
+  assert.equal(r124Subject('order', 'J-101', 'Acme Ltd'), 'Material order request — J-101 — Acme Ltd')
+})
+
+test('1.24.0 materialRequestEmailEnvelope: subject, From name, Reply-To and CC from the verified caller', () => {
+  assert.deepEqual(
+    r124Envelope({ requestType: 'quote', jobNumber: 'J-1', companyName: 'Acme', caller: { name: ' Sam Smith ', email: 'Sam@Acme.com ' } }),
+    { subject: 'Quote request — J-1 — Acme', fromName: `Sam Smith${r124FromSuffix}`, replyTo: 'sam@acme.com', cc: ['sam@acme.com'] }
+  )
+  assert.equal(r124FromSuffix, ' via Project Planner')
+  // No name, or a name that is just the email: the organisation From is used ('' here).
+  assert.equal(r124Envelope({ requestType: 'order', jobNumber: 'J', companyName: 'C', caller: { name: '', email: 'a@b.co' } }).fromName, '')
+  assert.equal(r124Envelope({ requestType: 'order', jobNumber: 'J', companyName: 'C', caller: { name: 'A@B.co', email: 'a@b.co' } }).fromName, '')
+  // Not an email: no Reply-To, no CC.
+  assert.deepEqual(r124Envelope({ requestType: 'order', jobNumber: 'J', companyName: 'C', caller: { name: 'Sam', email: 'nope' } }), {
+    subject: 'Material order request — J — C',
+    fromName: 'Sam via Project Planner',
+    replyTo: '',
+    cc: [],
+  })
+  assert.deepEqual(r124Envelope({ requestType: 'quote', jobNumber: 'J', companyName: 'C' }).cc, [])
+})

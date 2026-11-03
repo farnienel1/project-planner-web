@@ -27,8 +27,11 @@ import {
 import { dayKeyInZone } from '@/lib/orgTime/zoneTime'
 import { DEFAULT_ANNUAL_LEAVE } from '@/lib/settings/organizationSettings'
 import { STAFF_TRADE_TYPES } from '@/lib/staff/staffTradeTypes'
-import { lineManagerChoices } from '@/lib/staff/userRosterUtils'
-import { lineManagerOptions } from '@/lib/canonical/lineManagers'
+import {
+  lineManagerCandidates,
+  lineManagerOptions,
+  lineManagerSelectionAfterLevelChange,
+} from '@/lib/canonical/lineManagers'
 import { rulebookRoster } from '@/lib/staff/rulebookPeople'
 import {
   type PermissionToggleDef,
@@ -212,10 +215,14 @@ export function AddUserScreen() {
       .catch(() => {})
   }, [organization?.id])
 
-  const lineManagers = useMemo(
-    () => lineManagerChoices(users),
-    [users]
-  )
+  // Rulebook §11 `lineManagerCandidates(person, roster)`: the picker list (iOS AddUserView the same). Add User has no
+  // person yet, so nobody is excluded as "themself".
+  const lineManagers = useMemo(() => {
+    const byId = new Map(users.map((row) => [row.id, row]))
+    return lineManagerCandidates(null, users as never)
+      .map((candidate) => byId.get(candidate.id))
+      .filter((row): row is (typeof users)[number] => Boolean(row))
+  }, [users])
 
   const availableAccountTypes = useMemo(() => {
     if (canInviteAdmins) return ACCOUNT_TYPES
@@ -236,6 +243,18 @@ export function AddUserScreen() {
   const showSetup = true
 
   function selectAccountType(next: AccountType) {
+    if (next !== accountType) {
+      // Rulebook 1.24.0 `lineManagerSelectionAfterLevelChange`: keep the picks that are still candidates, drop the rest;
+      // "No line manager" stays only for an admin.
+      setForm((prev) => {
+        const kept = lineManagerSelectionAfterLevelChange(
+          { lineManagerIds: prev.assignedManagerUserIds, hasNoLineManager: prev.hasNoLineManager },
+          next,
+          users as never
+        )
+        return { ...prev, assignedManagerUserIds: kept.lineManagerIds, hasNoLineManager: kept.hasNoLineManager }
+      })
+    }
     setAccountType(next)
     setPermissions(addUserPermissionDefaults(next) as UserPermissions)
   }

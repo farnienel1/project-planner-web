@@ -1,4 +1,3 @@
-import { lineManagerCandidates } from '@/lib/canonical/lineManagers'
 import type { User } from '@/types'
 import {
   isAnonymisedDeletedProfile,
@@ -243,23 +242,6 @@ export function getVisibilityOperativeUsers(
       sensitivity: 'base',
     })
   )
-}
-
-/**
- * People who can be chosen as a line manager.
- * iOS ManageUsersView.lineManagerCandidates requires an accepted login (passwordSet)
- * and an active admin or manager. Pending invites stay on Manage users.
- */
-/**
- * The line manager picker (Add User, Edit User): rulebook 1.11.0 `lineManagerCandidates` — active admins, super
- * admins and managers, never the person under any of their ids, no pending invites or deleted profiles; by name.
- */
-export function lineManagerChoices(users: User[], excludeId?: string): User[] {
-  const subject = excludeId ? users.find((user) => user.id === excludeId) ?? { id: excludeId } : null
-  const byId = new Map(users.map((user) => [user.id, user]))
-  return lineManagerCandidates(subject as never, users as never)
-    .map((candidate) => byId.get(candidate.id))
-    .filter((user): user is User => Boolean(user))
 }
 
 /** Admins and managers (not operative-mode) — used by pickers / scheduling. */

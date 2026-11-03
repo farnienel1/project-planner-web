@@ -6,8 +6,8 @@ import {
   filterRosterByNameQuery,
   getManagerUsers,
   getManagersRosterUsers,
-  lineManagerChoices,
 } from '../staff/userRosterUtils.ts'
+import { lineManagerCandidates } from '../canonical/lineManagers.ts'
 import { coversCalendarDay, dateFromDayKey, dayKey } from './londonTime.ts'
 import { normalizeTimeSlot } from './enums.ts'
 
@@ -71,7 +71,7 @@ test('line manager choices omit pending invites', () => {
     passwordSet: false,
   })
   const self = user({ id: 'op', email: 'op@x.com', firstName: 'Test', surname: 'Operative', role: UserRole.OPERATIVE })
-  const choices = lineManagerChoices([admin, pending, self], 'op')
+  const choices = lineManagerCandidates(self as never, [admin, pending, self] as never)
   assert.deepEqual(
     choices.map((row) => row.id),
     ['admin']

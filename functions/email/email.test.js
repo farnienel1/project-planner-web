@@ -48,6 +48,11 @@ function fixture(overrides = {}) {
         .filter(([, data]) => String(data.email).toLowerCase() === email)
         .map(([id, data]) => ({ id, data })),
     listWholesalers: async () => wholesalers,
+    // Jobs by organisation (rulebook 1.24.0 optional `jobId` on material_request).
+    getJob: async (orgId, jobId) => {
+      const jobs = { [ORG]: { 'proj-1': { jobNumber: 'J-200' }, 'sw-1': { jobNumber: 'SW-9' } }, 'other-org': { 'proj-x': { jobNumber: 'J-200' } } }
+      return (jobs[orgId] && jobs[orgId][jobId]) || null
+    },
   }
   return { org, users, reader }
 }
@@ -605,4 +610,46 @@ test('server mode is unchanged by the app envelope: web_rendered keeps its calle
   assert.deepEqual(sent[1].to, ['manager@example.com'])
   assert.equal(sent[1].cc, undefined)
   assert.equal(sent[1].from, '"Acme Builders Ltd" <info@projectplanner.us>')
+})
+
+// ---------------------------------------------------------------------------------------------------------------
+// Rulebook 1.24.0: the shared envelope (`materialRequestEmailEnvelope`) and the optional job check
+
+const canonical = require('../loadCanonical')
+
+test('1.24.0 material_request: subject, From, Reply-To and CC are materialRequestEmailEnvelope', async () => {
+  const { handler, sent } = makeHandler()
+  const res = await call(handler, { headers: auth('M'), body: iosMaterialBody({ requestType: 'quote' }) })
+  assert.equal(res.code, 200, JSON.stringify(res.payload))
+  const envelope = canonical.materialRequestEmailEnvelope({
+    requestType: 'quote',
+    jobNumber: 'J-200',
+    companyName: 'Acme <Builders> Ltd',
+    caller: { name: 'Max Manager', email: 'manager@example.com' },
+  })
+  assert.equal(sent[0].subject, envelope.subject)
+  assert.equal(sent[0].subject, 'Quote request — J-200 — Acme <Builders> Ltd')
+  assert.equal(sent[0].from, `"${envelope.fromName}" <info@projectplanner.us>`)
+  assert.equal(sent[0].reply_to, envelope.replyTo)
+  assert.deepEqual(sent[0].cc, [...envelope.cc])
+})
+
+test('1.24.0 material_request: a jobId of this organisation (project or small works) is accepted; no jobId is accepted', async () => {
+  for (const jobId of ['proj-1', 'sw-1', undefined, '']) {
+    const { handler, sent } = makeHandler()
+    const res = await call(handler, { headers: auth('M'), body: iosMaterialBody(jobId === undefined ? {} : { jobId }) })
+    assert.equal(res.code, 200, `${jobId}: ${JSON.stringify(res.payload)}`)
+    assert.equal(sent.length, 1)
+  }
+})
+
+test("1.24.0 material_request: a jobId outside the caller's organisation, unknown or malformed is refused before anything is sent", async () => {
+  for (const [jobId, code] of [['proj-x', 404], ['nope', 404], ['../x', 400], [42, 400]]) {
+    const { handler, sent, rateCalls } = makeHandler()
+    const res = await call(handler, { headers: auth('M'), body: iosMaterialBody({ jobId }) })
+    assert.equal(res.code, code, `${jobId}: ${JSON.stringify(res.payload)}`)
+    assert.equal(res.payload.sent, false)
+    assert.equal(sent.length, 0)
+    assert.equal(rateCalls.length, 0)
+  }
 })

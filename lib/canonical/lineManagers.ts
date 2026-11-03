@@ -219,3 +219,61 @@ export function lineManagerSummary(
   const label = ids.length === 0 ? LINE_MANAGER_NOT_SET_LABEL : moreCount >= 1 ? `${ids[0].name} +${moreCount} more` : ids[0].name
   return { label, ids, moreCount }
 }
+
+/** The Add User / Change user type line-manager picks: the chosen ids and the "No line manager" choice. */
+export type LineManagerPicks = {
+  lineManagerIds?: ReadonlyArray<string> | null
+  hasNoLineManager?: boolean | null
+}
+
+/**
+ * The line-manager picks after the account type (level) changes on Add User (rulebook §11, 1.24.0). Before 1.24.0 web
+ * kept every pick and iOS cleared them all. One rule: keep each picked id that is still a `lineManagerCandidates` row
+ * for the person at `newLevel` (mapped onto that candidate's id, one entry per person, picked order) and drop the
+ * rest (an inactive or pending person, an operative, a deleted profile, an id the roster does not know, the person
+ * themself); keep "No line manager" only when `lineManagerOptions` allows it at `newLevel` (admins). Who may be picked
+ * is the same at every level (`lineManagerCandidates` reads only the roster and the person's ids), so in practice a
+ * level change keeps the picks and drops "No line manager" when leaving admin. `person` is the
+ * person being added or edited (their email and any ids) so they are never their own line manager; Add User passes
+ * what it passes to `lineManagerCandidates`. `dropped` lists the picks removed, as given. Choosing the same level again
+ * is not a change: the screen does not call this. Whether the result is enough is still `lineManagerRequiredError`.
+ */
+export function lineManagerSelectionAfterLevelChange(
+  picks: LineManagerPicks | null | undefined,
+  newLevel: 'admin' | 'manager' | 'operative' | string | null | undefined,
+  roster: ReadonlyArray<LineManagerRosterPerson> | null | undefined,
+  person?: LineManagerSubject | null
+): { lineManagerIds: string[]; hasNoLineManager: boolean; dropped: string[] } {
+  const level = text(newLevel).toLowerCase()
+  const resolved: 'admin' | 'manager' | 'operative' = level === 'admin' || level === 'operative' ? level : 'manager'
+  // Only "No line manager" depends on the level; who may be picked does not (`lineManagerCandidates`).
+  const levelSubject: LineManagerSubject = {
+    isActive: true,
+    role: resolved,
+    adminAccess: resolved === 'admin',
+    operativeMode: resolved === 'operative',
+  }
+  const rows = (roster || []).filter((row) => row && text(row.id))
+  const candidates = lineManagerCandidates(person || null, rows)
+  const groups = rosterPersonGroups(rows)
+  const lineManagerIds: string[] = []
+  const dropped: string[] = []
+  const seen = new Set<string>()
+  for (const raw of picks?.lineManagerIds || []) {
+    const id = text(raw)
+    if (!id) continue
+    const group = groups.find((entry) => entry.keys.has(idKey(id)))
+    const candidate = group
+      ? candidates.find((entry) => group.keys.has(idKey(entry.id)))
+      : candidates.find((entry) => idKey(entry.id) === idKey(id))
+    if (!candidate) {
+      dropped.push(id)
+      continue
+    }
+    if (seen.has(idKey(candidate.id))) continue
+    seen.add(idKey(candidate.id))
+    lineManagerIds.push(candidate.id)
+  }
+  const hasNoLineManager = picks?.hasNoLineManager === true && lineManagerOptions(levelSubject).allowsNoLineManager
+  return { lineManagerIds, hasNoLineManager, dropped }
+}

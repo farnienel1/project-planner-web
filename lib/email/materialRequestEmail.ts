@@ -7,6 +7,7 @@
 import { format } from 'date-fns'
 import { escapeHtml } from '@/lib/security/htmlEscape'
 import { quantityLabel, supplierGreeting } from '@/lib/materials/sendListLogic'
+import { materialRequestEmailSubject } from '@/lib/canonical/materialOrderAccess'
 
 export type MaterialRequestLine = {
   material: string
@@ -128,12 +129,13 @@ function brandMark(): string {
   </tr></table>`
 }
 
+/** Rulebook 1.24.0 `materialRequestEmailSubject` (the subject of `materialRequestEmailEnvelope`). */
 export function quoteSubject(jobNumber: string, company: string): string {
-  return `Quote request — ${jobNumber} — ${company}`
+  return materialRequestEmailSubject('quote', jobNumber, company)
 }
 
 export function orderSubject(jobNumber: string, company: string): string {
-  return `Material order request — ${jobNumber} — ${company}`
+  return materialRequestEmailSubject('order', jobNumber, company)
 }
 
 export function buildPlainTextEmail(context: MaterialRequestEmailContext, isQuote: boolean): string {

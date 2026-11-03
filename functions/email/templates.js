@@ -276,6 +276,8 @@ function renderMaterialRequest(input) {
     sentLabel: sentLabel(input.now, timeZone),
     deliveryRequiredLabel,
   }
+  // Rulebook 1.24.0 `materialRequestEmailEnvelope`: the subject is the shared one (company = the organisation name).
+  const envelope = canonical.materialRequestEmailEnvelope({ requestType, jobNumber: context.jobNumber, companyName: context.userCompany })
   const built = material.buildMaterialRequestEmail({
     context,
     isQuote,
@@ -283,7 +285,7 @@ function renderMaterialRequest(input) {
     // A wholesaler is greeted by their contact name; the sender's own copy uses the first wholesaler's.
     contactName: input.recipient.contactName || input.firstContactName || '',
   })
-  const subject = input.recipient.isSelf ? `Copy: ${built.subject}` : built.subject
+  const subject = input.recipient.isSelf ? `Copy: ${envelope.subject}` : envelope.subject
   return { subject: sanitizeHeader(subject, 180), html: built.html }
 }
 
@@ -338,6 +340,8 @@ const TEMPLATES = Object.freeze({
     // iOS sends one message per wholesaler: From "<user> via Project Planner", CC and Reply-To the user (as web does
     // through `web_rendered`). The sender's separate "Copy:" message is dropped when they are CC'd.
     callerEnvelope: true,
+    // Rulebook 1.24.0: an optional `data.jobId` must be a job of the organisation (handler `checkJobInOrganization`).
+    jobCheck: true,
     render: renderMaterialRequest,
   },
   leave_cancelled: {

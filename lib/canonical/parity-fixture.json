@@ -18018,6 +18018,277 @@
         }
       ],
       "expected": false
+    },
+    {
+      "name": "1.24.0 lineManagerSelectionAfterLevelChange: admin to operative keeps the valid picks, drops No line manager",
+      "function": "lineManagerSelectionAfterLevelChange",
+      "args": [
+        {
+          "lineManagerIds": [
+            "MGR-OLD",
+            "gone",
+            "op",
+            "adm"
+          ],
+          "hasNoLineManager": true
+        },
+        "operative",
+        [
+          {
+            "id": "adm",
+            "email": "adm@x.com",
+            "firstName": "Ann",
+            "surname": "Admin",
+            "isActive": true,
+            "passwordSet": true,
+            "role": "admin",
+            "adminAccess": true
+          },
+          {
+            "id": "mgr",
+            "email": "mgr@x.com",
+            "firstName": "Max",
+            "surname": "Manager",
+            "isActive": true,
+            "passwordSet": true,
+            "role": "manager",
+            "manager": true
+          },
+          {
+            "id": "MGR-OLD",
+            "email": "MGR@x.com",
+            "firstName": "Max",
+            "surname": "Manager",
+            "isActive": false,
+            "passwordSet": true,
+            "role": "manager",
+            "manager": true
+          },
+          {
+            "id": "gone",
+            "email": "gone@x.com",
+            "firstName": "Gil",
+            "surname": "Gone",
+            "isActive": false,
+            "passwordSet": true,
+            "role": "manager",
+            "manager": true
+          },
+          {
+            "id": "op",
+            "email": "op@x.com",
+            "firstName": "Oli",
+            "surname": "Operative",
+            "isActive": true,
+            "passwordSet": true,
+            "role": "operative",
+            "operativeMode": true
+          }
+        ]
+      ],
+      "expected": {
+        "lineManagerIds": [
+          "mgr",
+          "adm"
+        ],
+        "hasNoLineManager": false,
+        "dropped": [
+          "gone",
+          "op"
+        ]
+      }
+    },
+    {
+      "name": "1.24.0 lineManagerSelectionAfterLevelChange: to admin keeps No line manager",
+      "function": "lineManagerSelectionAfterLevelChange",
+      "args": [
+        {
+          "lineManagerIds": [],
+          "hasNoLineManager": true
+        },
+        "admin",
+        [
+          {
+            "id": "adm",
+            "email": "adm@x.com",
+            "firstName": "Ann",
+            "surname": "Admin",
+            "isActive": true,
+            "passwordSet": true,
+            "role": "admin",
+            "adminAccess": true
+          },
+          {
+            "id": "mgr",
+            "email": "mgr@x.com",
+            "firstName": "Max",
+            "surname": "Manager",
+            "isActive": true,
+            "passwordSet": true,
+            "role": "manager",
+            "manager": true
+          },
+          {
+            "id": "MGR-OLD",
+            "email": "MGR@x.com",
+            "firstName": "Max",
+            "surname": "Manager",
+            "isActive": false,
+            "passwordSet": true,
+            "role": "manager",
+            "manager": true
+          },
+          {
+            "id": "gone",
+            "email": "gone@x.com",
+            "firstName": "Gil",
+            "surname": "Gone",
+            "isActive": false,
+            "passwordSet": true,
+            "role": "manager",
+            "manager": true
+          },
+          {
+            "id": "op",
+            "email": "op@x.com",
+            "firstName": "Oli",
+            "surname": "Operative",
+            "isActive": true,
+            "passwordSet": true,
+            "role": "operative",
+            "operativeMode": true
+          }
+        ]
+      ],
+      "expected": {
+        "lineManagerIds": [],
+        "hasNoLineManager": true,
+        "dropped": []
+      }
+    },
+    {
+      "name": "1.24.0 lineManagerSelectionAfterLevelChange: never the person being added (same email)",
+      "function": "lineManagerSelectionAfterLevelChange",
+      "args": [
+        {
+          "lineManagerIds": [
+            "mgr",
+            "adm"
+          ]
+        },
+        "manager",
+        [
+          {
+            "id": "adm",
+            "email": "adm@x.com",
+            "firstName": "Ann",
+            "surname": "Admin",
+            "isActive": true,
+            "passwordSet": true,
+            "role": "admin",
+            "adminAccess": true
+          },
+          {
+            "id": "mgr",
+            "email": "mgr@x.com",
+            "firstName": "Max",
+            "surname": "Manager",
+            "isActive": true,
+            "passwordSet": true,
+            "role": "manager",
+            "manager": true
+          },
+          {
+            "id": "MGR-OLD",
+            "email": "MGR@x.com",
+            "firstName": "Max",
+            "surname": "Manager",
+            "isActive": false,
+            "passwordSet": true,
+            "role": "manager",
+            "manager": true
+          },
+          {
+            "id": "gone",
+            "email": "gone@x.com",
+            "firstName": "Gil",
+            "surname": "Gone",
+            "isActive": false,
+            "passwordSet": true,
+            "role": "manager",
+            "manager": true
+          },
+          {
+            "id": "op",
+            "email": "op@x.com",
+            "firstName": "Oli",
+            "surname": "Operative",
+            "isActive": true,
+            "passwordSet": true,
+            "role": "operative",
+            "operativeMode": true
+          }
+        ],
+        {
+          "id": "invite-draft",
+          "email": "mgr@x.com"
+        }
+      ],
+      "expected": {
+        "lineManagerIds": [
+          "adm"
+        ],
+        "hasNoLineManager": false,
+        "dropped": [
+          "mgr"
+        ]
+      }
+    },
+    {
+      "name": "1.24.0 materialRequestEmailEnvelope: quote",
+      "function": "materialRequestEmailEnvelope",
+      "args": [
+        {
+          "requestType": "quote",
+          "jobNumber": "J-101",
+          "companyName": "Acme Ltd",
+          "caller": {
+            "name": "Sam Smith",
+            "email": "Sam@Acme.com"
+          }
+        }
+      ],
+      "expected": {
+        "subject": "Quote request — J-101 — Acme Ltd",
+        "fromName": "Sam Smith via Project Planner",
+        "replyTo": "sam@acme.com",
+        "cc": [
+          "sam@acme.com"
+        ]
+      }
+    },
+    {
+      "name": "1.24.0 materialRequestEmailEnvelope: order, no caller name",
+      "function": "materialRequestEmailEnvelope",
+      "args": [
+        {
+          "requestType": "order",
+          "jobNumber": "J-101",
+          "companyName": "Acme Ltd",
+          "caller": {
+            "name": "",
+            "email": "sam@acme.com"
+          }
+        }
+      ],
+      "expected": {
+        "subject": "Material order request — J-101 — Acme Ltd",
+        "fromName": "",
+        "replyTo": "sam@acme.com",
+        "cc": [
+          "sam@acme.com"
+        ]
+      }
     }
   ]
 }
