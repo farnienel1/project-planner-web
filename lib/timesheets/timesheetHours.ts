@@ -31,7 +31,8 @@ export function bookingHoursOnDay(
   workEndTime: string | undefined,
   payrollPolicy: OrgPayrollTimePolicy = DEFAULT_PAYROLL_POLICY,
   isBreakRemoved?: boolean,
-  otMultiplierOverride?: number | null
+  otMultiplierOverride?: number | null,
+  timeZone?: string
 ): PayrollHoursResult {
   return bookingPayrollHours({
     timeSlot,
@@ -41,6 +42,7 @@ export function bookingHoursOnDay(
     otMultiplierOverride,
     policy: payrollPolicy,
     date,
+    timeZone,
   })
 }
 

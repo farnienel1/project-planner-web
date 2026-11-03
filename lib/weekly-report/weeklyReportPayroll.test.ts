@@ -87,3 +87,26 @@ test('a booking on a duplicate operative profile uses that person\'s account rat
   assert.equal(slices[0]?.rate, 25)
   assert.equal(slices[0]?.pay, 200)
 })
+
+test('labourPaySlices pays unrounded hours, as the timesheet collector does (20 minutes at £20/h is £6.67)', () => {
+  const user = {
+    id: 'u-hourly',
+    email: 'h@x.com',
+    firstName: 'H',
+    surname: 'Ourly',
+    payBasis: 'hourly',
+    hourlyRate: 20,
+    employmentType: 'self_employed',
+    isActive: true,
+  } as unknown as User
+  const slices = labourPaySlices({
+    date: new Date('2026-10-08T08:00:00Z'),
+    timeSlot: 'Custom',
+    workStartTime: '07:30',
+    workEndTime: '07:50',
+    user,
+    timeZone: 'Europe/London',
+  })
+  assert.equal(slices.length, 1)
+  assert.equal(slices[0]?.pay, 6.67)
+})

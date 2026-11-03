@@ -228,7 +228,7 @@ export function collectTimesheetPayroll({
     )
     const standardDayHours = orgDayHours(policy.standardPaidHours)
     // One rulebook result (`payrollHoursResult`), the same figures the iOS collector uses.
-    const hours = bookingHoursOnDay(date, timeSlot, workStartTime, workEndTime, policy, isBreakRemoved, otMultiplierOverride)
+    const hours = bookingHoursOnDay(date, timeSlot, workStartTime, workEndTime, policy, isBreakRemoved, otMultiplierOverride, zone)
     const paidHours = hours.totalPaidHours
     const otHours = hours.outsideHours
     const normalHours = Math.max(0, hours.standardHours)

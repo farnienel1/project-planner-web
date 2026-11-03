@@ -20,7 +20,7 @@ import { computeOperativeBookingClashWarnings } from '@/lib/scheduling/bookingCl
 import { managerSiteBookingDisplayTitle } from '@/lib/scheduling/managerSiteBookingUtils'
 import { getActiveOperativesForScheduling } from '@/lib/operatives/operativeRosterUtils'
 import type { OrganizationDetails } from '@/lib/settings/organizationSettings'
-import { includesManagerScheduleLocation } from '@/lib/settings/organizationSettings'
+import { DEFAULT_PAYROLL_POLICY, includesManagerScheduleLocation, orgPayrollPolicyForDay } from '@/lib/settings/organizationSettings'
 import { ianaTimeZoneForCountry } from '@/lib/orgTime/orgTimeZone'
 import { computeManagerBookingClashWarnings } from '@/lib/warnings/managerClashWarnings'
 import { employmentTypeOnDay, isAnonymisedDeletedProfile, reportPayCell, reportPayTotal, reportPersonPayCell, subcontractorDayValue } from '@/lib/canonical'
@@ -273,6 +273,17 @@ export function buildWeeklyReportData({
   const standardHours = orgDayHours(payroll?.standardPaidHours ?? 8)
   const otMultiplier = payroll?.weekdayOutsideStandardMultiplier ?? 1.5
   const timeZone = ianaTimeZoneForCountry(orgDetails?.countryCode)
+  // Rulebook §4.3 / §8: each booking is paid under the working hours in effect on its own day
+  // (`effectivePayrollTimePolicy` via `orgPayrollPolicyForDay`), in the organisation zone — as timesheets and iOS do.
+  const policyOn = (date: Date) =>
+    orgPayrollPolicyForDay(
+      date,
+      payroll ?? DEFAULT_PAYROLL_POLICY,
+      orgDetails?.payrollTimePolicyPrior ?? null,
+      orgDetails?.payrollTimePolicyEffectiveFrom ?? null,
+      timeZone,
+      orgDetails?.payrollTimePolicyScheduled ?? null
+    )
   const mergedWorks = mergeProjectsAndSmallWorks(projects, smallWorks)
   const projectsById = new Map<string, Project>()
   mergedWorks.forEach((project) => projectsById.set(project.id, project))
@@ -298,6 +309,7 @@ export function buildWeeklyReportData({
   const payBuckets = new Map<
     string,
     {
+      personKey: string
       person: string
       role: string
       slice: LabourPaySlice
@@ -312,13 +324,26 @@ export function buildWeeklyReportData({
     return Array.from(new Set([userId, ...sameEmail, ...rosterAliasIdsFor(userId, userIdAliases)]))
   }
 
-  const addPaySlice = (person: string, role: string, slice: LabourPaySlice) => {
+  // Pay rows are grouped by the person's account (the roster's kept id), never by display name: two people
+  // with the same name stay apart, and one person's same-email ids are one row.
+  const keptUserId = (id: string): string => {
+    const lower = id.trim().toLowerCase()
+    const hit = Object.entries(userIdAliases).find(([alias]) => alias.trim().toLowerCase() === lower)
+    return (hit ? hit[1] : id).trim().toLowerCase()
+  }
+  const payPersonKey = (user: User | undefined, operative: Operative | undefined, name: string): string => {
+    if (user?.id) return `user:${keptUserId(user.id)}`
+    if (operative?.id) return `operative:${operative.id.trim().toLowerCase()}`
+    return `name:${name}`
+  }
+
+  const addPaySlice = (personKey: string, person: string, role: string, slice: LabourPaySlice) => {
     if (!(slice.paidHours > 0) && !(slice.pay > 0)) return
     const rateKey = slice.rate == null ? 'none' : slice.rate.toFixed(2)
-    const key = `${person}|${role}|${slice.payBasis}|${slice.isOvertime ? 'ot' : 'std'}|${rateKey}|${slice.isPaye ? 'paye' : ''}`
+    const key = `${personKey}|${role}|${slice.payBasis}|${slice.isOvertime ? 'ot' : 'std'}|${rateKey}|${slice.isPaye ? 'paye' : ''}`
     const existing = payBuckets.get(key)
     if (!existing) {
-      payBuckets.set(key, { person, role, slice: { ...slice } })
+      payBuckets.set(key, { personKey, person, role, slice: { ...slice } })
       return
     }
     existing.slice.paidHours = roundPennies(existing.slice.paidHours + slice.paidHours)
@@ -346,12 +371,13 @@ export function buildWeeklyReportData({
       operative,
       history,
       aliasUserIds: user ? aliasIdsFor(user.id) : [],
-      payroll,
+      payroll: policyOn(date),
       timeZone,
     })
     const person = resolveDisplayName(user, operative)
     const role = resolvePersonRole(user, operative)
-    for (const slice of slices) addPaySlice(person, role, slice)
+    const personKey = payPersonKey(user, operative, person)
+    for (const slice of slices) addPaySlice(personKey, person, role, slice)
   }
 
   const addProjectRow = (
@@ -419,10 +445,11 @@ export function buildWeeklyReportData({
       String(booking.timeSlot),
       booking.workStartTime,
       booking.workEndTime,
-      payroll,
+      policyOn(new Date(booking.date)),
       new Date(booking.date),
       booking.isBreakRemoved,
-      booking.otMultiplierOverride
+      booking.otMultiplierOverride,
+      timeZone
     )
     addProjectRow(booking.projectId, undefined, booking.operativeId, days)
   }
@@ -445,9 +472,11 @@ export function buildWeeklyReportData({
       String(booking.timeSlot),
       booking.workStartTime,
       booking.workEndTime,
-      payroll,
+      policyOn(new Date(booking.date)),
       new Date(booking.date),
-      booking.isBreakRemoved
+      booking.isBreakRemoved,
+      null,
+      timeZone
     )
     addProjectRow(booking.locationId, booking.userId, undefined, days)
   }
@@ -503,9 +532,11 @@ export function buildWeeklyReportData({
       String(booking.timeSlot),
       booking.workStartTime,
       booking.workEndTime,
-      payroll,
+      policyOn(new Date(booking.date)),
       new Date(booking.date),
-      booking.isBreakRemoved
+      booking.isBreakRemoved,
+      null,
+      timeZone
     )
     const location = managerSiteBookingDisplayTitle(
       booking,
@@ -762,6 +793,7 @@ export function buildWeeklyReportData({
     const weekUser = users.find((entry) => entry.id === week.userId)
     const isPaye = Boolean(weekUser && employmentTypeOnDay(weekUser, line.date, timeZone) === 'paye')
     addPaySlice(
+      `user:${keptUserId(week.userId)}`,
       week.personName,
       week.role,
       signedLabourSlice(line, standardHours, line.otMultiplier ?? null, isPaye)
@@ -774,7 +806,7 @@ export function buildWeeklyReportData({
   for (const bucket of payBuckets.values()) {
     const shown = paySliceDisplay(bucket.slice, standardHours)
     if (!bucket.slice.isPaye && bucket.slice.rate == null) continue
-    const personKey = `${bucket.person}|${bucket.role}`
+    const personKey = `${bucket.personKey}|${bucket.role}`
     let summary = grouped.get(personKey)
     if (!summary) {
       summary = { person: bucket.person, role: bucket.role, lines: [], personTotal: 0 }

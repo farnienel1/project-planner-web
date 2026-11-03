@@ -124,6 +124,8 @@ export type BookingHoursInput = {
   /** Booking day. Saturday and Sunday use that day's weekend rule. */
   date?: Date
   dayKey?: string
+  /** Organisation business zone for `date` (rulebook §1). Without it the day is read in Europe/London. */
+  timeZone?: string
 }
 
 function clock(value?: string | null): string | undefined {
@@ -161,7 +163,7 @@ export function bookingPayrollHours(input: BookingHoursInput): PayrollHoursResul
       isBreakRemoved: input.isBreakRemoved === true,
       otMultiplierOverride: input.otMultiplierOverride ?? undefined,
     },
-    dayKey: input.dayKey ?? (input.date ? londonDayKey(input.date) : WEEKDAY_FALLBACK_KEY),
+    dayKey: input.dayKey ?? (input.date ? londonDayKey(input.date, input.timeZone) : WEEKDAY_FALLBACK_KEY),
     policy: policyFrom(input),
   })
 }

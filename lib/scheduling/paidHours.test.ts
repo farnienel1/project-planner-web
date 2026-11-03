@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  bookingPayrollHours,
   customHoursRangeLabel,
   estimatedPaidHours,
   formatHoursLabel,
@@ -165,4 +166,16 @@ test('custom hours 06:00-22:00 uses standard window, break, OT multiplier, then 
   assert.equal(breakdown.headline, 'Total paid hours 19.25')
   assert.equal(breakdown.lines.find((line) => line.kind === 'break')?.value, '-0.5')
   assert.equal(breakdown.lines.find((line) => line.kind === 'total')?.value, '19.25')
+})
+
+test('bookingPayrollHours reads the booking day in the organisation zone, not London', () => {
+  // 14:00 UTC on Fri 9 Oct 2026 is already Saturday 10 Oct in Sydney.
+  const date = new Date('2026-10-09T14:00:00Z')
+  const london = bookingPayrollHours({ timeSlot: 'FULL DAY', date })
+  const sydney = bookingPayrollHours({ timeSlot: 'FULL DAY', date, timeZone: 'Australia/Sydney' })
+  const saturday = bookingPayrollHours({ timeSlot: 'FULL DAY', dayKey: '2026-10-10' })
+  const friday = bookingPayrollHours({ timeSlot: 'FULL DAY', dayKey: '2026-10-09' })
+  assert.deepEqual(london, friday)
+  assert.deepEqual(sydney, saturday)
+  assert.notDeepEqual(saturday, friday)
 })

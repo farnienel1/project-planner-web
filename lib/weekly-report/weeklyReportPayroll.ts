@@ -20,10 +20,11 @@ export function bookingDayUnits(
   payrollPolicy?: OrgPayrollTimePolicy,
   date?: Date,
   isBreakRemoved?: boolean,
-  otMultiplierOverride?: number | null
+  otMultiplierOverride?: number | null,
+  timeZone?: string
 ): number {
   const policy = payrollPolicy || DEFAULT_PAYROLL_POLICY
-  const hours = bookingHoursOnDay(date, timeSlot, workStartTime, workEndTime, policy, isBreakRemoved, otMultiplierOverride)
+  const hours = bookingHoursOnDay(date, timeSlot, workStartTime, workEndTime, policy, isBreakRemoved, otMultiplierOverride, timeZone)
   return reportDayValue({ totalPaidHours: hours.totalPaidHours, standardPaidHours: policy.standardPaidHours })
 }
 
@@ -211,12 +212,14 @@ export function labourPaySlices({
   payroll?: OrgPayrollTimePolicy
   timeZone?: string
 }): LabourPaySlice[] {
+  // `payroll` is the policy in effect on `date` (`orgPayrollPolicyForDay`); the caller resolves it per day.
   const policy = payroll || DEFAULT_PAYROLL_POLICY
   const standard = orgDayHours(policy.standardPaidHours)
   // `payrollHoursResult`: the same normal hours, overtime hours and multiplier iOS uses.
-  const hours = bookingHoursOnDay(date, timeSlot, workStartTime, workEndTime, policy, isBreakRemoved, otMultiplierOverride)
+  const hours = bookingHoursOnDay(date, timeSlot, workStartTime, workEndTime, policy, isBreakRemoved, otMultiplierOverride, timeZone)
   const otHours = hours.outsideHours
-  const normalHours = Math.max(0, roundPennies(hours.standardHours))
+  // Unrounded, as the timesheet collector pays them; `payForHours` rounds the pay once.
+  const normalHours = Math.max(0, hours.standardHours)
   const otMultiplier = hours.outsideMultiplier
   const resolved = resolvePayrollRate({
     user,
