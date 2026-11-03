@@ -21,7 +21,7 @@ import { liveResultStillCurrent } from '@/lib/firebase/liveResult'
 import { readOrganizationDocument } from '@/lib/firebase/orgDocumentCache'
 import { UserRole, type SiteAudit, type SiteAuditItem, type User } from '@/types'
 import { parseOrgUser } from '@/lib/firebase/parseUser'
-import { aliasIdsForRoster } from '@/lib/staff/userRosterUtils'
+import { aliasIdsForRoster, dedupeUsersByEmail } from '@/lib/staff/userRosterUtils'
 import { mergeRetainedRoster, missingOrganizationIdPatch, retainScopedRows, rosterParseRecord } from '@/lib/staff/rosterRetain'
 import {
   catalogueRowNeedsRead,
@@ -632,11 +632,14 @@ function applyLiveRosterRows(organizationId: string, rows: User[]): void {
     }
   }
   if (!changed) return
-  const sorted = sortRoster(users)
+  // 1.14.0: the full load keeps one profile per email (`dedupeUsersByEmail`, the rulebook's `rosterPeople` fold). The
+  // listener's first snapshot (and any edit to the other document, e.g. `accountTypeChangeWrites` updating every
+  // same-email users doc) used to push the folded-away document back, so pickers listed the person twice.
+  const sorted = sortRoster(dedupeUsersByEmail(users))
   writeStoredRoster(organizationId, sorted)
   useOrgUserStore.setState({
     users: sorted,
-    userIdAliases: { ...state.userIdAliases, ...aliasIdsForRoster(sorted) },
+    userIdAliases: { ...state.userIdAliases, ...aliasIdsForRoster(users) },
   })
 }
 

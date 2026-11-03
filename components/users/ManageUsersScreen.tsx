@@ -1,5 +1,7 @@
 'use client'
 
+import { PAY_RATE_REQUIRED_MESSAGE } from '@/lib/canonical'
+import { usersWithoutPayRate } from '@/lib/staff/payRateRequired'
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -176,6 +178,12 @@ export function ManageUsersScreen() {
     [isAdminViewer, users]
   )
 
+  // Rulebook 1.14.0 `usersMissingPayRate`: active self-employed people saved before the pay-rate rule with no rate.
+  const missingPayRate = useMemo(
+    () => (isAdminViewer ? usersWithoutPayRate(users).filter((user) => matchesRosterSegment(user, 'active')) : []),
+    [isAdminViewer, users]
+  )
+
   const listPhase = manageUsersListPhase({
     organizationId: organization?.id,
     rosterLoadedOrgId,
@@ -300,6 +308,30 @@ export function ManageUsersScreen() {
           </p>
           <ul className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
             {missingLineManager.map((user) => (
+              <li key={user.id}>
+                <button
+                  type="button"
+                  onClick={() => selectUser(user)}
+                  className="font-semibold underline underline-offset-2 hover:text-amber-700"
+                >
+                  {displayName(user)}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {missingPayRate.length > 0 && (
+        <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <p className="font-semibold">
+            {missingPayRate.length === 1
+              ? '1 self-employed person needs a pay rate'
+              : `${missingPayRate.length} self-employed people need a pay rate`}
+          </p>
+          <p className="mt-0.5 text-xs">{PAY_RATE_REQUIRED_MESSAGE}</p>
+          <ul className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
+            {missingPayRate.map((user) => (
               <li key={user.id}>
                 <button
                   type="button"

@@ -1280,10 +1280,13 @@ export {
   NO_LINE_MANAGER_LABEL,
   lineManagerCandidates,
   lineManagerOptions,
+  lineManagerSelectedIds,
   lineManagerSummary,
 } from './lineManagers'
 export type { LineManagerCandidate, LineManagerRosterPerson, LineManagerSubject } from './lineManagers'
 export { PAY_BASIS_DAY_HELP, PAY_BASIS_HOURLY_HELP, PAY_BASIS_SAVE_NOTE } from './payRate'
+export { PAY_RATE_REQUIRED_MESSAGE, payRateRequiredError, usersMissingPayRate } from './payRate'
+export type { PayRateRequiredInput } from './payRate'
 export {
   ACCOUNT_TYPE_OTHER_COMPANY_NOTE,
   ACCOUNT_TYPE_OUT_OF_SYNC_MESSAGE,

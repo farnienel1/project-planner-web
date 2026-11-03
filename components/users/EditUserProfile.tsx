@@ -24,6 +24,7 @@ import { userLineManagerRequiredError, userMayHaveNoLineManager } from '@/lib/an
 import { userTimesheetSelfSigned } from '@/lib/timesheets/timesheetApprovalPolicy'
 import { UserAvatar } from '@/components/users/UserAvatar'
 import { PayBasisFields, payChoiceFromProfile, payChoiceToRates } from '@/components/users/PayBasisFields'
+import { maySetPayOf, userPayRateRequiredError } from '@/lib/staff/payRateRequired'
 import { PreviousRatesList, usePaySaveGate } from '@/components/users/PayRateChangeDialogs'
 import {
   emptyDayRateHistory,
@@ -72,7 +73,7 @@ import {
 import { loadOrganisationQualificationsEnsuringStarter } from '@/lib/qualifications/starterLibrary'
 import { canonicalCertificateUrls, formatCertificateSaveError } from '@/lib/qualifications/certificateUpload'
 import { canManageOrganisationQualifications, staffAccountRole } from '@/lib/permissions'
-import { canDeleteUser, SELF_EMAIL_INVALID_MESSAGE, selfEmailChangeAction, selfEmailChangeSentMessage } from '@/lib/canonical'
+import { canDeleteUser, lineManagerSelectedIds, SELF_EMAIL_INVALID_MESSAGE, selfEmailChangeAction, selfEmailChangeSentMessage } from '@/lib/canonical'
 import { PermissionRowsList } from '@/components/users/ProfileExpandablePermissionToggle'
 import { useOrganizationDocument } from '@/lib/stores/organizationDocumentStore'
 import { accountTypeSubject } from '@/lib/staff/accountTypeChange'
@@ -274,6 +275,7 @@ export function EditUserProfile({
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [lineManagerError, setLineManagerError] = useState<string | null>(null)
+  const [rateError, setRateError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
   const [showChangeType, setShowChangeType] = useState(false)
   const [draftAccountType, setDraftAccountType] = useState<'operative' | 'manager' | 'admin' | null>(null)
@@ -517,6 +519,20 @@ export function EditUserProfile({
     setLineManagerError(lineManagerMessage)
     if (lineManagerMessage) {
       if (!lineManagerFieldShown) setError(lineManagerMessage)
+      return
+    }
+    // Rulebook 1.14.0 `payRateRequiredError`: a self-employed person (including a change to self-employed, immediate
+    // or effective-dated — `employmentType` is the new type) must have a day or hourly rate above 0. Only when the
+    // signed-in user may set this person's pay (`canChangePersonPay`).
+    const payMessage = maySetPayOf(currentUser, {
+      id: asSaved.id,
+      isOperative: Boolean(asSaved.permissions?.operativeMode || asSaved.role === 'operative'),
+    })
+      ? userPayRateRequiredError(asSaved)
+      : null
+    setRateError(payMessage)
+    if (payMessage) {
+      if (!showSetupCard) setError(payMessage)
       return
     }
 
@@ -1032,7 +1048,10 @@ export function EditUserProfile({
                 <Select
                   value={normalizeEmploymentType(target.employmentType)}
                   disabled={!canEditMatrix}
-                  onChange={(e) => setTarget({ ...target, employmentType: e.target.value })}
+                  onChange={(e) => {
+                    setRateError(null)
+                    setTarget({ ...target, employmentType: e.target.value })
+                  }}
                 >
                   <option value="self_employed">Self-Employed</option>
                   <option value="paye">PAYE</option>
@@ -1072,7 +1091,7 @@ export function EditUserProfile({
                   }
                 >
                   <Select
-                    value={displayedLineManagerId(target)}
+                    value={lineManagerSelectedIds(target as never, users as never)[0] ?? displayedLineManagerId(target)}
                     disabled={!canEdit || saving || typeSaving}
                     onChange={(e) => {
                       setLineManagerError(null)
@@ -1102,7 +1121,11 @@ export function EditUserProfile({
                   {...payChoiceFromProfile(target)}
                   placeholder="manage"
                   disabled={!canEdit}
-                  onChange={(next) => setTarget({ ...target, ...payChoiceToRates(next.payBasis, next.amount) })}
+                  error={rateError}
+                  onChange={(next) => {
+                    setRateError(null)
+                    setTarget({ ...target, ...payChoiceToRates(next.payBasis, next.amount) })
+                  }}
                 />
                 <PreviousRatesList entries={previousRateEntries} />
               </div>

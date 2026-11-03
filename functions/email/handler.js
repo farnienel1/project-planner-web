@@ -57,10 +57,17 @@ function bearerToken(req) {
   return match ? match[1].trim() : ''
 }
 
+/**
+ * Both sides are trimmed first: a secret set from a file (`firebase functions:secrets:set ... --data-file`) or pasted
+ * into Netlify often carries a trailing newline or space, which used to fail every web email with "Server key is not
+ * valid". Whitespace is never part of a key. A blank key after trimming never matches.
+ */
 function sameSecret(given, expected) {
-  if (!given || !expected) return false
-  const a = crypto.createHash('sha256').update(String(given)).digest()
-  const b = crypto.createHash('sha256').update(String(expected)).digest()
+  const left = given == null ? '' : String(given).trim()
+  const right = expected == null ? '' : String(expected).trim()
+  if (!left || !right) return false
+  const a = crypto.createHash('sha256').update(left).digest()
+  const b = crypto.createHash('sha256').update(right).digest()
   return crypto.timingSafeEqual(a, b)
 }
 
@@ -324,5 +331,6 @@ module.exports = {
   SERVER_KEY_HEADER,
   createSendEmailHandler,
   fromHeader,
+  sameSecret,
   resendSender,
 }
