@@ -19,7 +19,7 @@ const ContentSecurityPolicy = [
   "img-src 'self' data: blob: https:",
   "font-src 'self' data:",
   "connect-src 'self' https://*.googleapis.com https://*.gstatic.com https://*.firebaseio.com wss://*.firebaseio.com https://*.firebasestorage.app https://*.firebaseapp.com https://*.cloudfunctions.net https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firestore.googleapis.com https://firebasestorage.googleapis.com https://content-firebaseappcheck.googleapis.com https://firebaseappcheck.googleapis.com https://www.google.com https://www.gstatic.com https://api.stripe.com https://*.stripe.com https://*.stripe.network https://maps.googleapis.com https://photon.komoot.io https://nominatim.openstreetmap.org https://*.tile.openstreetmap.org",
-  "frame-src 'self' https://js.stripe.com https://checkout.stripe.com https://hooks.stripe.com https://*.firebaseapp.com https://www.google.com https://www.gstatic.com https://recaptcha.google.com",
+  "frame-src 'self' blob: https://js.stripe.com https://checkout.stripe.com https://hooks.stripe.com https://*.firebaseapp.com https://www.google.com https://www.gstatic.com https://recaptcha.google.com",
   "worker-src 'self' blob:",
   "media-src 'self' blob:",
 ]

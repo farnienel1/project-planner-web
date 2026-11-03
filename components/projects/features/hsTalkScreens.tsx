@@ -15,6 +15,8 @@ import { signedPercent } from '@/lib/healthSafety/hsTracking'
 import { buildToolboxTalkPdf, isCustomUploadedTalk } from '@/lib/healthSafety/toolboxTalkPdf'
 import { FeatureCard, FeatureSectionLabel } from '@/components/projects/features/featureUi'
 import { ReportFileLink } from '@/components/fileReports/ReportFileLink'
+import { StoredFileLink } from '@/components/projects/features/StoredFileLink'
+import { resolveStoredFileUrl } from '@/lib/healthSafety/openStoredFile'
 
 export function HsTalkBody({
   talk,
@@ -45,19 +47,36 @@ export function HsTalkBody({
       .join('|'),
     (users || []).map((row) => row.id).join('|'),
   ].join('::')
-  const [src, setSrc] = useState<string | null>(customFile || null)
+  const [src, setSrc] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (customFile) {
-      setSrc(customFile)
-      setError(null)
-      return
-    }
     let cancelled = false
     let objectUrl = ''
     setSrc(null)
     setError(null)
+    if (customFile) {
+      // The site's frame-src allows only this origin and blob:, so the uploaded file is fetched (connect-src allows
+      // Firebase Storage) and previewed from a blob URL. A gs:// or path reference gets a fresh download URL first.
+      void resolveStoredFileUrl(customFile)
+        .then((url) => fetch(url))
+        .then((response) => {
+          if (!response.ok) throw new Error('fetch failed')
+          return response.blob()
+        })
+        .then((blob) => {
+          if (cancelled) return
+          objectUrl = URL.createObjectURL(blob)
+          setSrc(objectUrl)
+        })
+        .catch(() => {
+          if (!cancelled) setError('Could not preview this file. Use Open original file below.')
+        })
+      return () => {
+        cancelled = true
+        if (objectUrl) URL.revokeObjectURL(objectUrl)
+      }
+    }
     void buildToolboxTalkPdf({ talk, issue, signatures, users, projectLabel })
       .then((bytes) => {
         if (cancelled) return
@@ -88,14 +107,9 @@ export function HsTalkBody({
         <p className="text-sm text-slate-500">{error || 'Preparing the toolbox talk PDF…'}</p>
       )}
       {customFile ? (
-        <a
-          href={customFile}
-          target="_blank"
-          rel="noreferrer"
-          className="inline-flex text-sm font-semibold text-[#2F73F0] hover:underline"
-        >
+        <StoredFileLink fileRef={customFile} className="inline-flex text-sm font-semibold text-[#2F73F0] hover:underline">
           Open original file
-        </a>
+        </StoredFileLink>
       ) : null}
       {customFile ? (
         <div>

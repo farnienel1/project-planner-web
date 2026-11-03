@@ -12,6 +12,7 @@ import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { isOperativeMode } from '@/lib/navigation/menuPermissions'
 import { newUuid } from '@/lib/firebase/firestoreUtils'
 import { uploadFile as uploadHsFile, healthSafetyFilePath } from '@/lib/firebase/storageUtils'
+import { resolveStoredFileUrl } from '@/lib/healthSafety/openStoredFile'
 import { prepareClientUpload } from '@/lib/security/stripPhotoLocation'
 import { loadPlatformToolboxLibrary, mergeToolboxTalkLibraries } from '@/lib/healthSafety/toolboxLibrary'
 import { blankToolboxTalkTemplate } from '@/lib/healthSafety/mergeToolboxTalks'
@@ -475,9 +476,12 @@ export function ProjectHealthSafetySection({
       return
     }
     if (isCustomUploadedTalk(talk) && talk.fileURL) {
-      void downloadRemoteFile(talk.fileURL, customTalkDownloadName(talk.fileURL, talk)).catch(() => {
-        setDownloadError('Could not download the toolbox talk PDF.')
-      })
+      const fileRef = talk.fileURL
+      void resolveStoredFileUrl(fileRef)
+        .then((url) => downloadRemoteFile(url, customTalkDownloadName(fileRef, talk)))
+        .catch(() => {
+          setDownloadError('Could not download the toolbox talk PDF.')
+        })
       return
     }
     const filename = toolboxTalkPdfFilename(talk)

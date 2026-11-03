@@ -8,6 +8,12 @@ import type {
   HSToolboxTalk,
 } from '@/types'
 
+/** A stored text value, or undefined (left out of the write) when blank. */
+function nonEmpty(value: string | null | undefined): string | undefined {
+  const text = typeof value === 'string' ? value.trim() : ''
+  return text ? value! : undefined
+}
+
 export function serializeTalk(talk: HSToolboxTalk): Record<string, unknown> {
   return {
     id: talk.id,
@@ -24,7 +30,9 @@ export function serializeTalk(talk: HSToolboxTalk): Record<string, unknown> {
     status: talk.status,
     version: talk.version,
     updatedAt: Timestamp.fromDate(talk.updatedAt),
-    fileURL: talk.fileURL ?? '',
+    // Omitted when empty: rows are laid over the stored row (`healthSafetyDocumentWriteFields`), and an empty
+    // string from a copy that never had the link would overwrite the stored download URL.
+    fileURL: nonEmpty(talk.fileURL),
   }
 }
 
@@ -65,8 +73,8 @@ export function serializeRams(doc: HSRamsDocument): Record<string, unknown> {
     version: doc.version,
     status: doc.status,
     uploadedAt: Timestamp.fromDate(doc.uploadedAt),
-    fileURL: doc.fileURL ?? '',
-    fileName: doc.fileName ?? '',
+    fileURL: nonEmpty(doc.fileURL),
+    fileName: nonEmpty(doc.fileName),
   }
 }
 
@@ -77,8 +85,8 @@ export function serializeOtherDoc(doc: HSOtherDocument): Record<string, unknown>
     trade: doc.trade ?? '',
     category: doc.category,
     uploadedAt: Timestamp.fromDate(doc.uploadedAt),
-    fileURL: doc.fileURL ?? '',
-    fileName: doc.fileName ?? '',
+    fileURL: nonEmpty(doc.fileURL),
+    fileName: nonEmpty(doc.fileName),
     issuableToClient: false,
   }
 }

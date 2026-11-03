@@ -4,6 +4,8 @@ import { addDays, format, isSameDay, startOfWeek } from 'date-fns'
 import { coversCalendarDay, isSameLondonDay } from '@/lib/ios-parity/londonTime'
 import type { ReactNode } from 'react'
 import { ReportFileLink } from '@/components/fileReports/ReportFileLink'
+import { StoredFileLink } from '@/components/projects/features/StoredFileLink'
+import { hasOpenableStoredFile } from '@/lib/healthSafety/storedFile'
 
 /** Shared tokens aligned with iOS / HTML prototypes */
 export const featurePageBg = 'bg-[var(--bg)]'
@@ -272,8 +274,9 @@ export function DocListRow({
   /** Health & safety document id; shows "Report a problem with this file". */
   reportParentId?: string
 }) {
-  return (
-    <div className="flex items-center gap-3 border-t border-[#EEF1F5] px-4 py-3.5 first:border-t-0">
+  const openable = hasOpenableStoredFile(fileURL)
+  const body = (
+    <>
       <div className="relative flex h-11 w-10 shrink-0 items-center justify-center rounded-lg bg-[#FDEAEA]">
         <svg className="h-5 w-5 text-[#E2493F]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
@@ -288,22 +291,32 @@ export function DocListRow({
             <StatusPill label={status} tone={statusTone} />
           </span>
         )}
-        {fileURL && reportParentId ? (
-          <div className="mt-1">
-            <ReportFileLink fileRef={fileURL} surface="health_safety" parentId={reportParentId} fileName={title} />
-          </div>
-        ) : null}
       </div>
-      {fileURL && (
-        <a
-          href={fileURL}
-          target="_blank"
-          rel="noreferrer"
-          className="shrink-0 text-xs font-semibold text-[#2F73F0] hover:underline"
-        >
-          View
-        </a>
+      {openable ? (
+        <span className="shrink-0 text-xs font-semibold text-[#2F73F0]">View</span>
+      ) : (
+        <span className="shrink-0 text-xs text-slate-400">No file</span>
       )}
+    </>
+  )
+  return (
+    <div className="border-t border-[#EEF1F5] px-4 py-3.5 first:border-t-0">
+      {openable ? (
+        <StoredFileLink
+          fileRef={fileURL}
+          ariaLabel={`Open ${title}`}
+          className="flex items-center gap-3 rounded-lg hover:bg-slate-50"
+        >
+          {body}
+        </StoredFileLink>
+      ) : (
+        <div className="flex items-center gap-3">{body}</div>
+      )}
+      {fileURL && reportParentId ? (
+        <div className="mt-1 pl-[52px]">
+          <ReportFileLink fileRef={fileURL} surface="health_safety" parentId={reportParentId} fileName={title} />
+        </div>
+      ) : null}
     </div>
   )
 }
