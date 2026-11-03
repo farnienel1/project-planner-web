@@ -514,3 +514,49 @@ export function accountTypeChangeWrites(input: {
   writes.push({ path: `users/${uid}/orgMemberships/${org}`, kind: 'membership', role: kind, permissions })
   return { ok: true, role: kind, permissions, writes, note: otherCompany ? ACCOUNT_TYPE_OTHER_COMPANY_NOTE : null }
 }
+
+// MARK: - Half-applied user type (1.12.2)
+
+/** Shown in Manage Users and Edit User when the user type is not the same on every document that decides it. */
+export const ACCOUNT_TYPE_OUT_OF_SYNC_MESSAGE =
+  "This person's user type was only partly saved. Press Save to finish it on every record."
+
+/**
+ * Whether a person's user type is the same on every document that decides it in one organisation (rulebook §11,
+ * 1.12.2). A change made by an older iOS build (it wrote only `users/{uid}`) or a save interrupted after the profile
+ * write leaves `organizations/{orgId}.members.{uid}` (and the membership) on the old type; the security rules read the
+ * members entry, so the person may still be an admin there while every screen shows a manager.
+ *
+ * The users document of this organisation is the source (it is what both apps show and edit). Out of sync when:
+ *   - the members entry is `admin` and the profile is not an admin, or the profile is an admin and the members entry
+ *     is not `admin` (or missing);
+ *   - the members entry is `manager` or `operative` and differs from the profile's level;
+ *   - a membership is given and its `role` is `admin` / `manager` / `operative` and differs from the profile's level.
+ * A `member` entry (older data, any non-admin level) only counts for the admin test. A profile of another company is
+ * never judged (its level here is the members entry, `organizationLevelFor`). `repair` is the level to re-apply with
+ * `accountTypeChangeWrites`, else null.
+ */
+export function accountTypeSyncState(input: {
+  person: Record<string, unknown> & { id: string }
+  organizationId: string
+  members?: Record<string, unknown> | null
+  membership?: Record<string, unknown> | null
+}): { inSync: boolean; level: PermissionLevel | null; membersRole: string | null; repair: PermissionLevel | null } {
+  const person = input?.person
+  const org = typeof input?.organizationId === 'string' ? input.organizationId.trim() : ''
+  const uid = typeof person?.id === 'string' ? person.id.trim() : ''
+  if (!person || !uid || !org || !sameOrg(person.organizationId, org)) {
+    return { inSync: true, level: null, membersRole: null, repair: null }
+  }
+  const level = permissionLevelOf(person)
+  const members = input.members && typeof input.members === 'object' ? input.members : {}
+  const rawEntry = Object.entries(members).find(([key]) => key.trim().toLowerCase() === uid.toLowerCase())?.[1]
+  const membersRole = typeof rawEntry === 'string' && rawEntry.trim() ? rawEntry.trim().toLowerCase() : null
+  const explicit = (role: string | null) => role === 'admin' || role === 'manager' || role === 'operative'
+  let inSync = (membersRole === 'admin') === (level === 'admin')
+  if (inSync && explicit(membersRole) && membersRole !== level) inSync = false
+  const membershipRole =
+    input.membership && typeof input.membership.role === 'string' ? input.membership.role.trim().toLowerCase() : null
+  if (inSync && explicit(membershipRole) && membershipRole !== level) inSync = false
+  return { inSync, level, membersRole, repair: inSync ? null : level }
+}

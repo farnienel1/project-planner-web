@@ -42,6 +42,10 @@ import { countWorksByTab, filterWorksByTab, searchWorks } from '@/lib/projects/w
 import { coversCalendarDay } from '@/lib/ios-parity/londonTime'
 import type { Booking, Project } from '@/types'
 import { useBookingHistoryFrom } from '@/lib/stores/useBookingHistory'
+import { useAuthStore } from '@/lib/stores/authStore'
+import { useHolidayStore } from '@/lib/stores/holidayStore'
+import { useOperativeStore } from '@/lib/stores/operativeStore'
+import { myScheduleAnnualLeaveLabel, myScheduleLeaveRecords } from '@/lib/schedule/myScheduleLeave'
 
 /** Labour booked onto this person from Book labour. Shown on the week, not removed from here. */
 export type AssignedScheduleBooking = {
@@ -258,6 +262,19 @@ export function MyScheduleSelfBookingScreen({
   }, [organizationId, loadManagerSiteBookings, loadUsers, loadProjects, loadSmallWorks])
 
   const weekDates = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart])
+
+  // Rulebook §10 (1.12.2): the person's own annual leave, approved and pending, matched by account — the same as the
+  // read-only My Schedule and iOS. Live: `loadBookings` attaches the holidayBookings listener.
+  const authUser = useAuthStore((state) => state.user)
+  const rosterOperatives = useOperativeStore((state) => state.operatives)
+  const { bookings: holidayBookings, loadBookings: loadHolidayBookings, loadedOrgId: holidaysLoadedOrgId } = useHolidayStore()
+  useEffect(() => {
+    if (organizationId) void loadHolidayBookings(organizationId)
+  }, [organizationId, loadHolidayBookings])
+  const myHolidays = useMemo(() => {
+    if (holidaysLoadedOrgId !== organizationId || !authUser || authUser.id !== userId) return []
+    return myScheduleLeaveRecords(authUser, holidayBookings, rosterOperatives, [...samePersonIds(userId, users, userIdAliases)])
+  }, [holidaysLoadedOrgId, organizationId, authUser, userId, holidayBookings, rosterOperatives, users, userIdAliases])
 
   const myBookings = useMemo(() => {
     const mineIds = samePersonIds(userId, users, userIdAliases)
@@ -596,6 +613,7 @@ export function MyScheduleSelfBookingScreen({
           const today = isToday(day)
           const dayRows = myBookingsOn(day)
           const assignedRows = assignedOn(day)
+          const leaveLabel = myScheduleAnnualLeaveLabel(myHolidays, day)
           const weekend = index > 4
           return (
             <div
@@ -610,6 +628,12 @@ export function MyScheduleSelfBookingScreen({
                   {today ? ' · Today' : ''}
                 </span>
               </div>
+              {leaveLabel ? (
+                <div className="bk" data-hue="leave">
+                  <b>{leaveLabel.startsWith('Pending') ? 'Pending leave' : 'Annual Leave'}</b>
+                  <span className="x">{leaveLabel}</span>
+                </div>
+              ) : null}
               {assignedRows.map((booking) => (
                 <div key={booking.id} className="bk" data-hue="proj">
                   <b>{booking.title}</b>

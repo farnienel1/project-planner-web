@@ -1,10 +1,11 @@
 {
-  "rulebookVersion": "1.12.1",
-  "rulebookSha256": "9c68f0852d2094f396ebaf8beedbe157f440bf1da7a11ecec633c31856032950",
-  "bundleSha256": "31b9422d059bf0f93562afa68429a5486a2d81c8baf7f1a4b5b6d406410fd8c2",
+  "rulebookVersion": "1.12.2",
+  "rulebookSha256": "5cb9c4f3dbb565da4ea2fbcfb69b62c8785e98a044ec29e372fea7d95e4633d6",
+  "bundleSha256": "71edbc83add6cdba0a50330cf30df268eeefcd6b88f904b7ffd7172340c9deb5",
   "crossPlatformContractSha256": "43f4b04529bedc38c3827fa084854d1f55d0d4c760c9869c13190a84085298cf",
   "exports": [
     "ACCOUNT_TYPE_OTHER_COMPANY_NOTE",
+    "ACCOUNT_TYPE_OUT_OF_SYNC_MESSAGE",
     "ACCOUNT_TYPE_SUPER_ADMIN_MESSAGE",
     "ADMIN_EDITABLE_PERMISSION_FIELDS",
     "ADMIN_LOCKED_PERMISSION_MESSAGE",
@@ -212,6 +213,7 @@
     "accountKindFromFlags",
     "accountTypeChangeWrites",
     "accountTypePermissions",
+    "accountTypeSyncState",
     "activePaymentRunSummary",
     "addUserPermissionDefaults",
     "annualLeaveBalance",

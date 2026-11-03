@@ -1,4 +1,4 @@
-# iOS follow-on — rulebook 1.12.1
+# iOS follow-on — rulebook 1.12.2
 
 Generated 2026-11-03 by `npm run rulebook:handoff` in project-planner-web. Paste this whole file into the iOS agent.
 The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; never edit the iOS mirror by hand.
@@ -8,9 +8,9 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ║ FOLLOW-ON — paste into the iOS agent                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
-Rulebook version: 1.12.0 → 1.12.1
-Packed hash: 31b9422d059bf0f93562afa68429a5486a2d81c8baf7f1a4b5b6d406410fd8c2
-Rulebook sha256: 9c68f0852d2094f396ebaf8beedbe157f440bf1da7a11ecec633c31856032950
+Rulebook version: 1.12.1 → 1.12.2
+Packed hash: 71edbc83add6cdba0a50330cf30df268eeefcd6b88f904b7ffd7172340c9deb5
+Rulebook sha256: 5cb9c4f3dbb565da4ea2fbcfb69b62c8785e98a044ec29e372fea7d95e4633d6
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -20,26 +20,28 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
   web lib/canonical/cross-platform-contract.json    → iOS ProjectPlannerTests/CrossPlatformContract.json
 Contract sha256: 43f4b04529bedc38c3827fa084854d1f55d0d4c760c9869c13190a84085298cf
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: none
+Exports added: ACCOUNT_TYPE_OUT_OF_SYNC_MESSAGE, accountTypeSyncState
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, firestore.rules
+Web files that changed the rules: docs/RULEBOOK.md, firestore.rules, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/permissionLevels.ts
 Done when:
-- [ ] Packed hash in iOS equals 31b9422d059bf0f93562afa68429a5486a2d81c8baf7f1a4b5b6d406410fd8c2
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 9c68f0852d2094f396ebaf8beedbe157f440bf1da7a11ecec633c31856032950)
-- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.12.1)
+- [ ] Packed hash in iOS equals 71edbc83add6cdba0a50330cf30df268eeefcd6b88f904b7ffd7172340c9deb5
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 5cb9c4f3dbb565da4ea2fbcfb69b62c8785e98a044ec29e372fea7d95e4633d6)
+- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.12.2)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
 - [ ] Any disagreement traced to its first divergence — no copied screen number
 ```
 
-## What changed in 1.12.1
+## What changed in 1.12.2
 
-- Read scoping switched by data (§17, §18): the rules apply the 1.10.0 / 1.11.0 job and booking read scoping only when `platformConfig/app.enforcedReads` is true; until then every member reads them as before 1.10.0. The rules and functions deploy right after this merge; the backfills, the `ENFORCED_READS_ACTIVE` release and then the `enforcedReads` flip come later (Deploy notes, `docs/DEPLOY_1.11.0.md`).
-- 1.12.0 and 1.12.1 ship together in one merge (neither deployed before).
+- Change user type is one atomic batch (§11): users documents, `members.{uid}` and the membership together. Before 1.12.2 web wrote the membership after the batch (a refusal was swallowed), and iOS read the membership first, which only the person could read, so an admin → manager change stopped after `users/{uid}` (iOS: "the organisation membership could not be updated"). Rules: an admin of the organisation reads a membership there (get only; list stays the person's). Super Admin and founder protections (1.12.0 B4) unchanged.
+- Web profile save (§11): the same-email name sync queries this organisation's users only (`organizationId` + `email`); the email-only query was refused by the rules, so every admin save of someone else's profile — including a user type change — ended in "Missing or insufficient permissions" after the profile had been written. The sync is best effort.
+- Half-applied user type (§11): `accountTypeSyncState`, `ACCOUNT_TYPE_OUT_OF_SYNC_MESSAGE` — Manage Users lists them, Edit User repairs on Save. One save at a time; a saved profile returns to the people list.
+- My Schedule (§10): web's self-booking My Schedule (admins, timesheet managers) shows the person's own annual leave, matched by `leaveRecordsForAccount` with the roster's same-email ids.
 
 ## New rulebook sections
 
-- 1.12.1 — 2026-11-03
+- 1.12.2 — 2026-11-03
 
 ## Workflow for the iOS agent
 
