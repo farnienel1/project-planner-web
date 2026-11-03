@@ -128,6 +128,23 @@ test('change user type sets role; a manager keeps the four page toggles as they 
   assert.equal(back.permissions.weeklyReports, false)
 })
 
+test('1.15.0 change user type keeps every saved toggle: manager → admin → manager shows them again', () => {
+  const manager = user({
+    id: 'mgr',
+    email: 'sam@site.com',
+    permissions: { ...permissions, projects: false, weeklyReports: true, subContractors: false, operatives: true },
+  })
+  const admin = applyAccountTypeChange(manager, 'admin')
+  assert.equal(admin.permissions.projects, true)
+  assert.equal(admin.storedPermissions?.projects, false)
+  const back = applyAccountTypeChange(admin, 'manager')
+  assert.equal(back.permissions.projects, false)
+  assert.equal(back.permissions.weeklyReports, true)
+  assert.equal(back.permissions.subContractors, false)
+  assert.equal(back.permissions.operatives, true)
+  assert.equal(back.permissions.adminAccess, false)
+})
+
 test('the super admin picker lists another active administrator only', () => {
   const self = user({ id: 'self', email: 'ada@site.com', isSuperAdmin: true, role: UserRole.ADMIN, permissions: { ...permissions, adminAccess: true } })
   const operative = user({

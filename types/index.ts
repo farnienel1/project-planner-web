@@ -166,6 +166,12 @@ export interface User {
   isSuperAdmin: boolean;
   mobileNumber?: string;
   permissions: UserPermissions;
+  /**
+   * Rulebook 1.15.0: the toggles as stored on `users/{uid}` (top level, else `permissions.{key}`), before
+   * `effectivePermissions`. An admin reads every toggle on; these are the values a demotion shows again
+   * (`accountTypePermissions`). Missing keys were never stored.
+   */
+  storedPermissions?: Partial<Record<string, boolean>>;
   assignedManagerUserId?: string;
   assignedManagerUserIds?: string[];
   /** iOS `hasNoLineManager` — admin/founder with no counter-sign. */

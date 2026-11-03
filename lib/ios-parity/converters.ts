@@ -8,6 +8,8 @@
 
 import { Timestamp, deleteField } from 'firebase/firestore'
 import { isAnonymisedDeletedProfile } from '@/lib/canonical/userRosterSegment'
+import { storedPermissionFlag } from '@/lib/canonical/permissionLevels'
+import { USER_PERMISSION_FIELDS } from '@/lib/canonical/userProfile'
 import { assignedQualificationWriteFields } from '@/lib/canonical/operativeQualifications'
 import { currencySymbol, DEFAULT_CURRENCY_CODE } from '@/lib/canonical/money'
 import { bookingJobCollectionFields, bookingWriteFields, parseBookingDocument, parseManagerSiteBookingDocument } from '@/lib/canonical/bookings'
@@ -165,6 +167,12 @@ export function parseAppUserDocument(userId: string, data: Record<string, unknow
     developerAccess: doc.operativeMode ? false : readFlag(data, 'developerAccess') === true,
   }
   const managerIds = doc.assignedManagerUserIds
+  // Rulebook 1.15.0: the stored toggles under an admin's all-on view, so "Change user type" keeps them.
+  const storedPermissions: Partial<Record<string, boolean>> = {}
+  for (const key of USER_PERMISSION_FIELDS) {
+    const value = storedPermissionFlag(data, key)
+    if (value != null) storedPermissions[key] = value
+  }
 
   return ok({
     id: doc.id,
@@ -179,6 +187,7 @@ export function parseAppUserDocument(userId: string, data: Record<string, unknow
     isSuperAdmin: doc.isSuperAdmin,
     mobileNumber: doc.mobileNumber ?? undefined,
     permissions,
+    storedPermissions,
     assignedManagerUserIds: managerIds.length ? managerIds : undefined,
     assignedManagerUserId: managerIds[0],
     hasNoLineManager: doc.hasNoLineManager,

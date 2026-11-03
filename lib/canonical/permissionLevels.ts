@@ -404,44 +404,49 @@ export const OPERATIVE_PERMISSION_TOGGLES: PermissionToggleDef[] = PERMISSION_TO
 // MARK: - Change user type (1.11.0)
 
 /**
- * The toggles a person gets when "Change user type" moves them to `kind` (rulebook §11, 1.11.0; before 1.11.0 web
- * `applyAccountTypeChange` and iOS `UserRoleTransitionPolicy.kind(for:)` each kept their own presets):
- *   - admin: every toggle on and locked (`effectivePermissions` admin), Annual Leave Management kept from before;
- *   - manager: Manager, Operatives, Manage Qualifications, Sub Contractors, Materials and Site audit on; Projects, Small
- *     Works, Weekly Report and Daily Overview kept as they were (a type change never turns them on); the rest off;
- *   - operative: operative mode, Materials and Site audit on; the rest off.
- * Returns every `USER_PERMISSION_FIELDS` key.
+ * The toggles a person gets when "Change user type" moves them to `kind` (rulebook §11; 1.11.0 presets, **1.15.0 owner
+ * decision round 6: a type change keeps every saved toggle**). Before 1.15.0 a change kept Projects, Small Works, Weekly
+ * Report and Daily Overview and preset the rest, so manager → admin → manager lost the person's toggles.
+ *   - Every toggle keeps its stored value (top level, else `permissions.{key}`; `storedPermissionFlag`); a toggle never
+ *     stored keeps the value it reads as (`PERMISSION_DEFAULT_ON`, else off).
+ *   - Only the level flags change: admin `adminAccess` on, `operativeMode` off, `manager` on; manager `adminAccess`
+ *     off, `operativeMode` off, `manager` on; operative `adminAccess` off, `operativeMode` on, `manager` off.
+ * An admin still reads every toggle on and locked except Annual Leave Management (`effectivePermissions`); the stored
+ * values stay underneath and read again after a demotion. Returns every `USER_PERMISSION_FIELDS` key.
  */
 export function accountTypePermissions(
   kind: PermissionLevel,
   previous?: unknown
 ): Record<UserPermissionField, boolean> {
-  // An operative's projects / small works read on (the jobs of their bookings), which is not a manager permission:
-  // nothing is carried over from operative level.
-  const before = previous == null || permissionLevelOf(previous) === 'operative' ? null : effectivePermissions(previous)
-  if (kind === 'admin') {
-    const out = effectivePermissions({}, 'admin')
-    out.annualLeaveSelfBook = before?.annualLeaveSelfBook === true
-    return out
-  }
   const out = {} as Record<UserPermissionField, boolean>
-  for (const key of USER_PERMISSION_FIELDS) out[key] = false
-  if (kind === 'operative') {
-    out.operativeMode = true
-    out.materials = true
-    out.siteAudit = true
-    return out
+  for (const key of USER_PERMISSION_FIELDS) {
+    out[key] = storedPermissionFlag(previous, key) ?? PERMISSION_DEFAULT_ON.includes(key)
   }
-  out.manager = true
-  out.operatives = true
-  out.qualifications = true
-  out.subContractors = true
-  out.materials = true
-  out.siteAudit = true
-  out.projects = before?.projects === true
-  out.smallWorks = before?.smallWorks === true
-  out.weeklyReports = before?.weeklyReports === true
-  out.dailyOverview = before ? before.dailyOverview === true : true
+  out.adminAccess = kind === 'admin'
+  out.operativeMode = kind === 'operative'
+  out.manager = kind !== 'operative'
+  return out
+}
+
+/**
+ * The toggles a "Change user type" save writes (1.15.0): the stored toggles (`accountTypePermissions(kind, person)`),
+ * then the screen's values only for the toggles the new level can change (`permissionToggleRows` editable: an admin
+ * only Annual Leave Management; a manager every row but Admin Access, Materials and Site audit; an operative Materials
+ * and Site audit). A screen that shows an admin's toggles all on can never write them over the stored values.
+ */
+export function accountTypeWritePermissions(
+  kind: PermissionLevel,
+  person: unknown,
+  screen?: Record<string, unknown> | null
+): Record<UserPermissionField, boolean> {
+  const out = accountTypePermissions(kind, person)
+  if (!screen || typeof screen !== 'object') return out
+  const locked = new Set(lockedPermissionFields({}, kind))
+  for (const row of PERMISSION_TOGGLE_CATALOGUE) {
+    if (!row.levels.includes(kind) || locked.has(row.field)) continue
+    const value = bool(screen[row.field])
+    if (value != null) out[row.field] = value
+  }
   return out
 }
 
@@ -470,9 +475,9 @@ function sameOrg(value: unknown, organizationId: string): boolean {
  * wrote only `users/{uid}`, so `members.{uid}` and the membership kept the old role and the next sign-in or organisation
  * switch put the old level back. One plan for both apps, written as one batch:
  *   1. `users/{uid}`: `role`, the level flags and every toggle (top level and `permissions.{key}`) from
- *      `accountTypePermissions(kind, person)` (or the screen's `permissions`, through `effectivePermissions` for the
- *      new level); `isSuperAdmin` false unless the person stays an admin — only when that document's `organizationId`
- *      is this organisation;
+ *      `accountTypeWritePermissions(kind, person, permissions)` — every stored toggle kept (1.15.0), the screen's
+ *      values only for toggles the new level can change; `isSuperAdmin` false unless the person stays an admin — only
+ *      when that document's `organizationId` is this organisation;
  *   2. every same-email users document whose `organizationId` is this organisation, the same fields;
  *   3. `organizations/{orgId}` `members.{uid}` = the role — always;
  *   4. `users/{uid}/orgMemberships/{orgId}` role and nested permissions (`orgMembershipWriteFields` shape; an admin
@@ -487,7 +492,10 @@ export function accountTypeChangeWrites(input: {
   kind: PermissionLevel
   organizationId: string
   roster?: ReadonlyArray<Record<string, unknown> & { id: string }> | null
-  /** The toggles the admin set on the Change user type screen; else `accountTypePermissions(kind, person)`. */
+  /**
+   * The toggles the admin set on the Change user type screen: only those the new level can change are taken
+   * (`accountTypeWritePermissions`); every other toggle keeps its stored value (1.15.0).
+   */
   permissions?: Record<string, unknown> | null
 }):
   | { ok: true; role: PermissionLevel; permissions: Record<UserPermissionField, boolean>; writes: AccountTypeChangeWrite[]; note: string | null }
@@ -504,9 +512,7 @@ export function accountTypeChangeWrites(input: {
   if (storedPermissionFlag(person, 'isSuperAdmin') === true && kind !== 'admin') {
     return { ok: false, reason: 'super_admin', message: ACCOUNT_TYPE_SUPER_ADMIN_MESSAGE }
   }
-  const permissions = input.permissions
-    ? effectivePermissions({ permissions: input.permissions }, kind)
-    : accountTypePermissions(kind, person)
+  const permissions = accountTypeWritePermissions(kind, person, input.permissions ?? null)
   const fields: Record<string, unknown> = { role: kind }
   for (const key of USER_PERMISSION_FIELDS) {
     fields[key] = permissions[key]
