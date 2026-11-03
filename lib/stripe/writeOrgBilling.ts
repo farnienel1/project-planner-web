@@ -3,6 +3,7 @@ import { mrrPenceForInterval } from '@/lib/stripe/plans'
 import type { OrgBilling, OrgBillingStatus } from '@/lib/stripe/billing'
 import { adminGoogleAccessToken } from '@/lib/owner/identityToolkitAdmin'
 import { firestorePatch } from '@/lib/owner/firestoreRest'
+import { billingAccessFields } from '@/lib/canonical/billingAccess'
 
 function secondsToDate(value?: number | null): Date | null {
   if (!value) return null
@@ -117,6 +118,16 @@ export function subscriptionMirrorFromBilling(billing: OrgBilling) {
   }
 }
 
+/** Rulebook 1.13.0 §19: `accessOpen` / `accessClosesAt` for the security rules, from `billingAccessFields`. */
+export function withBillingAccessFields(billing: OrgBilling, now = Date.now()): OrgBilling {
+  const access = billingAccessFields(billing, now)
+  return {
+    ...billing,
+    accessOpen: access.accessOpen,
+    accessClosesAt: access.accessClosesAtMs == null ? null : new Date(access.accessClosesAtMs),
+  }
+}
+
 export async function writeOrgBillingWithServiceAccount(organizationId: string, billing: OrgBilling) {
   const { token, projectId } = await adminGoogleAccessToken(['https://www.googleapis.com/auth/datastore'])
   if (!projectId) throw new Error('Firebase project id is missing.')
@@ -150,7 +161,9 @@ export async function writeOrgBillingWithUserToken(
   )
 }
 
-export async function writeOrgBilling(organizationId: string, billing: OrgBilling, idToken?: string) {
+export async function writeOrgBilling(organizationId: string, rawBilling: OrgBilling, idToken?: string) {
+  // Every billing write carries the 1.13.0 access fields the security rules read.
+  const billing = withBillingAccessFields(rawBilling)
   try {
     await writeOrgBillingWithServiceAccount(organizationId, billing)
   } catch (error) {

@@ -6,11 +6,11 @@ import { createSubcontractorBooking } from '@/lib/subcontractors/subcontractorBo
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useSubcontractorStore } from '@/lib/stores/subcontractorStore'
 import {
-  setQuickSelectDates,
+  setQuickSelectWeekdays,
+  toggleSelectedDateChecked,
   slotKey,
   slotToFirestore,
   sortedDateSlots,
-  toggleSelectedDate,
   type ScheduleDateSlot,
 } from '@/lib/scheduling/scheduleUtils'
 import { db } from '@/lib/firebase/config'
@@ -20,6 +20,7 @@ import { ErrorBanner } from '@/components/dashboard/PageShell'
 import { ScheduleCalendar } from '@/components/projects/scheduling/ScheduleCalendar'
 import { ScheduleQuickSelect } from '@/components/projects/scheduling/ScheduleQuickSelect'
 import { ScheduleSelectedDates } from '@/components/projects/scheduling/ScheduleSelectedDates'
+import { useScheduleDateRules } from '@/lib/scheduling/useOrganizationPayrollPolicy'
 import type { Project } from '@/types'
 
 export function ScheduleSubcontractorForm({
@@ -36,6 +37,8 @@ export function ScheduleSubcontractorForm({
   const [month, setMonth] = useState(new Date())
   const [quickDays, setQuickDays] = useState<number | null>(null)
   const [dateSlots, setDateSlots] = useState<Map<string, ScheduleDateSlot>>(new Map())
+  const [mixError, setMixError] = useState<string | null>(null)
+  const dateRules = useScheduleDateRules()
   const [selectedSubcontractorId, setSelectedSubcontractorId] = useState('')
   const [useGeneralAttendance, setUseGeneralAttendance] = useState(true)
   const [selectedContactIds, setSelectedContactIds] = useState<Set<string>>(new Set())
@@ -119,12 +122,15 @@ export function ScheduleSubcontractorForm({
 
   const handleQuickSelect = (days: number) => {
     setQuickDays(days)
-    setDateSlots(setQuickSelectDates(days))
+    setDateSlots(setQuickSelectWeekdays(days, dateRules.isWeekend))
   }
 
   const handleToggleDate = (date: Date) => {
     setQuickDays(null)
-    setDateSlots((prev) => toggleSelectedDate(date, prev))
+    // Rulebook 1.13.0 (Q2): weekends are custom hours only and never mixed with weekdays.
+    const { slots, error } = toggleSelectedDateChecked(date, dateSlots, dateRules)
+    setMixError(error)
+    setDateSlots(slots)
   }
 
   const handleSlotChange = (date: Date, patch: Partial<ScheduleDateSlot>) => {
@@ -326,6 +332,7 @@ export function ScheduleSubcontractorForm({
 
       <section className="space-y-3">
         <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Selected dates</p>
+        {mixError ? <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">{mixError}</p> : null}
         <ScheduleSelectedDates
           slots={slotsList}
           onSlotChange={handleSlotChange}

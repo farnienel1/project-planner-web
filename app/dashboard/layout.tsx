@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { AppShell } from '@/components/shell/AppShell'
 import { BillingReadOnlyBanner } from '@/components/billing/BillingReadOnlyBanner'
@@ -15,7 +15,9 @@ import { hasCustomerOrganisation, isPlatformOwnerEmail } from '@/lib/platform/ow
 import { DeactivatedAccountScreen } from '@/components/auth/DeactivatedAccountScreen'
 import { isMfaGateOpen, mfaVerifyHref } from '@/lib/auth/mfa/mfaClient'
 import { MISSING_USER_PROFILE_SETUP_HREF } from '@/lib/auth/missingProfile'
-import { legalPackNeedsAcceptance } from '@/lib/canonical'
+import { legalPackNeedsAcceptance, subscriptionAccess } from '@/lib/canonical'
+import { hasAdminAccess } from '@/lib/navigation/menuPermissions'
+import { LAPSED_BILLING_PATH, LapsedBillingOnly, SubscriptionLapsedScreen } from '@/components/billing/SubscriptionLapsedScreen'
 import { LEGAL_ENTITY } from '@/lib/legal/customerLegalPack'
 
 export default function DashboardLayout({
@@ -24,7 +26,8 @@ export default function DashboardLayout({
   children: React.ReactNode
 }) {
   const router = useRouter()
-  const { user, firebaseUser, loading, error, mfaPending, mfaVerified, mfaStatusKnown, ensureSignedInProfile } =
+  const pathname = usePathname()
+  const { user, firebaseUser, organization, loading, error, mfaPending, mfaVerified, mfaStatusKnown, ensureSignedInProfile } =
     useAuthStore()
   const profileRetryStarted = useRef(false)
   const needsMfa =
@@ -94,6 +97,18 @@ export default function DashboardLayout({
     })
   ) {
     return <PolicyGate />
+  }
+
+  // Rulebook 1.13.0 §19 (`subscriptionAccess`): a lapsed subscription blocks the app; admins reach billing only.
+  const access = subscriptionAccess({
+    billing: organization?.billing,
+    viewerIsAdmin: hasAdminAccess(user),
+    viewerIsPlatformOwner: isPlatformOwnerEmail(user.email),
+  })
+  if (access === 'blocked') return <SubscriptionLapsedScreen admin={false} />
+  if (access === 'adminBillingOnly') {
+    if (pathname?.startsWith(LAPSED_BILLING_PATH)) return <LapsedBillingOnly>{children}</LapsedBillingOnly>
+    return <SubscriptionLapsedScreen admin />
   }
 
   return (

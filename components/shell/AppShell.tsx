@@ -200,7 +200,7 @@ function AppShellInner({ children }: { children: ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
   const toast = useToast()
-  const { user, organization, signOut, recordLastSeenIfDue } = useAuthStore()
+  const { user, organization, signOut, recordLastSeenIfDue, syncSignInEmail } = useAuthStore()
   const { users, loadUsers } = useOrgUserStore()
   const notifications = useNotificationStore((s) => s.notifications)
   const loadNotifications = useNotificationStore((s) => s.loadNotifications)
@@ -231,6 +231,11 @@ function AppShellInner({ children }: { children: ReactNode }) {
       window.removeEventListener('offline', off)
     }
   }, [])
+
+  useEffect(() => {
+    // Rulebook 1.13.0 §14 (`signInEmailSyncWrites`): once per signed-in account.
+    void syncSignInEmail()
+  }, [user?.id, syncSignInEmail])
 
   useEffect(() => {
     void recordLastSeenIfDue()

@@ -55,6 +55,7 @@ export const USER_DOCUMENT_FIELDS = [
   'annualLeaveYearStartMonth',
   'annualLeaveYearEndMonth',
   'annualLeaveCarriesOver',
+  'employmentStartDate',
   'annualLeaveYearAllowance',
   'annualLeaveYearAllowanceKey',
   'timesheetsEnabled',

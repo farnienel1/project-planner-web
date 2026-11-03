@@ -106,6 +106,7 @@ import { formatTimesheetHours, overtimeHoursBeyondPaidStandard, paidBookedHours,
 import { parseTimesheetManagerAmount, parseTimesheetMoneyAmount } from '@/lib/timesheets/timesheetMoney'
 import { dateFromDayKey, dayKey } from '@/lib/ios-parity/londonTime'
 import { HoursTimelinePicker } from '@/components/scheduling/HoursTimelinePicker'
+import { confirmCustomHoursBreak } from '@/lib/scheduling/bookingSlotRules'
 import {
   bookingIdFromLineId,
   initialHoursChoice,
@@ -505,6 +506,17 @@ export function TimesheetPeriodPage({
     if (!editingLineId) return
     const row = payroll.lineItems.find((item) => item.id === editingLineId)
     if (!row) return
+    // 1.13.0 lunch warning (`customHoursBreakWarning`): the reviewed hours cover the unpaid break with it on.
+    if (
+      !confirmCustomHoursBreak(payrollPolicy, row.date, {
+        timeSlot: 'CUSTOM_HOURS',
+        workStartTime: hoursStart,
+        workEndTime: hoursEnd,
+        isBreakRemoved: hoursBreakRemoved,
+      })
+    ) {
+      return
+    }
     const amount = revisedPayrollAmount({
       row,
       startTime: hoursStart,

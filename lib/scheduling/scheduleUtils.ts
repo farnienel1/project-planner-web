@@ -97,3 +97,44 @@ export function slotToFirestore(slot: ScheduleDateSlot): {
 export function isInMonth(date: Date, month: Date): boolean {
   return isSameMonth(date, month)
 }
+
+/**
+ * Rulebook 1.13.0 (Q2) date selection for the scheduling grids: a weekend day is custom hours only (opened with
+ * `customHoursPrefillForDate`), and one request never mixes weekdays and weekend days
+ * (`WEEKEND_WEEKDAY_MIX_MESSAGE`). Returns the new selection, or the unchanged one with the message.
+ */
+export function toggleSelectedDateChecked(
+  date: Date,
+  selected: Map<string, ScheduleDateSlot>,
+  rules: {
+    isWeekend: (date: Date) => boolean
+    prefill: (date: Date) => { start: string; end: string }
+    mixMessage: (dates: Date[]) => string | null
+  }
+): { slots: Map<string, ScheduleDateSlot>; error: string | null } {
+  const key = slotKey(date)
+  if (selected.has(key)) return { slots: toggleSelectedDate(date, selected), error: null }
+  const message = rules.mixMessage([...Array.from(selected.values()).map((slot) => slot.date), startOfDay(date)])
+  if (message) return { slots: selected, error: message }
+  const next = new Map(selected)
+  if (rules.isWeekend(date)) {
+    const hours = rules.prefill(date)
+    next.set(key, { date: startOfDay(date), slot: 'CUSTOM', workStartTime: hours.start, workEndTime: hours.end })
+  } else {
+    next.set(key, { date: startOfDay(date), slot: 'FULL DAY' })
+  }
+  return { slots: next, error: null }
+}
+
+/** Quick select N working days from today, skipping Saturdays and Sundays (as iOS `quickSelect`). */
+export function setQuickSelectWeekdays(days: number, isWeekend: (date: Date) => boolean): Map<string, ScheduleDateSlot> {
+  const next = new Map<string, ScheduleDateSlot>()
+  let cursor = startOfDay(new Date())
+  let guard = 0
+  while (next.size < days && guard < 60) {
+    if (!isWeekend(cursor)) next.set(slotKey(cursor), { date: cursor, slot: 'FULL DAY' })
+    cursor = addDays(cursor, 1)
+    guard += 1
+  }
+  return next
+}

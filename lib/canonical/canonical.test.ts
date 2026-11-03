@@ -3824,8 +3824,10 @@ test('weekend paid hours follow that day\'s rule; overnight runs past midnight',
   assert.equal(satPart.standardHours, 4)
   const sun = hoursOn(SUN, { timeSlot: 'CUSTOM_HOURS', workStartTime: '08:00', workEndTime: '12:00' }, policy)
   assert.deepEqual([sun.outsideHours, sun.totalPaidHours, sun.standardHours], [4, 8, 0])
+  // 1.13.0 (Q5): an overnight booking is paid at its start day's rules — 22:00–02:00 on a Wednesday is 4 hours
+  // outside the standard day, at the weekday multiplier.
   const night = hoursOn(WED, { timeSlot: 'CUSTOM_HOURS', workStartTime: '22:00', workEndTime: '02:00' })
-  assert.equal(night.totalPaidHours, 4)
+  assert.deepEqual([night.workedHours, night.outsideHours, night.totalPaidHours], [4, 4, 6])
 })
 
 test('weekly-report day units: weighted hours over the standard day, capped at 1.5; subcontractors 1 or 0.5', () => {
@@ -8511,6 +8513,240 @@ test('1.12.0 isVerifiedPlatformOwner: the owner email and a verified token, neve
   assert.equal(R112.isVerifiedPlatformOwner({ email: 'info@projectplanner.us', emailVerified: false }), false)
   assert.equal(R112.isVerifiedPlatformOwner({ email: 'info@projectplanner.us' }), false)
   assert.equal(R112.isVerifiedPlatformOwner({ email: 'someone@test.com', emailVerified: true }), false)
+})
+
+// MARK: - Rulebook 1.13.0 (owner decisions round 4)
+
+test('1.13.0 Q1: canViewPersonPay — the person, active line managers, admins, operatives managers for operatives', () => {
+  const roster = [
+    { id: 'OP', email: 'op@x.com', role: 'operative', operativeMode: true, assignedManagerUserIds: ['LM'] },
+    { id: 'OP2', email: 'op2@x.com', role: 'operative', operativeMode: true, assignedManagerUserIds: ['GONE'] },
+    { id: 'LM', email: 'lm@x.com', role: 'manager', manager: true },
+    { id: 'GONE', email: 'gone@x.com', role: 'manager', manager: true, isActive: false },
+    { id: 'OM', email: 'om@x.com', role: 'manager', manager: true, permissions: { operatives: true } },
+    { id: 'M', email: 'm@x.com', role: 'manager', manager: true },
+    { id: 'AD', email: 'ad@x.com', role: 'admin', adminAccess: true },
+    { id: 'NEW', email: 'op@x.com', role: 'operative', operativeMode: true },
+  ]
+  const by = (id: string) => roster.find((row) => row.id === id)!
+  const can = (viewer: string, subject: string) => R112.canViewPersonPay(by(viewer), by(subject), roster)
+  assert.equal(can('OP', 'OP'), true)
+  assert.equal(can('NEW', 'OP'), true, 'a same-email id is the same person')
+  assert.equal(can('OP2', 'OP'), false, 'a colleague never sees a rate')
+  assert.equal(can('LM', 'OP'), true, 'the active line manager')
+  assert.equal(can('GONE', 'OP2'), false, 'an inactive line manager does not count')
+  assert.equal(can('OM', 'OP'), true, 'a manager with the Operatives toggle, for an operative')
+  assert.equal(can('OM', 'M'), false, 'never another manager')
+  assert.equal(can('M', 'OP'), false, 'a manager without the toggle who is not the line manager')
+  assert.equal(can('AD', 'M'), true)
+  assert.equal(can('OP', 'AD'), false)
+  assert.equal(R112.canViewPersonPay({ id: 'x', isPlatformOwner: true }, by('OP'), roster), true)
+})
+
+test('1.13.0 Q1: pay profile reader, overlay, write fields and backfill', () => {
+  assert.deepEqual(R112.PAY_PROFILE_FIELDS, ['payBasis', 'dayRate', 'hourlyRate', 'employmentType', 'employmentTypeTransitionFrom', 'employmentTypeEffectiveAt'])
+  assert.equal(R112.payProfilePath('ORG', 'U1'), 'organizations/ORG/payProfiles/U1')
+  const profile = R112.parsePayProfileDocument('U1', { userId: 'U1', dayRate: 200, hourlyRate: null, other: 1 })
+  assert.deepEqual(profile, { subjectId: 'U1', fields: { dayRate: 200, hourlyRate: null } })
+  assert.deepEqual(R112.overlayPayProfile({ id: 'U1', dayRate: 150, payBasis: 'day' }, profile), { id: 'U1', dayRate: 200, payBasis: 'day', hourlyRate: null })
+  assert.deepEqual(R112.overlayPayProfile({ id: 'U1', dayRate: 150 }, null), { id: 'U1', dayRate: 150 })
+  assert.deepEqual(R112.payProfileWriteFieldsFromProfileWrite('U1', { firstName: 'A', dayRate: 210, payBasis: 'day' }), { userId: 'U1', dayRate: 210, payBasis: 'day' })
+  assert.equal(R112.payProfileWriteFieldsFromProfileWrite('U1', { firstName: 'A' }), null)
+  const copy = R112.payProfileBackfillWrites({ subjectId: 'U1', source: { dayRate: 150, employmentType: 'paye', firstName: 'A' }, profile: { dayRate: 200 } })
+  assert.deepEqual(copy, { profileSet: { userId: 'U1', employmentType: 'paye' }, sourceRemove: [] })
+  const strip = R112.payProfileBackfillWrites({ subjectId: 'U1', source: { dayRate: 150, employmentType: 'paye' }, profile: { dayRate: 200 }, strip: true })
+  assert.deepEqual(strip.sourceRemove, ['dayRate', 'employmentType'])
+  assert.deepEqual(R112.payProfileBackfillWrites({ subjectId: 'U1', source: { dayRate: 150 }, profile: { dayRate: 150 }, strip: true }), { profileSet: null, sourceRemove: ['dayRate'] })
+})
+
+test('1.13.0 Q2: weekends are custom hours only; the editor prefills the set window; stored weekend slots keep their pay', () => {
+  const policy = {
+    ...parsePayrollPolicy(undefined),
+    saturday: { allHoursAtMultiplierMode: false, allHoursMultiplier: 2, definedWindowStart: '07:30', definedWindowEnd: '13:00', countsAsStandardHours: 8, outsideWindowMultiplier: 2 },
+    sunday: { allHoursAtMultiplierMode: true, allHoursMultiplier: 2, sameAsSaturday: false },
+  }
+  assert.deepEqual(R112.allowedTimeSlotsOnDay(WED, policy), ['FULL DAY', 'AM', 'PM', 'CUSTOM'])
+  assert.deepEqual(R112.allowedTimeSlotsOnDay(SAT, policy), ['CUSTOM'])
+  assert.deepEqual(R112.allowedTimeSlotsOnDay(SUN, policy, 'Europe/London'), ['CUSTOM'])
+  assert.deepEqual(R112.WEEKEND_TIME_SLOTS, ['CUSTOM'])
+  // Whatever the weekend setup: the same with an all-hours Saturday.
+  assert.deepEqual(R112.allowedTimeSlotsOnDay(SAT, { ...policy, saturday: { ...policy.sunday } }), ['CUSTOM'])
+  for (const slot of ['FULL DAY', 'AM', 'PM']) assert.equal(R112.timeSlotAllowedOnDay(slot, SAT), false)
+  assert.equal(R112.timeSlotAllowedOnDay('CUSTOM_HOURS', SAT), true)
+  assert.equal(R112.timeSlotAllowedOnDay('AM', WED), true)
+  // Prefill: the window on a set-window day; nothing on an all-hours day or a weekday.
+  assert.deepEqual(R112.weekendCustomHoursDefault(policy, SAT), { start: '07:30', end: '13:00' })
+  assert.deepEqual(R112.weekendCustomHoursDefault(policy, 6), { start: '07:30', end: '13:00' })
+  assert.equal(R112.weekendCustomHoursDefault(policy, SUN), null)
+  assert.equal(R112.weekendCustomHoursDefault(policy, WED), null)
+  assert.equal(
+    R112.weekendBookingNote(policy, SAT),
+    'Saturday is paid on the hours you enter: 07:30–13:00 counts as 8h, hours outside it at 2×. Change it in Working hours.'
+  )
+  assert.equal(R112.weekendBookingNote(policy, 'sunday'), 'Sunday is paid on the hours you enter, every hour at 2×. Change it in Working hours.')
+  assert.equal(R112.weekendBookingNote(policy, WED), null)
+  // Custom hours: the window counts as its hours, the rest at the weekend multiplier; all-hours: every hour × multiplier.
+  const custom = hoursOn(SAT, { timeSlot: 'CUSTOM_HOURS', workStartTime: '07:30', workEndTime: '15:00' }, policy)
+  assert.deepEqual([custom.standardHours, custom.outsideHours, custom.totalPaidHours], [8, 2, 12])
+  assert.equal(hoursOn(SUN, { timeSlot: 'CUSTOM_HOURS', workStartTime: '08:00', workEndTime: '12:00' }, policy).totalPaidHours, 8)
+  // Stored weekend rows are paid as stored: FULL DAY in window mode = the window at counts-as hours; AM half of it;
+  // all-hours FULL DAY keeps the pre-1.13 calculation (the standard day 07:30–16:00 at 2× = 17), never more.
+  const full = hoursOn(SAT, { timeSlot: 'FULL DAY' }, policy)
+  assert.deepEqual([full.totalPaidHours, full.standardHours, full.outsideHours], [8, 8, 0])
+  assert.equal(hoursOn(SAT, { timeSlot: 'AM' }, policy).totalPaidHours, 4)
+  assert.equal(hoursOn(SUN, { timeSlot: 'FULL DAY' }, policy).totalPaidHours, 17)
+})
+
+test('1.13.0 Q2: a booking request never mixes weekdays and weekend days', () => {
+  assert.equal(R112.bookingDaysMixWeekdayAndWeekend([WED, SAT]), true)
+  assert.equal(R112.bookingDaysMixWeekdayAndWeekend([SAT, SUN]), false)
+  assert.equal(R112.bookingDaysMixWeekdayAndWeekend([WED, '2026-10-22']), false)
+  assert.equal(R112.bookingDaysMixWeekdayAndWeekend([]), false)
+  assert.equal(
+    R112.WEEKEND_WEEKDAY_MIX_MESSAGE,
+    'Weekends cannot be booked alongside Weekdays. Make your weekday booking first then weekend separately.'
+  )
+})
+
+test('1.13.0 Q3: a lapsed subscription blocks; admins reach billing only; missing billing is open', () => {
+  const now = Date.parse('2026-11-03T12:00:00Z')
+  assert.equal(R112.subscriptionAccess({ billing: null, now }), 'open')
+  assert.equal(R112.subscriptionAccess({ billing: { status: 'active' }, now }), 'open')
+  assert.equal(R112.subscriptionAccess({ billing: { status: 'canceled' }, now }), 'blocked')
+  assert.equal(R112.subscriptionAccess({ billing: { status: 'canceled' }, viewerIsAdmin: true, now }), 'adminBillingOnly')
+  assert.equal(R112.subscriptionAccess({ billing: { status: 'unpaid' }, viewerIsPlatformOwner: true, now }), 'open')
+  assert.equal(R112.subscriptionAccess({ billing: { status: 'past_due', lastPaymentFailedAt: now - 2 * 86_400_000 }, now }), 'open')
+  assert.equal(R112.subscriptionAccess({ billing: { status: 'past_due', lastPaymentFailedAt: now - 8 * 86_400_000 }, now }), 'blocked')
+  assert.equal(
+    R112.SUBSCRIPTION_LAPSED_MESSAGE,
+    "The organisation's Project Planner subscription has lapsed. Please contact your system administrator and ask them to renew."
+  )
+})
+
+test('1.13.0 Q4: leave is pro rata in the year joined; carry-over is capped by maxCarryOverDays', () => {
+  const year = { startDayKey: '2026-01-01', endDayKey: '2026-12-31' }
+  assert.deepEqual(R112.proRataLeaveAllowance({ daysPerYear: 25, year, employmentStartDayKey: null }), { allowance: 25, proRata: false })
+  assert.deepEqual(R112.proRataLeaveAllowance({ daysPerYear: 25, year, employmentStartDayKey: '2025-06-01' }), { allowance: 25, proRata: false })
+  // Joined 1 July: 184 of 365 days → 12.6 → 13 (rounded up to the half day).
+  assert.deepEqual(R112.proRataLeaveAllowance({ daysPerYear: 25, year, employmentStartDayKey: '2026-07-01' }), { allowance: 13, proRata: true })
+  assert.deepEqual(R112.proRataLeaveAllowance({ daysPerYear: 25, year, employmentStartDayKey: '2027-02-01' }), { allowance: 0, proRata: true })
+  const joinedYear = R112.annualLeaveBalance({ daysPerYear: 25, onDayKey: '2026-09-01', employmentStartDayKey: '2026-07-01', bookings: [] })
+  assert.deepEqual([joinedYear.yearEntitlement, joinedYear.proRata, joinedYear.remaining], [13, true, 13])
+  // Next year: carry what was left of the pro-rata 13 (13 − 3 = 10), capped at 5.
+  const bookings = [{ startDayKey: '2026-09-07', endDayKey: '2026-09-09', status: 'approved' }]
+  const uncapped = R112.annualLeaveBalance({ daysPerYear: 25, carriesOver: true, onDayKey: '2027-02-01', employmentStartDayKey: '2026-07-01', bookings })
+  assert.deepEqual([uncapped.carriedForward, uncapped.yearEntitlement, uncapped.remaining], [10, 25, 35])
+  const capped = R112.annualLeaveBalance({ daysPerYear: 25, carriesOver: true, maxCarryOverDays: 5, onDayKey: '2027-02-01', employmentStartDayKey: '2026-07-01', bookings })
+  assert.deepEqual([capped.carriedForward, capped.remaining], [5, 30])
+  // Joined after the previous year: nothing to carry.
+  const none = R112.annualLeaveBalance({ daysPerYear: 25, carriesOver: true, onDayKey: '2027-02-01', employmentStartDayKey: '2027-01-10', bookings: [] })
+  assert.equal(none.carriedForward, 0)
+  assert.equal(R112.parseAnnualLeaveDefaults({ daysPerYear: 25 }).maxCarryOverDays, null)
+  assert.equal(R112.parseAnnualLeaveDefaults({ maxCarryOverDays: '5' }).maxCarryOverDays, 5)
+  assert.equal(R112.parseAnnualLeaveDefaults({ maxCarryOverDays: -1 }).maxCarryOverDays, null)
+  assert.equal(R112.SUGGESTED_MAX_CARRY_OVER_DAYS, 5)
+})
+
+test('1.13.0 Q5: overnight bookings clash on real clock time across midnight', () => {
+  assert.deepEqual(R112.slotInterval({ timeSlot: 'CUSTOM_HOURS', workStartTime: '22:00', workEndTime: '06:00' }), { start: 1320, end: 1800 })
+  assert.deepEqual(R112.overnightCarryInterval({ start: 1320, end: 1800 }), { start: -120, end: 360 })
+  assert.equal(R112.nextCalendarDayKey('2026-12-31'), '2027-01-01')
+  const people = { accounts: [{ id: 'U1', email: 'u1@x.com' }], operatives: [] }
+  const night = { id: 'n1', operativeId: 'U1', dayKey: '2026-10-21', timeSlot: 'CUSTOM_HOURS', workStartTime: '22:00', workEndTime: '06:00' }
+  // The next morning from 05:00 overlaps the night shift; from 06:00 it only touches.
+  const clash = R112.operativeClashGroups({
+    people,
+    operativeBookings: [night, { id: 'm1', operativeId: 'U1', dayKey: '2026-10-22', timeSlot: 'CUSTOM_HOURS', workStartTime: '05:00', workEndTime: '12:00' }],
+  })
+  assert.equal(clash.length, 1)
+  assert.deepEqual([clash[0].dayKey, clash[0].bookingIds], ['2026-10-22', ['m1', 'n1']])
+  assert.deepEqual(
+    R112.operativeClashGroups({
+      people,
+      operativeBookings: [night, { id: 'm1', operativeId: 'U1', dayKey: '2026-10-22', timeSlot: 'CUSTOM_HOURS', workStartTime: '06:00', workEndTime: '12:00' }],
+    }),
+    []
+  )
+  // Two overnight bookings on one night are one clash, listed once (on their own day).
+  const twoNights = R112.operativeClashGroups({ people, operativeBookings: [night, { ...night, id: 'n2' }] })
+  assert.deepEqual(twoNights.map((g) => [g.dayKey, g.bookingIds]), [['2026-10-21', ['n1', 'n2']]])
+  // Same evening: a 21:00–23:00 booking overlaps.
+  assert.equal(R112.operativeClashGroups({ people, operativeBookings: [night, { id: 'e', operativeId: 'U1', dayKey: '2026-10-21', timeSlot: 'CUSTOM_HOURS', workStartTime: '21:00', workEndTime: '23:00' }] }).length, 1)
+  // Timesheet overlap flags and manager clashes follow the same rule.
+  assert.deepEqual(
+    R112.overlappingBookingIds([
+      { id: 'n1', dayKey: '2026-10-21', timeSlot: 'CUSTOM_HOURS', workStartTime: '22:00', workEndTime: '06:00' },
+      { id: 'm1', dayKey: '2026-10-22', timeSlot: 'AM' },
+    ]),
+    []
+  )
+  assert.deepEqual(
+    R112.overlappingBookingIds([
+      { id: 'n1', dayKey: '2026-10-21', timeSlot: 'CUSTOM_HOURS', workStartTime: '22:00', workEndTime: '08:00' },
+      { id: 'm1', dayKey: '2026-10-22', timeSlot: 'AM' },
+    ]),
+    ['n1', 'm1']
+  )
+  const mgr = R112.managerClashGroups({
+    managerIds: ['U1'],
+    people,
+    managerBookings: [
+      { id: 'MB', userId: 'U1', dayKey: '2026-10-21', timeSlot: 'CUSTOM_HOURS', workStartTime: '20:00', workEndTime: '09:00' },
+      { id: 'MB2', userId: 'U1', dayKey: '2026-10-22', timeSlot: 'AM' },
+    ],
+    operativeBookings: [],
+  })
+  assert.deepEqual(mgr.map((g) => [g.dayKey, g.pairKey]), [['2026-10-22', 'm-MB|m-MB2']])
+  // Paid at the start day's rules: Friday 18:00 → Saturday 02:00 is Friday overtime, not Saturday's rule.
+  const fri = hoursOn('2026-10-23', { timeSlot: 'CUSTOM_HOURS', workStartTime: '18:00', workEndTime: '02:00' })
+  assert.deepEqual([fri.outsideHours, fri.outsideMultiplier, fri.totalPaidHours], [8, 1.5, 12])
+  const long = hoursOn(WED, { timeSlot: 'CUSTOM_HOURS', workStartTime: '14:00', workEndTime: '01:00', isBreakRemoved: true })
+  assert.deepEqual([long.standardHours, long.outsideHours], [2, 9])
+})
+
+test('1.13.0 Q6: country pickers offer GB and IE; a stored other country is kept and shown', () => {
+  assert.deepEqual(R112.LAUNCH_COUNTRY_CODES, ['GB', 'IE'])
+  assert.deepEqual(R112.launchCountryOptions('GB').map((row) => row.code), ['GB', 'IE'])
+  assert.deepEqual(R112.launchCountryOptions('US').map((row) => row.code), ['GB', 'IE', 'US'])
+  assert.deepEqual(R112.launchCountryOptions(null).map((row) => row.code), ['GB', 'IE'])
+})
+
+test('1.13.0 lunch warning: custom hours over the unpaid break with Unpaid break on', () => {
+  const policy = parsePayrollPolicy(undefined)
+  const warn = (booking: Record<string, unknown>, dayKey = WED, p: Record<string, unknown> = policy) =>
+    R112.customHoursBreakWarning(p as never, dayKey, booking)
+  const message = 'You are booking custom hours that cover the unpaid lunch break. Turn off Unpaid break to make sure they are paid for this time.'
+  assert.equal(warn({ timeSlot: 'CUSTOM_HOURS', workStartTime: '11:00', workEndTime: '14:00' }), message)
+  assert.equal(warn({ timeSlot: 'CUSTOM_HOURS', workStartTime: '12:05', workEndTime: '12:25' }), message)
+  assert.equal(warn({ timeSlot: 'CUSTOM_HOURS', workStartTime: '11:00', workEndTime: '14:00', isBreakRemoved: true }), null)
+  assert.equal(warn({ timeSlot: 'CUSTOM_HOURS', workStartTime: '07:30', workEndTime: '12:00' }), null, 'touching the break is not covering it')
+  assert.equal(warn({ timeSlot: 'FULL DAY' }), null)
+  assert.equal(warn({ timeSlot: 'CUSTOM_HOURS', workStartTime: '11:00', workEndTime: '14:00' }, WED, { ...policy, breakPaid: true }), null)
+  assert.equal(warn({ timeSlot: 'CUSTOM_HOURS', workStartTime: '11:00', workEndTime: '14:00' }, SAT), null)
+})
+
+test('1.13.0 §14: self email change goes through Auth; the sign-in sync writes the users email and moves the claim', () => {
+  assert.equal(R112.selfEmailChangeAction({ storedEmail: 'a@x.com', nextEmail: ' A@X.com ' }), 'unchanged')
+  assert.equal(R112.selfEmailChangeAction({ storedEmail: 'a@x.com', nextEmail: 'nope' }), 'invalid')
+  assert.equal(R112.selfEmailChangeAction({ storedEmail: 'a@x.com', nextEmail: 'b@x.com' }), 'verifyBeforeUpdate')
+  assert.equal(R112.signInEmailSyncWrites({ userId: 'U', organizationId: 'O', storedEmail: 'a@x.com', tokenEmail: 'A@x.com', tokenEmailVerified: true }), null)
+  assert.equal(R112.signInEmailSyncWrites({ userId: 'U', organizationId: 'O', storedEmail: 'a@x.com', tokenEmail: 'b@x.com', tokenEmailVerified: false }), null)
+  assert.deepEqual(R112.signInEmailSyncWrites({ userId: 'U', organizationId: 'O', storedEmail: 'a@x.com', tokenEmail: 'B@x.com', tokenEmailVerified: true }), {
+    userFields: { email: 'b@x.com' },
+    claimSet: { path: 'organizations/O/userEmails/b@x.com', fields: { userId: 'U' } },
+    claimDelete: 'organizations/O/userEmails/a@x.com',
+  })
+})
+
+test('1.13.0: leaveYearStartMonth is the inverse of leaveYearEndMonth; billingAccessFields for the rules', () => {
+  for (let start = 1; start <= 12; start++) assert.equal(R112.leaveYearStartMonth(R112.leaveYearEndMonth(start)), start)
+  assert.equal(R112.leaveYearStartMonth(12), 1)
+  assert.equal(R112.leaveYearStartMonth(3), 4)
+  const now = Date.parse('2026-11-03T12:00:00Z')
+  const failed = now - 86_400_000
+  assert.deepEqual(R112.billingAccessFields({ status: 'past_due', lastPaymentFailedAt: failed }, now), { accessOpen: true, accessClosesAtMs: failed + 7 * 86_400_000 })
+  assert.deepEqual(R112.billingAccessFields({ status: 'canceled' }, now), { accessOpen: false, accessClosesAtMs: null })
+  assert.deepEqual(R112.billingAccessFields(null, now), { accessOpen: true, accessClosesAtMs: null })
 })
 
 test('1.12.2 accountTypeSyncState: a half-applied user type is found and repaired from the profile', () => {

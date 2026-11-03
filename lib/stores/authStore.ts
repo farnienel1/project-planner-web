@@ -11,7 +11,7 @@ import {
   reauthenticateWithCredential,
   updatePassword,
 } from 'firebase/auth'
-import { doc, getDoc, onSnapshot, setDoc, updateDoc, Timestamp } from 'firebase/firestore'
+import { deleteDoc, doc, getDoc, onSnapshot, setDoc, updateDoc, Timestamp } from 'firebase/firestore'
 import { seedOrgDefaultDashboard } from '@/lib/dashboard/dashboardLayoutStorage'
 import { withTimeout, withTimeoutFallback, isTimeoutError } from '@/lib/client/withTimeout'
 import { getFirebaseAuth, getFirebaseDb } from '@/lib/firebase/ensureFirebase'
@@ -27,7 +27,13 @@ import { parseTeamOnboarding } from '@/lib/orgSetup/teamOnboarding'
 import { topLevelAdminFlagPatch } from '@/lib/orgSetup/repairAdminFlags'
 import { ACCOUNT_UNCONFIRMED_MESSAGE } from '@/lib/orgSetup/accountConfirmation'
 import { ensurePrimaryOrgMembership, resolveWebSessionOrganization } from '@/lib/orgMembership/membershipService'
-import { adoptCurrentOrganization, coalesceOrganizationName, currentOrganizationId, parseOrganizationName } from '@/lib/canonical'
+import {
+  adoptCurrentOrganization,
+  coalesceOrganizationName,
+  currentOrganizationId,
+  parseOrganizationName,
+  signInEmailSyncWrites,
+} from '@/lib/canonical'
 // Rulebook 1.9.0 §1: listeners belong to the open organisation and stop when it changes.
 import { unsubscribeOrgCollectionsOutside } from '@/lib/firebase/subscribeOrgCollection'
 import {
@@ -101,6 +107,8 @@ interface AuthState {
   resetPassword: (email: string) => Promise<void>
   checkAuth: () => void
   recordLastSeenIfDue: () => Promise<void>
+  /** Rulebook 1.13.0 §14: after Auth changed the sign-in email, bring users/{uid}.email and the email claim in line. */
+  syncSignInEmail: () => Promise<void>
   ensureSignedInProfile: () => Promise<void>
   reloadSignedInProfile: () => Promise<void>
 }
@@ -1079,6 +1087,36 @@ export const useAuthStore = create<AuthState>((set) => {
         await loadProfileWithRetries(current)
       } catch (error) {
         profileLoadFailed(current, error)
+      }
+    },
+
+    syncSignInEmail: async () => {
+      const { firebaseUser, user, organization } = useAuthStore.getState()
+      if (!firebaseUser || !user || firebaseUser.uid !== user.id) return
+      const writes = signInEmailSyncWrites({
+        userId: user.id,
+        organizationId: organization?.id || user.organizationId,
+        storedEmail: user.email,
+        tokenEmail: firebaseUser.email,
+        tokenEmailVerified: firebaseUser.emailVerified,
+      })
+      if (!writes) return
+      const db = getFirebaseDb()
+      try {
+        // The rules allow a person's own `email` only as their token email, so the token must carry the new address.
+        await firebaseUser.getIdToken(true)
+        await updateDoc(doc(db, 'users', user.id), { ...writes.userFields, updatedAt: Timestamp.now() })
+        if (writes.claimSet) {
+          await setDoc(doc(db, writes.claimSet.path), writes.claimSet.fields)
+        }
+        if (writes.claimDelete) {
+          const old = await getDoc(doc(db, writes.claimDelete)).catch(() => null)
+          if (old?.exists() && String(old.data()?.userId || '') === user.id) await deleteDoc(doc(db, writes.claimDelete))
+        }
+        const latest = useAuthStore.getState().user
+        if (latest && latest.id === user.id) useAuthStore.setState({ user: { ...latest, email: writes.userFields.email } })
+      } catch (error) {
+        console.warn('sign-in email sync failed:', error)
       }
     },
 

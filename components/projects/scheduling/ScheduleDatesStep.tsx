@@ -1,12 +1,14 @@
 'use client'
 
+import { useState } from 'react'
 import { ScheduleCalendar } from '@/components/projects/scheduling/ScheduleCalendar'
 import { ScheduleQuickSelect } from '@/components/projects/scheduling/ScheduleQuickSelect'
 import { ScheduleSelectedDates } from '@/components/projects/scheduling/ScheduleSelectedDates'
+import { useScheduleDateRules } from '@/lib/scheduling/useOrganizationPayrollPolicy'
 import {
-  setQuickSelectDates,
+  setQuickSelectWeekdays,
+  toggleSelectedDateChecked,
   sortedDateSlots,
-  toggleSelectedDate,
   type ScheduleDateSlot,
 } from '@/lib/scheduling/scheduleUtils'
 
@@ -30,16 +32,21 @@ export function ScheduleDatesStep({
   onRemoveDate: (date: Date) => void
 }) {
   const slotsList = sortedDateSlots(dateSlots)
+  const [mixError, setMixError] = useState<string | null>(null)
+  const dateRules = useScheduleDateRules()
   const selectedDates = slotsList.map((s) => s.date)
 
   const handleQuickSelect = (days: number) => {
     onQuickDaysChange(days)
-    onDateSlotsChange(setQuickSelectDates(days))
+    // Rulebook 1.13.0 (Q2): quick select skips Saturday and Sunday (weekends are booked on their own).
+    onDateSlotsChange(setQuickSelectWeekdays(days, dateRules.isWeekend))
   }
 
   const handleToggleDate = (date: Date) => {
     onQuickDaysChange(null)
-    onDateSlotsChange(toggleSelectedDate(date, dateSlots))
+    const { slots, error } = toggleSelectedDateChecked(date, dateSlots, dateRules)
+    setMixError(error)
+    onDateSlotsChange(slots)
   }
 
   return (
@@ -55,6 +62,7 @@ export function ScheduleDatesStep({
           selectedDates={selectedDates}
           onToggleDate={handleToggleDate}
         />
+        {mixError ? <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">{mixError}</p> : null}
       </section>
 
       <section className="space-y-3">

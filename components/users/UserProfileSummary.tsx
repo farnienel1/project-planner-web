@@ -13,7 +13,10 @@ import { displayTradeType } from '@/lib/staff/staffTradeTypes'
 import { canShowAdminEditProfile, roleLabel } from '@/lib/staff/userEditPermissions'
 import { rosterStatusLabel } from '@/lib/staff/userRosterUtils'
 import { UserAvatar } from '@/components/users/UserAvatar'
-import { formatMoney } from '@/lib/canonical'
+import { canViewPersonPay, formatMoney, overlayPayProfile } from '@/lib/canonical'
+import { loadPayProfile } from '@/lib/pay/payProfileService'
+import { isPlatformOwnerEmail } from '@/lib/platform/owner'
+import type { PayProfileDocument } from '@/lib/canonical'
 import { useOrganizationCurrency } from '@/lib/stores/organizationDocumentStore'
 import { normalizeEmploymentType } from '@/lib/ios-parity/enums'
 
@@ -38,6 +41,7 @@ export function UserProfileSummary({
   const { getUser } = useUserStore()
   const [loading, setLoading] = useState(true)
   const [target, setTarget] = useState<Awaited<ReturnType<typeof getUser>>>(null)
+  const [payProfile, setPayProfile] = useState<PayProfileDocument | null>(null)
 
   useEffect(() => {
     if (!organization?.id) return
@@ -47,6 +51,40 @@ export function UserProfileSummary({
       .then(setTarget)
       .finally(() => setLoading(false))
   }, [organization?.id, userId, getUser, loadUsers, loadOperatives])
+
+  // Rulebook 1.13.0 §8 (Q1, `canViewPersonPay`): pay, pay basis and employment type only for the person, their
+  // active line managers, admins and operatives managers (for operatives). Pay comes from the private pay profile
+  // when it exists (`overlayPayProfile`), else the users document (before the backfill).
+  const payVisible = useMemo(
+    () =>
+      Boolean(
+        currentUser &&
+          target &&
+          canViewPersonPay(
+            { ...currentUser, isPlatformOwner: isPlatformOwnerEmail(currentUser.email) } as never,
+            target as never,
+            users as never
+          )
+      ),
+    [currentUser, target, users]
+  )
+  useEffect(() => {
+    if (!organization?.id || !target?.id || !payVisible) {
+      setPayProfile(null)
+      return
+    }
+    let cancelled = false
+    void loadPayProfile(organization.id, target.id).then((profile) => {
+      if (!cancelled) setPayProfile(profile)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [organization?.id, target?.id, payVisible])
+  const pay = useMemo(
+    () => (target ? overlayPayProfile(target as unknown as Record<string, unknown>, payProfile) : null),
+    [target, payProfile]
+  ) as { payBasis?: string; dayRate?: number | null; hourlyRate?: number | null; employmentType?: string } | null
 
   const linkedOperative = useMemo(
     () => (target ? findOperativeForUser(target, operatives) : undefined),
@@ -136,15 +174,15 @@ export function UserProfileSummary({
             value={target.lastSeenAt ? format(target.lastSeenAt, "d MMM yyyy 'at' HH:mm") : '—'}
           />
           <SummaryRow label="Trade" value={displayTradeType(target.tradeTypePreset, target.tradeTypeCustom)} />
-          <SummaryRow label="Employment" value={employmentLabel(target.employmentType)} />
+          {payVisible ? <SummaryRow label="Employment" value={employmentLabel(pay?.employmentType)} /> : null}
           <SummaryRow
             label="Line manager"
             value={lineManager ? `${lineManager.firstName} ${lineManager.surname}`.trim() : 'No line manager'}
           />
-          {target.payBasis === 'hourly' && target.hourlyRate != null ? (
-            <SummaryRow label="Hourly rate" value={`${formatMoney(Number(target.hourlyRate), currencyCode)}/hr`} />
-          ) : target.payBasis === 'day' && target.dayRate != null ? (
-            <SummaryRow label="Day rate" value={`${formatMoney(Number(target.dayRate), currencyCode)}/day`} />
+          {!payVisible ? null : pay?.payBasis === 'hourly' && pay.hourlyRate != null ? (
+            <SummaryRow label="Hourly rate" value={`${formatMoney(Number(pay.hourlyRate), currencyCode)}/hr`} />
+          ) : pay?.payBasis === 'day' && pay.dayRate != null ? (
+            <SummaryRow label="Day rate" value={`${formatMoney(Number(pay.dayRate), currencyCode)}/day`} />
           ) : null}
         </dl>
       </section>

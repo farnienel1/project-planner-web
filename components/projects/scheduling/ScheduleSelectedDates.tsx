@@ -2,6 +2,8 @@
 
 import { formatScheduleDay, type ScheduleDateSlot, type ScheduleSlotChoice } from '@/lib/scheduling/scheduleUtils'
 import { HoursTimelinePicker } from '@/components/scheduling/HoursTimelinePicker'
+import { slotOfferedOnDate, weekendNoteForDate } from '@/lib/scheduling/bookingSlotRules'
+import { useOrganizationPayrollPolicy } from '@/lib/scheduling/useOrganizationPayrollPolicy'
 
 const SLOT_OPTIONS: ScheduleSlotChoice[] = ['AM', 'PM', 'FULL DAY', 'CUSTOM']
 
@@ -17,6 +19,7 @@ export function ScheduleSelectedDates({
   accent?: 'blue' | 'purple'
 }) {
   const activeClass = accent === 'purple' ? 'bg-purple-600 text-white' : 'bg-blue-600 text-white'
+  const policy = useOrganizationPayrollPolicy()
 
   if (slots.length === 0) {
     return (
@@ -44,8 +47,9 @@ export function ScheduleSelectedDates({
             </button>
           </div>
 
+          {/* Rulebook 1.13.0 (Q2, `allowedTimeSlotsOnDay`): no AM / PM on Saturday or Sunday. */}
           <div className="grid grid-cols-4 gap-1 rounded-xl bg-slate-100 p-1">
-            {SLOT_OPTIONS.map((slot) => (
+            {SLOT_OPTIONS.filter((slot) => slotOfferedOnDate(slot, entry.date, policy, entry.slot)).map((slot) => (
               <button
                 key={slot}
                 type="button"
@@ -69,6 +73,10 @@ export function ScheduleSelectedDates({
               </button>
             ))}
           </div>
+
+          {weekendNoteForDate(entry.date, policy) ? (
+            <p className="mt-2 text-xs text-slate-500">{weekendNoteForDate(entry.date, policy)}</p>
+          ) : null}
 
           {entry.slot === 'CUSTOM' && (
             <div className="mt-3">

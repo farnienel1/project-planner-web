@@ -170,6 +170,9 @@ export function buildSaveUserPayload(user: User): Record<string, unknown> {
     payload.tradeTypeCustom = deleteField()
   }
 
+  // Rulebook 1.13.0 (Q4): a calendar day key; blank removes it (no pro rata).
+  const startDay = user.employmentStartDate?.trim()
+  payload.employmentStartDate = startDay && /^\d{4}-\d{2}-\d{2}$/.test(startDay) ? startDay : deleteField()
   if (user.annualLeaveDaysPerYear != null) payload.annualLeaveDaysPerYear = user.annualLeaveDaysPerYear
   if (user.annualLeaveYearStartMonth != null) payload.annualLeaveYearStartMonth = user.annualLeaveYearStartMonth
   if (user.annualLeaveYearEndMonth != null) payload.annualLeaveYearEndMonth = user.annualLeaveYearEndMonth
