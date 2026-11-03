@@ -6751,7 +6751,7 @@
       ]
     },
     {
-      "name": "excludeActor: drops every id of the actor and inactive members",
+      "name": "excludeActor: drops every id of the actor and inactive members (1.16.0: an id the roster cannot resolve to an account is dropped)",
       "function": "excludeActor",
       "args": [
         [
@@ -6935,8 +6935,7 @@
         ]
       ],
       "expected": [
-        "LM",
-        "NOT-ON-ROSTER"
+        "LM"
       ]
     },
     {

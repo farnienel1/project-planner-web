@@ -33,6 +33,8 @@ export type { PersonIdsInput, PersonRosterRow } from './personIds'
 /** A roster row for the recipient rules: `PersonRosterRow` with the resolved staff role. */
 export type NotificationRosterMember = Omit<PersonRosterRow, 'role'> & {
   role: StaffAccountRole
+  /** True once the account has signed up (`users/{uid}.passwordSet`); preferred as the person's account (1.16.0). */
+  passwordSet?: boolean | null
   annualLeaveSelfBook?: boolean | null
   permissions?: { annualLeaveSelfBook?: boolean | null; operativeMode?: boolean | null } | null
 }
@@ -60,28 +62,97 @@ function resolvePerson(person: NotificationPerson, members: NotificationRosterMe
   return merged as Partial<NotificationRosterMember>
 }
 
+/** An operatives catalogue row: a booked id that is not an account, linked to the account by email (or `userId`). */
+export type NotificationCatalogueRow = {
+  id: string
+  email?: string | null
+  userId?: string | null
+  linkedUserId?: string | null
+}
+
+type Catalogue = ReadonlyArray<NotificationCatalogueRow> | null | undefined
+
+/**
+ * The signed-in account a notice for `id` is written to (1.16.0, §13): `id` may be the account id, an invite
+ * placeholder or former id (`formerUserIds`), another users document on the same email (`sameEmailUserIds`), an
+ * operatives catalogue row id (linked by its `userId` / `linkedUserId` or its email), in any letter case. Every
+ * roster row that is the same person (`personIdSet`) is a candidate; inactive rows are not. The account is the
+ * candidate that has signed up (`passwordSet` true; unknown ranks below true, false last), then one no other row
+ * lists as a former id, then the first in roster order — the same answer whichever of the person's ids is given.
+ * Returns that row's id in stored case, or null (unknown id, nobody active, no roster).
+ */
+export function notificationRecipientAccountId(
+  id: unknown,
+  roster: Roster,
+  catalogue?: Catalogue
+): string | null {
+  const key = idKey(id)
+  if (!key) return null
+  const members = rosterOf(roster)
+  if (members.length === 0) return null
+  const seeds: PersonIdsInput[] = []
+  const direct = members.find((member) => idKey(member.id) === key)
+  if (direct) seeds.push(direct)
+  else {
+    const aliased = members.find((member) =>
+      [...(member.formerUserIds ?? []), ...(member.sameEmailUserIds ?? []), ...(member.formerIds ?? []), ...(member.aliasIds ?? [])].some(
+        (alias) => idKey(alias) === key
+      )
+    )
+    if (aliased) seeds.push(aliased)
+    else {
+      const row = (catalogue || []).find((entry) => entry && idKey(entry.id) === key)
+      if (!row) return null
+      const linked = idText(row.userId) || idText(row.linkedUserId)
+      if (linked) seeds.push({ id: linked })
+      if (idText(row.email)) seeds.push({ id: idText(row.id), email: idText(row.email) })
+    }
+  }
+  const same = new Set<string>()
+  for (const seed of seeds) for (const alias of personIdSet(seed, members)) same.add(idKey(alias))
+  const formerOfOther = new Set<string>()
+  for (const member of members) {
+    for (const alias of [...(member.formerUserIds ?? []), ...(member.formerIds ?? [])]) {
+      if (idKey(alias) !== idKey(member.id)) formerOfOther.add(idKey(alias))
+    }
+  }
+  let best: { id: string; score: number } | null = null
+  for (const member of members) {
+    const memberKey = idKey(member.id)
+    if (!same.has(memberKey) || !rosterMemberActive(member)) continue
+    const signedUp = member.passwordSet === true ? 2 : member.passwordSet === false ? 0 : 1
+    const score = signedUp * 2 + (formerOfOther.has(memberKey) ? 0 : 1)
+    if (!best || score > best.score) best = { id: idText(member.id), score }
+  }
+  return best ? best.id : null
+}
+
 /**
  * `ids` without any id of `actor` (`personIdSet`: id, `formerUserIds`, `sameEmailUserIds`, same-email roster rows),
- * without roster members marked inactive, de-duplicated without case. Order kept. An id the roster does not know is
- * kept. No actor → only the de-dupe and the inactive filter.
+ * without roster members marked inactive, de-duplicated without case. Order kept. 1.16.0: given a roster, every id
+ * is first resolved to the person's account (`notificationRecipientAccountId`, with `catalogue` for operatives rows)
+ * and an id the roster cannot resolve is dropped, so the result is one signed-in account id per person — never a
+ * placeholder, former id, catalogue id or a second document of the same person. With no roster the ids are kept as
+ * given (only the de-dupe). No actor → no actor filter.
  */
 export function excludeActor(
   ids: ReadonlyArray<string> | null | undefined,
   actor: NotificationPerson,
-  roster?: Roster
+  roster?: Roster,
+  catalogue?: Catalogue
 ): string[] {
   const members = rosterOf(roster)
   const actorPerson = resolvePerson(actor, members)
   const actorIds = new Set(personIdSet(actorPerson as PersonIdsInput, members).map(idKey))
-  const byId = new Map(members.map((member) => [idKey(member.id), member]))
   const seen = new Set<string>()
   const out: string[] = []
   for (const raw of ids || []) {
-    const id = idText(raw)
+    const given = idText(raw)
+    if (!given) continue
+    const id = members.length > 0 ? notificationRecipientAccountId(given, members, catalogue) : given
+    if (!id) continue
     const key = idKey(id)
-    if (!key || seen.has(key) || actorIds.has(key)) continue
-    const member = byId.get(key)
-    if (member && !rosterMemberActive(member)) continue
+    if (seen.has(key) || actorIds.has(key) || actorIds.has(idKey(given))) continue
     seen.add(key)
     out.push(id)
   }
@@ -143,13 +214,18 @@ export function holidayDecisionRecipients(requester: NotificationPerson, decider
   return id ? excludeActor([id], decider, roster) : []
 }
 
-/** `booking_created`: the people booked, without the person who booked them. */
+/**
+ * `booking_created`: the people booked, without the person who booked them. 1.16.0: booked ids may be operatives
+ * catalogue ids (`catalogue`), former or same-email ids in any case; each resolves to the person's account
+ * (`notificationRecipientAccountId`), one row per person.
+ */
 export function bookingCreatedRecipients(
   bookedIds: ReadonlyArray<string> | null | undefined,
   booker: NotificationPerson,
-  roster: Roster
+  roster: Roster,
+  catalogue?: Catalogue
 ): string[] {
-  return excludeActor(bookedIds, booker, roster)
+  return excludeActor(bookedIds, booker, roster, catalogue)
 }
 
 /** `deadline_assigned`: the newly added assignees, without the person who assigned them. */

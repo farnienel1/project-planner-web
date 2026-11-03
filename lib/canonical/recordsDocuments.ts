@@ -26,6 +26,7 @@ import {
   type NotificationDestination,
 } from './notificationPreferences'
 import { NOTIFICATION_CATALOG } from './notificationRecipients'
+import { notificationCreatedAtIsServerTime } from './notificationPreferences'
 import {
   documentBool,
   documentInstantMs,
@@ -1281,7 +1282,13 @@ export type NotificationCreateInput = {
   deepLinkWeekStart?: unknown
   dayKey?: unknown
   catalogue?: unknown
+  /**
+   * The row's due instant. 1.16.0: kept only for a scheduled type written ahead of time
+   * (`SCHEDULED_NOTIFICATION_TYPES`); for every other type `serverTimestamp` is written instead when given.
+   */
   createdAt: unknown
+  /** The app's SDK server-time sentinel (`serverTimestamp()` / `FieldValue.serverTimestamp()`), 1.16.0. */
+  serverTimestamp?: unknown
 }
 
 /**
@@ -1310,7 +1317,11 @@ export function notificationCreateFields(
     requiresPermission: optionalText(input?.requiresPermission),
     deepLinkUserId: optionalText(input?.deepLinkUserId),
     isRead: false,
-    createdAt: input?.createdAt,
+    // 1.16.0: a due-now row carries the server time; only a scheduled type keeps its own due instant.
+    createdAt:
+      input?.serverTimestamp !== undefined && notificationCreatedAtIsServerTime(type, input?.createdAt)
+        ? input.serverTimestamp
+        : input?.createdAt,
   }
   const actor = optionalText(input?.actorUserId)
   if (actor) set.actorUserId = actor
