@@ -139,6 +139,12 @@ export type TimesheetInvoiceRowsInput<L extends InvoiceLineInput & { id: string;
   timesheetDays?: ReadonlyArray<string> | null
   /** The organisation zone for entry dates (with `timesheetDays`). */
   timeZone?: string | null
+  /**
+   * 1.22.0: whether the line manager's labour reviews (`payrollLineReview`) apply to live lines in `decided` mode.
+   * Missing or null = once the line manager has signed (the invoice). `true` while the line manager is reviewing
+   * before they sign, so their on-screen total is the invoice their signature will produce (`timesheetTotals`).
+   */
+  applyLabourReviews?: boolean | null
 }
 
 function rowsOf(value: unknown): Record<string, unknown>[] {
@@ -202,10 +208,11 @@ export function timesheetInvoiceRows<L extends InvoiceLineInput & { id: string; 
 
   const decided = input.extrasMode === 'decided'
   const managerSigned = parseTimesheetStatusFields(sheet).managerSignedAtMs != null
+  const labourReviews = input.applyLabourReviews == null ? managerSigned : input.applyLabourReviews === true
   for (const line of invoiceLines(lines)) {
     if (!onCountedDay(line.dayKey)) continue
     let amount = line.amount
-    if (decided && managerSigned) {
+    if (decided && labourReviews) {
       const review = payrollLineReview(sheet, line.id)
       if (review?.decision === 'declined') continue
       if (review?.decision === 'edited' && review.revisedAmount != null) amount = review.revisedAmount

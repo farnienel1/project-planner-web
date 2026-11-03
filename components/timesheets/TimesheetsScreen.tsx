@@ -17,7 +17,8 @@ import {
   timesheetSourceDocumentId,
   type ExportedTimesheetHistoryRow,
 } from '@/lib/timesheets/timesheetStorage'
-import type { TimesheetDraft } from '@/lib/timesheets/timesheetDraft'
+import { emptyTimesheetDraft, type TimesheetDraft } from '@/lib/timesheets/timesheetDraft'
+import { draftTimesheetTotals } from '@/lib/timesheets/timesheetAdjustments'
 import { SIGNED_OFF_EDIT_NOTE, userTimesheetSelfSigned } from '@/lib/timesheets/timesheetApprovalPolicy'
 import {
   SENSITIVE_EXPORT_OPTION_LABEL,
@@ -237,9 +238,16 @@ export function TimesheetsScreen({
       scheduleOptions,
       aliasUserIds: userIdsSharingEmail(member, users),
     })
-    const priceWork = draft?.priceWorkEntries.reduce((sum, entry) => sum + entry.amount, 0) || 0
-    const expenses = draft?.expenseEntries.reduce((sum, entry) => sum + entry.amount, 0) || 0
-    return { hours: payroll.totalHours, overtimeHours: payroll.overtimeHours, priceWork, expenses }
+    // Rulebook 1.22.0 (§8): `timesheetTotals` — the export invoice's figures (declined entries 0, revised at the
+    // revision, a stale review at its own amount, PAYE days left out), never a raw sum of entries.
+    const totals = draftTimesheetTotals({
+      lines: payroll.lineItems,
+      draft: draft ?? emptyTimesheetDraft(),
+      decided: true,
+      timesheetDays: timesheetDayKeysForPeriod(member, start, end, timeZone),
+      timeZone,
+    })
+    return { hours: totals.hours, overtimeHours: totals.overtimeHours, priceWork: totals.priceWork, expenses: totals.expenses }
   }
 
   const persistExportedFlag = async (exportedAt: Date) => {

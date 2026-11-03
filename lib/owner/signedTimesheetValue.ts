@@ -5,7 +5,8 @@ import { db } from '@/lib/firebase/config'
 import { withTimeoutFallback } from '@/lib/client/withTimeout'
 import { parseFirestoreDate } from '@/lib/firebase/firestoreUtils'
 import { isTimesheetFullyApproved } from '@/lib/timesheets/timesheetApprovalPolicy'
-import { draftAdditionalTotal, emptyTimesheetDraft } from '@/lib/timesheets/timesheetDraft'
+import { emptyTimesheetDraft } from '@/lib/timesheets/timesheetDraft'
+import { timesheetTotals } from '@/lib/canonical/timesheetTotals'
 import { draftFromFirestoreMap } from '@/lib/timesheets/timesheetStorage'
 import { penceForSignedTimesheet, userIdFromTimesheetDoc } from '@/lib/timesheets/signedSheetPence'
 import type { User } from '@/types'
@@ -101,7 +102,8 @@ export async function loadSignedTimesheetValueTotals(input: {
 
             const storedHours =
               typeof data.valueHours === 'number' && Number.isFinite(data.valueHours) ? data.valueHours : 0
-            const extrasPounds = draftAdditionalTotal(draft)
+            // Rulebook 1.22.0 (§8): the signed sheet's extras as its invoice pays them (`timesheetTotals`), never a raw sum.
+            const extrasPounds = timesheetTotals({ sheet: data, payrollLines: [], extrasMode: 'decided' }).extras
             const valued = penceForSignedTimesheet({
               storedValuePence: asPence(data.valuePence),
               extrasPounds,
