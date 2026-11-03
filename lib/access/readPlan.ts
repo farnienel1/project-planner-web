@@ -17,6 +17,7 @@ import {
 } from '@/lib/canonical'
 import type { OrgPlanPart } from '@/lib/firebase/subscribeOrgPlan'
 import { jobAccessViewer } from '@/lib/access/bookingAccess'
+import { enforcedReadsFor } from '@/lib/access/securitySwitches'
 import type { User } from '@/types'
 
 export function webJobAccessViewer(user: User | null | undefined): JobAccessViewer | null {
@@ -52,7 +53,8 @@ export function jobPlanParts(
   collection: JobCollection,
   documentIds?: ReadonlyArray<string>
 ): OrgPlanPart[] | null {
-  const plan = jobQueryPlan(viewer, { documentIds: documentIds ?? [] })
+  // 1.26.0: planned for the `enforcedReads` switch as the rules read it now (`securitySwitchOn`).
+  const plan = jobQueryPlan(viewer, { documentIds: documentIds ?? [], enforced: enforcedReadsFor() })
   const queries = plan.queries.filter((query) => query.collection === collection)
   if (queries.some((query) => query.kind === 'all')) return null
   return queries.flatMap(jobPart)
@@ -79,7 +81,7 @@ export function bookingPlanParts(
   bound: QueryConstraint[] = [],
   boundId = ''
 ): OrgPlanPart[] | null {
-  const plan = bookingQueryPlan(viewer, visibleJobIds, { ownBookingIds })
+  const plan = bookingQueryPlan(viewer, visibleJobIds, { ownBookingIds, enforced: enforcedReadsFor() })
   if (plan.readsEveryBooking) return null
   return plan.queries.filter((query) => query.collection === collection).map((query) => bookingPart(query, bound, boundId))
 }

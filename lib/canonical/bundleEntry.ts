@@ -926,6 +926,12 @@ export { isVerifiedPlatformOwner } from './passwordPolicy'
 export { invitationIsOperativeOnly } from './inviteAccept'
 export { organizationMemberActive } from './orgMembership'
 export { PLATFORM_CONFIG_APP_PATH, appUpdateRequired, compareAppVersions } from './platformConfig'
+export {
+  SECURITY_SWITCHES,
+  SECURITY_SWITCH_ORGANIZATION_FIELDS,
+  securitySwitchOn,
+  securitySwitches,
+} from './platformConfig'
 export { LEAVE_YEAR_MONTHS_MESSAGE, leaveYearEndMonth, validateAnnualLeaveDefaults, validateLeaveYearMonths } from './annualLeaveBalance'
 export { PAY_STANDARD_DAY_MIN_HOURS } from './payRate'
 
@@ -984,6 +990,9 @@ export {
   payProfileBackfillWrites,
   payProfilePath,
   payProfileWriteFieldsFromProfileWrite,
+  payProfileReadPlan,
+  rateHistoryQueryPlan,
+  sharedDocumentPayWrite,
 } from './payProfile'
 export {
   SELF_EMAIL_INVALID_MESSAGE,

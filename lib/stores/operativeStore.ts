@@ -13,6 +13,7 @@ import { newUuid } from '@/lib/firebase/firestoreUtils'
 import { auth, db } from '@/lib/firebase/config'
 import { savePartialDocument } from '@/lib/firebase/partialWrite'
 import { managerRowWriteFields, operativeRowWriteFields, parseSkillDocument } from '@/lib/canonical/peopleDocuments'
+import { sharedDocumentPayWrite } from '@/lib/canonical/payProfile'
 import type { Operative, Manager, Skill, Qualification } from '@/types'
 import { filterRealManagers, isPlaceholderManager } from '@/lib/staff/managerRosterUtils'
 import { forgetOrgCollectionDoc, subscribeOrgCollectionLoaded } from '@/lib/firebase/subscribeOrgCollection'
@@ -27,6 +28,8 @@ import { currentOrganizationCurrency } from '@/lib/stores/organizationDocumentSt
 import { readStoredRates } from '@/lib/timesheets/payBasis'
 import { markRowsRemoved, retainScopedRows } from '@/lib/staff/rosterRetain'
 import { removeFutureBookingsForPerson } from '@/lib/bookings/removeBookingsOnDelete'
+import { privatePayFor, securitySwitchesReady } from '@/lib/access/securitySwitches'
+import { overlayRosterPay } from '@/lib/pay/payProfileOverlay'
 
 const OPERATIVES_KEY = 'operativeStore:operatives'
 const MANAGERS_KEY = 'operativeStore:managers'
@@ -84,7 +87,8 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
       await subscribeOrgCollectionLoaded(OPERATIVES_KEY, organizationId, 'operatives', (docs, meta) => {
         if (!liveResultStillCurrent(organizationId)) return
         const mapped = docs.flatMap((entry) => {
-          const parsed = parseOperative(entry.id, entry.data, organizationId)
+          // Rulebook 1.26.0 §8: a catalogue operative's pay is read from its pay profile first (`overlayPayProfile`).
+          const parsed = parseOperative(entry.id, overlayRosterPay(organizationId, entry.id, entry.data), organizationId)
           return parsed.ok ? [parsed.value] : []
         })
         const previous = operativesOrgId === organizationId ? get().operatives : []
@@ -231,7 +235,12 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
 
   saveOperative: async (organizationId, operative) => {
     const id = operative.id || newUuid()
-    const payload = serializeOperative({ ...operative, id, organizationId }, { currencyCode: currentOrganizationCurrency() })
+    await securitySwitchesReady()
+    // Rulebook 1.26.0 (`sharedDocumentPayWrite`): with `privatePay` on, pay goes only to the pay profile.
+    const payload = sharedDocumentPayWrite(
+      serializeOperative({ ...operative, id, organizationId }, { currencyCode: currentOrganizationCurrency() }),
+      { privatePay: privatePayFor(organizationId) }
+    )
     operativeMutationEpoch += 1
     // Partial update of the changed fields only (rulebook §1, `operativeRowWriteFields`).
     await savePartialDocument(
@@ -305,7 +314,7 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
             qualificationCertificateURLs: payload.qualificationCertificateURLs,
             updatedAt: payload.updatedAt,
           }
-        : payload,
+        : sharedDocumentPayWrite(payload, { privatePay: privatePayFor(organizationId) }),
       { merge: true }
     )
     operativeMutationEpoch += 1
@@ -315,8 +324,11 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
 
   saveManager: async (organizationId, manager) => {
     const id = manager.id || newUuid()
-    const payload = serializeManager({ ...manager, id, organizationId })
-    applyExclusiveRateFields(payload, manager)
+    const serialized = serializeManager({ ...manager, id, organizationId })
+    applyExclusiveRateFields(serialized, manager)
+    await securitySwitchesReady()
+    // Rulebook 1.26.0 (`sharedDocumentPayWrite`): with `privatePay` on, a manager's pay goes only to the pay profile.
+    const payload = sharedDocumentPayWrite(serialized, { privatePay: privatePayFor(organizationId) })
     // Partial update of the changed fields only (rulebook §1, `managerRowWriteFields`).
     await savePartialDocument(
       doc(db, 'organizations', organizationId, 'managers', id),

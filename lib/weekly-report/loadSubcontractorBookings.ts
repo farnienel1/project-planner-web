@@ -1,5 +1,6 @@
 import { collection, getDocs, query, type Unsubscribe } from 'firebase/firestore'
 import { bookingPlanInputs, bookingPlanParts, webJobAccessViewer } from '@/lib/access/readPlan'
+import { securitySwitchesReady } from '@/lib/access/securitySwitches'
 import { subscribeOrgPlan, unsubscribeOrgPlan } from '@/lib/firebase/subscribeOrgPlan'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { db } from '@/lib/firebase/config'
@@ -49,6 +50,7 @@ function subcontractorPlanParts() {
 
 export async function loadSubcontractorBookings(organizationId: string): Promise<SubcontractorBookingRow[]> {
   const col = collection(db, 'organizations', organizationId, 'subcontractorBookings')
+  await securitySwitchesReady()
   const parts = subcontractorPlanParts()
   const snapshots = parts === null
     ? [await getDocs(col)]

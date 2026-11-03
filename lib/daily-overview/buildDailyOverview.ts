@@ -232,6 +232,8 @@ export function buildDailyOverview(params: {
    * unbooked people are listed only when they read every booking (`warningScopeFor`). Missing → everything.
    */
   viewer?: JobAccessViewer | null
+  /** Rulebook 1.26.0: the `enforcedReads` switch for this organisation (`securitySwitchOn`); missing → off. */
+  enforcedReads?: boolean
 }): DailyOverviewModel {
   const day = params.day
   // Rulebook §1: the organisation zone (1.9.0: the open organisation's when none is passed, never always London).
@@ -478,6 +480,7 @@ export function buildDailyOverview(params: {
         })),
         people: params.users.map((user) => ({ id: user.id, email: user.email, formerIds: user.formerUserIds ?? [] })),
         operatives: params.operatives.map((operative) => ({ id: operative.id, email: operative.email })),
+        enforced: params.enforcedReads === true,
       })
     : null
   const unbookedRows = unbookedLabourRowsOnDay({

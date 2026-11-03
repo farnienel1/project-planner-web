@@ -188,6 +188,8 @@ export function generateOrgWarnings(input: {
    * jobs they see and the people booked on them (`warningScopeFor`); missing → everything.
    */
   viewer?: JobAccessViewer | null
+  /** Rulebook 1.26.0: the `enforcedReads` switch for this organisation (`securitySwitchOn`); missing → off. */
+  enforcedReads?: boolean
 }): OrgWarningsResult {
   const scope: WarningScope = input.viewer
     ? warningScopeFor({
@@ -201,6 +203,7 @@ export function generateOrgWarnings(input: {
         })),
         people: input.users.map((user) => ({ id: user.id, email: user.email, formerIds: user.formerUserIds ?? [] })),
         operatives: input.operatives.map((operative) => ({ id: operative.id, email: operative.email })),
+        enforced: input.enforcedReads === true,
       })
     : WARNING_SCOPE_ALL
   const warningDetection = input.warningDetection ?? input.orgDetails?.warningDetection ?? DEFAULT_WARNING_DETECTION

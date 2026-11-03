@@ -174,6 +174,12 @@ export function subscribeOrgCollection(
         }, authLoadRetryDelayMs(attempt))
         return
       }
+      // Rulebook 1.26.0: a listener the server refused is dead. Forget it, so the next subscribe for this key (a re-plan
+      // after a security switch changed, the Refresh button, reopening the screen) starts it again instead of
+      // treating it as live.
+      unsubs.get(key)?.()
+      unsubs.delete(key)
+      delivered.delete(key)
       activeCallback(key)?.onError?.(error)
       settleFirstSnapshot(key, error)
     }

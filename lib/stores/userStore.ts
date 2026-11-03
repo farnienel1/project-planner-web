@@ -28,7 +28,8 @@ import { parseOrgUser } from '@/lib/firebase/parseUser'
 import { operativeRecordForUser } from '@/lib/operatives/operativeRosterUtils'
 import { applyAccountTypeChange } from '@/lib/staff/accountTypeChange'
 import { accountTypeChangeWrites } from '@/lib/canonical/permissionLevels'
-import { parseFormerUserIds } from '@/lib/canonical'
+import { parseFormerUserIds, sharedDocumentPayWrite } from '@/lib/canonical'
+import { privatePayFor, securitySwitchesReady } from '@/lib/access/securitySwitches'
 import { savePartialDocument } from '@/lib/firebase/partialWrite'
 import { operativeRowWriteFields } from '@/lib/canonical/peopleDocuments'
 
@@ -242,7 +243,10 @@ export const useUserStore = create<UserStoreState>(() => ({
       { userId: user.id, isOperative: Boolean(user.permissions.operativeMode || user.role === 'operative') }
     )
     const batch = writeBatch(db)
-    batch.update(doc(db, 'users', user.id), payload)
+    // Rulebook 1.26.0 (`sharedDocumentPayWrite`): with `privatePay` on for this organisation, the users document takes
+    // no pay value (the rules refuse it); pay goes to the pay profile and the rate history in the same batch.
+    await securitySwitchesReady()
+    batch.update(doc(db, 'users', user.id), sharedDocumentPayWrite(payload, { privatePay: orgId ? privatePayFor(orgId) : false }))
     // One batch: the profile and its pay history are saved together or not at all (rulebook 1.10.0 §8).
     if (orgId) {
       for (const row of historyRows) batch.set(doc(db, 'organizations', orgId, 'operativeDayRateHistory', row.id), row.fields)

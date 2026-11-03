@@ -8,6 +8,7 @@
 import { policyForBookingDate } from '@/lib/scheduling/bookingSlotRules'
 
 import { webJobAccessViewer } from '@/lib/access/readPlan'
+import { enforcedReadsFor } from '@/lib/access/securitySwitches'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -164,6 +165,7 @@ export function DailyOverviewScreen() {
       buildDailyOverview({
         // Rulebook 1.10.0 §17: restricted managers see only their jobs and people (`warningScopeFor`).
         viewer: webJobAccessViewer(useAuthStore.getState().user),
+        enforcedReads: enforcedReadsFor(),
         day,
         today,
         projects: [...projects, ...smallWorks],

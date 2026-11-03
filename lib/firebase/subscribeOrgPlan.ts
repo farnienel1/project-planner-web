@@ -24,7 +24,7 @@ import type { OrgCollectionDoc } from '@/lib/firebase/subscribeOrgCollection'
 /** One query of a plan: `constraints` on the collection, or one `documentId`. `id` names it stably. */
 export type OrgPlanPart = { id: string; constraints?: QueryConstraint[]; documentId?: string }
 
-type PartState = { unsub: Unsubscribe | null; docs: OrgCollectionDoc[]; settled: boolean }
+type PartState = { unsub: Unsubscribe | null; docs: OrgCollectionDoc[]; settled: boolean; failed?: boolean }
 type PlanState = {
   organizationId: string
   collectionName: string
@@ -67,6 +67,7 @@ function startPart(key: string, state: PlanState, part: OrgPlanPart): PartState 
       if (!live()) return
       partState.docs = []
       partState.settled = true
+      partState.failed = true
       state.onError?.(error)
       emit(state)
       settle(state)
@@ -130,6 +131,12 @@ export function subscribeOrgPlan(
     state.parts.delete(id)
   }
   for (const [id, part] of wanted) {
+    const existing = state.parts.get(id)
+    // Rulebook 1.26.0: a part the server refused is started again (a re-plan after a security switch changed).
+    if (existing?.failed) {
+      existing.unsub?.()
+      state.parts.delete(id)
+    }
     if (!state.parts.has(id)) state.parts.set(id, startPart(key, state, part))
   }
   emit(state)

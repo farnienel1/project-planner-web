@@ -5,6 +5,7 @@
  * each other. Admins and managers with a job toggle read whole collections and never re-plan here.
  */
 import { ownBookingIdsFor, setBookingPlanInputs, webJobAccessViewer } from '@/lib/access/readPlan'
+import { enforcedReadsFor, onSecuritySwitchChange } from '@/lib/access/securitySwitches'
 import { bookingJobId, readsEveryBooking, seesEveryJob } from '@/lib/canonical'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { bookingsOrganizationId, useBookingStore } from '@/lib/stores/bookingStore'
@@ -19,7 +20,7 @@ let started = false
 
 function replanBookings(): void {
   const viewer = webJobAccessViewer(useAuthStore.getState().user)
-  if (!viewer || readsEveryBooking(viewer)) return
+  if (!viewer || readsEveryBooking(viewer, { enforced: enforcedReadsFor() })) return
   // 1.11.0: a kind the manager has the toggle for is read by `jobCollection`; only the other kind's jobs (their
   // managed jobs) get per-job booking queries.
   const untoggled = (['projects', 'smallWorks'] as const).filter((kind) => !seesEveryJob(viewer.role, kind, viewer.toggles ?? null))
@@ -54,9 +55,57 @@ function replanOperativeJobs(): void {
   if (setJobPlanDocumentIds(ids)) replanJobs()
 }
 
+/**
+ * Rulebook 1.26.0: the owner switched `enforcedReads` on or off for the open organisation. Every job and booking
+ * listener re-plans at once — whole collections when off, the §17 queries when on — so an open tab keeps working
+ * through the flip instead of holding a listener the rules now refuse.
+ */
+function replanEverything(): void {
+  replanJobs()
+  const viewer = webJobAccessViewer(useAuthStore.getState().user)
+  if (viewer && !readsEveryBooking(viewer, { enforced: enforcedReadsFor() })) {
+    const untoggled = (['projects', 'smallWorks'] as const).filter((kind) => !seesEveryJob(viewer.role, kind, viewer.toggles ?? null))
+    setBookingPlanInputs(loadedJobIds(untoggled), ownBookingIdsFor(useAuthStore.getState().user, useOperativeStore.getState().operatives))
+  }
+  const bookingsOrg = bookingsOrganizationId()
+  if (bookingsOrg) void useBookingStore.getState().loadBookings(bookingsOrg).catch(() => undefined)
+  const managerOrg = managerSiteBookingsOrganizationId()
+  if (managerOrg) void useManagerScheduleStore.getState().loadManagerSiteBookings(managerOrg).catch(() => undefined)
+}
+
+/**
+ * Rulebook 1.26.0: `privatePay` changed for the open organisation. The roster and the operatives rows are read again,
+ * laid over with pay profiles only while it is on (`refreshPayProfiles`, `overlayRosterPay`).
+ */
+async function rereadPay(): Promise<void> {
+  const [{ refreshPayProfiles }, { useOrgUserStore }, { unsubscribeOrgCollection }] = await Promise.all([
+    import('@/lib/pay/payProfileOverlay'),
+    import('@/lib/stores/siteAuditStore'),
+    import('@/lib/firebase/subscribeOrgCollection'),
+  ])
+  const organizationId = useOrgUserStore.getState().rosterLoadedOrgId
+  if (!organizationId) return
+  await refreshPayProfiles(organizationId, useAuthStore.getState().user as never, useOrgUserStore.getState().users as never)
+  await useOrgUserStore.getState().loadUsers(organizationId, { force: true })
+  unsubscribeOrgCollection('operativeStore:operatives')
+  await useOperativeStore.getState().loadOperatives(organizationId, { force: true })
+}
+
+let switchWatch = false
+/** Start following the `enforcedReads` switch (idempotent; the stores call it when they first plan). */
+export function followSecuritySwitches(): void {
+  if (switchWatch) return
+  switchWatch = true
+  onSecuritySwitchChange((name) => {
+    if (name === 'enforcedReads') replanEverything()
+    if (name === 'privatePay') void rereadPay()
+  })
+}
+
 function start(): void {
   if (started) return
   started = true
+  followSecuritySwitches()
   useBookingStore.subscribe((state, previous) => {
     if (state.bookings !== previous.bookings) replanOperativeJobs()
   })

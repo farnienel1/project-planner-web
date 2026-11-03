@@ -206,6 +206,8 @@ var ProjectPlannerCanonical = (() => {
     ROSTER_DOCUMENT_KEYS: () => ROSTER_DOCUMENT_KEYS,
     ROSTER_NAME_WRITE_GROUP: () => ROSTER_NAME_WRITE_GROUP,
     SCHEDULED_NOTIFICATION_TYPES: () => SCHEDULED_NOTIFICATION_TYPES,
+    SECURITY_SWITCHES: () => SECURITY_SWITCHES,
+    SECURITY_SWITCH_ORGANIZATION_FIELDS: () => SECURITY_SWITCH_ORGANIZATION_FIELDS,
     SELF_EMAIL_INVALID_MESSAGE: () => SELF_EMAIL_INVALID_MESSAGE,
     SENSITIVE_EXPORT_OPTION_LABEL: () => SENSITIVE_EXPORT_OPTION_LABEL,
     SENSITIVE_HELD_BY_ADMIN_COPY: () => SENSITIVE_HELD_BY_ADMIN_COPY,
@@ -757,6 +759,7 @@ var ProjectPlannerCanonical = (() => {
     payForHours: () => payForHours,
     payProfileBackfillWrites: () => payProfileBackfillWrites,
     payProfilePath: () => payProfilePath,
+    payProfileReadPlan: () => payProfileReadPlan,
     payProfileWriteFieldsFromProfileWrite: () => payProfileWriteFieldsFromProfileWrite,
     payRateChangeWrites: () => payRateChangeWrites,
     payRateHistoryWriteFields: () => payRateHistoryWriteFields,
@@ -817,6 +820,7 @@ var ProjectPlannerCanonical = (() => {
     qualificationSectionChipLabel: () => qualificationSectionChipLabel,
     rankMaterialRecords: () => rankMaterialRecords,
     rankQualificationRecords: () => rankQualificationRecords,
+    rateHistoryQueryPlan: () => rateHistoryQueryPlan,
     readCrossPlatformSample: () => readCrossPlatformSample,
     readStoredRates: () => readStoredRates,
     readsEveryBooking: () => readsEveryBooking,
@@ -851,6 +855,8 @@ var ProjectPlannerCanonical = (() => {
     rulebookStamp: () => rulebookStamp,
     scheduleOptionsWriteFields: () => scheduleOptionsWriteFields,
     screenMustListen: () => screenMustListen,
+    securitySwitchOn: () => securitySwitchOn,
+    securitySwitches: () => securitySwitches,
     seesEveryJob: () => seesEveryJob,
     seesEveryUserTimesheet: () => seesEveryUserTimesheet,
     selectableTimesheetPaymentRunPeriods: () => selectableTimesheetPaymentRunPeriods,
@@ -859,6 +865,7 @@ var ProjectPlannerCanonical = (() => {
     sensitiveProfileDocPath: () => sensitiveProfileDocPath,
     sensitiveProfileWriteFields: () => sensitiveProfileWriteFields,
     sessionMembershipIds: () => sessionMembershipIds,
+    sharedDocumentPayWrite: () => sharedDocumentPayWrite,
     sharedWarningResolutionKey: () => sharedWarningResolutionKey,
     shouldClearRememberedOrganization: () => shouldClearRememberedOrganization,
     showsMyTimesheets: () => showsMyTimesheets,
@@ -10012,8 +10019,8 @@ var ProjectPlannerCanonical = (() => {
   // lib/canonical/rulebookStamp.ts
   function rulebookStamp() {
     return {
-      version: true ? "1.25.0" : "",
-      sha256: true ? "90e025b9f37c015aebaaf659f5c6570037f1c7edffbb7a663a583bf43497eec6" : ""
+      version: true ? "1.26.0" : "",
+      sha256: true ? "86e32226ea6aab36e45d9b87be556522636bf54e8fecc98541bf44c7691339ec" : ""
     };
   }
 
@@ -14214,6 +14221,25 @@ var ProjectPlannerCanonical = (() => {
     }
     return false;
   }
+  var SECURITY_SWITCHES = ["enforcedReads", "privatePay"];
+  var SECURITY_SWITCH_ORGANIZATION_FIELDS = {
+    enforcedReads: "enforcedReadsOrganizationIds",
+    privatePay: "privatePayOrganizationIds"
+  };
+  function securitySwitchOn(config, organizationId, name) {
+    if (!config || typeof config !== "object") return false;
+    if (config[name] === true) return true;
+    const id2 = typeof organizationId === "string" ? organizationId : "";
+    if (!id2) return false;
+    const list = config[SECURITY_SWITCH_ORGANIZATION_FIELDS[name]];
+    return Array.isArray(list) && list.some((entry) => entry === id2);
+  }
+  function securitySwitches(config, organizationId) {
+    return {
+      enforcedReads: securitySwitchOn(config, organizationId, "enforcedReads"),
+      privatePay: securitySwitchOn(config, organizationId, "privatePay")
+    };
+  }
 
   // lib/canonical/bookingSlots.ts
   var WEEKDAY_TIME_SLOTS = ["FULL DAY", "CUSTOM"];
@@ -14588,6 +14614,46 @@ var ProjectPlannerCanonical = (() => {
       }
     }
     return { profileSet, sourceRemove };
+  }
+  function viewerSeesEveryPay(viewer) {
+    if (viewer.isPlatformOwner === true) return true;
+    if (viewer.isActive === false) return false;
+    return permissionLevelOf(viewer) === "admin";
+  }
+  function viewablePayIds(viewer, subjects, roster) {
+    const out = [];
+    const seen = /* @__PURE__ */ new Set();
+    const add = (raw) => {
+      const id2 = typeof raw === "string" ? raw.trim() : "";
+      if (!id2 || seen.has(id2)) return;
+      seen.add(id2);
+      out.push(id2);
+    };
+    add(viewer.id);
+    for (const subject of subjects || []) {
+      if (subject && canViewPersonPay(viewer, subject, roster)) add(subject.id);
+    }
+    return out;
+  }
+  function rateHistoryQueryPlan(viewer, subjects, roster, options) {
+    if (options?.privatePay !== true) return { kind: "all" };
+    if (!viewer) return { kind: "people", userIds: [] };
+    if (viewerSeesEveryPay(viewer)) return { kind: "all" };
+    return { kind: "people", userIds: viewablePayIds(viewer, subjects, roster) };
+  }
+  function payProfileReadPlan(viewer, subjects, roster) {
+    if (!viewer) return { kind: "documents", ids: [] };
+    if (viewerSeesEveryPay(viewer)) return { kind: "all" };
+    return { kind: "documents", ids: viewablePayIds(viewer, subjects, roster) };
+  }
+  function sharedDocumentPayWrite(write, options) {
+    if (options?.privatePay !== true || !write) return write;
+    const out = {};
+    for (const [key3, value] of Object.entries(write)) {
+      if (PAY_PROFILE_FIELDS.includes(key3)) continue;
+      out[key3] = value;
+    }
+    return out;
   }
 
   // lib/canonical/emailChange.ts
