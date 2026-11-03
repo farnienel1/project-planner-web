@@ -24,6 +24,7 @@ import {
   canViewSensitiveProfile,
   exportIncludesSensitiveFields,
   resolveTimesheetPeriod,
+  weekdayPaidHours,
 } from '@/lib/canonical'
 import { staffAccountRole } from '@/lib/permissions'
 import { loadTaxIds } from '@/lib/sensitiveProfile/taxIdsService'
@@ -349,11 +350,12 @@ export function TimesheetsScreen({
           draft: agreed,
           timeZone,
           extrasMode: 'export',
-          standardDayHours: payrollPolicy.standardPaidHours,
+          standardDayHours: weekdayPaidHours(payrollPolicy),
           // Rulebook 1.19.0: a signed line's day units against the standard day in effect on its own day.
           standardDayHoursOn: (date: Date) =>
-            orgPayrollPolicyForDay(date, payrollPolicy, payrollPolicyPrior, payrollPolicyEffectiveFrom, timeZone, null, payrollPolicyState)
-              .standardPaidHours,
+            weekdayPaidHours(
+              orgPayrollPolicyForDay(date, payrollPolicy, payrollPolicyPrior, payrollPolicyEffectiveFrom, timeZone, null, payrollPolicyState)
+            ),
           currencyCode: currency,
           // Rulebook 1.11.0: only the self-employed days of the period reach the invoice.
           timesheetDays: timesheetDayKeysForPeriod(member, periodStart, periodEnd, timeZone),

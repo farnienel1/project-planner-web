@@ -3,7 +3,7 @@
  * Information rows only: no hours, no pay, no edit, never on the invoice.
  */
 import type { HolidayBooking, Operative, User } from '@/types'
-import { bookingIdsForAccount, timesheetLeaveLines, type TimesheetLeaveLine } from '@/lib/canonical'
+import { bookingIdsForAccount, timesheetLeaveLines, type StandardDayInput, type TimesheetLeaveLine } from '@/lib/canonical'
 import { dayKey } from '@/lib/ios-parity/londonTime'
 import { holidayBookingDayKeys } from '@/lib/annualLeave/holidayDayKeys'
 
@@ -36,6 +36,7 @@ export function timesheetLeaveLinesForAccount({
   periodEnd,
   timeZone,
   bankHolidayDayKeys = [],
+  dayPolicy,
 }: {
   user: Pick<User, 'id' | 'email' | 'formerUserIds'>
   holidays: ReadonlyArray<HolidayBooking>
@@ -45,6 +46,8 @@ export function timesheetLeaveLinesForAccount({
   periodEnd: Date
   timeZone: string
   bankHolidayDayKeys?: ReadonlyArray<string>
+  /** Rulebook 1.20.0: the working day in effect on a day key, so each leave half carries its clock range. */
+  dayPolicy?: (dayKey: string) => StandardDayInput | null | undefined
 }): TimesheetLeaveLine[] {
   const records = holidayBookingsForAccount(user, holidays, operatives, aliasUserIds).map((holiday) => ({
     id: holiday.id,
@@ -56,6 +59,7 @@ export function timesheetLeaveLinesForAccount({
     records,
     { startDayKey: dayKey(periodStart, timeZone), endDayKey: dayKey(periodEnd, timeZone) },
     timeZone,
-    bankHolidayDayKeys
+    bankHolidayDayKeys,
+    dayPolicy ?? null
   )
 }

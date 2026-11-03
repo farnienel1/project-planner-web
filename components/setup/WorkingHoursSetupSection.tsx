@@ -11,13 +11,18 @@ import {
 import {
   buildWeekdayTimeline,
   computeSpanHours,
-  computeStandardPaidHours,
   effectiveWeekendSettings,
   formatTime12h,
   weekendHoursLabel,
   withSyncedPayrollPolicy,
 } from '@/lib/setup/workingHoursUtils'
 import type { OrgPayrollTimePolicy, WeekendPayrollSettings } from '@/lib/settings/organizationSettings'
+import { derivedWeekdayPaidHours, weekdayPaidDayPreview } from '@/lib/canonical'
+
+/** Rulebook 1.20.0 §4.3: the Mon–Fri paid day is derived (finish − start − unpaid break), never typed in. */
+function paidDayHours(policy: OrgPayrollTimePolicy): number {
+  return Math.round(derivedWeekdayPaidHours(policy) * 100) / 100
+}
 
 const SEGMENT_COLORS = {
   work: 'bg-blue-500',
@@ -58,11 +63,7 @@ function StepperRow({
 }
 
 function WeekAtAGlance({ policy }: { policy: OrgPayrollTimePolicy }) {
-  const paidHours = computeStandardPaidHours(
-    policy.standardDayStart,
-    policy.standardDayEnd,
-    policy.unpaidBreakMinutes
-  )
+  const paidHours = paidDayHours(policy)
   const sat = effectiveWeekendSettings('saturday', policy)
   const sun = effectiveWeekendSettings('sunday', policy)
 
@@ -106,12 +107,8 @@ function WeekAtAGlance({ policy }: { policy: OrgPayrollTimePolicy }) {
 
 function MonFriPaidDayInfographic({ policy }: { policy: OrgPayrollTimePolicy }) {
   const spanHours = computeSpanHours(policy.standardDayStart, policy.standardDayEnd)
-  const paidHours = computeStandardPaidHours(
-    policy.standardDayStart,
-    policy.standardDayEnd,
-    policy.unpaidBreakMinutes
-  )
-  const breakHours = Math.round((policy.unpaidBreakMinutes / 60) * 10) / 10
+  const paidHours = paidDayHours(policy)
+  const breakHours = policy.breakPaid === true ? 0 : Math.round((policy.unpaidBreakMinutes / 60) * 100) / 100
 
   return (
     <div className="rounded-xl border border-violet-200 bg-gradient-to-br from-violet-50 to-purple-50 p-4">
@@ -129,6 +126,7 @@ function MonFriPaidDayInfographic({ policy }: { policy: OrgPayrollTimePolicy }) 
           <span className="font-semibold">Standard paid day</span>
           <span className="text-lg font-extrabold">{paidHours}h</span>
         </div>
+        <p className="text-xs text-violet-700">{weekdayPaidDayPreview(policy).line}</p>
       </div>
     </div>
   )
@@ -294,11 +292,7 @@ export function WorkingHoursSetupSection({ value, onChange }: WorkingHoursSetupS
     onChange(withSyncedPayrollPolicy(partial, value))
   }
 
-  const paidHours = computeStandardPaidHours(
-    value.standardDayStart,
-    value.standardDayEnd,
-    value.unpaidBreakMinutes
-  )
+  const paidHours = paidDayHours(value)
 
   const { segments } = buildWeekdayTimeline({
     dayStart: value.standardDayStart,

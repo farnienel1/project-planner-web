@@ -22,6 +22,7 @@ import {
   bankHolidayRegionLabel,
   defaultBankHolidayRegionForCountry,
   normalizeBankHolidayRegionId,
+  withDerivedWeekdayPaidHours,
 } from '@/lib/canonical'
 import {
   CURRENCY_OPTIONS as CANONICAL_CURRENCY_OPTIONS,
@@ -219,7 +220,8 @@ export function orgSetupSettingsToFirestoreFields(
       countryCode: identity.countryCode,
       regionSelection: identity.countryCode,
     }),
-    payrollTimePolicy: payrollPolicyToFirestore(features.payrollTimePolicy),
+    // Rulebook 1.20.0 §4.3: a new company's weekday paid day is derived (`paidHoursDerived`).
+    payrollTimePolicy: payrollPolicyToFirestore(withDerivedWeekdayPaidHours(features.payrollTimePolicy)),
     annualLeaveDefaults: features.annualLeaveDefaults,
     warningDetection: warningDetectionToFirestore(features.warningDetection),
     invoicing: invoicingToFirestore(features.invoicing),

@@ -6,7 +6,7 @@
 
 import { estimatedWorkedHours, overviewFormatHours, parseMinutes } from '@/lib/daily-overview/buildDailyOverview'
 import { bookingPayrollHours, formatOvertimeEquation } from '@/lib/scheduling/paidHours'
-import { workedHoursSplit } from '@/lib/canonical'
+import { weekdayPaidHours, workedHoursSplit } from '@/lib/canonical'
 import { bookingDayKey, policyForBookingDate } from '@/lib/scheduling/bookingSlotRules'
 import type { ManagerLocationType, ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
@@ -158,7 +158,8 @@ export function MyScheduleTotalHoursCard({
     results.filter((r) => r.outsideHours > 0).reduce((max, r) => Math.max(max, r.outsideMultiplier), 0) ||
     policy.weekdayOutsideStandardMultiplier ||
     1.5
-  const std = policy.standardPaidHours || 8
+  // 1.20.0: the weekday paid day (`weekdayPaidHours`) of the day shown.
+  const std = weekdayPaidHours(dayPolicy) || 8
   const ticks = ['6:00', '9:00', '12:00', '15:00', '18:00']
 
   return (

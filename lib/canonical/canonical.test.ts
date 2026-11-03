@@ -1001,7 +1001,7 @@ test('AM booking with PM leave is silent; PM booking with AM leave is silent', (
   assert.deepEqual(amLeave, [])
 })
 
-test('PM leave with a 07:30–09:30 custom booking reports the missing 09:30–12:00', () => {
+test('PM leave with a 07:30–09:30 custom booking reports the missing 09:30–11:45 (1.20.0: leave halves at the midpoint)', () => {
   const rows = leaveInput({
     leave: [{ id: 'L1', userId: 'U-SAM', startDayKey: '2026-10-12', endDayKey: '2026-10-12', timeSlot: 'PM', approved: true }],
     bookings: [
@@ -1021,11 +1021,11 @@ test('PM leave with a 07:30–09:30 custom booking reports the missing 09:30–1
   const row = rows[0]
   assert.equal(row.kind, 'leave_cover')
   assert.equal(row.id, 'leave-cover-2026-10-12-U-SAM-L1')
-  assert.deepEqual(row.workingWindow, { start: 450, end: 720 })
-  assert.deepEqual(row.missing, [{ start: 570, end: 720 }])
-  assert.equal(row.missingHours, 2.5)
+  assert.deepEqual(row.workingWindow, { start: 450, end: 705 })
+  assert.deepEqual(row.missing, [{ start: 570, end: 705 }])
+  assert.equal(row.missingHours, 2.25)
   assert.equal(row.bookedHours, 2)
-  assert.match(row.message, /only booked 07:30–09:30; 09:30–12:00 \(2.5 hours\) is not booked/)
+  assert.match(row.message, /only booked 07:30–09:30; 09:30–11:45 \(2.25 hours\) is not booked/)
 })
 
 test('half-day leave with no booking at all reports the whole working half', () => {
@@ -1035,9 +1035,10 @@ test('half-day leave with no booking at all reports the whole working half', () 
   assert.equal(rows.length, 1)
   assert.equal(rows[0].kind, 'leave_cover')
   assert.equal(rows[0].personKey, 'OP-RAY')
-  assert.deepEqual(rows[0].missing, [{ start: 750, end: 960 }])
-  assert.equal(rows[0].missingHours, 3.5)
-  assert.match(rows[0].message, /not booked for the PM \(12:30–16:00, 3.5 hours\)/)
+  // 1.20.0: the lunch-break window (12:00–12:30) never needs covering.
+  assert.deepEqual(rows[0].missing, [{ start: 705, end: 720 }, { start: 750, end: 960 }])
+  assert.equal(rows[0].missingHours, 3.75)
+  assert.match(rows[0].message, /not booked for the PM \(11:45–16:00, 3.75 hours\)/)
 })
 
 test('a booking inside the leave window is a clash; full-day leave clashes with any booking', () => {
@@ -1055,9 +1056,9 @@ test('a booking inside the leave window is a clash; full-day leave clashes with 
     rows.map((row) => row.id),
     ['leave-clash-2026-10-12-U-SAM-L1', 'leave-clash-2026-10-14-OP-RAY-L2']
   )
-  assert.equal(rows[0].clashes[0].overlapStart, 750)
+  assert.equal(rows[0].clashes[0].overlapStart, 705)
   assert.equal(rows[0].clashes[0].overlapEnd, 960)
-  assert.match(rows[0].message, /booked J100 Site 07:30–16:00 on Monday 12 October while on PM annual leave \(12:30–16:00\)/)
+  assert.match(rows[0].message, /booked J100 Site 07:30–16:00 on Monday 12 October while on PM annual leave \(11:45–16:00\)/)
   assert.match(rows[1].message, /while on full-day annual leave/)
   // The full-day booking fully covers the AM, so there is no separate cover row for Sam.
   assert.equal(rows.find((row) => row.kind === 'leave_cover'), undefined)
@@ -1219,7 +1220,7 @@ test('the iOS JavaScript bundle exposes the standard-day, leave and dismiss rule
   assert.deepEqual(bundledLeave, plain(leaveCoverageRows(leaveArgs)))
   assert.equal(bundledLeave.length, 1)
   assert.equal(bundledLeave[0].kind, 'leave_cover')
-  assert.equal(bundledLeave[0].missingHours, 2.5)
+  assert.equal(bundledLeave[0].missingHours, 2.25) // 1.20.0: AM leave half 07:30–11:45
   assert.equal(bundle.qualificationDismissKey('OP-Q', 'Q-OLD', '2026-09-01'), qualificationDismissKey('OP-Q', 'Q-OLD', '2026-09-01'))
   const balanceArgs = {
     annualLeaveEnabled: false,
@@ -8571,7 +8572,7 @@ test('1.13.0 Q2: weekends are custom hours only; the editor prefills the set win
     saturday: { allHoursAtMultiplierMode: false, allHoursMultiplier: 2, definedWindowStart: '07:30', definedWindowEnd: '13:00', countsAsStandardHours: 8, outsideWindowMultiplier: 2 },
     sunday: { allHoursAtMultiplierMode: true, allHoursMultiplier: 2, sameAsSaturday: false },
   }
-  assert.deepEqual(R112.allowedTimeSlotsOnDay(WED, policy), ['FULL DAY', 'AM', 'PM', 'CUSTOM'])
+  assert.deepEqual(R112.allowedTimeSlotsOnDay(WED, policy), ['FULL DAY', 'CUSTOM'])
   assert.deepEqual(R112.allowedTimeSlotsOnDay(SAT, policy), ['CUSTOM'])
   assert.deepEqual(R112.allowedTimeSlotsOnDay(SUN, policy, 'Europe/London'), ['CUSTOM'])
   assert.deepEqual(R112.WEEKEND_TIME_SLOTS, ['CUSTOM'])
@@ -8579,7 +8580,10 @@ test('1.13.0 Q2: weekends are custom hours only; the editor prefills the set win
   assert.deepEqual(R112.allowedTimeSlotsOnDay(SAT, { ...policy, saturday: { ...policy.sunday } }), ['CUSTOM'])
   for (const slot of ['FULL DAY', 'AM', 'PM']) assert.equal(R112.timeSlotAllowedOnDay(slot, SAT), false)
   assert.equal(R112.timeSlotAllowedOnDay('CUSTOM_HOURS', SAT), true)
-  assert.equal(R112.timeSlotAllowedOnDay('AM', WED), true)
+  // 1.20.0: Monday–Friday offers Full day or Custom only.
+  assert.equal(R112.timeSlotAllowedOnDay('AM', WED), false)
+  assert.equal(R112.timeSlotAllowedOnDay('FULL DAY', WED), true)
+  assert.equal(R112.timeSlotAllowedOnDay('CUSTOM_HOURS', WED), true)
   // Prefill: the window on a set-window day; nothing on an all-hours day or a weekday.
   assert.deepEqual(R112.weekendCustomHoursDefault(policy, SAT), { start: '07:30', end: '13:00' })
   assert.deepEqual(R112.weekendCustomHoursDefault(policy, 6), { start: '07:30', end: '13:00' })
@@ -10039,4 +10043,274 @@ test('1.19.0 (owner, round 2): warningDetection.weekendCoverage parse, defaults,
     timeZone: R119_ZONE,
   } as never).dayKeys
   assert.deepEqual(days, ['2026-11-06', '2026-11-07'])
+})
+
+// ─── 1.20.0: weekday day = start / finish / break; bookings Full day + Custom; leave halves at the midpoint ────────
+
+const R120_ZONE = 'Europe/London'
+const R120_WED = '2026-11-04'
+/** Owner example: 06:30–14:30, break 10:00–10:45 unpaid 45 min, saved from 1.20.0 (`paidHoursDerived`). */
+const r120Owner = () =>
+  parsePolicy112({
+    standardDayStart: '06:30',
+    standardDayEnd: '14:30',
+    unpaidBreakMinutes: 45,
+    breakWindowStart: '10:00',
+    breakWindowEnd: '10:45',
+    standardPaidHours: 8,
+    weekdayOutsideStandardMultiplier: 1.5,
+    breakPaid: false,
+    paidHoursDerived: true,
+  })
+/** 10:00–18:00 with a paid 30-minute break 13:00–13:30, saved from 1.20.0. */
+const r120PaidBreak = () =>
+  parsePolicy112({
+    standardDayStart: '10:00',
+    standardDayEnd: '18:00',
+    unpaidBreakMinutes: 30,
+    breakWindowStart: '13:00',
+    breakWindowEnd: '13:30',
+    breakPaid: true,
+    paidHoursDerived: true,
+  })
+/** A policy saved before 1.20.0 (no `paidHoursDerived`). */
+const r120Legacy = (overrides: Record<string, unknown> = {}) =>
+  parsePolicy112({
+    standardDayStart: '07:30',
+    standardDayEnd: '16:00',
+    unpaidBreakMinutes: 30,
+    breakWindowStart: '12:00',
+    breakWindowEnd: '12:30',
+    standardPaidHours: 8,
+    ...overrides,
+  })
+const r120Hours = (policy: ReturnType<typeof r120Owner>, booking: Record<string, unknown>) =>
+  R112.payrollHoursResult({ booking, dayKey: R120_WED, policy, timeZone: R120_ZONE })
+const r120Custom = (start: string, end: string) => ({ timeSlot: 'CUSTOM_HOURS', workStartTime: start, workEndTime: end })
+
+test('1.20.0 owner: the Mon–Fri paid day is derived — preview "06:30–14:30 = 8h − 45 min unpaid break = 7h15m"', () => {
+  const owner = r120Owner()
+  const preview = R112.weekdayPaidDayPreview(owner)
+  assert.equal(preview.line, '06:30–14:30 = 8h − 45 min unpaid break = 7h15m')
+  assert.deepEqual([preview.dayMinutes, preview.breakMinutes, preview.breakPaid, preview.paidHours], [480, 45, false, 7.25])
+  assert.equal(R112.derivedWeekdayPaidHours(owner), 7.25)
+  assert.equal(R112.weekdayPaidHours(owner), 7.25)
+  // On read a derived policy's standardPaidHours is the derived day (a stale stored 8 never reaches pay).
+  assert.equal(owner.standardPaidHours, 7.25)
+  assert.equal(owner.paidHoursDerived, true)
+  // Paid break: nothing comes off.
+  const paid = r120PaidBreak()
+  assert.equal(R112.weekdayPaidDayPreview(paid).line, '10:00–18:00 = 8h, 30 min break paid = 8h')
+  assert.equal(R112.weekdayPaidHours(paid), 8)
+  assert.equal(R112.weekdayPaidDayPreview({ ...paid, unpaidBreakMinutes: 0 }).line, '10:00–18:00 = 8h')
+  assert.equal(R112.weekdayPaidDayPreview({ ...owner, standardDayEnd: '14:50' }).line, '06:30–14:50 = 8h20m − 45 min unpaid break = 7h35m')
+})
+
+test('1.20.0 owner: weekday bookings — FULL DAY 7.25h, custom 06:30–12:00 4.75h, 11:00–14:30 3.5h, 06:30–16:30 7.25h + 2h OT', () => {
+  const owner = r120Owner()
+  const full = r120Hours(owner, { timeSlot: 'FULL DAY' })
+  assert.deepEqual([full.totalPaidHours, full.standardHours, full.outsideHours, full.unpaidBreakHours], [7.25, 7.25, 0, 0.75])
+  assert.equal(r120Hours(owner, r120Custom('06:30', '12:00')).totalPaidHours, 4.75)
+  // 11:00–14:30 is within 20 minutes of the legacy PM half (10:45–14:30) but is never snapped to a half day: 3.5h on the clock.
+  const late = r120Hours(owner, r120Custom('11:00', '14:30'))
+  assert.deepEqual([late.totalPaidHours, late.unpaidBreakHours], [3.5, 0])
+  const long = r120Hours(owner, r120Custom('06:30', '16:30'))
+  assert.deepEqual([long.standardHours, long.outsideHours, long.outsideMultiplier, long.totalPaidHours], [7.25, 2, 1.5, 10.25])
+  // Day units and day-rate pay divide by the derived day: a FULL DAY is exactly 1 day.
+  assert.equal(R112.reportDayValue({ totalPaidHours: full.totalPaidHours, standardPaidHours: R112.weekdayPaidHours(owner) }), 1)
+  assert.equal(R112.payForHours({ payBasis: 'day', dayRate: 200, paidHours: full.totalPaidHours, standardDayHours: R112.weekdayPaidHours(owner) }), 200)
+  // Paid break: FULL DAY is the whole 8h.
+  assert.equal(r120Hours(r120PaidBreak(), { timeSlot: 'FULL DAY' }).totalPaidHours, 8)
+})
+
+test('1.20.0: a policy saved before 1.20.0 keeps pricing exactly as today (stored standardPaidHours, AM/PM, the half-day snap)', () => {
+  const legacy = r120Legacy()
+  assert.equal(legacy.paidHoursDerived, undefined)
+  assert.equal(R112.weekdayPaidHours(legacy), 8)
+  assert.equal(r120Hours(legacy, { timeSlot: 'FULL DAY' }).totalPaidHours, 8)
+  // Stored AM / PM bookings: half the stored paid day, on the legacy booking split (`halfDayWindows`).
+  assert.equal(r120Hours(legacy, { timeSlot: 'AM' }).totalPaidHours, 4)
+  assert.equal(r120Hours(legacy, { timeSlot: 'PM' }).totalPaidHours, 4)
+  assert.deepEqual(R112.halfDayWindows(legacy).am, { start: 450, end: 720 })
+  assert.deepEqual(R112.halfDayWindows(legacy).pm, { start: 750, end: 960 })
+  // The 20-minute snap stays for a legacy policy: custom 12:30–16:00 pays the half day.
+  assert.equal(r120Hours(legacy, r120Custom('12:30', '16:00')).totalPaidHours, 4)
+  // A stored paid day that does not match the clock is kept (07:00–16:00 − 30 min would be 8.5): day rate ÷ 8, AM 4h.
+  const mismatch = r120Legacy({ standardDayStart: '07:00' })
+  assert.equal(R112.weekdayPaidHours(mismatch), 8)
+  assert.equal(r120Hours(mismatch, { timeSlot: 'AM' }).totalPaidHours, 4)
+  assert.equal(r120Hours(mismatch, { timeSlot: 'FULL DAY' }).totalPaidHours, 8.5)
+  assert.equal(R112.reportDayValue({ totalPaidHours: 8.5, standardPaidHours: R112.weekdayPaidHours(mismatch) }), 1.0625)
+  // The same day saved from 1.20.0 divides by the derived 8.5h.
+  const derived = R112.withDerivedWeekdayPaidHours(mismatch)
+  assert.deepEqual([derived.paidHoursDerived, derived.standardPaidHours, R112.weekdayPaidHours(derived)], [true, 8.5, 8.5])
+  assert.equal(r120Hours(derived, { timeSlot: 'AM' }).totalPaidHours, 4.25)
+  // Stored AM under the owner's derived policy: half the derived day, on the legacy split (06:30–10:00).
+  const owner = r120Owner()
+  assert.equal(r120Hours(owner, { timeSlot: 'AM' }).totalPaidHours, 3.625)
+  assert.deepEqual(R112.slotInterval({ timeSlot: 'AM' }, owner), { start: 390, end: 600 })
+})
+
+test('1.20.0: Monday–Friday bookings offer Full day or Custom only; weekends stay Custom only', () => {
+  assert.deepEqual(R112.WEEKDAY_TIME_SLOTS, ['FULL DAY', 'CUSTOM'])
+  assert.deepEqual(R112.allowedTimeSlotsOnDay(R120_WED, r120Owner(), R120_ZONE), ['FULL DAY', 'CUSTOM'])
+  assert.deepEqual(R112.allowedTimeSlotsOnDay('2026-11-07', r120Owner(), R120_ZONE), ['CUSTOM'])
+  for (const slot of ['AM', 'PM', 'Morning']) assert.equal(R112.timeSlotAllowedOnDay(slot, R120_WED, R120_ZONE), false)
+  assert.equal(R112.timeSlotAllowedOnDay('FULL_DAY', R120_WED, R120_ZONE), true)
+})
+
+test('1.20.0: every working-hours save writes the derived day and paidHoursDerived; prior and history stay as stored', () => {
+  const orgDoc = { countryCode: 'GB', payrollTimePolicy: policyToFirestore119(r120Legacy()) }
+  const typed = { ...r120Owner(), standardPaidHours: 9, paidHoursDerived: undefined }
+  const fields = R112.payrollTimePolicyApplyNowWriteFields({ orgDoc, policy: typed as never, todayKey: R120_WED, timeZone: R120_ZONE })
+  const current = fields.payrollTimePolicy as Record<string, unknown>
+  assert.deepEqual([current.standardPaidHours, current.paidHoursDerived], [7.25, true])
+  const prior = fields.payrollTimePolicyPrior as Record<string, unknown>
+  assert.deepEqual([prior.standardPaidHours, 'paidHoursDerived' in prior], [8, false])
+  const history = fields.payrollTimePolicyHistory as Array<{ effectiveFrom: string; policy: Record<string, unknown> }>
+  assert.deepEqual(history.map((entry) => [entry.effectiveFrom, entry.policy.standardPaidHours, entry.policy.paidHoursDerived ?? null]), [
+    ['1970-01-01', 8, null],
+    [R120_WED, 7.25, true],
+  ])
+  const scheduled = R112.payrollTimePolicyScheduleWriteFields({ orgDoc, policy: typed as never, effectiveFrom: '2026-12-01', todayKey: R120_WED, timeZone: R120_ZONE })
+  const pending = (scheduled?.payrollTimePolicyScheduled as { policy: Record<string, unknown> }).policy
+  assert.deepEqual([pending.standardPaidHours, pending.paidHoursDerived], [7.25, true])
+  // Read back: the days before keep the legacy 8h, the days from the change the derived 7.25h.
+  const after = { ...orgDoc, ...fields }
+  assert.equal(R112.weekdayPaidHours(R112.effectivePayrollTimePolicy(after, '2026-11-03', R120_ZONE)), 8)
+  assert.equal(R112.weekdayPaidHours(R112.effectivePayrollTimePolicy(after, R120_WED, R120_ZONE)), 7.25)
+  // A legacy policy written back is unchanged (no flag, its own standardPaidHours).
+  assert.equal('paidHoursDerived' in policyToFirestore119(r120Legacy({ standardPaidHours: 7 })), false)
+  assert.equal(policyToFirestore119(r120Legacy({ standardPaidHours: 7 })).standardPaidHours, 7)
+})
+
+test('1.20.0: validation — the derived paid day must be 1–12 hours and the break inside the day', () => {
+  const owner = r120Owner()
+  assert.equal(R112.validatePayrollTimePolicy(owner), null)
+  assert.equal(
+    R112.validatePayrollTimePolicy({ ...owner, standardDayStart: '10:00', standardDayEnd: '10:50', breakWindowStart: '10:10', breakWindowEnd: '10:20', unpaidBreakMinutes: 10 }),
+    'The working day must give between 1 and 12 paid hours (finish − start − unpaid break).'
+  )
+  assert.equal(
+    R112.validatePayrollTimePolicy({ ...owner, standardDayStart: '06:00', standardDayEnd: '20:00', unpaidBreakMinutes: 0 }),
+    'The working day must give between 1 and 12 paid hours (finish − start − unpaid break).'
+  )
+  // 12h exactly is allowed.
+  assert.equal(R112.validatePayrollTimePolicy({ ...owner, standardDayStart: '06:00', standardDayEnd: '18:45' }), null)
+  assert.equal(
+    R112.validatePayrollTimePolicy({ ...owner, breakWindowStart: '14:00', breakWindowEnd: '14:45' }),
+    'Break window must fall within the working day.'
+  )
+  // A stored paid day the old check would refuse does not matter for a derived policy.
+  assert.equal(R112.validatePayrollTimePolicy({ ...owner, standardPaidHours: 0 }), null)
+})
+
+test('1.20.0 owner: leave halves split the day at its exact middle, ignoring the break', () => {
+  assert.deepEqual(R112.leaveHalfDayWindows(r120Owner()), { day: { start: 390, end: 870 }, am: { start: 390, end: 630 }, pm: { start: 630, end: 870 } })
+  assert.deepEqual(R112.leaveHalfDayWindows(r120PaidBreak()), { day: { start: 600, end: 1080 }, am: { start: 600, end: 840 }, pm: { start: 840, end: 1080 } })
+  assert.equal(R112.leaveHalfDayLabel('AM', r120Owner()), 'AM 06:30–10:30')
+  assert.equal(R112.leaveHalfDayLabel('PM', r120Owner()), 'PM 10:30–14:30')
+  assert.equal(R112.leaveHalfDayLabel('FULL DAY', r120Owner()), 'Full day')
+  // Day counting is unchanged: AM / PM 0.5, full day 1.
+  assert.equal(
+    R112.annualLeaveBalance({ annualLeaveEnabled: true, orgStartMonth: 1, orgEndMonth: 12, bookings: [{ startDayKey: R120_WED, timeSlot: 'AM', status: 'approved' }], onDayKey: R120_WED } as never).taken,
+    0.5
+  )
+})
+
+function r120Leave(slot: string, bookings: Array<Record<string, unknown>>, policy = r120Owner()) {
+  return R112.leaveCoverageRows({
+    timeZone: R120_ZONE,
+    startDayKey: R120_WED,
+    endDayKey: R120_WED,
+    day: policy,
+    includeWeekends: false,
+    people: [{ personKey: 'U-1', name: 'Op One', userId: 'U-1', operativeIds: ['OP-1'] }],
+    leave: [{ id: 'L1', userId: 'U-1', startDayKey: R120_WED, endDayKey: R120_WED, timeSlot: slot, approved: true }],
+    bookings: bookings.map((booking, index) => ({ id: `B${index}`, personId: 'OP-1', kind: 'operative', dayKey: R120_WED, label: 'J1', ...booking })) as never,
+  })
+}
+
+test('1.20.0 owner: AM leave + 10:30–14:30 covers the day; + 11:00–14:30 is missing 0.25h (lunch never needs covering); 10:00–18:00 AM leave + 14:00–18:00 covered', () => {
+  assert.deepEqual(r120Leave('AM', [r120Custom('10:30', '14:30')]), [])
+  const short = r120Leave('AM', [r120Custom('11:00', '14:30')])
+  assert.equal(short.length, 1)
+  assert.equal(short[0].kind, 'leave_cover')
+  assert.deepEqual(short[0].workingWindow, { start: 630, end: 870 })
+  // The lunch-break window 10:00–10:45 never needs covering, so only 10:45–11:00 is missing.
+  assert.deepEqual(short[0].missing, [{ start: 645, end: 660 }])
+  assert.equal(short[0].missingHours, 0.25)
+  assert.equal(short[0].bookedHours, 3.5)
+  assert.match(short[0].message, /The PM \(10:30–14:30\) is only booked 11:00–14:30; 10:45–11:00 \(0.25 hours\) is not booked\./)
+  // Booked 10:45–14:30 (from the end of lunch): covered.
+  assert.deepEqual(r120Leave('AM', [r120Custom('10:45', '14:30')]), [])
+  assert.deepEqual(r120Leave('AM', [r120Custom('14:00', '18:00')], r120PaidBreak()), [])
+  // Purple rows: a booking overlapping the AM leave half (06:30–10:30) clashes; 10:30 onwards does not.
+  const clash = r120Leave('AM', [r120Custom('10:00', '14:30')])
+  assert.deepEqual(clash.map((row) => [row.kind, row.leaveWindow]), [['leave_clash', { start: 390, end: 630 }]])
+  // Stored AM / PM bookings are that leave half: an AM booking covers a PM-leave day's morning and never clashes with it.
+  assert.deepEqual(r120Leave('PM', [{ timeSlot: 'AM' }]), [])
+  assert.deepEqual(r120Leave('AM', [{ timeSlot: 'PM' }]), [])
+  assert.deepEqual(r120Leave('AM', [{ timeSlot: 'AM' }]).map((row) => row.kind), ['leave_clash', 'leave_cover'])
+})
+
+test('1.20.0 owner: bookingLeaveConflicts compares with the leave halves (AM leave 06:30–10:30 only)', () => {
+  const conflicts = (booking: Record<string, unknown>) =>
+    R112.bookingLeaveConflicts({
+      people: ['U-1'],
+      dayKeys: [R120_WED],
+      holidays: [{ id: 'L1', userId: 'U-1', startDayKey: R120_WED, endDayKey: R120_WED, timeSlot: 'AM', status: 'approved' }],
+      timeZone: R120_ZONE,
+      day: r120Owner(),
+      ...booking,
+    }).length
+  assert.equal(conflicts(r120Custom('10:30', '14:30')), 0)
+  assert.equal(conflicts(r120Custom('10:00', '11:00')), 1)
+  assert.equal(conflicts({ timeSlot: 'FULL DAY' }), 1)
+  assert.equal(conflicts({ timeSlot: 'PM' }), 0)
+  assert.equal(conflicts({ timeSlot: 'AM' }), 1)
+})
+
+test('1.20.0 owner: weekday unbooked labour must cover the whole day; the lunch-break window never needs covering', () => {
+  const rows = (bookings: Array<Record<string, unknown>>, holidays: Array<Record<string, unknown>> = []) =>
+    R112.unbookedLabourRows({
+      timeZone: R120_ZONE,
+      startDayKey: R120_WED,
+      endDayKey: R120_WED,
+      includeWeekends: false,
+      payrollPolicy: r120Owner(),
+      people: [r119Person],
+      operatives: [],
+      bookings: bookings.map((booking) => ({ personId: 'u1', dayKey: R120_WED, kind: 'operative', ...booking })),
+      holidays,
+    } as never).map((row) => row.missingHours)
+  // Nothing booked: 8h − the 45-minute break window = 7.25h.
+  assert.deepEqual(rows([]), [7.25])
+  assert.deepEqual(rows([{ timeSlot: 'FULL DAY' }]), [])
+  // 06:30–10:00 and 10:45–14:30 either side of lunch cover the day.
+  assert.deepEqual(rows([{ timeSlot: 'CUSTOM_HOURS', workStart: '06:30', workEnd: '10:00' }, { timeSlot: 'CUSTOM_HOURS', workStart: '10:45', workEnd: '14:30' }]), [])
+  assert.deepEqual(rows([{ timeSlot: 'CUSTOM_HOURS', workStart: '06:30', workEnd: '12:00' }]), [2.5])
+  // A day with approved leave is left to the leave-cover rule (`leaveCoverageRows`).
+  assert.deepEqual(rows([], [{ userId: 'u1', startDayKey: R120_WED, endDayKey: R120_WED, approved: true, timeSlot: 'AM' }]), [])
+})
+
+test('1.20.0: timesheet leave lines carry the leave half clock range when given the day', () => {
+  const lines = R112.timesheetLeaveLines(
+    [
+      { id: 'L1', startDayKey: R120_WED, endDayKey: R120_WED, timeSlot: 'AM', status: 'approved' },
+      { id: 'L2', startDayKey: '2026-11-05', endDayKey: '2026-11-05', timeSlot: 'PM', status: 'approved' },
+      { id: 'L3', startDayKey: '2026-11-06', endDayKey: '2026-11-06', timeSlot: 'FULL DAY', status: 'approved' },
+    ],
+    { startDayKey: '2026-11-02', endDayKey: '2026-11-08' },
+    R120_ZONE,
+    [],
+    () => r120Owner()
+  )
+  assert.deepEqual(lines.map((line) => [line.label, line.timeRange]), [
+    ['Annual leave (AM)', '06:30–10:30'],
+    ['Annual leave (PM)', '10:30–14:30'],
+    ['Annual leave (full day)', '06:30–14:30'],
+  ])
+  // Without the day the lines are as before (no range).
+  assert.equal(R112.timesheetLeaveLines([{ id: 'L1', startDayKey: R120_WED, endDayKey: R120_WED, timeSlot: 'AM', status: 'approved' }], { startDayKey: R120_WED, endDayKey: R120_WED }, R120_ZONE)[0].timeRange, undefined)
 })

@@ -62,7 +62,7 @@ import {
   formatSubcontractorBookingLabel,
   resolveSubcontractorBookingPeople,
 } from '@/lib/subcontractors/bookingPeople'
-import { bookingJobLabel } from '@/lib/canonical'
+import { bookingJobLabel, weekdayPaidHours } from '@/lib/canonical'
 
 export type WeeklyReportWarningRow = {
   status: string
@@ -271,7 +271,7 @@ export function buildWeeklyReportData({
 }): WeeklyReportData {
   const payroll = orgDetails?.payrollTimePolicy
   // Today's standard day: only the fallback for a slice that does not carry its own day's (1.19.0).
-  const standardHours = orgDayHours(payroll?.standardPaidHours ?? 8)
+  const standardHours = orgDayHours(payroll ? weekdayPaidHours(payroll) : 8)
   const timeZone = ianaTimeZoneForCountry(orgDetails?.countryCode)
   // Rulebook §4.3 / §8 (1.19.0): each booking is paid under the working hours in effect on its own day — the history
   // first (`effectivePayrollTimePolicy` via `orgPayrollPolicyForDay` with the whole state), in the organisation zone.
@@ -801,7 +801,7 @@ export function buildWeeklyReportData({
       week.role,
       // 1.19.0: a signed line keeps its signed amount and multiplier (never re-priced); only its day units are read
       // against the standard day in effect on the line's own day.
-      signedLabourSlice(line, orgDayHours(policyOn(line.date).standardPaidHours), line.otMultiplier ?? null, isPaye)
+      signedLabourSlice(line, orgDayHours(weekdayPaidHours(policyOn(line.date))), line.otMultiplier ?? null, isPaye)
     )
   }
 

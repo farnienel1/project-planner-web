@@ -32,6 +32,7 @@ import {
 import { useHolidayStore } from '@/lib/stores/holidayStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { myScheduleLeaveRecords } from '@/lib/schedule/myScheduleLeave'
+import { policyForBookingDate } from '@/lib/scheduling/bookingSlotRules'
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import { DEFAULT_PAYROLL_POLICY } from '@/lib/settings/organizationSettings'
 import { dayKey } from '@/lib/ios-parity/londonTime'
@@ -745,7 +746,7 @@ export function ScheduleScreen({
               bookings={bookingsByDate.get(scheduleDayKey(selectedDate)) || []}
               policy={payrollPolicy || DEFAULT_PAYROLL_POLICY}
               date={selectedDate}
-              annualLeaveLabel={myScheduleAnnualLeaveLabel(myHolidays, selectedDate)}
+              annualLeaveLabel={myScheduleAnnualLeaveLabel(myHolidays, selectedDate, undefined, policyForBookingDate(selectedDate, payrollPolicy ?? null) ?? payrollPolicy)}
             />
           ) : null}
         </>

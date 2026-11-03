@@ -6,6 +6,10 @@ import type { TileId } from '@/lib/stores/dashboardStore'
 import { bookingsForPerson, userLeaveBalance } from '@/lib/annualLeave/leaveBalance'
 import { deriveWorkStatus, timelineProgressPercent } from '@/lib/projects/workStatus'
 import { isTaskOverdue } from '@/lib/tasks/taskUtils'
+import { estimatedPaidHours } from '@/lib/scheduling/paidHours'
+import { bookingDayKey, policyForBookingDate } from '@/lib/scheduling/bookingSlotRules'
+import { useOrganizationPayrollPolicy } from '@/lib/scheduling/useOrganizationPayrollPolicy'
+import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import type {
   Booking,
   Client,
@@ -125,11 +129,22 @@ function MiniBar({ label, value, max, color }: { label: string; value: number; m
   )
 }
 
-function slotHours(slot: string): number {
-  const normalized = `${slot}`.toUpperCase()
-  if (normalized.includes('FULL')) return 8
-  if (normalized === 'AM' || normalized === 'PM') return 4
-  return 8
+/**
+ * Paid hours of one booking on its own day: the rulebook pay rule (`payrollHoursResult` via `estimatedPaidHours`) under
+ * the working hours in effect that day (rulebook 1.20.0: FULL DAY is `weekdayPaidHours`), never a hard-coded 8h / 4h.
+ */
+function bookingPaidHours(booking: Booking, fallback: OrgPayrollTimePolicy): number {
+  const date = new Date(booking.date)
+  const policy = policyForBookingDate(date, fallback) ?? fallback
+  return estimatedPaidHours({
+    timeSlot: String(booking.timeSlot ?? ''),
+    workStartTime: booking.workStartTime ?? undefined,
+    workEndTime: booking.workEndTime ?? undefined,
+    isBreakRemoved: booking.isBreakRemoved === true,
+    otMultiplierOverride: booking.otMultiplierOverride ?? null,
+    policy,
+    dayKey: bookingDayKey(date),
+  })
 }
 
 function leaveDaysForUser(bookings: HolidayBooking[], user: User | null) {
@@ -474,11 +489,12 @@ function TileTimesheetsSubmitted({ bookings, operatives }: { bookings: Booking[]
 }
 
 function TileTimesheetsHours({ bookings }: { bookings: Booking[] }) {
+  const payrollPolicy = useOrganizationPayrollPolicy()
   const weeks = Array.from({ length: 4 }, (_, i) => {
     const start = startOfWeek(subWeeks(new Date(), 3 - i), { weekStartsOn: 1 })
     const end = endOfWeek(start, { weekStartsOn: 1 })
     const weekBookings = bookings.filter((b) => isWithinInterval(new Date(b.date), { start, end }))
-    return weekBookings.reduce((sum, b) => sum + slotHours(`${b.timeSlot}`), 0)
+    return Math.round(weekBookings.reduce((sum, b) => sum + bookingPaidHours(b, payrollPolicy), 0) * 100) / 100
   })
   const labels = ['Wk 1', 'Wk 2', 'Wk 3', 'Wk 4']
   return (

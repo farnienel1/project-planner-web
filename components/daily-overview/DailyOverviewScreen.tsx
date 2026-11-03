@@ -24,7 +24,7 @@ import { useHolidayStore } from '@/lib/stores/holidayStore'
 import { useSubcontractorStore } from '@/lib/stores/subcontractorStore'
 import { canViewDailyOverview, hasAdminAccess } from '@/lib/permissions'
 import { dateFromDayKey, dayKey, londonMidnight } from '@/lib/ios-parity/londonTime'
-import { effectivePayrollTimePolicy, type WeekendCoverage } from '@/lib/canonical'
+import { effectivePayrollTimePolicy, leaveHalfDayLabel, type WeekendCoverage } from '@/lib/canonical'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 import { watchSubcontractorBookings } from '@/lib/weekly-report/loadSubcontractorBookings'
 import type { SubcontractorBookingRow } from '@/lib/weekly-report/weeklyReportData'
@@ -422,7 +422,8 @@ export function DailyOverviewScreen() {
                   <div key={row.id} className="ritem" style={{ cursor: 'default' }}>
                     <span className="grow">
                       <span className="t">{holidayName(row, users, operatives, userIdAliases)}</span>
-                      <span className="s">Annual leave</span>
+                      {/* Rulebook 1.20.0 §9: a leave half is the exact middle of the day (`leaveHalfDayWindows`). */}
+                      <span className="s">Annual leave · {leaveHalfDayLabel(row.timeSlot, payrollPolicy)}</span>
                     </span>
                     <span className="pill" data-hue="leave">
                       Off

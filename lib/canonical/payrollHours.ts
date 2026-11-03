@@ -30,7 +30,7 @@
  */
 
 import { formatClockMinutes, halfDayWindows, namedSlotKind, parseClockMinutes, slotInterval, type MinuteInterval } from './engine'
-import { weekendBreakFor, type OrgPayrollTimePolicy, type WeekendPayrollSettings } from './organizationSettings'
+import { weekdayPaidHours, weekendBreakFor, type OrgPayrollTimePolicy, type WeekendPayrollSettings } from './organizationSettings'
 import { dateFromDayKeyInZone, isoWeekdayInZone } from '../orgTime/zoneTime'
 import { zoneOrLondon } from './dayKeys'
 
@@ -95,8 +95,9 @@ function weekendFor(isoWeekday: number, policy: OrgPayrollTimePolicy): WeekendPa
   return null
 }
 
+/** 1.20.0: the weekday paid day (`weekdayPaidHours`: derived for a policy saved from 1.20.0, else stored). */
 function standardPaid(policy: OrgPayrollTimePolicy): number {
-  return Math.max(Number(policy.standardPaidHours) || 0, 0)
+  return Math.max(Number(weekdayPaidHours(policy)) || 0, 0)
 }
 
 function countsAs(weekend: WeekendPayrollSettings, policy: OrgPayrollTimePolicy): number {
@@ -196,9 +197,13 @@ function isNamedHalf(booking: PayrollHoursBooking): boolean {
   return kind === 'AM' || kind === 'PM'
 }
 
-function isHalfDayPaid(booking: PayrollHoursBooking, policy: OrgPayrollTimePolicy, allHoursDay: boolean): boolean {
+function isHalfDayPaid(booking: PayrollHoursBooking, policy: OrgPayrollTimePolicy, allHoursDay: boolean, weekdayDay = false): boolean {
   if (isNamedHalf(booking)) return true
   if (namedSlotKind(booking.timeSlot) !== 'CUSTOM' || allHoursDay) return false
+  // 1.20.0 §4.3 / §8: Monday–Friday offers Full day or Custom only, so under a policy saved from 1.20.0 custom weekday
+  // hours are paid on the clock (inside the day less the unpaid-break overlap, outside at the multiplier) and are never
+  // snapped to a half day. A policy saved earlier keeps the 20-minute snap exactly as before.
+  if (weekdayDay && policy.paidHoursDerived === true) return false
   const span = interval(booking, policy)
   if (!span) return false
   const windows = halfDayWindows(dayInput(policy))
@@ -390,7 +395,7 @@ function outsideSegments(span: MinuteInterval, windowStart: number, windowEnd: n
 }
 
 function weekday(booking: PayrollHoursBooking, policy: OrgPayrollTimePolicy, multiplier: number): PayrollHoursResult {
-  if (isHalfDayPaid(booking, policy, false)) return halfDayPaid(booking, policy, null, multiplier)
+  if (isHalfDayPaid(booking, policy, false, true)) return halfDayPaid(booking, policy, null, multiplier)
   const span = interval(booking, policy)
   if (!span) return legacySlot(booking, policy, multiplier)
   const ds = parseClockMinutes(policy.standardDayStart) ?? 0

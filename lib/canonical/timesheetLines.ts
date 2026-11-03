@@ -13,7 +13,9 @@
  */
 
 import {
+  formatClockMinutes,
   intervalCrossesMidnight,
+  leaveHalfDayWindows,
   nextCalendarDayKey,
   overlappingIntervalGroups,
   overnightCarryInterval,
@@ -96,6 +98,12 @@ export type TimesheetLeaveLine = {
   dayKey: string
   timeSlot: HolidayTimeSlotValue
   label: string
+  /**
+   * Rulebook 1.20.0 §9: the leave half's clock range from `leaveHalfDayWindows` (the exact middle of the day in effect
+   * then, ignoring the break), e.g. "06:30–10:30"; the whole day for full-day leave. Only when the caller passes
+   * the working day (`dayPolicy`).
+   */
+  timeRange?: string
 }
 
 export function timesheetLeaveLabel(timeSlot: unknown): string {
@@ -110,7 +118,9 @@ export function timesheetLeaveLines(
   leaveRecords: ReadonlyArray<TimesheetLeaveRecord>,
   period: { startDayKey: string; endDayKey: string },
   timeZone?: string | null,
-  nonWorkingDayKeys?: ReadonlyArray<string> | null
+  nonWorkingDayKeys?: ReadonlyArray<string> | null,
+  /** 1.20.0: the working day in effect on a day key (`effectivePayrollTimePolicy`), for `timeRange`. */
+  dayPolicy?: ((dayKey: string) => StandardDayInput | null | undefined) | null
 ): TimesheetLeaveLine[] {
   const start = String(period?.startDayKey || '').trim()
   const end = String(period?.endDayKey || '').trim()
@@ -132,6 +142,11 @@ export function timesheetLeaveLines(
         dayKey,
         timeSlot: slot,
         label: timesheetLeaveLabel(slot),
+      }
+      if (dayPolicy) {
+        const halves = leaveHalfDayWindows(dayPolicy(dayKey))
+        const half = slot === 'AM' ? halves.am : slot === 'PM' ? halves.pm : halves.day
+        line.timeRange = `${formatClockMinutes(half.start)}–${formatClockMinutes(half.end)}`
       }
       byDay.set(dayKey, slot === 'FULL DAY' ? [line] : [...list, line])
     }

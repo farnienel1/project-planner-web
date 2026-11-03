@@ -14,7 +14,7 @@ import {
   type OrgPayrollTimePolicy,
 } from '@/lib/settings/organizationSettings'
 import { findOperativeForUser } from '@/lib/operatives/operativeRosterUtils'
-import { bookingIdsForAccount, bookingOccupiesDay, formatMoney, overlappingBookingIds } from '@/lib/canonical'
+import { bookingIdsForAccount, bookingOccupiesDay, formatMoney, overlappingBookingIds, weekdayPaidHours } from '@/lib/canonical'
 import { employmentTypeOnDay } from '@/lib/ios-parity/employmentType'
 import { emptyDayRateHistory, type OperativeDayRateHistoryCollection } from '@/lib/timesheets/dayRateHistoryStorage'
 import {
@@ -234,7 +234,8 @@ export function collectTimesheetPayroll({
       payrollPolicyScheduled,
       payrollPolicyState
     )
-    const standardDayHours = orgDayHours(policy.standardPaidHours)
+    // 1.20.0: a day rate divides by the weekday paid day in effect that day (`weekdayPaidHours`).
+    const standardDayHours = orgDayHours(weekdayPaidHours(policy))
     // One rulebook result (`payrollHoursResult`), the same figures the iOS collector uses.
     const hours = bookingHoursOnDay(date, timeSlot, workStartTime, workEndTime, policy, isBreakRemoved, otMultiplierOverride, zone)
     const paidHours = hours.totalPaidHours
