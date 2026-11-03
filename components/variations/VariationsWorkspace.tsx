@@ -35,6 +35,7 @@ import {
   type Unit,
 } from '@/components/variations/NewVariationSheet'
 import { canChangeVariationStatus, canEditVariationContent, canManageVariationTracker, canSeeJobVariations } from '@/lib/variations/variationAccess'
+import { ReportFileLink } from '@/components/files/ReportFileLink'
 import { variationsToCsv } from '@/lib/variations/variationCsv'
 import {
   createVariation,
@@ -611,6 +612,12 @@ function VariationDrawer({
                 ) : null}
                 {file.fileName}
               </a>
+              <ReportFileLink
+                fileUrl={file.downloadURL}
+                storagePath={file.storagePath}
+                fileName={file.fileName}
+                source="variation_evidence"
+              />
               {canEdit || file.uploadedByUid === viewerId ? (
                 <button type="button" className="btn sm ghost" onClick={() => void onRemoveEvidence(file.id)}>
                   Remove file

@@ -14,6 +14,7 @@ import {
   openSiteAuditPdf,
 } from '@/lib/siteAudit/siteAuditPdf'
 import type { Project, SiteAudit } from '@/types'
+import { ReportFileLink } from '@/components/files/ReportFileLink'
 
 const AUDIT_TYPES = ['All', 'Pre-Start', 'General', 'Variations', 'Snags', 'Other'] as const
 type AuditTypeFilter = (typeof AUDIT_TYPES)[number]
@@ -207,9 +208,21 @@ function AuditDetail({ audit, onClose }: { audit: SiteAudit; onClose: () => void
                         style={{ maxHeight: imgExpanded === item.id ? 'none' : '200px' }}
                         onClick={() => setImgExpanded(imgExpanded === item.id ? null : item.id)}
                       />
-                      <p className="px-4 py-2 text-[11px] text-slate-400">
-                        {imgExpanded === item.id ? 'Click to collapse' : 'Click to expand'}
-                      </p>
+                      <div className="flex flex-wrap items-center gap-3 px-4 py-2">
+                        <p className="text-[11px] text-slate-400">
+                          {imgExpanded === item.id ? 'Click to collapse' : 'Click to expand'}
+                        </p>
+                        <a
+                          href={item.imageURL}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-xs font-semibold text-[#2F73F0] hover:underline"
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          View
+                        </a>
+                        <ReportFileLink fileUrl={item.imageURL} fileName={item.title} source="site_audit" />
+                      </div>
                     </div>
                   )}
                 </div>

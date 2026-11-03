@@ -24,6 +24,7 @@ import { loadSignedTimesheetValueTotals, type SignedTimesheetValueTotals } from 
 import { billingLabel, billingStatusLabel } from '@/lib/stripe/billing'
 import { ANNUAL_PENCE, MONTHLY_PENCE } from '@/lib/stripe/plans'
 import { csvEscapeCell } from '@/lib/security/spreadsheetCell'
+import { DeveloperReportsList } from '@/components/developer/DeveloperReports'
 
 const PRESETS: { id: DateRangePreset; label: string }[] = [
   { id: 'all_time', label: 'All time' },
@@ -428,6 +429,7 @@ export function DeveloperOverviewScreen() {
           </tbody>
         </table>
       </section>
+      <DeveloperReportsList />
       <section className="card pad">
         <h2 className="h2">Needs attention</h2>
         {alerts.length === 0 ? (

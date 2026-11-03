@@ -21,6 +21,7 @@ import {
 } from '@/lib/staff/userEditPermissions'
 import { lineManagerChoices, rosterStatusLabel } from '@/lib/staff/userRosterUtils'
 import { UserAvatar } from '@/components/users/UserAvatar'
+import { ReportFileLink } from '@/components/files/ReportFileLink'
 import { PayBasisFields, payChoiceFromProfile, payChoiceToRates } from '@/components/users/PayBasisFields'
 import { PreviousRatesList, usePaySaveGate } from '@/components/users/PayRateChangeDialogs'
 import {
@@ -717,7 +718,24 @@ export function EditUserProfile({
 
       {/* Profile header */}
       <div className="mt-4 flex items-center gap-4 card p-5 shadow-sm">
-        <UserAvatar user={target} size={64} className="rounded-2xl" gradient="from-[#7F77DD] to-[#534AB7]" />
+        <div>
+          <UserAvatar user={target} size={64} className="rounded-2xl" gradient="from-[#7F77DD] to-[#534AB7]" />
+          {target.profilePhotoURL && currentUser?.id !== target.id ? (
+            <div className="mt-2">
+              {/^https?:\/\//i.test(target.profilePhotoURL) ? (
+                <a
+                  href={target.profilePhotoURL}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="block text-xs font-semibold text-[var(--blue)] hover:underline"
+                >
+                  View photo
+                </a>
+              ) : null}
+              <ReportFileLink fileUrl={target.profilePhotoURL} fileName="Profile photo" source="profile_photo" />
+            </div>
+          ) : null}
+        </div>
         <div className="min-w-0 flex-1">
           <div className="truncate text-lg font-bold text-[var(--ink)]">
             {target.firstName} {target.surname}

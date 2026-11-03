@@ -36,6 +36,8 @@ const ADMIN_A = 'admin-a'
 const OP_A = 'op-a'
 const ADMIN_B = 'admin-b'
 const OP_B = 'op-b'
+const OWNER = 'owner-1'
+const OWNER_EMAIL = 'info@projectplanner.us'
 
 let env: RulesTestEnvironment
 
@@ -91,6 +93,10 @@ test.before(async () => {
       adminAccess: false,
       operativeMode: true,
       firstName: 'Ben',
+    })
+    await setDoc(doc(db, 'users', OWNER), {
+      email: OWNER_EMAIL,
+      firstName: 'Owner',
     })
     await setDoc(doc(db, 'organizations', ORG_A, 'bookings', 'book-a'), {
       organizationId: ORG_A,
@@ -149,6 +155,8 @@ test.before(async () => {
     await setDoc(doc(db, 'organizations', ORG_A, 'settings', `timesheet_${OP_A}_1000`), {
       userId: OP_A,
     })
+    await setDoc(doc(db, 'contentReports', 'rep-read'), contentReportPayload(ADMIN_A))
+    await setDoc(doc(db, 'contentReports', 'rep-upd'), contentReportPayload(ADMIN_A))
   })
 })
 
@@ -442,6 +450,54 @@ test('admin A can write their own timesheet settings', async () => {
       { merge: true }
     )
   )
+})
+
+function contentReportPayload(uid: string, status = 'open') {
+  return {
+    orgId: ORG_A,
+    orgName: 'Company A',
+    reportedByUid: uid,
+    reporterEmail: `${uid}@test.com`,
+    status,
+    reason: 'copyright',
+    details: '',
+    fileUrl: 'https://firebasestorage.googleapis.com/v0/b/bucket/o/organizations%2Forg-a%2Ffile.pdf?alt=media',
+    storagePath: 'organizations/org-a/file.pdf',
+    fileName: 'file.pdf',
+    source: 'task_attachment',
+    createdAt: Timestamp.now(),
+  }
+}
+
+test('signed-in user can create an open content report for themselves', async () => {
+  const db = authDb(ADMIN_A, 'admin-a@test.com')
+  await assertSucceeds(setDoc(doc(db, 'contentReports', 'rep-a'), contentReportPayload(ADMIN_A)))
+})
+
+test('signed-in user cannot create a content report as someone else or closed', async () => {
+  const db = authDb(ADMIN_A, 'admin-a@test.com')
+  await assertFails(setDoc(doc(db, 'contentReports', 'rep-spoof'), contentReportPayload(OP_A)))
+  await assertFails(setDoc(doc(db, 'contentReports', 'rep-closed'), contentReportPayload(ADMIN_A, 'closed')))
+  const guest = env.unauthenticatedContext().firestore()
+  await assertFails(setDoc(doc(guest, 'contentReports', 'rep-guest'), contentReportPayload(ADMIN_A)))
+})
+
+test('reporter and platform owner can read a content report; others cannot', async () => {
+  const reporter = authDb(ADMIN_A, 'admin-a@test.com')
+  const other = authDb(OP_A, 'op-a@test.com')
+  const owner = authDb(OWNER, OWNER_EMAIL)
+  await assertSucceeds(getDoc(doc(reporter, 'contentReports', 'rep-read')))
+  await assertFails(getDoc(doc(other, 'contentReports', 'rep-read')))
+  await assertSucceeds(getDoc(doc(owner, 'contentReports', 'rep-read')))
+})
+
+test('only the platform owner can update a content report; nobody can delete', async () => {
+  const reporter = authDb(ADMIN_A, 'admin-a@test.com')
+  const owner = authDb(OWNER, OWNER_EMAIL)
+  await assertFails(updateDoc(doc(reporter, 'contentReports', 'rep-upd'), { status: 'reviewed' }))
+  await assertSucceeds(updateDoc(doc(owner, 'contentReports', 'rep-upd'), { status: 'reviewed' }))
+  await assertFails(deleteDoc(doc(reporter, 'contentReports', 'rep-upd')))
+  await assertFails(deleteDoc(doc(owner, 'contentReports', 'rep-upd')))
 })
 
 test('clients cannot create interest registrations', async () => {

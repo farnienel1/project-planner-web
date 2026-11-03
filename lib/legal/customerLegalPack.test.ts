@@ -36,6 +36,27 @@ test('pack has SaaS, DPA, AUP and Privacy with privacy as acknowledgement', () =
   assert.equal(privacy?.acceptLabel.includes('acknowledge'), true)
 })
 
+test('SaaS §20 is a content and copyright takedown clause without bumping the pack version', () => {
+  const saas = LEGAL_PACK_DOCUMENTS.find((doc) => doc.id === 'saas')
+  const section = saas?.sections.find((row) => row.title.startsWith('20.'))
+  assert.match(section?.title || '', /Content and copyright/i)
+  assert.match(
+    section?.paragraphs.join(' ') || '',
+    /takedown notice to info@projectplanner\.us.*review valid notices.*Repeat infringement may result in suspension or termination/s
+  )
+  assert.equal(LEGAL_ENTITY.version, '1.0')
+  assert.equal(LEGAL_ENTITY.effectiveDate, '18 September 2026')
+})
+
+test('AUP §6 also points file reports at the platform and info@', () => {
+  const aup = LEGAL_PACK_DOCUMENTS.find((doc) => doc.id === 'aup')
+  const section = aup?.sections.find((row) => row.title.startsWith('6.'))
+  assert.match(
+    section?.paragraphs.join(' ') || '',
+    /Copyright, personal data, offensive content and other concerns about an uploaded file should also be reported in the Platform or to info@projectplanner\.us\./
+  )
+})
+
 test('SaaS §3 requires authorised users to be 16 or over without collecting dates of birth', () => {
   const saas = LEGAL_PACK_DOCUMENTS.find((doc) => doc.id === 'saas')
   const section = saas?.sections.find((row) => row.title.startsWith('3.'))

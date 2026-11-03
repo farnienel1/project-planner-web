@@ -12,3 +12,13 @@ Business rules that the iOS app must also follow live in `lib/canonical/`. Read 
 6. Regression tests. A cross-platform discrepancy gets a test in `lib/canonical/canonical.test.ts` that locks the shared result.
 
 A commit that touches `lib/canonical` packs the rulebook through `.githooks/pre-commit` and stages `lib/canonical/dist/canonical-business.js`. When `../project-planner-ios` is checked out, that commit is refused until `Project Planner/Canonical/canonical-business.js` is committed there. `npm test` packs and then runs `npm run check:canonical`. An agent window with only this repo must not hand-edit the iOS script. An agent window with only the iOS repo calls `CanonicalBusinessEngine` and does not add a second calculator for a rule this module already owns.
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+## This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->

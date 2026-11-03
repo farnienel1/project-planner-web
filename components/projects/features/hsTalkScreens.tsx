@@ -14,6 +14,7 @@ import type { HSToolboxIssue, HSToolboxSignature, HSToolboxTalk, User } from '@/
 import { signedPercent } from '@/lib/healthSafety/hsTracking'
 import { buildToolboxTalkPdf, isCustomUploadedTalk } from '@/lib/healthSafety/toolboxTalkPdf'
 import { FeatureCard, FeatureSectionLabel } from '@/components/projects/features/featureUi'
+import { ReportFileLink } from '@/components/files/ReportFileLink'
 
 export function HsTalkBody({
   talk,
@@ -87,14 +88,17 @@ export function HsTalkBody({
         <p className="text-sm text-slate-500">{error || 'Preparing the toolbox talk PDF…'}</p>
       )}
       {customFile ? (
-        <a
-          href={customFile}
-          target="_blank"
-          rel="noreferrer"
-          className="inline-flex text-sm font-semibold text-[#2F73F0] hover:underline"
-        >
-          Open original file
-        </a>
+        <div>
+          <a
+            href={customFile}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex text-sm font-semibold text-[#2F73F0] hover:underline"
+          >
+            Open original file
+          </a>
+          <ReportFileLink fileUrl={customFile} fileName={talk.title} source="toolbox_talk" />
+        </div>
       ) : null}
     </div>
   )

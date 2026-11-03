@@ -13,6 +13,7 @@ import { displayTradeType } from '@/lib/staff/staffTradeTypes'
 import { canShowAdminEditProfile, roleLabel } from '@/lib/staff/userEditPermissions'
 import { rosterStatusLabel } from '@/lib/staff/userRosterUtils'
 import { UserAvatar } from '@/components/users/UserAvatar'
+import { ReportFileLink } from '@/components/files/ReportFileLink'
 import { normalizeEmploymentType } from '@/lib/ios-parity/enums'
 
 function employmentLabel(value?: string) {
@@ -88,7 +89,29 @@ export function UserProfileSummary({
 
       <section className="hero">
         <div className="row wrap" style={{ position: 'relative', zIndex: 1, gap: 20 }}>
-          <UserAvatar user={target} size={72} />
+          <div>
+            <UserAvatar user={target} size={72} />
+            {target.profilePhotoURL && currentUser?.id !== target.id ? (
+              <div className="mt-2">
+                {/^https?:\/\//i.test(target.profilePhotoURL) ? (
+                  <a
+                    href={target.profilePhotoURL}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="block text-xs font-semibold text-white/90 hover:underline"
+                  >
+                    View photo
+                  </a>
+                ) : null}
+                <ReportFileLink
+                  fileUrl={target.profilePhotoURL}
+                  fileName="Profile photo"
+                  source="profile_photo"
+                  className="text-white/80"
+                />
+              </div>
+            ) : null}
+          </div>
           <div className="grow">
             <div className="big">{name}</div>
             <div className="row wrap" style={{ marginTop: 8, gap: 8 }}>

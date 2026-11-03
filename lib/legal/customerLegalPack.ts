@@ -152,6 +152,12 @@ export const LEGAL_PACK_DOCUMENTS: LegalDocument[] = [
           "This Agreement is governed by the law of England and Wales. The courts of England and Wales have exclusive jurisdiction, subject to any mandatory rights or jurisdiction that cannot lawfully be excluded.",
         ],
       },
+      {
+        title: "20. Content and copyright",
+        paragraphs: [
+          "If you believe Customer Data infringes copyright or other intellectual property rights, send a takedown notice to info@projectplanner.us. The Provider will review valid notices and may remove or disable access to the material. Repeat infringement may result in suspension or termination of the relevant account or Subscription.",
+        ],
+      },
     ],
   },
   {
@@ -308,7 +314,7 @@ export const LEGAL_PACK_DOCUMENTS: LegalDocument[] = [
       {
         title: "6. Reporting",
         paragraphs: [
-          "Suspected security issues, abuse or unlawful use should be reported to info@projectplanner.us. Reports should include enough information for the Provider to investigate.",
+          "Suspected security issues, abuse or unlawful use should be reported to info@projectplanner.us. Reports should include enough information for the Provider to investigate. Copyright, personal data, offensive content and other concerns about an uploaded file should also be reported in the Platform or to info@projectplanner.us.",
         ],
       },
       {

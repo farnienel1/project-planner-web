@@ -22,6 +22,7 @@ import {
   StatusPill,
   siteAuditTypeTone,
 } from '@/components/projects/features/featureUi'
+import { ReportFileLink } from '@/components/files/ReportFileLink'
 
 function SiteAuditHero({
   auditCount,
@@ -243,9 +244,12 @@ export function ProjectSiteAuditSection({ project }: { project: Project }) {
                   {item.comments && <p className="mt-1 whitespace-pre-wrap text-sm text-slate-600">{item.comments}</p>}
                   {item.annotations ? <p className="mt-1 whitespace-pre-wrap text-xs text-slate-500">{item.annotations}</p> : null}
                   {item.imageURL && (
-                    <a href={item.imageURL} target="_blank" rel="noreferrer" className="mt-2 block">
-                      <img src={item.imageURL} alt="" className="max-h-40 rounded-lg object-cover" />
-                    </a>
+                    <div className="mt-2">
+                      <a href={item.imageURL} target="_blank" rel="noreferrer" className="block">
+                        <img src={item.imageURL} alt="" className="max-h-40 rounded-lg object-cover" />
+                      </a>
+                      <ReportFileLink fileUrl={item.imageURL} fileName={item.title} source="site_audit" />
+                    </div>
                   )}
                 </div>
               ))}

@@ -19,6 +19,7 @@ import {
   qualificationCertificateFileError,
 } from '@/lib/qualifications/certificateUpload'
 import { QualificationLibraryBrowser } from './QualificationLibraryBrowser'
+import { ReportFileLink } from '@/components/files/ReportFileLink'
 
 type LinkedOperative = NonNullable<ReturnType<typeof findOperativeForUser>>
 
@@ -286,9 +287,12 @@ export function OperativeQualificationsEditor({
                 </div>
               ) : cert ? (
                 <div className="mt-3 flex flex-wrap gap-3 text-sm">
-                  <a href={cert} target="_blank" rel="noreferrer" className="font-semibold text-[var(--blue)]">
-                    View certificate
-                  </a>
+                  <div>
+                    <a href={cert} target="_blank" rel="noreferrer" className="font-semibold text-[var(--blue)]">
+                      View certificate
+                    </a>
+                    <ReportFileLink fileUrl={cert} fileName={`${qual.name} certificate`} source="qualification_certificate" />
+                  </div>
                   <button
                     type="button"
                     className="font-semibold text-red-600"
@@ -314,9 +318,12 @@ export function OperativeQualificationsEditor({
               )}
               {pending && cert ? (
                 <div className="mt-2 flex flex-wrap gap-3 text-sm">
-                  <a href={cert} target="_blank" rel="noreferrer" className="font-semibold text-[var(--blue)]">
-                    View current certificate
-                  </a>
+                  <div>
+                    <a href={cert} target="_blank" rel="noreferrer" className="font-semibold text-[var(--blue)]">
+                      View current certificate
+                    </a>
+                    <ReportFileLink fileUrl={cert} fileName={`${qual.name} certificate`} source="qualification_certificate" />
+                  </div>
                   <button
                     type="button"
                     className="font-semibold text-red-600"

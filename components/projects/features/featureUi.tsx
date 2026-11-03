@@ -3,6 +3,7 @@
 import { addDays, format, isSameDay, startOfWeek } from 'date-fns'
 import { coversCalendarDay, isSameLondonDay } from '@/lib/ios-parity/londonTime'
 import type { ReactNode } from 'react'
+import { ReportFileLink } from '@/components/files/ReportFileLink'
 
 /** Shared tokens aligned with iOS / HTML prototypes */
 export const featurePageBg = 'bg-[var(--bg)]'
@@ -286,14 +287,17 @@ export function DocListRow({
         )}
       </div>
       {fileURL && (
-        <a
-          href={fileURL}
-          target="_blank"
-          rel="noreferrer"
-          className="shrink-0 text-xs font-semibold text-[#2F73F0] hover:underline"
-        >
-          View
-        </a>
+        <div className="shrink-0 text-right">
+          <a
+            href={fileURL}
+            target="_blank"
+            rel="noreferrer"
+            className="text-xs font-semibold text-[#2F73F0] hover:underline"
+          >
+            View
+          </a>
+          <ReportFileLink fileUrl={fileURL} fileName={title} source="health_safety" />
+        </div>
       )}
     </div>
   )
