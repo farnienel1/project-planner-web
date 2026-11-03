@@ -8,6 +8,19 @@ import {
   sendInterestEmails,
 } from './notifyEmail.ts'
 
+// sendProjectPlannerEmail posts to the sendEmail function as { template, to: [address], data: { subject, html, headers } }.
+process.env.EMAIL_SERVER_KEY = process.env.EMAIL_SERVER_KEY || 'test-server-key'
+
+type SentEmail = { to: string; subject?: unknown; html?: unknown; headers?: unknown }
+
+function sentEmail(init?: RequestInit): SentEmail {
+  const body = JSON.parse(String(init?.body || '{}')) as { to?: string[]; data?: Record<string, unknown> }
+  const data = body.data || {}
+  const row: SentEmail = { to: (body.to || [])[0] || '', subject: data.subject, html: data.html }
+  if ('headers' in data) row.headers = data.headers
+  return row
+}
+
 const draft = {
   firstName: 'Ada',
   lastName: 'Lovelace',
@@ -57,10 +70,10 @@ test('ack headers are RFC 8058 one-click', () => {
 })
 
 test('a suppressed address skips the prospect ack and still pings the owner', async () => {
-  const calls: Array<Record<string, unknown>> = []
+  const calls: SentEmail[] = []
   const originalFetch = globalThis.fetch
   globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
-    calls.push(JSON.parse(String(init?.body || '{}')) as Record<string, unknown>)
+    calls.push(sentEmail(init))
     return new Response('ok', { status: 200 })
   }) as typeof fetch
 
@@ -77,10 +90,10 @@ test('a suppressed address skips the prospect ack and still pings the owner', as
 })
 
 test('an unsuppressed address sends the ack with headers and a visible link', async () => {
-  const calls: Array<Record<string, unknown>> = []
+  const calls: SentEmail[] = []
   const originalFetch = globalThis.fetch
   globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
-    calls.push(JSON.parse(String(init?.body || '{}')) as Record<string, unknown>)
+    calls.push(sentEmail(init))
     return new Response('ok', { status: 200 })
   }) as typeof fetch
 

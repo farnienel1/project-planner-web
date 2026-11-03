@@ -66,6 +66,7 @@ export async function POST(request: NextRequest) {
         organizationName,
         confirmationToken,
       }),
+      idToken: bearerToken(request),
     })
 
     return Response.json({ ok: true })

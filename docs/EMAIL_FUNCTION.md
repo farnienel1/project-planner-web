@@ -1,0 +1,84 @@
+# Email function (`sendEmail`)
+
+`sendEmail` is the one way either app sends email. It replaces `sendProjectPlannerEmail`, which was deployed from outside any repo, had no authentication, and sent any HTML, attachments and "From" name to any address from `info@projectplanner.us` for anyone who found its URL (the URL ships inside the iOS app).
+
+Source: `functions/email/` (wired in `functions/index.js`, codebase `inbox-push`). Tests: `functions/email/email.test.js` (rules, rate limiter, mocked Resend) and `lib/email/emailFunctionParity.test.ts` (the function's template copies match the web builders). Both run in `npm test`.
+
+## What it enforces
+
+| Check | Rule |
+|---|---|
+| Authentication | App: `Authorization: Bearer <Firebase ID token>`, verified with `verifyIdToken(token, checkRevoked = true)`. Web server: `X-Project-Planner-Server-Key` (secret `EMAIL_SERVER_KEY`) plus the user's ID token when the route has one. |
+| App Check | `X-Firebase-AppCheck` verified when present (an invalid token is refused). When absent it is logged (`sendEmail: no App Check token`) and allowed, so it can be enforced later. |
+| Membership | App callers must be an active member of `orgId` (`organizationMemberActive`). Level from `organizationLevelFor`; `staff` templates need admin or manager. |
+| Templates | Apps send a template name and data; subject, HTML and links are rendered in the function. Apps cannot send HTML. `web_rendered` (pre-rendered HTML) is accepted only with the server key. |
+| Recipients | Per template, below. Never a free address from an app. One message per recipient (no shared To line). |
+| From | `"<organisation name>" <info@projectplanner.us>` (`parseOrganizationName`, header-sanitised), or `"Project Planner"` with no organisation. A caller-supplied `fromName` is ignored. |
+| Reply-To | `info@projectplanner.us`; the sender's own token email for `material_request`; for `web_rendered` the `data.replyTo` the web route set. |
+| Attachments | PDF, XLSX, CSV only (by extension; content type set by the function), strict base64, at most 80 files and 10 MB decoded in total. Only `timesheet_export` and `web_rendered` take attachments. |
+| Rate limit | `emailRateLimits/{uid}` (Firestore transaction): 60 messages an hour and 300 a day per user; web mail with no user uses `emailRateLimits/server` (600 / 3000). Each recipient counts. No security rule matches the collection, so apps cannot read or reset it. |
+| Headers | Only `List-Unsubscribe` / `List-Unsubscribe-Post`, and only from the web server. |
+
+## Templates
+
+| Template | Who may send | Recipients (rule) | Data | Notes |
+|---|---|---|---|---|
+| `invite_setup` | admin, manager | exactly the email on `invitations/{data.invitationId}`, which must belong to `orgId` and be unused (`invitation`) | `invitationId` | Welcome pack (`welcomeEmailPack.js`, byte-identical to web). Link `https://www.projectplanner.us/setup-password.html?token=<invitationId>`. First name from the invitation. |
+| `password_reset_link` | admin, manager | same as `invite_setup` | `invitationId` | iOS reset-link body (`createPasswordResetLinkEmailBody`), rendered here. |
+| `timesheet_export` | admin, manager | 1–5 active members of the organisation, found by their users email (`member`) | `weekTitle`, `paymentRunStamp`, `timesheetCount?`, `downloadLinks?` (Firebase Storage URLs only) | `managerExportEmailHTML`; greeting from the recipient's users document; PDF attachments. |
+| `material_request` | any active member | contacts on the organisation's `wholesalers` documents (`parseWholesalerDocument`), plus the sender's own email for their copy; at least one wholesaler contact (`wholesaler_or_self`) | `requestType` (`quote` / `order`), `jobNumber`, `siteName?`, `siteAddress?`, `materials[]` (1–250), `sendAsPlainText?`, `deliveryRequiredAt?` (ISO), `senderPhone?` | Web/iOS material builder. Sender name, email and phone from the caller's users document and token; company and logo from the organisation; dates in the organisation zone (`organizationTimeZone`, `formatMaterialDeliveryRequired`, `defaultMaterialDeliveryRequiredAt`). The copy's subject starts `Copy: `. |
+| `leave_cancelled` | admin, manager | one active member (`member`) | `dateText` | "<caller> has cancelled your annual leave request for <dateText>." |
+| `web_rendered` | web server key only | the one address the web route chose | `subject`, `html`, `text?`, `replyTo?`, `headers?` | Used by every web API route (below). |
+
+Web routes on `web_rendered` (the route does its own checks first): MFA code (`/api/auth/mfa/start`, `/resend`), invite set-up (`/api/invites/send-setup-email`), organisation addition (`/api/invites/send-org-addition-email`), account confirmation (`/api/org-setup/send-confirm-email`), material request (`/api/materials/send-request-email`), timesheet export (`/api/timesheets/export-email`), billing (Stripe webhook: purchase, trial ending, payment failed), owner password reset, support contact form, login-email fix request, register-interest acknowledgement and owner ping (`lib/interest/notifyEmail.ts`).
+
+## iOS request contract
+
+Replace `ResendEmailService.sendViaFirebaseFunction` (and remove the `#if DEBUG` direct-Resend fallback and the `EmailService` plain-text invite fallback, which would also stop working) with:
+
+```
+POST https://us-central1-<FirebaseApp.options.projectID>.cloudfunctions.net/sendEmail
+Content-Type: application/json
+Authorization: Bearer <Auth.auth().currentUser.getIDToken()>
+X-Firebase-AppCheck: <AppCheck token>        (optional for now; send it once App Check is set up)
+```
+
+```json
+{
+  "orgId": "<FirebaseBackend.currentOrganization.firestoreDocumentId>",
+  "template": "invite_setup | password_reset_link | timesheet_export | material_request | leave_cancelled",
+  "to": ["recipient@example.com"],
+  "data": { },
+  "attachments": [{ "filename": "Name timesheet for payment run date 26.10.26 01.11.26.pdf", "content": "<base64>" }]
+}
+```
+
+`data` per template (iOS call site → template):
+
+- `FirebaseBackend.sendInvitationEmail` → `invite_setup`, `to: [invitation email]`, `data: { "invitationId": "<invitations doc id>" }`.
+- `FirebaseBackend.sendPasswordResetVerificationEmail` → `password_reset_link`, same shape (the new invitation id).
+- `InvoicingView` timesheet export → `timesheet_export`, `to: [exporter email]`, `data: { "weekTitle", "paymentRunStamp", "timesheetCount", "downloadLinks": [{ "fileName", "url" }] }`, PDFs in `attachments`. The recipient must be an active member (today it is the exporter themself).
+- `FirebaseBackend.sendMaterialRequest` → `material_request`, one call with `to: [each wholesaler contact email…, sender email]`, `data: { "requestType": "quote"|"order", "jobNumber", "siteName", "siteAddress", "materials": [{ "material", "quantity", "unit", "brand", "productCode", "notes", "lengthDisplay" }], "sendAsPlainText", "deliveryRequiredAt": "<ISO 8601>", "senderPhone" }`. Every non-self recipient must be a contact saved on a `wholesalers` document of the organisation (a one-off address typed in the send sheet is refused — see "Open decision").
+- `NotificationService` annual leave cancelled email → `leave_cancelled`, `to: [person email]`, `data: { "dateText": "<annualLeaveDateText>" }`.
+
+Response: `200 { "sent": true, "sentCount": n, "failed": [], "results": [{ "to", "id" }] }`. When some recipients failed: `200` with `"sent": false` and their addresses in `failed`. Errors: `{ "sent": false, "error": "<message>" }` with `400` (bad template, data, attachment or recipient list), `401` (no / bad ID token or App Check token), `403` (not an active member, wrong level, recipient not allowed), `404` (organisation or invitation not found), `413` (attachments over 10 MB or 80 files), `429` (rate limit; `Retry-After` seconds, `retryAfterSec` in the body), `502` (Resend refused every message). iOS keeps treating `sent == true` as success.
+
+## Owner steps
+
+1. Secrets (once):
+   - `firebase functions:secrets:set RESEND_API_KEY` — the Resend key (the one the old function uses).
+   - `firebase functions:secrets:set EMAIL_SERVER_KEY` — a long random value (e.g. `openssl rand -hex 32`).
+   - Netlify: set `EMAIL_SERVER_KEY` to the same value (server-side env, not `NEXT_PUBLIC_`).
+2. Deploy the function: `firebase deploy --only functions:inbox-push` (deploys `sendEmail` beside `sendDevicePushOnNotificationCreate`; it does not touch `sendProjectPlannerEmail`). The function is `invoker: public` at the IAM level on purpose; every request is checked in code.
+3. Test before the web deploy:
+   - No token → 401: `curl -s -X POST https://us-central1-project-planner-f986c.cloudfunctions.net/sendEmail -H 'Content-Type: application/json' -d '{}'`.
+   - Server mode to your own inbox: the same with `-H "X-Project-Planner-Server-Key: $EMAIL_SERVER_KEY" -d '{"template":"web_rendered","to":["you@example.com"],"data":{"subject":"sendEmail test","html":"<p>ok</p>"}}'` → `200 {"sent":true,…}`.
+   - App mode: with a signed-in test user's ID token, send `timesheet_export` to that user's own email with a small PDF.
+4. Deploy the web app (Netlify) with `EMAIL_SERVER_KEY` set. Without it every web email fails with "EMAIL_SERVER_KEY is not set" (fail closed). Check an MFA sign-in and an invite.
+5. Ship the iOS change (contract above).
+6. Once the iOS release that calls `sendEmail` is the minimum build (`platformConfig/app.minimumIosBuild`, rulebook §18), delete the old function: `firebase functions:delete sendProjectPlannerEmail --region us-central1`. Until then older iOS builds keep using the open function, so the hole stays open until this step.
+7. Later: enforce App Check (refuse requests without `X-Firebase-AppCheck`) once the logs show no `sendEmail: no App Check token` from current builds.
+
+## Open decision
+
+- One-off material recipients: the web and iOS send sheets let a user type an address that is not saved on a wholesaler. `material_request` refuses it (recipients are never arbitrary). Either the send sheet saves the one-off contact on a wholesaler first, or the owner accepts a narrow exception (e.g. up to 3 one-off addresses per request, still the fixed template). The web route is unaffected today because it sends through `web_rendered`.
