@@ -3,15 +3,27 @@
  *
  * A device token belongs to exactly one account: the last one to register it. When a token is added to
  * `users/{uid}.pushTokens`, the server removes it from every other users document (`pushTokenOwnerWrites`); a one-off
- * clean-up keeps each token only on the most recently updated document (`pushTokenDedupePlan`). The push function
+ * clean-up keeps each token only on the signed-in account that registered it most recently (`pushTokenDedupePlan`).
+ * 1.17.0: a token never belongs to an invite placeholder users document (a UUID-shaped id, `isPushTokenPlaceholderUserId`;
+ * Firebase Auth uids are never UUID-shaped): placeholders always lose their tokens. The push function
  * also never sends to a token that is on the actor's own users document (`pushTokensExcludingActor`), so a phone
  * shared between accounts never hears about what its own user did.
  *
  * The push data payload is one shape for every platform (`pushPayloadFields`).
  */
 
+import { isBookingUuid } from './bookings'
+
 function text(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
+}
+
+/**
+ * Rulebook 1.17.0 §13: true when a users document id is UUID-shaped (any letter case) — an invite / placeholder
+ * document, never a Firebase Auth uid (28 characters, no dashes). A device push token is never kept on one.
+ */
+export function isPushTokenPlaceholderUserId(userId: unknown): boolean {
+  return isBookingUuid(text(userId))
 }
 
 /** A stored `pushTokens` value as a de-duplicated list (an array, or one legacy string). */
@@ -36,7 +48,8 @@ export type PushTokenHolder = { id: string; pushTokens?: unknown }
 /**
  * The removals that make `token` belong only to `ownerUid`: one `{ userId, remove: [token] }` per other users
  * document that holds it (ids compared as stored; Firestore document ids are case-sensitive). The server applies
- * each as an `arrayRemove`.
+ * each as an `arrayRemove`. 1.17.0: when `ownerUid` is a placeholder (`isPushTokenPlaceholderUserId`) it is never the
+ * owner — the only write removes the token from that placeholder, and the signed-in accounts keep it.
  */
 export function pushTokenOwnerWrites(
   token: unknown,
@@ -46,6 +59,7 @@ export function pushTokenOwnerWrites(
   const value = text(token)
   const owner = text(ownerUid)
   if (!value || !owner) return []
+  if (isPushTokenPlaceholderUserId(owner)) return [{ userId: owner, remove: [value] }]
   const out: Array<{ userId: string; remove: string[] }> = []
   const seen = new Set<string>()
   for (const holder of holders || []) {
@@ -82,32 +96,46 @@ function instantMs(value: unknown): number {
 }
 
 /**
- * The one-off clean-up: for every token held by more than one users document, keep it on the document that
- * registered a token most recently (`pushTokenUpdatedAt`, else `updatedAt`; a tie keeps the first given) and remove
- * it from the others. Returns one `{ userId, remove }` per document that loses tokens, in input order.
+ * The one-off clean-up (1.17.0). A placeholder users document (`isPushTokenPlaceholderUserId`) always loses its
+ * tokens. A token on more than one signed-in account is kept on the account that registered it most recently by
+ * `pushTokenUpdatedAt`; `updatedAt` is compared only when none of those accounts has a `pushTokenUpdatedAt` (a tie keeps
+ * the first given). A token that sits only on placeholders is removed everywhere (`keptOn` is null) — the phone
+ * registers it again on its signed-in uid at next launch. Returns one `{ userId, remove, keptOn }` per document that
+ * loses tokens, in input order.
  */
 export function pushTokenDedupePlan(
   documents: ReadonlyArray<PushTokenDocument> | null | undefined
-): Array<{ userId: string; remove: string[]; keptOn: Record<string, string> }> {
+): Array<{ userId: string; remove: string[]; keptOn: Record<string, string | null> }> {
   const docs = (documents || []).filter((doc) => doc && text(doc.id))
-  const keeper = new Map<string, { id: string; ms: number }>()
+  const holders = new Map<string, PushTokenDocument[]>()
   for (const doc of docs) {
-    const ms = instantMs(doc.pushTokenUpdatedAt) || instantMs(doc.updatedAt)
+    if (isPushTokenPlaceholderUserId(doc.id)) continue
     for (const token of pushTokenList(doc.pushTokens)) {
-      const current = keeper.get(token)
-      if (!current || ms > current.ms) keeper.set(token, { id: text(doc.id), ms })
+      const list = holders.get(token) ?? []
+      list.push(doc)
+      holders.set(token, list)
     }
   }
-  const out: Array<{ userId: string; remove: string[]; keptOn: Record<string, string> }> = []
+  const keeper = new Map<string, string>()
+  for (const [token, list] of holders) {
+    const byTokenTime = list.some((doc) => instantMs(doc.pushTokenUpdatedAt) > 0)
+    let best: { id: string; ms: number } | null = null
+    for (const doc of list) {
+      const ms = byTokenTime ? instantMs(doc.pushTokenUpdatedAt) : instantMs(doc.updatedAt)
+      if (!best || ms > best.ms) best = { id: text(doc.id), ms }
+    }
+    if (best) keeper.set(token, best.id)
+  }
+  const out: Array<{ userId: string; remove: string[]; keptOn: Record<string, string | null> }> = []
   for (const doc of docs) {
     const id = text(doc.id)
     const remove: string[] = []
-    const keptOn: Record<string, string> = {}
+    const keptOn: Record<string, string | null> = {}
     for (const token of pushTokenList(doc.pushTokens)) {
-      const kept = keeper.get(token)
-      if (kept && kept.id !== id) {
+      const kept = keeper.get(token) ?? null
+      if (kept !== id) {
         remove.push(token)
-        keptOn[token] = kept.id
+        keptOn[token] = kept
       }
     }
     if (remove.length > 0) out.push({ userId: id, remove, keptOn })

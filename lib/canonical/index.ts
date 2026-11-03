@@ -1327,6 +1327,7 @@ export {
   bookingDaysMixWeekdayAndWeekend,
   timeSlotAllowedOnDay,
   weekendBookingNote,
+  weekendBookingNotes,
   weekendCustomHoursDefault,
 } from './bookingSlots'
 export { weekendFullDayWindow, weekendRuleForIsoWeekday } from './payrollHours'
@@ -1409,6 +1410,7 @@ export {
   addedPushTokens,
   notificationOrganizationSwitch,
   pushPayloadFields,
+  isPushTokenPlaceholderUserId,
   pushTokenDedupePlan,
   pushTokenList,
   pushTokenOwnerWrites,

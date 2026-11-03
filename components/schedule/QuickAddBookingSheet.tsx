@@ -5,7 +5,7 @@ import {
   customHoursPrefillForDate,
   isWeekendDate,
   slotOfferedOnDate,
-  weekendNoteForDate,
+  weekendNotesForDates,
 } from '@/lib/scheduling/bookingSlotRules'
 import { useMemo, useState } from 'react'
 import { useBookingConflictGate, type BookingSlotConflictCheck } from '@/components/scheduling/BookingConflictRows'
@@ -16,6 +16,7 @@ import { hoursBreakdown } from '@/lib/scheduling/paidHours'
 import { HoursBreakdownCard } from '@/components/schedule/HoursBreakdownCard'
 import { DEFAULT_PAYROLL_POLICY, type OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import { formatClockMinutes, halfDayWindows } from '@/lib/canonical'
+import { useOrganizationDocument } from '@/lib/stores/organizationDocumentStore'
 
 export type QuickAddBookingValues = {
   timeSlot: string
@@ -58,6 +59,9 @@ export function QuickAddBookingSheet({
   conflictsFor?: BookingSlotConflictCheck
 }) {
   const conflictGate = useBookingConflictGate()
+  // Rulebook 1.17.0 §4.3: the live organisation document, so the weekend note, prefill and break check read the
+  // working hours in effect on the booking day (`effectivePayrollTimePolicy` in bookingSlotRules).
+  useOrganizationDocument()
   // Rulebook 1.13.0 (Q2): Saturday and Sunday are custom hours only, opened with that day's window when it has one.
   const weekendDay = isWeekendDate(date)
   const prefill = customHoursPrefillForDate(date, payroll)
@@ -73,7 +77,7 @@ export function QuickAddBookingSheet({
     `${formatClockMinutes(interval.start)}–${formatClockMinutes(interval.end)}`
 
   // Rulebook 1.13.0 (Q2, `allowedTimeSlotsOnDay`): Saturday and Sunday offer Custom hours only.
-  const weekendNote = weekendNoteForDate(date, payroll)
+  const weekendNotes = weekendNotesForDates([date], payroll)
   const slotOptions: { value: ScheduleSlotChoice; label: string }[] = (
     [
       { value: 'FULL DAY', label: `Full day (${range(halves.day)})` },
@@ -174,7 +178,11 @@ export function QuickAddBookingSheet({
                 </option>
               ))}
             </select>
-            {weekendNote ? <p className="mt-1 text-xs text-slate-500">{weekendNote}</p> : null}
+            {weekendNotes.map((note) => (
+              <p key={note} className="mt-1 text-xs text-slate-500">
+                {note}
+              </p>
+            ))}
           </div>
 
           {slot === 'CUSTOM' && (

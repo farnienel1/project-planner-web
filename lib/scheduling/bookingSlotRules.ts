@@ -9,20 +9,46 @@ import {
   customHoursBreakWarning,
   isWeekendDayKey,
   organizationTimeZone,
-  weekendBookingNote,
+  parsePayrollTimePolicyState,
+  payrollTimePolicyTimeline,
+  effectivePayrollTimePolicy,
+  weekendBookingNotes,
   weekendCustomHoursDefault,
+  type PayrollTimePolicyState,
   WEEKEND_WEEKDAY_MIX_MESSAGE,
   type BookingSlotChoice,
   type CustomHoursBreakBooking,
 } from '@/lib/canonical'
 import { dayKeyInZone } from '@/lib/orgTime/zoneTime'
 import { useOrganizationDocumentStore } from '@/lib/stores/organizationDocumentStore'
+import { useAuthStore } from '@/lib/stores/authStore'
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 
 function openOrganizationZone(): string {
   const data = useOrganizationDocumentStore.getState().data
   const country = data && typeof data.countryCode === 'string' ? data.countryCode : null
   return organizationTimeZone(country)
+}
+
+/**
+ * The open organisation's working-hours state from the live document (`parsePayrollTimePolicyState`, promoted to
+ * today with `payrollTimePolicyTimeline`), or null when the live document is not loaded for the open organisation.
+ */
+function livePayrollState(): PayrollTimePolicyState | null {
+  const { organizationId, data } = useOrganizationDocumentStore.getState()
+  const openId = useAuthStore.getState().organization?.id || ''
+  if (!data || !openId || organizationId !== openId) return null
+  const zone = openOrganizationZone()
+  return payrollTimePolicyTimeline(parsePayrollTimePolicyState(data, zone), dayKeyInZone(new Date(), zone), zone)
+}
+
+/**
+ * The working hours in effect on the booking day (`effectivePayrollTimePolicy`, rulebook §4.3): a scheduled change
+ * counts from its own day. Falls back to the policy the screen passed when the live document is not loaded.
+ */
+function policyOnBookingDay(dayKey: string, fallback?: OrgPayrollTimePolicy | null): OrgPayrollTimePolicy | null {
+  const state = livePayrollState()
+  return state ? effectivePayrollTimePolicy(state, dayKey, openOrganizationZone()) : fallback ?? null
 }
 
 /** The booking day as an organisation-zone day key. */
@@ -48,9 +74,17 @@ export function slotOfferedOnDate(
   return (slotChoicesForDate(date, policy) as string[]).includes(kind)
 }
 
-/** The weekend booking note for the date (`weekendBookingNote`), else null. */
-export function weekendNoteForDate(date: Date | string | number, policy?: OrgPayrollTimePolicy | null): string | null {
-  return weekendBookingNote(policy ?? null, bookingDayKey(date), openOrganizationZone())
+/**
+ * Rulebook 1.17.0: the weekend note lines for the days a picker has selected (`weekendBookingNotes`): one
+ * "Saturday/Sunday" line when both follow the same rule, else Saturday then Sunday; `[]` for weekdays. Each day is read
+ * under the working hours in effect on that day.
+ */
+export function weekendNotesForDates(
+  dates: ReadonlyArray<Date | string | number>,
+  policy?: OrgPayrollTimePolicy | null
+): string[] {
+  const keys = dates.map((date) => bookingDayKey(date))
+  return weekendBookingNotes(livePayrollState() ?? policy ?? null, keys, openOrganizationZone())
 }
 
 /** Whether the date is a Saturday or Sunday in the organisation zone (custom hours only). */
@@ -66,8 +100,26 @@ export function customHoursPrefillForDate(
   date: Date | string | number,
   policy?: OrgPayrollTimePolicy | null
 ): { start: string; end: string } {
-  const weekend = weekendCustomHoursDefault(policy ?? null, bookingDayKey(date), openOrganizationZone())
-  return weekend ?? { start: policy?.standardDayStart || '07:30', end: policy?.standardDayEnd || '16:00' }
+  const key = bookingDayKey(date)
+  const dayPolicy = policyOnBookingDay(key, policy)
+  const weekend = weekendCustomHoursDefault(dayPolicy, key, openOrganizationZone())
+  return weekend ?? { start: dayPolicy?.standardDayStart || '07:30', end: dayPolicy?.standardDayEnd || '16:00' }
+}
+
+/**
+ * The one pair of times a multi-day picker opens custom hours with: the first selected Saturday's
+ * (`customHoursPrefillForDate`), else the first selected day's. Each day's own default is
+ * `customHoursPrefillForDate`; a picker that keeps one time pair for the request saves that pair on every day.
+ */
+export function customHoursPrefillForDates(
+  dates: ReadonlyArray<Date | string | number>,
+  policy?: OrgPayrollTimePolicy | null
+): { start: string; end: string } {
+  const zone = openOrganizationZone()
+  const keyed = dates.map((date) => ({ date, key: bookingDayKey(date) })).sort((a, b) => a.key.localeCompare(b.key))
+  const saturday = keyed.find(({ key }) => isWeekendDayKey(key, zone) && new Date(`${key}T12:00:00Z`).getUTCDay() === 6)
+  const first = saturday ?? keyed[0]
+  return customHoursPrefillForDate(first ? first.date : new Date(), policy)
 }
 
 /** `WEEKEND_WEEKDAY_MIX_MESSAGE` when the dates mix weekdays and weekend days (`bookingDaysMixWeekdayAndWeekend`). */
@@ -86,7 +138,8 @@ export function confirmCustomHoursBreak(
   date: Date | string | number,
   booking: CustomHoursBreakBooking
 ): boolean {
-  const message = customHoursBreakWarning(policy ?? null, bookingDayKey(date), booking, openOrganizationZone())
+  const key = bookingDayKey(date)
+  const message = customHoursBreakWarning(policyOnBookingDay(key, policy), key, booking, openOrganizationZone())
   if (!message || typeof window === 'undefined') return true
   return window.confirm(message)
 }

@@ -1,7 +1,7 @@
 {
-  "rulebookVersion": "1.16.1",
-  "rulebookSha256": "905d39201c0c564346a02fc462a08ebd53dcad2988c5e0fed4c9f3d7ce320f55",
-  "bundleSha256": "586f1b0ba56e789c7f34d17cc4d0bfe4fcef046ac1842c94f4479574432ae5c8",
+  "rulebookVersion": "1.17.0",
+  "rulebookSha256": "65926053c23afcee349a7cda70647d73be2a1d3580791923483ad9265b2dd749",
+  "bundleSha256": "5390bfde93d29da5f8d8171ac3483cdf1004c00dfbbd6ba08e35fd69ac85b0d5",
   "crossPlatformContractSha256": "d655dd7d122e53a1167569216d43cba7598670671310ca84c59ea7e46373b7e6",
   "exports": [
     "ACCOUNT_DELETE_WITH_COMPANY_MESSAGE",
@@ -447,6 +447,7 @@
     "isOrganizationSuperAdmin",
     "isPersonInWarningScope",
     "isPlatformOwnerEmail",
+    "isPushTokenPlaceholderUserId",
     "isScheduledNotificationType",
     "isStaffAccount",
     "isStandardWorkingWeekday",
@@ -879,6 +880,7 @@
     "webSessionOrganizationStorageKey",
     "weekdayOffsetBefore",
     "weekendBookingNote",
+    "weekendBookingNotes",
     "weekendCustomHoursDefault",
     "weekendFullDayWindow",
     "weekendRuleForIsoWeekday",

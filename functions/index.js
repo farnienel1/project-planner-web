@@ -191,6 +191,7 @@ exports.sendDevicePushOnNotificationCreate = onDocumentCreated(
 /**
  * Rulebook 1.16.0 §13: a device token belongs to exactly one account, the last one to register it. When a users
  * document gains a token (`addedPushTokens`), remove it from every other users document (`pushTokenOwnerWrites`).
+ * 1.17.0: a placeholder users document (UUID-shaped id) never owns a token; its new token is removed from it instead.
  * Only removals are written, so the writes this makes never re-trigger an add.
  */
 exports.pushTokenSingleOwner = onDocumentWritten(

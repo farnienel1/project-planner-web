@@ -9238,3 +9238,193 @@ test('1.16.1: a blank H&S file link never overwrites a stored one; copies keep t
     { id: 'R3' },
   ])
 })
+
+test('1.17.0: weekendBookingNotes — one Saturday/Sunday line when the rules match, else Saturday then Sunday', () => {
+  const SAT = '2026-11-07'
+  const SUN = '2026-11-08'
+  const WED = '2026-11-04'
+  const windowRule = { allHoursAtMultiplierMode: false, allHoursMultiplier: 2, definedWindowStart: '07:30', definedWindowEnd: '13:00', countsAsStandardHours: 8, outsideWindowMultiplier: 2 }
+  const same = { ...parsePolicy112(undefined), saturday: windowRule, sunday: { ...windowRule, sameAsSaturday: true } }
+  assert.deepEqual(R112.weekendBookingNotes(same, [SUN, SAT], 'Europe/London'), [
+    'Saturday/Sunday is paid on the hours you enter: 07:30–13:00 counts as 8h, hours outside it at 2×. Change it in Working hours.',
+  ])
+  // Same rule written out on both days (not "same as Saturday") also gives one line.
+  const sameExplicit = { ...same, sunday: { ...windowRule, sameAsSaturday: false } }
+  assert.equal(R112.weekendBookingNotes(sameExplicit, [SAT, SUN]).length, 1)
+  // Both every hour at the same rate: one line.
+  const allHours = { allHoursAtMultiplierMode: true, allHoursMultiplier: 2, sameAsSaturday: false }
+  assert.deepEqual(R112.weekendBookingNotes({ ...same, saturday: allHours, sunday: allHours }, [SAT, SUN]), [
+    'Saturday/Sunday is paid on the hours you enter, every hour at 2×. Change it in Working hours.',
+  ])
+  // Different rules: Saturday's line, then Sunday's, whatever the selection order.
+  const different = { ...same, sunday: allHours }
+  assert.deepEqual(R112.weekendBookingNotes(different, [SUN, SAT]), [
+    R112.weekendBookingNote(different, SAT),
+    R112.weekendBookingNote(different, SUN),
+  ])
+  // Same window but a different rate outside it is a different rule.
+  assert.equal(R112.weekendBookingNotes({ ...same, sunday: { ...windowRule, outsideWindowMultiplier: 1.5, sameAsSaturday: false } }, [SAT, SUN]).length, 2)
+  // One weekend day: exactly today's line; two Saturdays still one line.
+  assert.deepEqual(R112.weekendBookingNotes(different, [SAT]), [R112.weekendBookingNote(different, SAT)])
+  assert.deepEqual(R112.weekendBookingNotes(different, [SUN]), [R112.weekendBookingNote(different, SUN)])
+  assert.deepEqual(R112.weekendBookingNotes(different, [SAT, '2026-11-14']), [R112.weekendBookingNote(different, SAT)])
+  // Weekdays only, nothing, or no policy: no line.
+  assert.deepEqual(R112.weekendBookingNotes(different, [WED]), [])
+  assert.deepEqual(R112.weekendBookingNotes(different, []), [])
+  assert.deepEqual(R112.weekendBookingNotes(null, [SAT, SUN]), [])
+  // Each booked day keeps its own prefill (no shared midpoint).
+  assert.deepEqual(R112.weekendCustomHoursDefault(different, SAT), { start: '07:30', end: '13:00' })
+  assert.equal(R112.weekendCustomHoursDefault(different, SUN), null)
+})
+
+test('1.17.0: working-hours schedule robustness — weekend start, DST, replace, partial writes, stored shapes', () => {
+  const zone = 'Europe/London'
+  const windowRule = { allHoursAtMultiplierMode: false, allHoursMultiplier: 2, definedWindowStart: '08:00', definedWindowEnd: '12:00', countsAsStandardHours: 4, outsideWindowMultiplier: 1.5, sameAsSaturday: false }
+  const allHours = { allHoursAtMultiplierMode: true, allHoursMultiplier: 2, sameAsSaturday: false }
+  const oldRaw = { standardDayStart: '07:30', saturday: allHours, sunday: allHours }
+  const newRaw = { standardDayStart: '08:00', saturday: windowRule, sunday: { ...windowRule, sameAsSaturday: true } }
+  // A change scheduled to start on a Saturday: Friday keeps the old rules, Saturday and Sunday take the new ones.
+  const doc = { countryCode: 'GB', payrollTimePolicy: oldRaw, payrollTimePolicyScheduled: { policy: newRaw, effectiveFrom: '2026-11-07' } }
+  assert.equal(R112.effectivePayrollTimePolicy(doc, '2026-11-06', zone).standardDayStart, '07:30')
+  assert.equal(R112.effectivePayrollTimePolicy(doc, '2026-11-07', zone).standardDayStart, '08:00')
+  assert.equal(R112.effectivePayrollTimePolicy(doc, '2026-11-07', zone).saturday.allHoursAtMultiplierMode, false)
+  // The weekend note follows the policy in effect on each day when given the state.
+  const state = R112.parsePayrollTimePolicyState(doc, zone)
+  assert.deepEqual(R112.weekendBookingNotes(state, ['2026-11-07', '2026-11-08'], zone), [
+    'Saturday/Sunday is paid on the hours you enter: 08:00–12:00 counts as 4h, hours outside it at 1.5×. Change it in Working hours.',
+  ])
+  assert.deepEqual(R112.weekendBookingNotes(state, ['2026-10-31', '2026-11-01'], zone), [
+    'Saturday/Sunday is paid on the hours you enter, every hour at 2×. Change it in Working hours.',
+  ])
+  // Sunday before the change and Saturday after it: different rules, so two lines (Saturday first).
+  assert.deepEqual(R112.weekendBookingNotes(state, ['2026-11-01', '2026-11-07'], zone), [
+    'Saturday is paid on the hours you enter: 08:00–12:00 counts as 4h, hours outside it at 1.5×. Change it in Working hours.',
+    'Sunday is paid on the hours you enter, every hour at 2×. Change it in Working hours.',
+  ])
+  assert.equal(R112.weekendCustomHoursDefault(R112.effectivePayrollTimePolicy(doc, '2026-11-07', zone), '2026-11-07', zone)?.start, '08:00')
+  assert.equal(R112.weekendCustomHoursDefault(R112.effectivePayrollTimePolicy(doc, '2026-10-31', zone), '2026-10-31', zone), null)
+
+  // DST: the promoted prior is the rules of the calendar day before, across the October and March clock changes.
+  for (const [effectiveFrom, todayKey] of [['2026-10-26', '2026-10-27'], ['2026-10-25', '2026-10-25'], ['2026-03-30', '2026-03-31'], ['2026-03-29', '2026-03-29']]) {
+    const dueDoc = {
+      payrollTimePolicy: { standardDayStart: '07:00' },
+      payrollTimePolicyPrior: { standardDayStart: '06:00' },
+      payrollTimePolicyEffectiveFrom: '2026-01-01',
+      payrollTimePolicyScheduled: { policy: { standardDayStart: '09:00' }, effectiveFrom },
+    }
+    const timeline = R112.payrollTimePolicyTimeline(dueDoc, todayKey, zone)
+    assert.equal(timeline.current.standardDayStart, '09:00', effectiveFrom)
+    assert.equal(timeline.prior?.standardDayStart, '07:00', effectiveFrom)
+    assert.equal(timeline.effectiveFrom, effectiveFrom)
+    const promoted = R112.payrollTimePolicyTimeline(dueDoc, todayKey, zone)
+    const dayBefore = zoneDayKey112(new Date(zoneMidnight112(effectiveFrom, zone).getTime() - 12 * 3600 * 1000), zone)
+    assert.equal(R112.effectivePayrollTimePolicy(promoted, dayBefore, zone).standardDayStart, '07:00', dayBefore)
+    assert.equal(R112.effectivePayrollTimePolicy(promoted, effectiveFrom, zone).standardDayStart, '09:00')
+  }
+  // Apply from today on the Monday after the October change: yesterday (the 25-hour Sunday) is the prior.
+  const applyAfterDst = R112.payrollTimePolicyApplyNowWriteFields({
+    orgDoc: { payrollTimePolicy: { standardDayStart: '07:00' }, payrollTimePolicyPrior: { standardDayStart: '06:00' }, payrollTimePolicyEffectiveFrom: '2026-10-26' },
+    policy: { ...parsePolicy112(undefined), standardDayStart: '05:00' },
+    todayKey: '2026-10-26',
+    timeZone: zone,
+  })
+  assert.equal((applyAfterDst.payrollTimePolicyPrior as Record<string, unknown>).standardDayStart, '06:00')
+  // Stored as a Timestamp (older builds): organisation-zone midnight either side of a clock change reads as that day.
+  const ts = (iso: string) => ({ seconds: Date.parse(iso) / 1000 })
+  assert.equal(R112.payrollDayKeyFromValue(ts('2026-10-24T23:00:00Z'), zone), '2026-10-25') // BST midnight
+  assert.equal(R112.payrollDayKeyFromValue(ts('2026-10-26T00:00:00Z'), zone), '2026-10-26') // GMT midnight
+  assert.equal(R112.payrollDayKeyFromValue(ts('2026-03-29T00:00:00Z'), zone), '2026-03-29') // GMT midnight
+  assert.equal(R112.payrollDayKeyFromValue(ts('2026-03-29T23:00:00Z'), zone), '2026-03-30') // BST midnight
+  assert.equal(R112.payrollDayKeyFromValue({ _seconds: Date.parse('2026-10-24T23:00:00Z') / 1000 }, zone), '2026-10-25')
+  const tsScheduled = R112.parsePayrollTimePolicyScheduled({ policy: { standardDayStart: '09:00' }, effectiveFrom: ts('2026-03-29T23:00:00Z') }, zone)
+  assert.equal(tsScheduled?.effectiveFrom, '2026-03-30')
+  // A scheduled map without a policy, or without a usable day, is no schedule.
+  assert.equal(R112.parsePayrollTimePolicyScheduled({ effectiveFrom: '2026-12-01' }, zone), null)
+  assert.equal(R112.parsePayrollTimePolicyScheduled({ policy: {}, effectiveFrom: 'soon' }, zone), null)
+
+  // Schedule, then schedule again before it is due: the second replaces the first and today's rules are untouched.
+  const pendingDoc = { payrollTimePolicy: oldRaw, payrollTimePolicyScheduled: { policy: newRaw, effectiveFrom: '2026-12-01' } }
+  const second = R112.payrollTimePolicyScheduleWriteFields({
+    orgDoc: pendingDoc,
+    policy: { ...parsePolicy112(undefined), standardDayStart: '06:30' },
+    effectiveFrom: '2027-01-04',
+    todayKey: '2026-11-03',
+    timeZone: zone,
+  })!
+  assert.deepEqual(Object.keys(second), ['payrollTimePolicyScheduled'])
+  assert.equal((second.payrollTimePolicyScheduled as Record<string, unknown>).effectiveFrom, '2027-01-04')
+  // Apply from today while a change is pending keeps it (never writes payrollTimePolicyScheduled).
+  const apply = R112.payrollTimePolicyApplyNowWriteFields({ orgDoc: pendingDoc, policy: parsePolicy112(undefined), todayKey: '2026-11-03', timeZone: zone })
+  assert.equal('payrollTimePolicyScheduled' in apply, false)
+  // Cancel with nothing due clears only the pending change.
+  assert.deepEqual(R112.payrollTimePolicyCancelScheduleWriteFields({ orgDoc: pendingDoc, todayKey: '2026-11-03', timeZone: zone }), { payrollTimePolicyScheduled: null })
+  // Every write is a partial update of the four working-hours fields only, so another settings save is never overwritten.
+  const payrollFields = new Set(['payrollTimePolicy', 'payrollTimePolicyPrior', 'payrollTimePolicyEffectiveFrom', 'payrollTimePolicyScheduled'])
+  const dueDoc = { ...pendingDoc, payrollTimePolicyScheduled: { policy: newRaw, effectiveFrom: '2026-11-01' } }
+  for (const fields of [
+    second,
+    apply,
+    R112.payrollTimePolicyCancelScheduleWriteFields({ orgDoc: dueDoc, todayKey: '2026-11-03', timeZone: zone }),
+    R112.payrollTimePolicyScheduleWriteFields({ orgDoc: dueDoc, policy: parsePolicy112(undefined), effectiveFrom: '2026-12-01', todayKey: '2026-11-03', timeZone: zone })!,
+    R112.payrollTimePolicyApplyNowWriteFields({ orgDoc: dueDoc, policy: parsePolicy112(undefined), todayKey: '2026-11-03', timeZone: zone }),
+  ]) {
+    for (const key of Object.keys(fields)) assert.ok(payrollFields.has(key), key)
+  }
+  // Day keys are written as 'YYYY-MM-DD' text, the shape iOS writes and reads.
+  const cancelDue = R112.payrollTimePolicyCancelScheduleWriteFields({ orgDoc: dueDoc, todayKey: '2026-11-03', timeZone: zone })
+  assert.equal(cancelDue.payrollTimePolicyEffectiveFrom, '2026-11-01')
+  assert.equal(cancelDue.payrollTimePolicyScheduled, null)
+  assert.equal((cancelDue.payrollTimePolicy as Record<string, unknown>).standardDayStart, '08:00')
+})
+
+test('1.17.0: push tokens never stay on a placeholder users document; signed-in accounts compare pushTokenUpdatedAt', () => {
+  const PLACEHOLDER = '463952DE-0375-435D-8AB3-67570C902C56'
+  const A = '8Qnz190EABWbS0t5Oaj0TZaOyfO2'
+  const B = 'Zk3pQ9aLmN0bVc7XyT2rS5uW1eF4'
+  const C = 'Hj6gR2tY8uI0oP4aS1dF3gH5jK7l'
+  assert.equal(rulebook.isPushTokenPlaceholderUserId(PLACEHOLDER), true)
+  assert.equal(rulebook.isPushTokenPlaceholderUserId(PLACEHOLDER.toLowerCase()), true)
+  assert.equal(rulebook.isPushTokenPlaceholderUserId(A), false)
+  // The owner's dry run: the placeholder's updatedAt is the newest, yet it loses every token and the real accounts
+  // keep theirs (each token decided among the signed-in accounts only).
+  const plan = rulebook.pushTokenDedupePlan([
+    { id: PLACEHOLDER, pushTokens: ['tA', 'tB', 'tC'], updatedAt: new Date('2026-11-02') },
+    { id: A, pushTokens: ['tA'], pushTokenUpdatedAt: new Date('2026-06-01'), updatedAt: new Date('2026-06-01') },
+    { id: B, pushTokens: ['tB'], pushTokenUpdatedAt: new Date('2026-07-01') },
+    { id: C, pushTokens: ['tC'], updatedAt: new Date('2026-05-01') },
+  ])
+  assert.deepEqual(plan, [{ userId: PLACEHOLDER, remove: ['tA', 'tB', 'tC'], keptOn: { tA: A, tB: B, tC: C } }])
+  // Among signed-in accounts, pushTokenUpdatedAt decides; a newer updatedAt without it never wins.
+  const shared = rulebook.pushTokenDedupePlan([
+    { id: A, pushTokens: ['t'], pushTokenUpdatedAt: new Date('2026-06-01'), updatedAt: new Date('2026-06-01') },
+    { id: B, pushTokens: ['t'], updatedAt: new Date('2026-11-01') },
+  ])
+  assert.deepEqual(shared, [{ userId: B, remove: ['t'], keptOn: { t: A } }])
+  // No candidate has pushTokenUpdatedAt: updatedAt decides.
+  const legacy = rulebook.pushTokenDedupePlan([
+    { id: A, pushTokens: ['t'], updatedAt: new Date('2026-06-01') },
+    { id: B, pushTokens: ['t'], updatedAt: new Date('2026-11-01') },
+  ])
+  assert.deepEqual(legacy, [{ userId: A, remove: ['t'], keptOn: { t: B } }])
+  // Only on placeholders (even one): removed everywhere.
+  const orphan = rulebook.pushTokenDedupePlan([
+    { id: PLACEHOLDER, pushTokens: ['t'], pushTokenUpdatedAt: new Date('2026-11-02') },
+    { id: '11111111-2222-3333-4444-555555555555', pushTokens: ['t', 'u'] },
+  ])
+  assert.deepEqual(orphan, [
+    { userId: PLACEHOLDER, remove: ['t'], keptOn: { t: null } },
+    { userId: '11111111-2222-3333-4444-555555555555', remove: ['t', 'u'], keptOn: { t: null, u: null } },
+  ])
+  // Idempotent once applied: a single signed-in holder keeps its token.
+  assert.deepEqual(rulebook.pushTokenDedupePlan([{ id: A, pushTokens: ['tA'] }]), [])
+  // Single-owner sweep: a placeholder write never takes the token from real accounts; it loses it itself.
+  assert.deepEqual(
+    rulebook.pushTokenOwnerWrites('t', PLACEHOLDER, [{ id: PLACEHOLDER, pushTokens: ['t'] }, { id: A, pushTokens: ['t'] }]),
+    [{ userId: PLACEHOLDER, remove: ['t'] }]
+  )
+  // A signed-in registration removes it from the placeholder and other accounts.
+  assert.deepEqual(
+    rulebook.pushTokenOwnerWrites('t', A, [{ id: PLACEHOLDER, pushTokens: ['t'] }, { id: A, pushTokens: ['t'] }, { id: B, pushTokens: ['t'] }]),
+    [{ userId: PLACEHOLDER, remove: ['t'] }, { userId: B, remove: ['t'] }]
+  )
+})

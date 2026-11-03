@@ -7,7 +7,9 @@
  * that phone ever lists. This keeps each token only on the users document that registered a token most recently
  * (`pushTokenUpdatedAt`, else `updatedAt`) and removes it from the others, with the rulebook's own
  * `pushTokenDedupePlan` read from the packed script. From 1.16.0 the `pushTokenSingleOwner` Cloud Function keeps it
- * that way.
+ * that way. 1.17.0: an invite placeholder users document (UUID-shaped id) always loses its tokens, signed-in
+ * accounts are compared by `pushTokenUpdatedAt` (`updatedAt` only when none has it), and a token held only by
+ * placeholders is removed everywhere.
  *
  *   node scripts/dedupe-push-tokens.mjs --project <firebaseProjectId>            # dry run (default)
  *   node scripts/dedupe-push-tokens.mjs --project <firebaseProjectId> --apply    # write
@@ -81,7 +83,7 @@ for (const doc of snap.docs) {
 const plan = rulebook.pushTokenDedupePlan(documents)
 console.log(`${documents.length} users documents hold tokens; ${plan.length} lose at least one token.`)
 for (const row of plan) {
-  const detail = row.remove.map((token) => `…${suffix(token)} → kept on ${row.keptOn[token]}`).join(', ')
+  const detail = row.remove.map((token) => `…${suffix(token)} → ${row.keptOn[token] ? `kept on ${row.keptOn[token]}` : 'removed everywhere (placeholders only)'}`).join(', ')
   console.log(`- users/${row.userId}: ${detail}`)
 }
 if (!apply) {

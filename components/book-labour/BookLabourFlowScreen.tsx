@@ -54,10 +54,11 @@ import {
   type BookLabourCandidate,
 } from '@/lib/book-labour/candidates'
 import { HoursTimelinePicker } from '@/components/scheduling/HoursTimelinePicker'
-import { confirmCustomHoursBreak, customHoursPrefillForDate, slotOfferedOnDate, weekendNoteForDate } from '@/lib/scheduling/bookingSlotRules'
+import { confirmCustomHoursBreak, customHoursPrefillForDate, slotOfferedOnDate, weekendNotesForDates } from '@/lib/scheduling/bookingSlotRules'
 import { CustomOtherLocationField } from '@/components/scheduling/CustomOtherLocationField'
 import { PanelHeader } from '@/components/settings/primitives'
 import { ORPHAN_BOOKING_LABEL } from '@/lib/canonical'
+import { useOrganizationDocument } from '@/lib/stores/organizationDocumentStore'
 
 type BookToTab = 'other' | 'projects' | 'smallWorks'
 type ManagerSlot = 'FULL_DAY' | 'AM' | 'PM' | 'CUSTOM_HOURS'
@@ -149,6 +150,9 @@ export function BookLabourFlowScreen({
   const [saving, setSaving] = useState(false)
   // Rulebook 1.16.0 §5: double bookings (orange) and annual leave (purple) in one list; tick or ✕ each.
   const conflictGate = useBookingConflictGate()
+  // Rulebook 1.17.0 §4.3: the live organisation document, so the weekend note, prefill and break check read the
+  // working hours in effect on the booking day (`effectivePayrollTimePolicy` in bookingSlotRules).
+  useOrganizationDocument()
   const [customStart, setCustomStart] = useState('07:30')
   const [customEnd, setCustomEnd] = useState('16:00')
   const [breakRemoved, setBreakRemoved] = useState(false)
@@ -1161,9 +1165,12 @@ function SlotPicker({
           </button>
         ))}
       </div>
-      {weekendNoteForDate(day, policy) ? (
-        <p className="px-1 text-[11px] text-[var(--ink3)]">{weekendNoteForDate(day, policy)}</p>
-      ) : null}
+      {/* Rulebook 1.17.0 (`weekendBookingNotes`). */}
+      {weekendNotesForDates([day], policy).map((note) => (
+        <p key={note} className="px-1 text-[11px] text-[var(--ink3)]">
+          {note}
+        </p>
+      ))}
       <button
         type="button"
         disabled={disabled}

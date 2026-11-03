@@ -3,7 +3,8 @@
 /**
  * Rulebook 1.16.0 §13: one account per device token. Finds every users document holding `token`
  * (`pushTokens array-contains`) and removes it from all but `ownerUid` (`pushTokenOwnerWrites` from the packed
- * rulebook). Logs only token suffixes.
+ * rulebook). 1.17.0: a placeholder users document (UUID-shaped id) is never the owner — the rulebook then returns one
+ * removal from that placeholder and the signed-in accounts keep the token. Logs only token suffixes.
  */
 async function removeTokenFromOtherAccounts({ db, canonical, token, ownerUid, logger, fieldValue }) {
   const snap = await db.collection('users').where('pushTokens', 'array-contains', token).get()
@@ -18,7 +19,7 @@ async function removeTokenFromOtherAccounts({ db, canonical, token, ownerUid, lo
   }
   await batch.commit()
   if (logger && typeof logger.info === 'function') {
-    logger.info('moved push token to its newest account', {
+    logger.info(canonical.isPushTokenPlaceholderUserId(ownerUid) ? 'removed push token from a placeholder users document' : 'moved push token to its newest account', {
       ownerUid,
       removedFrom: writes.map((write) => write.userId),
       suffix: String(token).slice(-10),

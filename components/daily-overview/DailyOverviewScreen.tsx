@@ -24,6 +24,7 @@ import { useHolidayStore } from '@/lib/stores/holidayStore'
 import { useSubcontractorStore } from '@/lib/stores/subcontractorStore'
 import { canViewDailyOverview, hasAdminAccess } from '@/lib/permissions'
 import { dateFromDayKey, dayKey, londonMidnight } from '@/lib/ios-parity/londonTime'
+import { effectivePayrollTimePolicy } from '@/lib/canonical'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 import { watchSubcontractorBookings } from '@/lib/weekly-report/loadSubcontractorBookings'
 import type { SubcontractorBookingRow } from '@/lib/weekly-report/weeklyReportData'
@@ -139,10 +140,12 @@ export function DailyOverviewScreen() {
   useEffect(() => {
     if (!organization?.id || liveOrganization.organizationId !== organization.id || !liveOrganization.data) return
     const details = organizationDetailsFromData(organization.id, liveOrganization.data)
-    setPayrollPolicy(details.payrollTimePolicy)
+    // Rulebook 1.17.0 §4.3 / §6: the working hours in effect on the day shown (`effectivePayrollTimePolicy`), so a
+    // past day keeps its old rules and a day after a scheduled change uses the new ones.
+    setPayrollPolicy(effectivePayrollTimePolicy(liveOrganization.data, dayKey(day, orgTimeZone), orgTimeZone))
     setIncludeWeekendsForUnbookedLabour(details.warningDetection.includeWeekendsForUnbookedLabour)
     setExcludedUserIdsFromUnbookedWarnings(details.warningDetection.excludedUserIdsFromUnbookedWarnings ?? [])
-  }, [organization?.id, liveOrganization.organizationId, liveOrganization.data])
+  }, [organization?.id, liveOrganization.organizationId, liveOrganization.data, day, orgTimeZone])
 
   // Rulebook 1.9.0 §1: subcontractor bookings are live while Daily Overview is open.
   useEffect(() => {
