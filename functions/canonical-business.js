@@ -98,6 +98,7 @@ var ProjectPlannerCanonical = (() => {
     KNOWN_NOTIFICATION_TYPES: () => KNOWN_NOTIFICATION_TYPES,
     LEAVE_SUBMIT_LABEL: () => LEAVE_SUBMIT_LABEL,
     LEAVE_SUBMIT_REQUEST_LABEL: () => LEAVE_SUBMIT_REQUEST_LABEL,
+    LEAVE_YEAR_MONTHS_MESSAGE: () => LEAVE_YEAR_MONTHS_MESSAGE,
     LEGACY_NOTIFICATION_PREFERENCE_ALIASES: () => LEGACY_NOTIFICATION_PREFERENCE_ALIASES,
     LEGACY_NOTIFICATION_TYPES: () => LEGACY_NOTIFICATION_TYPES,
     LEGACY_PLACEHOLDER_DOCUMENT_ID: () => LEGACY_PLACEHOLDER_DOCUMENT_ID,
@@ -151,9 +152,11 @@ var ProjectPlannerCanonical = (() => {
     PAY_BASIS_HOURLY_HELP: () => PAY_BASIS_HOURLY_HELP,
     PAY_BASIS_SAVE_NOTE: () => PAY_BASIS_SAVE_NOTE,
     PAY_HISTORY_NOT_LOADED_MESSAGE: () => PAY_HISTORY_NOT_LOADED_MESSAGE,
+    PAY_STANDARD_DAY_MIN_HOURS: () => PAY_STANDARD_DAY_MIN_HOURS,
     PAY_WRITE_GROUP: () => PAY_WRITE_GROUP,
     PERMISSION_DEFAULT_ON: () => PERMISSION_DEFAULT_ON,
     PERMISSION_TOGGLE_CATALOGUE: () => PERMISSION_TOGGLE_CATALOGUE,
+    PLATFORM_CONFIG_APP_PATH: () => PLATFORM_CONFIG_APP_PATH,
     PLATFORM_OWNER_EMAIL: () => PLATFORM_OWNER_EMAIL,
     PROJECT_TASK_PRIORITIES: () => PROJECT_TASK_PRIORITIES,
     PROJECT_TASK_STATUSES: () => PROJECT_TASK_STATUSES,
@@ -230,6 +233,7 @@ var ProjectPlannerCanonical = (() => {
     addUserPermissionDefaults: () => addUserPermissionDefaults,
     annualLeaveBalance: () => annualLeaveBalance,
     annualLeavePendingOmitFields: () => annualLeavePendingOmitFields,
+    appUpdateRequired: () => appUpdateRequired,
     applyEmploymentTypeChange: () => applyEmploymentTypeChange,
     applyRemainingOverride: () => applyRemainingOverride,
     approvedWarningKeys: () => approvedWarningKeys,
@@ -299,6 +303,7 @@ var ProjectPlannerCanonical = (() => {
     companyDetailsRegionPrompt: () => companyDetailsRegionPrompt,
     companyDetailsValidationError: () => companyDetailsValidationError,
     companyDetailsWriteFields: () => companyDetailsWriteFields,
+    compareAppVersions: () => compareAppVersions,
     compareInboxNotificationsByCreatedAt: () => compareInboxNotificationsByCreatedAt,
     compareWarningDayKeys: () => compareWarningDayKeys,
     coverageWindow: () => coverageWindow,
@@ -377,6 +382,7 @@ var ProjectPlannerCanonical = (() => {
     inboxNotificationVisibleToUser: () => inboxNotificationVisibleToUser,
     intervalsOverlap: () => intervalsOverlap,
     invitationCreateFields: () => invitationCreateFields,
+    invitationIsOperativeOnly: () => invitationIsOperativeOnly,
     invitationProfileFields: () => invitationProfileFields,
     invitationRole: () => invitationRole,
     invitationUsedWriteFields: () => invitationUsedWriteFields,
@@ -416,6 +422,7 @@ var ProjectPlannerCanonical = (() => {
     isTimesheetManagerSigned: () => isTimesheetManagerSigned,
     isTimesheetOperativeSigned: () => isTimesheetOperativeSigned,
     isTombstonedBookingCollection: () => isTombstonedBookingCollection,
+    isVerifiedPlatformOwner: () => isVerifiedPlatformOwner,
     isWarningActive: () => isWarningActive,
     isWorkLiveOn: () => isWorkLiveOn,
     jobClientId: () => jobClientId,
@@ -444,6 +451,7 @@ var ProjectPlannerCanonical = (() => {
     leaveSlotKind: () => leaveSlotKind,
     leaveSubmitLabel: () => leaveSubmitLabel,
     leaveYearBounds: () => leaveYearBounds,
+    leaveYearEndMonth: () => leaveYearEndMonth,
     legalPackNeedsAcceptance: () => legalPackNeedsAcceptance,
     lineManagerCandidates: () => lineManagerCandidates,
     lineManagerIds: () => lineManagerIds,
@@ -543,6 +551,7 @@ var ProjectPlannerCanonical = (() => {
     organizationIdFromValue: () => organizationIdFromValue,
     organizationIdsMatch: () => organizationIdsMatch,
     organizationLevelFor: () => organizationLevelFor,
+    organizationMemberActive: () => organizationMemberActive,
     organizationNameToFirestore: () => organizationNameToFirestore,
     organizationNameWriteFields: () => organizationNameWriteFields,
     organizationScopedKey: () => organizationScopedKey,
@@ -775,7 +784,9 @@ var ProjectPlannerCanonical = (() => {
     userRosterSegment: () => userRosterSegment,
     userTimesheetSubjects: () => userTimesheetSubjects,
     usersMissingLineManager: () => usersMissingLineManager,
+    validateAnnualLeaveDefaults: () => validateAnnualLeaveDefaults,
     validateInvoicingSettings: () => validateInvoicingSettings,
+    validateLeaveYearMonths: () => validateLeaveYearMonths,
     validatePayrollTimePolicy: () => validatePayrollTimePolicy,
     variationLineId: () => variationLineId,
     variationLogItemId: () => variationLogItemId,
@@ -852,21 +863,31 @@ var ProjectPlannerCanonical = (() => {
     const { y, m, d } = partsInZone(date, timeZone);
     return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
   }
+  function zoneOffsetMs(instantMs2, timeZone) {
+    const floored = Math.floor(instantMs2 / 6e4) * 6e4;
+    const p = partsInZone(new Date(floored), timeZone);
+    return Date.UTC(p.y, p.m - 1, p.d, p.h, p.min) - floored;
+  }
+  function localMidnightMs(y, m, d, timeZone) {
+    const wall = Date.UTC(y, m - 1, d, 0, 0, 0);
+    const dayOf = (ms) => {
+      const p = partsInZone(new Date(ms), timeZone);
+      return Date.UTC(p.y, p.m - 1, p.d);
+    };
+    const first = wall - zoneOffsetMs(wall, timeZone);
+    const second = wall - zoneOffsetMs(first, timeZone);
+    if (dayOf(second) === wall) return second;
+    const third = wall - zoneOffsetMs(second, timeZone);
+    return dayOf(third) === wall ? third : second;
+  }
   function midnightInZone(date, timeZone) {
     const { y, m, d } = partsInZone(date, timeZone);
-    const guess = new Date(Date.UTC(y, m - 1, d, 0, 0, 0));
-    const shown = partsInZone(guess, timeZone);
-    let deltaMin = shown.h * 60 + shown.min;
-    const shownKey = dayKeyInZone(guess, timeZone);
-    const wanted = `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-    if (shownKey < wanted) deltaMin -= 24 * 60;
-    else if (shownKey > wanted) deltaMin += 24 * 60;
-    return new Date(guess.getTime() - deltaMin * 6e4);
+    return new Date(localMidnightMs(y, m, d, timeZone));
   }
   function addDaysInZone(date, days, timeZone) {
     const { y, m, d } = partsInZone(date, timeZone);
-    const noon = new Date(Date.UTC(y, m - 1, d + days, 12, 0, 0));
-    return midnightInZone(noon, timeZone);
+    const shifted = new Date(Date.UTC(y, m - 1, d + days));
+    return new Date(localMidnightMs(shifted.getUTCFullYear(), shifted.getUTCMonth() + 1, shifted.getUTCDate(), timeZone));
   }
   function daysInZoneMonth(date, timeZone) {
     const { y, m } = partsInZone(date, timeZone);
@@ -882,7 +903,9 @@ var ProjectPlannerCanonical = (() => {
   }
   function dateFromDayKeyInZone(key3, timeZone) {
     const [y, m, d] = key3.split("-").map(Number);
-    return midnightInZone(new Date(Date.UTC(y, m - 1, d, 12, 0, 0)), timeZone);
+    const day = new Date(Date.UTC(y, m - 1, d));
+    if (Number.isNaN(day.getTime())) return /* @__PURE__ */ new Date(NaN);
+    return new Date(localMidnightMs(day.getUTCFullYear(), day.getUTCMonth() + 1, day.getUTCDate(), timeZone));
   }
   function unixStartOfDayInZone(date, timeZone) {
     return Math.floor(midnightInZone(date, timeZone).getTime() / 1e3);
@@ -1197,7 +1220,8 @@ var ProjectPlannerCanonical = (() => {
   }
   function shiftMonth(reference, offset, timeZone) {
     const { y, m } = partsInZone(reference, timeZone);
-    return midnightInZone(new Date(Date.UTC(y, m - 1 + offset, 1, 12, 0, 0)), timeZone);
+    const first = new Date(Date.UTC(y, m - 1 + offset, 1));
+    return dateFromDayKeyInZone(`${first.getUTCFullYear()}-${String(first.getUTCMonth() + 1).padStart(2, "0")}-01`, timeZone);
   }
   function paymentRunMonthDay(value) {
     const n = Number(value);
@@ -3568,27 +3592,45 @@ var ProjectPlannerCanonical = (() => {
     if (!Array.isArray(value)) return [];
     return value.map((id2) => String(id2).trim()).filter(Boolean);
   }
+  var PAYROLL_POLICY_LIMITS = {
+    paidHours: { min: 1, max: 12 },
+    breakMinutes: { min: 0, max: 120 },
+    multiplier: { min: 1, max: 3 }
+  };
+  function policyNumber(raw, fallback, limits, options = {}) {
+    if (raw == null || typeof raw === "string" && raw.trim() === "" || typeof raw === "boolean") return fallback;
+    const n = Number(raw);
+    if (!Number.isFinite(n)) return fallback;
+    if (options.zeroIsMissing && n <= 0) return fallback;
+    if (options.allowZero && n === 0) return 0;
+    return Math.min(Math.max(n, limits.min), limits.max);
+  }
   function parseWeekend(data, dayDefault) {
     if (!data || typeof data !== "object") return { ...dayDefault };
     const fallback = WEEKEND_FIELD_FALLBACK;
     return {
       allHoursAtMultiplierMode: data.allHoursAtMultiplierMode === true,
-      allHoursMultiplier: Number(data.allHoursMultiplier ?? fallback.allHoursMultiplier),
+      allHoursMultiplier: policyNumber(data.allHoursMultiplier, fallback.allHoursMultiplier, PAYROLL_POLICY_LIMITS.multiplier),
       definedWindowStart: String(
         firstPresent(data, ["customStandardStart", "definedWindowStart"], fallback.definedWindowStart ?? "07:30")
       ),
       definedWindowEnd: String(
         firstPresent(data, ["customStandardEnd", "definedWindowEnd"], fallback.definedWindowEnd ?? "16:00")
       ),
-      countsAsStandardHours: Number(
-        firstPresent(data, ["countsAsHours", "countsAsStandardHours"], fallback.countsAsStandardHours ?? 8)
+      countsAsStandardHours: policyNumber(
+        firstPresent(data, ["countsAsHours", "countsAsStandardHours"], fallback.countsAsStandardHours ?? 8),
+        fallback.countsAsStandardHours ?? 8,
+        PAYROLL_POLICY_LIMITS.paidHours,
+        { allowZero: true }
       ),
-      outsideWindowMultiplier: Number(
+      outsideWindowMultiplier: policyNumber(
         firstPresent(
           data,
           ["outsideStandardWindowMultiplier", "outsideWindowMultiplier"],
           fallback.outsideWindowMultiplier ?? 1.5
-        )
+        ),
+        fallback.outsideWindowMultiplier ?? 1.5,
+        PAYROLL_POLICY_LIMITS.multiplier
       ),
       sameAsSaturday: false
     };
@@ -3611,12 +3653,24 @@ var ProjectPlannerCanonical = (() => {
     return {
       standardDayStart: String(data.standardDayStart ?? DEFAULT_PAYROLL_POLICY.standardDayStart),
       standardDayEnd: String(data.standardDayEnd ?? DEFAULT_PAYROLL_POLICY.standardDayEnd),
-      unpaidBreakMinutes: Number(data.unpaidBreakMinutes ?? DEFAULT_PAYROLL_POLICY.unpaidBreakMinutes),
-      standardPaidHours: Number(data.standardPaidHours ?? DEFAULT_PAYROLL_POLICY.standardPaidHours),
+      // 1.12.0 §4.3: numbers are read into PAYROLL_POLICY_LIMITS (missing / blank / not a number → the default).
+      unpaidBreakMinutes: policyNumber(
+        data.unpaidBreakMinutes,
+        DEFAULT_PAYROLL_POLICY.unpaidBreakMinutes,
+        PAYROLL_POLICY_LIMITS.breakMinutes
+      ),
+      standardPaidHours: policyNumber(
+        data.standardPaidHours,
+        DEFAULT_PAYROLL_POLICY.standardPaidHours,
+        PAYROLL_POLICY_LIMITS.paidHours,
+        { zeroIsMissing: true }
+      ),
       breakWindowStart: String(data.breakWindowStart ?? DEFAULT_PAYROLL_POLICY.breakWindowStart),
       breakWindowEnd: String(data.breakWindowEnd ?? DEFAULT_PAYROLL_POLICY.breakWindowEnd),
-      weekdayOutsideStandardMultiplier: Number(
-        data.weekdayOutsideStandardMultiplier ?? DEFAULT_PAYROLL_POLICY.weekdayOutsideStandardMultiplier
+      weekdayOutsideStandardMultiplier: policyNumber(
+        data.weekdayOutsideStandardMultiplier,
+        DEFAULT_PAYROLL_POLICY.weekdayOutsideStandardMultiplier,
+        PAYROLL_POLICY_LIMITS.multiplier
       ),
       saturday: parseWeekend(data.saturday, DEFAULT_SATURDAY_PAYROLL),
       sunday: (() => {
@@ -4771,10 +4825,25 @@ var ProjectPlannerCanonical = (() => {
     if (!year || month < 1 || month > 12 || day < 1 || day > 31) return null;
     return { year, month, day };
   }
+  function leaveYearEndMonth(startMonth) {
+    const start = clampMonth(startMonth, 1);
+    return start === 1 ? 12 : start - 1;
+  }
+  var LEAVE_YEAR_MONTHS_MESSAGE = "The leave year must be 12 months: it ends the month before it starts.";
+  function validateLeaveYearMonths(startMonth, endMonth) {
+    const start = Number(startMonth);
+    const end = Number(endMonth);
+    const month = (n) => Number.isInteger(n) && n >= 1 && n <= 12;
+    if (!month(start) || !month(end)) return "Choose the months the leave year starts and ends.";
+    return end === leaveYearEndMonth(start) ? null : LEAVE_YEAR_MONTHS_MESSAGE;
+  }
+  function validateAnnualLeaveDefaults(defaults) {
+    return validateLeaveYearMonths(defaults?.startMonth, defaults?.endMonth);
+  }
   function leaveYearBounds(input) {
     const parsed = parseDayKey(input.onDayKey);
     const startMonth = clampMonth(input.startMonth, 1);
-    const endMonth = clampMonth(input.endMonth, 12);
+    const endMonth = leaveYearEndMonth(startMonth);
     if (!parsed) {
       const startDayKey2 = `1970-${pad22(startMonth)}-01`;
       const endDay2 = lastDayOfMonth(endMonth <= startMonth ? 1971 : 1970, endMonth);
@@ -6492,7 +6561,13 @@ var ProjectPlannerCanonical = (() => {
     const start = parseClockMinutes(policy.breakWindowStart);
     const end = parseClockMinutes(policy.breakWindowEnd);
     if (start == null || end == null || end <= start) return 0;
-    return Math.min(span.end, end) > Math.max(span.start, start) ? Number(policy.unpaidBreakMinutes) || 0 : 0;
+    const overlap = Math.min(span.end, end) - Math.max(span.start, start);
+    if (!(overlap > 0)) return 0;
+    const unpaid = Math.max(Number(policy.unpaidBreakMinutes) || 0, 0);
+    return Math.min(overlap, unpaid);
+  }
+  function nothingPaid(span, multiplier) {
+    return result([segment("standardWindow", 0, 1, span.start, span.end, 0)], multiplier);
   }
   function outsideSegments(span, windowStart, windowEnd, multiplier) {
     const rows3 = [];
@@ -6531,7 +6606,7 @@ var ProjectPlannerCanonical = (() => {
       if (hours > 1e-3) rows3.push(segment("standardWindow", hours, 1, insideStart, insideEnd));
     }
     rows3.push(...outsideSegments(span, ds, de, multiplier));
-    if (rows3.length === 0) return legacySlot(booking, policy, multiplier);
+    if (rows3.length === 0) return nothingPaid(span, multiplier);
     return result(rows3, multiplier);
   }
   function weekendDay(booking, policy, weekend, multiplier) {
@@ -6559,7 +6634,7 @@ var ProjectPlannerCanonical = (() => {
       rows3.push(segment("standardWindow", credited, 1, overlapStart, overlapEnd, (overlapEnd - overlapStart) / 60));
     }
     rows3.push(...outsideSegments(span, ws, we, multiplier));
-    if (rows3.length === 0) return legacySlot(booking, policy, multiplier);
+    if (rows3.length === 0) return nothingPaid(span, multiplier);
     return result(rows3, multiplier);
   }
   function payrollHoursResult(input) {
@@ -7084,6 +7159,7 @@ var ProjectPlannerCanonical = (() => {
   function roundPennies(amount) {
     return Math.round(Number(amount) * 100) / 100;
   }
+  var PAY_STANDARD_DAY_MIN_HOURS = 1;
   function orgDayHours(standardPaidHours) {
     const hours = Number(standardPaidHours);
     return hours > 0 ? hours : 0.01;
@@ -7091,9 +7167,16 @@ var ProjectPlannerCanonical = (() => {
   function payForHours(input) {
     const paidHours = Number(input.paidHours);
     if (!(paidHours > 0)) return 0;
-    const multiplier = input.otMultiplier ?? 1;
-    if (input.payBasis === "hourly") return roundPennies((input.hourlyRate ?? 0) * paidHours * multiplier);
-    return roundPennies((input.dayRate ?? 0) * (paidHours / orgDayHours(input.standardDayHours)) * multiplier);
+    const rawMultiplier = Number(input.otMultiplier ?? 1);
+    const multiplier = Number.isFinite(rawMultiplier) && rawMultiplier > 0 ? rawMultiplier : 1;
+    const rate = (value) => {
+      const n = Number(value ?? 0);
+      return Number.isFinite(n) ? n : 0;
+    };
+    if (input.payBasis === "hourly") return roundPennies(rate(input.hourlyRate) * paidHours * multiplier);
+    const standardDay = Number(input.standardDayHours);
+    if (!(standardDay >= PAY_STANDARD_DAY_MIN_HOURS)) return 0;
+    return roundPennies(rate(input.dayRate) * (paidHours / standardDay) * multiplier);
   }
 
   // lib/canonical/peopleDocuments.ts
@@ -8777,8 +8860,8 @@ var ProjectPlannerCanonical = (() => {
   // lib/canonical/rulebookStamp.ts
   function rulebookStamp() {
     return {
-      version: true ? "1.11.0" : "",
-      sha256: true ? "e5a5340c7dae8248326f59ccc643648a37a248e67f82709db838e57a3ccc8ec2" : ""
+      version: true ? "1.12.1" : "",
+      sha256: true ? "9c68f0852d2094f396ebaf8beedbe157f440bf1da7a11ecec633c31856032950" : ""
     };
   }
 
@@ -9425,11 +9508,6 @@ var ProjectPlannerCanonical = (() => {
     const promoted = promotedFields(state, input.todayKey, tz);
     return Object.keys(promoted).length > 0 ? promoted : { payrollTimePolicyScheduled: null };
   }
-  var PAYROLL_POLICY_LIMITS = {
-    paidHours: { min: 1, max: 12 },
-    breakMinutes: { min: 0, max: 120 },
-    multiplier: { min: 1, max: 3 }
-  };
   function inRange(value, limits) {
     return typeof value === "number" && Number.isFinite(value) && value >= limits.min && value <= limits.max;
   }
@@ -10434,6 +10512,9 @@ var ProjectPlannerCanonical = (() => {
   var PLATFORM_OWNER_EMAIL = "info@projectplanner.us";
   function isPlatformOwnerEmail(email) {
     return typeof email === "string" && email.trim().toLowerCase() === PLATFORM_OWNER_EMAIL;
+  }
+  function isVerifiedPlatformOwner(token) {
+    return isPlatformOwnerEmail(token?.email) && token?.emailVerified === true;
   }
   function passwordMinLength(options) {
     const developer = options?.developerAccount === true || isPlatformOwnerEmail(options?.email);
@@ -12580,6 +12661,33 @@ var ProjectPlannerCanonical = (() => {
     fields.updatedAt = input.now;
     return { mode: "update", fields, remove };
   }
+  function organizationMemberActive(input) {
+    const orgId = String(input?.organizationId ?? "").trim();
+    const uid = String(input?.userId ?? "").trim();
+    if (!orgId || !uid) return { member: false, active: false };
+    const org = input.organization && typeof input.organization === "object" ? input.organization : {};
+    const members = org.members && typeof org.members === "object" ? org.members : {};
+    const user = input.user && typeof input.user === "object" ? input.user : null;
+    const membership = input.membership && typeof input.membership === "object" ? input.membership : null;
+    const homeOrg = user ? membershipOrganizationId(user.organizationId) : "";
+    const home = homeOrg !== "" && homeOrg.toLowerCase() === orgId.toLowerCase();
+    const member = members[uid] != null && members[uid] !== "" || String(org.creatorUserId ?? "") === uid || home || membership != null;
+    const homeInactive = home && user?.isActive === false;
+    const membershipInactive = membership != null && (membership.accountActive ?? membership.isActive) === false;
+    return { member, active: member && !homeInactive && !membershipInactive };
+  }
+  function membershipOrganizationId(value) {
+    if (typeof value === "string") {
+      const parts = value.trim().split("/");
+      return (parts[parts.length - 1] ?? "").trim();
+    }
+    if (value && typeof value === "object") {
+      const row2 = value;
+      if (typeof row2.id === "string") return row2.id.trim();
+      if (typeof row2.path === "string") return membershipOrganizationId(row2.path);
+    }
+    return "";
+  }
 
   // lib/canonical/crossPlatformContract.ts
   var CROSS_PLATFORM_CONTRACT_READERS = {
@@ -12719,6 +12827,17 @@ var ProjectPlannerCanonical = (() => {
     if (permissions.adminAccess === true) return "admin";
     if (permissions.operativeMode === true) return "operative";
     return "manager";
+  }
+  var OPERATIVE_INVITE_FORBIDDEN_FLAGS = ["adminAccess", "isSuperAdmin", "manager", "operatives"];
+  function flagOn3(value) {
+    return value === true || value === 1;
+  }
+  function invitationIsOperativeOnly(invitation) {
+    const row2 = record7(invitation) ?? {};
+    const permissions = record7(row2.permissions) ?? {};
+    if (invitationRole(row2) !== "operative") return false;
+    if (!(flagOn3(permissions.operativeMode) || text18(row2.role).toLowerCase() === "operative")) return false;
+    return OPERATIVE_INVITE_FORBIDDEN_FLAGS.every((key3) => !flagOn3(permissions[key3]) && !flagOn3(row2[key3]));
   }
   function invitationProfileFields(invitation) {
     const row2 = record7(invitation) ?? {};
@@ -12923,6 +13042,45 @@ var ProjectPlannerCanonical = (() => {
     const present = new Set(docs.map((row2) => text20(row2.id).toLowerCase()));
     const unreadIds = anchored.filter((id2) => !present.has(id2.toLowerCase()) && !missing.has(id2.toLowerCase()));
     return { people, userIdAliases: folded.userIdAliases, anchoredIds: anchored, unreadIds };
+  }
+
+  // lib/canonical/platformConfig.ts
+  var PLATFORM_CONFIG_APP_PATH = "platformConfig/app";
+  function finiteNumber4(value) {
+    if (typeof value === "number") return Number.isFinite(value) ? value : null;
+    if (typeof value === "string" && /^\s*\d+(\.\d+)?\s*$/.test(value)) return Number(value);
+    return null;
+  }
+  function versionParts(value) {
+    if (typeof value === "number" && Number.isFinite(value) && value >= 0) return [value];
+    if (typeof value !== "string") return null;
+    const raw = value.trim().replace(/^v/i, "");
+    if (!/^\d+(\.\d+)*$/.test(raw)) return null;
+    return raw.split(".").map(Number);
+  }
+  function compareAppVersions(a, b) {
+    const length = Math.max(a.length, b.length);
+    for (let i = 0; i < length; i += 1) {
+      const left = a[i] ?? 0;
+      const right = b[i] ?? 0;
+      if (left !== right) return left < right ? -1 : 1;
+    }
+    return 0;
+  }
+  function appUpdateRequired(running, config) {
+    if (!config || typeof config !== "object") return false;
+    const platform = String(running?.platform ?? "").trim().toLowerCase();
+    if (platform === "ios") {
+      const minimum = finiteNumber4(config.minimumIosBuild);
+      const build = finiteNumber4(running?.runningBuild);
+      return minimum != null && build != null && build < minimum;
+    }
+    if (platform === "web") {
+      const minimum = versionParts(config.minimumWebVersion);
+      const version = versionParts(running?.runningBuild);
+      return minimum != null && version != null && compareAppVersions(version, minimum) < 0;
+    }
+    return false;
   }
   return __toCommonJS(bundleEntry_exports);
 })();

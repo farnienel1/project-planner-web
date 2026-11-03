@@ -99,17 +99,20 @@ service cloud.firestore {
   // (email '', passwordSet true) never qualifies. Lets the invitee create users/{authUid}
   // before the claim moves to authUid.
   function inviteClaimIsPendingPlaceholder(organizationId, emailKey) {
-    return exists(/databases/(default)/documents/organizations/$(organizationId)/userEmails/$(emailKey)) &&
-           get(/databases/(default)/documents/organizations/$(organizationId)/userEmails/$(emailKey)).data.userId is string &&
-           exists(/databases/(default)/documents/users/$(get(/databases/(default)/documents/organizations/$(organizationId)/userEmails/$(emailKey)).data.userId)) &&
-           get(/databases/(default)/documents/users/$(get(/databases/(default)/documents/organizations/$(organizationId)/userEmails/$(emailKey)).data.userId)).data.passwordSet != true &&
-           get(/databases/(default)/documents/users/$(get(/databases/(default)/documents/organizations/$(organizationId)/userEmails/$(emailKey)).data.userId)).data.email is string &&
-           get(/databases/(default)/documents/users/$(get(/databases/(default)/documents/organizations/$(organizationId)/userEmails/$(emailKey)).data.userId)).data.email.lower() == emailKey &&
-           'organizationId' in get(/databases/(default)/documents/users/$(get(/databases/(default)/documents/organizations/$(organizationId)/userEmails/$(emailKey)).data.userId)).data &&
-           userDocOrganizationMatches(
-             get(/databases/(default)/documents/users/$(get(/databases/(default)/documents/organizations/$(organizationId)/userEmails/$(emailKey)).data.userId)).data,
-             organizationId
-           );
+    let claimPath = /databases/(default)/documents/organizations/$(organizationId)/userEmails/$(emailKey);
+    let claimed = exists(claimPath) ? get(claimPath).data.get('userId', '') : '';
+    return claimed is string && claimed != '' && !claimed.matches('.*/.*') &&
+      pendingPlaceholderFor(claimed, organizationId, emailKey);
+  }
+  function pendingPlaceholderFor(placeholderId, organizationId, emailKey) {
+    let path = /databases/(default)/documents/users/$(placeholderId);
+    let placeholder = exists(path) ? get(path).data : {};
+    return exists(path) &&
+           placeholder.get('passwordSet', false) != true &&
+           placeholder.get('email', null) is string &&
+           placeholder.email.lower() == emailKey &&
+           'organizationId' in placeholder &&
+           userDocOrganizationMatches(placeholder, organizationId);
   }
 
   // Fields that decide what an account may do. A self-created profile may not choose its own.
@@ -152,19 +155,27 @@ service cloud.firestore {
     let claimPath = /databases/(default)/documents/organizations/$(organizationId)/userEmails/$(emailKey);
     return (
       inviteClaimIsPendingPlaceholder(organizationId, emailKey) &&
-      noMorePrivilegeThan(
-        request.resource.data,
-        get(/databases/(default)/documents/users/$(get(claimPath).data.userId)).data
-      )
+      selfCreateCopiesPlaceholder(get(claimPath).data.userId)
     ) || (
       exists(claimPath) &&
       get(claimPath).data.userId == request.auth.uid &&
       isOrgMemberViaParentGet(organizationId) &&
+      // 1.12.0 (B3): a returning member re-creating their own profile brings no alias ids (deleting and re-creating
+      // it must not be a way round the self-update lock).
+      selfCreateAliasesWithin(request.resource.data, {}, '') &&
       (
         !raisesPrivileges(request.resource.data) ||
         get(/databases/(default)/documents/organizations/$(organizationId)).data.members[request.auth.uid] == 'admin'
       )
     );
+  }
+
+  // The invitee's new profile has no privilege the placeholder lacks and (1.12.0, B3) alias ids only from the
+  // placeholder, plus its own id.
+  function selfCreateCopiesPlaceholder(placeholderId) {
+    let placeholder = get(/databases/(default)/documents/users/$(placeholderId)).data;
+    return noMorePrivilegeThan(request.resource.data, placeholder) &&
+      selfCreateAliasesWithin(request.resource.data, placeholder, placeholderId);
   }
 
   // Admin of this company: users/{uid}.organizationId plus admin flags, or 'admin' in its members map.
@@ -189,12 +200,40 @@ service cloud.firestore {
            );
   }
 
+  // Rulebook 1.12.0 (H2, lib/canonical organizationMemberActive): deactivated in this organisation. Two sources, read
+  // where the role is read so the check costs no extra document in most rules:
+  //   - this organisation's own users document (`organizationId` names it): `isActive` false;
+  //   - for a member whose users document names another company: their membership here,
+  //     users/{uid}/orgMemberships/{orgId}.accountActive (else isActive) false.
+  // Only an explicit false deactivates; a missing document or flag is active (older data, founder bootstrap). A
+  // deactivated person still reads their own users document and memberships (the apps show the deactivated screen).
+  // Rulebook 1.12.1 §17/§18: the job and booking read scoping of 1.10.0 / 1.11.0 applies only once the platform owner
+  // has set `platformConfig/app.enforcedReads` to true (after both backfills and an app release with
+  // ENFORCED_READS_ACTIVE true). Until then every member of the organisation reads its jobs and bookings as before
+  // 1.10.0. One document read, shared by every rule that asks. Writes are never switched by it.
+  function enforcedReadsOn() {
+    let config = /databases/(default)/documents/platformConfig/app;
+    return exists(config) && get(config).data.get('enforcedReads', false) == true;
+  }
+
+  function callerHomeInactiveIn(organizationId) {
+    let home = callerHomeData();
+    return home.get('isActive', true) == false && homeOrgIs(home, organizationId);
+  }
+  function callerMembershipDeactivated(organizationId) {
+    let membership = /databases/(default)/documents/users/$(request.auth.uid)/orgMemberships/$(organizationId);
+    return exists(membership) &&
+      get(membership).data.get('accountActive', get(membership).data.get('isActive', true)) == false;
+  }
+
   // For subcollections under organizations/{organizationId}/… only (parent get is not the resource being read).
+  // 1.12.0 (H2): never for a person this organisation has deactivated.
   function belongsToOrganization(organizationId) {
     return request.auth != null && (
-      userOrgIdMatchesPath(organizationId) ||
-      isOrgMemberViaParentGet(organizationId) ||
-      isOrgCreatorViaParentGet(organizationId)
+      userOrgIdMatchesPath(organizationId)
+        ? callerHomeData().get('isActive', true) != false
+        : ((isOrgMemberViaParentGet(organizationId) || isOrgCreatorViaParentGet(organizationId)) &&
+           !callerMembershipDeactivated(organizationId))
     );
   }
 
@@ -297,10 +336,11 @@ service cloud.firestore {
   // Helper function to check if user is admin of organization
   // Includes adminAccess so users with admin permissions can update org (e.g. members map on user delete).
   function isOrganizationAdmin(organizationId) {
-    return request.auth != null && 
+    return request.auth != null &&
            exists(/databases/(default)/documents/users/$(request.auth.uid)) &&
            userOrgIdMatchesPath(organizationId) &&
-           adminLikeUser(get(/databases/(default)/documents/users/$(request.auth.uid)).data);
+           adminLikeUser(get(/databases/(default)/documents/users/$(request.auth.uid)).data) &&
+           get(/databases/(default)/documents/users/$(request.auth.uid)).data.get('isActive', true) != false;
   }
 
   // Rulebook 1.10.0 (H2): a person's role in an organisation comes from that organisation. Their users/{uid}
@@ -325,14 +365,18 @@ service cloud.firestore {
   // The caller's role in THIS organisation: 'admin' | 'manager' | 'operative' | 'member' | the listed role | ''.
   // 1.11.0: an admin is an admin (no operative mode, permissionLevelOf); otherwise operative mode wins
   // (lib/canonical staffAccess: operative mode is never staff).
+  // 1.12.0 (H2): '' for a person this organisation has deactivated (callerHomeInactiveIn / callerMembershipDeactivated), so every rule built on the
+  // role refuses them.
   function callerOrgRole(organizationId) {
     let listed = callerListedRole(organizationId);
     let home = callerHomeData();
     return homeOrgIs(home, organizationId) ? (
-      (listed == 'admin' || adminLikeUser(home)) ? 'admin' : (
-        isOperativeProfile(home) ? 'operative' : (materialManagerLikeUser(home) ? 'manager' : 'member')
+      home.get('isActive', true) == false ? '' : (
+        (listed == 'admin' || adminLikeUser(home)) ? 'admin' : (
+          isOperativeProfile(home) ? 'operative' : (materialManagerLikeUser(home) ? 'manager' : 'member')
+        )
       )
-    ) : listed;
+    ) : ((listed != '' && callerMembershipDeactivated(organizationId)) ? '' : listed);
   }
 
   // Rulebook 1.11.0 (lib/canonical/inviteAccept.ts invitationRole): the role an invitation gives — its `role`, else
@@ -344,6 +388,20 @@ service cloud.firestore {
         perms.get('adminAccess', false) == true ? 'admin' : (perms.get('operativeMode', false) == true ? 'operative' : 'manager')
       )
     );
+  }
+
+  // Rulebook 1.12.0 (B2, lib/canonical invitationIsOperativeOnly): an invitation that gives an operative and nothing
+  // more — role operative (`invitationRole`), operative mode on, and no admin, super admin, manager or operatives
+  // toggle at the top level or in `permissions`. The same test as managerCanCreateOperativeUser on users/{uid}: the
+  // only invitation a manager with operatives access may create, change or hold.
+  function invitationIsOperativeOnly(inv) {
+    let perms = inv.get('permissions', {}) is map ? inv.get('permissions', {}) : {};
+    return invitationRole(inv) == 'operative' &&
+      (truthyBool(perms.get('operativeMode', false)) || inv.get('role', '') == 'operative') &&
+      !truthyBool(perms.get('adminAccess', false)) && !truthyBool(perms.get('isSuperAdmin', false)) &&
+      !truthyBool(perms.get('manager', false)) && !truthyBool(perms.get('operatives', false)) &&
+      !truthyBool(inv.get('adminAccess', false)) && !truthyBool(inv.get('isSuperAdmin', false)) &&
+      !truthyBool(inv.get('manager', false)) && !truthyBool(inv.get('operatives', false));
   }
 
   // A genuine, unused invitation (`invitations/{invId}`) to the signed-in email for this organisation, marked used in
@@ -403,7 +461,8 @@ service cloud.firestore {
     return request.auth != null &&
            exists(/databases/(default)/documents/organizations/$(organizationId)) &&
            'members' in get(/databases/(default)/documents/organizations/$(organizationId)).data &&
-           get(/databases/(default)/documents/organizations/$(organizationId)).data.members[request.auth.uid] == 'admin';
+           get(/databases/(default)/documents/organizations/$(organizationId)).data.members[request.auth.uid] == 'admin' &&
+           !callerHomeInactiveIn(organizationId);
   }
   
   // Helper function to check if current user is super admin or has admin access
@@ -451,15 +510,13 @@ service cloud.firestore {
   }
 
   // App owner only (Project Planner), never an organisation admin.
+  // Rulebook 1.12.0 (B1, isPlatformOwnerEmail): only the signed-in Auth token's email, and only once Firebase Auth has
+  // verified it. The users document's `email` is never read here — anyone could write their own.
   function isPlatformOwner() {
-    return request.auth != null && (
-      (request.auth.token.email is string &&
-       request.auth.token.email.lower() == 'info@projectplanner.us') ||
-      (exists(/databases/(default)/documents/users/$(request.auth.uid)) &&
-       'email' in get(/databases/(default)/documents/users/$(request.auth.uid)).data &&
-       get(/databases/(default)/documents/users/$(request.auth.uid)).data.email is string &&
-       get(/databases/(default)/documents/users/$(request.auth.uid)).data.email.lower() == 'info@projectplanner.us')
-    );
+    return request.auth != null &&
+      request.auth.token.email is string &&
+      request.auth.token.email.lower() == 'info@projectplanner.us' &&
+      request.auth.token.email_verified == true;
   }
 
   // Variations: every admin and manager of the org (isOrgManagerOrAdmin). Never an operative.
@@ -557,7 +614,38 @@ service cloud.firestore {
              !flagOn(request.resource.data.permissions, 'adminAccess') ||
              alreadyPrivilegedAdmin(resource.data)
            ) &&
+           selfUpdateKeepsIdentityLinks() &&
            selfUpdateKeepsManagedFields();
+  }
+
+  // Rulebook 1.12.0 (B1, B3): on their own document a person never changes the fields other rules trust as who they
+  // are. `email` changes only to the signed-in Auth email (the sync after Firebase Auth has changed the sign-in email,
+  // `verifyBeforeUpdateEmail`); `formerUserIds` and `sameEmailUserIds` (the ids the rules and pay treat as theirs,
+  // `personIdSet`) never change on a self-update — admins, invite acceptance and the admin backfill write them. Admins
+  // editing a person go through the admin branch, not this one.
+  function selfUpdateKeepsIdentityLinks() {
+    let changed = request.resource.data.diff(resource.data).affectedKeys();
+    return (!('email' in changed) || (
+             request.resource.data.get('email', null) is string &&
+             request.auth.token.email is string &&
+             request.resource.data.email.trim().lower() == request.auth.token.email.lower()
+           )) &&
+           !changed.hasAny(['formerUserIds', 'sameEmailUserIds']);
+  }
+
+  // A list field as a set (missing or not a list: empty).
+  function idSetOf(data, key) {
+    return data.get(key, null) is list ? data.get(key, null).toSet() : [].toSet();
+  }
+  function idListOrMissing(data, key) {
+    return data.get(key, null) == null || data.get(key, null) is list;
+  }
+  // 1.12.0 (B3): a self-created profile carries no alias ids except what the invite placeholder it copies already had,
+  // plus that placeholder's own id (`inviteMigrationFormerIdWriteFields`). `placeholderId` '' means no placeholder.
+  function selfCreateAliasesWithin(next, source, placeholderId) {
+    return idListOrMissing(next, 'formerUserIds') && idListOrMissing(next, 'sameEmailUserIds') &&
+      idSetOf(next, 'formerUserIds').difference(idSetOf(source, 'formerUserIds')).hasOnly([placeholderId]) &&
+      idSetOf(next, 'sameEmailUserIds').difference(idSetOf(source, 'sameEmailUserIds')).size() == 0;
   }
 
   // Effective flag for a key that defaults to true when missing (dailyOverview, wholesalersOrderHistory):
@@ -701,6 +789,46 @@ service cloud.firestore {
   }
 
 
+  // An organisation id stored on a document: an id, an "organizations/<id>" string or a reference.
+  function docOrganizationId(data) {
+    let v = data.get('organizationId', '');
+    let raw = v is path ? string(v) : (v is string ? v : '');
+    let parts = raw.split('/');
+    return parts.size() > 0 ? parts[parts.size() - 1].trim() : '';
+  }
+  function orgCreatorIs(org, uid) {
+    return org != '' && !org.matches('.*[.].*') &&
+      exists(/databases/(default)/documents/organizations/$(org)) &&
+      get(/databases/(default)/documents/organizations/$(org)).data.get('creatorUserId', '') == uid;
+  }
+  // 1.12.0 (B4): a self-created profile is super admin only for the organisation's creator (deleting and re-creating
+  // one's own profile is not a way to become super admin).
+  function selfCreateSuperAdminAllowed() {
+    return !staffFlag(request.resource.data, 'isSuperAdmin') ||
+      orgCreatorIs(docOrganizationId(request.resource.data), request.auth.uid);
+  }
+  // Rulebook 1.12.0 (B4, §16): the current Super Admin of this organisation — its creator, or a users document of
+  // this organisation that is already super admin. Never a flag the caller set on themselves (see below).
+  function callerIsSuperAdminOf(org) {
+    return orgCreatorIs(org, request.auth.uid) ||
+      (staffFlag(callerHomeData(), 'isSuperAdmin') && org != '' && homeOrgIs(callerHomeData(), org));
+  }
+  // 1.12.0 (B4): an admin who is not the Super Admin never changes `isSuperAdmin` on anyone (their own document
+  // included) and never changes the role, permissions, active flag or company of the Super Admin or the creator.
+  // Ownership moves only as §16 says (the current Super Admin, or the platform owner).
+  function adminUpdateKeepsTopAccount(userId) {
+    let next = request.resource.data;
+    let prev = resource.data;
+    let org = docOrganizationId(prev);
+    return callerIsSuperAdminOf(org) || (
+      staffFlag(next, 'isSuperAdmin') == staffFlag(prev, 'isSuperAdmin') && (
+        !next.diff(prev).affectedKeys().hasAny(['isSuperAdmin', 'adminAccess', 'role', 'permissions', 'operativeMode',
+          'manager', 'operatives', 'isActive', 'organizationId']) ||
+        !(staffFlag(prev, 'isSuperAdmin') || orgCreatorIs(org, userId))
+      )
+    );
+  }
+
   // Rulebook 1.11.0 (rosterMembersForOrganization): the reader's own company, from their users document
   // (`organizationId` as an id, an "organizations/<id>" string or a reference).
   function callerHomeOrgId() {
@@ -714,7 +842,8 @@ service cloud.firestore {
   function anchoredInCallerCompany(userId) {
     let org = callerHomeOrgId();
     let path = /databases/(default)/documents/organizations/$(org);
-    return org != '' && !org.matches('.*[.].*') && exists(path) && (
+    // 1.12.0 (H2): never for a person their company has deactivated.
+    return org != '' && !org.matches('.*[.].*') && callerHomeData().get('isActive', true) != false && exists(path) && (
       get(path).data.get('members', {}).get(userId, null) != null ||
       get(path).data.get('creatorUserId', '') == userId
     );
@@ -752,14 +881,31 @@ service cloud.firestore {
           : resource.data.organizationId;
       }
 
-      function canAdministerInvitation() {
+      function invitationAdmin() {
         return invitationOrgId() is string &&
           invitationOrgId().size() > 0 && (
             isPlatformOwner() ||
             isOrganizationAdmin(invitationOrgId()) ||
-            isOrgAdminViaMembersMap(invitationOrgId()) ||
-            (isManagerWithOperativesAccess() && userOrgIdMatchesPath(invitationOrgId()))
+            isOrgAdminViaMembersMap(invitationOrgId())
           );
+      }
+      function invitationOperativesManager() {
+        return invitationOrgId() is string && invitationOrgId().size() > 0 &&
+          isManagerWithOperativesAccess() && userOrgIdMatchesPath(invitationOrgId()) &&
+          callerHomeData().get('isActive', true) != false;
+      }
+      // 1.12.0 (B2): a manager with operatives access lists and deletes their company's invitations, and creates or
+      // changes only an operative-only invitation (`invitationIsOperativeOnly`), before and after the write — never
+      // an admin's or manager's invitation.
+      function canAdministerInvitation() {
+        return invitationAdmin() || (
+          invitationOperativesManager() && (
+            request.method in ['list', 'delete'] || (
+              invitationIsOperativeOnly(request.resource.data) &&
+              (request.method == 'create' || invitationIsOperativeOnly(resource.data))
+            )
+          )
+        );
       }
 
       function canMarkInvitationUsed() {
@@ -778,11 +924,18 @@ service cloud.firestore {
     }
 
     // Founder confirm-account email tokens. Get-by-id is public so the emailed link can mark the token used.
+    // 1.12.0 (H5): never listed (each holds a founder's email, uid and organisation); created by the founder for
+    // themselves; marked used only by the signed-in person whose email it names.
     match /accountConfirmations/{token} {
       allow get: if true;
-      allow list: if request.auth != null;
-      allow create: if request.auth != null;
-      allow update: if resource.data.isUsed != true
+      allow list: if false;
+      allow create: if request.auth != null &&
+                    request.resource.data.get('userId', '') == request.auth.uid;
+      allow update: if request.auth != null
+                    && request.auth.token.email is string
+                    && resource.data.get('email', '') is string
+                    && resource.data.get('email', '').lower() == request.auth.token.email.lower()
+                    && resource.data.isUsed != true
                     && request.resource.data.isUsed == true
                     && request.resource.data.diff(resource.data).changedKeys().hasOnly(['isUsed', 'usedAt']);
       allow delete: if false;
@@ -822,14 +975,17 @@ service cloud.firestore {
          'organizationId' in request.resource.data &&
          request.resource.data.organizationId is string &&
          selfCreateHasAgeConfirmation() &&
-         selfCreateJoinsCompany(request.resource.data.organizationId, request.resource.data.email.lower())) ||
+         selfCreateJoinsCompany(request.resource.data.organizationId, request.resource.data.email.lower()) &&
+         selfCreateSuperAdminAllowed()) ||
         // Path 2: Admin of the target company creating another user there (e.g. invite placeholder).
         // Not their own profile: that is Path 1 or Path 3, which require age confirmation.
         (request.auth.uid != userId &&
          'organizationId' in request.resource.data &&
          isAdminOfCompany(request.resource.data.organizationId)) ||
-        // Path 3: Web org setup bootstrap (org exists, caller is admin in members map, writing own profile)
-        (isOrgBootstrapAdminProfileCreate(userId) && selfCreateHasAgeConfirmation()) ||
+        // Path 3: Web org setup bootstrap (org exists, caller is admin in members map, writing own profile).
+        // 1.12.0 (B3): a founder's new profile carries no alias ids.
+        (isOrgBootstrapAdminProfileCreate(userId) && selfCreateHasAgeConfirmation() &&
+         selfCreateAliasesWithin(request.resource.data, {}, '') && selfCreateSuperAdminAllowed()) ||
         // Path 4: Manager with operatives permission inviting a new operative
         managerCanCreateOperativeUser() ||
         // Path 5: Platform owner creating their own non-tenant profile
@@ -847,7 +1003,8 @@ service cloud.firestore {
          request.resource.data.email is string &&
          request.resource.data.email.lower() == request.auth.token.email.lower() &&
          userSelfUpdateKeepsPrivileges()) ||
-        ('organizationId' in resource.data && isAdminOfCompany(resource.data.organizationId)) ||
+        ('organizationId' in resource.data && isAdminOfCompany(resource.data.organizationId) &&
+         adminUpdateKeepsTopAccount(userId)) ||
         canManagerUpdateOperativeProfile(userId)
       ) && (
         // No shortcut for the account's own document: an admin moving their own profile
@@ -973,9 +1130,14 @@ service cloud.firestore {
             next.get('invitedBy', inv.get('invitedBy', '')) == inv.get('invitedBy', '');
         }
         allow read: if request.auth != null && request.auth.uid == userId;
+        // 1.12.0 (B4): `isSuperAdmin` on a membership changes only by that organisation's Super Admin.
+        function membershipSuperAdminUnchanged() {
+          return staffFlag(request.resource.data, 'isSuperAdmin') ==
+            (resource == null ? false : staffFlag(resource.data, 'isSuperAdmin'));
+        }
         allow create, update: if request.auth != null && (
-          isOrgAdminViaMembersMap(membershipOrgId) ||
-          isOrganizationAdmin(membershipOrgId) ||
+          ((isOrgAdminViaMembersMap(membershipOrgId) || isOrganizationAdmin(membershipOrgId)) &&
+           (membershipSuperAdminUnchanged() || callerIsSuperAdminOf(membershipOrgId))) ||
           (request.auth.uid == userId && membershipSelfWriteAllowed()) ||
           membershipFromInvitation()
         );
@@ -1116,9 +1278,15 @@ service cloud.firestore {
       // A single job document: every-job viewers; a manager listed on it (`isJobManager`); operatives and other
       // non-staff members of this organisation by id only (the jobs of their own bookings — the rules cannot see
       // which jobs those are, so `list` is refused to them).
+      // 1.12.0: before `enforcedReads` (enforcedReadsOn), every member of this organisation reads every job, as
+      // before 1.10.0 (`legacyMemberRead`).
+      function legacyMemberRead(role) {
+        return role != '' || canAccessOrganization(organizationId);
+      }
       function jobGetAllowed(kind) {
         let role = callerOrgRole(organizationId);
         return role in ['operative', 'member'] ||
+          (!enforcedReadsOn() && legacyMemberRead(role)) ||
           (role == 'manager' && resource != null && jobListsCaller(resource.data)) ||
           callerSeesEveryJob(role, kind);
       }
@@ -1126,7 +1294,8 @@ service cloud.firestore {
       function jobListAllowed(kind) {
         let role = callerOrgRole(organizationId);
         return callerSeesEveryJob(role, kind) ||
-          (role == 'manager' && request.auth.uid in resource.data.get('managerUserIds', []));
+          (role == 'manager' && request.auth.uid in resource.data.get('managerUserIds', [])) ||
+          (!enforcedReadsOn() && legacyMemberRead(role));
       }
       function jobCreateAllowed(kind) {
         return callerSeesEveryJob(callerOrgRole(organizationId), kind);
@@ -1146,6 +1315,7 @@ service cloud.firestore {
         let role = callerOrgRole(organizationId);
         let path = /databases/(default)/documents/organizations/$(organizationId)/$(kind)/$(jobId);
         return role in ['operative', 'member'] ||
+          (!enforcedReadsOn() && legacyMemberRead(role)) ||
           (role == 'manager' && exists(path) && jobListsCaller(get(path).data)) ||
           callerSeesEveryJob(role, kind);
       }
@@ -1201,14 +1371,26 @@ service cloud.firestore {
           (resource != null && string(resource.data.get('email', '')).lower() == request.auth.token.email.lower());
       }
 
+      // Rulebook 1.12.0 (H3): a roster row's `email` is who it is — `jobListsCaller` (managers rows) and
+      // `callerOwnsBookingId` (operatives rows) trust it. Changing the email of an existing row is admins (and, for an
+      // operatives row that is not their own, managers with operatives access); a new row is staff only.
+      function rosterRowEmailChanged() {
+        return resource != null &&
+          string(request.resource.data.get('email', '')).trim().lower() != string(resource.data.get('email', '')).trim().lower();
+      }
+      function rosterRowAdmin() {
+        return isOrgAdminViaMembersMap(organizationId) || isPlatformOwner() || isOrganizationAdmin(organizationId);
+      }
+      function operativesManagerForOtherRow() {
+        return isManagerWithOperativesAccess() && userOrgIdMatchesPath(organizationId) && !operativeRowIsCaller();
+      }
+
       match /operatives/{operativeId} {
         allow read: if canAccessOrganization(organizationId);
         allow create, update: if canAccessOrganization(organizationId) &&
-          (!rosterRowPayKeysChanged() ||
-            isOrgAdminViaMembersMap(organizationId) ||
-            isPlatformOwner() ||
-            isOrganizationAdmin(organizationId) ||
-            (isManagerWithOperativesAccess() && userOrgIdMatchesPath(organizationId) && !operativeRowIsCaller())) &&
+          (resource != null || isOrgManagerOrAdmin(organizationId) || isPlatformOwner()) &&
+          (!rosterRowPayKeysChanged() || rosterRowAdmin() || operativesManagerForOtherRow()) &&
+          (!rosterRowEmailChanged() || rosterRowAdmin() || operativesManagerForOtherRow()) &&
           writeMetadataValidWhenPresent();
         allow delete: if isOrganizationAdmin(organizationId);
       }
@@ -1321,10 +1503,13 @@ service cloud.firestore {
       function callerOwnsBookingId(personId) {
         let home = callerHomeData();
         let row = /databases/(default)/documents/organizations/$(organizationId)/operatives/$(personId);
+        // 1.12.0 (B3): the caller's alias ids count only on their own company's users document (another company's
+        // admin could write their own aliases there).
         return personId is string && personId.size() > 0 && (
           personId == request.auth.uid ||
-          personId in home.get('formerUserIds', []) ||
-          personId in home.get('sameEmailUserIds', []) ||
+          (homeOrgIs(home, organizationId) && (
+            personId in home.get('formerUserIds', []) ||
+            personId in home.get('sameEmailUserIds', []))) ||
           (!personId.matches('.*/.*') && request.auth.token.email is string && exists(row) &&
             string(get(row).data.get('email', '')).lower() == request.auth.token.email.lower())
         );
@@ -1337,7 +1522,9 @@ service cloud.firestore {
       // and the people it books.
       function bookingReadAllowed(collection) {
         let role = callerOrgRole(organizationId);
+        // 1.12.0: before `enforcedReads`, every member of this organisation reads every booking (as before 1.10.0).
         return role == 'admin' ||
+          (!enforcedReadsOn() && (role != '' || canAccessOrganization(organizationId))) ||
           (role == 'manager' && resource.data.get('jobCollection', '') in ['projects', 'smallWorks'] &&
             callerJobToggle(role, resource.data.get('jobCollection', ''))) ||
           (collection == 'managerSiteBookings' && role == 'manager' && resource.data.userId == request.auth.uid) ||
@@ -1373,14 +1560,17 @@ service cloud.firestore {
         allow delete: if bookingWriteAllowed('bookings', 'delete');
       }
       
+      // 1.12.0 (M3, part): the qualification and skills catalogues are staff only (admins and managers of this
+      // organisation, never an operative). A person's own qualification assignments and expiry dates live on their
+      // operatives row, which iOS My Qualifications still lets them edit (not changed here).
       match /qualifications/{qualificationId} {
         allow read: if canAccessOrganization(organizationId);
-        allow write: if canAccessOrganization(organizationId);
+        allow write: if isOrgManagerOrAdmin(organizationId) || isPlatformOwner();
       }
       
       match /skills/{skillId} {
         allow read: if canAccessOrganization(organizationId);
-        allow write: if canAccessOrganization(organizationId);
+        allow write: if isOrgManagerOrAdmin(organizationId) || isPlatformOwner();
       }
       
       // Job types and other org settings (only jobTypes doc is used today). Org members need to sync job types when creating work.
@@ -1419,10 +1609,11 @@ service cloud.firestore {
               timesheetSubjectUid() is string &&
               timesheetSubjectUid() != request.auth.uid &&
               exists(/databases/(default)/documents/users/$(timesheetSubjectUid())) &&
+              // 1.12.0 (B3): former ids only from the caller's own company's users document.
               lineManagerIdList(get(/databases/(default)/documents/users/$(timesheetSubjectUid())).data).hasAny(
                 [request.auth.uid].concat(
-                  get(/databases/(default)/documents/users/$(request.auth.uid)).data.get('formerUserIds', []) is list
-                    ? get(/databases/(default)/documents/users/$(request.auth.uid)).data.get('formerUserIds', [])
+                  callerHomeData().get('formerUserIds', []) is list && homeOrgIs(callerHomeData(), organizationId)
+                    ? callerHomeData().get('formerUserIds', [])
                     : []
                 )
               )
@@ -1551,11 +1742,12 @@ service cloud.firestore {
       match /managers/{managerId} {
         allow read: if canAccessOrganization(organizationId);
         // A manager's pay is changed by admins only (never by the manager or another manager).
+        // 1.12.0 (H3): a new row is staff only (a job form adds the row for a manager it names); an existing row's
+        // email changes by admins only.
         allow create, update: if canAccessOrganization(organizationId) &&
-          (!rosterRowPayKeysChanged() ||
-            isOrgAdminViaMembersMap(organizationId) ||
-            isPlatformOwner() ||
-            isOrganizationAdmin(organizationId)) &&
+          (resource != null || isOrgManagerOrAdmin(organizationId) || isPlatformOwner()) &&
+          (!rosterRowPayKeysChanged() || rosterRowAdmin()) &&
+          (!rosterRowEmailChanged() || rosterRowAdmin()) &&
           writeMetadataValidWhenPresent();
         allow delete: if isOrganizationAdmin(organizationId);
       }
@@ -1580,10 +1772,24 @@ service cloud.firestore {
         function actorUserIdUnchanged() {
           return !('actorUserId' in request.resource.data.diff(resource.data).affectedKeys());
         }
+        // Rulebook 1.12.0 (H4, organizationMemberActive): a row is addressed to a member of this organisation — a key
+        // of its members map, its creator, a users document of this organisation, or a person with a membership here.
+        // Never a uid from anywhere on the platform, and never a row without `userId` (§13: not an inbox row).
+        function notificationRecipientIsMember() {
+          let uid = request.resource.data.get('userId', '');
+          let org = get(/databases/(default)/documents/organizations/$(organizationId)).data;
+          return uid is string && uid.size() > 0 && !uid.matches('.*/.*') && (
+            org.get('members', {}).get(uid, null) != null ||
+            org.get('creatorUserId', '') == uid ||
+            (exists(/databases/(default)/documents/users/$(uid)) &&
+             homeOrgIs(get(/databases/(default)/documents/users/$(uid)).data, organizationId)) ||
+            exists(/databases/(default)/documents/users/$(uid)/orgMemberships/$(organizationId))
+          );
+        }
         // Inbox queries userId == signed-in user. Fan-out create stays org-member.
         allow read: if canAccessOrganization(organizationId) &&
           (isOwnNotification() || canAdminNotifications());
-        allow create: if canAccessOrganization(organizationId) && actorUserIdValid();
+        allow create: if canAccessOrganization(organizationId) && actorUserIdValid() && notificationRecipientIsMember();
         allow update: if canAccessOrganization(organizationId) &&
           (isOwnNotification() || canAdminNotifications()) &&
           (actorUserIdUnchanged() || actorUserIdValid());
@@ -2109,8 +2315,11 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Rulebook 1.12.0 (§18, appUpdateRequired): `platformConfig/app` { minimumIosBuild, minimumWebVersion? } is read
+    // before sign-in (the forced-update gate), so anyone reads it; the rest (toolbox library) stays signed-in. Only the
+    // platform owner (verified token email) writes.
     match /platformConfig/{id} {
-      allow read: if request.auth != null;
+      allow read: if id == 'app' || request.auth != null;
       allow write: if isPlatformOwner();
     }
 

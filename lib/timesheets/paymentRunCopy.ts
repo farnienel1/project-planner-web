@@ -179,5 +179,6 @@ function zoneYmd(date: Date, timeZone: string): { y: number; m: number; d: numbe
 }
 
 function zoneDateWithYmd(year: number, month: number, day: number, timeZone: string): Date {
-  return londonMidnight(new Date(Date.UTC(year, month - 1, day, 12, 0, 0)), timeZone)
+  // 1.12.0: the day key's own local midnight (UTC noon is already the next local day at UTC+12 and later).
+  return dateFromDayKey(`${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`, timeZone)
 }

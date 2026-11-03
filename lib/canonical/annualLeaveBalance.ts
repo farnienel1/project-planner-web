@@ -65,7 +65,40 @@ export type LeaveYearBounds = {
   yearKey: string
 }
 
-/** Inclusive leave year that contains `onDayKey`. Months can wrap (April → March). */
+/**
+ * Rulebook 1.12.0 §4.4: a leave year is always 12 months, so its end month is the month before its start month
+ * (January → December, April → March). The end month is never chosen on its own.
+ */
+export function leaveYearEndMonth(startMonth: number | null | undefined): number {
+  const start = clampMonth(startMonth, 1)
+  return start === 1 ? 12 : start - 1
+}
+
+export const LEAVE_YEAR_MONTHS_MESSAGE = 'The leave year must be 12 months: it ends the month before it starts.'
+
+/**
+ * Save check for a leave year (`annualLeaveDefaults` on the organisation, or a person's
+ * `annualLeaveYearStartMonth` / `annualLeaveYearEndMonth`): null when valid, else the message. Both months must be
+ * whole months 1–12 and the end must be `leaveYearEndMonth(start)`. Both apps refuse the save otherwise.
+ */
+export function validateLeaveYearMonths(startMonth: unknown, endMonth: unknown): string | null {
+  const start = Number(startMonth)
+  const end = Number(endMonth)
+  const month = (n: number) => Number.isInteger(n) && n >= 1 && n <= 12
+  if (!month(start) || !month(end)) return 'Choose the months the leave year starts and ends.'
+  return end === leaveYearEndMonth(start) ? null : LEAVE_YEAR_MONTHS_MESSAGE
+}
+
+/** `validateLeaveYearMonths` for an organisation `annualLeaveDefaults` save (days per year are checked by the app). */
+export function validateAnnualLeaveDefaults(defaults: { startMonth?: unknown; endMonth?: unknown } | null | undefined): string | null {
+  return validateLeaveYearMonths(defaults?.startMonth, defaults?.endMonth)
+}
+
+/**
+ * Inclusive leave year that contains `onDayKey`. Months can wrap (April → March). 1.12.0: the year always runs 12
+ * months from `startMonth` (`leaveYearEndMonth`); a stored `endMonth` that disagrees (saved before the check) is
+ * ignored, so no leave falls outside every year and no year runs 13 months.
+ */
 export function leaveYearBounds(input: {
   startMonth?: number | null
   endMonth?: number | null
@@ -73,7 +106,7 @@ export function leaveYearBounds(input: {
 }): LeaveYearBounds {
   const parsed = parseDayKey(input.onDayKey)
   const startMonth = clampMonth(input.startMonth, 1)
-  const endMonth = clampMonth(input.endMonth, 12)
+  const endMonth = leaveYearEndMonth(startMonth)
   if (!parsed) {
     const startDayKey = `1970-${pad2(startMonth)}-01`
     const endDay = lastDayOfMonth(endMonth <= startMonth ? 1971 : 1970, endMonth)

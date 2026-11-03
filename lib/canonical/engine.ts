@@ -624,7 +624,10 @@ function dayInMonth(monthAnchor: Date, day: number, timeZone: string): Date {
 
 function shiftMonth(reference: Date, offset: number, timeZone: string): Date {
   const { y, m } = partsInZone(reference, timeZone)
-  return midnightInZone(new Date(Date.UTC(y, m - 1 + offset, 1, 12, 0, 0)), timeZone)
+  // 1.12.0: the 1st of the shifted month as a day key, then its local midnight (never UTC noon, which is the next
+  // local day at UTC+12 and later).
+  const first = new Date(Date.UTC(y, m - 1 + offset, 1))
+  return dateFromDayKeyInZone(`${first.getUTCFullYear()}-${String(first.getUTCMonth() + 1).padStart(2, '0')}-01`, timeZone)
 }
 
 /** Day-of-month 1–31. 0, blank, and anything else are missing. */

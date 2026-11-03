@@ -16,6 +16,7 @@
 import { addDaysInZone, dateFromDayKeyInZone, dayKeyInZone } from '../orgTime/zoneTime'
 import { parseClockMinutes } from './engine'
 import {
+  PAYROLL_POLICY_LIMITS,
   parsePayrollPolicy,
   payrollPolicyToFirestore,
   type OrgPayrollTimePolicy,
@@ -221,11 +222,8 @@ export function payrollTimePolicyCancelScheduleWriteFields(input: {
 }
 
 /** One set of limits both apps enforce on save. */
-export const PAYROLL_POLICY_LIMITS = {
-  paidHours: { min: 1, max: 12 },
-  breakMinutes: { min: 0, max: 120 },
-  multiplier: { min: 1, max: 3 },
-} as const
+// The one set of limits lives beside the policy reader, which clamps to them on read (1.12.0).
+export { PAYROLL_POLICY_LIMITS }
 
 function inRange(value: unknown, limits: { min: number; max: number }): boolean {
   return typeof value === 'number' && Number.isFinite(value) && value >= limits.min && value <= limits.max

@@ -162,6 +162,27 @@ export function invitationRole(invitation: Record<string, unknown> | null | unde
   return 'manager'
 }
 
+const OPERATIVE_INVITE_FORBIDDEN_FLAGS = ['adminAccess', 'isSuperAdmin', 'manager', 'operatives'] as const
+
+function flagOn(value: unknown): boolean {
+  return value === true || value === 1
+}
+
+/**
+ * Rulebook 1.12.0 (§11, §16, B2): an invitation that gives an operative and nothing more — `invitationRole` is
+ * `operative`, operative mode is on (in `permissions`, or the stored role), and no admin, super admin, manager or
+ * operatives toggle is on at the top level or in `permissions`. The only invitation a manager with operatives access
+ * may create or change (the security rules apply the same test, `invitationIsOperativeOnly`); Add User on both apps
+ * checks it before writing so the save is not refused.
+ */
+export function invitationIsOperativeOnly(invitation: Record<string, unknown> | null | undefined): boolean {
+  const row = record(invitation) ?? {}
+  const permissions = record(row.permissions) ?? {}
+  if (invitationRole(row) !== 'operative') return false
+  if (!(flagOn(permissions.operativeMode) || text(row.role).toLowerCase() === 'operative')) return false
+  return OPERATIVE_INVITE_FORBIDDEN_FLAGS.every((key) => !flagOn(permissions[key]) && !flagOn(row[key]))
+}
+
 /**
  * The fields accepting writes from the invitation onto a new `users/{authUid}` (mode `newProfile`; rulebook §11,
  * 1.11.0): exactly what Add User stored on it — `role`, the `permissions` map (and its flags at the top level, as

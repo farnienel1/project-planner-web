@@ -9,7 +9,7 @@ import {
 } from '@/lib/settings/organizationSettings'
 import { useApplyLiveWhenClean, useLiveOrganizationDetails } from '@/components/settings/useLiveOrganizationSettings'
 import { bankHolidayRegionIdFromSelection, bankHolidaySelectionFromStored } from '@/lib/orgSetup/orgSetupSettings'
-import { bankHolidayRegionLabel, bankHolidayRegionsForCountry } from '@/lib/canonical'
+import { bankHolidayRegionLabel, bankHolidayRegionsForCountry, leaveYearEndMonth } from '@/lib/canonical'
 import { LEAVE_DAYS_SAVE_MAX, parseBoundedNumber } from '@/lib/security/boundedValue'
 import { settingsHeader } from '@/lib/settings/settingsHeader'
 import { settingsSaveBarHint } from '@/lib/settings/settingsDirty'
@@ -191,7 +191,15 @@ export function AnnualLeaveDefaultsPanel({ onBack }: { onBack: () => void }) {
         <div className="space-y-4 p-5">
           <div className="[display:grid] grid-cols-[1fr_auto_1fr] items-end gap-3">
             <FormField label="Starts">
-              <Select value={String(startMonth)} onChange={(e) => setStartMonth(parseInt(e.target.value, 10))}>
+              <Select
+                value={String(startMonth)}
+                onChange={(e) => {
+                  // 1.12.0 §4.4: the year is 12 months, so the end follows the start (`leaveYearEndMonth`).
+                  const next = parseInt(e.target.value, 10)
+                  setStartMonth(next)
+                  setEndMonth(leaveYearEndMonth(next))
+                }}
+              >
                 {MONTHS.map((month, index) => (
                   <option key={month} value={index + 1}>
                     {month}
@@ -203,7 +211,15 @@ export function AnnualLeaveDefaultsPanel({ onBack }: { onBack: () => void }) {
               →
             </span>
             <FormField label="Ends">
-              <Select value={String(endMonth)} onChange={(e) => setEndMonth(parseInt(e.target.value, 10))}>
+              <Select
+                value={String(endMonth)}
+                onChange={(e) => {
+                  // Picking the end month moves the start to the month after it (12 months either way).
+                  const next = parseInt(e.target.value, 10)
+                  setEndMonth(next)
+                  setStartMonth(next === 12 ? 1 : next + 1)
+                }}
+              >
                 {MONTHS.map((month, index) => (
                   <option key={month} value={index + 1}>
                     {month}

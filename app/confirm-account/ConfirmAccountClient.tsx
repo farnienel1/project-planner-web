@@ -34,6 +34,13 @@ export default function ConfirmAccountClient() {
           throw new Error('This confirmation link was not found. Ask support if you were expecting an email.')
         }
         const data = snap.data()
+        // Rulebook 1.12.0 (H5): only the signed-in person whose email the confirmation names may mark it used, so wait
+        // for the saved sign-in and ask a signed-out visitor to sign in first.
+        const firebaseAuth = getFirebaseAuth()
+        await withTimeout(firebaseAuth.authStateReady(), 8000, 'Confirming your account is taking too long. Refresh this page.')
+        if (data.isUsed !== true && !firebaseAuth.currentUser) {
+          throw new Error('Sign in to Project Planner in this browser, then open the confirmation link again.')
+        }
         if (data.isUsed !== true) {
           await withTimeout(
             updateDoc(ref, { isUsed: true, usedAt: Timestamp.now() }),
@@ -42,7 +49,7 @@ export default function ConfirmAccountClient() {
           )
         }
         const userId = typeof data.userId === 'string' ? data.userId : ''
-        const signedInUid = getFirebaseAuth().currentUser?.uid
+        const signedInUid = firebaseAuth.currentUser?.uid
         if (userId && signedInUid === userId) {
           try {
             await withTimeout(

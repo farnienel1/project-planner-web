@@ -1,4 +1,5 @@
 import { doc, getDoc, getDocFromServer, setDoc, updateDoc } from 'firebase/firestore'
+import { validateAnnualLeaveDefaults } from '@/lib/canonical/annualLeaveBalance'
 import { db } from '@/lib/firebase/config'
 import { serverTimestamp } from 'firebase/firestore'
 import { writeMetadataFields } from '@/lib/canonical'
@@ -347,6 +348,9 @@ export async function saveAnnualLeaveSettings(
   bankHolidayRegionId: string,
   userId?: string
 ): Promise<void> {
+  // Rulebook 1.12.0 §4.4 (`validateAnnualLeaveDefaults`): a leave year is 12 months; refuse any other.
+  const leaveYearError = validateAnnualLeaveDefaults(defaults)
+  if (leaveYearError) throw new Error(leaveYearError)
   const regionId = bankHolidayRegionId.trim()
   await updateDoc(doc(db, 'organizations', organizationId), {
     annualLeaveDefaults: defaults,

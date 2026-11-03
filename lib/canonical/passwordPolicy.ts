@@ -17,6 +17,15 @@ export function isPlatformOwnerEmail(email: unknown): boolean {
   return typeof email === 'string' && email.trim().toLowerCase() === PLATFORM_OWNER_EMAIL
 }
 
+/**
+ * Rulebook 1.12.0 (§14, §16): the platform owner is the signed-in Firebase Auth account whose token email is
+ * `PLATFORM_OWNER_EMAIL` **and** verified (`email_verified`). Never a users document's `email` (anyone can write
+ * their own). The security rules (`isPlatformOwner`) and the owner API routes apply the same test.
+ */
+export function isVerifiedPlatformOwner(token: { email?: unknown; emailVerified?: unknown } | null | undefined): boolean {
+  return isPlatformOwnerEmail(token?.email) && token?.emailVerified === true
+}
+
 export type PasswordPolicyOptions = {
   /** The platform owner's developer account. */
   developerAccount?: boolean | null

@@ -43,8 +43,10 @@ import {
   SENSITIVE_HELD_BY_ADMIN_COPY,
   canViewSensitiveProfile,
   maskSensitiveValue,
+  leaveYearEndMonth,
   snapLeaveDays,
   type SensitiveProfile,
+  validateLeaveYearMonths,
 } from '@/lib/canonical'
 import { loadTaxIds, saveTaxIds } from '@/lib/sensitiveProfile/taxIdsService'
 import { LEAVE_DAYS_SAVE_MAX, parseBoundedNumber } from '@/lib/security/boundedValue'
@@ -539,6 +541,17 @@ export function EditUserProfile({
         annualLeaveYearAllowance: override.annualLeaveYearAllowance,
         annualLeaveYearAllowanceKey: override.annualLeaveYearAllowanceKey,
       }
+    }
+    // Rulebook 1.12.0 §4.4: refuse a leave year that is not 12 months, when this save changes the months.
+    const leaveYearChanged =
+      toSave.annualLeaveYearStartMonth !== savedUser.current?.annualLeaveYearStartMonth ||
+      toSave.annualLeaveYearEndMonth !== savedUser.current?.annualLeaveYearEndMonth
+    const leaveYearError = leaveYearChanged
+      ? validateLeaveYearMonths(toSave.annualLeaveYearStartMonth ?? 1, toSave.annualLeaveYearEndMonth ?? 12)
+      : null
+    if (leaveYearError) {
+      setError(leaveYearError)
+      return
     }
     setSaving(true)
     try {
@@ -1152,9 +1165,11 @@ export function EditUserProfile({
                   <Select
                     value={String(target.annualLeaveYearStartMonth ?? 1)}
                     disabled={!canEdit}
-                    onChange={(e) =>
-                      setTarget({ ...target, annualLeaveYearStartMonth: Number(e.target.value) })
-                    }
+                    onChange={(e) => {
+                      // 1.12.0 §4.4: a leave year is 12 months — the end follows the start (`leaveYearEndMonth`).
+                      const start = Number(e.target.value)
+                      setTarget({ ...target, annualLeaveYearStartMonth: start, annualLeaveYearEndMonth: leaveYearEndMonth(start) })
+                    }}
                   >
                     {MONTHS.map((month, index) => (
                       <option key={month} value={index + 1}>
@@ -1166,9 +1181,10 @@ export function EditUserProfile({
                   <Select
                     value={String(target.annualLeaveYearEndMonth ?? 12)}
                     disabled={!canEdit}
-                    onChange={(e) =>
-                      setTarget({ ...target, annualLeaveYearEndMonth: Number(e.target.value) })
-                    }
+                    onChange={(e) => {
+                      const end = Number(e.target.value)
+                      setTarget({ ...target, annualLeaveYearEndMonth: end, annualLeaveYearStartMonth: end === 12 ? 1 : end + 1 })
+                    }}
                   >
                     {MONTHS.map((month, index) => (
                       <option key={month} value={index + 1}>
