@@ -11280,3 +11280,73 @@ test('1.25.0 storage.rules: no member-wide delete or overwrite is left, and the 
   assert.doesNotMatch(rules, /allow delete: if staffLike\(orgId\);/)
   assert.match(rules, new RegExp(`duration\\.value\\(${r125UndoMinutes}, 'm'\\)`))
 })
+
+// MARK: - Rulebook 1.26.0 security switches
+
+import {
+  payProfileReadPlan as r126PayProfileReadPlan,
+  rateHistoryQueryPlan as r126RateHistoryPlan,
+  securitySwitchOn as r126SwitchOn,
+  securitySwitches as r126Switches,
+  sharedDocumentPayWrite as r126SharedPayWrite,
+} from './index'
+
+test('1.26.0 securitySwitches: platform-wide true, or this organisation in the list; anything else is off', () => {
+  assert.deepEqual(r126Switches(null, 'org-a'), { enforcedReads: false, privatePay: false })
+  assert.deepEqual(r126Switches({}, 'org-a'), { enforcedReads: false, privatePay: false })
+  assert.deepEqual(r126Switches({ enforcedReads: true }, 'org-a'), { enforcedReads: true, privatePay: false })
+  assert.deepEqual(r126Switches({ enforcedReads: 'true', privatePay: 1 }, 'org-a'), { enforcedReads: false, privatePay: false })
+  const config = { enforcedReadsOrganizationIds: ['org-a'], privatePayOrganizationIds: ['ORG-B'] }
+  assert.deepEqual(r126Switches(config, 'org-a'), { enforcedReads: true, privatePay: false })
+  assert.deepEqual(r126Switches(config, 'org-b'), { enforcedReads: false, privatePay: false })
+  assert.equal(r126SwitchOn(config, 'ORG-B', 'privatePay'), true)
+  assert.equal(r126SwitchOn({ privatePayOrganizationIds: 'org-a' }, 'org-a', 'privatePay'), false)
+  assert.equal(r126SwitchOn(config, '', 'enforcedReads'), false)
+  // false at platform level does not switch off a listed organisation (the rules read the same way).
+  assert.equal(r126SwitchOn({ enforcedReads: false, enforcedReadsOrganizationIds: ['org-a'] }, 'org-a', 'enforcedReads'), true)
+})
+
+test('1.26.0 jobQueryPlan / bookingQueryPlan follow the switch value the app passes', () => {
+  const manager = { role: { isManager: true }, ids: ['m'], uid: 'm' }
+  const plan = (on: boolean) => R112.jobQueryPlan(manager as any, { enforced: r126SwitchOn({ enforcedReadsOrganizationIds: on ? ['o'] : [] }, 'o', 'enforcedReads') })
+  assert.deepEqual(plan(false).queries.map((q: any) => q.kind), ['all', 'all'])
+  assert.deepEqual(plan(true).queries.map((q: any) => q.kind), ['managed', 'managed'])
+  assert.equal(R112.readsEveryBooking(manager as any, { enforced: false }), true)
+  assert.equal(R112.readsEveryBooking(manager as any, { enforced: true }), false)
+  // Operatives read their jobs by id whatever the switch.
+  const op = { role: { isOperativeMode: true }, ids: ['op'], uid: 'op' }
+  for (const enforced of [false, true]) {
+    assert.deepEqual(R112.jobQueryPlan(op as any, { documentIds: ['j1'], enforced }).queries.map((q: any) => q.kind), ['documents', 'documents'])
+    assert.equal(R112.bookingQueryPlan(op as any, [], { ownBookingIds: ['op'], enforced }).readsEveryBooking, false)
+  }
+})
+
+test('1.26.0 rateHistoryQueryPlan / payProfileReadPlan: admins read all; others only the people whose pay they may see', () => {
+  const admin = { id: 'adm', adminAccess: true }
+  const lm = { id: 'lm', manager: true }
+  const opsMgr = { id: 'om', manager: true, permissions: { operatives: true } }
+  const op = { id: 'op', operativeMode: true, assignedManagerUserIds: ['lm'] }
+  const other = { id: 'op2', operativeMode: true, assignedManagerUserIds: ['adm'] }
+  const mgr2 = { id: 'm2', manager: true, assignedManagerUserIds: ['adm'] }
+  const roster = [admin, lm, opsMgr, op, other, mgr2].map((p) => ({ ...p, email: `${p.id}@t.com`, isActive: true }))
+  const subjects = [op, other, mgr2]
+  assert.deepEqual(r126RateHistoryPlan(op, subjects, roster, { privatePay: false }), { kind: 'all' })
+  assert.deepEqual(r126RateHistoryPlan(op, subjects, roster), { kind: 'all' })
+  assert.deepEqual(r126RateHistoryPlan(admin, subjects, roster, { privatePay: true }), { kind: 'all' })
+  assert.deepEqual(r126RateHistoryPlan(op, subjects, roster, { privatePay: true }), { kind: 'people', userIds: ['op'] })
+  assert.deepEqual(r126RateHistoryPlan(lm, subjects, roster, { privatePay: true }), { kind: 'people', userIds: ['lm', 'op'] })
+  assert.deepEqual(r126RateHistoryPlan(opsMgr, subjects, roster, { privatePay: true }), { kind: 'people', userIds: ['om', 'op', 'op2'] })
+  assert.deepEqual(r126RateHistoryPlan(null, subjects, roster, { privatePay: true }), { kind: 'people', userIds: [] })
+  assert.deepEqual(r126RateHistoryPlan({ ...admin, isActive: false }, subjects, roster, { privatePay: true }), { kind: 'people', userIds: ['adm'] })
+  assert.deepEqual(r126PayProfileReadPlan(admin, subjects, roster), { kind: 'all' })
+  assert.deepEqual(r126PayProfileReadPlan(lm, subjects, roster), { kind: 'documents', ids: ['lm', 'op'] })
+  assert.deepEqual(r126PayProfileReadPlan({ id: 'x', isPlatformOwner: true }, subjects, roster), { kind: 'all' })
+})
+
+test('1.26.0 sharedDocumentPayWrite: pay stays on shared documents only while privatePay is off', () => {
+  const write = { firstName: 'Pat', dayRate: 200, payBasis: 'day', hourlyRate: null, employmentType: 'self_employed' }
+  assert.deepEqual(r126SharedPayWrite(write, { privatePay: false }), write)
+  assert.deepEqual(r126SharedPayWrite(write), write)
+  assert.deepEqual(r126SharedPayWrite(write, { privatePay: true }), { firstName: 'Pat' })
+  assert.deepEqual(r126SharedPayWrite({ dayRate: 1 }, { privatePay: true }), {})
+})

@@ -6,6 +6,7 @@
 'use client'
 
 import { webJobAccessViewer } from '@/lib/access/readPlan'
+import { enforcedReadsFor } from '@/lib/access/securitySwitches'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
@@ -303,6 +304,7 @@ export function HomeScreen() {
       const generated = generateOrgWarnings({
         // Rulebook 1.10.0 §17: restricted managers see only their jobs and people (`warningScopeFor`).
         viewer: webJobAccessViewer(useAuthStore.getState().user),
+        enforcedReads: enforcedReadsFor(),
         bookings,
         managerSiteBookings,
         operatives,

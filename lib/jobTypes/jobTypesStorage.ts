@@ -161,11 +161,14 @@ async function loadWorkJobTypeRecords(
 ): Promise<Array<{ jobType?: string; customJobType?: string }>> {
   if (!db) return []
   try {
-    const [projectsSnap, smallSnap] = await Promise.all([
+    // Rulebook 1.26.0 §17: with `enforcedReads` on, a manager without a job toggle may not list a job collection; a
+    // refused collection only drops its own names (the other collection's still count), never both.
+    const snaps = await Promise.allSettled([
       getDocs(collection(db, 'organizations', organizationId, 'projects')),
       getDocs(collection(db, 'organizations', organizationId, 'smallWorks')),
     ])
-    return [...projectsSnap.docs, ...smallSnap.docs]
+    return snaps
+      .flatMap((result) => (result.status === 'fulfilled' ? result.value.docs : []))
       .filter((entry) => !isLegacyPlaceholderDocumentId(entry.id))
       .map((entry) => jobTypeFieldsFromRecord(entry.data() as Record<string, unknown>))
   } catch {

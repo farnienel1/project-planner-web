@@ -1,4 +1,4 @@
-# iOS follow-on — rulebook 1.25.0
+# iOS follow-on — rulebook 1.26.0
 
 Generated 2026-11-03 by `npm run rulebook:handoff` in project-planner-web. Paste this whole file into the iOS agent.
 The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; never edit the iOS mirror by hand.
@@ -8,9 +8,9 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ║ FOLLOW-ON — paste into the iOS agent                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
-Rulebook version: 1.24.0 → 1.25.0
-Packed hash: c1491ca3604e15b7dd7ce8047493a79367d3deb3ef6f31a9734e0e61530bfc55
-Rulebook sha256: 90e025b9f37c015aebaaf659f5c6570037f1c7edffbb7a663a583bf43497eec6
+Rulebook version: 1.25.0 → 1.26.0
+Packed hash: 7dcb97cc74e3f4d5666a9050bb35359a58eafd69407fe52fb15030b78a5c0158
+Rulebook sha256: 86e32226ea6aab36e45d9b87be556522636bf54e8fecc98541bf44c7691339ec
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -20,31 +20,28 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
   web lib/canonical/cross-platform-contract.json    → iOS ProjectPlannerTests/CrossPlatformContract.json
 Contract sha256: c9e307b0604e78284baf3a4f217f0fb3ecc4b227aec957c901bdd93e4e31a306
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: FILE_KEPT_ON_REMOVE_COPY, FILE_UNDO_WINDOW_MINUTES, FILE_UNDO_WINDOW_MS, STORED_FILE_KINDS, fileDeletePermission, storedFileKind, storedFileObjectName, storedFileUploader
+Exports added: SECURITY_SWITCHES, SECURITY_SWITCH_ORGANIZATION_FIELDS, payProfileReadPlan, rateHistoryQueryPlan, securitySwitchOn, securitySwitches, sharedDocumentPayWrite
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/parity-fixture.json, lib/canonical/storedFiles.ts, storage.rules
+Web files that changed the rules: docs/RULEBOOK.md, firestore.rules, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/payProfile.ts, lib/canonical/platformConfig.ts, lib/canonical/staffAccess.ts
 Done when:
-- [ ] Packed hash in iOS equals c1491ca3604e15b7dd7ce8047493a79367d3deb3ef6f31a9734e0e61530bfc55
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 90e025b9f37c015aebaaf659f5c6570037f1c7edffbb7a663a583bf43497eec6)
-- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.25.0)
+- [ ] Packed hash in iOS equals 7dcb97cc74e3f4d5666a9050bb35359a58eafd69407fe52fb15030b78a5c0158
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 86e32226ea6aab36e45d9b87be556522636bf54e8fecc98541bf44c7691339ec)
+- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.26.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
 - [ ] Any disagreement traced to its first divergence — no copied screen number
 ```
 
-## What changed in 1.25.0
+## What changed in 1.26.0
 
-- Uploaded files are never deleted outright or lost (§24, launch checklist 2.2): `fileDeletePermission`, `storedFileKind`, `storedFileUploader`, `storedFileObjectName`, `FILE_UNDO_WINDOW_MINUTES`, `FILE_KEPT_ON_REMOVE_COPY`. `storage.rules`: any member could delete or overwrite any certificate, variation evidence, site audit photo, task file and health & safety file of the organisation, and any staff member any timesheet export; now a delete is the uploader within 15 minutes of the upload or an admin of that organisation outside operative mode, an overwrite only the uploader within 15 minutes, logos and timesheet exports admin only; profile photos stay the person or an admin. Creating files is unchanged.
-- Every upload is a new `{uid}_{unixMs}.{ext}` object (`storedFileObjectName`; web `generatedStorageFileName` and iOS `StorageUploadPolicy.generatedObjectName` already wrote this shape), so replacing a file keeps the old one and its links.
-- Web variation evidence removal deletes the Storage object only when `fileDeletePermission` allows it; otherwise it removes the link and keeps the file.
-- Recovery is Google Cloud Storage soft delete, set up by the platform owner (Deploy notes 1.25.0).
-- iOS hand-off: `Project Planner/Views/Variations/VariationEditorSheet.swift` `removeEvidence` (~1548) calls `fileDeletePermission` before `FirebaseBackend.deleteVariationEvidenceFile` and shows `FILE_KEPT_ON_REMOVE_COPY` when it is not allowed; `StorageUploadPolicy.generatedObjectName` may call `storedFileObjectName`. `uploadHealthSafetyFile`'s clean-up delete (uploader, seconds after upload) keeps working.
-- Web docs: the iOS booking recalibrator references (`docs/ios-parity/04-business-logic.md`, `IOS_APP_BLUEPRINT.md`, a note on the 1.19.0 hand-off) now say it is retired.
+- Security switches per organisation (§16, §17, §18): `platformConfig/app` takes `enforcedReadsOrganizationIds` and `privatePayOrganizationIds` beside the platform-wide `enforcedReads` / `privatePay`, so the owner can switch one company on first. The rules read them as `enforcedReadsOn(orgId)` / `privatePayOn(orgId)`; the shared test is `securitySwitchOn` / `securitySwitches` (`SECURITY_SWITCHES`, `SECURITY_SWITCH_ORGANIZATION_FIELDS`).
+- The apps follow the switches (§17): job and booking plans take `enforced: securitySwitchOn(...)` instead of waiting for a release that flips `ENFORCED_READS_ACTIVE` (now only the default). Web re-plans its listeners live when the switch changes.
+- Private pay in the apps (§8): `sharedDocumentPayWrite` keeps pay off `users` / `operatives` / `managers` writes while `privatePay` is on (before 1.26.0 a web pay save, Add User with a rate and an invite acceptance were refused as a whole once it was on); `rateHistoryQueryPlan` reads rate history per person for non-admins (the whole-collection read was refused); `payProfileReadPlan` + `overlayPayProfile` lay pay profiles over the roster so pay still shows after the strip.
+- Owner guide `docs/SECURITY_SWITCHES.md` (order: backfill → rules → iOS build → `minimumIosBuild` → own company → test → everyone; rollback).
 
 ## New rulebook sections
 
-- 24. Uploaded files (1.25.0)
-- 1.25.0 — 2026-11-04
+- 1.26.0 — 2026-11-04
 
 ## Workflow for the iOS agent
 

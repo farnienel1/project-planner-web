@@ -68,7 +68,8 @@ test('Continue order: Auth, own-email claim read, placeholder read, users/{authU
     'authWithPassword(email',
     'claimedUserIdAfterSignIn(record.organizationId, email)',
     'loadPlaceholderIfOwnInvite(hintedId)',
-    "setDoc(doc(db, 'users', authUid), nextUser)",
+    // 1.26.0: the users document is `sharedDocumentPayWrite(nextUser, …)` (no pay while `privatePay` is on).
+    "setDoc(doc(db, 'users', authUid), accountUser)",
     "setDoc(doc(db, 'organizations', record.organizationId, 'userEmails', email)",
     "deleteDoc(doc(db, 'users', placeholderId))",
     'ensurePrimaryOrgMembership(',

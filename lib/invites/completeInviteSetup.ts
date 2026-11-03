@@ -13,6 +13,8 @@ import { isAnonymisedDeletedProfile } from '@/lib/canonical/userRosterSegment'
 import { inviteMigrationFormerIdWriteFields } from '@/lib/canonical/userProfile'
 import { moveTaxIds } from '@/lib/sensitiveProfile/taxIdsService'
 import { invitationUsedWriteFields } from '@/lib/canonical/createDocuments'
+import { sharedDocumentPayWrite } from '@/lib/canonical/payProfile'
+import { privatePayFor, securitySwitchesReady } from '@/lib/access/securitySwitches'
 
 export type InvitationSummary = {
   invitationId: string
@@ -266,7 +268,12 @@ export async function completeInvitationPasswordSetup(params: {
       }
     : userDocFromInvitation(record, now)
   if (plan.writeProfile) {
-    await setDoc(doc(db, 'users', authUid), nextUser)
+    // Rulebook 1.26.0 (`sharedDocumentPayWrite`): with `privatePay` on, the new account's users document carries no
+    // pay (the rules refuse it, and a person never writes their own pay profile). The invited pay stays on the
+    // placeholder's pay profile, which readers find through the account's `formerUserIds`.
+    await securitySwitchesReady()
+    const accountUser = sharedDocumentPayWrite(nextUser, { privatePay: privatePayFor(record.organizationId) })
+    await setDoc(doc(db, 'users', authUid), accountUser)
   }
 
   // 4b. Move the placeholder's tax ids (users/{id}/private/taxIds) before the placeholder goes — only now that

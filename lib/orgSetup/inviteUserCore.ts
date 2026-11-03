@@ -1,7 +1,8 @@
 import { collection, doc, getDoc, getDocs, query, setDoc, Timestamp, where } from 'firebase/firestore'
 import { getFirebaseDb } from '@/lib/firebase/ensureFirebase'
 import { buildInvitedUserPayload, normalizeLineManagerIds, permissionsToFirestoreMap } from '@/lib/firebase/userPayload'
-import { userMissingLevel } from '@/lib/canonical'
+import { payProfileWriteFieldsFromProfileWrite, PAY_PROFILES_COLLECTION, sharedDocumentPayWrite, userMissingLevel, writeMetadataFields } from '@/lib/canonical'
+import { privatePayFor, securitySwitchesReady } from '@/lib/access/securitySwitches'
 import { invitationCreateFields } from '@/lib/canonical/createDocuments'
 import { newUuid } from '@/lib/firebase/firestoreUtils'
 import { withTimeout } from '@/lib/client/withTimeout'
@@ -213,9 +214,7 @@ export async function inviteUserCore(input: InviteUserCoreInput): Promise<Invite
   if (!invitationData) throw new Error('An invitation needs an email and an organisation.')
 
   await setDoc(doc(db, 'invitations', invitationId), invitationData)
-  await setDoc(
-    doc(db, 'users', userId),
-    buildInvitedUserPayload({
+  const placeholder = buildInvitedUserPayload({
       userId,
       email: emailLower,
       organizationId: input.organizationId,
@@ -241,7 +240,20 @@ export async function inviteUserCore(input: InviteUserCoreInput): Promise<Invite
       annualLeaveYearAllowanceKey: input.annualLeaveYearAllowanceKey,
       hasNoLineManager: input.hasNoLineManager,
     })
-  )
+  // Rulebook 1.26.0 (`sharedDocumentPayWrite`): with `privatePay` on, the placeholder users document carries no pay;
+  // the invited pay goes to the placeholder's pay profile (written after the placeholder exists, so the rules can
+  // check who may change its pay). The invitation itself still stores the pay it will apply.
+  await securitySwitchesReady()
+  const privatePay = privatePayFor(input.organizationId)
+  await setDoc(doc(db, 'users', userId), sharedDocumentPayWrite(placeholder, { privatePay }))
+  const payFields = privatePay ? payProfileWriteFieldsFromProfileWrite(userId, placeholder) : null
+  if (payFields) {
+    await setDoc(
+      doc(db, 'organizations', input.organizationId, PAY_PROFILES_COLLECTION, userId),
+      { ...payFields, ...(writeMetadataFields(input.invitedBy, 'web') || {}), updatedAt: Timestamp.now() },
+      { merge: true }
+    )
+  }
   await setDoc(doc(db, 'organizations', input.organizationId, 'userEmails', emailLower), { userId })
   if (input.utrNumber?.trim() || input.vatNumber?.trim()) {
     await saveTaxIds(userId, { utrNumber: input.utrNumber, vatNumber: input.vatNumber }, input.invitedBy, {

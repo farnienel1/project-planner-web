@@ -610,6 +610,11 @@ export type BookingQueryPlan = {
  * `managerUserIds` / `jobCollection` backfills, and that release goes out before the Firestore rules deploy
  * (docs/DEPLOY_1.10.0.md). Jobs saved before 1.10.0 have no `managerUserIds`, so a restricted plan before the
  * backfill would show those managers no jobs.
+ *
+ * 1.26.0: the apps no longer wait for a release that flips this constant. Each app reads `platformConfig/app` and
+ * passes `enforced: securitySwitchOn(config, organizationId, 'enforcedReads')` to `jobQueryPlan`, `bookingQueryPlan`,
+ * `readsEveryBooking` and `warningScopeFor`, so it plans exactly the reads the rules allow with the switch on or off.
+ * This constant is only the default when no value is passed (the document could not be read): off.
  */
 export const ENFORCED_READS_ACTIVE = false
 

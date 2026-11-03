@@ -69,3 +69,56 @@ export function appUpdateRequired(
   }
   return false
 }
+
+// MARK: - Security switches (rulebook §18, 1.26.0)
+
+/**
+ * The two security switches on `platformConfig/app` (rulebook §8, §16, §17, §18). Both are read by the security
+ * rules (`enforcedReadsOn(orgId)`, `privatePayOn(orgId)`) and, from 1.26.0, by the apps, which plan their reads and
+ * pay writes from the same value so they work with the switch on or off:
+ *   - `enforcedReads`: the §17 job and booking read scoping (managers without a job toggle read only their jobs and
+ *     those jobs' bookings; operatives only their own bookings and their jobs by id);
+ *   - `privatePay`: rate history, the `operativeProfiles` mirror and timesheets are read only by pay viewers
+ *     (`canViewPersonPay`), and no pay value is written onto `users`, `operatives` or `managers`.
+ * Each is on for every organisation when its field is `true`, or for one organisation when that organisation's id
+ * is in its list (`enforcedReadsOrganizationIds`, `privatePayOrganizationIds`), so the platform owner can switch one
+ * company on first. Ids compare exactly as stored (the rules' `in` is exact). Written by the platform owner only.
+ */
+export type SecuritySwitch = 'enforcedReads' | 'privatePay'
+
+export const SECURITY_SWITCHES: ReadonlyArray<SecuritySwitch> = ['enforcedReads', 'privatePay']
+
+/** The per-organisation list field of each switch on `platformConfig/app`. */
+export const SECURITY_SWITCH_ORGANIZATION_FIELDS: Readonly<Record<SecuritySwitch, string>> = {
+  enforcedReads: 'enforcedReadsOrganizationIds',
+  privatePay: 'privatePayOrganizationIds',
+}
+
+/**
+ * Whether `name` is on for `organizationId` under the `platformConfig/app` document as read (`config`). Missing
+ * config, a missing field, a value that is not exactly `true`, or an id not in the list → off. The same test as the
+ * rules, so an app never plans reads the rules would refuse.
+ */
+export function securitySwitchOn(
+  config: Record<string, unknown> | null | undefined,
+  organizationId: string | null | undefined,
+  name: SecuritySwitch
+): boolean {
+  if (!config || typeof config !== 'object') return false
+  if (config[name] === true) return true
+  const id = typeof organizationId === 'string' ? organizationId : ''
+  if (!id) return false
+  const list = config[SECURITY_SWITCH_ORGANIZATION_FIELDS[name]]
+  return Array.isArray(list) && list.some((entry) => entry === id)
+}
+
+/** Both switches for one organisation (`securitySwitchOn`). */
+export function securitySwitches(
+  config: Record<string, unknown> | null | undefined,
+  organizationId: string | null | undefined
+): Record<SecuritySwitch, boolean> {
+  return {
+    enforcedReads: securitySwitchOn(config, organizationId, 'enforcedReads'),
+    privatePay: securitySwitchOn(config, organizationId, 'privatePay'),
+  }
+}

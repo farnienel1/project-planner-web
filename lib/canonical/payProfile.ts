@@ -161,3 +161,93 @@ export function payProfileBackfillWrites(input: {
   }
   return { profileSet, sourceRemove }
 }
+
+// MARK: - Reading and writing pay with the `privatePay` switch (rulebook §8, §16, 1.26.0)
+
+/**
+ * How a viewer reads `operativeDayRateHistory` (rulebook §8, §16; `privatePay` from `securitySwitchOn`):
+ *   - `all`: the whole collection — while `privatePay` is off (every member reads it, as before), and for admins,
+ *     super admins and the platform owner when it is on;
+ *   - `people`: with `privatePay` on, everyone else runs one `userId ==` query per id in `userIds` — their own id and
+ *     the ids of the `subjects` whose pay they may see (`canViewPersonPay`), exact de-dupe, order kept. The rules
+ *     refuse a whole-collection query for them (Firestore rules are not filters).
+ * Known limit: a catalogue operative's rows with no `userId` (an `operatives` row with no account) are read only by
+ * admins while `privatePay` is on — the rules cannot prove a non-admin's `operativeId ==` query.
+ */
+export type RateHistoryQueryPlan = { kind: 'all' } | { kind: 'people'; userIds: string[] }
+
+function viewerSeesEveryPay(viewer: PayViewer): boolean {
+  if (viewer.isPlatformOwner === true) return true
+  if (viewer.isActive === false) return false
+  return permissionLevelOf(viewer) === 'admin'
+}
+
+function viewablePayIds(
+  viewer: PayViewer,
+  subjects: ReadonlyArray<PaySubject> | null | undefined,
+  roster: ReadonlyArray<PersonRosterRow> | null | undefined
+): string[] {
+  const out: string[] = []
+  const seen = new Set<string>()
+  const add = (raw: unknown) => {
+    const id = typeof raw === 'string' ? raw.trim() : ''
+    if (!id || seen.has(id)) return
+    seen.add(id)
+    out.push(id)
+  }
+  add(viewer.id)
+  for (const subject of subjects || []) {
+    if (subject && canViewPersonPay(viewer, subject, roster)) add(subject.id)
+  }
+  return out
+}
+
+export function rateHistoryQueryPlan(
+  viewer: PayViewer | null | undefined,
+  subjects: ReadonlyArray<PaySubject> | null | undefined,
+  roster?: ReadonlyArray<PersonRosterRow> | null,
+  options?: { privatePay?: boolean } | null
+): RateHistoryQueryPlan {
+  if (options?.privatePay !== true) return { kind: 'all' }
+  if (!viewer) return { kind: 'people', userIds: [] }
+  if (viewerSeesEveryPay(viewer)) return { kind: 'all' }
+  return { kind: 'people', userIds: viewablePayIds(viewer, subjects, roster) }
+}
+
+/**
+ * How a viewer reads `payProfiles` (private from the 1.13.0 deploy, whatever the switch): `all` (one collection
+ * query) for admins, super admins and the platform owner; otherwise `documents` — one read by id per person whose pay
+ * they may see (`canViewPersonPay`), their own first. Each app lays the result over its roster (`overlayPayProfile`),
+ * so once the strip has run pay still shows to the people who may see it.
+ */
+export type PayProfileReadPlan = { kind: 'all' } | { kind: 'documents'; ids: string[] }
+
+export function payProfileReadPlan(
+  viewer: PayViewer | null | undefined,
+  subjects: ReadonlyArray<PaySubject> | null | undefined,
+  roster?: ReadonlyArray<PersonRosterRow> | null
+): PayProfileReadPlan {
+  if (!viewer) return { kind: 'documents', ids: [] }
+  if (viewerSeesEveryPay(viewer)) return { kind: 'all' }
+  return { kind: 'documents', ids: viewablePayIds(viewer, subjects, roster) }
+}
+
+/**
+ * The part of a `users` / `operatives` / `managers` write that may go onto that shared document. While `privatePay`
+ * is off it is the write unchanged (apps write pay to both places, so older builds still read it). While it is on,
+ * every `PAY_PROFILE_FIELDS` key is left out — pay goes only to the pay profile (`payProfileWriteFieldsFromProfileWrite`)
+ * and the rate history, and the rules refuse a pay value on a shared document (`payStaysPrivate`). The backfill's
+ * `--strip` removes the values already there.
+ */
+export function sharedDocumentPayWrite<T extends Record<string, unknown>>(
+  write: T,
+  options?: { privatePay?: boolean } | null
+): T {
+  if (options?.privatePay !== true || !write) return write
+  const out: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(write)) {
+    if ((PAY_PROFILE_FIELDS as ReadonlyArray<string>).includes(key)) continue
+    out[key] = value
+  }
+  return out as T
+}

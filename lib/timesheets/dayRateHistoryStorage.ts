@@ -2,8 +2,12 @@
  * iOS parity: FirebaseBackend.loadOperativeDayRateHistory / recordOperativeDayRateChange
  * Collection: organizations/{orgId}/operativeDayRateHistory/{uuid}
  */
-import { collection, doc, getDocs, serverTimestamp, setDoc, Timestamp, type Unsubscribe } from 'firebase/firestore'
+import { collection, doc, getDocs, query, serverTimestamp, setDoc, Timestamp, where, type Unsubscribe } from 'firebase/firestore'
 import { watchOrgCollection } from '@/lib/firebase/watchOrgQuery'
+import { privatePayFor, securitySwitchesReady } from '@/lib/access/securitySwitches'
+import { rateHistoryQueryPlan, type RateHistoryQueryPlan } from '@/lib/canonical'
+import { useAuthStore } from '@/lib/stores/authStore'
+import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { auth, db } from '@/lib/firebase/config'
 import { writeMetadataFields } from '@/lib/canonical/writeMetadata'
 import { payRateChangeWrites, payRateHistoryWriteFields } from '@/lib/canonical/payRate'
@@ -106,12 +110,37 @@ function historyFromDocs(docs: ReadonlyArray<{ id: string; data: Record<string, 
   return { byUserId, byOperativeId }
 }
 
+/**
+ * Rulebook 1.26.0 §8 / §16 (`rateHistoryQueryPlan`): the whole collection while `privatePay` is off for this
+ * organisation, and for admins; otherwise one `userId ==` query per person whose pay the signed-in user may see
+ * (their own and their reports'), since the rules refuse a non-admin's whole-collection read once it is on.
+ */
+function rateHistoryPlanFor(organizationId: string): RateHistoryQueryPlan {
+  const roster = useOrgUserStore.getState().users
+  return rateHistoryQueryPlan(useAuthStore.getState().user as never, roster as never, roster as never, {
+    privatePay: privatePayFor(organizationId),
+  })
+}
+
+async function readRateHistoryDocs(organizationId: string): Promise<Array<{ id: string; data: Record<string, unknown> }>> {
+  const col = collection(db, 'organizations', organizationId, 'operativeDayRateHistory')
+  await securitySwitchesReady()
+  const plan = rateHistoryPlanFor(organizationId)
+  const snaps = plan.kind === 'all'
+    ? [await getDocs(col)]
+    : await Promise.all(plan.userIds.map((userId) => getDocs(query(col, where('userId', '==', userId)))))
+  const byId = new Map<string, { id: string; data: Record<string, unknown> }>()
+  for (const snap of snaps) {
+    for (const row of snap.docs) byId.set(row.id, { id: row.id, data: row.data() as Record<string, unknown> })
+  }
+  return [...byId.values()]
+}
+
 export async function loadOperativeDayRateHistory(
   organizationId: string
 ): Promise<OperativeDayRateHistoryCollection> {
   try {
-    const snap = await getDocs(collection(db, 'organizations', organizationId, 'operativeDayRateHistory'))
-    return historyFromDocs(snap.docs.map((row) => ({ id: row.id, data: row.data() as Record<string, unknown> })))
+    return historyFromDocs(await readRateHistoryDocs(organizationId))
   } catch {
     return emptyDayRateHistory()
   }
@@ -122,7 +151,32 @@ export function watchOperativeDayRateHistory(
   organizationId: string,
   onHistory: (history: OperativeDayRateHistoryCollection) => void
 ): Unsubscribe {
-  return watchOrgCollection(organizationId, 'operativeDayRateHistory', (docs) => onHistory(historyFromDocs(docs)))
+  const plan = rateHistoryPlanFor(organizationId)
+  if (plan.kind === 'all') {
+    return watchOrgCollection(organizationId, 'operativeDayRateHistory', (docs) => onHistory(historyFromDocs(docs)))
+  }
+  // 1.26.0: one listener per person (`rateHistoryQueryPlan`), merged.
+  const perPerson = new Map<string, Array<{ id: string; data: Record<string, unknown> }>>()
+  const emit = () => {
+    const byId = new Map<string, { id: string; data: Record<string, unknown> }>()
+    for (const rows of perPerson.values()) for (const row of rows) byId.set(row.id, row)
+    onHistory(historyFromDocs([...byId.values()]))
+  }
+  const stops = plan.userIds.map((userId) =>
+    watchOrgCollection(
+      organizationId,
+      'operativeDayRateHistory',
+      (docs) => {
+        perPerson.set(userId, docs)
+        emit()
+      },
+      { constraints: [where('userId', '==', userId)] }
+    )
+  )
+  if (stops.length === 0) onHistory(emptyDayRateHistory())
+  return () => {
+    for (const stop of stops) stop()
+  }
 }
 
 /** The open organisation's business zone (`organizationTimeZone`), for callers that do not pass one. */
@@ -247,8 +301,7 @@ export async function loadOperativeDayRateHistoryOrNull(
   organizationId: string
 ): Promise<OperativeDayRateHistoryCollection | null> {
   try {
-    const snap = await getDocs(collection(db, 'organizations', organizationId, 'operativeDayRateHistory'))
-    return historyFromDocs(snap.docs.map((row) => ({ id: row.id, data: row.data() as Record<string, unknown> })))
+    return historyFromDocs(await readRateHistoryDocs(organizationId))
   } catch {
     return null
   }

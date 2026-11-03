@@ -20,6 +20,7 @@ import {
 import { subscribeOrgCollectionLoaded, forgetOrgCollectionDoc, unsubscribeOrgCollection, type OrgCollectionDoc, type OrgCollectionSnapshotMeta } from '@/lib/firebase/subscribeOrgCollection'
 import { forgetOrgPlanDoc, subscribeOrgPlan, unsubscribeOrgPlan } from '@/lib/firebase/subscribeOrgPlan'
 import { jobPlanParts, webJobAccessViewer } from '@/lib/access/readPlan'
+import { securitySwitchesReady } from '@/lib/access/securitySwitches'
 import { userCanChangeJobManagers } from '@/lib/access/bookingAccess'
 import { jobWriteWithoutManagerList } from '@/lib/canonical'
 import { liveResultStillCurrent } from '@/lib/firebase/liveResult'
@@ -152,6 +153,9 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   loadProjects: async (organizationId, _options?: { force?: boolean }) => {
     void _options
     if (!organizationId) return
+    // Rulebook 1.26.0: plan for the `enforcedReads` switch as the rules read it now (first read of platformConfig/app).
+    await securitySwitchesReady()
+    void import('@/lib/access/readPlanSync').then((sync) => sync.followSecuritySwitches()).catch(() => undefined)
     if (get().projects.length === 0 || projectsOrgId !== organizationId) set({ loading: true, error: null })
     else set({ error: null })
     try {
@@ -179,6 +183,9 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   loadSmallWorks: async (organizationId, _options?: { force?: boolean }) => {
     void _options
     if (!organizationId) return
+    // Rulebook 1.26.0: plan for the `enforcedReads` switch as the rules read it now (first read of platformConfig/app).
+    await securitySwitchesReady()
+    void import('@/lib/access/readPlanSync').then((sync) => sync.followSecuritySwitches()).catch(() => undefined)
     if (get().smallWorks.length === 0 || smallWorksOrgId !== organizationId) set({ loading: true, error: null })
     else set({ error: null })
     try {

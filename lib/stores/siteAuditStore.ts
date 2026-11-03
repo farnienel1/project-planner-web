@@ -44,6 +44,7 @@ import { effectivePermissions } from '@/lib/canonical/permissionLevels'
 import { savePartialDocument } from '@/lib/firebase/partialWrite'
 import { inboxActorUserId } from '@/lib/firebase/notifyInbox'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
+import { overlayRosterPay, refreshPayProfiles } from '@/lib/pay/payProfileOverlay'
 
 /** `siteAudits/{id}` through the rulebook reader `parseSiteAuditDocument` (rulebook 1.8.0). */
 function mapSiteAudit(docId: string, data: Record<string, unknown>): SiteAudit | null {
@@ -183,7 +184,8 @@ function text(value: unknown): string {
 }
 
 function userForThisOrganisation(id: string, data: Record<string, unknown>, organizationId: string, allowNamedOrg = false): User | null {
-  const prepared = rosterParseRecord(data, organizationId, { allowNamedOrg })
+  // Rulebook 1.26.0 §8: pay is read pay profile first (`overlayPayProfile`), the users document second.
+  const prepared = rosterParseRecord(overlayRosterPay(organizationId, id, data), organizationId, { allowNamedOrg })
   if (!prepared) return null
   return mapOrgUser(id, prepared)
 }
@@ -871,6 +873,17 @@ export const useOrgUserStore = create<OrgUserState>((set, get) => ({
             rosterLoadedOrgId: organizationId,
           })
           startLiveRoster(organizationId, loaded.fallbackIds)
+          // Rulebook 1.26.0 §8: read the pay profiles this viewer may read; when they changed, read the roster again
+          // so every person's pay is laid over (`payProfileReadPlan`, `overlayPayProfile`).
+          void import('@/lib/stores/authStore')
+            .then(({ useAuthStore }) => refreshPayProfiles(organizationId, useAuthStore.getState().user as never, users as never))
+            .then((changed) => {
+              if (changed && listedRosterOrgId === organizationId) {
+                return get().loadUsers(organizationId, { force: true })
+              }
+              return undefined
+            })
+            .catch(() => undefined)
         }
         try {
           const rosterPromise = fetchOrganisationRoster(organizationId, { finalAttempt: attempt.final })

@@ -3514,3 +3514,113 @@ test('1.15.0 canSendMaterialOrders: only admins and managers write material send
   await assertFails(setDoc(doc(authDb(OP_A, 'op-a@test.com'), 'organizations', ORG_A, 'materialSendRecords', 'SEND-115-O'), record('SEND-115-O')))
   await assertFails(setDoc(doc(authDb(ADMIN_B, 'admin-b@test.com'), 'organizations', ORG_A, 'materialSendRecords', 'SEND-115-B'), record('SEND-115-B')))
 })
+
+async function step<T>(label: string, run: Promise<T>): Promise<T> {
+  try {
+    return await run
+  } catch (error) {
+    throw new Error(`${label}: ${error instanceof Error ? error.message : String(error)}`)
+  }
+}
+
+// MARK: - Rulebook 1.26.0: the security switches, per organisation (platformConfig/app lists)
+
+async function setSwitchConfig(fields: Record<string, unknown>) {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'platformConfig', 'app'), fields)
+  })
+}
+
+test('1.26.0 enforcedReads per organisation: on only for listed companies; operatives read only their own bookings and jobs by id', async () => {
+  await seed112()
+  const mgr = authDb(H_MGR, 'h-mgr@test.com')
+  const op2 = authDb(H_OP2, 'h-op2@test.com')
+  const col = (db: ReturnType<typeof authDb>, name: string) => collection(db, 'organizations', ORG_H, name)
+  try {
+    // Off for this company (another company listed): reads as before 1.10.0.
+    await setSwitchConfig({ enforcedReads: false, enforcedReadsOrganizationIds: [ORG_H2] })
+    await assertSucceeds(getDocs(col(mgr, 'projects')))
+    await assertSucceeds(getDocs(col(mgr, 'bookings')))
+    await assertSucceeds(getDocs(col(op2, 'bookings')))
+    await assertSucceeds(getDocs(col(op2, 'projects')))
+
+    // On for this company only.
+    await setSwitchConfig({ enforcedReads: false, enforcedReadsOrganizationIds: [ORG_H] })
+    await assertFails(getDocs(col(mgr, 'projects')))
+    await assertFails(getDocs(col(mgr, 'bookings')))
+    // An operative: their own bookings by id, never the whole collection or another person's booking.
+    await assertSucceeds(getDocs(query(col(op2, 'bookings'), where('operativeId', 'in', [H_OP2]))))
+    await assertSucceeds(getDoc(doc(op2, 'organizations', ORG_H, 'bookings', 'h-bk-op2')))
+    await assertFails(getDocs(col(op2, 'bookings')))
+    await assertFails(getDocs(query(col(op2, 'bookings'), where('operativeId', 'in', [H_OP3]))))
+    // Jobs: by id only, never a list.
+    await assertSucceeds(getDoc(doc(op2, 'organizations', ORG_H, 'projects', 'h-p1')))
+    await assertFails(getDocs(col(op2, 'projects')))
+    // Admins are unaffected.
+    await assertSucceeds(getDocs(col(authDb(H_AD, 'h-ad@test.com'), 'bookings')))
+    await assertSucceeds(getDocs(col(authDb(H_AD, 'h-ad@test.com'), 'projects')))
+
+    // A list that is not a list, or a mistyped id, switches nothing on.
+    await setSwitchConfig({ enforcedReadsOrganizationIds: ORG_H })
+    await assertSucceeds(getDocs(col(mgr, 'projects')))
+    await setSwitchConfig({ enforcedReadsOrganizationIds: [ORG_H.toUpperCase()] })
+    await assertSucceeds(getDocs(col(mgr, 'projects')))
+  } finally {
+    await setSwitchConfig({ enforcedReads: true })
+  }
+})
+
+test('1.26.0 privatePay per organisation: a person reads their own pay; a colleague never reads it; no pay goes back on users', async () => {
+  await seedPayPeople()
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    await setDoc(doc(db, 'organizations', ORG_A, 'payProfiles', PAY_OP), { userId: PAY_OP, dayRate: 200, payBasis: 'day' })
+    await setDoc(doc(db, 'organizations', ORG_A, 'operativeDayRateHistory', 'h126'), { userId: PAY_OP, dayRate: 200, effectiveAt: Timestamp.now() })
+    await setDoc(doc(db, 'organizations', ORG_A, 'settings', `timesheet_${PAY_OP}_126`), { userId: PAY_OP, weekStartKey: 'k126' })
+  })
+  const op = authDb(PAY_OP, 'pay-op@test.com')
+  const colleague = authDb(REPORT_A, 'report-a@test.com')
+  const mgrOther = authDb(MGR_OTHER_A, 'mgr-other-a@test.com')
+  const lm = authDb(LM_A, 'lm-a@test.com')
+  const admin = authDb(ADMIN_A, 'admin-a@test.com')
+  const history = (db: ReturnType<typeof authDb>) => collection(db, 'organizations', ORG_A, 'operativeDayRateHistory')
+  const settings = (db: ReturnType<typeof authDb>) => collection(db, 'organizations', ORG_A, 'settings')
+  const payProfile = (db: ReturnType<typeof authDb>) => doc(db, 'organizations', ORG_A, 'payProfiles', PAY_OP)
+  try {
+    for (const on of [false, true]) {
+      await setSwitchConfig({ enforcedReads: true, privatePayOrganizationIds: on ? [ORG_A] : [ORG_B] })
+      // The person reads their own pay, whatever the switch.
+      await step('assertSucceeds#1', assertSucceeds(getDoc(payProfile(op))))
+      await step('assertSucceeds#2', assertSucceeds(getDocs(query(history(op), where('userId', '==', PAY_OP)))))
+      await step('assertSucceeds#3', assertSucceeds(getDoc(doc(op, 'organizations', ORG_A, 'settings', `timesheet_${PAY_OP}_126`))))
+      // A colleague and a manager who is not their line manager never read the private pay profile.
+      await step('assertFails#5', assertFails(getDoc(payProfile(colleague))))
+      await step('assertFails#6', assertFails(getDoc(payProfile(mgrOther))))
+      // The line manager reads per person; the admin reads everything.
+      await step('assertSucceeds#7', assertSucceeds(getDoc(payProfile(lm))))
+      await step('assertSucceeds#8', assertSucceeds(getDocs(query(history(lm), where('userId', '==', PAY_OP)))))
+      await step('assertSucceeds#9', assertSucceeds(getDoc(doc(lm, 'organizations', ORG_A, 'settings', `timesheet_${PAY_OP}_126`))))
+      await step('assertSucceeds#10', assertSucceeds(getDocs(history(admin))))
+      await step('assertSucceeds#11', assertSucceeds(getDocs(query(settings(admin), where('weekStartKey', '==', 'k126')))))
+      if (on) {
+        // Rate history, the mirror and timesheets are closed to colleagues; whole-collection reads to non-admins.
+        await step('assertFails#12', assertFails(getDocs(query(history(colleague), where('userId', '==', PAY_OP)))))
+        await step('assertFails#13', assertFails(getDoc(doc(colleague, 'organizations', ORG_A, 'operativeProfiles', PAY_OP))))
+        await step('assertFails#14', assertFails(getDoc(doc(mgrOther, 'organizations', ORG_A, 'settings', `timesheet_${PAY_OP}_126`))))
+        await step('assertFails#15', assertFails(getDocs(history(lm))))
+        await step('assertFails#16', assertFails(getDocs(query(settings(lm), where('weekStartKey', '==', 'k126')))))
+        // No pay value back on a shared document of this company; removing and other fields still pass.
+        await step('assertFails#17', assertFails(updateDoc(doc(admin, 'users', PAY_OP), { dayRate: 260 })))
+        await step('assertSucceeds#18', assertSucceeds(updateDoc(doc(admin, 'users', PAY_OP), { firstName: 'Pat' })))
+        await step('assertFails#19', assertFails(updateDoc(doc(admin, 'organizations', ORG_A, 'operatives', PAY_OP_ROW), { dayRate: 260 })))
+      } else {
+        // Off for this company: reads and pay writes as before.
+        await step('assertSucceeds#20', assertSucceeds(getDocs(query(history(colleague), where('userId', '==', PAY_OP)))))
+        await step('assertSucceeds#21', assertSucceeds(getDocs(history(lm))))
+        await step('assertSucceeds#22', assertSucceeds(updateDoc(doc(admin, 'users', PAY_OP), { dayRate: 205 })))
+      }
+    }
+  } finally {
+    await setSwitchConfig({ enforcedReads: true })
+  }
+})

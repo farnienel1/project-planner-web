@@ -211,9 +211,14 @@ service cloud.firestore {
   // has set `platformConfig/app.enforcedReads` to true (after both backfills and an app release with
   // ENFORCED_READS_ACTIVE true). Until then every member of the organisation reads its jobs and bookings as before
   // 1.10.0. One document read, shared by every rule that asks. Writes are never switched by it.
-  function enforcedReadsOn() {
+  // 1.26.0: also on for one organisation when its id is in `enforcedReadsOrganizationIds` (lib/canonical
+  // securitySwitchOn), so the owner can switch their own company on first. The apps read the same document and plan
+  // their queries from it, so they work with the switch on or off.
+  function enforcedReadsOn(organizationId) {
     let config = /databases/(default)/documents/platformConfig/app;
-    return exists(config) && get(config).data.get('enforcedReads', false) == true;
+    let data = exists(config) ? get(config).data : {};
+    return data.get('enforcedReads', false) == true ||
+      (data.get('enforcedReadsOrganizationIds', []) is list && organizationId in data.get('enforcedReadsOrganizationIds', []));
   }
 
   // Rulebook 1.13.0 §16 / §19 (Q1): pay moves to organizations/{orgId}/payProfiles/{subjectId}. The pay reads of
@@ -222,9 +227,12 @@ service cloud.firestore {
   // `platformConfig/app.privatePay` true — after an app release that reads pay per person (Deploy notes 1.13.0). From
   // then on no write puts a pay value back on `users`, `operatives` or `managers`. One document read, shared with
   // `enforcedReadsOn`. `payProfiles` itself is private from the deploy.
-  function privatePayOn() {
+  // 1.26.0: also on for one organisation when its id is in `privatePayOrganizationIds` (securitySwitchOn).
+  function privatePayOn(organizationId) {
     let config = /databases/(default)/documents/platformConfig/app;
-    return exists(config) && get(config).data.get('privatePay', false) == true;
+    let data = exists(config) ? get(config).data : {};
+    return data.get('privatePay', false) == true ||
+      (data.get('privatePayOrganizationIds', []) is list && organizationId in data.get('privatePayOrganizationIds', []));
   }
   // A write that puts a pay value (not null) on a users / operatives / managers document, or changes one.
   function payValueWritten() {
@@ -239,8 +247,8 @@ service cloud.firestore {
       (next.get('employmentTypeEffectiveAt', null) != null &&
         next.get('employmentTypeEffectiveAt', null) != prev.get('employmentTypeEffectiveAt', null));
   }
-  function payStaysPrivate() {
-    return !privatePayOn() || !payValueWritten();
+  function payStaysPrivate(organizationId) {
+    return !privatePayOn(organizationId) || !payValueWritten();
   }
 
   // Rulebook 1.13.0 §19 (Q3, lib/canonical hasAccess / billingAccessFields): a lapsed subscription closes the
@@ -1070,7 +1078,7 @@ service cloud.firestore {
         managerCanCreateOperativeUser() ||
         // Path 5: Platform owner creating their own non-tenant profile
         (isPlatformOwner() && request.auth.uid == userId)
-      ) && payStaysPrivate();
+      ) && payStaysPrivate(request.resource.data.get('organizationId', ''));
       
       // Allow update if:
       // 1. User updating themselves without escalating admin / role / organizationId, OR
@@ -1094,7 +1102,7 @@ service cloud.firestore {
          (request.resource.data.organizationId is string &&
           organizationExists(request.resource.data.organizationId) &&
           isAdminOfCompany(request.resource.data.organizationId)))
-      ) && payStaysPrivate());
+      ) && payStaysPrivate(resource.data.get('organizationId', '')));
       
       // Allow delete if:
       // 1) User deleting themselves by uid, OR
@@ -1396,7 +1404,7 @@ service cloud.firestore {
       function jobGetAllowed(kind) {
         let role = callerOrgRole(organizationId);
         return role in ['operative', 'member'] ||
-          (!enforcedReadsOn() && legacyMemberRead(role)) ||
+          (!enforcedReadsOn(organizationId) && legacyMemberRead(role)) ||
           (role == 'manager' && resource != null && jobListsCaller(resource.data)) ||
           callerSeesEveryJob(role, kind);
       }
@@ -1405,7 +1413,7 @@ service cloud.firestore {
         let role = callerOrgRole(organizationId);
         return callerSeesEveryJob(role, kind) ||
           (role == 'manager' && request.auth.uid in resource.data.get('managerUserIds', [])) ||
-          (!enforcedReadsOn() && legacyMemberRead(role));
+          (!enforcedReadsOn(organizationId) && legacyMemberRead(role));
       }
       function jobCreateAllowed(kind) {
         return callerSeesEveryJob(callerOrgRole(organizationId), kind);
@@ -1425,7 +1433,7 @@ service cloud.firestore {
         let role = callerOrgRole(organizationId);
         let path = /databases/(default)/documents/organizations/$(organizationId)/$(kind)/$(jobId);
         return role in ['operative', 'member'] ||
-          (!enforcedReadsOn() && legacyMemberRead(role)) ||
+          (!enforcedReadsOn(organizationId) && legacyMemberRead(role)) ||
           (role == 'manager' && exists(path) && jobListsCaller(get(path).data)) ||
           callerSeesEveryJob(role, kind);
       }
@@ -1501,7 +1509,7 @@ service cloud.firestore {
           (resource != null || isOrgManagerOrAdmin(organizationId) || isPlatformOwner()) &&
           (!rosterRowPayKeysChanged() || rosterRowAdmin() || operativesManagerForOtherRow()) &&
           (!rosterRowEmailChanged() || rosterRowAdmin() || operativesManagerForOtherRow()) &&
-          payStaysPrivate() &&
+          payStaysPrivate(organizationId) &&
           writeMetadataValidWhenPresent();
         allow delete: if isOrganizationAdmin(organizationId);
       }
@@ -1635,7 +1643,7 @@ service cloud.firestore {
         let role = callerOrgRole(organizationId);
         // 1.12.0: before `enforcedReads`, every member of this organisation reads every booking (as before 1.10.0).
         return role == 'admin' ||
-          (!enforcedReadsOn() && (role != '' || canAccessOrganization(organizationId))) ||
+          (!enforcedReadsOn(organizationId) && (role != '' || canAccessOrganization(organizationId))) ||
           (role == 'manager' && resource.data.get('jobCollection', '') in ['projects', 'smallWorks'] &&
             callerJobToggle(role, resource.data.get('jobCollection', ''))) ||
           (collection == 'managerSiteBookings' && role == 'manager' && resource.data.userId == request.auth.uid) ||
@@ -1831,7 +1839,7 @@ service cloud.firestore {
         // 1.13.0 (Q1): with `privatePay` on, a timesheet is read by the person, their reviewers (line manager, admins)
         // and a manager with operatives access for an operative's sheet (`canViewPayOf`).
         function canReadTimesheetSettings() {
-          return !privatePayOn() || isOwnTimesheetSettings() ||
+          return !privatePayOn(organizationId) || isOwnTimesheetSettings() ||
             isOrgAdminViaMembersMap(organizationId) || isOrganizationAdmin(organizationId) || isPlatformOwner() ||
             (timesheetSubjectUid() is string && canViewPayOfAsMember(timesheetSubjectUid())) ||
             isTimesheetReviewer();
@@ -1868,7 +1876,7 @@ service cloud.firestore {
           (resource != null || isOrgManagerOrAdmin(organizationId) || isPlatformOwner()) &&
           (!rosterRowPayKeysChanged() || rosterRowAdmin()) &&
           (!rosterRowEmailChanged() || rosterRowAdmin()) &&
-          payStaysPrivate() &&
+          payStaysPrivate(organizationId) &&
           writeMetadataValidWhenPresent();
         allow delete: if isOrganizationAdmin(organizationId);
       }
@@ -2225,7 +2233,7 @@ service cloud.firestore {
         }
         // 1.13.0 (Q1): with `privatePay` on, only the people who may see this person's pay.
         allow read: if canAccessOrganization(organizationId) && (
-          !privatePayOn() || isOrgAdminViaMembersMap(organizationId) || isOrganizationAdmin(organizationId) ||
+          !privatePayOn(organizationId) || isOrgAdminViaMembersMap(organizationId) || isOrganizationAdmin(organizationId) ||
           canViewPayOfAsMember(userId)
         );
         allow create, update: if request.auth != null &&
@@ -2282,7 +2290,7 @@ service cloud.firestore {
           return isOrgAdminViaMembersMap(organizationId) || isOrganizationAdmin(organizationId) || isPlatformOwner() ||
             canViewPayOfAsMember(rateRowUserId(data).size() > 0 ? rateRowUserId(data) : rateRowOperativeId(data));
         }
-        allow read: if canAccessOrganization(organizationId) && (!privatePayOn() || canViewRateRow(resource.data));
+        allow read: if canAccessOrganization(organizationId) && (!privatePayOn(organizationId) || canViewRateRow(resource.data));
         allow create: if request.auth != null && canWriteRateRow(request.resource.data);
         allow update: if request.auth != null &&
           rateRowUserId(request.resource.data) == rateRowUserId(resource.data) &&

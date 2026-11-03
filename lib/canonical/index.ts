@@ -1343,9 +1343,15 @@ export { isVerifiedPlatformOwner } from './passwordPolicy'
 export { invitationIsOperativeOnly } from './inviteAccept'
 export { organizationMemberActive } from './orgMembership'
 export { PLATFORM_CONFIG_APP_PATH, appUpdateRequired, compareAppVersions } from './platformConfig'
+export {
+  SECURITY_SWITCHES,
+  SECURITY_SWITCH_ORGANIZATION_FIELDS,
+  securitySwitchOn,
+  securitySwitches,
+} from './platformConfig'
 export { LEAVE_YEAR_MONTHS_MESSAGE, leaveYearEndMonth, validateAnnualLeaveDefaults, validateLeaveYearMonths } from './annualLeaveBalance'
 export { PAY_STANDARD_DAY_MIN_HOURS } from './payRate'
-export type { AppUpdateConfig, AppUpdatePlatform } from './platformConfig'
+export type { AppUpdateConfig, AppUpdatePlatform, SecuritySwitch } from './platformConfig'
 
 // Rulebook 1.13.0 — owner decisions round 4.
 export {
@@ -1403,6 +1409,9 @@ export {
   payProfileBackfillWrites,
   payProfilePath,
   payProfileWriteFieldsFromProfileWrite,
+  payProfileReadPlan,
+  rateHistoryQueryPlan,
+  sharedDocumentPayWrite,
 } from './payProfile'
 export type {
   BookingSlotChoice,
@@ -1416,7 +1425,7 @@ export type {
   BookingHoursLabel,
 } from './bookingSlots'
 export type { SubscriptionAccess } from './billingAccess'
-export type { PayProfileDocument, PayProfileField, PaySubject, PayViewer } from './payProfile'
+export type { PayProfileDocument, PayProfileField, PayProfileReadPlan, PaySubject, PayViewer, RateHistoryQueryPlan } from './payProfile'
 export { parseAnnualLeaveDefaults } from './organizationSettings'
 export {
   SELF_EMAIL_INVALID_MESSAGE,

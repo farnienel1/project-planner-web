@@ -11,6 +11,7 @@ import { managerSiteBookingUpdateWriteFields } from '@/lib/canonical/workDocumen
 import { forgetOrgCollectionDoc, isOrgCollectionSubscribed, subscribeOrgCollection, unsubscribeOrgCollection, type OrgCollectionDoc } from '@/lib/firebase/subscribeOrgCollection'
 import { forgetOrgPlanDoc, subscribeOrgPlan, unsubscribeOrgPlan } from '@/lib/firebase/subscribeOrgPlan'
 import { bookingPlanInputs, bookingPlanParts, webJobAccessViewer } from '@/lib/access/readPlan'
+import { securitySwitchesReady } from '@/lib/access/securitySwitches'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { organizationIdsMatch } from '@/lib/orgMembership/webActiveOrg'
 import { retainParsedRows } from '@/lib/staff/rosterRetain'
@@ -116,6 +117,9 @@ export const useManagerScheduleStore = create<ManagerScheduleState>((set, get) =
 
   loadManagerSiteBookings: async (organizationId, options) => {
     if (!organizationId || !db) return
+    // Rulebook 1.26.0: plan for the `enforcedReads` switch as the rules read it now (first read of platformConfig/app).
+    await securitySwitchesReady()
+    void import('@/lib/access/readPlanSync').then((sync) => sync.followSecuritySwitches()).catch(() => undefined)
     if (managerDownloadOrgId !== organizationId) {
       managerDownloadOrgId = organizationId
       managerDownload = { loadedFromDayKey: null, fullHistory: false }
