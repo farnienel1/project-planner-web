@@ -39,6 +39,7 @@ import {
 } from './engine'
 import { eachDayKey, formatLongDayKey, isoWeekdayOfDayKey, zoneOrLondon } from './dayKeys'
 import { idKey } from './personIds'
+import { standardDayOn, type PayrollTimePolicyState } from './payrollPolicySchedule'
 
 export type LeaveSlot = 'FULL_DAY' | 'AM' | 'PM'
 
@@ -78,7 +79,11 @@ export type LeaveCoverageInput = {
   timeZone?: string | null
   startDayKey: string
   endDayKey: string
-  day: StandardDayInput | null | undefined
+  /**
+   * The standard day. Rulebook 1.23.0: pass the whole working-hours state (`PayrollTimePolicyState`) so each day of
+   * the window uses the rules in effect on it (`standardDayOn`); one policy is used for every day.
+   */
+  day: StandardDayInput | PayrollTimePolicyState | null | undefined
   includeWeekends: boolean
   /** Users who are never reported as unbooked. Applies to leave_cover, never to leave_clash. */
   excludedUserIds?: readonly string[] | null
@@ -156,9 +161,6 @@ function joinRanges(intervals: readonly MinuteInterval[]): string {
 
 export function leaveCoverageRows(input: LeaveCoverageInput): LeaveCoverageRow[] {
   const timeZone = zoneOrLondon(input.timeZone)
-  // 1.20.0 §9: leave halves split the day at its exact middle (never the booking break split).
-  const windows = leaveHalfDayWindows(input.day)
-  const lunch = standardBreakWindow(input.day)
   // Ids compare without case (`normalizeDocumentId`, rulebook §1); returned rows keep the stored ids.
   const excluded = new Set((input.excludedUserIds || []).map(idKey).filter(Boolean))
   const approvedLeave = input.leave.filter((record) => record.approved && record.startDayKey && record.endDayKey)
@@ -203,6 +205,10 @@ export function leaveCoverageRows(input: LeaveCoverageInput): LeaveCoverageRow[]
   for (const dayKey of eachDayKey(input.startDayKey, input.endDayKey, timeZone)) {
     const iso = isoWeekdayOfDayKey(dayKey, timeZone)
     const weekend = iso === 6 || iso === 7
+    // 1.23.0 §5: the standard day in effect on this day. 1.20.0 §9: leave halves split it at its exact middle.
+    const day = standardDayOn<StandardDayInput>(input.day, dayKey)
+    const windows = leaveHalfDayWindows(day)
+    const lunch = standardBreakWindow(day)
     for (const record of approvedLeave) {
       if (dayKey < record.startDayKey || dayKey > record.endDayKey) continue
       const person = personForLeave(record)
@@ -216,7 +222,7 @@ export function leaveCoverageRows(input: LeaveCoverageInput): LeaveCoverageRow[]
         leaveSlot === 'AM' ? windows.am : leaveSlot === 'PM' ? windows.pm : windows.day
       const dayBookings = bookingsByPersonDay.get(`${person.personKey}|${dayKey}`) || []
       const intervals = dayBookings
-        .map((booking) => ({ booking, interval: leaveComparableInterval(booking, input.day) }))
+        .map((booking) => ({ booking, interval: leaveComparableInterval(booking, day) }))
         .filter((entry): entry is { booking: LeaveBooking; interval: MinuteInterval } => entry.interval !== null)
 
       const personName = String(person.name || '').trim() || person.personKey

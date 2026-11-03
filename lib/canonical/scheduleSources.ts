@@ -25,6 +25,7 @@ import {
   type StandardDayInput,
 } from './engine'
 import { bookingOccupiesDay } from './warningRows'
+import { standardDayOn, type PayrollTimePolicyState } from './payrollPolicySchedule'
 
 const DAY_KEY = /^\d{4}-\d{2}-\d{2}$/
 
@@ -369,14 +370,17 @@ export type ManagerClashGroup = {
  * Manager and admin double bookings: per person-day (`personDayItems`), the groups whose `slotInterval`s
  * overlap (`overlappingIntervalGroups`). Touching intervals do not clash.
  */
-export function managerClashGroups(input: PersonDayItemsInput & { day?: StandardDayInput | null }): ManagerClashGroup[] {
+export function managerClashGroups(
+  input: PersonDayItemsInput & { day?: StandardDayInput | PayrollTimePolicyState | null }
+): ManagerClashGroup[] {
   const groups: ManagerClashGroup[] = []
   const seen = new Set<string>()
   const intervalOf = (item: PersonDayItem): MinuteInterval | null => {
     const booking = item.kind === 'manager' ? input.managerBookings[item.index] : input.operativeBookings[item.index]
     return slotInterval(
       { timeSlot: booking?.timeSlot, workStartTime: booking?.workStartTime, workEndTime: booking?.workEndTime },
-      input.day
+      // 1.23.0: the standard day in effect on the booking's own day when `day` is the working-hours state.
+      standardDayOn<StandardDayInput>(input.day, booking?.dayKey)
     )
   }
   const personDays = personDayItems(input)
@@ -661,6 +665,53 @@ export function isClashApproved(
   return isClashAccepted(row.bookingAId, row.bookingBId, decisions?.acceptedClashes)
 }
 
+// MARK: - A booking being made
+
+export type BookingRequestClashInput = {
+  /** The booking being made on one organisation day. */
+  request: { dayKey: string; timeSlot?: string | null; workStartTime?: string | null; workEndTime?: string | null }
+  /** The person's existing bookings (labour or manager schedule). A status that does not occupy the day is left out. */
+  existing: ReadonlyArray<ClockFields & { id: string; dayKey: string }>
+  /** One standard day, or the working-hours state read on the booked day (`standardDayOn`). */
+  day?: StandardDayInput | PayrollTimePolicyState | null
+}
+
+/**
+ * Rulebook 1.23.0 §5: the ids of the person's existing bookings that a booking being made on `request.dayKey` would
+ * clash with — every booking flow's double-booking row. Both intervals are `slotInterval`s under the working hours in
+ * effect on the booked day (never today's), touching times do not clash (`intervalsOverlap`), and an overnight
+ * booking from the day before clashes with that morning (`overnightCarryInterval`). Existing bookings with ids that
+ * repeat without case count once. Input order is kept.
+ */
+export function bookingRequestClashIds(input: BookingRequestClashInput): string[] {
+  const dayKey = dayKeyText(input?.request?.dayKey)
+  if (!dayKey) return []
+  const standard = standardDayOn<StandardDayInput>(input.day, dayKey)
+  const probe = slotInterval(
+    { timeSlot: input.request.timeSlot, workStartTime: input.request.workStartTime, workEndTime: input.request.workEndTime },
+    standard
+  )
+  if (!probe) return []
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const booking of input.existing || []) {
+    const id = idText(booking?.id)
+    const day = dayKeyText(booking?.dayKey)
+    if (!id || !day || seen.has(id.toLowerCase()) || !occupiesDay(booking.status)) continue
+    const clock = { timeSlot: booking.timeSlot, workStartTime: booking.workStartTime, workEndTime: booking.workEndTime }
+    let interval: MinuteInterval | null = null
+    if (day === dayKey) interval = slotInterval(clock, standard)
+    else if (nextCalendarDayKey(day) === dayKey) {
+      const own = slotInterval(clock, standardDayOn<StandardDayInput>(input.day, day))
+      interval = own && intervalCrossesMidnight(own) ? overnightCarryInterval(own) : null
+    }
+    if (!interval || !intervalsOverlap(probe, interval)) continue
+    seen.add(id.toLowerCase())
+    out.push(id)
+  }
+  return out
+}
+
 // MARK: - Operative clashes
 
 export type OperativeClashGroupsInput = {
@@ -673,7 +724,8 @@ export type OperativeClashGroupsInput = {
    * person who resolves to one of these accounts, or shares its email, is left out here.
    */
   managerIds?: readonly string[] | null
-  day?: StandardDayInput | null
+  /** One standard day, or (1.23.0) the working-hours state read per booking day (`standardDayOn`). */
+  day?: StandardDayInput | PayrollTimePolicyState | null
 }
 
 export type OperativeClashPair = {
@@ -753,7 +805,8 @@ export function operativeClashGroups(input: OperativeClashGroupsInput): Operativ
     const booking = input.operativeBookings[index]
     return slotInterval(
       { timeSlot: booking?.timeSlot, workStartTime: booking?.workStartTime, workEndTime: booking?.workEndTime },
-      input.day
+      // 1.23.0: the standard day in effect on the booking's own day when `day` is the working-hours state.
+      standardDayOn<StandardDayInput>(input.day, booking?.dayKey)
     )
   }
   const carried = new Map<string, number[]>()

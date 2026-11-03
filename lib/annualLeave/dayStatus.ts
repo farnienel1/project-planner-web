@@ -1,4 +1,6 @@
-import { startOfDay } from 'date-fns'
+import { dueDayKey, leaveDayKind, normalizeHolidayStatus } from '@/lib/canonical'
+import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
+import { holidayBookingDayKeys } from '@/lib/annualLeave/holidayDayKeys'
 // One document can cover several days (one per request). Its slot applies to every day in it.
 import type { HolidayBooking } from '@/types'
 import { bookingMatchesPerson, type AnnualLeavePerson } from './annualLeavePerson'
@@ -10,32 +12,22 @@ export type AnnualLeaveDayKind =
   | 'pendingFull'
   | 'pendingHalf'
 
+function calendarRecords(bookings: HolidayBooking[], zone: string) {
+  return bookings.map((booking) => ({
+    id: booking.id,
+    ...holidayBookingDayKeys(booking, zone),
+    timeSlot: booking.timeSlot,
+    status: booking.status,
+  }))
+}
+
+/**
+ * Rulebook 1.23.0 §9 `leaveDayKind`: the record's leave days (`leaveRecordDayKeys`) on the organisation day; full day
+ * beats half day and, at the same length, pending beats approved — never the list order.
+ */
 export function getDayKindForBookings(day: Date, bookings: HolidayBooking[]): AnnualLeaveDayKind {
-  const dayStart = startOfDay(day)
-  let pendingHalf: HolidayBooking | undefined
-  let approvedHalf: HolidayBooking | undefined
-
-  for (const booking of bookings) {
-    if (booking.status === 'rejected') continue
-    const start = startOfDay(booking.startDate)
-    const end = startOfDay(booking.endDate)
-    if (dayStart < start || dayStart > end) continue
-
-    if (booking.status === 'pending') {
-      if (booking.timeSlot !== 'AM' && booking.timeSlot !== 'PM') return 'pendingFull'
-      pendingHalf = booking
-      continue
-    }
-
-    if (booking.status === 'approved') {
-      if (booking.timeSlot !== 'AM' && booking.timeSlot !== 'PM') return 'approvedFull'
-      approvedHalf = booking
-    }
-  }
-
-  if (pendingHalf) return 'pendingHalf'
-  if (approvedHalf) return 'approvedHalf'
-  return 'none'
+  const zone = organizationZoneOr()
+  return leaveDayKind(calendarRecords(bookings, zone), dueDayKey(day, zone), zone).kind
 }
 
 export function getDayKindForPerson(
@@ -52,15 +44,10 @@ export function getBookingForDay(
   bookings: HolidayBooking[],
   kind: 'approved' | 'pending'
 ): HolidayBooking | null {
-  const dayStart = startOfDay(day)
-  for (const booking of bookings) {
-    if (booking.status !== kind) continue
-    const start = startOfDay(booking.startDate)
-    const end = startOfDay(booking.endDate)
-    if (dayStart < start || dayStart > end) continue
-    return booking
-  }
-  return null
+  const zone = organizationZoneOr()
+  const ofKind = bookings.filter((booking) => normalizeHolidayStatus(booking.status) === kind)
+  const { recordId } = leaveDayKind(calendarRecords(ofKind, zone), dueDayKey(day, zone), zone)
+  return recordId ? ofKind.find((booking) => booking.id === recordId) ?? null : null
 }
 
 export function isDayLocked(kind: AnnualLeaveDayKind): boolean {

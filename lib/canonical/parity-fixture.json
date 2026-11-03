@@ -16890,6 +16890,910 @@
         "covered": true,
         "paidHours": 8
       }
+    },
+    {
+      "name": "1.23.0 rosterListFor: a user with no level flag is on Managers; an admin by role is not",
+      "function": "rosterListFor",
+      "args": [
+        "managers",
+        [
+          {
+            "id": "m1",
+            "email": "mo@x.com",
+            "firstName": "Mo",
+            "surname": "M",
+            "passwordSet": true,
+            "isActive": true,
+            "permissions": {
+              "manager": true
+            }
+          },
+          {
+            "id": "p1",
+            "email": "pat@x.com",
+            "firstName": "Pat",
+            "surname": "P",
+            "passwordSet": true,
+            "isActive": true
+          },
+          {
+            "id": "a2",
+            "email": "rae@x.com",
+            "firstName": "Rae",
+            "surname": "R",
+            "passwordSet": true,
+            "isActive": true,
+            "role": "admin"
+          },
+          {
+            "id": "o2",
+            "email": "oona@x.com",
+            "firstName": "Oona",
+            "surname": "O",
+            "passwordSet": true,
+            "isActive": true,
+            "role": "operative"
+          }
+        ],
+        []
+      ],
+      "expected": [
+        {
+          "id": "m1",
+          "email": "mo@x.com",
+          "firstName": "Mo",
+          "surname": "M",
+          "passwordSet": true,
+          "isActive": true,
+          "permissions": {
+            "manager": true
+          }
+        },
+        {
+          "id": "p1",
+          "email": "pat@x.com",
+          "firstName": "Pat",
+          "surname": "P",
+          "passwordSet": true,
+          "isActive": true
+        }
+      ]
+    },
+    {
+      "name": "1.23.0 rosterListFor: operatives by level, one per email",
+      "function": "rosterListFor",
+      "args": [
+        "operatives",
+        [
+          {
+            "id": "o1",
+            "email": "ollie@x.com",
+            "firstName": "Ollie",
+            "surname": "O",
+            "passwordSet": true,
+            "isActive": true,
+            "operativeMode": true
+          },
+          {
+            "id": "O1-INVITE",
+            "email": "Ollie@x.com",
+            "firstName": "Ollie",
+            "surname": "O",
+            "passwordSet": false,
+            "isActive": true,
+            "operativeMode": true
+          },
+          {
+            "id": "o2",
+            "email": "oona@x.com",
+            "firstName": "Oona",
+            "surname": "O",
+            "passwordSet": true,
+            "isActive": true,
+            "role": "operative"
+          },
+          {
+            "id": "p1",
+            "email": "pat@x.com",
+            "firstName": "Pat",
+            "surname": "P",
+            "passwordSet": true,
+            "isActive": true
+          }
+        ],
+        null
+      ],
+      "expected": [
+        {
+          "id": "o1",
+          "email": "ollie@x.com",
+          "firstName": "Ollie",
+          "surname": "O",
+          "passwordSet": true,
+          "isActive": true,
+          "operativeMode": true
+        },
+        {
+          "id": "o2",
+          "email": "oona@x.com",
+          "firstName": "Oona",
+          "surname": "O",
+          "passwordSet": true,
+          "isActive": true,
+          "role": "operative"
+        }
+      ]
+    },
+    {
+      "name": "1.23.0 clashManagerIds: active admins and manager-flag people",
+      "function": "clashManagerIds",
+      "args": [
+        [
+          {
+            "id": "adm",
+            "role": "admin"
+          },
+          {
+            "id": "mgr",
+            "permissions": {
+              "manager": true
+            }
+          },
+          {
+            "id": "MGR",
+            "permissions": {
+              "manager": true
+            }
+          },
+          {
+            "id": "flagless"
+          },
+          {
+            "id": "gone",
+            "isActive": false,
+            "adminAccess": true
+          }
+        ]
+      ],
+      "expected": [
+        "adm",
+        "mgr"
+      ]
+    },
+    {
+      "name": "1.23.0 homeOverviewMetrics: New York day, one person under two ids",
+      "function": "homeOverviewMetrics",
+      "args": [
+        {
+          "nowMs": 1793754000000,
+          "timeZone": "America/New_York",
+          "viewer": {
+            "id": "u-mgr",
+            "email": "mo@x.com"
+          },
+          "roster": [
+            {
+              "id": "u-op",
+              "email": "ollie@x.com",
+              "isActive": true,
+              "operativeMode": true
+            },
+            {
+              "id": "u-mgr",
+              "email": "mo@x.com",
+              "isActive": true,
+              "permissions": {
+                "manager": true
+              }
+            },
+            {
+              "id": "u-flag",
+              "email": "pat@x.com",
+              "isActive": true
+            }
+          ],
+          "operatives": [
+            {
+              "id": "OP-ROW",
+              "email": "Ollie@x.com"
+            }
+          ],
+          "managers": [
+            {
+              "id": "MGR-ROW",
+              "email": "mo@x.com"
+            }
+          ],
+          "tasks": [
+            {
+              "status": "To Do",
+              "dueDate": "2026-11-03",
+              "assignedManagerIds": [
+                "mgr-row"
+              ]
+            },
+            {
+              "status": "To Do",
+              "dueDate": "2026-11-01",
+              "assignedManagerId": "MGR-ROW"
+            },
+            {
+              "status": "To Do",
+              "dueDate": "2026-11-09",
+              "assignedOperativeIds": [
+                "u-mgr"
+              ]
+            }
+          ],
+          "bookings": [
+            {
+              "operativeId": "OP-ROW",
+              "date": "2026-11-03T15:00:00Z",
+              "status": "Confirmed"
+            },
+            {
+              "operativeId": "u-op",
+              "date": "2026-11-03T20:00:00Z",
+              "status": "Confirmed"
+            },
+            {
+              "operativeId": "u-flag",
+              "date": "2026-11-03T15:00:00Z",
+              "status": "Cancelled"
+            }
+          ],
+          "managerSiteBookings": [
+            {
+              "userId": "u-mgr",
+              "dayKey": "2026-11-03",
+              "locationType": "project"
+            }
+          ],
+          "holidays": [
+            {
+              "userId": "u-flag",
+              "startDayKey": "2026-11-02",
+              "endDayKey": "2026-11-04",
+              "status": "approved"
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "dayKey": "2026-11-03",
+        "tasksDueToday": 1,
+        "tasksDueThisWeek": 2,
+        "tasksOverdue": 1,
+        "outstandingTasksAllUsers": 3,
+        "operativesOnSiteToday": 1,
+        "managersOnSiteToday": 1,
+        "peopleOnSiteToday": 2,
+        "operativesOnALToday": 0,
+        "managersOnALToday": 1
+      }
+    },
+    {
+      "name": "1.23.0 qualificationExpiryCount: the warning rows, expired and soon",
+      "function": "qualificationExpiryCount",
+      "args": [
+        {
+          "referenceIso": "2026-11-03T12:00:00Z",
+          "timeZone": "Europe/London",
+          "operatives": [
+            {
+              "id": "op-1",
+              "isActive": true,
+              "name": "Ollie",
+              "expiries": [
+                {
+                  "qualificationId": "q1",
+                  "name": "CSCS",
+                  "expiryIso": "2026-11-01T00:00:00Z"
+                },
+                {
+                  "qualificationId": "q2",
+                  "name": "IPAF",
+                  "expiryIso": "2026-12-02T12:00:00Z"
+                },
+                {
+                  "qualificationId": "q3",
+                  "name": "PASMA",
+                  "expiryIso": "2026-12-04T12:00:00Z"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "expired": 1,
+        "expiringSoon": 1,
+        "total": 2
+      }
+    },
+    {
+      "name": "1.23.0 isTaskOverdue: London 4 Nov",
+      "function": "isTaskOverdue",
+      "args": [
+        {
+          "status": "To Do",
+          "dueDate": "2026-11-03T12:00:00Z"
+        },
+        1793754000000,
+        "Europe/London"
+      ],
+      "expected": true
+    },
+    {
+      "name": "1.23.0 isTaskOverdue: New York still 3 Nov",
+      "function": "isTaskOverdue",
+      "args": [
+        {
+          "status": "To Do",
+          "dueDate": "2026-11-03T12:00:00Z"
+        },
+        1793754000000,
+        "America/New_York"
+      ],
+      "expected": false
+    },
+    {
+      "name": "1.23.0 deadlineUrgency: overdue beats blocked",
+      "function": "deadlineUrgency",
+      "args": [
+        {
+          "status": "blocked",
+          "due": "2026-11-02"
+        },
+        1793754000000,
+        "Europe/London"
+      ],
+      "expected": {
+        "kind": "overdue",
+        "days": 2
+      }
+    },
+    {
+      "name": "1.23.0 deadlineUrgency: soon",
+      "function": "deadlineUrgency",
+      "args": [
+        {
+          "status": "open",
+          "due": "2026-11-07"
+        },
+        1793754000000,
+        "Europe/London"
+      ],
+      "expected": {
+        "kind": "soon",
+        "days": 3
+      }
+    },
+    {
+      "name": "1.23.0 leaveDayKind: pending half beats approved half",
+      "function": "leaveDayKind",
+      "args": [
+        [
+          {
+            "id": "am",
+            "startDayKey": "2026-11-02",
+            "endDayKey": "2026-11-02",
+            "timeSlot": "AM",
+            "status": "approved"
+          },
+          {
+            "id": "pm",
+            "startDayKey": "2026-11-02",
+            "endDayKey": "2026-11-02",
+            "timeSlot": "PM",
+            "status": "requested"
+          }
+        ],
+        "2026-11-02",
+        "Europe/London"
+      ],
+      "expected": {
+        "kind": "pendingHalf",
+        "recordId": "pm",
+        "isLocked": false
+      }
+    },
+    {
+      "name": "1.23.0 leaveDayKind: a Saturday inside a multi-day record is not a leave day",
+      "function": "leaveDayKind",
+      "args": [
+        [
+          {
+            "id": "week",
+            "startDayKey": "2026-11-06",
+            "endDayKey": "2026-11-10",
+            "status": "approved"
+          }
+        ],
+        "2026-11-07",
+        "Europe/London"
+      ],
+      "expected": {
+        "kind": "none",
+        "recordId": null,
+        "isLocked": false
+      }
+    },
+    {
+      "name": "1.23.0 siteMapPins: cancelled bookings never count; inactive jobs are off the map",
+      "function": "siteMapPins",
+      "args": [
+        {
+          "jobs": [
+            {
+              "id": "job-1"
+            },
+            {
+              "id": "job-2",
+              "isLive": false
+            }
+          ],
+          "bookings": [
+            {
+              "projectId": "JOB-1",
+              "operativeId": "OP-ROW",
+              "dayKey": "2026-11-03",
+              "status": "Confirmed"
+            },
+            {
+              "projectId": "job-1",
+              "operativeId": "u-op",
+              "dayKey": "2026-11-03",
+              "status": "Tentative"
+            },
+            {
+              "projectId": "job-1",
+              "operativeId": "x",
+              "dayKey": "2026-11-03",
+              "status": "Cancelled"
+            }
+          ],
+          "managerSiteBookings": [
+            {
+              "userId": "u-mgr",
+              "locationId": "job-1",
+              "locationType": "project",
+              "dayKey": "2026-11-03"
+            }
+          ],
+          "dayKey": "2026-11-03",
+          "people": [
+            {
+              "id": "u-op",
+              "email": "ollie@x.com"
+            },
+            {
+              "id": "OP-ROW",
+              "email": "Ollie@x.com"
+            }
+          ]
+        }
+      ],
+      "expected": [
+        {
+          "jobId": "job-1",
+          "bookingCount": 3,
+          "peopleCount": 2
+        }
+      ]
+    },
+    {
+      "name": "1.23.0 jobTileBadges: one person once; open firms; open tasks",
+      "function": "jobTileBadges",
+      "args": [
+        {
+          "jobId": "job-1",
+          "bookings": [
+            {
+              "projectId": "JOB-1",
+              "operativeId": "OP-ROW",
+              "status": "Tentative"
+            },
+            {
+              "projectId": "job-1",
+              "operativeId": "u-op",
+              "status": "Confirmed"
+            },
+            {
+              "projectId": "job-1",
+              "operativeId": "x",
+              "status": "Cancelled"
+            }
+          ],
+          "managerSiteBookings": [
+            {
+              "userId": "u-mgr",
+              "locationId": "job-1",
+              "locationType": "small_work"
+            }
+          ],
+          "subcontractorBookings": [
+            {
+              "projectId": "job-1",
+              "subcontractorId": "sub-1",
+              "status": "Confirmed"
+            },
+            {
+              "projectId": "job-1",
+              "subcontractorId": "sub-2",
+              "status": "Cancelled"
+            }
+          ],
+          "tasks": [
+            {
+              "projectId": "job-1",
+              "status": "To Do"
+            },
+            {
+              "projectId": "job-1",
+              "status": "Completed"
+            }
+          ],
+          "people": [
+            {
+              "id": "u-op",
+              "email": "ollie@x.com"
+            },
+            {
+              "id": "OP-ROW",
+              "email": "Ollie@x.com"
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "tentativeBookings": 1,
+        "openTasks": 1,
+        "activeUsers": 3
+      }
+    },
+    {
+      "name": "1.23.0 mergeVariationSources: newer wins, collection wins a tie, ids without case",
+      "function": "mergeVariationSources",
+      "args": [
+        [
+          {
+            "id": "V1",
+            "updatedAtMs": 10,
+            "status": "open"
+          },
+          {
+            "id": "v2",
+            "updatedAtMs": 5,
+            "status": "closed"
+          }
+        ],
+        [
+          {
+            "id": "v1",
+            "updatedAtMs": 20,
+            "status": "closed"
+          },
+          {
+            "id": "v2",
+            "updatedAtMs": 5,
+            "status": "open"
+          }
+        ],
+        []
+      ],
+      "expected": [
+        {
+          "id": "v1",
+          "updatedAtMs": 20,
+          "status": "closed"
+        },
+        {
+          "id": "v2",
+          "updatedAtMs": 5,
+          "status": "closed"
+        }
+      ]
+    },
+    {
+      "name": "1.23.0 openVariationCount",
+      "function": "openVariationCount",
+      "args": [
+        [
+          {
+            "status": "OPEN"
+          },
+          {
+            "status": "open",
+            "isDeleted": true
+          },
+          {
+            "status": "closed"
+          }
+        ]
+      ],
+      "expected": 1
+    },
+    {
+      "name": "1.23.0 bookingRequestClashIds: the booked day's hours (06:00–12:00 from 10 Nov)",
+      "function": "bookingRequestClashIds",
+      "args": [
+        {
+          "request": {
+            "dayKey": "2026-11-10",
+            "timeSlot": "CUSTOM_HOURS",
+            "workStartTime": "13:00",
+            "workEndTime": "15:00"
+          },
+          "existing": [
+            {
+              "id": "x10",
+              "dayKey": "2026-11-10",
+              "timeSlot": "FULL DAY"
+            },
+            {
+              "id": "night",
+              "dayKey": "2026-11-09",
+              "timeSlot": "CUSTOM_HOURS",
+              "workStartTime": "22:00",
+              "workEndTime": "06:00"
+            }
+          ],
+          "day": {
+            "current": {
+              "standardDayStart": "06:00",
+              "standardDayEnd": "12:00",
+              "unpaidBreakMinutes": 15,
+              "standardPaidHours": 8,
+              "breakWindowStart": "09:00",
+              "breakWindowEnd": "09:15",
+              "weekdayOutsideStandardMultiplier": 1.5,
+              "saturday": {
+                "allHoursAtMultiplierMode": false,
+                "allHoursMultiplier": 2,
+                "definedWindowStart": "07:30",
+                "definedWindowEnd": "13:00",
+                "countsAsStandardHours": 8,
+                "outsideWindowMultiplier": 2,
+                "sameAsSaturday": false,
+                "breakPaid": true
+              },
+              "sunday": {
+                "allHoursAtMultiplierMode": true,
+                "allHoursMultiplier": 2,
+                "definedWindowStart": "07:30",
+                "definedWindowEnd": "16:00",
+                "countsAsStandardHours": 8,
+                "outsideWindowMultiplier": 2,
+                "sameAsSaturday": false,
+                "breakPaid": true
+              },
+              "breakPaid": false
+            },
+            "prior": {
+              "standardDayStart": "07:30",
+              "standardDayEnd": "16:00",
+              "unpaidBreakMinutes": 30,
+              "standardPaidHours": 8,
+              "breakWindowStart": "12:00",
+              "breakWindowEnd": "12:30",
+              "weekdayOutsideStandardMultiplier": 1.5,
+              "saturday": {
+                "allHoursAtMultiplierMode": false,
+                "allHoursMultiplier": 2,
+                "definedWindowStart": "07:30",
+                "definedWindowEnd": "13:00",
+                "countsAsStandardHours": 8,
+                "outsideWindowMultiplier": 2,
+                "sameAsSaturday": false,
+                "breakPaid": true
+              },
+              "sunday": {
+                "allHoursAtMultiplierMode": true,
+                "allHoursMultiplier": 2,
+                "definedWindowStart": "07:30",
+                "definedWindowEnd": "16:00",
+                "countsAsStandardHours": 8,
+                "outsideWindowMultiplier": 2,
+                "sameAsSaturday": false,
+                "breakPaid": true
+              },
+              "breakPaid": false
+            },
+            "effectiveFrom": "2026-11-10",
+            "scheduled": null
+          }
+        }
+      ],
+      "expected": []
+    },
+    {
+      "name": "1.23.0 bookingRequestClashIds: 07:30–16:00 before 10 Nov",
+      "function": "bookingRequestClashIds",
+      "args": [
+        {
+          "request": {
+            "dayKey": "2026-11-03",
+            "timeSlot": "CUSTOM_HOURS",
+            "workStartTime": "13:00",
+            "workEndTime": "15:00"
+          },
+          "existing": [
+            {
+              "id": "x3",
+              "dayKey": "2026-11-03",
+              "timeSlot": "FULL DAY"
+            }
+          ],
+          "day": {
+            "current": {
+              "standardDayStart": "06:00",
+              "standardDayEnd": "12:00",
+              "unpaidBreakMinutes": 15,
+              "standardPaidHours": 8,
+              "breakWindowStart": "09:00",
+              "breakWindowEnd": "09:15",
+              "weekdayOutsideStandardMultiplier": 1.5,
+              "saturday": {
+                "allHoursAtMultiplierMode": false,
+                "allHoursMultiplier": 2,
+                "definedWindowStart": "07:30",
+                "definedWindowEnd": "13:00",
+                "countsAsStandardHours": 8,
+                "outsideWindowMultiplier": 2,
+                "sameAsSaturday": false,
+                "breakPaid": true
+              },
+              "sunday": {
+                "allHoursAtMultiplierMode": true,
+                "allHoursMultiplier": 2,
+                "definedWindowStart": "07:30",
+                "definedWindowEnd": "16:00",
+                "countsAsStandardHours": 8,
+                "outsideWindowMultiplier": 2,
+                "sameAsSaturday": false,
+                "breakPaid": true
+              },
+              "breakPaid": false
+            },
+            "prior": {
+              "standardDayStart": "07:30",
+              "standardDayEnd": "16:00",
+              "unpaidBreakMinutes": 30,
+              "standardPaidHours": 8,
+              "breakWindowStart": "12:00",
+              "breakWindowEnd": "12:30",
+              "weekdayOutsideStandardMultiplier": 1.5,
+              "saturday": {
+                "allHoursAtMultiplierMode": false,
+                "allHoursMultiplier": 2,
+                "definedWindowStart": "07:30",
+                "definedWindowEnd": "13:00",
+                "countsAsStandardHours": 8,
+                "outsideWindowMultiplier": 2,
+                "sameAsSaturday": false,
+                "breakPaid": true
+              },
+              "sunday": {
+                "allHoursAtMultiplierMode": true,
+                "allHoursMultiplier": 2,
+                "definedWindowStart": "07:30",
+                "definedWindowEnd": "16:00",
+                "countsAsStandardHours": 8,
+                "outsideWindowMultiplier": 2,
+                "sameAsSaturday": false,
+                "breakPaid": true
+              },
+              "breakPaid": false
+            },
+            "effectiveFrom": "2026-11-10",
+            "scheduled": null
+          }
+        }
+      ],
+      "expected": [
+        "x3"
+      ]
+    },
+    {
+      "name": "1.23.0 overlappingBookingIds: each day under its own working hours",
+      "function": "overlappingBookingIds",
+      "args": [
+        [
+          {
+            "id": "a",
+            "dayKey": "2026-11-03",
+            "timeSlot": "FULL DAY"
+          },
+          {
+            "id": "b",
+            "dayKey": "2026-11-03",
+            "timeSlot": "CUSTOM_HOURS",
+            "workStartTime": "13:00",
+            "workEndTime": "15:00"
+          },
+          {
+            "id": "c",
+            "dayKey": "2026-11-10",
+            "timeSlot": "FULL DAY"
+          },
+          {
+            "id": "d",
+            "dayKey": "2026-11-10",
+            "timeSlot": "CUSTOM_HOURS",
+            "workStartTime": "13:00",
+            "workEndTime": "15:00"
+          }
+        ],
+        {
+          "current": {
+            "standardDayStart": "06:00",
+            "standardDayEnd": "12:00",
+            "unpaidBreakMinutes": 15,
+            "standardPaidHours": 8,
+            "breakWindowStart": "09:00",
+            "breakWindowEnd": "09:15",
+            "weekdayOutsideStandardMultiplier": 1.5,
+            "saturday": {
+              "allHoursAtMultiplierMode": false,
+              "allHoursMultiplier": 2,
+              "definedWindowStart": "07:30",
+              "definedWindowEnd": "13:00",
+              "countsAsStandardHours": 8,
+              "outsideWindowMultiplier": 2,
+              "sameAsSaturday": false,
+              "breakPaid": true
+            },
+            "sunday": {
+              "allHoursAtMultiplierMode": true,
+              "allHoursMultiplier": 2,
+              "definedWindowStart": "07:30",
+              "definedWindowEnd": "16:00",
+              "countsAsStandardHours": 8,
+              "outsideWindowMultiplier": 2,
+              "sameAsSaturday": false,
+              "breakPaid": true
+            },
+            "breakPaid": false
+          },
+          "prior": {
+            "standardDayStart": "07:30",
+            "standardDayEnd": "16:00",
+            "unpaidBreakMinutes": 30,
+            "standardPaidHours": 8,
+            "breakWindowStart": "12:00",
+            "breakWindowEnd": "12:30",
+            "weekdayOutsideStandardMultiplier": 1.5,
+            "saturday": {
+              "allHoursAtMultiplierMode": false,
+              "allHoursMultiplier": 2,
+              "definedWindowStart": "07:30",
+              "definedWindowEnd": "13:00",
+              "countsAsStandardHours": 8,
+              "outsideWindowMultiplier": 2,
+              "sameAsSaturday": false,
+              "breakPaid": true
+            },
+            "sunday": {
+              "allHoursAtMultiplierMode": true,
+              "allHoursMultiplier": 2,
+              "definedWindowStart": "07:30",
+              "definedWindowEnd": "16:00",
+              "countsAsStandardHours": 8,
+              "outsideWindowMultiplier": 2,
+              "sameAsSaturday": false,
+              "breakPaid": true
+            },
+            "breakPaid": false
+          },
+          "effectiveFrom": "2026-11-10",
+          "scheduled": null
+        }
+      ],
+      "expected": [
+        "a",
+        "b"
+      ]
     }
   ]
 }

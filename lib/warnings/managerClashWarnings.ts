@@ -1,7 +1,6 @@
 import { jobKind } from '@/lib/canonical/staffAccess'
 import { format } from 'date-fns'
 import type { Booking, Operative, Project, User } from '@/types'
-import { UserRole } from '@/types'
 import { dayKey, londonMidnight } from '@/lib/ios-parity/londonTime'
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import { DEFAULT_PAYROLL_POLICY } from '@/lib/settings/organizationSettings'
@@ -14,8 +13,15 @@ import {
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import { managerSiteBookingDisplayTitle } from '@/lib/scheduling/managerSiteBookingUtils'
 import type { ClashTimelineEntry } from '@/lib/warnings/clashTimeline'
-import { clashEntryFromOperativeBooking } from '@/lib/scheduling/bookingClashUtils'
-import { ORPHAN_BOOKING_LABEL, managerClashGroups, rosterAliasIdsFor, type BookingPersonInput } from '@/lib/canonical'
+import { clashEntryFromOperativeBooking, clashManagerIdsForUsers } from '@/lib/scheduling/bookingClashUtils'
+import {
+  ORPHAN_BOOKING_LABEL,
+  managerClashGroups,
+  rosterAliasIdsFor,
+  standardDayOn,
+  type BookingPersonInput,
+  type PayrollTimePolicyState,
+} from '@/lib/canonical'
 
 export interface ManagerBookingClashWarning {
   id: string
@@ -59,15 +65,6 @@ export function clashEntryFromManagerBooking(
   }
 }
 
-function isManagerOrAdminUser(user: User): boolean {
-  return Boolean(
-    user.isActive &&
-      (user.permissions?.manager ||
-        user.permissions?.adminAccess ||
-        user.isSuperAdmin ||
-        user.role === UserRole.ADMIN)
-  )
-}
 
 function personName(userId: string, usersById: Map<string, User>): string {
   const user = usersById.get(userId)
@@ -113,6 +110,8 @@ export function computeManagerBookingClashWarnings(
     operativeBookings?: Booking[]
     operatives?: Operative[]
     payrollPolicy?: OrgPayrollTimePolicy
+    /** Rulebook 1.23.0: the whole working-hours state, read on each booking's own day. */
+    payrollPolicyState?: PayrollTimePolicyState | null
     /** Folded same-email `users` id → the id the roster kept. */
     userIdAliases?: Readonly<Record<string, string>> | null
   }
@@ -122,11 +121,15 @@ export function computeManagerBookingClashWarnings(
   const projectTitles = new Map(projects.map((p) => [p.id, projectLabel(p)]))
   const payrollPolicy = options?.payrollPolicy ?? DEFAULT_PAYROLL_POLICY
   const operativeBookings = options?.operativeBookings || []
+  const dayInput = options?.payrollPolicyState ?? payrollPolicy
+  const policyOn = (date: Date): OrgPayrollTimePolicy =>
+    (standardDayOn(dayInput, dayKey(date)) as OrgPayrollTimePolicy | null) ?? payrollPolicy
 
   const groups = managerClashGroups({
-    managerIds: users.filter(isManagerOrAdminUser).map((user) => user.id),
+    managerIds: clashManagerIdsForUsers(users),
     people: bookingPeopleForRoster(users, options?.operatives || [], options?.userIdAliases),
-    day: payrollPolicy,
+    // 1.23.0: each booking's named slot under the working hours in effect on its own day.
+    day: dayInput,
     managerBookings: managerSiteBookings.map((booking) => ({
       id: booking.id,
       userId: booking.userId,
@@ -156,7 +159,7 @@ export function computeManagerBookingClashWarnings(
           return {
             date: booking.date,
             locationLabel,
-            entry: clashEntryFromManagerBooking(booking, project, locationLabel, payrollPolicy),
+            entry: clashEntryFromManagerBooking(booking, project, locationLabel, policyOn(booking.date)),
           }
         }
         const booking = operativeBookings[item.index]
@@ -164,7 +167,7 @@ export function computeManagerBookingClashWarnings(
         return {
           date: booking.date,
           locationLabel: projectLabel(project),
-          entry: clashEntryFromOperativeBooking(booking, project, payrollPolicy),
+          entry: clashEntryFromOperativeBooking(booking, project, policyOn(booking.date)),
         }
       })
       const name = personName(group.userId, usersById)

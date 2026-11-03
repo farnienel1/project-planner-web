@@ -22,6 +22,7 @@ import {
   slotInterval,
   type StandardDayInput,
 } from './engine'
+import { standardDayOn, type PayrollTimePolicyState } from './payrollPolicySchedule'
 import { leaveRecordDayKeys, normalizeHolidayStatus, normalizeHolidayTimeSlot, type HolidayTimeSlotValue } from './leaveRequests'
 
 export const OVERLAPPING_BOOKING_NOTE = 'Overlaps another booking — check with your manager'
@@ -35,10 +36,14 @@ export type OverlapBookingInput = {
   workEndTime?: string | null
 }
 
-/** Ids of bookings that overlap at least one other booking on the same day, in input order. */
+/**
+ * Ids of bookings that overlap at least one other booking on the same day, in input order. `day` is the standard
+ * day; rulebook 1.23.0: pass the whole working-hours state so each booking's named slot (Full day, AM, PM) is read
+ * under the rules in effect on its own day (`standardDayOn`), as pay is since 1.19.0.
+ */
 export function overlappingBookingIds(
   bookings: ReadonlyArray<OverlapBookingInput>,
-  day?: StandardDayInput | null
+  day?: StandardDayInput | PayrollTimePolicyState | null
 ): string[] {
   const byDay = new Map<string, OverlapBookingInput[]>()
   for (const booking of bookings || []) {
@@ -51,7 +56,10 @@ export function overlappingBookingIds(
   }
   const flagged = new Set<string>()
   const intervalOf = (booking: OverlapBookingInput) =>
-    slotInterval({ timeSlot: booking.timeSlot, workStartTime: booking.workStartTime, workEndTime: booking.workEndTime }, day)
+    slotInterval(
+      { timeSlot: booking.timeSlot, workStartTime: booking.workStartTime, workEndTime: booking.workEndTime },
+      standardDayOn<StandardDayInput>(day, booking.dayKey)
+    )
   // 1.13.0 §5: an overnight booking also sits on the next morning, so it overlaps that day's early bookings.
   const carried = new Map<string, OverlapBookingInput[]>()
   for (const [key, list] of byDay) {

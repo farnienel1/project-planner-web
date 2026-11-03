@@ -364,7 +364,14 @@ export function collectTimesheetPayroll({
   }
 
   // Every booking is paid; overlapping ones are only flagged (`overlappingBookingIds`).
-  const overlapping = new Set(overlappingBookingIds(paidBookings, currentPolicy))
+  // 1.23.0: each booking's named slot under the working hours in effect on its own day (as pay, 1.19.0).
+  const overlapState: PayrollTimePolicyState = payrollPolicyState ?? {
+    current: currentPolicy,
+    prior: payrollPolicyPrior,
+    effectiveFrom: payrollPolicyEffectiveFrom,
+    scheduled: payrollPolicyScheduled,
+  }
+  const overlapping = new Set(overlappingBookingIds(paidBookings, overlapState))
   for (const line of lineItems) line.isOverlapping = Boolean(line.bookingId && overlapping.has(line.bookingId))
 
   lineItems.sort((a, b) => {

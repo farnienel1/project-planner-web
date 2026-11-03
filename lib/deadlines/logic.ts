@@ -4,7 +4,8 @@
  */
 
 import { newUuid } from '@/lib/firebase/firestoreUtils'
-import { dayKey } from '@/lib/ios-parity/londonTime'
+import { calendarDaysBetween, deadlineUrgency, dueDayKey } from '@/lib/canonical'
+import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 import type {
   Deadline,
   DeadlineChange,
@@ -15,6 +16,11 @@ import type {
   DeadlineUrgency,
 } from '@/lib/deadlines/types'
 
+/** Rulebook 1.23.0 §23: a date's day in the organisation zone (`dueDayKey`), never London or the browser. */
+function dayKey(date: Date): string {
+  return dueDayKey(date, organizationZoneOr())
+}
+
 const DAY_MS = 86_400_000
 
 function dayIndex(date: Date): number {
@@ -23,23 +29,18 @@ function dayIndex(date: Date): number {
 }
 
 export function daysBetween(from: Date, to: Date): number {
-  return dayIndex(to) - dayIndex(from)
+  const a = dayKey(from)
+  const b = dayKey(to)
+  return a && b ? calendarDaysBetween(a, b) : 0
 }
 
 export function daysRemaining(item: Pick<Deadline, 'due'>, now: Date): number {
   return daysBetween(now, item.due)
 }
 
+/** Rulebook 1.23.0 §23 `deadlineUrgency` on the organisation day. */
 export function urgency(item: Pick<Deadline, 'status' | 'due'>, now: Date): DeadlineUrgency {
-  if (item.status === 'complete') return { kind: 'complete' }
-  const d = daysRemaining(item, now)
-  if (d < 0) return { kind: 'overdue', days: -d }
-  if (item.status === 'blocked') return { kind: 'blocked' }
-  if (d === 0) return { kind: 'today' }
-  if (d === 1) return { kind: 'tomorrow' }
-  if (d <= 3) return { kind: 'soon', days: d }
-  if (d <= 7) return { kind: 'thisWeek', days: d }
-  return { kind: 'later', days: d }
+  return deadlineUrgency({ status: item.status, due: item.due }, now.getTime(), organizationZoneOr()) as DeadlineUrgency
 }
 
 export function isOverdue(value: DeadlineUrgency): boolean {

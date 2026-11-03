@@ -51,15 +51,19 @@ function user(partial: Partial<User> & Pick<User, 'id' | 'email' | 'firstName'>)
   }
 }
 
-test('operatives list keeps flagless accounts and leaves admins and managers off it', () => {
+test('rulebook 1.23.0 rosterListFor: each person is on one list, by level', () => {
   const rows = dedupeUsersByEmail([
     user({ id: 'admin', email: 'ada@site.com', firstName: 'Ada', role: UserRole.ADMIN, isSuperAdmin: true, permissions: { ...emptyPermissions, adminAccess: true } }),
+    user({ id: 'role-admin', email: 'rae@site.com', firstName: 'Rae', role: UserRole.ADMIN }),
     user({ id: 'mgr', email: 'mo@site.com', firstName: 'Mo', permissions: { ...emptyPermissions, manager: true } }),
     user({ id: 'op', email: 'ollie@site.com', firstName: 'Ollie', permissions: { ...emptyPermissions, operativeMode: true } }),
+    // No level flag: manager level (`permissionLevelOf`), so the Managers list — never Operatives.
     user({ id: 'plain', email: 'pat@site.com', firstName: 'Pat' }),
+    // No flag but the operative role: operative level.
+    user({ id: 'plain-op', email: 'oona@site.com', firstName: 'Oona', role: UserRole.OPERATIVE }),
   ])
-  const ids = getOperativeModeUsers(rows).map((row) => row.id).sort()
-  assert.deepEqual(ids, ['op', 'plain'])
+  assert.deepEqual(getOperativeModeUsers(rows).map((row) => row.id).sort(), ['op', 'plain-op'])
+  assert.deepEqual(getManagersRosterUsers(rows).map((row) => row.id).sort(), ['mgr', 'plain'])
 })
 
 test('an admin wins over an operative duplicate of the same email', () => {

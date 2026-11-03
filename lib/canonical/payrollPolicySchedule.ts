@@ -151,6 +151,26 @@ function isState(value: unknown): value is PayrollTimePolicyState {
   return Boolean(v && 'current' in v && 'scheduled' in v && record(v.current))
 }
 
+/** Whether `value` is the whole working-hours state (`PayrollTimePolicyState`) rather than one policy. */
+export function isPayrollTimePolicyState(value: unknown): value is PayrollTimePolicyState {
+  return isState(value)
+}
+
+/**
+ * Rulebook 1.23.0 §4.3: the standard day (or whole policy) in effect on `dayKey` for a scan that takes either one
+ * policy or the whole state. A state is read per day (`payrollTimePolicyForDayFromState`); a single policy or
+ * standard-day input is returned as given (callers and tests that pass one policy keep it for every day); null and
+ * undefined stay null.
+ */
+export function standardDayOn<T>(day: T | PayrollTimePolicyState | null | undefined, dayKey: string | null | undefined): T | OrgPayrollTimePolicy | null {
+  if (day == null) return null
+  if (isState(day)) {
+    const key = typeof dayKey === 'string' && DAY_KEY_RE.test(dayKey.trim()) ? dayKey.trim() : null
+    return key ? payrollTimePolicyForDayFromState(day, key) : day.current
+  }
+  return day as T
+}
+
 /**
  * Rulebook 1.19.0: every change of working hours as a list of `{ effectiveFrom, policy }` in date order, the pending
  * scheduled change left out. History first: the stored entries before `payrollTimePolicyEffectiveFrom`, then the

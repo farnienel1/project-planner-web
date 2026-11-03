@@ -21,6 +21,7 @@
 import { intervalsOverlap, leaveComparableInterval, leaveHalfDayWindows, type MinuteInterval, type StandardDayInput } from './engine'
 import { idKey, idText, personIdSet, type PersonIdsInput, type PersonRosterRow } from './personIds'
 import { leaveSlotKind } from './leaveCoverage'
+import { standardDayOn, type PayrollTimePolicyState } from './payrollPolicySchedule'
 
 /** The label a leave conflict row shows (purple; double bookings stay orange). */
 export const ANNUAL_LEAVE_BOOKED_LABEL = 'Annual leave booked'
@@ -60,8 +61,11 @@ export type BookingLeaveConflictInput = {
   timeSlot?: string | null
   workStartTime?: string | null
   workEndTime?: string | null
-  /** The organisation's standard day (`payrollTimePolicy` / `effectivePayrollTimePolicy`). */
-  day?: StandardDayInput | null
+  /**
+   * The organisation's standard day (`payrollTimePolicy` / `effectivePayrollTimePolicy`). Rulebook 1.23.0: pass the
+   * whole working-hours state so each booked day uses the rules in effect on it (`standardDayOn`).
+   */
+  day?: StandardDayInput | PayrollTimePolicyState | null
   roster?: ReadonlyArray<PersonRosterRow> | null
 }
 
@@ -101,16 +105,17 @@ export function bookingLeaveConflicts(input: BookingLeaveConflictInput): Booking
   if (holidays.length === 0) return []
   const days = Array.from(new Set((input.dayKeys || []).map(idText).filter(Boolean))).sort()
   if (days.length === 0) return []
-  const windows = leaveHalfDayWindows(input.day)
-  const booking: MinuteInterval | null = leaveComparableInterval(
-    { timeSlot: input.timeSlot, workStartTime: input.workStartTime, workEndTime: input.workEndTime },
-    input.day
-  )
-  const leaveWindow = (slot: BookingLeaveSlot): MinuteInterval =>
-    slot === 'AM' ? windows.am : slot === 'PM' ? windows.pm : windows.day
-  const overlaps = (slot: BookingLeaveSlot): boolean => {
-    if (slot === 'FULL DAY' || booking === null) return true
-    return intervalsOverlap(booking, leaveWindow(slot))
+  // 1.23.0: the leave halves and the booking interval under the standard day in effect on each booked day.
+  const overlaps = (slot: BookingLeaveSlot, dayKey: string): boolean => {
+    if (slot === 'FULL DAY') return true
+    const day = standardDayOn<StandardDayInput>(input.day, dayKey)
+    const booking: MinuteInterval | null = leaveComparableInterval(
+      { timeSlot: input.timeSlot, workStartTime: input.workStartTime, workEndTime: input.workEndTime },
+      day
+    )
+    if (booking === null) return true
+    const windows = leaveHalfDayWindows(day)
+    return intervalsOverlap(booking, slot === 'AM' ? windows.am : windows.pm)
   }
 
   const people = (input.people || [])
@@ -141,12 +146,12 @@ export function bookingLeaveConflicts(input: BookingLeaveConflictInput): Booking
     const start = idText(holiday.startDayKey)
     const end = idText(holiday.endDayKey) || start
     const slot = leaveSlot(holiday.timeSlot)
-    if (!overlaps(slot)) continue
     const holidayKeys = [idKey(holiday.userId), idKey(holiday.operativeId)].filter(Boolean)
     for (const person of people) {
       if (!holidayKeys.some((key) => person.keys.has(key))) continue
       for (const dayKey of days) {
         if (dayKey < start || dayKey > end) continue
+        if (!overlaps(slot, dayKey)) continue
         const row = {
           personId: person.personId,
           dayKey,

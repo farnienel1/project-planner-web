@@ -1,3 +1,4 @@
+import { mergeVariationSources as canonicalMergeVariationSources } from '@/lib/canonical'
 import type { Variation } from '@/lib/variations/variationModel'
 
 /** iOS settings log while `variations/{id}` writes are denied. */
@@ -31,18 +32,14 @@ export function fallbackItemMaps(data: Record<string, unknown> | undefined): Rec
 }
 
 /**
- * Collection rows win ties. Fallback and item docs fill in rows the collection
- * rules would not store. Newer `updatedAt` wins when the same id appears twice.
+ * Rulebook 1.23.0 §22 `mergeVariationSources`: one row per id (without case); the newer `updatedAt` wins and the
+ * collection row wins a tie, then item documents, then the settings log.
  */
 export function mergeVariationSources(
   collectionRows: Variation[],
   fallbackRows: Variation[],
   itemDocs: Variation[] = []
 ): Variation[] {
-  const byId = new Map<string, Variation>()
-  for (const item of [...fallbackRows, ...itemDocs, ...collectionRows]) {
-    const existing = byId.get(item.id)
-    if (!existing || item.updatedAt >= existing.updatedAt) byId.set(item.id, item)
-  }
-  return [...byId.values()]
+  const withMs = (rows: Variation[]) => rows.map((row) => ({ id: row.id, updatedAtMs: row.updatedAt?.getTime?.() ?? 0, row }))
+  return canonicalMergeVariationSources(withMs(collectionRows), withMs(fallbackRows), withMs(itemDocs)).map((entry) => entry.row)
 }

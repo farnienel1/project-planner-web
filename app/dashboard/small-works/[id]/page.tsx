@@ -9,6 +9,7 @@ import { useTaskStore } from '@/lib/stores/taskStore'
 import { ProjectHub } from '@/components/projects/ProjectHub'
 import { LoadingSpinner } from '@/components/dashboard/PageShell'
 import type { Project } from '@/types'
+import { jobTileBadges } from '@/lib/canonical'
 
 export default function SmallWorkDetailPage() {
   const params = useParams()
@@ -28,7 +29,7 @@ export default function SmallWorkDetailPage() {
   }, [organization, params.id, getProject, loadTasks])
 
   const openTaskCount = useMemo(
-    () => tasks.filter(t => t.projectId === String(params.id) && t.status !== 'Completed').length,
+    () => jobTileBadges({ jobId: String(params.id), tasks }).openTasks,
     [tasks, params.id]
   )
 

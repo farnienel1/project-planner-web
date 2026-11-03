@@ -1,3 +1,4 @@
+import { isTaskOverdue as projectTaskIsOverdue } from '@/lib/tasks/projectTaskFilters'
 import type { Manager, Operative, Project, ProjectTask, User } from '@/types'
 import { isOperativeMode } from '@/lib/navigation/menuPermissions'
 
@@ -40,13 +41,9 @@ export function isTaskAssignedToUser(
   return false
 }
 
+/** Rulebook 1.23.0 §23 `isTaskOverdue` on the organisation day. */
 export function isTaskOverdue(task: ProjectTask): boolean {
-  if (task.status === 'Completed' || !task.dueDate) return false
-  const startOfToday = new Date()
-  startOfToday.setHours(0, 0, 0, 0)
-  const due = new Date(task.dueDate)
-  due.setHours(0, 0, 0, 0)
-  return due < startOfToday
+  return projectTaskIsOverdue(task)
 }
 
 export function getTaskProjectHref(

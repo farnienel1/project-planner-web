@@ -3,7 +3,7 @@
  * `bookingLeaveConflicts`; this file maps the web stores onto it (leave through `holidayBookingLabourInput`, the
  * organisation's standard day from its payroll policy, the roster through `rulebookRoster`).
  */
-import { bookingLeaveConflicts, type BookingLeaveConflict } from '@/lib/canonical'
+import { bookingLeaveConflicts, type BookingLeaveConflict, type PayrollTimePolicyState } from '@/lib/canonical'
 import { holidayBookingLabourInput } from '@/lib/annualLeave/holidayDayKeys'
 import { rulebookRoster } from '@/lib/staff/rulebookPeople'
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
@@ -22,7 +22,8 @@ export function leaveConflictsForBooking(input: {
   dayKeys: ReadonlyArray<string>
   holidays: ReadonlyArray<HolidayBooking>
   users: ReadonlyArray<User>
-  payrollPolicy?: OrgPayrollTimePolicy | null
+  /** One policy, or (1.23.0) the working-hours state read on each booked day. */
+  payrollPolicy?: OrgPayrollTimePolicy | PayrollTimePolicyState | null
   timeZone?: string | null
   timeSlot?: string | null
   workStartTime?: string | null

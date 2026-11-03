@@ -6,7 +6,10 @@ import {
   matchesRosterSegment as canonicalMatchesRosterSegment,
   rosterPeople,
   rosterStatusLabel as canonicalRosterStatusLabel,
+  rosterListFor,
   type RosterDocument,
+  type RosterListKind,
+  type RosterListRow,
   type RosterSegment,
   type RosterSegmentProfile,
 } from '@/lib/canonical'
@@ -180,23 +183,35 @@ export function dedupeUsersByEmail(users: readonly User[]): User[] {
   })
 }
 
-/** iOS OperativesView — operative-mode app users, plus accounts with no admin or manager role. */
+/** The rulebook's `RosterListRow` for a web `User` (rulebook 1.23.0 §11, `rosterListFor`). */
+function rosterListRow(user: User): RosterListRow & { user: User } {
+  return {
+    ...rosterProfile(user),
+    id: user.id,
+    role: user.role ?? null,
+    isSuperAdmin: user.isSuperAdmin ?? null,
+    permissions: (user.permissions ?? null) as unknown as Record<string, unknown> | null,
+    updatedAtMs: user.updatedAt instanceof Date ? user.updatedAt.getTime() : null,
+    formerUserIds: user.formerUserIds ?? [],
+    user,
+  }
+}
+
+/** Rulebook 1.23.0 §11 `rosterListFor`: the people on the Operatives, Managers or Admins list, one per email, by name. */
+export function usersOnRosterList(
+  kind: RosterListKind,
+  users: readonly User[],
+  claimedEmails?: readonly string[] | null
+): User[] {
+  return rosterListFor(kind, users.map(rosterListRow), claimedEmails).map((row) => row.user)
+}
+
+/** Operatives list (rulebook 1.23.0 §11): the operative level (`rosterListFor('operatives', …)`). */
 export function getOperativeModeUsers(
   users: User[],
   claimedEmails?: readonly string[] | null
 ): User[] {
-  return listedDedupe(
-    users.filter((user) => {
-      if (directoryAdmin(user)) return false
-      if (user.permissions?.manager && !user.permissions?.operativeMode) return false
-      return true
-    }),
-    claimedEmails
-  ).sort((a, b) =>
-    `${a.firstName} ${a.surname}`.localeCompare(`${b.firstName} ${b.surname}`, undefined, {
-      sensitivity: 'base',
-    })
-  )
+  return usersOnRosterList('operatives', users, claimedEmails)
 }
 
 /** Admins and managers for job View access — admins stay in Managers even if they also have operative mode. */
@@ -265,25 +280,15 @@ export function getManagerUsers(
   )
 }
 
-/** iOS ManagersView — manager users, excluding admins / super-admins / operative-mode. */
+/**
+ * Managers list (rulebook 1.23.0 §11): the manager level (`rosterListFor('managers', …)`) — the manager flag, the
+ * manager role, or no level flag at all; never an admin (by flag or role) or an operative.
+ */
 export function getManagersRosterUsers(
   users: User[],
   claimedEmails?: readonly string[] | null
 ): User[] {
-  return listedDedupe(
-    users.filter((user) => {
-      const p = user.permissions
-      if (!p) return false
-      if (p.operativeMode) return false
-      if (p.adminAccess || user.isSuperAdmin) return false
-      return p.manager === true
-    }),
-    claimedEmails
-  ).sort((a, b) =>
-    `${a.firstName} ${a.surname}`.localeCompare(`${b.firstName} ${b.surname}`, undefined, {
-      sensitivity: 'base',
-    })
-  )
+  return usersOnRosterList('managers', users, claimedEmails)
 }
 
 /** iOS OperativesView live search — token match on first / surname / full / email / phone. */
