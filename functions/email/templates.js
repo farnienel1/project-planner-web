@@ -10,6 +10,8 @@
  *   - `recipients`  the recipient rule (recipients.js): 'invitation', 'member' or 'wholesaler_or_self'
  *   - `maxRecipients`
  *   - `attachments` the file kinds it may carry ([] = none)
+ *   - `callerEnvelope` true: an app caller may ask for `data.fromCaller` / `data.ccCaller` (handler.js
+ *                   `callerEnvelopeFields`); every other app template ignores them
  *   - `render(input)` → { subject, html, text? } for one recipient
  */
 
@@ -333,6 +335,9 @@ const TEMPLATES = Object.freeze({
     maxRecipients: 41,
     attachments: [],
     replyToCaller: true,
+    // iOS sends one message per wholesaler: From "<user> via Project Planner", CC and Reply-To the user (as web does
+    // through `web_rendered`). The sender's separate "Copy:" message is dropped when they are CC'd.
+    callerEnvelope: true,
     render: renderMaterialRequest,
   },
   leave_cancelled: {
