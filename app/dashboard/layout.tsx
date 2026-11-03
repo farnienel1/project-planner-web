@@ -15,7 +15,8 @@ import { hasCustomerOrganisation, isPlatformOwnerEmail } from '@/lib/platform/ow
 import { DeactivatedAccountScreen } from '@/components/auth/DeactivatedAccountScreen'
 import { isMfaGateOpen, mfaVerifyHref } from '@/lib/auth/mfa/mfaClient'
 import { MISSING_USER_PROFILE_SETUP_HREF } from '@/lib/auth/missingProfile'
-import { legalPackNeedsAcceptance, subscriptionAccess } from '@/lib/canonical'
+import { legalPackNeedsAcceptance, organizationDeletionState, subscriptionAccess } from '@/lib/canonical'
+import { OrganizationDeletedScreen } from '@/components/billing/OrganizationDeletedScreen'
 import { hasAdminAccess } from '@/lib/navigation/menuPermissions'
 import { LAPSED_BILLING_PATH, LapsedBillingOnly, SubscriptionLapsedScreen } from '@/components/billing/SubscriptionLapsedScreen'
 import { LEGAL_ENTITY } from '@/lib/legal/customerLegalPack'
@@ -97,6 +98,15 @@ export default function DashboardLayout({
     })
   ) {
     return <PolicyGate />
+  }
+
+  // Rulebook 1.15.0 §20 (`organizationDeletionState`): a deleted organisation is locked until it is restored or erased;
+  // the platform owner is never locked out.
+  if (
+    organizationDeletionState({ deletion: organization?.deletion ?? null }).state !== 'active' &&
+    !isPlatformOwnerEmail(user.email)
+  ) {
+    return <OrganizationDeletedScreen />
   }
 
   // Rulebook 1.13.0 §19 (`subscriptionAccess`): a lapsed subscription blocks the app; admins reach billing only.

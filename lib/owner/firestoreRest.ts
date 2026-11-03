@@ -66,6 +66,35 @@ export async function firestoreQueryEqual(
     .filter(Boolean)
 }
 
+/** Every document of one collection (`parentPath/collectionId`), read with the caller's token, up to `limit`. */
+export async function firestoreListCollection(
+  idToken: string,
+  collectionPath: string,
+  limit = 500
+): Promise<{ id: string; fields?: Record<string, unknown> }[]> {
+  const out: { id: string; fields?: Record<string, unknown> }[] = []
+  let pageToken = ''
+  while (out.length < limit) {
+    const query = new URLSearchParams({ pageSize: String(Math.min(300, limit - out.length)) })
+    if (pageToken) query.set('pageToken', pageToken)
+    const response = await fetch(`${docUrl(collectionPath)}?${query.toString()}`, {
+      headers: { Authorization: `Bearer ${idToken}` },
+    })
+    if (!response.ok) throw new Error(`Could not read ${collectionPath}`)
+    const body = (await response.json()) as {
+      documents?: { name?: string; fields?: Record<string, unknown> }[]
+      nextPageToken?: string
+    }
+    for (const row of body.documents || []) {
+      const name = row.name || ''
+      out.push({ id: name.slice(name.lastIndexOf('/') + 1), fields: row.fields })
+    }
+    if (!body.nextPageToken) break
+    pageToken = body.nextPageToken
+  }
+  return out
+}
+
 export async function firestoreDelete(idToken: string, path: string) {
   const response = await fetch(docUrl(path), {
     method: 'DELETE',

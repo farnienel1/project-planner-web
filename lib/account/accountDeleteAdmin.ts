@@ -15,7 +15,8 @@ import {
   collectMembershipIds,
   changedAnonymisePatch,
   commentAnonymisePatch,
-  findSoleAdminBlock,
+  accountOrgPaths,
+  type AccountOrgPath,
   ideaAuthorAnonymisePatch,
   pickCreatorSuccessor,
   placeholderDeleteFallbackPatch,
@@ -27,7 +28,6 @@ import {
   timesheetSnapshotShouldStay,
   unsignedTimesheetAnonymisePatch,
   type OrgDeleteSnapshot,
-  type SoleAdminBlock,
 } from '@/lib/account/accountDelete'
 
 type AdminSession = {
@@ -268,13 +268,18 @@ async function loadOrgSnapshot(
     memberFlags.push({
       uid: memberUid,
       flags: adminLikeFromUserFields(user?.plain || {}, members[memberUid]),
+      profile: user?.plain || {},
     })
   }
-  if (!seen.has(uid)) {
-    const user = await adminGet(session, `users/${uid}`)
+  const creator = typeof org.plain.creatorUserId === 'string' ? org.plain.creatorUserId.trim() : ''
+  for (const extra of [uid, creator]) {
+    if (!extra || seen.has(extra)) continue
+    seen.add(extra)
+    const user = await adminGet(session, `users/${extra}`)
     memberFlags.push({
-      uid,
-      flags: adminLikeFromUserFields(user?.plain || {}, members[uid] || ''),
+      uid: extra,
+      flags: adminLikeFromUserFields(user?.plain || {}, members[extra] || ''),
+      profile: user?.plain || {},
     })
   }
   return {
@@ -283,6 +288,7 @@ async function loadOrgSnapshot(
     creatorUserId: typeof org.plain.creatorUserId === 'string' ? org.plain.creatorUserId : '',
     members,
     memberFlags,
+    deletion: org.plain.deletion ?? null,
   }
 }
 
@@ -631,16 +637,21 @@ async function finishAlreadyScrubbedAccount(
   await adminDeleteAuthUser(input.uid)
 }
 
+/**
+ * Rulebook 1.15.0 (§11, §20, `accountDeletionPath`): `handover` when the account is the super admin of an
+ * organisation with other active members (hand super admin over first); otherwise the snapshots, with `paths` naming
+ * the organisations deleted with the account (`delete_with_company`). Replaces the 409 `sole_admin` block.
+ */
 export async function evaluateAccountOrgs(
   uid: string,
   userOrganizationId?: string
-): Promise<{ block: SoleAdminBlock } | { snapshots: OrgDeleteSnapshot[] }> {
+): Promise<{ handover: AccountOrgPath } | { snapshots: OrgDeleteSnapshot[]; paths: AccountOrgPath[] }> {
   if (!firebaseAdminConfigured()) throw new Error('FIREBASE_SERVICE_ACCOUNT_JSON is not set on the server.')
   const session = await datastoreSession()
   const user = await adminGet(session, `users/${uid}`)
   const memberships = await adminList(session, `users/${uid}/orgMemberships`)
   if (user && retryFinishesWithoutOrgScan({ profile: user.plain, membershipCount: memberships.length })) {
-    return { snapshots: [] }
+    return { snapshots: [], paths: [] }
   }
   const fromDoc =
     userOrganizationId ||
@@ -651,9 +662,10 @@ export async function evaluateAccountOrgs(
     const snapshot = await loadOrgSnapshot(session, orgId, uid)
     if (snapshot) snapshots.push(snapshot)
   }
-  const block = findSoleAdminBlock(uid, snapshots)
-  if (block) return { block }
-  return { snapshots }
+  const paths = accountOrgPaths(uid, user?.plain || null, snapshots)
+  const handover = paths.find((row) => row.path === 'handover_required')
+  if (handover) return { handover }
+  return { snapshots, paths }
 }
 
 export async function executeAccountDelete(input: {

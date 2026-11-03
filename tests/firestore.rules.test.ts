@@ -3455,3 +3455,62 @@ test('1.12.2: a membership is read by the person and the admins of that organisa
   // Listing someone else's memberships stays closed.
   await assertFails(getDocs(collection(authDb(T_AD, 't-ad@test.com'), 'users', T_MGR, 'orgMemberships')))
 })
+
+test('1.15.0 §20: a scheduled organisation is locked; the super admin restores it; deletion is server-only otherwise', async () => {
+  const org = 'org-deleted-115'
+  const sa = 'sa-deleted-115'
+  const admin = 'admin-deleted-115'
+  const op = 'op-deleted-115'
+  const scheduled = (restoreBy: string) => ({
+    status: 'scheduled',
+    requestedAt: Timestamp.now(),
+    requestedBy: sa,
+    eraseAfter: Timestamp.fromMillis(Date.now() + 60 * 86400000),
+    restoreBy,
+  })
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    await setDoc(doc(db, 'organizations', org), {
+      name: 'Deleted Co', members: { [sa]: 'admin', [admin]: 'admin', [op]: 'operative' }, creatorUserId: sa,
+      deletion: scheduled('super_admin'),
+    })
+    await setDoc(doc(db, 'users', sa), { email: 'sa-del@test.com', organizationId: org, role: 'admin', adminAccess: true, isSuperAdmin: true })
+    await setDoc(doc(db, 'users', admin), { email: 'admin-del@test.com', organizationId: org, role: 'admin', adminAccess: true })
+    await setDoc(doc(db, 'users', op), { email: 'op-del@test.com', organizationId: org, role: 'operative', operativeMode: true })
+    await setDoc(doc(db, 'users', op, 'orgMemberships', org), { organizationId: org, role: 'operative' })
+    await setDoc(doc(db, 'organizations', org, 'clients', 'c1'), { name: 'Client' })
+  })
+  const saDb = authDb(sa, 'sa-del@test.com')
+  const adminDb = authDb(admin, 'admin-del@test.com')
+  const opDb = authDb(op, 'op-del@test.com')
+  // Locked for everyone, the super admin included.
+  await assertFails(getDoc(doc(saDb, 'organizations', org, 'clients', 'c1')))
+  await assertFails(getDoc(doc(opDb, 'organizations', org, 'clients', 'c1')))
+  await assertFails(setDoc(doc(adminDb, 'organizations', org, 'clients', 'c2'), { name: 'New' }))
+  await assertFails(getDoc(doc(opDb, 'users', sa)))
+  // Open: the organisation document, own users document and membership.
+  await assertSucceeds(getDoc(doc(opDb, 'organizations', org)))
+  await assertSucceeds(getDoc(doc(opDb, 'users', op)))
+  await assertSucceeds(getDoc(doc(opDb, 'users', op, 'orgMemberships', org)))
+  // No other edit of the organisation document while scheduled; an admin who is not the super admin cannot restore.
+  await assertFails(updateDoc(doc(saDb, 'organizations', org), { name: 'Renamed' }))
+  await assertFails(updateDoc(doc(adminDb, 'organizations', org), { deletion: deleteField() }))
+  await assertFails(updateDoc(doc(saDb, 'organizations', org), { deletion: deleteField(), name: 'Sneaky' }))
+  // The super admin restores (removes `deletion` only).
+  await assertSucceeds(updateDoc(doc(saDb, 'organizations', org), { deletion: deleteField(), updatedBy: sa }))
+  await assertSucceeds(getDoc(doc(opDb, 'organizations', org, 'clients', 'c1')))
+  // An app never schedules a deletion (server only), not even the super admin.
+  await assertFails(updateDoc(doc(saDb, 'organizations', org), { deletion: scheduled('super_admin') }))
+  // Deleted with the last member's account: only the platform owner restores.
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await updateDoc(doc(ctx.firestore(), 'organizations', org), { deletion: scheduled('platform_owner') })
+  })
+  await assertFails(updateDoc(doc(saDb, 'organizations', org), { deletion: deleteField() }))
+})
+
+test('1.15.0 canSendMaterialOrders: only admins and managers write material send records', async () => {
+  const record = (id: string) => ({ id, projectId: 'job-1', requestType: 'Order', sentAt: Timestamp.now(), sentBy: 'X', recipients: [], lines: [] })
+  await assertSucceeds(setDoc(doc(authDb(ADMIN_A, 'admin-a@test.com'), 'organizations', ORG_A, 'materialSendRecords', 'SEND-115-A'), record('SEND-115-A')))
+  await assertFails(setDoc(doc(authDb(OP_A, 'op-a@test.com'), 'organizations', ORG_A, 'materialSendRecords', 'SEND-115-O'), record('SEND-115-O')))
+  await assertFails(setDoc(doc(authDb(ADMIN_B, 'admin-b@test.com'), 'organizations', ORG_A, 'materialSendRecords', 'SEND-115-B'), record('SEND-115-B')))
+})

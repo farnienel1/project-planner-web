@@ -8,6 +8,7 @@ import { BILLING_PANEL_RENEWAL_COPY, billingStatusLabel, formatTrialChargeCopy }
 import { ANNUAL_PENCE, MONTHLY_PENCE } from '@/lib/stripe/plans'
 import { PanelHeader, SettingsCard, ErrorBanner, SuccessBanner } from '@/components/settings/primitives'
 import { useSettingsLeave } from '@/components/settings/SettingsDirty'
+import { DeleteOrganizationCard } from '@/components/settings/panels/DeleteOrganizationCard'
 
 export function BillingPanel({ onBack }: { onBack: () => void }) {
   const { organization, user } = useAuthStore()
@@ -76,6 +77,8 @@ export function BillingPanel({ onBack }: { onBack: () => void }) {
           </button>
         </div>
       </SettingsCard>
+      {/* Rulebook 1.15.0 §20: the super admin only. */}
+      <DeleteOrganizationCard />
     </div>
   )
 }

@@ -209,6 +209,9 @@ function createSendEmailHandler(deps) {
         if (template.minRole === 'staff' && caller.level !== 'admin' && caller.level !== 'manager') {
           throw new HttpError(403, 'Only admins and managers can send this email')
         }
+        if (template.minRole === 'material_sender' && !canonical.canSendMaterialOrders({ level: caller.level })) {
+          throw new HttpError(403, canonical.MATERIAL_ORDER_SEND_REFUSED_MESSAGE)
+        }
       }
     }
 

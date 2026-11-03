@@ -166,6 +166,12 @@ export interface User {
   isSuperAdmin: boolean;
   mobileNumber?: string;
   permissions: UserPermissions;
+  /**
+   * Rulebook 1.15.0: the toggles as stored on `users/{uid}` (top level, else `permissions.{key}`), before
+   * `effectivePermissions`. An admin reads every toggle on; these are the values a demotion shows again
+   * (`accountTypePermissions`). Missing keys were never stored.
+   */
+  storedPermissions?: Partial<Record<string, boolean>>;
   assignedManagerUserId?: string;
   assignedManagerUserIds?: string[];
   /** iOS `hasNoLineManager` — admin/founder with no counter-sign. */
@@ -350,6 +356,14 @@ export interface Organization {
   settings: Record<string, any>;
   teamOnboarding?: import('@/lib/orgSetup/teamOnboarding').TeamOnboardingState;
   billing?: import('@/lib/stripe/billing').OrgBilling;
+  /**
+   * Rulebook 1.15.0 §20: `organizations/{orgId}.deletion` as stored; read it only through `organizationDeletionState` /
+   * `parseOrganizationDeletion` (with `{ deletion }`).
+   */
+  deletion?: Record<string, unknown> | null;
+  /** The founder / super admin id (`creatorUserId`). */
+  creatorUserId?: string;
+  countryCode?: string;
   createdAt: Date;
   updatedAt: Date;
 }

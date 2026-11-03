@@ -1,6 +1,12 @@
 import { parseTimesheetStatusFields } from '@/lib/canonical'
 import { isInvitePlaceholderId } from '@/lib/owner/collapseDirectoryUsers'
 import { isPlatformOwnerEmail } from '@/lib/platform/owner'
+import {
+  accountDeletionPath,
+  organizationDeleteConfirmationError,
+  type AccountDeletionPath,
+  type AccountDeletionRosterRow,
+} from '@/lib/canonical/organizationDeletion'
 
 export const ACCOUNT_DELETE_CONFIRMATION = 'DELETE'
 export const DELETED_USER_DISPLAY_NAME = 'Deleted user'
@@ -27,6 +33,17 @@ export const ACCOUNT_DELETE_COPY = {
   soleAdminBody: (orgName: string) =>
     `You are the only admin of ${orgName || 'this organisation'}. Transfer admin access to someone else, or email ${SUPPORT_EMAIL} if you need this organisation removed.`,
   soleAdminClose: 'OK',
+  // Rulebook 1.15.0 (`accountDeletionPath`).
+  handoverTitle: 'Hand over super admin first',
+  handoverPickLabel: 'Make one of these admins the super admin',
+  handoverPromoteLabel: 'Or make a member an admin and the super admin',
+  handoverOtherOrg: (orgName: string) =>
+    `Open ${orgName || 'that organisation'}, then hand over super admin in Manage Users (Change Super Admin) before you delete your account.`,
+  handoverDone: 'Super admin handed over. You can delete your account now.',
+  companyTitle: 'This also deletes the organisation',
+  companyNameLabel: (orgName: string) => `Type the company name (${orgName})`,
+  companyNote:
+    'The organisation is locked straight away and erased after 60 days. Only Project Planner support (info@projectplanner.us) can restore it, because nobody else is left in it. The subscription is cancelled at the end of the billing period, with no refund.',
 } as const
 
 export type AdminLikeFlags = {
@@ -40,6 +57,8 @@ export type AdminLikeFlags = {
 export type OrgMemberSnapshot = {
   uid: string
   flags: AdminLikeFlags
+  /** Rulebook 1.15.0: the users document as stored (roster fields for `accountDeletionPath`). */
+  profile?: Record<string, unknown>
 }
 
 export type OrgDeleteSnapshot = {
@@ -48,6 +67,8 @@ export type OrgDeleteSnapshot = {
   creatorUserId: string
   members: Record<string, string>
   memberFlags: OrgMemberSnapshot[]
+  /** Rulebook 1.15.0 §20: `organizations/{orgId}.deletion` as stored. */
+  deletion?: unknown
 }
 
 export type SoleAdminBlock = {
@@ -66,6 +87,8 @@ export type AccountDeleteBodyOk = {
   ok: true
   confirmation: typeof ACCOUNT_DELETE_CONFIRMATION
   password: string
+  /** Rulebook 1.15.0: organisation id → company name typed, for the organisations deleted with the account. */
+  companyNames: Record<string, string>
 }
 
 const ROSTER_CLEAR_FIELDS = [
@@ -100,7 +123,13 @@ export function parseAccountDeleteBody(body: unknown): AccountDeleteBodyOk | Acc
       error: 'Type DELETE and enter your password to delete your account.',
     }
   }
-  return { ok: true, confirmation: ACCOUNT_DELETE_CONFIRMATION, password }
+  const companyNames: Record<string, string> = {}
+  if (value.companyNames && typeof value.companyNames === 'object' && !Array.isArray(value.companyNames)) {
+    for (const [key, name] of Object.entries(value.companyNames as Record<string, unknown>).slice(0, 20)) {
+      if (typeof name === 'string') companyNames[key] = name.slice(0, 200)
+    }
+  }
+  return { ok: true, confirmation: ACCOUNT_DELETE_CONFIRMATION, password, companyNames }
 }
 
 export function normalizeAccountDeleteEmail(value: unknown): string {
@@ -346,4 +375,47 @@ export function adminLikeFromUserFields(
     memberRole: memberRole || '',
     permissions,
   }
+}
+
+// MARK: - Rulebook 1.15.0: delete my account paths
+
+export const HANDOVER_REQUIRED_CODE = 'handover_required'
+export const COMPANY_DELETE_REQUIRED_CODE = 'company_delete_required'
+
+export type AccountOrgPath = { orgId: string; orgName: string; path: AccountDeletionPath }
+
+/**
+ * `accountDeletionPath` for every organisation the account belongs to, from the server's snapshots: the roster is
+ * the members (and creator) with their users documents; the viewer is the account's users document.
+ */
+export function accountOrgPaths(
+  uid: string,
+  viewerProfile: Record<string, unknown> | null | undefined,
+  snapshots: readonly OrgDeleteSnapshot[]
+): AccountOrgPath[] {
+  return snapshots.map((org) => {
+    const roster = org.memberFlags.map((row) => ({ ...(row.profile || {}), id: row.uid }) as AccountDeletionRosterRow)
+    const viewer = { ...(viewerProfile || {}), id: uid } as Parameters<typeof accountDeletionPath>[0]
+    const path = accountDeletionPath(viewer, roster, { id: org.orgId, creatorUserId: org.creatorUserId, deletion: org.deletion })
+    return { orgId: org.orgId, orgName: org.orgName, path }
+  })
+}
+
+/**
+ * The organisations whose company-name confirmation is missing or wrong (`organizationDeleteConfirmationError`), for
+ * the organisations deleted with the account. `companyNames` maps organisation id → the name typed.
+ */
+export function missingCompanyConfirmations(
+  paths: readonly AccountOrgPath[],
+  companyNames: Record<string, unknown> | null | undefined
+): AccountOrgPath[] {
+  return paths.filter(
+    (row) =>
+      row.path === 'delete_with_company' &&
+      organizationDeleteConfirmationError({
+        organizationName: row.orgName,
+        typedName: String((companyNames || {})[row.orgId] ?? ''),
+        typedConfirmation: ACCOUNT_DELETE_CONFIRMATION,
+      }) !== null
+  )
 }

@@ -11,13 +11,17 @@ import {
 import { enforceAppCheckOnAuthGate } from '@/lib/security/verifyAppCheckToken'
 import { firebaseAdminConfigured, verifyAuthPassword } from '@/lib/owner/identityToolkitAdmin'
 import {
+  COMPANY_DELETE_REQUIRED_CODE,
+  HANDOVER_REQUIRED_CODE,
+  missingCompanyConfirmations,
   ownerAccountDeleteBlock,
   parseAccountDeleteBody,
   resolveAccountDeleteEmail,
-  soleAdminErrorBody,
 } from '@/lib/account/accountDelete'
 import { evaluateAccountOrgs, executeAccountDelete, readAccountDeleteJobEmail } from '@/lib/account/accountDeleteAdmin'
 import { clearMfaCookies } from '@/lib/auth/mfa/mfaCookies'
+import { ACCOUNT_DELETE_WITH_COMPANY_MESSAGE, ACCOUNT_HANDOVER_REQUIRED_MESSAGE } from '@/lib/canonical/organizationDeletion'
+import { scheduleOrganizationDeletion } from '@/lib/organizationDeletion/server'
 
 export const runtime = 'nodejs'
 
@@ -55,11 +59,39 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    // Rulebook 1.15.0 `accountDeletionPath`: a super admin with other active members hands super admin over first;
+    // the super admin who is the only member deletes the company with the account (company name + DELETE).
     const evaluation = await evaluateAccountOrgs(user.uid)
-    if ('block' in evaluation) {
-      return NextResponse.json(soleAdminErrorBody(evaluation.block), {
-        status: 409,
-        headers: { 'Cache-Control': 'no-store' },
+    if ('handover' in evaluation) {
+      return NextResponse.json(
+        {
+          error: ACCOUNT_HANDOVER_REQUIRED_MESSAGE,
+          code: HANDOVER_REQUIRED_CODE,
+          orgId: evaluation.handover.orgId,
+          orgName: evaluation.handover.orgName,
+        },
+        { status: 409, headers: { 'Cache-Control': 'no-store' } }
+      )
+    }
+    const missing = missingCompanyConfirmations(evaluation.paths, parsed.companyNames)
+    if (missing.length > 0) {
+      return NextResponse.json(
+        {
+          error: ACCOUNT_DELETE_WITH_COMPANY_MESSAGE,
+          code: COMPANY_DELETE_REQUIRED_CODE,
+          orgs: missing.map((row) => ({ orgId: row.orgId, orgName: row.orgName })),
+        },
+        { status: 409, headers: { 'Cache-Control': 'no-store' } }
+      )
+    }
+    // The company first (locked for 60 days, restorable only by the platform owner since nobody is left), then the
+    // account as before.
+    for (const row of evaluation.paths.filter((entry) => entry.path === 'delete_with_company')) {
+      await scheduleOrganizationDeletion({
+        organizationId: row.orgId,
+        requestedBy: user.uid,
+        requestedByEmail: email,
+        restoreBy: 'platform_owner',
       })
     }
 

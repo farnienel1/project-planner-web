@@ -38,6 +38,9 @@ const { onRequest } = require('firebase-functions/v2/https')
 const { defineSecret } = require('firebase-functions/params')
 const { getAuth } = require('firebase-admin/auth')
 const { getAppCheck } = require('firebase-admin/app-check')
+const { getStorage } = require('firebase-admin/storage')
+const { onSchedule } = require('firebase-functions/v2/scheduler')
+const { createAdminEraserStore, eraseDueOrganizations } = require('./organizationEraser')
 const { createSendEmailHandler, resendSender } = require('./email/handler')
 const { createFirestoreReader } = require('./email/firestoreReader')
 const { consumeRateLimit } = require('./email/rateLimit')
@@ -218,4 +221,24 @@ exports.sendEmail = onRequest(
     timeoutSeconds: 60,
   },
   (req, res) => emailHandler()(req, res)
+)
+
+/**
+ * Rulebook 1.15.0 §20: once a day, erase every organisation deleted more than `DELETION_RESTORE_DAYS` (60) days ago
+ * (`organizationEraseDue`). See organizationEraser.js for what is removed; the audit row is
+ * `erasedOrganizations/{orgId}` `{ erasedAt, name }`.
+ */
+exports.eraseDeletedOrganizations = onSchedule(
+  { schedule: 'every day 03:17', timeZone: 'Europe/London', region: 'us-central1', timeoutSeconds: 540, memory: '512MiB' },
+  async () => {
+    const db = getFirestore()
+    const report = await eraseDueOrganizations({
+      canonical,
+      store: createAdminEraserStore(db),
+      deleteStoragePrefix: (prefix) => getStorage().bucket().deleteFiles({ prefix, force: true }),
+      deleteAuthUser: (uid) => getAuth().deleteUser(uid),
+      logger,
+    })
+    logger.info('eraseDeletedOrganizations', { erased: report.map((row) => row.orgId) })
+  }
 )

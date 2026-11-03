@@ -8,7 +8,9 @@
  *   - 'member'              an active member of the organisation (`organizationMemberActive`), found by their users
  *                           document email (timesheet export, leave cancelled).
  *   - 'wholesaler_or_self'  a contact email on one of the organisation's `wholesalers` documents
- *                           (`parseWholesalerDocument`), or the caller's own email for their copy (material request).
+ *                           (`parseWholesalerDocument`), the caller's own email for their copy, and at most 3 typed
+ *                           addresses not saved on a wholesaler (`materialOrderRecipientCheck`, rulebook 1.15.0)
+ *                           (material request).
  *   - 'server'              web server mail only (server key): the web route already decided the address.
  *
  * `reader` is the Firestore access, injected so the rules are tested without Firebase:
@@ -94,19 +96,23 @@ async function wholesalerOrSelfRecipients(emails, ctx) {
       if (email && !contacts.has(email)) contacts.set(email, { wholesalerId: firm.id, contactName: contact.name || '' })
     }
   }
+  // Rulebook 1.15.0 `materialOrderRecipientCheck`: saved wholesaler contacts, the sender's copy, and at most
+  // `MATERIAL_ORDER_TYPED_RECIPIENTS_MAX` (3) typed addresses not saved on a wholesaler.
+  const check = canonical.materialOrderRecipientCheck({
+    recipients: emails,
+    savedContactEmails: [...contacts.keys()],
+    senderEmail: ctx.caller.email,
+  })
+  if (!check.ok) throw new RecipientError(check.message, 400)
+  const typed = new Set(check.typed)
   const self = normalizeEmail(ctx.caller.email)
   const recipients = []
   for (const email of emails) {
     const contact = contacts.get(email)
-    if (contact) {
-      recipients.push({ email, ...contact })
-    } else if (self && email === self) {
-      recipients.push({ email, isSelf: true })
-    } else {
-      throw new RecipientError(`${email} is not a contact on this organisation's wholesalers`)
-    }
+    if (contact) recipients.push({ email, ...contact })
+    else if (typed.has(email)) recipients.push({ email, isTyped: true, contactName: '' })
+    else if (self && email === self) recipients.push({ email, isSelf: true })
   }
-  if (!recipients.some((row) => !row.isSelf)) throw new RecipientError('At least one wholesaler contact is required', 400)
   return recipients
 }
 

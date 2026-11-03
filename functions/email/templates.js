@@ -327,7 +327,8 @@ const TEMPLATES = Object.freeze({
     render: renderTimesheetExport,
   },
   material_request: {
-    minRole: 'member',
+    // Rulebook 1.15.0 `canSendMaterialOrders`: admins and managers only, never an operative.
+    minRole: 'material_sender',
     recipients: 'wholesaler_or_self',
     maxRecipients: 41,
     attachments: [],

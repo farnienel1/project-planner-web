@@ -3,6 +3,7 @@
  */
 'use client'
 
+import { MATERIAL_ORDER_TYPED_RECIPIENTS_MAX, MATERIAL_ORDER_TYPED_RECIPIENTS_MESSAGE } from '@/lib/canonical/materialOrderAccess'
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { format } from 'date-fns'
@@ -150,9 +151,16 @@ export function MaterialsSendListSheet({
     })
   }
 
+  // Rulebook 1.15.0 `materialOrderRecipientCheck`: at most 3 typed addresses not saved on a wholesaler per send.
+  const oneOffLimitReached = oneOffRecipients.length >= MATERIAL_ORDER_TYPED_RECIPIENTS_MAX
   const addOneOff = () => {
     const parsed = parseOneOffRecipient(newRecipientName, newEmail, newPhone)
     if (!parsed) return
+    const replacing = oneOffRecipients.some((row) => row.email.toLowerCase() === parsed.email.toLowerCase())
+    if (!replacing && oneOffLimitReached) {
+      setError(MATERIAL_ORDER_TYPED_RECIPIENTS_MESSAGE)
+      return
+    }
     setOneOffRecipients((prev) => [...prev.filter((row) => row.email.toLowerCase() !== parsed.email.toLowerCase()), parsed])
     setNewRecipientName('')
     setNewEmail('')
@@ -692,6 +700,9 @@ export function MaterialsSendListSheet({
                   </button>
                 </FeatureCard>
               ))}
+              {oneOffLimitReached ? (
+                <p className="text-[11px] text-slate-500">{MATERIAL_ORDER_TYPED_RECIPIENTS_MESSAGE}</p>
+              ) : null}
               <FeatureCard className="space-y-2 p-3">
                 <FormInput
                   value={newRecipientName}
@@ -714,7 +725,7 @@ export function MaterialsSendListSheet({
                   <button
                     type="button"
                     onClick={addOneOff}
-                    disabled={!parseOneOffRecipient(newRecipientName, newEmail)}
+                    disabled={!parseOneOffRecipient(newRecipientName, newEmail) || oneOffLimitReached}
                     className="text-sm font-semibold text-[var(--blue)] disabled:opacity-40"
                   >
                     Add
