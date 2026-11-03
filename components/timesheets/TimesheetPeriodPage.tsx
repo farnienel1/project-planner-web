@@ -117,6 +117,8 @@ import { useHolidayStore } from '@/lib/stores/holidayStore'
 import { timesheetLeaveLinesForAccount } from '@/lib/timesheets/timesheetLeave'
 import type { TimesheetLeaveLine } from '@/lib/canonical'
 import { useOrgBankHolidays } from '@/components/annual-leave/useOrgBankHolidays'
+import { PayInputsBanner } from '@/components/timesheets/PayInputsBanner'
+import { TimesheetInputsNotReadyError, type TimesheetInputsState } from '@/lib/timesheets/timesheetInputs'
 
 function money(value: number, currency: string): string {
   return formatMoney(value, currency)
@@ -148,7 +150,9 @@ export function TimesheetPeriodPage({
   timeZone,
   history = emptyDayRateHistory(),
   scheduleOptions = DEFAULT_MY_SCHEDULE,
+  payInputs,
 }: {
+  payInputs: TimesheetInputsState
   subjectUser: User
   mode: 'mine' | 'review'
   periodStart: Date
@@ -306,6 +310,8 @@ export function TimesheetPeriodPage({
   const persist = useCallback(
     async (next: TimesheetDraft) => {
       if (!organization?.id) return
+      // Never build `weeklyReportOverride` or save pay figures from defaults / an empty history (failed load).
+      if (!payInputs.ready) throw new TimesheetInputsNotReadyError(payInputs.message ?? undefined)
       localEdits.current = false
       lastPersistAt.current = Date.now()
       const withOverride = applyWeeklyReportOverride({
@@ -355,6 +361,8 @@ export function TimesheetPeriodPage({
     },
     [
       organization?.id,
+      payInputs.ready,
+      payInputs.message,
       subjectUser,
       viewer,
       periodStart,
@@ -372,6 +380,14 @@ export function TimesheetPeriodPage({
       timeZone,
       users,
     ]
+  )
+
+  const persistOrReport = useCallback(
+    (next: TimesheetDraft) =>
+      persist(next).catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : 'Could not save the timesheet')
+      }),
+    [persist]
   )
 
   // The roster at load time, without reloading the sheet each time the roster listener republishes.
@@ -449,7 +465,13 @@ export function TimesheetPeriodPage({
   const acceptPostSignExtra = async () => {
     const kind = pendingExtraMode
     if (!kind) return
-    await persist(clearSignatures(draft))
+    try {
+      await persist(clearSignatures(draft))
+    } catch (err: unknown) {
+      setPendingExtraMode(null)
+      setError(err instanceof Error ? err.message : 'Could not save the timesheet')
+      return
+    }
     setPendingExtraMode(null)
     setExtraMode(kind)
   }
@@ -491,7 +513,7 @@ export function TimesheetPeriodPage({
     })
     const prior = draft.payrollLineReviews[editingLineId]?.decision
     const review = payrollReviewAfterSave(prior, row.amount, amount)
-    void persist({
+    void persistOrReport({
       ...draft,
       payrollLineReviews: {
         ...draft.payrollLineReviews,
@@ -510,19 +532,23 @@ export function TimesheetPeriodPage({
         if (entry.id !== editingExtra.id) return entry
         return { ...entry, ...extraReviewAfterSave(entry.managerDecision, entry.amount, amount) }
       })
-      void persist({ ...draft, expenseEntries: next })
+      void persistOrReport({ ...draft, expenseEntries: next })
     } else {
       const next = draft.priceWorkEntries.map((entry) => {
         if (entry.id !== editingExtra.id) return entry
         return { ...entry, ...extraReviewAfterSave(entry.managerDecision, entry.amount, amount) }
       })
-      void persist({ ...draft, priceWorkEntries: next })
+      void persistOrReport({ ...draft, priceWorkEntries: next })
     }
     setEditingExtra(null)
   }
 
   const handleOperativeSign = async () => {
     if (!viewer || !signature) return
+    if (!payInputs.ready) {
+      setError(payInputs.message)
+      return
+    }
     setBusy(true)
     setError(null)
     try {
@@ -562,6 +588,10 @@ export function TimesheetPeriodPage({
 
   const handleManagerSign = async () => {
     if (!viewer || !signature) return
+    if (!payInputs.ready) {
+      setError(payInputs.message)
+      return
+    }
     if (extrasPendingReview(draft) && (draft.expenseEntries.length > 0 || draft.priceWorkEntries.length > 0)) {
       setManagerSignOpen(false)
       setSignature(null)
@@ -605,7 +635,7 @@ export function TimesheetPeriodPage({
 
   // Download only — iOS Generate Invoice does not set exportedAt. Email and export does.
   const runInvoiceGeneration = (taxIds: { utrNumber?: string; vatNumber?: string } = invoiceTaxIds) => {
-    if (!organization || !fullyApproved) return
+    if (!organization || !fullyApproved || !payInputs.ready) return
     const subject = subjectForUser(subjectUser, operatives)
     const lines = invoiceLinesForTimesheet({
       payroll,
@@ -669,6 +699,10 @@ export function TimesheetPeriodPage({
 
   const handleInvoice = async () => {
     if (!organization || !fullyApproved) return
+    if (!payInputs.ready) {
+      setError(payInputs.message)
+      return
+    }
     let taxIds: { utrNumber?: string; vatNumber?: string } = {}
     if (exportIncludesSensitiveFields({ requested: includeTaxIds, canView: canViewSubjectTaxIds })) {
       try {
@@ -689,7 +723,7 @@ export function TimesheetPeriodPage({
   }
 
   const setLineDecision = (lineId: string, decision: TimesheetManagerDecision, revisedAmount?: number | null) => {
-    void persist({
+    void persistOrReport({
       ...draft,
       payrollLineReviews: {
         ...draft.payrollLineReviews,
@@ -736,6 +770,7 @@ export function TimesheetPeriodPage({
   return (
     <div className="space-y-4 pb-10">
       <p className="text-[15px] font-semibold text-[var(--ink3)]">{periodTitle}</p>
+      <PayInputsBanner inputs={payInputs} />
       {error ? <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-800">{error}</p> : null}
       {updatedElsewhere ? (
         <p className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-900">
@@ -907,7 +942,7 @@ export function TimesheetPeriodPage({
                   localEdits.current = true
                   setDraft({ ...draft, managerNote: event.target.value })
                 }}
-                onBlur={(event) => void persist({ ...draft, managerNote: event.currentTarget.value })}
+                onBlur={(event) => void persistOrReport({ ...draft, managerNote: event.currentTarget.value })}
                 className="mt-2 min-h-[74px] w-full rounded-xl bg-[#F7F8FC] p-3 text-[15px]"
               />
             </label>
@@ -921,8 +956,9 @@ export function TimesheetPeriodPage({
           {!draft.operativeSignedAt ? (
             <button
               type="button"
+              disabled={!payInputs.ready}
               onClick={() => setSignOpen(true)}
-              className="w-full rounded-xl bg-[#007AFF] py-3.5 text-[16px] font-semibold text-white"
+              className="w-full rounded-xl bg-[#007AFF] py-3.5 text-[16px] font-semibold text-white disabled:opacity-50"
             >
               Continue to sign
             </button>
@@ -953,7 +989,7 @@ export function TimesheetPeriodPage({
             ) : null}
             <button
               type="button"
-              disabled={busy}
+              disabled={busy || !payInputs.ready}
               onClick={() => void handleInvoice()}
               className="w-full rounded-xl bg-[#16A34A] py-3.5 text-[16px] font-semibold text-white disabled:opacity-60"
             >
@@ -982,7 +1018,7 @@ export function TimesheetPeriodPage({
           draft={draft}
           canReview={canManagerReview}
           timeZone={timeZone}
-          onSave={(next) => void persist(next)}
+          onSave={(next) => void persistOrReport(next)}
           onEditExtra={(type, id, title, _original, current) => {
             setEditingExtra({ type, id, title, original: current })
             setEditAmount(current.toFixed(2))
@@ -1031,7 +1067,7 @@ export function TimesheetPeriodPage({
               ) : null}
               <button
                 type="button"
-                disabled={!draft.operativeSignedAt}
+                disabled={!draft.operativeSignedAt || !payInputs.ready}
                 onClick={() => {
                   if (extrasPendingReview(draft) && (draft.expenseEntries.length > 0 || draft.priceWorkEntries.length > 0)) {
                     setExtrasReviewAlert(true)
@@ -1060,7 +1096,12 @@ export function TimesheetPeriodPage({
               extraMode === 'priceWork'
                 ? { ...draft, priceWorkEntries: [...draft.priceWorkEntries, entry.priceWork!] }
                 : { ...draft, expenseEntries: [...draft.expenseEntries, entry.expense!] }
-            await persist(next)
+            try {
+              await persist(next)
+            } catch (err: unknown) {
+              setError(err instanceof Error ? err.message : 'Could not save the timesheet')
+              return
+            }
             setExtraMode(null)
           }}
         />

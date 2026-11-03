@@ -58,6 +58,8 @@ import { dateFromDayKey, dayKey, LONDON_TIME_ZONE } from '@/lib/ios-parity/londo
 import { timesheetsTeamHref } from '@/lib/timesheets/timesheetRoutes'
 import { computeInvoicingPeriod } from '@/lib/warnings/warningLookahead'
 import { formatStampInZone } from '@/lib/orgTime/zoneTime'
+import { PayInputsBanner } from '@/components/timesheets/PayInputsBanner'
+import type { TimesheetInputsState } from '@/lib/timesheets/timesheetInputs'
 
 export type TeamTimesheetTab = 'awaiting' | 'signed' | 'exported'
 
@@ -90,7 +92,9 @@ export function TimesheetsScreen({
   timeZone = LONDON_TIME_ZONE,
   history = emptyDayRateHistory(),
   scheduleOptions = DEFAULT_MY_SCHEDULE,
+  payInputs,
 }: {
+  payInputs: TimesheetInputsState
   bookings: Booking[]
   managerSiteBookings: ManagerSiteBooking[]
   operatives: Operative[]
@@ -274,6 +278,11 @@ export function TimesheetsScreen({
 
   const exportSigned = async () => {
     if (!organization?.id || !user || visible.length === 0) return
+    // Never export or freeze `weeklyReportOverride` from default settings / an empty pay history.
+    if (!payInputs.ready) {
+      setExportMessage(payInputs.message)
+      return
+    }
     const recipientEmail = user.email?.trim()
     setExporting(true)
     setExportMessage(null)
@@ -523,9 +532,10 @@ export function TimesheetsScreen({
               {SENSITIVE_EXPORT_OPTION_LABEL}
             </label>
           ) : null}
+          <PayInputsBanner inputs={payInputs} />
           <button
             type="button"
-            disabled={exporting}
+            disabled={exporting || !payInputs.ready}
             onClick={() => void exportSigned()}
             className="btn primary block"
           >
