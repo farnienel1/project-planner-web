@@ -1310,8 +1310,11 @@ export {
   allowedTimeSlotsOnDay,
   customHoursBreakWarning,
   isWeekendDayKey,
+  WEEKEND_WEEKDAY_MIX_MESSAGE,
+  bookingDaysMixWeekdayAndWeekend,
   timeSlotAllowedOnDay,
-  weekendFullDayNote,
+  weekendBookingNote,
+  weekendCustomHoursDefault,
 } from './bookingSlots'
 export { weekendFullDayWindow, weekendRuleForIsoWeekday } from './payrollHours'
 export { intervalCrossesMidnight, nextCalendarDayKey, overnightCarryInterval } from './engine'

@@ -8559,31 +8559,53 @@ test('1.13.0 Q1: pay profile reader, overlay, write fields and backfill', () => 
   assert.deepEqual(R112.payProfileBackfillWrites({ subjectId: 'U1', source: { dayRate: 150 }, profile: { dayRate: 150 }, strip: true }), { profileSet: null, sourceRemove: ['dayRate'] })
 })
 
-test('1.13.0 Q2: weekends offer FULL DAY and CUSTOM only; FULL DAY is the set window at its counts-as hours', () => {
+test('1.13.0 Q2: weekends are custom hours only; the editor prefills the set window; stored weekend slots keep their pay', () => {
   const policy = {
     ...parsePayrollPolicy(undefined),
-    saturday: { allHoursAtMultiplierMode: false, allHoursMultiplier: 2, definedWindowStart: '07:30', definedWindowEnd: '13:00', countsAsStandardHours: 8, outsideWindowMultiplier: 1.5 },
+    saturday: { allHoursAtMultiplierMode: false, allHoursMultiplier: 2, definedWindowStart: '07:30', definedWindowEnd: '13:00', countsAsStandardHours: 8, outsideWindowMultiplier: 2 },
     sunday: { allHoursAtMultiplierMode: true, allHoursMultiplier: 2, sameAsSaturday: false },
   }
   assert.deepEqual(R112.allowedTimeSlotsOnDay(WED, policy), ['FULL DAY', 'AM', 'PM', 'CUSTOM'])
-  assert.deepEqual(R112.allowedTimeSlotsOnDay(SAT, policy), ['FULL DAY', 'CUSTOM'])
-  assert.deepEqual(R112.allowedTimeSlotsOnDay(SUN, policy, 'Europe/London'), ['FULL DAY', 'CUSTOM'])
-  assert.equal(R112.timeSlotAllowedOnDay('AM', SAT), false)
+  assert.deepEqual(R112.allowedTimeSlotsOnDay(SAT, policy), ['CUSTOM'])
+  assert.deepEqual(R112.allowedTimeSlotsOnDay(SUN, policy, 'Europe/London'), ['CUSTOM'])
+  assert.deepEqual(R112.WEEKEND_TIME_SLOTS, ['CUSTOM'])
+  // Whatever the weekend setup: the same with an all-hours Saturday.
+  assert.deepEqual(R112.allowedTimeSlotsOnDay(SAT, { ...policy, saturday: { ...policy.sunday } }), ['CUSTOM'])
+  for (const slot of ['FULL DAY', 'AM', 'PM']) assert.equal(R112.timeSlotAllowedOnDay(slot, SAT), false)
+  assert.equal(R112.timeSlotAllowedOnDay('CUSTOM_HOURS', SAT), true)
   assert.equal(R112.timeSlotAllowedOnDay('AM', WED), true)
-  assert.equal(R112.weekendFullDayNote(policy, SAT), 'Full day = Saturday 07:30–13:00 (counts as 8h). Change it in Working hours.')
-  assert.equal(R112.weekendFullDayNote(policy, 6), 'Full day = Saturday 07:30–13:00 (counts as 8h). Change it in Working hours.')
-  assert.equal(R112.weekendFullDayNote(policy, 'sunday'), 'Full day = Sunday 07:30–16:00, every hour at 2×. Change it in Working hours.')
-  assert.equal(R112.weekendFullDayNote(policy, WED), null)
-  // FULL DAY on Saturday: the window, 8 hours, nothing outside (it used to add 13:00–16:00 at the multiplier).
-  const full = hoursOn(SAT, { timeSlot: 'FULL DAY' }, policy)
-  assert.deepEqual([full.totalPaidHours, full.standardHours, full.outsideHours, full.workedHours], [8, 8, 0, 5.5])
-  // Custom hours outside the window at that day's multiplier.
+  // Prefill: the window on a set-window day; nothing on an all-hours day or a weekday.
+  assert.deepEqual(R112.weekendCustomHoursDefault(policy, SAT), { start: '07:30', end: '13:00' })
+  assert.deepEqual(R112.weekendCustomHoursDefault(policy, 6), { start: '07:30', end: '13:00' })
+  assert.equal(R112.weekendCustomHoursDefault(policy, SUN), null)
+  assert.equal(R112.weekendCustomHoursDefault(policy, WED), null)
+  assert.equal(
+    R112.weekendBookingNote(policy, SAT),
+    'Saturday is paid on the hours you enter: 07:30–13:00 counts as 8h, hours outside it at 2×. Change it in Working hours.'
+  )
+  assert.equal(R112.weekendBookingNote(policy, 'sunday'), 'Sunday is paid on the hours you enter, every hour at 2×. Change it in Working hours.')
+  assert.equal(R112.weekendBookingNote(policy, WED), null)
+  // Custom hours: the window counts as its hours, the rest at the weekend multiplier; all-hours: every hour × multiplier.
   const custom = hoursOn(SAT, { timeSlot: 'CUSTOM_HOURS', workStartTime: '07:30', workEndTime: '15:00' }, policy)
-  assert.deepEqual([custom.standardHours, custom.outsideHours, custom.totalPaidHours], [8, 2, 11])
-  // An existing Saturday AM keeps its pay: half the counts-as hours.
+  assert.deepEqual([custom.standardHours, custom.outsideHours, custom.totalPaidHours], [8, 2, 12])
+  assert.equal(hoursOn(SUN, { timeSlot: 'CUSTOM_HOURS', workStartTime: '08:00', workEndTime: '12:00' }, policy).totalPaidHours, 8)
+  // Stored weekend rows are paid as stored: FULL DAY in window mode = the window at counts-as hours; AM half of it;
+  // all-hours FULL DAY keeps the pre-1.13 calculation (the standard day 07:30–16:00 at 2× = 17), never more.
+  const full = hoursOn(SAT, { timeSlot: 'FULL DAY' }, policy)
+  assert.deepEqual([full.totalPaidHours, full.standardHours, full.outsideHours], [8, 8, 0])
   assert.equal(hoursOn(SAT, { timeSlot: 'AM' }, policy).totalPaidHours, 4)
-  // Sunday all hours at 2×: the standard day, every hour at the multiplier (as before).
   assert.equal(hoursOn(SUN, { timeSlot: 'FULL DAY' }, policy).totalPaidHours, 17)
+})
+
+test('1.13.0 Q2: a booking request never mixes weekdays and weekend days', () => {
+  assert.equal(R112.bookingDaysMixWeekdayAndWeekend([WED, SAT]), true)
+  assert.equal(R112.bookingDaysMixWeekdayAndWeekend([SAT, SUN]), false)
+  assert.equal(R112.bookingDaysMixWeekdayAndWeekend([WED, '2026-10-22']), false)
+  assert.equal(R112.bookingDaysMixWeekdayAndWeekend([]), false)
+  assert.equal(
+    R112.WEEKEND_WEEKDAY_MIX_MESSAGE,
+    'Weekends cannot be booked alongside Weekdays. Make your weekday booking first then weekend separately.'
+  )
 })
 
 test('1.13.0 Q3: a lapsed subscription blocks; admins reach billing only; missing billing is open', () => {

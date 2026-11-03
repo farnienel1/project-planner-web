@@ -1,6 +1,12 @@
 'use client'
 
-import { confirmCustomHoursBreak, slotOfferedOnDate, weekendNoteForDate } from '@/lib/scheduling/bookingSlotRules'
+import {
+  confirmCustomHoursBreak,
+  customHoursPrefillForDate,
+  isWeekendDate,
+  slotOfferedOnDate,
+  weekendNoteForDate,
+} from '@/lib/scheduling/bookingSlotRules'
 import { useMemo, useState } from 'react'
 import { format } from 'date-fns'
 import { slotToFirestore, type ScheduleSlotChoice } from '@/lib/scheduling/scheduleUtils'
@@ -47,9 +53,12 @@ export function QuickAddBookingSheet({
   onSave: (values: QuickAddBookingValues) => Promise<void>
   onClose: () => void
 }) {
-  const [slot, setSlot] = useState<ScheduleSlotChoice>('FULL DAY')
-  const [workStartTime, setWorkStartTime] = useState(payroll.standardDayStart)
-  const [workEndTime, setWorkEndTime] = useState(payroll.standardDayEnd)
+  // Rulebook 1.13.0 (Q2): Saturday and Sunday are custom hours only, opened with that day's window when it has one.
+  const weekendDay = isWeekendDate(date)
+  const prefill = customHoursPrefillForDate(date, payroll)
+  const [slot, setSlot] = useState<ScheduleSlotChoice>(weekendDay ? 'CUSTOM' : 'FULL DAY')
+  const [workStartTime, setWorkStartTime] = useState(prefill.start)
+  const [workEndTime, setWorkEndTime] = useState(prefill.end)
   const [breakRemoved, setBreakRemoved] = useState(false)
   const [notes, setNotes] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -58,11 +67,11 @@ export function QuickAddBookingSheet({
   const range = (interval: { start: number; end: number }) =>
     `${formatClockMinutes(interval.start)}–${formatClockMinutes(interval.end)}`
 
-  // Rulebook 1.13.0 (Q2, `allowedTimeSlotsOnDay`): Saturday and Sunday offer Full day (that day's window) and Custom.
+  // Rulebook 1.13.0 (Q2, `allowedTimeSlotsOnDay`): Saturday and Sunday offer Custom hours only.
   const weekendNote = weekendNoteForDate(date, payroll)
   const slotOptions: { value: ScheduleSlotChoice; label: string }[] = (
     [
-      { value: 'FULL DAY', label: weekendNote ? 'Full day' : `Full day (${range(halves.day)})` },
+      { value: 'FULL DAY', label: `Full day (${range(halves.day)})` },
       { value: 'AM', label: `AM (${range(halves.am)})` },
       { value: 'PM', label: `PM (${range(halves.pm)})` },
       { value: 'CUSTOM', label: 'Custom hours' },

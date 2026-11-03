@@ -5,9 +5,13 @@
  */
 import {
   allowedTimeSlotsOnDay,
+  bookingDaysMixWeekdayAndWeekend,
   customHoursBreakWarning,
+  isWeekendDayKey,
   organizationTimeZone,
-  weekendFullDayNote,
+  weekendBookingNote,
+  weekendCustomHoursDefault,
+  WEEKEND_WEEKDAY_MIX_MESSAGE,
   type BookingSlotChoice,
   type CustomHoursBreakBooking,
 } from '@/lib/canonical'
@@ -44,9 +48,33 @@ export function slotOfferedOnDate(
   return (slotChoicesForDate(date, policy) as string[]).includes(kind)
 }
 
-/** The weekend Full day note for the date, else null. */
+/** The weekend booking note for the date (`weekendBookingNote`), else null. */
 export function weekendNoteForDate(date: Date | string | number, policy?: OrgPayrollTimePolicy | null): string | null {
-  return weekendFullDayNote(policy ?? null, bookingDayKey(date), openOrganizationZone())
+  return weekendBookingNote(policy ?? null, bookingDayKey(date), openOrganizationZone())
+}
+
+/** Whether the date is a Saturday or Sunday in the organisation zone (custom hours only). */
+export function isWeekendDate(date: Date | string | number): boolean {
+  return isWeekendDayKey(bookingDayKey(date), openOrganizationZone())
+}
+
+/**
+ * The custom-hours editor's starting times for the date (`weekendCustomHoursDefault`: a set-window weekend day's
+ * window), else the organisation's standard day. A prefill only.
+ */
+export function customHoursPrefillForDate(
+  date: Date | string | number,
+  policy?: OrgPayrollTimePolicy | null
+): { start: string; end: string } {
+  const weekend = weekendCustomHoursDefault(policy ?? null, bookingDayKey(date), openOrganizationZone())
+  return weekend ?? { start: policy?.standardDayStart || '07:30', end: policy?.standardDayEnd || '16:00' }
+}
+
+/** `WEEKEND_WEEKDAY_MIX_MESSAGE` when the dates mix weekdays and weekend days (`bookingDaysMixWeekdayAndWeekend`). */
+export function weekendWeekdayMixMessage(dates: ReadonlyArray<Date | string | number>): string | null {
+  const zone = openOrganizationZone()
+  const keys = dates.map((date) => bookingDayKey(date))
+  return bookingDaysMixWeekdayAndWeekend(keys, zone) ? WEEKEND_WEEKDAY_MIX_MESSAGE : null
 }
 
 /**

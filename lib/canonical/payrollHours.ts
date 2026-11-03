@@ -18,9 +18,10 @@
  * (22:00–02:00 is 4 hours). 1.13.0 (Q5): an overnight booking is paid wholly at
  * its start day's rules — on a weekday the hours inside that day's standard window
  * count once and every other hour (after midnight too) is at that day's multiplier;
- * on a Saturday or Sunday that day's rule. 1.13.0 (Q2): a Saturday or Sunday FULL DAY
- * with no clock times is that day's set window (`weekendFullDayWindow`), paid at its
- * "counts as" hours with nothing outside it. The day is the organisation-zone calendar day.
+ * on a Saturday or Sunday that day's rule. 1.13.0 (Q2): new weekend bookings are custom
+ * hours only; a stored Saturday or Sunday FULL DAY with no clock times is that day's set
+ * window (`weekendFullDayWindow`), paid at its "counts as" hours with nothing outside it,
+ * or on an all-hours day the standard day at that day's multiplier (as before 1.13.0). The day is the organisation-zone calendar day.
  */
 
 import { formatClockMinutes, halfDayWindows, namedSlotKind, parseClockMinutes, slotInterval, type MinuteInterval } from './engine'

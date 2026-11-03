@@ -37,7 +37,14 @@ import {
 import { AddWeekToCalendarButton } from '@/components/schedule/AddWeekToCalendarButton'
 import { myScheduleStripeClass } from '@/components/schedule/MyScheduleLooks'
 import { HoursTimelinePicker } from '@/components/scheduling/HoursTimelinePicker'
-import { confirmCustomHoursBreak, slotOfferedOnDate, weekendNoteForDate } from '@/lib/scheduling/bookingSlotRules'
+import {
+  confirmCustomHoursBreak,
+  customHoursPrefillForDate,
+  isWeekendDate,
+  slotOfferedOnDate,
+  weekendNoteForDate,
+  weekendWeekdayMixMessage,
+} from '@/lib/scheduling/bookingSlotRules'
 import { BookingEditSheet } from '@/components/schedule/BookingEditSheet'
 import { countWorksByTab, filterWorksByTab, searchWorks } from '@/lib/projects/workStatus'
 import { coversCalendarDay } from '@/lib/ios-parity/londonTime'
@@ -290,6 +297,20 @@ export function MyScheduleSelfBookingScreen({
     return [selectedDate]
   }
 
+  // Rulebook 1.13.0 (Q2): booking only weekend days opens custom hours with that day's window
+  // (`weekendCustomHoursDefault`); the person can change it.
+  const weekendPrefillKey = targetDays()
+    .map((day) => day.toDateString())
+    .join('|')
+  useEffect(() => {
+    const days = targetDays()
+    if (days.length === 0 || !days.every((day) => isWeekendDate(day))) return
+    const prefill = customHoursPrefillForDate(days[0], payrollPolicy)
+    setCustomStart(prefill.start)
+    setCustomEnd(prefill.end)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [weekendPrefillKey, payrollPolicy])
+
   function flash(kind: 'success' | 'error', msg: string) {
     setToast({ kind, msg })
     window.setTimeout(() => setToast(null), 2800)
@@ -353,14 +374,17 @@ export function MyScheduleSelfBookingScreen({
     locationId?: string
     customLocationName?: string
   }) {
-    // Rulebook 1.13.0 (Q2): no AM / PM on Saturday or Sunday — those days are left out of an AM / PM booking.
+    // Rulebook 1.13.0 (Q2): Saturday and Sunday are custom hours only, and one request never mixes weekdays and
+    // weekend days (`bookingDaysMixWeekdayAndWeekend`).
     const allDays = targetDays()
-    const days =
-      args.timeSlot === 'AM' || args.timeSlot === 'PM'
-        ? allDays.filter((day) => slotOfferedOnDate(args.timeSlot, day, payrollPolicy))
-        : allDays
+    const mix = weekendWeekdayMixMessage(allDays)
+    if (mix) {
+      flash('error', mix)
+      return
+    }
+    const days = allDays.filter((day) => slotOfferedOnDate(args.timeSlot, day, payrollPolicy))
     if (days.length === 0) {
-      flash('error', 'Saturday and Sunday have no AM or PM. Book a full day or custom hours.')
+      flash('error', 'Saturday and Sunday are booked as custom hours only.')
       return
     }
     // 1.13.0 lunch warning (`customHoursBreakWarning`), checked on the first day booked.

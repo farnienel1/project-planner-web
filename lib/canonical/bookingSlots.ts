@@ -2,11 +2,13 @@
  * Rulebook 1.13.0 (owner decisions round 4): which booking slots a day offers, what FULL DAY means at the weekend,
  * and the custom-hours lunch-break warning. Screens call these; none keeps its own slot list or break test.
  *
- * - Q2 weekends: Saturday and Sunday have no AM or PM. `allowedTimeSlotsOnDay` gives FULL DAY and CUSTOM only on
- *   those days. FULL DAY is that day's set window, paid at its "counts as" hours (`weekendFullDayWindow`,
- *   `payrollHoursResult`); custom hours outside it are paid at that day's outside multiplier. Existing weekend AM / PM
- *   bookings keep their stored slot and their pay (`payrollHoursResult` still pays them half the day).
- *   `weekendFullDayNote` is the line shown under the picker.
+ * - Q2 weekends (owner decision, revised in 1.13.0): Saturday and Sunday bookings are custom hours only, on every
+ *   platform and whatever the organisation's weekend setup — no FULL DAY, AM or PM (`allowedTimeSlotsOnDay`). When the
+ *   day's rule is a set window ("standard window + overtime"), the custom-hours editor opens prefilled with that window
+ *   (`weekendCustomHoursDefault`); the person can change it. Pay is the custom hours under that day's rule
+ *   (`payrollHoursResult`). Stored weekend FULL DAY / AM / PM bookings are never rewritten and keep their pay.
+ *   `weekendBookingNote` is the line shown under the picker. A booking request never mixes weekdays and weekend days
+ *   (`bookingDaysMixWeekdayAndWeekend`, `WEEKEND_WEEKDAY_MIX_MESSAGE`).
  * - Lunch warning: `customHoursBreakWarning` is the message shown before a custom-hours booking is saved when the
  *   organisation break is unpaid, the booking's "Unpaid break" toggle is on and the hours cover the break window. Pay
  *   is unchanged (§8: break minutes come off only while the toggle is on).
@@ -21,7 +23,7 @@ import { isoWeekdayOfDayKey, zoneOrLondon } from './dayKeys'
 export type BookingSlotChoice = 'FULL DAY' | 'AM' | 'PM' | 'CUSTOM'
 
 export const WEEKDAY_TIME_SLOTS: readonly BookingSlotChoice[] = ['FULL DAY', 'AM', 'PM', 'CUSTOM']
-export const WEEKEND_TIME_SLOTS: readonly BookingSlotChoice[] = ['FULL DAY', 'CUSTOM']
+export const WEEKEND_TIME_SLOTS: readonly BookingSlotChoice[] = ['CUSTOM']
 
 function isoWeekdayOf(day: string | number, timeZone?: string | null): number {
   if (typeof day === 'number') return day
@@ -39,8 +41,9 @@ export function isWeekendDayKey(dayKey: string, timeZone?: string | null): boole
 }
 
 /**
- * The slots a booking picker offers on a day: FULL DAY and CUSTOM on Saturday and Sunday, FULL DAY, AM, PM and
- * CUSTOM otherwise. `policy` is accepted so every platform passes the same inputs; the week is fixed (§1).
+ * The slots a booking picker offers on a day: CUSTOM only on Saturday and Sunday, FULL DAY, AM, PM and CUSTOM
+ * otherwise. Not affected by the organisation's weekend setup; `policy` is accepted so every platform passes the same
+ * inputs.
  */
 export function allowedTimeSlotsOnDay(
   dayKey: string,
@@ -50,11 +53,53 @@ export function allowedTimeSlotsOnDay(
   return [...(isWeekendDayKey(dayKey, timeZone) ? WEEKEND_TIME_SLOTS : WEEKDAY_TIME_SLOTS)]
 }
 
-/** Whether a stored slot is offered on that day (a stored weekend AM / PM is kept and shown, never offered anew). */
+/**
+ * Whether a slot may be booked anew on that day: on Saturday and Sunday only custom hours. A stored weekend FULL DAY /
+ * AM / PM is kept, shown and paid as stored, never offered anew and never rewritten.
+ */
 export function timeSlotAllowedOnDay(timeSlot: string | null | undefined, dayKey: string, timeZone?: string | null): boolean {
-  const kind = namedSlotKind(timeSlot)
-  if (kind !== 'AM' && kind !== 'PM') return true
-  return !isWeekendDayKey(dayKey, timeZone)
+  if (!isWeekendDayKey(dayKey, timeZone)) return true
+  return namedSlotKind(timeSlot) === 'CUSTOM'
+}
+
+/** iOS `ScheduleDateSelectionPolicy.weekdayWeekendMixMessage`, word for word. */
+export const WEEKEND_WEEKDAY_MIX_MESSAGE =
+  'Weekends cannot be booked alongside Weekdays. Make your weekday booking first then weekend separately.'
+
+/**
+ * True when one booking request holds both a weekday and a Saturday or Sunday. Every multi-day booking picker refuses
+ * that request with `WEEKEND_WEEKDAY_MIX_MESSAGE` (weekends are custom hours only, so they are booked on their own).
+ */
+export function bookingDaysMixWeekdayAndWeekend(dayKeys: ReadonlyArray<string> | null | undefined, timeZone?: string | null): boolean {
+  let weekday = false
+  let weekend = false
+  for (const key of dayKeys || []) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(key || '').trim())) continue
+    if (isWeekendDayKey(String(key).trim(), timeZone)) weekend = true
+    else weekday = true
+    if (weekday && weekend) return true
+  }
+  return false
+}
+
+/**
+ * The custom-hours editor's starting times on a Saturday or Sunday whose rule is a set window ("standard window +
+ * overtime"): that window, e.g. `{ start: '07:30', end: '13:00' }`. Null on a weekday, when the day pays every hour at
+ * one rate, or when the window is not set — then the editor opens with its usual times. A prefill only; the person may
+ * change it.
+ */
+export function weekendCustomHoursDefault(
+  policy: OrgPayrollTimePolicy | null | undefined,
+  weekday: string | number,
+  timeZone?: string | null
+): { start: string; end: string } | null {
+  if (!policy) return null
+  const iso = isoWeekdayOf(weekday, timeZone)
+  if (iso !== 6 && iso !== 7) return null
+  const weekend = weekendRuleForIsoWeekday(iso, policy)
+  if (!weekend || weekend.allHoursAtMultiplierMode) return null
+  const window = weekendFullDayWindow(policy, weekend)
+  return window ? { start: formatClockMinutes(window.start), end: formatClockMinutes(window.end) } : null
 }
 
 function hoursText(hours: number): string {
@@ -68,12 +113,12 @@ function multiplierText(multiplier: number): string {
 }
 
 /**
- * The line under a weekend booking picker, e.g. "Full day = Saturday 07:30–13:00 (counts as 8h). Change it in
- * Working hours." When that day pays every hour at its multiplier: "Full day = Saturday 07:30–16:00, every hour at
- * 1.5×. Change it in Working hours." `weekday` is an ISO weekday (6, 7), "saturday" / "sunday" or a day key. Null on
- * a weekday or when the window is not set.
+ * The line under a weekend booking picker. Set window: "Saturday is paid on the hours you enter: 07:30–13:00 counts as
+ * 8h, hours outside it at 2×. Change it in Working hours." Every hour at one rate: "Sunday is paid on the hours you
+ * enter, every hour at 2×. Change it in Working hours." `weekday` is an ISO weekday (6, 7), "saturday" / "sunday" or a
+ * day key. Null on a weekday or when the window is not set.
  */
-export function weekendFullDayNote(
+export function weekendBookingNote(
   policy: OrgPayrollTimePolicy | null | undefined,
   weekday: string | number,
   timeZone?: string | null
@@ -83,15 +128,16 @@ export function weekendFullDayNote(
   if (iso !== 6 && iso !== 7) return null
   const weekend = weekendRuleForIsoWeekday(iso, policy)
   if (!weekend) return null
+  const dayName = iso === 6 ? 'Saturday' : 'Sunday'
+  if (weekend.allHoursAtMultiplierMode) {
+    return `${dayName} is paid on the hours you enter, every hour at ${multiplierText(weekend.allHoursMultiplier)}. Change it in Working hours.`
+  }
   const window = weekendFullDayWindow(policy, weekend)
   if (!window) return null
-  const dayName = iso === 6 ? 'Saturday' : 'Sunday'
   const range = `${formatClockMinutes(window.start)}–${formatClockMinutes(window.end)}`
-  if (weekend.allHoursAtMultiplierMode) {
-    return `Full day = ${dayName} ${range}, every hour at ${multiplierText(weekend.allHoursMultiplier)}. Change it in Working hours.`
-  }
   const countsAs = Number(weekend.countsAsStandardHours ?? policy.standardPaidHours)
-  return `Full day = ${dayName} ${range} (counts as ${hoursText(Number.isFinite(countsAs) ? countsAs : 0)}). Change it in Working hours.`
+  const outside = Number(weekend.outsideWindowMultiplier ?? 1.5)
+  return `${dayName} is paid on the hours you enter: ${range} counts as ${hoursText(Number.isFinite(countsAs) ? countsAs : 0)}, hours outside it at ${multiplierText(outside)}. Change it in Working hours.`
 }
 
 export const CUSTOM_HOURS_BREAK_WARNING =

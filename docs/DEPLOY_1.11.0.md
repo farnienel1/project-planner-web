@@ -139,7 +139,7 @@ no deploy.
 - Sign in as a PAYE manager who reviews others. User Timesheets is still there.
 - Open an admin in Manage Users. Every permission is on and greyed out except Annual Leave Management.
 
-## 1.13.0 — owner decisions round 4
+## 1.13.0 / 1.13.1 — owner decisions round 4
 
 1.13.0 ships on top of 1.12.1 and keeps its order: steps 1–7 above are unchanged. These steps add to them.
 
@@ -168,13 +168,13 @@ Live at once:
 
 The Stripe webhook writes `billing.accessOpen` / `billing.accessClosesAt` (`billingAccessFields`) on every sync.
 Web writes pay to `users` (as before) **and** `payProfiles` in the same batch, reads the pay profile first on the
-people profile, gates the pay section with `canViewPersonPay`, blocks a lapsed organisation, hides AM / PM at the
-weekend, asks before saving custom hours over the unpaid break, offers GB and IE only, and sends a self email change
+people profile, gates the pay section with `canViewPersonPay`, blocks a lapsed organisation, books Saturday and Sunday as custom hours only (prefilled with a set-window day's window, never mixed with
+weekdays), asks before saving custom hours over the unpaid break, offers GB and IE only, and sends a self email change
 through `verifyBeforeUpdateEmail`.
 
-### C. Release iOS 1.13.0
+### C. Release iOS 1.13.1
 
-From `docs/ios-handoff/v1.13.0.md`: the same rules through `CanonicalBusinessEngine`, and the same double write of
+From `docs/ios-handoff/v1.13.1.md`: the same rules through `CanonicalBusinessEngine`, and the same double write of
 pay. Force it with `platformConfig/app.minimumIosBuild` before step E.
 
 ### D. Copy pay into the pay profiles
@@ -215,7 +215,8 @@ profiles; take a Firestore export first.
 ### After 1.13.0
 
 - Sign in as an operative: a colleague's profile shows no rate or employment type; their own does.
-- Book a Saturday: only Full day and Custom are offered, with the Full day note.
+- Book a Saturday: only Custom hours is offered, prefilled with the Saturday window, with the weekend note. Selecting a
+  Friday and a Saturday together is refused with the iOS message.
 - Book custom hours 11:00–14:00 on a weekday with Unpaid break on: the lunch warning asks first.
 - Set a test organisation's billing to `canceled` in Stripe test mode: everyone sees the lapsed message; an admin
   reaches Settings → Billing only.

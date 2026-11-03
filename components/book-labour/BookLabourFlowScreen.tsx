@@ -46,7 +46,7 @@ import {
   type BookLabourCandidate,
 } from '@/lib/book-labour/candidates'
 import { HoursTimelinePicker } from '@/components/scheduling/HoursTimelinePicker'
-import { confirmCustomHoursBreak, slotOfferedOnDate, weekendNoteForDate } from '@/lib/scheduling/bookingSlotRules'
+import { confirmCustomHoursBreak, customHoursPrefillForDate, slotOfferedOnDate, weekendNoteForDate } from '@/lib/scheduling/bookingSlotRules'
 import { CustomOtherLocationField } from '@/components/scheduling/CustomOtherLocationField'
 import { PanelHeader } from '@/components/settings/primitives'
 import { ORPHAN_BOOKING_LABEL } from '@/lib/canonical'
@@ -167,8 +167,10 @@ export function BookLabourFlowScreen({
         if (details?.myScheduleOptions) setScheduleOpts(details.myScheduleOptions)
         if (details?.payrollTimePolicy) {
           setPayroll(details.payrollTimePolicy)
-          setCustomStart(details.payrollTimePolicy.standardDayStart)
-          setCustomEnd(details.payrollTimePolicy.standardDayEnd)
+          // Rulebook 1.13.0 (Q2): a weekend day opens with that day's window (`weekendCustomHoursDefault`).
+          const prefill = customHoursPrefillForDate(day, details.payrollTimePolicy)
+          setCustomStart(prefill.start)
+          setCustomEnd(prefill.end)
         }
       })
       .catch(() => {})
@@ -1143,7 +1145,7 @@ function SlotPicker({
             ['PM', 'PM'],
           ] as const
         )
-          // Rulebook 1.13.0 (Q2, `allowedTimeSlotsOnDay`): Saturday and Sunday offer FULL DAY and Custom only.
+          // Rulebook 1.13.0 (Q2, `allowedTimeSlotsOnDay`): Saturday and Sunday are Custom hours only.
           .filter(([slot]) => slotOfferedOnDate(slot, day, policy))
           .map(([slot, title]) => (
           <button
