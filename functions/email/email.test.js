@@ -6,7 +6,7 @@ const { nextRateLimitState, USER_LIMITS } = require('./rateLimit')
 const { parseAttachments, MAX_TOTAL_BYTES } = require('./attachments')
 const { resolveRecipients } = require('./recipients')
 const { TEMPLATES, SERVER_TEMPLATES } = require('./templates')
-const { createSendEmailHandler, resendSender } = require('./handler')
+const { createSendEmailHandler, resendSender, sameSecret } = require('./handler')
 
 const ORG = 'org-1'
 const INVITE_ID = '3f2c8a51-7d1e-4b6a-9c0f-2a4b6c8d0e1f'
@@ -393,4 +393,18 @@ test('resendSender posts one message to Resend with the secret key', async () =>
   const failing = resendSender('re_test', async () => ({ ok: false, status: 422, text: async () => 'bad' }))
   await assert.rejects(failing({}), /Resend 422/)
   await assert.rejects(resendSender('')({}), /RESEND_API_KEY/)
+})
+
+test('server mode: a stored key or header with a trailing newline or spaces still matches (trimmed both sides)', async () => {
+  assert.equal(sameSecret('server-secret', 'server-secret\n'), true)
+  assert.equal(sameSecret(' server-secret\r\n', 'server-secret'), true)
+  assert.equal(sameSecret('server-secret', 'server-secret2'), false)
+  assert.equal(sameSecret('   ', '   '), false)
+  assert.equal(sameSecret('', ''), false)
+  assert.equal(sameSecret(undefined, 'server-secret'), false)
+  const fromFile = makeHandler({ serverKey: 'server-secret\n' })
+  const res = await call(fromFile.handler, { headers: { 'X-Project-Planner-Server-Key': 'server-secret' }, body: webBody })
+  assert.equal(res.code, 200, JSON.stringify(res.payload))
+  const blank = makeHandler({ serverKey: '\n' })
+  assert.equal((await call(blank.handler, { headers: { 'X-Project-Planner-Server-Key': 'server-secret' }, body: webBody })).code, 401)
 })

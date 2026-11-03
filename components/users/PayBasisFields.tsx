@@ -18,6 +18,7 @@ export function PayBasisFields({
   onChange,
   disabled,
   placeholder = 'example',
+  error,
 }: {
   payBasis: 'day' | 'hourly'
   amount: string
@@ -25,6 +26,8 @@ export function PayBasisFields({
   disabled?: boolean
   /** Manage-user card uses the blank placeholder. Other forms use the example amounts. */
   placeholder?: 'example' | 'manage'
+  /** Field-level error under the amount (rulebook 1.14.0 `payRateRequiredError`). */
+  error?: string | null
 }) {
   const hourly = payBasis === 'hourly'
   const symbol = currencySymbol(useOrganizationCurrency())
@@ -55,10 +58,16 @@ export function PayBasisFields({
           disabled={disabled}
           placeholder={amountPlaceholder}
           aria-label={hourly ? 'Hourly rate' : 'Day rate'}
+          aria-invalid={error ? true : undefined}
           onChange={(event) => onChange({ payBasis, amount: event.target.value })}
         />
         <span className="text-sm font-semibold text-[var(--ink2)]">{hourly ? '/hr' : '/day'}</span>
       </div>
+      {error ? (
+        <p role="alert" className="text-sm font-medium text-[var(--red,#dc2626)]">
+          {error}
+        </p>
+      ) : null}
       <p className="text-[12.5px] leading-relaxed text-[var(--ink3)]">{hourly ? HOURLY_HELP : DAY_HELP}</p>
       <p className="text-[12.5px] leading-relaxed text-[var(--ink3)]">{PAY_BASIS_SAVE_NOTE}</p>
     </div>

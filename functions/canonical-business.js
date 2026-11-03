@@ -157,6 +157,7 @@ var ProjectPlannerCanonical = (() => {
     PAY_HISTORY_NOT_LOADED_MESSAGE: () => PAY_HISTORY_NOT_LOADED_MESSAGE,
     PAY_PROFILES_COLLECTION: () => PAY_PROFILES_COLLECTION,
     PAY_PROFILE_FIELDS: () => PAY_PROFILE_FIELDS,
+    PAY_RATE_REQUIRED_MESSAGE: () => PAY_RATE_REQUIRED_MESSAGE,
     PAY_STANDARD_DAY_MIN_HOURS: () => PAY_STANDARD_DAY_MIN_HOURS,
     PAY_WRITE_GROUP: () => PAY_WRITE_GROUP,
     PERMISSION_DEFAULT_ON: () => PERMISSION_DEFAULT_ON,
@@ -482,6 +483,7 @@ var ProjectPlannerCanonical = (() => {
     lineManagerPeerRecipients: () => lineManagerPeerRecipients,
     lineManagerRequired: () => lineManagerRequired,
     lineManagerRequiredError: () => lineManagerRequiredError,
+    lineManagerSelectedIds: () => lineManagerSelectedIds,
     lineManagerSummary: () => lineManagerSummary,
     listedCurrentLabourPeople: () => listedCurrentLabourPeople,
     listedRosterUsers: () => listedRosterUsers,
@@ -655,6 +657,7 @@ var ProjectPlannerCanonical = (() => {
     payRateChangeWrites: () => payRateChangeWrites,
     payRateHistoryWriteFields: () => payRateHistoryWriteFields,
     payRateOnDay: () => payRateOnDay,
+    payRateRequiredError: () => payRateRequiredError,
     paymentDateAfterPeriodEnd: () => paymentDateAfterPeriodEnd,
     paymentRunHistoryAfterChange: () => paymentRunHistoryAfterChange,
     paymentRunHistoryToFirestore: () => paymentRunHistoryToFirestore,
@@ -821,6 +824,7 @@ var ProjectPlannerCanonical = (() => {
     userRosterSegment: () => userRosterSegment,
     userTimesheetSubjects: () => userTimesheetSubjects,
     usersMissingLineManager: () => usersMissingLineManager,
+    usersMissingPayRate: () => usersMissingPayRate,
     validateAnnualLeaveDefaults: () => validateAnnualLeaveDefaults,
     validateInvoicingSettings: () => validateInvoicingSettings,
     validateLeaveYearMonths: () => validateLeaveYearMonths,
@@ -6980,9 +6984,14 @@ var ProjectPlannerCanonical = (() => {
     { field: "siteAudit", label: "Site audit", help: "Can view and submit site audits.", levels: ["admin", "manager", "operative"] }
   ];
   function addUserPermissionDefaults(level) {
-    if (level === "admin") return effectivePermissions({}, "admin");
-    if (level === "operative") return effectivePermissions({}, "operative");
-    return effectivePermissions({ manager: true, qualifications: true }, "manager");
+    const resolved = level === "admin" || level === "operative" ? level : "manager";
+    const out = resolved === "admin" ? effectivePermissions({}, "admin") : resolved === "operative" ? effectivePermissions({}, "operative") : effectivePermissions({ manager: true }, "manager");
+    const locked = new Set(lockedPermissionFields({}, resolved));
+    for (const row2 of PERMISSION_TOGGLE_CATALOGUE) {
+      if (!row2.levels.includes(resolved) || locked.has(row2.field)) continue;
+      out[row2.field] = false;
+    }
+    return out;
   }
   function permissionToggleRows(input) {
     const level = input?.level === "admin" || input?.level === "operative" ? input.level : "manager";
@@ -7317,6 +7326,36 @@ var ProjectPlannerCanonical = (() => {
     const standardDay = Number(input.standardDayHours);
     if (!(standardDay >= PAY_STANDARD_DAY_MIN_HOURS)) return 0;
     return roundPennies(rate(input.dayRate) * (paidHours / standardDay) * multiplier);
+  }
+  var PAY_RATE_REQUIRED_MESSAGE = "Set a day rate or hourly rate \u2014 self-employed people are paid from it.";
+  function positiveRate(value) {
+    const amount = typeof value === "number" ? value : typeof value === "string" && value.trim() !== "" ? Number(value.trim()) : NaN;
+    return Number.isFinite(amount) && amount > 0;
+  }
+  function payRateRequiredError(input) {
+    const person = input || {};
+    if (normalizeEmploymentType(person.employmentType) !== "self_employed") return null;
+    const basis = person.payBasis === "hourly" || person.payBasis === "day" ? person.payBasis : null;
+    const ok = basis === "hourly" ? positiveRate(person.hourlyRate) : basis === "day" ? positiveRate(person.dayRate) : positiveRate(person.dayRate) || positiveRate(person.hourlyRate);
+    return ok ? null : PAY_RATE_REQUIRED_MESSAGE;
+  }
+  function usersMissingPayRate(roster) {
+    const rows3 = (roster || []).filter((row2) => row2 && typeof row2.id === "string" && row2.id.trim());
+    const done = /* @__PURE__ */ new Set();
+    const out = [];
+    for (const row2 of rows3) {
+      const key3 = row2.id.trim().toLowerCase();
+      if (done.has(key3)) continue;
+      const ids = new Set(personIdSet(row2, rows3).map((id2) => id2.toLowerCase()));
+      ids.add(key3);
+      const group = rows3.filter((other) => ids.has(other.id.trim().toLowerCase()));
+      for (const member of group) done.add(member.id.trim().toLowerCase());
+      const active = group.filter((member) => member.isActive !== false && !isAnonymisedDeletedProfile(member));
+      if (active.length === 0) continue;
+      if (active.some((member) => payRateRequiredError(member) == null)) continue;
+      out.push(active[0].id.trim());
+    }
+    return out;
   }
 
   // lib/canonical/peopleDocuments.ts
@@ -9039,8 +9078,8 @@ var ProjectPlannerCanonical = (() => {
   // lib/canonical/rulebookStamp.ts
   function rulebookStamp() {
     return {
-      version: true ? "1.13.2" : "",
-      sha256: true ? "e1286d455119753b296af87e61d271c49eaaa7b25872e589e293081298d6e571" : ""
+      version: true ? "1.14.0" : "",
+      sha256: true ? "35129e242d51f66dae05857fe1d56d784f3ac7745093575f3eef4b9d77666c97" : ""
     };
   }
 
@@ -13125,22 +13164,63 @@ var ProjectPlannerCanonical = (() => {
     }
     return permissionLevelOf(row2);
   }
+  function rosterPersonGroups(rows3) {
+    const groups = [];
+    const grouped = /* @__PURE__ */ new Set();
+    for (const row2 of rows3) {
+      const key3 = idKey2(row2.id);
+      if (grouped.has(key3)) continue;
+      const keys = new Set(personIdSet(row2, rows3).map(idKey2));
+      keys.add(key3);
+      const members = rows3.filter((other) => keys.has(idKey2(other.id)));
+      for (const member of members) grouped.add(idKey2(member.id));
+      const aliasKeys = /* @__PURE__ */ new Set();
+      for (const member of members) {
+        for (const alias of [...member.formerUserIds || [], ...member.sameEmailUserIds || [], ...member.formerIds || [], ...member.aliasIds || []]) {
+          if (idKey2(alias) !== idKey2(member.id)) aliasKeys.add(idKey2(alias));
+        }
+      }
+      const rank = (member) => (rosterMemberActive(member) && !isAnonymisedDeletedProfile(member) ? 0 : 4) + (member.passwordSet === false ? 2 : 0) + (aliasKeys.has(idKey2(member.id)) ? 1 : 0);
+      const primary = members.reduce((best, member) => rank(member) < rank(best) ? member : best, members[0]);
+      groups.push({ primary, rows: members, keys });
+    }
+    return groups;
+  }
   function lineManagerCandidates(person, roster) {
     const rows3 = (roster || []).filter((row2) => row2 && text19(row2.id));
     const self = new Set(person ? personIdSet(person, rows3).map(idKey2) : []);
-    const seen = /* @__PURE__ */ new Set();
     const out = [];
-    for (const row2 of rows3) {
-      const key3 = idKey2(row2.id);
-      if (seen.has(key3) || self.has(key3)) continue;
+    for (const group of rosterPersonGroups(rows3)) {
+      if ([...group.keys].some((key3) => self.has(key3))) continue;
+      const row2 = group.primary;
       if (!rosterMemberActive(row2) || row2.passwordSet === false) continue;
       if (isAnonymisedDeletedProfile(row2)) continue;
       const level = levelOf(row2);
       if (level === "operative") continue;
-      seen.add(key3);
       out.push({ id: text19(row2.id), name: rosterPersonName2(row2), level });
     }
     return out.sort((a, b) => a.name.localeCompare(b.name, "en", { sensitivity: "base" }) || a.id.localeCompare(b.id));
+  }
+  function lineManagerSelectedIds(person, roster) {
+    if (!person || person.hasNoLineManager === true) return [];
+    const listed = (person.assignedManagerUserIds || []).map(text19).filter(Boolean);
+    const stored = listed.length > 0 ? listed : [text19(person.assignedManagerUserId)].filter(Boolean);
+    if (stored.length === 0) return [];
+    const rows3 = (roster || []).filter((row2) => row2 && text19(row2.id));
+    const candidates = lineManagerCandidates(person, rows3);
+    const groups = rosterPersonGroups(rows3);
+    const out = [];
+    const seen = /* @__PURE__ */ new Set();
+    for (const id2 of stored) {
+      const group = groups.find((entry) => entry.keys.has(idKey2(id2)));
+      const candidate = group ? candidates.find((entry) => group.keys.has(idKey2(entry.id))) : candidates.find((entry) => idKey2(entry.id) === idKey2(id2));
+      const value = candidate ? candidate.id : id2;
+      const key3 = group ? `g:${idKey2(group.primary.id)}` : idKey2(value);
+      if (seen.has(key3)) continue;
+      seen.add(key3);
+      out.push(value);
+    }
+    return out;
   }
   function lineManagerOptions(person) {
     const required = lineManagerRequired(person);
@@ -13155,9 +13235,11 @@ var ProjectPlannerCanonical = (() => {
     const rows3 = (roster || []).filter((row2) => row2 && text19(row2.id));
     const ids = [];
     const seen = /* @__PURE__ */ new Set();
+    const groups = rosterPersonGroups(rows3);
     for (const id2 of stored) {
-      const row2 = rosterMemberFor(id2, rows3);
-      const key3 = idKey2(row2 ? row2.id : id2);
+      const group = groups.find((entry) => entry.keys.has(idKey2(id2)));
+      const row2 = group ? group.primary : rosterMemberFor(id2, rows3);
+      const key3 = group ? `g:${idKey2(group.primary.id)}` : idKey2(row2 ? row2.id : id2);
       if (seen.has(key3)) continue;
       seen.add(key3);
       ids.push(row2 ? { id: text19(row2.id), name: rosterPersonName2(row2) || UNKNOWN_PERSON_LABEL, resolved: true } : { id: id2, name: UNKNOWN_PERSON_LABEL, resolved: false });

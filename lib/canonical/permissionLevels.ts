@@ -302,14 +302,28 @@ export const PERMISSION_TOGGLE_CATALOGUE: ReadonlyArray<CatalogueRow> = [
 ]
 
 /**
- * What Add User starts with for each level (both apps' existing defaults): an admin every toggle (self-book off); a
- * manager Manage Qualifications, Materials, Site audit, Wholesalers and Daily Overview on, the rest off; an operative
- * Site audit on and Materials off.
+ * What Add User starts with for each level (rulebook §11, 1.14.0): **every toggle the adder can change starts off**
+ * — the rows `permissionToggleRows` shows for that level and does not lock — and the adder turns them on one by one.
+ * Locked toggles keep their locked value: an admin or super admin has every toggle on and locked except Annual Leave
+ * Management, which starts off; a manager has Materials and Site audit locked on. Flags that are not toggles keep the
+ * level's value (`manager` true for a manager, `operativeMode` true and `projects` / `smallWorks` on for an operative).
+ * Only for a new person: changing an existing person's user type never resets their saved toggles
+ * (`accountTypePermissions`).
  */
 export function addUserPermissionDefaults(level: PermissionLevel): Record<UserPermissionField, boolean> {
-  if (level === 'admin') return effectivePermissions({}, 'admin')
-  if (level === 'operative') return effectivePermissions({}, 'operative')
-  return effectivePermissions({ manager: true, qualifications: true }, 'manager')
+  const resolved: PermissionLevel = level === 'admin' || level === 'operative' ? level : 'manager'
+  const out =
+    resolved === 'admin'
+      ? effectivePermissions({}, 'admin')
+      : resolved === 'operative'
+        ? effectivePermissions({}, 'operative')
+        : effectivePermissions({ manager: true }, 'manager')
+  const locked = new Set(lockedPermissionFields({}, resolved))
+  for (const row of PERMISSION_TOGGLE_CATALOGUE) {
+    if (!row.levels.includes(resolved) || locked.has(row.field)) continue
+    out[row.field] = false
+  }
+  return out
 }
 
 /**

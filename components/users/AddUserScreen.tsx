@@ -37,6 +37,7 @@ import { loadOrganizationDetails } from '@/lib/settings/organizationSettings'
 import type { UserPermissions } from '@/types'
 import { LineManagerMultiSelect } from '@/components/users/LineManagerMultiSelect'
 import { PayBasisFields, payChoiceToRates } from '@/components/users/PayBasisFields'
+import { maySetPayOf, userPayRateRequiredError } from '@/lib/staff/payRateRequired'
 import { LEAVE_DAYS_SAVE_MAX, parseBoundedNumber } from '@/lib/security/boundedValue'
 import {
   PanelHeader,
@@ -189,6 +190,7 @@ export function AddUserScreen() {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [rateError, setRateError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
 
   useEffect(() => {
@@ -300,6 +302,17 @@ export function AddUserScreen() {
     )
     if (lineManagerMessage) {
       setError(lineManagerMessage)
+      return
+    }
+    // Rulebook 1.14.0 `payRateRequiredError`: a self-employed person must have a day or hourly rate above 0. Checked
+    // only when the adder may set this person's pay (`canChangePersonPay`).
+    const isOperativeInvite = operativeInviteOnly || accountType === 'operative'
+    const payMessage = maySetPayOf(user, { id: '', isOperative: isOperativeInvite })
+      ? userPayRateRequiredError({ employmentType: form.employmentType, ...payChoiceToRates(form.payBasis, form.rateAmount) })
+      : null
+    setRateError(payMessage)
+    if (payMessage) {
+      setError(payMessage)
       return
     }
 
@@ -689,7 +702,11 @@ export function AddUserScreen() {
                 <PayBasisFields
                   payBasis={form.payBasis}
                   amount={form.rateAmount}
-                  onChange={(next) => setForm({ ...form, payBasis: next.payBasis, rateAmount: next.amount })}
+                  error={rateError}
+                  onChange={(next) => {
+                    setRateError(null)
+                    setForm({ ...form, payBasis: next.payBasis, rateAmount: next.amount })
+                  }}
                 />
               </div>
 
@@ -727,7 +744,10 @@ export function AddUserScreen() {
                 <Select
                   value={form.employmentType}
                   onChange={(e) =>
-                    setForm({ ...form, employmentType: e.target.value as 'paye' | 'self_employed' })
+                    {
+                      setRateError(null)
+                      setForm({ ...form, employmentType: e.target.value as 'paye' | 'self_employed' })
+                    }
                   }
                 >
                   <option value="self_employed">Self-Employed</option>
