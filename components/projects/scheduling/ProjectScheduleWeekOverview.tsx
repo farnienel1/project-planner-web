@@ -25,6 +25,7 @@ import { useBookingHistoryFrom } from '@/lib/stores/useBookingHistory'
 import { ORG_DATA_REFRESHED_EVENT } from '@/lib/stores/refreshOrgData'
 import { canBookWork, hasAdminAccess } from '@/lib/permissions'
 import { userCanDeleteBooking, userCanWriteBooking } from '@/lib/access/bookingAccess'
+import { bookableWorks } from '@/lib/access/workAccess'
 import { BookingStatus, UserRole, type User } from '@/types'
 import { SubcontractorBookingEditSheet } from '@/components/projects/scheduling/SubcontractorBookingEditSheet'
 import { watchSubcontractorBookings } from '@/lib/weekly-report/loadSubcontractorBookings'
@@ -180,6 +181,19 @@ export function ProjectScheduleWeekOverview({
   const canQuickAdd =
     canBookWork(currentUser) &&
     userCanWriteBooking(currentUser, { collection: 'bookings', projectId: project.id }, project, managers)
+  // Rulebook 1.21.0 §21 (`bookableJobs`): a new booking only on a day this job is bookable — not inactive and running
+  // that day in the organisation zone. Editing existing bookings is not gated by it.
+  const quickAddOnDay = (day: Date) =>
+    bookableWorks({
+      projects: [project],
+      user: currentUser,
+      operatives,
+      managers,
+      bookings: [],
+      managerBookings: [],
+      dayKeys: [bookingDayKey(day)],
+      timeZone: organizationZoneOr(),
+    }).length > 0
   const { users, userIdAliases, loadUsers } = useOrgUserStore()
   const { subcontractors, loadSubcontractors } = useSubcontractorStore()
   const [weekStart, setWeekStart] = useState(startOfWeek(new Date(), { weekStartsOn: 1 }))
@@ -656,6 +670,7 @@ export function ProjectScheduleWeekOverview({
                   expanded={expanded}
                   onEdit={canQuickAdd ? setEditingRow : () => undefined}
                   onQuickAdd={canQuickAdd ? (target, date) => setQuickAdd({ person: target, date }) : undefined}
+                  quickAddOnDay={quickAddOnDay}
                 />
               ))}
             </div>
@@ -731,12 +746,14 @@ function PersonRow({
   expanded,
   onEdit,
   onQuickAdd,
+  quickAddOnDay,
 }: {
   person: PersonWeek
   weekDays: Date[]
   expanded: boolean
   onEdit: (row: DayRow) => void
   onQuickAdd?: (person: PersonWeek, date: Date) => void
+  quickAddOnDay?: (day: Date) => boolean
 }) {
   return (
     <>
@@ -763,7 +780,7 @@ function PersonRow({
             className={`border-l border-t border-slate-100 p-1.5 ${isTodayDay ? 'bg-blue-50/40' : 'bg-white'}`}
           >
             {cell.length === 0 ? (
-              onQuickAdd && person.quickAdd ? (
+              onQuickAdd && person.quickAdd && (quickAddOnDay?.(day) ?? true) ? (
                 <button
                   type="button"
                   onClick={() => onQuickAdd(person, day)}

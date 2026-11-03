@@ -286,7 +286,7 @@ function AppShellInner({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!organization?.id) return
     loadUsers(organization.id)
-    loadProjects(organization.id, true)
+    loadProjects(organization.id)
     loadSmallWorks(organization.id)
   }, [organization?.id, loadUsers, loadProjects, loadSmallWorks])
 

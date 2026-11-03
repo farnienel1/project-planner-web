@@ -129,7 +129,7 @@ export default function WarningsPage() {
       void loadOperatives(orgId).finally(() => {
         if (!cancelled) setOperativesReady(true)
       })
-      void Promise.all([loadProjects(orgId, true), loadSmallWorks(orgId)]).finally(() => {
+      void Promise.all([loadProjects(orgId), loadSmallWorks(orgId)]).finally(() => {
         if (!cancelled) setProjectsReady(true)
       })
       bookingsSawLoad.current = false

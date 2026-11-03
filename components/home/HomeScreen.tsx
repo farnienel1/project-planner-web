@@ -32,7 +32,10 @@ import { useTaskStore } from '@/lib/stores/taskStore'
 import { useHolidayStore } from '@/lib/stores/holidayStore'
 import { useMaterialProjectStore } from '@/lib/stores/materialProjectStore'
 import { canBookWork, canViewDailyOverview, canViewWarnings, canViewWeeklyReports, hasAdminAccess, isOperativeMode } from '@/lib/permissions'
-import { countHomeActiveProjects } from '@/lib/projects/homeActiveProjects'
+import { activeJobsCount } from '@/lib/canonical'
+import { jobAccessViewer } from '@/lib/access/bookingAccess'
+import { worksListContext } from '@/lib/access/workAccess'
+import { useDeadlineAssignedProjectIds } from '@/lib/deadlines/useDeadlineAssignedProjectIds'
 import {
   activeProjectSubtitle,
   readRememberedHomeCount,
@@ -103,7 +106,9 @@ export function HomeScreen() {
   const [metricIds, setMetricIds] = useState<HomeOverviewMetricID[]>(DEFAULT_ADMIN_OVERVIEW_METRICS)
   const [actionIds, setActionIds] = useState<string[]>([])
   // Moves on at the organisation's midnight and on tab focus, so a tab left open overnight counts today.
-  const homeDayKey = useOrganizationDayKey(useOrganizationTimeZone())
+  const homeTimeZone = useOrganizationTimeZone()
+  const homeDayKey = useOrganizationDayKey(homeTimeZone)
+  const deadlineAssignedProjectIds = useDeadlineAssignedProjectIds()
   const now = useMemo(() => new Date(), [homeDayKey]) // eslint-disable-line react-hooks/exhaustive-deps -- new instant per organisation day
   const [orgDetails, setOrgDetails] = useState<OrganizationDetails | null>(null)
   const [managerBookingsSettled, setManagerBookingsSettled] = useState(false)
@@ -127,7 +132,7 @@ export function HomeScreen() {
     const orgId = organization?.id
     if (!orgId || pauseHomeLoads) return
     let cancelled = false
-    loadProjects(orgId, true)
+    loadProjects(orgId)
     loadSmallWorks(orgId)
     loadOperatives(orgId)
     loadManagers(orgId)
@@ -233,14 +238,22 @@ export function HomeScreen() {
   }, [user?.id, users])
 
   const merged = useMemo(() => mergeProjectsAndSmallWorks(projects, smallWorks), [projects, smallWorks])
-  const liveCount = countHomeActiveProjects({
-    projects: merged,
-    user: displayUser,
-    operatives,
-    bookings,
-    managers,
-    now,
-  })
+  // Rulebook 1.21.0 §21 (`activeJobsCount`): the jobs the Projects and Small works lists show under Active for this
+  // viewer (`visibleJobs`, hide lists applied; operatives: bookings, tasks and deadlines), on the organisation's day.
+  const liveCount = activeJobsCount(
+    merged,
+    jobAccessViewer(displayUser),
+    worksListContext({
+      operatives,
+      managers: managers ?? [],
+      bookings,
+      managerBookings: managerSiteBookings,
+      tasks,
+      deadlineAssignedProjectIds,
+    }),
+    homeDayKey,
+    homeTimeZone
+  )
   const operative = isOperativeMode(displayUser)
   const admin = hasAdminAccess(displayUser)
   const seeWarnings = canViewWarnings(displayUser)

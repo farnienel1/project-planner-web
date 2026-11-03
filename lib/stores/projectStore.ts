@@ -61,7 +61,11 @@ interface ProjectState {
   smallWorksLoadedOrgId: string | null
   loading: boolean
   error: string | null
-  loadProjects: (organizationId: string, includeInactive?: boolean, options?: { force?: boolean }) => Promise<void>
+  /**
+   * Rulebook 1.21.0 §21: the store keeps every project document the reader accepts, live or not; lists ask
+   * `worksListMembership` / `visibleJobs` and pickers `bookableJobs`. No caller can make the store drop jobs.
+   */
+  loadProjects: (organizationId: string, options?: { force?: boolean }) => Promise<void>
   loadSmallWorks: (organizationId: string, options?: { force?: boolean }) => Promise<void>
   loadClients: (organizationId: string, options?: { force?: boolean }) => Promise<void>
   getProject: (organizationId: string, projectId: string, collection?: 'projects' | 'smallWorks') => Promise<Project | null>
@@ -84,10 +88,9 @@ interface ProjectState {
 let projectsOrgId = ''
 let smallWorksOrgId = ''
 let clientsOrgId = ''
-let projectsIncludeInactive = false
 /** Operatives: the jobs of their own bookings, tasks and deadlines (`jobQueryPlan` documentIds), set by readPlanSync. */
 let jobPlanDocumentIds: string[] = []
-/** Document ids of every job the listeners returned (before the live filter), for `bookingQueryPlan`. */
+/** Document ids of every job the listeners returned, for `bookingQueryPlan`. */
 const loadedJobIdsByKind: Record<'projects' | 'smallWorks', string[]> = { projects: [], smallWorks: [] }
 
 export function setJobPlanDocumentIds(ids: ReadonlyArray<string>): boolean {
@@ -130,7 +133,7 @@ function subscribeJobs(
 /** Re-run the job plans with the current viewer and inputs (role, toggles or an operative's bookings changed). */
 export function replanJobs(): void {
   const state = useProjectStore.getState()
-  if (projectsOrgId) void state.loadProjects(projectsOrgId, projectsIncludeInactive).catch(() => undefined)
+  if (projectsOrgId) void state.loadProjects(projectsOrgId).catch(() => undefined)
   if (smallWorksOrgId) void state.loadSmallWorks(smallWorksOrgId).catch(() => undefined)
 }
 
@@ -146,10 +149,9 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   // Rulebook 1.9.0 §1 (`LIVE_COLLECTIONS`): projects, small works and clients are live while the app is open. The
   // load is the listener's first snapshot; later edits on any platform arrive through the same listener, so there is
   // no time-to-live cache. `force` (the global Refresh) re-reads through `refreshOrgCollections`.
-  loadProjects: async (organizationId, includeInactive = false, _options?: { force?: boolean }) => {
+  loadProjects: async (organizationId, _options?: { force?: boolean }) => {
     void _options
     if (!organizationId) return
-    projectsIncludeInactive = includeInactive
     if (get().projects.length === 0 || projectsOrgId !== organizationId) set({ loading: true, error: null })
     else set({ error: null })
     try {
@@ -159,7 +161,6 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         let projects = docs
           .filter((entry) => !isLegacyPlaceholderDocumentId(entry.id))
           .map((entry) => mapProjectDoc(entry.id, entry.data, organizationId, 'projects'))
-        if (!projectsIncludeInactive) projects = projects.filter((p) => p.isLive)
         const previous = projectsOrgId === organizationId ? get().projects : []
         // A plan's parts are exact queries: a job that left them (manager removed) leaves the list now.
         projects = withoutLegacyPlaceholderDocuments(

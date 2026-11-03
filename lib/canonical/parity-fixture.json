@@ -13877,6 +13877,1025 @@
         "paidHours": 12.5,
         "text": "6.5h × 2 − 0.5h break = 12.5h"
       }
+    },
+    {
+      "name": "1.21.0 an inactive small works job is under Completed and All counts every row",
+      "function": "worksTabCounts",
+      "args": [
+        [
+          {
+            "id": "SW-1",
+            "collection": "smallWorks",
+            "jobNumber": "S1",
+            "isLive": false,
+            "startDayKey": "2026-11-01",
+            "endDayKey": "2026-11-30"
+          },
+          {
+            "id": "SW-2",
+            "collection": "smallWorks",
+            "jobNumber": "S2",
+            "isLive": true,
+            "startDayKey": "2026-11-01",
+            "endDayKey": "2026-11-30"
+          },
+          {
+            "id": "SW-3",
+            "collection": "smallWorks",
+            "jobNumber": "S3",
+            "isLive": true,
+            "startDayKey": "2026-12-01",
+            "endDayKey": "2026-12-05"
+          }
+        ],
+        "2026-11-03",
+        "Europe/London"
+      ],
+      "expected": {
+        "all": 3,
+        "active": 1,
+        "upcoming": 1,
+        "completed": 1
+      }
+    },
+    {
+      "name": "1.21.0 the Completed tab lists the inactive small works job",
+      "function": "worksInTab",
+      "args": [
+        [
+          {
+            "id": "SW-1",
+            "collection": "smallWorks",
+            "jobNumber": "S1",
+            "isLive": false,
+            "startDayKey": "2026-11-01",
+            "endDayKey": "2026-11-30"
+          },
+          {
+            "id": "SW-2",
+            "collection": "smallWorks",
+            "jobNumber": "S2",
+            "isLive": true,
+            "startDayKey": "2026-11-01",
+            "endDayKey": "2026-11-30"
+          },
+          {
+            "id": "SW-3",
+            "collection": "smallWorks",
+            "jobNumber": "S3",
+            "isLive": true,
+            "startDayKey": "2026-12-01",
+            "endDayKey": "2026-12-05"
+          }
+        ],
+        "completed",
+        "2026-11-03",
+        "Europe/London"
+      ],
+      "expected": [
+        {
+          "id": "SW-1",
+          "collection": "smallWorks",
+          "jobNumber": "S1",
+          "isLive": false,
+          "startDayKey": "2026-11-01",
+          "endDayKey": "2026-11-30"
+        }
+      ]
+    },
+    {
+      "name": "1.21.0 the All tab is every job given",
+      "function": "worksInTab",
+      "args": [
+        [
+          {
+            "id": "SW-1",
+            "collection": "smallWorks",
+            "jobNumber": "S1",
+            "isLive": false,
+            "startDayKey": "2026-11-01",
+            "endDayKey": "2026-11-30"
+          },
+          {
+            "id": "SW-2",
+            "collection": "smallWorks",
+            "jobNumber": "S2",
+            "isLive": true,
+            "startDayKey": "2026-11-01",
+            "endDayKey": "2026-11-30"
+          },
+          {
+            "id": "SW-3",
+            "collection": "smallWorks",
+            "jobNumber": "S3",
+            "isLive": true,
+            "startDayKey": "2026-12-01",
+            "endDayKey": "2026-12-05"
+          }
+        ],
+        "all",
+        "2026-11-03",
+        "Europe/London"
+      ],
+      "expected": [
+        {
+          "id": "SW-1",
+          "collection": "smallWorks",
+          "jobNumber": "S1",
+          "isLive": false,
+          "startDayKey": "2026-11-01",
+          "endDayKey": "2026-11-30"
+        },
+        {
+          "id": "SW-2",
+          "collection": "smallWorks",
+          "jobNumber": "S2",
+          "isLive": true,
+          "startDayKey": "2026-11-01",
+          "endDayKey": "2026-11-30"
+        },
+        {
+          "id": "SW-3",
+          "collection": "smallWorks",
+          "jobNumber": "S3",
+          "isLive": true,
+          "startDayKey": "2026-12-01",
+          "endDayKey": "2026-12-05"
+        }
+      ]
+    },
+    {
+      "name": "1.21.0 an inactive job is in the Completed tab",
+      "function": "worksTab",
+      "args": [
+        "inactive"
+      ],
+      "expected": "completed"
+    },
+    {
+      "name": "1.21.0 list membership: every document of the collection, live or not; the same job number twice; collection over jobType",
+      "function": "worksListMembership",
+      "args": [
+        [
+          {
+            "id": "P-1",
+            "collection": "projects",
+            "jobNumber": "C646",
+            "jobType": "Small Works",
+            "isLive": false
+          },
+          {
+            "id": "P-2",
+            "collection": "projects",
+            "jobNumber": "C646",
+            "isLive": true
+          },
+          {
+            "id": "p-2",
+            "collection": "projects",
+            "jobNumber": "C646",
+            "isLive": true
+          },
+          {
+            "id": "SW-9",
+            "collection": "smallWorks",
+            "jobNumber": "C646",
+            "jobType": "CAT A",
+            "isLive": false
+          },
+          {
+            "id": "INITIAL-PLACEHOLDER",
+            "collection": "projects",
+            "jobNumber": ""
+          }
+        ],
+        "projects"
+      ],
+      "expected": [
+        {
+          "id": "P-1",
+          "collection": "projects",
+          "jobNumber": "C646",
+          "jobType": "Small Works",
+          "isLive": false
+        },
+        {
+          "id": "P-2",
+          "collection": "projects",
+          "jobNumber": "C646",
+          "isLive": true
+        }
+      ]
+    },
+    {
+      "name": "1.21.0 list membership: an inactive small works job typed CAT A stays a small works job",
+      "function": "worksListMembership",
+      "args": [
+        [
+          {
+            "id": "P-1",
+            "collection": "projects",
+            "jobNumber": "C646",
+            "jobType": "Small Works",
+            "isLive": false
+          },
+          {
+            "id": "P-2",
+            "collection": "projects",
+            "jobNumber": "C646",
+            "isLive": true
+          },
+          {
+            "id": "p-2",
+            "collection": "projects",
+            "jobNumber": "C646",
+            "isLive": true
+          },
+          {
+            "id": "SW-9",
+            "collection": "smallWorks",
+            "jobNumber": "C646",
+            "jobType": "CAT A",
+            "isLive": false
+          },
+          {
+            "id": "INITIAL-PLACEHOLDER",
+            "collection": "projects",
+            "jobNumber": ""
+          }
+        ],
+        "smallWorks"
+      ],
+      "expected": [
+        {
+          "id": "SW-9",
+          "collection": "smallWorks",
+          "jobNumber": "C646",
+          "jobType": "CAT A",
+          "isLive": false
+        }
+      ]
+    },
+    {
+      "name": "1.21.0 an operative sees a job only through a task, and their booked job; cancelled and hidden jobs are not shown",
+      "function": "visibleJobs",
+      "args": [
+        [
+          {
+            "id": "J-TASK",
+            "collection": "projects",
+            "isLive": true
+          },
+          {
+            "id": "J-BOOKED",
+            "collection": "projects",
+            "isLive": true
+          },
+          {
+            "id": "J-OTHER",
+            "collection": "projects",
+            "isLive": true
+          },
+          {
+            "id": "J-HIDDEN",
+            "collection": "smallWorks",
+            "isLive": true,
+            "hiddenOperativeUserIds": [
+              "u-op"
+            ]
+          }
+        ],
+        {
+          "role": {
+            "isSuperAdmin": false,
+            "isAdmin": false,
+            "isManager": false,
+            "isOperativeMode": true
+          },
+          "ids": [
+            "U-OP"
+          ],
+          "email": "op@x.com",
+          "uid": "U-OP",
+          "toggles": {
+            "projects": false,
+            "smallWorks": false
+          }
+        },
+        {
+          "operatives": [
+            {
+              "id": "OPROW-1",
+              "email": "OP@x.com"
+            }
+          ],
+          "bookings": [
+            {
+              "projectId": "J-BOOKED",
+              "operativeId": "oprow-1",
+              "status": "Confirmed"
+            },
+            {
+              "projectId": "J-OTHER",
+              "operativeId": "OPROW-1",
+              "status": "Cancelled"
+            },
+            {
+              "projectId": "J-HIDDEN",
+              "operativeId": "U-OP",
+              "status": "Confirmed"
+            }
+          ],
+          "tasks": [
+            {
+              "projectId": "J-TASK",
+              "assignedOperativeIds": [
+                "OPROW-1"
+              ]
+            }
+          ]
+        }
+      ],
+      "expected": [
+        {
+          "id": "J-TASK",
+          "collection": "projects",
+          "isLive": true
+        },
+        {
+          "id": "J-BOOKED",
+          "collection": "projects",
+          "isLive": true
+        }
+      ]
+    },
+    {
+      "name": "1.21.0 operative job ids: bookings, tasks and deadlines",
+      "function": "operativeJobIds",
+      "args": [
+        {
+          "role": {
+            "isSuperAdmin": false,
+            "isAdmin": false,
+            "isManager": false,
+            "isOperativeMode": true
+          },
+          "ids": [
+            "U-OP"
+          ],
+          "email": "op@x.com",
+          "uid": "U-OP",
+          "toggles": {
+            "projects": false,
+            "smallWorks": false
+          }
+        },
+        {
+          "operatives": [
+            {
+              "id": "OPROW-1",
+              "email": "OP@x.com"
+            }
+          ],
+          "bookings": [
+            {
+              "projectId": "J-BOOKED",
+              "operativeId": "oprow-1",
+              "status": "Confirmed"
+            },
+            {
+              "projectId": "J-OTHER",
+              "operativeId": "OPROW-1",
+              "status": "Cancelled"
+            },
+            {
+              "projectId": "J-HIDDEN",
+              "operativeId": "U-OP",
+              "status": "Confirmed"
+            }
+          ],
+          "tasks": [
+            {
+              "projectId": "J-TASK",
+              "assignedOperativeIds": [
+                "OPROW-1"
+              ]
+            }
+          ],
+          "deadlineJobIds": [
+            "J-DEADLINE"
+          ]
+        }
+      ],
+      "expected": [
+        "J-BOOKED",
+        "J-HIDDEN",
+        "J-TASK",
+        "J-DEADLINE"
+      ]
+    },
+    {
+      "name": "1.21.0 a manager without the toggle sees only the jobs they manage (account id or managers row), less hidden ones",
+      "function": "visibleJobs",
+      "args": [
+        [
+          {
+            "id": "MINE",
+            "collection": "projects",
+            "isLive": true,
+            "managerUserIds": [
+              "U-M"
+            ]
+          },
+          {
+            "id": "ROW",
+            "collection": "smallWorks",
+            "isLive": true,
+            "managerIds": [
+              "MGR-ROW"
+            ]
+          },
+          {
+            "id": "NOT-MINE",
+            "collection": "projects",
+            "isLive": true,
+            "managerUserIds": [
+              "U-X"
+            ]
+          },
+          {
+            "id": "HIDDEN",
+            "collection": "projects",
+            "isLive": true,
+            "managerUserIds": [
+              "U-M"
+            ],
+            "hiddenManagerUserIds": [
+              "U-M"
+            ]
+          }
+        ],
+        {
+          "role": {
+            "isSuperAdmin": false,
+            "isAdmin": false,
+            "isManager": true,
+            "isOperativeMode": false
+          },
+          "ids": [
+            "U-M"
+          ],
+          "email": "m@x.com",
+          "uid": "U-M",
+          "toggles": {
+            "projects": false,
+            "smallWorks": false
+          }
+        },
+        {
+          "managers": [
+            {
+              "id": "MGR-ROW",
+              "email": "m@x.com"
+            }
+          ]
+        }
+      ],
+      "expected": [
+        {
+          "id": "MINE",
+          "collection": "projects",
+          "isLive": true,
+          "managerUserIds": [
+            "U-M"
+          ]
+        },
+        {
+          "id": "ROW",
+          "collection": "smallWorks",
+          "isLive": true,
+          "managerIds": [
+            "MGR-ROW"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "1.21.0 a manager with the Projects toggle sees every project and only their small works",
+      "function": "visibleJobs",
+      "args": [
+        [
+          {
+            "id": "MINE",
+            "collection": "projects",
+            "isLive": true,
+            "managerUserIds": [
+              "U-M"
+            ]
+          },
+          {
+            "id": "ROW",
+            "collection": "smallWorks",
+            "isLive": true,
+            "managerIds": [
+              "MGR-ROW"
+            ]
+          },
+          {
+            "id": "NOT-MINE",
+            "collection": "projects",
+            "isLive": true,
+            "managerUserIds": [
+              "U-X"
+            ]
+          },
+          {
+            "id": "HIDDEN",
+            "collection": "projects",
+            "isLive": true,
+            "managerUserIds": [
+              "U-M"
+            ],
+            "hiddenManagerUserIds": [
+              "U-M"
+            ]
+          }
+        ],
+        {
+          "role": {
+            "isSuperAdmin": false,
+            "isAdmin": false,
+            "isManager": true,
+            "isOperativeMode": false
+          },
+          "ids": [
+            "U-M"
+          ],
+          "email": "m@x.com",
+          "uid": "U-M",
+          "toggles": {
+            "projects": true,
+            "smallWorks": false
+          }
+        },
+        {
+          "managers": [
+            {
+              "id": "MGR-ROW",
+              "email": "m@x.com"
+            }
+          ]
+        }
+      ],
+      "expected": [
+        {
+          "id": "MINE",
+          "collection": "projects",
+          "isLive": true,
+          "managerUserIds": [
+            "U-M"
+          ]
+        },
+        {
+          "id": "ROW",
+          "collection": "smallWorks",
+          "isLive": true,
+          "managerIds": [
+            "MGR-ROW"
+          ]
+        },
+        {
+          "id": "NOT-MINE",
+          "collection": "projects",
+          "isLive": true,
+          "managerUserIds": [
+            "U-X"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "1.21.0 bookable: not inactive, running on the day, and writable (a toggle does not make another job writable)",
+      "function": "bookableJobs",
+      "args": [
+        [
+          {
+            "id": "LIVE",
+            "collection": "projects",
+            "isLive": true,
+            "managerUserIds": [
+              "U-M"
+            ],
+            "startDayKey": "2026-11-01",
+            "endDayKey": "2026-11-30"
+          },
+          {
+            "id": "INACTIVE",
+            "collection": "projects",
+            "isLive": false,
+            "managerUserIds": [
+              "U-M"
+            ],
+            "startDayKey": "2026-11-01",
+            "endDayKey": "2026-11-30"
+          },
+          {
+            "id": "NOT-MINE",
+            "collection": "projects",
+            "isLive": true,
+            "managerUserIds": [
+              "U-X"
+            ],
+            "startDayKey": "2026-11-01",
+            "endDayKey": "2026-11-30"
+          },
+          {
+            "id": "ENDED",
+            "collection": "projects",
+            "isLive": true,
+            "managerUserIds": [
+              "U-M"
+            ],
+            "startDayKey": "2026-10-01",
+            "endDayKey": "2026-11-02"
+          }
+        ],
+        {
+          "role": {
+            "isSuperAdmin": false,
+            "isAdmin": false,
+            "isManager": true,
+            "isOperativeMode": false
+          },
+          "ids": [
+            "U-M"
+          ],
+          "email": "m@x.com",
+          "uid": "U-M",
+          "toggles": {
+            "projects": true,
+            "smallWorks": false
+          }
+        },
+        {},
+        [
+          "2026-11-03"
+        ],
+        "Europe/London"
+      ],
+      "expected": [
+        {
+          "id": "LIVE",
+          "collection": "projects",
+          "isLive": true,
+          "managerUserIds": [
+            "U-M"
+          ],
+          "startDayKey": "2026-11-01",
+          "endDayKey": "2026-11-30"
+        }
+      ]
+    },
+    {
+      "name": "1.21.0 bookable with no day chosen keeps a job that ended",
+      "function": "bookableJobs",
+      "args": [
+        [
+          {
+            "id": "LIVE",
+            "collection": "projects",
+            "isLive": true,
+            "managerUserIds": [
+              "U-M"
+            ],
+            "startDayKey": "2026-11-01",
+            "endDayKey": "2026-11-30"
+          },
+          {
+            "id": "INACTIVE",
+            "collection": "projects",
+            "isLive": false,
+            "managerUserIds": [
+              "U-M"
+            ],
+            "startDayKey": "2026-11-01",
+            "endDayKey": "2026-11-30"
+          },
+          {
+            "id": "NOT-MINE",
+            "collection": "projects",
+            "isLive": true,
+            "managerUserIds": [
+              "U-X"
+            ],
+            "startDayKey": "2026-11-01",
+            "endDayKey": "2026-11-30"
+          },
+          {
+            "id": "ENDED",
+            "collection": "projects",
+            "isLive": true,
+            "managerUserIds": [
+              "U-M"
+            ],
+            "startDayKey": "2026-10-01",
+            "endDayKey": "2026-11-02"
+          }
+        ],
+        {
+          "role": {
+            "isSuperAdmin": false,
+            "isAdmin": false,
+            "isManager": true,
+            "isOperativeMode": false
+          },
+          "ids": [
+            "U-M"
+          ],
+          "email": "m@x.com",
+          "uid": "U-M",
+          "toggles": {
+            "projects": false,
+            "smallWorks": false
+          }
+        },
+        {},
+        null,
+        "Europe/London"
+      ],
+      "expected": [
+        {
+          "id": "LIVE",
+          "collection": "projects",
+          "isLive": true,
+          "managerUserIds": [
+            "U-M"
+          ],
+          "startDayKey": "2026-11-01",
+          "endDayKey": "2026-11-30"
+        },
+        {
+          "id": "ENDED",
+          "collection": "projects",
+          "isLive": true,
+          "managerUserIds": [
+            "U-M"
+          ],
+          "startDayKey": "2026-10-01",
+          "endDayKey": "2026-11-02"
+        }
+      ]
+    },
+    {
+      "name": "1.21.0 operatives book onto no job",
+      "function": "bookableJobs",
+      "args": [
+        [
+          {
+            "id": "J-TASK",
+            "collection": "projects",
+            "isLive": true
+          },
+          {
+            "id": "J-BOOKED",
+            "collection": "projects",
+            "isLive": true
+          },
+          {
+            "id": "J-OTHER",
+            "collection": "projects",
+            "isLive": true
+          },
+          {
+            "id": "J-HIDDEN",
+            "collection": "smallWorks",
+            "isLive": true,
+            "hiddenOperativeUserIds": [
+              "u-op"
+            ]
+          }
+        ],
+        {
+          "role": {
+            "isSuperAdmin": false,
+            "isAdmin": false,
+            "isManager": false,
+            "isOperativeMode": true
+          },
+          "ids": [
+            "U-OP"
+          ],
+          "email": "op@x.com",
+          "uid": "U-OP",
+          "toggles": {
+            "projects": false,
+            "smallWorks": false
+          }
+        },
+        {
+          "operatives": [
+            {
+              "id": "OPROW-1",
+              "email": "OP@x.com"
+            }
+          ],
+          "bookings": [
+            {
+              "projectId": "J-BOOKED",
+              "operativeId": "oprow-1",
+              "status": "Confirmed"
+            },
+            {
+              "projectId": "J-OTHER",
+              "operativeId": "OPROW-1",
+              "status": "Cancelled"
+            },
+            {
+              "projectId": "J-HIDDEN",
+              "operativeId": "U-OP",
+              "status": "Confirmed"
+            }
+          ],
+          "tasks": [
+            {
+              "projectId": "J-TASK",
+              "assignedOperativeIds": [
+                "OPROW-1"
+              ]
+            }
+          ]
+        },
+        null,
+        "Europe/London"
+      ],
+      "expected": []
+    },
+    {
+      "name": "1.21.0 day boundary: 23:30 UTC on 3 Nov is still 3 Nov in London (job ending that day is active)",
+      "function": "jobWorkStatus",
+      "args": [
+        {
+          "id": "J",
+          "isLive": true,
+          "startDayKey": "2026-11-01",
+          "endDayKey": "2026-11-03"
+        },
+        "2026-11-03T23:30:00Z",
+        "Europe/London"
+      ],
+      "expected": "active"
+    },
+    {
+      "name": "1.21.0 day boundary: the same instant is 4 Nov in Auckland (job ending 3 Nov is completed)",
+      "function": "jobWorkStatus",
+      "args": [
+        {
+          "id": "J",
+          "isLive": true,
+          "startDayKey": "2026-11-01",
+          "endDayKey": "2026-11-03"
+        },
+        "2026-11-03T23:30:00Z",
+        "Pacific/Auckland"
+      ],
+      "expected": "completed"
+    },
+    {
+      "name": "1.21.0 home active count = the Active tab of the viewer's lists",
+      "function": "activeJobsCount",
+      "args": [
+        [
+          {
+            "id": "LIVE",
+            "collection": "projects",
+            "isLive": true,
+            "managerUserIds": [
+              "U-M"
+            ],
+            "startDayKey": "2026-11-01",
+            "endDayKey": "2026-11-30"
+          },
+          {
+            "id": "INACTIVE",
+            "collection": "projects",
+            "isLive": false,
+            "managerUserIds": [
+              "U-M"
+            ],
+            "startDayKey": "2026-11-01",
+            "endDayKey": "2026-11-30"
+          },
+          {
+            "id": "NOT-MINE",
+            "collection": "projects",
+            "isLive": true,
+            "managerUserIds": [
+              "U-X"
+            ],
+            "startDayKey": "2026-11-01",
+            "endDayKey": "2026-11-30"
+          },
+          {
+            "id": "ENDED",
+            "collection": "projects",
+            "isLive": true,
+            "managerUserIds": [
+              "U-M"
+            ],
+            "startDayKey": "2026-10-01",
+            "endDayKey": "2026-11-02"
+          },
+          {
+            "id": "SW-A",
+            "collection": "smallWorks",
+            "isLive": true,
+            "startDayKey": "2026-11-03",
+            "endDayKey": "2026-11-03",
+            "managerUserIds": [
+              "U-M"
+            ]
+          }
+        ],
+        {
+          "role": {
+            "isSuperAdmin": false,
+            "isAdmin": false,
+            "isManager": true,
+            "isOperativeMode": false
+          },
+          "ids": [
+            "U-M"
+          ],
+          "email": "m@x.com",
+          "uid": "U-M",
+          "toggles": {
+            "projects": false,
+            "smallWorks": false
+          }
+        },
+        {},
+        "2026-11-03",
+        "Europe/London"
+      ],
+      "expected": 2
+    },
+    {
+      "name": "1.21.0 a numeric job number is read as text",
+      "function": "parseJobDocument",
+      "args": [
+        "JOB-N",
+        {
+          "jobNumber": 4521,
+          "siteName": "Yard",
+          "startDate": "2026-11-03T09:00:00Z",
+          "isLive": true
+        },
+        {
+          "kind": "projects",
+          "timeZone": "Europe/London"
+        }
+      ],
+      "expected": {
+        "id": "JOB-N",
+        "kind": "project",
+        "collection": "projects",
+        "jobNumber": "4521",
+        "siteName": "Yard",
+        "addressLine1": "",
+        "addressLine2": null,
+        "townCity": "",
+        "postcode": "",
+        "siteAddress": "",
+        "client": {
+          "id": "",
+          "idStored": false,
+          "name": "",
+          "email": null,
+          "phone": null
+        },
+        "startMs": 1793696400000,
+        "startDayKey": "2026-11-03",
+        "endMs": 1793696400000,
+        "endDayKey": "2026-11-03",
+        "jobType": "",
+        "customJobType": null,
+        "managerName": null,
+        "managerId": null,
+        "managerIds": [],
+        "managerUserIds": [],
+        "isLive": true,
+        "description": null,
+        "notes": null,
+        "latitude": null,
+        "longitude": null,
+        "usesMapPinForLocation": false,
+        "hiddenManagerUserIds": [],
+        "hiddenOperativeUserIds": [],
+        "status": null,
+        "organizationId": null,
+        "createdAtMs": null,
+        "updatedAtMs": null
+      }
     }
   ]
 }

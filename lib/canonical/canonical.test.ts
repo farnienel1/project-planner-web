@@ -10516,3 +10516,119 @@ test('1.20.3 owner: one text for hours at a multiplier — clock hours × N, the
   assert.equal(R112.parseMultipliedHoursText('OT 6.25h'), null)
   assert.equal(R112.parseMultipliedHoursText('07:30–14:00'), null)
 })
+
+// MARK: - 1.21.0 Job lists (§21)
+
+import {
+  activeJobsCount as jobsActiveCount121,
+  bookableJobs as bookableJobs121,
+  jobWorkStatus as jobWorkStatus121,
+  operativeJobIds as operativeJobIds121,
+  visibleJobs as visibleJobs121,
+  worksInTab as worksInTab121,
+  worksListMembership as worksListMembership121,
+  worksTabCounts as worksTabCounts121,
+} from './worksLists'
+import { parseJobDocument as parseJobDocument121 } from './workDocumentReaders'
+
+const role121 = (r: Partial<{ isSuperAdmin: boolean; isAdmin: boolean; isManager: boolean; isOperativeMode: boolean }>) => ({
+  isSuperAdmin: false,
+  isAdmin: false,
+  isManager: false,
+  isOperativeMode: false,
+  ...r,
+})
+const noToggles121 = { projects: false, smallWorks: false }
+
+test('1.21.0 inactive small works are listed, sit under Completed, and All counts every row', () => {
+  const jobs = [
+    { id: 'SW-1', collection: 'smallWorks', isLive: false, startDayKey: '2026-11-01', endDayKey: '2026-11-30' },
+    { id: 'SW-2', collection: 'smallWorks', isLive: true, startDayKey: '2026-11-01', endDayKey: '2026-11-30' },
+    { id: 'SW-3', collection: 'smallWorks', isLive: true, startDayKey: '2026-12-01', endDayKey: '2026-12-05' },
+  ]
+  const listed = worksListMembership121(jobs, 'smallWorks')
+  assert.deepEqual(listed.map((j) => j.id), ['SW-1', 'SW-2', 'SW-3'])
+  const counts = worksTabCounts121(listed, '2026-11-03', 'Europe/London')
+  assert.deepEqual(counts, { all: 3, active: 1, upcoming: 1, completed: 1 })
+  assert.equal(counts.all, listed.length)
+  assert.equal(counts.active + counts.upcoming + counts.completed, counts.all)
+  assert.deepEqual(worksInTab121(listed, 'completed', '2026-11-03', 'Europe/London').map((j) => j.id), ['SW-1'])
+})
+
+test('1.21.0 list membership keeps two jobs with the same job number and goes by collection, not jobType', () => {
+  const jobs = [
+    { id: 'P-1', collection: 'projects', jobNumber: 'C646', jobType: 'Small Works', isLive: false },
+    { id: 'P-2', collection: 'projects', jobNumber: 'C646', isLive: true },
+    { id: 'SW-9', collection: 'smallWorks', jobNumber: 'C646', jobType: 'CAT A' },
+  ]
+  assert.deepEqual(worksListMembership121(jobs, 'projects').map((j) => j.id), ['P-1', 'P-2'])
+  assert.deepEqual(worksListMembership121(jobs, 'smallWorks').map((j) => j.id), ['SW-9'])
+})
+
+test('1.21.0 an operative sees a job reached only through a task', () => {
+  const viewer = { role: role121({ isOperativeMode: true }), ids: ['U-OP'], email: 'op@x.com', toggles: noToggles121 }
+  const jobs = [
+    { id: 'J-TASK', collection: 'projects' },
+    { id: 'J-NONE', collection: 'projects' },
+  ]
+  const context = { operatives: [{ id: 'OPROW-1', email: 'OP@x.com' }], tasks: [{ projectId: 'j-task', assignedOperativeId: 'oprow-1' }] }
+  assert.deepEqual(visibleJobs121(jobs, viewer, context).map((j) => j.id), ['J-TASK'])
+  assert.deepEqual(visibleJobs121(jobs, viewer, {}).map((j) => j.id), [])
+  assert.deepEqual(operativeJobIds121(viewer, { ...context, deadlineJobIds: ['J-D'] }), ['j-task', 'J-D'])
+})
+
+test('1.21.0 a manager without the toggle sees only the jobs they manage', () => {
+  const viewer = { role: role121({ isManager: true }), ids: ['U-M'], email: 'm@x.com', toggles: noToggles121 }
+  const jobs = [
+    { id: 'MINE', collection: 'projects', managerUserIds: ['U-M'] },
+    { id: 'BY-ROW', collection: 'smallWorks', managerIds: ['MGR-ROW'] },
+    { id: 'OTHER', collection: 'projects', managerUserIds: ['U-X'] },
+    { id: 'HIDDEN', collection: 'projects', managerUserIds: ['U-M'], hiddenManagerUserIds: ['u-m'] },
+  ]
+  const context = { managers: [{ id: 'MGR-ROW', email: 'M@x.com' }] }
+  assert.deepEqual(visibleJobs121(jobs, viewer, context).map((j) => j.id), ['MINE', 'BY-ROW'])
+  const toggled = { ...viewer, toggles: { projects: true, smallWorks: false } }
+  assert.deepEqual(visibleJobs121(jobs, toggled, context).map((j) => j.id), ['MINE', 'BY-ROW', 'OTHER'])
+})
+
+test('1.21.0 bookable jobs exclude inactive and non-writable jobs and days outside the job', () => {
+  const viewer = { role: role121({ isManager: true }), ids: ['U-M'], email: 'm@x.com', toggles: { projects: true, smallWorks: true } }
+  const jobs = [
+    { id: 'LIVE', collection: 'projects', managerUserIds: ['U-M'], startDayKey: '2026-11-01', endDayKey: '2026-11-30' },
+    { id: 'INACTIVE', collection: 'projects', isLive: false, managerUserIds: ['U-M'], startDayKey: '2026-11-01', endDayKey: '2026-11-30' },
+    { id: 'NOT-MINE', collection: 'projects', managerUserIds: ['U-X'], startDayKey: '2026-11-01', endDayKey: '2026-11-30' },
+    { id: 'ENDED', collection: 'projects', managerUserIds: ['U-M'], startDayKey: '2026-10-01', endDayKey: '2026-11-02' },
+  ]
+  assert.deepEqual(bookableJobs121(jobs, viewer, {}, ['2026-11-03'], 'Europe/London').map((j) => j.id), ['LIVE'])
+  assert.deepEqual(bookableJobs121(jobs, viewer, {}, null, 'Europe/London').map((j) => j.id), ['LIVE', 'ENDED'])
+  const admin = { role: role121({ isAdmin: true }), ids: ['U-A'], email: 'a@x.com', toggles: noToggles121 }
+  assert.deepEqual(bookableJobs121(jobs, admin, {}, ['2026-11-03'], 'Europe/London').map((j) => j.id), ['LIVE', 'NOT-MINE'])
+})
+
+test('1.21.0 a job day is the organisation zone day: 23:30 London vs Auckland', () => {
+  const job = { id: 'J', isLive: true, startDayKey: '2026-11-01', endDayKey: '2026-11-03' }
+  assert.equal(jobWorkStatus121(job, '2026-11-03T23:30:00Z', 'Europe/London'), 'active')
+  assert.equal(jobWorkStatus121(job, '2026-11-03T23:30:00Z', 'Pacific/Auckland'), 'completed')
+  // A job stored with instants: its end instant 23:30 London on 3 Nov is 3 Nov in London, 4 Nov in Auckland.
+  const instants = { id: 'K', isLive: true, startMs: Date.parse('2026-11-01T09:00:00Z'), endMs: Date.parse('2026-11-03T23:30:00Z') }
+  assert.equal(jobWorkStatus121(instants, '2026-11-04T08:00:00Z', 'Europe/London'), 'completed')
+  assert.equal(jobWorkStatus121(instants, '2026-11-04T08:00:00Z', 'Pacific/Auckland'), 'active')
+})
+
+test('1.21.0 home active count equals the Active tabs of the viewer lists', () => {
+  const viewer = { role: role121({ isManager: true }), ids: ['U-M'], email: 'm@x.com', toggles: noToggles121 }
+  const jobs = [
+    { id: 'A', collection: 'projects', managerUserIds: ['U-M'], startDayKey: '2026-11-01', endDayKey: '2026-11-30' },
+    { id: 'a', collection: 'projects', managerUserIds: ['U-M'], startDayKey: '2026-11-01', endDayKey: '2026-11-30' },
+    { id: 'B', collection: 'smallWorks', managerUserIds: ['U-M'], startDayKey: '2026-11-03', endDayKey: '2026-11-03' },
+    { id: 'C', collection: 'projects', isLive: false, managerUserIds: ['U-M'], startDayKey: '2026-11-01', endDayKey: '2026-11-30' },
+    { id: 'D', collection: 'projects', managerUserIds: ['U-X'], startDayKey: '2026-11-01', endDayKey: '2026-11-30' },
+  ]
+  assert.equal(jobsActiveCount121(jobs, viewer, {}, '2026-11-03', 'Europe/London'), 2)
+})
+
+test('1.21.0 a numeric job number is read as its text', () => {
+  assert.equal(parseJobDocument121('J1', { jobNumber: 4521 })?.jobNumber, '4521')
+  assert.equal(parseJobDocument121('J2', { jobNumber: ' C646 ' })?.jobNumber, 'C646')
+  assert.equal(parseJobDocument121('J3', { jobNumber: Number.NaN })?.jobNumber, '')
+})

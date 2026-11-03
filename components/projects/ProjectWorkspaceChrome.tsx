@@ -46,6 +46,7 @@ import { assignedManagerLabel, assignedManagerNames } from '@/lib/projects/assig
 import type { SectionHue } from '@/lib/ui/sectionHue'
 import type { Project, User } from '@/types'
 import { cn } from '@/lib/ui/cn'
+import { useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
 
 function formatLondonDay(date: Date): string {
   return new Intl.DateTimeFormat('en-GB', {
@@ -115,9 +116,12 @@ export function ProjectWorkspaceChrome({
   const pathname = usePathname() || ''
   const { user, organization } = useAuthStore()
   const isSmallWork = basePath.includes('small-works')
-  const status = deriveWorkStatus(project)
-  const progress = timelineProgressPercent(project.startDate, project.endDate, status)
-  const remaining = daysLeftCaption(project.endDate, status)
+  // Rulebook 1.21.0: the job's day is the organisation's (`jobWorkStatus`), never London or the browser.
+  const timeZone = useOrganizationTimeZone()
+  const now = new Date()
+  const status = deriveWorkStatus(project, now, timeZone)
+  const progress = timelineProgressPercent(project.startDate, project.endDate, status, now, timeZone)
+  const remaining = daysLeftCaption(project.endDate, status, now, timeZone)
   // 1.10.0 round 2 (`canEditJob`): a manager edits the details of a job they manage even without the toggle.
   const canEdit = userCanEditJob(user, project, isSmallWork ? 'smallWorks' : 'projects', useOperativeStore.getState().managers)
   const showBook = canBookWork(user) && !isOperativeMode(user)

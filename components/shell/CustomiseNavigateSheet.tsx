@@ -18,6 +18,7 @@ import {
   type NavigateEntry,
 } from '@/lib/navigation/navigateCustomization'
 import { deriveWorkStatus, searchWorks } from '@/lib/projects/workStatus'
+import { useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
 
 function sortByDateAdded(works: Project[]): Project[] {
   return [...works].sort((a, b) => {
@@ -48,13 +49,15 @@ export function CustomiseNavigateSheet({
   const [dragIndex, setDragIndex] = useState<number | null>(null)
   const pickerRef = useRef<HTMLDivElement>(null)
   const available = useMemo(() => availableCatalogItems(config, catalog), [config, catalog])
+  // Rulebook 1.21.0: status on the organisation's day (`jobWorkStatus`); a shortcut is offered for jobs not inactive.
+  const timeZone = useOrganizationTimeZone()
   const liveProjects = useMemo(
-    () => sortByDateAdded(projects.filter((row) => deriveWorkStatus(row) !== 'inactive')),
-    [projects]
+    () => sortByDateAdded(projects.filter((row) => deriveWorkStatus(row, new Date(), timeZone) !== 'inactive')),
+    [projects, timeZone]
   )
   const liveSmallWorks = useMemo(
-    () => sortByDateAdded(smallWorks.filter((row) => deriveWorkStatus(row) !== 'inactive')),
-    [smallWorks]
+    () => sortByDateAdded(smallWorks.filter((row) => deriveWorkStatus(row, new Date(), timeZone) !== 'inactive')),
+    [smallWorks, timeZone]
   )
 
   useEffect(() => {
@@ -219,7 +222,7 @@ export function CustomiseNavigateSheet({
                       {work.jobNumber ? `${work.jobNumber} · ` : ''}
                       {work.siteName}
                     </span>
-                    <span className="text-[11px] text-slate-400">{deriveWorkStatus(work)}</span>
+                    <span className="text-[11px] text-slate-400">{deriveWorkStatus(work, new Date(), timeZone)}</span>
                   </button>
                 ))}
                 {pickerWorks.length === 0 ? (

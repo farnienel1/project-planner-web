@@ -30,7 +30,7 @@ export function VariationsRollup() {
 
   useEffect(() => {
     if (!organization?.id || !user || !canSeeAnyVariations(user)) return
-    loadProjects(organization.id, true)
+    loadProjects(organization.id)
     loadSmallWorks(organization.id)
     loadUsers(organization.id)
     loadManagers(organization.id)

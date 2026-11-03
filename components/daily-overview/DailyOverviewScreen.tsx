@@ -122,7 +122,7 @@ export function DailyOverviewScreen() {
     loadManagerSiteBookings(organization.id)
     loadOperatives(organization.id)
     loadUsers(organization.id)
-    loadProjects(organization.id, true)
+    loadProjects(organization.id)
     loadSmallWorks(organization.id)
     loadHolidays(organization.id)
     loadSubcontractors(organization.id)

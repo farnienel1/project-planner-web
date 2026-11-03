@@ -6,13 +6,12 @@
  * hours worked, never multiplied. Paid hours belong to pay screens.
  */
 
-import { bookingOccupiesDay, formerIdAliases, multipliedHoursText, payrollMultipliedHours, payrollOutsideMultiplier, unbookedLabourRowsOnDay, warningScopeFor, weekdayPaidHours, workedHoursSplit, type JobAccessViewer } from '@/lib/canonical'
+import { bookingOccupiesDay, formerIdAliases, jobKind, multipliedHoursText, payrollMultipliedHours, payrollOutsideMultiplier, unbookedLabourRowsOnDay, warningScopeFor, weekdayPaidHours, workedHoursSplit, type JobAccessViewer } from '@/lib/canonical'
 import { isoWeekdayInZone } from '@/lib/orgTime/zoneTime'
 import { labourPersonFromUser, labourRosterOperative } from '@/lib/warnings/unbookedLabourWarnings'
 import { findUserByAnyId, rosterDisplayName } from '@/lib/staff/userRosterUtils'
 import { addLondonDays, coversCalendarDay, dayKey, isSameLondonDay } from '@/lib/ios-parity/londonTime'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
-import { isSmallWorksJobType } from '@/lib/ios-parity/enums'
 import {
   bookingPayrollHours,
   estimatedPaidHours,
@@ -442,7 +441,8 @@ export function buildDailyOverview(params: {
       return {
         project,
         bookings,
-        isSmallWorks: isSmallWorksJobType(project.jobType || '') || /small works/i.test(project.jobType || ''),
+        // Rulebook 1.11.0 / 1.21.0 (`jobKind`): the collection decides small works, never the `jobType` text.
+        isSmallWorks: jobKind(project, project.collection ?? null) === 'smallWorks',
         people,
         peopleCount: people.length,
         bookedHours,

@@ -18,11 +18,10 @@ import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { canCreateProject, isOperativeMode } from '@/lib/permissions'
 import { operativeMatching, visibleWorks } from '@/lib/access/workAccess'
 import { useDeadlineAssignedProjectIds } from '@/lib/deadlines/useDeadlineAssignedProjectIds'
-import {
-  countWorksByTab,
-  filterWorksByTab,
-  searchWorks,
-} from '@/lib/projects/workStatus'
+import { searchWorks } from '@/lib/projects/workStatus'
+import { worksInTab, worksTabCounts } from '@/lib/canonical'
+import { useOrganizationDayKey } from '@/lib/warnings/useOrganizationDayKey'
+import { useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
 import { EmptyState, PageHeader, SearchField, StatsRow } from '@/components/ios/primitives'
 import { WorkCard } from '@/components/projects/WorkCard'
 import { assignedManagerLabel } from '@/lib/projects/assignedManagers'
@@ -78,11 +77,13 @@ export function ProjectsListScreen() {
     [projects, user, operatives, managers, bookings, managerSiteBookings, tasks, deadlineAssignedProjectIds]
   )
 
-  const counts = useMemo(() => countWorksByTab(visible), [visible])
-  const filtered = useMemo(() => {
-    const byTab = filterWorksByTab(visible, filter)
-    return searchWorks(byTab, search)
-  }, [visible, filter, search])
+  // Rulebook 1.21.0 §21: tabs and counts are `worksInTab` / `worksTabCounts` on the organisation's day (inactive →
+  // Completed; All = every row listed).
+  const timeZone = useOrganizationTimeZone()
+  const todayKey = useOrganizationDayKey(timeZone)
+  const byTab = useMemo(() => worksInTab(visible, filter, todayKey, timeZone), [visible, filter, todayKey, timeZone])
+  const counts = useMemo(() => worksTabCounts(visible, todayKey, timeZone), [visible, todayKey, timeZone])
+  const filtered = useMemo(() => searchWorks(byTab, search), [byTab, search])
 
   const canCreate = canCreateProject(user)
   const emptySubtitle = canCreate
@@ -92,8 +93,8 @@ export function ProjectsListScreen() {
     isOperativeMode(user) &&
     !operativeMatching(user?.email, operatives, { firstName: user?.firstName, surname: user?.surname })
   const compact = isOperativeMode(user)
-  const emptyDueToFilter = visible.length > 0 && filter !== 'all' && filterWorksByTab(visible, filter).length === 0
-  const emptySearch = search.trim().length > 0 && filtered.length === 0 && filterWorksByTab(visible, filter).length > 0
+  const emptyDueToFilter = visible.length > 0 && filter !== 'all' && byTab.length === 0
+  const emptySearch = search.trim().length > 0 && filtered.length === 0 && byTab.length > 0
 
   const managerName = (project: (typeof projects)[number]) =>
     assignedManagerLabel(project, managers, users, organization?.id)

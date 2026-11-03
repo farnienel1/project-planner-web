@@ -17,6 +17,7 @@ import {
 import type { SectionHue } from '@/lib/ui/sectionHue'
 import { ProgressRing } from '@/components/ui/media'
 import { StatusPill } from '@/components/ui/controls'
+import { useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
 
 function formatRange(start: Date, end: Date): string {
   const fmt = new Intl.DateTimeFormat('en-GB', {
@@ -43,13 +44,16 @@ export function WorkCard({
   compact?: boolean
   managerName?: string
 }) {
-  const status = deriveWorkStatus(project)
-  const pct = timelineProgressPercent(project.startDate, project.endDate, status)
+  // Rulebook 1.21.0: the job's day is the organisation's (`jobWorkStatus`), never London or the browser.
+  const timeZone = useOrganizationTimeZone()
+  const now = new Date()
+  const status = deriveWorkStatus(project, now, timeZone)
+  const pct = timelineProgressPercent(project.startDate, project.endDate, status, now, timeZone)
   const address = formatSiteAddress(project) || '—'
   const manager = managerName || project.manager?.name || '—'
   const type = jobTypeLabel(project)
   const hue: SectionHue = href.includes('small-works') ? 'sw' : 'proj'
-  const days = daysLeftCaption(project.endDate, status)
+  const days = daysLeftCaption(project.endDate, status, now, timeZone)
 
   if (compact) {
     return (

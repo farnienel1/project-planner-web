@@ -1,28 +1,19 @@
 import type { Project } from '@/types'
-import { workDocuments, workStatusOn } from '@/lib/canonical'
-import { dayKeyInZone, LONDON_TIME_ZONE } from '@/lib/orgTime/zoneTime'
+import { jobWorkStatus, workDocuments } from '@/lib/canonical'
 import { calendarDayOffset, programmeProgressPercent } from '@/lib/projects/programmeDates'
 
 export type WorkStatus = 'active' | 'upcoming' | 'completed' | 'inactive'
 
-function validDate(value: unknown): value is Date {
-  return value instanceof Date && !Number.isNaN(value.getTime())
-}
-
-/** The rulebook's `workStatusOn` for today in the organisation zone — past end date is completed, not overdue. */
+/**
+ * The rulebook's `jobWorkStatus` (`workStatusOn`) on `now`'s day in the organisation zone — past end date is
+ * completed, not overdue. Rulebook 1.21.0: the zone is required (never a London or browser default).
+ */
 export function deriveWorkStatus(
-  project: Pick<Project, 'isLive' | 'startDate' | 'endDate'>,
-  now = new Date(),
-  timeZone = LONDON_TIME_ZONE
+  project: Pick<Project, 'id' | 'isLive' | 'startDate' | 'endDate'>,
+  now: Date,
+  timeZone: string
 ): WorkStatus {
-  return workStatusOn(
-    {
-      isLive: project.isLive,
-      startDayKey: validDate(project.startDate) ? dayKeyInZone(project.startDate, timeZone) : null,
-      endDayKey: validDate(project.endDate) ? dayKeyInZone(project.endDate, timeZone) : null,
-    },
-    dayKeyInZone(now, timeZone)
-  )
+  return jobWorkStatus(project, now.getTime(), timeZone)
 }
 
 export function workStatusLabel(status: WorkStatus): string {
@@ -42,9 +33,9 @@ export function workStatusLabel(status: WorkStatus): string {
 export function timelineProgressPercent(
   startDate: Date,
   endDate: Date,
-  status?: WorkStatus,
-  now = new Date(),
-  timeZone = LONDON_TIME_ZONE
+  status: WorkStatus | undefined,
+  now: Date,
+  timeZone: string
 ): number {
   if (status === 'completed' || status === 'inactive') return 100
   return programmeProgressPercent(startDate, endDate, now, timeZone)
@@ -53,8 +44,8 @@ export function timelineProgressPercent(
 export function daysLeftCaption(
   endDate: Date,
   status: WorkStatus,
-  now = new Date(),
-  timeZone = LONDON_TIME_ZONE
+  now: Date,
+  timeZone: string
 ): string {
   if (status === 'completed') return 'Completed'
   if (status === 'inactive') return 'Inactive'
@@ -100,24 +91,4 @@ export function searchWorks<T extends Project>(projects: T[], query: string): T[
       (p.client?.name || '').toLowerCase().includes(q)
     )
   })
-}
-
-export function filterWorksByTab(projects: Project[], tab: 'all' | 'active' | 'upcoming' | 'completed'): Project[] {
-  if (tab === 'all') return projects
-  if (tab === 'completed') {
-    return projects.filter((p) => {
-      const status = deriveWorkStatus(p)
-      return status === 'completed' || status === 'inactive'
-    })
-  }
-  return projects.filter((p) => deriveWorkStatus(p) === tab)
-}
-
-export function countWorksByTab(projects: Project[]) {
-  return {
-    all: projects.length,
-    active: projects.filter((p) => deriveWorkStatus(p) === 'active').length,
-    upcoming: projects.filter((p) => deriveWorkStatus(p) === 'upcoming').length,
-    completed: projects.filter((p) => deriveWorkStatus(p) === 'completed' || deriveWorkStatus(p) === 'inactive').length,
-  }
 }

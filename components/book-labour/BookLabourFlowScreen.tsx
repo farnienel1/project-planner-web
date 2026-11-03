@@ -14,7 +14,7 @@ import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { useProjectStore } from '@/lib/stores/projectStore'
 import { useHolidayStore } from '@/lib/stores/holidayStore'
-import { visibleWorks } from '@/lib/access/workAccess'
+import { bookableWorks } from '@/lib/access/workAccess'
 import { canBookWork } from '@/lib/permissions'
 import { useDeadlineAssignedProjectIds } from '@/lib/deadlines/useDeadlineAssignedProjectIds'
 import {
@@ -185,7 +185,7 @@ export function BookLabourFlowScreen({
     // Rulebook 1.10.0: a manager's job list is `canSeeJob`, which reads the managers list.
     void loadManagers(organization.id)
     loadUsers(organization.id)
-    loadProjects(organization.id, true)
+    loadProjects(organization.id)
     loadSmallWorks(organization.id)
     loadHolidays(organization.id)
     loadOrganizationDetails(organization.id)
@@ -221,9 +221,12 @@ export function BookLabourFlowScreen({
   )
 
   const allWorks = useMemo(() => [...projects, ...smallWorks], [projects, smallWorks])
+  // Rulebook 1.21.0 §21 (`bookableJobs`): the jobs this user may book onto on this day — visible, not inactive,
+  // running on the day (organisation zone) and writable (`canWriteBooking`; before 1.21.0 web skipped it).
+  const bookingDayKey = orgDayKey(day, organizationZoneOr())
   const liveProjects = useMemo(
     () =>
-      visibleWorks({
+      bookableWorks({
         projects: allWorks,
         catalogue: 'projects',
         user,
@@ -232,12 +235,14 @@ export function BookLabourFlowScreen({
         bookings,
         managerBookings: managerSiteBookings,
         deadlineAssignedProjectIds,
-      }).filter((project) => project.isLive),
-    [allWorks, user, operatives, managers, bookings, managerSiteBookings, deadlineAssignedProjectIds]
+        dayKeys: [bookingDayKey],
+        timeZone: organizationZoneOr(),
+      }),
+    [allWorks, user, operatives, managers, bookings, managerSiteBookings, deadlineAssignedProjectIds, bookingDayKey]
   )
   const liveSmallWorks = useMemo(
     () =>
-      visibleWorks({
+      bookableWorks({
         projects: allWorks,
         catalogue: 'smallWorks',
         user,
@@ -246,8 +251,10 @@ export function BookLabourFlowScreen({
         bookings,
         managerBookings: managerSiteBookings,
         deadlineAssignedProjectIds,
-      }).filter((project) => project.isLive),
-    [allWorks, user, operatives, managers, bookings, managerSiteBookings, deadlineAssignedProjectIds]
+        dayKeys: [bookingDayKey],
+        timeZone: organizationZoneOr(),
+      }),
+    [allWorks, user, operatives, managers, bookings, managerSiteBookings, deadlineAssignedProjectIds, bookingDayKey]
   )
 
   const otherPicks = enabledScheduleLocationPicks(scheduleOpts)

@@ -11,6 +11,8 @@ import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { useHolidayStore } from '@/lib/stores/holidayStore'
 import { DEFAULT_PAYROLL_POLICY, loadOrganizationDetails, type OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
+import { bookableWorks } from '@/lib/access/workAccess'
+import { bookingDayKey } from '@/lib/scheduling/bookingSlotRules'
 import { mergeProjectsAndSmallWorks } from '@/lib/projects/workStatus'
 import { isExactDuplicateBooking } from '@/lib/scheduling/bookingClashUtils'
 import {
@@ -57,7 +59,7 @@ export function ScheduleOperativeForm({
 }) {
   const router = useRouter()
   const { organization, user } = useAuthStore()
-  const { operatives, loadOperatives } = useOperativeStore()
+  const { operatives, loadOperatives, managers } = useOperativeStore()
   const { users, loadUsers } = useOrgUserStore()
   const { projects, smallWorks, loadProjects, loadSmallWorks } = useProjectStore()
   const { bookings, createBooking, loadBookings } = useBookingStore()
@@ -93,7 +95,7 @@ export function ScheduleOperativeForm({
       loadUsers(organization.id)
       loadBookings(organization.id)
       loadManagerSiteBookings(organization.id)
-      loadProjects(organization.id, true)
+      loadProjects(organization.id)
       loadSmallWorks(organization.id)
     }
   }, [
@@ -113,7 +115,23 @@ export function ScheduleOperativeForm({
   }, [projects, smallWorks, project])
 
   const slotsList = useMemo(() => sortedDateSlots(dateSlots), [dateSlots])
-  const canConfirm = allDraftPeopleResolved(draftPeople) && slotsList.length > 0
+  // Rulebook 1.21.0 §21 (`bookableJobs`): this job must be bookable on every chosen day — not inactive, running that
+  // day in the organisation zone, and writable by this user (`canWriteBooking`).
+  const jobBookable = useMemo(
+    () =>
+      bookableWorks({
+        projects: [project],
+        user,
+        operatives,
+        managers,
+        bookings: [],
+        managerBookings: [],
+        dayKeys: slotsList.map((slot) => bookingDayKey(slot.date)),
+        timeZone,
+      }).length > 0,
+    [project, user, operatives, managers, slotsList, timeZone]
+  )
+  const canConfirm = allDraftPeopleResolved(draftPeople) && slotsList.length > 0 && jobBookable
 
   const handleSlotChange = (date: Date, patch: Partial<ScheduleDateSlot>) => {
     const key = slotKey(date)
@@ -423,6 +441,9 @@ export function ScheduleOperativeForm({
       )}
 
       {error && <ErrorBanner message={error} />}
+      {!jobBookable && slotsList.length > 0 ? (
+        <ErrorBanner message="This job can't be booked on every chosen day: it is inactive, a day is outside its start and end dates, or you don't manage it." />
+      ) : null}
 
       <div className="fixed bottom-0 left-0 right-0 border-t border-[var(--line)] bg-[var(--card)]/95 p-4 backdrop-blur md:pl-64">
         <div className="mx-auto flex max-w-3xl gap-2">
