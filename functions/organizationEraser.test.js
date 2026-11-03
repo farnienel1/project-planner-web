@@ -29,6 +29,10 @@ function fakeWorld() {
   const authDeleted = []
   const under = (path) => [...docs.keys()].filter((key) => key === path || key.startsWith(`${path}/`))
   const store = {
+    switchOn: true,
+    async erasureEnabled() {
+      return this.switchOn
+    },
     async scheduledOrganizations() {
       return [...docs.entries()]
         .filter(([key, data]) => /^organizations\/[^/]+$/.test(key) && data.deletion && data.deletion.status === 'scheduled')
@@ -110,4 +114,21 @@ test('eraser: erases only the due organisation, keeps people who belong elsewher
   // A second run finds nothing due and changes nothing.
   const again = await eraseDueOrganizations(world.deps)
   assert.deepEqual(again, [])
+})
+
+test('eraser: with the kill switch off (or unreadable) every run is a dry run that only reports', async () => {
+  for (const setSwitch of [(store) => { store.switchOn = false }, (store) => { store.erasureEnabled = async () => { throw new Error('denied') } }, (store) => { delete store.erasureEnabled }]) {
+    const world = fakeWorld()
+    setSwitch(world.deps.store)
+    const before = JSON.stringify([...world.docs.entries()])
+    const logs = []
+    const report = await eraseDueOrganizations({ ...world.deps, logger: { info: (...args) => logs.push(args), warn() {} } })
+    assert.equal(report.length, 1)
+    assert.equal(report[0].dryRun, true)
+    assert.deepEqual(report[0].counts, { usersDeleted: 2, usersKept: 1, memberships: 2, invitations: 1 })
+    assert.equal(JSON.stringify([...world.docs.entries()]), before)
+    assert.equal(world.authDeleted.length, 0)
+    assert.equal(world.storage.size, 2)
+    assert.ok(logs.some(([message, meta]) => /dry run/.test(message) && meta.orgId === 'DUE' && meta.name === 'Due Ltd'))
+  }
 })

@@ -15,6 +15,10 @@
  * The audit row is written first as `status: 'erasing'` and finished last, so a run that stops half way is picked
  * up again the next day (the organisation document is deleted last). Running it twice changes nothing more.
  *
+ * Kill switch: nothing is written or deleted unless `platformConfig/app.organizationErasureEnabled` is true (written
+ * by the platform owner). While it is off every run is a dry run that logs each due organisation's id, name and
+ * counts. Deploy with it off and turn it on after reviewing the first dry-run log.
+ *
  * Dependencies are injected so the plan is tested with a fake Firestore (`dryRun` lists the work without writing).
  */
 
@@ -36,6 +40,7 @@ function orgIdOf(value) {
  * @param {object} deps
  * @param {object} deps.canonical   the packed rulebook (`organizationEraseDue`, `erasedOrganizationAuditFields`)
  * @param {object} deps.store       Firestore access:
+ *   erasureEnabled() → boolean                              (platformConfig/app.organizationErasureEnabled)
  *   scheduledOrganizations() → [{ id, data }]
  *   usersOfOrganization(orgId) → [{ id, data }]           (users where organizationId == orgId)
  *   membershipsOfOrganization(orgId) → [{ uid, path }]     (collection group orgMemberships for orgId)
@@ -51,10 +56,19 @@ function orgIdOf(value) {
 async function eraseDueOrganizations(deps) {
   const now = typeof deps.now === 'number' ? deps.now : Date.now()
   const log = deps.logger || { info() {}, warn() {} }
+  // Kill switch (rulebook 1.15.0 §20): nothing destructive unless the platform owner set
+  // `platformConfig/app.organizationErasureEnabled` to true. Off (missing, false, unreadable): a dry run that only logs.
+  let enabled = false
+  try {
+    enabled = deps.store.erasureEnabled ? (await deps.store.erasureEnabled()) === true : false
+  } catch (error) {
+    log.warn('organisation erasure switch unreadable; dry run', { error: String((error && error.message) || error) })
+  }
+  const dryRun = Boolean(deps.dryRun) || !enabled
   const report = []
   for (const org of await deps.store.scheduledOrganizations()) {
     if (!deps.canonical.organizationEraseDue(org.data, now)) continue
-    report.push(await eraseOrganization(org, { ...deps, now, logger: log }))
+    report.push(await eraseOrganization(org, { ...deps, now, logger: log, dryRun }))
   }
   return report
 }
@@ -66,13 +80,21 @@ async function eraseOrganization(org, deps) {
     actions.push(label)
     if (!deps.dryRun) await fn()
   }
-  const audit = deps.canonical.erasedOrganizationAuditFields(org.data, deps.now)
+  const counts = { usersDeleted: 0, usersKept: 0, memberships: 0, invitations: 0 }
+  const fields = deps.canonical.erasedOrganizationAuditFields(org.data, deps.now)
+  // The packed rulebook runs in its own context: its Date is not this realm's Date, which the admin SDK refuses as
+  // "not a plain JavaScript object". Rebuild it here.
+  const audit = { name: String(fields.name || ''), erasedAt: new Date(Number(fields.erasedAt && fields.erasedAt.getTime ? fields.erasedAt.getTime() : deps.now)) }
   const auditPath = `${ERASED_ORGANIZATIONS_COLLECTION}/${orgId}`
   await act(`set ${auditPath} (erasing)`, () => deps.store.setDocument(auditPath, { ...audit, status: 'erasing' }))
 
   for (const user of await deps.store.usersOfOrganization(orgId)) {
     const otherOrgs = (await deps.store.membershipOrgIds(user.id)).filter((id) => orgIdOf(id) !== orgIdOf(orgId))
-    if (otherOrgs.length > 0) continue
+    if (otherOrgs.length > 0) {
+      counts.usersKept += 1
+      continue
+    }
+    counts.usersDeleted += 1
     await act(`delete users/${user.id}/private/taxIds`, () => deps.store.deleteDocument(`users/${user.id}/private/taxIds`))
     await act(`delete users/${user.id} (recursive)`, () => deps.store.deleteRecursive(`users/${user.id}`))
     const email = text(user.data && user.data.email).toLowerCase()
@@ -85,21 +107,33 @@ async function eraseOrganization(org, deps) {
     }
   }
   for (const membership of await deps.store.membershipsOfOrganization(orgId)) {
+    counts.memberships += 1
     await act(`delete ${membership.path}`, () => deps.store.deleteDocument(membership.path))
   }
   for (const path of await deps.store.invitationsOfOrganization(orgId)) {
+    counts.invitations += 1
     await act(`delete ${path}`, () => deps.store.deleteDocument(path))
   }
   await act(`delete storage organizations/${orgId}/`, () => deps.deleteStoragePrefix(`organizations/${orgId}/`))
   await act(`delete organizations/${orgId} (recursive)`, () => deps.store.deleteRecursive(`organizations/${orgId}`))
   await act(`set ${auditPath} (erased)`, () => deps.store.setDocument(auditPath, { ...audit, status: 'erased' }))
-  deps.logger.info('organisation erased', { orgId, dryRun: Boolean(deps.dryRun), actions: actions.length })
-  return { orgId, actions }
+  deps.logger.info(deps.dryRun ? 'organisation erasure (dry run, switch off): would erase' : 'organisation erased', {
+    orgId,
+    name: audit.name,
+    dryRun: Boolean(deps.dryRun),
+    ...counts,
+    actions: actions.length,
+  })
+  return { orgId, name: audit.name, dryRun: Boolean(deps.dryRun), counts, actions }
 }
 
 /** The Firestore access for `eraseDueOrganizations`, from the admin SDK. */
 function createAdminEraserStore(db) {
   return {
+    async erasureEnabled() {
+      const snap = await db.doc('platformConfig/app').get()
+      return snap.exists && snap.get('organizationErasureEnabled') === true
+    },
     async scheduledOrganizations() {
       const snap = await db.collection('organizations').where('deletion.status', '==', 'scheduled').get()
       return snap.docs.map((row) => ({ id: row.id, data: { id: row.id, ...row.data() } }))
