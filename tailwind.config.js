@@ -27,6 +27,23 @@ module.exports = {
           800: '#1e40af',
           900: '#0B1020',
         },
+        // Brand shell tokens (app/brand-shell.css, docs/DESIGN_TOKENS.md).
+        brand: {
+          50: 'var(--brand-50)',
+          500: 'var(--brand-500)',
+          600: 'var(--brand-600)',
+          800: 'var(--brand-800)',
+          900: 'var(--brand-900)',
+        },
+        danger: {
+          50: 'var(--danger-50)',
+          600: 'var(--danger-600)',
+        },
+        'sidebar-muted': 'var(--sidebar-muted)',
+        signout: 'var(--signout)',
+        'page-bg': 'var(--page-bg)',
+        'card-bg': 'var(--card-bg)',
+        'card-border': 'var(--card-border)',
         ios: {
           canvas: 'var(--ios-canvas)',
           card: 'var(--ios-card)',
