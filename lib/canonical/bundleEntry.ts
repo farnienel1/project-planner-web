@@ -875,9 +875,11 @@ export type { LineManagerCandidate, LineManagerRosterPerson, LineManagerSubject 
 export { PAY_BASIS_DAY_HELP, PAY_BASIS_HOURLY_HELP, PAY_BASIS_SAVE_NOTE } from './payRate'
 export {
   ACCOUNT_TYPE_OTHER_COMPANY_NOTE,
+  ACCOUNT_TYPE_OUT_OF_SYNC_MESSAGE,
   ACCOUNT_TYPE_SUPER_ADMIN_MESSAGE,
   accountTypeChangeWrites,
   accountTypePermissions,
+  accountTypeSyncState,
 } from './permissionLevels'
 export type { AccountTypeChangeWrite } from './permissionLevels'
 export { organizationLevelFor, rosterMembersForOrganization } from './orgRoster'
@@ -889,3 +891,46 @@ export { organizationMemberActive } from './orgMembership'
 export { PLATFORM_CONFIG_APP_PATH, appUpdateRequired, compareAppVersions } from './platformConfig'
 export { LEAVE_YEAR_MONTHS_MESSAGE, leaveYearEndMonth, validateAnnualLeaveDefaults, validateLeaveYearMonths } from './annualLeaveBalance'
 export { PAY_STANDARD_DAY_MIN_HOURS } from './payRate'
+
+// Rulebook 1.13.0 — owner decisions round 4.
+export {
+  CUSTOM_HOURS_BREAK_WARNING,
+  WEEKDAY_TIME_SLOTS,
+  WEEKEND_TIME_SLOTS,
+  allowedTimeSlotsOnDay,
+  customHoursBreakWarning,
+  isWeekendDayKey,
+  WEEKEND_WEEKDAY_MIX_MESSAGE,
+  bookingDaysMixWeekdayAndWeekend,
+  timeSlotAllowedOnDay,
+  weekendBookingNote,
+  weekendCustomHoursDefault,
+} from './bookingSlots'
+export { weekendFullDayWindow, weekendRuleForIsoWeekday } from './payrollHours'
+export { intervalCrossesMidnight, nextCalendarDayKey, overnightCarryInterval } from './engine'
+export {
+  SUBSCRIPTION_LAPSED_ADMIN_NOTE,
+  SUBSCRIPTION_LAPSED_ADMIN_WEB_NOTE,
+  SUBSCRIPTION_LAPSED_MESSAGE,
+  billingAccessFields,
+  subscriptionAccess,
+} from './billingAccess'
+export { LAUNCH_COUNTRY_CODES, launchCountryOptions } from './bankHolidayRegions'
+export { SUGGESTED_MAX_CARRY_OVER_DAYS, parseMaxCarryOverDays } from './organizationSettings'
+export { leaveYearStartMonth, proRataLeaveAllowance } from './annualLeaveBalance'
+export {
+  PAY_PROFILES_COLLECTION,
+  PAY_PROFILE_FIELDS,
+  canViewPersonPay,
+  overlayPayProfile,
+  parsePayProfileDocument,
+  payProfileBackfillWrites,
+  payProfilePath,
+  payProfileWriteFieldsFromProfileWrite,
+} from './payProfile'
+export {
+  SELF_EMAIL_INVALID_MESSAGE,
+  selfEmailChangeAction,
+  selfEmailChangeSentMessage,
+  signInEmailSyncWrites,
+} from './emailChange'

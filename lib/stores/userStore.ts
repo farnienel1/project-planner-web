@@ -1,6 +1,7 @@
 'use client'
 
 import { create } from 'zustand'
+import { addPayProfileWrite } from '@/lib/pay/payProfileService'
 import { collection, deleteField, doc, getDoc, getDocs, limit, query, serverTimestamp, setDoc, updateDoc, Timestamp, where, writeBatch } from 'firebase/firestore'
 import { sendPasswordResetEmail } from 'firebase/auth'
 import { passwordResetActionSettings } from '@/lib/auth/passwordResetSettings'
@@ -82,15 +83,30 @@ function identityFields(user: User): Record<string, unknown> {
   }
 }
 
-async function updateSameEmailUsers(user: User, previousEmail?: string): Promise<void> {
+/**
+ * The person's other users documents with the same email in THIS organisation get the same name (rulebook §11). The
+ * query names the organisation: a users query on email alone can never be allowed by the rules for another person
+ * (`canReadUserDocument` cannot prove every match is readable), so before 1.12.2 every admin save of someone else's
+ * profile ended in "Missing or insufficient permissions" after the profile itself had been written. Another company's
+ * document is never rewritten. Best effort: the profile is already saved, so a refusal here is logged, not thrown.
+ */
+async function updateSameEmailUsers(user: User, organizationId: string, previousEmail?: string): Promise<void> {
+  const org = organizationId.trim()
+  if (!org) return
   const emails = [user.email, previousEmail || '']
     .map((value) => value.trim().toLowerCase())
     .filter((value, index, all) => value.includes('@') && all.indexOf(value) === index)
   for (const email of emails) {
-    const snapshot = await getDocs(query(collection(db, 'users'), where('email', '==', email), limit(10)))
-    for (const entry of snapshot.docs) {
-      if (entry.id === user.id) continue
-      await updateDoc(entry.ref, identityFields(user))
+    try {
+      const snapshot = await getDocs(
+        query(collection(db, 'users'), where('organizationId', '==', org), where('email', '==', email), limit(10))
+      )
+      for (const entry of snapshot.docs) {
+        if (entry.id === user.id) continue
+        await updateDoc(entry.ref, identityFields(user))
+      }
+    } catch (error) {
+      console.warn('[userStore] same-email name sync skipped', error)
     }
   }
 }
@@ -213,20 +229,31 @@ export const useUserStore = create<UserStoreState>(() => ({
     if (metadata && (saverId === user.id || saverIsAdmin)) Object.assign(payload, metadata)
     const orgId = organizationId?.trim() || user.organizationId
     const historyRows = options?.payHistoryRows ?? []
-    if (historyRows.length > 0 && orgId) {
-      // One batch: the profile and its pay history are saved together or not at all (rulebook 1.10.0 §8).
-      const batch = writeBatch(db)
-      batch.update(doc(db, 'users', user.id), payload)
+    // Rulebook 1.13.0 (Q1): someone who may change this person's pay also writes the changed pay fields to their
+    // private pay profile (organizations/{orgId}/payProfiles/{uid}), in the same batch.
+    const payWriter = canChangePersonPay(
+      {
+        userId: saverId,
+        isAdmin: saverIsAdmin || Boolean(saver?.role === 'admin' && !saver?.permissions.operativeMode),
+        isManager: Boolean(saver && (saver.permissions.manager || saver.role === 'manager')),
+        hasOperativesAccess: Boolean(saver?.permissions.operatives),
+        isOperativeMode: Boolean(saver?.permissions.operativeMode),
+      },
+      { userId: user.id, isOperative: Boolean(user.permissions.operativeMode || user.role === 'operative') }
+    )
+    const batch = writeBatch(db)
+    batch.update(doc(db, 'users', user.id), payload)
+    // One batch: the profile and its pay history are saved together or not at all (rulebook 1.10.0 §8).
+    if (orgId) {
       for (const row of historyRows) batch.set(doc(db, 'organizations', orgId, 'operativeDayRateHistory', row.id), row.fields)
-      await batch.commit()
-    } else {
-      await updateDoc(doc(db, 'users', user.id), payload)
+      if (payWriter) addPayProfileWrite(batch, orgId, user.id, payload, saverId)
     }
+    await batch.commit()
     const email = user.email.toLowerCase().trim()
     if (orgId && email) {
       await setDoc(doc(db, 'organizations', orgId, 'userEmails', email), { userId: user.id })
     }
-    await updateSameEmailUsers(user, previousEmail)
+    if (orgId) await updateSameEmailUsers(user, orgId, previousEmail)
     if (orgId) await updateLinkedStaffNames(orgId, user, previousEmail)
     // The operativeProfiles mirror holds pay, so only someone who may change this person's pay
     // writes it (`canChangePersonPay`; firestore.rules `canChangePayOf`). A person's own save
@@ -411,18 +438,27 @@ export const useUserStore = create<UserStoreState>(() => ({
       permissions: (permissions as Record<string, unknown> | null | undefined) ?? null,
     })
     if (!plan.ok) throw new Error(plan.message)
+    // Rulebook 1.12.2: one atomic batch — users documents, `members.{uid}` and the membership land together or not at
+    // all. Before 1.12.2 the membership was written after the batch and a refusal there was swallowed, so a change
+    // could stop half way (the rules read `members.{uid}` and the membership, the screens read the users document).
+    // The membership is a merge-set of its role and nested `permissions` (admins may not read another person's
+    // membership on older rules, so it cannot be read first); a missing one is created, status and dates are kept.
     const batch = writeBatch(db)
     const metadata = writeMetadataFields(auth?.currentUser?.uid, 'web') ?? {}
     for (const write of plan.writes) {
-      if (write.kind === 'membership') continue
       const ref = doc(db, ...(write.path.split('/') as [string, ...string[]]))
+      if (write.kind === 'membership') {
+        const permissions: Record<string, boolean> = {}
+        for (const key of ORG_MEMBERSHIP_PERMISSION_KEYS) {
+          const value = (write.permissions as Record<string, unknown>)[key]
+          if (typeof value === 'boolean') permissions[key] = value
+        }
+        batch.set(ref, { organizationId, role: write.role, permissions, updatedAt: serverTimestamp() }, { merge: true })
+        continue
+      }
       batch.update(ref, write.kind === 'userProfile' ? { ...write.fields, ...metadata, updatedAt: serverTimestamp() } : write.fields)
     }
     await batch.commit()
-    for (const write of plan.writes) {
-      if (write.kind !== 'membership') continue
-      await writeMembershipFlags(user.id, organizationId, { role: write.role, ...write.permissions })
-    }
     return plan.note
   },
 

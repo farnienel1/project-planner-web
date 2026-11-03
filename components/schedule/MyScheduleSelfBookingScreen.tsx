@@ -37,11 +37,23 @@ import {
 import { AddWeekToCalendarButton } from '@/components/schedule/AddWeekToCalendarButton'
 import { myScheduleStripeClass } from '@/components/schedule/MyScheduleLooks'
 import { HoursTimelinePicker } from '@/components/scheduling/HoursTimelinePicker'
+import {
+  confirmCustomHoursBreak,
+  customHoursPrefillForDate,
+  isWeekendDate,
+  slotOfferedOnDate,
+  weekendNoteForDate,
+  weekendWeekdayMixMessage,
+} from '@/lib/scheduling/bookingSlotRules'
 import { BookingEditSheet } from '@/components/schedule/BookingEditSheet'
 import { countWorksByTab, filterWorksByTab, searchWorks } from '@/lib/projects/workStatus'
 import { coversCalendarDay } from '@/lib/ios-parity/londonTime'
 import type { Booking, Project } from '@/types'
 import { useBookingHistoryFrom } from '@/lib/stores/useBookingHistory'
+import { useAuthStore } from '@/lib/stores/authStore'
+import { useHolidayStore } from '@/lib/stores/holidayStore'
+import { useOperativeStore } from '@/lib/stores/operativeStore'
+import { myScheduleAnnualLeaveLabel, myScheduleLeaveRecords } from '@/lib/schedule/myScheduleLeave'
 
 /** Labour booked onto this person from Book labour. Shown on the week, not removed from here. */
 export type AssignedScheduleBooking = {
@@ -259,6 +271,19 @@ export function MyScheduleSelfBookingScreen({
 
   const weekDates = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart])
 
+  // Rulebook §10 (1.12.2): the person's own annual leave, approved and pending, matched by account — the same as the
+  // read-only My Schedule and iOS. Live: `loadBookings` attaches the holidayBookings listener.
+  const authUser = useAuthStore((state) => state.user)
+  const rosterOperatives = useOperativeStore((state) => state.operatives)
+  const { bookings: holidayBookings, loadBookings: loadHolidayBookings, loadedOrgId: holidaysLoadedOrgId } = useHolidayStore()
+  useEffect(() => {
+    if (organizationId) void loadHolidayBookings(organizationId)
+  }, [organizationId, loadHolidayBookings])
+  const myHolidays = useMemo(() => {
+    if (holidaysLoadedOrgId !== organizationId || !authUser || authUser.id !== userId) return []
+    return myScheduleLeaveRecords(authUser, holidayBookings, rosterOperatives, [...samePersonIds(userId, users, userIdAliases)])
+  }, [holidaysLoadedOrgId, organizationId, authUser, userId, holidayBookings, rosterOperatives, users, userIdAliases])
+
   const myBookings = useMemo(() => {
     const mineIds = samePersonIds(userId, users, userIdAliases)
     return uniqueBookings(managerSiteBookings.filter((b) => mineIds.has(b.userId)))
@@ -288,6 +313,20 @@ export function MyScheduleSelfBookingScreen({
     if (multiDay && selectedDates.length > 0) return selectedDates
     return [selectedDate]
   }
+
+  // Rulebook 1.13.0 (Q2): booking only weekend days opens custom hours with that day's window
+  // (`weekendCustomHoursDefault`); the person can change it.
+  const weekendPrefillKey = targetDays()
+    .map((day) => day.toDateString())
+    .join('|')
+  useEffect(() => {
+    const days = targetDays()
+    if (days.length === 0 || !days.every((day) => isWeekendDate(day))) return
+    const prefill = customHoursPrefillForDate(days[0], payrollPolicy)
+    setCustomStart(prefill.start)
+    setCustomEnd(prefill.end)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [weekendPrefillKey, payrollPolicy])
 
   function flash(kind: 'success' | 'error', msg: string) {
     setToast({ kind, msg })
@@ -352,7 +391,33 @@ export function MyScheduleSelfBookingScreen({
     locationId?: string
     customLocationName?: string
   }) {
-    const days = targetDays()
+    // Rulebook 1.13.0 (Q2): Saturday and Sunday are custom hours only, and one request never mixes weekdays and
+    // weekend days (`bookingDaysMixWeekdayAndWeekend`).
+    const allDays = targetDays()
+    const mix = weekendWeekdayMixMessage(allDays)
+    if (mix) {
+      flash('error', mix)
+      return
+    }
+    const days = allDays.filter((day) => slotOfferedOnDate(args.timeSlot, day, payrollPolicy))
+    if (days.length === 0) {
+      flash('error', 'Saturday and Sunday are booked as custom hours only.')
+      return
+    }
+    // 1.13.0 lunch warning (`customHoursBreakWarning`), checked on the first day booked.
+    if (
+      args.timeSlot === 'CUSTOM_HOURS' &&
+      !days.every((day) =>
+        confirmCustomHoursBreak(payrollPolicy, day, {
+          timeSlot: 'CUSTOM_HOURS',
+          workStartTime: customStart,
+          workEndTime: customEnd,
+          isBreakRemoved: breakRemoved,
+        })
+      )
+    ) {
+      return
+    }
     if (days.length === 1) {
       const existing = myBookingsOn(days[0])
       if (existing.length > 0) {
@@ -463,7 +528,7 @@ export function MyScheduleSelfBookingScreen({
     return (
       <div className="mt-3 rounded-[14px] bg-[var(--soft)] px-4 py-3">
         <div className="flex flex-wrap gap-2">
-          {SLOTS.map(({ slot, label }) => (
+          {SLOTS.filter(({ slot }) => targetDays().some((day) => slotOfferedOnDate(slot, day, payrollPolicy))).map(({ slot, label }) => (
             <button
               key={slot}
               type="button"
@@ -486,6 +551,14 @@ export function MyScheduleSelfBookingScreen({
             onBreak={setBreakRemoved}
           />
           <p className="mt-2 muted xs">Custom hours uses the times on this 00:00–24:00 bar.</p>
+          {targetDays()
+            .map((day) => weekendNoteForDate(day, payrollPolicy))
+            .filter((note, index, all): note is string => Boolean(note) && all.indexOf(note) === index)
+            .map((note) => (
+              <p key={note} className="mt-1 muted xs">
+                {note}
+              </p>
+            ))}
         </div>
       </div>
     )
@@ -596,6 +669,7 @@ export function MyScheduleSelfBookingScreen({
           const today = isToday(day)
           const dayRows = myBookingsOn(day)
           const assignedRows = assignedOn(day)
+          const leaveLabel = myScheduleAnnualLeaveLabel(myHolidays, day)
           const weekend = index > 4
           return (
             <div
@@ -610,6 +684,12 @@ export function MyScheduleSelfBookingScreen({
                   {today ? ' · Today' : ''}
                 </span>
               </div>
+              {leaveLabel ? (
+                <div className="bk" data-hue="leave">
+                  <b>{leaveLabel.startsWith('Pending') ? 'Pending leave' : 'Annual Leave'}</b>
+                  <span className="x">{leaveLabel}</span>
+                </div>
+              ) : null}
               {assignedRows.map((booking) => (
                 <div key={booking.id} className="bk" data-hue="proj">
                   <b>{booking.title}</b>

@@ -12,7 +12,14 @@
  * multi-day request skips weekends and bank holidays.
  */
 
-import { overlappingIntervalGroups, slotInterval, type StandardDayInput } from './engine'
+import {
+  intervalCrossesMidnight,
+  nextCalendarDayKey,
+  overlappingIntervalGroups,
+  overnightCarryInterval,
+  slotInterval,
+  type StandardDayInput,
+} from './engine'
 import { leaveRecordDayKeys, normalizeHolidayStatus, normalizeHolidayTimeSlot, type HolidayTimeSlotValue } from './leaveRequests'
 
 export const OVERLAPPING_BOOKING_NOTE = 'Overlaps another booking — check with your manager'
@@ -41,16 +48,27 @@ export function overlappingBookingIds(
     byDay.set(key, list)
   }
   const flagged = new Set<string>()
-  for (const list of byDay.values()) {
-    if (list.length < 2) continue
-    const intervals = list.map((booking) =>
-      slotInterval(
-        { timeSlot: booking.timeSlot, workStartTime: booking.workStartTime, workEndTime: booking.workEndTime },
-        day
-      )
+  const intervalOf = (booking: OverlapBookingInput) =>
+    slotInterval({ timeSlot: booking.timeSlot, workStartTime: booking.workStartTime, workEndTime: booking.workEndTime }, day)
+  // 1.13.0 §5: an overnight booking also sits on the next morning, so it overlaps that day's early bookings.
+  const carried = new Map<string, OverlapBookingInput[]>()
+  for (const [key, list] of byDay) {
+    const next = nextCalendarDayKey(key)
+    if (!next) continue
+    for (const booking of list) {
+      if (intervalCrossesMidnight(intervalOf(booking))) carried.set(next, [...(carried.get(next) || []), booking])
+    }
+  }
+  for (const [key, list] of byDay) {
+    const carriedIn = carried.get(key) || []
+    if (list.length + carriedIn.length < 2) continue
+    const entries = [...list.map((b) => ({ b, carried: false })), ...carriedIn.map((b) => ({ b, carried: true }))]
+    const intervals = entries.map((entry) =>
+      entry.carried ? overnightCarryInterval(intervalOf(entry.b)) : intervalOf(entry.b)
     )
     for (const group of overlappingIntervalGroups(intervals)) {
-      for (const index of group) flagged.add(String(list[index].id).trim())
+      if (group.every((index) => entries[index].carried)) continue
+      for (const index of group) flagged.add(String(entries[index].b.id).trim())
     }
   }
   const out: string[] = []

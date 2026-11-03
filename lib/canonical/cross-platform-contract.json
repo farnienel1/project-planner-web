@@ -221,6 +221,7 @@
             "annualLeaveYearStartMonth": 1,
             "annualLeaveYearEndMonth": 12,
             "annualLeaveCarriesOver": false,
+            "employmentStartDayKey": null,
             "annualLeaveStored": {
               "daysPerYear": null,
               "startMonth": null,
@@ -342,6 +343,7 @@
             "annualLeaveYearStartMonth": 1,
             "annualLeaveYearEndMonth": 12,
             "annualLeaveCarriesOver": false,
+            "employmentStartDayKey": null,
             "annualLeaveStored": {
               "daysPerYear": null,
               "startMonth": null,

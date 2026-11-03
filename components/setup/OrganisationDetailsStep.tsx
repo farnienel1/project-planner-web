@@ -1,5 +1,6 @@
 'use client'
 
+import { launchCountryOptions } from '@/lib/canonical'
 import { useMemo, useRef, useState } from 'react'
 import { FormInput, FormLabel, FormSelect } from '@/components/forms/FormShell'
 import { LogoCropModal } from '@/components/setup/LogoCropModal'
@@ -10,7 +11,6 @@ import {
   SetupStepNav,
 } from '@/components/setup/setupFormPrimitives'
 import {
-  COUNTRY_OPTIONS,
   CURRENCY_OPTIONS,
   bankHolidayCountryTitle,
   validateLogoFile,
@@ -154,9 +154,10 @@ export function OrganisationDetailsStep({
                   })
                 }}
               >
-                {COUNTRY_OPTIONS.map((country) => (
+                {/* Rulebook 1.13.0 §4.1 (`launchCountryOptions`): GB and IE at launch. */}
+                {launchCountryOptions(value.countryCode).map((country) => (
                   <option key={country.code} value={country.code}>
-                    {country.label}
+                    {country.title}
                   </option>
                 ))}
               </FormSelect>

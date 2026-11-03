@@ -14,7 +14,16 @@
 
 import { bookingPersonKey, resolveBookingPerson, type BookingPersonInput } from './bookingPerson'
 import { normalizeBookingStatus } from './bookings'
-import { intervalsOverlap, overlappingIntervalGroups, slotInterval, type MinuteInterval, type StandardDayInput } from './engine'
+import {
+  intervalCrossesMidnight,
+  intervalsOverlap,
+  nextCalendarDayKey,
+  overlappingIntervalGroups,
+  overnightCarryInterval,
+  slotInterval,
+  type MinuteInterval,
+  type StandardDayInput,
+} from './engine'
 import { bookingOccupiesDay } from './warningRows'
 
 const DAY_KEY = /^\d{4}-\d{2}-\d{2}$/
@@ -363,19 +372,39 @@ export type ManagerClashGroup = {
 export function managerClashGroups(input: PersonDayItemsInput & { day?: StandardDayInput | null }): ManagerClashGroup[] {
   const groups: ManagerClashGroup[] = []
   const seen = new Set<string>()
-  for (const personDay of personDayItems(input)) {
-    if (personDay.items.length < 2) continue
-    const intervals = personDay.items.map((item) => {
-      const booking =
-        item.kind === 'manager' ? input.managerBookings[item.index] : input.operativeBookings[item.index]
-      return slotInterval(
-        { timeSlot: booking?.timeSlot, workStartTime: booking?.workStartTime, workEndTime: booking?.workEndTime },
-        input.day
-      )
-    })
+  const intervalOf = (item: PersonDayItem): MinuteInterval | null => {
+    const booking = item.kind === 'manager' ? input.managerBookings[item.index] : input.operativeBookings[item.index]
+    return slotInterval(
+      { timeSlot: booking?.timeSlot, workStartTime: booking?.workStartTime, workEndTime: booking?.workEndTime },
+      input.day
+    )
+  }
+  const personDays = personDayItems(input)
+  // 1.13.0 §5: an overnight booking also sits on the next morning (`overnightCarryInterval`).
+  const carried = new Map<string, PersonDayItem[]>()
+  for (const personDay of personDays) {
+    const next = nextCalendarDayKey(personDay.dayKey)
+    if (!next) continue
+    for (const item of personDay.items) {
+      if (!intervalCrossesMidnight(intervalOf(item))) continue
+      const key = `${personDay.userId}|${next}`
+      carried.set(key, [...(carried.get(key) || []), item])
+    }
+  }
+  for (const personDay of personDays) {
+    const carriedIn = carried.get(`${personDay.userId}|${personDay.dayKey}`) || []
+    if (personDay.items.length + carriedIn.length < 2) continue
+    const entries = [
+      ...personDay.items.map((item) => ({ item, carried: false })),
+      ...carriedIn.map((item) => ({ item, carried: true })),
+    ].sort((a, b) => compareText(a.item.pairId, b.item.pairId))
+    const intervals = entries.map((entry) =>
+      entry.carried ? overnightCarryInterval(intervalOf(entry.item)) : intervalOf(entry.item)
+    )
     overlappingIntervalGroups(intervals).forEach((indexes, clusterIndex) => {
+      if (indexes.every((i) => entries[i].carried)) return
       const items = indexes
-        .map((i) => ({ ...personDay.items[i], interval: intervals[i] as MinuteInterval }))
+        .map((i) => ({ ...entries[i].item, interval: intervals[i] as MinuteInterval }))
         .sort((a, b) => compareText(a.pairId, b.pairId))
       const pairKey = items.map((item) => item.pairId).join('|')
       if (items.length < 2 || seen.has(pairKey)) return
@@ -718,24 +747,45 @@ export function operativeClashGroups(input: OperativeClashGroupsInput): Operativ
     days.set(key, entry)
   })
 
+  // 1.13.0 §5: an overnight booking also sits on the next morning (`overnightCarryInterval`), so it clashes with that
+  // day's bookings on real clock time. A group made only of carried bookings is the earlier day's and is skipped.
+  const intervalOf = (index: number): MinuteInterval | null => {
+    const booking = input.operativeBookings[index]
+    return slotInterval(
+      { timeSlot: booking?.timeSlot, workStartTime: booking?.workStartTime, workEndTime: booking?.workEndTime },
+      input.day
+    )
+  }
+  const carried = new Map<string, number[]>()
+  for (const entry of days.values()) {
+    const next = nextCalendarDayKey(entry.dayKey)
+    if (!next) continue
+    for (const index of entry.indexes) {
+      if (!intervalCrossesMidnight(intervalOf(index))) continue
+      const key = `${entry.personKey}|${next}`
+      carried.set(key, [...(carried.get(key) || []), index])
+    }
+  }
+
   const groups: OperativeClashGroup[] = []
   const seen = new Set<string>()
-  const ordered = Array.from(days.values()).sort(
-    (a, b) => compareText(a.dayKey, b.dayKey) || compareText(a.personKey, b.personKey)
+  const ordered = Array.from(days.entries()).sort(
+    ([, a], [, b]) => compareText(a.dayKey, b.dayKey) || compareText(a.personKey, b.personKey)
   )
-  for (const personDay of ordered) {
-    if (personDay.indexes.length < 2) continue
-    const sorted = [...personDay.indexes].sort((a, b) =>
-      compareText(idText(input.operativeBookings[a].id), idText(input.operativeBookings[b].id))
-    )
-    const intervals = sorted.map((i) => {
-      const booking = input.operativeBookings[i]
-      return slotInterval(
-        { timeSlot: booking?.timeSlot, workStartTime: booking?.workStartTime, workEndTime: booking?.workEndTime },
-        input.day
-      )
+  for (const [dayMapKey, personDay] of ordered) {
+    const carriedIn = carried.get(dayMapKey) || []
+    if (personDay.indexes.length + carriedIn.length < 2) continue
+    const entries = [
+      ...personDay.indexes.map((index) => ({ index, carried: false })),
+      ...carriedIn.map((index) => ({ index, carried: true })),
+    ].sort((a, b) => compareText(idText(input.operativeBookings[a.index].id), idText(input.operativeBookings[b.index].id)))
+    const sorted = entries.map((entry) => entry.index)
+    const intervals = entries.map((entry) => {
+      const interval = intervalOf(entry.index)
+      return entry.carried ? overnightCarryInterval(interval) : interval
     })
     for (const cluster of overlappingIntervalGroups(intervals)) {
+      if (cluster.every((position) => entries[position].carried)) continue
       const items = cluster.map((position) => ({
         bookingId: idText(input.operativeBookings[sorted[position]].id),
         index: sorted[position],

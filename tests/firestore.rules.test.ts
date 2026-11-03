@@ -28,7 +28,12 @@ import {
   where,
   writeBatch,
   deleteField,
+  limit,
 } from 'firebase/firestore'
+
+import { accountTypeChangeWrites } from '../lib/canonical/permissionLevels.ts'
+import { orgMembershipWriteFields } from '../lib/canonical/orgMembership.ts'
+import { writeMetadataFields } from '../lib/canonical/writeMetadata.ts'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const rules = readFileSync(path.join(root, 'firestore.rules'), 'utf8')
@@ -3092,4 +3097,361 @@ test('1.12.1 enforcedReads: absent, a manager without toggles reads every job an
   } finally {
     await setSwitch(true)
   }
+})
+
+// MARK: - Rulebook 1.13.0 (owner decisions round 4)
+
+async function setPrivatePay(on: boolean) {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'platformConfig', 'app'), { privatePay: on }, { merge: true })
+  })
+}
+
+test('1.13.0 Q1: payProfiles — the person, line managers, admins and operatives managers read; nobody else', async () => {
+  await seedPayPeople()
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    await setDoc(doc(db, 'organizations', ORG_A, 'payProfiles', PAY_OP), { userId: PAY_OP, dayRate: 200, payBasis: 'day' })
+    await setDoc(doc(db, 'organizations', ORG_A, 'payProfiles', PAY_MGR_OPS), { userId: PAY_MGR_OPS, dayRate: 300 })
+    await setDoc(doc(db, 'organizations', ORG_A, 'payProfiles', PAY_OP_ROW + '-solo'), { userId: PAY_OP_ROW + '-solo', dayRate: 150 })
+    await setDoc(doc(db, 'organizations', ORG_A, 'operatives', PAY_OP_ROW + '-solo'), { email: 'solo@test.com', name: 'Solo', dayRate: 150 })
+  })
+  const ref = (db: ReturnType<typeof authDb>, id: string) => doc(db, 'organizations', ORG_A, 'payProfiles', id)
+  const op = authDb(PAY_OP, 'pay-op@test.com')
+  const colleague = authDb(REPORT_A, 'report-a@test.com')
+  const lm = authDb(LM_A, 'lm-a@test.com')
+  const mgrOps = authDb(PAY_MGR_OPS, 'pay-mgr-ops@test.com')
+  const mgrOther = authDb(MGR_OTHER_A, 'mgr-other-a@test.com')
+  const admin = authDb(ADMIN_A, 'admin-a@test.com')
+  const outsider = authDb(ADMIN_B, 'admin-b@test.com')
+
+  await assertSucceeds(getDoc(ref(op, PAY_OP)))
+  await assertFails(getDoc(ref(colleague, PAY_OP)))
+  await assertSucceeds(getDoc(ref(lm, PAY_OP)))
+  await assertSucceeds(getDoc(ref(mgrOps, PAY_OP)))
+  await assertFails(getDoc(ref(mgrOps, LM_A)))
+  await assertFails(getDoc(ref(mgrOther, PAY_OP)))
+  await assertSucceeds(getDoc(ref(admin, PAY_MGR_OPS)))
+  await assertFails(getDoc(ref(outsider, PAY_OP)))
+  await assertFails(getDoc(ref(op, PAY_MGR_OPS)))
+  // A catalogue operative's profile: admins and operatives managers.
+  await assertSucceeds(getDoc(ref(mgrOps, PAY_OP_ROW + '-solo')))
+  await assertFails(getDoc(ref(colleague, PAY_OP_ROW + '-solo')))
+  // Whole collection: admins only.
+  await assertSucceeds(getDocs(collection(admin, 'organizations', ORG_A, 'payProfiles')))
+  await assertFails(getDocs(collection(lm, 'organizations', ORG_A, 'payProfiles')))
+
+  // Writes: who may change pay (canChangePayOf); never the person; only pay keys.
+  await assertFails(setDoc(ref(op, PAY_OP), { userId: PAY_OP, dayRate: 999 }, { merge: true }))
+  await assertSucceeds(setDoc(ref(mgrOps, PAY_OP), { userId: PAY_OP, dayRate: 210, updatedAt: serverTimestamp(), updatedBy: PAY_MGR_OPS, updatedFrom: 'web' }, { merge: true }))
+  await assertFails(setDoc(ref(mgrOps, PAY_MGR_OPS), { userId: PAY_MGR_OPS, dayRate: 999 }, { merge: true }))
+  await assertSucceeds(setDoc(ref(admin, PAY_MGR_OPS), { userId: PAY_MGR_OPS, hourlyRate: 40, payBasis: 'hourly', dayRate: deleteField() }, { merge: true }))
+  await assertFails(setDoc(ref(admin, PAY_MGR_OPS), { userId: PAY_MGR_OPS, firstName: 'x' }, { merge: true }))
+  await assertFails(setDoc(ref(admin, PAY_OP), { userId: 'someone-else', dayRate: 1 }, { merge: true }))
+})
+
+test('1.13.0 Q1: privatePay — history, operativeProfiles and timesheets are read only by pay viewers; no pay goes back on users', async () => {
+  await seedPayPeople()
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    await setDoc(doc(db, 'organizations', ORG_A, 'operativeDayRateHistory', 'h113'), { userId: PAY_OP, dayRate: 200, effectiveAt: Timestamp.now() })
+    await setDoc(doc(db, 'organizations', ORG_A, 'settings', `timesheet_${PAY_OP}_1`), { userId: PAY_OP, weekStartKey: 'k113' })
+  })
+  const colleague = authDb(REPORT_A, 'report-a@test.com')
+  const op = authDb(PAY_OP, 'pay-op@test.com')
+  const lm = authDb(LM_A, 'lm-a@test.com')
+  const mgrOps = authDb(PAY_MGR_OPS, 'pay-mgr-ops@test.com')
+  const admin = authDb(ADMIN_A, 'admin-a@test.com')
+  const history = (db: ReturnType<typeof authDb>) => doc(db, 'organizations', ORG_A, 'operativeDayRateHistory', 'h113')
+  const sheet = (db: ReturnType<typeof authDb>) => doc(db, 'organizations', ORG_A, 'settings', `timesheet_${PAY_OP}_1`)
+  const mirror = (db: ReturnType<typeof authDb>) => doc(db, 'organizations', ORG_A, 'operativeProfiles', PAY_OP)
+
+  // Off (the default until the release that reads per person): every member reads, as before.
+  await setPrivatePay(false)
+  await assertSucceeds(getDoc(history(colleague)))
+  await assertSucceeds(getDoc(sheet(colleague)))
+  await assertSucceeds(getDoc(mirror(colleague)))
+
+  await setPrivatePay(true)
+  try {
+    for (const db of [colleague]) {
+      await assertFails(getDoc(history(db)))
+      await assertFails(getDoc(sheet(db)))
+      await assertFails(getDoc(mirror(db)))
+    }
+    for (const db of [op, lm, mgrOps, admin]) {
+      await assertSucceeds(getDoc(history(db)))
+      await assertSucceeds(getDoc(sheet(db)))
+      await assertSucceeds(getDoc(mirror(db)))
+    }
+    // Queries: one person's rows by id; the whole collection for admins only.
+    await assertSucceeds(getDocs(query(collection(op, 'organizations', ORG_A, 'operativeDayRateHistory'), where('userId', '==', PAY_OP))))
+    await assertSucceeds(getDocs(query(collection(lm, 'organizations', ORG_A, 'operativeDayRateHistory'), where('userId', '==', PAY_OP))))
+    await assertFails(getDocs(collection(lm, 'organizations', ORG_A, 'operativeDayRateHistory')))
+    await assertSucceeds(getDocs(collection(admin, 'organizations', ORG_A, 'operativeDayRateHistory')))
+    // No pay value goes back onto a users document or roster row; removing one is fine.
+    await assertFails(updateDoc(doc(admin, 'users', PAY_OP), { dayRate: 250 }))
+    await assertSucceeds(updateDoc(doc(admin, 'users', PAY_OP), { dayRate: deleteField() }))
+    await assertSucceeds(updateDoc(doc(admin, 'users', PAY_OP), { firstName: 'Pat' }))
+    await assertFails(updateDoc(doc(admin, 'organizations', ORG_A, 'operatives', PAY_OP_ROW), { dayRate: 260 }))
+    await assertSucceeds(updateDoc(doc(admin, 'organizations', ORG_A, 'operatives', PAY_OP_ROW), { dayRate: deleteField() }))
+  } finally {
+    await setPrivatePay(false)
+  }
+})
+
+test('1.13.0 Q3: a lapsed subscription closes the organisation data; the org document, own profile and memberships stay', async () => {
+  await seedPayPeople()
+  const lapsedOrg = 'org-lapsed-113'
+  const lapsedAdmin = 'admin-lapsed-113'
+  const lapsedOp = 'op-lapsed-113'
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    await setDoc(doc(db, 'organizations', lapsedOrg), {
+      name: 'Lapsed', members: { [lapsedAdmin]: 'admin', [lapsedOp]: 'member' }, creatorUserId: lapsedAdmin,
+      billing: { status: 'canceled', accessOpen: false },
+    })
+    await setDoc(doc(db, 'users', lapsedAdmin), { email: 'lapsed-admin@test.com', organizationId: lapsedOrg, role: 'admin', adminAccess: true })
+    await setDoc(doc(db, 'users', lapsedOp), { email: 'lapsed-op@test.com', organizationId: lapsedOrg, role: 'operative', operativeMode: true })
+    await setDoc(doc(db, 'users', lapsedOp, 'orgMemberships', lapsedOrg), { organizationId: lapsedOrg, role: 'member' })
+    await setDoc(doc(db, 'organizations', lapsedOrg, 'clients', 'c1'), { name: 'Client' })
+    await setDoc(doc(db, 'organizations', lapsedOrg, 'holidayBookings', 'h1'), { userId: lapsedOp, status: 'pending' })
+    await setDoc(doc(db, 'organizations', lapsedOrg, 'projects', 'p1'), { name: 'Job' })
+  })
+  const admin = authDb(lapsedAdmin, 'lapsed-admin@test.com')
+  const op = authDb(lapsedOp, 'lapsed-op@test.com')
+  const c1 = (db: ReturnType<typeof authDb>) => doc(db, 'organizations', lapsedOrg, 'clients', 'c1')
+
+  // Closed: reads and writes of organisation data, for admins too.
+  await assertFails(getDoc(c1(admin)))
+  await assertFails(getDoc(c1(op)))
+  await assertFails(setDoc(doc(admin, 'organizations', lapsedOrg, 'clients', 'c2'), { name: 'New' }))
+  await assertFails(getDoc(doc(op, 'organizations', lapsedOrg, 'holidayBookings', 'h1')))
+  await assertFails(getDoc(doc(admin, 'organizations', lapsedOrg, 'projects', 'p1')))
+  await assertFails(getDoc(doc(op, 'users', lapsedAdmin)))
+  // Open: the organisation document (billing status), the caller's own users document and memberships.
+  await assertSucceeds(getDoc(doc(admin, 'organizations', lapsedOrg)))
+  await assertSucceeds(getDoc(doc(op, 'organizations', lapsedOrg)))
+  await assertSucceeds(getDoc(doc(op, 'users', lapsedOp)))
+  await assertSucceeds(getDoc(doc(op, 'users', lapsedOp, 'orgMemberships', lapsedOrg)))
+  // Billing stays server-only.
+  await assertFails(updateDoc(doc(admin, 'organizations', lapsedOrg), { 'billing.accessOpen': true }))
+
+  // The grace end passes without a Stripe event: closed from accessClosesAt.
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await updateDoc(doc(ctx.firestore(), 'organizations', lapsedOrg), {
+      billing: { status: 'past_due', accessOpen: true, accessClosesAt: Timestamp.fromMillis(Date.now() - 60_000) },
+    })
+  })
+  await assertFails(getDoc(c1(admin)))
+  // Renewed (or missing access fields, or no billing): open again — nothing was deleted.
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await updateDoc(doc(ctx.firestore(), 'organizations', lapsedOrg), { billing: { status: 'active', accessOpen: true, accessClosesAt: null } })
+  })
+  await assertSucceeds(getDoc(c1(admin)))
+  await assertSucceeds(getDoc(c1(op)))
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await updateDoc(doc(ctx.firestore(), 'organizations', lapsedOrg), { billing: { status: 'pending' } })
+  })
+  await assertSucceeds(getDoc(c1(op)))
+})
+
+test('1.13.0 §14: a person moves their own email claim only after Auth changed and verified their email', async () => {
+  const uid = 'email-mover-113'
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    await setDoc(doc(db, 'users', uid), { email: 'old-113@test.com', organizationId: ORG_A, role: 'operative', operativeMode: true })
+    await setDoc(doc(db, 'organizations', ORG_A), { members: { [uid]: 'member' } }, { merge: true })
+    await setDoc(doc(db, 'organizations', ORG_A, 'userEmails', 'old-113@test.com'), { userId: uid })
+    await setDoc(doc(db, 'organizations', ORG_A, 'userEmails', 'other-113@test.com'), { userId: 'someone-else' })
+  })
+  const before = env.authenticatedContext(uid, { email: 'old-113@test.com', email_verified: true }).firestore()
+  // Same email in the token: the claim is current, cannot be deleted by the person; nor can the users email change.
+  await assertFails(deleteDoc(doc(before, 'organizations', ORG_A, 'userEmails', 'old-113@test.com')))
+  await assertFails(updateDoc(doc(before, 'users', uid), { email: 'new-113@test.com' }))
+  const unverified = env.authenticatedContext(uid, { email: 'new-113@test.com', email_verified: false }).firestore()
+  await assertFails(deleteDoc(doc(unverified, 'organizations', ORG_A, 'userEmails', 'old-113@test.com')))
+  // After Auth changed it (verified): the signInEmailSyncWrites writes pass.
+  const after = env.authenticatedContext(uid, { email: 'new-113@test.com', email_verified: true }).firestore()
+  await assertSucceeds(updateDoc(doc(after, 'users', uid), { email: 'new-113@test.com' }))
+  await assertSucceeds(setDoc(doc(after, 'organizations', ORG_A, 'userEmails', 'new-113@test.com'), { userId: uid }))
+  await assertSucceeds(deleteDoc(doc(after, 'organizations', ORG_A, 'userEmails', 'old-113@test.com')))
+  // Never someone else's claim.
+  await assertFails(deleteDoc(doc(after, 'organizations', ORG_A, 'userEmails', 'other-113@test.com')))
+})
+
+test('1.13.0 Q4: a person cannot change their own start date', async () => {
+  await seedLeaveAndTimesheetPeople()
+  const db = authDb(REPORT_A, 'report-a@test.com')
+  await assertFails(updateDoc(doc(db, 'users', REPORT_A), { employmentStartDate: '2026-07-01' }))
+  await assertSucceeds(updateDoc(doc(authDb(ADMIN_A, 'admin-a@test.com'), 'users', REPORT_A), { employmentStartDate: '2026-07-01' }))
+})
+
+// ---------------------------------------------------------------------------
+// Rulebook 1.12.2: change user type admin -> manager by the Super Admin failed with "Missing or insufficient
+// permissions". Web: the type batch landed, then the profile save's same-email users query (email only) was refused.
+// iOS: `writeOrgMembership` reads the person's membership first, and only the person could read it.
+// ---------------------------------------------------------------------------
+
+const ORG_T = 'org-t-1122'
+const T_SA = 't-founder'
+const T_AD = 't-admin'
+const T_AD2 = 't-admin-2'
+const T_MGR = 't-manager'
+const T_ALL_ON = {
+  adminAccess: true, manager: true, operatives: true, skills: false, qualifications: true, materials: true,
+  projects: true, smallWorks: true, operativeMode: false, siteAudit: true, subContractors: true,
+  wholesalersOrderHistory: true, annualLeaveSelfBook: false, weeklyReports: true, dailyOverview: true,
+}
+function tAdminDoc(email: string, extra: Record<string, unknown> = {}) {
+  return {
+    email, organizationId: ORG_T, role: 'admin', ...T_ALL_ON, permissions: { ...T_ALL_ON }, isActive: true,
+    passwordSet: true, firstName: email.split('@')[0], surname: 'Test', ...extra,
+  }
+}
+async function seed1122() {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    await setDoc(doc(db, 'organizations', ORG_T), {
+      name: 'T Co', creatorUserId: T_SA, billing: { status: 'active' },
+      members: { [T_SA]: 'admin', [T_AD]: 'admin', [T_AD2]: 'admin', [T_MGR]: 'manager' },
+    })
+    await setDoc(doc(db, 'users', T_SA), tAdminDoc('t-sa@test.com', { isSuperAdmin: true }))
+    await setDoc(doc(db, 'users', T_AD), tAdminDoc('t-ad@test.com', { assignedManagerUserIds: [T_SA] }))
+    await setDoc(doc(db, 'users', T_AD2), tAdminDoc('t-ad2@test.com'))
+    await setDoc(doc(db, 'users', T_MGR), {
+      email: 't-mgr@test.com', organizationId: ORG_T, role: 'manager', manager: true, operatives: true,
+      permissions: { manager: true, operatives: true }, isActive: true, assignedManagerUserIds: [T_SA],
+    })
+    for (const [uid, role, superAdmin] of [[T_SA, 'admin', true], [T_AD, 'admin', false], [T_AD2, 'admin', false], [T_MGR, 'manager', false]] as const) {
+      await setDoc(doc(db, 'users', uid, 'orgMemberships', ORG_T), {
+        organizationId: ORG_T, role, isSuperAdmin: superAdmin, status: 'active', accountActive: true,
+        permissions: role === 'admin' ? { ...T_ALL_ON } : { manager: true, operatives: true },
+      })
+    }
+  })
+}
+async function tStored(uid: string) {
+  let out: { user: Record<string, unknown>; member: unknown; membership: Record<string, unknown> } | null = null
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    const user = (await getDoc(doc(db, 'users', uid))).data() ?? {}
+    const org = (await getDoc(doc(db, 'organizations', ORG_T))).data() ?? {}
+    const membership = (await getDoc(doc(db, 'users', uid, 'orgMemberships', ORG_T))).data() ?? {}
+    out = { user, member: (org.members as Record<string, unknown>)[uid], membership }
+  })
+  return out!
+}
+/** Web `userStore.changeAccountType` (1.12.2): the whole plan as one batch, the membership as a merge-set. */
+function webChangeType(db: ReturnType<typeof authDb>, actor: string, person: Record<string, unknown> & { id: string }, kind: 'admin' | 'manager' | 'operative') {
+  const plan = accountTypeChangeWrites({ person, kind, organizationId: ORG_T, roster: [] })
+  if (!plan.ok) throw new Error(plan.message)
+  const batch = writeBatch(db)
+  for (const write of plan.writes) {
+    const ref = doc(db, write.path)
+    if (write.kind === 'membership') {
+      batch.set(ref, { organizationId: ORG_T, role: write.role, permissions: { ...write.permissions }, updatedAt: serverTimestamp() }, { merge: true })
+    } else {
+      batch.update(ref, write.kind === 'userProfile' ? { ...write.fields, ...writeMetadataFields(actor, 'web'), updatedAt: serverTimestamp() } : write.fields)
+    }
+  }
+  return batch.commit()
+}
+/** Web `saveUser` follow-ups after a profile save (1.12.2): the same-email query names the organisation. */
+async function webSaveFollowUps(db: ReturnType<typeof authDb>, email: string) {
+  await getDocs(query(collection(db, 'users'), where('organizationId', '==', ORG_T), where('email', '==', email)))
+  await setDoc(doc(db, 'organizations', ORG_T, 'userEmails', email), { userId: email === 't-ad@test.com' ? T_AD : T_AD2 })
+}
+/** iOS `changeAccountType` (main 30b4df4): users patch, members entry, then the membership read + write. */
+async function iosChangeType(db: ReturnType<typeof authDb>, actor: string, uid: string, role: 'manager' | 'admin') {
+  const patch: Record<string, unknown> = { role, updatedAt: Timestamp.now() }
+  for (const key of ['adminAccess', 'projects', 'smallWorks', 'weeklyReports', 'wholesalersOrderHistory']) {
+    patch[key] = role === 'admin'
+    patch[`permissions.${key}`] = role === 'admin'
+  }
+  await updateDoc(doc(db, 'users', uid), patch)
+  await updateDoc(doc(db, 'organizations', ORG_T), { [`members.${uid}`]: role, updatedAt: serverTimestamp(), updatedBy: actor, updatedFrom: 'ios' })
+  const ref = doc(db, 'users', uid, 'orgMemberships', ORG_T)
+  const snap = await getDoc(ref)
+  const write = orgMembershipWriteFields({
+    organizationId: ORG_T, stored: snap.exists() ? snap.data() : null, writer: 'admin', now: serverTimestamp(),
+    next: { role, permissions: { adminAccess: role === 'admin', manager: true, operatives: true } },
+  })
+  if (!write) return
+  if (write.mode === 'create') await setDoc(ref, write.fields)
+  else await updateDoc(ref, { ...write.fields, ...Object.fromEntries(write.remove.map((key) => [key, deleteField()])) })
+}
+
+test('1.12.2: the Super Admin changes an admin to manager (web payload): every document lands, the save follow-ups pass', async () => {
+  await seed1122()
+  const sa = authDb(T_SA, 't-sa@test.com')
+  const before = await tStored(T_AD)
+  await assertSucceeds(webChangeType(sa, T_SA, { ...before.user, id: T_AD }, 'manager'))
+  const after = await tStored(T_AD)
+  assert.equal(after.user.role, 'manager')
+  assert.equal(after.user.adminAccess, false)
+  assert.equal(after.member, 'manager')
+  assert.equal(after.membership.role, 'manager')
+  assert.equal((after.membership.permissions as Record<string, unknown>).adminAccess, false)
+  assert.equal(after.membership.status, 'active')
+  await assertSucceeds(webSaveFollowUps(sa, 't-ad@test.com'))
+  // The pre-1.12.2 query (email only) is what the rules refused: it cannot be proven readable for every match.
+  await assertFails(getDocs(query(collection(sa, 'users'), where('email', '==', 't-ad@test.com'), limit(10))))
+  // Double save: pressing Save again sends the same plan from the new state; it passes and changes nothing.
+  await assertSucceeds(webChangeType(sa, T_SA, { ...after.user, id: T_AD }, 'manager'))
+  await assertSucceeds(webSaveFollowUps(sa, 't-ad@test.com'))
+  assert.equal((await tStored(T_AD)).member, 'manager')
+})
+
+test('1.12.2: the Super Admin changes an admin to manager (iOS payload): the membership read is allowed', async () => {
+  await seed1122()
+  const sa = authDb(T_SA, 't-sa@test.com')
+  await assertSucceeds(iosChangeType(sa, T_SA, T_AD, 'manager'))
+  const after = await tStored(T_AD)
+  assert.equal(after.user.role, 'manager')
+  assert.equal(after.member, 'manager')
+  assert.equal(after.membership.role, 'manager')
+  // Older iOS builds (before #151 / #152) wrote only the users document: it passes and leaves members.{uid} admin
+  // (accountTypeSyncState finds it; the next web save repairs it).
+  await seed1122()
+  await assertSucceeds(updateDoc(doc(sa, 'users', T_AD2), { role: 'manager', adminAccess: false, 'permissions.adminAccess': false, updatedAt: Timestamp.now() }))
+  assert.equal((await tStored(T_AD2)).member, 'admin')
+  await assertSucceeds(webChangeType(sa, T_SA, { ...(await tStored(T_AD2)).user, id: T_AD2 }, 'manager'))
+  assert.equal((await tStored(T_AD2)).member, 'manager')
+})
+
+test('1.12.2: an admin (not the Super Admin) demotes another admin and promotes a manager; never the founder or themself', async () => {
+  await seed1122()
+  const ad = authDb(T_AD, 't-ad@test.com')
+  await assertSucceeds(webChangeType(ad, T_AD, { ...(await tStored(T_AD2)).user, id: T_AD2 }, 'manager'))
+  await assertSucceeds(iosChangeType(ad, T_AD, T_MGR, 'admin'))
+  assert.equal((await tStored(T_MGR)).member, 'admin')
+  await seed1122()
+  await assertSucceeds(webChangeType(ad, T_AD, { ...(await tStored(T_MGR)).user, id: T_MGR }, 'admin'))
+  assert.equal((await tStored(T_MGR)).user.role, 'admin')
+  // The founder (creator and Super Admin): refused by the plan (super_admin) and by the rules for a raw write.
+  const founderPlan = accountTypeChangeWrites({ person: { ...tAdminDoc('t-sa@test.com', { isSuperAdmin: true }), id: T_SA }, kind: 'manager', organizationId: ORG_T })
+  assert.equal(founderPlan.ok ? null : founderPlan.reason, 'super_admin')
+  await assertFails(updateDoc(doc(ad, 'users', T_SA), { role: 'manager', adminAccess: false, 'permissions.adminAccess': false }))
+  await assertFails(updateDoc(doc(ad, 'users', T_SA), { isSuperAdmin: false }))
+  await assertFails(setDoc(doc(ad, 'users', T_SA, 'orgMemberships', ORG_T), { isSuperAdmin: false }, { merge: true }))
+  // Self-promotion stays refused: a manager cannot make themself admin on any of the three documents.
+  await seed1122()
+  const mgr = authDb(T_MGR, 't-mgr@test.com')
+  await assertFails(updateDoc(doc(mgr, 'users', T_MGR), { role: 'admin', adminAccess: true, 'permissions.adminAccess': true }))
+  await assertFails(updateDoc(doc(mgr, 'organizations', ORG_T), { [`members.${T_MGR}`]: 'admin' }))
+  await assertFails(setDoc(doc(mgr, 'users', T_MGR, 'orgMemberships', ORG_T), { role: 'admin', permissions: { adminAccess: true } }, { merge: true }))
+  // An admin cannot make themself Super Admin.
+  await assertFails(updateDoc(doc(ad, 'users', T_AD), { isSuperAdmin: true }))
+})
+
+test('1.12.2: a membership is read by the person and the admins of that organisation only', async () => {
+  await seed1122()
+  await assertSucceeds(getDoc(doc(authDb(T_AD, 't-ad@test.com'), 'users', T_MGR, 'orgMemberships', ORG_T)))
+  await assertSucceeds(getDoc(doc(authDb(T_MGR, 't-mgr@test.com'), 'users', T_MGR, 'orgMemberships', ORG_T)))
+  // Another member who is not an admin, and an admin of another company, cannot.
+  await assertFails(getDoc(doc(authDb(T_MGR, 't-mgr@test.com'), 'users', T_AD, 'orgMemberships', ORG_T)))
+  await assertFails(getDoc(doc(authDb(ADMIN_B, 'admin-b@test.com'), 'users', T_MGR, 'orgMemberships', ORG_T)))
+  // Listing someone else's memberships stays closed.
+  await assertFails(getDocs(collection(authDb(T_AD, 't-ad@test.com'), 'users', T_MGR, 'orgMemberships')))
 })

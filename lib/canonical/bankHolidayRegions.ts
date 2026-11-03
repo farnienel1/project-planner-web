@@ -251,3 +251,18 @@ export function companyDetailsRegionPrompt(
     message: `Choose the bank holidays for ${bankHolidayCountryTitle(after)}.`,
   }
 }
+
+/**
+ * Rulebook 1.13.0 §4.1 (owner decisions round 4, Q6): the countries a company can choose at launch. Every country
+ * picker (Company details, organisation setup) offers only these. A company that already stores another country keeps
+ * it: `launchCountryOptions(stored)` lists it too, so it is shown and saved unchanged. More countries come later.
+ */
+export const LAUNCH_COUNTRY_CODES: readonly string[] = ['GB', 'IE']
+
+/** The country picker rows: the launch countries, plus the stored country when it is another one (kept and shown). */
+export function launchCountryOptions(storedCountryCode?: unknown): { code: string; title: string }[] {
+  const out = LAUNCH_COUNTRY_CODES.map((code) => ({ code, title: bankHolidayCountryTitle(code) }))
+  const stored = countryKey(storedCountryCode)
+  if (stored && !LAUNCH_COUNTRY_CODES.includes(stored)) out.push({ code: stored, title: bankHolidayCountryTitle(stored) })
+  return out
+}

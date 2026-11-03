@@ -188,6 +188,8 @@ export interface User {
   annualLeaveYearStartMonth?: number;
   annualLeaveYearEndMonth?: number;
   annualLeaveCarriesOver?: boolean;
+  /** Rulebook 1.13.0 (Q4): the day the person started, `YYYY-MM-DD`; the leave year they joined is pro rata. */
+  employmentStartDate?: string;
   annualLeaveYearAllowance?: number;
   annualLeaveYearAllowanceKey?: string;
   timesheetsEnabled?: boolean;

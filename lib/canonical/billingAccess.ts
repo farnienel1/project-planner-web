@@ -70,3 +70,55 @@ export function hasAccess(billing: OrgBillingAccessInput | null | undefined, now
   }
   return false
 }
+
+/**
+ * Rulebook 1.13.0 §19 (owner decisions round 4, Q3): a lapsed subscription blocks both apps. Nothing is deleted and
+ * access returns as soon as `hasAccess` is true again (Stripe marks the subscription paid).
+ */
+export const SUBSCRIPTION_LAPSED_MESSAGE =
+  "The organisation's Project Planner subscription has lapsed. Please contact your system administrator and ask them to renew."
+
+/** Shown to an admin on the lapsed screen, under the message, where renewing is possible (web Settings → Billing). */
+export const SUBSCRIPTION_LAPSED_ADMIN_NOTE = 'You are an admin: renew the subscription in Settings → Billing.'
+
+/** On an app with no billing screen (iOS), what an admin is told. */
+export const SUBSCRIPTION_LAPSED_ADMIN_WEB_NOTE =
+  'You are an admin: renew the subscription in Settings → Billing on the Project Planner website.'
+
+export type SubscriptionAccess = 'open' | 'adminBillingOnly' | 'blocked'
+
+/**
+ * What a signed-in person may open: `open` while `hasAccess`; when lapsed, `adminBillingOnly` for an admin or super
+ * admin of the organisation (only the billing screen and sign out — web Settings → Billing), else `blocked` (only the
+ * lapsed message and sign out). The platform owner is never blocked. Missing billing is open (trials, older orgs).
+ */
+export function subscriptionAccess(input: {
+  billing: OrgBillingAccessInput | null | undefined
+  viewerIsAdmin?: boolean | null
+  viewerIsPlatformOwner?: boolean | null
+  now?: number
+}): SubscriptionAccess {
+  if (input.viewerIsPlatformOwner === true) return 'open'
+  if (hasAccess(input.billing, input.now ?? Date.now())) return 'open'
+  return input.viewerIsAdmin === true ? 'adminBillingOnly' : 'blocked'
+}
+
+/**
+ * Rulebook 1.13.0 §19: the two fields the Stripe webhook writes into `organizations/{orgId}.billing` beside the
+ * Stripe status, for the security rules (which cannot run `hasAccess`): `accessOpen` = `hasAccess(billing, now)`, and
+ * `accessClosesAtMs` = the end of the 7-day grace while a payment has failed (`past_due` with `lastPaymentFailedAt`),
+ * else null. The webhook stores the instant as a Timestamp named `accessClosesAt`. The rules close the organisation
+ * when `accessOpen` is false or `accessClosesAt` has passed.
+ */
+export function billingAccessFields(
+  billing: OrgBillingAccessInput | null | undefined,
+  now = Date.now()
+): { accessOpen: boolean; accessClosesAtMs: number | null } {
+  const accessOpen = hasAccess(billing, now)
+  let accessClosesAtMs: number | null = null
+  if (billing?.status === 'past_due' && billing.lastPaymentFailedAt) {
+    const failedAt = timestampMs(billing.lastPaymentFailedAt)
+    if (failedAt != null) accessClosesAtMs = failedAt + PAYMENT_GRACE_MS
+  }
+  return { accessOpen, accessClosesAtMs }
+}

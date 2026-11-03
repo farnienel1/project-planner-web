@@ -22,6 +22,7 @@ var ProjectPlannerCanonical = (() => {
   var bundleEntry_exports = {};
   __export(bundleEntry_exports, {
     ACCOUNT_TYPE_OTHER_COMPANY_NOTE: () => ACCOUNT_TYPE_OTHER_COMPANY_NOTE,
+    ACCOUNT_TYPE_OUT_OF_SYNC_MESSAGE: () => ACCOUNT_TYPE_OUT_OF_SYNC_MESSAGE,
     ACCOUNT_TYPE_SUPER_ADMIN_MESSAGE: () => ACCOUNT_TYPE_SUPER_ADMIN_MESSAGE,
     ADMIN_EDITABLE_PERMISSION_FIELDS: () => ADMIN_EDITABLE_PERMISSION_FIELDS,
     ADMIN_LOCKED_PERMISSION_MESSAGE: () => ADMIN_LOCKED_PERMISSION_MESSAGE,
@@ -43,6 +44,7 @@ var ProjectPlannerCanonical = (() => {
     COMPANY_ACTIVITY_NOTICE_TYPES: () => COMPANY_ACTIVITY_NOTICE_TYPES,
     CROSS_PLATFORM_CONTRACT_READERS: () => CROSS_PLATFORM_CONTRACT_READERS,
     CURRENCY_OPTIONS: () => CURRENCY_OPTIONS,
+    CUSTOM_HOURS_BREAK_WARNING: () => CUSTOM_HOURS_BREAK_WARNING,
     DEADLINE_ASSIGNMENTS_DOCUMENT_ID: () => DEADLINE_ASSIGNMENTS_DOCUMENT_ID,
     DEADLINE_STATUSES: () => DEADLINE_STATUSES,
     DEFAULT_ANNUAL_LEAVE: () => DEFAULT_ANNUAL_LEAVE,
@@ -96,6 +98,7 @@ var ProjectPlannerCanonical = (() => {
     JOB_QUERY_COLLECTIONS: () => JOB_QUERY_COLLECTIONS,
     JOB_TYPES_DOCUMENT_ID: () => JOB_TYPES_DOCUMENT_ID,
     KNOWN_NOTIFICATION_TYPES: () => KNOWN_NOTIFICATION_TYPES,
+    LAUNCH_COUNTRY_CODES: () => LAUNCH_COUNTRY_CODES,
     LEAVE_SUBMIT_LABEL: () => LEAVE_SUBMIT_LABEL,
     LEAVE_SUBMIT_REQUEST_LABEL: () => LEAVE_SUBMIT_REQUEST_LABEL,
     LEAVE_YEAR_MONTHS_MESSAGE: () => LEAVE_YEAR_MONTHS_MESSAGE,
@@ -152,6 +155,8 @@ var ProjectPlannerCanonical = (() => {
     PAY_BASIS_HOURLY_HELP: () => PAY_BASIS_HOURLY_HELP,
     PAY_BASIS_SAVE_NOTE: () => PAY_BASIS_SAVE_NOTE,
     PAY_HISTORY_NOT_LOADED_MESSAGE: () => PAY_HISTORY_NOT_LOADED_MESSAGE,
+    PAY_PROFILES_COLLECTION: () => PAY_PROFILES_COLLECTION,
+    PAY_PROFILE_FIELDS: () => PAY_PROFILE_FIELDS,
     PAY_STANDARD_DAY_MIN_HOURS: () => PAY_STANDARD_DAY_MIN_HOURS,
     PAY_WRITE_GROUP: () => PAY_WRITE_GROUP,
     PERMISSION_DEFAULT_ON: () => PERMISSION_DEFAULT_ON,
@@ -168,6 +173,7 @@ var ProjectPlannerCanonical = (() => {
     RESTORED_JOB_TYPE_NAMES: () => RESTORED_JOB_TYPE_NAMES,
     ROSTER_DOCUMENT_KEYS: () => ROSTER_DOCUMENT_KEYS,
     ROSTER_NAME_WRITE_GROUP: () => ROSTER_NAME_WRITE_GROUP,
+    SELF_EMAIL_INVALID_MESSAGE: () => SELF_EMAIL_INVALID_MESSAGE,
     SENSITIVE_EXPORT_OPTION_LABEL: () => SENSITIVE_EXPORT_OPTION_LABEL,
     SENSITIVE_HELD_BY_ADMIN_COPY: () => SENSITIVE_HELD_BY_ADMIN_COPY,
     SENSITIVE_PROFILE_DOC_ID: () => SENSITIVE_PROFILE_DOC_ID,
@@ -175,6 +181,10 @@ var ProjectPlannerCanonical = (() => {
     SENSITIVE_VALUE_MAX: () => SENSITIVE_VALUE_MAX,
     SUBCONTRACTOR_BOOKING_DOCUMENT_KEYS: () => SUBCONTRACTOR_BOOKING_DOCUMENT_KEYS,
     SUBCONTRACTOR_BOOKING_PEOPLE_WRITE_GROUP: () => SUBCONTRACTOR_BOOKING_PEOPLE_WRITE_GROUP,
+    SUBSCRIPTION_LAPSED_ADMIN_NOTE: () => SUBSCRIPTION_LAPSED_ADMIN_NOTE,
+    SUBSCRIPTION_LAPSED_ADMIN_WEB_NOTE: () => SUBSCRIPTION_LAPSED_ADMIN_WEB_NOTE,
+    SUBSCRIPTION_LAPSED_MESSAGE: () => SUBSCRIPTION_LAPSED_MESSAGE,
+    SUGGESTED_MAX_CARRY_OVER_DAYS: () => SUGGESTED_MAX_CARRY_OVER_DAYS,
     SYNC_WRITE_TRIGGERS: () => SYNC_WRITE_TRIGGERS,
     TASK_COMPLETION_WRITE_GROUP: () => TASK_COMPLETION_WRITE_GROUP,
     TASK_ITEMS_WRITE_GROUP: () => TASK_ITEMS_WRITE_GROUP,
@@ -221,6 +231,9 @@ var ProjectPlannerCanonical = (() => {
     WARNING_RESOLUTION_STATUSES: () => WARNING_RESOLUTION_STATUSES,
     WARNING_SCOPE_ALL: () => WARNING_SCOPE_ALL,
     WEB_SESSION_ORGANIZATION_STORAGE_PREFIX: () => WEB_SESSION_ORGANIZATION_STORAGE_PREFIX,
+    WEEKDAY_TIME_SLOTS: () => WEEKDAY_TIME_SLOTS,
+    WEEKEND_TIME_SLOTS: () => WEEKEND_TIME_SLOTS,
+    WEEKEND_WEEKDAY_MIX_MESSAGE: () => WEEKEND_WEEKDAY_MIX_MESSAGE,
     WHOLESALER_CONTACTS_WRITE_GROUP: () => WHOLESALER_CONTACTS_WRITE_GROUP,
     WORKING_WEEK: () => WORKING_WEEK,
     WRITE_PLATFORMS: () => WRITE_PLATFORMS,
@@ -229,8 +242,10 @@ var ProjectPlannerCanonical = (() => {
     accountKindFromFlags: () => accountKindFromFlags,
     accountTypeChangeWrites: () => accountTypeChangeWrites,
     accountTypePermissions: () => accountTypePermissions,
+    accountTypeSyncState: () => accountTypeSyncState,
     activePaymentRunSummary: () => activePaymentRunSummary,
     addUserPermissionDefaults: () => addUserPermissionDefaults,
+    allowedTimeSlotsOnDay: () => allowedTimeSlotsOnDay,
     annualLeaveBalance: () => annualLeaveBalance,
     annualLeavePendingOmitFields: () => annualLeavePendingOmitFields,
     appUpdateRequired: () => appUpdateRequired,
@@ -243,10 +258,12 @@ var ProjectPlannerCanonical = (() => {
     bankHolidayRegion: () => bankHolidayRegion,
     bankHolidayRegionLabel: () => bankHolidayRegionLabel,
     bankHolidayRegionsForCountry: () => bankHolidayRegionsForCountry,
+    billingAccessFields: () => billingAccessFields,
     bookingBelongsToOrganization: () => bookingBelongsToOrganization,
     bookingClock: () => bookingClock,
     bookingCreatedRecipients: () => bookingCreatedRecipients,
     bookingDateMs: () => bookingDateMs,
+    bookingDaysMixWeekdayAndWeekend: () => bookingDaysMixWeekdayAndWeekend,
     bookingHealthRows: () => bookingHealthRows,
     bookingIdsForAccount: () => bookingIdsForAccount,
     bookingIdsForPerson: () => bookingIdsForPerson,
@@ -283,6 +300,7 @@ var ProjectPlannerCanonical = (() => {
     canSeeVariations: () => canSeeVariations,
     canSelfBookAnnualLeave: () => canSelfBookAnnualLeave,
     canViewMaterialOrderHistory: () => canViewMaterialOrderHistory,
+    canViewPersonPay: () => canViewPersonPay,
     canViewSensitiveProfile: () => canViewSensitiveProfile,
     canViewStaffWarnings: () => canViewStaffWarnings,
     canWriteBooking: () => canWriteBooking,
@@ -310,6 +328,7 @@ var ProjectPlannerCanonical = (() => {
     crossPlatformContractReaderNames: () => crossPlatformContractReaderNames,
     currencyOption: () => currencyOption,
     currencySymbol: () => currencySymbol,
+    customHoursBreakWarning: () => customHoursBreakWarning,
     dayKeyInOrganizationZone: () => dayKeyInOrganizationZone,
     deadlineAssignedProjectIds: () => deadlineAssignedProjectIds,
     deadlineAssignedRecipients: () => deadlineAssignedRecipients,
@@ -380,6 +399,7 @@ var ProjectPlannerCanonical = (() => {
     holidayRequestWriteFields: () => holidayRequestWriteFields,
     ideaRecipients: () => ideaRecipients,
     inboxNotificationVisibleToUser: () => inboxNotificationVisibleToUser,
+    intervalCrossesMidnight: () => intervalCrossesMidnight,
     intervalsOverlap: () => intervalsOverlap,
     invitationCreateFields: () => invitationCreateFields,
     invitationIsOperativeOnly: () => invitationIsOperativeOnly,
@@ -424,6 +444,7 @@ var ProjectPlannerCanonical = (() => {
     isTombstonedBookingCollection: () => isTombstonedBookingCollection,
     isVerifiedPlatformOwner: () => isVerifiedPlatformOwner,
     isWarningActive: () => isWarningActive,
+    isWeekendDayKey: () => isWeekendDayKey,
     isWorkLiveOn: () => isWorkLiveOn,
     jobClientId: () => jobClientId,
     jobCollectionForJobId: () => jobCollectionForJobId,
@@ -442,6 +463,7 @@ var ProjectPlannerCanonical = (() => {
     labourBookingKind: () => labourBookingKind,
     labourHolidayInput: () => labourHolidayInput,
     labourPersonIds: () => labourPersonIds,
+    launchCountryOptions: () => launchCountryOptions,
     leaveApproverIds: () => leaveApproverIds,
     leaveCoverageRows: () => leaveCoverageRows,
     leaveDaysInRange: () => leaveDaysInRange,
@@ -452,6 +474,7 @@ var ProjectPlannerCanonical = (() => {
     leaveSubmitLabel: () => leaveSubmitLabel,
     leaveYearBounds: () => leaveYearBounds,
     leaveYearEndMonth: () => leaveYearEndMonth,
+    leaveYearStartMonth: () => leaveYearStartMonth,
     legalPackNeedsAcceptance: () => legalPackNeedsAcceptance,
     lineManagerCandidates: () => lineManagerCandidates,
     lineManagerIds: () => lineManagerIds,
@@ -498,6 +521,7 @@ var ProjectPlannerCanonical = (() => {
     monthDayOffsetBefore: () => monthDayOffsetBefore,
     monthDayOrdinal: () => monthDayOrdinal,
     namedSlotKind: () => namedSlotKind,
+    nextCalendarDayKey: () => nextCalendarDayKey,
     normalizeBankHolidayRegionId: () => normalizeBankHolidayRegionId,
     normalizeBookingJobCollection: () => normalizeBookingJobCollection,
     normalizeBookingStatus: () => normalizeBookingStatus,
@@ -558,6 +582,8 @@ var ProjectPlannerCanonical = (() => {
     organizationTimeZone: () => organizationTimeZone,
     overlappingBookingIds: () => overlappingBookingIds,
     overlappingIntervalGroups: () => overlappingIntervalGroups,
+    overlayPayProfile: () => overlayPayProfile,
+    overnightCarryInterval: () => overnightCarryInterval,
     paidHoursForNamedSlot: () => paidHoursForNamedSlot,
     parseAnnualLeaveDefaults: () => parseAnnualLeaveDefaults,
     parseBookingDocument: () => parseBookingDocument,
@@ -582,11 +608,13 @@ var ProjectPlannerCanonical = (() => {
     parseMaterialLineDocument: () => parseMaterialLineDocument,
     parseMaterialListDocuments: () => parseMaterialListDocuments,
     parseMaterialSendRecordDocument: () => parseMaterialSendRecordDocument,
+    parseMaxCarryOverDays: () => parseMaxCarryOverDays,
     parseNotificationDocument: () => parseNotificationDocument,
     parseOperativeDocument: () => parseOperativeDocument,
     parseOperativeProfileDocument: () => parseOperativeProfileDocument,
     parseOrgMembershipDocument: () => parseOrgMembershipDocument,
     parseOrganizationName: () => parseOrganizationName,
+    parsePayProfileDocument: () => parsePayProfileDocument,
     parsePayRateHistoryDocument: () => parsePayRateHistoryDocument,
     parsePayRateHistoryDocuments: () => parsePayRateHistoryDocuments,
     parsePaymentRunDateRanges: () => parsePaymentRunDateRanges,
@@ -621,6 +649,9 @@ var ProjectPlannerCanonical = (() => {
     passwordMinLength: () => passwordMinLength,
     passwordPolicyError: () => passwordPolicyError,
     payForHours: () => payForHours,
+    payProfileBackfillWrites: () => payProfileBackfillWrites,
+    payProfilePath: () => payProfilePath,
+    payProfileWriteFieldsFromProfileWrite: () => payProfileWriteFieldsFromProfileWrite,
     payRateChangeWrites: () => payRateChangeWrites,
     payRateHistoryWriteFields: () => payRateHistoryWriteFields,
     payRateOnDay: () => payRateOnDay,
@@ -649,6 +680,7 @@ var ProjectPlannerCanonical = (() => {
     personDayItems: () => personDayItems,
     personIdSet: () => personIdSet,
     pickTimesheetRowForPeriod: () => pickTimesheetRowForPeriod,
+    proRataLeaveAllowance: () => proRataLeaveAllowance,
     provisionalOrganizationId: () => provisionalOrganizationId,
     pushTestRecipients: () => pushTestRecipients,
     qualificationCertificateStoragePath: () => qualificationCertificateStoragePath,
@@ -697,12 +729,15 @@ var ProjectPlannerCanonical = (() => {
     seesEveryJob: () => seesEveryJob,
     seesEveryUserTimesheet: () => seesEveryUserTimesheet,
     selectableTimesheetPaymentRunPeriods: () => selectableTimesheetPaymentRunPeriods,
+    selfEmailChangeAction: () => selfEmailChangeAction,
+    selfEmailChangeSentMessage: () => selfEmailChangeSentMessage,
     sensitiveProfileDocPath: () => sensitiveProfileDocPath,
     sensitiveProfileWriteFields: () => sensitiveProfileWriteFields,
     sessionMembershipIds: () => sessionMembershipIds,
     sharedWarningResolutionKey: () => sharedWarningResolutionKey,
     shouldClearRememberedOrganization: () => shouldClearRememberedOrganization,
     showsMyTimesheets: () => showsMyTimesheets,
+    signInEmailSyncWrites: () => signInEmailSyncWrites,
     siteAuditWriteFields: () => siteAuditWriteFields,
     skillsCatalogueWrites: () => skillsCatalogueWrites,
     slotInterval: () => slotInterval,
@@ -721,12 +756,14 @@ var ProjectPlannerCanonical = (() => {
     subcontractorContactId: () => subcontractorContactId,
     subcontractorDayValue: () => subcontractorDayValue,
     subcontractorWriteFields: () => subcontractorWriteFields,
+    subscriptionAccess: () => subscriptionAccess,
     subtractMinuteIntervals: () => subtractMinuteIntervals,
     syncWriteAllowed: () => syncWriteAllowed,
     taskCompletedRecipients: () => taskCompletedRecipients,
     taskFields: () => taskFields,
     taskWriteFields: () => taskWriteFields,
     taxIdsDocumentFields: () => taxIdsDocumentFields,
+    timeSlotAllowedOnDay: () => timeSlotAllowedOnDay,
     timesheetBelongsToOrganization: () => timesheetBelongsToOrganization,
     timesheetChangedFields: () => timesheetChangedFields,
     timesheetDaysForPerson: () => timesheetDaysForPerson,
@@ -807,6 +844,10 @@ var ProjectPlannerCanonical = (() => {
     warningScopeFor: () => warningScopeFor,
     webSessionOrganizationStorageKey: () => webSessionOrganizationStorageKey,
     weekdayOffsetBefore: () => weekdayOffsetBefore,
+    weekendBookingNote: () => weekendBookingNote,
+    weekendCustomHoursDefault: () => weekendCustomHoursDefault,
+    weekendFullDayWindow: () => weekendFullDayWindow,
+    weekendRuleForIsoWeekday: () => weekendRuleForIsoWeekday,
     wholesalerContactId: () => wholesalerContactId,
     wholesalerWriteFields: () => wholesalerWriteFields,
     withoutDismissedQualificationRows: () => withoutDismissedQualificationRows,
@@ -1142,6 +1183,7 @@ var ProjectPlannerCanonical = (() => {
     const start = parseClockMinutes(booking.workStartTime);
     const end = parseClockMinutes(booking.workEndTime);
     if (start != null && end != null && end > start) return { start, end };
+    if (start != null && end != null && end < start) return { start, end: end + 24 * 60 };
     const windows = halfDayWindows(dayInput2);
     switch (namedSlotKind(booking.timeSlot)) {
       case "AM":
@@ -1160,6 +1202,19 @@ var ProjectPlannerCanonical = (() => {
       default:
         return { ...windows.day };
     }
+  }
+  function intervalCrossesMidnight(interval2) {
+    return Boolean(interval2 && interval2.end > 24 * 60);
+  }
+  function overnightCarryInterval(interval2) {
+    if (!interval2 || !intervalCrossesMidnight(interval2)) return null;
+    return { start: interval2.start - 24 * 60, end: interval2.end - 24 * 60 };
+  }
+  function nextCalendarDayKey(dayKey) {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dayKey || "").trim());
+    if (!match) return "";
+    const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]) + 1));
+    return date.toISOString().slice(0, 10);
   }
   function mergeMinuteIntervals(intervals) {
     const sorted = intervals.filter((interval2) => interval2.end > interval2.start).map((interval2) => ({ ...interval2 })).sort((a, b) => a.start - b.start);
@@ -3391,6 +3446,13 @@ var ProjectPlannerCanonical = (() => {
   }
 
   // lib/canonical/organizationSettings.ts
+  var SUGGESTED_MAX_CARRY_OVER_DAYS = 5;
+  function parseMaxCarryOverDays(value) {
+    if (value == null || value === "") return null;
+    const n = typeof value === "string" ? Number(value.trim()) : Number(value);
+    if (!Number.isFinite(n) || n < 0) return null;
+    return Math.min(365, Math.round(n * 2) / 2);
+  }
   var ORGANIZATION_DOCUMENT_FIELDS = [
     "name",
     "countryCode",
@@ -3495,7 +3557,8 @@ var ProjectPlannerCanonical = (() => {
     daysPerYear: 25,
     startMonth: 1,
     endMonth: 12,
-    carriesOver: false
+    carriesOver: false,
+    maxCarryOverDays: null
   };
   var DEFAULT_WARNING_DETECTION = {
     detectClashes: true,
@@ -3723,7 +3786,8 @@ var ProjectPlannerCanonical = (() => {
       daysPerYear: Number(data.daysPerYear ?? DEFAULT_ANNUAL_LEAVE.daysPerYear),
       startMonth: Number(data.startMonth ?? DEFAULT_ANNUAL_LEAVE.startMonth),
       endMonth: Number(data.endMonth ?? DEFAULT_ANNUAL_LEAVE.endMonth),
-      carriesOver: Boolean(data.carriesOver)
+      carriesOver: Boolean(data.carriesOver),
+      maxCarryOverDays: parseMaxCarryOverDays(data.maxCarryOverDays)
     };
   }
   function clampClashLookaheadDays(value) {
@@ -4013,6 +4077,7 @@ var ProjectPlannerCanonical = (() => {
     "annualLeaveYearStartMonth",
     "annualLeaveYearEndMonth",
     "annualLeaveCarriesOver",
+    "employmentStartDate",
     "annualLeaveYearAllowance",
     "annualLeaveYearAllowanceKey",
     "timesheetsEnabled",
@@ -4829,6 +4894,10 @@ var ProjectPlannerCanonical = (() => {
     const start = clampMonth(startMonth, 1);
     return start === 1 ? 12 : start - 1;
   }
+  function leaveYearStartMonth(endMonth) {
+    const end = clampMonth(endMonth, 12);
+    return end === 12 ? 1 : end + 1;
+  }
   var LEAVE_YEAR_MONTHS_MESSAGE = "The leave year must be 12 months: it ends the month before it starts.";
   function validateLeaveYearMonths(startMonth, endMonth) {
     const start = Number(startMonth);
@@ -4879,6 +4948,21 @@ var ProjectPlannerCanonical = (() => {
     }
     return snapLeaveDays(total);
   }
+  function dayNumber(dayKey) {
+    const parsed = parseDayKey(dayKey);
+    if (!parsed) return null;
+    return Math.round(Date.UTC(parsed.year, parsed.month - 1, parsed.day) / 864e5);
+  }
+  function proRataLeaveAllowance(input) {
+    const full = snapLeaveDays(input.daysPerYear);
+    const joined = dayNumber(String(input.employmentStartDayKey || "").trim());
+    const first = dayNumber(input.year.startDayKey);
+    const last = dayNumber(input.year.endDayKey);
+    if (joined == null || first == null || last == null || joined <= first) return { allowance: full, proRata: false };
+    if (joined > last) return { allowance: 0, proRata: true };
+    const fraction = (last - joined + 1) / (last - first + 1);
+    return { allowance: Math.min(full, Math.ceil(full * fraction * 2 - 1e-9) / 2), proRata: true };
+  }
   function resolveDaysPerYear(userDays, orgDays) {
     const user = Number(userDays);
     if (Number.isFinite(user) && user >= 0) return snapLeaveDays(user);
@@ -4905,6 +4989,7 @@ var ProjectPlannerCanonical = (() => {
     const daysPerYear = hasAllowance ? resolveDaysPerYear(input.daysPerYear, input.orgDaysPerYear) : 0;
     const overrideKey = String(input.yearAllowanceKey || "").trim();
     const overrideApplies = hasAllowance && overrideKey !== "" && overrideKey === year.yearKey && Number.isFinite(Number(input.yearAllowance));
+    const entitlement = hasAllowance ? proRataLeaveAllowance({ daysPerYear, year, employmentStartDayKey: input.employmentStartDayKey }) : { allowance: 0, proRata: false };
     let carriedForward = 0;
     if (hasAllowance && input.carriesOver === true && !overrideApplies && daysPerYear > 0) {
       const prevOn = previousYearEndKey(year.startDayKey, timeZone);
@@ -4917,10 +5002,19 @@ var ProjectPlannerCanonical = (() => {
         timeZone,
         nonWorking
       );
-      carriedForward = Math.max(0, snapLeaveDays(daysPerYear - prevTaken));
+      const prevAllowance = proRataLeaveAllowance({
+        daysPerYear,
+        year: previous,
+        employmentStartDayKey: input.employmentStartDayKey
+      }).allowance;
+      carriedForward = Math.max(0, snapLeaveDays(prevAllowance - prevTaken));
+      const cap = input.maxCarryOverDays;
+      if (cap != null && Number.isFinite(Number(cap)) && Number(cap) >= 0) {
+        carriedForward = Math.min(carriedForward, snapLeaveDays(Number(cap)));
+      }
     }
     const yearAllowance = overrideApplies ? snapLeaveDays(input.yearAllowance) : null;
-    const pot = yearAllowance != null ? yearAllowance : daysPerYear + carriedForward;
+    const pot = yearAllowance != null ? yearAllowance : entitlement.allowance + carriedForward;
     const remaining = hasAllowance ? snapLeaveDays(pot - taken - pending) : null;
     return {
       hasAllowance,
@@ -4931,6 +5025,8 @@ var ProjectPlannerCanonical = (() => {
       pending,
       usedThisYear: taken,
       daysPerYear,
+      yearEntitlement: entitlement.allowance,
+      proRata: entitlement.proRata,
       carriedForward,
       yearAllowance,
       remaining
@@ -5793,6 +5889,23 @@ var ProjectPlannerCanonical = (() => {
     }
     return false;
   }
+  var SUBSCRIPTION_LAPSED_MESSAGE = "The organisation's Project Planner subscription has lapsed. Please contact your system administrator and ask them to renew.";
+  var SUBSCRIPTION_LAPSED_ADMIN_NOTE = "You are an admin: renew the subscription in Settings \u2192 Billing.";
+  var SUBSCRIPTION_LAPSED_ADMIN_WEB_NOTE = "You are an admin: renew the subscription in Settings \u2192 Billing on the Project Planner website.";
+  function subscriptionAccess(input) {
+    if (input.viewerIsPlatformOwner === true) return "open";
+    if (hasAccess(input.billing, input.now ?? Date.now())) return "open";
+    return input.viewerIsAdmin === true ? "adminBillingOnly" : "blocked";
+  }
+  function billingAccessFields(billing, now = Date.now()) {
+    const accessOpen = hasAccess(billing, now);
+    let accessClosesAtMs = null;
+    if (billing?.status === "past_due" && billing.lastPaymentFailedAt) {
+      const failedAt = timestampMs(billing.lastPaymentFailedAt);
+      if (failedAt != null) accessClosesAtMs = failedAt + PAYMENT_GRACE_MS;
+    }
+    return { accessOpen, accessClosesAtMs };
+  }
 
   // lib/canonical/inviteEmailClaim.ts
   function normalizeEmail2(value) {
@@ -6494,7 +6607,7 @@ var ProjectPlannerCanonical = (() => {
     return policy.weekdayOutsideStandardMultiplier;
   }
   function segment(kind, baseHours, multiplier, start, end, workedHours = baseHours) {
-    const clock = (value) => value == null ? void 0 : typeof value === "number" ? formatClockMinutes(Math.min(value, 24 * 60 - 1)) : value;
+    const clock = (value) => value == null ? void 0 : typeof value === "number" ? formatClockMinutes(value > 24 * 60 ? value - 24 * 60 : Math.min(value, 24 * 60 - 1)) : value;
     return { kind, clockStart: clock(start), clockEnd: clock(end), baseHours, multiplier, paidHours: baseHours * multiplier, workedHours };
   }
   function result(segments, outsideMultiplier) {
@@ -6515,12 +6628,6 @@ var ProjectPlannerCanonical = (() => {
       { timeSlot: booking.timeSlot ?? void 0, workStartTime: booking.workStartTime ?? void 0, workEndTime: booking.workEndTime ?? void 0 },
       dayInput(policy)
     );
-  }
-  function overnight(booking) {
-    const start = parseClockMinutes(booking.workStartTime ?? void 0);
-    const end = parseClockMinutes(booking.workEndTime ?? void 0);
-    if (start == null || end == null || !(end < start)) return null;
-    return segment("standardWindow", (end + 24 * 60 - start) / 60, 1, booking.workStartTime ?? void 0, booking.workEndTime ?? void 0);
   }
   function isNamedHalf(booking) {
     const kind = namedSlotKind(booking.timeSlot);
@@ -6584,8 +6691,6 @@ var ProjectPlannerCanonical = (() => {
     return rows3;
   }
   function weekday(booking, policy, multiplier) {
-    const night = overnight(booking);
-    if (night) return result([night], multiplier);
     if (isHalfDayPaid(booking, policy, false)) return halfDayPaid(booking, policy, null, multiplier);
     const span = interval(booking, policy);
     if (!span) return legacySlot(booking, policy, multiplier);
@@ -6609,10 +6714,26 @@ var ProjectPlannerCanonical = (() => {
     if (rows3.length === 0) return nothingPaid(span, multiplier);
     return result(rows3, multiplier);
   }
+  function weekendFullDayOnly(booking) {
+    if (namedSlotKind(booking.timeSlot) !== "FULL_DAY") return false;
+    return parseClockMinutes(booking.workStartTime ?? void 0) == null || parseClockMinutes(booking.workEndTime ?? void 0) == null;
+  }
+  function weekendFullDayWindow(policy, weekend) {
+    if (weekend.allHoursAtMultiplierMode) {
+      const start2 = parseClockMinutes(policy.standardDayStart);
+      const end2 = parseClockMinutes(policy.standardDayEnd);
+      return start2 != null && end2 != null && end2 > start2 ? { start: start2, end: end2 } : null;
+    }
+    const start = parseClockMinutes(weekend.definedWindowStart ?? policy.standardDayStart);
+    const end = parseClockMinutes(weekend.definedWindowEnd ?? "13:00");
+    return start != null && end != null && end > start ? { start, end } : null;
+  }
+  function weekendRuleForIsoWeekday(isoWeekday, policy) {
+    return weekendFor(isoWeekday, policy);
+  }
   function weekendDay(booking, policy, weekend, multiplier) {
-    const night = overnight(booking);
-    if (night) return result([night], multiplier);
-    const span = interval(booking, policy);
+    const fullDayWindow = weekendFullDayOnly(booking) ? weekendFullDayWindow(policy, weekend) : null;
+    const span = fullDayWindow ?? interval(booking, policy);
     if (!span) return legacySlot(booking, policy, multiplier);
     if (weekend.allHoursAtMultiplierMode) {
       if (isNamedHalf(booking)) return halfDayPaid(booking, policy, weekend, multiplier);
@@ -6964,6 +7085,25 @@ var ProjectPlannerCanonical = (() => {
     writes.push({ path: `organizations/${org}`, kind: "organizationMember", fields: { [`members.${uid}`]: kind } });
     writes.push({ path: `users/${uid}/orgMemberships/${org}`, kind: "membership", role: kind, permissions });
     return { ok: true, role: kind, permissions, writes, note: otherCompany ? ACCOUNT_TYPE_OTHER_COMPANY_NOTE : null };
+  }
+  var ACCOUNT_TYPE_OUT_OF_SYNC_MESSAGE = "This person's user type was only partly saved. Press Save to finish it on every record.";
+  function accountTypeSyncState(input) {
+    const person = input?.person;
+    const org = typeof input?.organizationId === "string" ? input.organizationId.trim() : "";
+    const uid = typeof person?.id === "string" ? person.id.trim() : "";
+    if (!person || !uid || !org || !sameOrg(person.organizationId, org)) {
+      return { inSync: true, level: null, membersRole: null, repair: null };
+    }
+    const level = permissionLevelOf(person);
+    const members = input.members && typeof input.members === "object" ? input.members : {};
+    const rawEntry = Object.entries(members).find(([key3]) => key3.trim().toLowerCase() === uid.toLowerCase())?.[1];
+    const membersRole = typeof rawEntry === "string" && rawEntry.trim() ? rawEntry.trim().toLowerCase() : null;
+    const explicit = (role) => role === "admin" || role === "manager" || role === "operative";
+    let inSync = membersRole === "admin" === (level === "admin");
+    if (inSync && explicit(membersRole) && membersRole !== level) inSync = false;
+    const membershipRole = input.membership && typeof input.membership.role === "string" ? input.membership.role.trim().toLowerCase() : null;
+    if (inSync && explicit(membershipRole) && membershipRole !== level) inSync = false;
+    return { inSync, level, membersRole, repair: inSync ? null : level };
   }
 
   // lib/canonical/payRate.ts
@@ -7426,6 +7566,7 @@ var ProjectPlannerCanonical = (() => {
       annualLeaveYearStartMonth: leaveStored.startMonth ?? leaveDefaults.startMonth,
       annualLeaveYearEndMonth: leaveStored.endMonth ?? leaveDefaults.endMonth,
       annualLeaveCarriesOver: leaveStored.carriesOver ?? leaveDefaults.carriesOver,
+      employmentStartDayKey: /^\d{4}-\d{2}-\d{2}$/.test(text4(row2.employmentStartDate)) ? text4(row2.employmentStartDate) : dayKeyOf(documentInstantMs(row2.employmentStartDate), zone3),
       annualLeaveStored: leaveStored,
       annualLeaveDefaultsPending: !options?.annualLeaveDefaults && (leaveStored.daysPerYear == null || leaveStored.startMonth == null || leaveStored.endMonth == null || leaveStored.carriesOver == null),
       annualLeaveYearAllowance: documentNumber(row2.annualLeaveYearAllowance),
@@ -8050,17 +8191,37 @@ var ProjectPlannerCanonical = (() => {
   function managerClashGroups(input) {
     const groups = [];
     const seen = /* @__PURE__ */ new Set();
-    for (const personDay of personDayItems(input)) {
-      if (personDay.items.length < 2) continue;
-      const intervals = personDay.items.map((item) => {
-        const booking = item.kind === "manager" ? input.managerBookings[item.index] : input.operativeBookings[item.index];
-        return slotInterval(
-          { timeSlot: booking?.timeSlot, workStartTime: booking?.workStartTime, workEndTime: booking?.workEndTime },
-          input.day
-        );
-      });
+    const intervalOf = (item) => {
+      const booking = item.kind === "manager" ? input.managerBookings[item.index] : input.operativeBookings[item.index];
+      return slotInterval(
+        { timeSlot: booking?.timeSlot, workStartTime: booking?.workStartTime, workEndTime: booking?.workEndTime },
+        input.day
+      );
+    };
+    const personDays = personDayItems(input);
+    const carried = /* @__PURE__ */ new Map();
+    for (const personDay of personDays) {
+      const next = nextCalendarDayKey(personDay.dayKey);
+      if (!next) continue;
+      for (const item of personDay.items) {
+        if (!intervalCrossesMidnight(intervalOf(item))) continue;
+        const key3 = `${personDay.userId}|${next}`;
+        carried.set(key3, [...carried.get(key3) || [], item]);
+      }
+    }
+    for (const personDay of personDays) {
+      const carriedIn = carried.get(`${personDay.userId}|${personDay.dayKey}`) || [];
+      if (personDay.items.length + carriedIn.length < 2) continue;
+      const entries = [
+        ...personDay.items.map((item) => ({ item, carried: false })),
+        ...carriedIn.map((item) => ({ item, carried: true }))
+      ].sort((a, b) => compareText(a.item.pairId, b.item.pairId));
+      const intervals = entries.map(
+        (entry) => entry.carried ? overnightCarryInterval(intervalOf(entry.item)) : intervalOf(entry.item)
+      );
       overlappingIntervalGroups(intervals).forEach((indexes, clusterIndex) => {
-        const items = indexes.map((i) => ({ ...personDay.items[i], interval: intervals[i] })).sort((a, b) => compareText(a.pairId, b.pairId));
+        if (indexes.every((i) => entries[i].carried)) return;
+        const items = indexes.map((i) => ({ ...entries[i].item, interval: intervals[i] })).sort((a, b) => compareText(a.pairId, b.pairId));
         const pairKey = items.map((item) => item.pairId).join("|");
         if (items.length < 2 || seen.has(pairKey)) return;
         seen.add(pairKey);
@@ -8219,24 +8380,42 @@ var ProjectPlannerCanonical = (() => {
       entry.indexes.push(index);
       days.set(key3, entry);
     });
+    const intervalOf = (index) => {
+      const booking = input.operativeBookings[index];
+      return slotInterval(
+        { timeSlot: booking?.timeSlot, workStartTime: booking?.workStartTime, workEndTime: booking?.workEndTime },
+        input.day
+      );
+    };
+    const carried = /* @__PURE__ */ new Map();
+    for (const entry of days.values()) {
+      const next = nextCalendarDayKey(entry.dayKey);
+      if (!next) continue;
+      for (const index of entry.indexes) {
+        if (!intervalCrossesMidnight(intervalOf(index))) continue;
+        const key3 = `${entry.personKey}|${next}`;
+        carried.set(key3, [...carried.get(key3) || [], index]);
+      }
+    }
     const groups = [];
     const seen = /* @__PURE__ */ new Set();
-    const ordered = Array.from(days.values()).sort(
-      (a, b) => compareText(a.dayKey, b.dayKey) || compareText(a.personKey, b.personKey)
+    const ordered = Array.from(days.entries()).sort(
+      ([, a], [, b]) => compareText(a.dayKey, b.dayKey) || compareText(a.personKey, b.personKey)
     );
-    for (const personDay of ordered) {
-      if (personDay.indexes.length < 2) continue;
-      const sorted = [...personDay.indexes].sort(
-        (a, b) => compareText(idText2(input.operativeBookings[a].id), idText2(input.operativeBookings[b].id))
-      );
-      const intervals = sorted.map((i) => {
-        const booking = input.operativeBookings[i];
-        return slotInterval(
-          { timeSlot: booking?.timeSlot, workStartTime: booking?.workStartTime, workEndTime: booking?.workEndTime },
-          input.day
-        );
+    for (const [dayMapKey, personDay] of ordered) {
+      const carriedIn = carried.get(dayMapKey) || [];
+      if (personDay.indexes.length + carriedIn.length < 2) continue;
+      const entries = [
+        ...personDay.indexes.map((index) => ({ index, carried: false })),
+        ...carriedIn.map((index) => ({ index, carried: true }))
+      ].sort((a, b) => compareText(idText2(input.operativeBookings[a.index].id), idText2(input.operativeBookings[b.index].id)));
+      const sorted = entries.map((entry) => entry.index);
+      const intervals = entries.map((entry) => {
+        const interval2 = intervalOf(entry.index);
+        return entry.carried ? overnightCarryInterval(interval2) : interval2;
       });
       for (const cluster of overlappingIntervalGroups(intervals)) {
+        if (cluster.every((position) => entries[position].carried)) continue;
         const items = cluster.map((position) => ({
           bookingId: idText2(input.operativeBookings[sorted[position]].id),
           index: sorted[position],
@@ -8860,8 +9039,8 @@ var ProjectPlannerCanonical = (() => {
   // lib/canonical/rulebookStamp.ts
   function rulebookStamp() {
     return {
-      version: true ? "1.12.1" : "",
-      sha256: true ? "9c68f0852d2094f396ebaf8beedbe157f440bf1da7a11ecec633c31856032950" : ""
+      version: true ? "1.13.2" : "",
+      sha256: true ? "e1286d455119753b296af87e61d271c49eaaa7b25872e589e293081298d6e571" : ""
     };
   }
 
@@ -9013,16 +9192,25 @@ var ProjectPlannerCanonical = (() => {
       byDay.set(key3, list);
     }
     const flagged = /* @__PURE__ */ new Set();
-    for (const list of byDay.values()) {
-      if (list.length < 2) continue;
-      const intervals = list.map(
-        (booking) => slotInterval(
-          { timeSlot: booking.timeSlot, workStartTime: booking.workStartTime, workEndTime: booking.workEndTime },
-          day
-        )
+    const intervalOf = (booking) => slotInterval({ timeSlot: booking.timeSlot, workStartTime: booking.workStartTime, workEndTime: booking.workEndTime }, day);
+    const carried = /* @__PURE__ */ new Map();
+    for (const [key3, list] of byDay) {
+      const next = nextCalendarDayKey(key3);
+      if (!next) continue;
+      for (const booking of list) {
+        if (intervalCrossesMidnight(intervalOf(booking))) carried.set(next, [...carried.get(next) || [], booking]);
+      }
+    }
+    for (const [key3, list] of byDay) {
+      const carriedIn = carried.get(key3) || [];
+      if (list.length + carriedIn.length < 2) continue;
+      const entries = [...list.map((b) => ({ b, carried: false })), ...carriedIn.map((b) => ({ b, carried: true }))];
+      const intervals = entries.map(
+        (entry) => entry.carried ? overnightCarryInterval(intervalOf(entry.b)) : intervalOf(entry.b)
       );
       for (const group of overlappingIntervalGroups(intervals)) {
-        for (const index of group) flagged.add(String(list[index].id).trim());
+        if (group.every((index) => entries[index].carried)) continue;
+        for (const index of group) flagged.add(String(entries[index].b.id).trim());
       }
     }
     const out = [];
@@ -9268,6 +9456,13 @@ var ProjectPlannerCanonical = (() => {
       defaultRegionId: defaultBankHolidayRegionForCountry(after),
       message: `Choose the bank holidays for ${bankHolidayCountryTitle(after)}.`
     };
+  }
+  var LAUNCH_COUNTRY_CODES = ["GB", "IE"];
+  function launchCountryOptions(storedCountryCode) {
+    const out = LAUNCH_COUNTRY_CODES.map((code) => ({ code, title: bankHolidayCountryTitle(code) }));
+    const stored = countryKey(storedCountryCode);
+    if (stored && !LAUNCH_COUNTRY_CODES.includes(stored)) out.push({ code: stored, title: bankHolidayCountryTitle(stored) });
+    return out;
   }
 
   // lib/canonical/companyDetails.ts
@@ -12234,6 +12429,7 @@ var ProjectPlannerCanonical = (() => {
     { id: "qualifications", path: "organizations/{orgId}/qualifications", scope: "organization", listen: true, note: "While its screen is open." },
     { id: "variationTrades", path: "organizations/{orgId}/settings/variationTrades", scope: "organization", listen: false, note: "Add-only picker suggestions; read when the picker opens." },
     { id: "tradeTypeInventory", path: "organizations/{orgId}/settings/tradeTypeInventory", scope: "organization", listen: false, note: "Add-only picker suggestions; read when the picker opens." },
+    { id: "payProfiles", path: "organizations/{orgId}/payProfiles/{subjectId}", scope: "organization", listen: false, note: "1.13.0: private pay, one document per person; read by id when a pay screen opens (only pay viewers may, canViewPersonPay)." },
     { id: "taxIds", path: "users/{uid}/private/taxIds", scope: "user", listen: false, note: "Private; only its owner and admins edit it, on one screen; read when that screen opens." },
     { id: "toolboxLibrary", path: "platformConfig/*", scope: "platform", listen: false, note: "Platform content, changed by releases; read on open." },
     { id: "orgMemberships", path: "users/{uid}/orgMemberships/{orgId}", scope: "user", listen: false, note: "Read on sign-in and when switching organisation (1.10.0 parseOrgMembershipDocument); only admins of that organisation change role or permissions." },
@@ -13081,6 +13277,189 @@ var ProjectPlannerCanonical = (() => {
       return minimum != null && version != null && compareAppVersions(version, minimum) < 0;
     }
     return false;
+  }
+
+  // lib/canonical/bookingSlots.ts
+  var WEEKDAY_TIME_SLOTS = ["FULL DAY", "AM", "PM", "CUSTOM"];
+  var WEEKEND_TIME_SLOTS = ["CUSTOM"];
+  function isoWeekdayOf(day, timeZone) {
+    if (typeof day === "number") return day;
+    const text21 = String(day || "").trim().toLowerCase();
+    if (text21 === "saturday") return 6;
+    if (text21 === "sunday") return 7;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(text21)) return isoWeekdayOfDayKey(text21, zoneOrLondon(timeZone));
+    return 0;
+  }
+  function isWeekendDayKey(dayKey, timeZone) {
+    const iso = isoWeekdayOf(dayKey, timeZone);
+    return iso === 6 || iso === 7;
+  }
+  function allowedTimeSlotsOnDay(dayKey, _policy, timeZone) {
+    return [...isWeekendDayKey(dayKey, timeZone) ? WEEKEND_TIME_SLOTS : WEEKDAY_TIME_SLOTS];
+  }
+  function timeSlotAllowedOnDay(timeSlot, dayKey, timeZone) {
+    if (!isWeekendDayKey(dayKey, timeZone)) return true;
+    return namedSlotKind(timeSlot) === "CUSTOM";
+  }
+  var WEEKEND_WEEKDAY_MIX_MESSAGE = "Weekends cannot be booked alongside Weekdays. Make your weekday booking first then weekend separately.";
+  function bookingDaysMixWeekdayAndWeekend(dayKeys, timeZone) {
+    let weekday2 = false;
+    let weekend = false;
+    for (const key3 of dayKeys || []) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(String(key3 || "").trim())) continue;
+      if (isWeekendDayKey(String(key3).trim(), timeZone)) weekend = true;
+      else weekday2 = true;
+      if (weekday2 && weekend) return true;
+    }
+    return false;
+  }
+  function weekendCustomHoursDefault(policy, weekday2, timeZone) {
+    if (!policy) return null;
+    const iso = isoWeekdayOf(weekday2, timeZone);
+    if (iso !== 6 && iso !== 7) return null;
+    const weekend = weekendRuleForIsoWeekday(iso, policy);
+    if (!weekend || weekend.allHoursAtMultiplierMode) return null;
+    const window = weekendFullDayWindow(policy, weekend);
+    return window ? { start: formatClockMinutes(window.start), end: formatClockMinutes(window.end) } : null;
+  }
+  function hoursText(hours) {
+    const rounded = Math.round(hours * 100) / 100;
+    return `${Number.isInteger(rounded) ? rounded : rounded.toString()}h`;
+  }
+  function multiplierText(multiplier) {
+    const rounded = Math.round(Number(multiplier) * 100) / 100;
+    return `${rounded}\xD7`;
+  }
+  function weekendBookingNote(policy, weekday2, timeZone) {
+    if (!policy) return null;
+    const iso = isoWeekdayOf(weekday2, timeZone);
+    if (iso !== 6 && iso !== 7) return null;
+    const weekend = weekendRuleForIsoWeekday(iso, policy);
+    if (!weekend) return null;
+    const dayName = iso === 6 ? "Saturday" : "Sunday";
+    if (weekend.allHoursAtMultiplierMode) {
+      return `${dayName} is paid on the hours you enter, every hour at ${multiplierText(weekend.allHoursMultiplier)}. Change it in Working hours.`;
+    }
+    const window = weekendFullDayWindow(policy, weekend);
+    if (!window) return null;
+    const range = `${formatClockMinutes(window.start)}\u2013${formatClockMinutes(window.end)}`;
+    const countsAs2 = Number(weekend.countsAsStandardHours ?? policy.standardPaidHours);
+    const outside = Number(weekend.outsideWindowMultiplier ?? 1.5);
+    return `${dayName} is paid on the hours you enter: ${range} counts as ${hoursText(Number.isFinite(countsAs2) ? countsAs2 : 0)}, hours outside it at ${multiplierText(outside)}. Change it in Working hours.`;
+  }
+  var CUSTOM_HOURS_BREAK_WARNING = "You are booking custom hours that cover the unpaid lunch break. Turn off Unpaid break to make sure they are paid for this time.";
+  function customHoursBreakWarning(policy, dayKey, booking, timeZone) {
+    if (!policy || !booking) return null;
+    if (namedSlotKind(booking.timeSlot) !== "CUSTOM") return null;
+    if (policy.breakPaid === true || booking.isBreakRemoved === true) return null;
+    if (!(Number(policy.unpaidBreakMinutes) > 0)) return null;
+    if (dayKey && isWeekendDayKey(dayKey, timeZone)) return null;
+    const start = parseClockMinutes(policy.breakWindowStart);
+    const end = parseClockMinutes(policy.breakWindowEnd);
+    if (start == null || end == null || end <= start) return null;
+    const span = slotInterval(
+      { timeSlot: booking.timeSlot, workStartTime: booking.workStartTime, workEndTime: booking.workEndTime },
+      policy
+    );
+    if (!span) return null;
+    return intervalsOverlap(span, { start, end }) ? CUSTOM_HOURS_BREAK_WARNING : null;
+  }
+
+  // lib/canonical/payProfile.ts
+  var PAY_PROFILES_COLLECTION = "payProfiles";
+  var PAY_PROFILE_FIELDS = [
+    "payBasis",
+    "dayRate",
+    "hourlyRate",
+    "employmentType",
+    "employmentTypeTransitionFrom",
+    "employmentTypeEffectiveAt"
+  ];
+  function payProfilePath(organizationId, subjectId) {
+    return `organizations/${String(organizationId || "").trim()}/${PAY_PROFILES_COLLECTION}/${String(subjectId || "").trim()}`;
+  }
+  function canViewPersonPay(viewer, subject, roster) {
+    if (!viewer || !subject) return false;
+    const viewerIds = new Set(personIdSet(viewer, roster).map(idKey2));
+    if (viewerIds.size === 0) return false;
+    if (viewer.isPlatformOwner === true) return true;
+    const subjectIds = personIdSet(subject, roster).map(idKey2);
+    if (subjectIds.some((id2) => viewerIds.has(id2))) return true;
+    if (viewer.isActive === false) return false;
+    const level = permissionLevelOf(viewer);
+    if (level === "admin") return true;
+    if (lineManagerIds(subject, roster).some((id2) => viewerIds.has(idKey2(id2)))) return true;
+    return level === "manager" && effectivePermissions(viewer).operatives === true && permissionLevelOf(subject) === "operative";
+  }
+  function parsePayProfileDocument(docId, data) {
+    const fields = {};
+    for (const key3 of PAY_PROFILE_FIELDS) {
+      if (data && Object.prototype.hasOwnProperty.call(data, key3)) fields[key3] = data[key3];
+    }
+    return { subjectId: String(docId || "").trim(), fields };
+  }
+  function overlayPayProfile(person, profile) {
+    if (!profile) return person;
+    const out = { ...person };
+    for (const [key3, value] of Object.entries(profile.fields)) out[key3] = value;
+    return out;
+  }
+  function payProfileWriteFieldsFromProfileWrite(subjectId, profileWrite) {
+    const id2 = String(subjectId || "").trim();
+    if (!id2 || !profileWrite) return null;
+    const out = {};
+    for (const key3 of PAY_PROFILE_FIELDS) {
+      if (Object.prototype.hasOwnProperty.call(profileWrite, key3)) out[key3] = profileWrite[key3];
+    }
+    if (Object.keys(out).length === 0) return null;
+    return { userId: id2, ...out };
+  }
+  function payProfileBackfillWrites(input) {
+    const source = input.source || {};
+    const profile = input.profile || {};
+    const has = (data, key3) => Object.prototype.hasOwnProperty.call(data, key3);
+    const set = {};
+    for (const key3 of PAY_PROFILE_FIELDS) {
+      if (has(source, key3) && !has(profile, key3)) set[key3] = source[key3];
+    }
+    const profileSet = Object.keys(set).length > 0 ? { userId: String(input.subjectId || "").trim(), ...set } : null;
+    const sourceRemove = [];
+    if (input.strip === true) {
+      for (const key3 of PAY_PROFILE_FIELDS) {
+        if (has(source, key3) && (has(profile, key3) || has(set, key3))) sourceRemove.push(key3);
+      }
+    }
+    return { profileSet, sourceRemove };
+  }
+
+  // lib/canonical/emailChange.ts
+  function normalizeEmailText(value) {
+    return typeof value === "string" ? value.trim().toLowerCase() : "";
+  }
+  var EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  function selfEmailChangeAction(input) {
+    const stored = normalizeEmailText(input.storedEmail);
+    const next = normalizeEmailText(input.nextEmail);
+    if (!next || next === stored) return "unchanged";
+    if (!EMAIL_SHAPE.test(next)) return "invalid";
+    return "verifyBeforeUpdate";
+  }
+  var SELF_EMAIL_INVALID_MESSAGE = "Enter a valid email address.";
+  function selfEmailChangeSentMessage(nextEmail) {
+    const email = normalizeEmailText(nextEmail);
+    return `We sent a link to ${email}. Open it to confirm, then sign in with ${email}. Until then you sign in with your current email.`;
+  }
+  function signInEmailSyncWrites(input) {
+    const userId = String(input.userId || "").trim();
+    const token = normalizeEmailText(input.tokenEmail);
+    const stored = normalizeEmailText(input.storedEmail);
+    if (!userId || !token || input.tokenEmailVerified !== true || token === stored) return null;
+    const orgId = String(input.organizationId || "").trim();
+    return {
+      userFields: { email: token },
+      claimSet: orgId ? { path: `organizations/${orgId}/userEmails/${token}`, fields: { userId } } : null,
+      claimDelete: orgId && stored ? `organizations/${orgId}/userEmails/${stored}` : null
+    };
   }
   return __toCommonJS(bundleEntry_exports);
 })();

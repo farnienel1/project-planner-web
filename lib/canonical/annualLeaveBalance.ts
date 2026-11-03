@@ -74,6 +74,16 @@ export function leaveYearEndMonth(startMonth: number | null | undefined): number
   return start === 1 ? 12 : start - 1
 }
 
+/**
+ * Rulebook 1.13.0 §4.4: the inverse of `leaveYearEndMonth` — the month a 12-month leave year starts when it ends in
+ * `endMonth` (December → January, March → April). Pickers that let the person choose the end month move the start
+ * month with this; no app computes it itself.
+ */
+export function leaveYearStartMonth(endMonth: number | null | undefined): number {
+  const end = clampMonth(endMonth, 12)
+  return end === 12 ? 1 : end + 1
+}
+
 export const LEAVE_YEAR_MONTHS_MESSAGE = 'The leave year must be 12 months: it ends the month before it starts.'
 
 /**
@@ -182,6 +192,15 @@ export type AnnualLeaveBalanceInput = {
   timeZone?: string | null
   /** Bank holidays inside a multi-day record do not come out of the allowance. */
   nonWorkingDayKeys?: ReadonlyArray<string> | null
+  /**
+   * 1.13.0 (Q4): the person's start date (`users/{uid}.employmentStartDate`, an organisation-zone day key; never the
+   * account's `createdAt`).
+   * The leave year they joined in is pro rata from it (`proRataLeaveAllowance`); a year that ended before it gives
+   * nothing to carry over. Missing = a full allowance every year (as before).
+   */
+  employmentStartDayKey?: string | null
+  /** 1.13.0 (Q4): the organisation `annualLeaveDefaults.maxCarryOverDays`. Null or missing = no cap. */
+  maxCarryOverDays?: number | null
 }
 
 export type AnnualLeaveBalance = {
@@ -193,9 +212,40 @@ export type AnnualLeaveBalance = {
   pending: number
   usedThisYear: number
   daysPerYear: number
+  /** 1.13.0: this leave year's allowance before carry-over — `daysPerYear`, or the pro-rata figure in the year joined. */
+  yearEntitlement: number
+  /** 1.13.0: true when `yearEntitlement` is pro rata from the start date. */
+  proRata: boolean
   carriedForward: number
   yearAllowance: number | null
   remaining: number | null
+}
+
+function dayNumber(dayKey: string): number | null {
+  const parsed = parseDayKey(dayKey)
+  if (!parsed) return null
+  return Math.round(Date.UTC(parsed.year, parsed.month - 1, parsed.day) / 86_400_000)
+}
+
+/**
+ * Rulebook 1.13.0 §4.4 (owner decisions round 4, Q4): the allowance for one leave year of someone who started on
+ * `employmentStartDayKey`. Started on or before the year's first day (or no start date): the full `daysPerYear`.
+ * Started inside the year: `daysPerYear` × the calendar days from the start date to the year's last day (both
+ * included) ÷ the days in that year, rounded up to the next half day. Started after the year: 0.
+ */
+export function proRataLeaveAllowance(input: {
+  daysPerYear: number
+  year: { startDayKey: string; endDayKey: string }
+  employmentStartDayKey?: string | null
+}): { allowance: number; proRata: boolean } {
+  const full = snapLeaveDays(input.daysPerYear)
+  const joined = dayNumber(String(input.employmentStartDayKey || '').trim())
+  const first = dayNumber(input.year.startDayKey)
+  const last = dayNumber(input.year.endDayKey)
+  if (joined == null || first == null || last == null || joined <= first) return { allowance: full, proRata: false }
+  if (joined > last) return { allowance: 0, proRata: true }
+  const fraction = (last - joined + 1) / (last - first + 1)
+  return { allowance: Math.min(full, Math.ceil(full * fraction * 2 - 1e-9) / 2), proRata: true }
 }
 
 function resolveDaysPerYear(userDays: unknown, orgDays: unknown): number {
@@ -239,6 +289,10 @@ export function annualLeaveBalance(input: AnnualLeaveBalanceInput): AnnualLeaveB
     overrideKey === year.yearKey &&
     Number.isFinite(Number(input.yearAllowance))
 
+  const entitlement = hasAllowance
+    ? proRataLeaveAllowance({ daysPerYear, year, employmentStartDayKey: input.employmentStartDayKey })
+    : { allowance: 0, proRata: false }
+
   let carriedForward = 0
   if (hasAllowance && input.carriesOver === true && !overrideApplies && daysPerYear > 0) {
     const prevOn = previousYearEndKey(year.startDayKey, timeZone)
@@ -251,11 +305,21 @@ export function annualLeaveBalance(input: AnnualLeaveBalanceInput): AnnualLeaveB
       timeZone,
       nonWorking
     )
-    carriedForward = Math.max(0, snapLeaveDays(daysPerYear - prevTaken))
+    // 1.13.0: the previous year's own allowance (pro rata in the year joined, nothing before it), then the cap.
+    const prevAllowance = proRataLeaveAllowance({
+      daysPerYear,
+      year: previous,
+      employmentStartDayKey: input.employmentStartDayKey,
+    }).allowance
+    carriedForward = Math.max(0, snapLeaveDays(prevAllowance - prevTaken))
+    const cap = input.maxCarryOverDays
+    if (cap != null && Number.isFinite(Number(cap)) && Number(cap) >= 0) {
+      carriedForward = Math.min(carriedForward, snapLeaveDays(Number(cap)))
+    }
   }
 
   const yearAllowance = overrideApplies ? snapLeaveDays(input.yearAllowance) : null
-  const pot = yearAllowance != null ? yearAllowance : daysPerYear + carriedForward
+  const pot = yearAllowance != null ? yearAllowance : entitlement.allowance + carriedForward
   const remaining = hasAllowance ? snapLeaveDays(pot - taken - pending) : null
 
   return {
@@ -267,6 +331,8 @@ export function annualLeaveBalance(input: AnnualLeaveBalanceInput): AnnualLeaveB
     pending,
     usedThisYear: taken,
     daysPerYear,
+    yearEntitlement: entitlement.allowance,
+    proRata: entitlement.proRata,
     carriedForward,
     yearAllowance,
     remaining,

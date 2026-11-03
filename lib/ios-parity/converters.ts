@@ -198,6 +198,7 @@ export function parseAppUserDocument(userId: string, data: Record<string, unknow
     annualLeaveYearStartMonth: doc.annualLeaveStored.startMonth ?? undefined,
     annualLeaveYearEndMonth: doc.annualLeaveStored.endMonth ?? undefined,
     annualLeaveCarriesOver: doc.annualLeaveStored.carriesOver === true,
+    employmentStartDate: doc.employmentStartDayKey ?? undefined,
     annualLeaveYearAllowance: doc.annualLeaveYearAllowance ?? undefined,
     annualLeaveYearAllowanceKey: doc.annualLeaveYearAllowanceKey ?? undefined,
     timesheetsEnabled: doc.timesheetsEnabled,

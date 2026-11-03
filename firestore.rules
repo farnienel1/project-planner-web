@@ -216,6 +216,49 @@ service cloud.firestore {
     return exists(config) && get(config).data.get('enforcedReads', false) == true;
   }
 
+  // Rulebook 1.13.0 §16 / §19 (Q1): pay moves to organizations/{orgId}/payProfiles/{subjectId}. The pay reads of
+  // `operativeDayRateHistory`, `operativeProfiles` and `settings/timesheet_*` are limited to the people who may see
+  // that person's pay (`canViewPayOf`, lib/canonical canViewPersonPay) once the platform owner sets
+  // `platformConfig/app.privatePay` true — after an app release that reads pay per person (Deploy notes 1.13.0). From
+  // then on no write puts a pay value back on `users`, `operatives` or `managers`. One document read, shared with
+  // `enforcedReadsOn`. `payProfiles` itself is private from the deploy.
+  function privatePayOn() {
+    let config = /databases/(default)/documents/platformConfig/app;
+    return exists(config) && get(config).data.get('privatePay', false) == true;
+  }
+  // A write that puts a pay value (not null) on a users / operatives / managers document, or changes one.
+  function payValueWritten() {
+    let next = request.resource.data;
+    let prev = resource == null ? {} : resource.data;
+    return (next.get('dayRate', null) != null && next.get('dayRate', null) != prev.get('dayRate', null)) ||
+      (next.get('hourlyRate', null) != null && next.get('hourlyRate', null) != prev.get('hourlyRate', null)) ||
+      (next.get('payBasis', null) != null && next.get('payBasis', null) != prev.get('payBasis', null)) ||
+      (next.get('employmentType', null) != null && next.get('employmentType', null) != prev.get('employmentType', null)) ||
+      (next.get('employmentTypeTransitionFrom', null) != null &&
+        next.get('employmentTypeTransitionFrom', null) != prev.get('employmentTypeTransitionFrom', null)) ||
+      (next.get('employmentTypeEffectiveAt', null) != null &&
+        next.get('employmentTypeEffectiveAt', null) != prev.get('employmentTypeEffectiveAt', null));
+  }
+  function payStaysPrivate() {
+    return !privatePayOn() || !payValueWritten();
+  }
+
+  // Rulebook 1.13.0 §19 (Q3, lib/canonical hasAccess / billingAccessFields): a lapsed subscription closes the
+  // organisation's data. The Stripe webhook writes `billing.accessOpen` (`hasAccess` at the time) and, while a payment
+  // has failed, `billing.accessClosesAt` (the end of the 7-day grace), so the grace ends on time without another Stripe
+  // event. Closed when `accessOpen` is false or `accessClosesAt` has passed. Missing billing or missing fields are open
+  // (trials, organisations whose billing has not synced since 1.13.0), so the rules never block where the apps would
+  // not. Not gated: the organisation document itself, the caller's own users document and memberships, and billing
+  // (written by the server only). Kept to one document read and a few expressions: it runs inside the role helpers.
+  function orgBillingOpen(organizationId) {
+    let path = /databases/(default)/documents/organizations/$(organizationId);
+    let b = exists(path) ? get(path).data.get('billing', {}) : {};
+    return !(b is map) || (
+      b.get('accessOpen', true) != false &&
+      !(b.get('accessClosesAt', null) is timestamp && request.time >= b.get('accessClosesAt', null))
+    );
+  }
+
   function callerHomeInactiveIn(organizationId) {
     let home = callerHomeData();
     return home.get('isActive', true) == false && homeOrgIs(home, organizationId);
@@ -228,8 +271,9 @@ service cloud.firestore {
 
   // For subcollections under organizations/{organizationId}/… only (parent get is not the resource being read).
   // 1.12.0 (H2): never for a person this organisation has deactivated.
+  // 1.13.0 (Q3): never while the organisation's subscription has lapsed (`orgBillingOpen`).
   function belongsToOrganization(organizationId) {
-    return request.auth != null && (
+    return request.auth != null && orgBillingOpen(organizationId) && (
       userOrgIdMatchesPath(organizationId)
         ? callerHomeData().get('isActive', true) != false
         : ((isOrgMemberViaParentGet(organizationId) || isOrgCreatorViaParentGet(organizationId)) &&
@@ -335,7 +379,12 @@ service cloud.firestore {
   
   // Helper function to check if user is admin of organization
   // Includes adminAccess so users with admin permissions can update org (e.g. members map on user delete).
+  // 1.13.0 (Q3): an admin of a lapsed organisation is not an admin of its data (`orgBillingOpen`); the organisation
+  // document itself uses `isOrganizationAdminAnyBilling`.
   function isOrganizationAdmin(organizationId) {
+    return isOrganizationAdminAnyBilling(organizationId) && orgBillingOpen(organizationId);
+  }
+  function isOrganizationAdminAnyBilling(organizationId) {
     return request.auth != null &&
            exists(/databases/(default)/documents/users/$(request.auth.uid)) &&
            userOrgIdMatchesPath(organizationId) &&
@@ -367,7 +416,13 @@ service cloud.firestore {
   // (lib/canonical staffAccess: operative mode is never staff).
   // 1.12.0 (H2): '' for a person this organisation has deactivated (callerHomeInactiveIn / callerMembershipDeactivated), so every rule built on the
   // role refuses them.
+  // 1.13.0 (Q3): '' while the organisation's subscription has lapsed (`orgBillingOpen`).
   function callerOrgRole(organizationId) {
+    return orgBillingOpen(organizationId) ? callerOrgRoleAnyBilling(organizationId) : '';
+  }
+  // Without the billing test: for rules that already passed `canAccessOrganization` (annual leave, near the
+  // 1000-expression limit).
+  function callerOrgRoleAnyBilling(organizationId) {
     let listed = callerListedRole(organizationId);
     let home = callerHomeData();
     return homeOrgIs(home, organizationId) ? (
@@ -458,6 +513,11 @@ service cloud.firestore {
 
   // Admin of org by members map (works before users/{uid} profile exists — web org bootstrap).
   function isOrgAdminViaMembersMap(organizationId) {
+    return isOrgAdminViaMembersMapAnyBilling(organizationId) && orgBillingOpen(organizationId);
+  }
+  // 1.13.0: without the billing test, for rules that already passed `canAccessOrganization` (which has it) and sit
+  // near the 1000-expression limit (annual leave), and for the organisation document itself.
+  function isOrgAdminViaMembersMapAnyBilling(organizationId) {
     return request.auth != null &&
            exists(/databases/(default)/documents/organizations/$(organizationId)) &&
            'members' in get(/databases/(default)/documents/organizations/$(organizationId)).data &&
@@ -575,6 +635,7 @@ service cloud.firestore {
              'annualLeaveYearStartMonth',
              'annualLeaveYearEndMonth',
              'annualLeaveCarriesOver',
+             'employmentStartDate',
              'employmentType',
              'employmentTypeTransitionFrom',
              'employmentTypeEffectiveAt',
@@ -781,6 +842,9 @@ service cloud.firestore {
         sameLooseValue(next.get('employmentTypeTransitionFrom', null), prev.get('employmentTypeTransitionFrom', null)) &&
         sameInstantValue(next.get('employmentTypeEffectiveAt', null), prev.get('employmentTypeEffectiveAt', null))
       )) &&
+      // 1.13.0 (Q4): the start date sets the pro-rata leave allowance; the person does not change their own.
+      (!('employmentStartDate' in changed) ||
+        sameLooseValue(next.get('employmentStartDate', null), prev.get('employmentStartDate', null))) &&
       (!changed.hasAny(['permissions', 'manager', 'operatives', 'qualifications', 'projects', 'smallWorks',
                         'annualLeaveSelfBook', 'weeklyReports', 'subContractors', 'dailyOverview',
                         'wholesalersOrderHistory', 'materials', 'siteAudit', 'operativeMode', 'role']) ||
@@ -843,7 +907,9 @@ service cloud.firestore {
     let org = callerHomeOrgId();
     let path = /databases/(default)/documents/organizations/$(org);
     // 1.12.0 (H2): never for a person their company has deactivated.
-    return org != '' && !org.matches('.*[.].*') && callerHomeData().get('isActive', true) != false && exists(path) && (
+    // 1.13.0 (Q3): never while that company's subscription has lapsed (`orgBillingOpen`).
+    return org != '' && !org.matches('.*[.].*') && callerHomeData().get('isActive', true) != false && exists(path) &&
+      orgBillingOpen(org) && (
       get(path).data.get('members', {}).get(userId, null) != null ||
       get(path).data.get('creatorUserId', '') == userId
     );
@@ -990,7 +1056,7 @@ service cloud.firestore {
         managerCanCreateOperativeUser() ||
         // Path 5: Platform owner creating their own non-tenant profile
         (isPlatformOwner() && request.auth.uid == userId)
-      );
+      ) && payStaysPrivate();
       
       // Allow update if:
       // 1. User updating themselves without escalating admin / role / organizationId, OR
@@ -1014,7 +1080,7 @@ service cloud.firestore {
          (request.resource.data.organizationId is string &&
           organizationExists(request.resource.data.organizationId) &&
           isAdminOfCompany(request.resource.data.organizationId)))
-      ));
+      ) && payStaysPrivate());
       
       // Allow delete if:
       // 1) User deleting themselves by uid, OR
@@ -1129,7 +1195,14 @@ service cloud.firestore {
             next.get('status', 'active') == 'active' &&
             next.get('invitedBy', inv.get('invitedBy', '')) == inv.get('invitedBy', '');
         }
-        allow read: if request.auth != null && request.auth.uid == userId;
+        // 1.12.2: an admin of that organisation reads the membership too (iOS `writeOrgMembership` reads it before the
+        // change user type write; before 1.12.2 the read was refused and the change stopped after users/{uid}).
+        allow get: if request.auth != null && (
+          request.auth.uid == userId ||
+          isOrgAdminViaMembersMap(membershipOrgId) ||
+          isOrganizationAdmin(membershipOrgId)
+        );
+        allow list: if request.auth != null && request.auth.uid == userId;
         // 1.12.0 (B4): `isSuperAdmin` on a membership changes only by that organisation's Super Admin.
         function membershipSuperAdminUnchanged() {
           return staffFlag(request.resource.data, 'isSuperAdmin') ==
@@ -1168,7 +1241,17 @@ service cloud.firestore {
           isOwnEmailClaimWrite(organizationId, emailKey) ||
           (isManagerWithOperativesAccess() && userOrgIdMatchesPath(organizationId))
         );
-        allow delete: if request.auth != null && (isPlatformOwner() || isAdminOfCompany(organizationId));
+        // 1.13.0 (§14, `signInEmailSyncWrites`): after Firebase Auth changed a person's sign-in email (verified), they
+        // move their claim — create the new key (isOwnEmailClaimWrite) and delete their own old one, which no longer
+        // matches their token email.
+        allow delete: if request.auth != null && (
+          isPlatformOwner() || isAdminOfCompany(organizationId) || (
+            resource.data.get('userId', '') == request.auth.uid &&
+            request.auth.token.email is string &&
+            request.auth.token.email_verified == true &&
+            emailKey != request.auth.token.email.lower()
+          )
+        );
       }
       
       // Org root document: must not call get(organizations/{organizationId}) inside the rule (same doc → circular deny).
@@ -1202,7 +1285,7 @@ service cloud.firestore {
       // handing it to someone who is an admin here (iOS transferOrganizationOwnership, web
       // userStore transfer). Billing stays server-only.
       function orgRootCallerIsAdmin() {
-        return isOrganizationAdmin(organizationId) ||
+        return isOrganizationAdminAnyBilling(organizationId) ||
           ('members' in resource.data && resource.data.members is map &&
            resource.data.members.get(request.auth.uid, null) == 'admin');
       }
@@ -1391,6 +1474,7 @@ service cloud.firestore {
           (resource != null || isOrgManagerOrAdmin(organizationId) || isPlatformOwner()) &&
           (!rosterRowPayKeysChanged() || rosterRowAdmin() || operativesManagerForOtherRow()) &&
           (!rosterRowEmailChanged() || rosterRowAdmin() || operativesManagerForOtherRow()) &&
+          payStaysPrivate() &&
           writeMetadataValidWhenPresent();
         allow delete: if isOrganizationAdmin(organizationId);
       }
@@ -1717,8 +1801,17 @@ service cloud.firestore {
             settingId == 'deadlineAssignments' ||
             settingId.matches('^healthSafety_.*');
         }
+        // 1.13.0 (Q1): with `privatePay` on, a timesheet is read by the person, their reviewers (line manager, admins)
+        // and a manager with operatives access for an operative's sheet (`canViewPayOf`).
+        function canReadTimesheetSettings() {
+          return !privatePayOn() || isOwnTimesheetSettings() ||
+            isOrgAdminViaMembersMap(organizationId) || isOrganizationAdmin(organizationId) || isPlatformOwner() ||
+            (timesheetSubjectUid() is string && canViewPayOfAsMember(timesheetSubjectUid())) ||
+            isTimesheetReviewer();
+        }
         allow read: if canAccessOrganization(organizationId) &&
-          (!isVariationSettingsDoc() || canAccessVariationsStaff(organizationId));
+          (!isVariationSettingsDoc() || canAccessVariationsStaff(organizationId)) &&
+          (!isTimesheetSettingsDoc() || canReadTimesheetSettings());
         // Everything else (jobTypes, tradeTypeInventory, variationTrades, variation logs, and any new
         // company-wide setting) is admins and managers only. Operatives never write it.
         allow create, update: if canAccessOrganization(organizationId) && (
@@ -1748,6 +1841,7 @@ service cloud.firestore {
           (resource != null || isOrgManagerOrAdmin(organizationId) || isPlatformOwner()) &&
           (!rosterRowPayKeysChanged() || rosterRowAdmin()) &&
           (!rosterRowEmailChanged() || rosterRowAdmin()) &&
+          payStaysPrivate() &&
           writeMetadataValidWhenPresent();
         allow delete: if isOrganizationAdmin(organizationId);
       }
@@ -1860,15 +1954,16 @@ service cloud.firestore {
           return get(/databases/(default)/documents/users/$(request.auth.uid)).data;
         }
         // Members-map admin first (one get), then the users-document admin of this company.
+        // 1.13.0: every rule here passes canAccessOrganization first (billing included), so these skip it.
         function hbIsAdmin() {
-          return isOrgAdminViaMembersMap(organizationId) ||
-            isOrganizationAdmin(organizationId) ||
+          return isOrgAdminViaMembersMapAnyBilling(organizationId) ||
+            isOrganizationAdminAnyBilling(organizationId) ||
             isPlatformOwner();
         }
         // Staff (lib/canonical/staffAccess.ts isStaffAccount): admin of this company, or a manager not
         // in operative mode. Membership is already checked by canAccessOrganization on every rule below.
         function hbIsStaffManager() {
-          return isOrgManagerOrAdmin(organizationId) || hbIsAdmin();
+          return callerOrgRoleAnyBilling(organizationId) in ['admin', 'manager'] || hbIsAdmin();
         }
         function hbRequesterUid(data) {
           return data.get('userId', null);
@@ -1897,6 +1992,15 @@ service cloud.firestore {
         function hbCanDecide(data) {
           return !hbIsOwner(data) && (
             (hbRequesterExists(data) && request.auth.uid in lineManagerIdList(hbRequester(data))) ||
+            (!hbCallerIsOperative() && hbIsAdmin())
+          );
+        }
+        // hbCanDecide(resource.data) && hbCanDecide(request.resource.data), with the admin test evaluated once
+        // (1.13.0: keeps the update under the 1000-expression limit once the billing test is in canAccessOrganization).
+        function hbCanDecideBeforeAndAfter() {
+          return !hbIsOwner(resource.data) && !hbIsOwner(request.resource.data) && (
+            (hbRequesterExists(resource.data) && request.auth.uid in lineManagerIdList(hbRequester(resource.data)) &&
+             hbRequesterExists(request.resource.data) && request.auth.uid in lineManagerIdList(hbRequester(request.resource.data))) ||
             (!hbCallerIsOperative() && hbIsAdmin())
           );
         }
@@ -1968,7 +2072,7 @@ service cloud.firestore {
         );
         allow update: if canAccessOrganization(organizationId) && (
           hbOwnerUpdateAllowed() ||
-          (hbCanDecide(resource.data) && hbCanDecide(request.resource.data))
+          hbCanDecideBeforeAndAfter()
         );
         // Approving a cancellation (or a Team-screen removal, or an admin cleanup) deletes the row: only
         // someone who may decide this person's leave (hbCanDecide: never their own, admins included).
@@ -2004,6 +2108,83 @@ service cloud.firestore {
           isOrganizationAdmin(organizationId);
       }
 
+      // Rulebook 1.13.0 §8 / §16 (Q1, lib/canonical canViewPersonPay): who may see a person's pay — rates, pay basis,
+      // employment type, rate history, timesheets and invoices. `subjectId` is a users id, or an operatives row id for
+      // a catalogue operative with no account. Admins of this organisation; the person (their uid, or a users document
+      // on their signed-in email); their line manager (listed on their users document; the caller is a current member);
+      // a manager with operatives access, for an operative of this company; for a catalogue row, admins, operatives
+      // managers and the person on its email. The platform owner too.
+      function payUserPath(subjectId) {
+        return /databases/(default)/documents/users/$(subjectId);
+      }
+      function payOperativeRowPath(subjectId) {
+        return /databases/(default)/documents/organizations/$(organizationId)/operatives/$(subjectId);
+      }
+      function canViewPayOfUser(subjectId, subject) {
+        return request.auth.uid == subjectId ||
+          (request.auth.token.email is string && subject.get('email', '') is string &&
+           subject.get('email', '').lower() == request.auth.token.email.lower()) ||
+          lineManagerIdList(subject).hasAny([request.auth.uid]) ||
+          managerMayManageOperative(subjectId, subject);
+      }
+      function canViewPayOfRow(subjectId) {
+        return (isManagerWithOperativesAccess() && userOrgIdMatchesPath(organizationId)) || (
+          request.auth.token.email is string &&
+          string(get(payOperativeRowPath(subjectId)).data.get('email', '')).lower() == request.auth.token.email.lower()
+        );
+      }
+      function canViewPayOf(subjectId) {
+        return isPlatformOwner() || (
+          canAccessOrganization(organizationId) && (
+            isOrgAdminViaMembersMap(organizationId) ||
+            isOrganizationAdmin(organizationId) ||
+            canViewPayOfAsMember(subjectId)
+          )
+        );
+      }
+      // The non-admin half of canViewPayOf, for rules that already checked membership and admins (it keeps them under
+      // the 1000-expression limit).
+      function canViewPayOfAsMember(subjectId) {
+        return subjectId is string && subjectId.size() > 0 && (
+          (exists(payUserPath(subjectId)) && canViewPayOfUser(subjectId, get(payUserPath(subjectId)).data)) ||
+          (!exists(payUserPath(subjectId)) && exists(payOperativeRowPath(subjectId)) && canViewPayOfRow(subjectId))
+        );
+      }
+      // Writes: `canChangePayOf` for a users subject; for a catalogue row, admins and operatives managers (not their own
+      // row).
+      function canChangePayOfSubject(subjectId) {
+        return exists(payUserPath(subjectId))
+          ? canChangePayOf(subjectId)
+          : (isOrgAdminViaMembersMap(organizationId) || isOrganizationAdmin(organizationId) || isPlatformOwner() || (
+              exists(payOperativeRowPath(subjectId)) &&
+              isManagerWithOperativesAccess() && userOrgIdMatchesPath(organizationId) &&
+              !(request.auth.token.email is string &&
+                string(get(payOperativeRowPath(subjectId)).data.get('email', '')).lower() == request.auth.token.email.lower())
+            ));
+      }
+      match /payProfiles/{subjectId} {
+        function payProfileKeysValid() {
+          return request.resource.data.keys().hasOnly([
+            'userId', 'payBasis', 'dayRate', 'hourlyRate', 'employmentType', 'employmentTypeTransitionFrom',
+            'employmentTypeEffectiveAt', 'updatedAt', 'updatedBy', 'updatedFrom'
+          ]);
+        }
+        allow get: if request.auth != null && canViewPayOf(subjectId);
+        // A whole-collection query is for admins (and the platform owner); everyone else reads one document by id.
+        allow list: if request.auth != null && (
+          isPlatformOwner() ||
+          (canAccessOrganization(organizationId) &&
+           (isOrgAdminViaMembersMap(organizationId) || isOrganizationAdmin(organizationId)))
+        );
+        allow create, update: if request.auth != null &&
+          request.resource.data.get('userId', subjectId) == subjectId &&
+          payProfileKeysValid() &&
+          canAccessOrganization(organizationId) &&
+          canChangePayOfSubject(subjectId) &&
+          writeMetadataValidWhenPresent();
+        allow delete: if isOrganizationAdmin(organizationId) || isPlatformOwner();
+      }
+
       // Mirror of users/{userId} pay and line manager (iOS saveOperativeProfileMetadataFallback,
       // web saveUser). iOS reads it over users/{uid} on roster load. Anyone in the company may
       // touch only the id and write stamps; pay, line manager and employment fields are
@@ -2015,7 +2196,11 @@ service cloud.firestore {
             : request.resource.data.diff(resource.data).affectedKeys()
           ).hasOnly(['userId', 'updatedAt', 'updatedBy', 'updatedFrom']);
         }
-        allow read: if canAccessOrganization(organizationId);
+        // 1.13.0 (Q1): with `privatePay` on, only the people who may see this person's pay.
+        allow read: if canAccessOrganization(organizationId) && (
+          !privatePayOn() || isOrgAdminViaMembersMap(organizationId) || isOrganizationAdmin(organizationId) ||
+          canViewPayOfAsMember(userId)
+        );
         allow create, update: if request.auth != null &&
           request.resource.data.get('userId', userId) == userId &&
           (operativeProfileStampOnly() ? canAccessOrganization(organizationId) : canChangePayOf(userId)) &&
@@ -2064,7 +2249,13 @@ service cloud.firestore {
             isPlatformOwner() ||
             isOrganizationAdmin(organizationId);
         }
-        allow read: if canAccessOrganization(organizationId);
+        // 1.13.0 (Q1): with `privatePay` on, a row is read only by those who may see its person's pay. A query by
+        // anyone but an admin must name the person (`userId ==` or `operativeId ==`).
+        function canViewRateRow(data) {
+          return isOrgAdminViaMembersMap(organizationId) || isOrganizationAdmin(organizationId) || isPlatformOwner() ||
+            canViewPayOfAsMember(rateRowUserId(data).size() > 0 ? rateRowUserId(data) : rateRowOperativeId(data));
+        }
+        allow read: if canAccessOrganization(organizationId) && (!privatePayOn() || canViewRateRow(resource.data));
         allow create: if request.auth != null && canWriteRateRow(request.resource.data);
         allow update: if request.auth != null &&
           rateRowUserId(request.resource.data) == rateRowUserId(resource.data) &&
@@ -2183,7 +2374,10 @@ service cloud.firestore {
           collection != 'materialSendRecords' &&
           collection != 'fileReports' &&
           // 1.10.0 round 2: job and booking reads are enforced above (§17); never re-opened here.
-          !(collection in ['projects', 'smallWorks', 'bookings', 'managerSiteBookings', 'subcontractorBookings']);
+          !(collection in ['projects', 'smallWorks', 'bookings', 'managerSiteBookings', 'subcontractorBookings']) &&
+          // 1.13.0 (Q1): pay and timesheets have their own read rules (canViewPayOf); never re-opened here. `settings`
+          // also stops re-opening variation settings to non-staff (its own rule already refuses them).
+          !(collection in ['payProfiles', 'operativeDayRateHistory', 'operativeProfiles', 'settings']);
       }
     }
 

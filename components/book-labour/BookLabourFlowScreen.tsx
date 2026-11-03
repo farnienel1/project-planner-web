@@ -46,6 +46,7 @@ import {
   type BookLabourCandidate,
 } from '@/lib/book-labour/candidates'
 import { HoursTimelinePicker } from '@/components/scheduling/HoursTimelinePicker'
+import { confirmCustomHoursBreak, customHoursPrefillForDate, slotOfferedOnDate, weekendNoteForDate } from '@/lib/scheduling/bookingSlotRules'
 import { CustomOtherLocationField } from '@/components/scheduling/CustomOtherLocationField'
 import { PanelHeader } from '@/components/settings/primitives'
 import { ORPHAN_BOOKING_LABEL } from '@/lib/canonical'
@@ -166,8 +167,10 @@ export function BookLabourFlowScreen({
         if (details?.myScheduleOptions) setScheduleOpts(details.myScheduleOptions)
         if (details?.payrollTimePolicy) {
           setPayroll(details.payrollTimePolicy)
-          setCustomStart(details.payrollTimePolicy.standardDayStart)
-          setCustomEnd(details.payrollTimePolicy.standardDayEnd)
+          // Rulebook 1.13.0 (Q2): a weekend day opens with that day's window (`weekendCustomHoursDefault`).
+          const prefill = customHoursPrefillForDate(day, details.payrollTimePolicy)
+          setCustomStart(prefill.start)
+          setCustomEnd(prefill.end)
         }
       })
       .catch(() => {})
@@ -545,6 +548,10 @@ export function BookLabourFlowScreen({
       setErrorBanner('Enter valid times with end after start.')
       return
     }
+    // 1.13.0 lunch warning (`customHoursBreakWarning`).
+    if (!confirmCustomHoursBreak(payroll, day, { timeSlot: 'CUSTOM_HOURS', workStartTime: customStart, workEndTime: customEnd, isBreakRemoved: breakRemoved })) {
+      return
+    }
     void savePartyBookings({
       slot: 'CUSTOM_HOURS',
       locationType,
@@ -657,6 +664,8 @@ export function BookLabourFlowScreen({
           <SlotPicker
             label={slotLocationLabel(phase, allWorks)}
             dayLine={dayLine}
+            day={day}
+            policy={payroll}
             disabled={saving}
             onSlot={(slot) =>
               void savePartyBookings({
@@ -682,6 +691,8 @@ export function BookLabourFlowScreen({
           <SlotPicker
             label={`${phase.project.jobNumber} ${phase.project.siteName}`}
             dayLine={dayLine}
+            day={day}
+            policy={payroll}
             disabled={saving}
             onSlot={(slot) =>
               void savePartyBookings({
@@ -1107,12 +1118,16 @@ function ProjectList({
 function SlotPicker({
   label,
   dayLine,
+  day,
+  policy,
   disabled,
   onSlot,
   onCustom,
 }: {
   label: string
   dayLine: string
+  day: Date
+  policy: OrgPayrollTimePolicy
   disabled: boolean
   onSlot: (slot: ManagerSlot) => void
   onCustom: () => void
@@ -1129,7 +1144,10 @@ function SlotPicker({
             ['AM', 'AM'],
             ['PM', 'PM'],
           ] as const
-        ).map(([slot, title]) => (
+        )
+          // Rulebook 1.13.0 (Q2, `allowedTimeSlotsOnDay`): Saturday and Sunday are Custom hours only.
+          .filter(([slot]) => slotOfferedOnDate(slot, day, policy))
+          .map(([slot, title]) => (
           <button
             key={slot}
             type="button"
@@ -1141,6 +1159,9 @@ function SlotPicker({
           </button>
         ))}
       </div>
+      {weekendNoteForDate(day, policy) ? (
+        <p className="px-1 text-[11px] text-[var(--ink3)]">{weekendNoteForDate(day, policy)}</p>
+      ) : null}
       <button
         type="button"
         disabled={disabled}

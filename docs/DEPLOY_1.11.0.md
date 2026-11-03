@@ -138,3 +138,85 @@ no deploy.
 - Sign in as a PAYE operative. There is no My Timesheets.
 - Sign in as a PAYE manager who reviews others. User Timesheets is still there.
 - Open an admin in Manage Users. Every permission is on and greyed out except Annual Leave Management.
+
+## 1.13.0 / 1.13.1 — owner decisions round 4
+
+1.13.0 ships on top of 1.12.1 and keeps its order: steps 1–7 above are unchanged. These steps add to them.
+
+### A. Deploy the rules (with or after step 2)
+
+```sh
+firebase deploy --only firestore:rules
+```
+
+Live at once:
+
+- `organizations/{orgId}/payProfiles/{subjectId}` is private (RULEBOOK §8, §16: `canViewPayOf`). Nothing reads it yet.
+- The organisation catch-all read no longer re-opens `payProfiles`, `operativeDayRateHistory`, `operativeProfiles`
+  or `settings` (each has its own rule; `settings` keeps every member's read except variation settings for
+  non-staff, which its own rule already refused).
+- Lapsed subscriptions (§19): organisation data is closed when `billing.accessOpen` is false or
+  `billing.accessClosesAt` has passed. Both fields are missing on every organisation until its next Stripe sync, so
+  nothing closes at deploy. To close an organisation that has already lapsed, resync its billing (any Stripe event,
+  or the owner support tool) after step B.
+- A person may delete their own old `userEmails` claim once their verified Auth email is another (§14).
+- A person cannot change their own `employmentStartDate`.
+- `platformConfig/app.privatePay` is missing, so pay reads stay as before: every member still reads rate history,
+  the `operativeProfiles` mirror and timesheets, and the rates still on `users` documents.
+
+### B. Deploy web 1.13.0
+
+The Stripe webhook writes `billing.accessOpen` / `billing.accessClosesAt` (`billingAccessFields`) on every sync.
+Web writes pay to `users` (as before) **and** `payProfiles` in the same batch, reads the pay profile first on the
+people profile, gates the pay section with `canViewPersonPay`, blocks a lapsed organisation, books Saturday and Sunday as custom hours only (prefilled with a set-window day's window, never mixed with
+weekdays), asks before saving custom hours over the unpaid break, offers GB and IE only, and sends a self email change
+through `verifyBeforeUpdateEmail`.
+
+### C. Release iOS 1.13.1
+
+From `docs/ios-handoff/v1.13.1.md`: the same rules through `CanonicalBusinessEngine`, and the same double write of
+pay. Force it with `platformConfig/app.minimumIosBuild` before step E.
+
+### D. Copy pay into the pay profiles
+
+```sh
+node scripts/backfill-pay-profiles.mjs --project <firebaseProjectId> --all            # dry run
+node scripts/backfill-pay-profiles.mjs --project <firebaseProjectId> --all --apply    # copy
+```
+
+Copies only fields the pay profile does not have yet (an app's newer write is never overwritten), as merges, no
+write metadata. A second dry run must report `0 to copy`. Run it again just before step F.
+
+### E. Release both apps reading pay per person (a later release)
+
+Rate history by `userId ==` / `operativeId ==` per person for non-admins, timesheets by person for line managers and
+operatives managers, pay from `payProfiles` only, and no pay written to `users`, `operatives` or `managers`. These
+queries work with the switch off and on, so this release goes out before step F. Force iOS with `minimumIosBuild`.
+
+### F. Turn on private pay
+
+Signed in as the platform owner, set `platformConfig/app` `{ privatePay: true }` (a partial update). From the next
+request: rate history, `operativeProfiles` and timesheets are read only by pay viewers, and the rules refuse any pay
+value written back onto `users`, `operatives` or `managers`. Rollback: set it to `false`.
+
+### G. Strip pay from the shared documents
+
+```sh
+node scripts/backfill-pay-profiles.mjs --project <firebaseProjectId> --all --strip            # dry run
+node scripts/backfill-pay-profiles.mjs --project <firebaseProjectId> --all --apply --strip    # copy + strip
+```
+
+Deletes `payBasis`, `dayRate`, `hourlyRate`, `employmentType`, `employmentTypeTransitionFrom` and
+`employmentTypeEffectiveAt` from `users`, `operatives` and `managers` documents where the pay profile holds them.
+**Only after this step can no operative read a colleague's rate**: before it the rates are still on documents every
+member reads (the rules cannot hide fields). There is no rollback for the strip other than restoring from the pay
+profiles; take a Firestore export first.
+
+### After 1.13.0
+
+- Sign in as an operative: a colleague's profile shows no rate or employment type; their own does.
+- Book a Saturday: only Custom hours is offered, prefilled with the Saturday window, with the weekend note. Selecting a
+  Friday and a Saturday together is refused with the iOS message.
+- Book custom hours 11:00–14:00 on a weekday with Unpaid break on: the lunch warning asks first.
+- Set a test organisation's billing to `canceled` in Stripe test mode: everyone sees the lapsed message; an admin
+  reaches Settings → Billing only.

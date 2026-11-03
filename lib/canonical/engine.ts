@@ -522,11 +522,15 @@ export type SlotIntervalInput = {
  * Explicit work times win. Named slots use the organisation's day and halves.
  * A custom slot without times, and an unknown slot, occupy the whole day.
  * Evening is the four hours after the day; overtime is the two hours after that.
+ * Rulebook 1.13.0 §5 (owner decisions round 4, Q5): a finish before the start runs past midnight, so the
+ * interval is the real clock time on the start day: 22:00–02:00 is `{ start: 1320, end: 1560 }` (the end past
+ * 24:00). `overnightCarryInterval` is the part of it on the next morning, for that day's clash checks.
  */
 export function slotInterval(booking: SlotIntervalInput, dayInput?: StandardDayInput | null): MinuteInterval | null {
   const start = parseClockMinutes(booking.workStartTime)
   const end = parseClockMinutes(booking.workEndTime)
   if (start != null && end != null && end > start) return { start, end }
+  if (start != null && end != null && end < start) return { start, end: end + 24 * 60 }
   const windows = halfDayWindows(dayInput)
   switch (namedSlotKind(booking.timeSlot)) {
     case 'AM':
@@ -545,6 +549,30 @@ export function slotInterval(booking: SlotIntervalInput, dayInput?: StandardDayI
     default:
       return { ...windows.day }
   }
+}
+
+/** True when the interval runs past midnight (`slotInterval` of an overnight booking). */
+export function intervalCrossesMidnight(interval: MinuteInterval | null | undefined): boolean {
+  return Boolean(interval && interval.end > 24 * 60)
+}
+
+/**
+ * Rulebook 1.13.0 §5: the part of an overnight interval that falls on the next calendar day, in that day's
+ * minutes (22:00–02:00 → `{ start: -120, end: 120 }`, i.e. the booking measured from the next midnight). Null when
+ * the interval does not cross midnight. Clash and overlap checks on the next day compare it with that day's bookings,
+ * so a night shift that ends at 06:00 clashes with a 05:00 start the next morning; touching times still do not.
+ */
+export function overnightCarryInterval(interval: MinuteInterval | null | undefined): MinuteInterval | null {
+  if (!interval || !intervalCrossesMidnight(interval)) return null
+  return { start: interval.start - 24 * 60, end: interval.end - 24 * 60 }
+}
+
+/** The calendar day after a `YYYY-MM-DD` key (plain calendar arithmetic, zone independent). Empty when not a key. */
+export function nextCalendarDayKey(dayKey: string | null | undefined): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dayKey || '').trim())
+  if (!match) return ''
+  const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]) + 1))
+  return date.toISOString().slice(0, 10)
 }
 
 /** Sorted, merged copy of the intervals. Touching intervals join. */

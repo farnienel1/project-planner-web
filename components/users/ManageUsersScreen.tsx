@@ -20,6 +20,9 @@ import type { User } from '@/types'
 import { UserAvatar } from '@/components/users/UserAvatar'
 import { staffAccountRole } from '@/lib/permissions'
 import { usersWithoutRequiredLineManager } from '@/lib/annualLeave/holidayApprovalUtils'
+import { accountTypeSyncState } from '@/lib/canonical/permissionLevels'
+import { accountTypeSubject } from '@/lib/staff/accountTypeChange'
+import { useOrganizationDocument } from '@/lib/stores/organizationDocumentStore'
 
 const ROLE_TABS: { tab: ManageUsersTab; label: string; section: string }[] = [
   { tab: 'admins', label: 'Admins', section: 'Administrators' },
@@ -147,6 +150,24 @@ export function ManageUsersScreen() {
   // `usersMissingLineManager`: active people saved before the line-manager rule who still need one. Admins only.
   const viewerRole = staffAccountRole(currentUser)
   const isAdminViewer = (viewerRole.isAdmin || viewerRole.isSuperAdmin) && !viewerRole.isOperativeMode
+  // Rulebook 1.12.2 `accountTypeSyncState`: people whose user type was only partly saved (users document vs
+  // `members.{uid}`). Opening the person and pressing Save finishes it.
+  const liveOrganization = useOrganizationDocument()
+  const liveMembers =
+    liveOrganization.loaded && liveOrganization.data && typeof liveOrganization.data.members === 'object'
+      ? (liveOrganization.data.members as Record<string, unknown>)
+      : null
+  const typeOutOfSync = useMemo(
+    () =>
+      isAdminViewer && liveMembers && organization?.id
+        ? users.filter(
+            (user) =>
+              matchesRosterSegment(user, 'active') &&
+              !accountTypeSyncState({ person: accountTypeSubject(user), organizationId: organization.id, members: liveMembers }).inSync
+          )
+        : [],
+    [isAdminViewer, liveMembers, organization?.id, users]
+  )
   const missingLineManager = useMemo(
     () =>
       isAdminViewer
@@ -240,6 +261,30 @@ export function ManageUsersScreen() {
           }`}
         >
           {toast.msg}
+        </div>
+      )}
+
+      {typeOutOfSync.length > 0 && (
+        <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <p className="font-semibold">
+            {typeOutOfSync.length === 1
+              ? "1 person's user type was only partly saved"
+              : `${typeOutOfSync.length} people's user type was only partly saved`}
+          </p>
+          <p className="mt-0.5 text-xs">Open the person and press Save to finish it on every record.</p>
+          <ul className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
+            {typeOutOfSync.map((user) => (
+              <li key={user.id}>
+                <button
+                  type="button"
+                  onClick={() => selectUser(user)}
+                  className="font-semibold underline underline-offset-2 hover:text-amber-700"
+                >
+                  {displayName(user)}
+                </button>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 
