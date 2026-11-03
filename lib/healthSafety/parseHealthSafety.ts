@@ -124,6 +124,20 @@ function richerTalk(a: HSToolboxTalk, b: HSToolboxTalk): HSToolboxTalk {
   return (b.updatedAt?.getTime() || 0) >= (a.updatedAt?.getTime() || 0) ? b : a
 }
 
+/**
+ * Two copies of one uploaded document (the web nested copy and a settings copy): the newer one, keeping the file
+ * link and name when only one copy has them, so the copy that lost its link never hides the file.
+ */
+function richerDocument<T extends { uploadedAt: Date; fileURL?: string; fileName?: string }>(a: T, b: T): T {
+  const newer = b.uploadedAt.getTime() >= a.uploadedAt.getTime() ? b : a
+  const older = newer === a ? b : a
+  return {
+    ...newer,
+    fileURL: newer.fileURL?.trim() ? newer.fileURL : older.fileURL,
+    fileName: newer.fileName?.trim() ? newer.fileName : older.fileName,
+  }
+}
+
 function richerSignature(a: HSToolboxSignature, b: HSToolboxSignature): HSToolboxSignature {
   if (a.status === 'signed' && b.status !== 'signed') return { ...b, ...a }
   if (b.status === 'signed' && a.status !== 'signed') return { ...a, ...b }
@@ -165,12 +179,8 @@ export function mergeHealthSafetyPayload(
       signatureMergeKey,
       richerSignature
     ).sort((a, b) => (b.signedAt?.getTime() ?? 0) - (a.signedAt?.getTime() ?? 0)),
-    ramsDocuments: byId([...extra.ramsDocuments, ...primary.ramsDocuments], (a, b) =>
-      b.uploadedAt.getTime() >= a.uploadedAt.getTime() ? b : a
-    ).sort((a, b) => b.uploadedAt.getTime() - a.uploadedAt.getTime()),
-    otherDocuments: byId([...extra.otherDocuments, ...primary.otherDocuments], (a, b) =>
-      b.uploadedAt.getTime() >= a.uploadedAt.getTime() ? b : a
-    ).sort((a, b) => b.uploadedAt.getTime() - a.uploadedAt.getTime()),
+    ramsDocuments: byId([...extra.ramsDocuments, ...primary.ramsDocuments], richerDocument).sort((a, b) => b.uploadedAt.getTime() - a.uploadedAt.getTime()),
+    otherDocuments: byId([...extra.otherDocuments, ...primary.otherDocuments], richerDocument).sort((a, b) => b.uploadedAt.getTime() - a.uploadedAt.getTime()),
     updatedAt:
       (primary.updatedAt?.getTime() || 0) >= (extra.updatedAt?.getTime() || 0) ? primary.updatedAt : extra.updatedAt,
   }

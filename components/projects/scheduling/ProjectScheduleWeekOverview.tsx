@@ -31,7 +31,6 @@ import { watchSubcontractorBookings } from '@/lib/weekly-report/loadSubcontracto
 import { managerSiteBookingToScheduleBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import type { Booking, Project } from '@/types'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
-import { scheduleWorkKindLabel } from '@/lib/jobTypes/jobTypesStorage'
 import { coversCalendarDay } from '@/lib/ios-parity/londonTime'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 import { DEFAULT_PAYROLL_POLICY, loadOrganizationDetails, type OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
@@ -540,21 +539,6 @@ export function ProjectScheduleWeekOverview({
 
   return (
     <div className="space-y-4">
-      {variant === 'full' ? (
-      <div className="card pad">
-        <p className="text-xs font-bold text-[var(--blue)] truncate">
-          {project.jobNumber} {project.siteName}
-        </p>
-        <p className="text-xs text-[var(--ink3)] truncate">
-          {project.client?.name}
-          {project.addressLine1 ? ` · ${project.addressLine1}` : ''}
-        </p>
-        <span className="mt-1 inline-block rounded-md bg-[var(--soft)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--ink2)]">
-          {scheduleWorkKindLabel(project)}
-        </span>
-      </div>
-      ) : null}
-
       <div className="flex items-center justify-between gap-3">
         <button
           type="button"
