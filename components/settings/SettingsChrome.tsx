@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import type { MouseEvent, ReactNode } from 'react'
 import {
-  COMPANY_SETTINGS,
+  visibleCompanySettings,
   PERSONAL_SETTINGS,
   type SettingsNavItem,
   type SettingsPanel,
@@ -57,16 +57,18 @@ export function SettingsChrome({
   panel,
   canAccessCompany,
   canReviewReports,
+  canExportData,
   children,
 }: {
   panel: SettingsPanel
   canAccessCompany: boolean
   canReviewReports?: boolean
+  canExportData?: boolean
   children: ReactNode
 }) {
   const personal = PERSONAL_SETTINGS
   const company = canAccessCompany
-    ? COMPANY_SETTINGS.filter((item) => item.id !== 'reported-files' || canReviewReports)
+    ? visibleCompanySettings({ canReviewReports, canExportData })
     : []
 
   return (
