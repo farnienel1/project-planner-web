@@ -103,6 +103,8 @@ export async function POST(request: NextRequest) {
       subject: inviteSetupEmailSubject(organizationName),
       html: buildInviteSetupEmailHtml(mail),
       text: buildInviteSetupEmailText(mail),
+      orgId: access.organizationId,
+      idToken: token,
     })
 
     return Response.json({ ok: true })

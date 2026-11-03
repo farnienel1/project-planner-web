@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server'
+import { bearerToken } from '@/lib/owner/firestoreRest'
 import { sendProjectPlannerEmail, type ProjectPlannerEmailAttachment } from '@/lib/email/resendClient'
 import { managerExportEmailHTML } from '@/lib/timesheets/timesheetExport'
 import {
@@ -107,7 +108,8 @@ export async function POST(request: NextRequest) {
     to: recipientEmail.toLowerCase(),
     subject: sanitizeEmailHeader(`Signed timesheets for filing — ${paymentRunStamp} — ${organizationName}`, 180),
     html,
-    fromName: sanitizeEmailHeader(organizationName, 80) || 'Project Planner',
+    orgId: access.organizationId,
+    idToken: bearerToken(request),
   }
 
   try {

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { bearerToken } from '@/lib/owner/firestoreRest'
 import { sendProjectPlannerEmail } from '@/lib/email/resendClient'
 import {
   clientIp,
@@ -71,6 +72,7 @@ export async function POST(request: NextRequest) {
       to: email,
       subject: mfaEmailSubject(),
       html: buildMfaEmailHtml(code),
+      idToken: bearerToken(request),
     })
   } catch (error) {
     console.error('[auth/mfa/start]', clientIp(request), error)

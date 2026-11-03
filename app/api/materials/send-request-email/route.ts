@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server'
+import { bearerToken } from '@/lib/owner/firestoreRest'
 import { sendProjectPlannerEmail } from '@/lib/email/resendClient'
 import { buildMaterialRequestEmail } from '@/lib/email/materialRequestEmail'
 import {
@@ -151,7 +152,8 @@ export async function POST(request: NextRequest) {
         subject,
         html,
         replyTo: senderEmail.toLowerCase(),
-        fromName: `${senderName} (via Project Planner)`,
+        orgId: access.organizationId,
+        idToken: bearerToken(request),
       })
       sent += 1
     } catch (error) {
@@ -166,7 +168,8 @@ export async function POST(request: NextRequest) {
         subject: `Copy: ${subject}`,
         html,
         replyTo: senderEmail.toLowerCase(),
-        fromName: `${senderName} (via Project Planner)`,
+        orgId: access.organizationId,
+        idToken: bearerToken(request),
       })
       copies += 1
     } catch (error) {

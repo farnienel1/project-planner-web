@@ -1,148 +1,120 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  EMAIL_SERVER_KEY_HEADER,
   PROJECT_PLANNER_EMAIL_FUNCTION_URL,
   sendProjectPlannerEmail,
 } from './resendClient.ts'
 
-test('sendProjectPlannerEmail posts to the iOS Cloud Function, not Resend', async () => {
-  const calls: Array<{ url: string; body: Record<string, unknown> }> = []
+type Call = { url: string; headers: Record<string, string>; body: Record<string, unknown> }
+
+async function capture(run: () => Promise<void>, response: Response = new Response('{"sent":true}', { status: 200 })) {
+  const calls: Call[] = []
   const originalFetch = globalThis.fetch
+  const originalKey = process.env.EMAIL_SERVER_KEY
+  process.env.EMAIL_SERVER_KEY = 'test-server-key'
   globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     calls.push({
       url: String(input),
+      headers: (init?.headers || {}) as Record<string, string>,
       body: JSON.parse(String(init?.body || '{}')) as Record<string, unknown>,
     })
-    return new Response('ok', { status: 200 })
+    return response
   }) as typeof fetch
-
   try {
-    await sendProjectPlannerEmail({
+    await run()
+  } finally {
+    globalThis.fetch = originalFetch
+    if (originalKey === undefined) delete process.env.EMAIL_SERVER_KEY
+    else process.env.EMAIL_SERVER_KEY = originalKey
+  }
+  return calls
+}
+
+test('sendProjectPlannerEmail posts web_rendered to the authenticated sendEmail function with the server key', async () => {
+  const calls = await capture(() =>
+    sendProjectPlannerEmail({
       to: 'founder@example.com',
       subject: 'Confirm your Project Planner account',
       html: '<p>Hello</p>',
+      orgId: 'org-1',
+      idToken: 'id-token-1',
     })
-  } finally {
-    globalThis.fetch = originalFetch
-  }
-
+  )
   assert.equal(calls.length, 1)
   assert.equal(calls[0].url, PROJECT_PLANNER_EMAIL_FUNCTION_URL)
+  assert.ok(calls[0].url.endsWith('/sendEmail'))
   assert.equal(calls[0].url.includes('api.resend.com'), false)
-  assert.equal(calls[0].body.to, 'founder@example.com')
-  assert.equal(calls[0].body.fromName, 'Project Planner')
-  assert.equal(calls[0].body.replyTo, 'info@projectplanner.us')
+  assert.equal(calls[0].headers[EMAIL_SERVER_KEY_HEADER], 'test-server-key')
+  assert.equal(calls[0].headers.Authorization, 'Bearer id-token-1')
+  assert.deepEqual(calls[0].body, {
+    template: 'web_rendered',
+    to: ['founder@example.com'],
+    orgId: 'org-1',
+    data: { subject: 'Confirm your Project Planner account', html: '<p>Hello</p>' },
+  })
+  assert.equal('fromName' in calls[0].body, false, 'the function decides the From name')
 })
 
-test('sendProjectPlannerEmail forwards optional headers without changing callers that omit them', async () => {
-  const calls: Array<{ body: Record<string, unknown> }> = []
-  const originalFetch = globalThis.fetch
-  globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
-    calls.push({ body: JSON.parse(String(init?.body || '{}')) as Record<string, unknown> })
-    return new Response('ok', { status: 200 })
-  }) as typeof fetch
-
-  try {
-    await sendProjectPlannerEmail({
+test('sendProjectPlannerEmail omits Authorization without a user and forwards replyTo, text and headers', async () => {
+  const calls = await capture(() =>
+    sendProjectPlannerEmail({
       to: 'ada@example.com',
       subject: "You're on the Project Planner list",
       html: '<p>Hello</p>',
-      headers: {
-        'List-Unsubscribe': '<https://projectplanner.us/api/interest/unsubscribe?token=abc>',
-        'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
-      },
+      text: 'Hello',
+      replyTo: 'visitor@example.com',
+      headers: { 'List-Unsubscribe': '<https://projectplanner.us/api/interest/unsubscribe?token=abc>' },
     })
-    await sendProjectPlannerEmail({
-      to: 'info@projectplanner.us',
-      subject: 'New interest',
-      html: '<p>Ping</p>',
-    })
-  } finally {
-    globalThis.fetch = originalFetch
-  }
-
-  assert.deepEqual(calls[0].body.headers, {
-    'List-Unsubscribe': '<https://projectplanner.us/api/interest/unsubscribe?token=abc>',
-    'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+  )
+  assert.equal('Authorization' in calls[0].headers, false)
+  assert.equal('orgId' in calls[0].body, false)
+  assert.deepEqual(calls[0].body.data, {
+    subject: "You're on the Project Planner list",
+    html: '<p>Hello</p>',
+    text: 'Hello',
+    replyTo: 'visitor@example.com',
+    headers: { 'List-Unsubscribe': '<https://projectplanner.us/api/interest/unsubscribe?token=abc>' },
   })
-  assert.equal('headers' in calls[1].body, false)
 })
 
-test('sendProjectPlannerEmail forwards cc, replyTo and fromName like iOS', async () => {
-  const calls: Array<{ body: Record<string, unknown> }> = []
-  const originalFetch = globalThis.fetch
-  globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
-    calls.push({ body: JSON.parse(String(init?.body || '{}')) as Record<string, unknown> })
-    return new Response('ok', { status: 200 })
-  }) as typeof fetch
-
-  try {
-    await sendProjectPlannerEmail({
-      to: 'alex@cef.example',
-      subject: 'Quote request — P-104 — Acme',
-      html: '<p>Hi</p>',
-      cc: 'farnie@example.com',
-      replyTo: 'farnie@example.com',
-      fromName: 'Farnie (via Project Planner)',
+test('sendProjectPlannerEmail forwards attachments by name and content only', async () => {
+  const calls = await capture(() =>
+    sendProjectPlannerEmail({
+      to: 'manager@example.com',
+      subject: 'Signed timesheets',
+      html: '<p>Attached</p>',
+      attachments: [{ filename: 'Ada timesheet.pdf', content: 'JVBERi0x', type: 'application/pdf' }],
     })
-  } finally {
-    globalThis.fetch = originalFetch
-  }
-
-  assert.equal(calls[0].body.cc, 'farnie@example.com')
-  assert.equal(calls[0].body.replyTo, 'farnie@example.com')
-  assert.equal(calls[0].body.fromName, 'Farnie (via Project Planner)')
+  )
+  assert.deepEqual(calls[0].body.attachments, [{ filename: 'Ada timesheet.pdf', content: 'JVBERi0x' }])
 })
 
-test('sendProjectPlannerEmail forwards PDF attachments like iOS ResendEmailService', async () => {
-  const calls: Array<{ body: Record<string, unknown> }> = []
-  const originalFetch = globalThis.fetch
-  globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
-    calls.push({ body: JSON.parse(String(init?.body || '{}')) as Record<string, unknown> })
-    return new Response('ok', { status: 200 })
-  }) as typeof fetch
-
+test('sendProjectPlannerEmail refuses to send without EMAIL_SERVER_KEY', async () => {
+  const originalKey = process.env.EMAIL_SERVER_KEY
+  delete process.env.EMAIL_SERVER_KEY
   try {
-    await sendProjectPlannerEmail({
-      to: 'alex@cef.example',
-      subject: 'Signed timesheets for filing',
-      html: '<p>Hi</p>',
-      fromName: 'Acme',
-      attachments: [
-        {
-          filename: 'Ada Booked timesheet for payment run date 16.09.26 30.09.26.pdf',
-          content: Buffer.from('%PDF-1.4').toString('base64'),
-        },
-      ],
-    })
+    await assert.rejects(
+      sendProjectPlannerEmail({ to: 'a@example.com', subject: 's', html: 'h' }),
+      /EMAIL_SERVER_KEY/
+    )
   } finally {
-    globalThis.fetch = originalFetch
+    if (originalKey !== undefined) process.env.EMAIL_SERVER_KEY = originalKey
   }
-
-  const attachments = calls[0].body.attachments as Array<Record<string, string>>
-  assert.equal(attachments.length, 1)
-  assert.equal(attachments[0].filename.endsWith('.pdf'), true)
-  assert.equal(attachments[0].type, 'application/pdf')
-  assert.equal(attachments[0].content_type, 'application/pdf')
-  assert.ok(attachments[0].content.length > 0)
 })
 
 test('sendProjectPlannerEmail surfaces a Cloud Function error', async () => {
-  const originalFetch = globalThis.fetch
-  globalThis.fetch = (async () =>
-    new Response(JSON.stringify({ error: 'mailbox unavailable' }), { status: 500 })) as typeof fetch
-
-  try {
-    await assert.rejects(
-      () =>
-        sendProjectPlannerEmail({
-          to: 'founder@example.com',
-          subject: 'Hi',
-          html: '<p>x</p>',
-        }),
-      /mailbox unavailable/
-    )
-  } finally {
-    globalThis.fetch = originalFetch
-  }
+  let failure: unknown
+  await capture(
+    async () => {
+      try {
+        await sendProjectPlannerEmail({ to: 'a@example.com', subject: 's', html: 'h' })
+      } catch (error) {
+        failure = error
+      }
+    },
+    new Response(JSON.stringify({ sent: false, error: 'Too many emails. Try again later.' }), { status: 429 })
+  )
+  assert.ok(failure instanceof Error)
+  assert.equal((failure as Error).message, 'Too many emails. Try again later.')
 })

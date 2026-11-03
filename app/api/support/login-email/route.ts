@@ -99,6 +99,7 @@ export async function POST(request: NextRequest) {
       to: LOGIN_EMAIL_FIX_INBOX || PLATFORM_OWNER_EMAIL,
       subject: message.subject,
       html: `${message.html}<p><a href="${escapeHtml(deepLink)}">Open in the owner console</a></p>`,
+      idToken: token,
     })
     return NextResponse.json({ ok: true })
   } catch (error) {

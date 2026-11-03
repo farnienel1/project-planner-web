@@ -6,25 +6,31 @@ export function getAppBaseUrl(): string {
   )
 }
 
-/** Same HTTP function iOS uses (`ResendEmailService.swift` → Outlook / Microsoft 365). */
+/**
+ * The authenticated email Cloud Function (`functions/email`, docs/EMAIL_FUNCTION.md). Web API routes call it in
+ * server mode: `X-Project-Planner-Server-Key` (Netlify env `EMAIL_SERVER_KEY`, the same value as the function's
+ * `EMAIL_SERVER_KEY` secret) plus, when the route has a signed-in user, that user's Firebase ID token. The route has
+ * already checked the caller and rendered the HTML; the function fixes the From address and display name (the
+ * organisation's name when `orgId` is given), checks attachments and rate-limits per user.
+ *
+ * Replaces the open `sendProjectPlannerEmail` function (no auth; any HTML to any address).
+ */
 export const PROJECT_PLANNER_EMAIL_FUNCTION_URL =
-  'https://us-central1-project-planner-f986c.cloudfunctions.net/sendProjectPlannerEmail'
+  'https://us-central1-project-planner-f986c.cloudfunctions.net/sendEmail'
+
+export const EMAIL_SERVER_KEY_HEADER = 'X-Project-Planner-Server-Key'
 
 function emailFunctionUrl(): string {
   return process.env.EMAIL_FUNCTION_URL?.trim() || PROJECT_PLANNER_EMAIL_FUNCTION_URL
 }
 
-function fromName(): string {
-  return process.env.EMAIL_FROM_NAME?.trim() || 'Project Planner'
-}
-
-function replyTo(): string | undefined {
-  const value = process.env.EMAIL_REPLY_TO?.trim()
-  return value || 'info@projectplanner.us'
+function serverKey(): string {
+  return process.env.EMAIL_SERVER_KEY?.trim() || ''
 }
 
 export type ProjectPlannerEmailAttachment = {
   filename: string
+  /** Base64. PDF, XLSX or CSV only; the function decides the content type from the extension. */
   content: string
   type?: string
   content_type?: string
@@ -34,42 +40,52 @@ export async function sendProjectPlannerEmail(params: {
   to: string
   subject: string
   html: string
-  /** Optional plaintext alternative. Existing callers omit this; the Cloud Function may ignore it. */
+  /** Optional plaintext alternative. */
   text?: string
-  cc?: string
+  /** Reply-To address (e.g. the visitor on the support form, the sender of a material request). */
   replyTo?: string
-  fromName?: string
+  /** The organisation the email is about: its name becomes the From display name. */
+  orgId?: string
+  /** The signed-in user's Firebase ID token, when the route has one (audit and per-user rate limit). */
+  idToken?: string | null
   attachments?: ProjectPlannerEmailAttachment[]
-  /**
-   * Optional extra SMTP/API headers (e.g. List-Unsubscribe). Existing callers omit this.
-   * The Cloud Function source is NOT in this repo. If that function ignores unknown
-   * fields, these headers will not land until the function is updated. Marketing
-   * mail must still include a visible unsubscribe URL in HTML.
-   */
+  /** Only List-Unsubscribe / List-Unsubscribe-Post are passed on by the function. */
   headers?: Record<string, string>
 }): Promise<void> {
-  const payload: Record<string, unknown> = {
-    to: params.to,
+  const key = serverKey()
+  if (!key) {
+    throw new Error('Email is not configured on this server (EMAIL_SERVER_KEY is not set).')
+  }
+  const data: Record<string, unknown> = {
     subject: params.subject,
     html: params.html,
-    fromName: params.fromName?.trim() || fromName(),
-    replyTo: params.replyTo?.trim() || replyTo() || 'info@projectplanner.us',
   }
-  if (params.text?.trim()) payload.text = params.text
-  if (params.cc?.trim()) payload.cc = params.cc.trim()
-  if (params.headers && Object.keys(params.headers).length) payload.headers = params.headers
+  if (params.text?.trim()) data.text = params.text
+  if (params.replyTo?.trim()) data.replyTo = params.replyTo.trim()
+  if (params.headers && Object.keys(params.headers).length) data.headers = params.headers
+
+  const payload: Record<string, unknown> = {
+    template: 'web_rendered',
+    to: [params.to],
+    data,
+  }
+  if (params.orgId?.trim()) payload.orgId = params.orgId.trim()
   if (params.attachments?.length) {
     payload.attachments = params.attachments.map((attachment) => ({
       filename: attachment.filename,
       content: attachment.content,
-      type: attachment.type || 'application/pdf',
-      content_type: attachment.content_type || attachment.type || 'application/pdf',
     }))
   }
 
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    [EMAIL_SERVER_KEY_HEADER]: key,
+  }
+  if (params.idToken?.trim()) headers.Authorization = `Bearer ${params.idToken.trim()}`
+
   const response = await fetch(emailFunctionUrl(), {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify(payload),
   })
 

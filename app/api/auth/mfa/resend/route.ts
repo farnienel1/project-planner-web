@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { bearerToken } from '@/lib/owner/firestoreRest'
 import { sendProjectPlannerEmail } from '@/lib/email/resendClient'
 import {
   clientSafeMessage,
@@ -54,6 +55,7 @@ export async function POST(request: NextRequest) {
       to: targetEmail,
       subject: mfaEmailSubject(),
       html: buildMfaEmailHtml(code),
+      idToken: uid ? bearerToken(request) : null,
     })
     const next: MfaChallenge = {
       uid: targetUid,

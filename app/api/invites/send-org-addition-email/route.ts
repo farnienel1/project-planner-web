@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server'
 import { orgAdditionEmailSubject, buildOrgAdditionEmailHtml } from '@/lib/email/orgAdditionEmail'
+import { bearerToken } from '@/lib/owner/firestoreRest'
 import { sendProjectPlannerEmail } from '@/lib/email/resendClient'
 import {
   clientSafeMessage,
@@ -51,6 +52,8 @@ export async function POST(request: NextRequest) {
         firstName,
         organizationName,
       }),
+      orgId: access.organizationId,
+      idToken: bearerToken(request),
     })
 
     return Response.json({ ok: true })

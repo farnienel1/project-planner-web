@@ -15,9 +15,10 @@
  * recipient's own unread rows only (`userId == recipient`, `isRead == false`, bounded read), the
  * same rule as `unreadNotificationBadgeCount`.
  *
- * Email HTTP `sendProjectPlannerEmail` already lives on this Firebase project
- * (us-central1). This package is codebase `inbox-push` so a deploy here does
- * not replace that function.
+ * Email: `sendEmail` (below, `email/`) is the authenticated email function for both apps — fixed templates, recipient
+ * rules, rate limit (docs/EMAIL_FUNCTION.md). The old open `sendProjectPlannerEmail` was deployed outside this repo
+ * and is not in this codebase (`inbox-push`), so a deploy here neither replaces nor deletes it; the owner deletes it
+ * once both apps call `sendEmail`.
  *
  * After sendEachForMulticast, pruneDeadPushTokens drops only tokens whose
  * result is invalid APNs credential, unregistered, or invalid registration
@@ -33,6 +34,13 @@ const canonical = require('./loadCanonical')
 const { pruneDeadPushTokens } = require('./prunePushTokens')
 const { skipPushForActor } = require('./pushActorGuard')
 const { recipientMayReceivePush } = require('./pushRecipientGuard')
+const { onRequest } = require('firebase-functions/v2/https')
+const { defineSecret } = require('firebase-functions/params')
+const { getAuth } = require('firebase-admin/auth')
+const { getAppCheck } = require('firebase-admin/app-check')
+const { createSendEmailHandler, resendSender } = require('./email/handler')
+const { createFirestoreReader } = require('./email/firestoreReader')
+const { consumeRateLimit } = require('./email/rateLimit')
 
 initializeApp()
 
@@ -171,4 +179,42 @@ exports.sendDevicePushOnNotificationCreate = onDocumentCreated(
       logger.error('device push failed', { notificationId, orgId, userId, error })
     }
   }
+)
+
+const RESEND_API_KEY = defineSecret('RESEND_API_KEY')
+const EMAIL_SERVER_KEY = defineSecret('EMAIL_SERVER_KEY')
+
+let sendEmailHandler = null
+
+function emailHandler() {
+  if (sendEmailHandler) return sendEmailHandler
+  const db = getFirestore()
+  sendEmailHandler = createSendEmailHandler({
+    verifyIdToken: (token) => getAuth().verifyIdToken(token, true),
+    verifyAppCheck: (token) => getAppCheck().verifyToken(token),
+    reader: createFirestoreReader(db),
+    consumeRateLimit: (key, count, limits) => consumeRateLimit(db, key, count, limits),
+    sendMessage: resendSender(() => RESEND_API_KEY.value()),
+    serverKey: () => EMAIL_SERVER_KEY.value() || '',
+    logger,
+  })
+  return sendEmailHandler
+}
+
+/**
+ * Authenticated email (docs/EMAIL_FUNCTION.md). Public at the IAM level (iOS calls it with a plain URLRequest);
+ * every request is checked in code: a Firebase ID token (or the web server key), membership, template, recipients,
+ * attachments and the per-sender rate limit. No CORS: neither app calls it from a browser.
+ */
+exports.sendEmail = onRequest(
+  {
+    region: 'us-central1',
+    secrets: [RESEND_API_KEY, EMAIL_SERVER_KEY],
+    invoker: 'public',
+    cors: false,
+    maxInstances: 10,
+    memory: '512MiB',
+    timeoutSeconds: 60,
+  },
+  (req, res) => emailHandler()(req, res)
 )
