@@ -14,6 +14,7 @@ export type SettingsPanel =
   | 'roles'
   | 'billing'
   | 'reported-files'
+  | 'company-export'
 
 export type SettingsNavItem = {
   id: Exclude<SettingsPanel, 'main'>
@@ -144,6 +145,15 @@ export const SETTINGS_NAV: SettingsNavItem[] = [
     hue: 'warn',
     group: 'company',
   },
+  {
+    id: 'company-export',
+    label: 'Export company data',
+    description: 'Download every company record as one .zip',
+    href: '/dashboard/settings/company-export',
+    icon: 'M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4',
+    hue: 'lib',
+    group: 'company',
+  },
 ]
 
 const PANEL_BY_PATH: Record<string, SettingsPanel> = Object.fromEntries(
@@ -169,3 +179,15 @@ export function settingsHrefForPanel(panel: SettingsPanel): string {
 
 export const PERSONAL_SETTINGS = SETTINGS_NAV.filter((item) => item.group === 'personal')
 export const COMPANY_SETTINGS = SETTINGS_NAV.filter((item) => item.group === 'company')
+
+/**
+ * The company rows a viewer sees: Reported files only for file-report reviewers, Export company data only for
+ * admins outside operative mode (`canExportCompanyData`).
+ */
+export function visibleCompanySettings(options: { canReviewReports?: boolean; canExportData?: boolean }): SettingsNavItem[] {
+  return COMPANY_SETTINGS.filter(
+    (item) =>
+      (item.id !== 'reported-files' || Boolean(options.canReviewReports)) &&
+      (item.id !== 'company-export' || Boolean(options.canExportData))
+  )
+}

@@ -56,10 +56,12 @@ import { CompanyDetailsPanel } from '@/components/settings/panels/CompanyDetails
 import { BillingPanel } from '@/components/settings/panels/BillingPanel'
 import { MyNotificationsPanel } from '@/components/settings/panels/MyNotificationsPanel'
 import { ReportedFilesPanel } from '@/components/settings/panels/ReportedFilesPanel'
+import { CompanyDataExportPanel } from '@/components/settings/panels/CompanyDataExportPanel'
+import { canExportCompanyData } from '@/lib/companyExport/access'
 import { SettingsChrome } from '@/components/settings/SettingsChrome'
 import {
-  COMPANY_SETTINGS,
   PERSONAL_SETTINGS,
+  visibleCompanySettings,
   settingsHrefForPanel,
   settingsPanelFromPath,
   type SettingsPanel,
@@ -83,6 +85,7 @@ const ORGANISATION_HUB_PANELS: Panel[] = [
   'roles',
   'billing',
   'reported-files',
+  'company-export',
 ]
 
 function isOrganisationHubPanel(panel: Panel): boolean {
@@ -461,6 +464,7 @@ export default function SettingsScreen({ initialPanel = 'main' }: { initialPanel
   const orgName = displayOrganizationName(organization?.name)
   const canAccessOrgHub = canAccessOrganisationSettingsHub(user)
   const canReviewReports = canReviewFileReports(staffAccountRole(user))
+  const canExportData = canExportCompanyData(user, organization?.id)
   const pathPanel = settingsPanelFromPath(pathname)
   const requestedPanel = pathPanel || initialPanel
   const safeInitialPanel =
@@ -493,7 +497,12 @@ export default function SettingsScreen({ initialPanel = 'main' }: { initialPanel
 
   const goHub = () => router.push('/dashboard/settings')
   const wrap = (active: Panel, node: ReactNode) => (
-    <SettingsChrome panel={active} canAccessCompany={canAccessOrgHub} canReviewReports={canReviewReports}>
+    <SettingsChrome
+      panel={active}
+      canAccessCompany={canAccessOrgHub}
+      canReviewReports={canReviewReports}
+      canExportData={canExportData}
+    >
       {node}
     </SettingsChrome>
   )
@@ -547,6 +556,9 @@ export default function SettingsScreen({ initialPanel = 'main' }: { initialPanel
   if (panel === 'billing' && canAccessOrgHub) return wrap('billing', <BillingPanel onBack={goHub} />)
   if (panel === 'reported-files' && canAccessOrgHub && canReviewReports) {
     return wrap('reported-files', <ReportedFilesPanel onBack={goHub} />)
+  }
+  if (panel === 'company-export' && canAccessOrgHub && canExportData) {
+    return wrap('company-export', <CompanyDataExportPanel onBack={goHub} />)
   }
 
   return (
@@ -623,7 +635,7 @@ export default function SettingsScreen({ initialPanel = 'main' }: { initialPanel
               </span>
             </div>
             <SettingsCard>
-              {COMPANY_SETTINGS.filter((item) => item.id !== 'reported-files' || canReviewReports).map((item) => (
+              {visibleCompanySettings({ canReviewReports, canExportData }).map((item) => (
                 <Link key={item.id} href={item.href}>
                   <SettingsRow
                     icon={item.icon}
