@@ -7,6 +7,7 @@ import { HoursTimelinePicker } from '@/components/scheduling/HoursTimelinePicker
 import { hoursBreakdown } from '@/lib/scheduling/paidHours'
 import { HoursBreakdownCard } from '@/components/schedule/HoursBreakdownCard'
 import { DEFAULT_PAYROLL_POLICY, type OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
+import { confirmCustomHoursBreak, slotOfferedOnDate, weekendNoteForDate } from '@/lib/scheduling/bookingSlotRules'
 
 const SLOT_OPTIONS: { value: ScheduleSlotChoice; label: string }[] = [
   { value: 'AM', label: 'Morning (AM)' },
@@ -70,8 +71,20 @@ export function BookingEditSheet({
     })
   }, [booking.date, slot, workStartTime, workEndTime, breakRemoved, payroll])
 
+  // Rulebook 1.13.0 (Q2): no AM / PM on Saturday or Sunday; a weekend AM / PM already stored is kept and shown.
+  const storedChoice = firestoreSlotToChoice(String(booking.timeSlot))
+  const slotOptions = SLOT_OPTIONS.filter((opt) => slotOfferedOnDate(opt.value, booking.date, payroll, storedChoice))
+  const weekendNote = weekendNoteForDate(booking.date, payroll)
+
   const handleSave = async () => {
     setError(null)
+    // 1.13.0 lunch warning (`customHoursBreakWarning`).
+    if (
+      slot === 'CUSTOM' &&
+      !confirmCustomHoursBreak(payroll, booking.date, { timeSlot: 'CUSTOM_HOURS', workStartTime, workEndTime, isBreakRemoved: breakRemoved })
+    ) {
+      return
+    }
     try {
       const firestoreSlot = slotToFirestore({ date: new Date(booking.date), slot, workStartTime, workEndTime })
       await onSave({
@@ -137,12 +150,13 @@ export function BookingEditSheet({
               onChange={(e) => setSlot(e.target.value as ScheduleSlotChoice)}
               className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
             >
-              {SLOT_OPTIONS.map((opt) => (
+              {slotOptions.map((opt) => (
                 <option key={opt.value} value={opt.value}>
                   {opt.label}
                 </option>
               ))}
             </select>
+            {weekendNote ? <p className="mt-1 text-xs text-slate-500">{weekendNote}</p> : null}
           </div>
 
           {slot === 'CUSTOM' && (

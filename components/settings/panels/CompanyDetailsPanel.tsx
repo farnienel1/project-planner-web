@@ -27,7 +27,8 @@ import {
   useSettingsLeave,
 } from '@/components/settings/SettingsDirty'
 import { useApplyLiveWhenClean, useLiveOrganizationDetails } from '@/components/settings/useLiveOrganizationSettings'
-import { COUNTRY_OPTIONS, validateLogoFile } from '@/lib/orgSetup/orgSetupSettings'
+import { validateLogoFile } from '@/lib/orgSetup/orgSetupSettings'
+import { launchCountryOptions } from '@/lib/canonical'
 import {
   PanelHeader,
   SectionLabel,
@@ -58,7 +59,6 @@ type CompanyDraft = {
 }
 
 /** Company countries (canonical `bankHolidayCountries`); UK nations are regions, chosen below. */
-const COMPANY_COUNTRY_OPTIONS = COUNTRY_OPTIONS
 
 /** Saved currency on the document (any of the fields iOS or web write), without the country default. */
 function hasSavedCurrency(data: Record<string, unknown> | null): boolean {
@@ -331,9 +331,10 @@ export function CompanyDetailsPanel({ onBack }: { onBack: () => void }) {
 
           <FormField label="Country" hint="Sets the business time zone and the default currency">
             <Select value={country} onChange={(e) => changeCountry(e.target.value)}>
-              {COMPANY_COUNTRY_OPTIONS.map((option) => (
+              {/* Rulebook 1.13.0 §4.1 (`launchCountryOptions`): GB and IE, plus a stored other country. */}
+              {launchCountryOptions(savedCompany?.countryCode || country).map((option) => (
                 <option key={option.code} value={option.code}>
-                  {option.label}
+                  {option.title}
                 </option>
               ))}
             </Select>

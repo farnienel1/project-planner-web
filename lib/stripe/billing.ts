@@ -31,6 +31,9 @@ export type OrgBilling = {
   mrrPence?: number
   updatedAt?: Date
   lastStripeEventId?: string
+  /** Rulebook 1.13.0 §19 (`billingAccessFields`): written for the security rules. */
+  accessOpen?: boolean
+  accessClosesAt?: Date | null
 }
 
 function asDate(value: unknown): Date | null {

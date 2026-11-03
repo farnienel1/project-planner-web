@@ -44,6 +44,7 @@ export function userLeaveBalance(input: {
     | 'annualLeaveCarriesOver'
     | 'annualLeaveYearAllowance'
     | 'annualLeaveYearAllowanceKey'
+    | 'employmentStartDate'
   > | null
   bookings: HolidayBooking[]
   orgDefaults?: OrgAnnualLeaveDefaults | null
@@ -70,6 +71,9 @@ export function userLeaveBalance(input: {
     bookings: input.bookings.map((booking) => holidayToLeaveDay(booking, timeZone)),
     onDayKey: dayKeyInZone(input.now ?? new Date(), timeZone),
     nonWorkingDayKeys: input.bankHolidayDayKeys ?? [],
+    // Rulebook 1.13.0 (Q4): pro rata in the year joined; carry-over capped by the organisation setting.
+    employmentStartDayKey: user?.employmentStartDate ?? null,
+    maxCarryOverDays: defaults.maxCarryOverDays ?? null,
     timeZone,
   })
 }

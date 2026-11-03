@@ -435,6 +435,7 @@ export const CONTRACT_NO_READER: Readonly<Record<string, string>> = {
   dismissedWarnings: 'Dismiss key is the document id; no document reader.',
   qualifications: 'No shared reader yet (known gap).',
   toolboxLibrary: 'Platform content, not organisation data.',
+  payProfiles: '1.13.0: parsePayProfileDocument keeps only PAY_PROFILE_FIELDS; samples follow once iOS writes it.',
   deletedBookings: 'Write-only tombstones (bookingTombstoneWriteFields); never read by a screen.',
 }
 

@@ -1,6 +1,7 @@
 'use client'
 
 import { create } from 'zustand'
+import { addPayProfileWrite } from '@/lib/pay/payProfileService'
 import { collection, deleteField, doc, getDoc, getDocs, limit, query, serverTimestamp, setDoc, updateDoc, Timestamp, where, writeBatch } from 'firebase/firestore'
 import { sendPasswordResetEmail } from 'firebase/auth'
 import { passwordResetActionSettings } from '@/lib/auth/passwordResetSettings'
@@ -213,15 +214,26 @@ export const useUserStore = create<UserStoreState>(() => ({
     if (metadata && (saverId === user.id || saverIsAdmin)) Object.assign(payload, metadata)
     const orgId = organizationId?.trim() || user.organizationId
     const historyRows = options?.payHistoryRows ?? []
-    if (historyRows.length > 0 && orgId) {
-      // One batch: the profile and its pay history are saved together or not at all (rulebook 1.10.0 §8).
-      const batch = writeBatch(db)
-      batch.update(doc(db, 'users', user.id), payload)
+    // Rulebook 1.13.0 (Q1): someone who may change this person's pay also writes the changed pay fields to their
+    // private pay profile (organizations/{orgId}/payProfiles/{uid}), in the same batch.
+    const payWriter = canChangePersonPay(
+      {
+        userId: saverId,
+        isAdmin: saverIsAdmin || Boolean(saver?.role === 'admin' && !saver?.permissions.operativeMode),
+        isManager: Boolean(saver && (saver.permissions.manager || saver.role === 'manager')),
+        hasOperativesAccess: Boolean(saver?.permissions.operatives),
+        isOperativeMode: Boolean(saver?.permissions.operativeMode),
+      },
+      { userId: user.id, isOperative: Boolean(user.permissions.operativeMode || user.role === 'operative') }
+    )
+    const batch = writeBatch(db)
+    batch.update(doc(db, 'users', user.id), payload)
+    // One batch: the profile and its pay history are saved together or not at all (rulebook 1.10.0 §8).
+    if (orgId) {
       for (const row of historyRows) batch.set(doc(db, 'organizations', orgId, 'operativeDayRateHistory', row.id), row.fields)
-      await batch.commit()
-    } else {
-      await updateDoc(doc(db, 'users', user.id), payload)
+      if (payWriter) addPayProfileWrite(batch, orgId, user.id, payload, saverId)
     }
+    await batch.commit()
     const email = user.email.toLowerCase().trim()
     if (orgId && email) {
       await setDoc(doc(db, 'organizations', orgId, 'userEmails', email), { userId: user.id })

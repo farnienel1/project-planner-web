@@ -25,7 +25,7 @@ export function OperativeForm({
   backHref: string
   onSaved: (id: string) => void
 }) {
-  const { organization } = useAuthStore()
+  const { organization, user: signedInUser } = useAuthStore()
   const { saveOperative, operatives, loadOperatives } = useOperativeStore()
   const { users, loadUsers } = useOrgUserStore()
   const { saveUser } = useUserStore()
@@ -152,11 +152,26 @@ export function OperativeForm({
           // history rows in the same batch (1.10.0).
           { baseline: linked, payHistoryRows: historyRows }
         )
-      } else if (historyRows.length > 0) {
-        const { writeBatch, doc } = await import('firebase/firestore')
+      } else if (historyRows.length > 0 || payChanged) {
+        const { writeBatch, doc, deleteField } = await import('firebase/firestore')
         const { db } = await import('@/lib/firebase/config')
+        const { addPayProfileWrite } = await import('@/lib/pay/payProfileService')
         const batch = writeBatch(db)
         for (const row of historyRows) batch.set(doc(db, 'organizations', organization.id, 'operativeDayRateHistory', row.id), row.fields)
+        // Rulebook 1.13.0 (Q1): a catalogue operative's pay also goes to its private pay profile (payProfiles/{rowId}).
+        if (payChanged) {
+          addPayProfileWrite(
+            batch,
+            organization.id,
+            id,
+            {
+              payBasis: rates.payBasis ?? deleteField(),
+              dayRate: rates.payBasis === 'hourly' ? deleteField() : rates.dayRate ?? deleteField(),
+              hourlyRate: rates.payBasis === 'hourly' ? rates.hourlyRate ?? deleteField() : deleteField(),
+            },
+            signedInUser?.id || ''
+          )
+        }
         await batch.commit()
       }
       onSaved(id)

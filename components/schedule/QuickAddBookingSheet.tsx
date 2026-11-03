@@ -1,5 +1,6 @@
 'use client'
 
+import { confirmCustomHoursBreak, slotOfferedOnDate, weekendNoteForDate } from '@/lib/scheduling/bookingSlotRules'
 import { useMemo, useState } from 'react'
 import { format } from 'date-fns'
 import { slotToFirestore, type ScheduleSlotChoice } from '@/lib/scheduling/scheduleUtils'
@@ -57,12 +58,16 @@ export function QuickAddBookingSheet({
   const range = (interval: { start: number; end: number }) =>
     `${formatClockMinutes(interval.start)}–${formatClockMinutes(interval.end)}`
 
-  const slotOptions: { value: ScheduleSlotChoice; label: string }[] = [
-    { value: 'FULL DAY', label: `Full day (${range(halves.day)})` },
-    { value: 'AM', label: `AM (${range(halves.am)})` },
-    { value: 'PM', label: `PM (${range(halves.pm)})` },
-    { value: 'CUSTOM', label: 'Custom hours' },
-  ]
+  // Rulebook 1.13.0 (Q2, `allowedTimeSlotsOnDay`): Saturday and Sunday offer Full day (that day's window) and Custom.
+  const weekendNote = weekendNoteForDate(date, payroll)
+  const slotOptions: { value: ScheduleSlotChoice; label: string }[] = (
+    [
+      { value: 'FULL DAY', label: weekendNote ? 'Full day' : `Full day (${range(halves.day)})` },
+      { value: 'AM', label: `AM (${range(halves.am)})` },
+      { value: 'PM', label: `PM (${range(halves.pm)})` },
+      { value: 'CUSTOM', label: 'Custom hours' },
+    ] as { value: ScheduleSlotChoice; label: string }[]
+  ).filter((opt) => slotOfferedOnDate(opt.value, date, payroll))
 
   const breakdown = useMemo(() => {
     const firestoreSlot = slotToFirestore({ date, slot, workStartTime, workEndTime })
@@ -78,6 +83,13 @@ export function QuickAddBookingSheet({
 
   const handleSave = async () => {
     setError(null)
+    // 1.13.0 lunch warning (`customHoursBreakWarning`).
+    if (
+      slot === 'CUSTOM' &&
+      !confirmCustomHoursBreak(payroll, date, { timeSlot: 'CUSTOM_HOURS', workStartTime, workEndTime, isBreakRemoved: breakRemoved })
+    ) {
+      return
+    }
     try {
       const firestoreSlot = slotToFirestore({ date, slot, workStartTime, workEndTime })
       await onSave({
@@ -139,6 +151,7 @@ export function QuickAddBookingSheet({
                 </option>
               ))}
             </select>
+            {weekendNote ? <p className="mt-1 text-xs text-slate-500">{weekendNote}</p> : null}
           </div>
 
           {slot === 'CUSTOM' && (

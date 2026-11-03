@@ -15,7 +15,12 @@
  * all-hours multiplier, or a defined window that counts as `countsAsStandardHours`
  * (pro rata when only part of it is worked) with hours outside it at that
  * day's outside multiplier. A finish before the start runs past midnight
- * (22:00–02:00 is 4 hours). The day is the organisation-zone calendar day.
+ * (22:00–02:00 is 4 hours). 1.13.0 (Q5): an overnight booking is paid wholly at
+ * its start day's rules — on a weekday the hours inside that day's standard window
+ * count once and every other hour (after midnight too) is at that day's multiplier;
+ * on a Saturday or Sunday that day's rule. 1.13.0 (Q2): a Saturday or Sunday FULL DAY
+ * with no clock times is that day's set window (`weekendFullDayWindow`), paid at its
+ * "counts as" hours with nothing outside it. The day is the organisation-zone calendar day.
  */
 
 import { formatClockMinutes, halfDayWindows, namedSlotKind, parseClockMinutes, slotInterval, type MinuteInterval } from './engine'
@@ -134,7 +139,11 @@ function segment(
   workedHours: number = baseHours
 ): PayrollHoursSegment {
   const clock = (value: number | string | undefined) =>
-    value == null ? undefined : typeof value === 'number' ? formatClockMinutes(Math.min(value, 24 * 60 - 1)) : value
+    value == null
+      ? undefined
+      : typeof value === 'number'
+        ? formatClockMinutes(value > 24 * 60 ? value - 24 * 60 : Math.min(value, 24 * 60 - 1))
+        : value
   return { kind, clockStart: clock(start), clockEnd: clock(end), baseHours, multiplier, paidHours: baseHours * multiplier, workedHours }
 }
 
@@ -157,13 +166,6 @@ function interval(booking: PayrollHoursBooking, policy: OrgPayrollTimePolicy): M
     { timeSlot: booking.timeSlot ?? undefined, workStartTime: booking.workStartTime ?? undefined, workEndTime: booking.workEndTime ?? undefined },
     dayInput(policy)
   )
-}
-
-function overnight(booking: PayrollHoursBooking): PayrollHoursSegment | null {
-  const start = parseClockMinutes(booking.workStartTime ?? undefined)
-  const end = parseClockMinutes(booking.workEndTime ?? undefined)
-  if (start == null || end == null || !(end < start)) return null
-  return segment('standardWindow', (end + 24 * 60 - start) / 60, 1, booking.workStartTime ?? undefined, booking.workEndTime ?? undefined)
 }
 
 function isNamedHalf(booking: PayrollHoursBooking): boolean {
@@ -251,8 +253,6 @@ function outsideSegments(span: MinuteInterval, windowStart: number, windowEnd: n
 }
 
 function weekday(booking: PayrollHoursBooking, policy: OrgPayrollTimePolicy, multiplier: number): PayrollHoursResult {
-  const night = overnight(booking)
-  if (night) return result([night], multiplier)
   if (isHalfDayPaid(booking, policy, false)) return halfDayPaid(booking, policy, null, multiplier)
   const span = interval(booking, policy)
   if (!span) return legacySlot(booking, policy, multiplier)
@@ -278,10 +278,36 @@ function weekday(booking: PayrollHoursBooking, policy: OrgPayrollTimePolicy, mul
   return result(rows, multiplier)
 }
 
+/** A FULL DAY booking with no clock times of its own. */
+function weekendFullDayOnly(booking: PayrollHoursBooking): boolean {
+  if (namedSlotKind(booking.timeSlot) !== 'FULL_DAY') return false
+  return parseClockMinutes(booking.workStartTime ?? undefined) == null || parseClockMinutes(booking.workEndTime ?? undefined) == null
+}
+
+/**
+ * Rulebook 1.13.0 §4.3 / §8 (Q2): what FULL DAY means on a Saturday or Sunday — that day's set window
+ * (`definedWindowStart`–`definedWindowEnd`, paid at its "counts as" hours), or, when the day pays every hour at the
+ * multiplier, the standard day. Null when the window does not form an interval.
+ */
+export function weekendFullDayWindow(policy: OrgPayrollTimePolicy, weekend: WeekendPayrollSettings): MinuteInterval | null {
+  if (weekend.allHoursAtMultiplierMode) {
+    const start = parseClockMinutes(policy.standardDayStart)
+    const end = parseClockMinutes(policy.standardDayEnd)
+    return start != null && end != null && end > start ? { start, end } : null
+  }
+  const start = parseClockMinutes(weekend.definedWindowStart ?? policy.standardDayStart)
+  const end = parseClockMinutes(weekend.definedWindowEnd ?? '13:00')
+  return start != null && end != null && end > start ? { start, end } : null
+}
+
+/** The weekend rule for an ISO weekday (6 Saturday, 7 Sunday; Sunday "same as Saturday" is Saturday's), else null. */
+export function weekendRuleForIsoWeekday(isoWeekday: number, policy: OrgPayrollTimePolicy): WeekendPayrollSettings | null {
+  return weekendFor(isoWeekday, policy)
+}
+
 function weekendDay(booking: PayrollHoursBooking, policy: OrgPayrollTimePolicy, weekend: WeekendPayrollSettings, multiplier: number): PayrollHoursResult {
-  const night = overnight(booking)
-  if (night) return result([night], multiplier)
-  const span = interval(booking, policy)
+  const fullDayWindow = weekendFullDayOnly(booking) ? weekendFullDayWindow(policy, weekend) : null
+  const span = fullDayWindow ?? interval(booking, policy)
   if (!span) return legacySlot(booking, policy, multiplier)
   if (weekend.allHoursAtMultiplierMode) {
     if (isNamedHalf(booking)) return halfDayPaid(booking, policy, weekend, multiplier)

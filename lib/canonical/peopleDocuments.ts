@@ -298,6 +298,12 @@ export type UserDocument = {
   annualLeaveYearStartMonth: number
   annualLeaveYearEndMonth: number
   annualLeaveCarriesOver: boolean
+  /**
+   * 1.13.0 (Q4): `employmentStartDate`, the day the person started (an organisation-zone `YYYY-MM-DD`; an instant is
+   * read as its day). Null when not set — then the leave year is never pro rata (the account's `createdAt` is not a
+   * start date). `annualLeaveBalance` `employmentStartDayKey`.
+   */
+  employmentStartDayKey: string | null
   /** What is stored on the user document (null = not stored, the organisation default applies). */
   annualLeaveStored: UserDocumentAnnualLeave
   /**
@@ -448,6 +454,9 @@ export function parseUserDocument(
     annualLeaveYearStartMonth: leaveStored.startMonth ?? leaveDefaults.startMonth,
     annualLeaveYearEndMonth: leaveStored.endMonth ?? leaveDefaults.endMonth,
     annualLeaveCarriesOver: leaveStored.carriesOver ?? leaveDefaults.carriesOver,
+    employmentStartDayKey: /^\d{4}-\d{2}-\d{2}$/.test(text(row.employmentStartDate))
+      ? text(row.employmentStartDate)
+      : dayKeyOf(documentInstantMs(row.employmentStartDate), zone),
     annualLeaveStored: leaveStored,
     annualLeaveDefaultsPending:
       !options?.annualLeaveDefaults &&

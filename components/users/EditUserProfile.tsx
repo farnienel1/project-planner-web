@@ -44,6 +44,7 @@ import {
   canViewSensitiveProfile,
   maskSensitiveValue,
   leaveYearEndMonth,
+  leaveYearStartMonth,
   snapLeaveDays,
   type SensitiveProfile,
   validateLeaveYearMonths,
@@ -71,7 +72,7 @@ import {
 import { loadOrganisationQualificationsEnsuringStarter } from '@/lib/qualifications/starterLibrary'
 import { canonicalCertificateUrls, formatCertificateSaveError } from '@/lib/qualifications/certificateUpload'
 import { canManageOrganisationQualifications, staffAccountRole } from '@/lib/permissions'
-import { canDeleteUser } from '@/lib/canonical'
+import { canDeleteUser, SELF_EMAIL_INVALID_MESSAGE, selfEmailChangeAction, selfEmailChangeSentMessage } from '@/lib/canonical'
 import { PermissionRowsList } from '@/components/users/ProfileExpandablePermissionToggle'
 import {
   ADMIN_LOCKED_PERMISSION_MESSAGE,
@@ -512,6 +513,32 @@ export function EditUserProfile({
     setError(null)
     setSuccess(null)
     let toSave = { ...target, updatedAt: new Date() }
+    // Rulebook 1.13.0 §14 (`selfEmailChangeAction`): a person's own email changes through Firebase Auth first
+    // (verifyBeforeUpdateEmail); this save keeps the stored email and the sign-in sync writes the new one later.
+    let emailChangeNote: string | null = null
+    if (currentUser?.id === target.id && savedUser.current) {
+      const action = selfEmailChangeAction({ storedEmail: savedUser.current.email, nextEmail: target.email })
+      if (action === 'invalid') {
+        setError(SELF_EMAIL_INVALID_MESSAGE)
+        return
+      }
+      if (action === 'verifyBeforeUpdate') {
+        try {
+          const [{ verifyBeforeUpdateEmail }, { getFirebaseAuth }] = await Promise.all([
+            import('firebase/auth'),
+            import('@/lib/firebase/ensureFirebase'),
+          ])
+          const signedIn = getFirebaseAuth().currentUser
+          if (!signedIn) throw new Error('Sign in again to change your email.')
+          await verifyBeforeUpdateEmail(signedIn, target.email.trim().toLowerCase())
+          emailChangeNote = selfEmailChangeSentMessage(target.email)
+        } catch (err) {
+          setError(err instanceof Error ? err.message : 'Could not send the confirmation email.')
+          return
+        }
+        toSave = { ...toSave, email: savedUser.current.email }
+      }
+    }
     if (draftAccountType && draftTypePermissions) {
       toSave = applyAccountType(toSave, draftAccountType)
       toSave = { ...toSave, permissions: draftTypePermissions }
@@ -599,7 +626,8 @@ export function EditUserProfile({
       setRemainingTouched(false)
       setSaved(true)
       window.setTimeout(() => setSaved(false), 3000)
-      setSuccess(toSave.isActive ? 'Profile saved.' : 'User deactivated.')
+      setSuccess(emailChangeNote ?? (toSave.isActive ? 'Profile saved.' : 'User deactivated.'))
+      if (emailChangeNote) setTarget({ ...toSave })
       void setUserActive(toSave.id, toSave.isActive, organization.id).catch(() => undefined)
       void syncLinkedOperative(organization.id, toSave, operatives).catch(() => undefined)
     } catch (err: unknown) {
@@ -1183,7 +1211,7 @@ export function EditUserProfile({
                     disabled={!canEdit}
                     onChange={(e) => {
                       const end = Number(e.target.value)
-                      setTarget({ ...target, annualLeaveYearEndMonth: end, annualLeaveYearStartMonth: end === 12 ? 1 : end + 1 })
+                      setTarget({ ...target, annualLeaveYearEndMonth: end, annualLeaveYearStartMonth: leaveYearStartMonth(end) })
                     }}
                   >
                     {MONTHS.map((month, index) => (
@@ -1193,6 +1221,21 @@ export function EditUserProfile({
                     ))}
                   </Select>
                 </div>
+              </FormField>
+              {/* Rulebook 1.13.0 §4.4 (Q4, `proRataLeaveAllowance`): the leave year they joined is pro rata. */}
+              <FormField
+                label="Start date"
+                hint="The day this person started. Their allowance for that leave year is pro rata from it. Leave blank for a full allowance."
+              >
+                <Input
+                  type="date"
+                  value={target.employmentStartDate || ''}
+                  disabled={
+                    !canEdit ||
+                    (currentUser?.id === target.id && !currentUser?.permissions.adminAccess && !currentUser?.isSuperAdmin)
+                  }
+                  onChange={(e) => setTarget({ ...target, employmentStartDate: e.target.value || undefined })}
+                />
               </FormField>
               <div className="flex items-start justify-between gap-3">
                 <div>

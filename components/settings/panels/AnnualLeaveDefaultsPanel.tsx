@@ -9,7 +9,14 @@ import {
 } from '@/lib/settings/organizationSettings'
 import { useApplyLiveWhenClean, useLiveOrganizationDetails } from '@/components/settings/useLiveOrganizationSettings'
 import { bankHolidayRegionIdFromSelection, bankHolidaySelectionFromStored } from '@/lib/orgSetup/orgSetupSettings'
-import { bankHolidayRegionLabel, bankHolidayRegionsForCountry, leaveYearEndMonth } from '@/lib/canonical'
+import {
+  bankHolidayRegionLabel,
+  bankHolidayRegionsForCountry,
+  leaveYearEndMonth,
+  leaveYearStartMonth,
+  parseMaxCarryOverDays,
+  SUGGESTED_MAX_CARRY_OVER_DAYS,
+} from '@/lib/canonical'
 import { LEAVE_DAYS_SAVE_MAX, parseBoundedNumber } from '@/lib/security/boundedValue'
 import { settingsHeader } from '@/lib/settings/settingsHeader'
 import { settingsSaveBarHint } from '@/lib/settings/settingsDirty'
@@ -64,13 +71,15 @@ export function AnnualLeaveDefaultsPanel({ onBack }: { onBack: () => void }) {
   const [startMonth, setStartMonth] = useState(DEFAULT_ANNUAL_LEAVE.startMonth)
   const [endMonth, setEndMonth] = useState(DEFAULT_ANNUAL_LEAVE.endMonth)
   const [carriesOver, setCarriesOver] = useState(DEFAULT_ANNUAL_LEAVE.carriesOver)
+  // Rulebook 1.13.0 §4.4 (Q4): blank = no cap; the field suggests SUGGESTED_MAX_CARRY_OVER_DAYS.
+  const [maxCarryText, setMaxCarryText] = useState('')
   const [bankHolidayRegion, setBankHolidayRegion] = useState('GB-ENG-WLS')
   const { state: loadState, markLoaded, markFailed, isDirty } = useSettingsBaseline<string>()
 
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
-  const snapshot = JSON.stringify({ daysText, startMonth, endMonth, carriesOver, bankHolidayRegion })
+  const snapshot = JSON.stringify({ daysText, startMonth, endMonth, carriesOver, maxCarryText, bankHolidayRegion })
   const dirty = isDirty(snapshot)
   useSettingsDirty(dirty)
 
@@ -85,6 +94,7 @@ export function AnnualLeaveDefaultsPanel({ onBack }: { onBack: () => void }) {
       startMonth: defaults.startMonth,
       endMonth: defaults.endMonth,
       carriesOver: defaults.carriesOver,
+      maxCarryText: defaults.maxCarryOverDays == null ? '' : String(defaults.maxCarryOverDays),
       bankHolidayRegion: bankHolidaySelectionFromStored(details.bankHolidayRegionId || details.countryCode),
     }
   }, [live.details])
@@ -94,6 +104,7 @@ export function AnnualLeaveDefaultsPanel({ onBack }: { onBack: () => void }) {
       setStartMonth(next.startMonth)
       setEndMonth(next.endMonth)
       setCarriesOver(next.carriesOver)
+      setMaxCarryText(next.maxCarryText)
       setBankHolidayRegion(next.bankHolidayRegion)
       markLoaded(JSON.stringify(next))
     },
@@ -118,6 +129,7 @@ export function AnnualLeaveDefaultsPanel({ onBack }: { onBack: () => void }) {
         startMonth,
         endMonth,
         carriesOver,
+        maxCarryOverDays: carriesOver ? parseMaxCarryOverDays(maxCarryText.replace(',', '.')) : null,
       }
       await saveAnnualLeaveSettings(
         organization.id,
@@ -217,7 +229,7 @@ export function AnnualLeaveDefaultsPanel({ onBack }: { onBack: () => void }) {
                   // Picking the end month moves the start to the month after it (12 months either way).
                   const next = parseInt(e.target.value, 10)
                   setEndMonth(next)
-                  setStartMonth(next === 12 ? 1 : next + 1)
+                  setStartMonth(leaveYearStartMonth(next))
                 }}
               >
                 {MONTHS.map((month, index) => (
@@ -239,6 +251,21 @@ export function AnnualLeaveDefaultsPanel({ onBack }: { onBack: () => void }) {
             checked={carriesOver}
             onChange={setCarriesOver}
           />
+          {carriesOver ? (
+            <div className="mt-4 max-w-xs">
+              <FormField
+                label="Most days carried over"
+                hint={`Leave blank for no limit. ${SUGGESTED_MAX_CARRY_OVER_DAYS} is a common limit.`}
+              >
+                <Input
+                  inputMode="decimal"
+                  value={maxCarryText}
+                  placeholder={String(SUGGESTED_MAX_CARRY_OVER_DAYS)}
+                  onChange={(e) => setMaxCarryText(e.target.value)}
+                />
+              </FormField>
+            </div>
+          ) : null}
         </div>
       </SettingsCard>
 

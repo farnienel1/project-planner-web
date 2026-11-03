@@ -37,6 +37,7 @@ import {
 import { AddWeekToCalendarButton } from '@/components/schedule/AddWeekToCalendarButton'
 import { myScheduleStripeClass } from '@/components/schedule/MyScheduleLooks'
 import { HoursTimelinePicker } from '@/components/scheduling/HoursTimelinePicker'
+import { confirmCustomHoursBreak, slotOfferedOnDate, weekendNoteForDate } from '@/lib/scheduling/bookingSlotRules'
 import { BookingEditSheet } from '@/components/schedule/BookingEditSheet'
 import { countWorksByTab, filterWorksByTab, searchWorks } from '@/lib/projects/workStatus'
 import { coversCalendarDay } from '@/lib/ios-parity/londonTime'
@@ -352,7 +353,30 @@ export function MyScheduleSelfBookingScreen({
     locationId?: string
     customLocationName?: string
   }) {
-    const days = targetDays()
+    // Rulebook 1.13.0 (Q2): no AM / PM on Saturday or Sunday — those days are left out of an AM / PM booking.
+    const allDays = targetDays()
+    const days =
+      args.timeSlot === 'AM' || args.timeSlot === 'PM'
+        ? allDays.filter((day) => slotOfferedOnDate(args.timeSlot, day, payrollPolicy))
+        : allDays
+    if (days.length === 0) {
+      flash('error', 'Saturday and Sunday have no AM or PM. Book a full day or custom hours.')
+      return
+    }
+    // 1.13.0 lunch warning (`customHoursBreakWarning`), checked on the first day booked.
+    if (
+      args.timeSlot === 'CUSTOM_HOURS' &&
+      !days.every((day) =>
+        confirmCustomHoursBreak(payrollPolicy, day, {
+          timeSlot: 'CUSTOM_HOURS',
+          workStartTime: customStart,
+          workEndTime: customEnd,
+          isBreakRemoved: breakRemoved,
+        })
+      )
+    ) {
+      return
+    }
     if (days.length === 1) {
       const existing = myBookingsOn(days[0])
       if (existing.length > 0) {
@@ -463,7 +487,7 @@ export function MyScheduleSelfBookingScreen({
     return (
       <div className="mt-3 rounded-[14px] bg-[var(--soft)] px-4 py-3">
         <div className="flex flex-wrap gap-2">
-          {SLOTS.map(({ slot, label }) => (
+          {SLOTS.filter(({ slot }) => targetDays().some((day) => slotOfferedOnDate(slot, day, payrollPolicy))).map(({ slot, label }) => (
             <button
               key={slot}
               type="button"
@@ -486,6 +510,14 @@ export function MyScheduleSelfBookingScreen({
             onBreak={setBreakRemoved}
           />
           <p className="mt-2 muted xs">Custom hours uses the times on this 00:00–24:00 bar.</p>
+          {targetDays()
+            .map((day) => weekendNoteForDate(day, payrollPolicy))
+            .filter((note, index, all): note is string => Boolean(note) && all.indexOf(note) === index)
+            .map((note) => (
+              <p key={note} className="mt-1 muted xs">
+                {note}
+              </p>
+            ))}
         </div>
       </div>
     )

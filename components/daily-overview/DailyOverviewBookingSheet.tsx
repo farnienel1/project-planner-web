@@ -6,6 +6,7 @@ import { LONDON_TIME_ZONE, formatAbbreviatedDayInZone } from '@/lib/orgTime/zone
 import { FilterChip } from '@/components/ios/primitives'
 import { HoursBreakdownCard } from '@/components/schedule/HoursBreakdownCard'
 import { HoursTimelinePicker } from '@/components/scheduling/HoursTimelinePicker'
+import { confirmCustomHoursBreak } from '@/lib/scheduling/bookingSlotRules'
 import { CustomOtherLocationField } from '@/components/scheduling/CustomOtherLocationField'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useBookingStore } from '@/lib/stores/bookingStore'
@@ -221,8 +222,12 @@ export function DailyOverviewBookingSheet({
     isBreakRemoved: breakRemoved,
   })
 
+  // 1.13.0 lunch warning (`customHoursBreakWarning`): the confirm step before custom hours are saved.
+  const breakConfirmed = () => confirmCustomHoursBreak(payroll, day, hoursFields())
+
   const saveToProject = async (project: Project, asSmallWork: boolean) => {
     if (!organization?.id || !row.bookingId || !user || !hoursValid) return
+    if (!breakConfirmed()) return
     setSaving(true)
     setError(null)
     try {
@@ -262,6 +267,7 @@ export function DailyOverviewBookingSheet({
 
   const saveToOther = async (pick: ScheduleLocationPick) => {
     if (!organization?.id || !hoursValid) return
+    if (!breakConfirmed()) return
     if (!resolvedUserId) {
       setError('This person needs a user account to be booked to Other.')
       return

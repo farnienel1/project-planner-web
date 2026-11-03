@@ -53,6 +53,22 @@ export type OrgAnnualLeaveDefaults = {
   startMonth: number
   endMonth: number
   carriesOver: boolean
+  /**
+   * Rulebook 1.13.0 §4.4 (Q4): most unused days carried into the next leave year. Null or missing = no cap
+   * (every organisation saved before 1.13.0). The settings screens suggest `SUGGESTED_MAX_CARRY_OVER_DAYS`.
+   */
+  maxCarryOverDays?: number | null
+}
+
+/** The cap the settings screens suggest when carry-over is switched on (never applied unless saved). */
+export const SUGGESTED_MAX_CARRY_OVER_DAYS = 5
+
+/** A stored carry-over cap: a number 0–365 (snapped to half days), else null (no cap). */
+export function parseMaxCarryOverDays(value: unknown): number | null {
+  if (value == null || value === '') return null
+  const n = typeof value === 'string' ? Number(value.trim()) : Number(value)
+  if (!Number.isFinite(n) || n < 0) return null
+  return Math.min(365, Math.round(n * 2) / 2)
 }
 
 export type OrgWarningDetectionSettings = {
@@ -255,6 +271,7 @@ export const DEFAULT_ANNUAL_LEAVE: OrgAnnualLeaveDefaults = {
   startMonth: 1,
   endMonth: 12,
   carriesOver: false,
+  maxCarryOverDays: null,
 }
 
 export const DEFAULT_WARNING_DETECTION: OrgWarningDetectionSettings = {
@@ -565,6 +582,7 @@ export function parseAnnualLeaveDefaults(data: Record<string, unknown> | undefin
     startMonth: Number(data.startMonth ?? DEFAULT_ANNUAL_LEAVE.startMonth),
     endMonth: Number(data.endMonth ?? DEFAULT_ANNUAL_LEAVE.endMonth),
     carriesOver: Boolean(data.carriesOver),
+    maxCarryOverDays: parseMaxCarryOverDays(data.maxCarryOverDays),
   }
 }
 
