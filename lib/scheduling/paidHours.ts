@@ -10,7 +10,7 @@
  * the previous custom span.
  */
 
-import { payrollHoursResult, type PayrollHoursResult } from '@/lib/canonical'
+import { payrollHoursResult, weekdayPaidHours, type PayrollHoursResult } from '@/lib/canonical'
 import { DEFAULT_PAYROLL_POLICY, type OrgPayrollTimePolicy } from '@/lib/canonical/organizationSettings'
 import { dayKey as londonDayKey } from '@/lib/ios-parity/londonTime'
 
@@ -300,7 +300,7 @@ export type HoursBreakdown = {
 
 export function hoursBreakdown(input: BookingHoursInput): HoursBreakdown {
   const policy = policyFrom(input)
-  const standard = policy.standardPaidHours ?? FALLBACK_STANDARD_PAID_HOURS
+  const standard = weekdayPaidHours(policy) || FALLBACK_STANDARD_PAID_HOURS
   const paid = bookingPayrollHours(input)
   const multiplier = paid.outsideMultiplier || policy.weekdayOutsideStandardMultiplier || FALLBACK_OT_MULTIPLIER
   const kind = namedSlotKind(input.timeSlot)
@@ -367,7 +367,8 @@ export function hoursBreakdown(input: BookingHoursInput): HoursBreakdown {
   }
   // Rulebook 1.19.0: the break shown is the one pay takes off (`payrollHoursResult.unpaidBreakHours`) — on a weekend day
   // only when that day's break is unpaid; never a second break calculation here.
-  breakHours = Math.round((paid.unpaidBreakHours || 0) * 10) / 10
+  // 1.20.0: to the minute (a 45-minute break is 0.75h, never 0.8h).
+  breakHours = Math.round((paid.unpaidBreakHours || 0) * 100) / 100
   standardPaid = Math.round(paid.standardHours * 100) / 100
 
   const totalPaidHours = Math.round(paid.totalPaidHours * 100) / 100

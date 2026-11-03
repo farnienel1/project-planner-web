@@ -4,7 +4,7 @@
  * live here so a save on the web is the same document iOS decodes.
  */
 
-import { CANONICAL_HALF_MONTH_RANGES, formatClockMinutes, normalizePaymentRunRange } from './engine'
+import { CANONICAL_HALF_MONTH_RANGES, formatClockMinutes, normalizePaymentRunRange, standardDayWindow } from './engine'
 import {
   parseTimesheetSubmissionList,
   timesheetSubmissionToFirestore,
@@ -59,6 +59,13 @@ export type OrgPayrollTimePolicy = {
   saturday: WeekendPayrollSettings
   sunday: WeekendPayrollSettings
   breakPaid?: boolean
+  /**
+   * Rulebook 1.20.0 §4.3: true on every policy saved from 1.20.0 on. The Monday–Friday paid day is then derived from
+   * the day itself — finish − start − the unpaid break (`weekdayPaidHours`) — and `standardPaidHours` is written as that
+   * value so older builds agree. Missing (every policy saved before 1.20.0, history entries included) keeps the stored
+   * `standardPaidHours` exactly as before: nothing is re-priced.
+   */
+  paidHoursDerived?: boolean
 }
 
 export type OrgAnnualLeaveDefaults = {
@@ -556,7 +563,7 @@ export function parsePayrollPolicy(data: Record<string, unknown> | undefined): O
   if (!data) {
     return { ...DEFAULT_PAYROLL_POLICY, saturday: { ...DEFAULT_SATURDAY_PAYROLL }, sunday: { ...DEFAULT_SUNDAY_PAYROLL } }
   }
-  return {
+  const parsed: OrgPayrollTimePolicy = {
     standardDayStart: String(data.standardDayStart ?? DEFAULT_PAYROLL_POLICY.standardDayStart),
     standardDayEnd: String(data.standardDayEnd ?? DEFAULT_PAYROLL_POLICY.standardDayEnd),
     // 1.12.0 §4.3: numbers are read into PAYROLL_POLICY_LIMITS (missing / blank / not a number → the default).
@@ -589,6 +596,96 @@ export function parsePayrollPolicy(data: Record<string, unknown> | undefined): O
     })(),
     breakPaid: data.breakPaid === true,
   }
+  // 1.20.0 §4.3: a policy saved from 1.20.0 on derives its weekday paid day from the day itself.
+  if (data.paidHoursDerived !== true) return parsed
+  const derived: OrgPayrollTimePolicy = { ...parsed, paidHoursDerived: true }
+  return { ...derived, standardPaidHours: weekdayPaidHours(derived) }
+}
+
+/**
+ * Rulebook 1.20.0 §4.3: the Monday–Friday paid day worked out from the day itself — finish − start, less the break when
+ * it is unpaid (a paid break takes nothing off). 06:30–14:30 with a 45-minute unpaid break → 7.25. Not clamped (the
+ * save check `validatePayrollTimePolicy` refuses anything outside 1–12). Invalid clock times read as the canonical
+ * standard day (`standardDayWindow`).
+ */
+export function derivedWeekdayPaidHours(
+  policy: Pick<OrgPayrollTimePolicy, 'standardDayStart' | 'standardDayEnd' | 'unpaidBreakMinutes' | 'breakPaid'>
+): number {
+  const day = standardDayWindow(policy)
+  const breakMinutes = policy.breakPaid === true ? 0 : Math.max(Number(policy.unpaidBreakMinutes) || 0, 0)
+  return Math.max(0, day.end - day.start - breakMinutes) / 60
+}
+
+/**
+ * Rulebook 1.20.0 §4.3: the paid hours of a Monday–Friday full day — what FULL DAY pays, what a day rate is divided by,
+ * the unbooked-labour day, the weekly-report day unit, invoices and Home. A policy with `paidHoursDerived` uses
+ * `derivedWeekdayPaidHours` (read into the 1–12 limits, as every stored number is since 1.12.0); a policy without it
+ * (saved before 1.20.0) keeps its stored `standardPaidHours`, so nothing saved earlier is re-priced.
+ */
+export function weekdayPaidHours(
+  policy: Pick<OrgPayrollTimePolicy, 'standardDayStart' | 'standardDayEnd' | 'unpaidBreakMinutes' | 'breakPaid' | 'standardPaidHours' | 'paidHoursDerived'> | null | undefined
+): number {
+  if (!policy) return DEFAULT_PAYROLL_POLICY.standardPaidHours
+  if (policy.paidHoursDerived !== true) return Number(policy.standardPaidHours)
+  const { min, max } = PAYROLL_POLICY_LIMITS.paidHours
+  return Math.min(Math.max(derivedWeekdayPaidHours(policy), min), max)
+}
+
+/**
+ * Rulebook 1.20.0 §4.3: the policy a 1.20.0 working-hours save writes — `paidHoursDerived: true` and `standardPaidHours`
+ * set to the derived day (`derivedWeekdayPaidHours`) so older builds, which read `standardPaidHours`, agree. Every
+ * write-fields function (`payrollTimePolicyApplyNowWriteFields`, `payrollTimePolicyScheduleWriteFields`) applies it to
+ * the new policy; earlier policies (prior, history) are written as stored.
+ */
+export function withDerivedWeekdayPaidHours(policy: OrgPayrollTimePolicy): OrgPayrollTimePolicy {
+  const marked: OrgPayrollTimePolicy = { ...policy, paidHoursDerived: true }
+  return { ...marked, standardPaidHours: Math.round(derivedWeekdayPaidHours(marked) * 10000) / 10000 }
+}
+
+function hoursMinutesText(totalMinutes: number): string {
+  const minutes = Math.max(0, Math.round(totalMinutes))
+  const h = Math.floor(minutes / 60)
+  const m = minutes % 60
+  if (h === 0) return `${m}m`
+  return m === 0 ? `${h}h` : `${h}h${String(m).padStart(2, '0')}m`
+}
+
+export type WeekdayPaidDayPreview = {
+  /** `HH:mm` of the standard day. */
+  start: string
+  end: string
+  /** finish − start, in minutes. */
+  dayMinutes: number
+  breakMinutes: number
+  breakPaid: boolean
+  /** The derived paid day (`derivedWeekdayPaidHours`). */
+  paidHours: number
+  /** "06:30–14:30 = 8h − 45 min unpaid break = 7h15m"; paid break: "06:30–14:30 = 8h, 45 min break paid = 8h". */
+  line: string
+}
+
+/**
+ * Rulebook 1.20.0 §4.3: the live calculation shown under Monday–Friday in Working hours (web, iOS, setup wizard): the
+ * day, its break and the paid hours it gives. "06:30–14:30 = 8h − 45 min unpaid break = 7h15m". With no break (0
+ * minutes): "06:30–14:30 = 8h".
+ */
+export function weekdayPaidDayPreview(
+  policy: Pick<OrgPayrollTimePolicy, 'standardDayStart' | 'standardDayEnd' | 'unpaidBreakMinutes' | 'breakPaid'>
+): WeekdayPaidDayPreview {
+  const day = standardDayWindow(policy)
+  const dayMinutes = day.end - day.start
+  const breakMinutes = Math.max(Number(policy.unpaidBreakMinutes) || 0, 0)
+  const breakPaid = policy.breakPaid === true
+  const paidHours = derivedWeekdayPaidHours(policy)
+  const range = `${formatClockMinutes(day.start)}–${formatClockMinutes(day.end)}`
+  const dayText = hoursMinutesText(dayMinutes)
+  const line =
+    breakMinutes <= 0
+      ? `${range} = ${dayText}`
+      : breakPaid
+        ? `${range} = ${dayText}, ${breakMinutes} min break paid = ${dayText}`
+        : `${range} = ${dayText} − ${breakMinutes} min unpaid break = ${hoursMinutesText(paidHours * 60)}`
+  return { start: formatClockMinutes(day.start), end: formatClockMinutes(day.end), dayMinutes, breakMinutes, breakPaid, paidHours, line }
 }
 
 export function payrollPolicyToFirestore(policy: OrgPayrollTimePolicy): Record<string, unknown> {
@@ -596,7 +693,9 @@ export function payrollPolicyToFirestore(policy: OrgPayrollTimePolicy): Record<s
     standardDayStart: policy.standardDayStart,
     standardDayEnd: policy.standardDayEnd,
     unpaidBreakMinutes: policy.unpaidBreakMinutes,
-    standardPaidHours: policy.standardPaidHours,
+    // 1.20.0: a derived policy writes its derived day, so older builds that read `standardPaidHours` agree.
+    standardPaidHours: policy.paidHoursDerived === true ? Math.round(derivedWeekdayPaidHours(policy) * 10000) / 10000 : policy.standardPaidHours,
+    ...(policy.paidHoursDerived === true ? { paidHoursDerived: true } : {}),
     breakWindowStart: policy.breakWindowStart,
     breakWindowEnd: policy.breakWindowEnd,
     weekdayOutsideStandardMultiplier: policy.weekdayOutsideStandardMultiplier,

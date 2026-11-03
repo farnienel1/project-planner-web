@@ -24,6 +24,9 @@ import {
   weekendBreakFor,
   weekendCustomHoursDefault,
   weekendLunchBreakCopy,
+  weekdayPaidDayPreview,
+  weekdayPaidHours,
+  withDerivedWeekdayPaidHours,
 } from '@/lib/canonical'
 import { BookingDayBreakdownRows } from '@/components/scheduling/BookingDayBreakdownRows'
 import { useApplyLiveWhenClean, useLiveOrganizationDetails } from '@/components/settings/useLiveOrganizationSettings'
@@ -129,6 +132,23 @@ function DayTimeline({ policy }: { policy: OrgPayrollTimePolicy }) {
           <i className="h-2.5 w-2.5 rounded-sm bg-[var(--warn)]" /> Overtime ×{policy.weekdayOutsideStandardMultiplier}
         </span>
       </div>
+    </div>
+  )
+}
+
+/**
+ * Rulebook 1.20.0 §4.3: the live calculation under Monday–Friday — "06:30–14:30 = 8h − 45 min unpaid break = 7h15m"
+ * (`weekdayPaidDayPreview`). The paid day is derived; there is no paid-hours box.
+ */
+function WeekdayPaidDayLine({ policy }: { policy: OrgPayrollTimePolicy }) {
+  const valid = isValidHM(policy.standardDayStart) && isValidHM(policy.standardDayEnd) && minutesOf(policy.standardDayEnd) > minutesOf(policy.standardDayStart)
+  return (
+    <div className="p-5">
+      <p className="text-[14px] font-medium text-[var(--ink)]">Paid hours for a full day</p>
+      <p className="mt-1 text-[13px] tabular-nums text-[var(--ink2)]" data-testid="weekday-paid-day">
+        {valid ? weekdayPaidDayPreview(policy).line : 'Enter valid 24h times to see the paid day.'}
+      </p>
+      <p className="mt-1 text-[12px] text-[var(--ink3)]">Worked out from the start, finish and lunch break below.</p>
     </div>
   )
 }
@@ -258,7 +278,8 @@ export function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
 
   function openSave() {
     if (!organization?.id) return
-    const validationError = validatePayrollTimePolicy(draft)
+    // Rulebook 1.20.0 §4.3: the policy is saved with its weekday paid day derived (finish − start − unpaid break).
+    const validationError = validatePayrollTimePolicy(withDerivedWeekdayPaidHours(draft))
     if (validationError) {
       setError(validationError)
       return
@@ -273,9 +294,11 @@ export function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
     setSaving(true)
     setError('')
     try {
-      await savePayrollPolicy(organization.id, draft, user?.id, baseDoc.current)
+      const savedPolicy = withDerivedWeekdayPaidHours(draft)
+      await savePayrollPolicy(organization.id, savedPolicy, user?.id, baseDoc.current)
       setSaveChoice('closed')
-      markLoaded(draft)
+      setDraft(savedPolicy)
+      markLoaded(savedPolicy)
       flashSaved('Working hours saved — in effect from today')
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Could not save working hours.')
@@ -451,7 +474,7 @@ export function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
             <p className="text-[14px] font-semibold text-[var(--ink)]">Scheduled change</p>
             <p className="text-[13px] text-[var(--ink2)]">
               New working hours take effect on {formatPaymentRunDay(scheduled.effectiveFrom)}:{' '}
-              {scheduled.policy.standardDayStart}–{scheduled.policy.standardDayEnd}, {scheduled.policy.standardPaidHours}h paid.
+              {scheduled.policy.standardDayStart}–{scheduled.policy.standardDayEnd}, {weekdayPaidHours(scheduled.policy)}h paid.
             </p>
           </div>
           <button
@@ -482,18 +505,8 @@ export function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
             <TimeInput label="End time" value={draft.standardDayEnd} placeholder="16:00" onChange={(value) => patch({ standardDayEnd: value })} />
           </FormField>
         </div>
-        <div className="p-5">
-          <Stepper
-            label="Standard paid hours"
-            hint="Hours paid for a full day"
-            value={draft.standardPaidHours}
-            onChange={(value) => patch({ standardPaidHours: value })}
-            min={PAYROLL_POLICY_LIMITS.paidHours.min}
-            max={PAYROLL_POLICY_LIMITS.paidHours.max}
-            step={0.5}
-            format={(value) => `${value.toFixed(1)} h`}
-          />
-        </div>
+        {/* Rulebook 1.20.0 §4.3: no manual paid hours Monday–Friday — the day is start, finish and the lunch break. */}
+        <WeekdayPaidDayLine policy={draft} />
       </SettingsCard>
 
       <SectionLabel

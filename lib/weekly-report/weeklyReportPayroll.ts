@@ -1,5 +1,5 @@
 import { getISODay } from 'date-fns'
-import { formatMoney, reportDayValue, resolveBookingPerson, rosterAliasIdsFor } from '@/lib/canonical'
+import { formatMoney, reportDayValue, resolveBookingPerson, rosterAliasIdsFor, weekdayPaidHours } from '@/lib/canonical'
 import { currentOrganizationCurrency } from '@/lib/stores/organizationDocumentStore'
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import { DEFAULT_PAYROLL_POLICY } from '@/lib/settings/organizationSettings'
@@ -25,7 +25,7 @@ export function bookingDayUnits(
 ): number {
   const policy = payrollPolicy || DEFAULT_PAYROLL_POLICY
   const hours = bookingHoursOnDay(date, timeSlot, workStartTime, workEndTime, policy, isBreakRemoved, otMultiplierOverride, timeZone)
-  return reportDayValue({ totalPaidHours: hours.totalPaidHours, standardPaidHours: policy.standardPaidHours })
+  return reportDayValue({ totalPaidHours: hours.totalPaidHours, standardPaidHours: weekdayPaidHours(policy) })
 }
 
 function readableTrade(value?: string): string | undefined {
@@ -219,7 +219,7 @@ export function labourPaySlices({
 }): LabourPaySlice[] {
   // `payroll` is the policy in effect on `date` (`orgPayrollPolicyForDay`); the caller resolves it per day.
   const policy = payroll || DEFAULT_PAYROLL_POLICY
-  const standard = orgDayHours(policy.standardPaidHours)
+  const standard = orgDayHours(weekdayPaidHours(policy))
   // `payrollHoursResult`: the same normal hours, overtime hours and multiplier iOS uses.
   const hours = bookingHoursOnDay(date, timeSlot, workStartTime, workEndTime, policy, isBreakRemoved, otMultiplierOverride, timeZone)
   const otHours = hours.outsideHours

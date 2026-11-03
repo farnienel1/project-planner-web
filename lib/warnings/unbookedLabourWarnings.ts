@@ -1,7 +1,7 @@
 import type { OrgPayrollTimePolicy, OrgWarningDetectionSettings } from '@/lib/settings/organizationSettings'
 import { DEFAULT_PAYROLL_POLICY } from '@/lib/settings/organizationSettings'
 import type { LabourPerson, RosterOperative, WarningScope } from '@/lib/canonical'
-import { bookingOccupiesDay, unbookedLabourRows } from '@/lib/canonical'
+import { bookingOccupiesDay, unbookedLabourRows, weekdayPaidHours } from '@/lib/canonical'
 import type { Booking, HolidayBooking, Operative, User } from '@/types'
 import { UserRole } from '@/types'
 import { addLondonDays, dateFromDayKey, dayKey, londonIsoWeekday, londonMidnight } from '@/lib/ios-parity/londonTime'
@@ -158,7 +158,7 @@ export function computeUnbookedLabourWarningsForDateRange({
     endDayKey: endDayKey || dayKey(windowEnd, timeZone),
     includeWeekends: warningDetection.includeWeekendsForUnbookedLabour,
     excludedUserIds: warningDetection.excludedUserIdsFromUnbookedWarnings,
-    standardPaidHours: payrollPolicy.standardPaidHours,
+    standardPaidHours: weekdayPaidHours(payrollPolicy),
     standardDayStart: payrollPolicy.standardDayStart,
     standardDayEnd: payrollPolicy.standardDayEnd,
     breakWindowStart: payrollPolicy.breakWindowStart,

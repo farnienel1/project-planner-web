@@ -25,6 +25,7 @@ import {
 import { emptyDayRateHistory, type OperativeDayRateHistoryCollection } from '@/lib/timesheets/dayRateHistoryStorage'
 import { orgDayHours } from '@/lib/timesheets/payBasis'
 import type { PayrollTimePolicyState } from '@/lib/canonical'
+import { weekdayPaidHours } from '@/lib/canonical'
 import type {
   TimesheetDraft,
   TimesheetManagerDecision,
@@ -184,7 +185,7 @@ function makeOverride(input: WeeklyReportOverrideInput): WeeklyReportOverride {
       null,
       input.payrollPolicyState
     )
-    const days = scaledDays(line, amount, linePolicy.standardPaidHours)
+    const days = scaledDays(line, amount, weekdayPaidHours(linePolicy))
     lines.push(
       labourLine(line, agreedDecision(review?.decision), amount, days, input.managerSiteBookings)
     )

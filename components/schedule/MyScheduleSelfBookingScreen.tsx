@@ -712,7 +712,7 @@ export function MyScheduleSelfBookingScreen({
           const today = isToday(day)
           const dayRows = myBookingsOn(day)
           const assignedRows = assignedOn(day)
-          const leaveLabel = myScheduleAnnualLeaveLabel(myHolidays, day)
+          const leaveLabel = myScheduleAnnualLeaveLabel(myHolidays, day, undefined, policyForBookingDate(day, payrollPolicy) ?? payrollPolicy)
           const weekend = index > 4
           return (
             <div

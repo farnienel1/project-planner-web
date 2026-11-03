@@ -24,7 +24,8 @@ import { payrollTimePolicyForDayFromState, type PayrollTimePolicyState } from '.
 /** The slot values a booking picker may offer, in picker order. Stored spellings stay each collection's own. */
 export type BookingSlotChoice = 'FULL DAY' | 'AM' | 'PM' | 'CUSTOM'
 
-export const WEEKDAY_TIME_SLOTS: readonly BookingSlotChoice[] = ['FULL DAY', 'AM', 'PM', 'CUSTOM']
+/** Rulebook 1.20.0 §4.3: Monday–Friday bookings are Full day or Custom; AM / PM are no longer offered. */
+export const WEEKDAY_TIME_SLOTS: readonly BookingSlotChoice[] = ['FULL DAY', 'CUSTOM']
 export const WEEKEND_TIME_SLOTS: readonly BookingSlotChoice[] = ['CUSTOM']
 
 function isoWeekdayOf(day: string | number, timeZone?: string | null): number {
@@ -43,9 +44,9 @@ export function isWeekendDayKey(dayKey: string, timeZone?: string | null): boole
 }
 
 /**
- * The slots a booking picker offers on a day: CUSTOM only on Saturday and Sunday, FULL DAY, AM, PM and CUSTOM
- * otherwise. Not affected by the organisation's weekend setup; `policy` is accepted so every platform passes the same
- * inputs.
+ * The slots a booking picker offers on a day: CUSTOM only on Saturday and Sunday; FULL DAY and CUSTOM Monday–Friday
+ * (1.20.0: no AM / PM — a stored AM / PM booking is kept, shown and paid as stored, never offered anew). Not affected by
+ * the organisation's weekend setup; `policy` is accepted so every platform passes the same inputs.
  */
 export function allowedTimeSlotsOnDay(
   dayKey: string,
@@ -56,12 +57,14 @@ export function allowedTimeSlotsOnDay(
 }
 
 /**
- * Whether a slot may be booked anew on that day: on Saturday and Sunday only custom hours. A stored weekend FULL DAY /
- * AM / PM is kept, shown and paid as stored, never offered anew and never rewritten.
+ * Whether a slot may be booked anew on that day: on Saturday and Sunday only custom hours; Monday–Friday FULL DAY or
+ * custom hours (1.20.0). A stored FULL DAY / AM / PM is kept, shown and paid as stored, never offered anew and never
+ * rewritten.
  */
 export function timeSlotAllowedOnDay(timeSlot: string | null | undefined, dayKey: string, timeZone?: string | null): boolean {
-  if (!isWeekendDayKey(dayKey, timeZone)) return true
-  return namedSlotKind(timeSlot) === 'CUSTOM'
+  const kind = namedSlotKind(timeSlot)
+  if (!isWeekendDayKey(dayKey, timeZone)) return kind === 'FULL_DAY' || kind === 'CUSTOM'
+  return kind === 'CUSTOM'
 }
 
 /** iOS `ScheduleDateSelectionPolicy.weekdayWeekendMixMessage`, word for word. */

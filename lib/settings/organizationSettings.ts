@@ -2,7 +2,7 @@ import { doc, getDoc, getDocFromServer, runTransaction, setDoc, updateDoc } from
 import { validateAnnualLeaveDefaults } from '@/lib/canonical/annualLeaveBalance'
 import { db } from '@/lib/firebase/config'
 import { serverTimestamp } from 'firebase/firestore'
-import { writeMetadataFields } from '@/lib/canonical'
+import { weekdayPaidHours, writeMetadataFields } from '@/lib/canonical'
 import { type NotificationPreferences } from '@/lib/settings/notificationPreferences'
 import { dayKey } from '@/lib/ios-parity/londonTime'
 import {
@@ -512,7 +512,7 @@ export const WEEKDAY_OPTIONS = [
 ] as const
 
 export function formatPayrollSubtitle(policy: OrgPayrollTimePolicy): string {
-  return `${policy.standardDayStart}–${policy.standardDayEnd} · ${policy.standardPaidHours}h · weekday OT ${policy.weekdayOutsideStandardMultiplier}x`
+  return `${policy.standardDayStart}–${policy.standardDayEnd} · ${weekdayPaidHours(policy)}h · weekday OT ${policy.weekdayOutsideStandardMultiplier}x`
 }
 
 export function formatAnnualLeaveSubtitle(defaults: OrgAnnualLeaveDefaults, months: string[]): string {

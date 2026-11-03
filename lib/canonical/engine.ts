@@ -384,7 +384,13 @@ export function overlappingIntervalGroups(intervals: ReadonlyArray<MinuteInterva
 // ─── Standard day, AM and PM ─────────────────────────────────────────────────
 //
 // One definition of the working day and of its two halves, used by booking
-// clashes, annual-leave checks, half-day pay, and every screen that draws AM/PM.
+// clashes, half-day pay, and every screen that draws a stored AM/PM booking.
+//
+// Rulebook 1.20.0: `halfDayWindows` is the LEGACY BOOKING split. New Monday–Friday
+// bookings are Full day or Custom only (`allowedTimeSlotsOnDay`); a stored AM / PM
+// booking keeps this split and its pay unchanged. Annual leave halves are
+// `leaveHalfDayWindows` (the exact middle of the day, ignoring the break) and
+// never this function.
 //
 // Rule
 //   1. The standard day is [standardDayStart, standardDayEnd) from organisation
@@ -494,6 +500,54 @@ export function halfDayWindows(input?: StandardDayInput | null): HalfDayWindows 
     pivot: 'midpoint',
     breakWindow: null,
   }
+}
+
+export type LeaveHalfDayWindows = {
+  day: MinuteInterval
+  am: MinuteInterval
+  pm: MinuteInterval
+}
+
+/**
+ * Rulebook 1.20.0 §9: the halves of the Monday–Friday working day for ANNUAL LEAVE only — split at the exact middle of
+ * the standard day (floored to the minute), ignoring the break. 06:30–14:30 → AM 06:30–10:30, PM 10:30–14:30;
+ * 10:00–18:00 → AM 10:00–14:00, PM 14:00–18:00. Used by every leave display, `bookingLeaveConflicts`,
+ * `leaveCoverageRows` and timesheet leave lines. Stored AM / PM bookings keep `halfDayWindows`; leave day counting
+ * (0.5 / 1, `leaveRecordDayKeys`, `annualLeaveBalance`) is unchanged.
+ */
+export function leaveHalfDayWindows(input?: StandardDayInput | null): LeaveHalfDayWindows {
+  const day = standardDayWindow(input)
+  const mid = day.start + Math.floor((day.end - day.start) / 2)
+  return { day, am: { start: day.start, end: mid }, pm: { start: mid, end: day.end } }
+}
+
+/**
+ * Rulebook 1.20.0 §9: the clock a booking occupies when it is compared with annual leave. A stored named AM / PM booking
+ * is that half of the leave day (`leaveHalfDayWindows`), so an AM booking and PM leave never clash and an AM booking
+ * covers the morning of a PM-leave day; FULL DAY is the whole day; custom hours are their own clock times
+ * (`slotInterval`).
+ */
+export function leaveComparableInterval(booking: SlotIntervalInput, dayInput?: StandardDayInput | null): MinuteInterval | null {
+  const start = parseClockMinutes(booking.workStartTime)
+  const end = parseClockMinutes(booking.workEndTime)
+  const kind = namedSlotKind(booking.timeSlot)
+  if ((kind === 'AM' || kind === 'PM') && !(start != null && end != null && start !== end)) {
+    const halves = leaveHalfDayWindows(dayInput)
+    return { ...(kind === 'AM' ? halves.am : halves.pm) }
+  }
+  return slotInterval(booking, dayInput)
+}
+
+/**
+ * Rulebook 1.20.0 §9: the label for a leave day's slot with its clock range from `leaveHalfDayWindows`:
+ * "Full day", "AM 06:30–10:30", "PM 10:30–14:30".
+ */
+export function leaveHalfDayLabel(timeSlot: string | null | undefined, dayInput?: StandardDayInput | null): string {
+  const kind = namedSlotKind(timeSlot)
+  if (kind !== 'AM' && kind !== 'PM') return 'Full day'
+  const halves = leaveHalfDayWindows(dayInput)
+  const half = kind === 'AM' ? halves.am : halves.pm
+  return `${kind} ${formatClockMinutes(half.start)}–${formatClockMinutes(half.end)}`
 }
 
 export type NamedSlotKind = 'FULL_DAY' | 'AM' | 'PM' | 'CUSTOM' | 'EVENING' | 'OVERTIME' | 'UNKNOWN'

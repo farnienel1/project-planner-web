@@ -375,6 +375,7 @@ var ProjectPlannerCanonical = (() => {
     deletionTimeMs: () => deletionTimeMs,
     derivedDocumentId: () => derivedDocumentId,
     derivedRowId: () => derivedRowId,
+    derivedWeekdayPaidHours: () => derivedWeekdayPaidHours,
     devicePushAllowed: () => devicePushAllowed,
     devicePushNotificationTypes: () => devicePushNotificationTypes,
     displayOrganizationName: () => displayOrganizationName,
@@ -500,9 +501,12 @@ var ProjectPlannerCanonical = (() => {
     labourPersonIds: () => labourPersonIds,
     launchCountryOptions: () => launchCountryOptions,
     leaveApproverIds: () => leaveApproverIds,
+    leaveComparableInterval: () => leaveComparableInterval,
     leaveCoverageRows: () => leaveCoverageRows,
     leaveDaysInRange: () => leaveDaysInRange,
     leaveDecisionQueue: () => leaveDecisionQueue,
+    leaveHalfDayLabel: () => leaveHalfDayLabel,
+    leaveHalfDayWindows: () => leaveHalfDayWindows,
     leaveRecordDayKeys: () => leaveRecordDayKeys,
     leaveRecordsForAccount: () => leaveRecordsForAccount,
     leaveSlotKind: () => leaveSlotKind,
@@ -907,6 +911,8 @@ var ProjectPlannerCanonical = (() => {
     warningScopeFor: () => warningScopeFor,
     webSessionOrganizationStorageKey: () => webSessionOrganizationStorageKey,
     weekdayOffsetBefore: () => weekdayOffsetBefore,
+    weekdayPaidDayPreview: () => weekdayPaidDayPreview,
+    weekdayPaidHours: () => weekdayPaidHours,
     weekendBookingBreakdown: () => weekendBookingBreakdown,
     weekendBookingNote: () => weekendBookingNote,
     weekendBookingNotes: () => weekendBookingNotes,
@@ -918,6 +924,7 @@ var ProjectPlannerCanonical = (() => {
     wholesalerContactId: () => wholesalerContactId,
     wholesalerWriteFields: () => wholesalerWriteFields,
     windowCoverage: () => windowCoverage,
+    withDerivedWeekdayPaidHours: () => withDerivedWeekdayPaidHours,
     withoutDismissedQualificationRows: () => withoutDismissedQualificationRows,
     withoutLockedPermissionWrites: () => withoutLockedPermissionWrites,
     workDocuments: () => workDocuments,
@@ -1235,6 +1242,28 @@ var ProjectPlannerCanonical = (() => {
       pivot: "midpoint",
       breakWindow: null
     };
+  }
+  function leaveHalfDayWindows(input) {
+    const day = standardDayWindow(input);
+    const mid = day.start + Math.floor((day.end - day.start) / 2);
+    return { day, am: { start: day.start, end: mid }, pm: { start: mid, end: day.end } };
+  }
+  function leaveComparableInterval(booking, dayInput2) {
+    const start = parseClockMinutes(booking.workStartTime);
+    const end = parseClockMinutes(booking.workEndTime);
+    const kind = namedSlotKind(booking.timeSlot);
+    if ((kind === "AM" || kind === "PM") && !(start != null && end != null && start !== end)) {
+      const halves = leaveHalfDayWindows(dayInput2);
+      return { ...kind === "AM" ? halves.am : halves.pm };
+    }
+    return slotInterval(booking, dayInput2);
+  }
+  function leaveHalfDayLabel(timeSlot, dayInput2) {
+    const kind = namedSlotKind(timeSlot);
+    if (kind !== "AM" && kind !== "PM") return "Full day";
+    const halves = leaveHalfDayWindows(dayInput2);
+    const half = kind === "AM" ? halves.am : halves.pm;
+    return `${kind} ${formatClockMinutes(half.start)}\u2013${formatClockMinutes(half.end)}`;
   }
   function namedSlotKind(timeSlot) {
     const normalized = String(timeSlot || "").trim().toUpperCase().replace(/_/g, " ");
@@ -3184,7 +3213,7 @@ var ProjectPlannerCanonical = (() => {
     if (!data) {
       return { ...DEFAULT_PAYROLL_POLICY, saturday: { ...DEFAULT_SATURDAY_PAYROLL }, sunday: { ...DEFAULT_SUNDAY_PAYROLL } };
     }
-    return {
+    const parsed = {
       standardDayStart: String(data.standardDayStart ?? DEFAULT_PAYROLL_POLICY.standardDayStart),
       standardDayEnd: String(data.standardDayEnd ?? DEFAULT_PAYROLL_POLICY.standardDayEnd),
       // 1.12.0 §4.3: numbers are read into PAYROLL_POLICY_LIMITS (missing / blank / not a number → the default).
@@ -3215,13 +3244,51 @@ var ProjectPlannerCanonical = (() => {
       })(),
       breakPaid: data.breakPaid === true
     };
+    if (data.paidHoursDerived !== true) return parsed;
+    const derived = { ...parsed, paidHoursDerived: true };
+    return { ...derived, standardPaidHours: weekdayPaidHours(derived) };
+  }
+  function derivedWeekdayPaidHours(policy) {
+    const day = standardDayWindow(policy);
+    const breakMinutes = policy.breakPaid === true ? 0 : Math.max(Number(policy.unpaidBreakMinutes) || 0, 0);
+    return Math.max(0, day.end - day.start - breakMinutes) / 60;
+  }
+  function weekdayPaidHours(policy) {
+    if (!policy) return DEFAULT_PAYROLL_POLICY.standardPaidHours;
+    if (policy.paidHoursDerived !== true) return Number(policy.standardPaidHours);
+    const { min, max } = PAYROLL_POLICY_LIMITS.paidHours;
+    return Math.min(Math.max(derivedWeekdayPaidHours(policy), min), max);
+  }
+  function withDerivedWeekdayPaidHours(policy) {
+    const marked = { ...policy, paidHoursDerived: true };
+    return { ...marked, standardPaidHours: Math.round(derivedWeekdayPaidHours(marked) * 1e4) / 1e4 };
+  }
+  function hoursMinutesText(totalMinutes) {
+    const minutes = Math.max(0, Math.round(totalMinutes));
+    const h = Math.floor(minutes / 60);
+    const m = minutes % 60;
+    if (h === 0) return `${m}m`;
+    return m === 0 ? `${h}h` : `${h}h${String(m).padStart(2, "0")}m`;
+  }
+  function weekdayPaidDayPreview(policy) {
+    const day = standardDayWindow(policy);
+    const dayMinutes = day.end - day.start;
+    const breakMinutes = Math.max(Number(policy.unpaidBreakMinutes) || 0, 0);
+    const breakPaid = policy.breakPaid === true;
+    const paidHours = derivedWeekdayPaidHours(policy);
+    const range = `${formatClockMinutes(day.start)}\u2013${formatClockMinutes(day.end)}`;
+    const dayText = hoursMinutesText(dayMinutes);
+    const line = breakMinutes <= 0 ? `${range} = ${dayText}` : breakPaid ? `${range} = ${dayText}, ${breakMinutes} min break paid = ${dayText}` : `${range} = ${dayText} \u2212 ${breakMinutes} min unpaid break = ${hoursMinutesText(paidHours * 60)}`;
+    return { start: formatClockMinutes(day.start), end: formatClockMinutes(day.end), dayMinutes, breakMinutes, breakPaid, paidHours, line };
   }
   function payrollPolicyToFirestore(policy) {
     return {
       standardDayStart: policy.standardDayStart,
       standardDayEnd: policy.standardDayEnd,
       unpaidBreakMinutes: policy.unpaidBreakMinutes,
-      standardPaidHours: policy.standardPaidHours,
+      // 1.20.0: a derived policy writes its derived day, so older builds that read `standardPaidHours` agree.
+      standardPaidHours: policy.paidHoursDerived === true ? Math.round(derivedWeekdayPaidHours(policy) * 1e4) / 1e4 : policy.standardPaidHours,
+      ...policy.paidHoursDerived === true ? { paidHoursDerived: true } : {},
       breakWindowStart: policy.breakWindowStart,
       breakWindowEnd: policy.breakWindowEnd,
       weekdayOutsideStandardMultiplier: policy.weekdayOutsideStandardMultiplier,
@@ -3580,7 +3647,7 @@ var ProjectPlannerCanonical = (() => {
     return null;
   }
   function standardPaid(policy) {
-    return Math.max(Number(policy.standardPaidHours) || 0, 0);
+    return Math.max(Number(weekdayPaidHours(policy)) || 0, 0);
   }
   function countsAs(weekend, policy) {
     return weekend.countsAsStandardHours ?? Number(policy.standardPaidHours);
@@ -3650,9 +3717,10 @@ var ProjectPlannerCanonical = (() => {
     const kind = namedSlotKind(booking.timeSlot);
     return kind === "AM" || kind === "PM";
   }
-  function isHalfDayPaid(booking, policy, allHoursDay) {
+  function isHalfDayPaid(booking, policy, allHoursDay, weekdayDay = false) {
     if (isNamedHalf(booking)) return true;
     if (namedSlotKind(booking.timeSlot) !== "CUSTOM" || allHoursDay) return false;
+    if (weekdayDay && policy.paidHoursDerived === true) return false;
     const span = interval(booking, policy);
     if (!span) return false;
     const windows = halfDayWindows(dayInput(policy));
@@ -3774,7 +3842,7 @@ var ProjectPlannerCanonical = (() => {
     return rows3;
   }
   function weekday(booking, policy, multiplier) {
-    if (isHalfDayPaid(booking, policy, false)) return halfDayPaid(booking, policy, null, multiplier);
+    if (isHalfDayPaid(booking, policy, false, true)) return halfDayPaid(booking, policy, null, multiplier);
     const span = interval(booking, policy);
     if (!span) return legacySlot(booking, policy, multiplier);
     const ds = parseClockMinutes(policy.standardDayStart) ?? 0;
@@ -4038,12 +4106,13 @@ var ProjectPlannerCanonical = (() => {
     const state = parsePayrollTimePolicyState(input.orgDoc, tz);
     const yesterday = shiftDayKey(input.todayKey, -1, tz);
     const prior = payrollTimePolicyForDayFromState(state, yesterday);
+    const policy = withDerivedWeekdayPaidHours(input.policy);
     const fields = {
-      payrollTimePolicy: payrollPolicyToFirestore(input.policy),
+      payrollTimePolicy: payrollPolicyToFirestore(policy),
       payrollTimePolicyPrior: payrollPolicyToFirestore(prior),
       payrollTimePolicyEffectiveFrom: input.todayKey,
       payrollTimePolicyHistory: historyToFirestore(
-        historyToWrite(state, input.todayKey, { effectiveFrom: input.todayKey, policy: input.policy })
+        historyToWrite(state, input.todayKey, { effectiveFrom: input.todayKey, policy })
       ),
       ...revisionField(state)
     };
@@ -4064,7 +4133,8 @@ var ProjectPlannerCanonical = (() => {
     return {
       ...promotedFields(state, input.todayKey, tz),
       payrollTimePolicyScheduled: {
-        policy: payrollPolicyToFirestore(input.policy),
+        // 1.20.0 §4.3: the scheduled policy derives its weekday paid day (`paidHoursDerived`).
+        policy: payrollPolicyToFirestore(withDerivedWeekdayPaidHours(input.policy)),
         effectiveFrom: input.effectiveFrom
       },
       payrollTimePolicyHistory: historyToFirestore(historyToWrite(state, input.todayKey, null)),
@@ -4122,7 +4192,12 @@ var ProjectPlannerCanonical = (() => {
     if (dayEnd <= dayStart) return "Standard day end must be after the start time.";
     if (breakEnd <= breakStart) return "Break window end must be after the break start.";
     if (breakStart < dayStart || breakEnd > dayEnd) return "Break window must fall within the working day.";
-    if (!inRange(policy.standardPaidHours, paidHours)) {
+    if (policy.paidHoursDerived === true) {
+      const derived = derivedWeekdayPaidHours(policy);
+      if (!(derived >= paidHours.min - 1e-9 && derived <= paidHours.max + 1e-9)) {
+        return `The working day must give between ${paidHours.min} and ${paidHours.max} paid hours (finish \u2212 start \u2212 unpaid break).`;
+      }
+    } else if (!inRange(policy.standardPaidHours, paidHours)) {
       return `Standard paid hours must be between ${paidHours.min} and ${paidHours.max}.`;
     }
     if (!inRange(policy.unpaidBreakMinutes, breakMinutes)) {
@@ -4712,7 +4787,7 @@ var ProjectPlannerCanonical = (() => {
   }
   function leaveCoverageRows(input) {
     const timeZone = zoneOrLondon(input.timeZone);
-    const windows = halfDayWindows(input.day);
+    const windows = leaveHalfDayWindows(input.day);
     const excluded = new Set((input.excludedUserIds || []).map(idKey2).filter(Boolean));
     const approvedLeave = input.leave.filter((record9) => record9.approved && record9.startDayKey && record9.endDayKey);
     if (approvedLeave.length === 0) return [];
@@ -4760,7 +4835,7 @@ var ProjectPlannerCanonical = (() => {
         const leaveSlot2 = leaveSlotKind(record9.timeSlot);
         const leaveWindow = leaveSlot2 === "AM" ? windows.am : leaveSlot2 === "PM" ? windows.pm : windows.day;
         const dayBookings = bookingsByPersonDay.get(`${person.personKey}|${dayKey}`) || [];
-        const intervals = dayBookings.map((booking) => ({ booking, interval: slotInterval(booking, input.day) })).filter((entry) => entry.interval !== null);
+        const intervals = dayBookings.map((booking) => ({ booking, interval: leaveComparableInterval(booking, input.day) })).filter((entry) => entry.interval !== null);
         const personName = String(person.name || "").trim() || person.personKey;
         const userId = String(person.userId || "").trim() || void 0;
         const operativeId = String(record9.operativeId || person.operativeIds?.[0] || "").trim() || void 0;
@@ -9664,8 +9739,8 @@ var ProjectPlannerCanonical = (() => {
   // lib/canonical/rulebookStamp.ts
   function rulebookStamp() {
     return {
-      version: true ? "1.19.0" : "",
-      sha256: true ? "99b886e0dce74e166724d7b84c13f4caa10497b96b66c6ddb963aa8e3ccd751b" : ""
+      version: true ? "1.20.0" : "",
+      sha256: true ? "13317c7dac4848c00d5f4226105fece2fea9380609073a7883237c6e02da9620" : ""
     };
   }
 
@@ -9851,7 +9926,7 @@ var ProjectPlannerCanonical = (() => {
     if (slot === "PM") return "Annual leave (PM)";
     return "Annual leave (full day)";
   }
-  function timesheetLeaveLines(leaveRecords, period, timeZone, nonWorkingDayKeys) {
+  function timesheetLeaveLines(leaveRecords, period, timeZone, nonWorkingDayKeys, dayPolicy) {
     const start = String(period?.startDayKey || "").trim();
     const end = String(period?.endDayKey || "").trim();
     if (!start || !end || start > end) return [];
@@ -9872,6 +9947,11 @@ var ProjectPlannerCanonical = (() => {
           timeSlot: slot,
           label: timesheetLeaveLabel(slot)
         };
+        if (dayPolicy) {
+          const halves = leaveHalfDayWindows(dayPolicy(dayKey));
+          const half = slot === "AM" ? halves.am : slot === "PM" ? halves.pm : halves.day;
+          line.timeRange = `${formatClockMinutes(half.start)}\u2013${formatClockMinutes(half.end)}`;
+        }
         byDay.set(dayKey, slot === "FULL DAY" ? [line] : [...list, line]);
       }
     }
@@ -13825,7 +13905,7 @@ var ProjectPlannerCanonical = (() => {
   }
 
   // lib/canonical/bookingSlots.ts
-  var WEEKDAY_TIME_SLOTS = ["FULL DAY", "AM", "PM", "CUSTOM"];
+  var WEEKDAY_TIME_SLOTS = ["FULL DAY", "CUSTOM"];
   var WEEKEND_TIME_SLOTS = ["CUSTOM"];
   function isoWeekdayOf(day, timeZone) {
     if (typeof day === "number") return day;
@@ -13843,8 +13923,9 @@ var ProjectPlannerCanonical = (() => {
     return [...isWeekendDayKey(dayKey, timeZone) ? WEEKEND_TIME_SLOTS : WEEKDAY_TIME_SLOTS];
   }
   function timeSlotAllowedOnDay(timeSlot, dayKey, timeZone) {
-    if (!isWeekendDayKey(dayKey, timeZone)) return true;
-    return namedSlotKind(timeSlot) === "CUSTOM";
+    const kind = namedSlotKind(timeSlot);
+    if (!isWeekendDayKey(dayKey, timeZone)) return kind === "FULL_DAY" || kind === "CUSTOM";
+    return kind === "CUSTOM";
   }
   var WEEKEND_WEEKDAY_MIX_MESSAGE = "Weekends cannot be booked alongside Weekdays. Make your weekday booking first then weekend separately.";
   function bookingDaysMixWeekdayAndWeekend(dayKeys, timeZone) {
@@ -14383,8 +14464,8 @@ var ProjectPlannerCanonical = (() => {
     if (holidays.length === 0) return [];
     const days = Array.from(new Set((input.dayKeys || []).map(idText).filter(Boolean))).sort();
     if (days.length === 0) return [];
-    const windows = halfDayWindows(input.day);
-    const booking = slotInterval(
+    const windows = leaveHalfDayWindows(input.day);
+    const booking = leaveComparableInterval(
       { timeSlot: input.timeSlot, workStartTime: input.workStartTime, workEndTime: input.workEndTime },
       input.day
     );

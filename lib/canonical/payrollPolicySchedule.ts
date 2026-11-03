@@ -22,8 +22,10 @@ import { addDaysInZone, dateFromDayKeyInZone, dayKeyInZone } from '../orgTime/zo
 import { parseClockMinutes } from './engine'
 import {
   PAYROLL_POLICY_LIMITS,
+  derivedWeekdayPaidHours,
   parsePayrollPolicy,
   payrollPolicyToFirestore,
+  withDerivedWeekdayPaidHours,
   type OrgPayrollTimePolicy,
   type WeekendPayrollSettings,
 } from './organizationSettings'
@@ -288,12 +290,14 @@ export function payrollTimePolicyApplyNowWriteFields(input: {
   const state = parsePayrollTimePolicyState(input.orgDoc, tz)
   const yesterday = shiftDayKey(input.todayKey, -1, tz)
   const prior = payrollTimePolicyForDayFromState(state, yesterday)
+  // 1.20.0 §4.3: the saved policy derives its weekday paid day (`paidHoursDerived`); the prior and history stay as stored.
+  const policy = withDerivedWeekdayPaidHours(input.policy)
   const fields: Record<string, unknown> = {
-    payrollTimePolicy: payrollPolicyToFirestore(input.policy),
+    payrollTimePolicy: payrollPolicyToFirestore(policy),
     payrollTimePolicyPrior: payrollPolicyToFirestore(prior),
     payrollTimePolicyEffectiveFrom: input.todayKey,
     payrollTimePolicyHistory: historyToFirestore(
-      historyToWrite(state, input.todayKey, { effectiveFrom: input.todayKey, policy: input.policy })
+      historyToWrite(state, input.todayKey, { effectiveFrom: input.todayKey, policy })
     ),
     ...revisionField(state),
   }
@@ -328,7 +332,8 @@ export function payrollTimePolicyScheduleWriteFields(input: {
   return {
     ...promotedFields(state, input.todayKey, tz),
     payrollTimePolicyScheduled: {
-      policy: payrollPolicyToFirestore(input.policy),
+      // 1.20.0 §4.3: the scheduled policy derives its weekday paid day (`paidHoursDerived`).
+      policy: payrollPolicyToFirestore(withDerivedWeekdayPaidHours(input.policy)),
       effectiveFrom: input.effectiveFrom,
     },
     payrollTimePolicyHistory: historyToFirestore(historyToWrite(state, input.todayKey, null)),
@@ -418,7 +423,13 @@ export function validatePayrollTimePolicy(policy: OrgPayrollTimePolicy): string 
   if (dayEnd <= dayStart) return 'Standard day end must be after the start time.'
   if (breakEnd <= breakStart) return 'Break window end must be after the break start.'
   if (breakStart < dayStart || breakEnd > dayEnd) return 'Break window must fall within the working day.'
-  if (!inRange(policy.standardPaidHours, paidHours)) {
+  if (policy.paidHoursDerived === true) {
+    // 1.20.0 §4.3: the weekday paid day is finish − start − the unpaid break; it must still be 1–12 hours.
+    const derived = derivedWeekdayPaidHours(policy)
+    if (!(derived >= paidHours.min - 1e-9 && derived <= paidHours.max + 1e-9)) {
+      return `The working day must give between ${paidHours.min} and ${paidHours.max} paid hours (finish − start − unpaid break).`
+    }
+  } else if (!inRange(policy.standardPaidHours, paidHours)) {
     return `Standard paid hours must be between ${paidHours.min} and ${paidHours.max}.`
   }
   if (!inRange(policy.unpaidBreakMinutes, breakMinutes)) {

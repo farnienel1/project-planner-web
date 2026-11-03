@@ -114,7 +114,7 @@ import {
   revisedPayrollAmount,
 } from '@/lib/timesheets/payrollLineBookingLookup'
 import { extraReviewAfterSave, payrollReviewAfterSave } from '@/lib/timesheets/managerReviewSave'
-import { OVERLAPPING_BOOKING_NOTE, currencySymbol, formatMoney, timesheetLeaveLines } from '@/lib/canonical'
+import { OVERLAPPING_BOOKING_NOTE, currencySymbol, formatMoney, timesheetLeaveLines, weekdayPaidHours } from '@/lib/canonical'
 import { useOrganizationCurrency } from '@/lib/stores/organizationDocumentStore'
 import { useHolidayStore } from '@/lib/stores/holidayStore'
 import { timesheetLeaveLinesForAccount } from '@/lib/timesheets/timesheetLeave'
@@ -276,8 +276,11 @@ export function TimesheetPeriodPage({
         periodEnd,
         timeZone,
         bankHolidayDayKeys: bankHolidays.map((holiday) => holiday.date),
+        // Rulebook 1.20.0 §9: each leave half shows its clock range under the working day in effect that day.
+        dayPolicy: (key: string) =>
+          orgPayrollPolicyForDay(dateFromDayKey(key, timeZone), payrollPolicy, payrollPolicyPrior, payrollPolicyEffectiveFrom, timeZone, null, payrollPolicyState),
       }),
-    [subjectUser, holidayBookings, holidaysLoadedOrgId, organization?.id, operatives, users, periodStart, periodEnd, timeZone, bankHolidays]
+    [subjectUser, holidayBookings, holidaysLoadedOrgId, organization?.id, operatives, users, periodStart, periodEnd, timeZone, bankHolidays, payrollPolicy, payrollPolicyPrior, payrollPolicyEffectiveFrom, payrollPolicyState]
   )
   const sheetRows = useMemo(() => {
     const rows: Array<{ kind: 'pay'; key: string; dayKey: string; line: TimesheetPayrollLineItem } | { kind: 'leave'; key: string; dayKey: string; leave: TimesheetLeaveLine }> = [
@@ -670,8 +673,8 @@ export function TimesheetPeriodPage({
       draft,
       timeZone,
       extrasMode: 'raw',
-      standardDayHours: payrollPolicy.standardPaidHours,
-      standardDayHoursOn: (date: Date) => policyOnDay(date).standardPaidHours,
+      standardDayHours: weekdayPaidHours(payrollPolicy),
+      standardDayHoursOn: (date: Date) => weekdayPaidHours(policyOnDay(date)),
       currencyCode: currency,
       // Rulebook 1.11.0: only the self-employed days of the period reach the invoice.
       timesheetDays: subjectUser ? timesheetDayKeysForPeriod(subjectUser, periodStart, periodEnd, timeZone) : [],
@@ -691,7 +694,7 @@ export function TimesheetPeriodPage({
       weekStart: periodStart,
       weekEnd: periodEnd,
       totalHours: payroll.totalHours,
-      totalDays: payroll.totalHours / Math.max(payrollPolicy.standardPaidHours, 0.01),
+      totalDays: payroll.totalHours / Math.max(weekdayPaidHours(payrollPolicy), 0.01),
       amount: invoiceLinesTotal(lines),
       vatNumber: taxIds.vatNumber,
       utrNumber: taxIds.utrNumber,
@@ -1454,7 +1457,10 @@ function LeaveInfoLine({ leave, timeZone }: { leave: TimesheetLeaveLine; timeZon
     <li className="flex gap-3 bg-sky-50 px-4 py-3">
       <div className="min-w-0 flex-1">
         <p className="text-[15px] font-bold">{abbreviatedDate(dateFromDayKey(leave.dayKey, timeZone), timeZone)}</p>
-        <p className="text-[13px] font-medium text-sky-800">{leave.label}</p>
+        <p className="text-[13px] font-medium text-sky-800">
+          {leave.label}
+          {leave.timeRange ? ` · ${leave.timeRange}` : ''}
+        </p>
       </div>
       <p className="self-center text-[12px] text-[var(--ink3)]">No hours or pay</p>
     </li>

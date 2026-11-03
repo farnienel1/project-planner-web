@@ -7,8 +7,9 @@
  *
  * - Approved leave conflicts with the booking when the leave window overlaps the booking interval: full-day leave
  *   conflicts with any booking; AM leave with a booking that touches the AM half; PM leave likewise. AM leave and a
- *   PM booking do not conflict. Custom hours conflict with half-day leave when the interval overlaps that half
- *   (`halfDayWindows`, `slotInterval`). A booking with no interval (no slot, no times) conflicts with any leave.
+ *   PM booking do not conflict. Custom hours conflict with half-day leave when the interval overlaps that half.
+ *   1.20.0: the halves are the leave halves (`leaveHalfDayWindows`: the exact middle of the day, ignoring the break —
+ *   06:30–14:30 → AM 06:30–10:30), and a stored named AM / PM booking is that leave half (`leaveComparableInterval`). A booking with no interval (no slot, no times) conflicts with any leave.
  * - Pending leave is listed too, with `status: 'pending'` (shown softer). Rejected leave never is.
  * - People match leave by every id they go by (`personIdSet` over the roster, plus their `userId` and
  *   `operativeIds`), compared without case (`normalizeDocumentId`), like `leaveCoverageRows`.
@@ -17,7 +18,7 @@
  * Plain data in, plain data out. Apps parse leave with `parseHolidayDocument` / `labourHolidayInput` first.
  */
 
-import { halfDayWindows, intervalsOverlap, slotInterval, type MinuteInterval, type StandardDayInput } from './engine'
+import { intervalsOverlap, leaveComparableInterval, leaveHalfDayWindows, type MinuteInterval, type StandardDayInput } from './engine'
 import { idKey, idText, personIdSet, type PersonIdsInput, type PersonRosterRow } from './personIds'
 import { leaveSlotKind } from './leaveCoverage'
 
@@ -100,8 +101,8 @@ export function bookingLeaveConflicts(input: BookingLeaveConflictInput): Booking
   if (holidays.length === 0) return []
   const days = Array.from(new Set((input.dayKeys || []).map(idText).filter(Boolean))).sort()
   if (days.length === 0) return []
-  const windows = halfDayWindows(input.day)
-  const booking: MinuteInterval | null = slotInterval(
+  const windows = leaveHalfDayWindows(input.day)
+  const booking: MinuteInterval | null = leaveComparableInterval(
     { timeSlot: input.timeSlot, workStartTime: input.workStartTime, workEndTime: input.workEndTime },
     input.day
   )

@@ -1,4 +1,5 @@
 import type { OrgPayrollTimePolicy, WeekendPayrollSettings } from '@/lib/settings/organizationSettings'
+import { weekdayPaidHours, withDerivedWeekdayPaidHours } from '@/lib/canonical'
 
 /** Parse "HH:mm" to minutes from midnight. */
 export function timeToMinutes(time: string): number {
@@ -28,13 +29,6 @@ export function computeSpanHours(dayStart: string, dayEnd: string): number {
   return Math.round((span / 60) * 10) / 10
 }
 
-export function computeStandardPaidHours(dayStart: string, dayEnd: string, unpaidBreakMinutes: number): number {
-  const spanMins = timeToMinutes(dayEnd) - timeToMinutes(dayStart)
-  if (spanMins <= 0) return 0
-  const paidMins = Math.max(0, spanMins - unpaidBreakMinutes)
-  return Math.round((paidMins / 60) * 10) / 10
-}
-
 export function syncBreakWindowEnd(breakWindowStart: string, unpaidBreakMinutes: number): string {
   return minutesToTime(timeToMinutes(breakWindowStart) + unpaidBreakMinutes)
 }
@@ -46,19 +40,8 @@ export function withSyncedPayrollPolicy(patch: Partial<OrgPayrollTimePolicy>, cu
     next.breakWindowEnd = syncBreakWindowEnd(next.breakWindowStart, next.unpaidBreakMinutes)
   }
 
-  if (
-    patch.standardDayStart !== undefined ||
-    patch.standardDayEnd !== undefined ||
-    patch.unpaidBreakMinutes !== undefined
-  ) {
-    next.standardPaidHours = computeStandardPaidHours(
-      next.standardDayStart,
-      next.standardDayEnd,
-      next.unpaidBreakMinutes
-    )
-  }
-
-  return next
+  // Rulebook 1.20.0 §4.3: the Mon–Fri paid day is derived from the day (`withDerivedWeekdayPaidHours`), never typed in.
+  return withDerivedWeekdayPaidHours(next)
 }
 
 export type DayTimelineSegment = {
@@ -138,7 +121,7 @@ export function defaultDefinedWeekendSettings(policy: OrgPayrollTimePolicy): Wee
     allHoursMultiplier: 2,
     definedWindowStart: policy.standardDayStart,
     definedWindowEnd: policy.standardDayEnd,
-    countsAsStandardHours: policy.standardPaidHours,
+    countsAsStandardHours: weekdayPaidHours(policy),
     outsideWindowMultiplier: 1.5,
     sameAsSaturday: false,
   }

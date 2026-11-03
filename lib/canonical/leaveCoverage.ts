@@ -13,9 +13,13 @@
  *                that day is the whole half missing. The unbooked-labour rule skips days with any
  *                approved leave, so this is the only warning for that person-day.
  *
- * Windows come from `halfDayWindows` in engine.ts. An AM booking and PM leave never clash:
- * the two halves are disjoint by construction, so "AM booking + PM leave" is silent, and any
- * booking whose hours sit entirely in the working half is silent too.
+ * Windows come from `leaveHalfDayWindows` in engine.ts (rulebook 1.20.0: the exact middle of the
+ * Monday–Friday working day, ignoring the break — 06:30–14:30 → AM 06:30–10:30, PM 10:30–14:30).
+ * A stored named AM / PM booking is that leave half (`leaveComparableInterval`), so an AM booking and
+ * PM leave never clash and "AM booking + PM leave" is silent; custom hours use their own clock times,
+ * and any booking whose hours cover the whole working half is silent too. The working half must be
+ * covered minute for minute (the break is ignored for leave halves): AM leave + 11:00–14:30 on
+ * 06:30–14:30 is 10:30–11:00 (0.5 hours) not booked.
  *
  * Plain data in, plain data out. Web wrappers and the iOS engine map their own types.
  */
@@ -23,11 +27,11 @@
 import { isAnonymisedDeletedProfile } from './userRosterSegment'
 import {
   formatClockMinutes,
-  halfDayWindows,
   intervalsOverlap,
+  leaveComparableInterval,
+  leaveHalfDayWindows,
   mergeMinuteIntervals,
   namedSlotKind,
-  slotInterval,
   subtractMinuteIntervals,
   type MinuteInterval,
   type StandardDayInput,
@@ -151,7 +155,8 @@ function joinRanges(intervals: readonly MinuteInterval[]): string {
 
 export function leaveCoverageRows(input: LeaveCoverageInput): LeaveCoverageRow[] {
   const timeZone = zoneOrLondon(input.timeZone)
-  const windows = halfDayWindows(input.day)
+  // 1.20.0 §9: leave halves split the day at its exact middle (never the booking break split).
+  const windows = leaveHalfDayWindows(input.day)
   // Ids compare without case (`normalizeDocumentId`, rulebook §1); returned rows keep the stored ids.
   const excluded = new Set((input.excludedUserIds || []).map(idKey).filter(Boolean))
   const approvedLeave = input.leave.filter((record) => record.approved && record.startDayKey && record.endDayKey)
@@ -209,7 +214,7 @@ export function leaveCoverageRows(input: LeaveCoverageInput): LeaveCoverageRow[]
         leaveSlot === 'AM' ? windows.am : leaveSlot === 'PM' ? windows.pm : windows.day
       const dayBookings = bookingsByPersonDay.get(`${person.personKey}|${dayKey}`) || []
       const intervals = dayBookings
-        .map((booking) => ({ booking, interval: slotInterval(booking, input.day) }))
+        .map((booking) => ({ booking, interval: leaveComparableInterval(booking, input.day) }))
         .filter((entry): entry is { booking: LeaveBooking; interval: MinuteInterval } => entry.interval !== null)
 
       const personName = String(person.name || '').trim() || person.personKey

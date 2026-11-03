@@ -112,6 +112,7 @@ export type {
   CoverageWindowInput,
   DayWindow,
   HalfDayWindows,
+  LeaveHalfDayWindows,
   InvoicingPeriodInput,
   MinuteInterval,
   NamedSlotKind,
@@ -1368,7 +1369,13 @@ export {
   parseWeekendCoverage,
   resolveWeekendCoverageDay,
   weekendBreakFor,
+  derivedWeekdayPaidHours,
+  weekdayPaidHours,
+  withDerivedWeekdayPaidHours,
+  weekdayPaidDayPreview,
 } from './organizationSettings'
+export { leaveHalfDayWindows, leaveComparableInterval, leaveHalfDayLabel } from './engine'
+export type { WeekdayPaidDayPreview } from './organizationSettings'
 export { leaveYearStartMonth, proRataLeaveAllowance } from './annualLeaveBalance'
 export {
   PAY_PROFILES_COLLECTION,

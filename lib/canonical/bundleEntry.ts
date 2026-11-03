@@ -951,7 +951,12 @@ export {
   parseWeekendCoverage,
   resolveWeekendCoverageDay,
   weekendBreakFor,
+  derivedWeekdayPaidHours,
+  weekdayPaidHours,
+  withDerivedWeekdayPaidHours,
+  weekdayPaidDayPreview,
 } from './organizationSettings'
+export { leaveHalfDayWindows, leaveComparableInterval, leaveHalfDayLabel } from './engine'
 export { leaveYearStartMonth, proRataLeaveAllowance } from './annualLeaveBalance'
 export {
   PAY_PROFILES_COLLECTION,

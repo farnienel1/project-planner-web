@@ -6,7 +6,7 @@
  * hours worked, never multiplied. Paid hours belong to pay screens.
  */
 
-import { bookingOccupiesDay, formerIdAliases, payrollOutsideMultiplier, unbookedLabourRowsOnDay, warningScopeFor, workedHoursSplit, type JobAccessViewer } from '@/lib/canonical'
+import { bookingOccupiesDay, formerIdAliases, payrollOutsideMultiplier, unbookedLabourRowsOnDay, warningScopeFor, weekdayPaidHours, workedHoursSplit, type JobAccessViewer } from '@/lib/canonical'
 import { isoWeekdayInZone } from '@/lib/orgTime/zoneTime'
 import { labourPersonFromUser, labourRosterOperative } from '@/lib/warnings/unbookedLabourWarnings'
 import { findUserByAnyId, rosterDisplayName } from '@/lib/staff/userRosterUtils'
@@ -483,7 +483,7 @@ export function buildDailyOverview(params: {
     // 1.19.0: the weekend requirement is that day's "Hours to cover" window, read under the day's policy.
     weekendCoverage: params.weekendCoverage ?? null,
     payrollPolicy: payroll,
-    standardPaidHours: payroll.standardPaidHours,
+    standardPaidHours: weekdayPaidHours(payroll),
     standardDayStart: payroll.standardDayStart,
     standardDayEnd: payroll.standardDayEnd,
     breakWindowStart: payroll.breakWindowStart,
