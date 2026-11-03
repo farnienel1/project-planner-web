@@ -1,4 +1,5 @@
 /** Client checks that match storage.rules. Does not change Canonical or stored field names. */
+import { storedFileObjectName } from '@/lib/canonical/storedFiles'
 
 export const PROFILE_PHOTO_MAX_BYTES = 2 * 1024 * 1024
 export const COMPANY_LOGO_MAX_BYTES = 5 * 1024 * 1024
@@ -53,10 +54,16 @@ export function fileExtension(name: string): string {
   return trimmed.slice(dot + 1).toLowerCase()
 }
 
+/**
+ * Rulebook 1.25.0 §24: every upload is a new object `{uid}_{unixMs}.{ext}` (`storedFileObjectName`), so a
+ * replacement never overwrites the file it replaces and storage.rules can tell who uploaded it.
+ */
 export function generatedStorageFileName(originalName: string, uid: string, timestamp = Date.now()): string {
   const ext = fileExtension(originalName)
-  const safeUid = uid.replace(/[^a-zA-Z0-9_-]/g, '') || 'web'
-  return ext ? `${safeUid}_${timestamp}.${ext}` : `${safeUid}_${timestamp}`
+  const named = storedFileObjectName({ uid, unixMs: timestamp, extension: ext })
+  if (named) return named
+  const safeUid = uid.replace(/[^a-zA-Z0-9-]/g, '') || 'web'
+  return storedFileObjectName({ uid: safeUid, unixMs: timestamp, extension: ext }) ?? `web_${timestamp}`
 }
 
 export function isImageContent(file: NamedFile): boolean {

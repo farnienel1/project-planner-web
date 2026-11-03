@@ -50,6 +50,8 @@ import {
 } from '@/lib/variations/variationStorage'
 import type { Project } from '@/types'
 import { ReportFileLink } from '@/components/fileReports/ReportFileLink'
+import { FILE_KEPT_ON_REMOVE_COPY, fileDeletePermission } from '@/lib/canonical'
+import { staffAccountRole } from '@/lib/permissions'
 
 type Filter = VariationListFilter
 
@@ -334,13 +336,24 @@ export function VariationsWorkspace({
             const file = selected.evidence.find((item) => item.id === evidenceId)
             if (!file) return
             if (!canEdit && file.uploadedByUid !== user.id) return
-            if (!window.confirm('Remove this file?')) return
-            await removeEvidenceObject(file.storagePath)
+            // Rulebook 1.25.0 §24: the Storage object is deleted only when fileDeletePermission allows it (the
+            // uploader within the undo window, or an admin); otherwise the file is unlinked and kept for recovery.
+            const deletion = fileDeletePermission({
+              storagePath: file.storagePath,
+              organizationId: organization.id,
+              viewerUserId: user.id,
+              viewerRole: staffAccountRole(user),
+              nowMs: Date.now(),
+              uploadedAtMs: file.uploadedAt instanceof Date ? file.uploadedAt.getTime() : null,
+            })
+            if (!window.confirm(deletion.allowed ? 'Remove this file?' : 'Remove this file from the variation? The file itself is kept.')) return
+            if (deletion.allowed) await removeEvidenceObject(file.storagePath)
             await updateVariation({
               organizationId: organization.id,
               variation: { ...selected, evidence: selected.evidence.filter((item) => item.id !== evidenceId) },
               actorUid: user.id,
             })
+            if (!deletion.allowed) toast(FILE_KEPT_ON_REMOVE_COPY)
           }}
         />
       ) : null}

@@ -18289,6 +18289,157 @@
           "sam@acme.com"
         ]
       }
+    },
+    {
+      "name": "1.25.0 fileDeletePermission: uploader inside the 15-minute undo window",
+      "function": "fileDeletePermission",
+      "args": [
+        {
+          "storagePath": "organizations/org-a/operatives/op1/qualifications/q1/certificates/op-a_1762000000000.pdf",
+          "organizationId": "org-a",
+          "viewerUserId": "op-a",
+          "viewerRole": {
+            "isSuperAdmin": false,
+            "isAdmin": false,
+            "isManager": false,
+            "isOperativeMode": true
+          },
+          "nowMs": 1762000060000
+        }
+      ],
+      "expected": {
+        "allowed": true,
+        "reason": "uploader_undo",
+        "undoEndsAtMs": 1762000900000
+      }
+    },
+    {
+      "name": "1.25.0 fileDeletePermission: uploader after the undo window",
+      "function": "fileDeletePermission",
+      "args": [
+        {
+          "storagePath": "organizations/org-a/operatives/op1/qualifications/q1/certificates/op-a_1762000000000.pdf",
+          "organizationId": "org-a",
+          "viewerUserId": "op-a",
+          "viewerRole": {
+            "isSuperAdmin": false,
+            "isAdmin": false,
+            "isManager": false,
+            "isOperativeMode": true
+          },
+          "nowMs": 1762000900000
+        }
+      ],
+      "expected": {
+        "allowed": false,
+        "reason": "undo_expired",
+        "undoEndsAtMs": 1762000900000
+      }
+    },
+    {
+      "name": "1.25.0 fileDeletePermission: a manager never deletes another person's file",
+      "function": "fileDeletePermission",
+      "args": [
+        {
+          "storagePath": "organizations/org-a/operatives/op1/qualifications/q1/certificates/op-a_1762000000000.pdf",
+          "organizationId": "org-a",
+          "viewerUserId": "mgr",
+          "viewerRole": {
+            "isSuperAdmin": false,
+            "isAdmin": false,
+            "isManager": true,
+            "isOperativeMode": false
+          },
+          "nowMs": 1762000060000
+        }
+      ],
+      "expected": {
+        "allowed": false,
+        "reason": "not_uploader",
+        "undoEndsAtMs": null
+      }
+    },
+    {
+      "name": "1.25.0 fileDeletePermission: an admin of this organisation",
+      "function": "fileDeletePermission",
+      "args": [
+        {
+          "storagePath": "organizations/org-a/operatives/op1/qualifications/q1/certificates/op-a_1762000000000.pdf",
+          "organizationId": "ORG-A",
+          "viewerUserId": "adm",
+          "viewerRole": {
+            "isSuperAdmin": false,
+            "isAdmin": true,
+            "isManager": false,
+            "isOperativeMode": false
+          },
+          "nowMs": 1762086400000
+        }
+      ],
+      "expected": {
+        "allowed": true,
+        "reason": "admin",
+        "undoEndsAtMs": null
+      }
+    },
+    {
+      "name": "1.25.0 fileDeletePermission: company logo is admin only",
+      "function": "fileDeletePermission",
+      "args": [
+        {
+          "storagePath": "organizations/org-a/branding/company_logo/mgr_1762000000000.png",
+          "organizationId": "org-a",
+          "viewerUserId": "mgr",
+          "viewerRole": {
+            "isSuperAdmin": false,
+            "isAdmin": false,
+            "isManager": true,
+            "isOperativeMode": false
+          },
+          "nowMs": 1762000000000
+        }
+      ],
+      "expected": {
+        "allowed": false,
+        "reason": "admin_only",
+        "undoEndsAtMs": null
+      }
+    },
+    {
+      "name": "1.25.0 storedFileKind: iOS variation fallback path",
+      "function": "storedFileKind",
+      "args": [
+        "organizations/org-a/variations/V1/op-a_1.jpg"
+      ],
+      "expected": {
+        "organizationId": "org-a",
+        "objectName": "op-a_1.jpg",
+        "ownerUserId": null,
+        "kind": "variation_evidence"
+      }
+    },
+    {
+      "name": "1.25.0 storedFileObjectName: uid, upload time and extension",
+      "function": "storedFileObjectName",
+      "args": [
+        {
+          "uid": "op-a",
+          "unixMs": 1700000000000,
+          "extension": "PDF"
+        }
+      ],
+      "expected": "op-a_1700000000000.pdf"
+    },
+    {
+      "name": "1.25.0 storedFileUploader: from the object name",
+      "function": "storedFileUploader",
+      "args": [
+        "organizations/org-a/operatives/op1/qualifications/q1/certificates/op-a_1762000000000.pdf"
+      ],
+      "expected": {
+        "uploaderUserId": "op-a",
+        "uploadedAtMs": 1762000000000
+      }
     }
   ]
 }

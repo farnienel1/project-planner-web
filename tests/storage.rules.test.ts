@@ -16,7 +16,7 @@ import {
   type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing'
 import { doc, setDoc } from 'firebase/firestore'
-import { getBytes, ref, uploadBytes } from 'firebase/storage'
+import { deleteObject, getBytes, ref, uploadBytes } from 'firebase/storage'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const firestoreRules = readFileSync(path.join(root, 'firestore.rules'), 'utf8')
@@ -28,6 +28,8 @@ const ADMIN_A = 'admin-a'
 const OP_A = 'op-a'
 const ADMIN_B = 'admin-b'
 const OP_B = 'op-b'
+const MGR_A = 'mgr-a'
+const OPMODE_ADMIN_A = 'opmode-admin-a'
 
 const MB = 1024 * 1024
 
@@ -58,7 +60,7 @@ test.before(async () => {
     const db = ctx.firestore()
     await setDoc(doc(db, 'organizations', ORG_A), {
       name: 'Company A',
-      members: { [ADMIN_A]: 'admin', [OP_A]: 'member' },
+      members: { [ADMIN_A]: 'admin', [OP_A]: 'member', [MGR_A]: 'member', [OPMODE_ADMIN_A]: 'member', [ADMIN_B]: 'member' },
       creatorUserId: ADMIN_A,
     })
     await setDoc(doc(db, 'organizations', ORG_B), {
@@ -81,6 +83,22 @@ test.before(async () => {
       isSuperAdmin: false,
       operativeMode: true,
       firstName: 'Ollie',
+    })
+    await setDoc(doc(db, 'users', MGR_A), {
+      email: 'mgr-a@test.com',
+      organizationId: ORG_A,
+      role: 'manager',
+      manager: true,
+      adminAccess: false,
+      firstName: 'Mo',
+    })
+    await setDoc(doc(db, 'users', OPMODE_ADMIN_A), {
+      email: 'opmode-admin-a@test.com',
+      organizationId: ORG_A,
+      role: 'admin',
+      adminAccess: true,
+      operativeMode: true,
+      firstName: 'Opal',
     })
     await setDoc(doc(db, 'users', ADMIN_B), {
       email: 'admin-b@test.com',
@@ -271,4 +289,108 @@ test('unknown prefix is denied even for an org member', async () => {
 test('storage rules file still has no public org-wide allow', () => {
   assert.match(storageRules, /callerOrgMatches\(orgId\) \|\| callerIsMember\(orgId\)/)
   assert.doesNotMatch(storageRules, /allow read, write: if callerOrgMatches/)
+})
+
+// ---------------------------------------------------------------------------------------------------------------
+// Rulebook 1.25.0 §24 (fileDeletePermission): no client deletes or overwrites another person's file.
+// Uploads are named {uid}_{unixMs}.{ext}; the uploader may delete or overwrite within 15 minutes of the upload,
+// admins of the organisation (outside operative mode) may delete. The 15-minute expiry itself is not exercised
+// here (the emulator clock cannot be moved); canonical.test.ts locks the number in storage.rules.
+// ---------------------------------------------------------------------------------------------------------------
+
+const EMAIL: Record<string, string> = {
+  [ADMIN_A]: 'admin-a@test.com',
+  [OP_A]: 'op-a@test.com',
+  [MGR_A]: 'mgr-a@test.com',
+  [OPMODE_ADMIN_A]: 'opmode-admin-a@test.com',
+  [ADMIN_B]: 'admin-b@test.com',
+}
+
+function del(uid: string, objectPath: string) {
+  return deleteObject(ref(authStorage(uid, EMAIL[uid]), objectPath))
+}
+
+let seq = 0
+function certPath(uploader: string) {
+  seq += 1
+  return `organizations/${ORG_A}/operatives/op1/qualifications/q1/certificates/${uploader}_${Date.now() + seq}.pdf`
+}
+
+test('1.25.0 uploader deletes their own fresh certificate (undo window)', async () => {
+  const objectPath = certPath(OP_A)
+  await assertSucceeds(put(OP_A, EMAIL[OP_A], objectPath, 64, 'application/pdf'))
+  await assertSucceeds(del(OP_A, objectPath))
+})
+
+test('1.25.0 an operative cannot delete a certificate someone else uploaded', async () => {
+  const objectPath = certPath(ADMIN_A)
+  await assertSucceeds(put(ADMIN_A, EMAIL[ADMIN_A], objectPath, 64, 'application/pdf'))
+  await assertFails(del(OP_A, objectPath))
+})
+
+test('1.25.0 a manager cannot delete an operative\'s site audit photo, task file or H&S file', async () => {
+  const paths = [
+    `organizations/${ORG_A}/siteAudits/a1/images/${OP_A}_${Date.now()}.jpg`,
+    `organizations/${ORG_A}/tasks/t1/files/${OP_A}_${Date.now()}.pdf`,
+    `organizations/${ORG_A}/healthSafety/job-1/rams/${OP_A}_${Date.now()}.pdf`,
+    `organizations/${ORG_A}/healthSafety/job-1/variationEvidence/${OP_A}_${Date.now()}.jpg`,
+  ]
+  for (const objectPath of paths) {
+    const type = objectPath.endsWith('.jpg') ? 'image/jpeg' : 'application/pdf'
+    await assertSucceeds(put(OP_A, EMAIL[OP_A], objectPath, 64, type))
+    await assertFails(del(MGR_A, objectPath))
+  }
+})
+
+test('1.25.0 an admin of the organisation deletes any file in it', async () => {
+  const objectPath = `organizations/${ORG_A}/tasks/t1/${OP_A}_${Date.now()}.pdf`
+  await assertSucceeds(put(OP_A, EMAIL[OP_A], objectPath, 64, 'application/pdf'))
+  await assertSucceeds(del(ADMIN_A, objectPath))
+})
+
+test('1.25.0 an admin in operative mode, or an admin of another company, cannot delete someone else\'s file', async () => {
+  const objectPath = `organizations/${ORG_A}/healthSafety/job-1/other/${OP_A}_${Date.now()}.pdf`
+  await assertSucceeds(put(OP_A, EMAIL[OP_A], objectPath, 64, 'application/pdf'))
+  await assertFails(del(OPMODE_ADMIN_A, objectPath))
+  // ADMIN_B is a plain member of ORG_A here; their admin flags belong to ORG_B.
+  await assertFails(del(ADMIN_B, objectPath))
+})
+
+test('1.25.0 nobody overwrites another person\'s file; the uploader may retry the same path', async () => {
+  const objectPath = certPath(OP_A)
+  await assertSucceeds(put(OP_A, EMAIL[OP_A], objectPath, 64, 'application/pdf'))
+  await assertFails(put(MGR_A, EMAIL[MGR_A], objectPath, 64, 'application/pdf'))
+  await assertFails(put(ADMIN_A, EMAIL[ADMIN_A], objectPath, 64, 'application/pdf'))
+  await assertSucceeds(put(OP_A, EMAIL[OP_A], objectPath, 128, 'application/pdf'))
+})
+
+test('1.25.0 a file without an uploader in its name is admin-delete only', async () => {
+  const objectPath = `organizations/${ORG_A}/tasks/t1/old-drawing-${Date.now()}.pdf`
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await uploadBytes(ref(ctx.storage(), objectPath), new Uint8Array(16), { contentType: 'application/pdf' })
+  })
+  await assertFails(del(OP_A, objectPath))
+  await assertFails(del(MGR_A, objectPath))
+  await assertSucceeds(del(ADMIN_A, objectPath))
+})
+
+test('1.25.0 profile photo: the person or an admin deletes it, nobody else', async () => {
+  const objectPath = `organizations/${ORG_A}/userProfiles/${OP_A}/profile.jpg`
+  await assertSucceeds(put(OP_A, EMAIL[OP_A], objectPath, 512, 'image/jpeg'))
+  await assertFails(del(MGR_A, objectPath))
+  await assertSucceeds(del(OP_A, objectPath))
+  await assertSucceeds(put(ADMIN_A, EMAIL[ADMIN_A], objectPath, 512, 'image/jpeg'))
+  await assertSucceeds(del(ADMIN_A, objectPath))
+})
+
+test('1.25.0 timesheet exports and the logo: admins delete, managers do not', async () => {
+  const exportPath = `organizations/${ORG_A}/timesheetExports/${Math.floor(Date.now() / 1000)}_Mo_timesheet.pdf`
+  await assertSucceeds(put(MGR_A, EMAIL[MGR_A], exportPath, 512, 'application/pdf'))
+  await assertFails(del(MGR_A, exportPath))
+  await assertFails(put(MGR_A, EMAIL[MGR_A], exportPath, 512, 'application/pdf'))
+  await assertSucceeds(del(ADMIN_A, exportPath))
+  const logoPath = `organizations/${ORG_A}/branding/company_logo/${ADMIN_A}_${Date.now()}.png`
+  await assertSucceeds(put(ADMIN_A, EMAIL[ADMIN_A], logoPath, 512, 'image/png'))
+  await assertFails(del(MGR_A, logoPath))
+  await assertSucceeds(del(ADMIN_A, logoPath))
 })

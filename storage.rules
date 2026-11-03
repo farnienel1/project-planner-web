@@ -133,10 +133,65 @@ service firebase.storage {
       return orgMember(orgId) && sized(maxBytes) && typed;
     }
 
+    // Rulebook 1.25.0 §24 (fileDeletePermission): uploaded files are never lost.
+    // Admin of THIS organisation outside operative mode: 'admin' in its members map, or admin flags on a users
+    // document whose organizationId is this organisation. An admin of another company never counts.
+    function orgFileAdmin(orgId) {
+      return !isOperativeUser() && (
+        callerIsAdminMember(orgId) || (
+          callerOrgMatches(orgId) && (
+            ('isSuperAdmin' in userData() && truthyBool(userData().isSuperAdmin))
+            || ('adminAccess' in userData() && truthyBool(userData().adminAccess))
+            || ('role' in userData() && userData().role == 'admin')
+            || ('permissions' in userData() && userData().permissions is map
+              && 'adminAccess' in userData().permissions
+              && truthyBool(userData().permissions.adminAccess))
+          )
+        )
+      );
+    }
+
+    // Create is a new object. The emulator (and possibly production) evaluates a write over an existing object
+    // with `create` too, so every create rule also refuses an existing object unless the overwrite is allowed.
+    function isNewObject() {
+      return resource == null;
+    }
+
+    // Last path segment of the stored object (delete / overwrite: the object exists).
+    function storedObjectName() {
+      return resource.name.split('/')[resource.name.split('/').size() - 1];
+    }
+
+    // The uploader, inside FILE_UNDO_WINDOW_MINUTES (15) of the server upload time. Uploads are named
+    // {uid}_{unixMs}.{ext} on both apps (storedFileObjectName), so the name says who uploaded it.
+    function uploaderWithinUndoWindow() {
+      return signedIn()
+        && storedObjectName().split('_').size() > 1
+        && storedObjectName().split('_')[0] == request.auth.uid
+        && request.time < resource.timeCreated + duration.value(15, 'm');
+    }
+
+    // Delete: the uploader within the undo window, or an admin of this organisation.
+    function canDeleteStoredFile(orgId) {
+      return orgMember(orgId) && (uploaderWithinUndoWindow() || orgFileAdmin(orgId));
+    }
+
+    // A new object, or the uploader's own retry within the undo window.
+    function newOrOwnRetry() {
+      return isNewObject() || uploaderWithinUndoWindow();
+    }
+
+    // Overwrite of an existing object: only the uploader within the undo window (a retried upload).
+    function canOverwriteStoredFile(orgId, maxBytes, typed) {
+      return memberSizedWrite(orgId, maxBytes, typed) && uploaderWithinUndoWindow();
+    }
+
     // Profile photo. Web + iOS: .../userProfiles/{userId}/profile.jpg
     match /organizations/{orgId}/userProfiles/{userId}/profile.jpg {
       allow read: if orgMember(orgId);
-      allow delete: if orgMember(orgId) && (request.auth.uid == userId || adminLike(orgId));
+      // The person's own photo, or an admin of this organisation. Replacing it keeps the fixed name (both apps
+      // read this path); the replaced version is kept by the bucket's soft delete (§24).
+      allow delete: if orgMember(orgId) && (request.auth.uid == userId || orgFileAdmin(orgId));
       allow create, update: if orgMember(orgId)
         && (request.auth.uid == userId || adminLike(orgId))
         && sized(2 * 1024 * 1024)
@@ -146,9 +201,15 @@ service firebase.storage {
     // Company logo. Web + iOS: .../branding/company_logo/{file}
     match /organizations/{orgId}/branding/company_logo/{fileName} {
       allow read: if orgMember(orgId);
-      allow delete: if orgMember(orgId) && adminLike(orgId);
-      allow create, update: if orgMember(orgId)
+      // Each upload is a new {uid}_{ms} object; only an admin of this organisation deletes or overwrites one.
+      allow delete: if orgMember(orgId) && orgFileAdmin(orgId);
+      allow create: if (isNewObject() || orgFileAdmin(orgId))
+        && orgMember(orgId)
         && adminLike(orgId)
+        && sized(5 * 1024 * 1024)
+        && (isImageContent() || isPdf());
+      allow update: if orgMember(orgId)
+        && orgFileAdmin(orgId)
         && sized(5 * 1024 * 1024)
         && (isImageContent() || isPdf());
     }
@@ -156,8 +217,14 @@ service firebase.storage {
     // Timesheet export PDFs. iOS operatives do not getDownloadURL these objects.
     match /organizations/{orgId}/timesheetExports/{fileName} {
       allow read: if staffLike(orgId);
-      allow delete: if staffLike(orgId);
-      allow create, update: if staffLike(orgId)
+      // Staff create; only an admin of this organisation deletes or overwrites an export.
+      allow delete: if orgMember(orgId) && orgFileAdmin(orgId);
+      allow create: if (isNewObject() || orgFileAdmin(orgId))
+        && staffLike(orgId)
+        && sized(10 * 1024 * 1024)
+        && isPdf();
+      allow update: if staffLike(orgId)
+        && orgFileAdmin(orgId)
         && sized(10 * 1024 * 1024)
         && isPdf();
     }
@@ -165,52 +232,59 @@ service firebase.storage {
     // Qualification certificates. Member + size/type only — do not staff-lock.
     match /organizations/{orgId}/operatives/{operativeId}/qualifications/{qualificationId}/certificates/{fileName} {
       allow read: if orgMember(orgId);
-      allow delete: if orgMember(orgId);
-      allow create, update: if memberSizedWrite(orgId, 10 * 1024 * 1024, isCertificateType());
+      allow delete: if canDeleteStoredFile(orgId);
+      allow create: if newOrOwnRetry() && memberSizedWrite(orgId, 10 * 1024 * 1024, isCertificateType());
+      allow update: if canOverwriteStoredFile(orgId, 10 * 1024 * 1024, isCertificateType());
     }
 
     // Variation evidence — web path (20MB; iOS client already allows 20MB).
     match /organizations/{orgId}/healthSafety/{parentId}/variations/{fileName} {
       allow read: if orgMember(orgId);
-      allow delete: if orgMember(orgId);
-      allow create, update: if memberSizedWrite(orgId, 20 * 1024 * 1024, isWorkFileType());
+      allow delete: if canDeleteStoredFile(orgId);
+      allow create: if newOrOwnRetry() && memberSizedWrite(orgId, 20 * 1024 * 1024, isWorkFileType());
+      allow update: if canOverwriteStoredFile(orgId, 20 * 1024 * 1024, isWorkFileType());
     }
 
     // Variation evidence — iOS primary path.
     match /organizations/{orgId}/healthSafety/{parentId}/variationEvidence/{fileName} {
       allow read: if orgMember(orgId);
-      allow delete: if orgMember(orgId);
-      allow create, update: if memberSizedWrite(orgId, 20 * 1024 * 1024, isWorkFileType());
+      allow delete: if canDeleteStoredFile(orgId);
+      allow create: if newOrOwnRetry() && memberSizedWrite(orgId, 20 * 1024 * 1024, isWorkFileType());
+      allow update: if canOverwriteStoredFile(orgId, 20 * 1024 * 1024, isWorkFileType());
     }
 
     // Variation evidence — iOS fallback path.
     match /organizations/{orgId}/variations/{variationId}/{fileName} {
       allow read: if orgMember(orgId);
-      allow delete: if orgMember(orgId);
-      allow create, update: if memberSizedWrite(orgId, 20 * 1024 * 1024, isWorkFileType());
+      allow delete: if canDeleteStoredFile(orgId);
+      allow create: if newOrOwnRetry() && memberSizedWrite(orgId, 20 * 1024 * 1024, isWorkFileType());
+      allow update: if canOverwriteStoredFile(orgId, 20 * 1024 * 1024, isWorkFileType());
     }
 
     // Site audit images. Member + size/type only — do not staff-lock.
     match /organizations/{orgId}/siteAudits/{allPaths=**} {
       allow read: if orgMember(orgId);
-      allow delete: if orgMember(orgId);
-      allow create, update: if memberSizedWrite(orgId, 10 * 1024 * 1024, isImageContent());
+      allow delete: if canDeleteStoredFile(orgId);
+      allow create: if newOrOwnRetry() && memberSizedWrite(orgId, 10 * 1024 * 1024, isImageContent());
+      allow update: if canOverwriteStoredFile(orgId, 10 * 1024 * 1024, isImageContent());
     }
 
     // Tasks: web flat .../tasks/{taskId}/{file}; iOS .../files/ and .../images/.
     // Member + size/type only — do not staff-lock.
     match /organizations/{orgId}/tasks/{allPaths=**} {
       allow read: if orgMember(orgId);
-      allow delete: if orgMember(orgId);
-      allow create, update: if memberSizedWrite(orgId, 10 * 1024 * 1024, isWorkFileType());
+      allow delete: if canDeleteStoredFile(orgId);
+      allow create: if newOrOwnRetry() && memberSizedWrite(orgId, 10 * 1024 * 1024, isWorkFileType());
+      allow update: if canOverwriteStoredFile(orgId, 10 * 1024 * 1024, isWorkFileType());
     }
 
     // H&S talks/RAMS/other/deadlines. More-specific variation matches above win via OR.
     // Member + size/type only — do not staff-lock.
     match /organizations/{orgId}/healthSafety/{allPaths=**} {
       allow read: if orgMember(orgId);
-      allow delete: if orgMember(orgId);
-      allow create, update: if memberSizedWrite(orgId, 10 * 1024 * 1024, isWorkFileType());
+      allow delete: if canDeleteStoredFile(orgId);
+      allow create: if newOrOwnRetry() && memberSizedWrite(orgId, 10 * 1024 * 1024, isWorkFileType());
+      allow update: if canOverwriteStoredFile(orgId, 10 * 1024 * 1024, isWorkFileType());
     }
 
     match /{allPaths=**} {
