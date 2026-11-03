@@ -8,6 +8,7 @@ import test from 'node:test'
 import { createContext, runInContext } from 'node:vm'
 import { readCrossPlatformSample, crossPlatformContractReaderNames } from './crossPlatformContract.ts'
 import {
+  buildContractSample,
   CONTRACT_NO_READER,
   CONTRACT_READER_FOR,
   buildCrossPlatformContract,
@@ -71,6 +72,47 @@ test('the packed script reads every sample the same way (what iOS runs)', () => 
     for (const sample of entry.samples) {
       const got = bundle!.readCrossPlatformSample(entry.reader, sample.docId, sample.data, { timeZone: onDisk.timeZone, ...(entry.readerOptions ?? {}) })
       assert.deepEqual(JSON.parse(JSON.stringify(got)), sample.expected, `${entry.id} ${sample.platform}`)
+    }
+  }
+})
+
+test('1.11.0: every iOS sample with a builder is exactly what its rulebook writer produces from the input', () => {
+  let built = 0
+  for (const entry of onDisk.collections) {
+    for (const sample of entry.samples) {
+      if (!sample.builder) continue
+      built += 1
+      assert.equal(sample.platform, 'ios', `${entry.id}: only iOS samples carry a builder`)
+      assert.deepEqual(JSON.parse(JSON.stringify(buildContractSample(sample.builder))), sample.data, `${entry.id} builder`)
+    }
+  }
+  assert.ok(built >= 8, 'the builder samples are in the contract')
+  // The 1.11.0 fixes: nested membership (the legacy flat shape is a read-only case), full iOS job samples, task owner.
+  const byId = (id: string) => onDisk.collections.find((c) => c.id === id)!
+  const membership = byId('orgMemberships').samples.find((s) => s.platform === 'ios')!
+  assert.equal(typeof membership.data.permissions, 'object')
+  assert.equal('manager' in membership.data, false)
+  assert.ok(byId('orgMemberships').samples.some((s) => s.platform === 'ios-legacy'))
+  const sw = byId('smallWorks').samples.find((s) => s.platform === 'ios')!.data
+  for (const key of ['addressLine2', 'siteAddress', 'manager', 'description', 'hiddenManagerUserIds', 'hiddenOperativeUserIds', 'usesMapPinForLocation', 'managerUserIds']) {
+    assert.ok(key in sw, `smallWorks iOS sample has ${key}`)
+  }
+  assert.ok('managerUserIds' in byId('projects').samples.find((s) => s.platform === 'ios')!.data)
+  for (const sample of byId('tasks').samples) assert.ok('createdByUserId' in sample.data, `tasks ${sample.platform}`)
+  for (const id of ['bookings', 'subcontractorBookings']) {
+    for (const sample of byId(id).samples) assert.equal(sample.data.jobCollection, 'projects', `${id} ${sample.platform} jobCollection`)
+  }
+})
+
+test('1.11.0: the packed script\'s writers reproduce every builder sample (what iOS runs)', () => {
+  const source = readFileSync(new URL('./dist/canonical-business.js', import.meta.url), 'utf8')
+  const sandbox: { ProjectPlannerCanonical?: Record<string, (...args: unknown[]) => unknown> } = {}
+  runInContext(source, createContext(sandbox))
+  const bundle = sandbox.ProjectPlannerCanonical!
+  for (const entry of onDisk.collections) {
+    for (const sample of entry.samples) {
+      if (!sample.builder) continue
+      assert.equal(typeof bundle[sample.builder.writer], 'function', `${sample.builder.writer} is packed`)
     }
   }
 })

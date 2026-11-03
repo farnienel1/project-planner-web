@@ -9,6 +9,9 @@
  */
 
 import { normalizeEmploymentType } from './userProfile'
+import { dayKeyInZone } from '../orgTime/zoneTime'
+import { zoneOrLondon } from './dayKeys'
+import { documentInstantMs } from './peopleDocuments'
 import { roundPennies } from './payRate'
 import { normalizeDocumentId } from './scheduleSources'
 import { parseTimesheetStatusFields } from './timesheetPeriod'
@@ -75,6 +78,8 @@ export type InvoiceLineInput = ReportPayLineInput & {
   /** An annual-leave information line (`timesheetLeaveLines`). */
   isLeave?: boolean | null
   kind?: string | null
+  /** The line's organisation-zone day key; with `timesheetDays` a line on another day is left out (1.11.0). */
+  dayKey?: string | null
 }
 
 /**
@@ -126,6 +131,14 @@ export type TimesheetInvoiceRowsInput<L extends InvoiceLineInput & { id: string;
    * manager has signed. `raw` (the owner's draft invoice before review): every entry at its own amount.
    */
   extrasMode: 'raw' | 'decided'
+  /**
+   * The days that count on this person's sheet (`timesheetDaysForPerson`, 1.11.0). When given, a labour line whose
+   * `dayKey` is not one of them, and a price work or expense entry dated (`date` / `startDate`, organisation zone)
+   * on another day, are left out — a PAYE day never produces an invoice row. An empty list leaves no rows.
+   */
+  timesheetDays?: ReadonlyArray<string> | null
+  /** The organisation zone for entry dates (with `timesheetDays`). */
+  timeZone?: string | null
 }
 
 function rowsOf(value: unknown): Record<string, unknown>[] {
@@ -145,7 +158,8 @@ function amountOf(value: unknown): number {
  *      manager's review once they have signed (`payrollLineReview`: declined left out, edited at the revised amount)
  *      in `decided` mode; then price work and expenses — in `decided` mode by `timesheetEntryDecision` (declined left
  *      out, edited at the revised amount), in `raw` mode at their own amounts.
- * PAYE price work and expenses are kept as today (owner decision pending, §8). Ids compare without case.
+ * 1.11.0: with `timesheetDays`, rows on a day the person was PAYE are left out (the PAYE-extras path is removed;
+ * owner decisions round 3). Ids compare without case.
  */
 export function timesheetInvoiceRows<L extends InvoiceLineInput & { id: string; amount: number }>(
   input: TimesheetInvoiceRowsInput<L>
@@ -155,6 +169,14 @@ export function timesheetInvoiceRows<L extends InvoiceLineInput & { id: string; 
   const liveById = new Map(lines.map((line) => [normalizeDocumentId(line.id), line]))
   const override = (sheet as Record<string, unknown>).weeklyReportOverride
   const rows: TimesheetInvoiceRow<L>[] = []
+  const days = input.timesheetDays ? new Set(input.timesheetDays.map((day) => String(day).trim())) : null
+  const zone = zoneOrLondon(input.timeZone)
+  if (days && days.size === 0) return rows
+  const onCountedDay = (dayKey: string | null | undefined): boolean => !days || !dayKey || days.has(dayKey)
+  const entryDay = (entry: Record<string, unknown>): string | null => {
+    const ms = documentInstantMs(entry.date) ?? documentInstantMs(entry.startDate)
+    return ms == null ? null : dayKeyInZone(new Date(ms), zone)
+  }
 
   if (override && typeof override === 'object') {
     const snapshot = override as Record<string, unknown>
@@ -164,12 +186,14 @@ export function timesheetInvoiceRows<L extends InvoiceLineInput & { id: string; 
       const id = String(row.id ?? '').trim()
       const live = liveById.get(normalizeDocumentId(id)) ?? null
       if (live && !isInvoiceLine(live)) continue
+      if (!onCountedDay(live?.dayKey ?? null)) continue
       rows.push({ kind: 'labour', id, amount, source: 'override', line: live, stored: row })
     }
     for (const [kind, key] of [['priceWork', 'priceWork'], ['expense', 'expenses']] as const) {
       for (const row of rowsOf(snapshot[key])) {
         const amount = amountOf(row.amount)
         if (row.decision === 'declined' || amount <= INVOICE_AMOUNT_EPSILON) continue
+        if (!onCountedDay(entryDay(row))) continue
         rows.push({ kind, id: String(row.id ?? '').trim(), amount, source: 'override', line: null, stored: row })
       }
     }
@@ -179,6 +203,7 @@ export function timesheetInvoiceRows<L extends InvoiceLineInput & { id: string; 
   const decided = input.extrasMode === 'decided'
   const managerSigned = parseTimesheetStatusFields(sheet).managerSignedAtMs != null
   for (const line of invoiceLines(lines)) {
+    if (!onCountedDay(line.dayKey)) continue
     let amount = line.amount
     if (decided && managerSigned) {
       const review = payrollLineReview(sheet, line.id)
@@ -189,6 +214,7 @@ export function timesheetInvoiceRows<L extends InvoiceLineInput & { id: string; 
   }
   for (const [kind, key] of [['priceWork', 'priceWorkEntries'], ['expense', 'expenseEntries']] as const) {
     for (const entry of rowsOf((sheet as Record<string, unknown>)[key])) {
+      if (!onCountedDay(entryDay(entry))) continue
       const own = amountOf(entry.amount)
       let amount = own
       if (decided) {

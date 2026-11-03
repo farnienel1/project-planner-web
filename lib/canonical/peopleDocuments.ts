@@ -33,8 +33,9 @@
 
 import { dayKeyInZone } from '../orgTime/zoneTime'
 import { derivedRowId } from './derivedIds'
-import { zoneOrLondon } from './dayKeys'
+import { eachDayKey, zoneOrLondon } from './dayKeys'
 import { isAdminOutsideOperativeMode } from './leaveRequests'
+import { effectivePermissions, keepStoredLockedPermissions } from './permissionLevels'
 import { DEFAULT_ANNUAL_LEAVE, parseAnnualLeaveDefaults, type OrgAnnualLeaveDefaults } from './organizationSettings'
 import { readStoredRates, type PayBasis } from './payRate'
 import { isAnonymisedDeletedProfile } from './userRosterSegment'
@@ -383,20 +384,8 @@ export function parseUserDocument(
     const value = flagIn(row, key)
     return value == null ? fallback : value
   }
-  const permissions = {} as Record<UserPermissionField, boolean>
-  for (const key of USER_PERMISSION_FIELDS) permissions[key] = flag(key, false)
-  permissions.operativeMode = operativeMode
-  permissions.skills = false
-  permissions.adminAccess = operativeMode ? false : adminAccessStored
-  permissions.manager = operativeMode ? false : flag('manager', false)
-  permissions.operatives = operativeMode ? false : flag('operatives', false)
-  permissions.qualifications = operativeMode ? false : flag('qualifications', false)
-  permissions.materials = flag('materials', !operativeMode)
-  permissions.projects = operativeMode ? true : flag('projects', false)
-  permissions.smallWorks = operativeMode ? true : flag('smallWorks', false)
-  permissions.dailyOverview = flag('dailyOverview', true)
-  permissions.siteAudit = flag('siteAudit', true)
-  permissions.wholesalersOrderHistory = flag('wholesalersOrderHistory', true)
+  // 1.11.0: the toggles in effect (`effectivePermissions`): an admin's locked toggles read on, `operativeMode` off.
+  const permissions = effectivePermissions(row) as Record<UserPermissionField, boolean>
 
   const hasNoLineManager = flagIn(row, 'hasNoLineManager') === true
   let managers = hasNoLineManager ? [] : idList(row.assignedManagerUserIds)
@@ -437,7 +426,7 @@ export function parseUserDocument(
       role,
       isSuperAdmin,
       adminAccess: adminAccessStored,
-      operativeMode: operativeModeStored,
+      operativeMode,
     }),
     permissions,
     isActive: documentBool(row.isActive) ?? true,
@@ -1105,7 +1094,8 @@ export function userProfileWriteFields(
   before: Record<string, unknown> | null | undefined,
   next: Record<string, unknown>
 ): DocumentWriteFields {
-  return documentWriteFields(before, next, {
+  // 1.11.0: an admin's locked permission toggles are never written (`keepStoredLockedPermissions`).
+  return documentWriteFields(before, keepStoredLockedPermissions(before, next), {
     together: [LINE_MANAGER_WRITE_GROUP, PAY_WRITE_GROUP, EMPLOYMENT_WRITE_GROUP, USER_NAME_WRITE_GROUP],
     createOnly: ['createdAt', 'organizationId'],
   })
@@ -1149,35 +1139,90 @@ export function subcontractorWriteFields(
   return documentWriteFields(before, next, { createOnly: CREATE_ONLY_FIELDS })
 }
 
-// MARK: - Who takes part in timesheets (1.10.0, M6 / M12)
+// MARK: - Who takes part in timesheets (1.10.0 M6 / M12; 1.11.0 PAYE has no timesheet)
+
+/** A person as the timesheet rules read them. */
+export type TimesheetPerson = {
+  isActive?: boolean | null
+  email?: string | null
+  name?: string | null
+  employmentType?: string | null
+  employmentTypeTransitionFrom?: string | null
+  /** A Date, an ISO string, epoch ms or a Firestore Timestamp-like value. */
+  employmentTypeEffectiveAt?: unknown
+  /** Ignored from 1.11.0: a PAYE person has no timesheet whatever it says. Kept on the type for older callers. */
+  timesheetsEnabled?: boolean | null
+  operativeMode?: boolean | null
+  permissions?: { operativeMode?: boolean | null } | null
+}
+
+/** A timesheet period as organisation-zone day keys, both ends included (`TimesheetPeriodIdentity`). */
+export type TimesheetPeriodDays = { startDayKey: string; endDayKey: string }
+
+const DAY_KEY_PATTERN = /^\d{4}-\d{2}-\d{2}$/
+
+function timesheetEmploymentOnDayKey(user: TimesheetPerson, dayKey: string, zone: string): EmploymentType {
+  const current = normalizeEmploymentType(text(user.employmentType) || null)
+  const from = text(user.employmentTypeTransitionFrom)
+  const effectiveMs = documentInstantMs(user.employmentTypeEffectiveAt)
+  if (!from || effectiveMs == null) return current
+  return dayKey < dayKeyInZone(new Date(effectiveMs), zone) ? normalizeEmploymentType(from) : current
+}
 
 /**
- * Whether a person takes part in timesheets on `day` (organisation zone): the Weekly Report timesheet feed and the
- * timesheet submission reminder recipients on every platform. Inactive people and anonymised deleted profiles never
- * do. Otherwise: `timesheetsEnabled` true; or self-employed on that day (`employmentTypeOnDay`) — a self-employed
- * person is paid through their timesheet whatever the toggle; or `timesheetsEnabled` not stored and the account is in
- * operative mode (`defaultTimesheetsEnabled`).
+ * The days of `period` that count on this person's timesheet (rulebook §8, 1.11.0, owner decisions round 3): every
+ * organisation-zone day key from `startDayKey` to `endDayKey` on which the person is self-employed
+ * (`employmentTypeOnDay`, effective-dated). A PAYE day never counts: it produces no timesheet line, no pay and no
+ * invoice row (it is still a booking for warnings, Daily Overview and Weekly Report hours). Empty for an inactive
+ * person, an anonymised deleted profile, or a period that is not two day keys in order.
  */
-export function timesheetParticipant(
-  user: {
-    isActive?: boolean | null
-    email?: string | null
-    name?: string | null
-    timesheetsEnabled?: boolean | null
-    operativeMode?: boolean | null
-    permissions?: { operativeMode?: boolean | null } | null
-    employmentType?: string | null
-    employmentTypeTransitionFrom?: string | null
-    employmentTypeEffectiveAt?: Date | string | number | null
-  } | null | undefined,
-  day: Date | string | number,
+export function timesheetDaysForPerson(
+  user: TimesheetPerson | null | undefined,
+  period: TimesheetPeriodDays | null | undefined,
+  timeZone?: string | null
+): string[] {
+  if (!user || user.isActive === false) return []
+  if (isAnonymisedDeletedProfile({ email: user.email ?? '', name: user.name ?? '' })) return []
+  const start = text(period?.startDayKey)
+  const end = text(period?.endDayKey)
+  if (!DAY_KEY_PATTERN.test(start) || !DAY_KEY_PATTERN.test(end) || start > end) return []
+  const zone = zoneOrLondon(timeZone)
+  return eachDayKey(start, end, zone).filter((day) => timesheetEmploymentOnDayKey(user, day, zone) === 'self_employed')
+}
+
+/**
+ * Whether the person has a My Timesheets sheet for `period` (rulebook §8, 1.11.0): only when they are self-employed on
+ * at least one day of it (`timesheetDaysForPerson` not empty). A PAYE person never sees My Timesheets, gets no
+ * timesheet reminder, no own sheet and no invoice. Reviewing other people's sheets (User Timesheets) does not depend
+ * on this.
+ */
+export function showsMyTimesheets(
+  user: TimesheetPerson | null | undefined,
+  period: TimesheetPeriodDays | null | undefined,
   timeZone?: string | null
 ): boolean {
-  if (!user || user.isActive === false) return false
-  if (isAnonymisedDeletedProfile({ email: user.email ?? '', name: user.name ?? '' })) return false
-  if (user.timesheetsEnabled === true) return true
-  const when = day instanceof Date ? day : new Date(day)
-  if (employmentTypeOnDay(user, when, zoneOrLondon(timeZone)) === 'self_employed') return true
-  const operativeMode = user.operativeMode === true || user.permissions?.operativeMode === true
-  return user.timesheetsEnabled == null && operativeMode
+  return timesheetDaysForPerson(user, period, timeZone).length > 0
+}
+
+/**
+ * Whether a person takes part in timesheets (rulebook §8): the Weekly Report timesheet feed, the
+ * `timesheet_submission_reminder` recipients, User Timesheets rows and the My Timesheets hub on every platform.
+ * Given a period (`{ startDayKey, endDayKey }`) it is `showsMyTimesheets`; given a day, self-employed on that day.
+ * Inactive people and anonymised deleted profiles never take part. 1.11.0: `timesheetsEnabled` and operative mode no
+ * longer bring a PAYE person in — the PAYE timesheet path is removed (owner decisions round 3).
+ */
+export function timesheetParticipant(
+  user: TimesheetPerson | null | undefined,
+  dayOrPeriod: Date | string | number | TimesheetPeriodDays,
+  timeZone?: string | null
+): boolean {
+  if (!user) return false
+  const zone = zoneOrLondon(timeZone)
+  if (dayOrPeriod && typeof dayOrPeriod === 'object' && !(dayOrPeriod instanceof Date)) {
+    return showsMyTimesheets(user, dayOrPeriod, zone)
+  }
+  const when = dayOrPeriod instanceof Date ? dayOrPeriod : new Date(dayOrPeriod as string | number)
+  if (Number.isNaN(when.getTime())) return false
+  const key = dayKeyInZone(when, zone)
+  return showsMyTimesheets(user, { startDayKey: key, endDayKey: key }, zone)
 }

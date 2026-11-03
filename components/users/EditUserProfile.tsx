@@ -70,11 +70,14 @@ import { loadOrganisationQualificationsEnsuringStarter } from '@/lib/qualificati
 import { canonicalCertificateUrls, formatCertificateSaveError } from '@/lib/qualifications/certificateUpload'
 import { canManageOrganisationQualifications, staffAccountRole } from '@/lib/permissions'
 import { canDeleteUser } from '@/lib/canonical'
-import { PermissionToggleList } from '@/components/users/ProfileExpandablePermissionToggle'
+import { PermissionRowsList } from '@/components/users/ProfileExpandablePermissionToggle'
+import {
+  ADMIN_LOCKED_PERMISSION_MESSAGE,
+  permissionToggleRows,
+  type PermissionLevel,
+} from '@/lib/canonical/permissionLevels'
 import {
   ADMIN_ACCESS_LOCKED_MESSAGE,
-  MANAGER_PERMISSION_TOGGLES,
-  OPERATIVE_PERMISSION_TOGGLES,
 } from '@/lib/staff/userPermissionDescriptions'
 import { SUPER_ADMIN_SUCCESSOR_EMPTY, superAdminSuccessors } from '@/lib/staff/superAdminTransfer'
 import { displayedLineManagerId, userWithLineManagerChoice } from '@/lib/firebase/userPayload'
@@ -118,24 +121,23 @@ const ACCOUNT_TYPE_OPTIONS: {
 ]
 
 /**
- * A self-approved admin (`timesheetSelfSigned(user, roster)`: admin or super admin outside operative mode with no
- * active line manager) books their own leave approved anyway (`canSelfBookAnnualLeave`), so the self-book toggle
- * shows on and locked. Everyone else's toggle is the stored permission.
+ * Rulebook 1.11.0 `permissionToggleRows` for Edit User: the person at `level` with `permissions` (a pending account
+ * type change included). A self-approved admin's self-book row shows on and locked (`canSelfBookAnnualLeave`).
  */
-function permissionLocks(
+function editUserPermissionRows(
   user: User,
-  accountType: 'operative' | 'manager' | 'admin',
+  level: PermissionLevel,
+  permissions: UserPermissions,
   users: ReadonlyArray<User>
-): Partial<Record<keyof UserPermissions, string>> {
-  const locks: Partial<Record<keyof UserPermissions, string>> = {}
-  if (accountType === 'manager' && !user.isSuperAdmin) locks.adminAccess = ADMIN_ACCESS_LOCKED_MESSAGE
-  if (userTimesheetSelfSigned(user, users)) locks.annualLeaveSelfBook = ''
-  return locks
+) {
+  const selfSigned = userTimesheetSelfSigned(user, users)
+  return permissionToggleRows({ level, user: { ...user, permissions }, mode: 'edit' }).map((row) =>
+    row.field === 'annualLeaveSelfBook' && selfSigned ? { ...row, value: true, editable: false } : row
+  )
 }
 
-function annualLeaveChecked(user: User, users: ReadonlyArray<User>): Partial<Record<keyof UserPermissions, boolean>> | undefined {
-  if (!userTimesheetSelfSigned(user, users)) return undefined
-  return { annualLeaveSelfBook: true }
+function lockedPermissionMessage(level: PermissionLevel): string {
+  return level === 'admin' ? ADMIN_LOCKED_PERMISSION_MESSAGE : 'Always on for managers.'
 }
 
 function currentAccountType(user: User): 'operative' | 'manager' | 'admin' {
@@ -251,7 +253,7 @@ export function EditUserProfile({
   const { user: currentUser, organization, reloadSignedInProfile } = useAuthStore()
   const { users, loadUsers, setListedUserActive, patchListedUser } = useOrgUserStore()
   const { operatives, loadOperatives, patchOperativeQualifications } = useOperativeStore()
-  const { getUser, saveUser, setUserActive, deleteUser, sendPasswordReset, applyAccountType, syncLinkedOperative, transferSuperAdmin } =
+  const { getUser, saveUser, setUserActive, deleteUser, sendPasswordReset, applyAccountType, changeAccountType, syncLinkedOperative, transferSuperAdmin } =
     useUserStore()
   const { inviteUser } = useInviteStore()
   const { bookings: holidayBookings, loadBookings: loadHolidays } = useHolidayStore()
@@ -557,6 +559,11 @@ export function EditUserProfile({
           seedEffective: toSave.createdAt ?? null,
         })
       }
+      if (draftAccountType && draftTypePermissions && draftAccountType !== currentAccountType(previous)) {
+        // Rulebook 1.11.0 `accountTypeChangeWrites`: the new type on every document that decides it here.
+        const typeNote = await changeAccountType(previous, draftAccountType, organization.id, users, draftTypePermissions)
+        if (typeNote) setSuccess(typeNote)
+      }
       await saveUser(toSave, organization.id, previous.email, { baseline: savedUser.current, payHistoryRows })
       savedUser.current = toSave
       if (canViewTaxIds && taxDirty && currentUser?.id) {
@@ -742,7 +749,20 @@ export function EditUserProfile({
     setError(null)
     setSuccess(null)
     try {
-      await saveUser(next, organization.id, target.email, { baseline: savedUser.current })
+      // Rulebook 1.11.0 `accountTypeChangeWrites`: users docs, `members.{uid}` and the membership together.
+      const typeNote = await changeAccountType(target, accountType, organization.id, users, next.permissions)
+      if (typeNote) {
+        // Rulebook 1.11.0: a profile of another company is not rewritten; only this organisation's entry changed.
+        savedUser.current = next
+        patchListedUser(next)
+        setTarget(next)
+        setDraftAccountType(null)
+        setDraftTypePermissions(null)
+        setShowChangeType(false)
+        setSuccess(typeNote)
+        return
+      }
+      await saveUser(next, organization.id, target.email, { baseline: next })
       savedUser.current = next
       patchListedUser(next)
       setTarget(next)
@@ -1319,25 +1339,14 @@ export function EditUserProfile({
           <SectionLabel label="Permissions" />
           <SettingsCard>
             <div className="divide-y divide-slate-100">
-              {effectiveAccountType === 'operative' ? (
-                <PermissionToggleList
-                  defs={OPERATIVE_PERMISSION_TOGGLES}
-                  permissions={effectivePermissions}
-                  onChange={updatePermissions}
-                  disabled={!canEdit || target.isSuperAdmin}
-                />
-              ) : (
-                <PermissionToggleList
-                  defs={MANAGER_PERMISSION_TOGGLES}
-                  permissions={effectivePermissions}
-                  onChange={updatePermissions}
-                  disabled={!canEdit || target.isSuperAdmin}
-                  excludeKeys={suppressAdminAccessToggle ? ['adminAccess'] : undefined}
-                  lockedMessages={permissionLocks(target, effectiveAccountType, users)}
-                  checkedOverrides={annualLeaveChecked(target, users)}
-                  onLocked={setLockedNotice}
-                />
-              )}
+              <PermissionRowsList
+                rows={editUserPermissionRows(target, effectiveAccountType, effectivePermissions, users)}
+                onChange={updatePermissions}
+                disabled={!canEdit || target.isSuperAdmin}
+                excludeFields={suppressAdminAccessToggle ? ['adminAccess'] : undefined}
+                lockedMessage={lockedPermissionMessage(effectiveAccountType)}
+                onLocked={setLockedNotice}
+              />
               {lockedNotice ? <p className="px-5 py-3 text-sm text-slate-600">{lockedNotice}</p> : null}
             </div>
           </SettingsCard>
@@ -1462,30 +1471,13 @@ export function EditUserProfile({
                     )
                   })}
                 </div>
-                {effectiveAccountType === 'operative' && draftTypePermissions && (
+                {draftTypePermissions && (
                   <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-                    <PermissionToggleList
-                      defs={OPERATIVE_PERMISSION_TOGGLES}
-                      permissions={draftTypePermissions}
+                    <PermissionRowsList
+                      rows={editUserPermissionRows(target, effectiveAccountType, draftTypePermissions, users)}
                       onChange={(patch) => setDraftTypePermissions({ ...draftTypePermissions, ...patch })}
-                    />
-                  </div>
-                )}
-                {(effectiveAccountType === 'manager' || effectiveAccountType === 'admin') && draftTypePermissions && (
-                  <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-                    <PermissionToggleList
-                      defs={MANAGER_PERMISSION_TOGGLES}
-                      permissions={draftTypePermissions}
-                      onChange={(patch) => {
-                        if (patch.adminAccess != null && effectiveAccountType === 'manager') {
-                          setLockedNotice(ADMIN_ACCESS_LOCKED_MESSAGE)
-                          return
-                        }
-                        setDraftTypePermissions({ ...draftTypePermissions, ...patch })
-                      }}
-                      excludeKeys={suppressAdminAccessToggle ? ['adminAccess'] : undefined}
-                      lockedMessages={permissionLocks(target, effectiveAccountType, users)}
-                      checkedOverrides={annualLeaveChecked(target, users)}
+                      excludeFields={suppressAdminAccessToggle ? ['adminAccess'] : undefined}
+                      lockedMessage={lockedPermissionMessage(effectiveAccountType)}
                       onLocked={setLockedNotice}
                     />
                   </div>

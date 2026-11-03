@@ -277,81 +277,8 @@ export type PermissionToggleDef = {
   description: string
 }
 
-/** Operative Edit User toggles. Order matches iOS EditUserView. */
-export const OPERATIVE_PERMISSION_TOGGLES: PermissionToggleDef[] = [
-  {
-    key: 'materials',
-    title: 'Materials',
-    description:
-      'Can access material lists in projects and small works. They will not be able to send quotes or place orders.',
-  },
-  {
-    key: 'siteAudit',
-    title: 'Site audit',
-    description: 'Can view and submit site audits.',
-  },
-]
+// 1.11.0: the Manage Users toggle rows are `permissionToggleRows` / `PERMISSION_TOGGLE_CATALOGUE` in
+// permissionLevels.ts (`MANAGER_PERMISSION_TOGGLES` / `OPERATIVE_PERMISSION_TOGGLES` are derived there).
 
 export const ADMIN_ACCESS_LOCKED_MESSAGE =
   'Change user type at the bottom of their profile, to enable admin level access.'
-
-/** Manager and admin Edit User toggles. Order and copy match iOS EditUserView. */
-export const MANAGER_PERMISSION_TOGGLES: PermissionToggleDef[] = [
-  {
-    key: 'adminAccess',
-    title: 'Admin Access',
-    description: 'Gives Manage Users.',
-  },
-  {
-    key: 'projects',
-    title: 'Projects',
-    description:
-      'Can create, edit, and add projects. If off, they still see projects they are assigned to as a manager or booked onto — scheduling and other job tools stay available, but they cannot add or edit project details.',
-  },
-  {
-    key: 'smallWorks',
-    title: 'Small Works',
-    description:
-      'Can create, edit, and add small works. If off, they still see small works they are assigned to as a manager or booked onto — scheduling and other job tools stay available, but they cannot add or edit small works details.',
-  },
-  {
-    key: 'weeklyReports',
-    title: 'Weekly Report',
-    description: 'Can open Weekly Report from Home. If off, that tile is hidden.',
-  },
-  {
-    key: 'dailyOverview',
-    title: 'Daily Overview',
-    description: 'Can open Daily Overview from Home. If off, that tile is hidden.',
-  },
-  {
-    key: 'subContractors',
-    title: 'Sub Contractors',
-    description:
-      'Can add and manage sub contractor records. If off, Sub Contractors is hidden on Home and menus. They can still book existing subcontractors on jobs.',
-  },
-  {
-    key: 'annualLeaveSelfBook',
-    title: 'Annual Leave Management',
-    description:
-      'Can book their own annual leave. If off, this user requests leave for approval.',
-  },
-  {
-    key: 'operatives',
-    title: 'Operatives',
-    description:
-      'Can manage operatives and view their details. If turned off, the user can still assign operatives to projects and small works, but will not see the Manage Operatives screen or full operative profiles.',
-  },
-  {
-    key: 'qualifications',
-    title: 'Manage Qualifications',
-    description:
-      'When on, this manager can add and edit organisational qualification templates. When off, qualifications shows only My Qualifications, and they can still assign templates others have already added.',
-  },
-  {
-    key: 'wholesalersOrderHistory',
-    title: 'Wholesalers',
-    description:
-      'Can view and manage the Wholesalers page, including quote and order history. If off, that page is not available.',
-  },
-]

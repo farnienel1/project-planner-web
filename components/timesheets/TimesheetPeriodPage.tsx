@@ -57,6 +57,7 @@ import {
   priceWorkTotal,
   showsTimesheetAdjustment,
 } from '@/lib/timesheets/timesheetAdjustments'
+import { timesheetDayKeysForPeriod } from '@/lib/timesheets/timesheetPayrollPolicy'
 import {
   collectTimesheetPayroll,
   timesheetHoursRateLine,
@@ -613,6 +614,8 @@ export function TimesheetPeriodPage({
       extrasMode: 'raw',
       standardDayHours: payrollPolicy.standardPaidHours,
       currencyCode: currency,
+      // Rulebook 1.11.0: only the self-employed days of the period reach the invoice.
+      timesheetDays: subjectUser ? timesheetDayKeysForPeriod(subjectUser, periodStart, periodEnd, timeZone) : [],
     })
     const notes = invoiceRateChangeNotes({
       history,

@@ -825,3 +825,60 @@ export { payrollLineReview } from './timesheetEntryReviews'
 export { inviteAcceptWrites } from './inviteAccept'
 export { timesheetParticipant } from './peopleDocuments'
 export { orgDayHours, payForHours, roundPennies } from './payRate'
+
+// Rulebook 1.11.0 (owner decisions round 3): permission levels, PAYE timesheets, invites, job kind on bookings.
+export {
+  ADMIN_EDITABLE_PERMISSION_FIELDS,
+  ADMIN_LOCKED_PERMISSION_MESSAGE,
+  MANAGER_LOCKED_ON_PERMISSION_FIELDS,
+  MANAGER_PERMISSION_TOGGLES,
+  OPERATIVE_PERMISSION_TOGGLES,
+  PAYE_RATE_NOT_USED_NOTE,
+  PERMISSION_DEFAULT_ON,
+  PERMISSION_TOGGLE_CATALOGUE,
+  addUserPermissionDefaults,
+  canManageOperatives,
+  canScheduleOperatives,
+  effectivePermission,
+  effectivePermissions,
+  keepStoredLockedPermissions,
+  lockedPermissionFields,
+  permissionLevelOf,
+  permissionToggleRows,
+  permissionsWriteMap,
+  storedPermissionFlag,
+  withoutLockedPermissionWrites,
+} from './permissionLevels'
+export type { PermissionLevel, PermissionToggleMode, PermissionToggleRow } from './permissionLevels'
+export { showsMyTimesheets, timesheetDaysForPerson } from './peopleDocuments'
+export type { TimesheetPerson, TimesheetPeriodDays } from './peopleDocuments'
+export { INVITE_MEMBERSHIP_FIELDS, invitationProfileFields, invitationRole, inviteMembershipWrites } from './inviteAccept'
+export {
+  BOOKING_JOB_COLLECTIONS,
+  bookingJobCollectionFields,
+  jobCollectionForJobId,
+  normalizeBookingJobCollection,
+} from './bookings'
+export type { BookingJobCollection } from './bookings'
+export { BOOKING_JOB_WRITE_GROUP } from './workDocumentReaders'
+export { jobIdsInBothCollections, jobKind } from './staffAccess'
+export {
+  LINE_MANAGER_NOT_SET_LABEL,
+  UNKNOWN_PERSON_LABEL,
+  NO_LINE_MANAGER_HELP,
+  NO_LINE_MANAGER_LABEL,
+  lineManagerCandidates,
+  lineManagerOptions,
+  lineManagerSummary,
+} from './lineManagers'
+export type { LineManagerCandidate, LineManagerRosterPerson, LineManagerSubject } from './lineManagers'
+export { PAY_BASIS_DAY_HELP, PAY_BASIS_HOURLY_HELP, PAY_BASIS_SAVE_NOTE } from './payRate'
+export {
+  ACCOUNT_TYPE_OTHER_COMPANY_NOTE,
+  ACCOUNT_TYPE_SUPER_ADMIN_MESSAGE,
+  accountTypeChangeWrites,
+  accountTypePermissions,
+} from './permissionLevels'
+export type { AccountTypeChangeWrite } from './permissionLevels'
+export { organizationLevelFor, rosterMembersForOrganization } from './orgRoster'
+export type { OrgRosterLevel } from './orgRoster'

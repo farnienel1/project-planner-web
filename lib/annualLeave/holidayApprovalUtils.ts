@@ -1,3 +1,4 @@
+import { lineManagerOptions } from '@/lib/canonical/lineManagers'
 import type { HolidayBooking, Operative, User } from '@/types'
 import { staffAccountRole } from '@/lib/permissions'
 import { rulebookPerson, rulebookRoster, type RulebookPerson } from '@/lib/staff/rulebookPeople'
@@ -76,7 +77,8 @@ export function userLineManagerRequiredError(user: User, users: ReadonlyArray<Us
  * as an active account — an admin or super admin outside operative mode (`isAdminOutsideOperativeMode`).
  */
 export function userMayHaveNoLineManager(user: User, users: ReadonlyArray<User> = []): boolean {
-  return !lineManagerRequired({ ...leaveUser(user, users), isActive: true })
+  // Rulebook 1.11.0 `lineManagerOptions`: "No line manager" only when `lineManagerRequired` is false.
+  return lineManagerOptions({ ...leaveUser(user, users), isActive: true } as never).allowsNoLineManager
 }
 
 /** `usersMissingLineManager`: roster people an admin still has to give a line manager. */

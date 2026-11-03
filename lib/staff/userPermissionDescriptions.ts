@@ -4,7 +4,6 @@
  */
 export {
   ADMIN_ACCESS_LOCKED_MESSAGE,
-  MANAGER_PERMISSION_TOGGLES,
-  OPERATIVE_PERMISSION_TOGGLES,
   type PermissionToggleDef,
 } from '@/lib/canonical/userProfile'
+export { MANAGER_PERMISSION_TOGGLES, OPERATIVE_PERMISSION_TOGGLES } from '@/lib/canonical/permissionLevels'

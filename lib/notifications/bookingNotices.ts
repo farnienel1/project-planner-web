@@ -4,12 +4,12 @@
  * id (`notificationRelatedIdFor`), the row carries the booking's day and catalogue, and its id is the synthetic UUID
  * of `bookingCreated|{bookingId}|{userId}` (same key as iOS).
  */
+import { jobKind } from '@/lib/canonical/staffAccess'
 import { bookingCreatedRecipients, dayKeyInOrganizationZone } from '@/lib/canonical'
 import { saveInboxNotification } from '@/lib/firebase/notifyInbox'
 import { syntheticUuidFromKey } from '@/lib/ios-parity/uuid'
 import { rulebookPerson, rulebookRoster } from '@/lib/staff/rulebookPeople'
 import type { Booking, Project, User } from '@/types'
-import { isSmallWorksJobType } from '@/lib/ios-parity/enums'
 
 function key(value: unknown): string {
   return typeof value === 'string' ? value.trim().toLowerCase() : ''
@@ -55,7 +55,7 @@ export async function notifyBookingCreated(input: {
         userId,
         relatedId: input.booking.projectId,
         dayKey,
-        catalogue: input.job ? (isSmallWorksJobType(input.job.jobType) ? 'smallWorks' : 'projects') : null,
+        catalogue: input.job ? jobKind(input.job, input.job.collection) : null,
       }).catch(() => undefined)
     )
   )

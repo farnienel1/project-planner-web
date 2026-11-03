@@ -25,7 +25,20 @@ import { subcontractorBookingCreateFields } from './workDocumentReaders'
 export const CONTRACT_TIME_ZONE = 'Europe/London'
 
 type Doc = Record<string, unknown>
-export type ContractSample = { platform: 'web' | 'ios'; docId: string; data: Doc; expected?: unknown }
+/**
+ * 1.11.0: an iOS sample built by a rulebook writer carries `builder` — the writer, its exact input, the keys the app
+ * turns from epoch ms into Timestamps, and the fields the app adds itself (server timestamps) — so iOS tests can
+ * assert the exact document its builder writes, not a key subset. `iosWritten` is then exactly `data`.
+ * `ios-legacy` samples are documents older iOS builds wrote: read-only cases the readers must still accept.
+ */
+export type ContractBuilder = { writer: string; input: Doc; timestampKeys?: string[]; appAdds?: Doc }
+export type ContractSample = {
+  platform: 'web' | 'ios' | 'ios-legacy'
+  docId: string
+  data: Doc
+  builder?: ContractBuilder
+  expected?: unknown
+}
 export type ContractCollection = {
   /** `LIVE_COLLECTIONS` id. */
   id: string
@@ -80,6 +93,7 @@ export function webWrittenSamples(): Record<string, { docId: string; data: Doc }
     bookedBy: 'Ada Admin',
     notes: 'Bring keys',
     workStartTime: null,
+    jobCollection: 'projects',
     createdAtMs: Date.parse(CREATED),
     updatedAtMs: Date.parse(UPDATED),
   })) as { ok: true; fields: Doc }
@@ -92,6 +106,7 @@ export function webWrittenSamples(): Record<string, { docId: string; data: Doc }
     bookedBy: 'Ada Admin',
     bookedContactIds: ['c-1'],
     bookedOperativeNames: ['Sam Sub'],
+    jobCollection: 'projects',
     createdAtMs: Date.parse(CREATED),
   })) as { ok: true; fields: Doc }
   const leave = must(holidayRequestWriteFields({
@@ -171,7 +186,7 @@ const WEB_STORE_SAMPLES: Record<string, { docId: string; data: Doc; webWriter: s
   managerSiteBookings: {
     docId: 'MS000000-0000-4000-8000-000000000001',
     webWriter: 'managerSiteBookingStore create payload (lib/stores/managerScheduleStore.ts)',
-    data: { id: 'MS000000-0000-4000-8000-000000000001', userId: 'mgr-web-1', date: ts(DAY), timeSlot: 'FULL_DAY', locationType: 'project', locationId: WEB_JOB, isBreakRemoved: false, createdAt: ts(CREATED), updatedAt: ts(UPDATED) },
+    data: { id: 'MS000000-0000-4000-8000-000000000001', userId: 'mgr-web-1', date: ts(DAY), timeSlot: 'FULL_DAY', locationType: 'project', locationId: WEB_JOB, jobCollection: 'projects', isBreakRemoved: false, createdAt: ts(CREATED), updatedAt: ts(UPDATED) },
   },
   projects: {
     docId: WEB_JOB,
@@ -260,40 +275,122 @@ const WEB_STORE_SAMPLES: Record<string, { docId: string; data: Doc; webWriter: s
   },
 }
 
+/** The rulebook writers an iOS `builder` may name (1.11.0). Each returns the stored fields, maybe wrapped. */
+export const CONTRACT_BUILDER_WRITERS: Readonly<Record<string, (input: never) => unknown>> = {
+  bookingWriteFields: bookingWriteFields as never,
+  subcontractorBookingCreateFields: subcontractorBookingCreateFields as never,
+  orgMembershipWriteFields: orgMembershipWriteFields as never,
+  warningResolutionWriteFields: warningResolutionWriteFields as never,
+  notificationCreateFields: notificationCreateFields as never,
+  jobTypesWriteFields: ((input: { stored: string[]; next: string[] }) => jobTypesWriteFields(input.stored, input.next)) as never,
+  variationTradesWriteFields: ((input: { stored: unknown; change: { add?: string[]; remove?: string[] } }) =>
+    variationTradesWriteFields(input.stored as never, input.change)) as never,
+  tradeTypeInventoryWriteFields: ((input: { stored: unknown; trades: string[] }) => tradeTypeInventoryWriteFields(input.stored as never, input.trades)) as never,
+}
+
+/** Runs a `builder`: the writer, unwrapped (`fields`, `set`, else the result), epoch ms → Timestamp, then `appAdds`. */
+export function buildContractSample(builder: ContractBuilder): Doc {
+  const writer = CONTRACT_BUILDER_WRITERS[builder.writer]
+  if (!writer) throw new Error(`contract: unknown builder ${builder.writer}`)
+  const result = writer(builder.input as never) as Doc | null
+  if (!result || result.ok === false) throw new Error(`contract: ${builder.writer} refused its sample`)
+  const fields = ((result.fields ?? result.set ?? result) as Doc)
+  return { ...withTimestamps(fields, builder.timestampKeys ?? []), ...(builder.appAdds ?? {}) }
+}
+
+/** iOS samples built by the rulebook writers the iOS builders call (1.11.0): exact input → exact `iosWritten`. */
+const IOS_BUILT_SAMPLES: Record<string, { docId: string; iosWriter: string; builder: ContractBuilder }> = {
+  bookings: {
+    docId: 'B1000000-0000-4000-8000-000000000002',
+    iosWriter: 'BookingWritePatch.labourValues (bookingWriteFields)',
+    builder: {
+      writer: 'bookingWriteFields',
+      input: { id: 'B1000000-0000-4000-8000-000000000002', operativeId: 'OP-IOS-1', projectId: IOS_JOB, dateMs: Date.parse('2026-11-04T00:00:00.000Z'), timeSlot: 'AM', status: 'Confirmed', bookedBy: 'Ian Ios', notes: '', workStartTime: '07:30', bookingGroupId: 'G-1', jobCollection: 'projects', createdAtMs: Date.parse(CREATED), updatedAtMs: Date.parse(UPDATED) },
+      timestampKeys: ['date', 'createdAt', 'updatedAt'],
+    },
+  },
+  subcontractorBookings: {
+    docId: 'S1000000-0000-4000-8000-000000000002',
+    iosWriter: 'Rulebook+WorkDocuments subcontractorBookingCreateFields',
+    builder: {
+      writer: 'subcontractorBookingCreateFields',
+      input: { id: 'S1000000-0000-4000-8000-000000000002', subcontractorId: 'SUB-1', projectId: IOS_JOB, dateMs: Date.parse('2026-11-04T00:00:00.000Z'), timeSlot: 'FULL DAY', bookedBy: 'Ian Ios', bookedContactIds: [], bookedOperativeNames: [], jobCollection: 'projects', createdAtMs: Date.parse(CREATED) },
+      timestampKeys: ['date', 'createdAt', 'updatedAt'],
+    },
+  },
+  orgMemberships: {
+    docId: ORG,
+    iosWriter: 'OrganizationMembership write (orgMembershipWriteFields, nested permissions)',
+    builder: {
+      writer: 'orgMembershipWriteFields',
+      input: { organizationId: ORG, stored: null, next: { role: 'manager', status: 'active', permissions: { manager: true, projects: true, smallWorks: false } }, writer: 'admin', now: ts(UPDATED) },
+    },
+  },
+  warningResolutions: {
+    docId: 'mgr-clash-USER-IOS-1-1793750400-0',
+    iosWriter: 'FirebaseBackend warning resolution (warningResolutionWriteFields)',
+    builder: {
+      writer: 'warningResolutionWriteFields',
+      input: { resolutionKey: 'mgr-clash-USER-IOS-1-1793750400-0', status: 'dismissed', resolvedByUserId: 'USER-IOS-2' },
+      appAdds: { resolvedAt: ts(UPDATED) },
+    },
+  },
+  notifications: {
+    docId: 'N1000000-0000-4000-8000-000000000002',
+    iosWriter: 'NotificationService create (notificationCreateFields)',
+    builder: {
+      writer: 'notificationCreateFields',
+      input: { organizationId: ORG, type: 'variation_added', title: 'Variation added', message: 'Move door', userId: 'USER-IOS-2', actorUserId: 'USER-IOS-1', relatedId: 'V1000-IOS', createdAt: ts(UPDATED) },
+    },
+  },
+  jobTypes: {
+    docId: 'jobTypes',
+    iosWriter: 'JobTypeStore save (jobTypesWriteFields)',
+    builder: { writer: 'jobTypesWriteFields', input: { stored: [], next: ['CAT A', 'CAT B', 'Small Works'] } },
+  },
+  variationTrades: {
+    docId: 'variationTrades',
+    iosWriter: 'Variation trades save (variationTradesWriteFields)',
+    builder: { writer: 'variationTradesWriteFields', input: { stored: null, change: { add: ['Electrical', 'Decorating'] } } },
+  },
+  tradeTypeInventory: {
+    docId: 'tradeTypeInventory',
+    iosWriter: 'Trade type inventory save (tradeTypeInventoryWriteFields)',
+    builder: { writer: 'tradeTypeInventoryWriteFields', input: { stored: null, trades: ['Labourer'] } },
+  },
+}
+
+/** Documents older iOS builds wrote that the readers must still read (1.11.0: read-only cases). */
+const IOS_LEGACY_SAMPLES: Record<string, { docId: string; data: Doc }> = {
+  orgMemberships: { docId: ORG, data: { email: 'ian@acme.test', organizationId: ORG, role: 'manager', isActive: true, adminAccess: false, manager: true, operatives: false, skills: false, materials: true, projects: true, smallWorks: false, operativeMode: false, siteAudit: true, isSuperAdmin: false, accountActive: true } },
+}
+
 /** iOS-written documents, copied from the iOS payload builders (`iosWriter`). Upper-case UUIDs as iOS stores them. */
 const IOS_SAMPLES: Record<string, { docId: string; data: Doc; iosWriter: string }> = {
   organization: { docId: ORG, iosWriter: 'FirebaseBackend organisation settings saves (companyDetailsWriteFields, organizationCurrencyWriteFields)', data: { name: 'Acme Build', countryCode: 'GB', currencyCode: 'GBP', currency: 'GBP', 'settings.currencyCode': 'GBP', settings: { currencyCode: 'GBP', bankHolidayRegionId: 'GB-ENG-WLS' }, bankHolidayRegionId: 'GB-ENG-WLS', officeAddressLine1: '1 High St', officeCity: 'Leeds', officePostcode: 'LS1 1AA', warningDetection: { detectClashes: true, clashLookaheadMode: 'days', clashLookaheadDays: '7', includeWeekendsForUnbookedLabour: true, excludedUserIdsFromUnbookedWarnings: ['USER-IOS-9'] }, members: { 'USER-IOS-1': 'admin' } } },
   users: { docId: 'USER-IOS-1', iosWriter: 'FirebaseBackend.userDocumentPayload', data: { email: 'ian@acme.test', firstName: 'Ian', surname: 'Ios', organizationId: ORG, role: 'manager', isActive: true, passwordSet: true, isSuperAdmin: false, adminAccess: false, manager: true, operatives: false, operativeMode: false, permissions: { manager: true, projects: true }, payBasis: 'hourly', hourlyRate: 25, employmentType: 'paye', assignedManagerUserId: 'USER-IOS-2', assignedManagerUserIds: ['USER-IOS-2'], formerUserIds: ['6F1C2D3E-0000-4000-8000-000000000001'], notificationPreferences: { variations: false }, createdAt: ts(CREATED), updatedAt: ts(UPDATED) } },
-  bookings: { docId: 'B1000000-0000-4000-8000-000000000002', iosWriter: 'BookingWritePatch.labourValues', data: { operativeId: 'OP-IOS-1', projectId: IOS_JOB, date: ts('2026-11-04T08:00:00.000Z'), timeSlot: 'AM', bookedBy: 'Ian Ios', notes: '', status: 'Confirmed', isBreakRemoved: false, workStartTime: '07:30', bookingGroupId: 'G-1', createdAt: ts(CREATED), updatedAt: ts(UPDATED) } },
   managerSiteBookings: { docId: 'MS100000-0000-4000-8000-000000000002', iosWriter: 'BookingWritePatch.managerValues', data: { userId: 'USER-IOS-1', date: ts('2026-11-04T08:00:00.000Z'), timeSlot: 'CUSTOM_HOURS', locationType: 'office', isBreakRemoved: true, workStartTime: '09:00', workEndTime: '13:00', createdAt: ts(CREATED), updatedAt: ts(UPDATED) } },
-  subcontractorBookings: { docId: 'S1000000-0000-4000-8000-000000000002', iosWriter: 'Rulebook+WorkDocuments subcontractorBookingCreateFields', data: { id: 'S1000000-0000-4000-8000-000000000002', subcontractorId: 'SUB-1', projectID: IOS_JOB, date: ts('2026-11-04T08:00:00.000Z'), timeSlot: 'FULL DAY', isBreakRemoved: false, bookedBy: 'Ian Ios', status: 'Confirmed', bookedContactIds: [], bookedOperativeNames: [], createdAt: ts(CREATED), updatedAt: ts(CREATED) } },
-  projects: { docId: IOS_JOB, iosWriter: 'FirebaseBackend.jobDocumentPayload', data: { jobNumber: 'J-200', siteName: 'Office refit', addressLine1: '5 Park Row', addressLine2: '', townCity: 'Leeds', postcode: 'LS1 5AA', siteAddress: '5 Park Row, Leeds', client: { id: 'CLIENT-IOS-1', name: 'Client Co', email: '', phone: '' }, startDate: ts('2026-11-02T00:00:00.000Z'), endDate: ts('2026-12-18T00:00:00.000Z'), jobType: 'CAT B', manager: 'Custom', managerId: 'MGR-ROW-IOS-1', managerIds: ['MGR-ROW-IOS-1'], isLive: true, description: '', hiddenManagerUserIds: [], hiddenOperativeUserIds: [], usesMapPinForLocation: false, organizationId: ORG, createdAt: ts(CREATED), updatedAt: ts(UPDATED) } },
-  smallWorks: { docId: 'SW100000-0000-4000-8000-000000000002', iosWriter: 'FirebaseBackend.jobDocumentPayload (smallWorks)', data: { jobNumber: 'SW-8', siteName: 'Leak fix', addressLine1: '9 Side St', townCity: 'York', postcode: 'YO1 9AA', client: { id: 'CLIENT-IOS-1', name: 'Client Co' }, startDate: ts('2026-11-04T00:00:00.000Z'), endDate: ts('2026-11-04T00:00:00.000Z'), jobType: 'Small Works', managerIds: ['MGR-ROW-IOS-1'], managerId: 'MGR-ROW-IOS-1', isLive: true, organizationId: ORG, createdAt: ts(CREATED), updatedAt: ts(UPDATED) } },
+  projects: { docId: IOS_JOB, iosWriter: 'FirebaseBackend.jobDocumentPayload', data: { jobNumber: 'J-200', siteName: 'Office refit', addressLine1: '5 Park Row', addressLine2: '', townCity: 'Leeds', postcode: 'LS1 5AA', siteAddress: '5 Park Row, Leeds', client: { id: 'CLIENT-IOS-1', name: 'Client Co', email: '', phone: '' }, startDate: ts('2026-11-02T00:00:00.000Z'), endDate: ts('2026-12-18T00:00:00.000Z'), jobType: 'CAT B', manager: 'Custom', managerId: 'MGR-ROW-IOS-1', managerIds: ['MGR-ROW-IOS-1'], managerUserIds: ['USER-IOS-3'], isLive: true, description: '', hiddenManagerUserIds: [], hiddenOperativeUserIds: [], usesMapPinForLocation: false, organizationId: ORG, createdAt: ts(CREATED), updatedAt: ts(UPDATED) } },
+  smallWorks: { docId: 'SW100000-0000-4000-8000-000000000002', iosWriter: 'FirebaseBackend.jobDocumentPayload (smallWorks)', data: { jobNumber: 'SW-8', siteName: 'Leak fix', addressLine1: '9 Side St', addressLine2: '', townCity: 'York', postcode: 'YO1 9AA', siteAddress: '9 Side St, York', client: { id: 'CLIENT-IOS-1', name: 'Client Co' }, startDate: ts('2026-11-04T00:00:00.000Z'), endDate: ts('2026-11-04T00:00:00.000Z'), jobType: 'Small Works', manager: 'Max Manager', managerIds: ['MGR-ROW-IOS-1'], managerId: 'MGR-ROW-IOS-1', managerUserIds: ['USER-IOS-3'], isLive: true, description: '', hiddenManagerUserIds: [], hiddenOperativeUserIds: [], usesMapPinForLocation: false, organizationId: ORG, createdAt: ts(CREATED), updatedAt: ts(UPDATED) } },
   holidayBookings: { docId: 'H1000000-0000-4000-8000-000000000002', iosWriter: 'Rulebook holidayRequestWriteFields (iOS AnnualLeave save)', data: { id: 'H1000000-0000-4000-8000-000000000002', organizationId: ORG, userId: 'USER-IOS-1', operativeId: 'OP-IOS-1', startDate: ts('2026-11-09T00:00:00.000Z'), endDate: ts('2026-11-09T00:00:00.000Z'), status: 'approved', timeSlot: 'AM', approvedByUserId: 'USER-IOS-2', approvedAt: ts(UPDATED), cancellationRequestedAt: null, cancellationRequestedByUserId: null, decisionNote: null, createdAt: ts(CREATED), updatedAt: ts(UPDATED) } },
   operatives: { docId: 'OP-IOS-1', iosWriter: 'FirebaseBackend.operativeDocumentPayload', data: { firstName: 'Olga', lastName: 'Op', name: 'Olga Op', email: 'olga@acme.test', phone: '', startDate: ts(CREATED), skills: ['IPAF'], qualifications: [], isActive: true, currencySymbol: '£', notes: '', tradeTypePreset: 'Labourer', tradeTypeCustom: '', qualificationExpiryDates: {}, qualificationCertificateURLs: {}, payBasis: 'hourly', hourlyRate: 18.5, organizationId: ORG, createdAt: ts(CREATED) } },
   managers: { docId: 'MGR-ROW-IOS-1', iosWriter: 'FirebaseBackend.managerDocumentPayload', data: { firstName: 'Max', lastName: 'Manager', email: 'max@acme.test', mobileNumber: '07000 111111', department: '', isActive: true, notes: '', tradeTypePreset: '', tradeTypeCustom: '', organizationId: ORG, createdAt: ts(CREATED) } },
   clients: { docId: 'CLIENT-IOS-1', iosWriter: 'FirebaseBackend.clientDocumentPayload', data: { id: 'CLIENT-IOS-1', name: 'Client Co', contactPerson: '', email: '', phone: '', address: '', organizationId: ORG, createdAt: ts(CREATED) } },
   subcontractors: { docId: 'SUB-IOS-1', iosWriter: 'FirebaseBackend subcontractor save', data: { name: 'Pipes Ltd', subcontractorType: 'Plumbing', contacts: [{ name: 'Pat Pipe', email: '', contactNumber: '07000 222222', position: 'Supervisor', createdAt: ts(CREATED) }], organizationId: ORG, createdAt: ts(CREATED) } },
   operativeDayRateHistory: { docId: 'P1000000-0000-4000-8000-000000000002', iosWriter: 'FirebaseBackend.recordOperativeDayRateChange (payRateHistoryWriteFields)', data: { userId: 'USER-IOS-1', operativeId: 'OP-IOS-1', dayRate: null, payBasis: null, effectiveAt: ts('2026-11-04T00:00:00.000Z'), createdAt: ts(CREATED) } },
-  warningResolutions: { docId: 'mgr-clash-USER-IOS-1-1793750400-0', iosWriter: 'FirebaseBackend warning resolution (warningResolutionWriteFields; older builds: epoch-second keys)', data: { resolutionKey: 'mgr-clash-USER-IOS-1-1793750400-0', status: 'dismissed', resolvedByUserId: 'USER-IOS-2', resolvedAt: ts(UPDATED) } },
   materials: { docId: 'M1000000-0000-4000-8000-000000000002', iosWriter: 'FirebaseBackend.materialLinePayload', data: { projectId: IOS_JOB, material: 'Screws', quantity: 2, unit: 'Box', status: 'ordered', date: ts('2026-11-04T00:00:00.000Z'), addedBy: 'Ian Ios', addedByUserId: 'USER-IOS-1', addedAt: ts(CREATED), organizationId: ORG, createdAt: ts(CREATED) } },
   materialSendRecords: { docId: 'R1000000-0000-4000-8000-000000000002', iosWriter: 'FirebaseBackend.materialSendRecordPayload', data: { id: 'R1000000-0000-4000-8000-000000000002', projectId: IOS_JOB, requestType: 'Quote', sentAt: ts(UPDATED), sentBy: 'Ian Ios', recipients: [{ name: 'Pipes', email: 'quotes@pipes.test' }], lines: [{ materialId: 'M1000000-0000-4000-8000-000000000002', name: 'Screws', quantity: 2, unit: 'Box' }] } },
   materialCatalogue: { docId: 'CAT1000-IOS', iosWriter: 'FirebaseBackend.materialCatalogueItemPayload', data: { name: 'Screws 4x40', defaultUnit: 'Box', brand: '', productCode: '', organizationId: ORG, createdByUserId: 'USER-IOS-1', createdAt: ts(CREATED) } },
   wholesalers: { docId: 'W1000-IOS', iosWriter: 'FirebaseBackend.wholesalerPayload', data: { name: 'Pipes', email: 'quotes@pipes.test', phone: '0113 000000', contacts: [], organizationId: ORG, createdAt: ts(CREATED) } },
   siteAudits: { docId: 'AUD1000-IOS', iosWriter: 'FirebaseBackend.siteAuditPayload', data: { id: 'AUD1000-IOS', organizationId: ORG, projectId: IOS_JOB, projectJobNumber: 'J-200', projectName: 'Office refit', type: 'Snagging', customTitle: '', authorName: 'Ian Ios', date: ts(DAY), items: [{ id: 'I-1', title: 'Paint', location: 'Hall', assignee: '', comments: '', annotations: [], createdAt: ts(CREATED), imageURL: null, imageCapturedAt: null }], createdAt: ts(CREATED) } },
-  tasks: { docId: 'T1000000-0000-4000-8000-000000000002', iosWriter: 'FirebaseBackend.projectTaskFields', data: { id: 'T1000000-0000-4000-8000-000000000002', projectId: IOS_JOB, title: 'Check boards', details: null, createdBy: 'Ian Ios', status: 'Completed', priority: 'High', assignedOperativeId: 'OP-IOS-1', assignedOperativeIds: ['OP-IOS-1'], assignedManagerId: null, assignedManagerIds: [], dueDate: null, completedBy: 'Olga Op', completedAt: ts(UPDATED), completionNotes: 'Done', completionImages: [], completionFiles: [], attachedImageURLs: [], items: [], completedItemIds: [], organizationId: ORG, createdAt: ts(CREATED) } },
+  tasks: { docId: 'T1000000-0000-4000-8000-000000000002', iosWriter: 'FirebaseBackend.projectTaskFields', data: { id: 'T1000000-0000-4000-8000-000000000002', projectId: IOS_JOB, title: 'Check boards', details: null, createdBy: 'Ian Ios', createdByUserId: 'USER-IOS-1', status: 'Completed', priority: 'High', assignedOperativeId: 'OP-IOS-1', assignedOperativeIds: ['OP-IOS-1'], assignedManagerId: null, assignedManagerIds: [], dueDate: null, completedBy: 'Olga Op', completedAt: ts(UPDATED), completionNotes: 'Done', completionImages: [], completionFiles: [], attachedImageURLs: [], items: [], completedItemIds: [], organizationId: ORG, createdAt: ts(CREATED) } },
   healthSafety: { docId: `healthSafety_projects_${IOS_JOB}`, iosWriter: 'HealthSafety store (healthSafetyDocumentWriteFields)', data: { talks: [], issues: [], signatures: [], ramsDocuments: [{ id: 'DOC-1', name: 'RAMS.pdf', url: 'https://example.test/rams.pdf', uploadedAt: ts(CREATED) }], otherDocuments: [] } },
   variations: { docId: 'V1000-IOS', iosWriter: 'VariationStore save (variationWriteFields)', data: { parentId: IOS_JOB, parentType: 'projects', number: 3, title: 'Move door', status: 'submitted', isDeleted: false, createdByUserId: 'USER-IOS-1', createdAt: ts(CREATED) } },
   variationTrackers: { docId: IOS_JOB, iosWriter: 'VariationStore tracker (variationTrackerWriteFields)', data: { parentId: IOS_JOB, order: ['V1000-IOS'] } },
   deadlines: { docId: `deadlines_smallWorks_${'SW100000-0000-4000-8000-000000000002'}`, iosWriter: 'DeadlineStore save', data: { items: [{ id: 'D1000-IOS', title: 'Inspection', dueDate: ts('2026-11-05T00:00:00.000Z'), assigneeUserIds: ['USER-IOS-1'], completed: true }] } },
-  notifications: { docId: 'N1000000-0000-4000-8000-000000000002', iosWriter: 'NotificationService create (notificationCreateFields)', data: { organizationId: ORG, type: 'variation_added', title: 'Variation added', message: 'Move door', userId: 'USER-IOS-2', actorUserId: 'USER-IOS-1', relatedId: 'V1000-IOS', requiresPermission: null, deepLinkUserId: null, isRead: false, createdAt: ts(UPDATED) } },
-  jobTypes: { docId: 'jobTypes', iosWriter: 'JobTypeStore save (jobTypesWriteFields)', data: { jobTypes: ['CAT A', 'CAT B', 'Small Works'] } },
   skills: { docId: 'SK1000-IOS', iosWriter: 'SkillStore save', data: { name: 'CSCS', organizationId: ORG } },
   timesheets: { docId: 'timesheet_USER-IOS-1_1793750400', iosWriter: 'TimesheetStore.statusPayload', data: { userId: 'USER-IOS-1', ownerSignedAt: ts(UPDATED), managerSignedAt: ts(UPDATED), managerSignedByUserId: 'USER-IOS-2', exportedAt: null } },
-  variationTrades: { docId: 'variationTrades', iosWriter: 'Variation trades save (variationTradesWriteFields)', data: { customTrades: ['Electrical', 'Decorating'] } },
-  tradeTypeInventory: { docId: 'tradeTypeInventory', iosWriter: 'Trade type inventory save (tradeTypeInventoryWriteFields)', data: { trades: ['Labourer'] } },
   taxIds: { docId: 'taxIds', iosWriter: 'Profile tax ids save (sensitiveProfileWriteFields)', data: { utrNumber: '', vatNumber: 'GB999999999', updatedByUserId: 'USER-IOS-1', updatedAt: ts(UPDATED) } },
-  orgMemberships: { docId: ORG, iosWriter: 'FirebaseBackend+OrganizationMembership membershipPayload (legacy flat; 1.10.0 must write orgMembershipWriteFields)', data: { email: 'ian@acme.test', organizationId: ORG, role: 'manager', isActive: true, adminAccess: false, manager: true, operatives: false, skills: false, materials: true, projects: true, smallWorks: false, operativeMode: false, siteAudit: true, isSuperAdmin: false, accountActive: true } },
 }
 
 /** `LIVE_COLLECTIONS` id → the rulebook reader for it. Rows not listed have no reader (`CONTRACT_NO_READER`). */
@@ -353,22 +450,25 @@ export function buildCrossPlatformContract(): {
     const reader = CONTRACT_READER_FOR[row.id]
     if (!reader) continue
     const webSample = web[row.id] ?? WEB_STORE_SAMPLES[row.id]
-    const iosSample = IOS_SAMPLES[row.id]
+    const built = IOS_BUILT_SAMPLES[row.id]
+    const iosSample = built ? { docId: built.docId, iosWriter: built.iosWriter, data: buildContractSample(built.builder) } : IOS_SAMPLES[row.id]
     if (!webSample || !iosSample) throw new Error(`contract: missing sample for ${row.id}`)
     const webWriter = web[row.id] ? 'rulebook writer (see crossPlatformContract.samples.ts webWrittenSamples)' : WEB_STORE_SAMPLES[row.id].webWriter
     const options = { timeZone: CONTRACT_TIME_ZONE, ...(reader.readerOptions ?? {}) }
-    const samples: ContractSample[] = [
+    const legacy = IOS_LEGACY_SAMPLES[row.id]
+    const raw: Array<Omit<ContractSample, 'expected'>> = [
       { platform: 'web', docId: webSample.docId, data: webSample.data },
-      { platform: 'ios', docId: iosSample.docId, data: iosSample.data },
-    ].map((sample) => ({
+      { platform: 'ios', docId: iosSample.docId, data: iosSample.data, ...(built ? { builder: built.builder } : {}) },
+      ...(legacy ? [{ platform: 'ios-legacy' as const, docId: legacy.docId, data: legacy.data }] : []),
+    ]
+    const samples: ContractSample[] = raw.map((sample) => ({
       ...sample,
-      platform: sample.platform as 'web' | 'ios',
       expected: readCrossPlatformSample(reader.reader, sample.docId, sample.data, options),
     }))
     collections.push({ id: row.id, reader: reader.reader, ...(reader.readerOptions ? { readerOptions: reader.readerOptions } : {}), webWriter, iosWriter: iosSample.iosWriter, samples })
   }
   return {
-    contractVersion: 1,
+    contractVersion: 2,
     timeZone: CONTRACT_TIME_ZONE,
     instantShape: '{ "seconds": number, "nanoseconds": number } — a Firestore Timestamp as both apps pass it to the rulebook',
     collections,

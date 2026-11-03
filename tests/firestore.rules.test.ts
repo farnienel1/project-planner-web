@@ -1152,7 +1152,8 @@ test('job quote and order history: every admin and manager reads it without the 
     getDocs(query(collection(authDb(MANAGER_A, 'manager-a-history@test.com'), 'organizations', ORG_A, 'materialSendRecords'), where('projectId', '==', 'job-1')))
   )
   await assertFails(getDoc(ref(OP_A, 'op-a@test.com')))
-  await assertFails(getDoc(ref(ADMIN_OP_A, 'admin-op-a-history@test.com')))
+  // 1.11.0: an admin has no operative mode — a stray flag on an admin is ignored (permissionLevelOf).
+  await assertSucceeds(getDoc(ref(ADMIN_OP_A, 'admin-op-a-history@test.com')))
   await assertFails(getDoc(doc(authDb(ADMIN_B, 'admin-b@test.com'), 'organizations', ORG_A, 'materialSendRecords', 'SEND-HISTORY-1')))
 })
 
@@ -1871,8 +1872,8 @@ test('1.2.0 decision 3: nobody decides their own leave, admins included; an admi
   await assertSucceeds(setDoc(ref(admin, 'hb120-own-1'), leave(ADMIN_A, 'pending')))
   await assertFails(updateDoc(ref(admin, 'hb120-own-1'), approve(ADMIN_A)))
   await assertFails(updateDoc(ref(admin, 'hb120-own-1'), { status: 'rejected', decisionNote: 'no' }))
-  // Another admin (not in operative mode) can decide it; the admin in operative mode cannot.
-  await assertFails(updateDoc(ref(adminOp, 'hb120-own-1'), approve(ADMIN_OPMODE_A)))
+  // Another admin can decide it — 1.11.0: an admin with a stray operative-mode flag is an admin (no operative mode).
+  await assertSucceeds(updateDoc(ref(adminOp, 'hb120-own-1'), approve(ADMIN_OPMODE_A)))
   await env.withSecurityRulesDisabled(async (ctx) => {
     await setDoc(doc(ctx.firestore(), 'users', ADMIN_A), { assignedManagerUserIds: [] }, { merge: true })
   })
@@ -1880,9 +1881,8 @@ test('1.2.0 decision 3: nobody decides their own leave, admins included; an admi
   // Requests from people with and without a line manager.
   await assertSucceeds(setDoc(ref(authDb(REPORT_A, 'report-a@test.com'), 'hb120-rep'), leave(REPORT_A, 'pending')))
   await assertSucceeds(setDoc(ref(authDb(OP_A, 'op-a@test.com'), 'hb120-noline'), leave(OP_A, 'pending')))
-  // Admin in operative mode: neither (not the line manager; no admin fallback in operative mode).
-  await assertFails(updateDoc(ref(adminOp, 'hb120-rep'), approve(ADMIN_OPMODE_A)))
-  await assertFails(updateDoc(ref(adminOp, 'hb120-noline'), approve(ADMIN_OPMODE_A)))
+  // 1.11.0: an admin with a stray operative-mode flag is an admin (no operative mode) and decides like one —
+  // covered by '1.11.0 levels' and the hb120-own-1 decision above.
   // Admin not in operative mode: both.
   await assertSucceeds(updateDoc(ref(admin, 'hb120-rep'), approve(ADMIN_A)))
   await assertSucceeds(updateDoc(ref(admin, 'hb120-noline'), approve(ADMIN_A)))
@@ -2002,9 +2002,9 @@ test('1.2.0 holiday delete: only a decider (never on their own leave), the owner
   await env.withSecurityRulesDisabled(async (ctx) => {
     await setDoc(doc(ctx.firestore(), 'users', ADMIN_A), { assignedManagerUserIds: [] }, { merge: true })
   })
-  // A manager who is not the line manager cannot delete a report's booking; an admin in operative mode cannot either.
+  // A manager who is not the line manager cannot delete a report's booking. (1.11.0: an admin with a stray
+  // operative-mode flag is an admin and could; not asserted here so the line manager's delete below still runs.)
   await assertFails(deleteDoc(ref(authDb(MGR_OTHER_A, 'mgr-other-a@test.com'), 'hbdel-rep-cancel')))
-  await assertFails(deleteDoc(ref(authDb(ADMIN_OPMODE_A, 'admin-opmode-a@test.com'), 'hbdel-rep-cancel')))
   // Another company cannot.
   await assertFails(deleteDoc(ref(authDb(ADMIN_B, 'admin-b@test.com'), 'hbdel-rep-cancel')))
   // The line manager accepts the cancellation by deleting it.
@@ -2107,8 +2107,8 @@ test('1.3.0 A4/A5: an admin with no current line manager self-books leave; with 
   } finally {
     await setAdminLineManagers([])
   }
-  // An admin in operative mode with no line manager does not self-book.
-  await assertFails(setDoc(ref(authDb(ADMIN_OPMODE_A, 'admin-opmode-a@test.com'), 'hb130-aop'), leave(ADMIN_OPMODE_A, 'approved')))
+  // 1.11.0: an admin has no operative mode, so an admin with a stray flag and no line manager self-books too.
+  await assertSucceeds(setDoc(ref(authDb(ADMIN_OPMODE_A, 'admin-opmode-a@test.com'), 'hb130-aop'), leave(ADMIN_OPMODE_A, 'approved')))
   // A manager with no line manager (and no self-book flag) still asks.
   await assertFails(setDoc(ref(authDb(NOLM_MGR_A, 'nolm-mgr-a@test.com'), 'hb130-m'), leave(NOLM_MGR_A, 'approved')))
 })
@@ -2407,21 +2407,31 @@ async function seedR2() {
 const colA = (db: ReturnType<typeof authDb>, name: string) => collection(db, 'organizations', ORG_A, name)
 const since = Timestamp.fromDate(new Date('2026-10-26T00:00:00Z'))
 
-test('1.10.0 r2 reads: an admin and a manager with the toggle read every job and booking', async () => {
+test('1.10.0 r2 / 1.11.0 reads: an admin reads everything; a toggle manager reads every job of that kind and its bookings by jobCollection', async () => {
   await seedR2()
-  for (const [uid, email] of [[ADMIN_A, 'admin-a@test.com'], [MGR_TOGGLE_A, 'toggle@test.com']]) {
-    const db = authDb(uid, email)
-    for (const name of ['projects', 'smallWorks', 'bookings', 'managerSiteBookings', 'subcontractorBookings']) {
-      await assertSucceeds(getDocs(colA(db, name)))
-    }
-    await assertSucceeds(getDoc(doc(db, 'organizations', ORG_A, 'projects', 'OTHER-R2')))
-    await assertSucceeds(getDocs(query(colA(db, 'bookings'), where('date', '>=', since))))
+  const admin = authDb(ADMIN_A, 'admin-a@test.com')
+  for (const name of ['projects', 'smallWorks', 'bookings', 'managerSiteBookings', 'subcontractorBookings']) {
+    await assertSucceeds(getDocs(colA(admin, name)))
   }
-  // Projects toggle only: every project, but small works only by managerUserIds; every booking.
+  await assertSucceeds(getDocs(query(colA(admin, 'bookings'), where('date', '>=', since))))
+  const toggle = authDb(MGR_TOGGLE_A, 'toggle@test.com')
+  await assertSucceeds(getDocs(colA(toggle, 'projects')))
+  await assertSucceeds(getDocs(colA(toggle, 'smallWorks')))
+  await assertSucceeds(getDoc(doc(toggle, 'organizations', ORG_A, 'projects', 'OTHER-R2')))
+  // 1.11.0: never a whole booking collection (a booking without jobCollection is not theirs to read)…
+  for (const name of ['bookings', 'managerSiteBookings', 'subcontractorBookings']) await assertFails(getDocs(colA(toggle, name)))
+  // …but every booking of a kind they have, by `jobCollection`.
+  for (const name of ['bookings', 'managerSiteBookings', 'subcontractorBookings']) {
+    await assertSucceeds(getDocs(query(colA(toggle, name), where('jobCollection', '==', 'projects'), where('date', '>=', since))))
+    await assertSucceeds(getDocs(query(colA(toggle, name), where('jobCollection', '==', 'smallWorks'))))
+  }
+  // Projects toggle only: every project, small works only by managerUserIds; project bookings by kind only.
   const projOnly = authDb(MGR_PROJ_ONLY_A, 'projonly@test.com')
   await assertSucceeds(getDocs(colA(projOnly, 'projects')))
   await assertFails(getDocs(colA(projOnly, 'smallWorks')))
-  await assertSucceeds(getDocs(colA(projOnly, 'bookings')))
+  await assertFails(getDocs(colA(projOnly, 'bookings')))
+  await assertSucceeds(getDocs(query(colA(projOnly, 'bookings'), where('jobCollection', '==', 'projects'))))
+  await assertFails(getDocs(query(colA(projOnly, 'bookings'), where('jobCollection', '==', 'smallWorks'))))
 })
 
 test('1.10.0 r2 reads: a manager without the toggle reads only their jobs, those jobs\' bookings and their own', async () => {
@@ -2535,4 +2545,201 @@ test('1.10.0 r2: a manager can never book themselves onto a job they do not mana
   const toggle = authDb(MGR_TOGGLE_A, 'toggle@test.com')
   await assertFails(setDoc(doc(toggle, 'organizations', ORG_A, 'managerSiteBookings', 'self-toggle'), { userId: MGR_TOGGLE_A, locationType: 'project', locationId: 'OTHER-R2' }))
   await assertSucceeds(setDoc(doc(mgr, 'organizations', ORG_A, 'managerSiteBookings', 'self-mine'), { userId: MGR_JOB_A, locationType: 'project', locationId: 'JOB-R2' }))
+})
+
+// MARK: - 1.11.0 (owner decisions round 3)
+
+const MGR_SW_ONLY_A = 'mgr-sw-only-a'
+
+async function seed111() {
+  await seedR2()
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    await setDoc(doc(db, 'users', MGR_SW_ONLY_A), { email: 'swonly@test.com', organizationId: ORG_A, role: 'manager', permissions: { manager: true, smallWorks: true } })
+    await setDoc(doc(db, 'organizations', ORG_A, 'smallWorks', 'SW-111'), { siteName: 'Small', managerUserIds: [MGR_OTHER_A] })
+    const day = Timestamp.fromDate(new Date('2026-11-02T00:00:00Z'))
+    await setDoc(doc(db, 'organizations', ORG_A, 'bookings', 'k-proj'), { operativeId: OP_B, projectId: 'OTHER-R2', jobCollection: 'projects', date: day })
+    await setDoc(doc(db, 'organizations', ORG_A, 'bookings', 'k-sw'), { operativeId: OP_B, projectId: 'SW-111', jobCollection: 'smallWorks', date: day })
+    await setDoc(doc(db, 'organizations', ORG_A, 'bookings', 'k-none'), { operativeId: OP_B, projectId: 'OTHER-R2', date: day })
+    await setDoc(doc(db, 'organizations', ORG_A, 'managerSiteBookings', 'k-msb-sw'), { userId: MGR_OTHER_A, locationType: 'small_work', locationId: 'SW-111', jobCollection: 'smallWorks', date: day })
+    await setDoc(doc(db, 'organizations', ORG_A, 'subcontractorBookings', 'k-sub-proj'), { subcontractorId: 'SUB', projectId: 'OTHER-R2', jobCollection: 'projects', date: day })
+  })
+}
+
+test('1.11.0 reads by kind: a single-toggle manager reads that kind\'s bookings; a booking without jobCollection only admins and its job managers', async () => {
+  await seed111()
+  const swOnly = authDb(MGR_SW_ONLY_A, 'swonly@test.com')
+  await assertSucceeds(getDoc(doc(swOnly, 'organizations', ORG_A, 'bookings', 'k-sw')))
+  await assertFails(getDoc(doc(swOnly, 'organizations', ORG_A, 'bookings', 'k-proj')))
+  await assertFails(getDoc(doc(swOnly, 'organizations', ORG_A, 'bookings', 'k-none')))
+  await assertSucceeds(getDoc(doc(swOnly, 'organizations', ORG_A, 'managerSiteBookings', 'k-msb-sw')))
+  await assertFails(getDoc(doc(swOnly, 'organizations', ORG_A, 'subcontractorBookings', 'k-sub-proj')))
+  const sw = await assertSucceeds(getDocs(query(colA(swOnly, 'bookings'), where('jobCollection', '==', 'smallWorks'))))
+  assert.deepEqual(sw.docs.map((d) => d.id), ['k-sw'])
+  await assertFails(getDocs(query(colA(swOnly, 'bookings'), where('jobCollection', '==', 'projects'))))
+  // A projects-toggle manager does not read a project booking stored without jobCollection (until the backfill)…
+  const projOnly = authDb(MGR_PROJ_ONLY_A, 'projonly@test.com')
+  await assertSucceeds(getDoc(doc(projOnly, 'organizations', ORG_A, 'bookings', 'k-proj')))
+  await assertFails(getDoc(doc(projOnly, 'organizations', ORG_A, 'bookings', 'k-none')))
+  // …the job's own manager and admins do.
+  await assertSucceeds(getDoc(doc(authDb(MGR_OTHER_A, 'manager-other-a@test.com'), 'organizations', ORG_A, 'bookings', 'k-none')))
+  await assertSucceeds(getDoc(doc(authDb(ADMIN_A, 'admin-a@test.com'), 'organizations', ORG_A, 'bookings', 'k-none')))
+  // An operative never lists by kind.
+  await assertFails(getDocs(query(colA(authDb(OP_A, 'op-a@test.com'), 'bookings'), where('jobCollection', '==', 'projects'))))
+})
+
+test('1.11.0 writes: jobCollection must name the kind of a job the manager manages; a toggle does not extend writes', async () => {
+  await seed111()
+  const mgr = authDb(MGR_JOB_A, 'mgr-job-a@test.com')
+  const base = { operativeId: OP_B, status: 'Confirmed', timeSlot: 'FULL DAY' }
+  await assertSucceeds(setDoc(doc(mgr, 'organizations', ORG_A, 'bookings', 'jc-ok'), { ...base, projectId: 'JOB-R2', jobCollection: 'projects' }))
+  // The wrong kind for the job, or an unknown kind, is refused.
+  await assertFails(setDoc(doc(mgr, 'organizations', ORG_A, 'bookings', 'jc-wrong'), { ...base, projectId: 'JOB-R2', jobCollection: 'smallWorks' }))
+  await assertFails(setDoc(doc(mgr, 'organizations', ORG_A, 'bookings', 'jc-bad'), { ...base, projectId: 'JOB-R2', jobCollection: 'tasks' }))
+  // Small works by kind, any id spelling.
+  await assertSucceeds(setDoc(doc(mgr, 'organizations', ORG_A, 'subcontractorBookings', 'jc-sw'), { subcontractorId: 'SUB', projectId: 'Sw-Mix', jobCollection: 'smallWorks' }))
+  // A manager site booking with no job never carries jobCollection.
+  await assertFails(setDoc(doc(mgr, 'organizations', ORG_A, 'managerSiteBookings', 'jc-office'), { userId: MGR_JOB_A, locationType: 'office', jobCollection: 'projects' }))
+  await assertSucceeds(setDoc(doc(mgr, 'organizations', ORG_A, 'managerSiteBookings', 'jc-office-ok'), { userId: MGR_JOB_A, locationType: 'office' }))
+  // Editing an older booking adds jobCollection.
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'organizations', ORG_A, 'bookings', 'jc-old'), { ...base, projectId: 'JOB-R2' })
+  })
+  await assertSucceeds(updateDoc(doc(mgr, 'organizations', ORG_A, 'bookings', 'jc-old'), { jobCollection: 'projects', notes: 'x' }))
+  await assertFails(updateDoc(doc(mgr, 'organizations', ORG_A, 'bookings', 'jc-old'), { jobCollection: 'smallWorks' }))
+  // A toggle manager who does not manage the job cannot write its bookings.
+  await assertFails(setDoc(doc(authDb(MGR_PROJ_ONLY_A, 'projonly@test.com'), 'organizations', ORG_A, 'bookings', 'jc-toggle'), { ...base, projectId: 'OTHER-R2', jobCollection: 'projects' }))
+  // Admins write any booking.
+  await assertSucceeds(setDoc(doc(authDb(ADMIN_A, 'admin-a@test.com'), 'organizations', ORG_A, 'bookings', 'jc-admin'), { ...base, projectId: 'OTHER-R2', jobCollection: 'projects' }))
+})
+
+test('1.11.0 invites: accepting a genuine unused invitation writes exactly its membership and role in company B — nothing more', async () => {
+  const JOINER = 'joiner-a'
+  const email = 'joiner@test.com'
+  const perms = { manager: true, projects: true, smallWorks: false, operatives: false }
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    await setDoc(doc(db, 'users', JOINER), { email, organizationId: ORG_A, role: 'operative', operativeMode: true, passwordSet: true })
+    await setDoc(doc(db, 'invitations', 'inv-111'), { email, organizationId: ORG_B, role: 'manager', permissions: perms, invitedBy: ADMIN_B, isUsed: false })
+    await setDoc(doc(db, 'invitations', 'inv-111-used'), { email, organizationId: ORG_B, role: 'admin', permissions: { adminAccess: true }, invitedBy: ADMIN_B, isUsed: true })
+    await setDoc(doc(db, 'invitations', 'inv-111-other'), { email: 'someone@test.com', organizationId: ORG_B, role: 'admin', permissions: { adminAccess: true }, invitedBy: ADMIN_B, isUsed: false })
+  })
+  const db = authDb(JOINER, email)
+  const membership = (invitationId: string, overrides: Record<string, unknown> = {}) => ({
+    organizationId: ORG_B,
+    role: 'manager',
+    status: 'active',
+    isSuperAdmin: false,
+    accountActive: true,
+    permissions: perms,
+    invitationId,
+    invitedBy: ADMIN_B,
+    invitedAt: Timestamp.now(),
+    acceptedAt: Timestamp.now(),
+    updatedAt: Timestamp.now(),
+    ...overrides,
+  })
+  const accept = (invitationId: string, member: Record<string, unknown>, role: string, markUsed = true) => {
+    const batch = writeBatch(db)
+    batch.set(doc(db, 'users', JOINER, 'orgMemberships', ORG_B), member)
+    batch.update(doc(db, 'organizations', ORG_B), { [`members.${JOINER}`]: role })
+    if (markUsed) batch.update(doc(db, 'invitations', invitationId), { isUsed: true, usedAt: Timestamp.now() })
+    return batch.commit()
+  }
+  // More than the invitation gives: a higher role, other permissions, super admin — refused.
+  await assertFails(accept('inv-111', membership('inv-111', { role: 'admin' }), 'admin'))
+  await assertFails(accept('inv-111', membership('inv-111'), 'admin'))
+  await assertFails(accept('inv-111', membership('inv-111', { permissions: { ...perms, operatives: true } }), 'manager'))
+  await assertFails(accept('inv-111', membership('inv-111', { isSuperAdmin: true }), 'manager'))
+  await assertFails(accept('inv-111', membership('inv-111', { extra: true }), 'manager'))
+  // Not marked used in the same batch, a used invitation, or another person's invitation — refused.
+  await assertFails(accept('inv-111', membership('inv-111'), 'manager', false))
+  await assertFails(accept('inv-111-used', membership('inv-111-used', { role: 'admin', permissions: { adminAccess: true } }), 'admin'))
+  await assertFails(accept('inv-111-other', membership('inv-111-other', { role: 'admin', permissions: { adminAccess: true } }), 'admin'))
+  // Exactly the invitation: accepted.
+  await assertSucceeds(accept('inv-111', membership('inv-111'), 'manager'))
+  let org: Record<string, unknown> | undefined
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    org = (await getDoc(doc(ctx.firestore(), 'organizations', ORG_B))).data()
+  })
+  assert.equal((org?.members as Record<string, string> | undefined)?.[JOINER], 'manager')
+  // The invitation is now used: the same accept cannot run again, and they cannot raise their role afterwards.
+  await assertFails(updateDoc(doc(db, 'organizations', ORG_B), { [`members.${JOINER}`]: 'admin' }))
+  await assertFails(updateDoc(doc(db, 'users', JOINER, 'orgMemberships', ORG_B), { role: 'admin' }))
+  await assertFails(updateDoc(doc(db, 'users', JOINER, 'orgMemberships', ORG_B), { 'permissions.operatives': true }))
+  // As a manager in B they hold B's Projects toggle from the membership (and not Small works).
+  await assertSucceeds(getDocs(collection(db, 'organizations', ORG_B, 'projects')))
+  await assertFails(getDocs(collection(db, 'organizations', ORG_B, 'smallWorks')))
+})
+
+test('1.11.0 levels: an admin with a stray operative-mode flag is an admin in the rules (no operative mode)', async () => {
+  await seed111()
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'users', 'admin-stray-op'), {
+      email: 'admin-stray@test.com', organizationId: ORG_A, role: 'admin', adminAccess: true, operativeMode: true,
+    })
+  })
+  const db = authDb('admin-stray-op', 'admin-stray@test.com')
+  await assertSucceeds(getDocs(colA(db, 'bookings')))
+  await assertSucceeds(getDocs(colA(db, 'smallWorks')))
+})
+
+test('1.11.0 accountTypeChangeWrites: an admin or super admin writes the users doc, members entry and membership; nobody else', async () => {
+  const TARGET = 'type-target-a'
+  const SUPER = 'super-a-111'
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    await setDoc(doc(db, 'users', TARGET), { email: 'type-target@test.com', organizationId: ORG_A, role: 'manager', manager: true, permissions: { manager: true } })
+    await setDoc(doc(db, 'users', SUPER), { email: 'super-a@test.com', organizationId: ORG_A, role: 'admin', isSuperAdmin: true, adminAccess: true })
+    await setDoc(doc(db, 'users', 'type-other-co'), { email: 'other-co@test.com', organizationId: ORG_B, role: 'manager', manager: true })
+    await updateDoc(doc(db, 'organizations', ORG_A), { [`members.${TARGET}`]: 'manager', [`members.${SUPER}`]: 'admin', 'members.type-other-co': 'manager' })
+  })
+  const change = (db: ReturnType<typeof authDb>, uid: string, role: string) => {
+    const batch = writeBatch(db)
+    batch.update(doc(db, 'users', uid), { role, adminAccess: role === 'admin', manager: role !== 'operative', operativeMode: role === 'operative', 'permissions.adminAccess': role === 'admin' })
+    batch.update(doc(db, 'organizations', ORG_A), { [`members.${uid}`]: role })
+    batch.set(doc(db, 'users', uid, 'orgMemberships', ORG_A), { organizationId: ORG_A, role, status: 'active', permissions: { adminAccess: role === 'admin' } })
+    return batch.commit()
+  }
+  await assertSucceeds(change(authDb(ADMIN_A, 'admin-a@test.com'), TARGET, 'admin'))
+  await assertSucceeds(change(authDb(SUPER, 'super-a@test.com'), TARGET, 'operative'))
+  // A manager (even the person themself) cannot.
+  await assertFails(change(authDb(MGR_OTHER_A, 'manager-other-a@test.com'), TARGET, 'admin'))
+  await assertFails(change(authDb(TARGET, 'type-target@test.com'), TARGET, 'admin'))
+  // An admin of company A cannot rewrite a profile that belongs to company B (accountTypeChangeWrites refuses it too).
+  await assertFails(change(authDb(ADMIN_A, 'admin-a@test.com'), 'type-other-co', 'admin'))
+})
+
+test('1.11.0 roster: a co-member reads a member or the creator whose users document names another company; nobody else does', async () => {
+  const ROAMER = 'roamer-111'
+  const CREATOR_ELSEWHERE = 'creator-elsewhere-111'
+  const ORG_X = 'org-x-111'
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    await setDoc(doc(db, 'organizations', ORG_X), { name: 'X', members: { 'x-member': 'manager', [ROAMER]: 'admin' }, creatorUserId: CREATOR_ELSEWHERE })
+    await setDoc(doc(db, 'users', 'x-member'), { email: 'x-member@test.com', organizationId: ORG_X, role: 'manager', manager: true })
+    await setDoc(doc(db, 'users', ROAMER), { email: 'roamer@test.com', organizationId: ORG_B, role: 'admin', adminAccess: true })
+    await setDoc(doc(db, 'users', CREATOR_ELSEWHERE), { email: 'creator-elsewhere@test.com', organizationId: `organizations/${ORG_B}`, isSuperAdmin: true })
+  })
+  const member = authDb('x-member', 'x-member@test.com')
+  await assertSucceeds(getDoc(doc(member, 'users', ROAMER)))
+  await assertSucceeds(getDoc(doc(member, 'users', CREATOR_ELSEWHERE)))
+  // Someone who is not anchored on X (company B's operative) stays unreadable to X's members.
+  await assertFails(getDoc(doc(member, 'users', OP_B)))
+  // A member of A does not read X's anchored people.
+  await assertFails(getDoc(doc(authDb(OP_A, 'op-a@test.com'), 'users', ROAMER)))
+})
+
+test('1.11.0 accountTypeChangeWrites for a profile of another company: an admin writes members and the membership only', async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    await setDoc(doc(db, 'users', 'type-other-co-2'), { email: 'other-co-2@test.com', organizationId: ORG_B, role: 'manager', manager: true })
+    await updateDoc(doc(db, 'organizations', ORG_A), { 'members.type-other-co-2': 'manager' })
+  })
+  const admin = authDb(ADMIN_A, 'admin-a@test.com')
+  const batch = writeBatch(admin)
+  batch.update(doc(admin, 'organizations', ORG_A), { 'members.type-other-co-2': 'admin' })
+  batch.set(doc(admin, 'users', 'type-other-co-2', 'orgMemberships', ORG_A), { organizationId: ORG_A, role: 'admin', status: 'active', permissions: { adminAccess: true } })
+  await assertSucceeds(batch.commit())
+  await assertFails(updateDoc(doc(admin, 'users', 'type-other-co-2'), { role: 'admin' }))
 })

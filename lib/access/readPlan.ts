@@ -60,6 +60,9 @@ export function jobPlanParts(
 
 function bookingPart(query: BookingQuery, bound: QueryConstraint[], boundId: string): OrgPlanPart {
   if (query.kind === 'all') return { id: `all|${boundId}`, constraints: bound }
+  if (query.kind === 'jobCollection') {
+    return { id: `jobCollection:${query.value}|${boundId}`, constraints: [where('jobCollection', '==', query.value), ...bound] }
+  }
   const filter = query.op === '==' ? where(query.field, '==', query.values[0]) : where(query.field, 'in', query.values)
   return { id: `${query.kind}:${query.field}:${query.values.join(',')}|${boundId}`, constraints: [filter, ...bound] }
 }

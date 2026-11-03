@@ -39,6 +39,8 @@ import {
 } from '@/lib/stores/orgLoadCache'
 import { newUuid } from '@/lib/firebase/firestoreUtils'
 import { mergeStoredRows, parseSiteAuditDocument, siteAuditWriteFields } from '@/lib/canonical'
+import { organizationLevelFor } from '@/lib/canonical/orgRoster'
+import { effectivePermissions } from '@/lib/canonical/permissionLevels'
 import { savePartialDocument } from '@/lib/firebase/partialWrite'
 import { inboxActorUserId } from '@/lib/firebase/notifyInbox'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
@@ -184,6 +186,30 @@ function userForThisOrganisation(id: string, data: Record<string, unknown>, orga
   const prepared = rosterParseRecord(data, organizationId, { allowNamedOrg })
   if (!prepared) return null
   return mapOrgUser(id, prepared)
+}
+
+/**
+ * Rulebook 1.11.0 `organizationLevelFor`: a member whose users document names another company gets their level in
+ * THIS organisation from its members entry (the creator is super admin), never from the other company's flags.
+ */
+function withOrganizationLevel(
+  user: User,
+  data: Record<string, unknown>,
+  organizationId: string,
+  members: Record<string, unknown>,
+  creatorUserId: string
+): User {
+  const level = organizationLevelFor({
+    organizationId,
+    userId: user.id,
+    user: data,
+    membersRole: members[user.id],
+    creatorUserId,
+  })
+  if (level.source === 'users') return user
+  const permissions = effectivePermissions({ role: level.level, isSuperAdmin: level.isSuperAdmin }, level.level)
+  const role = level.level === 'admin' ? UserRole.ADMIN : level.level === 'operative' ? UserRole.OPERATIVE : UserRole.MANAGER
+  return { ...user, role, isSuperAdmin: level.isSuperAdmin, permissions: { ...user.permissions, ...permissions } }
 }
 
 function withManagerListHint(user: User): User {
@@ -389,9 +415,14 @@ async function fetchOrganisationRoster(
   }
 
   const memberIds: string[] = []
+  let orgMembers: Record<string, unknown> = {}
+  let orgCreatorUserId = ''
   if (orgResult.status === 'fulfilled') {
     const members = (orgResult.value.data()?.members ?? {}) as Record<string, unknown>
-    const listedIds = Object.keys(members).filter(Boolean)
+    orgMembers = members
+    orgCreatorUserId = text(orgResult.value.data()?.creatorUserId)
+    // Rulebook 1.11.0 `rosterMembersForOrganization`: the anchored people are the members keys and the creator.
+    const listedIds = [...Object.keys(members), orgCreatorUserId].filter((id, index, all) => Boolean(id) && all.indexOf(id) === index)
     listedMemberCount = listedIds.length
     for (const id of listedIds) {
       if (!presentIds.has(id)) memberIds.push(id)
@@ -446,7 +477,8 @@ async function fetchOrganisationRoster(
         }
         const data = snap.data() as Record<string, unknown>
         const patch = missingOrganizationIdPatch(data, organizationId, true)
-        memberRows[index] = userForThisOrganisation(snap.id, patch ? { ...data, ...patch } : data, organizationId, true)
+        const row = userForThisOrganisation(snap.id, patch ? { ...data, ...patch } : data, organizationId, true)
+        memberRows[index] = row ? withOrganizationLevel(row, patch ? { ...data, ...patch } : data, organizationId, orgMembers, orgCreatorUserId) : row
       } catch (error) {
         if (memberReadFailure == null) memberReadFailure = error
         memberRows[index] = 'failed'

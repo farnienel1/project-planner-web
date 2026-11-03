@@ -54,7 +54,7 @@ import {
   awaitingManagerSignOff,
   isTimesheetFullyApproved,
 } from '@/lib/timesheets/timesheetApprovalPolicy'
-import { canAccessMyTimesheetsWithPolicy, shouldAppearInOperativeTimesheetRoster } from '@/lib/timesheets/timesheetPayrollPolicy'
+import { canAccessMyTimesheetsWithPolicy, shouldAppearInOperativeTimesheetRoster, timesheetDayKeysForPeriod } from '@/lib/timesheets/timesheetPayrollPolicy'
 import { timesheetRosterGroups } from '@/lib/timesheets/timesheetWeekUtils'
 import {
   TIMESHEETS_HUB_PATH,
@@ -244,6 +244,11 @@ export function TimesheetsHub() {
 
   if (surface === 'mine') {
     const subject = users.find((row) => row.id === user.id) || user
+    // Rulebook 1.11.0 `showsMyTimesheets`: no My Timesheets for a PAYE person; only periods with a self-employed day.
+    const minePastPeriods = pastPeriods.filter(
+      (period) => timesheetDayKeysForPeriod(subject, period.start, period.end, timeZone).length > 0
+    )
+    if (!showMine && minePastPeriods.length === 0 && !periodParam) return null
     return (
       <div className="space-y-5 pb-10">
         <TimesheetsNavBar
@@ -259,7 +264,7 @@ export function TimesheetsHub() {
             subject={subject}
             users={users}
             currentPeriod={currentPeriod}
-            pastPeriods={pastPeriods}
+            pastPeriods={minePastPeriods}
             invoicing={invoicing}
             runCopyPeriodLine={runCopy.periodLine}
             timeZone={timeZone}

@@ -368,20 +368,24 @@ function roleText(role: unknown): string {
 /** Operative mode: the `operativeMode` flag, the `operative` role, or a resolved role in operative mode. */
 function inOperativeMode(user: LeaveSelfBookUser | null | undefined): boolean {
   if (!user) return false
+  // 1.11.0: an admin has no operative mode.
+  if (isAdminOutsideOperativeMode(user)) return false
   const role = roleObject(user.role)
   if (role?.isOperativeMode === true) return true
   return flagOn(user, 'operativeMode') || roleText(user.role) === 'operative'
 }
 
 /**
- * Admin or super admin, not in operative mode: `isSuperAdmin` / `adminAccess` (top level or `permissions`), the
- * `admin` / `super_admin` role, or a resolved role with `isAdmin` / `isSuperAdmin`. Same people as firestore.rules
- * `adminLikeUser` without `isOperativeProfile`.
+ * Admin or super admin: `isSuperAdmin` / `adminAccess` (top level or `permissions`), the `admin` / `super_admin`
+ * role, or a resolved role with `isAdmin` / `isSuperAdmin`. Same people as firestore.rules `adminLikeUser`. 1.11.0
+ * (owner decisions round 3): an admin has no operative mode — a stored `operativeMode` flag on an admin is ignored
+ * (`effectivePermissions` reads it off), so the name keeps its meaning for every admin. A resolved role whose
+ * `isOperativeMode` is set without an admin flag is not an admin.
  */
 export function isAdminOutsideOperativeMode(user: LeaveSelfBookUser | null | undefined): boolean {
-  if (!user || inOperativeMode(user)) return false
+  if (!user) return false
   const role = roleObject(user.role)
-  if (role && (role.isAdmin === true || role.isSuperAdmin === true)) return true
+  if (role) return role.isAdmin === true || role.isSuperAdmin === true
   const named = roleText(user.role)
   return (
     flagOn(user, 'isSuperAdmin') ||

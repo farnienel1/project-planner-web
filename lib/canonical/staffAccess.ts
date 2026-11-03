@@ -591,6 +591,8 @@ export function jobQueryPlan(
  */
 export type BookingQuery =
   | { collection: BookingPermissionCollection; kind: 'all' }
+  /** 1.11.0: every booking of one job kind (`jobCollection == value`), for a manager with that kind's toggle. */
+  | { collection: BookingPermissionCollection; kind: 'jobCollection'; field: 'jobCollection'; op: '=='; value: WorkCatalogue }
   | { collection: BookingPermissionCollection; kind: 'job'; jobId: string; field: 'projectId' | 'locationId'; op: 'in'; values: string[] }
   | { collection: BookingPermissionCollection; kind: 'own'; field: 'operativeId' | 'userId'; op: 'in' | '=='; values: string[] }
 
@@ -611,8 +613,10 @@ export type BookingQueryPlan = {
 export const ENFORCED_READS_ACTIVE = false
 
 /**
- * Who reads every booking: admins and super admins outside operative mode, and managers with either job toggle (a
- * booking does not say which kind its job is, and the rules cannot look up every job of a kind per query).
+ * Who reads every booking (whole collections). Enforced (1.11.0): admins and super admins outside operative mode
+ * only — a manager with a Projects / Small works toggle reads that kind's bookings by `jobCollection`, never a whole
+ * collection (a booking stored without `jobCollection` is read only by admins, its job's managers and the people it
+ * books). While `ENFORCED_READS_ACTIVE` is false (1.10.1): every admin and manager, as before 1.10.0.
  */
 export function readsEveryBooking(
   viewer: JobAccessViewer | null | undefined,
@@ -624,19 +628,23 @@ export function readsEveryBooking(
   if (role.isOperativeMode) return false
   if (role.isSuperAdmin || role.isAdmin) return true
   if (!role.isManager) return false
-  if (!enforced) return true
-  return viewer.toggles?.projects === true || viewer.toggles?.smallWorks === true
+  return !enforced
 }
 
 /**
- * The booking queries an app runs for the viewer (rulebook §17):
- *   - `readsEveryBooking`: `bookings`, `managerSiteBookings` and `subcontractorBookings`, whole collections;
- *   - other managers: per visible job (`visibleJobIds`, the jobs their job queries returned) one query per
- *     collection — `bookings` / `subcontractorBookings` `projectId in`, `managerSiteBookings` `locationId in` — with
- *     every spelling of that job id (`jobIdQueryValues`, `JOBS_PER_BOOKING_QUERY`); plus their own bookings;
- *   - operatives: their own bookings only.
- * Own bookings: `bookings` `operativeId in` `ownBookingIds` (the account's `bookingIdsForAccount`, else its ids),
- * `OWN_BOOKING_IDS_PER_QUERY` per query, and for managers `managerSiteBookings` `userId == <uid>`.
+ * The booking queries an app runs for the viewer (rulebook §17; 1.11.0 by job kind):
+ *   - `readsEveryBooking` (admins; every manager while `ENFORCED_READS_ACTIVE` is false): `bookings`,
+ *     `managerSiteBookings` and `subcontractorBookings`, whole collections;
+ *   - a manager with the Projects or Small works toggle: per collection one `jobCollection == <kind>` query for each kind
+ *     they have the toggle for;
+ *   - managers: per job in `visibleJobIds` one query per collection — `bookings` / `subcontractorBookings`
+ *     `projectId in`, `managerSiteBookings` `locationId in` — with every spelling of that job id (`jobIdQueryValues`,
+ *     `JOBS_PER_BOOKING_QUERY`). Pass the jobs of the kinds they have no toggle for (the results of `jobQueryPlan`'s
+ *     `managed` queries); a job of a toggled kind passed here is queried too (its bookings saved before the
+ *     `jobCollection` backfill are found that way);
+ *   - everyone with a role: their own bookings — `bookings` `operativeId in` `ownBookingIds` (the account's
+ *     `bookingIdsForAccount`, else its ids), `OWN_BOOKING_IDS_PER_QUERY` per query, and for managers
+ *     `managerSiteBookings` `userId == <uid>`.
  */
 export function bookingQueryPlan(
   viewer: JobAccessViewer | null | undefined,
@@ -656,6 +664,12 @@ export function bookingQueryPlan(
   const isManager = !role.isOperativeMode && role.isManager
   const queries: BookingQuery[] = []
   if (isManager) {
+    for (const kind of JOB_QUERY_COLLECTIONS) {
+      if (!seesEveryJob(role, kind, viewer.toggles ?? null)) continue
+      for (const collection of BOOKING_PERMISSION_COLLECTIONS) {
+        queries.push({ collection, kind: 'jobCollection', field: 'jobCollection', op: '==', value: kind })
+      }
+    }
     const seen = new Set<string>()
     for (const raw of visibleJobIds || []) {
       const jobId = typeof raw === 'string' ? raw.trim() : ''
@@ -766,4 +780,49 @@ export function isPersonInWarningScope(
   if (ids.some((id) => idKey(id) !== '' && scope.personIds.includes(idKey(id)))) return true
   const key = String(email ?? '').trim().toLowerCase()
   return key !== '' && scope.personEmails.includes(key)
+}
+
+// MARK: - Job kind (1.11.0)
+
+/** `jobType` values that mean small works on a job read without its collection (older imports). */
+function jobTypeIsSmallWorks(jobType: unknown): boolean {
+  return String(jobType ?? '').trim().toLowerCase().replace(/[\s_-]/g, '') === 'smallworks'
+}
+
+/**
+ * Whether a job is a project or a small works job (rulebook §16, §17; 1.11.0). The collection decides: a document in
+ * `projects` is a project and a document in `smallWorks` is a small works job, whatever its `jobType` says (a project
+ * whose job type is "Small Works" stays a project). Only when the collection is not known (a job passed around
+ * without it) does `jobType` decide. Every list, picker, permission (`seesEveryJob`, `canSeeJob`, `canCreateJob`),
+ * booking `jobCollection` and save path uses this — never `jobType` alone.
+ */
+export function jobKind(
+  doc: { jobType?: unknown } | Record<string, unknown> | null | undefined,
+  collection?: string | null
+): WorkCatalogue {
+  if (collection === 'projects' || collection === 'smallWorks') return collection
+  return jobTypeIsSmallWorks((doc as { jobType?: unknown } | null | undefined)?.jobType) ? 'smallWorks' : 'projects'
+}
+
+/**
+ * Job ids stored in both `projects` and `smallWorks` (older iOS builds could create such a pair). Both documents are
+ * kept and each shows in its own list (`jobKind`); this lists them (stored case of the project id, without case
+ * de-duplicated) so the owner can decide which to keep. A booking on such an id gets `jobCollection` from neither
+ * (`jobCollectionForJobId` returns null) and is reported by the backfill.
+ */
+export function jobIdsInBothCollections(
+  projectIds: ReadonlyArray<string> | null | undefined,
+  smallWorkIds: ReadonlyArray<string> | null | undefined
+): string[] {
+  const small = new Set((smallWorkIds || []).map((id) => String(id ?? '').trim().toLowerCase()).filter(Boolean))
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const raw of projectIds || []) {
+    const id = String(raw ?? '').trim()
+    const key = id.toLowerCase()
+    if (!id || seen.has(key) || !small.has(key)) continue
+    seen.add(key)
+    out.push(id)
+  }
+  return out
 }

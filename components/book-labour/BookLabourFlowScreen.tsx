@@ -4,6 +4,7 @@
 
 'use client'
 
+import { jobKind } from '@/lib/canonical/staffAccess'
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuthStore } from '@/lib/stores/authStore'
@@ -26,7 +27,7 @@ import {
   type OrgPayrollTimePolicy,
   type ScheduleLocationPick,
 } from '@/lib/settings/organizationSettings'
-import { isSmallWorksJobType, normalizeBookingStatus } from '@/lib/ios-parity/enums'
+import { normalizeBookingStatus } from '@/lib/ios-parity/enums'
 import { bookingOccupiesDay } from '@/lib/canonical'
 import { samePersonBookingIds } from '@/lib/bookings/bookingPeople'
 import { dateFromDayKey, dayKey, parseHhMm } from '@/lib/ios-parity/londonTime'
@@ -268,7 +269,7 @@ export function BookLabourFlowScreen({
         else setPhase({ kind: 'pickProject', smallWorks: phase.returnRoute.projectList })
         break
       case 'pickSlotOperative':
-        setPhase({ kind: 'pickProject', smallWorks: isSmallWorksJobType(phase.project.jobType) })
+        setPhase({ kind: 'pickProject', smallWorks: jobKind(phase.project, phase.project.collection) === 'smallWorks' })
         break
       case 'pickCustomManager':
         setPhase({
@@ -685,7 +686,7 @@ export function BookLabourFlowScreen({
             onSlot={(slot) =>
               void savePartyBookings({
                 slot,
-                locationType: isSmallWorksJobType(phase.project.jobType) ? 'small_work' : 'project',
+                locationType: jobKind(phase.project, phase.project.collection) === 'smallWorks' ? 'small_work' : 'project',
                 locationId: phase.project.id,
               })
             }
@@ -708,7 +709,7 @@ export function BookLabourFlowScreen({
                 validateCustomAndSave(phase.locationType, phase.locationId, phase.customLocationName)
               } else {
                 validateCustomAndSave(
-                  isSmallWorksJobType(phase.project.jobType) ? 'small_work' : 'project',
+                  jobKind(phase.project, phase.project.collection) === 'smallWorks' ? 'small_work' : 'project',
                   phase.project.id
                 )
               }

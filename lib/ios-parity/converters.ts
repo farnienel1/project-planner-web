@@ -10,7 +10,7 @@ import { Timestamp, deleteField } from 'firebase/firestore'
 import { isAnonymisedDeletedProfile } from '@/lib/canonical/userRosterSegment'
 import { assignedQualificationWriteFields } from '@/lib/canonical/operativeQualifications'
 import { currencySymbol, DEFAULT_CURRENCY_CODE } from '@/lib/canonical/money'
-import { bookingWriteFields, parseBookingDocument, parseManagerSiteBookingDocument } from '@/lib/canonical/bookings'
+import { bookingJobCollectionFields, bookingWriteFields, parseBookingDocument, parseManagerSiteBookingDocument } from '@/lib/canonical/bookings'
 import { parseHolidayDocument } from '@/lib/canonical/holidayDocument'
 import { parseJobDocument } from '@/lib/canonical/workDocumentReaders'
 import { parseNotificationDocument } from '@/lib/canonical/recordsDocuments'
@@ -349,6 +349,7 @@ export function parseBooking(
     isBreakRemoved: row.isBreakRemoved,
     otMultiplierOverride: row.otMultiplierOverride,
     bookingGroupId: row.bookingGroupId,
+    ...(row.jobCollection ? { jobCollection: row.jobCollection } : {}),
     createdAt: row.createdAtMs != null ? new Date(row.createdAtMs) : new Date(),
     updatedAt: row.updatedAtMs != null ? new Date(row.updatedAtMs) : new Date(),
     organizationId,
@@ -373,6 +374,7 @@ export function serializeBooking(booking: Booking): Record<string, unknown> {
     isBreakRemoved: booking.isBreakRemoved === true,
     otMultiplierOverride: booking.otMultiplierOverride ?? undefined,
     bookingGroupId: booking.bookingGroupId ?? undefined,
+    jobCollection: booking.jobCollection ?? undefined,
     createdAtMs: createdAt.getTime(),
     updatedAtMs: Date.now(),
   })
@@ -418,6 +420,7 @@ export function parseManagerSiteBooking(
     workEndTime: row.workEndTime,
     isBreakRemoved: row.isBreakRemoved,
     bookingGroupId: row.bookingGroupId,
+    ...(row.jobCollection ? { jobCollection: row.jobCollection } : {}),
     createdAt: row.createdAtMs != null ? new Date(row.createdAtMs) : new Date(),
     updatedAt: row.updatedAtMs != null ? new Date(row.updatedAtMs) : new Date(),
     organizationId,
@@ -463,6 +466,9 @@ export function serializeManagerSiteBooking(
   payload.customLocationName = v.customLocationName?.trim() ? v.customLocationName : deleteField()
   payload.workStartTime = v.workStartTime?.trim() ? v.workStartTime : deleteField()
   payload.workEndTime = v.workEndTime?.trim() ? v.workEndTime : deleteField()
+  // Rulebook 1.11.0 `bookingJobCollectionFields`: a job-linked booking carries its job's collection; none otherwise.
+  const kind = bookingJobCollectionFields({ collection: 'managerSiteBookings', jobCollection: booking.jobCollection, locationType: v.locationType })
+  payload.jobCollection = kind.jobCollection ?? deleteField()
   if (booking.bookingGroupId == null) {
     if (booking.bookingGroupId === null) payload.bookingGroupId = deleteField()
   } else if (booking.bookingGroupId.trim()) {

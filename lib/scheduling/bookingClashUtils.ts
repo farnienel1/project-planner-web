@@ -1,3 +1,4 @@
+import { jobKind } from '@/lib/canonical/staffAccess'
 import type { Booking, Operative, Project, User } from '@/types'
 import { UserRole } from '@/types'
 import type { ScheduleDateSlot } from '@/lib/scheduling/scheduleUtils'
@@ -13,7 +14,7 @@ function formatLondonDay(date: Date): string {
     year: 'numeric',
   }).format(date)
 }
-import { isActiveBookingStatus, isSmallWorksJobType } from '@/lib/ios-parity/enums'
+import { isActiveBookingStatus } from '@/lib/ios-parity/enums'
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import { DEFAULT_PAYROLL_POLICY } from '@/lib/settings/organizationSettings'
 import {
@@ -152,7 +153,7 @@ export function clashEntryFromOperativeBooking(
     bookingId: booking.id,
     jobNumber: project?.jobNumber,
     siteName: project?.siteName,
-    isSmallWorks: project ? isSmallWorksJobType(project.jobType) : false,
+    isSmallWorks: project ? jobKind(project, project.collection) === 'smallWorks' : false,
     locationLabel: project ? `${project.jobNumber} ${project.siteName}`.trim() : 'Project',
     timeLabel: clock,
     startMinutes: iv.start,

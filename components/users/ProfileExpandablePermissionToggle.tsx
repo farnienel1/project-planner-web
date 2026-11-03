@@ -121,3 +121,41 @@ export function PermissionToggleList({
     </>
   )
 }
+
+/**
+ * Rulebook 1.11.0 `permissionToggleRows`: the rows Add User, its summary and Edit User show on both apps. A row that is
+ * not `editable` is shown with its value and greyed out; tapping it shows `lockedMessage`.
+ */
+export function PermissionRowsList({
+  rows,
+  onChange,
+  disabled,
+  excludeFields,
+  lockedMessage,
+  onLocked,
+}: {
+  rows: ReadonlyArray<{ field: string; label: string; help: string; visible: boolean; editable: boolean; value: boolean }>
+  onChange: (patch: Partial<UserPermissions>) => void
+  disabled?: boolean
+  excludeFields?: string[]
+  lockedMessage?: string
+  onLocked?: (message: string) => void
+}) {
+  return (
+    <>
+      {rows
+        .filter((row) => row.visible && !excludeFields?.includes(row.field))
+        .map((row) => (
+          <ProfileExpandablePermissionToggle
+            key={row.field}
+            def={{ key: row.field as PermissionToggleDef['key'], title: row.label, description: row.help }}
+            checked={row.value}
+            onChange={(checked) => onChange({ [row.field]: checked } as Partial<UserPermissions>)}
+            disabled={disabled || !row.editable}
+            lockedMessage={!row.editable && !disabled ? lockedMessage : undefined}
+            onLocked={onLocked}
+          />
+        ))}
+    </>
+  )
+}

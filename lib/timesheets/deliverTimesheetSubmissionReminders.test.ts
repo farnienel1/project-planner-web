@@ -33,7 +33,7 @@ function user(partial: Partial<User> & Pick<User, 'id' | 'employmentType'>): Use
   } as User
 }
 
-test('timesheet submission reminders go to people who submit timesheets, not inactive PAYE staff', () => {
+test('1.11.0: timesheet submission reminders go to self-employed people only, never PAYE or inactive', () => {
   const now = new Date('2026-10-17T08:00:00+01:00')
   assert.equal(
     receivesTimesheetSubmissionReminder(user({ id: 'se', employmentType: 'self_employed' }), now, 'Europe/London'),
@@ -45,13 +45,12 @@ test('timesheet submission reminders go to people who submit timesheets, not ina
       now,
       'Europe/London'
     ),
-    true
+    false
   )
-  // Rulebook 1.10.0 `timesheetParticipant` (§8 `defaultTimesheetsEnabled`): a PAYE operative with the toggle not
-  // stored takes part; switched off, or a PAYE manager, does not.
+  // Rulebook 1.11.0 `timesheetParticipant`: PAYE has no timesheet path, whatever the toggle or operative mode.
   assert.equal(
     receivesTimesheetSubmissionReminder(user({ id: 'paye-op', employmentType: 'paye' }), now, 'Europe/London'),
-    true
+    false
   )
   assert.equal(
     receivesTimesheetSubmissionReminder(user({ id: 'paye-off', employmentType: 'paye', timesheetsEnabled: false }), now, 'Europe/London'),

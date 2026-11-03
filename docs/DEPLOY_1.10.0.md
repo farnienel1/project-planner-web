@@ -1,5 +1,7 @@
 # Deploying rulebook 1.10.0
 
+> **Superseded by `docs/DEPLOY_1.11.0.md`.** Use that file: it covers 1.10.0, 1.10.1 and 1.11.0 in one order.
+
 1.10.0 enforces job and booking **reads** in the Firestore rules (RULEBOOK §17). A manager without the Projects /
 Small works toggle can read a job only when its `managerUserIds` holds their account id. Jobs saved before 1.10.0 do
 not have that field, so the backfill must run **before** the rules are deployed. If it does not, those managers lose

@@ -1,8 +1,8 @@
+import { jobKind } from '@/lib/canonical/staffAccess'
 import { format } from 'date-fns'
 import type { Booking, Operative, Project, User } from '@/types'
 import { UserRole } from '@/types'
 import { dayKey, londonMidnight } from '@/lib/ios-parity/londonTime'
-import { isSmallWorksJobType } from '@/lib/ios-parity/enums'
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import { DEFAULT_PAYROLL_POLICY } from '@/lib/settings/organizationSettings'
 import {
@@ -50,7 +50,7 @@ export function clashEntryFromManagerBooking(
     managerBookingId: booking.id,
     jobNumber: isProject ? project?.jobNumber : undefined,
     siteName: isProject ? project?.siteName : undefined,
-    isSmallWorks: isProject && project ? isSmallWorksJobType(project.jobType) : false,
+    isSmallWorks: isProject && project ? jobKind(project, project.collection) === 'smallWorks' : false,
     locationLabel,
     timeLabel: clock,
     startMinutes: iv.start,

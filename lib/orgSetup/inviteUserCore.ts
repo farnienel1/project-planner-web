@@ -25,6 +25,8 @@ export type InviteUserCoreInput = {
   surname: string
   mobileNumber?: string
   permissions: UserPermissions
+  /** Rulebook 1.11.0: the Add User level, stored on the invitation (`invitationCreateFields` `role`). */
+  role?: 'admin' | 'manager' | 'operative'
   assignedManagerUserId?: string
   assignedManagerUserIds?: string[]
   dayRate?: number
@@ -178,6 +180,7 @@ export async function inviteUserCore(input: InviteUserCoreInput): Promise<Invite
     surname: input.surname,
     employmentType: input.employmentType,
     permissions: permissionsToFirestoreMap(input.permissions),
+    role: input.role,
     createdAt: Timestamp.now(),
     mobileNumber: input.mobileNumber,
     assignedManagerUserIds: normalizeLineManagerIds(input.assignedManagerUserIds, input.assignedManagerUserId),

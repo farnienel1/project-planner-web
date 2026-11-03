@@ -77,9 +77,67 @@ export type CanonicalBooking = {
   bookingGroupId?: string
   createdAtMs?: number
   updatedAtMs?: number
+  /** The collection the booking's job is stored in (1.11.0, `jobCollection`); absent on older bookings. */
+  jobCollection?: BookingJobCollection
   /** False for an id iOS cannot hold in a Swift UUID (for example a Firebase user id). */
   operativeIdIsUuid: boolean
   projectIdIsUuid: boolean
+}
+
+// MARK: - The job kind on a booking (1.11.0, owner decisions round 3)
+
+/** `projects` or `smallWorks`: the collection a booking's job is stored in. */
+export const BOOKING_JOB_COLLECTIONS = ['projects', 'smallWorks'] as const
+export type BookingJobCollection = (typeof BOOKING_JOB_COLLECTIONS)[number]
+
+/**
+ * A stored or given job kind as `projects` | `smallWorks`, from any spelling either app uses (`projects`,
+ * `project`, `smallWorks`, `small_work`, `small_works`, `smallworks`, `small-works`; any case). Null otherwise.
+ */
+export function normalizeBookingJobCollection(raw: unknown): BookingJobCollection | null {
+  const value = String(raw ?? '').trim().toLowerCase().replace(/[\s_-]/g, '')
+  if (value === 'projects' || value === 'project') return 'projects'
+  if (value === 'smallworks' || value === 'smallwork') return 'smallWorks'
+  return null
+}
+
+/**
+ * The collection a job id belongs to, given the ids of the projects and small works the app has (any letter case):
+ * `projects`, `smallWorks`, or null when it is in neither (or, ambiguously, in both). Used to fill `jobCollection` on
+ * a booking write and by the backfill.
+ */
+export function jobCollectionForJobId(
+  jobId: unknown,
+  jobs: { projects?: ReadonlyArray<string> | null; smallWorks?: ReadonlyArray<string> | null } | null | undefined
+): BookingJobCollection | null {
+  const key = String(jobId ?? '').trim().toLowerCase()
+  if (!key) return null
+  const inProjects = (jobs?.projects || []).some((id) => String(id ?? '').trim().toLowerCase() === key)
+  const inSmallWorks = (jobs?.smallWorks || []).some((id) => String(id ?? '').trim().toLowerCase() === key)
+  if (inProjects === inSmallWorks) return null
+  return inProjects ? 'projects' : 'smallWorks'
+}
+
+/**
+ * `jobCollection` to write on a booking (rulebook §16, §17; 1.11.0): every labour, subcontractor and job-linked
+ * manager site booking carries the collection its job is stored in, so the security rules can limit reads by kind
+ * without reading the job. `jobCollection` given (or the kind of the job the app booked onto) wins; a manager site
+ * booking falls back to its `locationType` (`project` → `projects`, `small_work` → `smallWorks`); a manager site
+ * booking with no job (office, working from home, site survey, custom) never carries one. `{}` when unknown.
+ */
+export function bookingJobCollectionFields(input: {
+  collection: 'bookings' | 'managerSiteBookings' | 'subcontractorBookings' | string
+  jobCollection?: unknown
+  locationType?: unknown
+}): { jobCollection?: BookingJobCollection } {
+  if (input?.collection === 'managerSiteBookings') {
+    const type = String(input.locationType ?? '').trim()
+    if (type !== 'project' && type !== 'small_work') return {}
+    const kind = normalizeBookingJobCollection(input.jobCollection) ?? (type === 'project' ? 'projects' : 'smallWorks')
+    return { jobCollection: kind }
+  }
+  const kind = normalizeBookingJobCollection(input?.jobCollection)
+  return kind ? { jobCollection: kind } : {}
 }
 
 export type BookingParseResult =
@@ -255,6 +313,8 @@ export function parseBookingDocument(
   if (bookingGroupId) booking.bookingGroupId = bookingGroupId
   if (createdAtMs != null) booking.createdAtMs = createdAtMs
   if (updatedAtMs != null) booking.updatedAtMs = updatedAtMs
+  const jobCollection = normalizeBookingJobCollection(row.jobCollection)
+  if (jobCollection) booking.jobCollection = jobCollection
   return { ok: true, booking, repairs }
 }
 
@@ -272,6 +332,8 @@ export type CanonicalBookingInput = {
   isBreakRemoved?: boolean | null
   otMultiplierOverride?: number | null
   bookingGroupId?: string | null
+  /** The job's collection (`projects` | `smallWorks`), 1.11.0 — written as `jobCollection`. */
+  jobCollection?: string | null
   createdAtMs: number
   updatedAtMs: number
 }
@@ -324,6 +386,7 @@ export function bookingWriteFields(input: CanonicalBookingInput): BookingWriteRe
   if (workEndTime) fields.workEndTime = workEndTime
   if (otMultiplierOverride != null) fields.otMultiplierOverride = otMultiplierOverride
   if (bookingGroupId) fields.bookingGroupId = bookingGroupId
+  Object.assign(fields, bookingJobCollectionFields({ collection: 'bookings', jobCollection: input.jobCollection }))
   return { ok: true, fields }
 }
 
@@ -532,6 +595,8 @@ export type CanonicalManagerSiteBooking = {
   workEndTime?: string
   isBreakRemoved: boolean
   bookingGroupId?: string
+  /** 1.11.0: the job's collection for a job-linked booking (stored `jobCollection`, else from `locationType`). */
+  jobCollection?: BookingJobCollection
   createdAtMs?: number
   updatedAtMs?: number
 }
@@ -594,5 +659,7 @@ export function parseManagerSiteBookingDocument(
   if (bookingGroupId) booking.bookingGroupId = bookingGroupId
   if (createdAtMs != null) booking.createdAtMs = createdAtMs
   if (updatedAtMs != null) booking.updatedAtMs = updatedAtMs
+  const kind = bookingJobCollectionFields({ collection: 'managerSiteBookings', jobCollection: row.jobCollection, locationType })
+  if (kind.jobCollection) booking.jobCollection = kind.jobCollection
   return { ok: true, booking, repairs }
 }

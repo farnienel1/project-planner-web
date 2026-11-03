@@ -2672,7 +2672,7 @@
       "expected": false
     },
     {
-      "name": "lineManagerRequired: an admin in operative mode does",
+      "name": "lineManagerRequired: 1.11.0 an admin has no operative mode, so a stray flag does not make one required",
       "function": "lineManagerRequired",
       "args": [
         {
@@ -2684,7 +2684,7 @@
           }
         }
       ],
-      "expected": true
+      "expected": false
     },
     {
       "name": "lineManagerRequired: an inactive person is not checked",
@@ -4480,7 +4480,7 @@
       ]
     },
     {
-      "name": "leaveApproverIds: a legacy operative with no line manager goes to the admins only",
+      "name": "leaveApproverIds: a legacy operative with no line manager goes to the admins only (1.11.0: an admin with a stray operative-mode flag is an admin)",
       "function": "leaveApproverIds",
       "args": [
         {
@@ -4667,11 +4667,12 @@
       "expected": [
         "ADMIN",
         "ADMIN_LM",
-        "SA"
+        "SA",
+        "ADMIN_OP"
       ]
     },
     {
-      "name": "leaveApproverIds: an admin with no line manager goes to the other admins",
+      "name": "leaveApproverIds: an admin with no line manager goes to the other admins (1.11.0: an admin with a stray operative-mode flag is an admin)",
       "function": "leaveApproverIds",
       "args": [
         {
@@ -4857,7 +4858,8 @@
       ],
       "expected": [
         "ADMIN_LM",
-        "SA"
+        "SA",
+        "ADMIN_OP"
       ]
     },
     {
@@ -5426,7 +5428,7 @@
       "expected": false
     },
     {
-      "name": "timesheetSelfSigned: an admin in operative mode is not",
+      "name": "timesheetSelfSigned: 1.11.0 an admin with a stray operative-mode flag is (admins have no operative mode)",
       "function": "timesheetSelfSigned",
       "args": [
         {
@@ -5610,7 +5612,7 @@
           }
         ]
       ],
-      "expected": false
+      "expected": true
     },
     {
       "name": "canSelfBookAnnualLeave: an admin with no line manager saves approved",
@@ -7136,7 +7138,7 @@
       ]
     },
     {
-      "name": "timesheetSubmittedRecipients: never the subject under an old id",
+      "name": "timesheetSubmittedRecipients: never the subject under an old id (1.11.0: an admin with a stray operative-mode flag is an admin)",
       "function": "timesheetSubmittedRecipients",
       "args": [
         {
@@ -7330,11 +7332,12 @@
       "expected": [
         "ADMIN",
         "ADMIN_LM",
-        "SA"
+        "SA",
+        "ADMIN_OP"
       ]
     },
     {
-      "name": "timesheetSubmittedRecipients: no line manager goes to admins",
+      "name": "timesheetSubmittedRecipients: no line manager goes to admins (1.11.0: an admin with a stray operative-mode flag is an admin)",
       "function": "timesheetSubmittedRecipients",
       "args": [
         {
@@ -7521,7 +7524,8 @@
       "expected": [
         "ADMIN",
         "ADMIN_LM",
-        "SA"
+        "SA",
+        "ADMIN_OP"
       ]
     },
     {
@@ -8786,7 +8790,7 @@
       ]
     },
     {
-      "name": "holidayRequestRecipients: legacy no line manager goes to admins",
+      "name": "holidayRequestRecipients: legacy no line manager goes to admins (1.11.0: an admin with a stray operative-mode flag is an admin)",
       "function": "holidayRequestRecipients",
       "args": [
         "LEGACY",
@@ -8964,7 +8968,8 @@
       "expected": [
         "ADMIN",
         "ADMIN_LM",
-        "SA"
+        "SA",
+        "ADMIN_OP"
       ]
     },
     {
@@ -10426,7 +10431,7 @@
       "expected": "Choose the bank holidays for Ireland."
     },
     {
-      "name": "1.4.0 company activity goes to active admins outside operative mode, not the actor",
+      "name": "1.4.0 company activity goes to active admins outside operative mode, not the actor (1.11.0: an admin with a stray operative-mode flag is an admin)",
       "function": "companyActivityRecipients",
       "args": [
         "A1",
@@ -10473,11 +10478,12 @@
         ]
       ],
       "expected": [
-        "A2"
+        "A2",
+        "A4"
       ]
     },
     {
-      "name": "1.4.0 company activity from a manager reaches both admins",
+      "name": "1.4.0 company activity from a manager reaches both admins (1.11.0: an admin with a stray operative-mode flag is an admin)",
       "function": "companyActivityRecipients",
       "args": [
         "M1",
@@ -10525,7 +10531,8 @@
       ],
       "expected": [
         "A1",
-        "A2"
+        "A2",
+        "A4"
       ]
     },
     {

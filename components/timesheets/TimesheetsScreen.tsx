@@ -41,7 +41,7 @@ import {
   timesheetExportFileName,
 } from '@/lib/timesheets/timesheetExport'
 import { buildTimesheetInvoicePdf, timesheetPdfBlob } from '@/lib/timesheets/invoicePdf'
-import { shouldAppearInOperativeTimesheetRoster } from '@/lib/timesheets/timesheetPayrollPolicy'
+import { shouldAppearInOperativeTimesheetRoster, timesheetDayKeysForPeriod } from '@/lib/timesheets/timesheetPayrollPolicy'
 import { jsonAuthHeaders } from '@/lib/security/clientAuthHeaders'
 import { timesheetExportPath, uploadFile } from '@/lib/firebase/storageUtils'
 import { emptyDayRateHistory, type OperativeDayRateHistoryCollection } from '@/lib/timesheets/dayRateHistoryStorage'
@@ -333,6 +333,8 @@ export function TimesheetsScreen({
           extrasMode: 'export',
           standardDayHours: payrollPolicy.standardPaidHours,
           currencyCode: currency,
+          // Rulebook 1.11.0: only the self-employed days of the period reach the invoice.
+          timesheetDays: timesheetDayKeysForPeriod(member, periodStart, periodEnd, timeZone),
         })
         const includeTaxIds = exportIncludesSensitiveFields({
           requested: exportTaxIds,

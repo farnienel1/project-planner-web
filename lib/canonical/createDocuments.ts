@@ -44,6 +44,8 @@ export type InvitationCreateInput = {
   employmentType?: unknown
   /** The permissions map exactly as written on `users/{uid}.permissions`. */
   permissions: Record<string, unknown>
+  /** The level Add User chose (`admin` | `manager` | `operative`), 1.11.0. Else the kind its permissions give. */
+  role?: unknown
   createdAt: unknown
   mobileNumber?: unknown
   assignedManagerUserIds?: unknown
@@ -64,9 +66,18 @@ export type InvitationCreateInput = {
   annualLeaveYearAllowanceKey?: unknown
 }
 
+function inviteRoleFor(role: unknown, permissions: Record<string, unknown>): string {
+  const stored = text(role).toLowerCase()
+  if (stored === 'admin' || stored === 'manager' || stored === 'operative') return stored
+  if (permissions.adminAccess === true || permissions.isSuperAdmin === true) return 'admin'
+  if (permissions.operativeMode === true) return 'operative'
+  return 'manager'
+}
+
 /**
- * A new `invitations/{id}` document (§11, 1.9.0). Always: `email` (lower case), `organizationId`, `invitedBy`,
- * `firstName`, `surname`, `employmentType` (`paye` | `self_employed`), `permissions`, `inviteType: 'new_user'`,
+ * A new `invitations/{id}` document (§11, 1.9.0; `role` from 1.11.0). Always: `email` (lower case), `organizationId`, `invitedBy`,
+ * `firstName`, `surname`, `employmentType` (`paye` | `self_employed`), `permissions`, `role` (1.11.0: the Add User
+ * level, else the kind its permissions give), `inviteType: 'new_user'`,
  * `createdAt`, `isUsed: false`. When given: `mobileNumber`; the line manager (`hasNoLineManager: true`, or
  * `assignedManagerUserIds` with `assignedManagerUserId` = the first and `hasNoLineManager: false`); one pay basis with
  * its amount (`readStoredRates`); `tradeTypePreset` / `tradeTypeCustom`; `timesheetsEnabled` for a manager or an
@@ -86,6 +97,7 @@ export function invitationCreateFields(input: InvitationCreateInput): Record<str
     surname: text(input.surname),
     employmentType: text(input.employmentType) === 'paye' ? 'paye' : 'self_employed',
     permissions,
+    role: inviteRoleFor(input.role, permissions),
     inviteType: 'new_user',
     createdAt: input.createdAt,
     isUsed: false,

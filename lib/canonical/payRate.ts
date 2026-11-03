@@ -314,6 +314,19 @@ export type PayRateChangeWrites =
   | { ok: true; rows: PayRateHistoryWriteFields[] }
   | { ok: false; reason: 'history_not_loaded'; message: string }
 
+/**
+ * Rulebook §8 (1.11.0): the sentence both apps show under the pay fields. A person is paid by the day or by the hour:
+ * a rate save writes exactly one basis and removes the other (`exclusiveRates`, `PAY_WRITE_GROUP`).
+ */
+export const PAY_BASIS_SAVE_NOTE =
+  'Pay is a day rate or an hourly rate, not both. Saving a day rate removes the hourly rate, and saving an hourly rate removes the day rate.'
+/** Under the day-rate field. */
+export const PAY_BASIS_DAY_HELP =
+  'Day rate pays a share of the standard day. This person cannot also have an hourly rate. Other people can still be paid hourly.'
+/** Under the hourly-rate field. */
+export const PAY_BASIS_HOURLY_HELP =
+  'Hourly pay is worked hours × this rate, including 15-minute blocks. This person cannot also have a day rate. Other people can still be on a day rate.'
+
 export const PAY_HISTORY_NOT_LOADED_MESSAGE = 'Pay history could not be loaded. Check your connection and save again.'
 
 /**

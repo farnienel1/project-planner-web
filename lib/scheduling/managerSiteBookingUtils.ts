@@ -20,6 +20,8 @@ export interface ManagerSiteBooking {
   workEndTime?: string
   isBreakRemoved?: boolean
   bookingGroupId?: string
+  /** Rulebook 1.11.0: the job's collection for a job-linked booking (`jobCollection`). */
+  jobCollection?: 'projects' | 'smallWorks'
   createdAt: Date
   updatedAt: Date
   organizationId?: string

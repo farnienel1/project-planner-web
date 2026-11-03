@@ -88,7 +88,7 @@ function booking(id: string, date: Date): Booking {
   }
 }
 
-test('payroll skips PAYE days after an employment-type transition', () => {
+test('1.11.0: a PAYE day after an employment-type transition produces no timesheet line', () => {
   const subject = user({
     id: 'u1',
     employmentType: 'paye',
@@ -108,12 +108,9 @@ test('payroll skips PAYE days after an employment-type transition', () => {
     timeZone: 'Europe/London',
   })
   assert.equal(summary.lineItems.some((line) => line.id.startsWith('op-b1')), true)
-  const paye = summary.lineItems.find((line) => line.id === 'op-b2-normal')
-  assert.ok(paye)
-  assert.equal(paye.isPayeDay, true)
-  assert.equal(paye.amount, 0)
-  assert.ok(paye.paidHours > 0)
-  assert.match(timesheetHoursRateLine(paye), /hours = £0\.00/)
+  // Rulebook 1.11.0 `timesheetDaysForPerson`: the PAYE day is not on the timesheet at all.
+  assert.equal(summary.lineItems.some((line) => line.id.startsWith('op-b2')), false)
+  assert.equal(summary.lineItems.some((line) => line.isPayeDay), false)
 })
 
 test('payroll uses historic day rate including explicit £0', () => {
