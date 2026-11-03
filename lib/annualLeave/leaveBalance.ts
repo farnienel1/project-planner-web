@@ -1,23 +1,20 @@
 import {
   annualLeaveBalance,
   applyRemainingOverride,
-  CANONICAL_TIME_ZONE,
   type AnnualLeaveBalance,
   type LeaveDayRecord,
 } from '@/lib/canonical'
 import { dayKeyInZone } from '@/lib/orgTime/zoneTime'
-
-function leaveDayKey(date: Date): string {
-  return dayKeyInZone(date, CANONICAL_TIME_ZONE)
-}
+import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 import type { HolidayBooking, User } from '@/types'
 import type { OrgAnnualLeaveDefaults } from '@/lib/settings/organizationSettings'
 import { DEFAULT_ANNUAL_LEAVE } from '@/lib/settings/organizationSettings'
 import { holidayBookingDayKeys } from '@/lib/annualLeave/holidayDayKeys'
 
-export function holidayToLeaveDay(booking: HolidayBooking): LeaveDayRecord {
+/** Day keys in the organisation business zone (rulebook §1), never London unless that is the organisation's zone. */
+export function holidayToLeaveDay(booking: HolidayBooking, timeZone?: string | null): LeaveDayRecord {
   return {
-    ...holidayBookingDayKeys(booking, CANONICAL_TIME_ZONE),
+    ...holidayBookingDayKeys(booking, organizationZoneOr(timeZone)),
     timeSlot: booking.timeSlot,
     status: booking.status,
   }
@@ -53,9 +50,12 @@ export function userLeaveBalance(input: {
   now?: Date
   /** Bank holidays inside a multi-day record are not taken from the allowance. */
   bankHolidayDayKeys?: ReadonlyArray<string>
+  /** Organisation business zone; defaults to the open organisation's zone. */
+  timeZone?: string | null
 }): AnnualLeaveBalance {
   const defaults = input.orgDefaults ?? DEFAULT_ANNUAL_LEAVE
   const user = input.user
+  const timeZone = organizationZoneOr(input.timeZone)
   return annualLeaveBalance({
     annualLeaveEnabled: user?.annualLeaveEnabled,
     daysPerYear: user?.annualLeaveDaysPerYear,
@@ -67,9 +67,10 @@ export function userLeaveBalance(input: {
     orgDaysPerYear: defaults.daysPerYear,
     orgStartMonth: defaults.startMonth,
     orgEndMonth: defaults.endMonth,
-    bookings: input.bookings.map(holidayToLeaveDay),
-    onDayKey: leaveDayKey(input.now ?? new Date()),
+    bookings: input.bookings.map((booking) => holidayToLeaveDay(booking, timeZone)),
+    onDayKey: dayKeyInZone(input.now ?? new Date(), timeZone),
     nonWorkingDayKeys: input.bankHolidayDayKeys ?? [],
+    timeZone,
   })
 }
 
