@@ -9211,3 +9211,30 @@ test('1.16.0: bookingLeaveConflicts lists annual leave on the days being booked'
   assert.equal(rulebook.bookingLeaveConflicts({ people: ['dup'], dayKeys: ['2026-11-03'], holidays, roster }).length, 1)
   assert.deepEqual(rulebook.bookingLeaveConflicts({ people: ['NOBODY'], dayKeys: ['2026-11-03'], holidays, roster }), [])
 })
+
+test('1.16.1: a blank H&S file link never overwrites a stored one; copies keep the one with a link', () => {
+  const stored = {
+    ramsDocuments: [{ id: 'R1', title: 'RAMS', fileURL: 'https://files/r1.pdf', fileName: 'r1.pdf' }],
+    otherDocuments: [{ id: 'D1', title: 'Doc', fileURL: 'https://files/d1.pdf', fileName: 'd1.pdf' }],
+  }
+  const write = rulebook.healthSafetyDocumentWriteFields(stored, {
+    ramsDocuments: [{ id: 'r1', title: 'RAMS v2', fileURL: '', fileName: null }],
+    otherDocuments: [{ id: 'D1', title: 'Doc', fileURL: 'https://files/d1-new.pdf', fileName: 'd1-new.pdf' }],
+  })
+  const rams = write.set.ramsDocuments as Array<Record<string, unknown>>
+  assert.equal(rams[0].fileURL, 'https://files/r1.pdf')
+  assert.equal(rams[0].fileName, 'r1.pdf')
+  assert.equal(rams[0].title, 'RAMS v2')
+  // A real replacement is written.
+  assert.equal((write.set.otherDocuments as Array<Record<string, unknown>>)[0].fileURL, 'https://files/d1-new.pdf')
+  assert.deepEqual([...rulebook.HEALTH_SAFETY_FILE_FIELDS], ['fileURL', 'fileName'])
+  const merged = rulebook.mergeHealthSafetyRowCopies(
+    [{ id: 'R1', fileURL: '' }, { id: 'R2', fileURL: 'a' }],
+    [{ id: 'r1', fileURL: 'https://files/r1.pdf', fileName: 'r1.pdf' }, { id: 'R2', fileURL: 'b' }, { id: 'R3' }]
+  )
+  assert.deepEqual(merged, [
+    { id: 'r1', fileURL: 'https://files/r1.pdf', fileName: 'r1.pdf' },
+    { id: 'R2', fileURL: 'a' },
+    { id: 'R3' },
+  ])
+})

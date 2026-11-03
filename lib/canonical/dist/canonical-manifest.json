@@ -1,7 +1,7 @@
 {
-  "rulebookVersion": "1.16.0",
-  "rulebookSha256": "58af4a8df45da3806f13cece3f47a0c90a1244b578bede889e4b252bec25e547",
-  "bundleSha256": "7f1174b2325288a4c7f8abb139d2bc2f29f6d366c95955829e065d85ef2fad41",
+  "rulebookVersion": "1.16.1",
+  "rulebookSha256": "905d39201c0c564346a02fc462a08ebd53dcad2988c5e0fed4c9f3d7ce320f55",
+  "bundleSha256": "586f1b0ba56e789c7f34d17cc4d0bfe4fcef046ac1842c94f4479574432ae5c8",
   "crossPlatformContractSha256": "d655dd7d122e53a1167569216d43cba7598670671310ca84c59ea7e46373b7e6",
   "exports": [
     "ACCOUNT_DELETE_WITH_COMPANY_MESSAGE",
@@ -67,6 +67,7 @@
     "FILE_REPORT_SURFACES",
     "FIRESTORE_IN_QUERY_LIMIT",
     "HEALTH_SAFETY_ARRAY_FIELDS",
+    "HEALTH_SAFETY_FILE_FIELDS",
     "HOLIDAY_DOCUMENT_KEYS",
     "HOLIDAY_REQUEST_SUBMITTED_TYPE",
     "HOLIDAY_STATUSES",
@@ -527,6 +528,7 @@
     "materialSendRecordCreateFields",
     "materialSendStatusWriteFields",
     "materialWhatsAppRows",
+    "mergeHealthSafetyRowCopies",
     "mergeJobTypeCatalogues",
     "mergeMinuteIntervals",
     "mergeOperativeQualificationWrite",

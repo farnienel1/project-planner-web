@@ -711,6 +711,8 @@ export {
   healthSafetyDocumentId,
   healthSafetyDocumentIds,
   healthSafetyDocumentWriteFields,
+  HEALTH_SAFETY_FILE_FIELDS,
+  mergeHealthSafetyRowCopies,
   healthSafetyIssueStatus,
   healthSafetySignatureKey,
   healthSafetySignatureWriteFields,

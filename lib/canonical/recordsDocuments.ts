@@ -460,6 +460,35 @@ export const HEALTH_SAFETY_ARRAY_FIELDS = ['talks', 'issues', 'signatures', 'ram
  */
 export type HealthSafetyArrayField = (typeof HEALTH_SAFETY_ARRAY_FIELDS)[number]
 
+/** File link fields on health & safety rows that a blank value never clears (1.16.1). */
+export const HEALTH_SAFETY_FILE_FIELDS = ['fileURL', 'fileName'] as const
+
+/**
+ * 1.16.1: one list of health & safety rows read from two copies of the same data (the job's nested copy and the
+ * `settings/healthSafety_*` document, or the two settings ids of `healthSafetyDocumentIds`): one row per id, the
+ * `primary` copy first; when only one copy of a row has a non-blank `fileURL`, that copy is kept (with `fileName`
+ * from the same copy), so a copy that lost its link never hides the download.
+ */
+export function mergeHealthSafetyRowCopies(
+  primary: ReadonlyArray<Record<string, unknown>> | null | undefined,
+  secondary: ReadonlyArray<Record<string, unknown>> | null | undefined
+): Record<string, unknown>[] {
+  const out: Record<string, unknown>[] = []
+  const index = new Map<string, number>()
+  for (const row of [...rows(primary), ...rows(secondary)]) {
+    const key = normalizeDocumentId(row.id)
+    if (!key) continue
+    const at = index.get(key)
+    if (at === undefined) {
+      index.set(key, out.length)
+      out.push(row)
+      continue
+    }
+    if (!text(out[at].fileURL) && text(row.fileURL)) out[at] = row
+  }
+  return out
+}
+
 export function healthSafetyDocumentWriteFields(
   stored: Record<string, unknown> | null | undefined,
   next: Partial<Record<HealthSafetyArrayField, ReadonlyArray<Record<string, unknown>>>>,
@@ -493,7 +522,13 @@ export function healthSafetyDocumentWriteFields(
     }
     out[field] = list.map((row) => {
       const merged: Record<string, unknown> = { ...(byId.get(normalizeDocumentId(row?.id)) ?? {}) }
-      for (const [key, value] of Object.entries(row || {})) if (value !== undefined) merged[key] = value
+      for (const [key, value] of Object.entries(row || {})) {
+        if (value === undefined) continue
+        // 1.16.1: a blank or missing file link never overwrites a stored one (a web serializer wrote `fileURL: ''`
+        // over stored download URLs, so RAMS lost their View link). Replacing a file sends the new non-blank value.
+        if (HEALTH_SAFETY_FILE_FIELDS.includes(key as never) && !text(value) && text(merged[key])) continue
+        merged[key] = value
+      }
       if (field === 'issues') merged.status = HS_ISSUE_STATUS_STORED[normalizeHSIssueStatus(merged.status)]
       if (field === 'signatures') merged.status = normalizeHSSignatureStatus(merged.status)
       return merged
