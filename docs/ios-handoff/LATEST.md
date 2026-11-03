@@ -1,4 +1,4 @@
-# iOS follow-on — rulebook 1.20.0
+# iOS follow-on — rulebook 1.20.1
 
 Generated 2026-11-03 by `npm run rulebook:handoff` in project-planner-web. Paste this whole file into the iOS agent.
 The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; never edit the iOS mirror by hand.
@@ -8,9 +8,9 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ║ FOLLOW-ON — paste into the iOS agent                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
-Rulebook version: 1.19.0 → 1.20.0
-Packed hash: 39d91bbdad7eefcfb62f4ef79a0b7c674aa8867391c7795f738b9c012f83b676
-Rulebook sha256: 13317c7dac4848c00d5f4226105fece2fea9380609073a7883237c6e02da9620
+Rulebook version: 1.20.0 → 1.20.1
+Packed hash: 1301236a48cf4966903ca48c5841fb3aa2a604327c5cbea974d3560409de811a
+Rulebook sha256: ea8f1b88c64b09824da62ddf364a016c43cccb99622affbf35a121275c780a25
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -20,27 +20,24 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
   web lib/canonical/cross-platform-contract.json    → iOS ProjectPlannerTests/CrossPlatformContract.json
 Contract sha256: c9e307b0604e78284baf3a4f217f0fb3ecc4b227aec957c901bdd93e4e31a306
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: derivedWeekdayPaidHours, leaveComparableInterval, leaveHalfDayLabel, leaveHalfDayWindows, weekdayPaidDayPreview, weekdayPaidHours, withDerivedWeekdayPaidHours
+Exports added: none
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bookingLeaveConflicts.ts, lib/canonical/bookingSlots.ts, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/engine.ts, lib/canonical/index.ts, lib/canonical/leaveCoverage.ts, lib/canonical/organizationSettings.ts, lib/canonical/parity-fixture.json, lib/canonical/payrollHours.ts, lib/canonical/payrollPolicySchedule.ts, lib/canonical/timesheetLines.ts
+Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/canonical.test.ts, lib/canonical/leaveCoverage.ts, lib/canonical/parity-fixture.json
 Done when:
-- [ ] Packed hash in iOS equals 39d91bbdad7eefcfb62f4ef79a0b7c674aa8867391c7795f738b9c012f83b676
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 13317c7dac4848c00d5f4226105fece2fea9380609073a7883237c6e02da9620)
-- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.20.0)
+- [ ] Packed hash in iOS equals 1301236a48cf4966903ca48c5841fb3aa2a604327c5cbea974d3560409de811a
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 ea8f1b88c64b09824da62ddf364a016c43cccb99622affbf35a121275c780a25)
+- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.20.1)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
 - [ ] Any disagreement traced to its first divergence — no copied screen number
 ```
 
-## What changed in 1.20.0
+## What changed in 1.20.1
 
-- The Monday–Friday working day is start, finish and the lunch break only (owner decision): no manual paid-hours figure for Monday–Friday on any platform; the paid day is finish − start − the unpaid break (`derivedWeekdayPaidHours`, `weekdayPaidHours`), shown live as "06:30–14:30 = 8h − 45 min unpaid break = 7h15m" (`weekdayPaidDayPreview`). Every 1.20.0 save writes `paidHoursDerived: true` and `standardPaidHours` = the derived value (`withDerivedWeekdayPaidHours`, inside the apply-now and schedule write fields); a policy without the flag keeps its stored `standardPaidHours`, so nothing saved earlier is re-priced. `validatePayrollTimePolicy` checks the derived day is 1–12 hours. Saturday / Sunday "counts as" hours are unchanged (§4.3, §8).
-- Weekday FULL DAY pay, day-rate units, the weekly-report day unit, invoices, Daily Overview, My Schedule and Home read `weekdayPaidHours`. Under a derived policy custom weekday hours are paid on the clock and never snapped to a half day (owner example: FULL DAY 7.25h, 06:30–12:00 4.75h, 11:00–14:30 3.5h, 06:30–16:30 7.25h + 2h OT) (§8).
-- Monday–Friday bookings offer Full day or Custom only (`WEEKDAY_TIME_SLOTS` = FULL DAY, CUSTOM; `allowedTimeSlotsOnDay`, `timeSlotAllowedOnDay`); stored AM / PM bookings are never rewritten, shown as stored and paid as before on the `halfDayWindows` split (§4.3, §8).
-- Annual leave halves split the working day at its exact middle, ignoring the break (`leaveHalfDayWindows`, `leaveHalfDayLabel`, `leaveComparableInterval`), for every leave display, `bookingLeaveConflicts`, `leaveCoverageRows` and timesheet leave lines (`timeRange`); leave day counting stays 0.5 / 1. On 07:30–16:00 the leave halves are now 07:30–11:45 / 11:45–16:00 (they were 07:30–12:00 / 12:30–16:00) (§5, §9).
-- Weekday unbooked labour covers the whole working day; the lunch-break window never needs covering (§5).
+- Leave cover (owner rule): on a half-leave day the lunch-break window never needs covering, as for unbooked labour — `leaveCoverageRows` takes the day's break window out of the other leave half before it counts what is missing. AM leave on 06:30–14:30 with lunch 10:00–10:45 plus a booking 11:00–14:30 → 10:45–11:00 (0.25h) missing; plus 10:45–14:30 → covered. 1.20.0 required the whole half (0.5h) (§5, §9).
+- Web Home dashboard "Hours logged" counts each booking's paid hours by the pay rule under the working hours in effect that day (`payrollHoursResult`, `weekdayPaidHours`), not a fixed 8h / 4h.
 
-## iOS work for 1.20.0
+## iOS work for 1.20.1
 
 No Firestore rules, index or Functions deploy comes with 1.20.0. Older iOS builds keep working: they read `standardPaidHours`, which every 1.20.0 save writes as the derived day, so their pay agrees; they still offer AM / PM (stored and paid as before) and their Working hours save writes a typed `standardPaidHours` without `paidHoursDerived` (priced on the typed figure, as before 1.20.0). Raise `minimumIosBuild` (§18) once the iOS build with 1.20.0 is out.
 
@@ -50,13 +47,15 @@ Swift screens and types to update (all through `CanonicalBusinessEngine`; no Swi
 2. **Weekday paid day everywhere** — every Swift read of `standardPaidHours` for a weekday (FULL DAY pay, day-rate divisor, weekly-report day units, invoices, Daily Overview, My Schedule, Home) becomes `weekdayPaidHours(policy)` of the policy in effect that day (`Core/TimesheetPayrollCollector.swift`, `Core/TimesheetWeeklyReportOverrideBuilder.swift`, `Views/InvoicingView.swift`, `Views/WeeklyReportView.swift`, `Core/WeeklyReportTimesheetFeed.swift`, `Views/MyScheduleView.swift`, `Views/DailyOverviewView.swift`). Booking hours stay `payrollHoursResult` (under a derived policy custom weekday hours are no longer snapped to a half day).
 3. **Booking slot chips** — every booking flow (`Views/BookLabourFlowView.swift`, `Views/ScheduleQuickAddSheet.swift`, `Views/BookingHoursEditSheet.swift`, `Views/ScheduleOperativeView.swift`, `Views/ScheduleSubcontractorView.swift`, `Views/SubcontractorBookingEditSheet.swift`, `Views/MyScheduleView.swift` self-booking, manager site bookings, quick-select chips, `Core/Rulebook+BookingSlots.swift`): the buttons come from `allowedTimeSlotsOnDay` — Monday–Friday now Full day and Custom only (`WEEKDAY_TIME_SLOTS`). Remove any hard-coded AM / PM button. An existing AM / PM booking's edit sheet still shows its own slot; it is never rewritten.
 4. **Leave halves** — call `leaveHalfDayWindows(policy)` (the exact middle of the day, ignoring the break: 06:30–14:30 → AM 06:30–10:30, PM 10:30–14:30) for every leave display: Daily Overview leave rows (`leaveHalfDayLabel`, e.g. "AM 06:30–10:30"), Schedule / My Schedule leave labels ("Annual Leave - AM (06:30–10:30)"), timesheet leave lines (`timesheetLeaveLines(…, dayPolicy)` → `timeRange`). `bookingLeaveConflicts` and `leaveCoverageRows` already use the leave halves inside the packed script; delete any Swift AM/PM leave window (`halfDayWindows` stays only for stored AM / PM bookings). Leave day counting (0.5 / 1) is unchanged.
-5. **Warnings** — nothing new to pass: `unbookedLabourRows` / `unbookedLabourRowsOnDay` (whole working day, lunch-break window never needs covering) and `leaveCoverageRows` (AM leave + 11:00–14:30 on 06:30–14:30 → 0.5h missing) change inside the script. Re-run the warning parity tests.
+5. **Warnings** — nothing new to pass: `unbookedLabourRows` / `unbookedLabourRowsOnDay` (whole working day, lunch-break window never needs covering) and `leaveCoverageRows` (lunch-break window never needs covering: AM leave + 11:00–14:30 on 06:30–14:30, lunch 10:00–10:45 → 0.25h missing) change inside the script. Re-run the warning parity tests.
 
 Parity fixture: 17 new `1.20.0 …` cases (owner examples through `weekdayPaidDayPreview`, `weekdayPaidHours`, `payrollHoursResult`, `leaveHalfDayWindows`, `leaveCoverageRows`, `allowedTimeSlotsOnDay`, `bookingLeaveConflicts`).
 
+1.20.1 (on top of 1.20.0): `leaveCoverageRows` no longer requires the lunch-break window to be booked on a half-leave day (AM leave + 11:00–14:30 on 06:30–14:30, lunch 10:00–10:45 → 0.25h missing). Inside the packed script; iOS only syncs and re-runs the parity tests. If iOS has a Home "hours booked" figure, it must come from `payrollHoursResult` under the day's policy, not a fixed 8h / 4h.
+
 ## New rulebook sections
 
-- 1.20.0 — 2026-11-03
+- 1.20.1 — 2026-11-03
 
 ## Workflow for the iOS agent
 

@@ -13250,7 +13250,7 @@
       "expected": []
     },
     {
-      "name": "1.20.0 owner: AM leave + 11:00–14:30 is missing 0.5h",
+      "name": "1.20.0 owner: AM leave + 11:00–14:30 is missing 0.25h (10:45–11:00; lunch never needs covering)",
       "function": "leaveCoverageRows",
       "args": [
         {
@@ -13346,15 +13346,15 @@
           },
           "missing": [
             {
-              "start": 630,
+              "start": 645,
               "end": 660
             }
           ],
-          "missingHours": 0.5,
+          "missingHours": 0.25,
           "bookedHours": 3.5,
           "severity": "medium",
           "title": "Half-day leave not covered",
-          "message": "Op One has AM annual leave on Wednesday 4 November. The PM (10:30–14:30) is only booked 11:00–14:30; 10:30–11:00 (0.5 hours) is not booked."
+          "message": "Op One has AM annual leave on Wednesday 4 November. The PM (10:30–14:30) is only booked 11:00–14:30; 10:45–11:00 (0.25 hours) is not booked."
         }
       ]
     },

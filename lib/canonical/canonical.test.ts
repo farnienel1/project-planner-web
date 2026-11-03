@@ -1035,9 +1035,10 @@ test('half-day leave with no booking at all reports the whole working half', () 
   assert.equal(rows.length, 1)
   assert.equal(rows[0].kind, 'leave_cover')
   assert.equal(rows[0].personKey, 'OP-RAY')
-  assert.deepEqual(rows[0].missing, [{ start: 705, end: 960 }])
-  assert.equal(rows[0].missingHours, 4.25)
-  assert.match(rows[0].message, /not booked for the PM \(11:45–16:00, 4.25 hours\)/)
+  // 1.20.0: the lunch-break window (12:00–12:30) never needs covering.
+  assert.deepEqual(rows[0].missing, [{ start: 705, end: 720 }, { start: 750, end: 960 }])
+  assert.equal(rows[0].missingHours, 3.75)
+  assert.match(rows[0].message, /not booked for the PM \(11:45–16:00, 3.75 hours\)/)
 })
 
 test('a booking inside the leave window is a clash; full-day leave clashes with any booking', () => {
@@ -10230,15 +10231,19 @@ function r120Leave(slot: string, bookings: Array<Record<string, unknown>>, polic
   })
 }
 
-test('1.20.0 owner: AM leave + 10:30–14:30 covers the day; + 11:00–14:30 is missing 0.5h; 10:00–18:00 AM leave + 14:00–18:00 covered', () => {
+test('1.20.0 owner: AM leave + 10:30–14:30 covers the day; + 11:00–14:30 is missing 0.25h (lunch never needs covering); 10:00–18:00 AM leave + 14:00–18:00 covered', () => {
   assert.deepEqual(r120Leave('AM', [r120Custom('10:30', '14:30')]), [])
   const short = r120Leave('AM', [r120Custom('11:00', '14:30')])
   assert.equal(short.length, 1)
   assert.equal(short[0].kind, 'leave_cover')
   assert.deepEqual(short[0].workingWindow, { start: 630, end: 870 })
-  assert.deepEqual(short[0].missing, [{ start: 630, end: 660 }])
-  assert.equal(short[0].missingHours, 0.5)
-  assert.match(short[0].message, /The PM \(10:30–14:30\) is only booked 11:00–14:30; 10:30–11:00 \(0.5 hours\) is not booked\./)
+  // The lunch-break window 10:00–10:45 never needs covering, so only 10:45–11:00 is missing.
+  assert.deepEqual(short[0].missing, [{ start: 645, end: 660 }])
+  assert.equal(short[0].missingHours, 0.25)
+  assert.equal(short[0].bookedHours, 3.5)
+  assert.match(short[0].message, /The PM \(10:30–14:30\) is only booked 11:00–14:30; 10:45–11:00 \(0.25 hours\) is not booked\./)
+  // Booked 10:45–14:30 (from the end of lunch): covered.
+  assert.deepEqual(r120Leave('AM', [r120Custom('10:45', '14:30')]), [])
   assert.deepEqual(r120Leave('AM', [r120Custom('14:00', '18:00')], r120PaidBreak()), [])
   // Purple rows: a booking overlapping the AM leave half (06:30–10:30) clashes; 10:30 onwards does not.
   const clash = r120Leave('AM', [r120Custom('10:00', '14:30')])

@@ -18,8 +18,8 @@
  * A stored named AM / PM booking is that leave half (`leaveComparableInterval`), so an AM booking and
  * PM leave never clash and "AM booking + PM leave" is silent; custom hours use their own clock times,
  * and any booking whose hours cover the whole working half is silent too. The working half must be
- * covered minute for minute (the break is ignored for leave halves): AM leave + 11:00–14:30 on
- * 06:30–14:30 is 10:30–11:00 (0.5 hours) not booked.
+ * covered minute for minute except the lunch-break window, which never needs covering (owner rule):
+ * AM leave + 11:00–14:30 on 06:30–14:30 with lunch 10:00–10:45 is 10:45–11:00 (0.25 hours) not booked.
  *
  * Plain data in, plain data out. Web wrappers and the iOS engine map their own types.
  */
@@ -32,6 +32,7 @@ import {
   leaveHalfDayWindows,
   mergeMinuteIntervals,
   namedSlotKind,
+  standardBreakWindow,
   subtractMinuteIntervals,
   type MinuteInterval,
   type StandardDayInput,
@@ -157,6 +158,7 @@ export function leaveCoverageRows(input: LeaveCoverageInput): LeaveCoverageRow[]
   const timeZone = zoneOrLondon(input.timeZone)
   // 1.20.0 §9: leave halves split the day at its exact middle (never the booking break split).
   const windows = leaveHalfDayWindows(input.day)
+  const lunch = standardBreakWindow(input.day)
   // Ids compare without case (`normalizeDocumentId`, rulebook §1); returned rows keep the stored ids.
   const excluded = new Set((input.excludedUserIds || []).map(idKey).filter(Boolean))
   const approvedLeave = input.leave.filter((record) => record.approved && record.startDayKey && record.endDayKey)
@@ -272,10 +274,17 @@ export function leaveCoverageRows(input: LeaveCoverageInput): LeaveCoverageRow[]
       const workingWindow = leaveSlot === 'PM' ? windows.am : windows.pm
       const workingLabel = leaveSlot === 'PM' ? 'AM' : 'PM'
       const covered = intervals.map((entry) => entry.interval)
-      const missing = subtractMinuteIntervals(workingWindow, covered)
+      // 1.20.0 (owner rule): time inside the lunch-break window never needs covering, on a half-leave day too.
+      const missing = subtractMinuteIntervals(workingWindow, lunch ? [...covered, lunch] : covered)
       if (missing.length === 0) continue
       const missingHours = hoursOf(missing)
-      const bookedInWorking = subtractMinuteIntervals(workingWindow, missing)
+      const bookedInWorking = mergeMinuteIntervals(
+        covered.flatMap((interval) => {
+          const start = Math.max(interval.start, workingWindow.start)
+          const end = Math.min(interval.end, workingWindow.end)
+          return end > start ? subtractMinuteIntervals({ start, end }, lunch ? [lunch] : []) : []
+        })
+      )
       const bookedHours = hoursOf(bookedInWorking)
       const message =
         bookedHours > 0
