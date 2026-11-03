@@ -149,7 +149,7 @@ Site address: ${address}`;
     "",
     thankYou,
     "",
-    context.userName
+    `${context.userName} via Project Planner`
   ].join("\n");
 }
 function plainTextAsSimpleHTML(plainText) {
@@ -315,7 +315,7 @@ function buildStyledEmail(context, isQuote) {
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="mr-panel" bgcolor="#f5f8fc" style="background:#f5f8fc;background-color:#f5f8fc;border:1px solid #e3e8ef;border-radius:12px;border-collapse:separate;">
           <tr><td class="mr-panel" bgcolor="#f5f8fc" style="padding:18px 20px;background-color:#f5f8fc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
             <div class="mr-label" style="font-size:11px;font-weight:700;letter-spacing:.08em;color:#5B6B82;text-transform:uppercase;margin-bottom:8px;">Kind regards</div>
-            <div class="mr-ink" style="font-size:17px;font-weight:800;color:#0b1220;line-height:22px;">${escapeHtml(context.userName)}</div>
+            <div class="mr-ink" style="font-size:17px;font-weight:800;color:#0b1220;line-height:22px;">${escapeHtml(context.userName)} <span class="mr-muted" style="font-size:13.5px;font-weight:600;color:#475569;">via Project Planner</span></div>
             <div class="mr-muted" style="font-size:13.5px;color:#475569;margin-top:2px;line-height:20px;">${escapeHtml(context.userCompany)}</div>
             <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin-top:10px;"><tr>
               ${contactPhoneHTML(context.userPhone)}

@@ -16,7 +16,9 @@
  *     Secret Manager, never in an app.
  *
  * Every message: from `"<organisation name>" <info@projectplanner.us>` (or "Project Planner"), never a caller-chosen
- * name or address; PDF / XLSX / CSV attachments only, 10 MB in total; one message per recipient; rate limited per
+ * name or address — except web server mail with `data.fromCaller`, which is `"<the signed-in caller's own profile
+ * name> via Project Planner" <info@projectplanner.us>`, and `data.ccCaller`, which copies that caller (CC) on the same
+ * message; PDF / XLSX / CSV attachments only, 10 MB in total; one message per recipient; rate limited per
  * sender (rateLimit.js).
  *
  * Dependencies are injected (index.js wires Firebase and Resend) so the rules are tested without either.
@@ -109,6 +111,17 @@ function callerProfile(decoded, user) {
 function fromHeader(orgName) {
   const display = sanitizeDisplayName(orgName) || DEFAULT_FROM_NAME
   return `"${display}" <${FROM_ADDRESS}>`
+}
+
+/**
+ * Web server mail sent on behalf of the signed-in user (material quote / order): `"<their name> via Project Planner"`
+ * from the verified FROM_ADDRESS. The name is the caller's own profile name (from their verified ID token and users
+ * document), never a name the request gives; the address is never theirs (SPF / DKIM / DMARC).
+ */
+function callerFromHeader(caller) {
+  const name = sanitizeDisplayName(caller && caller.displayName, 60)
+  if (!name || name === normalizeEmail(caller && caller.email)) return ''
+  return `"${name} via ${DEFAULT_FROM_NAME}" <${FROM_ADDRESS}>`
 }
 
 function serverHeaders(raw) {
@@ -239,11 +252,17 @@ function createSendEmailHandler(deps) {
     let replyTo = FROM_ADDRESS
     if (template.replyToCaller && caller && isValidEmail(caller.email)) replyTo = caller.email
     if (serverMode && isValidEmail(data.replyTo)) replyTo = normalizeEmail(data.replyTo)
-    const from = fromHeader(orgName)
+    // Web server mail may ask for the signed-in caller as the display name (`fromCaller`) and as CC (`ccCaller`): one
+    // message, the recipient in To and the sender in CC. Only the verified caller's own name and address are used.
+    const callerFrom = serverMode && data.fromCaller === true && caller ? callerFromHeader(caller) : ''
+    const from = callerFrom || fromHeader(orgName)
+    const cc =
+      serverMode && data.ccCaller === true && caller && isValidEmail(caller.email) ? [normalizeEmail(caller.email)] : []
     const extraHeaders = serverMode ? serverHeaders(data.headers) : undefined
 
     const results = []
     const failed = []
+    const failures = []
     for (let index = 0; index < recipients.length; index += 1) {
       const message = {
         from,
@@ -252,6 +271,7 @@ function createSendEmailHandler(deps) {
         html: rendered[index].html,
         reply_to: replyTo,
       }
+      if (cc.length && !cc.includes(normalizeEmail(recipients[index].email))) message.cc = cc
       if (rendered[index].text) message.text = rendered[index].text
       if (extraHeaders) message.headers = extraHeaders
       if (attachments.length) {
@@ -259,10 +279,11 @@ function createSendEmailHandler(deps) {
       }
       try {
         const sent = await deps.sendMessage(message)
-        results.push({ to: recipients[index].email, id: (sent && sent.id) || null })
+        results.push({ to: recipients[index].email, id: (sent && sent.id) || null, cc: message.cc || [] })
       } catch (error) {
         logger.error('sendEmail: provider refused a message', { template: templateName, orgId, error: String(error && error.message) })
         failed.push(recipients[index].email)
+        failures.push({ to: recipients[index].email, error: String((error && error.message) || error).slice(0, 300) })
       }
     }
 
@@ -273,11 +294,16 @@ function createSendEmailHandler(deps) {
       mode: serverMode ? 'server' : 'app',
       recipients: recipients.length,
       sent: results.length,
+      ids: results.map((row) => row.id),
+      cc: cc.length,
       attachments: attachments.length,
     })
 
-    if (results.length === 0) throw new HttpError(502, 'The email provider did not accept the message', { failed })
-    return { sent: failed.length === 0, sentCount: results.length, failed, results }
+    if (results.length === 0) {
+      const reason = failures[0] ? `: ${failures[0].error}` : ''
+      throw new HttpError(502, `The email provider did not accept the message${reason}`, { failed })
+    }
+    return { sent: failed.length === 0, sentCount: results.length, failed, results, from, ccSupported: true }
   }
 
   return async function sendEmailHandler(req, res) {
@@ -329,6 +355,7 @@ function resendSender(apiKey, fetchImpl = fetch) {
 
 module.exports = {
   ALLOWED_SERVER_HEADERS,
+  callerFromHeader,
   APP_CHECK_HEADER,
   FROM_ADDRESS,
   SERVER_KEY_HEADER,

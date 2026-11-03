@@ -9920,7 +9920,8 @@ test('1.19.0 (owner, round 2): each weekend day has its own break — length and
   assert.equal('breakMinutes' in (policyToFirestore119(fallback).saturday as Record<string, unknown>), false)
   assert.equal(parsePolicy112(policyToFirestore119(ownSat)).saturday.breakMinutes, 45)
   assert.equal(parsePolicy112({ saturday: { breakMinutes: 500 } }).saturday.breakMinutes, 120)
-  assert.equal(R112.validatePayrollTimePolicy(ownSat), null)
+  // 1.20.2: 12:15 is off the 30-minute step; stored before 1.20.2 it passes until edited (`previous`).
+  assert.equal(R112.validatePayrollTimePolicy(ownSat, ownSat), null)
   assert.equal(
     R112.validatePayrollTimePolicy({ ...ownSat, saturday: { ...ownSat.saturday, breakMinutes: 150 } }),
     'Saturday break length must be between 0 and 120 minutes.'
@@ -10186,7 +10187,8 @@ test('1.20.0: every working-hours save writes the derived day and paidHoursDeriv
 
 test('1.20.0: validation — the derived paid day must be 1–12 hours and the break inside the day', () => {
   const owner = r120Owner()
-  assert.equal(R112.validatePayrollTimePolicy(owner), null)
+  // 1.20.2: the owner's stored 10:00–10:45 break window is off the 30-minute step; it passes until edited.
+  assert.equal(R112.validatePayrollTimePolicy(owner, owner), null)
   assert.equal(
     R112.validatePayrollTimePolicy({ ...owner, standardDayStart: '10:00', standardDayEnd: '10:50', breakWindowStart: '10:10', breakWindowEnd: '10:20', unpaidBreakMinutes: 10 }),
     'The working day must give between 1 and 12 paid hours (finish − start − unpaid break).'
@@ -10195,14 +10197,14 @@ test('1.20.0: validation — the derived paid day must be 1–12 hours and the b
     R112.validatePayrollTimePolicy({ ...owner, standardDayStart: '06:00', standardDayEnd: '20:00', unpaidBreakMinutes: 0 }),
     'The working day must give between 1 and 12 paid hours (finish − start − unpaid break).'
   )
-  // 12h exactly is allowed.
-  assert.equal(R112.validatePayrollTimePolicy({ ...owner, standardDayStart: '06:00', standardDayEnd: '18:45' }), null)
+  // 12h exactly is allowed (1.20.2: times on the 30-minute step).
+  assert.equal(R112.validatePayrollTimePolicy({ ...owner, standardDayStart: '06:00', standardDayEnd: '18:30', unpaidBreakMinutes: 30 }, owner), null)
   assert.equal(
     R112.validatePayrollTimePolicy({ ...owner, breakWindowStart: '14:00', breakWindowEnd: '14:45' }),
     'Break window must fall within the working day.'
   )
   // A stored paid day the old check would refuse does not matter for a derived policy.
-  assert.equal(R112.validatePayrollTimePolicy({ ...owner, standardPaidHours: 0 }), null)
+  assert.equal(R112.validatePayrollTimePolicy({ ...owner, standardPaidHours: 0 }, owner), null)
 })
 
 test('1.20.0 owner: leave halves split the day at its exact middle, ignoring the break', () => {
@@ -10313,4 +10315,74 @@ test('1.20.0: timesheet leave lines carry the leave half clock range when given 
   ])
   // Without the day the lines are as before (no range).
   assert.equal(R112.timesheetLeaveLines([{ id: 'L1', startDayKey: R120_WED, endDayKey: R120_WED, timeSlot: 'AM', status: 'approved' }], { startDayKey: R120_WED, endDayKey: R120_WED }, R120_ZONE)[0].timeRange, undefined)
+})
+
+test('1.20.2: bookingRequestIdentity — a second weekend booking at the same place with other times is not "already booked"', () => {
+  const base = {
+    personId: 'USER-1',
+    dayKey: '2026-11-07',
+    timeSlot: 'CUSTOM_HOURS',
+    locationType: 'project',
+    locationId: 'JOB-1',
+    workStartTime: '07:30',
+    workEndTime: '12:00',
+    isBreakRemoved: false,
+  }
+  // Owner bug (3 Nov): the old screen identity left the times out, so this was treated as a duplicate and dropped.
+  assert.equal(R112.isSameBookingRequest(base, { ...base, workStartTime: '13:00', workEndTime: '16:00' }), false)
+  assert.equal(R112.isSameBookingRequest(base, { ...base, workEndTime: '12:30' }), false)
+  assert.equal(R112.isSameBookingRequest(base, { ...base, isBreakRemoved: true }), false)
+  // The same booking: ids and slot spellings without case, clock times as minutes.
+  assert.equal(
+    R112.isSameBookingRequest(base, { ...base, personId: 'user-1', locationId: 'job-1', timeSlot: 'CUSTOM', workStartTime: '7:30' }),
+    true
+  )
+  // Named slots ignore stored clock times; place and day still count.
+  const full = { ...base, timeSlot: 'FULL DAY', workStartTime: null, workEndTime: null }
+  assert.equal(R112.isSameBookingRequest(full, { ...full, timeSlot: 'FULL_DAY', workStartTime: '07:30', workEndTime: '16:00' }), true)
+  assert.equal(R112.isSameBookingRequest(full, { ...full, locationId: 'JOB-2' }), false)
+  assert.equal(R112.isSameBookingRequest(full, { ...full, dayKey: '2026-11-08' }), false)
+  assert.equal(R112.bookingRequestIdentity(base), R112.bookingRequestIdentity({ ...base }))
+})
+
+test('1.20.2: bookingHoursLabel — booking rows show the pay rule hours for the day, with the multiplier sum', () => {
+  const policy = r119Policy(r119SatWindow(false), r119SunAllHours(false))
+  const result = (dayKey: string, start: string, end: string) =>
+    R112.payrollHoursResult({
+      booking: { timeSlot: 'CUSTOM_HOURS', workStartTime: start, workEndTime: end, isBreakRemoved: true },
+      dayKey,
+      policy,
+      timeZone: R119_ZONE,
+    })
+  // Owner report: Sat and Sun 07:30–14:00 showed 6.5h (clock) everywhere.
+  assert.deepEqual(R112.bookingHoursLabel(result(R119_SAT, '07:30', '14:00')), { hours: 8, label: '8h' })
+  assert.deepEqual(R112.bookingHoursLabel(result(R119_SUN, '07:30', '14:00')), { hours: 13, label: '13h (6.5h × 2)' })
+  // Same figures as the booking breakdown (`weekendBookingBreakdown`).
+  const rows = R112.weekendBookingBreakdown(policy, [R119_SAT, R119_SUN], '07:30', '14:00', true, R119_ZONE)
+  assert.deepEqual(rows.map((row) => row.paidHoursEquivalent), [8, 13])
+  assert.deepEqual(R112.bookingHoursLabel(null), { hours: 0, label: '0h' })
+  assert.deepEqual(
+    R112.bookingHoursLabel({ totalPaidHours: 11, standardHours: 8, outsideHours: 2, outsideMultiplier: 1.5 }),
+    { hours: 11, label: '11h (8h + 2h × 1.5)' }
+  )
+  assert.deepEqual(R112.bookingHoursLabel({ totalPaidHours: 8, standardHours: 8, outsideHours: 0, outsideMultiplier: 1.5 }), { hours: 8, label: '8h' })
+})
+
+test('1.20.2: working hours use 30-minute steps; break length stays any minutes; stored off-step times pass until edited', () => {
+  const base = parsePolicy112(undefined)
+  assert.equal(R112.PAYROLL_POLICY_TIME_STEP_MINUTES, 30)
+  assert.equal(R112.validatePayrollTimePolicy({ ...base, standardDayStart: '07:30', standardDayEnd: '16:00' }), null)
+  assert.equal(R112.validatePayrollTimePolicy({ ...base, standardDayStart: '07:15' }), 'Working hours use 30-minute steps (e.g. 07:30).')
+  assert.equal(R112.validatePayrollTimePolicy({ ...base, breakWindowStart: '12:10', breakWindowEnd: '12:40' }), 'Working hours use 30-minute steps (e.g. 07:30).')
+  // Break length is any minutes 0–120 (owner example 45 min).
+  assert.equal(R112.validatePayrollTimePolicy({ ...base, unpaidBreakMinutes: 45 }), null)
+  // A weekend window and a weekend break window are on the step too.
+  const satWindow = { ...base.saturday, allHoursAtMultiplierMode: false, definedWindowStart: '07:30', definedWindowEnd: '13:15' }
+  assert.equal(R112.validatePayrollTimePolicy({ ...base, saturday: satWindow }), R112.PAYROLL_POLICY_TIME_STEP_MESSAGE)
+  // A time stored off the step before 1.20.2 is kept until it is edited.
+  const stored = { ...base, standardDayStart: '07:15' }
+  assert.equal(R112.validatePayrollTimePolicy({ ...stored, weekdayOutsideStandardMultiplier: 2 }, stored), null)
+  assert.equal(R112.validatePayrollTimePolicy({ ...stored, standardDayStart: '07:45' }, stored), R112.PAYROLL_POLICY_TIME_STEP_MESSAGE)
+  assert.equal(R112.payrollPolicyTimeOnStep('06:30'), true)
+  assert.equal(R112.payrollPolicyTimeOnStep('06:45'), false)
 })

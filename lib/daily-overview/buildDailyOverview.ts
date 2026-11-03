@@ -21,6 +21,8 @@ import {
   parseMinutes,
 } from '@/lib/scheduling/paidHours'
 import { DEFAULT_PAYROLL_POLICY, type OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
+import { bookingHoursLabel } from '@/lib/canonical/bookingSlots'
+import { bookingTimesText } from '@/lib/scheduling/paidHours'
 import type { Booking, HolidayBooking, Operative, Project, User } from '@/types'
 import type { ManagerLocationType, ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import {
@@ -87,15 +89,6 @@ export function initialsFrom(name: string): string {
   if (parts.length === 0) return '?'
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
   return `${parts[0][0]}${parts[1][0]}`.toUpperCase()
-}
-
-function slotLabel(slot?: string): string {
-  const s = String(slot || '').toUpperCase().replace(/_/g, ' ')
-  if (s === 'FULL DAY' || s === 'FULLDAY') return 'Full day'
-  if (s === 'AM' || s.includes('MORNING')) return 'Morning (AM)'
-  if (s === 'PM' || s.includes('AFTERNOON')) return 'Afternoon (PM)'
-  if (s === 'CUSTOM HOURS' || s === 'CUSTOMHOURS') return 'Custom hours'
-  return slot?.trim() || 'Full day'
 }
 
 function slotSortKey(slot?: string): number {
@@ -351,7 +344,9 @@ export function buildDailyOverview(params: {
       const op = operativeById.get(b.operativeId)
       // A booking is never hidden because its person cannot be named.
       const name = operativeDisplayName(op, b.operativeId, params.users, userIdAliases) || UNKNOWN_BOOKED_PERSON
-      const hours = estimatedWorkedHours({ ...b, policy: params.payrollPolicy ?? DEFAULT_PAYROLL_POLICY, date: params.day })
+      // Rulebook 1.20.2 (`bookingHoursLabel`): the pay rule's hours for the day, e.g. "13h (6.5h × 2)", never clock hours.
+      const shown = bookingHoursLabel(bookingPayrollHours({ ...b, policy: params.payrollPolicy ?? DEFAULT_PAYROLL_POLICY, date: params.day, timeZone: zone }))
+      const hours = shown.hours
       const linkedUser = op
         ? params.users.find((row) => row.email.trim().toLowerCase() === op.email.trim().toLowerCase())
         : userById.get(b.operativeId)
@@ -360,8 +355,8 @@ export function buildDailyOverview(params: {
         personKey: operativeIdentity(b.operativeId),
         name,
         initials: initialsFrom(name),
-        subtitle: slotLabel(String(b.timeSlot)),
-        pillText: `${overviewFormatHours(hours)}h`,
+        subtitle: bookingTimesText(b),
+        pillText: shown.label,
         hours,
         bookedOperativeNames: [],
         kind: 'operative',
@@ -384,14 +379,16 @@ export function buildDailyOverview(params: {
     for (const b of mgrs) {
       const user = userById.get(b.userId) || findUserByAnyId(params.users, b.userId, userIdAliases)
       const name = rosterDisplayName(user) || UNKNOWN_BOOKED_PERSON
-      const hours = estimatedWorkedHours({ ...b, policy: params.payrollPolicy ?? DEFAULT_PAYROLL_POLICY, date: params.day })
+      // Rulebook 1.20.2 (`bookingHoursLabel`): the pay rule's hours for the day, e.g. "13h (6.5h × 2)", never clock hours.
+      const shown = bookingHoursLabel(bookingPayrollHours({ ...b, policy: params.payrollPolicy ?? DEFAULT_PAYROLL_POLICY, date: params.day, timeZone: zone }))
+      const hours = shown.hours
       rows.push({
         id: `mgr-${b.id}`,
         personKey: managerIdentity(b.userId),
         name,
         initials: initialsFrom(name),
-        subtitle: slotLabel(b.timeSlot),
-        pillText: `${overviewFormatHours(hours)}h`,
+        subtitle: bookingTimesText(b),
+        pillText: shown.label,
         hours,
         bookedOperativeNames: [],
         kind: 'manager',
@@ -410,14 +407,16 @@ export function buildDailyOverview(params: {
       const firm = findSubcontractorFirm(params.subcontractors, b.subcontractorId)
       const people = resolveSubcontractorBookingPeople(b, firm)
       const name = formatSubcontractorBookingLabel(firm?.name || 'Subcontractor', people)
-      const hours = estimatedWorkedHours({ ...b, policy: params.payrollPolicy ?? DEFAULT_PAYROLL_POLICY, date: params.day })
+      // Rulebook 1.20.2 (`bookingHoursLabel`): the pay rule's hours for the day, e.g. "13h (6.5h × 2)", never clock hours.
+      const shown = bookingHoursLabel(bookingPayrollHours({ ...b, policy: params.payrollPolicy ?? DEFAULT_PAYROLL_POLICY, date: params.day, timeZone: zone }))
+      const hours = shown.hours
       rows.push({
         id: `sub-${b.id}`,
         personKey: `sub:${normalizeWorkId(b.subcontractorId)}`,
         name,
         initials: initialsFrom(firm?.name || name),
-        subtitle: slotLabel(b.timeSlot),
-        pillText: `${overviewFormatHours(hours)}h`,
+        subtitle: bookingTimesText(b),
+        pillText: shown.label,
         hours,
         bookedOperativeNames: people,
         kind: 'subcontractor',
@@ -521,13 +520,14 @@ export function buildDailyOverview(params: {
     ...dayManager.filter((b) => b.locationType === 'project' || b.locationType === 'small_work'),
     ...daySubs,
   ].map((b) => bookingPayrollHours({ ...b, policy, date: params.day }))
-  const labourHours = labourResults.reduce((sum, r) => sum + r.workedHours, 0)
+  // Rulebook 1.20.2: the day's hours are the pay rule's (`totalPaidHours`): standard hours, plus hours at the
+  // multiplier shown beside it — the same figures as each row.
+  const labourHours = labourResults.reduce((sum, r) => sum + r.totalPaidHours, 0)
   let standardWorkedHours = 0
   let overtimeWorkedHours = 0
   for (const r of labourResults) {
-    const split = workedHoursSplit(r)
-    standardWorkedHours += split.standardWorkedHours
-    overtimeWorkedHours += split.outsideWorkedHours
+    standardWorkedHours += r.standardHours
+    overtimeWorkedHours += r.outsideHours
   }
   const overtimeMultiplier =
     labourResults.filter((r) => r.outsideHours > 0).reduce((max, r) => Math.max(max, r.outsideMultiplier), 0) ||

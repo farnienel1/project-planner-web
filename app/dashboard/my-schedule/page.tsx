@@ -27,6 +27,7 @@ import { MyScheduleSelfBookingScreen } from '@/components/schedule/MyScheduleSel
 import { MyScheduleReadOnlyScreen } from '@/components/schedule/MyScheduleReadOnlyScreen'
 import { LoadingSpinner } from '@/components/dashboard/PageShell'
 import type { Booking } from '@/types'
+import { bookingRowText } from '@/lib/scheduling/bookingRowHours'
 
 function MySchedulePageContent() {
   const router = useRouter()
@@ -213,8 +214,8 @@ function MySchedulePageContent() {
         const title = project
           ? `${project.jobNumber ?? ''} ${project.siteName ?? ''}`.trim() || project.siteName || 'Scheduled work'
           : 'Scheduled work'
-        const slot = String(booking.timeSlot || 'Full day')
-        const detail = slot === 'FULL_DAY' || slot === 'FULL DAY' ? 'Full day' : slot
+        // Rulebook 1.20.2: the times and the pay rule's hours for that day ("Custom 07:30–14:00 · 8h").
+        const detail = bookingRowText(booking, booking.date, payrollPolicy)
         return { id: booking.id, date: booking.date, title, detail }
       })
   )

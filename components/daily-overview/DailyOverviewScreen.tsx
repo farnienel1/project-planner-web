@@ -5,6 +5,8 @@
 
 'use client'
 
+import { policyForBookingDate } from '@/lib/scheduling/bookingSlotRules'
+
 import { webJobAccessViewer } from '@/lib/access/readPlan'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
@@ -173,7 +175,9 @@ export function DailyOverviewScreen() {
         operatives,
         subcontractorBookings,
         subcontractors,
-        payrollPolicy,
+        // Rulebook 1.19.0 / 1.20.2: the working hours in effect on the day shown (history first), so the rows and the
+        // day's hours are the pay rule's for that day.
+        payrollPolicy: policyForBookingDate(day, payrollPolicy) ?? payrollPolicy,
         includeWeekendsForUnbookedLabour,
         excludedUserIdsFromUnbookedWarnings,
         weekendCoverage,

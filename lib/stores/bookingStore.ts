@@ -84,7 +84,11 @@ interface BookingState {
    * the whole archive (weekly report, timesheets history, job totals). The bound never moves later.
    */
   loadBookings: (organizationId: string, options?: LoadBookingsOptions) => Promise<void>
-  createBooking: (booking: Omit<Booking, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }) => Promise<void>
+  /**
+   * Rulebook 1.20.2: a create always gets a fresh document id and a plain create write — never a caller-chosen id or a
+   * merge, so a new booking can never land on (and overwrite fields of) an existing booking.
+   */
+  createBooking: (booking: Omit<Booking, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>
   updateBooking: (id: string, updates: Partial<Booking>) => Promise<void>
   deleteBooking: (id: string, organizationId: string) => Promise<void>
   getBookingsForDate: (date: Date) => Booking[]
@@ -144,7 +148,7 @@ export const useBookingStore = create<BookingState>((set, get) => ({
     const firestore = requireDb()
     const organizationId = bookingData.organizationId?.trim() || ''
     if (!organizationId) throw new Error('Missing organisation for booking')
-    const id = (bookingData.id?.trim() || newUppercaseUuid()).toUpperCase()
+    const id = newUppercaseUuid()
     const now = new Date()
     // Rulebook 1.11.0: every booking carries its job's collection (`jobCollection`).
     const jobCollection = bookingData.jobCollection ?? (await resolveBookingJobCollection(organizationId, bookingData.projectId)) ?? undefined
@@ -162,8 +166,7 @@ export const useBookingStore = create<BookingState>((set, get) => ({
     // Rulebook §1 / 1.9.0: a create carries write metadata (`writeMetadataFields`).
     await setDoc(
       doc(firestore, 'organizations', organizationId, 'bookings', id),
-      { ...payload, ...(writeMetadataFields(auth?.currentUser?.uid, 'web') ?? {}) },
-      { merge: true }
+      { ...payload, ...(writeMetadataFields(auth?.currentUser?.uid, 'web') ?? {}) }
     )
     if (!organizationContextStillCurrent(organizationId, captured)) return
     const { bookings } = get()

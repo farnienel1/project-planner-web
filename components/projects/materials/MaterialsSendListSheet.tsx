@@ -348,10 +348,23 @@ export function MaterialsSendListSheet({
           deliveryRequiredAt: materialOrderIncludesDeliveryRequired(type) ? deliveryAt.toISOString() : undefined,
         }),
       })
-      const payload = (await response.json().catch(() => ({}))) as { error?: string; sent?: number }
-      if (!response.ok) {
-        throw new Error(payload.error || 'Failed to send material list')
+      const payload = (await response.json().catch(() => ({}))) as {
+        error?: string
+        sent?: number
+        failures?: Array<{ email: string; reason: string }>
+        messageIds?: string[]
       }
+      if (!response.ok) {
+        const reason = payload.error || payload.failures?.[0]?.reason || `Failed to send material list (${response.status})`
+        toast(`Email not sent: ${reason}`)
+        throw new Error(reason)
+      }
+      // Owner (3 Nov): a recipient the email service refused is named, with the reason — never a silent success.
+      const partialFailures = payload.failures ?? []
+      if (partialFailures.length > 0) {
+        toast(`Not sent to ${partialFailures.map((row) => row.email).join(', ')}: ${partialFailures[0].reason}`)
+      }
+      if (payload.messageIds?.length) console.info('[materials/send] email ids', payload.messageIds)
 
       try {
         await saveSendRecord(organization.id, {
@@ -362,7 +375,7 @@ export function MaterialsSendListSheet({
           materialsDate: materialsDay,
           deliveryRequiredAt: materialOrderIncludesDeliveryRequired(type) ? deliveryAt : undefined,
           sentBy: senderName,
-          recipients: recipients.map((row) => ({
+          recipients: recipients.filter((row) => !partialFailures.some((failure) => failure.email === row.email.trim().toLowerCase())).map((row) => ({
             name: row.name,
             email: row.email,
             wholesalerName: row.wholesalerName,
@@ -385,7 +398,7 @@ export function MaterialsSendListSheet({
       } catch (persistErr: unknown) {
         console.error('[materials/send] email sent; history write failed', persistErr)
       }
-      setConfirmation({ requestType: type, itemCount: items.length, recipientCount: recipients.length })
+      setConfirmation({ requestType: type, itemCount: items.length, recipientCount: payload.sent ?? recipients.length })
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to send material list'
       if (/insufficient permissions|permission-denied/i.test(message)) {

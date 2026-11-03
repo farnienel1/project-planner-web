@@ -33,6 +33,7 @@ import { useHolidayStore } from '@/lib/stores/holidayStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { myScheduleLeaveRecords } from '@/lib/schedule/myScheduleLeave'
 import { policyForBookingDate } from '@/lib/scheduling/bookingSlotRules'
+import { bookingTimesText } from '@/lib/scheduling/bookingRowHours'
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import { DEFAULT_PAYROLL_POLICY } from '@/lib/settings/organizationSettings'
 import { dayKey } from '@/lib/ios-parity/londonTime'
@@ -106,7 +107,7 @@ function DayPill({
   )
 }
 
-function SlotPill({ slot }: { slot: string }) {
+function SlotPill({ slot, booking }: { slot: string; booking?: Pick<Booking, 'timeSlot' | 'workStartTime' | 'workEndTime'> }) {
   const s = (slot || '').toUpperCase()
   let color = 'bg-slate-100 text-slate-600'
   if (s.includes('FULL')) color = 'bg-indigo-50 text-indigo-700'
@@ -114,7 +115,7 @@ function SlotPill({ slot }: { slot: string }) {
   else if (s === 'PM' || s === 'AFTERNOON') color = 'bg-violet-50 text-violet-700'
   return (
     <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${color}`}>
-      {slotLabel(slot)}
+      {booking ? bookingTimesText(booking) : slotLabel(slot)}
     </span>
   )
 }
@@ -211,7 +212,7 @@ function BookingCard({
             </span>
           </div>
           <div className="mt-2 flex flex-wrap gap-1.5">
-            <SlotPill slot={String(booking.timeSlot)} />
+            <SlotPill slot={String(booking.timeSlot)} booking={booking} />
           </div>
         </div>
 
@@ -242,7 +243,7 @@ function BookingCard({
             </div>
             <div>
               <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Time slot</p>
-              <p className="mt-0.5 font-medium text-slate-800">{slotLabel(String(booking.timeSlot))}</p>
+              <p className="mt-0.5 font-medium text-slate-800">{bookingTimesText(booking)}</p>
             </div>
             {booking.bookedBy && (
               <div>

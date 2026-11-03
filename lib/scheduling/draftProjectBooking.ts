@@ -269,3 +269,22 @@ export function allDraftPeopleResolved(people: DraftBookingPerson[]): boolean {
   if (people.length === 0) return false
   return people.every((p) => !personHasPendingClashes(p) && personHasBookableDays(p))
 }
+
+/**
+ * Owner (3 Nov): going back to the dates step and changing the dates keeps the people already chosen. Rebuilding a
+ * person for the new dates recomputes every day's clashes; a ✓ (book anyway) or ✕ (drop) the booker already gave on a
+ * day that is still in the request and still clashes is kept. New days and days that no longer clash start fresh.
+ */
+export function carryDayDecisions(previous: DraftBookingPerson, rebuilt: DraftBookingPerson): DraftBookingPerson {
+  const dayStates = { ...rebuilt.dayStates }
+  for (const [key, state] of Object.entries(rebuilt.dayStates)) {
+    const before = previous.dayStates[key]
+    if (state === 'clash_pending' && (before === 'clash_accepted' || before === 'removed')) dayStates[key] = before
+  }
+  return { ...rebuilt, dayStates }
+}
+
+/** A person stays in the request while any day is bookable or still waiting for ✓ / ✕. */
+export function draftPersonStillListed(person: DraftBookingPerson): boolean {
+  return personHasBookableDays(person) || personHasPendingClashes(person)
+}

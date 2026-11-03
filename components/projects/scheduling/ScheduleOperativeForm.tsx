@@ -16,6 +16,8 @@ import { isExactDuplicateBooking } from '@/lib/scheduling/bookingClashUtils'
 import {
   allDraftPeopleResolved,
   buildDraftPersonDayStates,
+  carryDayDecisions,
+  draftPersonStillListed,
   isExactDuplicateManagerBooking,
   personHasBookableDays,
   personHasPendingClashes,
@@ -158,7 +160,9 @@ export function ScheduleOperativeForm({
   const rebuildDraftPeopleForNewSlots = (slots: ScheduleDateSlot[]) => {
     if (draftPeople.length > 0) {
       setDraftPeople((prev) =>
-        prev.map((draft) => rebuildDraftPerson(draft, slots)).filter(personHasBookableDays)
+        prev
+          .map((draft) => carryDayDecisions(draft, rebuildDraftPerson(draft, slots)))
+          .filter(draftPersonStillListed)
       )
     }
   }
@@ -344,19 +348,36 @@ export function ScheduleOperativeForm({
             wizardStep === 'dates' ||
             (wizardStep === 'pick-person' && slotsList.length > 0) ||
             (wizardStep === 'review' && draftPeople.length > 0)
+          // Owner (3 Nov): a reached step is a button — Dates goes back to change the dates; the people already
+          // chosen stay (their ✓ / ✕ kept where still valid, `carryDayDecisions`).
+          const enabled =
+            !saving &&
+            !active &&
+            (wizardStep === 'dates' ||
+              (wizardStep === 'pick-person' && slotsList.length > 0) ||
+              (wizardStep === 'review' && draftPeople.length > 0 && allDraftPeopleResolved(draftPeople)))
+          const go = () => {
+            setError(null)
+            setStep(wizardStep)
+          }
           return (
-            <span
+            <button
+              type="button"
               key={wizardStep}
+              onClick={go}
+              disabled={!enabled}
+              aria-current={active ? 'step' : undefined}
+              title={wizardStep === 'dates' && !active ? 'Change the dates' : undefined}
               className={`rounded-full px-3 py-1 text-xs font-semibold ${
                 active
                   ? 'bg-blue-600 text-white'
                   : reached
-                    ? 'bg-blue-50 text-blue-700'
+                    ? 'bg-blue-50 text-blue-700 hover:bg-blue-100'
                     : 'bg-slate-100 text-slate-400'
-              }`}
+              } disabled:cursor-default`}
             >
               {STEP_LABELS[wizardStep]}
-            </span>
+            </button>
           )
         })}
       </div>
@@ -397,6 +418,7 @@ export function ScheduleOperativeForm({
             setDraftPeople((prev) => prev.filter((p) => p.personId !== personId))
           }
           onAddAnother={goToPickPerson}
+          onChangeDates={goToDates}
         />
       )}
 

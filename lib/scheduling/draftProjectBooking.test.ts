@@ -215,3 +215,20 @@ test('a free person stays free when they have no overlapping bookings', () => {
 
   assert.equal(Object.values(draft.dayStates)[0], 'free')
 })
+
+test('carryDayDecisions keeps ✓ / ✕ on days still in the request and still clashing; new days start fresh', async () => {
+  const { carryDayDecisions, draftPersonStillListed } = await import('./draftProjectBooking.ts')
+  const base = { personId: 'P', kind: 'operative' as const, name: 'P', email: '', badge: '', clashByDay: {}, leaveByDay: {} }
+  const previous = { ...base, dayStates: { '2026-11-02': 'clash_accepted' as const, '2026-11-03': 'removed' as const, '2026-11-04': 'clash_accepted' as const } }
+  const rebuilt = { ...base, dayStates: { '2026-11-02': 'clash_pending' as const, '2026-11-03': 'clash_pending' as const, '2026-11-04': 'free' as const, '2026-11-05': 'clash_pending' as const } }
+  const carried = carryDayDecisions(previous, rebuilt)
+  assert.deepEqual(carried.dayStates, {
+    '2026-11-02': 'clash_accepted',
+    '2026-11-03': 'removed',
+    '2026-11-04': 'free',
+    '2026-11-05': 'clash_pending',
+  })
+  // A person whose only days wait for ✓ / ✕ stays listed after a date change.
+  assert.equal(draftPersonStillListed({ ...base, dayStates: { '2026-11-05': 'clash_pending' } }), true)
+  assert.equal(draftPersonStillListed({ ...base, dayStates: { '2026-11-05': 'removed' } }), false)
+})

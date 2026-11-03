@@ -64,6 +64,9 @@ import { useHolidayStore } from '@/lib/stores/holidayStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { myScheduleAnnualLeaveLabel, myScheduleLeaveRecords } from '@/lib/schedule/myScheduleLeave'
 import { useOrganizationDocument } from '@/lib/stores/organizationDocumentStore'
+import { bookingRequestIdentity } from '@/lib/canonical/bookingSlots'
+import { managerBookingIdentity, uniqueBookingsById } from '@/lib/scheduling/bookingRequestIdentity'
+import { bookingRowText } from '@/lib/scheduling/bookingRowHours'
 
 /** Labour booked onto this person from Book labour. Shown on the week, not removed from here. */
 export type AssignedScheduleBooking = {
@@ -76,18 +79,6 @@ export type AssignedScheduleBooking = {
 type JobFilter = 'all' | 'active' | 'upcoming' | 'completed'
 
 const selfBookInflight = new Set<string>()
-
-function bookingIdentity(booking: ManagerSiteBooking): string {
-  const day = format(startOfDay(booking.date), 'yyyy-MM-dd')
-  return [
-    booking.userId,
-    day,
-    booking.timeSlot,
-    booking.locationType,
-    booking.locationId || '',
-    (booking.customLocationName || '').trim().toLowerCase(),
-  ].join('|')
-}
 
 function BookColumn({
   title,
@@ -164,18 +155,6 @@ function StatusFilters({
   )
 }
 
-function uniqueBookings(rows: ManagerSiteBooking[]): ManagerSiteBooking[] {
-  const seen = new Set<string>()
-  const out: ManagerSiteBooking[] = []
-  for (const row of rows) {
-    const key = bookingIdentity(row)
-    if (seen.has(key)) continue
-    seen.add(key)
-    out.push(row)
-  }
-  return out
-}
-
 type TimeSlot = 'AM' | 'PM' | 'FULL_DAY' | 'CUSTOM_HOURS'
 
 const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
@@ -186,14 +165,9 @@ const SLOTS: { slot: TimeSlot; label: string }[] = [
   { slot: 'CUSTOM_HOURS', label: 'Custom hours' },
 ]
 
-function slotLabel(booking: ManagerSiteBooking): string {
-  if (booking.timeSlot === 'CUSTOM_HOURS' && booking.workStartTime && booking.workEndTime) {
-    return `${booking.workStartTime}–${booking.workEndTime}`
-  }
-  if (booking.timeSlot === 'AM') return 'AM'
-  if (booking.timeSlot === 'PM') return 'PM'
-  if (booking.timeSlot === 'FULL_DAY' || booking.timeSlot === 'FULL DAY') return 'Full day'
-  return booking.timeSlot || 'Full day'
+/** Rulebook 1.20.2: "Custom 07:30–14:00 · 13h (6.5h × 2)" — the times and the pay rule's hours for that day. */
+function slotLabel(booking: ManagerSiteBooking, policy?: OrgPayrollTimePolicy | null): string {
+  return bookingRowText(booking, booking.date, policy)
 }
 
 function locationStripe(type?: ManagerLocationType): string {
@@ -301,7 +275,9 @@ export function MyScheduleSelfBookingScreen({
 
   const myBookings = useMemo(() => {
     const mineIds = samePersonIds(userId, users, userIdAliases)
-    return uniqueBookings(managerSiteBookings.filter((b) => mineIds.has(b.userId)))
+    // Rulebook 1.20.2: one row per stored booking (by id). Folding by person/day/place hid a second weekend booking at
+    // the same job with other times, because weekend bookings are all custom hours.
+    return uniqueBookingsById(managerSiteBookings.filter((b) => mineIds.has(b.userId)))
   }, [managerSiteBookings, userId, users, userIdAliases])
 
   const myBookingsOn = (day: Date): ManagerSiteBooking[] =>
@@ -353,18 +329,29 @@ export function MyScheduleSelfBookingScreen({
     locationId?: string
     customLocationName?: string
   }) {
-    const keys = args.days.map(
-      (day) =>
-        `${userId}|${format(startOfDay(day), 'yyyy-MM-dd')}|${args.timeSlot}|${args.locationType}|${args.locationId || ''}|${(args.customLocationName || '').trim().toLowerCase()}`
-    )
+    // Rulebook 1.20.2 (`bookingRequestIdentity`): the request is the same booking only with the same custom times too.
+    const zone = organizationZoneOr()
+    const identityFor = (day: Date) =>
+      bookingRequestIdentity({
+        personId: userId,
+        dayKey: orgDayKey(day, zone),
+        timeSlot: args.timeSlot,
+        locationType: args.locationType,
+        locationId: args.locationId ?? null,
+        customLocationName: args.customLocationName ?? null,
+        workStartTime: args.timeSlot === 'CUSTOM_HOURS' ? customStart : null,
+        workEndTime: args.timeSlot === 'CUSTOM_HOURS' ? customEnd : null,
+        isBreakRemoved: args.timeSlot === 'CUSTOM_HOURS' ? breakRemoved : false,
+      })
+    const keys = args.days.map(identityFor)
     if (keys.some((key) => selfBookInflight.has(key))) return
     keys.forEach((key) => selfBookInflight.add(key))
     setBusy(true)
     try {
       let wrote = 0
       for (const day of args.days) {
-        const identity = `${userId}|${format(startOfDay(day), 'yyyy-MM-dd')}|${args.timeSlot}|${args.locationType}|${args.locationId || ''}|${(args.customLocationName || '').trim().toLowerCase()}`
-        const already = myBookingsOn(day).some((booking) => bookingIdentity(booking) === identity)
+        const identity = identityFor(day)
+        const already = myBookingsOn(day).some((booking) => managerBookingIdentity(booking, zone) === identity)
         if (already) continue
         await saveManagerSiteBooking(organizationId, {
           userId,
@@ -456,7 +443,7 @@ export function MyScheduleSelfBookingScreen({
           kind: 'double_booking' as const,
           personName: 'You',
           dayLabel: format(day, 'EEE d MMM yyyy'),
-          detail: `Already booked · ${existing.map((b) => `${slotLabel(b)} — ${locationName(b)}`).join(', ')}`,
+          detail: `Already booked · ${existing.map((b) => `${slotLabel(b, payrollPolicy)} — ${locationName(b)}`).join(', ')}`,
         },
       ]
     })
@@ -749,7 +736,7 @@ export function MyScheduleSelfBookingScreen({
                         ? {
                             role: 'button',
                             tabIndex: 0,
-                            'aria-label': `Edit booking: ${locationName(booking)}, ${slotLabel(booking)}`,
+                            'aria-label': `Edit booking: ${locationName(booking)}, ${slotLabel(booking, payrollPolicy)}`,
                             style: { cursor: 'pointer' },
                             onClick: (event: ReactMouseEvent) => {
                               event.stopPropagation()
@@ -766,7 +753,7 @@ export function MyScheduleSelfBookingScreen({
                         : {})}
                     >
                       <b>{locationName(booking)}</b>
-                      <span className="x">{slotLabel(booking)}</span>
+                      <span className="x">{slotLabel(booking, payrollPolicy)}</span>
                       <button
                         type="button"
                         className="btn xs ghost"

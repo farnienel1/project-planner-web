@@ -184,11 +184,11 @@ export const useManagerScheduleStore = create<ManagerScheduleState>((set, get) =
       next.jobCollection = booking.jobCollection ?? (await resolveBookingJobCollection(organizationId, booking.locationId)) ?? undefined
     }
     const payload = serializeManagerSiteBooking({ ...next, organizationId })
-    // Rulebook §1 / 1.9.0: a create carries write metadata (`writeMetadataFields`).
+    // Rulebook §1 / 1.9.0: a create carries write metadata (`writeMetadataFields`). 1.20.2: a fresh id and a plain
+    // create write (no merge), so it can never land on an existing booking.
     await setDoc(
       doc(firestore, 'organizations', organizationId, 'managerSiteBookings', id),
-      { ...payload, ...(writeMetadataFields(auth?.currentUser?.uid, 'web') ?? {}) },
-      { merge: true }
+      { ...payload, ...(writeMetadataFields(auth?.currentUser?.uid, 'web') ?? {}) }
     )
     const without = get().managerSiteBookings.filter((row) => row.id !== next.id)
     set({ managerSiteBookings: [...without, next] })

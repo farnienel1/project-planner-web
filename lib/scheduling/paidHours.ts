@@ -418,3 +418,12 @@ export function hoursBreakdown(input: BookingHoursInput): HoursBreakdown {
     lines,
   }
 }
+
+/** Rulebook 1.20.2: a booking row's times — "Custom 07:30–14:00" for custom hours with times, else the slot's name. */
+export function bookingTimesText(input: { timeSlot?: string | null; workStartTime?: string | null; workEndTime?: string | null }): string {
+  if (namedSlotKind(input.timeSlot ?? undefined) === 'custom') {
+    const range = formatClockRange(input.workStartTime, input.workEndTime, '–')
+    return range ? `Custom ${range}` : 'Custom hours'
+  }
+  return namedSlotLabel(input.timeSlot ?? undefined)
+}

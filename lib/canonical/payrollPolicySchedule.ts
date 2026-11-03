@@ -404,8 +404,68 @@ function validClock(value: unknown): number | null {
   return parseClockMinutes(raw)
 }
 
-/** Save check for a working-hours policy. Null when it is valid. */
-export function validatePayrollTimePolicy(policy: OrgPayrollTimePolicy): string | null {
+/**
+ * Rulebook 1.20.2 §4.3 (owner decision, 3 Nov): working-hours clock times — weekday start and finish, the break
+ * window, each weekend day's window and break window — are on a 30-minute step (:00 or :30). The break LENGTH stays
+ * any whole minutes 0–120 (e.g. 45). Booking custom times keep their own 15-minute step.
+ */
+export const PAYROLL_POLICY_TIME_STEP_MINUTES = 30
+export const PAYROLL_POLICY_TIME_STEP_MESSAGE = 'Working hours use 30-minute steps (e.g. 07:30).'
+
+/** Whether a working-hours clock time is on the 30-minute step. */
+export function payrollPolicyTimeOnStep(value: string | null | undefined): boolean {
+  const minutes = validClock(value)
+  return minutes != null && minutes % PAYROLL_POLICY_TIME_STEP_MINUTES === 0
+}
+
+/** Every working-hours clock time the policy uses, with a stable key (weekend rows only when that day uses them). */
+function payrollPolicyClockTimes(policy: OrgPayrollTimePolicy): Array<[string, string | null | undefined]> {
+  const times: Array<[string, string | null | undefined]> = [
+    ['standardDayStart', policy.standardDayStart],
+    ['standardDayEnd', policy.standardDayEnd],
+    ['breakWindowStart', policy.breakWindowStart],
+    ['breakWindowEnd', policy.breakWindowEnd],
+  ]
+  const days: Array<['saturday' | 'sunday', WeekendPayrollSettings | undefined]> = [['saturday', policy.saturday]]
+  if (!policy.sunday?.sameAsSaturday) days.push(['sunday', policy.sunday])
+  for (const [day, settings] of days) {
+    if (!settings) continue
+    if (!settings.allHoursAtMultiplierMode) {
+      times.push([`${day}.definedWindowStart`, settings.definedWindowStart])
+      times.push([`${day}.definedWindowEnd`, settings.definedWindowEnd])
+    }
+    if (settings.breakWindowStart != null) times.push([`${day}.breakWindowStart`, settings.breakWindowStart])
+    if (settings.breakWindowEnd != null) times.push([`${day}.breakWindowEnd`, settings.breakWindowEnd])
+  }
+  return times
+}
+
+/**
+ * 1.20.2: the step check. A stored time that is not on the step (saved before 1.20.2) is shown as stored and only
+ * checked once it is edited: pass the saved policy as `previous` and an unchanged time passes.
+ */
+function payrollPolicyTimeStepError(policy: OrgPayrollTimePolicy, previous?: OrgPayrollTimePolicy | null): string | null {
+  const before = new Map(previous ? payrollPolicyClockTimes(previous) : [])
+  for (const [key, value] of payrollPolicyClockTimes(policy)) {
+    if (value == null || String(value).trim() === '') continue
+    if (payrollPolicyTimeOnStep(value)) continue
+    const stored = before.get(key)
+    if (stored != null && validClock(stored) === validClock(value)) continue
+    return PAYROLL_POLICY_TIME_STEP_MESSAGE
+  }
+  return null
+}
+
+/**
+ * Save check for a working-hours policy. Null when it is valid. `previous` (1.20.2) is the saved policy, so a time
+ * stored off the 30-minute step before 1.20.2 is only refused once it is changed.
+ */
+export function validatePayrollTimePolicy(policy: OrgPayrollTimePolicy, previous?: OrgPayrollTimePolicy | null): string | null {
+  const error = validatePayrollTimePolicyFields(policy)
+  return error ?? payrollPolicyTimeStepError(policy, previous)
+}
+
+function validatePayrollTimePolicyFields(policy: OrgPayrollTimePolicy): string | null {
   const { paidHours, breakMinutes, multiplier } = PAYROLL_POLICY_LIMITS
   const clocks = [
     ['standardDayStart', 'Standard day start'],

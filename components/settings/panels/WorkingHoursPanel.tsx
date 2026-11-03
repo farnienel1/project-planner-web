@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useAuthStore } from '@/lib/stores/authStore'
 import {
   cancelScheduledPayrollPolicyChange,
@@ -27,6 +27,8 @@ import {
   weekdayPaidDayPreview,
   weekdayPaidHours,
   withDerivedWeekdayPaidHours,
+  PAYROLL_POLICY_TIME_STEP_MINUTES,
+  payrollPolicyTimeOnStep,
 } from '@/lib/canonical'
 import { BookingDayBreakdownRows } from '@/components/scheduling/BookingDayBreakdownRows'
 import { useApplyLiveWhenClean, useLiveOrganizationDetails } from '@/components/settings/useLiveOrganizationSettings'
@@ -40,8 +42,7 @@ import {
 } from '@/components/settings/SettingsDirty'
 import {
   PanelHeader,
-  SectionLabel,
-  SettingsCard,
+  Select,
   Input,
   FormField,
   SaveButton,
@@ -71,17 +72,49 @@ function minutesOf(value: string): number {
   return hours * 60 + minutes
 }
 
+/** 00:00, 00:30 … 23:30 — rulebook 1.20.2 `PAYROLL_POLICY_TIME_STEP_MINUTES`. */
+const STEP_TIMES: string[] = Array.from({ length: (24 * 60) / PAYROLL_POLICY_TIME_STEP_MINUTES }, (_, index) =>
+  formatClockMinutes(index * PAYROLL_POLICY_TIME_STEP_MINUTES)
+)
+
+/**
+ * Rulebook 1.20.2 §4.3: working-hours times are picked in 30-minute steps (:00 / :30). A time saved before 1.20.2 that
+ * is not on the step is shown as saved (and stays valid until it is changed).
+ */
 function TimeInput({ value, placeholder, onChange, label }: { value: string; placeholder: string; onChange: (value: string) => void; label: string }) {
+  const current = (value ?? '').trim()
+  const offStep = current !== '' && !payrollPolicyTimeOnStep(current)
   return (
-    <Input
-      value={value}
-      placeholder={placeholder}
-      inputMode="numeric"
-      maxLength={5}
+    <Select
+      value={current}
       aria-label={label}
       className="tabular-nums"
       onChange={(e) => onChange(e.target.value)}
-    />
+    >
+      {current === '' ? <option value="">{placeholder}</option> : null}
+      {offStep ? <option value={current}>{current} (saved)</option> : null}
+      {STEP_TIMES.map((time) => (
+        <option key={time} value={time}>
+          {time}
+        </option>
+      ))}
+    </Select>
+  )
+}
+
+/**
+ * Owner (3 Nov): one card per section with a dark navy header band (light and dark mode), so Mon–Fri, Saturday,
+ * Sunday, Overtime and Scheduled changes read as separate blocks. Design tokens only (`--navy`, `--card`, `--line`).
+ */
+function HoursSection({ title, description, children }: { title: string; description?: string; children: ReactNode }) {
+  return (
+    <section className="card mt-6 overflow-hidden first:mt-0" aria-label={title}>
+      <div className="bg-[var(--navy)] px-5 py-3">
+        <h2 className="text-[15.5px] font-bold leading-snug text-white">{title}</h2>
+        {description ? <p className="mt-0.5 text-[12.5px] leading-relaxed text-white/80">{description}</p> : null}
+      </div>
+      <div className="[&>*+*]:border-t [&>*+*]:border-[var(--line)]">{children}</div>
+    </section>
   )
 }
 
@@ -145,7 +178,10 @@ function WeekdayPaidDayLine({ policy }: { policy: OrgPayrollTimePolicy }) {
   return (
     <div className="p-5">
       <p className="text-[14px] font-medium text-[var(--ink)]">Paid hours for a full day</p>
-      <p className="mt-1 text-[13px] tabular-nums text-[var(--ink2)]" data-testid="weekday-paid-day">
+      <p
+        className="mt-2 rounded-xl border border-[var(--line)] bg-[var(--soft)] px-4 py-3 text-[17px] font-bold tabular-nums text-[var(--ink)]"
+        data-testid="weekday-paid-day"
+      >
         {valid ? weekdayPaidDayPreview(policy).line : 'Enter valid 24h times to see the paid day.'}
       </p>
       <p className="mt-1 text-[12px] text-[var(--ink3)]">Worked out from the start, finish and lunch break below.</p>
@@ -279,7 +315,8 @@ export function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
   function openSave() {
     if (!organization?.id) return
     // Rulebook 1.20.0 §4.3: the policy is saved with its weekday paid day derived (finish − start − unpaid break).
-    const validationError = validatePayrollTimePolicy(withDerivedWeekdayPaidHours(draft))
+    // 1.20.2: times on the 30-minute step; one saved off the step before 1.20.2 passes until it is changed.
+    const validationError = validatePayrollTimePolicy(withDerivedWeekdayPaidHours(draft), live.details?.payrollTimePolicy ?? null)
     if (validationError) {
       setError(validationError)
       return
@@ -468,35 +505,11 @@ export function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
           <SuccessBanner message={savedMessage} />
         </div>
       )}
-      {scheduled ? (
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-[var(--soft)] p-4">
-          <div>
-            <p className="text-[14px] font-semibold text-[var(--ink)]">Scheduled change</p>
-            <p className="text-[13px] text-[var(--ink2)]">
-              New working hours take effect on {formatPaymentRunDay(scheduled.effectiveFrom)}:{' '}
-              {scheduled.policy.standardDayStart}–{scheduled.policy.standardDayEnd}, {weekdayPaidHours(scheduled.policy)}h paid.
-            </p>
-          </div>
-          <button
-            type="button"
-            disabled={saving}
-            onClick={cancelScheduled}
-            className="rounded-xl px-3 py-2 text-[13px] font-semibold text-[var(--red)] hover:bg-[var(--card)] disabled:opacity-50"
-          >
-            Cancel scheduled change
-          </button>
-        </div>
-      ) : null}
-
       <SettingsFormBody state={loadState}>
-      <SettingsCard>
+      <HoursSection title="Monday to Friday" description="Your standard day and lunch break. Times are in 30-minute steps, e.g. 07:30.">
         <div className="p-5">
           <DayTimeline policy={draft} />
         </div>
-      </SettingsCard>
-
-      <SectionLabel label="Standard working day" description="Monday to Friday. Clock times use 24h format, e.g. 07:30." />
-      <SettingsCard>
         <div className="[display:grid] grid-cols-2 gap-4 p-5">
           <FormField label="Start time">
             <TimeInput label="Start time" value={draft.standardDayStart} placeholder="07:30" onChange={(value) => patch({ standardDayStart: value })} />
@@ -507,13 +520,12 @@ export function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
         </div>
         {/* Rulebook 1.20.0 §4.3: no manual paid hours Monday–Friday — the day is start, finish and the lunch break. */}
         <WeekdayPaidDayLine policy={draft} />
-      </SettingsCard>
-
-      <SectionLabel
-        label="Lunch break"
-        description={draft.breakPaid ? 'Paid — counts toward hours worked.' : 'Unpaid — taken off paid time on every booking unless removed.'}
-      />
-      <SettingsCard>
+        <div className="px-5 pt-4">
+          <p className="text-[14px] font-semibold text-[var(--ink)]">Lunch break</p>
+          <p className="text-[12.5px] text-[var(--ink3)]">
+            {draft.breakPaid ? 'Paid — counts toward hours worked.' : 'Unpaid — taken off paid time on every booking unless removed.'}
+          </p>
+        </div>
         <div className="p-5">
           <Segmented<'unpaid' | 'paid'>
             ariaLabel="Lunch break pay"
@@ -544,10 +556,9 @@ export function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
             <TimeInput label="Break window end" value={draft.breakWindowEnd} placeholder="12:30" onChange={(value) => patch({ breakWindowEnd: value })} />
           </FormField>
         </div>
-      </SettingsCard>
+      </HoursSection>
 
-      <SectionLabel label="Weekday overtime" description="Monday to Friday hours worked outside the standard day." />
-      <SettingsCard>
+      <HoursSection title="Overtime" description="Monday to Friday hours worked outside the standard day.">
         <div className="p-5">
           <MultiplierInput
             label="Overtime rate"
@@ -556,18 +567,16 @@ export function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
             onChange={(value) => patch({ weekdayOutsideStandardMultiplier: value })}
           />
         </div>
-      </SettingsCard>
+      </HoursSection>
 
-      <SectionLabel label="Saturday" description={weekendSummary(weekend('saturday'))} />
-      <SettingsCard>
+      <HoursSection title="Saturday" description={weekendSummary(weekend('saturday'))}>
         <div className="p-5">
           <WeekendDayPreview policy={draft} day="saturday" />
         </div>
         <div className="p-5">{weekendFields('saturday')}</div>
-      </SettingsCard>
+      </HoursSection>
 
-      <SectionLabel label="Sunday" description={sunday.sameAsSaturday ? 'Follows Saturday' : weekendSummary(sunday)} />
-      <SettingsCard>
+      <HoursSection title="Sunday" description={sunday.sameAsSaturday ? 'Follows Saturday' : weekendSummary(sunday)}>
         <div className="p-5">
           <ToggleRow
             title="Same as Saturday"
@@ -586,7 +595,33 @@ export function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
           <WeekendDayPreview policy={draft} day="sunday" />
         </div>
         {!sunday.sameAsSaturday ? <div className="p-5">{weekendFields('sunday')}</div> : null}
-      </SettingsCard>
+      </HoursSection>
+
+      <HoursSection title="Scheduled changes" description="A change saved for a later date takes effect on that day.">
+        {scheduled ? (
+          <div className="flex flex-wrap items-center justify-between gap-3 p-5">
+            <div>
+              <p className="text-[14px] font-semibold text-[var(--ink)]">Scheduled change</p>
+              <p className="text-[13px] text-[var(--ink2)]">
+                New working hours take effect on {formatPaymentRunDay(scheduled.effectiveFrom)}:{' '}
+                {scheduled.policy.standardDayStart}–{scheduled.policy.standardDayEnd}, {weekdayPaidHours(scheduled.policy)}h paid.
+              </p>
+            </div>
+            <button
+              type="button"
+              disabled={saving}
+              onClick={cancelScheduled}
+              className="rounded-xl px-3 py-2 text-[13px] font-semibold text-[var(--red)] hover:bg-[var(--soft)] disabled:opacity-50"
+            >
+              Cancel scheduled change
+            </button>
+          </div>
+        ) : (
+          <p className="p-5 text-[13px] text-[var(--ink3)]">
+            No change scheduled. Press Save and choose a date to schedule one.
+          </p>
+        )}
+      </HoursSection>
       </SettingsFormBody>
 
       <SaveBar dirty={dirty} hint={settingsSaveBarHint(loadState)}>

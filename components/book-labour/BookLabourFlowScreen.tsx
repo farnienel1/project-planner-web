@@ -36,6 +36,8 @@ import {
 import { useLeaveConflictCheck } from '@/components/scheduling/useLeaveConflictCheck'
 import { dayKey as orgDayKey } from '@/lib/ios-parity/londonTime'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
+import { bookingRequestIdentity } from '@/lib/canonical/bookingSlots'
+import { managerBookingIdentity } from '@/lib/scheduling/bookingRequestIdentity'
 import { bookingOccupiesDay } from '@/lib/canonical'
 import { samePersonBookingIds } from '@/lib/bookings/bookingPeople'
 import { dateFromDayKey, dayKey, parseHhMm } from '@/lib/ios-parity/londonTime'
@@ -322,22 +324,31 @@ export function BookLabourFlowScreen({
     return person.usesOperativeProjectBookings && Boolean(project) && (locationType === 'project' || locationType === 'small_work')
   }
 
+  // Rulebook 1.20.2 (`bookingRequestIdentity`): "already booked" only when the place AND the custom times match —
+  // a second weekend booking at the same place with other times is a new booking, never silently skipped.
   function duplicateManager(
     userId: string,
     slot: ManagerSlot,
     locationType: ManagerLocationType,
     locationId?: string,
-    custom?: string
+    custom?: string,
+    workStart?: string,
+    workEnd?: string,
+    breakOff?: boolean
   ) {
-    return managerSiteBookings.some(
-      (existing) =>
-        existing.userId === userId &&
-        dayKey(existing.date) === dayKey(day) &&
-        existing.timeSlot === slot &&
-        existing.locationType === locationType &&
-        (existing.locationId || '') === (locationId || '') &&
-        (existing.customLocationName || '') === (custom || '')
-    )
+    const zone = organizationZoneOr()
+    const wanted = bookingRequestIdentity({
+      personId: userId,
+      dayKey: orgDayKey(day, zone),
+      timeSlot: slot,
+      locationType,
+      locationId: locationId ?? null,
+      customLocationName: custom ?? null,
+      workStartTime: workStart ?? null,
+      workEndTime: workEnd ?? null,
+      isBreakRemoved: breakOff === true,
+    })
+    return managerSiteBookings.some((existing) => managerBookingIdentity(existing, zone) === wanted)
   }
 
   function duplicateOperative(
@@ -439,7 +450,16 @@ export function BookLabourFlowScreen({
         // Rulebook 1.16.0 §5 (owner: clashes as orange rows everywhere): a manager's overlapping booking is an orange
         // row to tick or drop, like an operative's — never a blocking banner.
         if (!usesOperativePath(person, args.locationType, resolvedProject)) {
-          if (duplicateManager(person.user.id, args.slot, args.locationType, args.locationId, args.customLocationName)) {
+          if (duplicateManager(
+            person.user.id,
+            args.slot,
+            args.locationType,
+            args.locationId,
+            args.customLocationName,
+            args.workStart,
+            args.workEnd,
+            args.breakRemoved
+          )) {
             continue
           }
           const managerLines = managerClashLines(person.user.id, args.slot, args.workStart, args.workEnd)
@@ -534,7 +554,16 @@ export function BookLabourFlowScreen({
             organizationId: organization.id,
           })
         } else {
-          if (duplicateManager(person.user.id, args.slot, args.locationType, args.locationId, args.customLocationName)) {
+          if (duplicateManager(
+            person.user.id,
+            args.slot,
+            args.locationType,
+            args.locationId,
+            args.customLocationName,
+            args.workStart,
+            args.workEnd,
+            args.breakRemoved
+          )) {
             continue
           }
           await saveManagerSiteBooking(organization.id, {
