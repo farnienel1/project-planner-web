@@ -55,7 +55,9 @@ import {
 import { useLeaveConflictCheck } from '@/components/scheduling/useLeaveConflictCheck'
 import { dayKey as orgDayKey } from '@/lib/ios-parity/londonTime'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
-import { countWorksByTab, filterWorksByTab, searchWorks } from '@/lib/projects/workStatus'
+import { searchWorks } from '@/lib/projects/workStatus'
+import { worksInTab, worksTabCounts } from '@/lib/canonical'
+import { bookableWorks } from '@/lib/access/workAccess'
 import { coversCalendarDay } from '@/lib/ios-parity/londonTime'
 import type { Booking, Project } from '@/types'
 import { useBookingHistoryFrom } from '@/lib/stores/useBookingHistory'
@@ -63,7 +65,7 @@ import { useAuthStore } from '@/lib/stores/authStore'
 import { useHolidayStore } from '@/lib/stores/holidayStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { myScheduleAnnualLeaveLabel, myScheduleLeaveRecords } from '@/lib/schedule/myScheduleLeave'
-import { useOrganizationDocument } from '@/lib/stores/organizationDocumentStore'
+import { useOrganizationDocument, useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
 import { bookingRequestIdentity } from '@/lib/canonical/bookingSlots'
 import { managerBookingIdentity, uniqueBookingsById } from '@/lib/scheduling/bookingRequestIdentity'
 import { bookingRowText } from '@/lib/scheduling/bookingRowHours'
@@ -249,7 +251,7 @@ export function MyScheduleSelfBookingScreen({
   useEffect(() => {
     loadManagerSiteBookings(organizationId)
     loadUsers(organizationId)
-    loadProjects(organizationId, true)
+    loadProjects(organizationId)
     loadSmallWorks(organizationId)
     loadOrganizationDetails(organizationId)
       .then((details) => {
@@ -264,6 +266,13 @@ export function MyScheduleSelfBookingScreen({
   // read-only My Schedule and iOS. Live: `loadBookings` attaches the holidayBookings listener.
   const authUser = useAuthStore((state) => state.user)
   const rosterOperatives = useOperativeStore((state) => state.operatives)
+  const rosterManagers = useOperativeStore((state) => state.managers)
+  const loadRosterManagers = useOperativeStore((state) => state.loadManagers)
+  const timeZone = useOrganizationTimeZone()
+  useEffect(() => {
+    // Rulebook 1.10.0: `canSeeJob` / `canWriteBooking` read the managers list.
+    if (organizationId) void loadRosterManagers(organizationId)
+  }, [organizationId, loadRosterManagers])
   const { bookings: holidayBookings, loadBookings: loadHolidayBookings, loadedOrgId: holidaysLoadedOrgId } = useHolidayStore()
   useEffect(() => {
     if (organizationId) void loadHolidayBookings(organizationId)
@@ -540,8 +549,21 @@ export function MyScheduleSelfBookingScreen({
 
   const otherQueryText = otherQuery.trim().toLowerCase()
   const filteredOther = selfLocations.filter((loc) => loc.name.toLowerCase().includes(otherQueryText))
-  const filteredProjects = searchWorks(filterWorksByTab(projects, projectStatus), projectQuery)
-  const filteredSmallWorks = searchWorks(filterWorksByTab(smallWorks, smallStatus), smallQuery)
+  // Rulebook 1.21.0 §21 (`bookableJobs`): jobs the signed-in user may book onto — visible, not inactive and writable
+  // for a manager site booking (`canWriteBooking`: a job they manage); the job's dates are never checked. The tabs
+  // only sort that list (`worksInTab` / `worksTabCounts`).
+  const bookableAccess = {
+    user: authUser,
+    operatives: rosterOperatives,
+    managers: rosterManagers,
+    bookings: [],
+    managerBookings: managerSiteBookings,
+    bookingCollection: 'managerSiteBookings' as const,
+  }
+  const bookableProjects = bookableWorks({ ...bookableAccess, projects, catalogue: 'projects' })
+  const bookableSmallWorks = bookableWorks({ ...bookableAccess, projects: smallWorks, catalogue: 'smallWorks' })
+  const filteredProjects = searchWorks(worksInTab(bookableProjects, projectStatus, Date.now(), timeZone), projectQuery)
+  const filteredSmallWorks = searchWorks(worksInTab(bookableSmallWorks, smallStatus, Date.now(), timeZone), smallQuery)
 
   function SlotPicker({
     locKey,
@@ -848,7 +870,7 @@ export function MyScheduleSelfBookingScreen({
         </BookColumn>
         <BookColumn title="Projects" hue="proj" count={filteredProjects.length}>
           <ColumnSearch value={projectQuery} onChange={setProjectQuery} placeholder="Search projects…" />
-          <StatusFilters value={projectStatus} counts={countWorksByTab(projects)} onChange={setProjectStatus} />
+          <StatusFilters value={projectStatus} counts={worksTabCounts(bookableProjects, Date.now(), timeZone)} onChange={setProjectStatus} />
           {filteredProjects.length === 0 ? (
             <p className="muted small">No projects in this filter.</p>
           ) : (
@@ -865,7 +887,7 @@ export function MyScheduleSelfBookingScreen({
         </BookColumn>
         <BookColumn title="Small works" hue="sw" count={filteredSmallWorks.length}>
           <ColumnSearch value={smallQuery} onChange={setSmallQuery} placeholder="Search small works…" />
-          <StatusFilters value={smallStatus} counts={countWorksByTab(smallWorks)} onChange={setSmallStatus} />
+          <StatusFilters value={smallStatus} counts={worksTabCounts(bookableSmallWorks, Date.now(), timeZone)} onChange={setSmallStatus} />
           {filteredSmallWorks.length === 0 ? (
             <p className="muted small">No small works in this filter.</p>
           ) : (

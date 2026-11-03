@@ -7,6 +7,8 @@ import { useAuthStore } from '@/lib/stores/authStore'
 import { useSiteAuditStore } from '@/lib/stores/siteAuditStore'
 import { useProjectStore } from '@/lib/stores/projectStore'
 import { deriveWorkStatus } from '@/lib/projects/workStatus'
+import { worksInTab, worksListMembership } from '@/lib/canonical'
+import { useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
 import { SiteAuditCreateFlow } from '@/components/projects/siteAudit/SiteAuditCreateFlow'
 import { ErrorBanner, LoadingSpinner } from '@/components/dashboard/PageShell'
 import {
@@ -417,16 +419,12 @@ function ProjectListView({
 }) {
   const [filter, setFilter] = useState<ProjectFilter>('Active')
 
+  // Rulebook 1.21.0 (`worksInTab`): the shared tabs on the organisation's day; inactive jobs are under Completed.
+  const timeZone = useOrganizationTimeZone()
   const filtered = useMemo(() => {
-    return projects.filter((p) => {
-      if (filter === 'All') return true
-      const status = deriveWorkStatus(p)
-      if (filter === 'Active') return status === 'active'
-      if (filter === 'Upcoming') return status === 'upcoming'
-      if (filter === 'Completed') return status === 'completed' || status === 'inactive'
-      return true
-    })
-  }, [projects, filter])
+    const tab = filter === 'All' ? 'all' : filter === 'Active' ? 'active' : filter === 'Upcoming' ? 'upcoming' : 'completed'
+    return worksInTab(projects, tab, Date.now(), timeZone)
+  }, [projects, filter, timeZone])
 
   const auditCountForProject = (id: string) => audits.filter((a) => a.projectId === id).length
 
@@ -469,7 +467,7 @@ function ProjectListView({
         <div className="space-y-2">
           {filtered.map((project) => {
             const auditCount = auditCountForProject(project.id)
-            const status = deriveWorkStatus(project)
+            const status = deriveWorkStatus(project, new Date(), timeZone)
             return (
               <button
                 key={project.id}
@@ -619,7 +617,7 @@ export function SiteAuditScreen() {
     return shell(
       <ProjectListView
         title="Projects"
-        projects={projects}
+        projects={worksListMembership(projects, 'projects')}
         audits={audits}
         onBack={() => setView({ type: 'hub' })}
         onSelectProject={(p) =>
@@ -639,7 +637,7 @@ export function SiteAuditScreen() {
     return shell(
       <ProjectListView
         title="Small works"
-        projects={smallWorks}
+        projects={worksListMembership(smallWorks, 'smallWorks')}
         audits={audits}
         onBack={() => setView({ type: 'hub' })}
         onSelectProject={(p) =>
@@ -683,7 +681,8 @@ export function SiteAuditNewScreen() {
     loadSmallWorks(organization.id)
   }, [organization, loadProjects, loadSmallWorks])
 
-  const list = source === 'projects' ? projects : smallWorks
+  // Rulebook 1.21.0 (`worksListMembership`): every document of the catalogue, live or not.
+  const list = source === 'projects' ? worksListMembership(projects, 'projects') : worksListMembership(smallWorks, 'smallWorks')
 
   return (
     <div className="mx-auto max-w-xl space-y-4 pb-10">

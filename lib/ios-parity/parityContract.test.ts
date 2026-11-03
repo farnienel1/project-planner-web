@@ -13,7 +13,8 @@ import {
 import { companyIdentityFirestoreFields } from '../orgSetup/orgSetupSettings.ts'
 import { notificationPreferenceFieldPatch } from '../settings/notificationPreferences.ts'
 import { permissionsForOperativeInvite } from '../orgSetup/accountPermissions.ts'
-import { countHomeActiveProjects } from '../projects/homeActiveProjects.ts'
+import { activeJobsCount } from '../canonical/worksLists.ts'
+import { jobAccessViewer } from '../access/bookingAccess.ts'
 import { computeMissedMaterialOrderWarnings } from '../warnings/materialOrderWarnings.ts'
 import { isOperativeSigned } from '../timesheets/timesheetApprovalPolicy.ts'
 import { emptyTimesheetDraft } from '../timesheets/timesheetDraft.ts'
@@ -134,15 +135,17 @@ test('home active-project count is jobs whose dates include today', () => {
     isSuperAdmin: false,
     role: 'admin',
   } as User
-  const count = countHomeActiveProjects({
-    now: today,
-    user: admin,
-    projects: [
+  const count = activeJobsCount(
+    [
       job('live', '2026-06-01T00:00:00Z', '2026-06-20T00:00:00Z'),
       job('also', '2026-06-01T00:00:00Z', '2026-06-20T00:00:00Z', { jobNumber: '100' }),
       job('later', '2026-07-01T00:00:00Z', '2026-07-20T00:00:00Z'),
     ],
-  })
+    jobAccessViewer(admin),
+    {},
+    today.getTime(),
+    'Europe/London'
+  )
   assert.equal(count, 2)
 })
 

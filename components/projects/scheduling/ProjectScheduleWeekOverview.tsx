@@ -25,6 +25,7 @@ import { useBookingHistoryFrom } from '@/lib/stores/useBookingHistory'
 import { ORG_DATA_REFRESHED_EVENT } from '@/lib/stores/refreshOrgData'
 import { canBookWork, hasAdminAccess } from '@/lib/permissions'
 import { userCanDeleteBooking, userCanWriteBooking } from '@/lib/access/bookingAccess'
+import { bookableWorks } from '@/lib/access/workAccess'
 import { BookingStatus, UserRole, type User } from '@/types'
 import { SubcontractorBookingEditSheet } from '@/components/projects/scheduling/SubcontractorBookingEditSheet'
 import { watchSubcontractorBookings } from '@/lib/weekly-report/loadSubcontractorBookings'
@@ -180,6 +181,17 @@ export function ProjectScheduleWeekOverview({
   const canQuickAdd =
     canBookWork(currentUser) &&
     userCanWriteBooking(currentUser, { collection: 'bookings', projectId: project.id }, project, managers)
+  // Rulebook 1.21.0 §21 (`bookableJobs`): a new booking only when this job is bookable — not inactive and writable;
+  // the job's dates are never checked. Editing existing bookings is not gated by it.
+  const jobBookable =
+    bookableWorks({
+      projects: [project],
+      user: currentUser,
+      operatives,
+      managers,
+      bookings: [],
+      managerBookings: [],
+    }).length > 0
   const { users, userIdAliases, loadUsers } = useOrgUserStore()
   const { subcontractors, loadSubcontractors } = useSubcontractorStore()
   const [weekStart, setWeekStart] = useState(startOfWeek(new Date(), { weekStartsOn: 1 }))
@@ -655,7 +667,7 @@ export function ProjectScheduleWeekOverview({
                   weekDays={weekDays}
                   expanded={expanded}
                   onEdit={canQuickAdd ? setEditingRow : () => undefined}
-                  onQuickAdd={canQuickAdd ? (target, date) => setQuickAdd({ person: target, date }) : undefined}
+                  onQuickAdd={canQuickAdd && jobBookable ? (target, date) => setQuickAdd({ person: target, date }) : undefined}
                 />
               ))}
             </div>

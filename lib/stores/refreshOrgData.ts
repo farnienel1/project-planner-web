@@ -55,7 +55,7 @@ export async function refreshAllOrgData(organizationId: string): Promise<void> {
   const audits = useSiteAuditStore.getState()
 
   await Promise.all([
-    settle('projects', () => projects.loadProjects(orgId, true, FORCE)),
+    settle('projects', () => projects.loadProjects(orgId, FORCE)),
     settle('small works', () => projects.loadSmallWorks(orgId, FORCE)),
     settle('clients', () => projects.loadClients(orgId, FORCE)),
     settle('operatives', () => operatives.loadOperatives(orgId, FORCE)),

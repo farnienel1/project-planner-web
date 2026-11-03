@@ -11,6 +11,9 @@ import { bookingsOrganizationId, useBookingStore } from '@/lib/stores/bookingSto
 import { managerSiteBookingsOrganizationId, useManagerScheduleStore } from '@/lib/stores/managerScheduleStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { loadedJobIds, replanJobs, setJobPlanDocumentIds } from '@/lib/stores/projectStore'
+import { useTaskStore } from '@/lib/stores/taskStore'
+import { useDeadlineStore } from '@/lib/stores/deadlineStore'
+import { operativeJobDocumentIds } from '@/lib/access/workAccess'
 
 let started = false
 
@@ -32,8 +35,18 @@ function replanOperativeJobs(): void {
   const user = useAuthStore.getState().user
   const viewer = webJobAccessViewer(user)
   if (!viewer || viewer.role.isAdmin || viewer.role.isSuperAdmin || (viewer.role.isManager && !viewer.role.isOperativeMode)) return
+  // Rulebook 1.21.0 §21 (`operativeJobIds`): the jobs of their own bookings, tasks and deadlines (web read only
+  // bookings before 1.21.0, so a job reached only through a task never loaded), plus job-linked manager site bookings.
   const ids = [
     ...useBookingStore.getState().bookings.map((booking) => booking.projectId),
+    ...operativeJobDocumentIds(user, {
+      operatives: useOperativeStore.getState().operatives,
+      managers: useOperativeStore.getState().managers,
+      bookings: [],
+      managerBookings: [],
+      tasks: useTaskStore.getState().tasks,
+      deadlineAssignedProjectIds: new Set(useDeadlineStore.getState().assignedProjectIds),
+    }),
     ...useManagerScheduleStore.getState().managerSiteBookings
       .map((booking) => bookingJobId({ collection: 'managerSiteBookings', ...booking }))
       .filter((id): id is string => Boolean(id)),
@@ -51,7 +64,16 @@ function start(): void {
     if (state.managerSiteBookings !== previous.managerSiteBookings) replanOperativeJobs()
   })
   useOperativeStore.subscribe((state, previous) => {
-    if (state.operatives !== previous.operatives) replanBookings()
+    if (state.operatives !== previous.operatives) {
+      replanBookings()
+      replanOperativeJobs()
+    }
+  })
+  useTaskStore.subscribe((state, previous) => {
+    if (state.tasks !== previous.tasks) replanOperativeJobs()
+  })
+  useDeadlineStore.subscribe((state, previous) => {
+    if (state.assignedProjectIds !== previous.assignedProjectIds) replanOperativeJobs()
   })
   useAuthStore.subscribe((state, previous) => {
     if (state.user !== previous.user) {

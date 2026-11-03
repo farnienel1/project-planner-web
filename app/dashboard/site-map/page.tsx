@@ -65,7 +65,7 @@ export default function SiteMapPage() {
 
   useEffect(() => {
     if (organization?.id) {
-      loadProjects(organization.id, true)
+      loadProjects(organization.id)
       loadSmallWorks(organization.id)
       loadBookings(organization.id)
       loadManagerSiteBookings(organization.id)

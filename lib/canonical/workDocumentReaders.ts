@@ -63,6 +63,12 @@ function firstText(row: Record<string, unknown>, keys: readonly string[]): strin
   return ''
 }
 
+/** Text, or a finite number as its text (a job number some imports stored as a number, 1.21.0). */
+function textOrNumber(value: unknown): string {
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value)
+  return text(value)
+}
+
 function optionalText(value: unknown): string | null {
   return text(value) || null
 }
@@ -230,7 +236,7 @@ export function parseJobDocument(
     id,
     kind,
     collection: JOB_COLLECTIONS[kind],
-    jobNumber: text(row.jobNumber),
+    jobNumber: textOrNumber(row.jobNumber),
     siteName: text(row.siteName),
     addressLine1,
     addressLine2,
@@ -613,7 +619,7 @@ function entryBase(
     idStored: Boolean(text(row.id)),
     title,
     details: rawText(row.details),
-    jobNumber: text(row.jobNumber),
+    jobNumber: textOrNumber(row.jobNumber),
     amount,
     managerDecision: decision.decision,
     managerRevisedAmount: decision.revisedAmount,

@@ -21,7 +21,7 @@ export default function TasksPage() {
     if (!organization?.id) return
     loadTasks(organization.id)
     loadBookings(organization.id)
-    loadProjects(organization.id, true)
+    loadProjects(organization.id)
     loadSmallWorks(organization.id)
     loadOperatives(organization.id)
     loadManagers(organization.id)

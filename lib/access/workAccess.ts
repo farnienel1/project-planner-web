@@ -4,30 +4,23 @@
  */
 
 import type { Booking, Manager, Operative, Project, ProjectTask, User } from '@/types'
-import { bookingIdsForAccount, bookingOccupiesDay } from '@/lib/canonical'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
-import { jobKind, seesEveryJob } from '@/lib/canonical'
-import { userCanSeeJob } from '@/lib/access/bookingAccess'
-import { isOperativeMode, staffAccountRole, type WorkCatalogueKind } from '@/lib/permissions'
+import {
+  bookableJobs,
+  operativeJobIds,
+  visibleJobs,
+  workDocuments,
+  worksListMembership,
+  type WorksListContext,
+} from '@/lib/canonical'
+import { jobAccessViewer } from '@/lib/access/bookingAccess'
+import type { WorkCatalogueKind } from '@/lib/permissions'
 import { normalizeBookingStatus } from '@/lib/ios-parity/enums'
 
 export type JobCatalogue = WorkCatalogueKind
 
 function normalizedEmail(value?: string | null): string {
   return value?.toLowerCase().trim() ?? ''
-}
-
-function catalogueIncludes(project: Project, catalogue: JobCatalogue): boolean {
-  // Rulebook 1.11.0 `jobKind`: the collection decides, never `jobType`.
-  const small = jobKind(project, project.collection) === 'smallWorks'
-  if (catalogue === 'projects') return !small
-  if (catalogue === 'smallWorks') return small
-  return true
-}
-
-function isExcludedFromManagerVisibilityHiding(user: User): boolean {
-  if (isOperativeMode(user)) return false
-  return user.isSuperAdmin || user.permissions.adminAccess || user.role === 'admin'
 }
 
 export function operativeMatching(
@@ -90,126 +83,7 @@ export function isTaskAssignedToUser(params: {
   return false
 }
 
-export function taskAssignedProjectIds(params: {
-  currentUser: User | null
-  tasks: ProjectTask[]
-  operatives: Operative[]
-  managers: Manager[]
-}): Set<string> {
-  const { currentUser, tasks, operatives, managers } = params
-  if (!currentUser) return new Set()
-  const ids = new Set<string>()
-  for (const task of tasks) {
-    const asOp = isTaskAssignedToUser({
-      task,
-      userEmail: currentUser.email,
-      operatives,
-      managers,
-      isOperativeMode: true,
-    })
-    const asStaff = isTaskAssignedToUser({
-      task,
-      userEmail: currentUser.email,
-      operatives,
-      managers,
-      isOperativeMode: false,
-    })
-    if (asOp || asStaff) ids.add(task.projectId)
-  }
-  return ids
-}
-
-export function operativeVisibleProjectIds(params: {
-  currentUser: User | null
-  operative: Operative | undefined
-  operatives: Operative[]
-  managers: Manager[]
-  bookings: Booking[]
-  tasks: ProjectTask[]
-  deadlineAssignedProjectIds?: Set<string>
-}): Set<string> {
-  const ids = new Set<string>()
-  const named = operativeMatching(params.currentUser?.email, params.operatives, {
-    firstName: params.currentUser?.firstName,
-    surname: params.currentUser?.surname,
-  })
-  // Every id this person's bookings may carry: catalogue rows, the users id and former invite ids (web #189).
-  const bookingIds = new Set<string>()
-  if (params.currentUser) {
-    for (const id of bookingIdsForAccount(
-      {
-        id: params.currentUser.id,
-        email: params.currentUser.email,
-        formerIds: params.currentUser.formerUserIds ?? [],
-      },
-      params.operatives
-    )) {
-      bookingIds.add(id.toLowerCase())
-    }
-  }
-  if (params.operative) bookingIds.add(params.operative.id.toLowerCase())
-  if (named) bookingIds.add(named.id.toLowerCase())
-  for (const booking of params.bookings) {
-    if (!booking.operativeId || !bookingIds.has(booking.operativeId.toLowerCase())) continue
-    if (bookingOccupiesDay(normalizeBookingStatus(booking.status) ?? booking.status)) ids.add(booking.projectId)
-  }
-  if (params.deadlineAssignedProjectIds) {
-    for (const id of params.deadlineAssignedProjectIds) ids.add(id)
-  }
-  return ids
-}
-
-function assignedManagerIds(project: Project): string[] {
-  if (project.managerIds && project.managerIds.length > 0) return project.managerIds
-  return project.managerId ? [project.managerId] : []
-}
-
-export function isAssignedOrBookedOnto(params: {
-  project: Project
-  user: User
-  operatives: Operative[]
-  managers: Manager[]
-  bookings: Booking[]
-  managerBookings: ManagerSiteBooking[]
-}): boolean {
-  const email = normalizedEmail(params.user.email)
-  const manager = params.managers.find((m) => normalizedEmail(m.email) === email)
-  if (manager && assignedManagerIds(params.project).includes(manager.id)) return true
-
-  if (
-    params.managerBookings.some(
-      (booking) =>
-        (booking.userId === params.user.id || (params.user.formerUserIds ?? []).includes(booking.userId)) &&
-        (booking.locationType === 'project' || booking.locationType === 'small_work') &&
-        booking.locationId === params.project.id
-    )
-  ) {
-    return true
-  }
-
-  // Every id this person's bookings may carry (`bookingIdsForAccount`), not only the catalogue row on their email.
-  const bookingIds = new Set(
-    bookingIdsForAccount(
-      { id: params.user.id, email: params.user.email, formerIds: params.user.formerUserIds ?? [] },
-      params.operatives
-    ).map((id) => id.toLowerCase())
-  )
-  const operative = operativeMatching(params.user.email, params.operatives)
-  if (operative) bookingIds.add(operative.id.toLowerCase())
-  if (
-    params.bookings.some(
-      (b) =>
-        bookingIds.has(String(b.operativeId || '').toLowerCase()) &&
-        b.projectId === params.project.id &&
-        bookingOccupiesDay(normalizeBookingStatus(b.status) ?? b.status)
-    )
-  ) {
-    return true
-  }
-  return false
-}
-
-export function visibleWorks(params: {
+export type WorkAccessParams = {
   projects: Project[]
   catalogue?: JobCatalogue
   user: User | null
@@ -219,60 +93,69 @@ export function visibleWorks(params: {
   managerBookings: ManagerSiteBooking[]
   tasks?: ProjectTask[]
   deadlineAssignedProjectIds?: Set<string>
-}): Project[] {
-  const catalogue = params.catalogue ?? 'all'
-  const scoped = params.projects.filter((p) => catalogueIncludes(p, catalogue))
-  const user = params.user
-  const managers = params.managers ?? []
-  const tasks = params.tasks ?? []
+}
 
-  if (!user) return []
-
-  if (isOperativeMode(user)) {
-    const assignedIds = operativeVisibleProjectIds({
-      currentUser: user,
-      operative: operativeMatching(user.email, params.operatives),
-      operatives: params.operatives,
-      managers,
-      bookings: params.bookings,
-      tasks,
-      deadlineAssignedProjectIds: params.deadlineAssignedProjectIds,
-    })
-    return scoped.filter((project) => {
-      const hid = project.hiddenOperativeUserIds ?? []
-      return assignedIds.has(project.id) && !hid.includes(user.id)
-    })
+/** The web stores as the rulebook's `WorksListContext` (plain rows only). */
+export function worksListContext(params: Omit<WorkAccessParams, 'projects' | 'catalogue' | 'user'>): WorksListContext {
+  return {
+    managers: (params.managers ?? []).map((row) => ({ id: row.id, email: row.email ?? null })),
+    operatives: params.operatives.map((row) => ({ id: row.id, email: row.email ?? null })),
+    bookings: params.bookings.map((booking) => ({
+      projectId: booking.projectId,
+      operativeId: booking.operativeId ?? null,
+      status: normalizeBookingStatus(booking.status) ?? booking.status,
+    })),
+    managerSiteBookings: params.managerBookings.map((booking) => ({
+      userId: booking.userId,
+      locationType: booking.locationType,
+      locationId: booking.locationId ?? null,
+    })),
+    tasks: (params.tasks ?? []).map((task) => ({
+      projectId: task.projectId,
+      assignedOperativeId: task.assignedOperativeId ?? null,
+      assignedOperativeIds: task.assignedOperativeIds ?? [],
+      assignedManagerId: task.assignedManagerId ?? null,
+      assignedManagerIds: task.assignedManagerIds ?? [],
+    })),
+    deadlineJobIds: params.deadlineAssignedProjectIds ? [...params.deadlineAssignedProjectIds] : [],
   }
+}
 
-  // Rulebook 1.10.0 (§16, `seesEveryJob` / `canSeeJob`): admins and super admins see every job, whether or not the
-  // Projects / Small works toggle is on (the toggles only gate add and edit). Managers see only the jobs they manage:
-  // removed as manager, the job leaves their lists on the next snapshot; re-added, it comes back. This runs on every
-  // render from the live job listener, so no list keeps a stale copy.
-  if (seesEveryJob(staffAccountRole(user))) {
-    if (isExcludedFromManagerVisibilityHiding(user)) return scoped
-    return scoped.filter((project) => !(project.hiddenManagerUserIds ?? []).includes(user.id))
-  }
-  if (staffAccountRole(user).isManager) {
-    return scoped.filter(
-      (project) =>
-        !(project.hiddenManagerUserIds ?? []).includes(user.id) &&
-        // 1.10.0 round 2: a manager with the toggle for the job's kind sees every job of that kind.
-        userCanSeeJob(user, project, managers, jobKind(project, project.collection))
-    )
-  }
+function catalogueJobs(projects: Project[], catalogue: JobCatalogue): Project[] {
+  if (catalogue === 'all') return workDocuments(projects)
+  return worksListMembership(projects, catalogue)
+}
 
-  // An account with no staff role sees only the jobs it is assigned to or booked onto.
-  const notHidden = scoped.filter((project) => !(project.hiddenManagerUserIds ?? []).includes(user.id))
-  return notHidden.filter((project) =>
-    isAssignedOrBookedOnto({
-      project,
-      user,
-      operatives: params.operatives,
-      managers,
-      bookings: params.bookings,
-      managerBookings: params.managerBookings,
-    })
+/**
+ * The jobs the signed-in user sees in a job list: the rulebook's `worksListMembership` (every document of the
+ * catalogue, live or not) then `visibleJobs` (§17, §21). No screen filters list membership itself.
+ */
+export function visibleWorks(params: WorkAccessParams): Project[] {
+  const viewer = jobAccessViewer(params.user)
+  return visibleJobs(catalogueJobs(params.projects, params.catalogue ?? 'all'), viewer, worksListContext(params))
+}
+
+/**
+ * The jobs the signed-in user may book a person onto (rulebook 1.21.0 `bookableJobs`): visible, not inactive and
+ * writable (`canWriteBooking`). The job's start and end dates are never checked (owner decision).
+ */
+export function bookableWorks(
+  params: WorkAccessParams & { bookingCollection?: 'bookings' | 'managerSiteBookings' | 'subcontractorBookings' }
+): Project[] {
+  const viewer = jobAccessViewer(params.user)
+  return bookableJobs(
+    catalogueJobs(params.projects, params.catalogue ?? 'all'),
+    viewer,
+    { ...worksListContext(params), bookingCollection: params.bookingCollection ?? 'bookings' }
   )
+}
+
+/** Job ids an operative's job documents are read by (`operativeJobIds`: bookings, tasks, deadlines). */
+export function operativeJobDocumentIds(
+  user: User | null,
+  params: Omit<WorkAccessParams, 'projects' | 'catalogue' | 'user'>
+): string[] {
+  return operativeJobIds(jobAccessViewer(user), worksListContext(params))
 }
 
 export function liveUserIdsOnJob(params: {

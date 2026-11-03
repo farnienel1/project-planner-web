@@ -192,7 +192,7 @@ export function TimesheetsHub() {
     loadBookings(organization.id, { fullHistory: true })
     loadManagerSiteBookings(organization.id, { fullHistory: true })
     loadOperatives(organization.id)
-    loadProjects(organization.id, true)
+    loadProjects(organization.id)
     loadSmallWorks(organization.id)
     setHistoryLoad('loading')
     loadOperativeDayRateHistoryOrNull(organization.id)

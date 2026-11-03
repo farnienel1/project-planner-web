@@ -59,7 +59,7 @@ export default function WeeklyReportPage() {
     loadManagerSiteBookings(organization.id, { fullHistory: true })
     loadOperatives(organization.id)
     loadUsers(organization.id)
-    loadProjects(organization.id, true)
+    loadProjects(organization.id)
     loadSmallWorks(organization.id)
     loadHolidayBookings(organization.id)
     loadSubcontractors(organization.id)

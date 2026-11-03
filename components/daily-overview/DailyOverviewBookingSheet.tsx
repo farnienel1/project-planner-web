@@ -22,11 +22,12 @@ import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { useBookingConflictGate } from '@/components/scheduling/BookingConflictRows'
 import { useLeaveConflictCheck } from '@/components/scheduling/useLeaveConflictCheck'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
-import { visibleWorks } from '@/lib/access/workAccess'
+import { bookableWorks } from '@/lib/access/workAccess'
 import { useDeadlineAssignedProjectIds } from '@/lib/deadlines/useDeadlineAssignedProjectIds'
 import { findOperativeForUser } from '@/lib/operatives/operativeRosterUtils'
 import { splitBookingMoveCatalogues } from '@/lib/projects/bookingMoveCatalogues'
-import { countWorksByTab, filterWorksByTab } from '@/lib/projects/workStatus'
+import { worksInTab, worksTabCounts } from '@/lib/canonical'
+import { useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
 import { hoursBreakdown } from '@/lib/scheduling/paidHours'
 import {
   DEFAULT_MY_SCHEDULE,
@@ -123,7 +124,7 @@ export function DailyOverviewBookingSheet({
 
   useEffect(() => {
     if (!organization?.id) return
-    loadProjects(organization.id, true)
+    loadProjects(organization.id)
     loadSmallWorks(organization.id)
     loadOrganizationDetails(organization.id)
       .then((details) => {
@@ -152,6 +153,9 @@ export function DailyOverviewBookingSheet({
   }, [row.bookingId, row.workStartTime, row.workEndTime, prefill.start, prefill.end])
 
   const catalogues = useMemo(() => splitBookingMoveCatalogues(projects, smallWorks), [projects, smallWorks])
+  // Rulebook 1.21.0 §21 (`bookableJobs`): the jobs this viewer may book onto — visible, not inactive and writable
+  // (`canWriteBooking`); the job's dates are never checked. The tabs below only sort that list.
+  const timeZone = useOrganizationTimeZone()
   const accessInput = {
     user,
     operatives,
@@ -159,20 +163,21 @@ export function DailyOverviewBookingSheet({
     bookings,
     managerBookings: managerSiteBookings,
     deadlineAssignedProjectIds,
-    catalogue: 'all' as const,
   }
   const visibleProjects = useMemo(
-    () => visibleWorks({ ...accessInput, projects: catalogues.projects }),
+    () => bookableWorks({ ...accessInput, projects: catalogues.projects, catalogue: 'projects' }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [catalogues.projects, user, operatives, managers, bookings, managerSiteBookings, deadlineAssignedProjectIds]
   )
   const visibleSmallWorks = useMemo(
-    () => visibleWorks({ ...accessInput, projects: catalogues.smallWorks }),
+    () => bookableWorks({ ...accessInput, projects: catalogues.smallWorks, catalogue: 'smallWorks' }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [catalogues.smallWorks, user, operatives, managers, bookings, managerSiteBookings, deadlineAssignedProjectIds]
   )
   const otherPicks = enabledScheduleLocationPicks(scheduleOpts)
   const catalogue = tab === 'smallWorks' ? visibleSmallWorks : visibleProjects
-  const counts = useMemo(() => countWorksByTab(catalogue), [catalogue])
-  const filtered = filterWorksByTab(catalogue, statusFilter).filter((project) => {
+  const counts = useMemo(() => worksTabCounts(catalogue, Date.now(), timeZone), [catalogue, timeZone])
+  const filtered = worksInTab(catalogue, statusFilter, Date.now(), timeZone).filter((project) => {
     const q = search.trim().toLowerCase()
     if (!q) return true
     return project.siteName.toLowerCase().includes(q) || project.jobNumber.toLowerCase().includes(q)
