@@ -4,6 +4,7 @@
  */
 'use client'
 
+import { canSendMaterialOrders } from '@/lib/canonical/materialOrderAccess'
 import { useEffect, useMemo, useState } from 'react'
 import { addDays, format, startOfDay, startOfWeek } from 'date-fns'
 import { coversCalendarDay } from '@/lib/ios-parity/londonTime'
@@ -119,7 +120,8 @@ export function ProjectMaterialsSection({ project }: { project: Project }) {
   const [historyRecordId, setHistoryRecordId] = useState<string | null>(null)
 
   const isOperative = isOperativeMode(user)
-  const canSend = !isOperative
+  // Rulebook 1.15.0 `canSendMaterialOrders`: admins and managers send quotes and orders; operatives never.
+  const canSend = canSendMaterialOrders(staffAccountRole(user))
   // Standard for every admin and manager, never operative mode. Not the Wholesalers toggle.
   const canViewHistory = canViewMaterialOrderHistory(staffAccountRole(user))
 

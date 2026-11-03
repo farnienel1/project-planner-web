@@ -1,12 +1,18 @@
 import { NextRequest } from 'next/server'
-import { bearerToken } from '@/lib/owner/firestoreRest'
+import { bearerToken, firestoreListCollection, restFieldsToPlain } from '@/lib/owner/firestoreRest'
 import { sendProjectPlannerEmail } from '@/lib/email/resendClient'
 import { buildMaterialRequestEmail } from '@/lib/email/materialRequestEmail'
 import {
   defaultMaterialDeliveryRequiredAt,
   formatMaterialDeliveryRequired,
   materialOrderIncludesDeliveryRequired,
+  parseWholesalerDocument,
 } from '@/lib/canonical'
+import {
+  MATERIAL_ORDER_SEND_REFUSED_MESSAGE,
+  canSendMaterialOrders,
+  materialOrderRecipientCheck,
+} from '@/lib/canonical/materialOrderAccess'
 import {
   clientSafeMessage,
   enforceRateLimit,
@@ -89,6 +95,18 @@ export async function POST(request: NextRequest) {
 
   const access = await requireOrgAccess(request, body.value.organizationId, 'member')
   if (!access.ok) return access.response
+  // Rulebook 1.15.0 `canSendMaterialOrders`: admins, super admins (the creator) and managers; never an operative.
+  const membership = access.membership
+  if (
+    !canSendMaterialOrders({
+      isSuperAdmin: membership.isCreator,
+      isAdmin: membership.role === 'admin',
+      isManager: membership.role === 'manager',
+      isOperativeMode: membership.role === 'operative' && !membership.isCreator,
+    })
+  ) {
+    return jsonError(MATERIAL_ORDER_SEND_REFUSED_MESSAGE, 403)
+  }
 
   const requestType = body.value.requestType
   if (requestType !== 'quote' && requestType !== 'order') {
@@ -97,7 +115,8 @@ export async function POST(request: NextRequest) {
 
   const jobNumber = clampString(body.value.jobNumber, 80)
   const senderName = clampString(body.value.senderName, 120)
-  const senderEmail = clampString(body.value.senderEmail, 254)
+  // The sender's copy goes to the signed-in account's email only (never an address the request names).
+  const senderEmail = (access.user.email || clampString(body.value.senderEmail, 254) || '').trim().toLowerCase()
   const senderCompany = clampString(body.value.senderCompany, 200)
   if (!jobNumber || !senderName || !senderEmail || !isValidEmail(senderEmail) || !senderCompany) {
     return jsonError('jobNumber, senderName, senderEmail, and senderCompany are required', 400)
@@ -108,6 +127,23 @@ export async function POST(request: NextRequest) {
   if (!recipients || !materials) {
     return jsonError('At least one valid recipient and material line is required', 400)
   }
+  // Rulebook 1.15.0 `materialOrderRecipientCheck`: saved wholesaler contacts, plus at most 3 typed addresses.
+  let savedContactEmails: string[] = []
+  try {
+    const rows = await firestoreListCollection(bearerToken(request), `organizations/${access.organizationId}/wholesalers`)
+    savedContactEmails = rows.flatMap((row) => {
+      const firm = parseWholesalerDocument(row.id, restFieldsToPlain(row.fields))
+      return firm ? firm.contacts.map((contact) => contact.email) : []
+    })
+  } catch {
+    return jsonError('Could not read your wholesalers. Try again.', 503)
+  }
+  const recipientCheck = materialOrderRecipientCheck({
+    recipients: recipients.map((row) => row.email),
+    savedContactEmails,
+    senderEmail,
+  })
+  if (!recipientCheck.ok) return jsonError(recipientCheck.message, 400)
 
   const sendAsPlainText = Boolean(body.value.sendAsPlainText)
   const isQuote = requestType === 'quote'

@@ -91,6 +91,7 @@ export function seesEveryUserTimesheet(role: StaffAccountRole): boolean {
  * gives the same answer for reads of `materialSendRecords`.
  */
 export function canViewMaterialOrderHistory(role: StaffAccountRole): boolean {
+  // Rulebook 1.15.0: the same people who send quotes and orders (`canSendMaterialOrders`).
   return isStaffAccount(role)
 }
 

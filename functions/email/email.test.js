@@ -209,8 +209,19 @@ test("recipients: a material request reaches the organisation's wholesaler conta
     ['wendy@pipes.example', false, 'Wendy Holesale'],
     ['manager@example.com', true, ''],
   ])
-  await assert.rejects(recipients('material_request', ['victim@example.com']), /not a contact/)
-  await assert.rejects(recipients('material_request', ['manager@example.com']), /wholesaler contact is required/)
+  // Rulebook 1.15.0 `materialOrderRecipientCheck`: up to 3 typed addresses not saved on a wholesaler.
+  const typed = await recipients('material_request', ['one@shop.example', 'two@shop.example', 'Three@shop.example', 'manager@example.com'])
+  assert.deepEqual(typed.map((row) => [row.email, Boolean(row.isTyped), Boolean(row.isSelf)]), [
+    ['one@shop.example', true, false],
+    ['two@shop.example', true, false],
+    ['three@shop.example', true, false],
+    ['manager@example.com', false, true],
+  ])
+  await assert.rejects(
+    recipients('material_request', ['wendy@pipes.example', 'a@x.example', 'b@x.example', 'c@x.example', 'd@x.example']),
+    /at most 3 email addresses/
+  )
+  await assert.rejects(recipients('material_request', ['manager@example.com']), /Choose a wholesaler contact or add an email address/)
 })
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -275,14 +286,26 @@ test('handler: an app cannot send free HTML (web_rendered is server only) or an 
   assert.equal(sent.length, 0)
 })
 
-test('handler: material request — any active member, wholesaler contacts plus own copy, reply-to the sender', async () => {
+test('handler: material request — admins and managers only (1.15.0 canSendMaterialOrders), contacts plus own copy, reply-to the sender', async () => {
   const { handler, sent } = makeHandler()
+  const materialBody = {
+    orgId: ORG,
+    template: 'material_request',
+    to: ['wendy@pipes.example'],
+    data: { requestType: 'quote', jobNumber: 'J-1', materials: [{ material: 'Pipe', quantity: 1, unit: 'Number' }] },
+  }
+  const refused = await call(handler, { headers: auth('O'), body: materialBody })
+  assert.equal(refused.code, 403)
+  assert.match(refused.payload.error || JSON.stringify(refused.payload), /Only admins and managers can send quotes and orders/)
+  assert.equal(sent.length, 0)
+  assert.equal((await call(handler, { headers: auth('A'), body: materialBody })).code, 200)
+  sent.length = 0
   const res = await call(handler, {
-    headers: auth('O'),
+    headers: auth('M'),
     body: {
       orgId: ORG,
       template: 'material_request',
-      to: ['wendy@pipes.example', 'op@example.com'],
+      to: ['wendy@pipes.example', 'manager@example.com'],
       data: {
         requestType: 'order',
         jobNumber: 'J-100',
@@ -297,7 +320,7 @@ test('handler: material request — any active member, wholesaler contacts plus 
   assert.equal(sent.length, 2)
   assert.equal(sent[0].subject, 'Material order request — J-100 — Acme <Builders> Ltd')
   assert.equal(sent[1].subject, 'Copy: Material order request — J-100 — Acme <Builders> Ltd')
-  assert.equal(sent[0].reply_to, 'op@example.com')
+  assert.equal(sent[0].reply_to, 'manager@example.com')
   assert.ok(sent[0].html.includes('Hi Wendy,'))
   assert.ok(sent[0].html.includes('4 Lengths'))
   assert.ok(sent[0].html.includes('Wednesday 4 November at 08:00'))
