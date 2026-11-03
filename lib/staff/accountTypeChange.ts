@@ -15,3 +15,17 @@ export function applyAccountTypeChange(user: User, accountType: 'operative' | 'm
     isSuperAdmin: accountType === 'admin' ? user.isSuperAdmin : false,
   }
 }
+
+/** The users document as `accountTypeSyncState` / `permissionLevelOf` read it. */
+export function accountTypeSubject(user: User): Record<string, unknown> & { id: string } {
+  return {
+    id: user.id,
+    organizationId: user.organizationId,
+    role: user.role,
+    isSuperAdmin: user.isSuperAdmin,
+    adminAccess: user.permissions.adminAccess,
+    manager: user.permissions.manager,
+    operativeMode: user.permissions.operativeMode,
+    permissions: { ...user.permissions },
+  }
+}

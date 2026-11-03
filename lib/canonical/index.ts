@@ -1286,9 +1286,11 @@ export type { LineManagerCandidate, LineManagerRosterPerson, LineManagerSubject 
 export { PAY_BASIS_DAY_HELP, PAY_BASIS_HOURLY_HELP, PAY_BASIS_SAVE_NOTE } from './payRate'
 export {
   ACCOUNT_TYPE_OTHER_COMPANY_NOTE,
+  ACCOUNT_TYPE_OUT_OF_SYNC_MESSAGE,
   ACCOUNT_TYPE_SUPER_ADMIN_MESSAGE,
   accountTypeChangeWrites,
   accountTypePermissions,
+  accountTypeSyncState,
 } from './permissionLevels'
 export type { AccountTypeChangeWrite } from './permissionLevels'
 export { organizationLevelFor, rosterMembersForOrganization } from './orgRoster'

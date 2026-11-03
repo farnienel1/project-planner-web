@@ -30,7 +30,7 @@ import {
 } from '@/components/schedule/MyScheduleLooks'
 import { useHolidayStore } from '@/lib/stores/holidayStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
-import { holidayBookingsForAccount } from '@/lib/timesheets/timesheetLeave'
+import { myScheduleLeaveRecords } from '@/lib/schedule/myScheduleLeave'
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import { DEFAULT_PAYROLL_POLICY } from '@/lib/settings/organizationSettings'
 import { dayKey } from '@/lib/ios-parity/londonTime'
@@ -506,7 +506,7 @@ export function ScheduleScreen({
   const myHolidays = useMemo(
     () =>
       isPersonal && authUser && holidaysLoadedOrgId === holidayOrgId
-        ? holidayBookingsForAccount(authUser, holidayBookings, rosterOperatives)
+        ? myScheduleLeaveRecords(authUser, holidayBookings, rosterOperatives)
         : [],
     [isPersonal, authUser, holidaysLoadedOrgId, holidayOrgId, holidayBookings, rosterOperatives]
   )
