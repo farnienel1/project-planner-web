@@ -17794,6 +17794,230 @@
         "a",
         "b"
       ]
+    },
+    {
+      "name": "1.23.1 bookingStandardDayOn: a Saturday is its own window",
+      "function": "bookingStandardDayOn",
+      "args": [
+        {
+          "standardDayStart": "07:30",
+          "standardDayEnd": "16:00",
+          "unpaidBreakMinutes": 30,
+          "standardPaidHours": 8,
+          "breakWindowStart": "12:00",
+          "breakWindowEnd": "12:30",
+          "weekdayOutsideStandardMultiplier": 1.5,
+          "saturday": {
+            "allHoursAtMultiplierMode": false,
+            "allHoursMultiplier": 2,
+            "definedWindowStart": "07:30",
+            "definedWindowEnd": "13:00",
+            "countsAsStandardHours": 8,
+            "outsideWindowMultiplier": 2,
+            "sameAsSaturday": false,
+            "breakPaid": true
+          },
+          "sunday": {
+            "allHoursAtMultiplierMode": true,
+            "allHoursMultiplier": 2,
+            "definedWindowStart": "07:30",
+            "definedWindowEnd": "16:00",
+            "countsAsStandardHours": 8,
+            "outsideWindowMultiplier": 2,
+            "sameAsSaturday": false,
+            "breakPaid": true
+          },
+          "breakPaid": false
+        },
+        "2026-11-07"
+      ],
+      "expected": {
+        "standardDayStart": "07:30",
+        "standardDayEnd": "13:00",
+        "breakWindowStart": "12:00",
+        "breakWindowEnd": "12:30"
+      }
+    },
+    {
+      "name": "1.23.1 overlappingBookingIds: Saturday Full day vs a custom booking inside the window",
+      "function": "overlappingBookingIds",
+      "args": [
+        [
+          {
+            "id": "sat-full",
+            "dayKey": "2026-11-07",
+            "timeSlot": "FULL DAY"
+          },
+          {
+            "id": "sat-in",
+            "dayKey": "2026-11-07",
+            "timeSlot": "CUSTOM_HOURS",
+            "workStartTime": "10:00",
+            "workEndTime": "12:00"
+          }
+        ],
+        {
+          "standardDayStart": "07:30",
+          "standardDayEnd": "16:00",
+          "unpaidBreakMinutes": 30,
+          "standardPaidHours": 8,
+          "breakWindowStart": "12:00",
+          "breakWindowEnd": "12:30",
+          "weekdayOutsideStandardMultiplier": 1.5,
+          "saturday": {
+            "allHoursAtMultiplierMode": false,
+            "allHoursMultiplier": 2,
+            "definedWindowStart": "07:30",
+            "definedWindowEnd": "13:00",
+            "countsAsStandardHours": 8,
+            "outsideWindowMultiplier": 2,
+            "sameAsSaturday": false,
+            "breakPaid": true
+          },
+          "sunday": {
+            "allHoursAtMultiplierMode": true,
+            "allHoursMultiplier": 2,
+            "definedWindowStart": "07:30",
+            "definedWindowEnd": "16:00",
+            "countsAsStandardHours": 8,
+            "outsideWindowMultiplier": 2,
+            "sameAsSaturday": false,
+            "breakPaid": true
+          },
+          "breakPaid": false
+        }
+      ],
+      "expected": [
+        "sat-full",
+        "sat-in"
+      ]
+    },
+    {
+      "name": "1.23.1 overlappingBookingIds: Saturday Full day vs a custom booking outside the window",
+      "function": "overlappingBookingIds",
+      "args": [
+        [
+          {
+            "id": "sat-full",
+            "dayKey": "2026-11-07",
+            "timeSlot": "FULL DAY"
+          },
+          {
+            "id": "sat-out",
+            "dayKey": "2026-11-07",
+            "timeSlot": "CUSTOM_HOURS",
+            "workStartTime": "14:00",
+            "workEndTime": "16:00"
+          }
+        ],
+        {
+          "standardDayStart": "07:30",
+          "standardDayEnd": "16:00",
+          "unpaidBreakMinutes": 30,
+          "standardPaidHours": 8,
+          "breakWindowStart": "12:00",
+          "breakWindowEnd": "12:30",
+          "weekdayOutsideStandardMultiplier": 1.5,
+          "saturday": {
+            "allHoursAtMultiplierMode": false,
+            "allHoursMultiplier": 2,
+            "definedWindowStart": "07:30",
+            "definedWindowEnd": "13:00",
+            "countsAsStandardHours": 8,
+            "outsideWindowMultiplier": 2,
+            "sameAsSaturday": false,
+            "breakPaid": true
+          },
+          "sunday": {
+            "allHoursAtMultiplierMode": true,
+            "allHoursMultiplier": 2,
+            "definedWindowStart": "07:30",
+            "definedWindowEnd": "16:00",
+            "countsAsStandardHours": 8,
+            "outsideWindowMultiplier": 2,
+            "sameAsSaturday": false,
+            "breakPaid": true
+          },
+          "breakPaid": false
+        }
+      ],
+      "expected": []
+    },
+    {
+      "name": "1.23.1 bookingRequestClashIds: Saturday custom outside the window vs a Full day",
+      "function": "bookingRequestClashIds",
+      "args": [
+        {
+          "request": {
+            "dayKey": "2026-11-07",
+            "timeSlot": "CUSTOM_HOURS",
+            "workStartTime": "14:00",
+            "workEndTime": "16:00"
+          },
+          "existing": [
+            {
+              "id": "sat-full",
+              "dayKey": "2026-11-07",
+              "timeSlot": "FULL DAY"
+            }
+          ],
+          "day": {
+            "standardDayStart": "07:30",
+            "standardDayEnd": "16:00",
+            "unpaidBreakMinutes": 30,
+            "standardPaidHours": 8,
+            "breakWindowStart": "12:00",
+            "breakWindowEnd": "12:30",
+            "weekdayOutsideStandardMultiplier": 1.5,
+            "saturday": {
+              "allHoursAtMultiplierMode": false,
+              "allHoursMultiplier": 2,
+              "definedWindowStart": "07:30",
+              "definedWindowEnd": "13:00",
+              "countsAsStandardHours": 8,
+              "outsideWindowMultiplier": 2,
+              "sameAsSaturday": false,
+              "breakPaid": true
+            },
+            "sunday": {
+              "allHoursAtMultiplierMode": true,
+              "allHoursMultiplier": 2,
+              "definedWindowStart": "07:30",
+              "definedWindowEnd": "16:00",
+              "countsAsStandardHours": 8,
+              "outsideWindowMultiplier": 2,
+              "sameAsSaturday": false,
+              "breakPaid": true
+            },
+            "breakPaid": false
+          }
+        }
+      ],
+      "expected": []
+    },
+    {
+      "name": "1.23.1 userMissingLevel: no level flag, manager role",
+      "function": "userMissingLevel",
+      "args": [
+        {
+          "id": "u1",
+          "email": "pat@x.com",
+          "role": "manager"
+        }
+      ],
+      "expected": true
+    },
+    {
+      "name": "1.23.1 userMissingLevel: admin by role has a level",
+      "function": "userMissingLevel",
+      "args": [
+        {
+          "id": "u2",
+          "email": "a@x.com",
+          "role": "admin"
+        }
+      ],
+      "expected": false
     }
   ]
 }

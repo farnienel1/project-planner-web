@@ -11044,3 +11044,71 @@ test('1.23.0 per-day hours: overlap flag, clashes, leave cover and booking confl
   assert.deepEqual(rows[0].workingWindow, { start: 9 * 60, end: 12 * 60 })
   assert.equal(rows[0].missingHours, 2.75)
 })
+
+test('1.23.1 userMissingLevel / usersMissingLevel: no level flag and not an admin by role', () => {
+  const roster = [
+    { id: 'flagless', email: 'pat@x.com', role: 'manager' },
+    { id: 'basic', email: 'b@x.com', role: 'basic', permissions: { manager: false, operativeMode: false } },
+    { id: 'mgr', email: 'm@x.com', permissions: { manager: true } },
+    { id: 'op', email: 'o@x.com', operativeMode: true },
+    { id: 'adm-role', email: 'a@x.com', role: 'admin' },
+    { id: 'sa', email: 's@x.com', isSuperAdmin: true },
+    { id: 'gone', email: '', firstName: 'Deleted', surname: 'user' },
+  ]
+  assert.deepEqual(R112.usersMissingLevel(roster).map((row) => row.id), ['flagless', 'basic'])
+  assert.equal(R112.userMissingLevel(null), false)
+  assert.equal(R112.USER_MISSING_LEVEL_MESSAGE, 'Has no user level: open in Manage Users and pick one')
+})
+
+test('1.23.1 weekend named slots: a Saturday Full day is that Saturday\'s own window (07:30–13:00), not the weekday day', () => {
+  // Weekday 07:30–16:00; Saturday set window 07:30–13:00 (default); Saturday 7 Nov 2026.
+  const policy = parsePolicy112({
+    standardDayStart: '07:30',
+    standardDayEnd: '16:00',
+    breakWindowStart: '12:00',
+    breakWindowEnd: '12:30',
+    unpaidBreakMinutes: 30,
+    saturday: { allHoursAtMultiplierMode: false, allHoursMultiplier: 2, definedWindowStart: '07:30', definedWindowEnd: '13:00', countsAsStandardHours: 8, outsideWindowMultiplier: 2 },
+  })
+  assert.deepEqual(R112.bookingStandardDayOn(policy, '2026-11-07'), {
+    standardDayStart: '07:30',
+    standardDayEnd: '13:00',
+    breakWindowStart: '12:00',
+    breakWindowEnd: '12:30',
+  })
+  assert.equal(R112.bookingStandardDayOn(policy, '2026-11-06')?.standardDayEnd, '16:00')
+  const fullDay = { id: 'sat-full', dayKey: '2026-11-07', timeSlot: 'FULL DAY' }
+  const inside = { id: 'sat-in', dayKey: '2026-11-07', timeSlot: 'CUSTOM_HOURS', workStartTime: '10:00', workEndTime: '12:00' }
+  const outside = { id: 'sat-out', dayKey: '2026-11-07', timeSlot: 'CUSTOM_HOURS', workStartTime: '14:00', workEndTime: '16:00' }
+  // Overlap flag (timesheets)
+  assert.deepEqual(R112.overlappingBookingIds([fullDay, inside], policy), ['sat-full', 'sat-in'])
+  assert.deepEqual(R112.overlappingBookingIds([fullDay, outside], policy), [])
+  // Warnings (operative clashes)
+  const people = { accounts: [], operatives: [] }
+  const withOp = (rows: Array<Record<string, string>>) => rows.map((row) => ({ ...row, operativeId: 'op1' })) as never
+  assert.equal(R112.operativeClashGroups({ operativeBookings: withOp([fullDay, inside]), people, day: policy }).length, 1)
+  assert.equal(R112.operativeClashGroups({ operativeBookings: withOp([fullDay, outside]), people, day: policy }).length, 0)
+  // Booking being made
+  const request = (row: Record<string, string>) => ({ dayKey: row.dayKey, timeSlot: row.timeSlot, workStartTime: row.workStartTime, workEndTime: row.workEndTime })
+  assert.deepEqual(R112.bookingRequestClashIds({ request: request(inside), existing: [fullDay], day: policy }), ['sat-full'])
+  assert.deepEqual(R112.bookingRequestClashIds({ request: request(outside), existing: [fullDay], day: policy }), [])
+  assert.deepEqual(R112.bookingRequestClashIds({ request: { dayKey: '2026-11-07', timeSlot: 'FULL DAY' }, existing: [outside], day: policy }), [])
+  // Leave: PM leave on Saturday is the later half of 07:30–13:00 (10:15–13:00), so 14:00–16:00 does not conflict.
+  const holidays = [{ id: 'h', userId: 'u1', startDayKey: '2026-11-07', endDayKey: '2026-11-07', timeSlot: 'PM', status: 'approved' }]
+  const leave = (row: Record<string, string>) =>
+    R112.bookingLeaveConflicts({ people: [{ id: 'u1' }], dayKeys: ['2026-11-07'], holidays, timeSlot: row.timeSlot, workStartTime: row.workStartTime, workEndTime: row.workEndTime, day: policy }).length
+  assert.equal(leave(inside), 1)
+  assert.equal(leave(outside), 0)
+  // Leave cover: AM leave on Saturday leaves 10:15–13:00 (less the 12:00–12:30 lunch) to cover.
+  const cover = R112.leaveCoverageRows({
+    timeZone: 'Europe/London',
+    startDayKey: '2026-11-07',
+    endDayKey: '2026-11-07',
+    day: policy,
+    includeWeekends: true,
+    people: [{ personKey: 'u1', name: 'Mo', userId: 'u1', operativeIds: [] }],
+    leave: [{ id: 'h', userId: 'u1', startDayKey: '2026-11-07', endDayKey: '2026-11-07', timeSlot: 'AM', approved: true }],
+    bookings: [],
+  })
+  assert.deepEqual(cover[0].workingWindow, { start: 10 * 60 + 15, end: 13 * 60 })
+})

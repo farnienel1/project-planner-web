@@ -18,7 +18,7 @@
 import { permissionLevelOf, storedPermissionFlag } from './permissionLevels'
 import { idText } from './personIds'
 import { rosterPeople, type RosterDocument } from './scheduleSources'
-import { listedRosterUsers, type RosterSegmentProfile } from './userRosterSegment'
+import { isAnonymisedDeletedProfile, listedRosterUsers, type RosterSegmentProfile } from './userRosterSegment'
 
 export type RosterListKind = 'admins' | 'managers' | 'operatives'
 
@@ -108,4 +108,30 @@ export function clashManagerIds(roster: ReadonlyArray<RosterListRow> | null | un
     out.push(id)
   }
   return out
+}
+
+/** Shown in Settings → Data health for a person with no user level (rulebook 1.23.1 §11). */
+export const USER_MISSING_LEVEL_MESSAGE = 'Has no user level: open in Manage Users and pick one'
+
+/**
+ * Rulebook 1.23.1 §11 (owner decision): every user is created with a level, so a users document with none is a data
+ * fault. A person has no level when none of the level flags is stored true — `isSuperAdmin`, `adminAccess`,
+ * `manager`, `operativeMode` (top level or in `permissions`) — and their role is not admin (`admin`, `super_admin`).
+ * Such a person reads as manager level (`permissionLevelOf`) and is listed on Managers until an admin picks a level
+ * with Change user type. An anonymised deleted profile is never reported. Every create path (Add User / invite,
+ * guided setup, sign-up) refuses or never writes a profile with no level.
+ */
+export function userMissingLevel(user: RosterListRow | null | undefined): boolean {
+  if (!user || !idText(user.id)) return false
+  if (isAnonymisedDeletedProfile(user)) return false
+  for (const key of ['isSuperAdmin', 'adminAccess', 'manager', 'operativeMode']) {
+    if (storedPermissionFlag(user, key) === true) return false
+  }
+  const role = typeof user.role === 'string' ? user.role.trim().toLowerCase().replace(/[\s-]/g, '_') : ''
+  return role !== 'admin' && role !== 'super_admin' && role !== 'superadmin'
+}
+
+/** The roster rows with no user level (`userMissingLevel`), in roster order — the Data health list. */
+export function usersMissingLevel<T extends RosterListRow>(roster: ReadonlyArray<T> | null | undefined): T[] {
+  return (roster || []).filter((row) => userMissingLevel(row))
 }

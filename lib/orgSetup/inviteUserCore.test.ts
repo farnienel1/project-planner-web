@@ -17,3 +17,12 @@ test('inviteUserCore blocks with the canonical live-claim rule, not any matching
   assert.equal(source.includes('adminLookupAuthUserByEmail'), false)
   assert.match(source, /INVITE_LOOKUP_TIMEOUT_MS/)
 })
+
+test('1.23.1 inviteUserCore refuses an invite with no user level before any write', () => {
+  const source = readFileSync(new URL('./inviteUserCore.ts', import.meta.url), 'utf8')
+  assert.match(source, /userMissingLevel/)
+  const guard = source.indexOf('const levelError = inviteLevelError(input)')
+  assert.ok(guard > 0)
+  assert.ok(guard < source.indexOf('await setDoc(doc(db, \'invitations\''))
+  assert.ok(guard < source.indexOf('loadInviteClaimState(input.organizationId'))
+})

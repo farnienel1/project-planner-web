@@ -25,15 +25,19 @@ import { useBookingStore } from '@/lib/stores/bookingStore'
 import { useManagerScheduleStore } from '@/lib/stores/managerScheduleStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { useProjectStore } from '@/lib/stores/projectStore'
-import { bookingOccupiesDay, ORPHAN_BOOKING_LABEL } from '@/lib/canonical'
-import { normalizeBookingStatus } from '@/lib/ios-parity/enums'
+import { bookingRequestClashIds, ORPHAN_BOOKING_LABEL, type PayrollTimePolicyState } from '@/lib/canonical'
 import { samePersonBookingIds } from '@/lib/bookings/bookingPeople'
-import { intervalsOverlap, operativeClashInterval } from '@/lib/warnings/clashIntervals'
+import { clockText } from '@/lib/warnings/clashIntervals'
 import { managerSiteBookingDisplayTitle } from '@/lib/scheduling/managerSiteBookingUtils'
 
 export type LeaveCheckPerson = LeaveConflictPerson & { name: string }
 
-export function useLeaveConflictCheck(payrollOverride?: OrgPayrollTimePolicy | null) {
+/**
+ * Rulebook 1.23.1 §5: clashes and leave on a booked day are read under the working hours in effect on THAT day
+ * (`bookingRequestClashIds`, `bookingLeaveConflicts` with the organisation's working-hours state), never today's.
+ * `payrollOverride` (a screen's single loaded policy) is only the fallback until the state has loaded.
+ */
+export function useLeaveConflictCheck(payrollOverride?: OrgPayrollTimePolicy | PayrollTimePolicyState | null) {
   const organizationId = useAuthStore((state) => state.organization?.id)
   const holidays = useHolidayStore((state) => state.bookings)
   const loadHolidays = useHolidayStore((state) => state.loadBookings)
@@ -43,20 +47,20 @@ export function useLeaveConflictCheck(payrollOverride?: OrgPayrollTimePolicy | n
   const operatives = useOperativeStore((state) => state.operatives)
   const projects = useProjectStore((state) => state.projects)
   const smallWorks = useProjectStore((state) => state.smallWorks)
-  const [payroll, setPayroll] = useState<OrgPayrollTimePolicy>(DEFAULT_PAYROLL_POLICY)
+  const [payroll, setPayroll] = useState<OrgPayrollTimePolicy | PayrollTimePolicyState | null>(null)
 
   useEffect(() => {
     if (!organizationId) return
     void loadHolidays(organizationId)
-    if (payrollOverride) return
     loadOrganizationDetails(organizationId)
       .then((details) => {
-        if (details?.payrollTimePolicy) setPayroll(details.payrollTimePolicy)
+        const next = details?.payrollTimePolicyState ?? details?.payrollTimePolicy
+        if (next) setPayroll(next)
       })
       .catch(() => {})
-  }, [organizationId, loadHolidays, payrollOverride])
+  }, [organizationId, loadHolidays])
 
-  const policy = payrollOverride ?? payroll
+  const policy: OrgPayrollTimePolicy | PayrollTimePolicyState = payroll ?? payrollOverride ?? DEFAULT_PAYROLL_POLICY
 
   /** Leave rows for these people on these day keys, for one slot. */
   const rowsFor = useCallback(
@@ -100,13 +104,6 @@ export function useLeaveConflictCheck(payrollOverride?: OrgPayrollTimePolicy | n
       excludeBookingIds: ReadonlyArray<string> = []
     ): BookingConflictRow[] => {
       const timeZone = organizationZoneOr()
-      const probe = operativeClashInterval(
-        { timeSlot: slot.timeSlot, workStartTime: slot.workStartTime, workEndTime: slot.workEndTime } as Parameters<
-          typeof operativeClashInterval
-        >[0],
-        policy
-      )
-      if (!probe) return []
       const excluded = new Set(excludeBookingIds.map((id) => String(id || '').toLowerCase()).filter(Boolean))
       const operativeIds = new Set<string>()
       for (const id of person.operativeIds ?? []) {
@@ -115,28 +112,47 @@ export function useLeaveConflictCheck(payrollOverride?: OrgPayrollTimePolicy | n
         for (const alias of samePersonBookingIds(id, users, operatives)) operativeIds.add(alias)
       }
       const userIds = new Set([person.userId, person.operativeIds?.length ? null : person.id].filter(Boolean).map((id) => String(id).toLowerCase()))
-      const overlaps = (row: { timeSlot?: unknown; workStartTime?: string; workEndTime?: string }) => {
-        const iv = operativeClashInterval(row as Parameters<typeof operativeClashInterval>[0], policy)
-        return iv ? intervalsOverlap(probe, iv) : false
-      }
       const titles = new Map(
         [...projects, ...smallWorks].map((work) => [work.id, `${work.jobNumber ?? ''} ${work.siteName ?? ''}`.trim() || work.id])
       )
+      // The person's labour and manager schedule bookings (any of their ids), less the one being edited.
+      const labour = bookings.filter(
+        (booking) =>
+          !excluded.has(String(booking.id).toLowerCase()) && operativeIds.has(String(booking.operativeId || '').toLowerCase())
+      )
+      const manager = managerSiteBookings.filter(
+        (booking) => !excluded.has(String(booking.id).toLowerCase()) && userIds.has(String(booking.userId || '').toLowerCase())
+      )
+      const existing = [
+        ...labour.map((booking) => ({
+          id: `o:${booking.id}`,
+          dayKey: dayKey(new Date(booking.date), timeZone),
+          timeSlot: String(booking.timeSlot ?? ''),
+          workStartTime: clockText(booking.workStartTime),
+          workEndTime: clockText(booking.workEndTime),
+          status: String(booking.status ?? ''),
+        })),
+        ...manager.map((booking) => ({
+          id: `m:${booking.id}`,
+          dayKey: dayKey(new Date(booking.date), timeZone),
+          timeSlot: String(booking.timeSlot ?? ''),
+          workStartTime: clockText(booking.workStartTime),
+          workEndTime: clockText(booking.workEndTime),
+        })),
+      ]
+      const clashing = new Set(
+        bookingRequestClashIds({
+          request: { dayKey: key, timeSlot: slot.timeSlot, workStartTime: slot.workStartTime ?? null, workEndTime: slot.workEndTime ?? null },
+          existing,
+          day: policy,
+        })
+      )
       const lines: string[] = []
-      for (const booking of bookings) {
-        if (excluded.has(String(booking.id).toLowerCase())) continue
-        if (!operativeIds.has(String(booking.operativeId || '').toLowerCase())) continue
-        if (dayKey(new Date(booking.date), timeZone) !== key) continue
-        if (!bookingOccupiesDay(normalizeBookingStatus(booking.status) ?? booking.status)) continue
-        if (!overlaps(booking)) continue
-        lines.push(`${booking.timeSlot} · ${titles.get(booking.projectId) ?? ORPHAN_BOOKING_LABEL}`)
+      for (const booking of labour) {
+        if (clashing.has(`o:${booking.id}`)) lines.push(`${booking.timeSlot} · ${titles.get(booking.projectId) ?? ORPHAN_BOOKING_LABEL}`)
       }
-      for (const booking of managerSiteBookings) {
-        if (excluded.has(String(booking.id).toLowerCase())) continue
-        if (!userIds.has(String(booking.userId || '').toLowerCase())) continue
-        if (dayKey(new Date(booking.date), timeZone) !== key) continue
-        if (!overlaps(booking)) continue
-        lines.push(`${booking.timeSlot} · ${managerSiteBookingDisplayTitle(booking, titles)}`)
+      for (const booking of manager) {
+        if (clashing.has(`m:${booking.id}`)) lines.push(`${booking.timeSlot} · ${managerSiteBookingDisplayTitle(booking, titles)}`)
       }
       if (lines.length === 0) return []
       return [

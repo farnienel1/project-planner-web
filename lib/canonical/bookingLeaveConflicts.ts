@@ -21,7 +21,7 @@
 import { intervalsOverlap, leaveComparableInterval, leaveHalfDayWindows, type MinuteInterval, type StandardDayInput } from './engine'
 import { idKey, idText, personIdSet, type PersonIdsInput, type PersonRosterRow } from './personIds'
 import { leaveSlotKind } from './leaveCoverage'
-import { standardDayOn, type PayrollTimePolicyState } from './payrollPolicySchedule'
+import { bookingStandardDayOn, type PayrollTimePolicyState } from './payrollPolicySchedule'
 
 /** The label a leave conflict row shows (purple; double bookings stay orange). */
 export const ANNUAL_LEAVE_BOOKED_LABEL = 'Annual leave booked'
@@ -108,7 +108,7 @@ export function bookingLeaveConflicts(input: BookingLeaveConflictInput): Booking
   // 1.23.0: the leave halves and the booking interval under the standard day in effect on each booked day.
   const overlaps = (slot: BookingLeaveSlot, dayKey: string): boolean => {
     if (slot === 'FULL DAY') return true
-    const day = standardDayOn<StandardDayInput>(input.day, dayKey)
+    const day = bookingStandardDayOn(input.day, dayKey)
     const booking: MinuteInterval | null = leaveComparableInterval(
       { timeSlot: input.timeSlot, workStartTime: input.workStartTime, workEndTime: input.workEndTime },
       day

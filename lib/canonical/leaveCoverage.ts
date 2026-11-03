@@ -39,7 +39,7 @@ import {
 } from './engine'
 import { eachDayKey, formatLongDayKey, isoWeekdayOfDayKey, zoneOrLondon } from './dayKeys'
 import { idKey } from './personIds'
-import { standardDayOn, type PayrollTimePolicyState } from './payrollPolicySchedule'
+import { bookingStandardDayOn, type PayrollTimePolicyState } from './payrollPolicySchedule'
 
 export type LeaveSlot = 'FULL_DAY' | 'AM' | 'PM'
 
@@ -206,7 +206,7 @@ export function leaveCoverageRows(input: LeaveCoverageInput): LeaveCoverageRow[]
     const iso = isoWeekdayOfDayKey(dayKey, timeZone)
     const weekend = iso === 6 || iso === 7
     // 1.23.0 §5: the standard day in effect on this day. 1.20.0 §9: leave halves split it at its exact middle.
-    const day = standardDayOn<StandardDayInput>(input.day, dayKey)
+    const day = bookingStandardDayOn(input.day, dayKey)
     const windows = leaveHalfDayWindows(day)
     const lunch = standardBreakWindow(day)
     for (const record of approvedLeave) {

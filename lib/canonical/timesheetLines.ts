@@ -22,7 +22,7 @@ import {
   slotInterval,
   type StandardDayInput,
 } from './engine'
-import { standardDayOn, type PayrollTimePolicyState } from './payrollPolicySchedule'
+import { bookingStandardDayOn, type PayrollTimePolicyState } from './payrollPolicySchedule'
 import { leaveRecordDayKeys, normalizeHolidayStatus, normalizeHolidayTimeSlot, type HolidayTimeSlotValue } from './leaveRequests'
 
 export const OVERLAPPING_BOOKING_NOTE = 'Overlaps another booking — check with your manager'
@@ -58,7 +58,7 @@ export function overlappingBookingIds(
   const intervalOf = (booking: OverlapBookingInput) =>
     slotInterval(
       { timeSlot: booking.timeSlot, workStartTime: booking.workStartTime, workEndTime: booking.workEndTime },
-      standardDayOn<StandardDayInput>(day, booking.dayKey)
+      bookingStandardDayOn(day, booking.dayKey)
     )
   // 1.13.0 §5: an overnight booking also sits on the next morning, so it overlaps that day's early bookings.
   const carried = new Map<string, OverlapBookingInput[]>()

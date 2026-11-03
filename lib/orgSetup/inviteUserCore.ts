@@ -1,6 +1,7 @@
 import { collection, doc, getDoc, getDocs, query, setDoc, Timestamp, where } from 'firebase/firestore'
 import { getFirebaseDb } from '@/lib/firebase/ensureFirebase'
 import { buildInvitedUserPayload, normalizeLineManagerIds, permissionsToFirestoreMap } from '@/lib/firebase/userPayload'
+import { userMissingLevel } from '@/lib/canonical'
 import { invitationCreateFields } from '@/lib/canonical/createDocuments'
 import { newUuid } from '@/lib/firebase/firestoreUtils'
 import { withTimeout } from '@/lib/client/withTimeout'
@@ -144,7 +145,17 @@ async function loadInviteClaimState(
   }
 }
 
+/** Rulebook 1.23.1 §11: the refusal when an invite has no user level, else null. Pure. */
+export function inviteLevelError(input: Pick<InviteUserCoreInput, 'permissions'>): string | null {
+  const flags = permissionsToFirestoreMap(input.permissions)
+  return userMissingLevel({ id: 'invite', email: 'invite', ...flags }) ? 'Choose a user level (admin, manager or operative) before inviting this person.' : null
+}
+
 export async function inviteUserCore(input: InviteUserCoreInput): Promise<InviteUserCoreResult> {
+  // Rulebook 1.23.1 §11: every user is created with a level (admin, manager or operative). Never write a profile or
+  // an invitation without one (`userMissingLevel`).
+  const levelError = inviteLevelError(input)
+  if (levelError) throw new Error(levelError)
   const db = getFirebaseDb()
   const emailLower = input.email.toLowerCase().trim()
   const claim = await loadInviteClaimState(input.organizationId, emailLower)

@@ -12,6 +12,7 @@ import { getFirebaseDb } from '@/lib/firebase/ensureFirebase'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { hasAdminAccess } from '@/lib/permissions'
 import { BookingHealthScan } from '@/components/dataHealth/BookingHealthScan'
+import { UsersMissingLevel } from '@/components/dataHealth/UsersMissingLevel'
 import {
   parseAppUserDocument,
   parseBooking,
@@ -109,7 +110,14 @@ export default function DataHealthPage() {
   }, [organization?.id, user])
 
   const isAdmin = hasAdminAccess(user)
-  const scan = isAdmin && organization?.id ? <BookingHealthScan organizationId={organization.id} /> : null
+  const scan =
+    isAdmin && organization?.id ? (
+      <div className="space-y-4">
+        {/* Rulebook 1.23.1 §11: people with no user level (`usersMissingLevel`). */}
+        <UsersMissingLevel organizationId={organization.id} />
+        <BookingHealthScan organizationId={organization.id} />
+      </div>
+    ) : null
 
   if (!isDev) {
     return scan ?? <p className="text-sm text-[var(--ink3)]">Data health is for admins.</p>

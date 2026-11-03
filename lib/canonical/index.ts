@@ -1529,10 +1529,10 @@ export { managerCoverageHours } from './managerCoverage'
 export type { CoverageBooking, ManagerCoverageHours } from './managerCoverage'
 
 // Rulebook 1.23.0 (§5, §9, §11, §21–§23): People, Home and per-day hours (audit findings 9, 12, 16–22).
-export { isPayrollTimePolicyState, standardDayOn } from './payrollPolicySchedule'
+export { bookingStandardDayOn, isPayrollTimePolicyState, standardDayOn } from './payrollPolicySchedule'
 export { bookingRequestClashIds } from './scheduleSources'
 export type { BookingRequestClashInput } from './scheduleSources'
-export { clashManagerIds, rosterListFor, rosterListKind } from './rosterLists'
+export { USER_MISSING_LEVEL_MESSAGE, clashManagerIds, rosterListFor, rosterListKind, userMissingLevel, usersMissingLevel } from './rosterLists'
 export type { RosterListKind, RosterListRow } from './rosterLists'
 export {
   addCalendarDayKeys,

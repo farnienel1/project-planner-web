@@ -38,16 +38,12 @@ import { dayKey as orgDayKey } from '@/lib/ios-parity/londonTime'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 import { bookingRequestIdentity } from '@/lib/canonical/bookingSlots'
 import { managerBookingIdentity } from '@/lib/scheduling/bookingRequestIdentity'
-import { bookingOccupiesDay } from '@/lib/canonical'
+import { bookingRequestClashIds, type PayrollTimePolicyState } from '@/lib/canonical'
 import { samePersonBookingIds } from '@/lib/bookings/bookingPeople'
 import { dateFromDayKey, dayKey, parseHhMm } from '@/lib/ios-parity/londonTime'
 import { IosWriteValidationError } from '@/lib/ios-parity/firestoreCodec'
 import { initialsFrom } from '@/lib/daily-overview/buildDailyOverview'
-import {
-  bookingsOverlapByInterval,
-  managerClashInterval,
-  intervalsOverlap,
-} from '@/lib/warnings/clashIntervals'
+import { clockText } from '@/lib/warnings/clashIntervals'
 import {
   managerSiteBookingDisplayTitle,
   type ManagerLocationType,
@@ -168,7 +164,9 @@ export function BookLabourFlowScreen({
     customItemEnabled: {},
   })
   const [payroll, setPayroll] = useState<OrgPayrollTimePolicy>(DEFAULT_PAYROLL_POLICY)
-  const leaveCheck = useLeaveConflictCheck(payroll)
+  // Rulebook 1.23.1 §5: clashes on the booked day use the hours in effect on that day (the working-hours state).
+  const [payrollState, setPayrollState] = useState<PayrollTimePolicyState | null>(null)
+  const leaveCheck = useLeaveConflictCheck(payrollState ?? payroll)
   // Rulebook 1.18.0 (`customHoursPrefillForDays`): custom hours open with the day's default — a set-window weekend
   // day's window, else the standard day in effect on it — and reset when the day changes kind or the hours load.
   const bookingDays = useMemo(() => [day], [day])
@@ -192,6 +190,7 @@ export function BookLabourFlowScreen({
       .then((details) => {
         if (details?.myScheduleOptions) setScheduleOpts(details.myScheduleOptions)
         if (details?.payrollTimePolicy) setPayroll(details.payrollTimePolicy)
+        if (details?.payrollTimePolicyState) setPayrollState(details.payrollTimePolicyState)
       })
       .catch(() => {})
   }, [
@@ -376,49 +375,53 @@ export function BookLabourFlowScreen({
     )
   }
 
-  /** The manager's own bookings that day whose clock interval overlaps this slot (`managerClashInterval`), as labels. */
+  /** Rulebook 1.23.1 §5 `bookingRequestClashIds`: the ids of `existing` the slot clashes with on the booked day's hours. */
+  function clashIdsOnDay(
+    existing: ReadonlyArray<{ id: string; date: Date | string; timeSlot?: unknown; workStartTime?: string; workEndTime?: string; status?: unknown }>,
+    slot: string,
+    workStart?: string,
+    workEnd?: string
+  ): Set<string> {
+    return new Set(
+      bookingRequestClashIds({
+        request: { dayKey: dayKey(day), timeSlot: slot, workStartTime: workStart ?? null, workEndTime: workEnd ?? null },
+        existing: existing.map((row) => ({
+          id: row.id,
+          dayKey: dayKey(new Date(row.date)),
+          timeSlot: String(row.timeSlot ?? ''),
+          workStartTime: clockText(row.workStartTime),
+          workEndTime: clockText(row.workEndTime),
+          status: row.status == null ? null : String(row.status),
+        })),
+        day: payrollState ?? payroll,
+      })
+    )
+  }
+
+  /** The manager's own bookings that clash with this slot on the booked day (`bookingRequestClashIds`), as labels. */
   function managerClashLines(userId: string, slot: ManagerSlot, workStart?: string, workEnd?: string): string[] | null {
-    const existing = managerSiteBookings.filter((booking) => booking.userId === userId && dayKey(booking.date) === dayKey(day))
+    const existing = managerSiteBookings.filter((booking) => booking.userId === userId)
     if (existing.length === 0) return null
-    const probe: Pick<ManagerSiteBooking, 'timeSlot' | 'workStartTime' | 'workEndTime'> = {
-      timeSlot: slot,
-      workStartTime: workStart,
-      workEndTime: workEnd,
-    }
-    const probeIv = managerClashInterval(probe, payroll)
-    if (!probeIv) return null
-    const titles = new Map(allWorks.map((work) => [work.id, `${work.jobNumber ?? ''} ${work.siteName ?? ''}`.trim() || work.id]))
-    const overlapping = existing.filter((row) => {
-      const iv = managerClashInterval(row, payroll)
-      return iv ? intervalsOverlap(probeIv, iv) : false
-    })
+    const clashing = clashIdsOnDay(existing, slot, workStart, workEnd)
+    const overlapping = existing.filter((row) => clashing.has(row.id))
     if (overlapping.length === 0) return null
+    const titles = new Map(allWorks.map((work) => [work.id, `${work.jobNumber ?? ''} ${work.siteName ?? ''}`.trim() || work.id]))
     return overlapping.map((row) => `${row.timeSlot} · ${managerSiteBookingDisplayTitle(row, titles)}`)
   }
 
   function operativeClashLines(
     operativeId: string,
-    projectId: string,
+    _projectId: string,
     slot: OperativeSlot,
     workStart?: string,
     workEnd?: string,
-    breakOff?: boolean
+    _breakOff?: boolean
   ): string[] | null {
     const personIds = samePersonBookingIds(operativeId, users, operatives)
-    const existing = bookings.filter(
-      (booking) =>
-        personIds.has(String(booking.operativeId || '').toLowerCase()) &&
-        dayKey(booking.date) === dayKey(day) &&
-        bookingOccupiesDay(normalizeBookingStatus(booking.status) ?? booking.status)
-    )
+    const existing = bookings.filter((booking) => personIds.has(String(booking.operativeId || '').toLowerCase()))
     if (existing.length === 0) return null
-    const probe: Pick<Booking, 'timeSlot' | 'workStartTime' | 'workEndTime' | 'isBreakRemoved'> = {
-      timeSlot: slot,
-      workStartTime: workStart,
-      workEndTime: workEnd,
-      isBreakRemoved: breakOff,
-    }
-    const overlapping = existing.filter((row) => bookingsOverlapByInterval(probe, row, payroll))
+    const clashing = clashIdsOnDay(existing, slot, workStart, workEnd)
+    const overlapping = existing.filter((row) => clashing.has(row.id))
     if (overlapping.length === 0) return null
     return overlapping.map((booking) => {
       const project = allWorks.find((p) => p.id === booking.projectId)

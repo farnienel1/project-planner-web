@@ -25,7 +25,7 @@ import {
   type StandardDayInput,
 } from './engine'
 import { bookingOccupiesDay } from './warningRows'
-import { standardDayOn, type PayrollTimePolicyState } from './payrollPolicySchedule'
+import { bookingStandardDayOn, type PayrollTimePolicyState } from './payrollPolicySchedule'
 
 const DAY_KEY = /^\d{4}-\d{2}-\d{2}$/
 
@@ -380,7 +380,7 @@ export function managerClashGroups(
     return slotInterval(
       { timeSlot: booking?.timeSlot, workStartTime: booking?.workStartTime, workEndTime: booking?.workEndTime },
       // 1.23.0: the standard day in effect on the booking's own day when `day` is the working-hours state.
-      standardDayOn<StandardDayInput>(input.day, booking?.dayKey)
+      bookingStandardDayOn(input.day, booking?.dayKey)
     )
   }
   const personDays = personDayItems(input)
@@ -686,7 +686,7 @@ export type BookingRequestClashInput = {
 export function bookingRequestClashIds(input: BookingRequestClashInput): string[] {
   const dayKey = dayKeyText(input?.request?.dayKey)
   if (!dayKey) return []
-  const standard = standardDayOn<StandardDayInput>(input.day, dayKey)
+  const standard = bookingStandardDayOn(input.day, dayKey)
   const probe = slotInterval(
     { timeSlot: input.request.timeSlot, workStartTime: input.request.workStartTime, workEndTime: input.request.workEndTime },
     standard
@@ -702,7 +702,7 @@ export function bookingRequestClashIds(input: BookingRequestClashInput): string[
     let interval: MinuteInterval | null = null
     if (day === dayKey) interval = slotInterval(clock, standard)
     else if (nextCalendarDayKey(day) === dayKey) {
-      const own = slotInterval(clock, standardDayOn<StandardDayInput>(input.day, day))
+      const own = slotInterval(clock, bookingStandardDayOn(input.day, day))
       interval = own && intervalCrossesMidnight(own) ? overnightCarryInterval(own) : null
     }
     if (!interval || !intervalsOverlap(probe, interval)) continue
@@ -806,7 +806,7 @@ export function operativeClashGroups(input: OperativeClashGroupsInput): Operativ
     return slotInterval(
       { timeSlot: booking?.timeSlot, workStartTime: booking?.workStartTime, workEndTime: booking?.workEndTime },
       // 1.23.0: the standard day in effect on the booking's own day when `day` is the working-hours state.
-      standardDayOn<StandardDayInput>(input.day, booking?.dayKey)
+      bookingStandardDayOn(input.day, booking?.dayKey)
     )
   }
   const carried = new Map<string, number[]>()
