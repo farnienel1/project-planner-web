@@ -405,60 +405,97 @@ function validClock(value: unknown): number | null {
 }
 
 /**
- * Rulebook 1.20.2 §4.3 (owner decision, 3 Nov): working-hours clock times — weekday start and finish, the break
- * window, each weekend day's window and break window — are on a 30-minute step (:00 or :30). The break LENGTH stays
- * any whole minutes 0–120 (e.g. 45). Booking custom times keep their own 15-minute step.
+ * Rulebook 1.20.2 / 1.20.3 §4.3 (owner decisions, 3 Nov): the working day's clock times — weekday start and finish,
+ * each weekend day's set-window start and finish — are on a 30-minute step (:00 or :30). Lunch break times have their
+ * own 15-minute step (`PAYROLL_BREAK_TIME_STEP_MINUTES`). Booking custom times keep their own 15-minute step.
  */
 export const PAYROLL_POLICY_TIME_STEP_MINUTES = 30
 export const PAYROLL_POLICY_TIME_STEP_MESSAGE = 'Working hours use 30-minute steps (e.g. 07:30).'
 
-/** Whether a working-hours clock time is on the 30-minute step. */
+/**
+ * Rulebook 1.20.3 §4.3 (owner decision, final): lunch break start and end (weekday `breakWindowStart` /
+ * `breakWindowEnd` and each weekend day's own) and the break LENGTH (`unpaidBreakMinutes`, weekend `breakMinutes`:
+ * 0, 15, 30 … 120) are on a 15-minute step — e.g. 10:00–10:45, 45 min.
+ */
+export const PAYROLL_BREAK_TIME_STEP_MINUTES = 15
+export const PAYROLL_BREAK_TIME_STEP_MESSAGE = 'Lunch break times and length use 15-minute steps (e.g. 10:45).'
+
+/** Whether a working-day clock time (start / finish, weekend window) is on the 30-minute step. */
 export function payrollPolicyTimeOnStep(value: string | null | undefined): boolean {
   const minutes = validClock(value)
   return minutes != null && minutes % PAYROLL_POLICY_TIME_STEP_MINUTES === 0
 }
 
-/** Every working-hours clock time the policy uses, with a stable key (weekend rows only when that day uses them). */
-function payrollPolicyClockTimes(policy: OrgPayrollTimePolicy): Array<[string, string | null | undefined]> {
-  const times: Array<[string, string | null | undefined]> = [
-    ['standardDayStart', policy.standardDayStart],
-    ['standardDayEnd', policy.standardDayEnd],
-    ['breakWindowStart', policy.breakWindowStart],
-    ['breakWindowEnd', policy.breakWindowEnd],
+/** 1.20.3: whether a lunch break clock time (start / end) is on the 15-minute step. */
+export function payrollBreakTimeOnStep(value: string | null | undefined): boolean {
+  const minutes = validClock(value)
+  return minutes != null && minutes % PAYROLL_BREAK_TIME_STEP_MINUTES === 0
+}
+
+/** 1.20.3: whether a lunch break length in minutes is on the 15-minute step (0, 15, 30 …). */
+export function payrollBreakMinutesOnStep(value: number | null | undefined): boolean {
+  const n = Number(value)
+  return value != null && Number.isFinite(n) && n % PAYROLL_BREAK_TIME_STEP_MINUTES === 0
+}
+
+type PolicyStepValue = { key: string; kind: 'day' | 'breakTime' | 'breakLength'; value: string | number | null | undefined }
+
+/** Every stepped working-hours value the policy uses, with a stable key (weekend rows only when that day uses them). */
+function payrollPolicyStepValues(policy: OrgPayrollTimePolicy): PolicyStepValue[] {
+  const values: PolicyStepValue[] = [
+    { key: 'standardDayStart', kind: 'day', value: policy.standardDayStart },
+    { key: 'standardDayEnd', kind: 'day', value: policy.standardDayEnd },
+    { key: 'breakWindowStart', kind: 'breakTime', value: policy.breakWindowStart },
+    { key: 'breakWindowEnd', kind: 'breakTime', value: policy.breakWindowEnd },
+    { key: 'unpaidBreakMinutes', kind: 'breakLength', value: policy.unpaidBreakMinutes },
   ]
   const days: Array<['saturday' | 'sunday', WeekendPayrollSettings | undefined]> = [['saturday', policy.saturday]]
   if (!policy.sunday?.sameAsSaturday) days.push(['sunday', policy.sunday])
   for (const [day, settings] of days) {
     if (!settings) continue
     if (!settings.allHoursAtMultiplierMode) {
-      times.push([`${day}.definedWindowStart`, settings.definedWindowStart])
-      times.push([`${day}.definedWindowEnd`, settings.definedWindowEnd])
+      values.push({ key: `${day}.definedWindowStart`, kind: 'day', value: settings.definedWindowStart })
+      values.push({ key: `${day}.definedWindowEnd`, kind: 'day', value: settings.definedWindowEnd })
     }
-    if (settings.breakWindowStart != null) times.push([`${day}.breakWindowStart`, settings.breakWindowStart])
-    if (settings.breakWindowEnd != null) times.push([`${day}.breakWindowEnd`, settings.breakWindowEnd])
+    if (settings.breakWindowStart != null) values.push({ key: `${day}.breakWindowStart`, kind: 'breakTime', value: settings.breakWindowStart })
+    if (settings.breakWindowEnd != null) values.push({ key: `${day}.breakWindowEnd`, kind: 'breakTime', value: settings.breakWindowEnd })
+    if (settings.breakMinutes != null) values.push({ key: `${day}.breakMinutes`, kind: 'breakLength', value: settings.breakMinutes })
   }
-  return times
+  return values
+}
+
+function stepValueOnStep(entry: PolicyStepValue): boolean {
+  if (entry.kind === 'breakLength') return payrollBreakMinutesOnStep(entry.value as number)
+  const value = entry.value as string
+  return entry.kind === 'day' ? payrollPolicyTimeOnStep(value) : payrollBreakTimeOnStep(value)
+}
+
+function sameStepValue(entry: PolicyStepValue, stored: PolicyStepValue['value']): boolean {
+  if (stored == null) return false
+  if (entry.kind === 'breakLength') return Number(stored) === Number(entry.value)
+  return validClock(stored) === validClock(entry.value)
 }
 
 /**
- * 1.20.2: the step check. A stored time that is not on the step (saved before 1.20.2) is shown as stored and only
- * checked once it is edited: pass the saved policy as `previous` and an unchanged time passes.
+ * 1.20.2 / 1.20.3: the step checks. A stored value that is not on its step (saved before the step applied) is shown as
+ * stored and only checked once it is edited: pass the saved policy as `previous` and an unchanged value passes.
+ * Working-day times are checked first (30 minutes), then lunch break times and length (15 minutes).
  */
 function payrollPolicyTimeStepError(policy: OrgPayrollTimePolicy, previous?: OrgPayrollTimePolicy | null): string | null {
-  const before = new Map(previous ? payrollPolicyClockTimes(previous) : [])
-  for (const [key, value] of payrollPolicyClockTimes(policy)) {
-    if (value == null || String(value).trim() === '') continue
-    if (payrollPolicyTimeOnStep(value)) continue
-    const stored = before.get(key)
-    if (stored != null && validClock(stored) === validClock(value)) continue
-    return PAYROLL_POLICY_TIME_STEP_MESSAGE
-  }
+  const before = new Map((previous ? payrollPolicyStepValues(previous) : []).map((entry) => [entry.key, entry.value]))
+  const offStep = payrollPolicyStepValues(policy).filter((entry) => {
+    if (entry.value == null || String(entry.value).trim() === '') return false
+    if (stepValueOnStep(entry)) return false
+    return !sameStepValue(entry, before.get(entry.key))
+  })
+  if (offStep.some((entry) => entry.kind === 'day')) return PAYROLL_POLICY_TIME_STEP_MESSAGE
+  if (offStep.length > 0) return PAYROLL_BREAK_TIME_STEP_MESSAGE
   return null
 }
 
 /**
- * Save check for a working-hours policy. Null when it is valid. `previous` (1.20.2) is the saved policy, so a time
- * stored off the 30-minute step before 1.20.2 is only refused once it is changed.
+ * Save check for a working-hours policy. Null when it is valid. `previous` (1.20.2) is the saved policy, so a value
+ * stored off its step (30-minute day times; 1.20.3: 15-minute break times and length) is only refused once it is changed.
  */
 export function validatePayrollTimePolicy(policy: OrgPayrollTimePolicy, previous?: OrgPayrollTimePolicy | null): string | null {
   const error = validatePayrollTimePolicyFields(policy)

@@ -17,18 +17,16 @@ import {
   payrollTimePolicyScheduleDateError,
   validatePayrollTimePolicy,
   formatClockMinutes,
-  halfDayWindows,
-  payrollBreakOnDay,
-  payrollDayWindows,
-  weekendBookingBreakdown,
   weekendBreakFor,
-  weekendCustomHoursDefault,
   weekendLunchBreakCopy,
   weekdayPaidDayPreview,
   weekdayPaidHours,
   withDerivedWeekdayPaidHours,
   PAYROLL_POLICY_TIME_STEP_MINUTES,
+  PAYROLL_BREAK_TIME_STEP_MINUTES,
   payrollPolicyTimeOnStep,
+  payrollBreakTimeOnStep,
+  weekendDayPreview,
 } from '@/lib/canonical'
 import { BookingDayBreakdownRows } from '@/components/scheduling/BookingDayBreakdownRows'
 import { useApplyLiveWhenClean, useLiveOrganizationDetails } from '@/components/settings/useLiveOrganizationSettings'
@@ -72,18 +70,42 @@ function minutesOf(value: string): number {
   return hours * 60 + minutes
 }
 
-/** 00:00, 00:30 … 23:30 — rulebook 1.20.2 `PAYROLL_POLICY_TIME_STEP_MINUTES`. */
-const STEP_TIMES: string[] = Array.from({ length: (24 * 60) / PAYROLL_POLICY_TIME_STEP_MINUTES }, (_, index) =>
-  formatClockMinutes(index * PAYROLL_POLICY_TIME_STEP_MINUTES)
-)
+/** 1.20.3: a stepped break length lands on the 15-minute step (a length saved off it, e.g. 40, moves to 30 / 60). */
+function snapBreakMinutes(value: number): number {
+  return Math.round(value / PAYROLL_BREAK_TIME_STEP_MINUTES) * PAYROLL_BREAK_TIME_STEP_MINUTES
+}
+
+function stepTimes(step: number): string[] {
+  return Array.from({ length: (24 * 60) / step }, (_, index) => formatClockMinutes(index * step))
+}
+
+/** 00:00, 00:30 … 23:30 — rulebook 1.20.2 `PAYROLL_POLICY_TIME_STEP_MINUTES` (day start and finish, weekend window). */
+const DAY_STEP_TIMES = stepTimes(PAYROLL_POLICY_TIME_STEP_MINUTES)
+/** 00:00, 00:15 … 23:45 — rulebook 1.20.3 `PAYROLL_BREAK_TIME_STEP_MINUTES` (lunch break start and end). */
+const BREAK_STEP_TIMES = stepTimes(PAYROLL_BREAK_TIME_STEP_MINUTES)
 
 /**
- * Rulebook 1.20.2 §4.3: working-hours times are picked in 30-minute steps (:00 / :30). A time saved before 1.20.2 that
- * is not on the step is shown as saved (and stays valid until it is changed).
+ * Rulebook 1.20.2 / 1.20.3 §4.3: day start and finish are picked in 30-minute steps (:00 / :30), lunch break start and
+ * end in 15-minute steps (`kind="break"`, e.g. 10:45). A time saved before the step applied that is not on it is shown
+ * as saved (and stays valid until it is changed).
  */
-function TimeInput({ value, placeholder, onChange, label }: { value: string; placeholder: string; onChange: (value: string) => void; label: string }) {
+function TimeInput({
+  value,
+  placeholder,
+  onChange,
+  label,
+  kind = 'day',
+}: {
+  value: string
+  placeholder: string
+  onChange: (value: string) => void
+  label: string
+  kind?: 'day' | 'break'
+}) {
   const current = (value ?? '').trim()
-  const offStep = current !== '' && !payrollPolicyTimeOnStep(current)
+  const onStep = kind === 'break' ? payrollBreakTimeOnStep : payrollPolicyTimeOnStep
+  const offStep = current !== '' && !onStep(current)
+  const times = kind === 'break' ? BREAK_STEP_TIMES : DAY_STEP_TIMES
   return (
     <Select
       value={current}
@@ -93,7 +115,7 @@ function TimeInput({ value, placeholder, onChange, label }: { value: string; pla
     >
       {current === '' ? <option value="">{placeholder}</option> : null}
       {offStep ? <option value={current}>{current} (saved)</option> : null}
-      {STEP_TIMES.map((time) => (
+      {times.map((time) => (
         <option key={time} value={time}>
           {time}
         </option>
@@ -189,39 +211,23 @@ function WeekdayPaidDayLine({ policy }: { policy: OrgPayrollTimePolicy }) {
   )
 }
 
-/** Any Saturday / Sunday: the preview prices one example day under the draft, so only the weekday matters. */
-const PREVIEW_DAY: Record<WeekendKey, string> = { saturday: '2026-01-03', sunday: '2026-01-04' }
-
 /**
- * Rulebook 1.19.0: the live calculation under Saturday / Sunday, as Monday–Friday has — that day's window (or every
- * hour at N× over the standard day), its lunch break and the paid hours, priced only by the canonical pay rule
- * (`weekendBookingBreakdown` → `payrollHoursResult`, `payrollDayWindows`). No figure is computed here.
+ * Rulebook 1.19.0 / 1.20.3: the live calculation under Saturday / Sunday, as Monday–Friday has. Everything — the example
+ * hours, the break (paid / unpaid, window, length, minutes taken off) and the paid hours — comes from the canonical
+ * `weekendDayPreview(draft, day)` (`weekendBookingBreakdown` → `payrollHoursResult`), priced from the draft being edited,
+ * so switching that day's break Paid / Unpaid or changing its length or times changes it at once. No figure is computed here.
  */
 function WeekendDayPreview({ policy, day }: { policy: OrgPayrollTimePolicy; day: WeekendKey }) {
   const valid = isValidHM(policy.standardDayStart) && isValidHM(policy.standardDayEnd)
-  if (!valid) return null
-  const dayKey = PREVIEW_DAY[day]
-  const window = weekendCustomHoursDefault(policy, dayKey, 'Europe/London')
-  const span = window ?? (() => {
-    const standard = halfDayWindows(policy).day
-    return { start: formatClockMinutes(standard.start), end: formatClockMinutes(standard.end) }
-  })()
-  const rows = weekendBookingBreakdown(policy, [dayKey], span.start, span.end, false, 'Europe/London')
-  const bands = payrollDayWindows(policy, dayKey, 'Europe/London')
-  const dayBreak = payrollBreakOnDay(policy, dayKey, 'Europe/London')
-  if (rows.length === 0) return null
+  const preview = valid ? weekendDayPreview(policy, day, 'Europe/London') : null
+  if (!preview) return null
   const name = day === 'saturday' ? 'Saturday' : 'Sunday'
   return (
     <div className="space-y-2">
-      <p className="text-[12.5px] text-[var(--ink2)]">
-        {bands.allHoursMultiplier != null
-          ? `Every hour at ×${bands.allHoursMultiplier}`
-          : `${span.start}–${span.end} counts as set hours`}
-        {dayBreak
-          ? ` · ${dayBreak.paid ? 'Paid' : 'Unpaid'} break ${formatClockMinutes(dayBreak.start)}–${formatClockMinutes(dayBreak.end)} (${dayBreak.minutes} min)`
-          : ''}
+      <p className="text-[12.5px] text-[var(--ink2)]" data-testid={`${day}-preview-summary`}>
+        {preview.summary}
       </p>
-      <BookingDayBreakdownRows rows={rows} title={`${name} example · ${span.start}–${span.end}`} />
+      <BookingDayBreakdownRows rows={preview.rows} title={`${name} example · ${preview.start}–${preview.end}`} />
     </div>
   )
 }
@@ -315,7 +321,8 @@ export function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
   function openSave() {
     if (!organization?.id) return
     // Rulebook 1.20.0 §4.3: the policy is saved with its weekday paid day derived (finish − start − unpaid break).
-    // 1.20.2: times on the 30-minute step; one saved off the step before 1.20.2 passes until it is changed.
+    // 1.20.2 / 1.20.3: day times on the 30-minute step, break times and length on the 15-minute step; a value saved off
+    // its step passes until it is changed.
     const validationError = validatePayrollTimePolicy(withDerivedWeekdayPaidHours(draft), live.details?.payrollTimePolicy ?? null)
     if (validationError) {
       setError(validationError)
@@ -455,15 +462,16 @@ export function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
         <Stepper
           label={`${name} break length`}
           value={dayBreak.minutes}
-          onChange={(value) => patchWeekend(key, { breakMinutes: value })}
+          onChange={(value) => patchWeekend(key, { breakMinutes: snapBreakMinutes(value) })}
           min={PAYROLL_POLICY_LIMITS.breakMinutes.min}
           max={PAYROLL_POLICY_LIMITS.breakMinutes.max}
-          step={5}
+          step={PAYROLL_BREAK_TIME_STEP_MINUTES}
           format={(value) => `${value} min`}
         />
         <div className="[display:grid] grid-cols-2 gap-3">
           <FormField label="Break start">
             <TimeInput
+              kind="break"
               label={`${name} break start`}
               value={dayBreak.start}
               placeholder={draft.breakWindowStart}
@@ -472,6 +480,7 @@ export function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
           </FormField>
           <FormField label="Break end">
             <TimeInput
+              kind="break"
               label={`${name} break end`}
               value={dayBreak.end}
               placeholder={draft.breakWindowEnd}
@@ -506,7 +515,7 @@ export function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
         </div>
       )}
       <SettingsFormBody state={loadState}>
-      <HoursSection title="Monday to Friday" description="Your standard day and lunch break. Times are in 30-minute steps, e.g. 07:30.">
+      <HoursSection title="Monday to Friday" description="Your standard day and lunch break. Start and finish are in 30-minute steps (e.g. 07:30); lunch break times and length in 15-minute steps (e.g. 10:45).">
         <div className="p-5">
           <DayTimeline policy={draft} />
         </div>
@@ -541,19 +550,19 @@ export function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
           <Stepper
             label="Break length"
             value={draft.unpaidBreakMinutes}
-            onChange={(value) => patch({ unpaidBreakMinutes: value })}
+            onChange={(value) => patch({ unpaidBreakMinutes: snapBreakMinutes(value) })}
             min={PAYROLL_POLICY_LIMITS.breakMinutes.min}
             max={PAYROLL_POLICY_LIMITS.breakMinutes.max}
-            step={5}
+            step={PAYROLL_BREAK_TIME_STEP_MINUTES}
             format={(value) => `${value} min`}
           />
         </div>
         <div className="[display:grid] grid-cols-2 gap-4 p-5">
           <FormField label="Break window start">
-            <TimeInput label="Break window start" value={draft.breakWindowStart} placeholder="12:00" onChange={(value) => patch({ breakWindowStart: value })} />
+            <TimeInput kind="break" label="Break window start" value={draft.breakWindowStart} placeholder="12:00" onChange={(value) => patch({ breakWindowStart: value })} />
           </FormField>
           <FormField label="Break window end">
-            <TimeInput label="Break window end" value={draft.breakWindowEnd} placeholder="12:30" onChange={(value) => patch({ breakWindowEnd: value })} />
+            <TimeInput kind="break" label="Break window end" value={draft.breakWindowEnd} placeholder="12:30" onChange={(value) => patch({ breakWindowEnd: value })} />
           </FormField>
         </div>
       </HoursSection>

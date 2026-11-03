@@ -17,7 +17,7 @@
 
 import { formatClockMinutes, halfDayWindows, intervalsOverlap, namedSlotKind, parseClockMinutes, slotInterval } from './engine'
 import { weekendBreakFor, type OrgPayrollTimePolicy } from './organizationSettings'
-import { payrollBreakOnDay, payrollHoursResult, unpaidBreakAppliesOnDay, weekendFullDayWindow, weekendRuleForIsoWeekday } from './payrollHours'
+import { payrollBreakOnDay, payrollHoursResult, payrollOutsideClockHours, type PayrollHoursResult, unpaidBreakAppliesOnDay, weekendFullDayWindow, weekendRuleForIsoWeekday } from './payrollHours'
 import { isoWeekdayOfDayKey, zoneOrLondon } from './dayKeys'
 import { payrollTimePolicyForDayFromState, type PayrollTimePolicyState } from './payrollPolicySchedule'
 
@@ -257,10 +257,13 @@ export type BookingDayBreakdownRow = {
   countsAsHours: number | null
   /** Hours paid at the normal rate (`standardHours`). */
   standardHours: number
-  /** Hours paid at `multiplier` (`outsideHours`): outside the window, or every hour on an all-hours day. */
+  /**
+   * Clock hours paid at `multiplier`: outside the window, or every hour on an all-hours day. 1.20.3: before the unpaid
+   * break, which comes off after the multiplier as plain hours (`payrollOutsideClockHours`).
+   */
   overtimeHours: number
   multiplier: number
-  /** `totalPaidHours`: standard hours plus overtime hours × multiplier. */
+  /** `totalPaidHours`: standard hours plus overtime hours × multiplier, less any break worked in them (1.20.3). */
   paidHoursEquivalent: number
   /** Rulebook 1.19.0: the unpaid break taken off (`payrollHoursResult.unpaidBreakHours`), 0 when none. */
   unpaidBreakHours: number
@@ -328,38 +331,35 @@ export function weekendBookingBreakdown(
     const windowDay = Boolean(weekend && !weekend.allHoursAtMultiplierMode)
     const allHoursDay = Boolean(weekend && weekend.allHoursAtMultiplierMode)
     const standardHours = roundHours(paid.standardHours)
-    const overtimeHours = roundHours(paid.outsideHours)
+    // 1.20.3: hours at the multiplier are shown as clock hours; a break worked in them comes off after the multiplier.
+    const outside = payrollOutsideClockHours(paid)
+    const overtimeHours = roundHours(outside.outsideClockHours)
     const multiplier = roundHours(paid.outsideMultiplier)
     const total = roundHours(paid.totalPaidHours)
     const unpaidBreakHours = roundHours(paid.unpaidBreakHours)
-    let breakInStandard = 0
-    let breakOutside = 0
-    for (const row of paid.segments) {
-      if (row.kind === 'standardWindow') breakInStandard += row.unpaidBreakHours ?? 0
-      else breakOutside += row.unpaidBreakHours ?? 0
-    }
-    breakInStandard = roundHours(breakInStandard)
-    breakOutside = roundHours(breakOutside)
+    const breakOutside = roundHours(outside.outsideBreakHours)
+    const breakInStandard = roundHours(Math.max(0, paid.unpaidBreakHours - outside.outsideBreakHours))
     const credit = weekend ? Number(weekend.countsAsStandardHours ?? dayPolicy.standardPaidHours) : NaN
     const fullDay = windowDay && standardHours > 0 && Math.abs(standardHours - roundHours(credit)) < 0.001
     const label = WEEKDAY_NAMES[iso] || dayKey
     let line = `${label} ${startText}–${endText} = `
     if (unpaidBreakHours > 0) {
-      // 1.19.0: the break shown as Monday–Friday shows it — the hours before the break, the break, then the total.
+      // 1.19.0 / 1.20.3: the break shown as Monday–Friday shows it. In the standard / set hours it comes off them; in
+      // hours at a multiplier it comes off after the multiplier, as plain hours: "6.5h × 2 = 13h − 0.5h unpaid break = 12.5h".
       const parts: string[] = []
       const standardBefore = roundHours(standardHours + breakInStandard)
       if (standardBefore > 0) {
         parts.push(breakInStandard > 0 ? `${hoursText(standardBefore)} − ${hoursText(breakInStandard)} unpaid break` : hoursText(standardHours))
       }
-      const outsideBefore = roundHours(overtimeHours + breakOutside)
-      if (outsideBefore > 0) {
-        parts.push(
-          breakOutside > 0
-            ? `(${hoursText(outsideBefore)} − ${hoursText(breakOutside)} unpaid break) × ${multiplier}`
-            : `${hoursText(overtimeHours)} × ${multiplier}`
-        )
+      if (overtimeHours > 0) parts.push(`${hoursText(overtimeHours)} × ${multiplier}`)
+      if (parts.length === 0) line += '0h'
+      else if (breakOutside > 0 && standardBefore <= 0) {
+        line += `${parts.join(' + ')} = ${hoursText(roundHours(overtimeHours * multiplier))} − ${hoursText(breakOutside)} unpaid break = ${hoursText(total)}`
+      } else if (breakOutside > 0) {
+        line += `${parts.join(' + ')} − ${hoursText(breakOutside)} unpaid break = ${hoursText(total)}`
+      } else {
+        line += `${parts.join(' + ')} = ${hoursText(total)}`
       }
-      line += parts.length === 0 ? '0h' : `${parts.join(' + ')} = ${hoursText(total)}`
     } else {
       const parts: string[] = []
       if (standardHours > 0) parts.push(hoursText(standardHours))
@@ -370,7 +370,7 @@ export function weekendBookingBreakdown(
     }
     const lines: BookingDayBreakdownLine[] = []
     if (allHoursDay) {
-      lines.push({ kind: 'outside', label: 'Every hour', value: `${hoursText(roundHours(overtimeHours + breakOutside))} × ${multiplier}` })
+      lines.push({ kind: 'outside', label: 'Every hour', value: `${hoursText(overtimeHours)} × ${multiplier}` })
     } else if (standardHours > 0 || breakInStandard > 0) {
       lines.push({
         kind: 'standard',
@@ -381,8 +381,8 @@ export function weekendBookingBreakdown(
     if (unpaidBreakHours > 0) {
       lines.push({ kind: 'break', label: 'Unpaid break', value: `−${hoursText(unpaidBreakHours)}` })
     }
-    if (!allHoursDay && (overtimeHours > 0 || breakOutside > 0)) {
-      lines.push({ kind: 'outside', label: 'Outside hours', value: `${hoursText(roundHours(overtimeHours + breakOutside))} × ${multiplier}` })
+    if (!allHoursDay && overtimeHours > 0) {
+      lines.push({ kind: 'outside', label: 'Outside hours', value: `${hoursText(overtimeHours)} × ${multiplier}` })
     }
     lines.push({ kind: 'total', label: 'Total paid hours', value: hoursText(total) })
     return {
@@ -401,6 +401,56 @@ export function weekendBookingBreakdown(
       lines,
     }
   })
+}
+
+/** One example Saturday / Sunday the Working hours preview prices (any one works: only the weekday matters). */
+export const WEEKEND_PREVIEW_DAY_KEYS = { saturday: '2026-01-03', sunday: '2026-01-04' } as const
+
+export type WeekendDayPreview = {
+  dayKey: string
+  /** The example hours priced: the day's set window, or the standard day on an every-hour day. */
+  start: string
+  end: string
+  /** e.g. "07:30–14:00 counts as 8h · Unpaid break 12:00–12:30, 30 min — 30 min taken off · 7.5h paid". */
+  summary: string
+  /** `weekendBookingBreakdown` for the example hours. */
+  rows: BookingDayBreakdownRow[]
+}
+
+/**
+ * Rulebook 1.19.0 / 1.20.3 §4.3: the live calculation Working hours shows under Saturday and under Sunday, from the
+ * policy being edited (the draft — never the saved policy), so it changes as soon as that day's break is switched
+ * Paid / Unpaid or its length or times change. Sunday "same as Saturday" prices Saturday's rule. Every figure is the
+ * pay rule's (`weekendBookingBreakdown` → `payrollHoursResult`); the summary says the break, the minutes the pay rule
+ * takes off (the covered part of the break window, up to the length) and the paid hours. Null when the day is invalid.
+ */
+export function weekendDayPreview(
+  policy: OrgPayrollTimePolicy | null | undefined,
+  weekday: 'saturday' | 'sunday',
+  timeZone?: string | null
+): WeekendDayPreview | null {
+  if (!policy) return null
+  const dayKey = WEEKEND_PREVIEW_DAY_KEYS[weekday]
+  const zone = timeZone || 'Europe/London'
+  const window = weekendCustomHoursDefault(policy, dayKey, zone)
+  const standard = halfDayWindows(policy).day
+  const span = window ?? { start: formatClockMinutes(standard.start), end: formatClockMinutes(standard.end) }
+  const rows = weekendBookingBreakdown(policy, [dayKey], span.start, span.end, false, zone)
+  if (rows.length === 0) return null
+  const row = rows[0]
+  const iso = weekday === 'saturday' ? 6 : 7
+  const rule = weekendRuleForIsoWeekday(iso, policy)
+  const dayBreak = payrollBreakOnDay(policy, dayKey, zone)
+  const parts: string[] = []
+  if (rule?.allHoursAtMultiplierMode) parts.push(`Every hour at ×${roundHours(rule.allHoursMultiplier)}`)
+  else parts.push(`${span.start}–${span.end} counts as ${hoursText(Number(rule?.countsAsStandardHours ?? policy.standardPaidHours))}`)
+  if (dayBreak) {
+    const window = `${formatClockMinutes(dayBreak.start)}–${formatClockMinutes(dayBreak.end)}, ${dayBreak.minutes} min`
+    if (dayBreak.paid) parts.push(`Paid break ${window}`)
+    else parts.push(`Unpaid break ${window} — ${Math.round(row.unpaidBreakHours * 60)} min taken off`)
+  }
+  parts.push(`${hoursText(row.paidHoursEquivalent)} paid`)
+  return { dayKey, start: span.start, end: span.end, summary: parts.join(' · '), rows }
 }
 
 /**
@@ -531,15 +581,29 @@ export function isSameBookingRequest(a: BookingRequestIdentityInput, b: BookingR
 export type BookingHoursLabel = { hours: number; label: string }
 
 export function bookingHoursLabel(
-  result: { totalPaidHours: number; standardHours: number; outsideHours: number; outsideMultiplier: number } | null | undefined
+  result:
+    | {
+        totalPaidHours: number
+        standardHours: number
+        outsideHours: number
+        outsideMultiplier: number
+        segments?: ReadonlyArray<{ kind: string; baseHours: number; multiplier: number; unpaidBreakHours?: number }>
+      }
+    | null
+    | undefined
 ): BookingHoursLabel {
   if (!result) return { hours: 0, label: '0h' }
   const total = roundHours(Number(result.totalPaidHours) || 0)
   const standard = roundHours(Number(result.standardHours) || 0)
-  const outside = roundHours(Number(result.outsideHours) || 0)
+  // 1.20.3: hours at the multiplier as clock hours; an unpaid break worked in them comes off after the multiplier, as
+  // plain hours — Sunday 07:30–14:00 every hour × 2, 30 min unpaid → "12.5h (6.5h × 2 − 0.5h break)".
+  const clock = result.segments ? payrollOutsideClockHours({ segments: result.segments as PayrollHoursResult['segments'] }) : null
+  const outside = roundHours(clock ? clock.outsideClockHours : Number(result.outsideHours) || 0)
+  const outsideBreak = roundHours(clock ? clock.outsideBreakHours : 0)
   const multiplier = roundHours(Number(result.outsideMultiplier) || 1)
   if (outside > 0 && Math.abs(multiplier - 1) > 0.001) {
-    const parts = standard > 0 ? `${hoursText(standard)} + ${hoursText(outside)} × ${multiplier}` : `${hoursText(outside)} × ${multiplier}`
+    const multiplied = standard > 0 ? `${hoursText(standard)} + ${hoursText(outside)} × ${multiplier}` : `${hoursText(outside)} × ${multiplier}`
+    const parts = outsideBreak > 0 ? `${multiplied} − ${hoursText(outsideBreak)} break` : multiplied
     return { hours: total, label: `${hoursText(total)} (${parts})` }
   }
   return { hours: total, label: hoursText(total) }

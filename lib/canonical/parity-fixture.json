@@ -11452,7 +11452,7 @@
       }
     },
     {
-      "name": "1.19.0 owner: Sunday every hour ×2, break unpaid → (6.5 − 0.5) × 2 = 12h",
+      "name": "1.20.3 owner: Sunday every hour ×2, break unpaid → 6.5 × 2 − 0.5 = 12.5h (break never multiplied)",
       "function": "payrollHoursResult",
       "args": [
         {
@@ -11495,9 +11495,9 @@
         }
       ],
       "expected": {
-        "totalPaidHours": 12,
+        "totalPaidHours": 12.5,
         "standardHours": 0,
-        "outsideHours": 6,
+        "outsideHours": 6.25,
         "outsideMultiplier": 2,
         "workedHours": 6,
         "unpaidBreakHours": 0.5,
@@ -11506,9 +11506,9 @@
             "kind": "allHoursMultiplier",
             "clockStart": "07:30",
             "clockEnd": "14:00",
-            "baseHours": 6,
+            "baseHours": 6.25,
             "multiplier": 2,
-            "paidHours": 12,
+            "paidHours": 12.5,
             "workedHours": 6,
             "unpaidBreakHours": 0.5
           }
@@ -11580,7 +11580,7 @@
       }
     },
     {
-      "name": "1.19.0 owner: weekend breakdown rows with an unpaid break",
+      "name": "1.19.0 / 1.20.3 owner: weekend breakdown rows with an unpaid break (Sunday 13h − 0.5h = 12.5h)",
       "function": "weekendBookingBreakdown",
       "args": [
         {
@@ -11661,11 +11661,11 @@
           "workedHours": 6,
           "countsAsHours": null,
           "standardHours": 0,
-          "overtimeHours": 6,
+          "overtimeHours": 6.5,
           "multiplier": 2,
-          "paidHoursEquivalent": 12,
+          "paidHoursEquivalent": 12.5,
           "unpaidBreakHours": 0.5,
-          "line": "Sunday 07:30–14:00 = (6.5h − 0.5h unpaid break) × 2 = 12h",
+          "line": "Sunday 07:30–14:00 = 6.5h × 2 = 13h − 0.5h unpaid break = 12.5h",
           "lines": [
             {
               "kind": "outside",
@@ -11680,7 +11680,7 @@
             {
               "kind": "total",
               "label": "Total paid hours",
-              "value": "12h"
+              "value": "12.5h"
             }
           ]
         }
@@ -13606,6 +13606,220 @@
         }
       ],
       "expected": []
+    },
+    {
+      "name": "1.20.3 owner: Working hours weekend preview reacts to the day's Paid / Unpaid break",
+      "function": "weekendDayPreview",
+      "args": [
+        {
+          "standardDayStart": "07:30",
+          "standardDayEnd": "16:00",
+          "unpaidBreakMinutes": 30,
+          "standardPaidHours": 8,
+          "breakWindowStart": "12:00",
+          "breakWindowEnd": "12:30",
+          "weekdayOutsideStandardMultiplier": 1.5,
+          "saturday": {
+            "allHoursAtMultiplierMode": false,
+            "allHoursMultiplier": 2,
+            "definedWindowStart": "07:30",
+            "definedWindowEnd": "14:00",
+            "countsAsStandardHours": 8,
+            "outsideWindowMultiplier": 1.5,
+            "sameAsSaturday": false,
+            "breakPaid": false
+          },
+          "sunday": {
+            "allHoursAtMultiplierMode": true,
+            "allHoursMultiplier": 2,
+            "definedWindowStart": "07:30",
+            "definedWindowEnd": "16:00",
+            "countsAsStandardHours": 8,
+            "outsideWindowMultiplier": 2,
+            "sameAsSaturday": false,
+            "breakPaid": false
+          }
+        },
+        "sunday",
+        "Europe/London"
+      ],
+      "expected": {
+        "dayKey": "2026-01-04",
+        "start": "07:30",
+        "end": "16:00",
+        "summary": "Every hour at ×2 · Unpaid break 12:00–12:30, 30 min — 30 min taken off · 16.5h paid",
+        "rows": [
+          {
+            "dayKey": "2026-01-04",
+            "weekdayLabel": "Sunday",
+            "start": "07:30",
+            "end": "16:00",
+            "workedHours": 8,
+            "countsAsHours": null,
+            "standardHours": 0,
+            "overtimeHours": 8.5,
+            "multiplier": 2,
+            "paidHoursEquivalent": 16.5,
+            "unpaidBreakHours": 0.5,
+            "line": "Sunday 07:30–16:00 = 8.5h × 2 = 17h − 0.5h unpaid break = 16.5h",
+            "lines": [
+              {
+                "kind": "outside",
+                "label": "Every hour",
+                "value": "8.5h × 2"
+              },
+              {
+                "kind": "break",
+                "label": "Unpaid break",
+                "value": "−0.5h"
+              },
+              {
+                "kind": "total",
+                "label": "Total paid hours",
+                "value": "16.5h"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "1.20.3 owner: lunch break 10:00–10:45, 45 min is on the 15-minute step",
+      "function": "validatePayrollTimePolicy",
+      "args": [
+        {
+          "standardDayStart": "07:30",
+          "standardDayEnd": "16:00",
+          "unpaidBreakMinutes": 45,
+          "standardPaidHours": 8,
+          "breakWindowStart": "10:00",
+          "breakWindowEnd": "10:45",
+          "weekdayOutsideStandardMultiplier": 1.5,
+          "saturday": {
+            "allHoursAtMultiplierMode": false,
+            "allHoursMultiplier": 2,
+            "definedWindowStart": "07:30",
+            "definedWindowEnd": "14:00",
+            "countsAsStandardHours": 8,
+            "outsideWindowMultiplier": 1.5,
+            "sameAsSaturday": false,
+            "breakPaid": false
+          },
+          "sunday": {
+            "allHoursAtMultiplierMode": true,
+            "allHoursMultiplier": 2,
+            "definedWindowStart": "07:30",
+            "definedWindowEnd": "16:00",
+            "countsAsStandardHours": 8,
+            "outsideWindowMultiplier": 2,
+            "sameAsSaturday": false,
+            "breakPaid": false
+          }
+        }
+      ],
+      "expected": null
+    },
+    {
+      "name": "1.20.3 owner: a break time off the 15-minute step is refused",
+      "function": "validatePayrollTimePolicy",
+      "args": [
+        {
+          "standardDayStart": "07:30",
+          "standardDayEnd": "16:00",
+          "unpaidBreakMinutes": 45,
+          "standardPaidHours": 8,
+          "breakWindowStart": "10:00",
+          "breakWindowEnd": "10:40",
+          "weekdayOutsideStandardMultiplier": 1.5,
+          "saturday": {
+            "allHoursAtMultiplierMode": false,
+            "allHoursMultiplier": 2,
+            "definedWindowStart": "07:30",
+            "definedWindowEnd": "14:00",
+            "countsAsStandardHours": 8,
+            "outsideWindowMultiplier": 1.5,
+            "sameAsSaturday": false,
+            "breakPaid": false
+          },
+          "sunday": {
+            "allHoursAtMultiplierMode": true,
+            "allHoursMultiplier": 2,
+            "definedWindowStart": "07:30",
+            "definedWindowEnd": "16:00",
+            "countsAsStandardHours": 8,
+            "outsideWindowMultiplier": 2,
+            "sameAsSaturday": false,
+            "breakPaid": false
+          }
+        }
+      ],
+      "expected": "Lunch break times and length use 15-minute steps (e.g. 10:45)."
+    },
+    {
+      "name": "1.20.3 owner: a break length off the 15-minute step is refused",
+      "function": "validatePayrollTimePolicy",
+      "args": [
+        {
+          "standardDayStart": "07:30",
+          "standardDayEnd": "16:00",
+          "unpaidBreakMinutes": 40,
+          "standardPaidHours": 8,
+          "breakWindowStart": "10:00",
+          "breakWindowEnd": "10:45",
+          "weekdayOutsideStandardMultiplier": 1.5,
+          "saturday": {
+            "allHoursAtMultiplierMode": false,
+            "allHoursMultiplier": 2,
+            "definedWindowStart": "07:30",
+            "definedWindowEnd": "14:00",
+            "countsAsStandardHours": 8,
+            "outsideWindowMultiplier": 1.5,
+            "sameAsSaturday": false,
+            "breakPaid": false
+          },
+          "sunday": {
+            "allHoursAtMultiplierMode": true,
+            "allHoursMultiplier": 2,
+            "definedWindowStart": "07:30",
+            "definedWindowEnd": "16:00",
+            "countsAsStandardHours": 8,
+            "outsideWindowMultiplier": 2,
+            "sameAsSaturday": false,
+            "breakPaid": false
+          }
+        }
+      ],
+      "expected": "Lunch break times and length use 15-minute steps (e.g. 10:45)."
+    },
+    {
+      "name": "1.20.3 owner: booking row label shows the break off after the multiplier",
+      "function": "bookingHoursLabel",
+      "args": [
+        {
+          "totalPaidHours": 12.5,
+          "standardHours": 0,
+          "outsideHours": 6.25,
+          "outsideMultiplier": 2,
+          "workedHours": 6,
+          "unpaidBreakHours": 0.5,
+          "segments": [
+            {
+              "kind": "allHoursMultiplier",
+              "clockStart": "07:30",
+              "clockEnd": "14:00",
+              "baseHours": 6.25,
+              "multiplier": 2,
+              "paidHours": 12.5,
+              "workedHours": 6,
+              "unpaidBreakHours": 0.5
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "hours": 12.5,
+        "label": "12.5h (6.5h × 2 − 0.5h break)"
+      }
     }
   ]
 }
