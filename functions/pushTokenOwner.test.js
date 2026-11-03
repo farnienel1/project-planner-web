@@ -26,9 +26,11 @@ function fakeDb(docs) {
   }
 }
 
+const fakeFieldValue = { arrayRemove: (...values) => ({ arrayRemove: values }) }
+
 test('a newly registered token is removed from every other account', async () => {
   const db = fakeDb({ ME: { pushTokens: ['tok'] }, OLD: { pushTokens: ['tok', 'x'] }, OTHER: { pushTokens: ['x'] } })
-  const writes = await removeTokenFromOtherAccounts({ db, canonical, token: 'tok', ownerUid: 'ME' })
+  const writes = await removeTokenFromOtherAccounts({ db, canonical, token: 'tok', ownerUid: 'ME', fieldValue: fakeFieldValue })
   assert.deepEqual(JSON.parse(JSON.stringify(writes)), [{ userId: 'OLD', remove: ['tok'] }])
   assert.equal(db.updates.length, 1)
   assert.equal(db.updates[0].path, 'users/OLD')

@@ -5,12 +5,13 @@
  * (`pushTokens array-contains`) and removes it from all but `ownerUid` (`pushTokenOwnerWrites` from the packed
  * rulebook). Logs only token suffixes.
  */
-async function removeTokenFromOtherAccounts({ db, canonical, token, ownerUid, logger }) {
+async function removeTokenFromOtherAccounts({ db, canonical, token, ownerUid, logger, fieldValue }) {
   const snap = await db.collection('users').where('pushTokens', 'array-contains', token).get()
   const holders = snap.docs.map((doc) => ({ id: doc.id, pushTokens: (doc.data() || {}).pushTokens }))
   const writes = canonical.pushTokenOwnerWrites(token, ownerUid, holders)
   if (writes.length === 0) return []
-  const { FieldValue } = require('firebase-admin/firestore')
+  // Injectable so unit tests run without the functions packages installed.
+  const FieldValue = fieldValue || require('firebase-admin/firestore').FieldValue
   const batch = db.batch()
   for (const write of writes) {
     batch.update(db.doc(`users/${write.userId}`), { pushTokens: FieldValue.arrayRemove(...write.remove) })
