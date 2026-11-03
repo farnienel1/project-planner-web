@@ -452,6 +452,7 @@ export function notificationDeliversDevicePush(type: string): boolean {
 
 export type UnreadNotificationBadgeRow = {
   userId?: string | null
+  type?: string | null
   isRead?: boolean | null
   createdAt?: Date | { getTime?: () => number } | { seconds?: number; nanoseconds?: number } | number | string | null
 }
@@ -478,15 +479,41 @@ function nowMs(now: InboxNow): number {
 }
 
 /**
+ * Types written ahead of time with the instant they become due as `createdAt` (1.10.0): only these are hidden until
+ * their `createdAt` (1.16.0). Every other row is written with the server time (`notificationCreatedAtIsServerTime`).
+ */
+export const SCHEDULED_NOTIFICATION_TYPES = ['deadline_reminder', 'deadline_due', 'timesheet_submission_reminder'] as const
+
+/** How far a due-now row's `createdAt` may be ahead of the reader's clock and still be listed (clock skew). */
+export const INBOX_CREATED_AT_SKEW_MS = 5 * 60 * 1000
+
+/** True for a type written ahead of time (`SCHEDULED_NOTIFICATION_TYPES`). */
+export function isScheduledNotificationType(type: unknown): boolean {
+  return (SCHEDULED_NOTIFICATION_TYPES as readonly string[]).includes(typeof type === "string" ? type.trim() : "")
+}
+
+/**
+ * True when a new row's `createdAt` is the server time (1.16.0): every type except a scheduled one written with its
+ * own due instant. Apps pass their SDK server timestamp (`serverTimestamp()` / `FieldValue.serverTimestamp()`) to
+ * `notificationCreateFields` as `serverTimestamp`; the client clock is never written for a due-now row.
+ */
+export function notificationCreatedAtIsServerTime(type: unknown, scheduledAt?: unknown): boolean {
+  return !(isScheduledNotificationType(type) && scheduledAt != null)
+}
+
+/**
  * The notification centre lists a row for this signed-in user only when the stored `userId` is one of their ids
  * (`userId` may be one id or every id of the person, compared without case). A row with no owner (a legacy
  * broadcast) is not an inbox row and is never listed or counted; a row addressed to someone else is never listed.
- * A row whose `createdAt` is after `now` (a scheduled `deadline_reminder` / `deadline_due` written ahead of time) is
- * not listed until that instant (1.10.0); a row with no `createdAt` yet (a pending server timestamp) is listed.
- * Who was written onto the row is the recipient rule at create time (`notificationRecipients.ts`).
+ * A scheduled row (`SCHEDULED_NOTIFICATION_TYPES`: `deadline_reminder`, `deadline_due`,
+ * `timesheet_submission_reminder`) whose `createdAt` is after `now` is not listed until that instant (1.10.0). Any
+ * other row is hidden only while its `createdAt` is more than `INBOX_CREATED_AT_SKEW_MS` (5 minutes) after `now`
+ * (1.16.0: a writer's clock ahead of the reader's no longer hides a due-now row). A row with no `createdAt` yet (a
+ * pending server timestamp) is listed. Who was written onto the row is the recipient rule at create time
+ * (`notificationRecipients.ts`).
  */
 export function inboxNotificationVisibleToUser(
-  row: Pick<UnreadNotificationBadgeRow, 'userId' | 'createdAt'> | null | undefined,
+  row: (Pick<UnreadNotificationBadgeRow, 'userId' | 'createdAt'> & { type?: string | null }) | null | undefined,
   userId: InboxOwnerIds,
   now?: InboxNow
 ): boolean {
@@ -495,7 +522,9 @@ export function inboxNotificationVisibleToUser(
   const owner = trimmed(row.userId).toLowerCase()
   if (owner === '' || !ids.has(owner)) return false
   const created = createdAtInstantMs(row.createdAt)
-  return created == null || created <= nowMs(now)
+  if (created == null) return true
+  const at = nowMs(now)
+  return isScheduledNotificationType(row.type) ? created <= at : created <= at + INBOX_CREATED_AT_SKEW_MS
 }
 
 function createdAtInstantMs(value: unknown): number | null {

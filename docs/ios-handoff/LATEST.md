@@ -1,4 +1,4 @@
-# iOS follow-on — rulebook 1.15.0
+# iOS follow-on — rulebook 1.16.1
 
 Generated 2026-11-03 by `npm run rulebook:handoff` in project-planner-web. Paste this whole file into the iOS agent.
 The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; never edit the iOS mirror by hand.
@@ -8,9 +8,9 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ║ FOLLOW-ON — paste into the iOS agent                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
-Rulebook version: 1.15.0 → 1.15.0
-Packed hash: 3bd8a1778794034b04da47af4a21454c7446a6a7e3a1505fc01d15ef058c67d3
-Rulebook sha256: 5d3c236c485cfb736a043500f5eef29009117af79ce756d55eb97a945f387b00
+Rulebook version: 1.16.0 → 1.16.1
+Packed hash: 586f1b0ba56e789c7f34d17cc4d0bfe4fcef046ac1842c94f4479574432ae5c8
+Rulebook sha256: 905d39201c0c564346a02fc462a08ebd53dcad2988c5e0fed4c9f3d7ce320f55
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -20,25 +20,26 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
   web lib/canonical/cross-platform-contract.json    → iOS ProjectPlannerTests/CrossPlatformContract.json
 Contract sha256: d655dd7d122e53a1167569216d43cba7598670671310ca84c59ea7e46373b7e6
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: none
+Exports added: HEALTH_SAFETY_FILE_FIELDS, mergeHealthSafetyRowCopies
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md
+Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/recordsDocuments.ts
 Done when:
-- [ ] Packed hash in iOS equals 3bd8a1778794034b04da47af4a21454c7446a6a7e3a1505fc01d15ef058c67d3
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 5d3c236c485cfb736a043500f5eef29009117af79ce756d55eb97a945f387b00)
-- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.15.0)
+- [ ] Packed hash in iOS equals 586f1b0ba56e789c7f34d17cc4d0bfe4fcef046ac1842c94f4479574432ae5c8
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 905d39201c0c564346a02fc462a08ebd53dcad2988c5e0fed4c9f3d7ce320f55)
+- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.16.1)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
 - [ ] Any disagreement traced to its first divergence — no copied screen number
 ```
 
-## What changed in 1.15.0
+## What changed in 1.16.1
 
-- Owner decisions round 6. A user type change keeps every saved toggle (§11): `accountTypePermissions` keeps the stored toggles and changes only the level flags; `accountTypeWritePermissions` takes the screen's values only for toggles the new level can change. Admins still read every toggle on and locked except Annual Leave Management; the stored values return on demotion.
-- Material quotes and orders (§16): `canSendMaterialOrders` (admins, super admins outside operative mode, managers); `materialOrderRecipientCheck` (saved wholesaler contacts, the sender's copy, at most 3 typed addresses — `MATERIAL_ORDER_TYPED_RECIPIENTS_MAX`). Enforced by the email function `material_request` and the web send route; `materialSendRecords` stays admins and managers in the rules.
-- Company deletion (new §20, §16): `organizationDeletionState`, `organizationDeletionWriteFields`, `DELETION_RESTORE_DAYS` (60), `organizationDeletedMessage`, `canRestoreOrganization`, `organizationDeleteConfirmationError`, `organizationEraseDue`, `erasedOrganizationAuditFields`. Rules lock a scheduled organisation (`orgBillingOpen`) and allow only the super admin's restore; a daily function erases organisations past `eraseAfter`, only while `platformConfig/app.organizationErasureEnabled` is true (otherwise a logged dry run).
-- Delete my account (§11): `accountDeletionPath` → `delete` | `handover_required` | `delete_with_company`; web `/api/account/delete` replaces 409 `sole_admin` with a super admin handover and company deletion (restorable only by the platform owner).
+- Health & safety file links (§1 partial writes): a blank `fileURL` / `fileName` never overwrites a stored one (`healthSafetyDocumentWriteFields`, `HEALTH_SAFETY_FILE_FIELDS`); two copies read as one keep the copy with a link (`mergeHealthSafetyRowCopies`). Web PR #227 found the web serializer wrote `fileURL: ''` over stored download URLs (RAMS lost their View link). iOS: `uploadHealthSafetyFile` must not store a `gs://` URL when `downloadURL()` fails — retry, or keep the storage path in a separate field and fail the upload visibly.
+- Ships in the same merge as 1.16.0 (neither deployed before).
 
+## New rulebook sections
+
+- 1.16.1 — 2026-11-03
 
 ## Workflow for the iOS agent
 

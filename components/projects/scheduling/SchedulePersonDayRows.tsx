@@ -8,6 +8,7 @@ import {
   type DraftBookingPerson,
 } from '@/lib/scheduling/draftProjectBooking'
 import { slotKey, type ScheduleDateSlot } from '@/lib/scheduling/scheduleUtils'
+import { leaveConflictDetail } from '@/lib/scheduling/leaveConflicts'
 
 function DayStateIcon({ state }: { state: DraftBookingPerson['dayStates'][string] }) {
   if (state === 'free' || state === 'clash_accepted') {
@@ -48,14 +49,17 @@ export function SchedulePersonDayRows({
         const key = slotKey(slot.date)
         const state = person.dayStates[key] || 'free'
         const clashes = person.clashByDay[key] || []
+        // Rulebook 1.16.0: annual leave on this day is a purple row; double bookings stay orange.
+        const leave = person.leaveByDay?.[key]
         const removed = state === 'removed'
+        const pendingBorder = clashes.length > 0 ? 'border-[var(--warn)]' : 'border-[var(--purple)]'
 
         return (
           <div
             key={key}
             className={`rounded-xl border bg-[var(--card)] ${
               compact ? 'p-3' : 'p-4 shadow-sm'
-            } ${state === 'clash_pending' ? 'border-[var(--warn)]' : 'border-[var(--line)]'}`}
+            } ${state === 'clash_pending' ? pendingBorder : 'border-[var(--line)]'}`}
           >
             <div className="flex items-start gap-3">
               <DayStateIcon state={state} />
@@ -75,15 +79,25 @@ export function SchedulePersonDayRows({
                   <p className="mt-1 text-xs font-medium text-blue-600">Available</p>
                 )}
 
-                {state === 'clash_accepted' && (
-                  <p className="mt-1 text-xs font-medium text-amber-700">
+                {state === 'clash_accepted' && clashes.length > 0 && (
+                  <p className="mt-1 text-xs font-medium text-[var(--warn)]">
                     Overlap accepted · {formatClashSummary(clashes)}
                   </p>
                 )}
 
-                {state === 'clash_pending' && (
-                  <p className="mt-1 text-xs text-amber-800">
+                {state === 'clash_pending' && clashes.length > 0 && (
+                  <p className="mt-1 text-xs font-medium text-[var(--warn)]">
                     Already booked · {formatClashSummary(clashes)}
+                  </p>
+                )}
+
+                {leave && !removed && (
+                  <p
+                    className="mt-1 text-xs font-medium text-[var(--purple)]"
+                    style={{ opacity: leave.status === 'pending' ? 0.8 : 1 }}
+                  >
+                    {leaveConflictDetail(leave)}
+                    {state === 'clash_accepted' ? ' · confirmed' : ''}
                   </p>
                 )}
 
@@ -95,7 +109,7 @@ export function SchedulePersonDayRows({
                   <button
                     type="button"
                     onClick={() => onPersonChange(removeDayFromPerson(person, key))}
-                    className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 hover:bg-slate-100"
+                    className="flex h-8 w-8 items-center justify-center rounded-full border border-[var(--red)] bg-[var(--card)] text-[var(--red)]"
                     aria-label={`Remove ${format(slot.date, 'd MMM')}`}
                   >
                     ✕
@@ -104,7 +118,7 @@ export function SchedulePersonDayRows({
                     type="button"
                     onClick={() => onPersonChange(acceptDayClash(person, key))}
                     className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-600 text-white hover:bg-blue-700"
-                    aria-label={`Accept overlap for ${format(slot.date, 'd MMM')}`}
+                    aria-label={`Confirm ${format(slot.date, 'd MMM')}`}
                   >
                     ✓
                   </button>
@@ -162,7 +176,7 @@ export function SchedulePersonPickerRow({
         {person.email ? <span className="s">{person.email}</span> : null}
       </span>
       {clashLabel ? (
-        <span className="pill" data-hue="red">
+        <span className="pill" data-hue={clashLabel === 'Annual leave' ? 'purple' : 'warn'}>
           {clashLabel}
         </span>
       ) : null}

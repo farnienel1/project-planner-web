@@ -1001,6 +1001,8 @@ export const useAuthStore = create<AuthState>((set) => {
       stopCurrentUserWatch()
       adoptCurrentOrganization('', '')
       unsubscribeOrgCollectionsOutside(currentOrganizationId())
+      // 1.16.0: the inbox listener and rows never outlive the session.
+      void import('@/lib/stores/notificationStore').then(({ useNotificationStore }) => useNotificationStore.getState().reset())
       const signedOutId = useAuthStore.getState().user?.id
       if (signedOutId) clearRememberedOrgDenied(signedOutId)
       // Keep pp.webActiveOrg:{userId}. Same-user login must reopen this company.

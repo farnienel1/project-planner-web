@@ -4,6 +4,7 @@
  */
 'use client'
 
+import { useNotificationStore } from '@/lib/stores/notificationStore'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -151,6 +152,8 @@ export default function ChangeOrganisationPage() {
     setError(null)
     try {
       await switchActiveOrganization(firebaseUser.uid, membership.organizationId)
+      // 1.16.0: never keep the previous company's inbox listener or rows.
+      useNotificationStore.getState().reset()
       window.location.assign(
         `/dashboard?switchOrg=${encodeURIComponent(membership.organizationId)}`
       )

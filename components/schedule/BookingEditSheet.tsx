@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import { useBookingConflictGate, type BookingSlotConflictCheck } from '@/components/scheduling/BookingConflictRows'
 import type { Booking } from '@/types'
 import { slotToFirestore, type ScheduleSlotChoice } from '@/lib/scheduling/scheduleUtils'
 import { HoursTimelinePicker } from '@/components/scheduling/HoursTimelinePicker'
@@ -35,6 +36,7 @@ export function BookingEditSheet({
   onClose,
   saving,
   payroll = DEFAULT_PAYROLL_POLICY,
+  conflictsFor,
 }: {
   booking: Booking
   operativeName: string
@@ -50,7 +52,10 @@ export function BookingEditSheet({
   onClose: () => void
   saving?: boolean
   payroll?: OrgPayrollTimePolicy
+  /** Rulebook 1.16.0: annual leave (and double bookings) on the day for this slot, asked before saving. */
+  conflictsFor?: BookingSlotConflictCheck
 }) {
+  const conflictGate = useBookingConflictGate()
   const [slot, setSlot] = useState<ScheduleSlotChoice>(firestoreSlotToChoice(String(booking.timeSlot)))
   // Rulebook 1.13.0 (Q2): a weekend day opens custom hours with that day's window (`weekendCustomHoursDefault`).
   const prefill = customHoursPrefillForDate(booking.date, payroll)
@@ -87,6 +92,20 @@ export function BookingEditSheet({
     ) {
       return
     }
+    const checkedSlot = slotToFirestore({ date: new Date(booking.date), slot, workStartTime, workEndTime })
+    // 1.16.0 (§5): tick to book anyway, or ✕ to drop the day — dropping the only day saves nothing.
+    // An edit asks only when it moves the booking's time (a notes-only save of a booking already on leave does not).
+    const slotChanged =
+      checkedSlot.timeSlot !== String(booking.timeSlot) ||
+      (checkedSlot.workStartTime || '') !== (booking.workStartTime || '') ||
+      (checkedSlot.workEndTime || '') !== (booking.workEndTime || '')
+    const isNew = !booking.id
+    const dropped = await conflictGate.check(conflictsFor && (slotChanged || isNew) ? conflictsFor(checkedSlot) : [])
+    if (dropped === null) return
+    if (dropped.size > 0) {
+      onClose()
+      return
+    }
     try {
       const firestoreSlot = slotToFirestore({ date: new Date(booking.date), slot, workStartTime, workEndTime })
       await onSave({
@@ -121,6 +140,7 @@ export function BookingEditSheet({
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center">
+      {conflictGate.dialog}
       <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl bg-white shadow-xl">
         <div className="border-b border-slate-100 px-5 py-4">
           <div className="flex items-start justify-between gap-3">

@@ -3,7 +3,7 @@
  * Spec: docs/ios-parity/sections/09-clients.md
  */
 
-import { doc, getDoc, setDoc } from 'firebase/firestore'
+import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore'
 import { notificationCreateFields, notificationRelatedIdFor, type NotificationCreateInput } from '@/lib/canonical'
 import { auth, db } from '@/lib/firebase/config'
 import { serializeNotification } from '@/lib/ios-parity/converters'
@@ -29,6 +29,12 @@ export async function saveInboxNotification(input: {
    * "never push to the actor" guard does not silence the signed-in user's own reminder.
    */
   actorUserId?: string | null
+  /**
+   * Rulebook 1.16.0 §13: only a scheduled type (`SCHEDULED_NOTIFICATION_TYPES`) written ahead of time passes its due
+   * instant. Every other row is written with the server time (`notificationCreatedAtIsServerTime`), never this
+   * browser's clock.
+   */
+  scheduledAt?: Date | null
 }): Promise<void> {
   if (!db) return
   const id = input.id || newUppercaseUuid()
@@ -62,6 +68,8 @@ export async function saveInboxNotification(input: {
       actorUserId: inboxActorUserId(input.actorUserId) || null,
       dayKey: input.dayKey ?? null,
       catalogue: input.catalogue ?? null,
+      createdAt: input.scheduledAt ?? null,
+      serverTimestamp: serverTimestamp(),
     } as NotificationCreateInput,
     stored
   )

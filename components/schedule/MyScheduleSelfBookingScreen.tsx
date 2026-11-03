@@ -46,6 +46,10 @@ import {
   weekendWeekdayMixMessage,
 } from '@/lib/scheduling/bookingSlotRules'
 import { BookingEditSheet } from '@/components/schedule/BookingEditSheet'
+import { useBookingConflictGate } from '@/components/scheduling/BookingConflictRows'
+import { useLeaveConflictCheck } from '@/components/scheduling/useLeaveConflictCheck'
+import { dayKey as orgDayKey } from '@/lib/ios-parity/londonTime'
+import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 import { countWorksByTab, filterWorksByTab, searchWorks } from '@/lib/projects/workStatus'
 import { coversCalendarDay } from '@/lib/ios-parity/londonTime'
 import type { Booking, Project } from '@/types'
@@ -230,6 +234,9 @@ export function MyScheduleSelfBookingScreen({
     loading,
   } = useManagerScheduleStore()
   const { users, userIdAliases, loadUsers } = useOrgUserStore()
+  // Rulebook 1.16.0 §5: booking yourself onto a day of your own annual leave asks first.
+  const leaveCheck = useLeaveConflictCheck(payrollPolicy)
+  const leaveGate = useBookingConflictGate()
 
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: 1 }))
   // An earlier week reaches before the launch booking download.
@@ -385,7 +392,7 @@ export function MyScheduleSelfBookingScreen({
     }
   }
 
-  function book(args: {
+  async function book(args: {
     timeSlot: TimeSlot
     locationType: ManagerLocationType
     locationId?: string
@@ -399,7 +406,7 @@ export function MyScheduleSelfBookingScreen({
       flash('error', mix)
       return
     }
-    const days = allDays.filter((day) => slotOfferedOnDate(args.timeSlot, day, payrollPolicy))
+    let days = allDays.filter((day) => slotOfferedOnDate(args.timeSlot, day, payrollPolicy))
     if (days.length === 0) {
       flash('error', 'Saturday and Sunday are booked as custom hours only.')
       return
@@ -417,6 +424,23 @@ export function MyScheduleSelfBookingScreen({
       )
     ) {
       return
+    }
+    // 1.16.0 (§5, `bookingLeaveConflicts`): tick to book anyway, or ✕ to drop that day.
+    const zone = organizationZoneOr()
+    const leaveRows = leaveCheck.rowsFor(
+      [{ id: userId, userId, name: 'You' }],
+      days.map((day) => orgDayKey(day, zone)),
+      {
+        timeSlot: args.timeSlot,
+        workStartTime: args.timeSlot === 'CUSTOM_HOURS' ? customStart : undefined,
+        workEndTime: args.timeSlot === 'CUSTOM_HOURS' ? customEnd : undefined,
+      }
+    )
+    const dropped = await leaveGate.check(leaveRows)
+    if (dropped === null) return
+    if (dropped.size > 0) {
+      days = days.filter((day) => !dropped.has(`${userId}|${orgDayKey(day, zone)}`))
+      if (days.length === 0) return
     }
     if (days.length === 1) {
       const existing = myBookingsOn(days[0])
@@ -533,7 +557,7 @@ export function MyScheduleSelfBookingScreen({
               key={slot}
               type="button"
               disabled={busy}
-              onClick={() => book({ timeSlot: slot, locationType: type, locationId, customLocationName })}
+              onClick={() => void book({ timeSlot: slot, locationType: type, locationId, customLocationName })}
               className="btn sm"
             >
               {label}
@@ -604,6 +628,7 @@ export function MyScheduleSelfBookingScreen({
 
   return (
     <div className="stack" data-hue="sched">
+      {leaveGate.dialog}
       <div className="phead" data-hue="sched">
         <div className="badge-ico">
           <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>

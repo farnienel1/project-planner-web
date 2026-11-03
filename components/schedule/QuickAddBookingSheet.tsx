@@ -8,6 +8,7 @@ import {
   weekendNoteForDate,
 } from '@/lib/scheduling/bookingSlotRules'
 import { useMemo, useState } from 'react'
+import { useBookingConflictGate, type BookingSlotConflictCheck } from '@/components/scheduling/BookingConflictRows'
 import { format } from 'date-fns'
 import { slotToFirestore, type ScheduleSlotChoice } from '@/lib/scheduling/scheduleUtils'
 import { HoursTimelinePicker } from '@/components/scheduling/HoursTimelinePicker'
@@ -40,6 +41,7 @@ export function QuickAddBookingSheet({
   payroll = DEFAULT_PAYROLL_POLICY,
   onSave,
   onClose,
+  conflictsFor,
 }: {
   personName: string
   roleLabel?: string
@@ -52,7 +54,10 @@ export function QuickAddBookingSheet({
   payroll?: OrgPayrollTimePolicy
   onSave: (values: QuickAddBookingValues) => Promise<void>
   onClose: () => void
+  /** Rulebook 1.16.0: annual leave (and double bookings) on the day for this slot, asked before saving. */
+  conflictsFor?: BookingSlotConflictCheck
 }) {
+  const conflictGate = useBookingConflictGate()
   // Rulebook 1.13.0 (Q2): Saturday and Sunday are custom hours only, opened with that day's window when it has one.
   const weekendDay = isWeekendDate(date)
   const prefill = customHoursPrefillForDate(date, payroll)
@@ -99,6 +104,14 @@ export function QuickAddBookingSheet({
     ) {
       return
     }
+    const checkedSlot = slotToFirestore({ date, slot, workStartTime, workEndTime })
+    // 1.16.0 (§5): tick to book anyway, or ✕ to drop the day — dropping the only day saves nothing.
+    const dropped = await conflictGate.check(conflictsFor ? conflictsFor(checkedSlot) : [])
+    if (dropped === null) return
+    if (dropped.size > 0) {
+      onClose()
+      return
+    }
     try {
       const firestoreSlot = slotToFirestore({ date, slot, workStartTime, workEndTime })
       await onSave({
@@ -116,6 +129,7 @@ export function QuickAddBookingSheet({
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center">
+      {conflictGate.dialog}
       <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl bg-white shadow-xl">
         <div className="border-b border-slate-100 px-5 py-4">
           <div className="flex items-start justify-between gap-3">

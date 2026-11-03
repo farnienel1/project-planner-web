@@ -9113,3 +9113,128 @@ test('1.15.0 accountDeletionPath: handover, delete with company, delete', () => 
   assert.equal(r1150Del.accountDeletionPath(sa, [sa, member], scheduled), 'delete')
   assert.deepEqual(Object.keys(r1150Del.erasedOrganizationAuditFields({ name: 'Acme', members: { SA: 'admin' } }, 0)), ['erasedAt', 'name'])
 })
+
+// MARK: - 1.16.0 notification centre reliability + annual leave when booking
+
+test('1.16.0: notificationRecipientAccountId resolves any person id to one signed-in account', () => {
+  const roster = [
+    { id: 'Placeholder-1', email: 'op@example.com', role: role130({ isOperativeMode: true }), passwordSet: false },
+    { id: 'ACCOUNT-1', email: 'OP@example.com', role: role130({ isOperativeMode: true }), passwordSet: true, formerUserIds: ['placeholder-1'] },
+    { id: 'LM', email: 'lm@example.com', role: role130({ isManager: true }) },
+    { id: 'GONE', email: 'gone@example.com', role: role130({ isManager: true }), isActive: false },
+  ]
+  const catalogue = [{ id: 'op-row-7', email: 'Op@Example.com' }, { id: 'linked-row', userId: 'lm' }]
+  assert.equal(rulebook.notificationRecipientAccountId('account-1', roster), 'ACCOUNT-1')
+  assert.equal(rulebook.notificationRecipientAccountId('PLACEHOLDER-1', roster), 'ACCOUNT-1')
+  assert.equal(rulebook.notificationRecipientAccountId('op-row-7', roster, catalogue), 'ACCOUNT-1')
+  assert.equal(rulebook.notificationRecipientAccountId('linked-row', roster, catalogue), 'LM')
+  assert.equal(rulebook.notificationRecipientAccountId('GONE', roster), null)
+  assert.equal(rulebook.notificationRecipientAccountId('stranger', roster), null)
+  assert.equal(rulebook.notificationRecipientAccountId('ACCOUNT-1', []), null)
+  // One row per person, never the booker, catalogue ids resolved.
+  assert.deepEqual(rulebook.bookingCreatedRecipients(['op-row-7', 'placeholder-1', 'ACCOUNT-1', 'LM'], 'lm', roster, catalogue), ['ACCOUNT-1'])
+  assert.deepEqual(rulebook.bookingCreatedRecipients(['op-row-7'], 'ACCOUNT-1', roster, catalogue), [])
+  // Without a roster ids pass through (de-duplicated without case).
+  assert.deepEqual(rulebook.excludeActor(['A', 'a'], null), ['A'])
+})
+
+test('1.16.0: due-now rows use server time; only scheduled types hide until createdAt', () => {
+  const now = Date.parse('2026-11-03T12:00:00Z')
+  const row = (type: string, offsetMs: number) => ({ userId: 'U', type, createdAt: new Date(now + offsetMs) })
+  assert.equal(rulebook.inboxNotificationVisibleToUser(row('booking_created', 60_000), 'U', now), true)
+  assert.equal(rulebook.inboxNotificationVisibleToUser(row('booking_created', 6 * 60_000), 'U', now), false)
+  assert.equal(rulebook.inboxNotificationVisibleToUser(row('deadline_reminder', 60_000), 'U', now), false)
+  assert.equal(rulebook.inboxNotificationVisibleToUser(row('timesheet_submission_reminder', -1), 'U', now), true)
+  assert.equal(rulebook.unreadNotificationBadgeCount([row('variation', 60_000), row('deadline_due', 60_000)], 'U', now), 1)
+  const sentinel = { server: true }
+  const base = { organizationId: 'O', title: 't', message: 'm', userId: 'U', createdAt: new Date(now), serverTimestamp: sentinel }
+  assert.equal(rulebook.notificationCreateFields({ ...base, type: 'booking_created' })!.set.createdAt, sentinel)
+  const due = new Date(now + 86_400_000)
+  assert.equal(rulebook.notificationCreateFields({ ...base, type: 'deadline_reminder', createdAt: due })!.set.createdAt, due)
+  // Without a sentinel the given instant is kept (older callers).
+  assert.equal(rulebook.notificationCreateFields({ ...base, serverTimestamp: undefined, type: 'variation' })!.set.createdAt, base.createdAt)
+})
+
+test('1.16.0: a push token belongs to one account; the shared push payload', () => {
+  assert.deepEqual(rulebook.addedPushTokens(['a'], ['a', 'b', ' b ']), ['b'])
+  assert.deepEqual(
+    rulebook.pushTokenOwnerWrites('b', 'ME', [{ id: 'ME', pushTokens: ['b'] }, { id: 'OTHER', pushTokens: ['b', 'c'] }, { id: 'X', pushTokens: ['c'] }]),
+    [{ userId: 'OTHER', remove: ['b'] }]
+  )
+  const plan = rulebook.pushTokenDedupePlan([
+    { id: 'OLD', pushTokens: ['t1', 't2'], pushTokenUpdatedAt: new Date('2026-01-01') },
+    { id: 'NEW', pushTokens: ['t1'], pushTokenUpdatedAt: { seconds: Date.parse('2026-06-01') / 1000 } },
+  ])
+  assert.deepEqual(plan, [{ userId: 'OLD', remove: ['t1'], keptOn: { t1: 'NEW' } }])
+  assert.deepEqual(rulebook.pushTokensExcludingActor(['t1', 't2'], ['t2']), ['t1'])
+  assert.deepEqual(
+    rulebook.pushPayloadFields({ notificationId: 'N', type: 'booking_created', relatedId: 'J', dayKey: '2026-11-03', catalogue: 'smallWorks', userId: 'U', organizationId: 'O' }),
+    { notificationId: 'N', type: 'booking_created', relatedId: 'J', dayKey: '2026-11-03', catalogue: 'smallWorks', userId: 'U', organizationId: 'O' }
+  )
+  assert.deepEqual(rulebook.pushPayloadFields({ id: 'N', type: 'push_test', dayKey: 'bad', catalogue: 'x' }), { notificationId: 'N', type: 'push_test' })
+  assert.equal(rulebook.notificationOrganizationSwitch({ rowOrganizationId: 'B', openOrganizationId: 'A', membershipIds: ['A', 'b'] }), 'B')
+  assert.equal(rulebook.notificationOrganizationSwitch({ rowOrganizationId: 'C', openOrganizationId: 'A', membershipIds: ['A'] }), null)
+  assert.equal(rulebook.notificationOrganizationSwitch({ rowOrganizationId: 'a', openOrganizationId: 'A', membershipIds: ['A'] }), null)
+})
+
+test('1.16.0: bookingLeaveConflicts lists annual leave on the days being booked', () => {
+  const day = { standardDayStart: '08:00', standardDayEnd: '16:00', breakWindowStart: '12:00', breakWindowEnd: '12:30' }
+  const holidays = [
+    { id: 'H1', userId: 'ACCOUNT', startDayKey: '2026-11-02', endDayKey: '2026-11-04', timeSlot: 'FULL DAY', status: 'approved' },
+    { id: 'H2', operativeId: 'op-row', startDayKey: '2026-11-05', endDayKey: '2026-11-05', timeSlot: 'AM', status: 'approved' },
+    { id: 'H3', userId: 'account', startDayKey: '2026-11-06', endDayKey: '2026-11-06', timeSlot: 'PM', status: 'pending' },
+    { id: 'H4', userId: 'ACCOUNT', startDayKey: '2026-11-09', endDayKey: '2026-11-09', timeSlot: 'FULL DAY', status: 'rejected' },
+  ]
+  const people = [{ id: 'OP-ROW', userId: 'Account' }]
+  const days = ['2026-11-03', '2026-11-05', '2026-11-06', '2026-11-09', '2026-11-10']
+  const full = rulebook.bookingLeaveConflicts({ people, dayKeys: days, holidays, timeSlot: 'FULL DAY', day })
+  assert.deepEqual(full.map((row) => [row.dayKey, row.leaveSlot, row.status, row.personId]), [
+    ['2026-11-03', 'FULL DAY', 'approved', 'OP-ROW'],
+    ['2026-11-05', 'AM', 'approved', 'OP-ROW'],
+    ['2026-11-06', 'PM', 'pending', 'OP-ROW'],
+  ])
+  assert.equal(full[0].label, rulebook.ANNUAL_LEAVE_BOOKED_LABEL)
+  assert.equal(full[0].label, 'Annual leave booked')
+  assert.equal(full[2].label, rulebook.ANNUAL_LEAVE_REQUESTED_LABEL)
+  // AM leave vs a PM booking: no conflict; PM leave vs an AM booking: none either.
+  const pm = rulebook.bookingLeaveConflicts({ people, dayKeys: ['2026-11-05'], holidays, timeSlot: 'PM', day })
+  assert.deepEqual(pm, [])
+  const am = rulebook.bookingLeaveConflicts({ people, dayKeys: ['2026-11-06'], holidays, timeSlot: 'AM', day })
+  assert.deepEqual(am, [])
+  // Custom hours overlapping the AM half conflict with AM leave; afternoon hours do not.
+  const customAm = rulebook.bookingLeaveConflicts({ people, dayKeys: ['2026-11-05'], holidays, timeSlot: 'CUSTOM', workStartTime: '11:00', workEndTime: '14:00', day })
+  assert.equal(customAm.length, 1)
+  const customPm = rulebook.bookingLeaveConflicts({ people, dayKeys: ['2026-11-05'], holidays, timeSlot: 'CUSTOM', workStartTime: '13:00', workEndTime: '15:00', day })
+  assert.deepEqual(customPm, [])
+  // Same person by roster email; a stranger never matches.
+  const roster = [{ id: 'ACCOUNT', email: 'p@example.com' }, { id: 'DUP', email: 'P@example.com' }]
+  assert.equal(rulebook.bookingLeaveConflicts({ people: ['dup'], dayKeys: ['2026-11-03'], holidays, roster }).length, 1)
+  assert.deepEqual(rulebook.bookingLeaveConflicts({ people: ['NOBODY'], dayKeys: ['2026-11-03'], holidays, roster }), [])
+})
+
+test('1.16.1: a blank H&S file link never overwrites a stored one; copies keep the one with a link', () => {
+  const stored = {
+    ramsDocuments: [{ id: 'R1', title: 'RAMS', fileURL: 'https://files/r1.pdf', fileName: 'r1.pdf' }],
+    otherDocuments: [{ id: 'D1', title: 'Doc', fileURL: 'https://files/d1.pdf', fileName: 'd1.pdf' }],
+  }
+  const write = rulebook.healthSafetyDocumentWriteFields(stored, {
+    ramsDocuments: [{ id: 'r1', title: 'RAMS v2', fileURL: '', fileName: null }],
+    otherDocuments: [{ id: 'D1', title: 'Doc', fileURL: 'https://files/d1-new.pdf', fileName: 'd1-new.pdf' }],
+  })
+  const rams = write.set.ramsDocuments as Array<Record<string, unknown>>
+  assert.equal(rams[0].fileURL, 'https://files/r1.pdf')
+  assert.equal(rams[0].fileName, 'r1.pdf')
+  assert.equal(rams[0].title, 'RAMS v2')
+  // A real replacement is written.
+  assert.equal((write.set.otherDocuments as Array<Record<string, unknown>>)[0].fileURL, 'https://files/d1-new.pdf')
+  assert.deepEqual([...rulebook.HEALTH_SAFETY_FILE_FIELDS], ['fileURL', 'fileName'])
+  const merged = rulebook.mergeHealthSafetyRowCopies(
+    [{ id: 'R1', fileURL: '' }, { id: 'R2', fileURL: 'a' }],
+    [{ id: 'r1', fileURL: 'https://files/r1.pdf', fileName: 'r1.pdf' }, { id: 'R2', fileURL: 'b' }, { id: 'R3' }]
+  )
+  assert.deepEqual(merged, [
+    { id: 'r1', fileURL: 'https://files/r1.pdf', fileName: 'r1.pdf' },
+    { id: 'R2', fileURL: 'a' },
+    { id: 'R3' },
+  ])
+})

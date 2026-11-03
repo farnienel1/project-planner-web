@@ -16,6 +16,8 @@ import {
   SchedulePersonPickerRow,
 } from '@/components/projects/scheduling/SchedulePersonDayRows'
 import type { ScheduleDateSlot } from '@/lib/scheduling/scheduleUtils'
+import { BOOKING_CONFLICTS_HEADING } from '@/lib/canonical'
+import { BookingConflictLegend } from '@/components/scheduling/BookingConflictRows'
 import type { Operative, User } from '@/types'
 
 export function SchedulePersonPickerStep({
@@ -52,8 +54,8 @@ export function SchedulePersonPickerStep({
       <div>
         <p className="h2">Add operative or manager</p>
         <p className="mt-1 muted small">
-          Select one or more people. If they are already booked, tick ✓ to double-book that day or ✕ to
-          remove them from this selection.
+          Select one or more people. If they are already booked or on annual leave, tick ✓ to book that day anyway
+          or ✕ to remove it from this selection.
         </p>
       </div>
 
@@ -91,22 +93,26 @@ export function SchedulePersonPickerStep({
           filteredPeople.map((person) => {
             const selected = selectedById.get(person.id) || null
             const pending = selected ? personHasPendingClashes(selected) : false
+            const onLeave = Boolean(selected && Object.keys(selected.leaveByDay ?? {}).length > 0)
+            const doubleBooked = Boolean(selected && Object.values(selected.clashByDay).some((list) => list.length > 0))
             return (
               <div key={person.id} className="space-y-2">
                 <SchedulePersonPickerRow
                   person={person}
                   selected={Boolean(selected)}
                   badge={person.badge}
-                  clashLabel={pending ? 'Already booked' : undefined}
+                  clashLabel={
+                    pending ? (doubleBooked && onLeave ? 'Clashes' : onLeave ? 'Annual leave' : 'Already booked') : undefined
+                  }
                   onSelect={() => onTogglePerson(person)}
                 />
 
                 {selected && pending ? (
-                  <div className="ml-2 space-y-2 border-l-2 border-[var(--warn)] pl-3">
-                    <p className="text-xs font-medium text-[var(--warn)]">
-                      Already booked on one or more selected days. Tick to confirm the double-book, or ✕
-                      to drop that day.
-                    </p>
+                  <div
+                    className={`ml-2 space-y-2 border-l-2 pl-3 ${doubleBooked ? 'border-[var(--warn)]' : 'border-[var(--purple)]'}`}
+                  >
+                    <p className="text-xs font-medium text-[var(--ink)]">{BOOKING_CONFLICTS_HEADING}</p>
+                    <BookingConflictLegend />
                     <SchedulePersonDayRows
                       person={selected}
                       slots={slots}
