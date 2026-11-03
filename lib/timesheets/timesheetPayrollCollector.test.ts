@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { Booking, Operative, Project, User } from '../../types/index.ts'
-import { collectTimesheetPayroll, timesheetHoursRateLine, timesheetRateAnnotation } from './timesheetPayrollCollector.ts'
+import { collectTimesheetPayroll, timesheetHoursRateLine, timesheetLabourDetails, timesheetRateAnnotation } from './timesheetPayrollCollector.ts'
 import { paidBookedHours } from './timesheetHours.ts'
 import { DEFAULT_PAYROLL_POLICY } from '../settings/organizationSettings.ts'
 import type { OperativeDayRateHistoryCollection } from './dayRateHistoryStorage.ts'
@@ -354,4 +354,74 @@ test('1.19.0: a signed timesheet (weeklyReportOverride) is never re-priced when 
   })
   const line = next.weeklyReportOverride?.lines[0]
   assert.deepEqual([line?.amount, line?.paidHours, line?.days], [200, 8, 1])
+})
+
+// Rulebook 1.20.3: an unpaid break worked in hours at a multiplier comes off after the multiplier as plain hours. The
+// lines show the clock hours and the break ("6.5h × 2 − 0.5h break = 12.5h", `multipliedHoursText`), never the
+// back-calculated "6.25h × 2"; amounts and totals are unchanged.
+const r1203Policy = {
+  ...DEFAULT_PAYROLL_POLICY,
+  saturday: {
+    ...DEFAULT_PAYROLL_POLICY.saturday,
+    allHoursAtMultiplierMode: false,
+    definedWindowStart: '07:30',
+    definedWindowEnd: '11:00',
+    countsAsStandardHours: 4,
+    outsideWindowMultiplier: 2,
+    breakPaid: false,
+  },
+  sunday: { ...DEFAULT_PAYROLL_POLICY.sunday, allHoursAtMultiplierMode: true, allHoursMultiplier: 2, sameAsSaturday: false, breakPaid: false },
+}
+function r1203Booking(id: string, date: string): Booking {
+  return {
+    ...booking(id, new Date(`${date}T10:00:00Z`)),
+    timeSlot: 'CUSTOM_HOURS',
+    workStartTime: '07:30',
+    workEndTime: '14:00',
+  } as Booking
+}
+function r1203Summary(subject: User) {
+  return collectTimesheetPayroll({
+    user: subject,
+    bookings: [r1203Booking('sat', '2026-11-07'), r1203Booking('sun', '2026-11-08')],
+    managerSiteBookings: [],
+    operatives: [{ ...operative, dayRate: subject.dayRate ?? 0, hourlyRate: subject.hourlyRate ?? 0 }],
+    projects: [project],
+    smallWorks: [],
+    periodStart: new Date('2026-11-01T00:00:00Z'),
+    periodEnd: new Date('2026-11-15T00:00:00Z'),
+    payrollPolicy: r1203Policy,
+    timeZone: 'Europe/London',
+  })
+}
+
+test('1.20.3: overtime lines show clock hours and the break, never "6.25h × 2"; pay totals unchanged (hourly)', () => {
+  const summary = r1203Summary(user({ id: 'u1', payBasis: 'hourly', hourlyRate: 20, dayRate: undefined } as Partial<User> & { id: string }))
+  const sunOt = summary.lineItems.find((line) => line.id === 'op-sun-ot')
+  const satOt = summary.lineItems.find((line) => line.id === 'op-sat-ot')
+  const satStd = summary.lineItems.find((line) => line.id === 'op-sat-normal')
+  assert.ok(sunOt && satOt && satStd)
+  // Pay is the pay rule's: Sunday 6.5 × 2 − 0.5 = 12.5h × £20; Saturday 4h + (3 × 2 − 0.5) = 9.5h × £20.
+  assert.deepEqual([sunOt.paidHours, sunOt.amount], [6.25, 250])
+  assert.deepEqual([satStd.amount, satOt.paidHours, satOt.amount], [80, 2.75, 110])
+  assert.equal(summary.baseAmount + summary.overtimeAmount, 440)
+  // The text: clock hours × N, then the break as plain hours, at the base rate.
+  assert.equal(sunOt.details, 'OT 6.5h × 2 − 0.5h break = 12.5h')
+  assert.equal(timesheetHoursRateLine(sunOt), '6.5h × 2 − 0.5h break = 12.5h × £20.00/hr = £250.00')
+  // The live invoice line's details are the same text (`invoiceLinesForTimesheet` → `timesheetLabourDetails`).
+  assert.equal(timesheetLabourDetails(sunOt), '6.5h × 2 − 0.5h break = 12.5h × £20.00/hr = £250.00')
+  assert.equal(satOt.details, 'OT 3h × 2 − 0.5h break = 5.5h')
+  assert.equal(timesheetHoursRateLine(satOt), '3h × 2 − 0.5h break = 5.5h × £20.00/hr = £110.00')
+  for (const line of summary.lineItems) assert.equal(/6\.25|2\.75/.test(timesheetHoursRateLine(line)), false, line.id)
+  // The queue's OT figure is the clock hours at the multiplier (3 + 6.5), not the back-calculated 2.75 + 6.25.
+  assert.equal(summary.overtimeHours, 9.5)
+})
+
+test('1.20.3: a day-rate overtime line with a break shows the hours that pay as days at the day rate; pay unchanged', () => {
+  const summary = r1203Summary(user({ id: 'u1', dayRate: 200 }))
+  const sunOt = summary.lineItems.find((line) => line.id === 'op-sun-ot')
+  assert.ok(sunOt)
+  // 6.25 / 8 × 2 × £200 = £312.50 = 12.5h / 8 × £200.
+  assert.equal(sunOt.amount, 312.5)
+  assert.equal(timesheetHoursRateLine(sunOt), '6.5h × 2 − 0.5h break = 12.5h = 1.56 days × £200.00/day = £312.50')
 })

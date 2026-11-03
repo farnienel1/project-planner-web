@@ -6,7 +6,7 @@
  * hours worked, never multiplied. Paid hours belong to pay screens.
  */
 
-import { bookingOccupiesDay, formerIdAliases, payrollOutsideMultiplier, unbookedLabourRowsOnDay, warningScopeFor, weekdayPaidHours, workedHoursSplit, type JobAccessViewer } from '@/lib/canonical'
+import { bookingOccupiesDay, formerIdAliases, multipliedHoursText, payrollMultipliedHours, payrollOutsideMultiplier, unbookedLabourRowsOnDay, warningScopeFor, weekdayPaidHours, workedHoursSplit, type JobAccessViewer } from '@/lib/canonical'
 import { isoWeekdayInZone } from '@/lib/orgTime/zoneTime'
 import { labourPersonFromUser, labourRosterOperative } from '@/lib/warnings/unbookedLabourWarnings'
 import { findUserByAnyId, rosterDisplayName } from '@/lib/staff/userRosterUtils'
@@ -120,8 +120,15 @@ export type DailyOverviewModel = {
   labourHours: number
   /** Of `labourHours`, hours worked inside the standard window (`workedHoursSplit`). */
   standardWorkedHours: number
-  /** Of `labourHours`, hours worked outside it, before any multiplier. */
+  /** Of `labourHours`, clock hours at the multiplier, before it (1.20.3: before any unpaid break taken off them). */
   overtimeWorkedHours: number
+  /**
+   * Rulebook 1.20.3: the unpaid break taken off hours at the multiplier as plain hours (`payrollMultipliedHours`), so
+   * standard + overtime × multiplier − this = `labourHours`. 0 when none.
+   */
+  overtimeBreakHours: number
+  /** `multipliedHoursText` for the day's hours at the multiplier ("6.5h × 2 − 0.5h break = 12.5h"); null when none. */
+  overtimeText: string | null
   /** That day's multiplier for the overtime hours (`payrollOutsideMultiplier`, or the booking's own). */
   overtimeMultiplier: number
   peopleCount: number
@@ -525,13 +532,22 @@ export function buildDailyOverview(params: {
   const labourHours = labourResults.reduce((sum, r) => sum + r.totalPaidHours, 0)
   let standardWorkedHours = 0
   let overtimeWorkedHours = 0
+  let overtimeBreakHours = 0
   for (const r of labourResults) {
     standardWorkedHours += r.standardHours
-    overtimeWorkedHours += r.outsideHours
+    // 1.20.3: clock hours at the multiplier and the break off them as plain hours — never the back-calculated base.
+    const multiplied = payrollMultipliedHours(r)
+    overtimeWorkedHours += multiplied ? multiplied.clockHours : r.outsideHours
+    overtimeBreakHours += multiplied ? multiplied.breakHours : 0
   }
   const overtimeMultiplier =
     labourResults.filter((r) => r.outsideHours > 0).reduce((max, r) => Math.max(max, r.outsideMultiplier), 0) ||
     payrollOutsideMultiplier({}, isoWeekdayInZone(params.day, zone), policy)
+  const multipliers = new Set(labourResults.filter((r) => r.outsideHours > 0).map((r) => r.outsideMultiplier))
+  const overtimeText =
+    overtimeWorkedHours > 0 && multipliers.size <= 1
+      ? multipliedHoursText({ clockHours: overtimeWorkedHours, multiplier: overtimeMultiplier, breakHours: overtimeBreakHours })
+      : null
 
   const hasOther = officeBookings.length > 0 || wfhBookings.length > 0 || customGroups.length > 0
   const empty =
@@ -553,6 +569,8 @@ export function buildDailyOverview(params: {
     labourHours,
     standardWorkedHours,
     overtimeWorkedHours,
+    overtimeBreakHours,
+    overtimeText,
     overtimeMultiplier,
     peopleCount: Math.max(onSiteKeys.size, bookedKeys.size),
     jobsCount: projectCards.length,

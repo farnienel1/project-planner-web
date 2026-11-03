@@ -6,7 +6,7 @@
  */
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import { DEFAULT_PAYROLL_POLICY } from '@/lib/settings/organizationSettings'
-import { payrollOutsideMultiplier, type PayrollHoursResult } from '@/lib/canonical'
+import { payrollMultipliedHours, payrollOutsideMultiplier, type PayrollHoursResult } from '@/lib/canonical'
 import { londonIsoWeekday } from '@/lib/ios-parity/londonTime'
 import { bookingPayrollHours } from '@/lib/scheduling/paidHours'
 
@@ -58,7 +58,10 @@ export function paidBookedHours(
   return bookingHoursOnDay(date, timeSlot, workStartTime, workEndTime, payrollPolicy, isBreakRemoved).totalPaidHours
 }
 
-/** Hours outside the standard window (`outsideHours`), before the multiplier. */
+/**
+ * Clock hours at the multiplier, before it (display only). 1.20.3: with an unpaid break worked in them, the clock
+ * hours (`payrollMultipliedHours`), never the back-calculated base; `overtimeHoursText` gives the full text.
+ */
 export function overtimeHoursBeyondPaidStandard(
   date: Date,
   timeSlot: string,
@@ -67,7 +70,21 @@ export function overtimeHoursBeyondPaidStandard(
   payrollPolicy: OrgPayrollTimePolicy = DEFAULT_PAYROLL_POLICY,
   isBreakRemoved?: boolean
 ): number {
-  return bookingHoursOnDay(date, timeSlot, workStartTime, workEndTime, payrollPolicy, isBreakRemoved).outsideHours
+  const result = bookingHoursOnDay(date, timeSlot, workStartTime, workEndTime, payrollPolicy, isBreakRemoved)
+  return payrollMultipliedHours(result)?.clockHours ?? result.outsideHours
+}
+
+/** 1.20.3: "6.5h × 2 − 0.5h break = 12.5h" (`multipliedHoursText`) when an unpaid break comes off overtime; else null. */
+export function overtimeHoursText(
+  date: Date,
+  timeSlot: string,
+  workStartTime: string | undefined,
+  workEndTime: string | undefined,
+  payrollPolicy: OrgPayrollTimePolicy = DEFAULT_PAYROLL_POLICY,
+  isBreakRemoved?: boolean
+): string | null {
+  const multiplied = payrollMultipliedHours(bookingHoursOnDay(date, timeSlot, workStartTime, workEndTime, payrollPolicy, isBreakRemoved))
+  return multiplied && multiplied.breakHours > 0 ? multiplied.text : null
 }
 
 /** Multiplier for outside hours on that day (`payrollOutsideMultiplier`). */

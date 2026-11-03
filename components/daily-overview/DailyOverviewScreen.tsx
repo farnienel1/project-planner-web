@@ -282,7 +282,11 @@ export function DailyOverviewScreen() {
           </div>
           <div className="st">
             <b>{overviewFormatHours(model.overtimeWorkedHours)}</b>
-            <span>Overtime {model.overtimeMultiplier}×</span>
+            {/* Rulebook 1.20.3: clock hours at the multiplier; an unpaid break comes off them as plain hours. */}
+            <span>
+              Overtime {model.overtimeMultiplier}×
+              {model.overtimeBreakHours > 0 ? ` − ${overviewFormatHours(model.overtimeBreakHours)}h break` : ''}
+            </span>
           </div>
           <div className="st">
             <b>{model.jobsCount}</b>

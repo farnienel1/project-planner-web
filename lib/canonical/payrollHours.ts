@@ -161,6 +161,109 @@ function segment(
   return row
 }
 
+/**
+ * Rulebook 1.20.3 (owner, final): hours at a multiplier with an unpaid break worked in them. The break comes off as
+ * plain hours AFTER the multiplier: paid = clock × N − break. Stored as `baseHours` = clock − break / N, so
+ * `baseHours × multiplier` (and every pay figure built on `outsideHours × multiplier`) is exactly clock × N − break;
+ * `unpaidBreakHours` is the break, `workedHours` the clock less the break. `payrollOutsideClockHours` gives the clock
+ * hours back for display ("6.5h × 2 = 13h − 0.5h unpaid break = 12.5h").
+ */
+function multipliedLessBreak(
+  kind: PayrollHoursSegmentKind,
+  clockHours: number,
+  breakHours: number,
+  multiplier: number,
+  start: number,
+  end: number
+): PayrollHoursSegment {
+  const n = Number(multiplier) > 0 ? Number(multiplier) : 1
+  const brk = Math.max(0, Math.min(clockHours * n, breakHours))
+  const row = segment(kind, Math.max(0, clockHours - brk / n), n, start, end, Math.max(0, clockHours - breakHours), breakHours)
+  row.paidHours = Math.max(0, clockHours * n - brk)
+  return row
+}
+
+/**
+ * Rulebook 1.20.3: the clock hours paid at the multiplier before the unpaid break came off (outside-window or
+ * every-hour segments), and the break taken off them as plain hours. For display only — pay uses `outsideHours ×
+ * outsideMultiplier`, which already equals `outsideClockHours × multiplier − outsideBreakHours`.
+ */
+export function payrollOutsideClockHours(result: Pick<PayrollHoursResult, 'segments'> | null | undefined): {
+  outsideClockHours: number
+  outsideBreakHours: number
+} {
+  let clock = 0
+  let brk = 0
+  for (const row of result?.segments ?? []) {
+    if (row.kind === 'standardWindow') continue
+    const b = row.unpaidBreakHours ?? 0
+    clock += row.baseHours + (b > 0 && row.multiplier > 0 ? b / row.multiplier : 0)
+    brk += b
+  }
+  return { outsideClockHours: clock, outsideBreakHours: brk }
+}
+
+function roundHundredths(value: number): number {
+  return Math.round(value * 100) / 100
+}
+
+function plainHoursText(hours: number): string {
+  return `${roundHundredths(hours)}h`
+}
+
+/**
+ * Rulebook 1.20.3 §8: the one text for hours at a multiplier, on every pay screen and export (timesheet lines,
+ * weekly report, invoices, Daily Overview): the clock hours × the multiplier, then any unpaid break as plain hours —
+ * "6.5h × 2 − 0.5h break = 12.5h", or "6.5h × 2 = 13h" with no break. Never the back-calculated base hours
+ * ("6.25h × 2"). Pass `payrollMultipliedHours(result)` (or the same three figures summed over lines).
+ */
+export function multipliedHoursText(input: { clockHours: number; multiplier: number; breakHours?: number | null }): string {
+  const clock = Math.max(0, Number(input.clockHours) || 0)
+  const n = Number(input.multiplier) > 0 ? Number(input.multiplier) : 1
+  const brk = Math.max(0, Number(input.breakHours) || 0)
+  const multiplied = `${plainHoursText(clock)} × ${roundHundredths(n)}`
+  const total = plainHoursText(Math.max(0, clock * n - brk))
+  return roundHundredths(brk) > 0 ? `${multiplied} − ${plainHoursText(brk)} break = ${total}` : `${multiplied} = ${total}`
+}
+
+/**
+ * Rulebook 1.20.3 §8: reads `multipliedHoursText` back ("6.5h × 2 − 0.5h break = 12.5h", optionally after a label such
+ * as "OT "), for a signed timesheet line that stored only that text, so it is shown the same way as a live line.
+ * Null for any other text (older sheets) — those keep their stored hours.
+ */
+export function parseMultipliedHoursText(
+  text: string | null | undefined
+): { clockHours: number; multiplier: number; breakHours: number } | null {
+  const match = /(\d+(?:\.\d+)?)h × (\d+(?:\.\d+)?)(?: − (\d+(?:\.\d+)?)h break)? = \d+(?:\.\d+)?h/.exec(String(text ?? ''))
+  if (!match) return null
+  const clockHours = Number(match[1])
+  const multiplier = Number(match[2])
+  const breakHours = match[3] == null ? 0 : Number(match[3])
+  if (!(clockHours > 0) || !(multiplier > 0)) return null
+  return { clockHours, multiplier, breakHours }
+}
+
+/**
+ * Rulebook 1.20.3 §8: a booking's hours at the multiplier for display — the clock hours, the multiplier, the unpaid
+ * break taken off them as plain hours, the hours they pay (clock × N − break) and `multipliedHoursText`. Null when the
+ * booking has no hours at a multiplier. Pay is unchanged: `outsideHours × outsideMultiplier` equals `paidHours`.
+ */
+export function payrollMultipliedHours(
+  result: Pick<PayrollHoursResult, 'segments' | 'outsideMultiplier'> | null | undefined
+): { clockHours: number; multiplier: number; breakHours: number; paidHours: number; text: string } | null {
+  if (!result) return null
+  const { outsideClockHours, outsideBreakHours } = payrollOutsideClockHours(result)
+  if (!(outsideClockHours > 0)) return null
+  const multiplier = Number(result.outsideMultiplier) > 0 ? Number(result.outsideMultiplier) : 1
+  return {
+    clockHours: outsideClockHours,
+    multiplier,
+    breakHours: outsideBreakHours,
+    paidHours: Math.max(0, outsideClockHours * multiplier - outsideBreakHours),
+    text: multipliedHoursText({ clockHours: outsideClockHours, multiplier, breakHours: outsideBreakHours }),
+  }
+}
+
 function result(segments: PayrollHoursSegment[], outsideMultiplier: number): PayrollHoursResult {
   let total = 0
   let standard = 0
@@ -308,12 +411,14 @@ export function unpaidBreakAppliesOnDay(
   dayKey: string,
   timeZone?: string | null
 ): boolean {
-  if (!policy || !(Number(policy.unpaidBreakMinutes) > 0)) return false
+  if (!policy) return false
   const zone = zoneOrLondon(timeZone)
   const iso = isoWeekdayInZone(dateFromDayKeyInZone(dayKey, zone), zone)
   const weekend = weekendFor(iso, policy)
+  // 1.20.3: a weekend day is judged on its own break length (`weekendBreakFor`), not the weekday length — a weekend
+  // day with its own unpaid break applies even when the weekday length is 0.
   if (weekend) return weekendBreakUnpaid(policy, weekend)
-  return policy.breakPaid !== true
+  return Number(policy.unpaidBreakMinutes) > 0 && policy.breakPaid !== true
 }
 
 /**
@@ -461,11 +566,11 @@ function weekendDay(booking: PayrollHoursBooking, policy: OrgPayrollTimePolicy, 
   const totalBreak = deductBreak ? dayBreakDeductionMinutes(dayBreak, span) : 0
   if (weekend.allHoursAtMultiplierMode) {
     if (isNamedHalf(booking)) return halfDayPaid(booking, policy, weekend, multiplier)
-    // Every hour at N×: (clock hours − deduction) × N.
+    // Rulebook 1.20.3 (owner, final): every hour at N×, then the unpaid break off as plain hours — clock × N − break
+    // (07:30–14:00 × 2 with 30 min unpaid = 13 − 0.5 = 12.5h). The break is never multiplied.
     const clockHours = (span.end - span.start) / 60
     const deducted = Math.min(clockHours, totalBreak / 60)
-    const base = Math.max(0, clockHours - deducted)
-    return result([segment('allHoursMultiplier', base, multiplier, span.start, span.end, base, deducted)], multiplier)
+    return result([multipliedLessBreak('allHoursMultiplier', clockHours, deducted, multiplier, span.start, span.end)], multiplier)
   }
   const ws = parseClockMinutes(weekend.definedWindowStart ?? policy.standardDayStart) ?? 0
   const we = parseClockMinutes(weekend.definedWindowEnd ?? '13:00') ?? 0
@@ -502,9 +607,10 @@ function weekendDay(booking: PayrollHoursBooking, policy: OrgPayrollTimePolicy, 
   for (const part of outsideIntervals(span, ws, we)) {
     const taken = Math.min(breakLeft, breakOverlapMinutes(dayBreak, part))
     breakLeft -= taken
-    const hours = (part.end - part.start - taken) / 60
-    if ((part.end - part.start) / 60 > 0.001) {
-      rows.push(segment('outsideWindow', Math.max(0, hours), multiplier, part.start, part.end, Math.max(0, hours), taken / 60))
+    const clockHours = (part.end - part.start) / 60
+    if (clockHours > 0.001) {
+      // 1.20.3: outside hours × N, then the break worked in them off as plain hours (never multiplied).
+      rows.push(multipliedLessBreak('outsideWindow', clockHours, Math.min(clockHours, taken / 60), multiplier, part.start, part.end))
     }
   }
   if (rows.length === 0) return nothingPaid(span, multiplier)

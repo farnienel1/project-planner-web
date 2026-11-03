@@ -358,6 +358,10 @@ export {
   subcontractorDayValue,
   unpaidBreakAppliesOnDay,
   workedHoursSplit,
+  payrollOutsideClockHours,
+  multipliedHoursText,
+  payrollMultipliedHours,
+  parseMultipliedHoursText,
 } from './payrollHours'
 export { DEFAULT_ANNUAL_LEAVE, parseAnnualLeaveDefaults, parsePayrollPolicy } from './organizationSettings'
 
@@ -475,6 +479,10 @@ export {
   PAYROLL_POLICY_TIME_STEP_MINUTES,
   PAYROLL_POLICY_TIME_STEP_MESSAGE,
   payrollPolicyTimeOnStep,
+  PAYROLL_BREAK_TIME_STEP_MINUTES,
+  PAYROLL_BREAK_TIME_STEP_MESSAGE,
+  payrollBreakTimeOnStep,
+  payrollBreakMinutesOnStep,
 } from './payrollPolicySchedule'
 export {
   activePaymentRunSummary,
@@ -928,6 +936,8 @@ export {
   allowedTimeSlotsOnDay,
   customHoursBreakWarning,
   weekendLunchBreakCopy,
+  weekendDayPreview,
+  WEEKEND_PREVIEW_DAY_KEYS,
   isWeekendDayKey,
   WEEKEND_WEEKDAY_MIX_MESSAGE,
   bookingDaysMixWeekdayAndWeekend,

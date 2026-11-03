@@ -348,6 +348,12 @@ export function buildWeeklyReportData({
       payBuckets.set(key, { personKey, person, role, slice: { ...slice } })
       return
     }
+    // 1.20.3: overtime rows keep clock hours and the break separately once any merged day had a break (display only).
+    if (slice.isOvertime && (Number(slice.breakHours) > 0 || Number(existing.slice.breakHours) > 0)) {
+      const clockOf = (row: LabourPaySlice) => (Number(row.breakHours) > 0 ? Number(row.clockHours) || 0 : row.paidHours)
+      existing.slice.clockHours = clockOf(existing.slice) + clockOf(slice)
+      existing.slice.breakHours = (Number(existing.slice.breakHours) || 0) + (Number(slice.breakHours) || 0)
+    }
     existing.slice.paidHours = roundPennies(existing.slice.paidHours + slice.paidHours)
     existing.slice.pay = roundPennies(existing.slice.pay + slice.pay)
   }

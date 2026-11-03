@@ -10,7 +10,7 @@
  * the previous custom span.
  */
 
-import { payrollHoursResult, weekdayPaidHours, type PayrollHoursResult } from '@/lib/canonical'
+import { payrollHoursResult, payrollOutsideClockHours, weekdayPaidHours, type PayrollHoursResult } from '@/lib/canonical'
 import { DEFAULT_PAYROLL_POLICY, type OrgPayrollTimePolicy } from '@/lib/canonical/organizationSettings'
 import { dayKey as londonDayKey } from '@/lib/ios-parity/londonTime'
 
@@ -305,12 +305,15 @@ export function hoursBreakdown(input: BookingHoursInput): HoursBreakdown {
   const multiplier = paid.outsideMultiplier || policy.weekdayOutsideStandardMultiplier || FALLBACK_OT_MULTIPLIER
   const kind = namedSlotKind(input.timeSlot)
   const slotLabel = namedSlotLabel(input.timeSlot)
-  const clockPaidHours = Math.round((paid.standardHours + paid.outsideHours) * 100) / 100
+  // Rulebook 1.20.3: hours at the multiplier as clock hours; a break worked in them comes off after the multiplier
+  // (`payrollOutsideClockHours`), so the overtime line is never "6.25h × 2".
+  const { outsideClockHours: outsideClock, outsideBreakHours: outsideBreak } = payrollOutsideClockHours(paid)
+  const clockPaidHours = Math.round((paid.standardHours + outsideClock - outsideBreak) * 100) / 100
   const rangeLabel = customHoursRangeLabel(input)
   const dayStart = policy.standardDayStart || FALLBACK_DAY_START
   const dayEnd = policy.standardDayEnd || FALLBACK_DAY_END
   const standardWindowLabel = `${dayStart} - ${dayEnd}`
-  const rawOt = Math.round(paid.outsideHours * 100) / 100
+  const rawOt = Math.round(outsideClock * 100) / 100
   const equivalent = Math.round(rawOt * multiplier * 100) / 100
   const overtimeEquation = rawOt > 0 ? formatOvertimeEquation(rawOt, multiplier) : null
   const segmentsLabel = overtimeSegmentsLabel({ ...input, standardDayStart: dayStart, standardDayEnd: dayEnd })

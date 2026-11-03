@@ -133,3 +133,34 @@ test('the Standard and Overtime tiles split the hours worked; overtime is not al
   const empty = build('2026-10-22', '07:30', '16:00')
   assert.deepEqual([empty.standardWorkedHours, empty.overtimeWorkedHours, empty.overtimeMultiplier], [8, 0, 1.5])
 })
+
+test('1.20.3: Daily Overview shows hours at the multiplier as clock hours with the break off as plain hours', async () => {
+  const { buildDailyOverview } = await import('./buildDailyOverview.ts')
+  const { dateFromDayKey } = await import('../ios-parity/londonTime.ts')
+  const { DEFAULT_PAYROLL_POLICY } = await import('../settings/organizationSettings.ts')
+  const day = dateFromDayKey('2026-11-08')
+  const payrollPolicy = {
+    ...DEFAULT_PAYROLL_POLICY,
+    sunday: { ...DEFAULT_PAYROLL_POLICY.sunday, allHoursAtMultiplierMode: true, allHoursMultiplier: 2, sameAsSaturday: false, breakPaid: false },
+  }
+  const model = buildDailyOverview({
+    day,
+    today: day,
+    projects: [{ id: 'P1', jobNumber: 'J1', siteName: 'Site', jobType: 'CAT A' } as never],
+    bookings: [
+      { id: 'B1', operativeId: 'op', projectId: 'P1', date: day, timeSlot: 'CUSTOM_HOURS', workStartTime: '07:30', workEndTime: '14:00', status: 'Confirmed', bookedBy: 'a', createdAt: day, updatedAt: day },
+    ] as never,
+    managerBookings: [],
+    holidays: [],
+    users: [],
+    operatives: [],
+    payrollPolicy,
+  })
+  // Pay total unchanged: 6.5 × 2 − 0.5 = 12.5h. The tile shows 6.5 (clock) × 2 and the 0.5h break, never 6.25.
+  assert.deepEqual(
+    [model.labourHours, model.standardWorkedHours, model.overtimeWorkedHours, model.overtimeBreakHours, model.overtimeMultiplier],
+    [12.5, 0, 6.5, 0.5, 2]
+  )
+  assert.equal(model.overtimeText, '6.5h × 2 − 0.5h break = 12.5h')
+  assert.equal(model.projectCards[0].people[0].pillText, '12.5h (6.5h × 2 − 0.5h break)')
+})

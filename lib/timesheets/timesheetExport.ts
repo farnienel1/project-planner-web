@@ -13,6 +13,7 @@ import type { Operative, User } from '@/types'
 import { findOperativeForUser } from '@/lib/operatives/operativeRosterUtils'
 import type { OperativeDayRateHistoryCollection } from '@/lib/timesheets/dayRateHistoryStorage'
 import { formatMoney } from '@/lib/canonical/money'
+import { parseMultipliedHoursText } from '@/lib/canonical/payrollHours'
 import { timesheetInvoiceRows } from '@/lib/canonical/reportPay'
 import { emailDocument, emailHeading, emailLink, emailList, emailStrong, emailText } from '@/lib/email/emailTheme'
 
@@ -116,7 +117,11 @@ function signedOverrideDetails(
   currencyCode?: string
 ): string {
   const standard = orgDayHours(standardDayHours)
-  const slice = signedLabourSlice(line, standard, 1)
+  // 1.20.3: a signed overtime line with a break shows "6.5h × 2 − 0.5h break = 12.5h" as a live line does
+  // (`parseMultipliedHoursText` on its stored text); other signed lines are shown as before.
+  const parsed = line.isOvertime ? parseMultipliedHoursText(line.details) : null
+  const slice = signedLabourSlice(line, standard, parsed?.multiplier ?? 1)
+  const withBreak = Number(slice.breakHours) > 0
   const equation = payLineDisplay({
     payBasis: slice.payBasis,
     paidHours: slice.paidHours,
@@ -124,6 +129,9 @@ function signedOverrideDetails(
     rate: slice.rate,
     pay: slice.pay,
     currencyCode,
+    ...(withBreak
+      ? { isOvertime: true, otMultiplier: slice.otMultiplier, clockHours: slice.clockHours ?? null, breakHours: slice.breakHours ?? null }
+      : {}),
   }).equation
   const clock = line.details && isClockSpanLabel(line.details) ? `${line.details} · ` : ''
   return `${clock}${equation}`

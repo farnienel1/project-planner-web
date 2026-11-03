@@ -597,6 +597,10 @@ export {
   subcontractorDayValue,
   unpaidBreakAppliesOnDay,
   workedHoursSplit,
+  payrollOutsideClockHours,
+  multipliedHoursText,
+  payrollMultipliedHours,
+  parseMultipliedHoursText,
 } from './payrollHours'
 export type { PayrollHoursBooking, PayrollHoursInput, PayrollHoursResult, PayrollHoursSegment } from './payrollHours'
 
@@ -735,6 +739,10 @@ export {
   PAYROLL_POLICY_TIME_STEP_MINUTES,
   PAYROLL_POLICY_TIME_STEP_MESSAGE,
   payrollPolicyTimeOnStep,
+  PAYROLL_BREAK_TIME_STEP_MINUTES,
+  PAYROLL_BREAK_TIME_STEP_MESSAGE,
+  payrollBreakTimeOnStep,
+  payrollBreakMinutesOnStep,
 } from './payrollPolicySchedule'
 export type {
   PayrollTimePolicyHistoryEntry,
@@ -1346,6 +1354,8 @@ export {
   allowedTimeSlotsOnDay,
   customHoursBreakWarning,
   weekendLunchBreakCopy,
+  weekendDayPreview,
+  WEEKEND_PREVIEW_DAY_KEYS,
   isWeekendDayKey,
   WEEKEND_WEEKDAY_MIX_MESSAGE,
   bookingDaysMixWeekdayAndWeekend,
@@ -1400,6 +1410,7 @@ export type {
   CustomHoursPrefillKind,
   BookingDayBreakdownLine,
   BookingDayBreakdownRow,
+  WeekendDayPreview,
   BookingRequestIdentityInput,
   BookingHoursLabel,
 } from './bookingSlots'
