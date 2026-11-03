@@ -29,12 +29,9 @@ service cloud.firestore {
            ('role' in userData && userData.role == 'manager');
   }
 
-  // Job quote and order history (`canViewMaterialOrderHistory`): every admin and manager in the
-  // organisation, never operative mode. The Wholesalers toggle (`wholesalersOrderHistory`) does not apply.
-  function canReadMaterialSendHistory(userData) {
-    return materialManagerLikeUser(userData) && !isOperativeProfile(userData);
-  }
-  
+  // Job quote and order history (`canViewMaterialOrderHistory`): every admin and manager of the organisation, never
+  // operative mode — `isOrgManagerOrAdmin` (1.10.0: this organisation's role, not another company's flags).
+
   // True if users/{auth.uid}.organizationId matches this org (string case-insensitive, DocumentReference exact path,
   // or DocumentReference whose *document id* matches case-insensitive — avoids strict path equality when UUID casing differs).
   // Also accepts string relative paths like "organizations/<uuid>" (Swift client strips the prefix; rules must too).
@@ -306,11 +303,51 @@ service cloud.firestore {
            adminLikeUser(get(/databases/(default)/documents/users/$(request.auth.uid)).data);
   }
 
+  // Rulebook 1.10.0 (H2): a person's role in an organisation comes from that organisation. Their users/{uid}
+  // flags count only when that document is this company's (users/{uid}.organizationId); otherwise the role is this
+  // company's members map entry. A manager in company A who is an operative (or member) in company B is never a
+  // manager in B.
+  function callerListedRole(organizationId) {
+    return exists(/databases/(default)/documents/organizations/$(organizationId)) ?
+      get(/databases/(default)/documents/organizations/$(organizationId)).data.get('members', {}).get(request.auth.uid, '') : '';
+  }
+  function callerHomeData() {
+    return exists(/databases/(default)/documents/users/$(request.auth.uid)) ?
+      get(/databases/(default)/documents/users/$(request.auth.uid)).data : {};
+  }
+  // users/{uid}.organizationId names this organisation (string, "organizations/<id>" path string, or reference).
+  function homeOrgIs(home, organizationId) {
+    let v = home.get('organizationId', '');
+    let org = organizationId.lower();
+    return (v is string && (v.trim().lower() == org || v.lower().matches('(^|.*/)organizations/' + org + '$'))) ||
+      (v is path && string(v).lower().matches('.*/organizations/' + org + '$'));
+  }
+  // The caller's role in THIS organisation: 'admin' | 'manager' | 'operative' | 'member' | the listed role | ''.
+  // Operative mode wins (lib/canonical staffAccess: operative mode is never staff).
+  function callerOrgRole(organizationId) {
+    let listed = callerListedRole(organizationId);
+    let home = callerHomeData();
+    return homeOrgIs(home, organizationId) ? (
+      isOperativeProfile(home) ? 'operative' : (
+        (listed == 'admin' || adminLikeUser(home)) ? 'admin' : (materialManagerLikeUser(home) ? 'manager' : 'member')
+      )
+    ) : listed;
+  }
+  // Admin or manager of THIS organisation, never operative mode (lib/canonical/staffAccess.ts isStaffAccount).
+  function isOrgManagerOrAdmin(organizationId) {
+    return request.auth != null && organizationId is string &&
+      callerOrgRole(organizationId) in ['admin', 'manager'];
+  }
+  // Staff who may open Send in THIS organisation: not an operative here.
+  function isOrgNonOperativeMember(organizationId) {
+    return request.auth != null && (
+      callerOrgRole(organizationId) in ['admin', 'manager'] ||
+      (homeOrgIs(callerHomeData(), organizationId) && !isOperativeLikeUser(callerHomeData()))
+    );
+  }
+
   function isOrganizationMaterialManager(organizationId) {
-    return request.auth != null &&
-           exists(/databases/(default)/documents/users/$(request.auth.uid)) &&
-           canAccessOrganization(organizationId) &&
-           materialManagerLikeUser(get(/databases/(default)/documents/users/$(request.auth.uid)).data);
+    return isOrgManagerOrAdmin(organizationId);
   }
 
   function isOperativeLikeUser(userData) {
@@ -323,9 +360,8 @@ service cloud.firestore {
   // primary org used to fail the send-history write after the email went out).
   function canWriteMaterialSendRecord(organizationId) {
     return request.auth != null &&
-           exists(/databases/(default)/documents/users/$(request.auth.uid)) &&
            canAccessOrganization(organizationId) &&
-           !isOperativeLikeUser(get(/databases/(default)/documents/users/$(request.auth.uid)).data);
+           isOrgNonOperativeMember(organizationId);
   }
 
   // Rulebook 1.9.0: a Send status update may carry write metadata (`updatedBy` = the signed-in user,
@@ -402,39 +438,18 @@ service cloud.firestore {
     );
   }
 
-  // Variations: every admin and manager in the org. Never an operative.
+  // Variations: every admin and manager of the org (isOrgManagerOrAdmin). Never an operative.
   // Do not look up the job's assigned-manager list here — that extra get() made
   // every variation read/write slow and denied managers who can already see the job.
-  function variationCallerIsOperative() {
-    return exists(/databases/(default)/documents/users/$(request.auth.uid)) && (
-      (
-        'operativeMode' in get(/databases/(default)/documents/users/$(request.auth.uid)).data &&
-        truthyBool(get(/databases/(default)/documents/users/$(request.auth.uid)).data.operativeMode)
-      ) ||
-      (
-        'permissions' in get(/databases/(default)/documents/users/$(request.auth.uid)).data &&
-        get(/databases/(default)/documents/users/$(request.auth.uid)).data.permissions is map &&
-        'operativeMode' in get(/databases/(default)/documents/users/$(request.auth.uid)).data.permissions &&
-        truthyBool(get(/databases/(default)/documents/users/$(request.auth.uid)).data.permissions.operativeMode)
-      ) ||
-      (
-        'role' in get(/databases/(default)/documents/users/$(request.auth.uid)).data &&
-        get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'operative'
-      )
-    );
-  }
-
   function canAdminVariations(organizationId) {
     return isOrganizationAdmin(organizationId) ||
       isOrgAdminViaMembersMap(organizationId) ||
       isPlatformOwner();
   }
 
+  // 1.10.0: the manager test is this organisation's role (isOrgManagerOrAdmin), never another company's flags.
   function canAccessVariationsStaff(organizationId) {
-    return canAdminVariations(organizationId) || (
-      isOrganizationMaterialManager(organizationId) &&
-      !variationCallerIsOperative()
-    );
+    return canAdminVariations(organizationId) || isOrgManagerOrAdmin(organizationId);
   }
 
   // A manager with operative-management access (manager + operatives, not operative mode) in the
@@ -699,7 +714,7 @@ service cloud.firestore {
             isPlatformOwner() ||
             isOrganizationAdmin(invitationOrgId()) ||
             isOrgAdminViaMembersMap(invitationOrgId()) ||
-            (isManagerWithOperativesAccess() && canAccessOrganization(invitationOrgId()))
+            (isManagerWithOperativesAccess() && userOrgIdMatchesPath(invitationOrgId()))
           );
       }
 
@@ -875,12 +890,32 @@ service cloud.firestore {
       }
 
       // Multi-org memberships (web Change organisation + cross-org invites)
+      // Rulebook 1.10.0 (lib/canonical/orgMembership.ts): only an admin of that organisation writes role,
+      // permissions, super admin or the active flag. The person may accept (status active, acceptedAt), keep
+      // their profile copy fields, and set `role` only to what that organisation's members map lists for them.
       match /orgMemberships/{membershipOrgId} {
+        function membershipChangedKeys() {
+          return resource == null
+            ? request.resource.data.keys().toSet()
+            : request.resource.data.diff(resource.data).affectedKeys();
+        }
+        function membershipSelfWriteAllowed() {
+          return membershipChangedKeys().hasOnly([
+              'status', 'acceptedAt', 'invitedAt', 'updatedAt', 'updatedBy', 'updatedFrom', 'role',
+              'organizationId', 'email', 'firstName', 'surname', 'lastName', 'mobileNumber', 'passwordSet',
+              'profilePhotoURL'
+            ]) &&
+            (!('role' in membershipChangedKeys()) ||
+              request.resource.data.role == callerListedRole(membershipOrgId) ||
+              (request.resource.data.role == 'admin' && isOrgCreatorViaParentGet(membershipOrgId))) &&
+            (!('status' in membershipChangedKeys()) || request.resource.data.status == 'active') &&
+            writeMetadataValidWhenPresent();
+        }
         allow read: if request.auth != null && request.auth.uid == userId;
         allow create, update: if request.auth != null && (
-          request.auth.uid == userId ||
           isOrgAdminViaMembersMap(membershipOrgId) ||
-          isOrganizationAdmin(membershipOrgId)
+          isOrganizationAdmin(membershipOrgId) ||
+          (request.auth.uid == userId && membershipSelfWriteAllowed())
         );
         allow delete: if request.auth != null && (
           request.auth.uid == userId ||
@@ -981,26 +1016,86 @@ service cloud.firestore {
       
       allow delete: if false;
       
+      // Rulebook 1.10.0 round 2 (lib/canonical/staffAccess.ts seesEveryJob / canCreateJob / canEditJob /
+      // canChangeJobManagers): the caller's Projects / Small works add-edit-manage permission in THIS organisation —
+      // users/{uid} flags when that is this organisation's profile, else this organisation's membership document
+      // (nested permissions.{kind}, else the legacy flat key). Only a manager here counts (admins see everything).
+      // `role` is callerOrgRole(organizationId), computed once per rule: these rules sit near the 1000-expression
+      // limit, so the helpers take it as an argument instead of recomputing it.
+      function callerJobToggle(role, kind) {
+        let home = callerHomeData();
+        let membership = /databases/(default)/documents/users/$(request.auth.uid)/orgMemberships/$(organizationId);
+        return role == 'manager' && (
+          homeOrgIs(home, organizationId)
+            ? staffFlag(home, kind)
+            : (exists(membership) &&
+               truthyBool(get(membership).data.get('permissions', {}).get(kind, get(membership).data.get(kind, false))))
+        );
+      }
+      // Sees, adds and edits every job of this kind, and changes its manager list (`seesEveryJob(role, kind)`).
+      function callerSeesEveryJob(role, kind) {
+        return role == 'admin' || callerJobToggle(role, kind) || isPlatformOwner();
+      }
+      // A single job document: every-job viewers; a manager listed on it (`isJobManager`); operatives and other
+      // non-staff members of this organisation by id only (the jobs of their own bookings — the rules cannot see
+      // which jobs those are, so `list` is refused to them).
+      function jobGetAllowed(kind) {
+        let role = callerOrgRole(organizationId);
+        return role in ['operative', 'member'] ||
+          (role == 'manager' && resource != null && jobListsCaller(resource.data)) ||
+          callerSeesEveryJob(role, kind);
+      }
+      // A job query: every-job viewers any query; other managers only `managerUserIds array-contains <uid>`.
+      function jobListAllowed(kind) {
+        let role = callerOrgRole(organizationId);
+        return callerSeesEveryJob(role, kind) ||
+          (role == 'manager' && request.auth.uid in resource.data.get('managerUserIds', []));
+      }
+      function jobCreateAllowed(kind) {
+        return callerSeesEveryJob(callerOrgRole(organizationId), kind);
+      }
+      // Editing a job: every-job viewers; a manager of the job edits its details but never its manager list.
+      function jobUpdateAllowed(kind) {
+        let role = callerOrgRole(organizationId);
+        return callerSeesEveryJob(role, kind) || (
+          role == 'manager' &&
+          !request.resource.data.diff(resource.data).affectedKeys()
+            .hasAny(['managerIds', 'managerId', 'assignedManagerUserIds', 'managerUserIds']) &&
+          jobListsCaller(resource.data)
+        );
+      }
+      // A job's health & safety subcollection is read by the people who may read the job.
+      function jobDocReadable(kind, jobId) {
+        let role = callerOrgRole(organizationId);
+        let path = /databases/(default)/documents/organizations/$(organizationId)/$(kind)/$(jobId);
+        return role in ['operative', 'member'] ||
+          (role == 'manager' && exists(path) && jobListsCaller(get(path).data)) ||
+          callerSeesEveryJob(role, kind);
+      }
+
       match /projects/{projectId} {
-        allow read: if canAccessOrganization(organizationId);
-        // Path already scopes org; do not require body organizationId type (string vs ref) to match.
-        allow create, update: if canAccessOrganization(organizationId);
+        allow get: if jobGetAllowed('projects');
+        allow list: if jobListAllowed('projects');
+        allow create: if jobCreateAllowed('projects');
+        allow update: if jobUpdateAllowed('projects');
         allow delete: if isOrganizationAdmin(organizationId);
 
         match /healthSafety/{documentId} {
-          allow read: if canAccessOrganization(organizationId);
+          allow read: if jobDocReadable('projects', projectId);
           allow create, update: if canAccessOrganization(organizationId);
           allow delete: if isOrganizationAdmin(organizationId);
         }
       }
       
       match /smallWorks/{smallWorkId} {
-        allow read: if canAccessOrganization(organizationId);
-        allow create, update: if canAccessOrganization(organizationId);
+        allow get: if jobGetAllowed('smallWorks');
+        allow list: if jobListAllowed('smallWorks');
+        allow create: if jobCreateAllowed('smallWorks');
+        allow update: if jobUpdateAllowed('smallWorks');
         allow delete: if isOrganizationAdmin(organizationId);
 
         match /healthSafety/{documentId} {
-          allow read: if canAccessOrganization(organizationId);
+          allow read: if jobDocReadable('smallWorks', smallWorkId);
           allow create, update: if canAccessOrganization(organizationId);
           allow delete: if isOrganizationAdmin(organizationId);
         }
@@ -1036,54 +1131,142 @@ service cloud.firestore {
             isOrgAdminViaMembersMap(organizationId) ||
             isPlatformOwner() ||
             isOrganizationAdmin(organizationId) ||
-            (isManagerWithOperativesAccess() && !operativeRowIsCaller())) &&
+            (isManagerWithOperativesAccess() && userOrgIdMatchesPath(organizationId) && !operativeRowIsCaller())) &&
           writeMetadataValidWhenPresent();
         allow delete: if isOrganizationAdmin(organizationId);
       }
       
-      // Deleted-booking tombstones (lib/canonical/bookingTombstones.ts). A delete of bookings/{id} or
-      // managerSiteBookings/{id} writes deletedBookings/{id} in the same batch; while it exists the
+      // Deleted-booking tombstones (lib/canonical/bookingTombstones.ts). A delete of bookings/{id},
+      // subcontractorBookings/{id} or managerSiteBookings/{id} writes deletedBookings/{id} in the same batch; while it exists the
       // booking cannot be created or updated again, so a queued offline save cannot bring it back.
       function bookingTombstoned(bookingId) {
         return exists(/databases/(default)/documents/organizations/$(organizationId)/deletedBookings/$(bookingId));
       }
-      function bookingStatusCancelled(data) {
-        return data.get('status', '') is string &&
-          data.get('status', '').lower() in ['cancelled', 'canceled'];
+      // Rulebook 1.10.0 (lib/canonical/staffAccess.ts canWriteBooking / canDeleteBooking): admins write every
+      // booking; managers only bookings on a project or small works they manage; operatives never.
+      // A job's managers: `managerUserIds` / `managerIds` / `managerId` naming the signed-in account (with or
+      // without `user:`, without case), or `managerId` naming a managers-list row whose email is the signed-in
+      // email. The job is projects/{id} or smallWorks/{id}, the booking's id as stored, then upper case.
+      function jobListsCaller(job) {
+        let uid = request.auth.uid.lower();
+        let primary = job.get('managerId', '');
+        return ((',' + job.get('managerUserIds', []).join(',').lower() + ',').matches('.*,(user:)?' + uid + ',.*')) ||
+          ((',' + job.get('managerIds', []).join(',').lower() + ',').matches('.*,(user:)?' + uid + ',.*')) ||
+          (primary is string && primary.lower() in [uid, 'user:' + uid]) ||
+          (primary is string && primary.size() > 0 && !primary.matches('.*/.*') &&
+            request.auth.token.email is string &&
+            exists(/databases/(default)/documents/organizations/$(organizationId)/managers/$(primary)) &&
+            string(get(/databases/(default)/documents/organizations/$(organizationId)/managers/$(primary)).data.get('email', '')).lower() == request.auth.token.email.lower());
       }
-      // A cancelled labour booking stays cancelled unless an admin or manager reinstates it.
-      // Edits that keep it cancelled are fine (iOS BookingStore re-saves every row).
-      function bookingUpdateKeepsCancellation() {
-        return !bookingStatusCancelled(resource.data) ||
-          bookingStatusCancelled(request.resource.data) ||
-          canAccessVariationsStaff(organizationId);
+      function callerManagesJobAt(jobId) {
+        return (exists(/databases/(default)/documents/organizations/$(organizationId)/projects/$(jobId)) &&
+            jobListsCaller(get(/databases/(default)/documents/organizations/$(organizationId)/projects/$(jobId)).data)) ||
+          (exists(/databases/(default)/documents/organizations/$(organizationId)/smallWorks/$(jobId)) &&
+            jobListsCaller(get(/databases/(default)/documents/organizations/$(organizationId)/smallWorks/$(jobId)).data));
+      }
+      function callerManagesJob(jobId) {
+        return jobId is string && jobId.size() > 0 && !jobId.matches('.*/.*') && (
+          callerManagesJobAt(jobId) ||
+          (jobId != jobId.upper() && callerManagesJobAt(jobId.upper())) ||
+          (jobId != jobId.lower() && callerManagesJobAt(jobId.lower()))
+        );
+      }
+      function bookingJobId(collection, data) {
+        return collection == 'managerSiteBookings'
+          ? data.get('locationId', '')
+          : data.get('projectId', data.get('projectID', ''));
+      }
+      function bookingHasJob(collection, data) {
+        return collection != 'managerSiteBookings' || data.get('locationType', '') in ['project', 'small_work'];
+      }
+      // The job part of canWriteBooking for a manager: the booking's job is one they manage; a manager site booking
+      // with no job is their own.
+      function managerMayWriteBookingData(collection, data) {
+        return bookingHasJob(collection, data)
+          ? callerManagesJob(bookingJobId(collection, data))
+          : data.get('userId', '') == request.auth.uid;
+      }
+      // `op`: 'create' (request.resource), 'update' (stored and written), 'delete' (stored).
+      function bookingWriteAllowed(collection, op) {
+        let role = callerOrgRole(organizationId);
+        return role == 'admin' || (
+          role == 'manager' && (
+            op == 'create' ? managerMayWriteBookingData(collection, request.resource.data) : (
+              managerMayWriteBookingData(collection, resource.data) && (
+                op != 'update' ||
+                (bookingJobId(collection, request.resource.data) == bookingJobId(collection, resource.data) &&
+                 bookingHasJob(collection, request.resource.data) == bookingHasJob(collection, resource.data) &&
+                 request.resource.data.get('userId', '') == resource.data.get('userId', '')) ||
+                managerMayWriteBookingData(collection, request.resource.data)
+              )
+            )
+          )
+        ) || isPlatformOwner();
+      }
+      // The tombstone of a stored booking: the people who may delete it (read as it was before the batch).
+      function bookingTombstoneAllowed(collection, bookingId) {
+        let role = callerOrgRole(organizationId);
+        let path = /databases/(default)/documents/organizations/$(organizationId)/$(collection)/$(bookingId);
+        return role == 'admin' || isPlatformOwner() || (
+          role == 'manager' && exists(path) && managerMayWriteBookingData(collection, get(path).data)
+        );
+      }
+
+      // A role in this organisation (callerOrgRole not '') is membership here, so these rules do not repeat
+      // canAccessOrganization (it would cost most of the expression budget).
+      // Rulebook 1.10.0 round 2 §17 (bookingQueryPlan): reads are enforced. Every-booking readers read everything;
+      // other managers read the bookings on a job they manage (`projectId` / `locationId`, any spelling of the job
+      // id) and their own; operatives only their own. Firestore rules are not filters: each app query names the job
+      // (`projectId in [<one job's id spellings>]`) or the person, so the rules can prove every document. Each `in`
+      // value costs a job lookup and a query may look up 10 documents, hence one job per query.
+      function callerOwnsBookingId(personId) {
+        let home = callerHomeData();
+        let row = /databases/(default)/documents/organizations/$(organizationId)/operatives/$(personId);
+        return personId is string && personId.size() > 0 && (
+          personId == request.auth.uid ||
+          personId in home.get('formerUserIds', []) ||
+          personId in home.get('sameEmailUserIds', []) ||
+          (!personId.matches('.*/.*') && request.auth.token.email is string && exists(row) &&
+            string(get(row).data.get('email', '')).lower() == request.auth.token.email.lower())
+        );
+      }
+      // Cheap tests first: when the rules cannot prove a query from its filters, they are evaluated document by
+      // document against the 1000-expression budget, so a toggle or own-booking match must not pay for a job lookup.
+      function bookingReadAllowed(collection) {
+        let role = callerOrgRole(organizationId);
+        return role == 'admin' ||
+          (role == 'manager' && (callerJobToggle(role, 'projects') || callerJobToggle(role, 'smallWorks'))) ||
+          (collection == 'managerSiteBookings' && role == 'manager' && resource.data.userId == request.auth.uid) ||
+          (collection == 'bookings' && role != '' && callerOwnsBookingId(resource.data.operativeId)) ||
+          (role == 'manager' && callerManagesJob(
+            collection == 'managerSiteBookings' ? resource.data.locationId : resource.data.projectId
+          )) ||
+          isPlatformOwner();
       }
 
       match /deletedBookings/{bookingId} {
         allow read: if canAccessOrganization(organizationId);
-        allow create: if canAccessOrganization(organizationId) &&
+        allow create: if request.auth != null &&
           request.resource.data.keys().hasOnly(['bookingId', 'collection', 'deletedAt', 'deletedBy', 'deletedFrom']) &&
           request.resource.data.keys().hasAll(['bookingId', 'collection', 'deletedAt', 'deletedBy', 'deletedFrom']) &&
           request.resource.data.bookingId == bookingId &&
           request.resource.data.deletedBy == request.auth.uid &&
           request.resource.data.deletedAt == request.time &&
           request.resource.data.deletedFrom in ['web', 'ios', 'android'] &&
-          (
-            // Same people who may delete each kind of booking.
-            (request.resource.data.collection == 'bookings' && isOrganizationAdmin(organizationId)) ||
-            request.resource.data.collection == 'managerSiteBookings'
-          );
+          request.resource.data.collection in ['bookings', 'managerSiteBookings', 'subcontractorBookings'] &&
+          // 1.10.0: the same people who may delete that booking (canDeleteBooking), read as it was before the
+          // batch. With the booking already gone, only an admin writes its tombstone.
+          bookingTombstoneAllowed(request.resource.data.collection, bookingId);
         allow update: if false;
         allow delete: if isOrganizationAdmin(organizationId) || isOrgAdminViaMembersMap(organizationId) || isPlatformOwner();
       }
 
       match /bookings/{bookingId} {
-        allow read: if canAccessOrganization(organizationId);
-        allow create: if canAccessOrganization(organizationId) && !bookingTombstoned(bookingId);
-        allow update: if canAccessOrganization(organizationId) &&
-          !bookingTombstoned(bookingId) &&
-          bookingUpdateKeepsCancellation();
-        allow delete: if isOrganizationAdmin(organizationId);
+        allow read: if bookingReadAllowed('bookings');
+        allow create: if !bookingTombstoned(bookingId) && bookingWriteAllowed('bookings', 'create');
+        // Only admins and the job's managers write (1.10.0), so a cancelled booking is reinstated only by them.
+        allow update: if !bookingTombstoned(bookingId) && bookingWriteAllowed('bookings', 'update');
+        allow delete: if bookingWriteAllowed('bookings', 'delete');
       }
       
       match /qualifications/{qualificationId} {
@@ -1323,7 +1506,7 @@ service cloud.firestore {
       match /materialSendRecords/{recordId} {
         allow read: if belongsToOrganization(organizationId) &&
           exists(/databases/(default)/documents/users/$(request.auth.uid)) &&
-          canReadMaterialSendHistory(get(/databases/(default)/documents/users/$(request.auth.uid)).data);
+          isOrgManagerOrAdmin(organizationId);
         allow create: if canWriteMaterialSendRecord(organizationId);
         allow update, delete: if isOrganizationAdmin(organizationId);
       }
@@ -1334,9 +1517,10 @@ service cloud.firestore {
       }
       
       match /managerSiteBookings/{bookingId} {
-        allow read: if canAccessOrganization(organizationId);
-        allow create, update: if canAccessOrganization(organizationId) && !bookingTombstoned(bookingId);
-        allow delete: if canAccessOrganization(organizationId);
+        allow read: if bookingReadAllowed('managerSiteBookings');
+        allow create: if !bookingTombstoned(bookingId) && bookingWriteAllowed('managerSiteBookings', 'create');
+        allow update: if !bookingTombstoned(bookingId) && bookingWriteAllowed('managerSiteBookings', 'update');
+        allow delete: if bookingWriteAllowed('managerSiteBookings', 'delete');
       }
       
       match /subcontractors/{subcontractorId} {
@@ -1346,9 +1530,10 @@ service cloud.firestore {
       }
       
       match /subcontractorBookings/{bookingId} {
-        allow read: if canAccessOrganization(organizationId);
-        allow create, update: if canAccessOrganization(organizationId);
-        allow delete: if canAccessOrganization(organizationId);
+        allow read: if bookingReadAllowed('subcontractorBookings');
+        allow create: if !bookingTombstoned(bookingId) && bookingWriteAllowed('subcontractorBookings', 'create');
+        allow update: if !bookingTombstoned(bookingId) && bookingWriteAllowed('subcontractorBookings', 'update');
+        allow delete: if bookingWriteAllowed('subcontractorBookings', 'delete');
       }
       
       // Annual leave. A requester asks (status 'pending') or asks to cancel (cancellationRequestedAt /
@@ -1373,9 +1558,7 @@ service cloud.firestore {
         // Staff (lib/canonical/staffAccess.ts isStaffAccount): admin of this company, or a manager not
         // in operative mode. Membership is already checked by canAccessOrganization on every rule below.
         function hbIsStaffManager() {
-          return ((staffFlag(hbCaller(), 'manager') || hbCaller().get('role', '') == 'manager') &&
-             !isOperativeProfile(hbCaller())) ||
-            hbIsAdmin();
+          return isOrgManagerOrAdmin(organizationId) || hbIsAdmin();
         }
         function hbRequesterUid(data) {
           return data.get('userId', null);
@@ -1687,7 +1870,9 @@ service cloud.firestore {
           collection != 'variationTrackers' &&
           collection != 'notifications' &&
           collection != 'materialSendRecords' &&
-          collection != 'fileReports';
+          collection != 'fileReports' &&
+          // 1.10.0 round 2: job and booking reads are enforced above (§17); never re-opened here.
+          !(collection in ['projects', 'smallWorks', 'bookings', 'managerSiteBookings', 'subcontractorBookings']);
       }
     }
 

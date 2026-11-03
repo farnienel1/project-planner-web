@@ -1,3 +1,4 @@
+import { inviteAcceptWrites } from '@/lib/canonical/inviteAccept'
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
@@ -184,6 +185,26 @@ function userDocFromInvitation(record: InvitationRecord, now: Timestamp): Record
   return payload
 }
 
+/**
+ * Rulebook 1.10.0 (H3, `inviteAcceptWrites` mode `existingAccount`): an account that already exists in another
+ * company. Its profile is never rewritten and the placeholder (the in-organisation row with the invited pay) stays;
+ * the role in this organisation goes on its membership. The security rules let only an admin of this organisation
+ * grant a role, so a refusal tells the person to ask one.
+ */
+async function acceptIntoAnotherCompany(authUid: string, organizationId: string, role: string, invitationId: string) {
+  const db = getFirebaseDb()
+  try {
+    await ensurePrimaryOrgMembership(authUid, organizationId, role)
+  } catch {
+    throw new Error(
+      'This email already has a Project Planner account. Sign in with it, and ask an admin of the inviting company to add your account to the company.'
+    )
+  }
+  await updateDoc(doc(db, 'invitations', invitationId), invitationUsedWriteFields(Timestamp.now()).set)
+  const { grantMfaSkip } = await import('@/lib/auth/mfa/mfaClient')
+  await grantMfaSkip({ invitationId })
+}
+
 export async function completeInvitationPasswordSetup(params: {
   invitationId: string
   password: string
@@ -210,12 +231,24 @@ export async function completeInvitationPasswordSetup(params: {
     authUid,
     claimedUser,
   })
-  const migrating = Boolean(placeholderId && claimedUser && !isAnonymisedDeletedProfile(claimedUser))
+  const ownPlaceholder = Boolean(placeholderId && claimedUser && !isAnonymisedDeletedProfile(claimedUser))
+  const ownUser = await loadOwnUserIfSetUp(authUid)
+  // Rulebook 1.10.0 (H3) `inviteAcceptWrites`: whether users/{authUid} is written, whether the placeholder moves and
+  // goes, and the role — from the invitation, never another company's profile.
+  const plan = inviteAcceptWrites({
+    existingProfile: ownUser,
+    placeholder: ownPlaceholder ? claimedUser : null,
+    invitation: { ...record, organizationId: record.organizationId },
+  })
+  const migrating = plan.movePlaceholder && ownPlaceholder
+
+  if (plan.mode === 'existingAccount' && plan.joinsAnotherCompany) {
+    await acceptIntoAnotherCompany(authUid, record.organizationId, plan.role, params.invitationId)
+    return
+  }
 
   // 4. Copy the placeholder onto users/{authUid} (self-create; rules accept a claim that
-  //    still names this invite's pending placeholder). Skip when a previous Continue
-  //    already wrote it so a retry does not overwrite a finished profile.
-  const ownUser = await loadOwnUserIfSetUp(authUid)
+  //    still names this invite's pending placeholder).
   const nextUser = migrating && claimedUser
     ? {
         ...claimedUser,
@@ -233,11 +266,12 @@ export async function completeInvitationPasswordSetup(params: {
         }),
       }
     : userDocFromInvitation(record, now)
-  if (!ownUser) {
+  if (plan.writeProfile) {
     await setDoc(doc(db, 'users', authUid), nextUser)
   }
 
-  // 4b. Move the placeholder's tax ids (users/{id}/private/taxIds) before the placeholder goes.
+  // 4b. Move the placeholder's tax ids (users/{id}/private/taxIds) before the placeholder goes — only now that
+  //     users/{authUid} is written.
   if (migrating) {
     try {
       await moveTaxIds(placeholderId, authUid)
@@ -247,9 +281,11 @@ export async function completeInvitationPasswordSetup(params: {
   }
 
   // 5. Point the claim at authUid.
-  await setDoc(doc(db, 'organizations', record.organizationId, 'userEmails', email), {
-    userId: authUid,
-  })
+  if (plan.claimToAccount) {
+    await setDoc(doc(db, 'organizations', record.organizationId, 'userEmails', email), {
+      userId: authUid,
+    })
+  }
 
   // 6. Remove the placeholder (best effort; it is not an Auth uid).
   if (migrating) {
@@ -260,9 +296,7 @@ export async function completeInvitationPasswordSetup(params: {
     }
   }
 
-  const profile = ownUser ?? nextUser
-  const role = (typeof profile.role === 'string' && profile.role) || record.role || 'member'
-  await ensurePrimaryOrgMembership(authUid, record.organizationId, role)
+  await ensurePrimaryOrgMembership(authUid, record.organizationId, plan.role)
 
   // 7. Mark the invitation used last.
   // Rulebook 1.9.0 `invitationUsedWriteFields`: a partial update, never a rewrite of the invitation.

@@ -440,7 +440,9 @@ export async function saveInvoicingSettings(
       recurringRunStartDay: settings.recurringRunStartDay,
       recurringRunEndDay: settings.recurringRunEndDay,
     },
-    existingHistory: settings.paymentRunHistory ?? previous.paymentRunHistory ?? [],
+    // Rulebook 1.10.0 (M7): history grows from the fresh server copy read above, never the screen's draft, so a run
+    // recorded on another device since the screen opened is kept.
+    existingHistory: previous.paymentRunHistory ?? [],
     recordedAtDayKey,
   })
   // Dotted keys: invoicing fields this screen does not own are left as stored.

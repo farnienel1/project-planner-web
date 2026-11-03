@@ -248,6 +248,9 @@ export function canOpenWorkForm(
   mode: 'create' | 'edit'
 ): boolean {
   if (kind === 'projects' && mode === 'create') return canCreateProject(user)
+  // 1.10.0 round 2 (`canEditJob`): a manager without the toggle may open the edit form of a job they manage; the
+  // form itself checks the job and leaves the manager list read-only.
+  if (mode === 'edit' && user && !isOperativeMode(user) && staffAccountRole(user).isManager) return true
   return canManageWorkCatalogue(user, kind)
 }
 

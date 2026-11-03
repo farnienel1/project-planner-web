@@ -1,7 +1,7 @@
 import type { OrgPayrollTimePolicy, OrgWarningDetectionSettings } from '@/lib/settings/organizationSettings'
 import { DEFAULT_PAYROLL_POLICY } from '@/lib/settings/organizationSettings'
 import { effectiveWeekendSettings } from '@/lib/setup/workingHoursUtils'
-import type { LabourPerson, RosterOperative } from '@/lib/canonical'
+import type { LabourPerson, RosterOperative, WarningScope } from '@/lib/canonical'
 import { bookingOccupiesDay, unbookedLabourRows } from '@/lib/canonical'
 import type { Booking, HolidayBooking, Operative, User } from '@/types'
 import { UserRole } from '@/types'
@@ -83,6 +83,7 @@ export function computeUnbookedLabourWarnings({
   payrollPolicy = DEFAULT_PAYROLL_POLICY,
   referenceDate = new Date(),
   timeZone,
+  scope,
 }: {
   bookings: Booking[]
   managerSiteBookings?: ManagerSiteBooking[]
@@ -94,6 +95,8 @@ export function computeUnbookedLabourWarnings({
   payrollPolicy?: OrgPayrollTimePolicy
   referenceDate?: Date
   timeZone?: string
+  /** Rulebook §17: the viewer's `warningScopeFor`. Missing → everything. */
+  scope?: WarningScope | null
 }): UnbookedLabourWarning[] {
   const window = computeWarningCoverageWindow(referenceDate, warningDetection, invoicing, timeZone)
   let periodEnd = window.end
@@ -121,6 +124,7 @@ export function computeUnbookedLabourWarnings({
     startDayKey: window.startDayKey,
     endDayKey,
     timeZone,
+    scope,
   })
 }
 
@@ -138,6 +142,7 @@ export function computeUnbookedLabourWarningsForDateRange({
   startDayKey,
   endDayKey,
   timeZone,
+  scope,
 }: {
   bookings: Booking[]
   managerSiteBookings?: ManagerSiteBooking[]
@@ -151,10 +156,13 @@ export function computeUnbookedLabourWarningsForDateRange({
   startDayKey?: string
   endDayKey?: string
   timeZone?: string
+  /** Rulebook §17: the viewer's `warningScopeFor`. Missing → everything. */
+  scope?: WarningScope | null
 }): UnbookedLabourWarning[] {
   const windowStart = londonMidnight(periodStart, timeZone)
   const windowEnd = londonMidnight(periodEnd, timeZone)
   const rows = unbookedLabourRows({
+    scope,
     timeZone,
     startDayKey: startDayKey || dayKey(windowStart, timeZone),
     endDayKey: endDayKey || dayKey(windowEnd, timeZone),

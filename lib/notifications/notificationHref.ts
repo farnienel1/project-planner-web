@@ -86,6 +86,12 @@ export function hrefForNotificationDestination(dest: NotificationDestination): s
       return '/dashboard/tasks'
     case 'healthSafety':
       return '/dashboard'
+    // 1.10.0: a variation notice opens Variations (the job's list when relatedId is the job; the company list
+    // otherwise, since a variation id alone does not name its job on web routes).
+    case 'variationDetail':
+      return '/dashboard/variations'
+    case 'variations':
+      return id ? `/dashboard/variations?job=${id}` : '/dashboard/variations'
     case 'timesheetMine':
       return timesheetsMineHref(dest.dayKey || null)
     case 'timesheetTeamAwaiting':

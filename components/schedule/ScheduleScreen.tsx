@@ -307,6 +307,8 @@ function DaySection({
   onSaveBooking,
   onDeleteBooking,
   selfDisplayName,
+  canWriteBookingFor,
+  canDeleteBookingFor,
 }: {
   date: Date
   bookings: Booking[]
@@ -319,6 +321,9 @@ function DaySection({
   onSaveBooking?: (bookingId: string, updates: Partial<Booking>) => Promise<void>
   onDeleteBooking?: (bookingId: string) => Promise<void>
   selfDisplayName?: string
+  /** Rulebook 1.10.0 `canWriteBooking` / `canDeleteBooking` per booking; missing → allowed by the flags above. */
+  canWriteBookingFor?: (booking: Booking) => boolean
+  canDeleteBookingFor?: (booking: Booking) => boolean
 }) {
   const today = isToday(date)
   const past = isPast(startOfDay(date)) && !today
@@ -390,9 +395,13 @@ function DaySection({
                 b.displayTitle || bookingJobLabel(projectsById.get(b.projectId))
               }
               isHighlighted={highlightBookingId === b.id}
-              canEdit={canEditBookings && b.source !== 'manager'}
+              canEdit={canEditBookings && b.source !== 'manager' && (canWriteBookingFor ? canWriteBookingFor(b) : true)}
               onSave={onSaveBooking ? (updates) => onSaveBooking(b.id, updates) : undefined}
-              onDelete={onDeleteBooking ? () => onDeleteBooking(b.id) : undefined}
+              onDelete={
+                onDeleteBooking && (canDeleteBookingFor ? canDeleteBookingFor(b) : true)
+                  ? () => onDeleteBooking(b.id)
+                  : undefined
+              }
             />
           ))
         )}
@@ -438,6 +447,8 @@ export function ScheduleScreen({
   onSaveBooking,
   onDeleteBooking,
   payrollPolicy,
+  canWriteBookingFor,
+  canDeleteBookingFor,
 }: {
   variant?: 'overview' | 'personal'
   organizationName: string
@@ -455,6 +466,9 @@ export function ScheduleScreen({
   onSaveBooking?: (bookingId: string, updates: Partial<Booking>) => Promise<void>
   onDeleteBooking?: (bookingId: string) => Promise<void>
   payrollPolicy?: OrgPayrollTimePolicy
+  /** Rulebook 1.10.0 `canWriteBooking` / `canDeleteBooking` per booking; missing → allowed by the flags above. */
+  canWriteBookingFor?: (booking: Booking) => boolean
+  canDeleteBookingFor?: (booking: Booking) => boolean
 }) {
   const isPersonal = variant === 'personal'
   const [filterStatus, setFilterStatus] = useState<FilterStatus>('all')
@@ -790,6 +804,8 @@ export function ScheduleScreen({
                 canEditBookings={canEditBookings && Boolean(organizationId)}
                 onSaveBooking={onSaveBooking}
                 onDeleteBooking={onDeleteBooking}
+                canWriteBookingFor={canWriteBookingFor}
+                canDeleteBookingFor={canDeleteBookingFor}
                 selfDisplayName={variant === 'personal' ? focusOperativeName || undefined : undefined}
               />
             )

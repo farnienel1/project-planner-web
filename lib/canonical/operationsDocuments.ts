@@ -909,6 +909,8 @@ export type TaskDocument = {
   title: string
   details: string | null
   createdBy: string
+  /** The creator's account id (1.10.0); empty on tasks saved before it was stored. */
+  createdByUserId: string
   status: ProjectTaskStatusToken
   priority: ProjectTaskPriorityToken
   /** Stored case; non-UUID ids are kept. */
@@ -983,6 +985,7 @@ export function parseTaskDocument(
     title,
     details: optionalText(row.details),
     createdBy: text(row.createdBy),
+    createdByUserId: text(row.createdByUserId),
     status: normalizeProjectTaskStatus(row.status),
     priority: normalizeProjectTaskPriority(row.priority),
     assignedOperativeId: optionalText(row.assignedOperativeId),
@@ -1015,6 +1018,8 @@ export type TaskFieldsInput = {
   title: string
   details?: string | null
   createdBy?: string | null
+  /** The creator's account id; written when the task is created (1.10.0), never rewritten. */
+  createdByUserId?: string | null
   status?: unknown
   priority?: unknown
   assignedOperativeId?: string | null
@@ -1078,6 +1083,7 @@ export function taskFields(input: TaskFieldsInput): Record<string, unknown> {
     completedItemIds: listOrNull(input?.completedItemIds),
   }
   if (input?.createdBy !== undefined) out.createdBy = text(input.createdBy)
+  if (input?.createdByUserId != null && text(input.createdByUserId)) out.createdByUserId = text(input.createdByUserId)
   if (input?.createdAt !== undefined) out.createdAt = input.createdAt
   if (input?.organizationId !== undefined) out.organizationId = text(input.organizationId) || null
   return out
@@ -1090,8 +1096,8 @@ export const TASK_ITEMS_WRITE_GROUP = ['items', 'completedItemIds'] as const
 
 /**
  * Partial update of `tasks/{id}` (§1): never a whole-task `setData`. Assignee id and list, completion by and at, and
- * items with completed item ids are each written together. `id`, `createdAt`, `createdBy` and `organizationId` are
- * never rewritten.
+ * items with completed item ids are each written together. `id`, `createdAt`, `createdBy`, `createdByUserId` and
+ * `organizationId` are never rewritten.
  */
 export function taskWriteFields(
   before: Record<string, unknown> | null | undefined,
@@ -1099,7 +1105,7 @@ export function taskWriteFields(
 ): DocumentWriteFields {
   return documentWriteFields(before, next, {
     together: [TASK_OPERATIVE_WRITE_GROUP, TASK_MANAGER_WRITE_GROUP, TASK_COMPLETION_WRITE_GROUP, TASK_ITEMS_WRITE_GROUP],
-    createOnly: [...CREATE_ONLY, 'createdBy'],
+    createOnly: [...CREATE_ONLY, 'createdBy', 'createdByUserId'],
   })
 }
 
@@ -1200,6 +1206,21 @@ export function jobTypesWriteFields(
   }
   if (before.length === names.length && before.every((name, index) => name === names[index])) return null
   return { set: { jobTypes: names } }
+}
+
+/**
+ * 1.10.0: a job type save from the user's explicit change only — the stored list plus `add`, minus `remove` (without
+ * case). Names recovered from live jobs for display (`mergeJobTypeCatalogues`) are never saved unless the user adds
+ * one. Same result shape and empty-list guard as `jobTypesWriteFields`.
+ */
+export function jobTypesChangeWriteFields(
+  stored: ReadonlyArray<string> | null | undefined,
+  change: { add?: ReadonlyArray<string> | null; remove?: ReadonlyArray<string> | null }
+): { set: { jobTypes: string[] } } | null {
+  const removed = new Set((change?.remove || []).map((name) => canonicalJobTypeName(String(name ?? '')).toLowerCase()))
+  const kept = (stored || []).map(canonicalJobTypeName).filter((name) => name && !removed.has(name.toLowerCase()))
+  const added = (change?.add || []).map((name) => canonicalJobTypeName(String(name ?? ''))).filter(Boolean)
+  return jobTypesWriteFields(stored, [...kept, ...added], { removed: change?.remove ?? [] })
 }
 
 // MARK: - settings/tradeTypeInventory

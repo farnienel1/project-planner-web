@@ -98,14 +98,15 @@ export function JobTypesScreen() {
     }
   }, [organization?.id])
 
-  const persist = async (next: string[], removed?: string[]) => {
+  // Rulebook 1.10.0: a save sends only the user's explicit add or remove (`jobTypesChangeWriteFields`); names shown
+  // because live jobs use them are never saved by another change.
+  const persist = async (change: { add?: string[]; remove?: string[] }, next: string[]) => {
     if (!organization?.id || !canManage) return
     setSaving(true)
     setError(null)
     try {
-      const sorted = [...next].sort((a, b) => a.localeCompare(b))
-      await saveJobTypes(organization.id, sorted, { removed })
-      setJobTypes(sorted)
+      await saveJobTypes(organization.id, change)
+      setJobTypes([...next].sort((a, b) => a.localeCompare(b)))
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Could not save job types')
     } finally {
@@ -120,17 +121,14 @@ export function JobTypesScreen() {
       setError(message)
       return
     }
-    await persist([...jobTypes, name.trim()])
+    await persist({ add: [name.trim()] }, [...jobTypes, name.trim()])
     setName('')
     setAddOpen(false)
   }
 
   const handleRemove = async (jobType: string) => {
     if (!window.confirm(`Delete "${jobType}"?`)) return
-    await persist(
-      jobTypes.filter((item) => item !== jobType),
-      [jobType]
-    )
+    await persist({ remove: [jobType] }, jobTypes.filter((item) => item !== jobType))
   }
 
   if (!user || !canManage) return null

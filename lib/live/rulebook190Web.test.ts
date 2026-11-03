@@ -42,7 +42,9 @@ test('1.9.0 live: shared collections load through live listeners scoped to the o
     ['lib/stores/materialCatalogStore.ts', "'materialCatalogue'"],
   ] as const) {
     const source = read(path)
-    assert.match(source, new RegExp(`subscribeOrgCollectionLoaded\\([^)]*${collection}`), `${path} ${collection}`)
+    // 1.10.0 round 2: jobs go through `subscribeJobs` (the whole-collection listener, or the read plan §17).
+    const listener = path === 'lib/stores/projectStore.ts' && collection !== "'clients'" ? 'subscribeJobs' : 'subscribeOrgCollectionLoaded'
+    assert.match(source, new RegExp(`${listener}\\([^)]*${collection}`), `${path} ${collection}`)
     assert.match(source, /liveResultStillCurrent\(organizationId\)/, path)
   }
   const auth = read('lib/stores/authStore.ts')

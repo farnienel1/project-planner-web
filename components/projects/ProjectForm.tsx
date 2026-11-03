@@ -16,6 +16,8 @@ import {
 import { FormActions, FormInput, FormLabel, FormSelect, FormTextarea } from '@/components/forms/FormShell'
 import { EmptyState, ErrorBanner } from '@/components/dashboard/PageShell'
 import { canManageWorkCatalogue } from '@/lib/permissions'
+import { userCanChangeJobManagers, userCanEditJob } from '@/lib/access/bookingAccess'
+import { jobManagerUserIds } from '@/lib/canonical'
 import { SitePinPickerSheet } from '@/components/site-map/SitePinPickerSheet'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import {
@@ -276,6 +278,12 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
         customJobType: form.customJobType.trim() && form.customJobType.trim() !== 'CAT A' ? form.customJobType.trim() : undefined,
         managerId: primaryManagerId,
         managerIds: resolvedManagerIds,
+        // Rulebook 1.10.0: the account ids of these managers, so the security rules can let them book on the job.
+        managerUserIds: jobManagerUserIds(
+          { managerId: primaryManagerId, managerIds: resolvedManagerIds },
+          managers.map((row) => ({ id: row.id, email: row.email })),
+          users.map((row) => ({ id: row.id, email: row.email, isActive: row.isActive }))
+        ),
         managerLegacy: primaryManager
           ? `${primaryManager.firstName} ${primaryManager.lastName}`.trim()
           : primaryUser
@@ -315,7 +323,10 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
 
   // The toggle never hides the list; it only turns off add and edit for this catalogue.
   // Super admin ignores it. A deep link to /new or /edit lands here, so gate the form too.
-  if (user && !canManageWorkCatalogue(user, collection)) {
+  // 1.10.0 round 2: creating is `canCreateJob`; editing is `canEditJob` (a manager without the toggle edits the
+  // details of a job they manage, never its manager list — `canChangeJobManagers`).
+  const formAllowed = initial ? userCanEditJob(user, initial, collection, managers) : canManageWorkCatalogue(user, collection)
+  if (user && !formAllowed) {
     return (
       <EmptyState
         title={collection === 'smallWorks' ? 'Small works editing is off for your account' : 'Project editing is off for your account'}
@@ -384,6 +395,8 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
           <FormLabel required>Managers</FormLabel>
           <select
             multiple
+            disabled={!userCanChangeJobManagers(user, collection)}
+            title={userCanChangeJobManagers(user, collection) ? undefined : 'Only an admin, or a manager with this toggle, changes the managers.'}
             value={form.managerIds}
             onChange={(e) => {
               managerSelectionEdited.current = true

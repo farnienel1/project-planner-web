@@ -114,8 +114,30 @@ export function OperativeForm({
         createdAt,
         updatedAt: new Date(),
       }
-      const id = await saveOperative(organization.id, operative)
+      // Rulebook 1.10.0 §8 (`payRateChangeWrites`): work out the pay history rows before anything is written; a
+      // history that did not load refuses the save (never a duplicate seed row).
+      const previousBasis = initial?.payBasis
+      const previousAmount = previousBasis === 'hourly' ? initial?.hourlyRate : initial?.dayRate
+      const { loadOperativeDayRateHistoryOrNull, payHistoryBatchRows } = await import('@/lib/timesheets/dayRateHistoryStorage')
       const linked = users.find((row) => row.email.trim().toLowerCase() === operative.email.trim().toLowerCase())
+      const nextAmount = rates.payBasis === 'hourly' ? rates.hourlyRate ?? null : rates.dayRate ?? null
+      const payChanged = (previousAmount ?? null) !== nextAmount || (previousBasis ?? null) !== (rates.payBasis ?? null)
+      const historyRowsFor = async (operativeId: string) =>
+        payChanged
+          ? payHistoryBatchRows({
+              history: await loadOperativeDayRateHistoryOrNull(organization.id),
+              userId: linked?.id,
+              operativeId,
+              previous: { rate: previousAmount ?? null, payBasis: previousBasis ?? null },
+              next: { rate: nextAmount, payBasis: rates.payBasis },
+              effectiveAt: decision instanceof Date ? decision : new Date(),
+              seedEffective: operative.createdAt ?? null,
+              timeZone,
+            })
+          : []
+      const preflightRows = initial?.id ? await historyRowsFor(initial.id) : []
+      const id = await saveOperative(organization.id, operative)
+      const historyRows = initial?.id ? preflightRows : await historyRowsFor(id)
       if (linked) {
         await saveUser(
           {
@@ -126,32 +148,16 @@ export function OperativeForm({
           },
           organization.id,
           undefined,
-          // Partial update of the changed pay fields only (rulebook §1, `userProfileWriteFields`).
-          { baseline: linked }
+          // Partial update of the changed pay fields only (rulebook §1, `userProfileWriteFields`), with the pay
+          // history rows in the same batch (1.10.0).
+          { baseline: linked, payHistoryRows: historyRows }
         )
-      }
-      try {
-        const previousBasis = initial?.payBasis
-        const previousAmount = previousBasis === 'hourly' ? initial?.hourlyRate : initial?.dayRate
-        const { loadOperativeDayRateHistory, recordDayRateChangeIfNeeded } = await import(
-          '@/lib/timesheets/dayRateHistoryStorage'
-        )
-        const history = await loadOperativeDayRateHistory(organization.id)
-        await recordDayRateChangeIfNeeded({
-          organizationId: organization.id,
-          userId: linked?.id,
-          operativeId: id,
-          previousDayRate: previousAmount ?? null,
-          nextDayRate: rates.payBasis === 'hourly' ? rates.hourlyRate ?? null : rates.dayRate ?? null,
-          previousPayBasis: previousBasis,
-          nextPayBasis: rates.payBasis,
-          createdAt: operative.createdAt,
-          effectiveAt: decision,
-          history,
-          timeZone,
-        })
-      } catch {
-        // Best-effort history so roster saves still succeed.
+      } else if (historyRows.length > 0) {
+        const { writeBatch, doc } = await import('firebase/firestore')
+        const { db } = await import('@/lib/firebase/config')
+        const batch = writeBatch(db)
+        for (const row of historyRows) batch.set(doc(db, 'organizations', organization.id, 'operativeDayRateHistory', row.id), row.fields)
+        await batch.commit()
       }
       onSaved(id)
     } catch (err: unknown) {

@@ -1,4 +1,5 @@
 import { idsMatch } from '@/lib/subcontractors/bookingPeople'
+import { stableManagerId } from '@/lib/canonical/staffAccess'
 import { isPlaceholderManager } from '@/lib/staff/managerRosterUtils'
 import { isPendingPerson } from '@/lib/staff/pendingPeople'
 
@@ -51,10 +52,6 @@ export type ProjectManagerChoice = {
   userId?: string
 }
 
-const MASK64 = (1n << 64n) - 1n
-const FNV_OFFSET = 14695981039346656037n
-const FNV_PRIME = 1099511628211n
-
 function clean(value: string | null | undefined): string {
   return String(value || '').trim()
 }
@@ -74,29 +71,9 @@ export function managerIdsMatch(left: string | null | undefined, right: string |
   return idsMatch(a, b) || idsMatch(bareId(a), bareId(b))
 }
 
-/** iOS `Manager.stableId(forFirestoreDocumentId:)`. */
+/** iOS `Manager.stableId(forFirestoreDocumentId:)` — the rulebook `stableManagerId` (1.10.0). */
 export function stableManagerDocumentId(documentId: string): string {
-  const trimmed = clean(documentId)
-  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed)) {
-    return trimmed.toUpperCase()
-  }
-  let h1 = FNV_OFFSET
-  let h2 = FNV_PRIME
-  for (const byte of new TextEncoder().encode(trimmed)) {
-    h1 = (h1 ^ BigInt(byte)) & MASK64
-    h1 = (h1 * FNV_PRIME) & MASK64
-    h2 = (h2 ^ BigInt(byte)) & MASK64
-    h2 = (h2 * FNV_OFFSET) & MASK64
-  }
-  const bytes = new Array<number>(16).fill(0)
-  for (let index = 0; index < 8; index += 1) {
-    bytes[index] = Number((h1 >> BigInt(8 * index)) & 255n)
-    bytes[index + 8] = Number((h2 >> BigInt(8 * index)) & 255n)
-  }
-  bytes[6] = (bytes[6] & 0x0f) | 0x50
-  bytes[8] = (bytes[8] & 0x3f) | 0x80
-  const hex = bytes.map((byte) => byte.toString(16).padStart(2, '0')).join('')
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`.toUpperCase()
+  return stableManagerId(documentId)
 }
 
 export function choiceIdForRoster(documentId: string): string {

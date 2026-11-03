@@ -1281,9 +1281,10 @@ test('dismissing an expired qualification hides it until the expiry date changes
   assert.equal(upcoming.length, 2)
 })
 
-test('every admin and manager sees every job and every warning; operatives and role-less accounts do not', () => {
+test('every admin and manager sees every warning; only admins see every job (1.10.0); operatives and role-less accounts do not', () => {
+  assert.equal(seesEveryJob(manager), false)
   for (const role of [superAdmin, admin, manager]) {
-    assert.equal(seesEveryJob(role), true)
+    if (role !== manager) assert.equal(seesEveryJob(role), true)
     assert.equal(canViewStaffWarnings(role), true)
     assert.equal(canSeeVariations(role), true)
     assert.equal(canReviewUserTimesheets(role), true)
@@ -1306,18 +1307,18 @@ test('every admin and manager sees every job and every warning; operatives and r
   assert.equal(canManageVariationTracker(manager), false)
 })
 
-test('the Projects and Small works toggles gate add and edit only, never the list, and super admin ignores them', () => {
+test('the Projects and Small works toggles gate manager add and edit; admins and super admins ignore them', () => {
   const off = { projects: false, smallWorks: false }
   const projectsOnly = { projects: true, smallWorks: false }
-  // The list is still the whole company with both toggles off.
-  assert.equal(seesEveryJob(manager), true)
+  // The admin list is still the whole company with both toggles off (managers: canSeeJob, 1.10.0).
   assert.equal(seesEveryJob(admin), true)
-  // Editing follows the toggle for admins and managers.
+  // Editing follows the toggle for managers.
   assert.equal(canEditWorkCatalogue(manager, 'projects', off), false)
   assert.equal(canEditWorkCatalogue(manager, 'smallWorks', off), false)
   assert.equal(canEditWorkCatalogue(manager, 'projects', projectsOnly), true)
   assert.equal(canEditWorkCatalogue(manager, 'smallWorks', projectsOnly), false)
-  assert.equal(canEditWorkCatalogue(admin, 'projects', off), false)
+  // 1.10.0 round 2: admins always add and edit, whatever the toggles.
+  assert.equal(canEditWorkCatalogue(admin, 'projects', off), true)
   assert.equal(canEditWorkCatalogue(admin, 'projects', projectsOnly), true)
   // Super admin adds and edits regardless.
   assert.equal(canEditWorkCatalogue(superAdmin, 'projects', off), true)
@@ -1331,8 +1332,7 @@ test('a manager receives a job notification only as line manager or assigned pro
   const job = { assignedManagerUserIds: ['pm-1'], lineManagerUserIds: ['lm-1'] }
   assert.equal(receivesJobNotification({ userId: 'pm-1', role: manager, ...job }), true)
   assert.equal(receivesJobNotification({ userId: 'lm-1', role: manager, ...job }), true)
-  // Seeing the job in the list does not make this manager a recipient.
-  assert.equal(seesEveryJob(manager), true)
+  // Seeing the job does not make this manager a recipient.
   assert.equal(receivesJobNotification({ userId: 'other-manager', role: manager, ...job }), false)
   // Admins and super admins always receive it.
   assert.equal(receivesJobNotification({ userId: 'adm', role: admin, ...job }), true)
@@ -7428,4 +7428,613 @@ test('1.9.0 L12: leave records for an account match every id of the person, neve
     [{ id: 'op-1', email: 'A@x.com' }]
   )
   assert.deepEqual(mine.map((row) => row.id), ['1', '2', '3', '4'])
+})
+
+// --- Rulebook 1.10.0 ---------------------------------------------------------------------------------------------
+
+import {
+  bookingJobId as rb110BookingJobId,
+  canDeleteBooking as rb110CanDeleteBooking,
+  canSeeJob as rb110CanSeeJob,
+  canWriteBooking as rb110CanWriteBooking,
+  isJobManager as rb110IsJobManager,
+  jobManagerUserIds as rb110JobManagerUserIds,
+  stableManagerId as rb110StableManagerId,
+  visibleJobsFor as rb110VisibleJobsFor,
+} from './staffAccess.ts'
+import { canDeleteUser as rb110CanDeleteUser, userDeleteRefusal as rb110UserDeleteRefusal, userDeleteWrites as rb110UserDeleteWrites } from './userDelete.ts'
+import { orgMembershipWriteFields as rb110MembershipWrite, parseOrgMembershipDocument as rb110ParseMembership } from './orgMembership.ts'
+import { payRateChangeWrites as rb110PayRateChangeWrites } from './payRate.ts'
+import { jobDeleteBookingRemovals as rb110JobDeleteBookingRemovals } from './bookings.ts'
+import {
+  inboxNotificationVisibleToUser as rb110InboxVisible,
+  notificationDestination as rb110Destination,
+  unreadNotificationBadgeCount as rb110Badge,
+} from './notificationPreferences.ts'
+import { TOMBSTONED_BOOKING_COLLECTIONS as rb110Tombstoned, bookingTombstoneWriteFields as rb110Tombstone } from './bookingTombstones.ts'
+
+test('1.10.0 canSeeJob: admins every job, managers only jobs they manage (any id spelling), operatives none', () => {
+  const job = { managerIds: ['MGR-ROW-1', 'user:Mgr-Uid-2'], managerId: 'MGR-ROW-1' }
+  const managers = [{ id: 'mgr-row-1', email: 'Pat@Example.com' }]
+  const pat = { role: manager, ids: ['pat-uid'], email: 'pat@example.com' }
+  const other = { role: manager, ids: ['mgr-uid-2'], email: 'x@example.com' }
+  const stranger = { role: manager, ids: ['someone'], email: 's@example.com' }
+  assert.equal(rb110CanSeeJob({ role: admin, ids: ['a'] }, job), true)
+  assert.equal(rb110CanSeeJob({ role: superAdmin, ids: ['s'] }, {}), true)
+  assert.equal(rb110CanSeeJob(pat, job, managers), true)
+  assert.equal(rb110CanSeeJob(pat, job), false)
+  assert.equal(rb110CanSeeJob(other, job), true)
+  assert.equal(rb110CanSeeJob(stranger, job, managers), false)
+  assert.equal(rb110CanSeeJob({ role: operative, ids: ['mgr-uid-2'] }, job), false)
+  assert.equal(rb110CanSeeJob({ role: { ...admin, isOperativeMode: true }, ids: ['a'] }, job), false)
+  // Removed as manager → gone; re-added → back.
+  assert.equal(rb110CanSeeJob(other, { managerIds: ['MGR-ROW-1'] }), false)
+  assert.equal(rb110CanSeeJob(other, { managerIds: ['MGR-ROW-1', 'mgr-uid-2'] }), true)
+  // Former ids count; managerUserIds counts.
+  assert.equal(rb110CanSeeJob({ role: manager, ids: ['new', 'OLD-INVITE'] }, { managerUserIds: ['old-invite'] }), true)
+  // iOS stores a managers row whose id is a user id as its stable hash.
+  const hashed = { managerIds: [rb110StableManagerId('pat-row-uid')] }
+  assert.equal(rb110IsJobManager(pat, hashed, [{ id: 'pat-row-uid', email: 'pat@example.com' }]), true)
+  assert.match(rb110StableManagerId('pat-row-uid'), /^[0-9A-F]{8}-[0-9A-F]{4}-5[0-9A-F]{3}-[89AB][0-9A-F]{3}-[0-9A-F]{12}$/)
+  assert.equal(rb110StableManagerId('0f8fad5b-d9cb-469f-a165-70867728950e'), '0F8FAD5B-D9CB-469F-A165-70867728950E')
+  assert.deepEqual(rb110VisibleJobsFor(other, [job, { managerIds: [] }]).length, 1)
+})
+
+test('1.10.0 canWriteBooking / canDeleteBooking: admin any, manager own jobs and own non-job site bookings, operative never', () => {
+  const job = { managerIds: ['m1'] }
+  const m1 = { role: manager, ids: ['m1'] }
+  const m2 = { role: manager, ids: ['m2'] }
+  const op = { role: operative, ids: ['m1'] }
+  const labour = { collection: 'bookings', projectId: 'J1' }
+  const sub = { collection: 'subcontractorBookings', projectId: 'J1' }
+  const site = { collection: 'managerSiteBookings', userId: 'm2', locationType: 'project', locationId: 'J1' }
+  const office = { collection: 'managerSiteBookings', userId: 'M2', locationType: 'office' }
+  for (const booking of [labour, sub, site]) {
+    assert.equal(rb110CanWriteBooking({ role: admin, ids: ['a'] }, booking, null), true)
+    assert.equal(rb110CanWriteBooking(m1, booking, job), true)
+    assert.equal(rb110CanDeleteBooking(m1, booking, job), true)
+    assert.equal(rb110CanWriteBooking(m2, booking, job), false)
+    assert.equal(rb110CanWriteBooking(m1, booking, null), false)
+    assert.equal(rb110CanWriteBooking(op, booking, job), false)
+  }
+  assert.equal(rb110BookingJobId(office), null)
+  assert.equal(rb110BookingJobId(site), 'J1')
+  assert.equal(rb110CanWriteBooking(m2, office, null), true)
+  assert.equal(rb110CanWriteBooking(m1, office, null), false)
+  assert.equal(rb110CanWriteBooking({ role: admin, ids: ['a'] }, { collection: 'holidayBookings' }, null), false)
+})
+
+test('1.10.0 jobManagerUserIds maps managers rows to active accounts by email', () => {
+  const ids = rb110JobManagerUserIds(
+    { managerIds: ['ROW-1', 'user:U3'], managerId: 'ROW-1' },
+    [{ id: 'row-1', email: 'a@x.com' }],
+    [
+      { id: 'U1', email: 'A@x.com' },
+      { id: 'U2', email: 'a@x.com', isActive: false },
+      { id: 'u3', email: 'c@x.com' },
+      { id: 'U4', email: 'd@x.com' },
+    ]
+  )
+  assert.deepEqual(ids, ['U1', 'u3'])
+})
+
+test('1.10.0 canDeleteUser follows the users delete rule', () => {
+  const actor = { id: 'adm', role: admin }
+  const sa = { id: 'sa', role: superAdmin }
+  assert.equal(rb110CanDeleteUser(actor, { id: 'op', role: operative }), true)
+  assert.equal(rb110UserDeleteRefusal(actor, { id: 'adm2', role: admin }), 'admin_needs_super_admin')
+  assert.equal(rb110UserDeleteRefusal(sa, { id: 'adm2', role: admin }), null)
+  assert.equal(rb110UserDeleteRefusal(sa, { id: 'sa2', role: superAdmin }), 'super_admin')
+  assert.equal(rb110UserDeleteRefusal(sa, { id: 'Owner', role: admin }, { creatorUserId: 'owner' }), 'creator')
+  assert.equal(rb110UserDeleteRefusal(actor, { id: 'ADM', role: operative }), 'self')
+  assert.equal(rb110UserDeleteRefusal({ id: 'm', role: manager }, { id: 'op', role: operative }), 'not_admin')
+  assert.equal(rb110UserDeleteRefusal({ id: 'x', role: { ...admin, isOperativeMode: true } }, { id: 'op', role: operative }), 'not_admin')
+})
+
+test('1.10.0 userDeleteWrites: account batch first, then future bookings with tombstones, roster rows, invitations', () => {
+  const day = Date.parse('2026-11-03T09:00:00Z')
+  const past = Date.parse('2026-10-01T09:00:00Z')
+  const steps = rb110UserDeleteWrites({
+    orgId: 'ORG',
+    user: { id: 'U1', email: 'Op@X.com', role: operative, formerUserIds: ['OLD'] },
+    actorUserId: 'adm',
+    platform: 'web',
+    bookings: [
+      { id: 'b1', operativeId: 'u1', dateMs: day },
+      { id: 'b2', operativeId: 'OP-ROW', dateMs: day },
+      { id: 'b3', operativeId: 'U1', dateMs: past },
+      { id: 'b4', operativeId: 'old', dateMs: day },
+    ],
+    managerSiteBookings: [{ id: 's1', userId: 'U1', dateMs: day }],
+    operativeRows: [{ id: 'OP-ROW', email: 'op@x.com' }, { id: 'other', email: 'z@x.com' }],
+    managerRows: [],
+    invitations: [{ id: 'inv1', email: 'OP@x.com' }, { id: 'inv2', email: 'q@x.com' }],
+    nowIso: '2026-11-02T12:00:00Z',
+    tz: 'Europe/London',
+  })
+  assert.deepEqual(steps.map((s) => s.step), ['account', 'bookings', 'rosterRows', 'invitations'])
+  assert.deepEqual(steps[0].writes.map((w) => w.path), [
+    'users/U1',
+    'users/U1/private/taxIds',
+    'users/U1/orgMemberships/ORG',
+    'organizations/ORG/userEmails/op@x.com',
+    'organizations/ORG',
+  ])
+  assert.deepEqual(steps[0].writes[4], { op: 'update', path: 'organizations/ORG', deleteFields: ['members.U1'] })
+  const bookingPaths = steps[1].writes.map((w) => w.path)
+  assert.deepEqual(bookingPaths, [
+    'organizations/ORG/bookings/b1',
+    'organizations/ORG/deletedBookings/b1',
+    'organizations/ORG/bookings/b2',
+    'organizations/ORG/deletedBookings/b2',
+    'organizations/ORG/bookings/b4',
+    'organizations/ORG/deletedBookings/b4',
+    'organizations/ORG/managerSiteBookings/s1',
+    'organizations/ORG/deletedBookings/s1',
+  ])
+  assert.deepEqual(steps[2].writes.map((w) => w.path), ['organizations/ORG/operatives/OP-ROW'])
+  assert.deepEqual(steps[3].writes.map((w) => w.path), ['invitations/inv1'])
+  assert.deepEqual(rb110UserDeleteWrites({ orgId: '', user: { id: 'U', role: operative }, actorUserId: 'a', platform: 'web', nowIso: '' }), [])
+})
+
+test('1.10.0 org memberships: one reader for flat and nested shapes; a person never raises their own flags', () => {
+  const flat = rb110ParseMembership('ORG', { role: 'manager', manager: true, skills: true, isActive: false })!
+  assert.equal(flat.permissions.manager, true)
+  assert.equal(flat.permissions.skills, true)
+  assert.equal(flat.permissions.materials, true)
+  assert.equal(flat.accountActive, false)
+  assert.equal(flat.hasLegacyFlatFlags, true)
+  const nested = rb110ParseMembership('ORG', { role: 'operative', status: 'pending', permissions: { operativeMode: true, manager: true, materials: false } })!
+  assert.equal(nested.permissions.manager, false)
+  assert.equal(nested.permissions.materials, false)
+  assert.equal(nested.status, 'pending')
+  assert.equal(rb110ParseMembership('', {}), null)
+  // Self: only accepting.
+  const self = rb110MembershipWrite({
+    organizationId: 'ORG',
+    stored: { role: 'operative', status: 'pending', permissions: {} },
+    next: { status: 'active', role: 'admin', permissions: { adminAccess: true } },
+    writer: 'self',
+    now: 'NOW',
+  })
+  assert.deepEqual(self, { mode: 'update', fields: { status: 'active', acceptedAt: 'NOW', updatedAt: 'NOW' }, remove: [] })
+  assert.equal(rb110MembershipWrite({ organizationId: 'ORG', stored: { status: 'active' }, next: { role: 'admin' }, writer: 'self', now: 1 }), null)
+  // Admin: changed fields only, nested, legacy flat keys removed.
+  const adminWrite = rb110MembershipWrite({
+    organizationId: 'ORG',
+    stored: { role: 'operative', manager: false, isActive: true, permissions: { adminAccess: false } },
+    next: { role: 'manager', permissions: { manager: true, adminAccess: false } },
+    writer: 'admin',
+    now: 'NOW',
+  })!
+  assert.equal(adminWrite.mode, 'update')
+  assert.equal(adminWrite.fields.role, 'manager')
+  assert.equal(adminWrite.fields['permissions.manager'], true)
+  assert.equal('permissions.adminAccess' in adminWrite.fields, false)
+  assert.equal(adminWrite.fields.accountActive, true)
+  assert.deepEqual(adminWrite.remove, ['manager', 'isActive'])
+  const created = rb110MembershipWrite({ organizationId: 'ORG', stored: null, next: { role: 'operative', status: 'pending', invitedBy: 'adm' }, writer: 'admin', now: 'NOW' })!
+  assert.equal(created.mode, 'create')
+  assert.equal((created.fields.permissions as Record<string, boolean>).materials, true)
+  assert.equal('acceptedAt' in created.fields, false)
+})
+
+test('1.10.0 payRateChangeWrites: seed only when history loaded and empty; refused when history failed to load', () => {
+  const base = { userId: 'U', operativeId: 'O', effectiveDayKey: '2026-11-04', seedEffective: '2026-01-10', timeZone: 'Europe/London' }
+  const seeded = rb110PayRateChangeWrites({ ...base, previousProfile: { rate: 150, payBasis: 'day' }, nextProfile: { rate: 160, payBasis: 'day' }, history: [] })
+  assert.equal(seeded.ok, true)
+  if (seeded.ok) {
+    assert.deepEqual(seeded.rows.map((r) => [r.dayRate, r.effectiveDayKey]), [[150, '2026-01-10'], [160, '2026-11-04']])
+  }
+  const noSeed = rb110PayRateChangeWrites({ ...base, previousProfile: { rate: 150 }, nextProfile: { rate: 160 }, history: [{ id: 'h' }] })
+  assert.equal(noSeed.ok && noSeed.rows.length, 1)
+  const refused = rb110PayRateChangeWrites({ ...base, previousProfile: { rate: 150 }, nextProfile: { rate: 160 }, history: null })
+  assert.equal(refused.ok, false)
+  const same = rb110PayRateChangeWrites({ ...base, previousProfile: { rate: 150, payBasis: 'day' }, nextProfile: { rate: 150, payBasis: 'day' }, history: null })
+  assert.deepEqual(same, { ok: true, rows: [] })
+  const cleared = rb110PayRateChangeWrites({ ...base, previousProfile: { rate: 150 }, nextProfile: { rate: null }, history: [] })
+  assert.equal(cleared.ok && cleared.rows.length === 1 && cleared.rows[0].dayRate === null, true)
+  const basis = rb110PayRateChangeWrites({ ...base, previousProfile: { rate: 20, payBasis: 'day' }, nextProfile: { rate: 20, payBasis: 'hourly' }, history: [{}] })
+  assert.equal(basis.ok && basis.rows[0].payBasis, 'hourly')
+})
+
+test('1.10.0 jobDeleteBookingRemovals covers labour, subcontractor and job-linked manager site bookings', () => {
+  const day = Date.parse('2026-11-02T08:00:00Z')
+  const past = Date.parse('2026-10-30T08:00:00Z')
+  const out = rb110JobDeleteBookingRemovals({
+    projectId: 'job-1',
+    bookings: [{ id: 'b1', projectId: 'JOB-1', dateMs: day }, { id: 'b2', projectId: 'job-1', dateMs: past }],
+    subcontractorBookings: [{ id: 's1', projectId: 'Job-1', dateMs: day }, { id: 's2', projectId: 'job-2', dateMs: day }],
+    managerSiteBookings: [
+      { id: 'm1', locationType: 'small_work', locationId: 'JOB-1', dateMs: day },
+      { id: 'm2', locationType: 'office', locationId: 'JOB-1', dateMs: day },
+    ],
+    nowIso: '2026-11-02T12:00:00Z',
+    timeZone: 'Europe/London',
+  })
+  assert.deepEqual(out, { bookings: ['b1'], subcontractorBookings: ['s1'], managerSiteBookings: ['m1'] })
+  assert.ok((rb110Tombstoned as readonly string[]).includes('subcontractorBookings'))
+  assert.equal(rb110Tombstone({ bookingId: 's1', collection: 'subcontractorBookings', deletedBy: 'u', deletedFrom: 'web' })?.collection, 'subcontractorBookings')
+})
+
+test('1.10.0 inbox rows are listed and counted only from their createdAt', () => {
+  const now = Date.parse('2026-11-02T12:00:00Z')
+  const future = { userId: 'U', isRead: false, createdAt: { seconds: now / 1000 + 3600, nanoseconds: 0 } }
+  const past = { userId: 'u', isRead: false, createdAt: new Date(now - 1000) }
+  const pending = { userId: 'U', isRead: false, createdAt: null }
+  assert.equal(rb110InboxVisible(future, 'U', now), false)
+  assert.equal(rb110InboxVisible(future, 'U', now + 3600 * 1000), true)
+  assert.equal(rb110InboxVisible(past, 'U', now), true)
+  assert.equal(rb110InboxVisible(pending, 'U', now), true)
+  assert.equal(rb110Badge([future, past, pending], 'U', now), 2)
+  assert.equal(rb110Badge([{ userId: 'U', createdAt: '2026-11-02T13:00:00Z' }], ['U'], new Date(now)), 0)
+})
+
+test('1.10.0 notificationDestination opens variations', () => {
+  assert.deepEqual(rb110Destination({ type: 'variation_added', relatedId: 'VAR-1', role: 'manager' }), { kind: 'variationDetail', relatedId: 'VAR-1' })
+  assert.deepEqual(rb110Destination({ type: 'variation_renumbered', relatedId: 'JOB-1', role: 'admin' }), { kind: 'variations', relatedId: 'JOB-1' })
+  assert.deepEqual(rb110Destination({ type: 'variation', role: 'operative', relatedId: 'V' }), { kind: 'notifications' })
+  assert.deepEqual(rb110Destination({ type: 'toolbox_talk_issued', relatedId: 'ISSUE', role: 'operative' }), { kind: 'healthSafety', relatedId: 'ISSUE' })
+})
+
+import { leaveRecordsForAccount as rb110LeaveRecordsForAccount } from './bookingPerson.ts'
+
+test('1.10.0 leaveRecordsForAccount also matches leave stored with the account email as userId (older iOS), without case', () => {
+  const records = [
+    { id: 'a', userId: 'Ada@Example.com' },
+    { id: 'b', userId: 'U-1' },
+    { id: 'c', userId: 'someone@else.com' },
+    { id: 'd', userId: 'ALIAS-2' },
+  ]
+  const got = rb110LeaveRecordsForAccount(records, { id: 'u-1', email: 'ada@example.com', aliasIds: ['alias-2'] }, [])
+  assert.deepEqual(got.map((row) => row.id), ['a', 'b', 'd'])
+  assert.deepEqual(rb110LeaveRecordsForAccount(records, { id: 'x', email: '' }, []).map((row) => row.id), [])
+})
+
+import { jobTypesChangeWriteFields as rb110JobTypesChange } from './operationsDocuments.ts'
+import { syncWriteAllowed as rb110SyncWriteAllowed } from './liveSources.ts'
+
+test('1.10.0 job type saves write the stored list plus explicit adds and removes only (never recovered names)', () => {
+  assert.deepEqual(rb110JobTypesChange(['CAT A', 'Fit out'], { add: ['Strip out'] }), { set: { jobTypes: ['CAT A', 'Fit out', 'Strip out'] } })
+  assert.deepEqual(rb110JobTypesChange(['CAT A', 'Fit out'], { remove: ['fit out'] }), { set: { jobTypes: ['CAT A'] } })
+  assert.deepEqual(rb110JobTypesChange(['CAT A'], { remove: ['CAT A'] }), { set: { jobTypes: [] } })
+  assert.equal(rb110JobTypesChange(['CAT A'], {}), null)
+  assert.equal(rb110JobTypesChange([], {}), null)
+})
+
+test('1.10.0 the warning-key migration is the one idempotent write allowed outside a user action', () => {
+  assert.equal(rb110SyncWriteAllowed('listenerSnapshot'), false)
+  assert.equal(rb110SyncWriteAllowed('listenerSnapshot', 'warningResolutionMigrationWrites'), true)
+  assert.equal(rb110SyncWriteAllowed('backgroundSync', 'somethingElse'), false)
+  assert.equal(rb110SyncWriteAllowed('userAction'), true)
+})
+
+// --- Rulebook 1.10.0 round 2: job add/edit/manager list, rules-compatible reads, warning scope -----------------
+
+import {
+  JOB_MANAGER_LIST_FIELDS as r2ManagerListFields,
+  bookingQueryPlan as r2BookingQueryPlan,
+  canChangeJobManagers as r2CanChangeJobManagers,
+  canCreateJob as r2CanCreateJob,
+  canEditJob as r2CanEditJob,
+  jobIdQueryValues as r2JobIdQueryValues,
+  jobQueryPlan as r2JobQueryPlan,
+  jobWriteWithoutManagerList as r2WithoutManagerList,
+  readsEveryBooking as r2ReadsEveryBooking,
+  warningScopeFor as r2WarningScopeFor,
+} from './staffAccess.ts'
+import { taskCompletedRecipients as r2TaskCompletedRecipients } from './notificationRecipients.ts'
+import { parseTaskDocument as r2ParseTask, taskFields as r2TaskFields, taskWriteFields as r2TaskWriteFields } from './operationsDocuments.ts'
+
+const r2Off = { projects: false, smallWorks: false }
+const r2Projects = { projects: true, smallWorks: false }
+const r2Both = { projects: true, smallWorks: true }
+const r2Job = { managerIds: ['MGR-ROW'], managerUserIds: ['mgr-uid'] }
+
+test('1.10.0 r2: admins add, edit and change managers; managers only with that kind\'s toggle; others edit details of jobs they manage', () => {
+  const adminViewer = { role: admin, ids: ['a'], toggles: r2Off }
+  const togglePm = { role: manager, ids: ['t'], toggles: r2Projects }
+  const plain = { role: manager, ids: ['mgr-uid'], toggles: r2Off }
+  const op = { role: operative, ids: ['op'], toggles: r2Both }
+  assert.equal(r2CanCreateJob(adminViewer, 'smallWorks'), true)
+  assert.equal(r2CanChangeJobManagers(adminViewer, 'projects'), true)
+  assert.equal(r2CanCreateJob(togglePm, 'projects'), true)
+  assert.equal(r2CanCreateJob(togglePm, 'smallWorks'), false)
+  assert.equal(r2CanChangeJobManagers(togglePm, 'projects'), true)
+  assert.equal(r2CanEditJob(togglePm, { managerIds: [] }, 'projects'), true)
+  assert.equal(r2CanEditJob(togglePm, { managerIds: [] }, 'smallWorks'), false)
+  assert.equal(r2CanCreateJob(plain, 'projects'), false)
+  assert.equal(r2CanChangeJobManagers(plain, 'projects'), false)
+  assert.equal(r2CanEditJob(plain, r2Job, 'projects'), true)
+  assert.equal(r2CanEditJob(plain, { managerIds: ['someone-else'] }, 'projects'), false)
+  assert.equal(r2CanCreateJob(op, 'projects'), false)
+  assert.equal(r2CanEditJob(op, r2Job, 'projects'), false)
+  assert.deepEqual([...r2ManagerListFields], ['managerIds', 'managerId', 'assignedManagerUserIds', 'managerUserIds'])
+  assert.deepEqual(r2WithoutManagerList({ siteName: 'A', managerIds: ['x'], managerId: 'x', managerUserIds: ['u'] }), { siteName: 'A' })
+})
+
+test('1.10.0 r2: canSeeJob and seesEveryJob — a toggle shows every job of that kind', () => {
+  const togglePm = { role: manager, ids: ['t'], toggles: r2Projects }
+  assert.equal(seesEveryJob(manager, 'projects', r2Projects), true)
+  assert.equal(seesEveryJob(manager, 'smallWorks', r2Projects), false)
+  assert.equal(seesEveryJob(manager, null, r2Projects), false)
+  assert.equal(seesEveryJob(manager, null, r2Both), true)
+  assert.equal(seesEveryJob(admin), true)
+  assert.equal(rb110CanSeeJob(togglePm, { managerIds: [] }, [], 'projects'), true)
+  assert.equal(rb110CanSeeJob(togglePm, { managerIds: [] }, [], 'smallWorks'), false)
+  assert.equal(rb110CanSeeJob(togglePm, { managerIds: ['t'] }, [], 'smallWorks'), true)
+})
+
+test('1.10.0 r2: jobQueryPlan — whole collections, managerUserIds array-contains, or an operative\'s own job documents', () => {
+  assert.deepEqual(r2JobQueryPlan({ role: admin, ids: ['a'] }).queries, [
+    { collection: 'projects', kind: 'all' },
+    { collection: 'smallWorks', kind: 'all' },
+  ])
+  assert.deepEqual(r2JobQueryPlan({ role: manager, ids: ['m'], uid: 'm-uid', toggles: r2Projects }).queries, [
+    { collection: 'projects', kind: 'all' },
+    { collection: 'smallWorks', kind: 'managed', field: 'managerUserIds', op: 'array-contains', value: 'm-uid' },
+  ])
+  assert.deepEqual(r2JobQueryPlan({ role: manager, ids: ['m'] }).queries.map((q) => q.kind), ['managed', 'managed'])
+  const opPlan = r2JobQueryPlan({ role: operative, ids: ['op'] }, { documentIds: ['abc', 'ABC'] })
+  assert.deepEqual(opPlan.queries, [
+    { collection: 'projects', kind: 'documents', ids: ['abc', 'ABC'] },
+    { collection: 'smallWorks', kind: 'documents', ids: ['abc', 'ABC'] },
+  ])
+  assert.deepEqual(r2JobQueryPlan({ role: operative, ids: ['op'] }).queries, [])
+  assert.deepEqual(r2JobQueryPlan(null).queries, [])
+  assert.deepEqual(r2JobIdQueryValues(['Ab-1', 'ab-1', 'CD-2']), ['Ab-1', 'ab-1', 'AB-1', 'CD-2', 'cd-2'])
+  assert.deepEqual(r2JobIdQueryValues(['123']), ['123'])
+})
+
+test('1.10.0 r2: bookingQueryPlan — whole collections for admins and toggle managers, one query per job otherwise, plus own', () => {
+  assert.equal(r2ReadsEveryBooking({ role: admin, ids: ['a'] }), true)
+  assert.equal(r2ReadsEveryBooking({ role: manager, ids: ['m'], toggles: r2Projects }), true)
+  assert.equal(r2ReadsEveryBooking({ role: manager, ids: ['m'] }), false)
+  assert.equal(r2ReadsEveryBooking({ role: operative, ids: ['o'], toggles: r2Both }), false)
+  const all = r2BookingQueryPlan({ role: admin, ids: ['a'] }, ['x'])
+  assert.equal(all.readsEveryBooking, true)
+  assert.deepEqual(all.queries.map((q) => `${q.collection}:${q.kind}`), ['bookings:all', 'managerSiteBookings:all', 'subcontractorBookings:all'])
+  const restricted = r2BookingQueryPlan({ role: manager, ids: ['m-uid'], uid: 'm-uid' }, ['job-a', 'JOB-A', 'job-b'], {
+    ownBookingIds: ['m-uid', 'op-row-1'],
+  })
+  assert.equal(restricted.readsEveryBooking, false)
+  assert.deepEqual(restricted.queries, [
+    { collection: 'bookings', kind: 'job', jobId: 'job-a', field: 'projectId', op: 'in', values: ['job-a', 'JOB-A'] },
+    { collection: 'subcontractorBookings', kind: 'job', jobId: 'job-a', field: 'projectId', op: 'in', values: ['job-a', 'JOB-A'] },
+    { collection: 'managerSiteBookings', kind: 'job', jobId: 'job-a', field: 'locationId', op: 'in', values: ['job-a', 'JOB-A'] },
+    { collection: 'bookings', kind: 'job', jobId: 'job-b', field: 'projectId', op: 'in', values: ['job-b', 'JOB-B'] },
+    { collection: 'subcontractorBookings', kind: 'job', jobId: 'job-b', field: 'projectId', op: 'in', values: ['job-b', 'JOB-B'] },
+    { collection: 'managerSiteBookings', kind: 'job', jobId: 'job-b', field: 'locationId', op: 'in', values: ['job-b', 'JOB-B'] },
+    { collection: 'bookings', kind: 'own', field: 'operativeId', op: 'in', values: ['m-uid', 'op-row-1'] },
+    { collection: 'managerSiteBookings', kind: 'own', field: 'userId', op: '==', values: ['m-uid'] },
+  ])
+  const op = r2BookingQueryPlan({ role: operative, ids: ['o'] }, ['job-a'], { ownBookingIds: ['a', 'b', 'c', 'd', 'e'] })
+  assert.deepEqual(op.queries.map((q) => (q.kind === 'own' ? q.values : [])), [['o', 'a', 'b', 'c'], ['d', 'e']])
+  assert.ok(op.queries.every((q) => q.collection === 'bookings'))
+})
+
+test('1.10.0 r2: warning scope — restricted managers get their jobs and people, and no unbooked labour', () => {
+  const plain = { role: manager, ids: ['m'] }
+  const scope = r2WarningScopeFor({
+    viewer: plain,
+    visibleJobIds: ['JOB-A'],
+    bookings: [
+      { projectId: 'job-a', operativeId: 'OP-1' },
+      { projectId: 'job-z', operativeId: 'OP-2' },
+    ],
+    people: [{ id: 'u-1', email: 'one@x.com' }],
+    operatives: [{ id: 'op-1', email: 'One@x.com' }],
+  })
+  assert.equal(scope.kind, 'jobs')
+  if (scope.kind !== 'jobs') return
+  assert.deepEqual(scope.jobIds, ['job-a'])
+  assert.deepEqual(scope.personEmails, ['one@x.com'])
+  assert.ok(scope.personIds.includes('u-1') && scope.personIds.includes('op-1') && !scope.personIds.includes('op-2'))
+  assert.equal(scope.unbookedLabour, false)
+  assert.deepEqual(r2WarningScopeFor({ viewer: { role: admin, ids: ['a'] }, visibleJobIds: [] }), { kind: 'all' })
+  assert.equal(r2WarningScopeFor({ viewer: { ...plain, toggles: r2Projects }, visibleJobIds: [] }).kind, 'jobs')
+  const unbooked = unbookedLabourRows({
+    scope,
+    startDayKey: '2026-11-02',
+    endDayKey: '2026-11-02',
+    includeWeekends: false,
+    standardPaidHours: 8,
+    saturdayCountsAsHours: 8,
+    sundayCountsAsHours: 8,
+    people: [],
+    operatives: [{ id: 'op-1', email: 'one@x.com', name: 'One', isActive: true, isPlaceholder: false, profileWeight: 1 }],
+    bookings: [],
+    holidays: [],
+  })
+  assert.deepEqual(unbooked, [])
+  const quals = qualificationExpiryRows({
+    scope,
+    referenceIso: '2026-11-02T10:00:00Z',
+    timeZone: 'Europe/London',
+    operatives: [
+      { id: 'op-1', isActive: true, name: 'One', email: 'one@x.com', expiries: [{ qualificationId: 'q', name: 'CSCS', expiryIso: '2026-11-10T00:00:00Z' }] },
+      { id: 'op-2', isActive: true, name: 'Two', email: 'two@x.com', expiries: [{ qualificationId: 'q', name: 'CSCS', expiryIso: '2026-11-10T00:00:00Z' }] },
+    ],
+  })
+  assert.deepEqual(quals.map((row) => row.operativeId), ['op-1'])
+})
+
+test('1.10.0 r2: tasks store createdByUserId, and task_completed goes to it (name only for older tasks)', () => {
+  const fields = r2TaskFields({ id: 't', projectId: 'p', title: 'Do it', createdBy: 'Ada Lovelace', createdByUserId: 'u-ada' })
+  assert.equal(fields.createdByUserId, 'u-ada')
+  assert.equal(r2ParseTask('t', fields)?.createdByUserId, 'u-ada')
+  assert.equal(r2ParseTask('t', { title: 'Old' })?.createdByUserId, '')
+  // Never rewritten on an edit.
+  const write = r2TaskWriteFields(fields, { ...fields, createdByUserId: 'someone-else', title: 'Do it now' })
+  assert.equal('createdByUserId' in (write.set ?? {}), false)
+  const roster = [
+    { id: 'u-ada', role: admin, firstName: 'Ada', surname: 'Lovelace' },
+    { id: 'u-bob', role: manager, firstName: 'Bob', surname: 'Smith' },
+    { id: 'u-bob2', role: manager, firstName: 'Bob', surname: 'Smith' },
+  ]
+  assert.deepEqual(r2TaskCompletedRecipients({ createdByUserId: 'u-ada', createdBy: 'Bob Smith' }, 'u-bob', roster), ['u-ada'])
+  assert.deepEqual(r2TaskCompletedRecipients({ createdByUserId: 'u-ada' }, 'u-ada', roster), [])
+  assert.deepEqual(r2TaskCompletedRecipients({ createdBy: 'ada  lovelace' }, 'u-bob', roster), ['u-ada'])
+  assert.deepEqual(r2TaskCompletedRecipients({ createdBy: 'Bob Smith' }, 'u-ada', roster), [])
+  assert.deepEqual(r2TaskCompletedRecipients({ createdBy: '' }, 'u-ada', roster), [])
+})
+
+test('1.10.0 r2: a manager never books themselves onto a job they do not manage', () => {
+  const plain = { role: manager, ids: ['m-uid'] }
+  const togglePm = { role: manager, ids: ['m-uid'], toggles: r2Both }
+  const otherJob = { managerIds: ['someone-else'], managerUserIds: ['someone-else'] }
+  for (const viewer of [plain, togglePm]) {
+    assert.equal(rb110CanWriteBooking(viewer, { collection: 'bookings', projectId: 'job-x' }, otherJob), false)
+    assert.equal(rb110CanWriteBooking(viewer, { collection: 'managerSiteBookings', userId: 'm-uid', locationType: 'project', locationId: 'job-x' }, otherJob), false)
+  }
+  assert.equal(rb110CanWriteBooking(plain, { collection: 'managerSiteBookings', userId: 'm-uid', locationType: 'project', locationId: 'job-a' }, r2Job), false)
+  assert.equal(rb110CanWriteBooking({ role: manager, ids: ['mgr-uid'] }, { collection: 'managerSiteBookings', userId: 'mgr-uid', locationType: 'project', locationId: 'job-a' }, r2Job), true)
+})
+
+// --- Rulebook 1.10.0 hunt C ---------------------------------------------------------------------------------------
+
+import { timesheetInvoiceRows as hcInvoiceRows } from './reportPay.ts'
+import { payrollLineReview as hcLineReview } from './timesheetEntryReviews.ts'
+import { inviteAcceptWrites as hcInviteAccept } from './inviteAccept.ts'
+import { timesheetParticipant as hcParticipant } from './peopleDocuments.ts'
+import { orgDayHours as hcOrgDayHours, payForHours as hcPayForHours, payRateOnDay as hcPayRateOnDay, roundPennies as hcRoundPennies } from './payRate.ts'
+import { syncWriteAllowed as hcSyncWriteAllowed } from './liveSources.ts'
+
+test('1.10.0 hunt C L16: payForHours / roundPennies give the same numbers web payBasis.ts gave', () => {
+  assert.equal(hcPayForHours({ payBasis: 'day', dayRate: 200, paidHours: 4, standardDayHours: 8 }), 100)
+  assert.equal(hcPayForHours({ payBasis: 'day', dayRate: 180, paidHours: 7.5, standardDayHours: 7.5, otMultiplier: 1.5 }), 270)
+  assert.equal(hcPayForHours({ payBasis: 'hourly', hourlyRate: 15.5, paidHours: 3, standardDayHours: 8, otMultiplier: 1.5 }), 69.75)
+  assert.equal(hcPayForHours({ payBasis: 'day', dayRate: 100, paidHours: 1, standardDayHours: 3 }), 33.33)
+  assert.equal(hcPayForHours({ payBasis: 'day', dayRate: 200, paidHours: 0, standardDayHours: 8 }), 0)
+  assert.equal(hcPayForHours({ payBasis: 'hourly', hourlyRate: null, paidHours: 2, standardDayHours: 8 }), 0)
+  assert.equal(hcOrgDayHours(0), 0.01)
+  assert.equal(hcOrgDayHours(7.5), 7.5)
+  assert.equal(hcRoundPennies(2.675), 2.68)
+  assert.equal(hcRoundPennies(1.005), 1)
+  assert.equal(hcRoundPennies(10.005), 10.01)
+})
+
+test('1.10.0 hunt C L13: payrollLineReview finds a review under the line id in any letter case', () => {
+  const sheet = { payrollLineReviews: { 'ABC-1': { decision: 'edited', revisedAmount: 80 }, 'def-2': { decision: 'declined' } } }
+  assert.deepEqual(hcLineReview(sheet, 'abc-1'), { decision: 'edited', revisedAmount: 80 })
+  assert.deepEqual(hcLineReview(sheet, 'DEF-2'), { decision: 'declined', revisedAmount: null })
+  assert.equal(hcLineReview(sheet, 'nope'), null)
+  assert.equal(hcLineReview({}, 'abc-1'), null)
+})
+
+test('1.10.0 hunt C H1: timesheetInvoiceRows — signed snapshot first, then reviews and entry decisions; PAYE and leave never', () => {
+  const lines = [
+    { id: 'L1', amount: 100 },
+    { id: 'L2', amount: 50, isPayeDay: true },
+    { id: 'L3', amount: 0, isLeave: true },
+    { id: 'L4', amount: 60 },
+  ]
+  const override = {
+    lines: [
+      { id: 'l1', amount: 90, decision: 'edited' },
+      { id: 'L2', amount: 50 },
+      { id: 'L4', amount: 60, decision: 'declined' },
+    ],
+    priceWork: [{ id: 'P1', amount: 30 }, { id: 'P2', amount: 0 }],
+    expenses: [{ id: 'E1', amount: 12.5 }],
+  }
+  const signed = hcInvoiceRows({ sheet: { weeklyReportOverride: override }, payrollLines: lines, extrasMode: 'decided' })
+  assert.deepEqual(signed.map((row) => [row.kind, row.id, row.amount, row.source]), [
+    ['labour', 'l1', 90, 'override'],
+    ['priceWork', 'P1', 30, 'override'],
+    ['expense', 'E1', 12.5, 'override'],
+  ])
+  const sheet = {
+    managerSignedAt: '2026-11-01T10:00:00Z',
+    payrollLineReviews: { l4: { decision: 'declined' }, L1: { decision: 'edited', revisedAmount: 95 } },
+    extraEntryReviews: { E1: { decision: 'declined', reviewedAmount: 12.5 } },
+    priceWorkEntries: [{ id: 'P1', amount: 30 }],
+    expenseEntries: [{ id: 'E1', amount: 12.5 }],
+  }
+  const decided = hcInvoiceRows({ sheet, payrollLines: lines, extrasMode: 'decided' })
+  assert.deepEqual(decided.map((row) => [row.kind, row.id, row.amount]), [
+    ['labour', 'L1', 95],
+    ['priceWork', 'P1', 30],
+  ])
+  const raw = hcInvoiceRows({ sheet, payrollLines: lines, extrasMode: 'raw' })
+  assert.deepEqual(raw.map((row) => [row.kind, row.id, row.amount]), [
+    ['labour', 'L1', 100],
+    ['labour', 'L4', 60],
+    ['priceWork', 'P1', 30],
+    ['expense', 'E1', 12.5],
+  ])
+  // Reviews count only once the line manager signed.
+  const unsigned = hcInvoiceRows({ sheet: { ...sheet, managerSignedAt: null }, payrollLines: lines, extrasMode: 'decided' })
+  assert.deepEqual(unsigned.filter((row) => row.kind === 'labour').map((row) => [row.id, row.amount]), [['L1', 100], ['L4', 60]])
+})
+
+test('1.10.0 hunt C H3: inviteAcceptWrites — role from the invitation; an existing account keeps its profile and the placeholder', () => {
+  const invitation = { organizationId: 'org-b', permissions: { manager: true, operativeMode: false }, payBasis: 'hourly', hourlyRate: 20 }
+  const existing = hcInviteAccept({
+    existingProfile: { organizationId: 'org-a', role: 'admin', passwordSet: true },
+    placeholder: { role: 'manager', organizationId: 'org-b' },
+    invitation,
+  })
+  assert.equal(existing.mode, 'existingAccount')
+  assert.equal(existing.joinsAnotherCompany, true)
+  assert.equal(existing.writeProfile, false)
+  assert.equal(existing.movePlaceholder, false)
+  assert.equal(existing.claimToAccount, false)
+  assert.equal(existing.role, 'manager')
+  assert.deepEqual(existing.pay, { payBasis: 'hourly', dayRate: null, hourlyRate: 20 })
+  const retry = hcInviteAccept({ existingProfile: { organizationId: 'organizations/ORG-B' }, placeholder: { role: 'operative' }, invitation })
+  assert.equal(retry.joinsAnotherCompany, false)
+  assert.equal(retry.movePlaceholder, true)
+  assert.equal(retry.claimToAccount, true)
+  assert.equal(retry.writeProfile, false)
+  const migrate = hcInviteAccept({ existingProfile: null, placeholder: { role: 'operative' }, invitation: { organizationId: 'org-b', role: 'operative' } })
+  assert.equal(migrate.mode, 'migratePlaceholder')
+  assert.equal(migrate.writeProfile && migrate.movePlaceholder && migrate.claimToAccount, true)
+  assert.equal(migrate.role, 'operative')
+  const fresh = hcInviteAccept({ existingProfile: null, placeholder: null, invitation: { organizationId: 'org-b', permissions: { adminAccess: true } } })
+  assert.equal(fresh.mode, 'newProfile')
+  assert.equal(fresh.role, 'admin')
+  assert.equal(fresh.pay, null)
+})
+
+test('1.10.0 hunt C M6/M12: timesheetParticipant', () => {
+  const day = new Date('2026-11-02T12:00:00Z')
+  assert.equal(hcParticipant({ timesheetsEnabled: true, employmentType: 'paye' }, day), true)
+  assert.equal(hcParticipant({ timesheetsEnabled: false, employmentType: 'self_employed' }, day), true)
+  assert.equal(hcParticipant({ employmentType: 'paye', operativeMode: true }, day), true)
+  assert.equal(hcParticipant({ employmentType: 'paye', permissions: { operativeMode: true }, timesheetsEnabled: false }, day), false)
+  assert.equal(hcParticipant({ employmentType: 'paye' }, day), false)
+  assert.equal(hcParticipant({ timesheetsEnabled: true, isActive: false }, day), false)
+  assert.equal(hcParticipant({ timesheetsEnabled: true, email: '', name: 'Deleted user' }, day), false)
+  // Effective-dated: PAYE until Wednesday, self-employed from then.
+  const changing = { employmentType: 'self_employed', employmentTypeTransitionFrom: 'paye', employmentTypeEffectiveAt: '2026-11-04T00:00:00Z' }
+  assert.equal(hcParticipant(changing, day, 'Europe/London'), false)
+  assert.equal(hcParticipant(changing, new Date('2026-11-05T12:00:00Z'), 'Europe/London'), true)
+  assert.equal(hcParticipant(null, day), false)
+})
+
+test('1.10.0 hunt C M7: a Weekly Report never writes', () => {
+  assert.equal(hcSyncWriteAllowed('weeklyReport'), false)
+  assert.equal(hcSyncWriteAllowed('weeklyReport', 'warningResolutionMigrationWrites'), false)
+})
+
+test('1.10.0 hunt C H4: payRateOnDay matches history under every id of the person (personIdSet)', () => {
+  const history = [
+    { id: 'h1', userId: 'INVITE-OLD', dayRate: 150, payBasis: 'day', effectiveAt: '2026-10-01T00:00:00Z' },
+    { id: 'h2', userId: 'same-email-2', dayRate: 175, payBasis: 'day', effectiveAt: '2026-10-15T00:00:00Z' },
+    { id: 'h3', userId: 'someone-else', dayRate: 999, payBasis: 'day', effectiveAt: '2026-10-20T00:00:00Z' },
+  ]
+  const user = { id: 'u-1', employmentType: 'self_employed', dayRate: 120 }
+  const withPerson = hcPayRateOnDay({
+    user,
+    history,
+    person: { id: 'u-1', email: 'a@x.com', formerUserIds: ['INVITE-OLD'] },
+    roster: [{ id: 'same-email-2', email: 'A@x.com' }],
+    dayKey: '2026-10-25',
+    timeZone: 'Europe/London',
+  })
+  assert.equal(withPerson.rate, 175)
+  assert.equal(withPerson.source, 'history')
+  const onlyOwn = hcPayRateOnDay({ user, history, dayKey: '2026-10-25', timeZone: 'Europe/London' })
+  assert.equal(onlyOwn.rate, 120)
 })

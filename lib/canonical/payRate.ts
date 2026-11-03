@@ -23,6 +23,7 @@
 import { dateFromDayKeyInZone, dayKeyInZone } from '../orgTime/zoneTime'
 import { zoneOrLondon } from './dayKeys'
 import { employmentTypeOnDay, type EmploymentType, type EmploymentTypeUser } from './userProfile'
+import { personIdSet, type PersonIdsInput, type PersonRosterRow } from './personIds'
 
 export type PayBasis = 'day' | 'hourly'
 
@@ -61,6 +62,13 @@ export type PayRateOnDayInput = {
   userIds?: ReadonlyArray<string> | null
   /** History rows match on these operative ids (default: operative.id). */
   operativeIds?: ReadonlyArray<string> | null
+  /**
+   * 1.10.0: the person whose rate this is (`id`, `email`, `formerUserIds`, `sameEmailUserIds`) and the roster. When
+   * given, history rows match every id of the person (`personIdSet`: own id, former ids, same-email ids, roster rows
+   * with the same email) as well as `userIds` — so the apps pass the whole history and never pick ids themselves.
+   */
+  person?: PersonIdsInput | null
+  roster?: ReadonlyArray<PersonRosterRow> | null
   dayKey: string
   timeZone?: string | null
 }
@@ -186,7 +194,11 @@ export function payRateOnDay(input: PayRateOnDayInput): PayRateOnDay {
     return { payBasis: liveBasis, rate: 0, employmentType, isPaye: true, hasRate: true, source: 'paye' }
   }
 
-  const userIds = idSet(input.userIds && input.userIds.length > 0 ? input.userIds : [user?.id])
+  const personIds = input.person ? personIdSet(input.person, input.roster ?? []) : []
+  const userIds = idSet([
+    ...(input.userIds && input.userIds.length > 0 ? input.userIds : [user?.id]),
+    ...personIds,
+  ])
   const operativeIds = idSet(input.operativeIds && input.operativeIds.length > 0 ? input.operativeIds : [operative?.id])
   const seen = new Set<string>()
   const rows: Array<{ payBasis?: string | null; effectiveAt: Date; createdAt: Date; dayRate: number | null }> = []
@@ -290,4 +302,102 @@ export function payRateHistoryWriteFields(input: PayRateHistoryWriteInput): PayR
     effectiveAtMs: dateFromDayKeyInZone(dayKey, timeZone).getTime(),
     effectiveDayKey: dayKey,
   }
+}
+
+export type PayRateChangeProfile = {
+  /** The amount on the profile (per day or per hour); null when no rate is set. */
+  rate: number | null | undefined
+  payBasis?: string | null
+}
+
+export type PayRateChangeWrites =
+  | { ok: true; rows: PayRateHistoryWriteFields[] }
+  | { ok: false; reason: 'history_not_loaded'; message: string }
+
+export const PAY_HISTORY_NOT_LOADED_MESSAGE = 'Pay history could not be loaded. Check your connection and save again.'
+
+/**
+ * The `operativeDayRateHistory` rows a pay change writes (1.10.0, §8), in the same batch as the profile save:
+ *   - nothing when the amount and basis are unchanged;
+ *   - a "rate cleared" row when a saved rate is cleared;
+ *   - otherwise the new row, preceded by a seed row of the previous rate from `seedEffective` (the account's creation
+ *     day) only when the person has no history row yet and the previous rate was above 0.
+ * `history` is the person's loaded rows (any shape with an id); `null` means the history did not load, and the save is
+ * refused (`history_not_loaded`) rather than treating it as empty and writing a duplicate seed.
+ */
+export function payRateChangeWrites(input: {
+  userId?: string | null
+  operativeId?: string | null
+  previousProfile: PayRateChangeProfile
+  nextProfile: PayRateChangeProfile
+  history: ReadonlyArray<unknown> | null | undefined
+  /** The day the change takes effect (`yyyy-MM-dd` in the organisation zone, or an instant). */
+  effectiveDayKey: string | number | Date
+  /** The seed row's effective instant (the account's creation). Without it no seed row is written. */
+  seedEffective?: string | number | Date | null
+  timeZone?: string | null
+}): PayRateChangeWrites {
+  const previous = finiteNumber(input.previousProfile?.rate)
+  const next = finiteNumber(input.nextProfile?.rate)
+  const prevBasis =
+    input.previousProfile?.payBasis === 'hourly' ? 'hourly' : input.previousProfile?.payBasis === 'day' ? 'day' : null
+  const nextBasis = input.nextProfile?.payBasis === 'hourly' ? 'hourly' : 'day'
+  const base = { userId: input.userId, operativeId: input.operativeId, timeZone: input.timeZone }
+  if (next == null) {
+    if (previous == null) return { ok: true, rows: [] }
+  } else if (previous === next && (prevBasis == null || prevBasis === nextBasis)) {
+    return { ok: true, rows: [] }
+  }
+  if (!Array.isArray(input.history)) {
+    return { ok: false, reason: 'history_not_loaded', message: PAY_HISTORY_NOT_LOADED_MESSAGE }
+  }
+  const rows: PayRateHistoryWriteFields[] = []
+  if (next == null) {
+    const cleared = payRateHistoryWriteFields({ ...base, rate: null, effective: input.effectiveDayKey })
+    return { ok: true, rows: cleared ? [cleared] : [] }
+  }
+  if (input.history.length === 0 && previous != null && previous > 0 && input.seedEffective != null) {
+    const seed = payRateHistoryWriteFields({
+      ...base,
+      rate: previous,
+      payBasis: prevBasis === 'hourly' ? 'hourly' : 'day',
+      effective: input.seedEffective,
+    })
+    if (seed) rows.push(seed)
+  }
+  const row = payRateHistoryWriteFields({ ...base, rate: next, payBasis: nextBasis, effective: input.effectiveDayKey })
+  if (row) rows.push(row)
+  return { ok: true, rows }
+}
+
+// MARK: - Pay arithmetic (1.10.0, L16; was web lib/timesheets/payBasis.ts and iOS PayrollRateResolver)
+
+/** Money rounded to whole pence (half away from zero for positive amounts, as `Math.round`). */
+export function roundPennies(amount: number): number {
+  return Math.round(Number(amount) * 100) / 100
+}
+
+/** The organisation's paid hours in a day (`payrollTimePolicy.standardPaidHours`); never 0 (0.01 floor), never 8 by default. */
+export function orgDayHours(standardPaidHours: number): number {
+  const hours = Number(standardPaidHours)
+  return hours > 0 ? hours : 0.01
+}
+
+/**
+ * Pay for `paidHours` on one basis: hourly → rate × hours × multiplier; day → day rate × (hours ÷ the organisation's
+ * paid day) × multiplier; rounded to pence. 0 hours (or fewer) pay 0; a missing rate counts as 0.
+ */
+export function payForHours(input: {
+  payBasis?: string | null
+  dayRate?: number | null
+  hourlyRate?: number | null
+  paidHours: number
+  standardDayHours: number
+  otMultiplier?: number
+}): number {
+  const paidHours = Number(input.paidHours)
+  if (!(paidHours > 0)) return 0
+  const multiplier = input.otMultiplier ?? 1
+  if (input.payBasis === 'hourly') return roundPennies((input.hourlyRate ?? 0) * paidHours * multiplier)
+  return roundPennies((input.dayRate ?? 0) * (paidHours / orgDayHours(input.standardDayHours)) * multiplier)
 }

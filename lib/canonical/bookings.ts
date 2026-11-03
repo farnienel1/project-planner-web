@@ -376,6 +376,57 @@ export function bookingsToRemoveOnProjectDelete(input: {
     .map((row) => row.id)
 }
 
+/** A booking row of any kind, as `jobDeleteBookingRemovals` reads it. */
+export type JobDeleteBookingRow = {
+  id: string
+  /** `bookings` / `subcontractorBookings`: the job id. */
+  projectId?: string | null
+  /** `managerSiteBookings`: `locationType` `project` / `small_work` and the job id in `locationId`. */
+  locationType?: string | null
+  locationId?: string | null
+  dateMs: number
+}
+
+/**
+ * Everything a job delete removes (1.10.0, §2): that job's labour bookings, subcontractor bookings and manager site
+ * bookings at the job (`locationType` `project` / `small_work`, `locationId` the job) dated today or later in the
+ * organisation zone. Ids compare without case and are returned as stored. Past rows stay (ORPHAN_BOOKING_LABEL). Each
+ * removal writes its tombstone (`bookingTombstoneWriteFields`) in the same batch.
+ */
+export function jobDeleteBookingRemovals(input: {
+  projectId: string
+  bookings?: ReadonlyArray<JobDeleteBookingRow> | null
+  subcontractorBookings?: ReadonlyArray<JobDeleteBookingRow> | null
+  managerSiteBookings?: ReadonlyArray<JobDeleteBookingRow> | null
+  nowIso: string
+  timeZone?: string | null
+}): { bookings: string[]; subcontractorBookings: string[]; managerSiteBookings: string[] } {
+  const job = text(input.projectId).toLowerCase()
+  const empty = { bookings: [], subcontractorBookings: [], managerSiteBookings: [] }
+  if (!job) return empty
+  const today = todayKey(input.nowIso, input.timeZone)
+  const upcoming = (row: JobDeleteBookingRow) =>
+    Number.isFinite(row?.dateMs) && onOrAfterToday(row.dateMs, today, input.timeZone)
+  const byProject = (rows: ReadonlyArray<JobDeleteBookingRow> | null | undefined) =>
+    (rows || [])
+      .filter((row) => row && text(row.id) && text(row.projectId).toLowerCase() === job && upcoming(row))
+      .map((row) => text(row.id))
+  return {
+    bookings: byProject(input.bookings),
+    subcontractorBookings: byProject(input.subcontractorBookings),
+    managerSiteBookings: (input.managerSiteBookings || [])
+      .filter(
+        (row) =>
+          row &&
+          text(row.id) &&
+          (text(row.locationType) === 'project' || text(row.locationType) === 'small_work') &&
+          text(row.locationId).toLowerCase() === job &&
+          upcoming(row)
+      )
+      .map((row) => text(row.id)),
+  }
+}
+
 /** 'deleted_job' when the booking's job is not in the live projects and small works. */
 export function bookingJobState(
   projectId: string,

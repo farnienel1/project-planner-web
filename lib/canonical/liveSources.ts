@@ -71,6 +71,7 @@ export const LIVE_COLLECTIONS: ReadonlyArray<LiveCollection> = [
   { id: 'tradeTypeInventory', path: 'organizations/{orgId}/settings/tradeTypeInventory', scope: 'organization', listen: false, note: 'Add-only picker suggestions; read when the picker opens.' },
   { id: 'taxIds', path: 'users/{uid}/private/taxIds', scope: 'user', listen: false, note: 'Private; only its owner and admins edit it, on one screen; read when that screen opens.' },
   { id: 'toolboxLibrary', path: 'platformConfig/*', scope: 'platform', listen: false, note: 'Platform content, changed by releases; read on open.' },
+  { id: 'orgMemberships', path: 'users/{uid}/orgMemberships/{orgId}', scope: 'user', listen: false, note: 'Read on sign-in and when switching organisation (1.10.0 parseOrgMembershipDocument); only admins of that organisation change role or permissions.' },
   { id: 'deletedBookings', path: 'organizations/{orgId}/deletedBookings', scope: 'organization', listen: false, note: 'Write-only tombstones; never shown.' },
 ]
 
@@ -104,12 +105,29 @@ export const SYNC_WRITE_TRIGGERS = [
   'backgroundSync',
   'pullToRefresh',
   'listenerSnapshot',
+  /** 1.10.0 (M7): producing a Weekly Report. It reads only; it never writes a timesheet or anything else. */
+  'weeklyReport',
 ] as const
 export type SyncWriteTrigger = (typeof SYNC_WRITE_TRIGGERS)[number]
 
-/** True only for `userAction` and `offlineReplay` (§1 "Never re-save what you didn't change"). */
-export function syncWriteAllowed(trigger: unknown): boolean {
-  return trigger === 'userAction' || trigger === 'offlineReplay'
+/**
+ * 1.10.0: the one exception to "never re-save" — idempotent key migrations that change no data. They may run from a
+ * scan or listener: `warningResolutionMigrationWrites` writes a warning resolution stored under an older key to its
+ * shared key only when the shared key is not already resolved; old documents stay. Running it twice, or on two
+ * devices, writes the same result.
+ */
+export const IDEMPOTENT_MIGRATION_WRITES = ['warningResolutionMigrationWrites'] as const
+export type IdempotentMigrationWrite = (typeof IDEMPOTENT_MIGRATION_WRITES)[number]
+
+/**
+ * True for `userAction` and `offlineReplay` (§1 "Never re-save what you didn't change"). Any other trigger writes
+ * only an `IDEMPOTENT_MIGRATION_WRITES` migration, named in `migration` — except `weeklyReport`, which never writes.
+ */
+export function syncWriteAllowed(trigger: unknown, migration?: unknown): boolean {
+  if (trigger === 'userAction' || trigger === 'offlineReplay') return true
+  // A Weekly Report never writes, not even a migration (§7: reports are not stored).
+  if (trigger === 'weeklyReport') return false
+  return typeof migration === 'string' && (IDEMPOTENT_MIGRATION_WRITES as readonly string[]).includes(migration)
 }
 
 /**

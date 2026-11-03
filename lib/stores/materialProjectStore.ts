@@ -169,6 +169,11 @@ function keepMaterialRows(
   return retainScopedRows(`materials:${organizationId}`, prior, loaded)
 }
 
+let allMaterialsUnsub: (() => void) | null = null
+let allMaterialsWatchOrgId = ''
+let allSendRecordsUnsub: (() => void) | null = null
+let allSendRecordsWatchOrgId = ''
+
 export const useMaterialProjectStore = create<MaterialProjectState>((set, get) => ({
   materials: [],
   sendRecords: [],
@@ -223,6 +228,20 @@ export const useMaterialProjectStore = create<MaterialProjectState>((set, get) =
       const materials = keepMaterialRows(organizationId, get().materials, mapped)
       materialsOrgId = organizationId
       set({ materials, loading: false })
+      // Rulebook 1.10.0 (1.9.0 leftover, LIVE_COLLECTIONS `materials`): the org-wide list (Home, Warnings) stays
+      // live after the first read; the listener is replaced when the organisation changes.
+      if (allMaterialsWatchOrgId !== organizationId) {
+        allMaterialsUnsub?.()
+        allMaterialsWatchOrgId = organizationId
+        allMaterialsUnsub = onSnapshot(
+          collection(db, 'organizations', organizationId, 'materials'),
+          (snap) => {
+            if (allMaterialsWatchOrgId !== organizationId) return
+            set({ materials: keepMaterialRows(organizationId, get().materials, mapMaterialLines(snap.docs)) })
+          },
+          () => undefined
+        )
+      }
     } catch (error: unknown) {
       set({ error: error instanceof Error ? error.message : 'Failed to load materials', loading: false })
       throw error
@@ -252,6 +271,23 @@ export const useMaterialProjectStore = create<MaterialProjectState>((set, get) =
       if (projectId) sendRecords = sendRecords.filter((r) => r.projectId.toLowerCase() === projectId.toLowerCase())
       sendRecords.sort((a, b) => b.sentAt.getTime() - a.sentAt.getTime())
       set({ sendRecords })
+      // Rulebook 1.10.0: the org-wide send-record list (material cut-off warnings) stays live after the first read.
+      if (!projectId && allSendRecordsWatchOrgId !== organizationId) {
+        allSendRecordsUnsub?.()
+        allSendRecordsWatchOrgId = organizationId
+        allSendRecordsUnsub = onSnapshot(
+          collection(db, 'organizations', organizationId, 'materialSendRecords'),
+          (snap) => {
+            if (allSendRecordsWatchOrgId !== organizationId) return
+            const rows = snap.docs
+              .map((entry) => mapSendRecord(entry.id, entry.data() as Record<string, unknown>))
+              .filter((r): r is MaterialSendRecord => r !== null)
+              .sort((a, b) => b.sentAt.getTime() - a.sentAt.getTime())
+            set({ sendRecords: rows })
+          },
+          () => undefined
+        )
+      }
     } catch (error: unknown) {
       // Operatives never read history (`canViewMaterialOrderHistory` / Firestore `canReadMaterialSendHistory`).
       if (isPermissionDenied(error)) {

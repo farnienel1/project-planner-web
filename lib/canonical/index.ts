@@ -807,6 +807,7 @@ export {
   bookingCreatedRecipients,
   deadlineAssignedRecipients,
   excludeActor,
+  taskCompletedRecipients,
   holidayDecisionRecipients,
   holidayRequestRecipients,
   ideaRecipients,
@@ -1159,3 +1160,80 @@ export { timesheetChangedFields } from './timesheetEntryReviews'
 export { leaveDaysInRange } from './leaveRequests'
 export { MANAGER_SITE_BOOKING_LOCATION_WRITE_GROUP, managerSiteBookingUpdateWriteFields } from './workDocumentReaders'
 export { leaveRecordsForAccount } from './bookingPerson'
+
+// Rulebook 1.10.0: job visibility and booking permissions (§2, §16).
+export {
+  BOOKING_PERMISSION_COLLECTIONS,
+  bookingJobId,
+  canDeleteBooking,
+  canSeeJob,
+  canWriteBooking,
+  isJobManager,
+  jobManagerIds,
+  jobManagerUserIds,
+  stableManagerId,
+  visibleJobsFor,
+  // 1.10.0 round 2: job add/edit/manager list, rules-compatible reads, warning scope (§16, §17).
+  FIRESTORE_IN_QUERY_LIMIT,
+  JOBS_PER_BOOKING_QUERY,
+  JOB_QUERY_COLLECTIONS,
+  JOB_MANAGER_LIST_FIELDS,
+  OWN_BOOKING_IDS_PER_QUERY,
+  WARNING_SCOPE_ALL,
+  bookingQueryPlan,
+  canChangeJobManagers,
+  canCreateJob,
+  canEditJob,
+  isJobInWarningScope,
+  isPersonInWarningScope,
+  jobIdQueryValues,
+  jobQueryPlan,
+  jobWriteWithoutManagerList,
+  readsEveryBooking,
+  warningScopeFor,
+} from './staffAccess'
+export type {
+  BookingPermissionCollection,
+  BookingPermissionInput,
+  JobAccessViewer,
+  JobManagerAccount,
+  JobManagerFields,
+  JobManagerRosterRow,
+  BookingQuery,
+  BookingQueryPlan,
+  JobCollection,
+  JobQuery,
+  JobQueryPlan,
+  WarningScope,
+} from './staffAccess'
+
+// Rulebook 1.10.0: user delete, organisation memberships, pay change rows, job delete removals.
+export { USER_DELETE_REFUSAL_MESSAGES, canDeleteUser, userDeleteRefusal, userDeleteWrites } from './userDelete'
+export {
+  ORG_MEMBERSHIP_ADMIN_FIELDS,
+  ORG_MEMBERSHIP_DEFAULT_ON,
+  ORG_MEMBERSHIP_PERMISSION_KEYS,
+  ORG_MEMBERSHIP_SELF_FIELDS,
+  orgMembershipWriteFields,
+  parseOrgMembershipDocument,
+} from './orgMembership'
+export { PAY_HISTORY_NOT_LOADED_MESSAGE, payRateChangeWrites } from './payRate'
+export { jobDeleteBookingRemovals } from './bookings'
+export type { UserDeleteInput, UserDeletePerson, UserDeleteRefusal, UserDeleteStep, UserDeleteWrite } from './userDelete'
+export type { OrgMembershipChange, OrgMembershipDocument, OrgMembershipPermissionKey, OrgMembershipStatus, OrgMembershipWrite } from './orgMembership'
+export type { PayRateChangeProfile, PayRateChangeWrites } from './payRate'
+export type { JobDeleteBookingRow } from './bookings'
+export { CROSS_PLATFORM_CONTRACT_READERS, crossPlatformContractReaderNames, readCrossPlatformSample } from './crossPlatformContract'
+export { notificationRelatedIdFor } from './recordsDocuments'
+export { jobTypesChangeWriteFields } from './operationsDocuments'
+export { IDEMPOTENT_MIGRATION_WRITES } from './liveSources'
+
+// Rulebook 1.10.0 (hunt C): invoice rows, payroll line reviews, invite accept plan, timesheet participants, pay maths.
+export { timesheetInvoiceRows } from './reportPay'
+export { payrollLineReview } from './timesheetEntryReviews'
+export { inviteAcceptWrites } from './inviteAccept'
+export { timesheetParticipant } from './peopleDocuments'
+export { orgDayHours, payForHours, roundPennies } from './payRate'
+export type { TimesheetInvoiceRow, TimesheetInvoiceRowKind, TimesheetInvoiceRowsInput } from './reportPay'
+export type { PayrollLineReview } from './timesheetEntryReviews'
+export type { InviteAcceptMode, InviteAcceptPlan } from './inviteAccept'

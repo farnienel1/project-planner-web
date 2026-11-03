@@ -3,10 +3,12 @@
  */
 'use client'
 
+import { userCanEditJob } from '@/lib/access/bookingAccess'
+import { useOperativeStore } from '@/lib/stores/operativeStore'
+
 import Link from 'next/link'
 import { CalendarDaysIcon, ClipboardDocumentCheckIcon, CubeIcon, ShieldCheckIcon } from '@heroicons/react/24/solid'
 import { useAuthStore } from '@/lib/stores/authStore'
-import { canManageWorkCatalogue } from '@/lib/permissions'
 import { ProjectDetailsCard, ProjectWorkspaceChrome } from '@/components/projects/ProjectWorkspaceChrome'
 import { ProjectScheduleSection } from '@/components/projects/scheduling/ProjectScheduleSection'
 import type { Project } from '@/types'
@@ -22,7 +24,8 @@ export function ProjectHub({
 }) {
   const { user } = useAuthStore()
   const isSmallWork = basePath.includes('small-works')
-  const canEdit = canManageWorkCatalogue(user, isSmallWork ? 'smallWorks' : 'projects')
+  // 1.10.0 round 2 (`canEditJob`): a manager edits the details of a job they manage even without the toggle.
+  const canEdit = userCanEditJob(user, project, isSmallWork ? 'smallWorks' : 'projects', useOperativeStore.getState().managers)
 
   return (
     <ProjectWorkspaceChrome project={project} basePath={basePath} taskCount={taskCount}>

@@ -6,7 +6,7 @@
  * hours worked, never multiplied. Paid hours belong to pay screens.
  */
 
-import { bookingOccupiesDay, formerIdAliases, payrollOutsideMultiplier, unbookedLabourRowsOnDay, workedHoursSplit } from '@/lib/canonical'
+import { bookingOccupiesDay, formerIdAliases, payrollOutsideMultiplier, unbookedLabourRowsOnDay, warningScopeFor, workedHoursSplit, type JobAccessViewer } from '@/lib/canonical'
 import { isoWeekdayInZone } from '@/lib/orgTime/zoneTime'
 import { labourPersonFromUser, labourRosterOperative } from '@/lib/warnings/unbookedLabourWarnings'
 import { findUserByAnyId, rosterDisplayName } from '@/lib/staff/userRosterUtils'
@@ -226,6 +226,11 @@ export function buildDailyOverview(params: {
   excludedUserIdsFromUnbookedWarnings?: readonly string[] | null
   /** Organisation business zone (`organizationTimeZone`). Default Europe/London. */
   timeZone?: string
+  /**
+   * Rulebook 1.10.0 §17: the signed-in user. A manager who does not see every job sees only their jobs' people;
+   * unbooked people are listed only when they read every booking (`warningScopeFor`). Missing → everything.
+   */
+  viewer?: JobAccessViewer | null
 }): DailyOverviewModel {
   const day = params.day
   // Rulebook §1: the organisation zone (1.9.0: the open organisation's when none is passed, never always London).
@@ -455,7 +460,22 @@ export function buildDailyOverview(params: {
   const payroll = params.payrollPolicy ?? DEFAULT_PAYROLL_POLICY
   const saturdayHours = effectiveWeekendSettings('saturday', payroll).countsAsStandardHours
   const sundayHours = effectiveWeekendSettings('sunday', payroll).countsAsStandardHours
+  const scope = params.viewer
+    ? warningScopeFor({
+        viewer: params.viewer,
+        visibleJobIds: params.projects.map((project) => project.id),
+        bookings: params.bookings.map((booking) => ({ projectId: booking.projectId, operativeId: booking.operativeId })),
+        managerBookings: params.managerBookings.map((booking) => ({
+          userId: booking.userId,
+          locationType: booking.locationType,
+          locationId: booking.locationId ?? null,
+        })),
+        people: params.users.map((user) => ({ id: user.id, email: user.email, formerIds: user.formerUserIds ?? [] })),
+        operatives: params.operatives.map((operative) => ({ id: operative.id, email: operative.email })),
+      })
+    : null
   const unbookedRows = unbookedLabourRowsOnDay({
+    scope,
     timeZone: zone,
     dayKey: overviewDayKey,
     includeWeekends: Boolean(params.includeWeekendsForUnbookedLabour),

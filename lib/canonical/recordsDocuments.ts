@@ -1144,6 +1144,8 @@ export const NOTIFICATION_RELATED_ID: Readonly<Record<string, NotificationRelate
   holiday_request_submitted: 'holidayBooking',
   holiday_request_approved: 'holidayBooking',
   holiday_request_declined: 'holidayBooking',
+  holiday_cancelled_by_manager: 'holidayBooking',
+  holiday_booked_for_you: 'holidayBooking',
   timesheet_pending_manager_signoff: 'none',
   timesheet_signed_by_manager: 'none',
   line_manager_peer_update: 'holidayBookingOrNone',
@@ -1233,6 +1235,35 @@ export function notificationRelatedId(type: unknown, input?: NotificationRelated
     default:
       return null
   }
+}
+
+const RELATED_ID_INPUT_KEY: Readonly<Record<NotificationRelatedIdKind, keyof NotificationRelatedIdInput | null>> = {
+  holidayBooking: 'holidayBookingId',
+  holidayBookingOrNone: 'holidayBookingId',
+  job: 'jobId',
+  variation: 'variationId',
+  client: 'clientId',
+  user: 'userId',
+  task: 'taskId',
+  deadline: 'deadlineId',
+  healthSafetyIssue: 'issueId',
+  warningKey: 'warningKey',
+  paymentDayKey: 'paymentDayKey',
+  feedbackIdea: 'ideaId',
+  none: null,
+}
+
+/**
+ * 1.10.0: the one `relatedId` rule for a caller that holds the id the type names (`NOTIFICATION_RELATED_ID`): the
+ * id itself, trimmed, when the type carries one; null for a type that carries none or an unknown type. Every web
+ * and iOS notification write passes its `relatedId` through this (or `notificationRelatedId`).
+ */
+export function notificationRelatedIdFor(type: unknown, id: unknown): string | null {
+  const kind = NOTIFICATION_RELATED_ID[text(type)]
+  if (!kind) return null
+  const key = RELATED_ID_INPUT_KEY[kind]
+  if (!key) return null
+  return notificationRelatedId(type, { [key]: id } as NotificationRelatedIdInput)
 }
 
 /** Input for `notificationCreateFields`. Instants (`createdAt`, `deepLinkWeekStart`) pass through as given. */

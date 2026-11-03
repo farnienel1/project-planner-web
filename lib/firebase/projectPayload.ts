@@ -18,6 +18,8 @@ export type ProjectSaveInput = {
   customJobType?: string
   managerId?: string
   managerIds?: string[]
+  /** Rulebook 1.10.0: `jobManagerUserIds` — written with `managerIds` so the security rules know the managers. */
+  managerUserIds?: string[]
   managerLegacy?: string
   isLive: boolean
   description?: string
@@ -71,6 +73,7 @@ export function buildProjectFirestorePayload(input: ProjectSaveInput): Record<st
     payload.managerIds = input.managerIds
     if (!input.managerId) payload.managerId = input.managerIds[0]
   }
+  if (input.managerUserIds) payload.managerUserIds = input.managerUserIds
   if (input.latitude != null) payload.latitude = input.latitude
   if (input.longitude != null) payload.longitude = input.longitude
 

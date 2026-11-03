@@ -7,7 +7,10 @@ import { auth, db } from '@/lib/firebase/config'
 import { MissingDocumentError, savePartialDocument } from '@/lib/firebase/partialWrite'
 import { BOOKING_REPLAY_REFUSED_MESSAGE, writeMetadataFields } from '@/lib/canonical'
 import { managerSiteBookingUpdateWriteFields } from '@/lib/canonical/workDocumentReaders'
-import { forgetOrgCollectionDoc, isOrgCollectionSubscribed, subscribeOrgCollection } from '@/lib/firebase/subscribeOrgCollection'
+import { forgetOrgCollectionDoc, isOrgCollectionSubscribed, subscribeOrgCollection, unsubscribeOrgCollection, type OrgCollectionDoc } from '@/lib/firebase/subscribeOrgCollection'
+import { forgetOrgPlanDoc, subscribeOrgPlan, unsubscribeOrgPlan } from '@/lib/firebase/subscribeOrgPlan'
+import { bookingPlanInputs, bookingPlanParts, webJobAccessViewer } from '@/lib/access/readPlan'
+import { useAuthStore } from '@/lib/stores/authStore'
 import { organizationIdsMatch } from '@/lib/orgMembership/webActiveOrg'
 import { retainParsedRows } from '@/lib/staff/rosterRetain'
 import { newUppercaseUuid } from '@/lib/ios-parity/uuid'
@@ -31,6 +34,37 @@ import { useOrganizationDocumentStore } from '@/lib/stores/organizationDocumentS
 
 let managerDownloadOrgId = ''
 let managerDownload: BookingDownload = { loadedFromDayKey: null, fullHistory: false }
+
+/**
+ * Rulebook 1.10.0 §17: a viewer who may not read every booking runs `bookingQueryPlan` — one query per visible job
+ * (`locationId in` every spelling of its id) and their own manager site bookings, each with the download bound;
+ * everyone else keeps the whole-collection listener.
+ */
+function subscribeBookingsFor(
+  key: string,
+  organizationId: string,
+  collectionName: 'managerSiteBookings',
+  onDocs: (docs: OrgCollectionDoc[]) => void,
+  onError: (error: { message: string }) => void,
+  options: { queryId: string; constraints: ReturnType<typeof bookingDownloadConstraints> }
+): void {
+  const inputs = bookingPlanInputs()
+  const parts = bookingPlanParts(
+    webJobAccessViewer(useAuthStore.getState().user),
+    collectionName,
+    inputs.visibleJobIds,
+    inputs.ownBookingIds,
+    options.constraints,
+    options.queryId
+  )
+  if (parts === null) {
+    unsubscribeOrgPlan(key)
+    subscribeOrgCollection(key, organizationId, collectionName, onDocs, onError, options)
+    return
+  }
+  unsubscribeOrgCollection(key)
+  void subscribeOrgPlan(key, organizationId, collectionName, parts, onDocs, onError)
+}
 
 function organizationDataFor(organizationId: string): Record<string, unknown> | null {
   const state = useOrganizationDocumentStore.getState()
@@ -98,7 +132,7 @@ export const useManagerScheduleStore = create<ManagerScheduleState>((set, get) =
     if (foreign) set({ managerSiteBookings: [], loading: true, error: null })
     else if (already || current.length > 0) set({ loading: false })
     else set({ loading: true, error: null })
-    subscribeOrgCollection(
+    subscribeBookingsFor(
       'managerSiteBookings',
       organizationId,
       'managerSiteBookings',
@@ -190,9 +224,15 @@ export const useManagerScheduleStore = create<ManagerScheduleState>((set, get) =
   deleteManagerSiteBooking: async (organizationId: string, bookingId: string) => {
     const firestore = requireDb()
     await deleteBookingWithTombstone(firestore, { organizationId, collection: 'managerSiteBookings', bookingId })
+    forgetOrgPlanDoc('managerSiteBookings', organizationId, bookingId)
     forgetOrgCollectionDoc('managerSiteBookings', organizationId, bookingId)
     set({
       managerSiteBookings: get().managerSiteBookings.filter((booking) => booking.id !== bookingId),
     })
   },
 }))
+
+/** The organisation the manager site booking listener is open for ('' before the first load). */
+export function managerSiteBookingsOrganizationId(): string {
+  return managerDownloadOrgId
+}

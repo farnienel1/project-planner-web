@@ -1,0 +1,194 @@
+/**
+ * Deleting a person from an organisation (rulebook §11, 1.10.0).
+ *
+ * Before 1.10.0 each app decided for itself. Web removed the person's future bookings and tax ids and only then
+ * deleted `users/{uid}`, so deleting an admin (which the rules refuse) still wiped their bookings; web left the
+ * operatives/managers row and pending invitations behind, iOS left `private/taxIds` and `orgMemberships`.
+ *
+ * `canDeleteUser` is the gate both apps check before any write; `userDeleteWrites` is the one ordered plan. Its first
+ * batch deletes `users/{uid}` together with the documents only it guards (tax ids, the email claim, the membership
+ * and the members-map entry), so a refusal by the security rules leaves everything as it was. Pure.
+ */
+
+import { bookingsToRemoveOnOperativeDelete } from './bookings'
+import { BOOKING_TOMBSTONE_BATCH_DELETE_LIMIT, bookingTombstonePath, bookingTombstoneWriteFields } from './bookingTombstones'
+import { personIdSet, type PersonRosterRow } from './personIds'
+import type { StaffAccountRole } from './staffAccess'
+import type { WritePlatform } from './writeMetadata'
+
+export type UserDeletePerson = {
+  id: string
+  email?: string | null
+  role: StaffAccountRole
+  formerUserIds?: ReadonlyArray<string> | null
+  sameEmailUserIds?: ReadonlyArray<string> | null
+}
+
+export type UserDeleteRefusal = 'not_admin' | 'self' | 'super_admin' | 'creator' | 'admin_needs_super_admin'
+
+export const USER_DELETE_REFUSAL_MESSAGES: Readonly<Record<UserDeleteRefusal, string>> = {
+  not_admin: 'Only an admin can delete people.',
+  self: 'You cannot delete your own account here.',
+  super_admin: 'The super admin cannot be deleted.',
+  creator: 'The company owner cannot be deleted.',
+  admin_needs_super_admin: 'Only the super admin can delete an admin.',
+}
+
+function key(value: unknown): string {
+  return typeof value === 'string' ? value.trim().toLowerCase() : ''
+}
+
+function text(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+/**
+ * Why `actor` may not delete `target`, or null when they may (the same test as the `users/{uid}` delete rule):
+ * only an admin or super admin outside operative mode deletes; never themselves (any of their ids); never the
+ * super admin or the organisation creator (`creatorUserId`); an admin who is not super admin deletes only people who
+ * are not admins.
+ */
+export function userDeleteRefusal(
+  actor: UserDeletePerson | null | undefined,
+  target: UserDeletePerson | null | undefined,
+  options?: { roster?: ReadonlyArray<PersonRosterRow> | null; creatorUserId?: string | null } | null
+): UserDeleteRefusal | null {
+  if (!actor || !target || !text(target.id)) return 'not_admin'
+  const actorRole = actor.role
+  if (!actorRole || actorRole.isOperativeMode || !(actorRole.isAdmin || actorRole.isSuperAdmin)) return 'not_admin'
+  const roster = options?.roster ?? null
+  const actorIds = new Set(personIdSet(actor, roster).map(key))
+  const targetIds = personIdSet(target, roster).map(key)
+  if (targetIds.some((id) => actorIds.has(id))) return 'self'
+  if (target.role?.isSuperAdmin) return 'super_admin'
+  const creator = key(options?.creatorUserId)
+  if (creator && targetIds.includes(creator)) return 'creator'
+  if (actorRole.isSuperAdmin) return null
+  if (target.role?.isAdmin || target.role?.isSuperAdmin) return 'admin_needs_super_admin'
+  return null
+}
+
+/** True when `userDeleteRefusal` is null. Both apps check it before any write and hide Delete otherwise. */
+export function canDeleteUser(
+  actor: UserDeletePerson | null | undefined,
+  target: UserDeletePerson | null | undefined,
+  options?: { roster?: ReadonlyArray<PersonRosterRow> | null; creatorUserId?: string | null } | null
+): boolean {
+  return userDeleteRefusal(actor, target, options) === null
+}
+
+/** One write in the plan. `update` is a partial update; `deleteFields` are removed (dotted keys). */
+export type UserDeleteWrite =
+  | { op: 'delete'; path: string }
+  | { op: 'update'; path: string; deleteFields: string[] }
+  | { op: 'set'; path: string; fields: Record<string, unknown>; serverTimestampFields: string[] }
+
+/** One Firestore batch. Run the steps in order; stop at the first refused step. */
+export type UserDeleteStep = {
+  step: 'account' | 'bookings' | 'rosterRows' | 'invitations'
+  writes: UserDeleteWrite[]
+}
+
+export type UserDeleteRow = { id: string; email?: string | null; userId?: string | null }
+
+export type UserDeleteInput = {
+  orgId: string
+  user: UserDeletePerson
+  /** The signed-in admin (deletedBy on tombstones). */
+  actorUserId: string
+  platform: WritePlatform
+  roster?: ReadonlyArray<PersonRosterRow> | null
+  /** `organizations/{orgId}/bookings` rows (id, operativeId, dateMs). */
+  bookings?: ReadonlyArray<{ id: string; operativeId: string; dateMs: number }> | null
+  /** `organizations/{orgId}/managerSiteBookings` rows (id, userId, dateMs). */
+  managerSiteBookings?: ReadonlyArray<{ id: string; userId: string; dateMs: number }> | null
+  operativeRows?: ReadonlyArray<UserDeleteRow> | null
+  managerRows?: ReadonlyArray<UserDeleteRow> | null
+  /** `invitations` in this organisation (id, email). */
+  invitations?: ReadonlyArray<UserDeleteRow> | null
+  /** True when the person's `organizations/{orgId}.members` map has an entry for them. Default true. */
+  listedInMembers?: boolean | null
+  nowIso: string
+  tz?: string | null
+}
+
+/**
+ * The ordered plan for deleting `user` from `orgId` (1.10.0). Nothing is written unless `canDeleteUser` passed.
+ *  1. `account` (one batch, first): delete `users/{uid}`, `users/{uid}/private/taxIds`,
+ *     `users/{uid}/orgMemberships/{orgId}`, `organizations/{orgId}/userEmails/{email}`, and remove
+ *     `members.{uid}` from the organisation. A refusal here stops the delete with nothing changed.
+ *  2. `bookings` (batches of `BOOKING_TOMBSTONE_BATCH_DELETE_LIMIT`): their labour bookings (every id,
+ *     `bookingsToRemoveOnOperativeDelete`) and manager site bookings from today on, each with its tombstone
+ *     (`bookingTombstoneWriteFields`; the app adds `deletedAt` as the server time). Past bookings stay.
+ *  3. `rosterRows`: their `operatives` and `managers` rows (by id or email, without case).
+ *  4. `invitations`: their pending invitations in this organisation (by email, without case).
+ */
+export function userDeleteWrites(input: UserDeleteInput): UserDeleteStep[] {
+  const org = text(input?.orgId)
+  const uid = text(input?.user?.id)
+  if (!org || !uid || org.includes('/') || uid.includes('/')) return []
+  const ids = personIdSet(input.user, input.roster ?? null)
+  const idKeys = new Set(ids.map(key))
+  const email = key(input.user.email)
+
+  const account: UserDeleteWrite[] = [
+    { op: 'delete', path: `users/${uid}` },
+    { op: 'delete', path: `users/${uid}/private/taxIds` },
+    { op: 'delete', path: `users/${uid}/orgMemberships/${org}` },
+  ]
+  if (email && !email.includes('/')) account.push({ op: 'delete', path: `organizations/${org}/userEmails/${email}` })
+  if (input.listedInMembers !== false) account.push({ op: 'update', path: `organizations/${org}`, deleteFields: [`members.${uid}`] })
+  const steps: UserDeleteStep[] = [{ step: 'account', writes: account }]
+
+  const rowMatches = (row: UserDeleteRow) =>
+    idKeys.has(key(row?.id)) || idKeys.has(key(row?.userId)) || (email !== '' && key(row?.email) === email)
+  const rosterRows = [
+    ...(input.operativeRows || []).filter(rowMatches).map((row) => ({ collection: 'operatives', id: text(row.id) })),
+    ...(input.managerRows || []).filter(rowMatches).map((row) => ({ collection: 'managers', id: text(row.id) })),
+  ].filter((row) => row.id && !row.id.includes('/'))
+
+  const labour = bookingsToRemoveOnOperativeDelete({
+    bookings: input.bookings || [],
+    operativeIds: [...ids, ...rosterRows.filter((row) => row.collection === 'operatives').map((row) => row.id)],
+    nowIso: input.nowIso,
+    timeZone: input.tz,
+  }).map((id) => ({ collection: 'bookings' as const, id }))
+  const today = bookingsToRemoveOnOperativeDelete({
+    bookings: (input.managerSiteBookings || []).map((row) => ({ id: row.id, operativeId: row.userId, dateMs: row.dateMs })),
+    operativeIds: ids,
+    nowIso: input.nowIso,
+    timeZone: input.tz,
+  }).map((id) => ({ collection: 'managerSiteBookings' as const, id }))
+  const bookingWrites: UserDeleteWrite[][] = []
+  let current: UserDeleteWrite[] = []
+  for (const row of [...labour, ...today]) {
+    const tombstone = bookingTombstoneWriteFields({
+      bookingId: row.id,
+      collection: row.collection,
+      deletedBy: input.actorUserId,
+      deletedFrom: input.platform,
+    })
+    const path = bookingTombstonePath(org, row.id)
+    if (!tombstone || !path) continue
+    current.push({ op: 'delete', path: `organizations/${org}/${row.collection}/${row.id}` })
+    current.push({ op: 'set', path, fields: { ...tombstone }, serverTimestampFields: ['deletedAt'] })
+    if (current.length >= BOOKING_TOMBSTONE_BATCH_DELETE_LIMIT * 2) {
+      bookingWrites.push(current)
+      current = []
+    }
+  }
+  if (current.length > 0) bookingWrites.push(current)
+  for (const writes of bookingWrites) steps.push({ step: 'bookings', writes })
+
+  if (rosterRows.length > 0) {
+    steps.push({
+      step: 'rosterRows',
+      writes: rosterRows.map((row) => ({ op: 'delete' as const, path: `organizations/${org}/${row.collection}/${row.id}` })),
+    })
+  }
+  const invitations = (input.invitations || [])
+    .filter((row) => email !== '' && key(row?.email) === email && text(row.id) && !text(row.id).includes('/'))
+    .map((row) => ({ op: 'delete' as const, path: `invitations/${text(row.id)}` }))
+  if (invitations.length > 0) steps.push({ step: 'invitations', writes: invitations })
+  return steps
+}

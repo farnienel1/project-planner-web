@@ -7,7 +7,10 @@ import { auth, db } from '@/lib/firebase/config'
 import { MissingDocumentError, savePartialDocument } from '@/lib/firebase/partialWrite'
 import { bookingUpdateWriteFields } from '@/lib/canonical/workDocumentReaders'
 import { BOOKING_REPLAY_REFUSED_MESSAGE } from '@/lib/canonical/bookingTombstones'
-import { forgetOrgCollectionDoc, isOrgCollectionSubscribed, subscribeOrgCollection } from '@/lib/firebase/subscribeOrgCollection'
+import { forgetOrgCollectionDoc, isOrgCollectionSubscribed, subscribeOrgCollection, unsubscribeOrgCollection, type OrgCollectionDoc } from '@/lib/firebase/subscribeOrgCollection'
+import { forgetOrgPlanDoc, subscribeOrgPlan, unsubscribeOrgPlan } from '@/lib/firebase/subscribeOrgPlan'
+import { bookingPlanInputs, bookingPlanParts, webJobAccessViewer } from '@/lib/access/readPlan'
+import { useAuthStore } from '@/lib/stores/authStore'
 import { captureOrganizationContext, organizationContextStillCurrent, writeMetadataFields } from '@/lib/canonical'
 import { organizationIdsMatch } from '@/lib/orgMembership/webActiveOrg'
 import { retainParsedRows } from '@/lib/staff/rosterRetain'
@@ -29,6 +32,37 @@ import { useOrganizationDocumentStore } from '@/lib/stores/organizationDocumentS
 /** Current listener bound per organisation. A new organisation starts again from the launch bound. */
 let bookingDownloadOrgId = ''
 let bookingDownload: BookingDownload = { loadedFromDayKey: null, fullHistory: false }
+
+/**
+ * Rulebook 1.10.0 §17: a viewer who may not read every booking runs `bookingQueryPlan` — one query per visible job
+ * (every spelling of its id) and their own bookings, each with the download bound; everyone else keeps the
+ * whole-collection listener.
+ */
+function subscribeBookingsFor(
+  key: string,
+  organizationId: string,
+  collectionName: 'bookings',
+  onDocs: (docs: OrgCollectionDoc[]) => void,
+  onError: (error: { message: string }) => void,
+  options: { queryId: string; constraints: ReturnType<typeof bookingDownloadConstraints> }
+): void {
+  const inputs = bookingPlanInputs()
+  const parts = bookingPlanParts(
+    webJobAccessViewer(useAuthStore.getState().user),
+    collectionName,
+    inputs.visibleJobIds,
+    inputs.ownBookingIds,
+    options.constraints,
+    options.queryId
+  )
+  if (parts === null) {
+    unsubscribeOrgPlan(key)
+    subscribeOrgCollection(key, organizationId, collectionName, onDocs, onError, options)
+    return
+  }
+  unsubscribeOrgCollection(key)
+  void subscribeOrgPlan(key, organizationId, collectionName, parts, onDocs, onError)
+}
 
 function organizationDataFor(organizationId: string): Record<string, unknown> | null {
   const state = useOrganizationDocumentStore.getState()
@@ -89,7 +123,7 @@ export const useBookingStore = create<BookingState>((set, get) => ({
     if (foreign) set({ bookings: [], loading: true, ready: false, error: null })
     else if (already || current.length > 0) set({ loading: false })
     else set({ loading: true, error: null })
-    subscribeOrgCollection('bookings', organizationId, 'bookings', (docs) => {
+    subscribeBookingsFor('bookings', organizationId, 'bookings', (docs) => {
       const bookings: Booking[] = []
       for (const entry of docs) {
         const parsed = parseBooking(entry.id, entry.data, organizationId)
@@ -132,6 +166,27 @@ export const useBookingStore = create<BookingState>((set, get) => ({
     if (!bookings.some((row) => row.id === id)) {
       set({ bookings: [...bookings, booking] })
     }
+    // Rulebook 1.10.0 §13: the booked person gets `booking_created` (never the booker).
+    void (async () => {
+      const [{ notifyBookingCreated }, { useOrgUserStore }, { useOperativeStore }, { useProjectStore }, { useAuthStore }] =
+        await Promise.all([
+          import('@/lib/notifications/bookingNotices'),
+          import('@/lib/stores/siteAuditStore'),
+          import('@/lib/stores/operativeStore'),
+          import('@/lib/stores/projectStore'),
+          import('@/lib/stores/authStore'),
+        ])
+      const { projects, smallWorks } = useProjectStore.getState()
+      const job = [...projects, ...smallWorks].find((row) => row.id.toLowerCase() === String(booking.projectId || '').toLowerCase())
+      await notifyBookingCreated({
+        booking,
+        job,
+        actor: useAuthStore.getState().user,
+        users: useOrgUserStore.getState().users,
+        operatives: useOperativeStore.getState().operatives,
+        timeZone: organizationZoneOr(),
+      })
+    })().catch(() => undefined)
   },
 
   updateBooking: async (id, updates) => {
@@ -175,6 +230,7 @@ export const useBookingStore = create<BookingState>((set, get) => ({
     const { bookings } = get()
     try {
       await deleteBookingWithTombstone(firestore, { organizationId, collection: 'bookings', bookingId: id })
+      forgetOrgPlanDoc('bookings', organizationId, id)
       forgetOrgCollectionDoc('bookings', organizationId, id)
       set({ bookings: bookings.filter((row) => row.id !== id) })
     } catch (error: unknown) {
@@ -203,3 +259,8 @@ export const useBookingStore = create<BookingState>((set, get) => ({
     )
   },
 }))
+
+/** The organisation the booking listener is open for ('' before the first load). */
+export function bookingsOrganizationId(): string {
+  return bookingDownloadOrgId
+}

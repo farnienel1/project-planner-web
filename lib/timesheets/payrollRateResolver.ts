@@ -110,7 +110,11 @@ function rateInput({
   return {
     user: user ?? null,
     operative: operative ?? null,
-    history: mergedDayRateEntries(history, userIds, operativeIds),
+    // Rulebook 1.10.0 (H4): the whole history; `payRateOnDay` matches every id of the person (`personIdSet`).
+    history: [...Object.values(history.byUserId).flat(), ...Object.values(history.byOperativeId).flat()],
+    person: user
+      ? { id: user.id, email: user.email ?? null, formerUserIds: user.formerUserIds ?? [], sameEmailUserIds: aliasUserIds }
+      : null,
     userIds,
     operativeIds,
     dayKey: dayKey(day, timeZone),

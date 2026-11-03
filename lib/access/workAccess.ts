@@ -7,6 +7,7 @@ import type { Booking, Manager, Operative, Project, ProjectTask, User } from '@/
 import { bookingIdsForAccount, bookingOccupiesDay } from '@/lib/canonical'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import { seesEveryJob } from '@/lib/canonical'
+import { userCanSeeJob } from '@/lib/access/bookingAccess'
 import { isOperativeMode, staffAccountRole, type WorkCatalogueKind } from '@/lib/permissions'
 import { isSmallWorksJobType, normalizeBookingStatus } from '@/lib/ios-parity/enums'
 
@@ -242,13 +243,21 @@ export function visibleWorks(params: {
     })
   }
 
-  // Canonical rule: admins and managers see every job, including jobs they are
-  // not assigned to, whether or not the Projects / Small works toggle is on.
-  // The toggles only gate add and edit (canManageWorkCatalogue).
+  // Rulebook 1.10.0 (§16, `seesEveryJob` / `canSeeJob`): admins and super admins see every job, whether or not the
+  // Projects / Small works toggle is on (the toggles only gate add and edit). Managers see only the jobs they manage:
+  // removed as manager, the job leaves their lists on the next snapshot; re-added, it comes back. This runs on every
+  // render from the live job listener, so no list keeps a stale copy.
   if (seesEveryJob(staffAccountRole(user))) {
     if (isExcludedFromManagerVisibilityHiding(user)) return scoped
-    // A manager still does not see a job an admin hid from them on the View tab.
     return scoped.filter((project) => !(project.hiddenManagerUserIds ?? []).includes(user.id))
+  }
+  if (staffAccountRole(user).isManager) {
+    return scoped.filter(
+      (project) =>
+        !(project.hiddenManagerUserIds ?? []).includes(user.id) &&
+        // 1.10.0 round 2: a manager with the toggle for the job's kind sees every job of that kind.
+        userCanSeeJob(user, project, managers, isSmallWorksJobType(project.jobType) ? 'smallWorks' : 'projects')
+    )
   }
 
   // An account with no staff role sees only the jobs it is assigned to or booked onto.

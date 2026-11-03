@@ -5,6 +5,7 @@ import {
   dayKeyInOrganizationZone,
   isClashApproved,
   isClashGroupApproved,
+  isWarningActive,
   resolveOrganizationCurrency,
   rosterAliasIdsFor,
   type AcceptedClashRecord,
@@ -661,6 +662,24 @@ export function buildWeeklyReportData({
     }
   }
 
+  // §5: a dismissed clash (`resolvedWarningKeys`) is no longer open (`isWarningActive`), and it is not approved
+  // either, so it is in neither list. A cluster stays open while any of its pairs is still active.
+  const clashStillOpen = (clash: {
+    bookingAId: string
+    bookingBId: string
+    resolutionKey?: string
+    pairs?: Array<{ bookingAId: string; bookingBId: string }>
+  }): boolean => {
+    if (!decisions) return true
+    const rows = clash.pairs && clash.pairs.length > 0 ? clash.pairs : [clash]
+    return rows.some((row) =>
+      isWarningActive(
+        { resolutionKey: clashResolutionKey(row), bookingAId: row.bookingAId, bookingBId: row.bookingBId },
+        decisions
+      )
+    )
+  }
+
   if (warningDetection?.detectClashes) {
     for (const clash of filterWarningsToPeriod(
       computeOperativeBookingClashWarnings(bookings, rosterOperatives, mergedWorks, {
@@ -676,6 +695,7 @@ export function buildWeeklyReportData({
         approvedClashes.push(approvedRow(clash, clash.operativeName, 'operative'))
         continue
       }
+      if (!clashStillOpen(clash)) continue
       warnings.push({
         status: 'Open',
         priority: 'High',
@@ -700,6 +720,7 @@ export function buildWeeklyReportData({
         approvedClashes.push(approvedRow(clash, clash.personName, 'manager'))
         continue
       }
+      if (!clashStillOpen(clash)) continue
       warnings.push({
         status: 'Open',
         priority: 'Medium',

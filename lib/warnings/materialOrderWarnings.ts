@@ -2,7 +2,7 @@ import {
   LONDON_TIME_ZONE,
   dateFromDayKeyInZone,
 } from '@/lib/orgTime/zoneTime'
-import { materialCutOffWarningRows, materialLineCountsAsOrdered } from '@/lib/canonical'
+import { materialCutOffWarningRows, materialLineCountsAsOrdered, type WarningScope } from '@/lib/canonical'
 import type { Booking, MaterialSendRecord, Project, ProjectMaterialLine } from '@/types'
 
 export type MissedMaterialOrderWarning = {
@@ -37,6 +37,8 @@ export type MaterialCutoffOptions = {
   referenceDate?: Date
   /** Organisation business zone (`organizationTimeZone(countryCode)`). */
   timeZone?: string
+  /** Rulebook §17: the viewer's `warningScopeFor` (rows only for jobs in it). Missing → everything. */
+  scope?: WarningScope | null
 }
 
 function isoOf(value: unknown): string | null {
@@ -57,6 +59,7 @@ export function computeMissedMaterialOrderWarnings(
 ): MissedMaterialOrderWarning[] {
   const timeZone = options.timeZone || LONDON_TIME_ZONE
   const rows = materialCutOffWarningRows({
+    scope: options.scope ?? null,
     now: (options.referenceDate ?? new Date()).toISOString(),
     timeZone,
     cutOff: {

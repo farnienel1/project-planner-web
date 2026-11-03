@@ -1,4 +1,5 @@
 import { permissionsToFirestoreMap } from '@/lib/firebase/userPayload'
+import { parseOrgMembershipDocument } from '@/lib/canonical/orgMembership'
 import type { UserPermissions } from '@/types'
 
 export const FOUNDER_PERMISSIONS: UserPermissions = {
@@ -18,33 +19,30 @@ export const FOUNDER_PERMISSIONS: UserPermissions = {
   dailyOverview: true,
 }
 
-export function permissionsFromRecord(raw?: Record<string, unknown> | null): UserPermissions {
-  const source = raw && typeof raw === 'object' ? raw : {}
-  const nested =
-    source.permissions && typeof source.permissions === 'object'
-      ? (source.permissions as Record<string, unknown>)
-      : {}
-  const read = (key: keyof UserPermissions, fallback = false): boolean => {
-    if (source[key] === true || nested[key] === true) return true
-    if (source[key] === false || nested[key] === false) return false
-    return fallback
-  }
+/**
+ * A membership's (or users document's) role flags, read by the rulebook (1.10.0 `parseOrgMembershipDocument`: nested
+ * `permissions.{key}` first, else the legacy flat key, else its default). `skills` stays off on web (no Skills
+ * screen yet), as before.
+ */
+export function membershipPermissions(raw?: Record<string, unknown> | null): UserPermissions {
+  const parsed = parseOrgMembershipDocument('membership', raw && typeof raw === 'object' ? raw : {})!
+  const flags = parsed.permissions
   return {
-    adminAccess: read('adminAccess'),
-    manager: read('manager'),
-    operatives: read('operatives'),
+    adminAccess: flags.adminAccess,
+    manager: flags.manager,
+    operatives: flags.operatives,
     skills: false,
-    qualifications: read('qualifications'),
-    materials: read('materials', true),
-    projects: read('projects'),
-    smallWorks: read('smallWorks'),
-    operativeMode: read('operativeMode'),
-    siteAudit: read('siteAudit', true),
-    subContractors: read('subContractors'),
-    wholesalersOrderHistory: read('wholesalersOrderHistory', true),
-    annualLeaveSelfBook: read('annualLeaveSelfBook'),
-    weeklyReports: read('weeklyReports'),
-    dailyOverview: read('dailyOverview', true),
+    qualifications: flags.qualifications,
+    materials: flags.materials,
+    projects: flags.projects,
+    smallWorks: flags.smallWorks,
+    operativeMode: flags.operativeMode,
+    siteAudit: flags.siteAudit,
+    subContractors: flags.subContractors,
+    wholesalersOrderHistory: flags.wholesalersOrderHistory,
+    annualLeaveSelfBook: flags.annualLeaveSelfBook,
+    weeklyReports: flags.weeklyReports,
+    dailyOverview: flags.dailyOverview,
   }
 }
 
@@ -59,7 +57,7 @@ export function userPatchForActiveOrg(input: {
   const isSuperAdmin = input.membershipIsSuperAdmin === true
   const permissions = isSuperAdmin
     ? FOUNDER_PERMISSIONS
-    : permissionsFromRecord(input.permissions || undefined)
+    : membershipPermissions(input.permissions || undefined)
   const flags = permissionsToFirestoreMap(permissions)
   const role = isSuperAdmin
     ? 'admin'
@@ -92,7 +90,7 @@ export function membershipSnapshotFromUserDoc(data: Record<string, unknown>): {
   accountActive: boolean
   permissions: Record<string, boolean>
 } {
-  const permissions = permissionsFromRecord(data)
+  const permissions = membershipPermissions(data)
   return {
     role: String(data.role || 'member'),
     status: 'active',

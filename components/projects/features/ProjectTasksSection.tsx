@@ -150,6 +150,8 @@ function ProjectTasksSectionInner({ project }: { project: Project }) {
       title: input.title,
       details: input.details,
       createdBy: existing?.createdBy || `${user.firstName} ${user.surname}`.trim() || user.email,
+      // Rulebook 1.10.0: the creator's account id, so `task_completed` reaches them (`taskCompletedRecipients`).
+      createdByUserId: existing ? existing.createdByUserId : user.id,
       status: existing?.status || 'To Do',
       priority: input.priority,
       dueDate: input.dueDate,

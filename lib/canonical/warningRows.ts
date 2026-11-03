@@ -11,6 +11,7 @@
  * warning or Daily Overview unbooked rows. Historic bookings keep the stored name.
  */
 
+import { isPersonInWarningScope, type WarningScope } from './staffAccess'
 import { isAnonymisedDeletedProfile, listedCurrentLabourPeople } from './userRosterSegment'
 import { standardDayCoverage, type StandardDayBooking } from './engine'
 import {
@@ -24,6 +25,8 @@ import { idKey } from './personIds'
 
 export type QualificationExpiryInput = {
   referenceIso: string
+  /** Rulebook §17: a restricted viewer's scope (`warningScopeFor`); rows only for people in it. Missing → all. */
+  scope?: WarningScope | null
   timeZone?: string | null
   operatives: ReadonlyArray<{
     id: string
@@ -73,6 +76,8 @@ export function withoutDismissedQualificationRows<T extends Pick<QualificationEx
 
 export type UnverifiedOperativeInput = {
   referenceIso: string
+  /** Rulebook §17: a restricted viewer's scope (`warningScopeFor`); rows only for people in it. Missing → all. */
+  scope?: WarningScope | null
   timeZone?: string | null
   operatives: ReadonlyArray<{
     id: string
@@ -146,6 +151,11 @@ export type LabourHoliday = {
 
 export type UnbookedLabourInput = {
   timeZone?: string | null
+  /**
+   * Rulebook §17: a restricted viewer's scope (`warningScopeFor`). Rows only for people in it, and none at all when
+   * the viewer cannot read every booking (`unbookedLabour` false). Missing → all.
+   */
+  scope?: WarningScope | null
   startDayKey: string
   endDayKey: string
   /**
@@ -248,7 +258,7 @@ function hoursForIsoWeekday(iso: number, input: Pick<UnbookedLabourInput, 'stand
 }
 
 /** Active operatives whose named qualification expires on or before today plus one calendar month. */
-export function qualificationExpiryRows(input: QualificationExpiryInput): QualificationExpiryRow[] {
+function qualificationExpiryRowsUnscoped(input: QualificationExpiryInput): QualificationExpiryRow[] {
   const timeZone = zoneOf(input.timeZone)
   const todayKey = dayKeyFromIso(input.referenceIso, timeZone)
   if (!todayKey) return []
@@ -290,7 +300,7 @@ export function qualificationExpiryRows(input: QualificationExpiryInput): Qualif
 }
 
 /** Operative-mode accounts that still have no password after three working days. */
-export function unverifiedOperativeRows(input: UnverifiedOperativeInput): UnverifiedOperativeRow[] {
+function unverifiedOperativeRowsUnscoped(input: UnverifiedOperativeInput): UnverifiedOperativeRow[] {
   const timeZone = zoneOf(input.timeZone)
   const todayKey = dayKeyFromIso(input.referenceIso, timeZone)
   if (!todayKey) return []
@@ -428,7 +438,7 @@ function asCoverageBooking(booking: LabourBooking): StandardDayBooking {
  * weekday-only loop on either screen. Anonymised deleted profiles are removed
  * by `listedCurrentLabourPeople` before the person-day loop.
  */
-export function unbookedLabourRows(input: UnbookedLabourInput): UnbookedLabourRow[] {
+function unbookedLabourRowsUnscoped(input: UnbookedLabourInput): UnbookedLabourRow[] {
   const timeZone = zoneOf(input.timeZone)
   const people = listedCurrentLabourPeople(input.people)
   const operatives = listedCurrentLabourPeople(input.operatives)
@@ -625,6 +635,37 @@ export function unbookedLabourRows(input: UnbookedLabourInput): UnbookedLabourRo
     if (a.dayKey !== b.dayKey) return a.dayKey < b.dayKey ? -1 : 1
     return a.operativeName.localeCompare(b.operativeName, undefined, { sensitivity: 'base' })
   })
+}
+
+/**
+ * Qualification expiry rows (§5). With `scope` (§17) only people in the viewer's scope (`isPersonInWarningScope`).
+ */
+export function qualificationExpiryRows(input: QualificationExpiryInput): QualificationExpiryRow[] {
+  const rows = qualificationExpiryRowsUnscoped(input)
+  const scope = input.scope
+  if (!scope || scope.kind === 'all') return rows
+  const emails = new Map(input.operatives.map((operative) => [operative.id, operative.email ?? null]))
+  return rows.filter((row) => isPersonInWarningScope(scope, [row.operativeId], emails.get(row.operativeId) ?? null))
+}
+
+/** Unverified operative rows (§5). With `scope` (§17) only people in the viewer's scope. */
+export function unverifiedOperativeRows(input: UnverifiedOperativeInput): UnverifiedOperativeRow[] {
+  const rows = unverifiedOperativeRowsUnscoped(input)
+  const scope = input.scope
+  if (!scope || scope.kind === 'all') return rows
+  return rows.filter((row) => isPersonInWarningScope(scope, [row.operativeId], row.email))
+}
+
+/**
+ * Unbooked labour rows (§5). With `scope` (§17): none when the viewer cannot read every booking
+ * (`scope.unbookedLabour` false), else only people in the viewer's scope.
+ */
+export function unbookedLabourRows(input: UnbookedLabourInput): UnbookedLabourRow[] {
+  const scope = input.scope
+  if (scope && scope.kind === 'jobs' && !scope.unbookedLabour) return []
+  const rows = unbookedLabourRowsUnscoped(input)
+  if (!scope || scope.kind === 'all') return rows
+  return rows.filter((row) => isPersonInWarningScope(scope, [row.operativeId, row.userId, row.personKey], row.personKey))
 }
 
 /**

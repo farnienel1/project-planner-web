@@ -10325,7 +10325,7 @@
           "web",
           "ios"
         ],
-        "status": "both: recipients included the submitter and inactive managers; iOS remapped stale ids to same-email accounts. Use timesheetSubmittedRecipients and timesheetNotificationDedupeKey."
+        "status": "both: use timesheetSubmittedRecipients and timesheetNotificationDedupeKey."
       }
     },
     {

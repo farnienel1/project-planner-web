@@ -4,7 +4,7 @@
  */
 
 import { doc, getDoc, setDoc } from 'firebase/firestore'
-import { notificationCreateFields, type NotificationCreateInput } from '@/lib/canonical'
+import { notificationCreateFields, notificationRelatedIdFor, type NotificationCreateInput } from '@/lib/canonical'
 import { auth, db } from '@/lib/firebase/config'
 import { serializeNotification } from '@/lib/ios-parity/converters'
 import { newUppercaseUuid } from '@/lib/ios-parity/uuid'
@@ -38,7 +38,8 @@ export async function saveInboxNotification(input: {
     title: input.title,
     message: input.message,
     userId: input.userId ?? null,
-    relatedId: input.relatedId ?? null,
+    // Rulebook 1.10.0: the relatedId kind per type is `notificationRelatedIdFor` (one source for both apps).
+    relatedId: notificationRelatedIdFor(input.type, input.relatedId ?? null),
     requiresPermission: input.requiresPermission ?? null,
     deepLinkUserId: input.deepLinkUserId ?? null,
     deepLinkWeekStart: input.deepLinkWeekStart ?? null,

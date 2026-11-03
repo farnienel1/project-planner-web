@@ -40,6 +40,7 @@ import { readStoredRates, type PayBasis } from './payRate'
 import { isAnonymisedDeletedProfile } from './userRosterSegment'
 import {
   accountKindFromFlags,
+  employmentTypeOnDay,
   normalizeEmploymentType,
   parseFormerUserIds,
   USER_PERMISSION_FIELDS,
@@ -1146,4 +1147,37 @@ export function subcontractorWriteFields(
   next: Record<string, unknown>
 ): DocumentWriteFields {
   return documentWriteFields(before, next, { createOnly: CREATE_ONLY_FIELDS })
+}
+
+// MARK: - Who takes part in timesheets (1.10.0, M6 / M12)
+
+/**
+ * Whether a person takes part in timesheets on `day` (organisation zone): the Weekly Report timesheet feed and the
+ * timesheet submission reminder recipients on every platform. Inactive people and anonymised deleted profiles never
+ * do. Otherwise: `timesheetsEnabled` true; or self-employed on that day (`employmentTypeOnDay`) — a self-employed
+ * person is paid through their timesheet whatever the toggle; or `timesheetsEnabled` not stored and the account is in
+ * operative mode (`defaultTimesheetsEnabled`).
+ */
+export function timesheetParticipant(
+  user: {
+    isActive?: boolean | null
+    email?: string | null
+    name?: string | null
+    timesheetsEnabled?: boolean | null
+    operativeMode?: boolean | null
+    permissions?: { operativeMode?: boolean | null } | null
+    employmentType?: string | null
+    employmentTypeTransitionFrom?: string | null
+    employmentTypeEffectiveAt?: Date | string | number | null
+  } | null | undefined,
+  day: Date | string | number,
+  timeZone?: string | null
+): boolean {
+  if (!user || user.isActive === false) return false
+  if (isAnonymisedDeletedProfile({ email: user.email ?? '', name: user.name ?? '' })) return false
+  if (user.timesheetsEnabled === true) return true
+  const when = day instanceof Date ? day : new Date(day)
+  if (employmentTypeOnDay(user, when, zoneOrLondon(timeZone)) === 'self_employed') return true
+  const operativeMode = user.operativeMode === true || user.permissions?.operativeMode === true
+  return user.timesheetsEnabled == null && operativeMode
 }

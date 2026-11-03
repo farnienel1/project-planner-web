@@ -14,14 +14,15 @@
  *
  * A tombstone carries only `BOOKING_TOMBSTONE_FIELDS`. It is the one exception to "writes carry metadata"
  * (`writeMetadataFields`): no `updatedAt` / `updatedBy` / `updatedFrom`, because the rules accept no other keys.
- * Deleting a labour booking (`bookings`) and its tombstone is admin-only; managers cancel instead. Deleting is
- * online-only (`offlineAvailability('booking.delete')`).
+ * Who may delete a booking (and write its tombstone) is `canDeleteBooking` (1.10.0): admins any booking, managers
+ * bookings on the jobs they manage, operatives never. Deleting is online-only (`offlineAvailability('booking.delete')`).
+ * Subcontractor bookings (`subcontractorBookings`) are tombstoned too from 1.10.0.
  */
 
 import { WRITE_PLATFORMS, type WritePlatform } from './writeMetadata'
 
 export const BOOKING_TOMBSTONE_COLLECTION = 'deletedBookings'
-export const TOMBSTONED_BOOKING_COLLECTIONS = ['bookings', 'managerSiteBookings'] as const
+export const TOMBSTONED_BOOKING_COLLECTIONS = ['bookings', 'managerSiteBookings', 'subcontractorBookings'] as const
 export type TombstonedBookingCollection = (typeof TOMBSTONED_BOOKING_COLLECTIONS)[number]
 
 /** Each delete writes two documents, and a Firestore batch holds at most 500 writes. */

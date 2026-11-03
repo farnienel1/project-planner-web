@@ -6,6 +6,7 @@ import { useAuthStore } from '@/lib/stores/authStore'
 import { useBookingStore } from '@/lib/stores/bookingStore'
 import { useManagerScheduleStore } from '@/lib/stores/managerScheduleStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
+import { userCanDeleteBooking, userCanWriteBooking } from '@/lib/access/bookingAccess'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { rosterDisplayName, samePersonIds } from '@/lib/staff/userRosterUtils'
 import { useProjectStore } from '@/lib/stores/projectStore'
@@ -36,7 +37,7 @@ function MySchedulePageContent() {
     loadManagerSiteBookings,
     loading: managerBookingsLoading,
   } = useManagerScheduleStore()
-  const { operatives, loadOperatives } = useOperativeStore()
+  const { operatives, loadOperatives, managers } = useOperativeStore()
   const { users, userIdAliases, loadUsers } = useOrgUserStore()
   const { projects, smallWorks, loadProjects, loadSmallWorks } = useProjectStore()
   const [payrollPolicy, setPayrollPolicy] = useState<OrgPayrollTimePolicy>(DEFAULT_PAYROLL_POLICY)
@@ -173,8 +174,15 @@ function MySchedulePageContent() {
 
   if (loading || !user || !organization?.id) return null
 
-  // Labour booking delete is admin only; managers get Cancel in the edit sheet (rulebook §2, §16).
-  const canDeleteLabourBooking = hasAdminAccess(user)
+  // Rulebook 1.10.0 (§2, §16): edit and delete per booking — admins any, managers on jobs they manage, operatives
+  // never (`canWriteBooking` / `canDeleteBooking`).
+  const jobsById = new Map([...projects, ...smallWorks].map((job) => [job.id.toLowerCase(), job]))
+  const bookingRef = (booking: Booking) => ({ collection: 'bookings' as const, projectId: booking.projectId })
+  const canWriteBookingFor = (booking: Booking) =>
+    userCanWriteBooking(user, bookingRef(booking), jobsById.get(String(booking.projectId || '').toLowerCase()), managers)
+  const canDeleteBookingFor = (booking: Booking) =>
+    userCanDeleteBooking(user, bookingRef(booking), jobsById.get(String(booking.projectId || '').toLowerCase()), managers)
+  const canDeleteLabourBooking = !isOperativeMode(user)
 
   const displayName =
     (linkedOperative && operativesById.get(linkedOperative.id)) ||
@@ -238,6 +246,8 @@ function MySchedulePageContent() {
       canEditBookings={canEditBookings}
       onSaveBooking={handleSaveBooking}
       onDeleteBooking={canDeleteLabourBooking ? handleDeleteBooking : undefined}
+      canWriteBookingFor={canWriteBookingFor}
+      canDeleteBookingFor={canDeleteBookingFor}
       payrollPolicy={payrollPolicy}
     />
   )

@@ -5,6 +5,7 @@
 
 'use client'
 
+import { webJobAccessViewer } from '@/lib/access/readPlan'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -40,7 +41,8 @@ import {
   managerBookingToTarget,
   type OverviewBookingTarget,
 } from '@/components/daily-overview/DailyOverviewBookingSheet'
-import { DEFAULT_PAYROLL_POLICY, loadOrganizationDetails, type OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
+import { DEFAULT_PAYROLL_POLICY, organizationDetailsFromData, type OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
+import { useOrganizationDocument } from '@/lib/stores/organizationDocumentStore'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import type { User } from '@/types'
 
@@ -119,12 +121,6 @@ export function DailyOverviewScreen() {
     loadSmallWorks(organization.id)
     loadHolidays(organization.id)
     loadSubcontractors(organization.id)
-    void loadOrganizationDetails(organization.id).then((details) => {
-      if (!details || details.id !== organization.id) return
-      setPayrollPolicy(details.payrollTimePolicy)
-      setIncludeWeekendsForUnbookedLabour(details.warningDetection.includeWeekendsForUnbookedLabour)
-      setExcludedUserIdsFromUnbookedWarnings(details.warningDetection.excludedUserIdsFromUnbookedWarnings ?? [])
-    })
   }, [
     organization?.id,
     loadBookings,
@@ -137,6 +133,17 @@ export function DailyOverviewScreen() {
     loadSubcontractors,
   ])
 
+  // Rulebook 1.10.0 (1.9.0 leftover): organisation settings come from the one live organisations/{orgId} listener,
+  // so a working-hours or warning-settings save on another device re-draws Daily Overview without a reload.
+  const liveOrganization = useOrganizationDocument()
+  useEffect(() => {
+    if (!organization?.id || liveOrganization.organizationId !== organization.id || !liveOrganization.data) return
+    const details = organizationDetailsFromData(organization.id, liveOrganization.data)
+    setPayrollPolicy(details.payrollTimePolicy)
+    setIncludeWeekendsForUnbookedLabour(details.warningDetection.includeWeekendsForUnbookedLabour)
+    setExcludedUserIdsFromUnbookedWarnings(details.warningDetection.excludedUserIdsFromUnbookedWarnings ?? [])
+  }, [organization?.id, liveOrganization.organizationId, liveOrganization.data])
+
   // Rulebook 1.9.0 §1: subcontractor bookings are live while Daily Overview is open.
   useEffect(() => {
     if (!organization?.id) return
@@ -147,6 +154,8 @@ export function DailyOverviewScreen() {
   const model = useMemo(
     () =>
       buildDailyOverview({
+        // Rulebook 1.10.0 §17: restricted managers see only their jobs and people (`warningScopeFor`).
+        viewer: webJobAccessViewer(useAuthStore.getState().user),
         day,
         today,
         projects: [...projects, ...smallWorks],
