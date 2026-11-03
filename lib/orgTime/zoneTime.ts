@@ -60,25 +60,45 @@ export function dayKeyInZone(date: Date, timeZone: string): string {
   return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
 }
 
+/**
+ * Offset of `timeZone` from UTC at `instant`, in milliseconds (local wall clock minus UTC), to the minute.
+ */
+function zoneOffsetMs(instantMs: number, timeZone: string): number {
+  const floored = Math.floor(instantMs / 60_000) * 60_000
+  const p = partsInZone(new Date(floored), timeZone)
+  return Date.UTC(p.y, p.m - 1, p.d, p.h, p.min) - floored
+}
+
+/**
+ * Rulebook 1.12.0: the first instant of the calendar day `y-m-d` in `timeZone`. Works out the zone offset at that
+ * local midnight directly (two passes, so a DST change on the day is respected) instead of starting from UTC noon,
+ * which in a zone at UTC+12 or later (Pacific/Auckland, Pacific/Kiritimati, Pacific/Chatham) is already the next
+ * local day. When a DST change skips midnight itself, the first instant of that day is returned.
+ */
+function localMidnightMs(y: number, m: number, d: number, timeZone: string): number {
+  const wall = Date.UTC(y, m - 1, d, 0, 0, 0)
+  const dayOf = (ms: number) => {
+    const p = partsInZone(new Date(ms), timeZone)
+    return Date.UTC(p.y, p.m - 1, p.d)
+  }
+  const first = wall - zoneOffsetMs(wall, timeZone)
+  const second = wall - zoneOffsetMs(first, timeZone)
+  if (dayOf(second) === wall) return second
+  // Midnight skipped by a DST change: the other offset gives the first instant of the day.
+  const third = wall - zoneOffsetMs(second, timeZone)
+  return dayOf(third) === wall ? third : second
+}
+
 export function midnightInZone(date: Date, timeZone: string): Date {
   const { y, m, d } = partsInZone(date, timeZone)
-  const guess = new Date(Date.UTC(y, m - 1, d, 0, 0, 0))
-  const shown = partsInZone(guess, timeZone)
-  let deltaMin = shown.h * 60 + shown.min
-  const shownKey = dayKeyInZone(guess, timeZone)
-  const wanted = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
-  // A zone behind UTC shows the previous calendar day at UTC midnight.
-  // A zone ahead of UTC can show the next calendar day. Shift by a day so the
-  // result is local midnight of `wanted`, not the device zone.
-  if (shownKey < wanted) deltaMin -= 24 * 60
-  else if (shownKey > wanted) deltaMin += 24 * 60
-  return new Date(guess.getTime() - deltaMin * 60_000)
+  return new Date(localMidnightMs(y, m, d, timeZone))
 }
 
 export function addDaysInZone(date: Date, days: number, timeZone: string): Date {
   const { y, m, d } = partsInZone(date, timeZone)
-  const noon = new Date(Date.UTC(y, m - 1, d + days, 12, 0, 0))
-  return midnightInZone(noon, timeZone)
+  // Calendar arithmetic on the local date (UTC fields only, never an instant), then that day's local midnight.
+  const shifted = new Date(Date.UTC(y, m - 1, d + days))
+  return new Date(localMidnightMs(shifted.getUTCFullYear(), shifted.getUTCMonth() + 1, shifted.getUTCDate(), timeZone))
 }
 
 export function daysInZoneMonth(date: Date, timeZone: string): number {
@@ -98,7 +118,10 @@ export function dayOfMonthInZone(date: Date, timeZone: string): number {
 
 export function dateFromDayKeyInZone(key: string, timeZone: string): Date {
   const [y, m, d] = key.split('-').map(Number)
-  return midnightInZone(new Date(Date.UTC(y, m - 1, d, 12, 0, 0)), timeZone)
+  // Normalise an out-of-range day (e.g. 2026-02-31) the way Date.UTC does, then that day's local midnight.
+  const day = new Date(Date.UTC(y, m - 1, d))
+  if (Number.isNaN(day.getTime())) return new Date(NaN)
+  return new Date(localMidnightMs(day.getUTCFullYear(), day.getUTCMonth() + 1, day.getUTCDate(), timeZone))
 }
 
 /** Unix seconds of local midnight in `timeZone` — iOS timesheet_{uid}_{stamp}. */

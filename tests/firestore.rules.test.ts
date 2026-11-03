@@ -578,8 +578,9 @@ test('invitee can finish password setup: own email claim, placeholder get, then 
   await assertSucceeds(deleteDoc(doc(db, 'users', placeholderId)))
   const moved = await assertSucceeds(getDoc(doc(db, 'organizations', ORG_A, 'userEmails', email)))
   assert.equal(moved.data()?.userId, authUid)
-  // iOS mergePlaceholderUserDocOntoAuthUidIfNeeded appends to formerUserIds on the account's own document.
-  await assertSucceeds(
+  // 1.12.0 (B3): the account never adds alias ids to its own document afterwards (older iOS builds appended here;
+  // current iOS stops with INVITE_SETUP_INCOMPLETE and the web invite link writes them on create, above).
+  await assertFails(
     setDoc(doc(db, 'users', authUid), { formerUserIds: [placeholderId, 'OLDER-PLACEHOLDER-ID'] }, { merge: true })
   )
   await assertFails(
@@ -1789,7 +1790,8 @@ test('roster rows: operatives and managers pay is changed only by admins or an o
   await assertFails(updateDoc(opRow(op, PAY_MGR_OP_ROW), { payBasis: 'hourly', hourlyRate: 90 }))
   await assertFails(setDoc(opRow(op, 'new-row-a'), { email: 'x@test.com', name: 'X', dayRate: 10 }))
   await assertSucceeds(setDoc(opRow(op, PAY_OP_ROW), { email: 'pay-op@test.com', name: 'Pat B', dayRate: 200 }, { merge: true }))
-  await assertSucceeds(setDoc(opRow(op, 'new-row-b'), { email: 'y@test.com', name: 'Y' }))
+  // 1.12.0 (H3): an operative never adds a roster row (its email is who it is).
+  await assertFails(setDoc(opRow(op, 'new-row-b'), { email: 'y@test.com', name: 'Y' }))
   // A manager with operatives access changes an operative's row, never their own row.
   await assertSucceeds(updateDoc(opRow(mgr, PAY_OP_ROW), { dayRate: 210 }))
   await assertFails(updateDoc(opRow(mgr, PAY_MGR_OP_ROW), { dayRate: 999 }))
@@ -2742,4 +2744,303 @@ test('1.11.0 accountTypeChangeWrites for a profile of another company: an admin 
   batch.set(doc(admin, 'users', 'type-other-co-2', 'orgMemberships', ORG_A), { organizationId: ORG_A, role: 'admin', status: 'active', permissions: { adminAccess: true } })
   await assertSucceeds(batch.commit())
   await assertFails(updateDoc(doc(admin, 'users', 'type-other-co-2'), { role: 'admin' }))
+})
+
+// ---------------------------------------------------------------------------
+// Rulebook 1.12.0: security hardening. Each test starts from a probe that proved a hole on the 1.11.0 rules
+// (scratchpad probe.test.ts / probe2.test.ts) and now refuses the bad write, then checks the app paths that must
+// keep working.
+// ---------------------------------------------------------------------------
+
+const ORG_H = 'org-h-112'
+const ORG_H2 = 'org-h2-112'
+const H_SA = 'h-super-admin'
+const H_AD = 'h-admin'
+const H_MGR_OPS = 'h-mgr-ops'
+const H_MGR = 'h-mgr'
+const H_MGR2 = 'h-mgr2'
+const H_OP = 'h-op'
+const H_OP2 = 'h-op2'
+const H_OP3 = 'h-op3'
+const H_INACTIVE = 'h-inactive'
+const H_ROAM_OFF = 'h-roamer-deactivated'
+const OWNER_EMAIL = 'info@projectplanner.us'
+
+function verifiedDb(uid: string, email: string, emailVerified: boolean) {
+  return env.authenticatedContext(uid, { email, email_verified: emailVerified }).firestore()
+}
+
+async function seed112() {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    await setDoc(doc(db, 'organizations', ORG_H), {
+      name: 'H',
+      creatorUserId: H_SA,
+      members: {
+        [H_SA]: 'admin', [H_AD]: 'admin', [H_MGR_OPS]: 'manager', [H_MGR]: 'manager', [H_MGR2]: 'manager',
+        [H_OP]: 'member', [H_OP2]: 'member', [H_OP3]: 'member', [H_INACTIVE]: 'member', [H_ROAM_OFF]: 'manager',
+      },
+    })
+    await setDoc(doc(db, 'organizations', ORG_H2), { name: 'H2', creatorUserId: 'h2-admin', members: { 'h2-admin': 'admin' } })
+    await setDoc(doc(db, 'users', 'h2-admin'), { email: 'h2-admin@test.com', organizationId: ORG_H2, role: 'admin', adminAccess: true, dayRate: 300 })
+    await setDoc(doc(db, 'users', H_SA), { email: 'h-sa@test.com', organizationId: ORG_H, role: 'admin', adminAccess: true, isSuperAdmin: true })
+    await setDoc(doc(db, 'users', H_AD), { email: 'h-ad@test.com', organizationId: ORG_H, role: 'admin', adminAccess: true })
+    await setDoc(doc(db, 'users', H_MGR_OPS), {
+      email: 'h-mgr-ops@test.com', organizationId: ORG_H, role: 'manager', manager: true, operatives: true,
+      permissions: { manager: true, operatives: true, operativeMode: false },
+    })
+    await setDoc(doc(db, 'users', H_MGR), { email: 'h-mgr@test.com', organizationId: ORG_H, role: 'manager', manager: true })
+    await setDoc(doc(db, 'users', H_MGR2), { email: 'h-mgr2@test.com', organizationId: ORG_H, role: 'manager', manager: true })
+    await setDoc(doc(db, 'users', H_OP), {
+      email: 'h-op@test.com', organizationId: ORG_H, role: 'operative', operativeMode: true, assignedManagerUserIds: [H_MGR_OPS], dayRate: 150,
+    })
+    await setDoc(doc(db, 'users', H_OP2), {
+      email: 'h-op2@test.com', organizationId: ORG_H, role: 'operative', operativeMode: true, assignedManagerUserIds: [H_MGR_OPS], dayRate: 180,
+    })
+    await setDoc(doc(db, 'users', H_OP3), {
+      email: 'h-op3@test.com', organizationId: ORG_H, role: 'operative', operativeMode: true, assignedManagerUserIds: [H_MGR2],
+    })
+    await setDoc(doc(db, 'users', H_INACTIVE), {
+      email: 'h-inactive@test.com', organizationId: ORG_H, role: 'operative', operativeMode: true, isActive: false,
+    })
+    // Home company is H2; a manager in H whose H membership is deactivated.
+    await setDoc(doc(db, 'users', H_ROAM_OFF), { email: 'h-roam@test.com', organizationId: ORG_H2, role: 'operative', operativeMode: true })
+    await setDoc(doc(db, 'users', H_ROAM_OFF, 'orgMemberships', ORG_H), { organizationId: ORG_H, role: 'manager', accountActive: false })
+    await setDoc(doc(db, 'organizations', ORG_H, 'settings', `timesheet_${H_OP2}_1000`), { userId: H_OP2, expenseEntries: [{ amount: 5 }] })
+    await setDoc(doc(db, 'organizations', ORG_H, 'bookings', 'h-bk-op2'), { operativeId: H_OP2, projectId: 'h-p1', date: '2026-11-03' })
+    await setDoc(doc(db, 'organizations', ORG_H, 'managers', 'h-row-mgr2'), { email: 'h-mgr2@test.com', name: 'M2' })
+    await setDoc(doc(db, 'organizations', ORG_H, 'operatives', 'h-row-op'), { email: 'h-op@test.com', name: 'Op' })
+    await setDoc(doc(db, 'organizations', ORG_H, 'operatives', 'h-row-op2'), { email: 'h-op2@test.com', name: 'Op2' })
+    await setDoc(doc(db, 'organizations', ORG_H, 'projects', 'h-p1'), { name: 'P1', managerId: 'h-row-mgr2' })
+    await setDoc(doc(db, 'invitations', 'h-admin-invite'), {
+      organizationId: ORG_H, email: 'later@test.com', role: 'admin', permissions: { adminAccess: true }, isUsed: false,
+    })
+    await setDoc(doc(db, 'invitations', 'h-op-invite'), {
+      organizationId: ORG_H, email: 'op-later@test.com', role: 'operative', permissions: { operativeMode: true, siteAudit: true }, isUsed: false,
+    })
+    await setDoc(doc(db, 'accountConfirmations', 'h-confirm'), { userId: 'h-founder', email: 'h-founder@test.com', organizationId: ORG_H2, isUsed: false })
+  })
+}
+
+test('1.12.0 B1: changing your own users email never makes you platform owner; only a verified owner token is', async () => {
+  await seed112()
+  const op = authDb(H_OP, 'h-op@test.com')
+  // Probe P1: the email write is refused, and another company stays closed.
+  await assertFails(updateDoc(doc(op, 'users', H_OP), { email: OWNER_EMAIL }))
+  await assertFails(updateDoc(doc(op, 'users', H_OP), { email: 'someone-else@test.com' }))
+  await assertFails(getDoc(doc(op, 'organizations', ORG_H2)))
+  await assertFails(updateDoc(doc(op, 'users', 'h2-admin'), { dayRate: 1 }))
+  // Even with the owner email already on the users document (written by an older rule), the users document is not read.
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await updateDoc(doc(ctx.firestore(), 'users', H_OP3), { email: OWNER_EMAIL })
+  })
+  await assertFails(getDoc(doc(authDb(H_OP3, 'h-op3@test.com'), 'organizations', ORG_H2)))
+  // The owner's token: verified opens it, unverified does not.
+  await assertFails(getDoc(doc(verifiedDb('owner-unverified', OWNER_EMAIL, false), 'organizations', ORG_H2)))
+  await assertSucceeds(getDoc(doc(verifiedDb('owner-verified', OWNER_EMAIL, true), 'organizations', ORG_H2)))
+  // The sign-in email sync after Firebase Auth changed the address: the users email may become the token email.
+  await assertSucceeds(updateDoc(doc(authDb(H_OP, 'h-op-new@test.com'), 'users', H_OP), { email: 'h-op-new@test.com' }))
+  // Admins still change a person's email from Manage Users.
+  await assertSucceeds(updateDoc(doc(authDb(H_AD, 'h-ad@test.com'), 'users', H_OP2), { email: 'h-op2-new@test.com' }))
+})
+
+test('1.12.0 B2: a manager with operatives access invites operatives only; admins invite any level', async () => {
+  await seed112()
+  const mgr = authDb(H_MGR_OPS, 'h-mgr-ops@test.com')
+  // Probe P4: an admin invitation from a manager is refused, as role or as permissions.
+  await assertFails(setDoc(doc(mgr, 'invitations', 'h-evil'), {
+    organizationId: ORG_H, email: 'sock@test.com', role: 'admin', permissions: { adminAccess: true }, isUsed: false,
+  }))
+  await assertFails(setDoc(doc(mgr, 'invitations', 'h-evil2'), {
+    organizationId: ORG_H, email: 'sock@test.com', permissions: { adminAccess: true }, isUsed: false,
+  }))
+  await assertFails(setDoc(doc(mgr, 'invitations', 'h-evil3'), {
+    organizationId: ORG_H, email: 'sock@test.com', role: 'manager', permissions: { manager: true }, isUsed: false,
+  }))
+  await assertFails(setDoc(doc(mgr, 'invitations', 'h-evil4'), {
+    organizationId: ORG_H, email: 'sock@test.com', role: 'operative', permissions: { operativeMode: true, operatives: true }, isUsed: false,
+  }))
+  // Nor can they repoint an admin's invitation, or turn an operative invitation into an admin one.
+  await assertFails(updateDoc(doc(mgr, 'invitations', 'h-admin-invite'), { email: 'sock@test.com' }))
+  await assertFails(updateDoc(doc(mgr, 'invitations', 'h-op-invite'), { role: 'admin', permissions: { adminAccess: true } }))
+  // An operative invitation as both apps write it (invitationCreateFields: role + permissions) passes.
+  await assertSucceeds(setDoc(doc(mgr, 'invitations', 'h-op-ok'), {
+    organizationId: ORG_H, email: 'new-op@test.com', role: 'operative',
+    permissions: { operativeMode: true, siteAudit: true, projects: true, smallWorks: true, adminAccess: false, manager: false, operatives: false },
+    isUsed: false,
+  }))
+  await assertSucceeds(updateDoc(doc(mgr, 'invitations', 'h-op-invite'), { firstName: 'Olly' }))
+  await assertSucceeds(deleteDoc(doc(mgr, 'invitations', 'h-op-ok')))
+  // Admins invite admins.
+  await assertSucceeds(setDoc(doc(authDb(H_AD, 'h-ad@test.com'), 'invitations', 'h-admin-ok'), {
+    organizationId: ORG_H, email: 'new-admin@test.com', role: 'admin', permissions: { adminAccess: true }, isUsed: false,
+  }))
+})
+
+test('1.12.0 B3: nobody adds alias ids to their own profile; reviews and bookings stay closed', async () => {
+  await seed112()
+  const op3 = authDb(H_OP3, 'h-op3@test.com')
+  // Probe P3: the self-update is refused and nothing opens.
+  await assertFails(updateDoc(doc(op3, 'users', H_OP3), { formerUserIds: [H_MGR_OPS, H_OP2] }))
+  await assertFails(updateDoc(doc(op3, 'users', H_OP3), { sameEmailUserIds: [H_OP2] }))
+  await assertFails(getDoc(doc(op3, 'organizations', ORG_H, 'bookings', 'h-bk-op2')))
+  await assertFails(updateDoc(doc(op3, 'organizations', ORG_H, 'settings', `timesheet_${H_OP2}_1000`), { managerSignedByUserId: H_OP3 }))
+  // Deleting and re-creating your own profile is not a way round it (members-map returning member, Path 1).
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'organizations', ORG_H, 'userEmails', 'h-op3@test.com'), { userId: H_OP3 })
+  })
+  await assertSucceeds(deleteDoc(doc(op3, 'users', H_OP3)))
+  const back = {
+    email: 'h-op3@test.com', organizationId: ORG_H, role: 'operative', operativeMode: true,
+    ageConfirmed: true, ageConfirmedYears: 16, ageConfirmedAt: Timestamp.now(),
+  }
+  await assertFails(setDoc(doc(op3, 'users', H_OP3), { ...back, formerUserIds: [H_MGR_OPS] }))
+  await assertSucceeds(setDoc(doc(op3, 'users', H_OP3), back))
+  // An unchanged resend still passes, and an admin still records an alias.
+  await assertSucceeds(updateDoc(doc(op3, 'users', H_OP3), { firstName: 'Ola' }))
+  await assertSucceeds(updateDoc(doc(authDb(H_AD, 'h-ad@test.com'), 'users', H_OP), { formerUserIds: ['OLD-INVITE-ID'] }))
+  await assertSucceeds(updateDoc(doc(authDb(H_OP, 'h-op@test.com'), 'users', H_OP), { firstName: 'Opal', formerUserIds: ['OLD-INVITE-ID'] }))
+})
+
+test('1.12.0 B3: alias ids on another company\'s users document do not count here', async () => {
+  await seed112()
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    // H2's admin, also listed as a member of H, wrote H operative ids onto their own (H2) profile.
+    await updateDoc(doc(db, 'organizations', ORG_H), { 'members.h2-admin': 'member' })
+    await updateDoc(doc(db, 'users', 'h2-admin'), { formerUserIds: [H_OP2] })
+  })
+  await assertFails(getDoc(doc(authDb('h2-admin', 'h2-admin@test.com'), 'organizations', ORG_H, 'bookings', 'h-bk-op2')))
+})
+
+test('1.12.0 B4: only the Super Admin changes isSuperAdmin or ownership; an admin cannot demote the founder', async () => {
+  await seed112()
+  const ad = authDb(H_AD, 'h-ad@test.com')
+  // Probe Q1: each step is refused.
+  await assertFails(updateDoc(doc(ad, 'users', H_AD), { isSuperAdmin: true }))
+  await assertFails(updateDoc(doc(ad, 'organizations', ORG_H), { creatorUserId: H_AD }))
+  await assertFails(updateDoc(doc(ad, 'users', H_SA), { isSuperAdmin: false, adminAccess: false, role: 'operative', operativeMode: true }))
+  await assertFails(updateDoc(doc(ad, 'users', H_SA), { isActive: false }))
+  await assertFails(setDoc(doc(ad, 'users', H_AD, 'orgMemberships', ORG_H), { organizationId: ORG_H, role: 'admin', isSuperAdmin: true }))
+  // Nor by deleting and re-creating their own profile (founder bootstrap path or returning member).
+  await assertSucceeds(deleteDoc(doc(ad, 'users', H_AD)))
+  await assertFails(setDoc(doc(ad, 'users', H_AD), {
+    email: 'h-ad@test.com', organizationId: ORG_H, role: 'admin', adminAccess: true, isSuperAdmin: true,
+    ageConfirmed: true, ageConfirmedYears: 30, ageConfirmedAt: Timestamp.now(),
+  }))
+  await assertSucceeds(setDoc(doc(ad, 'users', H_AD), {
+    email: 'h-ad@test.com', organizationId: ORG_H, role: 'admin', adminAccess: true,
+    ageConfirmed: true, ageConfirmedYears: 30, ageConfirmedAt: Timestamp.now(),
+  }))
+  // Admins still edit the founder's name, and other people's roles.
+  await assertSucceeds(updateDoc(doc(ad, 'users', H_SA), { firstName: 'Founder' }))
+  await assertSucceeds(updateDoc(doc(ad, 'users', H_MGR), { role: 'operative', operativeMode: true }))
+  // The Super Admin hands ownership to another admin (iOS transferOrganizationOwnership, web userStore transfer).
+  const sa = authDb(H_SA, 'h-sa@test.com')
+  await assertSucceeds(updateDoc(doc(sa, 'users', H_AD), { isSuperAdmin: true }))
+  await assertSucceeds(updateDoc(doc(sa, 'organizations', ORG_H), { creatorUserId: H_AD }))
+  await assertSucceeds(updateDoc(doc(sa, 'users', H_SA), { isSuperAdmin: false }))
+})
+
+test('1.12.0 H2: a deactivated person reads only their own profile; organisation data is closed', async () => {
+  await seed112()
+  const off = authDb(H_INACTIVE, 'h-inactive@test.com')
+  // Probe Q2.
+  await assertFails(getDoc(doc(off, 'organizations', ORG_H, 'settings', `timesheet_${H_OP2}_1000`)))
+  await assertFails(setDoc(doc(off, 'organizations', ORG_H, 'clients', 'h-c'), { name: 'x' }))
+  await assertFails(getDocs(collection(off, 'organizations', ORG_H, 'operatives')))
+  await assertFails(getDoc(doc(off, 'users', H_OP)))
+  // Their own profile and memberships stay readable (the deactivated screen and Switch organisation).
+  await assertSucceeds(getDoc(doc(off, 'users', H_INACTIVE)))
+  await assertSucceeds(getDocs(collection(off, 'users', H_INACTIVE, 'orgMemberships')))
+  // A member from another company whose membership here is deactivated: no role here either.
+  const roam = authDb(H_ROAM_OFF, 'h-roam@test.com')
+  await assertFails(getDoc(doc(roam, 'organizations', ORG_H, 'operatives', 'h-row-op')))
+  await assertFails(getDoc(doc(roam, 'organizations', ORG_H, 'projects', 'h-p1')))
+  // Active people are unaffected.
+  await assertSucceeds(getDoc(doc(authDb(H_OP, 'h-op@test.com'), 'organizations', ORG_H, 'operatives', 'h-row-op')))
+})
+
+test('1.12.0 H3: roster row emails change only by admins (operatives rows: also operatives managers, not their own)', async () => {
+  await seed112()
+  const mgr = authDb(H_MGR, 'h-mgr@test.com')
+  // Probe P5: rewriting another manager's row email is refused, so the job stays theirs.
+  await assertFails(updateDoc(doc(mgr, 'organizations', ORG_H, 'managers', 'h-row-mgr2'), { email: 'h-mgr@test.com' }))
+  await assertFails(setDoc(doc(mgr, 'organizations', ORG_H, 'bookings', 'h-new1'), { projectId: 'h-p1', operativeId: H_OP, date: '2026-11-04' }))
+  // Probe P8 (roster part): operatives never add or repoint a row.
+  const op2 = authDb(H_OP2, 'h-op2@test.com')
+  await assertFails(setDoc(doc(op2, 'organizations', ORG_H, 'operatives', 'h-orow'), { email: 'h-op2@test.com', name: 'x' }))
+  await assertFails(updateDoc(doc(op2, 'organizations', ORG_H, 'operatives', 'h-row-op'), { email: 'h-op2@test.com' }))
+  // An operative still saves their own row's qualification maps (iOS My Qualifications).
+  await assertSucceeds(setDoc(doc(op2, 'organizations', ORG_H, 'operatives', 'h-row-op2'), {
+    qualifications: [{ id: 'q1', name: 'CSCS' }], qualificationExpiryDates: {}, updatedAt: Timestamp.now(),
+  }, { merge: true }))
+  // A job form adds a managers row for the manager it names (web ProjectForm), name edits pass.
+  await assertSucceeds(setDoc(doc(mgr, 'organizations', ORG_H, 'managers', 'h-row-new'), { email: 'h-mgr2@test.com', firstName: 'M', lastName: '2' }))
+  await assertSucceeds(updateDoc(doc(mgr, 'organizations', ORG_H, 'managers', 'h-row-mgr2'), { name: 'M Two' }))
+  // Admins change a managers row email (iOS updateManagerIdentityInPlace); operatives managers an operative's row.
+  await assertSucceeds(updateDoc(doc(authDb(H_AD, 'h-ad@test.com'), 'organizations', ORG_H, 'managers', 'h-row-mgr2'), { email: 'h-mgr2-new@test.com' }))
+  const mops = authDb(H_MGR_OPS, 'h-mgr-ops@test.com')
+  await assertSucceeds(updateDoc(doc(mops, 'organizations', ORG_H, 'operatives', 'h-row-op'), { email: 'h-op-new@test.com' }))
+  await assertFails(updateDoc(doc(mops, 'organizations', ORG_H, 'operatives', 'h-row-op2'), { email: 'h-mgr-ops@test.com' }))
+  await assertFails(updateDoc(doc(mops, 'organizations', ORG_H, 'managers', 'h-row-new'), { email: 'h-mgr-ops@test.com' }))
+})
+
+test('1.12.0 H4: inbox rows go only to members of the organisation, never without a userId', async () => {
+  await seed112()
+  // Probe P6: a stranger's own company cannot address someone elsewhere.
+  const x = authDb('h-stranger', 'h-stranger@test.com')
+  await assertSucceeds(setDoc(doc(x, 'organizations', 'h-evil-org'), { name: 'E', members: { 'h-stranger': 'admin' }, creatorUserId: 'h-stranger' }))
+  await assertFails(setDoc(doc(x, 'organizations', 'h-evil-org', 'notifications', 'n1'), {
+    userId: H_OP, type: 'push_test', title: 'Reset your password', message: 'go to evil.example', actorUserId: 'h-stranger',
+  }))
+  const mgr = authDb(H_MGR, 'h-mgr@test.com')
+  await assertFails(setDoc(doc(mgr, 'organizations', ORG_H, 'notifications', 'n-out'), { userId: 'h2-admin', type: 'task_created', actorUserId: H_MGR }))
+  await assertFails(setDoc(doc(mgr, 'organizations', ORG_H, 'notifications', 'n-none'), { type: 'booking_created', actorUserId: H_MGR }))
+  // Members are addressed as before: by members key, creator, or a users document of this company.
+  await assertSucceeds(setDoc(doc(mgr, 'organizations', ORG_H, 'notifications', 'n-in'), { userId: H_OP, type: 'task_created', actorUserId: H_MGR, isRead: false }))
+  await assertSucceeds(setDoc(doc(mgr, 'organizations', ORG_H, 'notifications', 'n-sa'), { userId: H_SA, type: 'client_created', actorUserId: H_MGR, isRead: false }))
+  await assertSucceeds(setDoc(doc(x, 'organizations', 'h-evil-org', 'notifications', 'n-self'), { userId: 'h-stranger', type: 'push_test', actorUserId: 'h-stranger' }))
+})
+
+test('1.12.0 H5: account confirmations are never listed and are marked used only by the signed-in owner of the email', async () => {
+  await seed112()
+  // Probe P7.
+  await assertFails(getDocs(collection(authDb('h-s2', 'h-s2@test.com'), 'accountConfirmations')))
+  // Get by id (the emailed token) still works signed out.
+  await assertSucceeds(getDoc(doc(env.unauthenticatedContext().firestore(), 'accountConfirmations', 'h-confirm')))
+  const used = { isUsed: true, usedAt: Timestamp.now() }
+  await assertFails(updateDoc(doc(env.unauthenticatedContext().firestore(), 'accountConfirmations', 'h-confirm'), used))
+  await assertFails(updateDoc(doc(authDb('h-s2', 'h-s2@test.com'), 'accountConfirmations', 'h-confirm'), used))
+  await assertSucceeds(updateDoc(doc(authDb('h-founder', 'H-Founder@test.com'), 'accountConfirmations', 'h-confirm'), used))
+  // A confirmation is created by the founder for themselves only.
+  await assertFails(setDoc(doc(authDb('h-s2', 'h-s2@test.com'), 'accountConfirmations', 'h-forged'), { userId: 'h-founder', email: 'h-founder@test.com', isUsed: false }))
+  await assertSucceeds(setDoc(doc(authDb('h-s2', 'h-s2@test.com'), 'accountConfirmations', 'h-own'), { userId: 'h-s2', email: 'h-s2@test.com', isUsed: false }))
+})
+
+test('1.12.0 M3: the qualification and skills catalogues are staff only', async () => {
+  await seed112()
+  const op2 = authDb(H_OP2, 'h-op2@test.com')
+  // Probe P8 (catalogue part).
+  await assertFails(setDoc(doc(op2, 'organizations', ORG_H, 'qualifications', 'q1'), { userId: H_OP2, expiryDate: '2099-01-01' }))
+  await assertFails(setDoc(doc(op2, 'organizations', ORG_H, 'skills', 's1'), { name: 'x' }))
+  await assertSucceeds(getDoc(doc(op2, 'organizations', ORG_H, 'qualifications', 'q1')))
+  const mgr = authDb(H_MGR, 'h-mgr@test.com')
+  await assertSucceeds(setDoc(doc(mgr, 'organizations', ORG_H, 'qualifications', 'q1'), { name: 'CSCS' }))
+  await assertSucceeds(setDoc(doc(mgr, 'organizations', ORG_H, 'skills', 's1'), { name: 'Joiner' }))
+})
+
+test('1.12.0 platformConfig/app: anyone reads it (the forced-update gate runs before sign-in); only the verified owner writes', async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    await setDoc(doc(db, 'platformConfig', 'app'), { minimumIosBuild: 120 })
+    await setDoc(doc(db, 'platformConfig', 'toolboxLibrary'), { items: [] })
+  })
+  const signedOut = env.unauthenticatedContext().firestore()
+  await assertSucceeds(getDoc(doc(signedOut, 'platformConfig', 'app')))
+  await assertFails(getDoc(doc(signedOut, 'platformConfig', 'toolboxLibrary')))
+  await assertSucceeds(getDoc(doc(authDb(OP_A, 'op-a@test.com'), 'platformConfig', 'toolboxLibrary')))
+  await assertFails(setDoc(doc(authDb(ADMIN_A, 'admin-a@test.com'), 'platformConfig', 'app'), { minimumIosBuild: 1 }))
+  await assertFails(setDoc(doc(verifiedDb('owner-unverified', OWNER_EMAIL, false), 'platformConfig', 'app'), { minimumIosBuild: 1 }))
+  await assertSucceeds(setDoc(doc(verifiedDb('owner-verified', OWNER_EMAIL, true), 'platformConfig', 'app'), { minimumIosBuild: 121 }))
 })

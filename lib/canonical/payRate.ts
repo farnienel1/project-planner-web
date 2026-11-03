@@ -391,6 +391,9 @@ export function roundPennies(amount: number): number {
 }
 
 /** The organisation's paid hours in a day (`payrollTimePolicy.standardPaidHours`); never 0 (0.01 floor), never 8 by default. */
+/** The shortest paid day a day rate is divided by (`PAYROLL_POLICY_LIMITS.paidHours.min`). */
+export const PAY_STANDARD_DAY_MIN_HOURS = 1
+
 export function orgDayHours(standardPaidHours: number): number {
   const hours = Number(standardPaidHours)
   return hours > 0 ? hours : 0.01
@@ -399,6 +402,9 @@ export function orgDayHours(standardPaidHours: number): number {
 /**
  * Pay for `paidHours` on one basis: hourly → rate × hours × multiplier; day → day rate × (hours ÷ the organisation's
  * paid day) × multiplier; rounded to pence. 0 hours (or fewer) pay 0; a missing rate counts as 0.
+ * 1.12.0 §8: a day rate with no usable paid day (`standardDayHours` below 1, missing or not a number) pays 0 — rate
+ * not set — instead of dividing by the 0.01 floor (up to 800× the day rate). A multiplier that is not a positive
+ * number is 1; a rate that is not a number is 0.
  */
 export function payForHours(input: {
   payBasis?: string | null
@@ -410,7 +416,14 @@ export function payForHours(input: {
 }): number {
   const paidHours = Number(input.paidHours)
   if (!(paidHours > 0)) return 0
-  const multiplier = input.otMultiplier ?? 1
-  if (input.payBasis === 'hourly') return roundPennies((input.hourlyRate ?? 0) * paidHours * multiplier)
-  return roundPennies((input.dayRate ?? 0) * (paidHours / orgDayHours(input.standardDayHours)) * multiplier)
+  const rawMultiplier = Number(input.otMultiplier ?? 1)
+  const multiplier = Number.isFinite(rawMultiplier) && rawMultiplier > 0 ? rawMultiplier : 1
+  const rate = (value: number | null | undefined) => {
+    const n = Number(value ?? 0)
+    return Number.isFinite(n) ? n : 0
+  }
+  if (input.payBasis === 'hourly') return roundPennies(rate(input.hourlyRate) * paidHours * multiplier)
+  const standardDay = Number(input.standardDayHours)
+  if (!(standardDay >= PAY_STANDARD_DAY_MIN_HOURS)) return 0
+  return roundPennies(rate(input.dayRate) * (paidHours / standardDay) * multiplier)
 }

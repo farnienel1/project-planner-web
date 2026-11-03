@@ -5,6 +5,9 @@
  * Allow-list, preference check, and badge count come from the packed rulebook.
  * Do not copy those lists here. Same document id must not push again on update.
  *
+ * Rulebook 1.12.0 (§13, H4): a row is pushed only to an active member of its organisation (`organizationMemberActive`,
+ * `pushRecipientGuard.js`), the same test the security rules apply on create.
+ *
  * Rulebook §13: a row is never pushed to the person who caused it. `actorUserId` (written by the
  * app, validated by security rules) equal to the row's `userId`, or to one of the recipient's
  * `formerUserIds`, means no push — a last guard behind the recipient rules (`pushActorGuard.js`). The one
@@ -29,6 +32,7 @@ const { logger } = require('firebase-functions')
 const canonical = require('./loadCanonical')
 const { pruneDeadPushTokens } = require('./prunePushTokens')
 const { skipPushForActor } = require('./pushActorGuard')
+const { recipientMayReceivePush } = require('./pushRecipientGuard')
 
 initializeApp()
 
@@ -86,6 +90,23 @@ exports.sendDevicePushOnNotificationCreate = onDocumentCreated(
     if (!userSnap.exists) return
     const user = userSnap.data() || {}
     if (skipPushForActor(canonical, type, data.actorUserId, userId, user)) return
+    // 1.12.0 (H4): only an active member of this organisation (`organizationMemberActive`) — never a uid from another
+    // company or a person this organisation has deactivated.
+    const [orgSnap, membershipSnap] = await Promise.all([
+      db.doc(`organizations/${orgId}`).get(),
+      db.doc(`users/${userId}/orgMemberships/${orgId}`).get(),
+    ])
+    if (
+      !recipientMayReceivePush(canonical, {
+        orgId,
+        userId,
+        organization: orgSnap.exists ? orgSnap.data() : null,
+        user,
+        membership: membershipSnap.exists ? membershipSnap.data() : null,
+      })
+    ) {
+      return
+    }
     const prefs = canonical.parseUserNotificationPreferences(user.notificationPreferences)
     if (!canonical.notificationPreferenceAllowsDelivery(prefs, type)) return
 

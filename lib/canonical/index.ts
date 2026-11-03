@@ -1293,3 +1293,11 @@ export {
 export type { AccountTypeChangeWrite } from './permissionLevels'
 export { organizationLevelFor, rosterMembersForOrganization } from './orgRoster'
 export type { OrgRosterLevel } from './orgRoster'
+// Rulebook 1.12.0: security hardening helpers, forced app update, leave year, pay guards.
+export { isVerifiedPlatformOwner } from './passwordPolicy'
+export { invitationIsOperativeOnly } from './inviteAccept'
+export { organizationMemberActive } from './orgMembership'
+export { PLATFORM_CONFIG_APP_PATH, appUpdateRequired, compareAppVersions } from './platformConfig'
+export { LEAVE_YEAR_MONTHS_MESSAGE, leaveYearEndMonth, validateAnnualLeaveDefaults, validateLeaveYearMonths } from './annualLeaveBalance'
+export { PAY_STANDARD_DAY_MIN_HOURS } from './payRate'
+export type { AppUpdateConfig, AppUpdatePlatform } from './platformConfig'

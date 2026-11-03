@@ -242,3 +242,54 @@ export function orgMembershipWriteFields(input: {
   fields.updatedAt = input.now
   return { mode: 'update', fields, remove }
 }
+
+/**
+ * Rulebook 1.12.0 (§14, §16, H2 / H4): whether a person belongs to an organisation, and whether that organisation has
+ * deactivated them — the security rules' `belongsToOrganization` / `callerOrgRole` and the push Cloud Function use the
+ * same test.
+ *
+ * Member: a key of `organizations/{orgId}.members`, its `creatorUserId`, a users document whose `organizationId` is
+ * this organisation, or a membership document here. Active: not `isActive: false` on their users document when that
+ * document is this organisation's, and not `accountActive` (else `isActive`) false on their membership here. Only an
+ * explicit false deactivates; missing flags and documents are active.
+ */
+export function organizationMemberActive(input: {
+  organizationId: string
+  userId: string
+  organization?: Record<string, unknown> | null
+  user?: Record<string, unknown> | null
+  membership?: Record<string, unknown> | null
+}): { member: boolean; active: boolean } {
+  const orgId = String(input?.organizationId ?? '').trim()
+  const uid = String(input?.userId ?? '').trim()
+  if (!orgId || !uid) return { member: false, active: false }
+  const org = input.organization && typeof input.organization === 'object' ? input.organization : {}
+  const members = org.members && typeof org.members === 'object' ? (org.members as Record<string, unknown>) : {}
+  const user = input.user && typeof input.user === 'object' ? input.user : null
+  const membership = input.membership && typeof input.membership === 'object' ? input.membership : null
+  const homeOrg = user ? membershipOrganizationId(user.organizationId) : ''
+  const home = homeOrg !== '' && homeOrg.toLowerCase() === orgId.toLowerCase()
+  const member =
+    (members[uid] != null && members[uid] !== '') ||
+    String(org.creatorUserId ?? '') === uid ||
+    home ||
+    membership != null
+  const homeInactive = home && user?.isActive === false
+  const membershipInactive =
+    membership != null && (membership.accountActive ?? membership.isActive) === false
+  return { member, active: member && !homeInactive && !membershipInactive }
+}
+
+/** An organisation reference stored as an id, an "organizations/<id>" path string or a DocumentReference-like value. */
+function membershipOrganizationId(value: unknown): string {
+  if (typeof value === 'string') {
+    const parts = value.trim().split('/')
+    return (parts[parts.length - 1] ?? '').trim()
+  }
+  if (value && typeof value === 'object') {
+    const row = value as { id?: unknown; path?: unknown }
+    if (typeof row.id === 'string') return row.id.trim()
+    if (typeof row.path === 'string') return membershipOrganizationId(row.path)
+  }
+  return ''
+}
