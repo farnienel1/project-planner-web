@@ -1,15 +1,12 @@
 import { format, startOfDay } from 'date-fns'
 import { coversCalendarDay } from '@/lib/ios-parity/londonTime'
 import type { Booking, Operative, Project, User } from '@/types'
-import {
-  detectOperativeClashes,
-  type OperativeBookingClash,
-  timeSlotsOverlap,
-} from '@/lib/scheduling/bookingClashUtils'
+import { detectOperativeClashes, type OperativeBookingClash } from '@/lib/scheduling/bookingClashUtils'
+import { clockText } from '@/lib/warnings/clashIntervals'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import { slotKey, slotToFirestore, type ScheduleDateSlot } from '@/lib/scheduling/scheduleUtils'
 import type { SchedulablePerson, SchedulablePersonKind } from '@/lib/scheduling/scheduleRosterUtils'
-import { ORPHAN_BOOKING_LABEL, type BookingLeaveConflict } from '@/lib/canonical'
+import { ORPHAN_BOOKING_LABEL, bookingRequestClashIds, type BookingLeaveConflict, type PayrollTimePolicyState } from '@/lib/canonical'
 import { dayKey as orgDayKey } from '@/lib/ios-parity/londonTime'
 import { leaveConflictsForBooking } from '@/lib/scheduling/leaveConflicts'
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
@@ -56,53 +53,59 @@ function linkedOperativeForPerson(person: SchedulablePerson, operatives: Operati
   return operatives.find((operative) => emailKey(operative.email) === email)
 }
 
+/** Rulebook 1.23.0 §5 `bookingRequestClashIds` over the person's manager schedule bookings, on the booked day's hours. */
 function detectManagerDayClashes({
   userId,
   slot,
   managerSiteBookings,
   projects,
+  day,
+  timeZone,
 }: {
   userId: string
   slot: ScheduleDateSlot
   managerSiteBookings: ManagerSiteBooking[]
   projects: Project[]
   currentProjectId?: string
+  day: OrgPayrollTimePolicy | PayrollTimePolicyState | null
+  timeZone?: string
 }): OperativeBookingClash[] {
   const firestoreSlot = slotToFirestore(slot)
-  const clashes: OperativeBookingClash[] = []
+  const own = managerSiteBookings.filter((existing) => existing.userId === userId)
+  const byId = new Map(own.map((existing) => [existing.id, existing]))
+  const ids = bookingRequestClashIds({
+    request: {
+      dayKey: orgDayKey(slot.date, timeZone),
+      timeSlot: firestoreSlot.timeSlot,
+      workStartTime: firestoreSlot.workStartTime ?? null,
+      workEndTime: firestoreSlot.workEndTime ?? null,
+    },
+    existing: own.map((existing) => ({
+      id: existing.id,
+      dayKey: orgDayKey(new Date(existing.date), timeZone),
+      timeSlot: String(existing.timeSlot ?? ''),
+      workStartTime: clockText(existing.workStartTime),
+      workEndTime: clockText(existing.workEndTime),
+    })),
+    day,
+  })
 
-  for (const existing of managerSiteBookings) {
-    if (existing.userId !== userId) continue
-    if (!coversCalendarDay(existing.date, slot.date)) continue
-
-    if (
-      !timeSlotsOverlap(
-        existing.timeSlot,
-        firestoreSlot.timeSlot,
-        existing.workStartTime,
-        existing.workEndTime,
-        firestoreSlot.workStartTime,
-        firestoreSlot.workEndTime
-      )
-    ) {
-      continue
-    }
-
-    clashes.push({
-      operativeId: userId,
-      operativeName: '',
-      date: startOfDay(slot.date),
-      newTimeSlot: firestoreSlot.timeSlot,
-      existingBookingId: existing.id,
-      existingProjectId: existing.locationId || '',
-      existingTimeSlot: existing.timeSlot,
-      existingProjectLabel: existing.locationId
-        ? projectLabel(existing.locationId, projects)
-        : 'Another booking',
-    })
-  }
-
-  return clashes
+  return ids.flatMap((id) => {
+    const existing = byId.get(id)
+    if (!existing) return []
+    return [
+      {
+        operativeId: userId,
+        operativeName: '',
+        date: startOfDay(slot.date),
+        newTimeSlot: firestoreSlot.timeSlot,
+        existingBookingId: existing.id,
+        existingProjectId: existing.locationId || '',
+        existingTimeSlot: existing.timeSlot,
+        existingProjectLabel: existing.locationId ? projectLabel(existing.locationId, projects) : 'Another booking',
+      },
+    ]
+  })
 }
 
 export function buildDraftPersonDayStates({
@@ -128,7 +131,11 @@ export function buildDraftPersonDayStates({
   currentProjectId: string
   /** Rulebook 1.16.0: annual leave, listed beside double bookings (`bookingLeaveConflicts`). */
   holidays?: HolidayBooking[]
-  payrollPolicy?: OrgPayrollTimePolicy | null
+  /**
+   * Rulebook 1.23.0: the organisation's working-hours state (or one policy). Clashes and leave are read under the
+   * hours in effect on each booked day, never today's.
+   */
+  payrollPolicy?: OrgPayrollTimePolicy | PayrollTimePolicyState | null
   timeZone?: string | null
 }): DraftBookingPerson {
   const dayStates: Record<string, DayBookingState> = {}
@@ -151,6 +158,8 @@ export function buildDraftPersonDayStates({
           bookings,
           operatives,
           projects,
+          day: payrollPolicy,
+          timeZone: timeZone ?? undefined,
         }).map((clash) => ({ ...clash, operativeName: person.name }))
       )
     }
@@ -163,6 +172,8 @@ export function buildDraftPersonDayStates({
           managerSiteBookings,
           projects,
           currentProjectId,
+          day: payrollPolicy,
+          timeZone: timeZone ?? undefined,
         }).map((clash) => ({ ...clash, operativeName: person.name }))
       )
     }

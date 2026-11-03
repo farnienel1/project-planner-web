@@ -10,6 +10,7 @@ import { useProjectStore } from '@/lib/stores/projectStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { useHolidayStore } from '@/lib/stores/holidayStore'
 import { DEFAULT_PAYROLL_POLICY, loadOrganizationDetails, type OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
+import type { PayrollTimePolicyState } from '@/lib/canonical'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 import { bookableWorks } from '@/lib/access/workAccess'
 import { mergeProjectsAndSmallWorks } from '@/lib/projects/workStatus'
@@ -75,7 +76,8 @@ export function ScheduleOperativeForm({
   const [error, setError] = useState<string | null>(null)
   // Rulebook 1.16.0: annual leave on the chosen days is listed beside double bookings (`bookingLeaveConflicts`).
   const { bookings: holidays, loadBookings: loadHolidays } = useHolidayStore()
-  const [payrollPolicy, setPayrollPolicy] = useState<OrgPayrollTimePolicy>(DEFAULT_PAYROLL_POLICY)
+  // Rulebook 1.23.0: the whole working-hours state, so clashes and leave on each booked day use that day's hours.
+  const [payrollPolicy, setPayrollPolicy] = useState<OrgPayrollTimePolicy | PayrollTimePolicyState>(DEFAULT_PAYROLL_POLICY)
   const timeZone = organizationZoneOr()
 
   useEffect(() => {
@@ -83,7 +85,8 @@ export function ScheduleOperativeForm({
     void loadHolidays(organization.id)
     loadOrganizationDetails(organization.id)
       .then((details) => {
-        if (details?.payrollTimePolicy) setPayrollPolicy(details.payrollTimePolicy)
+        const next = details?.payrollTimePolicyState ?? details?.payrollTimePolicy
+        if (next) setPayrollPolicy(next)
       })
       .catch(() => {})
   }, [organization?.id, loadHolidays])

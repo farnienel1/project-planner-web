@@ -229,6 +229,7 @@ export function generateOrgWarnings(input: {
     ? computeOperativeBookingClashWarnings(input.bookings, input.operatives, input.projects, {
         users: input.users,
         payrollPolicy,
+        payrollPolicyState,
         userIdAliases: input.userIdAliases,
       }).filter((warning) => onClashDay(warning) && !isAnonymisedWarningSubject(warning.operativeName))
     : []
@@ -238,6 +239,7 @@ export function generateOrgWarnings(input: {
         operativeBookings: input.bookings,
         operatives: input.operatives,
         payrollPolicy,
+        payrollPolicyState,
         userIdAliases: input.userIdAliases,
       }).filter((warning) => onClashDay(warning) && !isAnonymisedWarningSubject(warning.personName))
     : []
@@ -267,6 +269,7 @@ export function generateOrgWarnings(input: {
     warningDetection,
     invoicing,
     payrollPolicy,
+    payrollPolicyState,
     referenceDate: now,
     timeZone,
   }).filter((warning) => !isAnonymisedWarningSubject(warning.personName))

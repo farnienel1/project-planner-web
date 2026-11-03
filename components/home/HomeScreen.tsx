@@ -262,8 +262,8 @@ export function HomeScreen() {
     () =>
       computeHomeOverviewMetrics({
         tasks,
+        userId: displayUser?.id,
         userEmail: displayUser?.email,
-        isOperativeMode: operative,
         operatives,
         managers: managers ?? [],
         bookings,
@@ -271,9 +271,10 @@ export function HomeScreen() {
         holidays,
         organizationUsers: users,
         liveProjectCount: liveCount,
+        timeZone: homeTimeZone,
         now,
       }),
-    [tasks, displayUser?.email, operative, operatives, managers, bookings, managerSiteBookings, holidays, users, liveCount, now]
+    [tasks, displayUser?.id, displayUser?.email, operatives, managers, bookings, managerSiteBookings, holidays, users, liveCount, homeTimeZone, now]
   )
 
   const orgId = organization?.id || ''

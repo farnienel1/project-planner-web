@@ -5,9 +5,8 @@
 
 import type { Booking, HolidayBooking, Manager, Operative, ProjectTask, User } from '@/types'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
-import { isSameLondonDay, londonMidnight, addLondonDays } from '@/lib/ios-parity/londonTime'
-import { isActiveBookingStatus } from '@/lib/ios-parity/enums'
-import { isTaskAssignedToUser } from '@/lib/access/workAccess'
+import { homeOverviewMetrics } from '@/lib/canonical'
+import { holidayBookingDayKeys } from '@/lib/annualLeave/holidayDayKeys'
 
 export const HOME_OVERVIEW_METRIC_IDS = [
   'tasksDueTodayPersonal',
@@ -67,10 +66,14 @@ export interface HomeOverviewMetrics {
   managersOnALToday: number
 }
 
+/**
+ * Rulebook 1.23.0 §23 `homeOverviewMetrics`: the figures on the organisation-zone day, each person once under all
+ * their ids. This only maps the web stores to the rulebook's plain rows.
+ */
 export function computeHomeOverviewMetrics(params: {
   tasks: ProjectTask[]
+  userId?: string | null
   userEmail?: string | null
-  isOperativeMode: boolean
   operatives: Operative[]
   managers: Manager[]
   bookings: Booking[]
@@ -78,92 +81,62 @@ export function computeHomeOverviewMetrics(params: {
   holidays: HolidayBooking[]
   organizationUsers: User[]
   liveProjectCount: number
+  timeZone: string
   now?: Date
 }): HomeOverviewMetrics {
   const now = params.now ?? new Date()
-  const today = londonMidnight(now)
-  const weekEnd = addLondonDays(today, 7)
-
-  let tasksDueToday = 0
-  let tasksDueThisWeek = 0
-  let tasksOverdue = 0
-  let outstandingTasksAllUsers = 0
-
-  for (const task of params.tasks) {
-    if (task.status === 'Completed') continue
-    outstandingTasksAllUsers += 1
-    if (!task.dueDate) continue
-    const assigned = isTaskAssignedToUser({
-      task,
-      userEmail: params.userEmail,
-      operatives: params.operatives,
-      managers: params.managers,
-      isOperativeMode: params.isOperativeMode,
-    })
-    if (!assigned) continue
-    const d0 = londonMidnight(task.dueDate)
-    if (isSameLondonDay(task.dueDate, today)) tasksDueToday += 1
-    if (d0.getTime() >= today.getTime() && d0.getTime() < weekEnd.getTime()) {
-      tasksDueThisWeek += 1
-    }
-    if (d0.getTime() < today.getTime()) tasksOverdue += 1
-  }
-
-  const operativeIds = new Set(
-    params.bookings
-      .filter((b) => isSameLondonDay(b.date, today) && isActiveBookingStatus(b.status))
-      .map((b) => b.operativeId)
-  )
-  const managerIds = new Set(
-    params.managerBookings
-      .filter(
-        (b) =>
-          isSameLondonDay(b.date, today) &&
-          (b.locationType === 'project' || b.locationType === 'small_work')
-      )
-      .map((b) => b.userId)
-  )
-
-  const approvedHolidays = params.holidays.filter((holiday) => {
-    if (holiday.status !== 'approved') return false
-    const start = londonMidnight(holiday.startDate)
-    const end = londonMidnight(holiday.endDate)
-    return today.getTime() >= start.getTime() && today.getTime() <= end.getTime()
+  const metrics = homeOverviewMetrics({
+    nowMs: now.getTime(),
+    timeZone: params.timeZone,
+    viewer: { id: params.userId ?? null, email: params.userEmail ?? null },
+    roster: params.organizationUsers.map((user) => ({
+      id: user.id,
+      email: user.email,
+      firstName: user.firstName,
+      surname: user.surname,
+      isActive: user.isActive,
+      passwordSet: user.passwordSet,
+      role: user.role ?? null,
+      isSuperAdmin: user.isSuperAdmin ?? null,
+      permissions: (user.permissions ?? null) as unknown as Record<string, unknown> | null,
+      formerUserIds: user.formerUserIds ?? [],
+    })),
+    operatives: params.operatives.map((row) => ({ id: row.id, email: row.email ?? null, isActive: row.isActive ?? null })),
+    managers: params.managers.map((row) => ({ id: row.id, email: row.email ?? null })),
+    tasks: params.tasks.map((task) => ({
+      status: task.status,
+      dueDate: task.dueDate ?? null,
+      assignedOperativeId: task.assignedOperativeId ?? null,
+      assignedOperativeIds: task.assignedOperativeIds ?? [],
+      assignedManagerId: task.assignedManagerId ?? null,
+      assignedManagerIds: task.assignedManagerIds ?? [],
+    })),
+    bookings: params.bookings.map((booking) => ({
+      operativeId: booking.operativeId,
+      date: booking.date,
+      status: String(booking.status ?? ''),
+    })),
+    managerSiteBookings: params.managerBookings.map((booking) => ({
+      userId: booking.userId,
+      date: booking.date,
+      locationType: booking.locationType,
+    })),
+    holidays: params.holidays.map((holiday) => {
+      const { startDayKey, endDayKey } = holidayBookingDayKeys(holiday, params.timeZone)
+      return { userId: holiday.userId ?? null, operativeId: holiday.operativeId ?? null, startDayKey, endDayKey, status: holiday.status }
+    }),
   })
-
-  const operativeALKeys = new Set<string>()
-  const managerALSeen = new Set<string>()
-  for (const h of approvedHolidays) {
-    if (h.operativeId) operativeALKeys.add(`op:${h.operativeId}`)
-    const uid = h.userId?.trim()
-    if (!uid) continue
-    const u = params.organizationUsers.find((user) => user.id === uid)
-    if (!u) continue
-    if (u.permissions.operativeMode) {
-      operativeALKeys.add(`u:${uid}`)
-    }
-    if (
-      !u.permissions.operativeMode &&
-      !u.isSuperAdmin &&
-      !u.permissions.adminAccess &&
-      u.permissions.manager &&
-      u.isActive
-    ) {
-      managerALSeen.add(uid)
-    }
-  }
-
   return {
     liveProjectCount: params.liveProjectCount,
-    tasksDueToday,
-    tasksDueThisWeek,
-    tasksOverdue,
-    outstandingTasksAllUsers,
-    operativesOnSiteToday: operativeIds.size,
-    managersOnSiteToday: managerIds.size,
-    peopleOnSiteToday: operativeIds.size + managerIds.size,
-    operativesOnALToday: operativeALKeys.size,
-    managersOnALToday: managerALSeen.size,
+    tasksDueToday: metrics.tasksDueToday,
+    tasksDueThisWeek: metrics.tasksDueThisWeek,
+    tasksOverdue: metrics.tasksOverdue,
+    outstandingTasksAllUsers: metrics.outstandingTasksAllUsers,
+    operativesOnSiteToday: metrics.operativesOnSiteToday,
+    managersOnSiteToday: metrics.managersOnSiteToday,
+    peopleOnSiteToday: metrics.peopleOnSiteToday,
+    operativesOnALToday: metrics.operativesOnALToday,
+    managersOnALToday: metrics.managersOnALToday,
   }
 }
 

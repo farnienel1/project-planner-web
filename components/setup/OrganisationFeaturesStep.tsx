@@ -16,7 +16,7 @@ import { WarningsSetupSection } from '@/components/setup/WarningsSetupSection'
 import { WorkingHoursSetupSection } from '@/components/setup/WorkingHoursSetupSection'
 import { validateInvoicingSettings } from '@/lib/settings/invoicingValidation'
 import { formatCutoffTime, parseCutoffTime } from '@/lib/settings/notificationPreferences'
-import type { OrganisationFeaturesSetup } from '@/lib/orgSetup/orgSetupSettings'
+import { orgSetupWorkingHoursError, type OrganisationFeaturesSetup } from '@/lib/orgSetup/orgSetupSettings'
 
 type FeatureSubStep =
   | 'working-hours'
@@ -84,6 +84,16 @@ export function OrganisationFeaturesStep({
 
   function goNext() {
     setError('')
+    // Rulebook 1.23.1 §4.3: the same working-hours check as Settings → Working hours (weekend breaks included),
+    // on leaving that sub-step and again before the setup completes.
+    if (subStep === 'working-hours' || isLast) {
+      const hoursError = orgSetupWorkingHoursError(value)
+      if (hoursError) {
+        setError(hoursError)
+        if (isLast) onStepIndexChange(0)
+        return
+      }
+    }
     if (subStep === 'payment-runs') {
       const invoicingError = validateInvoicingSettings(value.invoicing)
       if (invoicingError) {

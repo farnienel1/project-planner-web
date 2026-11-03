@@ -17,7 +17,34 @@ import {
   withSyncedPayrollPolicy,
 } from '@/lib/setup/workingHoursUtils'
 import type { OrgPayrollTimePolicy, WeekendPayrollSettings } from '@/lib/settings/organizationSettings'
-import { derivedWeekdayPaidHours, weekdayPaidDayPreview } from '@/lib/canonical'
+import {
+  PAYROLL_BREAK_TIME_STEP_MINUTES,
+  PAYROLL_POLICY_LIMITS,
+  derivedWeekdayPaidHours,
+  formatClockMinutes,
+  parseClockMinutes,
+  payrollBreakTimeOnStep,
+  weekdayPaidDayPreview,
+  weekendBreakFor,
+  weekendLunchBreakCopy,
+} from '@/lib/canonical'
+
+/** Rulebook 1.20.3: lunch break length on the 15-minute step, inside the 0–120 minute limits. */
+function snapBreakMinutes(value: number): number {
+  const stepped = Math.round(value / PAYROLL_BREAK_TIME_STEP_MINUTES) * PAYROLL_BREAK_TIME_STEP_MINUTES
+  return Math.min(PAYROLL_POLICY_LIMITS.breakMinutes.max, Math.max(PAYROLL_POLICY_LIMITS.breakMinutes.min, stepped))
+}
+
+/** Rulebook 1.20.3: a lunch break clock time on the 15-minute step (10:40 → 10:45); an unreadable value is kept. */
+function snapBreakTime(value: string): string {
+  if (payrollBreakTimeOnStep(value)) return value
+  const minutes = parseClockMinutes(value)
+  if (minutes == null) return value
+  const stepped = Math.round(minutes / PAYROLL_BREAK_TIME_STEP_MINUTES) * PAYROLL_BREAK_TIME_STEP_MINUTES
+  return formatClockMinutes(Math.min(stepped, 24 * 60 - PAYROLL_BREAK_TIME_STEP_MINUTES))
+}
+
+const BREAK_STEP_SECONDS = PAYROLL_BREAK_TIME_STEP_MINUTES * 60
 
 /** Rulebook 1.20.0 §4.3: the Mon–Fri paid day is derived (finish − start − unpaid break), never typed in. */
 function paidDayHours(policy: OrgPayrollTimePolicy): number {
@@ -148,6 +175,10 @@ function WeekendSection({
   const effective = effectiveWeekendSettings(dayKey, policy)
   const mode = effective.allHoursAtMultiplierMode ? 'all_hours' : 'defined_window'
   const disabled = isSunday && settings.sameAsSaturday
+  // Rulebook 1.19.0 / 1.20.3 §4.3: each weekend day's own lunch break — Paid / Unpaid, length and window — prefilled
+  // from the weekday break (`weekendBreakFor`), on 15-minute steps, as on Settings → Working hours.
+  const dayBreak = weekendBreakFor(policy, effective)
+  const lunch = weekendLunchBreakCopy(policy, dayKey)
 
   function patchWeekend(partial: Partial<WeekendPayrollSettings>) {
     const nextDay = { ...settings, ...partial }
@@ -275,6 +306,46 @@ function WeekendSection({
                 />
               </div>
             )}
+
+            <div className="space-y-3 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
+              <p className="text-sm font-semibold text-slate-900">{lunch.title}</p>
+              <SetupSegmentedControl<'paid' | 'unpaid'>
+                value={dayBreak.paid ? 'paid' : 'unpaid'}
+                onChange={(v) => patchWeekend({ breakPaid: v === 'paid' })}
+                options={[
+                  { value: 'paid', label: 'Paid' },
+                  { value: 'unpaid', label: 'Unpaid' },
+                ]}
+              />
+              <p className="text-xs text-slate-500">{lunch.detail}</p>
+              <StepperRow
+                label={`${dayLabel} break: ${dayBreak.minutes} min`}
+                onDecrement={() => patchWeekend({ breakMinutes: snapBreakMinutes(dayBreak.minutes - PAYROLL_BREAK_TIME_STEP_MINUTES) })}
+                onIncrement={() => patchWeekend({ breakMinutes: snapBreakMinutes(dayBreak.minutes + PAYROLL_BREAK_TIME_STEP_MINUTES) })}
+              />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <FormLabel>Break start</FormLabel>
+                  <FormInput
+                    type="time"
+                    step={BREAK_STEP_SECONDS}
+                    aria-label={`${dayLabel} break start`}
+                    value={dayBreak.start}
+                    onChange={(e) => patchWeekend({ breakWindowStart: snapBreakTime(e.target.value) })}
+                  />
+                </div>
+                <div>
+                  <FormLabel>Break end</FormLabel>
+                  <FormInput
+                    type="time"
+                    step={BREAK_STEP_SECONDS}
+                    aria-label={`${dayLabel} break end`}
+                    value={dayBreak.end}
+                    onChange={(e) => patchWeekend({ breakWindowEnd: snapBreakTime(e.target.value) })}
+                  />
+                </div>
+              </div>
+            </div>
           </>
         )}
       </div>
@@ -342,8 +413,8 @@ export function WorkingHoursSetupSection({ value, onChange }: WorkingHoursSetupS
 
           <StepperRow
             label={`Unpaid break: ${value.unpaidBreakMinutes} min`}
-            onDecrement={() => patch({ unpaidBreakMinutes: Math.max(0, value.unpaidBreakMinutes - 5) })}
-            onIncrement={() => patch({ unpaidBreakMinutes: value.unpaidBreakMinutes + 5 })}
+            onDecrement={() => patch({ unpaidBreakMinutes: snapBreakMinutes(value.unpaidBreakMinutes - PAYROLL_BREAK_TIME_STEP_MINUTES) })}
+            onIncrement={() => patch({ unpaidBreakMinutes: snapBreakMinutes(value.unpaidBreakMinutes + PAYROLL_BREAK_TIME_STEP_MINUTES) })}
           />
 
           <div className="grid grid-cols-2 gap-3">
@@ -351,8 +422,9 @@ export function WorkingHoursSetupSection({ value, onChange }: WorkingHoursSetupS
               <FormLabel>Break window start</FormLabel>
               <FormInput
                 type="time"
+                step={BREAK_STEP_SECONDS}
                 value={value.breakWindowStart}
-                onChange={(e) => patch({ breakWindowStart: e.target.value })}
+                onChange={(e) => patch({ breakWindowStart: snapBreakTime(e.target.value) })}
               />
             </div>
             <div>

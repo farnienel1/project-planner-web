@@ -74,6 +74,7 @@ export function computeLeaveCoverageWarnings({
   warningDetection,
   invoicing,
   payrollPolicy = DEFAULT_PAYROLL_POLICY,
+  payrollPolicyState = null,
   referenceDate = new Date(),
   timeZone,
 }: {
@@ -86,6 +87,8 @@ export function computeLeaveCoverageWarnings({
   warningDetection: OrgWarningDetectionSettings
   invoicing?: import('@/lib/settings/organizationSettings').OrgInvoicingSettings
   payrollPolicy?: OrgPayrollTimePolicy
+  /** Rulebook 1.23.0: the whole working-hours state, so each day of the window uses the rules in effect on it. */
+  payrollPolicyState?: import('@/lib/canonical').PayrollTimePolicyState | null
   referenceDate?: Date
   timeZone?: string
 }): LeaveCoverageWarning[] {
@@ -98,7 +101,7 @@ export function computeLeaveCoverageWarnings({
     timeZone,
     startDayKey: window.startDayKey,
     endDayKey: window.endDayKey,
-    day: payrollPolicy,
+    day: payrollPolicyState ?? payrollPolicy,
     includeWeekends: warningDetection.includeWeekendsForUnbookedLabour,
     excludedUserIds: warningDetection.excludedUserIdsFromUnbookedWarnings,
     people: leavePeopleFrom(users, operatives),

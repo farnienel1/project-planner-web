@@ -6,6 +6,7 @@ import { ProjectRecordPageShell } from '@/components/projects/ProjectRecordPageS
 import { ProjectWorkspaceChrome } from '@/components/projects/ProjectWorkspaceChrome'
 import { useTaskStore } from '@/lib/stores/taskStore'
 import { useAuthStore } from '@/lib/stores/authStore'
+import { jobTileBadges } from '@/lib/canonical'
 
 export function ProjectFeaturePageShell({
   title: _title,
@@ -32,7 +33,7 @@ export function ProjectFeaturePageShell({
       {(project) => {
         const basePath =
           collection === 'smallWorks' ? `/dashboard/small-works/${project.id}` : `/dashboard/projects/${project.id}`
-        const openTaskCount = tasks.filter((t) => t.projectId === project.id && t.status !== 'Completed').length
+        const openTaskCount = jobTileBadges({ jobId: project.id, tasks }).openTasks
         return (
           <ProjectWorkspaceChrome project={project} basePath={basePath} taskCount={ready ? openTaskCount : undefined}>
             {children(project)}

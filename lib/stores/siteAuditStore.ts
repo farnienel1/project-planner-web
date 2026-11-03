@@ -212,11 +212,6 @@ function withOrganizationLevel(
   return { ...user, role, isSuperAdmin: level.isSuperAdmin, permissions: { ...user.permissions, ...permissions } }
 }
 
-function withManagerListHint(user: User): User {
-  if (user.isSuperAdmin || user.permissions.adminAccess || user.role === 'admin') return user
-  if (user.permissions.operativeMode || user.permissions.manager) return user
-  return { ...user, permissions: { ...user.permissions, manager: true } }
-}
 
 async function fetchOrganisationRoster(
   organizationId: string,
@@ -230,11 +225,8 @@ async function fetchOrganisationRoster(
   claimedEmails: string[] | null
   /** People the `users where organizationId ==` query did not return (members of another current company). */
   fallbackIds: string[]
-  /** Ids shown as managers only because a managers catalogue row lists them. */
-  managerHintIds: string[]
 }> {
   const collected: User[] = []
-  const managerHintIds = new Set<string>()
   const queriedIds = new Set<string>()
   const presentIds = new Set<string>()
   const presentEmails = new Set<string>()
@@ -288,19 +280,11 @@ async function fetchOrganisationRoster(
     }
   }
 
-  const noteUser = (user: User | null, kind?: 'manager') => {
+  // Rulebook 1.23.1 §11 (owner 3A): a `managers` row only finds the person's users document; it never sets
+  // `manager: true` on it. Which list a person is on is their level (`rosterListFor`), the same on iOS.
+  const noteUser = (user: User | null, _kind?: 'manager') => {
     if (!user) return
     remember(user)
-    if (kind !== 'manager') return
-    const email = user.email.trim().toLowerCase()
-    const index = collected.findIndex(
-      (row) => row.id === user.id || (email !== '' && row.email.trim().toLowerCase() === email)
-    )
-    if (index >= 0) {
-      const hinted = withManagerListHint(collected[index])
-      if (hinted !== collected[index]) managerHintIds.add(hinted.id)
-      collected[index] = hinted
-    }
   }
 
   const userIdForEmail = async (email: string): Promise<string> => {
@@ -545,7 +529,6 @@ async function fetchOrganisationRoster(
     presentEmails,
     claimedEmails,
     fallbackIds: collected.map((user) => user.id).filter((id) => !queriedIds.has(id)),
-    managerHintIds: [...managerHintIds],
   }
 }
 
@@ -584,7 +567,6 @@ async function confirmMissingUserDocuments(
 let liveRosterOrgId = ''
 let liveRosterUnsubs: Unsubscribe[] = []
 let liveFallbackKey = ''
-let liveManagerHintIds = new Set<string>()
 let liveReloadTimer: ReturnType<typeof setTimeout> | null = null
 const LIVE_FALLBACK_LIMIT = 60
 
@@ -619,7 +601,7 @@ function applyLiveRosterRows(organizationId: string, rows: User[]): void {
   const users = [...state.users]
   let changed = false
   for (const incoming of rows) {
-    const row = liveManagerHintIds.has(incoming.id) ? withManagerListHint(incoming) : incoming
+    const row = incoming
     const index = users.findIndex((existing) => existing.id === row.id)
     if (index < 0) {
       users.push(row)
@@ -643,9 +625,8 @@ function applyLiveRosterRows(organizationId: string, rows: User[]): void {
   })
 }
 
-function startLiveRoster(organizationId: string, fallbackIds: string[], managerHintIds: string[]): void {
+function startLiveRoster(organizationId: string, fallbackIds: string[]): void {
   if (!db || typeof window === 'undefined') return
-  liveManagerHintIds = new Set(managerHintIds)
   const fallback = [...new Set(fallbackIds.filter(Boolean))].slice(0, LIVE_FALLBACK_LIMIT).sort()
   const fallbackKey = fallback.join('|')
   if (liveRosterOrgId === organizationId && liveFallbackKey === fallbackKey && liveRosterUnsubs.length > 0) return
@@ -889,7 +870,7 @@ export const useOrgUserStore = create<OrgUserState>((set, get) => ({
             error: null,
             rosterLoadedOrgId: organizationId,
           })
-          startLiveRoster(organizationId, loaded.fallbackIds, loaded.managerHintIds)
+          startLiveRoster(organizationId, loaded.fallbackIds)
         }
         try {
           const rosterPromise = fetchOrganisationRoster(organizationId, { finalAttempt: attempt.final })

@@ -22,6 +22,7 @@ import {
   bankHolidayRegionLabel,
   defaultBankHolidayRegionForCountry,
   normalizeBankHolidayRegionId,
+  validatePayrollTimePolicy,
   withDerivedWeekdayPaidHours,
 } from '@/lib/canonical'
 import {
@@ -199,6 +200,15 @@ export function companyIdentityFirestoreFields(input: {
     currencyCode: currency.currencyCode,
     bankHolidayRegionId: regionId,
   }
+}
+
+/**
+ * Rulebook 1.23.1 §4.3: the guided setup's working hours pass the same check as Settings → Working hours
+ * (`validatePayrollTimePolicy` on the derived policy) — weekday day, break, multipliers, steps and each weekend day's
+ * own lunch break. A new company has no saved hours, so nothing is "stored off its step" yet. Null when it is valid.
+ */
+export function orgSetupWorkingHoursError(features: Pick<OrganisationFeaturesSetup, 'payrollTimePolicy'>): string | null {
+  return validatePayrollTimePolicy(withDerivedWeekdayPaidHours(features.payrollTimePolicy), null)
 }
 
 /** Fields written to organizations/{id} from guided setup. */

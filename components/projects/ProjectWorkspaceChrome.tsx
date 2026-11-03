@@ -47,6 +47,7 @@ import type { SectionHue } from '@/lib/ui/sectionHue'
 import type { Project, User } from '@/types'
 import { cn } from '@/lib/ui/cn'
 import { useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
+import { openVariationCount } from '@/lib/canonical'
 
 function formatLondonDay(date: Date): string {
   return new Intl.DateTimeFormat('en-GB', {
@@ -155,7 +156,7 @@ export function ProjectWorkspaceChrome({
     return subscribeParentVariations(
       organization.id,
       project.id,
-      (rows) => setOpenVariations(rows.filter((row) => !row.isDeleted && row.status === 'open').length),
+      (rows) => setOpenVariations(openVariationCount(rows)),
       () => setOpenVariations(0)
     )
   }, [showVariations, organization?.id, project.id])

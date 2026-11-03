@@ -7,7 +7,7 @@
 import { isOperativeMode } from '@/lib/permissions'
 import { idsMatch } from '@/lib/subcontractors/bookingPeople'
 import { normalizeBookingStatus } from '@/lib/ios-parity/enums'
-import { isOpenBookingStatus } from '@/lib/canonical'
+import { isOpenBookingStatus, jobTileBadges, type FoldPersonRow } from '@/lib/canonical'
 import { paidBookedHours, scheduleLabel } from '@/lib/timesheets/timesheetHours'
 import { DEFAULT_PAYROLL_POLICY, type OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import type { Manager, Project, User } from '@/types'
@@ -232,33 +232,32 @@ export function buildProjectActiveUsers(input: {
   return rows.sort((a, b) => a.displayName.localeCompare(b.displayName, undefined, { sensitivity: 'base' }))
 }
 
-/** Tile badge: unique people ids, including rows the list hides when the roster record is missing. */
+/**
+ * Tile badge (rulebook 1.23.0 §21 `jobTileBadges`): people booked on the job, each person once under all their ids
+ * (`people`: users, operatives and managers rows), plus subcontractor firms with an open booking.
+ */
 export function countProjectActiveUsers(input: {
   projectId: string
   operativeBookings: Array<{ operativeId: string; projectId: string; status?: string }>
   managerBookings: Array<{ userId: string; locationId?: string; locationType: string }>
   subcontractorBookings: Array<{ subcontractorId: string; projectId: string; status?: string }>
+  people?: ReadonlyArray<FoldPersonRow>
 }): number {
-  const operatives = new Set<string>()
-  for (const booking of input.operativeBookings) {
-    if (!idsMatch(booking.projectId, input.projectId) || isCancelled(booking.status)) continue
-    const id = booking.operativeId.trim()
-    if (id) operatives.add(id.toLowerCase())
-  }
-  const staff = new Set<string>()
-  for (const booking of input.managerBookings) {
-    if (!idsMatch(booking.locationId, input.projectId)) continue
-    if (booking.locationType !== 'project' && booking.locationType !== 'small_work') continue
-    const id = booking.userId.trim()
-    if (id) staff.add(id.toLowerCase())
-  }
-  const subs = new Set<string>()
-  for (const booking of input.subcontractorBookings) {
-    if (!idsMatch(booking.projectId, input.projectId) || !isOpenBookingStatus(booking.status)) continue
-    const id = booking.subcontractorId.trim()
-    if (id) subs.add(id.toLowerCase())
-  }
-  return operatives.size + staff.size + subs.size
+  return jobTileBadges({
+    jobId: input.projectId,
+    bookings: input.operativeBookings.map((booking) => ({
+      projectId: booking.projectId,
+      operativeId: booking.operativeId,
+      status: booking.status ?? null,
+    })),
+    managerSiteBookings: input.managerBookings.map((booking) => ({
+      userId: booking.userId,
+      locationId: booking.locationId ?? null,
+      locationType: booking.locationType,
+    })),
+    subcontractorBookings: input.subcontractorBookings,
+    people: input.people ?? [],
+  }).activeUsers
 }
 
 export function activeUserDayRows(

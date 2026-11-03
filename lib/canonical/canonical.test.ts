@@ -10773,3 +10773,342 @@ test('1.22.0 managerCoverageHours: merged blocks, break once by the pay rule, co
   assert.equal(run([{ timeSlot: 'FULL DAY' }]).paidHours, 8)
   assert.equal(run([]).covered, false)
 })
+
+// MARK: - Rulebook 1.23.0 — People, Home and per-day hours (audit findings 9, 12, 16–22; older per-day gaps)
+
+const policy123Early = parsePolicy112({ standardDayStart: '07:30', standardDayEnd: '16:00', breakWindowStart: '12:00', breakWindowEnd: '12:30', unpaidBreakMinutes: 30 })
+const policy123Short = parsePolicy112({ standardDayStart: '06:00', standardDayEnd: '12:00', breakWindowStart: '09:00', breakWindowEnd: '09:15', unpaidBreakMinutes: 15 })
+/** Working hours 07:30–16:00 until Tuesday 10 Nov 2026, 06:00–12:00 from then on. */
+const state123 = { current: policy123Short, prior: policy123Early, effectiveFrom: '2026-11-10', scheduled: null }
+
+test('1.23.0 rosterListKind / rosterListFor: one list per person, by level', () => {
+  const roster = [
+    { id: 'a1', email: 'ada@x.com', firstName: 'Ada', surname: 'Admin', passwordSet: true, isActive: true, isSuperAdmin: true },
+    { id: 'a2', email: 'rae@x.com', firstName: 'Rae', surname: 'Role', passwordSet: true, isActive: true, role: 'admin' },
+    { id: 'm1', email: 'mo@x.com', firstName: 'Mo', surname: 'Manager', passwordSet: true, isActive: true, permissions: { manager: true } },
+    { id: 'p1', email: 'pat@x.com', firstName: 'Pat', surname: 'Plain', passwordSet: true, isActive: true },
+    { id: 'o1', email: 'ollie@x.com', firstName: 'Ollie', surname: 'Op', passwordSet: true, isActive: true, operativeMode: true },
+    { id: 'o2', email: 'oona@x.com', firstName: 'Oona', surname: 'Role', passwordSet: true, isActive: true, role: 'operative' },
+    // Same email as o1: one person, the signed-in document kept.
+    { id: 'O1-INVITE', email: 'Ollie@x.com', firstName: 'Ollie', surname: 'Op', passwordSet: false, isActive: true, operativeMode: true },
+    // Pending invite whose claim is gone: not listed.
+    { id: 'o3', email: 'gone@x.com', firstName: 'Gone', surname: 'Invite', passwordSet: false, isActive: true, operativeMode: true },
+  ]
+  assert.deepEqual(roster.map((row) => R112.rosterListKind(row)), ['admins', 'admins', 'managers', 'managers', 'operatives', 'operatives', 'operatives', 'operatives'])
+  assert.deepEqual(R112.rosterListFor('operatives', roster, ['ollie@x.com', 'oona@x.com']).map((row) => row.id), ['o1', 'o2'])
+  assert.deepEqual(R112.rosterListFor('managers', roster, []).map((row) => row.id), ['m1', 'p1'])
+  assert.deepEqual(R112.rosterListFor('admins', roster).map((row) => row.id), ['a1', 'a2'])
+})
+
+test('1.23.0 clashManagerIds: active admins and manager-flag people, never a flagless or inactive person', () => {
+  assert.deepEqual(
+    R112.clashManagerIds([
+      { id: 'adm', role: 'admin' },
+      { id: 'mgr', permissions: { manager: true } },
+      { id: 'MGR', permissions: { manager: true } },
+      { id: 'mgr-op', manager: true, operativeMode: true },
+      { id: 'role-mgr', role: 'manager' },
+      { id: 'flagless' },
+      { id: 'gone', isActive: false, adminAccess: true },
+    ]),
+    ['adm', 'mgr', 'mgr-op', 'role-mgr']
+  )
+})
+
+test('1.23.0 homeOverviewMetrics: organisation day, each person once under all their ids', () => {
+  // 01:00 UTC on 4 Nov is 3 Nov in New York and 4 Nov in London.
+  const nowMs = Date.parse('2026-11-04T01:00:00Z')
+  const input = {
+    nowMs,
+    timeZone: 'America/New_York',
+    viewer: { id: 'u-mgr', email: 'mo@x.com' },
+    roster: [
+      { id: 'u-op', email: 'ollie@x.com', isActive: true, operativeMode: true },
+      { id: 'u-mgr', email: 'mo@x.com', isActive: true, permissions: { manager: true } },
+      { id: 'u-flag', email: 'pat@x.com', isActive: true },
+      { id: 'u-gone', email: 'gone@x.com', isActive: false, permissions: { manager: true } },
+    ],
+    operatives: [{ id: 'OP-ROW', email: 'Ollie@x.com' }],
+    managers: [{ id: 'MGR-ROW', email: 'mo@x.com' }],
+    tasks: [
+      { status: 'To Do', dueDate: '2026-11-03', assignedManagerIds: ['mgr-row'] },
+      { status: 'In Progress', dueDate: '2026-11-01', assignedManagerId: 'MGR-ROW' },
+      { status: 'To Do', dueDate: '2026-11-09', assignedOperativeIds: ['u-mgr'] },
+      { status: 'done', dueDate: '2026-11-01', assignedManagerId: 'MGR-ROW' },
+      { status: 'To Do', dueDate: '2026-11-03', assignedOperativeIds: ['OP-ROW'] },
+    ],
+    bookings: [
+      { operativeId: 'OP-ROW', date: '2026-11-03T15:00:00Z', status: 'Confirmed' },
+      { operativeId: 'op-row', date: '2026-11-03T18:00:00Z', status: 'Tentative' },
+      { operativeId: 'u-op', date: '2026-11-03T20:00:00Z', status: 'Confirmed' },
+      { operativeId: 'u-op', date: '2026-11-04T15:00:00Z', status: 'Confirmed' },
+      { operativeId: 'u-flag', date: '2026-11-03T15:00:00Z', status: 'Cancelled' },
+    ],
+    managerSiteBookings: [
+      { userId: 'u-mgr', dayKey: '2026-11-03', locationType: 'project' },
+      { userId: 'u-flag', dayKey: '2026-11-03', locationType: 'office' },
+    ],
+    holidays: [
+      { userId: 'u-flag', startDayKey: '2026-11-02', endDayKey: '2026-11-04', status: 'approved' },
+      { userId: 'u-gone', startDayKey: '2026-11-03', endDayKey: '2026-11-03', status: 'approved' },
+      { operativeId: 'op-row', startDayKey: '2026-11-03', endDayKey: '2026-11-03', status: 'pending' },
+    ],
+  }
+  assert.deepEqual(R112.homeOverviewMetrics(input), {
+    dayKey: '2026-11-03',
+    tasksDueToday: 1,
+    tasksDueThisWeek: 2,
+    tasksOverdue: 1,
+    outstandingTasksAllUsers: 4,
+    operativesOnSiteToday: 1,
+    managersOnSiteToday: 1,
+    peopleOnSiteToday: 2,
+    operativesOnALToday: 0,
+    managersOnALToday: 1,
+  })
+  assert.equal(R112.homeOverviewMetrics({ ...input, timeZone: 'Europe/London' }).dayKey, '2026-11-04')
+})
+
+test('1.23.0 qualificationExpiryCount: the warning rows, split expired / soon, optionally one person', () => {
+  const input = {
+    referenceIso: '2026-11-03T12:00:00Z',
+    timeZone: 'Europe/London',
+    operatives: [
+      { id: 'op-1', isActive: true, name: 'Ollie', expiries: [
+        { qualificationId: 'q1', name: 'CSCS', expiryIso: '2026-11-01T00:00:00Z' },
+        { qualificationId: 'q2', name: 'IPAF', expiryIso: '2026-12-02T12:00:00Z' },
+        { qualificationId: 'q3', name: 'PASMA', expiryIso: '2026-12-04T12:00:00Z' },
+      ] },
+      { id: 'op-2', isActive: false, name: 'Gone', expiries: [{ qualificationId: 'q1', name: 'CSCS', expiryIso: '2026-11-05T00:00:00Z' }] },
+      { id: 'op-3', isActive: true, name: 'Ann', expiries: [{ qualificationId: 'q1', name: 'CSCS', expiryIso: '2026-11-05T00:00:00Z' }] },
+    ],
+  }
+  assert.deepEqual(R112.qualificationExpiryCount(input), { expired: 1, expiringSoon: 2, total: 3 })
+  assert.deepEqual(R112.qualificationExpiryCount({ ...input, operativeIds: ['OP-1'] }), { expired: 1, expiringSoon: 1, total: 2 })
+})
+
+test('1.23.0 isTaskOverdue / deadlineUrgency read the organisation day', () => {
+  const nowMs = Date.parse('2026-11-04T01:00:00Z')
+  const task = { status: 'To Do', dueDate: '2026-11-03T12:00:00Z' }
+  assert.equal(R112.isTaskOverdue(task, nowMs, 'Europe/London'), true)
+  assert.equal(R112.isTaskOverdue(task, nowMs, 'America/New_York'), false)
+  assert.equal(R112.isTaskOverdue({ ...task, status: 'Completed' }, nowMs, 'Europe/London'), false)
+  assert.equal(R112.isTaskOverdue({ status: 'To Do' }, nowMs, 'Europe/London'), false)
+  const due = (key: string, status = 'open') => R112.deadlineUrgency({ status, due: key }, nowMs, 'Europe/London')
+  assert.deepEqual(due('2026-11-02'), { kind: 'overdue', days: 2 })
+  assert.deepEqual(due('2026-11-02', 'blocked'), { kind: 'overdue', days: 2 })
+  assert.deepEqual(due('2026-11-05', 'blocked'), { kind: 'blocked' })
+  assert.deepEqual(due('2026-11-04'), { kind: 'today' })
+  assert.deepEqual(due('2026-11-05'), { kind: 'tomorrow' })
+  assert.deepEqual(due('2026-11-07'), { kind: 'soon', days: 3 })
+  assert.deepEqual(due('2026-11-11'), { kind: 'thisWeek', days: 7 })
+  assert.deepEqual(due('2026-11-12'), { kind: 'later', days: 8 })
+  assert.deepEqual(due('2026-11-01', 'complete'), { kind: 'complete' })
+})
+
+test('1.23.0 leaveDayKind: leave days only, fixed order, pending cancellation still approved', () => {
+  const records = [
+    { id: 'am', startDayKey: '2026-11-02', endDayKey: '2026-11-02', timeSlot: 'AM', status: 'approved' },
+    { id: 'pm', startDayKey: '2026-11-02', endDayKey: '2026-11-02', timeSlot: 'PM', status: 'requested' },
+    { id: 'week', startDayKey: '2026-11-06', endDayKey: '2026-11-10', timeSlot: 'FULL DAY', status: 'approved' },
+    { id: 'dup', startDayKey: '2026-11-09', endDayKey: '2026-11-09', timeSlot: 'FULL DAY', status: 'pending' },
+    { id: 'no', startDayKey: '2026-11-11', endDayKey: '2026-11-11', status: 'declined' },
+  ]
+  const day = (key: string) => R112.leaveDayKind(records, key, 'Europe/London')
+  assert.deepEqual(day('2026-11-02'), { kind: 'pendingHalf', recordId: 'pm', isLocked: false })
+  assert.deepEqual(day('2026-11-06'), { kind: 'approvedFull', recordId: 'week', isLocked: true })
+  // Saturday inside a multi-day record is not a leave day (`leaveRecordDayKeys`).
+  assert.deepEqual(day('2026-11-07'), { kind: 'none', recordId: null, isLocked: false })
+  assert.deepEqual(day('2026-11-09'), { kind: 'pendingFull', recordId: 'dup', isLocked: true })
+  assert.deepEqual(R112.leaveDayKind(records, '2026-11-10', 'Europe/London', ['2026-11-10']).kind, 'none')
+  assert.equal(day('2026-11-11').kind, 'none')
+})
+
+test('1.23.0 siteMapPins / jobTileBadges: occupied days, one person once, inactive jobs off the map', () => {
+  const people = [
+    { id: 'u-op', email: 'ollie@x.com' },
+    { id: 'OP-ROW', email: 'Ollie@x.com' },
+    { id: 'u-mgr', email: 'mo@x.com' },
+  ]
+  const bookings = [
+    { projectId: 'JOB-1', operativeId: 'OP-ROW', dayKey: '2026-11-03', status: 'Confirmed' },
+    { projectId: 'job-1', operativeId: 'u-op', dayKey: '2026-11-03', status: 'Tentative' },
+    { projectId: 'job-1', operativeId: 'other', dayKey: '2026-11-03', status: 'Cancelled' },
+    { projectId: 'job-1', operativeId: 'old', dayKey: '2026-10-01', status: 'Tentative' },
+  ]
+  const managerSiteBookings = [
+    { userId: 'u-mgr', locationId: 'job-1', locationType: 'small_work', dayKey: '2026-11-03' },
+    { userId: 'u-mgr', locationId: 'job-1', locationType: 'office', dayKey: '2026-11-03' },
+  ]
+  assert.deepEqual(
+    R112.siteMapPins({ jobs: [{ id: 'job-1' }, { id: 'job-2', isLive: false }, { id: 'job-3', isLive: true }], bookings, managerSiteBookings, dayKey: '2026-11-03', people }),
+    [
+      { jobId: 'job-1', bookingCount: 3, peopleCount: 2 },
+      { jobId: 'job-3', bookingCount: 0, peopleCount: 0 },
+    ]
+  )
+  assert.deepEqual(
+    R112.jobTileBadges({
+      jobId: 'job-1',
+      bookings,
+      managerSiteBookings,
+      subcontractorBookings: [
+        { projectId: 'job-1', subcontractorId: 'sub-1', status: 'Confirmed' },
+        { projectId: 'job-1', subcontractorId: 'SUB-1', status: 'Tentative' },
+        { projectId: 'job-1', subcontractorId: 'sub-2', status: 'Cancelled' },
+      ],
+      tasks: [{ projectId: 'JOB-1', status: 'To Do' }, { projectId: 'job-1', status: 'done' }, { projectId: 'job-2' }],
+      people,
+    }),
+    // Ollie under OP-ROW and u-op is one person; 'old' is another; Mo; one firm.
+    { tentativeBookings: 2, openTasks: 1, activeUsers: 4 }
+  )
+})
+
+test('1.23.0 mergeVariationSources / openVariationCount', () => {
+  const merged = R112.mergeVariationSources(
+    [{ id: 'V1', updatedAtMs: 10, status: 'open' }, { id: 'v2', updatedAtMs: 5, status: 'closed' }],
+    [{ id: 'v1', updatedAtMs: 20, status: 'closed' }, { id: 'v2', updatedAtMs: 5, status: 'open' }, { id: 'v3', status: 'OPEN' }],
+    [{ id: 'v4', updatedAtMs: 1, status: 'open', isDeleted: true }]
+  )
+  assert.deepEqual(merged.map((row) => [row.id, row.status]), [['v1', 'closed'], ['v2', 'closed'], ['v3', 'OPEN'], ['v4', 'open']])
+  assert.equal(R112.openVariationCount(merged), 1)
+})
+
+test('1.23.0 per-day hours: overlap flag, clashes, leave cover and booking conflicts read the booked day', () => {
+  // A full day and 13:00–15:00: overlap under 07:30–16:00 (3 Nov), not under 06:00–12:00 (10 Nov).
+  const bookings = [
+    { id: 'a', dayKey: '2026-11-03', timeSlot: 'FULL DAY' },
+    { id: 'b', dayKey: '2026-11-03', timeSlot: 'CUSTOM_HOURS', workStartTime: '13:00', workEndTime: '15:00' },
+    { id: 'c', dayKey: '2026-11-10', timeSlot: 'FULL DAY' },
+    { id: 'd', dayKey: '2026-11-10', timeSlot: 'CUSTOM_HOURS', workStartTime: '13:00', workEndTime: '15:00' },
+  ]
+  assert.deepEqual(R112.overlappingBookingIds(bookings, state123), ['a', 'b'])
+  assert.deepEqual(R112.overlappingBookingIds(bookings, policy123Early), ['a', 'b', 'c', 'd'])
+
+  const people = { accounts: [{ id: 'u1', email: 'mo@x.com' }], operatives: [] }
+  const managerBookings = bookings.map((row) => ({ ...row, userId: 'u1' }))
+  const groups = R112.managerClashGroups({ managerBookings, operativeBookings: [], people, managerIds: ['u1'], day: state123 })
+  assert.deepEqual(groups.map((group) => group.dayKey), ['2026-11-03'])
+  const opGroups = R112.operativeClashGroups({ operativeBookings: bookings.map((row) => ({ ...row, operativeId: 'op1' })), people: { accounts: [], operatives: [] }, day: state123 })
+  assert.deepEqual(opGroups.map((group) => group.dayKey), ['2026-11-03'])
+
+  // A booking being made: 13:00–15:00 against an existing full day.
+  const existing = [{ id: 'x3', dayKey: '2026-11-03', timeSlot: 'FULL DAY' }, { id: 'x10', dayKey: '2026-11-10', timeSlot: 'FULL DAY' }]
+  const request = (dayKey: string) => ({ dayKey, timeSlot: 'CUSTOM_HOURS', workStartTime: '13:00', workEndTime: '15:00' })
+  assert.deepEqual(R112.bookingRequestClashIds({ request: request('2026-11-03'), existing, day: state123 }), ['x3'])
+  assert.deepEqual(R112.bookingRequestClashIds({ request: request('2026-11-10'), existing, day: state123 }), [])
+  assert.deepEqual(R112.bookingRequestClashIds({ request: request('2026-11-10'), existing, day: policy123Early }), ['x10'])
+  // Touching times never clash; a cancelled booking never clashes; an overnight booking reaches the next morning.
+  assert.deepEqual(
+    R112.bookingRequestClashIds({
+      request: { dayKey: '2026-11-04', timeSlot: 'CUSTOM_HOURS', workStartTime: '05:00', workEndTime: '08:00' },
+      existing: [
+        { id: 'touch', dayKey: '2026-11-04', timeSlot: 'CUSTOM_HOURS', workStartTime: '08:00', workEndTime: '10:00' },
+        { id: 'gone', dayKey: '2026-11-04', timeSlot: 'CUSTOM_HOURS', workStartTime: '06:00', workEndTime: '07:00', status: 'Cancelled' },
+        { id: 'night', dayKey: '2026-11-03', timeSlot: 'CUSTOM_HOURS', workStartTime: '22:00', workEndTime: '06:00' },
+      ],
+      day: state123,
+    }),
+    ['night']
+  )
+
+  // Leave halves follow the day: PM leave on 10 Nov is 09:00–12:00, so a 13:00 booking does not conflict.
+  const holidays = [
+    { id: 'h3', userId: 'u1', startDayKey: '2026-11-03', endDayKey: '2026-11-03', timeSlot: 'PM', status: 'approved' },
+    { id: 'h10', userId: 'u1', startDayKey: '2026-11-10', endDayKey: '2026-11-10', timeSlot: 'PM', status: 'approved' },
+  ]
+  const conflicts = R112.bookingLeaveConflicts({
+    people: [{ id: 'u1' }],
+    dayKeys: ['2026-11-03', '2026-11-10'],
+    holidays,
+    timeSlot: 'CUSTOM_HOURS',
+    workStartTime: '13:00',
+    workEndTime: '15:00',
+    day: state123,
+  })
+  assert.deepEqual(conflicts.map((row) => row.dayKey), ['2026-11-03'])
+
+  // Leave cover: AM leave on 10 Nov leaves 09:00–12:00 (less the 09:00–09:15 break) to cover.
+  const rows = R112.leaveCoverageRows({
+    timeZone: 'Europe/London',
+    startDayKey: '2026-11-10',
+    endDayKey: '2026-11-10',
+    day: state123,
+    includeWeekends: false,
+    people: [{ personKey: 'u1', name: 'Mo', userId: 'u1', operativeIds: [] }],
+    leave: [{ id: 'h', userId: 'u1', startDayKey: '2026-11-10', endDayKey: '2026-11-10', timeSlot: 'AM', approved: true }],
+    bookings: [],
+  })
+  assert.equal(rows.length, 1)
+  assert.deepEqual(rows[0].workingWindow, { start: 9 * 60, end: 12 * 60 })
+  assert.equal(rows[0].missingHours, 2.75)
+})
+
+test('1.23.1 userMissingLevel / usersMissingLevel: no level flag and not an admin by role', () => {
+  const roster = [
+    { id: 'flagless', email: 'pat@x.com', role: 'manager' },
+    { id: 'basic', email: 'b@x.com', role: 'basic', permissions: { manager: false, operativeMode: false } },
+    { id: 'mgr', email: 'm@x.com', permissions: { manager: true } },
+    { id: 'op', email: 'o@x.com', operativeMode: true },
+    { id: 'adm-role', email: 'a@x.com', role: 'admin' },
+    { id: 'sa', email: 's@x.com', isSuperAdmin: true },
+    { id: 'gone', email: '', firstName: 'Deleted', surname: 'user' },
+  ]
+  assert.deepEqual(R112.usersMissingLevel(roster).map((row) => row.id), ['flagless', 'basic'])
+  assert.equal(R112.userMissingLevel(null), false)
+  assert.equal(R112.USER_MISSING_LEVEL_MESSAGE, 'Has no user level: open in Manage Users and pick one')
+})
+
+test('1.23.1 weekend named slots: a Saturday Full day is that Saturday\'s own window (07:30–13:00), not the weekday day', () => {
+  // Weekday 07:30–16:00; Saturday set window 07:30–13:00 (default); Saturday 7 Nov 2026.
+  const policy = parsePolicy112({
+    standardDayStart: '07:30',
+    standardDayEnd: '16:00',
+    breakWindowStart: '12:00',
+    breakWindowEnd: '12:30',
+    unpaidBreakMinutes: 30,
+    saturday: { allHoursAtMultiplierMode: false, allHoursMultiplier: 2, definedWindowStart: '07:30', definedWindowEnd: '13:00', countsAsStandardHours: 8, outsideWindowMultiplier: 2 },
+  })
+  assert.deepEqual(R112.bookingStandardDayOn(policy, '2026-11-07'), {
+    standardDayStart: '07:30',
+    standardDayEnd: '13:00',
+    breakWindowStart: '12:00',
+    breakWindowEnd: '12:30',
+  })
+  assert.equal(R112.bookingStandardDayOn(policy, '2026-11-06')?.standardDayEnd, '16:00')
+  const fullDay = { id: 'sat-full', dayKey: '2026-11-07', timeSlot: 'FULL DAY' }
+  const inside = { id: 'sat-in', dayKey: '2026-11-07', timeSlot: 'CUSTOM_HOURS', workStartTime: '10:00', workEndTime: '12:00' }
+  const outside = { id: 'sat-out', dayKey: '2026-11-07', timeSlot: 'CUSTOM_HOURS', workStartTime: '14:00', workEndTime: '16:00' }
+  // Overlap flag (timesheets)
+  assert.deepEqual(R112.overlappingBookingIds([fullDay, inside], policy), ['sat-full', 'sat-in'])
+  assert.deepEqual(R112.overlappingBookingIds([fullDay, outside], policy), [])
+  // Warnings (operative clashes)
+  const people = { accounts: [], operatives: [] }
+  const withOp = (rows: Array<Record<string, string>>) => rows.map((row) => ({ ...row, operativeId: 'op1' })) as never
+  assert.equal(R112.operativeClashGroups({ operativeBookings: withOp([fullDay, inside]), people, day: policy }).length, 1)
+  assert.equal(R112.operativeClashGroups({ operativeBookings: withOp([fullDay, outside]), people, day: policy }).length, 0)
+  // Booking being made
+  const request = (row: Record<string, string>) => ({ dayKey: row.dayKey, timeSlot: row.timeSlot, workStartTime: row.workStartTime, workEndTime: row.workEndTime })
+  assert.deepEqual(R112.bookingRequestClashIds({ request: request(inside), existing: [fullDay], day: policy }), ['sat-full'])
+  assert.deepEqual(R112.bookingRequestClashIds({ request: request(outside), existing: [fullDay], day: policy }), [])
+  assert.deepEqual(R112.bookingRequestClashIds({ request: { dayKey: '2026-11-07', timeSlot: 'FULL DAY' }, existing: [outside], day: policy }), [])
+  // Leave: PM leave on Saturday is the later half of 07:30–13:00 (10:15–13:00), so 14:00–16:00 does not conflict.
+  const holidays = [{ id: 'h', userId: 'u1', startDayKey: '2026-11-07', endDayKey: '2026-11-07', timeSlot: 'PM', status: 'approved' }]
+  const leave = (row: Record<string, string>) =>
+    R112.bookingLeaveConflicts({ people: [{ id: 'u1' }], dayKeys: ['2026-11-07'], holidays, timeSlot: row.timeSlot, workStartTime: row.workStartTime, workEndTime: row.workEndTime, day: policy }).length
+  assert.equal(leave(inside), 1)
+  assert.equal(leave(outside), 0)
+  // Leave cover: AM leave on Saturday leaves 10:15–13:00 (less the 12:00–12:30 lunch) to cover.
+  const cover = R112.leaveCoverageRows({
+    timeZone: 'Europe/London',
+    startDayKey: '2026-11-07',
+    endDayKey: '2026-11-07',
+    day: policy,
+    includeWeekends: true,
+    people: [{ personKey: 'u1', name: 'Mo', userId: 'u1', operativeIds: [] }],
+    leave: [{ id: 'h', userId: 'u1', startDayKey: '2026-11-07', endDayKey: '2026-11-07', timeSlot: 'AM', approved: true }],
+    bookings: [],
+  })
+  assert.deepEqual(cover[0].workingWindow, { start: 10 * 60 + 15, end: 13 * 60 })
+})

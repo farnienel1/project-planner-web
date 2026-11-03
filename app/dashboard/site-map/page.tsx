@@ -7,8 +7,8 @@ import { canViewSiteMap } from '@/lib/navigation/menuPermissions'
 import { useProjectStore } from '@/lib/stores/projectStore'
 import { useBookingStore } from '@/lib/stores/bookingStore'
 import { useManagerScheduleStore } from '@/lib/stores/managerScheduleStore'
-import { dateFromDayKey, dayKey } from '@/lib/ios-parity/londonTime'
-import { countBookingsOnSiteDay } from '@/lib/site-map/siteDayBookings'
+import { dayKeyInOrganizationZone, jobKind, siteMapPins } from '@/lib/canonical'
+import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 import { EmptyState, LoadingSpinner } from '@/components/dashboard/PageShell'
 import { mergeProjectsAndSmallWorks } from '@/lib/projects/workStatus'
 import { geocodeSiteProject } from '@/lib/maps/geocoding'
@@ -51,7 +51,7 @@ export default function SiteMapPage() {
   const { projects, smallWorks, loadProjects, loadSmallWorks } = useProjectStore()
   const { bookings, loadBookings } = useBookingStore()
   const { managerSiteBookings, loadManagerSiteBookings } = useManagerScheduleStore()
-  const [selectedDate, setSelectedDate] = useState(() => dayKey(new Date()))
+  const [selectedDate, setSelectedDate] = useState(() => dayKeyInOrganizationZone(new Date().toISOString(), organizationZoneOr()))
   const [selectedPinId, setSelectedPinId] = useState<string | null>(null)
   const [coordinatesBySiteId, setCoordinatesBySiteId] = useState<
     Record<string, { latitude: number; longitude: number }>
@@ -72,10 +72,29 @@ export default function SiteMapPage() {
     }
   }, [organization?.id, loadProjects, loadSmallWorks, loadBookings, loadManagerSiteBookings])
 
-  const dateObj = useMemo(() => dateFromDayKey(selectedDate), [selectedDate])
-
   const basePins = useMemo(() => {
     const allSites = mergeProjectsAndSmallWorks(projects, smallWorks).filter((site) => site.isLive)
+    // Rulebook 1.23.0 §21 `siteMapPins`: the organisation day's bookings that occupy it (never cancelled ones).
+    const zone = organizationZoneOr()
+    const counts = new Map(
+      siteMapPins({
+        jobs: allSites.map((site) => ({ id: site.id, isLive: site.isLive })),
+        bookings: bookings.map((booking) => ({
+          projectId: booking.projectId,
+          operativeId: booking.operativeId,
+          date: booking.date,
+          status: String(booking.status ?? ''),
+        })),
+        managerSiteBookings: managerSiteBookings.map((booking) => ({
+          userId: booking.userId,
+          locationId: booking.locationId ?? null,
+          locationType: booking.locationType,
+          date: booking.date,
+        })),
+        dayKey: selectedDate,
+        timeZone: zone,
+      }).map((pin) => [pin.jobId, pin.bookingCount])
+    )
 
     return allSites
       .map((site): Omit<SitePin, 'latitude' | 'longitude' | 'geocodeFailed'> & {
@@ -84,16 +103,12 @@ export default function SiteMapPage() {
         geocodeFailed: boolean
       } => {
         const address = formatSiteAddress(site)
-        const bookingCount = countBookingsOnSiteDay({
-          siteId: site.id,
-          day: dateObj,
-          operativeBookings: bookings,
-          managerBookings: managerSiteBookings,
-        })
+        const bookingCount = counts.get(site.id) ?? 0
         const stored = resolveStoredCoordinates(site)
         const resolved = stored || coordinatesBySiteId[site.id]
 
-        const source = /small works/i.test(site.jobType || '') ? 'smallWork' as const : 'project' as const
+        // The collection decides the kind (`jobKind`, §17), never `jobType` text.
+        const source = jobKind(site, site.collection) === 'smallWorks' ? 'smallWork' as const : 'project' as const
 
         return {
           id: site.id,
@@ -112,7 +127,7 @@ export default function SiteMapPage() {
         }
       })
       .sort((a, b) => a.label.localeCompare(b.label))
-  }, [projects, smallWorks, bookings, managerSiteBookings, dateObj, coordinatesBySiteId])
+  }, [projects, smallWorks, bookings, managerSiteBookings, selectedDate, coordinatesBySiteId])
 
   useEffect(() => {
     let cancelled = false

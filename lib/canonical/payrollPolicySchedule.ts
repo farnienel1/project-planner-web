@@ -19,12 +19,14 @@
  * Day keys use `organizationTimeZone(countryCode)`.
  */
 import { addDaysInZone, dateFromDayKeyInZone, dayKeyInZone } from '../orgTime/zoneTime'
-import { parseClockMinutes } from './engine'
+import { formatClockMinutes, parseClockMinutes, type StandardDayInput } from './engine'
+import { weekendFullDayWindow, weekendRuleForIsoWeekday } from './payrollHours'
 import {
   PAYROLL_POLICY_LIMITS,
   derivedWeekdayPaidHours,
   parsePayrollPolicy,
   payrollPolicyToFirestore,
+  weekendBreakFor,
   withDerivedWeekdayPaidHours,
   type OrgPayrollTimePolicy,
   type WeekendPayrollSettings,
@@ -149,6 +151,67 @@ export function parsePayrollTimePolicyState(orgDoc: unknown, timeZone?: string |
 function isState(value: unknown): value is PayrollTimePolicyState {
   const v = record(value)
   return Boolean(v && 'current' in v && 'scheduled' in v && record(v.current))
+}
+
+/** Whether `value` is the whole working-hours state (`PayrollTimePolicyState`) rather than one policy. */
+export function isPayrollTimePolicyState(value: unknown): value is PayrollTimePolicyState {
+  return isState(value)
+}
+
+/** ISO weekday (1 Monday … 7 Sunday) of a `YYYY-MM-DD` key — plain calendar arithmetic, zone independent. */
+function isoWeekdayOfKey(dayKey: string): number | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dayKey.trim())
+  if (!match) return null
+  const day = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))).getUTCDay()
+  return day === 0 ? 7 : day
+}
+
+function isWholePolicy(value: unknown): value is OrgPayrollTimePolicy {
+  const v = record(value)
+  return Boolean(v && record(v.saturday) && record(v.sunday))
+}
+
+/**
+ * Rulebook 1.23.1 §4.3, §5: the day a booking's named slot (Full day, AM, PM) is measured against on `dayKey`, for
+ * clash, overlap and leave checks. The working hours in effect that day (`standardDayOn`); on a Saturday or Sunday
+ * that day's own Full day window (`weekendFullDayWindow`: the set window, or the standard day when the day pays
+ * every hour at the multiplier) and its own lunch break (`weekendBreakFor`), never the Monday–Friday day. A bare
+ * standard-day input (no weekend rules) is used as given. Pay never reads this: it prices weekends with
+ * `payrollHoursResult`.
+ */
+export function bookingStandardDayOn(
+  day: StandardDayInput | OrgPayrollTimePolicy | PayrollTimePolicyState | null | undefined,
+  dayKey: string | null | undefined
+): StandardDayInput | null {
+  const resolved = standardDayOn<StandardDayInput>(day, dayKey)
+  if (!resolved || !isWholePolicy(resolved) || typeof dayKey !== 'string') return resolved
+  const iso = isoWeekdayOfKey(dayKey)
+  const weekend = iso === 6 || iso === 7 ? weekendRuleForIsoWeekday(iso, resolved) : null
+  if (!weekend) return resolved
+  const window = weekendFullDayWindow(resolved, weekend)
+  if (!window) return resolved
+  const ownBreak = weekendBreakFor(resolved, weekend)
+  return {
+    standardDayStart: formatClockMinutes(window.start),
+    standardDayEnd: formatClockMinutes(window.end),
+    breakWindowStart: ownBreak.start,
+    breakWindowEnd: ownBreak.end,
+  }
+}
+
+/**
+ * Rulebook 1.23.0 §4.3: the standard day (or whole policy) in effect on `dayKey` for a scan that takes either one
+ * policy or the whole state. A state is read per day (`payrollTimePolicyForDayFromState`); a single policy or
+ * standard-day input is returned as given (callers and tests that pass one policy keep it for every day); null and
+ * undefined stay null.
+ */
+export function standardDayOn<T>(day: T | PayrollTimePolicyState | null | undefined, dayKey: string | null | undefined): T | OrgPayrollTimePolicy | null {
+  if (day == null) return null
+  if (isState(day)) {
+    const key = typeof dayKey === 'string' && DAY_KEY_RE.test(dayKey.trim()) ? dayKey.trim() : null
+    return key ? payrollTimePolicyForDayFromState(day, key) : day.current
+  }
+  return day as T
 }
 
 /**

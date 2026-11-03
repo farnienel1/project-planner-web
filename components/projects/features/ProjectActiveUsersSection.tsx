@@ -140,9 +140,15 @@ function useProjectActiveUserData(project: Project, enabled: boolean) {
             operativeBookings: bookings,
             managerBookings: managerSiteBookings,
             subcontractorBookings: subBookings,
+            // Rulebook 1.23.0: one person once under all their ids.
+            people: [
+              ...users.map((row) => ({ id: row.id, email: row.email, formerUserIds: row.formerUserIds ?? [] })),
+              ...operatives.map((row) => ({ id: row.id, email: row.email ?? null })),
+              ...managers.map((row) => ({ id: row.id, email: row.email ?? null })),
+            ],
           })
         : 0,
-    [enabled, project.id, bookings, managerSiteBookings, subBookings]
+    [enabled, project.id, bookings, managerSiteBookings, subBookings, users, operatives, managers]
   )
 
   return { loading, allowed, summaries, count, input, user, managers }

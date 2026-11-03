@@ -1,3 +1,5 @@
+import { isTaskOverdue as canonicalIsTaskOverdue } from '@/lib/canonical'
+import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 /**
  * iOS parity source: Models/ProjectTask.swift, Views/ProjectDetailView.swift (job My Tasks)
  * Spec: docs/ios-parity/sections/16-job-tiles.md
@@ -38,13 +40,9 @@ export function isTaskCompleted(task: ProjectTask): boolean {
   return task.status === 'Completed'
 }
 
+/** Rulebook 1.23.0 §23 `isTaskOverdue`: due before today on the organisation day, never the browser's. */
 export function isTaskOverdue(task: ProjectTask, now = new Date()): boolean {
-  if (isTaskCompleted(task) || !task.dueDate) return false
-  const due = new Date(task.dueDate)
-  due.setHours(0, 0, 0, 0)
-  const startOfToday = new Date(now)
-  startOfToday.setHours(0, 0, 0, 0)
-  return due.getTime() < startOfToday.getTime()
+  return canonicalIsTaskOverdue({ status: task.status, dueDate: task.dueDate ?? null }, now.getTime(), organizationZoneOr())
 }
 
 export function isAssignedToUser(
