@@ -9,9 +9,15 @@
  * An invited person's pay may sit on the pay profile of their invite placeholder (written at Add User while
  * `privatePay` is on); a users document is laid over with the profile of its own id first, else of one of its
  * `formerUserIds`.
+ *
+ * Only while `privatePay` is on for the organisation (`securitySwitchOn`). While it is off, older app builds still write
+ * pay only to `users` / `operatives` / `managers`, so a pay profile can be stale: the roster is read from those
+ * documents unchanged, exactly as before 1.26.0 (the people profile keeps its own pay-profile-first read,
+ * `UserProfileSummary`).
  */
 import { collection, doc, getDoc, getDocs } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
+import { privatePayFor } from '@/lib/access/securitySwitches'
 import {
   PAY_PROFILES_COLLECTION,
   overlayPayProfile,
@@ -38,6 +44,7 @@ export function overlayRosterPay(
   data: Record<string, unknown>
 ): Record<string, unknown> {
   if (!organizationId || organizationId !== cacheOrganizationId || profiles.size === 0) return data
+  if (!privatePayFor(organizationId)) return data
   const profile = profiles.get(docId) ?? storedIds(data).map((id) => profiles.get(id)).find(Boolean) ?? null
   return profile ? overlayPayProfile(data, profile) : data
 }
@@ -61,8 +68,16 @@ export async function refreshPayProfiles(
   viewer: PayViewer | null | undefined,
   roster: ReadonlyArray<PaySubject & { formerUserIds?: ReadonlyArray<string> | null }>
 ): Promise<boolean> {
-  if (!db || !organizationId || !viewer) return false
+  if (!organizationId || !viewer) return false
   if (inFlight) await inFlight.catch(() => false)
+  // Off: no pay-profile read and nothing laid over (a stale profile never replaces the users document's pay).
+  if (!privatePayFor(organizationId)) {
+    const had = cacheOrganizationId === organizationId && profiles.size > 0
+    cacheOrganizationId = organizationId
+    profiles = new Map()
+    return had
+  }
+  if (!db) return false
   const firestore = db
   const run = (async () => {
     const plan = payProfileReadPlan(viewer, roster, roster as never)

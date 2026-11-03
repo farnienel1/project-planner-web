@@ -189,11 +189,12 @@ export function TimesheetsScreen({
       if (stale()) return
       listed = mergeListedTimesheetDrafts(listed, indexed)
       setDrafts((current) => mergeListedTimesheetDrafts(current, listed))
-    } catch {
+    } catch (error) {
       // Rulebook 1.26.0 §16: with `privatePay` on, the rules refuse a non-admin's period-wide query (it could return
-      // sheets of people whose pay they may not see). Fall through to the per-person reads below; show the error only
-      // when there is nobody to read that way.
-      if (userIds.length === 0) {
+      // sheets of people whose pay they may not see). Only that refusal falls through to the per-person reads below;
+      // any other failure (offline, timeout, missing index) still shows the error.
+      const code = (error as { code?: unknown } | null)?.code
+      if (code !== 'permission-denied' || userIds.length === 0) {
         if (!stale()) setLoadError('Timesheets did not finish loading. Check the connection and try again.')
         return
       }

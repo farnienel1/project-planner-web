@@ -73,6 +73,24 @@ function replanEverything(): void {
   if (managerOrg) void useManagerScheduleStore.getState().loadManagerSiteBookings(managerOrg).catch(() => undefined)
 }
 
+/**
+ * Rulebook 1.26.0: `privatePay` changed for the open organisation. The roster and the operatives rows are read again,
+ * laid over with pay profiles only while it is on (`refreshPayProfiles`, `overlayRosterPay`).
+ */
+async function rereadPay(): Promise<void> {
+  const [{ refreshPayProfiles }, { useOrgUserStore }, { unsubscribeOrgCollection }] = await Promise.all([
+    import('@/lib/pay/payProfileOverlay'),
+    import('@/lib/stores/siteAuditStore'),
+    import('@/lib/firebase/subscribeOrgCollection'),
+  ])
+  const organizationId = useOrgUserStore.getState().rosterLoadedOrgId
+  if (!organizationId) return
+  await refreshPayProfiles(organizationId, useAuthStore.getState().user as never, useOrgUserStore.getState().users as never)
+  await useOrgUserStore.getState().loadUsers(organizationId, { force: true })
+  unsubscribeOrgCollection('operativeStore:operatives')
+  await useOperativeStore.getState().loadOperatives(organizationId, { force: true })
+}
+
 let switchWatch = false
 /** Start following the `enforcedReads` switch (idempotent; the stores call it when they first plan). */
 export function followSecuritySwitches(): void {
@@ -80,6 +98,7 @@ export function followSecuritySwitches(): void {
   switchWatch = true
   onSecuritySwitchChange((name) => {
     if (name === 'enforcedReads') replanEverything()
+    if (name === 'privatePay') void rereadPay()
   })
 }
 
