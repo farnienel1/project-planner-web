@@ -16,8 +16,6 @@ import { dayKey as londonDayKey } from '@/lib/ios-parity/londonTime'
 
 const FALLBACK_STANDARD_PAID_HOURS = 8
 const FALLBACK_UNPAID_BREAK_MINUTES = 30
-const FALLBACK_BREAK_START = '12:00'
-const FALLBACK_BREAK_END = '12:30'
 const FALLBACK_DAY_START = '07:30'
 const FALLBACK_DAY_END = '16:00'
 const FALLBACK_OT_MULTIPLIER = 1.5
@@ -215,27 +213,6 @@ function overlapMinutes(a0: number, a1: number, b0: number, b1: number): number 
   return Math.max(0, Math.min(a1, b1) - Math.max(a0, b0))
 }
 
-function unpaidBreakOverlapMinutes(input: {
-  start: number
-  spanEnd: number
-  isBreakRemoved?: boolean
-  unpaidBreakMinutes?: number
-  breakWindowStart?: string
-  breakWindowEnd?: string
-}): number {
-  if (input.isBreakRemoved) return 0
-  const unpaid = input.unpaidBreakMinutes ?? FALLBACK_UNPAID_BREAK_MINUTES
-  if (unpaid <= 0) return 0
-  const breakStart = parseMinutes(input.breakWindowStart || FALLBACK_BREAK_START)
-  const breakEnd = parseMinutes(input.breakWindowEnd || FALLBACK_BREAK_END)
-  if (breakStart == null || breakEnd == null) return 0
-  const b0 = breakStart < input.start && breakEnd < input.start ? breakStart + 24 * 60 : breakStart
-  const b1 = breakEnd <= breakStart ? breakEnd + 24 * 60 : breakEnd
-  const overlap = overlapMinutes(input.start, input.spanEnd, b0, b1)
-  if (overlap <= 0) return 0
-  return Math.min(unpaid, overlap)
-}
-
 export type OvertimeSegment = { start: number; end: number }
 
 export function overtimeSegments(input: {
@@ -387,16 +364,10 @@ export function hoursBreakdown(input: BookingHoursInput): HoursBreakdown {
     if (standardOverlap > 0) {
       standardRangeLabel = `${formatClockFromMinutes(Math.max(span.start, windowStart))} - ${formatClockFromMinutes(Math.min(span.end, windowEnd))}`
     }
-    const breakMins = unpaidBreakOverlapMinutes({
-      start: span.start,
-      spanEnd: span.end,
-      isBreakRemoved: input.isBreakRemoved,
-      unpaidBreakMinutes: policy.unpaidBreakMinutes,
-      breakWindowStart: policy.breakWindowStart,
-      breakWindowEnd: policy.breakWindowEnd,
-    })
-    breakHours = Math.round((breakMins / 60) * 10) / 10
   }
+  // Rulebook 1.19.0: the break shown is the one pay takes off (`payrollHoursResult.unpaidBreakHours`) — on a weekend day
+  // only when that day's break is unpaid; never a second break calculation here.
+  breakHours = Math.round((paid.unpaidBreakHours || 0) * 10) / 10
   standardPaid = Math.round(paid.standardHours * 100) / 100
 
   const totalPaidHours = Math.round(paid.totalPaidHours * 100) / 100
@@ -410,7 +381,8 @@ export function hoursBreakdown(input: BookingHoursInput): HoursBreakdown {
   if (input.isBreakRemoved) {
     lines.push({ kind: 'break', label: 'Break', value: 'unpaid break removed' })
   } else if (breakHours > 0) {
-    const breakMins = policy.unpaidBreakMinutes ?? FALLBACK_UNPAID_BREAK_MINUTES
+    // 1.19.0: the break pay took off that day (a weekend day's own length), never assumed from the weekday setting.
+    const breakMins = Math.round((paid.unpaidBreakHours || 0) * 60) || (policy.unpaidBreakMinutes ?? FALLBACK_UNPAID_BREAK_MINUTES)
     lines.push({
       kind: 'break',
       label: `Minus ${breakMins} minute break`,

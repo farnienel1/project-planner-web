@@ -16,8 +16,8 @@
  */
 
 import { formatClockMinutes, halfDayWindows, intervalsOverlap, namedSlotKind, parseClockMinutes, slotInterval } from './engine'
-import type { OrgPayrollTimePolicy } from './organizationSettings'
-import { payrollHoursResult, weekendFullDayWindow, weekendRuleForIsoWeekday } from './payrollHours'
+import { weekendBreakFor, type OrgPayrollTimePolicy } from './organizationSettings'
+import { payrollBreakOnDay, payrollHoursResult, unpaidBreakAppliesOnDay, weekendFullDayWindow, weekendRuleForIsoWeekday } from './payrollHours'
 import { isoWeekdayOfDayKey, zoneOrLondon } from './dayKeys'
 import { payrollTimePolicyForDayFromState, type PayrollTimePolicyState } from './payrollPolicySchedule'
 
@@ -259,8 +259,21 @@ export type BookingDayBreakdownRow = {
   multiplier: number
   /** `totalPaidHours`: standard hours plus overtime hours × multiplier. */
   paidHoursEquivalent: number
-  /** The row text, e.g. "Saturday 07:30–14:00 = 8h (counts as a full day)". */
+  /** Rulebook 1.19.0: the unpaid break taken off (`payrollHoursResult.unpaidBreakHours`), 0 when none. */
+  unpaidBreakHours: number
+  /** The row text, e.g. "Saturday 07:30–14:00 = 8h (counts as a full day)" or "… = 8h − 0.5h unpaid break = 7.5h". */
   line: string
+  /**
+   * Rulebook 1.19.0: the row as the Mon–Fri hours breakdown shows it — set hours (or hours / every hour), unpaid
+   * break, outside hours with the multiplier, total. Values only; screens lay them out.
+   */
+  lines: BookingDayBreakdownLine[]
+}
+
+export type BookingDayBreakdownLine = {
+  kind: 'standard' | 'break' | 'outside' | 'total'
+  label: string
+  value: string
 }
 
 const WEEKDAY_NAMES = ['', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
@@ -274,8 +287,9 @@ function roundHours(hours: number): number {
  * selected day (`dayKeys`, organisation-zone, de-duplicated and in date order), each computed ONLY by the pay rule
  * timesheets use — `payrollHoursResult` for that day under the policy in effect on it (`policy` may be the policy
  * state) — so a Saturday on a set window and a Sunday at every hour × 2 show their own figures. Break handling is
- * exactly pay's: Saturday and Sunday take no unpaid break off; a weekday takes the covered part of the unpaid break
- * unless `isBreakRemoved` or the break is paid. Booking screens show these rows (collapsing identical weekend rows
+ * exactly pay's: a day takes the covered part of the unpaid break unless `isBreakRemoved` or that day's break is paid
+ * (1.19.0: Saturday / Sunday by their own `breakPaid`, missing = paid; the break is the weekday window and length),
+ * and the row shows it ("Saturday 07:30–14:00 = 8h − 0.5h unpaid break = 7.5h", `lines`). Booking screens show these rows (collapsing identical weekend rows
  * into one "Saturday/Sunday" row is allowed) instead of a generic standard-day summary. Invalid times or no days: [].
  *
  * Example: Saturday window 07:30–14:00 counts as 8h, Sunday every hour at 2×, booked 07:30–14:00 →
@@ -309,20 +323,65 @@ export function weekendBookingBreakdown(
     })
     const weekend = iso === 6 || iso === 7 ? weekendRuleForIsoWeekday(iso, dayPolicy) : null
     const windowDay = Boolean(weekend && !weekend.allHoursAtMultiplierMode)
+    const allHoursDay = Boolean(weekend && weekend.allHoursAtMultiplierMode)
     const standardHours = roundHours(paid.standardHours)
     const overtimeHours = roundHours(paid.outsideHours)
     const multiplier = roundHours(paid.outsideMultiplier)
     const total = roundHours(paid.totalPaidHours)
+    const unpaidBreakHours = roundHours(paid.unpaidBreakHours)
+    let breakInStandard = 0
+    let breakOutside = 0
+    for (const row of paid.segments) {
+      if (row.kind === 'standardWindow') breakInStandard += row.unpaidBreakHours ?? 0
+      else breakOutside += row.unpaidBreakHours ?? 0
+    }
+    breakInStandard = roundHours(breakInStandard)
+    breakOutside = roundHours(breakOutside)
     const credit = weekend ? Number(weekend.countsAsStandardHours ?? dayPolicy.standardPaidHours) : NaN
     const fullDay = windowDay && standardHours > 0 && Math.abs(standardHours - roundHours(credit)) < 0.001
-    const parts: string[] = []
-    if (standardHours > 0) parts.push(hoursText(standardHours))
-    if (overtimeHours > 0) parts.push(`${hoursText(overtimeHours)} × ${roundHours(multiplier)}`)
     const label = WEEKDAY_NAMES[iso] || dayKey
     let line = `${label} ${startText}–${endText} = `
-    if (parts.length === 0) line += '0h'
-    else if (overtimeHours > 0) line += `${parts.join(' + ')} = ${hoursText(total)}`
-    else line += `${parts[0]}${fullDay ? ' (counts as a full day)' : ''}`
+    if (unpaidBreakHours > 0) {
+      // 1.19.0: the break shown as Monday–Friday shows it — the hours before the break, the break, then the total.
+      const parts: string[] = []
+      const standardBefore = roundHours(standardHours + breakInStandard)
+      if (standardBefore > 0) {
+        parts.push(breakInStandard > 0 ? `${hoursText(standardBefore)} − ${hoursText(breakInStandard)} unpaid break` : hoursText(standardHours))
+      }
+      const outsideBefore = roundHours(overtimeHours + breakOutside)
+      if (outsideBefore > 0) {
+        parts.push(
+          breakOutside > 0
+            ? `(${hoursText(outsideBefore)} − ${hoursText(breakOutside)} unpaid break) × ${multiplier}`
+            : `${hoursText(overtimeHours)} × ${multiplier}`
+        )
+      }
+      line += parts.length === 0 ? '0h' : `${parts.join(' + ')} = ${hoursText(total)}`
+    } else {
+      const parts: string[] = []
+      if (standardHours > 0) parts.push(hoursText(standardHours))
+      if (overtimeHours > 0) parts.push(`${hoursText(overtimeHours)} × ${roundHours(multiplier)}`)
+      if (parts.length === 0) line += '0h'
+      else if (overtimeHours > 0) line += `${parts.join(' + ')} = ${hoursText(total)}`
+      else line += `${parts[0]}${fullDay ? ' (counts as a full day)' : ''}`
+    }
+    const lines: BookingDayBreakdownLine[] = []
+    if (allHoursDay) {
+      lines.push({ kind: 'outside', label: 'Every hour', value: `${hoursText(roundHours(overtimeHours + breakOutside))} × ${multiplier}` })
+    } else if (standardHours > 0 || breakInStandard > 0) {
+      lines.push({
+        kind: 'standard',
+        label: windowDay ? 'Set hours' : 'Standard hours',
+        value: hoursText(roundHours(standardHours + breakInStandard)),
+      })
+    }
+    if (unpaidBreakHours > 0) {
+      lines.push({ kind: 'break', label: 'Unpaid break', value: `−${hoursText(unpaidBreakHours)}` })
+    }
+    if (!allHoursDay && (overtimeHours > 0 || breakOutside > 0)) {
+      lines.push({ kind: 'outside', label: 'Outside hours', value: `${hoursText(roundHours(overtimeHours + breakOutside))} × ${multiplier}` })
+    }
+    lines.push({ kind: 'total', label: 'Total paid hours', value: hoursText(total) })
     return {
       dayKey,
       weekdayLabel: label,
@@ -334,9 +393,35 @@ export function weekendBookingBreakdown(
       overtimeHours,
       multiplier,
       paidHoursEquivalent: total,
+      unpaidBreakHours,
       line,
+      lines,
     }
   })
+}
+
+/**
+ * Rulebook 1.19.0: the Working hours copy for a weekend day's lunch break, e.g.
+ * `{ title: 'Lunch break on Saturday', detail: '12:00–12:30, 30 min — the same as your weekday lunch.' }`. Each weekend
+ * day has its own Paid / Unpaid, length and window; a day that has not set them shows (and is prefilled with) the
+ * weekday break (`weekendBreakFor`).
+ */
+export function weekendLunchBreakCopy(
+  policy: OrgPayrollTimePolicy | null | undefined,
+  weekday: 'saturday' | 'sunday'
+): { title: string; detail: string } {
+  const name = weekday === 'saturday' ? 'Saturday' : 'Sunday'
+  if (!policy) return { title: `Lunch break on ${name}`, detail: '' }
+  const settings = weekday === 'sunday' && policy.sunday?.sameAsSaturday ? policy.saturday : policy[weekday]
+  const own = weekendBreakFor(policy, settings)
+  const sameAsWeekday =
+    own.minutes === Math.max(0, Number(policy.unpaidBreakMinutes) || 0) &&
+    own.start === policy.breakWindowStart &&
+    own.end === policy.breakWindowEnd
+  return {
+    title: `Lunch break on ${name}`,
+    detail: `${own.start}–${own.end}, ${own.minutes} min${sameAsWeekday ? ' — the same as your weekday lunch.' : '.'}`,
+  }
 }
 
 export const CUSTOM_HOURS_BREAK_WARNING =
@@ -353,8 +438,8 @@ export type CustomHoursBreakBooking = {
 /**
  * `CUSTOM_HOURS_BREAK_WARNING` when the booking is custom hours, the organisation break is unpaid
  * (`breakPaid !== true`, an unpaid length above 0), the booking's Unpaid break toggle is on (`isBreakRemoved !== true`)
- * and its clock interval overlaps the break window on that day; else null. Saturday and Sunday take no break off
- * (§8), so they never warn. `policy` is the policy in effect that day (`effectivePayrollTimePolicy`).
+ * and its clock interval overlaps the break window on that day; else null. 1.19.0: on Saturday or Sunday only when that
+ * day's break is unpaid (`unpaidBreakAppliesOnDay`). `policy` is the policy in effect that day (`effectivePayrollTimePolicy`).
  */
 export function customHoursBreakWarning(
   policy: OrgPayrollTimePolicy | null | undefined,
@@ -364,12 +449,15 @@ export function customHoursBreakWarning(
 ): string | null {
   if (!policy || !booking) return null
   if (namedSlotKind(booking.timeSlot) !== 'CUSTOM') return null
-  if (policy.breakPaid === true || booking.isBreakRemoved === true) return null
-  if (!(Number(policy.unpaidBreakMinutes) > 0)) return null
-  if (dayKey && isWeekendDayKey(dayKey, timeZone)) return null
-  const start = parseClockMinutes(policy.breakWindowStart)
-  const end = parseClockMinutes(policy.breakWindowEnd)
-  if (start == null || end == null || end <= start) return null
+  if (booking.isBreakRemoved === true) return null
+  // 1.19.0: an unpaid break on that day — Monday–Friday the organisation break, Saturday / Sunday that day's
+  // `breakPaid === false` (`unpaidBreakAppliesOnDay`). A day whose break is paid never warns.
+  const day = dayKey || '2026-01-07'
+  if (!unpaidBreakAppliesOnDay(policy, day, timeZone)) return null
+  // 1.19.0: that day's break window (a weekend day's own, else the weekday one).
+  const dayBreak = payrollBreakOnDay(policy, day, timeZone)
+  if (!dayBreak) return null
+  const { start, end } = dayBreak
   const span = slotInterval(
     { timeSlot: booking.timeSlot, workStartTime: booking.workStartTime, workEndTime: booking.workEndTime },
     policy

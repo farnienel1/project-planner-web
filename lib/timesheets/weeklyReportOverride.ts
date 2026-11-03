@@ -8,7 +8,7 @@
 import type { Booking, Operative, Project, User } from '@/types'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import type { MyScheduleOptions, OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
-import { DEFAULT_MY_SCHEDULE, DEFAULT_PAYROLL_POLICY } from '@/lib/settings/organizationSettings'
+import { DEFAULT_MY_SCHEDULE, DEFAULT_PAYROLL_POLICY, orgPayrollPolicyForDay } from '@/lib/settings/organizationSettings'
 import { isTimesheetFullyApproved, userTimesheetSelfSigned } from '@/lib/timesheets/timesheetApprovalPolicy'
 import {
   effectiveExpenseAmount,
@@ -24,6 +24,7 @@ import {
 } from '@/lib/timesheets/timesheetPayrollCollector'
 import { emptyDayRateHistory, type OperativeDayRateHistoryCollection } from '@/lib/timesheets/dayRateHistoryStorage'
 import { orgDayHours } from '@/lib/timesheets/payBasis'
+import type { PayrollTimePolicyState } from '@/lib/canonical'
 import type {
   TimesheetDraft,
   TimesheetManagerDecision,
@@ -50,6 +51,8 @@ export type WeeklyReportOverrideInput = {
   payrollPolicy?: OrgPayrollTimePolicy
   payrollPolicyPrior?: OrgPayrollTimePolicy | null
   payrollPolicyEffectiveFrom?: string | null
+  /** Rulebook 1.19.0: the whole working-hours state; each day is priced under the rules in effect on it. */
+  payrollPolicyState?: PayrollTimePolicyState | null
   scheduleOptions?: MyScheduleOptions
   timeZone?: string
 }
@@ -156,6 +159,7 @@ function makeOverride(input: WeeklyReportOverrideInput): WeeklyReportOverride {
     payrollPolicy: policy,
     payrollPolicyPrior: input.payrollPolicyPrior,
     payrollPolicyEffectiveFrom: input.payrollPolicyEffectiveFrom,
+    payrollPolicyState: input.payrollPolicyState,
     timeZone: input.timeZone,
     history: input.history || emptyDayRateHistory(),
     scheduleOptions: input.scheduleOptions || DEFAULT_MY_SCHEDULE,
@@ -170,7 +174,17 @@ function makeOverride(input: WeeklyReportOverrideInput): WeeklyReportOverride {
       continue
     }
     const amount = effectivePayrollAmount(line, input.draft, managerHasSigned, true)
-    const days = scaledDays(line, amount, policy.standardPaidHours)
+    // 1.19.0: day units against the standard day in effect on the line's own day.
+    const linePolicy = orgPayrollPolicyForDay(
+      line.date,
+      policy,
+      input.payrollPolicyPrior,
+      input.payrollPolicyEffectiveFrom,
+      input.timeZone,
+      null,
+      input.payrollPolicyState
+    )
+    const days = scaledDays(line, amount, linePolicy.standardPaidHours)
     lines.push(
       labourLine(line, agreedDecision(review?.decision), amount, days, input.managerSiteBookings)
     )

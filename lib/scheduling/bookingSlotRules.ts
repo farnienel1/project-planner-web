@@ -23,6 +23,8 @@ import {
   WEEKEND_WEEKDAY_MIX_MESSAGE,
   type BookingSlotChoice,
   type CustomHoursBreakBooking,
+  payrollDayWindows,
+  unpaidBreakAppliesOnDay,
 } from '@/lib/canonical'
 import { dayKeyInZone } from '@/lib/orgTime/zoneTime'
 import { useOrganizationDocumentStore } from '@/lib/stores/organizationDocumentStore'
@@ -54,6 +56,32 @@ function livePayrollState(): PayrollTimePolicyState | null {
 function policyOnBookingDay(dayKey: string, fallback?: OrgPayrollTimePolicy | null): OrgPayrollTimePolicy | null {
   const state = livePayrollState()
   return state ? effectivePayrollTimePolicy(state, dayKey, openOrganizationZone()) : fallback ?? null
+}
+
+/**
+ * Rulebook 1.19.0: the working hours in effect on a booking date (history first, `effectivePayrollTimePolicy`), for
+ * hours previews and breakdowns. Falls back to the policy the screen passed when the live document is not loaded.
+ */
+export function policyForBookingDate(
+  date: Date | string | number,
+  fallback?: OrgPayrollTimePolicy | null
+): OrgPayrollTimePolicy | null {
+  return policyOnBookingDay(bookingDayKey(date), fallback)
+}
+
+/**
+ * Rulebook 1.19.0 (`unpaidBreakAppliesOnDay`): whether the booking day takes an unpaid break off — so whether a picker
+ * offers the "Unpaid break" toggle. Monday–Friday the organisation break; Saturday / Sunday that day's own setting.
+ */
+export function unpaidBreakAppliesOnDate(date: Date | string | number, fallback?: OrgPayrollTimePolicy | null): boolean {
+  const key = bookingDayKey(date)
+  return unpaidBreakAppliesOnDay(policyOnBookingDay(key, fallback), key, openOrganizationZone())
+}
+
+/** Rulebook 1.19.0 (`payrollDayWindows`): the paid window and unpaid break an hours timeline draws for the date. */
+export function payrollDayWindowsForDate(date: Date | string | number, fallback?: OrgPayrollTimePolicy | null) {
+  const key = bookingDayKey(date)
+  return payrollDayWindows(policyOnBookingDay(key, fallback), key, openOrganizationZone())
 }
 
 /** The booking day as an organisation-zone day key. */

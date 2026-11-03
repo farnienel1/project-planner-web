@@ -11197,6 +11197,1363 @@
           "message": "Op One is booked Booking 07:30–16:00 on Monday 9 November while on full-day annual leave."
         }
       ]
+    },
+    {
+      "name": "1.19.0 owner: Saturday window 07:30–14:00 counts 8h, break paid → 8h",
+      "function": "payrollHoursResult",
+      "args": [
+        {
+          "booking": {
+            "timeSlot": "CUSTOM_HOURS",
+            "workStartTime": "07:30",
+            "workEndTime": "14:00"
+          },
+          "dayKey": "2026-11-07",
+          "policy": {
+            "standardDayStart": "07:30",
+            "standardDayEnd": "16:00",
+            "unpaidBreakMinutes": 30,
+            "standardPaidHours": 8,
+            "breakWindowStart": "12:00",
+            "breakWindowEnd": "12:30",
+            "weekdayOutsideStandardMultiplier": 1.5,
+            "saturday": {
+              "allHoursAtMultiplierMode": false,
+              "allHoursMultiplier": 2,
+              "definedWindowStart": "07:30",
+              "definedWindowEnd": "14:00",
+              "countsAsStandardHours": 8,
+              "outsideWindowMultiplier": 1.5,
+              "sameAsSaturday": false,
+              "breakPaid": true
+            },
+            "sunday": {
+              "allHoursAtMultiplierMode": true,
+              "allHoursMultiplier": 2,
+              "definedWindowStart": "07:30",
+              "definedWindowEnd": "16:00",
+              "countsAsStandardHours": 8,
+              "outsideWindowMultiplier": 2,
+              "sameAsSaturday": false,
+              "breakPaid": true
+            }
+          },
+          "timeZone": "Europe/London"
+        }
+      ],
+      "expected": {
+        "totalPaidHours": 8,
+        "standardHours": 8,
+        "outsideHours": 0,
+        "outsideMultiplier": 1.5,
+        "workedHours": 6.5,
+        "unpaidBreakHours": 0,
+        "segments": [
+          {
+            "kind": "standardWindow",
+            "clockStart": "07:30",
+            "clockEnd": "14:00",
+            "baseHours": 8,
+            "multiplier": 1,
+            "paidHours": 8,
+            "workedHours": 6.5
+          }
+        ]
+      }
+    },
+    {
+      "name": "1.19.0 owner: Saturday window, break unpaid (12:00–12:30) → 7.5h",
+      "function": "payrollHoursResult",
+      "args": [
+        {
+          "booking": {
+            "timeSlot": "CUSTOM_HOURS",
+            "workStartTime": "07:30",
+            "workEndTime": "14:00"
+          },
+          "dayKey": "2026-11-07",
+          "policy": {
+            "standardDayStart": "07:30",
+            "standardDayEnd": "16:00",
+            "unpaidBreakMinutes": 30,
+            "standardPaidHours": 8,
+            "breakWindowStart": "12:00",
+            "breakWindowEnd": "12:30",
+            "weekdayOutsideStandardMultiplier": 1.5,
+            "saturday": {
+              "allHoursAtMultiplierMode": false,
+              "allHoursMultiplier": 2,
+              "definedWindowStart": "07:30",
+              "definedWindowEnd": "14:00",
+              "countsAsStandardHours": 8,
+              "outsideWindowMultiplier": 1.5,
+              "sameAsSaturday": false,
+              "breakPaid": false
+            },
+            "sunday": {
+              "allHoursAtMultiplierMode": true,
+              "allHoursMultiplier": 2,
+              "definedWindowStart": "07:30",
+              "definedWindowEnd": "16:00",
+              "countsAsStandardHours": 8,
+              "outsideWindowMultiplier": 2,
+              "sameAsSaturday": false,
+              "breakPaid": false
+            }
+          },
+          "timeZone": "Europe/London"
+        }
+      ],
+      "expected": {
+        "totalPaidHours": 7.5,
+        "standardHours": 7.5,
+        "outsideHours": 0,
+        "outsideMultiplier": 1.5,
+        "workedHours": 6,
+        "unpaidBreakHours": 0.5,
+        "segments": [
+          {
+            "kind": "standardWindow",
+            "clockStart": "07:30",
+            "clockEnd": "14:00",
+            "baseHours": 7.5,
+            "multiplier": 1,
+            "paidHours": 7.5,
+            "workedHours": 6,
+            "unpaidBreakHours": 0.5
+          }
+        ]
+      }
+    },
+    {
+      "name": "1.19.0 owner: Saturday unpaid, booked 07:30–11:00 → pro-rated 4.3077h, no deduction",
+      "function": "payrollHoursResult",
+      "args": [
+        {
+          "booking": {
+            "timeSlot": "CUSTOM_HOURS",
+            "workStartTime": "07:30",
+            "workEndTime": "11:00"
+          },
+          "dayKey": "2026-11-07",
+          "policy": {
+            "standardDayStart": "07:30",
+            "standardDayEnd": "16:00",
+            "unpaidBreakMinutes": 30,
+            "standardPaidHours": 8,
+            "breakWindowStart": "12:00",
+            "breakWindowEnd": "12:30",
+            "weekdayOutsideStandardMultiplier": 1.5,
+            "saturday": {
+              "allHoursAtMultiplierMode": false,
+              "allHoursMultiplier": 2,
+              "definedWindowStart": "07:30",
+              "definedWindowEnd": "14:00",
+              "countsAsStandardHours": 8,
+              "outsideWindowMultiplier": 1.5,
+              "sameAsSaturday": false,
+              "breakPaid": false
+            },
+            "sunday": {
+              "allHoursAtMultiplierMode": true,
+              "allHoursMultiplier": 2,
+              "definedWindowStart": "07:30",
+              "definedWindowEnd": "16:00",
+              "countsAsStandardHours": 8,
+              "outsideWindowMultiplier": 2,
+              "sameAsSaturday": false,
+              "breakPaid": false
+            }
+          },
+          "timeZone": "Europe/London"
+        }
+      ],
+      "expected": {
+        "totalPaidHours": 4.3076923076923075,
+        "standardHours": 4.3076923076923075,
+        "outsideHours": 0,
+        "outsideMultiplier": 1.5,
+        "workedHours": 3.5,
+        "unpaidBreakHours": 0,
+        "segments": [
+          {
+            "kind": "standardWindow",
+            "clockStart": "07:30",
+            "clockEnd": "11:00",
+            "baseHours": 4.3076923076923075,
+            "multiplier": 1,
+            "paidHours": 4.3076923076923075,
+            "workedHours": 3.5
+          }
+        ]
+      }
+    },
+    {
+      "name": "1.19.0 owner: Sunday every hour ×2, break paid → 6.5 × 2 = 13h",
+      "function": "payrollHoursResult",
+      "args": [
+        {
+          "booking": {
+            "timeSlot": "CUSTOM_HOURS",
+            "workStartTime": "07:30",
+            "workEndTime": "14:00"
+          },
+          "dayKey": "2026-11-08",
+          "policy": {
+            "standardDayStart": "07:30",
+            "standardDayEnd": "16:00",
+            "unpaidBreakMinutes": 30,
+            "standardPaidHours": 8,
+            "breakWindowStart": "12:00",
+            "breakWindowEnd": "12:30",
+            "weekdayOutsideStandardMultiplier": 1.5,
+            "saturday": {
+              "allHoursAtMultiplierMode": false,
+              "allHoursMultiplier": 2,
+              "definedWindowStart": "07:30",
+              "definedWindowEnd": "14:00",
+              "countsAsStandardHours": 8,
+              "outsideWindowMultiplier": 1.5,
+              "sameAsSaturday": false,
+              "breakPaid": true
+            },
+            "sunday": {
+              "allHoursAtMultiplierMode": true,
+              "allHoursMultiplier": 2,
+              "definedWindowStart": "07:30",
+              "definedWindowEnd": "16:00",
+              "countsAsStandardHours": 8,
+              "outsideWindowMultiplier": 2,
+              "sameAsSaturday": false,
+              "breakPaid": true
+            }
+          },
+          "timeZone": "Europe/London"
+        }
+      ],
+      "expected": {
+        "totalPaidHours": 13,
+        "standardHours": 0,
+        "outsideHours": 6.5,
+        "outsideMultiplier": 2,
+        "workedHours": 6.5,
+        "unpaidBreakHours": 0,
+        "segments": [
+          {
+            "kind": "allHoursMultiplier",
+            "clockStart": "07:30",
+            "clockEnd": "14:00",
+            "baseHours": 6.5,
+            "multiplier": 2,
+            "paidHours": 13,
+            "workedHours": 6.5
+          }
+        ]
+      }
+    },
+    {
+      "name": "1.19.0 owner: Sunday every hour ×2, break unpaid → (6.5 − 0.5) × 2 = 12h",
+      "function": "payrollHoursResult",
+      "args": [
+        {
+          "booking": {
+            "timeSlot": "CUSTOM_HOURS",
+            "workStartTime": "07:30",
+            "workEndTime": "14:00"
+          },
+          "dayKey": "2026-11-08",
+          "policy": {
+            "standardDayStart": "07:30",
+            "standardDayEnd": "16:00",
+            "unpaidBreakMinutes": 30,
+            "standardPaidHours": 8,
+            "breakWindowStart": "12:00",
+            "breakWindowEnd": "12:30",
+            "weekdayOutsideStandardMultiplier": 1.5,
+            "saturday": {
+              "allHoursAtMultiplierMode": false,
+              "allHoursMultiplier": 2,
+              "definedWindowStart": "07:30",
+              "definedWindowEnd": "14:00",
+              "countsAsStandardHours": 8,
+              "outsideWindowMultiplier": 1.5,
+              "sameAsSaturday": false,
+              "breakPaid": false
+            },
+            "sunday": {
+              "allHoursAtMultiplierMode": true,
+              "allHoursMultiplier": 2,
+              "definedWindowStart": "07:30",
+              "definedWindowEnd": "16:00",
+              "countsAsStandardHours": 8,
+              "outsideWindowMultiplier": 2,
+              "sameAsSaturday": false,
+              "breakPaid": false
+            }
+          },
+          "timeZone": "Europe/London"
+        }
+      ],
+      "expected": {
+        "totalPaidHours": 12,
+        "standardHours": 0,
+        "outsideHours": 6,
+        "outsideMultiplier": 2,
+        "workedHours": 6,
+        "unpaidBreakHours": 0.5,
+        "segments": [
+          {
+            "kind": "allHoursMultiplier",
+            "clockStart": "07:30",
+            "clockEnd": "14:00",
+            "baseHours": 6,
+            "multiplier": 2,
+            "paidHours": 12,
+            "workedHours": 6,
+            "unpaidBreakHours": 0.5
+          }
+        ]
+      }
+    },
+    {
+      "name": "1.19.0 owner: Sunday unpaid + No unpaid break (isBreakRemoved) → 13h",
+      "function": "payrollHoursResult",
+      "args": [
+        {
+          "booking": {
+            "timeSlot": "CUSTOM_HOURS",
+            "workStartTime": "07:30",
+            "workEndTime": "14:00",
+            "isBreakRemoved": true
+          },
+          "dayKey": "2026-11-08",
+          "policy": {
+            "standardDayStart": "07:30",
+            "standardDayEnd": "16:00",
+            "unpaidBreakMinutes": 30,
+            "standardPaidHours": 8,
+            "breakWindowStart": "12:00",
+            "breakWindowEnd": "12:30",
+            "weekdayOutsideStandardMultiplier": 1.5,
+            "saturday": {
+              "allHoursAtMultiplierMode": false,
+              "allHoursMultiplier": 2,
+              "definedWindowStart": "07:30",
+              "definedWindowEnd": "14:00",
+              "countsAsStandardHours": 8,
+              "outsideWindowMultiplier": 1.5,
+              "sameAsSaturday": false,
+              "breakPaid": false
+            },
+            "sunday": {
+              "allHoursAtMultiplierMode": true,
+              "allHoursMultiplier": 2,
+              "definedWindowStart": "07:30",
+              "definedWindowEnd": "16:00",
+              "countsAsStandardHours": 8,
+              "outsideWindowMultiplier": 2,
+              "sameAsSaturday": false,
+              "breakPaid": false
+            }
+          },
+          "timeZone": "Europe/London"
+        }
+      ],
+      "expected": {
+        "totalPaidHours": 13,
+        "standardHours": 0,
+        "outsideHours": 6.5,
+        "outsideMultiplier": 2,
+        "workedHours": 6.5,
+        "unpaidBreakHours": 0,
+        "segments": [
+          {
+            "kind": "allHoursMultiplier",
+            "clockStart": "07:30",
+            "clockEnd": "14:00",
+            "baseHours": 6.5,
+            "multiplier": 2,
+            "paidHours": 13,
+            "workedHours": 6.5
+          }
+        ]
+      }
+    },
+    {
+      "name": "1.19.0 owner: weekend breakdown rows with an unpaid break",
+      "function": "weekendBookingBreakdown",
+      "args": [
+        {
+          "standardDayStart": "07:30",
+          "standardDayEnd": "16:00",
+          "unpaidBreakMinutes": 30,
+          "standardPaidHours": 8,
+          "breakWindowStart": "12:00",
+          "breakWindowEnd": "12:30",
+          "weekdayOutsideStandardMultiplier": 1.5,
+          "saturday": {
+            "allHoursAtMultiplierMode": false,
+            "allHoursMultiplier": 2,
+            "definedWindowStart": "07:30",
+            "definedWindowEnd": "14:00",
+            "countsAsStandardHours": 8,
+            "outsideWindowMultiplier": 1.5,
+            "sameAsSaturday": false,
+            "breakPaid": false
+          },
+          "sunday": {
+            "allHoursAtMultiplierMode": true,
+            "allHoursMultiplier": 2,
+            "definedWindowStart": "07:30",
+            "definedWindowEnd": "16:00",
+            "countsAsStandardHours": 8,
+            "outsideWindowMultiplier": 2,
+            "sameAsSaturday": false,
+            "breakPaid": false
+          }
+        },
+        [
+          "2026-11-07",
+          "2026-11-08"
+        ],
+        "07:30",
+        "14:00",
+        false,
+        "Europe/London"
+      ],
+      "expected": [
+        {
+          "dayKey": "2026-11-07",
+          "weekdayLabel": "Saturday",
+          "start": "07:30",
+          "end": "14:00",
+          "workedHours": 6,
+          "countsAsHours": 7.5,
+          "standardHours": 7.5,
+          "overtimeHours": 0,
+          "multiplier": 1.5,
+          "paidHoursEquivalent": 7.5,
+          "unpaidBreakHours": 0.5,
+          "line": "Saturday 07:30–14:00 = 8h − 0.5h unpaid break = 7.5h",
+          "lines": [
+            {
+              "kind": "standard",
+              "label": "Set hours",
+              "value": "8h"
+            },
+            {
+              "kind": "break",
+              "label": "Unpaid break",
+              "value": "−0.5h"
+            },
+            {
+              "kind": "total",
+              "label": "Total paid hours",
+              "value": "7.5h"
+            }
+          ]
+        },
+        {
+          "dayKey": "2026-11-08",
+          "weekdayLabel": "Sunday",
+          "start": "07:30",
+          "end": "14:00",
+          "workedHours": 6,
+          "countsAsHours": null,
+          "standardHours": 0,
+          "overtimeHours": 6,
+          "multiplier": 2,
+          "paidHoursEquivalent": 12,
+          "unpaidBreakHours": 0.5,
+          "line": "Sunday 07:30–14:00 = (6.5h − 0.5h unpaid break) × 2 = 12h",
+          "lines": [
+            {
+              "kind": "outside",
+              "label": "Every hour",
+              "value": "6.5h × 2"
+            },
+            {
+              "kind": "break",
+              "label": "Unpaid break",
+              "value": "−0.5h"
+            },
+            {
+              "kind": "total",
+              "label": "Total paid hours",
+              "value": "12h"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "1.19.0 history: three changes — 2026-01-15 keeps its own rules (07:30)",
+      "function": "effectivePayrollTimePolicy",
+      "args": [
+        {
+          "countryCode": "GB",
+          "payrollTimePolicy": {
+            "standardDayStart": "06:30",
+            "standardDayEnd": "16:00",
+            "unpaidBreakMinutes": 30,
+            "standardPaidHours": 8,
+            "breakWindowStart": "12:00",
+            "breakWindowEnd": "12:30",
+            "weekdayOutsideStandardMultiplier": 1.5,
+            "saturday": {
+              "allHoursAtMultiplierMode": false,
+              "allHoursMultiplier": 2,
+              "useCustomStandardDayWindow": true,
+              "customStandardStart": "07:30",
+              "customStandardEnd": "13:00",
+              "countsAsHours": 8,
+              "outsideStandardWindowMultiplier": 2,
+              "breakPaid": true
+            },
+            "sunday": {
+              "allHoursAtMultiplierMode": true,
+              "allHoursMultiplier": 2,
+              "useCustomStandardDayWindow": false,
+              "customStandardStart": "07:30",
+              "customStandardEnd": "16:00",
+              "countsAsHours": 8,
+              "outsideStandardWindowMultiplier": 2,
+              "breakPaid": true
+            },
+            "sundaySameAsSaturday": false,
+            "breakPaid": false
+          },
+          "payrollTimePolicyPrior": {
+            "standardDayStart": "08:00",
+            "standardDayEnd": "16:00",
+            "unpaidBreakMinutes": 30,
+            "standardPaidHours": 8,
+            "breakWindowStart": "12:00",
+            "breakWindowEnd": "12:30",
+            "weekdayOutsideStandardMultiplier": 1.5,
+            "saturday": {
+              "allHoursAtMultiplierMode": false,
+              "allHoursMultiplier": 2,
+              "useCustomStandardDayWindow": true,
+              "customStandardStart": "07:30",
+              "customStandardEnd": "13:00",
+              "countsAsHours": 8,
+              "outsideStandardWindowMultiplier": 2,
+              "breakPaid": true
+            },
+            "sunday": {
+              "allHoursAtMultiplierMode": true,
+              "allHoursMultiplier": 2,
+              "useCustomStandardDayWindow": false,
+              "customStandardStart": "07:30",
+              "customStandardEnd": "16:00",
+              "countsAsHours": 8,
+              "outsideStandardWindowMultiplier": 2,
+              "breakPaid": true
+            },
+            "sundaySameAsSaturday": false,
+            "breakPaid": false
+          },
+          "payrollTimePolicyEffectiveFrom": "2026-06-01",
+          "payrollTimePolicyHistory": [
+            {
+              "effectiveFrom": "1970-01-01",
+              "policy": {
+                "standardDayStart": "07:30",
+                "standardDayEnd": "16:00",
+                "unpaidBreakMinutes": 30,
+                "standardPaidHours": 8,
+                "breakWindowStart": "12:00",
+                "breakWindowEnd": "12:30",
+                "weekdayOutsideStandardMultiplier": 1.5,
+                "saturday": {
+                  "allHoursAtMultiplierMode": false,
+                  "allHoursMultiplier": 2,
+                  "useCustomStandardDayWindow": true,
+                  "customStandardStart": "07:30",
+                  "customStandardEnd": "13:00",
+                  "countsAsHours": 8,
+                  "outsideStandardWindowMultiplier": 2,
+                  "breakPaid": true
+                },
+                "sunday": {
+                  "allHoursAtMultiplierMode": true,
+                  "allHoursMultiplier": 2,
+                  "useCustomStandardDayWindow": false,
+                  "customStandardStart": "07:30",
+                  "customStandardEnd": "16:00",
+                  "countsAsHours": 8,
+                  "outsideStandardWindowMultiplier": 2,
+                  "breakPaid": true
+                },
+                "sundaySameAsSaturday": false,
+                "breakPaid": false
+              }
+            },
+            {
+              "effectiveFrom": "2026-03-02",
+              "policy": {
+                "standardDayStart": "08:00",
+                "standardDayEnd": "16:00",
+                "unpaidBreakMinutes": 30,
+                "standardPaidHours": 8,
+                "breakWindowStart": "12:00",
+                "breakWindowEnd": "12:30",
+                "weekdayOutsideStandardMultiplier": 1.5,
+                "saturday": {
+                  "allHoursAtMultiplierMode": false,
+                  "allHoursMultiplier": 2,
+                  "useCustomStandardDayWindow": true,
+                  "customStandardStart": "07:30",
+                  "customStandardEnd": "13:00",
+                  "countsAsHours": 8,
+                  "outsideStandardWindowMultiplier": 2,
+                  "breakPaid": true
+                },
+                "sunday": {
+                  "allHoursAtMultiplierMode": true,
+                  "allHoursMultiplier": 2,
+                  "useCustomStandardDayWindow": false,
+                  "customStandardStart": "07:30",
+                  "customStandardEnd": "16:00",
+                  "countsAsHours": 8,
+                  "outsideStandardWindowMultiplier": 2,
+                  "breakPaid": true
+                },
+                "sundaySameAsSaturday": false,
+                "breakPaid": false
+              }
+            },
+            {
+              "effectiveFrom": "2026-06-01",
+              "policy": {
+                "standardDayStart": "06:30",
+                "standardDayEnd": "16:00",
+                "unpaidBreakMinutes": 30,
+                "standardPaidHours": 8,
+                "breakWindowStart": "12:00",
+                "breakWindowEnd": "12:30",
+                "weekdayOutsideStandardMultiplier": 1.5,
+                "saturday": {
+                  "allHoursAtMultiplierMode": false,
+                  "allHoursMultiplier": 2,
+                  "useCustomStandardDayWindow": true,
+                  "customStandardStart": "07:30",
+                  "customStandardEnd": "13:00",
+                  "countsAsHours": 8,
+                  "outsideStandardWindowMultiplier": 2,
+                  "breakPaid": true
+                },
+                "sunday": {
+                  "allHoursAtMultiplierMode": true,
+                  "allHoursMultiplier": 2,
+                  "useCustomStandardDayWindow": false,
+                  "customStandardStart": "07:30",
+                  "customStandardEnd": "16:00",
+                  "countsAsHours": 8,
+                  "outsideStandardWindowMultiplier": 2,
+                  "breakPaid": true
+                },
+                "sundaySameAsSaturday": false,
+                "breakPaid": false
+              }
+            }
+          ],
+          "payrollTimePolicyRevision": 2
+        },
+        "2026-01-15",
+        "Europe/London"
+      ],
+      "expected": {
+        "standardDayStart": "07:30",
+        "standardDayEnd": "16:00",
+        "unpaidBreakMinutes": 30,
+        "standardPaidHours": 8,
+        "breakWindowStart": "12:00",
+        "breakWindowEnd": "12:30",
+        "weekdayOutsideStandardMultiplier": 1.5,
+        "saturday": {
+          "allHoursAtMultiplierMode": false,
+          "allHoursMultiplier": 2,
+          "definedWindowStart": "07:30",
+          "definedWindowEnd": "13:00",
+          "countsAsStandardHours": 8,
+          "outsideWindowMultiplier": 2,
+          "sameAsSaturday": false,
+          "breakPaid": true
+        },
+        "sunday": {
+          "allHoursAtMultiplierMode": true,
+          "allHoursMultiplier": 2,
+          "definedWindowStart": "07:30",
+          "definedWindowEnd": "16:00",
+          "countsAsStandardHours": 8,
+          "outsideWindowMultiplier": 2,
+          "sameAsSaturday": false,
+          "breakPaid": true
+        },
+        "breakPaid": false
+      }
+    },
+    {
+      "name": "1.19.0 history: three changes — 2026-04-01 keeps its own rules (08:00)",
+      "function": "effectivePayrollTimePolicy",
+      "args": [
+        {
+          "countryCode": "GB",
+          "payrollTimePolicy": {
+            "standardDayStart": "06:30",
+            "standardDayEnd": "16:00",
+            "unpaidBreakMinutes": 30,
+            "standardPaidHours": 8,
+            "breakWindowStart": "12:00",
+            "breakWindowEnd": "12:30",
+            "weekdayOutsideStandardMultiplier": 1.5,
+            "saturday": {
+              "allHoursAtMultiplierMode": false,
+              "allHoursMultiplier": 2,
+              "useCustomStandardDayWindow": true,
+              "customStandardStart": "07:30",
+              "customStandardEnd": "13:00",
+              "countsAsHours": 8,
+              "outsideStandardWindowMultiplier": 2,
+              "breakPaid": true
+            },
+            "sunday": {
+              "allHoursAtMultiplierMode": true,
+              "allHoursMultiplier": 2,
+              "useCustomStandardDayWindow": false,
+              "customStandardStart": "07:30",
+              "customStandardEnd": "16:00",
+              "countsAsHours": 8,
+              "outsideStandardWindowMultiplier": 2,
+              "breakPaid": true
+            },
+            "sundaySameAsSaturday": false,
+            "breakPaid": false
+          },
+          "payrollTimePolicyPrior": {
+            "standardDayStart": "08:00",
+            "standardDayEnd": "16:00",
+            "unpaidBreakMinutes": 30,
+            "standardPaidHours": 8,
+            "breakWindowStart": "12:00",
+            "breakWindowEnd": "12:30",
+            "weekdayOutsideStandardMultiplier": 1.5,
+            "saturday": {
+              "allHoursAtMultiplierMode": false,
+              "allHoursMultiplier": 2,
+              "useCustomStandardDayWindow": true,
+              "customStandardStart": "07:30",
+              "customStandardEnd": "13:00",
+              "countsAsHours": 8,
+              "outsideStandardWindowMultiplier": 2,
+              "breakPaid": true
+            },
+            "sunday": {
+              "allHoursAtMultiplierMode": true,
+              "allHoursMultiplier": 2,
+              "useCustomStandardDayWindow": false,
+              "customStandardStart": "07:30",
+              "customStandardEnd": "16:00",
+              "countsAsHours": 8,
+              "outsideStandardWindowMultiplier": 2,
+              "breakPaid": true
+            },
+            "sundaySameAsSaturday": false,
+            "breakPaid": false
+          },
+          "payrollTimePolicyEffectiveFrom": "2026-06-01",
+          "payrollTimePolicyHistory": [
+            {
+              "effectiveFrom": "1970-01-01",
+              "policy": {
+                "standardDayStart": "07:30",
+                "standardDayEnd": "16:00",
+                "unpaidBreakMinutes": 30,
+                "standardPaidHours": 8,
+                "breakWindowStart": "12:00",
+                "breakWindowEnd": "12:30",
+                "weekdayOutsideStandardMultiplier": 1.5,
+                "saturday": {
+                  "allHoursAtMultiplierMode": false,
+                  "allHoursMultiplier": 2,
+                  "useCustomStandardDayWindow": true,
+                  "customStandardStart": "07:30",
+                  "customStandardEnd": "13:00",
+                  "countsAsHours": 8,
+                  "outsideStandardWindowMultiplier": 2,
+                  "breakPaid": true
+                },
+                "sunday": {
+                  "allHoursAtMultiplierMode": true,
+                  "allHoursMultiplier": 2,
+                  "useCustomStandardDayWindow": false,
+                  "customStandardStart": "07:30",
+                  "customStandardEnd": "16:00",
+                  "countsAsHours": 8,
+                  "outsideStandardWindowMultiplier": 2,
+                  "breakPaid": true
+                },
+                "sundaySameAsSaturday": false,
+                "breakPaid": false
+              }
+            },
+            {
+              "effectiveFrom": "2026-03-02",
+              "policy": {
+                "standardDayStart": "08:00",
+                "standardDayEnd": "16:00",
+                "unpaidBreakMinutes": 30,
+                "standardPaidHours": 8,
+                "breakWindowStart": "12:00",
+                "breakWindowEnd": "12:30",
+                "weekdayOutsideStandardMultiplier": 1.5,
+                "saturday": {
+                  "allHoursAtMultiplierMode": false,
+                  "allHoursMultiplier": 2,
+                  "useCustomStandardDayWindow": true,
+                  "customStandardStart": "07:30",
+                  "customStandardEnd": "13:00",
+                  "countsAsHours": 8,
+                  "outsideStandardWindowMultiplier": 2,
+                  "breakPaid": true
+                },
+                "sunday": {
+                  "allHoursAtMultiplierMode": true,
+                  "allHoursMultiplier": 2,
+                  "useCustomStandardDayWindow": false,
+                  "customStandardStart": "07:30",
+                  "customStandardEnd": "16:00",
+                  "countsAsHours": 8,
+                  "outsideStandardWindowMultiplier": 2,
+                  "breakPaid": true
+                },
+                "sundaySameAsSaturday": false,
+                "breakPaid": false
+              }
+            },
+            {
+              "effectiveFrom": "2026-06-01",
+              "policy": {
+                "standardDayStart": "06:30",
+                "standardDayEnd": "16:00",
+                "unpaidBreakMinutes": 30,
+                "standardPaidHours": 8,
+                "breakWindowStart": "12:00",
+                "breakWindowEnd": "12:30",
+                "weekdayOutsideStandardMultiplier": 1.5,
+                "saturday": {
+                  "allHoursAtMultiplierMode": false,
+                  "allHoursMultiplier": 2,
+                  "useCustomStandardDayWindow": true,
+                  "customStandardStart": "07:30",
+                  "customStandardEnd": "13:00",
+                  "countsAsHours": 8,
+                  "outsideStandardWindowMultiplier": 2,
+                  "breakPaid": true
+                },
+                "sunday": {
+                  "allHoursAtMultiplierMode": true,
+                  "allHoursMultiplier": 2,
+                  "useCustomStandardDayWindow": false,
+                  "customStandardStart": "07:30",
+                  "customStandardEnd": "16:00",
+                  "countsAsHours": 8,
+                  "outsideStandardWindowMultiplier": 2,
+                  "breakPaid": true
+                },
+                "sundaySameAsSaturday": false,
+                "breakPaid": false
+              }
+            }
+          ],
+          "payrollTimePolicyRevision": 2
+        },
+        "2026-04-01",
+        "Europe/London"
+      ],
+      "expected": {
+        "standardDayStart": "08:00",
+        "standardDayEnd": "16:00",
+        "unpaidBreakMinutes": 30,
+        "standardPaidHours": 8,
+        "breakWindowStart": "12:00",
+        "breakWindowEnd": "12:30",
+        "weekdayOutsideStandardMultiplier": 1.5,
+        "saturday": {
+          "allHoursAtMultiplierMode": false,
+          "allHoursMultiplier": 2,
+          "definedWindowStart": "07:30",
+          "definedWindowEnd": "13:00",
+          "countsAsStandardHours": 8,
+          "outsideWindowMultiplier": 2,
+          "sameAsSaturday": false,
+          "breakPaid": true
+        },
+        "sunday": {
+          "allHoursAtMultiplierMode": true,
+          "allHoursMultiplier": 2,
+          "definedWindowStart": "07:30",
+          "definedWindowEnd": "16:00",
+          "countsAsStandardHours": 8,
+          "outsideWindowMultiplier": 2,
+          "sameAsSaturday": false,
+          "breakPaid": true
+        },
+        "breakPaid": false
+      }
+    },
+    {
+      "name": "1.19.0 history: three changes — 2026-06-01 keeps its own rules (06:30)",
+      "function": "effectivePayrollTimePolicy",
+      "args": [
+        {
+          "countryCode": "GB",
+          "payrollTimePolicy": {
+            "standardDayStart": "06:30",
+            "standardDayEnd": "16:00",
+            "unpaidBreakMinutes": 30,
+            "standardPaidHours": 8,
+            "breakWindowStart": "12:00",
+            "breakWindowEnd": "12:30",
+            "weekdayOutsideStandardMultiplier": 1.5,
+            "saturday": {
+              "allHoursAtMultiplierMode": false,
+              "allHoursMultiplier": 2,
+              "useCustomStandardDayWindow": true,
+              "customStandardStart": "07:30",
+              "customStandardEnd": "13:00",
+              "countsAsHours": 8,
+              "outsideStandardWindowMultiplier": 2,
+              "breakPaid": true
+            },
+            "sunday": {
+              "allHoursAtMultiplierMode": true,
+              "allHoursMultiplier": 2,
+              "useCustomStandardDayWindow": false,
+              "customStandardStart": "07:30",
+              "customStandardEnd": "16:00",
+              "countsAsHours": 8,
+              "outsideStandardWindowMultiplier": 2,
+              "breakPaid": true
+            },
+            "sundaySameAsSaturday": false,
+            "breakPaid": false
+          },
+          "payrollTimePolicyPrior": {
+            "standardDayStart": "08:00",
+            "standardDayEnd": "16:00",
+            "unpaidBreakMinutes": 30,
+            "standardPaidHours": 8,
+            "breakWindowStart": "12:00",
+            "breakWindowEnd": "12:30",
+            "weekdayOutsideStandardMultiplier": 1.5,
+            "saturday": {
+              "allHoursAtMultiplierMode": false,
+              "allHoursMultiplier": 2,
+              "useCustomStandardDayWindow": true,
+              "customStandardStart": "07:30",
+              "customStandardEnd": "13:00",
+              "countsAsHours": 8,
+              "outsideStandardWindowMultiplier": 2,
+              "breakPaid": true
+            },
+            "sunday": {
+              "allHoursAtMultiplierMode": true,
+              "allHoursMultiplier": 2,
+              "useCustomStandardDayWindow": false,
+              "customStandardStart": "07:30",
+              "customStandardEnd": "16:00",
+              "countsAsHours": 8,
+              "outsideStandardWindowMultiplier": 2,
+              "breakPaid": true
+            },
+            "sundaySameAsSaturday": false,
+            "breakPaid": false
+          },
+          "payrollTimePolicyEffectiveFrom": "2026-06-01",
+          "payrollTimePolicyHistory": [
+            {
+              "effectiveFrom": "1970-01-01",
+              "policy": {
+                "standardDayStart": "07:30",
+                "standardDayEnd": "16:00",
+                "unpaidBreakMinutes": 30,
+                "standardPaidHours": 8,
+                "breakWindowStart": "12:00",
+                "breakWindowEnd": "12:30",
+                "weekdayOutsideStandardMultiplier": 1.5,
+                "saturday": {
+                  "allHoursAtMultiplierMode": false,
+                  "allHoursMultiplier": 2,
+                  "useCustomStandardDayWindow": true,
+                  "customStandardStart": "07:30",
+                  "customStandardEnd": "13:00",
+                  "countsAsHours": 8,
+                  "outsideStandardWindowMultiplier": 2,
+                  "breakPaid": true
+                },
+                "sunday": {
+                  "allHoursAtMultiplierMode": true,
+                  "allHoursMultiplier": 2,
+                  "useCustomStandardDayWindow": false,
+                  "customStandardStart": "07:30",
+                  "customStandardEnd": "16:00",
+                  "countsAsHours": 8,
+                  "outsideStandardWindowMultiplier": 2,
+                  "breakPaid": true
+                },
+                "sundaySameAsSaturday": false,
+                "breakPaid": false
+              }
+            },
+            {
+              "effectiveFrom": "2026-03-02",
+              "policy": {
+                "standardDayStart": "08:00",
+                "standardDayEnd": "16:00",
+                "unpaidBreakMinutes": 30,
+                "standardPaidHours": 8,
+                "breakWindowStart": "12:00",
+                "breakWindowEnd": "12:30",
+                "weekdayOutsideStandardMultiplier": 1.5,
+                "saturday": {
+                  "allHoursAtMultiplierMode": false,
+                  "allHoursMultiplier": 2,
+                  "useCustomStandardDayWindow": true,
+                  "customStandardStart": "07:30",
+                  "customStandardEnd": "13:00",
+                  "countsAsHours": 8,
+                  "outsideStandardWindowMultiplier": 2,
+                  "breakPaid": true
+                },
+                "sunday": {
+                  "allHoursAtMultiplierMode": true,
+                  "allHoursMultiplier": 2,
+                  "useCustomStandardDayWindow": false,
+                  "customStandardStart": "07:30",
+                  "customStandardEnd": "16:00",
+                  "countsAsHours": 8,
+                  "outsideStandardWindowMultiplier": 2,
+                  "breakPaid": true
+                },
+                "sundaySameAsSaturday": false,
+                "breakPaid": false
+              }
+            },
+            {
+              "effectiveFrom": "2026-06-01",
+              "policy": {
+                "standardDayStart": "06:30",
+                "standardDayEnd": "16:00",
+                "unpaidBreakMinutes": 30,
+                "standardPaidHours": 8,
+                "breakWindowStart": "12:00",
+                "breakWindowEnd": "12:30",
+                "weekdayOutsideStandardMultiplier": 1.5,
+                "saturday": {
+                  "allHoursAtMultiplierMode": false,
+                  "allHoursMultiplier": 2,
+                  "useCustomStandardDayWindow": true,
+                  "customStandardStart": "07:30",
+                  "customStandardEnd": "13:00",
+                  "countsAsHours": 8,
+                  "outsideStandardWindowMultiplier": 2,
+                  "breakPaid": true
+                },
+                "sunday": {
+                  "allHoursAtMultiplierMode": true,
+                  "allHoursMultiplier": 2,
+                  "useCustomStandardDayWindow": false,
+                  "customStandardStart": "07:30",
+                  "customStandardEnd": "16:00",
+                  "countsAsHours": 8,
+                  "outsideStandardWindowMultiplier": 2,
+                  "breakPaid": true
+                },
+                "sundaySameAsSaturday": false,
+                "breakPaid": false
+              }
+            }
+          ],
+          "payrollTimePolicyRevision": 2
+        },
+        "2026-06-01",
+        "Europe/London"
+      ],
+      "expected": {
+        "standardDayStart": "06:30",
+        "standardDayEnd": "16:00",
+        "unpaidBreakMinutes": 30,
+        "standardPaidHours": 8,
+        "breakWindowStart": "12:00",
+        "breakWindowEnd": "12:30",
+        "weekdayOutsideStandardMultiplier": 1.5,
+        "saturday": {
+          "allHoursAtMultiplierMode": false,
+          "allHoursMultiplier": 2,
+          "definedWindowStart": "07:30",
+          "definedWindowEnd": "13:00",
+          "countsAsStandardHours": 8,
+          "outsideWindowMultiplier": 2,
+          "sameAsSaturday": false,
+          "breakPaid": true
+        },
+        "sunday": {
+          "allHoursAtMultiplierMode": true,
+          "allHoursMultiplier": 2,
+          "definedWindowStart": "07:30",
+          "definedWindowEnd": "16:00",
+          "countsAsStandardHours": 8,
+          "outsideWindowMultiplier": 2,
+          "sameAsSaturday": false,
+          "breakPaid": true
+        },
+        "breakPaid": false
+      }
+    },
+    {
+      "name": "1.19.0 owner: Saturday own break 45 min 11:30–12:15 unpaid → 8 − 0.75 = 7.25h",
+      "function": "payrollHoursResult",
+      "args": [
+        {
+          "booking": {
+            "timeSlot": "CUSTOM_HOURS",
+            "workStartTime": "07:30",
+            "workEndTime": "14:00"
+          },
+          "dayKey": "2026-11-07",
+          "policy": {
+            "standardDayStart": "07:30",
+            "standardDayEnd": "16:00",
+            "unpaidBreakMinutes": 30,
+            "standardPaidHours": 8,
+            "breakWindowStart": "12:00",
+            "breakWindowEnd": "12:30",
+            "weekdayOutsideStandardMultiplier": 1.5,
+            "saturday": {
+              "allHoursAtMultiplierMode": false,
+              "allHoursMultiplier": 2,
+              "definedWindowStart": "07:30",
+              "definedWindowEnd": "14:00",
+              "countsAsStandardHours": 8,
+              "outsideWindowMultiplier": 1.5,
+              "sameAsSaturday": false,
+              "breakPaid": false,
+              "breakMinutes": 45,
+              "breakWindowStart": "11:30",
+              "breakWindowEnd": "12:15"
+            },
+            "sunday": {
+              "allHoursAtMultiplierMode": true,
+              "allHoursMultiplier": 2,
+              "definedWindowStart": "07:30",
+              "definedWindowEnd": "16:00",
+              "countsAsStandardHours": 8,
+              "outsideWindowMultiplier": 2,
+              "sameAsSaturday": false,
+              "breakPaid": true
+            }
+          },
+          "timeZone": "Europe/London"
+        }
+      ],
+      "expected": {
+        "totalPaidHours": 7.25,
+        "standardHours": 7.25,
+        "outsideHours": 0,
+        "outsideMultiplier": 1.5,
+        "workedHours": 5.75,
+        "unpaidBreakHours": 0.75,
+        "segments": [
+          {
+            "kind": "standardWindow",
+            "clockStart": "07:30",
+            "clockEnd": "14:00",
+            "baseHours": 7.25,
+            "multiplier": 1,
+            "paidHours": 7.25,
+            "workedHours": 5.75,
+            "unpaidBreakHours": 0.75
+          }
+        ]
+      }
+    },
+    {
+      "name": "1.19.0 owner: weekend Hours to cover (lunch 12:00–12:30 never needs covering) — Sat 07:30–14:00 booked to 11:30 misses 2h; Sun 08:00–13:00 unbooked misses 4.5h",
+      "function": "unbookedLabourRows",
+      "args": [
+        {
+          "timeZone": "Europe/London",
+          "startDayKey": "2026-11-07",
+          "endDayKey": "2026-11-08",
+          "includeWeekends": true,
+          "weekendCoverage": {
+            "saturday": {
+              "enabled": true,
+              "start": "07:30",
+              "end": "14:00"
+            },
+            "sunday": {
+              "enabled": true,
+              "start": "08:00",
+              "end": "13:00"
+            }
+          },
+          "payrollPolicy": {
+            "standardDayStart": "07:30",
+            "standardDayEnd": "16:00",
+            "unpaidBreakMinutes": 30,
+            "standardPaidHours": 8,
+            "breakWindowStart": "12:00",
+            "breakWindowEnd": "12:30",
+            "weekdayOutsideStandardMultiplier": 1.5,
+            "saturday": {
+              "allHoursAtMultiplierMode": false,
+              "allHoursMultiplier": 2,
+              "definedWindowStart": "07:30",
+              "definedWindowEnd": "14:00",
+              "countsAsStandardHours": 8,
+              "outsideWindowMultiplier": 1.5,
+              "sameAsSaturday": false,
+              "breakPaid": true
+            },
+            "sunday": {
+              "allHoursAtMultiplierMode": true,
+              "allHoursMultiplier": 2,
+              "definedWindowStart": "07:30",
+              "definedWindowEnd": "16:00",
+              "countsAsStandardHours": 8,
+              "outsideWindowMultiplier": 2,
+              "sameAsSaturday": false,
+              "breakPaid": true
+            }
+          },
+          "people": [
+            {
+              "id": "u1",
+              "email": "op@x.com",
+              "name": "Op One",
+              "isActive": true,
+              "passwordSet": true,
+              "isOperativeMode": true
+            }
+          ],
+          "operatives": [],
+          "holidays": [],
+          "bookings": [
+            {
+              "personId": "u1",
+              "dayKey": "2026-11-07",
+              "kind": "operative",
+              "timeSlot": "CUSTOM_HOURS",
+              "workStart": "07:30",
+              "workEnd": "11:30"
+            }
+          ]
+        }
+      ],
+      "expected": [
+        {
+          "id": "unbooked-2026-11-07-u1",
+          "operativeId": "u1",
+          "operativeName": "Op One",
+          "userId": "u1",
+          "personKey": "u1",
+          "dayKey": "2026-11-07",
+          "missingHours": 2,
+          "message": "Op One is missing 2h on Saturday 7 November."
+        },
+        {
+          "id": "unbooked-2026-11-08-u1",
+          "operativeId": "u1",
+          "operativeName": "Op One",
+          "userId": "u1",
+          "personKey": "u1",
+          "dayKey": "2026-11-08",
+          "missingHours": 4.5,
+          "message": "Op One is missing 4.5h on Sunday 8 November."
+        }
+      ]
+    },
+    {
+      "name": "1.19.0 owner: weekend Hours to cover — Sunday off is not scanned",
+      "function": "unbookedLabourRows",
+      "args": [
+        {
+          "timeZone": "Europe/London",
+          "startDayKey": "2026-11-07",
+          "endDayKey": "2026-11-08",
+          "includeWeekends": true,
+          "weekendCoverage": {
+            "saturday": {
+              "enabled": true,
+              "start": "07:30",
+              "end": "14:00"
+            },
+            "sunday": {
+              "enabled": false,
+              "start": "08:00",
+              "end": "13:00"
+            }
+          },
+          "payrollPolicy": {
+            "standardDayStart": "07:30",
+            "standardDayEnd": "16:00",
+            "unpaidBreakMinutes": 30,
+            "standardPaidHours": 8,
+            "breakWindowStart": "12:00",
+            "breakWindowEnd": "12:30",
+            "weekdayOutsideStandardMultiplier": 1.5,
+            "saturday": {
+              "allHoursAtMultiplierMode": false,
+              "allHoursMultiplier": 2,
+              "definedWindowStart": "07:30",
+              "definedWindowEnd": "14:00",
+              "countsAsStandardHours": 8,
+              "outsideWindowMultiplier": 1.5,
+              "sameAsSaturday": false,
+              "breakPaid": true
+            },
+            "sunday": {
+              "allHoursAtMultiplierMode": true,
+              "allHoursMultiplier": 2,
+              "definedWindowStart": "07:30",
+              "definedWindowEnd": "16:00",
+              "countsAsStandardHours": 8,
+              "outsideWindowMultiplier": 2,
+              "sameAsSaturday": false,
+              "breakPaid": true
+            }
+          },
+          "people": [
+            {
+              "id": "u1",
+              "email": "op@x.com",
+              "name": "Op One",
+              "isActive": true,
+              "passwordSet": true,
+              "isOperativeMode": true
+            }
+          ],
+          "operatives": [],
+          "holidays": [],
+          "bookings": []
+        }
+      ],
+      "expected": [
+        {
+          "id": "unbooked-2026-11-07-u1",
+          "operativeId": "u1",
+          "operativeName": "Op One",
+          "userId": "u1",
+          "personKey": "u1",
+          "dayKey": "2026-11-07",
+          "missingHours": 6,
+          "message": "Op One is missing 6h on Saturday 7 November."
+        }
+      ]
     }
   ]
 }

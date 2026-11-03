@@ -168,7 +168,9 @@ var ProjectPlannerCanonical = (() => {
     PAYE_RATE_NOT_USED_NOTE: () => PAYE_RATE_NOT_USED_NOTE,
     PAYMENT_GRACE_MS: () => PAYMENT_GRACE_MS,
     PAYMENT_RUN_1_LAST_END_DAY: () => PAYMENT_RUN_1_LAST_END_DAY,
+    PAYROLL_POLICY_HISTORY_START: () => PAYROLL_POLICY_HISTORY_START,
     PAYROLL_POLICY_LIMITS: () => PAYROLL_POLICY_LIMITS,
+    PAYROLL_POLICY_STALE_SAVE_MESSAGE: () => PAYROLL_POLICY_STALE_SAVE_MESSAGE,
     PAY_BASIS_DAY_HELP: () => PAY_BASIS_DAY_HELP,
     PAY_BASIS_HOURLY_HELP: () => PAY_BASIS_HOURLY_HELP,
     PAY_BASIS_SAVE_NOTE: () => PAY_BASIS_SAVE_NOTE,
@@ -666,6 +668,7 @@ var ProjectPlannerCanonical = (() => {
     parsePaymentRunDateRanges: () => parsePaymentRunDateRanges,
     parsePaymentRunHistory: () => parsePaymentRunHistory,
     parsePayrollPolicy: () => parsePayrollPolicy,
+    parsePayrollTimePolicyHistory: () => parsePayrollTimePolicyHistory,
     parsePayrollTimePolicyScheduled: () => parsePayrollTimePolicyScheduled,
     parsePayrollTimePolicyState: () => parsePayrollTimePolicyState,
     parseProjectDocument: () => parseProjectDocument,
@@ -691,6 +694,7 @@ var ProjectPlannerCanonical = (() => {
     parseWarningDetection: () => parseWarningDetection,
     parseWarningResolutionDocument: () => parseWarningResolutionDocument,
     parseWarningsSortDirection: () => parseWarningsSortDirection,
+    parseWeekendCoverage: () => parseWeekendCoverage,
     parseWholesalerDocument: () => parseWholesalerDocument,
     passwordMinLength: () => passwordMinLength,
     passwordPolicyError: () => passwordPolicyError,
@@ -711,13 +715,17 @@ var ProjectPlannerCanonical = (() => {
     paymentRunRangeToFirestore: () => paymentRunRangeToFirestore,
     paymentRunShowsMonthCoverage: () => paymentRunShowsMonthCoverage,
     paymentWeekdayAfterPeriodEnd: () => paymentWeekdayAfterPeriodEnd,
+    payrollBreakOnDay: () => payrollBreakOnDay,
     payrollDayKeyFromValue: () => payrollDayKeyFromValue,
+    payrollDayWindows: () => payrollDayWindows,
     payrollHoursResult: () => payrollHoursResult,
     payrollLineReview: () => payrollLineReview,
     payrollOutsideMultiplier: () => payrollOutsideMultiplier,
     payrollTimePolicyApplyNowWriteFields: () => payrollTimePolicyApplyNowWriteFields,
     payrollTimePolicyCancelScheduleWriteFields: () => payrollTimePolicyCancelScheduleWriteFields,
     payrollTimePolicyForDayFromState: () => payrollTimePolicyForDayFromState,
+    payrollTimePolicyHistoryEntries: () => payrollTimePolicyHistoryEntries,
+    payrollTimePolicySaveConflict: () => payrollTimePolicySaveConflict,
     payrollTimePolicyScheduleDateError: () => payrollTimePolicyScheduleDateError,
     payrollTimePolicyScheduleWriteFields: () => payrollTimePolicyScheduleWriteFields,
     payrollTimePolicyTimeline: () => payrollTimePolicyTimeline,
@@ -766,6 +774,7 @@ var ProjectPlannerCanonical = (() => {
     resolveSensitiveProfile: () => resolveSensitiveProfile,
     resolveTimesheetExportedAtMs: () => resolveTimesheetExportedAtMs,
     resolveTimesheetPeriod: () => resolveTimesheetPeriod,
+    resolveWeekendCoverageDay: () => resolveWeekendCoverageDay,
     resolvedWarningKeys: () => resolvedWarningKeys,
     rosterAliasIdsFor: () => rosterAliasIdsFor,
     rosterDocumentRank: () => rosterDocumentRank,
@@ -862,6 +871,7 @@ var ProjectPlannerCanonical = (() => {
     unbookedLabourRowsOnDay: () => unbookedLabourRowsOnDay,
     unbookedScanDays: () => unbookedScanDays,
     uniqueOrganizationIds: () => uniqueOrganizationIds,
+    unpaidBreakAppliesOnDay: () => unpaidBreakAppliesOnDay,
     unreadNotificationBadgeCount: () => unreadNotificationBadgeCount,
     unverifiedOperativeRows: () => unverifiedOperativeRows,
     userCreateRequiresAgeConfirmation: () => userCreateRequiresAgeConfirmation,
@@ -900,11 +910,14 @@ var ProjectPlannerCanonical = (() => {
     weekendBookingBreakdown: () => weekendBookingBreakdown,
     weekendBookingNote: () => weekendBookingNote,
     weekendBookingNotes: () => weekendBookingNotes,
+    weekendBreakFor: () => weekendBreakFor,
     weekendCustomHoursDefault: () => weekendCustomHoursDefault,
     weekendFullDayWindow: () => weekendFullDayWindow,
+    weekendLunchBreakCopy: () => weekendLunchBreakCopy,
     weekendRuleForIsoWeekday: () => weekendRuleForIsoWeekday,
     wholesalerContactId: () => wholesalerContactId,
     wholesalerWriteFields: () => wholesalerWriteFields,
+    windowCoverage: () => windowCoverage,
     withoutDismissedQualificationRows: () => withoutDismissedQualificationRows,
     withoutLockedPermissionWrites: () => withoutLockedPermissionWrites,
     workDocuments: () => workDocuments,
@@ -1460,6 +1473,23 @@ var ProjectPlannerCanonical = (() => {
       missingHours: roundCoverageHours(Math.max(0, requiredHours - coveredHours))
     };
   }
+  function windowCoverage(window, policy, bookings, breakWindow) {
+    const lunch = breakWindow && breakWindow.end > breakWindow.start ? breakWindow : null;
+    const required = withoutInterval([window], lunch);
+    const requiredHours = roundCoverageHours(intervalMinutes(required) / 60);
+    const windows = halfDayWindows(policy);
+    const covered = [];
+    for (const booking of bookings) {
+      const interval2 = bookingCoverInterval(booking, windows);
+      if (!interval2) continue;
+      const start = Math.max(interval2.start, window.start);
+      const end = Math.min(interval2.end, window.end);
+      if (end > start) covered.push({ start, end });
+    }
+    const inside = withoutInterval(mergeMinuteIntervals(covered), lunch);
+    const coveredHours = roundCoverageHours(Math.min(requiredHours, intervalMinutes(inside) / 60));
+    return { requiredHours, coveredHours, missingHours: roundCoverageHours(Math.max(0, requiredHours - coveredHours)) };
+  }
   var FALLBACK_LOOKAHEAD_DAYS = 7;
   function lookaheadDaysOrFallback(raw) {
     if (raw === void 0 || raw === null || typeof raw === "string" && raw.trim() === "") {
@@ -1539,7 +1569,8 @@ var ProjectPlannerCanonical = (() => {
       const key3 = dayKeyInZone(cursor, timeZone);
       if (key3 > endDayKey) break;
       const iso = isoWeekdayInZone(cursor, timeZone);
-      if (includeWeekends || iso >= 1 && iso <= 5) keys.push(key3);
+      const weekendOn = iso === 6 ? input.weekendCoverage?.saturday?.enabled !== false : iso === 7 ? input.weekendCoverage?.sunday?.enabled !== false : true;
+      if (includeWeekends && weekendOn || iso >= 1 && iso <= 5) keys.push(key3);
       cursor = addDaysInZone(cursor, 1, timeZone);
     }
     const result2 = { ...window, endDayKey, dayKeys: keys };
@@ -2062,648 +2093,6 @@ var ProjectPlannerCanonical = (() => {
     }).format(date);
   }
 
-  // lib/canonical/personIds.ts
-  function idText(value) {
-    return typeof value === "string" ? value.trim() : "";
-  }
-  function idKey2(value) {
-    return idText(value).toLowerCase();
-  }
-  function ownIds(person) {
-    if (!person) return [];
-    return [
-      person.id,
-      ...person.formerUserIds ?? [],
-      ...person.sameEmailUserIds ?? [],
-      ...person.formerIds ?? [],
-      ...person.aliasIds ?? []
-    ].map(idText).filter(Boolean);
-  }
-  function validRoster(roster) {
-    return (roster || []).filter((member) => member && typeof member === "object" && idText(member.id));
-  }
-  function rosterMemberActive(member) {
-    return Boolean(member) && member.isActive !== false;
-  }
-  function rosterMemberFor(id2, roster) {
-    const key3 = idKey2(id2);
-    if (!key3) return void 0;
-    const members = validRoster(roster);
-    return members.find((member) => idKey2(member.id) === key3) ?? members.find((member) => ownIds(member).some((alias) => idKey2(alias) === key3));
-  }
-  function personIdSet(person, roster) {
-    const out = [];
-    const seen = /* @__PURE__ */ new Set();
-    const add = (id2) => {
-      const key3 = idKey2(id2);
-      if (!key3 || seen.has(key3)) return false;
-      seen.add(key3);
-      out.push(idText(id2));
-      return true;
-    };
-    for (const id2 of ownIds(person)) add(id2);
-    if (out.length === 0) return [];
-    const emails = /* @__PURE__ */ new Set();
-    const personEmail = idKey2(person?.email);
-    if (personEmail) emails.add(personEmail);
-    const members = validRoster(roster);
-    let grew = true;
-    for (let pass = 0; grew && pass < 8; pass += 1) {
-      grew = false;
-      for (const member of members) {
-        const ids = ownIds(member);
-        const email = idKey2(member.email);
-        const same = ids.some((id2) => seen.has(idKey2(id2))) || email !== "" && emails.has(email);
-        if (!same) continue;
-        for (const id2 of ids) if (add(id2)) grew = true;
-        if (email && !emails.has(email)) {
-          emails.add(email);
-          grew = true;
-        }
-      }
-    }
-    return out;
-  }
-
-  // lib/canonical/warningRows.ts
-  function qualificationDismissKey(operativeId, qualificationId, expiryDayKey) {
-    return `qual|${String(operativeId).trim()}|${String(qualificationId).trim()}|${String(expiryDayKey).trim()}`;
-  }
-  function withoutDismissedQualificationRows(rows3, dismissedKeys) {
-    const dismissed = dismissedKeys instanceof Set ? dismissedKeys : new Set(dismissedKeys);
-    if (dismissed.size === 0) return [...rows3];
-    return rows3.filter((row2) => !(row2.daysUntilExpiry < 0 && dismissed.has(row2.dismissKey)));
-  }
-  var zoneOf2 = zoneOrLondon;
-  function emailKey(value) {
-    return String(value || "").trim().toLowerCase();
-  }
-  function dayKeyFromIso(iso, timeZone) {
-    const date = new Date(String(iso || ""));
-    if (Number.isNaN(date.getTime())) return "";
-    return dayKeyInZone(date, timeZone);
-  }
-  function addCalendarMonths(dayKey, months) {
-    const [year, month, day] = dayKey.split("-").map(Number);
-    if (!year || !month || !day) return dayKey;
-    const shifted = new Date(Date.UTC(year, month - 1 + months, 1));
-    const yearOut = shifted.getUTCFullYear();
-    const monthOut = shifted.getUTCMonth();
-    const lastDay = new Date(Date.UTC(yearOut, monthOut + 1, 0)).getUTCDate();
-    const dayOut = Math.min(day, lastDay);
-    return `${yearOut}-${String(monthOut + 1).padStart(2, "0")}-${String(dayOut).padStart(2, "0")}`;
-  }
-  function signedDayDelta(fromKey, toKey) {
-    const [fy, fm, fd] = fromKey.split("-").map(Number);
-    const [ty, tm, td] = toKey.split("-").map(Number);
-    const from = Date.UTC(fy, fm - 1, fd);
-    const to = Date.UTC(ty, tm - 1, td);
-    return Math.round((to - from) / 864e5);
-  }
-  function workingDaysInclusive(startKey, endKey, timeZone) {
-    if (!startKey || !endKey || startKey > endKey) return 0;
-    let count = 0;
-    let cursor = dateFromDayKeyInZone(startKey, timeZone);
-    while (dayKeyInZone(cursor, timeZone) <= endKey) {
-      const iso = isoWeekdayInZone(cursor, timeZone);
-      if (iso >= 1 && iso <= 5) count += 1;
-      cursor = addDaysInZone(cursor, 1, timeZone);
-      if (count > 400) break;
-    }
-    return count;
-  }
-  var formatUnbookedDay = formatLongDayKey;
-  function formatCoverageHours(hours) {
-    const rounded = Math.round(hours * 2) / 2;
-    if (Math.abs(rounded - Math.trunc(rounded)) < 0.01) return String(Math.trunc(rounded));
-    return rounded.toFixed(1);
-  }
-  function finiteHours(value, fallback) {
-    return typeof value === "number" && Number.isFinite(value) ? value : fallback;
-  }
-  function hoursForIsoWeekday(iso, input) {
-    const standard = finiteHours(input.standardPaidHours, 0);
-    if (iso === 6) return Math.max(finiteHours(input.saturdayCountsAsHours, standard), 0);
-    if (iso === 7) return Math.max(finiteHours(input.sundayCountsAsHours, standard), 0);
-    return Math.max(standard, 0);
-  }
-  function qualificationExpiryRowsUnscoped(input) {
-    const timeZone = zoneOf2(input.timeZone);
-    const todayKey2 = dayKeyFromIso(input.referenceIso, timeZone);
-    if (!todayKey2) return [];
-    const endKey = addCalendarMonths(todayKey2, 1);
-    const rows3 = [];
-    for (const operative of input.operatives) {
-      if (!operative.isActive) continue;
-      if (isAnonymisedDeletedProfile({ email: operative.email, name: operative.name })) continue;
-      const operativeName = String(operative.name || "").trim() || operative.id;
-      for (const expiry of operative.expiries) {
-        const name = String(expiry.name || "").trim();
-        const expiryKey = dayKeyFromIso(expiry.expiryIso, timeZone);
-        if (!name || !expiry.qualificationId || !expiryKey || expiryKey > endKey) continue;
-        const daysUntilExpiry = signedDayDelta(todayKey2, expiryKey);
-        const ago = Math.abs(daysUntilExpiry);
-        const message = daysUntilExpiry < 0 ? `${operativeName}'s ${name} expired ${ago} day${ago === 1 ? "" : "s"} ago` : daysUntilExpiry === 0 ? `${operativeName}'s ${name} expires today` : `${operativeName}'s ${name} expires in ${daysUntilExpiry} day${daysUntilExpiry === 1 ? "" : "s"}`;
-        rows3.push({
-          id: `qual-${operative.id}-${expiry.qualificationId}`,
-          operativeId: operative.id,
-          operativeName,
-          qualificationId: expiry.qualificationId,
-          qualificationName: name,
-          dayKey: expiryKey,
-          daysUntilExpiry,
-          severity: "low",
-          title: daysUntilExpiry < 0 ? "Qualification expired" : "Qualification expiry",
-          message,
-          dismissKey: qualificationDismissKey(operative.id, expiry.qualificationId, expiryKey)
-        });
-      }
-    }
-    return rows3;
-  }
-  function unverifiedOperativeRowsUnscoped(input) {
-    const timeZone = zoneOf2(input.timeZone);
-    const todayKey2 = dayKeyFromIso(input.referenceIso, timeZone);
-    if (!todayKey2) return [];
-    const rows3 = [];
-    for (const operative of input.operatives) {
-      if (isAnonymisedDeletedProfile({ email: operative.email, name: operative.name })) continue;
-      const email = emailKey(operative.email);
-      if (!email) continue;
-      const person = input.people.find((candidate) => emailKey(candidate.email) === email && candidate.isOperativeMode);
-      if (!person || person.passwordSet) continue;
-      const createdKey = dayKeyFromIso(person.createdAtIso, timeZone);
-      if (!createdKey || workingDaysInclusive(createdKey, todayKey2, timeZone) < 3) continue;
-      const operativeName = String(operative.name || "").trim() || operative.email;
-      rows3.push({
-        id: `unverified-${operative.id}`,
-        operativeId: operative.id,
-        operativeName,
-        email,
-        title: "Unverified operative",
-        message: `${operativeName} has not verified their account`
-      });
-    }
-    return rows3;
-  }
-  function bookingOccupiesDay(status) {
-    const value = String(status ?? "").trim().toLowerCase();
-    return value === "confirmed" || value === "tentative" || value === "pending" || value === "completed";
-  }
-  function labourBookingKind(person) {
-    if (!person.isActive) return null;
-    const admin = Boolean(person.isAdmin || person.isSuperAdmin);
-    if (person.isOperativeMode && !person.isManager && !admin) return "operative";
-    if (person.isManager || admin) return "manager";
-    return null;
-  }
-  function labourPersonIds(person) {
-    const ids = /* @__PURE__ */ new Set();
-    if (person.id) ids.add(String(person.id));
-    for (const id2 of person.formerIds || []) {
-      const trimmed6 = String(id2 || "").trim();
-      if (trimmed6) ids.add(trimmed6);
-    }
-    return [...ids];
-  }
-  function formerIdAliases(people) {
-    const aliases = {};
-    for (const person of people) {
-      for (const id2 of labourPersonIds(person)) {
-        if (id2 !== person.id && !(id2 in aliases)) aliases[id2] = person.id;
-      }
-    }
-    return aliases;
-  }
-  function hasFinishedSignup(person) {
-    return person.passwordSet === true && person.status !== "pending";
-  }
-  function isManagerOrAdmin(person) {
-    return labourBookingKind(person) === "manager";
-  }
-  function isOperativeModeOnly(person) {
-    return labourBookingKind(person) === "operative";
-  }
-  function preferFinishedAccount(candidates) {
-    return candidates.find((person) => person.passwordSet && person.isActive) ?? candidates.find((person) => person.passwordSet);
-  }
-  function dedupeFinishedPeople(people) {
-    const groups = /* @__PURE__ */ new Map();
-    const withoutEmail = [];
-    for (const person of people) {
-      if (!hasFinishedSignup(person)) continue;
-      const email = emailKey(person.email);
-      if (!email) {
-        withoutEmail.push(person);
-        continue;
-      }
-      const list = groups.get(email) || [];
-      list.push(person);
-      groups.set(email, list);
-    }
-    const picked = [];
-    for (const group of groups.values()) {
-      const best = preferFinishedAccount(group);
-      if (best) picked.push(best);
-    }
-    return [...picked, ...withoutEmail];
-  }
-  function asCoverageBooking(booking) {
-    return {
-      timeSlot: booking.timeSlot,
-      workStart: booking.workStart ?? booking.workStartTime,
-      workEnd: booking.workEnd ?? booking.workEndTime
-    };
-  }
-  function unbookedLabourRowsUnscoped(input) {
-    const timeZone = zoneOf2(input.timeZone);
-    const people = listedCurrentLabourPeople(input.people);
-    const operatives = listedCurrentLabourPeople(input.operatives);
-    const nid = idKey2;
-    const excludedIds = new Set((input.excludedUserIds || []).map(nid).filter(Boolean));
-    const isExcluded = (person) => labourPersonIds(person).some((id2) => excludedIds.has(nid(id2)));
-    const dayPolicy = {
-      standardDayStart: input.standardDayStart,
-      standardDayEnd: input.standardDayEnd,
-      breakWindowStart: input.breakWindowStart,
-      breakWindowEnd: input.breakWindowEnd
-    };
-    const operativeBookings = /* @__PURE__ */ new Map();
-    const managerBookings = /* @__PURE__ */ new Map();
-    for (const booking of input.bookings) {
-      const personId2 = nid(booking.personId);
-      const dayKey = String(booking.dayKey || "");
-      if (!personId2 || !dayKey) continue;
-      const key3 = `${personId2}|${dayKey}`;
-      const target = booking.kind === "manager" ? managerBookings : operativeBookings;
-      const list = target.get(key3) || [];
-      list.push(asCoverageBooking(booking));
-      target.set(key3, list);
-    }
-    const operativesByEmail = /* @__PURE__ */ new Map();
-    const operativeIdsByEmail = /* @__PURE__ */ new Map();
-    for (const operative of operatives) {
-      const email = emailKey(operative.email);
-      if (!email) continue;
-      const ids = operativeIdsByEmail.get(email) || /* @__PURE__ */ new Set();
-      if (nid(operative.id)) ids.add(nid(operative.id));
-      operativeIdsByEmail.set(email, ids);
-      const existing = operativesByEmail.get(email);
-      if (!existing || operative.profileWeight > existing.profileWeight) {
-        operativesByEmail.set(email, operative);
-      }
-    }
-    const userIdsByEmail = /* @__PURE__ */ new Map();
-    const idsByUserId = /* @__PURE__ */ new Map();
-    for (const person of people) {
-      if (nid(person.id)) idsByUserId.set(nid(person.id), labourPersonIds(person).map(nid).filter(Boolean));
-      const email = emailKey(person.email);
-      if (!email || !person.id) continue;
-      const ids = userIdsByEmail.get(email) || /* @__PURE__ */ new Set();
-      for (const id2 of labourPersonIds(person)) if (nid(id2)) ids.add(nid(id2));
-      userIdsByEmail.set(email, ids);
-    }
-    const withFormerIds = (target, userId) => {
-      const key3 = nid(userId);
-      if (!key3) return;
-      for (const id2 of idsByUserId.get(key3) || [key3]) target.add(id2);
-    };
-    const slotsFor = (email, operativeId, userId, dayKey) => {
-      const ids = /* @__PURE__ */ new Set();
-      if (nid(operativeId)) ids.add(nid(operativeId));
-      withFormerIds(ids, userId);
-      const linked = operativeIdsByEmail.get(email);
-      if (linked) for (const id2 of linked) ids.add(id2);
-      const linkedUsers = userIdsByEmail.get(email);
-      if (linkedUsers) for (const id2 of linkedUsers) ids.add(id2);
-      const slots = [];
-      for (const id2 of ids) {
-        slots.push(...operativeBookings.get(`${id2}|${dayKey}`) || []);
-        slots.push(...managerBookings.get(`${id2}|${dayKey}`) || []);
-      }
-      return slots;
-    };
-    const approvedHolidays = input.holidays.filter((holiday) => holiday.approved);
-    const holidayCovers = (dayKey, email, userId, operativeId) => {
-      const userIds = /* @__PURE__ */ new Set();
-      withFormerIds(userIds, userId);
-      const linkedUsers = userIdsByEmail.get(email);
-      if (linkedUsers) for (const id2 of linkedUsers) userIds.add(id2);
-      const operativeIds = /* @__PURE__ */ new Set();
-      if (nid(operativeId)) operativeIds.add(nid(operativeId));
-      const linkedOps = operativeIdsByEmail.get(email);
-      if (linkedOps) for (const id2 of linkedOps) operativeIds.add(id2);
-      return approvedHolidays.some((holiday) => {
-        if (dayKey < holiday.startDayKey || dayKey > holiday.endDayKey) return false;
-        const holidayUser = nid(holiday.userId);
-        if (holidayUser && userIds.has(holidayUser)) return true;
-        const holidayOperative = nid(holiday.operativeId);
-        if (holidayOperative && operativeIds.has(holidayOperative)) return true;
-        return false;
-      });
-    };
-    const operativeUsers = dedupeFinishedPeople(people.filter(isOperativeModeOnly));
-    const managerUsers = dedupeFinishedPeople(people.filter(isManagerOrAdmin));
-    const managerAdminUserIds = new Set(
-      people.filter(isManagerOrAdmin).filter(hasFinishedSignup).map((person) => nid(person.id))
-    );
-    const operativeUserEmails = new Set(operativeUsers.map((person) => emailKey(person.email)).filter(Boolean));
-    const verifiedUserForEmail = (email) => {
-      if (!email) return void 0;
-      return preferFinishedAccount(people.filter((person) => emailKey(person.email) === email));
-    };
-    const roster = operatives.filter((operative) => operative.isActive !== false && !operative.isPlaceholder);
-    const rows3 = [];
-    for (const dayKey of eachDayKey(input.startDayKey, input.endDayKey, timeZone)) {
-      const iso = isoWeekdayInZone(dateFromDayKeyInZone(dayKey, timeZone), timeZone);
-      if (!input.includeWeekends && (iso < 1 || iso > 5)) continue;
-      const weekendRequired = hoursForIsoWeekday(iso, input);
-      if (iso >= 6 && weekendRequired <= 1e-3) continue;
-      const seen = /* @__PURE__ */ new Set();
-      const append = (args) => {
-        const seenKey = args.email || args.personKey;
-        if (seen.has(seenKey)) return;
-        seen.add(seenKey);
-        const coverage = standardDayCoverage(dayPolicy, slotsFor(args.email, args.operativeId, args.userId, dayKey));
-        const requiredHours = iso >= 6 ? weekendRequired : coverage.requiredHours;
-        if (requiredHours <= 1e-3) return;
-        const coveredHours = Math.min(coverage.coveredHours, requiredHours);
-        const missingHours = Math.round(Math.max(0, requiredHours - coveredHours) * 100) / 100;
-        if (missingHours <= 1e-3) return;
-        const label = formatCoverageHours(missingHours);
-        rows3.push({
-          id: `unbooked-${dayKey}-${args.personKey}`,
-          operativeId: args.operativeId,
-          operativeName: args.name,
-          userId: args.userId,
-          personKey: args.personKey,
-          dayKey,
-          missingHours,
-          message: `${args.name} is missing ${label}h on ${formatUnbookedDay(dayKey, timeZone)}.`
-        });
-      };
-      for (const person of operativeUsers) {
-        if (isExcluded(person)) continue;
-        const email = emailKey(person.email);
-        const linked = operativesByEmail.get(email);
-        if (holidayCovers(dayKey, email, person.id, linked?.id)) continue;
-        append({
-          personKey: person.id,
-          name: person.name,
-          email,
-          operativeId: linked?.id || person.id,
-          userId: person.id
-        });
-      }
-      for (const person of managerUsers) {
-        if (isExcluded(person)) continue;
-        const email = emailKey(person.email);
-        const linked = operativesByEmail.get(email);
-        if (holidayCovers(dayKey, email, person.id, linked?.id)) continue;
-        append({
-          personKey: person.id,
-          name: person.name,
-          email,
-          operativeId: linked?.id || person.id,
-          userId: person.id
-        });
-      }
-      for (const operative of roster) {
-        const email = emailKey(operative.email);
-        if (email && operativeUserEmails.has(email)) continue;
-        const matched = email ? verifiedUserForEmail(email) : void 0;
-        if (!matched && email && people.some((person) => emailKey(person.email) === email)) continue;
-        if (matched && managerAdminUserIds.has(nid(matched.id))) continue;
-        if (matched && isExcluded(matched)) continue;
-        if (holidayCovers(dayKey, email, matched?.id, operative.id)) continue;
-        append({
-          personKey: matched?.id || operative.id,
-          name: matched?.name || operative.name,
-          email: email || operative.id,
-          operativeId: operative.id,
-          userId: matched?.id
-        });
-      }
-    }
-    return rows3.sort((a, b) => {
-      if (a.dayKey !== b.dayKey) return a.dayKey < b.dayKey ? -1 : 1;
-      return a.operativeName.localeCompare(b.operativeName, void 0, { sensitivity: "base" });
-    });
-  }
-  function qualificationExpiryRows(input) {
-    const rows3 = qualificationExpiryRowsUnscoped(input);
-    const scope = input.scope;
-    if (!scope || scope.kind === "all") return rows3;
-    const emails = new Map(input.operatives.map((operative) => [operative.id, operative.email ?? null]));
-    return rows3.filter((row2) => isPersonInWarningScope(scope, [row2.operativeId], emails.get(row2.operativeId) ?? null));
-  }
-  function unverifiedOperativeRows(input) {
-    const rows3 = unverifiedOperativeRowsUnscoped(input);
-    const scope = input.scope;
-    if (!scope || scope.kind === "all") return rows3;
-    return rows3.filter((row2) => isPersonInWarningScope(scope, [row2.operativeId], row2.email));
-  }
-  function unbookedLabourRows(input) {
-    const scope = input.scope;
-    if (scope && scope.kind === "jobs" && !scope.unbookedLabour) return [];
-    const rows3 = unbookedLabourRowsUnscoped(input);
-    if (!scope || scope.kind === "all") return rows3;
-    return rows3.filter((row2) => isPersonInWarningScope(scope, [row2.operativeId, row2.userId, row2.personKey], row2.personKey));
-  }
-  function unbookedLabourRowsOnDay(input) {
-    return unbookedLabourRows({
-      ...input,
-      startDayKey: input.dayKey,
-      endDayKey: input.dayKey
-    });
-  }
-
-  // lib/canonical/warningSort.ts
-  var DEFAULT_WARNINGS_SORT_DIRECTION = "oldest";
-  var DATED_DAY_KEY = /^(\d{4})-(\d{2})-(\d{2})$/;
-  function parseWarningsSortDirection(value) {
-    return value === "newest" ? "newest" : DEFAULT_WARNINGS_SORT_DIRECTION;
-  }
-  function warningDayKeyIsDated(dayKey) {
-    return DATED_DAY_KEY.test(String(dayKey ?? "").trim());
-  }
-  function compareWarningDayKeys(a, b, direction = DEFAULT_WARNINGS_SORT_DIRECTION) {
-    const left = String(a ?? "").trim();
-    const right = String(b ?? "").trim();
-    const leftDated = warningDayKeyIsDated(left);
-    const rightDated = warningDayKeyIsDated(right);
-    if (leftDated !== rightDated) return leftDated ? -1 : 1;
-    if (!leftDated || left === right) return 0;
-    const ascending = left < right ? -1 : 1;
-    return parseWarningsSortDirection(direction) === "newest" ? -ascending : ascending;
-  }
-  function sortWarningsByDate(rows3, direction = DEFAULT_WARNINGS_SORT_DIRECTION) {
-    const dir = parseWarningsSortDirection(direction);
-    return rows3.map((row2, index) => ({ row: row2, index })).sort((left, right) => {
-      const byDate = compareWarningDayKeys(left.row.dayKey ?? "", right.row.dayKey ?? "", dir);
-      return byDate !== 0 ? byDate : left.index - right.index;
-    }).map((entry) => entry.row);
-  }
-
-  // lib/canonical/leaveCoverage.ts
-  function leaveSlotKind(timeSlot) {
-    const kind = namedSlotKind(timeSlot);
-    if (kind === "AM") return "AM";
-    if (kind === "PM") return "PM";
-    return "FULL_DAY";
-  }
-  function leaveLabelFor(slot) {
-    return slot === "AM" ? "AM" : slot === "PM" ? "PM" : "Full day";
-  }
-  function rangeLabel(interval2) {
-    return `${formatClockMinutes(interval2.start)}\u2013${formatClockMinutes(interval2.end)}`;
-  }
-  function hoursOf(intervals) {
-    const minutes = intervals.reduce((sum, interval2) => sum + Math.max(0, interval2.end - interval2.start), 0);
-    return Math.round(minutes / 60 * 100) / 100;
-  }
-  function formatHours(hours) {
-    const rounded = Math.round(hours * 4) / 4;
-    const text23 = Number.isInteger(rounded) ? String(rounded) : String(rounded).replace(/0+$/, "");
-    return `${text23} hour${rounded === 1 ? "" : "s"}`;
-  }
-  function joinRanges(intervals) {
-    const labels = intervals.map(rangeLabel);
-    if (labels.length <= 1) return labels[0] || "";
-    return `${labels.slice(0, -1).join(", ")} and ${labels[labels.length - 1]}`;
-  }
-  function leaveCoverageRows(input) {
-    const timeZone = zoneOrLondon(input.timeZone);
-    const windows = halfDayWindows(input.day);
-    const excluded = new Set((input.excludedUserIds || []).map(idKey2).filter(Boolean));
-    const approvedLeave = input.leave.filter((record9) => record9.approved && record9.startDayKey && record9.endDayKey);
-    if (approvedLeave.length === 0) return [];
-    const peopleByUserId = /* @__PURE__ */ new Map();
-    const peopleByOperativeId = /* @__PURE__ */ new Map();
-    for (const person of input.people) {
-      if (isAnonymisedDeletedProfile({ name: person.name })) continue;
-      const userId = idKey2(person.userId);
-      if (userId && !peopleByUserId.has(userId)) peopleByUserId.set(userId, person);
-      for (const operativeId of person.operativeIds || []) {
-        const key3 = idKey2(operativeId);
-        if (key3 && !peopleByOperativeId.has(key3)) peopleByOperativeId.set(key3, person);
-      }
-    }
-    const personForLeave = (record9) => {
-      const userId = idKey2(record9.userId);
-      if (userId && peopleByUserId.has(userId)) return peopleByUserId.get(userId);
-      const operativeId = idKey2(record9.operativeId);
-      if (operativeId && peopleByOperativeId.has(operativeId)) return peopleByOperativeId.get(operativeId);
-      return void 0;
-    };
-    const bookingsByPersonDay = /* @__PURE__ */ new Map();
-    for (const booking of input.bookings) {
-      const personId2 = idKey2(booking.personId);
-      if (!personId2 || !booking.dayKey) continue;
-      const person = booking.kind === "manager" ? peopleByUserId.get(personId2) : peopleByOperativeId.get(personId2);
-      if (!person) continue;
-      const key3 = `${person.personKey}|${booking.dayKey}`;
-      const list = bookingsByPersonDay.get(key3) || [];
-      list.push(booking);
-      bookingsByPersonDay.set(key3, list);
-    }
-    const rows3 = [];
-    const seen = /* @__PURE__ */ new Set();
-    for (const dayKey of eachDayKey(input.startDayKey, input.endDayKey, timeZone)) {
-      const iso = isoWeekdayOfDayKey(dayKey, timeZone);
-      const weekend = iso === 6 || iso === 7;
-      for (const record9 of approvedLeave) {
-        if (dayKey < record9.startDayKey || dayKey > record9.endDayKey) continue;
-        const person = personForLeave(record9);
-        if (!person) continue;
-        const dedupe = `${person.personKey}|${dayKey}|${record9.id}`;
-        if (seen.has(dedupe)) continue;
-        seen.add(dedupe);
-        const leaveSlot2 = leaveSlotKind(record9.timeSlot);
-        const leaveWindow = leaveSlot2 === "AM" ? windows.am : leaveSlot2 === "PM" ? windows.pm : windows.day;
-        const dayBookings = bookingsByPersonDay.get(`${person.personKey}|${dayKey}`) || [];
-        const intervals = dayBookings.map((booking) => ({ booking, interval: slotInterval(booking, input.day) })).filter((entry) => entry.interval !== null);
-        const personName = String(person.name || "").trim() || person.personKey;
-        const userId = String(person.userId || "").trim() || void 0;
-        const operativeId = String(record9.operativeId || person.operativeIds?.[0] || "").trim() || void 0;
-        const longDay = formatLongDayKey(dayKey, timeZone);
-        const leaveLabel = leaveLabelFor(leaveSlot2);
-        const clashes = intervals.filter(({ interval: interval2 }) => intervalsOverlap(interval2, leaveWindow)).map(({ booking, interval: interval2 }) => ({
-          bookingId: booking.id,
-          kind: booking.kind,
-          label: String(booking.label || "").trim() || (booking.kind === "manager" ? "Manager booking" : "Booking"),
-          start: interval2.start,
-          end: interval2.end,
-          overlapStart: Math.max(interval2.start, leaveWindow.start),
-          overlapEnd: Math.min(interval2.end, leaveWindow.end)
-        })).sort((a, b) => a.start - b.start);
-        if (clashes.length > 0) {
-          const bookedText = clashes.map((clash) => `${clash.label} ${formatClockMinutes(clash.start)}\u2013${formatClockMinutes(clash.end)}`).join(", ");
-          const leaveText = leaveSlot2 === "FULL_DAY" ? "full-day annual leave" : `${leaveLabel} annual leave (${rangeLabel(leaveWindow)})`;
-          rows3.push({
-            id: `leave-clash-${dayKey}-${person.personKey}-${record9.id}`,
-            kind: "leave_clash",
-            personKey: person.personKey,
-            personName,
-            userId,
-            operativeId,
-            dayKey,
-            leaveId: record9.id,
-            leaveSlot: leaveSlot2,
-            leaveLabel,
-            leaveWindow: { ...leaveWindow },
-            clashes,
-            workingWindow: null,
-            missing: [],
-            missingHours: 0,
-            bookedHours: hoursOf(mergeMinuteIntervals(intervals.map((entry) => entry.interval))),
-            severity: "high",
-            title: "Booked during annual leave",
-            message: `${personName} is booked ${bookedText} on ${longDay} while on ${leaveText}.`
-          });
-        }
-        if (leaveSlot2 === "FULL_DAY") continue;
-        if (weekend && !input.includeWeekends) continue;
-        if (userId && excluded.has(idKey2(userId))) continue;
-        const workingWindow = leaveSlot2 === "PM" ? windows.am : windows.pm;
-        const workingLabel = leaveSlot2 === "PM" ? "AM" : "PM";
-        const covered = intervals.map((entry) => entry.interval);
-        const missing = subtractMinuteIntervals(workingWindow, covered);
-        if (missing.length === 0) continue;
-        const missingHours = hoursOf(missing);
-        const bookedInWorking = subtractMinuteIntervals(workingWindow, missing);
-        const bookedHours = hoursOf(bookedInWorking);
-        const message = bookedHours > 0 ? `${personName} has ${leaveLabel} annual leave on ${longDay}. The ${workingLabel} (${rangeLabel(workingWindow)}) is only booked ${joinRanges(bookedInWorking)}; ${joinRanges(missing)} (${formatHours(missingHours)}) is not booked.` : `${personName} has ${leaveLabel} annual leave on ${longDay} but is not booked for the ${workingLabel} (${rangeLabel(workingWindow)}, ${formatHours(missingHours)}).`;
-        rows3.push({
-          id: `leave-cover-${dayKey}-${person.personKey}-${record9.id}`,
-          kind: "leave_cover",
-          personKey: person.personKey,
-          personName,
-          userId,
-          operativeId,
-          dayKey,
-          leaveId: record9.id,
-          leaveSlot: leaveSlot2,
-          leaveLabel,
-          leaveWindow: { ...leaveWindow },
-          clashes: [],
-          workingWindow: { ...workingWindow },
-          missing,
-          missingHours,
-          bookedHours,
-          severity: "medium",
-          title: "Half-day leave not covered",
-          message
-        });
-      }
-    }
-    return rows3.sort((a, b) => {
-      if (a.dayKey !== b.dayKey) return a.dayKey < b.dayKey ? -1 : 1;
-      if (a.kind !== b.kind) return a.kind === "leave_clash" ? -1 : 1;
-      return a.personName.localeCompare(b.personName, void 0, { sensitivity: "base" });
-    });
-  }
-
   // lib/canonical/timesheetSubmission.ts
   var TIMESHEET_CLOSE_OF_PLAY_HOUR = 17;
   var TIMESHEET_CLOSE_OF_PLAY_MINUTE = 0;
@@ -3169,7 +2558,7 @@ var ProjectPlannerCanonical = (() => {
   var TIMESHEET_EXPORT_STORAGE_FOLDER = "timesheetExports";
   var TIMESHEET_SIGNED_AFTER_MS = Date.parse("2020-01-01T00:00:00.000Z");
   var TIMESHEET_INVOICE_EXPORT_LEFTOVER_MS = 6e4;
-  function zoneOf3(timeZone) {
+  function zoneOf2(timeZone) {
     return String(timeZone || "").trim() || CANONICAL_TIME_ZONE;
   }
   function trimmed2(value) {
@@ -3213,14 +2602,14 @@ var ProjectPlannerCanonical = (() => {
   function timesheetDocumentId(userId, startDayKey, timeZone) {
     const uid = trimmed2(userId);
     if (!uid || !isDayKey(startDayKey)) return "";
-    const stamp = unixStartOfDayInZone(dateFromDayKeyInZone(startDayKey, zoneOf3(timeZone)), zoneOf3(timeZone));
+    const stamp = unixStartOfDayInZone(dateFromDayKeyInZone(startDayKey, zoneOf2(timeZone)), zoneOf2(timeZone));
     return `${TIMESHEET_DOCUMENT_PREFIX}${uid}_${stamp}`;
   }
   function timesheetPeriodKey(period) {
     return `${period.startDayKey}|${period.endDayKey}`;
   }
   function timesheetPeriodFromInvoicing(input) {
-    const timeZone = zoneOf3(input.timeZone);
+    const timeZone = zoneOf2(input.timeZone);
     const reference = dateFromDayKeyInZone(input.referenceDayKey, timeZone);
     return invoicingPeriod({
       referenceIso: reference.toISOString(),
@@ -3395,7 +2784,7 @@ var ProjectPlannerCanonical = (() => {
     return [snapshot, ...rest].slice(0, 24);
   }
   function timesheetPaymentRunPeriodsFromWindow(input) {
-    const timeZone = zoneOf3(input.timeZone);
+    const timeZone = zoneOf2(input.timeZone);
     const lookback = Math.max(0, Math.min(Number(input.lookbackCount) || 0, 240));
     const current = timesheetPeriodFromInvoicing(input);
     const periods = input.includeCurrent === false ? [] : [current];
@@ -3497,7 +2886,7 @@ var ProjectPlannerCanonical = (() => {
   function timesheetStoredStartDayKey(weekStart, timeZone) {
     const ms = timesheetTimestampMs(weekStart);
     if (ms == null) return "";
-    return dayKeyInZone(new Date(ms), zoneOf3(timeZone));
+    return dayKeyInZone(new Date(ms), zoneOf2(timeZone));
   }
 
   // lib/canonical/organizationSettings.ts
@@ -3531,6 +2920,10 @@ var ProjectPlannerCanonical = (() => {
     "payrollTimePolicyPrior",
     "payrollTimePolicyEffectiveFrom",
     "payrollTimePolicyScheduled",
+    /** 1.19.0: append-only `{ effectiveFrom: 'YYYY-MM-DD', policy }[]`, the working hours in effect from each day. */
+    "payrollTimePolicyHistory",
+    /** 1.19.0: bumped by every working-hours save so a second admin's stale save is refused. */
+    "payrollTimePolicyRevision",
     "annualLeaveDefaults",
     "warningDetection",
     "invoicing",
@@ -3574,7 +2967,8 @@ var ProjectPlannerCanonical = (() => {
     definedWindowEnd: "16:00",
     countsAsStandardHours: 8,
     outsideWindowMultiplier: 1.5,
-    sameAsSaturday: false
+    sameAsSaturday: false,
+    breakPaid: true
   };
   var DEFAULT_SATURDAY_PAYROLL = {
     allHoursAtMultiplierMode: false,
@@ -3583,7 +2977,8 @@ var ProjectPlannerCanonical = (() => {
     definedWindowEnd: "13:00",
     countsAsStandardHours: 8,
     outsideWindowMultiplier: 2,
-    sameAsSaturday: false
+    sameAsSaturday: false,
+    breakPaid: true
   };
   var DEFAULT_SUNDAY_PAYROLL = {
     allHoursAtMultiplierMode: true,
@@ -3592,7 +2987,8 @@ var ProjectPlannerCanonical = (() => {
     definedWindowEnd: "16:00",
     countsAsStandardHours: 8,
     outsideWindowMultiplier: 2,
-    sameAsSaturday: false
+    sameAsSaturday: false,
+    breakPaid: true
   };
   var DEFAULT_PAYROLL_POLICY = {
     standardDayStart: "07:30",
@@ -3750,7 +3146,22 @@ var ProjectPlannerCanonical = (() => {
         fallback.outsideWindowMultiplier ?? 1.5,
         PAYROLL_POLICY_LIMITS.multiplier
       ),
-      sameAsSaturday: false
+      sameAsSaturday: false,
+      // 1.19.0: missing or anything but `false` = paid, so nothing changes for a company that never chose.
+      breakPaid: data.breakPaid !== false,
+      // 1.19.0: the day's own break; missing stays missing and reads as the weekday break.
+      ...data.breakMinutes == null || typeof data.breakMinutes === "string" && data.breakMinutes.trim() === "" || !Number.isFinite(Number(data.breakMinutes)) ? {} : { breakMinutes: policyNumber(data.breakMinutes, 0, PAYROLL_POLICY_LIMITS.breakMinutes) },
+      ...typeof data.breakWindowStart === "string" && data.breakWindowStart.trim() ? { breakWindowStart: data.breakWindowStart.trim() } : {},
+      ...typeof data.breakWindowEnd === "string" && data.breakWindowEnd.trim() ? { breakWindowEnd: data.breakWindowEnd.trim() } : {}
+    };
+  }
+  function weekendBreakFor(policy, weekend) {
+    const own = Number(weekend.breakMinutes);
+    return {
+      paid: weekend.breakPaid !== false,
+      minutes: weekend.breakMinutes != null && Number.isFinite(own) ? Math.max(0, own) : Math.max(0, Number(policy.unpaidBreakMinutes) || 0),
+      start: weekend.breakWindowStart || policy.breakWindowStart,
+      end: weekend.breakWindowEnd || policy.breakWindowEnd
     };
   }
   function weekendToFirestore(weekend) {
@@ -3761,7 +3172,12 @@ var ProjectPlannerCanonical = (() => {
       customStandardStart: weekend.definedWindowStart ?? "07:30",
       customStandardEnd: weekend.definedWindowEnd ?? "16:00",
       countsAsHours: weekend.countsAsStandardHours ?? 8,
-      outsideStandardWindowMultiplier: weekend.outsideWindowMultiplier ?? 1.5
+      outsideStandardWindowMultiplier: weekend.outsideWindowMultiplier ?? 1.5,
+      breakPaid: weekend.breakPaid !== false,
+      // 1.19.0: written only when the day has its own break; missing reads as the weekday break.
+      ...weekend.breakMinutes != null ? { breakMinutes: weekend.breakMinutes } : {},
+      ...weekend.breakWindowStart ? { breakWindowStart: weekend.breakWindowStart } : {},
+      ...weekend.breakWindowEnd ? { breakWindowEnd: weekend.breakWindowEnd } : {}
     };
   }
   function parsePayrollPolicy(data) {
@@ -3885,10 +3301,56 @@ var ProjectPlannerCanonical = (() => {
       clashLookaheadMode,
       clashLookaheadDays: fallback ? DEFAULT_WARNING_DETECTION.clashLookaheadDays : clampClashLookaheadDays(days),
       includeWeekendsForUnbookedLabour: Boolean(record9.includeWeekendsForUnbookedLabour),
-      excludedUserIdsFromUnbookedWarnings: excludedUnbookedUserIds(record9)
+      excludedUserIdsFromUnbookedWarnings: excludedUnbookedUserIds(record9),
+      weekendCoverage: parseWeekendCoverage(record9.weekendCoverage, Boolean(record9.includeWeekendsForUnbookedLabour))
     };
     if (fallback && clashLookaheadMode === "numberOfDays") parsed.clashLookaheadDaysFallback = fallback;
     return parsed;
+  }
+  var COVERAGE_CLOCK_RE = /^\d{1,2}:\d{2}$/;
+  function clockMinutesOf(value) {
+    const text23 = coverageClock(value);
+    if (!text23) return null;
+    const [h, m] = text23.split(":").map(Number);
+    return h * 60 + m;
+  }
+  function coverageClock(value) {
+    const text23 = typeof value === "string" ? value.trim() : "";
+    if (!COVERAGE_CLOCK_RE.test(text23)) return null;
+    const [h, m] = text23.split(":").map(Number);
+    return h >= 0 && h < 24 && m >= 0 && m < 60 ? `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}` : null;
+  }
+  function parseWeekendCoverage(value, includeWeekends) {
+    const raw = asSettingsRecord(value) ?? {};
+    const day = (entry) => {
+      const rec = asSettingsRecord(entry) ?? {};
+      let start = coverageClock(rec.start);
+      let end = coverageClock(rec.end);
+      if (start && end && clockMinutesOf(end) <= clockMinutesOf(start)) {
+        start = null;
+        end = null;
+      }
+      return { enabled: typeof rec.enabled === "boolean" ? rec.enabled : includeWeekends, start: start && end ? start : null, end: start && end ? end : null };
+    };
+    return { saturday: day(raw.saturday), sunday: day(raw.sunday) };
+  }
+  function resolveWeekendCoverageDay(coverage, includeWeekends, policy, weekday2) {
+    const saved = coverage?.[weekday2];
+    const enabled = includeWeekends && (saved ? saved.enabled !== false : true);
+    const fallbackDay = { start: policy?.standardDayStart || "07:30", end: policy?.standardDayEnd || "16:00" };
+    let window = fallbackDay;
+    if (policy) {
+      const rule = weekday2 === "sunday" && policy.sunday?.sameAsSaturday ? policy.saturday : policy[weekday2];
+      const ws = clockMinutesOf(rule?.definedWindowStart);
+      const we = clockMinutesOf(rule?.definedWindowEnd);
+      if (rule && !rule.allHoursAtMultiplierMode && ws != null && we != null && we > ws) {
+        window = { start: coverageClock(rule.definedWindowStart), end: coverageClock(rule.definedWindowEnd) };
+      }
+    }
+    const ss = clockMinutesOf(saved?.start);
+    const se = clockMinutesOf(saved?.end);
+    if (ss != null && se != null && se > ss) window = { start: saved.start, end: saved.end };
+    return { enabled, ...window };
   }
   function lookaheadDaysFallback(raw) {
     if (raw === void 0 || raw === null || typeof raw === "string" && raw.trim() === "") return "lookaheadDaysMissing";
@@ -3907,7 +3369,14 @@ var ProjectPlannerCanonical = (() => {
       clashLookaheadMode: settings.clashLookaheadMode,
       clashLookaheadDays: clampClashLookaheadDays(settings.clashLookaheadDays),
       includeWeekendsForUnbookedLabour: settings.includeWeekendsForUnbookedLabour,
-      excludedUserIdsFromUnbookedWarnings: settings.excludedUserIdsFromUnbookedWarnings
+      excludedUserIdsFromUnbookedWarnings: settings.excludedUserIdsFromUnbookedWarnings,
+      // 1.19.0: the whole map, one field (`warningDetection.weekendCoverage`) in the partial update.
+      ...settings.weekendCoverage ? {
+        weekendCoverage: {
+          saturday: { ...settings.weekendCoverage.saturday },
+          sunday: { ...settings.weekendCoverage.sunday }
+        }
+      } : {}
     };
   }
   function parseInvoicing(data) {
@@ -4101,6 +3570,1276 @@ var ProjectPlannerCanonical = (() => {
       }
     }
     return null;
+  }
+
+  // lib/canonical/payrollHours.ts
+  var HALF_WINDOW_TOLERANCE = 20;
+  function weekendFor(isoWeekday, policy) {
+    if (isoWeekday === 6) return policy.saturday;
+    if (isoWeekday === 7) return policy.sunday?.sameAsSaturday ? policy.saturday : policy.sunday;
+    return null;
+  }
+  function standardPaid(policy) {
+    return Math.max(Number(policy.standardPaidHours) || 0, 0);
+  }
+  function countsAs(weekend, policy) {
+    return weekend.countsAsStandardHours ?? Number(policy.standardPaidHours);
+  }
+  function dayInput(policy) {
+    return {
+      standardDayStart: policy.standardDayStart,
+      standardDayEnd: policy.standardDayEnd,
+      breakWindowStart: policy.breakWindowStart,
+      breakWindowEnd: policy.breakWindowEnd
+    };
+  }
+  function workedHoursSplit(result2) {
+    let standard = 0;
+    let outside = 0;
+    for (const row2 of result2.segments) {
+      if (row2.kind === "standardWindow") standard += row2.workedHours;
+      else outside += row2.workedHours;
+    }
+    return { standardWorkedHours: standard, outsideWorkedHours: outside };
+  }
+  function payrollOutsideMultiplier(booking, isoWeekday, policy) {
+    const override = Number(booking.otMultiplierOverride);
+    if (Number.isFinite(override) && override > 0) return override;
+    const weekend = weekendFor(isoWeekday, policy);
+    if (weekend) {
+      return weekend.allHoursAtMultiplierMode ? weekend.allHoursMultiplier : weekend.outsideWindowMultiplier ?? 1.5;
+    }
+    return policy.weekdayOutsideStandardMultiplier;
+  }
+  function segment(kind, baseHours, multiplier, start, end, workedHours = baseHours, unpaidBreakHours = 0) {
+    const clock = (value) => value == null ? void 0 : typeof value === "number" ? formatClockMinutes(value > 24 * 60 ? value - 24 * 60 : Math.min(value, 24 * 60 - 1)) : value;
+    const row2 = { kind, clockStart: clock(start), clockEnd: clock(end), baseHours, multiplier, paidHours: baseHours * multiplier, workedHours };
+    if (unpaidBreakHours > 0) row2.unpaidBreakHours = unpaidBreakHours;
+    return row2;
+  }
+  function result(segments, outsideMultiplier) {
+    let total = 0;
+    let standard = 0;
+    let outside = 0;
+    let worked = 0;
+    let unpaidBreak = 0;
+    for (const row2 of segments) {
+      total += row2.paidHours;
+      worked += row2.workedHours;
+      unpaidBreak += row2.unpaidBreakHours ?? 0;
+      if (row2.kind === "standardWindow") standard += row2.baseHours;
+      else outside += row2.baseHours;
+    }
+    return {
+      totalPaidHours: total,
+      standardHours: standard,
+      outsideHours: outside,
+      outsideMultiplier,
+      workedHours: worked,
+      unpaidBreakHours: unpaidBreak,
+      segments
+    };
+  }
+  function interval(booking, policy) {
+    return slotInterval(
+      { timeSlot: booking.timeSlot ?? void 0, workStartTime: booking.workStartTime ?? void 0, workEndTime: booking.workEndTime ?? void 0 },
+      dayInput(policy)
+    );
+  }
+  function isNamedHalf(booking) {
+    const kind = namedSlotKind(booking.timeSlot);
+    return kind === "AM" || kind === "PM";
+  }
+  function isHalfDayPaid(booking, policy, allHoursDay) {
+    if (isNamedHalf(booking)) return true;
+    if (namedSlotKind(booking.timeSlot) !== "CUSTOM" || allHoursDay) return false;
+    const span = interval(booking, policy);
+    if (!span) return false;
+    const windows = halfDayWindows(dayInput(policy));
+    const near = (a, b) => Math.abs(a - b) <= HALF_WINDOW_TOLERANCE;
+    return near(span.start, windows.am.start) && near(span.end, windows.am.end) || near(span.start, windows.pm.start) && near(span.end, windows.pm.end);
+  }
+  function halfDayPaid(booking, policy, weekend, multiplier) {
+    const paid = weekend && !weekend.allHoursAtMultiplierMode ? Math.max(countsAs(weekend, policy), 0) / 2 : standardPaid(policy) / 2;
+    const span = interval(booking, policy);
+    return result([segment("standardWindow", paid, 1, span?.start, span?.end)], multiplier);
+  }
+  function legacySlot(booking, policy, multiplier) {
+    const kind = namedSlotKind(booking.timeSlot);
+    const paid = kind === "AM" || kind === "PM" ? standardPaid(policy) / 2 : kind === "EVENING" ? 4 : kind === "OVERTIME" ? 2 : standardPaid(policy);
+    return result([segment("standardWindow", paid, 1)], multiplier);
+  }
+  function wallHours(booking, policy) {
+    const start = parseClockMinutes(booking.workStartTime ?? void 0);
+    const end = parseClockMinutes(booking.workEndTime ?? void 0);
+    if (start != null && end != null && start !== end) return ((end > start ? end : end + 24 * 60) - start) / 60;
+    const span = interval(booking, policy);
+    if (span) return (span.end - span.start) / 60;
+    const kind = namedSlotKind(booking.timeSlot);
+    if (kind === "AM" || kind === "PM") return standardPaid(policy) / 2;
+    if (kind === "EVENING") return 4;
+    if (kind === "OVERTIME") return 2;
+    return standardPaid(policy);
+  }
+  function breakDeductionMinutes(policy, span) {
+    const start = parseClockMinutes(policy.breakWindowStart);
+    const end = parseClockMinutes(policy.breakWindowEnd);
+    if (start == null || end == null || end <= start) return 0;
+    const overlap = Math.min(span.end, end) - Math.max(span.start, start);
+    if (!(overlap > 0)) return 0;
+    const unpaid = Math.max(Number(policy.unpaidBreakMinutes) || 0, 0);
+    return Math.min(overlap, unpaid);
+  }
+  function dayBreakOf(start, end, minutes) {
+    const s = parseClockMinutes(start);
+    const e = parseClockMinutes(end);
+    if (s == null || e == null || e <= s) return null;
+    return { start: s, end: e, minutes: Math.max(Number(minutes) || 0, 0) };
+  }
+  function weekendDayBreak(policy, weekend) {
+    const own = weekendBreakFor(policy, weekend);
+    return dayBreakOf(own.start, own.end, own.minutes);
+  }
+  function breakOverlapMinutes(dayBreak, part) {
+    if (!dayBreak) return 0;
+    return Math.max(0, Math.min(part.end, dayBreak.end) - Math.max(part.start, dayBreak.start));
+  }
+  function dayBreakDeductionMinutes(dayBreak, span) {
+    if (!dayBreak) return 0;
+    return Math.min(breakOverlapMinutes(dayBreak, span), dayBreak.minutes);
+  }
+  function weekendBreakUnpaid(policy, weekend) {
+    const own = weekendBreakFor(policy, weekend);
+    return !own.paid && own.minutes > 0;
+  }
+  function unpaidBreakAppliesOnDay(policy, dayKey, timeZone) {
+    if (!policy || !(Number(policy.unpaidBreakMinutes) > 0)) return false;
+    const zone3 = zoneOrLondon(timeZone);
+    const iso = isoWeekdayInZone(dateFromDayKeyInZone(dayKey, zone3), zone3);
+    const weekend = weekendFor(iso, policy);
+    if (weekend) return weekendBreakUnpaid(policy, weekend);
+    return policy.breakPaid !== true;
+  }
+  function payrollBreakOnDay(policy, dayKey, timeZone) {
+    if (!policy) return null;
+    const zone3 = zoneOrLondon(timeZone);
+    const iso = isoWeekdayInZone(dateFromDayKeyInZone(dayKey, zone3), zone3);
+    const weekend = weekendFor(iso, policy);
+    if (weekend) {
+      const own = weekendBreakFor(policy, weekend);
+      const window2 = dayBreakOf(own.start, own.end, own.minutes);
+      return window2 ? { ...window2, paid: own.paid } : null;
+    }
+    const window = dayBreakOf(policy.breakWindowStart, policy.breakWindowEnd, policy.unpaidBreakMinutes);
+    return window ? { ...window, paid: policy.breakPaid === true } : null;
+  }
+  function payrollDayWindows(policy, dayKey, timeZone) {
+    if (!policy) return { paidWindow: null, unpaidBreak: null, allHoursMultiplier: null };
+    const zone3 = zoneOrLondon(timeZone);
+    const iso = isoWeekdayInZone(dateFromDayKeyInZone(dayKey, zone3), zone3);
+    const weekend = weekendFor(iso, policy);
+    const dayBreak = payrollBreakOnDay(policy, dayKey, zone3);
+    const unpaidBreak = unpaidBreakAppliesOnDay(policy, dayKey, zone3) && dayBreak ? { start: dayBreak.start, end: dayBreak.end } : null;
+    if (weekend) {
+      if (weekend.allHoursAtMultiplierMode) return { paidWindow: null, unpaidBreak, allHoursMultiplier: weekend.allHoursMultiplier };
+      const ws = parseClockMinutes(weekend.definedWindowStart ?? policy.standardDayStart);
+      const we = parseClockMinutes(weekend.definedWindowEnd ?? "13:00");
+      return { paidWindow: ws != null && we != null && we > ws ? { start: ws, end: we } : null, unpaidBreak, allHoursMultiplier: null };
+    }
+    const ds = parseClockMinutes(policy.standardDayStart);
+    const de = parseClockMinutes(policy.standardDayEnd);
+    return { paidWindow: ds != null && de != null && de > ds ? { start: ds, end: de } : null, unpaidBreak, allHoursMultiplier: null };
+  }
+  function nothingPaid(span, multiplier) {
+    return result([segment("standardWindow", 0, 1, span.start, span.end, 0)], multiplier);
+  }
+  function outsideIntervals(span, windowStart, windowEnd) {
+    const parts = [];
+    if (span.start < windowStart) parts.push({ start: span.start, end: Math.min(span.end, windowStart) });
+    if (span.end > windowEnd) parts.push({ start: Math.max(span.start, windowEnd), end: span.end });
+    return parts.filter((part) => part.end > part.start);
+  }
+  function outsideSegments(span, windowStart, windowEnd, multiplier) {
+    const rows3 = [];
+    if (span.start < windowStart) {
+      const end = Math.min(span.end, windowStart);
+      const hours = (end - span.start) / 60;
+      if (hours > 1e-3) rows3.push(segment("outsideWindow", hours, multiplier, span.start, end));
+    }
+    if (span.end > windowEnd) {
+      const start = Math.max(span.start, windowEnd);
+      const hours = (span.end - start) / 60;
+      if (hours > 1e-3) rows3.push(segment("outsideWindow", hours, multiplier, start, span.end));
+    }
+    return rows3;
+  }
+  function weekday(booking, policy, multiplier) {
+    if (isHalfDayPaid(booking, policy, false)) return halfDayPaid(booking, policy, null, multiplier);
+    const span = interval(booking, policy);
+    if (!span) return legacySlot(booking, policy, multiplier);
+    const ds = parseClockMinutes(policy.standardDayStart) ?? 0;
+    const de = parseClockMinutes(policy.standardDayEnd) ?? 0;
+    if (!(de > ds)) {
+      const wall = wallHours(booking, policy);
+      return result([segment("allHoursMultiplier", wall, multiplier, booking.workStartTime ?? void 0, booking.workEndTime ?? void 0)], multiplier);
+    }
+    const rows3 = [];
+    const insideStart = Math.max(span.start, ds);
+    const insideEnd = Math.min(span.end, de);
+    if (insideEnd > insideStart) {
+      let hours = (insideEnd - insideStart) / 60;
+      let deducted = 0;
+      if (!isNamedHalf(booking) && policy.breakPaid !== true && booking.isBreakRemoved !== true) {
+        deducted = Math.min(hours, breakDeductionMinutes(policy, span) / 60);
+        hours = Math.max(0, hours - deducted);
+      }
+      if (hours > 1e-3) rows3.push(segment("standardWindow", hours, 1, insideStart, insideEnd, hours, deducted));
+    }
+    rows3.push(...outsideSegments(span, ds, de, multiplier));
+    if (rows3.length === 0) return nothingPaid(span, multiplier);
+    return result(rows3, multiplier);
+  }
+  function weekendFullDayOnly(booking) {
+    if (namedSlotKind(booking.timeSlot) !== "FULL_DAY") return false;
+    return parseClockMinutes(booking.workStartTime ?? void 0) == null || parseClockMinutes(booking.workEndTime ?? void 0) == null;
+  }
+  function weekendFullDayWindow(policy, weekend) {
+    if (weekend.allHoursAtMultiplierMode) {
+      const start2 = parseClockMinutes(policy.standardDayStart);
+      const end2 = parseClockMinutes(policy.standardDayEnd);
+      return start2 != null && end2 != null && end2 > start2 ? { start: start2, end: end2 } : null;
+    }
+    const start = parseClockMinutes(weekend.definedWindowStart ?? policy.standardDayStart);
+    const end = parseClockMinutes(weekend.definedWindowEnd ?? "13:00");
+    return start != null && end != null && end > start ? { start, end } : null;
+  }
+  function weekendRuleForIsoWeekday(isoWeekday, policy) {
+    return weekendFor(isoWeekday, policy);
+  }
+  function weekendDay(booking, policy, weekend, multiplier) {
+    const fullDayWindow = weekendFullDayOnly(booking) ? weekendFullDayWindow(policy, weekend) : null;
+    const span = fullDayWindow ?? interval(booking, policy);
+    if (!span) return legacySlot(booking, policy, multiplier);
+    const dayBreak = weekendDayBreak(policy, weekend);
+    const deductBreak = weekendBreakUnpaid(policy, weekend) && booking.isBreakRemoved !== true && !isNamedHalf(booking);
+    const totalBreak = deductBreak ? dayBreakDeductionMinutes(dayBreak, span) : 0;
+    if (weekend.allHoursAtMultiplierMode) {
+      if (isNamedHalf(booking)) return halfDayPaid(booking, policy, weekend, multiplier);
+      const clockHours = (span.end - span.start) / 60;
+      const deducted = Math.min(clockHours, totalBreak / 60);
+      const base = Math.max(0, clockHours - deducted);
+      return result([segment("allHoursMultiplier", base, multiplier, span.start, span.end, base, deducted)], multiplier);
+    }
+    const ws = parseClockMinutes(weekend.definedWindowStart ?? policy.standardDayStart) ?? 0;
+    const we = parseClockMinutes(weekend.definedWindowEnd ?? "13:00") ?? 0;
+    if (!(we > ws)) {
+      const wall = wallHours(booking, policy);
+      return result([segment("allHoursMultiplier", wall, multiplier, booking.workStartTime ?? void 0, booking.workEndTime ?? void 0)], multiplier);
+    }
+    if (isHalfDayPaid(booking, policy, false)) return halfDayPaid(booking, policy, weekend, multiplier);
+    const credit = countsAs(weekend, policy);
+    const rows3 = [];
+    const overlapStart = Math.max(span.start, ws);
+    const overlapEnd = Math.min(span.end, we);
+    let breakLeft = totalBreak;
+    if (overlapEnd > overlapStart) {
+      const credited = overlapStart <= ws && overlapEnd >= we ? credit : credit * ((overlapEnd - overlapStart) / (we - ws));
+      const inside = Math.min(breakLeft, breakOverlapMinutes(dayBreak, { start: overlapStart, end: overlapEnd }));
+      breakLeft -= inside;
+      const insideHours = inside / 60;
+      rows3.push(
+        segment(
+          "standardWindow",
+          Math.max(0, credited - insideHours),
+          1,
+          overlapStart,
+          overlapEnd,
+          Math.max(0, (overlapEnd - overlapStart) / 60 - insideHours),
+          insideHours
+        )
+      );
+    }
+    for (const part of outsideIntervals(span, ws, we)) {
+      const taken = Math.min(breakLeft, breakOverlapMinutes(dayBreak, part));
+      breakLeft -= taken;
+      const hours = (part.end - part.start - taken) / 60;
+      if ((part.end - part.start) / 60 > 1e-3) {
+        rows3.push(segment("outsideWindow", Math.max(0, hours), multiplier, part.start, part.end, Math.max(0, hours), taken / 60));
+      }
+    }
+    if (rows3.length === 0) return nothingPaid(span, multiplier);
+    return result(rows3, multiplier);
+  }
+  function payrollHoursResult(input) {
+    const zone3 = zoneOrLondon(input.timeZone);
+    const iso = isoWeekdayInZone(dateFromDayKeyInZone(input.dayKey, zone3), zone3);
+    const policy = input.policy;
+    const booking = input.booking || {};
+    const multiplier = payrollOutsideMultiplier(booking, iso, policy);
+    const weekend = weekendFor(iso, policy);
+    return weekend ? weekendDay(booking, policy, weekend, multiplier) : weekday(booking, policy, multiplier);
+  }
+  function reportDayValue(input) {
+    const standard = Math.max(Number(input.standardPaidHours) || 0, 0.01);
+    return Math.min(1.5, Math.max(0, Number(input.totalPaidHours) || 0) / standard);
+  }
+  function subcontractorDayValue(timeSlot) {
+    return namedSlotKind(timeSlot) === "FULL_DAY" ? 1 : 0.5;
+  }
+
+  // lib/canonical/payrollPolicySchedule.ts
+  var DEFAULT_ZONE = "Europe/London";
+  var DAY_KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
+  var PAYROLL_POLICY_HISTORY_START = "1970-01-01";
+  var PAYROLL_POLICY_STALE_SAVE_MESSAGE = "Someone else changed the working hours while you were editing. Your change was not saved \u2014 check the latest working hours and try again.";
+  function zone(timeZone) {
+    return String(timeZone || "").trim() || DEFAULT_ZONE;
+  }
+  function record(value) {
+    return value && typeof value === "object" && !Array.isArray(value) ? value : void 0;
+  }
+  function payrollDayKeyFromValue(value, timeZone) {
+    if (typeof value === "string") {
+      const trimmed6 = value.trim().slice(0, 10);
+      return DAY_KEY_RE.test(trimmed6) ? trimmed6 : null;
+    }
+    let date = null;
+    if (value instanceof Date) date = value;
+    else if (value && typeof value === "object") {
+      const v = value;
+      if (typeof v.toDate === "function") date = v.toDate();
+      else if (typeof v.seconds === "number") date = new Date(v.seconds * 1e3);
+      else if (typeof v._seconds === "number") date = new Date(v._seconds * 1e3);
+    }
+    if (!date || Number.isNaN(date.getTime())) return null;
+    return dayKeyInZone(date, zone(timeZone));
+  }
+  function shiftDayKey(dayKey, days, timeZone) {
+    return dayKeyInZone(addDaysInZone(dateFromDayKeyInZone(dayKey, timeZone), days, timeZone), timeZone);
+  }
+  function parsePayrollTimePolicyScheduled(value, timeZone) {
+    const raw = record(value);
+    const policy = record(raw?.policy);
+    if (!raw || !policy) return null;
+    const effectiveFrom = payrollDayKeyFromValue(raw.effectiveFrom, timeZone);
+    if (!effectiveFrom) return null;
+    return { policy: parsePayrollPolicy(policy), effectiveFrom };
+  }
+  function parsePayrollTimePolicyHistory(value, timeZone) {
+    if (!Array.isArray(value)) return [];
+    const entries = [];
+    value.forEach((raw, index) => {
+      const row2 = record(raw);
+      const policy = record(row2?.policy);
+      const effectiveFrom = row2 ? payrollDayKeyFromValue(row2.effectiveFrom, timeZone) : null;
+      if (!policy || !effectiveFrom) return;
+      entries.push({ effectiveFrom, policy: parsePayrollPolicy(policy), index });
+    });
+    entries.sort((a, b) => a.effectiveFrom < b.effectiveFrom ? -1 : a.effectiveFrom > b.effectiveFrom ? 1 : a.index - b.index);
+    return entries.map(({ effectiveFrom, policy }) => ({ effectiveFrom, policy }));
+  }
+  function parseRevision(value) {
+    const n = Number(value);
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+  }
+  function parsePayrollTimePolicyState(orgDoc, timeZone) {
+    const data = record(orgDoc) ?? {};
+    const priorRaw = record(data.payrollTimePolicyPrior);
+    return {
+      current: parsePayrollPolicy(record(data.payrollTimePolicy)),
+      prior: priorRaw ? parsePayrollPolicy(priorRaw) : null,
+      effectiveFrom: payrollDayKeyFromValue(data.payrollTimePolicyEffectiveFrom, timeZone),
+      scheduled: parsePayrollTimePolicyScheduled(data.payrollTimePolicyScheduled, timeZone),
+      history: parsePayrollTimePolicyHistory(data.payrollTimePolicyHistory, timeZone),
+      revision: parseRevision(data.payrollTimePolicyRevision)
+    };
+  }
+  function isState(value) {
+    const v = record(value);
+    return Boolean(v && "current" in v && "scheduled" in v && record(v.current));
+  }
+  function payrollTimePolicyHistoryEntries(state) {
+    const history = state.history ?? [];
+    const effectiveFrom = state.effectiveFrom;
+    const entries = effectiveFrom ? history.filter((entry) => entry.effectiveFrom < effectiveFrom) : history.slice();
+    if (entries.length === 0 && state.prior && effectiveFrom) {
+      entries.push({ effectiveFrom: PAYROLL_POLICY_HISTORY_START, policy: state.prior });
+    }
+    if (effectiveFrom) entries.push({ effectiveFrom, policy: state.current });
+    else if (entries.length === 0) entries.push({ effectiveFrom: PAYROLL_POLICY_HISTORY_START, policy: state.current });
+    return entries;
+  }
+  function payrollTimePolicyForDayFromState(state, dayKey) {
+    if (state.scheduled && dayKey >= state.scheduled.effectiveFrom) return state.scheduled.policy;
+    const entries = payrollTimePolicyHistoryEntries(state);
+    let chosen = entries[0]?.policy ?? state.current;
+    for (const entry of entries) {
+      if (entry.effectiveFrom <= dayKey) chosen = entry.policy;
+      else break;
+    }
+    return chosen;
+  }
+  function effectivePayrollTimePolicy(orgDoc, dayKey, timeZone) {
+    const state = isState(orgDoc) ? orgDoc : parsePayrollTimePolicyState(orgDoc, timeZone);
+    return payrollTimePolicyForDayFromState(state, dayKey);
+  }
+  function payrollTimePolicyTimeline(orgDoc, todayKey2, timeZone) {
+    const tz = zone(timeZone);
+    const state = isState(orgDoc) ? orgDoc : parsePayrollTimePolicyState(orgDoc, tz);
+    const scheduled = state.scheduled;
+    if (!scheduled || scheduled.effectiveFrom > todayKey2) return state;
+    const dayBefore = shiftDayKey(scheduled.effectiveFrom, -1, tz);
+    const settled = { ...state, scheduled: null };
+    return {
+      current: scheduled.policy,
+      prior: payrollTimePolicyForDayFromState(settled, dayBefore),
+      effectiveFrom: scheduled.effectiveFrom,
+      scheduled: null,
+      history: [...payrollTimePolicyHistoryEntries(settled), { effectiveFrom: scheduled.effectiveFrom, policy: scheduled.policy }],
+      revision: state.revision ?? 0
+    };
+  }
+  function samePolicy(a, b) {
+    return JSON.stringify(payrollPolicyToFirestore(a)) === JSON.stringify(payrollPolicyToFirestore(b));
+  }
+  function historyToWrite(state, todayKey2, next) {
+    const stored = state.history ?? [];
+    const entries = stored.length === 0 ? payrollTimePolicyHistoryEntries({ ...state, scheduled: null }) : stored.slice();
+    if (stored.length > 0 && state.effectiveFrom) {
+      const last = stored[stored.length - 1];
+      if (last.effectiveFrom < state.effectiveFrom || last.effectiveFrom === state.effectiveFrom && !samePolicy(last.policy, state.current)) {
+        entries.push({ effectiveFrom: state.effectiveFrom, policy: state.current });
+      }
+    }
+    if (state.scheduled && state.scheduled.effectiveFrom <= todayKey2) {
+      entries.push({ effectiveFrom: state.scheduled.effectiveFrom, policy: state.scheduled.policy });
+    }
+    if (next) entries.push(next);
+    return entries;
+  }
+  function historyToFirestore(entries) {
+    return entries.map((entry) => ({ effectiveFrom: entry.effectiveFrom, policy: payrollPolicyToFirestore(entry.policy) }));
+  }
+  function promotedFields(state, todayKey2, tz) {
+    const promoted = payrollTimePolicyTimeline(state, todayKey2, tz);
+    if (promoted === state) return {};
+    return {
+      payrollTimePolicy: payrollPolicyToFirestore(promoted.current),
+      payrollTimePolicyPrior: promoted.prior ? payrollPolicyToFirestore(promoted.prior) : null,
+      payrollTimePolicyEffectiveFrom: promoted.effectiveFrom,
+      payrollTimePolicyScheduled: null
+    };
+  }
+  function revisionField(state) {
+    return { payrollTimePolicyRevision: (state.revision ?? 0) + 1 };
+  }
+  function payrollTimePolicyApplyNowWriteFields(input) {
+    const tz = zone(input.timeZone);
+    const state = parsePayrollTimePolicyState(input.orgDoc, tz);
+    const yesterday = shiftDayKey(input.todayKey, -1, tz);
+    const prior = payrollTimePolicyForDayFromState(state, yesterday);
+    const fields = {
+      payrollTimePolicy: payrollPolicyToFirestore(input.policy),
+      payrollTimePolicyPrior: payrollPolicyToFirestore(prior),
+      payrollTimePolicyEffectiveFrom: input.todayKey,
+      payrollTimePolicyHistory: historyToFirestore(
+        historyToWrite(state, input.todayKey, { effectiveFrom: input.todayKey, policy: input.policy })
+      ),
+      ...revisionField(state)
+    };
+    if (state.scheduled && state.scheduled.effectiveFrom <= input.todayKey) {
+      fields.payrollTimePolicyScheduled = null;
+    }
+    return fields;
+  }
+  function payrollTimePolicyScheduleDateError(effectiveFrom, todayKey2) {
+    if (!DAY_KEY_RE.test(String(effectiveFrom || ""))) return "Choose the date the new working hours start.";
+    if (effectiveFrom <= todayKey2) return "Choose a date after today, or apply the change from today.";
+    return null;
+  }
+  function payrollTimePolicyScheduleWriteFields(input) {
+    if (payrollTimePolicyScheduleDateError(input.effectiveFrom, input.todayKey)) return null;
+    const tz = zone(input.timeZone);
+    const state = parsePayrollTimePolicyState(input.orgDoc, tz);
+    return {
+      ...promotedFields(state, input.todayKey, tz),
+      payrollTimePolicyScheduled: {
+        policy: payrollPolicyToFirestore(input.policy),
+        effectiveFrom: input.effectiveFrom
+      },
+      payrollTimePolicyHistory: historyToFirestore(historyToWrite(state, input.todayKey, null)),
+      ...revisionField(state)
+    };
+  }
+  function payrollTimePolicyCancelScheduleWriteFields(input) {
+    const tz = zone(input.timeZone);
+    const state = parsePayrollTimePolicyState(input.orgDoc, tz);
+    const promoted = promotedFields(state, input.todayKey, tz);
+    return {
+      ...Object.keys(promoted).length > 0 ? promoted : { payrollTimePolicyScheduled: null },
+      payrollTimePolicyHistory: historyToFirestore(historyToWrite(state, input.todayKey, null)),
+      ...revisionField(state)
+    };
+  }
+  function payrollTimePolicySaveConflict(baseOrgDoc, liveOrgDoc, timeZone) {
+    const tz = zone(timeZone);
+    const fingerprint = (doc) => {
+      const state = parsePayrollTimePolicyState(doc, tz);
+      return JSON.stringify({
+        revision: state.revision ?? 0,
+        current: payrollPolicyToFirestore(state.current),
+        prior: state.prior ? payrollPolicyToFirestore(state.prior) : null,
+        effectiveFrom: state.effectiveFrom,
+        scheduled: state.scheduled ? { effectiveFrom: state.scheduled.effectiveFrom, policy: payrollPolicyToFirestore(state.scheduled.policy) } : null,
+        history: (state.history ?? []).length
+      });
+    };
+    return fingerprint(baseOrgDoc) === fingerprint(liveOrgDoc) ? null : PAYROLL_POLICY_STALE_SAVE_MESSAGE;
+  }
+  function inRange(value, limits) {
+    return typeof value === "number" && Number.isFinite(value) && value >= limits.min && value <= limits.max;
+  }
+  function validClock(value) {
+    const raw = String(value ?? "").trim();
+    if (!/^\d{1,2}:\d{2}$/.test(raw)) return null;
+    return parseClockMinutes(raw);
+  }
+  function validatePayrollTimePolicy(policy) {
+    const { paidHours, breakMinutes, multiplier } = PAYROLL_POLICY_LIMITS;
+    const clocks = [
+      ["standardDayStart", "Standard day start"],
+      ["standardDayEnd", "Standard day end"],
+      ["breakWindowStart", "Break window start"],
+      ["breakWindowEnd", "Break window end"]
+    ];
+    for (const [field, label] of clocks) {
+      if (validClock(policy[field]) == null) return `${label} must be a valid 24h time (e.g. 07:30).`;
+    }
+    const dayStart = validClock(policy.standardDayStart);
+    const dayEnd = validClock(policy.standardDayEnd);
+    const breakStart = validClock(policy.breakWindowStart);
+    const breakEnd = validClock(policy.breakWindowEnd);
+    if (dayEnd <= dayStart) return "Standard day end must be after the start time.";
+    if (breakEnd <= breakStart) return "Break window end must be after the break start.";
+    if (breakStart < dayStart || breakEnd > dayEnd) return "Break window must fall within the working day.";
+    if (!inRange(policy.standardPaidHours, paidHours)) {
+      return `Standard paid hours must be between ${paidHours.min} and ${paidHours.max}.`;
+    }
+    if (!inRange(policy.unpaidBreakMinutes, breakMinutes)) {
+      return `Break length must be between ${breakMinutes.min} and ${breakMinutes.max} minutes.`;
+    }
+    if (!inRange(policy.weekdayOutsideStandardMultiplier, multiplier)) {
+      return `Weekday overtime rate must be between \xD7${multiplier.min} and \xD7${multiplier.max}.`;
+    }
+    const weekend = [["Saturday", policy.saturday]];
+    if (!policy.sunday.sameAsSaturday) weekend.push(["Sunday", policy.sunday]);
+    for (const [name, settings] of weekend) {
+      if (settings.breakMinutes != null && !inRange(settings.breakMinutes, breakMinutes)) {
+        return `${name} break length must be between ${breakMinutes.min} and ${breakMinutes.max} minutes.`;
+      }
+      if (settings.breakWindowStart != null || settings.breakWindowEnd != null) {
+        const bs = validClock(settings.breakWindowStart ?? policy.breakWindowStart);
+        const be = validClock(settings.breakWindowEnd ?? policy.breakWindowEnd);
+        if (bs == null || be == null) return `${name} break window must use valid 24h times.`;
+        if (be <= bs) return `${name} break window end must be after the break start.`;
+      }
+      if (settings.allHoursAtMultiplierMode) {
+        if (!inRange(settings.allHoursMultiplier, multiplier)) {
+          return `${name} rate must be between \xD7${multiplier.min} and \xD7${multiplier.max}.`;
+        }
+        continue;
+      }
+      const start = validClock(settings.definedWindowStart);
+      const end = validClock(settings.definedWindowEnd);
+      if (start == null || end == null) return `${name} window must use valid 24h times.`;
+      if (end <= start) return `${name} window end must be after the start.`;
+      if (settings.countsAsStandardHours != null && !inRange(settings.countsAsStandardHours, paidHours)) {
+        return `${name} counts-as hours must be between ${paidHours.min} and ${paidHours.max}.`;
+      }
+      if (!inRange(settings.outsideWindowMultiplier, multiplier)) {
+        return `${name} rate outside the window must be between \xD7${multiplier.min} and \xD7${multiplier.max}.`;
+      }
+    }
+    return null;
+  }
+  var WORKING_WEEK = {
+    firstDay: "monday",
+    lastDay: "sunday",
+    workingDays: ["monday", "tuesday", "wednesday", "thursday", "friday"]
+  };
+  function isStandardWorkingWeekday(isoWeekday) {
+    return Number.isInteger(isoWeekday) && isoWeekday >= 1 && isoWeekday <= 5;
+  }
+
+  // lib/canonical/personIds.ts
+  function idText(value) {
+    return typeof value === "string" ? value.trim() : "";
+  }
+  function idKey2(value) {
+    return idText(value).toLowerCase();
+  }
+  function ownIds(person) {
+    if (!person) return [];
+    return [
+      person.id,
+      ...person.formerUserIds ?? [],
+      ...person.sameEmailUserIds ?? [],
+      ...person.formerIds ?? [],
+      ...person.aliasIds ?? []
+    ].map(idText).filter(Boolean);
+  }
+  function validRoster(roster) {
+    return (roster || []).filter((member) => member && typeof member === "object" && idText(member.id));
+  }
+  function rosterMemberActive(member) {
+    return Boolean(member) && member.isActive !== false;
+  }
+  function rosterMemberFor(id2, roster) {
+    const key3 = idKey2(id2);
+    if (!key3) return void 0;
+    const members = validRoster(roster);
+    return members.find((member) => idKey2(member.id) === key3) ?? members.find((member) => ownIds(member).some((alias) => idKey2(alias) === key3));
+  }
+  function personIdSet(person, roster) {
+    const out = [];
+    const seen = /* @__PURE__ */ new Set();
+    const add = (id2) => {
+      const key3 = idKey2(id2);
+      if (!key3 || seen.has(key3)) return false;
+      seen.add(key3);
+      out.push(idText(id2));
+      return true;
+    };
+    for (const id2 of ownIds(person)) add(id2);
+    if (out.length === 0) return [];
+    const emails = /* @__PURE__ */ new Set();
+    const personEmail = idKey2(person?.email);
+    if (personEmail) emails.add(personEmail);
+    const members = validRoster(roster);
+    let grew = true;
+    for (let pass = 0; grew && pass < 8; pass += 1) {
+      grew = false;
+      for (const member of members) {
+        const ids = ownIds(member);
+        const email = idKey2(member.email);
+        const same = ids.some((id2) => seen.has(idKey2(id2))) || email !== "" && emails.has(email);
+        if (!same) continue;
+        for (const id2 of ids) if (add(id2)) grew = true;
+        if (email && !emails.has(email)) {
+          emails.add(email);
+          grew = true;
+        }
+      }
+    }
+    return out;
+  }
+
+  // lib/canonical/warningRows.ts
+  function qualificationDismissKey(operativeId, qualificationId, expiryDayKey) {
+    return `qual|${String(operativeId).trim()}|${String(qualificationId).trim()}|${String(expiryDayKey).trim()}`;
+  }
+  function withoutDismissedQualificationRows(rows3, dismissedKeys) {
+    const dismissed = dismissedKeys instanceof Set ? dismissedKeys : new Set(dismissedKeys);
+    if (dismissed.size === 0) return [...rows3];
+    return rows3.filter((row2) => !(row2.daysUntilExpiry < 0 && dismissed.has(row2.dismissKey)));
+  }
+  var zoneOf3 = zoneOrLondon;
+  function emailKey(value) {
+    return String(value || "").trim().toLowerCase();
+  }
+  function dayKeyFromIso(iso, timeZone) {
+    const date = new Date(String(iso || ""));
+    if (Number.isNaN(date.getTime())) return "";
+    return dayKeyInZone(date, timeZone);
+  }
+  function addCalendarMonths(dayKey, months) {
+    const [year, month, day] = dayKey.split("-").map(Number);
+    if (!year || !month || !day) return dayKey;
+    const shifted = new Date(Date.UTC(year, month - 1 + months, 1));
+    const yearOut = shifted.getUTCFullYear();
+    const monthOut = shifted.getUTCMonth();
+    const lastDay = new Date(Date.UTC(yearOut, monthOut + 1, 0)).getUTCDate();
+    const dayOut = Math.min(day, lastDay);
+    return `${yearOut}-${String(monthOut + 1).padStart(2, "0")}-${String(dayOut).padStart(2, "0")}`;
+  }
+  function signedDayDelta(fromKey, toKey) {
+    const [fy, fm, fd] = fromKey.split("-").map(Number);
+    const [ty, tm, td] = toKey.split("-").map(Number);
+    const from = Date.UTC(fy, fm - 1, fd);
+    const to = Date.UTC(ty, tm - 1, td);
+    return Math.round((to - from) / 864e5);
+  }
+  function workingDaysInclusive(startKey, endKey, timeZone) {
+    if (!startKey || !endKey || startKey > endKey) return 0;
+    let count = 0;
+    let cursor = dateFromDayKeyInZone(startKey, timeZone);
+    while (dayKeyInZone(cursor, timeZone) <= endKey) {
+      const iso = isoWeekdayInZone(cursor, timeZone);
+      if (iso >= 1 && iso <= 5) count += 1;
+      cursor = addDaysInZone(cursor, 1, timeZone);
+      if (count > 400) break;
+    }
+    return count;
+  }
+  var formatUnbookedDay = formatLongDayKey;
+  function formatCoverageHours(hours) {
+    const rounded = Math.round(hours * 2) / 2;
+    if (Math.abs(rounded - Math.trunc(rounded)) < 0.01) return String(Math.trunc(rounded));
+    return rounded.toFixed(1);
+  }
+  function isPayrollState(value) {
+    return Boolean(value && typeof value === "object" && "current" in value && "scheduled" in value);
+  }
+  function qualificationExpiryRowsUnscoped(input) {
+    const timeZone = zoneOf3(input.timeZone);
+    const todayKey2 = dayKeyFromIso(input.referenceIso, timeZone);
+    if (!todayKey2) return [];
+    const endKey = addCalendarMonths(todayKey2, 1);
+    const rows3 = [];
+    for (const operative of input.operatives) {
+      if (!operative.isActive) continue;
+      if (isAnonymisedDeletedProfile({ email: operative.email, name: operative.name })) continue;
+      const operativeName = String(operative.name || "").trim() || operative.id;
+      for (const expiry of operative.expiries) {
+        const name = String(expiry.name || "").trim();
+        const expiryKey = dayKeyFromIso(expiry.expiryIso, timeZone);
+        if (!name || !expiry.qualificationId || !expiryKey || expiryKey > endKey) continue;
+        const daysUntilExpiry = signedDayDelta(todayKey2, expiryKey);
+        const ago = Math.abs(daysUntilExpiry);
+        const message = daysUntilExpiry < 0 ? `${operativeName}'s ${name} expired ${ago} day${ago === 1 ? "" : "s"} ago` : daysUntilExpiry === 0 ? `${operativeName}'s ${name} expires today` : `${operativeName}'s ${name} expires in ${daysUntilExpiry} day${daysUntilExpiry === 1 ? "" : "s"}`;
+        rows3.push({
+          id: `qual-${operative.id}-${expiry.qualificationId}`,
+          operativeId: operative.id,
+          operativeName,
+          qualificationId: expiry.qualificationId,
+          qualificationName: name,
+          dayKey: expiryKey,
+          daysUntilExpiry,
+          severity: "low",
+          title: daysUntilExpiry < 0 ? "Qualification expired" : "Qualification expiry",
+          message,
+          dismissKey: qualificationDismissKey(operative.id, expiry.qualificationId, expiryKey)
+        });
+      }
+    }
+    return rows3;
+  }
+  function unverifiedOperativeRowsUnscoped(input) {
+    const timeZone = zoneOf3(input.timeZone);
+    const todayKey2 = dayKeyFromIso(input.referenceIso, timeZone);
+    if (!todayKey2) return [];
+    const rows3 = [];
+    for (const operative of input.operatives) {
+      if (isAnonymisedDeletedProfile({ email: operative.email, name: operative.name })) continue;
+      const email = emailKey(operative.email);
+      if (!email) continue;
+      const person = input.people.find((candidate) => emailKey(candidate.email) === email && candidate.isOperativeMode);
+      if (!person || person.passwordSet) continue;
+      const createdKey = dayKeyFromIso(person.createdAtIso, timeZone);
+      if (!createdKey || workingDaysInclusive(createdKey, todayKey2, timeZone) < 3) continue;
+      const operativeName = String(operative.name || "").trim() || operative.email;
+      rows3.push({
+        id: `unverified-${operative.id}`,
+        operativeId: operative.id,
+        operativeName,
+        email,
+        title: "Unverified operative",
+        message: `${operativeName} has not verified their account`
+      });
+    }
+    return rows3;
+  }
+  function bookingOccupiesDay(status) {
+    const value = String(status ?? "").trim().toLowerCase();
+    return value === "confirmed" || value === "tentative" || value === "pending" || value === "completed";
+  }
+  function labourBookingKind(person) {
+    if (!person.isActive) return null;
+    const admin = Boolean(person.isAdmin || person.isSuperAdmin);
+    if (person.isOperativeMode && !person.isManager && !admin) return "operative";
+    if (person.isManager || admin) return "manager";
+    return null;
+  }
+  function labourPersonIds(person) {
+    const ids = /* @__PURE__ */ new Set();
+    if (person.id) ids.add(String(person.id));
+    for (const id2 of person.formerIds || []) {
+      const trimmed6 = String(id2 || "").trim();
+      if (trimmed6) ids.add(trimmed6);
+    }
+    return [...ids];
+  }
+  function formerIdAliases(people) {
+    const aliases = {};
+    for (const person of people) {
+      for (const id2 of labourPersonIds(person)) {
+        if (id2 !== person.id && !(id2 in aliases)) aliases[id2] = person.id;
+      }
+    }
+    return aliases;
+  }
+  function hasFinishedSignup(person) {
+    return person.passwordSet === true && person.status !== "pending";
+  }
+  function isManagerOrAdmin(person) {
+    return labourBookingKind(person) === "manager";
+  }
+  function isOperativeModeOnly(person) {
+    return labourBookingKind(person) === "operative";
+  }
+  function preferFinishedAccount(candidates) {
+    return candidates.find((person) => person.passwordSet && person.isActive) ?? candidates.find((person) => person.passwordSet);
+  }
+  function dedupeFinishedPeople(people) {
+    const groups = /* @__PURE__ */ new Map();
+    const withoutEmail = [];
+    for (const person of people) {
+      if (!hasFinishedSignup(person)) continue;
+      const email = emailKey(person.email);
+      if (!email) {
+        withoutEmail.push(person);
+        continue;
+      }
+      const list = groups.get(email) || [];
+      list.push(person);
+      groups.set(email, list);
+    }
+    const picked = [];
+    for (const group of groups.values()) {
+      const best = preferFinishedAccount(group);
+      if (best) picked.push(best);
+    }
+    return [...picked, ...withoutEmail];
+  }
+  function asCoverageBooking(booking) {
+    return {
+      timeSlot: booking.timeSlot,
+      workStart: booking.workStart ?? booking.workStartTime,
+      workEnd: booking.workEnd ?? booking.workEndTime
+    };
+  }
+  function unbookedLabourRowsUnscoped(input) {
+    const timeZone = zoneOf3(input.timeZone);
+    const people = listedCurrentLabourPeople(input.people);
+    const operatives = listedCurrentLabourPeople(input.operatives);
+    const nid = idKey2;
+    const excludedIds = new Set((input.excludedUserIds || []).map(nid).filter(Boolean));
+    const isExcluded = (person) => labourPersonIds(person).some((id2) => excludedIds.has(nid(id2)));
+    const flatDayPolicy = {
+      standardDayStart: input.standardDayStart,
+      standardDayEnd: input.standardDayEnd,
+      breakWindowStart: input.breakWindowStart,
+      breakWindowEnd: input.breakWindowEnd
+    };
+    const rulesOn = (dayKey, iso) => {
+      const source = input.payrollPolicy;
+      const policy = source ? isPayrollState(source) ? payrollTimePolicyForDayFromState(source, dayKey) : source : null;
+      const dayPolicy = policy ? {
+        standardDayStart: policy.standardDayStart,
+        standardDayEnd: policy.standardDayEnd,
+        breakWindowStart: policy.breakWindowStart,
+        breakWindowEnd: policy.breakWindowEnd
+      } : flatDayPolicy;
+      if (iso !== 6 && iso !== 7) return { dayPolicy, weekendWindow: null, weekendBreak: null };
+      const resolved = resolveWeekendCoverageDay(
+        input.weekendCoverage ?? null,
+        input.includeWeekends,
+        policy ?? {
+          standardDayStart: input.standardDayStart ?? "07:30",
+          standardDayEnd: input.standardDayEnd ?? "16:00",
+          saturday: { allHoursAtMultiplierMode: true, allHoursMultiplier: 1 },
+          sunday: { allHoursAtMultiplierMode: true, allHoursMultiplier: 1 }
+        },
+        iso === 6 ? "saturday" : "sunday"
+      );
+      const start = parseClockMinutes(resolved.start);
+      const end = parseClockMinutes(resolved.end);
+      const dayBreak = policy ? payrollBreakOnDay(policy, dayKey, timeZone) : (() => {
+        const bs = parseClockMinutes(input.breakWindowStart ?? void 0);
+        const be = parseClockMinutes(input.breakWindowEnd ?? void 0);
+        return bs != null && be != null && be > bs ? { start: bs, end: be } : null;
+      })();
+      return {
+        dayPolicy,
+        weekendWindow: resolved.enabled && start != null && end != null && end > start ? { start, end } : null,
+        weekendBreak: dayBreak ? { start: dayBreak.start, end: dayBreak.end } : null
+      };
+    };
+    const operativeBookings = /* @__PURE__ */ new Map();
+    const managerBookings = /* @__PURE__ */ new Map();
+    for (const booking of input.bookings) {
+      const personId2 = nid(booking.personId);
+      const dayKey = String(booking.dayKey || "");
+      if (!personId2 || !dayKey) continue;
+      const key3 = `${personId2}|${dayKey}`;
+      const target = booking.kind === "manager" ? managerBookings : operativeBookings;
+      const list = target.get(key3) || [];
+      list.push(asCoverageBooking(booking));
+      target.set(key3, list);
+    }
+    const operativesByEmail = /* @__PURE__ */ new Map();
+    const operativeIdsByEmail = /* @__PURE__ */ new Map();
+    for (const operative of operatives) {
+      const email = emailKey(operative.email);
+      if (!email) continue;
+      const ids = operativeIdsByEmail.get(email) || /* @__PURE__ */ new Set();
+      if (nid(operative.id)) ids.add(nid(operative.id));
+      operativeIdsByEmail.set(email, ids);
+      const existing = operativesByEmail.get(email);
+      if (!existing || operative.profileWeight > existing.profileWeight) {
+        operativesByEmail.set(email, operative);
+      }
+    }
+    const userIdsByEmail = /* @__PURE__ */ new Map();
+    const idsByUserId = /* @__PURE__ */ new Map();
+    for (const person of people) {
+      if (nid(person.id)) idsByUserId.set(nid(person.id), labourPersonIds(person).map(nid).filter(Boolean));
+      const email = emailKey(person.email);
+      if (!email || !person.id) continue;
+      const ids = userIdsByEmail.get(email) || /* @__PURE__ */ new Set();
+      for (const id2 of labourPersonIds(person)) if (nid(id2)) ids.add(nid(id2));
+      userIdsByEmail.set(email, ids);
+    }
+    const withFormerIds = (target, userId) => {
+      const key3 = nid(userId);
+      if (!key3) return;
+      for (const id2 of idsByUserId.get(key3) || [key3]) target.add(id2);
+    };
+    const slotsFor = (email, operativeId, userId, dayKey) => {
+      const ids = /* @__PURE__ */ new Set();
+      if (nid(operativeId)) ids.add(nid(operativeId));
+      withFormerIds(ids, userId);
+      const linked = operativeIdsByEmail.get(email);
+      if (linked) for (const id2 of linked) ids.add(id2);
+      const linkedUsers = userIdsByEmail.get(email);
+      if (linkedUsers) for (const id2 of linkedUsers) ids.add(id2);
+      const slots = [];
+      for (const id2 of ids) {
+        slots.push(...operativeBookings.get(`${id2}|${dayKey}`) || []);
+        slots.push(...managerBookings.get(`${id2}|${dayKey}`) || []);
+      }
+      return slots;
+    };
+    const approvedHolidays = input.holidays.filter((holiday) => holiday.approved);
+    const holidayCovers = (dayKey, email, userId, operativeId) => {
+      const userIds = /* @__PURE__ */ new Set();
+      withFormerIds(userIds, userId);
+      const linkedUsers = userIdsByEmail.get(email);
+      if (linkedUsers) for (const id2 of linkedUsers) userIds.add(id2);
+      const operativeIds = /* @__PURE__ */ new Set();
+      if (nid(operativeId)) operativeIds.add(nid(operativeId));
+      const linkedOps = operativeIdsByEmail.get(email);
+      if (linkedOps) for (const id2 of linkedOps) operativeIds.add(id2);
+      return approvedHolidays.some((holiday) => {
+        if (dayKey < holiday.startDayKey || dayKey > holiday.endDayKey) return false;
+        const holidayUser = nid(holiday.userId);
+        if (holidayUser && userIds.has(holidayUser)) return true;
+        const holidayOperative = nid(holiday.operativeId);
+        if (holidayOperative && operativeIds.has(holidayOperative)) return true;
+        return false;
+      });
+    };
+    const operativeUsers = dedupeFinishedPeople(people.filter(isOperativeModeOnly));
+    const managerUsers = dedupeFinishedPeople(people.filter(isManagerOrAdmin));
+    const managerAdminUserIds = new Set(
+      people.filter(isManagerOrAdmin).filter(hasFinishedSignup).map((person) => nid(person.id))
+    );
+    const operativeUserEmails = new Set(operativeUsers.map((person) => emailKey(person.email)).filter(Boolean));
+    const verifiedUserForEmail = (email) => {
+      if (!email) return void 0;
+      return preferFinishedAccount(people.filter((person) => emailKey(person.email) === email));
+    };
+    const roster = operatives.filter((operative) => operative.isActive !== false && !operative.isPlaceholder);
+    const rows3 = [];
+    for (const dayKey of eachDayKey(input.startDayKey, input.endDayKey, timeZone)) {
+      const iso = isoWeekdayInZone(dateFromDayKeyInZone(dayKey, timeZone), timeZone);
+      if (!input.includeWeekends && (iso < 1 || iso > 5)) continue;
+      const { dayPolicy, weekendWindow, weekendBreak } = rulesOn(dayKey, iso);
+      if (iso >= 6 && !weekendWindow) continue;
+      const seen = /* @__PURE__ */ new Set();
+      const append = (args) => {
+        const seenKey = args.email || args.personKey;
+        if (seen.has(seenKey)) return;
+        seen.add(seenKey);
+        const slots = slotsFor(args.email, args.operativeId, args.userId, dayKey);
+        const coverage = weekendWindow ? windowCoverage(weekendWindow, dayPolicy, slots, weekendBreak) : standardDayCoverage(dayPolicy, slots);
+        const requiredHours = coverage.requiredHours;
+        if (requiredHours <= 1e-3) return;
+        const coveredHours = Math.min(coverage.coveredHours, requiredHours);
+        const missingHours = Math.round(Math.max(0, requiredHours - coveredHours) * 100) / 100;
+        if (missingHours <= 1e-3) return;
+        const label = formatCoverageHours(missingHours);
+        rows3.push({
+          id: `unbooked-${dayKey}-${args.personKey}`,
+          operativeId: args.operativeId,
+          operativeName: args.name,
+          userId: args.userId,
+          personKey: args.personKey,
+          dayKey,
+          missingHours,
+          message: `${args.name} is missing ${label}h on ${formatUnbookedDay(dayKey, timeZone)}.`
+        });
+      };
+      for (const person of operativeUsers) {
+        if (isExcluded(person)) continue;
+        const email = emailKey(person.email);
+        const linked = operativesByEmail.get(email);
+        if (holidayCovers(dayKey, email, person.id, linked?.id)) continue;
+        append({
+          personKey: person.id,
+          name: person.name,
+          email,
+          operativeId: linked?.id || person.id,
+          userId: person.id
+        });
+      }
+      for (const person of managerUsers) {
+        if (isExcluded(person)) continue;
+        const email = emailKey(person.email);
+        const linked = operativesByEmail.get(email);
+        if (holidayCovers(dayKey, email, person.id, linked?.id)) continue;
+        append({
+          personKey: person.id,
+          name: person.name,
+          email,
+          operativeId: linked?.id || person.id,
+          userId: person.id
+        });
+      }
+      for (const operative of roster) {
+        const email = emailKey(operative.email);
+        if (email && operativeUserEmails.has(email)) continue;
+        const matched = email ? verifiedUserForEmail(email) : void 0;
+        if (!matched && email && people.some((person) => emailKey(person.email) === email)) continue;
+        if (matched && managerAdminUserIds.has(nid(matched.id))) continue;
+        if (matched && isExcluded(matched)) continue;
+        if (holidayCovers(dayKey, email, matched?.id, operative.id)) continue;
+        append({
+          personKey: matched?.id || operative.id,
+          name: matched?.name || operative.name,
+          email: email || operative.id,
+          operativeId: operative.id,
+          userId: matched?.id
+        });
+      }
+    }
+    return rows3.sort((a, b) => {
+      if (a.dayKey !== b.dayKey) return a.dayKey < b.dayKey ? -1 : 1;
+      return a.operativeName.localeCompare(b.operativeName, void 0, { sensitivity: "base" });
+    });
+  }
+  function qualificationExpiryRows(input) {
+    const rows3 = qualificationExpiryRowsUnscoped(input);
+    const scope = input.scope;
+    if (!scope || scope.kind === "all") return rows3;
+    const emails = new Map(input.operatives.map((operative) => [operative.id, operative.email ?? null]));
+    return rows3.filter((row2) => isPersonInWarningScope(scope, [row2.operativeId], emails.get(row2.operativeId) ?? null));
+  }
+  function unverifiedOperativeRows(input) {
+    const rows3 = unverifiedOperativeRowsUnscoped(input);
+    const scope = input.scope;
+    if (!scope || scope.kind === "all") return rows3;
+    return rows3.filter((row2) => isPersonInWarningScope(scope, [row2.operativeId], row2.email));
+  }
+  function unbookedLabourRows(input) {
+    const scope = input.scope;
+    if (scope && scope.kind === "jobs" && !scope.unbookedLabour) return [];
+    const rows3 = unbookedLabourRowsUnscoped(input);
+    if (!scope || scope.kind === "all") return rows3;
+    return rows3.filter((row2) => isPersonInWarningScope(scope, [row2.operativeId, row2.userId, row2.personKey], row2.personKey));
+  }
+  function unbookedLabourRowsOnDay(input) {
+    return unbookedLabourRows({
+      ...input,
+      startDayKey: input.dayKey,
+      endDayKey: input.dayKey
+    });
+  }
+
+  // lib/canonical/warningSort.ts
+  var DEFAULT_WARNINGS_SORT_DIRECTION = "oldest";
+  var DATED_DAY_KEY = /^(\d{4})-(\d{2})-(\d{2})$/;
+  function parseWarningsSortDirection(value) {
+    return value === "newest" ? "newest" : DEFAULT_WARNINGS_SORT_DIRECTION;
+  }
+  function warningDayKeyIsDated(dayKey) {
+    return DATED_DAY_KEY.test(String(dayKey ?? "").trim());
+  }
+  function compareWarningDayKeys(a, b, direction = DEFAULT_WARNINGS_SORT_DIRECTION) {
+    const left = String(a ?? "").trim();
+    const right = String(b ?? "").trim();
+    const leftDated = warningDayKeyIsDated(left);
+    const rightDated = warningDayKeyIsDated(right);
+    if (leftDated !== rightDated) return leftDated ? -1 : 1;
+    if (!leftDated || left === right) return 0;
+    const ascending = left < right ? -1 : 1;
+    return parseWarningsSortDirection(direction) === "newest" ? -ascending : ascending;
+  }
+  function sortWarningsByDate(rows3, direction = DEFAULT_WARNINGS_SORT_DIRECTION) {
+    const dir = parseWarningsSortDirection(direction);
+    return rows3.map((row2, index) => ({ row: row2, index })).sort((left, right) => {
+      const byDate = compareWarningDayKeys(left.row.dayKey ?? "", right.row.dayKey ?? "", dir);
+      return byDate !== 0 ? byDate : left.index - right.index;
+    }).map((entry) => entry.row);
+  }
+
+  // lib/canonical/leaveCoverage.ts
+  function leaveSlotKind(timeSlot) {
+    const kind = namedSlotKind(timeSlot);
+    if (kind === "AM") return "AM";
+    if (kind === "PM") return "PM";
+    return "FULL_DAY";
+  }
+  function leaveLabelFor(slot) {
+    return slot === "AM" ? "AM" : slot === "PM" ? "PM" : "Full day";
+  }
+  function rangeLabel(interval2) {
+    return `${formatClockMinutes(interval2.start)}\u2013${formatClockMinutes(interval2.end)}`;
+  }
+  function hoursOf(intervals) {
+    const minutes = intervals.reduce((sum, interval2) => sum + Math.max(0, interval2.end - interval2.start), 0);
+    return Math.round(minutes / 60 * 100) / 100;
+  }
+  function formatHours(hours) {
+    const rounded = Math.round(hours * 4) / 4;
+    const text23 = Number.isInteger(rounded) ? String(rounded) : String(rounded).replace(/0+$/, "");
+    return `${text23} hour${rounded === 1 ? "" : "s"}`;
+  }
+  function joinRanges(intervals) {
+    const labels = intervals.map(rangeLabel);
+    if (labels.length <= 1) return labels[0] || "";
+    return `${labels.slice(0, -1).join(", ")} and ${labels[labels.length - 1]}`;
+  }
+  function leaveCoverageRows(input) {
+    const timeZone = zoneOrLondon(input.timeZone);
+    const windows = halfDayWindows(input.day);
+    const excluded = new Set((input.excludedUserIds || []).map(idKey2).filter(Boolean));
+    const approvedLeave = input.leave.filter((record9) => record9.approved && record9.startDayKey && record9.endDayKey);
+    if (approvedLeave.length === 0) return [];
+    const peopleByUserId = /* @__PURE__ */ new Map();
+    const peopleByOperativeId = /* @__PURE__ */ new Map();
+    for (const person of input.people) {
+      if (isAnonymisedDeletedProfile({ name: person.name })) continue;
+      const userId = idKey2(person.userId);
+      if (userId && !peopleByUserId.has(userId)) peopleByUserId.set(userId, person);
+      for (const operativeId of person.operativeIds || []) {
+        const key3 = idKey2(operativeId);
+        if (key3 && !peopleByOperativeId.has(key3)) peopleByOperativeId.set(key3, person);
+      }
+    }
+    const personForLeave = (record9) => {
+      const userId = idKey2(record9.userId);
+      if (userId && peopleByUserId.has(userId)) return peopleByUserId.get(userId);
+      const operativeId = idKey2(record9.operativeId);
+      if (operativeId && peopleByOperativeId.has(operativeId)) return peopleByOperativeId.get(operativeId);
+      return void 0;
+    };
+    const bookingsByPersonDay = /* @__PURE__ */ new Map();
+    for (const booking of input.bookings) {
+      const personId2 = idKey2(booking.personId);
+      if (!personId2 || !booking.dayKey) continue;
+      const person = booking.kind === "manager" ? peopleByUserId.get(personId2) : peopleByOperativeId.get(personId2);
+      if (!person) continue;
+      const key3 = `${person.personKey}|${booking.dayKey}`;
+      const list = bookingsByPersonDay.get(key3) || [];
+      list.push(booking);
+      bookingsByPersonDay.set(key3, list);
+    }
+    const rows3 = [];
+    const seen = /* @__PURE__ */ new Set();
+    for (const dayKey of eachDayKey(input.startDayKey, input.endDayKey, timeZone)) {
+      const iso = isoWeekdayOfDayKey(dayKey, timeZone);
+      const weekend = iso === 6 || iso === 7;
+      for (const record9 of approvedLeave) {
+        if (dayKey < record9.startDayKey || dayKey > record9.endDayKey) continue;
+        const person = personForLeave(record9);
+        if (!person) continue;
+        const dedupe = `${person.personKey}|${dayKey}|${record9.id}`;
+        if (seen.has(dedupe)) continue;
+        seen.add(dedupe);
+        const leaveSlot2 = leaveSlotKind(record9.timeSlot);
+        const leaveWindow = leaveSlot2 === "AM" ? windows.am : leaveSlot2 === "PM" ? windows.pm : windows.day;
+        const dayBookings = bookingsByPersonDay.get(`${person.personKey}|${dayKey}`) || [];
+        const intervals = dayBookings.map((booking) => ({ booking, interval: slotInterval(booking, input.day) })).filter((entry) => entry.interval !== null);
+        const personName = String(person.name || "").trim() || person.personKey;
+        const userId = String(person.userId || "").trim() || void 0;
+        const operativeId = String(record9.operativeId || person.operativeIds?.[0] || "").trim() || void 0;
+        const longDay = formatLongDayKey(dayKey, timeZone);
+        const leaveLabel = leaveLabelFor(leaveSlot2);
+        const clashes = intervals.filter(({ interval: interval2 }) => intervalsOverlap(interval2, leaveWindow)).map(({ booking, interval: interval2 }) => ({
+          bookingId: booking.id,
+          kind: booking.kind,
+          label: String(booking.label || "").trim() || (booking.kind === "manager" ? "Manager booking" : "Booking"),
+          start: interval2.start,
+          end: interval2.end,
+          overlapStart: Math.max(interval2.start, leaveWindow.start),
+          overlapEnd: Math.min(interval2.end, leaveWindow.end)
+        })).sort((a, b) => a.start - b.start);
+        if (clashes.length > 0) {
+          const bookedText = clashes.map((clash) => `${clash.label} ${formatClockMinutes(clash.start)}\u2013${formatClockMinutes(clash.end)}`).join(", ");
+          const leaveText = leaveSlot2 === "FULL_DAY" ? "full-day annual leave" : `${leaveLabel} annual leave (${rangeLabel(leaveWindow)})`;
+          rows3.push({
+            id: `leave-clash-${dayKey}-${person.personKey}-${record9.id}`,
+            kind: "leave_clash",
+            personKey: person.personKey,
+            personName,
+            userId,
+            operativeId,
+            dayKey,
+            leaveId: record9.id,
+            leaveSlot: leaveSlot2,
+            leaveLabel,
+            leaveWindow: { ...leaveWindow },
+            clashes,
+            workingWindow: null,
+            missing: [],
+            missingHours: 0,
+            bookedHours: hoursOf(mergeMinuteIntervals(intervals.map((entry) => entry.interval))),
+            severity: "high",
+            title: "Booked during annual leave",
+            message: `${personName} is booked ${bookedText} on ${longDay} while on ${leaveText}.`
+          });
+        }
+        if (leaveSlot2 === "FULL_DAY") continue;
+        if (weekend && !input.includeWeekends) continue;
+        if (userId && excluded.has(idKey2(userId))) continue;
+        const workingWindow = leaveSlot2 === "PM" ? windows.am : windows.pm;
+        const workingLabel = leaveSlot2 === "PM" ? "AM" : "PM";
+        const covered = intervals.map((entry) => entry.interval);
+        const missing = subtractMinuteIntervals(workingWindow, covered);
+        if (missing.length === 0) continue;
+        const missingHours = hoursOf(missing);
+        const bookedInWorking = subtractMinuteIntervals(workingWindow, missing);
+        const bookedHours = hoursOf(bookedInWorking);
+        const message = bookedHours > 0 ? `${personName} has ${leaveLabel} annual leave on ${longDay}. The ${workingLabel} (${rangeLabel(workingWindow)}) is only booked ${joinRanges(bookedInWorking)}; ${joinRanges(missing)} (${formatHours(missingHours)}) is not booked.` : `${personName} has ${leaveLabel} annual leave on ${longDay} but is not booked for the ${workingLabel} (${rangeLabel(workingWindow)}, ${formatHours(missingHours)}).`;
+        rows3.push({
+          id: `leave-cover-${dayKey}-${person.personKey}-${record9.id}`,
+          kind: "leave_cover",
+          personKey: person.personKey,
+          personName,
+          userId,
+          operativeId,
+          dayKey,
+          leaveId: record9.id,
+          leaveSlot: leaveSlot2,
+          leaveLabel,
+          leaveWindow: { ...leaveWindow },
+          clashes: [],
+          workingWindow: { ...workingWindow },
+          missing,
+          missingHours,
+          bookedHours,
+          severity: "medium",
+          title: "Half-day leave not covered",
+          message
+        });
+      }
+    }
+    return rows3.sort((a, b) => {
+      if (a.dayKey !== b.dayKey) return a.dayKey < b.dayKey ? -1 : 1;
+      if (a.kind !== b.kind) return a.kind === "leave_clash" ? -1 : 1;
+      return a.personName.localeCompare(b.personName, void 0, { sensitivity: "base" });
+    });
   }
 
   // lib/canonical/userProfile.ts
@@ -6632,214 +7371,6 @@ var ProjectPlannerCanonical = (() => {
     return text3(input.acceptedVersion) !== current;
   }
 
-  // lib/canonical/payrollHours.ts
-  var HALF_WINDOW_TOLERANCE = 20;
-  function weekendFor(isoWeekday, policy) {
-    if (isoWeekday === 6) return policy.saturday;
-    if (isoWeekday === 7) return policy.sunday?.sameAsSaturday ? policy.saturday : policy.sunday;
-    return null;
-  }
-  function standardPaid(policy) {
-    return Math.max(Number(policy.standardPaidHours) || 0, 0);
-  }
-  function countsAs(weekend, policy) {
-    return weekend.countsAsStandardHours ?? Number(policy.standardPaidHours);
-  }
-  function dayInput(policy) {
-    return {
-      standardDayStart: policy.standardDayStart,
-      standardDayEnd: policy.standardDayEnd,
-      breakWindowStart: policy.breakWindowStart,
-      breakWindowEnd: policy.breakWindowEnd
-    };
-  }
-  function workedHoursSplit(result2) {
-    let standard = 0;
-    let outside = 0;
-    for (const row2 of result2.segments) {
-      if (row2.kind === "standardWindow") standard += row2.workedHours;
-      else outside += row2.workedHours;
-    }
-    return { standardWorkedHours: standard, outsideWorkedHours: outside };
-  }
-  function payrollOutsideMultiplier(booking, isoWeekday, policy) {
-    const override = Number(booking.otMultiplierOverride);
-    if (Number.isFinite(override) && override > 0) return override;
-    const weekend = weekendFor(isoWeekday, policy);
-    if (weekend) {
-      return weekend.allHoursAtMultiplierMode ? weekend.allHoursMultiplier : weekend.outsideWindowMultiplier ?? 1.5;
-    }
-    return policy.weekdayOutsideStandardMultiplier;
-  }
-  function segment(kind, baseHours, multiplier, start, end, workedHours = baseHours) {
-    const clock = (value) => value == null ? void 0 : typeof value === "number" ? formatClockMinutes(value > 24 * 60 ? value - 24 * 60 : Math.min(value, 24 * 60 - 1)) : value;
-    return { kind, clockStart: clock(start), clockEnd: clock(end), baseHours, multiplier, paidHours: baseHours * multiplier, workedHours };
-  }
-  function result(segments, outsideMultiplier) {
-    let total = 0;
-    let standard = 0;
-    let outside = 0;
-    let worked = 0;
-    for (const row2 of segments) {
-      total += row2.paidHours;
-      worked += row2.workedHours;
-      if (row2.kind === "standardWindow") standard += row2.baseHours;
-      else outside += row2.baseHours;
-    }
-    return { totalPaidHours: total, standardHours: standard, outsideHours: outside, outsideMultiplier, workedHours: worked, segments };
-  }
-  function interval(booking, policy) {
-    return slotInterval(
-      { timeSlot: booking.timeSlot ?? void 0, workStartTime: booking.workStartTime ?? void 0, workEndTime: booking.workEndTime ?? void 0 },
-      dayInput(policy)
-    );
-  }
-  function isNamedHalf(booking) {
-    const kind = namedSlotKind(booking.timeSlot);
-    return kind === "AM" || kind === "PM";
-  }
-  function isHalfDayPaid(booking, policy, allHoursDay) {
-    if (isNamedHalf(booking)) return true;
-    if (namedSlotKind(booking.timeSlot) !== "CUSTOM" || allHoursDay) return false;
-    const span = interval(booking, policy);
-    if (!span) return false;
-    const windows = halfDayWindows(dayInput(policy));
-    const near = (a, b) => Math.abs(a - b) <= HALF_WINDOW_TOLERANCE;
-    return near(span.start, windows.am.start) && near(span.end, windows.am.end) || near(span.start, windows.pm.start) && near(span.end, windows.pm.end);
-  }
-  function halfDayPaid(booking, policy, weekend, multiplier) {
-    const paid = weekend && !weekend.allHoursAtMultiplierMode ? Math.max(countsAs(weekend, policy), 0) / 2 : standardPaid(policy) / 2;
-    const span = interval(booking, policy);
-    return result([segment("standardWindow", paid, 1, span?.start, span?.end)], multiplier);
-  }
-  function legacySlot(booking, policy, multiplier) {
-    const kind = namedSlotKind(booking.timeSlot);
-    const paid = kind === "AM" || kind === "PM" ? standardPaid(policy) / 2 : kind === "EVENING" ? 4 : kind === "OVERTIME" ? 2 : standardPaid(policy);
-    return result([segment("standardWindow", paid, 1)], multiplier);
-  }
-  function wallHours(booking, policy) {
-    const start = parseClockMinutes(booking.workStartTime ?? void 0);
-    const end = parseClockMinutes(booking.workEndTime ?? void 0);
-    if (start != null && end != null && start !== end) return ((end > start ? end : end + 24 * 60) - start) / 60;
-    const span = interval(booking, policy);
-    if (span) return (span.end - span.start) / 60;
-    const kind = namedSlotKind(booking.timeSlot);
-    if (kind === "AM" || kind === "PM") return standardPaid(policy) / 2;
-    if (kind === "EVENING") return 4;
-    if (kind === "OVERTIME") return 2;
-    return standardPaid(policy);
-  }
-  function breakDeductionMinutes(policy, span) {
-    const start = parseClockMinutes(policy.breakWindowStart);
-    const end = parseClockMinutes(policy.breakWindowEnd);
-    if (start == null || end == null || end <= start) return 0;
-    const overlap = Math.min(span.end, end) - Math.max(span.start, start);
-    if (!(overlap > 0)) return 0;
-    const unpaid = Math.max(Number(policy.unpaidBreakMinutes) || 0, 0);
-    return Math.min(overlap, unpaid);
-  }
-  function nothingPaid(span, multiplier) {
-    return result([segment("standardWindow", 0, 1, span.start, span.end, 0)], multiplier);
-  }
-  function outsideSegments(span, windowStart, windowEnd, multiplier) {
-    const rows3 = [];
-    if (span.start < windowStart) {
-      const end = Math.min(span.end, windowStart);
-      const hours = (end - span.start) / 60;
-      if (hours > 1e-3) rows3.push(segment("outsideWindow", hours, multiplier, span.start, end));
-    }
-    if (span.end > windowEnd) {
-      const start = Math.max(span.start, windowEnd);
-      const hours = (span.end - start) / 60;
-      if (hours > 1e-3) rows3.push(segment("outsideWindow", hours, multiplier, start, span.end));
-    }
-    return rows3;
-  }
-  function weekday(booking, policy, multiplier) {
-    if (isHalfDayPaid(booking, policy, false)) return halfDayPaid(booking, policy, null, multiplier);
-    const span = interval(booking, policy);
-    if (!span) return legacySlot(booking, policy, multiplier);
-    const ds = parseClockMinutes(policy.standardDayStart) ?? 0;
-    const de = parseClockMinutes(policy.standardDayEnd) ?? 0;
-    if (!(de > ds)) {
-      const wall = wallHours(booking, policy);
-      return result([segment("allHoursMultiplier", wall, multiplier, booking.workStartTime ?? void 0, booking.workEndTime ?? void 0)], multiplier);
-    }
-    const rows3 = [];
-    const insideStart = Math.max(span.start, ds);
-    const insideEnd = Math.min(span.end, de);
-    if (insideEnd > insideStart) {
-      let hours = (insideEnd - insideStart) / 60;
-      if (!isNamedHalf(booking) && policy.breakPaid !== true && booking.isBreakRemoved !== true) {
-        hours = Math.max(0, hours - breakDeductionMinutes(policy, span) / 60);
-      }
-      if (hours > 1e-3) rows3.push(segment("standardWindow", hours, 1, insideStart, insideEnd));
-    }
-    rows3.push(...outsideSegments(span, ds, de, multiplier));
-    if (rows3.length === 0) return nothingPaid(span, multiplier);
-    return result(rows3, multiplier);
-  }
-  function weekendFullDayOnly(booking) {
-    if (namedSlotKind(booking.timeSlot) !== "FULL_DAY") return false;
-    return parseClockMinutes(booking.workStartTime ?? void 0) == null || parseClockMinutes(booking.workEndTime ?? void 0) == null;
-  }
-  function weekendFullDayWindow(policy, weekend) {
-    if (weekend.allHoursAtMultiplierMode) {
-      const start2 = parseClockMinutes(policy.standardDayStart);
-      const end2 = parseClockMinutes(policy.standardDayEnd);
-      return start2 != null && end2 != null && end2 > start2 ? { start: start2, end: end2 } : null;
-    }
-    const start = parseClockMinutes(weekend.definedWindowStart ?? policy.standardDayStart);
-    const end = parseClockMinutes(weekend.definedWindowEnd ?? "13:00");
-    return start != null && end != null && end > start ? { start, end } : null;
-  }
-  function weekendRuleForIsoWeekday(isoWeekday, policy) {
-    return weekendFor(isoWeekday, policy);
-  }
-  function weekendDay(booking, policy, weekend, multiplier) {
-    const fullDayWindow = weekendFullDayOnly(booking) ? weekendFullDayWindow(policy, weekend) : null;
-    const span = fullDayWindow ?? interval(booking, policy);
-    if (!span) return legacySlot(booking, policy, multiplier);
-    if (weekend.allHoursAtMultiplierMode) {
-      if (isNamedHalf(booking)) return halfDayPaid(booking, policy, weekend, multiplier);
-      return result([segment("allHoursMultiplier", (span.end - span.start) / 60, multiplier, span.start, span.end)], multiplier);
-    }
-    const ws = parseClockMinutes(weekend.definedWindowStart ?? policy.standardDayStart) ?? 0;
-    const we = parseClockMinutes(weekend.definedWindowEnd ?? "13:00") ?? 0;
-    if (!(we > ws)) {
-      const wall = wallHours(booking, policy);
-      return result([segment("allHoursMultiplier", wall, multiplier, booking.workStartTime ?? void 0, booking.workEndTime ?? void 0)], multiplier);
-    }
-    if (isHalfDayPaid(booking, policy, false)) return halfDayPaid(booking, policy, weekend, multiplier);
-    const credit = countsAs(weekend, policy);
-    const rows3 = [];
-    const overlapStart = Math.max(span.start, ws);
-    const overlapEnd = Math.min(span.end, we);
-    if (overlapEnd > overlapStart) {
-      const credited = overlapStart <= ws && overlapEnd >= we ? credit : credit * ((overlapEnd - overlapStart) / (we - ws));
-      rows3.push(segment("standardWindow", credited, 1, overlapStart, overlapEnd, (overlapEnd - overlapStart) / 60));
-    }
-    rows3.push(...outsideSegments(span, ws, we, multiplier));
-    if (rows3.length === 0) return nothingPaid(span, multiplier);
-    return result(rows3, multiplier);
-  }
-  function payrollHoursResult(input) {
-    const zone3 = zoneOrLondon(input.timeZone);
-    const iso = isoWeekdayInZone(dateFromDayKeyInZone(input.dayKey, zone3), zone3);
-    const policy = input.policy;
-    const booking = input.booking || {};
-    const multiplier = payrollOutsideMultiplier(booking, iso, policy);
-    const weekend = weekendFor(iso, policy);
-    return weekend ? weekendDay(booking, policy, weekend, multiplier) : weekday(booking, policy, multiplier);
-  }
-  function reportDayValue(input) {
-    const standard = Math.max(Number(input.standardPaidHours) || 0, 0.01);
-    return Math.min(1.5, Math.max(0, Number(input.totalPaidHours) || 0) / standard);
-  }
-  function subcontractorDayValue(timeSlot) {
-    return namedSlotKind(timeSlot) === "FULL_DAY" ? 1 : 0.5;
-  }
-
   // lib/canonical/derivedIds.ts
   function fnv1a(input, seed) {
     let hash = seed >>> 0;
@@ -6883,17 +7414,17 @@ var ProjectPlannerCanonical = (() => {
     }
     return null;
   }
-  function record(value) {
+  function record2(value) {
     return value && typeof value === "object" && !Array.isArray(value) ? value : {};
   }
   function storedPermissionFlag(user, key3) {
-    const row2 = record(user);
+    const row2 = record2(user);
     const top = bool(row2[key3]);
     if (top != null) return top;
-    return bool(record(row2.permissions)[key3]);
+    return bool(record2(row2.permissions)[key3]);
   }
   function roleToken(user) {
-    const role = record(user).role;
+    const role = record2(user).role;
     return typeof role === "string" ? role.trim().toLowerCase().replace(/[\s-]/g, "_") : "";
   }
   function permissionLevelOf(user) {
@@ -6980,7 +7511,7 @@ var ProjectPlannerCanonical = (() => {
     }
     const map = out.permissions;
     if (map && typeof map === "object" && !Array.isArray(map)) {
-      const stored = record(before.permissions);
+      const stored = record2(before.permissions);
       const kept = { ...map };
       for (const key3 of locked) {
         if (stored[key3] !== void 0) kept[key3] = stored[key3];
@@ -9133,8 +9664,8 @@ var ProjectPlannerCanonical = (() => {
   // lib/canonical/rulebookStamp.ts
   function rulebookStamp() {
     return {
-      version: true ? "1.18.0" : "",
-      sha256: true ? "80ba8d122471b2ef904448a8e6d5e05886e34f5d1848710988800e904e2c43ae" : ""
+      version: true ? "1.19.0" : "",
+      sha256: true ? "99b886e0dce74e166724d7b84c13f4caa10497b96b66c6ddb963aa8e3ccd751b" : ""
     };
   }
 
@@ -9571,7 +10102,7 @@ var ProjectPlannerCanonical = (() => {
   function text10(value) {
     return typeof value === "string" ? value.trim() : "";
   }
-  function record2(value) {
+  function record3(value) {
     return value && typeof value === "object" && !Array.isArray(value) ? value : {};
   }
   function finiteNumber3(value) {
@@ -9588,9 +10119,9 @@ var ProjectPlannerCanonical = (() => {
     return /^[A-Z]{2}$/.test(country) ? country : "";
   }
   function parseCompanyDetails(orgDoc) {
-    const data = record2(orgDoc);
-    const nested = record2(data.officeAddress);
-    const settings = record2(data.settings);
+    const data = record3(orgDoc);
+    const nested = record3(data.officeAddress);
+    const settings = record3(data.settings);
     const pick = (flat, legacy) => text10(data[flat]) || text10(nested[legacy]);
     const line1 = pick("officeAddressLine1", "addressLine1");
     const city = pick("officeCity", "town");
@@ -9675,192 +10206,6 @@ var ProjectPlannerCanonical = (() => {
       }
     }
     return { set, remove };
-  }
-
-  // lib/canonical/payrollPolicySchedule.ts
-  var DEFAULT_ZONE = "Europe/London";
-  var DAY_KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
-  function zone(timeZone) {
-    return String(timeZone || "").trim() || DEFAULT_ZONE;
-  }
-  function record3(value) {
-    return value && typeof value === "object" && !Array.isArray(value) ? value : void 0;
-  }
-  function payrollDayKeyFromValue(value, timeZone) {
-    if (typeof value === "string") {
-      const trimmed6 = value.trim().slice(0, 10);
-      return DAY_KEY_RE.test(trimmed6) ? trimmed6 : null;
-    }
-    let date = null;
-    if (value instanceof Date) date = value;
-    else if (value && typeof value === "object") {
-      const v = value;
-      if (typeof v.toDate === "function") date = v.toDate();
-      else if (typeof v.seconds === "number") date = new Date(v.seconds * 1e3);
-      else if (typeof v._seconds === "number") date = new Date(v._seconds * 1e3);
-    }
-    if (!date || Number.isNaN(date.getTime())) return null;
-    return dayKeyInZone(date, zone(timeZone));
-  }
-  function shiftDayKey(dayKey, days, timeZone) {
-    return dayKeyInZone(addDaysInZone(dateFromDayKeyInZone(dayKey, timeZone), days, timeZone), timeZone);
-  }
-  function parsePayrollTimePolicyScheduled(value, timeZone) {
-    const raw = record3(value);
-    const policy = record3(raw?.policy);
-    if (!raw || !policy) return null;
-    const effectiveFrom = payrollDayKeyFromValue(raw.effectiveFrom, timeZone);
-    if (!effectiveFrom) return null;
-    return { policy: parsePayrollPolicy(policy), effectiveFrom };
-  }
-  function parsePayrollTimePolicyState(orgDoc, timeZone) {
-    const data = record3(orgDoc) ?? {};
-    const priorRaw = record3(data.payrollTimePolicyPrior);
-    return {
-      current: parsePayrollPolicy(record3(data.payrollTimePolicy)),
-      prior: priorRaw ? parsePayrollPolicy(priorRaw) : null,
-      effectiveFrom: payrollDayKeyFromValue(data.payrollTimePolicyEffectiveFrom, timeZone),
-      scheduled: parsePayrollTimePolicyScheduled(data.payrollTimePolicyScheduled, timeZone)
-    };
-  }
-  function isState(value) {
-    const v = record3(value);
-    return Boolean(v && "current" in v && "scheduled" in v && record3(v.current));
-  }
-  function payrollTimePolicyForDayFromState(state, dayKey) {
-    if (state.scheduled && dayKey >= state.scheduled.effectiveFrom) return state.scheduled.policy;
-    if (state.prior && state.effectiveFrom && dayKey < state.effectiveFrom) return state.prior;
-    return state.current;
-  }
-  function effectivePayrollTimePolicy(orgDoc, dayKey, timeZone) {
-    const state = isState(orgDoc) ? orgDoc : parsePayrollTimePolicyState(orgDoc, timeZone);
-    return payrollTimePolicyForDayFromState(state, dayKey);
-  }
-  function payrollTimePolicyTimeline(orgDoc, todayKey2, timeZone) {
-    const tz = zone(timeZone);
-    const state = isState(orgDoc) ? orgDoc : parsePayrollTimePolicyState(orgDoc, tz);
-    const scheduled = state.scheduled;
-    if (!scheduled || scheduled.effectiveFrom > todayKey2) return state;
-    const dayBefore = shiftDayKey(scheduled.effectiveFrom, -1, tz);
-    return {
-      current: scheduled.policy,
-      prior: payrollTimePolicyForDayFromState({ ...state, scheduled: null }, dayBefore),
-      effectiveFrom: scheduled.effectiveFrom,
-      scheduled: null
-    };
-  }
-  function promotedFields(state, todayKey2, tz) {
-    const promoted = payrollTimePolicyTimeline(state, todayKey2, tz);
-    if (promoted === state) return {};
-    return {
-      payrollTimePolicy: payrollPolicyToFirestore(promoted.current),
-      payrollTimePolicyPrior: promoted.prior ? payrollPolicyToFirestore(promoted.prior) : null,
-      payrollTimePolicyEffectiveFrom: promoted.effectiveFrom,
-      payrollTimePolicyScheduled: null
-    };
-  }
-  function payrollTimePolicyApplyNowWriteFields(input) {
-    const tz = zone(input.timeZone);
-    const state = parsePayrollTimePolicyState(input.orgDoc, tz);
-    const yesterday = shiftDayKey(input.todayKey, -1, tz);
-    const prior = payrollTimePolicyForDayFromState(state, yesterday);
-    const fields = {
-      payrollTimePolicy: payrollPolicyToFirestore(input.policy),
-      payrollTimePolicyPrior: payrollPolicyToFirestore(prior),
-      payrollTimePolicyEffectiveFrom: input.todayKey
-    };
-    if (state.scheduled && state.scheduled.effectiveFrom <= input.todayKey) {
-      fields.payrollTimePolicyScheduled = null;
-    }
-    return fields;
-  }
-  function payrollTimePolicyScheduleDateError(effectiveFrom, todayKey2) {
-    if (!DAY_KEY_RE.test(String(effectiveFrom || ""))) return "Choose the date the new working hours start.";
-    if (effectiveFrom <= todayKey2) return "Choose a date after today, or apply the change from today.";
-    return null;
-  }
-  function payrollTimePolicyScheduleWriteFields(input) {
-    if (payrollTimePolicyScheduleDateError(input.effectiveFrom, input.todayKey)) return null;
-    const tz = zone(input.timeZone);
-    const state = parsePayrollTimePolicyState(input.orgDoc, tz);
-    return {
-      ...promotedFields(state, input.todayKey, tz),
-      payrollTimePolicyScheduled: {
-        policy: payrollPolicyToFirestore(input.policy),
-        effectiveFrom: input.effectiveFrom
-      }
-    };
-  }
-  function payrollTimePolicyCancelScheduleWriteFields(input) {
-    const tz = zone(input.timeZone);
-    const state = parsePayrollTimePolicyState(input.orgDoc, tz);
-    const promoted = promotedFields(state, input.todayKey, tz);
-    return Object.keys(promoted).length > 0 ? promoted : { payrollTimePolicyScheduled: null };
-  }
-  function inRange(value, limits) {
-    return typeof value === "number" && Number.isFinite(value) && value >= limits.min && value <= limits.max;
-  }
-  function validClock(value) {
-    const raw = String(value ?? "").trim();
-    if (!/^\d{1,2}:\d{2}$/.test(raw)) return null;
-    return parseClockMinutes(raw);
-  }
-  function validatePayrollTimePolicy(policy) {
-    const { paidHours, breakMinutes, multiplier } = PAYROLL_POLICY_LIMITS;
-    const clocks = [
-      ["standardDayStart", "Standard day start"],
-      ["standardDayEnd", "Standard day end"],
-      ["breakWindowStart", "Break window start"],
-      ["breakWindowEnd", "Break window end"]
-    ];
-    for (const [field, label] of clocks) {
-      if (validClock(policy[field]) == null) return `${label} must be a valid 24h time (e.g. 07:30).`;
-    }
-    const dayStart = validClock(policy.standardDayStart);
-    const dayEnd = validClock(policy.standardDayEnd);
-    const breakStart = validClock(policy.breakWindowStart);
-    const breakEnd = validClock(policy.breakWindowEnd);
-    if (dayEnd <= dayStart) return "Standard day end must be after the start time.";
-    if (breakEnd <= breakStart) return "Break window end must be after the break start.";
-    if (breakStart < dayStart || breakEnd > dayEnd) return "Break window must fall within the working day.";
-    if (!inRange(policy.standardPaidHours, paidHours)) {
-      return `Standard paid hours must be between ${paidHours.min} and ${paidHours.max}.`;
-    }
-    if (!inRange(policy.unpaidBreakMinutes, breakMinutes)) {
-      return `Break length must be between ${breakMinutes.min} and ${breakMinutes.max} minutes.`;
-    }
-    if (!inRange(policy.weekdayOutsideStandardMultiplier, multiplier)) {
-      return `Weekday overtime rate must be between \xD7${multiplier.min} and \xD7${multiplier.max}.`;
-    }
-    const weekend = [["Saturday", policy.saturday]];
-    if (!policy.sunday.sameAsSaturday) weekend.push(["Sunday", policy.sunday]);
-    for (const [name, settings] of weekend) {
-      if (settings.allHoursAtMultiplierMode) {
-        if (!inRange(settings.allHoursMultiplier, multiplier)) {
-          return `${name} rate must be between \xD7${multiplier.min} and \xD7${multiplier.max}.`;
-        }
-        continue;
-      }
-      const start = validClock(settings.definedWindowStart);
-      const end = validClock(settings.definedWindowEnd);
-      if (start == null || end == null) return `${name} window must use valid 24h times.`;
-      if (end <= start) return `${name} window end must be after the start.`;
-      if (settings.countsAsStandardHours != null && !inRange(settings.countsAsStandardHours, paidHours)) {
-        return `${name} counts-as hours must be between ${paidHours.min} and ${paidHours.max}.`;
-      }
-      if (!inRange(settings.outsideWindowMultiplier, multiplier)) {
-        return `${name} rate outside the window must be between \xD7${multiplier.min} and \xD7${multiplier.max}.`;
-      }
-    }
-    return null;
-  }
-  var WORKING_WEEK = {
-    firstDay: "monday",
-    lastDay: "sunday",
-    workingDays: ["monday", "tuesday", "wednesday", "thursday", "friday"]
-  };
-  function isStandardWorkingWeekday(isoWeekday) {
-    return Number.isInteger(isoWeekday) && isoWeekday >= 1 && isoWeekday <= 5;
   }
 
   // lib/canonical/paymentRuns.ts
@@ -13621,20 +13966,62 @@ var ProjectPlannerCanonical = (() => {
       });
       const weekend = iso === 6 || iso === 7 ? weekendRuleForIsoWeekday(iso, dayPolicy) : null;
       const windowDay = Boolean(weekend && !weekend.allHoursAtMultiplierMode);
+      const allHoursDay = Boolean(weekend && weekend.allHoursAtMultiplierMode);
       const standardHours = roundHours(paid.standardHours);
       const overtimeHours = roundHours(paid.outsideHours);
       const multiplier = roundHours(paid.outsideMultiplier);
       const total = roundHours(paid.totalPaidHours);
+      const unpaidBreakHours = roundHours(paid.unpaidBreakHours);
+      let breakInStandard = 0;
+      let breakOutside = 0;
+      for (const row2 of paid.segments) {
+        if (row2.kind === "standardWindow") breakInStandard += row2.unpaidBreakHours ?? 0;
+        else breakOutside += row2.unpaidBreakHours ?? 0;
+      }
+      breakInStandard = roundHours(breakInStandard);
+      breakOutside = roundHours(breakOutside);
       const credit = weekend ? Number(weekend.countsAsStandardHours ?? dayPolicy.standardPaidHours) : NaN;
       const fullDay = windowDay && standardHours > 0 && Math.abs(standardHours - roundHours(credit)) < 1e-3;
-      const parts = [];
-      if (standardHours > 0) parts.push(hoursText(standardHours));
-      if (overtimeHours > 0) parts.push(`${hoursText(overtimeHours)} \xD7 ${roundHours(multiplier)}`);
       const label = WEEKDAY_NAMES[iso] || dayKey;
       let line = `${label} ${startText}\u2013${endText} = `;
-      if (parts.length === 0) line += "0h";
-      else if (overtimeHours > 0) line += `${parts.join(" + ")} = ${hoursText(total)}`;
-      else line += `${parts[0]}${fullDay ? " (counts as a full day)" : ""}`;
+      if (unpaidBreakHours > 0) {
+        const parts = [];
+        const standardBefore = roundHours(standardHours + breakInStandard);
+        if (standardBefore > 0) {
+          parts.push(breakInStandard > 0 ? `${hoursText(standardBefore)} \u2212 ${hoursText(breakInStandard)} unpaid break` : hoursText(standardHours));
+        }
+        const outsideBefore = roundHours(overtimeHours + breakOutside);
+        if (outsideBefore > 0) {
+          parts.push(
+            breakOutside > 0 ? `(${hoursText(outsideBefore)} \u2212 ${hoursText(breakOutside)} unpaid break) \xD7 ${multiplier}` : `${hoursText(overtimeHours)} \xD7 ${multiplier}`
+          );
+        }
+        line += parts.length === 0 ? "0h" : `${parts.join(" + ")} = ${hoursText(total)}`;
+      } else {
+        const parts = [];
+        if (standardHours > 0) parts.push(hoursText(standardHours));
+        if (overtimeHours > 0) parts.push(`${hoursText(overtimeHours)} \xD7 ${roundHours(multiplier)}`);
+        if (parts.length === 0) line += "0h";
+        else if (overtimeHours > 0) line += `${parts.join(" + ")} = ${hoursText(total)}`;
+        else line += `${parts[0]}${fullDay ? " (counts as a full day)" : ""}`;
+      }
+      const lines = [];
+      if (allHoursDay) {
+        lines.push({ kind: "outside", label: "Every hour", value: `${hoursText(roundHours(overtimeHours + breakOutside))} \xD7 ${multiplier}` });
+      } else if (standardHours > 0 || breakInStandard > 0) {
+        lines.push({
+          kind: "standard",
+          label: windowDay ? "Set hours" : "Standard hours",
+          value: hoursText(roundHours(standardHours + breakInStandard))
+        });
+      }
+      if (unpaidBreakHours > 0) {
+        lines.push({ kind: "break", label: "Unpaid break", value: `\u2212${hoursText(unpaidBreakHours)}` });
+      }
+      if (!allHoursDay && (overtimeHours > 0 || breakOutside > 0)) {
+        lines.push({ kind: "outside", label: "Outside hours", value: `${hoursText(roundHours(overtimeHours + breakOutside))} \xD7 ${multiplier}` });
+      }
+      lines.push({ kind: "total", label: "Total paid hours", value: hoursText(total) });
       return {
         dayKey,
         weekdayLabel: label,
@@ -13646,20 +14033,33 @@ var ProjectPlannerCanonical = (() => {
         overtimeHours,
         multiplier,
         paidHoursEquivalent: total,
-        line
+        unpaidBreakHours,
+        line,
+        lines
       };
     });
+  }
+  function weekendLunchBreakCopy(policy, weekday2) {
+    const name = weekday2 === "saturday" ? "Saturday" : "Sunday";
+    if (!policy) return { title: `Lunch break on ${name}`, detail: "" };
+    const settings = weekday2 === "sunday" && policy.sunday?.sameAsSaturday ? policy.saturday : policy[weekday2];
+    const own = weekendBreakFor(policy, settings);
+    const sameAsWeekday = own.minutes === Math.max(0, Number(policy.unpaidBreakMinutes) || 0) && own.start === policy.breakWindowStart && own.end === policy.breakWindowEnd;
+    return {
+      title: `Lunch break on ${name}`,
+      detail: `${own.start}\u2013${own.end}, ${own.minutes} min${sameAsWeekday ? " \u2014 the same as your weekday lunch." : "."}`
+    };
   }
   var CUSTOM_HOURS_BREAK_WARNING = "You are booking custom hours that cover the unpaid lunch break. Turn off Unpaid break to make sure they are paid for this time.";
   function customHoursBreakWarning(policy, dayKey, booking, timeZone) {
     if (!policy || !booking) return null;
     if (namedSlotKind(booking.timeSlot) !== "CUSTOM") return null;
-    if (policy.breakPaid === true || booking.isBreakRemoved === true) return null;
-    if (!(Number(policy.unpaidBreakMinutes) > 0)) return null;
-    if (dayKey && isWeekendDayKey(dayKey, timeZone)) return null;
-    const start = parseClockMinutes(policy.breakWindowStart);
-    const end = parseClockMinutes(policy.breakWindowEnd);
-    if (start == null || end == null || end <= start) return null;
+    if (booking.isBreakRemoved === true) return null;
+    const day = dayKey || "2026-01-07";
+    if (!unpaidBreakAppliesOnDay(policy, day, timeZone)) return null;
+    const dayBreak = payrollBreakOnDay(policy, day, timeZone);
+    if (!dayBreak) return null;
+    const { start, end } = dayBreak;
     const span = slotInterval(
       { timeSlot: booking.timeSlot, workStartTime: booking.workStartTime, workEndTime: booking.workEndTime },
       policy

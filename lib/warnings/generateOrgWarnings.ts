@@ -208,6 +208,9 @@ export function generateOrgWarnings(input: {
     (input.invoicing ?? input.orgDetails?.invoicing) as Record<string, unknown> | undefined
   )
   const payrollPolicy = input.payrollPolicy ?? input.orgDetails?.payrollTimePolicy ?? DEFAULT_PAYROLL_POLICY
+  // Rulebook 1.19.0 §5: unbooked labour reads each day of the window under the rules in effect on it. An explicit
+  // `payrollPolicy` (tests, one-policy callers) keeps that one policy.
+  const payrollPolicyState = input.payrollPolicy ? null : input.orgDetails?.payrollTimePolicyState ?? null
   const now = input.referenceDate ?? new Date()
   const cutOff = resolveMaterialCutOffClock({
     organizationMaterialCutOff: input.orgDetails?.materialCutOff ?? null,
@@ -248,6 +251,7 @@ export function generateOrgWarnings(input: {
     warningDetection,
     invoicing,
     payrollPolicy,
+    payrollPolicyState,
     referenceDate: now,
     timeZone,
     scope,

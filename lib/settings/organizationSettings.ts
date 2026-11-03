@@ -1,4 +1,4 @@
-import { doc, getDoc, getDocFromServer, setDoc, updateDoc } from 'firebase/firestore'
+import { doc, getDoc, getDocFromServer, runTransaction, setDoc, updateDoc } from 'firebase/firestore'
 import { validateAnnualLeaveDefaults } from '@/lib/canonical/annualLeaveBalance'
 import { db } from '@/lib/firebase/config'
 import { serverTimestamp } from 'firebase/firestore'
@@ -14,9 +14,11 @@ import {
   payrollTimePolicyApplyNowWriteFields,
   payrollTimePolicyCancelScheduleWriteFields,
   payrollTimePolicyForDayFromState,
+  payrollTimePolicySaveConflict,
   payrollTimePolicyScheduleWriteFields,
   payrollTimePolicyTimeline,
   parsePayrollTimePolicyState,
+  type PayrollTimePolicyState,
   paymentRunHistoryAfterChange,
   type CompanyDetailsInput,
   type PayrollTimePolicyScheduledChange,
@@ -138,6 +140,12 @@ export type OrganizationDetails = {
   payrollTimePolicyEffectiveFrom?: string | null
   /** A future working-hours change still pending (`{ policy, effectiveFrom }`). */
   payrollTimePolicyScheduled?: PayrollTimePolicyScheduledChange | null
+  /**
+   * Rulebook 1.19.0: the whole working-hours state promoted to today (`payrollTimePolicyTimeline`: history, prior,
+   * current and the pending change). Every screen that prices or labels a day other than today passes this on, so each
+   * day uses the rules in effect on it (`payrollTimePolicyForDayFromState`).
+   */
+  payrollTimePolicyState: PayrollTimePolicyState
   annualLeaveDefaults: OrgAnnualLeaveDefaults
   warningDetection: OrgWarningDetectionSettings
   invoicing: OrgInvoicingSettings
@@ -156,10 +164,12 @@ export function orgPayrollPolicyForDay(
   prior?: OrgPayrollTimePolicy | null,
   effectiveFrom?: string | null,
   timeZone?: string,
-  scheduled?: PayrollTimePolicyScheduledChange | null
+  scheduled?: PayrollTimePolicyScheduledChange | null,
+  /** 1.19.0: the full state (history first). When given, the loose fields above are not used. */
+  state?: PayrollTimePolicyState | null
 ): OrgPayrollTimePolicy {
   return payrollTimePolicyForDayFromState(
-    { current, prior: prior ?? null, effectiveFrom: effectiveFrom ?? null, scheduled: scheduled ?? null },
+    state ?? { current, prior: prior ?? null, effectiveFrom: effectiveFrom ?? null, scheduled: scheduled ?? null },
     dayKey(day, timeZone)
   )
 }
@@ -241,6 +251,7 @@ export function organizationDetailsFromData(
     payrollTimePolicyPrior: payroll.prior,
     payrollTimePolicyEffectiveFrom: payroll.effectiveFrom,
     payrollTimePolicyScheduled: payroll.scheduled,
+    payrollTimePolicyState: payroll,
     annualLeaveDefaults: parseAnnualLeaveDefaults(data.annualLeaveDefaults as Record<string, unknown> | undefined),
     warningDetection: parseWarningDetection(warningRaw),
     invoicing: parseInvoicing(data.invoicing as Record<string, unknown> | undefined),
@@ -287,25 +298,46 @@ export async function saveMaterialCutOffSettings(
 }
 
 /**
- * "Apply from today" (`payrollTimePolicyApplyNowWriteFields`). Reads the stored document first so
- * prior rules and a pending iOS-scheduled change are kept; a future scheduled change is not cancelled.
+ * Rulebook 1.19.0: every working-hours write runs in a transaction. The organisation document is read inside it, the
+ * save is refused when the working hours changed since `baseOrgDoc` (the document the screen showed —
+ * `payrollTimePolicySaveConflict`, `PAYROLL_POLICY_STALE_SAVE_MESSAGE`), and the canonical write fields are computed
+ * from the fresh document, so two admins can never silently replace or cancel each other's change.
+ */
+async function writePayrollPolicyFields(
+  organizationId: string,
+  baseOrgDoc: Record<string, unknown> | null | undefined,
+  userId: string | undefined,
+  build: (data: DocumentData, todayKey: string, timeZone: string) => Record<string, unknown> | null
+): Promise<void> {
+  const ref = doc(db, 'organizations', organizationId)
+  await runTransaction(db, async (transaction) => {
+    const snap = await transaction.get(ref)
+    if (!snap.exists()) throw new Error('Organisation not found.')
+    const data = snap.data()
+    const timeZone = organizationTimeZone(typeof data.countryCode === 'string' ? data.countryCode : null)
+    if (baseOrgDoc) {
+      const conflict = payrollTimePolicySaveConflict(baseOrgDoc, data, timeZone)
+      if (conflict) throw new Error(conflict)
+    }
+    const fields = build(data, dayKey(new Date(), timeZone), timeZone)
+    if (!fields) throw new Error('Choose a date after today for the scheduled change.')
+    transaction.update(ref, { ...fields, ...settingsWriteMetadata(userId) })
+  })
+}
+
+/**
+ * "Apply from today" (`payrollTimePolicyApplyNowWriteFields`): reads the stored document first so prior rules, the
+ * history and a pending iOS-scheduled change are kept; a future scheduled change is not cancelled.
  */
 export async function savePayrollPolicy(
   organizationId: string,
   policy: OrgPayrollTimePolicy,
-  userId?: string
+  userId?: string,
+  baseOrgDoc?: Record<string, unknown> | null
 ): Promise<void> {
-  const data = await readOrganizationData(organizationId)
-  const timeZone = organizationTimeZone(typeof data.countryCode === 'string' ? data.countryCode : null)
-  await updateDoc(doc(db, 'organizations', organizationId), {
-    ...payrollTimePolicyApplyNowWriteFields({
-      orgDoc: data,
-      policy,
-      todayKey: dayKey(new Date(), timeZone),
-      timeZone,
-    }),
-    ...settingsWriteMetadata(userId),
-  })
+  await writePayrollPolicyFields(organizationId, baseOrgDoc, userId, (data, todayKey, timeZone) =>
+    payrollTimePolicyApplyNowWriteFields({ orgDoc: data, policy, todayKey, timeZone })
+  )
 }
 
 /** "Schedule from a date" (`payrollTimePolicyScheduleWriteFields`). `effectiveFrom` is an org-zone day key. */
@@ -313,28 +345,23 @@ export async function schedulePayrollPolicyChange(
   organizationId: string,
   policy: OrgPayrollTimePolicy,
   effectiveFrom: string,
-  userId?: string
+  userId?: string,
+  baseOrgDoc?: Record<string, unknown> | null
 ): Promise<void> {
-  const data = await readOrganizationData(organizationId)
-  const timeZone = organizationTimeZone(typeof data.countryCode === 'string' ? data.countryCode : null)
-  const fields = payrollTimePolicyScheduleWriteFields({
-    orgDoc: data,
-    policy,
-    effectiveFrom,
-    todayKey: dayKey(new Date(), timeZone),
-    timeZone,
-  })
-  if (!fields) throw new Error('Choose a date after today for the scheduled change.')
-  await updateDoc(doc(db, 'organizations', organizationId), { ...fields, ...settingsWriteMetadata(userId) })
+  await writePayrollPolicyFields(organizationId, baseOrgDoc, userId, (data, todayKey, timeZone) =>
+    payrollTimePolicyScheduleWriteFields({ orgDoc: data, policy, effectiveFrom, todayKey, timeZone })
+  )
 }
 
-export async function cancelScheduledPayrollPolicyChange(organizationId: string, userId?: string): Promise<void> {
-  const data = await readOrganizationData(organizationId)
-  const timeZone = organizationTimeZone(typeof data.countryCode === 'string' ? data.countryCode : null)
-  await updateDoc(doc(db, 'organizations', organizationId), {
-    ...payrollTimePolicyCancelScheduleWriteFields({ orgDoc: data, todayKey: dayKey(new Date(), timeZone), timeZone }),
-    ...settingsWriteMetadata(userId),
-  })
+/** Cancel the pending change (`payrollTimePolicyCancelScheduleWriteFields`); history is never removed. */
+export async function cancelScheduledPayrollPolicyChange(
+  organizationId: string,
+  userId?: string,
+  baseOrgDoc?: Record<string, unknown> | null
+): Promise<void> {
+  await writePayrollPolicyFields(organizationId, baseOrgDoc, userId, (data, todayKey, timeZone) =>
+    payrollTimePolicyCancelScheduleWriteFields({ orgDoc: data, todayKey, timeZone })
+  )
 }
 
 /**

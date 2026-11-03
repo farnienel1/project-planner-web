@@ -37,6 +37,7 @@ export {
   WEB_SESSION_ORGANIZATION_STORAGE_PREFIX,
   webSessionOrganizationStorageKey,
   standardDayCoverage,
+  windowCoverage,
   resetOrganizationContextForTests,
   slotInterval,
   standardBreakWindow,
@@ -586,7 +587,16 @@ export type {
 
 export { PAYE_PAY_CELL_LABEL, reportPayCell, reportPayTotal, reportPersonPayCell } from './reportPay'
 export type { ReportPayCell, ReportPayLineInput } from './reportPay'
-export { payrollHoursResult, payrollOutsideMultiplier, reportDayValue, subcontractorDayValue, workedHoursSplit } from './payrollHours'
+export {
+  payrollBreakOnDay,
+  payrollDayWindows,
+  payrollHoursResult,
+  payrollOutsideMultiplier,
+  reportDayValue,
+  subcontractorDayValue,
+  unpaidBreakAppliesOnDay,
+  workedHoursSplit,
+} from './payrollHours'
 export type { PayrollHoursBooking, PayrollHoursInput, PayrollHoursResult, PayrollHoursSegment } from './payrollHours'
 
 export {
@@ -702,12 +712,17 @@ export {
 } from './companyDetails'
 export type { CompanyDetails, CompanyDetailsInput, CompanyDetailsWrite } from './companyDetails'
 export {
+  PAYROLL_POLICY_HISTORY_START,
   PAYROLL_POLICY_LIMITS,
+  PAYROLL_POLICY_STALE_SAVE_MESSAGE,
   WORKING_WEEK,
   effectivePayrollTimePolicy,
   isStandardWorkingWeekday,
+  parsePayrollTimePolicyHistory,
   parsePayrollTimePolicyScheduled,
   parsePayrollTimePolicyState,
+  payrollTimePolicyHistoryEntries,
+  payrollTimePolicySaveConflict,
   payrollDayKeyFromValue,
   payrollTimePolicyApplyNowWriteFields,
   payrollTimePolicyCancelScheduleWriteFields,
@@ -717,7 +732,11 @@ export {
   payrollTimePolicyTimeline,
   validatePayrollTimePolicy,
 } from './payrollPolicySchedule'
-export type { PayrollTimePolicyScheduledChange, PayrollTimePolicyState } from './payrollPolicySchedule'
+export type {
+  PayrollTimePolicyHistoryEntry,
+  PayrollTimePolicyScheduledChange,
+  PayrollTimePolicyState,
+} from './payrollPolicySchedule'
 export {
   activePaymentRunSummary,
   formatPaymentRunDay,
@@ -1322,6 +1341,7 @@ export {
   WEEKEND_TIME_SLOTS,
   allowedTimeSlotsOnDay,
   customHoursBreakWarning,
+  weekendLunchBreakCopy,
   isWeekendDayKey,
   WEEKEND_WEEKDAY_MIX_MESSAGE,
   bookingDaysMixWeekdayAndWeekend,
@@ -1342,7 +1362,13 @@ export {
   subscriptionAccess,
 } from './billingAccess'
 export { LAUNCH_COUNTRY_CODES, launchCountryOptions } from './bankHolidayRegions'
-export { SUGGESTED_MAX_CARRY_OVER_DAYS, parseMaxCarryOverDays } from './organizationSettings'
+export {
+  SUGGESTED_MAX_CARRY_OVER_DAYS,
+  parseMaxCarryOverDays,
+  parseWeekendCoverage,
+  resolveWeekendCoverageDay,
+  weekendBreakFor,
+} from './organizationSettings'
 export { leaveYearStartMonth, proRataLeaveAllowance } from './annualLeaveBalance'
 export {
   PAY_PROFILES_COLLECTION,
@@ -1354,7 +1380,14 @@ export {
   payProfilePath,
   payProfileWriteFieldsFromProfileWrite,
 } from './payProfile'
-export type { BookingSlotChoice, CustomHoursBreakBooking, CustomHoursPrefill, CustomHoursPrefillKind, BookingDayBreakdownRow } from './bookingSlots'
+export type {
+  BookingSlotChoice,
+  CustomHoursBreakBooking,
+  CustomHoursPrefill,
+  CustomHoursPrefillKind,
+  BookingDayBreakdownLine,
+  BookingDayBreakdownRow,
+} from './bookingSlots'
 export type { SubscriptionAccess } from './billingAccess'
 export type { PayProfileDocument, PayProfileField, PaySubject, PayViewer } from './payProfile'
 export { parseAnnualLeaveDefaults } from './organizationSettings'
@@ -1419,3 +1452,4 @@ export {
   pushTokensExcludingActor,
 } from './pushTokens'
 export type { NotificationCatalogueRow } from './notificationRecipients'
+export type { WeekendCoverage, WeekendCoverageDay } from './organizationSettings'

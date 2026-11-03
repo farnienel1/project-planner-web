@@ -24,7 +24,7 @@ import { useHolidayStore } from '@/lib/stores/holidayStore'
 import { useSubcontractorStore } from '@/lib/stores/subcontractorStore'
 import { canViewDailyOverview, hasAdminAccess } from '@/lib/permissions'
 import { dateFromDayKey, dayKey, londonMidnight } from '@/lib/ios-parity/londonTime'
-import { effectivePayrollTimePolicy } from '@/lib/canonical'
+import { effectivePayrollTimePolicy, type WeekendCoverage } from '@/lib/canonical'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 import { watchSubcontractorBookings } from '@/lib/weekly-report/loadSubcontractorBookings'
 import type { SubcontractorBookingRow } from '@/lib/weekly-report/weeklyReportData'
@@ -104,6 +104,8 @@ export function DailyOverviewScreen() {
   const [payrollPolicy, setPayrollPolicy] = useState<OrgPayrollTimePolicy>(DEFAULT_PAYROLL_POLICY)
   const [includeWeekendsForUnbookedLabour, setIncludeWeekendsForUnbookedLabour] = useState(false)
   const [excludedUserIdsFromUnbookedWarnings, setExcludedUserIdsFromUnbookedWarnings] = useState<string[]>([])
+  // Rulebook 1.19.0 §5: the weekend "Hours to cover" toggles and windows (`warningDetection.weekendCoverage`).
+  const [weekendCoverage, setWeekendCoverage] = useState<WeekendCoverage | null>(null)
 
   useEffect(() => {
     const raw = searchParams.get('date')
@@ -145,6 +147,7 @@ export function DailyOverviewScreen() {
     setPayrollPolicy(effectivePayrollTimePolicy(liveOrganization.data, dayKey(day, orgTimeZone), orgTimeZone))
     setIncludeWeekendsForUnbookedLabour(details.warningDetection.includeWeekendsForUnbookedLabour)
     setExcludedUserIdsFromUnbookedWarnings(details.warningDetection.excludedUserIdsFromUnbookedWarnings ?? [])
+    setWeekendCoverage(details.warningDetection.weekendCoverage ?? null)
   }, [organization?.id, liveOrganization.organizationId, liveOrganization.data, day, orgTimeZone])
 
   // Rulebook 1.9.0 §1: subcontractor bookings are live while Daily Overview is open.
@@ -173,9 +176,11 @@ export function DailyOverviewScreen() {
         payrollPolicy,
         includeWeekendsForUnbookedLabour,
         excludedUserIdsFromUnbookedWarnings,
+        weekendCoverage,
         timeZone: orgTimeZone,
       }),
     [
+      weekendCoverage,
       day,
       today,
       projects,

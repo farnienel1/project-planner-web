@@ -13,7 +13,14 @@ import {
   warningDetectionFromOrganizationData,
   type OrgWarningDetectionSettings,
 } from '@/lib/settings/organizationSettings'
-import { activePaymentRunSummary, formatPaymentRunDay } from '@/lib/canonical'
+import {
+  activePaymentRunSummary,
+  effectivePayrollTimePolicy,
+  formatPaymentRunDay,
+  parseWeekendCoverage,
+  resolveWeekendCoverageDay,
+  type WeekendCoverage,
+} from '@/lib/canonical'
 import { formatNumberOfDaysScanSummary, warningLookaheadFallbackNotice } from '@/lib/warnings/warningLookahead'
 import { useOrganizationDayKey } from '@/lib/warnings/useOrganizationDayKey'
 import {
@@ -225,6 +232,10 @@ export function WarningsPanel({ onBack }: { onBack: () => void }) {
     })
   }
 
+  // Rulebook 1.19.0: the saved weekend coverage (parsed defaults when missing) and today's working hours, for the
+  // default "Hours to cover" windows.
+  const coverage: WeekendCoverage = draft.weekendCoverage ?? parseWeekendCoverage(undefined, draft.includeWeekendsForUnbookedLabour)
+  const payrollToday = orgData ? effectivePayrollTimePolicy(orgData, todayKey, timeZone) : null
   const excluded = draft.excludedUserIdsFromUnbookedWarnings ?? []
   const activeUsers = users.filter((u) => u.isActive)
   const filtered = (() => {
@@ -506,9 +517,72 @@ export function WarningsPanel({ onBack }: { onBack: () => void }) {
             </div>
             <Toggle
               checked={draft.includeWeekendsForUnbookedLabour}
-              onChange={(value) => patch({ includeWeekendsForUnbookedLabour: value })}
+              onChange={(value) =>
+                patch({
+                  includeWeekendsForUnbookedLabour: value,
+                  // 1.19.0: turning weekends on starts with both days on (their windows unchanged).
+                  ...(value
+                    ? {
+                        weekendCoverage: {
+                          saturday: { ...coverage.saturday, enabled: true },
+                          sunday: { ...coverage.sunday, enabled: true },
+                        },
+                      }
+                    : {}),
+                })
+              }
             />
           </div>
+          {draft.includeWeekendsForUnbookedLabour
+            ? (['saturday', 'sunday'] as const).map((day) => {
+                // Rulebook 1.19.0 §4.6 (`resolveWeekendCoverageDay`): the day's toggle and "Hours to cover" window,
+                // defaulting to that day's working-hours set window, else the standard day.
+                const resolved = resolveWeekendCoverageDay(coverage, true, payrollToday, day)
+                const label = day === 'saturday' ? 'Saturday' : 'Sunday'
+                const setDay = (partial: Partial<WeekendCoverage['saturday']>) =>
+                  patch({
+                    weekendCoverage: {
+                      ...coverage,
+                      [day]: { ...coverage[day], start: resolved.start, end: resolved.end, ...partial },
+                    },
+                  })
+                return (
+                  <div key={day} className="space-y-3 p-4 pl-8">
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <div className="text-sm font-semibold text-slate-900">{label}</div>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {resolved.enabled
+                            ? `Unbooked when bookings do not cover ${resolved.start}–${resolved.end}.`
+                            : `${label} is not checked for unbooked labour.`}
+                        </p>
+                      </div>
+                      <Toggle checked={resolved.enabled} onChange={(value) => setDay({ enabled: value })} />
+                    </div>
+                    {resolved.enabled ? (
+                      <div className="flex flex-wrap items-center gap-2 text-sm">
+                        <span className="text-xs font-medium text-slate-500">Hours to cover</span>
+                        <input
+                          type="time"
+                          aria-label={`${label} hours to cover start`}
+                          value={resolved.start}
+                          onChange={(e) => setDay({ start: e.target.value })}
+                          className="rounded-lg border border-slate-200 px-2 py-1 tabular-nums"
+                        />
+                        <span className="text-slate-400">–</span>
+                        <input
+                          type="time"
+                          aria-label={`${label} hours to cover end`}
+                          value={resolved.end}
+                          onChange={(e) => setDay({ end: e.target.value })}
+                          className="rounded-lg border border-slate-200 px-2 py-1 tabular-nums"
+                        />
+                      </div>
+                    ) : null}
+                  </div>
+                )
+              })
+            : null}
         </div>
       </SettingsCard>
 

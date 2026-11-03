@@ -264,3 +264,94 @@ test('timesheets count Completed bookings and skip Cancelled ones, as bookingOcc
   assert.ok(ids.some((line) => line.startsWith('op-lower')))
   assert.equal(ids.some((line) => line.startsWith('op-off')), false)
 })
+
+test('1.19.0: a timesheet prices every day under the rules in effect on it — history and a change scheduled inside the run', async () => {
+  const { parsePayrollTimePolicyState, payrollTimePolicyTimeline } = await import('../canonical/index.ts')
+  const { payrollPolicyToFirestore } = await import('../canonical/organizationSettings.ts')
+  const rawPolicy = (end: string) => payrollPolicyToFirestore({ ...DEFAULT_PAYROLL_POLICY, standardDayEnd: end })
+  // 15:00 until 1 Nov (history), 16:00 from 1 Nov, 17:00 scheduled from 12 Nov (not promoted by any app).
+  const doc = {
+    countryCode: 'GB',
+    payrollTimePolicy: rawPolicy('16:00'),
+    payrollTimePolicyPrior: rawPolicy('15:00'),
+    payrollTimePolicyEffectiveFrom: '2026-11-01',
+    payrollTimePolicyHistory: [
+      { effectiveFrom: '1970-01-01', policy: rawPolicy('14:00') },
+      { effectiveFrom: '2026-10-20', policy: rawPolicy('15:00') },
+      { effectiveFrom: '2026-11-01', policy: rawPolicy('16:00') },
+    ],
+    payrollTimePolicyScheduled: { policy: rawPolicy('17:00'), effectiveFrom: '2026-11-12' },
+  }
+  const state = payrollTimePolicyTimeline(parsePayrollTimePolicyState(doc, 'Europe/London'), '2026-11-03', 'Europe/London')
+  const days = ['2026-10-15', '2026-10-21', '2026-11-10', '2026-11-12']
+  const summary = collectTimesheetPayroll({
+    user: user({ id: 'u1' }),
+    bookings: days.map((day, index) => booking(`d${index}`, new Date(`${day}T08:00:00Z`))),
+    managerSiteBookings: [],
+    operatives: [operative],
+    projects: [project],
+    smallWorks: [],
+    periodStart: new Date('2026-10-01T00:00:00Z'),
+    periodEnd: new Date('2026-11-30T00:00:00Z'),
+    payrollPolicy: state.current,
+    payrollPolicyState: state,
+    timeZone: 'Europe/London',
+  })
+  const hours = days.map((_, index) => summary.lineItems.find((item) => item.id === `op-d${index}-normal`)?.paidHours)
+  // FULL DAY = the standard day less the 30-minute break: 07:30–14:00 = 6h, –15:00 = 7h, –16:00 = 8h, –17:00 = 9h.
+  assert.deepEqual(hours, [6, 7, 8, 9])
+})
+
+test('1.19.0: a signed timesheet (weeklyReportOverride) is never re-priced when the working hours change', async () => {
+  const { applyWeeklyReportOverride } = await import('./weeklyReportOverride.ts')
+  const { emptyTimesheetDraft } = await import('./timesheetDraft.ts')
+  const subject = user({ id: 'u1', permissions: { ...user({ id: 'x' }).permissions, adminAccess: true, operativeMode: false }, role: 'admin' })
+  const signedLine = {
+    id: 'op-b1-normal',
+    date: new Date('2026-11-04T00:00:00Z'),
+    jobNumber: 'J-1',
+    projectName: 'Site One',
+    locationKind: 'project',
+    details: '07:30–16:00',
+    paidHours: 8,
+    days: 1,
+    amount: 200,
+    isOvertime: false,
+    decision: 'approved' as const,
+  }
+  const draft = {
+    ...emptyTimesheetDraft(),
+    operativeSignedAt: new Date('2026-11-10T09:00:00Z'),
+    operativeSignedByName: 'Ada Booked',
+    managerSignedAt: new Date('2026-11-10T09:00:00Z'),
+    managerSignedByName: 'Ada Booked',
+    managerSignedByUserId: 'u1',
+    weeklyReportOverride: {
+      approvedAt: new Date('2026-11-10T09:00:00Z'),
+      approvedByUserId: 'u1',
+      approvedByName: 'Ada Booked',
+      lines: [signedLine],
+      priceWork: [],
+      expenses: [],
+    },
+  }
+  // The live booking would now pay 9h under a longer day; the signed line keeps 8h / £200.
+  const longer = { ...DEFAULT_PAYROLL_POLICY, standardDayEnd: '17:00' }
+  const next = applyWeeklyReportOverride({
+    draft: draft as never,
+    user: subject,
+    users: [subject],
+    weekStart: new Date('2026-11-01T00:00:00Z'),
+    weekEnd: new Date('2026-11-15T00:00:00Z'),
+    bookings: [booking('b1', new Date('2026-11-04T08:00:00Z'))],
+    managerSiteBookings: [],
+    operatives: [operative],
+    projects: [project],
+    smallWorks: [],
+    payrollPolicy: longer,
+    payrollPolicyState: { current: longer, prior: null, effectiveFrom: null, scheduled: null },
+    timeZone: 'Europe/London',
+  })
+  const line = next.weeklyReportOverride?.lines[0]
+  assert.deepEqual([line?.amount, line?.paidHours, line?.days], [200, 8, 1])
+})

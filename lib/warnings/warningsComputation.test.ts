@@ -543,7 +543,7 @@ test('tentative operative bookings cover the day only when they fill the standar
   assert.equal(cancelled[0].missingHours, 8)
 })
 
-test('weekends are skipped unless included, and a zero counts-as weekend is not a working day', () => {
+test('weekends are skipped unless included; 1.19.0: a weekend day switched off is not scanned, a window sets the hours', () => {
   const saturday = new Date('2026-09-19T12:00:00+01:00')
   const opUser = user({ id: 'U-OP', email: 'ada@site.test', firstName: 'Ada', surname: 'Operative' })
   const linked = operative({ id: 'OP-ADA', email: 'ada@site.test', firstName: 'Ada', lastName: 'Operative' })
@@ -572,10 +572,7 @@ test('weekends are skipped unless included, and a zero counts-as weekend is not 
       clashLookaheadMode: 'numberOfDays',
       clashLookaheadDays: 1,
       includeWeekendsForUnbookedLabour: true,
-    },
-    payrollPolicy: {
-      ...DEFAULT_PAYROLL_POLICY,
-      saturday: { ...DEFAULT_PAYROLL_POLICY.saturday, countsAsStandardHours: 0 },
+      weekendCoverage: { saturday: { enabled: false, start: null, end: null }, sunday: { enabled: true, start: null, end: null } },
     },
   })
   assert.equal(nonWorking.length, 0)
@@ -587,10 +584,7 @@ test('weekends are skipped unless included, and a zero counts-as weekend is not 
       clashLookaheadMode: 'numberOfDays',
       clashLookaheadDays: 1,
       includeWeekendsForUnbookedLabour: true,
-    },
-    payrollPolicy: {
-      ...DEFAULT_PAYROLL_POLICY,
-      saturday: { ...DEFAULT_PAYROLL_POLICY.saturday, countsAsStandardHours: 5 },
+      weekendCoverage: { saturday: { enabled: true, start: '08:00', end: '13:30' }, sunday: { enabled: true, start: null, end: null } },
     },
   })
   assert.equal(workingWeekend.length, 1)

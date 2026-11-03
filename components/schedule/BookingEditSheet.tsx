@@ -9,7 +9,9 @@ import { hoursBreakdown } from '@/lib/scheduling/paidHours'
 import { HoursBreakdownCard } from '@/components/schedule/HoursBreakdownCard'
 import { DEFAULT_PAYROLL_POLICY, type OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import {
+  bookingDayKey,
   confirmCustomHoursBreak,
+  policyForBookingDate,
   customHoursPrefillForDate,
   slotOfferedOnDate,
   weekendBreakdownForDates,
@@ -83,8 +85,9 @@ export function BookingEditSheet({
       workStartTime: slot === 'CUSTOM' ? firestoreSlot.workStartTime || workStartTime : undefined,
       workEndTime: slot === 'CUSTOM' ? firestoreSlot.workEndTime || workEndTime : undefined,
       isBreakRemoved: slot === 'CUSTOM' ? breakRemoved : undefined,
-      policy: payroll,
-      date: new Date(booking.date),
+      // Rulebook 1.19.0: the working hours in effect on the booking day, never today's passed policy.
+      policy: policyForBookingDate(booking.date, payroll) ?? payroll,
+      dayKey: bookingDayKey(booking.date),
     })
   }, [booking.date, slot, workStartTime, workEndTime, breakRemoved, payroll])
 

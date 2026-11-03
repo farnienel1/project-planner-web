@@ -852,6 +852,35 @@ export function standardDayCoverage(
   }
 }
 
+/**
+ * Rulebook 1.19.0 §5: hours of a set clock window (a weekend day's "Hours to cover") a person's bookings cover. Time
+ * inside `breakWindow` (that day's lunch-break window) never needs covering, so two bookings either side of lunch
+ * cover the window. FULL DAY / AM / PM and bookings without clock times use the policy's standard day and halves
+ * (`halfDayWindows`), clipped to the window. Missing = uncovered minutes of the window outside the break.
+ */
+export function windowCoverage(
+  window: MinuteInterval,
+  policy: StandardDayPolicy,
+  bookings: readonly StandardDayBooking[],
+  breakWindow?: MinuteInterval | null
+): StandardDayCoverage {
+  const lunch = breakWindow && breakWindow.end > breakWindow.start ? breakWindow : null
+  const required = withoutInterval([window], lunch)
+  const requiredHours = roundCoverageHours(intervalMinutes(required) / 60)
+  const windows = halfDayWindows(policy)
+  const covered: MinuteInterval[] = []
+  for (const booking of bookings) {
+    const interval = bookingCoverInterval(booking, windows)
+    if (!interval) continue
+    const start = Math.max(interval.start, window.start)
+    const end = Math.min(interval.end, window.end)
+    if (end > start) covered.push({ start, end })
+  }
+  const inside = withoutInterval(mergeMinuteIntervals(covered), lunch)
+  const coveredHours = roundCoverageHours(Math.min(requiredHours, intervalMinutes(inside) / 60))
+  return { requiredHours, coveredHours, missingHours: roundCoverageHours(Math.max(0, requiredHours - coveredHours)) }
+}
+
 /** Days used when a saved "Set number of days" value is missing or not a whole number of at least 1. */
 export const FALLBACK_LOOKAHEAD_DAYS = 7
 
@@ -961,6 +990,11 @@ export type UnbookedScanDaysInput = CoverageWindowInput & {
   /** `warningDetection.includeWeekendsForUnbookedLabour`. Either name is read. */
   includeWeekends?: boolean | null
   includeWeekendsForUnbookedLabour?: boolean | null
+  /**
+   * Rulebook 1.19.0: `warningDetection.weekendCoverage` (parsed). A Saturday or Sunday whose toggle is off is not
+   * scanned. Missing → both on while include-weekends is on (as before 1.19.0).
+   */
+  weekendCoverage?: { saturday?: { enabled?: boolean } | null; sunday?: { enabled?: boolean } | null } | null
 }
 
 /**
@@ -969,8 +1003,7 @@ export type UnbookedScanDaysInput = CoverageWindowInput & {
  * The window is `coverageWindow`. Full week ends on Friday; with include-weekends on, it runs to Sunday of the
  * same Monday–Sunday week. Set number of days and Invoicing period keep their calendar days. Saturday and
  * Sunday are listed only when include-weekends is on (in every mode); otherwise weekdays only.
- * `unbookedLabourRows` also skips a weekend day whose "counts as" hours are 0; that is an hours rule, not a
- * scan day, so it is not applied here. Clash days are `clashScanDays`.
+ * 1.19.0: a Saturday or Sunday whose `weekendCoverage` toggle is off is not listed. Clash days are `clashScanDays`.
  */
 export function unbookedScanDays(input: UnbookedScanDaysInput): ClashScanDays {
   const timeZone = zoneOf(input.timeZone)
@@ -989,7 +1022,9 @@ export function unbookedScanDays(input: UnbookedScanDaysInput): ClashScanDays {
     const key = dayKeyInZone(cursor, timeZone)
     if (key > endDayKey) break
     const iso = isoWeekdayInZone(cursor, timeZone)
-    if (includeWeekends || (iso >= 1 && iso <= 5)) keys.push(key)
+    const weekendOn =
+      iso === 6 ? input.weekendCoverage?.saturday?.enabled !== false : iso === 7 ? input.weekendCoverage?.sunday?.enabled !== false : true
+    if ((includeWeekends && weekendOn) || (iso >= 1 && iso <= 5)) keys.push(key)
     cursor = addDaysInZone(cursor, 1, timeZone)
   }
   const result: ClashScanDays = { ...window, endDayKey, dayKeys: keys }

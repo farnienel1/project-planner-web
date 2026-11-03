@@ -1,7 +1,9 @@
 'use client'
 
 import {
+  bookingDayKey,
   confirmCustomHoursBreak,
+  policyForBookingDate,
   customHoursPrefillForDate,
   isWeekendDate,
   slotOfferedOnDate,
@@ -70,7 +72,9 @@ export function QuickAddBookingSheet({
   const [notes, setNotes] = useState('')
   const [error, setError] = useState<string | null>(null)
 
-  const halves = useMemo(() => halfDayWindows(payroll), [payroll])
+  // Rulebook 1.19.0: the slot times and hours preview use the working hours in effect on the booking day.
+  const dayPayroll = policyForBookingDate(date, payroll) ?? payroll
+  const halves = useMemo(() => halfDayWindows(dayPayroll), [dayPayroll])
   const range = (interval: { start: number; end: number }) =>
     `${formatClockMinutes(interval.start)}–${formatClockMinutes(interval.end)}`
 
@@ -92,10 +96,10 @@ export function QuickAddBookingSheet({
       workStartTime: slot === 'CUSTOM' ? firestoreSlot.workStartTime || workStartTime : undefined,
       workEndTime: slot === 'CUSTOM' ? firestoreSlot.workEndTime || workEndTime : undefined,
       isBreakRemoved: slot === 'CUSTOM' ? breakRemoved : undefined,
-      policy: payroll,
-      date,
+      policy: dayPayroll,
+      dayKey: bookingDayKey(date),
     })
-  }, [date, slot, workStartTime, workEndTime, breakRemoved, payroll])
+  }, [date, slot, workStartTime, workEndTime, breakRemoved, dayPayroll])
 
   const handleSave = async () => {
     setError(null)

@@ -1,6 +1,5 @@
 import type { OrgPayrollTimePolicy, OrgWarningDetectionSettings } from '@/lib/settings/organizationSettings'
 import { DEFAULT_PAYROLL_POLICY } from '@/lib/settings/organizationSettings'
-import { effectiveWeekendSettings } from '@/lib/setup/workingHoursUtils'
 import type { LabourPerson, RosterOperative, WarningScope } from '@/lib/canonical'
 import { bookingOccupiesDay, unbookedLabourRows } from '@/lib/canonical'
 import type { Booking, HolidayBooking, Operative, User } from '@/types'
@@ -11,6 +10,7 @@ import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtil
 import { isPlaceholderOperative } from '@/lib/operatives/operativeRosterUtils'
 import { computeWarningCoverageWindow, isDateWithinWarningWindow } from '@/lib/warnings/warningLookahead'
 import { holidayBookingLabourInput } from '@/lib/annualLeave/holidayDayKeys'
+import type { PayrollTimePolicyState } from '@/lib/canonical'
 
 export interface UnbookedLabourWarning {
   id: string
@@ -22,11 +22,6 @@ export interface UnbookedLabourWarning {
   missingHours: number
 }
 
-function countsAsHours(day: 'saturday' | 'sunday', payrollPolicy: OrgPayrollTimePolicy): number {
-  const settings = effectiveWeekendSettings(day, payrollPolicy)
-  const countsAs = settings.countsAsStandardHours
-  return typeof countsAs === 'number' && Number.isFinite(countsAs) ? countsAs : payrollPolicy.standardPaidHours
-}
 
 /** Web `User` → the rulebook's `LabourPerson`. Warnings, Daily Overview, and the scheduling picker all map through here. */
 export function labourPersonFromUser(user: User): LabourPerson {
@@ -60,18 +55,6 @@ export function labourRosterOperative(operative: Operative): RosterOperative {
   }
 }
 
-/** iOS paidHoursRequired: weekday standard day, or that weekend's counts-as hours. */
-export function paidHoursRequiredForUnbookedDay(
-  day: Date,
-  payrollPolicy: OrgPayrollTimePolicy,
-  timeZone?: string
-): number {
-  const iso = londonIsoWeekday(day, timeZone)
-  if (iso === 6) return Math.max(countsAsHours('saturday', payrollPolicy), 0)
-  if (iso === 7) return Math.max(countsAsHours('sunday', payrollPolicy), 0)
-  return Math.max(payrollPolicy.standardPaidHours, 0)
-}
-
 export function computeUnbookedLabourWarnings({
   bookings,
   managerSiteBookings = [],
@@ -81,6 +64,7 @@ export function computeUnbookedLabourWarnings({
   warningDetection,
   invoicing,
   payrollPolicy = DEFAULT_PAYROLL_POLICY,
+  payrollPolicyState = null,
   referenceDate = new Date(),
   timeZone,
   scope,
@@ -93,6 +77,8 @@ export function computeUnbookedLabourWarnings({
   warningDetection: OrgWarningDetectionSettings
   invoicing?: import('@/lib/settings/organizationSettings').OrgInvoicingSettings
   payrollPolicy?: OrgPayrollTimePolicy
+  /** Rulebook 1.19.0 §5: the whole working-hours state; each day of the window uses the rules in effect on it. */
+  payrollPolicyState?: PayrollTimePolicyState | null
   referenceDate?: Date
   timeZone?: string
   /** Rulebook §17: the viewer's `warningScopeFor`. Missing → everything. */
@@ -119,6 +105,7 @@ export function computeUnbookedLabourWarnings({
     holidays,
     warningDetection,
     payrollPolicy,
+    payrollPolicyState,
     periodStart: window.start,
     periodEnd,
     startDayKey: window.startDayKey,
@@ -137,6 +124,7 @@ export function computeUnbookedLabourWarningsForDateRange({
   holidays,
   warningDetection,
   payrollPolicy = DEFAULT_PAYROLL_POLICY,
+  payrollPolicyState = null,
   periodStart,
   periodEnd,
   startDayKey,
@@ -151,6 +139,8 @@ export function computeUnbookedLabourWarningsForDateRange({
   holidays: HolidayBooking[]
   warningDetection: OrgWarningDetectionSettings
   payrollPolicy?: OrgPayrollTimePolicy
+  /** Rulebook 1.19.0 §5: the whole working-hours state; each day of the range uses the rules in effect on it. */
+  payrollPolicyState?: PayrollTimePolicyState | null
   periodStart: Date
   periodEnd: Date
   startDayKey?: string
@@ -169,12 +159,14 @@ export function computeUnbookedLabourWarningsForDateRange({
     includeWeekends: warningDetection.includeWeekendsForUnbookedLabour,
     excludedUserIds: warningDetection.excludedUserIdsFromUnbookedWarnings,
     standardPaidHours: payrollPolicy.standardPaidHours,
-    saturdayCountsAsHours: countsAsHours('saturday', payrollPolicy),
-    sundayCountsAsHours: countsAsHours('sunday', payrollPolicy),
     standardDayStart: payrollPolicy.standardDayStart,
     standardDayEnd: payrollPolicy.standardDayEnd,
     breakWindowStart: payrollPolicy.breakWindowStart,
     breakWindowEnd: payrollPolicy.breakWindowEnd,
+    // 1.19.0 (`unbookedLabourRows` payrollPolicy): each day read under the policy in effect on it, never today's.
+    payrollPolicy: payrollPolicyState ?? payrollPolicy,
+    // 1.19.0 §5: each weekend day's toggle and "Hours to cover" window.
+    weekendCoverage: warningDetection.weekendCoverage ?? null,
     people: users.map(labourPersonFromUser),
     operatives: operatives.map(labourRosterOperative),
     bookings: [

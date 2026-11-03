@@ -2,11 +2,16 @@
  * Working hours over time: the policy in effect on a day, "apply from today" and
  * "schedule from a date" writes, the one set of limits, and the fixed working week.
  *
- * Fields on `organizations/{orgId}` (unchanged names, iOS-decodable):
+ * Fields on `organizations/{orgId}` (unchanged names, iOS-decodable; 1.19.0 adds the last two):
  * - `payrollTimePolicy` — the current policy.
  * - `payrollTimePolicyPrior` — the policy for days before `payrollTimePolicyEffectiveFrom`.
  * - `payrollTimePolicyEffectiveFrom` — `YYYY-MM-DD` day key in the organisation zone.
  * - `payrollTimePolicyScheduled` — `{ policy, effectiveFrom: 'YYYY-MM-DD' }`, a queued future change.
+ * - `payrollTimePolicyHistory` — append-only `{ effectiveFrom: 'YYYY-MM-DD', policy }[]`: the rules from each day on.
+ *   Never rewritten or trimmed (one entry is about 1 KB, so the 1 MiB document limit is several hundred changes away;
+ *   no cap is applied).
+ * - `payrollTimePolicyRevision` — a counter every working-hours write bumps; saves run in a transaction and are
+ *   refused when it moved (`payrollTimePolicySaveConflict`).
  *
  * A scheduled change counts from its `effectiveFrom` day on, whether or not any app has promoted
  * it into `payrollTimePolicy` yet, so neither app needs an in-memory promotion. Writes promote a
@@ -32,12 +37,33 @@ export type PayrollTimePolicyScheduledChange = {
   effectiveFrom: string
 }
 
+/** Rulebook 1.19.0: one entry of `payrollTimePolicyHistory` — the working hours in effect from `effectiveFrom` on. */
+export type PayrollTimePolicyHistoryEntry = {
+  /** Organisation-zone `YYYY-MM-DD`. `PAYROLL_POLICY_HISTORY_START` for the rules that applied before any recorded change. */
+  effectiveFrom: string
+  policy: OrgPayrollTimePolicy
+}
+
 export type PayrollTimePolicyState = {
   current: OrgPayrollTimePolicy
   prior: OrgPayrollTimePolicy | null
   effectiveFrom: string | null
   scheduled: PayrollTimePolicyScheduledChange | null
+  /**
+   * Rulebook 1.19.0: `payrollTimePolicyHistory` as stored (parsed, in date order; entries on the same day keep their
+   * stored order and the later one wins). Missing or `[]` for a company with no history yet.
+   */
+  history?: PayrollTimePolicyHistoryEntry[]
+  /** Rulebook 1.19.0: `payrollTimePolicyRevision` (0 when missing). */
+  revision?: number
 }
+
+/** The `effectiveFrom` of the history entry for the rules in effect before any recorded change. */
+export const PAYROLL_POLICY_HISTORY_START = '1970-01-01'
+
+/** Refusal when another admin (or device) changed the working hours after this screen loaded them. */
+export const PAYROLL_POLICY_STALE_SAVE_MESSAGE =
+  'Someone else changed the working hours while you were editing. Your change was not saved — check the latest working hours and try again.'
 
 function zone(timeZone?: string | null): string {
   return String(timeZone || '').trim() || DEFAULT_ZONE
@@ -81,7 +107,30 @@ export function parsePayrollTimePolicyScheduled(
   return { policy: parsePayrollPolicy(policy), effectiveFrom }
 }
 
-/** The four stored payroll fields of an organisation document, parsed. */
+/**
+ * Rulebook 1.19.0: `payrollTimePolicyHistory` read into entries in date order. An entry without a valid day or policy
+ * map is skipped; entries on the same day keep their stored order (the later one is the one in effect).
+ */
+export function parsePayrollTimePolicyHistory(value: unknown, timeZone?: string | null): PayrollTimePolicyHistoryEntry[] {
+  if (!Array.isArray(value)) return []
+  const entries: Array<PayrollTimePolicyHistoryEntry & { index: number }> = []
+  value.forEach((raw, index) => {
+    const row = record(raw)
+    const policy = record(row?.policy)
+    const effectiveFrom = row ? payrollDayKeyFromValue(row.effectiveFrom, timeZone) : null
+    if (!policy || !effectiveFrom) return
+    entries.push({ effectiveFrom, policy: parsePayrollPolicy(policy), index })
+  })
+  entries.sort((a, b) => (a.effectiveFrom < b.effectiveFrom ? -1 : a.effectiveFrom > b.effectiveFrom ? 1 : a.index - b.index))
+  return entries.map(({ effectiveFrom, policy }) => ({ effectiveFrom, policy }))
+}
+
+function parseRevision(value: unknown): number {
+  const n = Number(value)
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0
+}
+
+/** The stored payroll fields of an organisation document, parsed (1.19.0: with history and revision). */
 export function parsePayrollTimePolicyState(orgDoc: unknown, timeZone?: string | null): PayrollTimePolicyState {
   const data = record(orgDoc) ?? {}
   const priorRaw = record(data.payrollTimePolicyPrior)
@@ -90,6 +139,8 @@ export function parsePayrollTimePolicyState(orgDoc: unknown, timeZone?: string |
     prior: priorRaw ? parsePayrollPolicy(priorRaw) : null,
     effectiveFrom: payrollDayKeyFromValue(data.payrollTimePolicyEffectiveFrom, timeZone),
     scheduled: parsePayrollTimePolicyScheduled(data.payrollTimePolicyScheduled, timeZone),
+    history: parsePayrollTimePolicyHistory(data.payrollTimePolicyHistory, timeZone),
+    revision: parseRevision(data.payrollTimePolicyRevision),
   }
 }
 
@@ -98,17 +149,42 @@ function isState(value: unknown): value is PayrollTimePolicyState {
   return Boolean(v && 'current' in v && 'scheduled' in v && record(v.current))
 }
 
+/**
+ * Rulebook 1.19.0: every change of working hours as a list of `{ effectiveFrom, policy }` in date order, the pending
+ * scheduled change left out. History first: the stored entries before `payrollTimePolicyEffectiveFrom`, then the
+ * current policy from that day (so a save by an older app build, which writes only the four flat fields, still counts
+ * from its day). A company with no history reads its prior / current fields as before 1.19.0:
+ * `[{ PAYROLL_POLICY_HISTORY_START, prior }, { effectiveFrom, current }]`, or just the current policy.
+ * Days before the first entry use the first entry.
+ */
+export function payrollTimePolicyHistoryEntries(state: PayrollTimePolicyState): PayrollTimePolicyHistoryEntry[] {
+  const history = state.history ?? []
+  const effectiveFrom = state.effectiveFrom
+  const entries = effectiveFrom ? history.filter((entry) => entry.effectiveFrom < effectiveFrom) : history.slice()
+  if (entries.length === 0 && state.prior && effectiveFrom) {
+    entries.push({ effectiveFrom: PAYROLL_POLICY_HISTORY_START, policy: state.prior })
+  }
+  if (effectiveFrom) entries.push({ effectiveFrom, policy: state.current })
+  else if (entries.length === 0) entries.push({ effectiveFrom: PAYROLL_POLICY_HISTORY_START, policy: state.current })
+  return entries
+}
+
 /** Policy in effect on `dayKey` from an already-parsed state. */
 export function payrollTimePolicyForDayFromState(state: PayrollTimePolicyState, dayKey: string): OrgPayrollTimePolicy {
   if (state.scheduled && dayKey >= state.scheduled.effectiveFrom) return state.scheduled.policy
-  if (state.prior && state.effectiveFrom && dayKey < state.effectiveFrom) return state.prior
-  return state.current
+  const entries = payrollTimePolicyHistoryEntries(state)
+  let chosen = entries[0]?.policy ?? state.current
+  for (const entry of entries) {
+    if (entry.effectiveFrom <= dayKey) chosen = entry.policy
+    else break
+  }
+  return chosen
 }
 
 /**
- * The working-hours policy in effect on `dayKey` (organisation-zone `YYYY-MM-DD`):
- * the scheduled policy once its `effectiveFrom` has arrived; the prior policy before
- * `payrollTimePolicyEffectiveFrom`; otherwise the current policy.
+ * The working-hours policy in effect on `dayKey` (organisation-zone `YYYY-MM-DD`): the scheduled policy once its
+ * `effectiveFrom` has arrived; otherwise the latest `payrollTimePolicyHistory` entry on or before the day (1.19.0);
+ * for a company with no history, the prior policy before `payrollTimePolicyEffectiveFrom` and the current policy after.
  * Accepts the raw organisation document or a `PayrollTimePolicyState`.
  */
 export function effectivePayrollTimePolicy(
@@ -121,9 +197,10 @@ export function effectivePayrollTimePolicy(
 }
 
 /**
- * The stored state as it stands on `todayKey`: a due scheduled change is promoted
- * (current = scheduled policy, prior = the policy of the day before it, effectiveFrom = its day).
- * A future scheduled change stays pending. Screens that show "today's" rules read `current`.
+ * The stored state as it stands on `todayKey`: a due scheduled change is promoted (current = scheduled policy,
+ * prior = the policy of the day before it, effectiveFrom = its day, and — 1.19.0 — the history carries every earlier
+ * change plus the promoted one). A future scheduled change stays pending. Screens that show "today's" rules read
+ * `current`; screens that price other days pass the whole state on.
  */
 export function payrollTimePolicyTimeline(
   orgDoc: unknown,
@@ -135,12 +212,50 @@ export function payrollTimePolicyTimeline(
   const scheduled = state.scheduled
   if (!scheduled || scheduled.effectiveFrom > todayKey) return state
   const dayBefore = shiftDayKey(scheduled.effectiveFrom, -1, tz)
+  const settled = { ...state, scheduled: null }
   return {
     current: scheduled.policy,
-    prior: payrollTimePolicyForDayFromState({ ...state, scheduled: null }, dayBefore),
+    prior: payrollTimePolicyForDayFromState(settled, dayBefore),
     effectiveFrom: scheduled.effectiveFrom,
     scheduled: null,
+    history: [...payrollTimePolicyHistoryEntries(settled), { effectiveFrom: scheduled.effectiveFrom, policy: scheduled.policy }],
+    revision: state.revision ?? 0,
   }
+}
+
+function samePolicy(a: OrgPayrollTimePolicy, b: OrgPayrollTimePolicy): boolean {
+  return JSON.stringify(payrollPolicyToFirestore(a)) === JSON.stringify(payrollPolicyToFirestore(b))
+}
+
+/**
+ * The stored history to write, append-only: the stored entries as they are, never rewritten or removed. A company
+ * with no history is seeded from its prior / current fields (the first write after 1.19.0, no data lost). When an
+ * older app build changed the flat fields after the last entry, the current policy is appended from its day. Then a
+ * due scheduled change, then `next` (when given).
+ */
+function historyToWrite(
+  state: PayrollTimePolicyState,
+  todayKey: string,
+  next: PayrollTimePolicyHistoryEntry | null
+): PayrollTimePolicyHistoryEntry[] {
+  const stored = state.history ?? []
+  const entries: PayrollTimePolicyHistoryEntry[] =
+    stored.length === 0 ? payrollTimePolicyHistoryEntries({ ...state, scheduled: null }) : stored.slice()
+  if (stored.length > 0 && state.effectiveFrom) {
+    const last = stored[stored.length - 1]
+    if (last.effectiveFrom < state.effectiveFrom || (last.effectiveFrom === state.effectiveFrom && !samePolicy(last.policy, state.current))) {
+      entries.push({ effectiveFrom: state.effectiveFrom, policy: state.current })
+    }
+  }
+  if (state.scheduled && state.scheduled.effectiveFrom <= todayKey) {
+    entries.push({ effectiveFrom: state.scheduled.effectiveFrom, policy: state.scheduled.policy })
+  }
+  if (next) entries.push(next)
+  return entries
+}
+
+function historyToFirestore(entries: PayrollTimePolicyHistoryEntry[]): Array<Record<string, unknown>> {
+  return entries.map((entry) => ({ effectiveFrom: entry.effectiveFrom, policy: payrollPolicyToFirestore(entry.policy) }))
 }
 
 function promotedFields(state: PayrollTimePolicyState, todayKey: string, tz: string): Record<string, unknown> {
@@ -154,9 +269,14 @@ function promotedFields(state: PayrollTimePolicyState, todayKey: string, tz: str
   }
 }
 
+function revisionField(state: PayrollTimePolicyState): Record<string, unknown> {
+  return { payrollTimePolicyRevision: (state.revision ?? 0) + 1 }
+}
+
 /**
- * "Apply from today". `prior` is the policy that was in effect yesterday, so a second save on the
- * same day keeps the real earlier rules. A due scheduled change is consumed; a future one is kept.
+ * "Apply from today". `prior` is the policy that was in effect yesterday, so a second save on the same day keeps the
+ * real earlier rules. A due scheduled change is consumed; a future one is kept. 1.19.0: appends today's entry to
+ * `payrollTimePolicyHistory` (seeding it first when missing) and bumps `payrollTimePolicyRevision`.
  */
 export function payrollTimePolicyApplyNowWriteFields(input: {
   orgDoc: unknown
@@ -172,6 +292,10 @@ export function payrollTimePolicyApplyNowWriteFields(input: {
     payrollTimePolicy: payrollPolicyToFirestore(input.policy),
     payrollTimePolicyPrior: payrollPolicyToFirestore(prior),
     payrollTimePolicyEffectiveFrom: input.todayKey,
+    payrollTimePolicyHistory: historyToFirestore(
+      historyToWrite(state, input.todayKey, { effectiveFrom: input.todayKey, policy: input.policy })
+    ),
+    ...revisionField(state),
   }
   if (state.scheduled && state.scheduled.effectiveFrom <= input.todayKey) {
     fields.payrollTimePolicyScheduled = null
@@ -187,8 +311,9 @@ export function payrollTimePolicyScheduleDateError(effectiveFrom: string, todayK
 }
 
 /**
- * "Schedule from a date". Replaces any pending future change. A change that is already due is
- * first promoted into the current policy so it is not lost. Returns null when the date is invalid.
+ * "Schedule from a date". Replaces any pending future change (the one pending change is not history). A change that
+ * is already due is first promoted into the current policy and the history so it is not lost. Returns null when the
+ * date is invalid. 1.19.0: seeds the history when missing and bumps the revision.
  */
 export function payrollTimePolicyScheduleWriteFields(input: {
   orgDoc: unknown
@@ -206,10 +331,15 @@ export function payrollTimePolicyScheduleWriteFields(input: {
       policy: payrollPolicyToFirestore(input.policy),
       effectiveFrom: input.effectiveFrom,
     },
+    payrollTimePolicyHistory: historyToFirestore(historyToWrite(state, input.todayKey, null)),
+    ...revisionField(state),
   }
 }
 
-/** Cancel a pending future change. Promotes a due one first so it is not lost. */
+/**
+ * Cancel a pending future change. Promotes a due one first so it is not lost. Never removes a history entry (1.19.0);
+ * seeds the history when missing and bumps the revision.
+ */
 export function payrollTimePolicyCancelScheduleWriteFields(input: {
   orgDoc: unknown
   todayKey: string
@@ -218,7 +348,41 @@ export function payrollTimePolicyCancelScheduleWriteFields(input: {
   const tz = zone(input.timeZone)
   const state = parsePayrollTimePolicyState(input.orgDoc, tz)
   const promoted = promotedFields(state, input.todayKey, tz)
-  return Object.keys(promoted).length > 0 ? promoted : { payrollTimePolicyScheduled: null }
+  return {
+    ...(Object.keys(promoted).length > 0 ? promoted : { payrollTimePolicyScheduled: null }),
+    payrollTimePolicyHistory: historyToFirestore(historyToWrite(state, input.todayKey, null)),
+    ...revisionField(state),
+  }
+}
+
+/**
+ * Rulebook 1.19.0: the two-admin guard. `baseOrgDoc` is the organisation document the screen showed when the admin
+ * started editing (or pressed Cancel on the pending change); `liveOrgDoc` is the document read inside the save's
+ * transaction. When the working hours changed in between — a different `payrollTimePolicyRevision`, or different
+ * stored rules (an older build that does not bump the revision) — the save is refused with
+ * `PAYROLL_POLICY_STALE_SAVE_MESSAGE`, so one admin cannot silently replace or cancel another's change. Null when it
+ * is safe to write.
+ */
+export function payrollTimePolicySaveConflict(
+  baseOrgDoc: unknown,
+  liveOrgDoc: unknown,
+  timeZone?: string | null
+): string | null {
+  const tz = zone(timeZone)
+  const fingerprint = (doc: unknown): string => {
+    const state = parsePayrollTimePolicyState(doc, tz)
+    return JSON.stringify({
+      revision: state.revision ?? 0,
+      current: payrollPolicyToFirestore(state.current),
+      prior: state.prior ? payrollPolicyToFirestore(state.prior) : null,
+      effectiveFrom: state.effectiveFrom,
+      scheduled: state.scheduled
+        ? { effectiveFrom: state.scheduled.effectiveFrom, policy: payrollPolicyToFirestore(state.scheduled.policy) }
+        : null,
+      history: (state.history ?? []).length,
+    })
+  }
+  return fingerprint(baseOrgDoc) === fingerprint(liveOrgDoc) ? null : PAYROLL_POLICY_STALE_SAVE_MESSAGE
 }
 
 /** One set of limits both apps enforce on save. */
@@ -266,6 +430,16 @@ export function validatePayrollTimePolicy(policy: OrgPayrollTimePolicy): string 
   const weekend: Array<[string, WeekendPayrollSettings]> = [['Saturday', policy.saturday]]
   if (!policy.sunday.sameAsSaturday) weekend.push(['Sunday', policy.sunday])
   for (const [name, settings] of weekend) {
+    // 1.19.0: a weekend day's own lunch break has the weekday limits (0–120 minutes; the window forms an interval).
+    if (settings.breakMinutes != null && !inRange(settings.breakMinutes, breakMinutes)) {
+      return `${name} break length must be between ${breakMinutes.min} and ${breakMinutes.max} minutes.`
+    }
+    if (settings.breakWindowStart != null || settings.breakWindowEnd != null) {
+      const bs = validClock(settings.breakWindowStart ?? policy.breakWindowStart)
+      const be = validClock(settings.breakWindowEnd ?? policy.breakWindowEnd)
+      if (bs == null || be == null) return `${name} break window must use valid 24h times.`
+      if (be <= bs) return `${name} break window end must be after the break start.`
+    }
     if (settings.allHoursAtMultiplierMode) {
       if (!inRange(settings.allHoursMultiplier, multiplier)) {
         return `${name} rate must be between ×${multiplier.min} and ×${multiplier.max}.`

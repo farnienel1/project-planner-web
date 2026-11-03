@@ -5,6 +5,8 @@ import { createContext, runInContext } from 'node:vm'
 import * as R112 from './index'
 import { dateFromDayKeyInZone as zoneMidnight112, dayKeyInZone as zoneDayKey112 } from '../orgTime/zoneTime'
 import { parsePayrollPolicy as parsePolicy112 } from './organizationSettings'
+import { payrollPolicyToFirestore as policyToFirestore119 } from './organizationSettings'
+import { warningDetectionFirestoreFields as wdFields119 } from './organizationSettings'
 import {
   adoptCurrentOrganization,
   bookingBelongsToOrganization,
@@ -729,7 +731,7 @@ test('an operative is unverified only after three working days without a passwor
   assert.match(thirdDay[0].message, /has not verified/)
 })
 
-test('unbooked labour skips pending invitees, excluded people, zero-hour weekends, and duplicate booked profiles', () => {
+test('unbooked labour skips pending invitees, excluded people, a weekend day switched off, and duplicate booked profiles', () => {
   const people = [
     {
       id: 'U-LIVE',
@@ -779,8 +781,8 @@ test('unbooked labour skips pending invitees, excluded people, zero-hour weekend
     includeWeekends: true,
     excludedUserIds: ['U-ADMIN'],
     standardPaidHours: 8,
-    saturdayCountsAsHours: 0,
-    sundayCountsAsHours: 8,
+    // 1.19.0: Saturday is switched off; Sunday must cover 07:30–15:30 (8h), no break window given.
+    weekendCoverage: { saturday: { enabled: false, start: null, end: null }, sunday: { enabled: true, start: '07:30', end: '15:30' } },
     people,
     operatives,
     bookings: [{ personId: 'OP-ADA-DUP', dayKey: '2026-09-18', kind: 'operative' }],
@@ -9351,15 +9353,26 @@ test('1.17.0: working-hours schedule robustness — weekend start, DST, replace,
     todayKey: '2026-11-03',
     timeZone: zone,
   })!
-  assert.deepEqual(Object.keys(second), ['payrollTimePolicyScheduled'])
+  // 1.19.0: plus the (seeded) history and the revision bump — never today's rules.
+  assert.deepEqual(Object.keys(second), ['payrollTimePolicyScheduled', 'payrollTimePolicyHistory', 'payrollTimePolicyRevision'])
   assert.equal((second.payrollTimePolicyScheduled as Record<string, unknown>).effectiveFrom, '2027-01-04')
   // Apply from today while a change is pending keeps it (never writes payrollTimePolicyScheduled).
   const apply = R112.payrollTimePolicyApplyNowWriteFields({ orgDoc: pendingDoc, policy: parsePolicy112(undefined), todayKey: '2026-11-03', timeZone: zone })
   assert.equal('payrollTimePolicyScheduled' in apply, false)
   // Cancel with nothing due clears only the pending change.
-  assert.deepEqual(R112.payrollTimePolicyCancelScheduleWriteFields({ orgDoc: pendingDoc, todayKey: '2026-11-03', timeZone: zone }), { payrollTimePolicyScheduled: null })
-  // Every write is a partial update of the four working-hours fields only, so another settings save is never overwritten.
-  const payrollFields = new Set(['payrollTimePolicy', 'payrollTimePolicyPrior', 'payrollTimePolicyEffectiveFrom', 'payrollTimePolicyScheduled'])
+  const cancelled = R112.payrollTimePolicyCancelScheduleWriteFields({ orgDoc: pendingDoc, todayKey: '2026-11-03', timeZone: zone })
+  assert.equal(cancelled.payrollTimePolicyScheduled, null)
+  assert.equal('payrollTimePolicy' in cancelled, false)
+  // Every write is a partial update of the working-hours fields only (1.19.0: with history and revision), so another
+  // settings save is never overwritten.
+  const payrollFields = new Set([
+    'payrollTimePolicy',
+    'payrollTimePolicyPrior',
+    'payrollTimePolicyEffectiveFrom',
+    'payrollTimePolicyScheduled',
+    'payrollTimePolicyHistory',
+    'payrollTimePolicyRevision',
+  ])
   const dueDoc = { ...pendingDoc, payrollTimePolicyScheduled: { policy: newRaw, effectiveFrom: '2026-11-01' } }
   for (const fields of [
     second,
@@ -9488,12 +9501,12 @@ test('1.18.0: weekendBookingBreakdown — one row per selected day, priced by th
     'Sunday 07:30–14:00 = 6.5h × 2 = 13h',
   ])
   assert.deepEqual(
-    { ...rows[0], line: undefined },
-    { dayKey: SAT, weekdayLabel: 'Saturday', start: '07:30', end: '14:00', workedHours: 6.5, countsAsHours: 8, standardHours: 8, overtimeHours: 0, multiplier: 1.5, paidHoursEquivalent: 8, line: undefined }
+    { ...rows[0], line: undefined, lines: undefined },
+    { dayKey: SAT, weekdayLabel: 'Saturday', start: '07:30', end: '14:00', workedHours: 6.5, countsAsHours: 8, standardHours: 8, overtimeHours: 0, multiplier: 1.5, paidHoursEquivalent: 8, unpaidBreakHours: 0, line: undefined, lines: undefined }
   )
   assert.deepEqual(
-    { ...rows[1], line: undefined },
-    { dayKey: SUN, weekdayLabel: 'Sunday', start: '07:30', end: '14:00', workedHours: 6.5, countsAsHours: null, standardHours: 0, overtimeHours: 6.5, multiplier: 2, paidHoursEquivalent: 13, line: undefined }
+    { ...rows[1], line: undefined, lines: undefined },
+    { dayKey: SUN, weekdayLabel: 'Sunday', start: '07:30', end: '14:00', workedHours: 6.5, countsAsHours: null, standardHours: 0, overtimeHours: 6.5, multiplier: 2, paidHoursEquivalent: 13, unpaidBreakHours: 0, line: undefined, lines: undefined }
   )
   // Each figure is the timesheet pay rule's for that day.
   for (const row of rows) {
@@ -9522,4 +9535,508 @@ test('1.18.0: weekendBookingBreakdown — one row per selected day, priced by th
   assert.deepEqual(R112.weekendBookingBreakdown(policy, [SAT], '07:30', '07:30', false, zone), [])
   assert.deepEqual(R112.weekendBookingBreakdown(policy, [], '07:30', '14:00', false, zone), [])
   assert.deepEqual(R112.weekendBookingBreakdown(null, [SAT], '07:30', '14:00', false, zone), [])
+})
+
+// ─── Rulebook 1.19.0: weekend lunch breaks, working-hours pay history, every day priced under its own rules ───
+
+const R119_ZONE = 'Europe/London'
+const R119_SAT = '2026-11-07'
+const R119_SUN = '2026-11-08'
+const R119_WED = '2026-11-04'
+const r119SatWindow = (breakPaid?: boolean) => ({
+  allHoursAtMultiplierMode: false,
+  allHoursMultiplier: 2,
+  definedWindowStart: '07:30',
+  definedWindowEnd: '14:00',
+  countsAsStandardHours: 8,
+  outsideWindowMultiplier: 1.5,
+  sameAsSaturday: false,
+  ...(breakPaid === undefined ? {} : { breakPaid }),
+})
+const r119SunAllHours = (breakPaid?: boolean) => ({
+  allHoursAtMultiplierMode: true,
+  allHoursMultiplier: 2,
+  sameAsSaturday: false,
+  ...(breakPaid === undefined ? {} : { breakPaid }),
+})
+/** Weekday break 12:00–12:30, 30 min (the default), with the given weekend rules. */
+function r119Policy(saturday: Record<string, unknown>, sunday: Record<string, unknown>) {
+  return { ...parsePolicy112(undefined), saturday, sunday } as ReturnType<typeof parsePolicy112>
+}
+function r119Hours(dayKey: string, policy: ReturnType<typeof parsePolicy112>, start: string | null, end: string | null, extra: Record<string, unknown> = {}) {
+  return R112.payrollHoursResult({
+    booking: { timeSlot: start ? 'CUSTOM_HOURS' : 'FULL DAY', workStartTime: start, workEndTime: end, ...extra },
+    dayKey,
+    policy,
+    timeZone: R119_ZONE,
+  })
+}
+
+test('1.19.0: weekend lunch break — owner examples (set window and every hour, paid and unpaid, No unpaid break)', () => {
+  // Sat window 07:30–14:00 counts as 8h. Paid (missing = paid): 07:30–14:00 = 8h.
+  const paidSat = r119Policy(r119SatWindow(), r119SunAllHours())
+  assert.equal(r119Hours(R119_SAT, paidSat, '07:30', '14:00').totalPaidHours, 8)
+  // Unpaid, break 12:00–12:30: 7.5h.
+  const unpaid = r119Policy(r119SatWindow(false), r119SunAllHours(false))
+  const sat = r119Hours(R119_SAT, unpaid, '07:30', '14:00')
+  assert.equal(sat.totalPaidHours, 7.5)
+  assert.equal(sat.unpaidBreakHours, 0.5)
+  assert.equal(sat.workedHours, 6)
+  // Sat unpaid, booking 07:30–11:00 misses the break: pro-rated credit 8 × 3.5 / 6.5 = 4.3077h, no deduction.
+  const morning = r119Hours(R119_SAT, unpaid, '07:30', '11:00')
+  assert.ok(Math.abs(morning.totalPaidHours - (8 * 3.5) / 6.5) < 1e-9)
+  assert.equal(morning.unpaidBreakHours, 0)
+  // Sun every hour ×2, paid: 6.5 × 2 = 13h. Unpaid: (6.5 − 0.5) × 2 = 12h. Unpaid + No unpaid break: 13h.
+  assert.equal(r119Hours(R119_SUN, paidSat, '07:30', '14:00').totalPaidHours, 13)
+  const sun = r119Hours(R119_SUN, unpaid, '07:30', '14:00')
+  assert.equal(sun.totalPaidHours, 12)
+  assert.deepEqual([sun.outsideHours, sun.outsideMultiplier, sun.unpaidBreakHours, sun.workedHours], [6, 2, 0.5, 6])
+  assert.equal(r119Hours(R119_SUN, unpaid, '07:30', '14:00', { isBreakRemoved: true }).totalPaidHours, 13)
+  assert.equal(r119Hours(R119_SAT, unpaid, '07:30', '14:00', { isBreakRemoved: true }).totalPaidHours, 8)
+  // Partial cover: 08:00–12:25 covers 25 min of the break → 8 × 265/390 − 25/60 (the weekday rule's covered part).
+  const partial = r119Hours(R119_SAT, unpaid, '08:00', '12:25')
+  assert.ok(Math.abs(partial.totalPaidHours - (8 * 265 / 390 - 25 / 60)) < 1e-9)
+  // A weekday is unchanged (break taken off as before): 07:30–16:00 = 8h.
+  assert.equal(r119Hours(R119_WED, unpaid, '07:30', '16:00').totalPaidHours, 8)
+})
+
+test('1.19.0: weekend lunch break in the outside-window hours is taken off those hours before the multiplier', () => {
+  // Saturday window 07:30–11:00 counts as 4h, outside ×2; booked 07:30–14:00, so the break (12:00–12:30) is worked
+  // in outside hours: 4 + (3 − 0.5) × 2 = 9h unpaid; 4 + 3 × 2 = 10h paid.
+  const window = { ...r119SatWindow(false), definedWindowEnd: '11:00', countsAsStandardHours: 4, outsideWindowMultiplier: 2 }
+  const unpaid = r119Policy(window, r119SunAllHours())
+  const result = r119Hours(R119_SAT, unpaid, '07:30', '14:00')
+  assert.equal(result.totalPaidHours, 9)
+  assert.deepEqual(
+    result.segments.map((row) => [row.kind, row.baseHours, row.unpaidBreakHours ?? 0]),
+    [['standardWindow', 4, 0], ['outsideWindow', 2.5, 0.5]]
+  )
+  assert.equal(r119Hours(R119_SAT, r119Policy({ ...window, breakPaid: true }, r119SunAllHours()), '07:30', '14:00').totalPaidHours, 10)
+})
+
+test('1.19.0: legacy stored weekend FULL DAY / AM / PM — paid as stored; break off only when that day was unpaid', () => {
+  const unpaid = r119Policy(r119SatWindow(false), r119SunAllHours(false))
+  const paid = r119Policy(r119SatWindow(true), r119SunAllHours(true))
+  // Saturday FULL DAY = the set window at its counts-as hours, less the break when unpaid.
+  assert.equal(r119Hours(R119_SAT, paid, null, null).totalPaidHours, 8)
+  assert.equal(r119Hours(R119_SAT, unpaid, null, null).totalPaidHours, 7.5)
+  // Sunday every-hour FULL DAY = standard day 07:30–16:00 (8.5h) × 2; unpaid (8.5 − 0.5) × 2.
+  assert.equal(r119Hours(R119_SUN, paid, null, null).totalPaidHours, 17)
+  assert.equal(r119Hours(R119_SUN, unpaid, null, null).totalPaidHours, 16)
+  // AM / PM: half the counts-as hours, never a break (as Monday–Friday).
+  const am = R112.payrollHoursResult({ booking: { timeSlot: 'AM' }, dayKey: R119_SAT, policy: unpaid, timeZone: R119_ZONE })
+  assert.deepEqual([am.totalPaidHours, am.unpaidBreakHours], [4, 0])
+})
+
+test('1.19.0: weekend breakPaid — default paid, Sunday same as Saturday copies it, parse / write round trip', () => {
+  const parsed = parsePolicy112({ saturday: { allHoursAtMultiplierMode: false }, sunday: { allHoursAtMultiplierMode: true } })
+  assert.deepEqual([parsed.saturday.breakPaid, parsed.sunday.breakPaid], [true, true])
+  assert.equal(parsePolicy112(undefined).saturday.breakPaid, true)
+  const written = policyToFirestore119(r119Policy(r119SatWindow(false), r119SunAllHours(true)))
+  assert.equal((written.saturday as Record<string, unknown>).breakPaid, false)
+  assert.equal((written.sunday as Record<string, unknown>).breakPaid, true)
+  assert.deepEqual(
+    [parsePolicy112(written).saturday.breakPaid, parsePolicy112(written).sunday.breakPaid],
+    [false, true]
+  )
+  // Sunday same as Saturday uses Saturday's break setting.
+  const same = r119Policy(r119SatWindow(false), { ...r119SunAllHours(true), sameAsSaturday: true })
+  assert.equal(r119Hours(R119_SUN, same, '07:30', '14:00').totalPaidHours, 7.5)
+  assert.equal(R112.unpaidBreakAppliesOnDay(same, R119_SUN, R119_ZONE), true)
+  // Settings copy: the weekday lunch, set once.
+  assert.deepEqual(R112.weekendLunchBreakCopy(same, 'saturday'), {
+    title: 'Lunch break on Saturday',
+    detail: '12:00–12:30, 30 min — the same as your weekday lunch.',
+  })
+  // A day with its own break shows it.
+  const own = r119Policy({ ...r119SatWindow(false), breakMinutes: 45, breakWindowStart: '11:30', breakWindowEnd: '12:15' }, r119SunAllHours())
+  assert.deepEqual(R112.weekendLunchBreakCopy(own, 'saturday').detail, '11:30–12:15, 45 min.')
+})
+
+test('1.19.0: unpaidBreakAppliesOnDay, customHoursBreakWarning and payrollDayWindows follow each day', () => {
+  const unpaid = r119Policy(r119SatWindow(false), r119SunAllHours())
+  assert.equal(R112.unpaidBreakAppliesOnDay(unpaid, R119_WED, R119_ZONE), true)
+  assert.equal(R112.unpaidBreakAppliesOnDay({ ...unpaid, breakPaid: true }, R119_WED, R119_ZONE), false)
+  assert.equal(R112.unpaidBreakAppliesOnDay(unpaid, R119_SAT, R119_ZONE), true)
+  assert.equal(R112.unpaidBreakAppliesOnDay(unpaid, R119_SUN, R119_ZONE), false)
+  assert.equal(R112.unpaidBreakAppliesOnDay({ ...unpaid, unpaidBreakMinutes: 0 }, R119_SAT, R119_ZONE), false)
+  const booking = { timeSlot: 'CUSTOM_HOURS', workStartTime: '07:30', workEndTime: '14:00' }
+  assert.equal(R112.customHoursBreakWarning(unpaid, R119_SAT, booking, R119_ZONE), R112.CUSTOM_HOURS_BREAK_WARNING)
+  assert.equal(R112.customHoursBreakWarning(unpaid, R119_SUN, booking, R119_ZONE), null)
+  assert.equal(R112.customHoursBreakWarning(unpaid, R119_SAT, { ...booking, isBreakRemoved: true }, R119_ZONE), null)
+  assert.equal(R112.customHoursBreakWarning(unpaid, R119_WED, booking, R119_ZONE), R112.CUSTOM_HOURS_BREAK_WARNING)
+  // Bands: Saturday's own window and break, Sunday every hour with no window, Wednesday the standard day.
+  assert.deepEqual(R112.payrollDayWindows(unpaid, R119_SAT, R119_ZONE), {
+    paidWindow: { start: 450, end: 840 },
+    unpaidBreak: { start: 720, end: 750 },
+    allHoursMultiplier: null,
+  })
+  assert.deepEqual(R112.payrollDayWindows(unpaid, R119_SUN, R119_ZONE), { paidWindow: null, unpaidBreak: null, allHoursMultiplier: 2 })
+  assert.deepEqual(R112.payrollDayWindows(unpaid, R119_WED, R119_ZONE).paidWindow, { start: 450, end: 960 })
+})
+
+test('1.19.0: weekendBookingBreakdown shows the weekend break like Monday–Friday', () => {
+  const unpaid = r119Policy(r119SatWindow(false), r119SunAllHours(false))
+  const rows = R112.weekendBookingBreakdown(unpaid, [R119_SAT, R119_SUN], '07:30', '14:00', false, R119_ZONE)
+  assert.deepEqual(rows.map((row) => row.line), [
+    'Saturday 07:30–14:00 = 8h − 0.5h unpaid break = 7.5h',
+    'Sunday 07:30–14:00 = (6.5h − 0.5h unpaid break) × 2 = 12h',
+  ])
+  assert.deepEqual(rows[0].lines, [
+    { kind: 'standard', label: 'Set hours', value: '8h' },
+    { kind: 'break', label: 'Unpaid break', value: '−0.5h' },
+    { kind: 'total', label: 'Total paid hours', value: '7.5h' },
+  ])
+  assert.deepEqual(rows[1].lines, [
+    { kind: 'outside', label: 'Every hour', value: '6.5h × 2' },
+    { kind: 'break', label: 'Unpaid break', value: '−0.5h' },
+    { kind: 'total', label: 'Total paid hours', value: '12h' },
+  ])
+  assert.deepEqual(rows.map((row) => [row.paidHoursEquivalent, row.unpaidBreakHours]), [[7.5, 0.5], [12, 0.5]])
+  // No unpaid break on the booking: the 1.18.0 lines, unchanged.
+  assert.deepEqual(
+    R112.weekendBookingBreakdown(unpaid, [R119_SAT, R119_SUN], '07:30', '14:00', true, R119_ZONE).map((row) => row.line),
+    ['Saturday 07:30–14:00 = 8h (counts as a full day)', 'Sunday 07:30–14:00 = 6.5h × 2 = 13h']
+  )
+})
+
+/** Apply canonical write fields to a stored document the way Firestore's partial update does (no dotted keys here). */
+function r119Write(doc: Record<string, unknown>, fields: Record<string, unknown> | null): Record<string, unknown> {
+  assert.ok(fields)
+  return { ...doc, ...fields }
+}
+const r119Raw = (start: string, extra: Record<string, unknown> = {}) =>
+  policyToFirestore119({ ...parsePolicy112(undefined), standardDayStart: start, ...extra })
+const r119StartOn = (doc: unknown, dayKey: string) => R112.effectivePayrollTimePolicy(doc, dayKey, R119_ZONE).standardDayStart
+
+test('1.19.0: payrollTimePolicyHistory — three changes keep every old day on its own rules', () => {
+  // A (07:30) from the start; B (08:00) applied 2 March; C (06:30) applied 1 June.
+  let doc: Record<string, unknown> = { countryCode: 'GB', payrollTimePolicy: r119Raw('07:30') }
+  doc = r119Write(doc, R112.payrollTimePolicyApplyNowWriteFields({ orgDoc: doc, policy: parsePolicy112(r119Raw('08:00')), todayKey: '2026-03-02', timeZone: R119_ZONE }))
+  doc = r119Write(doc, R112.payrollTimePolicyApplyNowWriteFields({ orgDoc: doc, policy: parsePolicy112(r119Raw('06:30')), todayKey: '2026-06-01', timeZone: R119_ZONE }))
+  // Before 1.19.0 only one prior was kept, so January was re-priced with B. Now each day keeps its rules.
+  assert.equal(r119StartOn(doc, '2026-01-15'), '07:30')
+  assert.equal(r119StartOn(doc, '2026-03-01'), '07:30')
+  assert.equal(r119StartOn(doc, '2026-03-02'), '08:00')
+  assert.equal(r119StartOn(doc, '2026-05-31'), '08:00')
+  assert.equal(r119StartOn(doc, '2026-06-01'), '06:30')
+  // The flat fields stay for older builds: prior = yesterday's rules, current, effectiveFrom.
+  assert.equal((doc.payrollTimePolicyPrior as Record<string, unknown>).standardDayStart, '08:00')
+  assert.equal(doc.payrollTimePolicyEffectiveFrom, '2026-06-01')
+  assert.equal(doc.payrollTimePolicyRevision, 2)
+  // Schedule D (09:00) from 1 Dec: pending, not history. Cancel removes only the pending change.
+  doc = r119Write(doc, R112.payrollTimePolicyScheduleWriteFields({ orgDoc: doc, policy: parsePolicy112(r119Raw('09:00')), effectiveFrom: '2026-12-01', todayKey: '2026-11-03', timeZone: R119_ZONE }))
+  assert.equal(r119StartOn(doc, '2026-11-30'), '06:30')
+  assert.equal(r119StartOn(doc, '2026-12-01'), '09:00')
+  const historyBefore = (doc.payrollTimePolicyHistory as unknown[]).length
+  const cancelled = r119Write(doc, R112.payrollTimePolicyCancelScheduleWriteFields({ orgDoc: doc, todayKey: '2026-11-03', timeZone: R119_ZONE }))
+  assert.equal((cancelled.payrollTimePolicyHistory as unknown[]).length, historyBefore)
+  assert.equal(r119StartOn(cancelled, '2026-12-01'), '06:30')
+  assert.equal(r119StartOn(cancelled, '2026-01-15'), '07:30')
+  // Keep D scheduled; on 5 Dec (D already due, never promoted by any app) apply E (07:00).
+  doc = r119Write(doc, R112.payrollTimePolicyApplyNowWriteFields({ orgDoc: doc, policy: parsePolicy112(r119Raw('07:00')), todayKey: '2026-12-05', timeZone: R119_ZONE }))
+  assert.deepEqual(
+    (doc.payrollTimePolicyHistory as Array<{ effectiveFrom: string; policy: { standardDayStart: string } }>).map((e) => [e.effectiveFrom, e.policy.standardDayStart]),
+    [['1970-01-01', '07:30'], ['2026-03-02', '08:00'], ['2026-06-01', '06:30'], ['2026-12-01', '09:00'], ['2026-12-05', '07:00']]
+  )
+  assert.equal(doc.payrollTimePolicyScheduled, null)
+  for (const [day, start] of [['2026-01-15', '07:30'], ['2026-04-01', '08:00'], ['2026-07-01', '06:30'], ['2026-12-03', '09:00'], ['2026-12-05', '07:00']]) {
+    assert.equal(r119StartOn(doc, day), start, day)
+  }
+  assert.equal(doc.payrollTimePolicyRevision, 4)
+  // The promoted state carries the history (timeline view for "today" screens).
+  const timeline = R112.payrollTimePolicyTimeline(doc, '2026-12-06', R119_ZONE)
+  assert.equal(R112.payrollTimePolicyForDayFromState(timeline, '2026-01-15').standardDayStart, '07:30')
+})
+
+test('1.19.0: payrollTimePolicyHistory — seeded from the flat fields, an older build save still counts, same-day saves', () => {
+  // A company saved before 1.19.0: prior B before 1 June, current C. The first write seeds history from them.
+  const legacy = {
+    countryCode: 'GB',
+    payrollTimePolicy: r119Raw('06:30'),
+    payrollTimePolicyPrior: r119Raw('08:00'),
+    payrollTimePolicyEffectiveFrom: '2026-06-01',
+  }
+  const seeded = r119Write(legacy, R112.payrollTimePolicyApplyNowWriteFields({ orgDoc: legacy, policy: parsePolicy112(r119Raw('07:00')), todayKey: '2026-11-03', timeZone: R119_ZONE }))
+  assert.deepEqual(
+    (seeded.payrollTimePolicyHistory as Array<{ effectiveFrom: string; policy: { standardDayStart: string } }>).map((e) => [e.effectiveFrom, e.policy.standardDayStart]),
+    [['1970-01-01', '08:00'], ['2026-06-01', '06:30'], ['2026-11-03', '07:00']]
+  )
+  // Without history, reads are exactly as before 1.19.0.
+  assert.equal(r119StartOn(legacy, '2026-05-31'), '08:00')
+  assert.equal(r119StartOn(legacy, '2026-06-01'), '06:30')
+  // An older build (no history) applies F (05:30) on 1 Dec: only the flat fields change. It still counts from its day,
+  // and the history keeps the earlier days.
+  const oldBuild = { ...seeded, payrollTimePolicy: r119Raw('05:30'), payrollTimePolicyPrior: r119Raw('07:00'), payrollTimePolicyEffectiveFrom: '2026-12-01' }
+  assert.equal(r119StartOn(oldBuild, '2026-12-02'), '05:30')
+  assert.equal(r119StartOn(oldBuild, '2026-11-15'), '07:00')
+  assert.equal(r119StartOn(oldBuild, '2026-05-01'), '08:00')
+  // The next new-build write appends F at its day (never rewrites earlier entries).
+  const next = r119Write(oldBuild, R112.payrollTimePolicyCancelScheduleWriteFields({ orgDoc: oldBuild, todayKey: '2026-12-03', timeZone: R119_ZONE }))
+  assert.deepEqual(
+    (next.payrollTimePolicyHistory as Array<{ effectiveFrom: string }>).map((e) => e.effectiveFrom),
+    ['1970-01-01', '2026-06-01', '2026-11-03', '2026-12-01']
+  )
+  // Two Apply-from-today saves on one day: the later wins, both stay in the history.
+  const twice = r119Write(seeded, R112.payrollTimePolicyApplyNowWriteFields({ orgDoc: seeded, policy: parsePolicy112(r119Raw('09:30')), todayKey: '2026-11-03', timeZone: R119_ZONE }))
+  assert.equal(r119StartOn(twice, '2026-11-03'), '09:30')
+  assert.equal(r119StartOn(twice, '2026-11-02'), '06:30')
+  assert.equal((twice.payrollTimePolicyHistory as unknown[]).length, 4)
+  // History day keys may be stored as Timestamps: organisation-zone day (BST midnight 30 March = 2026-03-29T23:00Z).
+  const tsDoc = {
+    payrollTimePolicy: r119Raw('07:00'),
+    payrollTimePolicyEffectiveFrom: '2026-03-30',
+    payrollTimePolicyHistory: [
+      { effectiveFrom: '1970-01-01', policy: r119Raw('08:00') },
+      { effectiveFrom: { seconds: Date.parse('2026-03-29T23:00:00Z') / 1000 }, policy: r119Raw('07:00') },
+      { effectiveFrom: 'not a day', policy: r119Raw('04:00') },
+    ],
+  }
+  assert.deepEqual(R112.parsePayrollTimePolicyHistory(tsDoc.payrollTimePolicyHistory, R119_ZONE).map((e) => e.effectiveFrom), ['1970-01-01', '2026-03-30'])
+  assert.equal(r119StartOn(tsDoc, '2026-03-29'), '08:00') // the day the clocks go forward keeps the old rules
+  assert.equal(r119StartOn(tsDoc, '2026-03-30'), '07:00')
+})
+
+test('1.19.0: a scheduled change inside a pay run prices each day under its own rules (no promotion needed)', () => {
+  // FULL DAY pays the standard day's clock hours less the break: 07:30–16:00 = 8h now, 07:30–15:00 = 7h from the 12th.
+  const current = { ...parsePolicy112(undefined) }
+  const scheduled = { ...parsePolicy112(undefined), standardDayEnd: '15:00', standardPaidHours: 7 }
+  const doc = {
+    countryCode: 'GB',
+    payrollTimePolicy: policyToFirestore119(current),
+    payrollTimePolicyScheduled: { policy: policyToFirestore119(scheduled), effectiveFrom: '2026-11-12' },
+  }
+  const state = R112.payrollTimePolicyTimeline(doc, '2026-11-03', R119_ZONE)
+  const fullDay = (dayKey: string) =>
+    R112.payrollHoursResult({ booking: { timeSlot: 'FULL DAY' }, dayKey, policy: R112.payrollTimePolicyForDayFromState(state, dayKey), timeZone: R119_ZONE }).totalPaidHours
+  // Pay run 1–15 November: 10th and 11th on 8h, 12th and 13th on 7h.
+  assert.deepEqual(['2026-11-10', '2026-11-11', '2026-11-12', '2026-11-13'].map(fullDay), [8, 8, 7, 7])
+})
+
+test('1.19.0: payrollTimePolicySaveConflict refuses a stale working-hours save', () => {
+  const base = { payrollTimePolicy: r119Raw('07:30'), payrollTimePolicyRevision: 3 }
+  assert.equal(R112.payrollTimePolicySaveConflict(base, { ...base }, R119_ZONE), null)
+  // Another admin scheduled a change (revision bumped).
+  const other = r119Write(base, R112.payrollTimePolicyScheduleWriteFields({ orgDoc: base, policy: parsePolicy112(r119Raw('09:00')), effectiveFrom: '2026-12-01', todayKey: '2026-11-03', timeZone: R119_ZONE }))
+  assert.equal(other.payrollTimePolicyRevision, 4)
+  assert.equal(R112.payrollTimePolicySaveConflict(base, other, R119_ZONE), R112.PAYROLL_POLICY_STALE_SAVE_MESSAGE)
+  // An older build that does not bump the revision is still caught by the changed rules.
+  const oldBuild = { ...base, payrollTimePolicyScheduled: { policy: r119Raw('10:00'), effectiveFrom: '2026-12-01' } }
+  assert.equal(R112.payrollTimePolicySaveConflict(base, oldBuild, R119_ZONE), R112.PAYROLL_POLICY_STALE_SAVE_MESSAGE)
+  // Other organisation fields changing is not a conflict.
+  assert.equal(R112.payrollTimePolicySaveConflict(base, { ...base, name: 'Renamed' }, R119_ZONE), null)
+})
+
+test('1.19.0: unbooked labour reads each day of the window under the rules in effect on it', () => {
+  // Saturday's working-hours window is 07:30–13:00 until 14 Nov and 07:30–14:00 from then (a scheduled change); with no
+  // saved "Hours to cover", each Saturday must cover that day's own window, less its lunch window (12:00–12:30).
+  const before = { ...parsePolicy112(undefined), saturday: { ...r119SatWindow(), definedWindowEnd: '13:00' } }
+  const after = { ...parsePolicy112(undefined), saturday: r119SatWindow() }
+  const state = R112.parsePayrollTimePolicyState(
+    {
+      payrollTimePolicy: policyToFirestore119(before),
+      payrollTimePolicyScheduled: { policy: policyToFirestore119(after), effectiveFrom: '2026-11-14' },
+    },
+    R119_ZONE
+  )
+  const rows = R112.unbookedLabourRows({
+    timeZone: R119_ZONE,
+    startDayKey: '2026-11-07',
+    endDayKey: '2026-11-14',
+    includeWeekends: true,
+    payrollPolicy: state,
+    people: [{ id: 'u1', email: 'op@x.com', name: 'Op One', isActive: true, passwordSet: true, isOperativeMode: true }],
+    operatives: [],
+    bookings: [],
+    holidays: [],
+  })
+  const missing = (day: string) => rows.find((row) => row.dayKey === day)?.missingHours
+  assert.equal(missing('2026-11-07'), 5)
+  assert.equal(missing('2026-11-14'), 6)
+  // Sunday is every hour at 2× (no set window): the standard day 07:30–16:00 less the lunch window.
+  assert.equal(missing('2026-11-08'), 8)
+  // A weekday keeps the standard day less the break.
+  assert.equal(missing('2026-11-09'), 8)
+})
+
+test('1.19.0: a signed timesheet snapshot is never re-priced — its rows come from weeklyReportOverride', () => {
+  const signed = {
+    weeklyReportOverride: {
+      lines: [{ id: 'op-b1-normal', date: '2026-11-07T00:00:00.000Z', amount: 200, days: 1, paidHours: 8, isOvertime: false, decision: 'approved' }],
+      priceWork: [],
+      expenses: [],
+    },
+    managerSignedAt: '2026-11-10T09:00:00.000Z',
+  }
+  // The live line (re-priced under new rules) says 175; the invoice keeps the signed 200.
+  const rows = R112.timesheetInvoiceRows({
+    sheet: signed,
+    payrollLines: [{ id: 'op-b1-normal', date: new Date('2026-11-07T00:00:00Z'), amount: 175, paidHours: 7, isOvertimeLine: false }],
+    extrasMode: 'raw',
+    timesheetDays: null,
+    timeZone: R119_ZONE,
+  } as never) as Array<{ kind: string; amount?: number; source?: string }>
+  const labour = rows.filter((row) => row.kind === 'labour')
+  assert.equal(labour.length, 1)
+  assert.equal(labour[0].source, 'override')
+  assert.equal(labour[0].amount, 200)
+})
+
+test('1.19.0 (owner, round 2): each weekend day has its own break — length and window, weekday fallback', () => {
+  // Sat window 07:30–14:00 = 8h, break 12:00–12:30 unpaid (the weekday fallback) → 7.5h.
+  const fallback = r119Policy(r119SatWindow(false), r119SunAllHours(false))
+  assert.equal(r119Hours(R119_SAT, fallback, '07:30', '14:00').totalPaidHours, 7.5)
+  // Sun every hour ×2, break 30 min unpaid → (6.5 − 0.5) × 2 = 12h; paid → 13h.
+  assert.equal(r119Hours(R119_SUN, fallback, '07:30', '14:00').totalPaidHours, 12)
+  assert.equal(r119Hours(R119_SUN, r119Policy(r119SatWindow(), r119SunAllHours(true)), '07:30', '14:00').totalPaidHours, 13)
+  // Sat break set to 45 min, 11:30–12:15 → 8 − 0.75 = 7.25h.
+  const ownSat = r119Policy({ ...r119SatWindow(false), breakMinutes: 45, breakWindowStart: '11:30', breakWindowEnd: '12:15' }, r119SunAllHours())
+  const own = r119Hours(R119_SAT, ownSat, '07:30', '14:00')
+  assert.equal(own.totalPaidHours, 7.25)
+  assert.equal(own.unpaidBreakHours, 0.75)
+  // The weekday break is untouched by a weekend day's own break.
+  assert.equal(r119Hours(R119_WED, ownSat, '07:30', '16:00').totalPaidHours, 8)
+  // Sunday with its own 60-minute break 12:00–13:00, every hour ×2: (6.5 − 1) × 2 = 11h; No unpaid break → 13h.
+  const ownSun = r119Policy(r119SatWindow(), { ...r119SunAllHours(false), breakMinutes: 60, breakWindowStart: '12:00', breakWindowEnd: '13:00' })
+  assert.equal(r119Hours(R119_SUN, ownSun, '07:30', '14:00').totalPaidHours, 11)
+  assert.equal(r119Hours(R119_SUN, ownSun, '07:30', '14:00', { isBreakRemoved: true }).totalPaidHours, 13)
+  // Sunday "same as Saturday" copies Saturday's break.
+  const same = r119Policy({ ...r119SatWindow(false), breakMinutes: 45, breakWindowStart: '11:30', breakWindowEnd: '12:15' }, { ...r119SunAllHours(true), sameAsSaturday: true })
+  assert.equal(r119Hours(R119_SUN, same, '07:30', '14:00').totalPaidHours, 7.25)
+  // The lunch warning and the timeline use the day's own window.
+  const booking = { timeSlot: 'CUSTOM_HOURS', workStartTime: '07:30', workEndTime: '11:45' }
+  assert.equal(R112.customHoursBreakWarning(ownSat, R119_SAT, booking, R119_ZONE), R112.CUSTOM_HOURS_BREAK_WARNING)
+  assert.equal(R112.customHoursBreakWarning(fallback, R119_SAT, booking, R119_ZONE), null)
+  assert.deepEqual(R112.payrollDayWindows(ownSat, R119_SAT, R119_ZONE).unpaidBreak, { start: 690, end: 735 })
+  assert.deepEqual(R112.payrollBreakOnDay(ownSat, R119_SAT, R119_ZONE), { start: 690, end: 735, minutes: 45, paid: false })
+  assert.deepEqual(R112.weekendBreakFor(fallback, fallback.saturday), { paid: false, minutes: 30, start: '12:00', end: '12:30' })
+  // Stored: written only when set; read back; limits as weekdays.
+  const written = policyToFirestore119(ownSat).saturday as Record<string, unknown>
+  assert.deepEqual([written.breakMinutes, written.breakWindowStart, written.breakWindowEnd], [45, '11:30', '12:15'])
+  assert.equal('breakMinutes' in (policyToFirestore119(fallback).saturday as Record<string, unknown>), false)
+  assert.equal(parsePolicy112(policyToFirestore119(ownSat)).saturday.breakMinutes, 45)
+  assert.equal(parsePolicy112({ saturday: { breakMinutes: 500 } }).saturday.breakMinutes, 120)
+  assert.equal(R112.validatePayrollTimePolicy(ownSat), null)
+  assert.equal(
+    R112.validatePayrollTimePolicy({ ...ownSat, saturday: { ...ownSat.saturday, breakMinutes: 150 } }),
+    'Saturday break length must be between 0 and 120 minutes.'
+  )
+  assert.equal(
+    R112.validatePayrollTimePolicy({ ...ownSat, saturday: { ...ownSat.saturday, breakWindowStart: '12:30', breakWindowEnd: '12:00' } }),
+    'Saturday break window end must be after the break start.'
+  )
+})
+
+const r119Person = { id: 'u1', email: 'op@x.com', name: 'Op One', isActive: true, passwordSet: true, isOperativeMode: true }
+
+function r119Weekend(input: Record<string, unknown>) {
+  return R112.unbookedLabourRows({
+    timeZone: R119_ZONE,
+    startDayKey: '2026-11-07',
+    endDayKey: '2026-11-08',
+    includeWeekends: true,
+    payrollPolicy: r119Policy(r119SatWindow(), r119SunAllHours()),
+    people: [r119Person],
+    operatives: [],
+    bookings: [],
+    holidays: [],
+    ...input,
+  } as never)
+}
+
+test('1.19.0 (owner, round 2): weekend unbooked labour covers each day’s "Hours to cover" window', () => {
+  // Both days on with different windows: Sat 07:30–14:00 (6.5h − the 12:00–12:30 lunch = 6h), Sun 08:00–13:00 (4.5h).
+  const both = { saturday: { enabled: true, start: '07:30', end: '14:00' }, sunday: { enabled: true, start: '08:00', end: '13:00' } }
+  assert.deepEqual(r119Weekend({ weekendCoverage: both }).map((row) => [row.dayKey, row.missingHours]), [['2026-11-07', 6], ['2026-11-08', 4.5]])
+  // Partial coverage: Saturday booked 07:30–11:30 → missing 11:30–12:00 and 12:30–14:00 = 2h (lunch never needs covering).
+  const partial = r119Weekend({
+    weekendCoverage: both,
+    bookings: [{ personId: 'u1', dayKey: '2026-11-07', kind: 'operative', timeSlot: 'CUSTOM_HOURS', workStart: '07:30', workEnd: '11:30' }],
+  })
+  const sat = partial.find((row) => row.dayKey === '2026-11-07')
+  assert.equal(sat?.missingHours, 2)
+  assert.match(sat?.message ?? '', /^Op One is missing 2h on /)
+  // Two bookings either side of lunch (07:30–12:00, 12:30–14:00) cover the window.
+  assert.equal(
+    r119Weekend({
+      weekendCoverage: both,
+      bookings: [
+        { personId: 'u1', dayKey: '2026-11-07', kind: 'operative', timeSlot: 'CUSTOM_HOURS', workStart: '07:30', workEnd: '12:00' },
+        { personId: 'u1', dayKey: '2026-11-07', kind: 'operative', timeSlot: 'CUSTOM_HOURS', workStart: '12:30', workEnd: '14:00' },
+      ],
+    }).some((row) => row.dayKey === '2026-11-07'),
+    false
+  )
+  // A Saturday with its own lunch window (11:30–12:15) skips that window instead: 6.5 − 0.75 = 5.75h.
+  assert.equal(
+    r119Weekend({
+      weekendCoverage: both,
+      payrollPolicy: r119Policy({ ...r119SatWindow(), breakMinutes: 45, breakWindowStart: '11:30', breakWindowEnd: '12:15' }, r119SunAllHours()),
+    }).find((row) => row.dayKey === '2026-11-07')?.missingHours,
+    5.75
+  )
+  // Fully covered: no row.
+  assert.equal(
+    r119Weekend({ weekendCoverage: both, bookings: [{ personId: 'u1', dayKey: '2026-11-07', kind: 'operative', timeSlot: 'CUSTOM_HOURS', workStart: '07:00', workEnd: '14:30' }] })
+      .some((row) => row.dayKey === '2026-11-07'),
+    false
+  )
+  // Sunday off: not scanned.
+  assert.deepEqual(r119Weekend({ weekendCoverage: { ...both, sunday: { ...both.sunday, enabled: false } } }).map((row) => row.dayKey), ['2026-11-07'])
+  // Include weekends off: nothing scanned, whatever the toggles say.
+  assert.deepEqual(r119Weekend({ includeWeekends: false, weekendCoverage: both }), [])
+  // Legacy organisation with no field: both days on, Saturday its set window (07:30–14:00 less lunch = 6h), Sunday every
+  // hour → the standard day 07:30–16:00 less lunch = 8h.
+  assert.deepEqual(r119Weekend({}).map((row) => [row.dayKey, row.missingHours]), [['2026-11-07', 6], ['2026-11-08', 8]])
+  // Daily Overview's list for one day is the same rule.
+  assert.deepEqual(
+    R112.unbookedLabourRowsOnDay({
+      timeZone: R119_ZONE,
+      dayKey: '2026-11-08',
+      includeWeekends: true,
+      weekendCoverage: both,
+      payrollPolicy: r119Policy(r119SatWindow(), r119SunAllHours()),
+      people: [r119Person],
+      operatives: [],
+      bookings: [],
+      holidays: [],
+    } as never).map((row) => row.missingHours),
+    [4.5]
+  )
+})
+
+test('1.19.0 (owner, round 2): warningDetection.weekendCoverage parse, defaults, write and scan days', () => {
+  // Missing: enabled = include weekends, windows null (the default window).
+  assert.deepEqual(R112.parseWarningDetection({ includeWeekendsForUnbookedLabour: true }).weekendCoverage, {
+    saturday: { enabled: true, start: null, end: null },
+    sunday: { enabled: true, start: null, end: null },
+  })
+  assert.equal(R112.parseWarningDetection({}).weekendCoverage?.saturday.enabled, false)
+  const parsed = R112.parseWarningDetection({
+    includeWeekendsForUnbookedLabour: true,
+    weekendCoverage: { saturday: { enabled: true, start: '7:30', end: '14:00' }, sunday: { enabled: false, start: '13:00', end: '08:00' } },
+  })
+  assert.deepEqual(parsed.weekendCoverage, {
+    saturday: { enabled: true, start: '07:30', end: '14:00' },
+    sunday: { enabled: false, start: null, end: null },
+  })
+  // Defaults for the window: the saved one, else the day's working-hours set window, else the standard day.
+  const policy = r119Policy(r119SatWindow(), r119SunAllHours())
+  assert.deepEqual(R112.resolveWeekendCoverageDay(parsed.weekendCoverage, true, policy, 'saturday'), { enabled: true, start: '07:30', end: '14:00' })
+  assert.deepEqual(R112.resolveWeekendCoverageDay(null, true, policy, 'saturday'), { enabled: true, start: '07:30', end: '14:00' })
+  assert.deepEqual(R112.resolveWeekendCoverageDay(null, true, policy, 'sunday'), { enabled: true, start: '07:30', end: '16:00' })
+  assert.equal(R112.resolveWeekendCoverageDay(parsed.weekendCoverage, false, policy, 'saturday').enabled, false)
+  // Save: the whole map as one partial-update field.
+  const fields = wdFields119(parsed)
+  assert.deepEqual(fields['warningDetection.weekendCoverage'], parsed.weekendCoverage)
+  // Scan days skip a weekend day that is switched off.
+  const days = R112.unbookedScanDays({
+    referenceIso: '2026-11-06T09:00:00Z',
+    clashLookaheadMode: 'numberOfDays',
+    clashLookaheadDays: 3,
+    includeWeekends: true,
+    weekendCoverage: parsed.weekendCoverage,
+    timeZone: R119_ZONE,
+  } as never).dayKeys
+  assert.deepEqual(days, ['2026-11-06', '2026-11-07'])
 })

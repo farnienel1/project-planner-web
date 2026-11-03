@@ -39,7 +39,7 @@ import {
 import { TimesheetsScreen, type TeamTimesheetTab } from '@/components/timesheets/TimesheetsScreen'
 import { TimesheetPeriodPage } from '@/components/timesheets/TimesheetPeriodPage'
 import { dateFromDayKey, dayKey } from '@/lib/ios-parity/londonTime'
-import { resolveTimesheetPeriod, timesheetPeriodFromInvoicing } from '@/lib/canonical'
+import { resolveTimesheetPeriod, timesheetPeriodFromInvoicing, type PayrollTimePolicyState } from '@/lib/canonical'
 import { ianaTimeZoneForCountry } from '@/lib/orgTime/orgTimeZone'
 import { computeInvoicingPeriod } from '@/lib/warnings/warningLookahead'
 import {
@@ -117,6 +117,9 @@ export function TimesheetsHub() {
   const [payrollPolicy, setPayrollPolicy] = useState<OrgPayrollTimePolicy>(DEFAULT_PAYROLL_POLICY)
   const [payrollPolicyPrior, setPayrollPolicyPrior] = useState<OrgPayrollTimePolicy | null>(null)
   const [payrollPolicyEffectiveFrom, setPayrollPolicyEffectiveFrom] = useState<string | null>(null)
+  // Rulebook 1.19.0: the whole working-hours state (history + pending change), so every day of a pay run is priced
+  // under the rules in effect on it — including a change scheduled to start inside the run.
+  const [payrollPolicyState, setPayrollPolicyState] = useState<PayrollTimePolicyState | null>(null)
   const [scheduleOptions, setScheduleOptions] = useState<MyScheduleOptions>(DEFAULT_MY_SCHEDULE)
   const [timeZone, setTimeZone] = useState(ianaTimeZoneForCountry('GB'))
   const [history, setHistory] = useState<OperativeDayRateHistoryCollection>(emptyDayRateHistory())
@@ -159,6 +162,7 @@ export function TimesheetsHub() {
       if (details.payrollTimePolicy) setPayrollPolicy(details.payrollTimePolicy)
       setPayrollPolicyPrior(details.payrollTimePolicyPrior ?? null)
       setPayrollPolicyEffectiveFrom(details.payrollTimePolicyEffectiveFrom ?? null)
+      setPayrollPolicyState(details.payrollTimePolicyState ?? null)
       if (details.invoicing) setInvoicing(details.invoicing)
       if (details.myScheduleOptions) setScheduleOptions(details.myScheduleOptions)
       setTimeZone(ianaTimeZoneForCountry(details.countryCode))
@@ -275,6 +279,7 @@ export function TimesheetsHub() {
     payrollPolicy,
     payrollPolicyPrior,
     payrollPolicyEffectiveFrom,
+    payrollPolicyState,
     bookings,
     managerSiteBookings,
     operatives,
@@ -369,6 +374,7 @@ export function TimesheetsHub() {
               payrollPolicy={payrollPolicy}
               payrollPolicyPrior={payrollPolicyPrior}
               payrollPolicyEffectiveFrom={payrollPolicyEffectiveFrom}
+              payrollPolicyState={payrollPolicyState}
               invoicing={invoicing}
               loading={usersLoading && users.length === 0}
               teamTab={tab}

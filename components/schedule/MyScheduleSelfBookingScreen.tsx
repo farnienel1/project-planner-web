@@ -1,6 +1,7 @@
 'use client'
 
 import { enabledScheduleLocations } from '@/lib/canonical'
+import { intervalsOverlap, operativeClashInterval } from '@/lib/warnings/clashIntervals'
 import {
   useEffect,
   useMemo,
@@ -39,6 +40,7 @@ import { myScheduleStripeClass } from '@/components/schedule/MyScheduleLooks'
 import { HoursTimelinePicker } from '@/components/scheduling/HoursTimelinePicker'
 import {
   confirmCustomHoursBreak,
+  policyForBookingDate,
   slotOfferedOnDate,
   weekendNotesForDates,
   weekendWeekdayMixMessage,
@@ -429,7 +431,21 @@ export function MyScheduleSelfBookingScreen({
     // list, the same rows as every booking flow — tick to book anyway, or ✕ to drop that day.
     const zone = organizationZoneOr()
     const clashRows: BookingConflictRow[] = days.flatMap((day) => {
-      const existing = myBookingsOn(day)
+      // Owner decision (1.19.0): warn only when the times actually overlap (`slotInterval` via
+      // `operativeClashInterval`, `intervalsOverlap`), as every other booking flow does — touching times do not clash.
+      const dayPolicy = policyForBookingDate(day, payrollPolicy) ?? payrollPolicy
+      const probe = operativeClashInterval(
+        {
+          timeSlot: args.timeSlot,
+          workStartTime: args.timeSlot === 'CUSTOM_HOURS' ? customStart : undefined,
+          workEndTime: args.timeSlot === 'CUSTOM_HOURS' ? customEnd : undefined,
+        } as Parameters<typeof operativeClashInterval>[0],
+        dayPolicy ?? undefined
+      )
+      const existing = myBookingsOn(day).filter((booking) => {
+        const interval = operativeClashInterval(booking as Parameters<typeof operativeClashInterval>[0], dayPolicy ?? undefined)
+        return Boolean(probe && interval && intervalsOverlap(probe, interval))
+      })
       if (existing.length === 0) return []
       const key = orgDayKey(day, zone)
       return [

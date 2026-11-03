@@ -28,6 +28,19 @@ export type WeekendPayrollSettings = {
   countsAsStandardHours?: number
   outsideWindowMultiplier?: number
   sameAsSaturday?: boolean
+  /**
+   * Rulebook 1.19.0 §4.3: whether that day's lunch break is paid. Missing = paid (every company saved before 1.19.0).
+   * Sunday "same as Saturday" uses Saturday's.
+   */
+  breakPaid?: boolean
+  /**
+   * Rulebook 1.19.0 §4.3: that day's own break length (0–120 minutes) and window. Missing → the weekday break
+   * (`unpaidBreakMinutes`, `breakWindowStart`–`breakWindowEnd`), so data saved before 1.19.0 reads unchanged
+   * (`weekendBreakFor`).
+   */
+  breakMinutes?: number
+  breakWindowStart?: string
+  breakWindowEnd?: string
 }
 
 export type PaymentRunDateRange = {
@@ -84,7 +97,17 @@ export type OrgWarningDetectionSettings = {
    * (missing, not a number, or below 1), so 7 days is used. Never written to Firestore.
    */
   clashLookaheadDaysFallback?: 'lookaheadDaysMissing' | 'lookaheadDaysInvalid'
+  /**
+   * Rulebook 1.19.0 §4.6 / §5: `warningDetection.weekendCoverage` — per weekend day, whether it is scanned for unbooked
+   * labour and the "Hours to cover" window. `start` / `end` null = the default window (`resolveWeekendCoverageDay`).
+   * Missing in Firestore → each day enabled exactly when `includeWeekendsForUnbookedLabour` is on.
+   */
+  weekendCoverage?: WeekendCoverage
 }
+
+/** Rulebook 1.19.0: one weekend day's unbooked-labour requirement. */
+export type WeekendCoverageDay = { enabled: boolean; start: string | null; end: string | null }
+export type WeekendCoverage = { saturday: WeekendCoverageDay; sunday: WeekendCoverageDay }
 
 export type OrgInvoicingSettings = {
   paymentRunMode: 'date_ranges' | 'recurring_timeframe'
@@ -158,6 +181,10 @@ export const ORGANIZATION_DOCUMENT_FIELDS = [
   'payrollTimePolicyPrior',
   'payrollTimePolicyEffectiveFrom',
   'payrollTimePolicyScheduled',
+  /** 1.19.0: append-only `{ effectiveFrom: 'YYYY-MM-DD', policy }[]`, the working hours in effect from each day. */
+  'payrollTimePolicyHistory',
+  /** 1.19.0: bumped by every working-hours save so a second admin's stale save is refused. */
+  'payrollTimePolicyRevision',
   'annualLeaveDefaults',
   'warningDetection',
   'invoicing',
@@ -223,6 +250,7 @@ const WEEKEND_FIELD_FALLBACK: WeekendPayrollSettings = {
   countsAsStandardHours: 8,
   outsideWindowMultiplier: 1.5,
   sameAsSaturday: false,
+  breakPaid: true,
 }
 
 /**
@@ -237,6 +265,7 @@ export const DEFAULT_SATURDAY_PAYROLL: WeekendPayrollSettings = {
   countsAsStandardHours: 8,
   outsideWindowMultiplier: 2,
   sameAsSaturday: false,
+  breakPaid: true,
 }
 
 /** Sunday when the company never saved one (iOS `defaultSunday`): every hour at 2×. */
@@ -248,6 +277,7 @@ export const DEFAULT_SUNDAY_PAYROLL: WeekendPayrollSettings = {
   countsAsStandardHours: 8,
   outsideWindowMultiplier: 2,
   sameAsSaturday: false,
+  breakPaid: true,
 }
 
 export const DEFAULT_PAYROLL_POLICY: OrgPayrollTimePolicy = {
@@ -477,6 +507,31 @@ function parseWeekend(data: Record<string, unknown> | undefined, dayDefault: Wee
       PAYROLL_POLICY_LIMITS.multiplier
     ),
     sameAsSaturday: false,
+    // 1.19.0: missing or anything but `false` = paid, so nothing changes for a company that never chose.
+    breakPaid: data.breakPaid !== false,
+    // 1.19.0: the day's own break; missing stays missing and reads as the weekday break.
+    ...(data.breakMinutes == null || (typeof data.breakMinutes === 'string' && data.breakMinutes.trim() === '') || !Number.isFinite(Number(data.breakMinutes))
+      ? {}
+      : { breakMinutes: policyNumber(data.breakMinutes, 0, PAYROLL_POLICY_LIMITS.breakMinutes) }),
+    ...(typeof data.breakWindowStart === 'string' && data.breakWindowStart.trim() ? { breakWindowStart: data.breakWindowStart.trim() } : {}),
+    ...(typeof data.breakWindowEnd === 'string' && data.breakWindowEnd.trim() ? { breakWindowEnd: data.breakWindowEnd.trim() } : {}),
+  }
+}
+
+/**
+ * Rulebook 1.19.0 §4.3: a weekend day's lunch break — paid or not, its length and window, each missing field read as
+ * the weekday break (`unpaidBreakMinutes`, `breakWindowStart`–`breakWindowEnd`). The one place that fallback lives.
+ */
+export function weekendBreakFor(
+  policy: Pick<OrgPayrollTimePolicy, 'unpaidBreakMinutes' | 'breakWindowStart' | 'breakWindowEnd'>,
+  weekend: WeekendPayrollSettings
+): { paid: boolean; minutes: number; start: string; end: string } {
+  const own = Number(weekend.breakMinutes)
+  return {
+    paid: weekend.breakPaid !== false,
+    minutes: weekend.breakMinutes != null && Number.isFinite(own) ? Math.max(0, own) : Math.max(0, Number(policy.unpaidBreakMinutes) || 0),
+    start: weekend.breakWindowStart || policy.breakWindowStart,
+    end: weekend.breakWindowEnd || policy.breakWindowEnd,
   }
 }
 
@@ -489,6 +544,11 @@ function weekendToFirestore(weekend: WeekendPayrollSettings): Record<string, unk
     customStandardEnd: weekend.definedWindowEnd ?? '16:00',
     countsAsHours: weekend.countsAsStandardHours ?? 8,
     outsideStandardWindowMultiplier: weekend.outsideWindowMultiplier ?? 1.5,
+    breakPaid: weekend.breakPaid !== false,
+    // 1.19.0: written only when the day has its own break; missing reads as the weekday break.
+    ...(weekend.breakMinutes != null ? { breakMinutes: weekend.breakMinutes } : {}),
+    ...(weekend.breakWindowStart ? { breakWindowStart: weekend.breakWindowStart } : {}),
+    ...(weekend.breakWindowEnd ? { breakWindowEnd: weekend.breakWindowEnd } : {}),
   }
 }
 
@@ -592,6 +652,9 @@ export function copyWarningDetection(
   return {
     ...settings,
     excludedUserIdsFromUnbookedWarnings: [...(settings.excludedUserIdsFromUnbookedWarnings ?? [])],
+    ...(settings.weekendCoverage
+      ? { weekendCoverage: { saturday: { ...settings.weekendCoverage.saturday }, sunday: { ...settings.weekendCoverage.sunday } } }
+      : {}),
   }
 }
 
@@ -605,7 +668,9 @@ export function warningDetectionEquals(
     a.clashLookaheadDays === b.clashLookaheadDays &&
     a.includeWeekendsForUnbookedLabour === b.includeWeekendsForUnbookedLabour &&
     (a.excludedUserIdsFromUnbookedWarnings ?? []).join('\0') ===
-      (b.excludedUserIdsFromUnbookedWarnings ?? []).join('\0')
+      (b.excludedUserIdsFromUnbookedWarnings ?? []).join('\0') &&
+    JSON.stringify(a.weekendCoverage ?? parseWeekendCoverage(undefined, a.includeWeekendsForUnbookedLabour)) ===
+      JSON.stringify(b.weekendCoverage ?? parseWeekendCoverage(undefined, b.includeWeekendsForUnbookedLabour))
   )
 }
 
@@ -681,9 +746,76 @@ export function parseWarningDetection(data: Record<string, unknown> | undefined)
     clashLookaheadDays: fallback ? DEFAULT_WARNING_DETECTION.clashLookaheadDays : clampClashLookaheadDays(days),
     includeWeekendsForUnbookedLabour: Boolean(record.includeWeekendsForUnbookedLabour),
     excludedUserIdsFromUnbookedWarnings: excludedUnbookedUserIds(record),
+    weekendCoverage: parseWeekendCoverage(record.weekendCoverage, Boolean(record.includeWeekendsForUnbookedLabour)),
   }
   if (fallback && clashLookaheadMode === 'numberOfDays') parsed.clashLookaheadDaysFallback = fallback
   return parsed
+}
+
+const COVERAGE_CLOCK_RE = /^\d{1,2}:\d{2}$/
+
+function clockMinutesOf(value: unknown): number | null {
+  const text = coverageClock(value)
+  if (!text) return null
+  const [h, m] = text.split(':').map(Number)
+  return h * 60 + m
+}
+
+function coverageClock(value: unknown): string | null {
+  const text = typeof value === 'string' ? value.trim() : ''
+  if (!COVERAGE_CLOCK_RE.test(text)) return null
+  const [h, m] = text.split(':').map(Number)
+  return h >= 0 && h < 24 && m >= 0 && m < 60 ? `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}` : null
+}
+
+/**
+ * Rulebook 1.19.0: `warningDetection.weekendCoverage` read. Missing day or `enabled` → `includeWeekends` (so an
+ * organisation saved before 1.19.0 behaves as before); a missing or invalid window, or one whose end is not after
+ * its start, is null (the default window, `resolveWeekendCoverageDay`).
+ */
+export function parseWeekendCoverage(value: unknown, includeWeekends: boolean): WeekendCoverage {
+  const raw = asSettingsRecord(value) ?? {}
+  const day = (entry: unknown): WeekendCoverageDay => {
+    const rec = asSettingsRecord(entry) ?? {}
+    let start = coverageClock(rec.start)
+    let end = coverageClock(rec.end)
+    if (start && end && (clockMinutesOf(end) as number) <= (clockMinutesOf(start) as number)) {
+      start = null
+      end = null
+    }
+    return { enabled: typeof rec.enabled === 'boolean' ? rec.enabled : includeWeekends, start: start && end ? start : null, end: start && end ? end : null }
+  }
+  return { saturday: day(raw.saturday), sunday: day(raw.sunday) }
+}
+
+/**
+ * Rulebook 1.19.0 §5: a weekend day's unbooked-labour requirement on a day — scanned or not, and the window that must
+ * be covered: the saved "Hours to cover", else that day's working-hours set window (`saturday` / `sunday`, Sunday
+ * "same as Saturday" → Saturday's), else the standard day. `policy` is the policy in effect that day.
+ * Include weekends off → never scanned.
+ */
+export function resolveWeekendCoverageDay(
+  coverage: Partial<WeekendCoverage> | null | undefined,
+  includeWeekends: boolean,
+  policy: Pick<OrgPayrollTimePolicy, 'standardDayStart' | 'standardDayEnd' | 'saturday' | 'sunday'> | null | undefined,
+  weekday: 'saturday' | 'sunday'
+): { enabled: boolean; start: string; end: string } {
+  const saved = coverage?.[weekday]
+  const enabled = includeWeekends && (saved ? saved.enabled !== false : true)
+  const fallbackDay = { start: policy?.standardDayStart || '07:30', end: policy?.standardDayEnd || '16:00' }
+  let window = fallbackDay
+  if (policy) {
+    const rule = weekday === 'sunday' && policy.sunday?.sameAsSaturday ? policy.saturday : policy[weekday]
+    const ws = clockMinutesOf(rule?.definedWindowStart)
+    const we = clockMinutesOf(rule?.definedWindowEnd)
+    if (rule && !rule.allHoursAtMultiplierMode && ws != null && we != null && we > ws) {
+      window = { start: coverageClock(rule.definedWindowStart) as string, end: coverageClock(rule.definedWindowEnd) as string }
+    }
+  }
+  const ss = clockMinutesOf(saved?.start)
+  const se = clockMinutesOf(saved?.end)
+  if (ss != null && se != null && se > ss) window = { start: saved!.start as string, end: saved!.end as string }
+  return { enabled, ...window }
 }
 
 /** A saved days value that cannot be used: missing, blank, not a number, or below 1. */
@@ -706,6 +838,15 @@ export function warningDetectionToFirestore(settings: OrgWarningDetectionSetting
     clashLookaheadDays: clampClashLookaheadDays(settings.clashLookaheadDays),
     includeWeekendsForUnbookedLabour: settings.includeWeekendsForUnbookedLabour,
     excludedUserIdsFromUnbookedWarnings: settings.excludedUserIdsFromUnbookedWarnings,
+    // 1.19.0: the whole map, one field (`warningDetection.weekendCoverage`) in the partial update.
+    ...(settings.weekendCoverage
+      ? {
+          weekendCoverage: {
+            saturday: { ...settings.weekendCoverage.saturday },
+            sunday: { ...settings.weekendCoverage.sunday },
+          },
+        }
+      : {}),
   }
 }
 

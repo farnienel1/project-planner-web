@@ -183,6 +183,11 @@ export type LabourPaySlice = {
   paidHours: number
   pay: number
   isPaye: boolean
+  /**
+   * Rulebook 1.19.0: the standard paid day in effect on the slice's day (`effectivePayrollTimePolicy`), so day units are
+   * shown against that day's rules. Missing → the caller's standard day.
+   */
+  standardDayHours?: number
 }
 
 export function labourPaySlices({
@@ -250,6 +255,7 @@ export function labourPaySlices({
       paidHours: hours,
       pay,
       isPaye,
+      standardDayHours: standard,
     })
   }
   push(normalHours, false, 1)
@@ -280,6 +286,7 @@ export function signedLabourSlice(line: {
     paidHours,
     pay: isPaye ? 0 : roundPennies(line.amount),
     isPaye,
+    standardDayHours: standard,
   }
 }
 
@@ -297,7 +304,7 @@ export function paySliceDisplay(slice: LabourPaySlice, standardHours: number, cu
   const display = payLineDisplay({
     payBasis: slice.payBasis,
     paidHours: slice.paidHours,
-    standardDayHours: standardHours,
+    standardDayHours: slice.standardDayHours ?? standardHours,
     rate: slice.rate,
     pay: slice.pay,
     isOvertime: slice.isOvertime,

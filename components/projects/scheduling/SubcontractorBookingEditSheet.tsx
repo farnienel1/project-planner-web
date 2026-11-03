@@ -9,6 +9,7 @@ import { HoursTimelinePicker } from '@/components/scheduling/HoursTimelinePicker
 import { hoursBreakdown } from '@/lib/scheduling/paidHours'
 import { DEFAULT_PAYROLL_POLICY, type OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import type { Subcontractor } from '@/types'
+import { bookingDayKey, customHoursPrefillForDate, policyForBookingDate } from '@/lib/scheduling/bookingSlotRules'
 
 export type DiarySubBooking = {
   id: string
@@ -39,8 +40,10 @@ export function SubcontractorBookingEditSheet({
   onSaved: (next: DiarySubBooking | 'deleted') => void
   onClose: () => void
 }) {
-  const [workStartTime, setWorkStartTime] = useState(booking.workStartTime || payroll.standardDayStart)
-  const [workEndTime, setWorkEndTime] = useState(booking.workEndTime || payroll.standardDayEnd)
+  // Rulebook 1.19.0 (`customHoursPrefillForDays`): missing times open with that day's own prefill, never today's day.
+  const prefill = customHoursPrefillForDate(booking.date, payroll)
+  const [workStartTime, setWorkStartTime] = useState(booking.workStartTime || prefill.start)
+  const [workEndTime, setWorkEndTime] = useState(booking.workEndTime || prefill.end)
   const [selectedIds, setSelectedIds] = useState<string[]>(booking.bookedContactIds || [])
   const [saving, setSaving] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -54,8 +57,8 @@ export function SubcontractorBookingEditSheet({
         workStartTime,
         workEndTime,
         isBreakRemoved: true,
-        policy: payroll,
-        date: booking.date,
+        policy: policyForBookingDate(booking.date, payroll) ?? payroll,
+        dayKey: bookingDayKey(booking.date),
       }),
     [workStartTime, workEndTime, payroll, booking.date]
   )

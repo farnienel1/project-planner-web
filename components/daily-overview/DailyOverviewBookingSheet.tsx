@@ -6,7 +6,13 @@ import { LONDON_TIME_ZONE, formatAbbreviatedDayInZone } from '@/lib/orgTime/zone
 import { FilterChip } from '@/components/ios/primitives'
 import { HoursBreakdownCard } from '@/components/schedule/HoursBreakdownCard'
 import { HoursTimelinePicker } from '@/components/scheduling/HoursTimelinePicker'
-import { confirmCustomHoursBreak, weekendBreakdownForDates } from '@/lib/scheduling/bookingSlotRules'
+import {
+  bookingDayKey,
+  confirmCustomHoursBreak,
+  customHoursPrefillForDate,
+  policyForBookingDate,
+  weekendBreakdownForDates,
+} from '@/lib/scheduling/bookingSlotRules'
 import { CustomOtherLocationField } from '@/components/scheduling/CustomOtherLocationField'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useBookingStore } from '@/lib/stores/bookingStore'
@@ -111,6 +117,9 @@ export function DailyOverviewBookingSheet({
   const hoursTouched = useRef(false)
   const leaveCheck = useLeaveConflictCheck(payroll)
   const leaveGate = useBookingConflictGate('Save')
+  // Rulebook 1.19.0 (`customHoursPrefillForDays`): a booking with no clock times opens with that day's own prefill —
+  // a set-window Saturday's window, else the standard day in effect on the day — never today's weekday day.
+  const prefill = customHoursPrefillForDate(day, payroll)
 
   useEffect(() => {
     if (!organization?.id) return
@@ -129,8 +138,8 @@ export function DailyOverviewBookingSheet({
     const operative = bookings.find((entry) => entry.id === row.bookingId)
     const manager = managerSiteBookings.find((entry) => entry.id === row.bookingId)
     setBreakRemoved(operative?.isBreakRemoved === true || manager?.isBreakRemoved === true)
-    setWorkStartTime(row.workStartTime || payroll.standardDayStart)
-    setWorkEndTime(row.workEndTime || payroll.standardDayEnd)
+    setWorkStartTime(row.workStartTime || prefill.start)
+    setWorkEndTime(row.workEndTime || prefill.end)
     // Seed once per booking. Later store updates must not wipe slider changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [row.bookingId])
@@ -138,9 +147,9 @@ export function DailyOverviewBookingSheet({
   useEffect(() => {
     if (hoursTouched.current) return
     if (row.workStartTime && row.workEndTime) return
-    setWorkStartTime(row.workStartTime || payroll.standardDayStart)
-    setWorkEndTime(row.workEndTime || payroll.standardDayEnd)
-  }, [row.bookingId, row.workStartTime, row.workEndTime, payroll.standardDayStart, payroll.standardDayEnd])
+    setWorkStartTime(row.workStartTime || prefill.start)
+    setWorkEndTime(row.workEndTime || prefill.end)
+  }, [row.bookingId, row.workStartTime, row.workEndTime, prefill.start, prefill.end])
 
   const catalogues = useMemo(() => splitBookingMoveCatalogues(projects, smallWorks), [projects, smallWorks])
   const accessInput = {
@@ -213,8 +222,9 @@ export function DailyOverviewBookingSheet({
         workStartTime,
         workEndTime,
         isBreakRemoved: breakRemoved,
-        policy: payroll,
-        date: day,
+        // Rulebook 1.19.0: the working hours in effect on the day shown.
+        policy: policyForBookingDate(day, payroll) ?? payroll,
+        dayKey: bookingDayKey(day),
       }),
     [workStartTime, workEndTime, breakRemoved, payroll, day]
   )

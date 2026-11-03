@@ -63,6 +63,8 @@ test('hub and warnings settings write organizations/{id}.warningDetection only',
     'warningDetection.detectClashes',
     'warningDetection.excludedUserIdsFromUnbookedWarnings',
     'warningDetection.includeWeekendsForUnbookedLabour',
+    // 1.19.0: the whole weekend "Hours to cover" map, one field.
+    'warningDetection.weekendCoverage',
   ])
   assert.equal(fields['warningDetection.clashLookaheadMode'], 'endOfInvoicingPeriod')
   assert.equal(keys.some((key) => key.startsWith('settings.')), false)

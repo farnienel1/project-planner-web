@@ -7,6 +7,7 @@
 import { estimatedWorkedHours, overviewFormatHours, parseMinutes } from '@/lib/daily-overview/buildDailyOverview'
 import { bookingPayrollHours, formatOvertimeEquation } from '@/lib/scheduling/paidHours'
 import { workedHoursSplit } from '@/lib/canonical'
+import { bookingDayKey, policyForBookingDate } from '@/lib/scheduling/bookingSlotRules'
 import type { ManagerLocationType, ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import type { Booking } from '@/types'
@@ -68,7 +69,9 @@ export function myScheduleClockSubtitle(
   policy?: OrgPayrollTimePolicy
 ): string {
   const range = slotClockRange(input.timeSlot, input.workStartTime, input.workEndTime, policy)
-  const hours = estimatedWorkedHours({ ...input, policy })
+  // Rulebook 1.19.0: the working hours in effect on the booking day.
+  const dayPolicy = input.date ? policyForBookingDate(input.date, policy) ?? policy : policy
+  const hours = estimatedWorkedHours({ ...input, policy: dayPolicy, dayKey: input.date ? bookingDayKey(input.date) : undefined })
   return `${range.label} · ${overviewFormatHours(hours)} hrs`
 }
 
@@ -146,7 +149,9 @@ export function MyScheduleTotalHoursCard({
   date?: Date
 }) {
   // Same figures as Daily Overview: `payrollHoursResult` → `workedHoursSplit` (never multiplied).
-  const results = bookings.map((b) => bookingPayrollHours({ ...b, policy, date }))
+  // Rulebook 1.19.0: the working hours in effect on the day shown.
+  const dayPolicy = date ? policyForBookingDate(date, policy) ?? policy : policy
+  const results = bookings.map((b) => bookingPayrollHours({ ...b, policy: dayPolicy, dayKey: date ? bookingDayKey(date) : undefined }))
   const worked = results.reduce((sum, r) => sum + r.workedHours, 0)
   const ot = results.reduce((sum, r) => sum + workedHoursSplit(r).outsideWorkedHours, 0)
   const otMultiplier =
