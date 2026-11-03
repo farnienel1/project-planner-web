@@ -764,6 +764,8 @@ export function AddUserScreen() {
       )}
 
       <div className="space-y-3 pt-2">
+        {/* Repeat the refusal next to the button, so the reason is visible where the person pressed Save. */}
+        {error && <ErrorBanner message={error} />}
         <SaveButton saving={saving} saved={saved} onClick={() => handleSubmit()} />
         <p className="mt-3 text-center text-xs text-slate-400">
           Creates invitation, user profile and organisation email mapping in Firebase — iOS compatible.
