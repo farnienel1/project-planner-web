@@ -52,8 +52,8 @@ test('1.9.0 live: shared collections load through live listeners scoped to the o
   const teardowns = auth.match(/unsubscribeOrgCollectionsOutside\(currentOrganizationId\(\)\)/g)?.length ?? 0
   assert.ok(adopts > 0 && teardowns === adopts, 'every organisation switch tears listeners down')
   assert.match(read('components/schedule/ScheduleScreen.tsx'), /if \(isPersonal && holidayOrgId\) void loadHolidayBookings\(holidayOrgId\)/)
-  assert.match(read('app/dashboard/warnings/page.tsx'), /watchAcceptedBookingClashes\(orgId/)
-  assert.match(read('app/dashboard/warnings/page.tsx'), /watchDismissedWarnings\(orgId/)
+  assert.match(read('app/dashboard/warnings/page.tsx'), /watchAcceptedBookingClashes\(\s*orgId/)
+  assert.match(read('app/dashboard/warnings/page.tsx'), /watchDismissedWarnings\(\s*orgId/)
   assert.match(read('components/home/HomeScreen.tsx'), /watchResolvedWarningKeys\(orgId/)
   assert.match(read('components/timesheets/TimesheetPeriodPage.tsx'), /watchOrgDocument\(orgId, \['settings', docId\]/)
   assert.match(read('components/daily-overview/DailyOverviewScreen.tsx'), /watchSubcontractorBookings\(/)
@@ -73,7 +73,7 @@ test('1.9.0 edits of a record deleted elsewhere are refused, never re-created', 
 
 test('M9: manager site booking edits are partial; creates carry write metadata', () => {
   const source = read('lib/stores/managerScheduleStore.ts')
-  assert.match(source, /managerSiteBookingUpdateWriteFields,\s*\{ userId: auth\?\.currentUser\?\.uid \?\? null, missing: 'refuse' \}/)
+  assert.match(source, /managerSiteBookingUpdateWriteFields,\s*\{\s*userId: auth\?\.currentUser\?\.uid \?\? null,\s*missing: 'refuse',/)
   assert.match(source, /writeMetadataFields\(auth\?\.currentUser\?\.uid, 'web'\)/)
   assert.match(read('lib/stores/bookingStore.ts'), /writeMetadataFields\(auth\?\.currentUser\?\.uid, 'web'\)/)
 })
