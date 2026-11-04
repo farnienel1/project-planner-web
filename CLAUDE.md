@@ -13,6 +13,8 @@ The canonical rulebook is the single source of business rules for this web app a
 @docs/agent-rules/advisor.md
 @docs/agent-rules/ios-parity-upgrades.md
 @docs/agent-rules/feature-completeness.md
+@docs/agent-rules/platform-guardrails.md
+@docs/OWNER_DECISIONS.md
 
 The full boundary, every shared function and the iOS side are described in `docs/CANONICAL_ARCHITECTURE.md`. Read it before changing bookings, warnings, invoicing, labour, organisation context, dates, people, invites, notifications or billing.
 
