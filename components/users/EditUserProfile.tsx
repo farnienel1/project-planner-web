@@ -7,7 +7,7 @@ import { useRouter } from 'next/navigation'
 import { format } from 'date-fns'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
-import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
+import { useOrgUserStore, useRosterDocuments } from '@/lib/stores/siteAuditStore'
 import { useUserStore } from '@/lib/stores/userStore'
 import { useInviteStore } from '@/lib/stores/inviteStore'
 import { findOperativeForUser, operativeRecordForUser } from '@/lib/operatives/operativeRosterUtils'
@@ -73,7 +73,18 @@ import {
 import { loadOrganisationQualificationsEnsuringStarter } from '@/lib/qualifications/starterLibrary'
 import { canonicalCertificateUrls, formatCertificateSaveError } from '@/lib/qualifications/certificateUpload'
 import { canManageOrganisationQualifications, staffAccountRole } from '@/lib/permissions'
-import { canDeleteUser, lineManagerCandidates, lineManagerSelectedIds, SELF_EMAIL_INVALID_MESSAGE, selfEmailChangeAction, selfEmailChangeSentMessage } from '@/lib/canonical'
+import {
+  canDeleteUser,
+  canManageOperatives,
+  lineManagerCandidates,
+  lineManagerChangeBlock,
+  lineManagerSelectedIds,
+  SELF_EMAIL_INVALID_MESSAGE,
+  selfEmailChangeAction,
+  selfEmailChangeSentMessage,
+  type LineManagerReport,
+  type PersonAccessChange,
+} from '@/lib/canonical'
 import { PermissionRowsList } from '@/components/users/ProfileExpandablePermissionToggle'
 import { userIsOrganizationSuperAdmin } from '@/lib/staff/rulebookPeople'
 import { useOrganizationDocument } from '@/lib/stores/organizationDocumentStore'
@@ -268,8 +279,11 @@ export function EditUserProfile({
   const { user: currentUser, organization, reloadSignedInProfile } = useAuthStore()
   const { users, loadUsers, setListedUserActive, patchListedUser } = useOrgUserStore()
   const { operatives, loadOperatives, patchOperativeQualifications } = useOperativeStore()
-  const { getUser, saveUser, setUserActive, deleteUser, sendPasswordReset, applyAccountType, changeAccountType, syncLinkedOperative, transferSuperAdmin } =
+  const { getUser, saveUser, setUserActive, deleteUser, sendPasswordReset, applyAccountType, changeAccountType, syncLinkedOperative, transferSuperAdmin, removeFromManagedJobs } =
     useUserStore()
+  // Rulebook 1.30.3 / 1.31.0 (audit finding 1): every write builder gets every users document of the organisation (the
+  // unfolded roster), so a same-email copy is never missed by a type change, deactivation or the transfer.
+  const rosterDocs = useRosterDocuments(organization?.id)
   const { inviteUser } = useInviteStore()
   const { bookings: holidayBookings, loadBookings: loadHolidays } = useHolidayStore()
 
@@ -282,6 +296,8 @@ export function EditUserProfile({
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [lineManagerError, setLineManagerError] = useState<string | null>(null)
+  // Rulebook 1.31.0 `lineManagerChangeBlock`: the people who report to this person, listed when a change is refused.
+  const [reportsBlock, setReportsBlock] = useState<LineManagerReport[] | null>(null)
   const [rateError, setRateError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
   const [showChangeType, setShowChangeType] = useState(false)
@@ -462,8 +478,23 @@ export function EditUserProfile({
       canDeleteUser(
         { id: currentUser.id, email: currentUser.email, role: staffAccountRole(currentUser), formerUserIds: currentUser.formerUserIds },
         { id: target.id, email: target.email, role: staffAccountRole(target), formerUserIds: target.formerUserIds },
-        { creatorUserId: (organization as { creatorUserId?: string } | null)?.creatorUserId ?? null }
+        {
+          creatorUserId: (organization as { creatorUserId?: string } | null)?.creatorUserId ?? null,
+          // 1.31.0 (owner decision 7): a manager with the Operatives permission deletes operatives.
+          actorManagesOperatives: canManageOperatives({ ...currentUser.permissions, role: currentUser.role }),
+        }
       )
+  )
+
+  // Rulebook 1.31.0 (owner decision 7): a manager with the Operatives permission manages operatives (never a manager,
+  // an admin or themselves) — deactivate and delete here; the security rules allow the same.
+  const mayManageAsOperativesManager = Boolean(
+    target &&
+      currentUser &&
+      !canAdminTools &&
+      target.id !== currentUser.id &&
+      canManageOperatives({ ...currentUser.permissions, role: currentUser.role }) &&
+      currentAccountType(target) === 'operative'
   )
 
   const showSetupCard =
@@ -561,6 +592,32 @@ export function EditUserProfile({
     }
   }
 
+  /**
+   * Rulebook 1.31.0 `lineManagerChangeBlock`: true (and the reports listed) when `change` would leave people without
+   * their line manager — the save is refused until they have another one.
+   */
+  const lineManagerBlocks = (person: User, change: PersonAccessChange): boolean => {
+    const block = lineManagerChangeBlock({ person: person as never, roster: rosterDocs as never, change })
+    if (!block.blocked) {
+      setReportsBlock(null)
+      return false
+    }
+    setReportsBlock(block.reports)
+    setError(block.message)
+    return true
+  }
+
+  /** Rulebook 1.31.0 `jobManagerRemovalWrites`: off every job they manage after an operative / deactivate / delete change. */
+  const removeFromJobs = async (person: User, change: PersonAccessChange) => {
+    if (!organization?.id) return
+    try {
+      const count = await removeFromManagedJobs(person, change, organization.id, rosterDocs)
+      if (count > 0) setSuccess(`Removed as manager from ${count === 1 ? '1 job' : `${count} jobs`}.`)
+    } catch (err) {
+      setError(err instanceof Error ? `Saved, but removing them from their jobs failed: ${err.message}` : 'Removing them from their jobs failed.')
+    }
+  }
+
   const runSave = async () => {
     if (!target || !organization?.id || !canEdit) return
 
@@ -571,6 +628,11 @@ export function EditUserProfile({
       draftAccountType && draftTypePermissions
         ? { ...applyAccountType(target, draftAccountType), permissions: draftTypePermissions }
         : target
+    const levelChange: PersonAccessChange | null =
+      draftAccountType && draftAccountType !== currentAccountType(target) ? { kind: 'level', to: draftAccountType } : null
+    const deactivating = savedUser.current?.isActive !== false && target.isActive === false
+    if (levelChange && lineManagerBlocks(target, levelChange)) return
+    if (deactivating && lineManagerBlocks(target, { kind: 'deactivate' })) return
     const lineManagerMessage = userLineManagerRequiredError(asSaved, users)
     setLineManagerError(lineManagerMessage)
     if (lineManagerMessage) {
@@ -704,7 +766,7 @@ export function EditUserProfile({
       if (draftAccountType && draftTypePermissions && draftAccountType !== currentAccountType(previous)) {
         // Rulebook 1.11.0 `accountTypeChangeWrites`: the new type on every document that decides it here, in one batch
         // (1.12.2).
-        const typeNote = await changeAccountType(previous, draftAccountType, organization.id, users, draftTypePermissions)
+        const typeNote = await changeAccountType(previous, draftAccountType, organization.id, rosterDocs, draftTypePermissions)
         if (typeNote) setSuccess(typeNote)
         // The type is saved: the profile save below sends only the other edits, never the type fields again.
         if (profileBaseline) {
@@ -714,7 +776,7 @@ export function EditUserProfile({
       } else if (accountTypeRepair) {
         // Rulebook 1.12.2 `accountTypeSyncState`: a user type only partly saved (older iOS build, interrupted save) is
         // finished on every document from the profile's type.
-        await changeAccountType(previous, accountTypeRepair, organization.id, users, previous.permissions)
+        await changeAccountType(previous, accountTypeRepair, organization.id, rosterDocs, previous.permissions)
       }
       await saveUser(toSave, organization.id, previous.email, { baseline: profileBaseline, payHistoryRows })
       savedUser.current = toSave
@@ -740,8 +802,13 @@ export function EditUserProfile({
       window.setTimeout(() => setSaved(false), 3000)
       setSuccess(emailChangeNote ?? (toSave.isActive ? 'Profile saved.' : 'User deactivated.'))
       if (emailChangeNote) setTarget({ ...toSave })
-      void setUserActive(toSave.id, toSave.isActive, organization.id).catch(() => undefined)
+      void setUserActive(toSave.id, toSave.isActive, organization.id, rosterDocs).catch(() => undefined)
       void syncLinkedOperative(organization.id, toSave, operatives).catch(() => undefined)
+      if (draftAccountType === 'operative' && currentAccountType(previous) !== 'operative') {
+        await removeFromJobs(previous, { kind: 'level', to: 'operative' })
+      } else if (previous.isActive !== false && toSave.isActive === false) {
+        await removeFromJobs(previous, { kind: 'deactivate' })
+      }
     } catch (err: unknown) {
       setTarget(previous)
       setListedUserActive(previous.id, previous.isActive)
@@ -802,9 +869,10 @@ export function EditUserProfile({
   }
 
   const handleToggleActive = async () => {
-    if (!target || !canAdminTools || activeSaving || target.isSuperAdmin) return
+    if (!target || !(canAdminTools || mayManageAsOperativesManager) || activeSaving || target.isSuperAdmin) return
     const previous = target
     const next = !target.isActive
+    if (!next && lineManagerBlocks(target, { kind: 'deactivate' })) return
     const nextUser = { ...target, isActive: next, updatedAt: new Date() }
     // Reactivating is a save too: `lineManagerRequiredError` refuses an active operative or manager with no active
     // line manager (an inactive person is not checked).
@@ -824,8 +892,9 @@ export function EditUserProfile({
     setBaseline(profileSnapshot(nextUser, null, null))
     setSuccess(next ? 'User reactivated.' : 'User deactivated.')
     try {
-      await setUserActive(target.id, next, organization?.id)
+      await setUserActive(target.id, next, organization?.id, rosterDocs)
       if (savedUser.current) savedUser.current = { ...savedUser.current, isActive: next }
+      if (!next) await removeFromJobs(previous, { kind: 'deactivate' })
       if (organization?.id) void syncLinkedOperative(organization.id, nextUser, operatives).catch(() => undefined)
     } catch (err: unknown) {
       setTarget(previous)
@@ -839,11 +908,13 @@ export function EditUserProfile({
   }
 
   const handleDelete = async () => {
-    if (!target || !canAdminTools || !mayDeleteTarget) return
+    if (!target || !mayDeleteTarget) return
     setConfirmDelete(false)
+    if (lineManagerBlocks(target, { kind: 'delete' })) return
     setBusyAction('delete')
     try {
-      await deleteUser(target.id, { organizationId: organization?.id, email: target.email })
+      await deleteUser(target.id, { organizationId: organization?.id, email: target.email, roster: rosterDocs })
+      await removeFromJobs(target, { kind: 'delete' })
       router.push(hubHref || backHref)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to delete user')
@@ -857,7 +928,7 @@ export function EditUserProfile({
     setTransferring(true)
     setError(null)
     try {
-      await transferSuperAdmin(organization.id, currentUser.id, nextUserId, users)
+      await transferSuperAdmin(organization.id, currentUser.id, nextUserId, rosterDocs)
       await reloadSignedInProfile()
       await loadUsers(organization.id, { force: true })
       const refreshed = await getUser(target.id, { payEditor: true })
@@ -893,6 +964,7 @@ export function EditUserProfile({
   const persistAccountType = async (accountType: 'operative' | 'manager' | 'admin') => {
     if (!target || !organization?.id || typeSaving || payReloadingRef.current) return
     const next = applyAccountType(cloneUser(target), accountType)
+    if (accountType !== currentAccountType(target) && lineManagerBlocks(target, { kind: 'level', to: accountType })) return
     // `lineManagerRequiredError` on the person as this change would save them.
     const lineManagerMessage = userLineManagerRequiredError(next, users)
     if (lineManagerMessage) {
@@ -905,7 +977,8 @@ export function EditUserProfile({
     setSuccess(null)
     try {
       // Rulebook 1.11.0 `accountTypeChangeWrites`: users docs, `members.{uid}` and the membership together.
-      const typeNote = await changeAccountType(target, accountType, organization.id, users, next.permissions)
+      const typeNote = await changeAccountType(target, accountType, organization.id, rosterDocs, next.permissions)
+      if (accountType === 'operative' && currentAccountType(target) !== 'operative') await removeFromJobs(target, { kind: 'level', to: 'operative' })
       if (typeNote) {
         // Rulebook 1.11.0: a profile of another company is not rewritten; only this organisation's entry changed.
         savedUser.current = next
@@ -1001,6 +1074,19 @@ export function EditUserProfile({
           <ErrorBanner message={error} />
         </div>
       )}
+      {reportsBlock && reportsBlock.length > 0 ? (
+        <div className="mt-2 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <ul className="list-disc pl-5">
+            {reportsBlock.map((report) => (
+              <li key={report.id}>
+                <Link href={`/dashboard/users/${encodeURIComponent(report.id)}`} className="underline">
+                  {report.name}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
       {canEdit && accountTypeRepair && !draftAccountType ? (
         <div className="mt-4 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           {ACCOUNT_TYPE_OUT_OF_SYNC_MESSAGE}
@@ -1711,6 +1797,25 @@ export function EditUserProfile({
               <ActionButton
                 title="Delete user"
                 subtitle="Permanently remove account"
+                tone="red"
+                onClick={() => setConfirmDelete(true)}
+              />
+            )}
+          </>
+        )}
+        {mayManageAsOperativesManager && (
+          <>
+            <ActionButton
+              title={target.isActive ? 'Deactivate operative' : 'Reactivate operative'}
+              subtitle={target.isActive ? 'Suspend access, keep history' : 'Restore sign-in access'}
+              tone="amber"
+              busy={activeSaving}
+              onClick={handleToggleActive}
+            />
+            {!mayDeleteTarget ? null : (
+              <ActionButton
+                title="Delete operative"
+                subtitle="Permanently remove this operative"
                 tone="red"
                 onClick={() => setConfirmDelete(true)}
               />

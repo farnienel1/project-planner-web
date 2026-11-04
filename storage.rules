@@ -303,7 +303,9 @@ service firebase.storage {
           request.auth.uid in firestore.get(path).data.get('assignedManagerUserIds', [])
           || firestore.get(path).data.get('assignedManagerUserId', '') == request.auth.uid
         )
-        && firestore.get(path).data.get('hasNoLineManager', false) != true;
+        && firestore.get(path).data.get('hasNoLineManager', false) != true
+        // 1.31.0 (no rights carry over on a level change): an operative is nobody's line manager.
+        && !(truthyBool(userData().get('operativeMode', false)) || userData().get('role', '') == 'operative');
     }
 
     // An admin of this organisation, as Firestore isOrganizationAdmin and canonical isAdminOutsideOperativeMode read it

@@ -23,6 +23,7 @@ test('1.23.1 inviteUserCore refuses an invite with no user level before any writ
   assert.match(source, /userMissingLevel/)
   const guard = source.indexOf('const levelError = inviteLevelError(input)')
   assert.ok(guard > 0)
-  assert.ok(guard < source.indexOf('await setDoc(doc(db, \'invitations\''))
+  // 1.31.0: the invitation is written in the Add User batch.
+  assert.ok(guard < source.indexOf("batch.set(doc(db, 'invitations'"))
   assert.ok(guard < source.indexOf('loadInviteClaimState(input.organizationId'))
 })

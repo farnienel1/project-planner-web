@@ -1,4 +1,4 @@
-import { collection, doc, getDoc, getDocs, query, setDoc, Timestamp, where } from 'firebase/firestore'
+import { collection, doc, getDoc, getDocs, query, setDoc, Timestamp, where, writeBatch } from 'firebase/firestore'
 import { getFirebaseDb } from '@/lib/firebase/ensureFirebase'
 import { buildInvitedUserPayload, normalizeLineManagerIds, permissionsToFirestoreMap } from '@/lib/firebase/userPayload'
 import { payProfileWriteFieldsFromProfileWrite, PAY_PROFILES_COLLECTION, sharedDocumentPayWrite, userMissingLevel, writeMetadataFields } from '@/lib/canonical'
@@ -213,7 +213,6 @@ export async function inviteUserCore(input: InviteUserCoreInput): Promise<Invite
   })
   if (!invitationData) throw new Error('An invitation needs an email and an organisation.')
 
-  await setDoc(doc(db, 'invitations', invitationId), invitationData)
   const placeholder = buildInvitedUserPayload({
       userId,
       email: emailLower,
@@ -245,7 +244,14 @@ export async function inviteUserCore(input: InviteUserCoreInput): Promise<Invite
   // check who may change its pay). The invitation itself still stores the pay it will apply.
   await securitySwitchesReady()
   const privatePay = privatePayFor(input.organizationId)
-  await setDoc(doc(db, 'users', userId), sharedDocumentPayWrite(placeholder, { privatePay }))
+  // Rulebook 1.31.0 §11 (audit finding 8): the invitation, the placeholder users document and the email claim are ONE
+  // batch, so a refusal never leaves an invitation without its placeholder or a placeholder without its claim. The pay
+  // profile and the tax ids follow: their rules check the placeholder that this batch creates.
+  const batch = writeBatch(db)
+  batch.set(doc(db, 'invitations', invitationId), invitationData)
+  batch.set(doc(db, 'users', userId), sharedDocumentPayWrite(placeholder, { privatePay }))
+  batch.set(doc(db, 'organizations', input.organizationId, 'userEmails', emailLower), { userId })
+  await batch.commit()
   const payFields = privatePay ? payProfileWriteFieldsFromProfileWrite(userId, placeholder) : null
   if (payFields) {
     await setDoc(
@@ -254,7 +260,6 @@ export async function inviteUserCore(input: InviteUserCoreInput): Promise<Invite
       { merge: true }
     )
   }
-  await setDoc(doc(db, 'organizations', input.organizationId, 'userEmails', emailLower), { userId })
   if (input.utrNumber?.trim() || input.vatNumber?.trim()) {
     await saveTaxIds(userId, { utrNumber: input.utrNumber, vatNumber: input.vatNumber }, input.invitedBy, {
       stripLegacy: false,

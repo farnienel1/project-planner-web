@@ -24,7 +24,7 @@ export type UserDeletePerson = {
   sameEmailUserIds?: ReadonlyArray<string> | null
 }
 
-export type UserDeleteRefusal = 'not_admin' | 'self' | 'super_admin' | 'creator' | 'admin_needs_super_admin'
+export type UserDeleteRefusal = 'not_admin' | 'self' | 'super_admin' | 'creator' | 'admin_needs_super_admin' | 'operatives_only'
 
 export const USER_DELETE_REFUSAL_MESSAGES: Readonly<Record<UserDeleteRefusal, string>> = {
   not_admin: 'Only an admin can delete people.',
@@ -32,6 +32,7 @@ export const USER_DELETE_REFUSAL_MESSAGES: Readonly<Record<UserDeleteRefusal, st
   super_admin: 'The super admin cannot be deleted.',
   creator: 'The company owner cannot be deleted.',
   admin_needs_super_admin: 'Only the super admin can delete an admin.',
+  operatives_only: 'With the Operatives permission you can delete operatives only.',
 }
 
 function key(value: unknown): string {
@@ -44,18 +45,40 @@ function text(value: unknown): string {
 
 /**
  * Why `actor` may not delete `target`, or null when they may (the same test as the `users/{uid}` delete rule):
- * only an admin or super admin outside operative mode deletes; never themselves (any of their ids); never the
+ * an admin or super admin outside operative mode deletes; never themselves (any of their ids); never the
  * super admin or the organisation creator (`creatorUserId`); an admin who is not super admin deletes only people who
- * are not admins.
+ * are not admins. 1.31.0 (owner decision 7): a manager with the Operatives toggle (`actorManagesOperatives`) deletes
+ * operatives only (`operatives_only` otherwise), never themselves.
  */
+export type UserDeleteOptions = {
+  roster?: ReadonlyArray<PersonRosterRow> | null
+  creatorUserId?: string | null
+  /**
+   * 1.31.0 (owner decision 7): the actor is a manager with the Operatives toggle in this organisation
+   * (`canManageOperatives`). They may delete operatives (with or without a login) — never a manager, an admin or
+   * themselves.
+   */
+  actorManagesOperatives?: boolean | null
+}
+
 export function userDeleteRefusal(
   actor: UserDeletePerson | null | undefined,
   target: UserDeletePerson | null | undefined,
-  options?: { roster?: ReadonlyArray<PersonRosterRow> | null; creatorUserId?: string | null } | null
+  options?: UserDeleteOptions | null
 ): UserDeleteRefusal | null {
   if (!actor || !target || !text(target.id)) return 'not_admin'
   const actorRole = actor.role
-  if (!actorRole || actorRole.isOperativeMode || !(actorRole.isAdmin || actorRole.isSuperAdmin)) return 'not_admin'
+  if (!actorRole || actorRole.isOperativeMode) return 'not_admin'
+  const actorIsAdmin = actorRole.isAdmin || actorRole.isSuperAdmin
+  if (!actorIsAdmin) {
+    if (!(actorRole.isManager && options?.actorManagesOperatives === true)) return 'not_admin'
+    const operativesRoster = options?.roster ?? null
+    const ownIds = new Set(personIdSet(actor, operativesRoster).map(key))
+    if (personIdSet(target, operativesRoster).some((id) => ownIds.has(key(id)))) return 'self'
+    const targetRole = target.role
+    const operativeOnly = !!targetRole && targetRole.isOperativeMode && !targetRole.isAdmin && !targetRole.isSuperAdmin && !targetRole.isManager
+    return operativeOnly ? null : 'operatives_only'
+  }
   const roster = options?.roster ?? null
   const actorIds = new Set(personIdSet(actor, roster).map(key))
   const targetIds = personIdSet(target, roster).map(key)
@@ -72,7 +95,7 @@ export function userDeleteRefusal(
 export function canDeleteUser(
   actor: UserDeletePerson | null | undefined,
   target: UserDeletePerson | null | undefined,
-  options?: { roster?: ReadonlyArray<PersonRosterRow> | null; creatorUserId?: string | null } | null
+  options?: UserDeleteOptions | null
 ): boolean {
   return userDeleteRefusal(actor, target, options) === null
 }
@@ -108,6 +131,8 @@ export type UserDeleteInput = {
   invitations?: ReadonlyArray<UserDeleteRow> | null
   /** True when the person's `organizations/{orgId}.members` map has an entry for them. Default true. */
   listedInMembers?: boolean | null
+  /** 1.31.0: the actor is a manager with the Operatives permission (the account step runs one write at a time). */
+  actorManagesOperatives?: boolean | null
   nowIso: string
   tz?: string | null
 }
@@ -138,7 +163,18 @@ export function userDeleteWrites(input: UserDeleteInput): UserDeleteStep[] {
   ]
   if (email && !email.includes('/')) account.push({ op: 'delete', path: `organizations/${org}/userEmails/${email}` })
   if (input.listedInMembers !== false) account.push({ op: 'update', path: `organizations/${org}`, deleteFields: [`members.${uid}`] })
-  const steps: UserDeleteStep[] = [{ step: 'account', writes: account }]
+  // 1.31.0 (owner decision 7): a manager with the Operatives permission runs the account step one write at a time,
+  // in this order — tax ids, membership, email claim (each checked against the users document still there), then the
+  // users document, then the members entry (checked against it being gone). The security rules' document-lookup and
+  // expression budget is per request, and their tests are dearer than an admin's. An admin's stays one batch.
+  const steps: UserDeleteStep[] =
+    input.actorManagesOperatives === true
+      ? [
+          ...account.filter((write) => write.path !== `users/${uid}` && write.op === 'delete'),
+          ...account.filter((write) => write.path === `users/${uid}`),
+          ...account.filter((write) => write.op === 'update'),
+        ].map((write) => ({ step: 'account' as const, writes: [write] }))
+      : [{ step: 'account', writes: account }]
 
   const rowMatches = (row: UserDeleteRow) =>
     idKeys.has(key(row?.id)) || idKeys.has(key(row?.userId)) || (email !== '' && key(row?.email) === email)

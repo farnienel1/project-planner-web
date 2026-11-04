@@ -67,15 +67,27 @@ export function buildProjectFirestorePayload(input: ProjectSaveInput): Record<st
   if (input.hiddenManagerUserIds) payload.hiddenManagerUserIds = input.hiddenManagerUserIds
   if (input.hiddenOperativeUserIds) payload.hiddenOperativeUserIds = input.hiddenOperativeUserIds
 
-  if (input.customJobType?.trim()) payload.customJobType = input.customJobType.trim()
+  // Rulebook 1.31.0: null is a removal on an edit (`jobWriteFields` removes a field only when it is stored) and is
+  // left out on a create. Switching a custom job type back to CAT A clears `customJobType`.
+  payload.customJobType = input.customJobType?.trim() || null
   if (input.managerId) payload.managerId = input.managerId
   if (input.managerIds && input.managerIds.length > 0) {
     payload.managerIds = input.managerIds
     if (!input.managerId) payload.managerId = input.managerIds[0]
+  } else if (input.managerIds) {
+    // 1.31.0: clearing the managers removes all three fields together (as iOS does), never `managerUserIds: []` beside
+    // a stale `managerIds` / `managerId`.
+    payload.managerIds = null
+    payload.managerId = null
+    payload.managerUserIds = null
   }
-  if (input.managerUserIds) payload.managerUserIds = input.managerUserIds
-  if (input.latitude != null) payload.latitude = input.latitude
-  if (input.longitude != null) payload.longitude = input.longitude
+  if (input.managerUserIds && input.managerUserIds.length > 0) payload.managerUserIds = input.managerUserIds
+  else if (input.managerUserIds && payload.managerIds) payload.managerUserIds = []
+  // 1.31.0: switching from a map pin to an address removes the pin's coordinates.
+  payload.latitude = input.latitude != null ? input.latitude : input.usesMapPinForLocation === true ? undefined : null
+  payload.longitude = input.longitude != null ? input.longitude : input.usesMapPinForLocation === true ? undefined : null
+  if (payload.latitude === undefined) delete payload.latitude
+  if (payload.longitude === undefined) delete payload.longitude
 
   return payload
 }
@@ -106,6 +118,8 @@ export function projectToSaveInput(project: Project, organizationId: string): Pr
     customJobType: project.customJobType,
     managerId: project.managerId,
     managerIds: project.managerIds,
+    // 1.31.0: the stored account ids too, so an edit's base matches what is stored (`jobWriteFields` groups the three).
+    managerUserIds: project.managerUserIds,
     managerLegacy:
       project.manager?.name && project.manager.name.trim().toLowerCase() !== 'custom'
         ? project.manager.name

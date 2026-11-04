@@ -9,6 +9,7 @@
 import { bookingOccupiesDay, formerIdAliases, jobKind, multipliedHoursText, payrollMultipliedHours, payrollOutsideMultiplier, unbookedLabourRowsOnDay, warningScopeFor, weekdayPaidHours, workedHoursSplit, type JobAccessViewer } from '@/lib/canonical'
 import { isoWeekdayInZone } from '@/lib/orgTime/zoneTime'
 import { labourPersonFromUser, labourRosterOperative } from '@/lib/warnings/unbookedLabourWarnings'
+import { warningScopeRoster } from '@/lib/warnings/warningScopeRoster'
 import { findUserByAnyId, rosterDisplayName } from '@/lib/staff/userRosterUtils'
 import { addLondonDays, coversCalendarDay, dayKey, isSameLondonDay } from '@/lib/ios-parity/londonTime'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
@@ -260,7 +261,8 @@ export function buildDailyOverview(params: {
   }
   const customGroups = [...customMap.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([name, bookings]) => ({ name, bookings }))
 
-  const labourPeople = params.users.map(labourPersonFromUser)
+  // Rulebook 1.31.0 (audit finding 4): the fold's same-email ids count for the person kept.
+  const labourPeople = params.users.map((user) => labourPersonFromUser(user, params.userIdAliases))
   // A booking saved under an invite placeholder id still names the person after sign-up.
   const userIdAliases = { ...formerIdAliases(labourPeople), ...(params.userIdAliases || {}) }
   const operativeById = new Map(params.operatives.map((operative) => [operative.id, operative]))
@@ -469,15 +471,17 @@ export function buildDailyOverview(params: {
   const overviewDayKey = dayKey(day)
   const payroll = params.payrollPolicy ?? DEFAULT_PAYROLL_POLICY
   const scope = params.viewer
-    ? warningScopeFor({
+    ? // Rulebook 1.31.0 §5, §6: the same scope as the warning list — admins everyone; a manager themselves, their
+      // reports and the jobs they manage (`warningScopeFor`).
+      warningScopeFor({
         viewer: params.viewer,
-        visibleJobIds: params.projects.map((project) => project.id),
-        bookings: params.bookings.map((booking) => ({ projectId: booking.projectId, operativeId: booking.operativeId })),
-        managerBookings: params.managerBookings.map((booking) => ({
-          userId: booking.userId,
-          locationType: booking.locationType,
-          locationId: booking.locationId ?? null,
+        jobs: params.projects.map((project) => ({
+          id: project.id,
+          managerId: project.managerId ?? null,
+          managerIds: project.managerIds ?? [],
+          managerUserIds: project.managerUserIds ?? [],
         })),
+        roster: warningScopeRoster(params.users, params.userIdAliases),
         people: params.users.map((user) => ({ id: user.id, email: user.email, formerIds: user.formerUserIds ?? [] })),
         operatives: params.operatives.map((operative) => ({ id: operative.id, email: operative.email })),
         enforced: params.enforcedReads === true,

@@ -286,7 +286,7 @@ export function taskCompletedRecipients(
   return excludeActor([idText(named[0].id)], completer, members)
 }
 
-/** The six company activity types (rulebook 1.4.0 §13): written once per admin, never without a `userId`. */
+/** The company activity types (rulebook 1.4.0 §13; 1.31.0 adds `operative_deleted`, `job_manager_removed`): written once per admin, never without a `userId`. */
 export const COMPANY_ACTIVITY_NOTICE_TYPES = [
   'operative_created',
   'manager_created',
@@ -294,6 +294,9 @@ export const COMPANY_ACTIVITY_NOTICE_TYPES = [
   'project_created',
   'small_works_created',
   'warning_removed',
+  // 1.31.0 (§11): an operative deleted (by an admin or an operatives manager) and a manager taken off jobs.
+  'operative_deleted',
+  'job_manager_removed',
 ] as const
 
 /**
@@ -427,6 +430,10 @@ export const NOTIFICATION_CATALOG: ReadonlyArray<NotificationCatalogRow> = [
     'web: not written yet. One row per admin (userId + actorUserId). Toggle: companyActivity.'),
   row('warning_removed', 'Warning dismissed', 'companyActivityRecipients', ['web', 'ios'],
     'one row per admin (userId + actorUserId); never written without userId. Toggle: companyActivity.'),
+  row('operative_deleted', 'Operative deleted (1.31.0)', 'companyActivityRecipients', ['web'],
+    'one row per admin (userId + actorUserId); relatedId the deleted user id. Toggle: companyActivity. iOS: write it when an operative is deleted.'),
+  row('job_manager_removed', 'A manager made an operative, deactivated or deleted is taken off their jobs (1.31.0)', 'companyActivityRecipients', ['web'],
+    'one row per admin (userId + actorUserId); relatedId the person. Toggle: companyActivity. iOS: write it with jobManagerRemovalWrites.'),
   row('idea_status', 'Feedback idea status changed', 'ideaRecipients', ['web'], 'web: the actor is not removed; use ideaRecipients.'),
   row('idea_shipped', 'Feedback idea shipped', 'ideaRecipients', ['web'], 'web: the actor is not removed; use ideaRecipients.'),
   row('idea_comment', 'Comment on a feedback idea', 'ideaRecipients', ['web'],

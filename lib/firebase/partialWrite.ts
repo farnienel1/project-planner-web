@@ -93,3 +93,30 @@ export async function savePartialDocument(
   await updateDoc(ref, { ...firestoreUpdateFields(write), updatedAt: serverTimestamp(), ...(metadata ?? {}) })
   return true
 }
+
+/**
+ * `savePartialDocument` into a batch (rulebook 1.31.0 §11: Edit User saves every document in one batch). Reads the
+ * stored copy now and adds the partial update (or the create) to `batch`; nothing is written until the batch commits.
+ * Returns whether a write was added.
+ */
+export async function addPartialDocumentToBatch(
+  batch: { set: (ref: DocumentReference, data: Record<string, unknown>) => unknown; update: (ref: DocumentReference, data: Record<string, unknown>) => unknown },
+  ref: DocumentReference,
+  payload: Record<string, unknown>,
+  writeFields: (before: Record<string, unknown> | null, next: Record<string, unknown>) => DocumentWriteFields,
+  options?: { userId?: string | null; base?: Record<string, unknown> | null }
+): Promise<boolean> {
+  const metadata = writeMetadataFields(options?.userId, 'web')
+  const snap = await getDoc(ref)
+  const next = plainWritePayload(payload)
+  delete next.updatedAt
+  if (!snap.exists()) {
+    const create = writeFields(null, next)
+    batch.set(ref, { ...create.set, updatedAt: serverTimestamp(), ...(metadata ?? {}) })
+    return true
+  }
+  const write = writeFields(changeBase(options?.base, snap.data() as Record<string, unknown>), next)
+  if (Object.keys(write.set).length === 0 && write.remove.length === 0) return false
+  batch.update(ref, { ...firestoreUpdateFields(write), updatedAt: serverTimestamp(), ...(metadata ?? {}) })
+  return true
+}

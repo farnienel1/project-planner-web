@@ -34,7 +34,7 @@ function roleBadge(user: User | undefined): string {
 }
 
 function bookingKindOf(user: User) {
-  return labourBookingKind(labourPersonFromUser(user))
+  return labourBookingKind(labourPersonFromUser(user, null))
 }
 
 /**

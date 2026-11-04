@@ -29,6 +29,14 @@ service cloud.firestore {
            ('role' in userData && userData.role == 'manager');
   }
 
+  // Rulebook 1.31.0 §8 (owner decision: no rights carry over on a level change, lib/canonical lineManagerIds): an
+  // operative is nobody's line manager, even when an old id is still stored on the report. The caller's own users
+  // document says operative (and not admin).
+  function callerHomeIsOperative() {
+    let home = callerHomeData();
+    return isOperativeProfile(home) && !adminLikeUser(home);
+  }
+
   // Job quote and order history (`canViewMaterialOrderHistory`): every admin and manager of the organisation, never
   // operative mode — `isOrgManagerOrAdmin` (1.10.0: this organisation's role, not another company's flags).
 
@@ -120,9 +128,11 @@ service cloud.firestore {
     return data.get('permissions', {}) is map ? data.get('permissions', {}).get(key, null) : null;
   }
 
-  // A flag counts when it is on at the top level or inside `permissions`.
+  // Rulebook 1.31.0 (audit finding 5, lib/canonical userPermissionFlag): the top-level value when one is stored, else
+  // `permissions.{key}`. Before 1.31.0 a flag counted when it was on in EITHER place, while every screen read the
+  // top-level value first.
   function staffFlag(data, key) {
-    return truthyBool(data.get(key, false)) || truthyBool(permissionValue(data, key));
+    return data.get(key, null) == null ? truthyBool(permissionValue(data, key)) : truthyBool(data.get(key, false));
   }
 
   function isOperativeProfile(data) {
@@ -656,12 +666,36 @@ service cloud.firestore {
   }
 
   // Managers with operative-management access may edit limited operative profile fields on users docs.
+  // Rulebook 1.31.0 (owner decision 7): a manager with the Operatives permission edits an operative's profile — names,
+  // contact, trade, active flag, the operative toggles (Materials, Site audit), line manager, leave and pay — and the
+  // person stays an operative with no more privilege (never a manager, admin or the self-manage toggles) and never
+  // "No line manager" (admins only, §8).
   function canManagerUpdateOperativeProfile(targetUserId) {
     return managerMayManageOperative(targetUserId, resource.data) &&
+           isOperativeProfile(request.resource.data) &&
+           !raisesPrivileges(request.resource.data) &&
+           !staffFlag(request.resource.data, 'annualLeaveSelfBook') &&
+           !staffFlag(request.resource.data, 'timesheetSelfSign') &&
+           request.resource.data.get('hasNoLineManager', false) != true &&
            request.resource.data.diff(resource.data).changedKeys().hasOnly([
              'assignedManagerUserId',
              'assignedManagerUserIds',
              'hasNoLineManager',
+             'firstName',
+             'surname',
+             'lastName',
+             'name',
+             'displayName',
+             'mobileNumber',
+             'tradeTypePreset',
+             'tradeTypeCustom',
+             'isActive',
+             'materials',
+             'siteAudit',
+             'permissions',
+             'timesheetsEnabled',
+             'annualLeaveYearAllowance',
+             'annualLeaveYearAllowanceKey',
              'dayRate',
              'hourlyRate',
              'payBasis',
@@ -1148,7 +1182,10 @@ service cloud.firestore {
         ('organizationId' in resource.data && isAdminOfCompany(resource.data.organizationId) &&
          adminUpdateKeepsTopAccount(userId) &&
          // 1.28.0: an admin never changes their own self-manage toggles (the Super Admin reads both on).
-         (request.auth.uid != userId || selfManageTogglesUnchanged(request.resource.data, resource.data)))
+         (request.auth.uid != userId || selfManageTogglesUnchanged(request.resource.data, resource.data)) &&
+         // 1.31.0 (audit finding 9, §8): "No line manager" is set only on an admin.
+         (request.resource.data.get('hasNoLineManager', false) != true ||
+          resource.data.get('hasNoLineManager', false) == true || adminLikeUser(request.resource.data)))
       ) && (
         // No shortcut for the account's own document: an admin moving their own profile
         // into another company must be an admin of that company too.
@@ -1167,6 +1204,9 @@ service cloud.firestore {
       allow delete: if request.auth != null && (
         isPlatformOwner() ||
         request.auth.uid == userId ||
+        // 1.31.0 (owner decision 7, lib/canonical userDeleteRefusal): a manager with the Operatives permission deletes an
+        // operative of their company (never a manager, an admin or themselves).
+        managerMayManageOperative(userId, resource.data) ||
         (request.auth.token.email != null && resource.data.email == request.auth.token.email) ||
         (
           exists(/databases/(default)/documents/users/$(request.auth.uid)) &&
@@ -1229,7 +1269,9 @@ service cloud.firestore {
           request.auth.uid == userId || isPlatformOwner() || adminOfSubject()
         );
         allow delete: if request.auth != null && privateDocId == 'taxIds' && (
-          request.auth.uid == userId || isPlatformOwner() || adminOfSubject() || inviteeOfPlaceholder()
+          request.auth.uid == userId || isPlatformOwner() || adminOfSubject() || inviteeOfPlaceholder() ||
+          // 1.31.0: deleting an operative (userDeleteWrites) as a manager with the Operatives permission.
+          (subjectExists() && managerMayManageOperative(userId, subjectUserData()))
         );
       }
 
@@ -1294,7 +1336,10 @@ service cloud.firestore {
         allow delete: if request.auth != null && (
           request.auth.uid == userId ||
           isOrgAdminViaMembersMap(membershipOrgId) ||
-          isOrganizationAdmin(membershipOrgId)
+          isOrganizationAdmin(membershipOrgId) ||
+          // 1.31.0: deleting an operative as a manager with the Operatives permission (read before the batch).
+          (exists(/databases/(default)/documents/users/$(userId)) &&
+           managerMayManageOperative(userId, get(/databases/(default)/documents/users/$(userId)).data))
         );
       }
     }
@@ -1322,7 +1367,15 @@ service cloud.firestore {
         // move their claim — create the new key (isOwnEmailClaimWrite) and delete their own old one, which no longer
         // matches their token email.
         allow delete: if request.auth != null && (
-          isPlatformOwner() || isAdminOfCompany(organizationId) || (
+          isPlatformOwner() || isAdminOfCompany(organizationId) ||
+          // 1.31.0: deleting an operative as a manager with the Operatives permission — the claim names an operative
+          // users document of this company (read before the batch).
+          (isManagerWithOperativesAccess() && userOrgIdMatchesPath(organizationId) &&
+           resource.data.get('userId', '') is string && resource.data.get('userId', '') != request.auth.uid &&
+           !string(resource.data.get('userId', '')).matches('(|.*/.*)') &&
+           exists(/databases/(default)/documents/users/$(resource.data.userId)) &&
+           isOperativeProfile(get(/databases/(default)/documents/users/$(resource.data.userId)).data) &&
+           !adminLikeUser(get(/databases/(default)/documents/users/$(resource.data.userId)).data)) || (
             resource.data.get('userId', '') == request.auth.uid &&
             request.auth.token.email is string &&
             request.auth.token.email_verified == true &&
@@ -1413,7 +1466,30 @@ service cloud.firestore {
             .hasOnly(['deletion', 'updatedAt', 'updatedBy', 'updatedFrom']) &&
           orgRootCallerIsSuperAdmin();
       }
-      allow update: if billingUnchanged() && (isPlatformOwner() || (request.auth != null && orgRootSuperAdminRestore())) ||
+      // 1.31.0 (owner decision 7, userDeleteWrites): a manager with the Operatives permission deleting an operative
+      // removes that one `members` entry (an operative or member entry), in the batch that deletes the users document.
+      // Cheapest tests first (the caller's own users document): for everyone else this branch stops at once, so the
+      // organisation update's expression budget is unchanged for admins.
+      function orgRootOperativesManagerRemovesMember() {
+        let home = callerHomeData();
+        return staffFlag(home, 'operatives') && !adminLikeUser(home) && staffFlag(home, 'manager') &&
+          !isOperativeProfile(home) && homeOrgIs(home, organizationId) && home.get('isActive', true) != false &&
+          orgRootRemovesOneOperativeMember();
+      }
+      // The members map loses exactly one entry, `operative`, whose users document is gone after the write, and
+      // nothing else on the document changes.
+      function orgRootRemovesOneOperativeMember() {
+        let gone = request.resource.data.get('members', {}).diff(resource.data.get('members', {}));
+        let removed = resource.data.get('members', {}).keys().removeAll(request.resource.data.get('members', {}).keys());
+        let uid = removed.size() == 1 ? removed[0] : '_';
+        return gone.removedKeys().size() == 1 && gone.addedKeys().size() == 0 && gone.changedKeys().size() == 0 &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members']) &&
+          resource.data.members[uid] == 'operative' && uid != request.auth.uid &&
+          !existsAfter(/databases/(default)/documents/users/$(uid)) &&
+          billingUnchanged() && deletionUnchanged();
+      }
+      allow update: if (request.auth != null && orgRootOperativesManagerRemovesMember()) ||
+                   billingUnchanged() && (isPlatformOwner() || (request.auth != null && orgRootSuperAdminRestore())) ||
                    billingUnchanged() && deletionUnchanged() && !orgScheduledForErasure() && (
                      isPlatformOwner() || (
                        request.auth != null &&
@@ -1470,8 +1546,13 @@ service cloud.firestore {
           (role == 'manager' && request.auth.uid in resource.data.get('managerUserIds', [])) ||
           (!enforcedReadsOn(organizationId) && legacyMemberRead(role));
       }
+      // 1.31.0 (owner decision, lib/canonical jobManagerRequiredError): a new job names at least one manager.
       function jobCreateAllowed(kind) {
-        return callerSeesEveryJob(callerOrgRole(organizationId), kind);
+        let next = request.resource.data;
+        return (next.get('managerIds', []).size() > 0 || next.get('managerUserIds', []).size() > 0 ||
+                next.get('assignedManagerUserIds', []).size() > 0 ||
+                (next.get('managerId', '') is string && next.get('managerId', '') != '')) &&
+          callerSeesEveryJob(callerOrgRole(organizationId), kind);
       }
       // Editing a job: every-job viewers; a manager of the job edits its details but never its manager list.
       function jobUpdateAllowed(kind) {
@@ -1566,7 +1647,12 @@ service cloud.firestore {
           (!rosterRowEmailChanged() || rosterRowAdmin() || operativesManagerForOtherRow()) &&
           payStaysPrivate(organizationId) &&
           writeMetadataValidWhenPresent();
-        allow delete: if isOrganizationAdmin(organizationId);
+        // 1.31.0 (owner decision 7): managers with the Operatives permission delete an operative row (not their own).
+        allow delete: if isOrganizationAdmin(organizationId) || (
+          isManagerWithOperativesAccess() && userOrgIdMatchesPath(organizationId) &&
+          !(request.auth.token.email is string &&
+            string(resource.data.get('email', '')).lower() == request.auth.token.email.lower())
+        );
       }
       
       // Deleted-booking tombstones (lib/canonical/bookingTombstones.ts). A delete of bookings/{id},
@@ -1663,8 +1749,24 @@ service cloud.firestore {
         let role = callerOrgRole(organizationId);
         let path = /databases/(default)/documents/organizations/$(organizationId)/$(collection)/$(bookingId);
         return role == 'admin' || isPlatformOwner() || (
-          role == 'manager' && exists(path) && managerMayWriteBookingData(collection, get(path).data)
+          role == 'manager' && exists(path) && (
+            (collection == 'bookings' && operativesManagerRemovesOrphanBooking(get(path).data)) ||
+            managerMayWriteBookingData(collection, get(path).data)
+          )
         );
+      }
+      // 1.31.0 (owner decision 7, userDeleteWrites step 2): a manager with the Operatives permission deleting an
+      // operative removes that person's labour bookings (with their tombstones) once the users document is gone — a
+      // booking whose `operativeId` names no users document (a deleted or catalogue operative).
+      // Cheapest first (the caller's own users document, read once per request) so admins and other managers stop
+      // before the extra lookup (a request may look up 10 documents; a batch 20).
+      function operativesManagerRemovesOrphanBooking(data) {
+        let home = callerHomeData();
+        let opId = data.get('operativeId', '');
+        return staffFlag(home, 'operatives') && !adminLikeUser(home) && staffFlag(home, 'manager') &&
+          !isOperativeProfile(home) && homeOrgIs(home, organizationId) && home.get('isActive', true) != false &&
+          opId is string && opId.size() > 0 && !opId.matches('.*/.*') &&
+          !exists(/databases/(default)/documents/users/$(opId));
       }
 
       // A role in this organisation (callerOrgRole not '') is membership here, so these rules do not repeat
@@ -1740,7 +1842,9 @@ service cloud.firestore {
           exists(path) && homeOrgIs(get(path).data, organizationId) &&
           // 1.30.0 review: "No line manager" stored on the person means none (canonical lineManagerIds).
           get(path).data.get('hasNoLineManager', false) != true &&
-          request.auth.uid in lineManagerIdList(get(path).data);
+          request.auth.uid in lineManagerIdList(get(path).data) &&
+          // 1.31.0: an operative is never a line manager.
+          !callerHomeIsOperative();
       }
       function overtimeMultiplierWriteValid() {
         let m = request.resource.data.get('otMultiplierOverride', null);
@@ -2002,7 +2106,7 @@ service cloud.firestore {
         // 1.29.0: plus the booked person's line manager applying an approved overtime request (overtime fields only).
         allow update: if !bookingTombstoned(bookingId) &&
           (overtimeLineManagerBookingUpdate('bookings') || bookingWriteAllowed('bookings', 'update'));
-        allow delete: if bookingWriteAllowed('bookings', 'delete');
+        allow delete: if operativesManagerRemovesOrphanBooking(resource.data) || bookingWriteAllowed('bookings', 'delete');
       }
       
       // 1.12.0 (M3, part): the qualification and skills catalogues are staff only (admins and managers of this
@@ -2094,6 +2198,8 @@ service cloud.firestore {
           return (
             isOrganizationAdmin(organizationId) ||
             isOrgAdminViaMembersMap(organizationId) || (
+              // 1.31.0: an operative is never a line manager (no rights carry over on a level change).
+              !callerHomeIsOperative() &&
               timesheetSubjectUid() is string &&
               exists(/databases/(default)/documents/users/$(timesheetSubjectUid())) &&
               // 1.12.0 (B3): former ids only from the caller's own company's users document.
@@ -2407,9 +2513,10 @@ service cloud.firestore {
         // lib/canonical/leaveRequests.ts canDecideLeave: never the requester's own request (admins
         // included). The requester's line manager; otherwise an admin not in operative mode. With no
         // line manager (legacy data) the request waits for an admin — never any manager (rulebook 1.3.0).
+        // 1.31.0: an operative is never a line manager (hbCallerIsOperative), even with an old id stored on the request.
         function hbCanDecide(data) {
           return !hbIsOwner(data) && (
-            (hbRequesterExists(data) && request.auth.uid in lineManagerIdList(hbRequester(data))) ||
+            (hbRequesterExists(data) && request.auth.uid in lineManagerIdList(hbRequester(data)) && !hbCallerIsOperative()) ||
             (!hbCallerIsOperative() && hbIsAdmin())
           );
         }
@@ -2418,7 +2525,8 @@ service cloud.firestore {
         function hbCanDecideBeforeAndAfter() {
           return !hbIsOwner(resource.data) && !hbIsOwner(request.resource.data) && (
             (hbRequesterExists(resource.data) && request.auth.uid in lineManagerIdList(hbRequester(resource.data)) &&
-             hbRequesterExists(request.resource.data) && request.auth.uid in lineManagerIdList(hbRequester(request.resource.data))) ||
+             hbRequesterExists(request.resource.data) && request.auth.uid in lineManagerIdList(hbRequester(request.resource.data)) &&
+             !hbCallerIsOperative()) ||
             (!hbCallerIsOperative() && hbIsAdmin())
           );
         }
@@ -2543,7 +2651,7 @@ service cloud.firestore {
         return request.auth.uid == subjectId ||
           (request.auth.token.email is string && subject.get('email', '') is string &&
            subject.get('email', '').lower() == request.auth.token.email.lower()) ||
-          lineManagerIdList(subject).hasAny([request.auth.uid]) ||
+          (lineManagerIdList(subject).hasAny([request.auth.uid]) && !callerHomeIsOperative()) ||
           managerMayManageOperative(subjectId, subject);
       }
       // Rulebook 1.27.0 §8 / §16 (owner decision 7, lib/canonical catalogueOperativePaySubjects): a catalogue operative

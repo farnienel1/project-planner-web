@@ -48,6 +48,29 @@ export const useInviteStore = create<InviteState>(() => ({
 
   inviteUser: async (input) => {
     const invitedBy = auth.currentUser?.uid || ''
-    return inviteUserCore({ ...input, invitedBy } satisfies InviteUserCoreInput)
+    const result = await inviteUserCore({ ...input, invitedBy } satisfies InviteUserCoreInput)
+    // Rulebook 1.31.0 §13 (owner decision 7): the admins hear that an operative was added (`operative_created`,
+    // company activity, never the actor) — by an admin or by a manager with the Operatives permission. Best effort.
+    const operative = input.role === 'operative' || (input.role == null && input.permissions.operativeMode === true)
+    if (operative && result.inviteType === 'new_user') {
+      void (async () => {
+        const [{ notifyCompanyActivity }, { useAuthStore }, { useOrgUserStore }] = await Promise.all([
+          import('@/lib/notifications/companyActivity'),
+          import('@/lib/stores/authStore'),
+          import('@/lib/stores/siteAuditStore'),
+        ])
+        const name = `${input.firstName} ${input.surname}`.trim() || input.email
+        await notifyCompanyActivity({
+          organizationId: input.organizationId,
+          type: 'operative_created',
+          title: 'Operative added',
+          message: `${name} was added as an operative.`,
+          relatedId: result.userId,
+          actor: useAuthStore.getState().user,
+          users: useOrgUserStore.getState().users,
+        })
+      })().catch((error) => console.warn('[inviteStore] operative_created notice skipped', error))
+    }
+    return result
   },
 }))

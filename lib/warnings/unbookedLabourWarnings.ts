@@ -24,7 +24,12 @@ export interface UnbookedLabourWarning {
 
 
 /** Web `User` → the rulebook's `LabourPerson`. Warnings, Daily Overview, and the scheduling picker all map through here. */
-export function labourPersonFromUser(user: User): LabourPerson {
+export function labourPersonFromUser(user: User, userIdAliases?: Readonly<Record<string, string>> | null): LabourPerson {
+  // Rulebook 1.31.0 §5 (audit finding 4): the roster fold's same-email ids (`userIdAliases`: duplicate id → the kept
+  // id) are this person's too, so a booking or leave stored under their other users document still counts.
+  const sameEmail = Object.entries(userIdAliases || {})
+    .filter(([alias, kept]) => kept === user.id && alias !== user.id)
+    .map(([alias]) => alias)
   return {
     id: user.id,
     email: user.email,
@@ -36,7 +41,7 @@ export function labourPersonFromUser(user: User): LabourPerson {
     isManager: Boolean(user.permissions?.manager),
     isAdmin: Boolean(user.permissions?.adminAccess) || user.role === UserRole.ADMIN,
     isSuperAdmin: Boolean(user.isSuperAdmin),
-    formerIds: user.formerUserIds ?? [],
+    formerIds: [...(user.formerUserIds ?? []), ...sameEmail],
   }
 }
 
@@ -68,6 +73,7 @@ export function computeUnbookedLabourWarnings({
   referenceDate = new Date(),
   timeZone,
   scope,
+  userIdAliases,
 }: {
   bookings: Booking[]
   managerSiteBookings?: ManagerSiteBooking[]
@@ -83,6 +89,8 @@ export function computeUnbookedLabourWarnings({
   timeZone?: string
   /** Rulebook §17: the viewer's `warningScopeFor`. Missing → everything. */
   scope?: WarningScope | null
+  /** Rulebook 1.31.0 (audit finding 4): the roster fold's same-email ids (duplicate id → the kept id). */
+  userIdAliases?: Readonly<Record<string, string>> | null
 }): UnbookedLabourWarning[] {
   const window = computeWarningCoverageWindow(referenceDate, warningDetection, invoicing, timeZone)
   let periodEnd = window.end
@@ -112,6 +120,7 @@ export function computeUnbookedLabourWarnings({
     endDayKey,
     timeZone,
     scope,
+    userIdAliases,
   })
 }
 
@@ -131,6 +140,7 @@ export function computeUnbookedLabourWarningsForDateRange({
   endDayKey,
   timeZone,
   scope,
+  userIdAliases,
 }: {
   bookings: Booking[]
   managerSiteBookings?: ManagerSiteBooking[]
@@ -148,6 +158,8 @@ export function computeUnbookedLabourWarningsForDateRange({
   timeZone?: string
   /** Rulebook §17: the viewer's `warningScopeFor`. Missing → everything. */
   scope?: WarningScope | null
+  /** Rulebook 1.31.0 (audit finding 4): the roster fold's same-email ids (duplicate id → the kept id). */
+  userIdAliases?: Readonly<Record<string, string>> | null
 }): UnbookedLabourWarning[] {
   const windowStart = londonMidnight(periodStart, timeZone)
   const windowEnd = londonMidnight(periodEnd, timeZone)
@@ -167,7 +179,7 @@ export function computeUnbookedLabourWarningsForDateRange({
     payrollPolicy: payrollPolicyState ?? payrollPolicy,
     // 1.19.0 §5: each weekend day's toggle and "Hours to cover" window.
     weekendCoverage: warningDetection.weekendCoverage ?? null,
-    people: users.map(labourPersonFromUser),
+    people: users.map((user) => labourPersonFromUser(user, userIdAliases)),
     operatives: operatives.map(labourRosterOperative),
     bookings: [
       ...bookings

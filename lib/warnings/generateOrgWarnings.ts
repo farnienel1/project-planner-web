@@ -35,6 +35,8 @@ import {
   type WarningScope,
   WARNING_SCOPE_ALL,
   warningScopeFor,
+  isWarningRowInScope,
+  managerBookingJobId,
 } from '@/lib/canonical'
 import type { NotificationPreferences } from '@/lib/settings/notificationPreferences'
 import { computeOperativeBookingClashWarnings, type OperativeBookingClashWarning } from '@/lib/scheduling/bookingClashUtils'
@@ -44,6 +46,7 @@ import { computeClashScanDayKeys, computeWarningCoverageWindow } from '@/lib/war
 import { computeMissedMaterialOrderWarnings, type MissedMaterialOrderWarning } from '@/lib/warnings/materialOrderWarnings'
 import { computeLeaveCoverageWarnings, type LeaveCoverageWarning } from '@/lib/warnings/leaveCoverageWarnings'
 import { dateFromDayKey } from '@/lib/ios-parity/londonTime'
+import { warningScopeRoster } from '@/lib/warnings/warningScopeRoster'
 
 export type QualificationExpiryWarning = {
   id: string
@@ -188,24 +191,30 @@ export function generateOrgWarnings(input: {
    * jobs they see and the people booked on them (`warningScopeFor`); missing → everything.
    */
   viewer?: JobAccessViewer | null
+  /** Rulebook 1.31.0: `organizations/{orgId}/managers` rows (a job may name one), for `warningScopeForViewer`. */
+  managers?: ReadonlyArray<{ id: string; email?: string | null }> | null
   /** Rulebook 1.26.0: the `enforcedReads` switch for this organisation (`securitySwitchOn`); missing → off. */
   enforcedReads?: boolean
 }): OrgWarningsResult {
+  // Rulebook 1.31.0 §5 (owner decision): admins see every warning; a manager the warnings about themselves, their
+  // reports and the jobs they manage (`warningScopeFor`; their job toggles no longer widen it).
   const scope: WarningScope = input.viewer
     ? warningScopeFor({
         viewer: input.viewer,
-        visibleJobIds: input.projects.map((project) => project.id),
-        bookings: input.bookings.map((booking) => ({ projectId: booking.projectId, operativeId: booking.operativeId })),
-        managerBookings: input.managerSiteBookings.map((booking) => ({
-          userId: booking.userId,
-          locationType: booking.locationType,
-          locationId: booking.locationId ?? null,
+        jobs: input.projects.map((project) => ({
+          id: project.id,
+          managerId: project.managerId ?? null,
+          managerIds: project.managerIds ?? [],
+          managerUserIds: project.managerUserIds ?? [],
         })),
-        people: input.users.map((user) => ({ id: user.id, email: user.email, formerIds: user.formerUserIds ?? [] })),
+        managers: input.managers ?? null,
+        roster: warningScopeRoster(input.users, input.userIdAliases),
         operatives: input.operatives.map((operative) => ({ id: operative.id, email: operative.email })),
         enforced: input.enforcedReads === true,
       })
     : WARNING_SCOPE_ALL
+  const projectOfBooking = new Map(input.bookings.map((booking) => [booking.id, booking.projectId]))
+  const jobOfManagerBooking = new Map(input.managerSiteBookings.map((booking) => [booking.id, managerBookingJobId(booking)]))
   const warningDetection = input.warningDetection ?? input.orgDetails?.warningDetection ?? DEFAULT_WARNING_DETECTION
   const invoicing = parseInvoicing(
     (input.invoicing ?? input.orgDetails?.invoicing) as Record<string, unknown> | undefined
@@ -234,7 +243,12 @@ export function generateOrgWarnings(input: {
         payrollPolicy,
         payrollPolicyState,
         userIdAliases: input.userIdAliases,
-      }).filter((warning) => onClashDay(warning) && !isAnonymisedWarningSubject(warning.operativeName))
+      }).filter(
+        (warning) =>
+          onClashDay(warning) &&
+          !isAnonymisedWarningSubject(warning.operativeName) &&
+          isWarningRowInScope(scope, { jobIds: [warning.projectAId, warning.projectBId], personIds: [warning.operativeId] })
+      )
     : []
 
   const managerClashWarnings = warningDetection.detectClashes
@@ -244,7 +258,15 @@ export function generateOrgWarnings(input: {
         payrollPolicy,
         payrollPolicyState,
         userIdAliases: input.userIdAliases,
-      }).filter((warning) => onClashDay(warning) && !isAnonymisedWarningSubject(warning.personName))
+      }).filter(
+        (warning) =>
+          onClashDay(warning) &&
+          !isAnonymisedWarningSubject(warning.personName) &&
+          isWarningRowInScope(scope, {
+            jobIds: warning.entries.map((entry) => jobOfManagerBooking.get(entry.managerBookingId || entry.bookingId) || projectOfBooking.get(entry.bookingId) || ''),
+            personIds: [warning.userId],
+          })
+      )
     : []
 
   const unbookedWarnings = computeUnbookedLabourWarnings({
@@ -260,6 +282,7 @@ export function generateOrgWarnings(input: {
     referenceDate: now,
     timeZone,
     scope,
+    userIdAliases: input.userIdAliases,
   })
 
   const leaveWarnings = computeLeaveCoverageWarnings({
@@ -275,7 +298,14 @@ export function generateOrgWarnings(input: {
     payrollPolicyState,
     referenceDate: now,
     timeZone,
-  }).filter((warning) => !isAnonymisedWarningSubject(warning.personName))
+  }).filter(
+    (warning) =>
+      !isAnonymisedWarningSubject(warning.personName) &&
+      isWarningRowInScope(scope, {
+        jobIds: warning.clashes.map((entry) => projectOfBooking.get(entry.bookingId) || jobOfManagerBooking.get(entry.bookingId) || ''),
+        personIds: [warning.userId, warning.operativeId, warning.personKey],
+      })
+  )
 
   const materialWarnings = computeMissedMaterialOrderWarnings(
     input.materials || [],

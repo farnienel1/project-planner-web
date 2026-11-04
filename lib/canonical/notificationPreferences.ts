@@ -105,6 +105,9 @@ const TYPE_TO_PREFERENCE: Record<string, NotificationPreferenceKey> = {
   manager_created: 'companyActivity',
   client_created: 'companyActivity',
   warning_removed: 'companyActivity',
+  // 1.31.0 (§11, owner decisions): operative deleted, manager taken off jobs.
+  operative_deleted: 'companyActivity',
+  job_manager_removed: 'companyActivity',
   task_created: 'tasksAssignedOrCompleted',
   task_completed: 'tasksAssignedOrCompleted',
   deadline_assigned: 'tasksAssignedOrCompleted',
@@ -436,6 +439,8 @@ export const DEVICE_PUSH_NOTIFICATION_TYPES = [
   'variation_from_tracker',
   'variation_numbers_updated',
   'warning_removed',
+  'operative_deleted',
+  'job_manager_removed',
   'operative_created',
   'manager_created',
   'client_created',
@@ -661,7 +666,10 @@ export function notificationDestination(input: NotificationDestinationInput): No
       return { kind: 'materialOrders', relatedId }
     case 'operative_created':
     case 'manager_created':
+    case 'job_manager_removed':
       return relatedId ? { kind: 'userEdit', relatedId } : { kind: 'manageUsers' }
+    case 'operative_deleted':
+      return { kind: 'manageUsers' }
     case 'client_created':
       return { kind: 'clients', relatedId }
     case 'warning_removed':

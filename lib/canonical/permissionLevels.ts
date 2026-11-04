@@ -85,6 +85,17 @@ export function storedPermissionFlag(user: unknown, key: string): boolean | null
   return bool(record(row.permissions)[key])
 }
 
+/**
+ * Rulebook 1.31.0 §11 (audit finding 5): THE reader for a permission or level flag on a users document, a membership
+ * or a roster row — the top-level value when one is stored (true / false, 1 / 0, "yes" / "no"), else `permissions.{key}`,
+ * else off. Every rule reads flags through it (`effectivePermissions`, `permissionLevelOf`, the self-manage and
+ * line-manager rules); firestore.rules `staffFlag` reads the same way. Before 1.31.0 the self-manage rules (and the
+ * security rules) counted a flag on when it was on in EITHER place, while every screen read the top-level value first.
+ */
+export function userPermissionFlag(user: unknown, key: string): boolean {
+  return storedPermissionFlag(user, key) === true
+}
+
 function roleToken(user: unknown): string {
   const role = record(user).role
   return typeof role === 'string' ? role.trim().toLowerCase().replace(/[\s-]/g, '_') : ''
@@ -506,6 +517,11 @@ export function accountTypePermissions(
   for (const key of USER_PERMISSION_FIELDS) {
     out[key] = storedPermissionFlag(previous, key) ?? PERMISSION_DEFAULT_ON.includes(key)
   }
+  // 1.31.0 (owner decision): a demoted admin keeps Annual Leave Management as they had it — the value they read as an
+  // admin (the Super Admin reads it on), never a reset.
+  if (permissionLevelOf(previous) === 'admin' && storedPermissionFlag(previous, 'annualLeaveSelfBook') == null) {
+    out.annualLeaveSelfBook = storedSuperAdmin(previous)
+  }
   out.adminAccess = kind === 'admin'
   out.operativeMode = kind === 'operative'
   out.manager = kind !== 'operative'
@@ -581,6 +597,8 @@ export function accountTypeChangeWrites(input: {
    * (`accountTypeWritePermissions`); every other toggle keeps its stored value (1.15.0).
    */
   permissions?: Record<string, unknown> | null
+  /** 1.31.0: `organizations/{orgId}.members` as loaded — same-email documents listed there get the new role too. */
+  members?: Record<string, unknown> | null
 }):
   | { ok: true; role: PermissionLevel; permissions: Record<UserPermissionField, boolean>; writes: AccountTypeChangeWrite[]; note: string | null }
   | { ok: false; reason: 'super_admin' | 'invalid'; message: string } {
@@ -597,13 +615,29 @@ export function accountTypeChangeWrites(input: {
     return { ok: false, reason: 'super_admin', message: ACCOUNT_TYPE_SUPER_ADMIN_MESSAGE }
   }
   const permissions = accountTypeWritePermissions(kind, person, input.permissions ?? null)
+  // 1.31.0 (audit finding 9): only the fields whose stored value differs are written (top level and
+  // `permissions.{key}` each compared with what is stored), so a type change never writes back a toggle another admin
+  // changed since — the level flags and `role` always differ or are resent. `person` is the stored document.
+  const storedMap = person.permissions && typeof person.permissions === 'object' ? (person.permissions as Record<string, unknown>) : {}
+  const levelFlags = new Set<string>(['adminAccess', 'operativeMode', 'manager'])
   const fields: Record<string, unknown> = { role: kind }
   for (const key of USER_PERMISSION_FIELDS) {
-    fields[key] = permissions[key]
-    fields[`permissions.${key}`] = permissions[key]
+    if (levelFlags.has(key) || bool(person[key]) !== permissions[key]) fields[key] = permissions[key]
+    if (levelFlags.has(key) || bool(storedMap[key]) !== permissions[key]) fields[`permissions.${key}`] = permissions[key]
   }
   fields.isSuperAdmin = kind === 'admin' && storedPermissionFlag(person, 'isSuperAdmin') === true
+  // 1.31.0: "No line manager" is for admins only — leaving admin clears it (the person then needs a line manager).
+  if (kind !== 'admin' && person.hasNoLineManager === true) fields.hasNoLineManager = false
   const writes: AccountTypeChangeWrite[] = otherCompany ? [] : [{ path: `users/${uid}`, kind: 'userProfile', fields }]
+  // Same-email documents: the level only (their stored toggles are their own and are not loaded here).
+  const levelOnly: Record<string, unknown> = { role: kind, isSuperAdmin: false }
+  for (const key of levelFlags) {
+    levelOnly[key] = permissions[key as UserPermissionField]
+    levelOnly[`permissions.${key}`] = permissions[key as UserPermissionField]
+  }
+  if (kind !== 'admin') levelOnly.hasNoLineManager = false
+  const members = input.members && typeof input.members === 'object' ? input.members : null
+  const memberFields: Record<string, unknown> = { [`members.${uid}`]: kind }
   const email = typeof person.email === 'string' ? person.email.trim().toLowerCase() : ''
   if (email) {
     for (const row of input.roster || []) {
@@ -611,10 +645,14 @@ export function accountTypeChangeWrites(input: {
       if (!id || id === uid) continue
       if (String(row.email ?? '').trim().toLowerCase() !== email) continue
       if (!sameOrg(row.organizationId, org)) continue
-      writes.push({ path: `users/${id}`, kind: 'userProfile', fields: { ...fields, isSuperAdmin: false } })
+      writes.push({ path: `users/${id}`, kind: 'userProfile', fields: { ...levelOnly } })
+      // 1.31.0 (audit finding 3): a same-email document already listed in `members` gets the same role, so the roster
+      // never shows a half-applied type for the document the email fold keeps. Never adds a new members entry.
+      const listedKey = members ? Object.keys(members).find((key) => key.trim().toLowerCase() === id.toLowerCase()) : undefined
+      if (listedKey && !listedKey.includes('.')) memberFields[`members.${listedKey}`] = kind
     }
   }
-  writes.push({ path: `organizations/${org}`, kind: 'organizationMember', fields: { [`members.${uid}`]: kind } })
+  writes.push({ path: `organizations/${org}`, kind: 'organizationMember', fields: memberFields })
   writes.push({ path: `users/${uid}/orgMemberships/${org}`, kind: 'membership', role: kind, permissions })
   return { ok: true, role: kind, permissions, writes, note: otherCompany ? ACCOUNT_TYPE_OTHER_COMPANY_NOTE : null }
 }

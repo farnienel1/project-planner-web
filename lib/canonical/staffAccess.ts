@@ -1,3 +1,6 @@
+import { lineManagerIds } from './leaveRequests'
+import { personIdSet, rosterMemberActive, type PersonRosterRow } from './personIds'
+
 /**
  * Who sees the company job lists and the staff warning list, who may add or
  * edit a work catalogue, and which managers receive a job notification.
@@ -53,9 +56,9 @@ export function seesEveryJob(
 }
 
 /**
- * The staff warning list shows every warning in the company to every admin and
- * manager. It is not narrowed to the jobs or people a manager is assigned to.
- * Operatives do not get the list.
+ * Who opens the staff warning list: every admin and manager; operatives never. 1.31.0 (owner decision): opening the
+ * list is not seeing every row — admins see every warning, a manager only the warnings about themselves, their reports
+ * and the jobs they manage (`warningScopeFor`, §5, §17).
  */
 export function canViewStaffWarnings(role: StaffAccountRole): boolean {
   return isStaffAccount(role)
@@ -706,10 +709,10 @@ export function bookingQueryPlan(
 // MARK: - Daily Overview and warning scope (rulebook §17)
 
 /**
- * What Daily Overview and the warning list cover for a viewer. `all`: everything (admins, and managers who see every
- * job of both kinds). `jobs`: only rows about the jobs the viewer sees (`jobIds`) and the people booked on them
- * (`personIds` / `personEmails`); `unbookedLabour` is false when the viewer cannot read every booking, because a
- * person missing from the viewer's bookings may be booked on a job they cannot see — those rows are not produced.
+ * What Daily Overview and the warning list cover for a viewer (rulebook §5, §6, §17). `all`: everything (admins and
+ * super admins outside operative mode). `jobs`: only rows about the jobs in `jobIds` and the people in `personIds` /
+ * `personEmails`; `unbookedLabour` is false when the viewer cannot read every booking, because a person missing from
+ * the viewer's bookings may be booked on a job they cannot see — those rows are not produced.
  */
 export type WarningScope =
   | { kind: 'all' }
@@ -717,56 +720,126 @@ export type WarningScope =
 
 export const WARNING_SCOPE_ALL: WarningScope = { kind: 'all' }
 
+/** A users document as the warning scope reads it: ids, email, active flag, level and the line-manager fields. */
+export type WarningScopeRosterRow = {
+  id: string
+  email?: string | null
+  isActive?: boolean | null
+  role?: StaffAccountRole | string | null
+  formerUserIds?: ReadonlyArray<string> | null
+  sameEmailUserIds?: ReadonlyArray<string> | null
+  assignedManagerUserIds?: ReadonlyArray<string> | null
+  assignedManagerUserId?: string | null
+  hasNoLineManager?: boolean | null
+  [key: string]: unknown
+}
+
 /**
- * The scope for a viewer (`WarningScope`). `bookings` are the labour bookings the viewer loaded (`projectId`,
- * `operativeId`), `managerBookings` their manager site bookings (`userId`, `locationType`, `locationId`); a person
- * booked on a visible job is in scope under that id, every roster row with the same email (`people` accounts with
- * `formerIds`, `operatives` rows) and that email.
+ * The scope for a viewer (`WarningScope`). **1.31.0 (owner decision):** admins and super admins outside operative
+ * mode see every warning. A manager — whatever their Projects / Small works toggles — sees only:
+ *   (a) warnings about themselves, under any of their ids (`personIdSet` over `roster`, `people` and `operatives`:
+ *       their own id, former and same-email ids, rows on their email);
+ *   (b) warnings about their reports — the active people whose `lineManagerIds` include the manager — under any of
+ *       their ids and their email;
+ *   (c) warnings on the jobs they are an assigned manager of (`jobs`, kept by `isJobManager`: a stored manager id that
+ *       is one of theirs, or a `managers` row on their email).
+ * Per type: unbooked labour, qualification expiry and unverified accounts → (a) + (b); clashes and leave cover → any
+ * person involved in (a) + (b), or any booking on a job of (c) (`isWarningRowInScope`); materials cut-off → (c).
+ * Before 1.31.0 the scope was the jobs the viewer could see and everyone booked on them, so a manager who sees every
+ * job got `all`. `visibleJobIds`, `bookings` and `managerBookings` are no longer read (older callers may still pass
+ * them); a caller that passes no `jobs` gives a manager no job rows. Operatives and an unknown viewer: nothing.
  */
 export function warningScopeFor(input: {
   viewer: JobAccessViewer | null | undefined
-  visibleJobIds: ReadonlyArray<string> | null | undefined
+  /** Every job loaded, with its stored manager fields (`managerIds`, `managerId`, `managerUserIds`, ...). */
+  jobs?: ReadonlyArray<{ id: string } & JobManagerFields> | null
+  /** `organizations/{orgId}/managers` rows (a job may name one; matched on the viewer's email). */
+  managers?: ReadonlyArray<JobManagerRosterRow> | null
+  /** Every users document of the organisation, with the line-manager fields (for the viewer's reports). */
+  roster?: ReadonlyArray<WarningScopeRosterRow> | null
+  /** Ignored from 1.31.0 (kept so older callers still type-check). */
+  visibleJobIds?: ReadonlyArray<string> | null
+  /** Ignored from 1.31.0. */
   bookings?: ReadonlyArray<{ projectId?: string | null; operativeId?: string | null }> | null
+  /** Ignored from 1.31.0. */
   managerBookings?: ReadonlyArray<{ userId?: string | null; locationType?: string | null; locationId?: string | null }> | null
+  /** Accounts (`formerIds`) and `operatives` rows: a person in scope is in scope under every row on their email. */
   people?: ReadonlyArray<{ id: string; email?: string | null; formerIds?: ReadonlyArray<string> | null }> | null
   operatives?: ReadonlyArray<{ id: string; email?: string | null }> | null
   /** Overrides `ENFORCED_READS_ACTIVE` (tests and the release that switches reads on). */
   enforced?: boolean
 }): WarningScope {
   const viewer = input?.viewer
-  if (!viewer || !viewer.role) return { kind: 'jobs', jobIds: [], personIds: [], personEmails: [], unbookedLabour: false }
-  if (seesEveryJob(viewer.role, null, viewer.toggles ?? null)) return WARNING_SCOPE_ALL
-  const jobKeys = new Set((input.visibleJobIds || []).map(idKey).filter(Boolean))
-  const booked = new Set<string>()
-  for (const booking of input.bookings || []) {
-    if (jobKeys.has(idKey(booking?.projectId))) booked.add(idKey(booking?.operativeId))
+  const none: WarningScope = { kind: 'jobs', jobIds: [], personIds: [], personEmails: [], unbookedLabour: false }
+  if (!viewer || !viewer.role) return none
+  const role = viewer.role
+  if ((role.isAdmin || role.isSuperAdmin) && !role.isOperativeMode) return WARNING_SCOPE_ALL
+  if (!role.isManager || role.isOperativeMode) return none
+  const jobIds = new Set<string>()
+  for (const job of input.jobs || []) {
+    if (job && idKey(job.id) && isJobManager(viewer, job, input.managers ?? null)) jobIds.add(idKey(job.id))
   }
-  for (const booking of input.managerBookings || []) {
-    const job = bookingJobId({ collection: 'managerSiteBookings', ...booking })
-    if (job && jobKeys.has(idKey(job))) booked.add(idKey(booking?.userId))
-  }
-  booked.delete('')
-  const rows = [
-    ...(input.people || []).map((row) => ({ ids: [row.id, ...(row.formerIds || [])], email: row.email })),
-    ...(input.operatives || []).map((row) => ({ ids: [row.id], email: row.email })),
+  const roster = (input.roster || []).filter((row) => row && idKey(row.id)) as PersonRosterRow[]
+  const rows: Array<{ ids: string[]; email: string }> = [
+    ...roster.map((row) => ({
+      ids: [row.id, ...(row.formerUserIds || []), ...(row.sameEmailUserIds || [])],
+      email: idKey(row.email),
+    })),
+    ...(input.people || []).map((row) => ({ ids: [row.id, ...(row.formerIds || [])], email: idKey(row.email) })),
+    ...(input.operatives || []).map((row) => ({ ids: [row.id], email: idKey(row.email) })),
   ]
+  const ids = new Set<string>()
   const emails = new Set<string>()
-  for (const row of rows) {
-    const email = String(row.email ?? '').trim().toLowerCase()
-    if (email && row.ids.some((id) => booked.has(idKey(id)))) emails.add(email)
+  const addPerson = (personIds: ReadonlyArray<string | null | undefined>, email: unknown) => {
+    for (const id of personIds) if (idKey(id)) ids.add(idKey(id))
+    if (idKey(email)) emails.add(idKey(email))
   }
-  const ids = new Set(booked)
-  for (const row of rows) {
-    const email = String(row.email ?? '').trim().toLowerCase()
-    if (email && emails.has(email)) for (const id of row.ids) if (idKey(id)) ids.add(idKey(id))
+  // (a) the viewer, every id they go by.
+  const viewerIds = [viewer.uid, ...(viewer.ids || [])].filter((id): id is string => typeof id === 'string' && id.trim() !== '')
+  const self = { id: viewerIds[0] ?? '', email: viewer.email ?? null, formerUserIds: viewerIds }
+  addPerson(personIdSet(self, roster), viewer.email)
+  // (b) their reports: active roster people whose line managers (`lineManagerIds`) include one of the viewer's ids.
+  const viewerKeys = new Set(ids)
+  for (const member of roster) {
+    if (!rosterMemberActive(member)) continue
+    if (!lineManagerIds(member, roster).some((id) => viewerKeys.has(idKey(id)))) continue
+    addPerson(personIdSet(member, roster), member.email)
   }
+  // Every row on an email in scope is the same person (an `operatives` row, a second users document).
+  for (const row of rows) if (row.email && emails.has(row.email)) addPerson(row.ids, row.email)
+  ids.delete('')
   return {
     kind: 'jobs',
-    jobIds: [...jobKeys],
+    jobIds: [...jobIds],
     personIds: [...ids],
     personEmails: [...emails],
     unbookedLabour: readsEveryBooking(viewer, { enforced: input.enforced }),
   }
+}
+
+/**
+ * A warning row that can be about a job and people — a clash, a leave-cover row (rulebook 1.31.0 §5): in scope when
+ * one of its jobs is in `scope.jobIds` or one of its people is in scope (any id, or `email`). `WARNING_SCOPE_ALL` (or
+ * no scope) keeps every row.
+ */
+export function isWarningRowInScope(
+  scope: WarningScope | null | undefined,
+  row: {
+    jobIds?: ReadonlyArray<string | null | undefined> | null
+    personIds?: ReadonlyArray<string | null | undefined> | null
+    email?: string | null
+  }
+): boolean {
+  if (!scope || scope.kind === 'all') return true
+  if ((row?.jobIds || []).some((id) => idKey(id) !== '' && scope.jobIds.includes(idKey(id)))) return true
+  if ((row?.personIds || []).some((id) => idKey(id) !== '' && scope.personIds.includes(idKey(id)))) return true
+  const email = idKey(row?.email)
+  return email !== '' && scope.personEmails.includes(email)
+}
+
+/** The job id of a manager site booking at a project or small works, or '' (for `isWarningRowInScope`). */
+export function managerBookingJobId(booking: { locationType?: string | null; locationId?: string | null } | null | undefined): string {
+  return bookingJobId({ collection: 'managerSiteBookings', ...(booking || {}) }) || ''
 }
 
 /** True when a row about this job is in scope (ids without case). */
