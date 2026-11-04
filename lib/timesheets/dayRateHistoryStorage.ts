@@ -141,7 +141,9 @@ async function readRateHistoryDocs(organizationId: string): Promise<Array<{ id: 
   const plan = rateHistoryPlanFor(organizationId)
   const snaps = plan.kind === 'all'
     ? [await getDocs(col)]
-    : await Promise.all(planQueries(plan).map((entry) => getDocs(query(col, ...entry.constraints))))
+    : // One refused query (a row the rules count differently) never empties the rest of the history.
+      (await Promise.allSettled(planQueries(plan).map((entry) => getDocs(query(col, ...entry.constraints)))))
+        .flatMap((result) => (result.status === 'fulfilled' ? [result.value] : []))
   const byId = new Map<string, { id: string; data: Record<string, unknown> }>()
   for (const snap of snaps) {
     for (const row of snap.docs) byId.set(row.id, { id: row.id, data: row.data() as Record<string, unknown> })

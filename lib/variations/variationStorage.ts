@@ -640,17 +640,23 @@ export async function removeVariationEvidence(input: {
   const removedAt = Timestamp.now()
   const metadata = writeMetadataFields(input.actorUid, 'web') ?? {}
   const stamp = { updatedByUid: input.actorUid, updatedAt: removedAt, ...metadata }
-  const snap = await getDoc(collectionRef)
-  const stored = snap.exists() ? (snap.data() as Record<string, unknown>) : variationToFirestore(input.variation)
-  const write = variationEvidenceRemovalWriteFields(stored, {
-    evidenceId: input.evidenceId,
-    removedBy: input.actorUid,
-    removedAt,
-    variationId: input.variation.id,
+  // The read and the write are one transaction, so a file added or removed by someone else meanwhile is never lost.
+  const primary = await runTransaction(db!, async (transaction) => {
+    const snap = await transaction.get(collectionRef)
+    const stored = snap.exists() ? (snap.data() as Record<string, unknown>) : variationToFirestore(input.variation)
+    const write = variationEvidenceRemovalWriteFields(stored, {
+      evidenceId: input.evidenceId,
+      removedBy: input.actorUid,
+      removedAt,
+      variationId: input.variation.id,
+    })
+    if (write && snap.exists()) transaction.update(collectionRef, { ...write.set, ...stamp })
+    return { stored, write, exists: snap.exists() }
   })
+  const { stored, write } = primary
   if (!write) return null
   const results = await Promise.allSettled([
-    snap.exists() ? updateDoc(collectionRef, { ...write.set, ...stamp }) : Promise.reject(new Error('missing')),
+    primary.exists ? Promise.resolve() : Promise.reject(new Error('missing')),
     (async () => {
       const item = await getDoc(itemRef)
       if (!item.exists()) return

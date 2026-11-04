@@ -9,8 +9,8 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
 Rulebook version: 1.27.0 → 1.27.0
-Packed hash: cb0e4b6c53870c4763a4b08539b4bc644bc1f40dc2203ce73143d9feda8b3c2b
-Rulebook sha256: ef949bda2ff388407a3a6d931f68504e16901c2ddcfd345215646594693e3610
+Packed hash: af3a192fd592cf0ef2c13e804b7d13abdc34478b120cfca4e8a482a6f0d94a7c
+Rulebook sha256: dc3145636a04ee61232d215d9810220575cddb0ef3996a723115c060ee10768d
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -22,10 +22,10 @@ Contract sha256: 8c99592ff4cd836fbe172766d4eed5201108c977ba531c70ac26321b6e5208c
 Call: CanonicalBusinessEngine — no second calculator in Swift.
 Exports added: none
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/canonical.test.ts, lib/canonical/organizationDeletion.ts, lib/canonical/storedFiles.ts
+Web files that changed the rules: docs/RULEBOOK.md
 Done when:
-- [ ] Packed hash in iOS equals cb0e4b6c53870c4763a4b08539b4bc644bc1f40dc2203ce73143d9feda8b3c2b
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 ef949bda2ff388407a3a6d931f68504e16901c2ddcfd345215646594693e3610)
+- [ ] Packed hash in iOS equals af3a192fd592cf0ef2c13e804b7d13abdc34478b120cfca4e8a482a6f0d94a7c
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 dc3145636a04ee61232d215d9810220575cddb0ef3996a723115c060ee10768d)
 - [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.27.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
