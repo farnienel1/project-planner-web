@@ -328,6 +328,9 @@ export function MaterialsSendListSheet({
           organizationId: organization.id,
           requestType: type,
           sendAsPlainText,
+          // Rulebook 1.27.0 (§16, `materialRequestJobCheck`): the job's document id, so the route checks the sender
+          // sees this job and that the job number is the stored one.
+          jobId: project.id,
           jobNumber: project.jobNumber,
           siteName: project.siteName,
           siteAddress,

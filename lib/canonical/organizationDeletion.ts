@@ -4,7 +4,7 @@
  *   - A super admin deletes the organisation from web Settings → Billing ("Delete organisation"): they type the
  *     company name and DELETE (`organizationDeleteConfirmationError`). The server cancels the Stripe subscription at
  *     the period end (no refund) and writes `organizations/{orgId}.deletion` (`organizationDeletionWriteFields`):
- *     `{ status: 'scheduled', requestedAt, requestedBy, eraseAfter: requestedAt + 60 days, restoreBy }`.
+ *     `{ status: 'scheduled', requestedAt, requestedBy, eraseAfter: requestedAt + 30 days, restoreBy }`.
  *   - While scheduled the organisation is locked (`organizationDeletionState` → `scheduled`): the security rules
  *     refuse its data to everyone but the platform owner, like a lapsed subscription; every member sees
  *     `organizationDeletedMessage` and the super admin (when `restoreBy` is `super_admin`) also sees Restore
@@ -16,7 +16,7 @@
  *     (`erasedOrganizationAuditFields`: `erasedAt`, `name`; no personal data) is written.
  *   - "Delete my account" (`accountDeletionPath`): a super admin with other active members hands super admin to
  *     another admin first (`handover_required`); a super admin who is the only active member deletes the company
- *     with the account (`delete_with_company`, the same 60-day state, restorable only by the platform owner because
+ *     with the account (`delete_with_company`, the same 30-day state, restorable only by the platform owner because
  *     the account is gone); everyone else just deletes the account (`delete`).
  *
  * Pure, JSON in / JSON out. Dates are epoch milliseconds (a Firestore Timestamp, Date, ISO string or `{ seconds }`
@@ -27,7 +27,8 @@ import { personIdSet, type PersonRosterRow } from './personIds'
 import { rosterSegment, type RosterSegmentProfile } from './userRosterSegment'
 
 /** Days a deleted organisation stays restorable before it is erased. */
-export const DELETION_RESTORE_DAYS = 60
+/** 30 days from 1.27.0 (owner decision: the same as file recovery); 60 before. A deletion already scheduled keeps its stored `eraseAfter`. */
+export const DELETION_RESTORE_DAYS = 30
 const DAY_MS = 24 * 60 * 60 * 1000
 
 /** The word typed with the company name to delete an organisation (and an account). */
@@ -242,7 +243,7 @@ export type AccountDeletionRosterRow = PersonRosterRow & RosterSegmentProfile & 
  *     member (`rosterSegment` active, not the viewer under any of their ids) — they make another admin the super
  *     admin first (Change Super Admin; a member can be made an admin first);
  *   - `delete_with_company`: the viewer is its super admin and the only active member — the organisation is deleted
- *     with the account (60-day scheduled state, `restoreBy` `platform_owner`);
+ *     with the account (30-day scheduled state, `restoreBy` `platform_owner`);
  *   - `delete`: anyone else, and an organisation already scheduled for erasure.
  */
 export function accountDeletionPath(

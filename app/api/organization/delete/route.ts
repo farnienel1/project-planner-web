@@ -16,7 +16,7 @@ export const runtime = 'nodejs'
 
 /**
  * Rulebook 1.15.0 §20: the super admin deletes the organisation (Settings → Billing → Delete organisation). The
- * organisation is locked for 60 days (restorable by the super admin), Stripe cancels at the period end with no
+ * organisation is locked for 30 days (restorable by the super admin), Stripe cancels at the period end with no
  * refund, and the platform owner and the super admin are emailed.
  */
 export async function POST(request: NextRequest) {

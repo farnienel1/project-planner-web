@@ -28,6 +28,8 @@ import { dayKeyInZone } from '@/lib/orgTime/zoneTime'
 import { DEFAULT_ANNUAL_LEAVE } from '@/lib/settings/organizationSettings'
 import { STAFF_TRADE_TYPES } from '@/lib/staff/staffTradeTypes'
 import {
+  INVITE_DRAFT_PERSON_ID,
+  inviteDraftLineManagerSubject,
   lineManagerCandidates,
   lineManagerOptions,
   lineManagerSelectionAfterLevelChange,
@@ -215,14 +217,21 @@ export function AddUserScreen() {
       .catch(() => {})
   }, [organization?.id])
 
-  // Rulebook §11 `lineManagerCandidates(person, roster)`: the picker list (iOS AddUserView the same). Add User has no
-  // person yet, so nobody is excluded as "themself".
+  // Rulebook 1.27.0 §11 `inviteDraftLineManagerSubject`: the invite as it will be saved (typed email, chosen level) is
+  // the `person` — as iOS AddUserView passes its invite draft — so the invitee's own email row is never offered as
+  // their own line manager.
+  const invitePerson = useMemo(
+    () => inviteDraftLineManagerSubject({ email: form.email, level: operativeInviteOnly ? 'operative' : accountType }),
+    [form.email, operativeInviteOnly, accountType]
+  )
+
+  // Rulebook §11 `lineManagerCandidates(person, roster)`: the picker list (iOS AddUserView the same).
   const lineManagers = useMemo(() => {
     const byId = new Map(users.map((row) => [row.id, row]))
-    return lineManagerCandidates(null, users as never)
+    return lineManagerCandidates(invitePerson, users as never)
       .map((candidate) => byId.get(candidate.id))
       .filter((row): row is (typeof users)[number] => Boolean(row))
-  }, [users])
+  }, [users, invitePerson])
 
   const availableAccountTypes = useMemo(() => {
     if (canInviteAdmins) return ACCOUNT_TYPES
@@ -250,7 +259,9 @@ export function AddUserScreen() {
         const kept = lineManagerSelectionAfterLevelChange(
           { lineManagerIds: prev.assignedManagerUserIds, hasNoLineManager: prev.hasNoLineManager },
           next,
-          users as never
+          users as never,
+          // 1.27.0: the invite draft as `person`, as `lineManagerCandidates` gets it (iOS the same).
+          inviteDraftLineManagerSubject({ email: prev.email, level: next })
         )
         return { ...prev, assignedManagerUserIds: kept.lineManagerIds, hasNoLineManager: kept.hasNoLineManager }
       })
@@ -306,7 +317,9 @@ export function AddUserScreen() {
     // the self-book permission. Only admins and super admins outside operative mode may have none.
     const lineManagerMessage = lineManagerRequiredError(
       {
-        id: '',
+        // 1.27.0: the invite draft id (`INVITE_DRAFT_PERSON_ID`, iOS the same), so `personIdSet` reaches the rows on
+        // this email and a pick of the invitee themself never counts as their line manager (an empty id reached none).
+        id: INVITE_DRAFT_PERSON_ID,
         email,
         isActive: true,
         role: accountType,

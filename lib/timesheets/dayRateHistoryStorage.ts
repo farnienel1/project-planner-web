@@ -2,12 +2,13 @@
  * iOS parity: FirebaseBackend.loadOperativeDayRateHistory / recordOperativeDayRateChange
  * Collection: organizations/{orgId}/operativeDayRateHistory/{uuid}
  */
-import { collection, doc, getDocs, query, serverTimestamp, setDoc, Timestamp, where, type Unsubscribe } from 'firebase/firestore'
+import { collection, doc, getDocs, query, serverTimestamp, setDoc, Timestamp, where, type QueryConstraint, type Unsubscribe } from 'firebase/firestore'
 import { watchOrgCollection } from '@/lib/firebase/watchOrgQuery'
 import { privatePayFor, securitySwitchesReady } from '@/lib/access/securitySwitches'
 import { rateHistoryQueryPlan, type RateHistoryQueryPlan } from '@/lib/canonical'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
+import { payPlanSubjects } from '@/lib/pay/payProfileOverlay'
 import { auth, db } from '@/lib/firebase/config'
 import { writeMetadataFields } from '@/lib/canonical/writeMetadata'
 import { payRateChangeWrites, payRateHistoryWriteFields } from '@/lib/canonical/payRate'
@@ -117,9 +118,21 @@ function historyFromDocs(docs: ReadonlyArray<{ id: string; data: Record<string, 
  */
 function rateHistoryPlanFor(organizationId: string): RateHistoryQueryPlan {
   const roster = useOrgUserStore.getState().users
-  return rateHistoryQueryPlan(useAuthStore.getState().user as never, roster as never, roster as never, {
+  // 1.27.0: the catalogue operatives too (`payPlanSubjects`), each read `operativeId ==` + `userId == ''`.
+  return rateHistoryQueryPlan(useAuthStore.getState().user as never, payPlanSubjects(organizationId, roster as never), roster as never, {
     privatePay: privatePayFor(organizationId),
   })
+}
+
+/** The per-person queries of a `people` plan: `userId ==` per person, `operativeId ==` + `userId == ''` per catalogue row. */
+function planQueries(plan: Extract<RateHistoryQueryPlan, { kind: 'people' }>): Array<{ key: string; constraints: QueryConstraint[] }> {
+  return [
+    ...plan.userIds.map((userId) => ({ key: `user:${userId}`, constraints: [where('userId', '==', userId)] })),
+    ...(plan.operativeIds || []).map((operativeId) => ({
+      key: `operative:${operativeId}`,
+      constraints: [where('operativeId', '==', operativeId), where('userId', '==', '')],
+    })),
+  ]
 }
 
 async function readRateHistoryDocs(organizationId: string): Promise<Array<{ id: string; data: Record<string, unknown> }>> {
@@ -128,7 +141,9 @@ async function readRateHistoryDocs(organizationId: string): Promise<Array<{ id: 
   const plan = rateHistoryPlanFor(organizationId)
   const snaps = plan.kind === 'all'
     ? [await getDocs(col)]
-    : await Promise.all(plan.userIds.map((userId) => getDocs(query(col, where('userId', '==', userId)))))
+    : // One refused query (a row the rules count differently) never empties the rest of the history.
+      (await Promise.allSettled(planQueries(plan).map((entry) => getDocs(query(col, ...entry.constraints)))))
+        .flatMap((result) => (result.status === 'fulfilled' ? [result.value] : []))
   const byId = new Map<string, { id: string; data: Record<string, unknown> }>()
   for (const snap of snaps) {
     for (const row of snap.docs) byId.set(row.id, { id: row.id, data: row.data() as Record<string, unknown> })
@@ -162,15 +177,15 @@ export function watchOperativeDayRateHistory(
     for (const rows of perPerson.values()) for (const row of rows) byId.set(row.id, row)
     onHistory(historyFromDocs([...byId.values()]))
   }
-  const stops = plan.userIds.map((userId) =>
+  const stops = planQueries(plan).map((entry) =>
     watchOrgCollection(
       organizationId,
       'operativeDayRateHistory',
       (docs) => {
-        perPerson.set(userId, docs)
+        perPerson.set(entry.key, docs)
         emit()
       },
-      { constraints: [where('userId', '==', userId)] }
+      { constraints: entry.constraints }
     )
   )
   if (stops.length === 0) onHistory(emptyDayRateHistory())

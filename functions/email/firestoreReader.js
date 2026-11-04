@@ -14,10 +14,23 @@ function createFirestoreReader(db) {
     getUser: (uid) => getData(`users/${uid}`),
     getMembership: (uid, orgId) => (orgId ? getData(`users/${uid}/orgMemberships/${orgId}`) : Promise.resolve(null)),
     getInvitation: (id) => getData(`invitations/${id}`),
-    /** A job of this organisation: its project, else its small works document; null when neither exists. */
+    /**
+     * A job of this organisation as `{ kind, data }` (`kind` is its collection, `projects` or `smallWorks`, as
+     * `canSeeJob` reads it): its project, else its small works document; null when neither exists.
+     */
     async getJob(orgId, jobId) {
       if (!orgId || !jobId) return null
-      return (await getData(`organizations/${orgId}/projects/${jobId}`)) || (await getData(`organizations/${orgId}/smallWorks/${jobId}`))
+      const project = await getData(`organizations/${orgId}/projects/${jobId}`)
+      if (project) return { kind: 'projects', data: project }
+      const smallWorks = await getData(`organizations/${orgId}/smallWorks/${jobId}`)
+      return smallWorks ? { kind: 'smallWorks', data: smallWorks } : null
+    },
+    /** The organisation's `managers` rows on this email (a job may name the caller's managers-list row, §17). */
+    async managersByEmail(orgId, email) {
+      const wanted = normalizeEmail(email)
+      if (!orgId || !wanted) return []
+      const snap = await db.collection('organizations').doc(orgId).collection('managers').where('email', '==', wanted).limit(10).get()
+      return snap.docs.map((doc) => ({ id: doc.id, data: doc.data() || {} }))
     },
     async usersByEmail(email, orgId) {
       const wanted = normalizeEmail(email)

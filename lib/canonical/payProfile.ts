@@ -59,6 +59,11 @@ export type PaySubject = {
   assignedManagerUserIds?: ReadonlyArray<string> | null
   assignedManagerUserId?: string | null
   hasNoLineManager?: boolean | null
+  /**
+   * 1.27.0: true for a catalogue operative — an `operatives` row with no app account (`catalogueOperativePaySubjects`).
+   * `id` is then the row id, the subject id of its `payProfiles/{rowId}` and the `operativeId` of its rate history.
+   */
+  catalogueOperative?: boolean | null
   [key: string]: unknown
 }
 
@@ -82,8 +87,57 @@ export function canViewPersonPay(
   if (viewer.isActive === false) return false
   const level = permissionLevelOf(viewer)
   if (level === 'admin') return true
+  const operativesManager = level === 'manager' && effectivePermissions(viewer).operatives === true
+  // 1.27.0: a catalogue operative (an `operatives` row with no account) has no line manager and no level of its own:
+  // admins, the person on the row's email (above) and managers with the Operatives toggle see its pay.
+  if (subject.catalogueOperative === true) return operativesManager
   if (lineManagerIds(subject, roster as never).some((id) => viewerIds.has(idKey(id)))) return true
-  return level === 'manager' && effectivePermissions(viewer).operatives === true && permissionLevelOf(subject) === 'operative'
+  return operativesManager && permissionLevelOf(subject) === 'operative'
+}
+
+/** An `operatives` row as `catalogueOperativePaySubjects` reads it (`parseOperativeDocument` output, or the stored row). */
+export type CatalogueOperativeRow = {
+  id?: string | null
+  email?: string | null
+  linkedUserId?: string | null
+  userId?: string | null
+  uid?: string | null
+  isActive?: boolean | null
+  [key: string]: unknown
+}
+
+/**
+ * The catalogue operatives among `operatives` rows (rulebook §8, 1.27.0): rows with no app account — no stored
+ * `linkedUserId` / `userId` / `uid`, a row id that is no roster member's id (`personIdSet`, any letter case), and no
+ * roster member on the row's email (without case). Each comes back as a pay subject `{ id: <row id>, email,
+ * catalogueOperative: true }` for `canViewPersonPay`, `payProfileReadPlan` and `rateHistoryQueryPlan`. A row that
+ * belongs to an account is that person's, read through their users id (never twice).
+ */
+export function catalogueOperativePaySubjects(
+  operatives: ReadonlyArray<CatalogueOperativeRow> | null | undefined,
+  roster: ReadonlyArray<PersonRosterRow> | null | undefined
+): PaySubject[] {
+  const rosterIds = new Set<string>()
+  const rosterEmails = new Set<string>()
+  for (const member of roster || []) {
+    if (!member) continue
+    for (const id of personIdSet(member as never, null)) rosterIds.add(idKey(id))
+    const email = idKey(member.email)
+    if (email) rosterEmails.add(email)
+  }
+  const out: PaySubject[] = []
+  const seen = new Set<string>()
+  for (const row of operatives || []) {
+    const id = typeof row?.id === 'string' ? row.id.trim() : ''
+    if (!id || seen.has(idKey(id))) continue
+    const linked = [row.linkedUserId, row.userId, row.uid].some((value) => typeof value === 'string' && value.trim() !== '')
+    if (linked || rosterIds.has(idKey(id))) continue
+    const email = typeof row.email === 'string' ? row.email.trim() : ''
+    if (email && rosterEmails.has(idKey(email))) continue
+    seen.add(idKey(id))
+    out.push({ id, email: email || null, catalogueOperative: true })
+  }
+  return out
 }
 
 export type PayProfileDocument = {
@@ -172,10 +226,13 @@ export function payProfileBackfillWrites(input: {
  *   - `people`: with `privatePay` on, everyone else runs one `userId ==` query per id in `userIds` — their own id and
  *     the ids of the `subjects` whose pay they may see (`canViewPersonPay`), exact de-dupe, order kept. The rules
  *     refuse a whole-collection query for them (Firestore rules are not filters).
- * Known limit: a catalogue operative's rows with no `userId` (an `operatives` row with no account) are read only by
- * admins while `privatePay` is on — the rules cannot prove a non-admin's `operativeId ==` query.
+ * 1.27.0: `operativeIds` — the catalogue operatives among `subjects` (`catalogueOperative: true`, from
+ * `catalogueOperativePaySubjects`) whose pay the viewer may see (admins and managers with the Operatives toggle). Each
+ * is one query `operativeId ==` <row id> `and userId == ''` (rows written by `payRateHistoryWriteFields` store an
+ * empty `userId` for a catalogue operative); the rules allow it because the query proves the row names no account.
+ * Rows saved without any `userId` field (older builds) are read by admins only.
  */
-export type RateHistoryQueryPlan = { kind: 'all' } | { kind: 'people'; userIds: string[] }
+export type RateHistoryQueryPlan = { kind: 'all' } | { kind: 'people'; userIds: string[]; operativeIds: string[] }
 
 function viewerSeesEveryPay(viewer: PayViewer): boolean {
   if (viewer.isPlatformOwner === true) return true
@@ -203,6 +260,23 @@ function viewablePayIds(
   return out
 }
 
+function viewableCatalogueIds(
+  viewer: PayViewer,
+  subjects: ReadonlyArray<PaySubject> | null | undefined,
+  roster: ReadonlyArray<PersonRosterRow> | null | undefined
+): string[] {
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const subject of subjects || []) {
+    if (!subject || subject.catalogueOperative !== true) continue
+    const id = typeof subject.id === 'string' ? subject.id.trim() : ''
+    if (!id || seen.has(id) || !canViewPersonPay(viewer, subject, roster)) continue
+    seen.add(id)
+    out.push(id)
+  }
+  return out
+}
+
 export function rateHistoryQueryPlan(
   viewer: PayViewer | null | undefined,
   subjects: ReadonlyArray<PaySubject> | null | undefined,
@@ -210,16 +284,21 @@ export function rateHistoryQueryPlan(
   options?: { privatePay?: boolean } | null
 ): RateHistoryQueryPlan {
   if (options?.privatePay !== true) return { kind: 'all' }
-  if (!viewer) return { kind: 'people', userIds: [] }
+  if (!viewer) return { kind: 'people', userIds: [], operativeIds: [] }
   if (viewerSeesEveryPay(viewer)) return { kind: 'all' }
-  return { kind: 'people', userIds: viewablePayIds(viewer, subjects, roster) }
+  const operativeIds = viewableCatalogueIds(viewer, subjects, roster)
+  const catalogue = new Set(operativeIds)
+  const userIds = viewablePayIds(viewer, subjects, roster).filter((id) => !catalogue.has(id))
+  return { kind: 'people', userIds, operativeIds }
 }
 
 /**
  * How a viewer reads `payProfiles` (private from the 1.13.0 deploy, whatever the switch): `all` (one collection
  * query) for admins, super admins and the platform owner; otherwise `documents` — one read by id per person whose pay
  * they may see (`canViewPersonPay`), their own first. Each app lays the result over its roster (`overlayPayProfile`),
- * so once the strip has run pay still shows to the people who may see it.
+ * so once the strip has run pay still shows to the people who may see it. 1.27.0: `subjects` include the catalogue
+ * operatives (`catalogueOperativePaySubjects`), so a manager with the Operatives toggle reads `payProfiles/{rowId}`
+ * for each and the `operatives` row is laid over with it (`overlayPayProfile`) — before 1.27.0 only admins did.
  */
 export type PayProfileReadPlan = { kind: 'all' } | { kind: 'documents'; ids: string[] }
 

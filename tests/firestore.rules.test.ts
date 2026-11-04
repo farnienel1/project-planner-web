@@ -3624,3 +3624,135 @@ test('1.26.0 privatePay per organisation: a person reads their own pay; a collea
     await setSwitchConfig({ enforcedReads: true })
   }
 })
+
+// MARK: - Rulebook 1.27.0 (owner decisions 6 and 7)
+
+test('1.27.0 (6) invite accept: with privatePay on the invitee creates their own pay profile only as a copy of their placeholder profile', async () => {
+  const placeholderId = 'B1A2C3D4-0000-4000-8000-000000001270'
+  const otherPlaceholder = 'B1A2C3D4-0000-4000-8000-000000009999'
+  const authUid = 'invitee-127-uid'
+  const email = 'invitee-127@test.com'
+  const invited = { userId: placeholderId, payBasis: 'day', dayRate: 185, employmentType: 'self_employed' }
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    await setDoc(doc(db, 'users', placeholderId), {
+      email, organizationId: ORG_A, firstName: 'Ivy', surname: 'New', passwordSet: false, isActive: true,
+    })
+    await setDoc(doc(db, 'users', otherPlaceholder), {
+      email: 'someone-else-127@test.com', organizationId: ORG_A, firstName: 'Sam', passwordSet: false, isActive: true,
+    })
+    await setDoc(doc(db, 'organizations', ORG_A, 'userEmails', email), { userId: placeholderId })
+    await setDoc(doc(db, 'organizations', ORG_A, 'payProfiles', placeholderId), invited)
+    await setDoc(doc(db, 'organizations', ORG_A, 'payProfiles', otherPlaceholder), { userId: otherPlaceholder, payBasis: 'day', dayRate: 400 })
+    await setDoc(doc(db, 'users', authUid), {
+      email, organizationId: ORG_A, firstName: 'Ivy', surname: 'New', passwordSet: true, isActive: true, formerUserIds: [placeholderId],
+    })
+  })
+  const db = authDb(authUid, email)
+  const own = doc(db, 'organizations', ORG_A, 'payProfiles', authUid)
+  const copy = { userId: authUid, payBasis: 'day', dayRate: 185, employmentType: 'self_employed' }
+  try {
+    // Switch off for this company: nothing changes — the person never writes their own pay profile.
+    await setSwitchConfig({ enforcedReads: true, privatePayOrganizationIds: [ORG_B] })
+    await step('off: refused', assertFails(setDoc(own, copy)))
+
+    await setSwitchConfig({ enforcedReads: true, privatePayOrganizationIds: [ORG_A] })
+    // The invitee reads their placeholder's profile (their own email) to copy it.
+    await step('reads invited', assertSucceeds(getDoc(doc(db, 'organizations', ORG_A, 'payProfiles', placeholderId))))
+    // Anything but the exact invited values is refused: a higher rate, another basis, a missing field, extra keys.
+    await step('raise', assertFails(setDoc(own, { ...copy, dayRate: 999 })))
+    await step('basis', assertFails(setDoc(own, { userId: authUid, payBasis: 'hourly', hourlyRate: 185, employmentType: 'self_employed' })))
+    await step('drop employment', assertFails(setDoc(own, { userId: authUid, payBasis: 'day', dayRate: 185 })))
+    await step('extra key', assertFails(setDoc(own, { ...copy, firstName: 'Ivy' })))
+    await step('other subject', assertFails(setDoc(doc(db, 'organizations', ORG_A, 'payProfiles', 'someone-else'), { ...copy, userId: 'someone-else' })))
+    // Someone else's invite profile cannot be copied (the claim names this email's placeholder only).
+    await step('copy other invite', assertFails(setDoc(own, { userId: authUid, payBasis: 'day', dayRate: 400 })))
+    // The exact copy, with write metadata, is allowed once.
+    await step('exact copy', assertSucceeds(setDoc(own, { ...copy, updatedAt: serverTimestamp(), updatedBy: authUid, updatedFrom: 'web' })))
+    // Never an update afterwards — the person still never changes their own pay.
+    await step('no update', assertFails(setDoc(own, { ...copy, dayRate: 999 }, { merge: true })))
+    await step('no same-value update', assertFails(updateDoc(own, { dayRate: 185 })))
+
+    // Once the claim names the account (accept finished), the copy path is closed.
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      const admin = ctx.firestore()
+      await deleteDoc(doc(admin, 'organizations', ORG_A, 'payProfiles', authUid))
+      await setDoc(doc(admin, 'organizations', ORG_A, 'userEmails', email), { userId: authUid })
+    })
+    await step('claim moved', assertFails(setDoc(own, copy)))
+    // A placeholder that already set a password (a live member), or one in another company, never qualifies.
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      const admin = ctx.firestore()
+      await setDoc(doc(admin, 'organizations', ORG_A, 'userEmails', email), { userId: placeholderId })
+      await updateDoc(doc(admin, 'users', placeholderId), { passwordSet: true })
+    })
+    await step('placeholder not pending', assertFails(setDoc(own, copy)))
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await updateDoc(doc(ctx.firestore(), 'users', placeholderId), { passwordSet: false, organizationId: ORG_B })
+    })
+    await step('placeholder other company', assertFails(setDoc(own, copy)))
+    // A stranger signed in with another email cannot use this invite's profile.
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await updateDoc(doc(ctx.firestore(), 'users', placeholderId), { organizationId: ORG_A })
+    })
+    const stranger = authDb('stranger-127', 'stranger-127@test.com')
+    await step('stranger', assertFails(setDoc(doc(stranger, 'organizations', ORG_A, 'payProfiles', 'stranger-127'), { ...copy, userId: 'stranger-127' })))
+    // And it still works for the genuine invitee (sanity: the state above is valid again).
+    await step('valid again', assertSucceeds(setDoc(own, copy)))
+  } finally {
+    await setSwitchConfig({ enforcedReads: true })
+  }
+})
+
+test('1.27.0 (7) catalogue operatives: operatives managers read their pay profile and rate history while privatePay is on; never a row that belongs to an account', async () => {
+  await seedPayPeople()
+  const SOLO = 'pay-cat-solo-127'
+  const LINKED = 'pay-cat-linked-127'
+  const CLAIMED = 'pay-cat-claimed-127'
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    await setDoc(doc(db, 'organizations', ORG_A, 'operatives', SOLO), { email: 'solo-127@test.com', name: 'Solo' })
+    await setDoc(doc(db, 'organizations', ORG_A, 'operatives', LINKED), { email: 'linked-127@test.com', name: 'Linked', linkedUserId: LM_A })
+    // A row on the email of a manager of this company (an email claim exists): not a catalogue operative.
+    await setDoc(doc(db, 'organizations', ORG_A, 'operatives', CLAIMED), { email: 'lm-a@test.com', name: 'Lena' })
+    await setDoc(doc(db, 'organizations', ORG_A, 'userEmails', 'lm-a@test.com'), { userId: LM_A })
+    for (const id of [SOLO, LINKED, CLAIMED]) {
+      await setDoc(doc(db, 'organizations', ORG_A, 'payProfiles', id), { userId: id, dayRate: 150, payBasis: 'day' })
+      await setDoc(doc(db, 'organizations', ORG_A, 'operativeDayRateHistory', `h127-${id}`), {
+        userId: '', operativeId: id, dayRate: 150, payBasis: 'day', effectiveAt: Timestamp.now(),
+      })
+    }
+  })
+  const mgrOps = authDb(PAY_MGR_OPS, 'pay-mgr-ops@test.com')
+  const lm = authDb(LM_A, 'lm-a@test.com')
+  const colleague = authDb(REPORT_A, 'report-a@test.com')
+  const admin = authDb(ADMIN_A, 'admin-a@test.com')
+  const profile = (db: ReturnType<typeof authDb>, id: string) => doc(db, 'organizations', ORG_A, 'payProfiles', id)
+  const historyQuery = (db: ReturnType<typeof authDb>, id: string) =>
+    query(collection(db, 'organizations', ORG_A, 'operativeDayRateHistory'), where('operativeId', '==', id), where('userId', '==', ''))
+  try {
+    await setSwitchConfig({ enforcedReads: true, privatePayOrganizationIds: [ORG_A] })
+    // A catalogue operative: the operatives manager reads the profile and the history (rateHistoryQueryPlan operativeIds).
+    await step('mgr profile solo', assertSucceeds(getDoc(profile(mgrOps, SOLO))))
+    await step('mgr history solo', assertSucceeds(getDocs(historyQuery(mgrOps, SOLO))))
+    await step('mgr history row solo', assertSucceeds(getDoc(doc(mgrOps, 'organizations', ORG_A, 'operativeDayRateHistory', `h127-${SOLO}`))))
+    // A manager without the Operatives toggle and an operative colleague do not.
+    await step('lm profile solo', assertFails(getDoc(profile(lm, SOLO))))
+    await step('lm history solo', assertFails(getDocs(historyQuery(lm, SOLO))))
+    await step('colleague history solo', assertFails(getDocs(historyQuery(colleague, SOLO))))
+    // Rows that belong to an account (linked id, or an email claim of this company): not through the row.
+    await step('mgr profile linked', assertFails(getDoc(profile(mgrOps, LINKED))))
+    await step('mgr profile claimed', assertFails(getDoc(profile(mgrOps, CLAIMED))))
+    await step('mgr history linked', assertFails(getDocs(historyQuery(mgrOps, LINKED))))
+    await step('mgr history claimed', assertFails(getDocs(historyQuery(mgrOps, CLAIMED))))
+    // The person on the row's email still reads their own row; admins read everything.
+    await step('lm own row', assertSucceeds(getDoc(profile(lm, CLAIMED))))
+    await step('admin profile', assertSucceeds(getDoc(profile(admin, LINKED))))
+    await step('admin history', assertSucceeds(getDocs(collection(admin, 'organizations', ORG_A, 'operativeDayRateHistory'))))
+    // Off for this company: every member reads rate history, as before.
+    await setSwitchConfig({ enforcedReads: true, privatePayOrganizationIds: [ORG_B] })
+    await step('off colleague history', assertSucceeds(getDocs(historyQuery(colleague, SOLO))))
+  } finally {
+    await setSwitchConfig({ enforcedReads: true })
+  }
+})

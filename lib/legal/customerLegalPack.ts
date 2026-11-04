@@ -1,6 +1,8 @@
 /** Customer legal pack v1.1 — customer-facing text only (implementation notes omitted). */
 
 import { PROCESSORS_PUBLIC_URL } from './processors'
+// Rulebook 1.27.0 §24 (owner decision 5): the retention sentence both apps carry word for word.
+import { DELETED_DATA_RETENTION_NOTICE } from '../canonical/storedFiles'
 
 export const LEGAL_ENTITY = {
   name: "ProjectPlanner Systems Ltd",
@@ -251,6 +253,7 @@ export const LEGAL_PACK_DOCUMENTS: LegalDocument[] = [
         title: "14. Deletion and Return",
         paragraphs: [
           "At the Customer’s choice, the Provider will delete or return Customer personal data at the end of the service, unless applicable law requires continued storage. The Provider may retain limited copies in secure backups for a reasonable backup cycle where immediate deletion is not technically practicable, provided the data is protected and not actively processed for operational purposes.",
+          DELETED_DATA_RETENTION_NOTICE,
         ],
       },
       {
@@ -394,6 +397,7 @@ export const LEGAL_PACK_DOCUMENTS: LegalDocument[] = [
         title: "7. Retention",
         paragraphs: [
           "We keep personal information only for as long as reasonably necessary for the purposes described in this Policy, including to provide services, maintain business and financial records, resolve disputes, enforce agreements and comply with legal obligations. Retention periods vary according to the type of information and purpose. Product usage events and sessions are kept for 13 months. Unfinished organisation set-ups that never activated are reviewed after 12 months and may be deleted.",
+          DELETED_DATA_RETENTION_NOTICE,
         ],
       },
       {

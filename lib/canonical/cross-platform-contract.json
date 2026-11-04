@@ -2631,7 +2631,8 @@
             "statusHistory": [],
             "submittedAtMs": null,
             "closedAtMs": null,
-            "isDeleted": false
+            "isDeleted": false,
+            "removedEvidence": []
           }
         },
         {
@@ -2678,7 +2679,8 @@
             "statusHistory": [],
             "submittedAtMs": null,
             "closedAtMs": null,
-            "isDeleted": false
+            "isDeleted": false,
+            "removedEvidence": []
           }
         }
       ]

@@ -1,4 +1,4 @@
-# iOS follow-on — rulebook 1.26.1
+# iOS follow-on — rulebook 1.27.0
 
 Generated 2026-11-04 by `npm run rulebook:handoff` in project-planner-web. Paste this whole file into the iOS agent.
 The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; never edit the iOS mirror by hand.
@@ -8,9 +8,9 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ║ FOLLOW-ON — paste into the iOS agent                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
-Rulebook version: 1.26.1 → 1.26.1
-Packed hash: 4f4c44d9b43379863d797bbad6a4fa874cd429649ade09ffd2768bd902a89d86
-Rulebook sha256: 9379ecb7418407f9e54e38e53bbbdaf72c399d0271fa4d32325d16ff5b4ece5e
+Rulebook version: 1.27.0 → 1.27.0
+Packed hash: af3a192fd592cf0ef2c13e804b7d13abdc34478b120cfca4e8a482a6f0d94a7c
+Rulebook sha256: dc3145636a04ee61232d215d9810220575cddb0ef3996a723115c060ee10768d
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -18,64 +18,99 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
   web docs/RULEBOOK.md                              → iOS docs/RULEBOOK.md
   web lib/canonical/parity-fixture.json             → iOS ProjectPlannerTests/CanonicalParityFixture.json
   web lib/canonical/cross-platform-contract.json    → iOS ProjectPlannerTests/CrossPlatformContract.json
-Contract sha256: c9e307b0604e78284baf3a4f217f0fb3ecc4b227aec957c901bdd93e4e31a306
+Contract sha256: 8c99592ff4cd836fbe172766d4eed5201108c977ba531c70ac26321b6e5208cf
 Call: CanonicalBusinessEngine — no second calculator in Swift.
 Exports added: none
 Exports removed: none
-Web files that changed the rules: none recorded
+Web files that changed the rules: docs/RULEBOOK.md
 Done when:
-- [ ] Packed hash in iOS equals 4f4c44d9b43379863d797bbad6a4fa874cd429649ade09ffd2768bd902a89d86
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 9379ecb7418407f9e54e38e53bbbdaf72c399d0271fa4d32325d16ff5b4ece5e)
-- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.26.1)
+- [ ] Packed hash in iOS equals af3a192fd592cf0ef2c13e804b7d13abdc34478b120cfca4e8a482a6f0d94a7c
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 dc3145636a04ee61232d215d9810220575cddb0ef3996a723115c060ee10768d)
+- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.27.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
 - [ ] Any disagreement traced to its first divergence — no copied screen number
 ```
 
-## What changed in 1.26.1
+## What changed in 1.27.0
 
-- Pay editors start from the pay shown (§8): `payEditorStartingValues(person, profile, { privatePay })`. With `privatePay` on, web's people profile showed pay from `payProfiles` while Edit User started from `users/{uid}`, which can hold an old rate, so an admin could see one rate, edit another and save the old one back, and the rate-history previous row and "rate changed?" test used the wrong value. Now the display and every pay editor (web Edit User, the catalogue operative form and the save baseline read; iOS Manage Users editor seed and save baseline, operative and rate editors) take the same record, which is also the save baseline. With `privatePay` off nothing changes: the person's document as stored, no pay-profile read.
+- Add User: the invitee is never offered as their own line manager (§11, owner decision 1). `inviteDraftLineManagerSubject` / `INVITE_DRAFT_PERSON_ID`: web Add User passes the invite draft (typed email, chosen level) as `person` to `lineManagerCandidates`, `lineManagerSelectionAfterLevelChange` and `lineManagerRequiredError`, as iOS `AddUserView` already does. Before, web passed no person, so a roster row on the invitee's email was offered and counted.
+- Material email job checks (§16, owner decision 2): with `jobId`, `material_request` (email function) and the web send route also require that the sender sees the job (`canSeeJob`, §17) and that the job number is the stored one — `materialRequestJobViewer`, `materialRequestJobCheck`, `MATERIAL_REQUEST_JOB_NOT_FOUND_MESSAGE` / `_NOT_VISIBLE_MESSAGE` / `_NUMBER_MISMATCH_MESSAGE`. Web's send sheet now sends `jobId`. Requests without `jobId` are still accepted.
+- Admins can still delete any file (§24, owner decision 3): documented, unchanged.
+- A deleted company is restorable for 30 days, not 60, the same as file recovery (§20, owner decision): `DELETION_RESTORE_DAYS` 30, the account-delete and Delete organisation copy, and `DELETED_DATA_RETENTION_NOTICE` ("A deleted company can be restored for 30 days, …"). A deletion already scheduled keeps its stored `eraseAfter` (`organizationEraseDue`), so it is not erased sooner.
+- Removed variation evidence is recorded (§24, owner decision 4): `variationEvidenceRemovalWriteFields` appends `{ path, name, removedBy, removedAt }` to the variation's `removedEvidence` in the same partial update that unlinks it; `parseVariationDocument` reads it; admins see "Removed evidence (n)" (`canViewRemovedEvidence`, `removedEvidenceHeading`). The cross-platform contract's variation sample now reads `removedEvidence: []`.
+- Soft delete retention is 30 days (§24, owner decision 5): `FILE_RECOVERY_RETENTION_DAYS`, `DELETED_DATA_RETENTION_NOTICE` — added word for word to the privacy policy (7. Retention) and the DPA (14. Deletion and Return); Deploy notes 1.25.0 / 1.27.0 set the bucket to 30 days.
+- The invited rate is copied on accept while `privatePay` is on (§8, §16, owner decision 6): `invitePayProfileCopyWrite`; rules `inviteeCopiesOwnInvitedPay` let the accepting person create their own `payProfiles/{uid}` once, only as an exact copy of their pending placeholder's pay profile, while the email claim still names it.
+- Catalogue operatives' pay for operatives managers while `privatePay` is on (§8, §16, owner decision 7): `catalogueOperativePaySubjects`; `canViewPersonPay` takes `catalogueOperative: true`; `payProfileReadPlan` reads their `payProfiles/{rowId}` and `rateHistoryQueryPlan` adds `operativeIds` (`operativeId ==` + `userId == ''`). Rules: the operatives-manager branch of `canViewPayOfRow` is limited to catalogue rows (`payOperativeRowIsCatalogue`), so a row on an account holder's email is no longer read through the row. Web lays `payProfiles/{rowId}` over each catalogue `operatives` row for those managers (the overlay iOS found missing).
 
-## iOS work for 1.26.1
+## iOS work for 1.27.0
 
-Prerequisite for the owner turning `privatePay` on (`docs/SECURITY_SWITCHES.md` step 6.3). With the switch **off**
-nothing may change: every seed and baseline stays the users / operatives document as stored, and no pay profile is read.
+Owner decisions of 4 Nov, one release. Paths read from iOS `origin/main` 9116b30. With `privatePay` **off** nothing
+about pay may change (items 6 and 7 apply only while it is on).
 
-Rule: `payEditorStartingValues(person, profile, { privatePay })` → `{ record, pay, rate, employmentType, source }`.
-`profile` is `parsePayProfileDocument(id, data)` of the person's own id, else of a `formerUserIds` id (web
-`payEditorRecord`), or null. `record` is BOTH the editor's starting value AND its save baseline (the "rate changed?"
-test, the changed-fields write and the rate-history `previousProfile`). Wrap it once in `CanonicalBusinessEngine`
-(next to `overlayPayProfile` in `Rulebook+PayPrivacy.swift`) and route every path below through it — no Swift copy of
-the on/off test.
+Three-factor check for every item: **Web** (done in web 1.27.0), **iOS** (below), **Shared rule** (the function named).
 
-### Paths to switch (read from iOS `origin/main` 2b83b41)
+1. **Add User — invitee never their own line manager** (`inviteDraftLineManagerSubject`, `INVITE_DRAFT_PERSON_ID`).
+   iOS already passes its draft (`Project Planner/Views/AddUserView.swift:409` `inviteDraftUserForValidation`, id
+   `"invite-draft"`, used at `:347`, `:402`, `:422`, `:455`). Check only: the draft's `email` is the typed email
+   (lower case) when it is passed to `lineManagerCandidates`, so the shared function finds the roster rows on it. You
+   may build the draft with `inviteDraftLineManagerSubject({ email, level })` instead of the Swift initialiser; the
+   parity fixture has its exact output. No other change.
+2. **Material email job checks** (`materialRequestJobViewer`, `materialRequestJobCheck`). iOS still sends material
+   quotes and orders through `ResendEmailService` (`Project Planner/FirebaseBackend.swift:10309`
+   `sendMaterialRequest`, `:10363`), not the `sendEmail` function. When it moves to `sendEmail` `material_request`
+   (`docs/EMAIL_FUNCTION.md`, "iOS request contract"), send `"jobId": <request.projectId — the job's document id>`
+   and `"jobNumber": <the stored job number>`. The function then refuses (403) a job the sender cannot see and (409) a
+   number that is not the job's; show the response `error` text. Without `jobId` it is accepted as before. Nothing to
+   decide in Swift.
+3. **Admins can still delete any file**: no change (`fileDeletePermission` as 1.25.0).
+4. **Removed variation evidence is recorded** (`variationEvidenceRemovalWriteFields`, `parseVariationDocument`
+   `removedEvidence`, `canViewRemovedEvidence`, `removedEvidenceHeading`).
+   - `Project Planner/Views/Variations/VariationEditorSheet.swift:1560` `removeEvidence` and
+     `Project Planner/Core/FirebaseBackend+Variations.swift:481` / `:520` `deleteVariationEvidenceFile`: unlink with
+     one partial update built by `variationEvidenceRemovalWriteFields(stored, { evidenceId, removedBy: <uid>,
+     removedAt: <Timestamp> })` on `variations/{id}` and on `settings/variationItem_{id}` (read the stored document
+     first; never build the list from the screen copy). Write exactly `evidence`, `evidenceCount`, `removedEvidence`
+     plus write metadata. No other iOS save may write `removedEvidence` (a full-document write would drop it).
+   - Variation detail: for `canViewRemovedEvidence(role)` (admins / super admins outside operative mode) show a
+     section titled `removedEvidenceHeading(n)` ("Removed evidence (n)") with each entry's name, path, who removed it
+     (roster name) and when (organisation zone). Read it from `parseVariationDocument(...).removedEvidence`.
+5. **Soft delete retention = 30 days** (`FILE_RECOVERY_RETENTION_DAYS`, `DELETED_DATA_RETENTION_NOTICE`).
+   `Project Planner/Views/PrivacyPolicyView.swift` shows iOS's own copy, `Project Planner/Core/CustomerLegalPack.swift`
+   (not a link to web). Add this sentence, word for word, as a new paragraph at the end of Privacy "7. Retention"
+   (`CustomerLegalPack.swift` ~line 254) and at the end of DPA "14. Deletion and Return" (~line 177):
 
-1. `Project Planner/Core/Rulebook+PayPrivacy.swift:165` `AppUser.payShown(with:privatePay:)` and `:212`
-   `UserStore.refreshPayFromPayProfile(of:)` — call `payEditorStartingValues`; the read loads only `subject.id`
-   today: also try `formerUserIds` (an invited person's pay sits on the placeholder's profile), as web does.
-2. `Project Planner/Views/ManageUsersView.swift` `EditUserView` seed: `:1594` `_dayRateText` and `:1607`
-   `_employmentTypeDraft` (from `user` as passed in), `:2330` `.task(id:)` → `:3405` `refreshPayFromPayProfile()` (only
-   untouched drafts follow). Check the seed and the `.task` overlay give the same value as the summary when ON, and
-   that no save can run on the pre-overlay seed (e.g. disable Save until the overlay read has finished while ON).
-3. Save baseline in the same view: `:3892` (`saved`), `:3939` (`rateSubject`), `:3956` `runPersistUserEdits`
-   `subjectUser`, `:3418` `payRateRequiredMessageForSave`, `:3427` `isPayrollRateDirty(versus:)` — all read
-   `userStore.organizationUsers`, which holds the overlaid row only if the roster overlay
-   (`Rulebook+SecuritySwitches.swift:203` `overlayRosterPayIfPrivate`) or `refreshPayFromPayProfile` has run. Make the
-   baseline the `record` of `payEditorStartingValues`, the same one the seed used.
-4. `Project Planner/Core/UserStore.swift:2626` `updateOperativeProfileFields` and `:2916` `updateManagerDayRate` —
-   `previousPay = Self.storedPay(of: organizationUsers[index])` is the rate-history "previous" row and the
-   unchanged-rate test; it must be the same `record` (ON: profile rate, never a stale users rate). `:2557`
-   `updateUserEmploymentType` likewise for the previous employment type.
-5. Catalogue operative editor `Project Planner/Views/OperativesView.swift:946` `EditOperativeView` (`init` `:969`,
-   `previousAmount` `:1170`, history `:1209`) — seeded from the `operatives` row; while ON lay `payProfiles/{rowId}`
-   over it (`payEditorStartingValues`). This is the known 1.26.0 gap (catalogue operatives not overlaid on iOS).
-6. Display paths that must show the same value as the editor while ON: `Project Planner/Views/OperativeProfileView.swift:79`
-   `dayRateValue` (`displayedUser` / `linkedOperative`), `Project Planner/Views/SettingsHubSupportViews.swift:113`.
+   > A deleted company can be restored for 30 days, after which its data is erased. Deleted files, including the files of an erased company, are kept for up to 30 days so they can be recovered, then permanently removed.
 
-Tests (`ProjectPlannerTests`): switch OFF — seed, baseline and history "previous" equal the users document exactly,
-no `payProfiles` read; switch ON with users `dayRate` 120 and profile 150 — the editor shows 150, saving unchanged
-writes no pay and no history row, saving 180 writes a seed of 150 (empty history) then 180. The parity fixture's
-`payEditorStartingValues` cases cover the function itself.
+   Prefer reading it from the script (`DELETED_DATA_RETENTION_NOTICE`) and add a test that the pack contains it.
+   Do **not** change `CustomerLegalPack.version` (web keeps `1.1`; a mismatch would ask people to accept again on every
+   switch between the apps).
+6. **Invited rate copied on accept** (`invitePayProfileCopyWrite`; rules `inviteeCopiesOwnInvitedPay`). iOS does not
+   create `users/{authUid}` on accept — the invitation link (web `completeInviteSetup`) does
+   (`Project Planner/FirebaseBackend.swift:~4190`, `INVITE_SETUP_INCOMPLETE`), and web 1.27.0 now copies the rate there.
+   Nothing to build on iOS. Check only that iOS reads an invited person's pay from `payProfiles/{uid}` first, then a
+   `formerUserIds` profile (already so in `Rulebook+PayPrivacy.swift:318` / `:328`).
+7. **Catalogue operatives' pay for operatives managers** (`catalogueOperativePaySubjects`, `canViewPersonPay` with
+   `catalogueOperative: true`, `payProfileReadPlan`, `rateHistoryQueryPlan` → `people` plans now carry
+   `operativeIds`). This is the gap iOS reported (catalogue operatives not overlaid after the strip).
+   - `Project Planner/Core/Rulebook+SecuritySwitches.swift:204` `overlayRosterPayIfPrivate` and the `operatives` roster
+     load: pass `roster + catalogueOperativePaySubjects(operativesRows, roster)` as `subjects` to
+     `payProfileReadPlan`, read each id, and lay `payProfiles/{rowId}` over each catalogue `operatives` row with
+     `Operative.payShown(with:privatePay:)` (`Rulebook+PayPrivacy.swift:265`). Re-run it when the `operatives` rows
+     change.
+   - `:171` `rateHistoryPlan` (same subjects) and `:184` `rateHistoryListenQuery(subjectId:)`: for a catalogue row id in
+     `operativeIds`, listen to `whereField("operativeId", isEqualTo: rowId).whereField("userId", isEqualTo: "")` (the
+     rules allow exactly that query; a plain `operativeId ==` query is not part of the plan). Keep `userId ==` for
+     account holders. Decode `operativeIds` (absent in older scripts: treat as `[]`).
+   - `Project Planner/Views/OperativesView.swift` `EditOperativeView` (1.26.1 item 5) then starts from the overlaid row
+     for an operatives manager too.
+   Tests (`ProjectPlannerTests`): switch OFF — no `payProfiles` read, whole-collection history as before; ON — an
+   operatives manager's plan lists the catalogue row in `operativeIds` and its profile is laid over the row; a manager
+   without the toggle gets neither; an `operatives` row with `linkedUserId` or on a roster email is not a catalogue
+   operative. The parity fixture's `1.27.0` cases cover the functions.
+
+Deploy order (web Deploy notes 1.27.0): rules + functions deploy, web deploy, then this iOS build, before the owner
+switches `privatePay` on for any company.
 
 
 ## Workflow for the iOS agent

@@ -150,17 +150,27 @@ profiles, which the updated apps read anyway.
 
 ## Known limits (tell the web agent if any matters to you)
 
-- A catalogue operative with no account (an `operatives` row only): with `privatePay` on, only admins see their rate
-  history.
-- A person invited while `privatePay` is on: their rate is kept on their invite's pay profile. Admins see it; the
-  person and their line manager see it once an admin saves their rate again (owner question 2 below).
+- A catalogue operative with no account (an `operatives` row only): with `privatePay` on, admins and managers with the
+  Operatives toggle see their rate and rate history (rulebook 1.27.0). History rows saved by very old builds without
+  any `userId` field are seen by admins only.
+- A person invited while `privatePay` is on: accepting the invitation copies the invited rate to their own pay
+  profile (rulebook 1.27.0). If that copy fails (for example the accept was interrupted), the rate stays on their
+  invite's pay profile: admins see it, and the person and their line manager see it once an admin saves their rate
+  again. A person who joins from an account in another company keeps the rate on the invite's pay profile.
 - Older iPhone builds below `minimumIosBuild` cannot be used while a switch is on — that is why step 5 comes first.
 
 ## Questions for the owner
 
 1. Switch order: `enforcedReads` first, then `privatePay` a few days later (recommended), or both together?
-2. Invited people under `privatePay`: should accepting an invitation copy the invited rate into the new account's own
-   pay profile automatically? That needs a small rules change (the person may create their own pay profile once, with
-   exactly the invited values) or a server function. Recommended: the rules change, in the next release.
-3. Catalogue operatives (no account): should managers with the Operatives toggle see their rate history while
-   `privatePay` is on? Today only admins do.
+
+Answered 4 Nov (rulebook 1.27.0): invited people get their invited rate copied on accept (the rules let the person
+create their own pay profile once, only as an exact copy of their invite's); managers with the Operatives toggle see
+catalogue operatives' rates and rate history. Both need the 1.27.0 rules deploy, web 1.27.0 and the iOS 1.27.0 build
+before `privatePay` is switched on.
+
+## Deleted files: 30 days
+
+Rulebook 1.27.0 §24: deleted and replaced files are kept for 30 days. In the Cloud console set the Storage bucket's
+**Soft delete policy** to **30 days** (console.cloud.google.com → project `project-planner-f986c` → Cloud Storage →
+Buckets → `project-planner-f986c.firebasestorage.app` → **Protection** → Soft delete policy → 30 days → Save). The
+privacy policy and the data processing agreement say the same.

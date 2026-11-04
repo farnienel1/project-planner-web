@@ -29,7 +29,7 @@ import { readStoredRates } from '@/lib/timesheets/payBasis'
 import { markRowsRemoved, retainScopedRows } from '@/lib/staff/rosterRetain'
 import { removeFutureBookingsForPerson } from '@/lib/bookings/removeBookingsOnDelete'
 import { privatePayFor, securitySwitchesReady } from '@/lib/access/securitySwitches'
-import { overlayRosterPay, payEditorRecord } from '@/lib/pay/payProfileOverlay'
+import { noteOperativeRows, overlayRosterPay, payEditorRecord } from '@/lib/pay/payProfileOverlay'
 
 const OPERATIVES_KEY = 'operativeStore:operatives'
 const MANAGERS_KEY = 'operativeStore:managers'
@@ -65,6 +65,24 @@ interface OperativeState {
   cleanupLegacyPlaceholderManagers: (organizationId: string) => Promise<number>
 }
 
+/** Re-reads the pay profiles (1.27.0 catalogue operatives) and, when they changed, the operatives rows through them. */
+async function refreshCatalogueOperativePay(organizationId: string): Promise<void> {
+  try {
+    const [{ refreshPayProfiles }, { useAuthStore }, { useOrgUserStore }, { unsubscribeOrgCollection }] = await Promise.all([
+      import('@/lib/pay/payProfileOverlay'),
+      import('@/lib/stores/authStore'),
+      import('@/lib/stores/siteAuditStore'),
+      import('@/lib/firebase/subscribeOrgCollection'),
+    ])
+    const changed = await refreshPayProfiles(organizationId, useAuthStore.getState().user as never, useOrgUserStore.getState().users as never)
+    if (!changed || !liveResultStillCurrent(organizationId)) return
+    unsubscribeOrgCollection(OPERATIVES_KEY)
+    await useOperativeStore.getState().loadOperatives(organizationId, { force: true })
+  } catch {
+    // A refused or failed read keeps the rows as read (rulebook 1.26.0).
+  }
+}
+
 export const useOperativeStore = create<OperativeState>((set, get) => ({
   operatives: [],
   managers: [],
@@ -86,6 +104,12 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
     try {
       await subscribeOrgCollectionLoaded(OPERATIVES_KEY, organizationId, 'operatives', (docs, meta) => {
         if (!liveResultStillCurrent(organizationId)) return
+        // Rulebook 1.27.0 §8 (`catalogueOperativePaySubjects`): the pay-profile plan includes the catalogue operatives.
+        // When the rows that could be catalogue operatives change while `privatePay` is on, the pay profiles are read
+        // again and the rows re-read through the overlay (a non-admin with the Operatives toggle now reads them).
+        if (noteOperativeRows(organizationId, docs.map((entry) => ({ ...entry.data, id: entry.id }))) && privatePayFor(organizationId)) {
+          void refreshCatalogueOperativePay(organizationId)
+        }
         const mapped = docs.flatMap((entry) => {
           // Rulebook 1.26.0 §8: a catalogue operative's pay is read from its pay profile first (`overlayPayProfile`).
           const parsed = parseOperative(entry.id, overlayRosterPay(organizationId, entry.id, entry.data), organizationId)

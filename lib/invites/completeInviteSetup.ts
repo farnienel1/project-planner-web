@@ -1,10 +1,17 @@
-import { inviteAcceptWrites, inviteMembershipWrites, invitationProfileFields } from '@/lib/canonical/inviteAccept'
+import {
+  inviteAcceptWrites,
+  inviteMembershipWrites,
+  invitationProfileFields,
+  invitePayProfileCopyWrite,
+} from '@/lib/canonical/inviteAccept'
+import { PAY_PROFILES_COLLECTION } from '@/lib/canonical/payProfile'
+import { writeMetadataFields } from '@/lib/canonical/writeMetadata'
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   type UserCredential,
 } from 'firebase/auth'
-import { deleteDoc, doc, getDoc, setDoc, Timestamp, updateDoc, writeBatch } from 'firebase/firestore'
+import { deleteDoc, doc, getDoc, serverTimestamp, setDoc, Timestamp, updateDoc, writeBatch } from 'firebase/firestore'
 import { getFirebaseAuth, getFirebaseDb } from '@/lib/firebase/ensureFirebase'
 import { isValidUuid } from '@/lib/security/validation'
 import { ensurePrimaryOrgMembership } from '@/lib/orgMembership/membershipService'
@@ -283,6 +290,40 @@ export async function completeInvitationPasswordSetup(params: {
       await moveTaxIds(placeholderId, authUid)
     } catch (error) {
       console.warn('Invite tax ids were not moved; an admin can re-enter them', error instanceof Error ? error.message : 'unknown')
+    }
+  }
+
+  // 4c. Rulebook 1.27.0 (§8, §11, owner decision 6) `invitePayProfileCopyWrite`: with `privatePay` on, the invited rate
+  //     lives on the placeholder's pay profile. Copy it, exactly, to the account's own pay profile while the claim
+  //     still names the placeholder (the rules allow this one create only then). Off: nothing is read or written.
+  if (migrating) {
+    await securitySwitchesReady()
+    const privatePay = privatePayFor(record.organizationId)
+    if (privatePay) {
+      try {
+        const profiles = (id: string) => doc(db, 'organizations', record.organizationId, PAY_PROFILES_COLLECTION, id)
+        const [placeholderSnap, accountSnap] = await Promise.all([
+          getDoc(profiles(placeholderId)),
+          getDoc(profiles(authUid)).catch(() => null),
+        ])
+        const copy = invitePayProfileCopyWrite({
+          privatePay,
+          authUid,
+          placeholderId,
+          placeholderProfile: placeholderSnap.exists() ? (placeholderSnap.data() as Record<string, unknown>) : null,
+          accountProfile: accountSnap && accountSnap.exists() ? (accountSnap.data() as Record<string, unknown>) : null,
+        })
+        if (copy) {
+          await setDoc(profiles(copy.subjectId), {
+            ...copy.set,
+            updatedAt: serverTimestamp(),
+            ...(writeMetadataFields(authUid, 'web') ?? {}),
+          })
+        }
+      } catch (error) {
+        // The rate stays on the placeholder's profile (readers find it through formerUserIds); an admin can save it.
+        console.warn('Invited rate was not copied to the new pay profile', error instanceof Error ? error.message : 'unknown')
+      }
     }
   }
 

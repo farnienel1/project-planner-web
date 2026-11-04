@@ -1098,6 +1098,9 @@ export {
   variationLineId,
   variationRenumberWriteFields,
   variationWriteFields,
+  variationEvidenceRemovalWriteFields,
+  canViewRemovedEvidence,
+  removedEvidenceHeading,
   warningResolutionMigrationWrites,
   warningResolutionRecords,
 } from './recordsDocuments'
@@ -1140,6 +1143,7 @@ export type {
   NotificationDocument,
   VariationDocument,
   VariationEvidenceDocument,
+  VariationRemovedEvidenceDocument,
   VariationLabourLineDocument,
   VariationMaterialLineDocument,
   VariationStatusToken,
@@ -1320,6 +1324,8 @@ export {
   lineManagerOptions,
   lineManagerSelectedIds,
   lineManagerSelectionAfterLevelChange,
+  INVITE_DRAFT_PERSON_ID,
+  inviteDraftLineManagerSubject,
   lineManagerSummary,
 } from './lineManagers'
 export type { LineManagerCandidate, LineManagerPicks, LineManagerRosterPerson, LineManagerSubject } from './lineManagers'
@@ -1341,6 +1347,7 @@ export type { OrgRosterLevel } from './orgRoster'
 // Rulebook 1.12.0: security hardening helpers, forced app update, leave year, pay guards.
 export { isVerifiedPlatformOwner } from './passwordPolicy'
 export { invitationIsOperativeOnly } from './inviteAccept'
+export { invitePayProfileCopyWrite } from './inviteAccept'
 export { organizationMemberActive } from './orgMembership'
 export { PLATFORM_CONFIG_APP_PATH, appUpdateRequired, compareAppVersions } from './platformConfig'
 export {
@@ -1412,6 +1419,7 @@ export {
   payEditorStartingValues,
   payProfileReadPlan,
   rateHistoryQueryPlan,
+  catalogueOperativePaySubjects,
   sharedDocumentPayWrite,
 } from './payProfile'
 export type {
@@ -1426,7 +1434,7 @@ export type {
   BookingHoursLabel,
 } from './bookingSlots'
 export type { SubscriptionAccess } from './billingAccess'
-export type { PayEditorStartingSource, PayEditorStartingValues, PayProfileDocument, PayProfileField, PayProfileReadPlan, PaySubject, PayViewer, RateHistoryQueryPlan } from './payProfile'
+export type { PayEditorStartingSource, PayEditorStartingValues, PayProfileDocument, PayProfileField, PayProfileReadPlan, PaySubject, PayViewer, RateHistoryQueryPlan, CatalogueOperativeRow } from './payProfile'
 export { parseAnnualLeaveDefaults } from './organizationSettings'
 export {
   SELF_EMAIL_INVALID_MESSAGE,
@@ -1445,9 +1453,14 @@ export {
   canSendMaterialOrders,
   materialOrderRecipientCheck,
   materialRequestEmailEnvelope,
+  MATERIAL_REQUEST_JOB_NOT_FOUND_MESSAGE,
+  MATERIAL_REQUEST_JOB_NOT_VISIBLE_MESSAGE,
+  MATERIAL_REQUEST_JOB_NUMBER_MISMATCH_MESSAGE,
+  materialRequestJobCheck,
+  materialRequestJobViewer,
   materialRequestEmailSubject,
 } from './materialOrderAccess'
-export type { MaterialOrderRecipientCheck, MaterialOrderViewer, MaterialRequestEmailEnvelope } from './materialOrderAccess'
+export type { MaterialOrderRecipientCheck, MaterialOrderViewer, MaterialRequestEmailEnvelope, MaterialRequestJobCheck } from './materialOrderAccess'
 export {
   ACCOUNT_DELETE_WITH_COMPANY_MESSAGE,
   ACCOUNT_HANDOVER_REQUIRED_MESSAGE,
@@ -1568,6 +1581,8 @@ export type { JobBadgeLabourBooking, JobBadgeManagerBooking, JobTileBadges, Site
 // Rulebook 1.25.0 (§24): uploaded files are never deleted outright or lost.
 export {
   FILE_KEPT_ON_REMOVE_COPY,
+  FILE_RECOVERY_RETENTION_DAYS,
+  DELETED_DATA_RETENTION_NOTICE,
   FILE_UNDO_WINDOW_MINUTES,
   FILE_UNDO_WINDOW_MS,
   STORED_FILE_KINDS,

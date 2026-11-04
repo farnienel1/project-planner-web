@@ -84,7 +84,7 @@ export async function POST(request: NextRequest) {
         { status: 409, headers: { 'Cache-Control': 'no-store' } }
       )
     }
-    // The company first (locked for 60 days, restorable only by the platform owner since nobody is left), then the
+    // The company first (locked for 30 days, restorable only by the platform owner since nobody is left), then the
     // account as before.
     for (const row of evaluation.paths.filter((entry) => entry.path === 'delete_with_company')) {
       await scheduleOrganizationDeletion({

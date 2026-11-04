@@ -32,6 +32,8 @@ import {
   variationTrackerWriteFields,
   variationTradesWriteFields,
   variationWriteFields,
+  variationEvidenceRemovalWriteFields,
+  writeMetadataFields,
 } from '@/lib/canonical'
 import { firestoreUpdateFields, savePartialDocument } from '@/lib/firebase/partialWrite'
 import { rulebookPerson, rulebookRoster } from '@/lib/staff/rulebookPeople'
@@ -105,6 +107,12 @@ export function variationFromFirestore(id: string, data: Record<string, unknown>
     submittedAt: when(parsed.submittedAtMs),
     closedAt: when(parsed.closedAtMs),
     isDeleted: parsed.isDeleted,
+    removedEvidence: parsed.removedEvidence.map((item) => ({
+      path: item.path,
+      name: item.name,
+      removedBy: item.removedBy,
+      removedAt: when(item.removedAtMs),
+    })),
   }
 }
 
@@ -611,6 +619,64 @@ export async function updateVariation(input: {
 }): Promise<void> {
   const next = withCounters({ ...input.variation, updatedByUid: input.actorUid, updatedAt: new Date() })
   await persistVariationDocument(input.organizationId, next)
+}
+
+/**
+ * Rulebook 1.27.0 §24 (`variationEvidenceRemovalWriteFields`, owner decision 4): unlinks one evidence file and records
+ * `{ path, name, removedBy, removedAt }` on the variation's `removedEvidence`, as one partial update of
+ * `variations/{id}` (and of its `settings/variationItem_{id}` copy and settings-log entry, best effort, which iOS reads
+ * as a fallback). The list is built from the stored document, never from the screen's copy. Returns the variation as
+ * saved, or null when the file is no longer on it.
+ */
+export async function removeVariationEvidence(input: {
+  organizationId: string
+  variation: Variation
+  evidenceId: string
+  actorUid: string
+}): Promise<Variation | null> {
+  if (!db) throw new Error('Firestore not configured')
+  const collectionRef = variationRef(input.organizationId, input.variation.id)
+  const itemRef = settingsDoc(input.organizationId, variationItemDocId(input.variation.id))
+  const removedAt = Timestamp.now()
+  const metadata = writeMetadataFields(input.actorUid, 'web') ?? {}
+  const stamp = { updatedByUid: input.actorUid, updatedAt: removedAt, ...metadata }
+  // The read and the write are one transaction, so a file added or removed by someone else meanwhile is never lost.
+  const primary = await runTransaction(db!, async (transaction) => {
+    const snap = await transaction.get(collectionRef)
+    const stored = snap.exists() ? (snap.data() as Record<string, unknown>) : variationToFirestore(input.variation)
+    const write = variationEvidenceRemovalWriteFields(stored, {
+      evidenceId: input.evidenceId,
+      removedBy: input.actorUid,
+      removedAt,
+      variationId: input.variation.id,
+    })
+    if (write && snap.exists()) transaction.update(collectionRef, { ...write.set, ...stamp })
+    return { stored, write, exists: snap.exists() }
+  })
+  const { stored, write } = primary
+  if (!write) return null
+  const results = await Promise.allSettled([
+    primary.exists ? Promise.resolve() : Promise.reject(new Error('missing')),
+    (async () => {
+      const item = await getDoc(itemRef)
+      if (!item.exists()) return
+      const itemWrite = variationEvidenceRemovalWriteFields(item.data() as Record<string, unknown>, {
+        evidenceId: input.evidenceId,
+        removedBy: input.actorUid,
+        removedAt,
+        variationId: input.variation.id,
+      })
+      if (itemWrite) await updateDoc(itemRef, { ...itemWrite.set, ...stamp })
+    })(),
+  ])
+  if (results[0].status === 'rejected' && results[1].status === 'rejected') {
+    const first = results[0].reason
+    throw first instanceof Error ? first : new Error('Could not update this variation.')
+  }
+  const next = variationFromFirestore(input.variation.id, { ...stored, ...write.set, updatedByUid: input.actorUid, updatedAt: removedAt })
+  // The settings log (iOS fallback) gets the shorter evidence list through its own partial write.
+  await saveVariationSettingsLog(input.organizationId, next, variationToFirestore(next)).catch(() => undefined)
+  return next
 }
 
 export async function setVariationStatus(input: {

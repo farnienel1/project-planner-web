@@ -24,6 +24,20 @@ export const FILE_UNDO_WINDOW_MS = FILE_UNDO_WINDOW_MINUTES * 60 * 1000
 /** Shown when a file is removed from a record but the Storage object is kept. */
 export const FILE_KEPT_ON_REMOVE_COPY = 'Removed from this list. The file itself is kept so an admin can restore it.'
 
+/**
+ * Rulebook §24 (1.27.0, owner decision 5): how long a deleted or replaced file is kept for recovery — the Storage
+ * bucket's soft-delete retention, set by the platform owner (Deploy notes 1.27.0). Also the period an erased
+ * company's files are kept after the §20 eraser runs.
+ */
+export const FILE_RECOVERY_RETENTION_DAYS = 30
+
+/**
+ * The sentence both apps' privacy policy (Retention) and data processing agreement (Deletion and Return) carry, word
+ * for word (web `lib/legal/customerLegalPack.ts`, iOS `CustomerLegalPack.swift`).
+ */
+export const DELETED_DATA_RETENTION_NOTICE =
+  'A deleted company can be restored for 30 days, after which its data is erased. Deleted files, including the files of an erased company, are kept for up to 30 days so they can be recovered, then permanently removed.'
+
 export const STORED_FILE_KINDS = [
   'profile_photo',
   'company_logo',
