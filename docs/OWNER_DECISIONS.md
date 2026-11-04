@@ -39,6 +39,7 @@ How to use it:
 | 4 Nov | Book labour lists exactly the warning's unbooked people (`unbookedLabourRowsOnDay`), weekends included when the setting is on. | done web (#262); iOS already |
 | 4 Nov | Judgement call in #262: an operative with an app login but no Operatives-list row is booked under their users id from web Book labour (the rulebook counts it, `bookingIdsForAccount`). iOS still shows "No operative profile is linked" (iOS follow-up). | owner to confirm |
 
+| 4 Nov | **Booking screens follow `canWriteBooking` (1.10.0 rule kept)** (owner: "yes"). Managers book their own Office / Working from home / Site survey from any screen (My Schedule, project and small works scheduling, Daily Overview, Warnings → Book labour), and book other people only onto jobs they manage. Admins book anyone anywhere. Operatives: jobs only, never book themselves. Every screen offers exactly what the rule allows, so a save is never refused after the fact (fixes Book labour offering Office etc. for a manager's reports). | open (1.32) |
 ## Warnings
 
 | Date | Decision | Status |
