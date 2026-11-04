@@ -1,6 +1,6 @@
 # Project Planner Rulebook
 
-Version: 1.31.0
+Version: 1.31.1
 Updated: 2026-11-04
 
 This is the one rulebook for every Project Planner platform: web, iOS and (later) Android. It is written platform-neutral. Each rule names the shared function in `lib/canonical` that implements it; platforms call that function (web `@/lib/canonical`, iOS `CanonicalBusinessEngine`, Android the same packed script) and never keep a second copy.
@@ -610,6 +610,9 @@ Owner-approved spec of 4 Nov ("PAYE overtime, price work and expenses", release 
 **1.10.0** (full order and checks in `docs/DEPLOY_1.10.0.md`): 1. merge the web change; 2. `node scripts/backfill-job-manager-user-ids.mjs --project <id> --all` (dry run, the default) and review the per-job diff; 3. the same with `--apply` (writes only `managerUserIds`, partial updates, idempotent, no write metadata — `updatedFrom` takes only `web` / `ios` / `android`); 4. `firebase deploy --only firestore:rules,firestore:indexes,functions`; 5. release iOS 1.10.0. The read rules (§17) refuse whole-collection job and booking queries for managers without a job toggle and for operatives, so app builds that predate 1.10.0 lose those lists for them until they update.
 
 ## Changelog
+
+### 1.31.1 — 2026-11-04
+- firestore.rules slimmed so it compiles reliably; no permission changes. The deploy compile (`firebaserules` `:test`) began returning HTTP 503 as the file grew (180 KB at 1.30.2, 188 KB at 1.31.0). Comment blocks moved to `docs/firestore-rules-notes.md`; unused functions, `allow … : if false` statements (rules only grant, so they never applied) and exact duplicate functions removed; single-use wrappers inlined; repeated reads of one document passed once. 188,025 → 124,728 bytes, 245 → 232 functions. Same results in every rules suite and the same allow / deny with no more evaluated expressions in each measured request.
 
 ### 1.31.0 — 2026-11-04
 - **People and access** (§11, access audit, owner decisions 4 Nov; new `peopleAccess.ts`): no rights carry over on a level change — an operative is nobody's line manager (`lineManagerIds`, `rosterMemberIsOperativeLevel`; rules for leave decisions, timesheet review, pay, overtime, price work, expenses and claim evidence). A line manager cannot be made an operative, deactivated or deleted while anyone reports to them (`lineManagerReports`, `lineManagerChangeBlock`, `LINE_MANAGER_REPORTS_BLOCK_MESSAGE`).

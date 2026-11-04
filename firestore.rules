@@ -1,6 +1,5 @@
 rules_version = '2';
 service cloud.firestore {
-  // UUID / org strings may differ by case or accidental whitespace (website imports, copy/paste).
   function orgIdsMatch(a, b) {
     return a is string && b is string && (
       a.lower() == b.lower() ||
@@ -8,7 +7,6 @@ service cloud.firestore {
     );
   }
 
-  // Firestore may store legacy "boolean" flags as 1/0 from imports or other clients.
   function truthyBool(v) {
     return v == true || v == 1;
   }
@@ -29,20 +27,11 @@ service cloud.firestore {
            ('role' in userData && userData.role == 'manager');
   }
 
-  // Rulebook 1.31.0 §8 (owner decision: no rights carry over on a level change, lib/canonical lineManagerIds): an
-  // operative is nobody's line manager, even when an old id is still stored on the report. The caller's own users
-  // document says operative (and not admin).
   function callerHomeIsOperative() {
     let home = callerHomeData();
     return isOperativeProfile(home) && !adminLikeUser(home);
   }
 
-  // Job quote and order history (`canViewMaterialOrderHistory`): every admin and manager of the organisation, never
-  // operative mode — `isOrgManagerOrAdmin` (1.10.0: this organisation's role, not another company's flags).
-
-  // True if users/{auth.uid}.organizationId matches this org (string case-insensitive, DocumentReference exact path,
-  // or DocumentReference whose *document id* matches case-insensitive — avoids strict path equality when UUID casing differs).
-  // Also accepts string relative paths like "organizations/<uuid>" (Swift client strips the prefix; rules must too).
   function userDocOrganizationMatches(userData, organizationId) {
     return 'organizationId' in userData && (
       (userData.organizationId is string &&
@@ -52,12 +41,11 @@ service cloud.firestore {
       (userData.organizationId is path &&
        orgIdsMatch(userData.organizationId[4], organizationId)) ||
       userData.organizationId == /databases/(default)/documents/organizations/$(organizationId) ||
-      // Some clients/refs use a different path segment index; full string match covers those cases.
       (userData.organizationId is path &&
        string(userData.organizationId).lower().matches('.*/organizations/' + organizationId.lower() + '$'))
     );
   }
-  
+
   function userOrgIdMatchesPath(organizationId) {
     return request.auth != null &&
            exists(/databases/(default)/documents/users/$(request.auth.uid)) &&
@@ -66,16 +54,14 @@ service cloud.firestore {
              organizationId
            );
   }
-  
-  // Member check by reading the parent org document. Do NOT use this when evaluating read on that same org doc
-  // (circular get can deny access). For organizations/{organizationId} document reads, use resource.data.members instead.
+
   function isOrgMemberViaParentGet(organizationId) {
     return request.auth != null &&
            exists(/databases/(default)/documents/organizations/$(organizationId)) &&
            'members' in get(/databases/(default)/documents/organizations/$(organizationId)).data &&
            get(/databases/(default)/documents/organizations/$(organizationId)).data.members[request.auth.uid] != null;
   }
-  
+
   function isOrgCreatorViaParentGet(organizationId) {
     return request.auth != null &&
            exists(/databases/(default)/documents/organizations/$(organizationId)) &&
@@ -83,7 +69,6 @@ service cloud.firestore {
            get(/databases/(default)/documents/organizations/$(organizationId)).data.creatorUserId == request.auth.uid;
   }
 
-  // Web org setup: user just created organizations/{id} and is writing their own users/{authUid} profile.
   function isOrgBootstrapAdminProfileCreate(userId) {
     return request.auth != null &&
            request.auth.uid == userId &&
@@ -94,18 +79,12 @@ service cloud.firestore {
            get(/databases/(default)/documents/organizations/$(request.resource.data.organizationId)).data.members[request.auth.uid] == 'admin';
   }
 
-  // Self-create only (request.auth.uid == userId). Admin/manager invite placeholders omit these.
   function selfCreateHasAgeConfirmation() {
     return request.resource.data.ageConfirmed == true &&
            request.resource.data.ageConfirmedYears is number &&
            request.resource.data.ageConfirmedAt is timestamp;
   }
 
-  // Invite accept: organizations/{org}/userEmails/{email} still points at the UUID placeholder
-  // Add User wrote (not an Auth uid). The placeholder must be pending (passwordSet not true),
-  // in this org, and hold this same email — so a live member or the Deleted-user tombstone
-  // (email '', passwordSet true) never qualifies. Lets the invitee create users/{authUid}
-  // before the claim moves to authUid.
   function inviteClaimIsPendingPlaceholder(organizationId, emailKey) {
     let claimPath = /databases/(default)/documents/organizations/$(organizationId)/userEmails/$(emailKey);
     let claimed = exists(claimPath) ? get(claimPath).data.get('userId', '') : '';
@@ -123,14 +102,10 @@ service cloud.firestore {
            userDocOrganizationMatches(placeholder, organizationId);
   }
 
-  // Fields that decide what an account may do. A self-created profile may not choose its own.
   function permissionValue(data, key) {
     return data.get('permissions', {}) is map ? data.get('permissions', {}).get(key, null) : null;
   }
 
-  // Rulebook 1.31.0 (audit finding 5, lib/canonical userPermissionFlag): the top-level value when one is stored, else
-  // `permissions.{key}`. Before 1.31.0 a flag counted when it was on in EITHER place, while every screen read the
-  // top-level value first.
   function staffFlag(data, key) {
     return data.get(key, null) == null ? truthyBool(permissionValue(data, key)) : truthyBool(data.get(key, false));
   }
@@ -139,22 +114,17 @@ service cloud.firestore {
     return staffFlag(data, 'operativeMode') || data.get('role', '') == 'operative';
   }
 
-  // `next` has no privilege `source` lacks. Missing and false are the same; an operative stays one.
   function noMorePrivilegeThan(next, source) {
     return (!staffFlag(next, 'isSuperAdmin') || staffFlag(source, 'isSuperAdmin')) &&
            (!staffFlag(next, 'adminAccess') || staffFlag(source, 'adminAccess')) &&
            (!staffFlag(next, 'manager') || staffFlag(source, 'manager')) &&
            (!staffFlag(next, 'operatives') || staffFlag(source, 'operatives')) &&
-           // 1.28.0: the self-manage toggles only as the admin set them on the placeholder.
            (!staffFlag(next, 'annualLeaveSelfBook') || staffFlag(source, 'annualLeaveSelfBook')) &&
            (!staffFlag(next, 'timesheetSelfSign') || staffFlag(source, 'timesheetSelfSign')) &&
            (!(next.get('role', '') in ['admin', 'manager']) || next.get('role', '') == source.get('role', '')) &&
            (!isOperativeProfile(source) || isOperativeProfile(next));
   }
 
-  // Rulebook 1.28.0: a profile a person creates for themself (re-creating a deleted one, or the bootstrap path) never
-  // switches on their own self-manage toggles (Annual Leave Management, Timesheet self-sign; top level or
-  // `permissions`) — except the organisation's creator, the Super Admin, who reads both on anyway. An admin sets them.
   function selfCreateSelfManageOff(organizationId) {
     return (!staffFlag(request.resource.data, 'annualLeaveSelfBook') &&
             !staffFlag(request.resource.data, 'timesheetSelfSign')) ||
@@ -169,10 +139,6 @@ service cloud.firestore {
            next.get('role', '') in ['admin', 'manager'];
   }
 
-  // Self-create (users/{authUid}) into an existing company. Either the invitee copies the pending
-  // placeholder an admin wrote (no privilege it lacks), or a returning member whose email claim
-  // already names this account and who is in the company's members map. Admin flags need an
-  // 'admin' entry in that map. A company that never invited or listed this account is refused.
   function selfCreateJoinsCompany(organizationId, emailKey) {
     let claimPath = /databases/(default)/documents/organizations/$(organizationId)/userEmails/$(emailKey);
     return (
@@ -182,8 +148,6 @@ service cloud.firestore {
       exists(claimPath) &&
       get(claimPath).data.userId == request.auth.uid &&
       isOrgMemberViaParentGet(organizationId) &&
-      // 1.12.0 (B3): a returning member re-creating their own profile brings no alias ids (deleting and re-creating
-      // it must not be a way round the self-update lock).
       selfCreateAliasesWithin(request.resource.data, {}, '') &&
       selfCreateSelfManageOff(organizationId) &&
       (
@@ -193,24 +157,17 @@ service cloud.firestore {
     );
   }
 
-  // The invitee's new profile has no privilege the placeholder lacks and (1.12.0, B3) alias ids only from the
-  // placeholder, plus its own id.
   function selfCreateCopiesPlaceholder(placeholderId) {
     let placeholder = get(/databases/(default)/documents/users/$(placeholderId)).data;
     return noMorePrivilegeThan(request.resource.data, placeholder) &&
       selfCreateAliasesWithin(request.resource.data, placeholder, placeholderId);
   }
 
-  // Admin of this company: users/{uid}.organizationId plus admin flags, or 'admin' in its members map.
   function isAdminOfCompany(organizationId) {
-    // Members map first: one get. isOrganizationAdmin runs the long organizationId match.
     return organizationId is string &&
            (isOrgAdminViaMembersMap(organizationId) || isOrganizationAdmin(organizationId));
   }
 
-  // The claim for the signed-in email, pointed at the signed-in account. Allowed when the claim
-  // is new, already names this account, names this invite's pending placeholder, or names a
-  // users document that no longer exists. A live claim for another account is not taken over.
   function isOwnEmailClaimWrite(organizationId, emailKey) {
     return request.resource.data.userId == request.auth.uid &&
            request.auth.token.email is string &&
@@ -223,20 +180,6 @@ service cloud.firestore {
            );
   }
 
-  // Rulebook 1.12.0 (H2, lib/canonical organizationMemberActive): deactivated in this organisation. Two sources, read
-  // where the role is read so the check costs no extra document in most rules:
-  //   - this organisation's own users document (`organizationId` names it): `isActive` false;
-  //   - for a member whose users document names another company: their membership here,
-  //     users/{uid}/orgMemberships/{orgId}.accountActive (else isActive) false.
-  // Only an explicit false deactivates; a missing document or flag is active (older data, founder bootstrap). A
-  // deactivated person still reads their own users document and memberships (the apps show the deactivated screen).
-  // Rulebook 1.12.1 §17/§18: the job and booking read scoping of 1.10.0 / 1.11.0 applies only once the platform owner
-  // has set `platformConfig/app.enforcedReads` to true (after both backfills and an app release with
-  // ENFORCED_READS_ACTIVE true). Until then every member of the organisation reads its jobs and bookings as before
-  // 1.10.0. One document read, shared by every rule that asks. Writes are never switched by it.
-  // 1.26.0: also on for one organisation when its id is in `enforcedReadsOrganizationIds` (lib/canonical
-  // securitySwitchOn), so the owner can switch their own company on first. The apps read the same document and plan
-  // their queries from it, so they work with the switch on or off.
   function enforcedReadsOn(organizationId) {
     let config = /databases/(default)/documents/platformConfig/app;
     let data = exists(config) ? get(config).data : {};
@@ -244,20 +187,12 @@ service cloud.firestore {
       (data.get('enforcedReadsOrganizationIds', []) is list && organizationId in data.get('enforcedReadsOrganizationIds', []));
   }
 
-  // Rulebook 1.13.0 §16 / §19 (Q1): pay moves to organizations/{orgId}/payProfiles/{subjectId}. The pay reads of
-  // `operativeDayRateHistory`, `operativeProfiles` and `settings/timesheet_*` are limited to the people who may see
-  // that person's pay (`canViewPayOf`, lib/canonical canViewPersonPay) once the platform owner sets
-  // `platformConfig/app.privatePay` true — after an app release that reads pay per person (Deploy notes 1.13.0). From
-  // then on no write puts a pay value back on `users`, `operatives` or `managers`. One document read, shared with
-  // `enforcedReadsOn`. `payProfiles` itself is private from the deploy.
-  // 1.26.0: also on for one organisation when its id is in `privatePayOrganizationIds` (securitySwitchOn).
   function privatePayOn(organizationId) {
     let config = /databases/(default)/documents/platformConfig/app;
     let data = exists(config) ? get(config).data : {};
     return data.get('privatePay', false) == true ||
       (data.get('privatePayOrganizationIds', []) is list && organizationId in data.get('privatePayOrganizationIds', []));
   }
-  // A write that puts a pay value (not null) on a users / operatives / managers document, or changes one.
   function payValueWritten() {
     let next = request.resource.data;
     let prev = resource == null ? {} : resource.data;
@@ -274,16 +209,6 @@ service cloud.firestore {
     return !privatePayOn(organizationId) || !payValueWritten();
   }
 
-  // Rulebook 1.13.0 §19 (Q3, lib/canonical hasAccess / billingAccessFields): a lapsed subscription closes the
-  // organisation's data. The Stripe webhook writes `billing.accessOpen` (`hasAccess` at the time) and, while a payment
-  // has failed, `billing.accessClosesAt` (the end of the 7-day grace), so the grace ends on time without another Stripe
-  // event. Closed when `accessOpen` is false or `accessClosesAt` has passed. Missing billing or missing fields are open
-  // (trials, organisations whose billing has not synced since 1.13.0), so the rules never block where the apps would
-  // not. Not gated: the organisation document itself, the caller's own users document and memberships, and billing
-  // (written by the server only). Kept to one document read and a few expressions: it runs inside the role helpers.
-  // 1.15.0 (§20, `organizationDeletionState`): also closed while the organisation is scheduled for erasure
-  // (`deletion.status == 'scheduled'`) — same exceptions as a lapsed subscription (the organisation document, the
-  // caller's own users document and memberships, the platform owner).
   function orgBillingOpen(organizationId) {
     let path = /databases/(default)/documents/organizations/$(organizationId);
     let org = exists(path) ? get(path).data : {};
@@ -305,9 +230,6 @@ service cloud.firestore {
       get(membership).data.get('accountActive', get(membership).data.get('isActive', true)) == false;
   }
 
-  // For subcollections under organizations/{organizationId}/… only (parent get is not the resource being read).
-  // 1.12.0 (H2): never for a person this organisation has deactivated.
-  // 1.13.0 (Q3): never while the organisation's subscription has lapsed (`orgBillingOpen`).
   function belongsToOrganization(organizationId) {
     return request.auth != null && orgBillingOpen(organizationId) && (
       userOrgIdMatchesPath(organizationId)
@@ -326,7 +248,6 @@ service cloud.firestore {
       || request.resource.data.billing == resource.data.billing;
   }
 
-  // 1.15.0 (§20): `deletion` is written by the server (admin SDK) only, never by an app — except the restore below.
   function deletionUnchanged() {
     return (!('deletion' in resource.data) && !('deletion' in request.resource.data))
       || request.resource.data.get('deletion', null) == resource.data.get('deletion', null);
@@ -334,8 +255,7 @@ service cloud.firestore {
   function orgScheduledForErasure() {
     return resource.data.get('deletion', {}) is map && resource.data.get('deletion', {}).get('status', '') == 'scheduled';
   }
-  
-  // Treat missing or blank addedByUserId like legacy rows (see canDeleteOwnMaterial / canClaimLegacyOwnMaterial).
+
   function resourceMaterialHasNonEmptyOwnerUid() {
     return resource != null &&
            'addedByUserId' in resource.data &&
@@ -343,48 +263,18 @@ service cloud.firestore {
            resource.data.addedByUserId.size() > 0;
   }
 
-  function isMaterialOwnerForRequest() {
-    return request.auth != null && (
-      (resourceMaterialHasNonEmptyOwnerUid() && resource.data.addedByUserId == request.auth.uid) ||
-      (
-        request.resource.data.addedByUserId is string &&
-        request.resource.data.addedByUserId.size() > 0 &&
-        request.resource.data.addedByUserId == request.auth.uid
-      )
-    );
-  }
-
   function legacyMaterialAddedByMatchesCurrentUser() {
     return request.auth != null &&
            exists(/databases/(default)/documents/users/$(request.auth.uid)) &&
            resource.data.addedBy is string &&
-           (
-             (
-               'email' in get(/databases/(default)/documents/users/$(request.auth.uid)).data &&
-               get(/databases/(default)/documents/users/$(request.auth.uid)).data.email is string &&
-               resource.data.addedBy.lower() == get(/databases/(default)/documents/users/$(request.auth.uid)).data.email.lower()
-             ) ||
-             (
-               'firstName' in get(/databases/(default)/documents/users/$(request.auth.uid)).data &&
-               'surname' in get(/databases/(default)/documents/users/$(request.auth.uid)).data &&
-               get(/databases/(default)/documents/users/$(request.auth.uid)).data.firstName is string &&
-               get(/databases/(default)/documents/users/$(request.auth.uid)).data.surname is string &&
-               resource.data.addedBy.lower() == (
-                 get(/databases/(default)/documents/users/$(request.auth.uid)).data.firstName + ' ' +
-                 get(/databases/(default)/documents/users/$(request.auth.uid)).data.surname
-               ).lower()
-             ) ||
-             (
-               'firstName' in get(/databases/(default)/documents/users/$(request.auth.uid)).data &&
-               'lastName' in get(/databases/(default)/documents/users/$(request.auth.uid)).data &&
-               get(/databases/(default)/documents/users/$(request.auth.uid)).data.firstName is string &&
-               get(/databases/(default)/documents/users/$(request.auth.uid)).data.lastName is string &&
-               resource.data.addedBy.lower() == (
-                 get(/databases/(default)/documents/users/$(request.auth.uid)).data.firstName + ' ' +
-                 get(/databases/(default)/documents/users/$(request.auth.uid)).data.lastName
-               ).lower()
-             )
-           );
+           addedByNamesUser(resource.data.addedBy.lower(), get(/databases/(default)/documents/users/$(request.auth.uid)).data);
+  }
+  function addedByNamesUser(addedBy, u) {
+    return ('email' in u && u.email is string && addedBy == u.email.lower()) ||
+           ('firstName' in u && 'surname' in u && u.firstName is string && u.surname is string &&
+            addedBy == (u.firstName + ' ' + u.surname).lower()) ||
+           ('firstName' in u && 'lastName' in u && u.firstName is string && u.lastName is string &&
+            addedBy == (u.firstName + ' ' + u.lastName).lower());
   }
 
   function canClaimLegacyOwnMaterial(organizationId) {
@@ -401,17 +291,24 @@ service cloud.firestore {
     return canClaimLegacyOwnMaterial(organizationId) &&
            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['addedByUserId']);
   }
-  
+
   function canCreateOwnMaterial(organizationId) {
     return canAccessOrganization(organizationId) &&
            request.resource.data.addedByUserId is string &&
            request.resource.data.addedByUserId.size() > 0 &&
            request.resource.data.addedByUserId == request.auth.uid;
   }
-  
+
   function canUpdateOwnMaterial(organizationId) {
     return canAccessOrganization(organizationId) &&
-           isMaterialOwnerForRequest() &&
+           (request.auth != null && (
+               (resourceMaterialHasNonEmptyOwnerUid() && resource.data.addedByUserId == request.auth.uid) ||
+               (
+                 request.resource.data.addedByUserId is string &&
+                 request.resource.data.addedByUserId.size() > 0 &&
+                 request.resource.data.addedByUserId == request.auth.uid
+               )
+             )) &&
            (request.resource.data.addedByUserId == resource.data.addedByUserId);
   }
 
@@ -421,11 +318,7 @@ service cloud.firestore {
       (!resourceMaterialHasNonEmptyOwnerUid() && legacyMaterialAddedByMatchesCurrentUser())
     );
   }
-  
-  // Helper function to check if user is admin of organization
-  // Includes adminAccess so users with admin permissions can update org (e.g. members map on user delete).
-  // 1.13.0 (Q3): an admin of a lapsed organisation is not an admin of its data (`orgBillingOpen`); the organisation
-  // document itself uses `isOrganizationAdminAnyBilling`.
+
   function isOrganizationAdmin(organizationId) {
     return isOrganizationAdminAnyBilling(organizationId) && orgBillingOpen(organizationId);
   }
@@ -437,10 +330,6 @@ service cloud.firestore {
            get(/databases/(default)/documents/users/$(request.auth.uid)).data.get('isActive', true) != false;
   }
 
-  // Rulebook 1.10.0 (H2): a person's role in an organisation comes from that organisation. Their users/{uid}
-  // flags count only when that document is this company's (users/{uid}.organizationId); otherwise the role is this
-  // company's members map entry. A manager in company A who is an operative (or member) in company B is never a
-  // manager in B.
   function callerListedRole(organizationId) {
     return exists(/databases/(default)/documents/organizations/$(organizationId)) ?
       get(/databases/(default)/documents/organizations/$(organizationId)).data.get('members', {}).get(request.auth.uid, '') : '';
@@ -449,24 +338,15 @@ service cloud.firestore {
     return exists(/databases/(default)/documents/users/$(request.auth.uid)) ?
       get(/databases/(default)/documents/users/$(request.auth.uid)).data : {};
   }
-  // users/{uid}.organizationId names this organisation (string, "organizations/<id>" path string, or reference).
   function homeOrgIs(home, organizationId) {
     let v = home.get('organizationId', '');
     let org = organizationId.lower();
     return (v is string && (v.trim().lower() == org || v.lower().matches('(^|.*/)organizations/' + org + '$'))) ||
       (v is path && string(v).lower().matches('.*/organizations/' + org + '$'));
   }
-  // The caller's role in THIS organisation: 'admin' | 'manager' | 'operative' | 'member' | the listed role | ''.
-  // 1.11.0: an admin is an admin (no operative mode, permissionLevelOf); otherwise operative mode wins
-  // (lib/canonical staffAccess: operative mode is never staff).
-  // 1.12.0 (H2): '' for a person this organisation has deactivated (callerHomeInactiveIn / callerMembershipDeactivated), so every rule built on the
-  // role refuses them.
-  // 1.13.0 (Q3): '' while the organisation's subscription has lapsed (`orgBillingOpen`).
   function callerOrgRole(organizationId) {
     return orgBillingOpen(organizationId) ? callerOrgRoleAnyBilling(organizationId) : '';
   }
-  // Without the billing test: for rules that already passed `canAccessOrganization` (annual leave, near the
-  // 1000-expression limit).
   function callerOrgRoleAnyBilling(organizationId) {
     let listed = callerListedRole(organizationId);
     let home = callerHomeData();
@@ -479,8 +359,6 @@ service cloud.firestore {
     ) : ((listed != '' && callerMembershipDeactivated(organizationId)) ? '' : listed);
   }
 
-  // Rulebook 1.11.0 (lib/canonical/inviteAccept.ts invitationRole): the role an invitation gives — its `role`, else
-  // the kind its permissions give, else 'member'.
   function invitationRole(inv) {
     let perms = inv.get('permissions', {});
     return inv.get('role', '') in ['admin', 'manager', 'operative', 'member'] ? inv.get('role', '') : (
@@ -490,10 +368,6 @@ service cloud.firestore {
     );
   }
 
-  // Rulebook 1.12.0 (B2, lib/canonical invitationIsOperativeOnly): an invitation that gives an operative and nothing
-  // more — role operative (`invitationRole`), operative mode on, and no admin, super admin, manager or operatives
-  // toggle at the top level or in `permissions`. The same test as managerCanCreateOperativeUser on users/{uid}: the
-  // only invitation a manager with operatives access may create, change or hold.
   function invitationIsOperativeOnly(inv) {
     let perms = inv.get('permissions', {}) is map ? inv.get('permissions', {}) : {};
     return invitationRole(inv) == 'operative' &&
@@ -504,8 +378,6 @@ service cloud.firestore {
       !truthyBool(inv.get('manager', false)) && !truthyBool(inv.get('operatives', false));
   }
 
-  // A genuine, unused invitation (`invitations/{invId}`) to the signed-in email for this organisation, marked used in
-  // the same batch (inviteMembershipWrites). The one source of an accepting person's access in that organisation.
   function inviteBeingAccepted(invId, organizationId) {
     let path = /databases/(default)/documents/invitations/$(invId);
     return invId is string && invId.size() > 0 && !invId.matches('.*/.*') && exists(path) &&
@@ -515,12 +387,10 @@ service cloud.firestore {
       request.auth.token.email is string &&
       string(get(path).data.get('email', '')).lower() == request.auth.token.email.lower();
   }
-  // Admin or manager of THIS organisation, never operative mode (lib/canonical/staffAccess.ts isStaffAccount).
   function isOrgManagerOrAdmin(organizationId) {
     return request.auth != null && organizationId is string &&
       callerOrgRole(organizationId) in ['admin', 'manager'];
   }
-  // Staff who may open Send in THIS organisation: not an operative here.
   function isOrgNonOperativeMember(organizationId) {
     return request.auth != null && (
       callerOrgRole(organizationId) in ['admin', 'manager'] ||
@@ -528,26 +398,17 @@ service cloud.firestore {
     );
   }
 
-  function isOrganizationMaterialManager(organizationId) {
-    return isOrgManagerOrAdmin(organizationId);
-  }
-
   function isOperativeLikeUser(userData) {
     return ('operativeMode' in userData && truthyBool(userData.operativeMode)) ||
            ('role' in userData && userData.role == 'operative');
   }
 
-  // Staff who can open Send (not operatives). Membership is enough — do not
-  // require users/{uid}.organizationId to be this company (multi-org / stale
-  // primary org used to fail the send-history write after the email went out).
   function canWriteMaterialSendRecord(organizationId) {
     return request.auth != null &&
            canAccessOrganization(organizationId) &&
            isOrgNonOperativeMember(organizationId);
   }
 
-  // Rulebook 1.9.0: a Send status update may carry write metadata (`updatedBy` = the signed-in user,
-  // `updatedFrom` a known platform). Checked inline: the materials update rule is close to the expression limit.
   function isStaffMaterialStatusWrite(organizationId) {
     let affected = request.resource.data.diff(resource.data).affectedKeys();
     return affected.hasOnly(['status', 'lastSentAt', 'lastSentRequestType', 'updatedAt', 'updatedBy', 'updatedFrom']) &&
@@ -556,12 +417,9 @@ service cloud.firestore {
            canWriteMaterialSendRecord(organizationId);
   }
 
-  // Admin of org by members map (works before users/{uid} profile exists — web org bootstrap).
   function isOrgAdminViaMembersMap(organizationId) {
     return isOrgAdminViaMembersMapAnyBilling(organizationId) && orgBillingOpen(organizationId);
   }
-  // 1.13.0: without the billing test, for rules that already passed `canAccessOrganization` (which has it) and sit
-  // near the 1000-expression limit (annual leave), and for the organisation document itself.
   function isOrgAdminViaMembersMapAnyBilling(organizationId) {
     return request.auth != null &&
            exists(/databases/(default)/documents/organizations/$(organizationId)) &&
@@ -569,18 +427,7 @@ service cloud.firestore {
            get(/databases/(default)/documents/organizations/$(organizationId)).data.members[request.auth.uid] == 'admin' &&
            !callerHomeInactiveIn(organizationId);
   }
-  
-  // Helper function to check if current user is super admin or has admin access
-  // Firestore rules only support boolean expressions, not if/let statements
-  // 
-  // WHO CAN CREATE USERS:
-  // ✅ Super Admin (isSuperAdmin == true)
-  // ✅ Admins (adminAccess == true OR role == 'admin')
-  // ✅ Managers with operatives permission — operative accounts only (operativeMode == true)
-  // ❌ Managers without operatives permission — cannot create users
-  // ❌ Operatives (operativeMode == true) — CANNOT create users
-  //
-  // Managers and operatives can create their own accounts during website signup (self-creation path).
+
   function isManagerWithOperativesAccess() {
     return request.auth != null &&
            exists(/databases/(default)/documents/users/$(request.auth.uid)) &&
@@ -590,6 +437,12 @@ service cloud.firestore {
              truthyBool(get(/databases/(default)/documents/users/$(request.auth.uid)).data.manager)) &&
            ('operatives' in get(/databases/(default)/documents/users/$(request.auth.uid)).data &&
              truthyBool(get(/databases/(default)/documents/users/$(request.auth.uid)).data.operatives));
+  }
+  function managerOfSameOrg(me, organizationId) {
+    return 'organizationId' in me && orgIdsMatch(me.organizationId, organizationId) &&
+           !('operativeMode' in me && truthyBool(me.operativeMode)) &&
+           ('manager' in me && truthyBool(me.manager)) &&
+           ('operatives' in me && truthyBool(me.operatives));
   }
 
   function managerCanCreateOperativeUser() {
@@ -608,15 +461,6 @@ service cloud.firestore {
            !('isSuperAdmin' in request.resource.data && truthyBool(request.resource.data.isSuperAdmin));
   }
 
-  function isAdminOrSuperAdmin() {
-    return request.auth != null && 
-           exists(/databases/(default)/documents/users/$(request.auth.uid)) &&
-           adminLikeUser(get(/databases/(default)/documents/users/$(request.auth.uid)).data);
-  }
-
-  // App owner only (Project Planner), never an organisation admin.
-  // Rulebook 1.12.0 (B1, isPlatformOwnerEmail): only the signed-in Auth token's email, and only once Firebase Auth has
-  // verified it. The users document's `email` is never read here — anyone could write their own.
   function isPlatformOwner() {
     return request.auth != null &&
       request.auth.token.email is string &&
@@ -624,40 +468,22 @@ service cloud.firestore {
       request.auth.token.email_verified == true;
   }
 
-  // Variations: every admin and manager of the org (isOrgManagerOrAdmin). Never an operative.
-  // Do not look up the job's assigned-manager list here — that extra get() made
-  // every variation read/write slow and denied managers who can already see the job.
-  function canAdminVariations(organizationId) {
+  function isOrgAdminOrOwner(organizationId) {
     return isOrganizationAdmin(organizationId) ||
       isOrgAdminViaMembersMap(organizationId) ||
       isPlatformOwner();
   }
 
-  // 1.10.0: the manager test is this organisation's role (isOrgManagerOrAdmin), never another company's flags.
   function canAccessVariationsStaff(organizationId) {
-    return canAdminVariations(organizationId) || isOrgManagerOrAdmin(organizationId);
+    return isOrgAdminOrOwner(organizationId) || isOrgManagerOrAdmin(organizationId);
   }
 
-  // A manager with operative-management access (manager + operatives, not operative mode) in the
-  // same company as `targetData`, which is another person's operative users document. The one
-  // test for who besides an admin may change an operative's pay, on users/{uid}
-  // (canManagerUpdateOperativeProfile), operativeProfiles and operativeDayRateHistory.
   function managerMayManageOperative(targetUserId, targetData) {
     return request.auth != null &&
            request.auth.uid != targetUserId &&
            exists(/databases/(default)/documents/users/$(request.auth.uid)) &&
            ('organizationId' in targetData) &&
-           ('organizationId' in get(/databases/(default)/documents/users/$(request.auth.uid)).data) &&
-           orgIdsMatch(
-             get(/databases/(default)/documents/users/$(request.auth.uid)).data.organizationId,
-             targetData.organizationId
-           ) &&
-           !('operativeMode' in get(/databases/(default)/documents/users/$(request.auth.uid)).data &&
-             truthyBool(get(/databases/(default)/documents/users/$(request.auth.uid)).data.operativeMode)) &&
-           ('manager' in get(/databases/(default)/documents/users/$(request.auth.uid)).data &&
-             truthyBool(get(/databases/(default)/documents/users/$(request.auth.uid)).data.manager)) &&
-           ('operatives' in get(/databases/(default)/documents/users/$(request.auth.uid)).data &&
-             truthyBool(get(/databases/(default)/documents/users/$(request.auth.uid)).data.operatives)) &&
+           managerOfSameOrg(get(/databases/(default)/documents/users/$(request.auth.uid)).data, targetData.organizationId) &&
            (
              ('operativeMode' in targetData && truthyBool(targetData.operativeMode)) ||
              ('permissions' in targetData && targetData.permissions is map && 'operativeMode' in targetData.permissions && truthyBool(targetData.permissions.operativeMode)) ||
@@ -665,11 +491,6 @@ service cloud.firestore {
            );
   }
 
-  // Managers with operative-management access may edit limited operative profile fields on users docs.
-  // Rulebook 1.31.0 (owner decision 7): a manager with the Operatives permission edits an operative's profile — names,
-  // contact, trade, active flag, the operative toggles (Materials, Site audit), line manager, leave and pay — and the
-  // person stays an operative with no more privilege (never a manager, admin or the self-manage toggles) and never
-  // "No line manager" (admins only, §8).
   function canManagerUpdateOperativeProfile(targetUserId) {
     return managerMayManageOperative(targetUserId, resource.data) &&
            isOperativeProfile(request.resource.data) &&
@@ -726,8 +547,6 @@ service cloud.firestore {
            ('permissions' in data && data.permissions is map && flagOn(data.permissions, 'adminAccess'));
   }
 
-  // Self-update may repair missing top-level admin flags on an existing admin.
-  // It must not let an operative set adminAccess, isSuperAdmin, role, or organizationId.
   function userSelfUpdateKeepsPrivileges() {
     return resource != null &&
            (!('organizationId' in request.resource.data) ||
@@ -748,11 +567,6 @@ service cloud.firestore {
            selfUpdateKeepsManagedFields();
   }
 
-  // Rulebook 1.12.0 (B1, B3): on their own document a person never changes the fields other rules trust as who they
-  // are. `email` changes only to the signed-in Auth email (the sync after Firebase Auth has changed the sign-in email,
-  // `verifyBeforeUpdateEmail`); `formerUserIds` and `sameEmailUserIds` (the ids the rules and pay treat as theirs,
-  // `personIdSet`) never change on a self-update — admins, invite acceptance and the admin backfill write them. Admins
-  // editing a person go through the admin branch, not this one.
   function selfUpdateKeepsIdentityLinks() {
     let changed = request.resource.data.diff(resource.data).affectedKeys();
     return (!('email' in changed) || (
@@ -763,32 +577,18 @@ service cloud.firestore {
            !changed.hasAny(['formerUserIds', 'sameEmailUserIds']);
   }
 
-  // A list field as a set (missing or not a list: empty).
   function idSetOf(data, key) {
     return data.get(key, null) is list ? data.get(key, null).toSet() : [].toSet();
   }
   function idListOrMissing(data, key) {
     return data.get(key, null) == null || data.get(key, null) is list;
   }
-  // 1.12.0 (B3): a self-created profile carries no alias ids except what the invite placeholder it copies already had,
-  // plus that placeholder's own id (`inviteMigrationFormerIdWriteFields`). `placeholderId` '' means no placeholder.
   function selfCreateAliasesWithin(next, source, placeholderId) {
     return idListOrMissing(next, 'formerUserIds') && idListOrMissing(next, 'sameEmailUserIds') &&
       idSetOf(next, 'formerUserIds').difference(idSetOf(source, 'formerUserIds')).hasOnly([placeholderId]) &&
       idSetOf(next, 'sameEmailUserIds').difference(idSetOf(source, 'sameEmailUserIds')).size() == 0;
   }
 
-  // Effective flag for a key that defaults to true when missing (dailyOverview, wholesalersOrderHistory):
-  // off only when the top level or `permissions` says false.
-  function defaultOnFlag(data, key) {
-    return !(data.get(key, true) == false || data.get(key, true) == 0 ||
-             permissionValue(data, key) == false || permissionValue(data, key) == 0);
-  }
-
-  // Permission toggles a person may not switch on for themselves (Manage Users sets them). Kept as
-  // all-false maps so one diff() finds every toggle that is on: a key present with a value other
-  // than false. materials and siteAudit are locked only for an operative, because iOS saveUser
-  // forces them on for every non-operative.
   function lockedPermissionFalseMap(includeOperativeOnlyKeys) {
     return includeOperativeOnlyKeys
       ? {'manager': false, 'operatives': false, 'qualifications': false, 'projects': false, 'smallWorks': false,
@@ -798,14 +598,12 @@ service cloud.firestore {
          'annualLeaveSelfBook': false, 'timesheetSelfSign': false, 'weeklyReports': false, 'subContractors': false};
   }
 
-  // Locked toggles that are on at the top level or in `permissions`.
   function lockedPermissionsOn(data, falseMap) {
     return data.diff(falseMap).changedKeys().union(
       data.get('permissions', {}) is map ? data.get('permissions', {}).diff(falseMap).changedKeys() : [].toSet()
     );
   }
 
-  // Toggles that default to on (dailyOverview, wholesalersOrderHistory): explicitly false somewhere.
   function defaultOnPermissionsOff(data) {
     return data.diff({'dailyOverview': false, 'wholesalersOrderHistory': false}).unchangedKeys().union(
       data.get('permissions', {}) is map
@@ -814,17 +612,14 @@ service cloud.firestore {
     );
   }
 
-  // `next` turns on no permission toggle that `prev` had off, and an operative stays one.
   function selfPermissionsNotRaised(next, prev, topChanged) {
     return lockedPermissionsOn(prev, lockedPermissionFalseMap(isOperativeProfile(prev))).hasAll(
              lockedPermissionsOn(next, lockedPermissionFalseMap(isOperativeProfile(prev)))) &&
-           // A default-on toggle that was off stays off.
            defaultOnPermissionsOff(next).hasAll(defaultOnPermissionsOff(prev)) &&
            (!(topChanged.hasAny(['operativeMode', 'role', 'permissions'])) ||
             !isOperativeProfile(prev) || isOperativeProfile(next));
   }
 
-  // `assignedManagerUserIds`, or the legacy single id when that list is empty (lib/canonical/userTimesheetAccess.ts).
   function lineManagerIdList(data) {
     return (data.get('assignedManagerUserIds', null) is list && data.get('assignedManagerUserIds', null).size() > 0)
       ? data.get('assignedManagerUserIds', null)
@@ -833,22 +628,17 @@ service cloud.firestore {
           : []);
   }
 
-  function hasLineManager(data) {
-    return data.get('hasNoLineManager', false) != true && lineManagerIdList(data).size() > 0;
-  }
-
-  // Timestamps written by a client round-trip through ms (web Date) or a Swift Double (iOS Date),
-  // so a resent unchanged instant can differ by under a millisecond. Within one second is the same.
   function sameInstantValue(a, b) {
     return a == b ||
       (a is timestamp && b is timestamp && a > b - duration.value(1, 's') && a < b + duration.value(1, 's')) ||
       (a is number && b is number && a > b - 1000 && a < b + 1000);
   }
 
-  // Write metadata (lib/canonical/writeMetadata.ts writeMetadataFields). Optional while iOS does not
-  // send it yet; when present, updatedBy is the signed-in account, updatedFrom a known platform, and
-  // updatedAt a timestamp.
-  // Only keys this write sets are checked, so a merge that keeps an earlier editor's stamp still passes.
+  function writtenKeys() {
+    return resource == null
+      ? request.resource.data.keys().toSet()
+      : request.resource.data.diff(resource.data).affectedKeys();
+  }
   function writeMetadataValidWhenPresent() {
     return writeMetadataKeysValid(
       resource == null
@@ -863,21 +653,14 @@ service cloud.firestore {
       (!('updatedAt' in written) || request.resource.data.get('updatedAt', null) is timestamp);
   }
 
-  // A plain value, with missing, null and '' the same.
   function sameLooseValue(a, b) {
     return a == b || ((a == null || a == '') && (b == null || b == ''));
   }
 
-  // Pay, line manager, active state, employment type and permission toggles are set by an admin or
-  // a manager with operatives access (Manage Users), never by the person on their own document.
-  // Both apps resend the whole profile (iOS saveUser setData merge, web updateDoc), so only a real
-  // change is refused: missing and the app default are the same value. An admin repairing their
-  // own document keeps the existing exemption.
   function selfUpdateKeepsManagedFields() {
     let next = request.resource.data;
     let prev = resource.data;
     let changed = next.diff(prev).affectedKeys();
-    // 1.28.0: the admin exemption never covers their own self-manage toggles (selfManageTogglesUnchanged).
     return (alreadyPrivilegedAdmin(prev) && selfManageTogglesUnchanged(next, prev)) || (
       (!changed.hasAny(['dayRate', 'hourlyRate', 'payBasis']) || (
         next.get('dayRate', null) == prev.get('dayRate', null) &&
@@ -898,7 +681,6 @@ service cloud.firestore {
         sameLooseValue(next.get('employmentTypeTransitionFrom', null), prev.get('employmentTypeTransitionFrom', null)) &&
         sameInstantValue(next.get('employmentTypeEffectiveAt', null), prev.get('employmentTypeEffectiveAt', null))
       )) &&
-      // 1.13.0 (Q4): the start date sets the pro-rata leave allowance; the person does not change their own.
       (!('employmentStartDate' in changed) ||
         sameLooseValue(next.get('employmentStartDate', null), prev.get('employmentStartDate', null))) &&
       (!changed.hasAny(['permissions', 'manager', 'operatives', 'qualifications', 'projects', 'smallWorks',
@@ -908,13 +690,6 @@ service cloud.firestore {
     );
   }
 
-
-  // Rulebook 1.28.0 (§11, §16): nobody changes their own self-manage toggles (Annual Leave Management
-  // `annualLeaveSelfBook`, Timesheet self-sign `timesheetSelfSign`) — not even an admin, whose other self-repairs
-  // `selfUpdateKeepsManagedFields` still allows. They decide self-approval (hbCallerSelfBooks,
-  // timesheetSubjectSelfSigns). The Super Admin reads both on whatever is stored, so their own document is exempt.
-  // Resending an unchanged value (missing and false are the same) passes.
-  // Used on the admin paths only (a non-admin can never raise them: lockedPermissionFalseMap).
   function selfManageTogglesUnchanged(next, prev) {
     return !next.diff(prev).affectedKeys().hasAny(['annualLeaveSelfBook', 'timesheetSelfSign', 'permissions']) ||
       staffFlag(prev, 'isSuperAdmin') ||
@@ -923,7 +698,6 @@ service cloud.firestore {
        staffFlag(next, 'timesheetSelfSign') == staffFlag(prev, 'timesheetSelfSign'));
   }
 
-  // An organisation id stored on a document: an id, an "organizations/<id>" string or a reference.
   function docOrganizationId(data) {
     let v = data.get('organizationId', '');
     let raw = v is path ? string(v) : (v is string ? v : '');
@@ -935,31 +709,19 @@ service cloud.firestore {
       exists(/databases/(default)/documents/organizations/$(org)) &&
       get(/databases/(default)/documents/organizations/$(org)).data.get('creatorUserId', '') == uid;
   }
-  // 1.12.0 (B4): a self-created profile is super admin only for the organisation's creator (deleting and re-creating
-  // one's own profile is not a way to become super admin).
   function selfCreateSuperAdminAllowed() {
     return !staffFlag(request.resource.data, 'isSuperAdmin') ||
       orgCreatorIs(docOrganizationId(request.resource.data), request.auth.uid);
   }
-  // Rulebook 1.12.0 (B4, §16): the current Super Admin of this organisation — its creator, or a users document of
-  // this organisation that is already super admin. Never a flag the caller set on themselves (see below).
   function callerIsSuperAdminOf(org) {
     return orgCreatorIs(org, request.auth.uid) ||
       (staffFlag(callerHomeData(), 'isSuperAdmin') && org != '' && homeOrgIs(callerHomeData(), org));
   }
-  // Rulebook 1.30.2 (§8, §9, §16; lib/canonical organizationSelfManageFlags): a person's self-manage toggles
-  // (`annualLeaveSelfBook`, `timesheetSelfSign`) are read for THIS organisation — their users document when its
-  // `organizationId` names this organisation, else their membership here (users/{uid}/orgMemberships/{orgId}, as
-  // organizationLevelFor reads it), else off. Never another company's users document: before 1.30.2 an admin whose
-  // toggles were on only in their membership here was refused, and a manager with the flag on at home was allowed.
-  // A membership flag is `permissions.{key}` when stored there, else the flat key (parseOrgMembershipDocument).
   function membershipFlag(m, key) {
     let nested = m.get('permissions', {});
     return (nested is map && nested.get(key, null) in [true, false, 1, 0]) ?
       truthyBool(nested.get(key, false)) : truthyBool(m.get(key, false));
   }
-  // The membership's level here (organizationLevelFor): the role, else its flags. `adminOnly`: the flag counts for an
-  // admin only (Timesheet self-sign); otherwise for anyone outside operative mode (Annual Leave Management).
   function membershipSelfManageFlag(m, key, adminOnly) {
     let role = m.get('role', '') is string ? m.get('role', '').lower().replace('[ -]', '_') : '';
     let admin = role in ['admin', 'super_admin', 'superadmin'] || (!(role in ['manager', 'operative']) &&
@@ -968,8 +730,6 @@ service cloud.firestore {
     return m.get('accountActive', m.get('isActive', true)) != false && membershipFlag(m, key) &&
       (admin || (!adminOnly && !operative));
   }
-  // The toggle `key` of person `uid` in this organisation. On the users document of this organisation the Super Admin
-  // flag counts as both toggles on; a membership never makes anyone the Super Admin. The creator is the callers' test.
   function orgSelfManageFlag(uid, organizationId, key, adminOnly) {
     let homePath = /databases/(default)/documents/users/$(uid);
     let home = exists(homePath) ? get(homePath).data : {};
@@ -983,15 +743,11 @@ service cloud.firestore {
     let mPath = /databases/(default)/documents/users/$(uid)/orgMemberships/$(organizationId);
     return exists(mPath) && membershipSelfManageFlag(get(mPath).data, key, adminOnly);
   }
-  // 1.12.0 (B4): an admin who is not the Super Admin never changes `isSuperAdmin` on anyone (their own document
-  // included) and never changes the role, permissions, active flag or company of the Super Admin or the creator.
-  // Ownership moves only as §16 says (the current Super Admin, or the platform owner).
   function adminUpdateKeepsTopAccount(userId) {
     let next = request.resource.data;
     let prev = resource.data;
     let org = docOrganizationId(prev);
     return callerIsSuperAdminOf(org) || (
-      // 1.28.0: an admin never changes their own self-manage toggles.
       staffFlag(next, 'isSuperAdmin') == staffFlag(prev, 'isSuperAdmin') && (
         !next.diff(prev).affectedKeys().hasAny(['isSuperAdmin', 'adminAccess', 'role', 'permissions', 'operativeMode',
           'manager', 'operatives', 'isActive', 'organizationId']) ||
@@ -1000,21 +756,9 @@ service cloud.firestore {
     );
   }
 
-  // Rulebook 1.11.0 (rosterMembersForOrganization): the reader's own company, from their users document
-  // (`organizationId` as an id, an "organizations/<id>" string or a reference).
-  function callerHomeOrgId() {
-    let v = callerHomeData().get('organizationId', '');
-    let raw = v is path ? string(v) : (v is string ? v : '');
-    let parts = raw.split('/');
-    return parts.size() > 0 ? parts[parts.size() - 1].trim() : '';
-  }
-  // The person is anchored on the reader's company: a key of its `members` map or its creator. Lets co-members read a
-  // member whose own users document names another company (a super admin who last opened another one).
   function anchoredInCallerCompany(userId) {
-    let org = callerHomeOrgId();
+    let org = docOrganizationId(callerHomeData());
     let path = /databases/(default)/documents/organizations/$(org);
-    // 1.12.0 (H2): never for a person their company has deactivated.
-    // 1.13.0 (Q3): never while that company's subscription has lapsed (`orgBillingOpen`).
     return org != '' && !org.matches('.*[.].*') && callerHomeData().get('isActive', true) != false && exists(path) &&
       orgBillingOpen(org) && (
       get(path).data.get('members', {}).get(userId, null) != null ||
@@ -1036,17 +780,12 @@ service cloud.firestore {
       anchoredInCallerCompany(userId)
     );
   }
-  
-  // Helper function to validate organizationId exists
+
   function organizationExists(organizationId) {
     return exists(/databases/(default)/documents/organizations/$(organizationId));
   }
-  
+
   match /databases/{database}/documents {
-    // Invitees open /setup-password?token=<id> before they have an account, so get-by-id
-    // stays public. List/create/delete are the inviting org's admin or manager, or the
-    // platform owner — not any signed-in user. Update also allows the invitee to mark
-    // isUsed after they set a password (same field lock as accountConfirmations).
     match /invitations/{invitationId} {
       function invitationOrgId() {
         return request.method == 'create'
@@ -1067,9 +806,6 @@ service cloud.firestore {
           isManagerWithOperativesAccess() && userOrgIdMatchesPath(invitationOrgId()) &&
           callerHomeData().get('isActive', true) != false;
       }
-      // 1.12.0 (B2): a manager with operatives access lists and deletes their company's invitations, and creates or
-      // changes only an operative-only invitation (`invitationIsOperativeOnly`), before and after the write — never
-      // an admin's or manager's invitation.
       function canAdministerInvitation() {
         return invitationAdmin() || (
           invitationOperativesManager() && (
@@ -1081,27 +817,19 @@ service cloud.firestore {
         );
       }
 
-      function canMarkInvitationUsed() {
-        return request.auth != null &&
-          resource.data.isUsed != true &&
-          request.resource.data.isUsed == true &&
-          request.resource.data.diff(resource.data).changedKeys().hasOnly(['isUsed', 'usedAt']) &&
-          resource.data.email is string &&
-          request.auth.token.email is string &&
-          resource.data.email.lower() == request.auth.token.email.lower();
-      }
-
       allow get: if true;
       allow list, create, delete: if canAdministerInvitation();
-      allow update: if canAdministerInvitation() || canMarkInvitationUsed();
+      allow update: if canAdministerInvitation() || (request.auth != null &&
+        resource.data.isUsed != true &&
+        request.resource.data.isUsed == true &&
+        request.resource.data.diff(resource.data).changedKeys().hasOnly(['isUsed', 'usedAt']) &&
+        resource.data.email is string &&
+        request.auth.token.email is string &&
+        resource.data.email.lower() == request.auth.token.email.lower());
     }
 
-    // Founder confirm-account email tokens. Get-by-id is public so the emailed link can mark the token used.
-    // 1.12.0 (H5): never listed (each holds a founder's email, uid and organisation); created by the founder for
-    // themselves; marked used only by the signed-in person whose email it names.
     match /accountConfirmations/{token} {
       allow get: if true;
-      allow list: if false;
       allow create: if request.auth != null &&
                     request.resource.data.get('userId', '') == request.auth.uid;
       allow update: if request.auth != null
@@ -1111,36 +839,13 @@ service cloud.firestore {
                     && resource.data.isUsed != true
                     && request.resource.data.isUsed == true
                     && request.resource.data.diff(resource.data).changedKeys().hasOnly(['isUsed', 'usedAt']);
-      allow delete: if false;
     }
-    
-    // Users collection - with better validation
-    //
-    // Role / permission coherence when promoting or demoting accounts (operative ↔ manager ↔ admin)
-    // is enforced in the iOS client via `UserRoleTransitionPolicy` + `UserStore.updateUserPermissions`.
-    // That flow keeps `role`, boolean permission flags, and annual-leave behaviour aligned with the
-    // Add user presets; pending holiday *requests* are deleted client-side when switching onto the
-    // self-book path. Approved bookings are never deleted by that transition.
+
     match /users/{userId} {
       allow get: if canReadUserDocument(userId);
       allow list: if canReadUserDocument(userId);
-      
-      // Allow create if:
-      // 1. User is creating themselves (by email match - for signup flow), OR
-      // 2. Current user is super admin or has admin access (for admin user creation)
-      // 3. Web org bootstrap: org creator writes users/{authUid} right after creating organizations/{id}
-      // 
-      // IMPORTANT: We check self-creation FIRST because:
-      // - During signup, users create their own account via the website
-      // - This doesn't require admin permissions
-      // - This is fast and reliable (no document reads)
-      //
-      // For admin creation, we use inline checks instead of the function
-      // because functions can be unreliable during CREATE operations.
-      // This directly checks the user document in the rule itself.
+
       allow create: if request.auth != null && (
-        // Path 1: Self-creation into a company that invited or lists this account.
-        // A new company's founder uses Path 3. An email with no claim does not open any company.
         (request.auth.uid == userId &&
          request.resource.data.email is string &&
          request.auth.token.email is string &&
@@ -1150,25 +855,16 @@ service cloud.firestore {
          selfCreateHasAgeConfirmation() &&
          selfCreateJoinsCompany(request.resource.data.organizationId, request.resource.data.email.lower()) &&
          selfCreateSuperAdminAllowed()) ||
-        // Path 2: Admin of the target company creating another user there (e.g. invite placeholder).
-        // Not their own profile: that is Path 1 or Path 3, which require age confirmation.
         (request.auth.uid != userId &&
          'organizationId' in request.resource.data &&
          isAdminOfCompany(request.resource.data.organizationId)) ||
-        // Path 3: Web org setup bootstrap (org exists, caller is admin in members map, writing own profile).
-        // 1.12.0 (B3): a founder's new profile carries no alias ids.
         (isOrgBootstrapAdminProfileCreate(userId) && selfCreateHasAgeConfirmation() &&
          selfCreateAliasesWithin(request.resource.data, {}, '') && selfCreateSuperAdminAllowed() &&
          selfCreateSelfManageOff(request.resource.data.organizationId)) ||
-        // Path 4: Manager with operatives permission inviting a new operative
         managerCanCreateOperativeUser() ||
-        // Path 5: Platform owner creating their own non-tenant profile
         (isPlatformOwner() && request.auth.uid == userId)
       ) && payStaysPrivate(request.resource.data.get('organizationId', ''));
-      
-      // Allow update if:
-      // 1. User updating themselves without escalating admin / role / organizationId, OR
-      // 2. Admin/Super Admin updating other users (for user management)
+
       allow update: if isPlatformOwner() || (request.auth != null && (
         (request.auth.uid == userId && userSelfUpdateKeepsPrivileges()) ||
         (resource.data.email is string &&
@@ -1177,66 +873,44 @@ service cloud.firestore {
          request.resource.data.email is string &&
          request.resource.data.email.lower() == request.auth.token.email.lower() &&
          userSelfUpdateKeepsPrivileges()) ||
-        // Before the admin branch (1.28.0): a manager's operative edit stops here, under the expression limit.
         canManagerUpdateOperativeProfile(userId) ||
         ('organizationId' in resource.data && isAdminOfCompany(resource.data.organizationId) &&
          adminUpdateKeepsTopAccount(userId) &&
-         // 1.28.0: an admin never changes their own self-manage toggles (the Super Admin reads both on).
          (request.auth.uid != userId || selfManageTogglesUnchanged(request.resource.data, resource.data)) &&
-         // 1.31.0 (audit finding 9, §8): "No line manager" is set only on an admin.
          (request.resource.data.get('hasNoLineManager', false) != true ||
           resource.data.get('hasNoLineManager', false) == true || adminLikeUser(request.resource.data)))
       ) && (
-        // No shortcut for the account's own document: an admin moving their own profile
-        // into another company must be an admin of that company too.
         !('organizationId' in request.resource.data) ||
         (('organizationId' in resource.data && orgIdsMatch(request.resource.data.organizationId, resource.data.organizationId)) ||
          (request.resource.data.organizationId is string &&
           organizationExists(request.resource.data.organizationId) &&
           isAdminOfCompany(request.resource.data.organizationId)))
       ) && payStaysPrivate(resource.data.get('organizationId', '')));
-      
-      // Allow delete if:
-      // 1) User deleting themselves by uid, OR
-      // 2) User deleting their own duplicate docs by email, OR
-      // 3) Super Admin deleting any non-creator user in their organization, OR
-      // 4) Admin (non-super) deleting non-admin/non-super users in their organization.
+
       allow delete: if request.auth != null && (
         isPlatformOwner() ||
         request.auth.uid == userId ||
-        // 1.31.0 (owner decision 7, lib/canonical userDeleteRefusal): a manager with the Operatives permission deletes an
-        // operative of their company (never a manager, an admin or themselves).
         managerMayManageOperative(userId, resource.data) ||
         (request.auth.token.email != null && resource.data.email == request.auth.token.email) ||
         (
           exists(/databases/(default)/documents/users/$(request.auth.uid)) &&
-          orgIdsMatch(get(/databases/(default)/documents/users/$(request.auth.uid)).data.organizationId, resource.data.organizationId) &&
-          (
-            (
-              ('isSuperAdmin' in get(/databases/(default)/documents/users/$(request.auth.uid)).data &&
-               get(/databases/(default)/documents/users/$(request.auth.uid)).data.isSuperAdmin == true) &&
-              (
-                !exists(/databases/(default)/documents/organizations/$(resource.data.organizationId)) ||
-                !('creatorUserId' in get(/databases/(default)/documents/organizations/$(resource.data.organizationId)).data) ||
-                get(/databases/(default)/documents/organizations/$(resource.data.organizationId)).data.creatorUserId != userId
-              )
-            ) ||
-            (
-              isAdminOrSuperAdmin() &&
-              !('isSuperAdmin' in get(/databases/(default)/documents/users/$(request.auth.uid)).data &&
-                get(/databases/(default)/documents/users/$(request.auth.uid)).data.isSuperAdmin == true) &&
-              !('isSuperAdmin' in resource.data && resource.data.isSuperAdmin == true) &&
-              !('adminAccess' in resource.data && resource.data.adminAccess == true) &&
-              !('role' in resource.data && resource.data.role == 'admin')
-            )
-          )
+          adminDeletesUser(userId, get(/databases/(default)/documents/users/$(request.auth.uid)).data)
         )
       );
+      function adminDeletesUser(targetId, me) {
+        return orgIdsMatch(me.organizationId, resource.data.organizationId) && (
+          (('isSuperAdmin' in me && me.isSuperAdmin == true) &&
+           (!exists(/databases/(default)/documents/organizations/$(resource.data.organizationId)) ||
+            !('creatorUserId' in get(/databases/(default)/documents/organizations/$(resource.data.organizationId)).data) ||
+            get(/databases/(default)/documents/organizations/$(resource.data.organizationId)).data.creatorUserId != targetId)) ||
+          (adminLikeUser(me) &&
+           !('isSuperAdmin' in me && me.isSuperAdmin == true) &&
+           !('isSuperAdmin' in resource.data && resource.data.isSuperAdmin == true) &&
+           !('adminAccess' in resource.data && resource.data.adminAccess == true) &&
+           !('role' in resource.data && resource.data.role == 'admin'))
+        );
+      }
 
-      // Tax identifiers (UTR, VAT number): lib/canonical/sensitiveProfile.ts.
-      // Only the person, an admin of their company and the platform owner read or write.
-      // The invitee may read and remove the placeholder's copy while finishing an invite
-      // (same email check the placeholder user document uses).
       match /private/{privateDocId} {
         function subjectUserData() {
           return get(/databases/$(database)/documents/users/$(userId)).data;
@@ -1255,50 +929,35 @@ service cloud.firestore {
             request.auth.token.email is string &&
             subjectUserData().email.lower() == request.auth.token.email.lower();
         }
-        function validTaxIds() {
-          return request.resource.data.keys().hasOnly(['utrNumber', 'vatNumber', 'updatedByUserId', 'updatedAt']) &&
-            request.resource.data.utrNumber is string && request.resource.data.utrNumber.size() <= 20 &&
-            request.resource.data.vatNumber is string && request.resource.data.vatNumber.size() <= 20 &&
-            request.resource.data.updatedByUserId == request.auth.uid &&
-            request.resource.data.updatedAt == request.time;
-        }
         allow read: if request.auth != null && privateDocId == 'taxIds' && (
           request.auth.uid == userId || isPlatformOwner() || adminOfSubject() || inviteeOfPlaceholder()
         );
-        allow create, update: if request.auth != null && privateDocId == 'taxIds' && validTaxIds() && (
+        allow create, update: if request.auth != null && privateDocId == 'taxIds' && (request.resource.data.keys().hasOnly(['utrNumber', 'vatNumber', 'updatedByUserId', 'updatedAt']) &&
+          request.resource.data.utrNumber is string && request.resource.data.utrNumber.size() <= 20 &&
+          request.resource.data.vatNumber is string && request.resource.data.vatNumber.size() <= 20 &&
+          request.resource.data.updatedByUserId == request.auth.uid &&
+          request.resource.data.updatedAt == request.time) && (
           request.auth.uid == userId || isPlatformOwner() || adminOfSubject()
         );
         allow delete: if request.auth != null && privateDocId == 'taxIds' && (
           request.auth.uid == userId || isPlatformOwner() || adminOfSubject() || inviteeOfPlaceholder() ||
-          // 1.31.0: deleting an operative (userDeleteWrites) as a manager with the Operatives permission.
           (subjectExists() && managerMayManageOperative(userId, subjectUserData()))
         );
       }
 
-      // Multi-org memberships (web Change organisation + cross-org invites)
-      // Rulebook 1.10.0 (lib/canonical/orgMembership.ts): only an admin of that organisation writes role,
-      // permissions, super admin or the active flag. The person may accept (status active, acceptedAt), keep
-      // their profile copy fields, and set `role` only to what that organisation's members map lists for them.
       match /orgMemberships/{membershipOrgId} {
-        function membershipChangedKeys() {
-          return resource == null
-            ? request.resource.data.keys().toSet()
-            : request.resource.data.diff(resource.data).affectedKeys();
-        }
         function membershipSelfWriteAllowed() {
-          return membershipChangedKeys().hasOnly([
+          return writtenKeys().hasOnly([
               'status', 'acceptedAt', 'invitedAt', 'updatedAt', 'updatedBy', 'updatedFrom', 'role',
               'organizationId', 'email', 'firstName', 'surname', 'lastName', 'mobileNumber', 'passwordSet',
               'profilePhotoURL'
             ]) &&
-            (!('role' in membershipChangedKeys()) ||
+            (!('role' in writtenKeys()) ||
               request.resource.data.role == callerListedRole(membershipOrgId) ||
               (request.resource.data.role == 'admin' && isOrgCreatorViaParentGet(membershipOrgId))) &&
-            (!('status' in membershipChangedKeys()) || request.resource.data.status == 'active') &&
+            (!('status' in writtenKeys()) || request.resource.data.status == 'active') &&
             writeMetadataValidWhenPresent();
         }
-        // 1.11.0 (inviteMembershipWrites): accepting a genuine, unused invitation creates the membership with exactly
-        // the invitation's role and permissions — nothing more.
         function membershipFromInvitation() {
           let next = request.resource.data;
           let inv = get(/databases/(default)/documents/invitations/$(next.get('invitationId', ''))).data;
@@ -1314,22 +973,16 @@ service cloud.firestore {
             next.get('status', 'active') == 'active' &&
             next.get('invitedBy', inv.get('invitedBy', '')) == inv.get('invitedBy', '');
         }
-        // 1.12.2: an admin of that organisation reads the membership too (iOS `writeOrgMembership` reads it before the
-        // change user type write; before 1.12.2 the read was refused and the change stopped after users/{uid}).
         allow get: if request.auth != null && (
           request.auth.uid == userId ||
           isOrgAdminViaMembersMap(membershipOrgId) ||
           isOrganizationAdmin(membershipOrgId)
         );
         allow list: if request.auth != null && request.auth.uid == userId;
-        // 1.12.0 (B4): `isSuperAdmin` on a membership changes only by that organisation's Super Admin.
-        function membershipSuperAdminUnchanged() {
-          return staffFlag(request.resource.data, 'isSuperAdmin') ==
-            (resource == null ? false : staffFlag(resource.data, 'isSuperAdmin'));
-        }
         allow create, update: if request.auth != null && (
           ((isOrgAdminViaMembersMap(membershipOrgId) || isOrganizationAdmin(membershipOrgId)) &&
-           (membershipSuperAdminUnchanged() || callerIsSuperAdminOf(membershipOrgId))) ||
+           ((staffFlag(request.resource.data, 'isSuperAdmin') ==
+             (resource == null ? false : staffFlag(resource.data, 'isSuperAdmin'))) || callerIsSuperAdminOf(membershipOrgId))) ||
           (request.auth.uid == userId && membershipSelfWriteAllowed()) ||
           membershipFromInvitation()
         );
@@ -1337,20 +990,14 @@ service cloud.firestore {
           request.auth.uid == userId ||
           isOrgAdminViaMembersMap(membershipOrgId) ||
           isOrganizationAdmin(membershipOrgId) ||
-          // 1.31.0: deleting an operative as a manager with the Operatives permission (read before the batch).
           (exists(/databases/(default)/documents/users/$(userId)) &&
            managerMayManageOperative(userId, get(/databases/(default)/documents/users/$(userId)).data))
         );
       }
     }
 
-    // Organizations - with strict access control
     match /organizations/{organizationId} {
-      // One user per email per org (must stay above the catch-all so writes are not widened by {collection}/**)
       match /userEmails/{emailKey} {
-        // Invitee may read the claim for their own email after they create Auth.
-        // That id is the pending placeholder, not request.auth.uid. List of this
-        // collection stays closed: emailKey == token email is only true for one doc.
         allow read: if request.auth != null && (
           canAccessOrganization(organizationId) ||
           (resource != null && resource.data.userId == request.auth.uid) ||
@@ -1363,13 +1010,8 @@ service cloud.firestore {
           isOwnEmailClaimWrite(organizationId, emailKey) ||
           (isManagerWithOperativesAccess() && userOrgIdMatchesPath(organizationId))
         );
-        // 1.13.0 (§14, `signInEmailSyncWrites`): after Firebase Auth changed a person's sign-in email (verified), they
-        // move their claim — create the new key (isOwnEmailClaimWrite) and delete their own old one, which no longer
-        // matches their token email.
         allow delete: if request.auth != null && (
           isPlatformOwner() || isAdminOfCompany(organizationId) ||
-          // 1.31.0: deleting an operative as a manager with the Operatives permission — the claim names an operative
-          // users document of this company (read before the batch).
           (isManagerWithOperativesAccess() && userOrgIdMatchesPath(organizationId) &&
            resource.data.get('userId', '') is string && resource.data.get('userId', '') != request.auth.uid &&
            !string(resource.data.get('userId', '')).matches('(|.*/.*)') &&
@@ -1383,10 +1025,7 @@ service cloud.firestore {
           )
         );
       }
-      
-      // Org root document: must not call get(organizations/{organizationId}) inside the rule (same doc → circular deny).
-      // Use resource.data.members for membership; userOrgIdMatchesPath for users/{uid}.organizationId.
-      // creatorUserId covers legacy orgs that predate a reliable members map.
+
       allow get: if request.auth != null && (
         isPlatformOwner() ||
         userOrgIdMatchesPath(organizationId) ||
@@ -1394,34 +1033,15 @@ service cloud.firestore {
         (resource != null && 'creatorUserId' in resource.data && resource.data.creatorUserId == request.auth.uid)
       );
 
-      // Lists only the companies this account belongs to or created: the two queries both apps run
-      // (`members.{uid} != ''` and `creatorUserId == uid`). Listing every company is refused.
       allow list: if request.auth != null && (
         isPlatformOwner() ||
         resource.data.members[request.auth.uid] != '' ||
         resource.data.creatorUserId == request.auth.uid
       );
-      
-      // Signed-in bootstrap (first setup or leftover Auth with no users/{uid}): any
-      // authenticated user may create an organisation if they list themselves as admin.
-      // Do not require an existing profile. Path 3 on users/{uid} then writes that profile.
-      allow create: if request.auth != null && 
+
+      allow create: if request.auth != null &&
                      request.resource.data.members[request.auth.uid] == 'admin';
-      
-      // Admins of this company edit settings. Being the creator alone is not enough: a creator who
-      // was demoted is no longer an admin (members map or users document) and cannot edit.
-      // creatorUserId moves only in an ownership transfer: the platform owner, or the current
-      // Super Admin (creator, or users/{uid}.isSuperAdmin in this company) who is still an admin,
-      // handing it to someone who is an admin here (iOS transferOrganizationOwnership, web
-      // userStore transfer). Billing stays server-only.
-      function orgRootCallerIsAdmin() {
-        return isOrganizationAdminAnyBilling(organizationId) ||
-          ('members' in resource.data && resource.data.members is map &&
-           resource.data.members.get(request.auth.uid, null) == 'admin');
-      }
-      function orgRootCreatorUnchanged() {
-        return request.resource.data.get('creatorUserId', null) == resource.data.get('creatorUserId', null);
-      }
+
       function orgRootNewCreatorIsAdmin() {
         let newId = request.resource.data.get('creatorUserId', null);
         return newId is string && newId.size() > 0 && (
@@ -1441,8 +1061,6 @@ service cloud.firestore {
           userOrgIdMatchesPath(organizationId)
         );
       }
-      // 1.11.0 (inviteMembershipWrites): the person accepting an invitation adds only `members.{their uid}`, with the
-      // invitation's role, in the batch that creates their membership from it and marks it used.
       function orgRootInviteJoin() {
         let membership = /databases/(default)/documents/users/$(request.auth.uid)/orgMemberships/$(organizationId);
         let invId = getAfter(membership).data.get('invitationId', '');
@@ -1454,9 +1072,6 @@ service cloud.firestore {
           inviteBeingAccepted(invId, organizationId) &&
           request.resource.data.members[request.auth.uid] == invitationRole(inv);
       }
-      // 1.15.0 (§20, `canRestoreOrganization`): the super admin restores a scheduled organisation by removing
-      // `deletion` (and only that, with write metadata) when the deletion was theirs to undo (`restoreBy` is not
-      // `platform_owner`). Nothing else on the document changes while it is scheduled.
       function orgRootSuperAdminRestore() {
         let d = resource.data.get('deletion', {});
         return orgScheduledForErasure() &&
@@ -1466,18 +1081,12 @@ service cloud.firestore {
             .hasOnly(['deletion', 'updatedAt', 'updatedBy', 'updatedFrom']) &&
           orgRootCallerIsSuperAdmin();
       }
-      // 1.31.0 (owner decision 7, userDeleteWrites): a manager with the Operatives permission deleting an operative
-      // removes that one `members` entry (an operative or member entry), in the batch that deletes the users document.
-      // Cheapest tests first (the caller's own users document): for everyone else this branch stops at once, so the
-      // organisation update's expression budget is unchanged for admins.
       function orgRootOperativesManagerRemovesMember() {
         let home = callerHomeData();
         return staffFlag(home, 'operatives') && !adminLikeUser(home) && staffFlag(home, 'manager') &&
           !isOperativeProfile(home) && homeOrgIs(home, organizationId) && home.get('isActive', true) != false &&
           orgRootRemovesOneOperativeMember();
       }
-      // The members map loses exactly one entry, `operative`, whose users document is gone after the write, and
-      // nothing else on the document changes.
       function orgRootRemovesOneOperativeMember() {
         let gone = request.resource.data.get('members', {}).diff(resource.data.get('members', {}));
         let removed = resource.data.get('members', {}).keys().removeAll(request.resource.data.get('members', {}).keys());
@@ -1493,23 +1102,17 @@ service cloud.firestore {
                    billingUnchanged() && deletionUnchanged() && !orgScheduledForErasure() && (
                      isPlatformOwner() || (
                        request.auth != null &&
-                       orgRootCallerIsAdmin() && (
-                         orgRootCreatorUnchanged() ||
+                       (isOrganizationAdminAnyBilling(organizationId) ||
+                         ('members' in resource.data && resource.data.members is map &&
+                          resource.data.members.get(request.auth.uid, null) == 'admin')) && (
+                         (request.resource.data.get('creatorUserId', null) == resource.data.get('creatorUserId', null)) ||
                          (orgRootCallerIsSuperAdmin() && orgRootNewCreatorIsAdmin())
                        )
                      ) || (
                        request.auth != null && orgRootInviteJoin()
                      )
                    );
-      
-      allow delete: if false;
-      
-      // Rulebook 1.10.0 round 2 (lib/canonical/staffAccess.ts seesEveryJob / canCreateJob / canEditJob /
-      // canChangeJobManagers): the caller's Projects / Small works add-edit-manage permission in THIS organisation —
-      // users/{uid} flags when that is this organisation's profile, else this organisation's membership document
-      // (nested permissions.{kind}, else the legacy flat key). Only a manager here counts (admins see everything).
-      // `role` is callerOrgRole(organizationId), computed once per rule: these rules sit near the 1000-expression
-      // limit, so the helpers take it as an argument instead of recomputing it.
+
       function callerJobToggle(role, kind) {
         let home = callerHomeData();
         let membership = /databases/(default)/documents/users/$(request.auth.uid)/orgMemberships/$(organizationId);
@@ -1520,15 +1123,9 @@ service cloud.firestore {
                truthyBool(get(membership).data.get('permissions', {}).get(kind, get(membership).data.get(kind, false))))
         );
       }
-      // Sees, adds and edits every job of this kind, and changes its manager list (`seesEveryJob(role, kind)`).
       function callerSeesEveryJob(role, kind) {
         return role == 'admin' || callerJobToggle(role, kind) || isPlatformOwner();
       }
-      // A single job document: every-job viewers; a manager listed on it (`isJobManager`); operatives and other
-      // non-staff members of this organisation by id only (the jobs of their own bookings — the rules cannot see
-      // which jobs those are, so `list` is refused to them).
-      // 1.12.0: before `enforcedReads` (enforcedReadsOn), every member of this organisation reads every job, as
-      // before 1.10.0 (`legacyMemberRead`).
       function legacyMemberRead(role) {
         return role != '' || canAccessOrganization(organizationId);
       }
@@ -1539,14 +1136,12 @@ service cloud.firestore {
           (role == 'manager' && resource != null && jobListsCaller(resource.data)) ||
           callerSeesEveryJob(role, kind);
       }
-      // A job query: every-job viewers any query; other managers only `managerUserIds array-contains <uid>`.
       function jobListAllowed(kind) {
         let role = callerOrgRole(organizationId);
         return callerSeesEveryJob(role, kind) ||
           (role == 'manager' && request.auth.uid in resource.data.get('managerUserIds', [])) ||
           (!enforcedReadsOn(organizationId) && legacyMemberRead(role));
       }
-      // 1.31.0 (owner decision, lib/canonical jobManagerRequiredError): a new job names at least one manager.
       function jobCreateAllowed(kind) {
         let next = request.resource.data;
         return (next.get('managerIds', []).size() > 0 || next.get('managerUserIds', []).size() > 0 ||
@@ -1554,7 +1149,6 @@ service cloud.firestore {
                 (next.get('managerId', '') is string && next.get('managerId', '') != '')) &&
           callerSeesEveryJob(callerOrgRole(organizationId), kind);
       }
-      // Editing a job: every-job viewers; a manager of the job edits its details but never its manager list.
       function jobUpdateAllowed(kind) {
         let role = callerOrgRole(organizationId);
         return callerSeesEveryJob(role, kind) || (
@@ -1564,7 +1158,6 @@ service cloud.firestore {
           jobListsCaller(resource.data)
         );
       }
-      // A job's health & safety subcollection is read by the people who may read the job.
       function jobDocReadable(kind, jobId) {
         let role = callerOrgRole(organizationId);
         let path = /databases/(default)/documents/organizations/$(organizationId)/$(kind)/$(jobId);
@@ -1587,7 +1180,7 @@ service cloud.firestore {
           allow delete: if isOrganizationAdmin(organizationId);
         }
       }
-      
+
       match /smallWorks/{smallWorkId} {
         allow get: if jobGetAllowed('smallWorks');
         allow list: if jobListAllowed('smallWorks');
@@ -1601,16 +1194,13 @@ service cloud.firestore {
           allow delete: if isOrganizationAdmin(organizationId);
         }
       }
-      
-      // Path already scopes to this org; body organizationId can drift or be typed oddly on some clients.
+
       match /clients/{clientId} {
         allow read: if canAccessOrganization(organizationId);
         allow create, update: if canAccessOrganization(organizationId);
         allow delete: if isOrganizationAdmin(organizationId);
       }
-      
-      // Pay on roster rows (operatives/{id}, managers/{id}): payRate.ts falls back to these when
-      // users/{uid} has no rate, so they are pay too. Only keys whose value changes count.
+
       function rosterRowPayKeysChanged() {
         return (resource == null
           ? request.resource.data.keys().toSet()
@@ -1618,16 +1208,12 @@ service cloud.firestore {
         ).hasAny(['dayRate', 'hourlyRate', 'payBasis', 'employmentType',
                   'employmentTypeTransitionFrom', 'employmentTypeEffectiveAt']);
       }
-      // The operatives row is the caller's own when its email is the signed-in email.
       function operativeRowIsCaller() {
         return !(request.auth.token.email is string) ||
           string(request.resource.data.get('email', '')).lower() == request.auth.token.email.lower() ||
           (resource != null && string(resource.data.get('email', '')).lower() == request.auth.token.email.lower());
       }
 
-      // Rulebook 1.12.0 (H3): a roster row's `email` is who it is — `jobListsCaller` (managers rows) and
-      // `callerOwnsBookingId` (operatives rows) trust it. Changing the email of an existing row is admins (and, for an
-      // operatives row that is not their own, managers with operatives access); a new row is staff only.
       function rosterRowEmailChanged() {
         return resource != null &&
           string(request.resource.data.get('email', '')).trim().lower() != string(resource.data.get('email', '')).trim().lower();
@@ -1647,25 +1233,16 @@ service cloud.firestore {
           (!rosterRowEmailChanged() || rosterRowAdmin() || operativesManagerForOtherRow()) &&
           payStaysPrivate(organizationId) &&
           writeMetadataValidWhenPresent();
-        // 1.31.0 (owner decision 7): managers with the Operatives permission delete an operative row (not their own).
         allow delete: if isOrganizationAdmin(organizationId) || (
           isManagerWithOperativesAccess() && userOrgIdMatchesPath(organizationId) &&
           !(request.auth.token.email is string &&
             string(resource.data.get('email', '')).lower() == request.auth.token.email.lower())
         );
       }
-      
-      // Deleted-booking tombstones (lib/canonical/bookingTombstones.ts). A delete of bookings/{id},
-      // subcontractorBookings/{id} or managerSiteBookings/{id} writes deletedBookings/{id} in the same batch; while it exists the
-      // booking cannot be created or updated again, so a queued offline save cannot bring it back.
+
       function bookingTombstoned(bookingId) {
         return exists(/databases/(default)/documents/organizations/$(organizationId)/deletedBookings/$(bookingId));
       }
-      // Rulebook 1.10.0 (lib/canonical/staffAccess.ts canWriteBooking / canDeleteBooking): admins write every
-      // booking; managers only bookings on a project or small works they manage; operatives never.
-      // A job's managers: `managerUserIds` / `managerIds` / `managerId` naming the signed-in account (with or
-      // without `user:`, without case), or `managerId` naming a managers-list row whose email is the signed-in
-      // email. The job is projects/{id} or smallWorks/{id}, the booking's id as stored, then upper case.
       function jobListsCaller(job) {
         let uid = request.auth.uid.lower();
         let primary = job.get('managerId', '');
@@ -1690,7 +1267,6 @@ service cloud.firestore {
           (jobId != jobId.lower() && callerManagesJobAt(jobId.lower()))
         );
       }
-      // 1.11.0: the job in one collection (`jobCollection` on the booking), any spelling of its id.
       function callerManagesJobInAt(kind, jobId) {
         let path = /databases/(default)/documents/organizations/$(organizationId)/$(kind)/$(jobId);
         return exists(path) && jobListsCaller(get(path).data);
@@ -1710,13 +1286,10 @@ service cloud.firestore {
       function bookingHasJob(collection, data) {
         return collection != 'managerSiteBookings' || data.get('locationType', '') in ['project', 'small_work'];
       }
-      // 1.11.0 (bookingJobCollection): `jobCollection` is 'projects' or 'smallWorks', only on a booking with a job.
       function bookingJobCollectionValid(collection, data) {
         return !('jobCollection' in data) ||
           (data.jobCollection in ['projects', 'smallWorks'] && bookingHasJob(collection, data));
       }
-      // The job part of canWriteBooking for a manager: the booking's job is one they manage (in the collection its
-      // `jobCollection` names, when it carries one); a manager site booking with no job is their own.
       function managerMayWriteBookingData(collection, data) {
         return bookingHasJob(collection, data)
           ? ('jobCollection' in data
@@ -1724,7 +1297,6 @@ service cloud.firestore {
               : callerManagesJob(bookingJobId(collection, data)))
           : data.get('userId', '') == request.auth.uid;
       }
-      // `op`: 'create' (request.resource), 'update' (stored and written), 'delete' (stored).
       function bookingWriteAllowed(collection, op) {
         let role = callerOrgRole(organizationId);
         return (op == 'delete' || bookingJobCollectionValid(collection, request.resource.data)) && (
@@ -1744,7 +1316,6 @@ service cloud.firestore {
           ) || isPlatformOwner()
         );
       }
-      // The tombstone of a stored booking: the people who may delete it (read as it was before the batch).
       function bookingTombstoneAllowed(collection, bookingId) {
         let role = callerOrgRole(organizationId);
         let path = /databases/(default)/documents/organizations/$(organizationId)/$(collection)/$(bookingId);
@@ -1755,14 +1326,6 @@ service cloud.firestore {
           )
         );
       }
-      // 1.31.0 (owner decision 7, userDeleteWrites step 2): a manager with the Operatives permission deleting an
-      // operative removes that person's labour bookings (with their tombstones) once the users document is gone — a
-      // booking whose `operativeId` names no users document (a deleted or catalogue operative).
-      // Cheapest first (the caller's own users document, read once per request) so admins and other managers stop
-      // before the extra lookup (a request may look up 10 documents; a batch 20).
-      // 1.31.0 owner decision (lib/canonical operativesManagerMayDeleteBooking): only a booking dated AFTER today — its
-      // `date` (organisation-zone midnight) is after the request time, so today's midnight never passes — and whose
-      // person has no users document. Today's and past bookings they may only cancel.
       function operativesManagerRemovesOrphanBooking(data) {
         let home = callerHomeData();
         let opId = data.get('operativeId', '');
@@ -1773,18 +1336,9 @@ service cloud.firestore {
           !exists(/databases/(default)/documents/users/$(opId));
       }
 
-      // A role in this organisation (callerOrgRole not '') is membership here, so these rules do not repeat
-      // canAccessOrganization (it would cost most of the expression budget).
-      // Rulebook 1.10.0 round 2 §17 (bookingQueryPlan): reads are enforced. Every-booking readers read everything;
-      // other managers read the bookings on a job they manage (`projectId` / `locationId`, any spelling of the job
-      // id) and their own; operatives only their own. Firestore rules are not filters: each app query names the job
-      // (`projectId in [<one job's id spellings>]`) or the person, so the rules can prove every document. Each `in`
-      // value costs a job lookup and a query may look up 10 documents, hence one job per query.
       function callerOwnsBookingId(personId) {
         let home = callerHomeData();
         let row = /databases/(default)/documents/organizations/$(organizationId)/operatives/$(personId);
-        // 1.12.0 (B3): the caller's alias ids count only on their own company's users document (another company's
-        // admin could write their own aliases there).
         return personId is string && personId.size() > 0 && (
           personId == request.auth.uid ||
           (homeOrgIs(home, organizationId) && (
@@ -1794,15 +1348,8 @@ service cloud.firestore {
             string(get(row).data.get('email', '')).lower() == request.auth.token.email.lower())
         );
       }
-      // Cheap tests first: when the rules cannot prove a query from its filters, they are evaluated document by
-      // document against the 1000-expression budget, so a toggle or own-booking match must not pay for a job lookup.
-      // 1.11.0 (owner decisions round 3): reads are limited by job kind. A manager with the Projects / Small works
-      // toggle reads the bookings whose `jobCollection` is that kind (apps query `jobCollection == <kind>`); a booking
-      // without `jobCollection` (written before 1.11.0, until the backfill) is read only by admins, the job's managers
-      // and the people it books.
       function bookingReadAllowed(collection) {
         let role = callerOrgRole(organizationId);
-        // 1.12.0: before `enforcedReads`, every member of this organisation reads every booking (as before 1.10.0).
         return role == 'admin' ||
           (!enforcedReadsOn(organizationId) && (role != '' || canAccessOrganization(organizationId))) ||
           (role == 'manager' && resource.data.get('jobCollection', '') in ['projects', 'smallWorks'] &&
@@ -1818,25 +1365,16 @@ service cloud.firestore {
       match /deletedBookings/{bookingId} {
         allow read: if canAccessOrganization(organizationId);
         allow create: if request.auth != null &&
-          request.resource.data.keys().hasOnly(['bookingId', 'collection', 'deletedAt', 'deletedBy', 'deletedFrom']) &&
-          request.resource.data.keys().hasAll(['bookingId', 'collection', 'deletedAt', 'deletedBy', 'deletedFrom']) &&
+          request.resource.data.keys().toSet() == ['bookingId', 'collection', 'deletedAt', 'deletedBy', 'deletedFrom'].toSet() &&
           request.resource.data.bookingId == bookingId &&
           request.resource.data.deletedBy == request.auth.uid &&
           request.resource.data.deletedAt == request.time &&
           request.resource.data.deletedFrom in ['web', 'ios', 'android'] &&
           request.resource.data.collection in ['bookings', 'managerSiteBookings', 'subcontractorBookings'] &&
-          // 1.10.0: the same people who may delete that booking (canDeleteBooking), read as it was before the
-          // batch. With the booking already gone, only an admin writes its tombstone.
           bookingTombstoneAllowed(request.resource.data.collection, bookingId);
-        allow update: if false;
         allow delete: if isOrganizationAdmin(organizationId) || isOrgAdminViaMembersMap(organizationId) || isPlatformOwner();
       }
 
-      // Rulebook 1.29.0 (§16, §25; lib/canonical/payeOvertime.ts): PAYE overtime. A person's line manager (listed on their
-      // users document of this organisation) may apply an approved overtime request to that person's booking, changing
-      // only workStartTime, workEndTime, timeSlot, otMultiplierOverride (1–3 in 0.25 steps, or removed) and status to
-      // Cancelled — never anything else, never their own booking. Admins already write every booking (canWriteBooking);
-      // operatives never write a booking.
       function bookingPersonId(collection, data) {
         return collection == 'managerSiteBookings' ? data.get('userId', '') : data.get('operativeId', '');
       }
@@ -1844,10 +1382,8 @@ service cloud.firestore {
         let path = /databases/(default)/documents/users/$(uid);
         return uid is string && uid.size() > 0 && !uid.matches('.*/.*') && uid != request.auth.uid &&
           exists(path) && homeOrgIs(get(path).data, organizationId) &&
-          // 1.30.0 review: "No line manager" stored on the person means none (canonical lineManagerIds).
           get(path).data.get('hasNoLineManager', false) != true &&
           request.auth.uid in lineManagerIdList(get(path).data) &&
-          // 1.31.0: an operative is never a line manager.
           !callerHomeIsOperative();
       }
       function overtimeMultiplierWriteValid() {
@@ -1855,20 +1391,14 @@ service cloud.firestore {
         return m == null || m == resource.data.get('otMultiplierOverride', null) ||
           (m is number && m >= 1 && m <= 3 && m * 4 == math.floor(m * 4));
       }
-      // Cheap tests first (the 1000-expression budget is shared with bookingWriteAllowed). The caller is an active
-      // member of this organisation at manager or admin level (their users document of this organisation, not an
-      // operative), with the subscription open.
       function overtimeCallerIsStaffHere() {
         let home = callerHomeData();
         return homeOrgIs(home, organizationId) && home.get('isActive', true) != false &&
           (adminLikeUser(home) || !isOperativeProfile(home)) && orgBillingOpen(organizationId);
       }
-      // A clock or slot the line manager writes is short text (an `HH:mm` time, a known slot).
       function overtimeTextFieldValid(affected, key, maxSize) {
         return !(key in affected) || (request.resource.data[key] is string && request.resource.data[key].size() <= maxSize);
       }
-      // 1.29.0 review fix: only a booking whose person id is a users id listing the caller as line manager — never one
-      // filed under an `operatives` row (its link fields are writable by members, so they cannot grant access).
       function overtimeLineManagerBookingUpdate(collection) {
         let affected = request.resource.data.diff(resource.data).affectedKeys();
         return affected.hasOnly([
@@ -1884,17 +1414,10 @@ service cloud.firestore {
           callerLineManagesUser(bookingPersonId(collection, resource.data)) &&
           overtimeCallerIsStaffHere();
       }
-      // Overtime documents: the person, their line managers and admins of this organisation read them.
-      function overtimeAdmin() {
-        return isOrganizationAdmin(organizationId) || isOrgAdminViaMembersMap(organizationId) || isPlatformOwner();
-      }
       function overtimeViewer(uid) {
-        // The admin test first: it needs no document, so an admin's whole-collection list is provable.
         return canAccessOrganization(organizationId) &&
-          (overtimeAdmin() || (uid is string && uid.size() > 0 && (uid == request.auth.uid || callerLineManagesUser(uid))));
+          (isOrgAdminOrOwner(organizationId) || (uid is string && uid.size() > 0 && (uid == request.auth.uid || callerLineManagesUser(uid))));
       }
-      // A non-operative person changing their own booking's overtime directly writes its review only where they may
-      // edit that booking (canWriteBooking): admins every booking, managers the bookings on jobs they manage.
       function overtimeOwnBookingEditable(collection, bookingId) {
         let role = callerOrgRole(organizationId);
         let path = /databases/(default)/documents/organizations/$(organizationId)/$(collection)/$(bookingId);
@@ -1903,7 +1426,6 @@ service cloud.firestore {
 
       match /overtimeRequests/{requestId} {
         allow read: if overtimeViewer(resource.data.get('userId', ''));
-        // The person sends their own, pending, online only (overtimeRequestWriteFields).
         allow create: if canAccessOrganization(organizationId) &&
           callerOrgRole(organizationId) != '' &&
           request.resource.data.keys().hasOnly(['userId', 'rangeStart', 'rangeEnd', 'status', 'lines', 'createdAt', 'updatedAt', 'updatedBy', 'updatedFrom']) &&
@@ -1913,7 +1435,6 @@ service cloud.firestore {
           request.resource.data.lines is list && request.resource.data.lines.size() > 0 &&
           request.resource.data.rangeStart is string && request.resource.data.rangeEnd is string &&
           writeMetadataValidWhenPresent();
-        // The person withdraws their own pending request; their line manager or an admin (never the person) approves it.
         allow update: if canAccessOrganization(organizationId) &&
           resource.data.status == 'pending' &&
           request.resource.data.userId == resource.data.userId &&
@@ -1922,17 +1443,15 @@ service cloud.firestore {
               request.resource.data.status == 'withdrawn' &&
               request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'withdrawnAt', 'updatedAt', 'updatedBy', 'updatedFrom'])) ||
             (resource.data.userId != request.auth.uid &&
-              (overtimeAdmin() || callerLineManagesUser(resource.data.userId)) &&
+              (isOrgAdminOrOwner(organizationId) || callerLineManagesUser(resource.data.userId)) &&
               request.resource.data.status == 'approved' &&
               request.resource.data.get('decidedBy', '') == request.auth.uid &&
               request.resource.data.diff(resource.data).affectedKeys().hasOnly([
                 'status', 'decisions', 'decidedBy', 'decidedAt', 'appliedBookingIds', 'droppedBookingIds', 'updatedAt', 'updatedBy', 'updatedFrom'
               ]))
           );
-        allow delete: if false;
       }
 
-      // Approved overtime lines, one per person and booking: `{userId}_{bookingId}`.
       match /overtimeReviews/{reviewId} {
         allow read: if overtimeViewer(resource.data.get('userId', ''));
         allow create, update: if canAccessOrganization(organizationId) &&
@@ -1944,16 +1463,13 @@ service cloud.firestore {
           request.resource.data.collection in ['bookings', 'managerSiteBookings'] &&
           request.resource.data.decision in ['approved', 'edited', 'trimmed', 'cancelled'] &&
           writeMetadataValidWhenPresent() && (
-            // Their own line: only where they may edit the booking (admins every booking). Someone else's: their
-            // line manager or an admin.
             request.resource.data.userId == request.auth.uid
               ? overtimeOwnBookingEditable(request.resource.data.collection, request.resource.data.bookingId)
-              : (callerLineManagesUser(request.resource.data.userId) || overtimeAdmin())
+              : (callerLineManagesUser(request.resource.data.userId) || isOrgAdminOrOwner(organizationId))
           );
-        allow delete: if overtimeAdmin();
+        allow delete: if isOrgAdminOrOwner(organizationId);
       }
 
-      // Saved overtime reports: created once by the person, never changed or deleted by an app.
       match /overtimeReports/{reportId} {
         allow read: if overtimeViewer(resource.data.get('userId', ''));
         allow create: if canAccessOrganization(organizationId) &&
@@ -1965,23 +1481,14 @@ service cloud.firestore {
           request.resource.data.kind == 'overtime' &&
           request.resource.data.lines is list &&
           writeMetadataValidWhenPresent();
-        allow update, delete: if false;
       }
 
-      // Rulebook 1.30.0 (§16, §26; lib/canonical/payeClaims.ts, personalSiteAudits.ts): PAYE price work and expenses.
-      // The person reads and writes their own; their line managers (listed on the person's users document of this
-      // organisation, never an operatives row) and admins of this organisation read them; nobody else. No approval.
       function payeClaimDayKey(v) {
         return v is string && v.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$');
       }
       function payeClaimText(data, key, minSize, maxSize) {
         return data.get(key, '') is string && data.get(key, '').size() >= minSize && data.get(key, '').size() <= maxSize;
       }
-      // One evidence entry (index i): a map whose path is a file in the person's own claim folder of this organisation
-      // (`pattern`), never an SVG. Rules cannot loop and share a 1000-expression budget with the approver and membership
-      // tests, so the first 5 entries are checked here and the list is capped at 20;
-      // the rulebook readers (parsePayeClaimEvidence with the item's userId) drop any later entry that is not the
-      // person's own, so no viewer is ever offered it.
       function payeClaimEvidenceAt(list, i, pattern) {
         return list.size() <= i || (
           list[i] is map && list[i].get('path', '').matches(pattern) && list[i].get('contentType', '') != 'image/svg+xml'
@@ -2004,22 +1511,16 @@ service cloud.firestore {
           payeClaimEvidenceValid(data.evidence, data.userId) &&
           writeMetadataValidWhenPresent();
       }
-      // The named approver is an active admin or manager of this organisation (their users document here, not an
-      // operative), never the person (priceWorkApproverCandidates). Free text is never an id that passes.
       function priceWorkApproverValid(approverId) {
         return approverId is string && approverId.size() > 0 && !approverId.matches('.*/.*') &&
           approverId != request.auth.uid &&
           exists(/databases/(default)/documents/users/$(approverId)) &&
           priceWorkApproverData(get(/databases/(default)/documents/users/$(approverId)).data);
       }
-      // 1.30.0 review: an admin, or the manager flag / role and not an operative — a flagless member is not offered
-      // (canonical priceWorkApproverCandidates) — active, with a users document naming this organisation.
       function priceWorkApproverData(d) {
         return homeOrgIs(d, organizationId) && d.get('isActive', true) != false &&
           (adminLikeUser(d) || (!isOperativeProfile(d) && (staffFlag(d, 'manager') || d.get('role', '') == 'manager')));
       }
-      // 1.30.1: a job number (free text) is required on a new item, 1–60 characters (priceWorkJobNumberError); an
-      // item stored before 1.30.1 without one stays valid on update, and one that has it keeps 1–60.
       function priceWorkItemValid(data) {
         return data.keys().hasOnly(['userId', 'title', 'details', 'jobNumber', 'startDate', 'endDate', 'approvedByUserId', 'approvedByName', 'amount', 'currency', 'evidence', 'createdBy', 'createdAt', 'updatedAt', 'updatedBy', 'updatedFrom']) &&
           data.keys().hasAll(['userId', 'title', 'startDate', 'endDate', 'approvedByUserId', 'amount', 'evidence']) &&
@@ -2035,12 +1536,8 @@ service cloud.firestore {
           payeClaimCommonValid(data) &&
           payeClaimDayKey(data.date) &&
           payeClaimText(data, 'jobNumber', 0, 60) &&
-          // Evidence is required for an expense (EXPENSE_EVIDENCE_REQUIRED_MESSAGE).
           data.evidence.size() >= 1;
       }
-      // The person themself, active in this organisation (an inactive or lapsed member writes nothing).
-      // callerOrgRole is '' for anyone not a member here, deactivated here or in a lapsed / deleted organisation, so it
-      // stands in for canAccessOrganization (kept off this path: the expression budget).
       function payeClaimOwnerWriter(uid) {
         return uid == request.auth.uid && callerOrgRole(organizationId) != '';
       }
@@ -2067,7 +1564,6 @@ service cloud.firestore {
         allow delete: if payeClaimOwnerWriter(resource.data.get('userId', ''));
       }
 
-      // Saved price work / expenses report copies: created once by the person, never changed or deleted by an app.
       match /payeClaimReports/{reportId} {
         allow read: if overtimeViewer(resource.data.get('userId', ''));
         allow create: if payeClaimOwnerWriter(request.resource.data.get('userId', '')) &&
@@ -2077,11 +1573,8 @@ service cloud.firestore {
           request.resource.data.kind in ['priceWork', 'expense'] &&
           request.resource.data.items is list && request.resource.data.items.size() <= 500 &&
           writeMetadataValidWhenPresent();
-        allow update, delete: if false;
       }
 
-      // Personal site audits: the owner only — no admin, manager or line manager reads them (§26). A copy attached
-      // to a claim is a separate file in the claim folder (storage.rules).
       match /personalSiteAudits/{auditId} {
         allow read: if canAccessOrganization(organizationId) && resource.data.get('ownerUserId', '') == request.auth.uid;
         allow create: if payeClaimOwnerWriter(request.resource.data.get('ownerUserId', '')) &&
@@ -2106,28 +1599,21 @@ service cloud.firestore {
       match /bookings/{bookingId} {
         allow read: if bookingReadAllowed('bookings');
         allow create: if !bookingTombstoned(bookingId) && bookingWriteAllowed('bookings', 'create');
-        // Only admins and the job's managers write (1.10.0), so a cancelled booking is reinstated only by them.
-        // 1.29.0: plus the booked person's line manager applying an approved overtime request (overtime fields only).
         allow update: if !bookingTombstoned(bookingId) &&
           (overtimeLineManagerBookingUpdate('bookings') || bookingWriteAllowed('bookings', 'update'));
         allow delete: if operativesManagerRemovesOrphanBooking(resource.data) || bookingWriteAllowed('bookings', 'delete');
       }
-      
-      // 1.12.0 (M3, part): the qualification and skills catalogues are staff only (admins and managers of this
-      // organisation, never an operative). A person's own qualification assignments and expiry dates live on their
-      // operatives row, which iOS My Qualifications still lets them edit (not changed here).
+
       match /qualifications/{qualificationId} {
         allow read: if canAccessOrganization(organizationId);
         allow write: if isOrgManagerOrAdmin(organizationId) || isPlatformOwner();
       }
-      
+
       match /skills/{skillId} {
         allow read: if canAccessOrganization(organizationId);
         allow write: if isOrgManagerOrAdmin(organizationId) || isPlatformOwner();
       }
-      
-      // Job types and other org settings (only jobTypes doc is used today). Org members need to sync job types when creating work.
-      // Variation log / item docs live here as the iOS fallback. Operatives must not read them.
+
       match /settings/{settingId} {
         function isVariationSettingsDoc() {
           return settingId.matches('^variations_.*') || settingId.matches('^variationItem_.*');
@@ -2135,9 +1621,6 @@ service cloud.firestore {
         function isTimesheetSettingsDoc() {
           return settingId.matches('^timesheet_.*');
         }
-        // Doc id is timesheet_{userId}_{unix} (userId may itself contain underscores).
-        // Prefer stored userId; fall back to id prefix timesheet_{auth.uid}_.
-        // matches() is whole-string — the .* is required.
         function isOwnTimesheetSettings() {
           return request.auth != null && (
             (resource != null && 'userId' in resource.data && resource.data.userId == request.auth.uid) ||
@@ -2147,15 +1630,11 @@ service cloud.firestore {
             settingId.matches('^timesheet_' + request.auth.uid + '_.*')
           );
         }
-        // Whose timesheet: stored userId, else the incoming one on create.
         function timesheetSubjectUid() {
           return resource != null && resource.data.get('userId', null) is string
             ? resource.data.userId
             : request.resource.data.get('userId', null);
         }
-        // Rulebook 1.30.2 (lib/canonical timesheetWriterIsReviewer, personIdSet): every id the caller goes by — their
-        // uid, and the `formerUserIds` / `sameEmailUserIds` on their own users document (never self-edited,
-        // selfUpdateKeepsIdentityLinks).
         function timesheetIdIsCallers(id) {
           return id == request.auth.uid || timesheetIdIsCallerAlias(id);
         }
@@ -2164,17 +1643,12 @@ service cloud.firestore {
           return (home.get('formerUserIds', []) is list && id in home.get('formerUserIds', [])) ||
             (home.get('sameEmailUserIds', []) is list && id in home.get('sameEmailUserIds', []));
         }
-        // The sheet's `userId` (stored, else incoming) is one of the caller's ids.
         function timesheetSubjectIsCaller() {
           return timesheetSubjectUid() is string && timesheetIdIsCallers(timesheetSubjectUid());
         }
-        // The caller is the sheet's subject for the reviewer test: their id is the `userId`, or the doc id prefix names
-        // them (isOwnTimesheetSettings) — either one makes them never the reviewer.
         function timesheetCallerIsSubject() {
           return isOwnTimesheetSettings() || timesheetSubjectIsCaller();
         }
-        // The owner never re-attributes a sheet: an incoming `userId` is one of their own ids, and an update keeps the
-        // stored one (a legacy sheet without one may gain the caller's).
         function timesheetOwnerKeepsSubject() {
           let next = request.resource.data.get('userId', null);
           return (next == null || timesheetIdIsCallers(next)) && (
@@ -2183,30 +1657,20 @@ service cloud.firestore {
             (resource.data.get('userId', null) == null && next == request.auth.uid)
           );
         }
-        // The self-signed owner's write: the sheet is theirs by its `userId` (timesheetOwnerKeepsSubject, checked first,
-        // leaves only the caller's own ids there), the doc id names that same subject, and the subject is self-signed.
-        // The prefix alone never grants it.
         function timesheetSelfSignedOwnerWrite() {
           let uid = timesheetSubjectUid();
           return uid is string && settingId.matches('^timesheet_' + uid + '_.*') && timesheetSelfSignsUid(uid);
         }
-        // Admins, or the subject's line manager (their own id, or a former invite id on
-        // users/{auth.uid}.formerUserIds — lib/canonical/userTimesheetAccess.ts). 1.30.2: never the subject themself,
-        // admins and the Super Admin included (before it an admin was the reviewer of their own sheet and could
-        // counter-sign it); their own write is the owner's (canWriteTimesheetSettings).
         function isTimesheetReviewer() {
           return isPlatformOwner() || (!timesheetCallerIsSubject() && timesheetReviewerOfOthers());
         }
-        // Admins or the subject's line manager, for a sheet that is not the caller's (callers test that first).
         function timesheetReviewerOfOthers() {
           return (
             isOrganizationAdmin(organizationId) ||
             isOrgAdminViaMembersMap(organizationId) || (
-              // 1.31.0: an operative is never a line manager (no rights carry over on a level change).
               !callerHomeIsOperative() &&
               timesheetSubjectUid() is string &&
               exists(/databases/(default)/documents/users/$(timesheetSubjectUid())) &&
-              // 1.12.0 (B3): former ids only from the caller's own company's users document.
               lineManagerIdList(get(/databases/(default)/documents/users/$(timesheetSubjectUid())).data).hasAny(
                 [request.auth.uid].concat(
                   callerHomeData().get('formerUserIds', []) is list && homeOrgIs(callerHomeData(), organizationId)
@@ -2229,8 +1693,6 @@ service cloud.firestore {
             resource == null ? null : resource.data.get(key, null)
           );
         }
-        // Manager counter-sign and export (timesheetSignOffWriteFields role 'manager',
-        // timesheetExportWriteFields). The owner resends them unchanged on every save.
         function timesheetManagerFieldsUnchanged() {
           return timesheetSameInstant('managerSignedAt') &&
             timesheetSame('managerSignedByName') &&
@@ -2240,18 +1702,9 @@ service cloud.firestore {
             timesheetSame('approvedByName') &&
             timesheetSameInstant('exportedAt');
         }
-        // Reviewer-only parts (lib/canonical/timesheetEntryReviews.ts). Rules cannot walk arrays, so
-        // manager decisions on price work and expenses live in the `extraEntryReviews` map, not in
-        // the owner-editable entry rows. `managerNote` is the owner's "Note to manager" and stays theirs.
         function timesheetEmptyish(value) {
           return value == null || value == {};
         }
-        function timesheetWrittenKeys() {
-          return resource == null
-            ? request.resource.data.keys().toSet()
-            : request.resource.data.diff(resource.data).affectedKeys();
-        }
-        // Unchanged (missing and an empty map are the same), so a full resend passes.
         function timesheetOwnerLeaves(key, written) {
           return !(key in written) || (
             timesheetEmptyish(request.resource.data.get(key, null)) &&
@@ -2264,14 +1717,6 @@ service cloud.firestore {
             (resource == null || resource.data.get(key, null) == null || resource.data.get(key, null) == [])
           );
         }
-        // lib/canonical timesheetSelfSigned (rulebook 1.28.0): the owner writes the approved snapshot only when the
-        // sheet is self-signed — the organisation's Super Admin (its creator, or a super admin users document of this
-        // organisation), or an active admin of this organisation with Timesheet self-sign on, line manager or not.
-        // Having no line manager no longer self-signs anyone. 1.30.2: the toggle is read for this organisation
-        // (orgSelfManageFlag: the users document of this organisation, else the membership here).
-        function timesheetSubjectSelfSigns() {
-          return timesheetSubjectUid() is string && timesheetSelfSignsUid(timesheetSubjectUid());
-        }
         function timesheetSelfSignsUid(uid) {
           return orgCreatorIs(organizationId, uid) || orgSelfManageFlag(uid, organizationId, 'timesheetSelfSign', true);
         }
@@ -2283,11 +1728,8 @@ service cloud.firestore {
             resource.data.get('approvedAt', null) is number
           );
         }
-        // The owner never writes line reviews or entry decisions; never writes the approved snapshot (a self-signed
-        // owner passes canWriteTimesheetSettings before this); and cannot change their price work or expenses once the
-        // line manager has signed.
         function timesheetOwnerReviewFieldsUnchanged() {
-          let written = timesheetWrittenKeys();
+          let written = writtenKeys();
           return timesheetOwnerLeaves('payrollLineReviews', written) &&
             timesheetOwnerLeaves('extraEntryReviews', written) &&
             timesheetOwnerLeaves('weeklyReportOverride', written) &&
@@ -2296,14 +1738,7 @@ service cloud.firestore {
               timesheetOwnerLeavesList('priceWorkEntries', written)
             ));
         }
-        // 1.30.2: the subject writes their own sheet only here. A self-signed subject (timesheetSubjectSelfSigns) may
-        // write the whole sheet: their signature completes it, the snapshot is theirs, and an iOS build from before
-        // 1.30.2 saves a self-signed admin's own sheet as the reviewer's (sign-off fields, `extraEntryReviews`). Anyone
-        // else — an admin with Timesheet self-sign off included — leaves the sign-off and export fields, the review maps
-        // and the snapshot alone.
         function canWriteTimesheetSettings() {
-          // The subject test runs once (the 1000-expression limit), and an ordinary owner save never reads the
-          // self-sign toggle.
           return isPlatformOwner() || (timesheetCallerIsSubject() ? (
             timesheetOwnerKeepsSubject() && (
               (timesheetManagerFieldsUnchanged() && timesheetOwnerReviewFieldsUnchanged()) ||
@@ -2312,7 +1747,6 @@ service cloud.firestore {
           ) : timesheetReviewerOfOthers());
         }
         function canDeleteTimesheetSettings() {
-          // The owner deletes only an unsigned sheet filed under them (no self-signed exception: no app deletes one).
           return isPlatformOwner() || (timesheetCallerIsSubject() ? (
             (resource.data.get('userId', null) == null || timesheetSubjectIsCaller()) &&
             resource.data.get('managerSignedAt', null) == null &&
@@ -2321,15 +1755,11 @@ service cloud.firestore {
             timesheetEmptyish(resource.data.get('extraEntryReviews', null))
           ) : timesheetReviewerOfOthers());
         }
-        // Per-job deadlines and the legacy health & safety copy: operatives update their own
-        // deadlines and sign toolbox talks, so any member writes these.
         function isMemberWritableSettingsDoc() {
           return settingId.matches('^deadlines_.*') ||
             settingId == 'deadlineAssignments' ||
             settingId.matches('^healthSafety_.*');
         }
-        // 1.13.0 (Q1): with `privatePay` on, a timesheet is read by the person, their reviewers (line manager, admins)
-        // and a manager with operatives access for an operative's sheet (`canViewPayOf`).
         function canReadTimesheetSettings() {
           return !privatePayOn(organizationId) || isOwnTimesheetSettings() ||
             isOrgAdminViaMembersMap(organizationId) || isOrganizationAdmin(organizationId) || isPlatformOwner() ||
@@ -2339,8 +1769,6 @@ service cloud.firestore {
         allow read: if canAccessOrganization(organizationId) &&
           (!isVariationSettingsDoc() || canAccessVariationsStaff(organizationId)) &&
           (!isTimesheetSettingsDoc() || canReadTimesheetSettings());
-        // Everything else (jobTypes, tradeTypeInventory, variationTrades, variation logs, and any new
-        // company-wide setting) is admins and managers only. Operatives never write it.
         allow create, update: if canAccessOrganization(organizationId) && (
           isTimesheetSettingsDoc()
             ? canWriteTimesheetSettings()
@@ -2352,18 +1780,15 @@ service cloud.firestore {
             : (isMemberWritableSettingsDoc() || canAccessVariationsStaff(organizationId))
         );
       }
-      
+
       match /tasks/{taskId} {
         allow read: if canAccessOrganization(organizationId);
         allow create, update: if canAccessOrganization(organizationId);
         allow delete: if isOrganizationAdmin(organizationId);
       }
-      
+
       match /managers/{managerId} {
         allow read: if canAccessOrganization(organizationId);
-        // A manager's pay is changed by admins only (never by the manager or another manager).
-        // 1.12.0 (H3): a new row is staff only (a job form adds the row for a manager it names); an existing row's
-        // email changes by admins only.
         allow create, update: if canAccessOrganization(organizationId) &&
           (resource != null || isOrgManagerOrAdmin(organizationId) || isPlatformOwner()) &&
           (!rosterRowPayKeysChanged() || rosterRowAdmin()) &&
@@ -2372,30 +1797,17 @@ service cloud.firestore {
           writeMetadataValidWhenPresent();
         allow delete: if isOrganizationAdmin(organizationId);
       }
-      
+
       match /notifications/{notificationId} {
         function isOwnNotification() {
           return resource != null &&
             'userId' in resource.data &&
             resource.data.userId == request.auth.uid;
         }
-        function canAdminNotifications() {
-          return isOrganizationAdmin(organizationId) ||
-            isOrgAdminViaMembersMap(organizationId) ||
-            isPlatformOwner();
-        }
-        // Rulebook §13: `actorUserId` (who caused the row) is optional; when present it is the signed-in user,
-        // so nobody can silence another person's push by naming them the actor.
         function actorUserIdValid() {
           return !('actorUserId' in request.resource.data) ||
             request.resource.data.actorUserId == request.auth.uid;
         }
-        function actorUserIdUnchanged() {
-          return !('actorUserId' in request.resource.data.diff(resource.data).affectedKeys());
-        }
-        // Rulebook 1.12.0 (H4, organizationMemberActive): a row is addressed to a member of this organisation — a key
-        // of its members map, its creator, a users document of this organisation, or a person with a membership here.
-        // Never a uid from anywhere on the platform, and never a row without `userId` (§13: not an inbox row).
         function notificationRecipientIsMember() {
           let uid = request.resource.data.get('userId', '');
           let org = get(/databases/(default)/documents/organizations/$(organizationId)).data;
@@ -2407,31 +1819,28 @@ service cloud.firestore {
             exists(/databases/(default)/documents/users/$(uid)/orgMemberships/$(organizationId))
           );
         }
-        // Inbox queries userId == signed-in user. Fan-out create stays org-member.
         allow read: if canAccessOrganization(organizationId) &&
-          (isOwnNotification() || canAdminNotifications());
+          (isOwnNotification() || isOrgAdminOrOwner(organizationId));
         allow create: if canAccessOrganization(organizationId) && actorUserIdValid() && notificationRecipientIsMember();
         allow update: if canAccessOrganization(organizationId) &&
-          (isOwnNotification() || canAdminNotifications()) &&
-          (actorUserIdUnchanged() || actorUserIdValid());
-        allow delete: if canAdminNotifications();
+          (isOwnNotification() || isOrgAdminOrOwner(organizationId)) &&
+          ((!('actorUserId' in request.resource.data.diff(resource.data).affectedKeys())) || actorUserIdValid());
+        allow delete: if isOrgAdminOrOwner(organizationId);
       }
 
       match /materials/{materialId} {
         allow read: if canAccessOrganization(organizationId);
-        allow create: if isOrganizationMaterialManager(organizationId) || canCreateOwnMaterial(organizationId);
-        // The status branch goes first: it fails fast on any other field, and the rule stays under the
-        // 1000-expression limit when a Send status write carries write metadata (1.9.0).
+        allow create: if isOrgManagerOrAdmin(organizationId) || canCreateOwnMaterial(organizationId);
         allow update: if isStaffMaterialStatusWrite(organizationId) ||
-          isOrganizationMaterialManager(organizationId) ||
+          isOrgManagerOrAdmin(organizationId) ||
           canUpdateOwnMaterial(organizationId) ||
           isOnlyClaimingLegacyOwnMaterial(organizationId);
-        allow delete: if isOrganizationMaterialManager(organizationId) || canDeleteOwnMaterial(organizationId);
+        allow delete: if isOrgManagerOrAdmin(organizationId) || canDeleteOwnMaterial(organizationId);
       }
 
       match /materialCatalogue/{catalogueItemId} {
         allow read: if canAccessOrganization(organizationId);
-        allow create, update, delete: if isOrganizationMaterialManager(organizationId);
+        allow create, update, delete: if isOrgManagerOrAdmin(organizationId);
       }
 
       match /materialSendRecords/{recordId} {
@@ -2444,9 +1853,9 @@ service cloud.firestore {
 
       match /wholesalers/{wholesalerId} {
         allow read: if canAccessOrganization(organizationId);
-        allow create, update, delete: if isOrganizationMaterialManager(organizationId);
+        allow create, update, delete: if isOrgManagerOrAdmin(organizationId);
       }
-      
+
       match /managerSiteBookings/{bookingId} {
         allow read: if bookingReadAllowed('managerSiteBookings');
         allow create: if !bookingTombstoned(bookingId) && bookingWriteAllowed('managerSiteBookings', 'create');
@@ -2454,42 +1863,33 @@ service cloud.firestore {
           (overtimeLineManagerBookingUpdate('managerSiteBookings') || bookingWriteAllowed('managerSiteBookings', 'update'));
         allow delete: if bookingWriteAllowed('managerSiteBookings', 'delete');
       }
-      
+
       match /subcontractors/{subcontractorId} {
         allow read: if canAccessOrganization(organizationId);
         allow create, update: if canAccessOrganization(organizationId);
         allow delete: if isOrganizationAdmin(organizationId);
       }
-      
+
       match /subcontractorBookings/{bookingId} {
         allow read: if bookingReadAllowed('subcontractorBookings');
         allow create: if !bookingTombstoned(bookingId) && bookingWriteAllowed('subcontractorBookings', 'create');
         allow update: if !bookingTombstoned(bookingId) && bookingWriteAllowed('subcontractorBookings', 'update');
         allow delete: if bookingWriteAllowed('subcontractorBookings', 'delete');
       }
-      
-      // Annual leave. A requester asks (status 'pending') or asks to cancel (cancellationRequestedAt /
-      // cancellationRequestedByUserId); only an admin or the requester's line manager decides
-      // (status 'approved' / 'rejected', approvedByUserId, approvedAt, decisionNote). When the
-      // requester has no line manager, or the row has no users document (legacy operativeId-only
-      // row), an admin decides (never any manager). People who book their own leave
-      // (lib/canonical canSelfBookAnnualLeave: annualLeaveSelfBook outside operative mode, or the
-      // organisation's Super Admin — rulebook 1.28.0) save it approved. Both apps resend every field with setData merge, so
-      // decision fields count only when the value really changes (null, missing and a sub-second
-      // timestamp round-trip are the same).
+
       match /holidayBookings/{bookingId} {
         function hbCaller() {
           return get(/databases/(default)/documents/users/$(request.auth.uid)).data;
         }
-        // Members-map admin first (one get), then the users-document admin of this company.
-        // 1.13.0: every rule here passes canAccessOrganization first (billing included), so these skip it.
+        function hbCallerIsOperative() {
+          return exists(/databases/(default)/documents/users/$(request.auth.uid)) &&
+            isOperativeProfile(hbCaller()) && !adminLikeUser(hbCaller());
+        }
         function hbIsAdmin() {
           return isOrgAdminViaMembersMapAnyBilling(organizationId) ||
             isOrganizationAdminAnyBilling(organizationId) ||
             isPlatformOwner();
         }
-        // Staff (lib/canonical/staffAccess.ts isStaffAccount): admin of this company, or a manager not
-        // in operative mode. Membership is already checked by canAccessOrganization on every rule below.
         function hbIsStaffManager() {
           return callerOrgRoleAnyBilling(organizationId) in ['admin', 'manager'] || hbIsAdmin();
         }
@@ -2508,24 +1908,12 @@ service cloud.firestore {
           return hbRequesterUid(data) == request.auth.uid ||
             data.get('operativeId', null) == request.auth.uid;
         }
-        // The caller's own users document says operative mode (no document: not operative). 1.11.0: an admin has
-        // no operative mode (permissionLevelOf), so a stray flag on an admin does not count.
-        function hbCallerIsOperative() {
-          return exists(/databases/(default)/documents/users/$(request.auth.uid)) &&
-            isOperativeProfile(hbCaller()) && !adminLikeUser(hbCaller());
-        }
-        // lib/canonical/leaveRequests.ts canDecideLeave: never the requester's own request (admins
-        // included). The requester's line manager; otherwise an admin not in operative mode. With no
-        // line manager (legacy data) the request waits for an admin — never any manager (rulebook 1.3.0).
-        // 1.31.0: an operative is never a line manager (hbCallerIsOperative), even with an old id stored on the request.
         function hbCanDecide(data) {
           return !hbIsOwner(data) && (
             (hbRequesterExists(data) && request.auth.uid in lineManagerIdList(hbRequester(data)) && !hbCallerIsOperative()) ||
             (!hbCallerIsOperative() && hbIsAdmin())
           );
         }
-        // hbCanDecide(resource.data) && hbCanDecide(request.resource.data), with the admin test evaluated once
-        // (1.13.0: keeps the update under the 1000-expression limit once the billing test is in canAccessOrganization).
         function hbCanDecideBeforeAndAfter() {
           return !hbIsOwner(resource.data) && !hbIsOwner(request.resource.data) && (
             (hbRequesterExists(resource.data) && request.auth.uid in lineManagerIdList(hbRequester(resource.data)) &&
@@ -2534,12 +1922,6 @@ service cloud.firestore {
             (!hbCallerIsOperative() && hbIsAdmin())
           );
         }
-        // lib/canonical canSelfBookAnnualLeave (rulebook 1.28.0): the self-book flag (Annual Leave Management)
-        // outside operative mode, or the organisation's Super Admin (callerIsSuperAdminOf: its creator, or a super
-        // admin users document of this organisation). Having no line manager never self-books anyone, admins
-        // included (their request waits for the other admins).
-        // 1.30.2: the flag is read for this organisation (orgSelfManageFlag: the users document of this organisation,
-        // else the membership here), never the caller's users document of another company.
         function hbCallerSelfBooks() {
           return orgCreatorIs(organizationId, request.auth.uid) ||
             orgSelfManageFlag(request.auth.uid, organizationId, 'annualLeaveSelfBook', false);
@@ -2550,7 +1932,6 @@ service cloud.firestore {
             next.get('approvedAt', null) == null &&
             next.get('decisionNote', null) == null;
         }
-        // A request (pending, no decision) or, for a self-booker, their own approved booking.
         function hbOwnerShapeAllowed(next) {
           return hbIsRequestShape(next) || (
             next.get('status', null) == 'approved' &&
@@ -2559,7 +1940,6 @@ service cloud.firestore {
             hbCallerSelfBooks()
           );
         }
-        // Only a key that really changed is compared (null, missing and a sub-second round-trip are the same).
         function hbKeySame(changed, key) {
           return !(key in changed) ||
             sameLooseValue(request.resource.data.get(key, null), resource.data.get(key, null));
@@ -2582,9 +1962,7 @@ service cloud.firestore {
         }
         function hbOwnerEditAllowed(changed) {
           return hbKeySame(changed, 'userId') && hbKeySame(changed, 'operativeId') && (
-            // Ask to cancel (or withdraw that ask), or any edit that leaves decision and dates alone.
             (hbDecisionUnchanged(changed) && hbDatesUnchanged(changed)) ||
-            // Edit a pending request, or a self-booker edits their own booking.
             ((resource.data.get('status', null) == 'pending' || hbCallerSelfBooks()) &&
               (hbDecisionUnchanged(changed) || hbOwnerShapeAllowed(request.resource.data)))
           );
@@ -2598,16 +1976,12 @@ service cloud.firestore {
         allow create: if canAccessOrganization(organizationId) && (
           (hbIsOwner(request.resource.data) && hbOwnerShapeAllowed(request.resource.data)) ||
           hbCanDecide(request.resource.data) ||
-          // A manager on the Team screen books a request for someone with a line manager: it waits there.
           (hbIsRequestShape(request.resource.data) && hbIsStaffManager())
         );
         allow update: if canAccessOrganization(organizationId) && (
           hbOwnerUpdateAllowed() ||
           hbCanDecideBeforeAndAfter()
         );
-        // Approving a cancellation (or a Team-screen removal, or an admin cleanup) deletes the row: only
-        // someone who may decide this person's leave (hbCanDecide: never their own, admins included).
-        // The requester may withdraw a pending or declined request; a self-booker may remove their own.
         allow delete: if canAccessOrganization(organizationId) && (
           (hbIsOwner(resource.data) && (
             resource.data.get('status', null) in ['pending', 'rejected'] ||
@@ -2617,11 +1991,6 @@ service cloud.firestore {
         );
       }
 
-      // Pay change on another path than users/{uid}: the person never changes their own pay
-      // (lib/canonical/payAccess.ts canChangePersonPay; payRate.ts reads rate history first, then
-      // the live profile). Admins, the platform owner, or a manager with operatives access for an
-      // operative in this company (managerMayManageOperative, the same test as
-      // canManagerUpdateOperativeProfile). Cheapest tests first: the 1,000-expression limit.
       function managerMayChangePayOf(subjectUserId) {
         return subjectUserId is string && subjectUserId.size() > 0 &&
           subjectUserId != request.auth.uid &&
@@ -2630,8 +1999,6 @@ service cloud.firestore {
           orgIdsMatch(get(/databases/(default)/documents/users/$(subjectUserId)).data.organizationId, organizationId) &&
           managerMayManageOperative(subjectUserId, get(/databases/(default)/documents/users/$(subjectUserId)).data);
       }
-      // A manager-with-operatives write implies membership: the caller's users/{uid}.organizationId
-      // is the subject's, which is this company. Admin of this company is checked members map first.
       function canChangePayOf(subjectUserId) {
         return isOrgAdminViaMembersMap(organizationId) ||
           managerMayChangePayOf(subjectUserId) ||
@@ -2639,12 +2006,6 @@ service cloud.firestore {
           isOrganizationAdmin(organizationId);
       }
 
-      // Rulebook 1.13.0 §8 / §16 (Q1, lib/canonical canViewPersonPay): who may see a person's pay — rates, pay basis,
-      // employment type, rate history, timesheets and invoices. `subjectId` is a users id, or an operatives row id for
-      // a catalogue operative with no account. Admins of this organisation; the person (their uid, or a users document
-      // on their signed-in email); their line manager (listed on their users document; the caller is a current member);
-      // a manager with operatives access, for an operative of this company; for a catalogue row, admins, operatives
-      // managers and the person on its email. The platform owner too.
       function payUserPath(subjectId) {
         return /databases/(default)/documents/users/$(subjectId);
       }
@@ -2658,11 +2019,6 @@ service cloud.firestore {
           (lineManagerIdList(subject).hasAny([request.auth.uid]) && !callerHomeIsOperative()) ||
           managerMayManageOperative(subjectId, subject);
       }
-      // Rulebook 1.27.0 §8 / §16 (owner decision 7, lib/canonical catalogueOperativePaySubjects): a catalogue operative
-      // is an operatives row with no app account — no users document of its id (the callers check), no stored
-      // `linkedUserId` / `userId` / `uid`, and no email claim of this organisation (`userEmails/{email}`) on its email.
-      // Managers with operatives access read a catalogue operative's pay profile and rate history; an operatives row
-      // that belongs to an account is read through that account (canViewPayOfUser), never through the row.
       function payRowLinkText(row, key) {
         return row.get(key, '') is string ? row.get(key, '') : '';
       }
@@ -2691,16 +2047,12 @@ service cloud.firestore {
           )
         );
       }
-      // The non-admin half of canViewPayOf, for rules that already checked membership and admins (it keeps them under
-      // the 1000-expression limit).
       function canViewPayOfAsMember(subjectId) {
         return subjectId is string && subjectId.size() > 0 && (
           (exists(payUserPath(subjectId)) && canViewPayOfUser(subjectId, get(payUserPath(subjectId)).data)) ||
           (!exists(payUserPath(subjectId)) && exists(payOperativeRowPath(subjectId)) && canViewPayOfRow(subjectId))
         );
       }
-      // Writes: `canChangePayOf` for a users subject; for a catalogue row, admins and operatives managers (not their own
-      // row).
       function canChangePayOfSubject(subjectId) {
         return exists(payUserPath(subjectId))
           ? canChangePayOf(subjectId)
@@ -2719,21 +2071,11 @@ service cloud.firestore {
           ]);
         }
         allow get: if request.auth != null && canViewPayOf(subjectId);
-        // A whole-collection query is for admins (and the platform owner); everyone else reads one document by id.
         allow list: if request.auth != null && (
           isPlatformOwner() ||
           (canAccessOrganization(organizationId) &&
            (isOrgAdminViaMembersMap(organizationId) || isOrganizationAdmin(organizationId)))
         );
-        // Rulebook 1.27.0 §8 / §11 (owner decision 6, lib/canonical invitePayProfileCopyWrite): while `privatePay` is on,
-        // the person accepting an invitation creates their OWN pay profile once, as an exact copy of the pay profile of
-        // their invitation's placeholder. The rule checks: the document is the caller's (`subjectId` is their uid) and
-        // does not exist yet (create only, never update); `privatePay` is on for this organisation; the email claim
-        // `userEmails/{token email}` still names a pending placeholder of this organisation on the same email
-        // (`inviteClaimIsPendingPlaceholder`, the test the invitee's own users create uses), which is not the caller;
-        // `payProfiles/{placeholderId}` exists; and every pay field written equals that profile's (a missing field
-        // stays missing or null). So nobody can set or raise their own pay: they can only take what an admin or
-        // operatives manager wrote for their invitation, before the claim moves to their account.
         function invitedPayCopyFields() {
           return ['payBasis', 'dayRate', 'hourlyRate', 'employmentType', 'employmentTypeTransitionFrom', 'employmentTypeEffectiveAt'];
         }
@@ -2774,10 +2116,6 @@ service cloud.firestore {
         allow delete: if isOrganizationAdmin(organizationId) || isPlatformOwner();
       }
 
-      // Mirror of users/{userId} pay and line manager (iOS saveOperativeProfileMetadataFallback,
-      // web saveUser). iOS reads it over users/{uid} on roster load. Anyone in the company may
-      // touch only the id and write stamps; pay, line manager and employment fields are
-      // canChangePayOf. Only keys whose value changes count, so a resend of the same values passes.
       match /operativeProfiles/{userId} {
         function operativeProfileStampOnly() {
           return (resource == null
@@ -2785,7 +2123,6 @@ service cloud.firestore {
             : request.resource.data.diff(resource.data).affectedKeys()
           ).hasOnly(['userId', 'updatedAt', 'updatedBy', 'updatedFrom']);
         }
-        // 1.13.0 (Q1): with `privatePay` on, only the people who may see this person's pay.
         allow read: if canAccessOrganization(organizationId) && (
           !privatePayOn(organizationId) || isOrgAdminViaMembersMap(organizationId) || isOrganizationAdmin(organizationId) ||
           canViewPayOfAsMember(userId)
@@ -2798,10 +2135,6 @@ service cloud.firestore {
           (request.auth.uid == userId ? canAccessOrganization(organizationId) : canChangePayOf(userId));
       }
 
-      // Effective-dated pay rows { userId?, operativeId?, dayRate, payBasis?, effectiveAt, createdAt }.
-      // userId names a users document; an operativeId-only row is an operatives/{id} record.
-      // Never a row about the writer themselves (unless an admin, who may already set their own
-      // pay on users/{uid}). Rows are not re-pointed at another person.
       match /operativeDayRateHistory/{entryId} {
         function rateRowUserId(data) {
           return data.get('userId', '') is string ? data.get('userId', '') : '';
@@ -2809,7 +2142,6 @@ service cloud.firestore {
         function rateRowOperativeId(data) {
           return data.get('operativeId', '') is string ? data.get('operativeId', '') : '';
         }
-        // The operatives row is the caller's own when its email is the signed-in email.
         function rateRowOperativeIsCaller(operativeId) {
           return operativeId.size() > 0 && (
             !(request.auth.token.email is string) ||
@@ -2819,7 +2151,6 @@ service cloud.firestore {
               request.auth.token.email.lower()
           );
         }
-        // Manager with operatives access in this company, for an operatives row that is not theirs.
         function managerMayRecordOperativeRow(operativeId) {
           return operativeId.size() > 0 &&
             isManagerWithOperativesAccess() &&
@@ -2838,8 +2169,6 @@ service cloud.firestore {
             isPlatformOwner() ||
             isOrganizationAdmin(organizationId);
         }
-        // 1.13.0 (Q1): with `privatePay` on, a row is read only by those who may see its person's pay. A query by
-        // anyone but an admin must name the person (`userId ==` or `operativeId ==`).
         function canViewRateRow(data) {
           return isOrgAdminViaMembersMap(organizationId) || isOrganizationAdmin(organizationId) || isPlatformOwner() ||
             canViewPayOfAsMember(rateRowUserId(data).size() > 0 ? rateRowUserId(data) : rateRowOperativeId(data));
@@ -2859,20 +2188,14 @@ service cloud.firestore {
         allow delete: if isOrganizationAdmin(organizationId);
       }
 
-      // Accepting a clash is a staff warning decision (lib/canonical/staffAccess.ts canViewStaffWarnings,
-      // scheduleSources.ts acceptedClashWriteFields): admins and managers only, never operative mode.
       match /acceptedBookingClashes/{clashId} {
         allow read: if canAccessOrganization(organizationId);
         allow create, update: if canAccessVariationsStaff(organizationId) && writeMetadataValidWhenPresent();
-        // Un-approving a clash: the same staff who may accept it.
         allow delete: if canAccessVariationsStaff(organizationId);
       }
 
-      // Approved or dismissed warnings (lib/canonical/scheduleSources.ts warningResolutionWriteFields).
-      // Document id is the warning's resolution key. Undoing an approval deletes it.
       match /warningResolutions/{resolutionKey} {
         allow read: if canAccessOrganization(organizationId);
-        // Approving or dismissing a warning is staff only (canViewStaffWarnings): admins and managers.
         allow create, update: if canAccessVariationsStaff(organizationId) &&
           request.resource.data.keys().hasOnly(['resolutionKey', 'status', 'resolvedByUserId', 'resolvedAt', 'updatedBy', 'updatedFrom', 'updatedAt']) &&
           writeMetadataValidWhenPresent() &&
@@ -2881,25 +2204,18 @@ service cloud.firestore {
           request.resource.data.status in ['approved', 'dismissed'] &&
           request.resource.data.resolvedByUserId == request.auth.uid &&
           request.resource.data.resolvedAt is timestamp;
-        // Un-approving: the same staff who may approve, whoever approved it (rulebook 1.2.0 decision 5).
         allow delete: if canAccessVariationsStaff(organizationId);
       }
 
-      // Dismissed warnings (expired qualifications). Document id is the canonical dismiss key.
       match /dismissedWarnings/{dismissKey} {
         allow read: if canAccessOrganization(organizationId);
-        // Rulebook §16 / 1.9.0: only admins and managers dismiss a warning (the same staff who accept clashes).
         allow create, update: if canAccessVariationsStaff(organizationId) && writeMetadataValidWhenPresent();
         allow delete: if isOrganizationAdmin(organizationId);
       }
 
-      // Report a problem with this file (lib/canonical/fileReports.ts).
-      // Anyone in the organisation files a report as themselves; only admins and
-      // the platform owner read and close them. Reports are never deleted.
       match /fileReports/{reportId} {
         allow create: if canAccessOrganization(organizationId) &&
-          request.resource.data.keys().hasOnly(['organizationId', 'storagePath', 'surface', 'parentId', 'fileName', 'reason', 'details', 'reportedByUserId', 'status', 'createdAt']) &&
-          request.resource.data.keys().hasAll(['organizationId', 'storagePath', 'surface', 'parentId', 'fileName', 'reason', 'details', 'reportedByUserId', 'status', 'createdAt']) &&
+          request.resource.data.keys().toSet() == ['organizationId', 'storagePath', 'surface', 'parentId', 'fileName', 'reason', 'details', 'reportedByUserId', 'status', 'createdAt'].toSet() &&
           request.resource.data.organizationId == organizationId &&
           request.resource.data.reportedByUserId == request.auth.uid &&
           request.resource.data.status == 'open' &&
@@ -2923,7 +2239,6 @@ service cloud.firestore {
           request.resource.data.status in ['reviewed', 'removed'] &&
           request.resource.data.reviewedByUserId == request.auth.uid &&
           request.resource.data.reviewedAt == request.time;
-        allow delete: if false;
       }
 
       match /dashboardLayouts/{layoutUserId} {
@@ -2932,9 +2247,6 @@ service cloud.firestore {
           (request.auth.uid == layoutUserId || isOrganizationAdmin(organizationId));
       }
 
-      // Variations are not covered by the read-only catch-all below.
-      // Admins and managers read and write every job. Operatives never do.
-      // Hard delete is denied; rows are soft-deleted.
       match /variations/{variationId} {
         allow read: if resource.data.parentId is string &&
           canAccessVariationsStaff(organizationId);
@@ -2944,17 +2256,13 @@ service cloud.firestore {
         allow update: if resource.data.parentId is string &&
           request.resource.data.parentId == resource.data.parentId &&
           canAccessVariationsStaff(organizationId);
-        allow delete: if false;
       }
 
       match /variationTrackers/{parentId} {
         allow read: if canAccessVariationsStaff(organizationId);
-        allow create, update: if canAdminVariations(organizationId);
-        allow delete: if false;
+        allow create, update: if isOrgAdminOrOwner(organizationId);
       }
 
-      // Unknown subcollections: allow org-scoped read fallback only.
-      // Keep writes explicit per known subcollection rules above.
       match /{collection}/{document=**} {
         allow read: if canAccessOrganization(organizationId) &&
           collection != 'variations' &&
@@ -2962,20 +2270,13 @@ service cloud.firestore {
           collection != 'notifications' &&
           collection != 'materialSendRecords' &&
           collection != 'fileReports' &&
-          // 1.10.0 round 2: job and booking reads are enforced above (§17); never re-opened here.
           !(collection in ['projects', 'smallWorks', 'bookings', 'managerSiteBookings', 'subcontractorBookings']) &&
-          // 1.13.0 (Q1): pay and timesheets have their own read rules (canViewPayOf); never re-opened here. `settings`
-          // also stops re-opening variation settings to non-staff (its own rule already refuses them).
           !(collection in ['payProfiles', 'operativeDayRateHistory', 'operativeProfiles', 'settings']) &&
-          // 1.29.0: overtime requests, reviews and reports are the person's, their line managers' and admins' only.
           !(collection in ['overtimeRequests', 'overtimeReviews', 'overtimeReports']) &&
-          // 1.30.0: price work, expenses and their reports have their own read rules; personal site audits are the owner's only.
           !(collection in ['priceWorkItems', 'expenseItems', 'payeClaimReports', 'personalSiteAudits']);
       }
     }
 
-    // Shared product ideas board — every signed-in organisation can read and submit.
-    // The owner console (info@projectplanner.us) can hide, merge, and write private notes.
     match /productFeedback/{suggestionId} {
       allow read: if request.auth != null;
       allow create: if request.auth != null &&
@@ -3004,7 +2305,6 @@ service cloud.firestore {
         request.resource.data.userId == request.auth.uid &&
         voteId == request.resource.data.suggestionId + '_' + request.auth.uid;
       allow delete: if request.auth != null && resource.data.userId == request.auth.uid;
-      allow update: if false;
     }
 
     match /productFeedbackFollows/{followId} {
@@ -3014,7 +2314,6 @@ service cloud.firestore {
         request.resource.data.userId == request.auth.uid &&
         followId == request.resource.data.suggestionId + '_' + request.auth.uid;
       allow delete: if request.auth != null && resource.data.userId == request.auth.uid;
-      allow update: if false;
     }
 
     match /productFeedbackComments/{commentId} {
@@ -3036,21 +2335,17 @@ service cloud.firestore {
     match /productEvents/{eventId} {
       allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
       allow read: if isPlatformOwner();
-      allow update: if false;
-      allow delete: if false;
     }
 
     match /productSessions/{sessionId} {
       allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
       allow update: if request.auth != null && resource.data.userId == request.auth.uid;
       allow read: if isPlatformOwner() || (request.auth != null && resource.data.userId == request.auth.uid);
-      allow delete: if false;
     }
 
     match /adminAuditLog/{id} {
       allow read: if isPlatformOwner();
       allow create: if isPlatformOwner();
-      allow update, delete: if false;
     }
 
     match /supportRequests/{id} {
@@ -3060,66 +2355,43 @@ service cloud.firestore {
         request.resource.data.requestedByUid == request.auth.uid &&
         request.resource.data.status == 'open';
       allow update: if isPlatformOwner();
-      allow delete: if false;
-    }
-
-    match /stripeEvents/{id} {
-      allow read, write: if false;
     }
 
     match /publicStats/{id} {
       allow read: if true;
-      allow write: if false;
     }
 
     match /analyticsDaily/{id} {
       allow read: if isPlatformOwner();
-      allow write: if false;
     }
 
     match /analyticsMonthly/{id} {
       allow read: if isPlatformOwner();
-      allow write: if false;
     }
 
     match /analyticsTotals/{id} {
       allow read: if isPlatformOwner();
-      allow write: if false;
     }
 
     match /ownerAlerts/{id} {
       allow read: if isPlatformOwner();
-      allow write: if false;
     }
 
     match /adminJobs/{id} {
       allow read: if isPlatformOwner();
-      allow write: if false;
     }
 
     match /deletedOrganisations/{id} {
       allow read: if isPlatformOwner();
-      allow write: if false;
     }
 
-    // Rulebook 1.12.0 (§18, appUpdateRequired): `platformConfig/app` { minimumIosBuild, minimumWebVersion? } is read
-    // before sign-in (the forced-update gate), so anyone reads it; the rest (toolbox library) stays signed-in. Only the
-    // platform owner (verified token email) writes.
     match /platformConfig/{id} {
       allow read: if id == 'app' || request.auth != null;
       allow write: if isPlatformOwner();
     }
 
-    // Interest registrations are created only by the website Admin API. Clients cannot write this collection.
     match /interestRegistrations/{id} {
-      allow create: if false;
       allow read, update, delete: if isPlatformOwner();
-    }
-
-    // Marketing suppression list. Admin API only — no client reads or writes.
-    // There is no root catch-all; this match is explicit so the collection is never world-readable.
-    match /emailSuppressions/{email} {
-      allow read, write: if false;
     }
   }
 }
