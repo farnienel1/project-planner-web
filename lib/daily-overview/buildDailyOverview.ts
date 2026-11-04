@@ -6,7 +6,7 @@
  * hours worked, never multiplied. Paid hours belong to pay screens.
  */
 
-import { bookingOccupiesDay, formerIdAliases, jobKind, multipliedHoursText, payrollMultipliedHours, payrollOutsideMultiplier, unbookedLabourRowsOnDay, warningScopeFor, weekdayPaidHours, workedHoursSplit, type JobAccessViewer } from '@/lib/canonical'
+import { bookingOccupiesDay, formerIdAliases, isStandardWorkingWeekday, jobKind, multipliedHoursText, payrollMultipliedHours, payrollOutsideMultiplier, unbookedLabourRowsOnDay, warningScopeFor, weekdayPaidHours, workedHoursSplit, type JobAccessViewer } from '@/lib/canonical'
 import { isoWeekdayInZone } from '@/lib/orgTime/zoneTime'
 import { labourPersonFromUser, labourRosterOperative } from '@/lib/warnings/unbookedLabourWarnings'
 import { warningScopeRoster } from '@/lib/warnings/warningScopeRoster'
@@ -32,6 +32,7 @@ import {
 } from '@/lib/subcontractors/bookingPeople'
 import { holidayBookingDayKeys, holidayBookingLabourInput } from '@/lib/annualLeave/holidayDayKeys'
 import type { WeekendCoverage } from '@/lib/canonical'
+import { normalizeDocumentId } from '@/lib/canonical'
 
 export type OverviewSubcontractorBooking = {
   id: string
@@ -69,11 +70,6 @@ export type OverviewPersonRow = {
 
 /** Shown when a booking's person id matches no user or operative. The booking still appears. */
 export const UNKNOWN_BOOKED_PERSON = 'Unknown person'
-
-export function isLondonWeekday(date: Date): boolean {
-  const wd = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', weekday: 'short' }).format(date)
-  return wd !== 'Sat' && wd !== 'Sun'
-}
 
 export { overviewFormatHours, parseMinutes, estimatedPaidHours, estimatedWorkedHours }
 
@@ -337,13 +333,13 @@ export function buildDailyOverview(params: {
       const slot = slotSortKey(a.timeSlot) - slotSortKey(b.timeSlot)
       if (slot !== 0) return slot
       const nameA = operativeDisplayName(
-        params.operatives.find((o) => o.id === a.operativeId),
+        params.operatives.find((o) => normalizeDocumentId(o.id) === normalizeDocumentId(a.operativeId)),
         a.operativeId,
         params.users,
         userIdAliases
       )
       const nameB = operativeDisplayName(
-        params.operatives.find((o) => o.id === b.operativeId),
+        params.operatives.find((o) => normalizeDocumentId(o.id) === normalizeDocumentId(b.operativeId)),
         b.operativeId,
         params.users,
         userIdAliases
@@ -572,7 +568,8 @@ export function buildDailyOverview(params: {
     day,
     dayLabel,
     isToday: isSameLondonDay(day, today, zone),
-    isWeekday: isLondonWeekday(day),
+    // Rulebook §1 `WORKING_WEEK`: Monday–Friday in the organisation zone (was always London).
+    isWeekday: isStandardWorkingWeekday(isoWeekdayInZone(day, zone)),
     labourHours,
     standardWorkedHours,
     overtimeWorkedHours,

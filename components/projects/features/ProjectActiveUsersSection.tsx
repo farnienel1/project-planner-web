@@ -20,7 +20,6 @@ import {
   loadOrganizationDetails,
   type OrgPayrollTimePolicy,
 } from '@/lib/settings/organizationSettings'
-import { LONDON_TIME_ZONE } from '@/lib/orgTime/zoneTime'
 import {
   activeUserDayRows,
   buildProjectActiveUsers,
@@ -33,10 +32,11 @@ import {
 import type { SubcontractorBookingRow } from '@/lib/weekly-report/weeklyReportData'
 import type { Project } from '@/types'
 import { EmptyState } from '@/components/ios/primitives'
+import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 
 function formatRangeDay(date: Date): string {
   return new Intl.DateTimeFormat('en-GB', {
-    timeZone: LONDON_TIME_ZONE,
+    timeZone: organizationZoneOr(),
     day: 'numeric',
     month: 'short',
     year: 'numeric',
@@ -45,7 +45,7 @@ function formatRangeDay(date: Date): string {
 
 function formatCompleteDay(date: Date): string {
   return new Intl.DateTimeFormat('en-GB', {
-    timeZone: LONDON_TIME_ZONE,
+    timeZone: organizationZoneOr(),
     weekday: 'long',
     day: 'numeric',
     month: 'long',

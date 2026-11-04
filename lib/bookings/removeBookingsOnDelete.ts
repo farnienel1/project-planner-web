@@ -15,7 +15,7 @@ import {
   parseSubcontractorBookingDocument,
   type JobDeleteBookingRow,
 } from '@/lib/canonical'
-import { ianaTimeZoneForCountry } from '@/lib/orgTime/orgTimeZone'
+import { organizationTimeZone as zoneForCountry } from '@/lib/canonical'
 
 const IN_QUERY_LIMIT = 30
 
@@ -23,9 +23,9 @@ async function organizationTimeZone(db: Firestore, organizationId: string): Prom
   try {
     const snap = await getDoc(doc(db, 'organizations', organizationId))
     const country = snap.exists() ? String(snap.data().countryCode || '') : ''
-    return ianaTimeZoneForCountry(country || 'GB')
+    return zoneForCountry(country || 'GB')
   } catch {
-    return ianaTimeZoneForCountry('GB')
+    return zoneForCountry('GB')
   }
 }
 

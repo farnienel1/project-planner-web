@@ -10,7 +10,7 @@ import { inboxOwnerIds } from '@/lib/staff/rulebookPeople'
 import { EmptyState } from '@/components/ios/primitives'
 import { inboxNotificationHref } from '@/lib/notifications/notificationHref'
 import { loadOrganizationDetails } from '@/lib/settings/organizationSettings'
-import { ianaTimeZoneForCountry } from '@/lib/orgTime/orgTimeZone'
+import { organizationTimeZone } from '@/lib/canonical'
 import {
   DEFAULT_USER_NOTIFICATION_PREFERENCES,
   notificationOrganizationSwitch,
@@ -28,7 +28,7 @@ export default function NotificationsPage() {
   // Every id of the signed-in person: the inbox lists rows addressed to any of them (`inboxNotificationVisibleToUser`).
   const ownerIds = useMemo(() => inboxOwnerIds(user, users), [user, users])
   const [filter, setFilter] = useState<FilterOption>('Newest')
-  const [timeZone, setTimeZone] = useState(ianaTimeZoneForCountry('GB'))
+  const [timeZone, setTimeZone] = useState(organizationTimeZone('GB'))
   const [prefs, setPrefs] = useState<UserNotificationPreferences>(DEFAULT_USER_NOTIFICATION_PREFERENCES)
 
   useEffect(() => {
@@ -44,7 +44,7 @@ export default function NotificationsPage() {
   useEffect(() => {
     if (!organization?.id) return
     loadOrganizationDetails(organization.id)
-      .then((details) => setTimeZone(ianaTimeZoneForCountry(details?.countryCode)))
+      .then((details) => setTimeZone(organizationTimeZone(details?.countryCode)))
       .catch(() => {})
   }, [organization?.id])
 

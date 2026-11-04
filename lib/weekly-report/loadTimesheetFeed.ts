@@ -8,7 +8,7 @@ import type { Booking, Operative, Project, User } from '@/types'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import type { MyScheduleOptions, OrgInvoicingSettings, OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import { DEFAULT_MY_SCHEDULE, DEFAULT_PAYROLL_POLICY } from '@/lib/settings/organizationSettings'
-import { LONDON_TIME_ZONE, dayKey } from '@/lib/ios-parity/londonTime'
+import { dayKey } from '@/lib/ios-parity/londonTime'
 import { isTimesheetFullyApproved } from '@/lib/timesheets/timesheetApprovalPolicy'
 import { timesheetParticipant } from '@/lib/canonical'
 import { payPeriodsOverlapping } from '@/lib/timesheets/timesheetPayrollPolicy'
@@ -18,6 +18,7 @@ import { emptyDayRateHistory, type OperativeDayRateHistoryCollection } from '@/l
 import { findUserAndOperative, resolveDisplayName, resolvePersonRole, resolvePersonTrade } from '@/lib/weekly-report/weeklyReportPayroll'
 import { mergeDuplicatePersonWeeks, type ApprovedTimesheetWeek } from '@/lib/weekly-report/timesheetFeed'
 import type { PayrollTimePolicyState } from '@/lib/canonical'
+import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 
 /** Rulebook 1.11.0: `timesheetParticipant` over the whole period (`showsMyTimesheets`) — self-employed on a day of it. */
 function participatesInPeriod(user: User, period: { start: Date; end: Date }, timeZone: string): boolean {
@@ -49,7 +50,7 @@ export async function loadWeeklyReportTimesheetFeed({
   payrollPolicyEffectiveFrom = null,
   payrollPolicyState = null,
   scheduleOptions = DEFAULT_MY_SCHEDULE,
-  timeZone = LONDON_TIME_ZONE,
+  timeZone = organizationZoneOr(),
 }: {
   organizationId: string
   users: User[]

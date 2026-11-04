@@ -1,9 +1,9 @@
 import {
-  LONDON_TIME_ZONE,
   dateFromDayKeyInZone,
 } from '@/lib/orgTime/zoneTime'
 import { materialCutOffWarningRows, materialLineCountsAsOrdered, type WarningScope } from '@/lib/canonical'
 import type { Booking, MaterialSendRecord, Project, ProjectMaterialLine } from '@/types'
+import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 
 export type MissedMaterialOrderWarning = {
   id: string
@@ -57,7 +57,7 @@ export function computeMissedMaterialOrderWarnings(
   bookings: Booking[] = [],
   options: MaterialCutoffOptions = {}
 ): MissedMaterialOrderWarning[] {
-  const timeZone = options.timeZone || LONDON_TIME_ZONE
+  const timeZone = options.timeZone || organizationZoneOr()
   const rows = materialCutOffWarningRows({
     scope: options.scope ?? null,
     now: (options.referenceDate ?? new Date()).toISOString(),

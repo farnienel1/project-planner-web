@@ -16,6 +16,7 @@ import {
 import { jobAccessViewer } from '@/lib/access/bookingAccess'
 import type { WorkCatalogueKind } from '@/lib/permissions'
 import { normalizeBookingStatus } from '@/lib/ios-parity/enums'
+import { normalizeDocumentId } from '@/lib/canonical'
 
 export type JobCatalogue = WorkCatalogueKind
 
@@ -178,7 +179,7 @@ export function liveUserIdsOnJob(params: {
   for (const b of params.bookings) {
     if (b.projectId !== params.projectId) continue
     if (normalizeBookingStatus(b.status) === 'Cancelled') continue
-    const op = params.operatives.find((o) => o.id === b.operativeId)
+    const op = params.operatives.find((o) => normalizeDocumentId(o.id) === normalizeDocumentId(b.operativeId))
     if (!op) continue
     const user = params.users.find((u) => normalizedEmail(u.email) === normalizedEmail(op.email))
     if (user) ids.add(user.id)

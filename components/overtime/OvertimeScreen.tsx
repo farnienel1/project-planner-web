@@ -52,6 +52,7 @@ import {
   type OvertimeRequestRecord,
   type OvertimeReviewRecord,
 } from '@/lib/canonical'
+import { bookingIdsForAccount } from '@/lib/canonical'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
@@ -59,7 +60,6 @@ import { useProjectStore } from '@/lib/stores/projectStore'
 import { useOrganizationDocument, useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
 import { dayKeyInZone } from '@/lib/orgTime/zoneTime'
 import { webJobAccessViewer } from '@/lib/access/readPlan'
-import { findOperativeForUser } from '@/lib/operatives/operativeRosterUtils'
 import { rulebookPerson, rulebookRoster } from '@/lib/staff/rulebookPeople'
 import { timesheetsTeamHref, TIMESHEETS_HUB_PATH } from '@/lib/timesheets/timesheetRoutes'
 import {
@@ -397,9 +397,12 @@ function OvertimeLines(props: {
   const organization = useMemo(() => orgDoc ?? {}, [orgDoc])
   const roster = useMemo(() => rulebookRoster(users), [users])
   const subjectPerson = useMemo(() => rulebookPerson(subject, users), [subject, users])
-  const linkedOperative = useMemo(() => findOperativeForUser(subject, props.operatives), [subject, props.operatives])
   const userIds = useMemo(() => personIdSet(subjectPerson, roster), [subjectPerson, roster])
-  const operativeIds = useMemo(() => [...userIds, ...(linkedOperative ? [linkedOperative.id] : [])], [userIds, linkedOperative])
+  // Rulebook §10 `bookingIdsForAccount`: every id the person goes by, plus every operatives row on their email (not one).
+  const operativeIds = useMemo(
+    () => bookingIdsForAccount({ id: subject.id, email: subject.email, aliasIds: userIds }, props.operatives),
+    [subject.id, subject.email, userIds, props.operatives]
+  )
   const [bookings, setBookings] = useState<OvertimeBookingInput[]>([])
   const [reviews, setReviews] = useState<OvertimeReviewRecord[]>([])
   const [requests, setRequests] = useState<OvertimeRequestRecord[]>([])

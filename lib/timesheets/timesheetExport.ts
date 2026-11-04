@@ -18,6 +18,7 @@ import { parseMultipliedHoursText } from '@/lib/canonical/payrollHours'
 import { timesheetInvoiceRows } from '@/lib/canonical/reportPay'
 import { priceWorkJobNumberText } from '@/lib/canonical/priceWorkJobNumber'
 import { emailDocument, emailHeading, emailLink, emailList, emailStrong, emailText } from '@/lib/email/emailTheme'
+import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 
 export function paymentRunDateStamp(start: Date, end: Date, timeZone: string): string {
   const format = (date: Date) => {
@@ -31,7 +32,7 @@ export function timesheetExportFileName(userName: string, paymentRunStamp: strin
   return `${userName} timesheet for payment run date ${paymentRunStamp}.pdf`
 }
 
-export function signatureNotes(draft: TimesheetDraft, timeZone: string = 'Europe/London'): string[] {
+export function signatureNotes(draft: TimesheetDraft, timeZone: string = organizationZoneOr()): string[] {
   const notes: string[] = []
   if (draft.operativeSignedByName && draft.operativeSignedAt) {
     notes.push(

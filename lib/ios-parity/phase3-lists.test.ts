@@ -2,7 +2,9 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { serializeClient } from './converters.ts'
 import { searchWorks } from '../projects/workStatus.ts'
-import { buildDailyOverview, estimatedPaidHours, isLondonWeekday } from '../daily-overview/buildDailyOverview.ts'
+import { buildDailyOverview, estimatedPaidHours } from '../daily-overview/buildDailyOverview.ts'
+import { isStandardWorkingWeekday } from '../canonical/index.ts'
+import { isoWeekdayInZone } from '../orgTime/zoneTime.ts'
 import type { Booking, Client, HolidayBooking, Project, User } from '../../types/index.ts'
 import { UserRole } from '../../types/index.ts'
 
@@ -83,7 +85,7 @@ test('estimatedPaidHours uses named slots ahead of leftover custom clock times',
 
 test('buildDailyOverview groups jobs and weekday unbooked labour', () => {
   const day = new Date('2026-09-16T12:00:00Z')
-  assert.equal(isLondonWeekday(day), true)
+  assert.equal(isStandardWorkingWeekday(isoWeekdayInZone(day, 'Europe/London')), true)
   const project = {
     id: 'P1',
     jobNumber: 'J1',
@@ -166,7 +168,7 @@ test('buildDailyOverview groups jobs and weekday unbooked labour', () => {
 
 test('buildDailyOverview weekend unbooked follows warningDetection and skips excluded users', () => {
   const saturday = new Date('2026-10-17T12:00:00Z')
-  assert.equal(isLondonWeekday(saturday), false)
+  assert.equal(isStandardWorkingWeekday(isoWeekdayInZone(saturday, 'Europe/London')), false)
   const users = [
     user({ id: 'U-SAM', email: 'sam@x.com', firstName: 'Sam', surname: 'Site' }),
     user({ id: 'U-EX', email: 'ex@x.com', firstName: 'Excluded', surname: 'User' }),
@@ -204,6 +206,14 @@ test('buildDailyOverview weekend unbooked follows warningDetection and skips exc
     excluded.unbookedNames.some((name) => name.includes('Excluded')),
     false
   )
+})
+
+test('buildDailyOverview isWeekday is the organisation-zone working week, not London', () => {
+  // Friday 22:00 in London is already Saturday 11:00 in Auckland.
+  const instant = new Date('2026-10-16T22:00:00Z')
+  const base = { day: instant, today: instant, projects: [] as Project[], bookings: [] as Booking[], managerBookings: [], holidays: [] as HolidayBooking[], users: [] as User[], operatives: [] }
+  assert.equal(buildDailyOverview({ ...base, timeZone: 'Europe/London' }).isWeekday, true)
+  assert.equal(buildDailyOverview({ ...base, timeZone: 'Pacific/Auckland' }).isWeekday, false)
 })
 
 test('buildDailyOverview does not double-count the same booking id', () => {

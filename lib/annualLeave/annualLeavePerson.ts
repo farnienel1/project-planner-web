@@ -3,6 +3,7 @@ import { hasAdminAccess } from '@/lib/permissions'
 import { isPendingPerson } from '@/lib/staff/pendingPeople'
 import { lineManagerIds } from '@/lib/canonical'
 import { rulebookPerson, rulebookRoster } from '@/lib/staff/rulebookPeople'
+import { normalizeDocumentId } from '@/lib/canonical'
 
 export interface AnnualLeavePerson {
   id: string
@@ -174,7 +175,7 @@ export function resolvePersonName(
     if (user) return displayNameForUser(user)
   }
   if (booking.operativeId) {
-    const op = operatives.find((o) => o.id === booking.operativeId)
+    const op = operatives.find((o) => normalizeDocumentId(o.id) === normalizeDocumentId(booking.operativeId))
     if (op) return `${op.firstName} ${op.lastName}`.trim() || op.email
   }
   return 'Unknown'

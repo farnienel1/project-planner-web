@@ -7,7 +7,7 @@ import { addLondonDays, londonMidnight } from '@/lib/ios-parity/londonTime'
 import { readStoredRates } from '@/lib/timesheets/payBasis'
 import type { OperativeDayRateHistoryEntry } from '@/lib/timesheets/dayRateHistoryStorage'
 import { formatMoney } from '@/lib/canonical'
-import { useOrganizationCurrency } from '@/lib/stores/organizationDocumentStore'
+import { useOrganizationCurrency, useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
 
 type RateInput = {
   payBasis?: unknown
@@ -137,6 +137,7 @@ export function usePaySaveGate() {
 
 export function PreviousRatesList({ entries }: { entries: OperativeDayRateHistoryEntry[] }) {
   const currencyCode = useOrganizationCurrency()
+  const timeZone = useOrganizationTimeZone()
   if (entries.length === 0) return null
   const newestFirst = [...entries].sort((a, b) => {
     const byEffective = b.effectiveAt.getTime() - a.effectiveAt.getTime()
@@ -149,7 +150,7 @@ export function PreviousRatesList({ entries }: { entries: OperativeDayRateHistor
       <ul className="space-y-1">
         {newestFirst.map((entry) => {
           const date = entry.effectiveAt.toLocaleDateString('en-GB', {
-            timeZone: 'Europe/London',
+            timeZone,
             day: 'numeric',
             month: 'short',
             year: 'numeric',

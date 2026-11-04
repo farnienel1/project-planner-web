@@ -11,7 +11,7 @@ import {
   timesheetSubmissionNoticeDedupKey,
 } from '@/lib/canonical'
 import { loadOrganizationDetails } from '@/lib/settings/organizationSettings'
-import { ianaTimeZoneForCountry } from '@/lib/orgTime/orgTimeZone'
+import { organizationTimeZone } from '@/lib/canonical'
 import type { User } from '@/types'
 
 const deliveredThisSession = new Set<string>()
@@ -35,7 +35,7 @@ export async function deliverDueTimesheetSubmissionReminders(
   const captured = captureOrganizationContext()
   const details = await loadOrganizationDetails(orgId)
   if (!organizationContextStillCurrent(orgId, captured) || !details) return 0
-  const timeZone = ianaTimeZoneForCountry(details.countryCode)
+  const timeZone = organizationTimeZone(details.countryCode)
   const notices = dueTimesheetSubmissionNotices({
     referenceIso: now.toISOString(),
     timeZone,

@@ -3,11 +3,10 @@ import type { Booking, Operative, Project, User } from '@/types'
 import type { ScheduleDateSlot } from '@/lib/scheduling/scheduleUtils'
 import { slotToFirestore } from '@/lib/scheduling/scheduleUtils'
 import { dayKey, isSameLondonDay, londonMidnight } from '@/lib/ios-parity/londonTime'
-import { LONDON_TIME_ZONE } from '@/lib/orgTime/zoneTime'
 
 function formatLondonDay(date: Date): string {
   return new Intl.DateTimeFormat('en-GB', {
-    timeZone: LONDON_TIME_ZONE,
+    timeZone: organizationZoneOr(),
     day: 'numeric',
     month: 'short',
     year: 'numeric',
@@ -34,6 +33,8 @@ import {
   type BookingPersonInput,
   type PayrollTimePolicyState,
 } from '@/lib/canonical'
+import { normalizeDocumentId } from '@/lib/canonical'
+import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 
 export interface OperativeBookingClash {
   operativeId: string
@@ -145,7 +146,7 @@ export function detectOperativeClashes({
   const clashes: OperativeBookingClash[] = []
 
   for (const operativeId of operativeIds) {
-    const operative = operatives.find((o) => o.id === operativeId)
+    const operative = operatives.find((o) => normalizeDocumentId(o.id) === normalizeDocumentId(operativeId))
     const operativeName = operative ? `${operative.firstName} ${operative.lastName}`.trim() : 'Operative'
     const own = bookings.filter((existing) => existing.operativeId === operativeId)
     const byId = new Map(own.map((existing) => [existing.id, existing]))

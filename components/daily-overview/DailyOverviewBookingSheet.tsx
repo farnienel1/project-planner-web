@@ -3,7 +3,7 @@ import { OvertimeRateField } from '@/components/overtime/OvertimeRateField'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Modal } from '@/components/ui'
-import { LONDON_TIME_ZONE, formatAbbreviatedDayInZone } from '@/lib/orgTime/zoneTime'
+import { formatAbbreviatedDayInZone } from '@/lib/orgTime/zoneTime'
 import { FilterChip } from '@/components/ios/primitives'
 import { HoursBreakdownCard } from '@/components/schedule/HoursBreakdownCard'
 import { HoursTimelinePicker } from '@/components/scheduling/HoursTimelinePicker'
@@ -45,6 +45,8 @@ import type { OverviewPersonRow } from '@/lib/daily-overview/buildDailyOverview'
 import { BookingStatus, type Project } from '@/types'
 import { hasAdminAccess } from '@/lib/permissions'
 import { userCanDeleteBooking } from '@/lib/access/bookingAccess'
+import { normalizeDocumentId } from '@/lib/canonical'
+import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 
 type DestTab = 'other' | 'projects' | 'smallWorks'
 type StatusFilter = 'active' | 'upcoming' | 'completed'
@@ -195,15 +197,15 @@ export function DailyOverviewBookingSheet({
   const resolvedUserId = useMemo(() => {
     if (row.userId) return row.userId
     if (!row.operativeId) return undefined
-    const op = operatives.find((entry) => entry.id === row.operativeId)
+    const op = operatives.find((entry) => normalizeDocumentId(entry.id) === normalizeDocumentId(row.operativeId))
     if (!op) return undefined
     const byEmail = users.find((entry) => entry.email.trim().toLowerCase() === op.email.trim().toLowerCase())
     if (byEmail) return byEmail.id
-    return users.find((entry) => findOperativeForUser(entry, operatives)?.id === row.operativeId)?.id
+    return users.find((entry) => normalizeDocumentId(findOperativeForUser(entry, operatives)?.id) === normalizeDocumentId(row.operativeId))?.id
   }, [row.userId, row.operativeId, operatives, users])
 
   const linkedOperative = useMemo(() => {
-    if (row.operativeId) return operatives.find((entry) => entry.id === row.operativeId)
+    if (row.operativeId) return operatives.find((entry) => normalizeDocumentId(entry.id) === normalizeDocumentId(row.operativeId))
     if (!resolvedUserId) return undefined
     const matchedUser = users.find((entry) => entry.id === resolvedUserId)
     return matchedUser ? findOperativeForUser(matchedUser, operatives) : undefined
@@ -265,7 +267,7 @@ export function DailyOverviewBookingSheet({
         id: personId,
         userId,
         operativeIds: operativeId ? [operativeId] : [],
-        email: operatives.find((entry) => entry.id === operativeId)?.email ?? null,
+        email: operatives.find((entry) => normalizeDocumentId(entry.id) === normalizeDocumentId(operativeId))?.email ?? null,
         name: row.name,
       },
       day,
@@ -402,7 +404,7 @@ export function DailyOverviewBookingSheet({
       open
       hue="daily"
       title={row.name}
-      subtitle={`Change this booking · ${formatAbbreviatedDayInZone(day, LONDON_TIME_ZONE)}`}
+      subtitle={`Change this booking · ${formatAbbreviatedDayInZone(day, organizationZoneOr())}`}
       onClose={onClose}
       footer={false}
     >

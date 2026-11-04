@@ -4,11 +4,11 @@ import type { LabourPerson, RosterOperative, WarningScope } from '@/lib/canonica
 import { bookingOccupiesDay, unbookedLabourRows, weekdayPaidHours } from '@/lib/canonical'
 import type { Booking, HolidayBooking, Operative, User } from '@/types'
 import { UserRole } from '@/types'
-import { addLondonDays, dateFromDayKey, dayKey, londonIsoWeekday, londonMidnight } from '@/lib/ios-parity/londonTime'
+import { dateFromDayKey, dayKey, londonMidnight } from '@/lib/ios-parity/londonTime'
 import { formatWarningHours } from '@/lib/warnings/clashIntervals'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import { isPlaceholderOperative } from '@/lib/operatives/operativeRosterUtils'
-import { computeWarningCoverageWindow, isDateWithinWarningWindow } from '@/lib/warnings/warningLookahead'
+import { computeUnbookedScanWindow, isDateWithinWarningWindow } from '@/lib/warnings/warningLookahead'
 import { holidayBookingLabourInput } from '@/lib/annualLeave/holidayDayKeys'
 import type { PayrollTimePolicyState } from '@/lib/canonical'
 
@@ -92,19 +92,8 @@ export function computeUnbookedLabourWarnings({
   /** Rulebook 1.31.0 (audit finding 4): the roster fold's same-email ids (duplicate id → the kept id). */
   userIdAliases?: Readonly<Record<string, string>> | null
 }): UnbookedLabourWarning[] {
-  const window = computeWarningCoverageWindow(referenceDate, warningDetection, invoicing, timeZone)
-  let periodEnd = window.end
-  let endDayKey = window.endDayKey
-  if (
-    warningDetection.clashLookaheadMode === 'endOfWorkingWeek' &&
-    warningDetection.includeWeekendsForUnbookedLabour
-  ) {
-    const iso = londonIsoWeekday(window.end, timeZone)
-    if (iso >= 1 && iso <= 5) {
-      periodEnd = addLondonDays(window.end, 7 - iso, timeZone)
-      endDayKey = dayKey(periodEnd, timeZone)
-    }
-  }
+  // Rulebook §5 `unbookedScanDays`: Full week with include-weekends on runs to Sunday (no weekday arithmetic here).
+  const window = computeUnbookedScanWindow(referenceDate, warningDetection, invoicing, timeZone)
   return computeUnbookedLabourWarningsForDateRange({
     bookings,
     managerSiteBookings,
@@ -115,9 +104,9 @@ export function computeUnbookedLabourWarnings({
     payrollPolicy,
     payrollPolicyState,
     periodStart: window.start,
-    periodEnd,
+    periodEnd: window.end,
     startDayKey: window.startDayKey,
-    endDayKey,
+    endDayKey: window.endDayKey,
     timeZone,
     scope,
     userIdAliases,
@@ -246,20 +235,6 @@ export function groupUnbookedWarningsByDay(warnings: UnbookedLabourWarning[]): U
       date: londonMidnight(people[0].date),
       people: people.sort((a, b) => a.operativeName.localeCompare(b.operativeName)),
     }))
-}
-
-export function filterWarningsByLookahead<T extends { date: Date }>(
-  warnings: T[],
-  warningDetection: OrgWarningDetectionSettings,
-  invoicing?: import('@/lib/settings/organizationSettings').OrgInvoicingSettings,
-  referenceDate = new Date(),
-  timeZone?: string
-): T[] {
-  const window = computeWarningCoverageWindow(referenceDate, warningDetection, invoicing, timeZone)
-  return warnings.filter((warning) => {
-    const key = dayKey(warning.date, timeZone)
-    return key >= window.startDayKey && key <= window.endDayKey
-  })
 }
 
 export function formatUnbookedMissingLabel(missingHours: number): string {
