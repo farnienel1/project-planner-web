@@ -51,6 +51,7 @@ import { rulebookPerson, rulebookRoster } from '@/lib/staff/rulebookPeople'
 import {
   addExpense,
   addPriceWork,
+  discardClaimEvidence,
   attachPersonalAuditCopy,
   listenPayeClaimReports,
   listenPayeClaims,
@@ -463,12 +464,14 @@ function AddClaimSheet(props: {
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [pickAudit, setPickAudit] = useState(false)
-  const approvers = useMemo(() => priceWorkApproverCandidates(subject as never, users as never), [subject, users])
+  // The approver's users document must name this organisation (the rules check it): read each person's home company.
+  const approverRoster = useMemo(() => users.map((row) => ({ ...row, organizationId: row.homeOrganizationId || row.organizationId })), [users])
+  const approvers = useMemo(() => priceWorkApproverCandidates(subject as never, approverRoster as never, { organizationId }), [subject, approverRoster, organizationId])
 
   // Shape checks before upload: the rulebook validators with placeholder evidence (paths are checked again on save).
   const placeholder = evidence.map(() => ({ path: '', name: '', kind: 'file' as const }))
   const draftError = priceWork
-    ? priceWorkValidationError({ title, details, startDate: from, endDate: to, approvedByUserId: approver, amount }, { person: subject as never, roster: users as never })
+    ? priceWorkValidationError({ title, details, startDate: from, endDate: to, approvedByUserId: approver, amount }, { person: subject as never, roster: approverRoster as never, organizationId })
     : expenseValidationError({ title, details, jobNumber, date: from, amount, evidence: placeholder })
 
   const addFiles = async (list: FileList | null, photo: boolean) => {
@@ -531,14 +534,14 @@ function AddClaimSheet(props: {
     if (draftError || saving) return
     setSaving(true)
     setError(null)
+    const uploaded: PayeClaimEvidence[] = []
     try {
-      const uploaded: PayeClaimEvidence[] = []
       for (const entry of evidence) uploaded.push(await entry.upload())
       if (priceWork) {
         await addPriceWork({
           organizationId,
           person: subject as never,
-          roster: users as never,
+          roster: approverRoster as never,
           currency,
           draft: { title, details, startDate: from, endDate: to, approvedByUserId: approver, amount, evidence: uploaded },
         })
@@ -547,6 +550,8 @@ function AddClaimSheet(props: {
       }
       props.onClose()
     } catch (e: unknown) {
+      // 1.30.0 review: a refused or failed add leaves no copy behind where line managers and admins could read it.
+      await discardClaimEvidence(organizationId, uploaded)
       setError(e instanceof Error ? e.message : 'It could not be added.')
     } finally {
       setSaving(false)

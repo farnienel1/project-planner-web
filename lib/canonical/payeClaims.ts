@@ -35,7 +35,7 @@ import { formatMoney, normalizeCurrencyCode } from './money'
 import { formatPaymentRunDay } from './paymentRuns'
 import { documentInstantMs } from './peopleDocuments'
 import { idKey, idText, personIdSet, rosterMemberActive } from './personIds'
-import { storedFileKind, storedFileObjectName } from './storedFiles'
+import { fileDeletePermission, storedFileKind, storedFileObjectName } from './storedFiles'
 import type { NotificationRosterMember } from './notificationRecipients'
 import type { TimesheetEntriesDocument } from './workDocumentReaders'
 
@@ -195,14 +195,26 @@ function evidenceKind(value: unknown): PayeClaimEvidenceKind {
   return raw === 'photo' || raw === 'personalSiteAudit' ? raw : 'file'
 }
 
-/** Reads a stored `evidence` list. Entries without a path are dropped; order is kept. Never throws. */
-export function parsePayeClaimEvidence(value: unknown): PayeClaimEvidence[] {
+/**
+ * Reads a stored `evidence` list; order is kept. Never throws. Given `userId` (1.30.0 review), only entries whose path
+ * is a claim evidence file in that person's own folder are kept (`payeClaimEvidencePathBelongsTo`; also the
+ * organisation when given) — another person's file, a personal site audit photo, a URL or junk is dropped, so a viewer
+ * never opens it. Without `userId` (an older caller) entries without a path are dropped.
+ */
+export function parsePayeClaimEvidence(value: unknown, owner?: { userId?: unknown; organizationId?: unknown } | null): PayeClaimEvidence[] {
   const list = Array.isArray(value) ? value : []
   const out: PayeClaimEvidence[] = []
+  const userId = text(owner?.userId)
+  const organizationId = text(owner?.organizationId)
   for (const raw of list) {
     const row = record(raw)
     const path = text(row.path)
     if (!path) continue
+    if (owner) {
+      const parsed = storedFileKind(path)
+      if (!userId || !parsed || parsed.kind !== 'paye_claim_evidence' || parsed.ownerUserId !== userId) continue
+      if (organizationId && parsed.organizationId !== organizationId) continue
+    }
     out.push({
       path,
       name: text(row.name) || path.split('/').pop() || 'Evidence',
@@ -236,6 +248,33 @@ export function payeClaimEvidenceDrawAs(entry: Pick<PayeClaimEvidence, 'contentT
   return 'listed'
 }
 
+/**
+ * Which of the person's own claim evidence files are deleted, not kept (§24, 1.30.0 review): only those the person
+ * uploaded within the undo window (`fileDeletePermission` as the uploader — `uploader_undo`). Used when an add fails
+ * after its uploads (so no orphaned copy is left where line managers and admins can read it) and when the person
+ * removes an item; every other file is kept for recovery (`FILE_KEPT_ON_REMOVE_COPY`).
+ */
+export function payeClaimEvidenceToDelete(
+  evidence: ReadonlyArray<Pick<PayeClaimEvidence, 'path'>> | null | undefined,
+  input: { organizationId: string; viewerUserId: string; nowMs: number; uploadedAtMs?: Record<string, number | null | undefined> | null }
+): string[] {
+  const out: string[] = []
+  for (const entry of evidence || []) {
+    const path = text(entry?.path)
+    if (!path || !payeClaimEvidencePathBelongsTo(path, input.organizationId, input.viewerUserId) || out.includes(path)) continue
+    const permission = fileDeletePermission({
+      storagePath: path,
+      organizationId: input.organizationId,
+      viewerUserId: input.viewerUserId,
+      viewerRole: null as never,
+      nowMs: input.nowMs,
+      uploadedAtMs: input.uploadedAtMs?.[path] ?? null,
+    })
+    if (permission.allowed && permission.reason === 'uploader_undo') out.push(path)
+  }
+  return out
+}
+
 // MARK: - Approver candidates
 
 /**
@@ -245,10 +284,36 @@ export function payeClaimEvidenceDrawAs(entry: Pick<PayeClaimEvidence, 'contentT
  */
 export function priceWorkApproverCandidates(
   person: LineManagerSubject | null | undefined,
-  roster: ReadonlyArray<LineManagerRosterPerson> | null | undefined
+  roster: ReadonlyArray<LineManagerRosterPerson> | null | undefined,
+  options?: { organizationId?: string | null } | null
 ): LineManagerCandidate[] {
   if (!person || !idText(person.id)) return []
-  return lineManagerCandidates(person, roster)
+  const rows = roster || []
+  const org = text(options?.organizationId)
+  return lineManagerCandidates(person, rows).filter((candidate) => {
+    const row = rows.find((member) => idText(member?.id) === candidate.id)
+    if (!row) return false
+    // 1.30.0 review: the same test as the security rules (`priceWorkApproverValid`) — the approver's users document
+    // names this organisation, and they are an admin or carry the manager flag / role (a flagless "member" is not).
+    if (org && !homeOrganizationIs(record(row).organizationId, org)) return false
+    return candidate.level === 'admin' || storedManager(row)
+  })
+}
+
+/** A stored organisation reference (id, `organizations/{id}` path) names `organizationId` (without case). */
+function homeOrganizationIs(value: unknown, organizationId: string): boolean {
+  const raw = typeof value === 'string' ? value : value && typeof value === 'object' && 'path' in (value as object) ? String((value as { path: unknown }).path) : ''
+  const v = raw.trim().toLowerCase()
+  const org = organizationId.toLowerCase()
+  return v === org || v.endsWith(`organizations/${org}`)
+}
+
+/** The manager flag (top level or `permissions`) or the `manager` role, as the rules read it. */
+function storedManager(row: unknown): boolean {
+  const data = record(row)
+  const on = (value: unknown) => value === true || value === 1
+  const role = typeof data.role === 'string' ? data.role.trim().toLowerCase() : record(data.role).isManager === true ? 'manager' : ''
+  return on(data.manager) || on(record(data.permissions).manager) || role === 'manager'
 }
 
 // MARK: - Validation
@@ -310,7 +375,7 @@ export function priceWorkValidationError(
   if (!isDayKey(start) || !isDayKey(end) || end < start) return PRICE_WORK_DATES_MESSAGE
   const approver = text(draft.approvedByUserId)
   if (!approver) return PRICE_WORK_APPROVER_REQUIRED_MESSAGE
-  const candidates = priceWorkApproverCandidates(context.person, context.roster)
+  const candidates = priceWorkApproverCandidates(context.person, context.roster, { organizationId: context.organizationId })
   if (!candidates.some((row) => row.id === approver)) return PRICE_WORK_APPROVER_INVALID_MESSAGE
   const money = amountError(draft.amount)
   if (money) return money
@@ -354,7 +419,7 @@ export function priceWorkWriteFields(input: {
   if (priceWorkValidationError(input.draft, { person: input.person, roster: input.roster, organizationId: input.organizationId })) return null
   const start = text(input.draft.startDate)
   const end = text(input.draft.endDate) || start
-  const approver = priceWorkApproverCandidates(input.person, input.roster).find((row) => row.id === text(input.draft.approvedByUserId))
+  const approver = priceWorkApproverCandidates(input.person, input.roster, { organizationId: input.organizationId }).find((row) => row.id === text(input.draft.approvedByUserId))
   return {
     userId,
     title: text(input.draft.title).slice(0, PAYE_CLAIM_TITLE_MAX),
@@ -399,7 +464,7 @@ export function expenseWriteFields(input: {
 
 // MARK: - Readers
 
-function baseOf(docId: string, row: Record<string, unknown>): PayeClaimBase {
+function baseOf(docId: string, row: Record<string, unknown>, organizationId?: string | null): PayeClaimBase {
   return {
     id: text(docId),
     userId: text(row.userId),
@@ -407,21 +472,25 @@ function baseOf(docId: string, row: Record<string, unknown>): PayeClaimBase {
     details: text(row.details),
     amount: amountOf(row.amount) ?? 0,
     currency: normalizeCurrencyCode(row.currency) ?? '',
-    evidence: parsePayeClaimEvidence(row.evidence),
+    evidence: parsePayeClaimEvidence(row.evidence, { userId: row.userId, organizationId }),
     createdAtMs: documentInstantMs(row.createdAt),
     createdBy: text(row.createdBy),
   }
 }
 
 /** Reads `priceWorkItems/{id}`. Dates are organisation-zone day keys (a stored instant is converted); a missing end is the start. */
-export function parsePriceWorkDocument(docId: string, data: Record<string, unknown> | null | undefined, options?: { timeZone?: string | null } | null): PriceWorkItem {
+export function parsePriceWorkDocument(
+  docId: string,
+  data: Record<string, unknown> | null | undefined,
+  options?: { timeZone?: string | null; organizationId?: string | null } | null
+): PriceWorkItem {
   const row = record(data)
   const zone = zoneOrLondon(options?.timeZone)
   const startDate = storedDayKey(row.startDate, zone)
   const endRaw = storedDayKey(row.endDate, zone) || startDate
   const [a, b] = startDate && endRaw && endRaw < startDate ? [endRaw, startDate] : [startDate, endRaw]
   return {
-    ...baseOf(docId, row),
+    ...baseOf(docId, row, options?.organizationId),
     kind: 'priceWork',
     startDate: a,
     endDate: b,
@@ -431,11 +500,15 @@ export function parsePriceWorkDocument(docId: string, data: Record<string, unkno
 }
 
 /** Reads `expenseItems/{id}`. The date is an organisation-zone day key (a stored instant is converted). */
-export function parseExpenseDocument(docId: string, data: Record<string, unknown> | null | undefined, options?: { timeZone?: string | null } | null): ExpenseItem {
+export function parseExpenseDocument(
+  docId: string,
+  data: Record<string, unknown> | null | undefined,
+  options?: { timeZone?: string | null; organizationId?: string | null } | null
+): ExpenseItem {
   const row = record(data)
   const zone = zoneOrLondon(options?.timeZone)
   return {
-    ...baseOf(docId, row),
+    ...baseOf(docId, row, options?.organizationId),
     kind: 'expense',
     jobNumber: text(row.jobNumber),
     date: storedDayKey(row.date, zone),
@@ -688,6 +761,7 @@ export function parsePayeClaimReportDocument(
 ): PayeClaimReportSnapshot & { id: string; generatedAtMs: number | null } {
   const row = record(data)
   const kind: PayeClaimKind = text(row.kind) === 'priceWork' ? 'priceWork' : 'expense'
+  const owner = { userId: row.userId }
   const items: PayeClaimReportItem[] = (Array.isArray(row.items) ? row.items : []).map((raw) => {
     const r = record(raw)
     const start = isDayKey(text(r.startDate)) ? text(r.startDate) : ''
@@ -700,7 +774,7 @@ export function parsePayeClaimReportDocument(
       endDate: isDayKey(text(r.endDate)) ? text(r.endDate) : start,
       approvedByName: text(r.approvedByName),
       amount: amountOf(r.amount) ?? 0,
-      evidence: parsePayeClaimEvidence(r.evidence),
+      evidence: parsePayeClaimEvidence(r.evidence, owner),
     }
   })
   const totals = record(row.totals)

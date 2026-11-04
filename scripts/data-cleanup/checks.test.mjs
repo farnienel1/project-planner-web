@@ -318,7 +318,7 @@ test('paye-claims (1.30.0): report only — items with no owner in this organisa
     users,
     payeClaims: {
       priceWorkItems: [{ id: 'P1', data: { userId: 'sam', title: 'x' } }, { id: 'P2', data: { userId: 'gone' } }],
-      expenseItems: [{ id: 'E1', data: { userId: 'sam', title: 'x', evidence: [{ path: 'p' }] } }, { id: 'E2', data: { userId: 'sam', title: 'y', evidence: [] } }],
+      expenseItems: [{ id: 'E1', data: { userId: 'sam', title: 'x', evidence: [{ path: 'organizations/o/payeClaims/sam/sam_1.jpg' }] } }, { id: 'E2', data: { userId: 'sam', title: 'y', evidence: [] } }],
       payeClaimReports: [{ id: 'R1', data: {} }],
       personalSiteAudits: [{ id: 'A1', data: { ownerUserId: 'sam' } }, { id: 'A2', data: { ownerUserId: 'other' } }],
     },

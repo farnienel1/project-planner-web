@@ -1702,6 +1702,8 @@ service cloud.firestore {
         let path = /databases/(default)/documents/users/$(uid);
         return uid is string && uid.size() > 0 && !uid.matches('.*/.*') && uid != request.auth.uid &&
           exists(path) && homeOrgIs(get(path).data, organizationId) &&
+          // 1.30.0 review: "No line manager" stored on the person means none (canonical lineManagerIds).
+          get(path).data.get('hasNoLineManager', false) != true &&
           request.auth.uid in lineManagerIdList(get(path).data);
       }
       function overtimeMultiplierWriteValid() {
@@ -1831,6 +1833,23 @@ service cloud.firestore {
       function payeClaimText(data, key, minSize, maxSize) {
         return data.get(key, '') is string && data.get(key, '').size() >= minSize && data.get(key, '').size() <= maxSize;
       }
+      // One evidence entry (index i): a map whose path is a file in the person's own claim folder of this organisation
+      // (`pattern`), never an SVG. Rules cannot loop and share a 1000-expression budget with the approver and membership
+      // tests, so the first 5 entries are checked here and the list is capped at 20;
+      // the rulebook readers (parsePayeClaimEvidence with the item's userId) drop any later entry that is not the
+      // person's own, so no viewer is ever offered it.
+      function payeClaimEvidenceAt(list, i, pattern) {
+        return list.size() <= i || (
+          list[i] is map && list[i].get('path', '').matches(pattern) && list[i].get('contentType', '') != 'image/svg+xml'
+        );
+      }
+      function payeClaimEvidenceValid(list, uid) {
+        let pattern = 'organizations/' + organizationId + '/payeClaims/' + uid + '/[A-Za-z0-9_.-]+';
+        return list is list && list.size() <= 20 &&
+          payeClaimEvidenceAt(list, 0, pattern) && payeClaimEvidenceAt(list, 1, pattern) &&
+          payeClaimEvidenceAt(list, 2, pattern) && payeClaimEvidenceAt(list, 3, pattern) &&
+          payeClaimEvidenceAt(list, 4, pattern);
+      }
       function payeClaimCommonValid(data) {
         return data.userId == request.auth.uid &&
           data.get('createdBy', request.auth.uid) == request.auth.uid &&
@@ -1838,18 +1857,22 @@ service cloud.firestore {
           payeClaimText(data, 'details', 0, 4000) &&
           payeClaimText(data, 'currency', 0, 3) &&
           data.amount is number && data.amount > 0 && data.amount <= 1000000 &&
-          data.evidence is list && data.evidence.size() <= 20 &&
+          payeClaimEvidenceValid(data.evidence, data.userId) &&
           writeMetadataValidWhenPresent();
       }
       // The named approver is an active admin or manager of this organisation (their users document here, not an
       // operative), never the person (priceWorkApproverCandidates). Free text is never an id that passes.
       function priceWorkApproverValid(approverId) {
-        let path = /databases/(default)/documents/users/$(approverId);
         return approverId is string && approverId.size() > 0 && !approverId.matches('.*/.*') &&
-          approverId != request.auth.uid && exists(path) &&
-          homeOrgIs(get(path).data, organizationId) &&
-          get(path).data.get('isActive', true) != false &&
-          (adminLikeUser(get(path).data) || !isOperativeProfile(get(path).data));
+          approverId != request.auth.uid &&
+          exists(/databases/(default)/documents/users/$(approverId)) &&
+          priceWorkApproverData(get(/databases/(default)/documents/users/$(approverId)).data);
+      }
+      // 1.30.0 review: an admin, or the manager flag / role and not an operative — a flagless member is not offered
+      // (canonical priceWorkApproverCandidates) — active, with a users document naming this organisation.
+      function priceWorkApproverData(d) {
+        return homeOrgIs(d, organizationId) && d.get('isActive', true) != false &&
+          (adminLikeUser(d) || (!isOperativeProfile(d) && (staffFlag(d, 'manager') || d.get('role', '') == 'manager')));
       }
       function priceWorkItemValid(data) {
         return data.keys().hasOnly(['userId', 'title', 'details', 'startDate', 'endDate', 'approvedByUserId', 'approvedByName', 'amount', 'currency', 'evidence', 'createdBy', 'createdAt', 'updatedAt', 'updatedBy', 'updatedFrom']) &&
@@ -1869,8 +1892,10 @@ service cloud.firestore {
           data.evidence.size() >= 1;
       }
       // The person themself, active in this organisation (an inactive or lapsed member writes nothing).
+      // callerOrgRole is '' for anyone not a member here, deactivated here or in a lapsed / deleted organisation, so it
+      // stands in for canAccessOrganization (kept off this path: the expression budget).
       function payeClaimOwnerWriter(uid) {
-        return canAccessOrganization(organizationId) && callerOrgRole(organizationId) != '' && uid == request.auth.uid;
+        return uid == request.auth.uid && callerOrgRole(organizationId) != '';
       }
 
       match /priceWorkItems/{itemId} {
@@ -1901,7 +1926,7 @@ service cloud.firestore {
           request.resource.data.keys().hasAll(['userId', 'kind', 'rangeStart', 'rangeEnd', 'items', 'totals', 'generatedBy']) &&
           request.resource.data.generatedBy == request.auth.uid &&
           request.resource.data.kind in ['priceWork', 'expense'] &&
-          request.resource.data.items is list &&
+          request.resource.data.items is list && request.resource.data.items.size() <= 500 &&
           writeMetadataValidWhenPresent();
         allow update, delete: if false;
       }
@@ -1922,7 +1947,9 @@ service cloud.firestore {
           request.resource.data.ownerUserId == resource.data.ownerUserId &&
           request.resource.data.keys().hasOnly(['ownerUserId', 'jobNumber', 'jobName', 'type', 'customTitle', 'date', 'authorName', 'items', 'createdAt', 'updatedAt', 'updatedBy', 'updatedFrom']) &&
           payeClaimText(request.resource.data, 'jobName', 1, 200) &&
-          request.resource.data.items is list && request.resource.data.items.size() <= 100 &&
+          payeClaimText(request.resource.data, 'jobNumber', 0, 60) &&
+          payeClaimDayKey(request.resource.data.get('date', null)) &&
+          request.resource.data.items is list && request.resource.data.items.size() >= 1 && request.resource.data.items.size() <= 100 &&
           writeMetadataValidWhenPresent();
         allow delete: if payeClaimOwnerWriter(resource.data.get('ownerUserId', ''));
       }

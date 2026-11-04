@@ -6,6 +6,7 @@ import { parseExpenseDocument, payeClaimReportSnapshot } from '@/lib/canonical'
 import { buildPayeClaimReportPdf, buildPersonalSiteAuditPdf, pdfSafe } from '@/lib/payeClaims/payeClaimReportPdf'
 
 // 1×1 PNG.
+const DIR = 'organizations/org/payeClaims/sam/sam_'
 const PNG = Uint8Array.from(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64'))
 
 async function twoPagePdf(): Promise<Uint8Array> {
@@ -23,14 +24,14 @@ test('expenses report: summary, one page per image, a PDF attachment appended, o
     amount: 40,
     date: '2026-11-04',
     evidence: [
-      { path: 'a/receipt.png', name: 'receipt.png', kind: 'photo', contentType: 'image/png' },
-      { path: 'a/invoice.pdf', name: 'invoice.pdf', kind: 'file', contentType: 'application/pdf' },
-      { path: 'a/note.docx', name: 'note.docx', kind: 'file', contentType: 'application/msword' },
-      { path: 'a/missing.png', name: 'missing.png', kind: 'photo', contentType: 'image/png' },
+      { path: `${DIR}1.png`, name: 'receipt.png', kind: 'photo', contentType: 'image/png' },
+      { path: `${DIR}2.pdf`, name: 'invoice.pdf', kind: 'file', contentType: 'application/pdf' },
+      { path: `${DIR}3.docx`, name: 'note.docx', kind: 'file', contentType: 'application/msword' },
+      { path: `${DIR}4.png`, name: 'missing.png', kind: 'photo', contentType: 'image/png' },
     ],
   })
   const snapshot = payeClaimReportSnapshot({ kind: 'expense', userId: 'sam', userName: 'Sam', currency: 'EUR', rangeStart: '2026-10-26', rangeEnd: '2026-11-25', items: [item], generatedBy: 'sam' })
-  const files: Record<string, Uint8Array> = { 'a/receipt.png': PNG, 'a/invoice.pdf': attachment }
+  const files: Record<string, Uint8Array> = { [`${DIR}1.png`]: PNG, [`${DIR}2.pdf`]: attachment }
   const { bytes, notDrawn } = await buildPayeClaimReportPdf(snapshot, {
     readFile: async (path) => {
       if (!files[path]) throw new Error('missing')

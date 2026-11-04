@@ -12254,20 +12254,25 @@ const ORG130 = 'org-130'
 const rosterPc130 = [
   { id: 'sam', email: 'sam@x.com', role: 'operative', operativeMode: true, employmentType: 'paye', assignedManagerUserIds: ['lm'], isActive: true, firstName: 'Sam', surname: 'Smith' },
   { id: 'SAM-OLD', email: 'sam@x.com', role: 'operative', operativeMode: true, isActive: true },
-  { id: 'lm', email: 'lm@x.com', role: 'manager', manager: true, isActive: true, firstName: 'Lena', surname: 'Manager', assignedManagerUserIds: ['boss'] },
-  { id: 'boss', email: 'boss@x.com', role: 'admin', adminAccess: true, isActive: true, firstName: 'Bo', surname: 'Ss' },
+  { id: 'lm', email: 'lm@x.com', organizationId: ORG130, role: 'manager', manager: true, isActive: true, firstName: 'Lena', surname: 'Manager', assignedManagerUserIds: ['boss'] },
+  { id: 'boss', email: 'boss@x.com', organizationId: ORG130, role: 'admin', adminAccess: true, isActive: true, firstName: 'Bo', surname: 'Ss' },
   { id: 'gone', email: 'gone@x.com', role: 'manager', manager: true, isActive: false, firstName: 'Gone' },
   { id: 'op2', email: 'op2@x.com', role: 'operative', operativeMode: true, isActive: true, firstName: 'Olly', assignedManagerUserIds: ['boss'] },
   { id: 'pending', email: 'p@x.com', role: 'manager', manager: true, isActive: true, passwordSet: false, firstName: 'Pend' },
+  // 1.30.0 review: a member with no level flag, and a manager whose users document names another company.
+  { id: 'member', email: 'm@x.com', organizationId: ORG130, role: 'member', isActive: true, firstName: 'Mem' },
+  { id: 'visitor', email: 'v@x.com', organizationId: 'other-org', role: 'manager', manager: true, isActive: true, firstName: 'Vis' },
 ]
 const evidencePc130 = (userId = 'sam', ms = 1_700_000_000_000, ext = 'jpg') =>
   ({ path: r130.payeClaimEvidencePath({ organizationId: ORG130, userId, unixMs: ms, extension: ext })!, name: 'receipt.jpg', kind: 'photo' as const, contentType: 'image/jpeg' })
 
 test('1.30.0 price work approver candidates: active admins and managers only, never operatives, the person, pending or inactive', () => {
-  const ids = r130.priceWorkApproverCandidates(rosterPc130[0], rosterPc130).map((row) => row.id)
+  const ids = r130.priceWorkApproverCandidates(rosterPc130[0], rosterPc130, { organizationId: ORG130 }).map((row) => row.id)
   assert.deepEqual(ids.sort(), ['boss', 'lm'])
+  // Without the organisation the home-company test is skipped (the flagless member is still never offered).
+  assert.deepEqual(r130.priceWorkApproverCandidates(rosterPc130[0], rosterPc130).map((row) => row.id).sort(), ['boss', 'lm', 'visitor'])
   // A manager is never offered themself.
-  assert.deepEqual(r130.priceWorkApproverCandidates(rosterPc130[2], rosterPc130).map((row) => row.id), ['boss'])
+  assert.deepEqual(r130.priceWorkApproverCandidates(rosterPc130[2], rosterPc130, { organizationId: ORG130 }).map((row) => row.id), ['boss'])
   assert.deepEqual(r130.priceWorkApproverCandidates(null, rosterPc130), [])
 })
 
@@ -12278,7 +12283,7 @@ test('1.30.0 price work validation and write fields: name, from–to dates, requ
   assert.equal(r130.priceWorkValidationError({ ...draft, title: ' ' }, ctx), r130.PAYE_CLAIM_TITLE_MESSAGE)
   assert.equal(r130.priceWorkValidationError({ ...draft, endDate: '2026-11-02' }, ctx), r130.PRICE_WORK_DATES_MESSAGE)
   assert.equal(r130.priceWorkValidationError({ ...draft, approvedByUserId: '' }, ctx), r130.PRICE_WORK_APPROVER_REQUIRED_MESSAGE)
-  for (const bad of ['sam', 'SAM-OLD', 'op2', 'gone', 'pending', 'Free Text Name']) {
+  for (const bad of ['sam', 'SAM-OLD', 'op2', 'gone', 'pending', 'member', 'visitor', 'Free Text Name']) {
     assert.equal(r130.priceWorkValidationError({ ...draft, approvedByUserId: bad }, ctx), r130.PRICE_WORK_APPROVER_INVALID_MESSAGE, bad)
   }
   assert.equal(r130.priceWorkValidationError({ ...draft, amount: 0 }, ctx), r130.PAYE_CLAIM_AMOUNT_MESSAGE)
@@ -12315,7 +12320,7 @@ test('1.30.0 expenses need at least one piece of evidence; write fields are the 
 })
 
 test('1.30.0 readers, payrun ranges, totals and report readiness', () => {
-  const exp = r130.parseExpenseDocument('E1', { userId: 'sam', title: 'Fuel', amount: '12.345', date: '2026-11-04', evidence: [{ path: 'p', name: 'a' }, { name: 'no path' }] })
+  const exp = r130.parseExpenseDocument('E1', { userId: 'sam', title: 'Fuel', amount: '12.345', date: '2026-11-04', evidence: [{ path: evidencePc130().path, name: 'a' }, { name: 'no path' }] })
   assert.equal(exp.amount, 12.35)
   assert.equal(exp.evidence.length, 1)
   assert.equal(exp.evidence[0].kind, 'file')
@@ -12349,7 +12354,7 @@ test('1.30.0 who sees price work and expenses: the person, their active line man
 test('1.30.0 report snapshot, rows and evidence pages are frozen from the items', () => {
   const pdfEvidence = { ...evidencePc130('sam', 1_700_000_000_002, 'pdf'), name: 'invoice.pdf', kind: 'file' as const, contentType: 'application/pdf' }
   const items = [
-    r130.parseExpenseDocument('E1', { userId: 'sam', title: 'Fuel', amount: 40, date: '2026-11-04', jobNumber: 'J-9', evidence: [evidencePc130(), pdfEvidence, { path: 'x/y.docx', name: 'note.docx' }] }),
+    r130.parseExpenseDocument('E1', { userId: 'sam', title: 'Fuel', amount: 40, date: '2026-11-04', jobNumber: 'J-9', evidence: [evidencePc130(), pdfEvidence, { path: `organizations/${ORG130}/payeClaims/sam/sam_1700000000005.docx`, name: 'note.docx' }] }),
     r130.parseExpenseDocument('E2', { userId: 'sam', title: 'Parking', amount: 5.5, date: '2026-11-05', evidence: [evidencePc130('sam', 1_700_000_000_003)] }),
   ]
   const snap = r130.payeClaimReportSnapshot({ kind: 'expense', userId: 'sam', userName: 'Sam Smith', companyName: 'Co', currency: 'GBP', rangeStart: '2026-10-26', rangeEnd: '2026-11-25', items, generatedBy: 'sam' })
@@ -12411,4 +12416,29 @@ test('1.30.0 the new collections are listed for live reads and the operational p
     assert.ok(r130.LIVE_COLLECTIONS.some((row) => row.id === id), id)
     assert.ok(id in r130.OPERATIONAL_COLLECTION_PATHS, id)
   }
+})
+
+test('1.30.0 review: evidence is only the person\'s own claim files — other people\'s, private audit photos, URLs and junk are dropped', () => {
+  const own = evidencePc130()
+  const raw = [
+    own,
+    { path: `organizations/${ORG130}/payeClaims/op2/op2_1.jpg`, name: 'theirs' },
+    { path: `organizations/${ORG130}/personalSiteAudits/sam/A1/sam_1.jpg`, name: 'private' },
+    { path: 'https://firebasestorage.googleapis.com/v0/b/x/o/y', name: 'url' },
+    { path: 'junk', name: 'junk' },
+    { path: `organizations/other-org/payeClaims/sam/sam_2.jpg`, name: 'other org' },
+  ]
+  assert.deepEqual(r130.parsePayeClaimEvidence(raw, { userId: 'sam', organizationId: ORG130 }).map((e) => e.name), ['receipt.jpg'])
+  assert.deepEqual(r130.parsePayeClaimEvidence(raw, { userId: 'sam' }).map((e) => e.name), ['receipt.jpg', 'other org'])
+  assert.equal(r130.parseExpenseDocument('E', { userId: 'sam', title: 'x', amount: 1, date: '2026-11-04', evidence: raw }, { organizationId: ORG130 }).evidence.length, 1)
+  assert.equal(r130.parsePriceWorkDocument('P', { userId: 'op2', title: 'x', amount: 1, startDate: '2026-11-04', evidence: raw }).evidence.length, 1)
+  assert.equal(r130.parsePayeClaimReportDocument('R', { userId: 'sam', items: [{ id: 'i', evidence: raw }] }).items[0].evidence.length, 2)
+})
+
+test('1.30.0 review: just-uploaded evidence is deleted within the undo window only; older files are kept', () => {
+  const fresh = evidencePc130('sam', 1_700_000_000_000)
+  const old = evidencePc130('sam', 1_600_000_000_000)
+  const theirs = evidencePc130('op2', 1_700_000_000_000)
+  assert.deepEqual(r130.payeClaimEvidenceToDelete([fresh, old, theirs, fresh], { organizationId: ORG130, viewerUserId: 'sam', nowMs: 1_700_000_060_000 }), [fresh.path])
+  assert.deepEqual(r130.payeClaimEvidenceToDelete([fresh], { organizationId: ORG130, viewerUserId: 'sam', nowMs: 1_700_000_000_000 + 16 * 60_000 }), [])
 })

@@ -28,6 +28,9 @@ const PEER = 'pc-peer'
 const MGR2 = 'pc-mgr2'
 const ADMIN_B = 'pc-admin-b'
 const GONE = 'pc-gone'
+const MEMBER = 'pc-member'
+const VISITOR = 'pc-visitor'
+const NOLM = 'pc-nolm'
 
 let env: RulesTestEnvironment
 
@@ -93,7 +96,7 @@ async function seed() {
     await setDoc(doc(d, 'organizations', ORG), {
       name: 'Claims Co',
       creatorUserId: ADMIN,
-      members: { [ADMIN]: 'admin', [LM]: 'manager', [SAM]: 'member', [PEER]: 'member', [MGR2]: 'manager', [GONE]: 'manager' },
+      members: { [ADMIN]: 'admin', [LM]: 'manager', [SAM]: 'member', [PEER]: 'member', [MGR2]: 'manager', [GONE]: 'manager', [MEMBER]: 'member', [VISITOR]: 'manager', [NOLM]: 'member' },
     })
     await setDoc(doc(d, 'organizations', ORG_B), { name: 'Other Co', creatorUserId: ADMIN_B, members: { [ADMIN_B]: 'admin' } })
     const user = (id: string, fields: Record<string, unknown>) => setDoc(doc(d, 'users', id), { email: `${id}@test.com`, organizationId: ORG, ...fields })
@@ -103,6 +106,10 @@ async function seed() {
     await user(PEER, { role: 'operative', operativeMode: true, employmentType: 'paye', assignedManagerUserIds: [MGR2] })
     await user(MGR2, { role: 'manager', manager: true, assignedManagerUserIds: [ADMIN] })
     await user(GONE, { role: 'manager', manager: true, isActive: false })
+    await user(MEMBER, { role: 'member' })
+    await user(NOLM, { role: 'operative', operativeMode: true, employmentType: 'paye', assignedManagerUserIds: [LM], hasNoLineManager: true })
+    await setDoc(doc(d, 'users', VISITOR), { email: `${VISITOR}@test.com`, organizationId: ORG_B, role: 'manager', manager: true })
+    await setDoc(doc(d, 'organizations', ORG, 'expenseItems', 'EXN'), expense(NOLM, { evidence: [{ path: `organizations/${ORG}/payeClaims/${NOLM}/${NOLM}_1.jpg`, name: 'r', kind: 'photo' }] }))
     await setDoc(doc(d, 'users', ADMIN_B), { email: `${ADMIN_B}@test.com`, organizationId: ORG_B, role: 'admin', adminAccess: true })
     await setDoc(doc(d, 'organizations', ORG, 'priceWorkItems', 'PW1'), priceWork(SAM))
     await setDoc(doc(d, 'organizations', ORG, 'expenseItems', 'EX1'), expense(SAM))
@@ -216,4 +223,44 @@ test('1.30.0 another company\'s admin and an inactive member write nothing', asy
   await assertFails(setDoc(doc(db(ADMIN_B), 'organizations', ORG, 'expenseItems', 'X1'), expense(ADMIN_B)))
   await assertFails(setDoc(orgDoc(GONE, 'expenseItems', 'X2'), expense(GONE)))
   await assertFails(setDoc(orgDoc(GONE, 'personalSiteAudits', 'X3'), audit(GONE)))
+})
+
+test('1.30.0 review: evidence must be the person\'s own claim files — not another person\'s, a private audit photo, a URL or an SVG', async () => {
+  const bad = [
+    { path: `organizations/${ORG}/payeClaims/${PEER}/${PEER}_1.jpg`, name: 'theirs', kind: 'photo' },
+    { path: `organizations/${ORG}/personalSiteAudits/${SAM}/A1/${SAM}_1.jpg`, name: 'private', kind: 'photo' },
+    { path: 'https://example.com/x.jpg', name: 'url', kind: 'file' },
+    { path: `organizations/${ORG_B}/payeClaims/${SAM}/${SAM}_1.jpg`, name: 'other org', kind: 'photo' },
+    { path: `organizations/${ORG}/payeClaims/${SAM}/${SAM}_1.svg`, name: 'svg', kind: 'photo', contentType: 'image/svg+xml' },
+    'junk',
+  ]
+  for (const [i, entry] of bad.entries()) {
+    await assertFails(setDoc(orgDoc(SAM, 'expenseItems', `BAD${i}`), expense(SAM, { evidence: [entry] })))
+    // Hidden behind a good first entry too.
+    await assertFails(setDoc(orgDoc(SAM, 'priceWorkItems', `BADP${i}`), priceWork(SAM, { evidence: [...EVIDENCE, ...EVIDENCE, entry] })))
+  }
+  const many = Array.from({ length: 21 }, (_, i) => ({ ...EVIDENCE[0], path: `organizations/${ORG}/payeClaims/${SAM}/${SAM}_${i}.jpg` }))
+  await assertFails(setDoc(orgDoc(SAM, 'expenseItems', 'MANY'), expense(SAM, { evidence: many })))
+  await assertSucceeds(setDoc(orgDoc(SAM, 'expenseItems', 'TWENTY'), expense(SAM, { evidence: many.slice(0, 20) })))
+  // The heaviest valid write: price work with an approver read and 20 entries stays inside the expression budget.
+  await assertSucceeds(setDoc(orgDoc(SAM, 'priceWorkItems', 'TWENTYP'), priceWork(SAM, { evidence: many.slice(0, 20) })))
+  await assertSucceeds(updateDoc(orgDoc(SAM, 'priceWorkItems', 'TWENTYP'), { title: 'Tiling (2)' }))
+})
+
+test('1.30.0 review: the approver needs the admin or manager flag and a users document of this organisation', async () => {
+  await assertFails(setDoc(orgDoc(SAM, 'priceWorkItems', 'M1'), priceWork(SAM, { approvedByUserId: MEMBER })))
+  await assertFails(setDoc(orgDoc(SAM, 'priceWorkItems', 'M2'), priceWork(SAM, { approvedByUserId: VISITOR })))
+  await assertSucceeds(setDoc(orgDoc(SAM, 'priceWorkItems', 'M3'), priceWork(SAM, { approvedByUserId: MGR2 })))
+})
+
+test('1.30.0 review: a person with "No line manager" stored is not read through a listed line manager', async () => {
+  await assertFails(getDoc(orgDoc(LM, 'expenseItems', 'EXN')))
+  await assertSucceeds(getDoc(orgDoc(ADMIN, 'expenseItems', 'EXN')))
+})
+
+test('1.30.0 review: personal audit edits keep the create shape; report copies are capped', async () => {
+  await assertFails(updateDoc(orgDoc(SAM, 'personalSiteAudits', 'A1'), { items: [] }))
+  await assertFails(updateDoc(orgDoc(SAM, 'personalSiteAudits', 'A1'), { date: 'yesterday' }))
+  await assertFails(updateDoc(orgDoc(SAM, 'personalSiteAudits', 'A1'), { jobNumber: 'x'.repeat(61) }))
+  await assertFails(setDoc(orgDoc(SAM, 'payeClaimReports', 'BIG'), report(SAM, { items: Array.from({ length: 501 }, () => ({})) })))
 })

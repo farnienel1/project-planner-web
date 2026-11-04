@@ -30,8 +30,9 @@ const ADMIN_B = 'admin-b'
 const OP_B = 'op-b'
 const MGR_A = 'mgr-a'
 const OPMODE_ADMIN_A = 'opmode-admin-a'
-// 1.30.0: a PAYE operative whose line manager is MGR_A.
+// 1.30.0: a PAYE operative whose line managers are MGR_A and an inactive manager.
 const CLAIM_OP_A = 'claim-op-a'
+const GONE_MGR_A = 'gone-mgr-a'
 
 const MB = 1024 * 1024
 
@@ -62,7 +63,7 @@ test.before(async () => {
     const db = ctx.firestore()
     await setDoc(doc(db, 'organizations', ORG_A), {
       name: 'Company A',
-      members: { [ADMIN_A]: 'admin', [OP_A]: 'member', [CLAIM_OP_A]: 'member', [MGR_A]: 'member', [OPMODE_ADMIN_A]: 'member', [ADMIN_B]: 'member' },
+      members: { [ADMIN_A]: 'admin', [OP_A]: 'member', [CLAIM_OP_A]: 'member', [GONE_MGR_A]: 'member', [MGR_A]: 'member', [OPMODE_ADMIN_A]: 'member', [ADMIN_B]: 'member' },
       creatorUserId: ADMIN_A,
     })
     await setDoc(doc(db, 'organizations', ORG_B), {
@@ -92,7 +93,14 @@ test.before(async () => {
       role: 'operative',
       operativeMode: true,
       employmentType: 'paye',
-      assignedManagerUserIds: [MGR_A],
+      assignedManagerUserIds: [MGR_A, GONE_MGR_A],
+    })
+    await setDoc(doc(db, 'users', GONE_MGR_A), {
+      email: 'gone-mgr-a@test.com',
+      organizationId: ORG_A,
+      role: 'manager',
+      manager: true,
+      isActive: false,
     })
     await setDoc(doc(db, 'users', MGR_A), {
       email: 'mgr-a@test.com',
@@ -407,6 +415,7 @@ test('1.25.0 timesheet exports and the logo: admins delete, managers do not', as
 
 // Rulebook 1.30.0 §26: claim evidence (the person, their line manager, admins) and personal site audits (owner only).
 EMAIL[CLAIM_OP_A] = 'claim-op-a@test.com'
+EMAIL[GONE_MGR_A] = 'gone-mgr-a@test.com'
 
 function read(uid: string, objectPath: string) {
   return getBytes(ref(authStorage(uid, EMAIL[uid]), objectPath))
@@ -447,4 +456,13 @@ test('1.30.0 personal site audit photos are the owner\'s only — admins include
   await assertFails(del(ADMIN_A, objectPath))
   await assertFails(put(ADMIN_A, EMAIL[ADMIN_A], `organizations/${ORG_A}/personalSiteAudits/${CLAIM_OP_A}/A1/${ADMIN_A}_1.jpg`, 64, 'image/jpeg'))
   await assertSucceeds(del(CLAIM_OP_A, objectPath))
+})
+
+test('1.30.0 review: an inactive line manager reads no evidence; an admin with a stray operative flag does (1.11.0); no SVG', async () => {
+  const objectPath = `organizations/${ORG_A}/payeClaims/${CLAIM_OP_A}/${CLAIM_OP_A}_${Date.now() + 11}.jpg`
+  await assertSucceeds(put(CLAIM_OP_A, EMAIL[CLAIM_OP_A], objectPath, 128, 'image/jpeg'))
+  await assertFails(read(GONE_MGR_A, objectPath))
+  await assertSucceeds(read(OPMODE_ADMIN_A, objectPath))
+  await assertFails(put(CLAIM_OP_A, EMAIL[CLAIM_OP_A], objectPath.replace('.jpg', 'x.svg'), 128, 'image/svg+xml'))
+  await assertFails(put(CLAIM_OP_A, EMAIL[CLAIM_OP_A], `organizations/${ORG_A}/personalSiteAudits/${CLAIM_OP_A}/A1/${CLAIM_OP_A}_${Date.now()}.svg`, 128, 'image/svg+xml'))
 })

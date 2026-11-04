@@ -23,7 +23,7 @@ import { newUuid } from '@/lib/firebase/firestoreUtils'
 import { prepareAuditPhoto } from '@/lib/siteAudit/prepareAuditPhoto'
 import { uploadLimitError } from '@/lib/security/uploadLimits'
 import { SITE_AUDIT_TYPES } from '@/components/projects/features/featureUi'
-import { listenPersonalSiteAudits, savePersonalSiteAudit, storedFileBytes, storedFileUrl, uploadPersonalAuditPhoto } from '@/lib/payeClaims/payeClaimsData'
+import { discardPersonalAuditPhotos, listenPersonalSiteAudits, savePersonalSiteAudit, storedFileBytes, storedFileUrl, uploadPersonalAuditPhoto } from '@/lib/payeClaims/payeClaimsData'
 import { buildPersonalSiteAuditPdf } from '@/lib/payeClaims/payeClaimReportPdf'
 import { downloadPdf } from '@/lib/overtime/overtimeReportPdf'
 
@@ -198,8 +198,8 @@ export function PersonalSiteAuditCreateFlow({ onClose }: { onClose: () => void }
     }
     setError(null)
     const auditId = newUuid()
+    const uploaded: Array<{ id: string; title: string; location: string; comments: string; imagePath: string; takenAtMs: number }> = []
     try {
-      const uploaded = []
       for (let index = 0; index < items.length; index += 1) {
         const item = items[index]
         setSaving(`Uploading photo ${index + 1} of ${items.length}`)
@@ -210,6 +210,7 @@ export function PersonalSiteAuditCreateFlow({ onClose }: { onClose: () => void }
       await savePersonalSiteAudit(organization.id, auditId, { jobNumber, jobName, type, customTitle, date, authorName, items: uploaded })
       onClose()
     } catch (e: unknown) {
+      await discardPersonalAuditPhotos(uploaded.map((item) => item.imagePath))
       setError(e instanceof Error ? e.message : 'The audit could not be saved.')
     } finally {
       setSaving(null)

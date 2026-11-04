@@ -1,7 +1,7 @@
 {
   "rulebookVersion": "1.30.0",
-  "rulebookSha256": "8214efe8938b3b28ac25fb2f9888740cb8617576e08aa05db4fde25d0fa1d16e",
-  "bundleSha256": "7a7eda3c4e3f1e46eed0a8550b369e08073141129ce6bf941a0e5e73b9f20978",
+  "rulebookSha256": "85c030c6ec07dd53d0155b9fbbc2ced7a18ee33a1a6c008ff01e6e6bd0ae1e8b",
+  "bundleSha256": "c6b191fdde45c4bb540d842a0aa562bba569dc49642a89dd74edb99b2b2eade9",
   "crossPlatformContractSha256": "7f70ec28920ac6114068b4e44eaf893706d5b6af1b21d77b69f946074d74e126",
   "exports": [
     "ACCOUNT_DELETE_WITH_COMPANY_MESSAGE",
@@ -904,6 +904,7 @@
     "payeClaimEvidencePages",
     "payeClaimEvidencePath",
     "payeClaimEvidencePathBelongsTo",
+    "payeClaimEvidenceToDelete",
     "payeClaimEvidenceWriteFields",
     "payeClaimListRow",
     "payeClaimReportReady",

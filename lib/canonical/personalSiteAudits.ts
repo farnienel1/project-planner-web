@@ -33,7 +33,7 @@ export const PERSONAL_SITE_AUDIT_ITEMS_MAX = 100
  * copy attached to an expense or price work is visible to that person's line managers and admins.
  */
 export const PERSONAL_SITE_AUDIT_PRIVACY_NOTICE =
-  'Personal site audits are private to the person who created them. A copy attached to an expense or price work item is visible to that person’s line managers and admins.'
+  'Personal site audits are private to the person who created them. A copy attached to an expense or price work item is visible to that person’s line managers and admins, and is kept for recovery if the item is later removed.'
 
 export type PersonalSiteAuditItem = {
   id: string

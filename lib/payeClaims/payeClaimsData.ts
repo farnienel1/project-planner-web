@@ -17,7 +17,7 @@ import {
   where,
   type Unsubscribe,
 } from 'firebase/firestore'
-import { getDownloadURL, ref } from 'firebase/storage'
+import { deleteObject, getDownloadURL, ref } from 'firebase/storage'
 import {
   EXPENSE_ITEMS_COLLECTION,
   PAYE_CLAIM_REPORTS_COLLECTION,
@@ -31,6 +31,7 @@ import {
   parsePriceWorkDocument,
   parseTimesheetEntries,
   payeClaimEvidencePath,
+  payeClaimEvidenceToDelete,
   payeClaimReportSnapshot,
   personalSiteAuditEvidence,
   personalSiteAuditImagePath,
@@ -83,7 +84,9 @@ export function listenPayeClaims(
     (snap) =>
       onChange(
         snap.docs.map((row) =>
-          kind === 'priceWork' ? parsePriceWorkDocument(row.id, row.data(), { timeZone }) : parseExpenseDocument(row.id, row.data(), { timeZone })
+          kind === 'priceWork'
+            ? parsePriceWorkDocument(row.id, row.data(), { timeZone, organizationId })
+            : parseExpenseDocument(row.id, row.data(), { timeZone, organizationId })
         )
       ),
     (error) => onError?.(error)
@@ -159,9 +162,24 @@ export async function addExpense(input: { organizationId: string; draft: Expense
   return created.id
 }
 
-/** The person removes one of their own items (the evidence files are kept, §24). */
-export async function removePayeClaim(organizationId: string, item: Pick<PayeClaimItem, 'kind' | 'id'>): Promise<void> {
+/**
+ * Deletes the person's own just-uploaded claim files that `payeClaimEvidenceToDelete` allows (inside the §24 undo
+ * window); the rest are kept. Failures are ignored (the file is then kept, as §24 says).
+ */
+export async function discardClaimEvidence(organizationId: string, evidence: ReadonlyArray<Pick<PayeClaimEvidence, 'path'>>): Promise<void> {
+  const paths = payeClaimEvidenceToDelete(evidence, { organizationId, viewerUserId: uid(), nowMs: Date.now() })
+  await Promise.all(paths.map((path) => deleteObject(ref(storage, path)).catch(() => undefined)))
+}
+
+/** The person removes one of their own items; evidence uploaded within the undo window goes too, the rest is kept (§24). */
+export async function removePayeClaim(organizationId: string, item: Pick<PayeClaimItem, 'kind' | 'id' | 'evidence'>): Promise<void> {
   await deleteDoc(doc(db, 'organizations', organizationId, COLLECTION[item.kind], item.id))
+  await discardClaimEvidence(organizationId, item.evidence)
+}
+
+/** Deletes the owner's just-uploaded personal audit photos after a refused save (uploader undo window). */
+export async function discardPersonalAuditPhotos(paths: ReadonlyArray<string>): Promise<void> {
+  await Promise.all(paths.map((path) => deleteObject(ref(storage, path)).catch(() => undefined)))
 }
 
 /** Generate price work / expenses report: saves the frozen copy (written once) and returns it with its id. */
