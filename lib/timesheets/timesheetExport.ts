@@ -16,6 +16,7 @@ import type { OperativeDayRateHistoryCollection } from '@/lib/timesheets/dayRate
 import { formatMoney } from '@/lib/canonical/money'
 import { parseMultipliedHoursText } from '@/lib/canonical/payrollHours'
 import { timesheetInvoiceRows } from '@/lib/canonical/reportPay'
+import { priceWorkJobNumberText } from '@/lib/canonical/priceWorkJobNumber'
 import { emailDocument, emailHeading, emailLink, emailList, emailStrong, emailText } from '@/lib/email/emailTheme'
 
 export function paymentRunDateStamp(start: Date, end: Date, timeZone: string): string {
@@ -199,11 +200,17 @@ export function invoiceLinesForTimesheet({
       })
       continue
     }
-    const entry = (row.stored ?? {}) as { title?: string; jobNumber?: string; date?: Date; startDate?: Date }
+    const entry = (row.stored ?? {}) as { title?: string; date?: Date; startDate?: Date }
     const label = row.kind === 'priceWork' ? 'Price work' : 'Expense'
     const details = extraInvoiceDetails(String(entry.title ?? ''))
+    // Rulebook 1.30.1: the row's job number (`timesheetInvoiceRows` → `jobNumber`); price work with none shows "—"
+    // (`priceWorkJobNumberText`).
     const jobNumber =
-      row.kind === 'expense' && row.source === 'live' && extrasMode === 'raw' ? '—' : String(entry.jobNumber ?? '').trim() || '—'
+      row.kind === 'priceWork'
+        ? priceWorkJobNumberText(row.jobNumber)
+        : row.source === 'live' && extrasMode === 'raw'
+          ? '—'
+          : row.jobNumber || '—'
     const date = row.source === 'override' ? entry.date : row.kind === 'priceWork' ? entry.startDate : entry.date
     rows.push({
       date: formatAbbreviatedDayInZone(date as Date, timeZone),

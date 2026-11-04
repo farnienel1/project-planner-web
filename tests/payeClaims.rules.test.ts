@@ -47,6 +47,7 @@ function priceWork(userId: string, extra: Record<string, unknown> = {}) {
     userId,
     title: 'Tiling',
     details: 'Bathroom',
+    jobNumber: 'J-1042',
     startDate: '2026-11-03',
     endDate: '2026-11-05',
     approvedByUserId: LM,
@@ -112,6 +113,10 @@ async function seed() {
     await setDoc(doc(d, 'organizations', ORG, 'expenseItems', 'EXN'), expense(NOLM, { evidence: [{ path: `organizations/${ORG}/payeClaims/${NOLM}/${NOLM}_1.jpg`, name: 'r', kind: 'photo' }] }))
     await setDoc(doc(d, 'users', ADMIN_B), { email: `${ADMIN_B}@test.com`, organizationId: ORG_B, role: 'admin', adminAccess: true })
     await setDoc(doc(d, 'organizations', ORG, 'priceWorkItems', 'PW1'), priceWork(SAM))
+    // Stored before 1.30.1: no job number.
+    const { jobNumber: _legacyJob, ...legacy } = priceWork(SAM)
+    void _legacyJob
+    await setDoc(doc(d, 'organizations', ORG, 'priceWorkItems', 'PWOLD'), legacy)
     await setDoc(doc(d, 'organizations', ORG, 'expenseItems', 'EX1'), expense(SAM))
     await setDoc(doc(d, 'organizations', ORG, 'payeClaimReports', 'R1'), report(SAM))
     await setDoc(doc(d, 'organizations', ORG, 'personalSiteAudits', 'A1'), audit(SAM))
@@ -263,4 +268,19 @@ test('1.30.0 review: personal audit edits keep the create shape; report copies a
   await assertFails(updateDoc(orgDoc(SAM, 'personalSiteAudits', 'A1'), { date: 'yesterday' }))
   await assertFails(updateDoc(orgDoc(SAM, 'personalSiteAudits', 'A1'), { jobNumber: 'x'.repeat(61) }))
   await assertFails(setDoc(orgDoc(SAM, 'payeClaimReports', 'BIG'), report(SAM, { items: Array.from({ length: 501 }, () => ({})) })))
+})
+
+test('1.30.1 new price work needs a job number of 1–60 characters; an older item without one stays editable', async () => {
+  const { jobNumber: _job, ...noJob } = priceWork(SAM)
+  void _job
+  await assertFails(setDoc(orgDoc(SAM, 'priceWorkItems', 'J1'), noJob))
+  await assertFails(setDoc(orgDoc(SAM, 'priceWorkItems', 'J2'), priceWork(SAM, { jobNumber: '' })))
+  await assertFails(setDoc(orgDoc(SAM, 'priceWorkItems', 'J3'), priceWork(SAM, { jobNumber: 'x'.repeat(61) })))
+  await assertFails(setDoc(orgDoc(SAM, 'priceWorkItems', 'J4'), priceWork(SAM, { jobNumber: 1042 })))
+  await assertSucceeds(setDoc(orgDoc(SAM, 'priceWorkItems', 'J5'), priceWork(SAM, { jobNumber: 'x'.repeat(60) })))
+  // Legacy item: an update without a job number still passes; adding one must be 1–60.
+  await assertSucceeds(updateDoc(orgDoc(SAM, 'priceWorkItems', 'PWOLD'), { title: 'Tiling (old)' }))
+  await assertFails(updateDoc(orgDoc(SAM, 'priceWorkItems', 'PWOLD'), { jobNumber: '' }))
+  await assertSucceeds(updateDoc(orgDoc(SAM, 'priceWorkItems', 'PWOLD'), { jobNumber: 'J-7' }))
+  await assertFails(updateDoc(orgDoc(SAM, 'priceWorkItems', 'PW1'), { jobNumber: 'x'.repeat(61) }))
 })

@@ -12278,7 +12278,7 @@ test('1.30.0 price work approver candidates: active admins and managers only, ne
 
 test('1.30.0 price work validation and write fields: name, from–to dates, required approver from the list, amount, evidence in own folder', () => {
   const ctx = { person: rosterPc130[0], roster: rosterPc130, organizationId: ORG130 }
-  const draft = { title: 'Skirting', details: 'Flat 4', startDate: '2026-11-03', endDate: '2026-11-03', approvedByUserId: 'lm', amount: '120.5' }
+  const draft = { title: 'Skirting', details: 'Flat 4', jobNumber: ' J-1042 ', startDate: '2026-11-03', endDate: '2026-11-03', approvedByUserId: 'lm', amount: '120.5' }
   assert.equal(r130.priceWorkValidationError(draft, ctx), null)
   assert.equal(r130.priceWorkValidationError({ ...draft, title: ' ' }, ctx), r130.PAYE_CLAIM_TITLE_MESSAGE)
   assert.equal(r130.priceWorkValidationError({ ...draft, endDate: '2026-11-02' }, ctx), r130.PRICE_WORK_DATES_MESSAGE)
@@ -12293,6 +12293,7 @@ test('1.30.0 price work validation and write fields: name, from–to dates, requ
     userId: 'sam',
     title: 'Skirting',
     details: 'Flat 4',
+    jobNumber: 'J-1042',
     startDate: '2026-11-03',
     endDate: '2026-11-03',
     approvedByUserId: 'lm',
@@ -12337,7 +12338,7 @@ test('1.30.0 readers, payrun ranges, totals and report readiness', () => {
   assert.deepEqual(r130.payeClaimsInRange([exp2], { start: '2026-11-01', end: '2026-11-30' }), [])
   assert.equal(r130.payeClaimReportReady([]), false)
   assert.equal(r130.payeClaimReportReady(inRun), true)
-  assert.deepEqual(r130.payeClaimListRow(pw, 'GBP'), { title: 'Tiling', figure: '£300.00', subtitle: 'Tue 24 Nov – Fri 27 Nov · Approved by Lena' })
+  assert.deepEqual(r130.payeClaimListRow(pw, 'GBP'), { title: 'Tiling', figure: '£300.00', subtitle: 'Tue 24 Nov – Fri 27 Nov · — · Approved by Lena' })
 })
 
 test('1.30.0 who sees price work and expenses: the person, their active line managers, admins — never a peer', () => {
@@ -12441,4 +12442,84 @@ test('1.30.0 review: just-uploaded evidence is deleted within the undo window on
   const theirs = evidencePc130('op2', 1_700_000_000_000)
   assert.deepEqual(r130.payeClaimEvidenceToDelete([fresh, old, theirs, fresh], { organizationId: ORG130, viewerUserId: 'sam', nowMs: 1_700_000_060_000 }), [fresh.path])
   assert.deepEqual(r130.payeClaimEvidenceToDelete([fresh], { organizationId: ORG130, viewerUserId: 'sam', nowMs: 1_700_000_000_000 + 16 * 60_000 }), [])
+})
+
+// MARK: - 1.30.1 price work needs a job number (owner decision 4 Nov)
+
+import * as r1301 from './index'
+
+test('1.30.1 priceWorkJobNumberError / priceWorkJobNumberText: required, trimmed, 1–60, "—" for older items', () => {
+  assert.equal(r1301.priceWorkJobNumberError(''), r1301.PRICE_WORK_JOB_NUMBER_REQUIRED_MESSAGE)
+  assert.equal(r1301.priceWorkJobNumberError('   '), r1301.PRICE_WORK_JOB_NUMBER_REQUIRED_MESSAGE)
+  assert.equal(r1301.priceWorkJobNumberError(null), r1301.PRICE_WORK_JOB_NUMBER_REQUIRED_MESSAGE)
+  assert.equal(r1301.PRICE_WORK_JOB_NUMBER_REQUIRED_MESSAGE, 'Add the job number for this price work.')
+  assert.equal(r1301.priceWorkJobNumberError('x'.repeat(61)), r1301.PRICE_WORK_JOB_NUMBER_TOO_LONG_MESSAGE)
+  assert.equal(r1301.priceWorkJobNumberError(` ${'x'.repeat(60)} `), null)
+  assert.equal(r1301.priceWorkJobNumberError(1042), null)
+  assert.equal(r1301.priceWorkJobNumberText(' J-7 '), 'J-7')
+  assert.equal(r1301.priceWorkJobNumberText(''), '—')
+  assert.equal(r1301.priceWorkJobNumberText(undefined), '—')
+})
+
+test('1.30.1 PAYE price work: required on add, read and shown as "—" when an older item has none', () => {
+  const roster = [
+    { id: 'sam', email: 'sam@x.com', role: 'operative', operativeMode: true, isActive: true, passwordSet: true, organizationId: 'org1', firstName: 'Sam', surname: 'S' },
+    { id: 'lm', email: 'lm@x.com', role: 'manager', manager: true, isActive: true, passwordSet: true, organizationId: 'org1', firstName: 'Lena', surname: 'M' },
+  ]
+  const ctx = { person: roster[0], roster, organizationId: 'org1' }
+  const draft = { title: 'Skirting', startDate: '2026-11-03', endDate: '2026-11-03', approvedByUserId: 'lm', amount: 100 }
+  assert.equal(r1301.priceWorkValidationError(draft as never, ctx as never), r1301.PRICE_WORK_JOB_NUMBER_REQUIRED_MESSAGE)
+  assert.equal(r1301.priceWorkWriteFields({ userId: 'sam', draft, ...ctx, currency: 'GBP' } as never), null)
+  assert.equal(r1301.priceWorkValidationError({ ...draft, jobNumber: 'x'.repeat(61) } as never, ctx as never), r1301.PRICE_WORK_JOB_NUMBER_TOO_LONG_MESSAGE)
+  assert.equal(r1301.priceWorkWriteFields({ userId: 'sam', draft: { ...draft, jobNumber: ' J-9 ' }, ...ctx, currency: 'GBP' } as never)?.jobNumber, 'J-9')
+  // Reader: stored text or number kept; an older item has '' and stays valid.
+  const old = r1301.parsePriceWorkDocument('P0', { userId: 'sam', title: 'Old', amount: 50, startDate: '2026-11-03', approvedByName: 'Lena' })
+  assert.equal(old.jobNumber, '')
+  assert.equal(r1301.parsePriceWorkDocument('P1', { userId: 'sam', title: 'N', amount: 1, startDate: '2026-11-03', jobNumber: 1042 }).jobNumber, '1042')
+  const fresh = r1301.parsePriceWorkDocument('P2', { userId: 'sam', title: 'New', amount: 70, startDate: '2026-11-04', jobNumber: 'J-5' })
+  assert.equal(r1301.payeClaimListRow(old, 'GBP').subtitle, 'Tue 3 Nov · — · Approved by Lena')
+  assert.equal(r1301.payeClaimListRow(fresh, 'GBP').subtitle, 'Wed 4 Nov · J-5')
+  // The report copy carries the job number; the summary shows "—" for an older item.
+  const snap = r1301.payeClaimReportSnapshot({ kind: 'priceWork', userId: 'sam', userName: 'Sam', currency: 'GBP', rangeStart: '2026-11-01', rangeEnd: '2026-11-30', items: [old, fresh], generatedBy: 'sam' })
+  assert.deepEqual(snap.items.map((item) => item.jobNumber), ['', 'J-5'])
+  assert.deepEqual(r1301.payeClaimReportRows(snap).rows.map((row) => row.heading), ['Tue 3 Nov · — · Old', 'Wed 4 Nov · J-5 · New'])
+  // Expenses keep their optional job number (no "—" in the heading).
+  const exp = r1301.parseExpenseDocument('E1', { userId: 'sam', title: 'Fuel', amount: 5, date: '2026-11-04' })
+  const expSnap = r1301.payeClaimReportSnapshot({ kind: 'expense', userId: 'sam', userName: 'Sam', currency: 'GBP', rangeStart: '2026-11-01', rangeEnd: '2026-11-30', items: [exp], generatedBy: 'sam' })
+  assert.equal(r1301.payeClaimReportRows(expSnap).rows[0].heading, 'Wed 4 Nov · Fuel')
+})
+
+test('1.30.1 timesheet price work: new or edited entries need a job number; untouched older entries and reviews never ask', () => {
+  const at = (iso: string) => new Date(iso)
+  const legacy = { id: 'AAA', title: 'Tiling', details: '', jobNumber: '', agreedManagerName: 'Lena', startDate: at('2026-11-03T00:00:00Z'), endDate: null, amount: 100, managerDecision: 'approved' }
+  const noId = { title: 'Grout', details: 'x', agreedManagerName: 'Lena', startDate: { seconds: Date.UTC(2026, 10, 4) / 1000, nanoseconds: 0 }, amount: 20 }
+  // Untouched: the same entry (id in another case), and an id-less stored entry read back with a derived id.
+  assert.equal(r1301.timesheetPriceWorkJobNumberError([legacy, noId], [{ ...legacy, id: 'aaa' }, { ...noId, id: 'derived-1', startDate: at('2026-11-04T00:00:00Z'), endDate: null }]), null)
+  // A reviewer's decision or revised amount is not an edit.
+  assert.equal(r1301.timesheetPriceWorkJobNumberError([legacy], [{ ...legacy, managerDecision: 'edited', managerRevisedAmount: 80 }]), null)
+  // The owner edits the older entry: asks for the job number.
+  assert.equal(r1301.timesheetPriceWorkJobNumberError([legacy], [{ ...legacy, amount: 120 }]), r1301.PRICE_WORK_JOB_NUMBER_REQUIRED_MESSAGE)
+  assert.equal(r1301.timesheetPriceWorkJobNumberError([legacy], [{ ...legacy, amount: 120, jobNumber: 'J-1' }]), null)
+  // A new entry needs one.
+  const added = { id: 'BBB', title: 'Skirting', details: '', jobNumber: ' ', agreedManagerName: 'Lena', startDate: at('2026-11-05T00:00:00Z'), endDate: null, amount: 40 }
+  assert.equal(r1301.timesheetPriceWorkJobNumberError([legacy], [legacy, added]), r1301.PRICE_WORK_JOB_NUMBER_REQUIRED_MESSAGE)
+  assert.equal(r1301.timesheetPriceWorkJobNumberError([legacy], [legacy, { ...added, jobNumber: 'x'.repeat(61) }]), r1301.PRICE_WORK_JOB_NUMBER_TOO_LONG_MESSAGE)
+  assert.equal(r1301.timesheetPriceWorkJobNumberError(null, [{ ...added, jobNumber: 'J-2' }]), null)
+  // Removing an entry never asks.
+  assert.equal(r1301.timesheetPriceWorkJobNumberError([legacy, added], []), null)
+})
+
+test('1.30.1 timesheetInvoiceRows carries each row\'s job number', () => {
+  const sheet = {
+    priceWorkEntries: [
+      { id: 'P1', title: 'Tiling', jobNumber: 'J-3', startDate: '2026-11-03T00:00:00Z', amount: 100 },
+      { id: 'P2', title: 'Old', startDate: '2026-11-03T00:00:00Z', amount: 50 },
+    ],
+    expenseEntries: [{ id: 'E1', title: 'Fuel', jobNumber: 'J-4', date: '2026-11-03T00:00:00Z', amount: 5 }],
+  }
+  const rows = r1301.timesheetInvoiceRows({ sheet, payrollLines: [{ id: 'L1', amount: 200, dayKey: '2026-11-03', jobNumber: 'J-9' }], extrasMode: 'raw' } as never)
+  assert.deepEqual(rows.map((row) => [row.kind, row.id, row.jobNumber]), [['labour', 'L1', 'J-9'], ['priceWork', 'P1', 'J-3'], ['priceWork', 'P2', ''], ['expense', 'E1', 'J-4']])
+  assert.equal(r1301.priceWorkJobNumberText(rows[2].jobNumber), '—')
+  const signed = r1301.timesheetInvoiceRows({ sheet: { weeklyReportOverride: { lines: [], priceWork: [{ id: 'P1', title: 'Tiling', jobNumber: 'J-3', amount: 100, decision: 'approved' }], expenses: [] } }, payrollLines: [], extrasMode: 'decided' } as never)
+  assert.deepEqual(signed.map((row) => row.jobNumber), ['J-3'])
 })

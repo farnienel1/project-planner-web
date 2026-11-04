@@ -1874,12 +1874,15 @@ service cloud.firestore {
         return homeOrgIs(d, organizationId) && d.get('isActive', true) != false &&
           (adminLikeUser(d) || (!isOperativeProfile(d) && (staffFlag(d, 'manager') || d.get('role', '') == 'manager')));
       }
+      // 1.30.1: a job number (free text) is required on a new item, 1–60 characters (priceWorkJobNumberError); an
+      // item stored before 1.30.1 without one stays valid on update, and one that has it keeps 1–60.
       function priceWorkItemValid(data) {
-        return data.keys().hasOnly(['userId', 'title', 'details', 'startDate', 'endDate', 'approvedByUserId', 'approvedByName', 'amount', 'currency', 'evidence', 'createdBy', 'createdAt', 'updatedAt', 'updatedBy', 'updatedFrom']) &&
+        return data.keys().hasOnly(['userId', 'title', 'details', 'jobNumber', 'startDate', 'endDate', 'approvedByUserId', 'approvedByName', 'amount', 'currency', 'evidence', 'createdBy', 'createdAt', 'updatedAt', 'updatedBy', 'updatedFrom']) &&
           data.keys().hasAll(['userId', 'title', 'startDate', 'endDate', 'approvedByUserId', 'amount', 'evidence']) &&
           payeClaimCommonValid(data) &&
           payeClaimDayKey(data.startDate) && payeClaimDayKey(data.endDate) && data.endDate >= data.startDate &&
           payeClaimText(data, 'approvedByName', 0, 200) &&
+          (!('jobNumber' in data) || (data.jobNumber is string && data.jobNumber.size() >= 1 && data.jobNumber.size() <= 60)) &&
           priceWorkApproverValid(data.approvedByUserId);
       }
       function expenseItemValid(data) {
@@ -1900,7 +1903,9 @@ service cloud.firestore {
 
       match /priceWorkItems/{itemId} {
         allow read: if overtimeViewer(resource.data.get('userId', ''));
-        allow create: if payeClaimOwnerWriter(request.resource.data.get('userId', '')) && priceWorkItemValid(request.resource.data);
+        allow create: if payeClaimOwnerWriter(request.resource.data.get('userId', '')) &&
+          payeClaimText(request.resource.data, 'jobNumber', 1, 60) &&
+          priceWorkItemValid(request.resource.data);
         allow update: if payeClaimOwnerWriter(resource.data.get('userId', '')) &&
           request.resource.data.userId == resource.data.userId &&
           request.resource.data.get('createdBy', '') == resource.data.get('createdBy', '') &&

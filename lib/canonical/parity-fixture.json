@@ -22148,6 +22148,7 @@
           "draft": {
             "title": "Tiling",
             "details": "Bathroom",
+            "jobNumber": " J-1042 ",
             "startDate": "2026-11-03",
             "endDate": "2026-11-05",
             "approvedByUserId": "lm",
@@ -22167,6 +22168,7 @@
         "userId": "sam",
         "title": "Tiling",
         "details": "Bathroom",
+        "jobNumber": "J-1042",
         "startDate": "2026-11-03",
         "endDate": "2026-11-05",
         "approvedByUserId": "lm",
@@ -22190,6 +22192,7 @@
       "args": [
         {
           "title": "Tiling",
+          "jobNumber": "J-1",
           "startDate": "2026-11-03",
           "approvedByUserId": "op2",
           "amount": 10
@@ -22385,6 +22388,7 @@
         "createdAtMs": null,
         "createdBy": "",
         "kind": "priceWork",
+        "jobNumber": "",
         "startDate": "2026-11-24",
         "endDate": "2026-11-27",
         "approvedByUserId": "lm",
@@ -22745,6 +22749,143 @@
         }
       ],
       "expected": "organizations/org-130/payeClaims/sam/sam_1700000000000.pdf"
+    },
+    {
+      "name": "1.30.1 price work job number required",
+      "function": "priceWorkJobNumberError",
+      "args": [
+        "  "
+      ],
+      "expected": "Add the job number for this price work."
+    },
+    {
+      "name": "1.30.1 price work job number up to 60 characters",
+      "function": "priceWorkJobNumberError",
+      "args": [
+        "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+      ],
+      "expected": "The job number can be up to 60 characters."
+    },
+    {
+      "name": "1.30.1 price work job number ok",
+      "function": "priceWorkJobNumberError",
+      "args": [
+        " J-1042 "
+      ],
+      "expected": null
+    },
+    {
+      "name": "1.30.1 older price work shows a dash",
+      "function": "priceWorkJobNumberText",
+      "args": [
+        ""
+      ],
+      "expected": "—"
+    },
+    {
+      "name": "1.30.1 price work reader keeps a stored job number",
+      "function": "parsePriceWorkDocument",
+      "args": [
+        "P9",
+        {
+          "userId": "sam",
+          "title": "Tiling",
+          "amount": 10,
+          "startDate": "2026-11-03",
+          "jobNumber": " J-7 "
+        }
+      ],
+      "expected": {
+        "id": "P9",
+        "userId": "sam",
+        "title": "Tiling",
+        "details": "",
+        "amount": 10,
+        "currency": "",
+        "evidence": [],
+        "createdAtMs": null,
+        "createdBy": "",
+        "kind": "priceWork",
+        "jobNumber": "J-7",
+        "startDate": "2026-11-03",
+        "endDate": "2026-11-03",
+        "approvedByUserId": "",
+        "approvedByName": ""
+      }
+    },
+    {
+      "name": "1.30.1 timesheet price work: untouched older entry never asks",
+      "function": "timesheetPriceWorkJobNumberError",
+      "args": [
+        [
+          {
+            "id": "AAA",
+            "title": "Tiling",
+            "jobNumber": "",
+            "agreedManagerName": "Lena",
+            "startDate": "2026-11-03T00:00:00.000Z",
+            "amount": 100
+          }
+        ],
+        [
+          {
+            "id": "aaa",
+            "title": "Tiling",
+            "jobNumber": "",
+            "agreedManagerName": "Lena",
+            "startDate": "2026-11-03T00:00:00.000Z",
+            "amount": 100,
+            "managerDecision": "edited",
+            "managerRevisedAmount": 80
+          }
+        ]
+      ],
+      "expected": null
+    },
+    {
+      "name": "1.30.1 timesheet price work: an edited older entry asks",
+      "function": "timesheetPriceWorkJobNumberError",
+      "args": [
+        [
+          {
+            "id": "AAA",
+            "title": "Tiling",
+            "jobNumber": "",
+            "agreedManagerName": "Lena",
+            "startDate": "2026-11-03T00:00:00.000Z",
+            "amount": 100
+          }
+        ],
+        [
+          {
+            "id": "AAA",
+            "title": "Tiling",
+            "jobNumber": "",
+            "agreedManagerName": "Lena",
+            "startDate": "2026-11-03T00:00:00.000Z",
+            "amount": 120
+          }
+        ]
+      ],
+      "expected": "Add the job number for this price work."
+    },
+    {
+      "name": "1.30.1 timesheet price work: a new entry with a job number",
+      "function": "timesheetPriceWorkJobNumberError",
+      "args": [
+        [],
+        [
+          {
+            "id": "BBB",
+            "title": "Skirting",
+            "jobNumber": "J-2",
+            "agreedManagerName": "Lena",
+            "startDate": "2026-11-05T00:00:00.000Z",
+            "amount": 40
+          }
+        ]
+      ],
+      "expected": null
     }
   ]
 }
