@@ -4060,3 +4060,57 @@ test('1.30.2 cells: visitors — toggles come from the membership here, never th
   // An admin of B reviews the visitor's sheet; the visitor never reviews their own.
   await assertSucceeds(setDoc(sheetRef(ORG_B, VISIT_MGR, ADMIN_B, 'admin-b@test.com', 1800000012), counterSign(ADMIN_B), { merge: true }))
 })
+
+test('1.30.2 review fix: the doc id prefix never borrows another person\'s self-signing; the owner never re-attributes a sheet', async () => {
+  await seedRulebook1302People()
+  const rep = authDb(REPORT_A, 'report-a@test.com')
+  const privileged = (subject: string) => ({
+    userId: subject, operativeSignedAt: Timestamp.now(), operativeSignedByName: 'X',
+    ...counterSign(REPORT_A), exportedAt: Timestamp.now(), ...snapshot(subject),
+    extraEntryReviews: { e1: { decision: 'approved', reviewedAmount: 1, reviewedByUserId: REPORT_A, reviewedAtMs: 1 } },
+  })
+  // Create attack: own prefix, a self-signing admin's userId, every privileged field.
+  const attack = doc(rep, 'organizations', ORG_A, 'settings', `timesheet_${REPORT_A}_100`)
+  await assertFails(setDoc(attack, privileged(ADM_BOTH_A)))
+  // Even without privileged fields the owner never files a sheet under someone else.
+  await assertFails(setDoc(attack, { userId: ADM_BOTH_A, operativeSignedAt: Timestamp.now() }))
+  // Update attack: an own sheet re-attributed (to the admin, or back) is refused.
+  await assertSucceeds(setDoc(attack, ownSign(REPORT_A)))
+  await assertFails(updateDoc(attack, { userId: ADM_BOTH_A, ...snapshot(ADM_BOTH_A) }))
+  await assertFails(updateDoc(attack, { userId: ADM_BOTH_A }))
+  // A sheet stored under the admin's id with the operative's prefix (seeded) cannot be taken over or rewritten.
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'organizations', ORG_A, 'settings', `timesheet_${REPORT_A}_101`), { userId: ADM_BOTH_A })
+  })
+  const planted = doc(rep, 'organizations', ORG_A, 'settings', `timesheet_${REPORT_A}_101`)
+  await assertFails(updateDoc(planted, { ...counterSign(REPORT_A), ...snapshot(ADM_BOTH_A) }))
+  await assertFails(updateDoc(planted, { userId: REPORT_A }))
+  await assertFails(deleteDoc(planted))
+  // The self-signed admin's own sheet: full write, create and update, still allowed; their userId cannot move either.
+  const own = sheetRef(ORG_A, ADM_BOTH_A, ADM_BOTH_A, 'adm-both-a@test.com', 1800000021)
+  await assertSucceeds(setDoc(own, { ...ownSign(ADM_BOTH_A), ...counterSign(ADM_BOTH_A), ...snapshot(ADM_BOTH_A) }))
+  await assertSucceeds(updateDoc(own, entryReview(ADM_BOTH_A)))
+  await assertFails(updateDoc(own, { userId: REPORT_A }))
+  // A signed sheet is never deleted by its owner, self-signed or not (no app deletes one).
+  await assertFails(deleteDoc(own))
+})
+
+test('1.30.2 review fix: a same-email id is the caller — an admin never counter-signs a sheet filed under it', async () => {
+  await seedRulebook1302People()
+  const ALIAS = 'admin2-a-alias'
+  await setUserFields(ADMIN2_A, { sameEmailUserIds: [ALIAS] })
+  try {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      const db = ctx.firestore()
+      await setDoc(doc(db, 'users', ALIAS), { email: 'admin2-a@test.com', organizationId: ORG_A, role: 'operative' })
+      await setDoc(doc(db, 'organizations', ORG_A, 'settings', `timesheet_${ALIAS}_1`), ownSign(ALIAS))
+    })
+    const aliasSheet = sheetRef(ORG_A, ALIAS, ADMIN2_A, 'admin2-a@test.com', 1)
+    await assertFails(setDoc(aliasSheet, counterSign(ADMIN2_A), { merge: true }))
+    await assertFails(updateDoc(aliasSheet, entryReview(ADMIN2_A)))
+    // Another admin reviews it.
+    await assertSucceeds(setDoc(sheetRef(ORG_A, ALIAS, ADMIN_A, 'admin-a@test.com', 1), counterSign(ADMIN_A), { merge: true }))
+  } finally {
+    await setUserFields(ADMIN2_A, { sameEmailUserIds: [] })
+  }
+})

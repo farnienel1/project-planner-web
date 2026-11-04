@@ -2,6 +2,7 @@ import type { User, UserPermissions, UserRole } from '@/types'
 import { UserRole as Role } from '@/types'
 import { withTimeout } from '@/lib/client/withTimeout'
 import { membershipPermissions } from '@/lib/orgMembership/orgRoleFlags'
+import { activeOrganizationIdentity } from '@/lib/staff/activeOrganizationIdentity'
 import {
   chooseSessionOrganization,
   organizationIdsMatch,
@@ -156,6 +157,12 @@ function roleFrom(value: unknown, fallback: UserRole): UserRole {
   return fallback
 }
 
+/** The creator of `organizationId` when it is the open organisation the live listener knows (1.30.2), else null. */
+function openOrganizationCreator(organizationId: string): string | null {
+  const identity = activeOrganizationIdentity()
+  return identity && organizationIdsMatch(identity.organizationId, organizationId) ? identity.creatorUserId : null
+}
+
 function staffPermissions(role: UserRole): UserPermissions {
   const operative = role === Role.OPERATIVE
   const admin = role === Role.ADMIN
@@ -227,7 +234,7 @@ export function applyDeviceOrgMembership(
     if (!String(listedRole || '').trim()) {
       // Rulebook 1.30.2 (`organizationSelfManageFlags`): the self-manage toggles here come from this company's
       // membership only, never the home company's users document — off until the membership read arrives.
-      const here = organizationSelfManageFlags({ organizationId, userId: user.id, membership: null })
+      const here = organizationSelfManageFlags({ organizationId, userId: user.id, membership: null, creatorUserId: openOrganizationCreator(organizationId) })
       return {
         ...user,
         organizationId,
@@ -331,7 +338,7 @@ export function sessionUserForOrganizationProbe(
     !organizationIdsMatch(organizationId, documentOrganizationId)
   if (unconfirmedElsewhere) {
     // Rulebook 1.30.2: no self-manage toggle from the home company while this company is unconfirmed.
-    const here = organizationSelfManageFlags({ organizationId, userId: user.id, membership: null })
+    const here = organizationSelfManageFlags({ organizationId, userId: user.id, membership: null, creatorUserId: openOrganizationCreator(organizationId) })
     return {
       ...user,
       organizationId,
