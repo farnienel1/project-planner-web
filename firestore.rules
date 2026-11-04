@@ -913,6 +913,42 @@ service cloud.firestore {
     return orgCreatorIs(org, request.auth.uid) ||
       (staffFlag(callerHomeData(), 'isSuperAdmin') && org != '' && homeOrgIs(callerHomeData(), org));
   }
+  // Rulebook 1.30.2 (§8, §9, §16; lib/canonical organizationSelfManageFlags): a person's self-manage toggles
+  // (`annualLeaveSelfBook`, `timesheetSelfSign`) are read for THIS organisation — their users document when its
+  // `organizationId` names this organisation, else their membership here (users/{uid}/orgMemberships/{orgId}, as
+  // organizationLevelFor reads it), else off. Never another company's users document: before 1.30.2 an admin whose
+  // toggles were on only in their membership here was refused, and a manager with the flag on at home was allowed.
+  // A membership flag is `permissions.{key}` when stored there, else the flat key (parseOrgMembershipDocument).
+  function membershipFlag(m, key) {
+    let nested = m.get('permissions', {});
+    return (nested is map && nested.get(key, null) in [true, false, 1, 0]) ?
+      truthyBool(nested.get(key, false)) : truthyBool(m.get(key, false));
+  }
+  // The membership's level here (organizationLevelFor): the role, else its flags. `adminOnly`: the flag counts for an
+  // admin only (Timesheet self-sign); otherwise for anyone outside operative mode (Annual Leave Management).
+  function membershipSelfManageFlag(m, key, adminOnly) {
+    let role = m.get('role', '') is string ? m.get('role', '').lower().replace('[ -]', '_') : '';
+    let admin = role in ['admin', 'super_admin', 'superadmin'] || (!(role in ['manager', 'operative']) &&
+      (truthyBool(m.get('isSuperAdmin', false)) || membershipFlag(m, 'adminAccess')));
+    let operative = !admin && (role == 'operative' || (role != 'manager' && membershipFlag(m, 'operativeMode')));
+    return m.get('accountActive', m.get('isActive', true)) != false && membershipFlag(m, key) &&
+      (admin || (!adminOnly && !operative));
+  }
+  // The toggle `key` of person `uid` in this organisation. On the users document of this organisation the Super Admin
+  // flag counts as both toggles on; a membership never makes anyone the Super Admin. The creator is the callers' test.
+  function orgSelfManageFlag(uid, organizationId, key, adminOnly) {
+    let homePath = /databases/(default)/documents/users/$(uid);
+    let home = exists(homePath) ? get(homePath).data : {};
+    return homeOrgIs(home, organizationId) ?
+      (home.get('isActive', true) != false &&
+        (adminLikeUser(home) || (!adminOnly && !isOperativeProfile(home))) &&
+        (staffFlag(home, key) || staffFlag(home, 'isSuperAdmin'))) :
+      membershipSelfManageFlagOf(uid, organizationId, key, adminOnly);
+  }
+  function membershipSelfManageFlagOf(uid, organizationId, key, adminOnly) {
+    let mPath = /databases/(default)/documents/users/$(uid)/orgMemberships/$(organizationId);
+    return exists(mPath) && membershipSelfManageFlag(get(mPath).data, key, adminOnly);
+  }
   // 1.12.0 (B4): an admin who is not the Super Admin never changes `isSuperAdmin` on anyone (their own document
   // included) and never changes the role, permissions, active flag or company of the Super Admin or the creator.
   // Ownership moves only as §16 says (the current Super Admin, or the platform owner).
@@ -2009,14 +2045,56 @@ service cloud.firestore {
             ? resource.data.userId
             : request.resource.data.get('userId', null);
         }
+        // Rulebook 1.30.2 (lib/canonical timesheetWriterIsReviewer, personIdSet): every id the caller goes by — their
+        // uid, and the `formerUserIds` / `sameEmailUserIds` on their own users document (never self-edited,
+        // selfUpdateKeepsIdentityLinks).
+        function timesheetIdIsCallers(id) {
+          return id == request.auth.uid || timesheetIdIsCallerAlias(id);
+        }
+        function timesheetIdIsCallerAlias(id) {
+          let home = callerHomeData();
+          return (home.get('formerUserIds', []) is list && id in home.get('formerUserIds', [])) ||
+            (home.get('sameEmailUserIds', []) is list && id in home.get('sameEmailUserIds', []));
+        }
+        // The sheet's `userId` (stored, else incoming) is one of the caller's ids.
+        function timesheetSubjectIsCaller() {
+          return timesheetSubjectUid() is string && timesheetIdIsCallers(timesheetSubjectUid());
+        }
+        // The caller is the sheet's subject for the reviewer test: their id is the `userId`, or the doc id prefix names
+        // them (isOwnTimesheetSettings) — either one makes them never the reviewer.
+        function timesheetCallerIsSubject() {
+          return isOwnTimesheetSettings() || timesheetSubjectIsCaller();
+        }
+        // The owner never re-attributes a sheet: an incoming `userId` is one of their own ids, and an update keeps the
+        // stored one (a legacy sheet without one may gain the caller's).
+        function timesheetOwnerKeepsSubject() {
+          let next = request.resource.data.get('userId', null);
+          return (next == null || timesheetIdIsCallers(next)) && (
+            resource == null ||
+            next == resource.data.get('userId', null) ||
+            (resource.data.get('userId', null) == null && next == request.auth.uid)
+          );
+        }
+        // The self-signed owner's write: the sheet is theirs by its `userId` (timesheetOwnerKeepsSubject, checked first,
+        // leaves only the caller's own ids there), the doc id names that same subject, and the subject is self-signed.
+        // The prefix alone never grants it.
+        function timesheetSelfSignedOwnerWrite() {
+          let uid = timesheetSubjectUid();
+          return uid is string && settingId.matches('^timesheet_' + uid + '_.*') && timesheetSelfSignsUid(uid);
+        }
         // Admins, or the subject's line manager (their own id, or a former invite id on
-        // users/{auth.uid}.formerUserIds — lib/canonical/userTimesheetAccess.ts).
+        // users/{auth.uid}.formerUserIds — lib/canonical/userTimesheetAccess.ts). 1.30.2: never the subject themself,
+        // admins and the Super Admin included (before it an admin was the reviewer of their own sheet and could
+        // counter-sign it); their own write is the owner's (canWriteTimesheetSettings).
         function isTimesheetReviewer() {
-          return isPlatformOwner() ||
+          return isPlatformOwner() || (!timesheetCallerIsSubject() && timesheetReviewerOfOthers());
+        }
+        // Admins or the subject's line manager, for a sheet that is not the caller's (callers test that first).
+        function timesheetReviewerOfOthers() {
+          return (
             isOrganizationAdmin(organizationId) ||
             isOrgAdminViaMembersMap(organizationId) || (
               timesheetSubjectUid() is string &&
-              timesheetSubjectUid() != request.auth.uid &&
               exists(/databases/(default)/documents/users/$(timesheetSubjectUid())) &&
               // 1.12.0 (B3): former ids only from the caller's own company's users document.
               lineManagerIdList(get(/databases/(default)/documents/users/$(timesheetSubjectUid())).data).hasAny(
@@ -2026,7 +2104,8 @@ service cloud.firestore {
                     : []
                 )
               )
-            );
+            )
+          );
         }
         function timesheetSame(key) {
           return sameLooseValue(
@@ -2078,19 +2157,13 @@ service cloud.firestore {
         // lib/canonical timesheetSelfSigned (rulebook 1.28.0): the owner writes the approved snapshot only when the
         // sheet is self-signed — the organisation's Super Admin (its creator, or a super admin users document of this
         // organisation), or an active admin of this organisation with Timesheet self-sign on, line manager or not.
-        // Having no line manager no longer self-signs anyone.
+        // Having no line manager no longer self-signs anyone. 1.30.2: the toggle is read for this organisation
+        // (orgSelfManageFlag: the users document of this organisation, else the membership here).
         function timesheetSubjectSelfSigns() {
-          return timesheetSubjectUid() is string && timesheetSubjectSelfSignsData(timesheetSubjectUid());
+          return timesheetSubjectUid() is string && timesheetSelfSignsUid(timesheetSubjectUid());
         }
-        function timesheetSubjectSelfSignsData(uid) {
-          let path = /databases/(default)/documents/users/$(uid);
-          let subject = exists(path) ? get(path).data : {};
-          return orgCreatorIs(organizationId, uid) || (
-            homeOrgIs(subject, organizationId) &&
-            subject.get('isActive', true) != false &&
-            adminLikeUser(subject) &&
-            (staffFlag(subject, 'timesheetSelfSign') || staffFlag(subject, 'isSuperAdmin'))
-          );
+        function timesheetSelfSignsUid(uid) {
+          return orgCreatorIs(organizationId, uid) || orgSelfManageFlag(uid, organizationId, 'timesheetSelfSign', true);
         }
         function timesheetStoredManagerSigned() {
           return resource != null && (
@@ -2100,34 +2173,43 @@ service cloud.firestore {
             resource.data.get('approvedAt', null) is number
           );
         }
-        // The owner never writes line reviews or entry decisions; writes the approved snapshot only
-        // when the sheet is self-signed (timesheetSubjectSelfSigns); and cannot change their price work or
-        // expenses once the line manager has signed.
+        // The owner never writes line reviews or entry decisions; never writes the approved snapshot (a self-signed
+        // owner passes canWriteTimesheetSettings before this); and cannot change their price work or expenses once the
+        // line manager has signed.
         function timesheetOwnerReviewFieldsUnchanged() {
           let written = timesheetWrittenKeys();
           return timesheetOwnerLeaves('payrollLineReviews', written) &&
             timesheetOwnerLeaves('extraEntryReviews', written) &&
-            (timesheetOwnerLeaves('weeklyReportOverride', written) || timesheetSubjectSelfSigns()) &&
+            timesheetOwnerLeaves('weeklyReportOverride', written) &&
             (!timesheetStoredManagerSigned() || (
               timesheetOwnerLeavesList('expenseEntries', written) &&
               timesheetOwnerLeavesList('priceWorkEntries', written)
             ));
         }
+        // 1.30.2: the subject writes their own sheet only here. A self-signed subject (timesheetSubjectSelfSigns) may
+        // write the whole sheet: their signature completes it, the snapshot is theirs, and an iOS build from before
+        // 1.30.2 saves a self-signed admin's own sheet as the reviewer's (sign-off fields, `extraEntryReviews`). Anyone
+        // else — an admin with Timesheet self-sign off included — leaves the sign-off and export fields, the review maps
+        // and the snapshot alone.
         function canWriteTimesheetSettings() {
-          return isTimesheetReviewer() || (
-            isOwnTimesheetSettings() &&
-            timesheetManagerFieldsUnchanged() &&
-            timesheetOwnerReviewFieldsUnchanged()
-          );
+          // The subject test runs once (the 1000-expression limit), and an ordinary owner save never reads the
+          // self-sign toggle.
+          return isPlatformOwner() || (timesheetCallerIsSubject() ? (
+            timesheetOwnerKeepsSubject() && (
+              (timesheetManagerFieldsUnchanged() && timesheetOwnerReviewFieldsUnchanged()) ||
+              timesheetSelfSignedOwnerWrite()
+            )
+          ) : timesheetReviewerOfOthers());
         }
         function canDeleteTimesheetSettings() {
-          return isTimesheetReviewer() || (
-            isOwnTimesheetSettings() &&
+          // The owner deletes only an unsigned sheet filed under them (no self-signed exception: no app deletes one).
+          return isPlatformOwner() || (timesheetCallerIsSubject() ? (
+            (resource.data.get('userId', null) == null || timesheetSubjectIsCaller()) &&
             resource.data.get('managerSignedAt', null) == null &&
             resource.data.get('exportedAt', null) == null &&
             timesheetEmptyish(resource.data.get('payrollLineReviews', null)) &&
             timesheetEmptyish(resource.data.get('extraEntryReviews', null))
-          );
+          ) : timesheetReviewerOfOthers());
         }
         // Per-job deadlines and the legacy health & safety copy: operatives update their own
         // deadlines and sign toolbox talks, so any member writes these.
@@ -2344,11 +2426,11 @@ service cloud.firestore {
         // outside operative mode, or the organisation's Super Admin (callerIsSuperAdminOf: its creator, or a super
         // admin users document of this organisation). Having no line manager never self-books anyone, admins
         // included (their request waits for the other admins).
+        // 1.30.2: the flag is read for this organisation (orgSelfManageFlag: the users document of this organisation,
+        // else the membership here), never the caller's users document of another company.
         function hbCallerSelfBooks() {
-          return !hbCallerIsOperative() && (
-            staffFlag(hbCaller(), 'annualLeaveSelfBook') ||
-            callerIsSuperAdminOf(organizationId)
-          );
+          return orgCreatorIs(organizationId, request.auth.uid) ||
+            orgSelfManageFlag(request.auth.uid, organizationId, 'annualLeaveSelfBook', false);
         }
         function hbIsRequestShape(next) {
           return next.get('status', null) == 'pending' &&

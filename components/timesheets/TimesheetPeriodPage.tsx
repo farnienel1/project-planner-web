@@ -4,6 +4,7 @@
  */
 'use client'
 
+import { rulebookRoster } from '@/lib/staff/rulebookPeople'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Booking, Operative, Project, User } from '@/types'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
@@ -291,8 +292,20 @@ export function TimesheetPeriodPage({
 
   // `timesheetSelfSigned(user, roster)`: only a self-signed admin skips the counter-signature.
   const needsCounterSign = requiresLineManagerCounterSign(subjectUser, users)
+  // Rulebook 1.30.2 (`timesheetWriterIsReviewer`): the viewer reviews this sheet only as its line manager or an
+  // admin, and never their own under any of their ids (admins and the Super Admin included). Their own sheet is the
+  // owner flow; a self-signed owner's signature completes it.
+  const viewerIsReviewer = timesheetWriterIsReviewer({
+    writerUserId: viewer?.id,
+    subjectUserId: subjectUser.id,
+    writerIsAdmin: Boolean(viewer && seesEveryUserTimesheet(staffAccountRole(viewer))),
+    writerFormerIds: viewer?.formerUserIds ?? [],
+    writerAliasIds: viewer ? userIdsSharingEmail(viewer, users) : [],
+    subjectLineManagerIds: lineManagerUserIds(subjectUser, users),
+    roster: rulebookRoster(users),
+  })
   const canManagerReview = (() => {
-    if (mode !== 'review' || !viewer) return false
+    if (mode !== 'review' || !viewer || !viewerIsReviewer) return false
     if (draft.exportedAt) {
       // `userTimesheetSubjects`: admins see everyone, a manager the people they line-manage under any of their ids.
       const inScope = userTimesheetSubjectIds(viewer, users).includes(subjectUser.id)
@@ -353,7 +366,9 @@ export function TimesheetPeriodPage({
         subjectUserId: subjectUser.id,
         writerIsAdmin: Boolean(viewer && seesEveryUserTimesheet(staffAccountRole(viewer))),
         writerFormerIds: viewer?.formerUserIds ?? [],
+        writerAliasIds: viewer ? userIdsSharingEmail(viewer, users) : [],
         subjectLineManagerIds: lineManagerUserIds(subjectUser, users),
+        roster: rulebookRoster(users),
       })
       const reviews = await saveTimesheetDraft({
         organizationId: organization.id,
@@ -617,7 +632,8 @@ export function TimesheetPeriodPage({
   }
 
   const handleManagerSign = async () => {
-    if (!viewer || !signature) return
+    // Rulebook 1.30.2: never a counter-signature on one's own sheet.
+    if (!viewer || !signature || !viewerIsReviewer) return
     if (!payInputs.ready) {
       setError(payInputs.message)
       return

@@ -80,7 +80,7 @@ export function assignedManagerNames(
       if (row) push(`${clean(row.firstName)} ${clean(row.lastName)}`.trim() || clean(row.email))
     }
   } else {
-    // Rulebook 1.30.2 `jobManagerAssignments`: only current managers are named; a former one (operative now,
+    // Rulebook 1.30.3 `jobManagerAssignments`: only current managers are named; a former one (operative now,
     // inactive, invite not accepted, deleted) is never shown as the job's manager.
     for (const assignment of projectManagerAssignments({ managerIds: ids }, roster, accounts, organizationId)) {
       if (assignment.state === 'former' && assignment.reason === 'no_account') {

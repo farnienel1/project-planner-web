@@ -2166,8 +2166,7 @@ test('1.28.0: only the Super Admin or an admin with Timesheet self-sign writes t
     userId: uid, operativeSignedAt: Timestamp.now(), operativeSignedByName: 'Self',
     weeklyReportOverride: { approvedByUserId: uid, selfSigned: true, lines: [], priceWork: [], expenses: [], n },
   })
-  // Admins (and so the Super Admin) are timesheet reviewers in these rules, so their own writes pass as reviewers;
-  // the owner rule is shown on the non-admins below.
+  // The Super Admin's own sheet is self-signed (1.30.2: through the owner path — nobody reviews their own sheet).
   await assertSucceeds(setDoc(sheet(ADMIN_A, 'admin-a@test.com'), save(ADMIN_A, 1), { merge: true }))
   // REPORT_A (an operative with an active line manager): never.
   const rep = sheet(REPORT_A, 'report-a@test.com')
@@ -3904,4 +3903,214 @@ test('1.28.0 B2: the unflagged creator may change their own self-manage toggles;
   await assertSucceeds(updateDoc(own, { timesheetSelfSign: true, annualLeaveSelfBook: true }))
   await assertSucceeds(updateDoc(own, { timesheetSelfSign: false, annualLeaveSelfBook: false }))
   await assertFails(updateDoc(doc(authDb(ADMIN2_A, 'admin2-a@test.com'), 'users', ADMIN2_A), { timesheetSelfSign: true }))
+})
+
+// ── Rulebook 1.30.2: nobody reviews their own timesheet; self-manage toggles are read for THIS organisation ──
+const ADM_BOTH_A = 'adm-both-a'
+const ADM_LEAVE_A = 'adm-leave-only-a'
+const ADM_TS_A = 'adm-ts-only-a'
+const ADM_PAYE_A = 'adm-paye-a'
+const DEMOTED_MGR_A = 'demoted-mgr-a'
+const VISIT_ADMIN = 'visiting-admin'
+const VISIT_MGR = 'visiting-mgr'
+
+async function seedRulebook1302People() {
+  await seedRulebook1280People()
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    const admin = (email: string, extra: Record<string, unknown>) => ({
+      email, organizationId: ORG_A, role: 'admin', adminAccess: true, isActive: true, ...extra,
+    })
+    await setDoc(doc(db, 'users', ADM_BOTH_A), admin('adm-both-a@test.com', {
+      permissions: { adminAccess: true, annualLeaveSelfBook: true, timesheetSelfSign: true },
+    }))
+    await setDoc(doc(db, 'users', ADM_LEAVE_A), admin('adm-leave-a@test.com', {
+      assignedManagerUserIds: [LM_A], assignedManagerUserId: LM_A,
+      permissions: { adminAccess: true, annualLeaveSelfBook: true, timesheetSelfSign: false },
+    }))
+    await setDoc(doc(db, 'users', ADM_TS_A), admin('adm-ts-a@test.com', {
+      assignedManagerUserIds: [LM_A], assignedManagerUserId: LM_A,
+      permissions: { adminAccess: true, annualLeaveSelfBook: false, timesheetSelfSign: true },
+    }))
+    await setDoc(doc(db, 'users', ADM_PAYE_A), admin('adm-paye-a@test.com', {
+      employmentType: 'paye',
+      permissions: { adminAccess: true, annualLeaveSelfBook: true, timesheetSelfSign: false },
+    }))
+    // A demoted admin: manager now, Timesheet self-sign kept underneath, Annual Leave Management off.
+    await setDoc(doc(db, 'users', DEMOTED_MGR_A), {
+      email: 'demoted-mgr-a@test.com', organizationId: ORG_A, role: 'manager', manager: true, isActive: true,
+      assignedManagerUserIds: [LM_A], assignedManagerUserId: LM_A, timesheetSelfSign: true,
+      permissions: { manager: true, adminAccess: false, annualLeaveSelfBook: false, timesheetSelfSign: true },
+    })
+    // Visitors: users document of company A, members of company B.
+    await setDoc(doc(db, 'users', VISIT_ADMIN), {
+      email: 'visiting-admin@test.com', organizationId: ORG_A, role: 'operative', operativeMode: true, isActive: true,
+      permissions: { operativeMode: true, annualLeaveSelfBook: false, timesheetSelfSign: false },
+    })
+    await setDoc(doc(db, 'users', VISIT_ADMIN, 'orgMemberships', ORG_B), {
+      organizationId: ORG_B, role: 'admin', status: 'active', accountActive: true,
+      permissions: { adminAccess: true, annualLeaveSelfBook: true, timesheetSelfSign: true },
+    })
+    await setDoc(doc(db, 'users', VISIT_MGR), {
+      email: 'visiting-mgr@test.com', organizationId: ORG_A, role: 'admin', adminAccess: true, isActive: true,
+      annualLeaveSelfBook: true, timesheetSelfSign: true,
+      permissions: { adminAccess: true, annualLeaveSelfBook: true, timesheetSelfSign: true },
+    })
+    await setDoc(doc(db, 'users', VISIT_MGR, 'orgMemberships', ORG_B), {
+      organizationId: ORG_B, role: 'manager', status: 'active', accountActive: true,
+      permissions: { manager: true, adminAccess: false, annualLeaveSelfBook: false, timesheetSelfSign: false },
+    })
+    await updateDoc(doc(db, 'organizations', ORG_B), {
+      [`members.${VISIT_ADMIN}`]: 'admin',
+      [`members.${VISIT_MGR}`]: 'manager',
+    })
+  })
+}
+
+function sheetRef(org: string, subject: string, uid: string, email: string, n = 1800000000) {
+  return doc(authDb(uid, email), 'organizations', org, 'settings', `timesheet_${subject}_${n}`)
+}
+const ownSign = (uid: string) => ({
+  userId: uid, weekStartKey: '2026-11-01', weekEndKey: '2026-11-15',
+  operativeSignedAt: Timestamp.now(), operativeSignedByName: 'Self',
+})
+const counterSign = (uid: string) => ({
+  managerSignedAt: Timestamp.now(), managerSignedByName: 'Self', managerSignedByUserId: uid,
+  approvedAt: Timestamp.now(), approvedByName: 'Self',
+})
+const snapshot = (uid: string) => ({
+  weeklyReportOverride: { approvedByUserId: uid, selfSigned: true, lines: [], priceWork: [], expenses: [] },
+})
+const entryReview = (uid: string) => ({
+  'extraEntryReviews.e1': { decision: 'approved', revisedAmount: null, reviewedAmount: 10, reviewedByUserId: uid, reviewedAtMs: 1 },
+})
+const approvedLeave = (uid: string) => leave(uid, 'approved', { approvedByUserId: uid, approvedAt: Timestamp.now() })
+
+/** The owner signs; then counter-sign, snapshot and an entry review on their own sheet — allowed or refused together. */
+async function ownSheetCell(org: string, uid: string, email: string, selfSigned: boolean, n: number) {
+  const ref = sheetRef(org, uid, uid, email, n)
+  await assertSucceeds(setDoc(ref, ownSign(uid), { merge: true }))
+  const check = selfSigned ? assertSucceeds : assertFails
+  await check(setDoc(ref, snapshot(uid), { merge: true }))
+  await check(updateDoc(ref, entryReview(uid)))
+  await check(setDoc(ref, counterSign(uid), { merge: true }))
+}
+
+test('1.30.2 cells: own timesheet counter-sign, snapshot and reviews follow timesheetSelfSigned; own leave follows Annual Leave Management', async () => {
+  await seedRulebook1302People()
+  const hb = (org: string, uid: string, email: string, id: string) =>
+    doc(authDb(uid, email), 'organizations', org, 'holidayBookings', id)
+  // Super Admin (the creator): self-signed and self-books.
+  await ownSheetCell(ORG_A, ADMIN_A, 'admin-a@test.com', true, 1800000001)
+  await assertSucceeds(setDoc(hb(ORG_A, ADMIN_A, 'admin-a@test.com', 'c1302-sa'), approvedLeave(ADMIN_A)))
+  // Admin, both toggles, no line manager.
+  await ownSheetCell(ORG_A, ADM_BOTH_A, 'adm-both-a@test.com', true, 1800000002)
+  await assertSucceeds(setDoc(hb(ORG_A, ADM_BOTH_A, 'adm-both-a@test.com', 'c1302-both'), approvedLeave(ADM_BOTH_A)))
+  // Admin, leave only, with a line manager: leave approved; own sheet waits for the line manager.
+  await ownSheetCell(ORG_A, ADM_LEAVE_A, 'adm-leave-a@test.com', false, 1800000003)
+  await assertSucceeds(setDoc(hb(ORG_A, ADM_LEAVE_A, 'adm-leave-a@test.com', 'c1302-leave'), approvedLeave(ADM_LEAVE_A)))
+  await assertSucceeds(setDoc(sheetRef(ORG_A, ADM_LEAVE_A, LM_A, 'lm-a@test.com', 1800000003), counterSign(LM_A), { merge: true }))
+  // Admin, timesheet only, with a line manager: own sheet self-signed; leave is a request.
+  await ownSheetCell(ORG_A, ADM_TS_A, 'adm-ts-a@test.com', true, 1800000004)
+  await assertFails(setDoc(hb(ORG_A, ADM_TS_A, 'adm-ts-a@test.com', 'c1302-ts'), approvedLeave(ADM_TS_A)))
+  await assertSucceeds(setDoc(hb(ORG_A, ADM_TS_A, 'adm-ts-a@test.com', 'c1302-ts'), leave(ADM_TS_A, 'pending')))
+  // Admin, no toggles, no line manager: own counter-sign now DENIED (the audit's bug); another admin signs it.
+  await ownSheetCell(ORG_A, ADMIN2_A, 'admin2-a@test.com', false, 1800000005)
+  await assertFails(setDoc(sheetRef(ORG_A, ADMIN2_A, ADMIN2_A, 'admin2-a@test.com', 1800000005), { exportedAt: Timestamp.now() }, { merge: true }))
+  await assertFails(setDoc(hb(ORG_A, ADMIN2_A, 'admin2-a@test.com', 'c1302-none'), approvedLeave(ADMIN2_A)))
+  await assertSucceeds(setDoc(sheetRef(ORG_A, ADMIN2_A, ADMIN_A, 'admin-a@test.com', 1800000005), counterSign(ADMIN_A), { merge: true }))
+  // Signed by someone else: the owner (not self-signed) may not delete it.
+  await assertFails(deleteDoc(sheetRef(ORG_A, ADMIN2_A, ADMIN2_A, 'admin2-a@test.com', 1800000005)))
+  // PAYE admin, Annual Leave Management on, Timesheet self-sign off: leave approved; never their own counter-sign.
+  await ownSheetCell(ORG_A, ADM_PAYE_A, 'adm-paye-a@test.com', false, 1800000006)
+  await assertSucceeds(setDoc(hb(ORG_A, ADM_PAYE_A, 'adm-paye-a@test.com', 'c1302-paye'), approvedLeave(ADM_PAYE_A)))
+  // Demoted manager with Timesheet self-sign kept underneath: never self-signed, leave is a request.
+  await ownSheetCell(ORG_A, DEMOTED_MGR_A, 'demoted-mgr-a@test.com', false, 1800000007)
+  await assertFails(setDoc(hb(ORG_A, DEMOTED_MGR_A, 'demoted-mgr-a@test.com', 'c1302-dem'), approvedLeave(DEMOTED_MGR_A)))
+})
+
+test('1.30.2 cells: visitors — toggles come from the membership here, never the home company', async () => {
+  await seedRulebook1302People()
+  const hb = (uid: string, email: string, id: string) =>
+    doc(authDb(uid, email), 'organizations', ORG_B, 'holidayBookings', id)
+  // Visiting admin in B with the toggles only on the membership (home: operative, toggles off): allowed.
+  await assertSucceeds(setDoc(hb(VISIT_ADMIN, 'visiting-admin@test.com', 'c1302-va'), approvedLeave(VISIT_ADMIN)))
+  await ownSheetCell(ORG_B, VISIT_ADMIN, 'visiting-admin@test.com', true, 1800000011)
+  // Visiting manager in B with the flags on at home only: denied.
+  await assertFails(setDoc(hb(VISIT_MGR, 'visiting-mgr@test.com', 'c1302-vm'), approvedLeave(VISIT_MGR)))
+  await assertSucceeds(setDoc(hb(VISIT_MGR, 'visiting-mgr@test.com', 'c1302-vm'), leave(VISIT_MGR, 'pending')))
+  await ownSheetCell(ORG_B, VISIT_MGR, 'visiting-mgr@test.com', false, 1800000012)
+  // The membership's toggles are switched off: the visiting admin is refused too (no home fallback).
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'users', VISIT_ADMIN, 'orgMemberships', ORG_B), {
+      permissions: { adminAccess: true, annualLeaveSelfBook: false, timesheetSelfSign: false },
+    }, { merge: true })
+  })
+  await assertFails(setDoc(hb(VISIT_ADMIN, 'visiting-admin@test.com', 'c1302-va2'), approvedLeave(VISIT_ADMIN)))
+  await ownSheetCell(ORG_B, VISIT_ADMIN, 'visiting-admin@test.com', false, 1800000013)
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'users', VISIT_ADMIN, 'orgMemberships', ORG_B), {
+      permissions: { adminAccess: true, annualLeaveSelfBook: true, timesheetSelfSign: true },
+    }, { merge: true })
+  })
+  // Back on: allowed again (the flag is the membership's).
+  await assertSucceeds(setDoc(hb(VISIT_ADMIN, 'visiting-admin@test.com', 'c1302-va3'), approvedLeave(VISIT_ADMIN)))
+  // Home company A still reads the home users document: the visiting manager is an admin with both toggles there.
+  await assertSucceeds(setDoc(doc(authDb(VISIT_MGR, 'visiting-mgr@test.com'), 'organizations', ORG_A, 'holidayBookings', 'c1302-vm-home'), approvedLeave(VISIT_MGR)))
+  // An admin of B reviews the visitor's sheet; the visitor never reviews their own.
+  await assertSucceeds(setDoc(sheetRef(ORG_B, VISIT_MGR, ADMIN_B, 'admin-b@test.com', 1800000012), counterSign(ADMIN_B), { merge: true }))
+})
+
+test('1.30.2 review fix: the doc id prefix never borrows another person\'s self-signing; the owner never re-attributes a sheet', async () => {
+  await seedRulebook1302People()
+  const rep = authDb(REPORT_A, 'report-a@test.com')
+  const privileged = (subject: string) => ({
+    userId: subject, operativeSignedAt: Timestamp.now(), operativeSignedByName: 'X',
+    ...counterSign(REPORT_A), exportedAt: Timestamp.now(), ...snapshot(subject),
+    extraEntryReviews: { e1: { decision: 'approved', reviewedAmount: 1, reviewedByUserId: REPORT_A, reviewedAtMs: 1 } },
+  })
+  // Create attack: own prefix, a self-signing admin's userId, every privileged field.
+  const attack = doc(rep, 'organizations', ORG_A, 'settings', `timesheet_${REPORT_A}_100`)
+  await assertFails(setDoc(attack, privileged(ADM_BOTH_A)))
+  // Even without privileged fields the owner never files a sheet under someone else.
+  await assertFails(setDoc(attack, { userId: ADM_BOTH_A, operativeSignedAt: Timestamp.now() }))
+  // Update attack: an own sheet re-attributed (to the admin, or back) is refused.
+  await assertSucceeds(setDoc(attack, ownSign(REPORT_A)))
+  await assertFails(updateDoc(attack, { userId: ADM_BOTH_A, ...snapshot(ADM_BOTH_A) }))
+  await assertFails(updateDoc(attack, { userId: ADM_BOTH_A }))
+  // A sheet stored under the admin's id with the operative's prefix (seeded) cannot be taken over or rewritten.
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'organizations', ORG_A, 'settings', `timesheet_${REPORT_A}_101`), { userId: ADM_BOTH_A })
+  })
+  const planted = doc(rep, 'organizations', ORG_A, 'settings', `timesheet_${REPORT_A}_101`)
+  await assertFails(updateDoc(planted, { ...counterSign(REPORT_A), ...snapshot(ADM_BOTH_A) }))
+  await assertFails(updateDoc(planted, { userId: REPORT_A }))
+  await assertFails(deleteDoc(planted))
+  // The self-signed admin's own sheet: full write, create and update, still allowed; their userId cannot move either.
+  const own = sheetRef(ORG_A, ADM_BOTH_A, ADM_BOTH_A, 'adm-both-a@test.com', 1800000021)
+  await assertSucceeds(setDoc(own, { ...ownSign(ADM_BOTH_A), ...counterSign(ADM_BOTH_A), ...snapshot(ADM_BOTH_A) }))
+  await assertSucceeds(updateDoc(own, entryReview(ADM_BOTH_A)))
+  await assertFails(updateDoc(own, { userId: REPORT_A }))
+  // A signed sheet is never deleted by its owner, self-signed or not (no app deletes one).
+  await assertFails(deleteDoc(own))
+})
+
+test('1.30.2 review fix: a same-email id is the caller — an admin never counter-signs a sheet filed under it', async () => {
+  await seedRulebook1302People()
+  const ALIAS = 'admin2-a-alias'
+  await setUserFields(ADMIN2_A, { sameEmailUserIds: [ALIAS] })
+  try {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      const db = ctx.firestore()
+      await setDoc(doc(db, 'users', ALIAS), { email: 'admin2-a@test.com', organizationId: ORG_A, role: 'operative' })
+      await setDoc(doc(db, 'organizations', ORG_A, 'settings', `timesheet_${ALIAS}_1`), ownSign(ALIAS))
+    })
+    const aliasSheet = sheetRef(ORG_A, ALIAS, ADMIN2_A, 'admin2-a@test.com', 1)
+    await assertFails(setDoc(aliasSheet, counterSign(ADMIN2_A), { merge: true }))
+    await assertFails(updateDoc(aliasSheet, entryReview(ADMIN2_A)))
+    // Another admin reviews it.
+    await assertSucceeds(setDoc(sheetRef(ORG_A, ALIAS, ADMIN_A, 'admin-a@test.com', 1), counterSign(ADMIN_A), { merge: true }))
+  } finally {
+    await setUserFields(ADMIN2_A, { sameEmailUserIds: [] })
+  }
 })

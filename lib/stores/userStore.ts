@@ -449,7 +449,7 @@ export const useUserStore = create<UserStoreState>(() => ({
   changeAccountType: async (user, accountType, organizationId, roster, permissions) => {
     const stored = await getDoc(doc(db, 'users', user.id))
     const person = { ...(stored.exists() ? (stored.data() as Record<string, unknown>) : {}), id: user.id, email: user.email }
-    // Rulebook 1.30.2: the roster screens hold one document per email (the fold), so a same-email duplicate was never
+    // Rulebook 1.30.3: the roster screens hold one document per email (the fold), so a same-email duplicate was never
     // in `roster` and kept the old level — after admin → manager → admin the two documents disagreed and the fold could
     // show the stale one. Read this organisation's documents on the email so `accountTypeChangeWrites` updates them all.
     const rows = new Map(roster.map((row) => [row.id, { id: row.id, email: row.email, organizationId: row.organizationId }]))

@@ -599,7 +599,7 @@ function sortRoster(users: User[]): User[] {
 }
 
 /**
- * Rulebook 1.30.2 §11: every users document of the roster, NOT folded by email. `users` keeps one document per email
+ * Rulebook 1.30.3 §11: every users document of the roster, NOT folded by email. `users` keeps one document per email
  * (`rosterPeople`, admin first), so a stale admin copy can stand in for a live manager; the job-manager picker
  * (`jobManagerCandidates`) and Change user type (`accountTypeChangeWrites`, every same-email document) need them all.
  */
@@ -737,7 +737,7 @@ interface OrgUserState {
   claimedEmails: string[] | null
   /** Duplicate profile ids that share an email, pointing at the account kept on the roster. */
   userIdAliases: Record<string, string>
-  /** Rulebook 1.30.2: every users document loaded for `rosterDocumentsOrgId`, not folded by email. */
+  /** Rulebook 1.30.3: every users document loaded for `rosterDocumentsOrgId`, not folded by email. */
   rosterDocuments: User[]
   rosterDocumentsOrgId: string | null
   loadUsers: (organizationId: string, options?: { force?: boolean }) => Promise<void>
@@ -999,7 +999,7 @@ export const useOrgUserStore = create<OrgUserState>((set, get) => ({
 }))
 
 /**
- * Rulebook 1.30.2 §11: the roster as every users document (unfolded) for this organisation, with the folded list's
+ * Rulebook 1.30.3 §11: the roster as every users document (unfolded) for this organisation, with the folded list's
  * fresher copies laid over by id. Falls back to the folded list when the documents have not loaded (stored roster).
  */
 export function rosterDocumentsFor(
@@ -1012,7 +1012,7 @@ export function rosterDocumentsFor(
   return [...byId.values()]
 }
 
-/** `rosterDocumentsFor` as a hook (rulebook 1.30.2: job-manager rules read every users document). */
+/** `rosterDocumentsFor` as a hook (rulebook 1.30.3: job-manager rules read every users document). */
 export function useRosterDocuments(organizationId: string | null | undefined): User[] {
   const users = useOrgUserStore((state) => state.users)
   const rosterDocuments = useOrgUserStore((state) => state.rosterDocuments)

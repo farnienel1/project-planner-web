@@ -2,9 +2,11 @@ import type { User, UserPermissions, UserRole } from '@/types'
 import { UserRole as Role } from '@/types'
 import { withTimeout } from '@/lib/client/withTimeout'
 import { membershipPermissions } from '@/lib/orgMembership/orgRoleFlags'
+import { activeOrganizationIdentity } from '@/lib/staff/activeOrganizationIdentity'
 import {
   chooseSessionOrganization,
   organizationIdsMatch,
+  organizationSelfManageFlags,
   provisionalOrganizationId,
   webSessionOrganizationStorageKey,
   type OrgAccessProbe,
@@ -155,6 +157,12 @@ function roleFrom(value: unknown, fallback: UserRole): UserRole {
   return fallback
 }
 
+/** The creator of `organizationId` when it is the open organisation the live listener knows (1.30.2), else null. */
+function openOrganizationCreator(organizationId: string): string | null {
+  const identity = activeOrganizationIdentity()
+  return identity && organizationIdsMatch(identity.organizationId, organizationId) ? identity.creatorUserId : null
+}
+
 function staffPermissions(role: UserRole): UserPermissions {
   const operative = role === Role.OPERATIVE
   const admin = role === Role.ADMIN
@@ -224,7 +232,19 @@ export function applyDeviceOrgMembership(
     // The membership read has not arrived. Keep this person's rights and only
     // change the open company. A later read applies the real role.
     if (!String(listedRole || '').trim()) {
-      return { ...user, organizationId, homeOrganizationId: user.homeOrganizationId ?? documentOrganizationId }
+      // Rulebook 1.30.2 (`organizationSelfManageFlags`): the self-manage toggles here come from this company's
+      // membership only, never the home company's users document — off until the membership read arrives.
+      const here = organizationSelfManageFlags({ organizationId, userId: user.id, membership: null, creatorUserId: openOrganizationCreator(organizationId) })
+      return {
+        ...user,
+        organizationId,
+        homeOrganizationId: user.homeOrganizationId ?? documentOrganizationId,
+        permissions: {
+          ...user.permissions,
+          annualLeaveSelfBook: here.annualLeaveSelfBook,
+          timesheetSelfSign: here.timesheetSelfSign,
+        },
+      }
     }
     const listed = roleFrom(listedRole, Role.BASIC)
     const adminHere = listed === Role.ADMIN || (user.isSuperAdmin === true && !listedRole)
@@ -316,7 +336,15 @@ export function sessionUserForOrganizationProbe(
     !session.membership &&
     !session.listedRole &&
     !organizationIdsMatch(organizationId, documentOrganizationId)
-  if (unconfirmedElsewhere) return { ...user, organizationId }
+  if (unconfirmedElsewhere) {
+    // Rulebook 1.30.2: no self-manage toggle from the home company while this company is unconfirmed.
+    const here = organizationSelfManageFlags({ organizationId, userId: user.id, membership: null, creatorUserId: openOrganizationCreator(organizationId) })
+    return {
+      ...user,
+      organizationId,
+      permissions: { ...user.permissions, annualLeaveSelfBook: here.annualLeaveSelfBook, timesheetSelfSign: here.timesheetSelfSign },
+    }
+  }
   return applyDeviceOrgMembership(
     user,
     documentOrganizationId,

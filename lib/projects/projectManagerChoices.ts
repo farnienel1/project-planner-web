@@ -9,13 +9,13 @@ import {
 } from '@/lib/canonical/jobManagers'
 
 /**
- * Who can be chosen as a project or small-works manager: rulebook 1.30.2 `jobManagerCandidates` (active admins, super
+ * Who can be chosen as a project or small-works manager: rulebook 1.30.3 `jobManagerCandidates` (active admins, super
  * admins and managers, one per person, never an operative, inactive, pending or deleted profile), and how each stored
  * manager reads now: `jobManagerAssignments` (current / former with a note / unknown). This file only maps the web
  * roster into those functions and maps a candidate to the id the job stores.
  *
  * Pass every users document (`rosterDocumentsFor`), not the email-folded roster: the fold keeps an admin copy first,
- * and before 1.30.2 a stale admin copy (an old invite) left by repeated Change user type saves hid a live manager.
+ * and before 1.30.3 a stale admin copy (an old invite) left by repeated Change user type saves hid a live manager.
  *
  * iOS stores `managerIds` as `Manager.stableId(forFirestoreDocumentId:)` of a `managers` catalogue row. That equals the
  * document id when the id is a UUID, and a hash when the document id is a user id. A pick with no catalogue row is
@@ -54,7 +54,7 @@ export type ProjectManagerChoice = {
   label: string
   email: string
   userId?: string
-  /** Rulebook 1.30.2: 'admin' | 'manager' and its badge text. */
+  /** Rulebook 1.30.3: 'admin' | 'manager' and its badge text. */
   level: 'admin' | 'manager'
   levelLabel: string
 }

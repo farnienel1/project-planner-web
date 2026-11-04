@@ -118,7 +118,7 @@ test('a deactivated assignment is dropped and every other assignment is kept', (
   assert.equal(ids.includes('not-loaded-yet'), true)
 })
 
-// Rulebook 1.30.2 (owner bug 4 Nov): a manager hidden on web, listed on iOS, after repeated Change user type saves.
+// Rulebook 1.30.3 (owner bug 4 Nov): a manager hidden on web, listed on iOS, after repeated Change user type saves.
 test('a live manager is offered even when a stale admin invite copy shares their email', () => {
   const live = account({ id: 'sam-live', firstName: 'Sam', surname: 'Lee', email: 'sam@raccord.test' })
   const stale = account({

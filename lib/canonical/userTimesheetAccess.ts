@@ -11,6 +11,12 @@
  * ids). A person whose other users document on the same email names the
  * manager is the same person, so it is in scope too. Operative mode on the
  * report is not required.
+ *
+ * Never the viewer themself (rulebook 1.30.2): nobody reviews their own
+ * timesheet, admins and the Super Admin included — not under their own id,
+ * `formerIds`, `aliasIds`, nor a roster row on the same email as one of those.
+ * Their own sheet is on My Timesheets (the owner path; a self-signed admin's
+ * own signature completes it, `timesheetSelfSigned`).
  */
 
 import { canReviewUserTimesheets, seesEveryUserTimesheet, type StaffAccountRole } from './staffAccess'
@@ -78,15 +84,22 @@ export function userTimesheetSubjects(input: UserTimesheetSubjectsInput): UserTi
   if (!viewer || !idKey(viewer.id)) return []
   if (!canReviewUserTimesheets(viewer.role)) return []
 
-  const active = members.filter((member) => idKey(member.id) && memberIsActive(member))
+  const viewerKeys = new Set(
+    [viewer.id, ...(viewer.formerIds ?? []), ...(viewer.aliasIds ?? [])].map(idKey).filter(Boolean)
+  )
+  // The viewer under any of their ids: their own keys, and every roster row on the same email as one of them.
+  const viewerEmails = new Set(
+    members.filter((member) => viewerKeys.has(idKey(member.id))).map((member) => idKey(member.email)).filter(Boolean)
+  )
+  const isViewer = (member: UserTimesheetMember) =>
+    viewerKeys.has(idKey(member.id)) || (idKey(member.email) !== '' && viewerEmails.has(idKey(member.email)))
+
+  const active = members.filter((member) => idKey(member.id) && memberIsActive(member) && !isViewer(member))
 
   if (seesEveryUserTimesheet(viewer.role)) {
     return active.filter((member) => isTimesheetUser(member.role)).map((member) => ({ userId: member.id }))
   }
 
-  const viewerKeys = new Set(
-    [viewer.id, ...(viewer.formerIds ?? []), ...(viewer.aliasIds ?? [])].map(idKey).filter(Boolean)
-  )
   const reportsToViewer = (member: UserTimesheetMember) =>
     lineManagerKeys(member).some((key) => viewerKeys.has(key))
 

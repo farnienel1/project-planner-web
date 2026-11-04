@@ -1,7 +1,7 @@
 /**
- * Who can be a project or small-works job manager, and how a job's stored managers read now (rulebook §11, 1.30.2).
+ * Who can be a project or small-works job manager, and how a job's stored managers read now (rulebook §11, 1.30.3).
  *
- * Before 1.30.2 each app picked job managers itself. iOS offered every active `managers` catalogue row that has an
+ * Before 1.30.3 each app picked job managers itself. iOS offered every active `managers` catalogue row that has an
  * active users document on its email, plus active signed-up admins. Web judged the person on the one users document the
  * email fold kept — and the fold keeps an admin document first, so a stale admin duplicate (an old invite, an inactive
  * copy) left behind by repeated Change user type saves hid a live manager from the web picker, while iOS still listed
@@ -135,7 +135,7 @@ function byName(a: JobManagerCandidate, b: JobManagerCandidate): number {
 }
 
 /**
- * Who can be picked as a project or small-works manager (rulebook §11, 1.30.2): every active admin, super admin and
+ * Who can be picked as a project or small-works manager (rulebook §11, 1.30.3): every active admin, super admin and
  * manager, one per person (rows that are one person by `personIdSet` fold together; the active, signed-up document
  * speaks for them, as in `lineManagerCandidates`), sorted by name then id. Never an operative, an inactive person, an
  * invite not accepted yet (`passwordSet` false or status `pending`), or an anonymised deleted profile. Create and edit,
@@ -152,7 +152,7 @@ export function jobManagerCandidates(roster: ReadonlyArray<JobManagerRosterPerso
 
 /**
  * Each manager stored on the job (`jobManagerIds`: `managerIds`, `managerId`, `assignedManagerUserIds`,
- * `managerUserIds`; one per person) as it reads now (rulebook §11, 1.30.2). A stored id names a person when it is one
+ * `managerUserIds`; one per person) as it reads now (rulebook §11, 1.30.3). A stored id names a person when it is one
  * of their ids (a `user:` prefix and letter case ignored), or a `managers` catalogue row (its id or iOS
  * `stableManagerId`) whose email is theirs. `current`: the person is a `jobManagerCandidates` row. `former`: a known
  * person who is not (operative now, inactive, invite not accepted, deleted), or a catalogue row with no users document

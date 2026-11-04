@@ -1,7 +1,7 @@
 {
-  "rulebookVersion": "1.30.2",
-  "rulebookSha256": "8e3a5b31569fc7242124c23911be380f30a56e90e09c834c82ca5c8f09778ab8",
-  "bundleSha256": "0567f1586b1b8d8a0e69588d44ce82fb977162a8c825541321adb469613df42f",
+  "rulebookVersion": "1.30.3",
+  "rulebookSha256": "cd8b2f927131f6429118c95d82a8be9960460cedff5be24f9a0b67565643fb44",
+  "bundleSha256": "2b1800dc85773db1112e485f0350c8452103ae03a12a1d30751fd2f5b911213a",
   "crossPlatformContractSha256": "7f70ec28920ac6114068b4e44eaf893706d5b6af1b21d77b69f946074d74e126",
   "exports": [
     "ACCOUNT_DELETE_WITH_COMPANY_MESSAGE",
@@ -788,6 +788,7 @@
     "organizationNameWriteFields",
     "organizationOvertimeMultiplier",
     "organizationScopedKey",
+    "organizationSelfManageFlags",
     "organizationTimeZone",
     "overlappingBookingIds",
     "overlappingIntervalGroups",

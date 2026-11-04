@@ -5259,7 +5259,9 @@ test('timesheet owner save drops the reviewer-only parts', () => {
   assert.equal(timesheetWriterIsReviewer({ writerUserId: 'lm', subjectUserId: 'op', subjectLineManagerIds: ['LM'] }), true)
   assert.equal(timesheetWriterIsReviewer({ writerUserId: 'new', writerFormerIds: ['old'], subjectUserId: 'op', subjectLineManagerIds: ['old'] }), true)
   assert.equal(timesheetWriterIsReviewer({ writerUserId: 'other', subjectUserId: 'op', subjectLineManagerIds: ['lm'] }), false)
-  assert.equal(timesheetWriterIsReviewer({ writerUserId: 'admin', subjectUserId: 'admin', writerIsAdmin: true }), true)
+  // 1.30.2: an admin is never the reviewer of their own sheet, under any of their ids.
+  assert.equal(timesheetWriterIsReviewer({ writerUserId: 'admin', subjectUserId: 'admin', writerIsAdmin: true }), false)
+  assert.equal(timesheetWriterIsReviewer({ writerUserId: 'admin', subjectUserId: 'other', writerIsAdmin: true }), true)
 })
 
 test('pay access: a person never changes their own pay; admins and operatives managers do', () => {
@@ -12524,81 +12526,162 @@ test('1.30.1 timesheetInvoiceRows carries each row\'s job number', () => {
   assert.deepEqual(signed.map((row) => row.jobNumber), ['J-3'])
 })
 
-// MARK: - 1.30.2 job-manager candidates (§11)
+test('1.30.2 nobody reviews their own timesheet under any of their ids; userTimesheetSubjects leaves the viewer out', () => {
+  const R = R112 as unknown as typeof import('./index')
+  // Admins and the Super Admin are never the reviewer of their own sheet.
+  assert.equal(R.timesheetWriterIsReviewer({ writerUserId: 'ADM', subjectUserId: 'adm', writerIsAdmin: true }), false)
+  // A former invite id or a same-email id is the same person.
+  assert.equal(R.timesheetWriterIsReviewer({ writerUserId: 'adm', writerFormerIds: ['old-adm'], subjectUserId: 'OLD-ADM', writerIsAdmin: true }), false)
+  assert.equal(R.timesheetWriterIsReviewer({ writerUserId: 'adm', writerAliasIds: ['adm-2'], subjectUserId: 'adm-2', writerIsAdmin: true }), false)
+  const roster = [
+    { id: 'adm', email: 'a@x.com' },
+    { id: 'adm-dup', email: 'A@x.com' },
+    { id: 'op', email: 'op@x.com' },
+  ]
+  assert.equal(R.timesheetWriterIsReviewer({ writerUserId: 'adm', subjectUserId: 'adm-dup', writerIsAdmin: true, roster }), false)
+  assert.equal(R.timesheetWriterIsReviewer({ writerUserId: 'adm', subjectUserId: 'op', writerIsAdmin: true, roster }), true)
+  // A line manager is never their own reviewer even when listed as their own line manager.
+  assert.equal(R.timesheetWriterIsReviewer({ writerUserId: 'lm', subjectUserId: 'lm', subjectLineManagerIds: ['lm'] }), false)
+
+  const adminRole = { isAdmin: true, isSuperAdmin: false, isManager: true, isOperativeMode: false }
+  const opRole = { isAdmin: false, isSuperAdmin: false, isManager: false, isOperativeMode: true }
+  const members = [
+    { id: 'adm', email: 'a@x.com', role: adminRole },
+    { id: 'adm-dup', email: 'a@x.com', role: adminRole },
+    { id: 'other-adm', email: 'b@x.com', role: adminRole },
+    { id: 'op', email: 'op@x.com', role: opRole, assignedManagerUserIds: ['adm'] },
+  ]
+  assert.deepEqual(
+    R.userTimesheetSubjects({ viewer: { id: 'ADM', role: adminRole as never }, members: members as never }).map((row) => row.userId),
+    ['other-adm', 'op']
+  )
+  // A manager who lists themself as their own line manager does not see their own sheet.
+  const mgrRole = { isAdmin: false, isSuperAdmin: false, isManager: true, isOperativeMode: false }
+  assert.deepEqual(
+    R.userTimesheetSubjects({
+      viewer: { id: 'mgr', role: mgrRole as never },
+      members: [
+        { id: 'mgr', email: 'm@x.com', role: mgrRole, assignedManagerUserIds: ['mgr'] },
+        { id: 'op', email: 'op@x.com', role: opRole, assignedManagerUserIds: ['mgr'] },
+      ] as never,
+    }).map((row) => row.userId),
+    ['op']
+  )
+})
+
+test('1.30.2 organizationSelfManageFlags reads the toggles for this organisation only', () => {
+  const R = R112 as unknown as typeof import('./index')
+  const home = { organizationId: 'org-a', role: 'admin', adminAccess: true, permissions: { annualLeaveSelfBook: true, timesheetSelfSign: true } }
+  // Their users document of this organisation.
+  assert.deepEqual(
+    R.organizationSelfManageFlags({ organizationId: 'ORG-A', userId: 'u', user: home }),
+    { source: 'users', superAdmin: false, admin: true, active: true, annualLeaveSelfBook: true, timesheetSelfSign: true }
+  )
+  // In org B the home document never counts: the membership there decides.
+  assert.deepEqual(
+    R.organizationSelfManageFlags({ organizationId: 'org-b', userId: 'u', user: home }),
+    { source: 'none', superAdmin: false, admin: false, active: true, annualLeaveSelfBook: false, timesheetSelfSign: false }
+  )
+  const managerHere = { role: 'manager', permissions: { manager: true, annualLeaveSelfBook: false, timesheetSelfSign: true } }
+  const b = R.organizationSelfManageFlags({ organizationId: 'org-b', userId: 'u', user: home, membership: managerHere })
+  assert.equal(b.source, 'membership')
+  assert.equal(b.annualLeaveSelfBook, false)
+  // Timesheet self-sign is admins only.
+  assert.equal(b.timesheetSelfSign, false)
+  // A visiting admin with the toggles on only in the membership here.
+  const opAtHome = { organizationId: 'org-a', role: 'operative', operativeMode: true, permissions: { operativeMode: true } }
+  const adminHere = { role: 'admin', isSuperAdmin: true, permissions: { adminAccess: true, annualLeaveSelfBook: true, timesheetSelfSign: true } }
+  const v = R.organizationSelfManageFlags({ organizationId: 'org-b', userId: 'u', user: opAtHome, membership: adminHere })
+  assert.deepEqual([v.source, v.admin, v.superAdmin, v.annualLeaveSelfBook, v.timesheetSelfSign], ['membership', true, false, true, true])
+  // Nested permissions win over a flat legacy copy (parseOrgMembershipDocument).
+  const flatOn = { role: 'admin', annualLeaveSelfBook: true, permissions: { annualLeaveSelfBook: false } }
+  assert.equal(R.organizationSelfManageFlags({ organizationId: 'org-b', userId: 'u', membership: flatOn }).annualLeaveSelfBook, false)
+  // The creator is the Super Admin: both on, whatever is stored.
+  const c = R.organizationSelfManageFlags({ organizationId: 'org-b', userId: 'u', user: opAtHome, creatorUserId: 'u' })
+  assert.deepEqual([c.source, c.superAdmin, c.annualLeaveSelfBook, c.timesheetSelfSign], ['creator', true, true, true])
+  // A super admin users document of this organisation reads both on.
+  const sa = R.organizationSelfManageFlags({ organizationId: 'org-a', userId: 'u', user: { organizationId: 'org-a', isSuperAdmin: true } })
+  assert.deepEqual([sa.superAdmin, sa.annualLeaveSelfBook, sa.timesheetSelfSign], [true, true, true])
+  // An operative-mode membership never self-books.
+  const opHere = { role: 'member', permissions: { operativeMode: true, annualLeaveSelfBook: true } }
+  assert.equal(R.organizationSelfManageFlags({ organizationId: 'org-b', userId: 'u', membership: opHere }).annualLeaveSelfBook, false)
+})
+
+// MARK: - 1.30.3 job-manager candidates (§11)
 
 import {
-  JOB_MANAGER_FORMER_NOTES as r1302FormerNotes,
-  jobManagerAssignments as r1302Assignments,
-  jobManagerCandidates as r1302Candidates,
+  JOB_MANAGER_FORMER_NOTES as r1303FormerNotes,
+  jobManagerAssignments as r1303Assignments,
+  jobManagerCandidates as r1303Candidates,
 } from './jobManagers.ts'
-import { stableManagerId as r1302StableManagerId } from './staffAccess.ts'
+import { stableManagerId as r1303StableManagerId } from './staffAccess.ts'
 
-const r1302Row = (row: Record<string, unknown>) => ({ isActive: true, passwordSet: true, ...row }) as never
+const r1303Row = (row: Record<string, unknown>) => ({ isActive: true, passwordSet: true, ...row }) as never
 
-test('1.30.2 jobManagerCandidates: active admins and managers, never operatives, pending, inactive or deleted', () => {
+test('1.30.3 jobManagerCandidates: active admins and managers, never operatives, pending, inactive or deleted', () => {
   const roster = [
-    r1302Row({ id: 'adm', email: 'a@x.test', firstName: 'Ann', surname: 'Admin', role: 'admin', adminAccess: true }),
-    r1302Row({ id: 'mgr', email: 'm@x.test', firstName: 'Mo', surname: 'Manager', role: 'manager', manager: true }),
-    r1302Row({ id: 'op', email: 'o@x.test', firstName: 'Olly', surname: 'Op', role: 'operative', operativeMode: true }),
-    r1302Row({ id: 'pend', email: 'p@x.test', firstName: 'Pat', surname: 'Pending', role: 'manager', passwordSet: false }),
-    r1302Row({ id: 'pend2', email: 'q@x.test', firstName: 'Quin', surname: 'Invite', role: 'manager', status: 'pending' }),
-    r1302Row({ id: 'off', email: 'i@x.test', firstName: 'Ina', surname: 'Inactive', role: 'manager', isActive: false }),
-    r1302Row({ id: 'del', email: '', firstName: 'Deleted', surname: 'user', role: 'manager' }),
+    r1303Row({ id: 'adm', email: 'a@x.test', firstName: 'Ann', surname: 'Admin', role: 'admin', adminAccess: true }),
+    r1303Row({ id: 'mgr', email: 'm@x.test', firstName: 'Mo', surname: 'Manager', role: 'manager', manager: true }),
+    r1303Row({ id: 'op', email: 'o@x.test', firstName: 'Olly', surname: 'Op', role: 'operative', operativeMode: true }),
+    r1303Row({ id: 'pend', email: 'p@x.test', firstName: 'Pat', surname: 'Pending', role: 'manager', passwordSet: false }),
+    r1303Row({ id: 'pend2', email: 'q@x.test', firstName: 'Quin', surname: 'Invite', role: 'manager', status: 'pending' }),
+    r1303Row({ id: 'off', email: 'i@x.test', firstName: 'Ina', surname: 'Inactive', role: 'manager', isActive: false }),
+    r1303Row({ id: 'del', email: '', firstName: 'Deleted', surname: 'user', role: 'manager' }),
   ]
-  const out = r1302Candidates(roster)
+  const out = r1303Candidates(roster)
   assert.deepEqual(out.map((row) => [row.id, row.level]), [['adm', 'admin'], ['mgr', 'manager']])
 })
 
-test('1.30.2 jobManagerCandidates: a stale admin duplicate on the email never hides the live manager document', () => {
+test('1.30.3 jobManagerCandidates: a stale admin duplicate on the email never hides the live manager document', () => {
   // The owner bug: admin → manager → admin … left an old admin invite copy on the same email. The fold kept the admin
   // copy (admin first) and web judged the person on it (pending), so they vanished from the job-manager picker.
   const roster = [
-    r1302Row({ id: 'old-invite', email: 'Sam@X.test', firstName: 'Sam', surname: 'Lee', role: 'admin', adminAccess: true, passwordSet: false }),
-    r1302Row({ id: 'live', email: 'sam@x.test', firstName: 'Sam', surname: 'Lee', role: 'manager', manager: true }),
+    r1303Row({ id: 'old-invite', email: 'Sam@X.test', firstName: 'Sam', surname: 'Lee', role: 'admin', adminAccess: true, passwordSet: false }),
+    r1303Row({ id: 'live', email: 'sam@x.test', firstName: 'Sam', surname: 'Lee', role: 'manager', manager: true }),
   ]
-  const out = r1302Candidates(roster)
+  const out = r1303Candidates(roster)
   assert.equal(out.length, 1)
   assert.equal(out[0].id, 'live')
   assert.equal(out[0].level, 'manager')
   assert.deepEqual([...out[0].userIds].sort(), ['live', 'old-invite'])
 })
 
-test('1.30.2 jobManagerCandidates: two live documents on one email are one person; level from the live row', () => {
+test('1.30.3 jobManagerCandidates: two live documents on one email are one person; level from the live row', () => {
   const roster = [
-    r1302Row({ id: 'b', email: 'k@x.test', firstName: 'Kim', surname: 'Ng', role: 'admin', adminAccess: true }),
-    r1302Row({ id: 'a', email: 'K@x.test', firstName: 'Kim', surname: 'Ng', role: 'manager', manager: true, isActive: false }),
+    r1303Row({ id: 'b', email: 'k@x.test', firstName: 'Kim', surname: 'Ng', role: 'admin', adminAccess: true }),
+    r1303Row({ id: 'a', email: 'K@x.test', firstName: 'Kim', surname: 'Ng', role: 'manager', manager: true, isActive: false }),
   ]
-  const out = r1302Candidates(roster)
+  const out = r1303Candidates(roster)
   assert.equal(out.length, 1)
   assert.equal(out[0].id, 'b')
   assert.equal(out[0].level, 'admin')
 })
 
-test('1.30.2 jobManagerCandidates: manager role without the flag, and manager flag without the role, are managers', () => {
+test('1.30.3 jobManagerCandidates: manager role without the flag, and manager flag without the role, are managers', () => {
   const roster = [
-    r1302Row({ id: 'role', email: 'r@x.test', firstName: 'Rae', role: 'manager' }),
-    r1302Row({ id: 'flag', email: 'f@x.test', firstName: 'Fin', permissions: { manager: true } }),
-    r1302Row({ id: 'demoted', email: 'd@x.test', firstName: 'Dee', role: 'operative', permissions: { manager: false, adminAccess: false, operativeMode: true } }),
+    r1303Row({ id: 'role', email: 'r@x.test', firstName: 'Rae', role: 'manager' }),
+    r1303Row({ id: 'flag', email: 'f@x.test', firstName: 'Fin', permissions: { manager: true } }),
+    r1303Row({ id: 'demoted', email: 'd@x.test', firstName: 'Dee', role: 'operative', permissions: { manager: false, adminAccess: false, operativeMode: true } }),
   ]
-  assert.deepEqual(r1302Candidates(roster).map((row) => [row.id, row.level]), [['flag', 'manager'], ['role', 'manager']])
+  assert.deepEqual(r1303Candidates(roster).map((row) => [row.id, row.level]), [['flag', 'manager'], ['role', 'manager']])
 })
 
-test('1.30.2 jobManagerAssignments: current, former (demoted, inactive, catalogue without account) and unknown', () => {
+test('1.30.3 jobManagerAssignments: current, former (demoted, inactive, catalogue without account) and unknown', () => {
   const roster = [
-    r1302Row({ id: 'mgr', email: 'm@x.test', firstName: 'Mo', surname: 'M', role: 'manager', manager: true }),
-    r1302Row({ id: 'demoted', email: 'd@x.test', firstName: 'Dee', surname: 'D', role: 'operative', operativeMode: true }),
-    r1302Row({ id: 'gone', email: 'g@x.test', firstName: 'Gus', surname: 'G', role: 'manager', isActive: false }),
+    r1303Row({ id: 'mgr', email: 'm@x.test', firstName: 'Mo', surname: 'M', role: 'manager', manager: true }),
+    r1303Row({ id: 'demoted', email: 'd@x.test', firstName: 'Dee', surname: 'D', role: 'operative', operativeMode: true }),
+    r1303Row({ id: 'gone', email: 'g@x.test', firstName: 'Gus', surname: 'G', role: 'manager', isActive: false }),
   ]
   const catalogue = [
     { id: 'cat-mgr', email: 'M@x.test', firstName: 'Mo', lastName: 'M' },
     { id: 'cat-orphan', email: 'nobody@x.test', firstName: 'No', lastName: 'Body' },
   ]
-  const job = { managerIds: [r1302StableManagerId('cat-mgr'), 'user:demoted', 'GONE', 'cat-orphan', 'not-loaded', 'mgr'] }
-  const out = r1302Assignments(job, roster, catalogue)
+  const job = { managerIds: [r1303StableManagerId('cat-mgr'), 'user:demoted', 'GONE', 'cat-orphan', 'not-loaded', 'mgr'] }
+  const out = r1303Assignments(job, roster, catalogue)
   assert.deepEqual(
     out.map((row) => [row.storedId, row.state, row.reason]),
     [
-      [r1302StableManagerId('cat-mgr'), 'current', null],
+      [r1303StableManagerId('cat-mgr'), 'current', null],
       ['user:demoted', 'former', 'not_manager'],
       ['GONE', 'former', 'inactive'],
       ['cat-orphan', 'former', 'no_account'],
@@ -12606,6 +12689,6 @@ test('1.30.2 jobManagerAssignments: current, former (demoted, inactive, catalogu
     ]
   )
   assert.equal(out[0].candidate?.id, 'mgr')
-  assert.equal(out[1].note, r1302FormerNotes.not_manager)
+  assert.equal(out[1].note, r1303FormerNotes.not_manager)
   assert.equal(out[1].name, 'Dee D')
 })

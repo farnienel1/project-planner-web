@@ -61,7 +61,7 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
   const { clients, loadClients, saveProject, createClient } = useProjectStore()
   const { managers, loadManagers, saveManager } = useOperativeStore()
   const { users: foldedUsers, rosterDocuments, rosterDocumentsOrgId, rosterLoadedOrgId, loadUsers } = useOrgUserStore()
-  // Rulebook 1.30.2: the job-manager rules read every users document, not the email-folded roster.
+  // Rulebook 1.30.3: the job-manager rules read every users document, not the email-folded roster.
   const users = useMemo(
     () => rosterDocumentsFor({ users: foldedUsers, rosterDocuments, rosterDocumentsOrgId }, organization?.id),
     [foldedUsers, rosterDocuments, rosterDocumentsOrgId, organization?.id]
