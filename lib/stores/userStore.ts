@@ -114,7 +114,12 @@ function identityFields(user: User): Record<string, unknown> {
  * organisation: a users query on email alone can never be allowed by the rules for another person. Another company's
  * document is never rewritten. A refused read is logged and leaves the list empty (the profile still saves).
  */
-async function sameEmailUserRefs(user: User, organizationId: string, previousEmail?: string) {
+/**
+ * Rulebook 1.31.1 (F5): a pending invite placeholder (`passwordSet` not true) is synced only by an admin — the rules let
+ * a same-email account write it only after accepting that invitation, so a person's own save leaves it alone instead
+ * of failing the whole batch.
+ */
+async function sameEmailUserRefs(user: User, organizationId: string, previousEmail: string | undefined, includePending: boolean) {
   const org = organizationId.trim()
   if (!org) return []
   const emails = [user.email, previousEmail || '']
@@ -126,7 +131,11 @@ async function sameEmailUserRefs(user: User, organizationId: string, previousEma
       const snapshot = await getDocs(
         query(collection(db, 'users'), where('organizationId', '==', org), where('email', '==', email), limit(10))
       )
-      for (const entry of snapshot.docs) if (entry.id !== user.id && !refs.some((ref) => ref.id === entry.id)) refs.push(entry.ref)
+      for (const entry of snapshot.docs) {
+        if (entry.id === user.id || refs.some((ref) => ref.id === entry.id)) continue
+        if (!includePending && entry.data().passwordSet !== true) continue
+        refs.push(entry.ref)
+      }
     } catch (error) {
       console.warn('[userStore] same-email users read skipped', error)
     }
@@ -284,7 +293,7 @@ export const useUserStore = create<UserStoreState>(() => ({
     // one, so a refusal half way left the documents disagreeing. Everything is read first.
     const email = user.email.toLowerCase().trim()
     const [sameEmail, linkedRows] = orgId
-      ? await Promise.all([sameEmailUserRefs(user, orgId, previousEmail), linkedStaffRefs(orgId, user, previousEmail)])
+      ? await Promise.all([sameEmailUserRefs(user, orgId, previousEmail, saverIsAdmin), linkedStaffRefs(orgId, user, previousEmail)])
       : [[], []]
     const batch = writeBatch(db)
     // Rulebook 1.26.0 (`sharedDocumentPayWrite`): with `privatePay` on for this organisation, the users document takes

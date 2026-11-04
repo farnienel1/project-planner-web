@@ -68,6 +68,9 @@ export const USER_DOCUMENT_FIELDS = [
   'pushTokenUpdatedAt',
   'notificationPreferences',
   'formerUserIds',
+  // Rulebook 1.31.1 (F5): the invitation an account was created from (written once, with the invitation marked used in
+  // the same batch); the security rules accept a placeholder copy only with it.
+  'invitationId',
 ] as const
 
 /**

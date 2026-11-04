@@ -155,8 +155,10 @@ service cloud.firestore {
   function selfCreateJoinsCompany(organizationId, emailKey) {
     let claimPath = /databases/(default)/documents/organizations/$(organizationId)/userEmails/$(emailKey);
     return (
-      inviteClaimIsPendingPlaceholder(organizationId, emailKey) ?
-        selfCreateCopiesPlaceholder(get(claimPath).data.userId) : false
+      inviteClaimIsPendingPlaceholder(organizationId, emailKey) ? (
+        inviteBeingAccepted(request.resource.data.get('invitationId', ''), organizationId) ?
+          selfCreateCopiesPlaceholder(get(claimPath).data.userId) : false
+      ) : false
     ) || (
       (exists(claimPath) && get(claimPath).data.userId == request.auth.uid) ? (
         isOrgMemberViaParentGet(organizationId) ? (
@@ -182,6 +184,12 @@ service cloud.firestore {
     );
   }
 
+  function callerAcceptedPlaceholder(placeholderId, organizationId) {
+    let home = callerHomeData();
+    return placeholderId is string && placeholderId != '' &&
+      placeholderId in home.get('formerUserIds', []) &&
+      orgIdsMatch(home.get('organizationId', ''), organizationId);
+  }
   function selfCreateCopiesPlaceholder(placeholderId) {
     let placeholder = get(/databases/(default)/documents/users/$(placeholderId)).data;
     return noMorePrivilegeThan(request.resource.data, placeholder) &&
@@ -200,7 +208,8 @@ service cloud.firestore {
            (
              resource == null ||
              resource.data.userId == request.auth.uid ||
-             inviteClaimIsPendingPlaceholder(organizationId, emailKey) ||
+             (inviteClaimIsPendingPlaceholder(organizationId, emailKey) &&
+              callerAcceptedPlaceholder(resource.data.userId, organizationId)) ||
              !exists(/databases/(default)/documents/users/$(resource.data.userId))
            );
   }
@@ -879,13 +888,18 @@ service cloud.firestore {
 
       allow get: if true;
       allow list, create, delete: if canAdministerInvitation();
-      allow update: if canAdministerInvitation() || (request.auth != null &&
-        resource.data.isUsed != true &&
-        request.resource.data.isUsed == true &&
-        request.resource.data.diff(resource.data).changedKeys().hasOnly(['isUsed', 'usedAt']) &&
-        resource.data.email is string &&
-        request.auth.token.email is string &&
-        resource.data.email.lower() == request.auth.token.email.lower());
+      allow update: if (request.auth != null && request.auth.token.email is string &&
+          resource.data.get('email', null) is string &&
+          string(resource.data.email).lower() == request.auth.token.email.lower() &&
+          request.resource.data.diff(resource.data).changedKeys().hasOnly(['isUsed', 'usedAt']))
+        ? (resource.data.isUsed != true && request.resource.data.isUsed == true && invitationAcceptWrittenWith())
+        : canAdministerInvitation();
+      function invitationAcceptWrittenWith() {
+        let account = /databases/(default)/documents/users/$(request.auth.uid);
+        let membership = /databases/(default)/documents/users/$(request.auth.uid)/orgMemberships/$(resource.data.get('organizationId', '_'));
+        return (existsAfter(account) && getAfter(account).data.get('invitationId', '') == invitationId) ||
+          (existsAfter(membership) && getAfter(membership).data.get('invitationId', '') == invitationId);
+      }
     }
 
     match /accountConfirmations/{token} {
@@ -956,7 +970,10 @@ service cloud.firestore {
         let a = resource.data.get('email', null);
         let b = request.resource.data.get('email', null);
         return request.auth.uid == userId ||
-          ((t is string && a is string && b is string) ? (a.lower() == t.lower() && b.lower() == t.lower()) : false);
+          ((t is string && a is string && b is string) ? (
+            (a.lower() == t.lower() && b.lower() == t.lower()) &&
+            (resource.data.get('passwordSet', false) == true || callerAcceptedPlaceholder(userId, resource.data.get('organizationId', '')))
+          ) : false);
       }
       function userAdminUpdateAllowed(toggles, targetAdmin) {
         return (request.auth.uid != userId ? true : (
@@ -989,7 +1006,8 @@ service cloud.firestore {
         isPlatformOwner() ||
         request.auth.uid == userId ||
         managerMayManageOperative(userId, resource.data) ||
-        (request.auth.token.email != null && resource.data.email == request.auth.token.email) ||
+        (request.auth.token.email != null && resource.data.email == request.auth.token.email &&
+         (resource.data.get('passwordSet', false) == true || callerAcceptedPlaceholder(userId, resource.data.get('organizationId', '')))) ||
         (
           exists(/databases/(default)/documents/users/$(request.auth.uid)) &&
           adminDeletesUser(userId, get(/databases/(default)/documents/users/$(request.auth.uid)).data)
@@ -1025,7 +1043,8 @@ service cloud.firestore {
           return subjectExists() &&
             subjectUserData().email is string &&
             request.auth.token.email is string &&
-            subjectUserData().email.lower() == request.auth.token.email.lower();
+            subjectUserData().email.lower() == request.auth.token.email.lower() &&
+            (subjectUserData().get('passwordSet', false) == true || callerAcceptedPlaceholder(userId, subjectUserData().get('organizationId', '')));
         }
         allow read: if request.auth != null && privateDocId == 'taxIds' && (
           request.auth.uid == userId || isPlatformOwner() || adminOfSubject() || inviteeOfPlaceholder()
@@ -1103,9 +1122,11 @@ service cloud.firestore {
            emailKey == request.auth.token.email.lower())
         );
         allow create, update: if request.auth != null && (
+          (request.auth.token.email is string && emailKey == request.auth.token.email.lower() &&
+           request.resource.data.get('userId', '') == request.auth.uid)
+          ? (isOwnEmailClaimWrite(organizationId, emailKey) || isPlatformOwner() || isAdminOfCompany(organizationId)) :
           isPlatformOwner() ||
           isAdminOfCompany(organizationId) ||
-          isOwnEmailClaimWrite(organizationId, emailKey) ||
           ((isManagerWithOperativesAccess() && userOrgIdMatchesPath(organizationId)) ? (
             opsManagerClaimTarget(request.resource.data.get('userId', '')) &&
             (resource == null || opsManagerMayHoldClaim(resource.data.get('userId', '')))
@@ -1198,7 +1219,16 @@ service cloud.firestore {
           !existsAfter(/databases/(default)/documents/users/$(uid)) &&
           billingUnchanged() && deletionUnchanged();
       }
-      allow update: if (request.auth != null && orgRootOperativesManagerRemovesMember()) ||
+      function orgRootCallerTied() {
+        let members = resource.data.get('members', {});
+        return isPlatformOwner() || (request.auth != null && (
+          exists(/databases/(default)/documents/users/$(request.auth.uid)) ||
+          resource.data.get('creatorUserId', '') == request.auth.uid ||
+          (members is map && members.get(request.auth.uid, null) != null) ||
+          existsAfter(/databases/(default)/documents/users/$(request.auth.uid)/orgMemberships/$(organizationId))));
+      }
+      allow update: if orgRootCallerTied() ? (
+                   (request.auth != null && orgRootOperativesManagerRemovesMember()) ||
                    billingUnchanged() && (isPlatformOwner() || (request.auth != null && orgRootSuperAdminRestore())) ||
                    billingUnchanged() && deletionUnchanged() && !orgScheduledForErasure() && (
                      isPlatformOwner() || (
@@ -1212,7 +1242,7 @@ service cloud.firestore {
                      ) || (
                        request.auth != null && orgRootInviteJoin()
                      )
-                   );
+                   )) : false;
 
       function callerJobToggle(role, kind) {
         let home = callerHomeData();
@@ -2221,6 +2251,7 @@ service cloud.firestore {
             privatePayOn(organizationId) &&
             placeholderId is string && placeholderId != '' && placeholderId != request.auth.uid &&
             inviteClaimIsPendingPlaceholder(organizationId, emailKey) &&
+            callerAcceptedPlaceholder(placeholderId, organizationId) &&
             exists(/databases/(default)/documents/organizations/$(organizationId)/payProfiles/$(placeholderId)) &&
             copiesInvitedPay(placeholderId);
         }

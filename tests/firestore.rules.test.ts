@@ -51,6 +51,29 @@ function authDb(uid: string, email: string) {
   return env.authenticatedContext(uid, { email }).firestore()
 }
 
+/** Rulebook 1.31.1 (F5): an unused invitation to `email` in `organizationId`, written with the rules off. */
+async function seedInvitation(invitationId: string, organizationId: string, email: string, extra: Record<string, unknown> = {}) {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'invitations', invitationId), { organizationId, email, isUsed: false, ...extra })
+  })
+}
+
+/**
+ * Rulebook 1.31.1 (F5): accepting an invitation creates `users/{authUid}` with the invitation's secret id and marks the
+ * invitation used in the same batch (web `completeInviteSetup`). Returns the commit promise.
+ */
+function acceptInviteBatch(
+  db: ReturnType<typeof authDb>,
+  authUid: string,
+  profile: Record<string, unknown>,
+  invitationId: string
+) {
+  const batch = writeBatch(db)
+  batch.set(doc(db, 'users', authUid), { ...profile, invitationId })
+  batch.update(doc(db, 'invitations', invitationId), { isUsed: true, usedAt: Timestamp.now() })
+  return batch.commit()
+}
+
 test.before(async () => {
   env = await initializeTestEnvironment({
     projectId: 'demo-project-planner-rules',
@@ -507,8 +530,23 @@ test('admin invite can reclaim userEmails and overwrite a leftover UUID without 
 })
 
 test('invitee can mark their invitation used', async () => {
+  // Rulebook 1.31.1 (F5): only together with the account (or membership) that carries the invitation's id.
   const db = authDb('invitee-a', 'new-a@test.com')
+  await assertLogicalDeny(updateDoc(doc(db, 'invitations', 'invite-a'), { isUsed: true }))
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'users', 'invitee-a'), {
+      email: 'new-a@test.com',
+      organizationId: ORG_A,
+      passwordSet: true,
+      invitationId: 'invite-a',
+    })
+  })
   await assertSucceeds(updateDoc(doc(db, 'invitations', 'invite-a'), { isUsed: true }))
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    await deleteDoc(doc(db, 'users', 'invitee-a'))
+    await setDoc(doc(db, 'invitations', 'invite-a'), { organizationId: ORG_A, email: 'new-a@test.com', isUsed: false })
+  })
 })
 
 test('signed-out visitor cannot read userEmails or users', async () => {
@@ -578,9 +616,12 @@ test('invitee can finish password setup: own email claim, placeholder get, then 
     formerUserIds: [placeholderId],
   })
 
-  // Claim still names the placeholder: self-create is allowed (pending placeholder, same email, same org).
-  await assertFails(setDoc(doc(db, 'users', authUid), { ...selfProfile(), ageConfirmed: false }))
-  await assertSucceeds(setDoc(doc(db, 'users', authUid), selfProfile()))
+  // Claim still names the placeholder: self-create is allowed (pending placeholder, same email, same org) — 1.31.1
+  // (F5) only with the emailed invitation's id and the invitation marked used in the same batch.
+  await seedInvitation('invite-finish', ORG_A, email)
+  await assertLogicalDeny(setDoc(doc(db, 'users', authUid), selfProfile()))
+  await assertFails(acceptInviteBatch(db, authUid, { ...selfProfile(), ageConfirmed: false }, 'invite-finish'))
+  await assertSucceeds(acceptInviteBatch(db, authUid, selfProfile(), 'invite-finish'))
   // Then the claim moves to authUid, then the placeholder goes.
   await assertSucceeds(setDoc(doc(db, 'organizations', ORG_A, 'userEmails', email), { userId: authUid }))
   await assertSucceeds(deleteDoc(doc(db, 'users', placeholderId)))
@@ -908,16 +949,23 @@ test('invite accept: an admin invited as admin copies the admin placeholder', as
     })
     await setDoc(doc(db, 'organizations', ORG_A, 'userEmails', email), { userId: placeholderId })
   })
+  await seedInvitation('invite-admin-copy', ORG_A, email, { role: 'admin' })
   const db = authDb(authUid, email)
   const placeholder = await assertSucceeds(getDoc(doc(db, 'users', placeholderId)))
   await assertSucceeds(
-    setDoc(doc(db, 'users', authUid), {
-      ...placeholder.data(),
-      email,
-      organizationId: ORG_A,
-      passwordSet: true,
-      ...ageFields(),
-    })
+    acceptInviteBatch(
+      db,
+      authUid,
+      {
+        ...placeholder.data(),
+        email,
+        organizationId: ORG_A,
+        passwordSet: true,
+        formerUserIds: [placeholderId],
+        ...ageFields(),
+      },
+      'invite-admin-copy'
+    )
   )
   await assertSucceeds(setDoc(doc(db, 'organizations', ORG_A, 'userEmails', email), { userId: authUid }))
   await assertSucceeds(deleteDoc(doc(db, 'users', placeholderId)))
@@ -943,6 +991,7 @@ test('invite accept: an invitee cannot add privileges the placeholder does not h
     })
     await setDoc(doc(db, 'organizations', ORG_A, 'userEmails', email), { userId: placeholderId })
   })
+  await seedInvitation('invite-op-priv', ORG_A, email)
   const db = authDb(authUid, email)
   const base = {
     email,
@@ -954,14 +1003,14 @@ test('invite accept: an invitee cannot add privileges the placeholder does not h
     isActive: true,
     ...ageFields(),
   }
-  await assertFails(setDoc(doc(db, 'users', authUid), { ...base, adminAccess: true }))
-  await assertFails(setDoc(doc(db, 'users', authUid), { ...base, isSuperAdmin: true }))
-  await assertFails(setDoc(doc(db, 'users', authUid), { ...base, role: 'admin' }))
-  await assertFails(setDoc(doc(db, 'users', authUid), { ...base, permissions: { adminAccess: true } }))
-  await assertFails(setDoc(doc(db, 'users', authUid), { ...base, manager: true }))
+  await assertFails(acceptInviteBatch(db, authUid, { ...base, adminAccess: true }, 'invite-op-priv'))
+  await assertFails(acceptInviteBatch(db, authUid, { ...base, isSuperAdmin: true }, 'invite-op-priv'))
+  await assertFails(acceptInviteBatch(db, authUid, { ...base, role: 'admin' }, 'invite-op-priv'))
+  await assertFails(acceptInviteBatch(db, authUid, { ...base, permissions: { adminAccess: true } }, 'invite-op-priv'))
+  await assertFails(acceptInviteBatch(db, authUid, { ...base, manager: true }, 'invite-op-priv'))
   // Dropping operative mode turns an operative into staff.
-  await assertFails(setDoc(doc(db, 'users', authUid), { ...base, operativeMode: false, role: 'member' }))
-  await assertSucceeds(setDoc(doc(db, 'users', authUid), base))
+  await assertFails(acceptInviteBatch(db, authUid, { ...base, operativeMode: false, role: 'member' }, 'invite-op-priv'))
+  await assertSucceeds(acceptInviteBatch(db, authUid, base, 'invite-op-priv'))
 })
 
 test('a manager with operatives access can still invite an operative in their own company only', async () => {
@@ -1112,13 +1161,29 @@ test('tax identifiers: an invitee reads and removes the placeholder copy but can
     await setDoc(doc(db, 'users', placeholderId), { email: 'new-tax@test.com', organizationId: ORG_A, passwordSet: false })
     await setDoc(doc(db, 'users', placeholderId, 'private', 'taxIds'), { utrNumber: '2222222222', vatNumber: '', updatedByUserId: ADMIN_A, updatedAt: Timestamp.now() })
   })
-  const invitee = authDb('invitee-auth-uid', 'new-tax@test.com')
+  const invitee = authDb('invitee-tax-uid', 'new-tax@test.com')
   const stranger = authDb('stranger-uid', 'someone@test.com')
   const ref = (db: ReturnType<typeof authDb>) => doc(db, 'users', placeholderId, 'private', 'taxIds')
   await assertFails(getDoc(ref(stranger)))
+  // 1.31.1 (F5): someone who only signed up on the invitee's email (no accepted account yet) reads nothing.
+  await assertLogicalDeny(getDoc(ref(invitee)))
+  await assertLogicalDeny(deleteDoc(ref(invitee)))
+  // Once the account is created from the invitation (it lists the placeholder in formerUserIds) the move proceeds.
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'users', 'invitee-tax-uid'), {
+      email: 'new-tax@test.com',
+      organizationId: ORG_A,
+      passwordSet: true,
+      formerUserIds: [placeholderId],
+      invitationId: 'invite-tax',
+    })
+  })
   await assertSucceeds(getDoc(ref(invitee)))
-  await assertFails(setDoc(ref(invitee), taxIds('invitee-auth-uid')))
+  await assertFails(setDoc(ref(invitee), taxIds('invitee-tax-uid')))
   await assertSucceeds(deleteDoc(ref(invitee)))
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await deleteDoc(doc(ctx.firestore(), 'users', 'invitee-tax-uid'))
+  })
 })
 
 test('job quote and order history: every admin and manager reads it without the Wholesalers toggle, operatives never', async () => {
@@ -3833,6 +3898,7 @@ test('1.28.0 B1: invite accept copies the self-manage toggles only as the admin 
       })
       await setDoc(doc(db, 'organizations', ORG_A, 'userEmails', email), { userId: placeholderId })
     })
+    await seedInvitation('invite-toggles', ORG_A, email, { role: 'admin' })
   }
   const profile = (extra: Record<string, unknown>) => ({
     email, organizationId: ORG_A, firstName: 'Tia', role: 'admin', adminAccess: true, passwordSet: true, isActive: true,
@@ -3841,19 +3907,19 @@ test('1.28.0 B1: invite accept copies the self-manage toggles only as the admin 
   const db = authDb(authUid, email)
   // Placeholder has both off: the invitee cannot switch them on (top level or permissions map).
   await seed({ annualLeaveSelfBook: false, timesheetSelfSign: false })
-  await assertFails(setDoc(doc(db, 'users', authUid), profile({ annualLeaveSelfBook: true, timesheetSelfSign: true, hasNoLineManager: true })))
-  await assertFails(setDoc(doc(db, 'users', authUid), profile({ permissions: { adminAccess: true, timesheetSelfSign: true } })))
-  await assertFails(setDoc(doc(db, 'users', authUid), profile({ annualLeaveSelfBook: true })))
+  await assertFails(acceptInviteBatch(db, authUid, profile({ annualLeaveSelfBook: true, timesheetSelfSign: true, hasNoLineManager: true }), 'invite-toggles'))
+  await assertFails(acceptInviteBatch(db, authUid, profile({ permissions: { adminAccess: true, timesheetSelfSign: true } }), 'invite-toggles'))
+  await assertFails(acceptInviteBatch(db, authUid, profile({ annualLeaveSelfBook: true }), 'invite-toggles'))
   // Legit: copying the placeholder as it is.
-  await assertSucceeds(setDoc(doc(db, 'users', authUid), profile({ annualLeaveSelfBook: false, timesheetSelfSign: false })))
+  await assertSucceeds(acceptInviteBatch(db, authUid, profile({ annualLeaveSelfBook: false, timesheetSelfSign: false }), 'invite-toggles'))
   await env.withSecurityRulesDisabled(async (ctx) => {
     await deleteDoc(doc(ctx.firestore(), 'users', authUid))
   })
   // The admin turned both on at Add User: the invitee keeps them.
   await seed({ annualLeaveSelfBook: true, timesheetSelfSign: true })
-  await assertSucceeds(setDoc(doc(db, 'users', authUid), profile({
+  await assertSucceeds(acceptInviteBatch(db, authUid, profile({
     annualLeaveSelfBook: true, timesheetSelfSign: true, permissions: { adminAccess: true, annualLeaveSelfBook: true, timesheetSelfSign: true },
-  })))
+  }), 'invite-toggles'))
 })
 
 test('1.28.0 B1: deleting and re-creating your own profile never switches on your self-manage toggles', async () => {
@@ -4524,4 +4590,109 @@ test('1.31.1 S4: an operatives row\'s account link changes only by an admin or a
   await assertLogicalDeny(updateDoc(doc(mgr, 'organizations', ORG_A, 'operatives', 'row-s4'), { userId: ADMIN_1311 }))
   await assertSucceedsWithinBudget(updateDoc(doc(mgr, 'organizations', ORG_A, 'operatives', 'row-s4'), { userId: OP_1311 }))
   await assertSucceedsWithinBudget(updateDoc(doc(authDb(ADMIN_A, 'admin-a@test.com'), 'organizations', ORG_A, 'managers', 'mrow-s4'), { userId: OPS_MGR_1311 }))
+})
+
+// ── Rulebook 1.31.1 F5: accepting an invitation needs the emailed invitation, not only its email ──────────────────
+// Before 1.31.1 anyone signed in with the invitee's email (an unverified sign-up is enough) could copy a pending
+// placeholder to their own users document, take the email claim and act at the invited level (probe c3).
+
+async function seedF5Invite(tag: string, level: 'admin' | 'operative') {
+  const placeholderId = `F5-PLACEHOLDER-${tag}`
+  const email = `f5-${tag.toLowerCase()}@test.com`
+  const invitationId = `f5-invite-${tag.toLowerCase()}`
+  const levelFields =
+    level === 'admin'
+      ? { role: 'admin', adminAccess: true, permissions: { adminAccess: true } }
+      : { role: 'operative', operativeMode: true, adminAccess: false, permissions: { operativeMode: true, adminAccess: false } }
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    await setDoc(doc(db, 'users', placeholderId), {
+      email, organizationId: ORG_A, firstName: 'Fin', surname: tag, isSuperAdmin: false, passwordSet: false, isActive: true, ...levelFields,
+    })
+    await setDoc(doc(db, 'organizations', ORG_A, 'userEmails', email), { userId: placeholderId })
+    await setDoc(doc(db, 'users', placeholderId, 'private', 'taxIds'), { utrNumber: '3333333333', vatNumber: '', updatedByUserId: ADMIN_A, updatedAt: Timestamp.now() })
+    await setDoc(doc(db, 'invitations', invitationId), { organizationId: ORG_A, email, role: level, isUsed: false, permissions: levelFields.permissions })
+  })
+  const account = (authUid: string, extra: Record<string, unknown> = {}) => ({
+    email, organizationId: ORG_A, firstName: 'Fin', surname: tag, isSuperAdmin: false, isActive: true, passwordSet: true,
+    ...levelFields, formerUserIds: [placeholderId], ...ageFields(), ...extra,
+  })
+  return { placeholderId, email, invitationId, account }
+}
+
+for (const level of ['operative', 'admin'] as const) {
+  test(`1.31.1 F5: a genuine ${level} invite accept still passes every step (batch create + used, tax ids, claim, placeholder)`, async () => {
+    const { placeholderId, email, invitationId, account } = await seedF5Invite(`OK-${level.toUpperCase()}`, level)
+    const authUid = `f5-ok-${level}-auth`
+    const db = authDb(authUid, email)
+    await assertSucceeds(getDoc(doc(db, 'organizations', ORG_A, 'userEmails', email)))
+    await assertSucceeds(getDoc(doc(db, 'users', placeholderId)))
+    await assertSucceedsWithinBudget(acceptInviteBatch(db, authUid, account(authUid), invitationId))
+    const used = await assertSucceeds(getDoc(doc(db, 'invitations', invitationId)))
+    assert.equal(used.data()?.isUsed, true)
+    await assertSucceedsWithinBudget(getDoc(doc(db, 'users', placeholderId, 'private', 'taxIds')))
+    await assertSucceedsWithinBudget(setDoc(doc(db, 'users', authUid, 'private', 'taxIds'), taxIds(authUid, { utrNumber: '3333333333', vatNumber: '' })))
+    await assertSucceedsWithinBudget(deleteDoc(doc(db, 'users', placeholderId, 'private', 'taxIds')))
+    await assertSucceedsWithinBudget(setDoc(doc(db, 'organizations', ORG_A, 'userEmails', email), { userId: authUid }))
+    await assertSucceedsWithinBudget(deleteDoc(doc(db, 'users', placeholderId)))
+  })
+}
+
+test('1.31.1 F5 (c3): a sign-up on the invitee email without the invitation is refused at every step', async () => {
+  const { placeholderId, email, invitationId, account } = await seedF5Invite('C3', 'admin')
+  const evil = 'f5-evil'
+  const db = authDb(evil, email)
+  // 1. The placeholder copy without proof, with proof but the invitation left unused, or with another invitation's id.
+  await assertLogicalDeny(setDoc(doc(db, 'users', evil), account(evil)))
+  await assertLogicalDeny(setDoc(doc(db, 'users', evil), account(evil, { invitationId })))
+  await assertLogicalDeny(acceptInviteBatch(db, evil, account(evil), 'invite-a'))
+  // 2. Taking the email claim, editing or deleting the pending placeholder by email, reading or removing its tax ids.
+  await assertLogicalDeny(setDoc(doc(db, 'organizations', ORG_A, 'userEmails', email), { userId: evil }))
+  await assertLogicalDeny(updateDoc(doc(db, 'users', placeholderId), { passwordSet: true }))
+  await assertLogicalDeny(updateDoc(doc(db, 'users', placeholderId), { firstName: 'Evil' }))
+  await assertLogicalDeny(deleteDoc(doc(db, 'users', placeholderId)))
+  await assertLogicalDeny(getDoc(doc(db, 'users', placeholderId, 'private', 'taxIds')))
+  await assertLogicalDeny(deleteDoc(doc(db, 'users', placeholderId, 'private', 'taxIds')))
+  // 3. Marking the invitation used on its own, then acting at the invited level.
+  await assertLogicalDeny(updateDoc(doc(db, 'invitations', invitationId), { isUsed: true }))
+  await assertLogicalDeny(updateDoc(doc(db, 'organizations', ORG_A), { name: 'pwn' }))
+  await assertLogicalDeny(updateDoc(doc(db, 'users', OP_A), { dayRate: 1 }))
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const raw = ctx.firestore()
+    const left = await getDoc(doc(raw, 'organizations', ORG_A, 'userEmails', email))
+    assert.equal(left.data()?.userId, placeholderId)
+    assert.equal((await getDoc(doc(raw, 'invitations', invitationId))).data()?.isUsed, false)
+    assert.equal((await getDoc(doc(raw, 'users', evil))).exists(), false)
+  })
+})
+
+test('1.31.1 F5: an account of another company that lists the placeholder id cannot take the claim or the placeholder', async () => {
+  const { placeholderId, email } = await seedF5Invite('ALIAS', 'operative')
+  const evil = 'f5-alias-evil'
+  const evilOrg = 'org-f5-alias'
+  const db = authDb(evil, email)
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'users', evil), {
+      email, organizationId: evilOrg, role: 'admin', adminAccess: true, passwordSet: true, formerUserIds: [placeholderId],
+    })
+  })
+  await assertLogicalDeny(setDoc(doc(db, 'organizations', ORG_A, 'userEmails', email), { userId: evil }))
+  await assertLogicalDeny(deleteDoc(doc(db, 'users', placeholderId)))
+  await assertLogicalDeny(updateDoc(doc(db, 'users', placeholderId), { firstName: 'Evil' }))
+  await assertLogicalDeny(getDoc(doc(db, 'users', placeholderId, 'private', 'taxIds')))
+})
+
+test('1.31.1 F5: a person\'s own save still syncs names to a same-email account, never to a pending placeholder', async () => {
+  const me = 'f5-sync-me'
+  const email = 'f5-sync@test.com'
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    await setDoc(doc(db, 'users', me), { email, organizationId: ORG_A, role: 'operative', operativeMode: true, passwordSet: true, firstName: 'Sy' })
+    await setDoc(doc(db, 'users', 'f5-sync-copy'), { email, organizationId: ORG_A, role: 'operative', operativeMode: true, passwordSet: true, firstName: 'Sy' })
+    await setDoc(doc(db, 'users', 'F5-SYNC-PENDING'), { email, organizationId: ORG_A, role: 'operative', operativeMode: true, passwordSet: false, firstName: 'Sy' })
+  })
+  const db = authDb(me, email)
+  await assertSucceedsWithinBudget(updateDoc(doc(db, 'users', 'f5-sync-copy'), { firstName: 'Syd' }))
+  // Web saveUser leaves it out (sameEmailUserRefs includePending only for admins); the rules refuse it logically.
+  await assertLogicalDeny(updateDoc(doc(db, 'users', 'F5-SYNC-PENDING'), { firstName: 'Syd' }))
 })

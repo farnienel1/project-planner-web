@@ -69,7 +69,8 @@ test('Continue order: Auth, own-email claim read, placeholder read, users/{authU
     'claimedUserIdAfterSignIn(record.organizationId, email)',
     'loadPlaceholderIfOwnInvite(hintedId)',
     // 1.26.0: the users document is `sharedDocumentPayWrite(nextUser, …)` (no pay while `privatePay` is on).
-    "setDoc(doc(db, 'users', authUid), accountUser)",
+    // 1.31.1 (F5): created in one batch with the invitation marked used.
+    "batch.set(doc(db, 'users', authUid), { ...accountUser, invitationId: params.invitationId })",
     "setDoc(doc(db, 'organizations', record.organizationId, 'userEmails', email)",
     "deleteDoc(doc(db, 'users', placeholderId))",
     'ensurePrimaryOrgMembership(',
@@ -92,4 +93,13 @@ test('placeholder is read by id, never found by email, and the invitation write 
   assert.equal(source.includes('query('), false)
   // Rulebook 1.9.0: the shared partial update `invitationUsedWriteFields` → `{ isUsed: true, usedAt }`.
   assert.match(source, /updateDoc\(doc\(db, 'invitations', params\.invitationId\), invitationUsedWriteFields\(Timestamp\.now\(\)\)\.set\)/)
+})
+
+test('1.31.1 (F5): the account is created with the invitation id and the invitation marked used in one batch', () => {
+  const batchAt = source.indexOf("batch.set(doc(db, 'users', authUid), { ...accountUser, invitationId: params.invitationId })")
+  const usedAt = source.indexOf("batch.update(doc(db, 'invitations', params.invitationId), invitationUsedWriteFields(now).set)")
+  assert.ok(batchAt > 0, 'users/{authUid} carries invitationId')
+  assert.ok(usedAt > batchAt, 'the invitation is marked used in the same batch')
+  assert.ok(source.indexOf('await batch.commit()', usedAt) > usedAt)
+  assert.equal(source.includes("await setDoc(doc(db, 'users', authUid), accountUser)"), false)
 })
