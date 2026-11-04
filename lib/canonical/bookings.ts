@@ -594,6 +594,8 @@ export type CanonicalManagerSiteBooking = {
   workStartTime?: string
   workEndTime?: string
   isBreakRemoved: boolean
+  /** 1.29.0: the booking's own overtime rate (1–3; missing = the organisation's), as on labour bookings. */
+  otMultiplierOverride?: number
   bookingGroupId?: string
   /** 1.11.0: the job's collection for a job-linked booking (stored `jobCollection`, else from `locationType`). */
   jobCollection?: BookingJobCollection
@@ -652,6 +654,8 @@ export function parseManagerSiteBookingDocument(
   const bookingGroupId = text(row.bookingGroupId)
   const createdAtMs = bookingDateMs(row.createdAt)
   const updatedAtMs = bookingDateMs(row.updatedAt)
+  const otMultiplierOverride = finiteNumber(row.otMultiplierOverride)
+  if (otMultiplierOverride != null) booking.otMultiplierOverride = otMultiplierOverride
   if (locationId) booking.locationId = locationId
   if (customLocationName) booking.customLocationName = customLocationName
   if (workStartTime) booking.workStartTime = workStartTime

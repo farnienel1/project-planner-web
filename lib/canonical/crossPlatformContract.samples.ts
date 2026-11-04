@@ -436,6 +436,9 @@ export const CONTRACT_NO_READER: Readonly<Record<string, string>> = {
   qualifications: 'No shared reader yet (known gap).',
   toolboxLibrary: 'Platform content, not organisation data.',
   payProfiles: '1.13.0: parsePayProfileDocument keeps only PAY_PROFILE_FIELDS; samples follow once iOS writes it.',
+  overtimeRequests: '1.29.0: parseOvertimeRequestDocument (overtimeRequestWriteFields); samples follow once iOS writes it.',
+  overtimeReviews: '1.29.0: parseOvertimeReviewDocument (overtimeApprovalWrites / overtimeDirectWrites); samples follow once iOS writes it.',
+  overtimeReports: '1.29.0: parseOvertimeReportDocument (overtimeReportSnapshot); samples follow once iOS writes it.',
   deletedBookings: 'Write-only tombstones (bookingTombstoneWriteFields); never read by a screen.',
 }
 

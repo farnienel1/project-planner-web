@@ -73,6 +73,9 @@ export const LIVE_COLLECTIONS: ReadonlyArray<LiveCollection> = [
   { id: 'taxIds', path: 'users/{uid}/private/taxIds', scope: 'user', listen: false, note: 'Private; only its owner and admins edit it, on one screen; read when that screen opens.' },
   { id: 'toolboxLibrary', path: 'platformConfig/*', scope: 'platform', listen: false, note: 'Platform content, changed by releases; read on open.' },
   { id: 'orgMemberships', path: 'users/{uid}/orgMemberships/{orgId}', scope: 'user', listen: false, note: 'Read on sign-in and when switching organisation (1.10.0 parseOrgMembershipDocument); only admins of that organisation change role or permissions.' },
+  { id: 'overtimeRequests', path: 'organizations/{orgId}/overtimeRequests', scope: 'organization', listen: true, note: '1.29.0: PAYE overtime requests (parseOvertimeRequestDocument); the person\'s own, or the reports a line manager or admin decides.' },
+  { id: 'overtimeReviews', path: 'organizations/{orgId}/overtimeReviews/{userId}_{bookingId}', scope: 'organization', listen: true, note: '1.29.0: approved overtime lines (parseOvertimeReviewDocument), while the Overtime screen is open.' },
+  { id: 'overtimeReports', path: 'organizations/{orgId}/overtimeReports', scope: 'organization', listen: false, note: '1.29.0: saved report copies, written once and never changed (parseOvertimeReportDocument); read when Past PAYE payruns opens.' },
   { id: 'deletedBookings', path: 'organizations/{orgId}/deletedBookings', scope: 'organization', listen: false, note: 'Write-only tombstones; never shown.' },
 ]
 

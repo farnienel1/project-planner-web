@@ -20448,6 +20448,1307 @@
         ]
       ],
       "expected": false
+    },
+    {
+      "name": "1.29.0 PAYE payrun containing a day, across a payday change",
+      "function": "payePayrunPeriod",
+      "args": [
+        {
+          "invoicing": {
+            "payePayday": 16,
+            "payePaydayHistory": [
+              {
+                "day": 25,
+                "effectiveFrom": "2026-10-26"
+              },
+              {
+                "day": 16,
+                "effectiveFrom": "2026-11-26"
+              }
+            ]
+          }
+        },
+        "2026-11-30"
+      ],
+      "expected": {
+        "start": "2026-11-26",
+        "end": "2026-12-16",
+        "payDate": "2026-12-16",
+        "payday": 16
+      }
+    },
+    {
+      "name": "1.29.0 PAYE payday 31st clamps to the end of February",
+      "function": "payePayrunPeriod",
+      "args": [
+        {
+          "invoicing": {
+            "payePaydayHistory": [
+              {
+                "day": 31,
+                "effectiveFrom": "2026-01-01"
+              }
+            ]
+          }
+        },
+        "2027-02-10"
+      ],
+      "expected": {
+        "start": "2027-02-01",
+        "end": "2027-02-28",
+        "payDate": "2027-02-28",
+        "payday": 31
+      }
+    },
+    {
+      "name": "1.29.0 PAYE payrun summary label",
+      "function": "payePayrunSummary",
+      "args": [
+        {
+          "invoicing": {
+            "payePayday": 16,
+            "payePaydayHistory": [
+              {
+                "day": 25,
+                "effectiveFrom": "2026-10-26"
+              },
+              {
+                "day": 16,
+                "effectiveFrom": "2026-11-26"
+              }
+            ]
+          }
+        },
+        "2026-11-04"
+      ],
+      "expected": {
+        "notConfigured": false,
+        "start": "2026-10-26",
+        "end": "2026-11-25",
+        "payDate": "2026-11-25",
+        "payday": 25,
+        "label": "PAYE payrun: 26 Oct – 25 Nov · paid 25 Nov"
+      }
+    },
+    {
+      "name": "1.29.0 PAYE payday not set",
+      "function": "payePayrunSummary",
+      "args": [
+        {
+          "invoicing": {}
+        },
+        "2026-11-04"
+      ],
+      "expected": {
+        "notConfigured": true,
+        "message": "Ask an admin to set the PAYE payday"
+      }
+    },
+    {
+      "name": "1.29.0 past PAYE payruns newest first",
+      "function": "payePastPayruns",
+      "args": [
+        {
+          "invoicing": {
+            "payePayday": 16,
+            "payePaydayHistory": [
+              {
+                "day": 25,
+                "effectiveFrom": "2026-10-26"
+              },
+              {
+                "day": 16,
+                "effectiveFrom": "2026-11-26"
+              }
+            ]
+          }
+        },
+        "2027-01-05"
+      ],
+      "expected": [
+        {
+          "start": "2026-11-26",
+          "end": "2026-12-16",
+          "payDate": "2026-12-16",
+          "payday": 16
+        },
+        {
+          "start": "2026-10-26",
+          "end": "2026-11-25",
+          "payDate": "2026-11-25",
+          "payday": 25
+        }
+      ]
+    },
+    {
+      "name": "1.29.0 PAYE payday change applies from the next payrun",
+      "function": "payePaydayWriteFields",
+      "args": [
+        {
+          "invoicing": {
+            "payePayday": 25,
+            "payePaydayHistory": [
+              {
+                "day": 25,
+                "effectiveFrom": "2026-10-26"
+              }
+            ]
+          }
+        },
+        16,
+        "2026-11-04"
+      ],
+      "expected": {
+        "invoicing.payePayday": 16,
+        "invoicing.payePaydayHistory": [
+          {
+            "day": 25,
+            "effectiveFrom": "2026-10-26"
+          },
+          {
+            "day": 16,
+            "effectiveFrom": "2026-11-26"
+          }
+        ]
+      }
+    },
+    {
+      "name": "1.29.0 booking fingerprint",
+      "function": "overtimeBookingFingerprint",
+      "args": [
+        {
+          "id": "B2",
+          "collection": "bookings",
+          "personId": "sam",
+          "dayKey": "2026-11-05",
+          "timeSlot": "CUSTOM_HOURS",
+          "workStartTime": "07:30",
+          "workEndTime": "18:00",
+          "status": "Confirmed",
+          "jobId": "job-1",
+          "jobNumber": "J-1042",
+          "jobName": "Riverside Flats",
+          "otMultiplierOverride": 2
+        }
+      ],
+      "expected": "2026-11-05|CUSTOM HOURS|07:30|18:00|2||confirmed"
+    },
+    {
+      "name": "1.29.0 overtime of a booking with its own rate",
+      "function": "overtimeForBooking",
+      "args": [
+        {
+          "booking": {
+            "id": "B2",
+            "collection": "bookings",
+            "personId": "sam",
+            "dayKey": "2026-11-05",
+            "timeSlot": "CUSTOM_HOURS",
+            "workStartTime": "07:30",
+            "workEndTime": "18:00",
+            "status": "Confirmed",
+            "jobId": "job-1",
+            "jobNumber": "J-1042",
+            "jobName": "Riverside Flats",
+            "otMultiplierOverride": 2
+          },
+          "organization": {
+            "countryCode": "GB",
+            "payrollTimePolicy": {
+              "standardDayStart": "07:30",
+              "standardDayEnd": "16:00",
+              "unpaidBreakMinutes": 30,
+              "breakWindowStart": "12:00",
+              "breakWindowEnd": "12:30",
+              "weekdayOutsideStandardMultiplier": 1.5,
+              "saturday": {
+                "allHoursAtMultiplierMode": false,
+                "definedWindowStart": "07:30",
+                "definedWindowEnd": "14:00",
+                "countsAsStandardHours": 8,
+                "outsideWindowMultiplier": 1.5
+              },
+              "sunday": {
+                "allHoursAtMultiplierMode": true,
+                "allHoursMultiplier": 2,
+                "sameAsSaturday": false
+              }
+            }
+          },
+          "timeZone": "Europe/London"
+        }
+      ],
+      "expected": {
+        "clockHours": 2,
+        "multiplier": 2,
+        "breakHours": 0,
+        "overtimeHours": 4,
+        "text": "2h × 2 = 4h",
+        "dayWindow": "07:30–16:00",
+        "organizationMultiplier": 1.5,
+        "customMultiplier": 2
+      }
+    },
+    {
+      "name": "1.29.0 overtime lines with states",
+      "function": "payeOvertimeLines",
+      "args": [
+        {
+          "personIds": [
+            "SAM"
+          ],
+          "bookings": [
+            {
+              "id": "B1",
+              "collection": "bookings",
+              "personId": "sam",
+              "dayKey": "2026-11-04",
+              "timeSlot": "CUSTOM_HOURS",
+              "workStartTime": "06:30",
+              "workEndTime": "14:00",
+              "status": "Confirmed",
+              "jobId": "job-1",
+              "jobNumber": "J-1042",
+              "jobName": "Riverside Flats"
+            },
+            {
+              "id": "B2",
+              "collection": "bookings",
+              "personId": "sam",
+              "dayKey": "2026-11-05",
+              "timeSlot": "CUSTOM_HOURS",
+              "workStartTime": "07:30",
+              "workEndTime": "18:00",
+              "status": "Confirmed",
+              "jobId": "job-1",
+              "jobNumber": "J-1042",
+              "jobName": "Riverside Flats",
+              "otMultiplierOverride": 2
+            },
+            {
+              "id": "B4",
+              "collection": "bookings",
+              "personId": "sam",
+              "dayKey": "2026-11-08",
+              "timeSlot": "CUSTOM_HOURS",
+              "workStartTime": "07:30",
+              "workEndTime": "14:00",
+              "status": "Confirmed",
+              "jobId": "job-1",
+              "jobNumber": "J-1042",
+              "jobName": "Riverside Flats"
+            },
+            {
+              "id": "B7",
+              "collection": "bookings",
+              "personId": "sam",
+              "dayKey": "2026-11-02",
+              "timeSlot": "CUSTOM_HOURS",
+              "workStartTime": "18:00",
+              "workEndTime": "21:00",
+              "status": "Confirmed",
+              "jobId": "job-1",
+              "jobNumber": "J-1042",
+              "jobName": "Riverside Flats"
+            },
+            {
+              "id": "B9",
+              "collection": "bookings",
+              "personId": "sam",
+              "dayKey": "2026-11-03",
+              "timeSlot": "CUSTOM_HOURS",
+              "workStartTime": "07:30",
+              "workEndTime": "16:10",
+              "status": "Confirmed",
+              "jobId": "job-1",
+              "jobNumber": "J-1042",
+              "jobName": "Riverside Flats"
+            }
+          ],
+          "organization": {
+            "countryCode": "GB",
+            "payrollTimePolicy": {
+              "standardDayStart": "07:30",
+              "standardDayEnd": "16:00",
+              "unpaidBreakMinutes": 30,
+              "breakWindowStart": "12:00",
+              "breakWindowEnd": "12:30",
+              "weekdayOutsideStandardMultiplier": 1.5,
+              "saturday": {
+                "allHoursAtMultiplierMode": false,
+                "definedWindowStart": "07:30",
+                "definedWindowEnd": "14:00",
+                "countsAsStandardHours": 8,
+                "outsideWindowMultiplier": 1.5
+              },
+              "sunday": {
+                "allHoursAtMultiplierMode": true,
+                "allHoursMultiplier": 2,
+                "sameAsSaturday": false
+              }
+            }
+          },
+          "timeZone": "Europe/London",
+          "range": {
+            "start": "2026-11-01",
+            "end": "2026-11-30"
+          },
+          "reviews": [
+            {
+              "id": "sam_B1",
+              "userId": "sam",
+              "bookingId": "B1",
+              "collection": "bookings",
+              "decision": "approved",
+              "fingerprint": "2026-11-04|CUSTOM HOURS|06:30|14:00|||confirmed",
+              "reviewedBy": "lm",
+              "reviewedAtMs": null,
+              "requestId": null
+            }
+          ],
+          "requests": [
+            {
+              "id": "R2",
+              "userId": "sam",
+              "rangeStart": "2026-11-01",
+              "rangeEnd": "2026-11-30",
+              "status": "pending",
+              "lines": [
+                {
+                  "bookingId": "B4",
+                  "collection": "bookings",
+                  "dayKey": "2026-11-08",
+                  "jobId": "job-1",
+                  "fingerprint": "2026-11-08|CUSTOM HOURS|07:30|14:00|||confirmed",
+                  "action": "keep",
+                  "proposedStart": null,
+                  "proposedEnd": null,
+                  "proposedMultiplier": null,
+                  "cancel": false,
+                  "overtimeHoursBefore": 13,
+                  "overtimeHoursAfter": 13
+                },
+                {
+                  "bookingId": "B7",
+                  "collection": "bookings",
+                  "dayKey": "2026-11-02",
+                  "jobId": "job-1",
+                  "fingerprint": "old",
+                  "action": "keep",
+                  "proposedStart": null,
+                  "proposedEnd": null,
+                  "proposedMultiplier": null,
+                  "cancel": false,
+                  "overtimeHoursBefore": 4.5,
+                  "overtimeHoursAfter": 4.5
+                }
+              ],
+              "decisions": {},
+              "decidedBy": null,
+              "createdAtMs": null,
+              "decidedAtMs": null,
+              "appliedBookingIds": [],
+              "droppedBookingIds": []
+            }
+          ]
+        }
+      ],
+      "expected": [
+        {
+          "bookingId": "B7",
+          "collection": "bookings",
+          "dayKey": "2026-11-02",
+          "dayLabel": "Mon 2 Nov",
+          "jobId": "job-1",
+          "jobNumber": "J-1042",
+          "jobName": "Riverside Flats",
+          "title": "J-1042 · Riverside Flats",
+          "start": "18:00",
+          "end": "21:00",
+          "timeSlot": "CUSTOM_HOURS",
+          "fingerprint": "2026-11-02|CUSTOM HOURS|18:00|21:00|||confirmed",
+          "state": "changedSinceRequest",
+          "stateLabel": "Booking changed since request",
+          "figures": {
+            "clockHours": 3,
+            "multiplier": 1.5,
+            "breakHours": 0,
+            "overtimeHours": 4.5,
+            "text": "3h × 1.5 = 4.5h",
+            "dayWindow": "07:30–16:00",
+            "organizationMultiplier": 1.5,
+            "customMultiplier": null
+          },
+          "requestId": "R2",
+          "requestLine": {
+            "bookingId": "B7",
+            "collection": "bookings",
+            "dayKey": "2026-11-02",
+            "jobId": "job-1",
+            "fingerprint": "old",
+            "action": "keep",
+            "proposedStart": null,
+            "proposedEnd": null,
+            "proposedMultiplier": null,
+            "cancel": false,
+            "overtimeHoursBefore": 4.5,
+            "overtimeHoursAfter": 4.5
+          },
+          "review": null
+        },
+        {
+          "bookingId": "B1",
+          "collection": "bookings",
+          "dayKey": "2026-11-04",
+          "dayLabel": "Wed 4 Nov",
+          "jobId": "job-1",
+          "jobNumber": "J-1042",
+          "jobName": "Riverside Flats",
+          "title": "J-1042 · Riverside Flats",
+          "start": "06:30",
+          "end": "14:00",
+          "timeSlot": "CUSTOM_HOURS",
+          "fingerprint": "2026-11-04|CUSTOM HOURS|06:30|14:00|||confirmed",
+          "state": "approved",
+          "stateLabel": "Approved",
+          "figures": {
+            "clockHours": 1,
+            "multiplier": 1.5,
+            "breakHours": 0,
+            "overtimeHours": 1.5,
+            "text": "1h × 1.5 = 1.5h",
+            "dayWindow": "07:30–16:00",
+            "organizationMultiplier": 1.5,
+            "customMultiplier": null
+          },
+          "requestId": null,
+          "requestLine": null,
+          "review": {
+            "id": "sam_B1",
+            "userId": "sam",
+            "bookingId": "B1",
+            "collection": "bookings",
+            "decision": "approved",
+            "fingerprint": "2026-11-04|CUSTOM HOURS|06:30|14:00|||confirmed",
+            "reviewedBy": "lm",
+            "reviewedAtMs": null,
+            "requestId": null
+          }
+        },
+        {
+          "bookingId": "B2",
+          "collection": "bookings",
+          "dayKey": "2026-11-05",
+          "dayLabel": "Thu 5 Nov",
+          "jobId": "job-1",
+          "jobNumber": "J-1042",
+          "jobName": "Riverside Flats",
+          "title": "J-1042 · Riverside Flats",
+          "start": "07:30",
+          "end": "18:00",
+          "timeSlot": "CUSTOM_HOURS",
+          "fingerprint": "2026-11-05|CUSTOM HOURS|07:30|18:00|2||confirmed",
+          "state": "needsReview",
+          "stateLabel": "Needs review",
+          "figures": {
+            "clockHours": 2,
+            "multiplier": 2,
+            "breakHours": 0,
+            "overtimeHours": 4,
+            "text": "2h × 2 = 4h",
+            "dayWindow": "07:30–16:00",
+            "organizationMultiplier": 1.5,
+            "customMultiplier": 2
+          },
+          "requestId": null,
+          "requestLine": null,
+          "review": null
+        },
+        {
+          "bookingId": "B4",
+          "collection": "bookings",
+          "dayKey": "2026-11-08",
+          "dayLabel": "Sun 8 Nov",
+          "jobId": "job-1",
+          "jobNumber": "J-1042",
+          "jobName": "Riverside Flats",
+          "title": "J-1042 · Riverside Flats",
+          "start": "07:30",
+          "end": "14:00",
+          "timeSlot": "CUSTOM_HOURS",
+          "fingerprint": "2026-11-08|CUSTOM HOURS|07:30|14:00|||confirmed",
+          "state": "waiting",
+          "stateLabel": "Waiting for line manager",
+          "figures": {
+            "clockHours": 6.5,
+            "multiplier": 2,
+            "breakHours": 0,
+            "overtimeHours": 13,
+            "text": "6.5h × 2 = 13h",
+            "dayWindow": null,
+            "organizationMultiplier": 2,
+            "customMultiplier": null
+          },
+          "requestId": "R2",
+          "requestLine": {
+            "bookingId": "B4",
+            "collection": "bookings",
+            "dayKey": "2026-11-08",
+            "jobId": "job-1",
+            "fingerprint": "2026-11-08|CUSTOM HOURS|07:30|14:00|||confirmed",
+            "action": "keep",
+            "proposedStart": null,
+            "proposedEnd": null,
+            "proposedMultiplier": null,
+            "cancel": false,
+            "overtimeHoursBefore": 13,
+            "overtimeHoursAfter": 13
+          },
+          "review": null
+        }
+      ]
+    },
+    {
+      "name": "1.29.0 red X trims a weekday booking",
+      "function": "overtimeStrikeOutcome",
+      "args": [
+        {
+          "booking": {
+            "id": "B1",
+            "collection": "bookings",
+            "personId": "sam",
+            "dayKey": "2026-11-04",
+            "timeSlot": "CUSTOM_HOURS",
+            "workStartTime": "06:30",
+            "workEndTime": "14:00",
+            "status": "Confirmed",
+            "jobId": "job-1",
+            "jobNumber": "J-1042",
+            "jobName": "Riverside Flats"
+          },
+          "organization": {
+            "countryCode": "GB",
+            "payrollTimePolicy": {
+              "standardDayStart": "07:30",
+              "standardDayEnd": "16:00",
+              "unpaidBreakMinutes": 30,
+              "breakWindowStart": "12:00",
+              "breakWindowEnd": "12:30",
+              "weekdayOutsideStandardMultiplier": 1.5,
+              "saturday": {
+                "allHoursAtMultiplierMode": false,
+                "definedWindowStart": "07:30",
+                "definedWindowEnd": "14:00",
+                "countsAsStandardHours": 8,
+                "outsideWindowMultiplier": 1.5
+              },
+              "sunday": {
+                "allHoursAtMultiplierMode": true,
+                "allHoursMultiplier": 2,
+                "sameAsSaturday": false
+              }
+            }
+          },
+          "timeZone": "Europe/London"
+        }
+      ],
+      "expected": {
+        "kind": "trim",
+        "start": "07:30",
+        "end": "14:00"
+      }
+    },
+    {
+      "name": "1.29.0 red X cancels an every-hour weekend booking with the warning",
+      "function": "overtimeStrikeOutcome",
+      "args": [
+        {
+          "booking": {
+            "id": "B4",
+            "collection": "bookings",
+            "personId": "sam",
+            "dayKey": "2026-11-08",
+            "timeSlot": "CUSTOM_HOURS",
+            "workStartTime": "07:30",
+            "workEndTime": "14:00",
+            "status": "Confirmed",
+            "jobId": "job-1",
+            "jobNumber": "J-1042",
+            "jobName": "Riverside Flats"
+          },
+          "organization": {
+            "countryCode": "GB",
+            "payrollTimePolicy": {
+              "standardDayStart": "07:30",
+              "standardDayEnd": "16:00",
+              "unpaidBreakMinutes": 30,
+              "breakWindowStart": "12:00",
+              "breakWindowEnd": "12:30",
+              "weekdayOutsideStandardMultiplier": 1.5,
+              "saturday": {
+                "allHoursAtMultiplierMode": false,
+                "definedWindowStart": "07:30",
+                "definedWindowEnd": "14:00",
+                "countsAsStandardHours": 8,
+                "outsideWindowMultiplier": 1.5
+              },
+              "sunday": {
+                "allHoursAtMultiplierMode": true,
+                "allHoursMultiplier": 2,
+                "sameAsSaturday": false
+              }
+            }
+          },
+          "timeZone": "Europe/London"
+        }
+      ],
+      "expected": {
+        "kind": "cancel",
+        "warning": {
+          "title": "Remove this booking?",
+          "body": "This will remove this booking entirely. Your organisation pays a set multiplier for this day. If you still worked this day, use the cog to set the hours you worked and agreed.",
+          "back": "Go back",
+          "confirm": "Remove booking",
+          "footnote": "A manager can restore it if this was a mistake.",
+          "summary": "Sun 8 Nov · J-1042 Riverside Flats · 07:30–14:00"
+        }
+      }
+    },
+    {
+      "name": "1.29.0 cog preview",
+      "function": "overtimeCogPreview",
+      "args": [
+        {
+          "booking": {
+            "id": "B2",
+            "collection": "bookings",
+            "personId": "sam",
+            "dayKey": "2026-11-05",
+            "timeSlot": "CUSTOM_HOURS",
+            "workStartTime": "07:30",
+            "workEndTime": "18:00",
+            "status": "Confirmed",
+            "jobId": "job-1",
+            "jobNumber": "J-1042",
+            "jobName": "Riverside Flats"
+          },
+          "organization": {
+            "countryCode": "GB",
+            "payrollTimePolicy": {
+              "standardDayStart": "07:30",
+              "standardDayEnd": "16:00",
+              "unpaidBreakMinutes": 30,
+              "breakWindowStart": "12:00",
+              "breakWindowEnd": "12:30",
+              "weekdayOutsideStandardMultiplier": 1.5,
+              "saturday": {
+                "allHoursAtMultiplierMode": false,
+                "definedWindowStart": "07:30",
+                "definedWindowEnd": "14:00",
+                "countsAsStandardHours": 8,
+                "outsideWindowMultiplier": 1.5
+              },
+              "sunday": {
+                "allHoursAtMultiplierMode": true,
+                "allHoursMultiplier": 2,
+                "sameAsSaturday": false
+              }
+            }
+          },
+          "timeZone": "Europe/London",
+          "start": "07:30",
+          "end": "19:00",
+          "multiplier": 2
+        }
+      ],
+      "expected": {
+        "before": {
+          "clockHours": 2,
+          "multiplier": 1.5,
+          "breakHours": 0,
+          "overtimeHours": 3,
+          "text": "2h × 1.5 = 3h",
+          "dayWindow": "07:30–16:00",
+          "organizationMultiplier": 1.5,
+          "customMultiplier": null
+        },
+        "after": {
+          "clockHours": 3,
+          "multiplier": 2,
+          "breakHours": 0,
+          "overtimeHours": 6,
+          "text": "3h × 2 = 6h",
+          "dayWindow": "07:30–16:00",
+          "organizationMultiplier": 1.5,
+          "customMultiplier": 2
+        },
+        "beforeText": "2h × 1.5 = 3h",
+        "afterText": "3h × 2 = 6h",
+        "changed": true,
+        "error": null
+      }
+    },
+    {
+      "name": "1.29.0 approval writes",
+      "function": "overtimeApprovalWrites",
+      "args": [
+        {
+          "request": {
+            "id": "R1",
+            "userId": "sam",
+            "rangeStart": "2026-11-01",
+            "rangeEnd": "2026-11-30",
+            "status": "pending",
+            "lines": [
+              {
+                "bookingId": "B1",
+                "collection": "bookings",
+                "dayKey": "2026-11-04",
+                "jobId": "job-1",
+                "fingerprint": "2026-11-04|CUSTOM HOURS|06:30|14:00|||confirmed",
+                "action": "strike",
+                "proposedStart": "07:30",
+                "proposedEnd": "14:00",
+                "proposedMultiplier": null,
+                "cancel": false,
+                "overtimeHoursBefore": 1.5,
+                "overtimeHoursAfter": 0
+              },
+              {
+                "bookingId": "B4",
+                "collection": "bookings",
+                "dayKey": "2026-11-08",
+                "jobId": "job-1",
+                "fingerprint": "2026-11-08|CUSTOM HOURS|07:30|14:00|||confirmed",
+                "action": "strike",
+                "proposedStart": null,
+                "proposedEnd": null,
+                "proposedMultiplier": null,
+                "cancel": true,
+                "overtimeHoursBefore": 13,
+                "overtimeHoursAfter": 0
+              },
+              {
+                "bookingId": "B7",
+                "collection": "bookings",
+                "dayKey": "2026-11-02",
+                "jobId": "job-1",
+                "fingerprint": "2026-11-02|CUSTOM HOURS|18:00|21:00|||confirmed",
+                "action": "keep",
+                "proposedStart": null,
+                "proposedEnd": null,
+                "proposedMultiplier": null,
+                "cancel": false,
+                "overtimeHoursBefore": 4.5,
+                "overtimeHoursAfter": 4.5
+              }
+            ],
+            "decisions": {},
+            "decidedBy": null,
+            "createdAtMs": null,
+            "decidedAtMs": null,
+            "appliedBookingIds": [],
+            "droppedBookingIds": []
+          },
+          "decisions": {
+            "B1": {
+              "action": "approve"
+            },
+            "B4": {
+              "action": "approve"
+            },
+            "B7": {
+              "action": "edit",
+              "start": "18:00",
+              "end": "20:00",
+              "multiplier": 1.25
+            }
+          },
+          "bookings": {
+            "B1": {
+              "id": "B1",
+              "collection": "bookings",
+              "personId": "sam",
+              "dayKey": "2026-11-04",
+              "timeSlot": "CUSTOM_HOURS",
+              "workStartTime": "06:30",
+              "workEndTime": "14:00",
+              "status": "Confirmed",
+              "jobId": "job-1",
+              "jobNumber": "J-1042",
+              "jobName": "Riverside Flats"
+            },
+            "B4": {
+              "id": "B4",
+              "collection": "bookings",
+              "personId": "sam",
+              "dayKey": "2026-11-08",
+              "timeSlot": "CUSTOM_HOURS",
+              "workStartTime": "07:30",
+              "workEndTime": "14:00",
+              "status": "Confirmed",
+              "jobId": "job-1",
+              "jobNumber": "J-1042",
+              "jobName": "Riverside Flats"
+            },
+            "B7": {
+              "id": "B7",
+              "collection": "bookings",
+              "personId": "sam",
+              "dayKey": "2026-11-02",
+              "timeSlot": "CUSTOM_HOURS",
+              "workStartTime": "18:00",
+              "workEndTime": "21:00",
+              "status": "Confirmed",
+              "jobId": "job-1",
+              "jobNumber": "J-1042",
+              "jobName": "Riverside Flats"
+            }
+          },
+          "organization": {
+            "countryCode": "GB",
+            "payrollTimePolicy": {
+              "standardDayStart": "07:30",
+              "standardDayEnd": "16:00",
+              "unpaidBreakMinutes": 30,
+              "breakWindowStart": "12:00",
+              "breakWindowEnd": "12:30",
+              "weekdayOutsideStandardMultiplier": 1.5,
+              "saturday": {
+                "allHoursAtMultiplierMode": false,
+                "definedWindowStart": "07:30",
+                "definedWindowEnd": "14:00",
+                "countsAsStandardHours": 8,
+                "outsideWindowMultiplier": 1.5
+              },
+              "sunday": {
+                "allHoursAtMultiplierMode": true,
+                "allHoursMultiplier": 2,
+                "sameAsSaturday": false
+              }
+            }
+          },
+          "timeZone": "Europe/London",
+          "deciderId": "lm"
+        }
+      ],
+      "expected": {
+        "ok": true,
+        "bookingWrites": [
+          {
+            "collection": "bookings",
+            "bookingId": "B1",
+            "set": {
+              "workStartTime": "07:30"
+            },
+            "remove": []
+          },
+          {
+            "collection": "bookings",
+            "bookingId": "B4",
+            "set": {
+              "status": "Cancelled"
+            },
+            "remove": []
+          },
+          {
+            "collection": "bookings",
+            "bookingId": "B7",
+            "set": {
+              "workEndTime": "20:00",
+              "otMultiplierOverride": 1.25
+            },
+            "remove": []
+          }
+        ],
+        "reviewWrites": [
+          {
+            "docId": "sam_B1",
+            "fields": {
+              "userId": "sam",
+              "bookingId": "B1",
+              "collection": "bookings",
+              "decision": "trimmed",
+              "fingerprint": "2026-11-04|CUSTOM HOURS|07:30|14:00|||confirmed",
+              "reviewedBy": "lm",
+              "requestId": "R1"
+            }
+          },
+          {
+            "docId": "sam_B4",
+            "fields": {
+              "userId": "sam",
+              "bookingId": "B4",
+              "collection": "bookings",
+              "decision": "cancelled",
+              "fingerprint": "2026-11-08|CUSTOM HOURS|07:30|14:00|||cancelled",
+              "reviewedBy": "lm",
+              "requestId": "R1"
+            }
+          },
+          {
+            "docId": "sam_B7",
+            "fields": {
+              "userId": "sam",
+              "bookingId": "B7",
+              "collection": "bookings",
+              "decision": "edited",
+              "fingerprint": "2026-11-02|CUSTOM HOURS|18:00|20:00|1.25||confirmed",
+              "reviewedBy": "lm",
+              "requestId": "R1"
+            }
+          }
+        ],
+        "droppedBookingIds": [],
+        "requestFields": {
+          "status": "approved",
+          "decisions": {
+            "B1": {
+              "action": "approve"
+            },
+            "B4": {
+              "action": "approve"
+            },
+            "B7": {
+              "action": "edit",
+              "start": "18:00",
+              "end": "20:00",
+              "multiplier": 1.25
+            }
+          },
+          "decidedBy": "lm",
+          "appliedBookingIds": [
+            "B1",
+            "B4",
+            "B7"
+          ],
+          "droppedBookingIds": []
+        }
+      }
+    },
+    {
+      "name": "1.29.0 approval refused when a booking changed",
+      "function": "overtimeApprovalWrites",
+      "args": [
+        {
+          "request": {
+            "id": "R1",
+            "userId": "sam",
+            "rangeStart": "2026-11-01",
+            "rangeEnd": "2026-11-30",
+            "status": "pending",
+            "lines": [
+              {
+                "bookingId": "B1",
+                "collection": "bookings",
+                "dayKey": "2026-11-04",
+                "jobId": "job-1",
+                "fingerprint": "2026-11-04|CUSTOM HOURS|06:30|14:00|||confirmed",
+                "action": "strike",
+                "proposedStart": "07:30",
+                "proposedEnd": "14:00",
+                "proposedMultiplier": null,
+                "cancel": false,
+                "overtimeHoursBefore": 1.5,
+                "overtimeHoursAfter": 0
+              },
+              {
+                "bookingId": "B4",
+                "collection": "bookings",
+                "dayKey": "2026-11-08",
+                "jobId": "job-1",
+                "fingerprint": "2026-11-08|CUSTOM HOURS|07:30|14:00|||confirmed",
+                "action": "strike",
+                "proposedStart": null,
+                "proposedEnd": null,
+                "proposedMultiplier": null,
+                "cancel": true,
+                "overtimeHoursBefore": 13,
+                "overtimeHoursAfter": 0
+              },
+              {
+                "bookingId": "B7",
+                "collection": "bookings",
+                "dayKey": "2026-11-02",
+                "jobId": "job-1",
+                "fingerprint": "2026-11-02|CUSTOM HOURS|18:00|21:00|||confirmed",
+                "action": "keep",
+                "proposedStart": null,
+                "proposedEnd": null,
+                "proposedMultiplier": null,
+                "cancel": false,
+                "overtimeHoursBefore": 4.5,
+                "overtimeHoursAfter": 4.5
+              }
+            ],
+            "decisions": {},
+            "decidedBy": null,
+            "createdAtMs": null,
+            "decidedAtMs": null,
+            "appliedBookingIds": [],
+            "droppedBookingIds": []
+          },
+          "decisions": {
+            "B1": {
+              "action": "approve"
+            },
+            "B4": {
+              "action": "approve"
+            },
+            "B7": {
+              "action": "approve"
+            }
+          },
+          "bookings": {
+            "B1": {
+              "id": "B1",
+              "collection": "bookings",
+              "personId": "sam",
+              "dayKey": "2026-11-04",
+              "timeSlot": "CUSTOM_HOURS",
+              "workStartTime": "06:30",
+              "workEndTime": "15:00",
+              "status": "Confirmed",
+              "jobId": "job-1",
+              "jobNumber": "J-1042",
+              "jobName": "Riverside Flats"
+            },
+            "B4": {
+              "id": "B4",
+              "collection": "bookings",
+              "personId": "sam",
+              "dayKey": "2026-11-08",
+              "timeSlot": "CUSTOM_HOURS",
+              "workStartTime": "07:30",
+              "workEndTime": "14:00",
+              "status": "Confirmed",
+              "jobId": "job-1",
+              "jobNumber": "J-1042",
+              "jobName": "Riverside Flats"
+            },
+            "B7": {
+              "id": "B7",
+              "collection": "bookings",
+              "personId": "sam",
+              "dayKey": "2026-11-02",
+              "timeSlot": "CUSTOM_HOURS",
+              "workStartTime": "18:00",
+              "workEndTime": "21:00",
+              "status": "Confirmed",
+              "jobId": "job-1",
+              "jobNumber": "J-1042",
+              "jobName": "Riverside Flats"
+            }
+          },
+          "organization": {
+            "countryCode": "GB",
+            "payrollTimePolicy": {
+              "standardDayStart": "07:30",
+              "standardDayEnd": "16:00",
+              "unpaidBreakMinutes": 30,
+              "breakWindowStart": "12:00",
+              "breakWindowEnd": "12:30",
+              "weekdayOutsideStandardMultiplier": 1.5,
+              "saturday": {
+                "allHoursAtMultiplierMode": false,
+                "definedWindowStart": "07:30",
+                "definedWindowEnd": "14:00",
+                "countsAsStandardHours": 8,
+                "outsideWindowMultiplier": 1.5
+              },
+              "sunday": {
+                "allHoursAtMultiplierMode": true,
+                "allHoursMultiplier": 2,
+                "sameAsSaturday": false
+              }
+            }
+          },
+          "timeZone": "Europe/London",
+          "deciderId": "lm"
+        }
+      ],
+      "expected": {
+        "ok": false,
+        "reason": "stale",
+        "bookingIds": [
+          "B1"
+        ],
+        "message": "A booking changed after this request was sent, so it cannot be approved. Ask for the request to be sent again."
+      }
+    },
+    {
+      "name": "1.29.0 overtime request recipients",
+      "function": "overtimeRequestRecipients",
+      "args": [
+        "sam",
+        [
+          {
+            "id": "sam",
+            "email": "sam@x.com",
+            "isActive": true,
+            "role": {
+              "isOperativeMode": true
+            },
+            "assignedManagerUserIds": [
+              "lm"
+            ],
+            "employmentType": "paye"
+          },
+          {
+            "id": "lm",
+            "email": "lm@x.com",
+            "isActive": true,
+            "role": {
+              "isManager": true
+            }
+          },
+          {
+            "id": "admin",
+            "email": "admin@x.com",
+            "isActive": true,
+            "role": {
+              "isAdmin": true
+            }
+          },
+          {
+            "id": "gone",
+            "email": "gone@x.com",
+            "isActive": false,
+            "role": {
+              "isAdmin": true
+            }
+          }
+        ]
+      ],
+      "expected": [
+        "lm",
+        "admin"
+      ]
+    },
+    {
+      "name": "1.29.0 operative overtime changes are requests",
+      "function": "canEditOwnBookingOvertime",
+      "args": [
+        {
+          "viewer": {
+            "role": {
+              "isOperativeMode": true
+            },
+            "ids": [
+              "sam"
+            ]
+          },
+          "isPaye": true,
+          "booking": {
+            "collection": "bookings",
+            "projectId": "job-1",
+            "dayKey": "2026-11-04"
+          },
+          "job": {
+            "managerUserIds": [
+              "lm"
+            ]
+          },
+          "todayKey": "2026-11-04"
+        }
+      ],
+      "expected": "request"
+    },
+    {
+      "name": "1.29.0 weekly report PAYE overtime section",
+      "function": "weeklyReportPayeOvertime",
+      "args": [
+        {
+          "people": [
+            {
+              "id": "sam",
+              "name": "Sam",
+              "employmentType": "paye"
+            }
+          ],
+          "bookings": [
+            {
+              "id": "B1",
+              "collection": "bookings",
+              "personId": "sam",
+              "dayKey": "2026-11-04",
+              "timeSlot": "CUSTOM_HOURS",
+              "workStartTime": "06:30",
+              "workEndTime": "14:00",
+              "status": "Confirmed",
+              "jobId": "job-1",
+              "jobNumber": "J-1042",
+              "jobName": "Riverside Flats"
+            },
+            {
+              "id": "B2",
+              "collection": "bookings",
+              "personId": "sam",
+              "dayKey": "2026-11-05",
+              "timeSlot": "CUSTOM_HOURS",
+              "workStartTime": "07:30",
+              "workEndTime": "18:00",
+              "status": "Confirmed",
+              "jobId": "job-1",
+              "jobNumber": "J-1042",
+              "jobName": "Riverside Flats",
+              "otMultiplierOverride": 2
+            },
+            {
+              "id": "B7",
+              "collection": "bookings",
+              "personId": "sam",
+              "dayKey": "2026-11-02",
+              "timeSlot": "CUSTOM_HOURS",
+              "workStartTime": "18:00",
+              "workEndTime": "21:00",
+              "status": "Confirmed",
+              "jobId": "job-1",
+              "jobNumber": "J-1042",
+              "jobName": "Riverside Flats"
+            }
+          ],
+          "organization": {
+            "countryCode": "GB",
+            "payrollTimePolicy": {
+              "standardDayStart": "07:30",
+              "standardDayEnd": "16:00",
+              "unpaidBreakMinutes": 30,
+              "breakWindowStart": "12:00",
+              "breakWindowEnd": "12:30",
+              "weekdayOutsideStandardMultiplier": 1.5,
+              "saturday": {
+                "allHoursAtMultiplierMode": false,
+                "definedWindowStart": "07:30",
+                "definedWindowEnd": "14:00",
+                "countsAsStandardHours": 8,
+                "outsideWindowMultiplier": 1.5
+              },
+              "sunday": {
+                "allHoursAtMultiplierMode": true,
+                "allHoursMultiplier": 2,
+                "sameAsSaturday": false
+              }
+            }
+          },
+          "timeZone": "Europe/London",
+          "range": {
+            "start": "2026-11-02",
+            "end": "2026-11-08"
+          }
+        }
+      ],
+      "expected": [
+        {
+          "personId": "sam",
+          "name": "Sam",
+          "jobId": "job-1",
+          "jobNumber": "J-1042",
+          "jobName": "Riverside Flats",
+          "overtimeHours": 10,
+          "label": "Sam · J-1042 · 10h"
+        }
+      ]
     }
   ]
 }

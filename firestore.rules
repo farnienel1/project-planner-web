@@ -1690,11 +1690,135 @@ service cloud.firestore {
         allow delete: if isOrganizationAdmin(organizationId) || isOrgAdminViaMembersMap(organizationId) || isPlatformOwner();
       }
 
+      // Rulebook 1.29.0 (§16, §25; lib/canonical/payeOvertime.ts): PAYE overtime. A person's line manager (listed on their
+      // users document of this organisation) may apply an approved overtime request to that person's booking, changing
+      // only workStartTime, workEndTime, timeSlot, otMultiplierOverride (1–3 in 0.25 steps, or removed) and status to
+      // Cancelled — never anything else, never their own booking. Admins already write every booking (canWriteBooking);
+      // operatives never write a booking.
+      function bookingPersonId(collection, data) {
+        return collection == 'managerSiteBookings' ? data.get('userId', '') : data.get('operativeId', '');
+      }
+      function callerLineManagesUser(uid) {
+        let path = /databases/(default)/documents/users/$(uid);
+        return uid is string && uid.size() > 0 && !uid.matches('.*/.*') && uid != request.auth.uid &&
+          exists(path) && homeOrgIs(get(path).data, organizationId) &&
+          request.auth.uid in lineManagerIdList(get(path).data);
+      }
+      function overtimeMultiplierWriteValid() {
+        let m = request.resource.data.get('otMultiplierOverride', null);
+        return m == null || m == resource.data.get('otMultiplierOverride', null) ||
+          (m is number && m >= 1 && m <= 3 && m * 4 == math.floor(m * 4));
+      }
+      // Cheap tests first (the 1000-expression budget is shared with bookingWriteAllowed). The caller is an active
+      // member of this organisation at manager or admin level (their users document of this organisation, not an
+      // operative), with the subscription open.
+      function overtimeCallerIsStaffHere() {
+        let home = callerHomeData();
+        return homeOrgIs(home, organizationId) && home.get('isActive', true) != false &&
+          (adminLikeUser(home) || !isOperativeProfile(home)) && orgBillingOpen(organizationId);
+      }
+      function overtimeLineManagerBookingUpdate(collection) {
+        return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'workStartTime', 'workEndTime', 'timeSlot', 'otMultiplierOverride', 'status', 'updatedAt', 'updatedBy', 'updatedFrom'
+          ]) &&
+          (request.resource.data.get('status', null) == resource.data.get('status', null) ||
+            request.resource.data.get('status', null) == 'Cancelled') &&
+          overtimeMultiplierWriteValid() &&
+          writeMetadataValidWhenPresent() &&
+          callerLineManagesUser(bookingPersonId(collection, resource.data)) &&
+          overtimeCallerIsStaffHere();
+      }
+      // Overtime documents: the person, their line managers and admins of this organisation read them.
+      function overtimeAdmin() {
+        return isOrganizationAdmin(organizationId) || isOrgAdminViaMembersMap(organizationId) || isPlatformOwner();
+      }
+      function overtimeViewer(uid) {
+        // The admin test first: it needs no document, so an admin's whole-collection list is provable.
+        return canAccessOrganization(organizationId) &&
+          (overtimeAdmin() || (uid is string && uid.size() > 0 && (uid == request.auth.uid || callerLineManagesUser(uid))));
+      }
+      // A non-operative person changing their own booking's overtime directly writes its review only where they may
+      // edit that booking (canWriteBooking): admins every booking, managers the bookings on jobs they manage.
+      function overtimeOwnBookingEditable(collection, bookingId) {
+        let role = callerOrgRole(organizationId);
+        let path = /databases/(default)/documents/organizations/$(organizationId)/$(collection)/$(bookingId);
+        return role == 'admin' || (role == 'manager' && exists(path) && managerMayWriteBookingData(collection, get(path).data));
+      }
+
+      match /overtimeRequests/{requestId} {
+        allow read: if overtimeViewer(resource.data.get('userId', ''));
+        // The person sends their own, pending, online only (overtimeRequestWriteFields).
+        allow create: if canAccessOrganization(organizationId) &&
+          callerOrgRole(organizationId) != '' &&
+          request.resource.data.keys().hasOnly(['userId', 'rangeStart', 'rangeEnd', 'status', 'lines', 'createdAt', 'updatedAt', 'updatedBy', 'updatedFrom']) &&
+          request.resource.data.keys().hasAll(['userId', 'rangeStart', 'rangeEnd', 'status', 'lines']) &&
+          request.resource.data.userId == request.auth.uid &&
+          request.resource.data.status == 'pending' &&
+          request.resource.data.lines is list && request.resource.data.lines.size() > 0 &&
+          request.resource.data.rangeStart is string && request.resource.data.rangeEnd is string &&
+          writeMetadataValidWhenPresent();
+        // The person withdraws their own pending request; their line manager or an admin (never the person) approves it.
+        allow update: if canAccessOrganization(organizationId) &&
+          resource.data.status == 'pending' &&
+          request.resource.data.userId == resource.data.userId &&
+          writeMetadataValidWhenPresent() && (
+            (resource.data.userId == request.auth.uid &&
+              request.resource.data.status == 'withdrawn' &&
+              request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'withdrawnAt', 'updatedAt', 'updatedBy', 'updatedFrom'])) ||
+            (resource.data.userId != request.auth.uid &&
+              (overtimeAdmin() || callerLineManagesUser(resource.data.userId)) &&
+              request.resource.data.status == 'approved' &&
+              request.resource.data.get('decidedBy', '') == request.auth.uid &&
+              request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                'status', 'decisions', 'decidedBy', 'decidedAt', 'appliedBookingIds', 'droppedBookingIds', 'updatedAt', 'updatedBy', 'updatedFrom'
+              ]))
+          );
+        allow delete: if false;
+      }
+
+      // Approved overtime lines, one per person and booking: `{userId}_{bookingId}`.
+      match /overtimeReviews/{reviewId} {
+        allow read: if overtimeViewer(resource.data.get('userId', ''));
+        allow create, update: if canAccessOrganization(organizationId) &&
+          request.resource.data.keys().hasOnly(['userId', 'bookingId', 'collection', 'decision', 'fingerprint', 'reviewedBy', 'reviewedAt', 'requestId', 'updatedAt', 'updatedBy', 'updatedFrom']) &&
+          request.resource.data.keys().hasAll(['userId', 'bookingId', 'collection', 'decision', 'fingerprint', 'reviewedBy']) &&
+          request.resource.data.userId is string && request.resource.data.bookingId is string &&
+          reviewId == request.resource.data.userId + '_' + request.resource.data.bookingId &&
+          request.resource.data.reviewedBy == request.auth.uid &&
+          request.resource.data.collection in ['bookings', 'managerSiteBookings'] &&
+          request.resource.data.decision in ['approved', 'edited', 'trimmed', 'cancelled'] &&
+          writeMetadataValidWhenPresent() && (
+            // Their own line: only where they may edit the booking (admins every booking). Someone else's: their
+            // line manager or an admin.
+            request.resource.data.userId == request.auth.uid
+              ? overtimeOwnBookingEditable(request.resource.data.collection, request.resource.data.bookingId)
+              : (callerLineManagesUser(request.resource.data.userId) || overtimeAdmin())
+          );
+        allow delete: if overtimeAdmin();
+      }
+
+      // Saved overtime reports: created once by the person, never changed or deleted by an app.
+      match /overtimeReports/{reportId} {
+        allow read: if overtimeViewer(resource.data.get('userId', ''));
+        allow create: if canAccessOrganization(organizationId) &&
+          callerOrgRole(organizationId) != '' &&
+          request.resource.data.keys().hasOnly(['userId', 'userName', 'companyName', 'rangeStart', 'rangeEnd', 'kind', 'lines', 'totals', 'generatedBy', 'generatedAt', 'updatedAt', 'updatedBy', 'updatedFrom']) &&
+          request.resource.data.keys().hasAll(['userId', 'rangeStart', 'rangeEnd', 'kind', 'lines', 'totals', 'generatedBy']) &&
+          request.resource.data.userId == request.auth.uid &&
+          request.resource.data.generatedBy == request.auth.uid &&
+          request.resource.data.kind == 'overtime' &&
+          request.resource.data.lines is list &&
+          writeMetadataValidWhenPresent();
+        allow update, delete: if false;
+      }
+
       match /bookings/{bookingId} {
         allow read: if bookingReadAllowed('bookings');
         allow create: if !bookingTombstoned(bookingId) && bookingWriteAllowed('bookings', 'create');
         // Only admins and the job's managers write (1.10.0), so a cancelled booking is reinstated only by them.
-        allow update: if !bookingTombstoned(bookingId) && bookingWriteAllowed('bookings', 'update');
+        // 1.29.0: plus the booked person's line manager applying an approved overtime request (overtime fields only).
+        allow update: if !bookingTombstoned(bookingId) &&
+          (overtimeLineManagerBookingUpdate('bookings') || bookingWriteAllowed('bookings', 'update'));
         allow delete: if bookingWriteAllowed('bookings', 'delete');
       }
       
@@ -1987,7 +2111,8 @@ service cloud.firestore {
       match /managerSiteBookings/{bookingId} {
         allow read: if bookingReadAllowed('managerSiteBookings');
         allow create: if !bookingTombstoned(bookingId) && bookingWriteAllowed('managerSiteBookings', 'create');
-        allow update: if !bookingTombstoned(bookingId) && bookingWriteAllowed('managerSiteBookings', 'update');
+        allow update: if !bookingTombstoned(bookingId) &&
+          (overtimeLineManagerBookingUpdate('managerSiteBookings') || bookingWriteAllowed('managerSiteBookings', 'update'));
         allow delete: if bookingWriteAllowed('managerSiteBookings', 'delete');
       }
       
@@ -2500,7 +2625,9 @@ service cloud.firestore {
           !(collection in ['projects', 'smallWorks', 'bookings', 'managerSiteBookings', 'subcontractorBookings']) &&
           // 1.13.0 (Q1): pay and timesheets have their own read rules (canViewPayOf); never re-opened here. `settings`
           // also stops re-opening variation settings to non-staff (its own rule already refuses them).
-          !(collection in ['payProfiles', 'operativeDayRateHistory', 'operativeProfiles', 'settings']);
+          !(collection in ['payProfiles', 'operativeDayRateHistory', 'operativeProfiles', 'settings']) &&
+          // 1.29.0: overtime requests, reviews and reports are the person's, their line managers' and admins' only.
+          !(collection in ['overtimeRequests', 'overtimeReviews', 'overtimeReports']);
       }
     }
 
