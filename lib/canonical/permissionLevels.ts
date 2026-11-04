@@ -90,8 +90,12 @@ function roleToken(user: unknown): string {
   return typeof role === 'string' ? role.trim().toLowerCase().replace(/[\s-]/g, '_') : ''
 }
 
-/** The Super Admin from stored flags: `isSuperAdmin` (top level or `permissions`) or the `super_admin` role. */
+/** The Super Admin: `organizationSuperAdmin` when given, else `isSuperAdmin` (top level or `permissions`) or the `super_admin` role. */
 function storedSuperAdmin(user: unknown): boolean {
+  // 1.28.0: `organizationSuperAdmin` (`isOrganizationSuperAdmin`: the creator of the organisation being worked in, or
+  // its super admin users document) decides when given; otherwise the stored flag.
+  const perOrganization = record(user).organizationSuperAdmin
+  if (typeof perOrganization === 'boolean') return perOrganization
   const role = roleToken(user)
   return storedPermissionFlag(user, 'isSuperAdmin') === true || role === 'super_admin' || role === 'superadmin'
 }
@@ -230,7 +234,9 @@ export function withoutLockedPermissionWrites<T extends Record<string, unknown>>
  * stored: when the stored person (`before`) keeps their level, a toggle locked for that level
  * (`lockedPermissionFields`) is never written — not at the top level, and inside a `permissions` map its stored value
  * (or nothing) is kept — so a save never writes a locked toggle false and never rewrites stored toggles. Changing the
- * level ("Change user type") is not stripped.
+ * level ("Change user type") is not stripped, except (1.28.0) that a change away from admin never writes the
+ * admin-only toggles (`ADMIN_ONLY_PERMISSION_FIELDS`). The Super Admin's self-manage toggles are locked (read on), so
+ * a save never stores the derived on values.
  */
 export function keepStoredLockedPermissions(
   before: Record<string, unknown> | null | undefined,
@@ -238,8 +244,15 @@ export function keepStoredLockedPermissions(
 ): Record<string, unknown> {
   if (!before || !next || typeof next !== 'object') return next
   const level = permissionLevelOf(before)
-  if (permissionLevelOf({ ...before, ...next }) !== level) return next
-  const locked = lockedPermissionFields(before, level)
+  const nextLevel = permissionLevelOf({ ...before, ...next })
+  // 1.28.0: a level change leaving admin never writes the admin-only toggles (Timesheet self-sign reads off for the
+  // new level; the stored value stays underneath and reads again after a promotion back).
+  const locked =
+    nextLevel !== level
+      ? nextLevel === 'admin'
+        ? []
+        : [...ADMIN_ONLY_PERMISSION_FIELDS]
+      : lockedPermissionFields(before, level)
   if (locked.length === 0) return next
   const out: Record<string, unknown> = { ...next }
   for (const key of locked) {

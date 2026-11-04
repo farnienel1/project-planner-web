@@ -20305,6 +20305,149 @@
       "expected": [
         "LM"
       ]
+    },
+    {
+      "name": "1.28.0 isOrganizationSuperAdmin: the creator without the flag",
+      "function": "isOrganizationSuperAdmin",
+      "args": [
+        {
+          "id": "C",
+          "isSuperAdmin": false
+        },
+        {
+          "id": "ORG",
+          "creatorUserId": "C"
+        }
+      ],
+      "expected": true
+    },
+    {
+      "name": "1.28.0 isOrganizationSuperAdmin: a super admin users document of this organisation",
+      "function": "isOrganizationSuperAdmin",
+      "args": [
+        {
+          "id": "S",
+          "isSuperAdmin": true,
+          "organizationId": "ORG"
+        },
+        {
+          "id": "ORG"
+        }
+      ],
+      "expected": true
+    },
+    {
+      "name": "1.28.0 isOrganizationSuperAdmin: another company's Super Admin is not",
+      "function": "isOrganizationSuperAdmin",
+      "args": [
+        {
+          "id": "S",
+          "isSuperAdmin": true,
+          "organizationId": "ORG"
+        },
+        {
+          "id": "ORG-B"
+        }
+      ],
+      "expected": false
+    },
+    {
+      "name": "1.28.0 unflagged creator with no line manager: the save passes",
+      "function": "lineManagerRequiredError",
+      "args": [
+        {
+          "id": "C",
+          "email": "c@example.com",
+          "role": "admin",
+          "adminAccess": true,
+          "hasNoLineManager": true,
+          "organizationSuperAdmin": true
+        },
+        [
+          {
+            "id": "C",
+            "email": "c@example.com",
+            "role": "admin",
+            "adminAccess": true,
+            "hasNoLineManager": true,
+            "organizationSuperAdmin": true
+          }
+        ]
+      ],
+      "expected": null
+    },
+    {
+      "name": "1.28.0 unflagged creator: self-books",
+      "function": "canSelfBookAnnualLeave",
+      "args": [
+        {
+          "id": "C",
+          "email": "c@example.com",
+          "role": "admin",
+          "adminAccess": true,
+          "hasNoLineManager": true,
+          "organizationSuperAdmin": true
+        },
+        [
+          {
+            "id": "C",
+            "email": "c@example.com",
+            "role": "admin",
+            "adminAccess": true,
+            "hasNoLineManager": true,
+            "organizationSuperAdmin": true
+          }
+        ]
+      ],
+      "expected": true
+    },
+    {
+      "name": "1.28.0 unflagged creator: self-signs",
+      "function": "timesheetSelfSigned",
+      "args": [
+        {
+          "id": "C",
+          "email": "c@example.com",
+          "role": "admin",
+          "adminAccess": true,
+          "hasNoLineManager": true,
+          "organizationSuperAdmin": true
+        },
+        [
+          {
+            "id": "C",
+            "email": "c@example.com",
+            "role": "admin",
+            "adminAccess": true,
+            "hasNoLineManager": true,
+            "organizationSuperAdmin": true
+          }
+        ]
+      ],
+      "expected": true
+    },
+    {
+      "name": "1.28.0 another company's Super Admin working here: not self-signed",
+      "function": "timesheetSelfSigned",
+      "args": [
+        {
+          "id": "S",
+          "role": "admin",
+          "adminAccess": true,
+          "isSuperAdmin": true,
+          "organizationSuperAdmin": false
+        },
+        [
+          {
+            "id": "S",
+            "role": "admin",
+            "adminAccess": true,
+            "isSuperAdmin": true,
+            "organizationSuperAdmin": false
+          }
+        ]
+      ],
+      "expected": false
     }
   ]
 }

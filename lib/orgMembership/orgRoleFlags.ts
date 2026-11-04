@@ -41,6 +41,8 @@ export function membershipPermissions(raw?: Record<string, unknown> | null): Use
     subContractors: flags.subContractors,
     wholesalersOrderHistory: flags.wholesalersOrderHistory,
     annualLeaveSelfBook: flags.annualLeaveSelfBook,
+    // Rulebook 1.28.0: admins only; `effectivePermissions` reads it off at other levels.
+    timesheetSelfSign: flags.timesheetSelfSign,
     weeklyReports: flags.weeklyReports,
     dailyOverview: flags.dailyOverview,
   }

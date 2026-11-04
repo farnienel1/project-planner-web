@@ -2,6 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { User } from '../../types/index.ts'
 import { inboxOwnerIds, rulebookPerson, rulebookRoster } from './rulebookPeople.ts'
+import { setActiveOrganizationIdentity } from './activeOrganizationIdentity.ts'
 import {
   ADMIN_LINE_MANAGER_REQUIRED_MESSAGE,
   LINE_MANAGER_REQUIRED_MESSAGE,
@@ -146,4 +147,28 @@ test('line manager on the same email as the person is the person: never a recipi
   assert.deepEqual(timesheetSubmittedRecipients(rulebookPerson(op, users), roster), ['adm'])
   assert.deepEqual(holidayRequestRecipients(rulebookPerson(op, users), roster), ['adm'])
   assert.equal(userLineManagerRequiredError(op, users), LINE_MANAGER_REQUIRED_MESSAGE)
+})
+
+test('1.28.0: the organisation creator is its Super Admin without the flag; another company\'s Super Admin is not', () => {
+  setActiveOrganizationIdentity({ organizationId: 'org', creatorUserId: 'founder' })
+  try {
+    // A lone creator admin with no isSuperAdmin flag and no line manager: never stranded.
+    const founder = person('admin', { id: 'founder', hasNoLineManager: true })
+    assert.equal(rulebookPerson(founder, [founder]).organizationSuperAdmin, true)
+    assert.equal(userCanSelfBookAnnualLeave(founder, [founder]), true)
+    assert.equal(userTimesheetSelfSigned(founder, [founder]), true)
+    assert.equal(userLineManagerRequiredError(founder, [founder]), null)
+    // A Super Admin of another company, open here as an admin (`homeOrganizationId` from applyDeviceOrgMembership).
+    const visitor = person('admin', { id: 'visitor', isSuperAdmin: true, organizationId: 'org', homeOrganizationId: 'other-org' })
+    const users = [founder, visitor]
+    assert.equal(rulebookPerson(visitor, users).organizationSuperAdmin, false)
+    assert.equal(userCanSelfBookAnnualLeave(visitor, users), false)
+    assert.equal(userTimesheetSelfSigned(visitor, users), false)
+    assert.equal(userLineManagerRequiredError(visitor, users), ADMIN_LINE_MANAGER_REQUIRED_MESSAGE)
+    // A flagged Super Admin of this organisation is one.
+    const flagged = person('admin', { id: 'flagged', isSuperAdmin: true })
+    assert.equal(rulebookPerson(flagged, [flagged]).organizationSuperAdmin, true)
+  } finally {
+    setActiveOrganizationIdentity(null)
+  }
 })

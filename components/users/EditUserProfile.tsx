@@ -75,6 +75,7 @@ import { canonicalCertificateUrls, formatCertificateSaveError } from '@/lib/qual
 import { canManageOrganisationQualifications, staffAccountRole } from '@/lib/permissions'
 import { canDeleteUser, lineManagerCandidates, lineManagerSelectedIds, SELF_EMAIL_INVALID_MESSAGE, selfEmailChangeAction, selfEmailChangeSentMessage } from '@/lib/canonical'
 import { PermissionRowsList } from '@/components/users/ProfileExpandablePermissionToggle'
+import { userIsOrganizationSuperAdmin } from '@/lib/staff/rulebookPeople'
 import { useOrganizationDocument } from '@/lib/stores/organizationDocumentStore'
 import { accountTypeSubject } from '@/lib/staff/accountTypeChange'
 import {
@@ -138,11 +139,13 @@ function editUserPermissionRows(
   user: User,
   level: PermissionLevel,
   permissions: UserPermissions,
-  viewerId: string | null | undefined
+  viewerId: string | null | undefined,
+  users: ReadonlyArray<User>
 ) {
   return permissionToggleRows({
     level,
-    user: { ...user, permissions },
+    // 1.28.0: this organisation's Super Admin (its creator included) reads both self-manage toggles on and locked.
+    user: { ...user, permissions, organizationSuperAdmin: userIsOrganizationSuperAdmin(user, users) },
     mode: 'edit',
     viewerIsSubject: Boolean(viewerId && viewerId === user.id),
   })
@@ -1523,7 +1526,7 @@ export function EditUserProfile({
           <SettingsCard>
             <div className="divide-y divide-slate-100">
               <PermissionRowsList
-                rows={editUserPermissionRows(target, effectiveAccountType, effectivePermissions, currentUser?.id)}
+                rows={editUserPermissionRows(target, effectiveAccountType, effectivePermissions, currentUser?.id, users)}
                 onChange={updatePermissions}
                 disabled={!canEdit || target.isSuperAdmin}
                 excludeFields={suppressAdminAccessToggle ? ['adminAccess'] : undefined}
@@ -1657,7 +1660,7 @@ export function EditUserProfile({
                 {draftTypePermissions && (
                   <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
                     <PermissionRowsList
-                      rows={editUserPermissionRows(target, effectiveAccountType, draftTypePermissions, currentUser?.id)}
+                      rows={editUserPermissionRows(target, effectiveAccountType, draftTypePermissions, currentUser?.id, users)}
                       onChange={(patch) => setDraftTypePermissions({ ...draftTypePermissions, ...patch })}
                       excludeFields={suppressAdminAccessToggle ? ['adminAccess'] : undefined}
                       lockedMessage={lockedPermissionMessage(effectiveAccountType)}

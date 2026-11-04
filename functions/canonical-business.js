@@ -5950,6 +5950,7 @@ var ProjectPlannerCanonical = (() => {
   }
   function isSuperAdminAccount(user) {
     if (!user) return false;
+    if (typeof user.organizationSuperAdmin === "boolean") return user.organizationSuperAdmin;
     const role = roleObject(user.role);
     if (role?.isSuperAdmin === true) return true;
     const named = roleText(user.role);
@@ -5959,7 +5960,7 @@ var ProjectPlannerCanonical = (() => {
     return text(user?.employmentType).toLowerCase() === "paye";
   }
   function selfManageToggles(user) {
-    const admin = isAdminOutsideOperativeMode(user);
+    const admin = isAdminOutsideOperativeMode(user) || user?.organizationSuperAdmin === true;
     const superAdmin = admin && isSuperAdminAccount(user);
     const annualLeaveSelfBook = !!user && !inOperativeMode(user) && (superAdmin || flagOn2(user, "annualLeaveSelfBook"));
     const timesheetSelfSign = admin && (superAdmin || flagOn2(user, "timesheetSelfSign"));
@@ -7802,6 +7803,8 @@ var ProjectPlannerCanonical = (() => {
     return typeof role === "string" ? role.trim().toLowerCase().replace(/[\s-]/g, "_") : "";
   }
   function storedSuperAdmin(user) {
+    const perOrganization = record2(user).organizationSuperAdmin;
+    if (typeof perOrganization === "boolean") return perOrganization;
     const role = roleToken(user);
     return storedPermissionFlag(user, "isSuperAdmin") === true || role === "super_admin" || role === "superadmin";
   }
@@ -7886,8 +7889,8 @@ var ProjectPlannerCanonical = (() => {
   function keepStoredLockedPermissions(before, next) {
     if (!before || !next || typeof next !== "object") return next;
     const level = permissionLevelOf(before);
-    if (permissionLevelOf({ ...before, ...next }) !== level) return next;
-    const locked = lockedPermissionFields(before, level);
+    const nextLevel = permissionLevelOf({ ...before, ...next });
+    const locked = nextLevel !== level ? nextLevel === "admin" ? [] : [...ADMIN_ONLY_PERMISSION_FIELDS] : lockedPermissionFields(before, level);
     if (locked.length === 0) return next;
     const out = { ...next };
     for (const key3 of locked) {
@@ -10095,7 +10098,7 @@ var ProjectPlannerCanonical = (() => {
   function rulebookStamp() {
     return {
       version: true ? "1.28.0" : "",
-      sha256: true ? "0a64f387dae95f756cc1c21dbbfd195a23bc4f5cfdbdc597ac844c7ceb402b1c" : ""
+      sha256: true ? "043412f948c2ed11e75d2d41b1316deb5fe4271056f28e27ce71a4b90d39a91a" : ""
     };
   }
 

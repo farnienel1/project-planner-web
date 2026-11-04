@@ -224,7 +224,7 @@ export function applyDeviceOrgMembership(
     // The membership read has not arrived. Keep this person's rights and only
     // change the open company. A later read applies the real role.
     if (!String(listedRole || '').trim()) {
-      return { ...user, organizationId }
+      return { ...user, organizationId, homeOrganizationId: user.homeOrganizationId ?? documentOrganizationId }
     }
     const listed = roleFrom(listedRole, Role.BASIC)
     const adminHere = listed === Role.ADMIN || (user.isSuperAdmin === true && !listedRole)
@@ -232,6 +232,7 @@ export function applyDeviceOrgMembership(
       return {
         ...user,
         organizationId,
+        homeOrganizationId: user.homeOrganizationId ?? documentOrganizationId,
         role: Role.ADMIN,
         isSuperAdmin: user.isSuperAdmin === true,
         permissions: staffPermissions(Role.ADMIN),
@@ -240,6 +241,7 @@ export function applyDeviceOrgMembership(
     return {
       ...user,
       organizationId,
+      homeOrganizationId: user.homeOrganizationId ?? documentOrganizationId,
       role: listed,
       isSuperAdmin: false,
       permissions: staffPermissions(listed),
@@ -252,6 +254,7 @@ export function applyDeviceOrgMembership(
     return {
       ...user,
       organizationId,
+      homeOrganizationId: user.homeOrganizationId ?? documentOrganizationId,
       role: Role.ADMIN,
       isSuperAdmin: user.isSuperAdmin === true || membership.isSuperAdmin === true,
       isActive: membership.accountActive !== false,
@@ -276,6 +279,7 @@ export function applyDeviceOrgMembership(
   return {
     ...user,
     organizationId,
+    homeOrganizationId: user.homeOrganizationId ?? documentOrganizationId,
     role,
     isSuperAdmin,
     isActive: membership.accountActive !== false,

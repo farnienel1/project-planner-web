@@ -341,6 +341,12 @@ export type LeaveSelfBookUser = LeaveRequester & {
   role?: string | StaffAccountRole | null
   /** `users/{uid}.employmentType` as stored (`paye` | `self_employed`; missing is self-employed). */
   employmentType?: string | null
+  /**
+   * 1.28.0: whether this person is the Super Admin of the organisation being worked in
+   * (`isOrganizationSuperAdmin(viewer, org)` in organizationDeletion.ts: its creator, or `isSuperAdmin` on a users document of that organisation). When given
+   * it decides alone; the stored `isSuperAdmin` flag is used only when it is missing.
+   */
+  organizationSuperAdmin?: boolean | null
   permissions?: {
     annualLeaveSelfBook?: boolean | null
     timesheetSelfSign?: boolean | null
@@ -408,6 +414,7 @@ export function isAdminOutsideOperativeMode(user: LeaveSelfBookUser | null | und
  */
 export function isSuperAdminAccount(user: LeaveSelfBookUser | null | undefined): boolean {
   if (!user) return false
+  if (typeof user.organizationSuperAdmin === 'boolean') return user.organizationSuperAdmin
   const role = roleObject(user.role)
   if (role?.isSuperAdmin === true) return true
   const named = roleText(user.role)
@@ -438,7 +445,8 @@ export function selfManageToggles(user: LeaveSelfBookUser | null | undefined): {
   superAdmin: boolean
   satisfied: boolean
 } {
-  const admin = isAdminOutsideOperativeMode(user)
+  // The creator of the organisation is its admin and Super Admin whatever else is stored (`organizationLevelFor`).
+  const admin = isAdminOutsideOperativeMode(user) || user?.organizationSuperAdmin === true
   const superAdmin = admin && isSuperAdminAccount(user)
   const annualLeaveSelfBook = !!user && !inOperativeMode(user) && (superAdmin || flagOn(user, 'annualLeaveSelfBook'))
   const timesheetSelfSign = admin && (superAdmin || flagOn(user, 'timesheetSelfSign'))

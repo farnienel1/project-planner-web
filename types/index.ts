@@ -164,6 +164,12 @@ export interface User {
   /** Invitation not accepted. `pending` stays off scheduling and deadlines. */
   status?: 'pending' | 'active' | string;
   isSuperAdmin: boolean;
+  /**
+   * Rulebook 1.28.0: the organisation on the users document when the open company is another one (set by
+   * `applyDeviceOrgMembership`). `isSuperAdmin` there is the home company's; this company's Super Admin is
+   * `isOrganizationSuperAdmin` (its creator, or a super admin users document of it).
+   */
+  homeOrganizationId?: string;
   mobileNumber?: string;
   permissions: UserPermissions;
   /**

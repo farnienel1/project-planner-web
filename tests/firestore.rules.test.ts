@@ -3810,3 +3810,98 @@ test('1.27.0 (7) catalogue operatives: operatives managers read their pay profil
     await setSwitchConfig({ enforcedReads: true })
   }
 })
+
+// ---------------------------------------------------------------------------
+// Rulebook 1.28.0 (review B1, B2): create paths never switch on one's own self-manage toggles; the creator's own
+// document is exempt from the self-toggle lock.
+// ---------------------------------------------------------------------------
+
+test('1.28.0 B1: invite accept copies the self-manage toggles only as the admin set them on the placeholder', async () => {
+  const email = 'invited-toggles@test.com'
+  const placeholderId = 'C1C2D3E4-0000-4000-8000-TOGGLEINVITE'
+  const authUid = 'invited-toggles-auth'
+  const seed = async (toggles: Record<string, boolean>) => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      const db = ctx.firestore()
+      await setDoc(doc(db, 'users', placeholderId), {
+        email, organizationId: ORG_A, firstName: 'Tia', role: 'admin', adminAccess: true,
+        passwordSet: false, isActive: true, isSuperAdmin: false, ...toggles, permissions: { adminAccess: true, ...toggles },
+      })
+      await setDoc(doc(db, 'organizations', ORG_A, 'userEmails', email), { userId: placeholderId })
+    })
+  }
+  const profile = (extra: Record<string, unknown>) => ({
+    email, organizationId: ORG_A, firstName: 'Tia', role: 'admin', adminAccess: true, passwordSet: true, isActive: true,
+    formerUserIds: [placeholderId], ...ageFields(), ...extra,
+  })
+  const db = authDb(authUid, email)
+  // Placeholder has both off: the invitee cannot switch them on (top level or permissions map).
+  await seed({ annualLeaveSelfBook: false, timesheetSelfSign: false })
+  await assertFails(setDoc(doc(db, 'users', authUid), profile({ annualLeaveSelfBook: true, timesheetSelfSign: true, hasNoLineManager: true })))
+  await assertFails(setDoc(doc(db, 'users', authUid), profile({ permissions: { adminAccess: true, timesheetSelfSign: true } })))
+  await assertFails(setDoc(doc(db, 'users', authUid), profile({ annualLeaveSelfBook: true })))
+  // Legit: copying the placeholder as it is.
+  await assertSucceeds(setDoc(doc(db, 'users', authUid), profile({ annualLeaveSelfBook: false, timesheetSelfSign: false })))
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await deleteDoc(doc(ctx.firestore(), 'users', authUid))
+  })
+  // The admin turned both on at Add User: the invitee keeps them.
+  await seed({ annualLeaveSelfBook: true, timesheetSelfSign: true })
+  await assertSucceeds(setDoc(doc(db, 'users', authUid), profile({
+    annualLeaveSelfBook: true, timesheetSelfSign: true, permissions: { adminAccess: true, annualLeaveSelfBook: true, timesheetSelfSign: true },
+  })))
+})
+
+test('1.28.0 B1: deleting and re-creating your own profile never switches on your self-manage toggles', async () => {
+  const uid = 'returning-admin-toggles'
+  const email = 'returning-admin-toggles@test.com'
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    await updateDoc(doc(db, 'organizations', ORG_A), { [`members.${uid}`]: 'admin' })
+    await setDoc(doc(db, 'organizations', ORG_A, 'userEmails', email), { userId: uid })
+    await setDoc(doc(db, 'users', uid), { email, organizationId: ORG_A, role: 'admin', adminAccess: true })
+  })
+  const db = authDb(uid, email)
+  await assertSucceeds(deleteDoc(doc(db, 'users', uid)))
+  const profile = { email, organizationId: ORG_A, firstName: 'Ray', role: 'admin', adminAccess: true, ...ageFields() }
+  await assertFails(setDoc(doc(db, 'users', uid), { ...profile, annualLeaveSelfBook: true, timesheetSelfSign: true, hasNoLineManager: true }))
+  await assertFails(setDoc(doc(db, 'users', uid), { ...profile, permissions: { adminAccess: true, annualLeaveSelfBook: true } }))
+  await assertFails(setDoc(doc(db, 'users', uid), { ...profile, timesheetSelfSign: true }))
+  // Legit: re-created with the toggles off.
+  await assertSucceeds(setDoc(doc(db, 'users', uid), { ...profile, annualLeaveSelfBook: false, timesheetSelfSign: false }))
+})
+
+test('1.28.0 B1: the founder (organisation creator) may create their own profile with the toggles on', async () => {
+  const uid = 'founder-toggles'
+  const email = 'founder-toggles@test.com'
+  const orgId = 'org-founder-toggles'
+  const db = authDb(uid, email)
+  await assertSucceeds(setDoc(doc(db, 'organizations', orgId), { name: 'Toggle Co', members: { [uid]: 'admin' }, creatorUserId: uid }))
+  await assertSucceeds(setDoc(doc(db, 'organizations', orgId, 'userEmails', email), { userId: uid }))
+  await assertSucceeds(setDoc(doc(db, 'users', uid), {
+    email, organizationId: orgId, firstName: 'Flo', role: 'admin', adminAccess: true, isSuperAdmin: true,
+    annualLeaveSelfBook: true, timesheetSelfSign: true, ...ageFields(),
+  }))
+  // A second admin of that company re-creating their profile through the bootstrap path cannot.
+  const other = 'second-admin-toggles'
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await updateDoc(doc(ctx.firestore(), 'organizations', orgId), { [`members.${other}`]: 'admin' })
+  })
+  const odb = authDb(other, 'second-admin-toggles@test.com')
+  await assertFails(setDoc(doc(odb, 'users', other), {
+    email: 'second-admin-toggles@test.com', organizationId: orgId, firstName: 'Sam', role: 'admin', adminAccess: true,
+    annualLeaveSelfBook: true, timesheetSelfSign: true, ...ageFields(),
+  }))
+  await assertSucceeds(setDoc(doc(odb, 'users', other), {
+    email: 'second-admin-toggles@test.com', organizationId: orgId, firstName: 'Sam', role: 'admin', adminAccess: true, ...ageFields(),
+  }))
+})
+
+test('1.28.0 B2: the unflagged creator may change their own self-manage toggles; a non-creator admin may not', async () => {
+  await seedRulebook1280People()
+  // ADMIN_A is ORG_A's creator with no isSuperAdmin flag in the seed.
+  const own = doc(authDb(ADMIN_A, 'admin-a@test.com'), 'users', ADMIN_A)
+  await assertSucceeds(updateDoc(own, { timesheetSelfSign: true, annualLeaveSelfBook: true }))
+  await assertSucceeds(updateDoc(own, { timesheetSelfSign: false, annualLeaveSelfBook: false }))
+  await assertFails(updateDoc(doc(authDb(ADMIN2_A, 'admin2-a@test.com'), 'users', ADMIN2_A), { timesheetSelfSign: true }))
+})

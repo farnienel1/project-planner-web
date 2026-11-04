@@ -135,8 +135,20 @@ service cloud.firestore {
            (!staffFlag(next, 'adminAccess') || staffFlag(source, 'adminAccess')) &&
            (!staffFlag(next, 'manager') || staffFlag(source, 'manager')) &&
            (!staffFlag(next, 'operatives') || staffFlag(source, 'operatives')) &&
+           // 1.28.0: the self-manage toggles only as the admin set them on the placeholder.
+           (!staffFlag(next, 'annualLeaveSelfBook') || staffFlag(source, 'annualLeaveSelfBook')) &&
+           (!staffFlag(next, 'timesheetSelfSign') || staffFlag(source, 'timesheetSelfSign')) &&
            (!(next.get('role', '') in ['admin', 'manager']) || next.get('role', '') == source.get('role', '')) &&
            (!isOperativeProfile(source) || isOperativeProfile(next));
+  }
+
+  // Rulebook 1.28.0: a profile a person creates for themself (re-creating a deleted one, or the bootstrap path) never
+  // switches on their own self-manage toggles (Annual Leave Management, Timesheet self-sign; top level or
+  // `permissions`) — except the organisation's creator, the Super Admin, who reads both on anyway. An admin sets them.
+  function selfCreateSelfManageOff(organizationId) {
+    return (!staffFlag(request.resource.data, 'annualLeaveSelfBook') &&
+            !staffFlag(request.resource.data, 'timesheetSelfSign')) ||
+           orgCreatorIs(organizationId, request.auth.uid);
   }
 
   function raisesPrivileges(next) {
@@ -163,6 +175,7 @@ service cloud.firestore {
       // 1.12.0 (B3): a returning member re-creating their own profile brings no alias ids (deleting and re-creating
       // it must not be a way round the self-update lock).
       selfCreateAliasesWithin(request.resource.data, {}, '') &&
+      selfCreateSelfManageOff(organizationId) &&
       (
         !raisesPrivileges(request.resource.data) ||
         get(/databases/(default)/documents/organizations/$(organizationId)).data.members[request.auth.uid] == 'admin'
@@ -871,6 +884,7 @@ service cloud.firestore {
   function selfManageTogglesUnchanged(next, prev) {
     return !next.diff(prev).affectedKeys().hasAny(['annualLeaveSelfBook', 'timesheetSelfSign', 'permissions']) ||
       staffFlag(prev, 'isSuperAdmin') ||
+      orgCreatorIs(docOrganizationId(prev), request.auth.uid) ||
       (staffFlag(next, 'annualLeaveSelfBook') == staffFlag(prev, 'annualLeaveSelfBook') &&
        staffFlag(next, 'timesheetSelfSign') == staffFlag(prev, 'timesheetSelfSign'));
   }
@@ -1074,7 +1088,8 @@ service cloud.firestore {
         // Path 3: Web org setup bootstrap (org exists, caller is admin in members map, writing own profile).
         // 1.12.0 (B3): a founder's new profile carries no alias ids.
         (isOrgBootstrapAdminProfileCreate(userId) && selfCreateHasAgeConfirmation() &&
-         selfCreateAliasesWithin(request.resource.data, {}, '') && selfCreateSuperAdminAllowed()) ||
+         selfCreateAliasesWithin(request.resource.data, {}, '') && selfCreateSuperAdminAllowed() &&
+         selfCreateSelfManageOff(request.resource.data.organizationId)) ||
         // Path 4: Manager with operatives permission inviting a new operative
         managerCanCreateOperativeUser() ||
         // Path 5: Platform owner creating their own non-tenant profile

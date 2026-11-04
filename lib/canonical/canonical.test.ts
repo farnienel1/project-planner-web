@@ -11801,3 +11801,46 @@ test('1.28.0 the toggles are independent of the line manager; nobody edits their
   assert.equal(defaults.annualLeaveSelfBook, false)
   assert.equal(defaults.timesheetSelfSign, false)
 })
+
+test('1.28.0 the organisation creator is its Super Admin even without the flag; another company\'s Super Admin is not', () => {
+  // isOrganizationSuperAdmin (organizationDeletion.ts, reused): the rules' callerIsSuperAdminOf.
+  assert.equal(rulebook.isOrganizationSuperAdmin({ id: 'C', isSuperAdmin: false }, { id: 'ORG', creatorUserId: 'c' }), true)
+  assert.equal(rulebook.isOrganizationSuperAdmin({ id: 'S', isSuperAdmin: true, organizationId: 'organizations/org' }, { id: 'ORG' }), true)
+  assert.equal(rulebook.isOrganizationSuperAdmin({ id: 'S', isSuperAdmin: true, organizationId: 'ORG' }, { id: 'ORG-B' }), false)
+  assert.equal(rulebook.isOrganizationSuperAdmin({ id: 'A', isSuperAdmin: false }, { id: 'ORG', creatorUserId: 'C' }), false)
+
+  // A lone unflagged creator admin with no line manager: satisfied, self-signed, self-booked, saves pass.
+  const creator = { id: 'C', email: 'c@x.com', role: 'admin', adminAccess: true, hasNoLineManager: true, organizationSuperAdmin: true }
+  assert.equal(r1280Leave.lineManagerRequiredError(creator, [creator]), null)
+  assert.equal(r1280Leave.timesheetSelfSigned(creator, [creator]), true)
+  assert.equal(r1280Leave.canSelfBookAnnualLeave(creator, [creator]), true)
+  const rows = r1280Levels.permissionToggleRows({ level: 'admin', user: creator, mode: 'edit' })
+  assert.equal(rows.find((row) => row.field === 'timesheetSelfSign')?.value, true)
+  assert.equal(rows.find((row) => row.field === 'timesheetSelfSign')?.editable, false)
+
+  // A flagged Super Admin of another company working here as an admin: the flag does not count.
+  const visitor = { id: 'S', role: 'admin', adminAccess: true, isSuperAdmin: true, organizationSuperAdmin: false }
+  assert.equal(r1280Leave.timesheetSelfSigned(visitor, [r1280SA, visitor]), false)
+  assert.equal(r1280Leave.canSelfBookAnnualLeave(visitor, [r1280SA, visitor]), false)
+  assert.equal(r1280Leave.lineManagerRequiredError(visitor, [r1280SA, visitor]), r1280Leave.ADMIN_LINE_MANAGER_REQUIRED_MESSAGE)
+  assert.equal(r1280Levels.effectivePermissions(visitor).timesheetSelfSign, false)
+})
+
+test('1.28.0 a save never writes derived self-manage values: demotion keeps Timesheet self-sign underneath', () => {
+  const before = { role: 'admin', adminAccess: true, timesheetSelfSign: true, permissions: { adminAccess: true, timesheetSelfSign: true } }
+  // The screen sends the manager-level effective value (off) with the level change.
+  const write = r1280ProfileWrite(before, {
+    role: 'manager', adminAccess: false, manager: true, timesheetSelfSign: false,
+    permissions: { adminAccess: false, manager: true, timesheetSelfSign: false },
+  })
+  assert.equal('timesheetSelfSign' in write.set, false)
+  assert.equal((write.set.permissions as Record<string, unknown>).timesheetSelfSign, true)
+  // Promotion writes what the screen chose.
+  const promote = r1280ProfileWrite({ role: 'manager', manager: true }, { role: 'admin', adminAccess: true, timesheetSelfSign: true })
+  assert.equal(promote.set.timesheetSelfSign, true)
+  // A flagged Super Admin's save never stores the derived on values.
+  const sa = r1280ProfileWrite({ ...r1280SA, annualLeaveSelfBook: false }, { annualLeaveSelfBook: true, timesheetSelfSign: true, firstName: 'S' })
+  assert.deepEqual(write.set.role, 'manager')
+  assert.equal('annualLeaveSelfBook' in sa.set, false)
+  assert.equal('timesheetSelfSign' in sa.set, false)
+})

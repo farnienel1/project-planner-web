@@ -84,6 +84,7 @@ import {
 } from '@/lib/auth/authBoot'
 import { waitForAuthToken } from '@/lib/firebase/waitForAuthToken'
 import { MISSING_USER_PROFILE_MESSAGE } from '@/lib/auth/missingProfile'
+import { setActiveOrganizationIdentity } from '@/lib/staff/activeOrganizationIdentity'
 
 interface AuthState {
   user: User | null
@@ -1147,4 +1148,12 @@ export const useAuthStore = create<AuthState>((set) => {
       }
     },
   }
+})
+
+// Rulebook 1.28.0: the open organisation and its creator, for `rulebookPerson` (`isOrganizationSuperAdmin`).
+useAuthStore.subscribe((state) => {
+  const organization = state.organization
+  setActiveOrganizationIdentity(
+    organization ? { organizationId: organization.id, creatorUserId: organization.creatorUserId ?? null } : null
+  )
 })
