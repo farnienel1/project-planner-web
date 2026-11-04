@@ -1,5 +1,6 @@
 'use client'
 
+import { useMemo } from 'react'
 import { create } from 'zustand'
 import {
   collection,
@@ -597,8 +598,22 @@ function sortRoster(users: User[]): User[] {
   })
 }
 
+/**
+ * Rulebook 1.30.2 §11: every users document of the roster, NOT folded by email. `users` keeps one document per email
+ * (`rosterPeople`, admin first), so a stale admin copy can stand in for a live manager; the job-manager picker
+ * (`jobManagerCandidates`) and Change user type (`accountTypeChangeWrites`, every same-email document) need them all.
+ */
+function upsertRosterDocuments(organizationId: string, rows: readonly User[], replace = false): void {
+  const state = useOrgUserStore.getState()
+  const current = !replace && state.rosterDocumentsOrgId === organizationId ? state.rosterDocuments : []
+  const byId = new Map(current.map((row) => [row.id, row]))
+  for (const row of rows) byId.set(row.id, row)
+  useOrgUserStore.setState({ rosterDocuments: [...byId.values()], rosterDocumentsOrgId: organizationId })
+}
+
 function applyLiveRosterRows(organizationId: string, rows: User[]): void {
   if (rows.length === 0 || listedRosterOrgId !== organizationId || liveRosterOrgId !== organizationId) return
+  upsertRosterDocuments(organizationId, rows)
   const state = useOrgUserStore.getState()
   const users = [...state.users]
   let changed = false
@@ -722,6 +737,9 @@ interface OrgUserState {
   claimedEmails: string[] | null
   /** Duplicate profile ids that share an email, pointing at the account kept on the roster. */
   userIdAliases: Record<string, string>
+  /** Rulebook 1.30.2: every users document loaded for `rosterDocumentsOrgId`, not folded by email. */
+  rosterDocuments: User[]
+  rosterDocumentsOrgId: string | null
   loadUsers: (organizationId: string, options?: { force?: boolean }) => Promise<void>
   patchListedUser: (user: User) => void
   setListedUserActive: (userId: string, isActive: boolean) => void
@@ -795,6 +813,8 @@ export const useOrgUserStore = create<OrgUserState>((set, get) => ({
   rosterLoadedOrgId: null,
   claimedEmails: null,
   userIdAliases: {},
+  rosterDocuments: [],
+  rosterDocumentsOrgId: null,
 
   loadUsers: async (organizationId, options?: { force?: boolean }) => {
     const revisionAtStart = listedUserRevision
@@ -864,6 +884,11 @@ export const useOrgUserStore = create<OrgUserState>((set, get) => ({
           }
           listedRosterOrgId = organizationId
           writeStoredRoster(organizationId, users)
+          upsertRosterDocuments(
+            organizationId,
+            loaded.complete ? loaded.users : [...previous, ...loaded.users].filter((row) => !confirmedMissing.has(row.id)),
+            loaded.complete
+          )
           set({
             users,
             userIdAliases,
@@ -947,7 +972,16 @@ export const useOrgUserStore = create<OrgUserState>((set, get) => ({
       (row) => row.id === user.id || (email !== '' && row.email.trim().toLowerCase() === email)
     )
     const users = index >= 0 ? existing.map((row, i) => (i === index ? user : row)) : [...existing, user]
-    set({ users, rosterLoadedOrgId: user.organizationId || get().rosterLoadedOrgId })
+    const documents = get().rosterDocuments
+    set({
+      users,
+      rosterLoadedOrgId: user.organizationId || get().rosterLoadedOrgId,
+      rosterDocuments: documents.some((row) => row.id === user.id)
+        ? documents.map((row) => (row.id === user.id ? user : row))
+        : documents.length > 0
+          ? [...documents, user]
+          : documents,
+    })
   },
 
   setListedUserActive: (userId, isActive) => {
@@ -957,6 +991,34 @@ export const useOrgUserStore = create<OrgUserState>((set, get) => ({
       users: get().users.map((user) =>
         user.id === userId ? { ...user, isActive, updatedAt: new Date() } : user
       ),
+      rosterDocuments: get().rosterDocuments.map((user) =>
+        user.id === userId ? { ...user, isActive, updatedAt: new Date() } : user
+      ),
     })
   },
 }))
+
+/**
+ * Rulebook 1.30.2 §11: the roster as every users document (unfolded) for this organisation, with the folded list's
+ * fresher copies laid over by id. Falls back to the folded list when the documents have not loaded (stored roster).
+ */
+export function rosterDocumentsFor(
+  state: Pick<OrgUserState, 'users' | 'rosterDocuments' | 'rosterDocumentsOrgId'>,
+  organizationId: string | null | undefined
+): User[] {
+  if (!organizationId || state.rosterDocumentsOrgId !== organizationId || state.rosterDocuments.length === 0) return state.users
+  const byId = new Map(state.rosterDocuments.map((row) => [row.id, row]))
+  for (const row of state.users) byId.set(row.id, row)
+  return [...byId.values()]
+}
+
+/** `rosterDocumentsFor` as a hook (rulebook 1.30.2: job-manager rules read every users document). */
+export function useRosterDocuments(organizationId: string | null | undefined): User[] {
+  const users = useOrgUserStore((state) => state.users)
+  const rosterDocuments = useOrgUserStore((state) => state.rosterDocuments)
+  const rosterDocumentsOrgId = useOrgUserStore((state) => state.rosterDocumentsOrgId)
+  return useMemo(
+    () => rosterDocumentsFor({ users, rosterDocuments, rosterDocumentsOrgId }, organizationId),
+    [users, rosterDocuments, rosterDocumentsOrgId, organizationId]
+  )
+}

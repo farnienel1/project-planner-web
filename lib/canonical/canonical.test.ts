@@ -12523,3 +12523,89 @@ test('1.30.1 timesheetInvoiceRows carries each row\'s job number', () => {
   const signed = r1301.timesheetInvoiceRows({ sheet: { weeklyReportOverride: { lines: [], priceWork: [{ id: 'P1', title: 'Tiling', jobNumber: 'J-3', amount: 100, decision: 'approved' }], expenses: [] } }, payrollLines: [], extrasMode: 'decided' } as never)
   assert.deepEqual(signed.map((row) => row.jobNumber), ['J-3'])
 })
+
+// MARK: - 1.30.2 job-manager candidates (§11)
+
+import {
+  JOB_MANAGER_FORMER_NOTES as r1302FormerNotes,
+  jobManagerAssignments as r1302Assignments,
+  jobManagerCandidates as r1302Candidates,
+} from './jobManagers.ts'
+import { stableManagerId as r1302StableManagerId } from './staffAccess.ts'
+
+const r1302Row = (row: Record<string, unknown>) => ({ isActive: true, passwordSet: true, ...row }) as never
+
+test('1.30.2 jobManagerCandidates: active admins and managers, never operatives, pending, inactive or deleted', () => {
+  const roster = [
+    r1302Row({ id: 'adm', email: 'a@x.test', firstName: 'Ann', surname: 'Admin', role: 'admin', adminAccess: true }),
+    r1302Row({ id: 'mgr', email: 'm@x.test', firstName: 'Mo', surname: 'Manager', role: 'manager', manager: true }),
+    r1302Row({ id: 'op', email: 'o@x.test', firstName: 'Olly', surname: 'Op', role: 'operative', operativeMode: true }),
+    r1302Row({ id: 'pend', email: 'p@x.test', firstName: 'Pat', surname: 'Pending', role: 'manager', passwordSet: false }),
+    r1302Row({ id: 'pend2', email: 'q@x.test', firstName: 'Quin', surname: 'Invite', role: 'manager', status: 'pending' }),
+    r1302Row({ id: 'off', email: 'i@x.test', firstName: 'Ina', surname: 'Inactive', role: 'manager', isActive: false }),
+    r1302Row({ id: 'del', email: '', firstName: 'Deleted', surname: 'user', role: 'manager' }),
+  ]
+  const out = r1302Candidates(roster)
+  assert.deepEqual(out.map((row) => [row.id, row.level]), [['adm', 'admin'], ['mgr', 'manager']])
+})
+
+test('1.30.2 jobManagerCandidates: a stale admin duplicate on the email never hides the live manager document', () => {
+  // The owner bug: admin → manager → admin … left an old admin invite copy on the same email. The fold kept the admin
+  // copy (admin first) and web judged the person on it (pending), so they vanished from the job-manager picker.
+  const roster = [
+    r1302Row({ id: 'old-invite', email: 'Sam@X.test', firstName: 'Sam', surname: 'Lee', role: 'admin', adminAccess: true, passwordSet: false }),
+    r1302Row({ id: 'live', email: 'sam@x.test', firstName: 'Sam', surname: 'Lee', role: 'manager', manager: true }),
+  ]
+  const out = r1302Candidates(roster)
+  assert.equal(out.length, 1)
+  assert.equal(out[0].id, 'live')
+  assert.equal(out[0].level, 'manager')
+  assert.deepEqual([...out[0].userIds].sort(), ['live', 'old-invite'])
+})
+
+test('1.30.2 jobManagerCandidates: two live documents on one email are one person; level from the live row', () => {
+  const roster = [
+    r1302Row({ id: 'b', email: 'k@x.test', firstName: 'Kim', surname: 'Ng', role: 'admin', adminAccess: true }),
+    r1302Row({ id: 'a', email: 'K@x.test', firstName: 'Kim', surname: 'Ng', role: 'manager', manager: true, isActive: false }),
+  ]
+  const out = r1302Candidates(roster)
+  assert.equal(out.length, 1)
+  assert.equal(out[0].id, 'b')
+  assert.equal(out[0].level, 'admin')
+})
+
+test('1.30.2 jobManagerCandidates: manager role without the flag, and manager flag without the role, are managers', () => {
+  const roster = [
+    r1302Row({ id: 'role', email: 'r@x.test', firstName: 'Rae', role: 'manager' }),
+    r1302Row({ id: 'flag', email: 'f@x.test', firstName: 'Fin', permissions: { manager: true } }),
+    r1302Row({ id: 'demoted', email: 'd@x.test', firstName: 'Dee', role: 'operative', permissions: { manager: false, adminAccess: false, operativeMode: true } }),
+  ]
+  assert.deepEqual(r1302Candidates(roster).map((row) => [row.id, row.level]), [['flag', 'manager'], ['role', 'manager']])
+})
+
+test('1.30.2 jobManagerAssignments: current, former (demoted, inactive, catalogue without account) and unknown', () => {
+  const roster = [
+    r1302Row({ id: 'mgr', email: 'm@x.test', firstName: 'Mo', surname: 'M', role: 'manager', manager: true }),
+    r1302Row({ id: 'demoted', email: 'd@x.test', firstName: 'Dee', surname: 'D', role: 'operative', operativeMode: true }),
+    r1302Row({ id: 'gone', email: 'g@x.test', firstName: 'Gus', surname: 'G', role: 'manager', isActive: false }),
+  ]
+  const catalogue = [
+    { id: 'cat-mgr', email: 'M@x.test', firstName: 'Mo', lastName: 'M' },
+    { id: 'cat-orphan', email: 'nobody@x.test', firstName: 'No', lastName: 'Body' },
+  ]
+  const job = { managerIds: [r1302StableManagerId('cat-mgr'), 'user:demoted', 'GONE', 'cat-orphan', 'not-loaded', 'mgr'] }
+  const out = r1302Assignments(job, roster, catalogue)
+  assert.deepEqual(
+    out.map((row) => [row.storedId, row.state, row.reason]),
+    [
+      [r1302StableManagerId('cat-mgr'), 'current', null],
+      ['user:demoted', 'former', 'not_manager'],
+      ['GONE', 'former', 'inactive'],
+      ['cat-orphan', 'former', 'no_account'],
+      ['not-loaded', 'unknown', null],
+    ]
+  )
+  assert.equal(out[0].candidate?.id, 'mgr')
+  assert.equal(out[1].note, r1302FormerNotes.not_manager)
+  assert.equal(out[1].name, 'Dee D')
+})

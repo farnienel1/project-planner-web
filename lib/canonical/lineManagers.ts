@@ -69,7 +69,7 @@ export function rosterPersonName(row: LineManagerRosterPerson | null | undefined
   return full || text(row.displayName) || text(row.name) || text(row.email)
 }
 
-function levelOf(row: LineManagerRosterPerson): 'admin' | 'manager' | 'operative' {
+export function levelOf(row: LineManagerRosterPerson): 'admin' | 'manager' | 'operative' {
   const role = row.role
   if (role && typeof role === 'object') {
     const resolved = role as { isAdmin?: boolean; isSuperAdmin?: boolean; isManager?: boolean; isOperativeMode?: boolean }
@@ -86,7 +86,7 @@ function levelOf(row: LineManagerRosterPerson): 'admin' | 'manager' | 'operative
  * `primary` is the row that speaks for the person: active first, then a signed-up account (`passwordSet` not false),
  * then a row no other row of the group lists as an alias (the users document `rosterPeople` kept), then roster order.
  */
-function rosterPersonGroups(rows: ReadonlyArray<LineManagerRosterPerson>): Array<{ primary: LineManagerRosterPerson; rows: LineManagerRosterPerson[]; keys: Set<string> }> {
+export function rosterPersonGroups(rows: ReadonlyArray<LineManagerRosterPerson>): Array<{ primary: LineManagerRosterPerson; rows: LineManagerRosterPerson[]; keys: Set<string> }> {
   const groups: Array<{ primary: LineManagerRosterPerson; rows: LineManagerRosterPerson[]; keys: Set<string> }> = []
   const grouped = new Set<string>()
   for (const row of rows) {

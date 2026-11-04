@@ -14,7 +14,7 @@ import { useTaskStore } from '@/lib/stores/taskStore'
 import { useBookingStore } from '@/lib/stores/bookingStore'
 import { useManagerScheduleStore } from '@/lib/stores/managerScheduleStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
-import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
+import { useOrgUserStore, useRosterDocuments } from '@/lib/stores/siteAuditStore'
 import { canManageWorkCatalogue, isOperativeMode } from '@/lib/permissions'
 import { visibleWorks } from '@/lib/access/workAccess'
 import { useDeadlineAssignedProjectIds } from '@/lib/deadlines/useDeadlineAssignedProjectIds'
@@ -35,7 +35,7 @@ export function SmallWorksListScreen() {
   const { bookings, loadBookings } = useBookingStore()
   const { managerSiteBookings, loadManagerSiteBookings } = useManagerScheduleStore()
   const { operatives, managers, loadOperatives, loadManagers } = useOperativeStore()
-  const users = useOrgUserStore((state) => state.users)
+  const managerRoster = useRosterDocuments(organization?.id)
   const loadUsers = useOrgUserStore((state) => state.loadUsers)
   const deadlineAssignedProjectIds = useDeadlineAssignedProjectIds()
   const [filter, setFilter] = useState<Filter>('active')
@@ -94,7 +94,7 @@ export function SmallWorksListScreen() {
   const emptySearch = search.trim().length > 0 && filtered.length === 0 && byTab.length > 0
 
   const managerName = (project: (typeof smallWorks)[number]) =>
-    assignedManagerLabel(project, managers, users, organization?.id)
+    assignedManagerLabel(project, managers, managerRoster, organization?.id)
 
   if (loading && smallWorks.length === 0) {
     return (
