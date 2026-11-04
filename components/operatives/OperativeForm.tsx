@@ -3,7 +3,7 @@
 import { useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
 import { dayKeyInOrganizationZone } from '@/lib/canonical'
 import { dateFromDayKey } from '@/lib/ios-parity/londonTime'
-import { FormEvent, useEffect, useState } from 'react'
+import { FormEvent, useEffect, useRef, useState } from 'react'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
@@ -15,6 +15,7 @@ import { PayBasisFields, payChoiceFromProfile, payChoiceToRates } from '@/compon
 import { usePaySaveGate } from '@/components/users/PayRateChangeDialogs'
 import { ErrorBanner } from '@/components/dashboard/PageShell'
 import { isPlausibleDayKey } from '@/lib/security/boundedValue'
+import { watchPayEditorPrivatePay, withPayFieldsFrom } from '@/lib/pay/payEditorSwitchReload'
 
 export function OperativeForm({
   initial,
@@ -26,7 +27,7 @@ export function OperativeForm({
   onSaved: (id: string) => void
 }) {
   const { organization, user: signedInUser } = useAuthStore()
-  const { saveOperative, operatives, loadOperatives } = useOperativeStore()
+  const { saveOperative, getOperative, operatives, loadOperatives } = useOperativeStore()
   const { users, loadUsers } = useOrgUserStore()
   const { saveUser } = useUserStore()
   const [saving, setSaving] = useState(false)
@@ -49,6 +50,49 @@ export function OperativeForm({
     tradeTypeCustom: initial?.tradeTypeCustom || '',
     isActive: initial?.isActive !== false,
   })
+  // Rulebook 1.26.1 §8 (`payEditorStartingValues`): the pay this form started from — its save diff and the rate-history
+  // "previous" row. `initial` until `privatePay` changes while the form is open; then the reloaded row's pay.
+  const [payStart, setPayStart] = useState<Operative | null | undefined>(initial)
+  const payStartRef = useRef<Operative | null | undefined>(initial)
+  const [payReloading, setPayReloading] = useState(false)
+  const payReloadingRef = useRef(false)
+
+  // When `privatePay` changes for the open organisation, read the row again (`getOperative` → `payEditorRecord`),
+  // re-seed the pay basis and amount only when the admin has not changed them, and move the pay baseline. Save is
+  // disabled until that is done. While the switch does not change nothing is read.
+  const initialId = initial?.id || ''
+  useEffect(() => {
+    const organizationId = organization?.id
+    if (!organizationId || !initialId) return
+    const setReloading = (value: boolean) => {
+      payReloadingRef.current = value
+      setPayReloading(value)
+    }
+    const stop = watchPayEditorPrivatePay<Operative>({
+      organizationId: () => organizationId,
+      reload: () => getOperative(organizationId, initialId),
+      onReloading: setReloading,
+      onReloaded: (next) => {
+        const start = payStartRef.current
+        if (!start) return
+        const nextStart = withPayFieldsFrom(start, next)
+        const before = payChoiceFromProfile(start)
+        const after = payChoiceFromProfile(nextStart)
+        payStartRef.current = nextStart
+        setPayStart(nextStart)
+        setForm((current) =>
+          current.payBasis === before.payBasis && current.rateAmount === before.amount
+            ? { ...current, payBasis: after.payBasis, rateAmount: after.amount }
+            : current
+        )
+      },
+      onFailed: () => setError('Pay settings changed while this form was open and could not be reloaded. Reopen this operative before saving.'),
+    })
+    return () => {
+      stop()
+      setReloading(false)
+    }
+  }, [organization?.id, initialId, getOperative])
 
   useEffect(() => {
     if (organization?.id) {
@@ -59,7 +103,7 @@ export function OperativeForm({
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
-    if (!organization?.id) return
+    if (!organization?.id || payReloadingRef.current) return
     const first = form.firstName.trim()
     const last = form.lastName.trim()
     const duplicate = operatives.some(
@@ -86,7 +130,7 @@ export function OperativeForm({
     const decision = await requestPaySave({
       existing: Boolean(initial),
       employmentType: linkedPreview?.employmentType,
-      previous: initial,
+      previous: payStart,
       next: rates,
       createdAt,
     })
@@ -116,8 +160,8 @@ export function OperativeForm({
       }
       // Rulebook 1.10.0 §8 (`payRateChangeWrites`): work out the pay history rows before anything is written; a
       // history that did not load refuses the save (never a duplicate seed row).
-      const previousBasis = initial?.payBasis
-      const previousAmount = previousBasis === 'hourly' ? initial?.hourlyRate : initial?.dayRate
+      const previousBasis = payStart?.payBasis
+      const previousAmount = previousBasis === 'hourly' ? payStart?.hourlyRate : payStart?.dayRate
       const { loadOperativeDayRateHistoryOrNull, payHistoryBatchRows } = await import('@/lib/timesheets/dayRateHistoryStorage')
       const linked = users.find((row) => row.email.trim().toLowerCase() === operative.email.trim().toLowerCase())
       const nextAmount = rates.payBasis === 'hourly' ? rates.hourlyRate ?? null : rates.dayRate ?? null
@@ -238,7 +282,7 @@ export function OperativeForm({
           <FormInput type="date" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} />
         </div>
       </div>
-      <FormActions saving={saving} submitLabel={initial ? 'Save operative' : 'Create New Operative'} cancelHref={backHref} />
+      <FormActions saving={saving} disabled={payReloading} submitLabel={initial ? 'Save operative' : 'Create New Operative'} cancelHref={backHref} />
     </form>
   )
 }

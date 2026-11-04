@@ -1,6 +1,7 @@
 'use client'
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { reseedUntouchedPayFields, watchPayEditorPrivatePay, withPayFieldsFrom } from '@/lib/pay/payEditorSwitchReload'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { format } from 'date-fns'
@@ -314,6 +315,10 @@ export function EditUserProfile({
   // Rulebook 1.12.2: one save at a time. A second press (or Enter) while a save is in flight is ignored, so a role
   // change is never sent twice from a stale copy.
   const saveInFlight = useRef(false)
+  // Rulebook 1.26.1 §8 (`payEditorStartingValues`): true while the starting record is read again after `privatePay`
+  // changed for the open organisation; Save is disabled until it is applied.
+  const [payReloading, setPayReloading] = useState(false)
+  const payReloadingRef = useRef(false)
   // The live `organizations/{orgId}` document (members map), shared listener.
   const liveOrganization = useOrganizationDocument()
   const liveMembers =
@@ -367,6 +372,41 @@ export function EditUserProfile({
         if (generation === profileLoadGen.current) setLoading(false)
       })
   }, [organization?.id, userId, getUser, loadUsers, loadOperatives, loadHolidays])
+
+  // Rulebook 1.26.1 §8 (`payEditorStartingValues`): when `privatePay` changes for the open organisation while this
+  // form is open, read the starting record again (`getUser` → `payEditorRecord`), re-seed only the pay fields the
+  // admin has not touched, and move the save baseline — `savedUser` (the save diff), the original rate / basis /
+  // employment type (the rate-history "previous" row) and the dirty snapshot — to the reloaded pay. Save stays
+  // disabled until that is done. While the switch does not change nothing is read.
+  useEffect(() => {
+    const organizationId = organization?.id
+    if (!organizationId || !userId) return
+    const setReloading = (value: boolean) => {
+      payReloadingRef.current = value
+      setPayReloading(value)
+    }
+    const stop = watchPayEditorPrivatePay<User>({
+      organizationId: () => organizationId,
+      reload: () => getUser(userId, { payEditor: true }),
+      onReloading: setReloading,
+      onReloaded: (next) => {
+        const start = savedUser.current
+        if (!start) return
+        const nextBaseline = withPayFieldsFrom(start, next)
+        savedUser.current = nextBaseline
+        setTarget((current) => (current ? reseedUntouchedPayFields(current, start, next) : current))
+        setOriginalDayRate(nextBaseline.payBasis === 'hourly' ? nextBaseline.hourlyRate : nextBaseline.dayRate)
+        setOriginalPayBasis(nextBaseline.payBasis)
+        setOriginalEmploymentType(nextBaseline.employmentType)
+        setBaseline(profileSnapshot(nextBaseline, null, null))
+      },
+      onFailed: () => setError('Pay settings changed while this form was open and could not be reloaded. Reopen this person before saving.'),
+    })
+    return () => {
+      stop()
+      setReloading(false)
+    }
+  }, [organization?.id, userId, getUser])
 
   const linkedOperative = target ? operativeRecordForUser(target, operatives) : undefined
   const leaveBalance = useMemo(
@@ -506,7 +546,7 @@ export function EditUserProfile({
   const handleSave = async (e?: FormEvent) => {
     e?.preventDefault()
     if (!target || !organization?.id || !canEdit) return
-    if (saveInFlight.current || saving || typeSaving) return
+    if (saveInFlight.current || saving || typeSaving || payReloadingRef.current) return
     saveInFlight.current = true
     try {
       await runSave()
@@ -845,7 +885,7 @@ export function EditUserProfile({
   }
 
   const persistAccountType = async (accountType: 'operative' | 'manager' | 'admin') => {
-    if (!target || !organization?.id || typeSaving) return
+    if (!target || !organization?.id || typeSaving || payReloadingRef.current) return
     const next = applyAccountType(cloneUser(target), accountType)
     // `lineManagerRequiredError` on the person as this change would save them.
     const lineManagerMessage = userLineManagerRequiredError(next, users)
@@ -934,7 +974,7 @@ export function EditUserProfile({
           canEdit && dirty ? (
             <button
               type="button"
-              disabled={saving || typeSaving}
+              disabled={saving || typeSaving || payReloading}
               onClick={() => handleSave()}
               className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:opacity-50"
             >
@@ -1495,7 +1535,7 @@ export function EditUserProfile({
 
       {canEdit && dirty ? (
         <div className="mt-6">
-          <SaveButton saving={saving} saved={saved} onClick={() => handleSave()} />
+          <SaveButton saving={saving} saved={saved} dirty={!payReloading} onClick={() => handleSave()} />
         </div>
       ) : null}
 
