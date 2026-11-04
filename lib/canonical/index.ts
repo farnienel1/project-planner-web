@@ -529,6 +529,7 @@ export {
   bookingJobState,
   bookingWriteFields,
   bookingsToRemoveOnOperativeDelete,
+  operativesManagerMayDeleteBooking,
   bookingsToRemoveOnProjectDelete,
   isBookingUuid,
   normalizeBookingStatus,
@@ -1639,3 +1640,7 @@ export * from './peopleAccess'
 export { rosterMemberIsOperativeLevel } from './leaveRequests'
 export { userPermissionFlag } from './permissionLevels'
 export type { UserDeleteOptions } from './userDelete'
+// Rulebook 1.31.0 §8: whose exported timesheets the Exported list shows; the subject of a timesheet document id.
+export { exportedTimesheetHistorySubjects } from './userTimesheetAccess'
+export type { ExportedTimesheetHistorySubjectRow } from './userTimesheetAccess'
+export { timesheetDocumentSubjectId } from './timesheetPeriod'

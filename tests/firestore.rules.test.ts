@@ -4150,7 +4150,13 @@ async function seed1310People() {
     await setDoc(doc(db, 'users', DEL_OP_A, 'orgMemberships', ORG_A), { organizationId: ORG_A, role: 'operative' })
     await setDoc(doc(db, 'organizations', ORG_A, 'userEmails', 'del-op-a@test.com'), { userId: DEL_OP_A })
     await updateDoc(doc(db, 'organizations', ORG_A), { [`members.${DEL_OP_A}`]: 'operative' })
-    await setDoc(doc(db, 'organizations', ORG_A, 'bookings', 'del-op-booking'), { operativeId: DEL_OP_A, projectId: 'JOB-X' })
+    // Tomorrow (future) and today: an operatives manager deletes only the future one (1.31.0 owner decision).
+    await setDoc(doc(db, 'organizations', ORG_A, 'bookings', 'del-op-booking'), {
+      operativeId: DEL_OP_A, projectId: 'JOB-X', date: Timestamp.fromMillis(Date.now() + 36 * 3600 * 1000),
+    })
+    await setDoc(doc(db, 'organizations', ORG_A, 'bookings', 'del-op-booking-today'), {
+      operativeId: DEL_OP_A, projectId: 'JOB-X', date: Timestamp.fromMillis(Date.now() - 3600 * 1000),
+    })
   })
 }
 
@@ -4206,6 +4212,11 @@ test('1.31.0 owner decision 7: operatives managers edit and delete operatives (n
     bookingId: 'del-op-booking', collection: 'bookings', deletedAt: serverTimestamp(), deletedBy: PAY_MGR_OPS, deletedFrom: 'web',
   })
   await assertSucceeds(bookings.commit())
+  // Today's (and any past) booking of the deleted operative: never deleted by a manager, nor its tombstone written.
+  await assertFails(deleteDoc(doc(mgr, 'organizations', ORG_A, 'bookings', 'del-op-booking-today')))
+  await assertFails(setDoc(doc(mgr, 'organizations', ORG_A, 'deletedBookings', 'del-op-booking-today'), {
+    bookingId: 'del-op-booking-today', collection: 'bookings', deletedAt: serverTimestamp(), deletedBy: PAY_MGR_OPS, deletedFrom: 'web',
+  }))
   // Never a manager, an admin or themselves; never another members entry.
   await assertFails(deleteDoc(doc(mgr, 'users', LM_A)))
   await assertFails(deleteDoc(doc(mgr, 'users', ADMIN_A)))

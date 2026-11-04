@@ -9,6 +9,7 @@ import {
   canOpenUserTimesheets,
   canViewStaffWarnings,
   userTimesheetSubjects,
+  exportedTimesheetHistorySubjects,
   type NotificationPreferenceAudience,
   type StaffAccountRole,
   type UserTimesheetSubjectsInput,
@@ -411,6 +412,18 @@ export function userTimesheetSubjectIds(
 ): string[] {
   if (!user) return []
   return userTimesheetSubjects(userTimesheetAccessInput(user, orgUsers)).map((row) => row.userId)
+}
+
+/**
+ * Rulebook 1.31.0 `exportedTimesheetHistorySubjects`: whose exported sheets the Exported list and its hub count show —
+ * the User Timesheets people, the viewer's own sheets (read-only) and inactive people in scope. Roster order.
+ */
+export function exportedTimesheetSubjectIds(
+  user: PermissionUser,
+  orgUsers: Array<NonNullable<PermissionUser>> = []
+): string[] {
+  if (!user) return []
+  return exportedTimesheetHistorySubjects(userTimesheetAccessInput(user, orgUsers)).map((row) => row.userId)
 }
 
 /** The User Timesheets screen (`canOpenUserTimesheets`). `profileLoading` is the roster still loading. */

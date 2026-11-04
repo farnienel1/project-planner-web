@@ -31,7 +31,7 @@ import { staffAccountRole } from '@/lib/permissions'
 import { loadTaxIds } from '@/lib/sensitiveProfile/taxIdsService'
 import { currentPeriodTimesheetMembers } from '@/lib/timesheets/timesheetHubStats'
 import { applyWeeklyReportOverride } from '@/lib/timesheets/weeklyReportOverride'
-import { subjectForUser, timesheetRosterGroups, userIdsSharingEmail } from '@/lib/timesheets/timesheetWeekUtils'
+import { exportedTimesheetRosterGroups, subjectForUser, timesheetRosterGroups, userIdsSharingEmail } from '@/lib/timesheets/timesheetWeekUtils'
 import { formatPaymentPeriodLine, listSelectablePayPeriods, periodStartKey } from '@/lib/timesheets/paymentRunCopy'
 import { collectTimesheetPayroll } from '@/lib/timesheets/timesheetPayrollCollector'
 import {
@@ -140,7 +140,9 @@ export function TimesheetsScreen({
 
   const groups = useMemo(() => {
     if (!user) return [] as User[][]
-    return timesheetRosterGroups(user, users)
+    // Rulebook 1.31.0: the Exported list is `exportedTimesheetHistorySubjects` (own sheets read-only, inactive people
+    // in scope); the other tabs stay `userTimesheetSubjects`.
+    return (teamTab === 'exported' ? exportedTimesheetRosterGroups(user, users) : timesheetRosterGroups(user, users))
       .map((group) =>
         teamTab === 'exported'
           ? group

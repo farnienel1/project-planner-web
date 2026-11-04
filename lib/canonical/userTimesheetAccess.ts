@@ -132,3 +132,63 @@ export function canOpenUserTimesheets(input: CanOpenUserTimesheetsInput): boolea
   if (input.rosterLoading === true) return true
   return userTimesheetSubjects(input).length > 0
 }
+
+export type ExportedTimesheetHistorySubjectRow = {
+  userId: string
+  /** True for the viewer's own sheets: shown read-only, never reviewable (`timesheetWriterIsReviewer` unchanged). */
+  own: boolean
+}
+
+/**
+ * Whose EXPORTED timesheets the Exported list (and its hub count) shows (rulebook 1.31.0 §8, owner decision). Exported
+ * sheets are history, so the list is wider than `userTimesheetSubjects` (which stays as it is — nobody reviews their
+ * own sheet, 1.30.2):
+ *   - everyone `userTimesheetSubjects` lists;
+ *   - the viewer's own sheets, under any of their ids (own id, `formerIds`, `aliasIds`, roster rows on the same email
+ *     as one of them) — `own: true`, read-only. Before 1.31.0 the viewer's own exported sheets vanished from the list
+ *     (and a PAYE admin's showed nowhere);
+ *   - inactive (and anonymised deleted) people in scope: for an admin (`seesEveryUserTimesheet`) every timesheet user,
+ *     for a manager the people they line-manage under any of their ids (and those people's same-email rows).
+ * Only for a viewer who has User Timesheets (`canReviewUserTimesheets`); anyone else gets nothing here (their own
+ * sheets are on My Timesheets). Roster order, one row per users document.
+ */
+export function exportedTimesheetHistorySubjects(input: UserTimesheetSubjectsInput): ExportedTimesheetHistorySubjectRow[] {
+  const { viewer, members } = input
+  if (!viewer || !idKey(viewer.id)) return []
+  if (!canReviewUserTimesheets(viewer.role)) return []
+  const viewerKeys = new Set([viewer.id, ...(viewer.formerIds ?? []), ...(viewer.aliasIds ?? [])].map(idKey).filter(Boolean))
+  const viewerEmails = new Set(
+    members.filter((member) => viewerKeys.has(idKey(member.id))).map((member) => idKey(member.email)).filter(Boolean)
+  )
+  const isViewer = (member: UserTimesheetMember) =>
+    viewerKeys.has(idKey(member.id)) || (idKey(member.email) !== '' && viewerEmails.has(idKey(member.email)))
+  const listed = new Set(userTimesheetSubjects(input).map((row) => idKey(row.userId)))
+  const seesEvery = seesEveryUserTimesheet(viewer.role)
+  const reportsToViewer = (member: UserTimesheetMember) => lineManagerKeys(member).some((key) => viewerKeys.has(key))
+  const managedEmails = new Set<string>()
+  if (!seesEvery) {
+    for (const member of members) {
+      const email = idKey(member.email)
+      if (email && !isViewer(member) && reportsToViewer(member)) managedEmails.add(email)
+    }
+  }
+  const out: ExportedTimesheetHistorySubjectRow[] = []
+  const seen = new Set<string>()
+  for (const member of members) {
+    const key = idKey(member.id)
+    if (!key || seen.has(key)) continue
+    const own = isViewer(member)
+    const inScope =
+      own ||
+      listed.has(key) ||
+      (seesEvery
+        ? isTimesheetUser(member.role)
+        : reportsToViewer(member) || (idKey(member.email) !== '' && managedEmails.has(idKey(member.email))))
+    if (!inScope) continue
+    seen.add(key)
+    out.push({ userId: member.id, own })
+  }
+  // The viewer's own id even when the roster does not list it (a viewer read before the roster arrives).
+  if (!seen.has(idKey(viewer.id))) out.push({ userId: viewer.id, own: true })
+  return out
+}

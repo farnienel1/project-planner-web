@@ -1,7 +1,7 @@
 {
   "rulebookVersion": "1.31.0",
-  "rulebookSha256": "f65826b58dfab3a6e01b75fba8847e7943ab5992d084352c435db26ba1090373",
-  "bundleSha256": "bb4f265f2bd1b10e830c61a92c18a7d2040ccf3a5d09d05331540b3fc32d6635",
+  "rulebookSha256": "0f1071f709e0c26b94e5305d2e3d5f0dd998a9bf5a85a996be07ad2c0c8dc6bb",
+  "bundleSha256": "81e81d52ab41153475e732cfac138f630788bb2b5664e7567a1263d9ab4e7ae8",
   "crossPlatformContractSha256": "7f70ec28920ac6114068b4e44eaf893706d5b6af1b21d77b69f946074d74e126",
   "exports": [
     "ACCOUNT_DELETE_WITH_COMPANY_MESSAGE",
@@ -524,6 +524,7 @@
     "expenseValidationError",
     "expenseWriteFields",
     "exportIncludesSensitiveFields",
+    "exportedTimesheetHistorySubjects",
     "fileDeletePermission",
     "fileReportCollectionPath",
     "fileReportFileName",
@@ -781,6 +782,7 @@
     "operativeJobIds",
     "operativeProfileWriteFields",
     "operativeRowWriteFields",
+    "operativesManagerMayDeleteBooking",
     "orgAccessProbeFromReads",
     "orgDayHours",
     "orgMembershipWriteFields",
@@ -1105,6 +1107,7 @@
     "timesheetClaimRows",
     "timesheetDaysForPerson",
     "timesheetDocumentId",
+    "timesheetDocumentSubjectId",
     "timesheetEntryDecision",
     "timesheetEntryEffectiveAmount",
     "timesheetEntryId",

@@ -183,14 +183,19 @@ export function userDeleteWrites(input: UserDeleteInput): UserDeleteStep[] {
     ...(input.managerRows || []).filter(rowMatches).map((row) => ({ collection: 'managers', id: text(row.id) })),
   ].filter((row) => row.id && !row.id.includes('/'))
 
+  // 1.31.0 (owner decision): an operatives manager deletes only the bookings dated after today
+  // (`operativesManagerMayDeleteBooking`); today's and past bookings are left as they are (history), and manager site
+  // bookings are never theirs to delete.
+  const managerActor = input.actorManagesOperatives === true
   const labour = bookingsToRemoveOnOperativeDelete({
     bookings: input.bookings || [],
     operativeIds: [...ids, ...rosterRows.filter((row) => row.collection === 'operatives').map((row) => row.id)],
     nowIso: input.nowIso,
     timeZone: input.tz,
+    futureOnly: managerActor,
   }).map((id) => ({ collection: 'bookings' as const, id }))
   const today = bookingsToRemoveOnOperativeDelete({
-    bookings: (input.managerSiteBookings || []).map((row) => ({ id: row.id, operativeId: row.userId, dateMs: row.dateMs })),
+    bookings: managerActor ? [] : (input.managerSiteBookings || []).map((row) => ({ id: row.id, operativeId: row.userId, dateMs: row.dateMs })),
     operativeIds: ids,
     nowIso: input.nowIso,
     timeZone: input.tz,

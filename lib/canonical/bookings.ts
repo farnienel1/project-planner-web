@@ -412,13 +412,43 @@ export function bookingsToRemoveOnOperativeDelete(input: {
   operativeIds: readonly string[]
   nowIso: string
   timeZone?: string | null
+  /**
+   * 1.31.0 (owner decision): a manager with the Operatives permission deletes only bookings dated AFTER today in the
+   * organisation zone (`operativesManagerMayDeleteBooking`); today's and past bookings stay as they are.
+   */
+  futureOnly?: boolean | null
 }): string[] {
   const ids = new Set(input.operativeIds.map((id) => text(id).toUpperCase()).filter(Boolean))
   if (ids.size === 0) return []
   const today = todayKey(input.nowIso, input.timeZone)
   return input.bookings
-    .filter((row) => ids.has(text(row.operativeId).toUpperCase()) && onOrAfterToday(row.dateMs, today, input.timeZone))
+    .filter(
+      (row) =>
+        ids.has(text(row.operativeId).toUpperCase()) &&
+        onOrAfterToday(row.dateMs, today, input.timeZone) &&
+        (input.futureOnly !== true || dayKeyInZone(new Date(row.dateMs), zoneOrLondon(input.timeZone)) > today)
+    )
     .map((row) => row.id)
+}
+
+/**
+ * Rulebook 1.31.0 §2, §11 (owner decision): whether a manager with the Operatives permission may delete a labour
+ * booking (with its tombstone) — only when the booking's day is after today in the organisation zone AND its
+ * `operativeId` names no users document (a deleted or catalogue operative). Today's and past bookings they may only
+ * cancel (status Cancelled, on the jobs they manage, `canWriteBooking`). Admins are unchanged (`canDeleteBooking`).
+ * The security rules hold the same: the booking's `date` (organisation-zone midnight) is after the request time.
+ */
+export function operativesManagerMayDeleteBooking(input: {
+  dateMs: number | null | undefined
+  nowIso: string
+  timeZone?: string | null
+  operativeHasAccount: boolean
+}): boolean {
+  if (input?.operativeHasAccount !== false) return false
+  const dateMs = input.dateMs
+  if (typeof dateMs !== 'number' || !Number.isFinite(dateMs)) return false
+  const zone = zoneOrLondon(input.timeZone)
+  return dayKeyInZone(new Date(dateMs), zone) > todayKey(input.nowIso, input.timeZone)
 }
 
 /**

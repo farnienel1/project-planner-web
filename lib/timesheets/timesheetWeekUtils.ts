@@ -5,7 +5,7 @@ import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtil
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import { bookingPayrollHours } from '@/lib/scheduling/paidHours'
 import { dayKey, startOfLondonWeek } from '@/lib/ios-parity/londonTime'
-import { userTimesheetSubjectIds } from '@/lib/permissions'
+import { exportedTimesheetSubjectIds, userTimesheetSubjectIds } from '@/lib/permissions'
 import { orgDayHours, payForHours, readStoredRates } from '@/lib/timesheets/payBasis'
 
 export type TimesheetSubjectKind = 'operative' | 'manager'
@@ -145,6 +145,25 @@ export function usersSharingEmail(member: User, users: User[]): User[] {
 export function timesheetRosterGroups(viewer: User, users: User[]): User[][] {
   const subjects = new Set(userTimesheetSubjectIds(viewer, users))
   const listed = users.filter((member) => subjects.has(member.id))
+  const seen = new Set<string>()
+  const groups: User[][] = []
+  for (const member of listed) {
+    const key = member.email.trim().toLowerCase() || member.id
+    if (seen.has(key)) continue
+    seen.add(key)
+    groups.push(listed.filter((row) => (row.email.trim().toLowerCase() || row.id) === key))
+  }
+  return groups
+}
+
+/**
+ * Exported list rows, one group per email (rulebook 1.31.0 `exportedTimesheetHistorySubjects`): the User Timesheets
+ * people, the viewer's own sheets (read-only) and inactive people in scope.
+ */
+export function exportedTimesheetRosterGroups(viewer: User, users: User[]): User[][] {
+  const subjects = new Set(exportedTimesheetSubjectIds(viewer, users))
+  const listed = users.filter((member) => subjects.has(member.id))
+  if (!listed.some((member) => member.id === viewer.id) && subjects.has(viewer.id)) listed.push(viewer)
   const seen = new Set<string>()
   const groups: User[][] = []
   for (const member of listed) {

@@ -12956,3 +12956,58 @@ test('1.31.0 userDeleteWrites: an operatives manager runs the account step one w
   const admin = R112.userDeleteWrites({ orgId: 'ORG', user: { id: 'OP', email: 'op@x', role }, actorUserId: 'A', platform: 'web', nowIso: '2026-11-04T10:00:00Z' })
   assert.equal(admin[0].writes.length, 5)
 })
+
+test('1.31.0 operativesManagerMayDeleteBooking: future bookings of a person with no account only; userDeleteWrites leaves today and the past', () => {
+  const now = '2026-11-04T10:00:00Z'
+  const day = (key: string) => Date.parse(`${key}T00:00:00Z`)
+  assert.equal(R112.operativesManagerMayDeleteBooking({ dateMs: day('2026-11-05'), nowIso: now, timeZone: 'Europe/London', operativeHasAccount: false }), true)
+  assert.equal(R112.operativesManagerMayDeleteBooking({ dateMs: day('2026-11-04'), nowIso: now, timeZone: 'Europe/London', operativeHasAccount: false }), false)
+  assert.equal(R112.operativesManagerMayDeleteBooking({ dateMs: day('2026-11-01'), nowIso: now, timeZone: 'Europe/London', operativeHasAccount: false }), false)
+  assert.equal(R112.operativesManagerMayDeleteBooking({ dateMs: day('2026-11-05'), nowIso: now, timeZone: 'Europe/London', operativeHasAccount: true }), false)
+  const role = { isSuperAdmin: false, isAdmin: false, isManager: false, isOperativeMode: true }
+  const input = {
+    orgId: 'ORG', user: { id: 'OP', email: 'op@x', role }, actorUserId: 'M', platform: 'web' as const, nowIso: now, tz: 'Europe/London',
+    bookings: [
+      { id: 'past', operativeId: 'OP', dateMs: day('2026-11-03') },
+      { id: 'today', operativeId: 'OP', dateMs: day('2026-11-04') },
+      { id: 'future', operativeId: 'OP', dateMs: day('2026-11-06') },
+    ],
+    managerSiteBookings: [{ id: 'site', userId: 'OP', dateMs: day('2026-11-06') }],
+  }
+  const bookingPaths = (steps: ReturnType<typeof R112.userDeleteWrites>) =>
+    steps.filter((step) => step.step === 'bookings').flatMap((step) => step.writes.filter((w) => w.op === 'delete').map((w) => w.path))
+  assert.deepEqual(bookingPaths(R112.userDeleteWrites({ ...input, actorManagesOperatives: true })), ['organizations/ORG/bookings/future'])
+  assert.deepEqual(bookingPaths(R112.userDeleteWrites(input)), [
+    'organizations/ORG/bookings/today', 'organizations/ORG/bookings/future', 'organizations/ORG/managerSiteBookings/site',
+  ])
+})
+
+test('1.31.0 exportedTimesheetHistorySubjects: own sheets (read-only) and inactive people in scope; userTimesheetSubjects unchanged', () => {
+  const role = (over: Record<string, boolean>) => ({ isSuperAdmin: false, isAdmin: false, isManager: false, isOperativeMode: false, ...over })
+  const members = [
+    { id: 'ADMIN', email: 'admin@x', role: role({ isAdmin: true }) },
+    { id: 'admin-old', email: 'ADMIN@x', role: role({ isAdmin: true }) },
+    { id: 'LM', email: 'lm@x', role: role({ isManager: true }) },
+    { id: 'OP', email: 'op@x', role: role({ isOperativeMode: true }), assignedManagerUserIds: ['LM'] },
+    { id: 'GONE', email: 'gone@x', isActive: false, role: role({ isOperativeMode: true }), assignedManagerUserIds: ['LM'] },
+    { id: 'OTHER', email: 'other@x', isActive: false, role: role({ isOperativeMode: true }) },
+  ]
+  const admin = { id: 'ADMIN', role: role({ isAdmin: true }) }
+  assert.deepEqual(R112.userTimesheetSubjects({ viewer: admin, members }).map((row) => row.userId), ['LM', 'OP'])
+  assert.deepEqual(R112.exportedTimesheetHistorySubjects({ viewer: admin, members }), [
+    { userId: 'ADMIN', own: true },
+    { userId: 'admin-old', own: true },
+    { userId: 'LM', own: false },
+    { userId: 'OP', own: false },
+    { userId: 'GONE', own: false },
+    { userId: 'OTHER', own: false },
+  ])
+  const manager = { id: 'LM', role: role({ isManager: true }) }
+  assert.deepEqual(R112.exportedTimesheetHistorySubjects({ viewer: manager, members }).map((row) => row.userId), ['LM', 'OP', 'GONE'])
+  // An operative has no User Timesheets: nothing here (their sheets are on My Timesheets).
+  assert.deepEqual(R112.exportedTimesheetHistorySubjects({ viewer: { id: 'OP', role: role({ isOperativeMode: true }) }, members }), [])
+  // Opening one's own sheet stays non-reviewable.
+  assert.equal(R112.timesheetDocumentSubjectId('timesheet_ABC-123_1761955200'), 'ABC-123')
+  assert.equal(R112.timesheetDocumentSubjectId('timesheet_user_with_underscore_1761955200'), 'user_with_underscore')
+  assert.equal(R112.timesheetDocumentSubjectId('settings'), '')
+})

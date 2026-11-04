@@ -20,6 +20,7 @@ import {
   hasAdminAccess,
   shouldShowTimesheetsDisabledMessage,
   userTimesheetSubjectIds,
+  exportedTimesheetSubjectIds,
 } from '@/lib/permissions'
 import {
   DEFAULT_INVOICING,
@@ -55,7 +56,7 @@ import {
   isTimesheetFullyApproved,
 } from '@/lib/timesheets/timesheetApprovalPolicy'
 import { canAccessMyTimesheetsWithPolicy, shouldAppearInOperativeTimesheetRoster, timesheetDayKeysForPeriod } from '@/lib/timesheets/timesheetPayrollPolicy'
-import { timesheetRosterGroups } from '@/lib/timesheets/timesheetWeekUtils'
+import { exportedTimesheetRosterGroups, timesheetRosterGroups } from '@/lib/timesheets/timesheetWeekUtils'
 import {
   TIMESHEETS_HUB_PATH,
   legacyTimesheetRedirect,
@@ -333,9 +334,13 @@ export function TimesheetsHub() {
     if (user && !showTeam) return null
     const tab = TEAM_TABS.some((item) => item.id === tabParam) ? tabParam : 'awaiting'
     // Only someone on this viewer's User Timesheets (`userTimesheetSubjects`) opens from the link.
+    // 1.31.0: on the Exported tab, the people of `exportedTimesheetHistorySubjects` (the viewer's own exported sheets
+    // and inactive people in scope) open too — read-only for their own (`timesheetWriterIsReviewer` is false).
+    const openable =
+      tab === 'exported' ? exportedTimesheetSubjectIds(user, users) : userTimesheetSubjectIds(user, users)
     const selectedUser =
-      userParam && userTimesheetSubjectIds(user, users).includes(userParam)
-        ? users.find((row) => row.id === userParam)
+      userParam && openable.includes(userParam)
+        ? users.find((row) => row.id === userParam) ?? (user && user.id === userParam ? user : undefined)
         : undefined
     return (
       <div className="space-y-5 pb-10">
@@ -761,7 +766,8 @@ function ManagerTimesheetsTile({
     [reviewGroups, periodStart, periodEnd, invoicing, timeZone]
   )
   const currentRosterIds = useMemo(() => currentGroups.flat().map((member) => member.id), [currentGroups])
-  const exportedRoster = useMemo(() => reviewGroups.flat(), [reviewGroups])
+  // Rulebook 1.31.0: the Exported count is `exportedTimesheetHistorySubjects` (own sheets and inactive people in scope).
+  const exportedRoster = useMemo(() => exportedTimesheetRosterGroups(user, users).flat(), [user, users])
 
   useEffect(() => {
     if (!organizationId || users.length === 0) {

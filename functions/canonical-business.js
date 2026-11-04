@@ -541,6 +541,7 @@ var ProjectPlannerCanonical = (() => {
     expenseValidationError: () => expenseValidationError,
     expenseWriteFields: () => expenseWriteFields,
     exportIncludesSensitiveFields: () => exportIncludesSensitiveFields,
+    exportedTimesheetHistorySubjects: () => exportedTimesheetHistorySubjects,
     fileDeletePermission: () => fileDeletePermission,
     fileReportCollectionPath: () => fileReportCollectionPath,
     fileReportFileName: () => fileReportFileName,
@@ -798,6 +799,7 @@ var ProjectPlannerCanonical = (() => {
     operativeJobIds: () => operativeJobIds,
     operativeProfileWriteFields: () => operativeProfileWriteFields,
     operativeRowWriteFields: () => operativeRowWriteFields,
+    operativesManagerMayDeleteBooking: () => operativesManagerMayDeleteBooking,
     orgAccessProbeFromReads: () => orgAccessProbeFromReads,
     orgDayHours: () => orgDayHours,
     orgMembershipWriteFields: () => orgMembershipWriteFields,
@@ -1122,6 +1124,7 @@ var ProjectPlannerCanonical = (() => {
     timesheetClaimRows: () => timesheetClaimRows,
     timesheetDaysForPerson: () => timesheetDaysForPerson,
     timesheetDocumentId: () => timesheetDocumentId,
+    timesheetDocumentSubjectId: () => timesheetDocumentSubjectId,
     timesheetEntryDecision: () => timesheetEntryDecision,
     timesheetEntryEffectiveAmount: () => timesheetEntryEffectiveAmount,
     timesheetEntryId: () => timesheetEntryId,
@@ -3801,6 +3804,12 @@ var ProjectPlannerCanonical = (() => {
     if (!uid || !isDayKey(startDayKey)) return "";
     const stamp = unixStartOfDayInZone(dateFromDayKeyInZone(startDayKey, zoneOf2(timeZone)), zoneOf2(timeZone));
     return `${TIMESHEET_DOCUMENT_PREFIX}${uid}_${stamp}`;
+  }
+  function timesheetDocumentSubjectId(documentId2) {
+    const id2 = typeof documentId2 === "string" ? documentId2.trim() : "";
+    if (!id2.startsWith(TIMESHEET_DOCUMENT_PREFIX)) return "";
+    const match = /^(.+)_(-?\d+)$/.exec(id2.slice(TIMESHEET_DOCUMENT_PREFIX.length));
+    return match ? match[1] : "";
   }
   function timesheetPeriodKey(period) {
     return `${period.startDayKey}|${period.endDayKey}`;
@@ -7644,6 +7653,39 @@ var ProjectPlannerCanonical = (() => {
     if (input.rosterLoading === true) return true;
     return userTimesheetSubjects(input).length > 0;
   }
+  function exportedTimesheetHistorySubjects(input) {
+    const { viewer, members } = input;
+    if (!viewer || !idKey3(viewer.id)) return [];
+    if (!canReviewUserTimesheets(viewer.role)) return [];
+    const viewerKeys = new Set([viewer.id, ...viewer.formerIds ?? [], ...viewer.aliasIds ?? []].map(idKey3).filter(Boolean));
+    const viewerEmails = new Set(
+      members.filter((member) => viewerKeys.has(idKey3(member.id))).map((member) => idKey3(member.email)).filter(Boolean)
+    );
+    const isViewer = (member) => viewerKeys.has(idKey3(member.id)) || idKey3(member.email) !== "" && viewerEmails.has(idKey3(member.email));
+    const listed = new Set(userTimesheetSubjects(input).map((row2) => idKey3(row2.userId)));
+    const seesEvery = seesEveryUserTimesheet(viewer.role);
+    const reportsToViewer = (member) => lineManagerKeys(member).some((key4) => viewerKeys.has(key4));
+    const managedEmails = /* @__PURE__ */ new Set();
+    if (!seesEvery) {
+      for (const member of members) {
+        const email = idKey3(member.email);
+        if (email && !isViewer(member) && reportsToViewer(member)) managedEmails.add(email);
+      }
+    }
+    const out = [];
+    const seen = /* @__PURE__ */ new Set();
+    for (const member of members) {
+      const key4 = idKey3(member.id);
+      if (!key4 || seen.has(key4)) continue;
+      const own = isViewer(member);
+      const inScope = own || listed.has(key4) || (seesEvery ? isTimesheetUser(member.role) : reportsToViewer(member) || idKey3(member.email) !== "" && managedEmails.has(idKey3(member.email)));
+      if (!inScope) continue;
+      seen.add(key4);
+      out.push({ userId: member.id, own });
+    }
+    if (!seen.has(idKey3(viewer.id))) out.push({ userId: viewer.id, own: true });
+    return out;
+  }
 
   // lib/canonical/billingAccess.ts
   var PAYMENT_GRACE_MS = 7 * 24 * 60 * 60 * 1e3;
@@ -8130,7 +8172,16 @@ var ProjectPlannerCanonical = (() => {
     const ids = new Set(input.operativeIds.map((id2) => text2(id2).toUpperCase()).filter(Boolean));
     if (ids.size === 0) return [];
     const today = todayKey(input.nowIso, input.timeZone);
-    return input.bookings.filter((row2) => ids.has(text2(row2.operativeId).toUpperCase()) && onOrAfterToday(row2.dateMs, today, input.timeZone)).map((row2) => row2.id);
+    return input.bookings.filter(
+      (row2) => ids.has(text2(row2.operativeId).toUpperCase()) && onOrAfterToday(row2.dateMs, today, input.timeZone) && (input.futureOnly !== true || dayKeyInZone(new Date(row2.dateMs), zoneOrLondon(input.timeZone)) > today)
+    ).map((row2) => row2.id);
+  }
+  function operativesManagerMayDeleteBooking(input) {
+    if (input?.operativeHasAccount !== false) return false;
+    const dateMs = input.dateMs;
+    if (typeof dateMs !== "number" || !Number.isFinite(dateMs)) return false;
+    const zone3 = zoneOrLondon(input.timeZone);
+    return dayKeyInZone(new Date(dateMs), zone3) > todayKey(input.nowIso, input.timeZone);
   }
   function bookingsToRemoveOnProjectDelete(input) {
     const projectId = text2(input.projectId).toUpperCase();
@@ -10404,7 +10455,7 @@ var ProjectPlannerCanonical = (() => {
   function rulebookStamp() {
     return {
       version: true ? "1.31.0" : "",
-      sha256: true ? "f65826b58dfab3a6e01b75fba8847e7943ab5992d084352c435db26ba1090373" : ""
+      sha256: true ? "0f1071f709e0c26b94e5305d2e3d5f0dd998a9bf5a85a996be07ad2c0c8dc6bb" : ""
     };
   }
 
@@ -14032,14 +14083,16 @@ var ProjectPlannerCanonical = (() => {
       ...(input.operativeRows || []).filter(rowMatches).map((row2) => ({ collection: "operatives", id: text16(row2.id) })),
       ...(input.managerRows || []).filter(rowMatches).map((row2) => ({ collection: "managers", id: text16(row2.id) }))
     ].filter((row2) => row2.id && !row2.id.includes("/"));
+    const managerActor = input.actorManagesOperatives === true;
     const labour = bookingsToRemoveOnOperativeDelete({
       bookings: input.bookings || [],
       operativeIds: [...ids, ...rosterRows.filter((row2) => row2.collection === "operatives").map((row2) => row2.id)],
       nowIso: input.nowIso,
-      timeZone: input.tz
+      timeZone: input.tz,
+      futureOnly: managerActor
     }).map((id2) => ({ collection: "bookings", id: id2 }));
     const today = bookingsToRemoveOnOperativeDelete({
-      bookings: (input.managerSiteBookings || []).map((row2) => ({ id: row2.id, operativeId: row2.userId, dateMs: row2.dateMs })),
+      bookings: managerActor ? [] : (input.managerSiteBookings || []).map((row2) => ({ id: row2.id, operativeId: row2.userId, dateMs: row2.dateMs })),
       operativeIds: ids,
       nowIso: input.nowIso,
       timeZone: input.tz
