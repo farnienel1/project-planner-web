@@ -30,6 +30,7 @@ import {
   type BookingDownloadRequest,
 } from '@/lib/firebase/bookingDownloadBound'
 import { useOrganizationDocumentStore } from '@/lib/stores/organizationDocumentStore'
+import { normalizeDocumentId } from '@/lib/canonical'
 
 /** Current listener bound per organisation. A new organisation starts again from the launch bound. */
 let bookingDownloadOrgId = ''
@@ -270,7 +271,7 @@ export const useBookingStore = create<BookingState>((set, get) => ({
   },
 
   getBookingsForOperative: (operativeId: string, date: Date) => {
-    return get().getBookingsForDate(date).filter((booking) => booking.operativeId === operativeId)
+    return get().getBookingsForDate(date).filter((booking) => normalizeDocumentId(booking.operativeId) === normalizeDocumentId(operativeId))
   },
 
   checkConflict: (operativeId: string, date: Date, timeSlot: string) => {

@@ -8,7 +8,7 @@ import { dateFromDayKey, dayKey, londonMidnight } from '@/lib/ios-parity/londonT
 import { formatWarningHours } from '@/lib/warnings/clashIntervals'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import { isPlaceholderOperative } from '@/lib/operatives/operativeRosterUtils'
-import { computeUnbookedScanWindow, computeWarningCoverageWindow, isDateWithinWarningWindow } from '@/lib/warnings/warningLookahead'
+import { computeUnbookedScanWindow, isDateWithinWarningWindow } from '@/lib/warnings/warningLookahead'
 import { holidayBookingLabourInput } from '@/lib/annualLeave/holidayDayKeys'
 import type { PayrollTimePolicyState } from '@/lib/canonical'
 
@@ -291,20 +291,6 @@ export function groupUnbookedWarningsByDay(warnings: UnbookedLabourWarning[]): U
       date: londonMidnight(people[0].date),
       people: people.sort((a, b) => a.operativeName.localeCompare(b.operativeName)),
     }))
-}
-
-export function filterWarningsByLookahead<T extends { date: Date }>(
-  warnings: T[],
-  warningDetection: OrgWarningDetectionSettings,
-  invoicing?: import('@/lib/settings/organizationSettings').OrgInvoicingSettings,
-  referenceDate = new Date(),
-  timeZone?: string
-): T[] {
-  const window = computeWarningCoverageWindow(referenceDate, warningDetection, invoicing, timeZone)
-  return warnings.filter((warning) => {
-    const key = dayKey(warning.date, timeZone)
-    return key >= window.startDayKey && key <= window.endDayKey
-  })
 }
 
 export function formatUnbookedMissingLabel(missingHours: number): string {

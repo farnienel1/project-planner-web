@@ -41,17 +41,17 @@ import { isOperativeMode } from '@/lib/navigation/menuPermissions'
 import { jobHubTiles } from '@/lib/projects/jobHubTiles'
 import { canSeeJobVariations } from '@/lib/variations/variationAccess'
 import { subscribeParentVariations } from '@/lib/variations/variationStorage'
-import { LONDON_TIME_ZONE } from '@/lib/orgTime/zoneTime'
 import { assignedManagerLabel, assignedManagerNames } from '@/lib/projects/assignedManagers'
 import type { SectionHue } from '@/lib/ui/sectionHue'
 import type { Project, User } from '@/types'
 import { cn } from '@/lib/ui/cn'
 import { useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
 import { openVariationCount } from '@/lib/canonical'
+import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 
 function formatLondonDay(date: Date): string {
   return new Intl.DateTimeFormat('en-GB', {
-    timeZone: LONDON_TIME_ZONE,
+    timeZone: organizationZoneOr(),
     day: 'numeric',
     month: 'short',
     year: 'numeric',

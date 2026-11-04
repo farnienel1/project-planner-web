@@ -26,8 +26,10 @@ import {
 } from '@/lib/timesheets/payrollRateResolver'
 import { isClockSpanLabel, orgDayHours, payLineDisplay, quantityText } from '@/lib/timesheets/payBasis'
 import { bookingHoursOnDay, formatTimesheetHours, scheduleLabel } from '@/lib/timesheets/timesheetHours'
-import { LONDON_TIME_ZONE, dayKey } from '@/lib/ios-parity/londonTime'
+import { dayKey } from '@/lib/ios-parity/londonTime'
 import { timesheetDaysForPerson } from '@/lib/canonical/peopleDocuments'
+import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
+import { normalizeDocumentId } from '@/lib/canonical'
 
 export type { PayrollRateBasis }
 
@@ -200,7 +202,7 @@ export function collectTimesheetPayroll({
   if (linked) operativeIds.add(linked.id.toLowerCase())
   // Rulebook 1.11.0 `timesheetDaysForPerson`: only the days the person is self-employed count. A PAYE day never
   // produces a timesheet line (it stays a booking for warnings, Daily Overview and Weekly Report hours).
-  const zone = timeZone || LONDON_TIME_ZONE
+  const zone = timeZone || organizationZoneOr()
   const countedDays = new Set(
     timesheetDaysForPerson(
       {
@@ -331,7 +333,7 @@ export function collectTimesheetPayroll({
   for (const booking of bookings) {
     if (!bookingOccupiesDay(booking.status)) continue
     if (!booking.operativeId || !operativeIds.has(booking.operativeId.toLowerCase())) continue
-    const matchedOperative = matched.find((row) => row.id === booking.operativeId) || linked
+    const matchedOperative = matched.find((row) => normalizeDocumentId(row.id) === normalizeDocumentId(booking.operativeId)) || linked
     pushBooking(
       'op',
       booking.id,

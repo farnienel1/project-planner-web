@@ -5,6 +5,8 @@
 
 import { Timestamp, deleteField } from 'firebase/firestore'
 import { z } from 'zod'
+import { partsInZone } from '@/lib/orgTime/zoneTime'
+import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 
 export class IosWriteValidationError extends Error {
   issues: string[]
@@ -118,7 +120,11 @@ export function asClockHhMm(value: unknown): string | undefined {
     return undefined
   }
   const date = asDate(value)
-  if (date) return `${padClockPart(date.getHours())}:${padClockPart(date.getMinutes())}`
+  if (date) {
+    // Rulebook §1: a stored clock instant is read in the organisation zone, never the browser's.
+    const { h, min } = partsInZone(date, organizationZoneOr())
+    return `${padClockPart(h)}:${padClockPart(min)}`
+  }
   return undefined
 }
 

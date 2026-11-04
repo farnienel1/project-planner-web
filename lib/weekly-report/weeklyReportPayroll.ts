@@ -1,4 +1,3 @@
-import { getISODay } from 'date-fns'
 import { formatMoney, parseMultipliedHoursText, payrollMultipliedHours, reportDayValue, resolveBookingPerson, rosterAliasIdsFor, weekdayPaidHours } from '@/lib/canonical'
 import { currentOrganizationCurrency } from '@/lib/stores/organizationDocumentStore'
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
@@ -11,6 +10,7 @@ import { bookingHoursOnDay } from '@/lib/timesheets/timesheetHours'
 import { emptyDayRateHistory, type OperativeDayRateHistoryCollection } from '@/lib/timesheets/dayRateHistoryStorage'
 import { payForHours, resolvePayrollRate } from '@/lib/timesheets/payrollRateResolver'
 import { orgDayHours, payLineDisplay, quantityText, roundPennies, type PayBasis } from '@/lib/timesheets/payBasis'
+import { normalizeDocumentId } from '@/lib/canonical'
 
 /** Day units for a staff booking (`reportDayValue` of `payrollHoursResult`), as on iOS. */
 export function bookingDayUnits(
@@ -108,7 +108,7 @@ export function findUserAndOperative(
       users.find((entry) => (entry.formerUserIds ?? []).includes(opts.userId as string)) ||
       users.find((entry) => rosterAliasIdsFor(entry.id, opts.aliases).includes(opts.userId as string))
     : undefined
-  let operative = opts.operativeId ? operatives.find((entry) => entry.id === opts.operativeId) : undefined
+  let operative = opts.operativeId ? operatives.find((entry) => normalizeDocumentId(entry.id) === normalizeDocumentId(opts.operativeId)) : undefined
   if (!user && operative?.email) {
     const email = operative.email.trim().toLowerCase()
     user = preferLinkedUser(users.filter((entry) => entry.email.trim().toLowerCase() === email))
@@ -117,7 +117,7 @@ export function findUserAndOperative(
     // A booking stored under a users id, a former invite id or a same-email alias (web #189).
     const person = resolveBookingPerson(opts.operativeId, { accounts: accounts(), operatives })
     if (person.accountId) user = users.find((entry) => entry.id === person.accountId)
-    if (!operative && person.operativeId) operative = operatives.find((entry) => entry.id === person.operativeId)
+    if (!operative && person.operativeId) operative = operatives.find((entry) => normalizeDocumentId(entry.id) === normalizeDocumentId(person.operativeId))
   }
   if (!operative && user) operative = findOperativeForUser(user, operatives)
   return { user, operative }
@@ -159,11 +159,6 @@ export function buildPayLinesForDays(
       pay: roundPennies(dayRate * totalDays),
     },
   ]
-}
-
-export function isWeekendDay(date: Date): boolean {
-  const iso = getISODay(date)
-  return iso === 6 || iso === 7
 }
 
 /** Organisation money (`formatMoney`). The open company's currency unless a code is passed. */

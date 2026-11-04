@@ -21,7 +21,7 @@ import { managerSiteBookingDisplayTitle } from '@/lib/scheduling/managerSiteBook
 import { getActiveOperativesForScheduling } from '@/lib/operatives/operativeRosterUtils'
 import type { OrganizationDetails } from '@/lib/settings/organizationSettings'
 import { DEFAULT_PAYROLL_POLICY, includesManagerScheduleLocation, orgPayrollPolicyForDay } from '@/lib/settings/organizationSettings'
-import { ianaTimeZoneForCountry } from '@/lib/orgTime/orgTimeZone'
+import { organizationTimeZone } from '@/lib/canonical'
 import { computeManagerBookingClashWarnings } from '@/lib/warnings/managerClashWarnings'
 import { employmentTypeOnDay, isAnonymisedDeletedProfile, priceWorkJobNumberText, reportPayCell, reportPayTotal, reportPersonPayCell, subcontractorDayValue } from '@/lib/canonical'
 import { computeUnbookedLabourWarningsForDateRange } from '@/lib/warnings/unbookedLabourWarnings'
@@ -63,6 +63,7 @@ import {
   resolveSubcontractorBookingPeople,
 } from '@/lib/subcontractors/bookingPeople'
 import { bookingJobLabel, weekdayPaidHours, weeklyReportPayeDay, weeklyReportPayeOvertime, type OvertimeBookingInput, type PayrollTimePolicyState } from '@/lib/canonical'
+import { normalizeDocumentId } from '@/lib/canonical'
 
 export type WeeklyReportWarningRow = {
   status: string
@@ -280,7 +281,7 @@ export function buildWeeklyReportData({
   const payroll = orgDetails?.payrollTimePolicy
   // Today's standard day: only the fallback for a slice that does not carry its own day's (1.19.0).
   const standardHours = orgDayHours(payroll ? weekdayPaidHours(payroll) : 8)
-  const timeZone = ianaTimeZoneForCountry(orgDetails?.countryCode)
+  const timeZone = organizationTimeZone(orgDetails?.countryCode)
   // Rulebook §4.3 / §8 (1.19.0): each booking is paid under the working hours in effect on its own day — the history
   // first (`effectivePayrollTimePolicy` via `orgPayrollPolicyForDay` with the whole state), in the organisation zone.
   const policyOn = (date: Date) =>
@@ -431,7 +432,7 @@ export function buildWeeklyReportData({
 
   const usersForOperative = (operativeId: string | undefined): string[] => {
     if (!operativeId) return []
-    const operative = operatives.find((entry) => entry.id === operativeId)
+    const operative = operatives.find((entry) => normalizeDocumentId(entry.id) === normalizeDocumentId(operativeId))
     const linked = operative
       ? users.filter((user) => findOperativeForUser(user, [operative])?.id === operative.id)
       : []
@@ -660,7 +661,7 @@ export function buildWeeklyReportData({
     if (days <= 0) continue
     const user = holiday.userId ? users.find((entry) => entry.id === holiday.userId) : undefined
     const operative = holiday.operativeId
-      ? operatives.find((entry) => entry.id === holiday.operativeId)
+      ? operatives.find((entry) => normalizeDocumentId(entry.id) === normalizeDocumentId(holiday.operativeId))
       : user
         ? findOperativeForUser(user, operatives)
         : undefined

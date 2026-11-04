@@ -186,7 +186,7 @@ export function statusLabel(status: DeadlineStatus): string {
 }
 
 const londonDate = (date: Date, options: Intl.DateTimeFormatOptions) =>
-  new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', ...options }).format(date)
+  new Intl.DateTimeFormat('en-GB', { timeZone: organizationZoneOr(), ...options }).format(date)
 
 export function formatDay(date: Date): string {
   return londonDate(date, { day: 'numeric', month: 'short' })

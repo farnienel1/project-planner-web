@@ -10,6 +10,7 @@ import { formatPaymentPeriodLine } from '@/lib/timesheets/paymentRunCopy'
 import { formatStampInZone } from '@/lib/orgTime/zoneTime'
 import type { TimesheetSubject } from '@/lib/timesheets/timesheetWeekUtils'
 import type { TimesheetInvoiceLine } from '@/lib/timesheets/timesheetExport'
+import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 
 function escapeHtml(value: string): string {
   return value
@@ -35,7 +36,7 @@ export function buildTimesheetInvoiceHtml({
   vatNumber,
   utrNumber,
   lines,
-  timeZone = 'Europe/London',
+  timeZone = organizationZoneOr(),
   standardDayHours = 8,
   generatedAt = new Date(),
   documentTitle = 'Invoice',

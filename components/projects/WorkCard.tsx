@@ -19,9 +19,9 @@ import { ProgressRing } from '@/components/ui/media'
 import { StatusPill } from '@/components/ui/controls'
 import { useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
 
-function formatRange(start: Date, end: Date): string {
+function formatRange(start: Date, end: Date, timeZone: string): string {
   const fmt = new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Europe/London',
+    timeZone,
     day: 'numeric',
     month: 'short',
     year: 'numeric',
@@ -86,7 +86,7 @@ export function WorkCard({
           </div>
           <div>
             <span>Programme</span>
-            {formatRange(project.startDate, project.endDate)}
+            {formatRange(project.startDate, project.endDate, timeZone)}
           </div>
           <div>
             <span>Site</span>

@@ -8,7 +8,6 @@
 import type { OrgInvoicingSettings } from '@/lib/settings/organizationSettings'
 import { capitalizeDay, WEEKDAY_OPTIONS } from '@/lib/settings/organizationSettings'
 import {
-  LONDON_TIME_ZONE,
   addLondonDays,
   dateFromDayKey,
   dayKey,
@@ -20,6 +19,7 @@ import {
 } from '@/lib/ios-parity/londonTime'
 import { computeInvoicingPeriod } from '@/lib/warnings/warningLookahead'
 import { selectableTimesheetPaymentRunPeriods } from '@/lib/canonical'
+import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 
 export type PaymentRunCardCopy = {
   periodLine: string
@@ -33,7 +33,7 @@ export type PaymentRunCardCopy = {
 export function currentPaymentRunCopy(
   invoicing: OrgInvoicingSettings,
   referenceDate: Date = new Date(),
-  timeZone: string = LONDON_TIME_ZONE
+  timeZone: string = organizationZoneOr()
 ): PaymentRunCardCopy {
   const period = computeInvoicingPeriod(referenceDate, invoicing, timeZone)
   const payDate = payDateForPeriodEnd(period.end, invoicing, timeZone)
@@ -56,7 +56,7 @@ export function recurringRunDisplaySummary(invoicing: OrgInvoicingSettings): str
   return `In arrears: ${capitalizeDay(invoicing.recurringRunStartDay)} to ${capitalizeDay(invoicing.recurringRunEndDay)} (of the previous week)`
 }
 
-export function formatPaymentPeriodLine(start: Date, end: Date, timeZone: string = LONDON_TIME_ZONE): string {
+export function formatPaymentPeriodLine(start: Date, end: Date, timeZone: string = organizationZoneOr()): string {
   const startParts = londonDateParts(start, timeZone)
   const endParts = londonDateParts(end, timeZone)
   if (startParts.year === endParts.year && startParts.month === endParts.month) {
@@ -68,7 +68,7 @@ export function formatPaymentPeriodLine(start: Date, end: Date, timeZone: string
   return `${formatLongDay(start, timeZone)} – ${formatLongDay(end, timeZone)}`
 }
 
-export function formatLondonLongDay(date: Date, timeZone: string = LONDON_TIME_ZONE): string {
+export function formatLondonLongDay(date: Date, timeZone: string = organizationZoneOr()): string {
   return formatLongDay(date, timeZone)
 }
 
@@ -76,7 +76,7 @@ export function formatLondonLongDay(date: Date, timeZone: string = LONDON_TIME_Z
 export function payDateForPeriodEnd(
   periodEnd: Date,
   invoicing: OrgInvoicingSettings,
-  timeZone: string = LONDON_TIME_ZONE
+  timeZone: string = organizationZoneOr()
 ): Date | null {
   const periodEndDay = londonMidnight(periodEnd, timeZone)
 
@@ -93,7 +93,7 @@ export function listPreviousPayPeriods(
   invoicing: OrgInvoicingSettings,
   referenceDate: Date = new Date(),
   count = 24,
-  timeZone: string = LONDON_TIME_ZONE
+  timeZone: string = organizationZoneOr()
 ): Array<{ start: Date; end: Date }> {
   const periods: Array<{ start: Date; end: Date }> = []
   let cursor = computeInvoicingPeriod(referenceDate, invoicing, timeZone).start
@@ -106,7 +106,7 @@ export function listPreviousPayPeriods(
   return periods
 }
 
-export function periodStartKey(date: Date, timeZone: string = LONDON_TIME_ZONE): string {
+export function periodStartKey(date: Date, timeZone: string = organizationZoneOr()): string {
   return dayKey(date, timeZone)
 }
 
@@ -114,7 +114,7 @@ export function listSelectablePayPeriods(
   invoicing: OrgInvoicingSettings,
   referenceDate: Date = new Date(),
   count = 120,
-  timeZone: string = LONDON_TIME_ZONE,
+  timeZone: string = organizationZoneOr(),
   observedPeriods: Array<{ start: Date; end: Date }> = []
 ): Array<{ start: Date; end: Date }> {
   return selectableTimesheetPaymentRunPeriods({

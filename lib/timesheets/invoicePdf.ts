@@ -10,6 +10,7 @@ import { formatPaymentPeriodLine } from '@/lib/timesheets/paymentRunCopy'
 import { formatStampInZone } from '@/lib/orgTime/zoneTime'
 import type { TimesheetSubject } from '@/lib/timesheets/timesheetWeekUtils'
 import type { TimesheetInvoiceLine } from '@/lib/timesheets/timesheetExport'
+import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 
 const PAGE_W = 595
 const PAGE_H = 842
@@ -104,7 +105,7 @@ export function timesheetExportPdfFileName(userName: string, paymentRunStamp: st
 }
 
 export function buildTimesheetInvoicePdf(input: InvoicePdfContext): Uint8Array {
-  const timeZone = input.timeZone || 'Europe/London'
+  const timeZone = input.timeZone || organizationZoneOr()
   const generatedAt = input.generatedAt || new Date()
   const title = input.documentTitle || 'Invoice'
   const period = formatPaymentPeriodLine(input.weekStart, input.weekEnd, timeZone)

@@ -27,6 +27,12 @@ jobs:
       - run: npm ci
       - name: Typecheck
         run: npx tsc --noEmit
+      - name: No second calculators outside lib/canonical
+        # Own weekend cut-offs, browser / London business dates, single-id person matching (feature-completeness.md).
+        run: npm run check:calculators
+      - name: Security rules size budget
+        # firestore.rules / storage.rules byte budget in scripts/rules-budget.json (platform-guardrails.md §5).
+        run: npm run check:rules-budget
       - name: Full test suite
         timeout-minutes: 10
         run: npm test

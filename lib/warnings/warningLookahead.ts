@@ -12,13 +12,13 @@ import {
   type OrgWarningDetectionSettings,
 } from '@/lib/settings/organizationSettings'
 import {
-  LONDON_TIME_ZONE,
   addLondonDays,
   dateFromDayKey,
   dayKey,
   startOfLondonWeek,
   londonMidnight,
 } from '@/lib/ios-parity/londonTime'
+import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 
 function periodFromCanonical(
   referenceDate: Date,
@@ -63,7 +63,7 @@ export type WarningCoverageWindow = {
 export function computeInvoicingPeriod(
   referenceDate: Date,
   invoicing: OrgInvoicingSettings,
-  timeZone: string = LONDON_TIME_ZONE
+  timeZone: string = organizationZoneOr()
 ): InvoicingPeriodRange {
   return periodFromCanonical(londonMidnight(referenceDate, timeZone), invoicing, timeZone)
 }
@@ -78,7 +78,7 @@ export function computeWarningCoverageWindow(
   referenceDate: Date,
   warningDetection: OrgWarningDetectionSettings,
   invoicing?: OrgInvoicingSettings,
-  timeZone: string = LONDON_TIME_ZONE
+  timeZone: string = organizationZoneOr()
 ): WarningCoverageWindow {
   const settings = invoicing ?? DEFAULT_INVOICING
   const window = coverageWindow({
@@ -102,6 +102,40 @@ export function computeWarningCoverageWindow(
 }
 
 /**
+ * The unbooked-labour scan window: the rulebook's `unbookedScanDays` (Full week with include-weekends on runs to
+ * Sunday; every other mode keeps `coverageWindow`). Which weekend days count is still decided per day by
+ * `unbookedLabourRows` (include-weekends and `weekendCoverage`).
+ */
+export function computeUnbookedScanWindow(
+  referenceDate: Date,
+  warningDetection: OrgWarningDetectionSettings,
+  invoicing?: OrgInvoicingSettings,
+  timeZone: string = organizationZoneOr()
+): WarningCoverageWindow {
+  const settings = invoicing ?? DEFAULT_INVOICING
+  const days = unbookedScanDays({
+    referenceIso: referenceDate.toISOString(),
+    timeZone,
+    clashLookaheadMode: warningDetection.clashLookaheadMode,
+    clashLookaheadDays: warningDetection.clashLookaheadDays,
+    paymentRunMode: settings.paymentRunMode,
+    ranges: parsePaymentRunDateRanges({ paymentRunDateRanges: settings.paymentRunDateRanges }),
+    recurringRunStartDay: settings.recurringRunStartDay,
+    recurringRunEndDay: settings.recurringRunEndDay,
+    includeWeekends: warningDetection.includeWeekendsForUnbookedLabour,
+    weekendCoverage: warningDetection.weekendCoverage ?? null,
+  })
+  const result: WarningCoverageWindow = {
+    start: dateFromDayKey(days.startDayKey, timeZone),
+    end: dateFromDayKey(days.endDayKey, timeZone),
+    startDayKey: days.startDayKey,
+    endDayKey: days.endDayKey,
+  }
+  if (days.fallbackReason) result.fallbackReason = days.fallbackReason
+  return result
+}
+
+/**
  * Day keys clashes are checked on: the rulebook's `clashScanDays`. Full week is Monday–Friday plus a
  * Saturday or Sunday of this week that holds a booking (`bookedDayKeys`).
  */
@@ -109,7 +143,7 @@ export function computeClashScanDayKeys(
   referenceDate: Date,
   warningDetection: OrgWarningDetectionSettings,
   invoicing?: OrgInvoicingSettings,
-  timeZone: string = LONDON_TIME_ZONE,
+  timeZone: string = organizationZoneOr(),
   bookedDayKeys?: readonly string[]
 ): Set<string> {
   const settings = invoicing ?? DEFAULT_INVOICING
@@ -127,37 +161,6 @@ export function computeClashScanDayKeys(
   return new Set(days.dayKeys)
 }
 
-/**
- * The unbooked-labour scan window: the rulebook's `unbookedScanDays`. Full week with include-weekends on runs to
- * Sunday of the same week; every other mode keeps `coverageWindow`.
- */
-export function computeUnbookedScanWindow(
-  referenceDate: Date,
-  warningDetection: OrgWarningDetectionSettings,
-  invoicing?: OrgInvoicingSettings,
-  timeZone: string = LONDON_TIME_ZONE
-): { startDayKey: string; endDayKey: string; start: Date; end: Date } {
-  const settings = invoicing ?? DEFAULT_INVOICING
-  const days = unbookedScanDays({
-    referenceIso: referenceDate.toISOString(),
-    timeZone,
-    clashLookaheadMode: warningDetection.clashLookaheadMode,
-    clashLookaheadDays: warningDetection.clashLookaheadDays,
-    paymentRunMode: settings.paymentRunMode,
-    ranges: parsePaymentRunDateRanges({ paymentRunDateRanges: settings.paymentRunDateRanges }),
-    recurringRunStartDay: settings.recurringRunStartDay,
-    recurringRunEndDay: settings.recurringRunEndDay,
-    includeWeekends: warningDetection.includeWeekendsForUnbookedLabour,
-    weekendCoverage: warningDetection.weekendCoverage ?? null,
-  })
-  return {
-    startDayKey: days.startDayKey,
-    endDayKey: days.endDayKey,
-    start: dateFromDayKey(days.startDayKey, timeZone),
-    end: dateFromDayKey(days.endDayKey, timeZone),
-  }
-}
-
 /** Notice copy when the saved number of days could not be used: the rulebook's `warningLookaheadFallbackNotice`. */
 export { warningLookaheadFallbackNotice } from '@/lib/canonical'
 
@@ -165,7 +168,7 @@ export function computeWarningLookaheadEnd(
   referenceDate: Date,
   warningDetection: OrgWarningDetectionSettings,
   invoicing?: OrgInvoicingSettings,
-  timeZone: string = LONDON_TIME_ZONE
+  timeZone: string = organizationZoneOr()
 ): Date {
   return computeWarningCoverageWindow(referenceDate, warningDetection, invoicing, timeZone).end
 }
@@ -182,7 +185,7 @@ function formatScanDay(date: Date, timeZone: string): string {
 export function formatNumberOfDaysScanSummary(
   days: number,
   referenceDate = new Date(),
-  timeZone: string = LONDON_TIME_ZONE
+  timeZone: string = organizationZoneOr()
 ): string {
   const n = Math.max(1, Math.min(Math.round(days) || 1, 365))
   const window = computeWarningCoverageWindow(referenceDate, {
@@ -205,14 +208,14 @@ export function isDateWithinWarningWindow(
   date: Date,
   windowStart: Date,
   windowEnd: Date,
-  timeZone: string = LONDON_TIME_ZONE
+  timeZone: string = organizationZoneOr()
 ): boolean {
   const key = dayKey(date, timeZone)
   return key >= dayKey(windowStart, timeZone) && key <= dayKey(windowEnd, timeZone)
 }
 
 /** Iterate each calendar day in an inclusive window in the org zone. */
-export function eachLondonDay(start: Date, end: Date, timeZone: string = LONDON_TIME_ZONE): Date[] {
+export function eachLondonDay(start: Date, end: Date, timeZone: string = organizationZoneOr()): Date[] {
   const days: Date[] = []
   let cursor = londonMidnight(start, timeZone)
   const lastKey = dayKey(end, timeZone)

@@ -3,7 +3,6 @@
  * `mergeTimesheetFeedWeeks`, `timesheetFeedCovers`, `timesheetFeedLabourLines`, `timesheetFeedMoneyLines`
  * (iOS calls `weeklyReportTimesheetFeed`). This file only adapts the web types.
  */
-import { LONDON_TIME_ZONE } from '@/lib/ios-parity/londonTime'
 import {
   mergeTimesheetFeedWeeks,
   timesheetFeedCovers as canonicalTimesheetFeedCovers,
@@ -15,6 +14,7 @@ import type {
   WeeklyReportMoneyLine,
   WeeklyReportOverride,
 } from '@/lib/timesheets/timesheetDraft'
+import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 
 export type ApprovedTimesheetWeek = {
   userId: string
@@ -38,7 +38,7 @@ type WeekPerson = {
 export function mergeDuplicatePersonWeeks(
   weeks: ApprovedTimesheetWeek[],
   people: WeekPerson[],
-  timeZone: string = LONDON_TIME_ZONE
+  timeZone: string = organizationZoneOr()
 ): ApprovedTimesheetWeek[] {
   return mergeTimesheetFeedWeeks(weeks, people, timeZone)
 }
@@ -48,7 +48,7 @@ export function timesheetFeedCovers(
   weeks: ApprovedTimesheetWeek[],
   userId: string | string[] | undefined,
   day: Date,
-  timeZone: string = LONDON_TIME_ZONE
+  timeZone: string = organizationZoneOr()
 ): boolean {
   return canonicalTimesheetFeedCovers(weeks, userId ?? null, day, timeZone)
 }
@@ -58,7 +58,7 @@ export function timesheetLabourLines(
   weeks: ApprovedTimesheetWeek[],
   rangeStart: Date,
   rangeEnd: Date,
-  timeZone: string = LONDON_TIME_ZONE
+  timeZone: string = organizationZoneOr()
 ): Array<{ week: ApprovedTimesheetWeek; line: WeeklyReportLabourLine }> {
   return timesheetFeedLabourLines<WeeklyReportLabourLine>(weeks, { start: rangeStart, end: rangeEnd }, timeZone).map(
     ({ weekIndex, line }) => ({ week: weeks[weekIndex] as ApprovedTimesheetWeek, line })
@@ -71,7 +71,7 @@ export function timesheetMoneyLines(
   kind: 'priceWork' | 'expenses',
   rangeStart: Date,
   rangeEnd: Date,
-  timeZone: string = LONDON_TIME_ZONE
+  timeZone: string = organizationZoneOr()
 ): Array<{ week: ApprovedTimesheetWeek; line: WeeklyReportMoneyLine }> {
   return timesheetFeedMoneyLines<WeeklyReportMoneyLine>(weeks, kind, { start: rangeStart, end: rangeEnd }, timeZone).map(
     ({ weekIndex, line }) => ({ week: weeks[weekIndex] as ApprovedTimesheetWeek, line })

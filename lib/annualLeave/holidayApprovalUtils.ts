@@ -16,6 +16,7 @@ import {
 import { dayKeyInZone } from '@/lib/orgTime/zoneTime'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 import { isPendingHolidayRequest } from '@/lib/stores/holidayStore'
+import { normalizeDocumentId } from '@/lib/canonical'
 
 /** The account that asked for this leave: the booking userId, else the operative-mode user on the operative's email. */
 export function holidayRequester(request: HolidayBooking, users: User[], operatives: Operative[]): User | null {
@@ -24,7 +25,7 @@ export function holidayRequester(request: HolidayBooking, users: User[], operati
     if (requester) return requester
   }
   if (request.operativeId) {
-    const op = operatives.find((o) => o.id === request.operativeId)
+    const op = operatives.find((o) => normalizeDocumentId(o.id) === normalizeDocumentId(request.operativeId))
     if (op) {
       const email = op.email.toLowerCase()
       return (

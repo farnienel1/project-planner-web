@@ -41,7 +41,7 @@ import { TimesheetsScreen, type TeamTimesheetTab } from '@/components/timesheets
 import { TimesheetPeriodPage } from '@/components/timesheets/TimesheetPeriodPage'
 import { dateFromDayKey, dayKey } from '@/lib/ios-parity/londonTime'
 import { resolveTimesheetPeriod, timesheetPeriodFromInvoicing, type PayrollTimePolicyState } from '@/lib/canonical'
-import { ianaTimeZoneForCountry } from '@/lib/orgTime/orgTimeZone'
+import { organizationTimeZone } from '@/lib/canonical'
 import { computeInvoicingPeriod } from '@/lib/warnings/warningLookahead'
 import {
   loadExportedTimesheetHistory,
@@ -125,7 +125,7 @@ export function TimesheetsHub() {
   // under the rules in effect on it — including a change scheduled to start inside the run.
   const [payrollPolicyState, setPayrollPolicyState] = useState<PayrollTimePolicyState | null>(null)
   const [scheduleOptions, setScheduleOptions] = useState<MyScheduleOptions>(DEFAULT_MY_SCHEDULE)
-  const [timeZone, setTimeZone] = useState(ianaTimeZoneForCountry('GB'))
+  const [timeZone, setTimeZone] = useState(organizationTimeZone('GB'))
   const [history, setHistory] = useState<OperativeDayRateHistoryCollection>(emptyDayRateHistory())
   // Pay inputs: never price from the defaults or an empty history after a failed or unfinished load.
   const [detailsLoad, setDetailsLoad] = useState<TimesheetInputLoad>('loading')
@@ -173,7 +173,7 @@ export function TimesheetsHub() {
       setPayrollPolicyState(details.payrollTimePolicyState ?? null)
       if (details.invoicing) setInvoicing(details.invoicing)
       if (details.myScheduleOptions) setScheduleOptions(details.myScheduleOptions)
-      setTimeZone(ianaTimeZoneForCountry(details.countryCode))
+      setTimeZone(organizationTimeZone(details.countryCode))
       setDetailsLoad('loaded')
     }
     // A slow read shows the error with Retry after 8 s; the read keeps running and still applies when it lands.

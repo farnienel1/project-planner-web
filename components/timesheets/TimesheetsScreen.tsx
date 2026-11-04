@@ -57,13 +57,14 @@ import {
 import type { Booking, Operative, Project, User } from '@/types'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import { LoadingSpinner } from '@/components/dashboard/PageShell'
-import { dateFromDayKey, dayKey, LONDON_TIME_ZONE } from '@/lib/ios-parity/londonTime'
+import { dateFromDayKey, dayKey } from '@/lib/ios-parity/londonTime'
 import { timesheetsTeamHref } from '@/lib/timesheets/timesheetRoutes'
 import { computeInvoicingPeriod } from '@/lib/warnings/warningLookahead'
 import { formatStampInZone } from '@/lib/orgTime/zoneTime'
 import { PayInputsBanner } from '@/components/timesheets/PayInputsBanner'
 import type { TimesheetInputsState } from '@/lib/timesheets/timesheetInputs'
 import type { PayrollTimePolicyState } from '@/lib/canonical'
+import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 
 export type TeamTimesheetTab = 'awaiting' | 'signed' | 'exported'
 
@@ -94,7 +95,7 @@ export function TimesheetsScreen({
   invoicing,
   loading,
   teamTab,
-  timeZone = LONDON_TIME_ZONE,
+  timeZone = organizationZoneOr(),
   history = emptyDayRateHistory(),
   scheduleOptions = DEFAULT_MY_SCHEDULE,
   payInputs,

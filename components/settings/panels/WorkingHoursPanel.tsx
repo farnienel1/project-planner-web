@@ -30,6 +30,7 @@ import {
 } from '@/lib/canonical'
 import { BookingDayBreakdownRows } from '@/components/scheduling/BookingDayBreakdownRows'
 import { useApplyLiveWhenClean, useLiveOrganizationDetails } from '@/components/settings/useLiveOrganizationSettings'
+import { useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
 import { settingsHeader } from '@/lib/settings/settingsHeader'
 import { settingsSaveBarHint } from '@/lib/settings/settingsDirty'
 import {
@@ -218,8 +219,9 @@ function WeekdayPaidDayLine({ policy }: { policy: OrgPayrollTimePolicy }) {
  * so switching that day's break Paid / Unpaid or changing its length or times changes it at once. No figure is computed here.
  */
 function WeekendDayPreview({ policy, day }: { policy: OrgPayrollTimePolicy; day: WeekendKey }) {
+  const timeZone = useOrganizationTimeZone()
   const valid = isValidHM(policy.standardDayStart) && isValidHM(policy.standardDayEnd)
-  const preview = valid ? weekendDayPreview(policy, day, 'Europe/London') : null
+  const preview = valid ? weekendDayPreview(policy, day, timeZone) : null
   if (!preview) return null
   const name = day === 'saturday' ? 'Saturday' : 'Sunday'
   return (
