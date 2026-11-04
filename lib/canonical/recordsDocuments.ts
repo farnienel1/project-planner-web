@@ -1256,6 +1256,8 @@ export type NotificationRelatedIdKind =
   | 'paymentDayKey'
   | 'feedbackIdea'
   | 'holidayBookingOrNone'
+  | 'overtimeRequest'
+  | 'booking'
   | 'none'
 
 /**
@@ -1304,6 +1306,10 @@ export const NOTIFICATION_RELATED_ID: Readonly<Record<string, NotificationRelate
   idea_comment: 'feedbackIdea',
   idea_merged: 'feedbackIdea',
   material_added: 'job',
+  // 1.29.0 (§25)
+  overtime_request_submitted: 'overtimeRequest',
+  overtime_request_reviewed: 'overtimeRequest',
+  booking_hours_changed_by_owner: 'booking',
 }
 
 /** The ids a caller may have for `notificationRelatedId`. */
@@ -1319,6 +1325,8 @@ export type NotificationRelatedIdInput = {
   warningKey?: unknown
   paymentDayKey?: unknown
   ideaId?: unknown
+  overtimeRequestId?: unknown
+  bookingId?: unknown
 }
 
 /**
@@ -1355,6 +1363,10 @@ export function notificationRelatedId(type: unknown, input?: NotificationRelated
     }
     case 'feedbackIdea':
       return pick(input?.ideaId)
+    case 'overtimeRequest':
+      return pick(input?.overtimeRequestId)
+    case 'booking':
+      return pick(input?.bookingId)
     default:
       return null
   }
@@ -1373,6 +1385,8 @@ const RELATED_ID_INPUT_KEY: Readonly<Record<NotificationRelatedIdKind, keyof Not
   warningKey: 'warningKey',
   paymentDayKey: 'paymentDayKey',
   feedbackIdea: 'ideaId',
+  overtimeRequest: 'overtimeRequestId',
+  booking: 'bookingId',
   none: null,
 }
 

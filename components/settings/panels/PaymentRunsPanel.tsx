@@ -42,6 +42,8 @@ import {
   SaveBar,
 } from '@/components/settings/primitives'
 import { TimesheetSubmissionSection } from '@/components/settings/TimesheetSubmissionSection'
+import { PayePaydayCard } from '@/components/settings/PayePaydayCard'
+import { hasAdminAccess } from '@/lib/permissions'
 import {
   syncedTimesheetSubmission,
   withPaymentDateAt,
@@ -418,6 +420,9 @@ export function PaymentRunsPanel({ onBack }: { onBack: () => void }) {
       </SettingsCard>
 
       </SettingsFormBody>
+
+      {/* Rulebook 1.29.0 §4.5: the PAYE payday, saved on its own (not part of the payment-run draft). */}
+      <PayePaydayCard canEdit={hasAdminAccess(user)} step={6} />
 
       <SaveBar dirty={dirty} hint={settingsSaveBarHint(loadState)}>
         <SaveButton saving={saving} saved={saved} dirty={dirty} onClick={save} />

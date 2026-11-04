@@ -280,6 +280,19 @@ export async function buildWeeklyReportPdf(data: WeeklyReportData): Promise<Uint
         ]
   )
 
+  // Rulebook 1.29.0 §7: PAYE overtime per person per job (hours only).
+  section(draw, 'PAYE overtime')
+  table(
+    draw,
+    ['Person', 'Job Number', 'Job', 'Overtime hours'],
+    data.payeOvertimeRows.length === 0
+      ? [['No PAYE overtime in this period', '', '', '']]
+      : [
+          ...data.payeOvertimeRows.map((row) => [row.person, row.jobNumber, row.jobName, `${row.overtimeHours}h`]),
+          ['', '', 'Total', `${data.payeOvertimeTotal}h`],
+        ]
+  )
+
   section(draw, 'Price Work')
   table(
     draw,

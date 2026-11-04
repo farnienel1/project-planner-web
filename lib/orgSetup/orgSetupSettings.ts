@@ -33,6 +33,8 @@ import {
   organizationCurrencyWriteFields,
 } from '@/lib/canonical'
 import type { NotificationPreferences } from '@/lib/settings/notificationPreferences'
+import { organizationTimeZone, payePaydayWriteFields } from '@/lib/canonical'
+import { dayKeyInZone } from '@/lib/orgTime/zoneTime'
 import { COMPANY_LOGO_MAX_BYTES, uploadLimitError } from '@/lib/security/uploadLimits'
 
 export type OrgOfficeAddress = {
@@ -61,6 +63,8 @@ export type OrganisationFeaturesSetup = {
   warningDetection: OrgWarningDetectionSettings
   notificationPreferences: NotificationPreferences
   invoicing: OrgInvoicingSettings
+  /** Rulebook 1.29.0 §4.5: the optional PAYE payday (1–31) chosen in setup; null when not set. */
+  payePayday?: number | null
 }
 
 export type OrgSetupSettings = {
@@ -234,7 +238,7 @@ export function orgSetupSettingsToFirestoreFields(
     payrollTimePolicy: payrollPolicyToFirestore(withDerivedWeekdayPaidHours(features.payrollTimePolicy)),
     annualLeaveDefaults: features.annualLeaveDefaults,
     warningDetection: warningDetectionToFirestore(features.warningDetection),
-    invoicing: invoicingToFirestore(features.invoicing),
+    invoicing: { ...invoicingToFirestore(features.invoicing), ...setupPayePaydayFields(features.payePayday, identity.countryCode) },
     settings: {
       myScheduleOptions: myScheduleOptionsToFirestore(features.myScheduleOptions),
       materialCutOff: features.notificationPreferences,
@@ -258,4 +262,16 @@ export function isLogoCropCandidate(file: File): boolean {
     type === 'application/pdf' ||
     /\.(jpe?g|png|pdf)$/i.test(name)
   )
+}
+
+/**
+ * Rulebook 1.29.0 §4.5: the PAYE payday picked in setup, as the `invoicing` map fields (`payePayday` and its first
+ * history entry from `payePaydayWriteFields`, counting from the payrun that contains today). Empty when not picked.
+ */
+export function setupPayePaydayFields(day: number | null | undefined, countryCode: string | null | undefined): Record<string, unknown> {
+  if (day == null) return {}
+  const todayKey = dayKeyInZone(new Date(), organizationTimeZone(countryCode ?? null))
+  const fields = payePaydayWriteFields({ invoicing: {} }, day, todayKey)
+  if (!fields) return {}
+  return { payePayday: fields['invoicing.payePayday'], payePaydayHistory: fields['invoicing.payePaydayHistory'] }
 }

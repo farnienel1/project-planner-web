@@ -433,6 +433,12 @@ export const NOTIFICATION_CATALOG: ReadonlyArray<NotificationCatalogRow> = [
     'web: the actor is not removed; use ideaRecipients.'),
   row('idea_merged', 'Feedback idea merged into another', 'ideaRecipients', ['web'],
     'web: the actor is not removed; use ideaRecipients.'),
+  row('overtime_request_submitted', 'A PAYE person sends their overtime for approval (1.29.0)', 'overtimeRequestRecipients', ['web', 'ios'],
+    'deepLinkUserId = the requester; opens Users\' → that person → Overtime. Toggle: overtime.'),
+  row('overtime_request_reviewed', 'A line manager or admin approves an overtime request (1.29.0)', 'overtimeReviewedRecipients', ['web', 'ios'],
+    '"Overtime update"; opens the person\'s Overtime page. Toggle: overtime.'),
+  row('booking_hours_changed_by_owner', 'A PAYE manager or admin changes their own booking\'s hours or overtime directly (1.29.0)', 'bookingHoursChangedRecipients', ['web', 'ios'],
+    'inbox only (no push); opens the booking day. Toggle: overtime.'),
   row('material_order_cut_off', 'On-device clock before the organisation material cut-off', 'the signed-in user (local notification, not an inbox row)', ['ios'], 'iOS only.'),
   row('qualification_expiry', 'On-device clock before a qualification expires', 'the signed-in user (local notification, not an inbox row)', ['ios'], 'iOS only.'),
 ]

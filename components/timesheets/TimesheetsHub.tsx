@@ -75,6 +75,9 @@ import {
   type TimesheetInputsState,
 } from '@/lib/timesheets/timesheetInputs'
 import type { User } from '@/types'
+import { OVERTIME_HUB_LABEL, overtimeHubAccess } from '@/lib/canonical'
+import { rulebookPerson, rulebookRoster } from '@/lib/staff/rulebookPeople'
+import { OVERTIME_PATH } from '@/components/overtime/OvertimeScreen'
 
 const PAYE_DISABLED_BODY =
   'My Timesheets is for self-employed pay. PAYE accounts keep the current pay run until it is paid, then schedule hours no longer fill the next timesheet. Switch the person back to self-employed if they need timesheets again.'
@@ -131,7 +134,11 @@ export function TimesheetsHub() {
   const showMine = user ? canAccessMyTimesheetsWithPolicy(user, invoicing, new Date(), timeZone) : false
   const showTeam = canAccessOperativeTimesheets(user, usersLoading, users)
   const showDisabled = shouldShowTimesheetsDisabledMessage(user, showMine)
-  const canOpen = canAccessTimesheetsSurface(user, usersLoading, users)
+  // Rulebook 1.29.0 §25: "Overtime, Expenses & Price Work" — PAYE people (My…), admins and line managers (Users'…).
+  const overtimeAccess = user
+    ? overtimeHubAccess({ viewer: rulebookPerson(users.find((row) => row.id === user.id) || user, users), roster: rulebookRoster(users) })
+    : { showButton: false, mine: false, users: false }
+  const canOpen = canAccessTimesheetsSurface(user, usersLoading, users) || overtimeAccess.showButton
 
   useEffect(() => {
     if (pathSurface !== 'hub') return
@@ -410,7 +417,7 @@ export function TimesheetsHub() {
         </div>
       </section>
 
-      {showDisabled && !showMine && !showTeam ? (
+      {showDisabled && !showMine && !showTeam && !overtimeAccess.showButton ? (
         <DisabledCard />
       ) : (
         <div className="grid g2">
@@ -441,6 +448,31 @@ export function TimesheetsHub() {
                 </span>
                 <span className="pill" data-hue="ts">
                   {runCopy.periodLine}
+                </span>
+              </div>
+            </button>
+          ) : null}
+          {overtimeAccess.showButton ? (
+            <button
+              type="button"
+              className="card pad click"
+              data-hue="ts"
+              onClick={() => router.push(OVERTIME_PATH)}
+              style={{ border: 0, textAlign: 'left' }}
+            >
+              <div className="row">
+                <span className="ico-chip lg">
+                  <CalendarDaysIcon className="h-7 w-7" />
+                </span>
+                <span className="grow">
+                  <b style={{ fontFamily: 'var(--head)', fontSize: 20 }}>{OVERTIME_HUB_LABEL}</b>
+                  <div className="muted">
+                    {overtimeAccess.mine && overtimeAccess.users
+                      ? 'Your PAYE overtime, and your team’s'
+                      : overtimeAccess.mine
+                        ? 'Your PAYE overtime'
+                        : 'Your team’s overtime, expenses and price work'}
+                  </div>
                 </span>
               </div>
             </button>

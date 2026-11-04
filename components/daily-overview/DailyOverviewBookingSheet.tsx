@@ -1,4 +1,5 @@
 'use client'
+import { OvertimeRateField } from '@/components/overtime/OvertimeRateField'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Modal } from '@/components/ui'
@@ -115,6 +116,14 @@ export function DailyOverviewBookingSheet({
   const [workStartTime, setWorkStartTime] = useState(row.workStartTime || DEFAULT_PAYROLL_POLICY.standardDayStart)
   const [workEndTime, setWorkEndTime] = useState(row.workEndTime || DEFAULT_PAYROLL_POLICY.standardDayEnd)
   const [breakRemoved, setBreakRemoved] = useState(false)
+  // Rulebook 1.29.0 §25: the labour booking's own overtime rate (`otMultiplierOverride`; null = the organisation's).
+  const storedRate = (() => {
+    const stored =
+      bookings.find((entry) => entry.id === row.bookingId)?.otMultiplierOverride ??
+      managerSiteBookings.find((entry) => entry.id === row.bookingId)?.otMultiplierOverride
+    return typeof stored === 'number' ? stored : null
+  })()
+  const [overtimeRate, setOvertimeRate] = useState<number | null>(storedRate)
   const hoursTouched = useRef(false)
   const leaveCheck = useLeaveConflictCheck(payroll)
   const leaveGate = useBookingConflictGate('Save')
@@ -367,9 +376,12 @@ export function DailyOverviewBookingSheet({
     try {
       const hours = hoursFields()
       if (row.kind === 'operative') {
-        await updateBooking(row.bookingId, hours)
+        await updateBooking(row.bookingId, { ...hours, ...(overtimeRate !== storedRate ? { otMultiplierOverride: overtimeRate } : {}) })
       } else {
-        await updateManagerSiteBooking(organization.id, row.bookingId, hours)
+        await updateManagerSiteBooking(organization.id, row.bookingId, {
+          ...hours,
+          ...(overtimeRate !== storedRate ? { otMultiplierOverride: overtimeRate } : {}),
+        })
       }
       onClose()
     } catch (err: unknown) {
@@ -503,6 +515,17 @@ export function DailyOverviewBookingSheet({
             }}
           />
           {!hoursValid ? <p className="muted small">Finish needs to be after the start.</p> : null}
+          {row.kind === 'operative' || row.kind === 'manager' ? (
+            <OvertimeRateField
+              dayKey={bookingDayKey(day)}
+              timeSlot="CUSTOM_HOURS"
+              workStartTime={workStartTime}
+              workEndTime={workEndTime}
+              isBreakRemoved={breakRemoved}
+              value={overtimeRate}
+              onChange={setOvertimeRate}
+            />
+          ) : null}
           <HoursBreakdownCard
             breakdown={breakdown}
             dayRows={weekendBreakdownForDates([day], workStartTime, workEndTime, breakRemoved, payroll)}

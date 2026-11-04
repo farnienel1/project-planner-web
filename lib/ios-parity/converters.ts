@@ -432,6 +432,8 @@ export function parseManagerSiteBooking(
     isBreakRemoved: row.isBreakRemoved,
     bookingGroupId: row.bookingGroupId,
     ...(row.jobCollection ? { jobCollection: row.jobCollection } : {}),
+    // Rulebook 1.29.0: the booking's own overtime rate (read only; saves never drop it — they are partial updates).
+    ...(row.otMultiplierOverride != null ? { otMultiplierOverride: row.otMultiplierOverride } : {}),
     createdAt: row.createdAtMs != null ? new Date(row.createdAtMs) : new Date(),
     updatedAt: row.updatedAtMs != null ? new Date(row.updatedAtMs) : new Date(),
     organizationId,
@@ -486,6 +488,13 @@ export function serializeManagerSiteBooking(
     payload.bookingGroupId = booking.bookingGroupId.trim()
   } else {
     payload.bookingGroupId = deleteField()
+  }
+  // Rulebook 1.29.0 §25: the booking's own overtime rate. A number is written, null removes it, undefined (not read
+  // or not edited) leaves the stored value alone.
+  if (typeof booking.otMultiplierOverride === 'number' && Number.isFinite(booking.otMultiplierOverride)) {
+    payload.otMultiplierOverride = booking.otMultiplierOverride
+  } else if (booking.otMultiplierOverride === null) {
+    payload.otMultiplierOverride = deleteField()
   }
   return payload
 }

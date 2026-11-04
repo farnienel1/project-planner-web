@@ -62,7 +62,7 @@ import {
   formatSubcontractorBookingLabel,
   resolveSubcontractorBookingPeople,
 } from '@/lib/subcontractors/bookingPeople'
-import { bookingJobLabel, weekdayPaidHours } from '@/lib/canonical'
+import { bookingJobLabel, weekdayPaidHours, weeklyReportPayeDay, weeklyReportPayeOvertime, type OvertimeBookingInput, type PayrollTimePolicyState } from '@/lib/canonical'
 
 export type WeeklyReportWarningRow = {
   status: string
@@ -195,7 +195,15 @@ export type WeeklyReportData = {
   expenseTotal: number
   paySummary: WeeklyReportPayPerson[]
   grandTotal: number
+  /**
+   * Rulebook 1.29.0 §7: PAYE people are not in the hours and pay rows; this section lists their overtime per job,
+   * always live (`weeklyReportPayeOvertime`). Hours only.
+   */
+  payeOvertimeRows: WeeklyReportPayeOvertimeRow[]
+  payeOvertimeTotal: number
 }
+
+export type WeeklyReportPayeOvertimeRow = { person: string; jobNumber: string; jobName: string; overtimeHours: number; label: string }
 
 export type SubcontractorBookingRow = {
   id: string
@@ -439,6 +447,8 @@ export function buildWeeklyReportData({
       continue
     }
     const { user, operative } = findUserAndOperative(users, operatives, { operativeId: booking.operativeId, aliases: userIdAliases })
+    // 1.29.0 §7: a PAYE person's day leaves the normal hours and pay rows (it is in the PAYE overtime section).
+    if (user && weeklyReportPayeDay(user, dayKeyInZone(new Date(booking.date), timeZone), timeZone)) continue
     addBookingPay(
       new Date(booking.date),
       String(booking.timeSlot),
@@ -467,6 +477,7 @@ export function buildWeeklyReportData({
     if (!booking.locationId) continue
     if (timesheetFeedCovers(timesheetWeeks, aliasIdsFor(booking.userId), booking.date, timeZone)) continue
     const { user, operative } = findUserAndOperative(users, operatives, { userId: booking.userId, aliases: userIdAliases })
+    if (user && weeklyReportPayeDay(user, dayKeyInZone(new Date(booking.date), timeZone), timeZone)) continue
     addBookingPay(
       new Date(booking.date),
       String(booking.timeSlot),
@@ -474,7 +485,8 @@ export function buildWeeklyReportData({
       booking.workEndTime,
       booking.isBreakRemoved,
       user,
-      operative
+      operative,
+      booking.otMultiplierOverride
     )
     const days = bookingDayUnits(
       String(booking.timeSlot),
@@ -483,14 +495,22 @@ export function buildWeeklyReportData({
       policyOn(new Date(booking.date)),
       new Date(booking.date),
       booking.isBreakRemoved,
-      null,
+      booking.otMultiplierOverride ?? null,
       timeZone
     )
     addProjectRow(booking.locationId, booking.userId, undefined, days)
   }
 
+  // Rulebook 1.29.0 §7: a PAYE person's day is in the PAYE overtime section only — never in the hours, pay or
+  // additional-schedule rows, whatever source (live booking or approved-timesheet feed) it comes from.
+  const payeOnDay = (userId: string | undefined, date: Date): boolean => {
+    const person = userId ? users.find((entry) => entry.id === userId) : undefined
+    return Boolean(person && weeklyReportPayeDay(person, dayKeyInZone(new Date(date), timeZone), timeZone))
+  }
+
   for (const { week, line } of timesheetLabourLines(timesheetWeeks, period.start, period.end, timeZone)) {
     if (line.isOvertime || !isProjectLocationKind(line.locationKind) || line.days <= 0.0001) continue
+    if (payeOnDay(week.userId, line.date)) continue
     const projectName = line.projectName || 'Unknown'
     const jobNumber = line.jobNumber || 'N/A'
     const matched = mergedWorks.find(
@@ -526,6 +546,7 @@ export function buildWeeklyReportData({
     if (booking.locationType === 'project' || booking.locationType === 'small_work') continue
     if (timesheetFeedCovers(timesheetWeeks, aliasIdsFor(booking.userId), booking.date, timeZone)) continue
     const linked = findUserAndOperative(users, operatives, { userId: booking.userId, aliases: userIdAliases })
+    if (linked.user && weeklyReportPayeDay(linked.user, dayKeyInZone(new Date(booking.date), timeZone), timeZone)) continue
     addBookingPay(
       new Date(booking.date),
       String(booking.timeSlot),
@@ -563,6 +584,7 @@ export function buildWeeklyReportData({
   }
   for (const { week, line } of timesheetLabourLines(timesheetWeeks, period.start, period.end, timeZone)) {
     if (line.isOvertime || !isAdditionalScheduleLocationKind(line.locationKind) || line.days <= 0.0001) continue
+    if (payeOnDay(week.userId, line.date)) continue
     managerScheduleRows.push({
       person: week.personName,
       role: week.role,
@@ -803,6 +825,8 @@ export function buildWeeklyReportData({
   for (const { week, line } of timesheetLabourLines(timesheetWeeks, period.start, period.end, timeZone)) {
     const weekUser = users.find((entry) => entry.id === week.userId)
     const isPaye = Boolean(weekUser && employmentTypeOnDay(weekUser, line.date, timeZone) === 'paye')
+    // 1.29.0 §7: PAYE days leave the pay rows (they are in the PAYE overtime section).
+    if (isPaye) continue
     addPaySlice(
       `user:${keptUserId(week.userId)}`,
       week.personName,
@@ -882,7 +906,71 @@ export function buildWeeklyReportData({
     projectGroups.reduce((sum, group) => sum + group.projectTotal, 0) * 100
   ) / 100
 
+  // Rulebook 1.29.0 §7: the PAYE overtime section, live from the bookings (labour and job-linked manager site).
+  const policyState: PayrollTimePolicyState = orgDetails?.payrollTimePolicyState ?? {
+    current: payroll ?? DEFAULT_PAYROLL_POLICY,
+    prior: orgDetails?.payrollTimePolicyPrior ?? null,
+    effectiveFrom: orgDetails?.payrollTimePolicyEffectiveFrom ?? null,
+    scheduled: orgDetails?.payrollTimePolicyScheduled ?? null,
+  }
+  const jobFor = (id: string | undefined) => (id ? projectsById.get(id) : undefined)
+  const overtimeBookings: OvertimeBookingInput[] = [
+    ...periodOperativeBookings.map((booking) => ({
+      id: booking.id,
+      collection: 'bookings',
+      personId: booking.operativeId,
+      dayKey: dayKeyInZone(new Date(booking.date), timeZone),
+      timeSlot: String(booking.timeSlot),
+      workStartTime: booking.workStartTime ?? null,
+      workEndTime: booking.workEndTime ?? null,
+      isBreakRemoved: booking.isBreakRemoved === true,
+      otMultiplierOverride: booking.otMultiplierOverride ?? null,
+      status: String(booking.status),
+      jobId: booking.projectId,
+      jobNumber: jobFor(booking.projectId)?.jobNumber ?? '',
+      jobName: jobFor(booking.projectId)?.siteName ?? '',
+    })),
+    ...periodManagerBookings
+      .filter((booking) => (booking.locationType === 'project' || booking.locationType === 'small_work') && booking.locationId)
+      .map((booking) => ({
+        id: booking.id,
+        collection: 'managerSiteBookings',
+        personId: booking.userId,
+        dayKey: dayKeyInZone(new Date(booking.date), timeZone),
+        timeSlot: String(booking.timeSlot),
+        workStartTime: booking.workStartTime ?? null,
+        workEndTime: booking.workEndTime ?? null,
+        isBreakRemoved: booking.isBreakRemoved === true,
+        otMultiplierOverride: booking.otMultiplierOverride ?? null,
+        jobId: booking.locationId ?? null,
+        jobNumber: jobFor(booking.locationId)?.jobNumber ?? '',
+        jobName: jobFor(booking.locationId)?.siteName ?? '',
+      })),
+  ]
+  const payeOvertimeRows: WeeklyReportPayeOvertimeRow[] = weeklyReportPayeOvertime({
+    people: users
+      .filter((user) => !isAnonymisedDeletedProfile(user))
+      .map((user) => {
+        const operative = findOperativeForUser(user, operatives)
+        return {
+          id: user.id,
+          name: resolveDisplayName(user, operative),
+          ids: [user.id, ...aliasIdsFor(user.id), ...(operative ? [operative.id] : [])],
+          employmentType: user.employmentType ?? null,
+          employmentTypeTransitionFrom: user.employmentTypeTransitionFrom ?? null,
+          employmentTypeEffectiveAt: user.employmentTypeEffectiveAt ?? null,
+        }
+      }),
+    bookings: overtimeBookings,
+    organization: policyState,
+    timeZone,
+    range: { start: dayKeyInZone(period.start, timeZone), end: dayKeyInZone(period.end, timeZone) },
+  }).map((row) => ({ person: row.name, jobNumber: row.jobNumber, jobName: row.jobName, overtimeHours: row.overtimeHours, label: row.label }))
+  const payeOvertimeTotal = Math.round(payeOvertimeRows.reduce((sum, row) => sum + row.overtimeHours, 0) * 100) / 100
+
   return {
+    payeOvertimeRows,
+    payeOvertimeTotal,
     organizationName,
     companyLogoURL,
     reportPeriod: period,

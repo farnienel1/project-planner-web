@@ -22,6 +22,8 @@ export interface ManagerSiteBooking {
   bookingGroupId?: string
   /** Rulebook 1.11.0: the job's collection for a job-linked booking (`jobCollection`). */
   jobCollection?: 'projects' | 'smallWorks'
+  /** Rulebook 1.29.0: the booking's own overtime rate (1–3; missing = the organisation's). */
+  otMultiplierOverride?: number | null
   createdAt: Date
   updatedAt: Date
   organizationId?: string

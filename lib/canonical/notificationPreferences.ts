@@ -45,6 +45,7 @@ export const NOTIFICATION_PREFERENCE_KEYS = [
   'timesheetSubmissionReminder',
   'variations',
   'companyActivity',
+  'overtime',
 ] as const
 
 export type NotificationPreferenceKey = (typeof NOTIFICATION_PREFERENCE_KEYS)[number]
@@ -73,6 +74,7 @@ export const DEFAULT_USER_NOTIFICATION_PREFERENCES: UserNotificationPreferences 
   timesheetSubmissionReminder: true,
   variations: true,
   companyActivity: true,
+  overtime: true,
 }
 
 /**
@@ -121,6 +123,10 @@ const TYPE_TO_PREFERENCE: Record<string, NotificationPreferenceKey> = {
   variation_added: 'variations',
   variation_from_tracker: 'variations',
   variation_numbers_updated: 'variations',
+  // 1.29.0: PAYE overtime (§25).
+  overtime_request_submitted: 'overtime',
+  overtime_request_reviewed: 'overtime',
+  booking_hours_changed_by_owner: 'overtime',
 }
 
 export type NotificationWorkCatalogue = 'projects' | 'smallWorks'
@@ -151,6 +157,8 @@ export type NotificationDestinationKind =
   | 'qualifications'
   | 'notifications'
   | 'home'
+  | 'overtimeMine'
+  | 'overtimeUser'
 
 export type NotificationDestination = {
   kind: NotificationDestinationKind
@@ -278,6 +286,7 @@ const PREFERENCE_LABELS: Record<NotificationPreferenceKey, string> = {
   timesheetSubmissionReminder: 'Timesheet submission reminder',
   variations: 'Variations',
   companyActivity: 'Company activity',
+  overtime: 'Overtime',
 }
 
 /**
@@ -310,6 +319,7 @@ export function notificationPreferenceCopy(
     timesheetSubmissionReminder: 'Reminder to submit before the payment-run deadline.',
     variations: 'When a variation is added to a job you manage, or variation numbers are updated.',
     companyActivity: 'People, clients, jobs added and warnings removed.',
+    overtime: 'Overtime requests and updates, and hours changed on bookings you manage.',
   }
   return { label: PREFERENCE_LABELS[key], description: descriptions[key] }
 }
@@ -433,6 +443,9 @@ export const DEVICE_PUSH_NOTIFICATION_TYPES = [
   'small_works_created',
   TIMESHEET_SUBMISSION_NOTICE_TYPE,
   'push_test',
+  // 1.29.0 (§25): booking_hours_changed_by_owner is inbox only.
+  'overtime_request_submitted',
+  'overtime_request_reviewed',
 ] as const
 
 export type DevicePushNotificationType = (typeof DEVICE_PUSH_NOTIFICATION_TYPES)[number]
@@ -684,6 +697,14 @@ export function notificationDestination(input: NotificationDestinationInput): No
       return { kind: 'annualLeave' }
     case TIMESHEET_SUBMISSION_NOTICE_TYPE:
       return { kind: 'timesheetMine', dayKey }
+    // 1.29.0 (§25): a request opens Users' → that person → Overtime (deepLinkUserId = the requester); the update opens
+    // the person's own Overtime page; hours changed by the person open the booking day.
+    case 'overtime_request_submitted':
+      return userId ? { kind: 'overtimeUser', userId, relatedId } : { kind: 'notifications' }
+    case 'overtime_request_reviewed':
+      return { kind: 'overtimeMine', relatedId }
+    case 'booking_hours_changed_by_owner':
+      return dayKey ? { kind: 'dailyOverviewDay', dayKey, relatedId } : { kind: 'notifications' }
     default:
       return { kind: 'notifications' }
   }

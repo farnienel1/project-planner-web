@@ -60,6 +60,9 @@ export const EXPORT_FILES = {
   dismissedWarnings: { file: 'dismissed-warnings.csv', title: 'Dismissed warnings', description: 'Dismissed warnings (dismissedWarnings).' },
   settings: { file: 'settings.csv', title: 'Other settings', description: 'Other company settings documents (job types, trade types and similar).' },
   notifications: { file: 'notifications.csv', title: 'Notifications', description: 'Inbox notifications of everyone in the organisation (only when chosen).' },
+  overtimeRequests: { file: 'overtime-requests.csv', title: 'Overtime requests', description: 'PAYE overtime requests and their decisions (overtimeRequests, rulebook 1.29.0).' },
+  overtimeReviews: { file: 'overtime-reviews.csv', title: 'Overtime reviews', description: 'Approved PAYE overtime lines, one per person and booking (overtimeReviews).' },
+  overtimeReports: { file: 'overtime-reports.csv', title: 'Overtime reports', description: 'Saved PAYE overtime report copies (overtimeReports), as sent.' },
 } as const satisfies Record<string, ExportFile>
 
 export type ExportFileKey = keyof typeof EXPORT_FILES
@@ -119,6 +122,9 @@ const FILE_FOR_COLLECTION: Record<string, ExportFileKey> = {
   acceptedBookingClashes: 'acceptedClashes',
   settings: 'settings',
   notifications: 'notifications',
+  overtimeRequests: 'overtimeRequests',
+  overtimeReviews: 'overtimeReviews',
+  overtimeReports: 'overtimeReports',
 }
 
 const ADDITIONAL_COLLECTIONS = [
