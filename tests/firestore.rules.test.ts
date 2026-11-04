@@ -2948,6 +2948,7 @@ async function seed112() {
     })
     await setDoc(doc(db, 'invitations', 'h-op-invite'), {
       organizationId: ORG_H, email: 'op-later@test.com', role: 'operative', permissions: { operativeMode: true, siteAudit: true }, isUsed: false,
+      invitedBy: H_MGR_OPS,
     })
     await setDoc(doc(db, 'accountConfirmations', 'h-confirm'), { userId: 'h-founder', email: 'h-founder@test.com', organizationId: ORG_H2, isUsed: false })
   })
@@ -2998,7 +2999,7 @@ test('1.12.0 B2: a manager with operatives access invites operatives only; admin
   await assertSucceeds(setDoc(doc(mgr, 'invitations', 'h-op-ok'), {
     organizationId: ORG_H, email: 'new-op@test.com', role: 'operative',
     permissions: { operativeMode: true, siteAudit: true, projects: true, smallWorks: true, adminAccess: false, manager: false, operatives: false },
-    isUsed: false,
+    isUsed: false, invitedBy: H_MGR_OPS,
   }))
   await assertSucceeds(updateDoc(doc(mgr, 'invitations', 'h-op-invite'), { firstName: 'Olly' }))
   await assertSucceeds(deleteDoc(doc(mgr, 'invitations', 'h-op-ok')))
@@ -4711,4 +4712,83 @@ test('1.31.1 S4: an operatives manager still creates an operatives row linked to
   await assertSucceedsWithinBudget(setDoc(doc(mgr, 'organizations', ORG_A, 'operatives', 'row-s4-create'), row(OP_1311)))
   await assertLogicalDeny(setDoc(doc(mgr, 'organizations', ORG_A, 'operatives', 'row-s4-create-admin'), row(ADMIN_1311)))
   await assertLogicalDeny(setDoc(doc(mgr, 'organizations', ORG_A, 'operatives', 'row-s4-create-self'), row(OPS_MGR_1311)))
+})
+
+// ── Rulebook 1.31.1, fourth review ────────────────────────────────────────────────────────────────────────────────
+test('1.31.1 B-1: an operatives manager sees, deletes and creates only their own operative invitations', async () => {
+  await seed1311People()
+  const adminEmail = 'b1-admin-invitee@test.com'
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    await setDoc(doc(db, 'invitations', 'b1-admin-inv'), {
+      organizationId: ORG_A, email: adminEmail, role: 'admin', permissions: { adminAccess: true }, isUsed: false, invitedBy: ADMIN_A,
+    })
+    await setDoc(doc(db, 'invitations', 'b1-own-inv'), {
+      organizationId: ORG_A, email: 'b1-own@test.com', role: 'operative', permissions: { operativeMode: true }, isUsed: false, invitedBy: OPS_MGR_1311,
+    })
+    await setDoc(doc(db, 'users', 'B1-ADMIN-PLACEHOLDER'), {
+      email: adminEmail, organizationId: ORG_A, role: 'admin', adminAccess: true, passwordSet: false, isActive: true,
+    })
+    await setDoc(doc(db, 'organizations', ORG_A, 'userEmails', adminEmail), { userId: 'B1-ADMIN-PLACEHOLDER' })
+  })
+  const mgr = authDb(OPS_MGR_1311, 'ops-mgr-1311@test.com')
+  const invites = collection(mgr, 'invitations')
+  // Listing the organisation's invitations would hand out an admin invitation's secret id.
+  await assertLogicalDeny(getDocs(query(invites, where('organizationId', '==', ORG_A))))
+  const own = await assertSucceeds(getDocs(query(invites, where('organizationId', '==', ORG_A), where('invitedBy', '==', OPS_MGR_1311))))
+  assert.deepEqual(own.docs.map((d) => d.id), ['b1-own-inv'])
+  // Web deleteUser's cleanup query for an operatives manager (organisation + email + invitedBy).
+  await assertSucceeds(getDocs(query(invites, where('organizationId', '==', ORG_A), where('email', '==', 'b1-own@test.com'), where('invitedBy', '==', OPS_MGR_1311))))
+  await assertLogicalDeny(deleteDoc(doc(mgr, 'invitations', 'b1-admin-inv')))
+  await assertSucceeds(deleteDoc(doc(mgr, 'invitations', 'b1-own-inv')))
+  const opInvite = (email: string, invitedBy: string) => ({
+    organizationId: ORG_A, email, role: 'operative', permissions: { operativeMode: true }, isUsed: false, invitedBy,
+  })
+  // An operative invitation minted for the admin invitee's email, or in someone else's name, is refused.
+  await assertLogicalDeny(setDoc(doc(mgr, 'invitations', 'b1-mint'), opInvite(adminEmail, OPS_MGR_1311)))
+  await assertLogicalDeny(setDoc(doc(mgr, 'invitations', 'b1-other-name'), opInvite('b1-new@test.com', ADMIN_A)))
+  await assertSucceedsWithinBudget(setDoc(doc(mgr, 'invitations', 'b1-new'), opInvite('b1-new@test.com', OPS_MGR_1311)))
+  // Admins still list every invitation of their organisation.
+  await assertSucceeds(getDocs(query(collection(authDb(ADMIN_A, 'admin-a@test.com'), 'invitations'), where('organizationId', '==', ORG_A))))
+})
+
+test('1.31.1 B-1: an operative invitation never copies an admin or manager placeholder; a membership takes the invitation role', async () => {
+  const email = 'b1-level@test.com'
+  const evil = 'b1-level-evil'
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    await setDoc(doc(db, 'users', 'B1-LEVEL-PH'), {
+      email, organizationId: ORG_A, firstName: 'Lev', role: 'admin', adminAccess: true, isSuperAdmin: false, passwordSet: false, isActive: true,
+      permissions: { adminAccess: true },
+    })
+    await setDoc(doc(db, 'organizations', ORG_A, 'userEmails', email), { userId: 'B1-LEVEL-PH' })
+    await setDoc(doc(db, 'invitations', 'b1-level-op'), {
+      organizationId: ORG_A, email, role: 'operative', permissions: { operativeMode: true }, isUsed: false, invitedBy: 'someone',
+    })
+  })
+  const db = authDb(evil, email)
+  const copy = {
+    email, organizationId: ORG_A, firstName: 'Lev', role: 'admin', adminAccess: true, isSuperAdmin: false, isActive: true,
+    permissions: { adminAccess: true }, passwordSet: true, formerUserIds: ['B1-LEVEL-PH'], ...ageFields(),
+  }
+  await assertLogicalDeny(acceptInviteBatch(db, evil, copy, 'b1-level-op'))
+  const managerCopy = { ...copy, role: 'manager', adminAccess: false, manager: true, permissions: { manager: true } }
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'users', 'B1-LEVEL-PH'), { ...managerCopy, passwordSet: false, formerUserIds: [] })
+  })
+  await assertLogicalDeny(acceptInviteBatch(db, evil, managerCopy, 'b1-level-op'))
+  // The membership route takes exactly the invitation's role.
+  const membership = (role: string) => ({
+    organizationId: ORG_A, role, status: 'active', isSuperAdmin: false, accountActive: true, permissions: { operativeMode: true },
+    invitationId: 'b1-level-op', invitedBy: 'someone',
+  })
+  const batch = (role: string) => {
+    const b = writeBatch(db)
+    b.set(doc(db, 'users', evil, 'orgMemberships', ORG_A), membership(role))
+    b.update(doc(db, 'invitations', 'b1-level-op'), { isUsed: true, usedAt: Timestamp.now() })
+    return b.commit()
+  }
+  await assertLogicalDeny(batch('admin'))
+  await assertLogicalDeny(batch('manager'))
+  await assertSucceeds(batch('operative'))
 })

@@ -463,16 +463,22 @@ export const useUserStore = create<UserStoreState>(() => ({
         if (parsed.ok) managerSiteBookings.push({ id: row.id, userId: parsed.booking.userId, dateMs: parsed.booking.dateMs })
       }
     }
-    const invitations = email
-      ? ((await getDocs(query(collection(db, 'invitations'), where('organizationId', '==', orgId), where('email', '==', email))).catch(() => null))
-          ?.docs.map((row) => ({ id: row.id, email: String(row.data().email || '') })) ?? [])
-      : []
-    const orgData = useOrganizationDocumentStore.getState().data
-    const orgMembers = orgData && typeof orgData.members === 'object' && orgData.members ? (orgData.members as Record<string, unknown>) : null
     const actorManagesOperatives = Boolean(
       actor && !(actor.isSuperAdmin || actor.permissions.adminAccess || actor.role === 'admin') &&
         canManageOperatives({ ...actor.permissions, role: actor.role })
     )
+    // Rulebook 1.31.1 (fourth review, B-1): an operatives manager lists only the invitations they sent, so their query
+    // names `invitedBy` (the rules refuse any other); an admin's lists every invitation on the email in the organisation.
+    const invitationActorId = auth?.currentUser?.uid || actor?.id || ''
+    const invitations = email
+      ? ((await getDocs(
+          actorManagesOperatives
+            ? query(collection(db, 'invitations'), where('organizationId', '==', orgId), where('email', '==', email), where('invitedBy', '==', invitationActorId))
+            : query(collection(db, 'invitations'), where('organizationId', '==', orgId), where('email', '==', email))
+        ).catch(() => null))?.docs.map((row) => ({ id: row.id, email: String(row.data().email || '') })) ?? [])
+      : []
+    const orgData = useOrganizationDocumentStore.getState().data
+    const orgMembers = orgData && typeof orgData.members === 'object' && orgData.members ? (orgData.members as Record<string, unknown>) : null
     const steps = userDeleteWrites({
       actorManagesOperatives,
       // 1.31.0: remove `members.{uid}` only when it is listed (an operatives manager may remove only a listed entry).
