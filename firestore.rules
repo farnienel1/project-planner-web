@@ -889,13 +889,18 @@ service cloud.firestore {
           isManagerWithOperativesAccess() && userOrgIdMatchesPath(invitationOrgId()) &&
           callerHomeData().get('isActive', true) != false;
       }
+      function invitationSentByCaller(d) {
+        let by = d.get('invitedBy', '');
+        let email = request.auth.token.get('email', null);
+        return by == request.auth.uid || (email is string && (by == email || by == email.lower()));
+      }
       function invitationOpsManagerWrite() {
         let next = request.resource.data;
-        return request.method in ['list', 'delete'] ? resource.data.get('invitedBy', '') == request.auth.uid : (
-          (invitationIsOperativeOnly(next) && next.get('invitedBy', '') == request.auth.uid) ? (
+        return request.method in ['list', 'delete'] ? invitationSentByCaller(resource.data) : (
+          (invitationIsOperativeOnly(next) && invitationSentByCaller(next)) ? (
             request.method == 'create'
               ? opsManagerEmailFree(invitationOrgId(), next.get('email', null))
-              : (resource.data.get('invitedBy', '') == request.auth.uid && invitationIsOperativeOnly(resource.data) &&
+              : (invitationSentByCaller(resource.data) && invitationIsOperativeOnly(resource.data) &&
                  (next.get('email', '') == resource.data.get('email', '') || opsManagerEmailFree(invitationOrgId(), next.get('email', null))))
           ) : false);
       }

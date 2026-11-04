@@ -4763,6 +4763,10 @@ test('1.31.1 B-1: an operatives manager sees, deletes and creates only their own
   await assertLogicalDeny(setDoc(doc(mgr, 'invitations', 'b1-mint'), opInvite(adminEmail, OPS_MGR_1311)))
   await assertLogicalDeny(setDoc(doc(mgr, 'invitations', 'b1-other-name'), opInvite('b1-new@test.com', ADMIN_A)))
   await assertSucceedsWithinBudget(setDoc(doc(mgr, 'invitations', 'b1-new'), opInvite('b1-new@test.com', OPS_MGR_1311)))
+  // iOS writes invitedBy as the sender's email: that is the caller too, for create and list.
+  await assertSucceedsWithinBudget(setDoc(doc(mgr, 'invitations', 'b1-new-ios'), opInvite('b1-new-ios@test.com', 'ops-mgr-1311@test.com')))
+  await assertSucceeds(getDocs(query(invites, where('organizationId', '==', ORG_A), where('invitedBy', '==', 'ops-mgr-1311@test.com'))))
+  await assertLogicalDeny(getDocs(query(invites, where('organizationId', '==', ORG_A), where('invitedBy', '==', 'admin-a@test.com'))))
   // Admins still list every invitation of their organisation.
   await assertSucceeds(getDocs(query(collection(authDb(ADMIN_A, 'admin-a@test.com'), 'invitations'), where('organizationId', '==', ORG_A))))
 })
