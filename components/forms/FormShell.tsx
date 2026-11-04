@@ -53,16 +53,19 @@ export function FormActions({
   saving,
   submitLabel,
   cancelHref,
+  disabled = false,
 }: {
   saving: boolean
   submitLabel: string
   cancelHref: string
+  /** Disables submit without the "Saving…" label (e.g. while the form's starting values reload). */
+  disabled?: boolean
 }) {
   return (
     <div className="flex flex-wrap gap-3 pt-4">
       <button
         type="submit"
-        disabled={saving}
+        disabled={saving || disabled}
         className="btn primary disabled:opacity-50"
       >
         {saving ? 'Saving…' : submitLabel}
