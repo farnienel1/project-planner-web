@@ -4254,6 +4254,7 @@ const OPS_MGR_1311 = 'ops-mgr-1311'
 const OP_1311 = 'op-1311'
 const OP2_1311 = 'op2-1311'
 const MGR_1311 = 'mgr-plain-1311'
+const ADMIN_1311 = 'admin-1311'
 
 async function seed1311People() {
   await env.withSecurityRulesDisabled(async (ctx) => {
@@ -4275,6 +4276,10 @@ async function seed1311People() {
     await setDoc(doc(db, 'users', OP2_1311), {
       email: 'op2-1311@test.com', organizationId: ORG_A, role: 'operative', operativeMode: true,
       firstName: 'Otto', lastName: 'Two',
+    })
+    await setDoc(doc(db, 'users', ADMIN_1311), {
+      email: 'admin-1311@test.com', organizationId: ORG_A, role: 'admin', adminAccess: true,
+      annualLeaveSelfBook: true, timesheetSelfSign: true, assignedManagerUserId: ADMIN_A,
     })
     await setDoc(doc(db, 'organizations', ORG_A, 'materials', 'legacy-name-1311'), { addedBy: 'opal one', name: 'Sand' })
     await setDoc(doc(db, 'organizations', ORG_A, 'materials', 'legacy-last-1311'), { addedBy: 'Otto Two', name: 'Cement' })
@@ -4336,6 +4341,12 @@ test('1.31.1: an operative edits only their own users document, never another pe
   await assertLogicalDeny(updateDoc(doc(op, 'users', OP_1311), { isActive: false, firstName: 'x', dayRate: 1, role: 'admin' }))
   await assertLogicalDeny(updateDoc(doc(op, 'users', OP2_1311), { mobileNumber: '1' }))
   await assertLogicalDeny(updateDoc(doc(op, 'users', OP2_1311), { firstName: 'x', dayRate: 1, isActive: false, manager: true }))
+  // Nobody switches their own self-manage toggles, on or off (1.28.0; before 1.31.1 this was refused only by the
+  // expression limit, and the rules' own logic let an admin switch theirs off).
+  const self = authDb(ADMIN_1311, 'admin-1311@test.com')
+  await assertLogicalDeny(updateDoc(doc(self, 'users', ADMIN_1311), { timesheetSelfSign: false }))
+  await assertLogicalDeny(updateDoc(doc(self, 'users', ADMIN_1311), { annualLeaveSelfBook: false, 'permissions.annualLeaveSelfBook': false }))
+  await assertSucceedsWithinBudget(updateDoc(doc(self, 'users', ADMIN_1311), { mobileNumber: '07700 900001' }))
   // An admin edits anyone in their company; only the Super Admin changes another admin's Super Admin flag.
   const admin = authDb(ADMIN_A, 'admin-a@test.com')
   await assertSucceedsWithinBudget(updateDoc(doc(admin, 'users', OP_1311), { firstName: 'Opal', dayRate: 160, role: 'manager', manager: true, operativeMode: false }))
