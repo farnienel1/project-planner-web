@@ -1,0 +1,32 @@
+name: PR checklist
+
+# Owner safeguard B (docs/OWNER_DECISIONS.md, 4 Nov): every PR body carries the
+# sections of .github/pull_request_template.md. The body is passed to the checker
+# through an environment variable only — never interpolated into a shell line —
+# so a PR description cannot inject commands.
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  pr-body:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Checker tests
+        run: node --test scripts/check-pr-body.test.mjs
+      - name: PR body has the required sections
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/check-pr-body.mjs
