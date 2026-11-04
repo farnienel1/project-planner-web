@@ -186,36 +186,6 @@
     "reason": "Platform-owner analytics date ranges (all organisations), not an organisation business day."
   },
   {
-    "path": "lib/book-labour/candidates.ts",
-    "pattern": "europe-london-literal",
-    "count": 1,
-    "reason": "FU-1: Book labour's own unbooked calculation is being replaced by unbookedLabourRowsOnDay in a separate PR; this file is out of scope here."
-  },
-  {
-    "path": "lib/book-labour/candidates.ts",
-    "pattern": "londonIsoWeekday",
-    "count": 1,
-    "reason": "FU-1: Book labour's own unbooked calculation is being replaced by unbookedLabourRowsOnDay in a separate PR; this file is out of scope here."
-  },
-  {
-    "path": "lib/book-labour/candidates.ts",
-    "pattern": "londonMidnight",
-    "count": 1,
-    "reason": "FU-1: Book labour's own unbooked calculation is being replaced by unbookedLabourRowsOnDay in a separate PR; this file is out of scope here."
-  },
-  {
-    "path": "lib/book-labour/candidates.ts",
-    "pattern": "single-id-person-match",
-    "count": 1,
-    "reason": "FU-1: Book labour's own unbooked calculation is being replaced by unbookedLabourRowsOnDay in a separate PR; this file is out of scope here."
-  },
-  {
-    "path": "lib/book-labour/candidates.ts",
-    "pattern": "weekday-cutoff",
-    "count": 1,
-    "reason": "FU-1: Book labour's own unbooked calculation is being replaced by unbookedLabourRowsOnDay in a separate PR; this file is out of scope here."
-  },
-  {
     "path": "lib/healthSafety/hsTalks.ts",
     "pattern": "getHours",
     "count": 1,
