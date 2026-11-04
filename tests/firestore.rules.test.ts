@@ -4367,3 +4367,58 @@ test('1.31.1: legacy materials are claimed by name or email; owned materials are
   // The owner edits their own row.
   await assertSucceedsWithinBudget(updateDoc(mat(op, 'owned-1311'), { name: 'Lime 2' }))
 })
+
+// Rulebook 1.31.1 (second review): a privilege flag counts when it is on in EITHER place (top level or
+// permissions.{key}), as adminLikeUser reads it. An operative written by web (top-level flags false) must not gain one
+// through the permissions map, dotted or whole.
+const OPF_1311 = 'op-flags-1311'
+const PRIVILEGE_KEYS_1311 = ['adminAccess', 'manager', 'operatives', 'isSuperAdmin', 'annualLeaveSelfBook', 'timesheetSelfSign']
+
+async function seedFlagsOperative1311() {
+  await seed1311People()
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'users', OPF_1311), {
+      email: 'op-flags-1311@test.com', organizationId: ORG_A, role: 'operative', operativeMode: true,
+      adminAccess: false, isSuperAdmin: false, manager: false, operatives: false, annualLeaveSelfBook: false, timesheetSelfSign: false,
+      firstName: 'Fay', surname: 'Flags', assignedManagerUserId: OPS_MGR_1311,
+      permissions: { operativeMode: true, adminAccess: false, manager: false, operatives: false, materials: false },
+    })
+  })
+}
+
+test('1.31.1: an operatives manager never sets a privilege flag through permissions (dotted or whole map)', async () => {
+  await seedFlagsOperative1311()
+  const mgr = authDb(OPS_MGR_1311, 'ops-mgr-1311@test.com')
+  const ref = doc(mgr, 'users', OPF_1311)
+  for (const key of PRIVILEGE_KEYS_1311) {
+    await assertLogicalDeny(updateDoc(ref, { [`permissions.${key}`]: true }))
+    await assertLogicalDeny(updateDoc(ref, { permissions: { operativeMode: true, materials: false, [key]: true } }))
+  }
+  // The operative toggles still change.
+  await assertSucceedsWithinBudget(updateDoc(ref, { 'permissions.materials': true, materials: true }))
+})
+
+test('1.31.1: an operatives manager creates operatives only with no privilege flag in either place', async () => {
+  await seed1311People()
+  const mgr = authDb(OPS_MGR_1311, 'ops-mgr-1311@test.com')
+  const base = { organizationId: ORG_A, role: 'operative', operativeMode: true, firstName: 'New', surname: 'Op' }
+  await assertLogicalDeny(setDoc(doc(mgr, 'users', 'new-op-1311-a'), { ...base, email: 'n1@test.com', adminAccess: false, permissions: { operativeMode: true, adminAccess: true } }))
+  await assertLogicalDeny(setDoc(doc(mgr, 'users', 'new-op-1311-b'), { ...base, email: 'n2@test.com', manager: true, operatives: true }))
+  await assertLogicalDeny(setDoc(doc(mgr, 'users', 'new-op-1311-c'), { ...base, email: 'n3@test.com', permissions: { operativeMode: true, isSuperAdmin: true } }))
+  await assertLogicalDeny(setDoc(doc(mgr, 'users', 'new-op-1311-d'), { ...base, email: 'n4@test.com', annualLeaveSelfBook: true }))
+  await assertSucceedsWithinBudget(setDoc(doc(mgr, 'users', 'new-op-1311-e'), { ...base, email: 'n5@test.com', permissions: { operativeMode: true, materials: true } }))
+})
+
+test('1.31.1: nobody adds their own alias ids or a privilege through permissions; an admin keeps their own identity links', async () => {
+  await seedFlagsOperative1311()
+  const self = authDb(ADMIN_1311, 'admin-1311@test.com')
+  await assertLogicalDeny(updateDoc(doc(self, 'users', ADMIN_1311), { formerUserIds: [OP_1311] }))
+  await assertLogicalDeny(updateDoc(doc(self, 'users', ADMIN_1311), { sameEmailUserIds: [OP_1311] }))
+  await assertLogicalDeny(updateDoc(doc(self, 'users', ADMIN_1311), { email: 'someone-else@test.com' }))
+  const op = authDb(OPF_1311, 'op-flags-1311@test.com')
+  for (const key of PRIVILEGE_KEYS_1311) {
+    await assertLogicalDeny(updateDoc(doc(op, 'users', OPF_1311), { [`permissions.${key}`]: true }))
+  }
+  // Another admin still sets alias ids on someone else.
+  await assertSucceedsWithinBudget(updateDoc(doc(authDb(ADMIN_A, 'admin-a@test.com'), 'users', OP_1311), { formerUserIds: ['old-op-1311'] }))
+})

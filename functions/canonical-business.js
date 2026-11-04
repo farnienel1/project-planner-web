@@ -10455,7 +10455,7 @@ var ProjectPlannerCanonical = (() => {
   function rulebookStamp() {
     return {
       version: true ? "1.31.1" : "",
-      sha256: true ? "b76670c5c05fe15aa70ebb050852abe1c4899e958695ed9b18ac354413ce1ae3" : ""
+      sha256: true ? "c1d012ebe3f54616e0b89de8f2b7ee57f1b15f47630360429bfa9f4c0bcbd810" : ""
     };
   }
 

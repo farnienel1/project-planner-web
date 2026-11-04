@@ -110,32 +110,42 @@ service cloud.firestore {
     return data.get(key, null) == null ? truthyBool(permissionValue(data, key)) : truthyBool(data.get(key, false));
   }
 
+  function privilegeFlag(d, key) {
+    return truthyBool(d.get(key, false)) ||
+      (d.get('permissions', {}) is map && truthyBool(d.get('permissions', {}).get(key, false)));
+  }
+  function noPrivilegeFlags(d) {
+    return !(d.get('role', '') in ['admin', 'manager']) &&
+      !privilegeFlag(d, 'isSuperAdmin') && !privilegeFlag(d, 'adminAccess') && !privilegeFlag(d, 'manager') &&
+      !privilegeFlag(d, 'operatives') && !privilegeFlag(d, 'annualLeaveSelfBook') && !privilegeFlag(d, 'timesheetSelfSign');
+  }
+
   function isOperativeProfile(data) {
     return staffFlag(data, 'operativeMode') || data.get('role', '') == 'operative';
   }
 
   function noMorePrivilegeThan(next, source) {
-    return (!staffFlag(next, 'isSuperAdmin') || staffFlag(source, 'isSuperAdmin')) &&
-           (!staffFlag(next, 'adminAccess') || staffFlag(source, 'adminAccess')) &&
-           (!staffFlag(next, 'manager') || staffFlag(source, 'manager')) &&
-           (!staffFlag(next, 'operatives') || staffFlag(source, 'operatives')) &&
-           (!staffFlag(next, 'annualLeaveSelfBook') || staffFlag(source, 'annualLeaveSelfBook')) &&
-           (!staffFlag(next, 'timesheetSelfSign') || staffFlag(source, 'timesheetSelfSign')) &&
+    return (!privilegeFlag(next, 'isSuperAdmin') || privilegeFlag(source, 'isSuperAdmin')) &&
+           (!privilegeFlag(next, 'adminAccess') || privilegeFlag(source, 'adminAccess')) &&
+           (!privilegeFlag(next, 'manager') || privilegeFlag(source, 'manager')) &&
+           (!privilegeFlag(next, 'operatives') || privilegeFlag(source, 'operatives')) &&
+           (!privilegeFlag(next, 'annualLeaveSelfBook') || privilegeFlag(source, 'annualLeaveSelfBook')) &&
+           (!privilegeFlag(next, 'timesheetSelfSign') || privilegeFlag(source, 'timesheetSelfSign')) &&
            (!(next.get('role', '') in ['admin', 'manager']) || next.get('role', '') == source.get('role', '')) &&
            (!isOperativeProfile(source) || isOperativeProfile(next));
   }
 
   function selfCreateSelfManageOff(organizationId) {
-    return (!staffFlag(request.resource.data, 'annualLeaveSelfBook') &&
-            !staffFlag(request.resource.data, 'timesheetSelfSign')) ||
+    return (!privilegeFlag(request.resource.data, 'annualLeaveSelfBook') &&
+            !privilegeFlag(request.resource.data, 'timesheetSelfSign')) ||
            orgCreatorIs(organizationId, request.auth.uid);
   }
 
   function raisesPrivileges(next) {
-    return staffFlag(next, 'isSuperAdmin') ||
-           staffFlag(next, 'adminAccess') ||
-           staffFlag(next, 'manager') ||
-           staffFlag(next, 'operatives') ||
+    return privilegeFlag(next, 'isSuperAdmin') ||
+           privilegeFlag(next, 'adminAccess') ||
+           privilegeFlag(next, 'manager') ||
+           privilegeFlag(next, 'operatives') ||
            next.get('role', '') in ['admin', 'manager'];
   }
 
@@ -451,7 +461,7 @@ service cloud.firestore {
   }
 
   function managerCanCreateOperativeUser() {
-    return isManagerWithOperativesAccess() &&
+    return isManagerWithOperativesAccess() ? (
            'organizationId' in request.resource.data &&
            'organizationId' in get(/databases/(default)/documents/users/$(request.auth.uid)).data &&
            orgIdsMatch(
@@ -462,8 +472,7 @@ service cloud.firestore {
              ('operativeMode' in request.resource.data && truthyBool(request.resource.data.operativeMode)) ||
              ('role' in request.resource.data && request.resource.data.role == 'operative')
            ) &&
-           !('adminAccess' in request.resource.data && truthyBool(request.resource.data.adminAccess)) &&
-           !('isSuperAdmin' in request.resource.data && truthyBool(request.resource.data.isSuperAdmin));
+           noPrivilegeFlags(request.resource.data)) : false;
   }
 
   function isPlatformOwner() {
@@ -501,7 +510,6 @@ service cloud.firestore {
             orgIdsMatch(me.organizationId, resource.data.organizationId) &&
             operativeTarget(resource.data)) ? (
       request.resource.data.diff(resource.data).affectedKeys().hasAny([
-        'role', 'adminAccess', 'isSuperAdmin', 'manager', 'operatives', 'annualLeaveSelfBook', 'timesheetSelfSign',
         'email', 'organizationId', 'formerUserIds', 'sameEmailUserIds'
       ]) ? false : (
       request.resource.data.diff(resource.data).changedKeys().hasOnly([
@@ -527,16 +535,7 @@ service cloud.firestore {
   function plainOperative(d) {
     let p = d.get('permissions', {}) is map ? d.get('permissions', {}) : {};
     let om = d.get('operativeMode', null) == null ? p.get('operativeMode', null) : d.get('operativeMode', false);
-    let sa = d.get('isSuperAdmin', null) == null ? p.get('isSuperAdmin', null) : d.get('isSuperAdmin', false);
-    let aa = d.get('adminAccess', null) == null ? p.get('adminAccess', null) : d.get('adminAccess', false);
-    let mg = d.get('manager', null) == null ? p.get('manager', null) : d.get('manager', false);
-    let ops = d.get('operatives', null) == null ? p.get('operatives', null) : d.get('operatives', false);
-    let lv = d.get('annualLeaveSelfBook', null) == null ? p.get('annualLeaveSelfBook', null) : d.get('annualLeaveSelfBook', false);
-    let ts = d.get('timesheetSelfSign', null) == null ? p.get('timesheetSelfSign', null) : d.get('timesheetSelfSign', false);
-    let role = d.get('role', '');
-    return (om == true || om == 1 || role == 'operative') &&
-      !(sa == true || sa == 1) && !(aa == true || aa == 1) && !(mg == true || mg == 1) && !(ops == true || ops == 1) &&
-      !(role in ['admin', 'manager']) && !(lv == true || lv == 1) && !(ts == true || ts == 1);
+    return (om == true || om == 1 || d.get('role', '') == 'operative') && noPrivilegeFlags(d);
   }
 
   function alreadyPrivilegedAdmin(data) {
@@ -558,8 +557,7 @@ service cloud.firestore {
        ('role' in resource.data && request.resource.data.role == resource.data.role) ||
        (admin && request.resource.data.role == 'admin')) ? (
       (!('adminAccess' in request.resource.data && truthyBool(request.resource.data.adminAccess)) || admin) ? (
-      (!('isSuperAdmin' in request.resource.data && truthyBool(request.resource.data.isSuperAdmin)) ||
-       ('isSuperAdmin' in resource.data && truthyBool(resource.data.isSuperAdmin))) ? (
+      (!privilegeFlag(request.resource.data, 'isSuperAdmin') || privilegeFlag(resource.data, 'isSuperAdmin')) ? (
       (!('permissions' in request.resource.data) ||
        !(request.resource.data.permissions is map) ||
        !('adminAccess' in request.resource.data.permissions && truthyBool(request.resource.data.permissions.adminAccess)) ||
@@ -729,7 +727,7 @@ service cloud.firestore {
       get(/databases/(default)/documents/organizations/$(org)).data.get('creatorUserId', '') == uid;
   }
   function selfCreateSuperAdminAllowed() {
-    return !staffFlag(request.resource.data, 'isSuperAdmin') ||
+    return !privilegeFlag(request.resource.data, 'isSuperAdmin') ||
       orgCreatorIs(docOrganizationId(request.resource.data), request.auth.uid);
   }
   function callerIsSuperAdminOf(org) {
@@ -767,10 +765,10 @@ service cloud.firestore {
     let prev = resource.data;
     let org = docOrganizationId(prev);
     return (
-      staffFlag(next, 'isSuperAdmin') == staffFlag(prev, 'isSuperAdmin') ? (
+      privilegeFlag(next, 'isSuperAdmin') == privilegeFlag(prev, 'isSuperAdmin') ? (
         next.diff(prev).affectedKeys().hasAny(['isSuperAdmin', 'adminAccess', 'role', 'permissions', 'operativeMode',
           'manager', 'operatives', 'isActive', 'organizationId'])
-          ? !(staffFlag(prev, 'isSuperAdmin') || orgCreatorIs(org, userId)) : true
+          ? !(privilegeFlag(prev, 'isSuperAdmin') || orgCreatorIs(org, userId)) : true
       ) : false
     ) ? true : callerIsSuperAdminOf(org);
   }
@@ -865,21 +863,25 @@ service cloud.firestore {
       allow list: if canReadUserDocument(userId);
 
       allow create: if request.auth != null && (
-        (request.auth.uid == userId &&
-         request.resource.data.email is string &&
-         request.auth.token.email is string &&
-         request.resource.data.email.lower() == request.auth.token.email.lower() &&
-         'organizationId' in request.resource.data &&
-         request.resource.data.organizationId is string &&
-         selfCreateHasAgeConfirmation() &&
-         selfCreateJoinsCompany(request.resource.data.organizationId, request.resource.data.email.lower()) &&
-         selfCreateSuperAdminAllowed()) ||
-        (request.auth.uid != userId &&
-         'organizationId' in request.resource.data &&
-         isAdminOfCompany(request.resource.data.organizationId)) ||
-        (isOrgBootstrapAdminProfileCreate(userId) && selfCreateHasAgeConfirmation() &&
-         selfCreateAliasesWithin(request.resource.data, {}, '') && selfCreateSuperAdminAllowed() &&
-         selfCreateSelfManageOff(request.resource.data.organizationId)) ||
+        (request.auth.uid == userId ? (
+          (request.resource.data.get('email', null) is string &&
+           request.auth.token.get('email', null) is string &&
+           request.resource.data.get('organizationId', null) is string) ? (
+            request.resource.data.email.lower() == request.auth.token.email.lower() &&
+            selfCreateHasAgeConfirmation() &&
+            selfCreateJoinsCompany(request.resource.data.organizationId, request.resource.data.email.lower()) &&
+            selfCreateSuperAdminAllowed()
+          ) : false
+        ) : false) ||
+        ((request.auth.uid != userId && request.resource.data.get('organizationId', null) is string &&
+          (adminLikeUser(callerHomeData()) ? true :
+            callerListedRole(request.resource.data.organizationId) == 'admin'))
+          ? isAdminOfCompany(request.resource.data.organizationId) : false) ||
+        (request.auth.uid == userId ? (
+          isOrgBootstrapAdminProfileCreate(userId) && selfCreateHasAgeConfirmation() &&
+          selfCreateAliasesWithin(request.resource.data, {}, '') && selfCreateSuperAdminAllowed() &&
+          selfCreateSelfManageOff(request.resource.data.organizationId)
+        ) : false) ||
         managerCanCreateOperativeUser() ||
         (isPlatformOwner() && request.auth.uid == userId)
       ) && payStaysPrivate(request.resource.data.get('organizationId', ''));
@@ -910,8 +912,9 @@ service cloud.firestore {
           ((t is string && a is string && b is string) ? (a.lower() == t.lower() && b.lower() == t.lower()) : false);
       }
       function userAdminUpdateAllowed(toggles, targetAdmin) {
-        return (request.auth.uid != userId ? true : targetAdmin ? toggles :
-            selfManageTogglesUnchanged(request.resource.data, resource.data)) ? (
+        return (request.auth.uid != userId ? true : (
+            (targetAdmin ? toggles : selfManageTogglesUnchanged(request.resource.data, resource.data)) &&
+            selfUpdateKeepsIdentityLinks())) ? (
           isAdminOfCompany(resource.data.organizationId) ? (
             adminUpdateKeepsTopAccount(userId) ? (
               request.resource.data.get('hasNoLineManager', false) != true ||
@@ -925,7 +928,9 @@ service cloud.firestore {
           (request.resource.data.organizationId is string &&
            request.resource.data.organizationId == resource.data.get('organizationId', null)) ? true : (
           ('organizationId' in resource.data && orgIdsMatch(request.resource.data.organizationId, resource.data.organizationId)) ? true : (
-            request.resource.data.organizationId is string ? (
+            (request.resource.data.organizationId is string &&
+             (callerListedRole(request.resource.data.organizationId) == 'admin' ? true :
+               userDocOrganizationMatches(callerHomeData(), request.resource.data.organizationId))) ? (
               organizationExists(request.resource.data.organizationId) &&
               isAdminOfCompany(request.resource.data.organizationId)
             ) : false
@@ -1027,8 +1032,8 @@ service cloud.firestore {
         allow list: if request.auth != null && request.auth.uid == userId;
         allow create, update: if request.auth != null && (
           ((isOrgAdminViaMembersMap(membershipOrgId) || isOrganizationAdmin(membershipOrgId)) &&
-           ((staffFlag(request.resource.data, 'isSuperAdmin') ==
-             (resource == null ? false : staffFlag(resource.data, 'isSuperAdmin'))) || callerIsSuperAdminOf(membershipOrgId))) ||
+           ((privilegeFlag(request.resource.data, 'isSuperAdmin') ==
+             (resource == null ? false : privilegeFlag(resource.data, 'isSuperAdmin'))) || callerIsSuperAdminOf(membershipOrgId))) ||
           (request.auth.uid == userId && membershipSelfWriteAllowed()) ||
           membershipFromInvitation()
         );
@@ -1449,7 +1454,7 @@ service cloud.firestore {
         let affected = request.resource.data.diff(resource.data).affectedKeys();
         return affected.hasOnly([
             'workStartTime', 'workEndTime', 'timeSlot', 'otMultiplierOverride', 'status', 'updatedAt', 'updatedBy', 'updatedFrom'
-          ]) &&
+          ]) ? (
           overtimeTextFieldValid(affected, 'workStartTime', 8) &&
           overtimeTextFieldValid(affected, 'workEndTime', 8) &&
           (!('timeSlot' in affected) || request.resource.data.timeSlot in ['CUSTOM_HOURS', 'CUSTOM', 'FULL DAY', 'FULL_DAY', 'AM', 'PM']) &&
@@ -1458,7 +1463,7 @@ service cloud.firestore {
           overtimeMultiplierWriteValid() &&
           writeMetadataValidWhenPresent() &&
           callerLineManagesUser(bookingPersonId(collection, resource.data)) &&
-          overtimeCallerIsStaffHere();
+          overtimeCallerIsStaffHere()) : false;
       }
       function overtimeViewer(uid) {
         return canAccessOrganization(organizationId) &&

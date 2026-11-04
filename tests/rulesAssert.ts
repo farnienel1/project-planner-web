@@ -27,7 +27,7 @@ export async function assertLogicalDeny(pr: Promise<unknown>): Promise<unknown> 
 
 /**
  * The suites' `assertFails`. With RULES_STRICT_BUDGET=1 it is `assertLogicalDeny`; otherwise any denial passes, as
- * before 1.31.1. 1.31.1 measured 93 of the 185 older firestore tests with at least one denial that comes from the
+ * before 1.31.1. 1.31.1 measured 74 of the 185 older firestore tests with at least one denial that comes from the
  * limit (108 on 1.31.0); see docs/firestore-rules-notes.md "Expression budget". Run `RULES_STRICT_BUDGET=1 npm run test:rules`
  * to list them.
  */

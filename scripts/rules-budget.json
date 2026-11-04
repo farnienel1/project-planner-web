@@ -1,5 +1,5 @@
 {
   "firestoreRulesMaxBytes": 132096,
   "storageRulesMaxBytes": 19456,
-  "note": "Set 4 Nov 2026 by rulebook 1.31.1: firestore.rules 130042 bytes (127 KB rounded up + 2 KB; it was 188025 bytes at 1.31.0, when Google's rules checker timed out with HTTP 503), storage.rules 16862 bytes (17 KB rounded up + 2 KB). Platform guardrails \u00a75. Lower firestoreRulesMaxBytes when the rules are slimmed (new size rounded up to the next KB + 2 KB); raise it only with a stated reason in the PR."
+  "note": "Set 4 Nov 2026 by rulebook 1.31.1: firestore.rules 129928 bytes (127 KB rounded up + 2 KB; it was 188025 bytes at 1.31.0, when Google's rules checker timed out with HTTP 503), storage.rules 16862 bytes (17 KB rounded up + 2 KB). Platform guardrails \u00a75. Lower firestoreRulesMaxBytes when the rules are slimmed (new size rounded up to the next KB + 2 KB); raise it only with a stated reason in the PR."
 }
