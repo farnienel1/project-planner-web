@@ -36,7 +36,7 @@ export const FILE_RECOVERY_RETENTION_DAYS = 30
  * for word (web `lib/legal/customerLegalPack.ts`, iOS `CustomerLegalPack.swift`).
  */
 export const DELETED_DATA_RETENTION_NOTICE =
-  'A deleted company can be restored for 60 days, after which its data is erased. Deleted files, including the files of an erased company, are kept for up to 30 days so they can be recovered, then permanently removed.'
+  'A deleted company can be restored for 30 days, after which its data is erased. Deleted files, including the files of an erased company, are kept for up to 30 days so they can be recovered, then permanently removed.'
 
 export const STORED_FILE_KINDS = [
   'profile_photo',

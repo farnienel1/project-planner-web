@@ -10035,7 +10035,7 @@ var ProjectPlannerCanonical = (() => {
   function rulebookStamp() {
     return {
       version: true ? "1.27.0" : "",
-      sha256: true ? "142e20f48027bc0d25d5cf0793aa164833f863de1c914bca927c7e1c8acf7c36" : ""
+      sha256: true ? "ef949bda2ff388407a3a6d931f68504e16901c2ddcfd345215646594693e3610" : ""
     };
   }
 
@@ -14945,7 +14945,7 @@ var ProjectPlannerCanonical = (() => {
   }
 
   // lib/canonical/organizationDeletion.ts
-  var DELETION_RESTORE_DAYS = 60;
+  var DELETION_RESTORE_DAYS = 30;
   var DAY_MS = 24 * 60 * 60 * 1e3;
   var ORGANIZATION_DELETE_CONFIRMATION = "DELETE";
   var ORGANIZATION_DELETE_TITLE = "Delete organisation";
@@ -16172,7 +16172,7 @@ var ProjectPlannerCanonical = (() => {
   var FILE_UNDO_WINDOW_MS = FILE_UNDO_WINDOW_MINUTES * 60 * 1e3;
   var FILE_KEPT_ON_REMOVE_COPY = "Removed from this list. The file itself is kept so an admin can restore it.";
   var FILE_RECOVERY_RETENTION_DAYS = 30;
-  var DELETED_DATA_RETENTION_NOTICE = "A deleted company can be restored for 60 days, after which its data is erased. Deleted files, including the files of an erased company, are kept for up to 30 days so they can be recovered, then permanently removed.";
+  var DELETED_DATA_RETENTION_NOTICE = "A deleted company can be restored for 30 days, after which its data is erased. Deleted files, including the files of an erased company, are kept for up to 30 days so they can be recovered, then permanently removed.";
   var STORED_FILE_KINDS = [
     "profile_photo",
     "company_logo",

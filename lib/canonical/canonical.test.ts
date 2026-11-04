@@ -9061,27 +9061,27 @@ test('1.15.0 materialOrderRecipientCheck: saved contacts, the sender copy and at
 
 import * as r1150Del from './organizationDeletion.ts'
 
-test('1.15.0 organizationDeletionState: active, scheduled (locked, due after 60 days) and erased', () => {
+test('1.15.0 organizationDeletionState: active, scheduled (locked, due after DELETION_RESTORE_DAYS (30 from 1.27.0)) and erased', () => {
   const at = Date.UTC(2026, 10, 3, 10, 0, 0)
-  assert.equal(r1150Del.DELETION_RESTORE_DAYS, 60)
+  assert.equal(r1150Del.DELETION_RESTORE_DAYS, 30)
   assert.deepEqual(r1150Del.organizationDeletionState({}, at), { state: 'active' })
   const fields = r1150Del.organizationDeletionWriteFields({ requestedBy: 'SA', requestedAtMs: at })
   assert.equal(fields.deletion.status, 'scheduled')
   assert.equal(fields.deletion.restoreBy, 'super_admin')
-  assert.equal(fields.deletion.eraseAfter.getTime() - at, 60 * 24 * 60 * 60 * 1000)
+  assert.equal(fields.deletion.eraseAfter.getTime() - at, 30 * 24 * 60 * 60 * 1000)
   const org = { id: 'ORG', name: 'Acme', creatorUserId: 'SA', ...fields }
   const state = r1150Del.organizationDeletionState(org, at + 1000)
   assert.equal(state.state, 'scheduled')
   assert.ok(state.state === 'scheduled' && state.locked && !state.due)
-  assert.equal(r1150Del.organizationEraseDue(org, at + 59 * 86400000), false)
-  assert.equal(r1150Del.organizationEraseDue(org, at + 60 * 86400000), true)
+  assert.equal(r1150Del.organizationEraseDue(org, at + 29 * 86400000), false)
+  assert.equal(r1150Del.organizationEraseDue(org, at + 30 * 86400000), true)
   // Firestore Timestamp-like values read too.
   const stored = { deletion: { status: 'scheduled', requestedAt: { seconds: at / 1000, nanoseconds: 0 }, requestedBy: 'SA' } }
-  assert.equal(r1150Del.parseOrganizationDeletion(stored)?.eraseAfterMs, at + 60 * 86400000)
+  assert.equal(r1150Del.parseOrganizationDeletion(stored)?.eraseAfterMs, at + 30 * 86400000)
   assert.equal(r1150Del.organizationDeletionState({ deletion: { status: 'erased' } }).state, 'erased')
   assert.equal(
-    r1150Del.organizationDeletedMessage(at + 60 * 86400000, 'Europe/London'),
-    'This organisation has been deleted and will be erased on 2 January 2027.'
+    r1150Del.organizationDeletedMessage(at + 30 * 86400000, 'Europe/London'),
+    'This organisation has been deleted and will be erased on 3 December 2026.'
   )
 })
 
@@ -11630,4 +11630,12 @@ test('1.27.0 (7) catalogue operatives: managers with the Operatives toggle see t
   // The overlay: a catalogue row takes its pay profile.
   const overlaid = R112.overlayPayProfile({ id: 'row-solo', name: 'Solo', dayRate: 100 }, R112.parsePayProfileDocument('row-solo', { dayRate: 160, payBasis: 'day' }))
   assert.equal(overlaid.dayRate, 160)
+})
+
+test('1.27.0 a deletion scheduled under the 60-day rule keeps its stored eraseAfter', () => {
+  const at = Date.UTC(2026, 9, 1, 10, 0, 0)
+  const org = { deletion: { status: 'scheduled', requestedAt: new Date(at), requestedBy: 'SA', eraseAfter: new Date(at + 60 * 86400000) } }
+  assert.equal(r1150Del.organizationEraseDue(org, at + 31 * 86400000), false)
+  assert.equal(r1150Del.organizationEraseDue(org, at + 60 * 86400000), true)
+  assert.match(R112.DELETED_DATA_RETENTION_NOTICE, /restored for 30 days/)
 })

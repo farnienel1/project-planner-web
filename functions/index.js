@@ -253,7 +253,7 @@ exports.sendEmail = onRequest(
 )
 
 /**
- * Rulebook 1.15.0 §20: once a day, erase every organisation deleted more than `DELETION_RESTORE_DAYS` (60) days ago
+ * Rulebook 1.15.0 §20: once a day, erase every organisation deleted more than `DELETION_RESTORE_DAYS` (30 from 1.27.0) days ago
  * (`organizationEraseDue`). See organizationEraser.js for what is removed; the audit row is
  * `erasedOrganizations/{orgId}` `{ erasedAt, name }`.
  */

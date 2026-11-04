@@ -43,7 +43,7 @@ export const ACCOUNT_DELETE_COPY = {
   companyTitle: 'This also deletes the organisation',
   companyNameLabel: (orgName: string) => `Type the company name (${orgName})`,
   companyNote:
-    'The organisation is locked straight away and erased after 60 days. Only Project Planner support (info@projectplanner.us) can restore it, because nobody else is left in it. The subscription is cancelled at the end of the billing period, with no refund.',
+    'The organisation is locked straight away and erased after 30 days. Only Project Planner support (info@projectplanner.us) can restore it, because nobody else is left in it. The subscription is cancelled at the end of the billing period, with no refund.',
 } as const
 
 export type AdminLikeFlags = {

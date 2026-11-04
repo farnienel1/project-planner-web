@@ -8,9 +8,9 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ║ FOLLOW-ON — paste into the iOS agent                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
-Rulebook version: 1.26.1 → 1.27.0
-Packed hash: eac29814b14c461c08f338c632334266695b98b357c08999ab419df594621adf
-Rulebook sha256: 142e20f48027bc0d25d5cf0793aa164833f863de1c914bca927c7e1c8acf7c36
+Rulebook version: 1.27.0 → 1.27.0
+Packed hash: cb0e4b6c53870c4763a4b08539b4bc644bc1f40dc2203ce73143d9feda8b3c2b
+Rulebook sha256: ef949bda2ff388407a3a6d931f68504e16901c2ddcfd345215646594693e3610
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -20,12 +20,12 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
   web lib/canonical/cross-platform-contract.json    → iOS ProjectPlannerTests/CrossPlatformContract.json
 Contract sha256: 8c99592ff4cd836fbe172766d4eed5201108c977ba531c70ac26321b6e5208cf
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: DELETED_DATA_RETENTION_NOTICE, FILE_RECOVERY_RETENTION_DAYS, INVITE_DRAFT_PERSON_ID, MATERIAL_REQUEST_JOB_NOT_FOUND_MESSAGE, MATERIAL_REQUEST_JOB_NOT_VISIBLE_MESSAGE, MATERIAL_REQUEST_JOB_NUMBER_MISMATCH_MESSAGE, canViewRemovedEvidence, catalogueOperativePaySubjects, inviteDraftLineManagerSubject, invitePayProfileCopyWrite, materialRequestJobCheck, materialRequestJobViewer, removedEvidenceHeading, variationEvidenceRemovalWriteFields
+Exports added: none
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, firestore.rules, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/cross-platform-contract.json, lib/canonical/index.ts, lib/canonical/inviteAccept.ts, lib/canonical/lineManagers.ts, lib/canonical/materialOrderAccess.ts, lib/canonical/parity-fixture.json, lib/canonical/payProfile.ts, lib/canonical/recordsDocuments.ts, lib/canonical/storedFiles.ts
+Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/canonical.test.ts, lib/canonical/organizationDeletion.ts, lib/canonical/storedFiles.ts
 Done when:
-- [ ] Packed hash in iOS equals eac29814b14c461c08f338c632334266695b98b357c08999ab419df594621adf
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 142e20f48027bc0d25d5cf0793aa164833f863de1c914bca927c7e1c8acf7c36)
+- [ ] Packed hash in iOS equals cb0e4b6c53870c4763a4b08539b4bc644bc1f40dc2203ce73143d9feda8b3c2b
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 ef949bda2ff388407a3a6d931f68504e16901c2ddcfd345215646594693e3610)
 - [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.27.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
@@ -37,6 +37,7 @@ Done when:
 - Add User: the invitee is never offered as their own line manager (§11, owner decision 1). `inviteDraftLineManagerSubject` / `INVITE_DRAFT_PERSON_ID`: web Add User passes the invite draft (typed email, chosen level) as `person` to `lineManagerCandidates`, `lineManagerSelectionAfterLevelChange` and `lineManagerRequiredError`, as iOS `AddUserView` already does. Before, web passed no person, so a roster row on the invitee's email was offered and counted.
 - Material email job checks (§16, owner decision 2): with `jobId`, `material_request` (email function) and the web send route also require that the sender sees the job (`canSeeJob`, §17) and that the job number is the stored one — `materialRequestJobViewer`, `materialRequestJobCheck`, `MATERIAL_REQUEST_JOB_NOT_FOUND_MESSAGE` / `_NOT_VISIBLE_MESSAGE` / `_NUMBER_MISMATCH_MESSAGE`. Web's send sheet now sends `jobId`. Requests without `jobId` are still accepted.
 - Admins can still delete any file (§24, owner decision 3): documented, unchanged.
+- A deleted company is restorable for 30 days, not 60, the same as file recovery (§20, owner decision): `DELETION_RESTORE_DAYS` 30, the account-delete and Delete organisation copy, and `DELETED_DATA_RETENTION_NOTICE` ("A deleted company can be restored for 30 days, …"). A deletion already scheduled keeps its stored `eraseAfter` (`organizationEraseDue`), so it is not erased sooner.
 - Removed variation evidence is recorded (§24, owner decision 4): `variationEvidenceRemovalWriteFields` appends `{ path, name, removedBy, removedAt }` to the variation's `removedEvidence` in the same partial update that unlinks it; `parseVariationDocument` reads it; admins see "Removed evidence (n)" (`canViewRemovedEvidence`, `removedEvidenceHeading`). The cross-platform contract's variation sample now reads `removedEvidence: []`.
 - Soft delete retention is 30 days (§24, owner decision 5): `FILE_RECOVERY_RETENTION_DAYS`, `DELETED_DATA_RETENTION_NOTICE` — added word for word to the privacy policy (7. Retention) and the DPA (14. Deletion and Return); Deploy notes 1.25.0 / 1.27.0 set the bucket to 30 days.
 - The invited rate is copied on accept while `privatePay` is on (§8, §16, owner decision 6): `invitePayProfileCopyWrite`; rules `inviteeCopiesOwnInvitedPay` let the accepting person create their own `payProfiles/{uid}` once, only as an exact copy of their pending placeholder's pay profile, while the email claim still names it.
@@ -79,7 +80,7 @@ Three-factor check for every item: **Web** (done in web 1.27.0), **iOS** (below)
    (not a link to web). Add this sentence, word for word, as a new paragraph at the end of Privacy "7. Retention"
    (`CustomerLegalPack.swift` ~line 254) and at the end of DPA "14. Deletion and Return" (~line 177):
 
-   > A deleted company can be restored for 60 days, after which its data is erased. Deleted files, including the files of an erased company, are kept for up to 30 days so they can be recovered, then permanently removed.
+   > A deleted company can be restored for 30 days, after which its data is erased. Deleted files, including the files of an erased company, are kept for up to 30 days so they can be recovered, then permanently removed.
 
    Prefer reading it from the script (`DELETED_DATA_RETENTION_NOTICE`) and add a test that the pack contains it.
    Do **not** change `CustomerLegalPack.version` (web keeps `1.1`; a mismatch would ask people to accept again on every
@@ -111,9 +112,6 @@ Three-factor check for every item: **Web** (done in web 1.27.0), **iOS** (below)
 Deploy order (web Deploy notes 1.27.0): rules + functions deploy, web deploy, then this iOS build, before the owner
 switches `privatePay` on for any company.
 
-## New rulebook sections
-
-- 1.27.0 — 2026-11-04
 
 ## Workflow for the iOS agent
 
