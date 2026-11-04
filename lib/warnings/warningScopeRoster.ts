@@ -1,5 +1,5 @@
-import type { WarningScopeRosterRow } from '@/lib/canonical'
-import type { User } from '@/types'
+import { WARNING_SCOPE_ALL, warningScopeFor, type JobAccessViewer, type WarningScope, type WarningScopeRosterRow } from '@/lib/canonical'
+import type { Operative, Project, User } from '@/types'
 
 /**
  * Web `User` rows as `warningScopeFor` reads them (rulebook 1.31.0 §5): ids, email, active flag, level flags and the
@@ -27,4 +27,34 @@ export function warningScopeRoster(
     assignedManagerUserId: user.assignedManagerUserId ?? null,
     hasNoLineManager: user.hasNoLineManager ?? null,
   }))
+}
+
+/**
+ * The viewer's warning scope (`warningScopeFor`, rulebook 1.31.0 §5): admins everything; a manager themselves, their
+ * reports and the jobs they manage. The Warnings scan and Book labour both build it here, so the two unbooked lists
+ * are identical for the same viewer. No viewer → everything.
+ */
+export function orgWarningScope(input: {
+  viewer?: JobAccessViewer | null
+  projects: ReadonlyArray<Pick<Project, 'id' | 'managerId' | 'managerIds' | 'managerUserIds'>>
+  managers?: ReadonlyArray<{ id: string; email?: string | null }> | null
+  users: ReadonlyArray<User>
+  userIdAliases?: Readonly<Record<string, string>> | null
+  operatives: ReadonlyArray<Pick<Operative, 'id' | 'email'>>
+  enforcedReads?: boolean
+}): WarningScope {
+  if (!input.viewer) return WARNING_SCOPE_ALL
+  return warningScopeFor({
+    viewer: input.viewer,
+    jobs: input.projects.map((project) => ({
+      id: project.id,
+      managerId: project.managerId ?? null,
+      managerIds: project.managerIds ?? [],
+      managerUserIds: project.managerUserIds ?? [],
+    })),
+    managers: input.managers ?? null,
+    roster: warningScopeRoster(input.users, input.userIdAliases),
+    operatives: input.operatives.map((operative) => ({ id: operative.id, email: operative.email })),
+    enforced: input.enforcedReads === true,
+  })
 }

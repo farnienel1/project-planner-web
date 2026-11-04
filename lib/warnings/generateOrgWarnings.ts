@@ -33,8 +33,6 @@ import {
   type CoverageFallbackReason,
   type JobAccessViewer,
   type WarningScope,
-  WARNING_SCOPE_ALL,
-  warningScopeFor,
   isWarningRowInScope,
   managerBookingJobId,
 } from '@/lib/canonical'
@@ -46,7 +44,7 @@ import { computeClashScanDayKeys, computeWarningCoverageWindow } from '@/lib/war
 import { computeMissedMaterialOrderWarnings, type MissedMaterialOrderWarning } from '@/lib/warnings/materialOrderWarnings'
 import { computeLeaveCoverageWarnings, type LeaveCoverageWarning } from '@/lib/warnings/leaveCoverageWarnings'
 import { dateFromDayKey } from '@/lib/ios-parity/londonTime'
-import { warningScopeRoster } from '@/lib/warnings/warningScopeRoster'
+import { orgWarningScope } from '@/lib/warnings/warningScopeRoster'
 
 export type QualificationExpiryWarning = {
   id: string
@@ -198,21 +196,15 @@ export function generateOrgWarnings(input: {
 }): OrgWarningsResult {
   // Rulebook 1.31.0 §5 (owner decision): admins see every warning; a manager the warnings about themselves, their
   // reports and the jobs they manage (`warningScopeFor`; their job toggles no longer widen it).
-  const scope: WarningScope = input.viewer
-    ? warningScopeFor({
-        viewer: input.viewer,
-        jobs: input.projects.map((project) => ({
-          id: project.id,
-          managerId: project.managerId ?? null,
-          managerIds: project.managerIds ?? [],
-          managerUserIds: project.managerUserIds ?? [],
-        })),
-        managers: input.managers ?? null,
-        roster: warningScopeRoster(input.users, input.userIdAliases),
-        operatives: input.operatives.map((operative) => ({ id: operative.id, email: operative.email })),
-        enforced: input.enforcedReads === true,
-      })
-    : WARNING_SCOPE_ALL
+  const scope: WarningScope = orgWarningScope({
+    viewer: input.viewer,
+    projects: input.projects,
+    managers: input.managers,
+    users: input.users,
+    userIdAliases: input.userIdAliases,
+    operatives: input.operatives,
+    enforcedReads: input.enforcedReads,
+  })
   const projectOfBooking = new Map(input.bookings.map((booking) => [booking.id, booking.projectId]))
   const jobOfManagerBooking = new Map(input.managerSiteBookings.map((booking) => [booking.id, managerBookingJobId(booking)]))
   const warningDetection = input.warningDetection ?? input.orgDetails?.warningDetection ?? DEFAULT_WARNING_DETECTION

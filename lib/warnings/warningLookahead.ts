@@ -1,9 +1,9 @@
 import {
   clashScanDays,
   coverageWindow,
-  unbookedScanDays,
   invoicingPeriod,
   parsePaymentRunDateRanges,
+  unbookedScanDays,
   type CoverageFallbackReason,
 } from '@/lib/canonical'
 import {
