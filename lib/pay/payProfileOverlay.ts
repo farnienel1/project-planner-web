@@ -12,8 +12,8 @@
  *
  * Only while `privatePay` is on for the organisation (`securitySwitchOn`). While it is off, older app builds still write
  * pay only to `users` / `operatives` / `managers`, so a pay profile can be stale: the roster is read from those
- * documents unchanged, exactly as before 1.26.0 (the people profile keeps its own pay-profile-first read,
- * `UserProfileSummary`).
+ * documents unchanged, exactly as before 1.26.0. The people profile (`UserProfileSummary`) follows the same gate
+ * through `readsPersonPayProfile` / `personPayRecord`.
  */
 import { collection, doc, getDoc, getDocs } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
@@ -35,6 +35,27 @@ let inFlight: Promise<boolean> | null = null
 function storedIds(data: Record<string, unknown>): string[] {
   const former = Array.isArray(data.formerUserIds) ? data.formerUserIds : []
   return former.filter((id): id is string => typeof id === 'string' && id.trim() !== '').map((id) => id.trim())
+}
+
+/**
+ * Whether one person's pay profile is read for display (the people profile): only while `privatePay` is on for
+ * `organizationId`. Off, nothing is read and the users document's pay is shown, as on the roster.
+ */
+export function readsPersonPayProfile(organizationId: string | null | undefined): boolean {
+  return Boolean(organizationId) && privatePayFor(organizationId)
+}
+
+/**
+ * The users document `data` with its pay taken from `profile` (`overlayPayProfile`) only while `privatePay` is on for
+ * `organizationId`. Off, `data` is returned unchanged, so a stale pay profile is never shown or used as a starting value.
+ */
+export function personPayRecord(
+  organizationId: string | null | undefined,
+  data: Record<string, unknown>,
+  profile: PayProfileDocument | null | undefined
+): Record<string, unknown> {
+  if (!profile || !readsPersonPayProfile(organizationId)) return data
+  return overlayPayProfile(data, profile)
 }
 
 /** The users / operatives document `data` (id `docId`) with its pay taken from its pay profile when one was read. */
