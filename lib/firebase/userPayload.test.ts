@@ -77,3 +77,8 @@ test('changing the pay basis writes the basis, the new amount and removes the ol
   assert.equal(patch.hourlyRate, 25)
   assert.ok('dayRate' in patch)
 })
+
+test('a profile save never writes profilePhotoUpdatedAt (only the photo upload does)', () => {
+  const payload = buildSaveUserPayload(person({ profilePhotoURL: 'https://x/p.jpg', profilePhotoUpdatedAt: new Date() }))
+  assert.equal('profilePhotoUpdatedAt' in payload, false)
+})

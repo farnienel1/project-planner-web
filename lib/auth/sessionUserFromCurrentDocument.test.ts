@@ -168,3 +168,17 @@ test('a document for another company does not change access in this session', ()
   const next = sessionUserFromCurrentDocument(person(), doc({ organizationId: 'OTHER', siteAudit: false }))
   assert.equal(next, null)
 })
+
+test('a re-upload republishes the session with the new profilePhotoUpdatedAt, in any company (RULEBOOK §12)', () => {
+  const stamp = new Date('2026-11-04T08:00:00Z')
+  const same = sessionUserFromCurrentDocument(
+    person({ profilePhotoURL: 'https://example.com/p.jpg' }),
+    doc({ profilePhotoURL: 'https://example.com/p.jpg', profilePhotoUpdatedAt: stamp })
+  )
+  assert.equal(same?.profilePhotoUpdatedAt?.getTime(), stamp.getTime())
+  const other = sessionUserFromCurrentDocument(
+    person({ profilePhotoURL: 'https://example.com/p.jpg' }),
+    doc({ organizationId: 'OTHER', profilePhotoURL: 'https://example.com/p.jpg', profilePhotoUpdatedAt: stamp })
+  )
+  assert.equal(other?.profilePhotoUpdatedAt?.getTime(), stamp.getTime())
+})

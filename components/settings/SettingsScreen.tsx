@@ -258,7 +258,7 @@ function ProfilePanel({ onBack }: { onBack: () => void }) {
         ...(writeMetadataFields(user.id, 'web') ?? {}),
       })
       const current = useAuthStore.getState().user
-      if (current) useAuthStore.setState({ user: { ...current, profilePhotoURL: url } })
+      if (current) useAuthStore.setState({ user: { ...current, profilePhotoURL: url, profilePhotoUpdatedAt: new Date() } })
       setSaved(true)
       window.setTimeout(() => setSaved(false), 3000)
     } catch (e: unknown) {

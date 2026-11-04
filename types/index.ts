@@ -189,6 +189,8 @@ export interface User {
   employmentTypeEffectiveAt?: Date;
   lastSeenAt?: Date;
   profilePhotoURL?: string;
+  /** users/{uid}.profilePhotoUpdatedAt: set on every upload, refreshes cached avatars (RULEBOOK §12). */
+  profilePhotoUpdatedAt?: Date;
   annualLeaveEnabled?: boolean;
   annualLeaveDaysPerYear?: number;
   annualLeaveYearStartMonth?: number;

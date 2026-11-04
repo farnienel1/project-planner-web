@@ -13,6 +13,7 @@ const PERSONAL_FIELDS = [
   'surname',
   'mobileNumber',
   'profilePhotoURL',
+  'profilePhotoUpdatedAt',
   'tradeTypePreset',
   'tradeTypeCustom',
 ] as const

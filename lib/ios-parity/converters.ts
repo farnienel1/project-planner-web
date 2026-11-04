@@ -202,6 +202,7 @@ export function parseAppUserDocument(userId: string, data: Record<string, unknow
     employmentTypeEffectiveAt: msDate(doc.employmentTypeEffectiveAtMs),
     lastSeenAt: msDate(doc.lastSeenAtMs),
     profilePhotoURL: doc.profilePhotoURL ?? undefined,
+    profilePhotoUpdatedAt: msDate(doc.profilePhotoUpdatedAtMs),
     annualLeaveEnabled: doc.annualLeaveEnabled,
     annualLeaveDaysPerYear: doc.annualLeaveStored.daysPerYear ?? undefined,
     annualLeaveYearStartMonth: doc.annualLeaveStored.startMonth ?? undefined,
