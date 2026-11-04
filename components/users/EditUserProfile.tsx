@@ -22,7 +22,6 @@ import {
 } from '@/lib/staff/userEditPermissions'
 import { rosterStatusLabel } from '@/lib/staff/userRosterUtils'
 import { userLineManagerRequiredError, userMayHaveNoLineManager } from '@/lib/annualLeave/holidayApprovalUtils'
-import { userTimesheetSelfSigned } from '@/lib/timesheets/timesheetApprovalPolicy'
 import { UserAvatar } from '@/components/users/UserAvatar'
 import { PayBasisFields, payChoiceFromProfile, payChoiceToRates } from '@/components/users/PayBasisFields'
 import { maySetPayOf, userPayRateRequiredError } from '@/lib/staff/payRateRequired'
@@ -76,6 +75,7 @@ import { canonicalCertificateUrls, formatCertificateSaveError } from '@/lib/qual
 import { canManageOrganisationQualifications, staffAccountRole } from '@/lib/permissions'
 import { canDeleteUser, lineManagerCandidates, lineManagerSelectedIds, SELF_EMAIL_INVALID_MESSAGE, selfEmailChangeAction, selfEmailChangeSentMessage } from '@/lib/canonical'
 import { PermissionRowsList } from '@/components/users/ProfileExpandablePermissionToggle'
+import { userIsOrganizationSuperAdmin } from '@/lib/staff/rulebookPeople'
 import { useOrganizationDocument } from '@/lib/stores/organizationDocumentStore'
 import { accountTypeSubject } from '@/lib/staff/accountTypeChange'
 import {
@@ -131,18 +131,24 @@ const ACCOUNT_TYPE_OPTIONS: {
 
 /**
  * Rulebook 1.11.0 `permissionToggleRows` for Edit User: the person at `level` with `permissions` (a pending account
- * type change included). A self-approved admin's self-book row shows on and locked (`canSelfBookAnnualLeave`).
+ * type change included). 1.28.0: the Super Admin's self-manage rows are on and locked, a PAYE admin's Timesheet
+ * self-sign row is greyed out, and the viewer's own self-manage rows are not editable (`viewerIsSubject`) — all from
+ * the rulebook rows.
  */
 function editUserPermissionRows(
   user: User,
   level: PermissionLevel,
   permissions: UserPermissions,
+  viewerId: string | null | undefined,
   users: ReadonlyArray<User>
 ) {
-  const selfSigned = userTimesheetSelfSigned(user, users)
-  return permissionToggleRows({ level, user: { ...user, permissions }, mode: 'edit' }).map((row) =>
-    row.field === 'annualLeaveSelfBook' && selfSigned ? { ...row, value: true, editable: false } : row
-  )
+  return permissionToggleRows({
+    level,
+    // 1.28.0: this organisation's Super Admin (its creator included) reads both self-manage toggles on and locked.
+    user: { ...user, permissions, organizationSuperAdmin: userIsOrganizationSuperAdmin(user, users) },
+    mode: 'edit',
+    viewerIsSubject: Boolean(viewerId && viewerId === user.id),
+  })
 }
 
 function lockedPermissionMessage(level: PermissionLevel): string {
@@ -559,7 +565,7 @@ export function EditUserProfile({
     if (!target || !organization?.id || !canEdit) return
 
     // `lineManagerRequiredError(user, roster)`: every operative and manager needs an active line manager, whatever
-    // the self-book permission; only admins outside operative mode may have none.
+    // the self-book permission; 1.28.0: an admin may have none only with both self-manage toggles on.
     // Checked on the person as it will be saved (draft account type and permissions included).
     const asSaved =
       draftAccountType && draftTypePermissions
@@ -1136,7 +1142,7 @@ export function EditUserProfile({
                   label="Line manager(s)"
                   hint={
                     mayHaveNoLineManager
-                      ? 'Choose No line manager when this admin has none.'
+                      ? 'Choose No line manager when this admin has none — Annual Leave Management and Timesheet self-sign must then be on (PAYE: Annual Leave Management).'
                       : 'Required for operatives and managers.'
                   }
                 >
@@ -1148,7 +1154,7 @@ export function EditUserProfile({
                       setTarget(userWithLineManagerChoice(target, e.target.value))
                     }}
                   >
-                    {/* "No line manager" only for an admin or super admin (`lineManagerRequired` false). */}
+                    {/* "No line manager" only for an admin or super admin (`lineManagerOptions`); enough only with both self-manage toggles on. */}
                     <option value="" disabled={!mayHaveNoLineManager}>
                       {mayHaveNoLineManager ? 'No line manager' : 'Choose a line manager'}
                     </option>
@@ -1520,7 +1526,7 @@ export function EditUserProfile({
           <SettingsCard>
             <div className="divide-y divide-slate-100">
               <PermissionRowsList
-                rows={editUserPermissionRows(target, effectiveAccountType, effectivePermissions, users)}
+                rows={editUserPermissionRows(target, effectiveAccountType, effectivePermissions, currentUser?.id, users)}
                 onChange={updatePermissions}
                 disabled={!canEdit || target.isSuperAdmin}
                 excludeFields={suppressAdminAccessToggle ? ['adminAccess'] : undefined}
@@ -1654,7 +1660,7 @@ export function EditUserProfile({
                 {draftTypePermissions && (
                   <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
                     <PermissionRowsList
-                      rows={editUserPermissionRows(target, effectiveAccountType, draftTypePermissions, users)}
+                      rows={editUserPermissionRows(target, effectiveAccountType, draftTypePermissions, currentUser?.id, users)}
                       onChange={(patch) => setDraftTypePermissions({ ...draftTypePermissions, ...patch })}
                       excludeFields={suppressAdminAccessToggle ? ['adminAccess'] : undefined}
                       lockedMessage={lockedPermissionMessage(effectiveAccountType)}

@@ -531,6 +531,11 @@ export {
 export { canChangePersonPay } from './payAccess'
 export {
   LINE_MANAGER_REQUIRED_MESSAGE,
+  ADMIN_LINE_MANAGER_REQUIRED_MESSAGE,
+  PAYE_ADMIN_LINE_MANAGER_REQUIRED_MESSAGE,
+  isSuperAdminAccount,
+  isPayeAccount,
+  selfManageToggles,
   canDecideLeave,
   canSelfBookAnnualLeave,
   leaveDecisionQueue,
@@ -865,6 +870,10 @@ export { orgDayHours, payForHours, roundPennies } from './payRate'
 // Rulebook 1.11.0 (owner decisions round 3): permission levels, PAYE timesheets, invites, job kind on bookings.
 export {
   ADMIN_EDITABLE_PERMISSION_FIELDS,
+  ADMIN_ONLY_PERMISSION_FIELDS,
+  SUPER_ADMIN_SELF_MANAGE_MESSAGE,
+  TIMESHEET_SELF_SIGN_PAYE_NOTE,
+  OWN_SELF_MANAGE_MESSAGE,
   ADMIN_LOCKED_PERMISSION_MESSAGE,
   MANAGER_LOCKED_ON_PERMISSION_FIELDS,
   MANAGER_PERMISSION_TOGGLES,

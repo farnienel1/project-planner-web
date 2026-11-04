@@ -24,6 +24,7 @@ export const ORG_MEMBERSHIP_PERMISSION_KEYS = [
   'subContractors',
   'wholesalersOrderHistory',
   'annualLeaveSelfBook',
+  'timesheetSelfSign',
   'weeklyReports',
   'dailyOverview',
 ] as const

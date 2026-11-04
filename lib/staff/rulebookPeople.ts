@@ -9,7 +9,13 @@
 
 import type { User } from '@/types'
 import { staffAccountRole } from '@/lib/permissions'
-import { personIdSet, type NotificationRosterMember, type StaffAccountRole } from '@/lib/canonical'
+import {
+  isOrganizationSuperAdmin,
+  personIdSet,
+  type NotificationRosterMember,
+  type StaffAccountRole,
+} from '@/lib/canonical'
+import { activeOrganizationIdentity } from '@/lib/staff/activeOrganizationIdentity'
 
 export type RulebookPerson = NotificationRosterMember & {
   id: string
@@ -21,6 +27,15 @@ export type RulebookPerson = NotificationRosterMember & {
   manager: boolean
   operativeMode: boolean
   annualLeaveSelfBook: boolean
+  /** 1.28.0: admins only (`timesheetSelfSigned`, `selfManageToggles`). */
+  timesheetSelfSign: boolean
+  /** Stored `employmentType` (`paye` exempts an admin from Timesheet self-sign, `selfManageToggles`). */
+  employmentType: string | null
+  /**
+   * 1.28.0: Super Admin of the open organisation (`isOrganizationSuperAdmin`: its creator, or `isSuperAdmin` on a users
+   * document of it) — never the home company's flag in another company. Decides the self-manage toggles.
+   */
+  organizationSuperAdmin: boolean
   annualLeaveEnabled: boolean | null
 }
 
@@ -39,6 +54,26 @@ export function sameEmailUserIdsFor(user: Pick<User, 'id' | 'email'>, users: Rea
   return users.filter((row) => row && row.id && row.id !== user.id && emailKey(row.email) === email).map((row) => row.id)
 }
 
+/**
+ * Whether `user` is the Super Admin of the open organisation (`isOrganizationSuperAdmin`, the rules'
+ * `callerIsSuperAdminOf`): its creator, or `isSuperAdmin` on a users document of that organisation. The users
+ * document's organisation is `homeOrganizationId` (the signed-in user in another company), else their roster row's,
+ * else their own. With no open organisation known, the stored flag.
+ */
+export function userIsOrganizationSuperAdmin(user: User, users: ReadonlyArray<User> = []): boolean {
+  const identity = activeOrganizationIdentity()
+  const row = users.find((member) => member && member.id === user.id)
+  if (!identity) return user.isSuperAdmin === true
+  return isOrganizationSuperAdmin(
+    {
+      id: user.id,
+      isSuperAdmin: user.isSuperAdmin === true,
+      organizationId: user.homeOrganizationId || row?.homeOrganizationId || row?.organizationId || user.organizationId,
+    },
+    { id: identity.organizationId, creatorUserId: identity.creatorUserId }
+  )
+}
+
 /** One person, filled in from the roster for `sameEmailUserIds`. */
 export function rulebookPerson(user: User, users: ReadonlyArray<User> = []): RulebookPerson {
   const permissions = user.permissions || ({} as User['permissions'])
@@ -55,6 +90,9 @@ export function rulebookPerson(user: User, users: ReadonlyArray<User> = []): Rul
     manager: permissions.manager === true,
     operativeMode: permissions.operativeMode === true,
     annualLeaveSelfBook: permissions.annualLeaveSelfBook === true,
+    timesheetSelfSign: permissions.timesheetSelfSign === true,
+    employmentType: typeof user.employmentType === 'string' ? user.employmentType : null,
+    organizationSuperAdmin: userIsOrganizationSuperAdmin(user, users),
     annualLeaveEnabled: user.annualLeaveEnabled ?? null,
     formerUserIds: ids(user.formerUserIds),
     sameEmailUserIds: sameEmailUserIdsFor(user, users),

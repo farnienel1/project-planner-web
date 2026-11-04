@@ -10,7 +10,7 @@
  * Pure, JSON in / JSON out.
  */
 
-import { lineManagerRequired } from './leaveRequests'
+import { isAdminOutsideOperativeMode, lineManagerRequired } from './leaveRequests'
 import { permissionLevelOf } from './permissionLevels'
 import { idKey, personIdSet, rosterMemberActive, rosterMemberFor, type PersonRosterRow } from './personIds'
 import { isAnonymisedDeletedProfile } from './userRosterSegment'
@@ -46,6 +46,10 @@ export type LineManagerSubject = {
   assignedManagerUserIds?: ReadonlyArray<string> | null
   assignedManagerUserId?: string | null
   hasNoLineManager?: boolean | null
+  /** 1.28.0 self-manage toggles and PAYE (`selfManageToggles`). */
+  annualLeaveSelfBook?: boolean | null
+  timesheetSelfSign?: boolean | null
+  employmentType?: string | null
 }
 
 export type LineManagerCandidate = { id: string; name: string; level: 'admin' | 'manager' }
@@ -169,9 +173,11 @@ export function lineManagerSelectedIds(
 }
 
 /**
- * The picker's options for this person (rulebook §8): `allowsNoLineManager` — "No line manager" is offered only when
- * `lineManagerRequired(person)` is false (an admin or super admin; an inactive person). A manager or operative is never
- * offered it, even when the candidate list is empty (the screen then says no one can be picked yet).
+ * The picker's options for this person (rulebook §8): `allowsNoLineManager` — "No line manager" is offered to an admin
+ * or super admin (and an inactive person). 1.28.0: an admin may keep it only when their self-manage toggles are
+ * satisfied (`required` false: Annual Leave Management on and Timesheet self-sign on, or PAYE); otherwise the save is
+ * refused by `lineManagerRequiredError`, which says which toggles to turn on. A manager or operative is never offered
+ * it, even when the candidate list is empty (the screen then says no one can be picked yet).
  */
 export function lineManagerOptions(person: LineManagerSubject | null | undefined): {
   required: boolean
@@ -180,7 +186,8 @@ export function lineManagerOptions(person: LineManagerSubject | null | undefined
   noLineManagerHelp: string
 } {
   const required = lineManagerRequired(person as never)
-  return { required, allowsNoLineManager: !required, noLineManagerLabel: NO_LINE_MANAGER_LABEL, noLineManagerHelp: NO_LINE_MANAGER_HELP }
+  const allowsNoLineManager = !required || isAdminOutsideOperativeMode(person as never)
+  return { required, allowsNoLineManager, noLineManagerLabel: NO_LINE_MANAGER_LABEL, noLineManagerHelp: NO_LINE_MANAGER_HELP }
 }
 
 /** Shown for a stored line manager id the roster does not know (never a raw id, never dropped from the count). */

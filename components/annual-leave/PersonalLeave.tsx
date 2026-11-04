@@ -251,7 +251,7 @@ export function PersonalLeave({
       const store = useOrgUserStore.getState()
       if (store.users.length === 0) await store.loadUsers(organization.id).catch(() => undefined)
       const users = useOrgUserStore.getState().users
-      // Approved for a self-booker (the permission, or an admin with no active line manager); everyone else sends
+      // Approved for a self-booker (the permission, or the Super Admin; rulebook 1.28.0); everyone else sends
       // a pending request.
       const status = userCanSelfBookAnnualLeave(user, users) ? 'approved' : 'pending'
       const saved = await createRequests(

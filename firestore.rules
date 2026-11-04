@@ -135,8 +135,20 @@ service cloud.firestore {
            (!staffFlag(next, 'adminAccess') || staffFlag(source, 'adminAccess')) &&
            (!staffFlag(next, 'manager') || staffFlag(source, 'manager')) &&
            (!staffFlag(next, 'operatives') || staffFlag(source, 'operatives')) &&
+           // 1.28.0: the self-manage toggles only as the admin set them on the placeholder.
+           (!staffFlag(next, 'annualLeaveSelfBook') || staffFlag(source, 'annualLeaveSelfBook')) &&
+           (!staffFlag(next, 'timesheetSelfSign') || staffFlag(source, 'timesheetSelfSign')) &&
            (!(next.get('role', '') in ['admin', 'manager']) || next.get('role', '') == source.get('role', '')) &&
            (!isOperativeProfile(source) || isOperativeProfile(next));
+  }
+
+  // Rulebook 1.28.0: a profile a person creates for themself (re-creating a deleted one, or the bootstrap path) never
+  // switches on their own self-manage toggles (Annual Leave Management, Timesheet self-sign; top level or
+  // `permissions`) — except the organisation's creator, the Super Admin, who reads both on anyway. An admin sets them.
+  function selfCreateSelfManageOff(organizationId) {
+    return (!staffFlag(request.resource.data, 'annualLeaveSelfBook') &&
+            !staffFlag(request.resource.data, 'timesheetSelfSign')) ||
+           orgCreatorIs(organizationId, request.auth.uid);
   }
 
   function raisesPrivileges(next) {
@@ -163,6 +175,7 @@ service cloud.firestore {
       // 1.12.0 (B3): a returning member re-creating their own profile brings no alias ids (deleting and re-creating
       // it must not be a way round the self-update lock).
       selfCreateAliasesWithin(request.resource.data, {}, '') &&
+      selfCreateSelfManageOff(organizationId) &&
       (
         !raisesPrivileges(request.resource.data) ||
         get(/databases/(default)/documents/organizations/$(organizationId)).data.members[request.auth.uid] == 'admin'
@@ -745,10 +758,10 @@ service cloud.firestore {
   function lockedPermissionFalseMap(includeOperativeOnlyKeys) {
     return includeOperativeOnlyKeys
       ? {'manager': false, 'operatives': false, 'qualifications': false, 'projects': false, 'smallWorks': false,
-         'annualLeaveSelfBook': false, 'weeklyReports': false, 'subContractors': false,
+         'annualLeaveSelfBook': false, 'timesheetSelfSign': false, 'weeklyReports': false, 'subContractors': false,
          'materials': false, 'siteAudit': false}
       : {'manager': false, 'operatives': false, 'qualifications': false, 'projects': false, 'smallWorks': false,
-         'annualLeaveSelfBook': false, 'weeklyReports': false, 'subContractors': false};
+         'annualLeaveSelfBook': false, 'timesheetSelfSign': false, 'weeklyReports': false, 'subContractors': false};
   }
 
   // Locked toggles that are on at the top level or in `permissions`.
@@ -788,20 +801,6 @@ service cloud.firestore {
 
   function hasLineManager(data) {
     return data.get('hasNoLineManager', false) != true && lineManagerIdList(data).size() > 0;
-  }
-
-  // lib/canonical/leaveRequests.ts hasActiveLineManager, as far as rules can see: a listed line manager who
-  // is not the person and, when exactly one is listed, whose users document exists and is not inactive
-  // (rules cannot loop, so two or more listed ids count as having one). `uid` is the person's id.
-  function hasCurrentLineManager(uid, data) {
-    let ids = lineManagerIdList(data);
-    return data.get('hasNoLineManager', false) != true && ids.size() > 0 && (
-      ids.size() > 1 || (
-        ids[0] != uid &&
-        exists(/databases/(default)/documents/users/$(ids[0])) &&
-        get(/databases/(default)/documents/users/$(ids[0])).data.get('isActive', true) != false
-      )
-    );
   }
 
   // Timestamps written by a client round-trip through ms (web Date) or a Swift Double (iOS Date),
@@ -844,7 +843,8 @@ service cloud.firestore {
     let next = request.resource.data;
     let prev = resource.data;
     let changed = next.diff(prev).affectedKeys();
-    return alreadyPrivilegedAdmin(prev) || (
+    // 1.28.0: the admin exemption never covers their own self-manage toggles (selfManageTogglesUnchanged).
+    return (alreadyPrivilegedAdmin(prev) && selfManageTogglesUnchanged(next, prev)) || (
       (!changed.hasAny(['dayRate', 'hourlyRate', 'payBasis']) || (
         next.get('dayRate', null) == prev.get('dayRate', null) &&
         next.get('hourlyRate', null) == prev.get('hourlyRate', null) &&
@@ -868,12 +868,26 @@ service cloud.firestore {
       (!('employmentStartDate' in changed) ||
         sameLooseValue(next.get('employmentStartDate', null), prev.get('employmentStartDate', null))) &&
       (!changed.hasAny(['permissions', 'manager', 'operatives', 'qualifications', 'projects', 'smallWorks',
-                        'annualLeaveSelfBook', 'weeklyReports', 'subContractors', 'dailyOverview',
+                        'annualLeaveSelfBook', 'timesheetSelfSign', 'weeklyReports', 'subContractors', 'dailyOverview',
                         'wholesalersOrderHistory', 'materials', 'siteAudit', 'operativeMode', 'role']) ||
        selfPermissionsNotRaised(next, prev, changed))
     );
   }
 
+
+  // Rulebook 1.28.0 (§11, §16): nobody changes their own self-manage toggles (Annual Leave Management
+  // `annualLeaveSelfBook`, Timesheet self-sign `timesheetSelfSign`) — not even an admin, whose other self-repairs
+  // `selfUpdateKeepsManagedFields` still allows. They decide self-approval (hbCallerSelfBooks,
+  // timesheetSubjectSelfSigns). The Super Admin reads both on whatever is stored, so their own document is exempt.
+  // Resending an unchanged value (missing and false are the same) passes.
+  // Used on the admin paths only (a non-admin can never raise them: lockedPermissionFalseMap).
+  function selfManageTogglesUnchanged(next, prev) {
+    return !next.diff(prev).affectedKeys().hasAny(['annualLeaveSelfBook', 'timesheetSelfSign', 'permissions']) ||
+      staffFlag(prev, 'isSuperAdmin') ||
+      orgCreatorIs(docOrganizationId(prev), request.auth.uid) ||
+      (staffFlag(next, 'annualLeaveSelfBook') == staffFlag(prev, 'annualLeaveSelfBook') &&
+       staffFlag(next, 'timesheetSelfSign') == staffFlag(prev, 'timesheetSelfSign'));
+  }
 
   // An organisation id stored on a document: an id, an "organizations/<id>" string or a reference.
   function docOrganizationId(data) {
@@ -907,6 +921,7 @@ service cloud.firestore {
     let prev = resource.data;
     let org = docOrganizationId(prev);
     return callerIsSuperAdminOf(org) || (
+      // 1.28.0: an admin never changes their own self-manage toggles.
       staffFlag(next, 'isSuperAdmin') == staffFlag(prev, 'isSuperAdmin') && (
         !next.diff(prev).affectedKeys().hasAny(['isSuperAdmin', 'adminAccess', 'role', 'permissions', 'operativeMode',
           'manager', 'operatives', 'isActive', 'organizationId']) ||
@@ -1073,7 +1088,8 @@ service cloud.firestore {
         // Path 3: Web org setup bootstrap (org exists, caller is admin in members map, writing own profile).
         // 1.12.0 (B3): a founder's new profile carries no alias ids.
         (isOrgBootstrapAdminProfileCreate(userId) && selfCreateHasAgeConfirmation() &&
-         selfCreateAliasesWithin(request.resource.data, {}, '') && selfCreateSuperAdminAllowed()) ||
+         selfCreateAliasesWithin(request.resource.data, {}, '') && selfCreateSuperAdminAllowed() &&
+         selfCreateSelfManageOff(request.resource.data.organizationId)) ||
         // Path 4: Manager with operatives permission inviting a new operative
         managerCanCreateOperativeUser() ||
         // Path 5: Platform owner creating their own non-tenant profile
@@ -1091,9 +1107,12 @@ service cloud.firestore {
          request.resource.data.email is string &&
          request.resource.data.email.lower() == request.auth.token.email.lower() &&
          userSelfUpdateKeepsPrivileges()) ||
+        // Before the admin branch (1.28.0): a manager's operative edit stops here, under the expression limit.
+        canManagerUpdateOperativeProfile(userId) ||
         ('organizationId' in resource.data && isAdminOfCompany(resource.data.organizationId) &&
-         adminUpdateKeepsTopAccount(userId)) ||
-        canManagerUpdateOperativeProfile(userId)
+         adminUpdateKeepsTopAccount(userId) &&
+         // 1.28.0: an admin never changes their own self-manage toggles (the Super Admin reads both on).
+         (request.auth.uid != userId || selfManageTogglesUnchanged(request.resource.data, resource.data)))
       ) && (
         // No shortcut for the account's own document: an admin moving their own profile
         // into another company must be an admin of that company too.
@@ -1785,12 +1804,22 @@ service cloud.firestore {
             (resource == null || resource.data.get(key, null) == null || resource.data.get(key, null) == [])
           );
         }
-        // lib/canonical timesheetSelfSigned: the owner writes the approved snapshot only without a current
-        // line manager (hasCurrentLineManager: an inactive or self-only line manager is none).
-        function timesheetSubjectHasLineManager() {
-          return timesheetSubjectUid() is string &&
-            exists(/databases/(default)/documents/users/$(timesheetSubjectUid())) &&
-            hasCurrentLineManager(timesheetSubjectUid(), get(/databases/(default)/documents/users/$(timesheetSubjectUid())).data);
+        // lib/canonical timesheetSelfSigned (rulebook 1.28.0): the owner writes the approved snapshot only when the
+        // sheet is self-signed — the organisation's Super Admin (its creator, or a super admin users document of this
+        // organisation), or an active admin of this organisation with Timesheet self-sign on, line manager or not.
+        // Having no line manager no longer self-signs anyone.
+        function timesheetSubjectSelfSigns() {
+          return timesheetSubjectUid() is string && timesheetSubjectSelfSignsData(timesheetSubjectUid());
+        }
+        function timesheetSubjectSelfSignsData(uid) {
+          let path = /databases/(default)/documents/users/$(uid);
+          let subject = exists(path) ? get(path).data : {};
+          return orgCreatorIs(organizationId, uid) || (
+            homeOrgIs(subject, organizationId) &&
+            subject.get('isActive', true) != false &&
+            adminLikeUser(subject) &&
+            (staffFlag(subject, 'timesheetSelfSign') || staffFlag(subject, 'isSuperAdmin'))
+          );
         }
         function timesheetStoredManagerSigned() {
           return resource != null && (
@@ -1801,13 +1830,13 @@ service cloud.firestore {
           );
         }
         // The owner never writes line reviews or entry decisions; writes the approved snapshot only
-        // when they have no line manager (self-signed); and cannot change their price work or
+        // when the sheet is self-signed (timesheetSubjectSelfSigns); and cannot change their price work or
         // expenses once the line manager has signed.
         function timesheetOwnerReviewFieldsUnchanged() {
           let written = timesheetWrittenKeys();
           return timesheetOwnerLeaves('payrollLineReviews', written) &&
             timesheetOwnerLeaves('extraEntryReviews', written) &&
-            (timesheetOwnerLeaves('weeklyReportOverride', written) || !timesheetSubjectHasLineManager()) &&
+            (timesheetOwnerLeaves('weeklyReportOverride', written) || timesheetSubjectSelfSigns()) &&
             (!timesheetStoredManagerSigned() || (
               timesheetOwnerLeavesList('expenseEntries', written) &&
               timesheetOwnerLeavesList('priceWorkEntries', written)
@@ -1980,8 +2009,8 @@ service cloud.firestore {
       // (status 'approved' / 'rejected', approvedByUserId, approvedAt, decisionNote). When the
       // requester has no line manager, or the row has no users document (legacy operativeId-only
       // row), an admin decides (never any manager). People who book their own leave
-      // (lib/canonical canSelfBookAnnualLeave: annualLeaveSelfBook outside operative mode, or an admin
-      // with no current line manager) save it approved. Both apps resend every field with setData merge, so
+      // (lib/canonical canSelfBookAnnualLeave: annualLeaveSelfBook outside operative mode, or the
+      // organisation's Super Admin — rulebook 1.28.0) save it approved. Both apps resend every field with setData merge, so
       // decision fields count only when the value really changes (null, missing and a sub-second
       // timestamp round-trip are the same).
       match /holidayBookings/{bookingId} {
@@ -2039,13 +2068,14 @@ service cloud.firestore {
             (!hbCallerIsOperative() && hbIsAdmin())
           );
         }
-        // lib/canonical canSelfBookAnnualLeave: the self-book flag outside operative mode, or an admin /
-        // super admin outside operative mode with no current line manager (self-approved). Having no line
-        // manager does not self-book an operative or manager (their request waits for an admin).
+        // lib/canonical canSelfBookAnnualLeave (rulebook 1.28.0): the self-book flag (Annual Leave Management)
+        // outside operative mode, or the organisation's Super Admin (callerIsSuperAdminOf: its creator, or a super
+        // admin users document of this organisation). Having no line manager never self-books anyone, admins
+        // included (their request waits for the other admins).
         function hbCallerSelfBooks() {
           return !hbCallerIsOperative() && (
             staffFlag(hbCaller(), 'annualLeaveSelfBook') ||
-            (hbIsAdmin() && !hasCurrentLineManager(request.auth.uid, hbCaller()))
+            callerIsSuperAdminOf(organizationId)
           );
         }
         function hbIsRequestShape(next) {

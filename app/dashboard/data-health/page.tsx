@@ -13,6 +13,7 @@ import { useAuthStore } from '@/lib/stores/authStore'
 import { hasAdminAccess } from '@/lib/permissions'
 import { BookingHealthScan } from '@/components/dataHealth/BookingHealthScan'
 import { UsersMissingLevel } from '@/components/dataHealth/UsersMissingLevel'
+import { UsersMissingLineManager } from '@/components/dataHealth/UsersMissingLineManager'
 import {
   parseAppUserDocument,
   parseBooking,
@@ -115,6 +116,8 @@ export default function DataHealthPage() {
       <div className="space-y-4">
         {/* Rulebook 1.23.1 §11: people with no user level (`usersMissingLevel`). */}
         <UsersMissingLevel organizationId={organization.id} />
+        {/* Rulebook 1.28.0 §8, §11: people who need a line manager (`usersMissingLineManager`). */}
+        <UsersMissingLineManager organizationId={organization.id} />
         <BookingHealthScan organizationId={organization.id} />
       </div>
     ) : null

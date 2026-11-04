@@ -14,6 +14,7 @@ import { getFirebaseDb } from '@/lib/firebase/ensureFirebase'
 import { organizationTimeZone, resolveOrganizationCurrency } from '@/lib/canonical'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { setActiveOrganizationTimeZone } from '@/lib/orgTime/activeOrganizationZone'
+import { setActiveOrganizationIdentity } from '@/lib/staff/activeOrganizationIdentity'
 
 type OrganizationDocumentState = {
   organizationId: string
@@ -46,6 +47,11 @@ function startListening(organizationId: string) {
       if (listeningTo !== organizationId) return
       const data = snap.exists() ? snap.data() : null
       setActiveOrganizationTimeZone(organizationTimeZone(data && typeof data.countryCode === 'string' ? data.countryCode : null))
+      // 1.28.0: a live creator change (Change Super Admin) reaches `rulebookPerson` too.
+      setActiveOrganizationIdentity({
+        organizationId,
+        creatorUserId: data && typeof data.creatorUserId === 'string' ? data.creatorUserId : null,
+      })
       useOrganizationDocumentStore.setState({
         organizationId,
         data,

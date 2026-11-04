@@ -5303,8 +5303,9 @@ test('1.2.0 D2: self-book is the permission only; self-book off needs a current 
     { id: 'OP', role: role({ isOperativeMode: true }) },
     { id: 'OP2', role: role({ isOperativeMode: true }), assignedManagerUserIds: ['A'] },
   ]
-  // 1.3.0: the admin needs no line manager; the operative without one is listed.
-  assert.deepEqual(rulebook.usersMissingLineManager(people), ['OP'])
+  // 1.28.0: an admin with Annual Leave Management but Timesheet self-sign off needs a line manager too.
+  assert.deepEqual(rulebook.usersMissingLineManager(people), ['A', 'OP'])
+  assert.deepEqual(rulebook.usersMissingLineManager([{ ...people[0], timesheetSelfSign: true }, ...people.slice(1)]), ['OP'])
   assert.deepEqual(rulebook.leaveApproverIds(people[1], people), ['A'])
 })
 
@@ -5606,17 +5607,25 @@ test('1.3.0 A: every operative and manager needs a line manager; only admins out
   // A manager without a line manager is refused, self-book permission or not.
   assert.equal(rulebook.lineManagerRequiredError(roster130[6], roster130), msg)
   assert.equal(rulebook.lineManagerRequiredError({ id: 'M', role: 'manager', annualLeaveSelfBook: true }), msg)
-  // An admin without one is fine; an admin with one too; 1.11.0: an admin has no operative mode, so a stray flag
-  // does not make one required.
-  assert.equal(rulebook.lineManagerRequiredError(roster130[0], roster130), null)
+  // 1.28.0: an admin without one needs both self-manage toggles; an admin with one is fine; the Super Admin always is.
+  // 1.11.0: an admin has no operative mode, so a stray flag does not change which message applies.
+  assert.equal(rulebook.lineManagerRequiredError(roster130[0], roster130), rulebook.ADMIN_LINE_MANAGER_REQUIRED_MESSAGE)
+  assert.equal(
+    rulebook.lineManagerRequiredError({ ...roster130[0], annualLeaveSelfBook: true, timesheetSelfSign: true }, roster130),
+    null
+  )
   assert.equal(rulebook.lineManagerRequiredError(roster130[1], roster130), null)
-  assert.equal(rulebook.lineManagerRequiredError({ id: 'A', role: 'admin', operativeMode: true }), null)
+  assert.equal(rulebook.lineManagerRequiredError(roster130[2], roster130), null)
+  assert.equal(rulebook.lineManagerRequiredError({ id: 'A', role: 'admin', operativeMode: true }), rulebook.ADMIN_LINE_MANAGER_REQUIRED_MESSAGE)
   assert.equal(rulebook.lineManagerRequired({ id: 'O', role: 'operative', isActive: false }), false)
-  assert.deepEqual(rulebook.usersMissingLineManager(roster130), ['MGR', 'OP-STUB', 'LEGACY'])
+  assert.deepEqual(rulebook.usersMissingLineManager(roster130), ['ADMIN', 'MGR', 'OP-STUB', 'LEGACY'])
 })
 
-test('1.3.0 A4: an admin with no active line manager is self-approved; with one, normal approval', () => {
-  const admin = roster130[0]
+test('1.3.0 A4 (1.28.0): self-approval follows the self-manage toggles, not the missing line manager', () => {
+  // 1.28.0: no line manager alone no longer self-approves; the toggles do (line manager or not).
+  assert.equal(rulebook.timesheetSelfSigned(roster130[0], roster130), false)
+  assert.equal(rulebook.canSelfBookAnnualLeave(roster130[0], roster130), false)
+  const admin = { ...roster130[0], annualLeaveSelfBook: true, timesheetSelfSign: true }
   const adminLm = roster130[1]
   assert.equal(rulebook.timesheetSelfSigned(admin, roster130), true)
   assert.equal(rulebook.canSelfBookAnnualLeave(admin, roster130), true)
@@ -5625,8 +5634,9 @@ test('1.3.0 A4: an admin with no active line manager is self-approved; with one,
   assert.equal(rulebook.timesheetSelfSigned(adminLm, roster130), false)
   assert.equal(rulebook.canSelfBookAnnualLeave(adminLm, roster130), false)
   assert.equal(rulebook.leaveSubmitLabel(adminLm, roster130), 'Submit request')
-  // An admin whose only line manager left is self-approved again.
-  assert.equal(rulebook.timesheetSelfSigned({ ...adminLm, assignedManagerUserIds: ['GONE'] }, roster130), true)
+  // 1.28.0: an admin whose only line manager left is not self-approved by that; the toggle is.
+  assert.equal(rulebook.timesheetSelfSigned({ ...adminLm, assignedManagerUserIds: ['GONE'] }, roster130), false)
+  assert.equal(rulebook.timesheetSelfSigned({ ...adminLm, timesheetSelfSign: true }, roster130), true)
   // Self-signed owner saves may carry weeklyReportOverride; others may not.
   const fields = { weeklyReportOverride: { lines: [] }, managerNote: 'n' }
   assert.ok('weeklyReportOverride' in rulebook.timesheetOwnerWriteFields(fields, { subjectHasLineManager: !rulebook.timesheetSelfSigned(admin, roster130), managerSigned: false }))
@@ -5652,13 +5662,18 @@ test('1.3.0 B: notification recipients never include the actor', () => {
   assert.deepEqual(rulebook.personIdSet({ id: 'OP' }, roster130), ['OP', 'OP-STUB'])
   assert.deepEqual(rulebook.timesheetSubmittedRecipients('OP', roster130), ['LM', 'LM2'])
   assert.deepEqual(rulebook.timesheetSubmittedRecipients('LEGACY', roster130), ['ADMIN', 'ADMIN_LM', 'SA'])
-  assert.deepEqual(rulebook.timesheetSubmittedRecipients('ADMIN', roster130), [])
+  // 1.28.0: an admin with Timesheet self-sign off and no line manager goes to the other admins; with it on, nobody.
+  assert.deepEqual(rulebook.timesheetSubmittedRecipients('ADMIN', roster130), ['ADMIN_LM', 'SA'])
+  assert.deepEqual(rulebook.timesheetSubmittedRecipients({ id: 'ADMIN', timesheetSelfSign: true }, roster130), [])
+  assert.deepEqual(rulebook.timesheetSubmittedRecipients('SA', roster130), [])
   assert.deepEqual(rulebook.timesheetSubmittedRecipients('ADMIN_LM', roster130), ['LM'])
   assert.deepEqual(rulebook.timesheetSignedRecipients('OP', 'LM', roster130), ['OP'])
   assert.deepEqual(rulebook.timesheetSignedRecipients('OP', 'OP-STUB', roster130), [])
   assert.deepEqual(rulebook.lineManagerPeerRecipients('OP', 'LM-OLD', roster130), ['LM2'])
   assert.deepEqual(rulebook.holidayRequestRecipients('OP', roster130), ['LM', 'LM2'])
-  assert.deepEqual(rulebook.holidayRequestRecipients('ADMIN', roster130), [])
+  assert.deepEqual(rulebook.holidayRequestRecipients('ADMIN', roster130), ['ADMIN_LM', 'SA'])
+  assert.deepEqual(rulebook.holidayRequestRecipients({ id: 'ADMIN', annualLeaveSelfBook: true }, roster130), [])
+  assert.deepEqual(rulebook.holidayRequestRecipients('SA', roster130), [])
   assert.deepEqual(rulebook.holidayRequestRecipients('MGR', roster130), [])
   assert.deepEqual(rulebook.holidayDecisionRecipients('OP', 'op-stub', roster130), [])
   assert.deepEqual(rulebook.bookingCreatedRecipients(['OP', 'LM', 'GONE'], 'LM', roster130), ['OP'])
@@ -8099,10 +8114,14 @@ test('1.11.0 effectivePermissions / lockedPermissionFields: admins every toggle 
   const admin = { role: 'admin', adminAccess: true, operatives: false, weeklyReports: false, operativeMode: true, permissions: { projects: false, annualLeaveSelfBook: true } }
   const effective = r3Levels.effectivePermissions(admin)
   for (const key of R3_FIELDS) {
-    if (key === 'operativeMode') assert.equal(effective[key], false, key)
+    // 1.28.0: Timesheet self-sign is an admin self-manage toggle (stored, else off).
+    if (key === 'operativeMode' || key === 'timesheetSelfSign') assert.equal(effective[key], false, key)
     else assert.equal(effective[key], true, key)
   }
-  assert.deepEqual(r3Levels.lockedPermissionFields(admin), R3_FIELDS.filter((key) => key !== 'annualLeaveSelfBook'))
+  assert.deepEqual(
+    r3Levels.lockedPermissionFields(admin),
+    R3_FIELDS.filter((key) => key !== 'annualLeaveSelfBook' && key !== 'timesheetSelfSign')
+  )
   assert.equal(r3Levels.effectivePermissions({ ...admin, permissions: { annualLeaveSelfBook: false } }).annualLeaveSelfBook, false)
   assert.equal(r3Levels.permissionLevelOf({ isSuperAdmin: true, operativeMode: true }), 'admin')
   // Managers: stored toggles; Materials and Site audit always on and locked; Wholesalers stays editable (can be off).
@@ -8114,13 +8133,14 @@ test('1.11.0 effectivePermissions / lockedPermissionFields: admins every toggle 
   assert.equal(m.projects, true)
   assert.equal(m.smallWorks, false)
   assert.equal(m.adminAccess, false)
-  assert.deepEqual(r3Levels.lockedPermissionFields(manager), ['materials', 'siteAudit'])
+  // 1.28.0: Timesheet self-sign is admins only — locked off for a manager or operative.
+  assert.deepEqual(r3Levels.lockedPermissionFields(manager), ['materials', 'siteAudit', 'timesheetSelfSign'])
   // Operatives: stored Materials / Site audit, editable.
   const op = r3Levels.effectivePermissions({ role: 'operative', operativeMode: true, materials: true, siteAudit: false })
   assert.equal(op.materials, true)
   assert.equal(op.siteAudit, false)
   assert.equal(op.operativeMode, true)
-  assert.deepEqual(r3Levels.lockedPermissionFields({ role: 'operative' }), [])
+  assert.deepEqual(r3Levels.lockedPermissionFields({ role: 'operative' }), ['timesheetSelfSign'])
   // Operatives toggle: managing operatives vs scheduling them.
   assert.equal(r3Levels.canManageOperatives({ role: 'manager', manager: true, operatives: false }), false)
   assert.equal(r3Levels.canScheduleOperatives({ role: 'manager', manager: true, operatives: false }), true)
@@ -8149,8 +8169,8 @@ test('1.11.0 permissionToggleRows: one catalogue for Add User, its summary and E
   const visible = (level: 'admin' | 'manager' | 'operative', mode: 'add' | 'edit' | 'summary', user?: unknown) =>
     r3Levels.permissionToggleRows({ level, mode, user }).filter((row) => row.visible)
   const admin = visible('admin', 'edit', { role: 'admin', adminAccess: true })
-  assert.deepEqual(admin.filter((row) => row.editable).map((row) => row.field), ['annualLeaveSelfBook'])
-  assert.ok(admin.every((row) => row.field === 'annualLeaveSelfBook' || row.value === true))
+  assert.deepEqual(admin.filter((row) => row.editable).map((row) => row.field), ['annualLeaveSelfBook', 'timesheetSelfSign'])
+  assert.ok(admin.every((row) => row.field === 'annualLeaveSelfBook' || row.field === 'timesheetSelfSign' || row.value === true))
   assert.ok(admin.some((row) => row.field === 'adminAccess'))
   const manager = visible('manager', 'add')
   assert.deepEqual(manager.map((row) => row.field), [
@@ -8978,6 +8998,8 @@ test('1.15.0 manager → admin → manager returns the exact toggles; an admin s
   for (const key of R1150_FIELDS) {
     if (key === 'operativeMode') assert.equal(adminView[key], false)
     else if (key === 'annualLeaveSelfBook') assert.equal(adminView[key], true)
+    // 1.28.0: Timesheet self-sign is an admin self-manage toggle, never stored here, so it reads off.
+    else if (key === 'timesheetSelfSign') assert.equal(adminView[key], false)
     else assert.equal(adminView[key], true, `admin reads ${key} on`)
   }
   // Stored values untouched underneath.
@@ -11638,4 +11660,187 @@ test('1.27.0 a deletion scheduled under the 60-day rule keeps its stored eraseAf
   assert.equal(r1150Del.organizationEraseDue(org, at + 31 * 86400000), false)
   assert.equal(r1150Del.organizationEraseDue(org, at + 60 * 86400000), true)
   assert.match(R112.DELETED_DATA_RETENTION_NOTICE, /restored for 30 days/)
+})
+
+// MARK: - 1.28.0 (owner decisions 4 Nov): admin self-manage toggles and when a line manager is required
+
+import * as r1280Leave from './leaveRequests.ts'
+import * as r1280Levels from './permissionLevels.ts'
+import * as r1280Recipients from './notificationRecipients.ts'
+import { userProfileWriteFields as r1280ProfileWrite } from './peopleDocuments.ts'
+import { lineManagerOptions as r1280Options } from './lineManagers.ts'
+
+const r1280SA = { id: 'SA', email: 'sa@x.com', role: 'admin', adminAccess: true, isSuperAdmin: true }
+const r1280LM = { id: 'LM', email: 'lm@x.com', role: 'manager', manager: true, assignedManagerUserIds: ['SA'] }
+const r1280Admin = (extra: Record<string, unknown> = {}) => ({ id: 'A', email: 'a@x.com', role: 'admin', adminAccess: true, ...extra })
+
+test('1.28.0 the lone Super Admin always has both self-manage toggles and needs no line manager', () => {
+  const roster = [r1280SA]
+  const toggles = r1280Leave.selfManageToggles({ ...r1280SA, permissions: { annualLeaveSelfBook: false } })
+  assert.deepEqual(toggles, { annualLeaveSelfBook: true, timesheetSelfSign: true, timesheetApplies: true, superAdmin: true, satisfied: true })
+  assert.equal(r1280Leave.lineManagerRequired(r1280SA), false)
+  assert.equal(r1280Leave.lineManagerRequiredError(r1280SA, roster), null)
+  assert.equal(r1280Leave.timesheetSelfSigned(r1280SA, roster), true)
+  assert.equal(r1280Leave.canSelfBookAnnualLeave(r1280SA, roster), true)
+  assert.equal(r1280Leave.leaveSubmitLabel(r1280SA, roster), 'Submit')
+  assert.deepEqual(r1280Leave.usersMissingLineManager(roster), [])
+  // Read on and locked in the permission rows, with the Super Admin note.
+  const effective = r1280Levels.effectivePermissions({ ...r1280SA, annualLeaveSelfBook: false, timesheetSelfSign: false })
+  assert.equal(effective.annualLeaveSelfBook, true)
+  assert.equal(effective.timesheetSelfSign, true)
+  const rows = r1280Levels.permissionToggleRows({ level: 'admin', user: r1280SA, mode: 'edit' })
+  for (const field of ['annualLeaveSelfBook', 'timesheetSelfSign']) {
+    const row = rows.find((entry) => entry.field === field)!
+    assert.equal(row.value, true, field)
+    assert.equal(row.editable, false, field)
+    assert.equal(row.note, r1280Levels.SUPER_ADMIN_SELF_MANAGE_MESSAGE, field)
+  }
+  // A save never writes the Super Admin's self-manage toggles.
+  const write = r1280ProfileWrite({ ...r1280SA, permissions: { annualLeaveSelfBook: false } }, { annualLeaveSelfBook: true, permissions: { annualLeaveSelfBook: true } })
+  assert.equal('annualLeaveSelfBook' in write.set, false)
+})
+
+test('1.28.0 an admin with both toggles may have no line manager; with one toggle they need one', () => {
+  const both = r1280Admin({ annualLeaveSelfBook: true, timesheetSelfSign: true, hasNoLineManager: true })
+  const roster = [r1280SA, both]
+  assert.equal(r1280Leave.lineManagerRequired(both), false)
+  assert.equal(r1280Leave.lineManagerRequiredError(both, roster), null)
+  assert.equal(r1280Leave.timesheetSelfSigned(both, roster), true)
+  assert.equal(r1280Leave.canSelfBookAnnualLeave(both, roster), true)
+  assert.deepEqual(r1280Recipients.timesheetSubmittedRecipients(both, roster), [])
+  assert.deepEqual(r1280Recipients.holidayRequestRecipients(both, roster), [])
+
+  const leaveOnly = r1280Admin({ annualLeaveSelfBook: true, hasNoLineManager: true })
+  assert.equal(r1280Leave.lineManagerRequired(leaveOnly), true)
+  assert.equal(r1280Leave.lineManagerRequiredError(leaveOnly, [r1280SA, leaveOnly]), r1280Leave.ADMIN_LINE_MANAGER_REQUIRED_MESSAGE)
+  assert.equal(r1280Leave.timesheetSelfSigned(leaveOnly, [r1280SA, leaveOnly]), false)
+  assert.equal(r1280Leave.canSelfBookAnnualLeave(leaveOnly, [r1280SA, leaveOnly]), true)
+  // Not stranded: the sheet goes to the other active admins (here only the Super Admin).
+  assert.deepEqual(r1280Recipients.timesheetSubmittedRecipients(leaveOnly, [r1280SA, leaveOnly]), ['SA'])
+
+  const signOnly = r1280Admin({ timesheetSelfSign: true })
+  assert.equal(r1280Leave.lineManagerRequiredError(signOnly, [r1280SA, signOnly]), r1280Leave.ADMIN_LINE_MANAGER_REQUIRED_MESSAGE)
+  assert.equal(r1280Leave.leaveSubmitLabel(signOnly, [r1280SA, signOnly]), 'Submit request')
+  assert.deepEqual(r1280Recipients.holidayRequestRecipients(signOnly, [r1280SA, signOnly]), ['SA'])
+  assert.deepEqual(r1280Leave.leaveApproverIds(signOnly, [r1280SA, signOnly]), ['SA'])
+  assert.deepEqual(r1280Leave.usersMissingLineManager([r1280SA, leaveOnly, signOnly, both]), ['A', 'A'])
+
+  // "No line manager" is offered to every admin; whether it is enough is lineManagerRequiredError.
+  assert.equal(r1280Options(leaveOnly).allowsNoLineManager, true)
+  assert.equal(r1280Options(leaveOnly).required, true)
+  assert.equal(r1280Options(r1280LM).allowsNoLineManager, false)
+})
+
+test('1.28.0 a PAYE admin needs only Annual Leave Management; Timesheet self-sign is greyed out', () => {
+  const paye = r1280Admin({ annualLeaveSelfBook: true, employmentType: 'paye' })
+  assert.equal(r1280Leave.isPayeAccount(paye), true)
+  assert.equal(r1280Leave.selfManageToggles(paye).satisfied, true)
+  assert.equal(r1280Leave.lineManagerRequiredError(paye, [r1280SA, paye]), null)
+  const payeOff = r1280Admin({ employmentType: 'paye' })
+  assert.equal(r1280Leave.lineManagerRequiredError(payeOff, [r1280SA, payeOff]), r1280Leave.PAYE_ADMIN_LINE_MANAGER_REQUIRED_MESSAGE)
+  const row = r1280Levels.permissionToggleRows({ level: 'admin', user: paye, mode: 'edit' }).find((entry) => entry.field === 'timesheetSelfSign')!
+  assert.equal(row.visible, true)
+  assert.equal(row.editable, false)
+  assert.equal(row.note, r1280Levels.TIMESHEET_SELF_SIGN_PAYE_NOTE)
+  // Self-employed: the row is editable.
+  const se = r1280Levels.permissionToggleRows({ level: 'admin', user: r1280Admin(), mode: 'edit' }).find((entry) => entry.field === 'timesheetSelfSign')!
+  assert.equal(se.editable, true)
+  assert.equal(se.note, null)
+  assert.equal(se.label, 'Timesheet self-sign')
+  assert.equal(se.help, "Sign your own timesheet and generate the invoice without a line manager's signature.")
+})
+
+test('1.28.0 a demoted admin: Timesheet self-sign reads off, is kept underneath, and a line manager is required', () => {
+  const stored = { id: 'D', email: 'd@x.com', organizationId: 'ORG', role: 'admin', adminAccess: true, timesheetSelfSign: true, annualLeaveSelfBook: true, permissions: { timesheetSelfSign: true, annualLeaveSelfBook: true } }
+  const plan = r1280Levels.accountTypeChangeWrites({ person: stored, kind: 'manager', organizationId: 'ORG' })
+  assert.ok(plan.ok)
+  if (!plan.ok) return
+  const fields = (plan.writes[0] as { fields: Record<string, unknown> }).fields
+  assert.equal(fields.timesheetSelfSign, true, 'stored value kept')
+  const demoted = { ...stored, role: 'manager', adminAccess: false, manager: true, permissions: { ...stored.permissions, adminAccess: false } }
+  assert.equal(r1280Levels.effectivePermissions(demoted).timesheetSelfSign, false)
+  assert.equal(r1280Leave.timesheetSelfSigned(demoted, [r1280SA, demoted]), false)
+  assert.equal(r1280Leave.lineManagerRequiredError(demoted, [r1280SA, demoted]), r1280Leave.LINE_MANAGER_REQUIRED_MESSAGE)
+  // Never shown for a manager; a manager save keeps the stored value underneath.
+  const row = r1280Levels.permissionToggleRows({ level: 'manager', user: demoted, mode: 'edit' }).find((entry) => entry.field === 'timesheetSelfSign')!
+  assert.equal(row.visible, false)
+  const write = r1280ProfileWrite(demoted, { timesheetSelfSign: false, permissions: { timesheetSelfSign: false, projects: true } })
+  assert.equal('timesheetSelfSign' in write.set, false)
+  assert.deepEqual(write.set.permissions, { timesheetSelfSign: true, projects: true })
+  // A manager can never be given it.
+  assert.deepEqual(r1280Levels.withoutLockedPermissionWrites(demoted, { timesheetSelfSign: true }), {})
+  // Promoted back, it reads again.
+  assert.equal(r1280Levels.effectivePermissions({ ...demoted, role: 'admin', adminAccess: true }).timesheetSelfSign, true)
+})
+
+test('1.28.0 the toggles are independent of the line manager; nobody edits their own', () => {
+  const roster = [r1280SA, r1280LM]
+  const withLm = r1280Admin({ annualLeaveSelfBook: true, assignedManagerUserIds: ['LM'] })
+  roster.push(withLm as never)
+  // Leave self-booked, timesheet signed by the line manager.
+  assert.equal(r1280Leave.canSelfBookAnnualLeave(withLm, roster), true)
+  assert.equal(r1280Leave.timesheetSelfSigned(withLm, roster), false)
+  assert.deepEqual(r1280Recipients.timesheetSubmittedRecipients(withLm, roster), ['LM'])
+  // And the other way round.
+  const signsOwn = r1280Admin({ timesheetSelfSign: true, assignedManagerUserIds: ['LM'] })
+  assert.equal(r1280Leave.timesheetSelfSigned(signsOwn, roster), true)
+  assert.equal(r1280Leave.canSelfBookAnnualLeave(signsOwn, roster), false)
+  assert.equal(r1280Leave.lineManagerRequiredError(signsOwn, roster), null)
+  // Managers keep Annual Leave Management; Timesheet self-sign never applies to them.
+  assert.equal(r1280Leave.selfManageToggles({ ...r1280LM, timesheetSelfSign: true }).timesheetSelfSign, false)
+  assert.equal(r1280Leave.canSelfBookAnnualLeave({ ...r1280LM, annualLeaveSelfBook: true }), true)
+  // The viewer's own self-manage rows are not editable.
+  const own = r1280Levels.permissionToggleRows({ level: 'admin', user: withLm, mode: 'edit', viewerIsSubject: true })
+  for (const field of ['annualLeaveSelfBook', 'timesheetSelfSign']) {
+    const row = own.find((entry) => entry.field === field)!
+    assert.equal(row.editable, false, field)
+    assert.equal(row.note, r1280Levels.OWN_SELF_MANAGE_MESSAGE, field)
+  }
+  // Add User: both start off for a new admin.
+  const defaults = r1280Levels.addUserPermissionDefaults('admin')
+  assert.equal(defaults.annualLeaveSelfBook, false)
+  assert.equal(defaults.timesheetSelfSign, false)
+})
+
+test('1.28.0 the organisation creator is its Super Admin even without the flag; another company\'s Super Admin is not', () => {
+  // isOrganizationSuperAdmin (organizationDeletion.ts, reused): the rules' callerIsSuperAdminOf.
+  assert.equal(rulebook.isOrganizationSuperAdmin({ id: 'C', isSuperAdmin: false }, { id: 'ORG', creatorUserId: 'c' }), true)
+  assert.equal(rulebook.isOrganizationSuperAdmin({ id: 'S', isSuperAdmin: true, organizationId: 'organizations/org' }, { id: 'ORG' }), true)
+  assert.equal(rulebook.isOrganizationSuperAdmin({ id: 'S', isSuperAdmin: true, organizationId: 'ORG' }, { id: 'ORG-B' }), false)
+  assert.equal(rulebook.isOrganizationSuperAdmin({ id: 'A', isSuperAdmin: false }, { id: 'ORG', creatorUserId: 'C' }), false)
+
+  // A lone unflagged creator admin with no line manager: satisfied, self-signed, self-booked, saves pass.
+  const creator = { id: 'C', email: 'c@x.com', role: 'admin', adminAccess: true, hasNoLineManager: true, organizationSuperAdmin: true }
+  assert.equal(r1280Leave.lineManagerRequiredError(creator, [creator]), null)
+  assert.equal(r1280Leave.timesheetSelfSigned(creator, [creator]), true)
+  assert.equal(r1280Leave.canSelfBookAnnualLeave(creator, [creator]), true)
+  const rows = r1280Levels.permissionToggleRows({ level: 'admin', user: creator, mode: 'edit' })
+  assert.equal(rows.find((row) => row.field === 'timesheetSelfSign')?.value, true)
+  assert.equal(rows.find((row) => row.field === 'timesheetSelfSign')?.editable, false)
+
+  // A flagged Super Admin of another company working here as an admin: the flag does not count.
+  const visitor = { id: 'S', role: 'admin', adminAccess: true, isSuperAdmin: true, organizationSuperAdmin: false }
+  assert.equal(r1280Leave.timesheetSelfSigned(visitor, [r1280SA, visitor]), false)
+  assert.equal(r1280Leave.canSelfBookAnnualLeave(visitor, [r1280SA, visitor]), false)
+  assert.equal(r1280Leave.lineManagerRequiredError(visitor, [r1280SA, visitor]), r1280Leave.ADMIN_LINE_MANAGER_REQUIRED_MESSAGE)
+  assert.equal(r1280Levels.effectivePermissions(visitor).timesheetSelfSign, false)
+})
+
+test('1.28.0 a save never writes derived self-manage values: demotion keeps Timesheet self-sign underneath', () => {
+  const before = { role: 'admin', adminAccess: true, timesheetSelfSign: true, permissions: { adminAccess: true, timesheetSelfSign: true } }
+  // The screen sends the manager-level effective value (off) with the level change.
+  const write = r1280ProfileWrite(before, {
+    role: 'manager', adminAccess: false, manager: true, timesheetSelfSign: false,
+    permissions: { adminAccess: false, manager: true, timesheetSelfSign: false },
+  })
+  assert.equal('timesheetSelfSign' in write.set, false)
+  assert.equal((write.set.permissions as Record<string, unknown>).timesheetSelfSign, true)
+  // Promotion writes what the screen chose.
+  const promote = r1280ProfileWrite({ role: 'manager', manager: true }, { role: 'admin', adminAccess: true, timesheetSelfSign: true })
+  assert.equal(promote.set.timesheetSelfSign, true)
+  // A flagged Super Admin's save never stores the derived on values.
+  const sa = r1280ProfileWrite({ ...r1280SA, annualLeaveSelfBook: false }, { annualLeaveSelfBook: true, timesheetSelfSign: true, firstName: 'S' })
+  assert.deepEqual(write.set.role, 'manager')
+  assert.equal('annualLeaveSelfBook' in sa.set, false)
+  assert.equal('timesheetSelfSign' in sa.set, false)
 })

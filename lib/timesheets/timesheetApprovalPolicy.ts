@@ -34,8 +34,8 @@ export function userHasLineManager(user: User, users: Roster = []): boolean {
 }
 
 /**
- * `timesheetSelfSigned(user, roster)`: an admin or super admin outside operative mode with no active line manager.
- * Their own signature completes the sheet; no note to the manager, no "pending manager signature".
+ * `timesheetSelfSigned(user, roster)`: an admin with Timesheet self-sign on, or the Super Admin (rulebook 1.28.0),
+ * line manager or not. Their own signature completes the sheet; no note to the manager, no "pending manager signature".
  */
 export function userTimesheetSelfSigned(user: User, users: Roster = []): boolean {
   return timesheetSelfSigned(rulebookPerson(user, users), rulebookRoster(users))

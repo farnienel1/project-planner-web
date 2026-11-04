@@ -324,7 +324,7 @@ export function leaveApproverIds(
 /** Inbox type both apps write when someone asks for leave. */
 export const HOLIDAY_REQUEST_SUBMITTED_TYPE = 'holiday_request_submitted'
 
-// MARK: - Self-approval and the line-manager requirement (rulebook §8, §9, §11)
+// MARK: - Self-manage toggles and the line-manager requirement (rulebook §8, §9, §11; 1.28.0)
 
 /**
  * The fields the self-approval and line-manager rules read from `users/{uid}` (or a roster row). Each flag counts
@@ -333,12 +333,23 @@ export const HOLIDAY_REQUEST_SUBMITTED_TYPE = 'holiday_request_submitted'
  */
 export type LeaveSelfBookUser = LeaveRequester & {
   annualLeaveSelfBook?: boolean | null
+  /** 1.28.0: admins only — their own signature completes their timesheet (`timesheetSelfSigned`). */
+  timesheetSelfSign?: boolean | null
   operativeMode?: boolean | null
   adminAccess?: boolean | null
   isSuperAdmin?: boolean | null
   role?: string | StaffAccountRole | null
+  /** `users/{uid}.employmentType` as stored (`paye` | `self_employed`; missing is self-employed). */
+  employmentType?: string | null
+  /**
+   * 1.28.0: whether this person is the Super Admin of the organisation being worked in
+   * (`isOrganizationSuperAdmin(viewer, org)` in organizationDeletion.ts: its creator, or `isSuperAdmin` on a users document of that organisation). When given
+   * it decides alone; the stored `isSuperAdmin` flag is used only when it is missing.
+   */
+  organizationSuperAdmin?: boolean | null
   permissions?: {
     annualLeaveSelfBook?: boolean | null
+    timesheetSelfSign?: boolean | null
     operativeMode?: boolean | null
     adminAccess?: boolean | null
     isSuperAdmin?: boolean | null
@@ -349,7 +360,7 @@ export type LeaveSelfBookUser = LeaveRequester & {
   annualLeaveEnabled?: boolean | null
 }
 
-type FlagKey = 'annualLeaveSelfBook' | 'operativeMode' | 'adminAccess' | 'isSuperAdmin'
+type FlagKey = 'annualLeaveSelfBook' | 'timesheetSelfSign' | 'operativeMode' | 'adminAccess' | 'isSuperAdmin'
 
 function flagOn(user: LeaveSelfBookUser | null | undefined, key: FlagKey): boolean {
   if (!user) return false
@@ -397,42 +408,90 @@ export function isAdminOutsideOperativeMode(user: LeaveSelfBookUser | null | und
 }
 
 /**
- * Whether this person must have an active line manager (rulebook §8): every operative and every manager, whatever
- * the self-book permission. Only an admin or super admin outside operative mode may have none. An inactive person
- * (`isActive === false`) is not checked.
+ * The Super Admin (1.28.0): `isSuperAdmin` (top level or `permissions`), the `super_admin` role, or a resolved role with
+ * `isSuperAdmin`. Apps pass the organisation creator with `isSuperAdmin` set (firestore.rules: the creator, or a users
+ * document of this organisation that is super admin). Both self-manage toggles read on and locked for them.
+ */
+export function isSuperAdminAccount(user: LeaveSelfBookUser | null | undefined): boolean {
+  if (!user) return false
+  if (typeof user.organizationSuperAdmin === 'boolean') return user.organizationSuperAdmin
+  const role = roleObject(user.role)
+  if (role?.isSuperAdmin === true) return true
+  const named = roleText(user.role)
+  return flagOn(user, 'isSuperAdmin') || named === 'super_admin' || named === 'superadmin'
+}
+
+/** PAYE now (`employmentType` as stored is `paye`): no My Timesheets, so the timesheet self-sign toggle does not apply. */
+export function isPayeAccount(user: LeaveSelfBookUser | null | undefined): boolean {
+  return text(user?.employmentType).toLowerCase() === 'paye'
+}
+
+/**
+ * The two self-manage toggles in effect (rulebook §8, §9; 1.28.0):
+ *   - `annualLeaveSelfBook` (Annual Leave Management): the stored flag outside operative mode (admins and managers);
+ *     always on for the Super Admin.
+ *   - `timesheetSelfSign` (Timesheet self-sign): admins only — the stored flag for an admin, always on for the Super
+ *     Admin, always off for a manager or operative (a demoted admin's stored value is kept underneath and reads again
+ *     after a promotion).
+ *   - `timesheetApplies`: false for a PAYE person (no My Timesheets); the toggle is then shown greyed out.
+ *   - `satisfied`: an admin with Annual Leave Management on AND (Timesheet self-sign on OR PAYE) — the only way an
+ *     admin may have no line manager. Never true for a manager or operative.
+ * The two toggles are independent of the line manager: either may be on while the admin has one.
+ */
+export function selfManageToggles(user: LeaveSelfBookUser | null | undefined): {
+  annualLeaveSelfBook: boolean
+  timesheetSelfSign: boolean
+  timesheetApplies: boolean
+  superAdmin: boolean
+  satisfied: boolean
+} {
+  // The creator of the organisation is its admin and Super Admin whatever else is stored (`organizationLevelFor`).
+  const admin = isAdminOutsideOperativeMode(user) || user?.organizationSuperAdmin === true
+  const superAdmin = admin && isSuperAdminAccount(user)
+  const annualLeaveSelfBook = !!user && !inOperativeMode(user) && (superAdmin || flagOn(user, 'annualLeaveSelfBook'))
+  const timesheetSelfSign = admin && (superAdmin || flagOn(user, 'timesheetSelfSign'))
+  const timesheetApplies = !isPayeAccount(user)
+  const satisfied = admin && annualLeaveSelfBook && (timesheetSelfSign || !timesheetApplies)
+  return { annualLeaveSelfBook, timesheetSelfSign, timesheetApplies, superAdmin, satisfied }
+}
+
+/**
+ * Whether this person must have an active line manager (rulebook §8, 1.28.0): every operative and every manager, and
+ * every admin whose self-manage toggles are not satisfied (`selfManageToggles(user).satisfied`: Annual Leave
+ * Management on and Timesheet self-sign on, or PAYE). The Super Admin never needs one (both toggles always on). An
+ * inactive person (`isActive === false`) is not checked.
  */
 export function lineManagerRequired(user: LeaveSelfBookUser | null | undefined): boolean {
   if (!user || user.isActive === false) return false
-  return !isAdminOutsideOperativeMode(user)
+  return !selfManageToggles(user).satisfied
 }
 
 /**
- * Self-approved timesheets (rulebook §8): an admin or super admin outside operative mode with no active line manager
- * (`hasActiveLineManager` false). Their signature completes the sheet — no note to the manager, no "pending manager
+ * Self-signed timesheets (rulebook §8, 1.28.0): an admin with Timesheet self-sign on, or the Super Admin — whether or
+ * not they have a line manager. Their signature completes the sheet — no note to the manager, no "pending manager
  * signature", and the owner writes `weeklyReportOverride` (`timesheetOwnerWriteFields` with
- * `subjectHasLineManager: !timesheetSelfSigned(...)`). Everyone else waits for their line manager, or the admins.
+ * `subjectHasLineManager: !timesheetSelfSigned(...)`). Everyone else (an admin with the toggle off included, line
+ * manager or not) waits for their line manager, or the admins (`leaveApproverIds`). Before 1.28.0 having no line
+ * manager self-signed an admin; it no longer does. `roster` is kept for older callers and not read.
  */
 export function timesheetSelfSigned(
   user: LeaveSelfBookUser | null | undefined,
-  roster?: ReadonlyArray<LineManagerRosterMember> | null
+  _roster?: ReadonlyArray<LineManagerRosterMember> | null
 ): boolean {
-  return isAdminOutsideOperativeMode(user) && !hasActiveLineManager(user, roster)
+  return selfManageToggles(user).timesheetSelfSign
 }
 
 /**
- * Whether this person's own annual leave saves approved (rulebook §9): the `annualLeaveSelfBook` permission outside
- * operative mode, OR an admin / super admin outside operative mode with no active line manager (self-approved,
- * `timesheetSelfSigned`). An admin with a line manager asks like everyone else unless they have the permission.
- * Everyone else sends a pending request to `leaveApproverIds`. Same test as firestore.rules `hbCallerSelfBooks`.
+ * Whether this person's own annual leave saves approved (rulebook §9, 1.28.0): the `annualLeaveSelfBook` permission
+ * outside operative mode, or the Super Admin. Having no line manager never self-books anyone (before 1.28.0 it did for
+ * an admin). Everyone else sends a pending request to `leaveApproverIds`. Same test as firestore.rules
+ * `hbCallerSelfBooks`. `roster` is kept for older callers and not read.
  */
 export function canSelfBookAnnualLeave(
   user: LeaveSelfBookUser | null | undefined,
-  roster?: ReadonlyArray<LineManagerRosterMember> | null
+  _roster?: ReadonlyArray<LineManagerRosterMember> | null
 ): boolean {
-  if (!user) return false
-  if (inOperativeMode(user)) return false
-  if (flagOn(user, 'annualLeaveSelfBook')) return true
-  return timesheetSelfSigned(user, roster)
+  return selfManageToggles(user).annualLeaveSelfBook
 }
 
 /** The leave submit button when the leave saves approved (`canSelfBookAnnualLeave` true). */
@@ -448,26 +507,37 @@ export function leaveSubmitLabel(
   return canSelfBookAnnualLeave(user, roster) ? LEAVE_SUBMIT_LABEL : LEAVE_SUBMIT_REQUEST_LABEL
 }
 
-/** Shown by Manage Users (both apps) when it refuses a save by `lineManagerRequiredError`. */
+/** Shown by Manage Users (both apps) when it refuses a manager's or operative's save by `lineManagerRequiredError`. */
 export const LINE_MANAGER_REQUIRED_MESSAGE = "Set a line manager — this person's timesheets and annual leave need approval."
+/** 1.28.0: an admin (not PAYE) with no line manager and a self-manage toggle off. */
+export const ADMIN_LINE_MANAGER_REQUIRED_MESSAGE =
+  'Set a line manager, or turn on both Annual Leave Management and Timesheet self-sign — this person\'s timesheets and annual leave need approval.'
+/** 1.28.0: a PAYE admin (no timesheets) with no line manager and Annual Leave Management off. */
+export const PAYE_ADMIN_LINE_MANAGER_REQUIRED_MESSAGE =
+  'Set a line manager, or turn on Annual Leave Management — this person\'s annual leave needs approval.'
 
 /**
  * Manage Users save check (rulebook §8, §11). When `lineManagerRequired(user)` and the person has no active line
  * manager other than themself (`hasActiveLineManager(user, roster)` false, `hasNoLineManager` counts as none),
- * returns `LINE_MANAGER_REQUIRED_MESSAGE`; otherwise null. Pass the user as it will be saved.
+ * returns the message for who they are: a manager or operative `LINE_MANAGER_REQUIRED_MESSAGE`; an admin
+ * `ADMIN_LINE_MANAGER_REQUIRED_MESSAGE` (set a line manager or turn on both self-manage toggles), or for a PAYE admin
+ * `PAYE_ADMIN_LINE_MANAGER_REQUIRED_MESSAGE`. Otherwise null. Pass the user as it will be saved.
  */
 export function lineManagerRequiredError(
   user: LeaveSelfBookUser | null | undefined,
   roster?: ReadonlyArray<LineManagerRosterMember> | null
 ): string | null {
   if (!lineManagerRequired(user)) return null
-  return hasActiveLineManager(user, roster) ? null : LINE_MANAGER_REQUIRED_MESSAGE
+  if (hasActiveLineManager(user, roster)) return null
+  if (!isAdminOutsideOperativeMode(user)) return LINE_MANAGER_REQUIRED_MESSAGE
+  return isPayeAccount(user) ? PAYE_ADMIN_LINE_MANAGER_REQUIRED_MESSAGE : ADMIN_LINE_MANAGER_REQUIRED_MESSAGE
 }
 
 /**
  * Ids of roster people saved before the line-manager requirement who now fail `lineManagerRequiredError`:
- * the admins' one-off clean-up list. Their requests are not stranded meanwhile — `leaveApproverIds` still
- * sends them to every active admin. Roster order is kept.
+ * the admins' one-off clean-up list (Data health), including (1.28.0) admins with no line manager whose self-manage
+ * toggles are not satisfied. Their requests are not stranded meanwhile — `leaveApproverIds` still sends them to every
+ * other active admin, the Super Admin included (who is always satisfied). Roster order is kept.
  */
 export function usersMissingLineManager(
   roster: ReadonlyArray<LeaveSelfBookUser & { id: string }> | null | undefined

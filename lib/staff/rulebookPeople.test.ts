@@ -2,7 +2,9 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { User } from '../../types/index.ts'
 import { inboxOwnerIds, rulebookPerson, rulebookRoster } from './rulebookPeople.ts'
+import { setActiveOrganizationIdentity } from './activeOrganizationIdentity.ts'
 import {
+  ADMIN_LINE_MANAGER_REQUIRED_MESSAGE,
   LINE_MANAGER_REQUIRED_MESSAGE,
   holidayRequestRecipients,
   timesheetSubmittedRecipients,
@@ -76,21 +78,34 @@ test('rulebookPerson passes the full person: flags, aliases and line-manager fie
   assert.deepEqual(inboxOwnerIds(op, [op, alias]).sort(), ['invite-op', 'op', 'op-old'])
 })
 
-test('admin with no active line manager is self-signed and self-books; with one they ask', () => {
+test('1.28.0: an admin self-signs and self-books by the self-manage toggles, not by having no line manager', () => {
   const boss = person('manager', { id: 'boss', isActive: false })
   const soloAdmin = person('admin', { id: 'solo', hasNoLineManager: true })
+  const toggled = person('admin', {
+    id: 'solo2',
+    hasNoLineManager: true,
+    permissions: { ...basePermissions, adminAccess: true, annualLeaveSelfBook: true, timesheetSelfSign: true },
+  })
   const inactiveLm = person('admin', { id: 'adm2', assignedManagerUserIds: ['boss'] })
   const activeBoss = person('manager', { id: 'boss2' })
   const managedAdmin = person('admin', { id: 'adm3', assignedManagerUserIds: ['boss2'] })
-  const users = [boss, soloAdmin, inactiveLm, activeBoss, managedAdmin]
+  const users = [boss, soloAdmin, toggled, inactiveLm, activeBoss, managedAdmin]
 
-  assert.equal(userTimesheetSelfSigned(soloAdmin, users), true)
-  assert.equal(requiresLineManagerCounterSign(soloAdmin, users), false)
-  assert.equal(userCanSelfBookAnnualLeave(soloAdmin, users), true)
-  assert.equal(userLeaveSubmitLabel(soloAdmin, users), 'Submit')
+  // No line manager and the toggles off: not self-approved, and the save is refused.
+  assert.equal(userTimesheetSelfSigned(soloAdmin, users), false)
+  assert.equal(requiresLineManagerCounterSign(soloAdmin, users), true)
+  assert.equal(userCanSelfBookAnnualLeave(soloAdmin, users), false)
+  assert.equal(userLeaveSubmitLabel(soloAdmin, users), 'Submit request')
+  assert.equal(userLineManagerRequiredError(soloAdmin, users), ADMIN_LINE_MANAGER_REQUIRED_MESSAGE)
 
-  // Only line manager inactive → no active line manager → self-approved.
-  assert.equal(userTimesheetSelfSigned(inactiveLm, users), true)
+  assert.equal(userTimesheetSelfSigned(toggled, users), true)
+  assert.equal(requiresLineManagerCounterSign(toggled, users), false)
+  assert.equal(userCanSelfBookAnnualLeave(toggled, users), true)
+  assert.equal(userLeaveSubmitLabel(toggled, users), 'Submit')
+  assert.equal(userLineManagerRequiredError(toggled, users), null)
+
+  // Only line manager inactive → no active line manager; still not self-approved without the toggle.
+  assert.equal(userTimesheetSelfSigned(inactiveLm, users), false)
 
   assert.equal(userTimesheetSelfSigned(managedAdmin, users), false)
   assert.equal(userCanSelfBookAnnualLeave(managedAdmin, users), false)
@@ -117,9 +132,10 @@ test('Manage Users: operatives and managers need an active line manager whatever
   const op = person('operative', { id: 'op', assignedManagerUserIds: ['mgr'] })
   const users = [admin, selfBooker, op]
   assert.equal(userLineManagerRequiredError(selfBooker, users), LINE_MANAGER_REQUIRED_MESSAGE)
-  assert.equal(userLineManagerRequiredError(admin, users), null)
+  // 1.28.0: an admin with no line manager and the self-manage toggles off is listed too.
+  assert.equal(userLineManagerRequiredError(admin, users), ADMIN_LINE_MANAGER_REQUIRED_MESSAGE)
   assert.equal(userLineManagerRequiredError(op, users), null)
-  assert.deepEqual(usersWithoutRequiredLineManager(users).map((user) => user.id), ['mgr'])
+  assert.deepEqual(usersWithoutRequiredLineManager(users).map((user) => user.id), ['adm', 'mgr'])
 })
 
 test('line manager on the same email as the person is the person: never a recipient or approver', () => {
@@ -131,4 +147,28 @@ test('line manager on the same email as the person is the person: never a recipi
   assert.deepEqual(timesheetSubmittedRecipients(rulebookPerson(op, users), roster), ['adm'])
   assert.deepEqual(holidayRequestRecipients(rulebookPerson(op, users), roster), ['adm'])
   assert.equal(userLineManagerRequiredError(op, users), LINE_MANAGER_REQUIRED_MESSAGE)
+})
+
+test('1.28.0: the organisation creator is its Super Admin without the flag; another company\'s Super Admin is not', () => {
+  setActiveOrganizationIdentity({ organizationId: 'org', creatorUserId: 'founder' })
+  try {
+    // A lone creator admin with no isSuperAdmin flag and no line manager: never stranded.
+    const founder = person('admin', { id: 'founder', hasNoLineManager: true })
+    assert.equal(rulebookPerson(founder, [founder]).organizationSuperAdmin, true)
+    assert.equal(userCanSelfBookAnnualLeave(founder, [founder]), true)
+    assert.equal(userTimesheetSelfSigned(founder, [founder]), true)
+    assert.equal(userLineManagerRequiredError(founder, [founder]), null)
+    // A Super Admin of another company, open here as an admin (`homeOrganizationId` from applyDeviceOrgMembership).
+    const visitor = person('admin', { id: 'visitor', isSuperAdmin: true, organizationId: 'org', homeOrganizationId: 'other-org' })
+    const users = [founder, visitor]
+    assert.equal(rulebookPerson(visitor, users).organizationSuperAdmin, false)
+    assert.equal(userCanSelfBookAnnualLeave(visitor, users), false)
+    assert.equal(userTimesheetSelfSigned(visitor, users), false)
+    assert.equal(userLineManagerRequiredError(visitor, users), ADMIN_LINE_MANAGER_REQUIRED_MESSAGE)
+    // A flagged Super Admin of this organisation is one.
+    const flagged = person('admin', { id: 'flagged', isSuperAdmin: true })
+    assert.equal(rulebookPerson(flagged, [flagged]).organizationSuperAdmin, true)
+  } finally {
+    setActiveOrganizationIdentity(null)
+  }
 })

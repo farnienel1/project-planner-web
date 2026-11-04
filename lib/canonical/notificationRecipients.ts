@@ -36,7 +36,14 @@ export type NotificationRosterMember = Omit<PersonRosterRow, 'role'> & {
   /** True once the account has signed up (`users/{uid}.passwordSet`); preferred as the person's account (1.16.0). */
   passwordSet?: boolean | null
   annualLeaveSelfBook?: boolean | null
-  permissions?: { annualLeaveSelfBook?: boolean | null; operativeMode?: boolean | null } | null
+  /** 1.28.0: admins only (`timesheetSelfSigned`). */
+  timesheetSelfSign?: boolean | null
+  employmentType?: string | null
+  permissions?: {
+    annualLeaveSelfBook?: boolean | null
+    timesheetSelfSign?: boolean | null
+    operativeMode?: boolean | null
+  } | null
 }
 
 /** The person a notice is about, or the actor: a roster row, a partial row, or a bare id. */
