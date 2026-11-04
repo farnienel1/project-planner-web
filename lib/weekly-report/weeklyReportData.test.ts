@@ -138,14 +138,15 @@ test('cancelled bookings are not counted, and bookings under a users id or forme
   assert.equal(re?.days, 2)
 })
 
-test('a PAYE person keeps their bookings and hours but shows PAYE instead of pay, and is not in the pay total', () => {
+test('1.29.0: a PAYE person leaves the hours and pay rows and their overtime is in the PAYE overtime section', () => {
   const paye = { ...person(), id: 'u2', email: 'pat@x.com', firstName: 'Pat', surname: 'Paye', employmentType: 'paye' } as User
   const payeOperative: Operative = { ...operative, id: 'op2', firstName: 'Pat', lastName: 'Paye', email: 'pat@x.com' }
   const payeBooking = { ...booking('b3', day), operativeId: 'op2' }
+  const payeOvertime = { ...booking('b4', next), operativeId: 'op2', timeSlot: 'CUSTOM_HOURS', workStartTime: '07:30', workEndTime: '18:00' }
   const input = {
     organizationName: 'Acme',
     period: { start: new Date('2026-10-05T00:00:00Z'), end: new Date('2026-10-11T00:00:00Z'), label: 'week' },
-    bookings: [booking('b1', day), booking('b2', next), payeBooking],
+    bookings: [booking('b1', day), booking('b2', next), payeBooking, payeOvertime],
     managerSiteBookings: [],
     subcontractorBookings: [],
     subcontractors: [],
@@ -157,19 +158,17 @@ test('a PAYE person keeps their bookings and hours but shows PAYE instead of pay
     orgDetails: null,
   }
   const report = buildWeeklyReportData(input)
-  const pat = report.paySummary.find((row) => row.person === 'Pat Paye')
-  assert.ok(pat, 'PAYE person stays on the report')
-  assert.equal(pat?.lines[0]?.payLabel, 'PAYE')
-  assert.equal(pat?.lines[0]?.isPaye, true)
-  assert.ok((pat?.lines[0]?.days ?? 0) > 0, 'PAYE hours are still shown')
-  assert.equal(pat?.personTotalLabel, 'PAYE')
+  assert.equal(report.paySummary.find((row) => row.person === 'Pat Paye'), undefined, 'PAYE person is not in the pay rows')
   const ada = report.paySummary.find((row) => row.person === 'Ada Booked')
   assert.equal(ada?.personTotal, 400)
-  assert.equal(ada?.personTotalLabel, null)
   assert.equal(report.grandTotal, 400)
-  // The PAYE booking is still a project row with its day.
   const rows = report.projectGroups[0]?.rows ?? []
-  assert.equal(rows.find((row) => row.person === 'Pat Paye')?.days, 1)
+  assert.equal(rows.find((row) => row.person === 'Pat Paye'), undefined, 'PAYE person is not in the hours rows')
+  assert.deepEqual(
+    report.payeOvertimeRows.map((row) => [row.person, row.jobNumber, row.overtimeHours]),
+    [['Pat Paye', project.jobNumber, 3]]
+  )
+  assert.equal(report.payeOvertimeTotal, 3)
 })
 
 test('a booking under the other same-email profile is named through the roster aliases, as on Daily Overview', () => {

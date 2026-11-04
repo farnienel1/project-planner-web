@@ -111,6 +111,15 @@ export function buildWeeklyReportHtml(data: WeeklyReportData): string {
           ['', '', '', '<strong>Total</strong>', `<strong>${formatDays(data.managerScheduleTotal)}</strong>`],
         ]
 
+  // Rulebook 1.29.0 §7: PAYE overtime per person per job (hours only).
+  const payeRows =
+    data.payeOvertimeRows.length === 0
+      ? []
+      : [
+          ...data.payeOvertimeRows.map((row) => [escapeHtml(row.person), escapeHtml(row.jobNumber), escapeHtml(row.jobName), `${row.overtimeHours}h`]),
+          ['', '', '<strong>Total</strong>', `<strong>${data.payeOvertimeTotal}h</strong>`],
+        ]
+
   const payRows: string[][] = []
   for (const person of data.paySummary) {
     for (const line of person.lines) {
@@ -233,6 +242,9 @@ export function buildWeeklyReportHtml(data: WeeklyReportData): string {
 
   <h2>📅 Manager / Admin Additional Schedule</h2>
   ${renderTable(['Person', 'Role', 'Location', 'Time', 'Days'], managerRows, 'No additional manager schedule in this period')}
+
+  <h2>⏱️ PAYE overtime</h2>
+  ${renderTable(['Person', 'Job Number', 'Job', 'Overtime hours'], payeRows, 'No PAYE overtime in this period')}
 
   <h2>🧱 Price Work</h2>
   ${renderTable(
@@ -396,6 +408,14 @@ export function buildWeeklyReportSpreadsheetXml(data: WeeklyReportData): string 
           ['', '', '', 'Total', formatDays(data.managerScheduleTotal)],
         ]
 
+  const payeRows =
+    data.payeOvertimeRows.length === 0
+      ? [['No PAYE overtime in this period', '', '', '']]
+      : [
+          ...data.payeOvertimeRows.map((row) => [row.person, row.jobNumber, row.jobName, `${row.overtimeHours}h`]),
+          ['', '', 'Total', `${data.payeOvertimeTotal}h`],
+        ]
+
   const payRows: string[][] = []
   for (const person of data.paySummary) {
     for (const line of person.lines) {
@@ -451,6 +471,9 @@ export function buildWeeklyReportSpreadsheetXml(data: WeeklyReportData): string 
    ${spreadsheetRow([''])}
    ${spreadsheetRow(['Manager / Admin Additional Schedule'])}
    ${spreadsheetTable(['Person', 'Role', 'Location', 'Time', 'Days'], managerRows)}
+   ${spreadsheetRow([''])}
+   ${spreadsheetRow(['PAYE OVERTIME'])}
+   ${spreadsheetTable(['Person', 'Job Number', 'Job', 'Overtime hours'], payeRows)}
    ${spreadsheetRow([''])}
    ${spreadsheetRow(['PRICE WORK'])}
    ${spreadsheetTable(

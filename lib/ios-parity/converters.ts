@@ -432,6 +432,8 @@ export function parseManagerSiteBooking(
     isBreakRemoved: row.isBreakRemoved,
     bookingGroupId: row.bookingGroupId,
     ...(row.jobCollection ? { jobCollection: row.jobCollection } : {}),
+    // Rulebook 1.29.0: the booking's own overtime rate (read only; saves never drop it — they are partial updates).
+    ...(row.otMultiplierOverride != null ? { otMultiplierOverride: row.otMultiplierOverride } : {}),
     createdAt: row.createdAtMs != null ? new Date(row.createdAtMs) : new Date(),
     updatedAt: row.updatedAtMs != null ? new Date(row.updatedAtMs) : new Date(),
     organizationId,

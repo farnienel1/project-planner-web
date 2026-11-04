@@ -359,7 +359,9 @@ export function collectTimesheetPayroll({
       booking.workEndTime,
       booking.isBreakRemoved,
       managerLabels(booking, projects, smallWorks),
-      linked || matched[0]
+      linked || matched[0],
+      // Rulebook 1.29.0: a manager site booking's own overtime rate prices its overtime part too.
+      booking.otMultiplierOverride
     )
   }
 
