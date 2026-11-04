@@ -49,6 +49,7 @@ import { DEFAULT_PAYROLL_POLICY, organizationDetailsFromData, type OrgPayrollTim
 import { useOrganizationDocument } from '@/lib/stores/organizationDocumentStore'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import type { User } from '@/types'
+import { normalizeDocumentId } from '@/lib/canonical'
 
 function personName(userId: string, users: User[], aliases?: Record<string, string>): string {
   const user = findUserByAnyId(users, userId, aliases)
@@ -66,7 +67,7 @@ function holidayName(
     if (named) return named
   }
   if (booking.operativeId) {
-    const op = operatives.find((row) => row.id === booking.operativeId)
+    const op = operatives.find((row) => normalizeDocumentId(row.id) === normalizeDocumentId(booking.operativeId))
     if (op) {
       const named = rosterDisplayName({ firstName: op.firstName, surname: op.lastName, email: '' })
       if (named) return named

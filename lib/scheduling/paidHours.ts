@@ -12,7 +12,7 @@
 
 import { payrollHoursResult, payrollOutsideClockHours, weekdayPaidHours, type PayrollHoursResult } from '@/lib/canonical'
 import { DEFAULT_PAYROLL_POLICY, type OrgPayrollTimePolicy } from '@/lib/canonical/organizationSettings'
-import { dayKey as londonDayKey } from '@/lib/ios-parity/londonTime'
+import { dayKey as londonDayKey, londonMinutesOfDay } from '@/lib/ios-parity/londonTime'
 
 const FALLBACK_STANDARD_PAID_HOURS = 8
 const FALLBACK_UNPAID_BREAK_MINUTES = 30
@@ -32,7 +32,8 @@ function minutesFromHourValue(n: number): number | null {
 export function parseMinutes(hhmm?: string | number | Date | null): number | null {
   if (hhmm == null) return null
   if (hhmm instanceof Date && !Number.isNaN(hhmm.getTime())) {
-    return hhmm.getHours() * 60 + hhmm.getMinutes()
+    // Rulebook §1: a stored clock instant is read in the organisation zone, never the browser's.
+    return londonMinutesOfDay(hhmm)
   }
   if (typeof hhmm === 'number' && Number.isFinite(hhmm)) {
     return minutesFromHourValue(hhmm)

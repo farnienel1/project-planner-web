@@ -1,14 +1,14 @@
 import type { OrgPayrollTimePolicy, OrgWarningDetectionSettings } from '@/lib/settings/organizationSettings'
 import { DEFAULT_PAYROLL_POLICY } from '@/lib/settings/organizationSettings'
-import type { LabourPerson, RosterOperative, WarningScope } from '@/lib/canonical'
+import type { LabourPerson, RosterOperative, UnbookedLabourInput, WarningScope } from '@/lib/canonical'
 import { bookingOccupiesDay, unbookedLabourRows, weekdayPaidHours } from '@/lib/canonical'
 import type { Booking, HolidayBooking, Operative, User } from '@/types'
 import { UserRole } from '@/types'
-import { addLondonDays, dateFromDayKey, dayKey, londonIsoWeekday, londonMidnight } from '@/lib/ios-parity/londonTime'
+import { dateFromDayKey, dayKey, londonMidnight } from '@/lib/ios-parity/londonTime'
 import { formatWarningHours } from '@/lib/warnings/clashIntervals'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import { isPlaceholderOperative } from '@/lib/operatives/operativeRosterUtils'
-import { computeWarningCoverageWindow, isDateWithinWarningWindow } from '@/lib/warnings/warningLookahead'
+import { computeUnbookedScanWindow, isDateWithinWarningWindow } from '@/lib/warnings/warningLookahead'
 import { holidayBookingLabourInput } from '@/lib/annualLeave/holidayDayKeys'
 import type { PayrollTimePolicyState } from '@/lib/canonical'
 
@@ -60,6 +60,93 @@ export function labourRosterOperative(operative: Operative): RosterOperative {
   }
 }
 
+/**
+ * The `unbookedLabourRows` input (everything but the window's day keys) from the loaded stores. Warnings, the weekly
+ * report and Book labour all build it here, so they pass the rulebook the same people, bookings, leave and settings.
+ */
+export function unbookedLabourInputFromStores({
+  bookings,
+  managerSiteBookings = [],
+  operatives,
+  users,
+  holidays,
+  warningDetection,
+  payrollPolicy = DEFAULT_PAYROLL_POLICY,
+  payrollPolicyState = null,
+  windowStart,
+  windowEnd,
+  timeZone,
+  scope,
+  userIdAliases,
+}: {
+  bookings: Booking[]
+  managerSiteBookings?: ManagerSiteBooking[]
+  operatives: Operative[]
+  users: User[]
+  holidays: HolidayBooking[]
+  warningDetection: Pick<
+    OrgWarningDetectionSettings,
+    'includeWeekendsForUnbookedLabour' | 'excludedUserIdsFromUnbookedWarnings' | 'weekendCoverage'
+  >
+  payrollPolicy?: OrgPayrollTimePolicy
+  payrollPolicyState?: PayrollTimePolicyState | null
+  /** Bookings outside these days (organisation zone, inclusive) are left out. */
+  windowStart: Date
+  windowEnd: Date
+  timeZone?: string
+  scope?: WarningScope | null
+  userIdAliases?: Readonly<Record<string, string>> | null
+}): Omit<UnbookedLabourInput, 'startDayKey' | 'endDayKey'> {
+  return {
+    scope,
+    timeZone,
+    includeWeekends: warningDetection.includeWeekendsForUnbookedLabour,
+    excludedUserIds: warningDetection.excludedUserIdsFromUnbookedWarnings,
+    standardPaidHours: weekdayPaidHours(payrollPolicy),
+    standardDayStart: payrollPolicy.standardDayStart,
+    standardDayEnd: payrollPolicy.standardDayEnd,
+    breakWindowStart: payrollPolicy.breakWindowStart,
+    breakWindowEnd: payrollPolicy.breakWindowEnd,
+    // 1.19.0 (`unbookedLabourRows` payrollPolicy): each day read under the policy in effect on it, never today's.
+    payrollPolicy: payrollPolicyState ?? payrollPolicy,
+    // 1.19.0 §5: each weekend day's toggle and "Hours to cover" window.
+    weekendCoverage: warningDetection.weekendCoverage ?? null,
+    people: users.map((user) => labourPersonFromUser(user, userIdAliases)),
+    operatives: operatives.map(labourRosterOperative),
+    bookings: [
+      ...bookings
+        .filter(
+          (booking) =>
+            bookingOccupiesDay(booking.status) &&
+            Boolean(booking.operativeId) &&
+            isDateWithinWarningWindow(booking.date, windowStart, windowEnd, timeZone)
+        )
+        .map((booking) => ({
+          personId: booking.operativeId,
+          dayKey: dayKey(booking.date, timeZone),
+          kind: 'operative' as const,
+          timeSlot: booking.timeSlot,
+          workStart: booking.workStartTime,
+          workEnd: booking.workEndTime,
+        })),
+      ...managerSiteBookings
+        .filter(
+          (booking) => Boolean(booking.userId) && isDateWithinWarningWindow(booking.date, windowStart, windowEnd, timeZone)
+        )
+        .map((booking) => ({
+          personId: booking.userId,
+          dayKey: dayKey(booking.date, timeZone),
+          kind: 'manager' as const,
+          timeSlot: booking.timeSlot,
+          workStart: booking.workStartTime,
+          workEnd: booking.workEndTime,
+        })),
+    ],
+    // Parsed day keys from `parseHolidayDocument` (rulebook §9), never recomputed here.
+    holidays: holidays.map((holiday) => holidayBookingLabourInput(holiday, timeZone)),
+  }
+}
+
 export function computeUnbookedLabourWarnings({
   bookings,
   managerSiteBookings = [],
@@ -92,19 +179,8 @@ export function computeUnbookedLabourWarnings({
   /** Rulebook 1.31.0 (audit finding 4): the roster fold's same-email ids (duplicate id → the kept id). */
   userIdAliases?: Readonly<Record<string, string>> | null
 }): UnbookedLabourWarning[] {
-  const window = computeWarningCoverageWindow(referenceDate, warningDetection, invoicing, timeZone)
-  let periodEnd = window.end
-  let endDayKey = window.endDayKey
-  if (
-    warningDetection.clashLookaheadMode === 'endOfWorkingWeek' &&
-    warningDetection.includeWeekendsForUnbookedLabour
-  ) {
-    const iso = londonIsoWeekday(window.end, timeZone)
-    if (iso >= 1 && iso <= 5) {
-      periodEnd = addLondonDays(window.end, 7 - iso, timeZone)
-      endDayKey = dayKey(periodEnd, timeZone)
-    }
-  }
+  // Rulebook §5 (`unbookedScanDays`): Full week with include-weekends on runs to Sunday; other modes keep the window.
+  const window = computeUnbookedScanWindow(referenceDate, warningDetection, invoicing, timeZone)
   return computeUnbookedLabourWarningsForDateRange({
     bookings,
     managerSiteBookings,
@@ -115,9 +191,9 @@ export function computeUnbookedLabourWarnings({
     payrollPolicy,
     payrollPolicyState,
     periodStart: window.start,
-    periodEnd,
+    periodEnd: window.end,
     startDayKey: window.startDayKey,
-    endDayKey,
+    endDayKey: window.endDayKey,
     timeZone,
     scope,
     userIdAliases,
@@ -164,54 +240,23 @@ export function computeUnbookedLabourWarningsForDateRange({
   const windowStart = londonMidnight(periodStart, timeZone)
   const windowEnd = londonMidnight(periodEnd, timeZone)
   const rows = unbookedLabourRows({
-    scope,
-    timeZone,
+    ...unbookedLabourInputFromStores({
+      bookings,
+      managerSiteBookings,
+      operatives,
+      users,
+      holidays,
+      warningDetection,
+      payrollPolicy,
+      payrollPolicyState,
+      windowStart,
+      windowEnd,
+      timeZone,
+      scope,
+      userIdAliases,
+    }),
     startDayKey: startDayKey || dayKey(windowStart, timeZone),
     endDayKey: endDayKey || dayKey(windowEnd, timeZone),
-    includeWeekends: warningDetection.includeWeekendsForUnbookedLabour,
-    excludedUserIds: warningDetection.excludedUserIdsFromUnbookedWarnings,
-    standardPaidHours: weekdayPaidHours(payrollPolicy),
-    standardDayStart: payrollPolicy.standardDayStart,
-    standardDayEnd: payrollPolicy.standardDayEnd,
-    breakWindowStart: payrollPolicy.breakWindowStart,
-    breakWindowEnd: payrollPolicy.breakWindowEnd,
-    // 1.19.0 (`unbookedLabourRows` payrollPolicy): each day read under the policy in effect on it, never today's.
-    payrollPolicy: payrollPolicyState ?? payrollPolicy,
-    // 1.19.0 §5: each weekend day's toggle and "Hours to cover" window.
-    weekendCoverage: warningDetection.weekendCoverage ?? null,
-    people: users.map((user) => labourPersonFromUser(user, userIdAliases)),
-    operatives: operatives.map(labourRosterOperative),
-    bookings: [
-      ...bookings
-        .filter(
-          (booking) =>
-            bookingOccupiesDay(booking.status) &&
-            Boolean(booking.operativeId) &&
-            isDateWithinWarningWindow(booking.date, windowStart, windowEnd, timeZone)
-        )
-        .map((booking) => ({
-          personId: booking.operativeId,
-          dayKey: dayKey(booking.date, timeZone),
-          kind: 'operative' as const,
-          timeSlot: booking.timeSlot,
-          workStart: booking.workStartTime,
-          workEnd: booking.workEndTime,
-        })),
-      ...managerSiteBookings
-        .filter(
-          (booking) => Boolean(booking.userId) && isDateWithinWarningWindow(booking.date, windowStart, windowEnd, timeZone)
-        )
-        .map((booking) => ({
-          personId: booking.userId,
-          dayKey: dayKey(booking.date, timeZone),
-          kind: 'manager' as const,
-          timeSlot: booking.timeSlot,
-          workStart: booking.workStartTime,
-          workEnd: booking.workEndTime,
-        })),
-    ],
-    // Parsed day keys from `parseHolidayDocument` (rulebook §9), never recomputed here.
-    holidays: holidays.map((holiday) => holidayBookingLabourInput(holiday, timeZone)),
   })
   return rows.map((row) => ({
     id: row.id,
@@ -246,20 +291,6 @@ export function groupUnbookedWarningsByDay(warnings: UnbookedLabourWarning[]): U
       date: londonMidnight(people[0].date),
       people: people.sort((a, b) => a.operativeName.localeCompare(b.operativeName)),
     }))
-}
-
-export function filterWarningsByLookahead<T extends { date: Date }>(
-  warnings: T[],
-  warningDetection: OrgWarningDetectionSettings,
-  invoicing?: import('@/lib/settings/organizationSettings').OrgInvoicingSettings,
-  referenceDate = new Date(),
-  timeZone?: string
-): T[] {
-  const window = computeWarningCoverageWindow(referenceDate, warningDetection, invoicing, timeZone)
-  return warnings.filter((warning) => {
-    const key = dayKey(warning.date, timeZone)
-    return key >= window.startDayKey && key <= window.endDayKey
-  })
 }
 
 export function formatUnbookedMissingLabel(missingHours: number): string {

@@ -1,0 +1,410 @@
+[
+  {
+    "path": "app/api/stripe/webhook/route.ts",
+    "pattern": "toLocaleDateString",
+    "count": 1,
+    "reason": "Stripe webhook email copy for the trial end — billing, server side, not an organisation business date."
+  },
+  {
+    "path": "app/dashboard/my-schedule/page.tsx",
+    "pattern": "findOperativeForUser",
+    "count": 1,
+    "reason": "FU-5: linked catalogue row for the read-only My Schedule; bookings must come from bookingIdsForAccount (rulebook §10)."
+  },
+  {
+    "path": "app/dashboard/operatives/[id]/page.tsx",
+    "pattern": "single-id-person-match",
+    "count": 1,
+    "reason": "Route lookup of the operatives row named in the URL (the document's own id), not person matching."
+  },
+  {
+    "path": "components/annual-leave/LeaveDayCalendar.tsx",
+    "pattern": "device-week-maths",
+    "count": 3,
+    "reason": "FU-4 (needs canonical rule): week/month grid and weekend test via date-fns in the browser zone; needs an organisation-week rule (week start / weekend of a day key) that iOS Scheduling also lacks (it uses Calendar.current)."
+  },
+  {
+    "path": "components/daily-overview/DailyOverviewBookingSheet.tsx",
+    "pattern": "findOperativeForUser",
+    "count": 2,
+    "reason": "FU-5: resolves which account a booking row belongs to via one catalogue row; should be resolveBookingPerson. Ids now compare without case."
+  },
+  {
+    "path": "components/daily-overview/DailyOverviewScreen.tsx",
+    "pattern": "londonMidnight",
+    "count": 3,
+    "reason": "FU-2: londonTime.ts helpers default to the open organisation's zone (organizationZoneOr, rulebook §1 since 1.9.0) despite the London name; rename to org-zone names is a follow-up, not a behaviour change."
+  },
+  {
+    "path": "components/dashboard/DashboardTilePreviews.tsx",
+    "pattern": "toLocaleDateString",
+    "count": 1,
+    "reason": "Static marketing/tile preview label, no organisation data."
+  },
+  {
+    "path": "components/developer/RegisterInterestConsole.tsx",
+    "pattern": "device-week-maths",
+    "count": 1,
+    "reason": "Platform-owner register-interest console week bucket (cross-organisation), not an organisation business week."
+  },
+  {
+    "path": "components/feedback/FeedbackBoardScreen.tsx",
+    "pattern": "toLocaleDateString",
+    "count": 2,
+    "reason": "Platform feedback board timestamps (cross-organisation), display only."
+  },
+  {
+    "path": "components/feedback/FeedbackDetailScreen.tsx",
+    "pattern": "toLocaleDateString",
+    "count": 2,
+    "reason": "Platform feedback timestamps (cross-organisation), display only."
+  },
+  {
+    "path": "components/operatives/OperativesListScreen.tsx",
+    "pattern": "findOperativeForUser",
+    "count": 2,
+    "reason": "Operatives list shows the account linked to a catalogue row (display: name, avatar, link)."
+  },
+  {
+    "path": "components/overtime/PayeClaimsScreen.tsx",
+    "pattern": "toLocaleDateString",
+    "count": 1,
+    "reason": "FU-6: 'report made on' label in the browser zone; display only, should use the organisation zone."
+  },
+  {
+    "path": "components/projects/features/ProjectHealthSafetySection.tsx",
+    "pattern": "device-week-maths",
+    "count": 2,
+    "reason": "FU-4 (needs canonical rule): week/month grid and weekend test via date-fns in the browser zone; needs an organisation-week rule (week start / weekend of a day key) that iOS Scheduling also lacks (it uses Calendar.current)."
+  },
+  {
+    "path": "components/projects/features/ProjectMaterialsSection.tsx",
+    "pattern": "device-week-maths",
+    "count": 1,
+    "reason": "FU-4 (needs canonical rule): week/month grid and weekend test via date-fns in the browser zone; needs an organisation-week rule (week start / weekend of a day key) that iOS Scheduling also lacks (it uses Calendar.current)."
+  },
+  {
+    "path": "components/projects/features/featureUi.tsx",
+    "pattern": "device-week-maths",
+    "count": 1,
+    "reason": "FU-4 (needs canonical rule): week/month grid and weekend test via date-fns in the browser zone; needs an organisation-week rule (week start / weekend of a day key) that iOS Scheduling also lacks (it uses Calendar.current)."
+  },
+  {
+    "path": "components/projects/scheduling/ProjectScheduleWeekOverview.tsx",
+    "pattern": "device-week-maths",
+    "count": 2,
+    "reason": "FU-4 (needs canonical rule): week/month grid and weekend test via date-fns in the browser zone; needs an organisation-week rule (week start / weekend of a day key) that iOS Scheduling also lacks (it uses Calendar.current)."
+  },
+  {
+    "path": "components/projects/scheduling/SubcontractorBookingEditSheet.tsx",
+    "pattern": "toLocaleDateString",
+    "count": 1,
+    "reason": "FU-6: subcontractor booking day label in the browser zone; display only, should use the organisation zone."
+  },
+  {
+    "path": "components/schedule/AddWeekToCalendarButton.tsx",
+    "pattern": "device-week-maths",
+    "count": 1,
+    "reason": "FU-4 (needs canonical rule): week/month grid and weekend test via date-fns in the browser zone; needs an organisation-week rule (week start / weekend of a day key) that iOS Scheduling also lacks (it uses Calendar.current)."
+  },
+  {
+    "path": "components/schedule/MyScheduleSelfBookingScreen.tsx",
+    "pattern": "device-week-maths",
+    "count": 2,
+    "reason": "FU-4 (needs canonical rule): week/month grid and weekend test via date-fns in the browser zone; needs an organisation-week rule (week start / weekend of a day key) that iOS Scheduling also lacks (it uses Calendar.current)."
+  },
+  {
+    "path": "components/schedule/ScheduleScreen.tsx",
+    "pattern": "device-week-maths",
+    "count": 5,
+    "reason": "FU-4 (needs canonical rule): week/month grid and weekend test via date-fns in the browser zone; needs an organisation-week rule (week start / weekend of a day key) that iOS Scheduling also lacks (it uses Calendar.current)."
+  },
+  {
+    "path": "components/settings/panels/BillingPanel.tsx",
+    "pattern": "toLocaleDateString",
+    "count": 1,
+    "reason": "Billing period end date (Stripe), not an organisation business date."
+  },
+  {
+    "path": "components/users/EditUserProfile.tsx",
+    "pattern": "findOperativeForUser",
+    "count": 2,
+    "reason": "FU-5: rate history merge and the operativeId written on a rate change use one catalogue row on the email; should use bookingIdsForAccount / personIdSet."
+  },
+  {
+    "path": "components/users/EmploymentTypeChangeDialog.tsx",
+    "pattern": "londonMidnight",
+    "count": 1,
+    "reason": "FU-2: londonTime.ts helpers default to the open organisation's zone (organizationZoneOr, rulebook §1 since 1.9.0) despite the London name; rename to org-zone names is a follow-up, not a behaviour change."
+  },
+  {
+    "path": "components/users/PayRateChangeDialogs.tsx",
+    "pattern": "londonMidnight",
+    "count": 1,
+    "reason": "FU-2: londonTime.ts helpers default to the open organisation's zone (organizationZoneOr, rulebook §1 since 1.9.0) despite the London name; rename to org-zone names is a follow-up, not a behaviour change."
+  },
+  {
+    "path": "components/users/PayRateChangeDialogs.tsx",
+    "pattern": "toLocaleDateString",
+    "count": 1,
+    "reason": "Display of a rate-history date with the organisation zone passed (useOrganizationTimeZone)."
+  },
+  {
+    "path": "components/users/UserProfileSummary.tsx",
+    "pattern": "findOperativeForUser",
+    "count": 1,
+    "reason": "Profile summary shows the linked catalogue row's details (display only)."
+  },
+  {
+    "path": "components/variations/VariationsWorkspace.tsx",
+    "pattern": "toLocaleDateString",
+    "count": 1,
+    "reason": "FU-6: variation date label in the browser zone; display only, should use the organisation zone."
+  },
+  {
+    "path": "components/wholesalers/WholesalersScreen.tsx",
+    "pattern": "toLocaleDateString",
+    "count": 2,
+    "reason": "FU-6: order sent / materials date label in the browser zone; display only, should use the organisation zone."
+  },
+  {
+    "path": "lib/analytics/aggregations.ts",
+    "pattern": "london-zone-constant",
+    "count": 8,
+    "reason": "Platform-owner analytics console (all organisations), not an organisation business day; London is the platform's reporting zone."
+  },
+  {
+    "path": "lib/analytics/consolePeriod.ts",
+    "pattern": "london-zone-constant",
+    "count": 7,
+    "reason": "Platform-owner analytics console periods (all organisations), not an organisation business day."
+  },
+  {
+    "path": "lib/analytics/dateRange.ts",
+    "pattern": "london-zone-constant",
+    "count": 4,
+    "reason": "Platform-owner analytics date ranges (all organisations), not an organisation business day."
+  },
+  {
+    "path": "lib/healthSafety/hsTalks.ts",
+    "pattern": "getHours",
+    "count": 1,
+    "reason": "FU-7: <input type=time> value from a Date in the browser zone; follow-up with FU-4 (organisation-zone form values)."
+  },
+  {
+    "path": "lib/home/upNext.ts",
+    "pattern": "londonMidnight",
+    "count": 3,
+    "reason": "FU-2: londonTime.ts helpers default to the open organisation's zone (organizationZoneOr, rulebook §1 since 1.9.0) despite the London name; rename to org-zone names is a follow-up, not a behaviour change."
+  },
+  {
+    "path": "lib/ios-parity/londonTime.ts",
+    "pattern": "london-zone-constant",
+    "count": 2,
+    "reason": "Definition of the org-zone helpers (zone defaults to organizationZoneOr); LONDON_TIME_ZONE is only re-exported. FU-2 renames them."
+  },
+  {
+    "path": "lib/ios-parity/londonTime.ts",
+    "pattern": "londonIsoWeekday",
+    "count": 3,
+    "reason": "Definition of the org-zone helpers (zone defaults to organizationZoneOr); LONDON_TIME_ZONE is only re-exported. FU-2 renames them."
+  },
+  {
+    "path": "lib/ios-parity/londonTime.ts",
+    "pattern": "londonMidnight",
+    "count": 4,
+    "reason": "Definition of the org-zone helpers (zone defaults to organizationZoneOr); LONDON_TIME_ZONE is only re-exported. FU-2 renames them."
+  },
+  {
+    "path": "lib/navigation/scheduleNavigation.ts",
+    "pattern": "findOperativeForUser",
+    "count": 1,
+    "reason": "FU-5: 'is this my own booking' check uses one catalogue row; should use bookingIdsForAccount."
+  },
+  {
+    "path": "lib/operatives/operativeRosterUtils.ts",
+    "pattern": "findOperativeForUser",
+    "count": 3,
+    "reason": "Definition of findOperativeForUser and its display helpers (edit-user link, qualifications host). Logic callers are FU-5."
+  },
+  {
+    "path": "lib/operatives/operativeRosterUtils.ts",
+    "pattern": "single-id-person-match",
+    "count": 1,
+    "reason": "editUserHrefForOperative: navigation link to the operative's edit page; already falls back to a case-insensitive match. Display only."
+  },
+  {
+    "path": "lib/orgSetup/pendingOrganizationReuse.ts",
+    "pattern": "toLocaleDateString",
+    "count": 1,
+    "reason": "Shows when an unfinished organisation setup was created (before any organisation zone exists), display only."
+  },
+  {
+    "path": "lib/orgTime/activeOrganizationZone.ts",
+    "pattern": "london-zone-constant",
+    "count": 3,
+    "reason": "The pre-load fallback zone (rulebook §1: missing or unknown country → Europe/London) before the organisation listener sets the real zone."
+  },
+  {
+    "path": "lib/scheduling/bookingCalendarExport.ts",
+    "pattern": "device-week-maths",
+    "count": 1,
+    "reason": "FU-4 (needs canonical rule): calendar export week end uses the device week; move to an organisation-week rule with the other week grids."
+  },
+  {
+    "path": "lib/scheduling/bookingCalendarExport.ts",
+    "pattern": "getHours",
+    "count": 1,
+    "reason": "ICS export writes floating local times for the user's own calendar app; device clock is intended for the calendar file."
+  },
+  {
+    "path": "lib/scheduling/bookingClashUtils.ts",
+    "pattern": "londonMidnight",
+    "count": 3,
+    "reason": "FU-2: londonTime.ts helpers default to the open organisation's zone (organizationZoneOr, rulebook §1 since 1.9.0) despite the London name; rename to org-zone names is a follow-up, not a behaviour change."
+  },
+  {
+    "path": "lib/scheduling/scheduleUtils.ts",
+    "pattern": "device-week-maths",
+    "count": 4,
+    "reason": "FU-4 (needs canonical rule): week/month grid and weekend test via date-fns in the browser zone; needs an organisation-week rule (week start / weekend of a day key) that iOS Scheduling also lacks (it uses Calendar.current)."
+  },
+  {
+    "path": "lib/stores/bookingStore.ts",
+    "pattern": "londonMidnight",
+    "count": 4,
+    "reason": "FU-2: londonTime.ts helpers default to the open organisation's zone (organizationZoneOr, rulebook §1 since 1.9.0) despite the London name; rename to org-zone names is a follow-up, not a behaviour change."
+  },
+  {
+    "path": "lib/stores/healthSafetyStore.ts",
+    "pattern": "device-week-maths",
+    "count": 1,
+    "reason": "FU-4 (needs canonical rule): week/month grid and weekend test via date-fns in the browser zone; needs an organisation-week rule (week start / weekend of a day key) that iOS Scheduling also lacks (it uses Calendar.current)."
+  },
+  {
+    "path": "lib/stores/managerScheduleStore.ts",
+    "pattern": "londonMidnight",
+    "count": 2,
+    "reason": "FU-2: londonTime.ts helpers default to the open organisation's zone (organizationZoneOr, rulebook §1 since 1.9.0) despite the London name; rename to org-zone names is a follow-up, not a behaviour change."
+  },
+  {
+    "path": "lib/stripe/billing.ts",
+    "pattern": "toLocaleDateString",
+    "count": 4,
+    "reason": "Billing copy (Stripe trial/renewal dates) — subscription billing, not organisation business dates (rulebook §4.2)."
+  },
+  {
+    "path": "lib/tasks/projectTaskFilters.ts",
+    "pattern": "single-id-person-match",
+    "count": 1,
+    "reason": "Name shown on a task filter chip for the chosen operatives row, display only."
+  },
+  {
+    "path": "lib/tasks/projectTaskFilters.ts",
+    "pattern": "toLocaleDateString",
+    "count": 1,
+    "reason": "FU-6: task filter chip date label in the browser zone; display only, should use the organisation zone."
+  },
+  {
+    "path": "lib/timesheets/paymentRunCopy.ts",
+    "pattern": "londonIsoWeekday",
+    "count": 1,
+    "reason": "FU-2: londonTime.ts helpers default to the open organisation's zone (organizationZoneOr, rulebook §1 since 1.9.0) despite the London name; rename to org-zone names is a follow-up, not a behaviour change."
+  },
+  {
+    "path": "lib/timesheets/paymentRunCopy.ts",
+    "pattern": "londonMidnight",
+    "count": 2,
+    "reason": "FU-2: londonTime.ts helpers default to the open organisation's zone (organizationZoneOr, rulebook §1 since 1.9.0) despite the London name; rename to org-zone names is a follow-up, not a behaviour change."
+  },
+  {
+    "path": "lib/timesheets/payrollRateResolver.ts",
+    "pattern": "londonMidnight",
+    "count": 1,
+    "reason": "FU-2: londonTime.ts helpers default to the open organisation's zone (organizationZoneOr, rulebook §1 since 1.9.0) despite the London name; rename to org-zone names is a follow-up, not a behaviour change."
+  },
+  {
+    "path": "lib/timesheets/timesheetExport.ts",
+    "pattern": "findOperativeForUser",
+    "count": 1,
+    "reason": "FU-5: export header takes rate fields from one catalogue row on the email; should come from the pay profile / payRateOnDay."
+  },
+  {
+    "path": "lib/timesheets/timesheetHours.ts",
+    "pattern": "londonIsoWeekday",
+    "count": 1,
+    "reason": "FU-2: londonTime.ts helpers default to the open organisation's zone (organizationZoneOr, rulebook §1 since 1.9.0) despite the London name; rename to org-zone names is a follow-up, not a behaviour change."
+  },
+  {
+    "path": "lib/timesheets/timesheetPayrollCollector.ts",
+    "pattern": "findOperativeForUser",
+    "count": 1,
+    "reason": "Booking ids already come from bookingIdsForAccount; the one-row lookup is only the fallback catalogue row for a booking filed under the account id. FU-5 removes it."
+  },
+  {
+    "path": "lib/timesheets/timesheetPayrollPolicy.ts",
+    "pattern": "londonMidnight",
+    "count": 2,
+    "reason": "FU-2: londonTime.ts helpers default to the open organisation's zone (organizationZoneOr, rulebook §1 since 1.9.0) despite the London name; rename to org-zone names is a follow-up, not a behaviour change."
+  },
+  {
+    "path": "lib/timesheets/timesheetStorage.ts",
+    "pattern": "london-zone-constant",
+    "count": 15,
+    "reason": "FU-3 (needs canonical rule): timesheet document ids and legacy reads are stamped at London midnight (timesheet_{uid}_{stamp}); changing the zone changes document ids, so the id rule must be defined in lib/canonical first."
+  },
+  {
+    "path": "lib/timesheets/timesheetWeekUtils.ts",
+    "pattern": "device-week-maths",
+    "count": 2,
+    "reason": "FU-4 (needs canonical rule): ISO week bounds via date-fns in the browser zone (legacy weekly timesheets)."
+  },
+  {
+    "path": "lib/timesheets/timesheetWeekUtils.ts",
+    "pattern": "findOperativeForUser",
+    "count": 3,
+    "reason": "FU-5: timesheet subject identity (operative:{id} / user:{id}) is keyed on one catalogue row; changing it changes subject keys, own PR."
+  },
+  {
+    "path": "lib/warnings/leaveCoverageWarnings.ts",
+    "pattern": "londonMidnight",
+    "count": 2,
+    "reason": "FU-2: londonTime.ts helpers default to the open organisation's zone (organizationZoneOr, rulebook §1 since 1.9.0) despite the London name; rename to org-zone names is a follow-up, not a behaviour change."
+  },
+  {
+    "path": "lib/warnings/managerClashWarnings.ts",
+    "pattern": "londonMidnight",
+    "count": 1,
+    "reason": "FU-2: londonTime.ts helpers default to the open organisation's zone (organizationZoneOr, rulebook §1 since 1.9.0) despite the London name; rename to org-zone names is a follow-up, not a behaviour change."
+  },
+  {
+    "path": "lib/warnings/unbookedLabourWarnings.ts",
+    "pattern": "londonMidnight",
+    "count": 3,
+    "reason": "FU-2: londonTime.ts helpers default to the open organisation's zone (organizationZoneOr, rulebook §1 since 1.9.0) despite the London name; rename to org-zone names is a follow-up, not a behaviour change."
+  },
+  {
+    "path": "lib/warnings/warningLookahead.ts",
+    "pattern": "londonMidnight",
+    "count": 2,
+    "reason": "FU-2: londonTime.ts helpers default to the open organisation's zone (organizationZoneOr, rulebook §1 since 1.9.0) despite the London name; rename to org-zone names is a follow-up, not a behaviour change."
+  },
+  {
+    "path": "lib/weekly-report/invoicingPeriodUtils.ts",
+    "pattern": "londonMidnight",
+    "count": 5,
+    "reason": "FU-2: londonTime.ts helpers default to the open organisation's zone (organizationZoneOr, rulebook §1 since 1.9.0) despite the London name; rename to org-zone names is a follow-up, not a behaviour change."
+  },
+  {
+    "path": "lib/weekly-report/weeklyReportData.ts",
+    "pattern": "findOperativeForUser",
+    "count": 3,
+    "reason": "FU-5: weekly report matches users to catalogue rows one-to-one on email; should use bookingIdsForAccount / rosterPeople userIdAliases."
+  },
+  {
+    "path": "lib/weekly-report/weeklyReportPayroll.ts",
+    "pattern": "findOperativeForUser",
+    "count": 1,
+    "reason": "FU-5: pay-row rate fallback picks one catalogue row on the email; should use payRateOnDay with the person's ids."
+  }
+]

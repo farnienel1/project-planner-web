@@ -13,6 +13,7 @@ import { currentOrganizationTimeZone } from '@/lib/stores/organizationDocumentSt
 import { holidayDecisionRecipients, lineManagerPeerRecipients, notificationDestination } from '@/lib/canonical'
 import { rulebookPerson, rulebookRoster } from '@/lib/staff/rulebookPeople'
 import type { HolidayBooking, Operative, User } from '@/types'
+import { normalizeDocumentId } from '@/lib/canonical'
 
 export const HOLIDAY_REQUEST_APPROVED = 'holiday_request_approved'
 export const HOLIDAY_REQUEST_DECLINED = 'holiday_request_declined'
@@ -41,7 +42,7 @@ export function holidayDecisionRecipientUserId(
 
   const operativeId = trimmed(booking.operativeId)
   if (!operativeId) return null
-  const op = operatives.find((row) => row.id === operativeId)
+  const op = operatives.find((row) => normalizeDocumentId(row.id) === normalizeDocumentId(operativeId))
   if (!op) return null
   const email = op.email.toLowerCase()
   const account = users.find(

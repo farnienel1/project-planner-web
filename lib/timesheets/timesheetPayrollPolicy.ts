@@ -6,9 +6,10 @@
  */
 import type { User } from '@/types'
 import type { OrgInvoicingSettings } from '@/lib/settings/organizationSettings'
-import { LONDON_TIME_ZONE, addLondonDays, dayKey, londonMidnight } from '@/lib/ios-parity/londonTime'
+import { addLondonDays, dayKey, londonMidnight } from '@/lib/ios-parity/londonTime'
 import { computeInvoicingPeriod } from '@/lib/warnings/warningLookahead'
 import { showsMyTimesheets, timesheetDaysForPerson, type TimesheetPerson } from '@/lib/canonical/peopleDocuments'
+import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 
 function timesheetPerson(
   user: Pick<User, 'employmentType' | 'employmentTypeTransitionFrom' | 'employmentTypeEffectiveAt'> &
@@ -34,7 +35,7 @@ export function canAccessMyTimesheetsWithPolicy(
     Partial<Pick<User, 'isActive' | 'email' | 'firstName' | 'surname'>>,
   invoicing: OrgInvoicingSettings,
   referenceDate: Date = new Date(),
-  timeZone: string = LONDON_TIME_ZONE
+  timeZone: string = organizationZoneOr()
 ): boolean {
   const period = computeInvoicingPeriod(referenceDate, invoicing, timeZone)
   return showsMyTimesheets(timesheetPerson(user), periodDays(period.start, period.end, timeZone), timeZone)
@@ -46,7 +47,7 @@ export function timesheetDayKeysForPeriod(
     Partial<Pick<User, 'isActive' | 'email' | 'firstName' | 'surname'>>,
   periodStart: Date,
   periodEnd: Date,
-  timeZone: string = LONDON_TIME_ZONE
+  timeZone: string = organizationZoneOr()
 ): string[] {
   return timesheetDaysForPerson(timesheetPerson(user), periodDays(periodStart, periodEnd, timeZone), timeZone)
 }
@@ -56,7 +57,7 @@ export function payPeriodsOverlapping(
   rangeStart: Date,
   rangeEnd: Date,
   invoicing: OrgInvoicingSettings,
-  timeZone: string = LONDON_TIME_ZONE
+  timeZone: string = organizationZoneOr()
 ): { start: Date; end: Date }[] {
   const periods: { start: Date; end: Date }[] = []
   let cursor = londonMidnight(rangeStart, timeZone)
@@ -82,7 +83,7 @@ export function shouldAppearInOperativeTimesheetRoster(
   periodEnd: Date,
   _invoicing: OrgInvoicingSettings,
   _referenceDate: Date = new Date(),
-  timeZone: string = LONDON_TIME_ZONE
+  timeZone: string = organizationZoneOr()
 ): boolean {
   return showsMyTimesheets(timesheetPerson(user), periodDays(periodStart, periodEnd, timeZone), timeZone)
 }

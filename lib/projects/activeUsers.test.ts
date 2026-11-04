@@ -284,3 +284,54 @@ test('a staff booking with no user account still appears as Staff member', () =>
   assert.equal(rows[0].subtitle, 'Staff')
   assert.equal(rows[0].id, 'staff-ghost')
 })
+
+test('Active users lists an operative booked under their users id (no Operatives-list row) with their hours', () => {
+  const solo = user({
+    id: 'uidSolo01',
+    email: 'solo@site.test',
+    firstName: 'Solo',
+    surname: 'Op',
+    role: 'operative',
+    permissions: { ...user({ id: 'x', email: 'x' }).permissions, manager: false, operativeMode: true },
+  })
+  const booking = (id: string, operativeId: string) => ({
+    id,
+    operativeId,
+    projectId: 'job-1',
+    date: new Date('2026-03-02T00:00:00Z'),
+    timeSlot: 'custom',
+    workStartTime: '08:00',
+    workEndTime: '10:00',
+    isBreakRemoved: true,
+    status: 'Confirmed',
+  })
+  const rows = buildProjectActiveUsers({
+    projectId: 'job-1',
+    payrollPolicy: policy,
+    operativeBookings: [booking('b1', 'UIDSOLO01')],
+    operatives: [],
+    managerBookings: [],
+    users: [solo],
+    subcontractorBookings: [],
+    subcontractors: [],
+  })
+  assert.equal(rows.length, 1)
+  assert.equal(rows[0].displayName, 'Solo Op')
+  assert.equal(rows[0].kind, 'operative')
+  assert.equal(rows[0].totalHours, 2)
+
+  // Bookings under the catalogue row and the users id of one person are one row.
+  const both = buildProjectActiveUsers({
+    projectId: 'job-1',
+    payrollPolicy: policy,
+    operativeBookings: [booking('b1', 'uidSolo01'), { ...booking('b2', 'OP-SOLO'), date: new Date('2026-03-03T00:00:00Z') }],
+    operatives: [{ id: 'OP-SOLO', firstName: 'Solo', lastName: 'Op', email: 'solo@site.test' }],
+    managerBookings: [],
+    users: [solo],
+    subcontractorBookings: [],
+    subcontractors: [],
+  })
+  assert.equal(both.length, 1)
+  assert.equal(both[0].bookingCount, 2)
+  assert.equal(both[0].totalHours, 4)
+})

@@ -146,6 +146,15 @@ test('holiday document userId wins; operativeId is only an in-memory fallback', 
     ),
     'resolved-user'
   )
+  // Ids compare without case (rulebook §1 `normalizeDocumentId`): an iOS upper-case operativeId finds the web row.
+  assert.equal(
+    holidayDecisionRecipientUserId(
+      booking({ userId: '', operativeId: 'OP-ROW-1' }),
+      [operativeUser({ id: 'resolved-user' })],
+      [rosterOperative()]
+    ),
+    'resolved-user'
+  )
   assert.equal(
     holidayDecisionRecipientUserId(
       booking({ userId: '', operativeId: 'op-row-1' }),

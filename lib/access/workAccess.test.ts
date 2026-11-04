@@ -7,7 +7,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { Booking, Operative, Project, User } from '../../types/index.ts'
 import { UserRole } from '../../types/index.ts'
-import { visibleWorks } from './workAccess.ts'
+import { liveUserIdsOnJob, visibleWorks } from './workAccess.ts'
 
 const emptyPerms = {
   adminAccess: false,
@@ -306,4 +306,44 @@ test('an operative with no catalogue row sees jobs booked under their users id o
     managerBookings: [],
   })
   assert.deepEqual(visible.map((p) => p.id).sort(), ['by-placeholder', 'by-uid', 'completed'])
+})
+
+test('liveUserIdsOnJob counts a booking stored under the users id (no Operatives-list row)', () => {
+  const solo = {
+    id: 'uidSolo01',
+    email: 'solo@site.test',
+    firstName: 'Solo',
+    surname: 'Op',
+    organizationId: 'org',
+    role: UserRole.OPERATIVE,
+    isActive: true,
+    passwordSet: true,
+    isSuperAdmin: false,
+    policyAccepted: true,
+    permissions: { ...emptyPerms, operativeMode: true },
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  } as User
+  const booking = (operativeId: string) =>
+    ({
+      id: `b-${operativeId}`,
+      operativeId,
+      projectId: 'job-1',
+      date: new Date(),
+      timeSlot: 'FULL DAY',
+      bookedBy: 'admin',
+      status: 'Confirmed',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }) as Booking
+  const base = { projectId: 'job-1', managerBookings: [], tasks: [], users: [solo] }
+  assert.deepEqual([...liveUserIdsOnJob({ ...base, bookings: [booking('UIDSOLO01')], operatives: [] })], ['uidSolo01'])
+  // A catalogue row on the same email still maps to the account.
+  const row = { id: 'OP-SOLO', email: 'solo@site.test' } as Operative
+  assert.deepEqual([...liveUserIdsOnJob({ ...base, bookings: [booking('OP-SOLO')], operatives: [row] })], ['uidSolo01'])
+  // A cancelled booking does not count.
+  assert.deepEqual(
+    [...liveUserIdsOnJob({ ...base, bookings: [{ ...booking('uidSolo01'), status: 'Cancelled' }], operatives: [] })],
+    []
+  )
 })

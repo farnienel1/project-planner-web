@@ -3,7 +3,6 @@ import type { OrgInvoicingSettings } from '@/lib/settings/organizationSettings'
 import { capitalizeDay } from '@/lib/settings/organizationSettings'
 import { computeInvoicingPeriod } from '@/lib/warnings/warningLookahead'
 import {
-  LONDON_TIME_ZONE,
   addLondonDays,
   dateFromDayKey,
   dayKey,
@@ -11,6 +10,7 @@ import {
   startOfLondonWeek,
 } from '@/lib/ios-parity/londonTime'
 import { formatPaymentPeriodLine } from '@/lib/timesheets/paymentRunCopy'
+import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 
 export type WeeklyReportPeriodMode = 'invoicing' | 'week' | 'custom'
 
@@ -25,7 +25,7 @@ export type InvoicingPeriodOption = ReportPeriod & {
   isCurrent: boolean
 }
 
-export function formatReportPeriodLabel(start: Date, end: Date, timeZone: string = LONDON_TIME_ZONE): string {
+export function formatReportPeriodLabel(start: Date, end: Date, timeZone: string = organizationZoneOr()): string {
   return formatPaymentPeriodLine(start, end, timeZone)
 }
 
@@ -41,7 +41,7 @@ export function formatInvoicingPeriodDescription(invoicing: OrgInvoicingSettings
 function invoicingPeriodContainingDate(
   referenceDate: Date,
   invoicing: OrgInvoicingSettings,
-  timeZone: string = LONDON_TIME_ZONE
+  timeZone: string = organizationZoneOr()
 ): ReportPeriod {
   const { start, end } = computeInvoicingPeriod(referenceDate, invoicing, timeZone)
   return {
@@ -54,7 +54,7 @@ function invoicingPeriodContainingDate(
 function previousInvoicingPeriod(
   period: ReportPeriod,
   invoicing: OrgInvoicingSettings,
-  timeZone: string = LONDON_TIME_ZONE
+  timeZone: string = organizationZoneOr()
 ): ReportPeriod {
   const anchor = addLondonDays(londonMidnight(period.start, timeZone), -1, timeZone)
   return invoicingPeriodContainingDate(anchor, invoicing, timeZone)
@@ -74,7 +74,7 @@ export function listInvoicingPeriodOptions(
   invoicing: OrgInvoicingSettings,
   referenceDate: Date = new Date(),
   count?: number,
-  timeZone: string = LONDON_TIME_ZONE
+  timeZone: string = organizationZoneOr()
 ): InvoicingPeriodOption[] {
   const options: InvoicingPeriodOption[] = []
   const limit = count ?? INVOICING_PERIOD_HISTORY_CAP
@@ -110,7 +110,7 @@ function zoneDayFromValue(value: string, timeZone: string): Date | null {
   return Number.isNaN(parsed.getTime()) ? null : londonMidnight(parsed, timeZone)
 }
 
-export function resolveWeekPeriod(weekStartValue: string, timeZone: string = LONDON_TIME_ZONE): ReportPeriod {
+export function resolveWeekPeriod(weekStartValue: string, timeZone: string = organizationZoneOr()): ReportPeriod {
   const day = zoneDayFromValue(weekStartValue, timeZone) ?? londonMidnight(new Date(), timeZone)
   const start = startOfLondonWeek(day, timeZone)
   const end = addLondonDays(start, 6, timeZone)
@@ -121,7 +121,7 @@ export function resolveWeekPeriod(weekStartValue: string, timeZone: string = LON
 export function resolveCustomPeriod(
   customStart: string,
   customEnd: string,
-  timeZone: string = LONDON_TIME_ZONE
+  timeZone: string = organizationZoneOr()
 ): ReportPeriod | null {
   const start = zoneDayFromValue(customStart, timeZone)
   const end = zoneDayFromValue(customEnd, timeZone)
@@ -142,7 +142,7 @@ export function resolveReportPeriod({
   customStart,
   customEnd,
   referenceDate = new Date(),
-  timeZone = LONDON_TIME_ZONE,
+  timeZone = organizationZoneOr(),
 }: {
   mode: WeeklyReportPeriodMode
   invoicing?: OrgInvoicingSettings
@@ -173,12 +173,12 @@ export function resolveReportPeriod({
   }
 }
 
-export function isDateWithinReportPeriod(date: Date, period: ReportPeriod, timeZone: string = LONDON_TIME_ZONE): boolean {
+export function isDateWithinReportPeriod(date: Date, period: ReportPeriod, timeZone: string = organizationZoneOr()): boolean {
   const key = dayKey(date, timeZone)
   return key >= dayKey(period.start, timeZone) && key <= dayKey(period.end, timeZone)
 }
 
-export function eachDayInReportPeriod(period: ReportPeriod, timeZone: string = LONDON_TIME_ZONE): Date[] {
+export function eachDayInReportPeriod(period: ReportPeriod, timeZone: string = organizationZoneOr()): Date[] {
   const days: Date[] = []
   const endKey = dayKey(period.end, timeZone)
   let cursor = londonMidnight(period.start, timeZone)

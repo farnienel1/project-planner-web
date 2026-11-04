@@ -1,0 +1,5 @@
+{
+  "firestoreRulesMaxBytes": 190464,
+  "storageRulesMaxBytes": 19456,
+  "note": "Set 4 Nov 2026 from origin/main: firestore.rules 188025 bytes (184 KB rounded up + 2 KB), storage.rules 16862 bytes (17 KB rounded up + 2 KB). Platform guardrails §5: Google's rules checker timed out (HTTP 503) at ~188 KB. Lower firestoreRulesMaxBytes when the rules are slimmed (new size rounded up to the next KB + 2 KB); raise it only with a stated reason in the PR."
+}

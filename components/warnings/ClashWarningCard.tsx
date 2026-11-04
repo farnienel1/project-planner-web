@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import { dayKey } from '@/lib/ios-parity/londonTime'
+import { useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
 import { initialsFrom } from '@/lib/daily-overview/buildDailyOverview'
 import {
   analyse,
@@ -21,9 +22,9 @@ import {
   type ClashTimelineEntry,
 } from '@/lib/warnings/clashTimeline'
 
-function dateLabel(date: Date): string {
+function dateLabel(date: Date, timeZone: string): string {
   return new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Europe/London',
+    timeZone,
     weekday: 'short',
     day: 'numeric',
     month: 'short',
@@ -165,7 +166,8 @@ export function ClashWarningCard({
 }) {
   const [timelineOpen, setTimelineOpen] = useState(false)
   const analysis = useMemo(() => analyse(entries, FULL_DAY_WINDOW), [entries])
-  const label = dateLabel(date)
+  const timeZone = useOrganizationTimeZone()
+  const label = dateLabel(date, timeZone)
   const hue = severity === 'medium' ? 'warn' : 'red'
 
   return (

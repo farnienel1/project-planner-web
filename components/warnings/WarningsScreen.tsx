@@ -22,6 +22,7 @@ import { initialsFrom } from '@/lib/daily-overview/buildDailyOverview'
 import { dayKey, formatLongDay } from '@/lib/ios-parity/londonTime'
 import { notifyCompanyActivity } from '@/lib/notifications/companyActivity'
 import { useAuthStore } from '@/lib/stores/authStore'
+import { normalizeDocumentId } from '@/lib/canonical'
 
 type FilterChip = 'all' | 'clashes' | 'unbooked' | 'leave' | 'materials' | 'qualifications'
 
@@ -621,7 +622,7 @@ export function WarningsScreen({
               showOpenOperative={canOpenOperativeFromWarning(
                 user,
                 findUserForOperative(
-                  operatives.find((operative) => operative.id === item.warning.operativeId),
+                  operatives.find((operative) => normalizeDocumentId(operative.id) === normalizeDocumentId(item.warning.operativeId)),
                   users
                 )
               )}

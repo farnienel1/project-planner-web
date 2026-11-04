@@ -1,4 +1,5 @@
-import { dayKeyInZone, LONDON_TIME_ZONE } from '@/lib/orgTime/zoneTime'
+import { dayKeyInZone } from '@/lib/orgTime/zoneTime'
+import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 
 function utcDayFromKey(key: string): Date {
   const [y, m, d] = key.split('-').map(Number)
@@ -6,7 +7,7 @@ function utcDayFromKey(key: string): Date {
 }
 
 /** Whole calendar days from `from` to `to` in `timeZone`. Positive = `to` is in the future. */
-export function calendarDayOffset(to: Date, from = new Date(), timeZone = LONDON_TIME_ZONE): number {
+export function calendarDayOffset(to: Date, from = new Date(), timeZone = organizationZoneOr()): number {
   const start = utcDayFromKey(dayKeyInZone(from, timeZone)).getTime()
   const end = utcDayFromKey(dayKeyInZone(to, timeZone)).getTime()
   return Math.round((end - start) / 86_400_000)
@@ -20,7 +21,7 @@ export function programmeProgressPercent(
   startDate: Date,
   endDate: Date,
   now = new Date(),
-  timeZone = LONDON_TIME_ZONE
+  timeZone = organizationZoneOr()
 ): number {
   const elapsed = -calendarDayOffset(startDate, now, timeZone)
   const span = calendarDayOffset(endDate, startDate, timeZone)
