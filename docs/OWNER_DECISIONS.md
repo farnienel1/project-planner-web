@@ -109,4 +109,5 @@ How to use it:
 
 | Date | Question |
 |---|---|
-| 4 Nov | Should the Super Admin and managers count as unbookable labour on weekends? (They showed as unbooked on Sunday 15 Nov.) |
+| 4 Nov | Admins, the Super Admin and managers count as unbooked labour by design (`labourBookingKind`, warningRows.ts:368). Keep that, using Excluded users for people who are never booked? The rulebook text (§5 "an operative not booked") is narrower than the code and needs rewording either way. |
+| 4 Nov | Book labour lists every unbooked person; Warnings for a manager are scoped to themselves, their reports and their jobs. Should a manager's Book labour list everyone (so they can book anyone onto their jobs) or only their scope? Recommended: everyone. |
