@@ -4472,3 +4472,22 @@ test('1.31.1 B2: an operatives manager never deletes or pays an admin, Super Adm
   await assertSucceedsWithinBudget(deleteDoc(doc(mgr, 'users', OP2_1311)))
 })
 
+test('1.31.1 S1: re-creating your own profile never sets your own pay, line manager or level', async () => {
+  const uid = 'recreate-1311'
+  const email = 'recreate-1311@test.com'
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    await setDoc(doc(db, 'organizations', ORG_A, 'userEmails', email), { userId: uid })
+    await updateDoc(doc(db, 'organizations', ORG_A), { [`members.${uid}`]: 'operative' })
+  })
+  const db = authDb(uid, email)
+  const base = { email, organizationId: ORG_A, firstName: 'Re', surname: 'Create', ...ageFields() }
+  await assertLogicalDeny(setDoc(doc(db, 'users', uid), { ...base, role: 'operative', operativeMode: true, dayRate: 999, payBasis: 'day' }))
+  await assertLogicalDeny(setDoc(doc(db, 'users', uid), { ...base, role: 'operative', operativeMode: true, hasNoLineManager: true }))
+  await assertLogicalDeny(setDoc(doc(db, 'users', uid), { ...base, role: 'operative', operativeMode: true, assignedManagerUserIds: [uid] }))
+  await assertLogicalDeny(setDoc(doc(db, 'users', uid), { ...base, employmentType: 'self_employed' }))
+  // Listed as an operative: the profile stays an operative.
+  await assertLogicalDeny(setDoc(doc(db, 'users', uid), { ...base }))
+  await assertSucceedsWithinBudget(setDoc(doc(db, 'users', uid), { ...base, role: 'operative', operativeMode: true }))
+})
+

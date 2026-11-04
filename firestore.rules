@@ -155,18 +155,30 @@ service cloud.firestore {
   function selfCreateJoinsCompany(organizationId, emailKey) {
     let claimPath = /databases/(default)/documents/organizations/$(organizationId)/userEmails/$(emailKey);
     return (
-      inviteClaimIsPendingPlaceholder(organizationId, emailKey) &&
-      selfCreateCopiesPlaceholder(get(claimPath).data.userId)
+      inviteClaimIsPendingPlaceholder(organizationId, emailKey) ?
+        selfCreateCopiesPlaceholder(get(claimPath).data.userId) : false
     ) || (
-      exists(claimPath) &&
-      get(claimPath).data.userId == request.auth.uid &&
-      isOrgMemberViaParentGet(organizationId) &&
-      selfCreateAliasesWithin(request.resource.data, {}, '') &&
-      selfCreateSelfManageOff(organizationId) &&
-      (
-        !raisesPrivileges(request.resource.data) ||
-        get(/databases/(default)/documents/organizations/$(organizationId)).data.members[request.auth.uid] == 'admin'
-      )
+      (exists(claimPath) && get(claimPath).data.userId == request.auth.uid) ? (
+        isOrgMemberViaParentGet(organizationId) ? (
+          selfCreateKeepsManagedFields(callerListedRole(organizationId)) ? (
+            selfCreateAliasesWithin(request.resource.data, {}, '') &&
+            selfCreateSelfManageOff(organizationId) &&
+            (
+              !raisesPrivileges(request.resource.data) ||
+              get(/databases/(default)/documents/organizations/$(organizationId)).data.members[request.auth.uid] == 'admin'
+            )
+          ) : false
+        ) : false
+      ) : false
+    );
+  }
+  function selfCreateKeepsManagedFields(listed) {
+    return listed == 'admin' || (
+      !request.resource.data.keys().hasAny([
+        'dayRate', 'hourlyRate', 'payBasis', 'employmentType', 'employmentTypeTransitionFrom', 'employmentTypeEffectiveAt',
+        'hasNoLineManager', 'assignedManagerUserId', 'assignedManagerUserIds'
+      ]) &&
+      (listed != 'operative' || isOperativeProfile(request.resource.data))
     );
   }
 
@@ -873,10 +885,10 @@ service cloud.firestore {
           (request.resource.data.get('email', null) is string &&
            request.auth.token.get('email', null) is string &&
            request.resource.data.get('organizationId', null) is string) ? (
-            request.resource.data.email.lower() == request.auth.token.email.lower() &&
-            selfCreateHasAgeConfirmation() &&
-            selfCreateJoinsCompany(request.resource.data.organizationId, request.resource.data.email.lower()) &&
-            selfCreateSuperAdminAllowed()
+            (request.resource.data.email.lower() == request.auth.token.email.lower() && selfCreateHasAgeConfirmation()) ? (
+              selfCreateJoinsCompany(request.resource.data.organizationId, request.resource.data.email.lower()) ?
+                selfCreateSuperAdminAllowed() : false
+            ) : false
           ) : false
         ) : false) ||
         ((request.auth.uid != userId && request.resource.data.get('organizationId', null) is string &&
@@ -886,9 +898,11 @@ service cloud.firestore {
              (!privilegeFlag(request.resource.data, 'isSuperAdmin') ||
               callerIsSuperAdminOf(request.resource.data.organizationId))) : false) ||
         (request.auth.uid == userId ? (
-          isOrgBootstrapAdminProfileCreate(userId) && selfCreateHasAgeConfirmation() &&
-          selfCreateAliasesWithin(request.resource.data, {}, '') && selfCreateSuperAdminAllowed() &&
-          selfCreateSelfManageOff(request.resource.data.organizationId)
+          isOrgBootstrapAdminProfileCreate(userId) ? (
+            selfCreateHasAgeConfirmation() &&
+            selfCreateAliasesWithin(request.resource.data, {}, '') && selfCreateSuperAdminAllowed() &&
+            selfCreateSelfManageOff(request.resource.data.organizationId)
+          ) : false
         ) : false) ||
         managerCanCreateOperativeUser() ||
         (isPlatformOwner() && request.auth.uid == userId)
