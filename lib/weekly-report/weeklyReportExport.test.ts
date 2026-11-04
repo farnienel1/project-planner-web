@@ -52,6 +52,8 @@ test('weekly report spreadsheet includes iOS section titles and named sub contra
       },
     ],
     grandTotal: 580,
+    payeOvertimeRows: [{ person: 'Sam Paye', jobNumber: 'J-1042', jobName: 'Riverside Flats', overtimeHours: 1.5, label: 'Sam Paye · J-1042 · 1.5h' }],
+    payeOvertimeTotal: 1.5,
   }
   const xml = buildWeeklyReportSpreadsheetXml(data)
   assert.match(xml, /WEEKLY REPORT/)
@@ -61,6 +63,10 @@ test('weekly report spreadsheet includes iOS section titles and named sub contra
   assert.equal(xml.includes('People'), false)
   assert.equal(xml.includes('Jane Smith'), false)
   assert.match(xml, /Pay Summary/)
+  // Rulebook 1.29.0 §7: the PAYE overtime section (hours only).
+  assert.match(xml, /PAYE OVERTIME/)
+  assert.match(xml, /Sam Paye/)
+  assert.match(xml, /1\.5h/)
   const pay = xml.split('Pay Summary')[1] || ''
   const alice = pay.indexOf('Alice total')
   const bob = pay.indexOf('>Bob<')
@@ -93,6 +99,8 @@ test('weekly report pdf downloads as a coloured PDF document', async () => {
     expenseTotal: 0,
     paySummary: [],
     grandTotal: 0,
+    payeOvertimeRows: [],
+    payeOvertimeTotal: 0,
   }
   const bytes = await buildWeeklyReportPdf(data)
   assert.equal(String.fromCharCode(...bytes.slice(0, 5)), '%PDF-')
@@ -142,11 +150,15 @@ test('weekly report HTML escapes price work and expenses; spreadsheet prefixes f
     expenseTotal: 5,
     paySummary: [],
     grandTotal: 0,
+    payeOvertimeRows: [{ person: '<b>Ada</b>', jobNumber: 'J-1', jobName: 'Job', overtimeHours: 2, label: 'Ada · J-1 · 2h' }],
+    payeOvertimeTotal: 2,
   }
   const html = buildWeeklyReportHtml(data)
   assert.doesNotMatch(html, /<script>Ada/)
   assert.match(html, /&lt;script&gt;Ada&lt;\/script&gt;/)
   assert.match(html, /&lt;img src=x&gt;/)
+  assert.match(html, /PAYE overtime/)
+  assert.match(html, /&lt;b&gt;Ada&lt;\/b&gt;/)
   const xml = buildWeeklyReportSpreadsheetXml(data)
   assert.match(xml, /'=1\+1/)
 })
