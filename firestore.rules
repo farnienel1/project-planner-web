@@ -2162,10 +2162,28 @@ service cloud.firestore {
           lineManagerIdList(subject).hasAny([request.auth.uid]) ||
           managerMayManageOperative(subjectId, subject);
       }
+      // Rulebook 1.27.0 §8 / §16 (owner decision 7, lib/canonical catalogueOperativePaySubjects): a catalogue operative
+      // is an operatives row with no app account — no users document of its id (the callers check), no stored
+      // `linkedUserId` / `userId` / `uid`, and no email claim of this organisation (`userEmails/{email}`) on its email.
+      // Managers with operatives access read a catalogue operative's pay profile and rate history; an operatives row
+      // that belongs to an account is read through that account (canViewPayOfUser), never through the row.
+      function payRowLinkText(row, key) {
+        return row.get(key, '') is string ? row.get(key, '') : '';
+      }
+      function payOperativeRowIsCatalogue(subjectId) {
+        let row = get(payOperativeRowPath(subjectId)).data;
+        let email = payRowLinkText(row, 'email').lower();
+        return payRowLinkText(row, 'linkedUserId') == '' && payRowLinkText(row, 'userId') == '' &&
+          payRowLinkText(row, 'uid') == '' &&
+          (email == '' ||
+           !exists(/databases/(default)/documents/organizations/$(organizationId)/userEmails/$(email)));
+      }
       function canViewPayOfRow(subjectId) {
-        return (isManagerWithOperativesAccess() && userOrgIdMatchesPath(organizationId)) || (
+        return (
           request.auth.token.email is string &&
           string(get(payOperativeRowPath(subjectId)).data.get('email', '')).lower() == request.auth.token.email.lower()
+        ) || (
+          isManagerWithOperativesAccess() && userOrgIdMatchesPath(organizationId) && payOperativeRowIsCatalogue(subjectId)
         );
       }
       function canViewPayOf(subjectId) {
@@ -2211,7 +2229,47 @@ service cloud.firestore {
           (canAccessOrganization(organizationId) &&
            (isOrgAdminViaMembersMap(organizationId) || isOrganizationAdmin(organizationId)))
         );
-        allow create, update: if request.auth != null &&
+        // Rulebook 1.27.0 §8 / §11 (owner decision 6, lib/canonical invitePayProfileCopyWrite): while `privatePay` is on,
+        // the person accepting an invitation creates their OWN pay profile once, as an exact copy of the pay profile of
+        // their invitation's placeholder. The rule checks: the document is the caller's (`subjectId` is their uid) and
+        // does not exist yet (create only, never update); `privatePay` is on for this organisation; the email claim
+        // `userEmails/{token email}` still names a pending placeholder of this organisation on the same email
+        // (`inviteClaimIsPendingPlaceholder`, the test the invitee's own users create uses), which is not the caller;
+        // `payProfiles/{placeholderId}` exists; and every pay field written equals that profile's (a missing field
+        // stays missing or null). So nobody can set or raise their own pay: they can only take what an admin or
+        // operatives manager wrote for their invitation, before the claim moves to their account.
+        function invitedPayCopyFields() {
+          return ['payBasis', 'dayRate', 'hourlyRate', 'employmentType', 'employmentTypeTransitionFrom', 'employmentTypeEffectiveAt'];
+        }
+        function copiesInvitedPay(placeholderId) {
+          let invited = get(/databases/(default)/documents/organizations/$(organizationId)/payProfiles/$(placeholderId)).data;
+          let next = request.resource.data;
+          return next.get('payBasis', null) == invited.get('payBasis', null) &&
+            next.get('dayRate', null) == invited.get('dayRate', null) &&
+            next.get('hourlyRate', null) == invited.get('hourlyRate', null) &&
+            next.get('employmentType', null) == invited.get('employmentType', null) &&
+            next.get('employmentTypeTransitionFrom', null) == invited.get('employmentTypeTransitionFrom', null) &&
+            next.get('employmentTypeEffectiveAt', null) == invited.get('employmentTypeEffectiveAt', null) &&
+            next.keys().hasAny(invitedPayCopyFields());
+        }
+        function inviteeCopiesOwnInvitedPay() {
+          let emailKey = request.auth.token.email is string ? request.auth.token.email.lower() : '';
+          let claimPath = /databases/(default)/documents/organizations/$(organizationId)/userEmails/$(emailKey);
+          let placeholderId = emailKey != '' && exists(claimPath) ? get(claimPath).data.get('userId', '') : '';
+          return subjectId == request.auth.uid &&
+            emailKey != '' &&
+            privatePayOn(organizationId) &&
+            placeholderId is string && placeholderId != '' && placeholderId != request.auth.uid &&
+            inviteClaimIsPendingPlaceholder(organizationId, emailKey) &&
+            exists(/databases/(default)/documents/organizations/$(organizationId)/payProfiles/$(placeholderId)) &&
+            copiesInvitedPay(placeholderId);
+        }
+        allow create: if request.auth != null &&
+          request.resource.data.get('userId', subjectId) == subjectId &&
+          payProfileKeysValid() &&
+          writeMetadataValidWhenPresent() &&
+          (inviteeCopiesOwnInvitedPay() || (canAccessOrganization(organizationId) && canChangePayOfSubject(subjectId)));
+        allow update: if request.auth != null &&
           request.resource.data.get('userId', subjectId) == subjectId &&
           payProfileKeysValid() &&
           canAccessOrganization(organizationId) &&

@@ -21,16 +21,47 @@ import { privatePayFor, securitySwitchesReady } from '@/lib/access/securitySwitc
 import { loadPayProfile } from '@/lib/pay/payProfileService'
 import {
   PAY_PROFILES_COLLECTION,
+  catalogueOperativePaySubjects,
   overlayPayProfile,
   parsePayProfileDocument,
   payEditorStartingValues,
   payProfileReadPlan,
+  type CatalogueOperativeRow,
   type PayProfileDocument,
   type PaySubject,
   type PayViewer,
 } from '@/lib/canonical'
 
 let cacheOrganizationId = ''
+// Rulebook 1.27.0 §8 (`catalogueOperativePaySubjects`): the open organisation's `operatives` rows as stored, so the
+// pay-profile and rate-history plans include the catalogue operatives (rows with no app account).
+let operativeRowsOrganizationId = ''
+let operativeRows: CatalogueOperativeRow[] = []
+
+/**
+ * Records the `operatives` rows of `organizationId` as read (`{ id, ...data }`). Returns true when the set of rows that
+ * could be catalogue operatives changed, so the caller re-reads the pay profiles.
+ */
+export function noteOperativeRows(organizationId: string, rows: ReadonlyArray<CatalogueOperativeRow>): boolean {
+  const key = (list: ReadonlyArray<CatalogueOperativeRow>) =>
+    JSON.stringify(list.map((row) => [row.id, row.email ?? '', row.linkedUserId ?? '', row.userId ?? '', row.uid ?? '']).sort())
+  const changed = operativeRowsOrganizationId !== organizationId || key(operativeRows) !== key(rows)
+  operativeRowsOrganizationId = organizationId
+  operativeRows = [...rows]
+  return changed
+}
+
+/**
+ * The pay subjects of `organizationId` for `payProfileReadPlan` / `rateHistoryQueryPlan` (rulebook 1.27.0): the roster
+ * (users documents) and the catalogue operatives among the `operatives` rows (`catalogueOperativePaySubjects`).
+ */
+export function payPlanSubjects(
+  organizationId: string,
+  roster: ReadonlyArray<PaySubject & { formerUserIds?: ReadonlyArray<string> | null }>
+): PaySubject[] {
+  const rows = operativeRowsOrganizationId === organizationId ? operativeRows : []
+  return [...roster, ...catalogueOperativePaySubjects(rows, roster as never)]
+}
 let profiles = new Map<string, PayProfileDocument>()
 let inFlight: Promise<boolean> | null = null
 
@@ -133,7 +164,8 @@ export async function refreshPayProfiles(
   if (!db) return false
   const firestore = db
   const run = (async () => {
-    const plan = payProfileReadPlan(viewer, roster, roster as never)
+    // 1.27.0: the catalogue operatives too, so a manager with the Operatives toggle reads `payProfiles/{rowId}`.
+    const plan = payProfileReadPlan(viewer, payPlanSubjects(organizationId, roster), roster as never)
     const next = new Map<string, PayProfileDocument>()
     if (plan.kind === 'all') {
       try {

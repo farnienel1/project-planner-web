@@ -51,6 +51,14 @@ export type VariationEvidence = {
   uploadedAt: Date
 }
 
+/** Rulebook 1.27.0 §24 (`variationEvidenceRemovalWriteFields`): an evidence file unlinked from the variation. */
+export type VariationRemovedEvidence = {
+  path: string
+  name: string
+  removedBy: string
+  removedAt: Date | null
+}
+
 export type Variation = {
   id: string
   orgId: string
@@ -80,6 +88,11 @@ export type Variation = {
   submittedAt?: Date | null
   closedAt?: Date | null
   isDeleted: boolean
+  /**
+   * Read only (1.27.0): evidence unlinked from this variation. Never written by `variationToFirestore` — only
+   * `removeVariationEvidence` adds to it, so a save from an older copy can never shorten the list.
+   */
+  removedEvidence?: VariationRemovedEvidence[]
 }
 
 export type VariationTracker = {

@@ -277,3 +277,48 @@ export function inviteMembershipWrites(input: {
   if (invitedBy) membership.invitedBy = invitedBy
   return { organizationId, membership, membersField: `members.${authUid}`, role }
 }
+
+// MARK: - The invited rate under private pay (rulebook §8, §11; 1.27.0, owner decision 6)
+
+const INVITED_PAY_FIELDS = [
+  'payBasis',
+  'dayRate',
+  'hourlyRate',
+  'employmentType',
+  'employmentTypeTransitionFrom',
+  'employmentTypeEffectiveAt',
+] as const
+
+/**
+ * The pay profile an accepting invitee creates for their own account while `privatePay` is on (rulebook §8, §11,
+ * 1.27.0): an exact copy of the pay fields on their invitation placeholder's pay profile
+ * (`payProfiles/{placeholderId}`, written at Add User), with `userId` the account id — written to
+ * `payProfiles/{authUid}` before the email claim moves to the account (the security rules allow this one create only
+ * while the claim still names that pending placeholder, and only with the same values; the person never sets their
+ * own pay). Null — nothing is written — when `privatePay` is off (nothing changes), when there is no placeholder or it
+ * is the account itself, when the account already has a pay profile (a retried accept), or when the placeholder's
+ * profile holds no pay field. `placeholderProfile` and `accountProfile` are the stored documents (or null).
+ */
+export function invitePayProfileCopyWrite(input: {
+  privatePay: boolean | null | undefined
+  authUid: unknown
+  placeholderId: unknown
+  placeholderProfile: Record<string, unknown> | null | undefined
+  accountProfile?: Record<string, unknown> | null | undefined
+}): { subjectId: string; set: Record<string, unknown> } | null {
+  if (input?.privatePay !== true) return null
+  const authUid = text(input.authUid)
+  const placeholderId = text(input.placeholderId)
+  if (!authUid || !placeholderId || placeholderId === authUid) return null
+  if (record(input.accountProfile)) return null
+  const source = record(input.placeholderProfile)
+  if (!source) return null
+  const set: Record<string, unknown> = { userId: authUid }
+  let copied = 0
+  for (const key of INVITED_PAY_FIELDS) {
+    if (!Object.prototype.hasOwnProperty.call(source, key)) continue
+    set[key] = source[key]
+    copied += 1
+  }
+  return copied > 0 ? { subjectId: authUid, set } : null
+}

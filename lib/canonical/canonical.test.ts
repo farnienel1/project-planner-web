@@ -11333,11 +11333,11 @@ test('1.26.0 rateHistoryQueryPlan / payProfileReadPlan: admins read all; others 
   assert.deepEqual(r126RateHistoryPlan(op, subjects, roster, { privatePay: false }), { kind: 'all' })
   assert.deepEqual(r126RateHistoryPlan(op, subjects, roster), { kind: 'all' })
   assert.deepEqual(r126RateHistoryPlan(admin, subjects, roster, { privatePay: true }), { kind: 'all' })
-  assert.deepEqual(r126RateHistoryPlan(op, subjects, roster, { privatePay: true }), { kind: 'people', userIds: ['op'] })
-  assert.deepEqual(r126RateHistoryPlan(lm, subjects, roster, { privatePay: true }), { kind: 'people', userIds: ['lm', 'op'] })
-  assert.deepEqual(r126RateHistoryPlan(opsMgr, subjects, roster, { privatePay: true }), { kind: 'people', userIds: ['om', 'op', 'op2'] })
-  assert.deepEqual(r126RateHistoryPlan(null, subjects, roster, { privatePay: true }), { kind: 'people', userIds: [] })
-  assert.deepEqual(r126RateHistoryPlan({ ...admin, isActive: false }, subjects, roster, { privatePay: true }), { kind: 'people', userIds: ['adm'] })
+  assert.deepEqual(r126RateHistoryPlan(op, subjects, roster, { privatePay: true }), { kind: 'people', userIds: ['op'], operativeIds: [] })
+  assert.deepEqual(r126RateHistoryPlan(lm, subjects, roster, { privatePay: true }), { kind: 'people', userIds: ['lm', 'op'], operativeIds: [] })
+  assert.deepEqual(r126RateHistoryPlan(opsMgr, subjects, roster, { privatePay: true }), { kind: 'people', userIds: ['om', 'op', 'op2'], operativeIds: [] })
+  assert.deepEqual(r126RateHistoryPlan(null, subjects, roster, { privatePay: true }), { kind: 'people', userIds: [], operativeIds: [] })
+  assert.deepEqual(r126RateHistoryPlan({ ...admin, isActive: false }, subjects, roster, { privatePay: true }), { kind: 'people', userIds: ['adm'], operativeIds: [] })
   assert.deepEqual(r126PayProfileReadPlan(admin, subjects, roster), { kind: 'all' })
   assert.deepEqual(r126PayProfileReadPlan(lm, subjects, roster), { kind: 'documents', ids: ['lm', 'op'] })
   assert.deepEqual(r126PayProfileReadPlan({ id: 'x', isPlatformOwner: true }, subjects, roster), { kind: 'all' })
@@ -11430,4 +11430,204 @@ test('1.26.1 payEditorStartingValues: privatePay on — a stale users rate gives
   const cleared = r1261PayEditorStart(users, { subjectId: 'u1', fields: { dayRate: null, payBasis: null } }, { privatePay: true })
   assert.equal(cleared.rate, null)
   assert.equal(cleared.source, 'payProfile')
+})
+
+// MARK: - Rulebook 1.27.0 (owner decisions 1–7)
+
+test('1.27.0 (1) Add User: the invite draft is the person, so the invitee is never offered as their own line manager', () => {
+  const roster = [
+    { id: 'mgr-1', email: 'boss@example.com', firstName: 'Bea', surname: 'Boss', isActive: true, passwordSet: true, role: 'manager', manager: true },
+    // The invitee already has a row on this email (a manager in this company being re-invited, or a same-email account).
+    { id: 'self-row', email: 'new.person@example.com', firstName: 'Nia', surname: 'New', isActive: true, passwordSet: true, role: 'manager', manager: true },
+  ]
+  const draft = R112.inviteDraftLineManagerSubject({ email: '  New.Person@Example.com ', level: 'operative' })
+  assert.equal(draft.id, R112.INVITE_DRAFT_PERSON_ID)
+  assert.equal(draft.email, 'new.person@example.com')
+  assert.equal(draft.operativeMode, true)
+  // Before 1.27.0 web passed no person: both rows were offered.
+  assert.deepEqual(R112.lineManagerCandidates(null, roster as never).map((row) => row.id), ['mgr-1', 'self-row'])
+  assert.deepEqual(R112.lineManagerCandidates(draft, roster as never).map((row) => row.id), ['mgr-1'])
+  // A level change keeps only real candidates, so a pick of the invitee's own row is dropped.
+  const kept = R112.lineManagerSelectionAfterLevelChange({ lineManagerIds: ['self-row', 'mgr-1'], hasNoLineManager: false }, 'manager', roster as never, draft)
+  assert.deepEqual(kept.lineManagerIds, ['mgr-1'])
+  assert.deepEqual(kept.dropped, ['self-row'])
+  // The save check: the invitee picked as their own line manager does not count (an empty id reached nobody).
+  const saving = { ...draft, assignedManagerUserIds: ['self-row'] }
+  assert.equal(R112.lineManagerRequiredError(saving as never, roster as never), R112.LINE_MANAGER_REQUIRED_MESSAGE)
+  assert.equal(R112.lineManagerRequiredError({ ...draft, assignedManagerUserIds: ['mgr-1'] } as never, roster as never), null)
+  // Unknown levels read as manager; admins may have none.
+  assert.equal(R112.inviteDraftLineManagerSubject({ email: 'x@y.z', level: 'weird' }).role, 'manager')
+  assert.equal(R112.inviteDraftLineManagerSubject({ email: 'x@y.z', level: 'admin' }).adminAccess, true)
+})
+
+test('1.27.0 (2) material email: the sender must see the job (§17 canSeeJob) and the job number must be the stored one', () => {
+  const job = { jobNumber: 'J-200', managerIds: ['mgr-1'] }
+  const viewer = (input: Partial<Parameters<typeof R112.materialRequestJobViewer>[0]>) =>
+    R112.materialRequestJobViewer({ userId: 'mgr-1', email: 'Boss@Example.com', level: 'manager', ...input })
+  const check = (v: ReturnType<typeof R112.materialRequestJobViewer>, overrides: Record<string, unknown> = {}) =>
+    R112.materialRequestJobCheck({ viewer: v, job, kind: 'projects', managers: [], jobNumber: 'J-200', ...overrides } as never)
+  assert.deepEqual(check(viewer({})), { ok: true })
+  assert.equal(viewer({}).email, 'boss@example.com')
+  // A manager who does not manage it and has no Projects toggle: refused.
+  const other = viewer({ userId: 'mgr-2', email: 'other@example.com' })
+  assert.deepEqual(check(other), {
+    ok: false,
+    reason: 'job_not_visible',
+    status: 403,
+    message: R112.MATERIAL_REQUEST_JOB_NOT_VISIBLE_MESSAGE,
+  })
+  // ... unless the Projects toggle is on (every project), never for small works.
+  const toggled = viewer({ userId: 'mgr-2', email: 'other@example.com', permissionSource: { permissions: { projects: true } } })
+  assert.equal(check(toggled).ok, true)
+  assert.equal(check(toggled, { kind: 'smallWorks' }).ok, false)
+  // A job naming the sender's managers-list row (by email) counts; an alias id counts.
+  assert.equal(check(other, { job: { jobNumber: 'J-200', managerIds: ['mrow-9'] }, managers: [{ id: 'mrow-9', email: 'OTHER@example.com' }] }).ok, true)
+  assert.equal(check(viewer({ userId: 'new-uid', formerUserIds: ['mgr-1'] })).ok, true)
+  // Admins see every job; operatives none.
+  assert.equal(check(viewer({ userId: 'a', email: 'a@x.y', level: 'admin' }), { job: { jobNumber: 'J-200' } }).ok, true)
+  assert.equal(check(viewer({ level: 'operative' })).ok, false)
+  // The job number: spaces and case aside; a number stored as a number; blank or another job's number refused.
+  assert.equal(check(viewer({}), { jobNumber: '  j-200 ' }).ok, true)
+  assert.equal(check(viewer({}), { job: { jobNumber: 4100, managerIds: ['mgr-1'] }, jobNumber: '4100' }).ok, true)
+  for (const jobNumber of ['J-201', '', null]) {
+    const refused = check(viewer({}), { jobNumber })
+    assert.equal(refused.ok, false)
+    assert.equal(refused.ok ? '' : refused.reason, 'job_number_mismatch')
+    assert.equal(refused.ok ? 0 : refused.status, 409)
+  }
+  // A missing job.
+  const missing = check(viewer({}), { job: null })
+  assert.equal(missing.ok ? '' : missing.reason, 'job_not_found')
+  assert.equal(missing.ok ? '' : missing.message, R112.MATERIAL_REQUEST_JOB_NOT_FOUND_MESSAGE)
+})
+
+test('1.27.0 (4) variation evidence: unlinking records { path, name, removedBy, removedAt }; nothing else is rewritten', () => {
+  const stored = {
+    id: 'v1',
+    heading: 'Extra socket',
+    evidence: [
+      { id: 'e1', fileName: 'before.jpg', storagePath: 'organizations/o/healthSafety/j/variations/u_1.jpg', downloadURL: 'https://x/1' },
+      // Stored without an id (older build): matched by its derived id.
+      { fileName: 'after.jpg', storagePath: 'organizations/o/healthSafety/j/variations/u_2.jpg', downloadURL: 'https://x/2' },
+    ],
+    evidenceCount: 2,
+    removedEvidence: [{ path: 'organizations/o/old.pdf', name: 'old.pdf', removedBy: 'u0', removedAt: 1762000000000 }],
+  }
+  const write = R112.variationEvidenceRemovalWriteFields(stored, { evidenceId: 'e1', removedBy: 'admin-1', removedAt: 1762250000000 })
+  assert.ok(write)
+  assert.deepEqual(Object.keys(write!.set).sort(), ['evidence', 'evidenceCount', 'removedEvidence'])
+  assert.deepEqual(write!.set.evidence, [stored.evidence[1]])
+  assert.equal(write!.set.evidenceCount, 1)
+  assert.deepEqual(write!.set.removedEvidence, [
+    stored.removedEvidence[0],
+    { path: 'organizations/o/healthSafety/j/variations/u_1.jpg', name: 'before.jpg', removedBy: 'admin-1', removedAt: 1762250000000 },
+  ])
+  const derivedId = R112.parseVariationDocument('v1', stored)!.evidence[1].id
+  const second = R112.variationEvidenceRemovalWriteFields(stored, { evidenceId: derivedId, removedBy: 'm', removedAt: 2 })
+  assert.deepEqual(second!.set.evidence, [stored.evidence[0]])
+  assert.equal(R112.variationEvidenceRemovalWriteFields(stored, { evidenceId: 'nope', removedBy: 'm', removedAt: 2 }), null)
+  // The reader returns the list (oldest first); rows without a path are skipped.
+  const parsed = R112.parseVariationDocument('v1', { ...stored, removedEvidence: [...stored.removedEvidence, { name: 'x' }] })!
+  assert.deepEqual(parsed.removedEvidence, [{ path: 'organizations/o/old.pdf', name: 'old.pdf', removedBy: 'u0', removedAtMs: 1762000000000 }])
+  assert.deepEqual(R112.parseVariationDocument('v2', { heading: 'h' })!.removedEvidence, [])
+  // Admins only, never in operative mode; the heading.
+  assert.equal(R112.canViewRemovedEvidence({ isAdmin: true }), true)
+  assert.equal(R112.canViewRemovedEvidence({ isSuperAdmin: true }), true)
+  assert.equal(R112.canViewRemovedEvidence({ isAdmin: true, isOperativeMode: true }), false)
+  assert.equal(R112.canViewRemovedEvidence({ isAdmin: false, isSuperAdmin: false }), false)
+  assert.equal(R112.removedEvidenceHeading(3), 'Removed evidence (3)')
+  assert.equal(R112.removedEvidenceHeading(-1), 'Removed evidence (0)')
+})
+
+test('1.27.0 (5) retention: 30 days, and the privacy policy and DPA carry the shared sentence', async () => {
+  assert.equal(R112.FILE_RECOVERY_RETENTION_DAYS, 30)
+  assert.match(R112.DELETED_DATA_RETENTION_NOTICE, /up to 30 days/)
+  assert.match(R112.DELETED_DATA_RETENTION_NOTICE, new RegExp(`restored for ${R112.DELETION_RESTORE_DAYS} days`))
+  const { LEGAL_PACK_DOCUMENTS } = await import('../legal/customerLegalPack')
+  for (const id of ['privacy', 'dpa']) {
+    const document = LEGAL_PACK_DOCUMENTS.find((row) => row.id === id)!
+    assert.ok(JSON.stringify(document.sections).includes(R112.DELETED_DATA_RETENTION_NOTICE), id)
+  }
+})
+
+test('1.27.0 (6) invite accept: the invited pay profile is copied exactly to the account, only while privatePay is on', () => {
+  const placeholderProfile = { userId: 'ph-1', payBasis: 'hourly', hourlyRate: 28, employmentType: 'paye', updatedBy: 'admin' }
+  const base = { privatePay: true, authUid: 'uid-1', placeholderId: 'ph-1', placeholderProfile, accountProfile: null }
+  assert.deepEqual(R112.invitePayProfileCopyWrite(base), {
+    subjectId: 'uid-1',
+    set: { userId: 'uid-1', payBasis: 'hourly', hourlyRate: 28, employmentType: 'paye' },
+  })
+  // A stored null (rate cleared) is copied as null.
+  assert.deepEqual(
+    R112.invitePayProfileCopyWrite({ ...base, placeholderProfile: { userId: 'ph-1', dayRate: null, payBasis: null } })!.set,
+    { userId: 'uid-1', dayRate: null, payBasis: null }
+  )
+  for (const blocked of [
+    { privatePay: false },
+    { privatePay: undefined },
+    { placeholderId: '' },
+    { placeholderId: 'uid-1' },
+    { placeholderProfile: null },
+    { placeholderProfile: { userId: 'ph-1' } },
+    { accountProfile: { userId: 'uid-1', dayRate: 1 } },
+  ]) {
+    assert.equal(R112.invitePayProfileCopyWrite({ ...base, ...blocked } as never), null, JSON.stringify(blocked))
+  }
+})
+
+test('1.27.0 (7) catalogue operatives: managers with the Operatives toggle see their pay; plans read their profile and history', () => {
+  const roster = [
+    { id: 'admin-1', email: 'admin@x.y', isActive: true, role: 'admin', adminAccess: true },
+    { id: 'ops-mgr', email: 'ops@x.y', isActive: true, role: 'manager', manager: true, permissions: { operatives: true } },
+    { id: 'plain-mgr', email: 'plain@x.y', isActive: true, role: 'manager', manager: true },
+    { id: 'op-1', email: 'op@x.y', isActive: true, role: 'operative', operativeMode: true, assignedManagerUserIds: ['plain-mgr'] },
+  ]
+  const operatives = [
+    { id: 'row-solo', email: 'solo@x.y', name: 'Solo' },
+    { id: 'row-noemail', name: 'No email' },
+    { id: 'row-linked', email: 'linked@x.y', linkedUserId: 'someone' },
+    { id: 'row-op', email: 'OP@x.y' },
+    { id: 'OP-1' },
+    { id: 'row-solo' },
+  ]
+  const catalogue = R112.catalogueOperativePaySubjects(operatives, roster as never)
+  assert.deepEqual(catalogue, [
+    { id: 'row-solo', email: 'solo@x.y', catalogueOperative: true },
+    { id: 'row-noemail', email: null, catalogueOperative: true },
+  ])
+  const [solo] = catalogue
+  const admin = roster[0]
+  const opsMgr = roster[1]
+  const plainMgr = roster[2]
+  const op = roster[3]
+  assert.equal(R112.canViewPersonPay(admin as never, solo, roster as never), true)
+  assert.equal(R112.canViewPersonPay(opsMgr as never, solo, roster as never), true)
+  assert.equal(R112.canViewPersonPay(plainMgr as never, solo, roster as never), false)
+  assert.equal(R112.canViewPersonPay(op as never, solo, roster as never), false)
+  assert.equal(R112.canViewPersonPay({ ...opsMgr, isActive: false } as never, solo, roster as never), false)
+  // Unchanged for accounts: the ops manager sees the operative, never another manager.
+  assert.equal(R112.canViewPersonPay(opsMgr as never, op as never, roster as never), true)
+  assert.equal(R112.canViewPersonPay(opsMgr as never, plainMgr as never, roster as never), false)
+
+  const subjects = [...roster, ...catalogue]
+  assert.deepEqual(R112.payProfileReadPlan(opsMgr as never, subjects as never, roster as never), {
+    kind: 'documents',
+    ids: ['ops-mgr', 'op-1', 'row-solo', 'row-noemail'],
+  })
+  assert.deepEqual(R112.payProfileReadPlan(plainMgr as never, subjects as never, roster as never), { kind: 'documents', ids: ['plain-mgr', 'op-1'] })
+  assert.deepEqual(R112.rateHistoryQueryPlan(opsMgr as never, subjects as never, roster as never, { privatePay: true }), {
+    kind: 'people',
+    userIds: ['ops-mgr', 'op-1'],
+    operativeIds: ['row-solo', 'row-noemail'],
+  })
+  assert.deepEqual(R112.rateHistoryQueryPlan(plainMgr as never, subjects as never, roster as never, { privatePay: true }), {
+    kind: 'people',
+    userIds: ['plain-mgr', 'op-1'],
+    operativeIds: [],
+  })
+  assert.deepEqual(R112.rateHistoryQueryPlan(admin as never, subjects as never, roster as never, { privatePay: true }), { kind: 'all' })
+  assert.deepEqual(R112.rateHistoryQueryPlan(opsMgr as never, subjects as never, roster as never, { privatePay: false }), { kind: 'all' })
+  // The overlay: a catalogue row takes its pay profile.
+  const overlaid = R112.overlayPayProfile({ id: 'row-solo', name: 'Solo', dayRate: 100 }, R112.parsePayProfileDocument('row-solo', { dayRate: 160, payBasis: 'day' }))
+  assert.equal(overlaid.dayRate, 160)
 })

@@ -189,12 +189,37 @@ function createSendEmailHandler(deps) {
   const now = deps.now || (() => new Date())
   const logger = deps.logger
 
-  async function checkJobInOrganization(rawJobId, orgId) {
+  // Rulebook 1.24.0 / 1.27.0 (§16, §17, owner decision 2): a request that names a job (`data.jobId`) — the job must be
+  // a project or small works of this organisation, the caller must see it (`canSeeJob`, the same rule as every job
+  // list), and the sent job number must be the stored one (`materialRequestJobCheck`). Without `jobId` nothing is
+  // checked (older app builds).
+  async function checkRequestJob(data, orgId, callerJob) {
+    const rawJobId = data.jobId
     if (rawJobId == null || rawJobId === '') return
     const jobId = typeof rawJobId === 'string' ? rawJobId.trim() : ''
     if (!jobId || jobId.length > 128 || !/^[A-Za-z0-9_-]+$/.test(jobId)) throw new HttpError(400, 'jobId is not valid')
-    const job = await deps.reader.getJob(orgId, jobId)
-    if (!job) throw new HttpError(404, 'Job not found in this organisation')
+    const found = await deps.reader.getJob(orgId, jobId)
+    const managers =
+      found && callerJob.email && typeof deps.reader.managersByEmail === 'function'
+        ? await deps.reader.managersByEmail(orgId, callerJob.email)
+        : []
+    const viewer = canonical.materialRequestJobViewer({
+      userId: callerJob.uid,
+      email: callerJob.email,
+      level: callerJob.level,
+      isSuperAdmin: callerJob.isSuperAdmin,
+      permissionSource: callerJob.permissionSource,
+      formerUserIds: callerJob.formerUserIds,
+      sameEmailUserIds: callerJob.sameEmailUserIds,
+    })
+    const result = canonical.materialRequestJobCheck({
+      viewer,
+      job: found ? found.data : null,
+      kind: found ? found.kind : null,
+      managers: managers.map((row) => ({ id: row.id, email: row.data ? row.data.email : null })),
+      jobNumber: data.jobNumber,
+    })
+    if (!result.ok) throw new HttpError(result.status, result.message)
   }
 
   async function handle(req) {
@@ -247,6 +272,8 @@ function createSendEmailHandler(deps) {
     const orgName = org ? canonical.parseOrganizationName(org) || '' : ''
 
     let caller = null
+    // What the job check (`materialRequestJobViewer`) needs about an app caller; null in server mode.
+    let callerJob = null
     if (decoded) {
       const user = await deps.reader.getUser(decoded.uid)
       caller = callerProfile(decoded, user)
@@ -266,6 +293,16 @@ function createSendEmailHandler(deps) {
           membersRole: members[decoded.uid],
         })
         caller.level = level ? level.level : 'operative'
+        const userInOrg = user && typeof user.organizationId === 'string' && level && level.source === 'users'
+        callerJob = {
+          uid: decoded.uid,
+          email: caller.tokenEmail || '',
+          level: caller.level,
+          isSuperAdmin: Boolean(level && level.isSuperAdmin),
+          permissionSource: userInOrg ? user : { permissions: (membership && membership.permissions) || {} },
+          formerUserIds: user && Array.isArray(user.formerUserIds) ? user.formerUserIds : [],
+          sameEmailUserIds: user && Array.isArray(user.sameEmailUserIds) ? user.sameEmailUserIds : [],
+        }
         if (template.minRole === 'staff' && caller.level !== 'admin' && caller.level !== 'manager') {
           throw new HttpError(403, 'Only admins and managers can send this email')
         }
@@ -275,10 +312,9 @@ function createSendEmailHandler(deps) {
       }
     }
 
-    // Rulebook 1.24.0 (§16): a template that names a job (`jobCheck`) and a request that sends `data.jobId` — the job
-    // must be a project or small works of this organisation (`organizations/{orgId}/projects|smallWorks/{jobId}`).
-    // A request without `jobId` is still accepted (iOS sends only the job number today).
-    if (template.jobCheck === true && !serverMode) await checkJobInOrganization(data.jobId, orgId)
+    // Rulebook 1.24.0 / 1.27.0 (§16): a template that names a job (`jobCheck`) and a request that sends `data.jobId`
+    // (`checkRequestJob`). A request without `jobId` is still accepted (older iOS builds send only the job number).
+    if (template.jobCheck === true && !serverMode) await checkRequestJob(data, orgId, callerJob || {})
 
     const attachments = parseAttachments(body.attachments, template.attachments)
     const resolved = await resolveRecipients(template, body.to, {

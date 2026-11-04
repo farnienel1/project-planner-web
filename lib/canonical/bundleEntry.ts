@@ -756,6 +756,9 @@ export {
   variationLineId,
   variationRenumberWriteFields,
   variationWriteFields,
+  variationEvidenceRemovalWriteFields,
+  canViewRemovedEvidence,
+  removedEvidenceHeading,
   warningResolutionMigrationWrites,
   warningResolutionRecords,
 } from './recordsDocuments'
@@ -904,6 +907,8 @@ export {
   lineManagerOptions,
   lineManagerSelectedIds,
   lineManagerSelectionAfterLevelChange,
+  INVITE_DRAFT_PERSON_ID,
+  inviteDraftLineManagerSubject,
   lineManagerSummary,
 } from './lineManagers'
 export type { LineManagerCandidate, LineManagerPicks, LineManagerRosterPerson, LineManagerSubject } from './lineManagers'
@@ -924,6 +929,7 @@ export type { OrgRosterLevel } from './orgRoster'
 // Rulebook 1.12.0: security hardening helpers, forced app update, leave year, pay guards.
 export { isVerifiedPlatformOwner } from './passwordPolicy'
 export { invitationIsOperativeOnly } from './inviteAccept'
+export { invitePayProfileCopyWrite } from './inviteAccept'
 export { organizationMemberActive } from './orgMembership'
 export { PLATFORM_CONFIG_APP_PATH, appUpdateRequired, compareAppVersions } from './platformConfig'
 export {
@@ -993,6 +999,7 @@ export {
   payEditorStartingValues,
   payProfileReadPlan,
   rateHistoryQueryPlan,
+  catalogueOperativePaySubjects,
   sharedDocumentPayWrite,
 } from './payProfile'
 export {
@@ -1011,6 +1018,11 @@ export {
   canSendMaterialOrders,
   materialOrderRecipientCheck,
   materialRequestEmailEnvelope,
+  MATERIAL_REQUEST_JOB_NOT_FOUND_MESSAGE,
+  MATERIAL_REQUEST_JOB_NOT_VISIBLE_MESSAGE,
+  MATERIAL_REQUEST_JOB_NUMBER_MISMATCH_MESSAGE,
+  materialRequestJobCheck,
+  materialRequestJobViewer,
   materialRequestEmailSubject,
 } from './materialOrderAccess'
 export {
@@ -1131,6 +1143,8 @@ export type { JobBadgeLabourBooking, JobBadgeManagerBooking, JobTileBadges, Site
 // Rulebook 1.25.0 (§24): uploaded files are never deleted outright or lost.
 export {
   FILE_KEPT_ON_REMOVE_COPY,
+  FILE_RECOVERY_RETENTION_DAYS,
+  DELETED_DATA_RETENTION_NOTICE,
   FILE_UNDO_WINDOW_MINUTES,
   FILE_UNDO_WINDOW_MS,
   STORED_FILE_KINDS,

@@ -43,6 +43,7 @@ import {
   saveCustomTrade,
   setVariationStatus,
   removeEvidenceObject,
+  removeVariationEvidence,
   softDeleteVariation,
   subscribeParentVariations,
   subscribeVariationTracker,
@@ -50,7 +51,7 @@ import {
 } from '@/lib/variations/variationStorage'
 import type { Project } from '@/types'
 import { ReportFileLink } from '@/components/fileReports/ReportFileLink'
-import { FILE_KEPT_ON_REMOVE_COPY, fileDeletePermission } from '@/lib/canonical'
+import { FILE_KEPT_ON_REMOVE_COPY, canViewRemovedEvidence, fileDeletePermission, removedEvidenceHeading } from '@/lib/canonical'
 import { staffAccountRole } from '@/lib/permissions'
 
 type Filter = VariationListFilter
@@ -310,6 +311,11 @@ export function VariationsWorkspace({
           canEdit={canEdit}
           canStatus={canStatus}
           viewerId={user.id}
+          showRemovedEvidence={canViewRemovedEvidence(staffAccountRole(user))}
+          personName={(id) => {
+            const person = users.find((row) => row.id === id)
+            return person ? displayUser(person) : id || 'Unknown'
+          }}
           onClose={() => setOpenId(null)}
           onEdit={() => {
             setEditing(selected)
@@ -348,9 +354,12 @@ export function VariationsWorkspace({
             })
             if (!window.confirm(deletion.allowed ? 'Remove this file?' : 'Remove this file from the variation? The file itself is kept.')) return
             if (deletion.allowed) await removeEvidenceObject(file.storagePath)
-            await updateVariation({
+            // Rulebook 1.27.0 §24 (`variationEvidenceRemovalWriteFields`): the link goes and `{ path, name, removedBy,
+            // removedAt }` is added to the variation's `removedEvidence`, so an admin can find and restore the file.
+            await removeVariationEvidence({
               organizationId: organization.id,
-              variation: { ...selected, evidence: selected.evidence.filter((item) => item.id !== evidenceId) },
+              variation: selected,
+              evidenceId,
               actorUid: user.id,
             })
             if (!deletion.allowed) toast(FILE_KEPT_ON_REMOVE_COPY)
@@ -579,11 +588,16 @@ function VariationDrawer({
   onStatus,
   onDelete,
   onRemoveEvidence,
+  showRemovedEvidence,
+  personName,
 }: {
   row: Variation
   canEdit: boolean
   canStatus: boolean
   viewerId: string
+  /** Rulebook 1.27.0 §24 `canViewRemovedEvidence`: admins only. */
+  showRemovedEvidence: boolean
+  personName: (userId: string) => string
   onClose: () => void
   onEdit: () => void
   onStatus: (status: VariationStatus) => Promise<void>
@@ -644,6 +658,22 @@ function VariationDrawer({
             </div>
           ))}
         </div>
+        {showRemovedEvidence && (row.removedEvidence?.length ?? 0) > 0 ? (
+          <>
+            {/* Rulebook 1.27.0 §24: evidence unlinked from this variation, for an admin to find and restore. */}
+            <h3 className="h2 mt-4">{removedEvidenceHeading(row.removedEvidence?.length ?? 0)}</h3>
+            {(row.removedEvidence ?? []).map((item, index) => (
+              <div key={`${item.path}-${index}`} className="card pad mt-2">
+                <b>{item.name}</b>
+                <p className="xs muted" style={{ wordBreak: 'break-all' }}>{item.path}</p>
+                <p className="xs">
+                  Removed by {personName(item.removedBy)}
+                  {item.removedAt ? ` on ${formatWhen(item.removedAt)}` : ''}
+                </p>
+              </div>
+            ))}
+          </>
+        ) : null}
         <h3 className="h2 mt-4">History</h3>
         <p>Raised by {row.createdByName} on {formatWhen(row.createdAt)}</p>
         {row.statusHistory.map((item, index) => (

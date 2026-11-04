@@ -615,6 +615,16 @@ export type VariationEvidenceDocument = {
   uploadedAtMs: number | null
 }
 
+/** One evidence file unlinked from a variation (rulebook §24, 1.27.0): kept so an admin can find and restore it. */
+export type VariationRemovedEvidenceDocument = {
+  /** The Storage path (`storagePath`), else the stored download URL. */
+  path: string
+  name: string
+  /** The uid of whoever unlinked it. */
+  removedBy: string
+  removedAtMs: number | null
+}
+
 export type VariationDocument = {
   /** The document id (or, in a settings log, the item's `id`), stored case. */
   id: string
@@ -646,6 +656,8 @@ export type VariationDocument = {
   submittedAtMs: number | null
   closedAtMs: number | null
   isDeleted: boolean
+  /** 1.27.0: evidence unlinked from this variation, oldest first (`variationEvidenceRemovalWriteFields`). */
+  removedEvidence: VariationRemovedEvidenceDocument[]
 }
 
 /** The id of a variation line stored without one: `derivedRowId(variation id, array, index, content)`. */
@@ -752,7 +764,82 @@ export function parseVariationDocument(
     submittedAtMs: documentInstantMs(row.submittedAt),
     closedAtMs: documentInstantMs(row.closedAt),
     isDeleted: documentBool(row.isDeleted) === true,
+    removedEvidence: parseRemovedEvidence(row.removedEvidence),
   }
+}
+
+function parseRemovedEvidence(value: unknown): VariationRemovedEvidenceDocument[] {
+  const out: VariationRemovedEvidenceDocument[] = []
+  for (const entry of rows(value)) {
+    const path = text(entry.path)
+    if (!path) continue
+    out.push({ path, name: text(entry.name) || 'file', removedBy: text(entry.removedBy), removedAtMs: documentInstantMs(entry.removedAt) })
+  }
+  return out
+}
+
+/**
+ * Unlinking one evidence file from a variation (rulebook §24, 1.27.0, owner decision 4). A partial update of the
+ * variation (`variations/{id}` and its `settings/variationItem_{id}` copy):
+ *   - `evidence`: the stored list without the entry whose id (`parseVariationDocument`, so an entry stored without an
+ *     id is matched by its `variationLineId`) is `evidenceId`; every other entry exactly as stored;
+ *   - `evidenceCount`: the new length (written with the list, `VARIATION_EVIDENCE_WRITE_GROUP`);
+ *   - `removedEvidence`: the stored list plus `{ path, name, removedBy, removedAt }` — `path` the entry's Storage path
+ *     (else its download URL), `removedAt` passed through as given (each app's timestamp). Nothing is ever taken off
+ *     this list, so an admin can find the file in Storage and restore it (the object is kept unless
+ *     `fileDeletePermission` allowed deleting it; a deleted object is kept by the bucket's soft delete for
+ *     `FILE_RECOVERY_RETENTION_DAYS`).
+ * Null when `evidenceId` is not on the variation. Never rewrites any other field.
+ */
+export function variationEvidenceRemovalWriteFields(
+  stored: Record<string, unknown> | null | undefined,
+  input: { evidenceId: unknown; removedBy: unknown; removedAt: unknown; variationId?: unknown }
+): { set: { evidence: unknown[]; evidenceCount: number; removedEvidence: Record<string, unknown>[] } } | null {
+  const row = record(stored)
+  const evidenceId = text(input?.evidenceId)
+  if (!evidenceId) return null
+  const variationId = text(input?.variationId) || text(row.id)
+  const raw = Array.isArray(row.evidence) ? row.evidence : []
+  let removed: Record<string, unknown> | null = null
+  const kept: unknown[] = []
+  for (const [index, entry] of raw.entries()) {
+    const line = record(entry)
+    const hasFile = Boolean(text(line.storagePath) || text(line.downloadURL))
+    const id = text(line.id) || variationLineId(variationId, 'evidence', index, line)
+    if (!removed && hasFile && id === evidenceId) {
+      removed = line
+      continue
+    }
+    kept.push(entry)
+  }
+  if (!removed) return null
+  const removedEvidence = rows(row.removedEvidence).map((entry) => ({ ...entry }))
+  removedEvidence.push({
+    path: text(removed.storagePath) || text(removed.downloadURL),
+    name: text(removed.fileName) || 'file',
+    removedBy: text(input?.removedBy),
+    removedAt: input?.removedAt ?? null,
+  })
+  const evidenceCount = kept.filter((entry) => {
+    const line = record(entry)
+    return Boolean(text(line.storagePath) || text(line.downloadURL))
+  }).length
+  return { set: { evidence: kept, evidenceCount, removedEvidence } }
+}
+
+/**
+ * Who sees a variation's removed evidence (rulebook §24, 1.27.0): admins and super admins of the organisation outside
+ * operative mode — the people who can restore a file. Managers and operatives never see the list.
+ */
+export function canViewRemovedEvidence(role: { isSuperAdmin?: boolean | null; isAdmin?: boolean | null; isOperativeMode?: boolean | null } | null | undefined): boolean {
+  if (!role || role.isOperativeMode === true) return false
+  return role.isSuperAdmin === true || role.isAdmin === true
+}
+
+/** The heading over that list: "Removed evidence (n)". */
+export function removedEvidenceHeading(count: unknown): string {
+  const n = typeof count === 'number' && Number.isFinite(count) && count > 0 ? Math.trunc(count) : 0
+  return `Removed evidence (${n})`
 }
 
 export const VARIATION_LABOUR_WRITE_GROUP = ['labour', 'totalLabourHours'] as const

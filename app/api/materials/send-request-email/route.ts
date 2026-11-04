@@ -1,11 +1,12 @@
 import { NextRequest } from 'next/server'
-import { bearerToken, firestoreListCollection, restFieldsToPlain } from '@/lib/owner/firestoreRest'
+import { bearerToken, firestoreGet, firestoreListCollection, firestoreQueryEqual, restFieldsToPlain } from '@/lib/owner/firestoreRest'
 import { sendProjectPlannerEmail } from '@/lib/email/resendClient'
 import { buildMaterialRequestEmail } from '@/lib/email/materialRequestEmail'
 import {
   defaultMaterialDeliveryRequiredAt,
   formatMaterialDeliveryRequired,
   materialOrderIncludesDeliveryRequired,
+  organizationLevelFor,
   parseWholesalerDocument,
 } from '@/lib/canonical'
 import {
@@ -13,6 +14,9 @@ import {
   canSendMaterialOrders,
   materialOrderRecipientCheck,
   materialRequestEmailEnvelope,
+  materialRequestJobCheck,
+  materialRequestJobViewer,
+  MATERIAL_REQUEST_JOB_NOT_VISIBLE_MESSAGE,
 } from '@/lib/canonical/materialOrderAccess'
 import {
   clientSafeMessage,
@@ -40,6 +44,8 @@ type SendBody = {
   organizationId?: string
   requestType?: 'quote' | 'order'
   sendAsPlainText?: boolean
+  /** Rulebook 1.27.0: the job's document id (project or small works). Optional for older clients. */
+  jobId?: string
   jobNumber?: string
   siteName?: string
   siteAddress?: string
@@ -87,6 +93,67 @@ function parseRecipients(rows: RecipientBody[] | undefined) {
   return recipients
 }
 
+async function plainDoc(idToken: string, path: string): Promise<Record<string, unknown> | null> {
+  const row = await firestoreGet(idToken, path)
+  return row ? restFieldsToPlain(row.fields) : null
+}
+
+/** `materialRequestJobCheck` for the signed-in sender: job read, level and toggles from their own documents. */
+async function materialJobCheck(
+  idToken: string,
+  organizationId: string,
+  user: { uid: string; email?: string | null },
+  membership: { role: string; isCreator: boolean },
+  jobId: string,
+  jobNumber: string
+): Promise<{ ok: true } | { ok: false; status: number; message: string }> {
+  let job: Record<string, unknown> | null = null
+  let kind: 'projects' | 'smallWorks' | null = null
+  try {
+    job = await plainDoc(idToken, `organizations/${organizationId}/projects/${jobId}`)
+    kind = job ? 'projects' : null
+    if (!job) {
+      job = await plainDoc(idToken, `organizations/${organizationId}/smallWorks/${jobId}`)
+      kind = job ? 'smallWorks' : null
+    }
+  } catch {
+    // The rules refused the read: this sender may not see the job.
+    return { ok: false, status: 403, message: MATERIAL_REQUEST_JOB_NOT_VISIBLE_MESSAGE }
+  }
+  const userDoc = await plainDoc(idToken, `users/${user.uid}`).catch(() => null)
+  const membershipDoc = await plainDoc(idToken, `users/${user.uid}/orgMemberships/${organizationId}`).catch(() => null)
+  const level = organizationLevelFor({
+    organizationId,
+    userId: user.uid,
+    user: userDoc,
+    membership: membershipDoc,
+    membersRole: membership.role === 'none' ? undefined : membership.role,
+    creatorUserId: membership.isCreator ? user.uid : '',
+  })
+  const email = (user.email || '').trim().toLowerCase()
+  const managerPaths = email
+    ? await firestoreQueryEqual(idToken, `organizations/${organizationId}`, 'managers', 'email', email).catch(() => [])
+    : []
+  const list = (value: unknown) => (Array.isArray(value) ? value.filter((id): id is string => typeof id === 'string') : [])
+  const viewer = materialRequestJobViewer({
+    userId: user.uid,
+    email,
+    level: level.level,
+    isSuperAdmin: level.isSuperAdmin,
+    permissionSource: level.source === 'users' ? userDoc : { permissions: (membershipDoc?.permissions as Record<string, unknown>) || {} },
+    formerUserIds: list(userDoc?.formerUserIds),
+    sameEmailUserIds: list(userDoc?.sameEmailUserIds),
+  })
+  const result = materialRequestJobCheck({
+    viewer,
+    job,
+    kind,
+    managers: managerPaths.map((path) => ({ id: path.split('/').pop() || '', email })),
+    jobNumber,
+  })
+  return result.ok ? { ok: true } : { ok: false, status: result.status, message: result.message }
+}
+
 export async function POST(request: NextRequest) {
   const limited = enforceRateLimit(request, 'material-send-email', 20, 10 * 60 * 1000)
   if (limited) return limited
@@ -121,6 +188,16 @@ export async function POST(request: NextRequest) {
   const senderCompany = clampString(body.value.senderCompany, 200)
   if (!jobNumber || !senderName || !senderEmail || !isValidEmail(senderEmail) || !senderCompany) {
     return jsonError('jobNumber, senderName, senderEmail, and senderCompany are required', 400)
+  }
+
+  // Rulebook 1.27.0 (§16, §17, owner decision 2) `materialRequestJobCheck`: when the request names its job, the sender
+  // must see that job (`canSeeJob`, the same rule as the email function's `material_request`) and the job number must
+  // be the stored one. Read with the caller's own token, so the security rules apply too.
+  const rawJobId = typeof body.value.jobId === 'string' ? body.value.jobId.trim() : ''
+  if (body.value.jobId != null && body.value.jobId !== '') {
+    if (!rawJobId || rawJobId.length > 128 || !/^[A-Za-z0-9_-]+$/.test(rawJobId)) return jsonError('jobId is not valid', 400)
+    const check = await materialJobCheck(bearerToken(request), access.organizationId, access.user, membership, rawJobId, jobNumber)
+    if (!check.ok) return jsonError(check.message, check.status)
   }
 
   const recipients = parseRecipients(body.value.recipients)

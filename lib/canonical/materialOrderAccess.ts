@@ -14,7 +14,15 @@
  * route and the email function (`material_request`) apply the same tests. Pure, JSON in / JSON out.
  */
 
-import { isStaffAccount, type StaffAccountRole } from './staffAccess'
+import { effectivePermissions } from './permissionLevels'
+import {
+  canSeeJob,
+  isStaffAccount,
+  type JobAccessViewer,
+  type JobManagerRosterRow,
+  type StaffAccountRole,
+  type WorkCatalogue,
+} from './staffAccess'
 
 /** Typed one-off addresses (not saved on any wholesaler) allowed in one send. */
 export const MATERIAL_ORDER_TYPED_RECIPIENTS_MAX = 3
@@ -136,4 +144,93 @@ export function materialRequestEmailEnvelope(input: {
     replyTo: validEmail,
     cc: validEmail ? [validEmail] : [],
   }
+}
+
+// MARK: - The job a material email names (rulebook §16, §17; 1.27.0, owner decision 2)
+
+export const MATERIAL_REQUEST_JOB_NOT_FOUND_MESSAGE = 'Job not found in this organisation'
+export const MATERIAL_REQUEST_JOB_NOT_VISIBLE_MESSAGE = 'You cannot send materials for this job.'
+export const MATERIAL_REQUEST_JOB_NUMBER_MISMATCH_MESSAGE =
+  'The job number does not match this job. Reopen the job and send again.'
+
+/**
+ * The sender of a material email as `canSeeJob` reads them (§17), from what a server can verify: the caller's uid
+ * and token email, their level in the organisation (`organizationLevelFor` → `{ level, isSuperAdmin }`), where
+ * their permissions are stored (`permissionSource`: their users document when it names this organisation, else
+ * `{ permissions: <the membership's permissions> }`; read through `effectivePermissions` for the Projects / Small
+ * works toggles) and their
+ * alias ids (`formerUserIds`, `sameEmailUserIds` from their users document).
+ */
+export function materialRequestJobViewer(input: {
+  userId: string
+  email?: string | null
+  level: string | null | undefined
+  isSuperAdmin?: boolean | null
+  permissionSource?: Record<string, unknown> | null
+  formerUserIds?: ReadonlyArray<unknown> | null
+  sameEmailUserIds?: ReadonlyArray<unknown> | null
+}): JobAccessViewer {
+  const level = typeof input?.level === 'string' ? input.level.trim().toLowerCase() : ''
+  const resolved = level === 'admin' || level === 'manager' ? level : 'operative'
+  const superAdmin = input?.isSuperAdmin === true && resolved === 'admin'
+  const effective = effectivePermissions(input?.permissionSource || {}, resolved)
+  const ids: string[] = []
+  for (const raw of [input?.userId, ...(input?.formerUserIds || []), ...(input?.sameEmailUserIds || [])]) {
+    const id = typeof raw === 'string' ? raw.trim() : ''
+    if (id && !ids.includes(id)) ids.push(id)
+  }
+  return {
+    role: {
+      isSuperAdmin: superAdmin,
+      isAdmin: resolved === 'admin',
+      isManager: resolved === 'manager',
+      isOperativeMode: resolved === 'operative',
+    },
+    toggles: { projects: effective.projects === true, smallWorks: effective.smallWorks === true },
+    uid: ids[0] || null,
+    ids,
+    email: normalizedEmail(input?.email) || null,
+  }
+}
+
+function jobNumberKey(value: unknown): string {
+  const raw = typeof value === 'number' && Number.isFinite(value) ? String(value) : typeof value === 'string' ? value : ''
+  return raw.trim().replace(/\s+/g, ' ').toLowerCase()
+}
+
+export type MaterialRequestJobCheck =
+  | { ok: true }
+  | { ok: false; reason: 'job_not_found' | 'job_not_visible' | 'job_number_mismatch'; status: 403 | 404 | 409; message: string }
+
+/**
+ * Whether a material quote / order email may go out for the job it names (rulebook §16, 1.27.0, owner decision 2).
+ * Applied by the email function (`material_request` with `data.jobId`) and the web send route, before anything is
+ * sent:
+ *   - `job` is the stored project or small works document of the organisation (`kind` is its collection); missing →
+ *     `job_not_found` (404);
+ *   - the sender must see that job (`canSeeJob(viewer, job, managers, kind)`, §17 — the same rule as every job list;
+ *     `managers` are the organisation's `managers` rows on the sender's email, so a job that names their managers-list
+ *     row counts) → else `job_not_visible` (403);
+ *   - the sent job number must be the stored `jobNumber` (trimmed, spaces collapsed, without case) → else
+ *     `job_number_mismatch` (409). The email shows the sent number, so a send never names another job's number.
+ * A request without a job id is not checked (older app builds); the caller decides that before calling this.
+ */
+export function materialRequestJobCheck(input: {
+  viewer: JobAccessViewer | null | undefined
+  job: Record<string, unknown> | null | undefined
+  kind: WorkCatalogue | null | undefined
+  managers?: ReadonlyArray<JobManagerRosterRow> | null
+  jobNumber: unknown
+}): MaterialRequestJobCheck {
+  if (!input?.job) {
+    return { ok: false, reason: 'job_not_found', status: 404, message: MATERIAL_REQUEST_JOB_NOT_FOUND_MESSAGE }
+  }
+  if (!canSeeJob(input.viewer ?? null, input.job, input.managers ?? null, input.kind ?? null)) {
+    return { ok: false, reason: 'job_not_visible', status: 403, message: MATERIAL_REQUEST_JOB_NOT_VISIBLE_MESSAGE }
+  }
+  const sent = jobNumberKey(input.jobNumber)
+  if (!sent || sent !== jobNumberKey(input.job.jobNumber)) {
+    return { ok: false, reason: 'job_number_mismatch', status: 409, message: MATERIAL_REQUEST_JOB_NUMBER_MISMATCH_MESSAGE }
+  }
+  return { ok: true }
 }

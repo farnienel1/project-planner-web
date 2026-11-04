@@ -68,6 +68,7 @@ var ProjectPlannerCanonical = (() => {
     DEFAULT_VARIATION_PREFIX: () => DEFAULT_VARIATION_PREFIX,
     DEFAULT_WARNINGS_SORT_DIRECTION: () => DEFAULT_WARNINGS_SORT_DIRECTION,
     DEFAULT_WARNING_DETECTION: () => DEFAULT_WARNING_DETECTION,
+    DELETED_DATA_RETENTION_NOTICE: () => DELETED_DATA_RETENTION_NOTICE,
     DELETED_USER_DISPLAY_NAME: () => DELETED_USER_DISPLAY_NAME,
     DELETION_RESTORE_DAYS: () => DELETION_RESTORE_DAYS,
     DEVELOPER_PASSWORD_MIN_LENGTH: () => DEVELOPER_PASSWORD_MIN_LENGTH,
@@ -78,6 +79,7 @@ var ProjectPlannerCanonical = (() => {
     ERASED_ORGANIZATIONS_COLLECTION: () => ERASED_ORGANIZATIONS_COLLECTION,
     FALLBACK_LOOKAHEAD_DAYS: () => FALLBACK_LOOKAHEAD_DAYS,
     FILE_KEPT_ON_REMOVE_COPY: () => FILE_KEPT_ON_REMOVE_COPY,
+    FILE_RECOVERY_RETENTION_DAYS: () => FILE_RECOVERY_RETENTION_DAYS,
     FILE_REPORT_DETAILS_MAX: () => FILE_REPORT_DETAILS_MAX,
     FILE_REPORT_FILE_NAME_MAX: () => FILE_REPORT_FILE_NAME_MAX,
     FILE_REPORT_LINK_LABEL: () => FILE_REPORT_LINK_LABEL,
@@ -101,6 +103,7 @@ var ProjectPlannerCanonical = (() => {
     HS_SIGNATURE_STATUSES: () => HS_SIGNATURE_STATUSES,
     IDEMPOTENT_MIGRATION_WRITES: () => IDEMPOTENT_MIGRATION_WRITES,
     INBOX_CREATED_AT_SKEW_MS: () => INBOX_CREATED_AT_SKEW_MS,
+    INVITE_DRAFT_PERSON_ID: () => INVITE_DRAFT_PERSON_ID,
     INVITE_MEMBERSHIP_FIELDS: () => INVITE_MEMBERSHIP_FIELDS,
     IOS_SESSION_ORGANIZATION_STORAGE_KEY: () => IOS_SESSION_ORGANIZATION_STORAGE_KEY,
     JOBS_PER_BOOKING_QUERY: () => JOBS_PER_BOOKING_QUERY,
@@ -137,6 +140,9 @@ var ProjectPlannerCanonical = (() => {
     MATERIAL_ORDER_TYPED_RECIPIENTS_MAX: () => MATERIAL_ORDER_TYPED_RECIPIENTS_MAX,
     MATERIAL_ORDER_TYPED_RECIPIENTS_MESSAGE: () => MATERIAL_ORDER_TYPED_RECIPIENTS_MESSAGE,
     MATERIAL_REQUEST_FROM_SUFFIX: () => MATERIAL_REQUEST_FROM_SUFFIX,
+    MATERIAL_REQUEST_JOB_NOT_FOUND_MESSAGE: () => MATERIAL_REQUEST_JOB_NOT_FOUND_MESSAGE,
+    MATERIAL_REQUEST_JOB_NOT_VISIBLE_MESSAGE: () => MATERIAL_REQUEST_JOB_NOT_VISIBLE_MESSAGE,
+    MATERIAL_REQUEST_JOB_NUMBER_MISMATCH_MESSAGE: () => MATERIAL_REQUEST_JOB_NUMBER_MISMATCH_MESSAGE,
     MATERIAL_STATUS_SYNONYMS: () => MATERIAL_STATUS_SYNONYMS,
     MATERIAL_UNITS: () => MATERIAL_UNITS,
     MATERIAL_WHATSAPP_ITEM_LIMIT: () => MATERIAL_WHATSAPP_ITEM_LIMIT,
@@ -354,11 +360,13 @@ var ProjectPlannerCanonical = (() => {
     canSendMaterialOrders: () => canSendMaterialOrders,
     canViewMaterialOrderHistory: () => canViewMaterialOrderHistory,
     canViewPersonPay: () => canViewPersonPay,
+    canViewRemovedEvidence: () => canViewRemovedEvidence,
     canViewSensitiveProfile: () => canViewSensitiveProfile,
     canViewStaffWarnings: () => canViewStaffWarnings,
     canWriteBooking: () => canWriteBooking,
     canonicalJobTypeName: () => canonicalJobTypeName,
     capitalizeTimesheetWeekday: () => capitalizeTimesheetWeekday,
+    catalogueOperativePaySubjects: () => catalogueOperativePaySubjects,
     catalogueRecordFromItem: () => catalogueRecordFromItem,
     chooseSessionOrganization: () => chooseSessionOrganization,
     clampMonthDayInZone: () => clampMonthDayInZone,
@@ -471,10 +479,12 @@ var ProjectPlannerCanonical = (() => {
     invitationRole: () => invitationRole,
     invitationUsedWriteFields: () => invitationUsedWriteFields,
     inviteAcceptWrites: () => inviteAcceptWrites,
+    inviteDraftLineManagerSubject: () => inviteDraftLineManagerSubject,
     inviteEmailHasLiveClaim: () => inviteEmailHasLiveClaim,
     inviteEmailOrgLookupConstraints: () => inviteEmailOrgLookupConstraints,
     inviteMembershipWrites: () => inviteMembershipWrites,
     inviteMigrationFormerIdWriteFields: () => inviteMigrationFormerIdWriteFields,
+    invitePayProfileCopyWrite: () => invitePayProfileCopyWrite,
     invitePlaceholderUserWriteFields: () => invitePlaceholderUserWriteFields,
     inviteWritesOperativeProfile: () => inviteWritesOperativeProfile,
     invoiceLines: () => invoiceLines,
@@ -596,6 +606,8 @@ var ProjectPlannerCanonical = (() => {
     materialRecordMatches: () => materialRecordMatches,
     materialRequestEmailEnvelope: () => materialRequestEmailEnvelope,
     materialRequestEmailSubject: () => materialRequestEmailSubject,
+    materialRequestJobCheck: () => materialRequestJobCheck,
+    materialRequestJobViewer: () => materialRequestJobViewer,
     materialSearchScore: () => materialSearchScore,
     materialSendRecordCreateFields: () => materialSendRecordCreateFields,
     materialSendStatusWriteFields: () => materialSendStatusWriteFields,
@@ -828,6 +840,7 @@ var ProjectPlannerCanonical = (() => {
     receivesJobNotification: () => receivesJobNotification,
     recordsToSave: () => recordsToSave,
     rememberedOrganizationSurvivesSignOut: () => rememberedOrganizationSurvivesSignOut,
+    removedEvidenceHeading: () => removedEvidenceHeading,
     removedQualificationCertificateIds: () => removedQualificationCertificateIds,
     replayRefusedIsFinal: () => replayRefusedIsFinal,
     reportDayValue: () => reportDayValue,
@@ -971,6 +984,7 @@ var ProjectPlannerCanonical = (() => {
     validateInvoicingSettings: () => validateInvoicingSettings,
     validateLeaveYearMonths: () => validateLeaveYearMonths,
     validatePayrollTimePolicy: () => validatePayrollTimePolicy,
+    variationEvidenceRemovalWriteFields: () => variationEvidenceRemovalWriteFields,
     variationLineId: () => variationLineId,
     variationLogItemId: () => variationLogItemId,
     variationLogItems: () => variationLogItems,
@@ -10020,8 +10034,8 @@ var ProjectPlannerCanonical = (() => {
   // lib/canonical/rulebookStamp.ts
   function rulebookStamp() {
     return {
-      version: true ? "1.26.1" : "",
-      sha256: true ? "9379ecb7418407f9e54e38e53bbbdaf72c399d0271fa4d32325d16ff5b4ece5e" : ""
+      version: true ? "1.27.0" : "",
+      sha256: true ? "142e20f48027bc0d25d5cf0793aa164833f863de1c914bca927c7e1c8acf7c36" : ""
     };
   }
 
@@ -12821,8 +12835,58 @@ var ProjectPlannerCanonical = (() => {
       })),
       submittedAtMs: documentInstantMs(row2.submittedAt),
       closedAtMs: documentInstantMs(row2.closedAt),
-      isDeleted: documentBool(row2.isDeleted) === true
+      isDeleted: documentBool(row2.isDeleted) === true,
+      removedEvidence: parseRemovedEvidence(row2.removedEvidence)
     };
+  }
+  function parseRemovedEvidence(value) {
+    const out = [];
+    for (const entry of rows2(value)) {
+      const path = text14(entry.path);
+      if (!path) continue;
+      out.push({ path, name: text14(entry.name) || "file", removedBy: text14(entry.removedBy), removedAtMs: documentInstantMs(entry.removedAt) });
+    }
+    return out;
+  }
+  function variationEvidenceRemovalWriteFields(stored, input) {
+    const row2 = record6(stored);
+    const evidenceId = text14(input?.evidenceId);
+    if (!evidenceId) return null;
+    const variationId = text14(input?.variationId) || text14(row2.id);
+    const raw = Array.isArray(row2.evidence) ? row2.evidence : [];
+    let removed = null;
+    const kept = [];
+    for (const [index, entry] of raw.entries()) {
+      const line = record6(entry);
+      const hasFile = Boolean(text14(line.storagePath) || text14(line.downloadURL));
+      const id2 = text14(line.id) || variationLineId(variationId, "evidence", index, line);
+      if (!removed && hasFile && id2 === evidenceId) {
+        removed = line;
+        continue;
+      }
+      kept.push(entry);
+    }
+    if (!removed) return null;
+    const removedEvidence = rows2(row2.removedEvidence).map((entry) => ({ ...entry }));
+    removedEvidence.push({
+      path: text14(removed.storagePath) || text14(removed.downloadURL),
+      name: text14(removed.fileName) || "file",
+      removedBy: text14(input?.removedBy),
+      removedAt: input?.removedAt ?? null
+    });
+    const evidenceCount = kept.filter((entry) => {
+      const line = record6(entry);
+      return Boolean(text14(line.storagePath) || text14(line.downloadURL));
+    }).length;
+    return { set: { evidence: kept, evidenceCount, removedEvidence } };
+  }
+  function canViewRemovedEvidence(role) {
+    if (!role || role.isOperativeMode === true) return false;
+    return role.isSuperAdmin === true || role.isAdmin === true;
+  }
+  function removedEvidenceHeading(count) {
+    const n = typeof count === "number" && Number.isFinite(count) && count > 0 ? Math.trunc(count) : 0;
+    return `Removed evidence (${n})`;
   }
   var VARIATION_LABOUR_WRITE_GROUP = ["labour", "totalLabourHours"];
   var VARIATION_MATERIALS_WRITE_GROUP = ["materials", "materialLineCount"];
@@ -13972,6 +14036,31 @@ var ProjectPlannerCanonical = (() => {
     if (invitedBy) membership.invitedBy = invitedBy;
     return { organizationId, membership, membersField: `members.${authUid}`, role };
   }
+  var INVITED_PAY_FIELDS = [
+    "payBasis",
+    "dayRate",
+    "hourlyRate",
+    "employmentType",
+    "employmentTypeTransitionFrom",
+    "employmentTypeEffectiveAt"
+  ];
+  function invitePayProfileCopyWrite(input) {
+    if (input?.privatePay !== true) return null;
+    const authUid = text18(input.authUid);
+    const placeholderId = text18(input.placeholderId);
+    if (!authUid || !placeholderId || placeholderId === authUid) return null;
+    if (record7(input.accountProfile)) return null;
+    const source = record7(input.placeholderProfile);
+    if (!source) return null;
+    const set = { userId: authUid };
+    let copied = 0;
+    for (const key3 of INVITED_PAY_FIELDS) {
+      if (!Object.prototype.hasOwnProperty.call(source, key3)) continue;
+      set[key3] = source[key3];
+      copied += 1;
+    }
+    return copied > 0 ? { subjectId: authUid, set } : null;
+  }
 
   // lib/canonical/lineManagers.ts
   var NO_LINE_MANAGER_LABEL = "No line manager";
@@ -14109,6 +14198,19 @@ var ProjectPlannerCanonical = (() => {
     }
     const hasNoLineManager = picks?.hasNoLineManager === true && lineManagerOptions(levelSubject).allowsNoLineManager;
     return { lineManagerIds: lineManagerIds2, hasNoLineManager, dropped };
+  }
+  var INVITE_DRAFT_PERSON_ID = "invite-draft";
+  function inviteDraftLineManagerSubject(input) {
+    const level = text19(input?.level).toLowerCase();
+    const resolved = level === "admin" || level === "operative" ? level : "manager";
+    return {
+      id: INVITE_DRAFT_PERSON_ID,
+      email: text19(input?.email).toLowerCase(),
+      role: resolved,
+      isActive: true,
+      adminAccess: resolved === "admin",
+      operativeMode: resolved === "operative"
+    };
   }
 
   // lib/canonical/orgRoster.ts
@@ -14573,8 +14675,33 @@ var ProjectPlannerCanonical = (() => {
     if (viewer.isActive === false) return false;
     const level = permissionLevelOf(viewer);
     if (level === "admin") return true;
+    const operativesManager = level === "manager" && effectivePermissions(viewer).operatives === true;
+    if (subject.catalogueOperative === true) return operativesManager;
     if (lineManagerIds(subject, roster).some((id2) => viewerIds.has(idKey2(id2)))) return true;
-    return level === "manager" && effectivePermissions(viewer).operatives === true && permissionLevelOf(subject) === "operative";
+    return operativesManager && permissionLevelOf(subject) === "operative";
+  }
+  function catalogueOperativePaySubjects(operatives, roster) {
+    const rosterIds = /* @__PURE__ */ new Set();
+    const rosterEmails = /* @__PURE__ */ new Set();
+    for (const member of roster || []) {
+      if (!member) continue;
+      for (const id2 of personIdSet(member, null)) rosterIds.add(idKey2(id2));
+      const email = idKey2(member.email);
+      if (email) rosterEmails.add(email);
+    }
+    const out = [];
+    const seen = /* @__PURE__ */ new Set();
+    for (const row2 of operatives || []) {
+      const id2 = typeof row2?.id === "string" ? row2.id.trim() : "";
+      if (!id2 || seen.has(idKey2(id2))) continue;
+      const linked = [row2.linkedUserId, row2.userId, row2.uid].some((value) => typeof value === "string" && value.trim() !== "");
+      if (linked || rosterIds.has(idKey2(id2))) continue;
+      const email = typeof row2.email === "string" ? row2.email.trim() : "";
+      if (email && rosterEmails.has(idKey2(email))) continue;
+      seen.add(idKey2(id2));
+      out.push({ id: id2, email: email || null, catalogueOperative: true });
+    }
+    return out;
   }
   function parsePayProfileDocument(docId, data) {
     const fields = {};
@@ -14636,11 +14763,26 @@ var ProjectPlannerCanonical = (() => {
     }
     return out;
   }
+  function viewableCatalogueIds(viewer, subjects, roster) {
+    const out = [];
+    const seen = /* @__PURE__ */ new Set();
+    for (const subject of subjects || []) {
+      if (!subject || subject.catalogueOperative !== true) continue;
+      const id2 = typeof subject.id === "string" ? subject.id.trim() : "";
+      if (!id2 || seen.has(id2) || !canViewPersonPay(viewer, subject, roster)) continue;
+      seen.add(id2);
+      out.push(id2);
+    }
+    return out;
+  }
   function rateHistoryQueryPlan(viewer, subjects, roster, options) {
     if (options?.privatePay !== true) return { kind: "all" };
-    if (!viewer) return { kind: "people", userIds: [] };
+    if (!viewer) return { kind: "people", userIds: [], operativeIds: [] };
     if (viewerSeesEveryPay(viewer)) return { kind: "all" };
-    return { kind: "people", userIds: viewablePayIds(viewer, subjects, roster) };
+    const operativeIds = viewableCatalogueIds(viewer, subjects, roster);
+    const catalogue = new Set(operativeIds);
+    const userIds = viewablePayIds(viewer, subjects, roster).filter((id2) => !catalogue.has(id2));
+    return { kind: "people", userIds, operativeIds };
   }
   function payProfileReadPlan(viewer, subjects, roster) {
     if (!viewer) return { kind: "documents", ids: [] };
@@ -14757,6 +14899,49 @@ var ProjectPlannerCanonical = (() => {
       replyTo: validEmail,
       cc: validEmail ? [validEmail] : []
     };
+  }
+  var MATERIAL_REQUEST_JOB_NOT_FOUND_MESSAGE = "Job not found in this organisation";
+  var MATERIAL_REQUEST_JOB_NOT_VISIBLE_MESSAGE = "You cannot send materials for this job.";
+  var MATERIAL_REQUEST_JOB_NUMBER_MISMATCH_MESSAGE = "The job number does not match this job. Reopen the job and send again.";
+  function materialRequestJobViewer(input) {
+    const level = typeof input?.level === "string" ? input.level.trim().toLowerCase() : "";
+    const resolved = level === "admin" || level === "manager" ? level : "operative";
+    const superAdmin = input?.isSuperAdmin === true && resolved === "admin";
+    const effective = effectivePermissions(input?.permissionSource || {}, resolved);
+    const ids = [];
+    for (const raw of [input?.userId, ...input?.formerUserIds || [], ...input?.sameEmailUserIds || []]) {
+      const id2 = typeof raw === "string" ? raw.trim() : "";
+      if (id2 && !ids.includes(id2)) ids.push(id2);
+    }
+    return {
+      role: {
+        isSuperAdmin: superAdmin,
+        isAdmin: resolved === "admin",
+        isManager: resolved === "manager",
+        isOperativeMode: resolved === "operative"
+      },
+      toggles: { projects: effective.projects === true, smallWorks: effective.smallWorks === true },
+      uid: ids[0] || null,
+      ids,
+      email: normalizedEmail(input?.email) || null
+    };
+  }
+  function jobNumberKey(value) {
+    const raw = typeof value === "number" && Number.isFinite(value) ? String(value) : typeof value === "string" ? value : "";
+    return raw.trim().replace(/\s+/g, " ").toLowerCase();
+  }
+  function materialRequestJobCheck(input) {
+    if (!input?.job) {
+      return { ok: false, reason: "job_not_found", status: 404, message: MATERIAL_REQUEST_JOB_NOT_FOUND_MESSAGE };
+    }
+    if (!canSeeJob(input.viewer ?? null, input.job, input.managers ?? null, input.kind ?? null)) {
+      return { ok: false, reason: "job_not_visible", status: 403, message: MATERIAL_REQUEST_JOB_NOT_VISIBLE_MESSAGE };
+    }
+    const sent = jobNumberKey(input.jobNumber);
+    if (!sent || sent !== jobNumberKey(input.job.jobNumber)) {
+      return { ok: false, reason: "job_number_mismatch", status: 409, message: MATERIAL_REQUEST_JOB_NUMBER_MISMATCH_MESSAGE };
+    }
+    return { ok: true };
   }
 
   // lib/canonical/organizationDeletion.ts
@@ -15986,6 +16171,8 @@ var ProjectPlannerCanonical = (() => {
   var FILE_UNDO_WINDOW_MINUTES = 15;
   var FILE_UNDO_WINDOW_MS = FILE_UNDO_WINDOW_MINUTES * 60 * 1e3;
   var FILE_KEPT_ON_REMOVE_COPY = "Removed from this list. The file itself is kept so an admin can restore it.";
+  var FILE_RECOVERY_RETENTION_DAYS = 30;
+  var DELETED_DATA_RETENTION_NOTICE = "A deleted company can be restored for 60 days, after which its data is erased. Deleted files, including the files of an erased company, are kept for up to 30 days so they can be recovered, then permanently removed.";
   var STORED_FILE_KINDS = [
     "profile_photo",
     "company_logo",

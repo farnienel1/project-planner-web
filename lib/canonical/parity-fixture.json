@@ -18622,6 +18622,993 @@
         "employmentType": "self_employed",
         "source": "payProfile"
       }
+    },
+    {
+      "name": "1.27.0 inviteDraftLineManagerSubject: id invite-draft, email lower case, the level",
+      "function": "inviteDraftLineManagerSubject",
+      "args": [
+        {
+          "email": " New.Person@Example.com ",
+          "level": "operative"
+        }
+      ],
+      "expected": {
+        "id": "invite-draft",
+        "email": "new.person@example.com",
+        "role": "operative",
+        "isActive": true,
+        "adminAccess": false,
+        "operativeMode": true
+      }
+    },
+    {
+      "name": "1.27.0 lineManagerCandidates: the invite draft as person — the invitee's own email row is never offered",
+      "function": "lineManagerCandidates",
+      "args": [
+        {
+          "id": "invite-draft",
+          "email": "new.person@example.com",
+          "role": "manager",
+          "isActive": true,
+          "adminAccess": false,
+          "operativeMode": false
+        },
+        [
+          {
+            "id": "mgr-1",
+            "email": "boss@example.com",
+            "firstName": "Bea",
+            "surname": "Boss",
+            "isActive": true,
+            "passwordSet": true,
+            "role": "manager",
+            "manager": true
+          },
+          {
+            "id": "self-row",
+            "email": "new.person@example.com",
+            "firstName": "Nia",
+            "surname": "New",
+            "isActive": true,
+            "passwordSet": true,
+            "role": "manager",
+            "manager": true
+          }
+        ]
+      ],
+      "expected": [
+        {
+          "id": "mgr-1",
+          "name": "Bea Boss",
+          "level": "manager"
+        }
+      ]
+    },
+    {
+      "name": "1.27.0 lineManagerSelectionAfterLevelChange: a pick of the invitee's own row is dropped",
+      "function": "lineManagerSelectionAfterLevelChange",
+      "args": [
+        {
+          "lineManagerIds": [
+            "self-row",
+            "mgr-1"
+          ],
+          "hasNoLineManager": false
+        },
+        "manager",
+        [
+          {
+            "id": "mgr-1",
+            "email": "boss@example.com",
+            "firstName": "Bea",
+            "surname": "Boss",
+            "isActive": true,
+            "passwordSet": true,
+            "role": "manager",
+            "manager": true
+          },
+          {
+            "id": "self-row",
+            "email": "new.person@example.com",
+            "firstName": "Nia",
+            "surname": "New",
+            "isActive": true,
+            "passwordSet": true,
+            "role": "manager",
+            "manager": true
+          }
+        ],
+        {
+          "id": "invite-draft",
+          "email": "new.person@example.com",
+          "role": "manager",
+          "isActive": true,
+          "adminAccess": false,
+          "operativeMode": false
+        }
+      ],
+      "expected": {
+        "lineManagerIds": [
+          "mgr-1"
+        ],
+        "hasNoLineManager": false,
+        "dropped": [
+          "self-row"
+        ]
+      }
+    },
+    {
+      "name": "1.27.0 materialRequestJobViewer: a manager from their users document",
+      "function": "materialRequestJobViewer",
+      "args": [
+        {
+          "userId": "mgr-2",
+          "email": "Other@Example.com",
+          "level": "manager",
+          "permissionSource": {
+            "permissions": {
+              "projects": true
+            }
+          },
+          "formerUserIds": [
+            "old-2"
+          ]
+        }
+      ],
+      "expected": {
+        "role": {
+          "isSuperAdmin": false,
+          "isAdmin": false,
+          "isManager": true,
+          "isOperativeMode": false
+        },
+        "toggles": {
+          "projects": true,
+          "smallWorks": false
+        },
+        "uid": "mgr-2",
+        "ids": [
+          "mgr-2",
+          "old-2"
+        ],
+        "email": "other@example.com"
+      }
+    },
+    {
+      "name": "1.27.0 materialRequestJobCheck: a manager who does not manage the job is refused (job_not_visible)",
+      "function": "materialRequestJobCheck",
+      "args": [
+        {
+          "viewer": {
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": false,
+              "isManager": true,
+              "isOperativeMode": false
+            },
+            "toggles": {
+              "projects": false,
+              "smallWorks": false
+            },
+            "uid": "mgr-2",
+            "ids": [
+              "mgr-2"
+            ],
+            "email": "other@example.com"
+          },
+          "job": {
+            "jobNumber": "J-200",
+            "managerIds": [
+              "mgr-1"
+            ]
+          },
+          "kind": "projects",
+          "managers": [],
+          "jobNumber": "J-200"
+        }
+      ],
+      "expected": {
+        "ok": false,
+        "reason": "job_not_visible",
+        "status": 403,
+        "message": "You cannot send materials for this job."
+      }
+    },
+    {
+      "name": "1.27.0 materialRequestJobCheck: a job naming the sender's managers-list row; number with spaces and case",
+      "function": "materialRequestJobCheck",
+      "args": [
+        {
+          "viewer": {
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": false,
+              "isManager": true,
+              "isOperativeMode": false
+            },
+            "toggles": {
+              "projects": false,
+              "smallWorks": false
+            },
+            "uid": "mgr-2",
+            "ids": [
+              "mgr-2"
+            ],
+            "email": "other@example.com"
+          },
+          "job": {
+            "jobNumber": "J-200",
+            "managerIds": [
+              "mrow-9"
+            ]
+          },
+          "kind": "projects",
+          "managers": [
+            {
+              "id": "mrow-9",
+              "email": "other@example.com"
+            }
+          ],
+          "jobNumber": " j-200 "
+        }
+      ],
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "name": "1.27.0 materialRequestJobCheck: another job's number is refused (job_number_mismatch)",
+      "function": "materialRequestJobCheck",
+      "args": [
+        {
+          "viewer": {
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": true,
+              "isManager": false,
+              "isOperativeMode": false
+            },
+            "toggles": {
+              "projects": true,
+              "smallWorks": true
+            },
+            "uid": "a",
+            "ids": [
+              "a"
+            ],
+            "email": "a@x.y"
+          },
+          "job": {
+            "jobNumber": "J-200"
+          },
+          "kind": "smallWorks",
+          "managers": [],
+          "jobNumber": "J-201"
+        }
+      ],
+      "expected": {
+        "ok": false,
+        "reason": "job_number_mismatch",
+        "status": 409,
+        "message": "The job number does not match this job. Reopen the job and send again."
+      }
+    },
+    {
+      "name": "1.27.0 materialRequestJobCheck: no job (job_not_found)",
+      "function": "materialRequestJobCheck",
+      "args": [
+        {
+          "viewer": {
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": false,
+              "isManager": true,
+              "isOperativeMode": false
+            },
+            "toggles": {
+              "projects": false,
+              "smallWorks": false
+            },
+            "uid": "mgr-2",
+            "ids": [
+              "mgr-2"
+            ],
+            "email": "other@example.com"
+          },
+          "job": null,
+          "kind": null,
+          "managers": [],
+          "jobNumber": "J-200"
+        }
+      ],
+      "expected": {
+        "ok": false,
+        "reason": "job_not_found",
+        "status": 404,
+        "message": "Job not found in this organisation"
+      }
+    },
+    {
+      "name": "1.27.0 variationEvidenceRemovalWriteFields: unlink e1, append to removedEvidence",
+      "function": "variationEvidenceRemovalWriteFields",
+      "args": [
+        {
+          "id": "v1",
+          "evidence": [
+            {
+              "id": "e1",
+              "fileName": "before.jpg",
+              "storagePath": "organizations/o/healthSafety/j/variations/u_1.jpg",
+              "downloadURL": "https://x/1"
+            },
+            {
+              "fileName": "after.jpg",
+              "storagePath": "organizations/o/healthSafety/j/variations/u_2.jpg",
+              "downloadURL": "https://x/2"
+            }
+          ],
+          "evidenceCount": 2,
+          "removedEvidence": [
+            {
+              "path": "organizations/o/old.pdf",
+              "name": "old.pdf",
+              "removedBy": "u0",
+              "removedAt": 1762000000000
+            }
+          ]
+        },
+        {
+          "evidenceId": "e1",
+          "removedBy": "admin-1",
+          "removedAt": 1762250000000
+        }
+      ],
+      "expected": {
+        "set": {
+          "evidence": [
+            {
+              "fileName": "after.jpg",
+              "storagePath": "organizations/o/healthSafety/j/variations/u_2.jpg",
+              "downloadURL": "https://x/2"
+            }
+          ],
+          "evidenceCount": 1,
+          "removedEvidence": [
+            {
+              "path": "organizations/o/old.pdf",
+              "name": "old.pdf",
+              "removedBy": "u0",
+              "removedAt": 1762000000000
+            },
+            {
+              "path": "organizations/o/healthSafety/j/variations/u_1.jpg",
+              "name": "before.jpg",
+              "removedBy": "admin-1",
+              "removedAt": 1762250000000
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "1.27.0 variationEvidenceRemovalWriteFields: an id that is not on the variation writes nothing",
+      "function": "variationEvidenceRemovalWriteFields",
+      "args": [
+        {
+          "id": "v1",
+          "evidence": [
+            {
+              "id": "e1",
+              "fileName": "before.jpg",
+              "storagePath": "organizations/o/healthSafety/j/variations/u_1.jpg",
+              "downloadURL": "https://x/1"
+            },
+            {
+              "fileName": "after.jpg",
+              "storagePath": "organizations/o/healthSafety/j/variations/u_2.jpg",
+              "downloadURL": "https://x/2"
+            }
+          ],
+          "evidenceCount": 2,
+          "removedEvidence": [
+            {
+              "path": "organizations/o/old.pdf",
+              "name": "old.pdf",
+              "removedBy": "u0",
+              "removedAt": 1762000000000
+            }
+          ]
+        },
+        {
+          "evidenceId": "nope",
+          "removedBy": "admin-1",
+          "removedAt": 1762250000000
+        }
+      ],
+      "expected": null
+    },
+    {
+      "name": "1.27.0 canViewRemovedEvidence: admin outside operative mode",
+      "function": "canViewRemovedEvidence",
+      "args": [
+        {
+          "isAdmin": true,
+          "isOperativeMode": false
+        }
+      ],
+      "expected": true
+    },
+    {
+      "name": "1.27.0 canViewRemovedEvidence: manager",
+      "function": "canViewRemovedEvidence",
+      "args": [
+        {
+          "isAdmin": false,
+          "isSuperAdmin": false,
+          "isManager": true
+        }
+      ],
+      "expected": false
+    },
+    {
+      "name": "1.27.0 removedEvidenceHeading",
+      "function": "removedEvidenceHeading",
+      "args": [
+        2
+      ],
+      "expected": "Removed evidence (2)"
+    },
+    {
+      "name": "1.27.0 invitePayProfileCopyWrite: privatePay on — the exact invited fields",
+      "function": "invitePayProfileCopyWrite",
+      "args": [
+        {
+          "privatePay": true,
+          "authUid": "uid-1",
+          "placeholderId": "ph-1",
+          "placeholderProfile": {
+            "userId": "ph-1",
+            "payBasis": "day",
+            "dayRate": 185,
+            "employmentType": "self_employed",
+            "updatedBy": "admin"
+          },
+          "accountProfile": null
+        }
+      ],
+      "expected": {
+        "subjectId": "uid-1",
+        "set": {
+          "userId": "uid-1",
+          "payBasis": "day",
+          "dayRate": 185,
+          "employmentType": "self_employed"
+        }
+      }
+    },
+    {
+      "name": "1.27.0 invitePayProfileCopyWrite: privatePay off — nothing",
+      "function": "invitePayProfileCopyWrite",
+      "args": [
+        {
+          "privatePay": false,
+          "authUid": "uid-1",
+          "placeholderId": "ph-1",
+          "placeholderProfile": {
+            "userId": "ph-1",
+            "dayRate": 185
+          },
+          "accountProfile": null
+        }
+      ],
+      "expected": null
+    },
+    {
+      "name": "1.27.0 invitePayProfileCopyWrite: the account already has a profile — nothing",
+      "function": "invitePayProfileCopyWrite",
+      "args": [
+        {
+          "privatePay": true,
+          "authUid": "uid-1",
+          "placeholderId": "ph-1",
+          "placeholderProfile": {
+            "userId": "ph-1",
+            "dayRate": 185
+          },
+          "accountProfile": {
+            "userId": "uid-1",
+            "dayRate": 185
+          }
+        }
+      ],
+      "expected": null
+    },
+    {
+      "name": "1.27.0 catalogueOperativePaySubjects: rows with no account only (no link, id or email on the roster)",
+      "function": "catalogueOperativePaySubjects",
+      "args": [
+        [
+          {
+            "id": "row-solo",
+            "email": "solo@x.y",
+            "name": "Solo"
+          },
+          {
+            "id": "row-linked",
+            "email": "linked@x.y",
+            "linkedUserId": "someone"
+          },
+          {
+            "id": "row-op",
+            "email": "OP@x.y"
+          },
+          {
+            "id": "OP-1"
+          }
+        ],
+        [
+          {
+            "id": "admin-1",
+            "email": "admin@x.y",
+            "isActive": true,
+            "role": "admin",
+            "adminAccess": true
+          },
+          {
+            "id": "ops-mgr",
+            "email": "ops@x.y",
+            "isActive": true,
+            "role": "manager",
+            "manager": true,
+            "permissions": {
+              "operatives": true
+            }
+          },
+          {
+            "id": "plain-mgr",
+            "email": "plain@x.y",
+            "isActive": true,
+            "role": "manager",
+            "manager": true
+          },
+          {
+            "id": "op-1",
+            "email": "op@x.y",
+            "isActive": true,
+            "role": "operative",
+            "operativeMode": true,
+            "assignedManagerUserIds": [
+              "plain-mgr"
+            ]
+          }
+        ]
+      ],
+      "expected": [
+        {
+          "id": "row-solo",
+          "email": "solo@x.y",
+          "catalogueOperative": true
+        }
+      ]
+    },
+    {
+      "name": "1.27.0 canViewPersonPay: a manager with the Operatives toggle sees a catalogue operative",
+      "function": "canViewPersonPay",
+      "args": [
+        {
+          "id": "ops-mgr",
+          "email": "ops@x.y",
+          "isActive": true,
+          "role": "manager",
+          "manager": true,
+          "permissions": {
+            "operatives": true
+          }
+        },
+        {
+          "id": "row-solo",
+          "email": "solo@x.y",
+          "catalogueOperative": true
+        },
+        [
+          {
+            "id": "admin-1",
+            "email": "admin@x.y",
+            "isActive": true,
+            "role": "admin",
+            "adminAccess": true
+          },
+          {
+            "id": "ops-mgr",
+            "email": "ops@x.y",
+            "isActive": true,
+            "role": "manager",
+            "manager": true,
+            "permissions": {
+              "operatives": true
+            }
+          },
+          {
+            "id": "plain-mgr",
+            "email": "plain@x.y",
+            "isActive": true,
+            "role": "manager",
+            "manager": true
+          },
+          {
+            "id": "op-1",
+            "email": "op@x.y",
+            "isActive": true,
+            "role": "operative",
+            "operativeMode": true,
+            "assignedManagerUserIds": [
+              "plain-mgr"
+            ]
+          }
+        ]
+      ],
+      "expected": true
+    },
+    {
+      "name": "1.27.0 canViewPersonPay: a manager without it does not",
+      "function": "canViewPersonPay",
+      "args": [
+        {
+          "id": "plain-mgr",
+          "email": "plain@x.y",
+          "isActive": true,
+          "role": "manager",
+          "manager": true
+        },
+        {
+          "id": "row-solo",
+          "email": "solo@x.y",
+          "catalogueOperative": true
+        },
+        [
+          {
+            "id": "admin-1",
+            "email": "admin@x.y",
+            "isActive": true,
+            "role": "admin",
+            "adminAccess": true
+          },
+          {
+            "id": "ops-mgr",
+            "email": "ops@x.y",
+            "isActive": true,
+            "role": "manager",
+            "manager": true,
+            "permissions": {
+              "operatives": true
+            }
+          },
+          {
+            "id": "plain-mgr",
+            "email": "plain@x.y",
+            "isActive": true,
+            "role": "manager",
+            "manager": true
+          },
+          {
+            "id": "op-1",
+            "email": "op@x.y",
+            "isActive": true,
+            "role": "operative",
+            "operativeMode": true,
+            "assignedManagerUserIds": [
+              "plain-mgr"
+            ]
+          }
+        ]
+      ],
+      "expected": false
+    },
+    {
+      "name": "1.27.0 payProfileReadPlan: the operatives manager reads the catalogue operative profile by id",
+      "function": "payProfileReadPlan",
+      "args": [
+        {
+          "id": "ops-mgr",
+          "email": "ops@x.y",
+          "isActive": true,
+          "role": "manager",
+          "manager": true,
+          "permissions": {
+            "operatives": true
+          }
+        },
+        [
+          {
+            "id": "admin-1",
+            "email": "admin@x.y",
+            "isActive": true,
+            "role": "admin",
+            "adminAccess": true
+          },
+          {
+            "id": "ops-mgr",
+            "email": "ops@x.y",
+            "isActive": true,
+            "role": "manager",
+            "manager": true,
+            "permissions": {
+              "operatives": true
+            }
+          },
+          {
+            "id": "plain-mgr",
+            "email": "plain@x.y",
+            "isActive": true,
+            "role": "manager",
+            "manager": true
+          },
+          {
+            "id": "op-1",
+            "email": "op@x.y",
+            "isActive": true,
+            "role": "operative",
+            "operativeMode": true,
+            "assignedManagerUserIds": [
+              "plain-mgr"
+            ]
+          },
+          {
+            "id": "row-solo",
+            "email": "solo@x.y",
+            "catalogueOperative": true
+          }
+        ],
+        [
+          {
+            "id": "admin-1",
+            "email": "admin@x.y",
+            "isActive": true,
+            "role": "admin",
+            "adminAccess": true
+          },
+          {
+            "id": "ops-mgr",
+            "email": "ops@x.y",
+            "isActive": true,
+            "role": "manager",
+            "manager": true,
+            "permissions": {
+              "operatives": true
+            }
+          },
+          {
+            "id": "plain-mgr",
+            "email": "plain@x.y",
+            "isActive": true,
+            "role": "manager",
+            "manager": true
+          },
+          {
+            "id": "op-1",
+            "email": "op@x.y",
+            "isActive": true,
+            "role": "operative",
+            "operativeMode": true,
+            "assignedManagerUserIds": [
+              "plain-mgr"
+            ]
+          }
+        ]
+      ],
+      "expected": {
+        "kind": "documents",
+        "ids": [
+          "ops-mgr",
+          "op-1",
+          "row-solo"
+        ]
+      }
+    },
+    {
+      "name": "1.27.0 rateHistoryQueryPlan: operativeIds for the catalogue operatives (privatePay on)",
+      "function": "rateHistoryQueryPlan",
+      "args": [
+        {
+          "id": "ops-mgr",
+          "email": "ops@x.y",
+          "isActive": true,
+          "role": "manager",
+          "manager": true,
+          "permissions": {
+            "operatives": true
+          }
+        },
+        [
+          {
+            "id": "admin-1",
+            "email": "admin@x.y",
+            "isActive": true,
+            "role": "admin",
+            "adminAccess": true
+          },
+          {
+            "id": "ops-mgr",
+            "email": "ops@x.y",
+            "isActive": true,
+            "role": "manager",
+            "manager": true,
+            "permissions": {
+              "operatives": true
+            }
+          },
+          {
+            "id": "plain-mgr",
+            "email": "plain@x.y",
+            "isActive": true,
+            "role": "manager",
+            "manager": true
+          },
+          {
+            "id": "op-1",
+            "email": "op@x.y",
+            "isActive": true,
+            "role": "operative",
+            "operativeMode": true,
+            "assignedManagerUserIds": [
+              "plain-mgr"
+            ]
+          },
+          {
+            "id": "row-solo",
+            "email": "solo@x.y",
+            "catalogueOperative": true
+          }
+        ],
+        [
+          {
+            "id": "admin-1",
+            "email": "admin@x.y",
+            "isActive": true,
+            "role": "admin",
+            "adminAccess": true
+          },
+          {
+            "id": "ops-mgr",
+            "email": "ops@x.y",
+            "isActive": true,
+            "role": "manager",
+            "manager": true,
+            "permissions": {
+              "operatives": true
+            }
+          },
+          {
+            "id": "plain-mgr",
+            "email": "plain@x.y",
+            "isActive": true,
+            "role": "manager",
+            "manager": true
+          },
+          {
+            "id": "op-1",
+            "email": "op@x.y",
+            "isActive": true,
+            "role": "operative",
+            "operativeMode": true,
+            "assignedManagerUserIds": [
+              "plain-mgr"
+            ]
+          }
+        ],
+        {
+          "privatePay": true
+        }
+      ],
+      "expected": {
+        "kind": "people",
+        "userIds": [
+          "ops-mgr",
+          "op-1"
+        ],
+        "operativeIds": [
+          "row-solo"
+        ]
+      }
+    },
+    {
+      "name": "1.27.0 rateHistoryQueryPlan: privatePay off — the whole collection",
+      "function": "rateHistoryQueryPlan",
+      "args": [
+        {
+          "id": "ops-mgr",
+          "email": "ops@x.y",
+          "isActive": true,
+          "role": "manager",
+          "manager": true,
+          "permissions": {
+            "operatives": true
+          }
+        },
+        [
+          {
+            "id": "admin-1",
+            "email": "admin@x.y",
+            "isActive": true,
+            "role": "admin",
+            "adminAccess": true
+          },
+          {
+            "id": "ops-mgr",
+            "email": "ops@x.y",
+            "isActive": true,
+            "role": "manager",
+            "manager": true,
+            "permissions": {
+              "operatives": true
+            }
+          },
+          {
+            "id": "plain-mgr",
+            "email": "plain@x.y",
+            "isActive": true,
+            "role": "manager",
+            "manager": true
+          },
+          {
+            "id": "op-1",
+            "email": "op@x.y",
+            "isActive": true,
+            "role": "operative",
+            "operativeMode": true,
+            "assignedManagerUserIds": [
+              "plain-mgr"
+            ]
+          },
+          {
+            "id": "row-solo",
+            "email": "solo@x.y",
+            "catalogueOperative": true
+          }
+        ],
+        [
+          {
+            "id": "admin-1",
+            "email": "admin@x.y",
+            "isActive": true,
+            "role": "admin",
+            "adminAccess": true
+          },
+          {
+            "id": "ops-mgr",
+            "email": "ops@x.y",
+            "isActive": true,
+            "role": "manager",
+            "manager": true,
+            "permissions": {
+              "operatives": true
+            }
+          },
+          {
+            "id": "plain-mgr",
+            "email": "plain@x.y",
+            "isActive": true,
+            "role": "manager",
+            "manager": true
+          },
+          {
+            "id": "op-1",
+            "email": "op@x.y",
+            "isActive": true,
+            "role": "operative",
+            "operativeMode": true,
+            "assignedManagerUserIds": [
+              "plain-mgr"
+            ]
+          }
+        ],
+        {
+          "privatePay": false
+        }
+      ],
+      "expected": {
+        "kind": "all"
+      }
     }
   ]
 }

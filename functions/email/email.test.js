@@ -48,11 +48,22 @@ function fixture(overrides = {}) {
         .filter(([, data]) => String(data.email).toLowerCase() === email)
         .map(([id, data]) => ({ id, data })),
     listWholesalers: async () => wholesalers,
-    // Jobs by organisation (rulebook 1.24.0 optional `jobId` on material_request).
+    // Jobs by organisation (rulebook 1.24.0 optional `jobId` on material_request; 1.27.0 `{ kind, data }`). Manager M
+    // manages proj-1 (by id) and sw-1 (through their managers-list row `mrow-M`); nobody manages proj-free.
     getJob: async (orgId, jobId) => {
-      const jobs = { [ORG]: { 'proj-1': { jobNumber: 'J-200' }, 'sw-1': { jobNumber: 'SW-9' } }, 'other-org': { 'proj-x': { jobNumber: 'J-200' } } }
+      const jobs = {
+        [ORG]: {
+          'proj-1': { kind: 'projects', data: { jobNumber: 'J-200', managerIds: ['M'] } },
+          'sw-1': { kind: 'smallWorks', data: { jobNumber: 'SW-9', managerIds: ['mrow-M'] } },
+          'proj-free': { kind: 'projects', data: { jobNumber: 'J-300', managerIds: ['someone-else'] } },
+          ...((overrides.jobs && overrides.jobs[ORG]) || {}),
+        },
+        'other-org': { 'proj-x': { kind: 'projects', data: { jobNumber: 'J-200', managerIds: ['M'] } } },
+      }
       return (jobs[orgId] && jobs[orgId][jobId]) || null
     },
+    managersByEmail: async (orgId, email) =>
+      orgId === ORG && email === 'manager@example.com' ? [{ id: 'mrow-M', data: { email: 'Manager@Example.com' } }] : [],
   }
   return { org, users, reader }
 }
@@ -635,12 +646,72 @@ test('1.24.0 material_request: subject, From, Reply-To and CC are materialReques
 })
 
 test('1.24.0 material_request: a jobId of this organisation (project or small works) is accepted; no jobId is accepted', async () => {
-  for (const jobId of ['proj-1', 'sw-1', undefined, '']) {
+  for (const [jobId, jobNumber] of [['proj-1', 'J-200'], ['sw-1', 'SW-9'], [undefined, 'J-200'], ['', 'J-200']]) {
     const { handler, sent } = makeHandler()
-    const res = await call(handler, { headers: auth('M'), body: iosMaterialBody(jobId === undefined ? {} : { jobId }) })
+    const res = await call(handler, { headers: auth('M'), body: iosMaterialBody(jobId === undefined ? { jobNumber } : { jobId, jobNumber }) })
     assert.equal(res.code, 200, `${jobId}: ${JSON.stringify(res.payload)}`)
     assert.equal(sent.length, 1)
   }
+})
+
+// Rulebook 1.27.0 (owner decision 2): with a jobId the caller must see the job (§17 `canSeeJob`) and the job number
+// must be the stored one (`materialRequestJobCheck`). Without a jobId nothing changes (older builds).
+
+test('1.27.0 material_request: a manager may send only for a job they see; admins for any job of the organisation', async () => {
+  // M manages proj-1 by id and sw-1 through their managers-list row; proj-free is someone else's.
+  for (const [uid, jobId, jobNumber, code] of [
+    ['M', 'proj-1', 'J-200', 200],
+    ['M', 'sw-1', 'SW-9', 200],
+    ['M', 'proj-free', 'J-300', 403],
+    ['A', 'proj-free', 'J-300', 200],
+  ]) {
+    const { handler, sent, rateCalls } = makeHandler()
+    const res = await call(handler, { headers: auth(uid), body: iosMaterialBody({ jobId, jobNumber }) })
+    assert.equal(res.code, code, `${uid} ${jobId}: ${JSON.stringify(res.payload)}`)
+    if (code === 403) {
+      assert.equal(res.payload.error, canonical.MATERIAL_REQUEST_JOB_NOT_VISIBLE_MESSAGE)
+      assert.equal(sent.length, 0)
+      assert.equal(rateCalls.length, 0)
+    } else {
+      assert.equal(sent.length, 1)
+    }
+  }
+})
+
+test('1.27.0 material_request: a manager with the Projects toggle sees every project, not small works they do not manage', async () => {
+  const fixture = {
+    users: { M: { email: 'manager@example.com', firstName: 'Max', surname: 'Manager', organizationId: ORG, role: 'manager', manager: true, projects: true } },
+    jobs: { [ORG]: { 'sw-free': { kind: 'smallWorks', data: { jobNumber: 'SW-1', managerIds: ['someone-else'] } } } },
+  }
+  const project = makeHandler({ fixture })
+  assert.equal((await call(project.handler, { headers: auth('M'), body: iosMaterialBody({ jobId: 'proj-free', jobNumber: 'J-300' }) })).code, 200)
+  const smallWorks = makeHandler({ fixture })
+  assert.equal((await call(smallWorks.handler, { headers: auth('M'), body: iosMaterialBody({ jobId: 'sw-free', jobNumber: 'SW-1' }) })).code, 403)
+})
+
+test('1.27.0 material_request: the job number must be the stored one (spaces and case aside); nothing is sent otherwise', async () => {
+  for (const [jobNumber, code] of [['J-200', 200], ['  j-200 ', 200], ['J-201', 409], ['', 400]]) {
+    const { handler, sent } = makeHandler()
+    const res = await call(handler, { headers: auth('M'), body: iosMaterialBody({ jobId: 'proj-1', jobNumber }) })
+    if (code === 400) {
+      // A blank job number is refused before the job check (the template needs one).
+      assert.notEqual(res.code, 200, JSON.stringify(res.payload))
+      assert.equal(sent.length, 0)
+      continue
+    }
+    assert.equal(res.code, code, `${jobNumber}: ${JSON.stringify(res.payload)}`)
+    if (code === 409) {
+      assert.equal(res.payload.error, canonical.MATERIAL_REQUEST_JOB_NUMBER_MISMATCH_MESSAGE)
+      assert.equal(sent.length, 0)
+    }
+  }
+})
+
+test('1.27.0 material_request: a request without jobId is still accepted for a job number the caller may not see', async () => {
+  const { handler, sent } = makeHandler()
+  const res = await call(handler, { headers: auth('M'), body: iosMaterialBody({ jobNumber: 'J-300' }) })
+  assert.equal(res.code, 200, JSON.stringify(res.payload))
+  assert.equal(sent.length, 1)
 })
 
 test("1.24.0 material_request: a jobId outside the caller's organisation, unknown or malformed is refused before anything is sent", async () => {

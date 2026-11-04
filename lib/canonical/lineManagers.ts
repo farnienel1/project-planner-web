@@ -277,3 +277,30 @@ export function lineManagerSelectionAfterLevelChange(
   const hasNoLineManager = picks?.hasNoLineManager === true && lineManagerOptions(levelSubject).allowsNoLineManager
   return { lineManagerIds, hasNoLineManager, dropped }
 }
+
+/** The id an Add User invite draft is given before it has a document (rulebook §11, 1.27.0; iOS `AddUserView`). */
+export const INVITE_DRAFT_PERSON_ID = 'invite-draft'
+
+/**
+ * The person Add User passes to `lineManagerCandidates` / `lineManagerSelectionAfterLevelChange` /
+ * `lineManagerOptions` for an invite that is not saved yet (rulebook §11, 1.27.0, owner decision 1): id
+ * `INVITE_DRAFT_PERSON_ID`, the typed email (trimmed, lower case) and the chosen level. `personIdSet` reaches the
+ * roster rows on that email from it, so the invitee's own row (an earlier pending invite, or an account in this
+ * company on the same email) is never offered as their own line manager. Before 1.27.0 web passed no person
+ * (`null`); iOS already passed this draft.
+ */
+export function inviteDraftLineManagerSubject(input: {
+  email?: string | null
+  level?: 'admin' | 'manager' | 'operative' | string | null
+}): LineManagerSubject {
+  const level = text(input?.level).toLowerCase()
+  const resolved: 'admin' | 'manager' | 'operative' = level === 'admin' || level === 'operative' ? level : 'manager'
+  return {
+    id: INVITE_DRAFT_PERSON_ID,
+    email: text(input?.email).toLowerCase(),
+    role: resolved,
+    isActive: true,
+    adminAccess: resolved === 'admin',
+    operativeMode: resolved === 'operative',
+  }
+}
