@@ -44,6 +44,7 @@ How to use it:
 
 | Date | Decision | Status |
 |---|---|---|
+| 4 Nov | **Ghost operatives** (owner design, "ghost: all recommended"): an operative with no app login, created by admins and managers with the Operatives toggle (admins notified on add and delete). Required: first name, last name, trade, and a day **or** hourly rate (self-employed, cost shown on the weekly report). Phone optional; no email, so no invite. A line manager is required, so their manager sees the unbooked warning. Admins or their line manager book leave for them (approved straight away). Bookable everywhere (Book labour, scheduling, Quick Add); appears in Warnings, Daily Overview and the weekly report. They never get a login, notifications, timesheets, overtime requests, price work or expenses, or My Schedule. Can be upgraded to a normal user by adding an email and inviting them, keeping all history. Existing no-login operatives rows become ghosts automatically, listed for the owner to check first. The new-operative screen on both apps explains what a ghost is. Cross-checked against the rulebook, firestore.rules, web, iOS, the screen map and an independent review before merge. | open (rulebook 1.33) |
 | 3 Nov | Every user has a level. Flagless users are legacy data: they go on the Managers list (1A), their clashes stay High (2A), and admins are shown them to fix. | done (1.23) |
 | 4 Nov | Add User never offers the invitee as their own line manager. | done (1.27) |
 | 4 Nov | Everyone needs a line manager, except an admin with both self-manage toggles on (Annual Leave Management and Timesheet self-sign); a PAYE admin needs the leave toggle only. The Super Admin counts as both on. | done (1.28) |
@@ -66,6 +67,12 @@ How to use it:
 | 4 Nov | Job managers are kept across admin ↔ manager. They are removed when the person becomes an operative, is deactivated or deleted, and admins are notified. The job stays, even with no manager. A manager is required only to create a job. | done web (1.31.0); iOS open |
 | 4 Nov | Web: the projects and small works list spacing gets tidied. | open (web only) |
 | 4 Nov | Blank "Assigned manager" rows made by older iOS builds are removed with an owner-run script (dry run first). | script merged (#260); owner to run |
+
+## Annual leave
+
+| Date | Decision | Status |
+|---|---|---|
+| 4 Nov | **Never delete leave** when the Annual Leave Management toggle changes. The toggle only decides whether *future* leave saves straight away or is requested. Existing approved and pending leave stays as it is. (The iOS app deleted approved leave on switch-off and pending requests on switch-on: `HolidayStore.deleteSelfBookedApprovedHolidaysFor` / `deletePendingHolidayRequestsFor`.) Until fixed, change the toggle on web only. | open (iOS 1.31 removes the deletes; rulebook §9 sentence in the next rule release) |
 
 ## Timesheets
 
@@ -114,9 +121,12 @@ How to use it:
 | Date | Bug | Status |
 |---|---|---|
 | 4 Nov | `preferFinishedAccount` (warningRows.ts:410) lets an inactive account through, so inactive users can show as unbooked in Warnings and Book labour. The rulebook says inactive users are skipped. | open |
+| 4 Nov | Web clash check when booking (`lib/scheduling/bookingClashUtils.ts:151`) compares `operativeId` with letter case, so an existing iOS upper-case booking is missed. | open |
+| 4 Nov | Web: a rate change's `operativeId`, the weekly-report/timesheet-export rate fallback and the "is this my own booking" check each pick one operatives row (`EditUserProfile.tsx`, `weeklyReportPayroll.ts`, `timesheetExport.ts`, `scheduleNavigation.ts`; sweep FU-5). | open |
+| 4 Nov | Web week grids use the browser's week in 11 files; needs a shared "organisation week" rule (sweep FU-4; iOS Scheduling has the same problem). | open (rule release) |
+| 4 Nov | Overtime: until 1.32's partial approval, a request containing one line under an older record cannot be approved by the line manager at all (whole approval refused, "Needs an admin"); admins can. | open (1.32) |
 
 ## Open questions for the owner
 
 | Date | Question |
 |---|---|
-| 4 Nov | Operatives can exist with no app login by design (added on the operatives list; 1.27 catalogue operatives; 1.31 operatives managers add them "with or without a login"). They are not pending invites. Owner's view: inactive and pending people never show. Open: should an active no-login operative count as unbooked labour and be bookable from Book labour? Recommended: yes to both, since they are real workers who get booked onto jobs. |
