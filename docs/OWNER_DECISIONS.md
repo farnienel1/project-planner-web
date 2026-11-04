@@ -22,6 +22,10 @@ How to use it:
 
 | Date | Decision | Status |
 |---|---|---|
+| 4 Nov | **Who may delete a labour booking:** admins any booking; managers bookings on jobs they are assigned to (current rule A, `canDeleteBooking`), plus their own office/WFH/site-survey bookings. Operatives never. | done (rule since 1.10.0; iOS wording fixed #186) |
+| 4 Nov | **Cancel is removed as a user action**: bookings are Book / Edit / Delete only. Old Cancelled bookings stay hidden; no data is changed. Web removes the "Cancel booking" button. | open (1.32) |
+| 4 Nov | **PAYE overtime ✕ on an all-overtime day** (weekend, or entirely outside working hours): the operative's ✕ is a request to their line manager and all admins (notified); on approval the booking is **deleted** (not cancelled). Rules: the approving line manager may delete that one booking even if not the job's manager. Lines under an older record still need an admin (decision A). No line manager / Super Admin: applied directly after the warning. | open (1.32) |
+| 4 Nov | **Offline delete on iOS** ("offline delete: all recommended"): deleting a labour or manager-schedule booking works offline. It queues with its tombstone and shows "Pending sync", undo from the sync list. A booking created and deleted offline sends nothing. If the booking was changed on another device after the offline delete, the replay is **refused** with "changed on another device — not deleted". If permission was lost, it is refused and the booking reappears with a message. Subcontractor bookings stay **online only**. Deleting a booking on a day that is on a signed timesheet **warns but allows** (the signed sheet never changes). Fixes the two existing iOS outbox bugs (refusal detection, lower-case schedule ids). Web stays online only. | open (1.32) |
 | 3 Nov | Weekend set-window part booking is pro rata: counts-as hours on the day's own Saturday or Sunday settings. 07:30–11:00 in a 07:30–14:00 window counting 8h = 4.31h. Saturday outside-window example 9.5h confirmed. | done (1.20.4) |
 | 3 Nov | Bookable jobs: live only, visible to the booker, and `canWriteBooking`. Job start and end dates are not checked. | done (1.21) |
 | 3 Nov | Job visibility is by account and email only, never by name. | done (1.21) |
@@ -44,6 +48,7 @@ How to use it:
 
 | Date | Decision | Status |
 |---|---|---|
+| 4 Nov | Rules 1.31.1 (owner OK): operatives managers cannot add an email or extra account ids to an operative (ghost upgrade will use the invite route); admins cannot switch off their own self-manage toggles. | open (#264) |
 | 4 Nov | **Ghost operatives** (owner design, "ghost: all recommended"): an operative with no app login, created by admins and managers with the Operatives toggle (admins notified on add and delete). Required: first name, last name, trade, and a day **or** hourly rate (self-employed, cost shown on the weekly report). Phone optional; no email, so no invite. A line manager is required, so their manager sees the unbooked warning. Admins or their line manager book leave for them (approved straight away). Bookable everywhere (Book labour, scheduling, Quick Add); appears in Warnings, Daily Overview and the weekly report. They never get a login, notifications, timesheets, overtime requests, price work or expenses, or My Schedule. Can be upgraded to a normal user by adding an email and inviting them, keeping all history. Existing no-login operatives rows become ghosts automatically, listed for the owner to check first. The new-operative screen on both apps explains what a ghost is. Cross-checked against the rulebook, firestore.rules, web, iOS, the screen map and an independent review before merge. | open (rulebook 1.33) |
 | 3 Nov | Every user has a level. Flagless users are legacy data: they go on the Managers list (1A), their clashes stay High (2A), and admins are shown them to fix. | done (1.23) |
 | 4 Nov | Add User never offers the invitee as their own line manager. | done (1.27) |
@@ -120,6 +125,10 @@ How to use it:
 
 | Date | Bug | Status |
 |---|---|---|
+| 4 Nov | **SECURITY (live 1.30.2):** a manager with the Operatives toggle can make an operative an admin through `permissions.adminAccess` (or `manager`, `operatives`, `isSuperAdmin`, `annualLeaveSelfBook`, `timesheetSelfSign`), and can create a user with `permissions.adminAccess: true`. Owner: fix before launch; no interim toggle change. | fixing (#264 1.31.1, then third review, then owner deploy) |
+| 4 Nov | A manager or operative can still switch off their own Annual Leave Management (rulebook: nobody changes their own toggles). Owner: close in the next rule release, after iOS sends changed-fields-only profile saves. | open |
+| 4 Nov | 93 rules tests still get their refusal from the 1,000-expression limit rather than logic; apply the 1.31.1 ternary restructure to the rest of firestore.rules. | open (next rule release) |
+| 4 Nov | Web `setUserActive` merge-sets the membership `{accountActive}`, creating a bare membership; and `userActiveWrites` writes `users/{uid}.isActive` even when that document's `organizationId` is another company. | open (next rule release; iOS fixed the first in #187) |
 | 4 Nov | `preferFinishedAccount` (warningRows.ts:410) lets an inactive account through, so inactive users can show as unbooked in Warnings and Book labour. The rulebook says inactive users are skipped. | open |
 | 4 Nov | Web clash check when booking (`lib/scheduling/bookingClashUtils.ts:151`) compares `operativeId` with letter case, so an existing iOS upper-case booking is missed. | open |
 | 4 Nov | Web: a rate change's `operativeId`, the weekly-report/timesheet-export rate fallback and the "is this my own booking" check each pick one operatives row (`EditUserProfile.tsx`, `weeklyReportPayroll.ts`, `timesheetExport.ts`, `scheduleNavigation.ts`; sweep FU-5). | open |
