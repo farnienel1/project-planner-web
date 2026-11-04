@@ -4699,3 +4699,16 @@ test('1.31.1 F5: a person\'s own save still syncs names to a same-email account,
   // Web saveUser leaves it out (sameEmailUserRefs includePending only for admins); the rules refuse it logically.
   await assertLogicalDeny(updateDoc(doc(db, 'users', 'F5-SYNC-PENDING'), { firstName: 'Syd' }))
 })
+
+test('1.31.1 S4: an operatives manager still creates an operatives row linked to an operative they manage (reviewer matrix)', async () => {
+  await seed1311People()
+  const mgr = authDb(OPS_MGR_1311, 'ops-mgr-1311@test.com')
+  // The matrix payload: many link-like fields beside userId. It went over the expression limit after S4's link gate.
+  const row = (uid: string) => ({
+    userId: uid, operativeId: uid, personId: uid, ownerUserId: uid, addedByUserId: uid, createdBy: uid, createdByUserId: uid,
+    status: 'pending', date: '2026-11-10', projectId: 'p1', organizationId: ORG_A, name: 'n', firstName: 'Otto',
+  })
+  await assertSucceedsWithinBudget(setDoc(doc(mgr, 'organizations', ORG_A, 'operatives', 'row-s4-create'), row(OP_1311)))
+  await assertLogicalDeny(setDoc(doc(mgr, 'organizations', ORG_A, 'operatives', 'row-s4-create-admin'), row(ADMIN_1311)))
+  await assertLogicalDeny(setDoc(doc(mgr, 'organizations', ORG_A, 'operatives', 'row-s4-create-self'), row(OPS_MGR_1311)))
+})

@@ -1362,10 +1362,17 @@ service cloud.firestore {
           ? request.resource.data.keys().hasAny(['userId', 'linkedUserId', 'uid'])
           : request.resource.data.diff(resource.data).affectedKeys().hasAny(['userId', 'linkedUserId', 'uid']);
       }
+      function rosterRowLinkTargetOk(uid) {
+        let path = /databases/(default)/documents/users/$(uid);
+        return (!(uid is string) || uid == '') ? true : (uid.matches('.*/.*') ? false : (
+          !exists(path) ? true : (uid != request.auth.uid &&
+            orgIdsMatch(get(path).data.get('organizationId', ''), organizationId) &&
+            manageableOperative(get(path).data))));
+      }
       function rosterRowLinksManageable() {
-        return opsManagerMayHoldClaim(request.resource.data.get('userId', '')) &&
-          opsManagerMayHoldClaim(request.resource.data.get('linkedUserId', '')) &&
-          opsManagerMayHoldClaim(request.resource.data.get('uid', ''));
+        return rosterRowLinkTargetOk(request.resource.data.get('userId', '')) &&
+          rosterRowLinkTargetOk(request.resource.data.get('linkedUserId', '')) &&
+          rosterRowLinkTargetOk(request.resource.data.get('uid', ''));
       }
       function operativesManagerForOtherRow() {
         return isManagerWithOperativesAccess() && userOrgIdMatchesPath(organizationId) && !operativeRowIsCaller();
@@ -1375,10 +1382,9 @@ service cloud.firestore {
         allow read: if canAccessOrganization(organizationId);
         allow create, update: if (rosterRowLinkChanged()
             ? ((operativesManagerForOtherRow() && rosterRowLinksManageable()) ? true : rosterRowAdmin()) : true) ? (
-          canAccessOrganization(organizationId) &&
-          (resource != null || isOrgManagerOrAdmin(organizationId) || isPlatformOwner()) &&
-          (!rosterRowPayKeysChanged() || rosterRowAdmin() || operativesManagerForOtherRow()) &&
-          (!rosterRowEmailChanged() || rosterRowAdmin() || operativesManagerForOtherRow()) &&
+          (resource == null ? (isPlatformOwner() || isOrgManagerOrAdmin(organizationId)) : canAccessOrganization(organizationId)) &&
+          ((rosterRowPayKeysChanged() || rosterRowEmailChanged())
+            ? (operativesManagerForOtherRow() ? true : rosterRowAdmin()) : true) &&
           payStaysPrivate(organizationId) &&
           writeMetadataValidWhenPresent()) : false;
         allow delete: if isOrganizationAdmin(organizationId) || (
