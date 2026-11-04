@@ -20,7 +20,6 @@ import { useDeadlineAssignedProjectIds } from '@/lib/deadlines/useDeadlineAssign
 import {
   DEFAULT_MY_SCHEDULE,
   DEFAULT_PAYROLL_POLICY,
-  DEFAULT_WARNING_DETECTION,
   enabledScheduleLocationPicks,
   loadOrganizationDetails,
   organizationDetailsFromData,
@@ -54,8 +53,10 @@ import {
 import type { Booking, Project } from '@/types'
 import {
   bookLabourDayLine,
+  bookLabourListPhase,
   buildBookLabourCandidates,
   type BookLabourCandidate,
+  type BookLabourListPhase,
 } from '@/lib/book-labour/candidates'
 import { HoursTimelinePicker } from '@/components/scheduling/HoursTimelinePicker'
 import { confirmCustomHoursBreak, slotOfferedOnDate, weekendNotesForDates } from '@/lib/scheduling/bookingSlotRules'
@@ -64,6 +65,11 @@ import { CustomOtherLocationField } from '@/components/scheduling/CustomOtherLoc
 import { PanelHeader } from '@/components/settings/primitives'
 import { ORPHAN_BOOKING_LABEL } from '@/lib/canonical'
 import { useOrganizationDocument, useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
+import { partitionRowsByOrganization, warningScanUsers } from '@/lib/warnings/warningsScan'
+import { orgWarningScope } from '@/lib/warnings/warningScopeRoster'
+import { mergeProjectsAndSmallWorks } from '@/lib/projects/workStatus'
+import { webJobAccessViewer } from '@/lib/access/readPlan'
+import { enforcedReadsFor } from '@/lib/access/securitySwitches'
 
 type BookToTab = 'other' | 'projects' | 'smallWorks'
 type ManagerSlot = 'FULL_DAY' | 'AM' | 'PM' | 'CUSTOM_HOURS'
@@ -119,12 +125,24 @@ export function BookLabourFlowScreen({
   const searchParams = useSearchParams()
   const { user, organization } = useAuthStore()
   const deadlineAssignedProjectIds = useDeadlineAssignedProjectIds()
-  const { bookings, loadBookings, createBooking } = useBookingStore()
-  const { managerSiteBookings, loadManagerSiteBookings, saveManagerSiteBooking } = useManagerScheduleStore()
-  const { operatives, loadOperatives, managers, loadManagers, loading: operativesLoading } = useOperativeStore()
-  const { users, userIdAliases, loadUsers, loading: usersLoading } = useOrgUserStore()
+  const { bookings, loadBookings, createBooking, loading: bookingsLoading, error: bookingsError } = useBookingStore()
+  const {
+    managerSiteBookings,
+    loadManagerSiteBookings,
+    saveManagerSiteBooking,
+    loading: managerLoading,
+    error: managerError,
+  } = useManagerScheduleStore()
+  const { operatives, loadOperatives, managers, loadManagers, error: operativesError } = useOperativeStore()
+  const { users, userIdAliases, loadUsers, rosterLoadedOrgId, error: usersError } = useOrgUserStore()
   const { projects, smallWorks, loadProjects, loadSmallWorks } = useProjectStore()
-  const { bookings: holidays, loadBookings: loadHolidays } = useHolidayStore()
+  const {
+    bookings: holidays,
+    loadBookings: loadHolidays,
+    loading: holidaysLoading,
+    error: holidaysError,
+    loadedOrgId: holidaysLoadedOrgId,
+  } = useHolidayStore()
   const mayBook = canBookWork(user)
 
   useEffect(() => {
@@ -159,12 +177,13 @@ export function BookLabourFlowScreen({
   // working hours in effect on the booking day (`effectivePayrollTimePolicy` in bookingSlotRules).
   const liveOrganization = useOrganizationDocument()
   const orgTimeZone = useOrganizationTimeZone()
-  // Rulebook §5 / §6: the live warning settings, so Book labour lists the same unbooked people as Warnings.
-  const warningDetection = useMemo(
+  // Rulebook §5 / §6: the live warning settings and working hours, so Book labour lists the same unbooked people as
+  // Warnings. Null until the listener has this organisation's document.
+  const liveDetails = useMemo(
     () =>
       organization?.id && liveOrganization.organizationId === organization.id && liveOrganization.data
-        ? organizationDetailsFromData(organization.id, liveOrganization.data).warningDetection
-        : DEFAULT_WARNING_DETECTION,
+        ? organizationDetailsFromData(organization.id, liveOrganization.data)
+        : null,
     [organization?.id, liveOrganization.organizationId, liveOrganization.data]
   )
   const [customStart, setCustomStart] = useState('07:30')
@@ -187,23 +206,53 @@ export function BookLabourFlowScreen({
   })
 
   useEffect(() => {
+    if (!liveDetails) return
+    setPayroll(liveDetails.payrollTimePolicy)
+    setPayrollState(liveDetails.payrollTimePolicyState)
+  }, [liveDetails])
+
+  // Like the Warnings scan (`warningScanLanes`): each source counts as loaded only once its load for this
+  // organisation has finished, so the list never shows "Everyone is booked" from half-loaded data.
+  const [loadsSettled, setLoadsSettled] = useState<{
+    orgId: string
+    bookings: boolean
+    manager: boolean
+    operatives: boolean
+    projects: boolean
+  }>({
+    orgId: '',
+    bookings: false,
+    manager: false,
+    operatives: false,
+    projects: false,
+  })
+
+  useEffect(() => {
     if (!organization?.id) return
-    loadBookings(organization.id)
-    loadManagerSiteBookings(organization.id)
-    loadOperatives(organization.id)
+    const orgId = organization.id
+    let cancelled = false
+    setLoadsSettled({ orgId, bookings: false, manager: false, operatives: false, projects: false })
+    const settle = (key: 'bookings' | 'manager' | 'operatives' | 'projects') => () => {
+      if (!cancelled) setLoadsSettled((current) => (current.orgId === orgId ? { ...current, [key]: true } : current))
+    }
+    void loadBookings(orgId).finally(settle('bookings'))
+    void loadManagerSiteBookings(orgId).finally(settle('manager'))
+    void loadOperatives(orgId).finally(settle('operatives'))
     // Rulebook 1.10.0: a manager's job list is `canSeeJob`, which reads the managers list.
-    void loadManagers(organization.id)
-    loadUsers(organization.id)
-    loadProjects(organization.id)
-    loadSmallWorks(organization.id)
-    loadHolidays(organization.id)
-    loadOrganizationDetails(organization.id)
+    void loadManagers(orgId)
+    void loadUsers(orgId)
+    // The viewer's warning scope reads every job's managers (`warningScopeFor`).
+    void Promise.all([loadProjects(orgId), loadSmallWorks(orgId)]).finally(settle('projects'))
+    void loadHolidays(orgId)
+    loadOrganizationDetails(orgId)
       .then((details) => {
+        if (cancelled) return
         if (details?.myScheduleOptions) setScheduleOpts(details.myScheduleOptions)
-        if (details?.payrollTimePolicy) setPayroll(details.payrollTimePolicy)
-        if (details?.payrollTimePolicyState) setPayrollState(details.payrollTimePolicyState)
       })
       .catch(() => {})
+    return () => {
+      cancelled = true
+    }
   }, [
     organization?.id,
     loadBookings,
@@ -215,35 +264,80 @@ export function BookLabourFlowScreen({
     loadHolidays,
   ])
 
+  const orgId = organization?.id || ''
+  // Rows saved for another company never count for this one (`partitionRowsByOrganization`, `warningScanUsers`).
+  const userScope = useMemo(
+    () => warningScanUsers(users, orgId, Boolean(orgId) && rosterLoadedOrgId === orgId),
+    [users, orgId, rosterLoadedOrgId]
+  )
+  const operativeScope = useMemo(() => partitionRowsByOrganization(operatives, orgId), [operatives, orgId])
+  const bookingScope = useMemo(() => partitionRowsByOrganization(bookings, orgId), [bookings, orgId])
+  const managerScope = useMemo(() => partitionRowsByOrganization(managerSiteBookings, orgId), [managerSiteBookings, orgId])
+  const holidayScope = useMemo(() => partitionRowsByOrganization(holidays, orgId), [holidays, orgId])
+  const projectScope = useMemo(
+    () => partitionRowsByOrganization(mergeProjectsAndSmallWorks(projects, smallWorks), orgId),
+    [projects, smallWorks, orgId]
+  )
+  // Owner decision (4 Nov 2026): Book labour is scoped exactly like the Warnings unbooked list — admins see everyone;
+  // a manager themselves and the people they line-manage (`warningScopeFor`, rulebook 1.31.0 §5).
+  const viewerScope = useMemo(
+    () =>
+      orgWarningScope({
+        viewer: webJobAccessViewer(user),
+        enforcedReads: enforcedReadsFor(),
+        projects: projectScope.rows,
+        users: userScope.rows,
+        userIdAliases,
+        operatives: operativeScope.rows,
+      }),
+    [user, projectScope, userScope, userIdAliases, operativeScope]
+  )
+  const settledHere = loadsSettled.orgId === orgId
+  const listPhase = bookLabourListPhase({
+    organization: {
+      ready: Boolean(liveDetails) && liveOrganization.loaded,
+      error: liveOrganization.organizationId === orgId ? liveOrganization.error : null,
+    },
+    roster: { ready: rosterLoadedOrgId === orgId && !userScope.foreign, error: usersError },
+    operatives: { ready: settledHere && loadsSettled.operatives && !operativeScope.foreign, error: operativesError },
+    bookings: { ready: settledHere && loadsSettled.bookings && !bookingsLoading && !bookingScope.foreign, error: bookingsError },
+    managerBookings: { ready: settledHere && loadsSettled.manager && !managerLoading && !managerScope.foreign, error: managerError },
+    holidays: { ready: holidaysLoadedOrgId === orgId && !holidaysLoading && !holidayScope.foreign, error: holidaysError },
+    jobs: { ready: settledHere && loadsSettled.projects && !projectScope.foreign },
+  })
+
   const candidates = useMemo(
     () =>
-      // Rulebook §5 / §6: exactly the `unbookedLabourRowsOnDay` people for the day (Warnings and Daily Overview).
-      buildBookLabourCandidates({
-        dayKey: dayKey(day),
-        timeZone: orgTimeZone,
-        users,
-        operatives,
-        bookings,
-        managerSiteBookings,
-        holidays,
-        warningDetection,
-        payrollPolicy: payroll,
-        payrollPolicyState: payrollState,
-        userIdAliases,
-        focusedUserIds,
-      }),
+      listPhase !== 'ready' || !liveDetails
+        ? []
+        : // Rulebook §5 / §6: exactly the `unbookedLabourRowsOnDay` people for the day (Warnings and Daily Overview).
+          buildBookLabourCandidates({
+            dayKey: dayKey(day),
+            timeZone: orgTimeZone,
+            users: userScope.rows,
+            operatives: operativeScope.rows,
+            bookings: bookingScope.rows,
+            managerSiteBookings: managerScope.rows,
+            holidays: holidayScope.rows,
+            warningDetection: liveDetails.warningDetection,
+            payrollPolicy: liveDetails.payrollTimePolicy,
+            payrollPolicyState: liveDetails.payrollTimePolicyState,
+            userIdAliases,
+            scope: viewerScope,
+            focusedUserIds,
+          }),
     [
+      listPhase,
+      liveDetails,
       day,
       orgTimeZone,
-      users,
-      operatives,
-      bookings,
-      managerSiteBookings,
-      holidays,
-      warningDetection,
-      payroll,
-      payrollState,
+      userScope,
+      operativeScope,
+      bookingScope,
+      managerScope,
+      holidayScope,
       userIdAliases,
+      viewerScope,
       focusedUserIds,
     ]
   )
@@ -510,11 +604,11 @@ export function BookLabourFlowScreen({
           }
           continue
         }
-        if (!resolvedProject || !person.linkedOperative) {
+        if (!resolvedProject) {
           continue
         }
         const lines = operativeClashLines(
-          person.linkedOperative.id,
+          person.bookingOperativeId,
           resolvedProject.id,
           operativeSlot,
           args.workStart,
@@ -539,7 +633,7 @@ export function BookLabourFlowScreen({
           people.map((person) => ({
             id: person.user.id,
             userId: person.user.id,
-            operativeIds: person.linkedOperative ? [person.linkedOperative.id] : [],
+            operativeIds: [person.bookingOperativeId],
             email: person.user.email ?? null,
             name: person.displayName,
           })),
@@ -561,10 +655,10 @@ export function BookLabourFlowScreen({
     setErrorBanner(null)
     try {
       for (const person of people) {
-        if (usesOperativePath(person, args.locationType, resolvedProject) && resolvedProject && person.linkedOperative) {
+        if (usesOperativePath(person, args.locationType, resolvedProject) && resolvedProject) {
           if (
             duplicateOperative(
-              person.linkedOperative.id,
+              person.bookingOperativeId,
               resolvedProject.id,
               operativeSlot,
               args.workStart,
@@ -575,7 +669,8 @@ export function BookLabourFlowScreen({
             continue
           }
           await createBooking({
-            operativeId: person.linkedOperative.id,
+            // The rulebook row's id: the catalogue row, or the users id when the person has none.
+            operativeId: person.bookingOperativeId,
             projectId: resolvedProject.id,
             date: day,
             timeSlot: operativeSlot,
@@ -625,14 +720,6 @@ export function BookLabourFlowScreen({
 
   function onSelectProject(project: Project, smallWorksList: boolean) {
     const people = activeParty
-    if (people.some((p) => p.usesOperativeProjectBookings && !p.linkedOperative)) {
-      setErrorBanner(
-        people.length === 1
-          ? 'No operative profile is linked to this user.'
-          : 'No operative profile is linked to one of the selected users.'
-      )
-      return
-    }
     if (people.length === 1 && people[0].usesOperativeProjectBookings) {
       setPhase({ kind: 'pickSlotOperative', project })
       return
@@ -674,7 +761,6 @@ export function BookLabourFlowScreen({
   const isCustom = phase.kind === 'pickCustomManager' || phase.kind === 'pickCustomOperative'
   const title = isCustom ? 'Custom hours' : 'Book labour'
   if (user && !mayBook) return null
-  const rosterLoading = (usersLoading && users.length === 0) || (operativesLoading && operatives.length === 0)
 
   return (
     <div className="mx-auto max-w-2xl pb-16">
@@ -691,7 +777,7 @@ export function BookLabourFlowScreen({
           <PickPerson
             dayLine={dayLine}
             candidates={candidates}
-            loading={rosterLoading}
+            phase={listPhase}
             multiSelect={multiSelect}
             selectedIds={selectedIds}
             onToggleMulti={() => {
@@ -917,7 +1003,7 @@ function Chip({ label, className }: { label: string; className: string }) {
 function PickPerson({
   dayLine,
   candidates,
-  loading,
+  phase,
   multiSelect,
   selectedIds,
   onToggleMulti,
@@ -927,7 +1013,7 @@ function PickPerson({
 }: {
   dayLine: string
   candidates: BookLabourCandidate[]
-  loading: boolean
+  phase: BookLabourListPhase
   multiSelect: boolean
   selectedIds: Set<string>
   onToggleMulti: () => void
@@ -935,7 +1021,17 @@ function PickPerson({
   onPick: (person: BookLabourCandidate) => void
   onContinue: () => void
 }) {
-  if (loading) {
+  if (phase === 'error') {
+    return (
+      <div className="card py-16 text-center">
+        <p className="text-[17px] font-semibold">Unbooked labour did not load</p>
+        <p className="mt-2 text-[13px] text-[var(--ink3)]">
+          Check your connection and open Book labour again.
+        </p>
+      </div>
+    )
+  }
+  if (phase === 'loading') {
     return (
       <div className="card py-16 text-center">
         <div className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-[var(--blue)] border-t-transparent" />

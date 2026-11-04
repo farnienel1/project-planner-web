@@ -8,7 +8,10 @@ import {
   enabledScheduleLocationPicks,
   oneOffCustomLocationPick,
 } from '../settings/organizationSettings.ts'
-import { buildBookLabourCandidates } from './candidates.ts'
+import { bookLabourListPhase, bookLabourUserForRow, buildBookLabourCandidates } from './candidates.ts'
+import { bookingWriteFields } from '../canonical/index.ts'
+import { orgWarningScope } from '../warnings/warningScopeRoster.ts'
+import { jobAccessViewer } from '../access/bookingAccess.ts'
 import { computeUnbookedLabourWarningsForDateRange } from '../warnings/unbookedLabourWarnings.ts'
 
 function perms(partial: Partial<User['permissions']> = {}): User['permissions'] {
@@ -171,10 +174,10 @@ test('book labour includes unlinked operative users and name-matched roster', ()
     people.some((row) => row.id === 'U-UNLINKED' && !row.linkedOperative),
     'unlinked operative users must still appear so Daily overview Book labour is not empty'
   )
-  assert.ok(
-    people.some((row) => row.id === 'U-NAME' && row.linkedOperative?.id === 'OP-CAM'),
-    'name match should link an operative when emails differ'
-  )
+  // Never linked by name (two people can share a name): no same-email catalogue row → booked under the users id.
+  const named_ = people.find((row) => row.id === 'U-NAME')
+  assert.equal(named_?.linkedOperative, undefined)
+  assert.equal(named_?.bookingOperativeId, 'U-NAME')
 })
 
 test('book labour hides people who are already booked for the day', () => {
@@ -561,4 +564,190 @@ test('Book labour leaves out people on approved annual leave, as Warnings does',
     payrollPolicy: DEFAULT_PAYROLL_POLICY,
   })
   assert.equal(pending.length, 2)
+})
+
+test('two people with the same name never share a catalogue row', () => {
+  const john1 = user({ id: 'U-JS1', email: 'john1@site.test', firstName: 'John', surname: 'Smith' })
+  const john2 = user({ id: 'U-JS2', email: 'john2@site.test', firstName: 'John', surname: 'Smith' })
+  const rows = buildBookLabourCandidates({
+    dayKey: WED,
+    users: [john1, john2],
+    operatives: [operative({ id: 'OP-JS2', email: 'john2@site.test', firstName: 'John', lastName: 'Smith' })],
+    bookings: [],
+    managerSiteBookings: [],
+    holidays: [],
+    warningDetection: WEEKDAYS_ONLY,
+    payrollPolicy: DEFAULT_PAYROLL_POLICY,
+  })
+  const one = rows.find((row) => row.id === 'U-JS1')
+  const two = rows.find((row) => row.id === 'U-JS2')
+  assert.equal(one?.linkedOperative, undefined)
+  assert.equal(one?.bookingOperativeId, 'U-JS1')
+  assert.equal(two?.linkedOperative?.id, 'OP-JS2')
+  assert.equal(two?.bookingOperativeId, 'OP-JS2')
+})
+
+test('an operative with no catalogue row is booked under their users id, which the rulebook counts', () => {
+  const solo = user({ id: 'uidSoloOperative01', email: 'solo@site.test', firstName: 'Solo', surname: 'Op' })
+  const input = {
+    dayKey: WED,
+    timeZone: 'Europe/London',
+    users: [solo],
+    operatives: [],
+    managerSiteBookings: [],
+    holidays: [],
+    warningDetection: WEEKDAYS_ONLY,
+    payrollPolicy: DEFAULT_PAYROLL_POLICY,
+  }
+  const before = buildBookLabourCandidates({ ...input, bookings: [] })
+  assert.equal(before.length, 1)
+  assert.equal(before[0].usesOperativeProjectBookings, true)
+  assert.equal(before[0].linkedOperative, undefined)
+  assert.equal(before[0].bookingOperativeId, 'uidSoloOperative01')
+
+  // The write the save path makes is a valid booking (`bookingWriteFields`) …
+  const written = bookingWriteFields({
+    id: 'B-SOLO',
+    operativeId: before[0].bookingOperativeId,
+    projectId: 'P1',
+    dateMs: WED_DATE.getTime(),
+    timeSlot: 'FULL DAY',
+    status: 'Confirmed',
+    bookedBy: 'admin',
+    notes: '',
+    isBreakRemoved: false,
+    createdAtMs: WED_DATE.getTime(),
+    updatedAtMs: WED_DATE.getTime(),
+  })
+  assert.equal(written.ok, true)
+  // … and once saved the person is booked: gone from Book labour and from Warnings.
+  const saved = booking({ id: 'B-SOLO', operativeId: before[0].bookingOperativeId })
+  assert.deepEqual(buildBookLabourCandidates({ ...input, bookings: [saved] }), [])
+  assert.deepEqual(
+    computeUnbookedLabourWarningsForDateRange({
+      bookings: [saved],
+      operatives: [],
+      users: [solo],
+      holidays: [],
+      warningDetection: WEEKDAYS_ONLY,
+      payrollPolicy: DEFAULT_PAYROLL_POLICY,
+      periodStart: WED_DATE,
+      periodEnd: WED_DATE,
+      startDayKey: WED,
+      endDayKey: WED,
+      timeZone: 'Europe/London',
+    }),
+    []
+  )
+})
+
+test('a rulebook row maps to its users account without case, through same-email and former ids', () => {
+  const kept = user({ id: 'u-kept', email: 'kept@site.test', formerUserIds: ['OLD-INVITE-ID'] })
+  const aliases = { 'DUP-ACCOUNT': 'u-kept' }
+  assert.equal(bookLabourUserForRow([kept], ['U-KEPT'], aliases)?.id, 'u-kept')
+  assert.equal(bookLabourUserForRow([kept], ['', 'dup-account'], aliases)?.id, 'u-kept')
+  assert.equal(bookLabourUserForRow([kept], ['old-invite-id'], aliases)?.id, 'u-kept')
+  assert.equal(bookLabourUserForRow([kept], ['someone-else'], aliases), undefined)
+})
+
+test('the day is read in the organisation zone, not London', () => {
+  const zone = 'Australia/Sydney'
+  const people = ownerRoster()
+  // 09:00 on Sunday 15 November in Sydney is Saturday 14 November in London.
+  const sydneyMorning = new Date('2026-11-14T22:00:00Z')
+  const rows = buildBookLabourCandidates({
+    dayKey: SUN,
+    timeZone: zone,
+    users: people,
+    operatives: [],
+    bookings: [],
+    managerSiteBookings: [
+      {
+        id: 'M-SYD',
+        userId: 'U-TESTMGR',
+        date: sydneyMorning,
+        timeSlot: 'FULL DAY',
+        locationType: 'office',
+        createdAt: sydneyMorning,
+        updatedAt: sydneyMorning,
+      },
+    ],
+    holidays: [],
+    warningDetection: WEEKENDS_ON,
+    payrollPolicy: DEFAULT_PAYROLL_POLICY,
+  })
+  assert.deepEqual(rows.map((row) => row.id), ['U-FARNIE'])
+})
+
+test('Book labour waits for every source and shows an error instead of "Everyone is booked"', () => {
+  const ready = { ready: true }
+  assert.equal(bookLabourListPhase({ organization: ready, holidays: ready }), 'ready')
+  assert.equal(bookLabourListPhase({ organization: { ready: false }, holidays: ready }), 'loading')
+  assert.equal(bookLabourListPhase({ organization: ready, holidays: { ready: false } }), 'loading')
+  assert.equal(bookLabourListPhase({ organization: { ready: false, error: 'permission-denied' }, holidays: ready }), 'error')
+  assert.equal(bookLabourListPhase({ organization: ready, holidays: { ready: true, error: 'offline' } }), 'error')
+})
+
+test('owner decision: Book labour is scoped like the Warnings unbooked list (manager: self + reports; admin: all)', () => {
+  const admin = user({
+    id: 'U-ADMIN',
+    email: 'admin@site.test',
+    firstName: 'Ann',
+    surname: 'Admin',
+    role: UserRole.ADMIN,
+    permissions: perms({ adminAccess: true }),
+  })
+  const manager = user({
+    id: 'U-MGR',
+    email: 'mgr@site.test',
+    firstName: 'Max',
+    surname: 'Manager',
+    role: UserRole.MANAGER,
+    permissions: perms({ manager: true }),
+    assignedManagerUserIds: ['U-ADMIN'],
+  })
+  const report1 = user({ id: 'U-R1', email: 'r1@site.test', firstName: 'Rae', surname: 'One', assignedManagerUserIds: ['U-MGR'] })
+  const report2 = user({ id: 'U-R2', email: 'r2@site.test', firstName: 'Rob', surname: 'Two', assignedManagerUserIds: ['U-MGR'] })
+  const other = user({ id: 'U-OTHER', email: 'other@site.test', firstName: 'Ola', surname: 'Other', assignedManagerUserIds: ['U-ADMIN'] })
+  const users = [admin, manager, report1, report2, other]
+  const listsFor = (viewer: User) => {
+    const scope = orgWarningScope({ viewer: jobAccessViewer(viewer), projects: [], users, operatives: [] })
+    const warnings = computeUnbookedLabourWarningsForDateRange({
+      bookings: [],
+      operatives: [],
+      users,
+      holidays: [],
+      warningDetection: WEEKDAYS_ONLY,
+      payrollPolicy: DEFAULT_PAYROLL_POLICY,
+      periodStart: WED_DATE,
+      periodEnd: WED_DATE,
+      startDayKey: WED,
+      endDayKey: WED,
+      timeZone: 'Europe/London',
+      scope,
+    })
+      .map((row) => row.userId)
+      .sort()
+    const bookLabour = buildBookLabourCandidates({
+      dayKey: WED,
+      timeZone: 'Europe/London',
+      users,
+      operatives: [],
+      bookings: [],
+      managerSiteBookings: [],
+      holidays: [],
+      warningDetection: WEEKDAYS_ONLY,
+      payrollPolicy: DEFAULT_PAYROLL_POLICY,
+      scope,
+    })
+      .map((row) => row.id)
+      .sort()
+    return { warnings, bookLabour }
+  }
+  const asManager = listsFor(manager)
+  assert.deepEqual(asManager.warnings, ['U-MGR', 'U-R1', 'U-R2'])
+  assert.deepEqual(asManager.bookLabour, asManager.warnings)
+  const asAdmin = listsFor(admin)
+  assert.deepEqual(asAdmin.warnings, ['U-ADMIN', 'U-MGR', 'U-OTHER', 'U-R1', 'U-R2'])
+  assert.deepEqual(asAdmin.bookLabour, asAdmin.warnings)
 })

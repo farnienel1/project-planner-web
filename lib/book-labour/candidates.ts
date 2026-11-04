@@ -9,7 +9,7 @@
 
 import type { Booking, HolidayBooking, Operative, User } from '@/types'
 import { UserRole } from '@/types'
-import { normalizeDocumentId, unbookedLabourRowsOnDay, type PayrollTimePolicyState } from '@/lib/canonical'
+import { normalizeDocumentId, unbookedLabourRowsOnDay, type PayrollTimePolicyState, type WarningScope } from '@/lib/canonical'
 import { dateFromDayKey } from '@/lib/ios-parity/londonTime'
 import { displayTradeType } from '@/lib/staff/staffTradeTypes'
 import { rosterDisplayName } from '@/lib/staff/userRosterUtils'
@@ -21,6 +21,12 @@ export type BookLabourCandidate = {
   id: string
   user: User
   linkedOperative?: Operative
+  /**
+   * The `operativeId` an operative job booking is written under: the rulebook row's `operativeId` — the person's
+   * catalogue row, or their users id when they have none (the rulebook counts a booking under either,
+   * `bookingIdsForAccount`).
+   */
+  bookingOperativeId: string
   usesOperativeProjectBookings: boolean
   displayName: string
   roleChips: string[]
@@ -35,10 +41,6 @@ function emailKey(value: string | undefined): string {
 /** Ids compare without case (`normalizeDocumentId`, rulebook §1). */
 function idKey(value: string | undefined | null): string {
   return normalizeDocumentId(value ?? '')
-}
-
-function nameKey(first?: string, last?: string): string {
-  return `${first || ''} ${last || ''}`.trim().toLowerCase().replace(/\s+/g, ' ')
 }
 
 function roleChipsFor(user: User): string[] {
@@ -76,7 +78,7 @@ function isOperativeOnly(user: User): boolean {
 }
 
 /** The `users` account a rulebook row names: its `userId`, else its `personKey`, also as a same-email or former id. */
-function userForRow(
+export function bookLabourUserForRow(
   users: User[],
   ids: string[],
   userIdAliases: Readonly<Record<string, string>> | null | undefined
@@ -95,15 +97,10 @@ function userForRow(
   return undefined
 }
 
-/**
- * The catalogue row operative bookings are written against: the row's `operativeId` (the rulebook's pick among the
- * same-email profiles). An account with no same-email profile falls back to a same-name catalogue row.
- */
-function linkedOperativeFor(user: User, operativeId: string, operatives: Operative[]): Operative | undefined {
-  const byId = operatives.find((operative) => idKey(operative.id) === idKey(operativeId))
-  if (byId) return byId
-  const name = nameKey(user.firstName, user.surname)
-  return name ? operatives.find((operative) => nameKey(operative.firstName, operative.lastName) === name) : undefined
+/** The catalogue row the rulebook row names (`operativeId`, compared without case). Never matched by name. */
+function linkedOperativeFor(operativeId: string, operatives: Operative[]): Operative | undefined {
+  const key = idKey(operativeId)
+  return key ? operatives.find((operative) => idKey(operative.id) === key) : undefined
 }
 
 export function buildBookLabourCandidates(input: {
@@ -126,6 +123,8 @@ export function buildBookLabourCandidates(input: {
   payrollPolicyState?: PayrollTimePolicyState | null
   /** The roster fold's same-email ids (duplicate id → the kept id). */
   userIdAliases?: Readonly<Record<string, string>> | null
+  /** The viewer's warning scope (`orgWarningScope` / `warningScopeFor`), the same one Warnings passes. Missing → everyone. */
+  scope?: WarningScope | null
   /** User ids (or linked operative ids) named on a warning; listed first. */
   focusedUserIds?: string[]
 }): BookLabourCandidate[] {
@@ -143,6 +142,7 @@ export function buildBookLabourCandidates(input: {
       windowStart: day,
       windowEnd: day,
       timeZone: input.timeZone,
+      scope: input.scope,
       userIdAliases: input.userIdAliases,
     }),
     dayKey: input.dayKey,
@@ -165,17 +165,18 @@ export function buildBookLabourCandidates(input: {
   for (const row of rows) {
     const rowIds = [row.userId ?? '', row.personKey]
     // A roster row with no `users` account cannot be booked from here (iOS skips it too).
-    const user = userForRow(input.users, rowIds, input.userIdAliases)
+    const user = bookLabourUserForRow(input.users, rowIds, input.userIdAliases)
     if (!user || seen.has(user.id)) continue
     const displayName = rosterDisplayName(user)
     if (!displayName) continue
     seen.add(user.id)
-    const linked = linkedOperativeFor(user, row.operativeId, input.operatives)
+    const linked = linkedOperativeFor(row.operativeId, input.operatives)
     listed.push({
       candidate: {
         id: user.id,
         user,
         linkedOperative: linked,
+        bookingOperativeId: linked?.id ?? (row.operativeId || user.id),
         usesOperativeProjectBookings: isOperativeOnly(user),
         displayName,
         roleChips: roleChipsFor(user),
@@ -192,6 +193,23 @@ export function buildBookLabourCandidates(input: {
       return a.candidate.displayName.localeCompare(b.candidate.displayName, undefined, { sensitivity: 'base' })
     })
     .map((entry) => entry.candidate)
+}
+
+export type BookLabourListPhase = 'loading' | 'error' | 'ready'
+
+/** One source the list is built from: loaded for this organisation, still loading, or failed. */
+export type BookLabourSource = { ready: boolean; error?: string | null }
+
+/**
+ * Whether Book labour may show its list. Like the Warnings scan (`warningScanLanes`), nothing is listed until the
+ * live organisation document (warning settings, working hours), the roster, operatives, bookings, manager bookings
+ * and annual leave have loaded for this organisation; a failed source is an error, never "Everyone is booked".
+ */
+export function bookLabourListPhase(sources: Readonly<Record<string, BookLabourSource>>): BookLabourListPhase {
+  const all = Object.values(sources)
+  if (all.some((source) => Boolean(source.error))) return 'error'
+  if (all.some((source) => !source.ready)) return 'loading'
+  return 'ready'
 }
 
 export function bookLabourDayLine(day: Date): string {
