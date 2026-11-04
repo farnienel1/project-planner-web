@@ -12245,3 +12245,170 @@ test('1.29.0 review fix: a line manager never writes a booking filed under an op
   assert.equal(unreadable.ok, true)
   assert.deepEqual(unreadable.ok && [unreadable.unreadableBookingIds, unreadable.deletedBookingIds, unreadable.bookingWrites.length], [['BR'], [], 0])
 })
+
+// MARK: - Rulebook 1.30.0 (§26): PAYE price work, expenses and personal site audits
+
+import * as r130 from './index'
+
+const ORG130 = 'org-130'
+const rosterPc130 = [
+  { id: 'sam', email: 'sam@x.com', role: 'operative', operativeMode: true, employmentType: 'paye', assignedManagerUserIds: ['lm'], isActive: true, firstName: 'Sam', surname: 'Smith' },
+  { id: 'SAM-OLD', email: 'sam@x.com', role: 'operative', operativeMode: true, isActive: true },
+  { id: 'lm', email: 'lm@x.com', role: 'manager', manager: true, isActive: true, firstName: 'Lena', surname: 'Manager', assignedManagerUserIds: ['boss'] },
+  { id: 'boss', email: 'boss@x.com', role: 'admin', adminAccess: true, isActive: true, firstName: 'Bo', surname: 'Ss' },
+  { id: 'gone', email: 'gone@x.com', role: 'manager', manager: true, isActive: false, firstName: 'Gone' },
+  { id: 'op2', email: 'op2@x.com', role: 'operative', operativeMode: true, isActive: true, firstName: 'Olly', assignedManagerUserIds: ['boss'] },
+  { id: 'pending', email: 'p@x.com', role: 'manager', manager: true, isActive: true, passwordSet: false, firstName: 'Pend' },
+]
+const evidencePc130 = (userId = 'sam', ms = 1_700_000_000_000, ext = 'jpg') =>
+  ({ path: r130.payeClaimEvidencePath({ organizationId: ORG130, userId, unixMs: ms, extension: ext })!, name: 'receipt.jpg', kind: 'photo' as const, contentType: 'image/jpeg' })
+
+test('1.30.0 price work approver candidates: active admins and managers only, never operatives, the person, pending or inactive', () => {
+  const ids = r130.priceWorkApproverCandidates(rosterPc130[0], rosterPc130).map((row) => row.id)
+  assert.deepEqual(ids.sort(), ['boss', 'lm'])
+  // A manager is never offered themself.
+  assert.deepEqual(r130.priceWorkApproverCandidates(rosterPc130[2], rosterPc130).map((row) => row.id), ['boss'])
+  assert.deepEqual(r130.priceWorkApproverCandidates(null, rosterPc130), [])
+})
+
+test('1.30.0 price work validation and write fields: name, from–to dates, required approver from the list, amount, evidence in own folder', () => {
+  const ctx = { person: rosterPc130[0], roster: rosterPc130, organizationId: ORG130 }
+  const draft = { title: 'Skirting', details: 'Flat 4', startDate: '2026-11-03', endDate: '2026-11-03', approvedByUserId: 'lm', amount: '120.5' }
+  assert.equal(r130.priceWorkValidationError(draft, ctx), null)
+  assert.equal(r130.priceWorkValidationError({ ...draft, title: ' ' }, ctx), r130.PAYE_CLAIM_TITLE_MESSAGE)
+  assert.equal(r130.priceWorkValidationError({ ...draft, endDate: '2026-11-02' }, ctx), r130.PRICE_WORK_DATES_MESSAGE)
+  assert.equal(r130.priceWorkValidationError({ ...draft, approvedByUserId: '' }, ctx), r130.PRICE_WORK_APPROVER_REQUIRED_MESSAGE)
+  for (const bad of ['sam', 'SAM-OLD', 'op2', 'gone', 'pending', 'Free Text Name']) {
+    assert.equal(r130.priceWorkValidationError({ ...draft, approvedByUserId: bad }, ctx), r130.PRICE_WORK_APPROVER_INVALID_MESSAGE, bad)
+  }
+  assert.equal(r130.priceWorkValidationError({ ...draft, amount: 0 }, ctx), r130.PAYE_CLAIM_AMOUNT_MESSAGE)
+  assert.equal(r130.priceWorkValidationError({ ...draft, evidence: [evidencePc130('op2')] }, ctx), r130.PAYE_CLAIM_EVIDENCE_INVALID_MESSAGE)
+  const fields = r130.priceWorkWriteFields({ userId: 'sam', draft: { ...draft, evidence: [evidencePc130()] }, ...ctx, currency: 'gbp' })
+  assert.deepEqual(fields, {
+    userId: 'sam',
+    title: 'Skirting',
+    details: 'Flat 4',
+    startDate: '2026-11-03',
+    endDate: '2026-11-03',
+    approvedByUserId: 'lm',
+    approvedByName: 'Lena Manager',
+    amount: 120.5,
+    currency: 'GBP',
+    evidence: [{ path: `organizations/${ORG130}/payeClaims/sam/sam_1700000000000.jpg`, name: 'receipt.jpg', kind: 'photo', contentType: 'image/jpeg' }],
+    createdBy: 'sam',
+  })
+  // Someone else writing for Sam is refused.
+  assert.equal(r130.priceWorkWriteFields({ userId: 'lm', draft, ...ctx, currency: 'GBP' }), null)
+})
+
+test('1.30.0 expenses need at least one piece of evidence; write fields are the timesheet expense fields', () => {
+  const draft = { title: 'Parking', details: '', jobNumber: 'J-1', date: '2026-11-04', amount: 6.4 }
+  assert.equal(r130.expenseValidationError(draft), r130.EXPENSE_EVIDENCE_REQUIRED_MESSAGE)
+  assert.equal(r130.expenseWriteFields({ userId: 'sam', draft, currency: 'GBP' }), null)
+  const ok = r130.expenseWriteFields({ userId: 'sam', draft: { ...draft, evidence: [evidencePc130(), evidencePc130('sam', 1_700_000_000_001, 'pdf')] }, currency: 'EUR', organizationId: ORG130 })
+  assert.equal(ok?.date, '2026-11-04')
+  assert.equal(ok?.jobNumber, 'J-1')
+  assert.equal((ok?.evidence as unknown[]).length, 2)
+  assert.equal(r130.expenseValidationError({ ...draft, date: '2026-02-30', evidence: [evidencePc130()] }), r130.PAYE_CLAIM_DATE_MESSAGE)
+  const many = Array.from({ length: 21 }, (_, i) => evidencePc130('sam', 1_700_000_000_000 + i))
+  assert.equal(r130.expenseValidationError({ ...draft, evidence: many }), r130.PAYE_CLAIM_EVIDENCE_LIMIT_MESSAGE)
+})
+
+test('1.30.0 readers, payrun ranges, totals and report readiness', () => {
+  const exp = r130.parseExpenseDocument('E1', { userId: 'sam', title: 'Fuel', amount: '12.345', date: '2026-11-04', evidence: [{ path: 'p', name: 'a' }, { name: 'no path' }] })
+  assert.equal(exp.amount, 12.35)
+  assert.equal(exp.evidence.length, 1)
+  assert.equal(exp.evidence[0].kind, 'file')
+  // A stored instant reads as its organisation-zone day.
+  const exp2 = r130.parseExpenseDocument('E2', { userId: 'sam', title: 'Late', amount: 1, date: { seconds: Date.UTC(2026, 9, 31, 23, 30) / 1000, nanoseconds: 0 } }, { timeZone: 'Europe/London' })
+  assert.equal(exp2.date, '2026-10-31')
+  const pw = r130.parsePriceWorkDocument('P1', { userId: 'sam', title: 'Tiling', amount: 300, startDate: '2026-11-27', endDate: '2026-11-24', approvedByName: 'Lena' })
+  assert.deepEqual([pw.startDate, pw.endDate], ['2026-11-24', '2026-11-27'])
+  const org = { invoicing: { payePaydayHistory: [{ day: 25, effectiveFrom: '2026-01-01' }] } }
+  const run = r130.payePayrunPeriod(org, '2026-11-04')!
+  const inRun = r130.payeClaimsInRange([pw, exp, exp2], run)
+  assert.deepEqual(inRun.map((row) => row.id), ['E2', 'E1', 'P1'])
+  assert.equal(r130.payeClaimsTotal(inRun), 313.35)
+  assert.deepEqual(r130.payeClaimsInRange([exp2], { start: '2026-11-01', end: '2026-11-30' }), [])
+  assert.equal(r130.payeClaimReportReady([]), false)
+  assert.equal(r130.payeClaimReportReady(inRun), true)
+  assert.deepEqual(r130.payeClaimListRow(pw, 'GBP'), { title: 'Tiling', figure: '£300.00', subtitle: 'Tue 24 Nov – Fri 27 Nov · Approved by Lena' })
+})
+
+test('1.30.0 who sees price work and expenses: the person, their active line managers, admins — never a peer', () => {
+  const sam = rosterPc130[0]
+  assert.equal(r130.canViewPayeClaims(sam, sam, rosterPc130), true)
+  assert.equal(r130.canViewPayeClaims(rosterPc130[2], sam, rosterPc130), true) // line manager
+  assert.equal(r130.canViewPayeClaims(rosterPc130[3], sam, rosterPc130), true) // admin
+  assert.equal(r130.canViewPayeClaims(rosterPc130[5], sam, rosterPc130), false) // another operative
+  assert.equal(r130.canViewPayeClaims({ ...rosterPc130[2], isActive: false }, sam, rosterPc130), false)
+  assert.equal(r130.canWritePayeClaim('sam', { userId: 'sam' }), true)
+  assert.equal(r130.canWritePayeClaim('lm', { userId: 'sam' }), false)
+})
+
+test('1.30.0 report snapshot, rows and evidence pages are frozen from the items', () => {
+  const pdfEvidence = { ...evidencePc130('sam', 1_700_000_000_002, 'pdf'), name: 'invoice.pdf', kind: 'file' as const, contentType: 'application/pdf' }
+  const items = [
+    r130.parseExpenseDocument('E1', { userId: 'sam', title: 'Fuel', amount: 40, date: '2026-11-04', jobNumber: 'J-9', evidence: [evidencePc130(), pdfEvidence, { path: 'x/y.docx', name: 'note.docx' }] }),
+    r130.parseExpenseDocument('E2', { userId: 'sam', title: 'Parking', amount: 5.5, date: '2026-11-05', evidence: [evidencePc130('sam', 1_700_000_000_003)] }),
+  ]
+  const snap = r130.payeClaimReportSnapshot({ kind: 'expense', userId: 'sam', userName: 'Sam Smith', companyName: 'Co', currency: 'GBP', rangeStart: '2026-10-26', rangeEnd: '2026-11-25', items, generatedBy: 'sam' })
+  assert.deepEqual(snap.totals, { amount: 45.5, itemCount: 2, evidenceCount: 4 })
+  const rows = r130.payeClaimReportRows(snap)
+  assert.equal(rows.title, 'Expenses report · Sam Smith')
+  assert.equal(rows.total, 'Total expenses: £45.50')
+  assert.equal(rows.rows[0].heading, 'Wed 4 Nov · J-9 · Fuel')
+  const pages = r130.payeClaimEvidencePages(snap)
+  assert.deepEqual(pages.map((page) => page.drawAs), ['image', 'pdf', 'listed', 'image'])
+  assert.equal(pages[1].details[0], 'Evidence 2 of 3: invoice.pdf')
+  const back = r130.parsePayeClaimReportDocument('R1', JSON.parse(JSON.stringify(snap)))
+  assert.deepEqual({ ...back, id: undefined, generatedAtMs: undefined }, { ...snap, id: undefined, generatedAtMs: undefined })
+})
+
+test('1.30.0 self-employed people: Users\' view reads their timesheet entries, read-only, in the range', () => {
+  const sheet = r130.parseTimesheetEntries('timesheet_op2_1', {
+    expenseEntries: [{ id: 'X1', title: 'Fuel', amount: 10, date: '2026-11-04T09:00:00Z', receiptName: 'receipt.jpg' }],
+    priceWorkEntries: [{ id: 'PW1', title: 'Tiles', amount: 200, startDate: '2026-10-20T09:00:00Z', endDate: '2026-11-02T09:00:00Z', agreedManagerName: 'Bo' }],
+  }, { timeZone: 'Europe/London' })
+  const range = { start: '2026-10-26', end: '2026-11-25' }
+  assert.deepEqual(r130.timesheetClaimRows([{ id: 'timesheet_op2_1', entries: sheet }], 'expense', range).map((row) => [row.id, row.startDate, row.amount]), [['X1', '2026-11-04', 10]])
+  const pw = r130.timesheetClaimRows([{ id: 'timesheet_op2_1', entries: sheet }], 'priceWork', range)
+  assert.deepEqual(pw.map((row) => [row.id, row.startDate, row.endDate, row.approvedByName]), [['PW1', '2026-10-20', '2026-11-02', 'Bo']])
+})
+
+test('1.30.0 personal site audits: owner only, free-text job, frozen copy as evidence; storage kinds and delete', () => {
+  const imagePath = r130.personalSiteAuditImagePath({ organizationId: ORG130, ownerUserId: 'sam', auditId: 'A1', unixMs: 1_700_000_000_000, extension: 'jpg' })!
+  assert.equal(imagePath, `organizations/${ORG130}/personalSiteAudits/sam/A1/sam_1700000000000.jpg`)
+  const draft = { jobNumber: 'J-77', jobName: 'Garden wall', date: '2026-11-04', authorName: 'Sam', items: [{ id: 'i1', title: 'Crack', imagePath }] }
+  assert.equal(r130.personalSiteAuditValidationError({ ...draft, jobName: '' }), r130.PERSONAL_SITE_AUDIT_JOB_NAME_MESSAGE)
+  assert.equal(r130.personalSiteAuditValidationError({ ...draft, items: [] }), r130.PERSONAL_SITE_AUDIT_ITEMS_MESSAGE)
+  assert.equal(r130.personalSiteAuditValidationError(draft, { organizationId: ORG130, ownerUserId: 'lm' }), r130.PERSONAL_SITE_AUDIT_ITEMS_MESSAGE)
+  const fields = r130.personalSiteAuditWriteFields({ ownerUserId: 'sam', draft, organizationId: ORG130 })!
+  assert.equal(fields.ownerUserId, 'sam')
+  const audit = r130.parsePersonalSiteAuditDocument('A1', fields)
+  assert.equal(r130.canViewPersonalSiteAudit('sam', audit), true)
+  assert.equal(r130.canViewPersonalSiteAudit('boss', audit), false)
+  assert.deepEqual(r130.personalSiteAuditsFor([audit, { ...audit, id: 'A2', ownerUserId: 'lm' }], 'sam').map((a) => a.id), ['A1'])
+  assert.equal(r130.personalSiteAuditPdfRows(audit).lines[0], 'Job number: J-77')
+  const copyPath = r130.payeClaimEvidencePath({ organizationId: ORG130, userId: 'sam', unixMs: 1_700_000_000_009, extension: 'pdf' })!
+  assert.deepEqual(r130.personalSiteAuditEvidence(audit, copyPath), {
+    path: copyPath,
+    name: 'Site audit (General) · J-77 Garden wall · Wed 4 Nov',
+    kind: 'personalSiteAudit',
+    contentType: 'application/pdf',
+    auditId: 'A1',
+  })
+  assert.equal(r130.storedFileKind(imagePath)?.kind, 'personal_site_audit')
+  assert.equal(r130.storedFileKind(copyPath)?.ownerUserId, 'sam')
+  const admin = { isAdmin: true, isSuperAdmin: false, isManager: false, isOperativeMode: false } as never
+  assert.equal(r130.fileDeletePermission({ storagePath: imagePath, organizationId: ORG130, viewerUserId: 'boss', viewerRole: admin, nowMs: 1_700_000_000_500 }).reason, 'owner_only')
+  assert.equal(r130.fileDeletePermission({ storagePath: copyPath, organizationId: ORG130, viewerUserId: 'boss', viewerRole: admin, nowMs: 1_700_000_000_500 }).reason, 'admin')
+  assert.equal(r130.fileDeletePermission({ storagePath: imagePath, organizationId: ORG130, viewerUserId: 'sam', viewerRole: null as never, nowMs: 1_700_000_000_500 }).allowed, true)
+})
+
+test('1.30.0 the new collections are listed for live reads and the operational paths', () => {
+  for (const id of ['priceWorkItems', 'expenseItems', 'payeClaimReports', 'personalSiteAudits']) {
+    assert.ok(r130.LIVE_COLLECTIONS.some((row) => row.id === id), id)
+    assert.ok(id in r130.OPERATIONAL_COLLECTION_PATHS, id)
+  }
+})

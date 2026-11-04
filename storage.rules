@@ -287,6 +287,43 @@ service firebase.storage {
       allow update: if canOverwriteStoredFile(orgId, 10 * 1024 * 1024, isWorkFileType());
     }
 
+    // Rulebook 1.30.0 §26: a person's line manager — listed on that person's users document, which names this
+    // organisation (never an operatives row) — the same test as Firestore callerLineManagesUser.
+    function callerLineManagesUser(orgId, uid) {
+      let path = /databases/(default)/documents/users/$(uid);
+      return signedIn() && uid != request.auth.uid
+        && firestore.exists(path)
+        && (
+          (firestore.get(path).data.get('organizationId', '') is string
+            && firestore.get(path).data.get('organizationId', '').lower() == orgId.lower())
+        )
+        && (
+          request.auth.uid in firestore.get(path).data.get('assignedManagerUserIds', [])
+          || firestore.get(path).data.get('assignedManagerUserId', '') == request.auth.uid
+        )
+        && firestore.get(path).data.get('hasNoLineManager', false) != true;
+    }
+
+    // Price work / expense evidence (and frozen personal site audit copies), in the person's own folder. The person
+    // uploads (a new {uid}_{ms} object each time); the person, their line managers and admins of this organisation
+    // read; delete as §24 (the uploader within the undo window, or an admin). Images and PDFs, 10MB.
+    match /organizations/{orgId}/payeClaims/{userId}/{fileName} {
+      allow read: if orgMember(orgId) && (request.auth.uid == userId || orgFileAdmin(orgId) || callerLineManagesUser(orgId, userId));
+      allow delete: if canDeleteStoredFile(orgId);
+      allow create: if request.auth.uid == userId && newOrOwnRetry()
+        && memberSizedWrite(orgId, 10 * 1024 * 1024, isImageContent() || isPdf());
+      allow update: if request.auth.uid == userId && canOverwriteStoredFile(orgId, 10 * 1024 * 1024, isImageContent() || isPdf());
+    }
+
+    // Personal site audit photos: the owner only — read, write and delete (within the undo window). No admin.
+    match /organizations/{orgId}/personalSiteAudits/{ownerId}/{allPaths=**} {
+      allow read: if orgMember(orgId) && request.auth.uid == ownerId;
+      allow delete: if orgMember(orgId) && request.auth.uid == ownerId && uploaderWithinUndoWindow();
+      allow create: if request.auth.uid == ownerId && newOrOwnRetry()
+        && memberSizedWrite(orgId, 10 * 1024 * 1024, isImageContent());
+      allow update: if request.auth.uid == ownerId && canOverwriteStoredFile(orgId, 10 * 1024 * 1024, isImageContent());
+    }
+
     match /{allPaths=**} {
       allow read, write: if false;
     }

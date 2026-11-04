@@ -30,6 +30,8 @@ const ADMIN_B = 'admin-b'
 const OP_B = 'op-b'
 const MGR_A = 'mgr-a'
 const OPMODE_ADMIN_A = 'opmode-admin-a'
+// 1.30.0: a PAYE operative whose line manager is MGR_A.
+const CLAIM_OP_A = 'claim-op-a'
 
 const MB = 1024 * 1024
 
@@ -60,7 +62,7 @@ test.before(async () => {
     const db = ctx.firestore()
     await setDoc(doc(db, 'organizations', ORG_A), {
       name: 'Company A',
-      members: { [ADMIN_A]: 'admin', [OP_A]: 'member', [MGR_A]: 'member', [OPMODE_ADMIN_A]: 'member', [ADMIN_B]: 'member' },
+      members: { [ADMIN_A]: 'admin', [OP_A]: 'member', [CLAIM_OP_A]: 'member', [MGR_A]: 'member', [OPMODE_ADMIN_A]: 'member', [ADMIN_B]: 'member' },
       creatorUserId: ADMIN_A,
     })
     await setDoc(doc(db, 'organizations', ORG_B), {
@@ -83,6 +85,14 @@ test.before(async () => {
       isSuperAdmin: false,
       operativeMode: true,
       firstName: 'Ollie',
+    })
+    await setDoc(doc(db, 'users', CLAIM_OP_A), {
+      email: 'claim-op-a@test.com',
+      organizationId: ORG_A,
+      role: 'operative',
+      operativeMode: true,
+      employmentType: 'paye',
+      assignedManagerUserIds: [MGR_A],
     })
     await setDoc(doc(db, 'users', MGR_A), {
       email: 'mgr-a@test.com',
@@ -393,4 +403,48 @@ test('1.25.0 timesheet exports and the logo: admins delete, managers do not', as
   await assertSucceeds(put(ADMIN_A, EMAIL[ADMIN_A], logoPath, 512, 'image/png'))
   await assertFails(del(MGR_A, logoPath))
   await assertSucceeds(del(ADMIN_A, logoPath))
+})
+
+// Rulebook 1.30.0 §26: claim evidence (the person, their line manager, admins) and personal site audits (owner only).
+EMAIL[CLAIM_OP_A] = 'claim-op-a@test.com'
+
+function read(uid: string, objectPath: string) {
+  return getBytes(ref(authStorage(uid, EMAIL[uid]), objectPath))
+}
+
+test('1.30.0 claim evidence: the person uploads to their own folder only; images and PDFs up to 10MB', async () => {
+  const own = `organizations/${ORG_A}/payeClaims/${CLAIM_OP_A}/${CLAIM_OP_A}_${Date.now()}.jpg`
+  await assertSucceeds(put(CLAIM_OP_A, EMAIL[CLAIM_OP_A], own, 256, 'image/jpeg'))
+  await assertSucceeds(put(CLAIM_OP_A, EMAIL[CLAIM_OP_A], own.replace('.jpg', '1.pdf'), 256, 'application/pdf'))
+  await assertFails(put(CLAIM_OP_A, EMAIL[CLAIM_OP_A], own.replace('.jpg', '2.docx'), 256, 'application/msword'))
+  await assertFails(put(CLAIM_OP_A, EMAIL[CLAIM_OP_A], own.replace('.jpg', '3.jpg'), 11 * MB, 'image/jpeg'))
+  // Nobody uploads into someone else's folder — line manager, admin or peer.
+  const theirs = `organizations/${ORG_A}/payeClaims/${CLAIM_OP_A}/${MGR_A}_${Date.now()}.jpg`
+  await assertFails(put(MGR_A, EMAIL[MGR_A], theirs, 256, 'image/jpeg'))
+  await assertFails(put(ADMIN_A, EMAIL[ADMIN_A], theirs.replace(MGR_A, ADMIN_A), 256, 'image/jpeg'))
+  await assertFails(put(OP_A, EMAIL[OP_A], theirs.replace(MGR_A, OP_A), 256, 'image/jpeg'))
+})
+
+test('1.30.0 claim evidence is read by the person, their line manager and admins — never a peer or another company', async () => {
+  const objectPath = `organizations/${ORG_A}/payeClaims/${CLAIM_OP_A}/${CLAIM_OP_A}_${Date.now() + 7}.pdf`
+  await assertSucceeds(put(CLAIM_OP_A, EMAIL[CLAIM_OP_A], objectPath, 128, 'application/pdf'))
+  await assertSucceeds(read(CLAIM_OP_A, objectPath))
+  await assertSucceeds(read(MGR_A, objectPath))
+  await assertSucceeds(read(ADMIN_A, objectPath))
+  await assertFails(read(OP_A, objectPath))
+  await assertFails(read(ADMIN_B, objectPath))
+  // Delete as §24: the uploader within the undo window or an admin; never the line manager.
+  await assertFails(del(MGR_A, objectPath))
+  await assertSucceeds(del(CLAIM_OP_A, objectPath))
+})
+
+test('1.30.0 personal site audit photos are the owner\'s only — admins included cannot read or delete them', async () => {
+  const objectPath = `organizations/${ORG_A}/personalSiteAudits/${CLAIM_OP_A}/A1/${CLAIM_OP_A}_${Date.now() + 9}.jpg`
+  await assertSucceeds(put(CLAIM_OP_A, EMAIL[CLAIM_OP_A], objectPath, 256, 'image/jpeg'))
+  await assertFails(put(CLAIM_OP_A, EMAIL[CLAIM_OP_A], objectPath.replace('.jpg', 'x.pdf'), 256, 'application/pdf'))
+  await assertSucceeds(read(CLAIM_OP_A, objectPath))
+  for (const uid of [MGR_A, ADMIN_A, OP_A, ADMIN_B]) await assertFails(read(uid, objectPath))
+  await assertFails(del(ADMIN_A, objectPath))
+  await assertFails(put(ADMIN_A, EMAIL[ADMIN_A], `organizations/${ORG_A}/personalSiteAudits/${CLAIM_OP_A}/A1/${ADMIN_A}_1.jpg`, 64, 'image/jpeg'))
+  await assertSucceeds(del(CLAIM_OP_A, objectPath))
 })

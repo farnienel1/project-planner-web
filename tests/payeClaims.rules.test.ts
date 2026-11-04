@@ -1,0 +1,219 @@
+/**
+ * Rulebook 1.30.0 (§16, §26): PAYE price work, expenses, their saved report copies and personal site audits.
+ * Runs against the Firestore emulator only (own project id, so it can run beside the other rules tests).
+ *
+ *   npm run test:rules
+ */
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+import test from 'node:test'
+import {
+  assertFails,
+  assertSucceeds,
+  initializeTestEnvironment,
+  type RulesTestEnvironment,
+} from '@firebase/rules-unit-testing'
+import { collection, deleteDoc, doc, getDoc, getDocs, query, setDoc, updateDoc, where } from 'firebase/firestore'
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+const rules = readFileSync(path.join(root, 'firestore.rules'), 'utf8')
+
+const ORG = 'org-pc'
+const ORG_B = 'org-pc-b'
+const ADMIN = 'pc-admin'
+const LM = 'pc-lm'
+const SAM = 'pc-sam'
+const PEER = 'pc-peer'
+const MGR2 = 'pc-mgr2'
+const ADMIN_B = 'pc-admin-b'
+const GONE = 'pc-gone'
+
+let env: RulesTestEnvironment
+
+function db(uid: string) {
+  return env.authenticatedContext(uid, { email: `${uid}@test.com` }).firestore()
+}
+function orgDoc(uid: string, ...segments: string[]) {
+  return doc(db(uid), 'organizations', ORG, ...segments)
+}
+
+const EVIDENCE = [{ path: `organizations/${ORG}/payeClaims/${SAM}/${SAM}_1700000000000.jpg`, name: 'receipt.jpg', kind: 'photo' }]
+function priceWork(userId: string, extra: Record<string, unknown> = {}) {
+  return {
+    userId,
+    title: 'Tiling',
+    details: 'Bathroom',
+    startDate: '2026-11-03',
+    endDate: '2026-11-05',
+    approvedByUserId: LM,
+    approvedByName: 'Lena',
+    amount: 250,
+    currency: 'GBP',
+    evidence: [],
+    createdBy: userId,
+    ...extra,
+  }
+}
+function expense(userId: string, extra: Record<string, unknown> = {}) {
+  return { userId, title: 'Fuel', details: '', jobNumber: 'J-1', date: '2026-11-04', amount: 12.5, currency: 'GBP', evidence: EVIDENCE, createdBy: userId, ...extra }
+}
+function report(userId: string, extra: Record<string, unknown> = {}) {
+  return {
+    userId,
+    userName: 'Sam',
+    companyName: 'Claims Co',
+    kind: 'expense',
+    rangeStart: '2026-10-26',
+    rangeEnd: '2026-11-25',
+    currency: 'GBP',
+    items: [],
+    totals: { amount: 0, itemCount: 0, evidenceCount: 0 },
+    generatedBy: userId,
+    ...extra,
+  }
+}
+function audit(ownerUserId: string, extra: Record<string, unknown> = {}) {
+  return {
+    ownerUserId,
+    jobNumber: 'J-77',
+    jobName: 'Garden wall',
+    type: 'General',
+    customTitle: '',
+    date: '2026-11-04',
+    authorName: 'Sam',
+    items: [{ id: 'i1', title: 'Crack', imagePath: `organizations/${ORG}/personalSiteAudits/${ownerUserId}/A1/${ownerUserId}_1.jpg` }],
+    ...extra,
+  }
+}
+
+async function seed() {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const d = ctx.firestore()
+    await setDoc(doc(d, 'organizations', ORG), {
+      name: 'Claims Co',
+      creatorUserId: ADMIN,
+      members: { [ADMIN]: 'admin', [LM]: 'manager', [SAM]: 'member', [PEER]: 'member', [MGR2]: 'manager', [GONE]: 'manager' },
+    })
+    await setDoc(doc(d, 'organizations', ORG_B), { name: 'Other Co', creatorUserId: ADMIN_B, members: { [ADMIN_B]: 'admin' } })
+    const user = (id: string, fields: Record<string, unknown>) => setDoc(doc(d, 'users', id), { email: `${id}@test.com`, organizationId: ORG, ...fields })
+    await user(ADMIN, { role: 'admin', adminAccess: true, isSuperAdmin: true })
+    await user(LM, { role: 'manager', manager: true, assignedManagerUserIds: [ADMIN] })
+    await user(SAM, { role: 'operative', operativeMode: true, employmentType: 'paye', assignedManagerUserIds: [LM] })
+    await user(PEER, { role: 'operative', operativeMode: true, employmentType: 'paye', assignedManagerUserIds: [MGR2] })
+    await user(MGR2, { role: 'manager', manager: true, assignedManagerUserIds: [ADMIN] })
+    await user(GONE, { role: 'manager', manager: true, isActive: false })
+    await setDoc(doc(d, 'users', ADMIN_B), { email: `${ADMIN_B}@test.com`, organizationId: ORG_B, role: 'admin', adminAccess: true })
+    await setDoc(doc(d, 'organizations', ORG, 'priceWorkItems', 'PW1'), priceWork(SAM))
+    await setDoc(doc(d, 'organizations', ORG, 'expenseItems', 'EX1'), expense(SAM))
+    await setDoc(doc(d, 'organizations', ORG, 'payeClaimReports', 'R1'), report(SAM))
+    await setDoc(doc(d, 'organizations', ORG, 'personalSiteAudits', 'A1'), audit(SAM))
+  })
+}
+
+test.before(async () => {
+  env = await initializeTestEnvironment({
+    projectId: 'demo-project-planner-paye-claims',
+    firestore: { rules, host: '127.0.0.1', port: 8080 },
+  })
+})
+
+test.beforeEach(async () => {
+  await env.clearFirestore()
+  await seed()
+})
+
+test.after(async () => {
+  await env?.cleanup()
+})
+
+test('1.30.0 the person adds their own price work with a listed approver', async () => {
+  await assertSucceeds(setDoc(orgDoc(SAM, 'priceWorkItems', 'PW2'), priceWork(SAM)))
+  await assertSucceeds(setDoc(orgDoc(SAM, 'priceWorkItems', 'PW3'), priceWork(SAM, { approvedByUserId: ADMIN, startDate: '2026-11-04', endDate: '2026-11-04' })))
+})
+
+test('1.30.0 price work approver must be an active admin or manager of this organisation, never yourself or an operative', async () => {
+  await assertFails(setDoc(orgDoc(SAM, 'priceWorkItems', 'X1'), priceWork(SAM, { approvedByUserId: SAM })))
+  await assertFails(setDoc(orgDoc(SAM, 'priceWorkItems', 'X2'), priceWork(SAM, { approvedByUserId: PEER })))
+  await assertFails(setDoc(orgDoc(SAM, 'priceWorkItems', 'X3'), priceWork(SAM, { approvedByUserId: GONE })))
+  await assertFails(setDoc(orgDoc(SAM, 'priceWorkItems', 'X4'), priceWork(SAM, { approvedByUserId: ADMIN_B })))
+  await assertFails(setDoc(orgDoc(SAM, 'priceWorkItems', 'X5'), priceWork(SAM, { approvedByUserId: 'Bob the builder' })))
+  await assertFails(setDoc(orgDoc(SAM, 'priceWorkItems', 'X6'), priceWork(SAM, { approvedByUserId: '' })))
+})
+
+test('1.30.0 price work shape: dates in order, amount above zero, no extra fields', async () => {
+  await assertFails(setDoc(orgDoc(SAM, 'priceWorkItems', 'X1'), priceWork(SAM, { endDate: '2026-11-01' })))
+  await assertFails(setDoc(orgDoc(SAM, 'priceWorkItems', 'X2'), priceWork(SAM, { amount: 0 })))
+  await assertFails(setDoc(orgDoc(SAM, 'priceWorkItems', 'X3'), priceWork(SAM, { approved: true })))
+  await assertFails(setDoc(orgDoc(SAM, 'priceWorkItems', 'X4'), priceWork(SAM, { title: '' })))
+})
+
+test('1.30.0 nobody writes another person\'s price work or expenses — line managers and admins included', async () => {
+  await assertFails(setDoc(orgDoc(LM, 'priceWorkItems', 'X1'), priceWork(SAM)))
+  await assertFails(setDoc(orgDoc(ADMIN, 'expenseItems', 'X1'), expense(SAM)))
+  await assertFails(updateDoc(orgDoc(LM, 'priceWorkItems', 'PW1'), { amount: 1 }))
+  await assertFails(updateDoc(orgDoc(ADMIN, 'expenseItems', 'EX1'), { amount: 1 }))
+  await assertFails(deleteDoc(orgDoc(ADMIN, 'expenseItems', 'EX1')))
+  // Self-escalation: the person cannot move an item onto someone else.
+  await assertFails(updateDoc(orgDoc(SAM, 'expenseItems', 'EX1'), { userId: PEER }))
+})
+
+test('1.30.0 expenses need at least one piece of evidence', async () => {
+  await assertFails(setDoc(orgDoc(SAM, 'expenseItems', 'X1'), expense(SAM, { evidence: [] })))
+  await assertSucceeds(setDoc(orgDoc(SAM, 'expenseItems', 'EX2'), expense(SAM)))
+  await assertFails(updateDoc(orgDoc(SAM, 'expenseItems', 'EX1'), { evidence: [] }))
+  await assertSucceeds(updateDoc(orgDoc(SAM, 'expenseItems', 'EX1'), { title: 'Diesel' }))
+  await assertSucceeds(deleteDoc(orgDoc(SAM, 'expenseItems', 'EX1')))
+})
+
+test('1.30.0 who reads: the person, their line manager and admins; never a peer, another manager or another company', async () => {
+  for (const uid of [SAM, LM, ADMIN]) {
+    await assertSucceeds(getDoc(orgDoc(uid, 'priceWorkItems', 'PW1')))
+    await assertSucceeds(getDoc(orgDoc(uid, 'expenseItems', 'EX1')))
+    await assertSucceeds(getDoc(orgDoc(uid, 'payeClaimReports', 'R1')))
+  }
+  for (const uid of [PEER, MGR2, ADMIN_B]) {
+    await assertFails(getDoc(orgDoc(uid, 'priceWorkItems', 'PW1')))
+    await assertFails(getDoc(orgDoc(uid, 'expenseItems', 'EX1')))
+    await assertFails(getDoc(orgDoc(uid, 'payeClaimReports', 'R1')))
+  }
+  // Queries: the line manager by userId; the person their own; a peer refused.
+  await assertSucceeds(getDocs(query(collection(db(LM), 'organizations', ORG, 'expenseItems'), where('userId', '==', SAM))))
+  await assertSucceeds(getDocs(query(collection(db(SAM), 'organizations', ORG, 'priceWorkItems'), where('userId', '==', SAM))))
+  await assertSucceeds(getDocs(collection(db(ADMIN), 'organizations', ORG, 'priceWorkItems')))
+  await assertFails(getDocs(query(collection(db(PEER), 'organizations', ORG, 'expenseItems'), where('userId', '==', SAM))))
+  await assertFails(getDocs(collection(db(LM), 'organizations', ORG, 'expenseItems')))
+})
+
+test('1.30.0 saved claim reports: the person creates their own once; nobody changes or deletes them', async () => {
+  await assertSucceeds(setDoc(orgDoc(SAM, 'payeClaimReports', 'R2'), report(SAM, { kind: 'priceWork' })))
+  await assertFails(setDoc(orgDoc(SAM, 'payeClaimReports', 'R3'), report(SAM, { kind: 'overtime' })))
+  await assertFails(setDoc(orgDoc(LM, 'payeClaimReports', 'R4'), report(SAM)))
+  await assertFails(setDoc(orgDoc(SAM, 'payeClaimReports', 'R5'), report(SAM, { generatedBy: LM })))
+  await assertFails(updateDoc(orgDoc(SAM, 'payeClaimReports', 'R1'), { userName: 'x' }))
+  await assertFails(deleteDoc(orgDoc(ADMIN, 'payeClaimReports', 'R1')))
+})
+
+test('1.30.0 personal site audits are the owner\'s only — admins and line managers cannot read or write them', async () => {
+  await assertSucceeds(getDoc(orgDoc(SAM, 'personalSiteAudits', 'A1')))
+  for (const uid of [LM, ADMIN, PEER, ADMIN_B]) {
+    await assertFails(getDoc(orgDoc(uid, 'personalSiteAudits', 'A1')))
+    await assertFails(updateDoc(orgDoc(uid, 'personalSiteAudits', 'A1'), { jobName: 'x' }))
+    await assertFails(deleteDoc(orgDoc(uid, 'personalSiteAudits', 'A1')))
+  }
+  await assertFails(getDocs(collection(db(ADMIN), 'organizations', ORG, 'personalSiteAudits')))
+  await assertSucceeds(getDocs(query(collection(db(SAM), 'organizations', ORG, 'personalSiteAudits'), where('ownerUserId', '==', SAM))))
+  await assertSucceeds(setDoc(orgDoc(PEER, 'personalSiteAudits', 'A2'), audit(PEER)))
+  await assertFails(setDoc(orgDoc(PEER, 'personalSiteAudits', 'A3'), audit(SAM)))
+  await assertFails(setDoc(orgDoc(SAM, 'personalSiteAudits', 'A4'), audit(SAM, { jobName: '' })))
+  await assertFails(setDoc(orgDoc(SAM, 'personalSiteAudits', 'A5'), audit(SAM, { items: [] })))
+  await assertFails(updateDoc(orgDoc(SAM, 'personalSiteAudits', 'A1'), { ownerUserId: PEER }))
+  await assertSucceeds(updateDoc(orgDoc(SAM, 'personalSiteAudits', 'A1'), { jobName: 'Garden wall (rear)' }))
+  await assertSucceeds(deleteDoc(orgDoc(SAM, 'personalSiteAudits', 'A1')))
+})
+
+test('1.30.0 another company\'s admin and an inactive member write nothing', async () => {
+  await assertFails(setDoc(doc(db(ADMIN_B), 'organizations', ORG, 'expenseItems', 'X1'), expense(ADMIN_B)))
+  await assertFails(setDoc(orgDoc(GONE, 'expenseItems', 'X2'), expense(GONE)))
+  await assertFails(setDoc(orgDoc(GONE, 'personalSiteAudits', 'X3'), audit(GONE)))
+})

@@ -63,6 +63,9 @@ export const EXPORT_FILES = {
   overtimeRequests: { file: 'overtime-requests.csv', title: 'Overtime requests', description: 'PAYE overtime requests and their decisions (overtimeRequests, rulebook 1.29.0).' },
   overtimeReviews: { file: 'overtime-reviews.csv', title: 'Overtime reviews', description: 'Approved PAYE overtime lines, one per person and booking (overtimeReviews).' },
   overtimeReports: { file: 'overtime-reports.csv', title: 'Overtime reports', description: 'Saved PAYE overtime report copies (overtimeReports), as sent.' },
+  priceWorkItems: { file: 'price-work.csv', title: 'PAYE price work', description: 'PAYE price work items with their approver and evidence paths (priceWorkItems, rulebook 1.30.0).' },
+  expenseItems: { file: 'expenses.csv', title: 'PAYE expenses', description: 'PAYE expenses with their evidence paths (expenseItems, rulebook 1.30.0).' },
+  payeClaimReports: { file: 'price-work-and-expense-reports.csv', title: 'Price work and expense reports', description: 'Saved PAYE price work and expenses report copies (payeClaimReports), as sent.' },
 } as const satisfies Record<string, ExportFile>
 
 export type ExportFileKey = keyof typeof EXPORT_FILES
@@ -125,6 +128,9 @@ const FILE_FOR_COLLECTION: Record<string, ExportFileKey> = {
   overtimeRequests: 'overtimeRequests',
   overtimeReviews: 'overtimeReviews',
   overtimeReports: 'overtimeReports',
+  priceWorkItems: 'priceWorkItems',
+  expenseItems: 'expenseItems',
+  payeClaimReports: 'payeClaimReports',
 }
 
 const ADDITIONAL_COLLECTIONS = [
@@ -152,6 +158,7 @@ export const EXCLUDED_COLLECTIONS: Record<string, string> = {
   userEmails: 'internal sign-in email claims (an index of email → account), not company records',
   dashboardLayouts: 'each person\'s Home layout, a per-user display preference',
   fileReports: 'moderation reports about uploaded files, reviewed in Settings → Reported files',
+  personalSiteAudits: 'personal site audits are private to the person who created them (rulebook 1.30.0); copies attached to expenses or price work are listed with those',
 }
 
 /** Every collection read under `organizations/{orgId}`, in reading order. */

@@ -80,6 +80,13 @@ var ProjectPlannerCanonical = (() => {
     EMPLOYMENT_WRITE_GROUP: () => EMPLOYMENT_WRITE_GROUP,
     ENFORCED_READS_ACTIVE: () => ENFORCED_READS_ACTIVE,
     ERASED_ORGANIZATIONS_COLLECTION: () => ERASED_ORGANIZATIONS_COLLECTION,
+    EXPENSES_EMPTY_MESSAGE: () => EXPENSES_EMPTY_MESSAGE,
+    EXPENSES_GENERATE_REPORT_LABEL: () => EXPENSES_GENERATE_REPORT_LABEL,
+    EXPENSES_REPORT_TITLE: () => EXPENSES_REPORT_TITLE,
+    EXPENSES_TOTAL_LABEL: () => EXPENSES_TOTAL_LABEL,
+    EXPENSE_ADD_LABEL: () => EXPENSE_ADD_LABEL,
+    EXPENSE_EVIDENCE_REQUIRED_MESSAGE: () => EXPENSE_EVIDENCE_REQUIRED_MESSAGE,
+    EXPENSE_ITEMS_COLLECTION: () => EXPENSE_ITEMS_COLLECTION,
     FALLBACK_LOOKAHEAD_DAYS: () => FALLBACK_LOOKAHEAD_DAYS,
     FILE_KEPT_ON_REMOVE_COPY: () => FILE_KEPT_ON_REMOVE_COPY,
     FILE_RECOVERY_RETENTION_DAYS: () => FILE_RECOVERY_RETENTION_DAYS,
@@ -213,6 +220,22 @@ var ProjectPlannerCanonical = (() => {
     OWN_SELF_MANAGE_MESSAGE: () => OWN_SELF_MANAGE_MESSAGE,
     PASSWORD_MIN_LENGTH: () => PASSWORD_MIN_LENGTH,
     PAYE_ADMIN_LINE_MANAGER_REQUIRED_MESSAGE: () => PAYE_ADMIN_LINE_MANAGER_REQUIRED_MESSAGE,
+    PAYE_CLAIM_AMOUNT_MAX: () => PAYE_CLAIM_AMOUNT_MAX,
+    PAYE_CLAIM_AMOUNT_MESSAGE: () => PAYE_CLAIM_AMOUNT_MESSAGE,
+    PAYE_CLAIM_APPROVER_NOT_NOTIFIED_NOTE: () => PAYE_CLAIM_APPROVER_NOT_NOTIFIED_NOTE,
+    PAYE_CLAIM_DATE_MESSAGE: () => PAYE_CLAIM_DATE_MESSAGE,
+    PAYE_CLAIM_DETAILS_MAX: () => PAYE_CLAIM_DETAILS_MAX,
+    PAYE_CLAIM_EVIDENCE_FOLDER: () => PAYE_CLAIM_EVIDENCE_FOLDER,
+    PAYE_CLAIM_EVIDENCE_INVALID_MESSAGE: () => PAYE_CLAIM_EVIDENCE_INVALID_MESSAGE,
+    PAYE_CLAIM_EVIDENCE_KINDS: () => PAYE_CLAIM_EVIDENCE_KINDS,
+    PAYE_CLAIM_EVIDENCE_LIMIT_MESSAGE: () => PAYE_CLAIM_EVIDENCE_LIMIT_MESSAGE,
+    PAYE_CLAIM_EVIDENCE_MAX: () => PAYE_CLAIM_EVIDENCE_MAX,
+    PAYE_CLAIM_EVIDENCE_NOT_DRAWN_NOTE: () => PAYE_CLAIM_EVIDENCE_NOT_DRAWN_NOTE,
+    PAYE_CLAIM_EVIDENCE_UNREADABLE_NOTE: () => PAYE_CLAIM_EVIDENCE_UNREADABLE_NOTE,
+    PAYE_CLAIM_KINDS: () => PAYE_CLAIM_KINDS,
+    PAYE_CLAIM_REPORTS_COLLECTION: () => PAYE_CLAIM_REPORTS_COLLECTION,
+    PAYE_CLAIM_TITLE_MAX: () => PAYE_CLAIM_TITLE_MAX,
+    PAYE_CLAIM_TITLE_MESSAGE: () => PAYE_CLAIM_TITLE_MESSAGE,
     PAYE_PAYDAY_CONTROL_LABEL: () => PAYE_PAYDAY_CONTROL_LABEL,
     PAYE_PAYDAY_HELP: () => PAYE_PAYDAY_HELP,
     PAYE_PAYDAY_INVALID_MESSAGE: () => PAYE_PAYDAY_INVALID_MESSAGE,
@@ -241,8 +264,27 @@ var ProjectPlannerCanonical = (() => {
     PAY_WRITE_GROUP: () => PAY_WRITE_GROUP,
     PERMISSION_DEFAULT_ON: () => PERMISSION_DEFAULT_ON,
     PERMISSION_TOGGLE_CATALOGUE: () => PERMISSION_TOGGLE_CATALOGUE,
+    PERSONAL_SITE_AUDITS_COLLECTION: () => PERSONAL_SITE_AUDITS_COLLECTION,
+    PERSONAL_SITE_AUDIT_CREATE_LABEL: () => PERSONAL_SITE_AUDIT_CREATE_LABEL,
+    PERSONAL_SITE_AUDIT_DATE_MESSAGE: () => PERSONAL_SITE_AUDIT_DATE_MESSAGE,
+    PERSONAL_SITE_AUDIT_ITEMS_MAX: () => PERSONAL_SITE_AUDIT_ITEMS_MAX,
+    PERSONAL_SITE_AUDIT_ITEMS_MESSAGE: () => PERSONAL_SITE_AUDIT_ITEMS_MESSAGE,
+    PERSONAL_SITE_AUDIT_ITEM_TITLE_MESSAGE: () => PERSONAL_SITE_AUDIT_ITEM_TITLE_MESSAGE,
+    PERSONAL_SITE_AUDIT_JOB_NAME_MESSAGE: () => PERSONAL_SITE_AUDIT_JOB_NAME_MESSAGE,
+    PERSONAL_SITE_AUDIT_PRIVACY_NOTICE: () => PERSONAL_SITE_AUDIT_PRIVACY_NOTICE,
+    PERSONAL_SITE_AUDIT_PRIVATE_NOTE: () => PERSONAL_SITE_AUDIT_PRIVATE_NOTE,
+    PERSONAL_SITE_AUDIT_SECTION_LABEL: () => PERSONAL_SITE_AUDIT_SECTION_LABEL,
     PLATFORM_CONFIG_APP_PATH: () => PLATFORM_CONFIG_APP_PATH,
     PLATFORM_OWNER_EMAIL: () => PLATFORM_OWNER_EMAIL,
+    PRICE_WORK_ADD_LABEL: () => PRICE_WORK_ADD_LABEL,
+    PRICE_WORK_APPROVER_INVALID_MESSAGE: () => PRICE_WORK_APPROVER_INVALID_MESSAGE,
+    PRICE_WORK_APPROVER_REQUIRED_MESSAGE: () => PRICE_WORK_APPROVER_REQUIRED_MESSAGE,
+    PRICE_WORK_DATES_MESSAGE: () => PRICE_WORK_DATES_MESSAGE,
+    PRICE_WORK_EMPTY_MESSAGE: () => PRICE_WORK_EMPTY_MESSAGE,
+    PRICE_WORK_GENERATE_REPORT_LABEL: () => PRICE_WORK_GENERATE_REPORT_LABEL,
+    PRICE_WORK_ITEMS_COLLECTION: () => PRICE_WORK_ITEMS_COLLECTION,
+    PRICE_WORK_REPORT_TITLE: () => PRICE_WORK_REPORT_TITLE,
+    PRICE_WORK_TOTAL_LABEL: () => PRICE_WORK_TOTAL_LABEL,
     PROJECT_TASK_PRIORITIES: () => PROJECT_TASK_PRIORITIES,
     PROJECT_TASK_STATUSES: () => PROJECT_TASK_STATUSES,
     PUSH_PAYLOAD_KEYS: () => PUSH_PAYLOAD_KEYS,
@@ -408,11 +450,14 @@ var ProjectPlannerCanonical = (() => {
     canSelfBookAnnualLeave: () => canSelfBookAnnualLeave,
     canSendMaterialOrders: () => canSendMaterialOrders,
     canViewMaterialOrderHistory: () => canViewMaterialOrderHistory,
+    canViewPayeClaims: () => canViewPayeClaims,
     canViewPersonPay: () => canViewPersonPay,
+    canViewPersonalSiteAudit: () => canViewPersonalSiteAudit,
     canViewRemovedEvidence: () => canViewRemovedEvidence,
     canViewSensitiveProfile: () => canViewSensitiveProfile,
     canViewStaffWarnings: () => canViewStaffWarnings,
     canWriteBooking: () => canWriteBooking,
+    canWritePayeClaim: () => canWritePayeClaim,
     canonicalJobTypeName: () => canonicalJobTypeName,
     capitalizeTimesheetWeekday: () => capitalizeTimesheetWeekday,
     catalogueOperativePaySubjects: () => catalogueOperativePaySubjects,
@@ -481,6 +526,8 @@ var ProjectPlannerCanonical = (() => {
     erasedOrganizationAuditFields: () => erasedOrganizationAuditFields,
     excludeActor: () => excludeActor,
     exclusiveRates: () => exclusiveRates,
+    expenseValidationError: () => expenseValidationError,
+    expenseWriteFields: () => expenseWriteFields,
     exportIncludesSensitiveFields: () => exportIncludesSensitiveFields,
     fileDeletePermission: () => fileDeletePermission,
     fileReportCollectionPath: () => fileReportCollectionPath,
@@ -792,6 +839,7 @@ var ProjectPlannerCanonical = (() => {
     parseDeadlineAssignments: () => parseDeadlineAssignments,
     parseDeadlineDocument: () => parseDeadlineDocument,
     parseDeadlineItem: () => parseDeadlineItem,
+    parseExpenseDocument: () => parseExpenseDocument,
     parseFormerUserIds: () => parseFormerUserIds,
     parseHealthSafetyDocument: () => parseHealthSafetyDocument,
     parseHolidayDecisionNote: () => parseHolidayDecisionNote,
@@ -821,12 +869,16 @@ var ProjectPlannerCanonical = (() => {
     parsePayProfileDocument: () => parsePayProfileDocument,
     parsePayRateHistoryDocument: () => parsePayRateHistoryDocument,
     parsePayRateHistoryDocuments: () => parsePayRateHistoryDocuments,
+    parsePayeClaimEvidence: () => parsePayeClaimEvidence,
+    parsePayeClaimReportDocument: () => parsePayeClaimReportDocument,
     parsePaymentRunDateRanges: () => parsePaymentRunDateRanges,
     parsePaymentRunHistory: () => parsePaymentRunHistory,
     parsePayrollPolicy: () => parsePayrollPolicy,
     parsePayrollTimePolicyHistory: () => parsePayrollTimePolicyHistory,
     parsePayrollTimePolicyScheduled: () => parsePayrollTimePolicyScheduled,
     parsePayrollTimePolicyState: () => parsePayrollTimePolicyState,
+    parsePersonalSiteAuditDocument: () => parsePersonalSiteAuditDocument,
+    parsePriceWorkDocument: () => parsePriceWorkDocument,
     parseProjectDocument: () => parseProjectDocument,
     parseSiteAuditDocument: () => parseSiteAuditDocument,
     parseSkillDocument: () => parseSkillDocument,
@@ -864,6 +916,19 @@ var ProjectPlannerCanonical = (() => {
     payRateHistoryWriteFields: () => payRateHistoryWriteFields,
     payRateOnDay: () => payRateOnDay,
     payRateRequiredError: () => payRateRequiredError,
+    payeClaimDayKey: () => payeClaimDayKey,
+    payeClaimEvidenceDrawAs: () => payeClaimEvidenceDrawAs,
+    payeClaimEvidencePages: () => payeClaimEvidencePages,
+    payeClaimEvidencePath: () => payeClaimEvidencePath,
+    payeClaimEvidencePathBelongsTo: () => payeClaimEvidencePathBelongsTo,
+    payeClaimEvidenceWriteFields: () => payeClaimEvidenceWriteFields,
+    payeClaimListRow: () => payeClaimListRow,
+    payeClaimReportReady: () => payeClaimReportReady,
+    payeClaimReportRows: () => payeClaimReportRows,
+    payeClaimReportSnapshot: () => payeClaimReportSnapshot,
+    payeClaimReportsOfKind: () => payeClaimReportsOfKind,
+    payeClaimsInRange: () => payeClaimsInRange,
+    payeClaimsTotal: () => payeClaimsTotal,
     payeCustomRange: () => payeCustomRange,
     payeOvertimeLines: () => payeOvertimeLines,
     payePastPayruns: () => payePastPayruns,
@@ -908,7 +973,17 @@ var ProjectPlannerCanonical = (() => {
     permissionsWriteMap: () => permissionsWriteMap,
     personDayItems: () => personDayItems,
     personIdSet: () => personIdSet,
+    personalSiteAuditEvidence: () => personalSiteAuditEvidence,
+    personalSiteAuditImagePath: () => personalSiteAuditImagePath,
+    personalSiteAuditPdfRows: () => personalSiteAuditPdfRows,
+    personalSiteAuditTitle: () => personalSiteAuditTitle,
+    personalSiteAuditValidationError: () => personalSiteAuditValidationError,
+    personalSiteAuditWriteFields: () => personalSiteAuditWriteFields,
+    personalSiteAuditsFor: () => personalSiteAuditsFor,
     pickTimesheetRowForPeriod: () => pickTimesheetRowForPeriod,
+    priceWorkApproverCandidates: () => priceWorkApproverCandidates,
+    priceWorkValidationError: () => priceWorkValidationError,
+    priceWorkWriteFields: () => priceWorkWriteFields,
     proRataLeaveAllowance: () => proRataLeaveAllowance,
     provisionalOrganizationId: () => provisionalOrganizationId,
     pushPayloadFields: () => pushPayloadFields,
@@ -1015,6 +1090,7 @@ var ProjectPlannerCanonical = (() => {
     timeSlotAllowedOnDay: () => timeSlotAllowedOnDay,
     timesheetBelongsToOrganization: () => timesheetBelongsToOrganization,
     timesheetChangedFields: () => timesheetChangedFields,
+    timesheetClaimRows: () => timesheetClaimRows,
     timesheetDaysForPerson: () => timesheetDaysForPerson,
     timesheetDocumentId: () => timesheetDocumentId,
     timesheetEntryDecision: () => timesheetEntryDecision,
@@ -1395,8 +1471,8 @@ var ProjectPlannerCanonical = (() => {
     if (typeof value === "number") {
       return Number.isFinite(value) && value >= 0 && value <= 24 * 60 ? Math.round(value) : null;
     }
-    const text25 = String(value ?? "").trim();
-    const match = /^(\d{1,2}):(\d{2})$/.exec(text25);
+    const text27 = String(value ?? "").trim();
+    const match = /^(\d{1,2}):(\d{2})$/.exec(text27);
     if (!match) return null;
     const hours = Number(match[1]);
     const minutes = Number(match[2]);
@@ -3185,7 +3261,12 @@ var ProjectPlannerCanonical = (() => {
     overtimeRequests: "organizations/{orgId}/overtimeRequests",
     /** Document id `{userId}_{bookingId}` (`overtimeReviewDocId`). */
     overtimeReviews: "organizations/{orgId}/overtimeReviews",
-    overtimeReports: "organizations/{orgId}/overtimeReports"
+    overtimeReports: "organizations/{orgId}/overtimeReports",
+    /** 1.30.0 (§26): PAYE price work and expenses, their saved report copies, and personal site audits (owner only). */
+    priceWorkItems: "organizations/{orgId}/priceWorkItems",
+    expenseItems: "organizations/{orgId}/expenseItems",
+    payeClaimReports: "organizations/{orgId}/payeClaimReports",
+    personalSiteAudits: "organizations/{orgId}/personalSiteAudits"
   };
   function starterCollectionShouldSeed(existingDocumentCount) {
     return existingDocumentCount === 0;
@@ -3553,46 +3634,46 @@ var ProjectPlannerCanonical = (() => {
     if (mode === "endOfWorkingWeek" || mode === "week") return "endOfWorkingWeek";
     return DEFAULT_WARNING_DETECTION.clashLookaheadMode;
   }
-  function excludedUnbookedUserIds(record10) {
-    if (Array.isArray(record10.excludedUserIdsFromUnbookedWarnings)) {
-      return stringIdList(record10.excludedUserIdsFromUnbookedWarnings);
+  function excludedUnbookedUserIds(record12) {
+    if (Array.isArray(record12.excludedUserIdsFromUnbookedWarnings)) {
+      return stringIdList(record12.excludedUserIdsFromUnbookedWarnings);
     }
     for (const key4 of ["excludedUserIds", "excludedUsers", "excludedUserIdsFromWarnings", "unbookedWarningExcludedUserIds"]) {
-      if (Array.isArray(record10[key4])) return stringIdList(record10[key4]);
+      if (Array.isArray(record12[key4])) return stringIdList(record12[key4]);
     }
     return [];
   }
   function parseWarningDetection(data) {
-    const record10 = asSettingsRecord(data);
-    if (!record10) return { ...DEFAULT_WARNING_DETECTION, excludedUserIdsFromUnbookedWarnings: [] };
-    const daysRaw = record10.clashLookaheadDays ?? record10.lookaheadDays ?? record10.lookAheadDays ?? record10.numberOfDays ?? record10.daysAhead;
+    const record12 = asSettingsRecord(data);
+    if (!record12) return { ...DEFAULT_WARNING_DETECTION, excludedUserIdsFromUnbookedWarnings: [] };
+    const daysRaw = record12.clashLookaheadDays ?? record12.lookaheadDays ?? record12.lookAheadDays ?? record12.numberOfDays ?? record12.daysAhead;
     const days = daysRaw === void 0 || daysRaw === null ? DEFAULT_WARNING_DETECTION.clashLookaheadDays : daysRaw;
     const clashLookaheadMode = parseClashLookaheadMode(
-      record10.clashLookaheadMode ?? record10.lookAheadMode ?? record10.lookaheadMode
+      record12.clashLookaheadMode ?? record12.lookAheadMode ?? record12.lookaheadMode
     );
     const fallback = lookaheadDaysFallback(daysRaw);
     const parsed = {
-      detectClashes: record10.detectClashes !== false,
+      detectClashes: record12.detectClashes !== false,
       clashLookaheadMode,
       clashLookaheadDays: fallback ? DEFAULT_WARNING_DETECTION.clashLookaheadDays : clampClashLookaheadDays(days),
-      includeWeekendsForUnbookedLabour: Boolean(record10.includeWeekendsForUnbookedLabour),
-      excludedUserIdsFromUnbookedWarnings: excludedUnbookedUserIds(record10),
-      weekendCoverage: parseWeekendCoverage(record10.weekendCoverage, Boolean(record10.includeWeekendsForUnbookedLabour))
+      includeWeekendsForUnbookedLabour: Boolean(record12.includeWeekendsForUnbookedLabour),
+      excludedUserIdsFromUnbookedWarnings: excludedUnbookedUserIds(record12),
+      weekendCoverage: parseWeekendCoverage(record12.weekendCoverage, Boolean(record12.includeWeekendsForUnbookedLabour))
     };
     if (fallback && clashLookaheadMode === "numberOfDays") parsed.clashLookaheadDaysFallback = fallback;
     return parsed;
   }
   var COVERAGE_CLOCK_RE = /^\d{1,2}:\d{2}$/;
   function clockMinutesOf(value) {
-    const text25 = coverageClock(value);
-    if (!text25) return null;
-    const [h, m] = text25.split(":").map(Number);
+    const text27 = coverageClock(value);
+    if (!text27) return null;
+    const [h, m] = text27.split(":").map(Number);
     return h * 60 + m;
   }
   function coverageClock(value) {
-    const text25 = typeof value === "string" ? value.trim() : "";
-    if (!COVERAGE_CLOCK_RE.test(text25)) return null;
-    const [h, m] = text25.split(":").map(Number);
+    const text27 = typeof value === "string" ? value.trim() : "";
+    if (!COVERAGE_CLOCK_RE.test(text27)) return null;
+    const [h, m] = text27.split(":").map(Number);
     return h >= 0 && h < 24 && m >= 0 && m < 60 ? `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}` : null;
   }
   function parseWeekendCoverage(value, includeWeekends) {
@@ -3924,8 +4005,8 @@ var ProjectPlannerCanonical = (() => {
     const total = plainHoursText(Math.max(0, clock * n - brk));
     return roundHundredths(brk) > 0 ? `${multiplied} \u2212 ${plainHoursText(brk)} break = ${total}` : `${multiplied} = ${total}`;
   }
-  function parseMultipliedHoursText(text25) {
-    const match = /(\d+(?:\.\d+)?)h × (\d+(?:\.\d+)?)(?: − (\d+(?:\.\d+)?)h break)? = \d+(?:\.\d+)?h/.exec(String(text25 ?? ""));
+  function parseMultipliedHoursText(text27) {
+    const match = /(\d+(?:\.\d+)?)h × (\d+(?:\.\d+)?)(?: − (\d+(?:\.\d+)?)h break)? = \d+(?:\.\d+)?h/.exec(String(text27 ?? ""));
     if (!match) return null;
     const clockHours = Number(match[1]);
     const multiplier = Number(match[2]);
@@ -5138,8 +5219,8 @@ var ProjectPlannerCanonical = (() => {
   }
   function formatHours(hours) {
     const rounded = Math.round(hours * 4) / 4;
-    const text25 = Number.isInteger(rounded) ? String(rounded) : String(rounded).replace(/0+$/, "");
-    return `${text25} hour${rounded === 1 ? "" : "s"}`;
+    const text27 = Number.isInteger(rounded) ? String(rounded) : String(rounded).replace(/0+$/, "");
+    return `${text27} hour${rounded === 1 ? "" : "s"}`;
   }
   function joinRanges(intervals) {
     const labels = intervals.map(rangeLabel);
@@ -5149,7 +5230,7 @@ var ProjectPlannerCanonical = (() => {
   function leaveCoverageRows(input) {
     const timeZone = zoneOrLondon(input.timeZone);
     const excluded = new Set((input.excludedUserIds || []).map(idKey2).filter(Boolean));
-    const approvedLeave = input.leave.filter((record10) => record10.approved && record10.startDayKey && record10.endDayKey);
+    const approvedLeave = input.leave.filter((record12) => record12.approved && record12.startDayKey && record12.endDayKey);
     if (approvedLeave.length === 0) return [];
     const peopleByUserId = /* @__PURE__ */ new Map();
     const peopleByOperativeId = /* @__PURE__ */ new Map();
@@ -5162,10 +5243,10 @@ var ProjectPlannerCanonical = (() => {
         if (key4 && !peopleByOperativeId.has(key4)) peopleByOperativeId.set(key4, person);
       }
     }
-    const personForLeave = (record10) => {
-      const userId = idKey2(record10.userId);
+    const personForLeave = (record12) => {
+      const userId = idKey2(record12.userId);
       if (userId && peopleByUserId.has(userId)) return peopleByUserId.get(userId);
-      const operativeId = idKey2(record10.operativeId);
+      const operativeId = idKey2(record12.operativeId);
       if (operativeId && peopleByOperativeId.has(operativeId)) return peopleByOperativeId.get(operativeId);
       return void 0;
     };
@@ -5188,20 +5269,20 @@ var ProjectPlannerCanonical = (() => {
       const day = bookingStandardDayOn(input.day, dayKey);
       const windows = leaveHalfDayWindows(day);
       const lunch = standardBreakWindow(day);
-      for (const record10 of approvedLeave) {
-        if (dayKey < record10.startDayKey || dayKey > record10.endDayKey) continue;
-        const person = personForLeave(record10);
+      for (const record12 of approvedLeave) {
+        if (dayKey < record12.startDayKey || dayKey > record12.endDayKey) continue;
+        const person = personForLeave(record12);
         if (!person) continue;
-        const dedupe = `${person.personKey}|${dayKey}|${record10.id}`;
+        const dedupe = `${person.personKey}|${dayKey}|${record12.id}`;
         if (seen.has(dedupe)) continue;
         seen.add(dedupe);
-        const leaveSlot2 = leaveSlotKind(record10.timeSlot);
+        const leaveSlot2 = leaveSlotKind(record12.timeSlot);
         const leaveWindow = leaveSlot2 === "AM" ? windows.am : leaveSlot2 === "PM" ? windows.pm : windows.day;
         const dayBookings = bookingsByPersonDay.get(`${person.personKey}|${dayKey}`) || [];
         const intervals = dayBookings.map((booking) => ({ booking, interval: leaveComparableInterval(booking, day) })).filter((entry) => entry.interval !== null);
         const personName = String(person.name || "").trim() || person.personKey;
         const userId = String(person.userId || "").trim() || void 0;
-        const operativeId = String(record10.operativeId || person.operativeIds?.[0] || "").trim() || void 0;
+        const operativeId = String(record12.operativeId || person.operativeIds?.[0] || "").trim() || void 0;
         const longDay = formatLongDayKey(dayKey, timeZone);
         const leaveLabel = leaveLabelFor(leaveSlot2);
         const clashes = intervals.filter(({ interval: interval2 }) => intervalsOverlap(interval2, leaveWindow)).map(({ booking, interval: interval2 }) => ({
@@ -5217,14 +5298,14 @@ var ProjectPlannerCanonical = (() => {
           const bookedText = clashes.map((clash) => `${clash.label} ${formatClockMinutes(clash.start)}\u2013${formatClockMinutes(clash.end)}`).join(", ");
           const leaveText = leaveSlot2 === "FULL_DAY" ? "full-day annual leave" : `${leaveLabel} annual leave (${rangeLabel(leaveWindow)})`;
           rows3.push({
-            id: `leave-clash-${dayKey}-${person.personKey}-${record10.id}`,
+            id: `leave-clash-${dayKey}-${person.personKey}-${record12.id}`,
             kind: "leave_clash",
             personKey: person.personKey,
             personName,
             userId,
             operativeId,
             dayKey,
-            leaveId: record10.id,
+            leaveId: record12.id,
             leaveSlot: leaveSlot2,
             leaveLabel,
             leaveWindow: { ...leaveWindow },
@@ -5257,14 +5338,14 @@ var ProjectPlannerCanonical = (() => {
         const bookedHours = hoursOf(bookedInWorking);
         const message = bookedHours > 0 ? `${personName} has ${leaveLabel} annual leave on ${longDay}. The ${workingLabel} (${rangeLabel(workingWindow)}) is only booked ${joinRanges(bookedInWorking)}; ${joinRanges(missing)} (${formatHours(missingHours)}) is not booked.` : `${personName} has ${leaveLabel} annual leave on ${longDay} but is not booked for the ${workingLabel} (${rangeLabel(workingWindow)}, ${formatHours(missingHours)}).`;
         rows3.push({
-          id: `leave-cover-${dayKey}-${person.personKey}-${record10.id}`,
+          id: `leave-cover-${dayKey}-${person.personKey}-${record12.id}`,
           kind: "leave_cover",
           personKey: person.personKey,
           personName,
           userId,
           operativeId,
           dayKey,
-          leaveId: record10.id,
+          leaveId: record12.id,
           leaveSlot: leaveSlot2,
           leaveLabel,
           leaveWindow: { ...leaveWindow },
@@ -5920,11 +6001,11 @@ var ProjectPlannerCanonical = (() => {
     const note = text(value);
     return note ? note : null;
   }
-  function leaveRecordDayKeys(record10, timeZone, nonWorkingDayKeys) {
+  function leaveRecordDayKeys(record12, timeZone, nonWorkingDayKeys) {
     const zone3 = zoneOrLondon(timeZone);
-    const start = text(record10.startDayKey);
+    const start = text(record12.startDayKey);
     if (!DAY_KEY.test(start)) return [];
-    const endRaw = text(record10.endDayKey);
+    const endRaw = text(record12.endDayKey);
     const end = DAY_KEY.test(endRaw) && endRaw >= start ? endRaw : start;
     if (end === start) return [start];
     const skip = new Set((nonWorkingDayKeys || []).map(text));
@@ -5933,12 +6014,12 @@ var ProjectPlannerCanonical = (() => {
       return iso !== 6 && iso !== 7 && !skip.has(key4);
     });
   }
-  function leaveDaysInRange(record10, range, timeZone, nonWorkingDayKeys) {
+  function leaveDaysInRange(record12, range, timeZone, nonWorkingDayKeys) {
     const from = text(range?.startDayKey);
     const to = text(range?.endDayKey);
     if (!DAY_KEY.test(from) || !DAY_KEY.test(to) || to < from) return 0;
-    const each = normalizeHolidayTimeSlot(record10?.timeSlot) === "FULL DAY" ? 1 : 0.5;
-    const days = leaveRecordDayKeys(record10, timeZone, nonWorkingDayKeys).filter((key4) => key4 >= from && key4 <= to);
+    const each = normalizeHolidayTimeSlot(record12?.timeSlot) === "FULL DAY" ? 1 : 0.5;
+    const days = leaveRecordDayKeys(record12, timeZone, nonWorkingDayKeys).filter((key4) => key4 >= from && key4 <= to);
     return Math.round(days.length * each * 100) / 100;
   }
   function holidayRequestRanges(picks, timeZone) {
@@ -6401,22 +6482,22 @@ var ProjectPlannerCanonical = (() => {
     }
     return null;
   }
-  function recordFields(record10) {
+  function recordFields(record12) {
     return {
-      name: fieldTokens(record10.name),
-      brand: fieldTokens(record10.brand),
-      code: fieldTokens(record10.productCode),
+      name: fieldTokens(record12.name),
+      brand: fieldTokens(record12.brand),
+      code: fieldTokens(record12.productCode),
       extra: [
-        ...fieldTokens(record10.category),
-        ...fieldTokens(record10.size),
-        ...fieldTokens(record10.length)
+        ...fieldTokens(record12.category),
+        ...fieldTokens(record12.size),
+        ...fieldTokens(record12.length)
       ]
     };
   }
-  function materialSearchScore(query, record10) {
+  function materialSearchScore(query, record12) {
     const tokens = tokenizeMaterialSearch(query);
     if (tokens.length === 0) return 1;
-    const fields = recordFields(record10);
+    const fields = recordFields(record12);
     const all = [...fields.name, ...fields.brand, ...fields.code, ...fields.extra];
     let score = 0;
     for (const token of tokens) {
@@ -6432,7 +6513,7 @@ var ProjectPlannerCanonical = (() => {
       if (coded) score += 18;
       if (named) score += 8;
     }
-    const name = normalizeMaterialSearchText(record10.name);
+    const name = normalizeMaterialSearchText(record12.name);
     const joined = tokens.join(" ");
     if (name.startsWith(joined)) score += 24;
     else if (name.includes(joined)) score += 10;
@@ -6440,8 +6521,8 @@ var ProjectPlannerCanonical = (() => {
     if (nameLength > 0) score += Math.max(0, 20 - Math.floor(nameLength / 8));
     return score;
   }
-  function materialRecordMatches(query, record10) {
-    return materialSearchScore(query, record10) > 0;
+  function materialRecordMatches(query, record12) {
+    return materialSearchScore(query, record12) > 0;
   }
   function rankMaterialRecords(query, records, limit) {
     const tokens = tokenizeMaterialSearch(query);
@@ -6527,22 +6608,22 @@ var ProjectPlannerCanonical = (() => {
     }
     return null;
   }
-  function recordFields2(record10) {
+  function recordFields2(record12) {
     return {
-      name: fieldTokens2(record10.name),
-      code: fieldTokens2(record10.code),
-      body: fieldTokens2(record10.awardingBody),
+      name: fieldTokens2(record12.name),
+      code: fieldTokens2(record12.code),
+      body: fieldTokens2(record12.awardingBody),
       extra: [
-        ...fieldTokens2(record10.section),
-        ...fieldTokens2(record10.subsection),
-        ...fieldTokens2(record10.notes)
+        ...fieldTokens2(record12.section),
+        ...fieldTokens2(record12.subsection),
+        ...fieldTokens2(record12.notes)
       ]
     };
   }
-  function qualificationSearchScore(query, record10) {
+  function qualificationSearchScore(query, record12) {
     const tokens = tokenizeQualificationSearch(query);
     if (tokens.length === 0) return 1;
-    const fields = recordFields2(record10);
+    const fields = recordFields2(record12);
     const all = [...fields.name, ...fields.code, ...fields.body, ...fields.extra];
     let score = 0;
     for (const token of tokens) {
@@ -6558,20 +6639,20 @@ var ProjectPlannerCanonical = (() => {
       if (coded) score += 18;
       if (named) score += 8;
     }
-    const name = normalizeQualificationSearchText(record10.name);
+    const name = normalizeQualificationSearchText(record12.name);
     const joined = tokens.join(" ");
     if (name.startsWith(joined)) score += 24;
     else if (name.includes(joined)) score += 10;
     if (name.length > 0) score += Math.max(0, 20 - Math.floor(name.length / 8));
     return score;
   }
-  function qualificationRecordMatches(query, record10) {
-    return qualificationSearchScore(query, record10) > 0;
+  function qualificationRecordMatches(query, record12) {
+    return qualificationSearchScore(query, record12) > 0;
   }
-  function qualificationMatchesSection(record10, section) {
+  function qualificationMatchesSection(record12, section) {
     const wanted = String(section || "").trim();
     if (!wanted || wanted === QUALIFICATION_FILTER_ALL) return true;
-    const value = String(record10.section || "").trim();
+    const value = String(record12.section || "").trim();
     if (wanted === QUALIFICATION_FILTER_OTHER) return value.length === 0;
     return value === wanted;
   }
@@ -6582,8 +6663,8 @@ var ProjectPlannerCanonical = (() => {
   function qualificationLibraryFilterChips(records) {
     const counts = /* @__PURE__ */ new Map();
     let other = 0;
-    for (const record10 of records) {
-      const section = String(record10.section || "").trim();
+    for (const record12 of records) {
+      const section = String(record12.section || "").trim();
       if (!section) {
         other += 1;
         continue;
@@ -7153,16 +7234,16 @@ var ProjectPlannerCanonical = (() => {
       return Number.isNaN(parsed) ? null : parsed;
     }
     if (typeof value === "object") {
-      const record10 = value;
-      if (typeof record10.toDate === "function") {
+      const record12 = value;
+      if (typeof record12.toDate === "function") {
         try {
-          const parsed = record10.toDate();
+          const parsed = record12.toDate();
           const ms = timestampMs(parsed);
           if (ms != null) return ms;
         } catch {
         }
       }
-      const seconds = typeof record10.seconds === "number" ? record10.seconds : record10._seconds;
+      const seconds = typeof record12.seconds === "number" ? record12.seconds : record12._seconds;
       if (typeof seconds === "number" && Number.isFinite(seconds)) return Math.round(seconds * 1e3);
     }
     return null;
@@ -7845,7 +7926,7 @@ var ProjectPlannerCanonical = (() => {
     const email = emailKey2(account?.email);
     if (email) ids.add(email);
     const has = (value) => typeof value === "string" && value.trim() !== "" && ids.has(value.trim().toLowerCase());
-    return (records || []).filter((record10) => has(record10?.userId) || has(record10?.operativeId));
+    return (records || []).filter((record12) => has(record12?.userId) || has(record12?.operativeId));
   }
 
   // lib/canonical/legalPack.ts
@@ -9159,8 +9240,8 @@ var ProjectPlannerCanonical = (() => {
     return typeof value === "string" ? value.trim().toLowerCase() : "";
   }
   function dayKeyText(value) {
-    const text25 = typeof value === "string" ? value.trim() : "";
-    return DAY_KEY2.test(text25) ? text25 : null;
+    const text27 = typeof value === "string" ? value.trim() : "";
+    return DAY_KEY2.test(text27) ? text27 : null;
   }
   function compareText(a, b) {
     if (a === b) return 0;
@@ -9288,8 +9369,8 @@ var ProjectPlannerCanonical = (() => {
   function personDayItems(input) {
     const managerIdByKey = /* @__PURE__ */ new Map();
     for (const id2 of input?.managerIds || []) {
-      const text25 = idText2(id2);
-      if (text25) managerIdByKey.set(text25.toLowerCase(), text25);
+      const text27 = idText2(id2);
+      if (text27) managerIdByKey.set(text27.toLowerCase(), text27);
     }
     const people = input?.people || { accounts: [], operatives: [] };
     const managerIdByEmail = /* @__PURE__ */ new Map();
@@ -9433,11 +9514,11 @@ var ProjectPlannerCanonical = (() => {
   }
   function warningResolutionKeys(records, statuses) {
     const keys = /* @__PURE__ */ new Map();
-    for (const record10 of records || []) {
-      if (!record10) continue;
-      const status = typeof record10.status === "string" ? record10.status.trim().toLowerCase() : "";
+    for (const record12 of records || []) {
+      if (!record12) continue;
+      const status = typeof record12.status === "string" ? record12.status.trim().toLowerCase() : "";
       if (!statuses.includes(status)) continue;
-      const key4 = idText2(record10.resolutionKey) || idText2(record10.id);
+      const key4 = idText2(record12.resolutionKey) || idText2(record12.id);
       if (key4 && !keys.has(normalizeDocumentId(key4))) keys.set(normalizeDocumentId(key4), key4);
     }
     return [...keys.values()].sort(compareText);
@@ -10214,8 +10295,8 @@ var ProjectPlannerCanonical = (() => {
   // lib/canonical/rulebookStamp.ts
   function rulebookStamp() {
     return {
-      version: true ? "1.29.0" : "",
-      sha256: true ? "75558d368110b8299c0746d310526597ff2fd19beea212ed73a530883a9f3390" : ""
+      version: true ? "1.30.0" : "",
+      sha256: true ? "8214efe8938b3b28ac25fb2f9888740cb8617576e08aa05db4fde25d0fa1d16e" : ""
     };
   }
 
@@ -10342,15 +10423,15 @@ var ProjectPlannerCanonical = (() => {
     }
     return out;
   }
-  function labourHolidayInput(record10) {
+  function labourHolidayInput(record12) {
     return {
-      id: record10.id,
-      userId: record10.userId,
-      operativeId: record10.operativeId,
-      startDayKey: record10.startDayKey,
-      endDayKey: record10.endDayKey,
-      timeSlot: record10.timeSlot,
-      approved: record10.approved
+      id: record12.id,
+      userId: record12.userId,
+      operativeId: record12.operativeId,
+      startDayKey: record12.startDayKey,
+      endDayKey: record12.endDayKey,
+      timeSlot: record12.timeSlot,
+      approved: record12.approved
     };
   }
 
@@ -10409,18 +10490,18 @@ var ProjectPlannerCanonical = (() => {
     const end = String(period?.endDayKey || "").trim();
     if (!start || !end || start > end) return [];
     const byDay = /* @__PURE__ */ new Map();
-    for (const record10 of leaveRecords || []) {
-      if (!record10) continue;
-      const approved = record10.approved === true || record10.approved == null && normalizeHolidayStatus(record10.status) === "approved";
+    for (const record12 of leaveRecords || []) {
+      if (!record12) continue;
+      const approved = record12.approved === true || record12.approved == null && normalizeHolidayStatus(record12.status) === "approved";
       if (!approved) continue;
-      const slot = normalizeHolidayTimeSlot(record10.timeSlot);
-      for (const dayKey of leaveRecordDayKeys(record10, timeZone, nonWorkingDayKeys)) {
+      const slot = normalizeHolidayTimeSlot(record12.timeSlot);
+      for (const dayKey of leaveRecordDayKeys(record12, timeZone, nonWorkingDayKeys)) {
         if (dayKey < start || dayKey > end) continue;
         const list = byDay.get(dayKey) || [];
         if (list.some((line2) => line2.timeSlot === slot || line2.timeSlot === "FULL DAY")) continue;
         const line = {
-          id: `leave-${String(record10.id)}-${dayKey}`,
-          leaveId: String(record10.id),
+          id: `leave-${String(record12.id)}-${dayKey}`,
+          leaveId: String(record12.id),
           dayKey,
           timeSlot: slot,
           label: timesheetLeaveLabel(slot)
@@ -11618,13 +11699,13 @@ var ProjectPlannerCanonical = (() => {
   }
   function orderedMaterialIds(records) {
     const ids = /* @__PURE__ */ new Set();
-    for (const record10 of records || []) {
-      if (!record10 || normalizeMaterialRequestType(record10.requestType) !== "Order") continue;
-      for (const id2 of record10.materialIds || []) {
+    for (const record12 of records || []) {
+      if (!record12 || normalizeMaterialRequestType(record12.requestType) !== "Order") continue;
+      for (const id2 of record12.materialIds || []) {
         const value = normalizeDocumentId(id2);
         if (value) ids.add(value);
       }
-      for (const line of record10.lines || []) {
+      for (const line of record12.lines || []) {
         const value = normalizeDocumentId(line?.materialId);
         if (value) ids.add(value);
       }
@@ -12209,8 +12290,8 @@ var ProjectPlannerCanonical = (() => {
       let id2 = "";
       if (typeof item === "string") id2 = item.trim();
       else if (item && typeof item === "object") {
-        const record10 = item;
-        id2 = text13(record10.id) || text13(record10.contactId);
+        const record12 = item;
+        id2 = text13(record12.id) || text13(record12.contactId);
       }
       const key4 = normalizeDocumentId(id2);
       if (!id2 || seen.has(key4)) continue;
@@ -13581,6 +13662,10 @@ var ProjectPlannerCanonical = (() => {
     { id: "overtimeRequests", path: "organizations/{orgId}/overtimeRequests", scope: "organization", listen: true, note: "1.29.0: PAYE overtime requests (parseOvertimeRequestDocument); the person's own, or the reports a line manager or admin decides." },
     { id: "overtimeReviews", path: "organizations/{orgId}/overtimeReviews/{userId}_{bookingId}", scope: "organization", listen: true, note: "1.29.0: approved overtime lines (parseOvertimeReviewDocument), while the Overtime screen is open." },
     { id: "overtimeReports", path: "organizations/{orgId}/overtimeReports", scope: "organization", listen: false, note: "1.29.0: saved report copies, written once and never changed (parseOvertimeReportDocument); read when Past PAYE payruns opens." },
+    { id: "priceWorkItems", path: "organizations/{orgId}/priceWorkItems", scope: "organization", listen: true, note: "1.30.0: PAYE price work (parsePriceWorkDocument); the person's own, or read-only for their line managers and admins, while the screen is open." },
+    { id: "expenseItems", path: "organizations/{orgId}/expenseItems", scope: "organization", listen: true, note: "1.30.0: PAYE expenses (parseExpenseDocument); the person's own, or read-only for their line managers and admins, while the screen is open." },
+    { id: "payeClaimReports", path: "organizations/{orgId}/payeClaimReports", scope: "organization", listen: false, note: "1.30.0: saved price work / expenses report copies, written once and never changed (parsePayeClaimReportDocument); read when Past PAYE payruns opens." },
+    { id: "personalSiteAudits", path: "organizations/{orgId}/personalSiteAudits", scope: "organization", listen: true, note: "1.30.0: personal site audits (parsePersonalSiteAuditDocument); the owner's only, while Site audits \u2192 Personal is open." },
     { id: "deletedBookings", path: "organizations/{orgId}/deletedBookings", scope: "organization", listen: false, note: "Write-only tombstones; never shown." }
   ];
   function liveCollection(id2) {
@@ -14565,10 +14650,10 @@ var ProjectPlannerCanonical = (() => {
   var WEEKEND_TIME_SLOTS = ["CUSTOM"];
   function isoWeekdayOf(day, timeZone) {
     if (typeof day === "number") return day;
-    const text25 = String(day || "").trim().toLowerCase();
-    if (text25 === "saturday") return 6;
-    if (text25 === "sunday") return 7;
-    if (/^\d{4}-\d{2}-\d{2}$/.test(text25)) return isoWeekdayOfDayKey(text25, zoneOrLondon(timeZone));
+    const text27 = String(day || "").trim().toLowerCase();
+    if (text27 === "saturday") return 6;
+    if (text27 === "sunday") return 7;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(text27)) return isoWeekdayOfDayKey(text27, zoneOrLondon(timeZone));
     return 0;
   }
   function isWeekendDayKey(dayKey, timeZone) {
@@ -15016,11 +15101,11 @@ var ProjectPlannerCanonical = (() => {
   }
   function payEditorStartingValues(person, profile, options) {
     const overlaid = options?.privatePay === true && profile ? overlayPayProfile(person, profile) : person;
-    const record10 = overlaid || {};
-    const pay = readStoredRates(record10);
+    const record12 = overlaid || {};
+    const pay = readStoredRates(record12);
     const rate = pay.payBasis === "hourly" ? pay.hourlyRate : pay.dayRate;
-    const employmentType = Object.prototype.hasOwnProperty.call(record10, "employmentType") ? record10.employmentType ?? null : null;
-    return { record: record10, pay, rate, employmentType, source: overlaid !== person ? "payProfile" : "users" };
+    const employmentType = Object.prototype.hasOwnProperty.call(record12, "employmentType") ? record12.employmentType ?? null : null;
+    return { record: record12, pay, rate, employmentType, source: overlaid !== person ? "payProfile" : "users" };
   }
 
   // lib/canonical/emailChange.ts
@@ -15785,8 +15870,8 @@ var ProjectPlannerCanonical = (() => {
   }
 
   // lib/canonical/leaveReport.ts
-  function leaveReportDayCount(record10, range, timeZone, nonWorkingDayKeys) {
-    return snapLeaveDays(leaveDaysInRange(record10, range, timeZone, nonWorkingDayKeys));
+  function leaveReportDayCount(record12, range, timeZone, nonWorkingDayKeys) {
+    return snapLeaveDays(leaveDaysInRange(record12, range, timeZone, nonWorkingDayKeys));
   }
   function leaveReportRows(input) {
     const zone3 = zoneOrLondon(input.timeZone);
@@ -15796,18 +15881,18 @@ var ProjectPlannerCanonical = (() => {
     const nonWorking = input.nonWorkingDayKeys ?? [];
     const range = { startDayKey: year.startDayKey, endDayKey: year.endDayKey };
     const rows3 = [];
-    for (const record10 of input.records || []) {
-      if (!record10) continue;
-      const mine = record10.userId != null && ids.has(normalizeDocumentId(record10.userId)) || record10.operativeId != null && ids.has(normalizeDocumentId(record10.operativeId));
+    for (const record12 of input.records || []) {
+      if (!record12) continue;
+      const mine = record12.userId != null && ids.has(normalizeDocumentId(record12.userId)) || record12.operativeId != null && ids.has(normalizeDocumentId(record12.operativeId));
       if (!mine) continue;
-      const status = normalizeHolidayStatus(record10.status);
+      const status = normalizeHolidayStatus(record12.status);
       if (!statuses.has(status)) continue;
-      const start = String(record10.startDayKey || "").trim();
-      const endRaw = String(record10.endDayKey || "").trim();
+      const start = String(record12.startDayKey || "").trim();
+      const endRaw = String(record12.endDayKey || "").trim();
       const end = endRaw && endRaw >= start ? endRaw : start;
       if (!start || end < range.startDayKey || start > range.endDayKey) continue;
-      const days = leaveReportDayCount({ startDayKey: start, endDayKey: end, timeSlot: record10.timeSlot }, range, zone3, nonWorking);
-      rows3.push({ id: String(record10.id ?? ""), startDayKey: start, endDayKey: end, timeSlot: normalizeHolidayTimeSlot(record10.timeSlot), status, days });
+      const days = leaveReportDayCount({ startDayKey: start, endDayKey: end, timeSlot: record12.timeSlot }, range, zone3, nonWorking);
+      rows3.push({ id: String(record12.id ?? ""), startDayKey: start, endDayKey: end, timeSlot: normalizeHolidayTimeSlot(record12.timeSlot), status, days });
     }
     rows3.sort((a, b) => a.startDayKey === b.startDayKey ? a.id.localeCompare(b.id) : a.startDayKey < b.startDayKey ? 1 : -1);
     return {
@@ -16291,17 +16376,17 @@ var ProjectPlannerCanonical = (() => {
   function leaveDayKind(records, dayKey, timeZone, nonWorkingDayKeys) {
     let best = "none";
     let recordId = null;
-    for (const record10 of records || []) {
-      if (!record10) continue;
-      const status = normalizeHolidayStatus(record10.status);
+    for (const record12 of records || []) {
+      if (!record12) continue;
+      const status = normalizeHolidayStatus(record12.status);
       if (status !== "approved" && status !== "pending") continue;
-      if (!leaveRecordDayKeys(record10, timeZone, nonWorkingDayKeys).includes(dayKey)) continue;
-      const slot = normalizeHolidayTimeSlot(record10.timeSlot);
+      if (!leaveRecordDayKeys(record12, timeZone, nonWorkingDayKeys).includes(dayKey)) continue;
+      const slot = normalizeHolidayTimeSlot(record12.timeSlot);
       const half = slot === "AM" || slot === "PM";
       const kind = status === "pending" ? half ? "pendingHalf" : "pendingFull" : half ? "approvedHalf" : "approvedFull";
       if (RANK[kind] > RANK[best]) {
         best = kind;
-        recordId = String(record10.id ?? "").trim() || null;
+        recordId = String(record12.id ?? "").trim() || null;
       }
     }
     return { kind: best, recordId, isLocked: best === "approvedFull" || best === "pendingFull" };
@@ -16397,7 +16482,10 @@ var ProjectPlannerCanonical = (() => {
     "variation_evidence",
     "site_audit_photo",
     "task_attachment",
-    "health_safety"
+    "health_safety",
+    // 1.30.0 (§26): PAYE price work / expense evidence, and personal site audit photos (owner only).
+    "paye_claim_evidence",
+    "personal_site_audit"
   ];
   function text23(value) {
     return typeof value === "string" ? value.trim() : "";
@@ -16427,6 +16515,8 @@ var ProjectPlannerCanonical = (() => {
     if (rest.length >= 2 && rest[0] === "siteAudits") return { ...base, kind: "site_audit_photo" };
     if (rest.length >= 2 && rest[0] === "tasks") return { ...base, kind: "task_attachment" };
     if (rest.length >= 2 && rest[0] === "healthSafety") return { ...base, kind: "health_safety" };
+    if (rest.length === 3 && rest[0] === "payeClaims" && rest[1]) return { ...base, kind: "paye_claim_evidence", ownerUserId: rest[1] };
+    if (rest.length >= 3 && rest[0] === "personalSiteAudits" && rest[1]) return { ...base, kind: "personal_site_audit", ownerUserId: rest[1] };
     return null;
   }
   var UID_PATTERN = /^[A-Za-z0-9-]+$/;
@@ -16463,7 +16553,8 @@ var ProjectPlannerCanonical = (() => {
     if (!parsed) return deny("unknown_path");
     const org = text23(input.organizationId);
     if (!org || parsed.organizationId.toLowerCase() !== org.toLowerCase()) return deny("other_organization");
-    if (isFileAdmin(input.viewerRole)) return { allowed: true, reason: "admin", undoEndsAtMs: null };
+    if (parsed.kind === "personal_site_audit" && parsed.ownerUserId !== viewer) return deny("owner_only");
+    if (parsed.kind !== "personal_site_audit" && isFileAdmin(input.viewerRole)) return { allowed: true, reason: "admin", undoEndsAtMs: null };
     if (parsed.kind === "profile_photo") {
       return parsed.ownerUserId === viewer ? { allowed: true, reason: "own_profile_photo", undoEndsAtMs: null } : deny("not_uploader");
     }
@@ -17452,6 +17543,593 @@ var ProjectPlannerCanonical = (() => {
   }
   function overtimeBookingSlot(raw) {
     return normalizeBookingTimeSlot(raw) ?? text24(raw);
+  }
+
+  // lib/canonical/payeClaims.ts
+  var PRICE_WORK_ITEMS_COLLECTION = "priceWorkItems";
+  var EXPENSE_ITEMS_COLLECTION = "expenseItems";
+  var PAYE_CLAIM_REPORTS_COLLECTION = "payeClaimReports";
+  var PAYE_CLAIM_EVIDENCE_FOLDER = "payeClaims";
+  var PAYE_CLAIM_KINDS = ["priceWork", "expense"];
+  var PRICE_WORK_ADD_LABEL = "Add Price Work";
+  var EXPENSE_ADD_LABEL = "Add Expense";
+  var PRICE_WORK_GENERATE_REPORT_LABEL = "Generate price work report";
+  var EXPENSES_GENERATE_REPORT_LABEL = "Generate expenses report";
+  var PRICE_WORK_REPORT_TITLE = "Price work report";
+  var EXPENSES_REPORT_TITLE = "Expenses report";
+  var PRICE_WORK_TOTAL_LABEL = "Total price work";
+  var EXPENSES_TOTAL_LABEL = "Total expenses";
+  var PRICE_WORK_EMPTY_MESSAGE = "No price work in this range.";
+  var EXPENSES_EMPTY_MESSAGE = "No expenses in this range.";
+  var PAYE_CLAIM_TITLE_MESSAGE = "Enter a name.";
+  var PAYE_CLAIM_AMOUNT_MESSAGE = "Enter an amount greater than zero.";
+  var PAYE_CLAIM_DATE_MESSAGE = "Choose a date.";
+  var PRICE_WORK_DATES_MESSAGE = "Choose the dates from and to (the same day is allowed).";
+  var PRICE_WORK_APPROVER_REQUIRED_MESSAGE = "Choose who approved this price work.";
+  var PRICE_WORK_APPROVER_INVALID_MESSAGE = "Choose an active admin or manager other than yourself.";
+  var EXPENSE_EVIDENCE_REQUIRED_MESSAGE = "Add at least one piece of evidence (a file, photo or personal site audit).";
+  var PAYE_CLAIM_EVIDENCE_LIMIT_MESSAGE = "Up to 20 pieces of evidence.";
+  var PAYE_CLAIM_EVIDENCE_INVALID_MESSAGE = "Evidence must be uploaded to your own claim folder.";
+  var PAYE_CLAIM_APPROVER_NOT_NOTIFIED_NOTE = "They are not notified; the report names them.";
+  var PAYE_CLAIM_EVIDENCE_NOT_DRAWN_NOTE = "This file type cannot be shown in the PDF. Open it in the app.";
+  var PAYE_CLAIM_EVIDENCE_UNREADABLE_NOTE = "This file could not be read when the report was made. Open it in the app.";
+  var PAYE_CLAIM_EVIDENCE_MAX = 20;
+  var PAYE_CLAIM_TITLE_MAX = 200;
+  var PAYE_CLAIM_DETAILS_MAX = 4e3;
+  var PAYE_CLAIM_AMOUNT_MAX = 1e6;
+  var PAYE_CLAIM_EVIDENCE_KINDS = ["file", "photo", "personalSiteAudit"];
+  var DAY_KEY9 = /^\d{4}-\d{2}-\d{2}$/;
+  function text25(value) {
+    return value == null ? "" : String(value).trim();
+  }
+  function record10(value) {
+    return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  }
+  function round23(value) {
+    return Math.round((Number(value) || 0) * 100) / 100;
+  }
+  function amountOf2(value) {
+    if (value == null || value === "") return null;
+    const n = typeof value === "string" ? Number(value.replace(/[^0-9.-]/g, "")) : Number(value);
+    return Number.isFinite(n) ? round23(n) : null;
+  }
+  function isDayKey2(value) {
+    if (typeof value !== "string" || !DAY_KEY9.test(value)) return false;
+    const [y, m, d] = value.split("-").map(Number);
+    const date = new Date(Date.UTC(y, m - 1, d));
+    return date.getUTCFullYear() === y && date.getUTCMonth() === m - 1 && date.getUTCDate() === d;
+  }
+  function storedDayKey2(value, timeZone) {
+    if (isDayKey2(text25(value))) return text25(value);
+    const ms = documentInstantMs(value);
+    return ms == null ? "" : dayKeyInZone(new Date(ms), timeZone);
+  }
+  function sameText(a, b) {
+    return idKey2(a) === idKey2(b) && idKey2(a) !== "";
+  }
+  function payeClaimEvidencePath(input) {
+    const org = text25(input.organizationId);
+    const user = text25(input.userId);
+    if (!org || !user || org.includes("/") || user.includes("/")) return null;
+    const name = storedFileObjectName({ uid: user, unixMs: input.unixMs, extension: input.extension });
+    return name ? `organizations/${org}/${PAYE_CLAIM_EVIDENCE_FOLDER}/${user}/${name}` : null;
+  }
+  function payeClaimEvidencePathBelongsTo(path, organizationId, userId) {
+    const parsed = storedFileKind(text25(path));
+    if (!parsed || parsed.kind !== "paye_claim_evidence") return false;
+    return parsed.organizationId === text25(organizationId) && parsed.ownerUserId === text25(userId);
+  }
+  function evidenceKind(value) {
+    const raw = text25(value);
+    return raw === "photo" || raw === "personalSiteAudit" ? raw : "file";
+  }
+  function parsePayeClaimEvidence(value) {
+    const list = Array.isArray(value) ? value : [];
+    const out = [];
+    for (const raw of list) {
+      const row2 = record10(raw);
+      const path = text25(row2.path);
+      if (!path) continue;
+      out.push({
+        path,
+        name: text25(row2.name) || path.split("/").pop() || "Evidence",
+        kind: evidenceKind(row2.kind),
+        contentType: text25(row2.contentType),
+        auditId: text25(row2.auditId) || null
+      });
+    }
+    return out;
+  }
+  function payeClaimEvidenceWriteFields(entry) {
+    const out = {
+      path: text25(entry.path),
+      name: text25(entry.name).slice(0, PAYE_CLAIM_TITLE_MAX) || text25(entry.path).split("/").pop() || "Evidence",
+      kind: evidenceKind(entry.kind)
+    };
+    if (text25(entry.contentType)) out.contentType = text25(entry.contentType);
+    if (text25(entry.auditId)) out.auditId = text25(entry.auditId);
+    return out;
+  }
+  function payeClaimEvidenceDrawAs(entry) {
+    const type = text25(entry.contentType).toLowerCase();
+    const name = `${text25(entry.name)} ${text25(entry.path)}`.toLowerCase();
+    if (type === "application/pdf" || /\.pdf(\s|$)/.test(name)) return "pdf";
+    if (type === "image/jpeg" || type === "image/jpg" || type === "image/pjpeg" || type === "image/png") return "image";
+    if (!type && /\.(jpe?g|png)(\s|$)/.test(name)) return "image";
+    return "listed";
+  }
+  function priceWorkApproverCandidates(person, roster) {
+    if (!person || !idText(person.id)) return [];
+    return lineManagerCandidates(person, roster);
+  }
+  function amountError(value) {
+    const amount = amountOf2(value);
+    return amount == null || amount <= 0 || amount > PAYE_CLAIM_AMOUNT_MAX ? PAYE_CLAIM_AMOUNT_MESSAGE : null;
+  }
+  function evidenceError(evidence, context) {
+    const list = evidence || [];
+    if (list.length > PAYE_CLAIM_EVIDENCE_MAX) return PAYE_CLAIM_EVIDENCE_LIMIT_MESSAGE;
+    if (context.organizationId != null && context.userId != null) {
+      for (const entry of list) {
+        if (!payeClaimEvidencePathBelongsTo(entry?.path, context.organizationId, context.userId)) return PAYE_CLAIM_EVIDENCE_INVALID_MESSAGE;
+      }
+    }
+    return null;
+  }
+  function priceWorkValidationError(draft, context) {
+    if (!text25(draft.title)) return PAYE_CLAIM_TITLE_MESSAGE;
+    const start = text25(draft.startDate);
+    const end = text25(draft.endDate) || start;
+    if (!isDayKey2(start) || !isDayKey2(end) || end < start) return PRICE_WORK_DATES_MESSAGE;
+    const approver = text25(draft.approvedByUserId);
+    if (!approver) return PRICE_WORK_APPROVER_REQUIRED_MESSAGE;
+    const candidates = priceWorkApproverCandidates(context.person, context.roster);
+    if (!candidates.some((row2) => row2.id === approver)) return PRICE_WORK_APPROVER_INVALID_MESSAGE;
+    const money = amountError(draft.amount);
+    if (money) return money;
+    return evidenceError(draft.evidence, { organizationId: context.organizationId ?? void 0, userId: context.organizationId != null ? context.person?.id : void 0 });
+  }
+  function expenseValidationError(draft, context) {
+    if (!text25(draft.title)) return PAYE_CLAIM_TITLE_MESSAGE;
+    if (!isDayKey2(text25(draft.date))) return PAYE_CLAIM_DATE_MESSAGE;
+    const money = amountError(draft.amount);
+    if (money) return money;
+    if (!draft.evidence || draft.evidence.length === 0) return EXPENSE_EVIDENCE_REQUIRED_MESSAGE;
+    return evidenceError(draft.evidence, { organizationId: context?.organizationId ?? void 0, userId: context?.userId ?? void 0 });
+  }
+  function priceWorkWriteFields(input) {
+    const userId = text25(input.userId);
+    if (!userId || idText(input.person?.id) !== userId) return null;
+    if (priceWorkValidationError(input.draft, { person: input.person, roster: input.roster, organizationId: input.organizationId })) return null;
+    const start = text25(input.draft.startDate);
+    const end = text25(input.draft.endDate) || start;
+    const approver = priceWorkApproverCandidates(input.person, input.roster).find((row2) => row2.id === text25(input.draft.approvedByUserId));
+    return {
+      userId,
+      title: text25(input.draft.title).slice(0, PAYE_CLAIM_TITLE_MAX),
+      details: text25(input.draft.details).slice(0, PAYE_CLAIM_DETAILS_MAX),
+      startDate: start,
+      endDate: end,
+      approvedByUserId: approver?.id ?? "",
+      approvedByName: approver?.name ?? "",
+      amount: amountOf2(input.draft.amount),
+      currency: normalizeCurrencyCode(input.currency) ?? "GBP",
+      evidence: (input.draft.evidence || []).map(payeClaimEvidenceWriteFields),
+      createdBy: userId
+    };
+  }
+  function expenseWriteFields(input) {
+    const userId = text25(input.userId);
+    if (!userId) return null;
+    if (expenseValidationError(input.draft, { organizationId: input.organizationId, userId })) return null;
+    return {
+      userId,
+      title: text25(input.draft.title).slice(0, PAYE_CLAIM_TITLE_MAX),
+      details: text25(input.draft.details).slice(0, PAYE_CLAIM_DETAILS_MAX),
+      jobNumber: text25(input.draft.jobNumber).slice(0, 60),
+      date: text25(input.draft.date),
+      amount: amountOf2(input.draft.amount),
+      currency: normalizeCurrencyCode(input.currency) ?? "GBP",
+      evidence: (input.draft.evidence || []).map(payeClaimEvidenceWriteFields),
+      createdBy: userId
+    };
+  }
+  function baseOf(docId, row2) {
+    return {
+      id: text25(docId),
+      userId: text25(row2.userId),
+      title: text25(row2.title),
+      details: text25(row2.details),
+      amount: amountOf2(row2.amount) ?? 0,
+      currency: normalizeCurrencyCode(row2.currency) ?? "",
+      evidence: parsePayeClaimEvidence(row2.evidence),
+      createdAtMs: documentInstantMs(row2.createdAt),
+      createdBy: text25(row2.createdBy)
+    };
+  }
+  function parsePriceWorkDocument(docId, data, options) {
+    const row2 = record10(data);
+    const zone3 = zoneOrLondon(options?.timeZone);
+    const startDate = storedDayKey2(row2.startDate, zone3);
+    const endRaw = storedDayKey2(row2.endDate, zone3) || startDate;
+    const [a, b] = startDate && endRaw && endRaw < startDate ? [endRaw, startDate] : [startDate, endRaw];
+    return {
+      ...baseOf(docId, row2),
+      kind: "priceWork",
+      startDate: a,
+      endDate: b,
+      approvedByUserId: text25(row2.approvedByUserId),
+      approvedByName: text25(row2.approvedByName)
+    };
+  }
+  function parseExpenseDocument(docId, data, options) {
+    const row2 = record10(data);
+    const zone3 = zoneOrLondon(options?.timeZone);
+    return {
+      ...baseOf(docId, row2),
+      kind: "expense",
+      jobNumber: text25(row2.jobNumber),
+      date: storedDayKey2(row2.date, zone3)
+    };
+  }
+  function payeClaimDayKey(item) {
+    return item.kind === "expense" ? item.date : item.startDate;
+  }
+  function payeClaimsInRange(items, range) {
+    if (!range || !isDayKey2(range.start) || !isDayKey2(range.end)) return [];
+    const out = (items || []).filter((item) => {
+      if (item.kind === "expense") return isDayKey2(item.date) && item.date >= range.start && item.date <= range.end;
+      const start = item.startDate;
+      const end = item.endDate || start;
+      return isDayKey2(start) && start <= range.end && end >= range.start;
+    });
+    return out.sort(
+      (a, b) => payeClaimDayKey(a).localeCompare(payeClaimDayKey(b)) || a.title.localeCompare(b.title, "en", { sensitivity: "base" }) || a.id.localeCompare(b.id)
+    );
+  }
+  function payeClaimsTotal(items) {
+    return round23((items || []).reduce((sum, item) => sum + (Number(item.amount) || 0), 0));
+  }
+  function payeClaimReportReady(items) {
+    return (items || []).length > 0;
+  }
+  function payeClaimListRow(item, currency) {
+    const code = item.currency || currency;
+    const subtitle = item.kind === "expense" ? [formatPaymentRunDay(item.date), item.jobNumber].filter(Boolean).join(" \xB7 ") : [
+      item.startDate === item.endDate || !item.endDate ? formatPaymentRunDay(item.startDate) : `${formatPaymentRunDay(item.startDate)} \u2013 ${formatPaymentRunDay(item.endDate)}`,
+      item.approvedByName ? `Approved by ${item.approvedByName}` : ""
+    ].filter(Boolean).join(" \xB7 ");
+    return { title: item.title || "Untitled", figure: formatMoney(item.amount, code), subtitle };
+  }
+  function canViewPayeClaims(viewer, subject, roster) {
+    if (!viewer || !subject || !idText(viewer.id) || !idText(subject.id)) return false;
+    if (viewer.isActive === false) return false;
+    const members = roster || [];
+    const viewerIds = new Set(personIdSet(viewer, members).map(idKey2));
+    if (viewerIds.has(idKey2(subject.id))) return true;
+    if (isAdminOutsideOperativeMode(viewer)) return true;
+    const managers = lineManagerIds(subject, members).map(idKey2);
+    if (!managers.some((id2) => viewerIds.has(id2))) return false;
+    const member = members.find((row2) => sameText(row2.id, viewer.id));
+    return member ? rosterMemberActive(member) : true;
+  }
+  function canWritePayeClaim(viewerId, item) {
+    const viewer = text25(viewerId);
+    return Boolean(viewer) && Boolean(item) && text25(item?.userId) === viewer;
+  }
+  function timesheetClaimRows(sheets, kind, range) {
+    if (!range || !isDayKey2(range.start) || !isDayKey2(range.end)) return [];
+    const out = [];
+    const seen = /* @__PURE__ */ new Set();
+    for (const sheet of sheets || []) {
+      if (kind === "expense") {
+        for (const entry of sheet.entries.expenseEntries) {
+          const day = entry.dayKey || "";
+          if (!day || day < range.start || day > range.end || seen.has(idKey2(entry.id))) continue;
+          seen.add(idKey2(entry.id));
+          out.push({
+            id: entry.id,
+            sheetId: text25(sheet.id),
+            kind,
+            title: entry.title,
+            details: entry.details,
+            jobNumber: entry.jobNumber,
+            amount: round23(entry.managerRevisedAmount ?? entry.amount),
+            startDate: day,
+            endDate: day,
+            approvedByName: "",
+            receiptName: entry.receiptName,
+            managerDecision: entry.managerDecision
+          });
+        }
+      } else {
+        for (const entry of sheet.entries.priceWorkEntries) {
+          const start = entry.startDayKey || "";
+          const end = entry.endDayKey && entry.endDayKey >= start ? entry.endDayKey : start;
+          if (!start || start > range.end || end < range.start || seen.has(idKey2(entry.id))) continue;
+          seen.add(idKey2(entry.id));
+          out.push({
+            id: entry.id,
+            sheetId: text25(sheet.id),
+            kind,
+            title: entry.title,
+            details: entry.details,
+            jobNumber: entry.jobNumber,
+            amount: round23(entry.managerRevisedAmount ?? entry.amount),
+            startDate: start,
+            endDate: end,
+            approvedByName: entry.agreedManagerName,
+            receiptName: null,
+            managerDecision: entry.managerDecision
+          });
+        }
+      }
+    }
+    return out.sort((a, b) => a.startDate.localeCompare(b.startDate) || a.title.localeCompare(b.title) || a.id.localeCompare(b.id));
+  }
+  function payeClaimReportSnapshot(input) {
+    const items = input.items.filter((item) => item.kind === input.kind).map((item) => ({
+      id: item.id,
+      title: item.title,
+      details: item.details,
+      jobNumber: item.kind === "expense" ? item.jobNumber : "",
+      startDate: item.kind === "expense" ? item.date : item.startDate,
+      endDate: item.kind === "expense" ? item.date : item.endDate || item.startDate,
+      approvedByName: item.kind === "priceWork" ? item.approvedByName : "",
+      amount: round23(item.amount),
+      evidence: item.evidence.map((entry) => ({ ...entry }))
+    }));
+    return {
+      userId: text25(input.userId),
+      userName: text25(input.userName),
+      companyName: text25(input.companyName),
+      kind: input.kind,
+      rangeStart: text25(input.rangeStart),
+      rangeEnd: text25(input.rangeEnd),
+      currency: normalizeCurrencyCode(input.currency) ?? "GBP",
+      items,
+      totals: {
+        amount: payeClaimsTotal(items),
+        itemCount: items.length,
+        evidenceCount: items.reduce((sum, item) => sum + item.evidence.length, 0)
+      },
+      generatedBy: text25(input.generatedBy)
+    };
+  }
+  function parsePayeClaimReportDocument(docId, data) {
+    const row2 = record10(data);
+    const kind = text25(row2.kind) === "priceWork" ? "priceWork" : "expense";
+    const items = (Array.isArray(row2.items) ? row2.items : []).map((raw) => {
+      const r = record10(raw);
+      const start = isDayKey2(text25(r.startDate)) ? text25(r.startDate) : "";
+      return {
+        id: text25(r.id),
+        title: text25(r.title),
+        details: text25(r.details),
+        jobNumber: text25(r.jobNumber),
+        startDate: start,
+        endDate: isDayKey2(text25(r.endDate)) ? text25(r.endDate) : start,
+        approvedByName: text25(r.approvedByName),
+        amount: amountOf2(r.amount) ?? 0,
+        evidence: parsePayeClaimEvidence(r.evidence)
+      };
+    });
+    const totals = record10(row2.totals);
+    return {
+      id: text25(docId),
+      userId: text25(row2.userId),
+      userName: text25(row2.userName),
+      companyName: text25(row2.companyName),
+      kind,
+      rangeStart: isDayKey2(text25(row2.rangeStart)) ? text25(row2.rangeStart) : "",
+      rangeEnd: isDayKey2(text25(row2.rangeEnd)) ? text25(row2.rangeEnd) : "",
+      currency: normalizeCurrencyCode(row2.currency) ?? "GBP",
+      items,
+      totals: {
+        amount: amountOf2(totals.amount) ?? payeClaimsTotal(items),
+        itemCount: Number(totals.itemCount) || items.length,
+        evidenceCount: Number(totals.evidenceCount) || items.reduce((sum, item) => sum + item.evidence.length, 0)
+      },
+      generatedBy: text25(row2.generatedBy),
+      generatedAtMs: documentInstantMs(row2.generatedAt)
+    };
+  }
+  function dateText(start, end) {
+    if (!start) return "";
+    return !end || end === start ? formatPaymentRunDay(start) : `${formatPaymentRunDay(start)} \u2013 ${formatPaymentRunDay(end)}`;
+  }
+  function payeClaimReportRows(snapshot) {
+    const priceWork = snapshot.kind === "priceWork";
+    const rows3 = snapshot.items.map((item) => ({
+      heading: [dateText(item.startDate, item.endDate), item.jobNumber, item.title].filter(Boolean).join(" \xB7 "),
+      figure: formatMoney(item.amount, snapshot.currency),
+      lines: [
+        item.details,
+        priceWork && item.approvedByName ? `Approved by ${item.approvedByName}` : "",
+        item.evidence.length > 0 ? `Evidence: ${item.evidence.length} (${item.evidence.map((entry) => entry.name).join(", ")})` : ""
+      ].filter(Boolean)
+    }));
+    return {
+      title: `${priceWork ? PRICE_WORK_REPORT_TITLE : EXPENSES_REPORT_TITLE} \xB7 ${text25(snapshot.userName)}`,
+      subtitle: `${formatPaymentRunDay(snapshot.rangeStart)} \u2013 ${formatPaymentRunDay(snapshot.rangeEnd)}`,
+      rows: rows3,
+      total: `${priceWork ? PRICE_WORK_TOTAL_LABEL : EXPENSES_TOTAL_LABEL}: ${formatMoney(snapshot.totals.amount, snapshot.currency)}`,
+      empty: priceWork ? PRICE_WORK_EMPTY_MESSAGE : EXPENSES_EMPTY_MESSAGE
+    };
+  }
+  function payeClaimEvidencePages(snapshot) {
+    const out = [];
+    for (const item of snapshot.items) {
+      item.evidence.forEach((entry, index) => {
+        out.push({
+          itemId: item.id,
+          heading: [item.title, dateText(item.startDate, item.endDate), formatMoney(item.amount, snapshot.currency)].filter(Boolean).join(" \xB7 "),
+          details: [
+            `Evidence ${index + 1} of ${item.evidence.length}: ${entry.name}${entry.kind === "personalSiteAudit" ? " (personal site audit copy)" : ""}`,
+            item.details
+          ].filter(Boolean),
+          path: entry.path,
+          name: entry.name,
+          contentType: entry.contentType,
+          drawAs: payeClaimEvidenceDrawAs(entry)
+        });
+      });
+    }
+    return out;
+  }
+  function payeClaimReportsOfKind(reports, kind) {
+    return (reports || []).filter((row2) => row2.kind === kind).sort((a, b) => (b.generatedAtMs ?? 0) - (a.generatedAtMs ?? 0) || b.rangeEnd.localeCompare(a.rangeEnd));
+  }
+
+  // lib/canonical/personalSiteAudits.ts
+  var PERSONAL_SITE_AUDITS_COLLECTION = "personalSiteAudits";
+  var PERSONAL_SITE_AUDIT_SECTION_LABEL = "Personal";
+  var PERSONAL_SITE_AUDIT_CREATE_LABEL = "Create Personal Site Audit";
+  var PERSONAL_SITE_AUDIT_PRIVATE_NOTE = "Only you can see your personal site audits.";
+  var PERSONAL_SITE_AUDIT_JOB_NAME_MESSAGE = "Enter a job name.";
+  var PERSONAL_SITE_AUDIT_ITEMS_MESSAGE = "Add at least one photo.";
+  var PERSONAL_SITE_AUDIT_ITEM_TITLE_MESSAGE = "Each photo needs a title before the audit can be saved.";
+  var PERSONAL_SITE_AUDIT_DATE_MESSAGE = "Enter a valid audit date.";
+  var PERSONAL_SITE_AUDIT_ITEMS_MAX = 100;
+  var PERSONAL_SITE_AUDIT_PRIVACY_NOTICE = "Personal site audits are private to the person who created them. A copy attached to an expense or price work item is visible to that person\u2019s line managers and admins.";
+  var DAY_KEY10 = /^\d{4}-\d{2}-\d{2}$/;
+  function text26(value) {
+    return value == null ? "" : String(value).trim();
+  }
+  function record11(value) {
+    return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  }
+  function isDayKey3(value) {
+    if (!DAY_KEY10.test(value)) return false;
+    const [y, m, d] = value.split("-").map(Number);
+    const date = new Date(Date.UTC(y, m - 1, d));
+    return date.getUTCFullYear() === y && date.getUTCMonth() === m - 1 && date.getUTCDate() === d;
+  }
+  function personalSiteAuditImagePath(input) {
+    const parts2 = [text26(input.organizationId), text26(input.ownerUserId), text26(input.auditId)];
+    if (parts2.some((part) => !part || part.includes("/"))) return null;
+    const name = storedFileObjectName({ uid: parts2[1], unixMs: input.unixMs, extension: input.extension });
+    return name ? `organizations/${parts2[0]}/${PERSONAL_SITE_AUDITS_COLLECTION}/${parts2[1]}/${parts2[2]}/${name}` : null;
+  }
+  function canViewPersonalSiteAudit(viewerUserId, audit) {
+    const viewer = text26(viewerUserId);
+    return Boolean(viewer) && text26(audit?.ownerUserId) === viewer;
+  }
+  function personalSiteAuditValidationError(draft, context) {
+    if (!text26(draft.jobName)) return PERSONAL_SITE_AUDIT_JOB_NAME_MESSAGE;
+    if (!isDayKey3(text26(draft.date))) return PERSONAL_SITE_AUDIT_DATE_MESSAGE;
+    const items = draft.items || [];
+    if (items.length === 0 || items.length > PERSONAL_SITE_AUDIT_ITEMS_MAX) return PERSONAL_SITE_AUDIT_ITEMS_MESSAGE;
+    for (const item of items) {
+      if (!text26(item.title)) return PERSONAL_SITE_AUDIT_ITEM_TITLE_MESSAGE;
+      if (context?.organizationId && context.ownerUserId) {
+        const parsed = storedFileKind(text26(item.imagePath));
+        if (!parsed || parsed.kind !== "personal_site_audit" || parsed.organizationId !== text26(context.organizationId) || parsed.ownerUserId !== text26(context.ownerUserId)) {
+          return PERSONAL_SITE_AUDIT_ITEMS_MESSAGE;
+        }
+      }
+    }
+    return null;
+  }
+  function personalSiteAuditWriteFields(input) {
+    const owner = text26(input.ownerUserId);
+    if (!owner) return null;
+    if (personalSiteAuditValidationError(input.draft, { organizationId: input.organizationId, ownerUserId: owner })) return null;
+    const items = (input.draft.items || []).map((item, index) => {
+      const out = {
+        id: text26(item.id) || `item-${index + 1}`,
+        title: text26(item.title).slice(0, 200),
+        imagePath: text26(item.imagePath)
+      };
+      for (const key4 of ["location", "comments", "assignee", "annotations"]) {
+        const value = text26(item[key4]).slice(0, 2e3);
+        if (value) out[key4] = value;
+      }
+      const taken = documentInstantMs(item.takenAtMs);
+      if (taken != null) out.takenAtMs = taken;
+      return out;
+    });
+    return {
+      ownerUserId: owner,
+      jobNumber: text26(input.draft.jobNumber).slice(0, 60),
+      jobName: text26(input.draft.jobName).slice(0, 200),
+      type: text26(input.draft.type).slice(0, 60) || "General",
+      customTitle: text26(input.draft.customTitle).slice(0, 200),
+      date: text26(input.draft.date),
+      authorName: text26(input.draft.authorName).slice(0, 200),
+      items
+    };
+  }
+  function parsePersonalSiteAuditDocument(docId, data, options) {
+    const row2 = record11(data);
+    const zone3 = zoneOrLondon(options?.timeZone);
+    const rawDate = text26(row2.date);
+    const dateMs = isDayKey3(rawDate) ? null : documentInstantMs(row2.date);
+    const items = (Array.isArray(row2.items) ? row2.items : []).map((raw, index) => {
+      const r = record11(raw);
+      return {
+        id: text26(r.id) || `item-${index + 1}`,
+        title: text26(r.title),
+        location: text26(r.location),
+        comments: text26(r.comments),
+        assignee: text26(r.assignee),
+        annotations: text26(r.annotations),
+        imagePath: text26(r.imagePath),
+        takenAtMs: documentInstantMs(r.takenAtMs ?? r.createdAt)
+      };
+    });
+    return {
+      id: text26(docId),
+      ownerUserId: text26(row2.ownerUserId),
+      jobNumber: text26(row2.jobNumber),
+      jobName: text26(row2.jobName),
+      type: text26(row2.type) || "General",
+      customTitle: text26(row2.customTitle),
+      date: isDayKey3(rawDate) ? rawDate : dateMs != null ? dayKeyInZone(new Date(dateMs), zone3) : "",
+      authorName: text26(row2.authorName),
+      items,
+      createdAtMs: documentInstantMs(row2.createdAt)
+    };
+  }
+  function personalSiteAuditTitle(audit) {
+    const job = [text26(audit.jobNumber), text26(audit.jobName)].filter(Boolean).join(" ");
+    return [text26(audit.customTitle) || `Site audit (${text26(audit.type) || "General"})`, job, audit.date ? formatPaymentRunDay(audit.date) : ""].filter(Boolean).join(" \xB7 ");
+  }
+  function personalSiteAuditPdfRows(audit, options) {
+    const zone3 = zoneOrLondon(options?.timeZone);
+    return {
+      title: text26(audit.customTitle) || `Personal site audit \xB7 ${text26(audit.type) || "General"}`,
+      lines: [
+        `Job number: ${text26(audit.jobNumber) || "\u2014"}`,
+        `Job name: ${text26(audit.jobName) || "\u2014"}`,
+        `Author: ${text26(audit.authorName) || "\u2014"}`,
+        `Date: ${audit.date ? formatPaymentRunDay(audit.date) : "\u2014"}`,
+        `Items: ${audit.items.length}`
+      ],
+      items: audit.items.map((item, index) => ({
+        heading: `${index + 1}. ${item.title}`,
+        lines: [
+          item.takenAtMs != null ? `Taken ${dayKeyInZone(new Date(item.takenAtMs), zone3)}` : "",
+          item.location ? `Location: ${item.location}` : "",
+          item.assignee ? `Assignee: ${item.assignee}` : "",
+          item.comments,
+          item.annotations
+        ].filter(Boolean),
+        imagePath: item.imagePath
+      }))
+    };
+  }
+  function personalSiteAuditEvidence(audit, path) {
+    return {
+      path: text26(path),
+      name: personalSiteAuditTitle(audit),
+      kind: "personalSiteAudit",
+      contentType: "application/pdf",
+      auditId: text26(audit.id) || null
+    };
+  }
+  function personalSiteAuditsFor(audits, viewerUserId) {
+    return (audits || []).filter((audit) => canViewPersonalSiteAudit(viewerUserId, audit)).sort((a, b) => b.date.localeCompare(a.date) || (b.createdAtMs ?? 0) - (a.createdAtMs ?? 0) || a.id.localeCompare(b.id));
   }
   return __toCommonJS(bundleEntry_exports);
 })();

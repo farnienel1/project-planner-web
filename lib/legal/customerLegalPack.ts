@@ -3,6 +3,8 @@
 import { PROCESSORS_PUBLIC_URL } from './processors'
 // Rulebook 1.27.0 §24 (owner decision 5): the retention sentence both apps carry word for word.
 import { DELETED_DATA_RETENTION_NOTICE } from '../canonical/storedFiles'
+// Rulebook 1.30.0 §26 (owner text): who sees personal site audits. Not a legal pack version change.
+import { PERSONAL_SITE_AUDIT_PRIVACY_NOTICE } from '../canonical/personalSiteAudits'
 
 export const LEGAL_ENTITY = {
   name: "ProjectPlanner Systems Ltd",
@@ -385,6 +387,7 @@ export const LEGAL_PACK_DOCUMENTS: LegalDocument[] = [
         paragraphs: [
           "We may share personal information with service providers that help us operate ProjectPlanner, such as hosting, infrastructure, authentication, email, payment, analytics, security, support and professional service providers. We may also disclose information where required by law, to protect rights or safety, or in connection with a business sale, restructuring or financing, subject to applicable law.",
           `A named list of the processors we currently use is published at ${PROCESSORS_PUBLIC_URL}.`,
+          PERSONAL_SITE_AUDIT_PRIVACY_NOTICE,
         ],
       },
       {

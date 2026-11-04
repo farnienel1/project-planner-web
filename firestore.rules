@@ -1822,6 +1822,111 @@ service cloud.firestore {
         allow update, delete: if false;
       }
 
+      // Rulebook 1.30.0 (§16, §26; lib/canonical/payeClaims.ts, personalSiteAudits.ts): PAYE price work and expenses.
+      // The person reads and writes their own; their line managers (listed on the person's users document of this
+      // organisation, never an operatives row) and admins of this organisation read them; nobody else. No approval.
+      function payeClaimDayKey(v) {
+        return v is string && v.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$');
+      }
+      function payeClaimText(data, key, minSize, maxSize) {
+        return data.get(key, '') is string && data.get(key, '').size() >= minSize && data.get(key, '').size() <= maxSize;
+      }
+      function payeClaimCommonValid(data) {
+        return data.userId == request.auth.uid &&
+          data.get('createdBy', request.auth.uid) == request.auth.uid &&
+          payeClaimText(data, 'title', 1, 200) &&
+          payeClaimText(data, 'details', 0, 4000) &&
+          payeClaimText(data, 'currency', 0, 3) &&
+          data.amount is number && data.amount > 0 && data.amount <= 1000000 &&
+          data.evidence is list && data.evidence.size() <= 20 &&
+          writeMetadataValidWhenPresent();
+      }
+      // The named approver is an active admin or manager of this organisation (their users document here, not an
+      // operative), never the person (priceWorkApproverCandidates). Free text is never an id that passes.
+      function priceWorkApproverValid(approverId) {
+        let path = /databases/(default)/documents/users/$(approverId);
+        return approverId is string && approverId.size() > 0 && !approverId.matches('.*/.*') &&
+          approverId != request.auth.uid && exists(path) &&
+          homeOrgIs(get(path).data, organizationId) &&
+          get(path).data.get('isActive', true) != false &&
+          (adminLikeUser(get(path).data) || !isOperativeProfile(get(path).data));
+      }
+      function priceWorkItemValid(data) {
+        return data.keys().hasOnly(['userId', 'title', 'details', 'startDate', 'endDate', 'approvedByUserId', 'approvedByName', 'amount', 'currency', 'evidence', 'createdBy', 'createdAt', 'updatedAt', 'updatedBy', 'updatedFrom']) &&
+          data.keys().hasAll(['userId', 'title', 'startDate', 'endDate', 'approvedByUserId', 'amount', 'evidence']) &&
+          payeClaimCommonValid(data) &&
+          payeClaimDayKey(data.startDate) && payeClaimDayKey(data.endDate) && data.endDate >= data.startDate &&
+          payeClaimText(data, 'approvedByName', 0, 200) &&
+          priceWorkApproverValid(data.approvedByUserId);
+      }
+      function expenseItemValid(data) {
+        return data.keys().hasOnly(['userId', 'title', 'details', 'jobNumber', 'date', 'amount', 'currency', 'evidence', 'createdBy', 'createdAt', 'updatedAt', 'updatedBy', 'updatedFrom']) &&
+          data.keys().hasAll(['userId', 'title', 'date', 'amount', 'evidence']) &&
+          payeClaimCommonValid(data) &&
+          payeClaimDayKey(data.date) &&
+          payeClaimText(data, 'jobNumber', 0, 60) &&
+          // Evidence is required for an expense (EXPENSE_EVIDENCE_REQUIRED_MESSAGE).
+          data.evidence.size() >= 1;
+      }
+      // The person themself, active in this organisation (an inactive or lapsed member writes nothing).
+      function payeClaimOwnerWriter(uid) {
+        return canAccessOrganization(organizationId) && callerOrgRole(organizationId) != '' && uid == request.auth.uid;
+      }
+
+      match /priceWorkItems/{itemId} {
+        allow read: if overtimeViewer(resource.data.get('userId', ''));
+        allow create: if payeClaimOwnerWriter(request.resource.data.get('userId', '')) && priceWorkItemValid(request.resource.data);
+        allow update: if payeClaimOwnerWriter(resource.data.get('userId', '')) &&
+          request.resource.data.userId == resource.data.userId &&
+          request.resource.data.get('createdBy', '') == resource.data.get('createdBy', '') &&
+          priceWorkItemValid(request.resource.data);
+        allow delete: if payeClaimOwnerWriter(resource.data.get('userId', ''));
+      }
+
+      match /expenseItems/{itemId} {
+        allow read: if overtimeViewer(resource.data.get('userId', ''));
+        allow create: if payeClaimOwnerWriter(request.resource.data.get('userId', '')) && expenseItemValid(request.resource.data);
+        allow update: if payeClaimOwnerWriter(resource.data.get('userId', '')) &&
+          request.resource.data.userId == resource.data.userId &&
+          request.resource.data.get('createdBy', '') == resource.data.get('createdBy', '') &&
+          expenseItemValid(request.resource.data);
+        allow delete: if payeClaimOwnerWriter(resource.data.get('userId', ''));
+      }
+
+      // Saved price work / expenses report copies: created once by the person, never changed or deleted by an app.
+      match /payeClaimReports/{reportId} {
+        allow read: if overtimeViewer(resource.data.get('userId', ''));
+        allow create: if payeClaimOwnerWriter(request.resource.data.get('userId', '')) &&
+          request.resource.data.keys().hasOnly(['userId', 'userName', 'companyName', 'kind', 'rangeStart', 'rangeEnd', 'currency', 'items', 'totals', 'generatedBy', 'generatedAt', 'updatedAt', 'updatedBy', 'updatedFrom']) &&
+          request.resource.data.keys().hasAll(['userId', 'kind', 'rangeStart', 'rangeEnd', 'items', 'totals', 'generatedBy']) &&
+          request.resource.data.generatedBy == request.auth.uid &&
+          request.resource.data.kind in ['priceWork', 'expense'] &&
+          request.resource.data.items is list &&
+          writeMetadataValidWhenPresent();
+        allow update, delete: if false;
+      }
+
+      // Personal site audits: the owner only — no admin, manager or line manager reads them (§26). A copy attached
+      // to a claim is a separate file in the claim folder (storage.rules).
+      match /personalSiteAudits/{auditId} {
+        allow read: if canAccessOrganization(organizationId) && resource.data.get('ownerUserId', '') == request.auth.uid;
+        allow create: if payeClaimOwnerWriter(request.resource.data.get('ownerUserId', '')) &&
+          request.resource.data.keys().hasOnly(['ownerUserId', 'jobNumber', 'jobName', 'type', 'customTitle', 'date', 'authorName', 'items', 'createdAt', 'updatedAt', 'updatedBy', 'updatedFrom']) &&
+          request.resource.data.keys().hasAll(['ownerUserId', 'jobName', 'date', 'items']) &&
+          payeClaimText(request.resource.data, 'jobName', 1, 200) &&
+          payeClaimText(request.resource.data, 'jobNumber', 0, 60) &&
+          payeClaimDayKey(request.resource.data.date) &&
+          request.resource.data.items is list && request.resource.data.items.size() >= 1 && request.resource.data.items.size() <= 100 &&
+          writeMetadataValidWhenPresent();
+        allow update: if payeClaimOwnerWriter(resource.data.get('ownerUserId', '')) &&
+          request.resource.data.ownerUserId == resource.data.ownerUserId &&
+          request.resource.data.keys().hasOnly(['ownerUserId', 'jobNumber', 'jobName', 'type', 'customTitle', 'date', 'authorName', 'items', 'createdAt', 'updatedAt', 'updatedBy', 'updatedFrom']) &&
+          payeClaimText(request.resource.data, 'jobName', 1, 200) &&
+          request.resource.data.items is list && request.resource.data.items.size() <= 100 &&
+          writeMetadataValidWhenPresent();
+        allow delete: if payeClaimOwnerWriter(resource.data.get('ownerUserId', ''));
+      }
+
       match /bookings/{bookingId} {
         allow read: if bookingReadAllowed('bookings');
         allow create: if !bookingTombstoned(bookingId) && bookingWriteAllowed('bookings', 'create');
@@ -2637,7 +2742,9 @@ service cloud.firestore {
           // also stops re-opening variation settings to non-staff (its own rule already refuses them).
           !(collection in ['payProfiles', 'operativeDayRateHistory', 'operativeProfiles', 'settings']) &&
           // 1.29.0: overtime requests, reviews and reports are the person's, their line managers' and admins' only.
-          !(collection in ['overtimeRequests', 'overtimeReviews', 'overtimeReports']);
+          !(collection in ['overtimeRequests', 'overtimeReviews', 'overtimeReports']) &&
+          // 1.30.0: price work, expenses and their reports have their own read rules; personal site audits are the owner's only.
+          !(collection in ['priceWorkItems', 'expenseItems', 'payeClaimReports', 'personalSiteAudits']);
       }
     }
 

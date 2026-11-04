@@ -16,6 +16,7 @@ import {
   planCurrencyLiteralKey,
   planOfficeAddressMap,
   planOrphanInvites,
+  planPayeClaims,
   planPayrollHistorySeed,
   planPlaceholderDocs,
   plannedPaths,
@@ -221,6 +222,7 @@ test('every registered check is report-only or plans partial updates and placeho
     'payroll-history-seed',
     'placeholder-docs',
     'orphan-invites',
+    'paye-claims',
   ])
   for (const check of CHECKS) assert.equal(typeof check.plan, 'function')
 })
@@ -307,4 +309,25 @@ test('shiftDayKey moves calendar days', () => {
   assert.equal(shiftDayKey('2026-03-01', -1), '2026-02-28')
   assert.equal(shiftDayKey('2024-03-01', -1), '2024-02-29')
   assert.equal(shiftDayKey('2026-12-31', 1), '2027-01-01')
+})
+
+test('paye-claims (1.30.0): report only — items with no owner in this organisation and expenses without evidence', () => {
+  const users = [{ id: 'sam', data: {} }]
+  const plan = planPayeClaims(rulebook, {
+    orgId: 'o',
+    users,
+    payeClaims: {
+      priceWorkItems: [{ id: 'P1', data: { userId: 'sam', title: 'x' } }, { id: 'P2', data: { userId: 'gone' } }],
+      expenseItems: [{ id: 'E1', data: { userId: 'sam', title: 'x', evidence: [{ path: 'p' }] } }, { id: 'E2', data: { userId: 'sam', title: 'y', evidence: [] } }],
+      payeClaimReports: [{ id: 'R1', data: {} }],
+      personalSiteAudits: [{ id: 'A1', data: { ownerUserId: 'sam' } }, { id: 'A2', data: { ownerUserId: 'other' } }],
+    },
+  })
+  assert.deepEqual(plan.notes.map((note) => note.path.split('/').slice(-2).join('/')), [
+    'priceWorkItems/P2',
+    'expenseItems/E2',
+    'payeClaimReports/R1',
+    'personalSiteAudits/A2',
+  ])
+  assert.equal(plan.updates.length + plan.deletes.length, 0)
 })

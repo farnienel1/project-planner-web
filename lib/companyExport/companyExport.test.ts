@@ -147,7 +147,10 @@ test('a map keyed by ids that would make too many columns becomes one JSON colum
 
 test('every plain OPERATIONAL_COLLECTION_PATHS collection is read; templated ones live in settings', () => {
   const read = organizationCollectionReads({ includeNotifications: false }).map((entry) => entry.collection)
-  for (const name of operationalCollectionNames()) assert.ok(read.includes(name), `${name} is read`)
+  // 1.30.0: personal site audits are private to their creator (admins cannot read them), so the export leaves them out.
+  for (const name of operationalCollectionNames()) if (!EXCLUDED_COLLECTIONS[name]) assert.ok(read.includes(name), `${name} is read`)
+  assert.ok(EXCLUDED_COLLECTIONS.personalSiteAudits)
+  for (const name of ['priceWorkItems', 'expenseItems', 'payeClaimReports']) assert.ok(read.includes(name), `${name} is read`)
   for (const [key, path] of Object.entries(OPERATIONAL_COLLECTION_PATHS)) {
     const plain = /^organizations\/\{orgId\}\/[A-Za-z]+$/.test(path)
     const inSettings = path.startsWith('organizations/{orgId}/settings/')
