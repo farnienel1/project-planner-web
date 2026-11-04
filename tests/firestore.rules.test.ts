@@ -4842,3 +4842,11 @@ for (const level of ['operative', 'manager'] as const) {
     await assertFails(setDoc(doc(db, 'users', authUid, 'orgMemberships', 'org-s1-other'), { role: level, status: 'active' }))
   })
 }
+
+test('1.31.1 (fourth review): an operatives manager creates a linked operatives row with email and pay', async () => {
+  await seed1311People()
+  const mgr = authDb(OPS_MGR_1311, 'ops-mgr-1311@test.com')
+  const row = { name: 'Opal One', firstName: 'Opal', lastName: 'One', email: 'op-1311@test.com', userId: OP_1311, dayRate: 150, payBasis: 'day', isActive: true, organizationId: ORG_A }
+  await assertSucceedsWithinBudget(setDoc(doc(mgr, 'organizations', ORG_A, 'operatives', 'row-r4-linked'), row))
+  await assertLogicalDeny(setDoc(doc(mgr, 'organizations', ORG_A, 'operatives', 'row-r4-admin'), { ...row, email: 'admin-1311@test.com', userId: ADMIN_1311 }))
+})

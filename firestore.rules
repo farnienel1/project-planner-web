@@ -1410,13 +1410,15 @@ service cloud.firestore {
 
       match /operatives/{operativeId} {
         allow read: if canAccessOrganization(organizationId);
-        allow create, update: if (rosterRowLinkChanged()
-            ? ((operativesManagerForOtherRow() && rosterRowLinksManageable()) ? true : rosterRowAdmin()) : true) ? (
-          (resource == null ? (isPlatformOwner() || isOrgManagerOrAdmin(organizationId)) : canAccessOrganization(organizationId)) &&
-          ((rosterRowPayKeysChanged() || rosterRowEmailChanged())
-            ? (operativesManagerForOtherRow() ? true : rosterRowAdmin()) : true) &&
-          payStaysPrivate(organizationId) &&
-          writeMetadataValidWhenPresent()) : false;
+        function operativeRowWriteAllowed() {
+          let ops = operativesManagerForOtherRow();
+          return (rosterRowLinkChanged() ? ((ops && rosterRowLinksManageable()) ? true : rosterRowAdmin()) : true) ? (
+            (resource == null ? (isPlatformOwner() || isOrgManagerOrAdmin(organizationId)) : canAccessOrganization(organizationId)) &&
+            ((rosterRowPayKeysChanged() || rosterRowEmailChanged()) ? (ops ? true : rosterRowAdmin()) : true) &&
+            payStaysPrivate(organizationId) &&
+            writeMetadataValidWhenPresent()) : false;
+        }
+        allow create, update: if operativeRowWriteAllowed();
         allow delete: if isOrganizationAdmin(organizationId) || (
           isManagerWithOperativesAccess() && userOrgIdMatchesPath(organizationId) &&
           !(request.auth.token.email is string &&
