@@ -4655,6 +4655,9 @@ test('1.31.1 F5 (c3): a sign-up on the invitee email without the invitation is r
   await assertLogicalDeny(deleteDoc(doc(db, 'users', placeholderId, 'private', 'taxIds')))
   // 3. Marking the invitation used on its own, then acting at the invited level.
   await assertLogicalDeny(updateDoc(doc(db, 'invitations', invitationId), { isUsed: true }))
+  // An upsert (no exists precondition) is judged as create and update; both refuse logically.
+  await assertLogicalDeny(setDoc(doc(db, 'invitations', invitationId), { isUsed: true }, { merge: true }))
+  await assertLogicalDeny(setDoc(doc(db, 'invitations', 'f5-evil-new-invite'), { organizationId: ORG_A, email, isUsed: false }))
   await assertLogicalDeny(updateDoc(doc(db, 'organizations', ORG_A), { name: 'pwn' }))
   await assertLogicalDeny(updateDoc(doc(db, 'users', OP_A), { dayRate: 1 }))
   await env.withSecurityRulesDisabled(async (ctx) => {

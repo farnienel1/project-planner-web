@@ -887,13 +887,18 @@ service cloud.firestore {
       }
 
       allow get: if true;
-      allow list, create, delete: if canAdministerInvitation();
+      function invitationCallerKnown() {
+        return isPlatformOwner() || (request.auth != null && (
+          exists(/databases/(default)/documents/users/$(request.auth.uid)) ||
+          (invitationOrgId() is string && callerListedRole(invitationOrgId()) == 'admin')));
+      }
+      allow list, create, delete: if invitationCallerKnown() ? canAdministerInvitation() : false;
       allow update: if (request.auth != null && request.auth.token.email is string &&
           resource.data.get('email', null) is string &&
           string(resource.data.email).lower() == request.auth.token.email.lower() &&
           request.resource.data.diff(resource.data).changedKeys().hasOnly(['isUsed', 'usedAt']))
         ? (resource.data.isUsed != true && request.resource.data.isUsed == true && invitationAcceptWrittenWith())
-        : canAdministerInvitation();
+        : (invitationCallerKnown() ? canAdministerInvitation() : false);
       function invitationAcceptWrittenWith() {
         let account = /databases/(default)/documents/users/$(request.auth.uid);
         let membership = /databases/(default)/documents/users/$(request.auth.uid)/orgMemberships/$(resource.data.get('organizationId', '_'));
@@ -1134,12 +1139,12 @@ service cloud.firestore {
         );
         allow delete: if request.auth != null && (
           isPlatformOwner() || isAdminOfCompany(organizationId) ||
-          (isManagerWithOperativesAccess() && userOrgIdMatchesPath(organizationId) &&
+          ((isManagerWithOperativesAccess() && userOrgIdMatchesPath(organizationId)) ? (
            resource.data.get('userId', '') is string && resource.data.get('userId', '') != request.auth.uid &&
            !string(resource.data.get('userId', '')).matches('(|.*/.*)') &&
            exists(/databases/(default)/documents/users/$(resource.data.userId)) &&
            isOperativeProfile(get(/databases/(default)/documents/users/$(resource.data.userId)).data) &&
-           manageableOperative(get(/databases/(default)/documents/users/$(resource.data.userId)).data)) || (
+           manageableOperative(get(/databases/(default)/documents/users/$(resource.data.userId)).data)) : false) || (
             resource.data.get('userId', '') == request.auth.uid &&
             request.auth.token.email is string &&
             request.auth.token.email_verified == true &&
