@@ -31,6 +31,14 @@ Rule 0 says each business rule is written once, in `lib/canonical`. This file ma
 - Do not silence it. Either call the rulebook function, or add the file to its allow-list with a one-line reason the reviewer can challenge.
 - When you remove a second calculator, delete its dead helpers in the same change, so they cannot be called again.
 
+## PR body
+
+- Start every PR from `.github/pull_request_template.md` (GitHub fills it in). Its sections: Summary, 3-factor (Web / iOS / Shared rule rows), Owner decisions (rows from `docs/OWNER_DECISIONS.md`), Call sites, Ways in checked, Screen map rows updated (`docs/SCREEN_MAP.md`), Deploy needed, minimumIosBuild needed, Not done / follow-ups, What I did NOT check, and the checklist below.
+- CI enforces it: `.github/workflows/pr-checklist.yml` runs `scripts/check-pr-body.mjs` on every PR open, edit and push. It fails when the 3-factor table (with Web, iOS and Shared rule rows), Owner decisions, Call sites, Deploy needed, Not done or What I did NOT check is missing or left empty. Write "none" or "n/a" rather than deleting a heading.
+- Docs-only escape: when every changed file is under `docs/` or `.github/`, or is a `.md` file, only the 3-factor table and What I did NOT check are required.
+- Every PR that touches a screen updates its row in `docs/SCREEN_MAP.md` (steps 1–2) and names the rows under **Screen map rows updated**.
+- Check a body locally: `PR_BODY="$(cat body.md)" node scripts/check-pr-body.mjs --files <comma-separated paths>`.
+
 ## PR body checklist (copy it in)
 
 ```
