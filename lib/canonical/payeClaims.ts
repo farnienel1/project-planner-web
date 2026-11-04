@@ -37,6 +37,7 @@ import { documentInstantMs } from './peopleDocuments'
 import { idKey, idText, personIdSet, rosterMemberActive } from './personIds'
 import { fileDeletePermission, storedFileKind, storedFileObjectName } from './storedFiles'
 import type { NotificationRosterMember } from './notificationRecipients'
+import { priceWorkJobNumberError, priceWorkJobNumberText, PRICE_WORK_JOB_NUMBER_MAX } from './priceWorkJobNumber'
 import type { TimesheetEntriesDocument } from './workDocumentReaders'
 
 // MARK: - Constants and copy
@@ -109,6 +110,8 @@ export type PayeClaimBase = {
 
 export type PriceWorkItem = PayeClaimBase & {
   kind: 'priceWork'
+  /** 1.30.1: free text, required on new items; '' on items stored before (shown "—", `priceWorkJobNumberText`). */
+  jobNumber: string
   startDate: string
   endDate: string
   approvedByUserId: string
@@ -157,6 +160,10 @@ function storedDayKey(value: unknown, timeZone: string): string {
   if (isDayKey(text(value))) return text(value)
   const ms = documentInstantMs(value)
   return ms == null ? '' : dayKeyInZone(new Date(ms), timeZone)
+}
+
+function jobNumberText(value: unknown): string {
+  return typeof value === 'number' && Number.isFinite(value) ? String(value) : text(value)
 }
 
 function sameText(a: unknown, b: unknown): boolean {
@@ -321,6 +328,7 @@ function storedManager(row: unknown): boolean {
 export type PriceWorkDraft = {
   title?: unknown
   details?: unknown
+  jobNumber?: unknown
   startDate?: unknown
   endDate?: unknown
   approvedByUserId?: unknown
@@ -357,7 +365,8 @@ function evidenceError(
 }
 
 /**
- * Null when the price work can be added, else the first message: a name; dates from–to (`startDate` ≤ `endDate`, the
+ * Null when the price work can be added, else the first message: a name; a job number (1.30.1,
+ * `priceWorkJobNumberError`: trimmed, 1–60 characters, `PRICE_WORK_JOB_NUMBER_REQUIRED_MESSAGE`); dates from–to (`startDate` ≤ `endDate`, the
  * same day allowed); an approver from `priceWorkApproverCandidates` (required); an amount above zero; at most
  * `PAYE_CLAIM_EVIDENCE_MAX` pieces of evidence, each in the person's own claim folder (when `organizationId` is given).
  */
@@ -370,6 +379,8 @@ export function priceWorkValidationError(
   }
 ): string | null {
   if (!text(draft.title)) return PAYE_CLAIM_TITLE_MESSAGE
+  const job = priceWorkJobNumberError(draft.jobNumber)
+  if (job) return job
   const start = text(draft.startDate)
   const end = text(draft.endDate) || start
   if (!isDayKey(start) || !isDayKey(end) || end < start) return PRICE_WORK_DATES_MESSAGE
@@ -424,6 +435,7 @@ export function priceWorkWriteFields(input: {
     userId,
     title: text(input.draft.title).slice(0, PAYE_CLAIM_TITLE_MAX),
     details: text(input.draft.details).slice(0, PAYE_CLAIM_DETAILS_MAX),
+    jobNumber: text(input.draft.jobNumber).slice(0, PRICE_WORK_JOB_NUMBER_MAX),
     startDate: start,
     endDate: end,
     approvedByUserId: approver?.id ?? '',
@@ -478,7 +490,11 @@ function baseOf(docId: string, row: Record<string, unknown>, organizationId?: st
   }
 }
 
-/** Reads `priceWorkItems/{id}`. Dates are organisation-zone day keys (a stored instant is converted); a missing end is the start. */
+/**
+ * Reads `priceWorkItems/{id}`. Dates are organisation-zone day keys (a stored instant is converted); a missing end is
+ * the start. `jobNumber` is the stored text (a number is read as text); '' for an item stored before 1.30.1, which stays
+ * valid and is never rewritten.
+ */
 export function parsePriceWorkDocument(
   docId: string,
   data: Record<string, unknown> | null | undefined,
@@ -492,6 +508,7 @@ export function parsePriceWorkDocument(
   return {
     ...baseOf(docId, row, options?.organizationId),
     kind: 'priceWork',
+    jobNumber: jobNumberText(row.jobNumber),
     startDate: a,
     endDate: b,
     approvedByUserId: text(row.approvedByUserId),
@@ -552,7 +569,11 @@ export function payeClaimReportReady(items: ReadonlyArray<unknown> | null | unde
   return (items || []).length > 0
 }
 
-/** The list row: the name and the figure (`formatMoney` in the organisation currency), and the date text under it. */
+/**
+ * The list row: the name and the figure (`formatMoney` in the organisation currency), and the date text under it — an
+ * expense's date and job number; price work's dates, its job number ("—" when an older item has none,
+ * `priceWorkJobNumberText`, 1.30.1) and approver.
+ */
 export function payeClaimListRow(item: PayeClaimItem, currency: unknown): { title: string; figure: string; subtitle: string } {
   const code = item.currency || currency
   const subtitle =
@@ -562,6 +583,7 @@ export function payeClaimListRow(item: PayeClaimItem, currency: unknown): { titl
           item.startDate === item.endDate || !item.endDate
             ? formatPaymentRunDay(item.startDate)
             : `${formatPaymentRunDay(item.startDate)} – ${formatPaymentRunDay(item.endDate)}`,
+          priceWorkJobNumberText(item.jobNumber),
           item.approvedByName ? `Approved by ${item.approvedByName}` : '',
         ]
           .filter(Boolean)
@@ -729,7 +751,7 @@ export function payeClaimReportSnapshot(input: {
       id: item.id,
       title: item.title,
       details: item.details,
-      jobNumber: item.kind === 'expense' ? item.jobNumber : '',
+      jobNumber: item.jobNumber,
       startDate: item.kind === 'expense' ? item.date : item.startDate,
       endDate: item.kind === 'expense' ? item.date : item.endDate || item.startDate,
       approvedByName: item.kind === 'priceWork' ? item.approvedByName : '',
@@ -818,7 +840,7 @@ export function payeClaimReportRows(
 } {
   const priceWork = snapshot.kind === 'priceWork'
   const rows = snapshot.items.map((item) => ({
-    heading: [dateText(item.startDate, item.endDate), item.jobNumber, item.title].filter(Boolean).join(' · '),
+    heading: [dateText(item.startDate, item.endDate), priceWork ? priceWorkJobNumberText(item.jobNumber) : item.jobNumber, item.title].filter(Boolean).join(' · '),
     figure: formatMoney(item.amount, snapshot.currency),
     lines: [
       item.details,

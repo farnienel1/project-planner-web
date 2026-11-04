@@ -37,6 +37,8 @@ import {
   personalSiteAuditTitle,
   personalSiteAuditsFor,
   priceWorkApproverCandidates,
+  priceWorkJobNumberText,
+  PRICE_WORK_JOB_NUMBER_MAX,
   priceWorkValidationError,
   timesheetClaimRows,
   type PayeClaimEvidence,
@@ -211,7 +213,7 @@ function TimesheetClaims({ kind, organizationId, subject, timeZone, range }: { k
             <b>{formatMoney(row.amount, currency)}</b>
           </div>
           <div className="muted small">
-            {[row.startDate === row.endDate ? formatPayePayrunDay(row.startDate) : `${formatPayePayrunDay(row.startDate)} – ${formatPayePayrunDay(row.endDate)}`, row.jobNumber, row.approvedByName ? `Agreed by ${row.approvedByName}` : '', `Timesheet: ${row.managerDecision}`]
+            {[row.startDate === row.endDate ? formatPayePayrunDay(row.startDate) : `${formatPayePayrunDay(row.startDate)} – ${formatPayePayrunDay(row.endDate)}`, kind === 'priceWork' ? priceWorkJobNumberText(row.jobNumber) : row.jobNumber, row.approvedByName ? `Agreed by ${row.approvedByName}` : '', `Timesheet: ${row.managerDecision}`]
               .filter(Boolean)
               .join(' · ')}
           </div>
@@ -471,7 +473,7 @@ function AddClaimSheet(props: {
   // Shape checks before upload: the rulebook validators with placeholder evidence (paths are checked again on save).
   const placeholder = evidence.map(() => ({ path: '', name: '', kind: 'file' as const }))
   const draftError = priceWork
-    ? priceWorkValidationError({ title, details, startDate: from, endDate: to, approvedByUserId: approver, amount }, { person: subject as never, roster: approverRoster as never, organizationId })
+    ? priceWorkValidationError({ title, details, jobNumber, startDate: from, endDate: to, approvedByUserId: approver, amount }, { person: subject as never, roster: approverRoster as never, organizationId })
     : expenseValidationError({ title, details, jobNumber, date: from, amount, evidence: placeholder })
 
   const addFiles = async (list: FileList | null, photo: boolean) => {
@@ -543,7 +545,7 @@ function AddClaimSheet(props: {
           person: subject as never,
           roster: approverRoster as never,
           currency,
-          draft: { title, details, startDate: from, endDate: to, approvedByUserId: approver, amount, evidence: uploaded },
+          draft: { title, details, jobNumber, startDate: from, endDate: to, approvedByUserId: approver, amount, evidence: uploaded },
         })
       } else {
         await addExpense({ organizationId, currency, draft: { title, details, jobNumber, date: from, amount, evidence: uploaded } })
@@ -584,12 +586,10 @@ function AddClaimSheet(props: {
           Description
           <textarea className="input" value={details} onChange={(e) => setDetails(e.target.value)} rows={3} maxLength={4000} />
         </label>
-        {!priceWork ? (
-          <label className="small">
-            Job number
-            <input className="input" value={jobNumber} onChange={(e) => setJobNumber(e.target.value)} maxLength={60} />
-          </label>
-        ) : null}
+        <label className="small">
+          {priceWork ? 'Job number (required)' : 'Job number'}
+          <input className="input" value={jobNumber} onChange={(e) => setJobNumber(e.target.value)} maxLength={PRICE_WORK_JOB_NUMBER_MAX} required={priceWork} />
+        </label>
         <div className="grid g2" style={{ gap: 8 }}>
           <label className="small">
             {priceWork ? 'From' : 'Date'}

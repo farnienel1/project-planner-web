@@ -25,6 +25,7 @@ import {
   timesheetEntryReviewsAfterWrite,
   timesheetOwnerWriteFields,
   timesheetPeriodWriteFields,
+  timesheetPriceWorkJobNumberError,
   timesheetStoredStartDayKey,
   type TimesheetEntryDecision,
   type TimesheetEntryReview,
@@ -737,6 +738,30 @@ export async function saveTimesheetDraft({
       weekStart: Timestamp.fromDate(weekStart),
       weekEnd: Timestamp.fromDate(end),
     }) as Record<string, unknown>
+  }
+  // Rulebook 1.30.1: the owner's new or edited price work entries need a job number
+  // (`timesheetPriceWorkJobNumberError`); entries they did not touch — older ones without one included — never block a
+  // save. Compared with the sheet as this editor loaded it, else as stored. A reviewer's save never asks.
+  if (!reviewer) {
+    let previous: unknown = base ? draftToFirestoreMap(base).priceWorkEntries : undefined
+    if (!base) {
+      for (const id of ids) {
+        try {
+          const stored = await readDoc(organizationId, id)
+          if (stored) {
+            previous = stored.priceWorkEntries
+            break
+          }
+        } catch {
+          // Unreadable: compared with nothing, so every entry counts as new.
+        }
+      }
+    }
+    const jobNumberError = timesheetPriceWorkJobNumberError(
+      Array.isArray(previous) ? previous : [],
+      draftToFirestoreMap(draft).priceWorkEntries as unknown[]
+    )
+    if (jobNumberError) throw new Error(jobNumberError)
   }
   // Who and where (`writeMetadataFields`) plus the server time, on every timesheet save.
   const metadata = { ...(writeMetadataFields(writerId, 'web') ?? {}), updatedAt: serverTimestamp() }

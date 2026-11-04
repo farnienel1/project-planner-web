@@ -38,6 +38,9 @@ import {
   exportIncludesSensitiveFields,
   seesEveryUserTimesheet,
   timesheetWriterIsReviewer,
+  priceWorkJobNumberError,
+  priceWorkJobNumberText,
+  PRICE_WORK_JOB_NUMBER_MAX,
 } from '@/lib/canonical'
 import { loadTaxIds } from '@/lib/sensitiveProfile/taxIdsService'
 import {
@@ -932,6 +935,7 @@ export function TimesheetPeriodPage({
               items={draft.priceWorkEntries.map((item) => ({
                 id: item.id,
                 title: item.title,
+                jobNumber: priceWorkJobNumberText(item.jobNumber),
                 details: item.details,
                 amount: effectivePriceWorkAmount(item, managerHasSigned),
                 original: item.amount,
@@ -947,6 +951,7 @@ export function TimesheetPeriodPage({
               items={draft.expenseEntries.map((item) => ({
                 id: item.id,
                 title: item.title,
+                jobNumber: item.jobNumber.trim(),
                 details: item.details,
                 amount: effectiveExpenseAmount(item, managerHasSigned),
                 original: item.amount,
@@ -1536,6 +1541,8 @@ function ExtraList({
   items: Array<{
     id: string
     title: string
+    /** Job number as shown (price work: "—" when an older entry has none). */
+    jobNumber?: string
     details: string
     amount: number
     original: number
@@ -1552,6 +1559,7 @@ function ExtraList({
           <li key={item.id} className={`flex justify-between gap-3 ${item.removed ? 'opacity-55' : ''}`}>
             <div>
               <p className={`font-semibold ${item.removed ? 'line-through' : ''}`}>{item.title}</p>
+              {item.jobNumber ? <p className="text-[12px] text-[var(--ink3)]">Job {item.jobNumber}</p> : null}
               <p className="text-[12px] text-[var(--ink3)]">{item.details}</p>
               {managerHasSigned && item.decision !== 'pending' ? (
                 <p className="text-[11px] font-bold uppercase" style={{ color: decisionTint(item.decision) }}>
@@ -1662,7 +1670,7 @@ function ReviewExtras({
               <div>
                 <p className={`font-semibold ${removed ? 'line-through' : ''}`}>{entry.title}</p>
                 <p className={`text-[12px] text-[var(--ink3)] ${removed ? 'line-through' : ''}`}>
-                  Agreed with: {entry.agreedManagerName} · {abbreviatedDate(entry.startDate, timeZone)} · {entry.jobNumber}
+                  Agreed with: {entry.agreedManagerName} · {abbreviatedDate(entry.startDate, timeZone)} · {priceWorkJobNumberText(entry.jobNumber)}
                 </p>
                 {canReview ? (
                   <LiveReviewExtraAmount
@@ -2015,7 +2023,9 @@ function ExtraForm({
   const [endDate, setEndDate] = useState('')
   const [receiptName, setReceiptName] = useState<string | null>(null)
   const value = parseTimesheetMoneyAmount(amount)
-  const canSave = value != null && (mode === 'priceWork' || Boolean(receiptName))
+  // Rulebook 1.30.1: a new price work entry needs a job number (`priceWorkJobNumberError`).
+  const jobNumberError = mode === 'priceWork' ? priceWorkJobNumberError(jobNumber) : null
+  const canSave = value != null && (mode === 'priceWork' ? !jobNumberError : Boolean(receiptName))
   const jobSuggestions = extraFormJobSuggestions(jobs, jobNumber)
   const managerSuggestions = extraFormManagerSuggestions(managers, agreedManagerName)
 
@@ -2076,8 +2086,17 @@ function ExtraForm({
             <textarea value={details} onChange={(e) => setDetails(e.target.value)} className="mt-1 min-h-[72px] w-full border-0 p-0 text-[14px] text-[var(--ink)] outline-none" />
           </label>
           <label className="block border-b border-[#E5E5EA] py-3 text-[11px] font-medium uppercase tracking-[0.4px] text-[var(--ink3)]">
-            Job number
-            <input value={jobNumber} onChange={(e) => setJobNumber(e.target.value)} className="mt-1 w-full border-0 p-0 text-[14px] font-medium text-[var(--ink)] outline-none" />
+            {mode === 'priceWork' ? 'Job number (required)' : 'Job number'}
+            <input
+              value={jobNumber}
+              onChange={(e) => setJobNumber(e.target.value)}
+              maxLength={mode === 'priceWork' ? PRICE_WORK_JOB_NUMBER_MAX : undefined}
+              required={mode === 'priceWork'}
+              className="mt-1 w-full border-0 p-0 text-[14px] font-medium text-[var(--ink)] outline-none"
+            />
+            {jobNumberError && (title.trim() || amount.trim()) ? (
+              <span className="mt-1 block text-[12px] normal-case tracking-normal text-red-600">{jobNumberError}</span>
+            ) : null}
           </label>
           {jobSuggestions.length > 0 ? (
             <div className="flex flex-wrap gap-2 py-2">

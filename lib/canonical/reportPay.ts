@@ -117,6 +117,12 @@ export type TimesheetInvoiceRow<L> = {
   line: L | null
   /** The stored override row (override rows) or price work / expense entry (live rows). */
   stored: Record<string, unknown> | null
+  /**
+   * 1.30.1: the row's stored job number, trimmed ('' when none): the override row's, else the live line's for labour;
+   * the entry's for price work and expenses. A price work row with none (stored before 1.30.1) is shown as "—"
+   * (`priceWorkJobNumberText`); never rewritten.
+   */
+  jobNumber: string
 }
 
 export type TimesheetInvoiceRowsInput<L extends InvoiceLineInput & { id: string; amount: number }> = {
@@ -149,6 +155,14 @@ export type TimesheetInvoiceRowsInput<L extends InvoiceLineInput & { id: string;
 
 function rowsOf(value: unknown): Record<string, unknown>[] {
   return Array.isArray(value) ? value.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === 'object') : []
+}
+
+function jobNumberOf(...values: unknown[]): string {
+  for (const value of values) {
+    const job = typeof value === 'number' && Number.isFinite(value) ? String(value) : typeof value === 'string' ? value.trim() : ''
+    if (job) return job
+  }
+  return ''
 }
 
 function amountOf(value: unknown): number {
@@ -193,14 +207,14 @@ export function timesheetInvoiceRows<L extends InvoiceLineInput & { id: string; 
       const live = liveById.get(normalizeDocumentId(id)) ?? null
       if (live && !isInvoiceLine(live)) continue
       if (!onCountedDay(live?.dayKey ?? null)) continue
-      rows.push({ kind: 'labour', id, amount, source: 'override', line: live, stored: row })
+      rows.push({ kind: 'labour', id, amount, source: 'override', line: live, stored: row, jobNumber: jobNumberOf(live && (live as unknown as Record<string, unknown>).jobNumber, row.jobNumber) })
     }
     for (const [kind, key] of [['priceWork', 'priceWork'], ['expense', 'expenses']] as const) {
       for (const row of rowsOf(snapshot[key])) {
         const amount = amountOf(row.amount)
         if (row.decision === 'declined' || amount <= INVOICE_AMOUNT_EPSILON) continue
         if (!onCountedDay(entryDay(row))) continue
-        rows.push({ kind, id: String(row.id ?? '').trim(), amount, source: 'override', line: null, stored: row })
+        rows.push({ kind, id: String(row.id ?? '').trim(), amount, source: 'override', line: null, stored: row, jobNumber: jobNumberOf(row.jobNumber) })
       }
     }
     return rows
@@ -217,7 +231,7 @@ export function timesheetInvoiceRows<L extends InvoiceLineInput & { id: string; 
       if (review?.decision === 'declined') continue
       if (review?.decision === 'edited' && review.revisedAmount != null) amount = review.revisedAmount
     }
-    rows.push({ kind: 'labour', id: line.id, amount, source: 'live', line, stored: null })
+    rows.push({ kind: 'labour', id: line.id, amount, source: 'live', line, stored: null, jobNumber: jobNumberOf((line as unknown as Record<string, unknown>).jobNumber) })
   }
   for (const [kind, key] of [['priceWork', 'priceWorkEntries'], ['expense', 'expenseEntries']] as const) {
     for (const entry of rowsOf((sheet as Record<string, unknown>)[key])) {
@@ -229,7 +243,7 @@ export function timesheetInvoiceRows<L extends InvoiceLineInput & { id: string; 
         if (decision.decision === 'declined') continue
         amount = timesheetEntryEffectiveAmount(decision.decision, decision.revisedAmount, own)
       }
-      rows.push({ kind, id: String(entry.id ?? '').trim(), amount, source: 'live', line: null, stored: entry })
+      rows.push({ kind, id: String(entry.id ?? '').trim(), amount, source: 'live', line: null, stored: entry, jobNumber: jobNumberOf(entry.jobNumber) })
     }
   }
   return rows

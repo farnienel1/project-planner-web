@@ -1610,4 +1610,5 @@ export * from './payeOvertime'
 // Rulebook 1.30.0 (§26): PAYE price work and expenses (items, evidence, approver candidates, ranges, reports, who sees
 // them) and personal site audits (owner only; the frozen copy attached as evidence).
 export * from './payeClaims'
+export * from './priceWorkJobNumber'
 export * from './personalSiteAudits'

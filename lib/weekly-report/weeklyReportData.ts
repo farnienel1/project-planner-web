@@ -23,7 +23,7 @@ import type { OrganizationDetails } from '@/lib/settings/organizationSettings'
 import { DEFAULT_PAYROLL_POLICY, includesManagerScheduleLocation, orgPayrollPolicyForDay } from '@/lib/settings/organizationSettings'
 import { ianaTimeZoneForCountry } from '@/lib/orgTime/orgTimeZone'
 import { computeManagerBookingClashWarnings } from '@/lib/warnings/managerClashWarnings'
-import { employmentTypeOnDay, isAnonymisedDeletedProfile, reportPayCell, reportPayTotal, reportPersonPayCell, subcontractorDayValue } from '@/lib/canonical'
+import { employmentTypeOnDay, isAnonymisedDeletedProfile, priceWorkJobNumberText, reportPayCell, reportPayTotal, reportPersonPayCell, subcontractorDayValue } from '@/lib/canonical'
 import { computeUnbookedLabourWarningsForDateRange } from '@/lib/warnings/unbookedLabourWarnings'
 import type { Booking, HolidayBooking, Operative, Project, User } from '@/types'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
@@ -607,7 +607,7 @@ export function buildWeeklyReportData({
     .map(({ week, line }) => ({
       person: week.personName,
       title: line.title,
-      jobNumber: line.jobNumber,
+      jobNumber: priceWorkJobNumberText(line.jobNumber),
       date: format(line.date, 'd MMM yyyy'),
       details: line.details,
       amount: line.amount,
