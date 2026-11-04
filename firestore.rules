@@ -1704,6 +1704,19 @@ service cloud.firestore {
           exists(path) && homeOrgIs(get(path).data, organizationId) &&
           request.auth.uid in lineManagerIdList(get(path).data);
       }
+      // The booked person: a users id, or an `operatives` row whose account is its stored link (`linkedUserId` /
+      // `userId` / `uid`). Known limit: a row linked only by email is not traced (an admin applies those changes).
+      function operativeRowAccountId(pid) {
+        let data = get(/databases/(default)/documents/organizations/$(organizationId)/operatives/$(pid)).data;
+        return data.get('linkedUserId', data.get('userId', data.get('uid', '')));
+      }
+      function callerLineManagesBookingPerson(pid) {
+        return pid is string && pid.size() > 0 && !pid.matches('.*/.*') && (
+          callerLineManagesUser(pid) ||
+          (exists(/databases/(default)/documents/organizations/$(organizationId)/operatives/$(pid)) &&
+            callerLineManagesUser(operativeRowAccountId(pid)))
+        );
+      }
       function overtimeMultiplierWriteValid() {
         let m = request.resource.data.get('otMultiplierOverride', null);
         return m == null || m == resource.data.get('otMultiplierOverride', null) ||
@@ -1725,7 +1738,7 @@ service cloud.firestore {
             request.resource.data.get('status', null) == 'Cancelled') &&
           overtimeMultiplierWriteValid() &&
           writeMetadataValidWhenPresent() &&
-          callerLineManagesUser(bookingPersonId(collection, resource.data)) &&
+          callerLineManagesBookingPerson(bookingPersonId(collection, resource.data)) &&
           overtimeCallerIsStaffHere();
       }
       // Overtime documents: the person, their line managers and admins of this organisation read them.

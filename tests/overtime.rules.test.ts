@@ -99,6 +99,10 @@ async function seed() {
     await booking('B2', PM, 'job2')
     await booking('B3', PM, 'job1')
     await booking('B4', OP2, 'job2')
+    // A catalogue row linked to Sam's account.
+    await setDoc(doc(d, 'organizations', ORG, 'operatives', 'row-sam'), { firstName: 'Sam', email: 'other@test.com', linkedUserId: SAM })
+    await booking('BR1', 'row-sam', 'job1')
+    await setDoc(doc(d, 'platformConfig', 'app'), { enforcedReads: true })
     await setDoc(doc(d, 'organizations', ORG, 'managerSiteBookings', 'M1'), {
       userId: PM,
       date: 1762214400000,
@@ -182,6 +186,21 @@ test('the line manager rule also covers manager site bookings', async () => {
 
 test('an admin of another company is no line manager here', async () => {
   await assertFails(updateDoc(doc(db(ADMIN_B), 'organizations', ORG, 'bookings', 'B1'), { workStartTime: '07:30' }))
+})
+
+test('the line manager reaches bookings stored under the person\'s linked operatives row', async () => {
+  await assertSucceeds(updateDoc(orgDoc(LM, 'bookings', 'BR1'), { workStartTime: '07:30' }))
+  await assertSucceeds(updateDoc(orgDoc(LM, 'bookings', 'BR1'), { status: 'Cancelled' }))
+  await assertFails(updateDoc(orgDoc(MGR2, 'bookings', 'BR1'), { workStartTime: '07:30' }))
+  await assertFails(updateDoc(orgDoc(LM, 'bookings', 'BR1'), { notes: 'x' }))
+})
+
+test('reads are unchanged: with enforced reads a line manager who does not manage the job reads the booking only as before', async () => {
+  // Known limit (1.29.0, rules expression budget): the line manager's overtime reads of a report's bookings follow the
+  // existing read rules (switch off: every member; switch on: job managers, toggles, the person).
+  await assertFails(getDoc(orgDoc(LM, 'bookings', 'B1')))
+  await assertSucceeds(getDoc(orgDoc(PM, 'bookings', 'B1')))
+  await assertSucceeds(getDoc(orgDoc(ADMIN, 'bookings', 'B1')))
 })
 
 // MARK: - overtimeRequests
