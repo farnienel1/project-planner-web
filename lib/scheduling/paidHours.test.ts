@@ -179,3 +179,25 @@ test('bookingPayrollHours reads the booking day in the organisation zone, not Lo
   assert.deepEqual(sydney, saturday)
   assert.notDeepEqual(saturday, friday)
 })
+
+test('parseMinutes reads a stored Timestamp clock in the organisation zone, not the browser zone', async () => {
+  const { parseMinutes } = await import('./paidHours.ts')
+  const { Timestamp } = await import('firebase/firestore')
+  const { setActiveOrganizationTimeZone } = await import('../orgTime/activeOrganizationZone.ts')
+  const previousTz = process.env.TZ
+  // 07:30 UTC on a BST day is 08:30 in London and 03:30 in New York.
+  const stored = Timestamp.fromDate(new Date('2026-10-14T07:30:00Z'))
+  try {
+    process.env.TZ = 'America/New_York'
+    setActiveOrganizationTimeZone('Europe/London')
+    assert.equal(new Date('2026-10-14T07:30:00Z').getHours(), 3, 'the browser zone really is New York here')
+    assert.equal(parseMinutes(stored as never), 8 * 60 + 30)
+    assert.equal(parseMinutes(stored.toDate()), 8 * 60 + 30)
+    setActiveOrganizationTimeZone('Pacific/Auckland')
+    assert.equal(parseMinutes(stored as never), 20 * 60 + 30)
+  } finally {
+    setActiveOrganizationTimeZone(null)
+    if (previousTz === undefined) delete process.env.TZ
+    else process.env.TZ = previousTz
+  }
+})

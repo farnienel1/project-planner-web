@@ -52,7 +52,6 @@ import {
   type OvertimeRequestRecord,
   type OvertimeReviewRecord,
 } from '@/lib/canonical'
-import { bookingIdsForAccount } from '@/lib/canonical'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
@@ -61,6 +60,7 @@ import { useOrganizationDocument, useOrganizationTimeZone } from '@/lib/stores/o
 import { dayKeyInZone } from '@/lib/orgTime/zoneTime'
 import { webJobAccessViewer } from '@/lib/access/readPlan'
 import { rulebookPerson, rulebookRoster } from '@/lib/staff/rulebookPeople'
+import { overtimePersonIds } from '@/lib/overtime/overtimePersonIds'
 import { timesheetsTeamHref, TIMESHEETS_HUB_PATH } from '@/lib/timesheets/timesheetRoutes'
 import {
   OvertimeApprovalRefused,
@@ -400,7 +400,7 @@ function OvertimeLines(props: {
   const userIds = useMemo(() => personIdSet(subjectPerson, roster), [subjectPerson, roster])
   // Rulebook §10 `bookingIdsForAccount`: every id the person goes by, plus every operatives row on their email (not one).
   const operativeIds = useMemo(
-    () => bookingIdsForAccount({ id: subject.id, email: subject.email, aliasIds: userIds }, props.operatives),
+    () => overtimePersonIds(subject, userIds, props.operatives),
     [subject.id, subject.email, userIds, props.operatives]
   )
   const [bookings, setBookings] = useState<OvertimeBookingInput[]>([])

@@ -39,18 +39,35 @@ test('each smell is caught outside lib/canonical; canonical, tests and comments 
   assert.equal(hits.filter((hit) => hit.line === 8).length, 0)
 })
 
-test('allow-listed hits pass, unlisted hits fail, stale entries fail', () => {
+test('allow-listed hits pass up to their count; a new hit, an unlisted hit or a stale entry fails', () => {
   const hits = [
     { path: 'a.ts', line: 1, pattern: 'getDay', text: '' },
+    { path: 'a.ts', line: 9, pattern: 'getDay', text: '' },
     { path: 'b.ts', line: 1, pattern: 'getDay', text: '' },
+    { path: 'c.ts', line: 1, pattern: 'getDay', text: '' },
   ]
   const rows = [
-    { path: 'a.ts', pattern: 'getDay', reason: 'display only, reviewed' },
-    { path: 'gone.ts', pattern: 'getDay', reason: 'no longer there at all' },
+    { path: 'a.ts', pattern: 'getDay', count: 2, reason: 'display only, reviewed' },
+    { path: 'c.ts', pattern: 'getDay', count: 2, reason: 'one hit was removed since' },
+    { path: 'gone.ts', pattern: 'getDay', count: 1, reason: 'no longer there at all' },
   ]
-  const { violations, stale } = evaluate(hits, rows)
-  assert.deepEqual(violations.map((v) => v.path), ['b.ts'])
-  assert.deepEqual(stale.map((s) => s.path), ['gone.ts'])
+  const first = evaluate(hits, rows)
+  assert.deepEqual(first.violations.map((v) => v.path), ['b.ts'])
+  assert.deepEqual(first.stale.map((s) => s.path).sort(), ['c.ts', 'gone.ts'])
+  // A third getDay in an allow-listed file fails even though the file is listed.
+  const more = evaluate([...hits, { path: 'a.ts', line: 20, pattern: 'getDay', text: '' }], rows)
+  assert.deepEqual(more.overCount.map((o) => [o.path, o.actual, o.count]), [['a.ts', 3, 2]])
+  assert.ok(more.violations.some((v) => v.path === 'a.ts'))
+})
+
+test('single-id-person-match catches operativeId comparisons in either direction, not normalizeDocumentId calls', () => {
+  const pattern = PATTERNS.find((p) => p.id === 'single-id-person-match').regex
+  assert.ok(pattern.test('bookings.filter((existing) => existing.operativeId === operativeId)'))
+  assert.ok(pattern.test('if (booking.operativeId !== subject.operativeId) continue'))
+  assert.ok(pattern.test('const mine = focusId === b.operativeId'))
+  assert.ok(pattern.test('operatives.find((o) => o.id === b.operativeId)'))
+  assert.equal(pattern.test('normalizeDocumentId(existing.operativeId) === normalizeDocumentId(operativeId)'), false)
+  assert.equal(pattern.test('const operativeId = booking.operativeId'), false)
 })
 
 test('the committed allow-list is well formed and the repo passes', () => {

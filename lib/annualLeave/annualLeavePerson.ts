@@ -143,8 +143,13 @@ export function bookingMatchesPerson(
   booking: { userId?: string; operativeId?: string },
   person: AnnualLeavePerson
 ): boolean {
-  if (person.userId && (booking.userId === person.userId || booking.operativeId === person.userId)) return true
-  if (person.operativeId && (booking.operativeId === person.operativeId || booking.userId === person.operativeId)) return true
+  // Ids compare without case (rulebook §1 `normalizeDocumentId`).
+  const userKey = normalizeDocumentId(person.userId)
+  const operativeKey = normalizeDocumentId(person.operativeId)
+  const bookingUser = normalizeDocumentId(booking.userId)
+  const bookingOperative = normalizeDocumentId(booking.operativeId)
+  if (userKey && (bookingUser === userKey || bookingOperative === userKey)) return true
+  if (operativeKey && (bookingOperative === operativeKey || bookingUser === operativeKey)) return true
   return false
 }
 

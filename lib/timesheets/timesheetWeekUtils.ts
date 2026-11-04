@@ -7,6 +7,7 @@ import { bookingPayrollHours } from '@/lib/scheduling/paidHours'
 import { dayKey, startOfLondonWeek } from '@/lib/ios-parity/londonTime'
 import { exportedTimesheetSubjectIds, userTimesheetSubjectIds } from '@/lib/permissions'
 import { orgDayHours, payForHours, readStoredRates } from '@/lib/timesheets/payBasis'
+import { normalizeDocumentId } from '@/lib/canonical'
 
 export type TimesheetSubjectKind = 'operative' | 'manager'
 
@@ -251,7 +252,7 @@ export function collectSubjectDayEntries({
 
   if (subject.operativeId) {
     for (const booking of bookings) {
-      if (booking.operativeId !== subject.operativeId) continue
+      if (normalizeDocumentId(booking.operativeId) !== normalizeDocumentId(subject.operativeId)) continue
       const date = new Date(booking.date)
       if (!isDateInPeriod(date, weekRange)) continue
       entries.push({

@@ -148,7 +148,7 @@ export function detectOperativeClashes({
   for (const operativeId of operativeIds) {
     const operative = operatives.find((o) => normalizeDocumentId(o.id) === normalizeDocumentId(operativeId))
     const operativeName = operative ? `${operative.firstName} ${operative.lastName}`.trim() : 'Operative'
-    const own = bookings.filter((existing) => existing.operativeId === operativeId)
+    const own = bookings.filter((existing) => normalizeDocumentId(existing.operativeId) === normalizeDocumentId(operativeId))
     const byId = new Map(own.map((existing) => [existing.id, existing]))
 
     for (const slot of slots) {
@@ -210,7 +210,7 @@ export function isExactDuplicateBooking(
   return bookings.some(
     (booking) =>
       booking.projectId === projectId &&
-      booking.operativeId === operativeId &&
+      normalizeDocumentId(booking.operativeId) === normalizeDocumentId(operativeId) &&
       isSameLondonDay(new Date(booking.date), slot.date) &&
       String(booking.timeSlot) === firestoreSlot.timeSlot &&
       (booking.workStartTime || '') === (firestoreSlot.workStartTime || '') &&

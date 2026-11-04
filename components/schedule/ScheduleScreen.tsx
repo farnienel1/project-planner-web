@@ -40,6 +40,7 @@ import { dayKey } from '@/lib/ios-parity/londonTime'
 import { bookingJobLabel } from '@/lib/canonical'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useBookingHistoryFrom } from '@/lib/stores/useBookingHistory'
+import { normalizeDocumentId } from '@/lib/canonical'
 
 /** A role word is not a person. Prefer the looked-up name, then the signed-in name. */
 function personLabel(primary?: string, fallback?: string): string {
@@ -534,7 +535,7 @@ export function ScheduleScreen({
   const scopedBookings = useMemo(() => {
     if (variant === 'personal') return bookings
     if (!focusOperativeId) return bookings
-    return bookings.filter((b) => b.operativeId === focusOperativeId)
+    return bookings.filter((b) => normalizeDocumentId(b.operativeId) === normalizeDocumentId(focusOperativeId))
   }, [bookings, focusOperativeId, variant])
 
   const filteredBookings = useMemo(() => {

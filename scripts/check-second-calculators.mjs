@@ -5,9 +5,11 @@
  * Scans components/, app/ and lib/ (not lib/canonical, not tests) for code that re-derives a rule the rulebook owns:
  * own weekend / weekday cut-offs, browser or London-only business dates, and person matching by a single id.
  * Each hit must either be replaced by the rulebook function (`@/lib/canonical`) or be listed in
- * scripts/second-calculator-allowlist.json as { path, pattern, reason } with a reason a reviewer can challenge.
+ * scripts/second-calculator-allowlist.json as { path, pattern, count, reason } with a reason a reviewer can challenge.
+ * `count` is the number of hits of that pattern the file may have: a new hit in an allow-listed file fails.
  *
- * The check also fails on a stale allow-list entry (the file no longer has that pattern), so the list only shrinks.
+ * The check also fails on a stale entry (fewer hits than `count`, or none), so the list only shrinks: lower the
+ * count (or delete the entry) in the same change that removes a hit.
  *
  *   node scripts/check-second-calculators.mjs          # check
  *   node scripts/check-second-calculators.mjs --list   # print every hit, allowed or not
@@ -104,7 +106,9 @@ export const PATTERNS = [
   {
     id: 'single-id-person-match',
     category: 2,
-    regex: /\.id\s*===\s*[\w.?]*[oO]perativeId\b|[oO]perativeId\s*===\s*[\w.?]*\.id\b/,
+    // `x.id === y.operativeId`, `operativeId === x.id`, and any `x.operativeId ===` / `=== x.operativeId` comparison.
+    regex:
+      /\.id\s*[!=]==\s*[\w.?]*[oO]perativeId\b|[oO]perativeId\s*[!=]==\s*[\w.?]*\.id\b|\.operativeId\s*[!=]==\s*[\w.?'"]|[\w)\]?]\s*[!=]==\s*[\w?]+(?:\.[\w?]+)*\.operativeId\b/,
     fix: 'personIdSet / bookingIdsForAccount (ids compare without case, normalizeDocumentId)',
   },
 ]
@@ -163,6 +167,7 @@ export function loadAllowlist(path = ALLOWLIST) {
   const problems = []
   rows.forEach((row, i) => {
     if (!row || typeof row.path !== 'string' || typeof row.pattern !== 'string') problems.push(`entry ${i}: needs path and pattern`)
+    if (!row || !Number.isInteger(row.count) || row.count < 1) problems.push(`entry ${i} (${row?.path}): needs count, a whole number of allowed hits`)
     else if (!known.has(row.pattern)) problems.push(`entry ${i} (${row.path}): unknown pattern "${row.pattern}"`)
     if (!row || typeof row.reason !== 'string' || row.reason.trim().length < 10) {
       problems.push(`entry ${i} (${row?.path}): needs a reason a reviewer can challenge`)
@@ -172,11 +177,27 @@ export function loadAllowlist(path = ALLOWLIST) {
 }
 
 export function evaluate(hits, rows) {
-  const allowed = new Set(rows.map((row) => `${row.path}::${row.pattern}`))
-  const violations = hits.filter((hit) => !allowed.has(`${hit.path}::${hit.pattern}`))
-  const used = new Set(hits.map((hit) => `${hit.path}::${hit.pattern}`))
-  const stale = rows.filter((row) => !used.has(`${row.path}::${row.pattern}`))
-  return { violations, stale }
+  const counts = new Map()
+  for (const hit of hits) {
+    const key = `${hit.path}::${hit.pattern}`
+    counts.set(key, (counts.get(key) || 0) + 1)
+  }
+  const allowed = new Map(rows.map((row) => [`${row.path}::${row.pattern}`, row]))
+  const violations = []
+  const overCount = []
+  for (const [key, n] of counts) {
+    const row = allowed.get(key)
+    const fileHits = hits.filter((hit) => `${hit.path}::${hit.pattern}` === key)
+    if (!row) violations.push(...fileHits)
+    else if (n > (row.count ?? 0)) {
+      violations.push(...fileHits)
+      overCount.push({ ...row, actual: n })
+    }
+  }
+  const stale = rows
+    .map((row) => ({ ...row, actual: counts.get(`${row.path}::${row.pattern}`) || 0 }))
+    .filter((row) => row.actual < row.count)
+  return { violations, stale, overCount }
 }
 
 function main() {
@@ -187,7 +208,7 @@ function main() {
     return
   }
   const { rows, problems } = loadAllowlist()
-  const { violations, stale } = evaluate(hits, rows)
+  const { violations, stale, overCount } = evaluate(hits, rows)
   let failed = false
   if (problems.length) {
     failed = true
@@ -197,6 +218,7 @@ function main() {
   if (violations.length) {
     failed = true
     console.error('Second calculators outside lib/canonical (call the rulebook function, or allow-list with a reason):')
+    for (const o of overCount) console.error(`  ${o.path} [${o.pattern}]: ${o.actual} hits, allow-list permits ${o.count}`)
     for (const v of violations) {
       const pattern = PATTERNS.find((p) => p.id === v.pattern)
       console.error(`  ${v.path}:${v.line}  [${v.pattern}]  ${v.text}`)
@@ -205,8 +227,8 @@ function main() {
   }
   if (stale.length) {
     failed = true
-    console.error('Stale allow-list entries (the pattern is gone from the file — delete the entry):')
-    for (const s of stale) console.error(`  ${s.path}  [${s.pattern}]`)
+    console.error('Stale allow-list entries (fewer hits than allowed — lower the count or delete the entry):')
+    for (const s of stale) console.error(`  ${s.path}  [${s.pattern}]: ${s.actual} hit(s), count ${s.count}`)
   }
   if (failed) process.exit(1)
   console.log(`check-second-calculators: ${hits.length} hit(s), all allow-listed with a reason (${rows.length} entries).`)
