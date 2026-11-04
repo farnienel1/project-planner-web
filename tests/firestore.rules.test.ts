@@ -4438,3 +4438,37 @@ test('1.31.1 B1: only the Super Admin creates a Super Admin (top level or permis
   await assertSucceedsWithinBudget(setDoc(doc(authDb(ADMIN_A, 'admin-a@test.com'), 'users', 'alt-1311d'), { ...base, email: 'alt-1311d@test.com', isSuperAdmin: true }))
 })
 
+const ADMINOP_1311 = 'adminop-1311'
+const MGROP_1311 = 'mgrop-1311'
+const SUPEROP_1311 = 'superop-1311'
+
+async function seed1311StaffInOperativeMode() {
+  await seed1311People()
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    await setDoc(doc(db, 'users', ADMINOP_1311), { email: 'adminop-1311@test.com', organizationId: ORG_A, role: 'admin', adminAccess: true, operativeMode: true })
+    await setDoc(doc(db, 'users', MGROP_1311), { email: 'mgrop-1311@test.com', organizationId: ORG_A, role: 'manager', manager: true, operativeMode: true })
+    await setDoc(doc(db, 'users', SUPEROP_1311), { email: 'superop-1311@test.com', organizationId: ORG_A, isSuperAdmin: true, adminAccess: true, operativeMode: true })
+    await setDoc(doc(db, 'users', ADMINOP_1311, 'orgMemberships', ORG_A), { organizationId: ORG_A, role: 'admin', status: 'active' })
+  })
+}
+
+test('1.31.1 B2: an operatives manager never deletes or pays an admin, Super Admin or manager in operative mode', async () => {
+  await seed1311StaffInOperativeMode()
+  const mgr = authDb(OPS_MGR_1311, 'ops-mgr-1311@test.com')
+  const history = (id: string, userId: string) => setDoc(doc(mgr, 'organizations', ORG_A, 'operativeDayRateHistory', id), {
+    userId, operativeId: '', dayRate: 999, payBasis: 'day', effectiveAt: Timestamp.now(), createdAt: Timestamp.now(),
+  })
+  for (const target of [ADMINOP_1311, MGROP_1311, SUPEROP_1311]) {
+    await assertLogicalDeny(deleteDoc(doc(mgr, 'users', target)))
+    await assertLogicalDeny(history(`h-${target}`, target))
+    await assertLogicalDeny(setDoc(doc(mgr, 'organizations', ORG_A, 'payProfiles', target), { userId: target, dayRate: 1, payBasis: 'day' }))
+    await assertLogicalDeny(setDoc(doc(mgr, 'organizations', ORG_A, 'operativeProfiles', target), { userId: target, dayRate: 1 }))
+    await assertLogicalDeny(updateDoc(doc(mgr, 'users', target), { mobileNumber: '1' }))
+  }
+  await assertLogicalDeny(deleteDoc(doc(mgr, 'users', ADMINOP_1311, 'orgMemberships', ORG_A)))
+  // A real operative is still theirs to manage.
+  await assertSucceedsWithinBudget(history('h-op-1311', OP_1311))
+  await assertSucceedsWithinBudget(deleteDoc(doc(mgr, 'users', OP2_1311)))
+})
+

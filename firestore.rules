@@ -496,22 +496,19 @@ service cloud.firestore {
   }
 
   function managerMayManageOperative(targetUserId, targetData) {
-    return request.auth != null &&
-           request.auth.uid != targetUserId &&
-           exists(/databases/(default)/documents/users/$(request.auth.uid)) &&
-           ('organizationId' in targetData) &&
-           managerOfSameOrg(get(/databases/(default)/documents/users/$(request.auth.uid)).data, targetData.organizationId) &&
-           (
-             ('operativeMode' in targetData && truthyBool(targetData.operativeMode)) ||
-             ('permissions' in targetData && targetData.permissions is map && 'operativeMode' in targetData.permissions && truthyBool(targetData.permissions.operativeMode)) ||
-             ('role' in targetData && targetData.role == 'operative')
-           );
+    let home = callerHomeData();
+    return (request.auth.uid != targetUserId && operativesManagerFlags(home)) ? (
+      'organizationId' in home && 'organizationId' in targetData &&
+      orgIdsMatch(home.organizationId, targetData.organizationId) &&
+      manageableOperative(targetData)
+    ) : false;
   }
+
 
   function canManagerUpdateOperativeProfile(me) {
     return ('organizationId' in resource.data && 'organizationId' in me &&
             orgIdsMatch(me.organizationId, resource.data.organizationId) &&
-            operativeTarget(resource.data)) ? (
+            manageableOperative(resource.data)) ? (
       request.resource.data.diff(resource.data).affectedKeys().hasAny([
         'email', 'organizationId', 'formerUserIds', 'sameEmailUserIds'
       ]) ? false : (
@@ -529,6 +526,12 @@ service cloud.firestore {
         writeMetadataValidWhenPresent()
       ) : false)
     ) : false;
+  }
+  function manageableOperative(t) {
+    let p = t.get('permissions', {}) is map ? t.get('permissions', {}) : {};
+    let v = [t.get('isSuperAdmin', false), t.get('adminAccess', false), t.get('manager', false),
+      p.get('isSuperAdmin', false), p.get('adminAccess', false), p.get('manager', false)];
+    return operativeTarget(t) && !(t.get('role', '') in ['admin', 'manager']) && !(true in v) && !(1 in v);
   }
   function operativeTarget(t) {
     return ('operativeMode' in t && truthyBool(t.operativeMode)) ||
@@ -1073,7 +1076,7 @@ service cloud.firestore {
            !string(resource.data.get('userId', '')).matches('(|.*/.*)') &&
            exists(/databases/(default)/documents/users/$(resource.data.userId)) &&
            isOperativeProfile(get(/databases/(default)/documents/users/$(resource.data.userId)).data) &&
-           !adminLikeUser(get(/databases/(default)/documents/users/$(resource.data.userId)).data)) || (
+           manageableOperative(get(/databases/(default)/documents/users/$(resource.data.userId)).data)) || (
             resource.data.get('userId', '') == request.auth.uid &&
             request.auth.token.email is string &&
             request.auth.token.email_verified == true &&
