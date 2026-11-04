@@ -30,3 +30,40 @@ test('1.26.0 overlayRosterPay: pay profile first (own id, else a former invite i
   assert.deepEqual(overlayRosterPay('org-a', 'u3', { dayRate: 150 }), { dayRate: 150 })
   assert.deepEqual(overlayRosterPay('org-b', 'u1', { dayRate: 200 }), { dayRate: 200 })
 })
+
+test('1.26.0 people profile: privatePay off — a stale pay profile is ignored for the summary and the edit form starting values', async () => {
+  const { personPayRecord, readsPersonPayProfile } = await import('./payProfileOverlay.ts')
+  const { parseOrgUser } = await import('../firebase/parseUser.ts')
+  const usersDoc = {
+    organizationId: 'org-a',
+    firstName: 'A',
+    surname: 'B',
+    email: 'a@example.com',
+    payBasis: 'day',
+    dayRate: 200,
+    employmentType: 'self_employed',
+  }
+  const stale = { subjectId: 'u1', fields: { payBasis: 'day', dayRate: 150, employmentType: 'paye' } }
+
+  // Off (on for another organisation only): no profile read, and the profile is never laid over.
+  setSecuritySwitchConfigForTests({ privatePayOrganizationIds: ['org-other'] })
+  assert.equal(readsPersonPayProfile('org-a'), false)
+  const summary = personPayRecord('org-a', usersDoc, stale)
+  assert.deepEqual(summary, usersDoc)
+  // The edit form starts from the users document (`getUser` → `parseOrgUser`); it matches what the summary shows.
+  const editor = parseOrgUser('u1', usersDoc)
+  const shown = parseOrgUser('u1', summary)
+  assert.equal(editor?.dayRate, 200)
+  assert.equal(editor?.employmentType, 'self_employed')
+  assert.equal(shown?.dayRate, editor?.dayRate)
+  assert.equal(shown?.employmentType, editor?.employmentType)
+  assert.equal(shown?.payBasis, editor?.payBasis)
+
+  // On for this organisation: the profile is read and wins.
+  setSecuritySwitchConfigForTests({ privatePayOrganizationIds: ['org-a'] })
+  assert.equal(readsPersonPayProfile('org-a'), true)
+  assert.deepEqual(personPayRecord('org-a', usersDoc, stale), { ...usersDoc, dayRate: 150, employmentType: 'paye' })
+  assert.deepEqual(personPayRecord('org-a', usersDoc, null), usersDoc)
+  assert.equal(readsPersonPayProfile(''), false)
+  setSecuritySwitchConfigForTests(null)
+})

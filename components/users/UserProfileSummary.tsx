@@ -13,8 +13,10 @@ import { displayTradeType } from '@/lib/staff/staffTradeTypes'
 import { canShowAdminEditProfile, roleLabel } from '@/lib/staff/userEditPermissions'
 import { rosterStatusLabel } from '@/lib/staff/userRosterUtils'
 import { UserAvatar } from '@/components/users/UserAvatar'
-import { canViewPersonPay, formatMoney, overlayPayProfile } from '@/lib/canonical'
+import { canViewPersonPay, formatMoney } from '@/lib/canonical'
 import { loadPayProfile } from '@/lib/pay/payProfileService'
+import { personPayRecord, readsPersonPayProfile } from '@/lib/pay/payProfileOverlay'
+import { onSecuritySwitchChange } from '@/lib/access/securitySwitches'
 import { isPlatformOwnerEmail } from '@/lib/platform/owner'
 import type { PayProfileDocument } from '@/lib/canonical'
 import { useOrganizationCurrency } from '@/lib/stores/organizationDocumentStore'
@@ -42,6 +44,15 @@ export function UserProfileSummary({
   const [loading, setLoading] = useState(true)
   const [target, setTarget] = useState<Awaited<ReturnType<typeof getUser>>>(null)
   const [payProfile, setPayProfile] = useState<PayProfileDocument | null>(null)
+  // Re-read when `privatePay` changes for the open organisation (the gate below reads it).
+  const [switchTick, setSwitchTick] = useState(0)
+  useEffect(
+    () =>
+      onSecuritySwitchChange((name) => {
+        if (name === 'privatePay') setSwitchTick((tick) => tick + 1)
+      }),
+    []
+  )
 
   useEffect(() => {
     if (!organization?.id) return
@@ -53,8 +64,10 @@ export function UserProfileSummary({
   }, [organization?.id, userId, getUser, loadUsers, loadOperatives])
 
   // Rulebook 1.13.0 §8 (Q1, `canViewPersonPay`): pay, pay basis and employment type only for the person, their
-  // active line managers, admins and operatives managers (for operatives). Pay comes from the private pay profile
-  // when it exists (`overlayPayProfile`), else the users document (before the backfill).
+  // active line managers, admins and operatives managers (for operatives). Rulebook 1.26.0 §8: pay comes from the
+  // private pay profile (`overlayPayProfile`) only while `privatePay` is on for this organisation; off, older iOS builds
+  // still write pay only to users / operatives / managers, so the profile can be stale and the users document is shown,
+  // exactly as the roster (`overlayRosterPay`).
   const payVisible = useMemo(
     () =>
       Boolean(
@@ -69,7 +82,7 @@ export function UserProfileSummary({
     [currentUser, target, users]
   )
   useEffect(() => {
-    if (!organization?.id || !target?.id || !payVisible) {
+    if (!organization?.id || !target?.id || !payVisible || !readsPersonPayProfile(organization.id)) {
       setPayProfile(null)
       return
     }
@@ -80,10 +93,12 @@ export function UserProfileSummary({
     return () => {
       cancelled = true
     }
-  }, [organization?.id, target?.id, payVisible])
+  }, [organization?.id, target?.id, payVisible, switchTick])
   const pay = useMemo(
-    () => (target ? overlayPayProfile(target as unknown as Record<string, unknown>, payProfile) : null),
-    [target, payProfile]
+    () => (target ? personPayRecord(organization?.id, target as unknown as Record<string, unknown>, payProfile) : null),
+    // switchTick: the gate is re-read when `privatePay` changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [organization?.id, target, payProfile, switchTick]
   ) as { payBasis?: string; dayRate?: number | null; hourlyRate?: number | null; employmentType?: string } | null
 
   const linkedOperative = useMemo(
