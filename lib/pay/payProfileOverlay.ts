@@ -17,11 +17,13 @@
  */
 import { collection, doc, getDoc, getDocs } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
-import { privatePayFor } from '@/lib/access/securitySwitches'
+import { privatePayFor, securitySwitchesReady } from '@/lib/access/securitySwitches'
+import { loadPayProfile } from '@/lib/pay/payProfileService'
 import {
   PAY_PROFILES_COLLECTION,
   overlayPayProfile,
   parsePayProfileDocument,
+  payEditorStartingValues,
   payProfileReadPlan,
   type PayProfileDocument,
   type PaySubject,
@@ -54,8 +56,38 @@ export function personPayRecord(
   data: Record<string, unknown>,
   profile: PayProfileDocument | null | undefined
 ): Record<string, unknown> {
-  if (!profile || !readsPersonPayProfile(organizationId)) return data
-  return overlayPayProfile(data, profile)
+  // Rulebook 1.26.1 §8: the display and every pay editor take the same value (`payEditorStartingValues`).
+  return payEditorStartingValues(data, profile, { privatePay: readsPersonPayProfile(organizationId) }).record
+}
+
+/**
+ * Rulebook 1.26.1 §8 (`payEditorStartingValues`): the stored person document `data` (a `users` or `operatives` row,
+ * id `subjectId`) a pay editor starts from and diffs its save against. While `privatePay` is off for `organizationId`
+ * no pay profile is read and `data` is returned unchanged (as before 1.26.1). While it is on, the pay profile of
+ * `subjectId` (else of one of its `formerUserIds`) is read and laid over, so the editor shows — and its save, its
+ * "rate changed?" test and its rate-history "previous" row start from — the same pay the people profile shows. A
+ * refused or missing read keeps `data`.
+ */
+export async function payEditorRecord(
+  organizationId: string | null | undefined,
+  subjectId: string,
+  data: Record<string, unknown>,
+  load: (organizationId: string, subjectId: string) => Promise<PayProfileDocument | null> = defaultLoadPayProfile
+): Promise<Record<string, unknown>> {
+  if (!organizationId || !subjectId) return data
+  await securitySwitchesReady()
+  const privatePay = readsPersonPayProfile(organizationId)
+  if (!privatePay) return payEditorStartingValues(data, null, { privatePay }).record
+  let profile: PayProfileDocument | null = null
+  for (const id of [subjectId, ...storedIds(data)]) {
+    profile = await load(organizationId, id).catch(() => null)
+    if (profile) break
+  }
+  return payEditorStartingValues(data, profile, { privatePay }).record
+}
+
+function defaultLoadPayProfile(organizationId: string, subjectId: string): Promise<PayProfileDocument | null> {
+  return loadPayProfile(organizationId, subjectId)
 }
 
 /** The users / operatives document `data` (id `docId`) with its pay taken from its pay profile when one was read. */

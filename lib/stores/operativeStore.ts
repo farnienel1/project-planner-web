@@ -29,7 +29,7 @@ import { readStoredRates } from '@/lib/timesheets/payBasis'
 import { markRowsRemoved, retainScopedRows } from '@/lib/staff/rosterRetain'
 import { removeFutureBookingsForPerson } from '@/lib/bookings/removeBookingsOnDelete'
 import { privatePayFor, securitySwitchesReady } from '@/lib/access/securitySwitches'
-import { overlayRosterPay } from '@/lib/pay/payProfileOverlay'
+import { overlayRosterPay, payEditorRecord } from '@/lib/pay/payProfileOverlay'
 
 const OPERATIVES_KEY = 'operativeStore:operatives'
 const MANAGERS_KEY = 'operativeStore:managers'
@@ -185,7 +185,10 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
   getOperative: async (organizationId, id) => {
     const snap = await getDoc(doc(db, 'organizations', organizationId, 'operatives', id))
     if (!snap.exists()) return null
-    const data = snap.data()
+    // Rulebook 1.26.1 §8 (`payEditorStartingValues`): the catalogue operative form starts from (and its save and
+    // rate history diff against) the row's pay profile `payProfiles/{rowId}` while `privatePay` is on; while it is
+    // off, the row exactly as stored.
+    const data: ReturnType<typeof snap.data> = await payEditorRecord(organizationId, snap.id, snap.data() as Record<string, unknown>)
     const parsed = parseOperative(snap.id, data, organizationId)
     if (parsed.ok) return parsed.value
     const stored = readStoredRates(data)

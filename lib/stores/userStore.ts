@@ -2,6 +2,7 @@
 
 import { create } from 'zustand'
 import { addPayProfileWrite } from '@/lib/pay/payProfileService'
+import { payEditorRecord } from '@/lib/pay/payProfileOverlay'
 import { collection, deleteField, doc, getDoc, getDocs, limit, query, serverTimestamp, setDoc, updateDoc, Timestamp, where, writeBatch } from 'firebase/firestore'
 import { sendPasswordResetEmail } from 'firebase/auth'
 import { passwordResetActionSettings } from '@/lib/auth/passwordResetSettings'
@@ -36,7 +37,12 @@ import { operativeRowWriteFields } from '@/lib/canonical/peopleDocuments'
 interface UserStoreState {
   saving: boolean
   error: string | null
-  getUser: (userId: string) => Promise<User | null>
+  /**
+   * `options.payEditor` (rulebook 1.26.1 §8, `payEditorStartingValues`): the copy a pay editor starts from and diffs its
+   * save against — while `privatePay` is on for the organisation the person's pay profile is laid over the users
+   * document (the same pay the people profile shows); while it is off the users document exactly as stored.
+   */
+  getUser: (userId: string, options?: { payEditor?: boolean }) => Promise<User | null>
   /**
    * `options.baseline`: the copy the editor loaded. With it only changed fields are written
    * (never a stale photo, mobile or rate from a copy loaded before another device saved).
@@ -181,14 +187,17 @@ export const useUserStore = create<UserStoreState>(() => ({
   saving: false,
   error: null,
 
-  getUser: async (userId) => {
+  getUser: async (userId, options) => {
     const snap = await getDoc(doc(db, 'users', userId))
     if (!snap.exists()) return null
-    const data = snap.data() as Record<string, unknown>
-    const orgOnDoc = typeof data.organizationId === 'string' ? data.organizationId.trim() : ''
+    const stored = snap.data() as Record<string, unknown>
+    const orgOnDoc = typeof stored.organizationId === 'string' ? stored.organizationId.trim() : ''
+    const openOrgId = useAuthStore.getState().organization?.id || ''
+    // Rulebook 1.26.1 §8 (`payEditorStartingValues`): a pay editor's copy has the pay profile laid over only while
+    // `privatePay` is on for the open organisation; off (and for every other caller) `stored` is used unchanged.
+    const data = options?.payEditor ? await payEditorRecord(openOrgId || orgOnDoc, snap.id, stored) : stored
     if (orgOnDoc) return parseOrgUser(snap.id, data)
-    const { useAuthStore } = await import('@/lib/stores/authStore')
-    const fallback = useAuthStore.getState().organization?.id || useAuthStore.getState().user?.organizationId || ''
+    const fallback = openOrgId || useAuthStore.getState().user?.organizationId || ''
     if (!fallback) return parseOrgUser(snap.id, data)
     return parseOrgUser(snap.id, { ...data, organizationId: fallback })
   },
@@ -204,7 +213,13 @@ export const useUserStore = create<UserStoreState>(() => ({
     if (!baseline) {
       const stored = await getDoc(doc(db, 'users', user.id))
       if (stored.exists()) {
-        const data = stored.data() as Record<string, unknown>
+        // Rulebook 1.26.1 §8 (`payEditorStartingValues`): the pay half of the baseline is the pay profile while
+        // `privatePay` is on (where the pay is saved), the users document while it is off.
+        const data = await payEditorRecord(
+          organizationId?.trim() || user.organizationId,
+          stored.id,
+          stored.data() as Record<string, unknown>
+        )
         baseline = parseOrgUser(stored.id, {
           ...data,
           organizationId: (typeof data.organizationId === 'string' && data.organizationId.trim()) || user.organizationId,

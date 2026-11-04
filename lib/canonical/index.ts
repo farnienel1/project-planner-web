@@ -1409,6 +1409,7 @@ export {
   payProfileBackfillWrites,
   payProfilePath,
   payProfileWriteFieldsFromProfileWrite,
+  payEditorStartingValues,
   payProfileReadPlan,
   rateHistoryQueryPlan,
   sharedDocumentPayWrite,
@@ -1425,7 +1426,7 @@ export type {
   BookingHoursLabel,
 } from './bookingSlots'
 export type { SubscriptionAccess } from './billingAccess'
-export type { PayProfileDocument, PayProfileField, PayProfileReadPlan, PaySubject, PayViewer, RateHistoryQueryPlan } from './payProfile'
+export type { PayEditorStartingSource, PayEditorStartingValues, PayProfileDocument, PayProfileField, PayProfileReadPlan, PaySubject, PayViewer, RateHistoryQueryPlan } from './payProfile'
 export { parseAnnualLeaveDefaults } from './organizationSettings'
 export {
   SELF_EMAIL_INVALID_MESSAGE,
