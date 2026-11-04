@@ -105,9 +105,17 @@ How to use it:
 | 4 Nov | The design upgrade PR also fixes the PAYE break bug from Scheduling, shows Delete on labour bookings to admins only, and fixes the hours display. | open (iOS #186) |
 | 4 Nov | 1.32: the overtime rate on managers' own site bookings is shown consistently on Scheduling, Daily Overview and My Schedule. | open (1.32) |
 
+## Known rulebook bugs (fix in the next rulebook release)
+
+| Date | Bug | Status |
+|---|---|---|
+| 4 Nov | `preferFinishedAccount` (warningRows.ts:410) lets an inactive account through, so inactive users can show as unbooked in Warnings and Book labour. The rulebook says inactive users are skipped. | open |
+
 ## Open questions for the owner
 
 | Date | Question |
 |---|---|
 | 4 Nov | Admins, the Super Admin and managers count as unbooked labour by design (`labourBookingKind`, warningRows.ts:368). Keep that, using Excluded users for people who are never booked? The rulebook text (§5 "an operative not booked") is narrower than the code and needs rewording either way. |
 | 4 Nov | Book labour lists every unbooked person; Warnings for a manager are scoped to themselves, their reports and their jobs. Should a manager's Book labour list everyone (so they can book anyone onto their jobs) or only their scope? Recommended: everyone. |
+| 4 Nov | People on the operatives list with no app login are listed as unbooked in Warnings, but Book labour can't book them (same on iPhone). Make them bookable from Book labour, or stop listing them as unbooked? Recommended: make them bookable. |
+| 4 Nov | Excluded users (warning settings) no longer appear in Book labour on either app. Fine, or should Book labour still offer them? Recommended: fine. Use Scheduling to book them when needed. |
