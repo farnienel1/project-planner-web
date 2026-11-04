@@ -7,7 +7,7 @@
 import { isOperativeMode } from '@/lib/permissions'
 import { idsMatch } from '@/lib/subcontractors/bookingPeople'
 import { normalizeBookingStatus } from '@/lib/ios-parity/enums'
-import { isOpenBookingStatus, jobTileBadges, type FoldPersonRow } from '@/lib/canonical'
+import { bookingPersonKey, isOpenBookingStatus, jobTileBadges, resolveBookingPerson, type FoldPersonRow } from '@/lib/canonical'
 import { paidBookedHours, scheduleLabel } from '@/lib/timesheets/timesheetHours'
 import { DEFAULT_PAYROLL_POLICY, type OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import type { Manager, Project, User } from '@/types'
@@ -50,7 +50,7 @@ type OperativeBooking = ActiveUserBooking & {
   projectId: string
 }
 
-type NamedOperative = { id: string; firstName: string; lastName: string }
+type NamedOperative = { id: string; firstName: string; lastName: string; email?: string | null }
 type NamedSubcontractor = { id: string; name: string; subcontractorType?: string }
 
 export function formatActiveUserHours(value: number): string {
@@ -159,21 +159,31 @@ export function buildProjectActiveUsers(input: {
   const policy = input.payrollPolicy ?? DEFAULT_PAYROLL_POLICY
   const rows: ActiveUserSummary[] = []
 
-  const operativeGroups = new Map<string, OperativeBooking[]>()
+  // A booking's `operativeId` may be a catalogue row or the person's users id (Book labour books an operative with
+  // no catalogue row under it). The rulebook decides who it names (`resolveBookingPerson`), and one person's
+  // bookings under several ids are one row (`bookingPersonKey`).
+  const people = {
+    accounts: input.users.map((user) => ({ id: user.id, email: user.email, formerIds: user.formerUserIds ?? [] })),
+    operatives: input.operatives.map((operative) => ({ id: operative.id, email: operative.email ?? null })),
+  }
+  const operativeGroups = new Map<string, { storedId: string; bookings: OperativeBooking[] }>()
   for (const booking of input.operativeBookings) {
     if (!idsMatch(booking.projectId, input.projectId) || isCancelled(booking.status)) continue
-    const key = booking.operativeId.trim()
-    if (!key) continue
-    const group = operativeGroups.get(key) || []
-    group.push(booking)
+    const storedId = booking.operativeId.trim()
+    if (!storedId) continue
+    const key = bookingPersonKey(storedId, people)
+    const group = operativeGroups.get(key) || { storedId, bookings: [] }
+    group.bookings.push(booking)
     operativeGroups.set(key, group)
   }
-  for (const [operativeId, bookings] of operativeGroups) {
-    const operative = input.operatives.find((row) => idsMatch(row.id, operativeId))
-    if (!operative) continue
-    const name = `${operative.firstName} ${operative.lastName}`.trim()
+  for (const { storedId, bookings } of operativeGroups.values()) {
+    const person = resolveBookingPerson(storedId, people)
+    const operative = person.operativeId ? input.operatives.find((row) => idsMatch(row.id, person.operativeId!)) : undefined
+    const user = person.accountId ? input.users.find((row) => idsMatch(row.id, person.accountId!)) : undefined
+    if (!operative && !user) continue
+    const name = operative ? `${operative.firstName} ${operative.lastName}`.trim() : personName(user)
     const summary = summarize({
-      id: `op-${operative.id}`,
+      id: `op-${operative ? operative.id : user!.id}`,
       kind: 'operative',
       displayName: name || 'Operative',
       subtitle: 'Operative',

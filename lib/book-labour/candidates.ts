@@ -1,26 +1,32 @@
 /**
- * iOS parity: Views/BookLabourFlowView.swift buildCandidates
- * Hours include every operative profile and user account that share an email,
- * matching unbooked-labour coverage. A full day on any of those profiles
- * removes the person from the unbooked list.
+ * iOS parity: Views/BookLabourFlowView.swift buildCandidates.
+ *
+ * Rulebook §5 / §6: Book labour lists exactly the people `unbookedLabourRowsOnDay` returns for the day — the same
+ * rows as the Warnings unbooked card and Daily Overview, built from the same input (`unbookedLabourInputFromStores`).
+ * Weekends, excluded users, approved leave, pending invitees, deleted profiles, same-email profiles and coverage are
+ * the rulebook's; this file only maps each row to its `users` account and catalogue row for the booking writes.
  */
 
 import type { Booking, HolidayBooking, Operative, User } from '@/types'
 import { UserRole } from '@/types'
-import { bookingIdsForAccount, bookingOccupiesDay, managerCoverageHours } from '@/lib/canonical'
-import { dayKey, londonIsoWeekday, londonMidnight } from '@/lib/ios-parity/londonTime'
+import { normalizeDocumentId, unbookedLabourRowsOnDay, type PayrollTimePolicyState, type WarningScope } from '@/lib/canonical'
+import { dateFromDayKey } from '@/lib/ios-parity/londonTime'
 import { displayTradeType } from '@/lib/staff/staffTradeTypes'
-import { isCurrentLabourUser, rosterDisplayName } from '@/lib/staff/userRosterUtils'
-import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
-import { DEFAULT_PAYROLL_POLICY } from '@/lib/settings/organizationSettings'
+import { rosterDisplayName } from '@/lib/staff/userRosterUtils'
+import type { OrgPayrollTimePolicy, OrgWarningDetectionSettings } from '@/lib/settings/organizationSettings'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
-import { estimatedPaidHours } from '@/lib/scheduling/paidHours'
-import { holidayBookingDayKeys } from '@/lib/annualLeave/holidayDayKeys'
+import { unbookedLabourInputFromStores } from '@/lib/warnings/unbookedLabourWarnings'
 
 export type BookLabourCandidate = {
   id: string
   user: User
   linkedOperative?: Operative
+  /**
+   * The `operativeId` an operative job booking is written under: the rulebook row's `operativeId` — the person's
+   * catalogue row, or their users id when they have none (the rulebook counts a booking under either,
+   * `bookingIdsForAccount`).
+   */
+  bookingOperativeId: string
   usesOperativeProjectBookings: boolean
   displayName: string
   roleChips: string[]
@@ -32,94 +38,9 @@ function emailKey(value: string | undefined): string {
   return (value || '').trim().toLowerCase()
 }
 
-function nameKey(first?: string, last?: string): string {
-  return `${first || ''} ${last || ''}`.trim().toLowerCase().replace(/\s+/g, ' ')
-}
-
-function operativeProfileWeight(operative: Operative): number {
-  return (
-    (operative.qualifications?.length ?? 0) +
-    Object.keys(operative.qualificationCertificateURLs || {}).length +
-    Object.keys(operative.qualificationExpiryDates || {}).length
-  )
-}
-
-/** One catalogue row per person. Prefer the profile that already holds today's hours. */
-function preferOperativeProfile(
-  candidates: Operative[],
-  bookings: Booking[],
-  day: Date,
-  policy: OrgPayrollTimePolicy
-): Operative | undefined {
-  if (candidates.length === 0) return undefined
-  const withHours = candidates.filter((operative) => operativePaidHours(bookings, operative.id, day, policy) > 0)
-  const pool = withHours.length > 0 ? withHours : candidates
-  return [...pool].sort((a, b) => {
-    const weight = operativeProfileWeight(b) - operativeProfileWeight(a)
-    if (weight !== 0) return weight
-    return a.id.localeCompare(b.id)
-  })[0]
-}
-
-function findLinkedOperative(
-  user: User,
-  operatives: Operative[],
-  byName: Map<string, Operative>,
-  claimed: Set<string>,
-  bookings: Booking[],
-  day: Date,
-  policy: OrgPayrollTimePolicy
-): Operative | undefined {
-  const email = emailKey(user.email)
-  const fromEmail = email
-    ? operatives.filter((operative) => emailKey(operative.email) === email && !claimed.has(operative.id))
-    : []
-  const picked = preferOperativeProfile(fromEmail, bookings, day, policy)
-  if (picked) return picked
-  const fromName = byName.get(nameKey(user.firstName, user.surname))
-  if (fromName && !claimed.has(fromName.id)) return fromName
-  return undefined
-}
-
-function oneAccountPerEmail(users: User[]): User[] {
-  const groups = new Map<string, User[]>()
-  const withoutEmail: User[] = []
-  for (const person of users) {
-    const email = emailKey(person.email)
-    if (!email) {
-      withoutEmail.push(person)
-      continue
-    }
-    const list = groups.get(email) || []
-    list.push(person)
-    groups.set(email, list)
-  }
-  const picked: User[] = []
-  for (const group of groups.values()) {
-    const best =
-      group.find((person) => person.passwordSet && person.isActive) ??
-      group.find((person) => person.passwordSet) ??
-      group[0]
-    picked.push(best)
-  }
-  return [...picked, ...withoutEmail]
-}
-
-function holidayCoversDay(
-  holidays: HolidayBooking[],
-  day: Date,
-  userIds: ReadonlySet<string>,
-  operativeIds: ReadonlySet<string>
-): boolean {
-  const key = dayKey(day)
-  return holidays.some((holiday) => {
-    if (String(holiday.status).toLowerCase() !== 'approved') return false
-    const { startDayKey: start, endDayKey: end } = holidayBookingDayKeys(holiday)
-    if (key < start || key > end) return false
-    if (holiday.userId && userIds.has(holiday.userId)) return true
-    if (holiday.operativeId && operativeIds.has(holiday.operativeId)) return true
-    return false
-  })
+/** Ids compare without case (`normalizeDocumentId`, rulebook §1). */
+function idKey(value: string | undefined | null): string {
+  return normalizeDocumentId(value ?? '')
 }
 
 function roleChipsFor(user: User): string[] {
@@ -144,258 +65,165 @@ function canBookOtherLocations(_user: User): boolean {
   return true
 }
 
-function sameDay(date: Date, day: Date): boolean {
-  return dayKey(date) === dayKey(day)
+
+/** Operative-mode only (not a manager or admin): booked onto jobs through the `bookings` collection. */
+function isOperativeOnly(user: User): boolean {
+  return (
+    Boolean(user.permissions?.operativeMode) &&
+    !user.permissions?.manager &&
+    !user.permissions?.adminAccess &&
+    !user.isSuperAdmin &&
+    user.role !== UserRole.ADMIN
+  )
 }
 
-function slotPaidHours(
-  booking: { timeSlot?: string; workStartTime?: string; workEndTime?: string; isBreakRemoved?: boolean; date?: Date | string },
-  policy: OrgPayrollTimePolicy
-): number {
-  return estimatedPaidHours({
-    timeSlot: booking.timeSlot,
-    workStartTime: booking.workStartTime,
-    workEndTime: booking.workEndTime,
-    isBreakRemoved: booking.isBreakRemoved,
-    policy,
-    date: booking.date ? new Date(booking.date) : undefined,
-  })
-}
-
-function operativePaidHours(
-  bookings: Booking[],
-  operativeId: string,
-  day: Date,
-  policy: OrgPayrollTimePolicy
-): number {
-  return bookings
-    .filter(
-      (booking) =>
-        booking.operativeId === operativeId &&
-        sameDay(booking.date, day) &&
-        bookingOccupiesDay(booking.status)
-    )
-    .reduce((sum, booking) => sum + slotPaidHours(booking, policy), 0)
-}
-
-function idsSharingEmail(rows: ReadonlyArray<{ id: string; email?: string }>, email: string): Set<string> {
-  const ids = new Set<string>()
-  if (!email) return ids
-  for (const row of rows) {
-    if (emailKey(row.email) === email) ids.add(row.id)
-  }
-  return ids
-}
-
-function identityIds(
-  user: User,
-  linked: Operative | undefined,
+/** The `users` account a rulebook row names: its `userId`, else its `personKey`, also as a same-email or former id. */
+export function bookLabourUserForRow(
   users: User[],
-  operatives: Operative[]
-): { email: string; userIds: Set<string>; operativeIds: Set<string> } {
-  const email = emailKey(user.email)
-  const userIds = idsSharingEmail(users, email)
-  userIds.add(user.id)
-  for (const former of user.formerUserIds ?? []) userIds.add(former)
-  const operativeIds = idsSharingEmail(operatives, email)
-  if (linked) operativeIds.add(linked.id)
-  // Operative bookings may be stored under the users id or a former invite id too (`bookingIdsForAccount`).
-  for (const id of bookingIdsForAccount({ id: user.id, email: user.email, formerIds: user.formerUserIds ?? [] }, operatives)) {
-    operativeIds.add(id)
+  ids: string[],
+  userIdAliases: Readonly<Record<string, string>> | null | undefined
+): User | undefined {
+  for (const raw of ids) {
+    const id = idKey(raw)
+    if (!id) continue
+    const direct = users.find((user) => idKey(user.id) === id)
+    if (direct) return direct
+    const kept = Object.entries(userIdAliases || {}).find(([alias]) => idKey(alias) === id)?.[1]
+    const aliased = kept ? users.find((user) => idKey(user.id) === idKey(kept)) : undefined
+    if (aliased) return aliased
+    const former = users.find((user) => (user.formerUserIds ?? []).some((formerId) => idKey(formerId) === id))
+    if (former) return former
   }
-  return { email, userIds, operativeIds }
+  return undefined
 }
 
-/**
- * True when the person's bookings that day cover the standard day (`managerCoverageHours(...).covered`, which is
- * `standardDayCoverage`),
- * across every user and operative profile that shares the email. The same rule as
- * `unbookedLabourRowsOnDay`, so nobody is offered here who Daily Overview shows as booked.
- */
-function coversStandardDay(
-  user: User,
-  linked: Operative | undefined,
-  bookings: Booking[],
-  managerSiteBookings: ManagerSiteBooking[],
-  users: User[],
-  operatives: Operative[],
-  day: Date,
-  policy: OrgPayrollTimePolicy
-): boolean {
-  const { userIds, operativeIds } = identityIds(user, linked, users, operatives)
-  const slots = [
-    ...bookings.filter(
-      (booking) => operativeIds.has(booking.operativeId) && sameDay(booking.date, day) && bookingOccupiesDay(booking.status)
-    ),
-    ...managerSiteBookings.filter((booking) => userIds.has(booking.userId) && sameDay(booking.date, day)),
-  ].map((booking) => ({
-    timeSlot: String(booking.timeSlot ?? ''),
-    workStartTime: booking.workStartTime,
-    workEndTime: booking.workEndTime,
-    isBreakRemoved: booking.isBreakRemoved,
-  }))
-  // Rulebook 1.22.0 (§6): `managerCoverageHours` — covered is `standardDayCoverage`, the Daily Overview rule.
-  return managerCoverageHours({ bookings: slots, dayKey: dayKey(day), policy }).covered
+/** The catalogue row the rulebook row names (`operativeId`, compared without case). Never matched by name. */
+function linkedOperativeFor(operativeId: string, operatives: Operative[]): Operative | undefined {
+  const key = idKey(operativeId)
+  return key ? operatives.find((operative) => idKey(operative.id) === key) : undefined
 }
 
 export function buildBookLabourCandidates(input: {
-  day: Date
+  /** The day shown, `YYYY-MM-DD` in the organisation zone. */
+  dayKey: string
+  /** The organisation business time zone (rulebook §1). */
+  timeZone?: string
   users: User[]
   operatives: Operative[]
   bookings: Booking[]
   managerSiteBookings: ManagerSiteBooking[]
   holidays: HolidayBooking[]
+  /** `organizations/{orgId}.warningDetection` — include weekends, excluded users, weekend hours to cover. */
+  warningDetection: Pick<
+    OrgWarningDetectionSettings,
+    'includeWeekendsForUnbookedLabour' | 'excludedUserIdsFromUnbookedWarnings' | 'weekendCoverage'
+  >
   payrollPolicy?: OrgPayrollTimePolicy
-  /** User ids (or linked operative ids) named on a warning. Pending users stay out unless focused. */
+  /** The whole working-hours state, so the day uses the rules in effect on it. */
+  payrollPolicyState?: PayrollTimePolicyState | null
+  /** The roster fold's same-email ids (duplicate id → the kept id). */
+  userIdAliases?: Readonly<Record<string, string>> | null
+  /** The viewer's warning scope (`orgWarningScope` / `warningScopeFor`), the same one Warnings passes. Missing → everyone. */
+  scope?: WarningScope | null
+  /** User ids (or linked operative ids) named on a warning; listed first. */
   focusedUserIds?: string[]
 }): BookLabourCandidate[] {
-  const day = londonMidnight(input.day)
-  const weekday = londonIsoWeekday(day)
-  if (weekday < 1 || weekday > 5) return []
-
-  const policy = input.payrollPolicy ?? DEFAULT_PAYROLL_POLICY
-  const focused = new Set(input.focusedUserIds || [])
-  const sharesFocusedId = (user: User, linked?: Operative) => {
-    if (focused.has(user.id) || (linked ? focused.has(linked.id) : false)) return true
-    const email = emailKey(user.email)
-    if (!email || focused.size === 0) return false
-    return (
-      input.users.some((other) => emailKey(other.email) === email && focused.has(other.id)) ||
-      input.operatives.some((operative) => emailKey(operative.email) === email && focused.has(operative.id))
-    )
-  }
-  const bookable = (user: User) =>
-    isCurrentLabourUser(user) && user.status !== 'pending' && (user.passwordSet || focused.has(user.id))
-  const operativesByName = new Map<string, Operative>()
-  for (const operative of input.operatives) {
-    const name = nameKey(operative.firstName, operative.lastName)
-    if (name && !operativesByName.has(name)) operativesByName.set(name, operative)
-  }
-  const claimedOperativeIds = new Set<string>()
-
-  const operativeOnlyUsers = oneAccountPerEmail(
-    input.users.filter(
-      (user) =>
-        user.isActive &&
-        bookable(user) &&
-        user.permissions.operativeMode &&
-        !user.permissions.manager &&
-        !user.permissions.adminAccess &&
-        !user.isSuperAdmin &&
-        user.role !== UserRole.ADMIN
-    )
-  )
-  const managerUsers = oneAccountPerEmail(
-    input.users.filter(
-      (user) =>
-        user.isActive &&
-        bookable(user) &&
-        (user.permissions.manager ||
-          user.permissions.adminAccess ||
-          user.isSuperAdmin ||
-          user.role === UserRole.ADMIN)
-    )
-  )
-
-  const out: BookLabourCandidate[] = []
-  const seen = new Set<string>()
-  const seenEmails = new Set<string>()
-
-  for (const user of operativeOnlyUsers) {
-    const email = emailKey(user.email)
-    if (email && seenEmails.has(email)) continue
-    const linked = findLinkedOperative(
-      user,
-      input.operatives,
-      operativesByName,
-      claimedOperativeIds,
-      input.bookings,
-      day,
-      policy
-    )
-    const ids = identityIds(user, linked, input.users, input.operatives)
-    if (holidayCoversDay(input.holidays, day, ids.userIds, ids.operativeIds)) continue
-    const covered = coversStandardDay(
-      user,
-      linked,
-      input.bookings,
-      input.managerSiteBookings,
-      input.users,
-      input.operatives,
-      day,
-      policy
-    )
-    if (!sharesFocusedId(user, linked) && covered) continue
-    if (linked) claimedOperativeIds.add(linked.id)
-    const operativeName = rosterDisplayName(user)
-    if (!operativeName) continue
-    seen.add(user.id)
-    if (email) seenEmails.add(email)
-    out.push({
-      id: user.id,
-      user,
-      linkedOperative: linked,
-      usesOperativeProjectBookings: true,
-      displayName: operativeName,
-      roleChips: roleChipsFor(user),
-      tradeDisplay: tradeFor(user, linked),
-      canBookOtherLocations: canBookOtherLocations(user),
-    })
-  }
-
-  for (const user of managerUsers) {
-    const email = emailKey(user.email)
-    if (email && seenEmails.has(email)) continue
-    const linked = findLinkedOperative(
-      user,
-      input.operatives,
-      operativesByName,
-      claimedOperativeIds,
-      input.bookings,
-      day,
-      policy
-    )
-    if (seen.has(user.id)) continue
-    const ids = identityIds(user, linked, input.users, input.operatives)
-    if (holidayCoversDay(input.holidays, day, ids.userIds, ids.operativeIds)) continue
-    const covered = coversStandardDay(
-      user,
-      linked,
-      input.bookings,
-      input.managerSiteBookings,
-      input.users,
-      input.operatives,
-      day,
-      policy
-    )
-    if (!sharesFocusedId(user, linked) && covered) continue
-    if (linked) claimedOperativeIds.add(linked.id)
-    if (email) seenEmails.add(email)
-    const managerName = rosterDisplayName(user)
-    if (!managerName) continue
-    out.push({
-      id: user.id,
-      user,
-      linkedOperative: linked,
-      usesOperativeProjectBookings: false,
-      displayName: managerName,
-      roleChips: roleChipsFor(user),
-      tradeDisplay: tradeFor(user, linked),
-      canBookOtherLocations: canBookOtherLocations(user),
-    })
-  }
-
-  return out.sort((a, b) => {
-    const aFocus = sharesFocusedId(a.user, a.linkedOperative)
-    const bFocus = sharesFocusedId(b.user, b.linkedOperative)
-    if (aFocus !== bFocus) return aFocus ? -1 : 1
-    return a.displayName.localeCompare(b.displayName, undefined, { sensitivity: 'base' })
+  const day = dateFromDayKey(input.dayKey, input.timeZone)
+  const rows = unbookedLabourRowsOnDay({
+    ...unbookedLabourInputFromStores({
+      bookings: input.bookings,
+      managerSiteBookings: input.managerSiteBookings,
+      operatives: input.operatives,
+      users: input.users,
+      holidays: input.holidays,
+      warningDetection: input.warningDetection,
+      payrollPolicy: input.payrollPolicy,
+      payrollPolicyState: input.payrollPolicyState,
+      windowStart: day,
+      windowEnd: day,
+      timeZone: input.timeZone,
+      scope: input.scope,
+      userIdAliases: input.userIdAliases,
+    }),
+    dayKey: input.dayKey,
   })
+
+  const focused = new Set((input.focusedUserIds || []).map(idKey).filter(Boolean))
+  const isFocused = (user: User, linked: Operative | undefined, rowIds: string[]): boolean => {
+    if (focused.size === 0) return false
+    if ([user.id, linked?.id, ...rowIds].some((id) => focused.has(idKey(id)))) return true
+    const email = emailKey(user.email)
+    if (!email) return false
+    return (
+      input.users.some((other) => emailKey(other.email) === email && focused.has(idKey(other.id))) ||
+      input.operatives.some((operative) => emailKey(operative.email) === email && focused.has(idKey(operative.id)))
+    )
+  }
+
+  const listed: { candidate: BookLabourCandidate; focused: boolean }[] = []
+  const seen = new Set<string>()
+  for (const row of rows) {
+    const rowIds = [row.userId ?? '', row.personKey]
+    // A roster row with no `users` account cannot be booked from here (iOS skips it too).
+    const user = bookLabourUserForRow(input.users, rowIds, input.userIdAliases)
+    if (!user || seen.has(user.id)) continue
+    const displayName = rosterDisplayName(user)
+    if (!displayName) continue
+    seen.add(user.id)
+    const linked = linkedOperativeFor(row.operativeId, input.operatives)
+    listed.push({
+      candidate: {
+        id: user.id,
+        user,
+        linkedOperative: linked,
+        bookingOperativeId: linked?.id ?? (row.operativeId || user.id),
+        usesOperativeProjectBookings: isOperativeOnly(user),
+        displayName,
+        roleChips: roleChipsFor(user),
+        tradeDisplay: tradeFor(user, linked),
+        canBookOtherLocations: canBookOtherLocations(user),
+      },
+      focused: isFocused(user, linked, [...rowIds, row.operativeId]),
+    })
+  }
+
+  return listed
+    .sort((a, b) => {
+      if (a.focused !== b.focused) return a.focused ? -1 : 1
+      return a.candidate.displayName.localeCompare(b.candidate.displayName, undefined, { sensitivity: 'base' })
+    })
+    .map((entry) => entry.candidate)
 }
 
-export function bookLabourDayLine(day: Date): string {
+export type BookLabourListPhase = 'loading' | 'error' | 'noAccess' | 'ready'
+
+/** One source the list is built from: loaded for this organisation, still loading, or failed. */
+export type BookLabourSource = { ready: boolean; error?: string | null }
+
+/**
+ * Whether Book labour may show its list. Like the Warnings scan (`warningScanLanes`), nothing is listed until the
+ * live organisation document (warning settings, working hours), the roster, operatives, bookings, manager bookings
+ * and annual leave have loaded for this organisation; a failed source is an error, never "Everyone is booked".
+ */
+export function bookLabourListPhase(
+  sources: Readonly<Record<string, BookLabourSource>>,
+  /**
+   * The viewer's warning scope. When it cannot list unbooked labour (`unbookedLabour` false: a viewer who cannot
+   * read every booking, or an operative), the list is `noAccess` — never "Everyone is booked".
+   */
+  scope?: WarningScope | null
+): BookLabourListPhase {
+  const all = Object.values(sources)
+  if (all.some((source) => Boolean(source.error))) return 'error'
+  if (all.some((source) => !source.ready)) return 'loading'
+  if (scope && scope.kind === 'jobs' && !scope.unbookedLabour) return 'noAccess'
+  return 'ready'
+}
+
+/** The day heading, read in the organisation business time zone (rulebook §1). */
+export function bookLabourDayLine(day: Date, timeZone: string): string {
   return new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Europe/London',
+    timeZone,
     weekday: 'long',
     day: 'numeric',
     month: 'short',

@@ -16,6 +16,8 @@ import {
 import { jobAccessViewer } from '@/lib/access/bookingAccess'
 import type { WorkCatalogueKind } from '@/lib/permissions'
 import { normalizeBookingStatus } from '@/lib/ios-parity/enums'
+import { resolveBookingPerson } from '@/lib/canonical'
+import { bookingPersonInput } from '@/lib/bookings/bookingPeople'
 
 export type JobCatalogue = WorkCatalogueKind
 
@@ -167,6 +169,7 @@ export function liveUserIdsOnJob(params: {
   users: User[]
 }): Set<string> {
   const ids = new Set<string>()
+  const people = bookingPersonInput(params.users, params.operatives)
   for (const b of params.managerBookings) {
     if (
       (b.locationType === 'project' || b.locationType === 'small_work') &&
@@ -178,10 +181,9 @@ export function liveUserIdsOnJob(params: {
   for (const b of params.bookings) {
     if (b.projectId !== params.projectId) continue
     if (normalizeBookingStatus(b.status) === 'Cancelled') continue
-    const op = params.operatives.find((o) => o.id === b.operativeId)
-    if (!op) continue
-    const user = params.users.find((u) => normalizedEmail(u.email) === normalizedEmail(op.email))
-    if (user) ids.add(user.id)
+    // The stored id may be a catalogue row or the person's users id (`resolveBookingPerson`).
+    const person = resolveBookingPerson(b.operativeId, people)
+    if (person.accountId) ids.add(person.accountId)
   }
   for (const task of params.tasks) {
     if (task.projectId !== params.projectId) continue
