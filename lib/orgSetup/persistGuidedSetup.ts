@@ -226,7 +226,13 @@ export async function persistGuidedSetup(
     endDate: new Date(project.endDate),
     jobType: project.jobType || 'CAT A',
     isLive: true,
+    // Rulebook 1.31.0 (`jobManagerRequiredError`): a new job needs a manager — the founder manages the first job.
+    managerId: adminUserId,
+    managerIds: [adminUserId],
+    managerUserIds: [adminUserId],
   })
+  // A create never stores a null field (the builder's nulls are removals for an edit).
+  for (const [key, value] of Object.entries(payload)) if (value === null) delete payload[key]
   const collectionName = project.jobType === 'Small Works' ? 'smallWorks' : 'projects'
   await setDoc(doc(db, 'organizations', organizationId, collectionName, projectId), payload)
 

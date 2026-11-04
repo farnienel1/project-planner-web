@@ -49,8 +49,8 @@ function displayName(row: RosterListRow): string {
 }
 
 /**
- * The people on the Operatives, Managers or Admins list (rulebook 1.23.0 §11): the rows whose `rosterListKind` is
- * `kind`, one per email (`rosterPeople` keeps the admin, signed-in, newest, active document), without identifiable
+ * The people on the Operatives, Managers or Admins list (rulebook 1.23.0 §11; 1.31.0 fold first): one document per
+ * email (`rosterPeople`, a live admin document first), listed when its `rosterListKind` is `kind`, one per email (`rosterPeople` keeps the admin, signed-in, newest, active document), without identifiable
  * leftovers of a removed invite (`listedRosterUsers` with `claimedEmails`), sorted by first name and surname
  * (ignoring case), then id. Active / Inactive / Pending within the list stays `rosterSegment`.
  */
@@ -59,24 +59,29 @@ export function rosterListFor<T extends RosterListRow>(
   roster: ReadonlyArray<T> | null | undefined,
   claimedEmails?: ReadonlyArray<string> | null
 ): T[] {
-  const inList = (roster || []).filter((row) => row && idText(row.id) && rosterListKind(row) === kind)
+  // 1.31.0 (audit finding 3): fold first, then classify. Before 1.31.0 each document was put on a list by its own level
+  // and only then folded within the list, so a person with a stale admin copy and a live manager document was on both
+  // Admins and Managers, and the copy the Managers list kept was not the one Change user type wrote `members.{uid}`
+  // for (a false "partly saved" banner). The fold prefers a live admin document (active and signed up) — never a stale
+  // admin copy — then `rosterPeople`'s order (signed in, newer, active).
+  const rows = (roster || []).filter((row) => row && idText(row.id))
   const byId = new Map<string, T>()
-  for (const row of inList) if (!byId.has(idText(row.id))) byId.set(idText(row.id), row)
-  const docs: RosterDocument[] = inList.map((row) => ({
+  for (const row of rows) if (!byId.has(idText(row.id))) byId.set(idText(row.id), row)
+  const docs: RosterDocument[] = rows.map((row) => ({
     id: idText(row.id),
     email: row.email ?? '',
     passwordSet: row.passwordSet ?? undefined,
     isActive: row.isActive ?? undefined,
     firstName: row.firstName ?? undefined,
     surname: row.surname ?? undefined,
-    admin: kind === 'admins',
+    admin: rosterListKind(row) === 'admins' && row.isActive !== false && row.passwordSet !== false,
     listed: true,
     updatedAtMs: typeof row.updatedAtMs === 'number' ? row.updatedAtMs : null,
     formerUserIds: [...(row.formerUserIds || [])],
   }))
   const kept = rosterPeople(docs).people.flatMap((person) => {
     const row = byId.get(idText(person.id))
-    return row ? [row] : []
+    return row && rosterListKind(row) === kind ? [row] : []
   })
   return listedRosterUsers(kept, claimedEmails).sort(
     (a, b) =>

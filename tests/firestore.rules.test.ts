@@ -1956,8 +1956,9 @@ test('1.2.0 decision 14: hasNoLineManager is a line-manager field: never the per
   // Resending the unchanged value passes (missing and false are the same; true stays true).
   await assertSucceeds(updateDoc(user(op, PAY_OP), { hasNoLineManager: false, firstName: 'Pat' }))
   await assertSucceeds(updateDoc(user(authDb(NOLM_MGR_A, 'nolm-mgr-a@test.com'), NOLM_MGR_A), { hasNoLineManager: true, firstName: 'Nia' }))
-  // An operatives manager sets it for an operative, alongside the line manager; not for a manager, not their own.
-  await assertSucceeds(updateDoc(user(mgrOps, PAY_OP), { hasNoLineManager: true, assignedManagerUserIds: [], assignedManagerUserId: '' }))
+  // 1.31.0 (audit finding 9): "No line manager" is for admins only — an operatives manager never sets it on an
+  // operative; they set the line manager (and clear the flag).
+  await assertFails(updateDoc(user(mgrOps, PAY_OP), { hasNoLineManager: true, assignedManagerUserIds: [], assignedManagerUserId: '' }))
   await assertSucceeds(updateDoc(user(mgrOps, PAY_OP), { hasNoLineManager: false, assignedManagerUserIds: [LM_A], assignedManagerUserId: LM_A }))
   await assertFails(updateDoc(user(mgrOps, LM_A), { hasNoLineManager: true }))
   await assertFails(updateDoc(user(mgrOps, PAY_MGR_OPS), { hasNoLineManager: true }))
@@ -1965,7 +1966,8 @@ test('1.2.0 decision 14: hasNoLineManager is a line-manager field: never the per
   await assertFails(updateDoc(user(authDb(LM_A, 'lm-a@test.com'), PAY_OP), { hasNoLineManager: true }))
   // Admins can, for anyone in their company; another company's admin cannot.
   await assertSucceeds(updateDoc(user(authDb(ADMIN_A, 'admin-a@test.com'), NOLM_MGR_A), { hasNoLineManager: false }))
-  await assertSucceeds(updateDoc(user(authDb(ADMIN_A, 'admin-a@test.com'), PAY_OP), { hasNoLineManager: true }))
+  // 1.31.0: an admin sets it on an admin only — never on an operative or a manager.
+  await assertFails(updateDoc(user(authDb(ADMIN_A, 'admin-a@test.com'), PAY_OP), { hasNoLineManager: true }))
   await assertFails(updateDoc(user(authDb(ADMIN_B, 'admin-b@test.com'), PAY_OP), { hasNoLineManager: false }))
 })
 
@@ -2564,9 +2566,12 @@ test('1.10.0 r2 jobs: admins and toggle managers add jobs and change manager lis
   const mgr = authDb(MGR_JOB_A, 'mgr-job-a@test.com')
   const op = authDb(OP_A, 'op-a@test.com')
   await assertSucceeds(setDoc(ref(admin, 'projects', 'NEW-ADMIN'), { siteName: 'A', managerIds: [MGR_JOB_A], managerUserIds: [MGR_JOB_A] }))
-  await assertSucceeds(setDoc(ref(toggle, 'smallWorks', 'NEW-TOGGLE'), { siteName: 'T' }))
-  await assertSucceeds(setDoc(ref(projOnly, 'projects', 'NEW-PROJONLY'), { siteName: 'P' }))
-  await assertFails(setDoc(ref(projOnly, 'smallWorks', 'NEW-PROJONLY-SW'), { siteName: 'P' }))
+  await assertSucceeds(setDoc(ref(toggle, 'smallWorks', 'NEW-TOGGLE'), { siteName: 'T', managerIds: [MGR_TOGGLE_A] }))
+  await assertSucceeds(setDoc(ref(projOnly, 'projects', 'NEW-PROJONLY'), { siteName: 'P', managerUserIds: [MGR_PROJ_ONLY_A] }))
+  await assertFails(setDoc(ref(projOnly, 'smallWorks', 'NEW-PROJONLY-SW'), { siteName: 'P', managerUserIds: [MGR_PROJ_ONLY_A] }))
+  // 1.31.0 (owner decision): a new job names a manager.
+  await assertFails(setDoc(ref(admin, 'projects', 'NEW-NO-MANAGER'), { siteName: 'A' }))
+  await assertFails(setDoc(ref(admin, 'projects', 'NEW-EMPTY-MANAGERS'), { siteName: 'A', managerIds: [], managerUserIds: [] }))
   await assertFails(setDoc(ref(mgr, 'projects', 'NEW-MGR'), { siteName: 'M', managerUserIds: [MGR_JOB_A] }))
   await assertFails(setDoc(ref(op, 'projects', 'NEW-OP'), { siteName: 'O' }))
   // A manager without the toggle: details of their own job yes, its manager list never, other jobs never.
@@ -2592,11 +2597,11 @@ test('1.10.0 r2 jobs: the toggle of a non-home organisation comes from that orga
     await setDoc(doc(db, 'users', MULTI, 'orgMemberships', ORG_A), { role: 'manager', permissions: { manager: true, projects: true, smallWorks: false } })
   })
   const multi = authDb(MULTI, 'multi@test.com')
-  await assertSucceeds(setDoc(doc(multi, 'organizations', ORG_A, 'projects', 'NEW-MULTI'), { siteName: 'M' }))
-  await assertFails(setDoc(doc(multi, 'organizations', ORG_A, 'smallWorks', 'NEW-MULTI-SW'), { siteName: 'M' }))
+  await assertSucceeds(setDoc(doc(multi, 'organizations', ORG_A, 'projects', 'NEW-MULTI'), { siteName: 'M', managerUserIds: [MULTI] }))
+  await assertFails(setDoc(doc(multi, 'organizations', ORG_A, 'smallWorks', 'NEW-MULTI-SW'), { siteName: 'M', managerUserIds: [MULTI] }))
   await assertSucceeds(getDocs(colA(multi, 'projects')))
   // Their home company's toggles (none) do not leak the other way: in company B MULTI is a manager without them.
-  await assertFails(setDoc(doc(multi, 'organizations', ORG_B, 'projects', 'NEW-MULTI-B'), { siteName: 'B' }))
+  await assertFails(setDoc(doc(multi, 'organizations', ORG_B, 'projects', 'NEW-MULTI-B'), { siteName: 'B', managerUserIds: [MULTI] }))
 })
 
 test('1.10.0 r2: a manager can never book themselves onto a job they do not manage', async () => {
@@ -4113,4 +4118,129 @@ test('1.30.2 review fix: a same-email id is the caller — an admin never counte
   } finally {
     await setUserFields(ADMIN2_A, { sameEmailUserIds: [] })
   }
+})
+
+// ---------------------------------------------------------------------------
+// Rulebook 1.31.0: people and access.
+// ---------------------------------------------------------------------------
+
+const DEMOTED_A = 'demoted-lm-a'
+const DEMOTED_REPORT_A = 'demoted-report-a'
+const DEL_OP_A = 'del-op-a'
+
+async function seed1310People() {
+  await seedPayPeople()
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    // A former manager now an operative; their old report still lists them.
+    await setDoc(doc(db, 'users', DEMOTED_A), {
+      email: 'demoted-a@test.com', organizationId: ORG_A, role: 'operative', operativeMode: true, manager: false,
+      permissions: { operativeMode: true, manager: false },
+    })
+    await setDoc(doc(db, 'users', DEMOTED_REPORT_A), {
+      email: 'demoted-report-a@test.com', organizationId: ORG_A, role: 'operative', operativeMode: true,
+      assignedManagerUserIds: [DEMOTED_A, LM_A], dayRate: 150,
+    })
+    await setDoc(doc(db, 'organizations', ORG_A, 'holidayBookings', 'hb1310'), leave(DEMOTED_REPORT_A, 'pending'))
+    // An operative an operatives manager deletes (with the documents userDeleteWrites removes in its first batch).
+    await setDoc(doc(db, 'users', DEL_OP_A), {
+      email: 'del-op-a@test.com', organizationId: ORG_A, role: 'operative', operativeMode: true, firstName: 'Del',
+    })
+    await setDoc(doc(db, 'users', DEL_OP_A, 'private', 'taxIds'), { utrNumber: '1', vatNumber: '' })
+    await setDoc(doc(db, 'users', DEL_OP_A, 'orgMemberships', ORG_A), { organizationId: ORG_A, role: 'operative' })
+    await setDoc(doc(db, 'organizations', ORG_A, 'userEmails', 'del-op-a@test.com'), { userId: DEL_OP_A })
+    await updateDoc(doc(db, 'organizations', ORG_A), { [`members.${DEL_OP_A}`]: 'operative' })
+    // Tomorrow (future) and today: an operatives manager deletes only the future one (1.31.0 owner decision).
+    await setDoc(doc(db, 'organizations', ORG_A, 'bookings', 'del-op-booking'), {
+      operativeId: DEL_OP_A, projectId: 'JOB-X', date: Timestamp.fromMillis(Date.now() + 36 * 3600 * 1000),
+    })
+    await setDoc(doc(db, 'organizations', ORG_A, 'bookings', 'del-op-booking-today'), {
+      operativeId: DEL_OP_A, projectId: 'JOB-X', date: Timestamp.fromMillis(Date.now() - 3600 * 1000),
+    })
+  })
+}
+
+test('1.31.0: a manager demoted to operative is nobody’s line manager — no leave decision, no pay read', async () => {
+  await seed1310People()
+  const demoted = authDb(DEMOTED_A, 'demoted-a@test.com')
+  const ref = doc(demoted, 'organizations', ORG_A, 'holidayBookings', 'hb1310')
+  await assertFails(updateDoc(ref, { status: 'approved', approvedByUserId: DEMOTED_A, approvedAt: Timestamp.now() }))
+  await assertFails(getDoc(doc(demoted, 'organizations', ORG_A, 'payProfiles', DEMOTED_REPORT_A)))
+  // The current line manager still decides.
+  await assertSucceeds(
+    updateDoc(doc(authDb(LM_A, 'lm-a@test.com'), 'organizations', ORG_A, 'holidayBookings', 'hb1310'), {
+      status: 'approved', approvedByUserId: LM_A, approvedAt: Timestamp.now(),
+    })
+  )
+})
+
+test('1.31.0: one flag reader — a self-manage toggle off at the top level is off, whatever permissions.{key} says', async () => {
+  await seedLeaveAndTimesheetPeople()
+  const MIXED = 'mixed-flag-a'
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'users', MIXED), {
+      email: 'mixed-a@test.com', organizationId: ORG_A, role: 'manager', manager: true, annualLeaveSelfBook: false,
+      assignedManagerUserIds: [LM_A], permissions: { manager: true, annualLeaveSelfBook: true },
+    })
+  })
+  const mixed = authDb(MIXED, 'mixed-a@test.com')
+  await assertFails(setDoc(doc(mixed, 'organizations', ORG_A, 'holidayBookings', 'hb-mixed'), leave(MIXED, 'approved')))
+  await assertSucceeds(setDoc(doc(mixed, 'organizations', ORG_A, 'holidayBookings', 'hb-mixed'), leave(MIXED, 'pending')))
+})
+
+test('1.31.0 owner decision 7: operatives managers edit and delete operatives (never managers, admins or themselves)', async () => {
+  await seed1310People()
+  const mgr = authDb(PAY_MGR_OPS, 'pay-mgr-ops@test.com')
+  // Edit: names, active flag and the operative toggles; never a privilege or "No line manager".
+  await assertSucceeds(updateDoc(doc(mgr, 'users', DEL_OP_A), { firstName: 'Delia', name: 'Delia', isActive: false, materials: true }))
+  await assertFails(updateDoc(doc(mgr, 'users', DEL_OP_A), { adminAccess: true }))
+  await assertFails(updateDoc(doc(mgr, 'users', DEL_OP_A), { manager: true, operativeMode: false, role: 'manager' }))
+  await assertFails(updateDoc(doc(mgr, 'users', DEL_OP_A), { annualLeaveSelfBook: true }))
+  await assertFails(updateDoc(doc(mgr, 'users', LM_A), { firstName: 'Nope' }))
+  // A manager without the Operatives permission edits nobody.
+  await assertFails(updateDoc(doc(authDb(LM_A, 'lm-a@test.com'), 'users', DEL_OP_A), { firstName: 'No' }))
+  // Delete: the userDeleteWrites first batch (users, tax ids, membership, email claim, members entry) in one go.
+  await assertSucceeds(deleteDoc(doc(mgr, 'users', DEL_OP_A, 'private', 'taxIds')))
+  await assertSucceeds(deleteDoc(doc(mgr, 'users', DEL_OP_A, 'orgMemberships', ORG_A)))
+  await assertSucceeds(deleteDoc(doc(mgr, 'organizations', ORG_A, 'userEmails', 'del-op-a@test.com')))
+  await assertSucceeds(deleteDoc(doc(mgr, 'users', DEL_OP_A)))
+  await assertSucceeds(updateDoc(doc(mgr, 'organizations', ORG_A), { [`members.${DEL_OP_A}`]: deleteField() }))
+  // Step 2: the deleted operative's booking and its tombstone.
+  const bookings = writeBatch(mgr)
+  bookings.delete(doc(mgr, 'organizations', ORG_A, 'bookings', 'del-op-booking'))
+  bookings.set(doc(mgr, 'organizations', ORG_A, 'deletedBookings', 'del-op-booking'), {
+    bookingId: 'del-op-booking', collection: 'bookings', deletedAt: serverTimestamp(), deletedBy: PAY_MGR_OPS, deletedFrom: 'web',
+  })
+  await assertSucceeds(bookings.commit())
+  // Today's (and any past) booking of the deleted operative: never deleted by a manager, nor its tombstone written.
+  await assertFails(deleteDoc(doc(mgr, 'organizations', ORG_A, 'bookings', 'del-op-booking-today')))
+  await assertFails(setDoc(doc(mgr, 'organizations', ORG_A, 'deletedBookings', 'del-op-booking-today'), {
+    bookingId: 'del-op-booking-today', collection: 'bookings', deletedAt: serverTimestamp(), deletedBy: PAY_MGR_OPS, deletedFrom: 'web',
+  }))
+  // Never a manager, an admin or themselves; never another members entry.
+  await assertFails(deleteDoc(doc(mgr, 'users', LM_A)))
+  await assertFails(deleteDoc(doc(mgr, 'users', ADMIN_A)))
+  await assertFails(deleteDoc(doc(authDb(LM_A, 'lm-a@test.com'), 'users', PAY_OP)))
+  await assertFails(updateDoc(doc(mgr, 'organizations', ORG_A), { [`members.${ADMIN_A}`]: deleteField() }))
+})
+
+test('1.31.0: Change Super Admin is one batch; the outgoing Super Admin keeps self-approval', async () => {
+  await seedLeaveAndTimesheetPeople()
+  const NEW_SA = 'new-sa-a'
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    await setDoc(doc(db, 'users', NEW_SA), { email: 'new-sa@test.com', organizationId: ORG_A, role: 'admin', adminAccess: true })
+    await updateDoc(doc(db, 'organizations', ORG_A), { [`members.${NEW_SA}`]: 'admin' })
+  })
+  const admin = authDb(ADMIN_A, 'admin-a@test.com')
+  const batch = writeBatch(admin)
+  batch.update(doc(admin, 'organizations', ORG_A), { creatorUserId: NEW_SA, [`members.${NEW_SA}`]: 'admin' })
+  batch.update(doc(admin, 'users', NEW_SA), { isSuperAdmin: true, adminAccess: true, role: 'admin', annualLeaveSelfBook: true, timesheetSelfSign: true })
+  batch.update(doc(admin, 'users', ADMIN_A), { isSuperAdmin: false, adminAccess: true, role: 'admin', annualLeaveSelfBook: true, timesheetSelfSign: true })
+  await assertSucceeds(batch.commit())
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    await updateDoc(doc(db, 'organizations', ORG_A), { creatorUserId: ADMIN_A })
+    await updateDoc(doc(db, 'users', ADMIN_A), { isSuperAdmin: deleteField(), annualLeaveSelfBook: deleteField(), timesheetSelfSign: deleteField() })
+  })
 })

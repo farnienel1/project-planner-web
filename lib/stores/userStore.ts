@@ -11,7 +11,14 @@ import { auth, db } from '@/lib/firebase/config'
 import { applyExclusiveRateFields, buildSaveUserPayload, changedUserPayload } from '@/lib/firebase/userPayload'
 import {
   ORG_MEMBERSHIP_PERMISSION_KEYS,
+  JOB_MANAGER_REMOVED_NOTICE_TYPE,
   USER_DELETE_REFUSAL_MESSAGES,
+  canManageOperatives,
+  jobManagerRemovalWrites,
+  jobManagerRemovedNoticeText,
+  superAdminTransferWrites,
+  userActiveWrites,
+  type PersonAccessChange,
   orgMembershipWriteFields,
   canChangePersonPay,
   operativeProfileWriteFields,
@@ -31,7 +38,8 @@ import { applyAccountTypeChange } from '@/lib/staff/accountTypeChange'
 import { accountTypeChangeWrites } from '@/lib/canonical/permissionLevels'
 import { parseFormerUserIds, sharedDocumentPayWrite } from '@/lib/canonical'
 import { privatePayFor, securitySwitchesReady } from '@/lib/access/securitySwitches'
-import { savePartialDocument } from '@/lib/firebase/partialWrite'
+import { addPartialDocumentToBatch, firestoreUpdateFields, savePartialDocument } from '@/lib/firebase/partialWrite'
+import { notifyCompanyActivity } from '@/lib/notifications/companyActivity'
 import { operativeRowWriteFields } from '@/lib/canonical/peopleDocuments'
 
 interface UserStoreState {
@@ -58,8 +66,9 @@ interface UserStoreState {
     }
   ) => Promise<void>
   transferSuperAdmin: (organizationId: string, fromUserId: string, toUserId: string, roster: User[]) => Promise<void>
-  setUserActive: (userId: string, isActive: boolean, organizationId?: string) => Promise<void>
-  deleteUser: (userId: string, opts?: { organizationId?: string; email?: string }) => Promise<void>
+  /** Rulebook 1.31.0 `userActiveWrites`: `roster` is every users document of the organisation (same-email copies). */
+  setUserActive: (userId: string, isActive: boolean, organizationId?: string, roster?: ReadonlyArray<User>) => Promise<void>
+  deleteUser: (userId: string, opts?: { organizationId?: string; email?: string; roster?: ReadonlyArray<User> }) => Promise<void>
   sendPasswordReset: (email: string) => Promise<void>
   applyAccountType: (user: User, accountType: 'operative' | 'manager' | 'admin') => User
   /**
@@ -74,6 +83,16 @@ interface UserStoreState {
     permissions?: object | null
   ) => Promise<string | null>
   syncLinkedOperative: (organizationId: string, user: User, operatives: Operative[]) => Promise<void>
+  /**
+   * Rulebook 1.31.0 `jobManagerRemovalWrites`: a person made an operative, deactivated or deleted is taken off every
+   * job they manage (one batch) and the admins are told (`job_manager_removed`). Returns the number of jobs changed.
+   */
+  removeFromManagedJobs: (
+    person: User,
+    change: PersonAccessChange,
+    organizationId: string,
+    roster: ReadonlyArray<User>
+  ) => Promise<number>
 }
 
 function identityFields(user: User): Record<string, unknown> {
@@ -91,47 +110,49 @@ function identityFields(user: User): Record<string, unknown> {
 }
 
 /**
- * The person's other users documents with the same email in THIS organisation get the same name (rulebook §11). The
- * query names the organisation: a users query on email alone can never be allowed by the rules for another person
- * (`canReadUserDocument` cannot prove every match is readable), so before 1.12.2 every admin save of someone else's
- * profile ended in "Missing or insufficient permissions" after the profile itself had been written. Another company's
- * document is never rewritten. Best effort: the profile is already saved, so a refusal here is logged, not thrown.
+ * The person's other users documents with the same email in THIS organisation (rulebook §11). The query names the
+ * organisation: a users query on email alone can never be allowed by the rules for another person. Another company's
+ * document is never rewritten. A refused read is logged and leaves the list empty (the profile still saves).
  */
-async function updateSameEmailUsers(user: User, organizationId: string, previousEmail?: string): Promise<void> {
+async function sameEmailUserRefs(user: User, organizationId: string, previousEmail?: string) {
   const org = organizationId.trim()
-  if (!org) return
+  if (!org) return []
   const emails = [user.email, previousEmail || '']
     .map((value) => value.trim().toLowerCase())
     .filter((value, index, all) => value.includes('@') && all.indexOf(value) === index)
+  const refs: ReturnType<typeof doc>[] = []
   for (const email of emails) {
     try {
       const snapshot = await getDocs(
         query(collection(db, 'users'), where('organizationId', '==', org), where('email', '==', email), limit(10))
       )
-      for (const entry of snapshot.docs) {
-        if (entry.id === user.id) continue
-        await updateDoc(entry.ref, identityFields(user))
-      }
+      for (const entry of snapshot.docs) if (entry.id !== user.id && !refs.some((ref) => ref.id === entry.id)) refs.push(entry.ref)
     } catch (error) {
-      console.warn('[userStore] same-email name sync skipped', error)
+      console.warn('[userStore] same-email users read skipped', error)
     }
   }
+  return refs
 }
 
-async function updateLinkedStaffNames(organizationId: string, user: User, previousEmail?: string): Promise<void> {
+/** The `operatives` / `managers` rows on the person's email (old or new), for the name sync. */
+async function linkedStaffRefs(organizationId: string, user: User, previousEmail?: string) {
   const emails = new Set(
     [user.email, previousEmail || ''].map((value) => value.trim().toLowerCase()).filter(Boolean)
   )
-  if (emails.size === 0) return
-  const fields = identityFields(user)
+  const refs: ReturnType<typeof doc>[] = []
+  if (emails.size === 0) return refs
   for (const collectionName of ['operatives', 'managers'] as const) {
-    const snapshot = await getDocs(collection(db, 'organizations', organizationId, collectionName))
-    for (const entry of snapshot.docs) {
-      const email = String(entry.data().email || '').trim().toLowerCase()
-      if (!emails.has(email)) continue
-      await updateDoc(entry.ref, fields)
+    try {
+      const snapshot = await getDocs(collection(db, 'organizations', organizationId, collectionName))
+      for (const entry of snapshot.docs) {
+        const email = String(entry.data().email || '').trim().toLowerCase()
+        if (emails.has(email)) refs.push(entry.ref)
+      }
+    } catch (error) {
+      console.warn(`[userStore] ${collectionName} read skipped`, error)
     }
   }
+  return refs
 }
 
 /**
@@ -257,103 +278,131 @@ export const useUserStore = create<UserStoreState>(() => ({
       },
       { userId: user.id, isOperative: Boolean(user.permissions.operativeMode || user.role === 'operative') }
     )
+    // Rulebook 1.31.0 §11 (audit finding 8): ONE batch — the profile, its pay history and pay profile, the email
+    // claim, the same-email copies' names, the linked operatives / managers rows' names and the operativeProfiles
+    // mirror land together or not at all. Before 1.31.0 only the first three were batched and the rest followed one by
+    // one, so a refusal half way left the documents disagreeing. Everything is read first.
+    const email = user.email.toLowerCase().trim()
+    const [sameEmail, linkedRows] = orgId
+      ? await Promise.all([sameEmailUserRefs(user, orgId, previousEmail), linkedStaffRefs(orgId, user, previousEmail)])
+      : [[], []]
     const batch = writeBatch(db)
     // Rulebook 1.26.0 (`sharedDocumentPayWrite`): with `privatePay` on for this organisation, the users document takes
     // no pay value (the rules refuse it); pay goes to the pay profile and the rate history in the same batch.
     await securitySwitchesReady()
     batch.update(doc(db, 'users', user.id), sharedDocumentPayWrite(payload, { privatePay: orgId ? privatePayFor(orgId) : false }))
-    // One batch: the profile and its pay history are saved together or not at all (rulebook 1.10.0 §8).
     if (orgId) {
       for (const row of historyRows) batch.set(doc(db, 'organizations', orgId, 'operativeDayRateHistory', row.id), row.fields)
       if (payWriter) addPayProfileWrite(batch, orgId, user.id, payload, saverId)
+      if (email) batch.set(doc(db, 'organizations', orgId, 'userEmails', email), { userId: user.id })
+      for (const ref of sameEmail) batch.update(ref, identityFields(user))
+      for (const ref of linkedRows) batch.update(ref, identityFields(user))
+      // The operativeProfiles mirror holds pay, so only someone who may change this person's pay writes it
+      // (`canChangePersonPay`; firestore.rules `canChangePayOf`). A person's own save never touches it.
+      if (
+        payWriter &&
+        (user.permissions.operativeMode || user.permissions.manager || user.permissions.adminAccess || user.isSuperAdmin)
+      ) {
+        const profile: Record<string, unknown> = { userId: user.id }
+        applyExclusiveRateFields(profile, user)
+        // Rulebook 1.8.0: a partial update of the mirror (`operativeProfileWriteFields`); unchanged pay writes nothing.
+        await addPartialDocumentToBatch(
+          batch,
+          doc(db, 'organizations', orgId, 'operativeProfiles', user.id),
+          profile,
+          operativeProfileWriteFields,
+          { userId: saverId }
+        )
+      }
     }
     await batch.commit()
-    const email = user.email.toLowerCase().trim()
-    if (orgId && email) {
-      await setDoc(doc(db, 'organizations', orgId, 'userEmails', email), { userId: user.id })
-    }
-    if (orgId) await updateSameEmailUsers(user, orgId, previousEmail)
-    if (orgId) await updateLinkedStaffNames(orgId, user, previousEmail)
-    // The operativeProfiles mirror holds pay, so only someone who may change this person's pay
-    // writes it (`canChangePersonPay`; firestore.rules `canChangePayOf`). A person's own save
-    // never touches it.
-    const mayWritePay = canChangePersonPay(
-      {
-        userId: saverId,
-        isAdmin: saverIsAdmin || Boolean(saver?.role === 'admin' && !saver?.permissions.operativeMode),
-        isManager: Boolean(saver && (saver.permissions.manager || saver.role === 'manager')),
-        hasOperativesAccess: Boolean(saver?.permissions.operatives),
-        isOperativeMode: Boolean(saver?.permissions.operativeMode),
-      },
-      { userId: user.id, isOperative: Boolean(user.permissions.operativeMode || user.role === 'operative') }
-    )
-    if (
-      orgId &&
-      mayWritePay &&
-      (user.permissions.operativeMode ||
-        user.permissions.manager ||
-        user.permissions.adminAccess ||
-        user.isSuperAdmin)
-    ) {
-      const profile: Record<string, unknown> = { userId: user.id }
-      applyExclusiveRateFields(profile, user)
-      // Rulebook 1.8.0: a partial update of the mirror (`operativeProfileWriteFields`); unchanged pay writes nothing.
-      await savePartialDocument(
-        doc(db, 'organizations', orgId, 'operativeProfiles', user.id),
-        profile,
-        operativeProfileWriteFields,
-        { userId: saverId }
-      )
-    }
   },
 
   transferSuperAdmin: async (organizationId, fromUserId, toUserId, roster) => {
     if (!organizationId || !toUserId || fromUserId === toUserId) return
     const orgSnap = await getDoc(doc(db, 'organizations', organizationId))
     const previousCreator = orgSnap.exists() ? String(orgSnap.data().creatorUserId || '') : ''
-    const updatedAt = Timestamp.now()
-    await updateDoc(doc(db, 'organizations', organizationId), { creatorUserId: toUserId, updatedAt })
-
-    const demote = new Set<string>()
-    for (const person of roster) {
-      if (person.isSuperAdmin) demote.add(person.id)
+    // Rulebook 1.31.0 `superAdminTransferWrites`: one batch — the organisation's creator and members entry, the new
+    // Super Admin (both self-manage toggles on), and every outgoing Super Admin (kept self-approved when they have no
+    // line manager). Before 1.31.0 these were separate writes and the outgoing Super Admin lost self-approval.
+    const writes = superAdminTransferWrites({
+      organizationId,
+      fromUserId,
+      toUserId,
+      previousCreatorUserId: previousCreator || null,
+      roster: roster.map((row) => ({
+        id: row.id,
+        email: row.email,
+        organizationId: row.organizationId,
+        isActive: row.isActive,
+        role: row.role,
+        isSuperAdmin: row.isSuperAdmin,
+        formerUserIds: row.formerUserIds ?? [],
+        assignedManagerUserIds: row.assignedManagerUserIds ?? null,
+        assignedManagerUserId: row.assignedManagerUserId ?? null,
+        hasNoLineManager: row.hasNoLineManager ?? null,
+        permissions: row.permissions as unknown as Record<string, unknown>,
+      })),
+    })
+    if (!writes) return
+    const batch = writeBatch(db)
+    const metadata = writeMetadataFields(auth?.currentUser?.uid, 'web') ?? {}
+    for (const write of writes) {
+      const ref = doc(db, ...(write.path.split('/') as [string, ...string[]]))
+      if (write.kind === 'membership') {
+        // Admins may not read another person's membership: a merge-set of the nested flags (created when missing).
+        const nested: Record<string, unknown> = {}
+        const flat: Record<string, unknown> = {}
+        for (const [key, value] of Object.entries(write.fields)) {
+          if (key.startsWith('permissions.')) nested[key.slice('permissions.'.length)] = value
+          else flat[key] = value
+        }
+        batch.set(ref, { organizationId, ...flat, permissions: nested, updatedAt: serverTimestamp() }, { merge: true })
+      } else if (write.kind === 'userProfile') {
+        batch.update(ref, { ...write.fields, ...metadata, updatedAt: serverTimestamp() })
+      } else {
+        batch.update(ref, { ...write.fields, updatedAt: serverTimestamp() })
+      }
     }
-    if (fromUserId) demote.add(fromUserId)
-    if (previousCreator) demote.add(previousCreator)
-    demote.delete(toUserId)
-
-    const promote = { isSuperAdmin: true, adminAccess: true, role: 'admin', 'permissions.adminAccess': true, updatedAt }
-    await updateDoc(doc(db, 'users', toUserId), promote)
-    await writeMembershipFlags(toUserId, organizationId, promote)
-
-    for (const userId of demote) {
-      const demotion = { ...roleFields, updatedAt }
-      await updateDoc(doc(db, 'users', userId), demotion)
-      await writeMembershipFlags(userId, organizationId, demotion)
-    }
+    await batch.commit()
   },
 
-  setUserActive: async (userId, isActive, organizationId) => {
+  setUserActive: async (userId, isActive, organizationId, roster) => {
     if (!isActive) {
       const existing = await getDoc(doc(db, 'users', userId))
       if (existing.exists() && existing.data().isSuperAdmin === true) {
         throw new Error('The super admin cannot be deactivated.')
       }
     }
-    const updatedAt = Timestamp.now()
-    await updateDoc(doc(db, 'users', userId), { isActive, updatedAt })
     const orgId = organizationId?.trim()
-    if (!orgId) return
-    // Admins can update a membership but cannot read another user's membership doc.
-    // A get() here throws "Missing or insufficient permissions" and the screen rolls the toggle back.
-    try {
-      await updateDoc(doc(db, 'users', userId, 'orgMemberships', orgId), { accountActive: isActive, updatedAt })
-    } catch (error) {
-      const code = (error as { code?: string }).code || ''
-      if (code === 'not-found' || code === 'permission-denied') return
-      throw error
+    if (!orgId) {
+      await updateDoc(doc(db, 'users', userId), { isActive, updatedAt: Timestamp.now() })
+      return
     }
+    // Rulebook 1.31.0 `userActiveWrites` (audit finding 9): every users document of the person in this organisation
+    // (their same-email copies included) and the membership, in one batch. Before 1.31.0 only one document changed.
+    const person = (roster || []).find((row) => row.id === userId)
+    const writes = userActiveWrites({
+      organizationId: orgId,
+      person: { id: userId, email: person?.email ?? null },
+      isActive,
+      roster: (roster || []).map((row) => ({ id: row.id, email: row.email, organizationId: row.organizationId })),
+    })
+    const batch = writeBatch(db)
+    const updatedAt = Timestamp.now()
+    const actor = useAuthStore.getState().user
+    const actorIsAdmin = Boolean(actor && (actor.isSuperAdmin || actor.permissions.adminAccess || actor.role === 'admin'))
+    for (const write of writes) {
+      const ref = doc(db, ...(write.path.split('/') as [string, ...string[]]))
+      // Admins can update a membership but cannot read it: a merge-set of the flag (created when missing). A manager
+      // with the Operatives permission (1.31.0) writes the users documents only — memberships are admin writes.
+      if (write.kind === 'membership' && !actorIsAdmin) continue
+      if (write.kind === 'membership') batch.set(ref, { ...write.fields, updatedAt }, { merge: true })
+      else batch.update(ref, { ...write.fields, updatedAt })
+    }
+    await batch.commit()
   },
+
 
   deleteUser: async (userId, opts) => {
     // Rulebook 1.10.0 §11 (`canDeleteUser`, `userDeleteWrites`): gate first, then one plan in order. The first
@@ -369,10 +418,11 @@ export const useUserStore = create<UserStoreState>(() => ({
       const orgSnap = await getDoc(doc(db, 'organizations', orgId)).catch(() => null)
       creatorUserId = orgSnap?.exists() ? String(orgSnap.data().creatorUserId || '') || null : null
     }
+    // Rulebook 1.31.0 (owner decision 7): a manager with the Operatives permission deletes operatives too.
     const refusal = userDeleteRefusal(
       actor ? { id: actor.id, email: actor.email, role: staffAccountRole(actor), formerUserIds: actor.formerUserIds } : null,
       { id: userId, email, role: staffAccountRole(target), formerUserIds: parseFormerUserIds(stored) },
-      { creatorUserId }
+      { creatorUserId, actorManagesOperatives: Boolean(actor && canManageOperatives(actor.permissions ? { ...actor.permissions, role: actor.role } : actor)) }
     )
     if (refusal) throw new Error(USER_DELETE_REFUSAL_MESSAGES[refusal])
     if (!orgId) throw new Error('Organisation not loaded.')
@@ -409,7 +459,15 @@ export const useUserStore = create<UserStoreState>(() => ({
           ?.docs.map((row) => ({ id: row.id, email: String(row.data().email || '') })) ?? [])
       : []
     const orgData = useOrganizationDocumentStore.getState().data
+    const orgMembers = orgData && typeof orgData.members === 'object' && orgData.members ? (orgData.members as Record<string, unknown>) : null
+    const actorManagesOperatives = Boolean(
+      actor && !(actor.isSuperAdmin || actor.permissions.adminAccess || actor.role === 'admin') &&
+        canManageOperatives({ ...actor.permissions, role: actor.role })
+    )
     const steps = userDeleteWrites({
+      actorManagesOperatives,
+      // 1.31.0: remove `members.{uid}` only when it is listed (an operatives manager may remove only a listed entry).
+      listedInMembers: orgMembers ? Object.prototype.hasOwnProperty.call(orgMembers, userId) : true,
       orgId,
       user: { id: userId, email, role: staffAccountRole(target), formerUserIds: parseFormerUserIds(stored) },
       actorUserId: auth?.currentUser?.uid || actor?.id || '',
@@ -438,6 +496,80 @@ export const useUserStore = create<UserStoreState>(() => ({
       }
       await batch.commit()
     }
+    // Rulebook 1.31.0 §13: the admins hear that an operative was deleted (`operative_deleted`, company activity,
+    // never the actor). Best effort — the delete is done.
+    if (target && staffAccountRole(target).isOperativeMode && !staffAccountRole(target).isAdmin) {
+      const name = `${target.firstName || ''} ${target.surname || ''}`.trim() || email || 'An operative'
+      void notifyCompanyActivity({
+        organizationId: orgId,
+        type: 'operative_deleted',
+        title: 'Operative deleted',
+        message: `${name} was deleted.`,
+        relatedId: userId,
+        actor,
+        users: opts?.roster ?? [],
+      }).catch((error) => console.warn('[userStore] operative_deleted notice skipped', error))
+    }
+  },
+
+  removeFromManagedJobs: async (person, change, organizationId, roster) => {
+    const org = organizationId.trim()
+    if (!org) return 0
+    const [projects, smallWorks, managers] = await Promise.all([
+      getDocs(collection(db, 'organizations', org, 'projects')),
+      getDocs(collection(db, 'organizations', org, 'smallWorks')),
+      getDocs(collection(db, 'organizations', org, 'managers')).catch(() => null),
+    ])
+    const ids = (value: unknown) => (Array.isArray(value) ? value.filter((id): id is string => typeof id === 'string') : [])
+    const jobs = [
+      ...projects.docs.map((row) => ({ row, collection: 'projects' as const })),
+      ...smallWorks.docs.map((row) => ({ row, collection: 'smallWorks' as const })),
+    ].map(({ row, collection: kind }) => {
+      const data = row.data() as Record<string, unknown>
+      return {
+        id: row.id,
+        collection: kind,
+        managerId: typeof data.managerId === 'string' ? data.managerId : null,
+        managerIds: ids(data.managerIds),
+        managerUserIds: ids(data.managerUserIds),
+        assignedManagerUserIds: ids(data.assignedManagerUserIds),
+      }
+    })
+    // Rulebook 1.31.0 `jobManagerRemovalWrites`: every id of the person (same-email documents, the catalogue rows on
+    // their email) off each job; the job stays, with no manager when none is left.
+    const writes = jobManagerRemovalWrites({
+      organizationId: org,
+      person: { id: person.id, email: person.email, role: person.role, ...person.permissions },
+      change,
+      jobs,
+      roster: roster.map((row) => ({ id: row.id, email: row.email, isActive: row.isActive, formerUserIds: row.formerUserIds ?? [] })),
+      managers: managers?.docs.map((row) => ({ id: row.id, email: String(row.data().email || '') })) ?? [],
+    })
+    if (writes.length === 0) return 0
+    const metadata = writeMetadataFields(auth?.currentUser?.uid, 'web') ?? {}
+    for (let i = 0; i < writes.length; i += 400) {
+      const batch = writeBatch(db)
+      for (const write of writes.slice(i, i + 400)) {
+        batch.update(doc(db, ...(write.path.split('/') as [string, ...string[]])), {
+          ...firestoreUpdateFields({ set: write.set, remove: write.remove }),
+          ...metadata,
+          updatedAt: serverTimestamp(),
+        })
+      }
+      await batch.commit()
+    }
+    const name = `${person.firstName || ''} ${person.surname || ''}`.trim() || person.email
+    const text = jobManagerRemovedNoticeText(name, writes.length)
+    void notifyCompanyActivity({
+      organizationId: org,
+      type: JOB_MANAGER_REMOVED_NOTICE_TYPE,
+      title: text.title,
+      message: text.message,
+      relatedId: person.id,
+      actor: useAuthStore.getState().user,
+      users: roster,
+    }).catch((error) => console.warn('[userStore] job_manager_removed notice skipped', error))
+    return writes.length
   },
 
   sendPasswordReset: async (email) => {
@@ -466,6 +598,10 @@ export const useUserStore = create<UserStoreState>(() => ({
         console.warn('[userStore] same-email users read skipped', error)
       }
     }
+    // Rulebook 1.31.0 (audit finding 3): same-email documents already listed in `members` get the new role too.
+    const orgData = useOrganizationDocumentStore.getState().data
+    const members =
+      orgData && typeof orgData.members === 'object' && orgData.members ? (orgData.members as Record<string, unknown>) : null
     const buildPlan = (rosterRows: Array<{ id: string; email: string; organizationId?: string }>) =>
       accountTypeChangeWrites({
         person,
@@ -473,6 +609,7 @@ export const useUserStore = create<UserStoreState>(() => ({
         organizationId,
         roster: rosterRows,
         permissions: (permissions as Record<string, unknown> | null | undefined) ?? null,
+        members,
       })
     const plan = buildPlan([...rows.values()])
     if (!plan.ok) throw new Error(plan.message)

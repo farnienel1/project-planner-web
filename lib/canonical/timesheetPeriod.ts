@@ -157,6 +157,18 @@ export function timesheetDocumentId(userId: string, startDayKey: string, timeZon
   return `${TIMESHEET_DOCUMENT_PREFIX}${uid}_${stamp}`
 }
 
+/**
+ * Rulebook 1.31.0: the users id a timesheet document id names (`timesheet_{uid}_{unix}`, `timesheetDocumentId`), or
+ * '' when the id is not a timesheet id. Used when a stored sheet has no `userId` field (older builds), so it is never
+ * dropped from a list that matches sheets to people.
+ */
+export function timesheetDocumentSubjectId(documentId: unknown): string {
+  const id = typeof documentId === 'string' ? documentId.trim() : ''
+  if (!id.startsWith(TIMESHEET_DOCUMENT_PREFIX)) return ''
+  const match = /^(.+)_(-?\d+)$/.exec(id.slice(TIMESHEET_DOCUMENT_PREFIX.length))
+  return match ? match[1] : ''
+}
+
 export function timesheetPeriodKey(period: Pick<TimesheetPeriodIdentity, 'startDayKey' | 'endDayKey'>): string {
   return `${period.startDayKey}|${period.endDayKey}`
 }

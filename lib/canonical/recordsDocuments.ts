@@ -1300,6 +1300,8 @@ export const NOTIFICATION_RELATED_ID: Readonly<Record<string, NotificationRelate
   project_created: 'job',
   small_works_created: 'job',
   warning_removed: 'warningKey',
+  operative_deleted: 'user',
+  job_manager_removed: 'user',
   qualification_expiry: 'none',
   idea_status: 'feedbackIdea',
   idea_shipped: 'feedbackIdea',

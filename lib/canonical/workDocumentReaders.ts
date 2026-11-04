@@ -259,7 +259,8 @@ export function parseJobDocument(
     managerName: managerName && managerName.toLowerCase() !== 'custom' ? managerName : null,
     managerId: managerIdStored || managerIds[0] || null,
     managerIds,
-    managerUserIds: idList(row.managerUserIds),
+    // 1.31.0: an older job stored its account ids as `assignedManagerUserIds` only (`jobManagerIds` already reads it).
+    managerUserIds: idList(row.managerUserIds).length > 0 ? idList(row.managerUserIds) : idList(row.assignedManagerUserIds),
     isLive: documentBool(row.isLive) !== false,
     description: optionalText(row.description),
     notes: optionalText(row.notes),

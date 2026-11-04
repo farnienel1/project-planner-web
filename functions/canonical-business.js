@@ -123,6 +123,8 @@ var ProjectPlannerCanonical = (() => {
     JOB_MANAGER_LEVEL_LABELS: () => JOB_MANAGER_LEVEL_LABELS,
     JOB_MANAGER_LIST_FIELDS: () => JOB_MANAGER_LIST_FIELDS,
     JOB_MANAGER_NO_CANDIDATES_MESSAGE: () => JOB_MANAGER_NO_CANDIDATES_MESSAGE,
+    JOB_MANAGER_REMOVED_NOTICE_TYPE: () => JOB_MANAGER_REMOVED_NOTICE_TYPE,
+    JOB_MANAGER_REQUIRED_MESSAGE: () => JOB_MANAGER_REQUIRED_MESSAGE,
     JOB_MANAGER_WRITE_GROUP: () => JOB_MANAGER_WRITE_GROUP,
     JOB_PIN_WRITE_GROUP: () => JOB_PIN_WRITE_GROUP,
     JOB_QUERY_COLLECTIONS: () => JOB_QUERY_COLLECTIONS,
@@ -136,6 +138,7 @@ var ProjectPlannerCanonical = (() => {
     LEGACY_NOTIFICATION_TYPES: () => LEGACY_NOTIFICATION_TYPES,
     LEGACY_PLACEHOLDER_DOCUMENT_ID: () => LEGACY_PLACEHOLDER_DOCUMENT_ID,
     LINE_MANAGER_NOT_SET_LABEL: () => LINE_MANAGER_NOT_SET_LABEL,
+    LINE_MANAGER_REPORTS_BLOCK_MESSAGE: () => LINE_MANAGER_REPORTS_BLOCK_MESSAGE,
     LINE_MANAGER_REQUIRED_MESSAGE: () => LINE_MANAGER_REQUIRED_MESSAGE,
     LINE_MANAGER_WRITE_GROUP: () => LINE_MANAGER_WRITE_GROUP,
     LIVE_COLLECTIONS: () => LIVE_COLLECTIONS,
@@ -470,6 +473,7 @@ var ProjectPlannerCanonical = (() => {
     capitalizeTimesheetWeekday: () => capitalizeTimesheetWeekday,
     catalogueOperativePaySubjects: () => catalogueOperativePaySubjects,
     catalogueRecordFromItem: () => catalogueRecordFromItem,
+    changeRemovesJobManager: () => changeRemovesJobManager,
     chooseSessionOrganization: () => chooseSessionOrganization,
     clampMonthDayInZone: () => clampMonthDayInZone,
     clashApprovalWrites: () => clashApprovalWrites,
@@ -537,6 +541,7 @@ var ProjectPlannerCanonical = (() => {
     expenseValidationError: () => expenseValidationError,
     expenseWriteFields: () => expenseWriteFields,
     exportIncludesSensitiveFields: () => exportIncludesSensitiveFields,
+    exportedTimesheetHistorySubjects: () => exportedTimesheetHistorySubjects,
     fileDeletePermission: () => fileDeletePermission,
     fileReportCollectionPath: () => fileReportCollectionPath,
     fileReportFileName: () => fileReportFileName,
@@ -633,6 +638,7 @@ var ProjectPlannerCanonical = (() => {
     isTombstonedBookingCollection: () => isTombstonedBookingCollection,
     isVerifiedPlatformOwner: () => isVerifiedPlatformOwner,
     isWarningActive: () => isWarningActive,
+    isWarningRowInScope: () => isWarningRowInScope,
     isWeekendDayKey: () => isWeekendDayKey,
     isWorkLiveOn: () => isWorkLiveOn,
     jobClientId: () => jobClientId,
@@ -645,9 +651,14 @@ var ProjectPlannerCanonical = (() => {
     jobManagerAssignments: () => jobManagerAssignments,
     jobManagerCandidates: () => jobManagerCandidates,
     jobManagerIds: () => jobManagerIds,
+    jobManagerRemovalWrites: () => jobManagerRemovalWrites,
+    jobManagerRemovedNoticeText: () => jobManagerRemovedNoticeText,
+    jobManagerRequiredError: () => jobManagerRequiredError,
     jobManagerUserIds: () => jobManagerUserIds,
     jobQueryPlan: () => jobQueryPlan,
     jobTileBadges: () => jobTileBadges,
+    jobTypeDisplayName: () => jobTypeDisplayName,
+    jobTypeStoredFields: () => jobTypeStoredFields,
     jobTypesChangeWriteFields: () => jobTypesChangeWriteFields,
     jobTypesWriteFields: () => jobTypesWriteFields,
     jobWorkStatus: () => jobWorkStatus,
@@ -678,9 +689,11 @@ var ProjectPlannerCanonical = (() => {
     leaveYearStartMonth: () => leaveYearStartMonth,
     legalPackNeedsAcceptance: () => legalPackNeedsAcceptance,
     lineManagerCandidates: () => lineManagerCandidates,
+    lineManagerChangeBlock: () => lineManagerChangeBlock,
     lineManagerIds: () => lineManagerIds,
     lineManagerOptions: () => lineManagerOptions,
     lineManagerPeerRecipients: () => lineManagerPeerRecipients,
+    lineManagerReports: () => lineManagerReports,
     lineManagerRequired: () => lineManagerRequired,
     lineManagerRequiredError: () => lineManagerRequiredError,
     lineManagerSelectedIds: () => lineManagerSelectedIds,
@@ -691,6 +704,7 @@ var ProjectPlannerCanonical = (() => {
     liveCollection: () => liveCollection,
     livePayRate: () => livePayRate,
     lockedPermissionFields: () => lockedPermissionFields,
+    managerBookingJobId: () => managerBookingJobId,
     managerClashGroups: () => managerClashGroups,
     managerCoverageHours: () => managerCoverageHours,
     managerRowWriteFields: () => managerRowWriteFields,
@@ -785,6 +799,7 @@ var ProjectPlannerCanonical = (() => {
     operativeJobIds: () => operativeJobIds,
     operativeProfileWriteFields: () => operativeProfileWriteFields,
     operativeRowWriteFields: () => operativeRowWriteFields,
+    operativesManagerMayDeleteBooking: () => operativesManagerMayDeleteBooking,
     orgAccessProbeFromReads: () => orgAccessProbeFromReads,
     orgDayHours: () => orgDayHours,
     orgMembershipWriteFields: () => orgMembershipWriteFields,
@@ -1046,6 +1061,7 @@ var ProjectPlannerCanonical = (() => {
     rosterDocumentRank: () => rosterDocumentRank,
     rosterListFor: () => rosterListFor,
     rosterListKind: () => rosterListKind,
+    rosterMemberIsOperativeLevel: () => rosterMemberIsOperativeLevel,
     rosterMembersForOrganization: () => rosterMembersForOrganization,
     rosterPeople: () => rosterPeople,
     rosterPersonName: () => rosterPersonName,
@@ -1096,6 +1112,7 @@ var ProjectPlannerCanonical = (() => {
     subcontractorWriteFields: () => subcontractorWriteFields,
     subscriptionAccess: () => subscriptionAccess,
     subtractMinuteIntervals: () => subtractMinuteIntervals,
+    superAdminTransferWrites: () => superAdminTransferWrites,
     syncWriteAllowed: () => syncWriteAllowed,
     taskCompletedRecipients: () => taskCompletedRecipients,
     taskFields: () => taskFields,
@@ -1107,6 +1124,7 @@ var ProjectPlannerCanonical = (() => {
     timesheetClaimRows: () => timesheetClaimRows,
     timesheetDaysForPerson: () => timesheetDaysForPerson,
     timesheetDocumentId: () => timesheetDocumentId,
+    timesheetDocumentSubjectId: () => timesheetDocumentSubjectId,
     timesheetEntryDecision: () => timesheetEntryDecision,
     timesheetEntryEffectiveAmount: () => timesheetEntryEffectiveAmount,
     timesheetEntryId: () => timesheetEntryId,
@@ -1157,12 +1175,14 @@ var ProjectPlannerCanonical = (() => {
     unpaidBreakAppliesOnDay: () => unpaidBreakAppliesOnDay,
     unreadNotificationBadgeCount: () => unreadNotificationBadgeCount,
     unverifiedOperativeRows: () => unverifiedOperativeRows,
+    userActiveWrites: () => userActiveWrites,
     userCreateRequiresAgeConfirmation: () => userCreateRequiresAgeConfirmation,
     userDeleteRefusal: () => userDeleteRefusal,
     userDeleteWrites: () => userDeleteWrites,
     userMissingLevel: () => userMissingLevel,
     userNotificationPreferenceFieldPatch: () => userNotificationPreferenceFieldPatch,
     userNotificationPreferencesToFirestore: () => userNotificationPreferencesToFirestore,
+    userPermissionFlag: () => userPermissionFlag,
     userProfileWriteFields: () => userProfileWriteFields,
     userRosterSegment: () => userRosterSegment,
     userTimesheetSubjects: () => userTimesheetSubjects,
@@ -1486,8 +1506,8 @@ var ProjectPlannerCanonical = (() => {
     if (typeof value === "number") {
       return Number.isFinite(value) && value >= 0 && value <= 24 * 60 ? Math.round(value) : null;
     }
-    const text29 = String(value ?? "").trim();
-    const match = /^(\d{1,2}):(\d{2})$/.exec(text29);
+    const text30 = String(value ?? "").trim();
+    const match = /^(\d{1,2}):(\d{2})$/.exec(text30);
     if (!match) return null;
     const hours = Number(match[1]);
     const minutes = Number(match[2]);
@@ -1917,6 +1937,875 @@ var ProjectPlannerCanonical = (() => {
     return user ? `${kind}:${user}:${org}` : `${kind}:${org}`;
   }
 
+  // lib/canonical/dayKeys.ts
+  function zoneOrLondon(timeZone) {
+    const value = String(timeZone || "").trim();
+    return value || LONDON_TIME_ZONE;
+  }
+  function eachDayKey(startKey, endKey, timeZone, cap = 400) {
+    if (!startKey || !endKey || startKey > endKey) return [];
+    const keys = [];
+    let cursor = dateFromDayKeyInZone(startKey, timeZone);
+    while (dayKeyInZone(cursor, timeZone) <= endKey) {
+      keys.push(dayKeyInZone(cursor, timeZone));
+      cursor = addDaysInZone(cursor, 1, timeZone);
+      if (keys.length > cap) break;
+    }
+    return keys;
+  }
+  function isoWeekdayOfDayKey(dayKey, timeZone) {
+    return isoWeekdayInZone(dateFromDayKeyInZone(dayKey, timeZone), timeZone);
+  }
+  function formatLongDayKey(dayKey, timeZone) {
+    const date = dateFromDayKeyInZone(dayKey, timeZone);
+    return new Intl.DateTimeFormat("en-GB", {
+      timeZone,
+      weekday: "long",
+      day: "numeric",
+      month: "long"
+    }).format(date);
+  }
+
+  // lib/canonical/userProfile.ts
+  var USER_DOCUMENT_FIELDS = [
+    "firstName",
+    "surname",
+    "email",
+    "mobileNumber",
+    "role",
+    "isActive",
+    "passwordSet",
+    "status",
+    "isSuperAdmin",
+    "organizationId",
+    "permissions",
+    "assignedManagerUserId",
+    "assignedManagerUserIds",
+    "hasNoLineManager",
+    "dayRate",
+    "hourlyRate",
+    "payBasis",
+    "tradeTypePreset",
+    "tradeTypeCustom",
+    "employmentType",
+    "employmentTypeTransitionFrom",
+    "employmentTypeEffectiveAt",
+    "annualLeaveEnabled",
+    "annualLeaveDaysPerYear",
+    "annualLeaveYearStartMonth",
+    "annualLeaveYearEndMonth",
+    "annualLeaveCarriesOver",
+    "employmentStartDate",
+    "annualLeaveYearAllowance",
+    "annualLeaveYearAllowanceKey",
+    "timesheetsEnabled",
+    // vatNumber and utrNumber live at users/{uid}/private/taxIds (sensitiveProfile.ts).
+    "lastSeenAt",
+    "profilePhotoURL",
+    // Set with the new download URL on every photo upload; devices refresh the cached avatar when it changes.
+    "profilePhotoUpdatedAt",
+    "pushTokens",
+    "pushTokenUpdatedAt",
+    "notificationPreferences",
+    "formerUserIds"
+  ];
+  var USER_FORMER_IDS_FIELD = "formerUserIds";
+  function parseFormerUserIds(data) {
+    const raw = data?.[USER_FORMER_IDS_FIELD];
+    if (!Array.isArray(raw)) return [];
+    const ids = /* @__PURE__ */ new Set();
+    for (const value of raw) {
+      const id2 = typeof value === "string" ? value.trim() : "";
+      if (id2) ids.add(id2);
+    }
+    return [...ids];
+  }
+  function inviteMigrationFormerIdWriteFields(input) {
+    const ids = parseFormerUserIds(input.existing);
+    const placeholder = String(input.placeholderId || "").trim();
+    if (placeholder && placeholder !== input.authUid.trim() && !ids.includes(placeholder)) ids.push(placeholder);
+    return ids.length > 0 ? { [USER_FORMER_IDS_FIELD]: ids } : {};
+  }
+  var USER_SELF_CREATE_AGE_FIELDS = [
+    "ageConfirmed",
+    "ageConfirmedAt",
+    "ageConfirmedYears"
+  ];
+  function userCreateRequiresAgeConfirmation(input) {
+    const creator = typeof input.creatorUserId === "string" ? input.creatorUserId.trim() : "";
+    const target = typeof input.targetUserId === "string" ? input.targetUserId.trim() : "";
+    return creator.length > 0 && creator === target;
+  }
+  var USER_PERMISSION_FIELDS = [
+    "adminAccess",
+    "manager",
+    "operatives",
+    "skills",
+    "qualifications",
+    "materials",
+    "projects",
+    "smallWorks",
+    "operativeMode",
+    "siteAudit",
+    "subContractors",
+    "wholesalersOrderHistory",
+    "annualLeaveSelfBook",
+    // 1.28.0: admins only (`ADMIN_ONLY_PERMISSION_FIELDS`); reads off for a manager or operative.
+    "timesheetSelfSign",
+    "weeklyReports",
+    "dailyOverview"
+  ];
+  function normalizeEmploymentType(raw) {
+    if (raw === "paye") return "paye";
+    if (raw === "self_employed" || raw === "selfEmployed") return "self_employed";
+    return "self_employed";
+  }
+  function accountKindFromFlags(flags2) {
+    if (flags2.isSuperAdmin) return "admin";
+    if (flags2.adminAccess || flags2.role === "admin") return "admin";
+    if (flags2.operativeMode) return "operative";
+    return "manager";
+  }
+  function validDay(value) {
+    if (value instanceof Date) return Number.isNaN(value.getTime()) ? void 0 : value;
+    if (typeof value === "string" || typeof value === "number") {
+      const parsed = new Date(value);
+      return Number.isNaN(parsed.getTime()) ? void 0 : parsed;
+    }
+    return void 0;
+  }
+  function employmentTypeOnDay(user, date, timeZone) {
+    const current = normalizeEmploymentType(user.employmentType);
+    const from = user.employmentTypeTransitionFrom;
+    const day = validDay(date);
+    const effectiveAt = validDay(user.employmentTypeEffectiveAt);
+    if (!from || !day || !effectiveAt) return current;
+    const zone3 = zoneOrLondon(timeZone);
+    if (dayKeyInZone(day, zone3) < dayKeyInZone(effectiveAt, zone3)) {
+      return normalizeEmploymentType(from);
+    }
+    return current;
+  }
+  function isBillableSelfEmployedDay(user, date, timeZone) {
+    return employmentTypeOnDay(user, date, timeZone) === "self_employed";
+  }
+  function applyEmploymentTypeChange(input) {
+    const next = normalizeEmploymentType(input.nextType);
+    const previous = normalizeEmploymentType(input.previousType);
+    if (next === previous) {
+      const existing = validDay(input.previousEffectiveAt);
+      return {
+        employmentType: next,
+        employmentTypeTransitionFrom: input.previousTransitionFrom ? String(input.previousTransitionFrom) : null,
+        employmentTypeEffectiveAt: existing ?? null
+      };
+    }
+    const zone3 = zoneOrLondon(input.timeZone);
+    const todayKey4 = dayKeyInZone(input.now ?? /* @__PURE__ */ new Date(), zone3);
+    if (input.effectiveAt === "immediate") {
+      return { employmentType: next, employmentTypeTransitionFrom: null, employmentTypeEffectiveAt: null };
+    }
+    const when = validDay(input.effectiveAt);
+    if (!when || dayKeyInZone(when, zone3) <= todayKey4) {
+      return { employmentType: next, employmentTypeTransitionFrom: null, employmentTypeEffectiveAt: null };
+    }
+    return {
+      employmentType: next,
+      employmentTypeTransitionFrom: previous,
+      employmentTypeEffectiveAt: when
+    };
+  }
+  function employmentEffectiveLabel(user, now = /* @__PURE__ */ new Date(), timeZone) {
+    const effectiveAt = validDay(user.employmentTypeEffectiveAt);
+    if (!effectiveAt || !user.employmentTypeTransitionFrom) return "Effective immediately";
+    const zone3 = zoneOrLondon(timeZone);
+    if (dayKeyInZone(now, zone3) >= dayKeyInZone(effectiveAt, zone3)) return "Effective immediately";
+    const [year, month, day] = dayKeyInZone(effectiveAt, zone3).split("-").map(Number);
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    return `${day} ${months[(month || 1) - 1]} ${year}`;
+  }
+
+  // lib/canonical/permissionLevels.ts
+  var ADMIN_EDITABLE_PERMISSION_FIELDS = ["annualLeaveSelfBook", "timesheetSelfSign"];
+  var ADMIN_ONLY_PERMISSION_FIELDS = ["timesheetSelfSign"];
+  var MANAGER_LOCKED_ON_PERMISSION_FIELDS = ["materials", "siteAudit"];
+  var PERMISSION_DEFAULT_ON = [
+    "materials",
+    "siteAudit",
+    "wholesalersOrderHistory",
+    "dailyOverview"
+  ];
+  var ADMIN_LOCKED_PERMISSION_MESSAGE = "Administrators have this on. Change user type to remove admin access.";
+  var SUPER_ADMIN_SELF_MANAGE_MESSAGE = "The Super Admin always books their own leave and signs their own timesheet.";
+  var OWN_SELF_MANAGE_MESSAGE = "You cannot change your own self-manage toggles. Ask another admin.";
+  var TIMESHEET_SELF_SIGN_PAYE_NOTE = "Not used while PAYE \u2014 PAYE has no timesheets.";
+  function bool(value) {
+    if (value === true || value === false) return value;
+    if (typeof value === "number" && Number.isFinite(value)) return value !== 0;
+    if (typeof value === "string") {
+      const token = value.trim().toLowerCase();
+      if (token === "true" || token === "yes" || token === "1") return true;
+      if (token === "false" || token === "no" || token === "0") return false;
+    }
+    return null;
+  }
+  function record(value) {
+    return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  }
+  function storedPermissionFlag(user, key4) {
+    const row2 = record(user);
+    const top = bool(row2[key4]);
+    if (top != null) return top;
+    return bool(record(row2.permissions)[key4]);
+  }
+  function userPermissionFlag(user, key4) {
+    return storedPermissionFlag(user, key4) === true;
+  }
+  function roleToken(user) {
+    const role = record(user).role;
+    return typeof role === "string" ? role.trim().toLowerCase().replace(/[\s-]/g, "_") : "";
+  }
+  function storedSuperAdmin(user) {
+    const perOrganization = record(user).organizationSuperAdmin;
+    if (typeof perOrganization === "boolean") return perOrganization;
+    const role = roleToken(user);
+    return storedPermissionFlag(user, "isSuperAdmin") === true || role === "super_admin" || role === "superadmin";
+  }
+  function storedPaye(user) {
+    const value = record(user).employmentType;
+    return typeof value === "string" && value.trim().toLowerCase() === "paye";
+  }
+  function permissionLevelOf(user) {
+    const role = roleToken(user);
+    if (storedPermissionFlag(user, "isSuperAdmin") === true || storedPermissionFlag(user, "adminAccess") === true || role === "admin" || role === "super_admin" || role === "superadmin") {
+      return "admin";
+    }
+    if (storedPermissionFlag(user, "operativeMode") === true || role === "operative") return "operative";
+    return "manager";
+  }
+  function lockedPermissionFields(user, level) {
+    const resolved = level ?? permissionLevelOf(user);
+    if (resolved === "manager") return [...MANAGER_LOCKED_ON_PERMISSION_FIELDS, ...ADMIN_ONLY_PERMISSION_FIELDS];
+    if (resolved !== "admin") return [...ADMIN_ONLY_PERMISSION_FIELDS];
+    if (storedSuperAdmin(user)) return [...USER_PERMISSION_FIELDS];
+    return USER_PERMISSION_FIELDS.filter((key4) => !ADMIN_EDITABLE_PERMISSION_FIELDS.includes(key4));
+  }
+  function effectivePermissions(user, level) {
+    const resolved = level ?? permissionLevelOf(user);
+    const out = {};
+    const stored = (key4, fallback) => storedPermissionFlag(user, key4) ?? fallback;
+    if (resolved === "admin") {
+      for (const key4 of USER_PERMISSION_FIELDS) out[key4] = true;
+      out.operativeMode = false;
+      const superAdmin = storedSuperAdmin(user);
+      out.annualLeaveSelfBook = superAdmin || stored("annualLeaveSelfBook", false);
+      out.timesheetSelfSign = superAdmin || stored("timesheetSelfSign", false);
+      return out;
+    }
+    for (const key4 of USER_PERMISSION_FIELDS) out[key4] = stored(key4, PERMISSION_DEFAULT_ON.includes(key4));
+    out.skills = false;
+    out.adminAccess = false;
+    for (const key4 of ADMIN_ONLY_PERMISSION_FIELDS) out[key4] = false;
+    if (resolved === "operative") {
+      out.operativeMode = true;
+      out.manager = false;
+      out.operatives = false;
+      out.qualifications = false;
+      out.materials = stored("materials", false);
+      out.projects = true;
+      out.smallWorks = true;
+      return out;
+    }
+    out.operativeMode = false;
+    out.manager = stored("manager", roleToken(user) === "manager");
+    for (const key4 of MANAGER_LOCKED_ON_PERMISSION_FIELDS) out[key4] = true;
+    return out;
+  }
+  function effectivePermission(user, key4) {
+    return effectivePermissions(user)[key4] === true;
+  }
+  function withoutLockedPermissionWrites(user, fields, level) {
+    const locked = lockedPermissionFields(user, level);
+    if (locked.length === 0) return fields;
+    const effective = effectivePermissions(user, level);
+    const out = {};
+    for (const [key4, value] of Object.entries(fields || {})) {
+      const dotted = key4.startsWith("permissions.") ? key4.slice("permissions.".length) : null;
+      const field = dotted ?? key4;
+      if (locked.includes(field) && (dotted != null || key4 === field) && typeof value === "boolean" && value !== effective[field]) {
+        continue;
+      }
+      if (key4 === "permissions" && value && typeof value === "object" && !Array.isArray(value)) {
+        const map = {};
+        for (const [inner, flag] of Object.entries(value)) {
+          const innerField = inner;
+          if (locked.includes(innerField) && typeof flag === "boolean" && flag !== effective[innerField]) continue;
+          map[inner] = flag;
+        }
+        out[key4] = map;
+        continue;
+      }
+      out[key4] = value;
+    }
+    return out;
+  }
+  function keepStoredLockedPermissions(before, next) {
+    if (!before || !next || typeof next !== "object") return next;
+    const level = permissionLevelOf(before);
+    const nextLevel = permissionLevelOf({ ...before, ...next });
+    const locked = nextLevel !== level ? nextLevel === "admin" ? [] : [...ADMIN_ONLY_PERMISSION_FIELDS] : lockedPermissionFields(before, level);
+    if (locked.length === 0) return next;
+    const out = { ...next };
+    for (const key4 of locked) {
+      if (key4 === "adminAccess") continue;
+      delete out[key4];
+      delete out[`permissions.${key4}`];
+    }
+    const map = out.permissions;
+    if (map && typeof map === "object" && !Array.isArray(map)) {
+      const stored = record(before.permissions);
+      const kept = { ...map };
+      for (const key4 of locked) {
+        if (stored[key4] !== void 0) kept[key4] = stored[key4];
+        else delete kept[key4];
+      }
+      out.permissions = kept;
+    }
+    return out;
+  }
+  var PERMISSION_TOGGLE_CATALOGUE = [
+    { field: "adminAccess", label: "Admin Access", help: "Gives Manage Users and organisation settings. Change user type to give or remove it.", levels: ["admin"] },
+    {
+      field: "projects",
+      label: "Projects",
+      help: "Sees, adds and edits every project. If off, they see only the projects they are assigned to as a manager \u2014 scheduling and other job tools stay available there, but they cannot add projects or change a project's managers.",
+      levels: ["admin", "manager"]
+    },
+    {
+      field: "smallWorks",
+      label: "Small Works",
+      help: "Sees, adds and edits every small works job. If off, they see only the small works they are assigned to as a manager \u2014 scheduling and other job tools stay available there, but they cannot add small works or change their managers.",
+      levels: ["admin", "manager"]
+    },
+    { field: "weeklyReports", label: "Weekly Report", help: "Can open Weekly Report from Home. If off, that tile is hidden.", levels: ["admin", "manager"] },
+    { field: "dailyOverview", label: "Daily Overview", help: "Can open Daily Overview from Home. If off, that tile is hidden.", levels: ["admin", "manager"] },
+    {
+      field: "subContractors",
+      label: "Sub Contractors",
+      help: "Can add and manage sub contractor records. If off, Sub Contractors is hidden on Home and menus. They can still book existing subcontractors on jobs.",
+      levels: ["admin", "manager"]
+    },
+    {
+      field: "annualLeaveSelfBook",
+      label: "Annual Leave Management",
+      help: "Can book their own annual leave. If off, this user requests leave for approval.",
+      levels: ["admin", "manager"]
+    },
+    {
+      field: "timesheetSelfSign",
+      label: "Timesheet self-sign",
+      help: "Sign your own timesheet and generate the invoice without a line manager's signature.",
+      levels: ["admin"]
+    },
+    {
+      field: "operatives",
+      label: "Operatives",
+      help: "Can add and manage operatives and view their details. If off, they can still schedule active operatives onto the jobs they manage, but do not see Manage Operatives or full operative profiles.",
+      levels: ["admin", "manager"]
+    },
+    {
+      field: "qualifications",
+      label: "Manage Qualifications",
+      help: "Can add and edit organisation qualification templates. If off, they see My Qualifications and can still assign templates others have added.",
+      levels: ["admin", "manager"]
+    },
+    {
+      field: "wholesalersOrderHistory",
+      label: "Wholesalers",
+      help: "Can view and manage the Wholesalers page, including quote and order history. If off, that page is not available.",
+      levels: ["admin", "manager"]
+    },
+    {
+      field: "materials",
+      label: "Materials",
+      help: "Can open material lists on projects and small works. Operatives cannot send quotes or place orders.",
+      levels: ["admin", "manager", "operative"]
+    },
+    { field: "siteAudit", label: "Site audit", help: "Can view and submit site audits.", levels: ["admin", "manager", "operative"] }
+  ];
+  function addUserPermissionDefaults(level) {
+    const resolved = level === "admin" || level === "operative" ? level : "manager";
+    const out = resolved === "admin" ? effectivePermissions({}, "admin") : resolved === "operative" ? effectivePermissions({}, "operative") : effectivePermissions({ manager: true }, "manager");
+    const locked = new Set(lockedPermissionFields({}, resolved));
+    for (const row2 of PERMISSION_TOGGLE_CATALOGUE) {
+      if (!row2.levels.includes(resolved) || locked.has(row2.field)) continue;
+      out[row2.field] = false;
+    }
+    return out;
+  }
+  function permissionToggleRows(input) {
+    const level = input?.level === "admin" || input?.level === "operative" ? input.level : "manager";
+    const values = input?.user != null ? effectivePermissions(input.user, level) : addUserPermissionDefaults(level);
+    const locked = lockedPermissionFields(input?.user ?? {}, level);
+    const superAdmin = level === "admin" && storedSuperAdmin(input?.user);
+    const paye = storedPaye(input?.user);
+    return PERMISSION_TOGGLE_CATALOGUE.map((row2) => {
+      const visible = row2.levels.includes(level);
+      const selfManage = level === "admin" && ADMIN_EDITABLE_PERMISSION_FIELDS.includes(row2.field);
+      const payeTimesheet = level === "admin" && row2.field === "timesheetSelfSign" && paye && !superAdmin;
+      const own = selfManage && input?.viewerIsSubject === true && !superAdmin;
+      const note = selfManage && superAdmin ? SUPER_ADMIN_SELF_MANAGE_MESSAGE : payeTimesheet ? TIMESHEET_SELF_SIGN_PAYE_NOTE : own ? OWN_SELF_MANAGE_MESSAGE : null;
+      return {
+        field: row2.field,
+        label: row2.label,
+        help: row2.help,
+        visible,
+        editable: visible && input?.mode !== "summary" && !locked.includes(row2.field) && !payeTimesheet && !own,
+        value: values[row2.field] === true,
+        note
+      };
+    });
+  }
+  function permissionsWriteMap(draft, level) {
+    return effectivePermissions(draft, level);
+  }
+  var PAYE_RATE_NOT_USED_NOTE = "Not used while PAYE. Kept for days they are self-employed.";
+  function canManageOperatives(user) {
+    const level = permissionLevelOf(user);
+    if (level === "operative") return false;
+    return effectivePermissions(user, level).operatives === true;
+  }
+  function canScheduleOperatives(user) {
+    return permissionLevelOf(user) !== "operative";
+  }
+  var MANAGER_PERMISSION_TOGGLES = PERMISSION_TOGGLE_CATALOGUE.filter(
+    (row2) => row2.levels.includes("admin")
+  ).map((row2) => ({ key: row2.field, title: row2.label, description: row2.help }));
+  var OPERATIVE_PERMISSION_TOGGLES = PERMISSION_TOGGLE_CATALOGUE.filter(
+    (row2) => row2.levels.includes("operative")
+  ).map((row2) => ({ key: row2.field, title: row2.label, description: row2.help }));
+  function accountTypePermissions(kind, previous) {
+    const out = {};
+    for (const key4 of USER_PERMISSION_FIELDS) {
+      out[key4] = storedPermissionFlag(previous, key4) ?? PERMISSION_DEFAULT_ON.includes(key4);
+    }
+    if (permissionLevelOf(previous) === "admin" && storedPermissionFlag(previous, "annualLeaveSelfBook") == null) {
+      out.annualLeaveSelfBook = storedSuperAdmin(previous);
+    }
+    out.adminAccess = kind === "admin";
+    out.operativeMode = kind === "operative";
+    out.manager = kind !== "operative";
+    return out;
+  }
+  function accountTypeWritePermissions(kind, person, screen) {
+    const out = accountTypePermissions(kind, person);
+    if (!screen || typeof screen !== "object") return out;
+    const locked = new Set(lockedPermissionFields({}, kind));
+    for (const row2 of PERMISSION_TOGGLE_CATALOGUE) {
+      if (!row2.levels.includes(kind) || locked.has(row2.field)) continue;
+      const value = bool(screen[row2.field]);
+      if (value != null) out[row2.field] = value;
+    }
+    return out;
+  }
+  var ACCOUNT_TYPE_OTHER_COMPANY_NOTE = "This person's profile belongs to another company. Their user type changes here only; their profile in the other company is not changed.";
+  var ACCOUNT_TYPE_SUPER_ADMIN_MESSAGE = "The Super Admin stays an administrator. Pass Super Admin to another admin first (Change Super Admin).";
+  function sameOrg(value, organizationId) {
+    const raw = typeof value === "string" ? value.trim() : "";
+    const id2 = raw.includes("/") ? raw.split("/").filter(Boolean).pop() ?? "" : raw;
+    return id2 !== "" && id2.toLowerCase() === organizationId.trim().toLowerCase();
+  }
+  function accountTypeChangeWrites(input) {
+    const person = input?.person;
+    const org = typeof input?.organizationId === "string" ? input.organizationId.trim() : "";
+    const uid = typeof person?.id === "string" ? person.id.trim() : "";
+    const kind = input?.kind;
+    if (!person || !uid || !org || kind !== "admin" && kind !== "manager" && kind !== "operative") {
+      return { ok: false, reason: "invalid", message: "Choose a user type." };
+    }
+    const otherCompany = person.organizationId != null && String(person.organizationId).trim() !== "" && !sameOrg(person.organizationId, org);
+    if (storedPermissionFlag(person, "isSuperAdmin") === true && kind !== "admin") {
+      return { ok: false, reason: "super_admin", message: ACCOUNT_TYPE_SUPER_ADMIN_MESSAGE };
+    }
+    const permissions = accountTypeWritePermissions(kind, person, input.permissions ?? null);
+    const storedMap = person.permissions && typeof person.permissions === "object" ? person.permissions : {};
+    const levelFlags = /* @__PURE__ */ new Set(["adminAccess", "operativeMode", "manager"]);
+    const fields = { role: kind };
+    for (const key4 of USER_PERMISSION_FIELDS) {
+      if (levelFlags.has(key4) || bool(person[key4]) !== permissions[key4]) fields[key4] = permissions[key4];
+      if (levelFlags.has(key4) || bool(storedMap[key4]) !== permissions[key4]) fields[`permissions.${key4}`] = permissions[key4];
+    }
+    fields.isSuperAdmin = kind === "admin" && storedPermissionFlag(person, "isSuperAdmin") === true;
+    if (kind !== "admin" && person.hasNoLineManager === true) fields.hasNoLineManager = false;
+    const writes = otherCompany ? [] : [{ path: `users/${uid}`, kind: "userProfile", fields }];
+    const levelOnly = { role: kind, isSuperAdmin: false };
+    for (const key4 of levelFlags) {
+      levelOnly[key4] = permissions[key4];
+      levelOnly[`permissions.${key4}`] = permissions[key4];
+    }
+    if (kind !== "admin") levelOnly.hasNoLineManager = false;
+    const members = input.members && typeof input.members === "object" ? input.members : null;
+    const memberFields = { [`members.${uid}`]: kind };
+    const email = typeof person.email === "string" ? person.email.trim().toLowerCase() : "";
+    if (email) {
+      for (const row2 of input.roster || []) {
+        const id2 = typeof row2?.id === "string" ? row2.id.trim() : "";
+        if (!id2 || id2 === uid) continue;
+        if (String(row2.email ?? "").trim().toLowerCase() !== email) continue;
+        if (!sameOrg(row2.organizationId, org)) continue;
+        writes.push({ path: `users/${id2}`, kind: "userProfile", fields: { ...levelOnly } });
+        const listedKey = members ? Object.keys(members).find((key4) => key4.trim().toLowerCase() === id2.toLowerCase()) : void 0;
+        if (listedKey && !listedKey.includes(".")) memberFields[`members.${listedKey}`] = kind;
+      }
+    }
+    writes.push({ path: `organizations/${org}`, kind: "organizationMember", fields: memberFields });
+    writes.push({ path: `users/${uid}/orgMemberships/${org}`, kind: "membership", role: kind, permissions });
+    return { ok: true, role: kind, permissions, writes, note: otherCompany ? ACCOUNT_TYPE_OTHER_COMPANY_NOTE : null };
+  }
+  var ACCOUNT_TYPE_OUT_OF_SYNC_MESSAGE = "This person's user type was only partly saved. Press Save to finish it on every record.";
+  function accountTypeSyncState(input) {
+    const person = input?.person;
+    const org = typeof input?.organizationId === "string" ? input.organizationId.trim() : "";
+    const uid = typeof person?.id === "string" ? person.id.trim() : "";
+    if (!person || !uid || !org || !sameOrg(person.organizationId, org)) {
+      return { inSync: true, level: null, membersRole: null, repair: null };
+    }
+    const level = permissionLevelOf(person);
+    const members = input.members && typeof input.members === "object" ? input.members : {};
+    const rawEntry = Object.entries(members).find(([key4]) => key4.trim().toLowerCase() === uid.toLowerCase())?.[1];
+    const membersRole = typeof rawEntry === "string" && rawEntry.trim() ? rawEntry.trim().toLowerCase() : null;
+    const explicit = (role) => role === "admin" || role === "manager" || role === "operative";
+    let inSync = membersRole === "admin" === (level === "admin");
+    if (inSync && explicit(membersRole) && membersRole !== level) inSync = false;
+    const membershipRole = input.membership && typeof input.membership.role === "string" ? input.membership.role.trim().toLowerCase() : null;
+    if (inSync && explicit(membershipRole) && membershipRole !== level) inSync = false;
+    return { inSync, level, membersRole, repair: inSync ? null : level };
+  }
+
+  // lib/canonical/personIds.ts
+  function idText(value) {
+    return typeof value === "string" ? value.trim() : "";
+  }
+  function idKey(value) {
+    return idText(value).toLowerCase();
+  }
+  function ownIds(person) {
+    if (!person) return [];
+    return [
+      person.id,
+      ...person.formerUserIds ?? [],
+      ...person.sameEmailUserIds ?? [],
+      ...person.formerIds ?? [],
+      ...person.aliasIds ?? []
+    ].map(idText).filter(Boolean);
+  }
+  function validRoster(roster) {
+    return (roster || []).filter((member) => member && typeof member === "object" && idText(member.id));
+  }
+  function rosterMemberActive(member) {
+    return Boolean(member) && member.isActive !== false;
+  }
+  function rosterMemberFor(id2, roster) {
+    const key4 = idKey(id2);
+    if (!key4) return void 0;
+    const members = validRoster(roster);
+    return members.find((member) => idKey(member.id) === key4) ?? members.find((member) => ownIds(member).some((alias) => idKey(alias) === key4));
+  }
+  function personIdSet(person, roster) {
+    const out = [];
+    const seen = /* @__PURE__ */ new Set();
+    const add = (id2) => {
+      const key4 = idKey(id2);
+      if (!key4 || seen.has(key4)) return false;
+      seen.add(key4);
+      out.push(idText(id2));
+      return true;
+    };
+    for (const id2 of ownIds(person)) add(id2);
+    if (out.length === 0) return [];
+    const emails = /* @__PURE__ */ new Set();
+    const personEmail = idKey(person?.email);
+    if (personEmail) emails.add(personEmail);
+    const members = validRoster(roster);
+    let grew = true;
+    for (let pass = 0; grew && pass < 8; pass += 1) {
+      grew = false;
+      for (const member of members) {
+        const ids = ownIds(member);
+        const email = idKey(member.email);
+        const same = ids.some((id2) => seen.has(idKey(id2))) || email !== "" && emails.has(email);
+        if (!same) continue;
+        for (const id2 of ids) if (add(id2)) grew = true;
+        if (email && !emails.has(email)) {
+          emails.add(email);
+          grew = true;
+        }
+      }
+    }
+    return out;
+  }
+
+  // lib/canonical/leaveRequests.ts
+  var HOLIDAY_TIME_SLOTS = ["FULL DAY", "AM", "PM"];
+  var HOLIDAY_STATUSES = ["pending", "approved", "rejected"];
+  var DAY_KEY = /^\d{4}-\d{2}-\d{2}$/;
+  function text(value) {
+    return typeof value === "string" ? value.trim() : "";
+  }
+  function normalizeHolidayTimeSlot(value) {
+    const raw = text(value).toUpperCase().replace(/_/g, " ");
+    if (raw === "AM" || raw === "A.M." || raw === "MORNING") return "AM";
+    if (raw === "PM" || raw === "P.M." || raw === "AFTERNOON") return "PM";
+    return "FULL DAY";
+  }
+  var HOLIDAY_STATUS_SYNONYMS = {
+    pending: ["pending", "requested", "awaiting", "awaiting approval", "submitted"],
+    approved: ["approved", "approve", "accepted", "confirmed"],
+    rejected: ["rejected", "declined", "denied", "cancelled", "canceled"]
+  };
+  function normalizeHolidayStatus(value) {
+    const raw = text(value).toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ");
+    if (!raw) return "approved";
+    for (const status of HOLIDAY_STATUSES) {
+      if (HOLIDAY_STATUS_SYNONYMS[status].includes(raw)) return status;
+    }
+    return "approved";
+  }
+  function parseHolidayDecisionNote(value) {
+    const note = text(value);
+    return note ? note : null;
+  }
+  function leaveRecordDayKeys(record13, timeZone, nonWorkingDayKeys) {
+    const zone3 = zoneOrLondon(timeZone);
+    const start = text(record13.startDayKey);
+    if (!DAY_KEY.test(start)) return [];
+    const endRaw = text(record13.endDayKey);
+    const end = DAY_KEY.test(endRaw) && endRaw >= start ? endRaw : start;
+    if (end === start) return [start];
+    const skip = new Set((nonWorkingDayKeys || []).map(text));
+    return eachDayKey(start, end, zone3).filter((key4) => {
+      const iso = isoWeekdayOfDayKey(key4, zone3);
+      return iso !== 6 && iso !== 7 && !skip.has(key4);
+    });
+  }
+  function leaveDaysInRange(record13, range, timeZone, nonWorkingDayKeys) {
+    const from = text(range?.startDayKey);
+    const to = text(range?.endDayKey);
+    if (!DAY_KEY.test(from) || !DAY_KEY.test(to) || to < from) return 0;
+    const each = normalizeHolidayTimeSlot(record13?.timeSlot) === "FULL DAY" ? 1 : 0.5;
+    const days = leaveRecordDayKeys(record13, timeZone, nonWorkingDayKeys).filter((key4) => key4 >= from && key4 <= to);
+    return Math.round(days.length * each * 100) / 100;
+  }
+  function holidayRequestRanges(picks, timeZone) {
+    const zone3 = zoneOrLondon(timeZone);
+    const bySlot = /* @__PURE__ */ new Map();
+    for (const pick of picks || []) {
+      const key4 = text(pick?.dayKey);
+      if (!DAY_KEY.test(key4) || bySlot.has(key4)) continue;
+      bySlot.set(key4, normalizeHolidayTimeSlot(pick.timeSlot));
+    }
+    const keys = Array.from(bySlot.keys()).sort();
+    const ranges = [];
+    for (const key4 of keys) {
+      const slot = bySlot.get(key4);
+      const last = ranges[ranges.length - 1];
+      if (last && last.timeSlot === slot) {
+        const next = dayKeyInZone(addDaysInZone(dateFromDayKeyInZone(last.endDayKey, zone3), 1, zone3), zone3);
+        if (next === key4) {
+          last.endDayKey = key4;
+          continue;
+        }
+      }
+      ranges.push({ startDayKey: key4, endDayKey: key4, timeSlot: slot });
+    }
+    return ranges;
+  }
+  function holidayRequestWriteFields(input) {
+    const zone3 = zoneOrLondon(input.timeZone);
+    const id2 = text(input.id);
+    const organizationId = text(input.organizationId);
+    const userId = text(input.userId) || null;
+    const operativeId = text(input.operativeId) || null;
+    const startDayKey = text(input.startDayKey);
+    if (!id2 || !organizationId || !userId && !operativeId || !DAY_KEY.test(startDayKey)) return null;
+    const endRaw = text(input.endDayKey);
+    const endDayKey = DAY_KEY.test(endRaw) && endRaw >= startDayKey ? endRaw : startDayKey;
+    const status = normalizeHolidayStatus(input.status || "pending");
+    return {
+      id: id2,
+      organizationId,
+      userId,
+      operativeId,
+      startDateMs: dateFromDayKeyInZone(startDayKey, zone3).getTime(),
+      endDateMs: dateFromDayKeyInZone(endDayKey, zone3).getTime(),
+      startDayKey,
+      endDayKey,
+      status,
+      timeSlot: normalizeHolidayTimeSlot(input.timeSlot),
+      approvedByUserId: status === "approved" ? text(input.approvedByUserId) || null : null,
+      cancellationRequestedByUserId: null,
+      decisionNote: null
+    };
+  }
+  function holidayDecisionWriteFields(input) {
+    const raw = text(input.status).toLowerCase();
+    const status = raw === "approved" ? "approved" : raw === "rejected" || raw === "declined" ? "rejected" : null;
+    const approver = text(input.approverUid);
+    if (!status || !approver) return null;
+    return { status, approvedByUserId: approver, decisionNote: parseHolidayDecisionNote(input.decisionNote) };
+  }
+  function lineManagerIds(user, roster) {
+    if (!user || user.hasNoLineManager === true) return [];
+    const listed = (user.assignedManagerUserIds || []).map(text).filter(Boolean);
+    const ids = listed.length > 0 ? listed : [text(user.assignedManagerUserId)].filter(Boolean);
+    const members = (roster || []).filter((member) => member && text(member.id));
+    const self = new Set(personIdSet(user, members).map(idKey));
+    const seen = /* @__PURE__ */ new Set();
+    const out = [];
+    for (const id2 of ids) {
+      let resolved = id2;
+      if (members.length > 0) {
+        const member = rosterMemberFor(id2, members);
+        if (!member || !rosterMemberActive(member)) continue;
+        if (rosterMemberIsOperativeLevel(member)) continue;
+        resolved = text(member.id);
+      }
+      if (self.has(idKey(id2)) || self.has(idKey(resolved))) continue;
+      if (seen.has(idKey(resolved))) continue;
+      seen.add(idKey(resolved));
+      out.push(resolved);
+    }
+    return out;
+  }
+  function rosterMemberIsOperativeLevel(member) {
+    const row2 = member && typeof member === "object" ? member : {};
+    const role = row2.role;
+    if (role && typeof role === "object") {
+      const resolved = role;
+      return resolved.isOperativeMode === true && resolved.isAdmin !== true && resolved.isSuperAdmin !== true;
+    }
+    return permissionLevelOf(row2) === "operative";
+  }
+  function hasActiveLineManager(user, roster) {
+    return lineManagerIds(user, roster).length > 0;
+  }
+  function leaveApproverIds(user, roster) {
+    const members = (roster || []).filter((member) => member && text(member.id));
+    const managers = lineManagerIds(user, members);
+    if (managers.length > 0) return managers;
+    const self = new Set(personIdSet(user, members).map(idKey));
+    const seen = /* @__PURE__ */ new Set();
+    return members.filter((member) => {
+      const key4 = idKey(member.id);
+      if (!rosterMemberActive(member) || !isAdminOutsideOperativeMode(member) || self.has(key4) || seen.has(key4)) return false;
+      seen.add(key4);
+      return true;
+    }).map((member) => text(member.id));
+  }
+  var HOLIDAY_REQUEST_SUBMITTED_TYPE = "holiday_request_submitted";
+  function flagOn(user, key4) {
+    if (!user) return false;
+    return userPermissionFlag(user, key4);
+  }
+  function roleObject(role) {
+    if (!role || typeof role !== "object") return null;
+    return role;
+  }
+  function roleText(role) {
+    return text(role).toLowerCase().replace(/[\s-]/g, "_");
+  }
+  function inOperativeMode(user) {
+    if (!user) return false;
+    if (isAdminOutsideOperativeMode(user)) return false;
+    const role = roleObject(user.role);
+    if (role?.isOperativeMode === true) return true;
+    return flagOn(user, "operativeMode") || roleText(user.role) === "operative";
+  }
+  function isAdminOutsideOperativeMode(user) {
+    if (!user) return false;
+    const role = roleObject(user.role);
+    if (role) return role.isAdmin === true || role.isSuperAdmin === true;
+    const named = roleText(user.role);
+    return flagOn(user, "isSuperAdmin") || flagOn(user, "adminAccess") || named === "admin" || named === "super_admin" || named === "superadmin";
+  }
+  function isSuperAdminAccount(user) {
+    if (!user) return false;
+    if (typeof user.organizationSuperAdmin === "boolean") return user.organizationSuperAdmin;
+    const role = roleObject(user.role);
+    if (role?.isSuperAdmin === true) return true;
+    const named = roleText(user.role);
+    return flagOn(user, "isSuperAdmin") || named === "super_admin" || named === "superadmin";
+  }
+  function isPayeAccount(user) {
+    return text(user?.employmentType).toLowerCase() === "paye";
+  }
+  function selfManageToggles(user) {
+    const admin = isAdminOutsideOperativeMode(user) || user?.organizationSuperAdmin === true;
+    const superAdmin = admin && isSuperAdminAccount(user);
+    const annualLeaveSelfBook = !!user && !inOperativeMode(user) && (superAdmin || flagOn(user, "annualLeaveSelfBook"));
+    const timesheetSelfSign = admin && (superAdmin || flagOn(user, "timesheetSelfSign"));
+    const timesheetApplies = !isPayeAccount(user);
+    const satisfied = admin && annualLeaveSelfBook && (timesheetSelfSign || !timesheetApplies);
+    return { annualLeaveSelfBook, timesheetSelfSign, timesheetApplies, superAdmin, satisfied };
+  }
+  function lineManagerRequired(user) {
+    if (!user || user.isActive === false) return false;
+    return !selfManageToggles(user).satisfied;
+  }
+  function timesheetSelfSigned(user, _roster) {
+    return selfManageToggles(user).timesheetSelfSign;
+  }
+  function canSelfBookAnnualLeave(user, _roster) {
+    return selfManageToggles(user).annualLeaveSelfBook;
+  }
+  var LEAVE_SUBMIT_LABEL = "Submit";
+  var LEAVE_SUBMIT_REQUEST_LABEL = "Submit request";
+  function leaveSubmitLabel(user, roster) {
+    return canSelfBookAnnualLeave(user, roster) ? LEAVE_SUBMIT_LABEL : LEAVE_SUBMIT_REQUEST_LABEL;
+  }
+  var LINE_MANAGER_REQUIRED_MESSAGE = "Set a line manager \u2014 this person's timesheets and annual leave need approval.";
+  var ADMIN_LINE_MANAGER_REQUIRED_MESSAGE = "Set a line manager, or turn on both Annual Leave Management and Timesheet self-sign \u2014 this person's timesheets and annual leave need approval.";
+  var PAYE_ADMIN_LINE_MANAGER_REQUIRED_MESSAGE = "Set a line manager, or turn on Annual Leave Management \u2014 this person's annual leave needs approval.";
+  function lineManagerRequiredError(user, roster) {
+    if (!lineManagerRequired(user)) return null;
+    if (hasActiveLineManager(user, roster)) return null;
+    if (!isAdminOutsideOperativeMode(user)) return LINE_MANAGER_REQUIRED_MESSAGE;
+    return isPayeAccount(user) ? PAYE_ADMIN_LINE_MANAGER_REQUIRED_MESSAGE : ADMIN_LINE_MANAGER_REQUIRED_MESSAGE;
+  }
+  function usersMissingLineManager(roster) {
+    const members = (roster || []).filter((member) => member && text(member.id));
+    return members.filter((member) => lineManagerRequiredError(member, members) != null).map((member) => text(member.id));
+  }
+  function canDecideLeave(viewer, requester, roster) {
+    const me = text(viewer?.id).toLowerCase();
+    if (!viewer || !me) return false;
+    if (me === text(requester?.id).toLowerCase()) return false;
+    if (personIdSet(requester, roster).some((id2) => idKey(id2) === me)) return false;
+    const role = viewer.role;
+    if (role && !role.isOperativeMode && (role.isAdmin || role.isSuperAdmin)) return true;
+    return leaveApproverIds(requester, roster).some((id2) => id2.toLowerCase() === me);
+  }
+  function cancellationRequested(request) {
+    const at = request.cancellationRequestedAt;
+    if (at != null && at !== "" && at !== false) return true;
+    return text(request.cancellationRequestedByUserId) !== "";
+  }
+  function leaveDecisionQueue(viewer, requests, roster) {
+    const members = (roster || []).filter((member) => member && text(member.id));
+    const byId = new Map(members.map((member) => [text(member.id).toLowerCase(), member]));
+    return (requests || []).filter((request) => {
+      if (!request) return false;
+      const status = normalizeHolidayStatus(request.status);
+      const waiting = status === "pending" || status === "approved" && cancellationRequested(request);
+      if (!waiting) return false;
+      const ids = [text(request.userId), text(request.operativeId)].filter(Boolean);
+      if (ids.length === 0) return false;
+      const member = ids.map((id2) => byId.get(id2.toLowerCase())).find(Boolean);
+      const requester = member ?? { id: ids[0] };
+      return canDecideLeave(viewer, requester, members);
+    });
+  }
+
   // lib/canonical/staffAccess.ts
   function isStaffAccount(role) {
     if (role.isOperativeMode) return false;
@@ -1967,7 +2856,7 @@ var ProjectPlannerCanonical = (() => {
     const line = (input.lineManagerUserIds ?? []).map(normalizedId);
     return line.includes(userId);
   }
-  function idKey(value) {
+  function idKey2(value) {
     const raw = typeof value === "string" ? value.trim() : "";
     const bare = raw.toLowerCase().startsWith("user:") ? raw.slice(5) : raw;
     return bare.trim().toLowerCase();
@@ -2019,7 +2908,7 @@ var ProjectPlannerCanonical = (() => {
     const out = [];
     const seen = /* @__PURE__ */ new Set();
     const add = (id2) => {
-      const key4 = idKey(id2);
+      const key4 = idKey2(id2);
       if (!key4 || seen.has(key4)) return;
       seen.add(key4);
       out.push(id2);
@@ -2032,9 +2921,9 @@ var ProjectPlannerCanonical = (() => {
   }
   function isJobManager(viewer, job, managers) {
     if (!viewer) return false;
-    const viewerIds = new Set((viewer.ids || []).map(idKey).filter(Boolean));
+    const viewerIds = new Set((viewer.ids || []).map(idKey2).filter(Boolean));
     if (viewerIds.size === 0) return false;
-    const stored = jobManagerIds(job).map(idKey);
+    const stored = jobManagerIds(job).map(idKey2);
     if (stored.length === 0) return false;
     if (stored.some((id2) => viewerIds.has(id2))) return true;
     const email = typeof viewer.email === "string" ? viewer.email.trim().toLowerCase() : "";
@@ -2043,7 +2932,7 @@ var ProjectPlannerCanonical = (() => {
     return (managers || []).some((row2) => {
       if (!row2 || typeof row2.id !== "string") return false;
       if (String(row2.email ?? "").trim().toLowerCase() !== email) return false;
-      return storedSet.has(idKey(row2.id)) || storedSet.has(idKey(stableManagerId(row2.id)));
+      return storedSet.has(idKey2(row2.id)) || storedSet.has(idKey2(stableManagerId(row2.id)));
     });
   }
   function canSeeJob(viewer, job, managers, kind) {
@@ -2078,8 +2967,8 @@ var ProjectPlannerCanonical = (() => {
     if (role.isSuperAdmin || role.isAdmin) return true;
     if (!role.isManager) return false;
     if (booking.collection === "managerSiteBookings" && bookingJobId(booking) == null) {
-      const ids = new Set((viewer.ids || []).map(idKey).filter(Boolean));
-      return ids.has(idKey(booking.userId));
+      const ids = new Set((viewer.ids || []).map(idKey2).filter(Boolean));
+      return ids.has(idKey2(booking.userId));
     }
     if (!job) return false;
     return isJobManager(viewer, job, managers);
@@ -2093,11 +2982,11 @@ var ProjectPlannerCanonical = (() => {
       const ids = [];
       for (const id2 of idList(row2.managerIds)) ids.push(id2);
       if (typeof row2.managerId === "string" && row2.managerId.trim()) ids.push(row2.managerId.trim());
-      return new Set(ids.map(idKey).filter(Boolean));
+      return new Set(ids.map(idKey2).filter(Boolean));
     })();
     if (stored.size === 0) return [];
     const emails = new Set(
-      (managers || []).filter((row2) => row2 && (stored.has(idKey(row2.id)) || stored.has(idKey(stableManagerId(row2.id))))).map((row2) => String(row2.email ?? "").trim().toLowerCase()).filter(Boolean)
+      (managers || []).filter((row2) => row2 && (stored.has(idKey2(row2.id)) || stored.has(idKey2(stableManagerId(row2.id))))).map((row2) => String(row2.email ?? "").trim().toLowerCase()).filter(Boolean)
     );
     const out = [];
     const seen = /* @__PURE__ */ new Set();
@@ -2248,50 +3137,67 @@ var ProjectPlannerCanonical = (() => {
   var WARNING_SCOPE_ALL = { kind: "all" };
   function warningScopeFor(input) {
     const viewer = input?.viewer;
-    if (!viewer || !viewer.role) return { kind: "jobs", jobIds: [], personIds: [], personEmails: [], unbookedLabour: false };
-    if (seesEveryJob(viewer.role, null, viewer.toggles ?? null)) return WARNING_SCOPE_ALL;
-    const jobKeys = new Set((input.visibleJobIds || []).map(idKey).filter(Boolean));
-    const booked = /* @__PURE__ */ new Set();
-    for (const booking of input.bookings || []) {
-      if (jobKeys.has(idKey(booking?.projectId))) booked.add(idKey(booking?.operativeId));
+    const none = { kind: "jobs", jobIds: [], personIds: [], personEmails: [], unbookedLabour: false };
+    if (!viewer || !viewer.role) return none;
+    const role = viewer.role;
+    if ((role.isAdmin || role.isSuperAdmin) && !role.isOperativeMode) return WARNING_SCOPE_ALL;
+    if (!role.isManager || role.isOperativeMode) return none;
+    const jobIds = /* @__PURE__ */ new Set();
+    for (const job of input.jobs || []) {
+      if (job && idKey2(job.id) && isJobManager(viewer, job, input.managers ?? null)) jobIds.add(idKey2(job.id));
     }
-    for (const booking of input.managerBookings || []) {
-      const job = bookingJobId({ collection: "managerSiteBookings", ...booking });
-      if (job && jobKeys.has(idKey(job))) booked.add(idKey(booking?.userId));
-    }
-    booked.delete("");
+    const roster = (input.roster || []).filter((row2) => row2 && idKey2(row2.id));
     const rows3 = [
-      ...(input.people || []).map((row2) => ({ ids: [row2.id, ...row2.formerIds || []], email: row2.email })),
-      ...(input.operatives || []).map((row2) => ({ ids: [row2.id], email: row2.email }))
+      ...roster.map((row2) => ({
+        ids: [row2.id, ...row2.formerUserIds || [], ...row2.sameEmailUserIds || []],
+        email: idKey2(row2.email)
+      })),
+      ...(input.people || []).map((row2) => ({ ids: [row2.id, ...row2.formerIds || []], email: idKey2(row2.email) })),
+      ...(input.operatives || []).map((row2) => ({ ids: [row2.id], email: idKey2(row2.email) }))
     ];
+    const ids = /* @__PURE__ */ new Set();
     const emails = /* @__PURE__ */ new Set();
-    for (const row2 of rows3) {
-      const email = String(row2.email ?? "").trim().toLowerCase();
-      if (email && row2.ids.some((id2) => booked.has(idKey(id2)))) emails.add(email);
+    const addPerson = (personIds, email) => {
+      for (const id2 of personIds) if (idKey2(id2)) ids.add(idKey2(id2));
+      if (idKey2(email)) emails.add(idKey2(email));
+    };
+    const viewerIds = [viewer.uid, ...viewer.ids || []].filter((id2) => typeof id2 === "string" && id2.trim() !== "");
+    const self = { id: viewerIds[0] ?? "", email: viewer.email ?? null, formerUserIds: viewerIds };
+    addPerson(personIdSet(self, roster), viewer.email);
+    const viewerKeys = new Set(ids);
+    for (const member of roster) {
+      if (!rosterMemberActive(member)) continue;
+      if (!lineManagerIds(member, roster).some((id2) => viewerKeys.has(idKey2(id2)))) continue;
+      addPerson(personIdSet(member, roster), member.email);
     }
-    const ids = new Set(booked);
-    for (const row2 of rows3) {
-      const email = String(row2.email ?? "").trim().toLowerCase();
-      if (email && emails.has(email)) {
-        for (const id2 of row2.ids) if (idKey(id2)) ids.add(idKey(id2));
-      }
-    }
+    for (const row2 of rows3) if (row2.email && emails.has(row2.email)) addPerson(row2.ids, row2.email);
+    ids.delete("");
     return {
       kind: "jobs",
-      jobIds: [...jobKeys],
+      jobIds: [...jobIds],
       personIds: [...ids],
       personEmails: [...emails],
       unbookedLabour: readsEveryBooking(viewer, { enforced: input.enforced })
     };
   }
+  function isWarningRowInScope(scope, row2) {
+    if (!scope || scope.kind === "all") return true;
+    if ((row2?.jobIds || []).some((id2) => idKey2(id2) !== "" && scope.jobIds.includes(idKey2(id2)))) return true;
+    if ((row2?.personIds || []).some((id2) => idKey2(id2) !== "" && scope.personIds.includes(idKey2(id2)))) return true;
+    const email = idKey2(row2?.email);
+    return email !== "" && scope.personEmails.includes(email);
+  }
+  function managerBookingJobId(booking) {
+    return bookingJobId({ collection: "managerSiteBookings", ...booking || {} }) || "";
+  }
   function isJobInWarningScope(scope, jobId) {
     if (!scope || scope.kind === "all") return true;
-    const key4 = idKey(jobId);
+    const key4 = idKey2(jobId);
     return key4 !== "" && scope.jobIds.includes(key4);
   }
   function isPersonInWarningScope(scope, ids, email) {
     if (!scope || scope.kind === "all") return true;
-    if (ids.some((id2) => idKey(id2) !== "" && scope.personIds.includes(idKey(id2)))) return true;
+    if (ids.some((id2) => idKey2(id2) !== "" && scope.personIds.includes(idKey2(id2)))) return true;
     const key4 = String(email ?? "").trim().toLowerCase();
     return key4 !== "" && scope.personEmails.includes(key4);
   }
@@ -2386,35 +3292,6 @@ var ProjectPlannerCanonical = (() => {
   var DELETED_USER_DISPLAY_NAME = ANONYMISED_DELETED_USER_NAME;
   var userRosterSegment = rosterSegment;
   var matchesUserRosterSegment = matchesRosterSegment;
-
-  // lib/canonical/dayKeys.ts
-  function zoneOrLondon(timeZone) {
-    const value = String(timeZone || "").trim();
-    return value || LONDON_TIME_ZONE;
-  }
-  function eachDayKey(startKey, endKey, timeZone, cap = 400) {
-    if (!startKey || !endKey || startKey > endKey) return [];
-    const keys = [];
-    let cursor = dateFromDayKeyInZone(startKey, timeZone);
-    while (dayKeyInZone(cursor, timeZone) <= endKey) {
-      keys.push(dayKeyInZone(cursor, timeZone));
-      cursor = addDaysInZone(cursor, 1, timeZone);
-      if (keys.length > cap) break;
-    }
-    return keys;
-  }
-  function isoWeekdayOfDayKey(dayKey, timeZone) {
-    return isoWeekdayInZone(dateFromDayKeyInZone(dayKey, timeZone), timeZone);
-  }
-  function formatLongDayKey(dayKey, timeZone) {
-    const date = dateFromDayKeyInZone(dayKey, timeZone);
-    return new Intl.DateTimeFormat("en-GB", {
-      timeZone,
-      weekday: "long",
-      day: "numeric",
-      month: "long"
-    }).format(date);
-  }
 
   // lib/canonical/timesheetSubmission.ts
   var TIMESHEET_CLOSE_OF_PLAY_HOUR = 17;
@@ -2927,6 +3804,12 @@ var ProjectPlannerCanonical = (() => {
     if (!uid || !isDayKey(startDayKey)) return "";
     const stamp = unixStartOfDayInZone(dateFromDayKeyInZone(startDayKey, zoneOf2(timeZone)), zoneOf2(timeZone));
     return `${TIMESHEET_DOCUMENT_PREFIX}${uid}_${stamp}`;
+  }
+  function timesheetDocumentSubjectId(documentId2) {
+    const id2 = typeof documentId2 === "string" ? documentId2.trim() : "";
+    if (!id2.startsWith(TIMESHEET_DOCUMENT_PREFIX)) return "";
+    const match = /^(.+)_(-?\d+)$/.exec(id2.slice(TIMESHEET_DOCUMENT_PREFIX.length));
+    return match ? match[1] : "";
   }
   function timesheetPeriodKey(period) {
     return `${period.startDayKey}|${period.endDayKey}`;
@@ -3680,15 +4563,15 @@ var ProjectPlannerCanonical = (() => {
   }
   var COVERAGE_CLOCK_RE = /^\d{1,2}:\d{2}$/;
   function clockMinutesOf(value) {
-    const text29 = coverageClock(value);
-    if (!text29) return null;
-    const [h, m] = text29.split(":").map(Number);
+    const text30 = coverageClock(value);
+    if (!text30) return null;
+    const [h, m] = text30.split(":").map(Number);
     return h * 60 + m;
   }
   function coverageClock(value) {
-    const text29 = typeof value === "string" ? value.trim() : "";
-    if (!COVERAGE_CLOCK_RE.test(text29)) return null;
-    const [h, m] = text29.split(":").map(Number);
+    const text30 = typeof value === "string" ? value.trim() : "";
+    if (!COVERAGE_CLOCK_RE.test(text30)) return null;
+    const [h, m] = text30.split(":").map(Number);
     return h >= 0 && h < 24 && m >= 0 && m < 60 ? `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}` : null;
   }
   function parseWeekendCoverage(value, includeWeekends) {
@@ -4020,8 +4903,8 @@ var ProjectPlannerCanonical = (() => {
     const total = plainHoursText(Math.max(0, clock * n - brk));
     return roundHundredths(brk) > 0 ? `${multiplied} \u2212 ${plainHoursText(brk)} break = ${total}` : `${multiplied} = ${total}`;
   }
-  function parseMultipliedHoursText(text29) {
-    const match = /(\d+(?:\.\d+)?)h × (\d+(?:\.\d+)?)(?: − (\d+(?:\.\d+)?)h break)? = \d+(?:\.\d+)?h/.exec(String(text29 ?? ""));
+  function parseMultipliedHoursText(text30) {
+    const match = /(\d+(?:\.\d+)?)h × (\d+(?:\.\d+)?)(?: − (\d+(?:\.\d+)?)h break)? = \d+(?:\.\d+)?h/.exec(String(text30 ?? ""));
     if (!match) return null;
     const clockHours = Number(match[1]);
     const multiplier = Number(match[2]);
@@ -4320,7 +5203,7 @@ var ProjectPlannerCanonical = (() => {
   function zone(timeZone) {
     return String(timeZone || "").trim() || DEFAULT_ZONE;
   }
-  function record(value) {
+  function record2(value) {
     return value && typeof value === "object" && !Array.isArray(value) ? value : void 0;
   }
   function payrollDayKeyFromValue(value, timeZone) {
@@ -4343,8 +5226,8 @@ var ProjectPlannerCanonical = (() => {
     return dayKeyInZone(addDaysInZone(dateFromDayKeyInZone(dayKey, timeZone), days, timeZone), timeZone);
   }
   function parsePayrollTimePolicyScheduled(value, timeZone) {
-    const raw = record(value);
-    const policy = record(raw?.policy);
+    const raw = record2(value);
+    const policy = record2(raw?.policy);
     if (!raw || !policy) return null;
     const effectiveFrom = payrollDayKeyFromValue(raw.effectiveFrom, timeZone);
     if (!effectiveFrom) return null;
@@ -4354,8 +5237,8 @@ var ProjectPlannerCanonical = (() => {
     if (!Array.isArray(value)) return [];
     const entries = [];
     value.forEach((raw, index) => {
-      const row2 = record(raw);
-      const policy = record(row2?.policy);
+      const row2 = record2(raw);
+      const policy = record2(row2?.policy);
       const effectiveFrom = row2 ? payrollDayKeyFromValue(row2.effectiveFrom, timeZone) : null;
       if (!policy || !effectiveFrom) return;
       entries.push({ effectiveFrom, policy: parsePayrollPolicy(policy), index });
@@ -4368,10 +5251,10 @@ var ProjectPlannerCanonical = (() => {
     return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
   }
   function parsePayrollTimePolicyState(orgDoc, timeZone) {
-    const data = record(orgDoc) ?? {};
-    const priorRaw = record(data.payrollTimePolicyPrior);
+    const data = record2(orgDoc) ?? {};
+    const priorRaw = record2(data.payrollTimePolicyPrior);
     return {
-      current: parsePayrollPolicy(record(data.payrollTimePolicy)),
+      current: parsePayrollPolicy(record2(data.payrollTimePolicy)),
       prior: priorRaw ? parsePayrollPolicy(priorRaw) : null,
       effectiveFrom: payrollDayKeyFromValue(data.payrollTimePolicyEffectiveFrom, timeZone),
       scheduled: parsePayrollTimePolicyScheduled(data.payrollTimePolicyScheduled, timeZone),
@@ -4380,8 +5263,8 @@ var ProjectPlannerCanonical = (() => {
     };
   }
   function isState(value) {
-    const v = record(value);
-    return Boolean(v && "current" in v && "scheduled" in v && record(v.current));
+    const v = record2(value);
+    return Boolean(v && "current" in v && "scheduled" in v && record2(v.current));
   }
   function isPayrollTimePolicyState(value) {
     return isState(value);
@@ -4393,8 +5276,8 @@ var ProjectPlannerCanonical = (() => {
     return day === 0 ? 7 : day;
   }
   function isWholePolicy(value) {
-    const v = record(value);
-    return Boolean(v && record(v.saturday) && record(v.sunday));
+    const v = record2(value);
+    return Boolean(v && record2(v.saturday) && record2(v.sunday));
   }
   function bookingStandardDayOn(day, dayKey) {
     const resolved = standardDayOn(day, dayKey);
@@ -4703,69 +5586,6 @@ var ProjectPlannerCanonical = (() => {
     return Number.isInteger(isoWeekday) && isoWeekday >= 1 && isoWeekday <= 5;
   }
 
-  // lib/canonical/personIds.ts
-  function idText(value) {
-    return typeof value === "string" ? value.trim() : "";
-  }
-  function idKey2(value) {
-    return idText(value).toLowerCase();
-  }
-  function ownIds(person) {
-    if (!person) return [];
-    return [
-      person.id,
-      ...person.formerUserIds ?? [],
-      ...person.sameEmailUserIds ?? [],
-      ...person.formerIds ?? [],
-      ...person.aliasIds ?? []
-    ].map(idText).filter(Boolean);
-  }
-  function validRoster(roster) {
-    return (roster || []).filter((member) => member && typeof member === "object" && idText(member.id));
-  }
-  function rosterMemberActive(member) {
-    return Boolean(member) && member.isActive !== false;
-  }
-  function rosterMemberFor(id2, roster) {
-    const key4 = idKey2(id2);
-    if (!key4) return void 0;
-    const members = validRoster(roster);
-    return members.find((member) => idKey2(member.id) === key4) ?? members.find((member) => ownIds(member).some((alias) => idKey2(alias) === key4));
-  }
-  function personIdSet(person, roster) {
-    const out = [];
-    const seen = /* @__PURE__ */ new Set();
-    const add = (id2) => {
-      const key4 = idKey2(id2);
-      if (!key4 || seen.has(key4)) return false;
-      seen.add(key4);
-      out.push(idText(id2));
-      return true;
-    };
-    for (const id2 of ownIds(person)) add(id2);
-    if (out.length === 0) return [];
-    const emails = /* @__PURE__ */ new Set();
-    const personEmail = idKey2(person?.email);
-    if (personEmail) emails.add(personEmail);
-    const members = validRoster(roster);
-    let grew = true;
-    for (let pass = 0; grew && pass < 8; pass += 1) {
-      grew = false;
-      for (const member of members) {
-        const ids = ownIds(member);
-        const email = idKey2(member.email);
-        const same = ids.some((id2) => seen.has(idKey2(id2))) || email !== "" && emails.has(email);
-        if (!same) continue;
-        for (const id2 of ids) if (add(id2)) grew = true;
-        if (email && !emails.has(email)) {
-          emails.add(email);
-          grew = true;
-        }
-      }
-    }
-    return out;
-  }
-
   // lib/canonical/warningRows.ts
   function qualificationDismissKey(operativeId, qualificationId, expiryDayKey) {
     return `qual|${String(operativeId).trim()}|${String(qualificationId).trim()}|${String(expiryDayKey).trim()}`;
@@ -4954,7 +5774,7 @@ var ProjectPlannerCanonical = (() => {
     const timeZone = zoneOf3(input.timeZone);
     const people = listedCurrentLabourPeople(input.people);
     const operatives = listedCurrentLabourPeople(input.operatives);
-    const nid = idKey2;
+    const nid = idKey;
     const excludedIds = new Set((input.excludedUserIds || []).map(nid).filter(Boolean));
     const isExcluded = (person) => labourPersonIds(person).some((id2) => excludedIds.has(nid(id2)));
     const flatDayPolicy = {
@@ -5234,8 +6054,8 @@ var ProjectPlannerCanonical = (() => {
   }
   function formatHours(hours) {
     const rounded = Math.round(hours * 4) / 4;
-    const text29 = Number.isInteger(rounded) ? String(rounded) : String(rounded).replace(/0+$/, "");
-    return `${text29} hour${rounded === 1 ? "" : "s"}`;
+    const text30 = Number.isInteger(rounded) ? String(rounded) : String(rounded).replace(/0+$/, "");
+    return `${text30} hour${rounded === 1 ? "" : "s"}`;
   }
   function joinRanges(intervals) {
     const labels = intervals.map(rangeLabel);
@@ -5244,30 +6064,30 @@ var ProjectPlannerCanonical = (() => {
   }
   function leaveCoverageRows(input) {
     const timeZone = zoneOrLondon(input.timeZone);
-    const excluded = new Set((input.excludedUserIds || []).map(idKey2).filter(Boolean));
+    const excluded = new Set((input.excludedUserIds || []).map(idKey).filter(Boolean));
     const approvedLeave = input.leave.filter((record13) => record13.approved && record13.startDayKey && record13.endDayKey);
     if (approvedLeave.length === 0) return [];
     const peopleByUserId = /* @__PURE__ */ new Map();
     const peopleByOperativeId = /* @__PURE__ */ new Map();
     for (const person of input.people) {
       if (isAnonymisedDeletedProfile({ name: person.name })) continue;
-      const userId = idKey2(person.userId);
+      const userId = idKey(person.userId);
       if (userId && !peopleByUserId.has(userId)) peopleByUserId.set(userId, person);
       for (const operativeId of person.operativeIds || []) {
-        const key4 = idKey2(operativeId);
+        const key4 = idKey(operativeId);
         if (key4 && !peopleByOperativeId.has(key4)) peopleByOperativeId.set(key4, person);
       }
     }
     const personForLeave = (record13) => {
-      const userId = idKey2(record13.userId);
+      const userId = idKey(record13.userId);
       if (userId && peopleByUserId.has(userId)) return peopleByUserId.get(userId);
-      const operativeId = idKey2(record13.operativeId);
+      const operativeId = idKey(record13.operativeId);
       if (operativeId && peopleByOperativeId.has(operativeId)) return peopleByOperativeId.get(operativeId);
       return void 0;
     };
     const bookingsByPersonDay = /* @__PURE__ */ new Map();
     for (const booking of input.bookings) {
-      const personId2 = idKey2(booking.personId);
+      const personId2 = idKey(booking.personId);
       if (!personId2 || !booking.dayKey) continue;
       const person = booking.kind === "manager" ? peopleByUserId.get(personId2) : peopleByOperativeId.get(personId2);
       if (!person) continue;
@@ -5336,7 +6156,7 @@ var ProjectPlannerCanonical = (() => {
         }
         if (leaveSlot2 === "FULL_DAY") continue;
         if (weekend && !input.includeWeekends) continue;
-        if (userId && excluded.has(idKey2(userId))) continue;
+        if (userId && excluded.has(idKey(userId))) continue;
         const workingWindow = leaveSlot2 === "PM" ? windows.am : windows.pm;
         const workingLabel = leaveSlot2 === "PM" ? "AM" : "PM";
         const covered = intervals.map((entry) => entry.interval);
@@ -5380,165 +6200,6 @@ var ProjectPlannerCanonical = (() => {
       if (a.kind !== b.kind) return a.kind === "leave_clash" ? -1 : 1;
       return a.personName.localeCompare(b.personName, void 0, { sensitivity: "base" });
     });
-  }
-
-  // lib/canonical/userProfile.ts
-  var USER_DOCUMENT_FIELDS = [
-    "firstName",
-    "surname",
-    "email",
-    "mobileNumber",
-    "role",
-    "isActive",
-    "passwordSet",
-    "status",
-    "isSuperAdmin",
-    "organizationId",
-    "permissions",
-    "assignedManagerUserId",
-    "assignedManagerUserIds",
-    "hasNoLineManager",
-    "dayRate",
-    "hourlyRate",
-    "payBasis",
-    "tradeTypePreset",
-    "tradeTypeCustom",
-    "employmentType",
-    "employmentTypeTransitionFrom",
-    "employmentTypeEffectiveAt",
-    "annualLeaveEnabled",
-    "annualLeaveDaysPerYear",
-    "annualLeaveYearStartMonth",
-    "annualLeaveYearEndMonth",
-    "annualLeaveCarriesOver",
-    "employmentStartDate",
-    "annualLeaveYearAllowance",
-    "annualLeaveYearAllowanceKey",
-    "timesheetsEnabled",
-    // vatNumber and utrNumber live at users/{uid}/private/taxIds (sensitiveProfile.ts).
-    "lastSeenAt",
-    "profilePhotoURL",
-    // Set with the new download URL on every photo upload; devices refresh the cached avatar when it changes.
-    "profilePhotoUpdatedAt",
-    "pushTokens",
-    "pushTokenUpdatedAt",
-    "notificationPreferences",
-    "formerUserIds"
-  ];
-  var USER_FORMER_IDS_FIELD = "formerUserIds";
-  function parseFormerUserIds(data) {
-    const raw = data?.[USER_FORMER_IDS_FIELD];
-    if (!Array.isArray(raw)) return [];
-    const ids = /* @__PURE__ */ new Set();
-    for (const value of raw) {
-      const id2 = typeof value === "string" ? value.trim() : "";
-      if (id2) ids.add(id2);
-    }
-    return [...ids];
-  }
-  function inviteMigrationFormerIdWriteFields(input) {
-    const ids = parseFormerUserIds(input.existing);
-    const placeholder = String(input.placeholderId || "").trim();
-    if (placeholder && placeholder !== input.authUid.trim() && !ids.includes(placeholder)) ids.push(placeholder);
-    return ids.length > 0 ? { [USER_FORMER_IDS_FIELD]: ids } : {};
-  }
-  var USER_SELF_CREATE_AGE_FIELDS = [
-    "ageConfirmed",
-    "ageConfirmedAt",
-    "ageConfirmedYears"
-  ];
-  function userCreateRequiresAgeConfirmation(input) {
-    const creator = typeof input.creatorUserId === "string" ? input.creatorUserId.trim() : "";
-    const target = typeof input.targetUserId === "string" ? input.targetUserId.trim() : "";
-    return creator.length > 0 && creator === target;
-  }
-  var USER_PERMISSION_FIELDS = [
-    "adminAccess",
-    "manager",
-    "operatives",
-    "skills",
-    "qualifications",
-    "materials",
-    "projects",
-    "smallWorks",
-    "operativeMode",
-    "siteAudit",
-    "subContractors",
-    "wholesalersOrderHistory",
-    "annualLeaveSelfBook",
-    // 1.28.0: admins only (`ADMIN_ONLY_PERMISSION_FIELDS`); reads off for a manager or operative.
-    "timesheetSelfSign",
-    "weeklyReports",
-    "dailyOverview"
-  ];
-  function normalizeEmploymentType(raw) {
-    if (raw === "paye") return "paye";
-    if (raw === "self_employed" || raw === "selfEmployed") return "self_employed";
-    return "self_employed";
-  }
-  function accountKindFromFlags(flags2) {
-    if (flags2.isSuperAdmin) return "admin";
-    if (flags2.adminAccess || flags2.role === "admin") return "admin";
-    if (flags2.operativeMode) return "operative";
-    return "manager";
-  }
-  function validDay(value) {
-    if (value instanceof Date) return Number.isNaN(value.getTime()) ? void 0 : value;
-    if (typeof value === "string" || typeof value === "number") {
-      const parsed = new Date(value);
-      return Number.isNaN(parsed.getTime()) ? void 0 : parsed;
-    }
-    return void 0;
-  }
-  function employmentTypeOnDay(user, date, timeZone) {
-    const current = normalizeEmploymentType(user.employmentType);
-    const from = user.employmentTypeTransitionFrom;
-    const day = validDay(date);
-    const effectiveAt = validDay(user.employmentTypeEffectiveAt);
-    if (!from || !day || !effectiveAt) return current;
-    const zone3 = zoneOrLondon(timeZone);
-    if (dayKeyInZone(day, zone3) < dayKeyInZone(effectiveAt, zone3)) {
-      return normalizeEmploymentType(from);
-    }
-    return current;
-  }
-  function isBillableSelfEmployedDay(user, date, timeZone) {
-    return employmentTypeOnDay(user, date, timeZone) === "self_employed";
-  }
-  function applyEmploymentTypeChange(input) {
-    const next = normalizeEmploymentType(input.nextType);
-    const previous = normalizeEmploymentType(input.previousType);
-    if (next === previous) {
-      const existing = validDay(input.previousEffectiveAt);
-      return {
-        employmentType: next,
-        employmentTypeTransitionFrom: input.previousTransitionFrom ? String(input.previousTransitionFrom) : null,
-        employmentTypeEffectiveAt: existing ?? null
-      };
-    }
-    const zone3 = zoneOrLondon(input.timeZone);
-    const todayKey4 = dayKeyInZone(input.now ?? /* @__PURE__ */ new Date(), zone3);
-    if (input.effectiveAt === "immediate") {
-      return { employmentType: next, employmentTypeTransitionFrom: null, employmentTypeEffectiveAt: null };
-    }
-    const when = validDay(input.effectiveAt);
-    if (!when || dayKeyInZone(when, zone3) <= todayKey4) {
-      return { employmentType: next, employmentTypeTransitionFrom: null, employmentTypeEffectiveAt: null };
-    }
-    return {
-      employmentType: next,
-      employmentTypeTransitionFrom: previous,
-      employmentTypeEffectiveAt: when
-    };
-  }
-  function employmentEffectiveLabel(user, now = /* @__PURE__ */ new Date(), timeZone) {
-    const effectiveAt = validDay(user.employmentTypeEffectiveAt);
-    if (!effectiveAt || !user.employmentTypeTransitionFrom) return "Effective immediately";
-    const zone3 = zoneOrLondon(timeZone);
-    if (dayKeyInZone(now, zone3) >= dayKeyInZone(effectiveAt, zone3)) return "Effective immediately";
-    const [year, month, day] = dayKeyInZone(effectiveAt, zone3).split("-").map(Number);
-    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-    return `${day} ${months[(month || 1) - 1]} ${year}`;
   }
 
   // lib/canonical/notificationPreferences.ts
@@ -5609,6 +6270,9 @@ var ProjectPlannerCanonical = (() => {
     manager_created: "companyActivity",
     client_created: "companyActivity",
     warning_removed: "companyActivity",
+    // 1.31.0 (§11, owner decisions): operative deleted, manager taken off jobs.
+    operative_deleted: "companyActivity",
+    job_manager_removed: "companyActivity",
     task_created: "tasksAssignedOrCompleted",
     task_completed: "tasksAssignedOrCompleted",
     deadline_assigned: "tasksAssignedOrCompleted",
@@ -5643,7 +6307,7 @@ var ProjectPlannerCanonical = (() => {
     if (value === "projects" || value === "smallWorks") return value;
     return void 0;
   }
-  function flagOn(raw) {
+  function flagOn2(raw) {
     return raw !== false;
   }
   function parseUserNotificationPreferences(raw) {
@@ -5651,11 +6315,11 @@ var ProjectPlannerCanonical = (() => {
     const prefs = { ...DEFAULT_USER_NOTIFICATION_PREFERENCES };
     for (const [legacy, current] of Object.entries(LEGACY_NOTIFICATION_PREFERENCE_ALIASES)) {
       if (!(current in source) && legacy in source) {
-        prefs[current] = flagOn(source[legacy]);
+        prefs[current] = flagOn2(source[legacy]);
       }
     }
     for (const key4 of NOTIFICATION_PREFERENCE_KEYS) {
-      if (key4 in source) prefs[key4] = flagOn(source[key4]);
+      if (key4 in source) prefs[key4] = flagOn2(source[key4]);
     }
     return prefs;
   }
@@ -5799,6 +6463,8 @@ var ProjectPlannerCanonical = (() => {
     "variation_from_tracker",
     "variation_numbers_updated",
     "warning_removed",
+    "operative_deleted",
+    "job_manager_removed",
     "operative_created",
     "manager_created",
     "client_created",
@@ -5938,7 +6604,10 @@ var ProjectPlannerCanonical = (() => {
         return { kind: "materialOrders", relatedId };
       case "operative_created":
       case "manager_created":
+      case "job_manager_removed":
         return relatedId ? { kind: "userEdit", relatedId } : { kind: "manageUsers" };
+      case "operative_deleted":
+        return { kind: "manageUsers" };
       case "client_created":
         return { kind: "clients", relatedId };
       case "warning_removed":
@@ -5984,257 +6653,6 @@ var ProjectPlannerCanonical = (() => {
       default:
         return { kind: "notifications" };
     }
-  }
-
-  // lib/canonical/leaveRequests.ts
-  var HOLIDAY_TIME_SLOTS = ["FULL DAY", "AM", "PM"];
-  var HOLIDAY_STATUSES = ["pending", "approved", "rejected"];
-  var DAY_KEY = /^\d{4}-\d{2}-\d{2}$/;
-  function text(value) {
-    return typeof value === "string" ? value.trim() : "";
-  }
-  function normalizeHolidayTimeSlot(value) {
-    const raw = text(value).toUpperCase().replace(/_/g, " ");
-    if (raw === "AM" || raw === "A.M." || raw === "MORNING") return "AM";
-    if (raw === "PM" || raw === "P.M." || raw === "AFTERNOON") return "PM";
-    return "FULL DAY";
-  }
-  var HOLIDAY_STATUS_SYNONYMS = {
-    pending: ["pending", "requested", "awaiting", "awaiting approval", "submitted"],
-    approved: ["approved", "approve", "accepted", "confirmed"],
-    rejected: ["rejected", "declined", "denied", "cancelled", "canceled"]
-  };
-  function normalizeHolidayStatus(value) {
-    const raw = text(value).toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ");
-    if (!raw) return "approved";
-    for (const status of HOLIDAY_STATUSES) {
-      if (HOLIDAY_STATUS_SYNONYMS[status].includes(raw)) return status;
-    }
-    return "approved";
-  }
-  function parseHolidayDecisionNote(value) {
-    const note = text(value);
-    return note ? note : null;
-  }
-  function leaveRecordDayKeys(record13, timeZone, nonWorkingDayKeys) {
-    const zone3 = zoneOrLondon(timeZone);
-    const start = text(record13.startDayKey);
-    if (!DAY_KEY.test(start)) return [];
-    const endRaw = text(record13.endDayKey);
-    const end = DAY_KEY.test(endRaw) && endRaw >= start ? endRaw : start;
-    if (end === start) return [start];
-    const skip = new Set((nonWorkingDayKeys || []).map(text));
-    return eachDayKey(start, end, zone3).filter((key4) => {
-      const iso = isoWeekdayOfDayKey(key4, zone3);
-      return iso !== 6 && iso !== 7 && !skip.has(key4);
-    });
-  }
-  function leaveDaysInRange(record13, range, timeZone, nonWorkingDayKeys) {
-    const from = text(range?.startDayKey);
-    const to = text(range?.endDayKey);
-    if (!DAY_KEY.test(from) || !DAY_KEY.test(to) || to < from) return 0;
-    const each = normalizeHolidayTimeSlot(record13?.timeSlot) === "FULL DAY" ? 1 : 0.5;
-    const days = leaveRecordDayKeys(record13, timeZone, nonWorkingDayKeys).filter((key4) => key4 >= from && key4 <= to);
-    return Math.round(days.length * each * 100) / 100;
-  }
-  function holidayRequestRanges(picks, timeZone) {
-    const zone3 = zoneOrLondon(timeZone);
-    const bySlot = /* @__PURE__ */ new Map();
-    for (const pick of picks || []) {
-      const key4 = text(pick?.dayKey);
-      if (!DAY_KEY.test(key4) || bySlot.has(key4)) continue;
-      bySlot.set(key4, normalizeHolidayTimeSlot(pick.timeSlot));
-    }
-    const keys = Array.from(bySlot.keys()).sort();
-    const ranges = [];
-    for (const key4 of keys) {
-      const slot = bySlot.get(key4);
-      const last = ranges[ranges.length - 1];
-      if (last && last.timeSlot === slot) {
-        const next = dayKeyInZone(addDaysInZone(dateFromDayKeyInZone(last.endDayKey, zone3), 1, zone3), zone3);
-        if (next === key4) {
-          last.endDayKey = key4;
-          continue;
-        }
-      }
-      ranges.push({ startDayKey: key4, endDayKey: key4, timeSlot: slot });
-    }
-    return ranges;
-  }
-  function holidayRequestWriteFields(input) {
-    const zone3 = zoneOrLondon(input.timeZone);
-    const id2 = text(input.id);
-    const organizationId = text(input.organizationId);
-    const userId = text(input.userId) || null;
-    const operativeId = text(input.operativeId) || null;
-    const startDayKey = text(input.startDayKey);
-    if (!id2 || !organizationId || !userId && !operativeId || !DAY_KEY.test(startDayKey)) return null;
-    const endRaw = text(input.endDayKey);
-    const endDayKey = DAY_KEY.test(endRaw) && endRaw >= startDayKey ? endRaw : startDayKey;
-    const status = normalizeHolidayStatus(input.status || "pending");
-    return {
-      id: id2,
-      organizationId,
-      userId,
-      operativeId,
-      startDateMs: dateFromDayKeyInZone(startDayKey, zone3).getTime(),
-      endDateMs: dateFromDayKeyInZone(endDayKey, zone3).getTime(),
-      startDayKey,
-      endDayKey,
-      status,
-      timeSlot: normalizeHolidayTimeSlot(input.timeSlot),
-      approvedByUserId: status === "approved" ? text(input.approvedByUserId) || null : null,
-      cancellationRequestedByUserId: null,
-      decisionNote: null
-    };
-  }
-  function holidayDecisionWriteFields(input) {
-    const raw = text(input.status).toLowerCase();
-    const status = raw === "approved" ? "approved" : raw === "rejected" || raw === "declined" ? "rejected" : null;
-    const approver = text(input.approverUid);
-    if (!status || !approver) return null;
-    return { status, approvedByUserId: approver, decisionNote: parseHolidayDecisionNote(input.decisionNote) };
-  }
-  function lineManagerIds(user, roster) {
-    if (!user || user.hasNoLineManager === true) return [];
-    const listed = (user.assignedManagerUserIds || []).map(text).filter(Boolean);
-    const ids = listed.length > 0 ? listed : [text(user.assignedManagerUserId)].filter(Boolean);
-    const members = (roster || []).filter((member) => member && text(member.id));
-    const self = new Set(personIdSet(user, members).map(idKey2));
-    const seen = /* @__PURE__ */ new Set();
-    const out = [];
-    for (const id2 of ids) {
-      let resolved = id2;
-      if (members.length > 0) {
-        const member = rosterMemberFor(id2, members);
-        if (!member || !rosterMemberActive(member)) continue;
-        resolved = text(member.id);
-      }
-      if (self.has(idKey2(id2)) || self.has(idKey2(resolved))) continue;
-      if (seen.has(idKey2(resolved))) continue;
-      seen.add(idKey2(resolved));
-      out.push(resolved);
-    }
-    return out;
-  }
-  function hasActiveLineManager(user, roster) {
-    return lineManagerIds(user, roster).length > 0;
-  }
-  function leaveApproverIds(user, roster) {
-    const members = (roster || []).filter((member) => member && text(member.id));
-    const managers = lineManagerIds(user, members);
-    if (managers.length > 0) return managers;
-    const self = new Set(personIdSet(user, members).map(idKey2));
-    const seen = /* @__PURE__ */ new Set();
-    return members.filter((member) => {
-      const key4 = idKey2(member.id);
-      if (!rosterMemberActive(member) || !isAdminOutsideOperativeMode(member) || self.has(key4) || seen.has(key4)) return false;
-      seen.add(key4);
-      return true;
-    }).map((member) => text(member.id));
-  }
-  var HOLIDAY_REQUEST_SUBMITTED_TYPE = "holiday_request_submitted";
-  function flagOn2(user, key4) {
-    if (!user) return false;
-    return user[key4] === true || user.permissions?.[key4] === true;
-  }
-  function roleObject(role) {
-    if (!role || typeof role !== "object") return null;
-    return role;
-  }
-  function roleText(role) {
-    return text(role).toLowerCase().replace(/[\s-]/g, "_");
-  }
-  function inOperativeMode(user) {
-    if (!user) return false;
-    if (isAdminOutsideOperativeMode(user)) return false;
-    const role = roleObject(user.role);
-    if (role?.isOperativeMode === true) return true;
-    return flagOn2(user, "operativeMode") || roleText(user.role) === "operative";
-  }
-  function isAdminOutsideOperativeMode(user) {
-    if (!user) return false;
-    const role = roleObject(user.role);
-    if (role) return role.isAdmin === true || role.isSuperAdmin === true;
-    const named = roleText(user.role);
-    return flagOn2(user, "isSuperAdmin") || flagOn2(user, "adminAccess") || named === "admin" || named === "super_admin" || named === "superadmin";
-  }
-  function isSuperAdminAccount(user) {
-    if (!user) return false;
-    if (typeof user.organizationSuperAdmin === "boolean") return user.organizationSuperAdmin;
-    const role = roleObject(user.role);
-    if (role?.isSuperAdmin === true) return true;
-    const named = roleText(user.role);
-    return flagOn2(user, "isSuperAdmin") || named === "super_admin" || named === "superadmin";
-  }
-  function isPayeAccount(user) {
-    return text(user?.employmentType).toLowerCase() === "paye";
-  }
-  function selfManageToggles(user) {
-    const admin = isAdminOutsideOperativeMode(user) || user?.organizationSuperAdmin === true;
-    const superAdmin = admin && isSuperAdminAccount(user);
-    const annualLeaveSelfBook = !!user && !inOperativeMode(user) && (superAdmin || flagOn2(user, "annualLeaveSelfBook"));
-    const timesheetSelfSign = admin && (superAdmin || flagOn2(user, "timesheetSelfSign"));
-    const timesheetApplies = !isPayeAccount(user);
-    const satisfied = admin && annualLeaveSelfBook && (timesheetSelfSign || !timesheetApplies);
-    return { annualLeaveSelfBook, timesheetSelfSign, timesheetApplies, superAdmin, satisfied };
-  }
-  function lineManagerRequired(user) {
-    if (!user || user.isActive === false) return false;
-    return !selfManageToggles(user).satisfied;
-  }
-  function timesheetSelfSigned(user, _roster) {
-    return selfManageToggles(user).timesheetSelfSign;
-  }
-  function canSelfBookAnnualLeave(user, _roster) {
-    return selfManageToggles(user).annualLeaveSelfBook;
-  }
-  var LEAVE_SUBMIT_LABEL = "Submit";
-  var LEAVE_SUBMIT_REQUEST_LABEL = "Submit request";
-  function leaveSubmitLabel(user, roster) {
-    return canSelfBookAnnualLeave(user, roster) ? LEAVE_SUBMIT_LABEL : LEAVE_SUBMIT_REQUEST_LABEL;
-  }
-  var LINE_MANAGER_REQUIRED_MESSAGE = "Set a line manager \u2014 this person's timesheets and annual leave need approval.";
-  var ADMIN_LINE_MANAGER_REQUIRED_MESSAGE = "Set a line manager, or turn on both Annual Leave Management and Timesheet self-sign \u2014 this person's timesheets and annual leave need approval.";
-  var PAYE_ADMIN_LINE_MANAGER_REQUIRED_MESSAGE = "Set a line manager, or turn on Annual Leave Management \u2014 this person's annual leave needs approval.";
-  function lineManagerRequiredError(user, roster) {
-    if (!lineManagerRequired(user)) return null;
-    if (hasActiveLineManager(user, roster)) return null;
-    if (!isAdminOutsideOperativeMode(user)) return LINE_MANAGER_REQUIRED_MESSAGE;
-    return isPayeAccount(user) ? PAYE_ADMIN_LINE_MANAGER_REQUIRED_MESSAGE : ADMIN_LINE_MANAGER_REQUIRED_MESSAGE;
-  }
-  function usersMissingLineManager(roster) {
-    const members = (roster || []).filter((member) => member && text(member.id));
-    return members.filter((member) => lineManagerRequiredError(member, members) != null).map((member) => text(member.id));
-  }
-  function canDecideLeave(viewer, requester, roster) {
-    const me = text(viewer?.id).toLowerCase();
-    if (!viewer || !me) return false;
-    if (me === text(requester?.id).toLowerCase()) return false;
-    if (personIdSet(requester, roster).some((id2) => idKey2(id2) === me)) return false;
-    const role = viewer.role;
-    if (role && !role.isOperativeMode && (role.isAdmin || role.isSuperAdmin)) return true;
-    return leaveApproverIds(requester, roster).some((id2) => id2.toLowerCase() === me);
-  }
-  function cancellationRequested(request) {
-    const at = request.cancellationRequestedAt;
-    if (at != null && at !== "" && at !== false) return true;
-    return text(request.cancellationRequestedByUserId) !== "";
-  }
-  function leaveDecisionQueue(viewer, requests, roster) {
-    const members = (roster || []).filter((member) => member && text(member.id));
-    const byId = new Map(members.map((member) => [text(member.id).toLowerCase(), member]));
-    return (requests || []).filter((request) => {
-      if (!request) return false;
-      const status = normalizeHolidayStatus(request.status);
-      const waiting = status === "pending" || status === "approved" && cancellationRequested(request);
-      if (!waiting) return false;
-      const ids = [text(request.userId), text(request.operativeId)].filter(Boolean);
-      if (ids.length === 0) return false;
-      const member = ids.map((id2) => byId.get(id2.toLowerCase())).find(Boolean);
-      const requester = member ?? { id: ids[0] };
-      return canDecideLeave(viewer, requester, members);
-    });
   }
 
   // lib/canonical/annualLeaveBalance.ts
@@ -7235,6 +7653,39 @@ var ProjectPlannerCanonical = (() => {
     if (input.rosterLoading === true) return true;
     return userTimesheetSubjects(input).length > 0;
   }
+  function exportedTimesheetHistorySubjects(input) {
+    const { viewer, members } = input;
+    if (!viewer || !idKey3(viewer.id)) return [];
+    if (!canReviewUserTimesheets(viewer.role)) return [];
+    const viewerKeys = new Set([viewer.id, ...viewer.formerIds ?? [], ...viewer.aliasIds ?? []].map(idKey3).filter(Boolean));
+    const viewerEmails = new Set(
+      members.filter((member) => viewerKeys.has(idKey3(member.id))).map((member) => idKey3(member.email)).filter(Boolean)
+    );
+    const isViewer = (member) => viewerKeys.has(idKey3(member.id)) || idKey3(member.email) !== "" && viewerEmails.has(idKey3(member.email));
+    const listed = new Set(userTimesheetSubjects(input).map((row2) => idKey3(row2.userId)));
+    const seesEvery = seesEveryUserTimesheet(viewer.role);
+    const reportsToViewer = (member) => lineManagerKeys(member).some((key4) => viewerKeys.has(key4));
+    const managedEmails = /* @__PURE__ */ new Set();
+    if (!seesEvery) {
+      for (const member of members) {
+        const email = idKey3(member.email);
+        if (email && !isViewer(member) && reportsToViewer(member)) managedEmails.add(email);
+      }
+    }
+    const out = [];
+    const seen = /* @__PURE__ */ new Set();
+    for (const member of members) {
+      const key4 = idKey3(member.id);
+      if (!key4 || seen.has(key4)) continue;
+      const own = isViewer(member);
+      const inScope = own || listed.has(key4) || (seesEvery ? isTimesheetUser(member.role) : reportsToViewer(member) || idKey3(member.email) !== "" && managedEmails.has(idKey3(member.email)));
+      if (!inScope) continue;
+      seen.add(key4);
+      out.push({ userId: member.id, own });
+    }
+    if (!seen.has(idKey3(viewer.id))) out.push({ userId: viewer.id, own: true });
+    return out;
+  }
 
   // lib/canonical/billingAccess.ts
   var PAYMENT_GRACE_MS = 7 * 24 * 60 * 60 * 1e3;
@@ -7721,7 +8172,16 @@ var ProjectPlannerCanonical = (() => {
     const ids = new Set(input.operativeIds.map((id2) => text2(id2).toUpperCase()).filter(Boolean));
     if (ids.size === 0) return [];
     const today = todayKey(input.nowIso, input.timeZone);
-    return input.bookings.filter((row2) => ids.has(text2(row2.operativeId).toUpperCase()) && onOrAfterToday(row2.dateMs, today, input.timeZone)).map((row2) => row2.id);
+    return input.bookings.filter(
+      (row2) => ids.has(text2(row2.operativeId).toUpperCase()) && onOrAfterToday(row2.dateMs, today, input.timeZone) && (input.futureOnly !== true || dayKeyInZone(new Date(row2.dateMs), zoneOrLondon(input.timeZone)) > today)
+    ).map((row2) => row2.id);
+  }
+  function operativesManagerMayDeleteBooking(input) {
+    if (input?.operativeHasAccount !== false) return false;
+    const dateMs = input.dateMs;
+    if (typeof dateMs !== "number" || !Number.isFinite(dateMs)) return false;
+    const zone3 = zoneOrLondon(input.timeZone);
+    return dayKeyInZone(new Date(dateMs), zone3) > todayKey(input.nowIso, input.timeZone);
   }
   function bookingsToRemoveOnProjectDelete(input) {
     const projectId = text2(input.projectId).toUpperCase();
@@ -7980,344 +8440,6 @@ var ProjectPlannerCanonical = (() => {
     const position = String(Math.max(0, Math.floor(Number(index) || 0)));
     const parts2 = (content || []).map((value) => value == null ? "" : typeof value === "string" ? value : String(value));
     return derivedDocumentId([parent, arrayName, position, ...parts2].join("|"));
-  }
-
-  // lib/canonical/permissionLevels.ts
-  var ADMIN_EDITABLE_PERMISSION_FIELDS = ["annualLeaveSelfBook", "timesheetSelfSign"];
-  var ADMIN_ONLY_PERMISSION_FIELDS = ["timesheetSelfSign"];
-  var MANAGER_LOCKED_ON_PERMISSION_FIELDS = ["materials", "siteAudit"];
-  var PERMISSION_DEFAULT_ON = [
-    "materials",
-    "siteAudit",
-    "wholesalersOrderHistory",
-    "dailyOverview"
-  ];
-  var ADMIN_LOCKED_PERMISSION_MESSAGE = "Administrators have this on. Change user type to remove admin access.";
-  var SUPER_ADMIN_SELF_MANAGE_MESSAGE = "The Super Admin always books their own leave and signs their own timesheet.";
-  var OWN_SELF_MANAGE_MESSAGE = "You cannot change your own self-manage toggles. Ask another admin.";
-  var TIMESHEET_SELF_SIGN_PAYE_NOTE = "Not used while PAYE \u2014 PAYE has no timesheets.";
-  function bool(value) {
-    if (value === true || value === false) return value;
-    if (typeof value === "number" && Number.isFinite(value)) return value !== 0;
-    if (typeof value === "string") {
-      const token = value.trim().toLowerCase();
-      if (token === "true" || token === "yes" || token === "1") return true;
-      if (token === "false" || token === "no" || token === "0") return false;
-    }
-    return null;
-  }
-  function record2(value) {
-    return value && typeof value === "object" && !Array.isArray(value) ? value : {};
-  }
-  function storedPermissionFlag(user, key4) {
-    const row2 = record2(user);
-    const top = bool(row2[key4]);
-    if (top != null) return top;
-    return bool(record2(row2.permissions)[key4]);
-  }
-  function roleToken(user) {
-    const role = record2(user).role;
-    return typeof role === "string" ? role.trim().toLowerCase().replace(/[\s-]/g, "_") : "";
-  }
-  function storedSuperAdmin(user) {
-    const perOrganization = record2(user).organizationSuperAdmin;
-    if (typeof perOrganization === "boolean") return perOrganization;
-    const role = roleToken(user);
-    return storedPermissionFlag(user, "isSuperAdmin") === true || role === "super_admin" || role === "superadmin";
-  }
-  function storedPaye(user) {
-    const value = record2(user).employmentType;
-    return typeof value === "string" && value.trim().toLowerCase() === "paye";
-  }
-  function permissionLevelOf(user) {
-    const role = roleToken(user);
-    if (storedPermissionFlag(user, "isSuperAdmin") === true || storedPermissionFlag(user, "adminAccess") === true || role === "admin" || role === "super_admin" || role === "superadmin") {
-      return "admin";
-    }
-    if (storedPermissionFlag(user, "operativeMode") === true || role === "operative") return "operative";
-    return "manager";
-  }
-  function lockedPermissionFields(user, level) {
-    const resolved = level ?? permissionLevelOf(user);
-    if (resolved === "manager") return [...MANAGER_LOCKED_ON_PERMISSION_FIELDS, ...ADMIN_ONLY_PERMISSION_FIELDS];
-    if (resolved !== "admin") return [...ADMIN_ONLY_PERMISSION_FIELDS];
-    if (storedSuperAdmin(user)) return [...USER_PERMISSION_FIELDS];
-    return USER_PERMISSION_FIELDS.filter((key4) => !ADMIN_EDITABLE_PERMISSION_FIELDS.includes(key4));
-  }
-  function effectivePermissions(user, level) {
-    const resolved = level ?? permissionLevelOf(user);
-    const out = {};
-    const stored = (key4, fallback) => storedPermissionFlag(user, key4) ?? fallback;
-    if (resolved === "admin") {
-      for (const key4 of USER_PERMISSION_FIELDS) out[key4] = true;
-      out.operativeMode = false;
-      const superAdmin = storedSuperAdmin(user);
-      out.annualLeaveSelfBook = superAdmin || stored("annualLeaveSelfBook", false);
-      out.timesheetSelfSign = superAdmin || stored("timesheetSelfSign", false);
-      return out;
-    }
-    for (const key4 of USER_PERMISSION_FIELDS) out[key4] = stored(key4, PERMISSION_DEFAULT_ON.includes(key4));
-    out.skills = false;
-    out.adminAccess = false;
-    for (const key4 of ADMIN_ONLY_PERMISSION_FIELDS) out[key4] = false;
-    if (resolved === "operative") {
-      out.operativeMode = true;
-      out.manager = false;
-      out.operatives = false;
-      out.qualifications = false;
-      out.materials = stored("materials", false);
-      out.projects = true;
-      out.smallWorks = true;
-      return out;
-    }
-    out.operativeMode = false;
-    out.manager = stored("manager", roleToken(user) === "manager");
-    for (const key4 of MANAGER_LOCKED_ON_PERMISSION_FIELDS) out[key4] = true;
-    return out;
-  }
-  function effectivePermission(user, key4) {
-    return effectivePermissions(user)[key4] === true;
-  }
-  function withoutLockedPermissionWrites(user, fields, level) {
-    const locked = lockedPermissionFields(user, level);
-    if (locked.length === 0) return fields;
-    const effective = effectivePermissions(user, level);
-    const out = {};
-    for (const [key4, value] of Object.entries(fields || {})) {
-      const dotted = key4.startsWith("permissions.") ? key4.slice("permissions.".length) : null;
-      const field = dotted ?? key4;
-      if (locked.includes(field) && (dotted != null || key4 === field) && typeof value === "boolean" && value !== effective[field]) {
-        continue;
-      }
-      if (key4 === "permissions" && value && typeof value === "object" && !Array.isArray(value)) {
-        const map = {};
-        for (const [inner, flag] of Object.entries(value)) {
-          const innerField = inner;
-          if (locked.includes(innerField) && typeof flag === "boolean" && flag !== effective[innerField]) continue;
-          map[inner] = flag;
-        }
-        out[key4] = map;
-        continue;
-      }
-      out[key4] = value;
-    }
-    return out;
-  }
-  function keepStoredLockedPermissions(before, next) {
-    if (!before || !next || typeof next !== "object") return next;
-    const level = permissionLevelOf(before);
-    const nextLevel = permissionLevelOf({ ...before, ...next });
-    const locked = nextLevel !== level ? nextLevel === "admin" ? [] : [...ADMIN_ONLY_PERMISSION_FIELDS] : lockedPermissionFields(before, level);
-    if (locked.length === 0) return next;
-    const out = { ...next };
-    for (const key4 of locked) {
-      if (key4 === "adminAccess") continue;
-      delete out[key4];
-      delete out[`permissions.${key4}`];
-    }
-    const map = out.permissions;
-    if (map && typeof map === "object" && !Array.isArray(map)) {
-      const stored = record2(before.permissions);
-      const kept = { ...map };
-      for (const key4 of locked) {
-        if (stored[key4] !== void 0) kept[key4] = stored[key4];
-        else delete kept[key4];
-      }
-      out.permissions = kept;
-    }
-    return out;
-  }
-  var PERMISSION_TOGGLE_CATALOGUE = [
-    { field: "adminAccess", label: "Admin Access", help: "Gives Manage Users and organisation settings. Change user type to give or remove it.", levels: ["admin"] },
-    {
-      field: "projects",
-      label: "Projects",
-      help: "Sees, adds and edits every project. If off, they see only the projects they are assigned to as a manager \u2014 scheduling and other job tools stay available there, but they cannot add projects or change a project's managers.",
-      levels: ["admin", "manager"]
-    },
-    {
-      field: "smallWorks",
-      label: "Small Works",
-      help: "Sees, adds and edits every small works job. If off, they see only the small works they are assigned to as a manager \u2014 scheduling and other job tools stay available there, but they cannot add small works or change their managers.",
-      levels: ["admin", "manager"]
-    },
-    { field: "weeklyReports", label: "Weekly Report", help: "Can open Weekly Report from Home. If off, that tile is hidden.", levels: ["admin", "manager"] },
-    { field: "dailyOverview", label: "Daily Overview", help: "Can open Daily Overview from Home. If off, that tile is hidden.", levels: ["admin", "manager"] },
-    {
-      field: "subContractors",
-      label: "Sub Contractors",
-      help: "Can add and manage sub contractor records. If off, Sub Contractors is hidden on Home and menus. They can still book existing subcontractors on jobs.",
-      levels: ["admin", "manager"]
-    },
-    {
-      field: "annualLeaveSelfBook",
-      label: "Annual Leave Management",
-      help: "Can book their own annual leave. If off, this user requests leave for approval.",
-      levels: ["admin", "manager"]
-    },
-    {
-      field: "timesheetSelfSign",
-      label: "Timesheet self-sign",
-      help: "Sign your own timesheet and generate the invoice without a line manager's signature.",
-      levels: ["admin"]
-    },
-    {
-      field: "operatives",
-      label: "Operatives",
-      help: "Can add and manage operatives and view their details. If off, they can still schedule active operatives onto the jobs they manage, but do not see Manage Operatives or full operative profiles.",
-      levels: ["admin", "manager"]
-    },
-    {
-      field: "qualifications",
-      label: "Manage Qualifications",
-      help: "Can add and edit organisation qualification templates. If off, they see My Qualifications and can still assign templates others have added.",
-      levels: ["admin", "manager"]
-    },
-    {
-      field: "wholesalersOrderHistory",
-      label: "Wholesalers",
-      help: "Can view and manage the Wholesalers page, including quote and order history. If off, that page is not available.",
-      levels: ["admin", "manager"]
-    },
-    {
-      field: "materials",
-      label: "Materials",
-      help: "Can open material lists on projects and small works. Operatives cannot send quotes or place orders.",
-      levels: ["admin", "manager", "operative"]
-    },
-    { field: "siteAudit", label: "Site audit", help: "Can view and submit site audits.", levels: ["admin", "manager", "operative"] }
-  ];
-  function addUserPermissionDefaults(level) {
-    const resolved = level === "admin" || level === "operative" ? level : "manager";
-    const out = resolved === "admin" ? effectivePermissions({}, "admin") : resolved === "operative" ? effectivePermissions({}, "operative") : effectivePermissions({ manager: true }, "manager");
-    const locked = new Set(lockedPermissionFields({}, resolved));
-    for (const row2 of PERMISSION_TOGGLE_CATALOGUE) {
-      if (!row2.levels.includes(resolved) || locked.has(row2.field)) continue;
-      out[row2.field] = false;
-    }
-    return out;
-  }
-  function permissionToggleRows(input) {
-    const level = input?.level === "admin" || input?.level === "operative" ? input.level : "manager";
-    const values = input?.user != null ? effectivePermissions(input.user, level) : addUserPermissionDefaults(level);
-    const locked = lockedPermissionFields(input?.user ?? {}, level);
-    const superAdmin = level === "admin" && storedSuperAdmin(input?.user);
-    const paye = storedPaye(input?.user);
-    return PERMISSION_TOGGLE_CATALOGUE.map((row2) => {
-      const visible = row2.levels.includes(level);
-      const selfManage = level === "admin" && ADMIN_EDITABLE_PERMISSION_FIELDS.includes(row2.field);
-      const payeTimesheet = level === "admin" && row2.field === "timesheetSelfSign" && paye && !superAdmin;
-      const own = selfManage && input?.viewerIsSubject === true && !superAdmin;
-      const note = selfManage && superAdmin ? SUPER_ADMIN_SELF_MANAGE_MESSAGE : payeTimesheet ? TIMESHEET_SELF_SIGN_PAYE_NOTE : own ? OWN_SELF_MANAGE_MESSAGE : null;
-      return {
-        field: row2.field,
-        label: row2.label,
-        help: row2.help,
-        visible,
-        editable: visible && input?.mode !== "summary" && !locked.includes(row2.field) && !payeTimesheet && !own,
-        value: values[row2.field] === true,
-        note
-      };
-    });
-  }
-  function permissionsWriteMap(draft, level) {
-    return effectivePermissions(draft, level);
-  }
-  var PAYE_RATE_NOT_USED_NOTE = "Not used while PAYE. Kept for days they are self-employed.";
-  function canManageOperatives(user) {
-    const level = permissionLevelOf(user);
-    if (level === "operative") return false;
-    return effectivePermissions(user, level).operatives === true;
-  }
-  function canScheduleOperatives(user) {
-    return permissionLevelOf(user) !== "operative";
-  }
-  var MANAGER_PERMISSION_TOGGLES = PERMISSION_TOGGLE_CATALOGUE.filter(
-    (row2) => row2.levels.includes("admin")
-  ).map((row2) => ({ key: row2.field, title: row2.label, description: row2.help }));
-  var OPERATIVE_PERMISSION_TOGGLES = PERMISSION_TOGGLE_CATALOGUE.filter(
-    (row2) => row2.levels.includes("operative")
-  ).map((row2) => ({ key: row2.field, title: row2.label, description: row2.help }));
-  function accountTypePermissions(kind, previous) {
-    const out = {};
-    for (const key4 of USER_PERMISSION_FIELDS) {
-      out[key4] = storedPermissionFlag(previous, key4) ?? PERMISSION_DEFAULT_ON.includes(key4);
-    }
-    out.adminAccess = kind === "admin";
-    out.operativeMode = kind === "operative";
-    out.manager = kind !== "operative";
-    return out;
-  }
-  function accountTypeWritePermissions(kind, person, screen) {
-    const out = accountTypePermissions(kind, person);
-    if (!screen || typeof screen !== "object") return out;
-    const locked = new Set(lockedPermissionFields({}, kind));
-    for (const row2 of PERMISSION_TOGGLE_CATALOGUE) {
-      if (!row2.levels.includes(kind) || locked.has(row2.field)) continue;
-      const value = bool(screen[row2.field]);
-      if (value != null) out[row2.field] = value;
-    }
-    return out;
-  }
-  var ACCOUNT_TYPE_OTHER_COMPANY_NOTE = "This person's profile belongs to another company. Their user type changes here only; their profile in the other company is not changed.";
-  var ACCOUNT_TYPE_SUPER_ADMIN_MESSAGE = "The Super Admin stays an administrator. Pass Super Admin to another admin first (Change Super Admin).";
-  function sameOrg(value, organizationId) {
-    const raw = typeof value === "string" ? value.trim() : "";
-    const id2 = raw.includes("/") ? raw.split("/").filter(Boolean).pop() ?? "" : raw;
-    return id2 !== "" && id2.toLowerCase() === organizationId.trim().toLowerCase();
-  }
-  function accountTypeChangeWrites(input) {
-    const person = input?.person;
-    const org = typeof input?.organizationId === "string" ? input.organizationId.trim() : "";
-    const uid = typeof person?.id === "string" ? person.id.trim() : "";
-    const kind = input?.kind;
-    if (!person || !uid || !org || kind !== "admin" && kind !== "manager" && kind !== "operative") {
-      return { ok: false, reason: "invalid", message: "Choose a user type." };
-    }
-    const otherCompany = person.organizationId != null && String(person.organizationId).trim() !== "" && !sameOrg(person.organizationId, org);
-    if (storedPermissionFlag(person, "isSuperAdmin") === true && kind !== "admin") {
-      return { ok: false, reason: "super_admin", message: ACCOUNT_TYPE_SUPER_ADMIN_MESSAGE };
-    }
-    const permissions = accountTypeWritePermissions(kind, person, input.permissions ?? null);
-    const fields = { role: kind };
-    for (const key4 of USER_PERMISSION_FIELDS) {
-      fields[key4] = permissions[key4];
-      fields[`permissions.${key4}`] = permissions[key4];
-    }
-    fields.isSuperAdmin = kind === "admin" && storedPermissionFlag(person, "isSuperAdmin") === true;
-    const writes = otherCompany ? [] : [{ path: `users/${uid}`, kind: "userProfile", fields }];
-    const email = typeof person.email === "string" ? person.email.trim().toLowerCase() : "";
-    if (email) {
-      for (const row2 of input.roster || []) {
-        const id2 = typeof row2?.id === "string" ? row2.id.trim() : "";
-        if (!id2 || id2 === uid) continue;
-        if (String(row2.email ?? "").trim().toLowerCase() !== email) continue;
-        if (!sameOrg(row2.organizationId, org)) continue;
-        writes.push({ path: `users/${id2}`, kind: "userProfile", fields: { ...fields, isSuperAdmin: false } });
-      }
-    }
-    writes.push({ path: `organizations/${org}`, kind: "organizationMember", fields: { [`members.${uid}`]: kind } });
-    writes.push({ path: `users/${uid}/orgMemberships/${org}`, kind: "membership", role: kind, permissions });
-    return { ok: true, role: kind, permissions, writes, note: otherCompany ? ACCOUNT_TYPE_OTHER_COMPANY_NOTE : null };
-  }
-  var ACCOUNT_TYPE_OUT_OF_SYNC_MESSAGE = "This person's user type was only partly saved. Press Save to finish it on every record.";
-  function accountTypeSyncState(input) {
-    const person = input?.person;
-    const org = typeof input?.organizationId === "string" ? input.organizationId.trim() : "";
-    const uid = typeof person?.id === "string" ? person.id.trim() : "";
-    if (!person || !uid || !org || !sameOrg(person.organizationId, org)) {
-      return { inSync: true, level: null, membersRole: null, repair: null };
-    }
-    const level = permissionLevelOf(person);
-    const members = input.members && typeof input.members === "object" ? input.members : {};
-    const rawEntry = Object.entries(members).find(([key4]) => key4.trim().toLowerCase() === uid.toLowerCase())?.[1];
-    const membersRole = typeof rawEntry === "string" && rawEntry.trim() ? rawEntry.trim().toLowerCase() : null;
-    const explicit = (role) => role === "admin" || role === "manager" || role === "operative";
-    let inSync = membersRole === "admin" === (level === "admin");
-    if (inSync && explicit(membersRole) && membersRole !== level) inSync = false;
-    const membershipRole = input.membership && typeof input.membership.role === "string" ? input.membership.role.trim().toLowerCase() : null;
-    if (inSync && explicit(membershipRole) && membershipRole !== level) inSync = false;
-    return { inSync, level, membersRole, repair: inSync ? null : level };
   }
 
   // lib/canonical/payRate.ts
@@ -9259,8 +9381,8 @@ var ProjectPlannerCanonical = (() => {
     return typeof value === "string" ? value.trim().toLowerCase() : "";
   }
   function dayKeyText(value) {
-    const text29 = typeof value === "string" ? value.trim() : "";
-    return DAY_KEY2.test(text29) ? text29 : null;
+    const text30 = typeof value === "string" ? value.trim() : "";
+    return DAY_KEY2.test(text30) ? text30 : null;
   }
   function compareText(a, b) {
     if (a === b) return 0;
@@ -9388,8 +9510,8 @@ var ProjectPlannerCanonical = (() => {
   function personDayItems(input) {
     const managerIdByKey = /* @__PURE__ */ new Map();
     for (const id2 of input?.managerIds || []) {
-      const text29 = idText2(id2);
-      if (text29) managerIdByKey.set(text29.toLowerCase(), text29);
+      const text30 = idText2(id2);
+      if (text30) managerIdByKey.set(text30.toLowerCase(), text30);
     }
     const people = input?.people || { accounts: [], operatives: [] };
     const managerIdByEmail = /* @__PURE__ */ new Map();
@@ -10332,8 +10454,8 @@ var ProjectPlannerCanonical = (() => {
   // lib/canonical/rulebookStamp.ts
   function rulebookStamp() {
     return {
-      version: true ? "1.30.3" : "",
-      sha256: true ? "cd8b2f927131f6429118c95d82a8be9960460cedff5be24f9a0b67565643fb44" : ""
+      version: true ? "1.31.0" : "",
+      sha256: true ? "0f1071f709e0c26b94e5305d2e3d5f0dd998a9bf5a85a996be07ad2c0c8dc6bb" : ""
     };
   }
 
@@ -11856,7 +11978,7 @@ var ProjectPlannerCanonical = (() => {
   function resolvePerson(person, members) {
     const given = typeof person === "string" ? { id: person } : person && typeof person === "object" ? person : null;
     if (!given || !idText(given.id)) return given;
-    const row2 = members.find((member) => idKey2(member.id) === idKey2(given.id));
+    const row2 = members.find((member) => idKey(member.id) === idKey(given.id));
     if (!row2) return given;
     const merged = { ...row2 };
     for (const [key4, value] of Object.entries(given)) {
@@ -11865,22 +11987,22 @@ var ProjectPlannerCanonical = (() => {
     return merged;
   }
   function notificationRecipientAccountId(id2, roster, catalogue) {
-    const key4 = idKey2(id2);
+    const key4 = idKey(id2);
     if (!key4) return null;
     const members = rosterOf(roster);
     if (members.length === 0) return null;
     const seeds = [];
-    const direct = members.find((member) => idKey2(member.id) === key4);
+    const direct = members.find((member) => idKey(member.id) === key4);
     if (direct) seeds.push(direct);
     else {
       const aliased = members.find(
         (member) => [...member.formerUserIds ?? [], ...member.sameEmailUserIds ?? [], ...member.formerIds ?? [], ...member.aliasIds ?? []].some(
-          (alias) => idKey2(alias) === key4
+          (alias) => idKey(alias) === key4
         )
       );
       if (aliased) seeds.push(aliased);
       else {
-        const row2 = (catalogue || []).find((entry) => entry && idKey2(entry.id) === key4);
+        const row2 = (catalogue || []).find((entry) => entry && idKey(entry.id) === key4);
         if (!row2) return null;
         const linked = idText(row2.userId) || idText(row2.linkedUserId);
         if (linked) seeds.push({ id: linked });
@@ -11888,16 +12010,16 @@ var ProjectPlannerCanonical = (() => {
       }
     }
     const same = /* @__PURE__ */ new Set();
-    for (const seed of seeds) for (const alias of personIdSet(seed, members)) same.add(idKey2(alias));
+    for (const seed of seeds) for (const alias of personIdSet(seed, members)) same.add(idKey(alias));
     const formerOfOther = /* @__PURE__ */ new Set();
     for (const member of members) {
       for (const alias of [...member.formerUserIds ?? [], ...member.formerIds ?? []]) {
-        if (idKey2(alias) !== idKey2(member.id)) formerOfOther.add(idKey2(alias));
+        if (idKey(alias) !== idKey(member.id)) formerOfOther.add(idKey(alias));
       }
     }
     let best = null;
     for (const member of members) {
-      const memberKey = idKey2(member.id);
+      const memberKey = idKey(member.id);
       if (!same.has(memberKey) || !rosterMemberActive(member)) continue;
       const signedUp = member.passwordSet === true ? 2 : member.passwordSet === false ? 0 : 1;
       const score = signedUp * 2 + (formerOfOther.has(memberKey) ? 0 : 1);
@@ -11908,7 +12030,7 @@ var ProjectPlannerCanonical = (() => {
   function excludeActor(ids, actor, roster, catalogue) {
     const members = rosterOf(roster);
     const actorPerson = resolvePerson(actor, members);
-    const actorIds = new Set(personIdSet(actorPerson, members).map(idKey2));
+    const actorIds = new Set(personIdSet(actorPerson, members).map(idKey));
     const seen = /* @__PURE__ */ new Set();
     const out = [];
     for (const raw of ids || []) {
@@ -11916,8 +12038,8 @@ var ProjectPlannerCanonical = (() => {
       if (!given) continue;
       const id2 = members.length > 0 ? notificationRecipientAccountId(given, members, catalogue) : given;
       if (!id2) continue;
-      const key4 = idKey2(id2);
-      if (seen.has(key4) || actorIds.has(key4) || actorIds.has(idKey2(given))) continue;
+      const key4 = idKey(id2);
+      if (seen.has(key4) || actorIds.has(key4) || actorIds.has(idKey(given))) continue;
       seen.add(key4);
       out.push(id2);
     }
@@ -11986,7 +12108,10 @@ var ProjectPlannerCanonical = (() => {
     "client_created",
     "project_created",
     "small_works_created",
-    "warning_removed"
+    "warning_removed",
+    // 1.31.0 (§11): an operative deleted (by an admin or an operatives manager) and a manager taken off jobs.
+    "operative_deleted",
+    "job_manager_removed"
   ];
   function companyActivityRecipients(actor, roster) {
     const members = rosterOf(roster);
@@ -12188,6 +12313,20 @@ var ProjectPlannerCanonical = (() => {
       "companyActivityRecipients",
       ["web", "ios"],
       "one row per admin (userId + actorUserId); never written without userId. Toggle: companyActivity."
+    ),
+    row(
+      "operative_deleted",
+      "Operative deleted (1.31.0)",
+      "companyActivityRecipients",
+      ["web"],
+      "one row per admin (userId + actorUserId); relatedId the deleted user id. Toggle: companyActivity. iOS: write it when an operative is deleted."
+    ),
+    row(
+      "job_manager_removed",
+      "A manager made an operative, deactivated or deleted is taken off their jobs (1.31.0)",
+      "companyActivityRecipients",
+      ["web"],
+      "one row per admin (userId + actorUserId); relatedId the person. Toggle: companyActivity. iOS: write it with jobManagerRemovalWrites."
     ),
     row("idea_status", "Feedback idea status changed", "ideaRecipients", ["web"], "web: the actor is not removed; use ideaRecipients."),
     row("idea_shipped", "Feedback idea shipped", "ideaRecipients", ["web"], "web: the actor is not removed; use ideaRecipients."),
@@ -12414,7 +12553,8 @@ var ProjectPlannerCanonical = (() => {
       managerName: managerName && managerName.toLowerCase() !== "custom" ? managerName : null,
       managerId: managerIdStored || managerIds[0] || null,
       managerIds,
-      managerUserIds: idList4(row2.managerUserIds),
+      // 1.31.0: an older job stored its account ids as `assignedManagerUserIds` only (`jobManagerIds` already reads it).
+      managerUserIds: idList4(row2.managerUserIds).length > 0 ? idList4(row2.managerUserIds) : idList4(row2.assignedManagerUserIds),
       isLive: documentBool(row2.isLive) !== false,
       description: optionalText3(row2.description),
       notes: optionalText3(row2.notes),
@@ -13480,6 +13620,8 @@ var ProjectPlannerCanonical = (() => {
     project_created: "job",
     small_works_created: "job",
     warning_removed: "warningKey",
+    operative_deleted: "user",
+    job_manager_removed: "user",
     qualification_expiry: "none",
     idea_status: "feedbackIdea",
     idea_shipped: "feedbackIdea",
@@ -13880,7 +14022,8 @@ var ProjectPlannerCanonical = (() => {
     self: "You cannot delete your own account here.",
     super_admin: "The super admin cannot be deleted.",
     creator: "The company owner cannot be deleted.",
-    admin_needs_super_admin: "Only the super admin can delete an admin."
+    admin_needs_super_admin: "Only the super admin can delete an admin.",
+    operatives_only: "With the Operatives permission you can delete operatives only."
   };
   function key2(value) {
     return typeof value === "string" ? value.trim().toLowerCase() : "";
@@ -13891,7 +14034,17 @@ var ProjectPlannerCanonical = (() => {
   function userDeleteRefusal(actor, target, options) {
     if (!actor || !target || !text16(target.id)) return "not_admin";
     const actorRole = actor.role;
-    if (!actorRole || actorRole.isOperativeMode || !(actorRole.isAdmin || actorRole.isSuperAdmin)) return "not_admin";
+    if (!actorRole || actorRole.isOperativeMode) return "not_admin";
+    const actorIsAdmin = actorRole.isAdmin || actorRole.isSuperAdmin;
+    if (!actorIsAdmin) {
+      if (!(actorRole.isManager && options?.actorManagesOperatives === true)) return "not_admin";
+      const operativesRoster = options?.roster ?? null;
+      const ownIds2 = new Set(personIdSet(actor, operativesRoster).map(key2));
+      if (personIdSet(target, operativesRoster).some((id2) => ownIds2.has(key2(id2)))) return "self";
+      const targetRole = target.role;
+      const operativeOnly = !!targetRole && targetRole.isOperativeMode && !targetRole.isAdmin && !targetRole.isSuperAdmin && !targetRole.isManager;
+      return operativeOnly ? null : "operatives_only";
+    }
     const roster = options?.roster ?? null;
     const actorIds = new Set(personIdSet(actor, roster).map(key2));
     const targetIds = personIdSet(target, roster).map(key2);
@@ -13920,20 +14073,26 @@ var ProjectPlannerCanonical = (() => {
     ];
     if (email && !email.includes("/")) account.push({ op: "delete", path: `organizations/${org}/userEmails/${email}` });
     if (input.listedInMembers !== false) account.push({ op: "update", path: `organizations/${org}`, deleteFields: [`members.${uid}`] });
-    const steps = [{ step: "account", writes: account }];
+    const steps = input.actorManagesOperatives === true ? [
+      ...account.filter((write) => write.path !== `users/${uid}` && write.op === "delete"),
+      ...account.filter((write) => write.path === `users/${uid}`),
+      ...account.filter((write) => write.op === "update")
+    ].map((write) => ({ step: "account", writes: [write] })) : [{ step: "account", writes: account }];
     const rowMatches = (row2) => idKeys.has(key2(row2?.id)) || idKeys.has(key2(row2?.userId)) || email !== "" && key2(row2?.email) === email;
     const rosterRows = [
       ...(input.operativeRows || []).filter(rowMatches).map((row2) => ({ collection: "operatives", id: text16(row2.id) })),
       ...(input.managerRows || []).filter(rowMatches).map((row2) => ({ collection: "managers", id: text16(row2.id) }))
     ].filter((row2) => row2.id && !row2.id.includes("/"));
+    const managerActor = input.actorManagesOperatives === true;
     const labour = bookingsToRemoveOnOperativeDelete({
       bookings: input.bookings || [],
       operativeIds: [...ids, ...rosterRows.filter((row2) => row2.collection === "operatives").map((row2) => row2.id)],
       nowIso: input.nowIso,
-      timeZone: input.tz
+      timeZone: input.tz,
+      futureOnly: managerActor
     }).map((id2) => ({ collection: "bookings", id: id2 }));
     const today = bookingsToRemoveOnOperativeDelete({
-      bookings: (input.managerSiteBookings || []).map((row2) => ({ id: row2.id, operativeId: row2.userId, dateMs: row2.dateMs })),
+      bookings: managerActor ? [] : (input.managerSiteBookings || []).map((row2) => ({ id: row2.id, operativeId: row2.userId, dateMs: row2.dateMs })),
       operativeIds: ids,
       nowIso: input.nowIso,
       timeZone: input.tz
@@ -14425,19 +14584,19 @@ var ProjectPlannerCanonical = (() => {
     const groups = [];
     const grouped = /* @__PURE__ */ new Set();
     for (const row2 of rows3) {
-      const key4 = idKey2(row2.id);
+      const key4 = idKey(row2.id);
       if (grouped.has(key4)) continue;
-      const keys = new Set(personIdSet(row2, rows3).map(idKey2));
+      const keys = new Set(personIdSet(row2, rows3).map(idKey));
       keys.add(key4);
-      const members = rows3.filter((other) => keys.has(idKey2(other.id)));
-      for (const member of members) grouped.add(idKey2(member.id));
+      const members = rows3.filter((other) => keys.has(idKey(other.id)));
+      for (const member of members) grouped.add(idKey(member.id));
       const aliasKeys = /* @__PURE__ */ new Set();
       for (const member of members) {
         for (const alias of [...member.formerUserIds || [], ...member.sameEmailUserIds || [], ...member.formerIds || [], ...member.aliasIds || []]) {
-          if (idKey2(alias) !== idKey2(member.id)) aliasKeys.add(idKey2(alias));
+          if (idKey(alias) !== idKey(member.id)) aliasKeys.add(idKey(alias));
         }
       }
-      const rank = (member) => (rosterMemberActive(member) && !isAnonymisedDeletedProfile(member) ? 0 : 4) + (member.passwordSet === false ? 2 : 0) + (aliasKeys.has(idKey2(member.id)) ? 1 : 0);
+      const rank = (member) => (rosterMemberActive(member) && !isAnonymisedDeletedProfile(member) ? 0 : 4) + (member.passwordSet === false ? 2 : 0) + (aliasKeys.has(idKey(member.id)) ? 1 : 0);
       const primary = members.reduce((best, member) => rank(member) < rank(best) ? member : best, members[0]);
       groups.push({ primary, rows: members, keys });
     }
@@ -14445,7 +14604,7 @@ var ProjectPlannerCanonical = (() => {
   }
   function lineManagerCandidates(person, roster) {
     const rows3 = (roster || []).filter((row2) => row2 && text19(row2.id));
-    const self = new Set(person ? personIdSet(person, rows3).map(idKey2) : []);
+    const self = new Set(person ? personIdSet(person, rows3).map(idKey) : []);
     const out = [];
     for (const group of rosterPersonGroups(rows3)) {
       if ([...group.keys].some((key4) => self.has(key4))) continue;
@@ -14469,10 +14628,10 @@ var ProjectPlannerCanonical = (() => {
     const out = [];
     const seen = /* @__PURE__ */ new Set();
     for (const id2 of stored) {
-      const group = groups.find((entry) => entry.keys.has(idKey2(id2)));
-      const candidate = group ? candidates.find((entry) => group.keys.has(idKey2(entry.id))) : candidates.find((entry) => idKey2(entry.id) === idKey2(id2));
+      const group = groups.find((entry) => entry.keys.has(idKey(id2)));
+      const candidate = group ? candidates.find((entry) => group.keys.has(idKey(entry.id))) : candidates.find((entry) => idKey(entry.id) === idKey(id2));
       const value = candidate ? candidate.id : id2;
-      const key4 = group ? `g:${idKey2(group.primary.id)}` : idKey2(value);
+      const key4 = group ? `g:${idKey(group.primary.id)}` : idKey(value);
       if (seen.has(key4)) continue;
       seen.add(key4);
       out.push(value);
@@ -14495,9 +14654,9 @@ var ProjectPlannerCanonical = (() => {
     const seen = /* @__PURE__ */ new Set();
     const groups = rosterPersonGroups(rows3);
     for (const id2 of stored) {
-      const group = groups.find((entry) => entry.keys.has(idKey2(id2)));
+      const group = groups.find((entry) => entry.keys.has(idKey(id2)));
       const row2 = group ? group.primary : rosterMemberFor(id2, rows3);
-      const key4 = group ? `g:${idKey2(group.primary.id)}` : idKey2(row2 ? row2.id : id2);
+      const key4 = group ? `g:${idKey(group.primary.id)}` : idKey(row2 ? row2.id : id2);
       if (seen.has(key4)) continue;
       seen.add(key4);
       ids.push(row2 ? { id: text19(row2.id), name: rosterPersonName2(row2) || UNKNOWN_PERSON_LABEL, resolved: true } : { id: id2, name: UNKNOWN_PERSON_LABEL, resolved: false });
@@ -14524,14 +14683,14 @@ var ProjectPlannerCanonical = (() => {
     for (const raw of picks?.lineManagerIds || []) {
       const id2 = text19(raw);
       if (!id2) continue;
-      const group = groups.find((entry) => entry.keys.has(idKey2(id2)));
-      const candidate = group ? candidates.find((entry) => group.keys.has(idKey2(entry.id))) : candidates.find((entry) => idKey2(entry.id) === idKey2(id2));
+      const group = groups.find((entry) => entry.keys.has(idKey(id2)));
+      const candidate = group ? candidates.find((entry) => group.keys.has(idKey(entry.id))) : candidates.find((entry) => idKey(entry.id) === idKey(id2));
       if (!candidate) {
         dropped.push(id2);
         continue;
       }
-      if (seen.has(idKey2(candidate.id))) continue;
-      seen.add(idKey2(candidate.id));
+      if (seen.has(idKey(candidate.id))) continue;
+      seen.add(idKey(candidate.id));
       lineManagerIds2.push(candidate.id);
     }
     const hasNoLineManager = picks?.hasNoLineManager === true && lineManagerOptions(levelSubject).allowsNoLineManager;
@@ -14746,10 +14905,10 @@ var ProjectPlannerCanonical = (() => {
   var WEEKEND_TIME_SLOTS = ["CUSTOM"];
   function isoWeekdayOf(day, timeZone) {
     if (typeof day === "number") return day;
-    const text29 = String(day || "").trim().toLowerCase();
-    if (text29 === "saturday") return 6;
-    if (text29 === "sunday") return 7;
-    if (/^\d{4}-\d{2}-\d{2}$/.test(text29)) return isoWeekdayOfDayKey(text29, zoneOrLondon(timeZone));
+    const text30 = String(day || "").trim().toLowerCase();
+    if (text30 === "saturday") return 6;
+    if (text30 === "sunday") return 7;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(text30)) return isoWeekdayOfDayKey(text30, zoneOrLondon(timeZone));
     return 0;
   }
   function isWeekendDayKey(dayKey, timeZone) {
@@ -15064,17 +15223,17 @@ var ProjectPlannerCanonical = (() => {
   }
   function canViewPersonPay(viewer, subject, roster) {
     if (!viewer || !subject) return false;
-    const viewerIds = new Set(personIdSet(viewer, roster).map(idKey2));
+    const viewerIds = new Set(personIdSet(viewer, roster).map(idKey));
     if (viewerIds.size === 0) return false;
     if (viewer.isPlatformOwner === true) return true;
-    const subjectIds = personIdSet(subject, roster).map(idKey2);
+    const subjectIds = personIdSet(subject, roster).map(idKey);
     if (subjectIds.some((id2) => viewerIds.has(id2))) return true;
     if (viewer.isActive === false) return false;
     const level = permissionLevelOf(viewer);
     if (level === "admin") return true;
     const operativesManager = level === "manager" && effectivePermissions(viewer).operatives === true;
     if (subject.catalogueOperative === true) return operativesManager;
-    if (lineManagerIds(subject, roster).some((id2) => viewerIds.has(idKey2(id2)))) return true;
+    if (lineManagerIds(subject, roster).some((id2) => viewerIds.has(idKey(id2)))) return true;
     return operativesManager && permissionLevelOf(subject) === "operative";
   }
   function catalogueOperativePaySubjects(operatives, roster) {
@@ -15082,20 +15241,20 @@ var ProjectPlannerCanonical = (() => {
     const rosterEmails = /* @__PURE__ */ new Set();
     for (const member of roster || []) {
       if (!member) continue;
-      for (const id2 of personIdSet(member, null)) rosterIds.add(idKey2(id2));
-      const email = idKey2(member.email);
+      for (const id2 of personIdSet(member, null)) rosterIds.add(idKey(id2));
+      const email = idKey(member.email);
       if (email) rosterEmails.add(email);
     }
     const out = [];
     const seen = /* @__PURE__ */ new Set();
     for (const row2 of operatives || []) {
       const id2 = typeof row2?.id === "string" ? row2.id.trim() : "";
-      if (!id2 || seen.has(idKey2(id2))) continue;
+      if (!id2 || seen.has(idKey(id2))) continue;
       const linked = [row2.linkedUserId, row2.userId, row2.uid].some((value) => typeof value === "string" && value.trim() !== "");
-      if (linked || rosterIds.has(idKey2(id2))) continue;
+      if (linked || rosterIds.has(idKey(id2))) continue;
       const email = typeof row2.email === "string" ? row2.email.trim() : "";
-      if (email && rosterEmails.has(idKey2(email))) continue;
-      seen.add(idKey2(id2));
+      if (email && rosterEmails.has(idKey(email))) continue;
+      seen.add(idKey(id2));
       out.push({ id: id2, email: email || null, catalogueOperative: true });
     }
     return out;
@@ -15495,7 +15654,7 @@ var ProjectPlannerCanonical = (() => {
   var ANNUAL_LEAVE_REQUESTED_LABEL = "Annual leave requested";
   var BOOKING_CONFLICTS_HEADING = "Some selected days clash. Tick to confirm, or \u2715 to drop that day.";
   function holidayStatus(holiday) {
-    const status = idKey2(holiday.status);
+    const status = idKey(holiday.status);
     if (status === "approved") return "approved";
     if (status === "pending") return "pending";
     if (status === "rejected") return null;
@@ -15533,7 +15692,7 @@ var ProjectPlannerCanonical = (() => {
           ...personIdSet(given, input.roster),
           idText(given.userId),
           ...(given.operativeIds || []).map(idText)
-        ].map(idKey2).filter(Boolean)
+        ].map(idKey).filter(Boolean)
       );
       return { personId: personId2, keys, index };
     }).filter((entry) => entry !== null);
@@ -15545,7 +15704,7 @@ var ProjectPlannerCanonical = (() => {
       const start = idText(holiday.startDayKey);
       const end = idText(holiday.endDayKey) || start;
       const slot = leaveSlot(holiday.timeSlot);
-      const holidayKeys = [idKey2(holiday.userId), idKey2(holiday.operativeId)].filter(Boolean);
+      const holidayKeys = [idKey(holiday.userId), idKey(holiday.operativeId)].filter(Boolean);
       for (const person of people) {
         if (!holidayKeys.some((key4) => person.keys.has(key4))) continue;
         for (const dayKey of days) {
@@ -15561,7 +15720,7 @@ var ProjectPlannerCanonical = (() => {
             label: status === "approved" ? ANNUAL_LEAVE_BOOKED_LABEL : ANNUAL_LEAVE_REQUESTED_LABEL,
             index: person.index
           };
-          const key4 = `${idKey2(person.personId)}|${dayKey}`;
+          const key4 = `${idKey(person.personId)}|${dayKey}`;
           const current = best.get(key4);
           if (!current || rank(row2) > rank(current)) best.set(key4, row2);
         }
@@ -16239,24 +16398,24 @@ var ProjectPlannerCanonical = (() => {
     return `${String(row2.firstName ?? "").trim()} ${String(row2.surname ?? row2.lastName ?? "").trim()}`.trim();
   }
   function rosterListFor(kind, roster, claimedEmails) {
-    const inList = (roster || []).filter((row2) => row2 && idText(row2.id) && rosterListKind(row2) === kind);
+    const rows3 = (roster || []).filter((row2) => row2 && idText(row2.id));
     const byId = /* @__PURE__ */ new Map();
-    for (const row2 of inList) if (!byId.has(idText(row2.id))) byId.set(idText(row2.id), row2);
-    const docs = inList.map((row2) => ({
+    for (const row2 of rows3) if (!byId.has(idText(row2.id))) byId.set(idText(row2.id), row2);
+    const docs = rows3.map((row2) => ({
       id: idText(row2.id),
       email: row2.email ?? "",
       passwordSet: row2.passwordSet ?? void 0,
       isActive: row2.isActive ?? void 0,
       firstName: row2.firstName ?? void 0,
       surname: row2.surname ?? void 0,
-      admin: kind === "admins",
+      admin: rosterListKind(row2) === "admins" && row2.isActive !== false && row2.passwordSet !== false,
       listed: true,
       updatedAtMs: typeof row2.updatedAtMs === "number" ? row2.updatedAtMs : null,
       formerUserIds: [...row2.formerUserIds || []]
     }));
     const kept = rosterPeople(docs).people.flatMap((person) => {
       const row2 = byId.get(idText(person.id));
-      return row2 ? [row2] : [];
+      return row2 && rosterListKind(row2) === kind ? [row2] : [];
     });
     return listedRosterUsers(kept, claimedEmails).sort(
       (a, b) => displayName(a).localeCompare(displayName(b), "en", { sensitivity: "base" }) || idText(a.id).localeCompare(idText(b.id))
@@ -16340,11 +16499,11 @@ var ProjectPlannerCanonical = (() => {
     const rows3 = (roster || []).filter((row2) => row2 && idText(row2.id));
     const cache = /* @__PURE__ */ new Map();
     return (id2) => {
-      const key4 = idKey2(id2);
+      const key4 = idKey(id2);
       if (!key4) return "";
       const hit = cache.get(key4);
       if (hit != null) return hit;
-      const ids = personIdSet({ id: idText(id2) }, rows3).map(idKey2).filter(Boolean).sort();
+      const ids = personIdSet({ id: idText(id2) }, rows3).map(idKey).filter(Boolean).sort();
       const folded = ids[0] || key4;
       for (const each of ids) cache.set(each, folded);
       cache.set(key4, folded);
@@ -16358,7 +16517,7 @@ var ProjectPlannerCanonical = (() => {
   }
   var SITE_LOCATIONS = /* @__PURE__ */ new Set(["project", "smallwork", "small_work", "smallworks", "small_works"]);
   function isSiteLocationType(locationType) {
-    return SITE_LOCATIONS.has(idKey2(locationType).replace(/[\s-]+/g, "_"));
+    return SITE_LOCATIONS.has(idKey(locationType).replace(/[\s-]+/g, "_"));
   }
   function taskAssigneeIds2(task) {
     return [
@@ -16387,11 +16546,11 @@ var ProjectPlannerCanonical = (() => {
     ];
     const fold = personFolder(foldRoster);
     const viewerIds = new Set(
-      personIdSet({ id: idText(input.viewer?.id) || void 0, email: input.viewer?.email ?? null }, foldRoster).map(idKey2).filter(Boolean)
+      personIdSet({ id: idText(input.viewer?.id) || void 0, email: input.viewer?.email ?? null }, foldRoster).map(idKey).filter(Boolean)
     );
-    const viewerEmail = idKey2(input.viewer?.email);
+    const viewerEmail = idKey(input.viewer?.email);
     if (viewerEmail) {
-      for (const row2 of foldRoster) if (idKey2(row2.email) === viewerEmail) for (const id2 of personIdSet(row2, foldRoster)) viewerIds.add(idKey2(id2));
+      for (const row2 of foldRoster) if (idKey(row2.email) === viewerEmail) for (const id2 of personIdSet(row2, foldRoster)) viewerIds.add(idKey(id2));
     }
     let tasksDueToday = 0;
     let tasksDueThisWeek = 0;
@@ -16402,7 +16561,7 @@ var ProjectPlannerCanonical = (() => {
       outstandingTasksAllUsers += 1;
       const due = dueDayKey(task.dueDate, timeZone);
       if (!due || !today) continue;
-      if (!taskAssigneeIds2(task).some((id2) => viewerIds.has(idKey2(id2)))) continue;
+      if (!taskAssigneeIds2(task).some((id2) => viewerIds.has(idKey(id2)))) continue;
       if (due === today) tasksDueToday += 1;
       if (due >= today && due < weekEnd) tasksDueThisWeek += 1;
       if (due < today) tasksOverdue += 1;
@@ -16461,8 +16620,8 @@ var ProjectPlannerCanonical = (() => {
     };
   }
   function qualificationExpiryCount(input) {
-    const only = input.operativeIds ? new Set(input.operativeIds.map(idKey2).filter(Boolean)) : null;
-    const rows3 = qualificationExpiryRows(input).filter((row2) => !only || only.has(idKey2(row2.operativeId)));
+    const only = input.operativeIds ? new Set(input.operativeIds.map(idKey).filter(Boolean)) : null;
+    const rows3 = qualificationExpiryRows(input).filter((row2) => !only || only.has(idKey(row2.operativeId)));
     const expired = rows3.filter((row2) => row2.daysUntilExpiry < 0).length;
     return { expired, expiringSoon: rows3.length - expired, total: rows3.length };
   }
@@ -16499,7 +16658,7 @@ var ProjectPlannerCanonical = (() => {
     const day = idText(input.dayKey);
     const perJob = /* @__PURE__ */ new Map();
     const add = (jobId, personId2) => {
-      const key4 = idKey2(jobId);
+      const key4 = idKey(jobId);
       if (!key4) return;
       const entry = perJob.get(key4) || { rows: 0, people: /* @__PURE__ */ new Set() };
       entry.rows += 1;
@@ -16516,17 +16675,17 @@ var ProjectPlannerCanonical = (() => {
       add(booking.locationId, booking.userId);
     }
     return (input.jobs || []).filter((job) => job && idText(job.id) && job.isLive !== false).map((job) => {
-      const entry = perJob.get(idKey2(job.id));
+      const entry = perJob.get(idKey(job.id));
       return { jobId: idText(job.id), bookingCount: entry?.rows ?? 0, peopleCount: entry?.people.size ?? 0 };
     });
   }
   function jobTileBadges(input) {
-    const job = idKey2(input.jobId);
+    const job = idKey(input.jobId);
     const fold = personFolder(input.people || []);
     let tentativeBookings = 0;
     const people = /* @__PURE__ */ new Set();
     for (const booking of input.bookings || []) {
-      if (!booking || idKey2(booking.projectId) !== job || !job) continue;
+      if (!booking || idKey(booking.projectId) !== job || !job) continue;
       const status = normalizeBookingStatus(booking.status);
       if (status === "Tentative") tentativeBookings += 1;
       if (status === "Cancelled") continue;
@@ -16534,18 +16693,18 @@ var ProjectPlannerCanonical = (() => {
       if (person) people.add(person);
     }
     for (const booking of input.managerSiteBookings || []) {
-      if (!booking || idKey2(booking.locationId) !== job || !job || !isSiteLocationType(booking.locationType)) continue;
+      if (!booking || idKey(booking.locationId) !== job || !job || !isSiteLocationType(booking.locationType)) continue;
       const person = fold(booking.userId);
       if (person) people.add(person);
     }
     const firms = /* @__PURE__ */ new Set();
     for (const booking of input.subcontractorBookings || []) {
-      if (!booking || idKey2(booking.projectId) !== job || !job || !isOpenBookingStatus(booking.status)) continue;
-      const firm = idKey2(booking.subcontractorId);
+      if (!booking || idKey(booking.projectId) !== job || !job || !isOpenBookingStatus(booking.status)) continue;
+      const firm = idKey(booking.subcontractorId);
       if (firm) firms.add(firm);
     }
     const openTasks = (input.tasks || []).filter(
-      (task) => task && job && idKey2(task.projectId) === job && normalizeProjectTaskStatus(task.status) !== "Completed"
+      (task) => task && job && idKey(task.projectId) === job && normalizeProjectTaskStatus(task.status) !== "Completed"
     ).length;
     return { tentativeBookings, openTasks, activeUsers: people.size + firms.size };
   }
@@ -16553,7 +16712,7 @@ var ProjectPlannerCanonical = (() => {
     const byId = /* @__PURE__ */ new Map();
     const ms = (row2) => typeof row2.updatedAtMs === "number" && Number.isFinite(row2.updatedAtMs) ? row2.updatedAtMs : 0;
     for (const row2 of [...fallbackRows || [], ...itemDocs || [], ...collectionRows || []]) {
-      const key4 = idKey2(row2?.id);
+      const key4 = idKey(row2?.id);
       if (!key4) continue;
       const existing = byId.get(key4);
       if (!existing || ms(row2) >= ms(existing)) byId.set(key4, row2);
@@ -16561,7 +16720,7 @@ var ProjectPlannerCanonical = (() => {
     return [...byId.values()];
   }
   function openVariationCount(rows3) {
-    return (rows3 || []).filter((row2) => row2 && row2.isDeleted !== true && idKey2(row2.status) === "open").length;
+    return (rows3 || []).filter((row2) => row2 && row2.isDeleted !== true && idKey(row2.status) === "open").length;
   }
 
   // lib/canonical/storedFiles.ts
@@ -17075,14 +17234,14 @@ var ProjectPlannerCanonical = (() => {
     let best = null;
     for (const request of requests) {
       if (request.status !== "pending") continue;
-      const line = request.lines.find((row2) => idKey2(row2.bookingId) === idKey2(bookingId));
+      const line = request.lines.find((row2) => idKey(row2.bookingId) === idKey(bookingId));
       if (!line) continue;
       if (!best || (request.createdAtMs ?? 0) >= (best.request.createdAtMs ?? 0)) best = { request, line };
     }
     return best;
   }
   function payeOvertimeLines(input) {
-    const ids = new Set((input.personIds || []).map(idKey2).filter(Boolean));
+    const ids = new Set((input.personIds || []).map(idKey).filter(Boolean));
     const start = text24(input.range?.start);
     const end = text24(input.range?.end);
     const reviews = input.reviews || [];
@@ -17090,14 +17249,14 @@ var ProjectPlannerCanonical = (() => {
     const out = [];
     const seen = /* @__PURE__ */ new Set();
     for (const booking of input.bookings || []) {
-      if (!booking || !ids.has(idKey2(booking.personId))) continue;
+      if (!booking || !ids.has(idKey(booking.personId))) continue;
       const day = text24(booking.dayKey);
       if (!day || day < start || day > end) continue;
-      const bookingKey = `${collectionOf(booking)}/${idKey2(booking.id)}`;
+      const bookingKey = `${collectionOf(booking)}/${idKey(booking.id)}`;
       if (seen.has(bookingKey)) continue;
       seen.add(bookingKey);
       const fingerprint = overtimeBookingFingerprint(booking);
-      const review = reviews.find((row2) => idKey2(row2.bookingId) === idKey2(booking.id)) ?? null;
+      const review = reviews.find((row2) => idKey(row2.bookingId) === idKey(booking.id)) ?? null;
       const pending = newestPending(requests, booking.id);
       let state;
       let figures = null;
@@ -17247,25 +17406,25 @@ var ProjectPlannerCanonical = (() => {
   function canDecideOvertimeRequest(viewer, requester, roster) {
     if (!viewer || !requester || !idText(viewer.id)) return false;
     const members = roster || [];
-    const requesterIds = new Set(personIdSet(requester, members).map(idKey2));
-    const viewerIds = personIdSet(viewer, members).map(idKey2);
+    const requesterIds = new Set(personIdSet(requester, members).map(idKey));
+    const viewerIds = personIdSet(viewer, members).map(idKey);
     if (viewerIds.some((id2) => requesterIds.has(id2))) return false;
     if (viewer.isActive === false) return false;
     if (isAdminOutsideOperativeMode(viewer)) return true;
-    const managers = new Set(lineManagerIds(requester, members).map(idKey2));
+    const managers = new Set(lineManagerIds(requester, members).map(idKey));
     return viewerIds.some((id2) => managers.has(id2));
   }
   function overtimeUserSubjects(viewer, roster) {
     if (!viewer || !idText(viewer.id)) return [];
     const members = (roster || []).filter((member) => member && idText(member.id));
-    const self = new Set(personIdSet(viewer, members).map(idKey2));
+    const self = new Set(personIdSet(viewer, members).map(idKey));
     const admin = isAdminOutsideOperativeMode(viewer);
     const out = [];
     const seen = /* @__PURE__ */ new Set();
     for (const member of members) {
-      const key4 = idKey2(member.id);
+      const key4 = idKey(member.id);
       if (self.has(key4) || seen.has(key4) || !rosterMemberActive(member)) continue;
-      const managed = lineManagerIds(member, members).some((id2) => self.has(idKey2(id2)));
+      const managed = lineManagerIds(member, members).some((id2) => self.has(idKey(id2)));
       if (!admin && !managed) continue;
       seen.add(key4);
       out.push(idText(member.id));
@@ -17331,10 +17490,10 @@ var ProjectPlannerCanonical = (() => {
     const end = dayKeyOrEmpty(input.rangeEnd);
     if (!userId || !start || !end || start > end || !input.lines) return null;
     const ids = input.personIds ?? [userId];
-    const byId = input.bookings ? new Map(input.bookings.map((row2) => [`${collectionOf(row2)}/${idKey2(row2.id)}`, row2])) : null;
+    const byId = input.bookings ? new Map(input.bookings.map((row2) => [`${collectionOf(row2)}/${idKey(row2.id)}`, row2])) : null;
     const lines = input.lines.filter((line) => {
       if (!byId) return true;
-      const booking = byId.get(`${line.collection}/${idKey2(line.bookingId)}`);
+      const booking = byId.get(`${line.collection}/${idKey(line.bookingId)}`);
       return Boolean(booking && overtimeBookingIsTheirs(booking, ids));
     });
     if (lines.length === 0) return null;
@@ -17348,24 +17507,24 @@ var ProjectPlannerCanonical = (() => {
   }
   function overtimeBookingIsTheirs(booking, personIds) {
     if (!booking) return false;
-    const ids = new Set((personIds || []).map(idKey2).filter(Boolean));
-    return ids.has(idKey2(booking.personId));
+    const ids = new Set((personIds || []).map(idKey).filter(Boolean));
+    return ids.has(idKey(booking.personId));
   }
   function overtimeDeciderMayWriteBooking(input) {
     if (input.deciderIsAdmin === true) return true;
-    if ((input.writableBookingIds || []).some((id2) => idKey2(id2) === idKey2(input.booking.id))) return true;
+    if ((input.writableBookingIds || []).some((id2) => idKey(id2) === idKey(input.booking.id))) return true;
     return text24(input.booking.personId) !== "" && text24(input.booking.personId) === text24(input.requesterUserId);
   }
   function overtimeRequestsToReplace(requests, userId, rangeStart, rangeEnd) {
-    return requests.filter((row2) => row2.status === "pending" && idKey2(row2.userId) === idKey2(userId) && row2.rangeStart === rangeStart && row2.rangeEnd === rangeEnd).map((row2) => row2.id);
+    return requests.filter((row2) => row2.status === "pending" && idKey(row2.userId) === idKey(userId) && row2.rangeStart === rangeStart && row2.rangeEnd === rangeEnd).map((row2) => row2.id);
   }
   function overtimeRequestWithdrawWriteFields(request) {
     return request.status === "pending" ? { status: "withdrawn" } : null;
   }
   function overtimeRequestFullyDecided(request, decisions) {
     if (request.lines.length === 0) return false;
-    const keyed = new Map(Object.entries(decisions || {}).map(([key4, value]) => [idKey2(key4), value]));
-    return request.lines.every((line) => Boolean(keyed.get(idKey2(line.bookingId))));
+    const keyed = new Map(Object.entries(decisions || {}).map(([key4, value]) => [idKey(key4), value]));
+    return request.lines.every((line) => Boolean(keyed.get(idKey(line.bookingId))));
   }
   function decisionToChange(line, decision, live, organization, timeZone) {
     if (decision.action === "edit") return { change: { kind: "edit", start: decision.start, end: decision.end, multiplier: decision.multiplier } };
@@ -17394,12 +17553,12 @@ var ProjectPlannerCanonical = (() => {
     if (!overtimeRequestFullyDecided(request, input.decisions)) {
       return { ok: false, reason: "undecided", bookingIds: [], message: OVERTIME_REQUEST_UNDECIDED_MESSAGE };
     }
-    const decisions = new Map(Object.entries(input.decisions).map(([key4, value]) => [idKey2(key4), value]));
-    const live = new Map(Object.entries(input.bookings || {}).map(([key4, value]) => [idKey2(key4), value]));
+    const decisions = new Map(Object.entries(input.decisions).map(([key4, value]) => [idKey(key4), value]));
+    const live = new Map(Object.entries(input.bookings || {}).map(([key4, value]) => [idKey(key4), value]));
     const stale = [];
     const dropped = [];
     const refused = [];
-    const unreadable = new Set((input.unreadableBookingIds || []).map(idKey2));
+    const unreadable = new Set((input.unreadableBookingIds || []).map(idKey));
     const requesterIds = input.requesterIds && input.requesterIds.length > 0 ? input.requesterIds : [request.userId];
     const unreadableIds = [];
     const foreign = [];
@@ -17409,11 +17568,11 @@ var ProjectPlannerCanonical = (() => {
     const applied = [];
     const storedDecisions = {};
     for (const line of request.lines) {
-      if (unreadable.has(idKey2(line.bookingId))) {
+      if (unreadable.has(idKey(line.bookingId))) {
         unreadableIds.push(line.bookingId);
         continue;
       }
-      const booking = live.get(idKey2(line.bookingId));
+      const booking = live.get(idKey(line.bookingId));
       if (!booking) {
         dropped.push(line.bookingId);
         continue;
@@ -17426,7 +17585,7 @@ var ProjectPlannerCanonical = (() => {
         stale.push(line.bookingId);
         continue;
       }
-      const decision = decisions.get(idKey2(line.bookingId));
+      const decision = decisions.get(idKey(line.bookingId));
       const { change, refused: why } = decisionToChange(line, decision, booking, input.organization, input.timeZone);
       if (why) {
         refused.push(line.bookingId);
@@ -17518,7 +17677,7 @@ var ProjectPlannerCanonical = (() => {
   }
   function overtimeRequestRecipients(requester, roster) {
     const members = (roster || []).filter((member) => member && idText(member.id));
-    const person = typeof requester === "string" ? members.find((member) => idKey2(member.id) === idKey2(requester)) ?? { id: requester } : requester;
+    const person = typeof requester === "string" ? members.find((member) => idKey(member.id) === idKey(requester)) ?? { id: requester } : requester;
     if (!person || !idText(person.id)) return [];
     const managers = lineManagerIds(person, members);
     const admins = members.filter((member) => rosterMemberActive(member) && isAdminOutsideOperativeMode(member)).map((member) => idText(member.id));
@@ -17530,7 +17689,7 @@ var ProjectPlannerCanonical = (() => {
   }
   function bookingHoursChangedRecipients(owner, jobManagerIds2, roster) {
     const members = (roster || []).filter((member) => member && idText(member.id));
-    const person = typeof owner === "string" ? members.find((member) => idKey2(member.id) === idKey2(owner)) ?? { id: owner } : owner;
+    const person = typeof owner === "string" ? members.find((member) => idKey(member.id) === idKey(owner)) ?? { id: owner } : owner;
     if (!person || !idText(person.id)) return [];
     const managers = lineManagerIds(person, members);
     return excludeActor([...jobManagerIds2 || [], ...managers], person, members);
@@ -17629,7 +17788,7 @@ var ProjectPlannerCanonical = (() => {
       const lines = payeOvertimeLines({ personIds: ids, bookings: input.bookings, organization: input.organization, timeZone: zone3, range: input.range });
       for (const line of lines) {
         if (line.state === "cancelled" || !line.figures || !weeklyReportPayeDay(person, line.dayKey, zone3)) continue;
-        const key4 = `${idKey2(person.id)}|${idKey2(line.jobId ?? line.jobNumber)}`;
+        const key4 = `${idKey(person.id)}|${idKey(line.jobId ?? line.jobNumber)}`;
         const row2 = rows3.get(key4) ?? { personId: idText(person.id), name: text24(person.name), jobId: line.jobId, jobNumber: line.jobNumber, jobName: line.jobName, overtimeHours: 0 };
         row2.overtimeHours = round22(row2.overtimeHours + line.figures.overtimeHours);
         rows3.set(key4, row2);
@@ -17761,7 +17920,7 @@ var ProjectPlannerCanonical = (() => {
     return typeof value === "number" && Number.isFinite(value) ? String(value) : text26(value);
   }
   function sameText(a, b) {
-    return idKey2(a) === idKey2(b) && idKey2(a) !== "";
+    return idKey(a) === idKey(b) && idKey(a) !== "";
   }
   function payeClaimEvidencePath(input) {
     const org = text26(input.organizationId);
@@ -18009,10 +18168,10 @@ var ProjectPlannerCanonical = (() => {
     if (!viewer || !subject || !idText(viewer.id) || !idText(subject.id)) return false;
     if (viewer.isActive === false) return false;
     const members = roster || [];
-    const viewerIds = new Set(personIdSet(viewer, members).map(idKey2));
-    if (viewerIds.has(idKey2(subject.id))) return true;
+    const viewerIds = new Set(personIdSet(viewer, members).map(idKey));
+    if (viewerIds.has(idKey(subject.id))) return true;
     if (isAdminOutsideOperativeMode(viewer)) return true;
-    const managers = lineManagerIds(subject, members).map(idKey2);
+    const managers = lineManagerIds(subject, members).map(idKey);
     if (!managers.some((id2) => viewerIds.has(id2))) return false;
     const member = members.find((row2) => sameText(row2.id, viewer.id));
     return member ? rosterMemberActive(member) : true;
@@ -18029,8 +18188,8 @@ var ProjectPlannerCanonical = (() => {
       if (kind === "expense") {
         for (const entry of sheet.entries.expenseEntries) {
           const day = entry.dayKey || "";
-          if (!day || day < range.start || day > range.end || seen.has(idKey2(entry.id))) continue;
-          seen.add(idKey2(entry.id));
+          if (!day || day < range.start || day > range.end || seen.has(idKey(entry.id))) continue;
+          seen.add(idKey(entry.id));
           out.push({
             id: entry.id,
             sheetId: text26(sheet.id),
@@ -18050,8 +18209,8 @@ var ProjectPlannerCanonical = (() => {
         for (const entry of sheet.entries.priceWorkEntries) {
           const start = entry.startDayKey || "";
           const end = entry.endDayKey && entry.endDayKey >= start ? entry.endDayKey : start;
-          if (!start || start > range.end || end < range.start || seen.has(idKey2(entry.id))) continue;
-          seen.add(idKey2(entry.id));
+          if (!start || start > range.end || end < range.start || seen.has(idKey(entry.id))) continue;
+          seen.add(idKey(entry.id));
           out.push({
             id: entry.id,
             sheetId: text26(sheet.id),
@@ -18355,7 +18514,7 @@ var ProjectPlannerCanonical = (() => {
   }
   function bareKey(value) {
     const raw = text28(value);
-    return idKey2(raw.toLowerCase().startsWith("user:") ? raw.slice(5) : raw);
+    return idKey(raw.toLowerCase().startsWith("user:") ? raw.slice(5) : raw);
   }
   function emailKey5(value) {
     return text28(value).toLowerCase();
@@ -18376,8 +18535,8 @@ var ProjectPlannerCanonical = (() => {
     const seen = /* @__PURE__ */ new Set();
     const add = (id2) => {
       const value = text28(id2);
-      if (!value || seen.has(idKey2(value))) return;
-      seen.add(idKey2(value));
+      if (!value || seen.has(idKey(value))) return;
+      seen.add(idKey(value));
       ids.push(value);
     };
     add(row2.id);
@@ -18415,7 +18574,7 @@ var ProjectPlannerCanonical = (() => {
       let group = groups.find((entry) => entry.keys.has(key4));
       let catalogueRow;
       if (!group) {
-        catalogueRow = rows3.find((row2) => idKey2(row2.id) === key4 || idKey2(stableManagerId(row2.id)) === key4);
+        catalogueRow = rows3.find((row2) => idKey(row2.id) === key4 || idKey(stableManagerId(row2.id)) === key4);
         const email = emailKey5(catalogueRow?.email);
         if (email) group = groups.find((entry) => entry.rows.some((row2) => emailKey5(row2.email) === email));
       }
@@ -18448,6 +18607,202 @@ var ProjectPlannerCanonical = (() => {
       out.push({ storedId, state: "unknown", candidate: null, name: "", reason: null, note: null });
     }
     return out;
+  }
+
+  // lib/canonical/peopleAccess.ts
+  function text29(value) {
+    return typeof value === "string" ? value.trim() : "";
+  }
+  function sameOrg2(value, organizationId) {
+    const raw = text29(value);
+    const id2 = raw.includes("/") ? raw.split("/").filter(Boolean).pop() ?? "" : raw;
+    return id2 !== "" && id2.toLowerCase() === organizationId.trim().toLowerCase();
+  }
+  function storedLineManagerIds(row2) {
+    if (row2.hasNoLineManager === true) return [];
+    const listed = (row2.assignedManagerUserIds || []).map(text29).filter(Boolean);
+    return listed.length > 0 ? listed : [text29(row2.assignedManagerUserId)].filter(Boolean);
+  }
+  function lineManagerReports(person, roster) {
+    if (!person || !text29(person.id)) return [];
+    const rows3 = (roster || []).filter((row2) => row2 && text29(row2.id));
+    const keys = new Set(personIdSet(person, rows3).map(idKey));
+    const out = [];
+    for (const group of rosterPersonGroups(rows3)) {
+      if ([...group.keys].some((key4) => keys.has(key4))) continue;
+      const primary = group.primary;
+      if (!rosterMemberActive(primary) || isAnonymisedDeletedProfile(primary)) continue;
+      const reports = group.rows.some((row2) => storedLineManagerIds(row2).some((id2) => keys.has(idKey(id2))));
+      if (reports) out.push({ id: text29(primary.id), name: rosterPersonName2(primary) || text29(primary.id) });
+    }
+    return out.sort((a, b) => a.name.localeCompare(b.name, "en", { sensitivity: "base" }) || a.id.localeCompare(b.id));
+  }
+  var LINE_MANAGER_REPORTS_BLOCK_MESSAGE = "This user is the line manager for the users below. Give each of them another line manager first, then try again.";
+  function lineManagerChangeBlock(input) {
+    const reports = lineManagerReports(input?.person, input?.roster);
+    const change = input?.change;
+    const removesLineManager = !!change && (change.kind === "deactivate" || change.kind === "delete" || change.kind === "level" && change.to === "operative" && permissionLevelOf(input?.person) !== "operative");
+    const blocked = removesLineManager && reports.length > 0;
+    return { blocked, reports, message: blocked ? LINE_MANAGER_REPORTS_BLOCK_MESSAGE : null };
+  }
+  function changeRemovesJobManager(person, change) {
+    if (!change) return false;
+    if (change.kind === "deactivate" || change.kind === "delete") return true;
+    return change.kind === "level" && change.to === "operative" && permissionLevelOf(person) !== "operative";
+  }
+  var JOB_MANAGER_REQUIRED_MESSAGE = "Please assign at least one manager";
+  function jobManagerRequiredError(managerIds) {
+    return (managerIds || []).some((id2) => text29(id2) !== "") ? null : JOB_MANAGER_REQUIRED_MESSAGE;
+  }
+  var JOB_MANAGER_REMOVED_NOTICE_TYPE = "job_manager_removed";
+  function jobManagerRemovedNoticeText(name, jobCount) {
+    const who = text29(name) || "A manager";
+    const jobs = jobCount === 1 ? "1 job" : `${jobCount} jobs`;
+    return {
+      title: "Manager removed from jobs",
+      message: `${who} is no longer a manager and was removed from ${jobs}. Those jobs may have no manager now.`
+    };
+  }
+  function jobManagerRemovalWrites(input) {
+    const org = text29(input?.organizationId);
+    const person = input?.person;
+    if (!org || !person || !text29(person.id) || !changeRemovesJobManager(person, input.change)) return [];
+    const rows3 = (input.roster || []).filter((row2) => row2 && text29(row2.id));
+    const keys = /* @__PURE__ */ new Set();
+    for (const id2 of personIdSet(person, rows3)) {
+      keys.add(idKey(id2));
+      keys.add(idKey(`user:${id2}`));
+    }
+    const emails = /* @__PURE__ */ new Set();
+    if (idKey(person.email)) emails.add(idKey(person.email));
+    for (const row2 of rows3) if (keys.has(idKey(row2.id)) && idKey(row2.email)) emails.add(idKey(row2.email));
+    for (const row2 of input.managers || []) {
+      if (!row2 || !text29(row2.id) || !emails.has(idKey(row2.email))) continue;
+      keys.add(idKey(row2.id));
+      keys.add(idKey(stableManagerId(row2.id)));
+    }
+    keys.delete("");
+    const out = [];
+    for (const job of input.jobs || []) {
+      const jobId = text29(job?.id);
+      if (!jobId || jobId.includes("/") || job.collection !== "projects" && job.collection !== "smallWorks") continue;
+      if (!jobManagerIds(job).some((id2) => keys.has(idKey(id2)))) continue;
+      const set = {};
+      const remove = [];
+      const keep = (list) => (list || []).map(text29).filter((id2) => id2 && !keys.has(idKey(id2)));
+      let remainingManagerIds = keep(job.managerIds);
+      for (const field of ["managerIds", "managerUserIds", "assignedManagerUserIds"]) {
+        const stored = (job[field] || []).map(text29).filter(Boolean);
+        if (stored.length === 0) continue;
+        const kept = keep(stored);
+        if (kept.length === stored.length) continue;
+        if (kept.length > 0) set[field] = kept;
+        else remove.push(field);
+      }
+      const primary = text29(job.managerId);
+      if (primary && keys.has(idKey(primary))) {
+        if (remainingManagerIds.length === 0) remainingManagerIds = keep(job.managerUserIds);
+        if (remainingManagerIds.length > 0) set.managerId = remainingManagerIds[0];
+        else remove.push("managerId");
+      }
+      if (Object.keys(set).length === 0 && remove.length === 0) continue;
+      out.push({ path: `organizations/${org}/${job.collection}/${jobId}`, collection: job.collection, jobId, set, remove });
+    }
+    return out;
+  }
+  function superAdminTransferWrites(input) {
+    const org = text29(input?.organizationId);
+    const from = text29(input?.fromUserId);
+    const to = text29(input?.toUserId);
+    if (!org || !to || idKey(to) === idKey(from) || org.includes("/") || to.includes("/")) return null;
+    const rows3 = (input.roster || []).filter((row2) => row2 && text29(row2.id));
+    const toRow = rows3.find((row2) => idKey(row2.id) === idKey(to));
+    const toKeys = new Set(personIdSet(toRow ?? { id: to }, rows3).map(idKey));
+    const writes = [
+      { path: `organizations/${org}`, kind: "organization", fields: { creatorUserId: to, [`members.${to}`]: "admin" } }
+    ];
+    const promote = {
+      isSuperAdmin: true,
+      adminAccess: true,
+      role: "admin",
+      "permissions.adminAccess": true,
+      annualLeaveSelfBook: true,
+      "permissions.annualLeaveSelfBook": true,
+      timesheetSelfSign: true,
+      "permissions.timesheetSelfSign": true
+    };
+    const inOrg = (row2) => sameOrg2(row2.organizationId, org);
+    writes.push({ path: `users/${to}`, kind: "userProfile", fields: { ...promote } });
+    for (const row2 of rows3) {
+      if (idKey(row2.id) !== idKey(to) && toKeys.has(idKey(row2.id)) && inOrg(row2) && idKey(row2.email) === idKey(toRow?.email)) {
+        writes.push({ path: `users/${text29(row2.id)}`, kind: "userProfile", fields: { ...promote, isSuperAdmin: false } });
+      }
+    }
+    writes.push({
+      path: `users/${to}/orgMemberships/${org}`,
+      kind: "membership",
+      fields: { role: "admin", isSuperAdmin: true, "permissions.adminAccess": true, "permissions.annualLeaveSelfBook": true, "permissions.timesheetSelfSign": true }
+    });
+    const demote = /* @__PURE__ */ new Map();
+    if (from) demote.set(idKey(from), rows3.find((row2) => idKey(row2.id) === idKey(from)) ?? null);
+    const creator = text29(input.previousCreatorUserId);
+    if (creator) demote.set(idKey(creator), rows3.find((row2) => idKey(row2.id) === idKey(creator)) ?? null);
+    for (const row2 of rows3) if (storedPermissionFlag(row2, "isSuperAdmin") === true && inOrg(row2)) demote.set(idKey(row2.id), row2);
+    for (const key4 of toKeys) demote.delete(key4);
+    for (const [key4, row2] of demote) {
+      const id2 = text29(row2?.id) || (idKey(from) === key4 ? from : creator);
+      if (!id2 || id2.includes("/")) continue;
+      const needsSelfApproval = !hasActiveLineManager(row2 ?? { id: id2 }, rows3);
+      const fields = { isSuperAdmin: false, adminAccess: true, role: "admin", "permissions.adminAccess": true };
+      if (needsSelfApproval) {
+        Object.assign(fields, {
+          annualLeaveSelfBook: true,
+          "permissions.annualLeaveSelfBook": true,
+          timesheetSelfSign: true,
+          "permissions.timesheetSelfSign": true
+        });
+      }
+      writes.push({ path: `users/${id2}`, kind: "userProfile", fields });
+      const membership = { role: "admin", isSuperAdmin: false, "permissions.adminAccess": true };
+      if (needsSelfApproval) Object.assign(membership, { "permissions.annualLeaveSelfBook": true, "permissions.timesheetSelfSign": true });
+      writes.push({ path: `users/${id2}/orgMemberships/${org}`, kind: "membership", fields: membership });
+    }
+    return writes;
+  }
+  function userActiveWrites(input) {
+    const org = text29(input?.organizationId);
+    const uid = text29(input?.person?.id);
+    if (!org || !uid || uid.includes("/")) return [];
+    const active = input.isActive === true;
+    const out = [
+      { path: `users/${uid}`, kind: "userProfile", fields: { isActive: active } }
+    ];
+    const email = idKey(input.person.email);
+    const seen = /* @__PURE__ */ new Set([idKey(uid)]);
+    if (email) {
+      for (const row2 of input.roster || []) {
+        const id2 = text29(row2?.id);
+        if (!id2 || id2.includes("/") || seen.has(idKey(id2)) || idKey(row2.email) !== email || !sameOrg2(row2.organizationId, org)) continue;
+        seen.add(idKey(id2));
+        out.push({ path: `users/${id2}`, kind: "userProfile", fields: { isActive: active } });
+      }
+    }
+    out.push({ path: `users/${uid}/orgMemberships/${org}`, kind: "membership", fields: { accountActive: active } });
+    return out;
+  }
+  function jobTypeStoredFields(name, collection) {
+    const canonical = canonicalJobTypeName(typeof name === "string" ? name : "");
+    if (collection === "smallWorks") {
+      return { jobType: "Small Works", customJobType: canonical && canonical !== "Small Works" ? canonical : null };
+    }
+    const enumType = canonical === "CAT B" || canonical === "Maintenance" || canonical === "CAT A" ? canonical : "CAT A";
+    return { jobType: enumType, customJobType: canonical && canonical !== "CAT A" && canonical !== "Small Works" ? canonical : null };
+  }
+  function jobTypeDisplayName(job, collection) {
+    const custom = canonicalJobTypeName(typeof job?.customJobType === "string" ? job.customJobType : "");
+    if (custom) return custom;
+    const stored = canonicalJobTypeName(typeof job?.jobType === "string" ? job.jobType : "");
+    return stored || (collection === "smallWorks" ? "Small Works" : "CAT A");
   }
   return __toCommonJS(bundleEntry_exports);
 })();

@@ -24,6 +24,7 @@
 import { addDaysInZone, dateFromDayKeyInZone, dayKeyInZone } from '../orgTime/zoneTime'
 import { eachDayKey, isoWeekdayOfDayKey, zoneOrLondon } from './dayKeys'
 import type { StaffAccountRole } from './staffAccess'
+import { permissionLevelOf, userPermissionFlag } from './permissionLevels'
 import { idKey, personIdSet, rosterMemberActive, rosterMemberFor, type PersonRosterRow } from './personIds'
 
 export const HOLIDAY_TIME_SLOTS = ['FULL DAY', 'AM', 'PM'] as const
@@ -265,7 +266,8 @@ type LineManagerRosterMember = Omit<PersonRosterRow, 'role'> & { role?: StaffAcc
  * `hasNoLineManager`. Never the person under any of their ids (`personIdSet`: id, `formerUserIds`,
  * `sameEmailUserIds`, same-email roster rows). With a non-empty `roster`, only managers who are on it and
  * active count, and an id the roster knows only as an alias (an old invite id) is returned as that roster
- * row's id. Order kept, de-duplicated without case.
+ * row's id. Order kept, de-duplicated without case. 1.31.0: a roster member at the operative level is skipped
+ * (`rosterMemberIsOperativeLevel`) — a manager demoted to operative is nobody's line manager any more.
  */
 export function lineManagerIds(
   user: LeaveRequester | null | undefined,
@@ -283,6 +285,9 @@ export function lineManagerIds(
     if (members.length > 0) {
       const member = rosterMemberFor(id, members)
       if (!member || !rosterMemberActive(member)) continue
+      // 1.31.0 (owner decision: no rights carry over on a level change): an operative-level member is never anyone's
+      // line manager, even when an old id is still stored on the report.
+      if (rosterMemberIsOperativeLevel(member)) continue
       resolved = text(member.id)
     }
     if (self.has(idKey(id)) || self.has(idKey(resolved))) continue
@@ -291,6 +296,21 @@ export function lineManagerIds(
     out.push(resolved)
   }
   return out
+}
+
+/**
+ * Rulebook 1.31.0 §8: a roster row at the operative level (`permissionLevelOf`; a resolved role with `isOperativeMode`
+ * and no admin flag) — never a line manager, a leave approver or a pay viewer as one. A row with no level flag reads as
+ * manager level (§11), so a roster of bare ids keeps working.
+ */
+export function rosterMemberIsOperativeLevel(member: unknown): boolean {
+  const row = (member && typeof member === 'object' ? member : {}) as { role?: unknown }
+  const role = row.role
+  if (role && typeof role === 'object') {
+    const resolved = role as Partial<StaffAccountRole>
+    return resolved.isOperativeMode === true && resolved.isAdmin !== true && resolved.isSuperAdmin !== true
+  }
+  return permissionLevelOf(row) === 'operative'
 }
 
 /** Whether `lineManagerIds(user, roster)` names anyone: a current active line manager other than the person. */
@@ -364,7 +384,11 @@ type FlagKey = 'annualLeaveSelfBook' | 'timesheetSelfSign' | 'operativeMode' | '
 
 function flagOn(user: LeaveSelfBookUser | null | undefined, key: FlagKey): boolean {
   if (!user) return false
-  return user[key] === true || user.permissions?.[key] === true
+  // 1.31.0 (audit finding 5): one flag reader for every rule — `userPermissionFlag` (a top-level value when stored,
+  // else `permissions.{key}`), the same as `effectivePermissions` and firestore.rules `staffFlag`. Before 1.31.0 this
+  // read "either place on", so a toggle turned off at the top level but still on in the map read on here and off on
+  // every screen.
+  return userPermissionFlag(user, key)
 }
 
 function roleObject(role: unknown): StaffAccountRole | null {

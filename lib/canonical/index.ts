@@ -529,6 +529,7 @@ export {
   bookingJobState,
   bookingWriteFields,
   bookingsToRemoveOnOperativeDelete,
+  operativesManagerMayDeleteBooking,
   bookingsToRemoveOnProjectDelete,
   isBookingUuid,
   normalizeBookingStatus,
@@ -1237,6 +1238,8 @@ export {
   jobWriteWithoutManagerList,
   readsEveryBooking,
   warningScopeFor,
+  isWarningRowInScope,
+  managerBookingJobId,
 } from './staffAccess'
 export type {
   BookingPermissionCollection,
@@ -1251,6 +1254,7 @@ export type {
   JobQuery,
   JobQueryPlan,
   WarningScope,
+  WarningScopeRosterRow,
 } from './staffAccess'
 
 // Rulebook 1.10.0: user delete, organisation memberships, pay change rows, job delete removals.
@@ -1628,3 +1632,15 @@ export type {
   JobManagerFormerReason,
   JobManagerRosterPerson,
 } from './jobManagers'
+
+// Rulebook 1.31.0 §5, §8, §11, §16: people and access — line-manager reports and the change block, the warning scope
+// for a viewer, job managers on a level change / deactivation / delete, Change Super Admin, deactivation of every
+// same-email document, and the job-type picker ↔ stored fields.
+export * from './peopleAccess'
+export { rosterMemberIsOperativeLevel } from './leaveRequests'
+export { userPermissionFlag } from './permissionLevels'
+export type { UserDeleteOptions } from './userDelete'
+// Rulebook 1.31.0 §8: whose exported timesheets the Exported list shows; the subject of a timesheet document id.
+export { exportedTimesheetHistorySubjects } from './userTimesheetAccess'
+export type { ExportedTimesheetHistorySubjectRow } from './userTimesheetAccess'
+export { timesheetDocumentSubjectId } from './timesheetPeriod'

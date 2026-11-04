@@ -17,7 +17,8 @@ import { FormActions, FormInput, FormLabel, FormSelect, FormTextarea } from '@/c
 import { EmptyState, ErrorBanner } from '@/components/dashboard/PageShell'
 import { canManageWorkCatalogue } from '@/lib/permissions'
 import { userCanChangeJobManagers, userCanEditJob } from '@/lib/access/bookingAccess'
-import { jobManagerUserIds } from '@/lib/canonical'
+import { jobManagerRequiredError, jobManagerUserIds, jobTypeStoredFields, personIdSet } from '@/lib/canonical'
+import { useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
 import { SitePinPickerSheet } from '@/components/site-map/SitePinPickerSheet'
 import { rosterDocumentsFor, useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import {
@@ -48,12 +49,14 @@ function normalizeEmail(email: string): string {
   return email.trim().toLowerCase()
 }
 
-function defaultProjectStart(): string {
-  return dayKey(new Date())
+// Rulebook §1 / 1.31.0: job dates are organisation-zone day keys (`organizationTimeZone`), never Europe/London unless
+// that is the organisation's zone.
+function defaultProjectStart(timeZone: string): string {
+  return dayKey(new Date(), timeZone)
 }
 
-function defaultProjectEnd(): string {
-  return dayKey(addLondonDays(new Date(), 30))
+function defaultProjectEnd(timeZone: string): string {
+  return dayKey(addLondonDays(new Date(), 30, timeZone), timeZone)
 }
 
 export function ProjectForm({ initial, collection = 'projects', backHref, onSaved }: ProjectFormProps) {
@@ -66,8 +69,13 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
     () => rosterDocumentsFor({ users: foldedUsers, rosterDocuments, rosterDocumentsOrgId }, organization?.id),
     [foldedUsers, rosterDocuments, rosterDocumentsOrgId, organization?.id]
   )
+  const timeZone = useOrganizationTimeZone()
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Rulebook 1.31.0: whether the manager list was changed in this form, and the ids removed (a stored manager the
+  // form cannot show is kept unless the user removed them).
+  const [managersTouched, setManagersTouched] = useState(false)
+  const [removedManagerIds, setRemovedManagerIds] = useState<string[]>([])
   const [managerFieldError, setManagerFieldError] = useState(false)
   const [pinPickerOpen, setPinPickerOpen] = useState(false)
   const [newClientName, setNewClientName] = useState('')
@@ -87,8 +95,8 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
     townCity: initial?.townCity || '',
     postcode: initial?.postcode || '',
     clientId: initial?.client?.id || '',
-    startDate: initial?.startDate ? dayKey(new Date(initial.startDate)) : defaultProjectStart(),
-    endDate: initial?.endDate ? dayKey(new Date(initial.endDate)) : defaultProjectEnd(),
+    startDate: initial?.startDate ? dayKey(new Date(initial.startDate), timeZone) : defaultProjectStart(timeZone),
+    endDate: initial?.endDate ? dayKey(new Date(initial.endDate), timeZone) : defaultProjectEnd(timeZone),
     jobType: initial
       ? collectionJobTypeForName(initial.customJobType || initial.jobType || 'CAT A', collection)
       : '',
@@ -237,7 +245,11 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
       setError('Enter an address or drop a map pin.')
       return
     }
-    const client = clients.find((c) => c.id === form.clientId)
+    // 1.31.0: a job whose client id was derived from its client name (`jobClientId`, no stored client row) keeps that
+    // client — before 1.31.0 web refused the save with "Please select a client".
+    const client =
+      clients.find((c) => c.id === form.clientId) ??
+      (initial?.client && initial.client.id === form.clientId ? initial.client : undefined)
     if (!client) {
       setError('Please select a client')
       return
@@ -251,8 +263,10 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
         users,
         organization.id
       )
-      if (creating && resolvedManagerIds.length === 0) {
-        setError('Please assign at least one manager')
+      // Rulebook 1.31.0 `jobManagerRequiredError`: a new project or small works needs a manager.
+      const managerRequired = creating ? jobManagerRequiredError(resolvedManagerIds) : null
+      if (managerRequired) {
+        setError(managerRequired)
         setManagerFieldError(true)
         scrollToFirstError()
         return
@@ -268,6 +282,33 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
         (user) => managerIdsMatch(user.id, form.managerIds[0]) || managerIdsMatch(`user:${user.id}`, form.managerIds[0])
       )
 
+      // Rulebook 1.31.0: an edit that did not touch the managers sends them exactly as stored, so the manager group is
+      // never rewritten (before 1.31.0 a description-only edit wrote managerIds: ["M1"] over ["M1", "M2"]). A changed
+      // list keeps every stored account id the user did not remove.
+      const removedKeys = new Set(
+        removedManagerIds.flatMap((id) => {
+          const bare = id.replace(/^user:/i, '')
+          const row = users.find((entry) => entry.id.toLowerCase() === bare.toLowerCase())
+          return (row ? personIdSet(row, users) : [bare]).map((value) => value.toLowerCase())
+        })
+      )
+      const computedUserIds = jobManagerUserIds(
+        { managerId: primaryManagerId, managerIds: resolvedManagerIds },
+        managers.map((row) => ({ id: row.id, email: row.email })),
+        users.map((row) => ({ id: row.id, email: row.email, isActive: row.isActive }))
+      )
+      const keptStoredUserIds = (initial?.managerUserIds ?? []).filter((id) => !removedKeys.has(id.toLowerCase()))
+      const nextManagerUserIds = [...computedUserIds]
+      for (const id of keptStoredUserIds) {
+        if (!nextManagerUserIds.some((value) => value.toLowerCase() === id.toLowerCase())) nextManagerUserIds.push(id)
+      }
+      const managerFields =
+        !creating && !managersTouched && initial
+          ? { managerId: initial.managerId, managerIds: initial.managerIds ?? [], managerUserIds: initial.managerUserIds ?? [] }
+          : { managerId: primaryManagerId, managerIds: resolvedManagerIds, managerUserIds: nextManagerUserIds }
+      // Rulebook 1.31.0 `jobTypeStoredFields`: the picker name → `jobType` / `customJobType` (null clears a custom type).
+      const jobTypeFields = jobTypeStoredFields(form.customJobType || form.jobType, collection)
+
       const input: ProjectSaveInput = {
         id: initial?.id || '',
         organizationId: organization.id,
@@ -278,22 +319,12 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
         townCity: form.townCity,
         postcode: form.postcode,
         client,
-        startDate: dateFromDayKey(form.startDate),
-        endDate: dateFromDayKey(form.endDate),
-        jobType: form.jobType.trim()
-          ? form.jobType
-          : collection === 'smallWorks'
-            ? 'Small Works'
-            : 'CAT A',
-        customJobType: form.customJobType.trim() && form.customJobType.trim() !== 'CAT A' ? form.customJobType.trim() : undefined,
-        managerId: primaryManagerId,
-        managerIds: resolvedManagerIds,
+        startDate: dateFromDayKey(form.startDate, timeZone),
+        endDate: dateFromDayKey(form.endDate, timeZone),
+        jobType: jobTypeFields.jobType,
+        customJobType: jobTypeFields.customJobType ?? undefined,
         // Rulebook 1.10.0: the account ids of these managers, so the security rules can let them book on the job.
-        managerUserIds: jobManagerUserIds(
-          { managerId: primaryManagerId, managerIds: resolvedManagerIds },
-          managers.map((row) => ({ id: row.id, email: row.email })),
-          users.map((row) => ({ id: row.id, email: row.email, isActive: row.isActive }))
-        ),
+        ...managerFields,
         managerLegacy: primaryManager
           ? `${primaryManager.firstName} ${primaryManager.lastName}`.trim()
           : primaryUser
@@ -411,9 +442,12 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
             }
             onAdd={(choice) => {
               setManagerFieldError(false)
+              setManagersTouched(true)
               setForm((current) => ({ ...current, managerIds: [...current.managerIds, choice.id] }))
             }}
             onRemove={(id) => {
+              setManagersTouched(true)
+              setRemovedManagerIds((current) => [...current, id])
               setForm((current) => ({
                 ...current,
                 managerIds: projectManagerIdsWithout(current.managerIds, id, managers, users, organization?.id),

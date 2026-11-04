@@ -5770,7 +5770,7 @@ test('1.4.0: company activity goes to active admins outside operative mode, neve
   const recipients = rulebook.companyActivityRecipients('A1', roster as never)
   assert.deepEqual(recipients, ['A2', 'A4'])
   assert.deepEqual(rulebook.companyActivityRecipients('M1', roster as never), ['A1', 'A2', 'A4'])
-  assert.deepEqual([...rulebook.COMPANY_ACTIVITY_NOTICE_TYPES].sort(), ['client_created', 'manager_created', 'operative_created', 'project_created', 'small_works_created', 'warning_removed'])
+  assert.deepEqual([...rulebook.COMPANY_ACTIVITY_NOTICE_TYPES].sort(), ['client_created', 'job_manager_removed', 'manager_created', 'operative_created', 'operative_deleted', 'project_created', 'small_works_created', 'warning_removed'])
   for (const type of rulebook.COMPANY_ACTIVITY_NOTICE_TYPES) {
     assert.equal(rulebook.notificationPreferenceKeyForType(type), 'companyActivity', type)
     assert.equal(rulebook.notificationDeliversDevicePush(type), true, type)
@@ -7858,15 +7858,12 @@ test('1.10.0 r2 / 1.11.0: bookingQueryPlan — whole collections for admins, by 
   assert.ok(op.queries.every((q) => q.collection === 'bookings'))
 })
 
-test('1.10.0 r2: warning scope — restricted managers get their jobs and people, and no unbooked labour', () => {
+test('1.10.0 r2 (1.31.0): warning scope — a manager gets their jobs and their people, and no unbooked labour without every booking', () => {
   const plain = { role: manager, ids: ['m'] }
   const scope = r2WarningScopeFor({
     viewer: plain,
-    visibleJobIds: ['JOB-A'],
-    bookings: [
-      { projectId: 'job-a', operativeId: 'OP-1' },
-      { projectId: 'job-z', operativeId: 'OP-2' },
-    ],
+    jobs: [{ id: 'JOB-A', managerUserIds: ['m'] }, { id: 'JOB-Z', managerUserIds: ['x'] }],
+    roster: [{ id: 'm', role: 'manager' }, { id: 'u-1', email: 'one@x.com', assignedManagerUserIds: ['m'] }],
     people: [{ id: 'u-1', email: 'one@x.com' }],
     operatives: [{ id: 'op-1', email: 'One@x.com' }],
   })
@@ -11758,7 +11755,8 @@ test('1.28.0 a demoted admin: Timesheet self-sign reads off, is kept underneath,
   assert.ok(plan.ok)
   if (!plan.ok) return
   const fields = (plan.writes[0] as { fields: Record<string, unknown> }).fields
-  assert.equal(fields.timesheetSelfSign, true, 'stored value kept')
+  // 1.31.0: an unchanged stored toggle is not rewritten at all (partial write) — the stored true stays underneath.
+  assert.equal('timesheetSelfSign' in fields, false, 'stored value kept (not rewritten)')
   const demoted = { ...stored, role: 'manager', adminAccess: false, manager: true, permissions: { ...stored.permissions, adminAccess: false } }
   assert.equal(r1280Levels.effectivePermissions(demoted).timesheetSelfSign, false)
   assert.equal(r1280Leave.timesheetSelfSigned(demoted, [r1280SA, demoted]), false)
@@ -12691,4 +12689,325 @@ test('1.30.3 jobManagerAssignments: current, former (demoted, inactive, catalogu
   assert.equal(out[0].candidate?.id, 'mgr')
   assert.equal(out[1].note, r1303FormerNotes.not_manager)
   assert.equal(out[1].name, 'Dee D')
+})
+
+// MARK: - 1.31.0 people and access
+
+test('1.31.0 lineManagerIds / leaveApproverIds / canViewPersonPay: a manager demoted to operative is nobody’s line manager', () => {
+  const roster = [
+    { id: 'SA', email: 'sa@x', role: 'admin', isSuperAdmin: true },
+    { id: 'EX', email: 'ex@x', role: 'operative', operativeMode: true },
+    { id: 'LM', email: 'lm@x', role: 'manager', manager: true },
+    { id: 'OP', email: 'op@x', role: 'operative', operativeMode: true, assignedManagerUserIds: ['EX'] },
+  ]
+  const op = roster[3]
+  assert.deepEqual(R112.lineManagerIds(op, roster as never), [])
+  assert.deepEqual(R112.leaveApproverIds(op, roster as never), ['SA'])
+  assert.equal(R112.rosterMemberIsOperativeLevel(roster[1]), true)
+  assert.equal(R112.rosterMemberIsOperativeLevel({ id: 'bare' }), false)
+  assert.equal(R112.rosterMemberIsOperativeLevel({ id: 'r', role: { isAdmin: false, isSuperAdmin: false, isManager: false, isOperativeMode: true } }), true)
+  // Still a line manager while a manager.
+  assert.deepEqual(R112.lineManagerIds({ ...op, assignedManagerUserIds: ['LM'] }, roster as never), ['LM'])
+})
+
+test('1.31.0 userPermissionFlag: the top-level value when stored, else permissions.{key} — one reader for every rule', () => {
+  assert.equal(R112.userPermissionFlag({ annualLeaveSelfBook: false, permissions: { annualLeaveSelfBook: true } }, 'annualLeaveSelfBook'), false)
+  assert.equal(R112.userPermissionFlag({ permissions: { annualLeaveSelfBook: true } }, 'annualLeaveSelfBook'), true)
+  assert.equal(R112.userPermissionFlag({ annualLeaveSelfBook: 1 }, 'annualLeaveSelfBook'), true)
+  // The self-book rule reads the same way as every screen (before 1.31.0 it read "either place on").
+  const user = { id: 'M', role: 'manager', manager: true, annualLeaveSelfBook: false, permissions: { annualLeaveSelfBook: true } }
+  assert.equal(R112.selfManageToggles(user as never).annualLeaveSelfBook, false)
+  assert.equal(R112.effectivePermissions(user).annualLeaveSelfBook, false)
+})
+
+test('1.31.0 lineManagerReports / lineManagerChangeBlock: a line manager is not made an operative, deactivated or deleted while anyone reports to them', () => {
+  const roster = [
+    { id: 'LM', email: 'lm@x', firstName: 'Lee', surname: 'M', role: 'manager', manager: true },
+    { id: 'lm-old', email: 'LM@x', role: 'admin', adminAccess: true, isActive: false },
+    { id: 'A', email: 'a@x', firstName: 'Ann', surname: 'A', role: 'operative', operativeMode: true, assignedManagerUserIds: ['lm-old'] },
+    { id: 'B', email: 'b@x', firstName: 'Bob', surname: 'B', role: 'operative', operativeMode: true, assignedManagerUserId: 'LM' },
+    { id: 'C', email: 'c@x', firstName: 'Cy', surname: 'C', role: 'operative', operativeMode: true, assignedManagerUserIds: ['LM'], isActive: false },
+    { id: 'D', email: 'd@x', firstName: 'Di', surname: 'D', role: 'manager', manager: true, assignedManagerUserIds: ['LM'], hasNoLineManager: true },
+  ]
+  const lm = roster[0]
+  assert.deepEqual(R112.lineManagerReports(lm, roster).map((row) => row.name), ['Ann A', 'Bob B'])
+  for (const change of [{ kind: 'level', to: 'operative' }, { kind: 'deactivate' }, { kind: 'delete' }] as const) {
+    const block = R112.lineManagerChangeBlock({ person: lm, roster, change })
+    assert.equal(block.blocked, true, change.kind)
+    assert.equal(block.message, R112.LINE_MANAGER_REPORTS_BLOCK_MESSAGE)
+  }
+  assert.equal(R112.lineManagerChangeBlock({ person: lm, roster, change: { kind: 'level', to: 'admin' } }).blocked, false)
+  assert.equal(R112.lineManagerChangeBlock({ person: roster[3], roster, change: { kind: 'delete' } }).blocked, false)
+})
+
+const r1310Manager = { isSuperAdmin: false, isAdmin: false, isManager: true, isOperativeMode: false }
+const r1310Roster = [
+  { id: 'M', email: 'm@x', role: 'manager', manager: true },
+  { id: 'm-old', email: 'M@x', role: 'manager' },
+  { id: 'R', email: 'r@x', role: 'operative', operativeMode: true, assignedManagerUserIds: ['m-old'] },
+  { id: 'GONE', email: 'g@x', role: 'operative', operativeMode: true, assignedManagerUserIds: ['M'], isActive: false },
+  { id: 'X', email: 'x@x', role: 'operative', operativeMode: true },
+]
+const r1310Jobs = [
+  { id: 'J1', managerUserIds: ['M'] },
+  { id: 'J2', managerIds: ['other'] },
+]
+const r1310Scope = (viewer: Record<string, unknown>, extra: Record<string, unknown> = {}) =>
+  R112.warningScopeFor({ viewer: viewer as never, jobs: r1310Jobs, roster: r1310Roster as never, enforced: false, ...extra })
+
+test('1.31.0 warningScopeFor: admins see everything; a manager (any toggles) only themselves, their active reports and the jobs they manage', () => {
+  assert.equal(r1310Scope({ role: { ...r1310Manager, isAdmin: true }, ids: ['A'] }).kind, 'all')
+  assert.equal(r1310Scope({ role: { ...r1310Manager, isSuperAdmin: true }, ids: ['S'] }).kind, 'all')
+  const scope = r1310Scope({ role: r1310Manager, ids: ['M'], email: 'm@x', toggles: { projects: true, smallWorks: true } })
+  assert.equal(scope.kind, 'jobs')
+  if (scope.kind !== 'jobs') return
+  assert.deepEqual(scope.jobIds, ['j1'])
+  // Own ids under every document (m-old), the report R (stored against m-old), never the inactive GONE or X.
+  assert.deepEqual([...scope.personIds].sort(), ['m', 'm-old', 'r'])
+  assert.deepEqual([...scope.personEmails].sort(), ['m@x', 'r@x'])
+  // Operatives: nothing.
+  const op = r1310Scope({ role: { ...r1310Manager, isManager: false, isOperativeMode: true }, ids: ['X'] })
+  assert.deepEqual(op, { kind: 'jobs', jobIds: [], personIds: [], personEmails: [], unbookedLabour: false })
+})
+
+test('1.31.0 warningScopeFor per type: unbooked labour, qualifications, unverified → self + reports; clashes → person or managed job; materials → managed jobs', () => {
+  const scope = r1310Scope({ role: r1310Manager, ids: ['M'], email: 'm@x' }, { enforced: false })
+  // Unbooked labour needs every booking read (enforced reads off here, so the manager reads every booking).
+  assert.equal(scope.kind === 'jobs' && scope.unbookedLabour, true)
+  const unbooked = R112.unbookedLabourRows({
+    scope,
+    startDayKey: '2026-11-02',
+    endDayKey: '2026-11-02',
+    includeWeekends: false,
+    standardPaidHours: 8,
+    people: [
+      { id: 'R', email: 'r@x', name: 'Rae', isActive: true, passwordSet: true, isOperativeMode: true, isManager: false, isAdmin: false, isSuperAdmin: false },
+      { id: 'X', email: 'x@x', name: 'Xan', isActive: true, passwordSet: true, isOperativeMode: true, isManager: false, isAdmin: false, isSuperAdmin: false },
+    ],
+    operatives: [],
+    bookings: [],
+    holidays: [],
+  } as never)
+  assert.deepEqual(unbooked.map((row: { personName?: string; operativeName?: string }) => row.operativeName ?? row.personName), ['Rae'])
+  const quals = R112.qualificationExpiryRows({
+    scope,
+    referenceIso: '2026-11-02T10:00:00Z',
+    timeZone: 'Europe/London',
+    operatives: [
+      { id: 'R', isActive: true, name: 'Rae', email: 'r@x', expiries: [{ qualificationId: 'q', name: 'CSCS', expiryIso: '2026-11-10T00:00:00Z' }] },
+      { id: 'X', isActive: true, name: 'Xan', email: 'x@x', expiries: [{ qualificationId: 'q', name: 'CSCS', expiryIso: '2026-11-10T00:00:00Z' }] },
+    ],
+  } as never)
+  assert.deepEqual(quals.map((row: { operativeId: string }) => row.operativeId), ['R'])
+  // Unverified accounts are filtered by person (unverifiedOperativeRows → isPersonInWarningScope).
+  assert.equal(R112.isPersonInWarningScope(scope, ['R']), true)
+  assert.equal(R112.isPersonInWarningScope(scope, ['X'], 'x@x'), false)
+  // Operative / manager clashes: a person in scope, or any booking on a managed job.
+  assert.equal(R112.isWarningRowInScope(scope, { jobIds: ['J2', 'J2'], personIds: ['X'] }), false)
+  assert.equal(R112.isWarningRowInScope(scope, { jobIds: ['J2', 'j1'], personIds: ['X'] }), true)
+  assert.equal(R112.isWarningRowInScope(scope, { jobIds: ['J2'], personIds: ['R'] }), true)
+  assert.equal(R112.isWarningRowInScope(scope, { personIds: ['M-OLD'] }), true)
+  // Materials cut-off: managed jobs only.
+  assert.equal(R112.isJobInWarningScope(scope, 'J1'), true)
+  assert.equal(R112.isJobInWarningScope(scope, 'J2'), false)
+  assert.equal(R112.managerBookingJobId({ locationType: 'project', locationId: 'J1' }), 'J1')
+  assert.equal(R112.isWarningRowInScope(R112.WARNING_SCOPE_ALL, { personIds: ['X'] }), true)
+})
+
+test('1.31.0 warningScopeFor: a manager with no reports and no jobs sees only warnings about themselves', () => {
+  const scope = R112.warningScopeFor({ viewer: { role: r1310Manager, ids: ['X2'], email: 'x2@x' }, jobs: r1310Jobs, roster: [{ id: 'X2', email: 'x2@x', role: 'manager' }], enforced: false })
+  assert.ok(scope.kind === 'jobs')
+  if (scope.kind !== 'jobs') return
+  assert.deepEqual(scope.jobIds, [])
+  assert.deepEqual(scope.personIds, ['x2'])
+  assert.equal(R112.isWarningRowInScope(scope, { jobIds: ['J1'], personIds: ['R'] }), false)
+  assert.equal(R112.isPersonInWarningScope(scope, ['X2']), true)
+  // Enforced reads: a manager who cannot read every booking gets no unbooked-labour rows (planning unchanged).
+  const enforced = R112.warningScopeFor({ viewer: { role: r1310Manager, ids: ['X2'] }, jobs: [], roster: [], enforced: true })
+  assert.equal(enforced.kind === 'jobs' && enforced.unbookedLabour, false)
+})
+
+test('1.31.0 jobManagerRemovalWrites: made an operative, deactivated or deleted — off every job; admin ↔ manager keeps them', () => {
+  const roster = [{ id: 'M', email: 'm@x', role: 'manager', manager: true }, { id: 'm-old', email: 'M@x', role: 'manager' }]
+  const managers = [{ id: 'cat-m', email: 'm@x' }]
+  const jobs = [
+    { id: 'J1', collection: 'projects' as const, managerId: 'M', managerIds: ['M', 'K'], managerUserIds: ['M', 'K'] },
+    { id: 'J2', collection: 'smallWorks' as const, managerId: R112.stableManagerId('cat-m'), managerIds: [R112.stableManagerId('cat-m')], managerUserIds: ['m-old'] },
+    { id: 'J3', collection: 'projects' as const, managerIds: ['K'], managerUserIds: ['K'] },
+    { id: 'J4', collection: 'projects' as const, managerIds: ['user:M'] },
+  ]
+  const person = roster[0]
+  const out = R112.jobManagerRemovalWrites({ organizationId: 'ORG', person, change: { kind: 'level', to: 'operative' }, jobs, roster, managers })
+  assert.deepEqual(out.map((row) => row.jobId), ['J1', 'J2', 'J4'])
+  assert.deepEqual(out[0].set, { managerIds: ['K'], managerUserIds: ['K'], managerId: 'K' })
+  assert.deepEqual(out[1], { path: 'organizations/ORG/smallWorks/J2', collection: 'smallWorks', jobId: 'J2', set: {}, remove: ['managerIds', 'managerUserIds', 'managerId'] })
+  assert.deepEqual(out[2].remove, ['managerIds'])
+  assert.equal(R112.jobManagerRemovalWrites({ organizationId: 'ORG', person, change: { kind: 'level', to: 'admin' }, jobs, roster }).length, 0)
+  assert.equal(R112.jobManagerRemovalWrites({ organizationId: 'ORG', person, change: { kind: 'deactivate' }, jobs, roster }).length, 3)
+  assert.equal(R112.jobManagerRequiredError([]), R112.JOB_MANAGER_REQUIRED_MESSAGE)
+  assert.equal(R112.jobManagerRequiredError(['', 'M']), null)
+  assert.equal(R112.jobManagerRemovedNoticeText('Mo', 2).message.includes('2 jobs'), true)
+})
+
+test('1.31.0 superAdminTransferWrites: one batch; the outgoing Super Admin without a line manager keeps self-approval', () => {
+  const roster = [
+    { id: 'SA', email: 'sa@x', role: 'admin', adminAccess: true, isSuperAdmin: true, organizationId: 'ORG' },
+    { id: 'NEW', email: 'new@x', role: 'admin', adminAccess: true, organizationId: 'ORG' },
+    { id: 'LM', email: 'lm@x', role: 'admin', adminAccess: true, organizationId: 'ORG' },
+  ]
+  const writes = R112.superAdminTransferWrites({ organizationId: 'ORG', fromUserId: 'SA', toUserId: 'NEW', previousCreatorUserId: 'SA', roster })!
+  assert.deepEqual(writes[0], { path: 'organizations/ORG', kind: 'organization', fields: { creatorUserId: 'NEW', 'members.NEW': 'admin' } })
+  const newProfile = writes.find((row) => row.path === 'users/NEW')!
+  assert.equal(newProfile.fields.isSuperAdmin, true)
+  assert.equal(newProfile.fields.timesheetSelfSign, true)
+  assert.equal(newProfile.fields.annualLeaveSelfBook, true)
+  const outgoing = writes.find((row) => row.path === 'users/SA')!
+  assert.equal(outgoing.fields.isSuperAdmin, false)
+  assert.equal(outgoing.fields.annualLeaveSelfBook, true)
+  assert.equal(outgoing.fields.timesheetSelfSign, true)
+  // With a line manager the outgoing Super Admin's toggles are left as stored (normal approval).
+  const withManager = R112.superAdminTransferWrites({
+    organizationId: 'ORG', fromUserId: 'SA', toUserId: 'NEW',
+    roster: [{ ...roster[0], assignedManagerUserIds: ['LM'] }, roster[1], roster[2]],
+  })!
+  assert.equal('annualLeaveSelfBook' in withManager.find((row) => row.path === 'users/SA')!.fields, false)
+  assert.equal(R112.superAdminTransferWrites({ organizationId: 'ORG', fromUserId: 'SA', toUserId: 'sa', roster }), null)
+})
+
+test('1.31.0 userActiveWrites: every same-email users document of this organisation, and the membership', () => {
+  const writes = R112.userActiveWrites({
+    organizationId: 'ORG',
+    person: { id: 'U', email: 'u@x' },
+    isActive: false,
+    roster: [{ id: 'U', email: 'u@x', organizationId: 'ORG' }, { id: 'u-old', email: 'U@x', organizationId: 'organizations/ORG' }, { id: 'u-b', email: 'u@x', organizationId: 'OTHER' }],
+  })
+  assert.deepEqual(writes.map((row) => row.path), ['users/U', 'users/u-old', 'users/U/orgMemberships/ORG'])
+  assert.deepEqual(writes[2].fields, { accountActive: false })
+})
+
+test('1.31.0 accountTypeChangeWrites: partial writes, demotion clears No line manager, same-email members entries, demoted admin keeps Annual Leave Management', () => {
+  const person = { id: 'A', email: 'a@x', organizationId: 'ORG', role: 'admin', adminAccess: true, hasNoLineManager: true, projects: true, permissions: { projects: true } }
+  const plan = R112.accountTypeChangeWrites({
+    person, kind: 'manager', organizationId: 'ORG',
+    roster: [{ id: 'a-old', email: 'A@x', organizationId: 'ORG' }],
+    members: { A: 'admin', 'a-old': 'admin' },
+  })
+  assert.ok(plan.ok)
+  if (!plan.ok) return
+  const fields = (plan.writes[0] as { fields: Record<string, unknown> }).fields
+  assert.equal(fields.hasNoLineManager, false)
+  assert.equal('projects' in fields, false, 'unchanged toggle not rewritten')
+  assert.equal(fields.adminAccess, false)
+  const dup = (plan.writes[1] as { fields: Record<string, unknown> }).fields
+  assert.equal(dup.role, 'manager')
+  assert.equal('projects' in dup, false)
+  assert.deepEqual((plan.writes[2] as { fields: Record<string, unknown> }).fields, { 'members.A': 'manager', 'members.a-old': 'manager' })
+  // A Super Admin's Annual Leave Management reads on; never stored, it is kept on when they stop being an admin.
+  assert.equal(R112.accountTypePermissions('manager', { role: 'admin', isSuperAdmin: true }).annualLeaveSelfBook, true)
+  assert.equal(R112.accountTypePermissions('manager', { role: 'admin', adminAccess: true, annualLeaveSelfBook: true }).annualLeaveSelfBook, true)
+})
+
+test('1.31.0 userDeleteRefusal: a manager with the Operatives permission deletes operatives only', () => {
+  const role = (over: Record<string, boolean>) => ({ isSuperAdmin: false, isAdmin: false, isManager: false, isOperativeMode: false, ...over })
+  const manager = { id: 'M', role: role({ isManager: true }) }
+  const operative = { id: 'O', role: role({ isOperativeMode: true }) }
+  assert.equal(R112.userDeleteRefusal(manager, operative, { actorManagesOperatives: true }), null)
+  assert.equal(R112.userDeleteRefusal(manager, operative), 'not_admin')
+  assert.equal(R112.userDeleteRefusal(manager, { id: 'M2', role: role({ isManager: true }) }, { actorManagesOperatives: true }), 'operatives_only')
+  assert.equal(R112.userDeleteRefusal(manager, { id: 'A', role: role({ isAdmin: true }) }, { actorManagesOperatives: true }), 'operatives_only')
+  assert.equal(R112.userDeleteRefusal(manager, { id: 'm', role: role({ isOperativeMode: true }) }, { actorManagesOperatives: true }), 'self')
+})
+
+test('1.31.0 operative_deleted and job_manager_removed are company activity notices for the admins', () => {
+  for (const type of ['operative_deleted', 'job_manager_removed']) {
+    assert.ok((R112.COMPANY_ACTIVITY_NOTICE_TYPES as readonly string[]).includes(type), type)
+    assert.equal(R112.notificationPreferenceKeyForType(type), 'companyActivity')
+    assert.ok(R112.notificationCatalogRow(type))
+    assert.equal(R112.notificationDeliversDevicePush(type), true)
+  }
+})
+
+test('1.31.0 job edits: rosterListFor folds before it classifies; legacy assignedManagerUserIds; job type stored fields', () => {
+  const roster = [
+    { id: 'live', email: 's@x', firstName: 'Sam', surname: 'S', role: 'manager', manager: true, passwordSet: true, isActive: true },
+    { id: 'stale', email: 'S@x', firstName: 'Sam', surname: 'S', role: 'admin', adminAccess: true, passwordSet: false, isActive: false },
+  ]
+  assert.deepEqual(R112.rosterListFor('managers', roster).map((row) => row.id), ['live'])
+  assert.deepEqual(R112.rosterListFor('admins', roster).map((row) => row.id), [])
+  const job = R112.parseProjectDocument('J', { siteName: 'S', assignedManagerUserIds: ['M1', 'M2'] })!
+  assert.deepEqual(job.managerUserIds, ['M1', 'M2'])
+  assert.deepEqual(R112.jobTypeStoredFields('CAT A', 'projects'), { jobType: 'CAT A', customJobType: null })
+  assert.deepEqual(R112.jobTypeStoredFields('cat b', 'projects'), { jobType: 'CAT B', customJobType: 'CAT B' })
+  assert.deepEqual(R112.jobTypeStoredFields('Fit-out', 'projects'), { jobType: 'CAT A', customJobType: 'Fit-out' })
+  assert.deepEqual(R112.jobTypeStoredFields('Small works', 'smallWorks'), { jobType: 'Small Works', customJobType: null })
+  assert.deepEqual(R112.jobTypeStoredFields('Decarbonization', 'smallWorks'), { jobType: 'Small Works', customJobType: 'Decarbonisation' })
+  assert.equal(R112.jobTypeDisplayName({ jobType: 'CAT A', customJobType: 'Fit-out' }, 'projects'), 'Fit-out')
+  assert.equal(R112.jobTypeDisplayName({}, 'smallWorks'), 'Small Works')
+})
+
+test('1.31.0 userDeleteWrites: an operatives manager runs the account step one write at a time, users document before the members entry', () => {
+  const role = { isSuperAdmin: false, isAdmin: false, isManager: false, isOperativeMode: true }
+  const steps = R112.userDeleteWrites({
+    orgId: 'ORG', user: { id: 'OP', email: 'op@x', role }, actorUserId: 'M', platform: 'web', nowIso: '2026-11-04T10:00:00Z', actorManagesOperatives: true,
+  })
+  assert.deepEqual(steps.map((step) => step.writes.map((write) => write.path)), [
+    ['users/OP/private/taxIds'], ['users/OP/orgMemberships/ORG'], ['organizations/ORG/userEmails/op@x'], ['users/OP'], ['organizations/ORG'],
+  ])
+  const admin = R112.userDeleteWrites({ orgId: 'ORG', user: { id: 'OP', email: 'op@x', role }, actorUserId: 'A', platform: 'web', nowIso: '2026-11-04T10:00:00Z' })
+  assert.equal(admin[0].writes.length, 5)
+})
+
+test('1.31.0 operativesManagerMayDeleteBooking: future bookings of a person with no account only; userDeleteWrites leaves today and the past', () => {
+  const now = '2026-11-04T10:00:00Z'
+  const day = (key: string) => Date.parse(`${key}T00:00:00Z`)
+  assert.equal(R112.operativesManagerMayDeleteBooking({ dateMs: day('2026-11-05'), nowIso: now, timeZone: 'Europe/London', operativeHasAccount: false }), true)
+  assert.equal(R112.operativesManagerMayDeleteBooking({ dateMs: day('2026-11-04'), nowIso: now, timeZone: 'Europe/London', operativeHasAccount: false }), false)
+  assert.equal(R112.operativesManagerMayDeleteBooking({ dateMs: day('2026-11-01'), nowIso: now, timeZone: 'Europe/London', operativeHasAccount: false }), false)
+  assert.equal(R112.operativesManagerMayDeleteBooking({ dateMs: day('2026-11-05'), nowIso: now, timeZone: 'Europe/London', operativeHasAccount: true }), false)
+  const role = { isSuperAdmin: false, isAdmin: false, isManager: false, isOperativeMode: true }
+  const input = {
+    orgId: 'ORG', user: { id: 'OP', email: 'op@x', role }, actorUserId: 'M', platform: 'web' as const, nowIso: now, tz: 'Europe/London',
+    bookings: [
+      { id: 'past', operativeId: 'OP', dateMs: day('2026-11-03') },
+      { id: 'today', operativeId: 'OP', dateMs: day('2026-11-04') },
+      { id: 'future', operativeId: 'OP', dateMs: day('2026-11-06') },
+    ],
+    managerSiteBookings: [{ id: 'site', userId: 'OP', dateMs: day('2026-11-06') }],
+  }
+  const bookingPaths = (steps: ReturnType<typeof R112.userDeleteWrites>) =>
+    steps.filter((step) => step.step === 'bookings').flatMap((step) => step.writes.filter((w) => w.op === 'delete').map((w) => w.path))
+  assert.deepEqual(bookingPaths(R112.userDeleteWrites({ ...input, actorManagesOperatives: true })), ['organizations/ORG/bookings/future'])
+  assert.deepEqual(bookingPaths(R112.userDeleteWrites(input)), [
+    'organizations/ORG/bookings/today', 'organizations/ORG/bookings/future', 'organizations/ORG/managerSiteBookings/site',
+  ])
+})
+
+test('1.31.0 exportedTimesheetHistorySubjects: own sheets (read-only) and inactive people in scope; userTimesheetSubjects unchanged', () => {
+  const role = (over: Record<string, boolean>) => ({ isSuperAdmin: false, isAdmin: false, isManager: false, isOperativeMode: false, ...over })
+  const members = [
+    { id: 'ADMIN', email: 'admin@x', role: role({ isAdmin: true }) },
+    { id: 'admin-old', email: 'ADMIN@x', role: role({ isAdmin: true }) },
+    { id: 'LM', email: 'lm@x', role: role({ isManager: true }) },
+    { id: 'OP', email: 'op@x', role: role({ isOperativeMode: true }), assignedManagerUserIds: ['LM'] },
+    { id: 'GONE', email: 'gone@x', isActive: false, role: role({ isOperativeMode: true }), assignedManagerUserIds: ['LM'] },
+    { id: 'OTHER', email: 'other@x', isActive: false, role: role({ isOperativeMode: true }) },
+  ]
+  const admin = { id: 'ADMIN', role: role({ isAdmin: true }) }
+  assert.deepEqual(R112.userTimesheetSubjects({ viewer: admin, members }).map((row) => row.userId), ['LM', 'OP'])
+  assert.deepEqual(R112.exportedTimesheetHistorySubjects({ viewer: admin, members }), [
+    { userId: 'ADMIN', own: true },
+    { userId: 'admin-old', own: true },
+    { userId: 'LM', own: false },
+    { userId: 'OP', own: false },
+    { userId: 'GONE', own: false },
+    { userId: 'OTHER', own: false },
+  ])
+  const manager = { id: 'LM', role: role({ isManager: true }) }
+  assert.deepEqual(R112.exportedTimesheetHistorySubjects({ viewer: manager, members }).map((row) => row.userId), ['LM', 'OP', 'GONE'])
+  // An operative has no User Timesheets: nothing here (their sheets are on My Timesheets).
+  assert.deepEqual(R112.exportedTimesheetHistorySubjects({ viewer: { id: 'OP', role: role({ isOperativeMode: true }) }, members }), [])
+  // Opening one's own sheet stays non-reviewable.
+  assert.equal(R112.timesheetDocumentSubjectId('timesheet_ABC-123_1761955200'), 'ABC-123')
+  assert.equal(R112.timesheetDocumentSubjectId('timesheet_user_with_underscore_1761955200'), 'user_with_underscore')
+  assert.equal(R112.timesheetDocumentSubjectId('settings'), '')
 })

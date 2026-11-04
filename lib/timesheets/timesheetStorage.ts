@@ -12,6 +12,7 @@ import { parseFirestoreDate as parseSharedFirestoreDate, sanitizeForFirestore } 
 import { changedFirestoreFields } from '@/lib/firebase/changedFields'
 import { firestoreUpdateFields } from '@/lib/firebase/partialWrite'
 import { timesheetChangedFields } from '@/lib/canonical/timesheetEntryReviews'
+import { timesheetDocumentSubjectId } from '@/lib/canonical/timesheetPeriod'
 import { LONDON_TIME_ZONE, unixStartOfDay, dayKey } from '@/lib/ios-parity/londonTime'
 import { weekStartKey } from '@/lib/timesheets/timesheetWeekUtils'
 import { periodStartKey } from '@/lib/timesheets/paymentRunCopy'
@@ -978,8 +979,11 @@ export async function loadExportedTimesheetHistory({
     for (const entry of snap.docs) {
       if (!entry.id.startsWith('timesheet_')) continue
       const data = entry.data() as Record<string, unknown>
-      const userId = typeof data.userId === 'string' ? data.userId : ''
-      const member = byUserId.get(userId)
+      // Rulebook 1.31.0: a sheet stored without `userId` (older builds) is matched by its document id
+      // (`timesheetDocumentSubjectId`), never dropped by this fast path.
+      const userId =
+        (typeof data.userId === 'string' && data.userId.trim()) || timesheetDocumentSubjectId(entry.id)
+      const member = byUserId.get(userId) ?? users.find((row) => row.id.toLowerCase() === userId.toLowerCase())
       const weekStart = parseFirestoreDate(data.weekStart)
       if (!member || !weekStart) continue
       ingestData(member, weekStart, data)

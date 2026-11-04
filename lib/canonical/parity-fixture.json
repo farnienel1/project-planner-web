@@ -22886,6 +22886,196 @@
         ]
       ],
       "expected": null
+    },
+    {
+      "name": "1.31.0 exported timesheet history: a manager's own sheets (read-only) and an inactive report",
+      "function": "exportedTimesheetHistorySubjects",
+      "args": [
+        {
+          "viewer": {
+            "id": "LM",
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": false,
+              "isManager": true,
+              "isOperativeMode": false
+            }
+          },
+          "members": [
+            {
+              "id": "ADMIN",
+              "email": "admin@x",
+              "role": {
+                "isSuperAdmin": false,
+                "isAdmin": true,
+                "isManager": false,
+                "isOperativeMode": false
+              }
+            },
+            {
+              "id": "LM",
+              "email": "lm@x",
+              "role": {
+                "isSuperAdmin": false,
+                "isAdmin": false,
+                "isManager": true,
+                "isOperativeMode": false
+              }
+            },
+            {
+              "id": "OP",
+              "email": "op@x",
+              "role": {
+                "isSuperAdmin": false,
+                "isAdmin": false,
+                "isManager": false,
+                "isOperativeMode": true
+              },
+              "assignedManagerUserIds": [
+                "LM"
+              ]
+            },
+            {
+              "id": "GONE",
+              "email": "gone@x",
+              "isActive": false,
+              "role": {
+                "isSuperAdmin": false,
+                "isAdmin": false,
+                "isManager": false,
+                "isOperativeMode": true
+              },
+              "assignedManagerUserIds": [
+                "LM"
+              ]
+            }
+          ]
+        }
+      ],
+      "expected": [
+        {
+          "userId": "LM",
+          "own": true
+        },
+        {
+          "userId": "OP",
+          "own": false
+        },
+        {
+          "userId": "GONE",
+          "own": false
+        }
+      ]
+    },
+    {
+      "name": "1.31.0 exported timesheet history: an admin sees every timesheet user, own and inactive included",
+      "function": "exportedTimesheetHistorySubjects",
+      "args": [
+        {
+          "viewer": {
+            "id": "ADMIN",
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": true,
+              "isManager": false,
+              "isOperativeMode": false
+            }
+          },
+          "members": [
+            {
+              "id": "ADMIN",
+              "email": "admin@x",
+              "role": {
+                "isSuperAdmin": false,
+                "isAdmin": true,
+                "isManager": false,
+                "isOperativeMode": false
+              }
+            },
+            {
+              "id": "LM",
+              "email": "lm@x",
+              "role": {
+                "isSuperAdmin": false,
+                "isAdmin": false,
+                "isManager": true,
+                "isOperativeMode": false
+              }
+            },
+            {
+              "id": "OP",
+              "email": "op@x",
+              "role": {
+                "isSuperAdmin": false,
+                "isAdmin": false,
+                "isManager": false,
+                "isOperativeMode": true
+              },
+              "assignedManagerUserIds": [
+                "LM"
+              ]
+            },
+            {
+              "id": "GONE",
+              "email": "gone@x",
+              "isActive": false,
+              "role": {
+                "isSuperAdmin": false,
+                "isAdmin": false,
+                "isManager": false,
+                "isOperativeMode": true
+              },
+              "assignedManagerUserIds": [
+                "LM"
+              ]
+            }
+          ]
+        }
+      ],
+      "expected": [
+        {
+          "userId": "ADMIN",
+          "own": true
+        },
+        {
+          "userId": "LM",
+          "own": false
+        },
+        {
+          "userId": "OP",
+          "own": false
+        },
+        {
+          "userId": "GONE",
+          "own": false
+        }
+      ]
+    },
+    {
+      "name": "1.31.0 operatives manager: a future booking of a person with no account may be deleted",
+      "function": "operativesManagerMayDeleteBooking",
+      "args": [
+        {
+          "dateMs": 1793923200000,
+          "nowIso": "2026-11-04T10:00:00Z",
+          "timeZone": "Europe/London",
+          "operativeHasAccount": false
+        }
+      ],
+      "expected": true
+    },
+    {
+      "name": "1.31.0 operatives manager: today's booking is never deleted (cancel only)",
+      "function": "operativesManagerMayDeleteBooking",
+      "args": [
+        {
+          "dateMs": 1793750400000,
+          "nowIso": "2026-11-04T10:00:00Z",
+          "timeZone": "Europe/London",
+          "operativeHasAccount": false
+        }
+      ],
+      "expected": false
     }
   ]
 }
