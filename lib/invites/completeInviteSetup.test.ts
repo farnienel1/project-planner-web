@@ -103,3 +103,13 @@ test('1.31.1 (F5): the account is created with the invitation id and the invitat
   assert.ok(source.indexOf('await batch.commit()', usedAt) > usedAt)
   assert.equal(source.includes("await setDoc(doc(db, 'users', authUid), accountUser)"), false)
 })
+
+test('1.31.1 (S-1): the membership is written in the accept batch, in the inviteMembershipWrites shape', () => {
+  const at = source.indexOf("batch.set(doc(db, 'users', authUid), { ...accountUser, invitationId: params.invitationId })")
+  const membership = source.indexOf("batch.set(doc(db, 'users', authUid, 'orgMemberships', membershipWrite.organizationId), membershipWrite.membership)")
+  const used = source.indexOf("batch.update(doc(db, 'invitations', params.invitationId), invitationUsedWriteFields(now).set)")
+  assert.ok(at > 0 && membership > at && used > membership)
+  assert.match(source, /const membershipWrite = inviteMembershipWrites\(\{ invitation: record\.raw, invitationId: params\.invitationId, authUid, now \}\)/)
+  const later = source.indexOf('await ensurePrimaryOrgMembership(authUid, record.organizationId, plan.role)')
+  assert.ok(source.lastIndexOf('try {', later) > used, 'the fallback membership write never stops the setup')
+})

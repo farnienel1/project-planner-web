@@ -34,6 +34,7 @@ import {
 import { accountTypeChangeWrites } from '../lib/canonical/permissionLevels.ts'
 import { orgMembershipWriteFields } from '../lib/canonical/orgMembership.ts'
 import { writeMetadataFields } from '../lib/canonical/writeMetadata.ts'
+import { inviteMembershipWrites } from '../lib/canonical/inviteAccept.ts'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const rules = readFileSync(path.join(root, 'firestore.rules'), 'utf8')
@@ -4597,14 +4598,16 @@ test('1.31.1 S4: an operatives row\'s account link changes only by an admin or a
 // Before 1.31.1 anyone signed in with the invitee's email (an unverified sign-up is enough) could copy a pending
 // placeholder to their own users document, take the email claim and act at the invited level (probe c3).
 
-async function seedF5Invite(tag: string, level: 'admin' | 'operative') {
+async function seedF5Invite(tag: string, level: 'admin' | 'manager' | 'operative') {
   const placeholderId = `F5-PLACEHOLDER-${tag}`
   const email = `f5-${tag.toLowerCase()}@test.com`
   const invitationId = `f5-invite-${tag.toLowerCase()}`
   const levelFields =
     level === 'admin'
       ? { role: 'admin', adminAccess: true, permissions: { adminAccess: true } }
-      : { role: 'operative', operativeMode: true, adminAccess: false, permissions: { operativeMode: true, adminAccess: false } }
+      : level === 'manager'
+        ? { role: 'manager', manager: true, adminAccess: false, permissions: { manager: true, adminAccess: false } }
+        : { role: 'operative', operativeMode: true, adminAccess: false, permissions: { operativeMode: true, adminAccess: false } }
   await env.withSecurityRulesDisabled(async (ctx) => {
     const db = ctx.firestore()
     await setDoc(doc(db, 'users', placeholderId), {
@@ -4792,3 +4795,34 @@ test('1.31.1 B-1: an operative invitation never copies an admin or manager place
   await assertLogicalDeny(batch('manager'))
   await assertSucceeds(batch('operative'))
 })
+
+for (const level of ['operative', 'manager'] as const) {
+  test(`1.31.1 S-1: a ${level} invitee finishes setup with no refusal (membership in the accept batch)`, async () => {
+    const { placeholderId, email, invitationId, account } = await seedF5Invite(`S1-${level.toUpperCase()}`, level)
+    const authUid = `s1-${level}-auth`
+    const db = authDb(authUid, email)
+    let invitation: Record<string, unknown> = {}
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      invitation = (await getDoc(doc(ctx.firestore(), 'invitations', invitationId))).data() ?? {}
+    })
+    const write = inviteMembershipWrites({ invitation, invitationId, authUid, now: Timestamp.now() })
+    assert.ok(write)
+    const batch = writeBatch(db)
+    batch.set(doc(db, 'users', authUid), { ...account(authUid), invitationId })
+    batch.set(doc(db, 'users', authUid, 'orgMemberships', write.organizationId), write.membership)
+    batch.update(doc(db, 'invitations', invitationId), { isUsed: true, usedAt: Timestamp.now() })
+    await assertSucceedsWithinBudget(batch.commit())
+    await assertSucceedsWithinBudget(getDoc(doc(db, 'users', placeholderId, 'private', 'taxIds')))
+    await assertSucceedsWithinBudget(setDoc(doc(db, 'users', authUid, 'private', 'taxIds'), taxIds(authUid, { utrNumber: '3333333333', vatNumber: '' })))
+    await assertSucceedsWithinBudget(deleteDoc(doc(db, 'users', placeholderId, 'private', 'taxIds')))
+    await assertSucceedsWithinBudget(setDoc(doc(db, 'organizations', ORG_A, 'userEmails', email), { userId: authUid }))
+    await assertSucceedsWithinBudget(deleteDoc(doc(db, 'users', placeholderId)))
+    // ensurePrimaryOrgMembership finds the membership and writes nothing.
+    const mine = await assertSucceeds(getDoc(doc(db, 'users', authUid, 'orgMemberships', ORG_A)))
+    assert.equal(mine.data()?.role, level)
+    await assertSucceeds(getDoc(doc(db, 'users', authUid)))
+    await assertSucceeds(getDoc(doc(db, 'organizations', ORG_A)))
+    // Before 1.31.1 S-1 the app wrote the membership afterwards, which a non-admin may not do.
+    await assertFails(setDoc(doc(db, 'users', authUid, 'orgMemberships', 'org-s1-other'), { role: level, status: 'active' }))
+  })
+}

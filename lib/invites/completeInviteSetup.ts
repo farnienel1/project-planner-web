@@ -285,6 +285,13 @@ export async function completeInvitationPasswordSetup(params: {
     // that only knows the invitee's email cannot take the placeholder.
     const batch = writeBatch(db)
     batch.set(doc(db, 'users', authUid), { ...accountUser, invitationId: params.invitationId })
+    // Rulebook 1.31.1 (fourth review, S-1): the membership is written in the same batch, in the `inviteMembershipWrites`
+    // shape the rules accept from an invitee (`membershipFromInvitation`). Written later, a non-admin invitee's own
+    // membership write was refused after the account existed, and a retry then found the invitation used.
+    const membershipWrite = inviteMembershipWrites({ invitation: record.raw, invitationId: params.invitationId, authUid, now })
+    if (membershipWrite) {
+      batch.set(doc(db, 'users', authUid, 'orgMemberships', membershipWrite.organizationId), membershipWrite.membership)
+    }
     batch.update(doc(db, 'invitations', params.invitationId), invitationUsedWriteFields(now).set)
     await batch.commit()
   }
@@ -349,7 +356,13 @@ export async function completeInvitationPasswordSetup(params: {
     }
   }
 
-  await ensurePrimaryOrgMembership(authUid, record.organizationId, plan.role)
+  // The membership normally came with the account (step 4). An account created before 1.31.1 may lack one; that write
+  // is an admin's for a non-admin, so a refusal here never stops the setup.
+  try {
+    await ensurePrimaryOrgMembership(authUid, record.organizationId, plan.role)
+  } catch (error) {
+    console.warn('Organisation membership not written; the users document still names the organisation', error instanceof Error ? error.message : 'unknown')
+  }
 
   // 7. The invitation was marked used with the account (step 4). A retried Continue whose account already exists marks it
   //    here; the rules allow that only when the account carries this invitation's id (rulebook 1.31.1, F5).
