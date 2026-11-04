@@ -27,6 +27,7 @@
  */
 
 import { normalizeDocumentId } from './scheduleSources'
+import { personIdSet, type PersonRosterRow } from './personIds'
 import { parseTimesheetStatusFields } from './timesheetPeriod'
 import { documentWriteFields, type DocumentWriteFields } from './peopleDocuments'
 
@@ -275,23 +276,44 @@ export function timesheetEntryReviewsAfterWrite(
 
 /**
  * Whether a timesheet write counts as the reviewer's (line manager or admin) — the
- * same test as firestore.rules `isTimesheetReviewer`. Admins always; otherwise
- * someone other than the subject whose own id or former invite id is one of the
- * subject's line managers (`lineManagerIds`).
+ * same test as firestore.rules `isTimesheetReviewer`. Never the subject: a write by the
+ * person whose sheet it is, under any of their ids (their own id, `writerFormerIds`,
+ * `writerAliasIds`, and with `roster` every id `personIdSet` finds), is the owner's — admins
+ * and the Super Admin included (rulebook 1.30.2; before it an admin counted as the reviewer of
+ * their own sheet and could counter-sign it). Otherwise admins always; else someone whose own
+ * id or former invite id is one of the subject's line managers (`lineManagerIds`).
+ * A self-signed owner (`timesheetSelfSigned`) signs through the owner path
+ * (`timesheetOwnerWriteFields` with `subjectHasLineManager: false`).
  */
 export function timesheetWriterIsReviewer(input: {
   writerUserId: string | null | undefined
   subjectUserId: string | null | undefined
   writerIsAdmin?: boolean | null
   writerFormerIds?: readonly string[] | null
+  /** Other users documents on the writer's email (`sameEmailUserIds`). */
+  writerAliasIds?: readonly string[] | null
   subjectLineManagerIds?: readonly string[] | null
+  /** The organisation roster: the writer's ids are `personIdSet(writer, roster)`. */
+  roster?: ReadonlyArray<PersonRosterRow> | null
 }): boolean {
   const writer = text(input.writerUserId).toLowerCase()
   if (!writer) return false
+  const writerIds = personIdSet(
+    {
+      id: text(input.writerUserId),
+      formerUserIds: input.writerFormerIds ?? [],
+      sameEmailUserIds: input.writerAliasIds ?? [],
+    },
+    input.roster ?? []
+  )
+  const keys = new Set([writer, ...writerIds.map((id) => text(id).toLowerCase())].filter(Boolean))
+  if (keys.has(text(input.subjectUserId).toLowerCase())) return false
   if (input.writerIsAdmin === true) return true
-  if (writer === text(input.subjectUserId).toLowerCase()) return false
-  const keys = new Set([writer, ...(input.writerFormerIds ?? []).map((id) => text(id).toLowerCase())].filter(Boolean))
-  return (input.subjectLineManagerIds ?? []).some((id) => keys.has(text(id).toLowerCase()))
+  // Line managers: the writer's own id or a former invite id (as the rules read `formerUserIds`).
+  const managerKeys = new Set(
+    [writer, ...(input.writerFormerIds ?? []).map((id) => text(id).toLowerCase())].filter(Boolean)
+  )
+  return (input.subjectLineManagerIds ?? []).some((id) => managerKeys.has(text(id).toLowerCase()))
 }
 
 /**

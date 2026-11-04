@@ -933,7 +933,7 @@ export {
   accountTypeSyncState,
 } from './permissionLevels'
 export type { AccountTypeChangeWrite } from './permissionLevels'
-export { organizationLevelFor, rosterMembersForOrganization } from './orgRoster'
+export { organizationLevelFor, organizationSelfManageFlags, rosterMembersForOrganization } from './orgRoster'
 export type { OrgRosterLevel } from './orgRoster'
 // Rulebook 1.12.0: security hardening helpers, forced app update, leave year, pay guards.
 export { isVerifiedPlatformOwner } from './passwordPolicy'

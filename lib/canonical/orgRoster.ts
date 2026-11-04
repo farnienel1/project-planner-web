@@ -16,6 +16,7 @@
 import { parseOrgMembershipDocument } from './orgMembership'
 import { permissionLevelOf, storedPermissionFlag, type PermissionLevel } from './permissionLevels'
 import { rosterPeople, type RosterDocument } from './scheduleSources'
+import { selfManageToggles } from './leaveRequests'
 
 export type OrgRosterLevel = {
   level: PermissionLevel
@@ -31,6 +32,17 @@ function text(value: unknown): string {
 function orgIdOf(value: unknown): string {
   const raw = text(value)
   return raw.includes('/') ? raw.split('/').filter(Boolean).pop() ?? '' : raw
+}
+
+function flagValue(value: unknown): boolean {
+  return value === true || value === 1
+}
+
+/** A users-document flag on at the top level or inside `permissions` (firestore.rules `staffFlag`). */
+function eitherFlag(user: Record<string, unknown> | null, key: string): boolean {
+  if (!user) return false
+  const permissions = user.permissions && typeof user.permissions === 'object' ? (user.permissions as Record<string, unknown>) : {}
+  return flagValue(user[key]) || flagValue(permissions[key])
 }
 
 function levelFromRole(role: unknown): PermissionLevel | null {
@@ -72,6 +84,86 @@ export function organizationLevelFor(input: {
     }
   }
   return { level: levelFromRole(input.membersRole) ?? 'operative', isSuperAdmin: false, source: 'members' }
+}
+
+/**
+ * Where a person's self-manage toggles for organisation `organizationId` are read (rulebook §8, §9, §16; 1.30.2) —
+ * the same source as `organizationLevelFor` and the security rules (`orgSelfManageData`):
+ *   - the organisation's creator: its Super Admin, both toggles on;
+ *   - their users document when its `organizationId` is this organisation (`isSuperAdmin` there is the Super Admin);
+ *   - otherwise their membership here (`users/{uid}/orgMemberships/{orgId}`, `parseOrgMembershipDocument`: role, then
+ *     its flags). A membership never makes anyone the Super Admin (`isOrganizationSuperAdmin`);
+ *   - otherwise nothing: both off.
+ * Never the users document of another company (before 1.30.2 the rules read it: an admin whose toggles were on only
+ * in their membership here was refused approved leave, and a manager with the flag on at home was allowed it here).
+ * `annualLeaveSelfBook` / `timesheetSelfSign` are in effect as `selfManageToggles` reads them (operative mode, admin
+ * level, Super Admin); `active` is that source's active flag. Pure.
+ */
+export function organizationSelfManageFlags(input: {
+  organizationId: string
+  userId: string
+  user?: Record<string, unknown> | null
+  membership?: Record<string, unknown> | null
+  creatorUserId?: string | null
+}): {
+  source: 'creator' | 'users' | 'membership' | 'none'
+  superAdmin: boolean
+  admin: boolean
+  active: boolean
+  annualLeaveSelfBook: boolean
+  timesheetSelfSign: boolean
+} {
+  const org = text(input?.organizationId).toLowerCase()
+  const id = text(input?.userId)
+  const user = input?.user && typeof input.user === 'object' ? input.user : null
+  const none = { source: 'none' as const, superAdmin: false, admin: false, active: true, annualLeaveSelfBook: false, timesheetSelfSign: false }
+  if (!org || !id) return none
+  const creator = text(input?.creatorUserId) !== '' && text(input?.creatorUserId) === id
+  const home = Boolean(user && orgIdOf(user.organizationId).toLowerCase() === org)
+  if (creator || home) {
+    const level = home ? permissionLevelOf(user) : 'admin'
+    const superAdmin = creator || eitherFlag(user, 'isSuperAdmin')
+    const toggles = selfManageToggles({
+      id,
+      role: level,
+      adminAccess: level === 'admin',
+      operativeMode: level === 'operative',
+      // Top level or `permissions`, as the rules' `staffFlag` reads a users document.
+      annualLeaveSelfBook: eitherFlag(user, 'annualLeaveSelfBook'),
+      timesheetSelfSign: eitherFlag(user, 'timesheetSelfSign'),
+      organizationSuperAdmin: superAdmin,
+    } as Parameters<typeof selfManageToggles>[0])
+    return {
+      source: creator ? 'creator' : 'users',
+      superAdmin,
+      admin: level === 'admin',
+      active: creator ? true : user?.isActive !== false,
+      annualLeaveSelfBook: toggles.annualLeaveSelfBook,
+      timesheetSelfSign: toggles.timesheetSelfSign,
+    }
+  }
+  const parsed = input?.membership && typeof input.membership === 'object'
+    ? parseOrgMembershipDocument(input.organizationId, input.membership)
+    : null
+  if (!parsed) return none
+  const level = organizationLevelFor({ organizationId: org, userId: id, membership: input.membership }).level
+  const toggles = selfManageToggles({
+    id,
+    role: level,
+    adminAccess: level === 'admin',
+    operativeMode: level === 'operative',
+    annualLeaveSelfBook: parsed.permissions.annualLeaveSelfBook,
+    timesheetSelfSign: parsed.permissions.timesheetSelfSign,
+    organizationSuperAdmin: false,
+  } as Parameters<typeof selfManageToggles>[0])
+  return {
+    source: 'membership',
+    superAdmin: false,
+    admin: level === 'admin',
+    active: parsed.accountActive,
+    annualLeaveSelfBook: toggles.annualLeaveSelfBook,
+    timesheetSelfSign: toggles.timesheetSelfSign,
+  }
 }
 
 /**

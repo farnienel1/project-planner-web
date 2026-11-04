@@ -292,6 +292,8 @@ test('managers with the operatives flag still need assigned reports for Operativ
   assert.equal(canAccessOperativeTimesheets(manager, false, []), false)
   const report = user({
     id: 'op1',
+    // Rulebook 1.30.2: a roster row on the viewer's own email is the viewer (never their own reviewer).
+    email: 'op1@b.com',
     permissions: { operativeMode: true },
     assignedManagerUserIds: ['mgr'],
   })
