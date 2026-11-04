@@ -4491,3 +4491,22 @@ test('1.31.1 S1: re-creating your own profile never sets your own pay, line mana
   await assertSucceedsWithinBudget(setDoc(doc(db, 'users', uid), { ...base, role: 'operative', operativeMode: true }))
 })
 
+test('1.31.1 S3: an operatives manager creates no alias ids, no "No line manager" and takes no one else\'s email claim', async () => {
+  await seed1311People()
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'organizations', ORG_A, 'userEmails', 'admin-1311@test.com'), { userId: ADMIN_1311 })
+  })
+  const mgr = authDb(OPS_MGR_1311, 'ops-mgr-1311@test.com')
+  const base = { organizationId: ORG_A, role: 'operative', operativeMode: true, firstName: 'N', surname: 'Op' }
+  await assertLogicalDeny(setDoc(doc(mgr, 'users', 's3-a'), { ...base, email: 's3-a@test.com', formerUserIds: [ADMIN_1311] }))
+  await assertLogicalDeny(setDoc(doc(mgr, 'users', 's3-b'), { ...base, email: 's3-b@test.com', sameEmailUserIds: [ADMIN_1311] }))
+  await assertLogicalDeny(setDoc(doc(mgr, 'users', 's3-c'), { ...base, email: 's3-c@test.com', hasNoLineManager: true }))
+  await assertLogicalDeny(setDoc(doc(mgr, 'users', 's3-d'), { ...base, email: 'admin-1311@test.com' }))
+  await assertLogicalDeny(setDoc(doc(mgr, 'organizations', ORG_A, 'userEmails', 'admin-1311@test.com'), { userId: OP_1311 }))
+  // Their own new operative and its claim, in one batch, still work.
+  const batch = writeBatch(mgr)
+  batch.set(doc(mgr, 'users', 's3-e'), { ...base, email: 's3-e@test.com' })
+  batch.set(doc(mgr, 'organizations', ORG_A, 'userEmails', 's3-e@test.com'), { userId: 's3-e' })
+  await assertSucceedsWithinBudget(batch.commit())
+})
+

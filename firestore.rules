@@ -487,7 +487,32 @@ service cloud.firestore {
              ('operativeMode' in request.resource.data && truthyBool(request.resource.data.operativeMode)) ||
              ('role' in request.resource.data && request.resource.data.role == 'operative')
            ) &&
-           noPrivilegeFlags(request.resource.data)) : false;
+           noPrivilegeFlags(request.resource.data) &&
+           !request.resource.data.keys().hasAny(['formerUserIds', 'sameEmailUserIds']) &&
+           request.resource.data.get('hasNoLineManager', false) != true &&
+           opsManagerEmailFree(request.resource.data.organizationId, request.resource.data.get('email', null))) : false;
+  }
+  function opsManagerEmailFree(org, email) {
+    return (!(email is string) || email.trim() == '') ? true : opsManagerClaimFree(org, email.trim().lower());
+  }
+  function opsManagerClaimFree(org, key) {
+    return key.matches('.*/.*') ? false : (
+      !exists(/databases/(default)/documents/organizations/$(org)/userEmails/$(key)) ? true :
+        opsManagerMayHoldClaim(get(/databases/(default)/documents/organizations/$(org)/userEmails/$(key)).data.get('userId', ''))
+    );
+  }
+  function opsManagerMayHoldClaim(uid) {
+    return (!(uid is string) || uid == '') ? true : (
+      uid.matches('.*/.*') ? false : (
+        !exists(/databases/(default)/documents/users/$(uid)) ? true :
+          managerMayManageOperative(uid, get(/databases/(default)/documents/users/$(uid)).data)
+      )
+    );
+  }
+  function opsManagerClaimTarget(uid) {
+    return (uid is string && uid != '' && !uid.matches('.*/.*') &&
+            existsAfter(/databases/(default)/documents/users/$(uid))) ?
+      managerMayManageOperative(uid, getAfter(/databases/(default)/documents/users/$(uid)).data) : false;
   }
 
   function isPlatformOwner() {
@@ -1081,7 +1106,10 @@ service cloud.firestore {
           isPlatformOwner() ||
           isAdminOfCompany(organizationId) ||
           isOwnEmailClaimWrite(organizationId, emailKey) ||
-          (isManagerWithOperativesAccess() && userOrgIdMatchesPath(organizationId))
+          ((isManagerWithOperativesAccess() && userOrgIdMatchesPath(organizationId)) ? (
+            opsManagerClaimTarget(request.resource.data.get('userId', '')) &&
+            (resource == null || opsManagerMayHoldClaim(resource.data.get('userId', '')))
+          ) : false)
         );
         allow delete: if request.auth != null && (
           isPlatformOwner() || isAdminOfCompany(organizationId) ||
