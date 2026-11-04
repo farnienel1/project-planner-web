@@ -5259,7 +5259,9 @@ test('timesheet owner save drops the reviewer-only parts', () => {
   assert.equal(timesheetWriterIsReviewer({ writerUserId: 'lm', subjectUserId: 'op', subjectLineManagerIds: ['LM'] }), true)
   assert.equal(timesheetWriterIsReviewer({ writerUserId: 'new', writerFormerIds: ['old'], subjectUserId: 'op', subjectLineManagerIds: ['old'] }), true)
   assert.equal(timesheetWriterIsReviewer({ writerUserId: 'other', subjectUserId: 'op', subjectLineManagerIds: ['lm'] }), false)
-  assert.equal(timesheetWriterIsReviewer({ writerUserId: 'admin', subjectUserId: 'admin', writerIsAdmin: true }), true)
+  // 1.30.2: an admin is never the reviewer of their own sheet, under any of their ids.
+  assert.equal(timesheetWriterIsReviewer({ writerUserId: 'admin', subjectUserId: 'admin', writerIsAdmin: true }), false)
+  assert.equal(timesheetWriterIsReviewer({ writerUserId: 'admin', subjectUserId: 'other', writerIsAdmin: true }), true)
 })
 
 test('pay access: a person never changes their own pay; admins and operatives managers do', () => {
@@ -12522,4 +12524,85 @@ test('1.30.1 timesheetInvoiceRows carries each row\'s job number', () => {
   assert.equal(r1301.priceWorkJobNumberText(rows[2].jobNumber), '—')
   const signed = r1301.timesheetInvoiceRows({ sheet: { weeklyReportOverride: { lines: [], priceWork: [{ id: 'P1', title: 'Tiling', jobNumber: 'J-3', amount: 100, decision: 'approved' }], expenses: [] } }, payrollLines: [], extrasMode: 'decided' } as never)
   assert.deepEqual(signed.map((row) => row.jobNumber), ['J-3'])
+})
+
+test('1.30.2 nobody reviews their own timesheet under any of their ids; userTimesheetSubjects leaves the viewer out', () => {
+  const R = R112 as unknown as typeof import('./index')
+  // Admins and the Super Admin are never the reviewer of their own sheet.
+  assert.equal(R.timesheetWriterIsReviewer({ writerUserId: 'ADM', subjectUserId: 'adm', writerIsAdmin: true }), false)
+  // A former invite id or a same-email id is the same person.
+  assert.equal(R.timesheetWriterIsReviewer({ writerUserId: 'adm', writerFormerIds: ['old-adm'], subjectUserId: 'OLD-ADM', writerIsAdmin: true }), false)
+  assert.equal(R.timesheetWriterIsReviewer({ writerUserId: 'adm', writerAliasIds: ['adm-2'], subjectUserId: 'adm-2', writerIsAdmin: true }), false)
+  const roster = [
+    { id: 'adm', email: 'a@x.com' },
+    { id: 'adm-dup', email: 'A@x.com' },
+    { id: 'op', email: 'op@x.com' },
+  ]
+  assert.equal(R.timesheetWriterIsReviewer({ writerUserId: 'adm', subjectUserId: 'adm-dup', writerIsAdmin: true, roster }), false)
+  assert.equal(R.timesheetWriterIsReviewer({ writerUserId: 'adm', subjectUserId: 'op', writerIsAdmin: true, roster }), true)
+  // A line manager is never their own reviewer even when listed as their own line manager.
+  assert.equal(R.timesheetWriterIsReviewer({ writerUserId: 'lm', subjectUserId: 'lm', subjectLineManagerIds: ['lm'] }), false)
+
+  const adminRole = { isAdmin: true, isSuperAdmin: false, isManager: true, isOperativeMode: false }
+  const opRole = { isAdmin: false, isSuperAdmin: false, isManager: false, isOperativeMode: true }
+  const members = [
+    { id: 'adm', email: 'a@x.com', role: adminRole },
+    { id: 'adm-dup', email: 'a@x.com', role: adminRole },
+    { id: 'other-adm', email: 'b@x.com', role: adminRole },
+    { id: 'op', email: 'op@x.com', role: opRole, assignedManagerUserIds: ['adm'] },
+  ]
+  assert.deepEqual(
+    R.userTimesheetSubjects({ viewer: { id: 'ADM', role: adminRole as never }, members: members as never }).map((row) => row.userId),
+    ['other-adm', 'op']
+  )
+  // A manager who lists themself as their own line manager does not see their own sheet.
+  const mgrRole = { isAdmin: false, isSuperAdmin: false, isManager: true, isOperativeMode: false }
+  assert.deepEqual(
+    R.userTimesheetSubjects({
+      viewer: { id: 'mgr', role: mgrRole as never },
+      members: [
+        { id: 'mgr', email: 'm@x.com', role: mgrRole, assignedManagerUserIds: ['mgr'] },
+        { id: 'op', email: 'op@x.com', role: opRole, assignedManagerUserIds: ['mgr'] },
+      ] as never,
+    }).map((row) => row.userId),
+    ['op']
+  )
+})
+
+test('1.30.2 organizationSelfManageFlags reads the toggles for this organisation only', () => {
+  const R = R112 as unknown as typeof import('./index')
+  const home = { organizationId: 'org-a', role: 'admin', adminAccess: true, permissions: { annualLeaveSelfBook: true, timesheetSelfSign: true } }
+  // Their users document of this organisation.
+  assert.deepEqual(
+    R.organizationSelfManageFlags({ organizationId: 'ORG-A', userId: 'u', user: home }),
+    { source: 'users', superAdmin: false, admin: true, active: true, annualLeaveSelfBook: true, timesheetSelfSign: true }
+  )
+  // In org B the home document never counts: the membership there decides.
+  assert.deepEqual(
+    R.organizationSelfManageFlags({ organizationId: 'org-b', userId: 'u', user: home }),
+    { source: 'none', superAdmin: false, admin: false, active: true, annualLeaveSelfBook: false, timesheetSelfSign: false }
+  )
+  const managerHere = { role: 'manager', permissions: { manager: true, annualLeaveSelfBook: false, timesheetSelfSign: true } }
+  const b = R.organizationSelfManageFlags({ organizationId: 'org-b', userId: 'u', user: home, membership: managerHere })
+  assert.equal(b.source, 'membership')
+  assert.equal(b.annualLeaveSelfBook, false)
+  // Timesheet self-sign is admins only.
+  assert.equal(b.timesheetSelfSign, false)
+  // A visiting admin with the toggles on only in the membership here.
+  const opAtHome = { organizationId: 'org-a', role: 'operative', operativeMode: true, permissions: { operativeMode: true } }
+  const adminHere = { role: 'admin', isSuperAdmin: true, permissions: { adminAccess: true, annualLeaveSelfBook: true, timesheetSelfSign: true } }
+  const v = R.organizationSelfManageFlags({ organizationId: 'org-b', userId: 'u', user: opAtHome, membership: adminHere })
+  assert.deepEqual([v.source, v.admin, v.superAdmin, v.annualLeaveSelfBook, v.timesheetSelfSign], ['membership', true, false, true, true])
+  // Nested permissions win over a flat legacy copy (parseOrgMembershipDocument).
+  const flatOn = { role: 'admin', annualLeaveSelfBook: true, permissions: { annualLeaveSelfBook: false } }
+  assert.equal(R.organizationSelfManageFlags({ organizationId: 'org-b', userId: 'u', membership: flatOn }).annualLeaveSelfBook, false)
+  // The creator is the Super Admin: both on, whatever is stored.
+  const c = R.organizationSelfManageFlags({ organizationId: 'org-b', userId: 'u', user: opAtHome, creatorUserId: 'u' })
+  assert.deepEqual([c.source, c.superAdmin, c.annualLeaveSelfBook, c.timesheetSelfSign], ['creator', true, true, true])
+  // A super admin users document of this organisation reads both on.
+  const sa = R.organizationSelfManageFlags({ organizationId: 'org-a', userId: 'u', user: { organizationId: 'org-a', isSuperAdmin: true } })
+  assert.deepEqual([sa.superAdmin, sa.annualLeaveSelfBook, sa.timesheetSelfSign], [true, true, true])
+  // An operative-mode membership never self-books.
+  const opHere = { role: 'member', permissions: { operativeMode: true, annualLeaveSelfBook: true } }
+  assert.equal(R.organizationSelfManageFlags({ organizationId: 'org-b', userId: 'u', membership: opHere }).annualLeaveSelfBook, false)
 })
