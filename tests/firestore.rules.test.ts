@@ -4510,3 +4510,18 @@ test('1.31.1 S3: an operatives manager creates no alias ids, no "No line manager
   await assertSucceedsWithinBudget(batch.commit())
 })
 
+test('1.31.1 S4: an operatives row\'s account link changes only by an admin or an operatives manager (to an operative)', async () => {
+  await seed1311People()
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    await setDoc(doc(db, 'organizations', ORG_A, 'operatives', 'row-s4'), { firstName: 'Otto', surname: 'Two', email: 'op2-1311@test.com', userId: OP2_1311 })
+    await setDoc(doc(db, 'organizations', ORG_A, 'managers', 'mrow-s4'), { firstName: 'M', surname: 'Plain', email: 'mgr-plain-1311@test.com', userId: MGR_1311 })
+  })
+  const op = authDb(OP_1311, 'op-1311@test.com')
+  await assertLogicalDeny(updateDoc(doc(op, 'organizations', ORG_A, 'operatives', 'row-s4'), { userId: OP_1311 }))
+  await assertLogicalDeny(updateDoc(doc(op, 'organizations', ORG_A, 'managers', 'mrow-s4'), { userId: OP_1311 }))
+  const mgr = authDb(OPS_MGR_1311, 'ops-mgr-1311@test.com')
+  await assertLogicalDeny(updateDoc(doc(mgr, 'organizations', ORG_A, 'operatives', 'row-s4'), { userId: ADMIN_1311 }))
+  await assertSucceedsWithinBudget(updateDoc(doc(mgr, 'organizations', ORG_A, 'operatives', 'row-s4'), { userId: OP_1311 }))
+  await assertSucceedsWithinBudget(updateDoc(doc(authDb(ADMIN_A, 'admin-a@test.com'), 'organizations', ORG_A, 'managers', 'mrow-s4'), { userId: OPS_MGR_1311 }))
+})

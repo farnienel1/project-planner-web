@@ -1322,18 +1322,30 @@ service cloud.firestore {
       function rosterRowAdmin() {
         return isOrgAdminViaMembersMap(organizationId) || isPlatformOwner() || isOrganizationAdmin(organizationId);
       }
+      function rosterRowLinkChanged() {
+        return resource == null
+          ? request.resource.data.keys().hasAny(['userId', 'linkedUserId', 'uid'])
+          : request.resource.data.diff(resource.data).affectedKeys().hasAny(['userId', 'linkedUserId', 'uid']);
+      }
+      function rosterRowLinksManageable() {
+        return opsManagerMayHoldClaim(request.resource.data.get('userId', '')) &&
+          opsManagerMayHoldClaim(request.resource.data.get('linkedUserId', '')) &&
+          opsManagerMayHoldClaim(request.resource.data.get('uid', ''));
+      }
       function operativesManagerForOtherRow() {
         return isManagerWithOperativesAccess() && userOrgIdMatchesPath(organizationId) && !operativeRowIsCaller();
       }
 
       match /operatives/{operativeId} {
         allow read: if canAccessOrganization(organizationId);
-        allow create, update: if canAccessOrganization(organizationId) &&
+        allow create, update: if (rosterRowLinkChanged()
+            ? ((operativesManagerForOtherRow() && rosterRowLinksManageable()) ? true : rosterRowAdmin()) : true) ? (
+          canAccessOrganization(organizationId) &&
           (resource != null || isOrgManagerOrAdmin(organizationId) || isPlatformOwner()) &&
           (!rosterRowPayKeysChanged() || rosterRowAdmin() || operativesManagerForOtherRow()) &&
           (!rosterRowEmailChanged() || rosterRowAdmin() || operativesManagerForOtherRow()) &&
           payStaysPrivate(organizationId) &&
-          writeMetadataValidWhenPresent();
+          writeMetadataValidWhenPresent()) : false;
         allow delete: if isOrganizationAdmin(organizationId) || (
           isManagerWithOperativesAccess() && userOrgIdMatchesPath(organizationId) &&
           !(request.auth.token.email is string &&
@@ -1890,12 +1902,13 @@ service cloud.firestore {
 
       match /managers/{managerId} {
         allow read: if canAccessOrganization(organizationId);
-        allow create, update: if canAccessOrganization(organizationId) &&
+        allow create, update: if (rosterRowLinkChanged() ? rosterRowAdmin() : true) ? (
+          canAccessOrganization(organizationId) &&
           (resource != null || isOrgManagerOrAdmin(organizationId) || isPlatformOwner()) &&
           (!rosterRowPayKeysChanged() || rosterRowAdmin()) &&
           (!rosterRowEmailChanged() || rosterRowAdmin()) &&
           payStaysPrivate(organizationId) &&
-          writeMetadataValidWhenPresent();
+          writeMetadataValidWhenPresent()) : false;
         allow delete: if isOrganizationAdmin(organizationId);
       }
 
