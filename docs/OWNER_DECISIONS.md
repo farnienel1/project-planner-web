@@ -125,11 +125,14 @@ How to use it:
 | 4 Nov | The design upgrade PR also fixes the PAYE break bug from Scheduling, shows Delete on labour bookings to admins only, and fixes the hours display. | open (iOS #186) |
 | 4 Nov | 1.32: the overtime rate on managers' own site bookings is shown consistently on Scheduling, Daily Overview and My Schedule. | open (1.32) |
 
+| 4 Nov | **Materials catalogue** (add, edit, delete catalogue items and prices) is **admins only** on both apps, through one rulebook rule. iOS `canManageMaterialCatalogue` currently has its own role check (found in the #188 sweep). Sending material orders is unchanged. | open (next rulebook release) |
+| 4 Nov | Very old timesheets with sign-off dates but no signer name or signature image read **Sign Off Pending** (rulebook `isTimesheetFullySigned`), on both apps. No rulebook exception: new organisations only use the new rules. | done (iOS #188, web already) |
 ## Known rulebook bugs (fix in the next rulebook release)
 
 | Date | Bug | Status |
 |---|---|---|
 | 4 Nov | **SECURITY (live 1.30.2):** a manager with the Operatives toggle can make an operative an admin through `permissions.adminAccess` (or `manager`, `operatives`, `isSuperAdmin`, `annualLeaveSelfBook`, `timesheetSelfSign`), and can create a user with `permissions.adminAccess: true`. Owner: fix before launch; no interim toggle change. | fixing (#264 1.31.1, then third review, then owner deploy) |
+| 4 Nov | **F5 (unverified email edits a pending invite)** is closed in the **next rules release**, not in #264: first the apps stop touching pending placeholders in the same-email profile sync (or verify emails), then the rules require `email_verified` on the email self path. Accepted pre-launch risk until then. | open (next rules release) |
 | 4 Nov | A manager or operative can still switch off their own Annual Leave Management (rulebook: nobody changes their own toggles). Owner: close in the next rule release, after iOS sends changed-fields-only profile saves. | open |
 | 4 Nov | 93 rules tests still get their refusal from the 1,000-expression limit rather than logic; apply the 1.31.1 ternary restructure to the rest of firestore.rules. | open (next rule release) |
 | 4 Nov | Web `setUserActive` merge-sets the membership `{accountActive}`, creating a bare membership; and `userActiveWrites` writes `users/{uid}.isActive` even when that document's `organizationId` is another company. | open (next rule release; iOS fixed the first in #187) |
