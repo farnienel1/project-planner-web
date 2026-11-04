@@ -349,7 +349,10 @@ export function EditUserProfile({
         setQualificationTemplates(mergeQualificationTemplates(existing, assigned))
       })
       .catch(() => undefined)
-    getUser(userId)
+    // Rulebook 1.26.1 §8 (`payEditorStartingValues`): the form, `savedUser` (the save diff) and the original rate /
+    // basis / employment type (the rate-history "previous" row) all start from the same copy — the pay profile laid
+    // over the users document while `privatePay` is on, the users document as stored while it is off.
+    getUser(userId, { payEditor: true })
       .then((row) => {
         if (generation !== profileLoadGen.current) return
         setTarget(row)
@@ -811,7 +814,7 @@ export function EditUserProfile({
       await transferSuperAdmin(organization.id, currentUser.id, nextUserId, users)
       await reloadSignedInProfile()
       await loadUsers(organization.id, { force: true })
-      const refreshed = await getUser(target.id)
+      const refreshed = await getUser(target.id, { payEditor: true })
       if (refreshed) {
         setTarget(refreshed)
         savedUser.current = refreshed

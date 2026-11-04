@@ -11350,3 +11350,84 @@ test('1.26.0 sharedDocumentPayWrite: pay stays on shared documents only while pr
   assert.deepEqual(r126SharedPayWrite(write, { privatePay: true }), { firstName: 'Pat' })
   assert.deepEqual(r126SharedPayWrite({ dayRate: 1 }, { privatePay: true }), {})
 })
+
+// MARK: - Rulebook 1.26.1 pay editor starting values
+
+import {
+  payEditorStartingValues as r1261PayEditorStart,
+  payRateChangeWrites as r1261PayRateChangeWrites,
+  payProfileWriteFieldsFromProfileWrite as r1261PayProfileWrite,
+  userProfileWriteFields as r1261UserProfileWrite,
+} from './index'
+
+test('1.26.1 payEditorStartingValues: privatePay off — the person as stored (same object), exactly as before', () => {
+  const users = { firstName: 'Pat', dayRate: 120, payBasis: 'day', employmentType: 'self_employed' }
+  const stale = { subjectId: 'u1', fields: { dayRate: 150, payBasis: 'day', employmentType: 'paye' } }
+  for (const options of [{ privatePay: false }, {}, null, undefined]) {
+    const start = r1261PayEditorStart(users, stale, options)
+    assert.equal(start.record, users)
+    assert.equal(start.source, 'users')
+    assert.equal(start.rate, 120)
+    assert.equal(start.employmentType, 'self_employed')
+  }
+  assert.deepEqual(users, { firstName: 'Pat', dayRate: 120, payBasis: 'day', employmentType: 'self_employed' })
+  // No pay and no basis: "rate not set" (readStoredRates), as the editors read it today.
+  assert.deepEqual(r1261PayEditorStart({ firstName: 'Pat' }, null, { privatePay: false }).pay, {
+    payBasis: null,
+    dayRate: null,
+    hourlyRate: null,
+  })
+})
+
+test('1.26.1 payEditorStartingValues: privatePay on — a stale users rate gives the editor the profile rate, and the save diff and history row start from it', () => {
+  const users = { firstName: 'Pat', dayRate: 120, payBasis: 'day', employmentType: 'self_employed' }
+  const profile = { subjectId: 'u1', fields: { dayRate: 150, payBasis: 'day' } }
+  const start = r1261PayEditorStart(users, profile, { privatePay: true })
+  assert.equal(start.source, 'payProfile')
+  assert.equal(start.rate, 150)
+  assert.deepEqual(start.record, { ...users, dayRate: 150 })
+  assert.deepEqual(users.dayRate, 120, 'the stored document is not changed')
+
+  // Saving the rate shown (unchanged) writes no pay and no history row. From the stale users copy it would have.
+  const kept = { ...start.record, firstName: 'Patrick' }
+  assert.deepEqual(r1261UserProfileWrite(start.record, kept).set, { firstName: 'Patrick' })
+  assert.equal(r1261PayProfileWrite('u1', r1261UserProfileWrite(start.record, kept).set), null)
+  assert.ok('dayRate' in r1261UserProfileWrite(users, kept).set, 'the old baseline saw a rate change')
+  const unchanged = r1261PayRateChangeWrites({
+    userId: 'u1',
+    previousProfile: { rate: start.rate, payBasis: start.pay.payBasis },
+    nextProfile: { rate: 150, payBasis: 'day' },
+    history: [],
+    effectiveDayKey: '2026-11-04',
+    seedEffective: '2026-01-05',
+    timeZone: 'Europe/London',
+  })
+  assert.deepEqual(unchanged, { ok: true, rows: [] })
+
+  // A real change: the diff and the pay-profile write carry the new rate; the seed row is the rate in force (150).
+  const edited = { ...start.record, dayRate: 180 }
+  const diff = r1261UserProfileWrite(start.record, edited).set
+  assert.equal(diff.dayRate, 180)
+  assert.deepEqual(r1261PayProfileWrite('u1', diff), { userId: 'u1', ...diff })
+  const change = r1261PayRateChangeWrites({
+    userId: 'u1',
+    previousProfile: { rate: start.rate, payBasis: start.pay.payBasis },
+    nextProfile: { rate: 180, payBasis: 'day' },
+    history: [],
+    effectiveDayKey: '2026-11-04',
+    seedEffective: '2026-01-05',
+    timeZone: 'Europe/London',
+  })
+  assert.ok(change.ok)
+  assert.deepEqual(
+    change.ok ? change.rows.map((row) => row.dayRate) : [],
+    [150, 180],
+    'seed of the profile rate (never the stale 120), then the new rate'
+  )
+
+  // No readable profile: the users document; a profile that cleared the rate wins (rate not set).
+  assert.equal(r1261PayEditorStart(users, null, { privatePay: true }).record, users)
+  const cleared = r1261PayEditorStart(users, { subjectId: 'u1', fields: { dayRate: null, payBasis: null } }, { privatePay: true })
+  assert.equal(cleared.rate, null)
+  assert.equal(cleared.source, 'payProfile')
+})

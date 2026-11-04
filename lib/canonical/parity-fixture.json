@@ -18440,6 +18440,188 @@
         "uploaderUserId": "op-a",
         "uploadedAtMs": 1762000000000
       }
+    },
+    {
+      "name": "1.26.1 payEditorStartingValues: privatePay off — the users document as stored, a stale pay profile ignored",
+      "function": "payEditorStartingValues",
+      "args": [
+        {
+          "firstName": "Pat",
+          "dayRate": 120,
+          "payBasis": "day",
+          "employmentType": "self_employed"
+        },
+        {
+          "subjectId": "u1",
+          "fields": {
+            "dayRate": 150,
+            "payBasis": "day"
+          }
+        },
+        {
+          "privatePay": false
+        }
+      ],
+      "expected": {
+        "record": {
+          "firstName": "Pat",
+          "dayRate": 120,
+          "payBasis": "day",
+          "employmentType": "self_employed"
+        },
+        "pay": {
+          "payBasis": "day",
+          "dayRate": 120,
+          "hourlyRate": null
+        },
+        "rate": 120,
+        "employmentType": "self_employed",
+        "source": "users"
+      }
+    },
+    {
+      "name": "1.26.1 payEditorStartingValues: privatePay on — the pay profile laid over a stale users rate",
+      "function": "payEditorStartingValues",
+      "args": [
+        {
+          "firstName": "Pat",
+          "dayRate": 120,
+          "payBasis": "day",
+          "employmentType": "self_employed"
+        },
+        {
+          "subjectId": "u1",
+          "fields": {
+            "dayRate": 150,
+            "payBasis": "day"
+          }
+        },
+        {
+          "privatePay": true
+        }
+      ],
+      "expected": {
+        "record": {
+          "firstName": "Pat",
+          "dayRate": 150,
+          "payBasis": "day",
+          "employmentType": "self_employed"
+        },
+        "pay": {
+          "payBasis": "day",
+          "dayRate": 150,
+          "hourlyRate": null
+        },
+        "rate": 150,
+        "employmentType": "self_employed",
+        "source": "payProfile"
+      }
+    },
+    {
+      "name": "1.26.1 payEditorStartingValues: privatePay on after the strip — hourly profile, PAYE, no pay on users",
+      "function": "payEditorStartingValues",
+      "args": [
+        {
+          "firstName": "Pat"
+        },
+        {
+          "subjectId": "u1",
+          "fields": {
+            "hourlyRate": 30,
+            "payBasis": "hourly",
+            "employmentType": "paye"
+          }
+        },
+        {
+          "privatePay": true
+        }
+      ],
+      "expected": {
+        "record": {
+          "firstName": "Pat",
+          "hourlyRate": 30,
+          "payBasis": "hourly",
+          "employmentType": "paye"
+        },
+        "pay": {
+          "payBasis": "hourly",
+          "dayRate": null,
+          "hourlyRate": 30
+        },
+        "rate": 30,
+        "employmentType": "paye",
+        "source": "payProfile"
+      }
+    },
+    {
+      "name": "1.26.1 payEditorStartingValues: privatePay on, no readable pay profile — the users document",
+      "function": "payEditorStartingValues",
+      "args": [
+        {
+          "firstName": "Pat",
+          "dayRate": 120,
+          "payBasis": "day",
+          "employmentType": "self_employed"
+        },
+        null,
+        {
+          "privatePay": true
+        }
+      ],
+      "expected": {
+        "record": {
+          "firstName": "Pat",
+          "dayRate": 120,
+          "payBasis": "day",
+          "employmentType": "self_employed"
+        },
+        "pay": {
+          "payBasis": "day",
+          "dayRate": 120,
+          "hourlyRate": null
+        },
+        "rate": 120,
+        "employmentType": "self_employed",
+        "source": "users"
+      }
+    },
+    {
+      "name": "1.26.1 payEditorStartingValues: rate cleared on the pay profile (null) is not set",
+      "function": "payEditorStartingValues",
+      "args": [
+        {
+          "firstName": "Pat",
+          "dayRate": 120,
+          "payBasis": "day",
+          "employmentType": "self_employed"
+        },
+        {
+          "subjectId": "u1",
+          "fields": {
+            "dayRate": null,
+            "payBasis": null
+          }
+        },
+        {
+          "privatePay": true
+        }
+      ],
+      "expected": {
+        "record": {
+          "firstName": "Pat",
+          "dayRate": null,
+          "payBasis": null,
+          "employmentType": "self_employed"
+        },
+        "pay": {
+          "payBasis": null,
+          "dayRate": null,
+          "hourlyRate": null
+        },
+        "rate": null,
+        "employmentType": "self_employed",
+        "source": "payProfile"
+      }
     }
   ]
 }

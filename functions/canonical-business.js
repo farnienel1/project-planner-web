@@ -756,6 +756,7 @@ var ProjectPlannerCanonical = (() => {
     parseWholesalerDocument: () => parseWholesalerDocument,
     passwordMinLength: () => passwordMinLength,
     passwordPolicyError: () => passwordPolicyError,
+    payEditorStartingValues: () => payEditorStartingValues,
     payForHours: () => payForHours,
     payProfileBackfillWrites: () => payProfileBackfillWrites,
     payProfilePath: () => payProfilePath,
@@ -10019,8 +10020,8 @@ var ProjectPlannerCanonical = (() => {
   // lib/canonical/rulebookStamp.ts
   function rulebookStamp() {
     return {
-      version: true ? "1.26.0" : "",
-      sha256: true ? "86e32226ea6aab36e45d9b87be556522636bf54e8fecc98541bf44c7691339ec" : ""
+      version: true ? "1.26.1" : "",
+      sha256: true ? "9379ecb7418407f9e54e38e53bbbdaf72c399d0271fa4d32325d16ff5b4ece5e" : ""
     };
   }
 
@@ -14654,6 +14655,14 @@ var ProjectPlannerCanonical = (() => {
       out[key3] = value;
     }
     return out;
+  }
+  function payEditorStartingValues(person, profile, options) {
+    const overlaid = options?.privatePay === true && profile ? overlayPayProfile(person, profile) : person;
+    const record9 = overlaid || {};
+    const pay = readStoredRates(record9);
+    const rate = pay.payBasis === "hourly" ? pay.hourlyRate : pay.dayRate;
+    const employmentType = Object.prototype.hasOwnProperty.call(record9, "employmentType") ? record9.employmentType ?? null : null;
+    return { record: record9, pay, rate, employmentType, source: overlaid !== person ? "payProfile" : "users" };
   }
 
   // lib/canonical/emailChange.ts

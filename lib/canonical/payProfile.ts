@@ -22,6 +22,7 @@
 import { lineManagerIds } from './leaveRequests'
 import { effectivePermissions, permissionLevelOf } from './permissionLevels'
 import { idKey, personIdSet, type PersonRosterRow } from './personIds'
+import { readStoredRates, type PayRateProfile, type StoredPay } from './payRate'
 
 export const PAY_PROFILES_COLLECTION = 'payProfiles'
 
@@ -250,4 +251,53 @@ export function sharedDocumentPayWrite<T extends Record<string, unknown>>(
     out[key] = value
   }
   return out as T
+}
+
+// MARK: - Pay editor starting values (rulebook §8, 1.26.1)
+
+/**
+ * Where a pay editor's starting values came from: `payProfile` when the pay profile was laid over the person, `users`
+ * when the person's own document (`users` / `operatives` / `managers`) is used as stored.
+ */
+export type PayEditorStartingSource = 'users' | 'payProfile'
+
+export type PayEditorStartingValues<T extends Record<string, unknown>> = {
+  /**
+   * The record a pay editor starts from AND the baseline its save is diffed against (the changed-fields payload, the
+   * "rate changed?" test and the rate-history `previousProfile` of `payRateChangeWrites`). With `privatePay` off it
+   * is `person` itself (the same object, unchanged).
+   */
+  record: T
+  /** The record's stored pay (`readStoredRates`): basis, day rate, hourly rate. */
+  pay: StoredPay
+  /** The amount for the record's basis (`pay.hourlyRate` when hourly, else `pay.dayRate`), or null. */
+  rate: number | null
+  /** The record's stored `employmentType`, as stored (null when missing). */
+  employmentType: unknown
+  source: PayEditorStartingSource
+}
+
+/**
+ * The starting values and save baseline of every single-person pay display and pay editor (Manage Users / Edit User,
+ * the people profile, the catalogue operative form, the rate dialogs), rulebook §8 1.26.1:
+ *   - `privatePay` off for the organisation (`securitySwitchOn`): the person's own document exactly as stored — a pay
+ *     profile is never read into the result, because older app builds still write pay only to `users` /
+ *     `operatives` / `managers` and a pay profile can be stale;
+ *   - `privatePay` on: the person with their pay profile laid over (`overlayPayProfile`) — the same value the display
+ *     shows — so an editor never starts from (and saves back) an old rate left on the shared document, and the rate
+ *     history's "previous" rate is the one in force. With no readable pay profile the person's document is used.
+ * `profile` is the parsed pay profile (`parsePayProfileDocument`) of the person's id (else of a former invite id), or
+ * null.
+ */
+export function payEditorStartingValues<T extends Record<string, unknown>>(
+  person: T,
+  profile: PayProfileDocument | null | undefined,
+  options?: { privatePay?: boolean } | null
+): PayEditorStartingValues<T> {
+  const overlaid = options?.privatePay === true && profile ? overlayPayProfile(person, profile) : person
+  const record = overlaid || ({} as T)
+  const pay = readStoredRates(record as PayRateProfile)
+  const rate = pay.payBasis === 'hourly' ? pay.hourlyRate : pay.dayRate
+  const employmentType = Object.prototype.hasOwnProperty.call(record, 'employmentType') ? record.employmentType ?? null : null
+  return { record, pay, rate, employmentType, source: overlaid !== person ? 'payProfile' : 'users' }
 }

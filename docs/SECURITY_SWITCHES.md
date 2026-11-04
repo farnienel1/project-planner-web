@@ -91,7 +91,9 @@ In the console, `platformConfig/app`:
 1. **Add field** → name `enforcedReadsOrganizationIds` → type **array** → add one item, type **string**, value =
    your company id → **Add**.
 2. Test (step 7). If all is well:
-3. **Add field** → name `privatePayOrganizationIds` → type **array** → one **string** item, your company id → **Add**.
+3. Only once web **1.26.1** is live and the iOS build from the 1.26.1 hand-off is the `minimumIosBuild` (rulebook 1.26.1:
+   pay editors start from the pay profile while `privatePay` is on, so an admin never saves an old rate back):
+   **Add field** → name `privatePayOrganizationIds` → type **array** → one **string** item, your company id → **Add**.
 4. Test again (step 7).
 5. Only for your company and only after the tests pass, remove old rates from the shared documents:
 
@@ -119,6 +121,8 @@ Sign in on the web **and** on an updated iPhone for each:
 - [ ] **Line manager**: their reports' timesheets show rates and totals; they can sign them.
 - [ ] Change an operative's day rate as an admin, then reopen: the new rate shows on web and iPhone, and the timesheet
       uses it from the effective date.
+- [ ] With `privatePay` on, open a person's profile, then Edit: the rate and employment type in the form are the
+      same as on the profile (web and iPhone). Save without touching pay: their rate history gets no new row.
 - [ ] Add a new user with a rate (Add User): the save succeeds.
 - [ ] Add a manager to a job, then remove them: the job appears and disappears on their list.
 

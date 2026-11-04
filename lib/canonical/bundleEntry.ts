@@ -990,6 +990,7 @@ export {
   payProfileBackfillWrites,
   payProfilePath,
   payProfileWriteFieldsFromProfileWrite,
+  payEditorStartingValues,
   payProfileReadPlan,
   rateHistoryQueryPlan,
   sharedDocumentPayWrite,
