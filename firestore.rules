@@ -498,13 +498,6 @@ service cloud.firestore {
            ('manager' in me && truthyBool(me.manager)) &&
            ('operatives' in me && truthyBool(me.operatives));
   }
-  function managerOfSameOrg(me, organizationId) {
-    return 'organizationId' in me && orgIdsMatch(me.organizationId, organizationId) &&
-           !('operativeMode' in me && truthyBool(me.operativeMode)) &&
-           ('manager' in me && truthyBool(me.manager)) &&
-           ('operatives' in me && truthyBool(me.operatives));
-  }
-
   function managerCanCreateOperativeUser() {
     return isManagerWithOperativesAccess() ? (
            'organizationId' in request.resource.data &&
