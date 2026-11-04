@@ -9,11 +9,11 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 import {
-  assertFails,
   assertSucceeds,
   initializeTestEnvironment,
   type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing'
+import { assertFails, assertLogicalDeny, assertSucceedsWithinBudget } from './rulesAssert.ts'
 import {
   collection,
   deleteDoc,
@@ -4243,4 +4243,116 @@ test('1.31.0: Change Super Admin is one batch; the outgoing Super Admin keeps se
     await updateDoc(doc(db, 'organizations', ORG_A), { creatorUserId: ADMIN_A })
     await updateDoc(doc(db, 'users', ADMIN_A), { isSuperAdmin: deleteField(), annualLeaveSelfBook: deleteField(), timesheetSelfSign: deleteField() })
   })
+})
+
+// ---------------------------------------------------------------------------
+// Rulebook 1.31.1: users/{uid} and materials updates decide by the rules' logic, never by the 1,000-expression limit.
+// assertLogicalDeny fails a test whose denial came from the limit.
+// ---------------------------------------------------------------------------
+
+const OPS_MGR_1311 = 'ops-mgr-1311'
+const OP_1311 = 'op-1311'
+const OP2_1311 = 'op2-1311'
+const MGR_1311 = 'mgr-plain-1311'
+
+async function seed1311People() {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    await setDoc(doc(db, 'users', OPS_MGR_1311), {
+      email: 'ops-mgr-1311@test.com', organizationId: ORG_A, role: 'manager', manager: true, operatives: true,
+      permissions: { manager: true, operatives: true, operativeMode: false },
+    })
+    await setDoc(doc(db, 'users', MGR_1311), {
+      email: 'mgr-plain-1311@test.com', organizationId: ORG_A, role: 'manager', manager: true,
+      permissions: { manager: true, operativeMode: false },
+    })
+    await setDoc(doc(db, 'users', OP_1311), {
+      email: 'op-1311@test.com', organizationId: ORG_A, role: 'operative', operativeMode: true,
+      firstName: 'Opal', surname: 'One', assignedManagerUserId: OPS_MGR_1311, dayRate: 150, payBasis: 'day',
+      employmentType: 'self_employed', isActive: true,
+      permissions: { operativeMode: true, materials: false, siteAudit: false },
+    })
+    await setDoc(doc(db, 'users', OP2_1311), {
+      email: 'op2-1311@test.com', organizationId: ORG_A, role: 'operative', operativeMode: true,
+      firstName: 'Otto', lastName: 'Two',
+    })
+    await setDoc(doc(db, 'organizations', ORG_A, 'materials', 'legacy-name-1311'), { addedBy: 'opal one', name: 'Sand' })
+    await setDoc(doc(db, 'organizations', ORG_A, 'materials', 'legacy-last-1311'), { addedBy: 'Otto Two', name: 'Cement' })
+    await setDoc(doc(db, 'organizations', ORG_A, 'materials', 'owned-1311'), { addedByUserId: OP_1311, addedBy: 'x', name: 'Lime' })
+  })
+}
+
+test('1.31.1: an operatives manager edits an operative\'s users document (§11 owner decision 7)', async () => {
+  await seed1311People()
+  const mgr = authDb(OPS_MGR_1311, 'ops-mgr-1311@test.com')
+  const op = (data: Record<string, unknown>) => updateDoc(doc(mgr, 'users', OP_1311), data)
+  await assertSucceedsWithinBudget(op({ mobileNumber: '07700 900000', phone: '07700 900000' }))
+  await assertSucceedsWithinBudget(op({ dayRate: 180 }))
+  await assertSucceedsWithinBudget(op({ payBasis: 'hourly', hourlyRate: 25, dayRate: deleteField() }))
+  await assertSucceedsWithinBudget(op({ employmentType: 'paye', employmentTypeTransitionFrom: 'self_employed' }))
+  await assertSucceedsWithinBudget(op({ assignedManagerUserIds: [OPS_MGR_1311, MGR_1311], assignedManagerUserId: OPS_MGR_1311 }))
+  await assertSucceedsWithinBudget(op({ isActive: false }))
+  await assertSucceedsWithinBudget(op({
+    firstName: 'Opaline', surname: 'Uno', name: 'Opaline Uno', tradeTypePreset: 'Joiner', isActive: true, materials: true,
+    timesheetsEnabled: true, annualLeaveDaysPerYear: 20, employmentStartDate: '2026-01-05',
+    updatedBy: OPS_MGR_1311, updatedFrom: 'web',
+  }))
+})
+
+test('1.31.1: an operatives manager never changes an operative\'s privileges, identity or company (logical deny)', async () => {
+  await seed1311People()
+  const mgr = authDb(OPS_MGR_1311, 'ops-mgr-1311@test.com')
+  const op = (data: Record<string, unknown>) => updateDoc(doc(mgr, 'users', OP_1311), data)
+  await assertLogicalDeny(op({ role: 'admin' }))
+  await assertLogicalDeny(op({ adminAccess: true }))
+  await assertLogicalDeny(op({ isSuperAdmin: true }))
+  await assertLogicalDeny(op({ organizationId: ORG_B }))
+  await assertLogicalDeny(op({ manager: true }))
+  await assertLogicalDeny(op({ operatives: true }))
+  await assertLogicalDeny(op({ annualLeaveSelfBook: true }))
+  await assertLogicalDeny(op({ timesheetSelfSign: true }))
+  await assertLogicalDeny(op({ email: 'evil@test.com' }))
+  await assertLogicalDeny(op({ hasNoLineManager: true }))
+  await assertLogicalDeny(op({ formerUserIds: [ADMIN_A] }))
+  await assertLogicalDeny(op({ sameEmailUserIds: [ADMIN_A] }))
+  await assertLogicalDeny(op({ 'permissions.adminAccess': true }))
+  await assertLogicalDeny(op({ firstName: 'Ok', dayRate: 200, role: 'manager' }))
+  // Not theirs to edit: a manager without the Operatives permission, another manager, an admin, themselves as a privilege.
+  await assertLogicalDeny(updateDoc(doc(authDb(MGR_1311, 'mgr-plain-1311@test.com'), 'users', OP_1311), { mobileNumber: '1' }))
+  await assertLogicalDeny(updateDoc(doc(mgr, 'users', MGR_1311), { mobileNumber: '1' }))
+  await assertLogicalDeny(updateDoc(doc(mgr, 'users', ADMIN_A), { mobileNumber: '1' }))
+  await assertLogicalDeny(updateDoc(doc(mgr, 'users', OPS_MGR_1311), { dayRate: 999 }))
+  // Company B's admin never edits company A's operative.
+  await assertLogicalDeny(updateDoc(doc(authDb(ADMIN_B, 'admin-b@test.com'), 'users', OP_1311), { mobileNumber: '1' }))
+})
+
+test('1.31.1: an operative edits only their own users document, never another person\'s (logical deny)', async () => {
+  await seed1311People()
+  const op = authDb(OP_1311, 'op-1311@test.com')
+  await assertSucceedsWithinBudget(updateDoc(doc(op, 'users', OP_1311), { firstName: 'Me', mobileNumber: '1' }))
+  await assertLogicalDeny(updateDoc(doc(op, 'users', OP_1311), { adminAccess: true }))
+  await assertLogicalDeny(updateDoc(doc(op, 'users', OP_1311), { dayRate: 999 }))
+  await assertLogicalDeny(updateDoc(doc(op, 'users', OP_1311), { assignedManagerUserIds: [OP_1311] }))
+  await assertLogicalDeny(updateDoc(doc(op, 'users', OP_1311), { isActive: false, firstName: 'x', dayRate: 1, role: 'admin' }))
+  await assertLogicalDeny(updateDoc(doc(op, 'users', OP2_1311), { mobileNumber: '1' }))
+  await assertLogicalDeny(updateDoc(doc(op, 'users', OP2_1311), { firstName: 'x', dayRate: 1, isActive: false, manager: true }))
+  // An admin edits anyone in their company; only the Super Admin changes another admin's Super Admin flag.
+  const admin = authDb(ADMIN_A, 'admin-a@test.com')
+  await assertSucceedsWithinBudget(updateDoc(doc(admin, 'users', OP_1311), { firstName: 'Opal', dayRate: 160, role: 'manager', manager: true, operativeMode: false }))
+})
+
+test('1.31.1: legacy materials are claimed by name or email; owned materials are never reassigned (logical deny)', async () => {
+  await seed1311People()
+  const op = authDb(OP_1311, 'op-1311@test.com')
+  const op2 = authDb(OP2_1311, 'op2-1311@test.com')
+  const mat = (db: ReturnType<typeof authDb>, id: string) => doc(db, 'organizations', ORG_A, 'materials', id)
+  // A legacy row whose addedBy is the caller's "first surname" / "first last": claim it (only addedByUserId changes).
+  await assertSucceedsWithinBudget(updateDoc(mat(op, 'legacy-name-1311'), { addedByUserId: OP_1311 }))
+  await assertSucceedsWithinBudget(updateDoc(mat(op2, 'legacy-last-1311'), { addedByUserId: OP2_1311 }))
+  // Not their name, or more than the claim: refused.
+  await assertLogicalDeny(updateDoc(mat(op2, 'owned-1311'), { addedByUserId: OP2_1311 }))
+  await assertLogicalDeny(updateDoc(mat(op, 'owned-1311'), { addedByUserId: OP2_1311 }))
+  await assertLogicalDeny(updateDoc(mat(op2, 'owned-1311'), { name: 'Mine now' }))
+  // The owner edits their own row.
+  await assertSucceedsWithinBudget(updateDoc(mat(op, 'owned-1311'), { name: 'Lime 2' }))
 })
