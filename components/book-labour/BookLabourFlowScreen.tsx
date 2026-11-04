@@ -20,8 +20,10 @@ import { useDeadlineAssignedProjectIds } from '@/lib/deadlines/useDeadlineAssign
 import {
   DEFAULT_MY_SCHEDULE,
   DEFAULT_PAYROLL_POLICY,
+  DEFAULT_WARNING_DETECTION,
   enabledScheduleLocationPicks,
   loadOrganizationDetails,
+  organizationDetailsFromData,
   oneOffCustomLocationPick,
   type MyScheduleOptions,
   type OrgPayrollTimePolicy,
@@ -61,7 +63,7 @@ import { useCustomHoursPrefillOnKindChange } from '@/lib/scheduling/useOrganizat
 import { CustomOtherLocationField } from '@/components/scheduling/CustomOtherLocationField'
 import { PanelHeader } from '@/components/settings/primitives'
 import { ORPHAN_BOOKING_LABEL } from '@/lib/canonical'
-import { useOrganizationDocument } from '@/lib/stores/organizationDocumentStore'
+import { useOrganizationDocument, useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
 
 type BookToTab = 'other' | 'projects' | 'smallWorks'
 type ManagerSlot = 'FULL_DAY' | 'AM' | 'PM' | 'CUSTOM_HOURS'
@@ -120,7 +122,7 @@ export function BookLabourFlowScreen({
   const { bookings, loadBookings, createBooking } = useBookingStore()
   const { managerSiteBookings, loadManagerSiteBookings, saveManagerSiteBooking } = useManagerScheduleStore()
   const { operatives, loadOperatives, managers, loadManagers, loading: operativesLoading } = useOperativeStore()
-  const { users, loadUsers, loading: usersLoading } = useOrgUserStore()
+  const { users, userIdAliases, loadUsers, loading: usersLoading } = useOrgUserStore()
   const { projects, smallWorks, loadProjects, loadSmallWorks } = useProjectStore()
   const { bookings: holidays, loadBookings: loadHolidays } = useHolidayStore()
   const mayBook = canBookWork(user)
@@ -155,7 +157,16 @@ export function BookLabourFlowScreen({
   const conflictGate = useBookingConflictGate()
   // Rulebook 1.17.0 §4.3: the live organisation document, so the weekend note, prefill and break check read the
   // working hours in effect on the booking day (`effectivePayrollTimePolicy` in bookingSlotRules).
-  useOrganizationDocument()
+  const liveOrganization = useOrganizationDocument()
+  const orgTimeZone = useOrganizationTimeZone()
+  // Rulebook §5 / §6: the live warning settings, so Book labour lists the same unbooked people as Warnings.
+  const warningDetection = useMemo(
+    () =>
+      organization?.id && liveOrganization.organizationId === organization.id && liveOrganization.data
+        ? organizationDetailsFromData(organization.id, liveOrganization.data).warningDetection
+        : DEFAULT_WARNING_DETECTION,
+    [organization?.id, liveOrganization.organizationId, liveOrganization.data]
+  )
   const [customStart, setCustomStart] = useState('07:30')
   const [customEnd, setCustomEnd] = useState('16:00')
   const [breakRemoved, setBreakRemoved] = useState(false)
@@ -206,17 +217,35 @@ export function BookLabourFlowScreen({
 
   const candidates = useMemo(
     () =>
+      // Rulebook §5 / §6: exactly the `unbookedLabourRowsOnDay` people for the day (Warnings and Daily Overview).
       buildBookLabourCandidates({
-        day,
+        dayKey: dayKey(day),
+        timeZone: orgTimeZone,
         users,
         operatives,
         bookings,
         managerSiteBookings,
         holidays,
+        warningDetection,
         payrollPolicy: payroll,
+        payrollPolicyState: payrollState,
+        userIdAliases,
         focusedUserIds,
       }),
-    [day, users, operatives, bookings, managerSiteBookings, holidays, payroll, focusedUserIds]
+    [
+      day,
+      orgTimeZone,
+      users,
+      operatives,
+      bookings,
+      managerSiteBookings,
+      holidays,
+      warningDetection,
+      payroll,
+      payrollState,
+      userIdAliases,
+      focusedUserIds,
+    ]
   )
 
   const allWorks = useMemo(() => [...projects, ...smallWorks], [projects, smallWorks])
@@ -919,7 +948,7 @@ function PickPerson({
       <div className="card py-16 text-center">
         <p className="text-[17px] font-semibold">Everyone is booked</p>
         <p className="mt-2 text-[13px] text-[var(--ink3)]">
-          No unbooked team members for this day, or only weekdays show unbooked labour.
+          No unbooked team members for this day.
         </p>
       </div>
     )

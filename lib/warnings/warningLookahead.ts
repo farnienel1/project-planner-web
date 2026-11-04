@@ -3,6 +3,7 @@ import {
   coverageWindow,
   invoicingPeriod,
   parsePaymentRunDateRanges,
+  unbookedScanDays,
   type CoverageFallbackReason,
 } from '@/lib/canonical'
 import {
@@ -124,6 +125,37 @@ export function computeClashScanDayKeys(
     bookedDayKeys: bookedDayKeys ?? null,
   })
   return new Set(days.dayKeys)
+}
+
+/**
+ * The unbooked-labour scan window: the rulebook's `unbookedScanDays`. Full week with include-weekends on runs to
+ * Sunday of the same week; every other mode keeps `coverageWindow`.
+ */
+export function computeUnbookedScanWindow(
+  referenceDate: Date,
+  warningDetection: OrgWarningDetectionSettings,
+  invoicing?: OrgInvoicingSettings,
+  timeZone: string = LONDON_TIME_ZONE
+): { startDayKey: string; endDayKey: string; start: Date; end: Date } {
+  const settings = invoicing ?? DEFAULT_INVOICING
+  const days = unbookedScanDays({
+    referenceIso: referenceDate.toISOString(),
+    timeZone,
+    clashLookaheadMode: warningDetection.clashLookaheadMode,
+    clashLookaheadDays: warningDetection.clashLookaheadDays,
+    paymentRunMode: settings.paymentRunMode,
+    ranges: parsePaymentRunDateRanges({ paymentRunDateRanges: settings.paymentRunDateRanges }),
+    recurringRunStartDay: settings.recurringRunStartDay,
+    recurringRunEndDay: settings.recurringRunEndDay,
+    includeWeekends: warningDetection.includeWeekendsForUnbookedLabour,
+    weekendCoverage: warningDetection.weekendCoverage ?? null,
+  })
+  return {
+    startDayKey: days.startDayKey,
+    endDayKey: days.endDayKey,
+    start: dateFromDayKey(days.startDayKey, timeZone),
+    end: dateFromDayKey(days.endDayKey, timeZone),
+  }
 }
 
 /** Notice copy when the saved number of days could not be used: the rulebook's `warningLookaheadFallbackNotice`. */
