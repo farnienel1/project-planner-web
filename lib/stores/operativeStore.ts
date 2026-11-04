@@ -107,7 +107,7 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
         // Rulebook 1.27.0 §8 (`catalogueOperativePaySubjects`): the pay-profile plan includes the catalogue operatives.
         // When the rows that could be catalogue operatives change while `privatePay` is on, the pay profiles are read
         // again and the rows re-read through the overlay (a non-admin with the Operatives toggle now reads them).
-        if (noteOperativeRows(organizationId, docs.map((entry) => ({ id: entry.id, ...entry.data }))) && privatePayFor(organizationId)) {
+        if (noteOperativeRows(organizationId, docs.map((entry) => ({ ...entry.data, id: entry.id }))) && privatePayFor(organizationId)) {
           void refreshCatalogueOperativePay(organizationId)
         }
         const mapped = docs.flatMap((entry) => {
