@@ -115,9 +115,12 @@ service cloud.firestore {
       (d.get('permissions', {}) is map && truthyBool(d.get('permissions', {}).get(key, false)));
   }
   function noPrivilegeFlags(d) {
-    return !(d.get('role', '') in ['admin', 'manager']) &&
-      !privilegeFlag(d, 'isSuperAdmin') && !privilegeFlag(d, 'adminAccess') && !privilegeFlag(d, 'manager') &&
-      !privilegeFlag(d, 'operatives') && !privilegeFlag(d, 'annualLeaveSelfBook') && !privilegeFlag(d, 'timesheetSelfSign');
+    let p = d.get('permissions', {}) is map ? d.get('permissions', {}) : {};
+    let v = [d.get('isSuperAdmin', false), d.get('adminAccess', false), d.get('manager', false), d.get('operatives', false),
+      d.get('annualLeaveSelfBook', false), d.get('timesheetSelfSign', false), p.get('isSuperAdmin', false),
+      p.get('adminAccess', false), p.get('manager', false), p.get('operatives', false), p.get('annualLeaveSelfBook', false),
+      p.get('timesheetSelfSign', false)];
+    return !(d.get('role', '') in ['admin', 'manager']) && !(true in v) && !(1 in v);
   }
 
   function isOperativeProfile(data) {
