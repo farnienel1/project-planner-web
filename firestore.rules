@@ -879,7 +879,9 @@ service cloud.firestore {
         ((request.auth.uid != userId && request.resource.data.get('organizationId', null) is string &&
           (adminLikeUser(callerHomeData()) ? true :
             callerListedRole(request.resource.data.organizationId) == 'admin'))
-          ? isAdminOfCompany(request.resource.data.organizationId) : false) ||
+          ? (isAdminOfCompany(request.resource.data.organizationId) &&
+             (!privilegeFlag(request.resource.data, 'isSuperAdmin') ||
+              callerIsSuperAdminOf(request.resource.data.organizationId))) : false) ||
         (request.auth.uid == userId ? (
           isOrgBootstrapAdminProfileCreate(userId) && selfCreateHasAgeConfirmation() &&
           selfCreateAliasesWithin(request.resource.data, {}, '') && selfCreateSuperAdminAllowed() &&

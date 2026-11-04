@@ -4422,3 +4422,19 @@ test('1.31.1: nobody adds their own alias ids or a privilege through permissions
   // Another admin still sets alias ids on someone else.
   await assertSucceedsWithinBudget(updateDoc(doc(authDb(ADMIN_A, 'admin-a@test.com'), 'users', OP_1311), { formerUserIds: ['old-op-1311'] }))
 })
+
+// ---------------------------------------------------------------------------
+// Rulebook 1.31.1, third review: B1, B2, S1, S3, S4.
+// ---------------------------------------------------------------------------
+
+test('1.31.1 B1: only the Super Admin creates a Super Admin (top level or permissions)', async () => {
+  await seed1311People()
+  const admin = authDb(ADMIN_1311, 'admin-1311@test.com')
+  const base = { organizationId: ORG_A, role: 'admin', adminAccess: true }
+  await assertLogicalDeny(setDoc(doc(admin, 'users', 'alt-1311a'), { ...base, email: 'alt-1311a@test.com', isSuperAdmin: true }))
+  await assertLogicalDeny(setDoc(doc(admin, 'users', 'alt-1311b'), { ...base, email: 'alt-1311b@test.com', permissions: { isSuperAdmin: true } }))
+  // An admin still adds an admin; the Super Admin (the creator) may add a Super Admin.
+  await assertSucceedsWithinBudget(setDoc(doc(admin, 'users', 'alt-1311c'), { ...base, email: 'alt-1311c@test.com' }))
+  await assertSucceedsWithinBudget(setDoc(doc(authDb(ADMIN_A, 'admin-a@test.com'), 'users', 'alt-1311d'), { ...base, email: 'alt-1311d@test.com', isSuperAdmin: true }))
+})
+
