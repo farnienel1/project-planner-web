@@ -798,7 +798,10 @@ test('hole 1b: deleting your own profile and re-creating it does not move you in
   })
   const db = authDb(uid, email)
   await assertFails(updateDoc(doc(db, 'users', uid), { organizationId: ORG_A }))
-  await assertSucceeds(deleteDoc(doc(db, 'users', uid)))
+  // 1.31.1 (fourth review): nobody deletes their own users document; accounts are deleted through
+  // /api/account/delete (service credentials). The document is removed with the rules off to test the re-create.
+  await assertLogicalDeny(deleteDoc(doc(db, 'users', uid)))
+  await env.withSecurityRulesDisabled(async (ctx) => { await deleteDoc(doc(ctx.firestore(), 'users', uid)) })
   await assertFails(
     setDoc(doc(db, 'users', uid), { email, organizationId: ORG_A, role: 'admin', adminAccess: true, ...ageFields() })
   )
@@ -3022,7 +3025,10 @@ test('1.12.0 B3: nobody adds alias ids to their own profile; reviews and booking
   await env.withSecurityRulesDisabled(async (ctx) => {
     await setDoc(doc(ctx.firestore(), 'organizations', ORG_H, 'userEmails', 'h-op3@test.com'), { userId: H_OP3 })
   })
-  await assertSucceeds(deleteDoc(doc(op3, 'users', H_OP3)))
+  // 1.31.1 (fourth review): nobody deletes their own users document; accounts are deleted through
+  // /api/account/delete (service credentials). The document is removed with the rules off to test the re-create.
+  await assertLogicalDeny(deleteDoc(doc(op3, 'users', H_OP3)))
+  await env.withSecurityRulesDisabled(async (ctx) => { await deleteDoc(doc(ctx.firestore(), 'users', H_OP3)) })
   const back = {
     email: 'h-op3@test.com', organizationId: ORG_H, role: 'operative', operativeMode: true,
     ageConfirmed: true, ageConfirmedYears: 16, ageConfirmedAt: Timestamp.now(),
@@ -3056,7 +3062,10 @@ test('1.12.0 B4: only the Super Admin changes isSuperAdmin or ownership; an admi
   await assertFails(updateDoc(doc(ad, 'users', H_SA), { isActive: false }))
   await assertFails(setDoc(doc(ad, 'users', H_AD, 'orgMemberships', ORG_H), { organizationId: ORG_H, role: 'admin', isSuperAdmin: true }))
   // Nor by deleting and re-creating their own profile (founder bootstrap path or returning member).
-  await assertSucceeds(deleteDoc(doc(ad, 'users', H_AD)))
+  // 1.31.1 (fourth review): nobody deletes their own users document; accounts are deleted through
+  // /api/account/delete (service credentials). The document is removed with the rules off to test the re-create.
+  await assertLogicalDeny(deleteDoc(doc(ad, 'users', H_AD)))
+  await env.withSecurityRulesDisabled(async (ctx) => { await deleteDoc(doc(ctx.firestore(), 'users', H_AD)) })
   await assertFails(setDoc(doc(ad, 'users', H_AD), {
     email: 'h-ad@test.com', organizationId: ORG_H, role: 'admin', adminAccess: true, isSuperAdmin: true,
     ageConfirmed: true, ageConfirmedYears: 30, ageConfirmedAt: Timestamp.now(),
@@ -3934,7 +3943,10 @@ test('1.28.0 B1: deleting and re-creating your own profile never switches on you
     await setDoc(doc(db, 'users', uid), { email, organizationId: ORG_A, role: 'admin', adminAccess: true })
   })
   const db = authDb(uid, email)
-  await assertSucceeds(deleteDoc(doc(db, 'users', uid)))
+  // 1.31.1 (fourth review): nobody deletes their own users document; accounts are deleted through
+  // /api/account/delete (service credentials). The document is removed with the rules off to test the re-create.
+  await assertLogicalDeny(deleteDoc(doc(db, 'users', uid)))
+  await env.withSecurityRulesDisabled(async (ctx) => { await deleteDoc(doc(ctx.firestore(), 'users', uid)) })
   const profile = { email, organizationId: ORG_A, firstName: 'Ray', role: 'admin', adminAccess: true, ...ageFields() }
   await assertFails(setDoc(doc(db, 'users', uid), { ...profile, annualLeaveSelfBook: true, timesheetSelfSign: true, hasNoLineManager: true }))
   await assertFails(setDoc(doc(db, 'users', uid), { ...profile, permissions: { adminAccess: true, annualLeaveSelfBook: true } }))

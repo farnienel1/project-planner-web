@@ -1034,7 +1034,6 @@ service cloud.firestore {
 
       allow delete: if request.auth != null && (
         isPlatformOwner() ||
-        request.auth.uid == userId ||
         managerMayManageOperative(userId, resource.data) ||
         (request.auth.token.email != null && resource.data.email == request.auth.token.email &&
          (resource.data.get('passwordSet', false) == true || callerAcceptedPlaceholder(userId, resource.data.get('organizationId', '')))) ||
