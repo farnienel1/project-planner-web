@@ -291,3 +291,77 @@ test('pay rows are grouped by person, not by display name', () => {
   assert.equal(named.length, 2)
   assert.deepEqual(named.map((row) => row.personTotal).sort((a, b) => a - b), [100, 200])
 })
+
+test('1.29.0 review fix: PAYE days never reach hours, pay or additional-schedule rows from the timesheet feed or office bookings', () => {
+  const paye = { ...person(), id: 'u2', email: 'pat@x.com', firstName: 'Pat', surname: 'Paye', employmentType: 'paye' } as User
+  const feedLine = (id: string, locationKind: string) => ({
+    id,
+    bookingId: id,
+    date: day,
+    jobNumber: project.jobNumber,
+    projectName: project.siteName,
+    locationKind,
+    details: '',
+    paidHours: 8,
+    days: 1,
+    amount: 200,
+    isOvertime: false,
+    decision: 'approved',
+  })
+  const payeWeek = {
+    userId: 'u2',
+    personName: 'Pat Paye',
+    role: 'Operative',
+    trade: 'General',
+    weekStart: new Date('2026-10-05T00:00:00Z'),
+    weekEnd: new Date('2026-10-11T00:00:00Z'),
+    override: {
+      approvedAt: day,
+      approvedByUserId: 'admin',
+      approvedByName: 'Admin',
+      selfSigned: false,
+      lines: [feedLine('f1', 'project'), feedLine('f2', 'office')],
+      priceWork: [],
+      expenses: [],
+    },
+  }
+  const office = {
+    id: 'm1',
+    userId: 'u2',
+    date: day,
+    timeSlot: 'CUSTOM_HOURS',
+    locationType: 'office' as const,
+    workStartTime: '07:30',
+    workEndTime: '16:00',
+    createdAt: day,
+    updatedAt: day,
+  }
+  const base = {
+    organizationName: 'Acme',
+    period: { start: new Date('2026-10-05T00:00:00Z'), end: new Date('2026-10-11T00:00:00Z'), label: 'week' },
+    bookings: [booking('b1', day), booking('b2', next)],
+    managerSiteBookings: [],
+    subcontractorBookings: [],
+    subcontractors: [],
+    operatives: [operative],
+    users: [person(), paye],
+    projects: [project],
+    smallWorks: [],
+    holidays: [],
+    orgDetails: null,
+  }
+  const without = buildWeeklyReportData(base)
+  const withPaye = buildWeeklyReportData({
+    ...base,
+    managerSiteBookings: [office],
+    timesheetWeeks: [payeWeek] as never,
+  })
+  const named = (rows: Array<{ person: string }>) => rows.filter((row) => row.person === 'Pat Paye').length
+  assert.equal(named(withPaye.paySummary), 0)
+  assert.equal(named(withPaye.projectGroups.flatMap((group) => group.rows)), 0)
+  assert.equal(named(withPaye.managerScheduleRows), 0)
+  // Everyone else's totals are unchanged.
+  assert.equal(withPaye.grandTotal, without.grandTotal)
+  assert.equal(withPaye.allProjectWorkTotal, without.allProjectWorkTotal)
+  assert.equal(withPaye.managerScheduleTotal, without.managerScheduleTotal)
+})

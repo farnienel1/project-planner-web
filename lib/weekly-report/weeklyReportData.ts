@@ -501,8 +501,16 @@ export function buildWeeklyReportData({
     addProjectRow(booking.locationId, booking.userId, undefined, days)
   }
 
+  // Rulebook 1.29.0 §7: a PAYE person's day is in the PAYE overtime section only — never in the hours, pay or
+  // additional-schedule rows, whatever source (live booking or approved-timesheet feed) it comes from.
+  const payeOnDay = (userId: string | undefined, date: Date): boolean => {
+    const person = userId ? users.find((entry) => entry.id === userId) : undefined
+    return Boolean(person && weeklyReportPayeDay(person, dayKeyInZone(new Date(date), timeZone), timeZone))
+  }
+
   for (const { week, line } of timesheetLabourLines(timesheetWeeks, period.start, period.end, timeZone)) {
     if (line.isOvertime || !isProjectLocationKind(line.locationKind) || line.days <= 0.0001) continue
+    if (payeOnDay(week.userId, line.date)) continue
     const projectName = line.projectName || 'Unknown'
     const jobNumber = line.jobNumber || 'N/A'
     const matched = mergedWorks.find(
@@ -538,6 +546,7 @@ export function buildWeeklyReportData({
     if (booking.locationType === 'project' || booking.locationType === 'small_work') continue
     if (timesheetFeedCovers(timesheetWeeks, aliasIdsFor(booking.userId), booking.date, timeZone)) continue
     const linked = findUserAndOperative(users, operatives, { userId: booking.userId, aliases: userIdAliases })
+    if (linked.user && weeklyReportPayeDay(linked.user, dayKeyInZone(new Date(booking.date), timeZone), timeZone)) continue
     addBookingPay(
       new Date(booking.date),
       String(booking.timeSlot),
@@ -575,6 +584,7 @@ export function buildWeeklyReportData({
   }
   for (const { week, line } of timesheetLabourLines(timesheetWeeks, period.start, period.end, timeZone)) {
     if (line.isOvertime || !isAdditionalScheduleLocationKind(line.locationKind) || line.days <= 0.0001) continue
+    if (payeOnDay(week.userId, line.date)) continue
     managerScheduleRows.push({
       person: week.personName,
       role: week.role,
@@ -815,6 +825,8 @@ export function buildWeeklyReportData({
   for (const { week, line } of timesheetLabourLines(timesheetWeeks, period.start, period.end, timeZone)) {
     const weekUser = users.find((entry) => entry.id === week.userId)
     const isPaye = Boolean(weekUser && employmentTypeOnDay(weekUser, line.date, timeZone) === 'paye')
+    // 1.29.0 §7: PAYE days leave the pay rows (they are in the PAYE overtime section).
+    if (isPaye) continue
     addPaySlice(
       `user:${keptUserId(week.userId)}`,
       week.personName,

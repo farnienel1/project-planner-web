@@ -12188,3 +12188,60 @@ test('1.29.0 direct change by a PAYE manager or admin, the report snapshot and t
   assert.equal(r129.weeklyReportPayeDay(switching, '2026-11-04', R129_TZ), false)
   assert.equal(r129.weeklyReportPayeDay(switching, '2026-11-05', R129_TZ), true)
 })
+
+test('1.29.0 review fix: a request can only name and change the requester\'s own bookings', () => {
+  const mine = r129Booking('B1', '2026-11-04', '06:30', '14:00')
+  const theirs = r129Booking('X1', '2026-11-04', '06:30', '14:00', { personId: 'someone-else' })
+  // Building a line for someone else's booking gives nothing.
+  assert.equal(r129.overtimeRequestLineFields({ booking: theirs, organization: R129_ORG, timeZone: R129_TZ, proposal: { action: 'strike' }, personIds: ['sam'] }), null)
+  const ownLine = r129.overtimeRequestLineFields({ booking: mine, organization: R129_ORG, timeZone: R129_TZ, proposal: { action: 'strike' }, personIds: ['SAM'] })!
+  const forged = r129.overtimeRequestLineFields({ booking: theirs, organization: R129_ORG, timeZone: R129_TZ, proposal: { action: 'strike' } })!
+  // The write keeps only lines on the requester's own bookings.
+  const fields = r129.overtimeRequestWriteFields({
+    userId: 'sam', rangeStart: '2026-11-01', rangeEnd: '2026-11-30', lines: [ownLine, forged], personIds: ['sam'], bookings: [mine, theirs],
+  })!
+  assert.deepEqual((fields.lines as Array<{ bookingId: string }>).map((line) => line.bookingId), ['B1'])
+  assert.equal(r129.overtimeRequestWriteFields({ userId: 'sam', rangeStart: '2026-11-01', rangeEnd: '2026-11-30', lines: [forged], personIds: ['sam'], bookings: [theirs] }), null)
+  // A forged stored request: the approval re-checks every live booking and leaves the foreign one out.
+  const request = r129.parseOvertimeRequestDocument('R9', { userId: 'sam', rangeStart: '2026-11-01', rangeEnd: '2026-11-30', status: 'pending', lines: [ownLine, forged] })
+  const result = r129.overtimeApprovalWrites({
+    request,
+    decisions: { B1: { action: 'approve' }, X1: { action: 'approve' } },
+    bookings: { B1: mine, X1: theirs },
+    organization: R129_ORG,
+    timeZone: R129_TZ,
+    deciderId: 'admin',
+    deciderIsAdmin: true,
+    requesterIds: ['sam'],
+  })
+  assert.equal(result.ok, true)
+  if (!result.ok) return
+  assert.deepEqual(result.bookingWrites.map((row) => row.bookingId), ['B1'])
+  assert.deepEqual(result.foreignBookingIds, ['X1'])
+  assert.deepEqual(result.requestFields.droppedBookingIds, ['X1'])
+  assert.deepEqual(result.reviewWrites.map((row) => row.docId), ['sam_B1'])
+})
+
+test('1.29.0 review fix: a line manager never writes a booking filed under an operatives row; an admin or the job manager does', () => {
+  const rowBooking = r129Booking('BR', '2026-11-04', '06:30', '14:00', { personId: 'row-sam' })
+  const line = r129.overtimeRequestLineFields({ booking: rowBooking, organization: R129_ORG, timeZone: R129_TZ, proposal: { action: 'strike' } })!
+  const request = r129.parseOvertimeRequestDocument('R8', { userId: 'sam', rangeStart: '2026-11-01', rangeEnd: '2026-11-30', status: 'pending', lines: [line] })
+  const base = {
+    request, bookings: { BR: rowBooking }, organization: R129_ORG, timeZone: R129_TZ, deciderId: 'lm', requesterIds: ['sam', 'row-sam'],
+  }
+  const asLineManager = r129.overtimeApprovalWrites({ ...base, decisions: { BR: { action: 'approve' } } })
+  assert.deepEqual(asLineManager.ok === false && [asLineManager.reason, asLineManager.bookingIds], ['needsAdmin', ['BR']])
+  assert.equal(r129.overtimeApprovalWrites({ ...base, decisions: { BR: { action: 'approve' } }, deciderIsAdmin: true }).ok, true)
+  assert.equal(r129.overtimeApprovalWrites({ ...base, decisions: { BR: { action: 'approve' } }, writableBookingIds: ['br'] }).ok, true)
+  // A tick on a line that keeps the booking as it is writes only the review: a line manager may.
+  const keepLine = r129.overtimeRequestLineFields({ booking: rowBooking, organization: R129_ORG, timeZone: R129_TZ, proposal: { action: 'keep' } })!
+  const keep = r129.parseOvertimeRequestDocument('R7', { userId: 'sam', rangeStart: '2026-11-01', rangeEnd: '2026-11-30', status: 'pending', lines: [keepLine] })
+  assert.equal(r129.overtimeApprovalWrites({ ...base, request: keep, decisions: { BR: { action: 'approve' } } }).ok, true)
+  // The direct rule the rules apply: the booking's person id is the requester's users id, exactly.
+  assert.equal(r129.overtimeDeciderMayWriteBooking({ booking: { id: 'B1', personId: 'sam' }, requesterUserId: 'sam' }), true)
+  assert.equal(r129.overtimeDeciderMayWriteBooking({ booking: { id: 'BR', personId: 'row-sam' }, requesterUserId: 'sam' }), false)
+  // An unreadable booking is left out, named, and nothing is written for it.
+  const unreadable = r129.overtimeApprovalWrites({ ...base, decisions: { BR: { action: 'approve' } }, unreadableBookingIds: ['BR'], bookings: {} })
+  assert.equal(unreadable.ok, true)
+  assert.deepEqual(unreadable.ok && [unreadable.unreadableBookingIds, unreadable.deletedBookingIds, unreadable.bookingWrites.length], [['BR'], [], 0])
+})

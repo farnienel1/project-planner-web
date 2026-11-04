@@ -60,6 +60,10 @@ export const OVERTIME_NO_LINES_MESSAGE = 'There is no overtime in this range.'
 export const OVERTIME_CANCEL_NOT_ALLOWED_MESSAGE =
   'All of this booking is outside the working day. Change its hours with the cog, or ask a scheduler to remove it.'
 export const OVERTIME_REPORT_TOTAL_LABEL = 'Total overtime'
+export const OVERTIME_NEEDS_ADMIN_MESSAGE =
+  'This booking is filed under an operatives row, or on a job you do not manage: an admin or the job\'s manager must approve this request.'
+export const OVERTIME_BOOKING_UNREADABLE_MESSAGE = "Can't read this booking — it is left out of this approval."
+export const OVERTIME_NOT_THEIR_BOOKING_MESSAGE = 'This booking is not theirs — it is left out.'
 
 /** The red X cancel warning, the same on every platform. */
 export const OVERTIME_CANCEL_WARNING = {
@@ -807,9 +811,12 @@ export function overtimeRequestLineFields(input: {
   organization: OvertimeOrganization
   timeZone?: string | null
   proposal: { action: 'keep' } | { action: 'strike' } | { action: 'edit'; start: string; end: string; multiplier: number | null }
+  /** Every id the requester goes by; a booking on anyone else is never a line (null). */
+  personIds?: ReadonlyArray<string> | null
 }): OvertimeRequestLine | null {
   const booking = input.booking
   if (!booking || !text(booking.id)) return null
+  if (input.personIds && !overtimeBookingIsTheirs(booking, input.personIds)) return null
   const before = overtimeForBooking({ booking, organization: input.organization, timeZone: input.timeZone, minMinutes: 0 })
   const base: OvertimeRequestLine = {
     bookingId: text(booking.id),
@@ -863,18 +870,56 @@ export function overtimeRequestWriteFields(input: {
   rangeStart: string
   rangeEnd: string
   lines: ReadonlyArray<OvertimeRequestLine>
+  /**
+   * The requester's ids and their bookings: when given, a line is kept only when its booking is one of `bookings` and
+   * on one of `personIds` (a request can never name someone else's booking).
+   */
+  personIds?: ReadonlyArray<string> | null
+  bookings?: ReadonlyArray<OvertimeBookingInput> | null
 }): Record<string, unknown> | null {
   const userId = text(input.userId)
   const start = dayKeyOrEmpty(input.rangeStart)
   const end = dayKeyOrEmpty(input.rangeEnd)
-  if (!userId || !start || !end || start > end || !input.lines || input.lines.length === 0) return null
+  if (!userId || !start || !end || start > end || !input.lines) return null
+  const ids = input.personIds ?? [userId]
+  const byId = input.bookings ? new Map(input.bookings.map((row) => [`${collectionOf(row)}/${idKey(row.id)}`, row])) : null
+  const lines = input.lines.filter((line) => {
+    if (!byId) return true
+    const booking = byId.get(`${line.collection}/${idKey(line.bookingId)}`)
+    return Boolean(booking && overtimeBookingIsTheirs(booking, ids))
+  })
+  if (lines.length === 0) return null
   return {
     userId,
     rangeStart: start,
     rangeEnd: end,
     status: 'pending',
-    lines: input.lines.map((line) => ({ ...line })),
+    lines: lines.map((line) => ({ ...line })),
   }
+}
+
+/** The booking is on one of the person's ids (without case). */
+export function overtimeBookingIsTheirs(booking: Pick<OvertimeBookingInput, 'personId'> | null | undefined, personIds: ReadonlyArray<string>): boolean {
+  if (!booking) return false
+  const ids = new Set((personIds || []).map(idKey).filter(Boolean))
+  return ids.has(idKey(booking.personId))
+}
+
+/**
+ * Whether the decider's booking write for an approved line is one the security rules allow (§16): an admin; a writer
+ * of that booking under `canWriteBooking` (the app passes those booking ids as `writableBookingIds`); or the person's
+ * line manager — the rules let a line manager write only a booking whose person id is the requester's users id
+ * (`request.userId`, exactly as stored), never one filed under an `operatives` row id.
+ */
+export function overtimeDeciderMayWriteBooking(input: {
+  booking: Pick<OvertimeBookingInput, 'id' | 'personId'>
+  requesterUserId: string
+  deciderIsAdmin?: boolean | null
+  writableBookingIds?: ReadonlyArray<string> | null
+}): boolean {
+  if (input.deciderIsAdmin === true) return true
+  if ((input.writableBookingIds || []).some((id) => idKey(id) === idKey(input.booking.id))) return true
+  return text(input.booking.personId) !== '' && text(input.booking.personId) === text(input.requesterUserId)
 }
 
 /** The person's pending requests for exactly this range (withdrawn when they send again). */
@@ -948,15 +993,27 @@ export function overtimeApprovalWrites(input: {
   organization: OvertimeOrganization
   timeZone?: string | null
   deciderId: string
+  /** Every id the requester goes by (`personIdSet` + their operatives rows); default `[request.userId]`. */
+  requesterIds?: ReadonlyArray<string> | null
+  /** True for an admin outside operative mode (writes every booking). */
+  deciderIsAdmin?: boolean | null
+  /** Bookings the decider may write under `canWriteBooking` (e.g. jobs they manage). */
+  writableBookingIds?: ReadonlyArray<string> | null
+  /** Bookings the decider could not read: left out, nothing written for them. */
+  unreadableBookingIds?: ReadonlyArray<string> | null
 }):
   | {
       ok: true
       bookingWrites: OvertimeBookingWrite[]
       reviewWrites: OvertimeReviewWrite[]
+      /** Deleted, unreadable or not the requester's: left out (all named in the request's `droppedBookingIds`). */
       droppedBookingIds: string[]
+      deletedBookingIds: string[]
+      unreadableBookingIds: string[]
+      foreignBookingIds: string[]
       requestFields: Record<string, unknown>
     }
-  | { ok: false; reason: 'notPending' | 'undecided' | 'stale' | 'refused'; bookingIds: string[]; message: string } {
+  | { ok: false; reason: 'notPending' | 'undecided' | 'stale' | 'refused' | 'needsAdmin'; bookingIds: string[]; message: string } {
   const request = input.request
   if (request.status !== 'pending') return { ok: false, reason: 'notPending', bookingIds: [], message: OVERTIME_REQUEST_NOT_PENDING_MESSAGE }
   if (!overtimeRequestFullyDecided(request, input.decisions)) {
@@ -967,14 +1024,28 @@ export function overtimeApprovalWrites(input: {
   const stale: string[] = []
   const dropped: string[] = []
   const refused: string[] = []
+  const unreadable = new Set((input.unreadableBookingIds || []).map(idKey))
+  const requesterIds = input.requesterIds && input.requesterIds.length > 0 ? input.requesterIds : [request.userId]
+  const unreadableIds: string[] = []
+  const foreign: string[] = []
+  const needsAdmin: string[] = []
   const bookingWrites: OvertimeBookingWrite[] = []
   const reviewWrites: OvertimeReviewWrite[] = []
   const applied: string[] = []
   const storedDecisions: Record<string, Record<string, unknown>> = {}
   for (const line of request.lines) {
+    if (unreadable.has(idKey(line.bookingId))) {
+      unreadableIds.push(line.bookingId)
+      continue
+    }
     const booking = live.get(idKey(line.bookingId))
     if (!booking) {
       dropped.push(line.bookingId)
+      continue
+    }
+    // A request can only ever change the requester's own bookings.
+    if (!overtimeBookingIsTheirs(booking, requesterIds)) {
+      foreign.push(line.bookingId)
       continue
     }
     if (overtimeBookingFingerprint(booking) !== line.fingerprint) {
@@ -995,6 +1066,17 @@ export function overtimeApprovalWrites(input: {
     if (change) {
       const fields = overtimeBookingWriteFields(booking, change)
       if (Object.keys(fields.set).length > 0 || fields.remove.length > 0) {
+        if (
+          !overtimeDeciderMayWriteBooking({
+            booking,
+            requesterUserId: request.userId,
+            deciderIsAdmin: input.deciderIsAdmin,
+            writableBookingIds: input.writableBookingIds,
+          })
+        ) {
+          needsAdmin.push(line.bookingId)
+          continue
+        }
         bookingWrites.push({ collection: line.collection, bookingId: line.bookingId, ...fields })
       }
     }
@@ -1014,17 +1096,22 @@ export function overtimeApprovalWrites(input: {
   }
   if (stale.length > 0) return { ok: false, reason: 'stale', bookingIds: stale, message: OVERTIME_REQUEST_STALE_MESSAGE }
   if (refused.length > 0) return { ok: false, reason: 'refused', bookingIds: refused, message: OVERTIME_CANCEL_NOT_ALLOWED_MESSAGE }
+  if (needsAdmin.length > 0) return { ok: false, reason: 'needsAdmin', bookingIds: needsAdmin, message: OVERTIME_NEEDS_ADMIN_MESSAGE }
+  const allDropped = [...dropped, ...unreadableIds, ...foreign]
   return {
     ok: true,
     bookingWrites,
     reviewWrites,
-    droppedBookingIds: dropped,
+    droppedBookingIds: allDropped,
+    deletedBookingIds: dropped,
+    unreadableBookingIds: unreadableIds,
+    foreignBookingIds: foreign,
     requestFields: {
       status: 'approved',
       decisions: storedDecisions,
       decidedBy: text(input.deciderId),
       appliedBookingIds: applied,
-      droppedBookingIds: dropped,
+      droppedBookingIds: allDropped,
     },
   }
 }

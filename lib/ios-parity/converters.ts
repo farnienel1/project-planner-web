@@ -489,6 +489,13 @@ export function serializeManagerSiteBooking(
   } else {
     payload.bookingGroupId = deleteField()
   }
+  // Rulebook 1.29.0 §25: the booking's own overtime rate. A number is written, null removes it, undefined (not read
+  // or not edited) leaves the stored value alone.
+  if (typeof booking.otMultiplierOverride === 'number' && Number.isFinite(booking.otMultiplierOverride)) {
+    payload.otMultiplierOverride = booking.otMultiplierOverride
+  } else if (booking.otMultiplierOverride === null) {
+    payload.otMultiplierOverride = deleteField()
+  }
   return payload
 }
 

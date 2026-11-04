@@ -21400,6 +21400,9 @@
           }
         ],
         "droppedBookingIds": [],
+        "deletedBookingIds": [],
+        "unreadableBookingIds": [],
+        "foreignBookingIds": [],
         "requestFields": {
           "status": "approved",
           "decisions": {
@@ -21574,6 +21577,257 @@
           "B1"
         ],
         "message": "A booking changed after this request was sent, so it cannot be approved. Ask for the request to be sent again."
+      }
+    },
+    {
+      "name": "1.29.0 approval: a line manager cannot write a booking filed under an operatives row",
+      "function": "overtimeApprovalWrites",
+      "args": [
+        {
+          "request": {
+            "id": "R3",
+            "userId": "sam",
+            "rangeStart": "2026-11-01",
+            "rangeEnd": "2026-11-30",
+            "status": "pending",
+            "lines": [
+              {
+                "bookingId": "BR",
+                "collection": "bookings",
+                "dayKey": "2026-11-04",
+                "jobId": "job-1",
+                "fingerprint": "2026-11-04|CUSTOM HOURS|06:30|14:00|||confirmed",
+                "action": "strike",
+                "proposedStart": "07:30",
+                "proposedEnd": "14:00",
+                "proposedMultiplier": null,
+                "cancel": false,
+                "overtimeHoursBefore": 1.5,
+                "overtimeHoursAfter": 0
+              }
+            ],
+            "decisions": {},
+            "decidedBy": null,
+            "createdAtMs": null,
+            "decidedAtMs": null,
+            "appliedBookingIds": [],
+            "droppedBookingIds": []
+          },
+          "decisions": {
+            "BR": {
+              "action": "approve"
+            }
+          },
+          "bookings": {
+            "BR": {
+              "id": "BR",
+              "collection": "bookings",
+              "personId": "row-sam",
+              "dayKey": "2026-11-04",
+              "timeSlot": "CUSTOM_HOURS",
+              "workStartTime": "06:30",
+              "workEndTime": "14:00",
+              "status": "Confirmed",
+              "jobId": "job-1",
+              "jobNumber": "J-1042",
+              "jobName": "Riverside Flats"
+            }
+          },
+          "organization": {
+            "countryCode": "GB",
+            "payrollTimePolicy": {
+              "standardDayStart": "07:30",
+              "standardDayEnd": "16:00",
+              "unpaidBreakMinutes": 30,
+              "breakWindowStart": "12:00",
+              "breakWindowEnd": "12:30",
+              "weekdayOutsideStandardMultiplier": 1.5,
+              "saturday": {
+                "allHoursAtMultiplierMode": false,
+                "definedWindowStart": "07:30",
+                "definedWindowEnd": "14:00",
+                "countsAsStandardHours": 8,
+                "outsideWindowMultiplier": 1.5
+              },
+              "sunday": {
+                "allHoursAtMultiplierMode": true,
+                "allHoursMultiplier": 2,
+                "sameAsSaturday": false
+              }
+            }
+          },
+          "timeZone": "Europe/London",
+          "deciderId": "lm",
+          "requesterIds": [
+            "sam",
+            "row-sam"
+          ]
+        }
+      ],
+      "expected": {
+        "ok": false,
+        "reason": "needsAdmin",
+        "bookingIds": [
+          "BR"
+        ],
+        "message": "This booking is filed under an operatives row, or on a job you do not manage: an admin or the job's manager must approve this request."
+      }
+    },
+    {
+      "name": "1.29.0 approval leaves out a booking that is not the requester's",
+      "function": "overtimeApprovalWrites",
+      "args": [
+        {
+          "request": {
+            "id": "R4",
+            "userId": "sam",
+            "rangeStart": "2026-11-01",
+            "rangeEnd": "2026-11-30",
+            "status": "pending",
+            "lines": [
+              {
+                "bookingId": "B1",
+                "collection": "bookings",
+                "dayKey": "2026-11-04",
+                "jobId": "job-1",
+                "fingerprint": "2026-11-04|CUSTOM HOURS|06:30|14:00|||confirmed",
+                "action": "keep",
+                "proposedStart": null,
+                "proposedEnd": null,
+                "proposedMultiplier": null,
+                "cancel": false,
+                "overtimeHoursBefore": 1.5,
+                "overtimeHoursAfter": 1.5
+              },
+              {
+                "bookingId": "X1",
+                "collection": "bookings",
+                "dayKey": "2026-11-04",
+                "jobId": "job-1",
+                "fingerprint": "2026-11-04|CUSTOM HOURS|06:30|14:00|||confirmed",
+                "action": "strike",
+                "proposedStart": "07:30",
+                "proposedEnd": "14:00",
+                "proposedMultiplier": null,
+                "cancel": false,
+                "overtimeHoursBefore": 1.5,
+                "overtimeHoursAfter": 0
+              }
+            ],
+            "decisions": {},
+            "decidedBy": null,
+            "createdAtMs": null,
+            "decidedAtMs": null,
+            "appliedBookingIds": [],
+            "droppedBookingIds": []
+          },
+          "decisions": {
+            "B1": {
+              "action": "approve"
+            },
+            "X1": {
+              "action": "approve"
+            }
+          },
+          "bookings": {
+            "B1": {
+              "id": "B1",
+              "collection": "bookings",
+              "personId": "sam",
+              "dayKey": "2026-11-04",
+              "timeSlot": "CUSTOM_HOURS",
+              "workStartTime": "06:30",
+              "workEndTime": "14:00",
+              "status": "Confirmed",
+              "jobId": "job-1",
+              "jobNumber": "J-1042",
+              "jobName": "Riverside Flats"
+            },
+            "X1": {
+              "id": "X1",
+              "collection": "bookings",
+              "personId": "other",
+              "dayKey": "2026-11-04",
+              "timeSlot": "CUSTOM_HOURS",
+              "workStartTime": "06:30",
+              "workEndTime": "14:00",
+              "status": "Confirmed",
+              "jobId": "job-1",
+              "jobNumber": "J-1042",
+              "jobName": "Riverside Flats"
+            }
+          },
+          "organization": {
+            "countryCode": "GB",
+            "payrollTimePolicy": {
+              "standardDayStart": "07:30",
+              "standardDayEnd": "16:00",
+              "unpaidBreakMinutes": 30,
+              "breakWindowStart": "12:00",
+              "breakWindowEnd": "12:30",
+              "weekdayOutsideStandardMultiplier": 1.5,
+              "saturday": {
+                "allHoursAtMultiplierMode": false,
+                "definedWindowStart": "07:30",
+                "definedWindowEnd": "14:00",
+                "countsAsStandardHours": 8,
+                "outsideWindowMultiplier": 1.5
+              },
+              "sunday": {
+                "allHoursAtMultiplierMode": true,
+                "allHoursMultiplier": 2,
+                "sameAsSaturday": false
+              }
+            }
+          },
+          "timeZone": "Europe/London",
+          "deciderId": "admin",
+          "deciderIsAdmin": true,
+          "requesterIds": [
+            "sam"
+          ]
+        }
+      ],
+      "expected": {
+        "ok": true,
+        "bookingWrites": [],
+        "reviewWrites": [
+          {
+            "docId": "sam_B1",
+            "fields": {
+              "userId": "sam",
+              "bookingId": "B1",
+              "collection": "bookings",
+              "decision": "approved",
+              "fingerprint": "2026-11-04|CUSTOM HOURS|06:30|14:00|||confirmed",
+              "reviewedBy": "admin",
+              "requestId": "R4"
+            }
+          }
+        ],
+        "droppedBookingIds": [
+          "X1"
+        ],
+        "deletedBookingIds": [],
+        "unreadableBookingIds": [],
+        "foreignBookingIds": [
+          "X1"
+        ],
+        "requestFields": {
+          "status": "approved",
+          "decisions": {
+            "B1": {
+              "action": "approve"
+            }
+          },
+          "decidedBy": "admin",
+          "appliedBookingIds": [
+            "B1"
+          ],
+          "droppedBookingIds": [
+            "X1"
+          ]
+        }
       }
     },
     {

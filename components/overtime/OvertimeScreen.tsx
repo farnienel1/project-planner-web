@@ -11,6 +11,12 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import {
   OVERTIME_APPROVE_REQUEST_LABEL,
+  OVERTIME_BOOKING_UNREADABLE_MESSAGE,
+  OVERTIME_NOT_THEIR_BOOKING_MESSAGE,
+  canWriteBooking,
+  isAdminOutsideOperativeMode,
+  overtimeApprovalWrites,
+  overtimeBookingIsTheirs,
   OVERTIME_CANCEL_WARNING,
   OVERTIME_COMING_NEXT_MESSAGE,
   OVERTIME_GENERATE_REPORT_LABEL,
@@ -562,14 +568,14 @@ function OvertimeLines(props: {
         if (editMode(line) !== 'request') continue
         const booking = bookingById.get(line.bookingId.toLowerCase())
         if (!booking) continue
-        const built = overtimeRequestLineFields({ booking, organization, timeZone, proposal: draft[line.bookingId] ?? { action: 'keep' } })
+        const built = overtimeRequestLineFields({ booking, organization, timeZone, proposal: draft[line.bookingId] ?? { action: 'keep' }, personIds: operativeIds })
         if (built) requestLines.push(built)
       }
       if (requestLines.length === 0) {
         setMessage(OVERTIME_NO_LINES_MESSAGE)
         return
       }
-      await sendOvertimeRequest({ organizationId, requester: subject, users, rangeStart: range.start, rangeEnd: range.end, lines: requestLines, existing: requests })
+      await sendOvertimeRequest({ organizationId, requester: subject, users, rangeStart: range.start, rangeEnd: range.end, lines: requestLines, existing: requests, personIds: operativeIds, bookings })
       setDraft({})
       setMessage('Sent for approval.')
     })
@@ -583,6 +589,17 @@ function OvertimeLines(props: {
     })
 
   const canDecide = props.mode === 'review' && canDecideOvertimeRequest(rulebookPerson(props.viewerUser, users), subjectPerson, roster)
+  // §16: an admin writes every booking; a line manager only the requester's users-id bookings, or jobs they manage.
+  const deciderIsAdmin = isAdminOutsideOperativeMode(rulebookPerson(props.viewerUser, users))
+  const deciderCanWrite = (booking: OvertimeBookingInput) =>
+    canWriteBooking(
+      viewerAccess,
+      booking.collection === 'managerSiteBookings'
+        ? { collection: 'managerSiteBookings', userId: booking.personId, locationType: booking.jobId ? 'project' : 'office', locationId: booking.jobId }
+        : { collection: 'bookings', projectId: booking.jobId },
+      jobFor(booking.jobId ?? null) as unknown as Record<string, unknown> | null,
+      props.managers as never
+    )
 
   return (
     <div className="stack" style={{ gap: 12 }}>
@@ -651,6 +668,9 @@ function OvertimeLines(props: {
               decisions={decisions}
               setDecisions={setDecisions}
               busy={busy}
+              requesterIds={operativeIds}
+              deciderIsAdmin={deciderIsAdmin}
+              canWriteBooking={deciderCanWrite}
               onCog={(booking) => setCog({ booking, target: 'decision' })}
               onStrike={(booking, apply) => strike(booking, apply)}
               onApprove={() =>
@@ -664,13 +684,17 @@ function OvertimeLines(props: {
                     decider: props.viewerUser,
                     requester: subject,
                     users,
+                    requesterIds: operativeIds,
+                    deciderIsAdmin,
+                    canWriteBooking: deciderCanWrite,
                   })
                   setDecisions({})
-                  setMessage(
-                    result.droppedBookingIds.length > 0
-                      ? `Approved. ${result.droppedBookingIds.length} booking(s) had been deleted and were left out.`
-                      : 'Approved. The bookings are updated.'
-                  )
+                  const notes = [
+                    result.deletedBookingIds.length > 0 ? `${result.deletedBookingIds.length} deleted booking(s) left out` : '',
+                    result.unreadableBookingIds.length > 0 ? `${result.unreadableBookingIds.length} booking(s) you can't read left out` : '',
+                    result.foreignBookingIds.length > 0 ? `${result.foreignBookingIds.length} booking(s) not theirs left out` : '',
+                  ].filter(Boolean)
+                  setMessage(notes.length > 0 ? `Approved. ${notes.join('; ')}.` : 'Approved. The bookings are updated.')
                 })
               }
             />
@@ -757,9 +781,35 @@ function RequestReview(props: {
   onCog: (booking: OvertimeBookingInput) => void
   onStrike: (booking: OvertimeBookingInput, apply: () => void) => void
   onApprove: () => void
+  requesterIds: ReadonlyArray<string>
+  deciderIsAdmin: boolean
+  canWriteBooking: (booking: OvertimeBookingInput) => boolean
 }) {
   const { request, decisions } = props
   const ready = overtimeRequestFullyDecided(request, decisions)
+  // The same rule the approval transaction (and the security rules) apply, run on what this screen can read, so the
+  // button is never offered for an approval that would be refused.
+  const unreadable = request.lines.filter((line) => !props.bookingById.get(line.bookingId.toLowerCase())).map((line) => line.bookingId)
+  const live: Record<string, OvertimeBookingInput> = {}
+  for (const line of request.lines) {
+    const booking = props.bookingById.get(line.bookingId.toLowerCase())
+    if (booking) live[line.bookingId] = booking
+  }
+  const dryRun = ready
+    ? overtimeApprovalWrites({
+        request,
+        decisions,
+        bookings: live,
+        organization: props.organization,
+        timeZone: props.timeZone,
+        deciderId: 'preview',
+        requesterIds: props.requesterIds,
+        deciderIsAdmin: props.deciderIsAdmin,
+        writableBookingIds: Object.values(live).filter(props.canWriteBooking).map((row) => row.id),
+        unreadableBookingIds: unreadable,
+      })
+    : null
+  const blocked = dryRun && !dryRun.ok ? dryRun : null
   const decide = (bookingId: string, decision: OvertimeDecision) => props.setDecisions((d) => ({ ...d, [bookingId]: decision }))
   const describe = (line: OvertimeRequestLine): ReactNode =>
     line.cancel
@@ -782,7 +832,8 @@ function RequestReview(props: {
             <div className="grow small" style={{ minWidth: 0 }}>
               {formatPayePayrunDay(line.dayKey)} · {describe(line)}
               {decision ? <span className="muted"> · {decision.action === 'approve' ? 'ticked' : decision.action === 'strike' ? 'crossed' : `changed to ${decision.start}–${decision.end}`}</span> : null}
-              {!booking ? <span className="muted"> · booking deleted (will be left out)</span> : null}
+              {!booking ? <span className="muted"> · {OVERTIME_BOOKING_UNREADABLE_MESSAGE}</span> : null}
+              {booking && !overtimeBookingIsTheirs(booking, props.requesterIds) ? <span className="muted"> · {OVERTIME_NOT_THEIR_BOOKING_MESSAGE}</span> : null}
             </div>
             {props.canDecide && booking ? (
               <span className="row" style={{ gap: 6 }}>
@@ -806,9 +857,12 @@ function RequestReview(props: {
         )
       })}
       {props.canDecide ? (
-        <button type="button" className="btn primary" disabled={!ready || props.busy} onClick={props.onApprove}>
-          {OVERTIME_APPROVE_REQUEST_LABEL}
-        </button>
+        <>
+          {blocked ? <p className="small" style={{ color: 'var(--red)' }}>{blocked.message}</p> : null}
+          <button type="button" className="btn primary" disabled={!ready || props.busy || Boolean(blocked)} onClick={props.onApprove}>
+            {OVERTIME_APPROVE_REQUEST_LABEL}
+          </button>
+        </>
       ) : (
         <p className="muted small">Waiting for their line manager or an admin.</p>
       )}

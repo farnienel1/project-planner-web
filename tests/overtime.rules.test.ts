@@ -99,7 +99,7 @@ async function seed() {
     await booking('B2', PM, 'job2')
     await booking('B3', PM, 'job1')
     await booking('B4', OP2, 'job2')
-    // A catalogue row linked to Sam's account.
+    // A catalogue row linked to Sam's account (the link is member-writable, so it grants no booking write).
     await setDoc(doc(d, 'organizations', ORG, 'operatives', 'row-sam'), { firstName: 'Sam', email: 'other@test.com', linkedUserId: SAM })
     await booking('BR1', 'row-sam', 'job1')
     await setDoc(doc(d, 'platformConfig', 'app'), { enforcedReads: true })
@@ -188,11 +188,36 @@ test('an admin of another company is no line manager here', async () => {
   await assertFails(updateDoc(doc(db(ADMIN_B), 'organizations', ORG, 'bookings', 'B1'), { workStartTime: '07:30' }))
 })
 
-test('the line manager reaches bookings stored under the person\'s linked operatives row', async () => {
-  await assertSucceeds(updateDoc(orgDoc(LM, 'bookings', 'BR1'), { workStartTime: '07:30' }))
-  await assertSucceeds(updateDoc(orgDoc(LM, 'bookings', 'BR1'), { status: 'Cancelled' }))
-  await assertFails(updateDoc(orgDoc(MGR2, 'bookings', 'BR1'), { workStartTime: '07:30' }))
-  await assertFails(updateDoc(orgDoc(LM, 'bookings', 'BR1'), { notes: 'x' }))
+test('a booking filed under an operatives row is never written through the line-manager path (admins and job managers only)', async () => {
+  await assertFails(updateDoc(orgDoc(LM, 'bookings', 'BR1'), { workStartTime: '07:30' }))
+  await assertFails(updateDoc(orgDoc(LM, 'bookings', 'BR1'), { status: 'Cancelled' }))
+  await assertSucceeds(updateDoc(orgDoc(PM, 'bookings', 'BR1'), { workStartTime: '07:30' }))
+  await assertSucceeds(updateDoc(orgDoc(ADMIN, 'bookings', 'BR1'), { status: 'Cancelled' }))
+})
+
+test('relink attack: re-pointing an operatives row at a report never grants a booking write', async () => {
+  // Another manager's operative, booked under a catalogue row on a job LM does not manage.
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const d = ctx.firestore()
+    await setDoc(doc(d, 'organizations', ORG, 'operatives', 'row-x'), { firstName: 'Xavier', email: 'x@test.com' })
+    await setDoc(doc(d, 'organizations', ORG, 'bookings', 'BX'), {
+      id: 'BX', operativeId: 'row-x', projectId: 'job2', jobCollection: 'projects', date: 1762214400000,
+      timeSlot: 'CUSTOM_HOURS', workStartTime: '06:30', workEndTime: '14:00', status: 'Confirmed', bookedBy: 'Ada', notes: '',
+    })
+  })
+  // Members can change the row's link fields, so the rules must not trust them.
+  await assertSucceeds(updateDoc(orgDoc(LM, 'operatives', 'row-x'), { linkedUserId: SAM }))
+  await assertFails(updateDoc(orgDoc(LM, 'bookings', 'BX'), { status: 'Cancelled' }))
+  await assertFails(updateDoc(orgDoc(LM, 'bookings', 'BX'), { workStartTime: '07:30' }))
+  // Even an operative relinking the row gains nothing.
+  await assertFails(updateDoc(orgDoc(OP2, 'bookings', 'BX'), { status: 'Cancelled' }))
+})
+
+test('line manager booking writes: clock times are short text and the slot is a known one', async () => {
+  await assertFails(updateDoc(orgDoc(LM, 'bookings', 'B1'), { workStartTime: 730 }))
+  await assertFails(updateDoc(orgDoc(LM, 'bookings', 'B1'), { workEndTime: 'x'.repeat(40) }))
+  await assertFails(updateDoc(orgDoc(LM, 'bookings', 'B1'), { timeSlot: 'WHATEVER' }))
+  await assertSucceeds(updateDoc(orgDoc(LM, 'bookings', 'B1'), { timeSlot: 'CUSTOM_HOURS', workStartTime: '07:30', workEndTime: '15:00' }))
 })
 
 test('reads are unchanged: with enforced reads a line manager who does not manage the job reads the booking only as before', async () => {

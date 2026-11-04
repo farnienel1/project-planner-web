@@ -8,6 +8,7 @@ import {
   collection,
   deleteField,
   doc,
+  getDoc,
   onSnapshot,
   query,
   runTransaction,
@@ -188,8 +189,18 @@ export async function sendOvertimeRequest(input: {
   rangeEnd: string
   lines: ReadonlyArray<OvertimeRequestLine>
   existing: ReadonlyArray<OvertimeRequestRecord>
+  /** The requester's ids and bookings: lines on anyone else's booking are left out (`overtimeRequestWriteFields`). */
+  personIds: ReadonlyArray<string>
+  bookings: ReadonlyArray<OvertimeBookingInput>
 }): Promise<string | null> {
-  const fields = overtimeRequestWriteFields({ userId: input.requester.id, rangeStart: input.rangeStart, rangeEnd: input.rangeEnd, lines: input.lines })
+  const fields = overtimeRequestWriteFields({
+    userId: input.requester.id,
+    rangeStart: input.rangeStart,
+    rangeEnd: input.rangeEnd,
+    lines: input.lines,
+    personIds: input.personIds,
+    bookings: input.bookings,
+  })
   if (!fields) return null
   const batch = writeBatch(db)
   for (const id of overtimeRequestsToReplace(input.existing, input.requester.id, input.rangeStart, input.rangeEnd)) {
@@ -295,8 +306,27 @@ export async function approveOvertimeRequest(input: {
   decider: User
   requester: User | null
   users: ReadonlyArray<User>
-}): Promise<{ droppedBookingIds: string[] }> {
+  /** Every id the requester goes by (users ids and their operatives rows). */
+  requesterIds: ReadonlyArray<string>
+  deciderIsAdmin: boolean
+  /** Whether the decider may write this booking under `canWriteBooking` (jobs they manage). */
+  canWriteBooking: (booking: OvertimeBookingInput) => boolean
+}): Promise<{ droppedBookingIds: string[]; unreadableBookingIds: string[]; deletedBookingIds: string[]; foreignBookingIds: string[] }> {
   const orgId = input.organizationId
+  // Bookings this decider cannot read (enforced reads) are left out, never read inside the transaction.
+  const before = await getDoc(doc(db, 'organizations', orgId, 'overtimeRequests', input.requestId))
+  const unreadable: string[] = []
+  if (before.exists()) {
+    const pre = parseOvertimeRequestDocument(before.id, before.data())
+    for (const line of pre.lines) {
+      try {
+        await getDoc(doc(db, 'organizations', orgId, line.collection, line.bookingId))
+      } catch (error) {
+        if ((error as { code?: string })?.code === 'permission-denied') unreadable.push(line.bookingId)
+        else throw error
+      }
+    }
+  }
   const result = await runTransaction(db, async (tx) => {
     const requestRef = doc(db, 'organizations', orgId, 'overtimeRequests', input.requestId)
     const requestSnap = await tx.get(requestRef)
@@ -304,6 +334,7 @@ export async function approveOvertimeRequest(input: {
     const request = parseOvertimeRequestDocument(requestSnap.id, requestSnap.data())
     const bookings: Record<string, OvertimeBookingInput | null> = {}
     for (const line of request.lines) {
+      if (unreadable.includes(line.bookingId)) continue
       const snap = await tx.get(doc(db, 'organizations', orgId, line.collection, line.bookingId))
       bookings[line.bookingId] = snap.exists()
         ? bookingInputFromDoc(line.collection, snap.id, snap.data() as Record<string, unknown>, input.timeZone)
@@ -316,6 +347,12 @@ export async function approveOvertimeRequest(input: {
       organization: input.organization,
       timeZone: input.timeZone,
       deciderId: input.decider.id,
+      requesterIds: input.requesterIds,
+      deciderIsAdmin: input.deciderIsAdmin,
+      writableBookingIds: Object.values(bookings)
+        .filter((row): row is OvertimeBookingInput => row != null && input.canWriteBooking(row))
+        .map((row) => row.id),
+      unreadableBookingIds: unreadable,
     })
     if (!writes.ok) throw new OvertimeApprovalRefused(writes.message, writes.bookingIds)
     for (const write of writes.bookingWrites) {
@@ -331,7 +368,13 @@ export async function approveOvertimeRequest(input: {
       })
     }
     tx.update(requestRef, { ...writes.requestFields, decidedAt: serverTimestamp(), ...metadata() })
-    return { droppedBookingIds: writes.droppedBookingIds, userId: request.userId }
+    return {
+      droppedBookingIds: writes.droppedBookingIds,
+      unreadableBookingIds: writes.unreadableBookingIds,
+      deletedBookingIds: writes.deletedBookingIds,
+      foreignBookingIds: writes.foreignBookingIds,
+      userId: request.userId,
+    }
   })
   const roster = rulebookRoster(input.users)
   const recipients = overtimeReviewedRecipients(result.userId, rulebookPerson(input.decider, input.users), roster)
@@ -347,7 +390,12 @@ export async function approveOvertimeRequest(input: {
       }).catch(() => undefined)
     )
   )
-  return { droppedBookingIds: result.droppedBookingIds }
+  return {
+    droppedBookingIds: result.droppedBookingIds,
+    unreadableBookingIds: result.unreadableBookingIds,
+    deletedBookingIds: result.deletedBookingIds,
+    foreignBookingIds: result.foreignBookingIds,
+  }
 }
 
 /**

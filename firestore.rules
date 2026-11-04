@@ -1704,19 +1704,6 @@ service cloud.firestore {
           exists(path) && homeOrgIs(get(path).data, organizationId) &&
           request.auth.uid in lineManagerIdList(get(path).data);
       }
-      // The booked person: a users id, or an `operatives` row whose account is its stored link (`linkedUserId` /
-      // `userId` / `uid`). Known limit: a row linked only by email is not traced (an admin applies those changes).
-      function operativeRowAccountId(pid) {
-        let data = get(/databases/(default)/documents/organizations/$(organizationId)/operatives/$(pid)).data;
-        return data.get('linkedUserId', data.get('userId', data.get('uid', '')));
-      }
-      function callerLineManagesBookingPerson(pid) {
-        return pid is string && pid.size() > 0 && !pid.matches('.*/.*') && (
-          callerLineManagesUser(pid) ||
-          (exists(/databases/(default)/documents/organizations/$(organizationId)/operatives/$(pid)) &&
-            callerLineManagesUser(operativeRowAccountId(pid)))
-        );
-      }
       function overtimeMultiplierWriteValid() {
         let m = request.resource.data.get('otMultiplierOverride', null);
         return m == null || m == resource.data.get('otMultiplierOverride', null) ||
@@ -1730,15 +1717,25 @@ service cloud.firestore {
         return homeOrgIs(home, organizationId) && home.get('isActive', true) != false &&
           (adminLikeUser(home) || !isOperativeProfile(home)) && orgBillingOpen(organizationId);
       }
+      // A clock or slot the line manager writes is short text (an `HH:mm` time, a known slot).
+      function overtimeTextFieldValid(affected, key, maxSize) {
+        return !(key in affected) || (request.resource.data[key] is string && request.resource.data[key].size() <= maxSize);
+      }
+      // 1.29.0 review fix: only a booking whose person id is a users id listing the caller as line manager — never one
+      // filed under an `operatives` row (its link fields are writable by members, so they cannot grant access).
       function overtimeLineManagerBookingUpdate(collection) {
-        return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+        let affected = request.resource.data.diff(resource.data).affectedKeys();
+        return affected.hasOnly([
             'workStartTime', 'workEndTime', 'timeSlot', 'otMultiplierOverride', 'status', 'updatedAt', 'updatedBy', 'updatedFrom'
           ]) &&
+          overtimeTextFieldValid(affected, 'workStartTime', 8) &&
+          overtimeTextFieldValid(affected, 'workEndTime', 8) &&
+          (!('timeSlot' in affected) || request.resource.data.timeSlot in ['CUSTOM_HOURS', 'CUSTOM', 'FULL DAY', 'FULL_DAY', 'AM', 'PM']) &&
           (request.resource.data.get('status', null) == resource.data.get('status', null) ||
             request.resource.data.get('status', null) == 'Cancelled') &&
           overtimeMultiplierWriteValid() &&
           writeMetadataValidWhenPresent() &&
-          callerLineManagesBookingPerson(bookingPersonId(collection, resource.data)) &&
+          callerLineManagesUser(bookingPersonId(collection, resource.data)) &&
           overtimeCallerIsStaffHere();
       }
       // Overtime documents: the person, their line managers and admins of this organisation read them.

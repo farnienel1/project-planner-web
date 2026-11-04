@@ -118,7 +118,9 @@ export function DailyOverviewBookingSheet({
   const [breakRemoved, setBreakRemoved] = useState(false)
   // Rulebook 1.29.0 §25: the labour booking's own overtime rate (`otMultiplierOverride`; null = the organisation's).
   const storedRate = (() => {
-    const stored = bookings.find((entry) => entry.id === row.bookingId)?.otMultiplierOverride
+    const stored =
+      bookings.find((entry) => entry.id === row.bookingId)?.otMultiplierOverride ??
+      managerSiteBookings.find((entry) => entry.id === row.bookingId)?.otMultiplierOverride
     return typeof stored === 'number' ? stored : null
   })()
   const [overtimeRate, setOvertimeRate] = useState<number | null>(storedRate)
@@ -376,7 +378,10 @@ export function DailyOverviewBookingSheet({
       if (row.kind === 'operative') {
         await updateBooking(row.bookingId, { ...hours, ...(overtimeRate !== storedRate ? { otMultiplierOverride: overtimeRate } : {}) })
       } else {
-        await updateManagerSiteBooking(organization.id, row.bookingId, hours)
+        await updateManagerSiteBooking(organization.id, row.bookingId, {
+          ...hours,
+          ...(overtimeRate !== storedRate ? { otMultiplierOverride: overtimeRate } : {}),
+        })
       }
       onClose()
     } catch (err: unknown) {
@@ -510,7 +515,7 @@ export function DailyOverviewBookingSheet({
             }}
           />
           {!hoursValid ? <p className="muted small">Finish needs to be after the start.</p> : null}
-          {row.kind === 'operative' ? (
+          {row.kind === 'operative' || row.kind === 'manager' ? (
             <OvertimeRateField
               dayKey={bookingDayKey(day)}
               timeSlot="CUSTOM_HOURS"
