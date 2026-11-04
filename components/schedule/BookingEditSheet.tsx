@@ -18,6 +18,7 @@ import {
   weekendNotesForDates,
 } from '@/lib/scheduling/bookingSlotRules'
 import { useOrganizationDocument } from '@/lib/stores/organizationDocumentStore'
+import { OvertimeRateField } from '@/components/overtime/OvertimeRateField'
 
 const SLOT_OPTIONS: { value: ScheduleSlotChoice; label: string }[] = [
   { value: 'AM', label: 'Morning (AM)' },
@@ -75,6 +76,9 @@ export function BookingEditSheet({
   const [workEndTime, setWorkEndTime] = useState(booking.workEndTime || prefill.end)
   const [breakRemoved, setBreakRemoved] = useState(booking.isBreakRemoved === true)
   const [notes, setNotes] = useState(booking.notes || '')
+  // Rulebook 1.29.0 §25: the booking's own overtime rate (`otMultiplierOverride`; null = the organisation's).
+  const storedRate = typeof booking.otMultiplierOverride === 'number' ? booking.otMultiplierOverride : null
+  const [overtimeRate, setOvertimeRate] = useState<number | null>(storedRate)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -127,6 +131,8 @@ export function BookingEditSheet({
         workEndTime: firestoreSlot.workEndTime,
         isBreakRemoved: slot === 'CUSTOM' ? breakRemoved : false,
         notes,
+        // Only when changed: a number sets it, null removes it (the converter deletes the field); untouched keeps it.
+        ...(overtimeRate !== storedRate ? { otMultiplierOverride: overtimeRate } : {}),
       })
       onClose()
     } catch (e) {
@@ -211,6 +217,18 @@ export function BookingEditSheet({
               onBreak={setBreakRemoved}
             />
           )}
+
+          {slot === 'CUSTOM' && booking.source !== 'manager' ? (
+            <OvertimeRateField
+              dayKey={bookingDayKey(booking.date)}
+              timeSlot="CUSTOM_HOURS"
+              workStartTime={workStartTime}
+              workEndTime={workEndTime}
+              isBreakRemoved={breakRemoved}
+              value={overtimeRate}
+              onChange={setOvertimeRate}
+            />
+          ) : null}
 
           <HoursBreakdownCard
             breakdown={breakdown}

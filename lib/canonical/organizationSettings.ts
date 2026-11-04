@@ -224,7 +224,8 @@ export const OPERATIONAL_COLLECTION_PATHS = {
   healthSafetyEvidence: 'organizations/{orgId}/healthSafety/{parentId}/variations/{file}',
   /** 1.29.0 (§25): PAYE overtime requests, approved lines and saved reports. */
   overtimeRequests: 'organizations/{orgId}/overtimeRequests',
-  overtimeReviews: 'organizations/{orgId}/overtimeReviews/{userId}_{bookingId}',
+  /** Document id `{userId}_{bookingId}` (`overtimeReviewDocId`). */
+  overtimeReviews: 'organizations/{orgId}/overtimeReviews',
   overtimeReports: 'organizations/{orgId}/overtimeReports',
 } as const
 

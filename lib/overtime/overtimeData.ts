@@ -435,3 +435,56 @@ export async function saveOvertimeReport(input: {
   })
   return { ...snapshot, id: ref.id }
 }
+
+/**
+ * Live bookings of one person for the Overtime screens: labour bookings under each of their ids (`operativeId ==`,
+ * one query per id, as the read rules require) and their manager site bookings (`userId ==`). Mapped through the
+ * rulebook readers; job number and name from `jobs`.
+ */
+export function listenPersonOvertimeBookings(input: {
+  organizationId: string
+  operativeIds: ReadonlyArray<string>
+  userIds: ReadonlyArray<string>
+  timeZone: string
+  jobs: ReadonlyArray<Project>
+  onChange: (rows: OvertimeBookingInput[]) => void
+  onError?: (error: Error) => void
+}): Unsubscribe {
+  const job = jobLookup(input.jobs, [])
+  const parts = new Map<string, OvertimeBookingInput[]>()
+  const emit = () => {
+    const seen = new Set<string>()
+    const out: OvertimeBookingInput[] = []
+    for (const rows of parts.values()) {
+      for (const row of rows) {
+        const key = `${row.collection}/${row.id}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        const found = job(row.jobId)
+        out.push({ ...row, jobNumber: found?.jobNumber ?? row.jobNumber ?? '', jobName: found?.siteName ?? row.jobName ?? '' })
+      }
+    }
+    input.onChange(out)
+  }
+  const unsubs: Unsubscribe[] = []
+  const listen = (key: string, collectionName: 'bookings' | 'managerSiteBookings', field: string, value: string) => {
+    unsubs.push(
+      onSnapshot(
+        query(collection(db, 'organizations', input.organizationId, collectionName), where(field, '==', value)),
+        (snap) => {
+          parts.set(
+            key,
+            snap.docs
+              .map((row) => bookingInputFromDoc(collectionName, row.id, row.data() as Record<string, unknown>, input.timeZone))
+              .filter((row): row is OvertimeBookingInput => row != null)
+          )
+          emit()
+        },
+        (error) => input.onError?.(error)
+      )
+    )
+  }
+  for (const id of Array.from(new Set(input.operativeIds.filter(Boolean)))) listen(`b:${id}`, 'bookings', 'operativeId', id)
+  for (const id of Array.from(new Set(input.userIds.filter(Boolean)))) listen(`m:${id}`, 'managerSiteBookings', 'userId', id)
+  return () => unsubs.forEach((stop) => stop())
+}

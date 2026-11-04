@@ -8,9 +8,9 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ║ FOLLOW-ON — paste into the iOS agent                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
-Rulebook version: 1.28.0 → 1.29.0
-Packed hash: 4c1534cf3709d755e42699e97b662372d7afe9aec5fde4701b038630f7188ce5
-Rulebook sha256: e7c7678e3e6a5fd012ac4aa67ed3e1aa57e96174fc4a5043af4540ca62d3fc9e
+Rulebook version: 1.29.0 → 1.29.0
+Packed hash: f5eb6855d726101f20bd2e8449b8f0e61edfe8240dc02b88b735d93315fa294f
+Rulebook sha256: fb49a8bcd20d04bfadc9ae51473c7f7baf417f1167175fd11316ca026c491d6b
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -20,12 +20,12 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
   web lib/canonical/cross-platform-contract.json    → iOS ProjectPlannerTests/CrossPlatformContract.json
 Contract sha256: 7f70ec28920ac6114068b4e44eaf893706d5b6af1b21d77b69f946074d74e126
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: BOOKING_HOURS_CHANGED_BY_OWNER_TYPE, OVERTIME_APPROVE_REQUEST_LABEL, OVERTIME_CANCEL_NOT_ALLOWED_MESSAGE, OVERTIME_CANCEL_WARNING, OVERTIME_COMING_NEXT_MESSAGE, OVERTIME_GENERATE_REPORT_LABEL, OVERTIME_HUB_LABEL, OVERTIME_LINE_STATES, OVERTIME_LINE_STATE_LABELS, OVERTIME_MINE_LABEL, OVERTIME_MIN_MINUTES, OVERTIME_MULTIPLIER_MAX, OVERTIME_MULTIPLIER_MESSAGE, OVERTIME_MULTIPLIER_MIN, OVERTIME_MULTIPLIER_STEP, OVERTIME_MULTIPLIER_STEPS, OVERTIME_NO_LINES_MESSAGE, OVERTIME_REPORTS_COLLECTION, OVERTIME_REPORT_TOTAL_LABEL, OVERTIME_REQUESTS_COLLECTION, OVERTIME_REQUEST_NOT_PENDING_MESSAGE, OVERTIME_REQUEST_REVIEWED_TYPE, OVERTIME_REQUEST_STALE_MESSAGE, OVERTIME_REQUEST_STATUSES, OVERTIME_REQUEST_SUBMITTED_TYPE, OVERTIME_REQUEST_UNDECIDED_MESSAGE, OVERTIME_REVIEWS_COLLECTION, OVERTIME_SEND_FOR_APPROVAL_LABEL, OVERTIME_TIMES_MESSAGE, OVERTIME_USERS_LABEL, PAYE_PAYDAY_CONTROL_LABEL, PAYE_PAYDAY_HELP, PAYE_PAYDAY_INVALID_MESSAGE, PAYE_PAYDAY_MAX, PAYE_PAYDAY_MIN, PAYE_PAYDAY_NOT_SET_MESSAGE, bookingHoursChangedRecipients, canDecideOvertimeRequest, canEditOwnBookingOvertime, canGenerateOvertimeReport, formatPayePayrunDay, organizationOvertimeMultiplier, overtimeApprovalWrites, overtimeBookingAfter, overtimeBookingFingerprint, overtimeBookingSlot, overtimeBookingWriteFields, overtimeCogPreview, overtimeDirectWrites, overtimeEditValidationError, overtimeForBooking, overtimeHubAccess, overtimeLineIsStale, overtimeLinesTotal, overtimeMultiplierValid, overtimeMultiplierValidationError, overtimeMultiplierWriteFields, overtimeRateControl, overtimeReportRows, overtimeReportSnapshot, overtimeRequestFullyDecided, overtimeRequestLineFields, overtimeRequestRecipients, overtimeRequestWithdrawWriteFields, overtimeRequestWriteFields, overtimeRequestsToReplace, overtimeReviewDocId, overtimeReviewedRecipients, overtimeStrikeOutcome, overtimeUserSubjects, parseOvertimeReportDocument, parseOvertimeRequestDocument, parseOvertimeReviewDocument, payeCustomRange, payeOvertimeLines, payePastPayruns, payePayday, payePaydayHistory, payePaydayValidationError, payePaydayWriteFields, payePayrunLabel, payePayrunPeriod, payePayrunSummary, payeRangeDayKeys, weeklyReportPayeDay, weeklyReportPayeOvertime
+Exports added: none
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, firestore.rules, lib/canonical/bookings.ts, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/crossPlatformContract.samples.ts, lib/canonical/index.ts, lib/canonical/liveSources.ts, lib/canonical/notificationPreferences.ts, lib/canonical/notificationRecipients.ts, lib/canonical/organizationSettings.ts, lib/canonical/parity-fixture.json, lib/canonical/recordsDocuments.ts, lib/canonical/payeOvertime.ts, lib/canonical/payePayrun.ts
+Web files that changed the rules: lib/canonical/organizationSettings.ts
 Done when:
-- [ ] Packed hash in iOS equals 4c1534cf3709d755e42699e97b662372d7afe9aec5fde4701b038630f7188ce5
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 e7c7678e3e6a5fd012ac4aa67ed3e1aa57e96174fc4a5043af4540ca62d3fc9e)
+- [ ] Packed hash in iOS equals f5eb6855d726101f20bd2e8449b8f0e61edfe8240dc02b88b735d93315fa294f
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 fb49a8bcd20d04bfadc9ae51473c7f7baf417f1167175fd11316ca026c491d6b)
 - [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.29.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
@@ -41,10 +41,6 @@ Done when:
 - **Notifications** (§13): `overtime_request_submitted` and `overtime_request_reviewed` (push), `booking_hours_changed_by_owner` (inbox only); recipients `overtimeRequestRecipients`, `overtimeReviewedRecipients`, `bookingHoursChangedRecipients`; a new **Overtime** toggle (`overtime`, on by default); destinations `overtimeUser` / `overtimeMine`; `relatedId` kinds `overtimeRequest` and `booking`.
 - **Security rules** (§16): a person's line manager may change only the overtime fields of their bookings (and cancel them); `overtimeRequests`, `overtimeReviews`, `overtimeReports` rules; the catch-all read never re-opens them. `LIVE_COLLECTIONS` and `OPERATIONAL_COLLECTION_PATHS` list the three collections.
 
-## New rulebook sections
-
-- 25. PAYE overtime (1.29.0)
-- 1.29.0 — 2026-11-04
 
 ## Workflow for the iOS agent
 

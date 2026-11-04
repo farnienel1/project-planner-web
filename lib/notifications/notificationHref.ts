@@ -102,6 +102,13 @@ export function hrefForNotificationDestination(dest: NotificationDestination): s
       return '/dashboard/qualifications'
     case 'home':
       return '/dashboard'
+    // Rulebook 1.29.0 §25: the person's own Overtime page; Users' → that person → Overtime.
+    case 'overtimeMine':
+      return '/dashboard/timesheets/overtime?scope=mine&section=overtime'
+    case 'overtimeUser':
+      return dest.userId
+        ? `/dashboard/timesheets/overtime?scope=users&user=${encodeURIComponent(dest.userId)}&section=overtime`
+        : '/dashboard/timesheets/overtime?scope=users'
     case 'notifications':
     default:
       return '/dashboard/notifications'

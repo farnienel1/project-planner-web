@@ -231,10 +231,31 @@ export function OrganisationFeaturesStep({
       )}
 
       {subStep === 'payment-runs' && (
-        <PaymentRunsSetupSection
-          value={value.invoicing}
-          onChange={(invoicing) => patch({ invoicing })}
-        />
+        <>
+          <PaymentRunsSetupSection
+            value={value.invoicing}
+            onChange={(invoicing) => patch({ invoicing })}
+          />
+          {/* Rulebook 1.29.0 §4.5: optional PAYE payday (can be set later in Settings → Payment runs and timesheets). */}
+          <label className="mt-5 block text-sm font-semibold text-slate-700">
+            Set PAYE payday (optional)
+            <select
+              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+              value={value.payePayday == null ? '' : String(value.payePayday)}
+              onChange={(e) => patch({ payePayday: e.target.value ? Number(e.target.value) : null })}
+            >
+              <option value="">Not now</option>
+              {Array.from({ length: 31 }, (_, i) => i + 1).map((day) => (
+                <option key={day} value={String(day)}>
+                  Day {day}
+                </option>
+              ))}
+            </select>
+            <span className="mt-1 block text-xs font-normal text-slate-500">
+              PAYE staff are paid on this day each month; 29–31 is the last day of shorter months.
+            </span>
+          </label>
+        </>
       )}
 
       {error && (
