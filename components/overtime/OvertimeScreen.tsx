@@ -18,7 +18,6 @@ import {
   overtimeApprovalWrites,
   overtimeBookingIsTheirs,
   OVERTIME_CANCEL_WARNING,
-  OVERTIME_COMING_NEXT_MESSAGE,
   OVERTIME_GENERATE_REPORT_LABEL,
   OVERTIME_HUB_LABEL,
   OVERTIME_MINE_LABEL,
@@ -77,56 +76,11 @@ import {
 } from '@/lib/overtime/overtimeData'
 import { buildOvertimeReportPdf, downloadPdf } from '@/lib/overtime/overtimeReportPdf'
 import { Modal } from '@/components/ui'
+import { CustomRangeForm, NavBar, OVERTIME_PATH, Tile, isPaye, orgLogo, overtimeHref, personName } from '@/components/overtime/overtimeUi'
+import { PayeClaimsSection } from '@/components/overtime/PayeClaimsScreen'
+
+export { OVERTIME_PATH, overtimeHref }
 import type { Project, User } from '@/types'
-
-export const OVERTIME_PATH = '/dashboard/timesheets/overtime'
-
-export function overtimeHref(params: Record<string, string | null | undefined>): string {
-  const search = new URLSearchParams()
-  for (const [key, value] of Object.entries(params)) if (value) search.set(key, value)
-  const query = search.toString()
-  return query ? `${OVERTIME_PATH}?${query}` : OVERTIME_PATH
-}
-
-function personName(user: User | null | undefined): string {
-  if (!user) return 'Unknown person'
-  return [user.firstName, user.surname].filter(Boolean).join(' ') || user.email || 'Unknown person'
-}
-
-function isPaye(user: User | null | undefined): boolean {
-  return String(user?.employmentType ?? '').toLowerCase() === 'paye'
-}
-
-function NavBar({ title, back }: { title: string; back?: { label: string; href: string } }) {
-  const router = useRouter()
-  return (
-    <div className="phead" data-hue="ts">
-      {back ? (
-        <button type="button" className="btn sm ghost" onClick={() => router.replace(back.href)}>
-          {back.label}
-        </button>
-      ) : null}
-      <div>
-        <h1>{title}</h1>
-      </div>
-    </div>
-  )
-}
-
-function Tile({ title, subtitle, onClick, disabled }: { title: string; subtitle?: string; onClick: () => void; disabled?: boolean }) {
-  return (
-    <button
-      type="button"
-      className="card pad click"
-      style={{ border: 0, textAlign: 'left', opacity: disabled ? 0.55 : 1 }}
-      onClick={onClick}
-      disabled={disabled}
-    >
-      <b style={{ fontFamily: 'var(--head)', fontSize: 18 }}>{title}</b>
-      {subtitle ? <div className="muted small">{subtitle}</div> : null}
-    </button>
-  )
-}
 
 export function OvertimeScreen() {
   const router = useRouter()
@@ -211,31 +165,38 @@ export function OvertimeScreen() {
         <NavBar title={baseTitle} back={{ label: mine ? OVERTIME_HUB_LABEL : OVERTIME_USERS_LABEL, href: upHref }} />
         <div className="grid g2">
           <Tile title="Overtime" onClick={() => router.push(overtimeHref({ ...here, section: 'overtime' }))} />
-          <Tile title="Expenses" subtitle="Coming in the next update" onClick={() => router.push(overtimeHref({ ...here, section: 'expenses' }))} />
-          <Tile title="Price work" subtitle="Coming in the next update" onClick={() => router.push(overtimeHref({ ...here, section: 'priceWork' }))} />
+          <Tile title="Expenses" onClick={() => router.push(overtimeHref({ ...here, section: 'expenses' }))} />
+          <Tile title="Price work" onClick={() => router.push(overtimeHref({ ...here, section: 'priceWork' }))} />
         </div>
       </div>
     )
   }
 
   const sectionBack = { label: baseTitle, href: overtimeHref({ scope, user: userParam }) }
-  if (section !== 'overtime') {
+  if (section === 'expenses' || section === 'priceWork') {
+    // Rulebook 1.30.0 §26: PAYE price work and expenses (self-employed: their timesheet entries, read-only).
     return (
-      <div className="stack" data-hue="ts">
-        <NavBar title={section === 'expenses' ? 'Expenses' : 'Price work'} back={sectionBack} />
-        <div className="card pad">
-          {!mine && !isPaye(subject) ? (
-            <p>
-              {personName(subject)} is self-employed: their {section === 'expenses' ? 'expenses are' : 'price work is'} on their timesheet.{' '}
-              <a className="link" href={timesheetsTeamHref({ user: subject.id })}>Open User Timesheets</a>
-            </p>
-          ) : (
-            <p>{OVERTIME_COMING_NEXT_MESSAGE}</p>
-          )}
-        </div>
-      </div>
+      <PayeClaimsSection
+        kind={section === 'expenses' ? 'expense' : 'priceWork'}
+        mine={mine}
+        subject={subject}
+        viewerUser={user}
+        users={users}
+        organizationId={organization.id}
+        orgDoc={orgDoc}
+        orgLoaded={orgLoaded}
+        companyName={String(orgDoc?.name ?? organization.name ?? '')}
+        timeZone={timeZone}
+        todayKey={todayKey}
+        here={{ scope, user: userParam, section }}
+        range={range}
+        start={start}
+        end={end}
+        sectionBack={sectionBack}
+      />
     )
   }
+  if (section !== 'overtime') return <p className="muted">Unknown section.</p>
 
   if (!mine && !isPaye(subject)) {
     return (
@@ -339,11 +300,6 @@ export function OvertimeScreen() {
   )
 }
 
-function orgLogo(orgDoc: Record<string, unknown> | null | undefined): string | null {
-  const url = orgDoc?.companyLogoURL
-  return typeof url === 'string' && url.trim() ? url : null
-}
-
 /** Pending overtime requests of the person, each opening its range (the request push lands here). */
 function PendingRequests({ organizationId, subjectId, onOpen }: { organizationId: string; subjectId: string; onOpen: (request: OvertimeRequestRecord) => void }) {
   const [requests, setRequests] = useState<OvertimeRequestRecord[]>([])
@@ -386,27 +342,6 @@ function UsersList({ users, onOpen }: { users: User[]; onOpen: (id: string) => v
       {rows.map((row) => (
         <Tile key={row.id} title={personName(row)} subtitle={isPaye(row) ? 'PAYE' : 'Self-employed'} onClick={() => onOpen(row.id)} />
       ))}
-    </div>
-  )
-}
-
-function CustomRangeForm({ onView }: { onView: (start: string, end: string) => void }) {
-  const [a, setA] = useState('')
-  const [b, setB] = useState('')
-  const picked = payeCustomRange(a, b)
-  return (
-    <div className="card pad stack" style={{ gap: 12 }}>
-      <label className="small">
-        Start
-        <input className="input" type="date" value={a} onChange={(e) => setA(e.target.value)} />
-      </label>
-      <label className="small">
-        End
-        <input className="input" type="date" value={b} onChange={(e) => setB(e.target.value)} />
-      </label>
-      <button type="button" className="btn primary" style={{ background: 'var(--green, #16a34a)' }} disabled={!picked} onClick={() => picked && onView(picked.start, picked.end)}>
-        View Overtime
-      </button>
     </div>
   )
 }

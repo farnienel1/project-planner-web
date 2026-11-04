@@ -287,6 +287,64 @@ service firebase.storage {
       allow update: if canOverwriteStoredFile(orgId, 10 * 1024 * 1024, isWorkFileType());
     }
 
+    // Rulebook 1.30.0 §26: a person's line manager — listed on that person's users document, which names this
+    // organisation (never an operatives row) — the same test as Firestore callerLineManagesUser.
+    function callerLineManagesUser(orgId, uid) {
+      let path = /databases/(default)/documents/users/$(uid);
+      return signedIn() && uid != request.auth.uid
+        // 1.30.0 review: the caller is active (as Firestore canAccessOrganization requires).
+        && userDocExists() && userData().get('isActive', true) != false
+        && firestore.exists(path)
+        && (
+          (firestore.get(path).data.get('organizationId', '') is string
+            && firestore.get(path).data.get('organizationId', '').lower() == orgId.lower())
+        )
+        && (
+          request.auth.uid in firestore.get(path).data.get('assignedManagerUserIds', [])
+          || firestore.get(path).data.get('assignedManagerUserId', '') == request.auth.uid
+        )
+        && firestore.get(path).data.get('hasNoLineManager', false) != true;
+    }
+
+    // An admin of this organisation, as Firestore isOrganizationAdmin and canonical isAdminOutsideOperativeMode read it
+    // (1.11.0: a stray operativeMode never demotes an admin), active.
+    function claimAdmin(orgId) {
+      return callerIsAdminMember(orgId) || (
+        callerOrgMatches(orgId) && userData().get('isActive', true) != false && (
+          ('isSuperAdmin' in userData() && truthyBool(userData().isSuperAdmin))
+          || ('adminAccess' in userData() && truthyBool(userData().adminAccess))
+          || ('role' in userData() && userData().role == 'admin')
+          || ('permissions' in userData() && userData().permissions is map
+            && 'adminAccess' in userData().permissions
+            && truthyBool(userData().permissions.adminAccess))
+        )
+      );
+    }
+
+    function isClaimImageOrPdf() {
+      return (isImageContent() && request.resource.contentType != 'image/svg+xml') || isPdf();
+    }
+
+    // Price work / expense evidence (and frozen personal site audit copies), in the person's own folder. The person
+    // uploads (a new {uid}_{ms} object each time); the person, their line managers and admins of this organisation
+    // read; delete as §24 (the uploader within the undo window, or an admin). Images and PDFs, 10MB.
+    match /organizations/{orgId}/payeClaims/{userId}/{fileName} {
+      allow read: if orgMember(orgId) && (request.auth.uid == userId || claimAdmin(orgId) || callerLineManagesUser(orgId, userId));
+      allow delete: if canDeleteStoredFile(orgId);
+      allow create: if request.auth.uid == userId && newOrOwnRetry()
+        && memberSizedWrite(orgId, 10 * 1024 * 1024, isClaimImageOrPdf());
+      allow update: if request.auth.uid == userId && canOverwriteStoredFile(orgId, 10 * 1024 * 1024, isClaimImageOrPdf());
+    }
+
+    // Personal site audit photos: the owner only — read, write and delete (within the undo window). No admin.
+    match /organizations/{orgId}/personalSiteAudits/{ownerId}/{allPaths=**} {
+      allow read: if orgMember(orgId) && request.auth.uid == ownerId;
+      allow delete: if orgMember(orgId) && request.auth.uid == ownerId && uploaderWithinUndoWindow();
+      allow create: if request.auth.uid == ownerId && newOrOwnRetry()
+        && memberSizedWrite(orgId, 10 * 1024 * 1024, isImageContent() && request.resource.contentType != 'image/svg+xml');
+      allow update: if request.auth.uid == ownerId && canOverwriteStoredFile(orgId, 10 * 1024 * 1024, isImageContent() && request.resource.contentType != 'image/svg+xml');
+    }
+
     match /{allPaths=**} {
       allow read, write: if false;
     }

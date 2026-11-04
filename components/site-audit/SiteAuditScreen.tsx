@@ -17,6 +17,8 @@ import {
 } from '@/lib/siteAudit/siteAuditPdf'
 import type { Project, SiteAudit } from '@/types'
 import { ReportFileLink } from '@/components/fileReports/ReportFileLink'
+import { PersonalSiteAuditsView, usePersonalSiteAudits } from '@/components/site-audit/PersonalSiteAudits'
+import { PERSONAL_SITE_AUDIT_SECTION_LABEL } from '@/lib/canonical'
 
 const AUDIT_TYPES = ['All', 'Pre-Start', 'General', 'Variations', 'Snags', 'Other'] as const
 type AuditTypeFilter = (typeof AUDIT_TYPES)[number]
@@ -520,6 +522,7 @@ type View =
   | { type: 'hub' }
   | { type: 'projects' }
   | { type: 'small-works' }
+  | { type: 'personal' }
   | { type: 'project-audits'; projectId: string; projectJobNumber: string; projectName: string; from: 'projects' | 'small-works' }
 
 export function SiteAuditScreen() {
@@ -527,6 +530,8 @@ export function SiteAuditScreen() {
   const { audits, loading, error, loadAudits } = useSiteAuditStore()
   const { projects, smallWorks, loadProjects, loadSmallWorks } = useProjectStore()
   const [view, setView] = useState<View>({ type: 'hub' })
+  // Rulebook 1.30.0 §26: the signed-in person's own personal audits (owner only).
+  const personal = usePersonalSiteAudits()
 
   useEffect(() => {
     if (!organization?.id) return
@@ -608,6 +613,19 @@ export function SiteAuditScreen() {
             </span>
             <span className="count soft">{smallWorks.length}</span>
           </button>
+
+          <button type="button" onClick={() => setView({ type: 'personal' })} className="ritem" data-hue="hs">
+            <span className="ico-chip">
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+              </svg>
+            </span>
+            <span className="grow">
+              <span className="t">{PERSONAL_SITE_AUDIT_SECTION_LABEL}</span>
+              <span className="s">Your own audits, not linked to a job — only you can see them</span>
+            </span>
+            <span className="count soft">{personal.audits.length}</span>
+          </button>
         </div>
       </div>
     )
@@ -651,6 +669,10 @@ export function SiteAuditScreen() {
         }
       />
     )
+  }
+
+  if (view.type === 'personal') {
+    return shell(<PersonalSiteAuditsView onBack={() => setView({ type: 'hub' })} />)
   }
 
   if (view.type === 'project-audits') {

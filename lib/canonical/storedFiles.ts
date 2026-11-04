@@ -47,6 +47,9 @@ export const STORED_FILE_KINDS = [
   'site_audit_photo',
   'task_attachment',
   'health_safety',
+  // 1.30.0 (§26): PAYE price work / expense evidence, and personal site audit photos (owner only).
+  'paye_claim_evidence',
+  'personal_site_audit',
 ] as const
 export type StoredFileKind = (typeof STORED_FILE_KINDS)[number]
 
@@ -55,7 +58,10 @@ export type StoredFilePath = {
   organizationId: string
   /** Last path segment. */
   objectName: string
-  /** Profile photo: the person the photo belongs to (from the path). Otherwise null. */
+  /**
+   * Profile photo: the person the photo belongs to (from the path). 1.30.0: claim evidence and personal site audit
+   * files: the person whose folder it is. Otherwise null.
+   */
   ownerUserId: string | null
 }
 
@@ -93,6 +99,8 @@ export function storedFileKind(storagePath: string | null | undefined): StoredFi
   if (rest.length >= 2 && rest[0] === 'siteAudits') return { ...base, kind: 'site_audit_photo' }
   if (rest.length >= 2 && rest[0] === 'tasks') return { ...base, kind: 'task_attachment' }
   if (rest.length >= 2 && rest[0] === 'healthSafety') return { ...base, kind: 'health_safety' }
+  if (rest.length === 3 && rest[0] === 'payeClaims' && rest[1]) return { ...base, kind: 'paye_claim_evidence', ownerUserId: rest[1] }
+  if (rest.length >= 3 && rest[0] === 'personalSiteAudits' && rest[1]) return { ...base, kind: 'personal_site_audit', ownerUserId: rest[1] }
   return null
 }
 
@@ -139,6 +147,7 @@ export type FileDeleteReason =
   | 'undo_expired'
   | 'not_uploader'
   | 'admin_only'
+  | 'owner_only'
   | 'other_organization'
   | 'unknown_path'
   | 'signed_out'
@@ -190,7 +199,10 @@ export function fileDeletePermission(input: FileDeleteInput): FileDeletePermissi
   if (!parsed) return deny('unknown_path')
   const org = text(input.organizationId)
   if (!org || parsed.organizationId.toLowerCase() !== org.toLowerCase()) return deny('other_organization')
-  if (isFileAdmin(input.viewerRole)) return { allowed: true, reason: 'admin', undoEndsAtMs: null }
+  // 1.30.0 (§26): a personal site audit file is its owner's only — admins never delete it; the owner within the undo
+  // window. Claim evidence is in the person's own folder: only they upload there.
+  if (parsed.kind === 'personal_site_audit' && parsed.ownerUserId !== viewer) return deny('owner_only')
+  if (parsed.kind !== 'personal_site_audit' && isFileAdmin(input.viewerRole)) return { allowed: true, reason: 'admin', undoEndsAtMs: null }
   if (parsed.kind === 'profile_photo') {
     return parsed.ownerUserId === viewer ? { allowed: true, reason: 'own_profile_photo', undoEndsAtMs: null } : deny('not_uploader')
   }

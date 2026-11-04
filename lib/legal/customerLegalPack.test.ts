@@ -83,3 +83,10 @@ test('terms carry a content and copyright section with a takedown contact and a 
   assert.match(text, /Report a problem with this file/)
   assert.match(text, /repeatedly infringe/)
 })
+
+test('1.30.0 the privacy policy says personal site audits are private, and who sees attached copies (no pack version change)', () => {
+  const privacy = JSON.stringify(LEGAL_PACK_DOCUMENTS.find((doc) => doc.id === 'privacy'))
+  assert.ok(privacy.includes('Personal site audits are private to the person who created them.'))
+  assert.ok(privacy.includes('visible to that person’s line managers and admins'))
+  assert.equal(LEGAL_ENTITY.version, '1.1')
+})

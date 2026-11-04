@@ -76,6 +76,10 @@ export const LIVE_COLLECTIONS: ReadonlyArray<LiveCollection> = [
   { id: 'overtimeRequests', path: 'organizations/{orgId}/overtimeRequests', scope: 'organization', listen: true, note: '1.29.0: PAYE overtime requests (parseOvertimeRequestDocument); the person\'s own, or the reports a line manager or admin decides.' },
   { id: 'overtimeReviews', path: 'organizations/{orgId}/overtimeReviews/{userId}_{bookingId}', scope: 'organization', listen: true, note: '1.29.0: approved overtime lines (parseOvertimeReviewDocument), while the Overtime screen is open.' },
   { id: 'overtimeReports', path: 'organizations/{orgId}/overtimeReports', scope: 'organization', listen: false, note: '1.29.0: saved report copies, written once and never changed (parseOvertimeReportDocument); read when Past PAYE payruns opens.' },
+  { id: 'priceWorkItems', path: 'organizations/{orgId}/priceWorkItems', scope: 'organization', listen: true, note: '1.30.0: PAYE price work (parsePriceWorkDocument); the person\'s own, or read-only for their line managers and admins, while the screen is open.' },
+  { id: 'expenseItems', path: 'organizations/{orgId}/expenseItems', scope: 'organization', listen: true, note: '1.30.0: PAYE expenses (parseExpenseDocument); the person\'s own, or read-only for their line managers and admins, while the screen is open.' },
+  { id: 'payeClaimReports', path: 'organizations/{orgId}/payeClaimReports', scope: 'organization', listen: false, note: '1.30.0: saved price work / expenses report copies, written once and never changed (parsePayeClaimReportDocument); read when Past PAYE payruns opens.' },
+  { id: 'personalSiteAudits', path: 'organizations/{orgId}/personalSiteAudits', scope: 'organization', listen: true, note: '1.30.0: personal site audits (parsePersonalSiteAuditDocument); the owner\'s only, while Site audits → Personal is open.' },
   { id: 'deletedBookings', path: 'organizations/{orgId}/deletedBookings', scope: 'organization', listen: false, note: 'Write-only tombstones; never shown.' },
 ]
 

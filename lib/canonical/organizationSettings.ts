@@ -227,6 +227,11 @@ export const OPERATIONAL_COLLECTION_PATHS = {
   /** Document id `{userId}_{bookingId}` (`overtimeReviewDocId`). */
   overtimeReviews: 'organizations/{orgId}/overtimeReviews',
   overtimeReports: 'organizations/{orgId}/overtimeReports',
+  /** 1.30.0 (§26): PAYE price work and expenses, their saved report copies, and personal site audits (owner only). */
+  priceWorkItems: 'organizations/{orgId}/priceWorkItems',
+  expenseItems: 'organizations/{orgId}/expenseItems',
+  payeClaimReports: 'organizations/{orgId}/payeClaimReports',
+  personalSiteAudits: 'organizations/{orgId}/personalSiteAudits',
 } as const
 
 /**

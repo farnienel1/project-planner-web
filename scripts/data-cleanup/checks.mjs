@@ -39,6 +39,9 @@ export const RULEBOOK_FUNCTIONS = [
   'isIdentifiablePendingLeftover',
   'isPushTokenPlaceholderUserId',
   'writeMetadataFields',
+  'parsePriceWorkDocument',
+  'parseExpenseDocument',
+  'parsePersonalSiteAuditDocument',
 ]
 
 /** The packed rulebook (`ProjectPlannerCanonical`), read only. */
@@ -321,6 +324,43 @@ export function planOrphanInvites(rulebook, input) {
   return plan
 }
 
+// ─── 7. paye-claims (report only, 1.30.0) ──────────────────────────────────────────────────────────────────────────
+
+/** Rulebook 1.30.0 §26 collections this check reads (each document's owner field). */
+export const PAYE_CLAIM_COLLECTIONS = {
+  priceWorkItems: 'userId',
+  expenseItems: 'userId',
+  payeClaimReports: 'userId',
+  personalSiteAudits: 'ownerUserId',
+}
+
+/**
+ * PAYE price work, expenses, their saved reports and personal site audits whose owner is not a users document of this
+ * organisation (deleted, or another company's id), and expenses the rulebook reader finds without evidence (an older or
+ * hand-edited row). Never written or deleted: they are the person's records (and personal audits are private), so an
+ * admin reviews them; only the path and the reason are printed, never the contents.
+ *
+ * input: { orgId, users: [{ id, data }], payeClaims: { [collection]: [{ id, data }] } }
+ */
+export function planPayeClaims(rulebook, input) {
+  const plan = emptyPlan()
+  const userIds = new Set((input.users || []).map((doc) => doc.id))
+  for (const [name, field] of Object.entries(PAYE_CLAIM_COLLECTIONS)) {
+    for (const doc of input.payeClaims?.[name] || []) {
+      const owner = typeof doc.data?.[field] === 'string' ? doc.data[field].trim() : ''
+      const docPath = `${orgPath(input.orgId)}/${name}/${doc.id}`
+      if (!owner || !userIds.has(owner)) {
+        plan.notes.push({ path: docPath, reason: `${field} ${owner ? `"${owner}"` : '(missing)'} is not a person of this organisation; review — never changed by this script` })
+        continue
+      }
+      if (name === 'expenseItems' && rulebook.parseExpenseDocument(doc.id, doc.data || {}).evidence.length === 0) {
+        plan.notes.push({ path: docPath, reason: 'expense with no evidence (1.30.0 requires at least one); review — never changed by this script' })
+      }
+    }
+  }
+  return plan
+}
+
 // ─── registry ──────────────────────────────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -370,6 +410,13 @@ export const CHECKS = [
     reads: ['users'],
     writes: 'nothing — report only',
     plan: planOrphanInvites,
+  },
+  {
+    id: 'paye-claims',
+    title: 'PAYE price work, expenses and personal site audits with no owner here, or expenses without evidence (report only)',
+    reads: ['users', 'payeClaims'],
+    writes: 'nothing — report only',
+    plan: planPayeClaims,
   },
 ]
 

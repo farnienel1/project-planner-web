@@ -30,6 +30,7 @@ import { createRequire } from 'node:module'
 import path from 'node:path'
 import {
   CHECKS,
+  PAYE_CLAIM_COLLECTIONS,
   PLACEHOLDER_COLLECTIONS,
   backupFileBody,
   checkById,
@@ -195,6 +196,13 @@ async function loadInput(check, orgId, meta) {
       input.claimedEmails = (await orgRef.collection('userEmails').select().get()).docs.map((doc) => doc.id)
     } catch {
       input.claimedEmails = null // a failed read never marks anyone as a leftover
+    }
+  }
+  if (check.reads.includes('payeClaims')) {
+    // 1.30.0: read with the admin SDK for the report only; contents are never printed.
+    input.payeClaims = {}
+    for (const name of Object.keys(PAYE_CLAIM_COLLECTIONS)) {
+      input.payeClaims[name] = remember((await orgRef.collection(name).get()).docs.map(asDoc))
     }
   }
   return input

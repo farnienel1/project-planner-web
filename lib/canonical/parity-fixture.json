@@ -22003,6 +22003,748 @@
           "label": "Sam · J-1042 · 10h"
         }
       ]
+    },
+    {
+      "name": "1.30.0 price work approver candidates",
+      "function": "priceWorkApproverCandidates",
+      "args": [
+        {
+          "id": "sam",
+          "email": "sam@x.com",
+          "role": "operative",
+          "operativeMode": true,
+          "employmentType": "paye",
+          "assignedManagerUserIds": [
+            "lm"
+          ],
+          "isActive": true,
+          "firstName": "Sam",
+          "surname": "Smith"
+        },
+        [
+          {
+            "id": "sam",
+            "email": "sam@x.com",
+            "role": "operative",
+            "operativeMode": true,
+            "employmentType": "paye",
+            "assignedManagerUserIds": [
+              "lm"
+            ],
+            "isActive": true,
+            "firstName": "Sam",
+            "surname": "Smith"
+          },
+          {
+            "id": "lm",
+            "email": "lm@x.com",
+            "organizationId": "org-130",
+            "role": "manager",
+            "manager": true,
+            "isActive": true,
+            "firstName": "Lena",
+            "surname": "Manager"
+          },
+          {
+            "id": "boss",
+            "email": "boss@x.com",
+            "organizationId": "org-130",
+            "role": "admin",
+            "adminAccess": true,
+            "isActive": true,
+            "firstName": "Bo",
+            "surname": "Ss"
+          },
+          {
+            "id": "op2",
+            "email": "op2@x.com",
+            "role": "operative",
+            "operativeMode": true,
+            "isActive": true,
+            "firstName": "Olly"
+          }
+        ],
+        {
+          "organizationId": "org-130"
+        }
+      ],
+      "expected": [
+        {
+          "id": "boss",
+          "name": "Bo Ss",
+          "level": "admin"
+        },
+        {
+          "id": "lm",
+          "name": "Lena Manager",
+          "level": "manager"
+        }
+      ]
+    },
+    {
+      "name": "1.30.0 price work write fields",
+      "function": "priceWorkWriteFields",
+      "args": [
+        {
+          "userId": "sam",
+          "person": {
+            "id": "sam",
+            "email": "sam@x.com",
+            "role": "operative",
+            "operativeMode": true,
+            "employmentType": "paye",
+            "assignedManagerUserIds": [
+              "lm"
+            ],
+            "isActive": true,
+            "firstName": "Sam",
+            "surname": "Smith"
+          },
+          "roster": [
+            {
+              "id": "sam",
+              "email": "sam@x.com",
+              "role": "operative",
+              "operativeMode": true,
+              "employmentType": "paye",
+              "assignedManagerUserIds": [
+                "lm"
+              ],
+              "isActive": true,
+              "firstName": "Sam",
+              "surname": "Smith"
+            },
+            {
+              "id": "lm",
+              "email": "lm@x.com",
+              "organizationId": "org-130",
+              "role": "manager",
+              "manager": true,
+              "isActive": true,
+              "firstName": "Lena",
+              "surname": "Manager"
+            },
+            {
+              "id": "boss",
+              "email": "boss@x.com",
+              "organizationId": "org-130",
+              "role": "admin",
+              "adminAccess": true,
+              "isActive": true,
+              "firstName": "Bo",
+              "surname": "Ss"
+            },
+            {
+              "id": "op2",
+              "email": "op2@x.com",
+              "role": "operative",
+              "operativeMode": true,
+              "isActive": true,
+              "firstName": "Olly"
+            }
+          ],
+          "currency": "GBP",
+          "organizationId": "org-130",
+          "draft": {
+            "title": "Tiling",
+            "details": "Bathroom",
+            "startDate": "2026-11-03",
+            "endDate": "2026-11-05",
+            "approvedByUserId": "lm",
+            "amount": "250",
+            "evidence": [
+              {
+                "path": "organizations/org-130/payeClaims/sam/sam_1700000000000.jpg",
+                "name": "receipt.jpg",
+                "kind": "photo",
+                "contentType": "image/jpeg"
+              }
+            ]
+          }
+        }
+      ],
+      "expected": {
+        "userId": "sam",
+        "title": "Tiling",
+        "details": "Bathroom",
+        "startDate": "2026-11-03",
+        "endDate": "2026-11-05",
+        "approvedByUserId": "lm",
+        "approvedByName": "Lena Manager",
+        "amount": 250,
+        "currency": "GBP",
+        "evidence": [
+          {
+            "path": "organizations/org-130/payeClaims/sam/sam_1700000000000.jpg",
+            "name": "receipt.jpg",
+            "kind": "photo",
+            "contentType": "image/jpeg"
+          }
+        ],
+        "createdBy": "sam"
+      }
+    },
+    {
+      "name": "1.30.0 price work approver must be on the list",
+      "function": "priceWorkValidationError",
+      "args": [
+        {
+          "title": "Tiling",
+          "startDate": "2026-11-03",
+          "approvedByUserId": "op2",
+          "amount": 10
+        },
+        {
+          "person": {
+            "id": "sam",
+            "email": "sam@x.com",
+            "role": "operative",
+            "operativeMode": true,
+            "employmentType": "paye",
+            "assignedManagerUserIds": [
+              "lm"
+            ],
+            "isActive": true,
+            "firstName": "Sam",
+            "surname": "Smith"
+          },
+          "roster": [
+            {
+              "id": "sam",
+              "email": "sam@x.com",
+              "role": "operative",
+              "operativeMode": true,
+              "employmentType": "paye",
+              "assignedManagerUserIds": [
+                "lm"
+              ],
+              "isActive": true,
+              "firstName": "Sam",
+              "surname": "Smith"
+            },
+            {
+              "id": "lm",
+              "email": "lm@x.com",
+              "organizationId": "org-130",
+              "role": "manager",
+              "manager": true,
+              "isActive": true,
+              "firstName": "Lena",
+              "surname": "Manager"
+            },
+            {
+              "id": "boss",
+              "email": "boss@x.com",
+              "organizationId": "org-130",
+              "role": "admin",
+              "adminAccess": true,
+              "isActive": true,
+              "firstName": "Bo",
+              "surname": "Ss"
+            },
+            {
+              "id": "op2",
+              "email": "op2@x.com",
+              "role": "operative",
+              "operativeMode": true,
+              "isActive": true,
+              "firstName": "Olly"
+            }
+          ],
+          "organizationId": "org-130"
+        }
+      ],
+      "expected": "Choose an active admin or manager other than yourself."
+    },
+    {
+      "name": "1.30.0 expense needs evidence",
+      "function": "expenseValidationError",
+      "args": [
+        {
+          "title": "Fuel",
+          "date": "2026-11-04",
+          "amount": 12
+        }
+      ],
+      "expected": "Add at least one piece of evidence (a file, photo or personal site audit)."
+    },
+    {
+      "name": "1.30.0 expense write fields",
+      "function": "expenseWriteFields",
+      "args": [
+        {
+          "userId": "sam",
+          "currency": "EUR",
+          "organizationId": "org-130",
+          "draft": {
+            "title": "Fuel",
+            "details": "",
+            "jobNumber": "J-1",
+            "date": "2026-11-04",
+            "amount": 12.5,
+            "evidence": [
+              {
+                "path": "organizations/org-130/payeClaims/sam/sam_1700000000000.jpg",
+                "name": "receipt.jpg",
+                "kind": "photo",
+                "contentType": "image/jpeg"
+              }
+            ]
+          }
+        }
+      ],
+      "expected": {
+        "userId": "sam",
+        "title": "Fuel",
+        "details": "",
+        "jobNumber": "J-1",
+        "date": "2026-11-04",
+        "amount": 12.5,
+        "currency": "EUR",
+        "evidence": [
+          {
+            "path": "organizations/org-130/payeClaims/sam/sam_1700000000000.jpg",
+            "name": "receipt.jpg",
+            "kind": "photo",
+            "contentType": "image/jpeg"
+          }
+        ],
+        "createdBy": "sam"
+      }
+    },
+    {
+      "name": "1.30.0 expense reader",
+      "function": "parseExpenseDocument",
+      "args": [
+        "E1",
+        {
+          "userId": "sam",
+          "title": "Fuel",
+          "amount": "12.345",
+          "date": "2026-11-04",
+          "currency": "gbp",
+          "evidence": [
+            {
+              "path": "organizations/org-130/payeClaims/sam/sam_1700000000000.jpg",
+              "name": "receipt.jpg",
+              "kind": "photo",
+              "contentType": "image/jpeg"
+            },
+            {
+              "name": "no path"
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "id": "E1",
+        "userId": "sam",
+        "title": "Fuel",
+        "details": "",
+        "amount": 12.35,
+        "currency": "GBP",
+        "evidence": [
+          {
+            "path": "organizations/org-130/payeClaims/sam/sam_1700000000000.jpg",
+            "name": "receipt.jpg",
+            "kind": "photo",
+            "contentType": "image/jpeg",
+            "auditId": null
+          }
+        ],
+        "createdAtMs": null,
+        "createdBy": "",
+        "kind": "expense",
+        "jobNumber": "",
+        "date": "2026-11-04"
+      }
+    },
+    {
+      "name": "1.30.0 price work reader swaps a reversed range",
+      "function": "parsePriceWorkDocument",
+      "args": [
+        "P1",
+        {
+          "userId": "sam",
+          "title": "Tiling",
+          "amount": 300,
+          "startDate": "2026-11-27",
+          "endDate": "2026-11-24",
+          "approvedByUserId": "lm",
+          "approvedByName": "Lena"
+        }
+      ],
+      "expected": {
+        "id": "P1",
+        "userId": "sam",
+        "title": "Tiling",
+        "details": "",
+        "amount": 300,
+        "currency": "",
+        "evidence": [],
+        "createdAtMs": null,
+        "createdBy": "",
+        "kind": "priceWork",
+        "startDate": "2026-11-24",
+        "endDate": "2026-11-27",
+        "approvedByUserId": "lm",
+        "approvedByName": "Lena"
+      }
+    },
+    {
+      "name": "1.30.0 items in a payrun",
+      "function": "payeClaimsInRange",
+      "args": [
+        [
+          {
+            "kind": "expense",
+            "id": "E1",
+            "title": "Fuel",
+            "date": "2026-11-04",
+            "amount": 1,
+            "evidence": []
+          },
+          {
+            "kind": "expense",
+            "id": "E0",
+            "title": "Old",
+            "date": "2026-10-25",
+            "amount": 1,
+            "evidence": []
+          },
+          {
+            "kind": "priceWork",
+            "id": "P1",
+            "title": "Tiling",
+            "startDate": "2026-10-20",
+            "endDate": "2026-10-27",
+            "amount": 1,
+            "evidence": []
+          }
+        ],
+        {
+          "start": "2026-10-26",
+          "end": "2026-11-25"
+        }
+      ],
+      "expected": [
+        {
+          "kind": "priceWork",
+          "id": "P1",
+          "title": "Tiling",
+          "startDate": "2026-10-20",
+          "endDate": "2026-10-27",
+          "amount": 1,
+          "evidence": []
+        },
+        {
+          "kind": "expense",
+          "id": "E1",
+          "title": "Fuel",
+          "date": "2026-11-04",
+          "amount": 1,
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "name": "1.30.0 who sees claims: line manager yes, peer no",
+      "function": "canViewPayeClaims",
+      "args": [
+        {
+          "id": "lm",
+          "email": "lm@x.com",
+          "organizationId": "org-130",
+          "role": "manager",
+          "manager": true,
+          "isActive": true,
+          "firstName": "Lena",
+          "surname": "Manager"
+        },
+        {
+          "id": "sam",
+          "email": "sam@x.com",
+          "role": "operative",
+          "operativeMode": true,
+          "employmentType": "paye",
+          "assignedManagerUserIds": [
+            "lm"
+          ],
+          "isActive": true,
+          "firstName": "Sam",
+          "surname": "Smith"
+        },
+        [
+          {
+            "id": "sam",
+            "email": "sam@x.com",
+            "role": "operative",
+            "operativeMode": true,
+            "employmentType": "paye",
+            "assignedManagerUserIds": [
+              "lm"
+            ],
+            "isActive": true,
+            "firstName": "Sam",
+            "surname": "Smith"
+          },
+          {
+            "id": "lm",
+            "email": "lm@x.com",
+            "organizationId": "org-130",
+            "role": "manager",
+            "manager": true,
+            "isActive": true,
+            "firstName": "Lena",
+            "surname": "Manager"
+          },
+          {
+            "id": "boss",
+            "email": "boss@x.com",
+            "organizationId": "org-130",
+            "role": "admin",
+            "adminAccess": true,
+            "isActive": true,
+            "firstName": "Bo",
+            "surname": "Ss"
+          },
+          {
+            "id": "op2",
+            "email": "op2@x.com",
+            "role": "operative",
+            "operativeMode": true,
+            "isActive": true,
+            "firstName": "Olly"
+          }
+        ]
+      ],
+      "expected": true
+    },
+    {
+      "name": "1.30.0 who sees claims: another operative no",
+      "function": "canViewPayeClaims",
+      "args": [
+        {
+          "id": "op2",
+          "email": "op2@x.com",
+          "role": "operative",
+          "operativeMode": true,
+          "isActive": true,
+          "firstName": "Olly"
+        },
+        {
+          "id": "sam",
+          "email": "sam@x.com",
+          "role": "operative",
+          "operativeMode": true,
+          "employmentType": "paye",
+          "assignedManagerUserIds": [
+            "lm"
+          ],
+          "isActive": true,
+          "firstName": "Sam",
+          "surname": "Smith"
+        },
+        [
+          {
+            "id": "sam",
+            "email": "sam@x.com",
+            "role": "operative",
+            "operativeMode": true,
+            "employmentType": "paye",
+            "assignedManagerUserIds": [
+              "lm"
+            ],
+            "isActive": true,
+            "firstName": "Sam",
+            "surname": "Smith"
+          },
+          {
+            "id": "lm",
+            "email": "lm@x.com",
+            "organizationId": "org-130",
+            "role": "manager",
+            "manager": true,
+            "isActive": true,
+            "firstName": "Lena",
+            "surname": "Manager"
+          },
+          {
+            "id": "boss",
+            "email": "boss@x.com",
+            "organizationId": "org-130",
+            "role": "admin",
+            "adminAccess": true,
+            "isActive": true,
+            "firstName": "Bo",
+            "surname": "Ss"
+          },
+          {
+            "id": "op2",
+            "email": "op2@x.com",
+            "role": "operative",
+            "operativeMode": true,
+            "isActive": true,
+            "firstName": "Olly"
+          }
+        ]
+      ],
+      "expected": false
+    },
+    {
+      "name": "1.30.0 report snapshot",
+      "function": "payeClaimReportSnapshot",
+      "args": [
+        {
+          "kind": "expense",
+          "userId": "sam",
+          "userName": "Sam Smith",
+          "companyName": "Co",
+          "currency": "GBP",
+          "rangeStart": "2026-10-26",
+          "rangeEnd": "2026-11-25",
+          "generatedBy": "sam",
+          "items": [
+            {
+              "kind": "expense",
+              "id": "E1",
+              "userId": "sam",
+              "title": "Fuel",
+              "details": "",
+              "jobNumber": "J-9",
+              "date": "2026-11-04",
+              "amount": 40,
+              "currency": "GBP",
+              "evidence": [
+                {
+                  "path": "organizations/org-130/payeClaims/sam/sam_1700000000000.jpg",
+                  "name": "receipt.jpg",
+                  "kind": "photo",
+                  "contentType": "image/jpeg"
+                },
+                {
+                  "path": "organizations/org-130/payeClaims/sam/sam_1700000000001.pdf",
+                  "name": "inv.pdf",
+                  "kind": "file",
+                  "contentType": "application/pdf",
+                  "auditId": null
+                }
+              ],
+              "createdAtMs": null,
+              "createdBy": "sam"
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "userId": "sam",
+        "userName": "Sam Smith",
+        "companyName": "Co",
+        "kind": "expense",
+        "rangeStart": "2026-10-26",
+        "rangeEnd": "2026-11-25",
+        "currency": "GBP",
+        "items": [
+          {
+            "id": "E1",
+            "title": "Fuel",
+            "details": "",
+            "jobNumber": "J-9",
+            "startDate": "2026-11-04",
+            "endDate": "2026-11-04",
+            "approvedByName": "",
+            "amount": 40,
+            "evidence": [
+              {
+                "path": "organizations/org-130/payeClaims/sam/sam_1700000000000.jpg",
+                "name": "receipt.jpg",
+                "kind": "photo",
+                "contentType": "image/jpeg"
+              },
+              {
+                "path": "organizations/org-130/payeClaims/sam/sam_1700000000001.pdf",
+                "name": "inv.pdf",
+                "kind": "file",
+                "contentType": "application/pdf",
+                "auditId": null
+              }
+            ]
+          }
+        ],
+        "totals": {
+          "amount": 40,
+          "itemCount": 1,
+          "evidenceCount": 2
+        },
+        "generatedBy": "sam"
+      }
+    },
+    {
+      "name": "1.30.0 personal site audit write fields",
+      "function": "personalSiteAuditWriteFields",
+      "args": [
+        {
+          "ownerUserId": "sam",
+          "organizationId": "org-130",
+          "draft": {
+            "jobNumber": "J-77",
+            "jobName": "Garden wall",
+            "date": "2026-11-04",
+            "authorName": "Sam",
+            "items": [
+              {
+                "id": "i1",
+                "title": "Crack",
+                "location": "North",
+                "imagePath": "organizations/org-130/personalSiteAudits/sam/A1/sam_1700000000000.jpg",
+                "takenAtMs": 1762250000000
+              }
+            ]
+          }
+        }
+      ],
+      "expected": {
+        "ownerUserId": "sam",
+        "jobNumber": "J-77",
+        "jobName": "Garden wall",
+        "type": "General",
+        "customTitle": "",
+        "date": "2026-11-04",
+        "authorName": "Sam",
+        "items": [
+          {
+            "id": "i1",
+            "title": "Crack",
+            "imagePath": "organizations/org-130/personalSiteAudits/sam/A1/sam_1700000000000.jpg",
+            "location": "North",
+            "takenAtMs": 1762250000000
+          }
+        ]
+      }
+    },
+    {
+      "name": "1.30.0 personal site audit is the owner's only",
+      "function": "canViewPersonalSiteAudit",
+      "args": [
+        "boss",
+        {
+          "ownerUserId": "sam"
+        }
+      ],
+      "expected": false
+    },
+    {
+      "name": "1.30.0 claim evidence path",
+      "function": "payeClaimEvidencePath",
+      "args": [
+        {
+          "organizationId": "org-130",
+          "userId": "sam",
+          "unixMs": 1700000000000,
+          "extension": "PDF"
+        }
+      ],
+      "expected": "organizations/org-130/payeClaims/sam/sam_1700000000000.pdf"
     }
   ]
 }
