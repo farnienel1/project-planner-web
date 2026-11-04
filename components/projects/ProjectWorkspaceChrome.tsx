@@ -36,7 +36,7 @@ import { canBookWork, canViewMaterials, canViewSiteAudit } from '@/lib/permissio
 import { canViewProjectActiveUsers } from '@/lib/projects/activeUsers'
 import { useActiveUserBadge } from '@/components/projects/features/ProjectActiveUsersSection'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
-import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
+import { useOrgUserStore, useRosterDocuments } from '@/lib/stores/siteAuditStore'
 import { isOperativeMode } from '@/lib/navigation/menuPermissions'
 import { jobHubTiles } from '@/lib/projects/jobHubTiles'
 import { canSeeJobVariations } from '@/lib/variations/variationAccess'
@@ -129,7 +129,8 @@ export function ProjectWorkspaceChrome({
   const showViewTile = canConfigureProjectVisibility(user, isSmallWork)
   const isOperative = isOperativeMode(user)
   const { managers: rosterManagers, loadManagers } = useOperativeStore()
-  const { users, loadUsers } = useOrgUserStore()
+  const { loadUsers } = useOrgUserStore()
+  const managerRoster = useRosterDocuments(organization?.id)
   const showActiveUsers = canViewProjectActiveUsers(user, rosterManagers, project)
   const activeUserCount = useActiveUserBadge(project, showActiveUsers)
 
@@ -141,7 +142,7 @@ export function ProjectWorkspaceChrome({
   const active = tabFromPath(pathname, basePath)
   const hideTabs = hideWorkspaceTabs(pathname)
   const typeLabel = visibleJobTypeLabel(project.jobType, project.customJobType)
-  const managers = assignedManagerLabel(project, rosterManagers, users, organization?.id)
+  const managers = assignedManagerLabel(project, rosterManagers, managerRoster, organization?.id)
   const catalogue = isSmallWork ? '/dashboard/small-works' : '/dashboard/projects'
   const catalogueLabel = isSmallWork ? 'Small works' : 'Projects'
 
@@ -298,7 +299,7 @@ export function ProjectDetailsCard({
 }) {
   const { organization } = useAuthStore()
   const rosterManagers = useOperativeStore((state) => state.managers)
-  const users = useOrgUserStore((state) => state.users)
+  const users = useRosterDocuments(organization?.id)
   const address = formatSiteAddress(project)
   const managerNames = assignedManagerNames(project, rosterManagers, users, organization?.id)
   const rows: {

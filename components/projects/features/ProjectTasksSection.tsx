@@ -11,7 +11,7 @@ import { ClipboardDocumentListIcon } from '@heroicons/react/24/outline'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useTaskStore } from '@/lib/stores/taskStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
-import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
+import { useOrgUserStore, useRosterDocuments } from '@/lib/stores/siteAuditStore'
 import { assignableProjectManagers } from '@/lib/projects/projectManagerChoices'
 import { isOperativeMode } from '@/lib/navigation/menuPermissions'
 import { canManageWorkCatalogue, hasAdminAccess } from '@/lib/permissions'
@@ -52,7 +52,8 @@ function ProjectTasksSectionInner({ project }: { project: Project }) {
   const { organization, user } = useAuthStore()
   const { tasks, loading, error, loadTasks, saveTask, deleteTask } = useTaskStore()
   const { operatives, managers, loadOperatives, loadManagers } = useOperativeStore()
-  const { users, loadUsers } = useOrgUserStore()
+  const { loadUsers } = useOrgUserStore()
+  const managerRoster = useRosterDocuments(organization?.id)
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState<ProjectTask | null>(null)
   const [openTask, setOpenTask] = useState<ProjectTask | null>(null)
@@ -74,8 +75,8 @@ function ProjectTasksSectionInner({ project }: { project: Project }) {
   }, [organization, loadTasks, loadOperatives, loadManagers, loadUsers])
 
   const assignableManagers = useMemo(
-    () => assignableProjectManagers(managers, users, organization?.id),
-    [managers, users, organization?.id]
+    () => assignableProjectManagers(managers, managerRoster, organization?.id),
+    [managers, managerRoster, organization?.id]
   )
 
   const projectTasks = useMemo(

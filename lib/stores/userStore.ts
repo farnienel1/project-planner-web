@@ -449,13 +449,32 @@ export const useUserStore = create<UserStoreState>(() => ({
   changeAccountType: async (user, accountType, organizationId, roster, permissions) => {
     const stored = await getDoc(doc(db, 'users', user.id))
     const person = { ...(stored.exists() ? (stored.data() as Record<string, unknown>) : {}), id: user.id, email: user.email }
-    const plan = accountTypeChangeWrites({
-      person,
-      kind: accountType,
-      organizationId,
-      roster: roster.map((row) => ({ id: row.id, email: row.email, organizationId: row.organizationId })),
-      permissions: (permissions as Record<string, unknown> | null | undefined) ?? null,
-    })
+    // Rulebook 1.30.3: the roster screens hold one document per email (the fold), so a same-email duplicate was never
+    // in `roster` and kept the old level — after admin → manager → admin the two documents disagreed and the fold could
+    // show the stale one. Read this organisation's documents on the email so `accountTypeChangeWrites` updates them all.
+    const rows = new Map(roster.map((row) => [row.id, { id: row.id, email: row.email, organizationId: row.organizationId }]))
+    const email = user.email.trim().toLowerCase()
+    if (email.includes('@')) {
+      try {
+        const snapshot = await getDocs(
+          query(collection(db, 'users'), where('organizationId', '==', organizationId), where('email', '==', email), limit(10))
+        )
+        for (const entry of snapshot.docs) {
+          if (!rows.has(entry.id)) rows.set(entry.id, { id: entry.id, email, organizationId })
+        }
+      } catch (error) {
+        console.warn('[userStore] same-email users read skipped', error)
+      }
+    }
+    const buildPlan = (rosterRows: Array<{ id: string; email: string; organizationId?: string }>) =>
+      accountTypeChangeWrites({
+        person,
+        kind: accountType,
+        organizationId,
+        roster: rosterRows,
+        permissions: (permissions as Record<string, unknown> | null | undefined) ?? null,
+      })
+    const plan = buildPlan([...rows.values()])
     if (!plan.ok) throw new Error(plan.message)
     // Rulebook 1.12.2: one atomic batch — users documents, `members.{uid}` and the membership land together or not at
     // all. Before 1.12.2 the membership was written after the batch and a refusal there was swallowed, so a change

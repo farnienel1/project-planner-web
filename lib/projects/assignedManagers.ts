@@ -1,4 +1,4 @@
-import { classifyStoredManager, managerIdsMatch } from '@/lib/projects/projectManagerChoices'
+import { managerIdsMatch, projectManagerAssignments, stableManagerDocumentId } from '@/lib/projects/projectManagerChoices'
 
 export type AssignedManagerProject = {
   managerId?: string | null
@@ -73,13 +73,27 @@ export function assignedManagerNames(
   }
 
   let hidIneligible = false
-  for (const id of ids) {
-    const classified = classifyStoredManager(id, roster, accounts, organizationId)
-    if (classified.kind === 'ineligible') {
-      hidIneligible = true
-      continue
+  if (accounts.length === 0) {
+    // The users roster has not loaded: name the catalogue rows as stored (nothing can be judged yet).
+    for (const id of ids) {
+      const row = roster.find((entry) => managerIdsMatch(entry.id, id) || managerIdsMatch(stableManagerDocumentId(entry.id), id))
+      if (row) push(`${clean(row.firstName)} ${clean(row.lastName)}`.trim() || clean(row.email))
     }
-    if (classified.kind === 'eligible') push(classified.name)
+  } else {
+    // Rulebook 1.30.3 `jobManagerAssignments`: only current managers are named; a former one (operative now,
+    // inactive, invite not accepted, deleted) is never shown as the job's manager.
+    for (const assignment of projectManagerAssignments({ managerIds: ids }, roster, accounts, organizationId)) {
+      if (assignment.state === 'former' && assignment.reason === 'no_account') {
+        // A catalogue row whose users document is not on this (possibly partial) roster: named as stored.
+        push(assignment.name)
+        continue
+      }
+      if (assignment.state === 'former') {
+        hidIneligible = true
+        continue
+      }
+      if (assignment.state === 'current') push(assignment.candidate?.name || assignment.name)
+    }
   }
 
   if (names.length === 0 && !hidIneligible) push(project.manager?.name || '')

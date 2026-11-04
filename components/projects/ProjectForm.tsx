@@ -19,14 +19,18 @@ import { canManageWorkCatalogue } from '@/lib/permissions'
 import { userCanChangeJobManagers, userCanEditJob } from '@/lib/access/bookingAccess'
 import { jobManagerUserIds } from '@/lib/canonical'
 import { SitePinPickerSheet } from '@/components/site-map/SitePinPickerSheet'
-import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
+import { rosterDocumentsFor, useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import {
   choiceIdForRoster,
   managerIdsMatch,
+  projectManagerChoiceSelected,
   projectManagerChoices,
+  projectManagerIdsWithout,
+  projectManagerSelectedEntries,
   projectManagerSelectionIds,
   stableManagerDocumentId,
 } from '@/lib/projects/projectManagerChoices'
+import { JobManagerPicker } from '@/components/projects/JobManagerPicker'
 import {
   isPlausibleDayKey,
   parseBoundedLatitude,
@@ -55,15 +59,19 @@ function defaultProjectEnd(): string {
 export function ProjectForm({ initial, collection = 'projects', backHref, onSaved }: ProjectFormProps) {
   const { user, organization } = useAuthStore()
   const { clients, loadClients, saveProject, createClient } = useProjectStore()
-  const { managers, placeholderManagerCount, managersLoadedOrgId, loadManagers, saveManager } = useOperativeStore()
-  const { users, rosterLoadedOrgId, loadUsers } = useOrgUserStore()
+  const { managers, loadManagers, saveManager } = useOperativeStore()
+  const { users: foldedUsers, rosterDocuments, rosterDocumentsOrgId, rosterLoadedOrgId, loadUsers } = useOrgUserStore()
+  // Rulebook 1.30.3: the job-manager rules read every users document, not the email-folded roster.
+  const users = useMemo(
+    () => rosterDocumentsFor({ users: foldedUsers, rosterDocuments, rosterDocumentsOrgId }, organization?.id),
+    [foldedUsers, rosterDocuments, rosterDocumentsOrgId, organization?.id]
+  )
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [managerFieldError, setManagerFieldError] = useState(false)
   const [pinPickerOpen, setPinPickerOpen] = useState(false)
   const [newClientName, setNewClientName] = useState('')
   const managersFieldRef = useRef<HTMLDivElement>(null)
-  const managerSelectionEdited = useRef(false)
   // The job as this form opened it: the save diffs against it, so a field changed on another device while the
   // form was open (and not touched here) is not written back.
   const openedJob = useRef<Project | null>(initial ?? null)
@@ -119,12 +127,10 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
     [managers, users, organization?.id]
   )
 
-  useEffect(() => {
-    if (!initial || managerSelectionEdited.current || !organization?.id) return
-    if (managersLoadedOrgId !== organization.id || rosterLoadedOrgId !== organization.id) return
-    const managerIds = projectManagerSelectionIds(initial, managers, users, organization.id)
-    setForm((current) => ({ ...current, managerIds }))
-  }, [initial, managers, users, organization?.id, managersLoadedOrgId, rosterLoadedOrgId])
+  const selectedManagers = useMemo(
+    () => projectManagerSelectedEntries(form.managerIds, managers, users, organization?.id),
+    [form.managerIds, managers, users, organization?.id]
+  )
 
   const setAddressField = (patch: Partial<Pick<typeof form, 'addressLine1' | 'addressLine2' | 'townCity' | 'postcode'>>) => {
     setForm((current) => ({
@@ -397,48 +403,33 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
         </div>
         <div ref={managersFieldRef}>
           <FormLabel required>Managers</FormLabel>
-          <select
-            multiple
-            disabled={!userCanChangeJobManagers(user, collection)}
-            title={userCanChangeJobManagers(user, collection) ? undefined : 'Only an admin, or a manager with this toggle, changes the managers.'}
-            value={form.managerIds}
-            onChange={(e) => {
-              managerSelectionEdited.current = true
+          <JobManagerPicker
+            choices={managerOptions}
+            selected={selectedManagers}
+            isSelected={(choice) =>
+              projectManagerChoiceSelected(choice, selectedManagers, managers, users, organization?.id)
+            }
+            onAdd={(choice) => {
               setManagerFieldError(false)
-              setForm({
-                ...form,
-                managerIds: Array.from(e.target.selectedOptions, (o) => o.value),
-              })
+              setForm((current) => ({ ...current, managerIds: [...current.managerIds, choice.id] }))
             }}
-            className={`h-28 w-full rounded-lg border px-3 py-2 text-sm ${
-              managerFieldError ? 'border-red-400 bg-red-50 ring-2 ring-red-200' : 'border-slate-300'
-            }`}
-            aria-invalid={managerFieldError}
-            aria-describedby={managerFieldError ? 'managers-error' : undefined}
-          >
-            {managerOptions.map((option) => (
-              <option key={option.id} value={option.id}>
-                {option.label}
-              </option>
-            ))}
-          </select>
+            onRemove={(id) => {
+              setForm((current) => ({
+                ...current,
+                managerIds: projectManagerIdsWithout(current.managerIds, id, managers, users, organization?.id),
+              }))
+            }}
+            disabled={!userCanChangeJobManagers(user, collection)}
+            disabledReason="Only an admin, or a manager with this toggle, changes the managers."
+            invalid={managerFieldError}
+            errorId="managers-error"
+            loading={rosterLoadedOrgId !== organization?.id}
+          />
           {managerFieldError && (
             <p id="managers-error" className="mt-2 text-xs font-semibold text-red-700">
               Please assign at least one manager
             </p>
           )}
-          {managerOptions.length === 0 && (
-            <p className="mt-2 text-xs text-amber-700">
-              No managers found. Invite managers from Manage users, then return here.
-            </p>
-          )}
-          {placeholderManagerCount > 0 && (
-            <p className="mt-2 text-xs text-slate-500">
-              {placeholderManagerCount} legacy placeholder manager record
-              {placeholderManagerCount === 1 ? '' : 's'} hidden from this list (same as iOS).
-            </p>
-          )}
-          <p className="mt-1 text-xs text-slate-500">Hold Cmd/Ctrl to select multiple</p>
         </div>
       </div>
 

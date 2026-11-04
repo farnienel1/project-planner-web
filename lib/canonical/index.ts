@@ -1612,3 +1612,19 @@ export * from './payeOvertime'
 export * from './payeClaims'
 export * from './priceWorkJobNumber'
 export * from './personalSiteAudits'
+
+// Rulebook 1.30.3 §11: job-manager candidates and how a job's stored managers read now.
+export {
+  JOB_MANAGER_FORMER_NOTES,
+  JOB_MANAGER_LEVEL_LABELS,
+  JOB_MANAGER_NO_CANDIDATES_MESSAGE,
+  jobManagerAssignments,
+  jobManagerCandidates,
+} from './jobManagers'
+export type {
+  JobManagerAssignment,
+  JobManagerCandidate,
+  JobManagerCatalogueRow,
+  JobManagerFormerReason,
+  JobManagerRosterPerson,
+} from './jobManagers'

@@ -3,7 +3,9 @@ import test from 'node:test'
 import {
   assignableProjectManagers,
   choiceIdForRoster,
+  projectManagerChoiceSelected,
   projectManagerChoices,
+  projectManagerSelectedEntries,
   projectManagerSelectionIds,
   stableManagerDocumentId,
 } from './projectManagerChoices.ts'
@@ -114,4 +116,54 @@ test('a deactivated assignment is dropped and every other assignment is kept', (
   assert.equal(ids.includes(choiceIdForRoster('admin-id')), true)
   assert.equal(ids.includes(stableManagerDocumentId('mgr-user')), true)
   assert.equal(ids.includes('not-loaded-yet'), true)
+})
+
+// Rulebook 1.30.3 (owner bug 4 Nov): a manager hidden on web, listed on iOS, after repeated Change user type saves.
+test('a live manager is offered even when a stale admin invite copy shares their email', () => {
+  const live = account({ id: 'sam-live', firstName: 'Sam', surname: 'Lee', email: 'sam@raccord.test' })
+  const stale = account({
+    id: 'sam-old',
+    firstName: 'Sam',
+    surname: 'Lee',
+    email: 'Sam@raccord.test',
+    passwordSet: false,
+    role: 'admin',
+    permissions: { manager: true, adminAccess: true, operativeMode: false },
+  })
+  const choices = projectManagerChoices([], [stale, live], org)
+  assert.deepEqual(choices.map((choice) => [choice.label, choice.userId, choice.levelLabel]), [['Sam Lee', 'sam-live', 'Manager']])
+  assert.equal(choices[0].id, 'user:sam-live')
+})
+
+test('the picker badges admins and managers and stores a catalogue row id when there is one', () => {
+  const choices = projectManagerChoices(roster, users, org)
+  assert.deepEqual(choices.map((choice) => [choice.label, choice.levelLabel, choice.id]), [
+    ['Test Admin', 'Admin', choiceIdForRoster('admin-id')],
+    ['Test Manager', 'Manager', choiceIdForRoster('mgr-user')],
+  ])
+})
+
+test('assigned managers who are no longer candidates are shown with a note, then left out on save', () => {
+  const demoted = account({
+    id: 'dee',
+    firstName: 'Dee',
+    surname: 'Demoted',
+    email: 'dee@raccord.test',
+    role: 'operative',
+    permissions: { manager: false, adminAccess: false, operativeMode: true },
+  })
+  const ids = ['admin-id', 'user:dee', 'pn-user', 'not-loaded-yet']
+  const entries = projectManagerSelectedEntries(ids, roster, [...users, demoted], org)
+  assert.deepEqual(entries.map((entry) => [entry.id, entry.state, entry.note]), [
+    ['admin-id', 'current', null],
+    ['user:dee', 'former', 'Former manager — no longer a manager'],
+    ['pn-user', 'former', 'Former manager — inactive'],
+    ['not-loaded-yet', 'unknown', null],
+  ])
+  assert.deepEqual(projectManagerSelectionIds({ managerIds: ids }, roster, [...users, demoted], org), [
+    choiceIdForRoster('admin-id'),
+    'not-loaded-yet',
+  ])
+  const adminChoice = projectManagerChoices(roster, users, org)[0]
+  assert.equal(projectManagerChoiceSelected(adminChoice, entries, roster, users, org), true)
 })

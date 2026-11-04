@@ -1,21 +1,25 @@
 import { idsMatch } from '@/lib/subcontractors/bookingPeople'
 import { stableManagerId } from '@/lib/canonical/staffAccess'
-import { isPlaceholderManager } from '@/lib/staff/managerRosterUtils'
-import { isPendingPerson } from '@/lib/staff/pendingPeople'
+import {
+  JOB_MANAGER_LEVEL_LABELS,
+  jobManagerAssignments,
+  jobManagerCandidates,
+  type JobManagerAssignment,
+  type JobManagerRosterPerson,
+} from '@/lib/canonical/jobManagers'
 
 /**
- * Who can be chosen as a project or small-works manager.
+ * Who can be chosen as a project or small-works manager: rulebook 1.30.3 `jobManagerCandidates` (active admins, super
+ * admins and managers, one per person, never an operative, inactive, pending or deleted profile), and how each stored
+ * manager reads now: `jobManagerAssignments` (current / former with a note / unknown). This file only maps the web
+ * roster into those functions and maps a candidate to the id the job stores.
  *
- * iOS `ProjectManagerPickerSupport.availableManagers` offers active catalogue
- * managers, plus active admins who have finished signup. A catalogue row whose
- * `isActive` flag was never written still decodes as active, so the web also
- * requires a linked user who is an active, accepted manager or admin in this
- * organisation. A catalogue name with no user account is not offered. Inactive,
- * deactivated, pending, operative-only, and other-org accounts are not managers.
+ * Pass every users document (`rosterDocumentsFor`), not the email-folded roster: the fold keeps an admin copy first,
+ * and before 1.30.3 a stale admin copy (an old invite) left by repeated Change user type saves hid a live manager.
  *
- * iOS stores `managerIds` as `Manager.stableId(forFirestoreDocumentId:)`.
- * That equals the document id when the id is a UUID, and a hash when the
- * document id is a user id. Both spellings have to resolve to the same person.
+ * iOS stores `managerIds` as `Manager.stableId(forFirestoreDocumentId:)` of a `managers` catalogue row. That equals the
+ * document id when the id is a UUID, and a hash when the document id is a user id. A pick with no catalogue row is
+ * `user:{uid}` until the save creates the row.
  */
 
 export type ProjectManagerRosterRow = {
@@ -50,6 +54,18 @@ export type ProjectManagerChoice = {
   label: string
   email: string
   userId?: string
+  /** Rulebook 1.30.3: 'admin' | 'manager' and its badge text. */
+  level: 'admin' | 'manager'
+  levelLabel: string
+}
+
+/** One selected entry in the picker: a current candidate, a former manager (with the note) or an id not loaded. */
+export type ProjectManagerSelectedEntry = {
+  id: string
+  label: string
+  state: JobManagerAssignment['state']
+  levelLabel: string | null
+  note: string | null
 }
 
 function clean(value: string | null | undefined): string {
@@ -81,213 +97,161 @@ export function choiceIdForRoster(documentId: string): string {
   return managerIdsMatch(stable, documentId) ? documentId : stable
 }
 
-function rosterName(row: ProjectManagerRosterRow): string {
-  return `${clean(row.firstName)} ${clean(row.lastName)}`.trim() || clean(row.email)
-}
-
-function accountName(row: ProjectManagerAccount): string {
-  return `${clean(row.firstName)} ${clean(row.surname)}`.trim() || clean(row.email)
-}
-
-function isManagerOrAdmin(user: ProjectManagerAccount): boolean {
-  return Boolean(
-    user.isSuperAdmin ||
-      user.permissions?.adminAccess ||
-      user.role === 'admin' ||
-      user.permissions?.manager ||
-      user.role === 'manager'
-  )
-}
-
 function sameOrganisation(user: ProjectManagerAccount, organizationId?: string): boolean {
   if (!organizationId || !clean(user.organizationId)) return true
   return user.organizationId === organizationId
 }
 
-/** Active accepted manager or admin in this organisation. Operative mode is not a manager. */
-export function isEligibleProjectManagerAccount(user: ProjectManagerAccount, organizationId?: string): boolean {
-  if (!sameOrganisation(user, organizationId)) return false
-  if (user.isActive === false) return false
-  if (isPendingPerson(user)) return false
-  if (user.permissions?.operativeMode) return false
-  if (user.permissions || user.role || user.isSuperAdmin) return isManagerOrAdmin(user)
-  return true
+/** The web roster as `jobManagerCandidates` reads it (this organisation's users documents only). */
+function rosterRows(users: readonly ProjectManagerAccount[], organizationId?: string): JobManagerRosterPerson[] {
+  return users
+    .filter((user) => sameOrganisation(user, organizationId))
+    .map((user) => ({
+      id: user.id,
+      email: user.email ?? '',
+      firstName: user.firstName ?? '',
+      surname: user.surname ?? '',
+      isActive: user.isActive,
+      passwordSet: user.passwordSet,
+      status: user.status ?? null,
+      role: user.role ?? null,
+      isSuperAdmin: user.isSuperAdmin ?? null,
+      permissions: (user.permissions ?? null) as Record<string, unknown> | null,
+    }))
 }
 
-function accountIneligible(user: ProjectManagerAccount, organizationId?: string): boolean {
-  if (!sameOrganisation(user, organizationId)) return true
-  if (user.isActive === false) return true
-  if (isPendingPerson(user)) return true
-  if (user.permissions?.operativeMode) return true
-  if (user.permissions || user.role || user.isSuperAdmin) return !isManagerOrAdmin(user)
-  return false
+function catalogueRows(managers: readonly ProjectManagerRosterRow[]) {
+  return managers.map((row) => ({
+    id: row.id,
+    email: row.email ?? '',
+    firstName: row.firstName ?? '',
+    lastName: row.lastName ?? '',
+    isActive: row.isActive,
+  }))
 }
 
-function rosterMatches(row: ProjectManagerRosterRow, storedId: string): boolean {
-  return managerIdsMatch(row.id, storedId) || managerIdsMatch(stableManagerDocumentId(row.id), storedId)
+/** The catalogue row a candidate's pick is stored as: an active row on their email, else none. */
+function catalogueRowForEmail(managers: readonly ProjectManagerRosterRow[], email: string): ProjectManagerRosterRow | undefined {
+  const key = normalizeManagerEmail(email)
+  if (!key) return undefined
+  const rows = managers.filter((row) => normalizeManagerEmail(row.email) === key)
+  return rows.find((row) => row.isActive !== false) || rows[0]
 }
 
-function findRoster(managers: readonly ProjectManagerRosterRow[], storedId: string): ProjectManagerRosterRow | undefined {
-  return managers.find((row) => rosterMatches(row, storedId))
-}
-
-function findAccount(users: readonly ProjectManagerAccount[], storedId: string): ProjectManagerAccount | undefined {
-  return users.find((user) => managerIdsMatch(user.id, storedId))
-}
-
-function accountsForEmail(users: readonly ProjectManagerAccount[], email: string): ProjectManagerAccount[] {
-  if (!email) return []
-  return users.filter((user) => normalizeManagerEmail(user.email) === email)
-}
-
-function preferredAccount(users: ProjectManagerAccount[], organizationId?: string): ProjectManagerAccount | undefined {
-  const inOrg = users.filter((user) => sameOrganisation(user, organizationId))
-  const pool = inOrg.length > 0 ? inOrg : users
-  return [...pool].sort((a, b) => {
-    const score = (user: ProjectManagerAccount) =>
-      (user.isActive === false ? 0 : 4) + (isPendingPerson(user) ? 0 : 2) + (isManagerOrAdmin(user) ? 1 : 0)
-    return score(b) - score(a)
-  })[0]
-}
-
-function linkedAccount(
-  row: ProjectManagerRosterRow | undefined,
-  users: readonly ProjectManagerAccount[],
-  organizationId?: string
-): ProjectManagerAccount | undefined {
-  if (!row) return undefined
-  const email = normalizeManagerEmail(row.email)
-  return preferredAccount(accountsForEmail(users, email), organizationId)
-}
-
-export type ClassifiedManager =
-  | { kind: 'unknown' }
-  | { kind: 'ineligible'; name: string }
-  | { kind: 'eligible'; name: string; choiceId: string }
-
-export function classifyStoredManager(
-  storedId: string,
-  managers: readonly ProjectManagerRosterRow[],
-  users: readonly ProjectManagerAccount[],
-  organizationId?: string
-): ClassifiedManager {
-  const id = clean(storedId)
-  if (!id) return { kind: 'unknown' }
-  const roster = findRoster(managers, id)
-  const account = findAccount(users, id) || linkedAccount(roster, users, organizationId)
-  if (!roster && !account) return { kind: 'unknown' }
-
-  if (account && accountIneligible(account, organizationId)) {
-    return { kind: 'ineligible', name: roster ? rosterName(roster) : accountName(account) }
-  }
-  if (!account && roster && roster.isActive === false) {
-    return { kind: 'ineligible', name: rosterName(roster) }
-  }
-  if (roster && isPlaceholderManager({
-    firstName: clean(roster.firstName),
-    lastName: clean(roster.lastName),
-    email: clean(roster.email),
-  })) {
-    return { kind: 'ineligible', name: rosterName(roster) }
-  }
-  if (organizationId && roster?.organizationId && roster.organizationId !== organizationId && !account) {
-    return { kind: 'ineligible', name: rosterName(roster) }
-  }
-
-  const name = roster && rosterName(roster) ? rosterName(roster) : account ? accountName(account) : ''
-  const choiceId = roster ? choiceIdForRoster(roster.id) : `user:${account?.id || bareId(id)}`
-  return { kind: 'eligible', name, choiceId }
-}
-
-function catalogueEligible(
-  row: ProjectManagerRosterRow,
-  users: readonly ProjectManagerAccount[],
-  organizationId?: string
-): boolean {
-  if (row.isActive === false) return false
-  if (!clean(row.email)) return false
-  if (organizationId && row.organizationId && row.organizationId !== organizationId) return false
-  if (isPlaceholderManager({
-    firstName: clean(row.firstName),
-    lastName: clean(row.lastName),
-    email: clean(row.email),
-  })) {
-    return false
-  }
-  const linked = accountsForEmail(users, normalizeManagerEmail(row.email))
-  // A catalogue row with no user account is not an active person. iOS still
-  // lists isActive catalogue rows, but a name like "P N" with no account must
-  // not be offered as a project or small-works manager.
-  if (linked.length === 0) return false
-  const inOrg = linked.filter((user) => sameOrganisation(user, organizationId))
-  if (inOrg.length === 0) return false
-  const account = preferredAccount(inOrg, organizationId)
-  return Boolean(account && isEligibleProjectManagerAccount(account, organizationId))
-}
-
-/** Options for the project and small-works manager picker. */
+/** Options for the project and small-works manager picker (`jobManagerCandidates`), by name. */
 export function projectManagerChoices(
   managers: readonly ProjectManagerRosterRow[],
   users: readonly ProjectManagerAccount[],
   organizationId?: string
 ): ProjectManagerChoice[] {
-  const options: ProjectManagerChoice[] = []
-  const seenEmails = new Set<string>()
-
-  for (const manager of managers) {
-    if (!catalogueEligible(manager, users, organizationId)) continue
-    const email = normalizeManagerEmail(manager.email)
-    if (email && seenEmails.has(email)) continue
-    if (email) seenEmails.add(email)
-    options.push({
-      id: choiceIdForRoster(manager.id),
-      label: rosterName(manager),
-      email: clean(manager.email),
-    })
-  }
-
-  for (const user of users) {
-    if (!isEligibleProjectManagerAccount(user, organizationId)) continue
-    const email = normalizeManagerEmail(user.email)
-    if (email && seenEmails.has(email)) continue
-    if (email) seenEmails.add(email)
-    options.push({
-      id: `user:${user.id}`,
-      label: accountName(user),
-      email: clean(user.email),
-      userId: user.id,
-    })
-  }
-
-  return options.sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }))
+  return jobManagerCandidates(rosterRows(users, organizationId)).map((candidate) => {
+    const row = catalogueRowForEmail(managers, candidate.email)
+    return {
+      id: row ? choiceIdForRoster(row.id) : `user:${candidate.id}`,
+      label: candidate.name || candidate.email,
+      email: candidate.email,
+      userId: candidate.id,
+      level: candidate.level,
+      levelLabel: JOB_MANAGER_LEVEL_LABELS[candidate.level],
+    }
+  })
 }
 
+/** Catalogue rows of people who are job-manager candidates (task assignment uses the catalogue). */
 export function assignableProjectManagers<T extends ProjectManagerRosterRow>(
   managers: readonly T[],
   users: readonly ProjectManagerAccount[],
   organizationId?: string
 ): T[] {
-  return managers.filter((manager) => catalogueEligible(manager, users, organizationId))
+  const emails = new Set(
+    jobManagerCandidates(rosterRows(users, organizationId)).map((candidate) => normalizeManagerEmail(candidate.email))
+  )
+  return managers.filter((row) => row.isActive !== false && emails.has(normalizeManagerEmail(row.email)))
 }
 
-function storedManagerIds(project: {
-  managerId?: string | null
-  managerIds?: readonly string[] | null
-}): string[] {
-  const ids: string[] = []
-  for (const id of project.managerIds || []) {
-    const value = clean(id)
-    if (value && !ids.some((existing) => managerIdsMatch(existing, value))) ids.push(value)
+/** Each stored manager as it reads now (`jobManagerAssignments`). */
+export function projectManagerAssignments(
+  project: { managerId?: string | null; managerIds?: readonly string[] | null },
+  managers: readonly ProjectManagerRosterRow[],
+  users: readonly ProjectManagerAccount[],
+  organizationId?: string
+): JobManagerAssignment[] {
+  // Web `managerIdsMatch` also matches a UUID stored without dashes; hand the rulebook the row id it names.
+  const original = new Map<string, string>()
+  const known = [...managers.map((row) => row.id), ...users.map((row) => row.id)]
+  const normalise = (id: string) => {
+    const bare = clean(id)
+    const match = known.find((rowId) => managerIdsMatch(rowId, bare) || managerIdsMatch(stableManagerDocumentId(rowId), bare))
+    const next = match || bare
+    if (!original.has(next)) original.set(next, id)
+    return next
   }
-  const primary = clean(project.managerId)
-  if (primary && !ids.some((existing) => managerIdsMatch(existing, primary))) ids.unshift(primary)
-  return ids
+  const ids = [...(project.managerIds || [])].map(normalise)
+  const primary = project.managerId ? normalise(project.managerId) : null
+  return jobManagerAssignments({ managerIds: ids, managerId: primary }, rosterRows(users, organizationId), catalogueRows(managers)).map(
+    (row) => ({ ...row, storedId: original.get(row.storedId) ?? row.storedId })
+  )
+}
+
+function choiceFor(assignment: JobManagerAssignment, choices: readonly ProjectManagerChoice[]): ProjectManagerChoice | undefined {
+  const userId = assignment.candidate?.id
+  return (
+    choices.find((choice) => managerIdsMatch(choice.id, assignment.storedId)) ||
+    (userId ? choices.find((choice) => choice.userId === userId) : undefined)
+  )
 }
 
 /**
- * Ids to keep on the edit form.
- * Ineligible people (such as a deactivated account still on the catalogue) are removed.
- * An id that does not match anyone loaded yet is kept, so a save cannot drop a real assignment.
+ * The picker's selected entries, in order, one per person: current managers as their choice, former managers with
+ * `JOB_MANAGER_FORMER_NOTES` (shown so they can be removed, never silently), ids nobody loaded as "Not loaded".
+ */
+export function projectManagerSelectedEntries(
+  selectedIds: readonly string[],
+  managers: readonly ProjectManagerRosterRow[],
+  users: readonly ProjectManagerAccount[],
+  organizationId?: string
+): ProjectManagerSelectedEntry[] {
+  const choices = projectManagerChoices(managers, users, organizationId)
+  const out: ProjectManagerSelectedEntry[] = []
+  for (const assignment of projectManagerAssignments({ managerIds: selectedIds }, managers, users, organizationId)) {
+    if (assignment.state === 'current') {
+      const choice = choiceFor(assignment, choices)
+      out.push({
+        id: assignment.storedId,
+        label: choice?.label || assignment.name,
+        state: 'current',
+        levelLabel: choice?.levelLabel ?? null,
+        note: null,
+      })
+      continue
+    }
+    out.push({
+      id: assignment.storedId,
+      label: assignment.name || 'Unknown person',
+      state: assignment.state,
+      levelLabel: null,
+      note: assignment.note,
+    })
+  }
+  return out
+}
+
+/** Whether a choice is already picked (the same person under any id stored). */
+export function projectManagerChoiceSelected(
+  choice: ProjectManagerChoice,
+  entries: readonly ProjectManagerSelectedEntry[],
+  managers: readonly ProjectManagerRosterRow[],
+  users: readonly ProjectManagerAccount[],
+  organizationId?: string
+): boolean {
+  if (entries.some((entry) => managerIdsMatch(entry.id, choice.id))) return true
+  const current = projectManagerAssignments({ managerIds: entries.map((entry) => entry.id) }, managers, users, organizationId)
+  return current.some((row) => row.candidate?.id === choice.userId)
+}
+
+/**
+ * Ids to save: each current manager as its choice id, ids not loaded kept (a save never drops an assignment it could
+ * not read); former managers (no longer candidates) are left out — the picker shows them with a note first.
  */
 export function projectManagerSelectionIds(
   project: { managerId?: string | null; managerIds?: readonly string[] | null },
@@ -297,18 +261,24 @@ export function projectManagerSelectionIds(
 ): string[] {
   const choices = projectManagerChoices(managers, users, organizationId)
   const selected: string[] = []
-  for (const id of storedManagerIds(project)) {
-    const classified = classifyStoredManager(id, managers, users, organizationId)
-    if (classified.kind === 'ineligible') continue
-    if (classified.kind === 'unknown') {
-      if (!selected.some((existing) => managerIdsMatch(existing, id))) selected.push(id)
-      continue
-    }
-    const choice = choices.find(
-      (option) => managerIdsMatch(option.id, classified.choiceId) || managerIdsMatch(option.id, id)
-    )
-    const next = choice?.id || classified.choiceId
+  for (const assignment of projectManagerAssignments(project, managers, users, organizationId)) {
+    if (assignment.state === 'former') continue
+    const next = assignment.state === 'current' ? choiceFor(assignment, choices)?.id || assignment.storedId : assignment.storedId
     if (!selected.some((existing) => managerIdsMatch(existing, next))) selected.push(next)
   }
   return selected
+}
+
+/** The ids on the form without `id` and without any other id stored for the same person. */
+export function projectManagerIdsWithout(
+  selectedIds: readonly string[],
+  id: string,
+  managers: readonly ProjectManagerRosterRow[],
+  users: readonly ProjectManagerAccount[],
+  organizationId?: string
+): string[] {
+  const personOf = (value: string) =>
+    projectManagerAssignments({ managerIds: [value] }, managers, users, organizationId)[0]?.candidate?.id ?? null
+  const person = personOf(id)
+  return selectedIds.filter((existing) => !managerIdsMatch(existing, id) && (!person || personOf(existing) !== person))
 }
