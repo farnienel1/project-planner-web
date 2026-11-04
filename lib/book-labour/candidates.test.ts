@@ -8,7 +8,7 @@ import {
   enabledScheduleLocationPicks,
   oneOffCustomLocationPick,
 } from '../settings/organizationSettings.ts'
-import { bookLabourListPhase, bookLabourUserForRow, buildBookLabourCandidates } from './candidates.ts'
+import { bookLabourDayLine, bookLabourListPhase, bookLabourUserForRow, buildBookLabourCandidates } from './candidates.ts'
 import { bookingWriteFields } from '../canonical/index.ts'
 import { orgWarningScope } from '../warnings/warningScopeRoster.ts'
 import { jobAccessViewer } from '../access/bookingAccess.ts'
@@ -750,4 +750,25 @@ test('owner decision: Book labour is scoped like the Warnings unbooked list (man
   const asAdmin = listsFor(admin)
   assert.deepEqual(asAdmin.warnings, ['U-ADMIN', 'U-MGR', 'U-OTHER', 'U-R1', 'U-R2'])
   assert.deepEqual(asAdmin.bookLabour, asAdmin.warnings)
+})
+
+test('a viewer whose scope cannot list unbooked labour sees "no access", never "Everyone is booked"', () => {
+  const ready = { organization: { ready: true }, holidays: { ready: true } }
+  const blocked = { kind: 'jobs' as const, jobIds: [], personIds: [], personEmails: [], unbookedLabour: false }
+  assert.equal(bookLabourListPhase(ready, blocked), 'noAccess')
+  assert.equal(bookLabourListPhase(ready, { ...blocked, unbookedLabour: true }), 'ready')
+  assert.equal(bookLabourListPhase(ready, null), 'ready')
+  // Loading and errors still come first.
+  assert.equal(bookLabourListPhase({ organization: { ready: false } }, blocked), 'loading')
+  assert.equal(bookLabourListPhase({ organization: { ready: true, error: 'offline' } }, blocked), 'error')
+  // An operative's scope (`warningScopeFor`) cannot list unbooked labour.
+  const operativeViewer = user({ id: 'U-OPV', email: 'opv@site.test' })
+  const scope = orgWarningScope({ viewer: jobAccessViewer(operativeViewer), projects: [], users: [operativeViewer], operatives: [] })
+  assert.equal(bookLabourListPhase(ready, scope), 'noAccess')
+})
+
+test('the Book labour day heading is the organisation day, not London', () => {
+  // Sunday 15 November in Sydney starts at 13:00 UTC on the 14th.
+  assert.equal(bookLabourDayLine(new Date('2026-11-14T13:00:00Z'), 'Australia/Sydney'), 'Sunday 15 Nov')
+  assert.equal(bookLabourDayLine(new Date('2026-11-15T00:00:00Z'), 'Europe/London'), 'Sunday 15 Nov')
 })

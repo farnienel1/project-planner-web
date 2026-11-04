@@ -162,7 +162,6 @@ export function BookLabourFlowScreen({
     () => (dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam) ? dateFromDayKey(dateParam) : dateFromDayKey(dayKey(new Date()))),
     [dateParam]
   )
-  const dayLine = bookLabourDayLine(day)
 
   const [phase, setPhase] = useState<Phase>({ kind: 'pickPerson' })
   const [multiSelect, setMultiSelect] = useState(false)
@@ -177,6 +176,8 @@ export function BookLabourFlowScreen({
   // working hours in effect on the booking day (`effectivePayrollTimePolicy` in bookingSlotRules).
   const liveOrganization = useOrganizationDocument()
   const orgTimeZone = useOrganizationTimeZone()
+  // The day heading in the organisation zone: the chosen day key's first instant there (rulebook §1).
+  const dayLine = bookLabourDayLine(dateFromDayKey(dayKey(day), orgTimeZone), orgTimeZone)
   // Rulebook §5 / §6: the live warning settings and working hours, so Book labour lists the same unbooked people as
   // Warnings. Null until the listener has this organisation's document.
   const liveDetails = useMemo(
@@ -304,7 +305,7 @@ export function BookLabourFlowScreen({
     managerBookings: { ready: settledHere && loadsSettled.manager && !managerLoading && !managerScope.foreign, error: managerError },
     holidays: { ready: holidaysLoadedOrgId === orgId && !holidaysLoading && !holidayScope.foreign, error: holidaysError },
     jobs: { ready: settledHere && loadsSettled.projects && !projectScope.foreign },
-  })
+  }, viewerScope)
 
   const candidates = useMemo(
     () =>
@@ -1027,6 +1028,16 @@ function PickPerson({
         <p className="text-[17px] font-semibold">Unbooked labour did not load</p>
         <p className="mt-2 text-[13px] text-[var(--ink3)]">
           Check your connection and open Book labour again.
+        </p>
+      </div>
+    )
+  }
+  if (phase === 'noAccess') {
+    return (
+      <div className="card py-16 text-center">
+        <p className="text-[17px] font-semibold">You can&apos;t see unbooked labour for the whole company</p>
+        <p className="mt-2 text-[13px] text-[var(--ink3)]">
+          Unbooked labour is listed for people who can see every booking. Ask an admin to book this day.
         </p>
       </div>
     )

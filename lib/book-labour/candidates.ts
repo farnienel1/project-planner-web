@@ -195,7 +195,7 @@ export function buildBookLabourCandidates(input: {
     .map((entry) => entry.candidate)
 }
 
-export type BookLabourListPhase = 'loading' | 'error' | 'ready'
+export type BookLabourListPhase = 'loading' | 'error' | 'noAccess' | 'ready'
 
 /** One source the list is built from: loaded for this organisation, still loading, or failed. */
 export type BookLabourSource = { ready: boolean; error?: string | null }
@@ -205,16 +205,25 @@ export type BookLabourSource = { ready: boolean; error?: string | null }
  * live organisation document (warning settings, working hours), the roster, operatives, bookings, manager bookings
  * and annual leave have loaded for this organisation; a failed source is an error, never "Everyone is booked".
  */
-export function bookLabourListPhase(sources: Readonly<Record<string, BookLabourSource>>): BookLabourListPhase {
+export function bookLabourListPhase(
+  sources: Readonly<Record<string, BookLabourSource>>,
+  /**
+   * The viewer's warning scope. When it cannot list unbooked labour (`unbookedLabour` false: a viewer who cannot
+   * read every booking, or an operative), the list is `noAccess` — never "Everyone is booked".
+   */
+  scope?: WarningScope | null
+): BookLabourListPhase {
   const all = Object.values(sources)
   if (all.some((source) => Boolean(source.error))) return 'error'
   if (all.some((source) => !source.ready)) return 'loading'
+  if (scope && scope.kind === 'jobs' && !scope.unbookedLabour) return 'noAccess'
   return 'ready'
 }
 
-export function bookLabourDayLine(day: Date): string {
+/** The day heading, read in the organisation business time zone (rulebook §1). */
+export function bookLabourDayLine(day: Date, timeZone: string): string {
   return new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Europe/London',
+    timeZone,
     weekday: 'long',
     day: 'numeric',
     month: 'short',
