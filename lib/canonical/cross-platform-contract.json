@@ -223,6 +223,7 @@
               "subContractors": true,
               "wholesalersOrderHistory": true,
               "annualLeaveSelfBook": false,
+              "timesheetSelfSign": false,
               "weeklyReports": true,
               "dailyOverview": true
             },
@@ -341,6 +342,7 @@
               "subContractors": false,
               "wholesalersOrderHistory": true,
               "annualLeaveSelfBook": false,
+              "timesheetSelfSign": false,
               "weeklyReports": false,
               "dailyOverview": true
             },
@@ -3247,6 +3249,7 @@
               "subContractors": false,
               "wholesalersOrderHistory": true,
               "annualLeaveSelfBook": false,
+              "timesheetSelfSign": false,
               "weeklyReports": false,
               "dailyOverview": true
             },
@@ -3283,6 +3286,7 @@
               "subContractors": false,
               "wholesalersOrderHistory": true,
               "annualLeaveSelfBook": false,
+              "timesheetSelfSign": false,
               "weeklyReports": false,
               "dailyOverview": true
             },
@@ -3315,6 +3319,7 @@
               "subContractors": false,
               "wholesalersOrderHistory": true,
               "annualLeaveSelfBook": false,
+              "timesheetSelfSign": false,
               "weeklyReports": false,
               "dailyOverview": true
             },
@@ -3372,6 +3377,7 @@
               "subContractors": false,
               "wholesalersOrderHistory": true,
               "annualLeaveSelfBook": false,
+              "timesheetSelfSign": false,
               "weeklyReports": false,
               "dailyOverview": true
             },
@@ -3422,6 +3428,7 @@
               "subContractors": false,
               "wholesalersOrderHistory": true,
               "annualLeaveSelfBook": false,
+              "timesheetSelfSign": false,
               "weeklyReports": false,
               "dailyOverview": true
             },

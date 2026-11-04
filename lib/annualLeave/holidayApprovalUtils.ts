@@ -52,8 +52,8 @@ export function leaveRoster(users: ReadonlyArray<User>): RulebookPerson[] {
 }
 
 /**
- * `canSelfBookAnnualLeave(user, roster)`: the self-book permission outside operative mode, or an admin / super admin
- * outside operative mode with no active line manager (self-approved).
+ * `canSelfBookAnnualLeave(user, roster)`: the self-book permission outside operative mode, or the Super Admin
+ * (rulebook 1.28.0; having no line manager no longer self-books an admin).
  */
 export function userCanSelfBookAnnualLeave(user: User | null | undefined, users: ReadonlyArray<User> = []): boolean {
   return user ? canSelfBookAnnualLeave(leaveUser(user, users), leaveRoster(users)) : false
@@ -73,8 +73,8 @@ export function userLineManagerRequiredError(user: User, users: ReadonlyArray<Us
 }
 
 /**
- * Whether Manage Users offers "No line manager" for this person: only when `lineManagerRequired` is false for them
- * as an active account — an admin or super admin outside operative mode (`isAdminOutsideOperativeMode`).
+ * Whether Manage Users offers "No line manager" for this person (`lineManagerOptions`): an admin or super admin outside
+ * operative mode. 1.28.0: the save still needs both self-manage toggles on (`lineManagerRequiredError`).
  */
 export function userMayHaveNoLineManager(user: User, users: ReadonlyArray<User> = []): boolean {
   // Rulebook 1.11.0 `lineManagerOptions`: "No line manager" only when `lineManagerRequired` is false.

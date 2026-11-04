@@ -134,7 +134,16 @@ export function PermissionRowsList({
   lockedMessage,
   onLocked,
 }: {
-  rows: ReadonlyArray<{ field: string; label: string; help: string; visible: boolean; editable: boolean; value: boolean }>
+  rows: ReadonlyArray<{
+    field: string
+    label: string
+    help: string
+    visible: boolean
+    editable: boolean
+    value: boolean
+    /** Rulebook 1.28.0: why this row is greyed out (Super Admin, PAYE), shown in place of `lockedMessage`. */
+    note?: string | null
+  }>
   onChange: (patch: Partial<UserPermissions>) => void
   disabled?: boolean
   excludeFields?: string[]
@@ -152,7 +161,7 @@ export function PermissionRowsList({
             checked={row.value}
             onChange={(checked) => onChange({ [row.field]: checked } as Partial<UserPermissions>)}
             disabled={disabled || !row.editable}
-            lockedMessage={!row.editable && !disabled ? lockedMessage : undefined}
+            lockedMessage={!row.editable && !disabled ? row.note || lockedMessage : undefined}
             onLocked={onLocked}
           />
         ))}

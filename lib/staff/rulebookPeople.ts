@@ -21,6 +21,10 @@ export type RulebookPerson = NotificationRosterMember & {
   manager: boolean
   operativeMode: boolean
   annualLeaveSelfBook: boolean
+  /** 1.28.0: admins only (`timesheetSelfSigned`, `selfManageToggles`). */
+  timesheetSelfSign: boolean
+  /** Stored `employmentType` (`paye` exempts an admin from Timesheet self-sign, `selfManageToggles`). */
+  employmentType: string | null
   annualLeaveEnabled: boolean | null
 }
 
@@ -55,6 +59,8 @@ export function rulebookPerson(user: User, users: ReadonlyArray<User> = []): Rul
     manager: permissions.manager === true,
     operativeMode: permissions.operativeMode === true,
     annualLeaveSelfBook: permissions.annualLeaveSelfBook === true,
+    timesheetSelfSign: permissions.timesheetSelfSign === true,
+    employmentType: typeof user.employmentType === 'string' ? user.employmentType : null,
     annualLeaveEnabled: user.annualLeaveEnabled ?? null,
     formerUserIds: ids(user.formerUserIds),
     sameEmailUserIds: sameEmailUserIdsFor(user, users),

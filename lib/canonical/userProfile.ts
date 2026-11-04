@@ -143,6 +143,8 @@ export const USER_PERMISSION_FIELDS = [
   'subContractors',
   'wholesalersOrderHistory',
   'annualLeaveSelfBook',
+  // 1.28.0: admins only (`ADMIN_ONLY_PERMISSION_FIELDS`); reads off for a manager or operative.
+  'timesheetSelfSign',
   'weeklyReports',
   'dailyOverview',
 ] as const

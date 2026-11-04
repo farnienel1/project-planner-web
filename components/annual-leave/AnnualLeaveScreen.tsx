@@ -30,8 +30,8 @@ export function AnnualLeaveScreen() {
   useEffect(() => {
     if (organization?.id) void loadRosterUsers(organization.id).catch(() => undefined)
   }, [organization?.id, loadRosterUsers])
-  // `canSelfBookAnnualLeave(user, roster)`: the self-book permission outside operative mode, or an admin / super
-  // admin outside operative mode with no active line manager. No line manager is not self-booking for anyone else.
+  // `canSelfBookAnnualLeave(user, roster)`: the self-book permission outside operative mode, or the Super Admin
+  // (rulebook 1.28.0). Having no line manager is not self-booking for anyone.
   const booksOwnLeave = userCanSelfBookAnnualLeave(user, rosterUsers)
   const canTeam = !isOperative && canAccessOperativeAnnualLeaveDirectory(user)
   const searchParams = useSearchParams()

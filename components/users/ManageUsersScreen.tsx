@@ -304,7 +304,7 @@ export function ManageUsersScreen() {
               : `${missingLineManager.length} people need a line manager`}
           </p>
           <p className="mt-0.5 text-xs">
-            Every operative and manager needs a line manager. Until one is set, their timesheets and annual leave requests go to admins.
+            Every operative and manager needs a line manager, and so does an admin unless Annual Leave Management and Timesheet self-sign are both on (PAYE: Annual Leave Management). Until fixed, their timesheets and annual leave requests go to the other admins.
           </p>
           <ul className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
             {missingLineManager.map((user) => (

@@ -7,8 +7,9 @@
  * not Materials or Site audit) and an admin's stored toggles decided what the admin could open.
  *
  *   - Admins and super admins: every toggle in `USER_PERMISSION_FIELDS` reads on and is locked, Admin Access and
- *     Operatives included, whatever is stored — except Annual Leave Management (`annualLeaveSelfBook`), the one
- *     toggle an admin can change. `operativeMode` reads off: an admin has no operative mode (only operative-level
+ *     Operatives included, whatever is stored — except the two self-manage toggles (1.28.0), Annual Leave Management
+ *     (`annualLeaveSelfBook`) and Timesheet self-sign (`timesheetSelfSign`), which an admin's toggles can change. The
+ *     Super Admin reads both on and locked (they may be the only admin). `operativeMode` reads off: an admin has no operative mode (only operative-level
  *     users get it, at setup). Existing user documents are never rewritten; the values are derived when read.
  *   - Managers: the stored toggles (defaults below), editable — except Materials and Site audit, always on and locked.
  *   - Operatives: the stored toggles; Materials and Site audit are the only rows.
@@ -21,8 +22,17 @@ import { USER_PERMISSION_FIELDS, type PermissionToggleDef, type UserPermissionFi
 
 export type PermissionLevel = 'admin' | 'manager' | 'operative'
 
-/** The only permission toggle an admin or super admin can change. */
-export const ADMIN_EDITABLE_PERMISSION_FIELDS: ReadonlyArray<UserPermissionField> = ['annualLeaveSelfBook']
+/**
+ * The permission toggles an admin can change (1.28.0, the self-manage toggles): Annual Leave Management and Timesheet
+ * self-sign. Locked on for the Super Admin.
+ */
+export const ADMIN_EDITABLE_PERMISSION_FIELDS: ReadonlyArray<UserPermissionField> = ['annualLeaveSelfBook', 'timesheetSelfSign']
+
+/**
+ * Toggles that exist for admins only (1.28.0): never shown for a manager or operative, always read off for them, and
+ * never written by a save at that level — the stored value stays underneath, so promoting back restores it.
+ */
+export const ADMIN_ONLY_PERMISSION_FIELDS: ReadonlyArray<UserPermissionField> = ['timesheetSelfSign']
 
 /**
  * Toggles always on for a manager (and an admin), shown on and locked (owner decision, 1.11.0): Materials and Site
@@ -41,6 +51,16 @@ export const PERMISSION_DEFAULT_ON: ReadonlyArray<UserPermissionField> = [
 
 /** Shown under a locked admin toggle. The level is changed with "Change user type". */
 export const ADMIN_LOCKED_PERMISSION_MESSAGE = 'Administrators have this on. Change user type to remove admin access.'
+
+/** 1.28.0: shown under the Super Admin's self-manage toggles (always on, locked). */
+export const SUPER_ADMIN_SELF_MANAGE_MESSAGE =
+  'The Super Admin always books their own leave and signs their own timesheet.'
+
+/** 1.28.0: shown under the viewer's own self-manage toggles — nobody changes their own (rulebook §11). */
+export const OWN_SELF_MANAGE_MESSAGE = 'You cannot change your own self-manage toggles. Ask another admin.'
+
+/** 1.28.0: shown under a PAYE admin's Timesheet self-sign toggle (greyed out; PAYE has no My Timesheets). */
+export const TIMESHEET_SELF_SIGN_PAYE_NOTE = 'Not used while PAYE — PAYE has no timesheets.'
 
 function bool(value: unknown): boolean | null {
   if (value === true || value === false) return value
@@ -70,6 +90,17 @@ function roleToken(user: unknown): string {
   return typeof role === 'string' ? role.trim().toLowerCase().replace(/[\s-]/g, '_') : ''
 }
 
+/** The Super Admin from stored flags: `isSuperAdmin` (top level or `permissions`) or the `super_admin` role. */
+function storedSuperAdmin(user: unknown): boolean {
+  const role = roleToken(user)
+  return storedPermissionFlag(user, 'isSuperAdmin') === true || role === 'super_admin' || role === 'superadmin'
+}
+
+function storedPaye(user: unknown): boolean {
+  const value = record(user).employmentType
+  return typeof value === 'string' && value.trim().toLowerCase() === 'paye'
+}
+
 /**
  * The person's level from their stored flags: `admin` for a super admin, `adminAccess` (top level or
  * `permissions`) or the `admin` / `super_admin` role — a stray `operativeMode` flag never demotes an admin; then
@@ -91,26 +122,31 @@ export function permissionLevelOf(user: unknown): PermissionLevel {
 }
 
 /**
- * The toggles locked for this person (rulebook §11): for an admin or super admin every `USER_PERMISSION_FIELDS` key
- * except `annualLeaveSelfBook` (Admin Access, Operatives and Operative mode included); for a manager Materials and
- * Site audit (`MANAGER_LOCKED_ON_PERMISSION_FIELDS`, always on); for an operative none.
+ * The toggles locked for this person (rulebook §11): for an admin every `USER_PERMISSION_FIELDS` key except the
+ * self-manage toggles (`ADMIN_EDITABLE_PERMISSION_FIELDS`; Admin Access, Operatives and Operative mode included); for
+ * the Super Admin every key (1.28.0: both self-manage toggles always on); for a manager Materials and Site audit
+ * (`MANAGER_LOCKED_ON_PERMISSION_FIELDS`, always on) and the admin-only toggles (`ADMIN_ONLY_PERMISSION_FIELDS`,
+ * always off); for an operative the admin-only toggles.
  * `level` overrides the level read from `user` (an Add User draft, a pending "Change user type").
  */
 export function lockedPermissionFields(user: unknown, level?: PermissionLevel | null): UserPermissionField[] {
   const resolved = level ?? permissionLevelOf(user)
-  if (resolved === 'manager') return [...MANAGER_LOCKED_ON_PERMISSION_FIELDS]
-  if (resolved !== 'admin') return []
+  if (resolved === 'manager') return [...MANAGER_LOCKED_ON_PERMISSION_FIELDS, ...ADMIN_ONLY_PERMISSION_FIELDS]
+  if (resolved !== 'admin') return [...ADMIN_ONLY_PERMISSION_FIELDS]
+  if (storedSuperAdmin(user)) return [...USER_PERMISSION_FIELDS]
   return USER_PERMISSION_FIELDS.filter((key) => !ADMIN_EDITABLE_PERMISSION_FIELDS.includes(key))
 }
 
 /**
  * The toggles in effect for this person — the values every permission check reads (rulebook §8, §11, 1.11.0):
- *   - admin / super admin: every toggle true except `operativeMode` (false) and `annualLeaveSelfBook` (stored, else
- *     false);
+ *   - admin: every toggle true except `operativeMode` (false) and the self-manage toggles `annualLeaveSelfBook` and
+ *     `timesheetSelfSign` (stored, else false); the Super Admin reads both self-manage toggles true (1.28.0);
  *   - operative: stored values; `operativeMode` true; `adminAccess`, `manager`, `operatives`, `qualifications` off;
  *     `projects` / `smallWorks` on (their bookings' jobs); `materials` stored, else off; `siteAudit` stored, else on;
  *   - manager level: stored values, `PERMISSION_DEFAULT_ON` on when not stored, the rest off; Materials and Site
  *     audit always on; `manager` stored, else the `manager` role; `adminAccess` and `operativeMode` false.
+ *   - manager and operative: `timesheetSelfSign` false (admins only, 1.28.0) whatever is stored — a demoted admin's
+ *     stored value stays underneath and reads again after a promotion.
  * `skills` is retired (the skills catalogue is not managed in the apps): false except for an admin.
  */
 export function effectivePermissions(
@@ -123,12 +159,15 @@ export function effectivePermissions(
   if (resolved === 'admin') {
     for (const key of USER_PERMISSION_FIELDS) out[key] = true
     out.operativeMode = false
-    out.annualLeaveSelfBook = stored('annualLeaveSelfBook', false)
+    const superAdmin = storedSuperAdmin(user)
+    out.annualLeaveSelfBook = superAdmin || stored('annualLeaveSelfBook', false)
+    out.timesheetSelfSign = superAdmin || stored('timesheetSelfSign', false)
     return out
   }
   for (const key of USER_PERMISSION_FIELDS) out[key] = stored(key, PERMISSION_DEFAULT_ON.includes(key))
   out.skills = false
   out.adminAccess = false
+  for (const key of ADMIN_ONLY_PERMISSION_FIELDS) out[key] = false
   if (resolved === 'operative') {
     out.operativeMode = true
     out.manager = false
@@ -235,6 +274,12 @@ export type PermissionToggleRow = {
   editable: boolean
   /** On or off: the person's effective value, or the level's Add User default. */
   value: boolean
+  /**
+   * 1.28.0: why a visible row is greyed out when it is not the level lock — `SUPER_ADMIN_SELF_MANAGE_MESSAGE` for the
+   * Super Admin's self-manage toggles, `TIMESHEET_SELF_SIGN_PAYE_NOTE` for a PAYE admin's Timesheet self-sign. Null
+   * otherwise (a screen shows its usual locked copy).
+   */
+  note: string | null
 }
 
 type CatalogueRow = { field: UserPermissionField; label: string; help: string; levels: ReadonlyArray<PermissionLevel> }
@@ -274,6 +319,12 @@ export const PERMISSION_TOGGLE_CATALOGUE: ReadonlyArray<CatalogueRow> = [
     levels: ['admin', 'manager'],
   },
   {
+    field: 'timesheetSelfSign',
+    label: 'Timesheet self-sign',
+    help: "Sign your own timesheet and generate the invoice without a line manager's signature.",
+    levels: ['admin'],
+  },
+  {
     field: 'operatives',
     label: 'Operatives',
     help:
@@ -304,8 +355,8 @@ export const PERMISSION_TOGGLE_CATALOGUE: ReadonlyArray<CatalogueRow> = [
 /**
  * What Add User starts with for each level (rulebook §11, 1.14.0): **every toggle the adder can change starts off**
  * — the rows `permissionToggleRows` shows for that level and does not lock — and the adder turns them on one by one.
- * Locked toggles keep their locked value: an admin or super admin has every toggle on and locked except Annual Leave
- * Management, which starts off; a manager has Materials and Site audit locked on. Flags that are not toggles keep the
+ * Locked toggles keep their locked value: an admin has every toggle on and locked except the self-manage toggles
+ * (Annual Leave Management, Timesheet self-sign; 1.28.0), which start off; a manager has Materials and Site audit locked on. Flags that are not toggles keep the
  * level's value (`manager` true for a manager, `operativeMode` true and `projects` / `smallWorks` on for an operative).
  * Only for a new person: changing an existing person's user type never resets their saved toggles
  * (`accountTypePermissions`).
@@ -329,8 +380,11 @@ export function addUserPermissionDefaults(level: PermissionLevel): Record<UserPe
 /**
  * The Manage Users permission rows (rulebook §11, 1.11.0): one ordered list used by Add User (`add`), its summary
  * (`summary`) and Edit User (`edit`) on every platform, so the three never show different sets.
- *   - `admin`: every row visible, on and locked except Annual Leave Management.
- *   - `manager`: every row except Admin Access; Materials and Site audit on and locked, the rest editable (Wholesalers
+ *   - `admin`: every row visible, on and locked except the self-manage toggles (Annual Leave Management, Timesheet
+ *     self-sign; 1.28.0). The Super Admin's self-manage rows are on and locked (`note` SUPER_ADMIN_SELF_MANAGE_MESSAGE);
+ *     a PAYE admin's Timesheet self-sign row is shown greyed out (`note` TIMESHEET_SELF_SIGN_PAYE_NOTE, not editable);
+ *     with `viewerIsSubject` the viewer's own self-manage rows are not editable (`note` OWN_SELF_MANAGE_MESSAGE).
+ *   - `manager`: every row except Admin Access and Timesheet self-sign (admins only); Materials and Site audit on and locked, the rest editable (Wholesalers
  *     included).
  *   - `operative`: Materials and Site audit only.
  * `value` is `effectivePermissions(user, level)` when `user` is given (Edit User, or the Add User draft), else the
@@ -341,19 +395,35 @@ export function permissionToggleRows(input: {
   level: PermissionLevel
   user?: unknown
   mode: PermissionToggleMode
+  /** 1.28.0: the viewer is this person — their own self-manage rows are not editable (`OWN_SELF_MANAGE_MESSAGE`). */
+  viewerIsSubject?: boolean | null
 }): PermissionToggleRow[] {
   const level: PermissionLevel = input?.level === 'admin' || input?.level === 'operative' ? input.level : 'manager'
   const values = input?.user != null ? effectivePermissions(input.user, level) : addUserPermissionDefaults(level)
   const locked = lockedPermissionFields(input?.user ?? {}, level)
+  const superAdmin = level === 'admin' && storedSuperAdmin(input?.user)
+  const paye = storedPaye(input?.user)
   return PERMISSION_TOGGLE_CATALOGUE.map((row) => {
     const visible = row.levels.includes(level)
+    const selfManage = level === 'admin' && ADMIN_EDITABLE_PERMISSION_FIELDS.includes(row.field)
+    const payeTimesheet = level === 'admin' && row.field === 'timesheetSelfSign' && paye && !superAdmin
+    const own = selfManage && input?.viewerIsSubject === true && !superAdmin
+    const note =
+      selfManage && superAdmin
+        ? SUPER_ADMIN_SELF_MANAGE_MESSAGE
+        : payeTimesheet
+          ? TIMESHEET_SELF_SIGN_PAYE_NOTE
+          : own
+            ? OWN_SELF_MANAGE_MESSAGE
+            : null
     return {
       field: row.field,
       label: row.label,
       help: row.help,
       visible,
-      editable: visible && input?.mode !== 'summary' && !locked.includes(row.field),
+      editable: visible && input?.mode !== 'summary' && !locked.includes(row.field) && !payeTimesheet && !own,
       value: values[row.field] === true,
+      note,
     }
   })
 }
@@ -411,8 +481,9 @@ export const OPERATIVE_PERMISSION_TOGGLES: PermissionToggleDef[] = PERMISSION_TO
  *     stored keeps the value it reads as (`PERMISSION_DEFAULT_ON`, else off).
  *   - Only the level flags change: admin `adminAccess` on, `operativeMode` off, `manager` on; manager `adminAccess`
  *     off, `operativeMode` off, `manager` on; operative `adminAccess` off, `operativeMode` on, `manager` off.
- * An admin still reads every toggle on and locked except Annual Leave Management (`effectivePermissions`); the stored
- * values stay underneath and read again after a demotion. Returns every `USER_PERMISSION_FIELDS` key.
+ * An admin still reads every toggle on and locked except the self-manage toggles (`effectivePermissions`); the stored
+ * values stay underneath and read again after a demotion. Timesheet self-sign (admins only) reads off after a demotion
+ * and its stored value is kept, so a promotion back restores it (1.28.0). Returns every `USER_PERMISSION_FIELDS` key.
  */
 export function accountTypePermissions(
   kind: PermissionLevel,

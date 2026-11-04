@@ -230,6 +230,8 @@ export interface UserPermissions {
   subContractors: boolean;
   wholesalersOrderHistory: boolean;
   annualLeaveSelfBook?: boolean;
+  /** Rulebook 1.28.0: admins only — signs their own timesheet without a line manager's signature. */
+  timesheetSelfSign?: boolean;
   weeklyReports?: boolean;
   dailyOverview?: boolean;
   /** Legacy flag. Owner console access is email-only (info@projectplanner.us), never granted from an organisation. */

@@ -212,12 +212,12 @@ test('later schedule changes do not rebuild stored labour lines', () => {
   assert.equal(second.weeklyReportOverride?.priceWork[0].decision, 'edited')
 })
 
-test('admin with no line manager: own signature is full approval and selfSigned (timesheetSelfSigned)', () => {
+test('admin with Timesheet self-sign (1.28.0): own signature is full approval and selfSigned (timesheetSelfSigned)', () => {
   const solo = user({ id: 'solo', hasNoLineManager: true, assignedManagerUserId: undefined })
   const admin = {
     ...solo,
     role: 'admin',
-    permissions: { ...solo.permissions, adminAccess: true, operativeMode: false },
+    permissions: { ...solo.permissions, adminAccess: true, operativeMode: false, timesheetSelfSign: true },
   } as User
   const draft = applyWeeklyReportOverride({
     ...base,

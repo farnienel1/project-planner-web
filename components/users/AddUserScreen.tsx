@@ -241,12 +241,19 @@ export function AddUserScreen() {
   // Rulebook 1.11.0 `permissionToggleRows`: the same rows, values and locks as iOS Add User, its summary and Edit User.
   const permissionLevel: AccountType = operativeInviteOnly ? 'operative' : accountType
   const permissionRows = useMemo(
-    () => permissionToggleRows({ level: permissionLevel, user: { permissions }, mode: 'add' }).filter((row) => row.visible),
-    [permissionLevel, permissions]
+    // 1.28.0: `employmentType` greys out a PAYE admin's Timesheet self-sign row (`TIMESHEET_SELF_SIGN_PAYE_NOTE`).
+    () =>
+      permissionToggleRows({ level: permissionLevel, user: { permissions, employmentType: form.employmentType }, mode: 'add' }).filter(
+        (row) => row.visible
+      ),
+    [permissionLevel, permissions, form.employmentType]
   )
   const summaryRows = useMemo(
-    () => permissionToggleRows({ level: permissionLevel, user: { permissions }, mode: 'summary' }).filter((row) => row.visible),
-    [permissionLevel, permissions]
+    () =>
+      permissionToggleRows({ level: permissionLevel, user: { permissions, employmentType: form.employmentType }, mode: 'summary' }).filter(
+        (row) => row.visible
+      ),
+    [permissionLevel, permissions, form.employmentType]
   )
 
   const showSetup = true
@@ -314,7 +321,8 @@ export function AddUserScreen() {
       return
     }
     // `lineManagerRequiredError(user, roster)`: every operative and manager needs an active line manager, whatever
-    // the self-book permission. Only admins and super admins outside operative mode may have none.
+    // the self-book permission. 1.28.0: an admin may have none only with both self-manage toggles on (Annual Leave
+    // Management, and Timesheet self-sign unless PAYE).
     const lineManagerMessage = lineManagerRequiredError(
       {
         // 1.27.0: the invite draft id (`INVITE_DRAFT_PERSON_ID`, iOS the same), so `personIdSet` reaches the rows on
@@ -326,6 +334,8 @@ export function AddUserScreen() {
         adminAccess: invitePermissions.adminAccess === true,
         operativeMode: invitePermissions.operativeMode === true,
         annualLeaveSelfBook: invitePermissions.annualLeaveSelfBook === true,
+        timesheetSelfSign: invitePermissions.timesheetSelfSign === true,
+        employmentType: form.employmentType,
         assignedManagerUserIds: form.hasNoLineManager ? [] : form.assignedManagerUserIds,
         hasNoLineManager: mayHaveNoLineManager && form.hasNoLineManager,
         annualLeaveEnabled: form.annualLeaveEnabled,
@@ -559,7 +569,7 @@ export function AddUserScreen() {
           <SettingsCard>
             <div className="border-b border-slate-100 px-4 py-3 text-sm text-slate-600">
               {permissionLevel === 'admin'
-                ? 'Administrators have every permission. Only Annual Leave Management can be changed.'
+                ? 'Administrators have every permission. Only Annual Leave Management and Timesheet self-sign can be changed. With no line manager, both must be on (PAYE: Annual Leave Management).'
                 : permissionLevel === 'manager'
                   ? 'Materials and Site audit are always on for managers. Anything left off can be turned on later in Manage Users.'
                   : 'Choose what this operative can open. Anything left off can be turned on later in Manage Users.'}
@@ -716,14 +726,13 @@ export function AddUserScreen() {
                       checked={form.hasNoLineManager}
                       onChange={(event) => {
                         const hasNoLineManager = event.target.checked
+                        // 1.28.0: the self-manage toggles are kept — with no line manager both must be on
+                        // (`lineManagerRequiredError`).
                         setForm({
                           ...form,
                           hasNoLineManager,
                           assignedManagerUserIds: hasNoLineManager ? [] : form.assignedManagerUserIds,
                         })
-                        if (hasNoLineManager) {
-                          setPermissions((current) => ({ ...current, annualLeaveSelfBook: false }))
-                        }
                       }}
                     />
                     No line manager

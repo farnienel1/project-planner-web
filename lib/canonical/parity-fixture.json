@@ -1421,7 +1421,7 @@
       "expected": "Set a line manager — this person's timesheets and annual leave need approval."
     },
     {
-      "name": "usersMissingLineManager: the admins clean-up list",
+      "name": "usersMissingLineManager: the admins clean-up list (1.28.0: an admin with no line manager and Timesheet self-sign off is on it)",
       "function": "usersMissingLineManager",
       "args": [
         [
@@ -1502,6 +1502,7 @@
         ]
       ],
       "expected": [
+        "ADMIN",
         "LM",
         "MGR2",
         "OP2",
@@ -2650,7 +2651,7 @@
       "expected": true
     },
     {
-      "name": "lineManagerRequired: an admin does not",
+      "name": "lineManagerRequired: 1.28.0 an admin with the self-manage toggles off needs one",
       "function": "lineManagerRequired",
       "args": [
         {
@@ -2658,7 +2659,7 @@
           "role": "admin"
         }
       ],
-      "expected": false
+      "expected": true
     },
     {
       "name": "lineManagerRequired: a super admin flag does not",
@@ -2672,7 +2673,7 @@
       "expected": false
     },
     {
-      "name": "lineManagerRequired: 1.11.0 an admin has no operative mode, so a stray flag does not make one required",
+      "name": "lineManagerRequired: 1.28.0 an admin with a stray operative-mode flag and the self-manage toggles off needs one",
       "function": "lineManagerRequired",
       "args": [
         {
@@ -2684,7 +2685,7 @@
           }
         }
       ],
-      "expected": false
+      "expected": true
     },
     {
       "name": "lineManagerRequired: an inactive person is not checked",
@@ -2933,7 +2934,7 @@
       "expected": "Set a line manager — this person's timesheets and annual leave need approval."
     },
     {
-      "name": "lineManagerRequiredError: an admin without a line manager passes",
+      "name": "lineManagerRequiredError: 1.28.0 an admin without a line manager and the self-manage toggles off is refused",
       "function": "lineManagerRequiredError",
       "args": [
         {
@@ -3117,7 +3118,7 @@
           }
         ]
       ],
-      "expected": null
+      "expected": "Set a line manager, or turn on both Annual Leave Management and Timesheet self-sign — this person's timesheets and annual leave need approval."
     },
     {
       "name": "lineManagerRequiredError: an admin with a line manager passes",
@@ -4863,7 +4864,7 @@
       ]
     },
     {
-      "name": "timesheetSelfSigned: an admin with no line manager",
+      "name": "timesheetSelfSigned: 1.28.0 an admin with Timesheet self-sign on",
       "function": "timesheetSelfSigned",
       "args": [
         {
@@ -4874,7 +4875,8 @@
             "isAdmin": true,
             "isManager": false,
             "isOperativeMode": false
-          }
+          },
+          "timesheetSelfSign": true
         },
         [
           {
@@ -5428,7 +5430,7 @@
       "expected": false
     },
     {
-      "name": "timesheetSelfSigned: 1.11.0 an admin with a stray operative-mode flag is (admins have no operative mode)",
+      "name": "timesheetSelfSigned: 1.11.0 an admin with a stray operative-mode flag and Timesheet self-sign on is (admins have no operative mode)",
       "function": "timesheetSelfSigned",
       "args": [
         {
@@ -5439,7 +5441,8 @@
             "isAdmin": true,
             "isManager": false,
             "isOperativeMode": true
-          }
+          },
+          "timesheetSelfSign": true
         },
         [
           {
@@ -5615,7 +5618,7 @@
       "expected": true
     },
     {
-      "name": "canSelfBookAnnualLeave: an admin with no line manager saves approved",
+      "name": "canSelfBookAnnualLeave: 1.28.0 an admin with no line manager and Annual Leave Management off asks",
       "function": "canSelfBookAnnualLeave",
       "args": [
         {
@@ -5799,7 +5802,7 @@
           }
         ]
       ],
-      "expected": true
+      "expected": false
     },
     {
       "name": "canSelfBookAnnualLeave: an admin with a line manager asks",
@@ -6185,7 +6188,7 @@
       "expected": true
     },
     {
-      "name": "leaveSubmitLabel: self-approved admin",
+      "name": "leaveSubmitLabel: 1.28.0 an admin with Annual Leave Management on",
       "function": "leaveSubmitLabel",
       "args": [
         {
@@ -6196,7 +6199,8 @@
             "isAdmin": true,
             "isManager": false,
             "isOperativeMode": false
-          }
+          },
+          "annualLeaveSelfBook": true
         },
         [
           {
@@ -7528,7 +7532,7 @@
       ]
     },
     {
-      "name": "timesheetSubmittedRecipients: a self-signed admin notifies nobody",
+      "name": "timesheetSubmittedRecipients: a self-signed admin (1.28.0 Timesheet self-sign on) notifies nobody",
       "function": "timesheetSubmittedRecipients",
       "args": [
         "ADMIN",
@@ -7541,7 +7545,8 @@
               "isAdmin": true,
               "isManager": false,
               "isOperativeMode": false
-            }
+            },
+            "timesheetSelfSign": true
           },
           {
             "id": "ADMIN_LM",
@@ -8972,7 +8977,7 @@
       ]
     },
     {
-      "name": "holidayRequestRecipients: self-booked leave notifies nobody",
+      "name": "holidayRequestRecipients: self-booked leave (1.28.0 Annual Leave Management on) notifies nobody",
       "function": "holidayRequestRecipients",
       "args": [
         "ADMIN",
@@ -8985,7 +8990,8 @@
               "isAdmin": true,
               "isManager": false,
               "isOperativeMode": false
-            }
+            },
+            "annualLeaveSelfBook": true
           },
           {
             "id": "ADMIN_LM",
@@ -19609,6 +19615,696 @@
       "expected": {
         "kind": "all"
       }
+    },
+    {
+      "name": "1.28.0 lone Super Admin: no line manager needed",
+      "function": "lineManagerRequiredError",
+      "args": [
+        {
+          "id": "SA",
+          "email": "sa@example.com",
+          "isSuperAdmin": true,
+          "role": "admin"
+        },
+        [
+          {
+            "id": "SA",
+            "email": "sa@example.com",
+            "isSuperAdmin": true,
+            "role": "admin"
+          }
+        ]
+      ],
+      "expected": null
+    },
+    {
+      "name": "1.28.0 lone Super Admin: self-signs their timesheet",
+      "function": "timesheetSelfSigned",
+      "args": [
+        {
+          "id": "SA",
+          "email": "sa@example.com",
+          "isSuperAdmin": true,
+          "role": "admin"
+        },
+        [
+          {
+            "id": "SA",
+            "email": "sa@example.com",
+            "isSuperAdmin": true,
+            "role": "admin"
+          }
+        ]
+      ],
+      "expected": true
+    },
+    {
+      "name": "1.28.0 lone Super Admin: books their own leave approved",
+      "function": "canSelfBookAnnualLeave",
+      "args": [
+        {
+          "id": "SA",
+          "email": "sa@example.com",
+          "isSuperAdmin": true,
+          "role": "admin"
+        },
+        [
+          {
+            "id": "SA",
+            "email": "sa@example.com",
+            "isSuperAdmin": true,
+            "role": "admin"
+          }
+        ]
+      ],
+      "expected": true
+    },
+    {
+      "name": "1.28.0 Super Admin: both self-manage toggles read on",
+      "function": "selfManageToggles",
+      "args": [
+        {
+          "id": "SA",
+          "email": "sa@example.com",
+          "isSuperAdmin": true,
+          "role": "admin",
+          "permissions": {
+            "annualLeaveSelfBook": false,
+            "timesheetSelfSign": false
+          }
+        }
+      ],
+      "expected": {
+        "annualLeaveSelfBook": true,
+        "timesheetSelfSign": true,
+        "timesheetApplies": true,
+        "superAdmin": true,
+        "satisfied": true
+      }
+    },
+    {
+      "name": "1.28.0 admin with both toggles and no line manager: none needed",
+      "function": "lineManagerRequiredError",
+      "args": [
+        {
+          "id": "A",
+          "email": "a@example.com",
+          "role": "admin",
+          "adminAccess": true,
+          "annualLeaveSelfBook": true,
+          "timesheetSelfSign": true,
+          "hasNoLineManager": true
+        },
+        [
+          {
+            "id": "SA",
+            "email": "sa@example.com",
+            "isSuperAdmin": true,
+            "role": "admin"
+          },
+          {
+            "id": "A",
+            "email": "a@example.com",
+            "role": "admin",
+            "adminAccess": true,
+            "annualLeaveSelfBook": true,
+            "timesheetSelfSign": true,
+            "hasNoLineManager": true
+          }
+        ]
+      ],
+      "expected": null
+    },
+    {
+      "name": "1.28.0 admin with both toggles: self-signed",
+      "function": "timesheetSelfSigned",
+      "args": [
+        {
+          "id": "A",
+          "email": "a@example.com",
+          "role": "admin",
+          "adminAccess": true,
+          "annualLeaveSelfBook": true,
+          "timesheetSelfSign": true,
+          "hasNoLineManager": true
+        },
+        [
+          {
+            "id": "SA",
+            "email": "sa@example.com",
+            "isSuperAdmin": true,
+            "role": "admin"
+          },
+          {
+            "id": "A",
+            "email": "a@example.com",
+            "role": "admin",
+            "adminAccess": true,
+            "annualLeaveSelfBook": true,
+            "timesheetSelfSign": true,
+            "hasNoLineManager": true
+          }
+        ]
+      ],
+      "expected": true
+    },
+    {
+      "name": "1.28.0 admin with both toggles: self-booked",
+      "function": "canSelfBookAnnualLeave",
+      "args": [
+        {
+          "id": "A",
+          "email": "a@example.com",
+          "role": "admin",
+          "adminAccess": true,
+          "annualLeaveSelfBook": true,
+          "timesheetSelfSign": true,
+          "hasNoLineManager": true
+        },
+        [
+          {
+            "id": "SA",
+            "email": "sa@example.com",
+            "isSuperAdmin": true,
+            "role": "admin"
+          },
+          {
+            "id": "A",
+            "email": "a@example.com",
+            "role": "admin",
+            "adminAccess": true,
+            "annualLeaveSelfBook": true,
+            "timesheetSelfSign": true,
+            "hasNoLineManager": true
+          }
+        ]
+      ],
+      "expected": true
+    },
+    {
+      "name": "1.28.0 admin with Annual Leave Management only and no line manager: refused",
+      "function": "lineManagerRequiredError",
+      "args": [
+        {
+          "id": "A",
+          "email": "a@example.com",
+          "role": "admin",
+          "adminAccess": true,
+          "annualLeaveSelfBook": true,
+          "hasNoLineManager": true
+        },
+        [
+          {
+            "id": "SA",
+            "email": "sa@example.com",
+            "isSuperAdmin": true,
+            "role": "admin"
+          },
+          {
+            "id": "A",
+            "email": "a@example.com",
+            "role": "admin",
+            "adminAccess": true,
+            "annualLeaveSelfBook": true,
+            "hasNoLineManager": true
+          }
+        ]
+      ],
+      "expected": "Set a line manager, or turn on both Annual Leave Management and Timesheet self-sign — this person's timesheets and annual leave need approval."
+    },
+    {
+      "name": "1.28.0 admin with Annual Leave Management only: not self-signed",
+      "function": "timesheetSelfSigned",
+      "args": [
+        {
+          "id": "A",
+          "email": "a@example.com",
+          "role": "admin",
+          "adminAccess": true,
+          "annualLeaveSelfBook": true,
+          "hasNoLineManager": true
+        },
+        [
+          {
+            "id": "SA",
+            "email": "sa@example.com",
+            "isSuperAdmin": true,
+            "role": "admin"
+          },
+          {
+            "id": "A",
+            "email": "a@example.com",
+            "role": "admin",
+            "adminAccess": true,
+            "annualLeaveSelfBook": true,
+            "hasNoLineManager": true
+          }
+        ]
+      ],
+      "expected": false
+    },
+    {
+      "name": "1.28.0 admin with Annual Leave Management only: their timesheet goes to the other admins",
+      "function": "timesheetSubmittedRecipients",
+      "args": [
+        {
+          "id": "A",
+          "email": "a@example.com",
+          "role": "admin",
+          "adminAccess": true,
+          "annualLeaveSelfBook": true,
+          "hasNoLineManager": true
+        },
+        [
+          {
+            "id": "SA",
+            "email": "sa@example.com",
+            "isSuperAdmin": true,
+            "role": "admin"
+          },
+          {
+            "id": "A",
+            "email": "a@example.com",
+            "role": "admin",
+            "adminAccess": true,
+            "annualLeaveSelfBook": true,
+            "hasNoLineManager": true
+          }
+        ]
+      ],
+      "expected": [
+        "SA"
+      ]
+    },
+    {
+      "name": "1.28.0 admin with Timesheet self-sign only and no line manager: refused",
+      "function": "lineManagerRequiredError",
+      "args": [
+        {
+          "id": "A",
+          "email": "a@example.com",
+          "role": "admin",
+          "adminAccess": true,
+          "timesheetSelfSign": true
+        },
+        [
+          {
+            "id": "SA",
+            "email": "sa@example.com",
+            "isSuperAdmin": true,
+            "role": "admin"
+          },
+          {
+            "id": "A",
+            "email": "a@example.com",
+            "role": "admin",
+            "adminAccess": true,
+            "timesheetSelfSign": true
+          }
+        ]
+      ],
+      "expected": "Set a line manager, or turn on both Annual Leave Management and Timesheet self-sign — this person's timesheets and annual leave need approval."
+    },
+    {
+      "name": "1.28.0 admin with Timesheet self-sign only: their leave goes to the other admins",
+      "function": "holidayRequestRecipients",
+      "args": [
+        {
+          "id": "A",
+          "email": "a@example.com",
+          "role": "admin",
+          "adminAccess": true,
+          "timesheetSelfSign": true
+        },
+        [
+          {
+            "id": "SA",
+            "email": "sa@example.com",
+            "isSuperAdmin": true,
+            "role": "admin"
+          },
+          {
+            "id": "A",
+            "email": "a@example.com",
+            "role": "admin",
+            "adminAccess": true,
+            "timesheetSelfSign": true
+          }
+        ]
+      ],
+      "expected": [
+        "SA"
+      ]
+    },
+    {
+      "name": "1.28.0 PAYE admin with Annual Leave Management only: none needed",
+      "function": "lineManagerRequiredError",
+      "args": [
+        {
+          "id": "A",
+          "email": "a@example.com",
+          "role": "admin",
+          "adminAccess": true,
+          "annualLeaveSelfBook": true,
+          "employmentType": "paye"
+        },
+        [
+          {
+            "id": "SA",
+            "email": "sa@example.com",
+            "isSuperAdmin": true,
+            "role": "admin"
+          },
+          {
+            "id": "A",
+            "email": "a@example.com",
+            "role": "admin",
+            "adminAccess": true,
+            "annualLeaveSelfBook": true,
+            "employmentType": "paye"
+          }
+        ]
+      ],
+      "expected": null
+    },
+    {
+      "name": "1.28.0 PAYE admin: Timesheet self-sign does not apply",
+      "function": "selfManageToggles",
+      "args": [
+        {
+          "id": "A",
+          "email": "a@example.com",
+          "role": "admin",
+          "adminAccess": true,
+          "annualLeaveSelfBook": true,
+          "employmentType": "paye"
+        }
+      ],
+      "expected": {
+        "annualLeaveSelfBook": true,
+        "timesheetSelfSign": false,
+        "timesheetApplies": false,
+        "superAdmin": false,
+        "satisfied": true
+      }
+    },
+    {
+      "name": "1.28.0 PAYE admin with no toggles and no line manager: refused (leave only)",
+      "function": "lineManagerRequiredError",
+      "args": [
+        {
+          "id": "A",
+          "email": "a@example.com",
+          "role": "admin",
+          "adminAccess": true,
+          "employmentType": "paye"
+        },
+        [
+          {
+            "id": "SA",
+            "email": "sa@example.com",
+            "isSuperAdmin": true,
+            "role": "admin"
+          },
+          {
+            "id": "A",
+            "email": "a@example.com",
+            "role": "admin",
+            "adminAccess": true,
+            "employmentType": "paye"
+          }
+        ]
+      ],
+      "expected": "Set a line manager, or turn on Annual Leave Management — this person's annual leave needs approval."
+    },
+    {
+      "name": "1.28.0 demoted admin: Timesheet self-sign reads off for a manager",
+      "function": "effectivePermission",
+      "args": [
+        {
+          "id": "D",
+          "email": "d@example.com",
+          "role": "manager",
+          "manager": true,
+          "annualLeaveSelfBook": true,
+          "timesheetSelfSign": true
+        },
+        "timesheetSelfSign"
+      ],
+      "expected": false
+    },
+    {
+      "name": "1.28.0 demoted admin: not self-signed",
+      "function": "timesheetSelfSigned",
+      "args": [
+        {
+          "id": "D",
+          "email": "d@example.com",
+          "role": "manager",
+          "manager": true,
+          "annualLeaveSelfBook": true,
+          "timesheetSelfSign": true
+        },
+        [
+          {
+            "id": "SA",
+            "email": "sa@example.com",
+            "isSuperAdmin": true,
+            "role": "admin"
+          },
+          {
+            "id": "D",
+            "email": "d@example.com",
+            "role": "manager",
+            "manager": true,
+            "annualLeaveSelfBook": true,
+            "timesheetSelfSign": true
+          }
+        ]
+      ],
+      "expected": false
+    },
+    {
+      "name": "1.28.0 demoted admin: needs a line manager",
+      "function": "lineManagerRequiredError",
+      "args": [
+        {
+          "id": "D",
+          "email": "d@example.com",
+          "role": "manager",
+          "manager": true,
+          "annualLeaveSelfBook": true,
+          "timesheetSelfSign": true
+        },
+        [
+          {
+            "id": "SA",
+            "email": "sa@example.com",
+            "isSuperAdmin": true,
+            "role": "admin"
+          },
+          {
+            "id": "D",
+            "email": "d@example.com",
+            "role": "manager",
+            "manager": true,
+            "annualLeaveSelfBook": true,
+            "timesheetSelfSign": true
+          }
+        ]
+      ],
+      "expected": "Set a line manager — this person's timesheets and annual leave need approval."
+    },
+    {
+      "name": "1.28.0 demoted admin promoted back: the stored Timesheet self-sign reads again",
+      "function": "effectivePermission",
+      "args": [
+        {
+          "id": "D",
+          "email": "d@example.com",
+          "role": "admin",
+          "manager": true,
+          "annualLeaveSelfBook": true,
+          "timesheetSelfSign": true,
+          "adminAccess": true
+        },
+        "timesheetSelfSign"
+      ],
+      "expected": true
+    },
+    {
+      "name": "1.28.0 toggles on with a line manager: self-signed",
+      "function": "timesheetSelfSigned",
+      "args": [
+        {
+          "id": "A",
+          "email": "a@example.com",
+          "role": "admin",
+          "adminAccess": true,
+          "annualLeaveSelfBook": true,
+          "timesheetSelfSign": true,
+          "assignedManagerUserIds": [
+            "LM"
+          ]
+        },
+        [
+          {
+            "id": "SA",
+            "email": "sa@example.com",
+            "isSuperAdmin": true,
+            "role": "admin"
+          },
+          {
+            "id": "LM",
+            "email": "lm@example.com",
+            "role": "manager",
+            "manager": true,
+            "isActive": true
+          },
+          {
+            "id": "A",
+            "email": "a@example.com",
+            "role": "admin",
+            "adminAccess": true,
+            "annualLeaveSelfBook": true,
+            "timesheetSelfSign": true,
+            "assignedManagerUserIds": [
+              "LM"
+            ]
+          }
+        ]
+      ],
+      "expected": true
+    },
+    {
+      "name": "1.28.0 toggles on with a line manager: self-booked",
+      "function": "canSelfBookAnnualLeave",
+      "args": [
+        {
+          "id": "A",
+          "email": "a@example.com",
+          "role": "admin",
+          "adminAccess": true,
+          "annualLeaveSelfBook": true,
+          "timesheetSelfSign": true,
+          "assignedManagerUserIds": [
+            "LM"
+          ]
+        },
+        [
+          {
+            "id": "SA",
+            "email": "sa@example.com",
+            "isSuperAdmin": true,
+            "role": "admin"
+          },
+          {
+            "id": "LM",
+            "email": "lm@example.com",
+            "role": "manager",
+            "manager": true,
+            "isActive": true
+          },
+          {
+            "id": "A",
+            "email": "a@example.com",
+            "role": "admin",
+            "adminAccess": true,
+            "annualLeaveSelfBook": true,
+            "timesheetSelfSign": true,
+            "assignedManagerUserIds": [
+              "LM"
+            ]
+          }
+        ]
+      ],
+      "expected": true
+    },
+    {
+      "name": "1.28.0 toggles on with a line manager: the save passes",
+      "function": "lineManagerRequiredError",
+      "args": [
+        {
+          "id": "A",
+          "email": "a@example.com",
+          "role": "admin",
+          "adminAccess": true,
+          "annualLeaveSelfBook": true,
+          "timesheetSelfSign": true,
+          "assignedManagerUserIds": [
+            "LM"
+          ]
+        },
+        [
+          {
+            "id": "SA",
+            "email": "sa@example.com",
+            "isSuperAdmin": true,
+            "role": "admin"
+          },
+          {
+            "id": "LM",
+            "email": "lm@example.com",
+            "role": "manager",
+            "manager": true,
+            "isActive": true
+          },
+          {
+            "id": "A",
+            "email": "a@example.com",
+            "role": "admin",
+            "adminAccess": true,
+            "annualLeaveSelfBook": true,
+            "timesheetSelfSign": true,
+            "assignedManagerUserIds": [
+              "LM"
+            ]
+          }
+        ]
+      ],
+      "expected": null
+    },
+    {
+      "name": "1.28.0 toggles off with a line manager: their line manager signs",
+      "function": "timesheetSubmittedRecipients",
+      "args": [
+        {
+          "id": "A",
+          "email": "a@example.com",
+          "role": "admin",
+          "adminAccess": true,
+          "assignedManagerUserIds": [
+            "LM"
+          ]
+        },
+        [
+          {
+            "id": "SA",
+            "email": "sa@example.com",
+            "isSuperAdmin": true,
+            "role": "admin"
+          },
+          {
+            "id": "LM",
+            "email": "lm@example.com",
+            "role": "manager",
+            "manager": true,
+            "isActive": true
+          },
+          {
+            "id": "A",
+            "email": "a@example.com",
+            "role": "admin",
+            "adminAccess": true,
+            "assignedManagerUserIds": [
+              "LM"
+            ]
+          }
+        ]
+      ],
+      "expected": [
+        "LM"
+      ]
     }
   ]
 }

@@ -36,6 +36,8 @@ function admin(): User {
       smallWorks: false,
       operativeMode: false,
       annualLeaveSelfBook: false,
+      // Rulebook 1.28.0: self-signed only with Timesheet self-sign on.
+      timesheetSelfSign: true,
       weeklyReports: false,
       dailyOverview: true,
       subContractors: false,

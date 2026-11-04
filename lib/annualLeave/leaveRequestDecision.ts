@@ -13,8 +13,8 @@ export function annualLeaveAllowance(daysPerYear: number | null | undefined): nu
 
 /**
  * The status of the person's own leave booking: approved only when they self-book
- * (`canSelfBookAnnualLeave(user, roster)`: the annualLeaveSelfBook permission outside operative mode, or an admin /
- * super admin outside operative mode with no active line manager). Everyone else sends a pending request
+ * (`canSelfBookAnnualLeave(user, roster)`: the annualLeaveSelfBook permission outside operative mode, or the Super
+ * Admin; rulebook 1.28.0). Everyone else sends a pending request
  * (`leaveApproverIds`). Booking someone else's leave is `leaveSaveStatus`.
  */
 export function leaveSubmitStatus(user: User, users: ReadonlyArray<User> = []): 'pending' | 'approved' {
