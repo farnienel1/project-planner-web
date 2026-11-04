@@ -34,6 +34,9 @@ How to use it:
 
 | Date | Decision | Status |
 |---|---|---|
+| 4 Nov | Every active user (operative, manager, admin, Super Admin) who is not booked shows as unbooked labour. The organisation chooses whom to exclude (Excluded users). Inactive users and pending invites never show. Rulebook §5 wording ("an operative not booked") to be updated to say this. | decided; rulebook wording open |
+| 4 Nov | Book labour shows the same unbooked people as that viewer's Warnings: admins see everyone; a manager sees only the people they line-manage (and themselves). | open (web #262; iOS 1.31) |
+| 4 Nov | Excluded users do not appear in Book labour. Book them through Scheduling. | done web (#262); iOS already |
 | 4 Nov | Admins and the Super Admin see every warning. A manager sees warnings about themselves, their reports, and the jobs they manage (materials etc.). | done web (1.31.0); iOS open |
 
 ## People, levels and access (Manage Users)
@@ -115,7 +118,4 @@ How to use it:
 
 | Date | Question |
 |---|---|
-| 4 Nov | Admins, the Super Admin and managers count as unbooked labour by design (`labourBookingKind`, warningRows.ts:368). Keep that, using Excluded users for people who are never booked? The rulebook text (§5 "an operative not booked") is narrower than the code and needs rewording either way. |
-| 4 Nov | Book labour lists every unbooked person; Warnings for a manager are scoped to themselves, their reports and their jobs. Should a manager's Book labour list everyone (so they can book anyone onto their jobs) or only their scope? Recommended: everyone. |
-| 4 Nov | People on the operatives list with no app login are listed as unbooked in Warnings, but Book labour can't book them (same on iPhone). Make them bookable from Book labour, or stop listing them as unbooked? Recommended: make them bookable. |
-| 4 Nov | Excluded users (warning settings) no longer appear in Book labour on either app. Fine, or should Book labour still offer them? Recommended: fine. Use Scheduling to book them when needed. |
+| 4 Nov | Operatives can exist with no app login by design (added on the operatives list; 1.27 catalogue operatives; 1.31 operatives managers add them "with or without a login"). They are not pending invites. Owner's view: inactive and pending people never show. Open: should an active no-login operative count as unbooked labour and be bookable from Book labour? Recommended: yes to both, since they are real workers who get booked onto jobs. |
