@@ -5,10 +5,6 @@
 
 'use client'
 
-import { policyForBookingDate } from '@/lib/scheduling/bookingSlotRules'
-
-import { webJobAccessViewer } from '@/lib/access/readPlan'
-import { enforcedReadsFor } from '@/lib/access/securitySwitches'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -21,18 +17,16 @@ import { useBookingStore } from '@/lib/stores/bookingStore'
 import { useManagerScheduleStore } from '@/lib/stores/managerScheduleStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { useProjectStore } from '@/lib/stores/projectStore'
-import { findUserByAnyId, rosterDisplayName } from '@/lib/staff/userRosterUtils'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { useHolidayStore } from '@/lib/stores/holidayStore'
 import { useSubcontractorStore } from '@/lib/stores/subcontractorStore'
 import { canViewDailyOverview, hasAdminAccess } from '@/lib/permissions'
 import { dateFromDayKey, dayKey, londonMidnight } from '@/lib/ios-parity/londonTime'
-import { effectivePayrollTimePolicy, leaveHalfDayLabel, type WeekendCoverage } from '@/lib/canonical'
+import { leaveHalfDayLabel } from '@/lib/canonical'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 import { watchSubcontractorBookings } from '@/lib/weekly-report/loadSubcontractorBookings'
 import type { SubcontractorBookingRow } from '@/lib/weekly-report/weeklyReportData'
 import {
-  buildDailyOverview,
   dailyOverviewMayPublish,
   initialsFrom,
   overviewFormatHours,
@@ -45,36 +39,10 @@ import {
   managerBookingToTarget,
   type OverviewBookingTarget,
 } from '@/components/daily-overview/DailyOverviewBookingSheet'
-import { DEFAULT_PAYROLL_POLICY, organizationDetailsFromData, type OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
-import { useOrganizationDocument } from '@/lib/stores/organizationDocumentStore'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import type { User } from '@/types'
-import { normalizeDocumentId } from '@/lib/canonical'
-
-function personName(userId: string, users: User[], aliases?: Record<string, string>): string {
-  const user = findUserByAnyId(users, userId, aliases)
-  return rosterDisplayName(user)
-}
-
-function holidayName(
-  booking: { userId?: string; operativeId?: string },
-  users: User[],
-  operatives: { id: string; firstName: string; lastName: string }[],
-  aliases?: Record<string, string>
-): string {
-  if (booking.userId) {
-    const named = personName(booking.userId, users, aliases)
-    if (named) return named
-  }
-  if (booking.operativeId) {
-    const op = operatives.find((row) => normalizeDocumentId(row.id) === normalizeDocumentId(booking.operativeId))
-    if (op) {
-      const named = rosterDisplayName({ firstName: op.firstName, surname: op.lastName, email: '' })
-      if (named) return named
-    }
-  }
-  return 'Team member'
-}
+import { overviewHolidayName as holidayName, overviewPersonName as personName } from '@/lib/daily-overview/dailyOverviewToday'
+import { useDailyOverviewModel } from '@/lib/daily-overview/useDailyOverviewModel'
 
 export function DailyOverviewScreen() {
   const router = useRouter()
@@ -105,11 +73,6 @@ export function DailyOverviewScreen() {
   useBookingHistoryFrom(organization?.id, day)
   const [bookLabourOpen, setBookLabourOpen] = useState(false)
   const [editingRow, setEditingRow] = useState<OverviewBookingTarget | null>(null)
-  const [payrollPolicy, setPayrollPolicy] = useState<OrgPayrollTimePolicy>(DEFAULT_PAYROLL_POLICY)
-  const [includeWeekendsForUnbookedLabour, setIncludeWeekendsForUnbookedLabour] = useState(false)
-  const [excludedUserIdsFromUnbookedWarnings, setExcludedUserIdsFromUnbookedWarnings] = useState<string[]>([])
-  // Rulebook 1.19.0 §5: the weekend "Hours to cover" toggles and windows (`warningDetection.weekendCoverage`).
-  const [weekendCoverage, setWeekendCoverage] = useState<WeekendCoverage | null>(null)
 
   useEffect(() => {
     const raw = searchParams.get('date')
@@ -140,19 +103,6 @@ export function DailyOverviewScreen() {
     loadSubcontractors,
   ])
 
-  // Rulebook 1.10.0 (1.9.0 leftover): organisation settings come from the one live organisations/{orgId} listener,
-  // so a working-hours or warning-settings save on another device re-draws Daily Overview without a reload.
-  const liveOrganization = useOrganizationDocument()
-  useEffect(() => {
-    if (!organization?.id || liveOrganization.organizationId !== organization.id || !liveOrganization.data) return
-    const details = organizationDetailsFromData(organization.id, liveOrganization.data)
-    // Rulebook 1.17.0 §4.3 / §6: the working hours in effect on the day shown (`effectivePayrollTimePolicy`), so a
-    // past day keeps its old rules and a day after a scheduled change uses the new ones.
-    setPayrollPolicy(effectivePayrollTimePolicy(liveOrganization.data, dayKey(day, orgTimeZone), orgTimeZone))
-    setIncludeWeekendsForUnbookedLabour(details.warningDetection.includeWeekendsForUnbookedLabour)
-    setExcludedUserIdsFromUnbookedWarnings(details.warningDetection.excludedUserIdsFromUnbookedWarnings ?? [])
-    setWeekendCoverage(details.warningDetection.weekendCoverage ?? null)
-  }, [organization?.id, liveOrganization.organizationId, liveOrganization.data, day, orgTimeZone])
 
   // Rulebook 1.9.0 §1: subcontractor bookings are live while Daily Overview is open.
   useEffect(() => {
@@ -161,51 +111,17 @@ export function DailyOverviewScreen() {
     return watchSubcontractorBookings(organization.id, setSubcontractorBookings, () => setSubcontractorBookings([]))
   }, [organization?.id])
 
-  const model = useMemo(
-    () =>
-      buildDailyOverview({
-        // Rulebook 1.10.0 §17: restricted managers see only their jobs and people (`warningScopeFor`).
-        viewer: webJobAccessViewer(useAuthStore.getState().user),
-        enforcedReads: enforcedReadsFor(),
-        day,
-        today,
-        projects: [...projects, ...smallWorks],
-        bookings,
-        managerBookings: managerSiteBookings,
-        holidays,
-        users,
-        userIdAliases,
-        operatives,
-        subcontractorBookings,
-        subcontractors,
-        // Rulebook 1.19.0 / 1.20.2: the working hours in effect on the day shown (history first), so the rows and the
-        // day's hours are the pay rule's for that day.
-        payrollPolicy: policyForBookingDate(day, payrollPolicy) ?? payrollPolicy,
-        includeWeekendsForUnbookedLabour,
-        excludedUserIdsFromUnbookedWarnings,
-        weekendCoverage,
-        timeZone: orgTimeZone,
-      }),
-    [
-      weekendCoverage,
-      day,
-      today,
-      projects,
-      smallWorks,
-      bookings,
-      managerSiteBookings,
-      holidays,
-      users,
-      userIdAliases,
-      operatives,
-      subcontractorBookings,
-      subcontractors,
-      payrollPolicy,
-      includeWeekendsForUnbookedLabour,
-      excludedUserIdsFromUnbookedWarnings,
-      orgTimeZone,
-    ]
-  )
+  // Owner decision 5 (5 Nov 2026): one Daily Overview set-up shared with Home (`useDailyOverviewModel`): the live
+  // organisation settings for the day shown and `buildDailyOverview`, unchanged.
+  const { model: builtModel, settings } = useDailyOverviewModel({
+    day,
+    today,
+    timeZone: orgTimeZone,
+    subcontractorBookings,
+    subcontractors,
+  })
+  const model = builtModel!
+  const payrollPolicy = settings.payrollPolicy
 
   const canBook = Boolean(user && (hasAdminAccess(user) || user.permissions?.manager))
   const dateParam = dayKey(day)
