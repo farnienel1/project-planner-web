@@ -17,8 +17,8 @@ How to use it:
 | 4 Nov | Guardrails 1–7 (`platform-guardrails.md`): one person-ids rule, organisation time zone only, never hide old data, release order, rules size budget, this register, UI-only means UI-only. A sweep of both apps for second calculators, plus CI checks. | open |
 | 4 Nov | Firebase rules and functions are deployed by the owner by hand from Terminal; Claude sends the exact commands. No automated deploy for now. | standing |
 | 4 Nov | **Release split** (owner: "happy with your suggestion"). 1.32: overtime multiplier, PAYE payday, overtime review, price work and expenses review, rulebook version in Settings. 1.33: remove Cancel, PAYE ✕ deletes once approved, iOS offline delete (built on a merged 1.32; Cancel removal and PAYE ✕ ship together). 1.34: ghost operatives. Each release has its own deploy and test list. | standing |
-| 4 Nov | `minimumIosBuild` is raised before 1.32 switches on; older iPhone builds must update (pre-launch, testers only). Claude sends the owner the exact steps. | open (1.32) |
-| 4 Nov | 1.32: the rulebook version (e.g. "Rules 1.32.0") is shown to **everyone** at the bottom of Settings on web and iOS. | open (1.32) |
+| 4 Nov | `minimumIosBuild` is raised before 1.32 switches on; older iPhone builds must update (pre-launch, testers only). Claude sends the owner the exact steps. | open: owner steps in PR #274 Deploy needed (raise after the iOS 1.32.0 build ships) |
+| 4 Nov | 1.32: the rulebook version (e.g. "Rules 1.32.0") is shown to **everyone** at the bottom of Settings on web and iOS. | done web + rulebook (1.32.0 / PR #274); iOS open (hand-off) |
 | 4 Nov | Cross-referencing safeguards A–F ("all yes"): A screen map (web ↔ iOS ↔ rulebook functions per screen); B PR checklist enforced by CI; C an independent reviewer checks every PR against this register, the screen map and the other app before merge; D shared test scenarios for both apps; E a weekly drift check; F checkpoint test lists generated from this register. Accepted that changes take longer. | open (A, B, E being built; C applies from now; D after A; F at the next checkpoint) |
 
 ## Scheduling, bookings and working hours
@@ -34,12 +34,12 @@ How to use it:
 | 3 Nov | Job visibility is by account and email only, never by name. | done (1.21) |
 | 3 Nov | Book Labour "covered" uses the web clock-time rule (`standardDayCoverage`, lunch excluded); iOS adopts it via `managerCoverageHours.covered`. | done (1.22) |
 | 4 Nov | A booking's own overtime multiplier (`otMultiplierOverride`) is edited in Edit Booking by admins and managers (never operatives), 1–3 in 0.25 steps. It applies to self-employed pay too, so raise `minimumIosBuild` before enabling. | done (1.29), see 1.32 |
-| 4 Nov | 1.32: every custom-hours create screen gets the multiplier, pre-filled with the organisation rate for that day. The weekly report shows the multiplier per overtime row ("2h at ×1.5 = 3h") and marks rows changed from the organisation rate. Raise `minimumIosBuild` first. | open (1.32) |
-| 4 Nov | 1.32 multiplier, owner chose **A**: the multiplier is stored on the booking (`otMultiplierOverride`) only when the person changes it from the pre-filled organisation rate. Bookings left at the organisation rate follow later rate changes, including scheduled ones, and only edited rows are marked on the weekly report. | open (1.32) |
+| 4 Nov | 1.32: every custom-hours create screen gets the multiplier, pre-filled with the organisation rate for that day. The weekly report shows the multiplier per overtime row ("2h at ×1.5 = 3h") and marks rows changed from the organisation rate. Raise `minimumIosBuild` first. | done web + rulebook (1.32.0 / PR #274); iOS open (hand-off) |
+| 4 Nov | 1.32 multiplier, owner chose **A**: the multiplier is stored on the booking (`otMultiplierOverride`) only when the person changes it from the pre-filled organisation rate. Bookings left at the organisation rate follow later rate changes, including scheduled ones, and only edited rows are marked on the weekly report. | done web + rulebook (1.32.0 / PR #274); iOS open (hand-off) |
 | 4 Nov | Book labour lists exactly the warning's unbooked people (`unbookedLabourRowsOnDay`), weekends included when the setting is on. | done web (#262); iOS already |
 | 4 Nov | Judgement call in #262: an operative with an app login but no Operatives-list row is booked under their users id from web Book labour (the rulebook counts it, `bookingIdsForAccount`). iOS still shows "No operative profile is linked" (iOS follow-up). | owner to confirm |
 
-| 4 Nov | **Booking screens follow `canWriteBooking` (1.10.0 rule kept)** (owner: "yes"). Managers book their own Office / Working from home / Site survey from any screen (My Schedule, project and small works scheduling, Daily Overview, Warnings → Book labour), and book other people only onto jobs they manage. Admins book anyone anywhere. Operatives: jobs only, never book themselves. Every screen offers exactly what the rule allows, so a save is never refused after the fact (fixes Book labour offering Office etc. for a manager's reports). | open (1.32) |
+| 4 Nov | **Booking screens follow `canWriteBooking` (1.10.0 rule kept)** (owner: "yes"). Managers book their own Office / Working from home / Site survey from any screen (My Schedule, project and small works scheduling, Daily Overview, Warnings → Book labour), and book other people only onto jobs they manage. Admins book anyone anywhere. Operatives: jobs only, never book themselves. Every screen offers exactly what the rule allows, so a save is never refused after the fact (fixes Book labour offering Office etc. for a manager's reports). | done web + rulebook (1.32.0 / PR #274); iOS open (hand-off) — Book labour and the Daily Overview booking sheet |
 ## Warnings
 
 | Date | Decision | Status |
@@ -91,7 +91,7 @@ How to use it:
 | 4 Nov | Price work needs a job number (1–60 characters) on PAYE price work and on timesheet price work entries. New and edited entries only; old entries show "—". | done (1.30.1) |
 | 4 Nov | Nobody reviews their own timesheet. | done (1.30.2) |
 | 4 Nov | Exported history shows the viewer's own exported sheets (read-only) and inactive or deleted people's sheets (admins: all; managers: their reports). | done web (1.31.0); iOS open |
-| 4 Nov | 1.32: a notice when an export skips the exporter's own sheet. | open (1.32) |
+| 4 Nov | 1.32: a notice when an export skips the exporter's own sheet. | done web + rulebook (1.32.0 / PR #274); iOS open (hand-off) |
 
 ## PAYE overtime, price work and expenses
 
@@ -101,13 +101,13 @@ How to use it:
 | 4 Nov | ✕ means "I didn't work those overtime hours": weekday bookings are clamped to the working day. A weekend multiplier-only day, or a weekday booking that is all overtime, is cancelled after a clear warning. A weekend set window is trimmed to the window. | done (1.29) |
 | 4 Nov | Operative-level PAYE users' changes are requests, approved by their line manager or any admin. Push goes to line managers and all admins. "Send for approval" / "Generate overtime report". | done (1.29) |
 | 4 Nov | PAYE payday (day of month; 29–31 means the last day of shorter months). A change applies from the next payrun; past payruns keep their dates. Current / past payruns / custom range. | done (1.29) |
-| 4 Nov | 1.32: the PAYE payday is saved by the main Save, is mandatory at organisation setup, and a banner shows if it is missing. | open (1.32) |
-| 4 Nov | 1.32 (option 2): ✓ ✕ ⚙ are allowed on future days within the current payrun; future payruns stay locked. | open (1.32) |
-| 4 Nov | 1.32: own-overtime edits are requests when the person has a line manager, and direct when they have none or are the Super Admin. | open (1.32) |
-| 4 Nov | 1.32: one shared "all records for this person" rule for overtime loading, sending and approving. ✓ ✕ ⚙ on each line, one Approve button, clear messages ("Approved 2 of 5…", "Nothing was approved…"). | open (1.32) |
-| 4 Nov | Owner chose **A**: overtime filed under an older (operatives-row) record is approved by admins only; the line manager sees "Needs an admin". | open (1.32) |
+| 4 Nov | 1.32: the PAYE payday is saved by the main Save, is mandatory at organisation setup, and a banner shows if it is missing. | done web + rulebook (1.32.0 / PR #274); iOS open (hand-off) |
+| 4 Nov | 1.32 (option 2): ✓ ✕ ⚙ are allowed on future days within the current payrun; future payruns stay locked. | done web + rulebook (1.32.0 / PR #274); iOS open (hand-off) |
+| 4 Nov | 1.32: own-overtime edits are requests when the person has a line manager, and direct when they have none or are the Super Admin. | done web + rulebook (1.32.0 / PR #274); iOS open (hand-off) |
+| 4 Nov | 1.32: one shared "all records for this person" rule for overtime loading, sending and approving. ✓ ✕ ⚙ on each line, one Approve button, clear messages ("Approved 2 of 5…", "Nothing was approved…"). | done web + rulebook (1.32.0 / PR #274); iOS open (hand-off) (`overtimePersonIds`) |
+| 4 Nov | Owner chose **A**: overtime filed under an older (operatives-row) record is approved by admins only; the line manager sees "Needs an admin". | done web + rulebook (1.32.0 / PR #274); iOS open (hand-off) |
 | 4 Nov | Price work: approver is a required pick from admins and managers only. Expenses need at least one piece of evidence. Personal site audits are visible to their creator only. | done (1.30) |
-| 4 Nov | 1.32: the price work and expenses review screen matches the overtime review (✓ ✕ per line, one Approve button), plus the same all-records-per-person check. | open (1.32) |
+| 4 Nov | 1.32: the price work and expenses review screen matches the overtime review (✓ ✕ per line, one Approve button), plus the same all-records-per-person check. | done web + rulebook (1.32.0 / PR #274); iOS open (hand-off) |
 
 ## Files, data and privacy
 
@@ -118,16 +118,16 @@ How to use it:
 | 4 Nov | The invited rate is copied to private pay on accept. Operatives managers see catalogue operatives' rates. | done (1.27) |
 | 4 Nov | Material email: the sender must be able to see the job, and the job number must match. | done |
 
-| 5 Nov | **Who sees pay rates (owner restatement).** Day and hourly rates are seen by **admins (all users)** and by **managers with the Operatives toggle (operatives only)**. With the toggle on, a manager sees the Operatives page (live, pending, inactive), opens any operative and sees their rate, and can add operative-level users only. With it off, a manager has no Operatives page and sees live operatives only through project and small works scheduling, with no rates. **This differs from rulebook §8 / `canViewPersonPay` (1.13.0), which also lets a person's line managers see their pay** — to be changed in the next rulebook release. Open: the person's own rate on My Profile (§12 shows it read-only) and whether a line manager signing a self-employed timesheet sees its £ amounts (see Open questions). | open (next rulebook release) |
+| 5 Nov | **Who sees pay rates (owner restatement).** Day and hourly rates are seen by **admins (all users)** and by **managers with the Operatives toggle (operatives only)**. With the toggle on, a manager sees the Operatives page (live, pending, inactive), opens any operative and sees their rate, and can add operative-level users only. With it off, a manager has no Operatives page and sees live operatives only through project and small works scheduling, with no rates. **This differs from rulebook §8 / `canViewPersonPay` (1.13.0), which also lets a person's line managers see their pay** — to be changed in the next rulebook release. Open: the person's own rate on My Profile (§12 shows it read-only) and whether a line manager signing a self-employed timesheet sees its £ amounts (see Open questions). | done in rulebook §8 (1.32.0 / PR #274) together with the 5 Nov edge-case row; iOS open |
 | 5 Nov | **Private pay switch on before launch** (owner: "yes before launch"). Order: merge rules #264; raise `minimumIosBuild` to at least the iOS 1.26.0 build (changed-fields-only saves) with 1.32; then the owner switches `privatePay` on in `platformConfig/app` with steps Claude sends. Until then pay is hidden on screen only; the stored rate is on the users document that every member can read. | open (before launch) |
-| 5 Nov | **Pay visibility edge cases (answers to the 5 Nov open question).** (a) A person sees their own rate, read-only, on My Profile. (b) A line manager who is not an admin and has no Operatives toggle sees a report's rate **only on the timesheets they review** (rate, overtime calculation and invoice, so every timesheet looks the same) — nowhere else: no Operatives page, no profile rate, no rate history. A level change recalculates all of this (no rights carry over). Rulebook §8 `canViewPersonPay` to be narrowed to this in the next rulebook release. | open (next rulebook release) |
+| 5 Nov | **Pay visibility edge cases (answers to the 5 Nov open question).** (a) A person sees their own rate, read-only, on My Profile. (b) A line manager who is not an admin and has no Operatives toggle sees a report's rate **only on the timesheets they review** (rate, overtime calculation and invoice, so every timesheet looks the same) — nowhere else: no Operatives page, no profile rate, no rate history. A level change recalculates all of this (no rights carry over). Rulebook §8 `canViewPersonPay` to be narrowed to this in the next rulebook release. | done web + rulebook (1.32.0 / PR #274); iOS open (hand-off); firestore.rules pay reads unchanged (the timesheet review needs them) |
 ## iOS
 
 | Date | Decision | Status |
 |---|---|---|
 | 4 Nov | Booking and scheduling design upgrade (owner spec, "UI: all recommended"): reuse the Home design kit; "on site" = finish − start; keep the shared lunch-warning text; rate chips ×1 / Org (real rate) / ×2 / ×3 plus More rates; the tab bar stays hidden on Scheduling; "Next 3/5 working days"; projects green, small works amber. | open (iOS #186) |
 | 4 Nov | The design upgrade PR also fixes the PAYE break bug from Scheduling, shows Delete on labour bookings to admins only, and fixes the hours display. | open (iOS #186) |
-| 4 Nov | 1.32: the overtime rate on managers' own site bookings is shown consistently on Scheduling, Daily Overview and My Schedule. | open (1.32) |
+| 4 Nov | 1.32: the overtime rate on managers' own site bookings is shown consistently on Scheduling, Daily Overview and My Schedule. | web already consistent (bookingHoursLabel gets the stored rate; 1.32.0 / PR #274 checked); iOS open |
 
 | 4 Nov | **Materials catalogue** (add, edit, delete catalogue items and prices) is **admins only** on both apps, through one rulebook rule. iOS `canManageMaterialCatalogue` currently has its own role check (found in the #188 sweep). Sending material orders is unchanged. | open (next rulebook release) |
 | 4 Nov | Very old timesheets with sign-off dates but no signer name or signature image read **Sign Off Pending** (rulebook `isTimesheetFullySigned`), on both apps. No rulebook exception: new organisations only use the new rules. | done (iOS #188, web already) |
@@ -146,7 +146,18 @@ How to use it:
 | 4 Nov | Web clash check when booking (`lib/scheduling/bookingClashUtils.ts:151`) compares `operativeId` with letter case, so an existing iOS upper-case booking is missed. | open |
 | 4 Nov | Web: a rate change's `operativeId`, the weekly-report/timesheet-export rate fallback and the "is this my own booking" check each pick one operatives row (`EditUserProfile.tsx`, `weeklyReportPayroll.ts`, `timesheetExport.ts`, `scheduleNavigation.ts`; sweep FU-5). | open |
 | 4 Nov | Web week grids use the browser's week in 11 files; needs a shared "organisation week" rule (sweep FU-4; iOS Scheduling has the same problem). | open (rule release) |
-| 4 Nov | Overtime: until 1.32's partial approval, a request containing one line under an older record cannot be approved by the line manager at all (whole approval refused, "Needs an admin"); admins can. | open (1.32) |
+| 4 Nov | Overtime: until 1.32's partial approval, a request containing one line under an older record cannot be approved by the line manager at all (whole approval refused, "Needs an admin"); admins can. | fixed (1.32.0 / PR #274: partial approval) |
+
+## 1.32.0 judgement calls (owner to confirm)
+
+| Date | Choice made in PR #274 | Status |
+|---|---|---|
+| 5 Nov | Partial approval: Approve is enabled once **any** line has ✓ ✕ ⚙; undecided lines stay waiting on the request (not refused). A booking changed since the request now stays waiting on its own line instead of refusing the whole approval. | owner to confirm |
+| 5 Nov | Price work and expenses review stores a separate `payeClaimReviews/{kind}_{itemId}` document (the items stay written only by the person) and does **not** gate the person's report. A changed item needs review again. | owner to confirm |
+| 5 Nov | "Own overtime is a request with a line manager" applies to admins with a line manager too; a manager with no line manager edits directly only where `canWriteBooking` allows (else a request). The security rules still accept a direct edit from an admin with a line manager (the app no longer offers it). | owner to confirm |
+| 5 Nov | The PAYE payday banner shows on Settings (admins), Payment runs and the Overtime hub. Settings → Payment runs does not refuse a Save without a payday; only setup requires it. | owner to confirm |
+| 5 Nov | The weekly report marks a row "changed from organisation rate" only when the stored `otMultiplierOverride` differs from the organisation's rate; an older booking that stored the same value as the organisation's is not marked. | owner to confirm |
+| 5 Nov | Removed web `lib/firebase/mergePlaceholderUser.ts` and its sign-in call: since #264 (F5) the rules refuse every write it made, so an invitee's account is created only by the invitation accept. | owner to confirm |
 
 ## Open questions for the owner
 
