@@ -1,6 +1,6 @@
 # iOS follow-on — rulebook 1.31.1
 
-Generated 2026-11-04 by `npm run rulebook:handoff` in project-planner-web. Paste this whole file into the iOS agent.
+Generated 2026-11-05 by `npm run rulebook:handoff` in project-planner-web. Paste this whole file into the iOS agent.
 The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; never edit the iOS mirror by hand.
 
 ```
@@ -9,8 +9,8 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
 Rulebook version: 1.31.0 → 1.31.1
-Packed hash: 65c94aefda75131c857b502655ce8f0ef80807ba44b4b300908120df31e825e1
-Rulebook sha256: ed94469e670995d41de851de25546f297a81b51089b8242a97e9a91ec7ef2e34
+Packed hash: 18084794b0acf09b92aad12226733cf20e3a63016b9be023e5a8c224a40c69f7
+Rulebook sha256: 9abb2e921984df96ecc9bc7ba5020f599aab1c0be9eef4778280ff52f0e69db9
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -24,8 +24,8 @@ Exports added: none
 Exports removed: none
 Web files that changed the rules: docs/RULEBOOK.md, firestore.rules, lib/canonical/canonical.test.ts, lib/canonical/userProfile.ts
 Done when:
-- [ ] Packed hash in iOS equals 65c94aefda75131c857b502655ce8f0ef80807ba44b4b300908120df31e825e1
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 ed94469e670995d41de851de25546f297a81b51089b8242a97e9a91ec7ef2e34)
+- [ ] Packed hash in iOS equals 18084794b0acf09b92aad12226733cf20e3a63016b9be023e5a8c224a40c69f7
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 9abb2e921984df96ecc9bc7ba5020f599aab1c0be9eef4778280ff52f0e69db9)
 - [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.31.1)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
@@ -44,6 +44,7 @@ Done when:
 - **Nobody deletes their own users document** (fourth review NIT, §16): both apps delete accounts through `POST /api/account/delete`, which writes with service credentials; `canDeleteUser` never lets anyone delete themself. The dead rules function `managerOfSameOrg` is gone. An invitation's `invitedBy` names the sender as their users id (web) or their sign-in email (iOS); the rules accept either as the caller.
 - **Deploy order (A0):** the web release with this change goes live **before** the rules deploy. An older web build creates the invitee's account without `invitationId` and marks the invitation used on its own, which these rules refuse, so a person accepting an invitation in between is stuck until the new web is live.
 - **iOS follow-on (no rule divergence):** (1) `ManageUsersView.swift` (about lines 1160, 4393, 4478) marks old invitations used with a query on `email` alone, which the rules refuse for everyone (no `organizationId`); query `organizationId` + `email`, and as an operatives manager also `invitedBy` (the account's id or email as stored). (2) `UserStore.swift` delete clean-up (about line 1928) queries `organizationId` + `email`: as an operatives manager add `invitedBy`. (3) New invitations may keep `invitedBy` = the sender's email (accepted) or move to the users id like web. (4) iOS has no invite-accept write (`mergePlaceholderUserDocOntoAuthUidIfNeeded` stops with `INVITE_SETUP_INCOMPLETE`); keep it that way.
+- **Security (fifth review, ROOT, §16): privilege values are typed.** On the write paths to `users/{uid}` (create; the person's own update and an operatives manager's), `users/{uid}/orgMemberships/*`, `organizations/{orgId}.members`, `invitations`, `operatives` and `managers`, a privilege key that is written or changed (`isSuperAdmin`, `adminAccess`, `manager`, `operatives`, `operativeMode`, `annualLeaveSelfBook`, `timesheetSelfSign`, top level and in `permissions`) is a bool or null, and a written `role` (users, memberships, invitations) or `members` value is one the apps write (`admin`, `manager`, `operative`, `member`, plus `basic` / `viewer` from iOS's `UserRole`). An untouched stored legacy value is accepted as it is; readers stay tolerant (`truthyBool`), and the deny-side readers count `1` and `1.0` as on. Before, a double `1.0` passed the deny checks (`in [true, 1]` is type-strict) while `truthyBool(1.0)` granted it (B-A): an operatives manager could make an operative an admin with `permissions.adminAccess: 1.0`. An admin's update of another users document is not type-checked (it already holds every privilege, and the check would put the admin type-change batch over the expression limit); both apps write bools there. (S-B) Accepting an invitation copies the placeholder's privilege flags, role, line manager (`assignedManagerUserId(s)`, `hasNoLineManager`) and self-manage toggles exactly, and its pay (`dayRate`, `hourlyRate`, `payBasis`, `employmentType` and its dates) exactly or not at all (private pay leaves it out) — a person never sets their own pay or line manager (§8).
 - **Invite accept writes the membership with the account (fourth review S-1, §11):** web `completeInviteSetup` writes `users/{authUid}/orgMemberships/{orgId}` in the accept batch in the `inviteMembershipWrites` shape. Before, a non-admin invitee's separate membership write was refused after the account was created ("Missing or insufficient permissions"), and a retry then found the invitation used. A later fallback write never stops the setup.
 - `&&` does not short-circuit on a false left side that reads document data; expensive branches are gated with a ternary on a cheap condition (`docs/firestore-rules-notes.md` "Expression budget"). Rules tests can assert a logical denial (`tests/rulesAssert.ts`).
 

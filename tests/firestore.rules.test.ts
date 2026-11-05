@@ -4850,3 +4850,84 @@ test('1.31.1 (fourth review): an operatives manager creates a linked operatives 
   await assertSucceedsWithinBudget(setDoc(doc(mgr, 'organizations', ORG_A, 'operatives', 'row-r4-linked'), row))
   await assertLogicalDeny(setDoc(doc(mgr, 'organizations', ORG_A, 'operatives', 'row-r4-admin'), { ...row, email: 'admin-1311@test.com', userId: ADMIN_1311 }))
 })
+
+// ── Rulebook 1.31.1, fifth review (ROOT: privilege values are typed) ─────────────────────────────────────────────
+const BAD_FLAG_VALUES: unknown[] = [1, 1.5, 'true', 2]
+test('1.31.1 ROOT: an operatives manager writes no non-bool privilege value onto an operative', async () => {
+  await seed1311People()
+  const mgr = authDb(OPS_MGR_1311, 'ops-mgr-1311@test.com')
+  const op = doc(mgr, 'users', OP_1311)
+  for (const v of BAD_FLAG_VALUES) {
+    await assertLogicalDeny(updateDoc(op, { 'permissions.adminAccess': v }))
+    await assertLogicalDeny(updateDoc(op, { adminAccess: v }))
+    await assertLogicalDeny(updateDoc(op, { 'permissions.manager': v }))
+    await assertLogicalDeny(updateDoc(op, { operativeMode: v }))
+  }
+  // 1.0 is sent as a double by the REST probes; the SDK sends 1.0 as the integer 1, covered above.
+  await assertSucceedsWithinBudget(updateDoc(op, { firstName: 'Opal' }))
+  await assertSucceedsWithinBudget(updateDoc(op, { 'permissions.materials': true }))
+})
+
+test('1.31.1 ROOT: a person writes no non-bool admin or Super Admin value onto themself', async () => {
+  await seed1311People()
+  const me = doc(authDb(OP_1311, 'op-1311@test.com'), 'users', OP_1311)
+  for (const v of BAD_FLAG_VALUES) {
+    await assertLogicalDeny(updateDoc(me, { adminAccess: v }))
+    await assertLogicalDeny(updateDoc(me, { 'permissions.adminAccess': v }))
+    await assertLogicalDeny(updateDoc(me, { isSuperAdmin: v }))
+  }
+  await assertSucceeds(updateDoc(me, { firstName: 'Opal' }))
+})
+
+test('1.31.1 ROOT: invitations, memberships, members entries and roster rows take only bool flags and known roles', async () => {
+  await seed1311People()
+  const admin = authDb(ADMIN_A, 'admin-a@test.com')
+  const inv = (extra: Record<string, unknown>) => ({ organizationId: ORG_A, email: 'root-inv@test.com', isUsed: false, invitedBy: ADMIN_A, ...extra })
+  for (const v of BAD_FLAG_VALUES) {
+    await assertLogicalDeny(setDoc(doc(admin, 'invitations', 'root-bad'), inv({ role: 'operative', permissions: { operativeMode: true, adminAccess: v } })))
+  }
+  for (const role of ['Admin', 'super_admin', 'owner']) {
+    await assertLogicalDeny(setDoc(doc(admin, 'invitations', 'root-role'), inv({ role, permissions: { adminAccess: true } })))
+  }
+  await assertSucceeds(setDoc(doc(admin, 'invitations', 'root-ok'), inv({ role: 'admin', permissions: { adminAccess: true } })))
+  // Memberships written by an admin.
+  const m = doc(admin, 'users', OP_1311, 'orgMemberships', ORG_A)
+  await assertLogicalDeny(setDoc(m, { organizationId: ORG_A, role: 'Admin', status: 'active' }))
+  await assertLogicalDeny(setDoc(m, { organizationId: ORG_A, role: 'operative', status: 'active', permissions: { adminAccess: 'true' } }))
+  await assertSucceeds(setDoc(m, { organizationId: ORG_A, role: 'operative', status: 'active', permissions: { operativeMode: true } }))
+  // members map values.
+  await assertLogicalDeny(updateDoc(doc(admin, 'organizations', ORG_A), { [`members.${OP_1311}`]: 'super_admin' }))
+  await assertLogicalDeny(updateDoc(doc(admin, 'organizations', ORG_A), { [`members.${OP_1311}`]: 'Admin' }))
+  await assertSucceeds(updateDoc(doc(admin, 'organizations', ORG_A), { [`members.${OP_1311}`]: 'operative' }))
+  // Roster rows.
+  await assertLogicalDeny(setDoc(doc(admin, 'organizations', ORG_A, 'operatives', 'root-row'), { name: 'R', adminAccess: 'true' }))
+  await assertLogicalDeny(setDoc(doc(admin, 'organizations', ORG_A, 'managers', 'root-mrow'), { name: 'M', manager: 2 }))
+  await assertSucceeds(setDoc(doc(admin, 'organizations', ORG_A, 'operatives', 'root-row'), { name: 'R', role: 'Engineer' }))
+  // A users document created by an admin.
+  await assertLogicalDeny(setDoc(doc(admin, 'users', 'root-new-user'), { organizationId: ORG_A, email: 'root-new@test.com', role: 'Admin' }))
+  await assertLogicalDeny(setDoc(doc(admin, 'users', 'root-new-user'), { organizationId: ORG_A, email: 'root-new@test.com', role: 'operative', operativeMode: 'true' }))
+})
+
+test('1.31.1 S-B: an invitee copies the placeholder pay, line manager and toggles exactly (or leaves pay out)', async () => {
+  const { placeholderId, email, invitationId, account } = await seedF5Invite('SB', 'operative')
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await updateDoc(doc(ctx.firestore(), 'users', placeholderId), {
+      dayRate: 150, payBasis: 'day', employmentType: 'self_employed', assignedManagerUserId: ADMIN_A, assignedManagerUserIds: [ADMIN_A],
+    })
+  })
+  const authUid = 'sb-auth'
+  const db = authDb(authUid, email)
+  const placed = { dayRate: 150, payBasis: 'day', employmentType: 'self_employed', assignedManagerUserId: ADMIN_A, assignedManagerUserIds: [ADMIN_A] }
+  for (const change of [
+    { dayRate: 999 }, { payBasis: 'hourly', hourlyRate: 50 }, { employmentType: 'paye' }, { employmentTypeEffectiveAt: '2026-11-01' },
+    { assignedManagerUserId: authUid, assignedManagerUserIds: [authUid] }, { hasNoLineManager: true },
+    { annualLeaveSelfBook: true }, { timesheetSelfSign: true }, { permissions: { operativeMode: true, adminAccess: false, annualLeaveSelfBook: true } },
+    { adminAccess: 1.5 }, { permissions: { operativeMode: true, adminAccess: 'true' } },
+  ]) {
+    await assertLogicalDeny(acceptInviteBatch(db, authUid, { ...account(authUid), ...placed, ...change }, invitationId))
+  }
+  // The exact copy passes; with private pay the app leaves pay out, which is allowed too.
+  const { dayRate: _d, payBasis: _p, employmentType: _e, ...withoutPay } = { ...account(authUid), ...placed }
+  void _d; void _p; void _e
+  await assertSucceedsWithinBudget(acceptInviteBatch(db, authUid, withoutPay, invitationId))
+})
