@@ -477,9 +477,11 @@ export const useUserStore = create<UserStoreState>(() => ({
     )
     // Rulebook 1.32.0 `invitationListConstraints`: this organisation and email; an operatives manager's also name
     // `invitedBy` (one query per sender value).
+    // Rulebook 1.32.0 (review fix r274 S5): the email as stored (not pre-lowered); the helper asks both forms.
+    const typedInvitationEmail = (opts?.email || String(stored.email || '')).trim()
     const invitationQueries = invitationListConstraints({
       organizationId: orgId,
-      email: email || '',
+      email: typedInvitationEmail,
       actorManagesOperatives,
       senderIds: invitationSenders,
     }).map((constraints) => query(collection(db, 'invitations'), ...constraints.map(([field, value]) => where(field, '==', value))))

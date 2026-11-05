@@ -16,7 +16,7 @@ test('1.31.1 (B-1, S-E) / 1.32.0: an operatives manager\'s delete-cleanup invita
   assert.match(source, /new Set\(\[invitationActorId, auth\?\.currentUser\?\.email \|\| '', \(auth\?\.currentUser\?\.email \|\| ''\)\.toLowerCase\(\), actor\?\.email \|\| ''\]/)
   // 1.32.0: the queries are the rulebook's `invitationListConstraints` (one per sender for an operatives manager), and
   // only a permission-denied read is skipped (`invitationReadErrorIsSkippable`).
-  assert.match(source, /invitationListConstraints\(\{\s*organizationId: orgId,\s*email: email \|\| '',\s*actorManagesOperatives,\s*senderIds: invitationSenders,/)
+  assert.match(source, /invitationListConstraints\(\{\s*organizationId: orgId,\s*email: typedInvitationEmail,\s*actorManagesOperatives,\s*senderIds: invitationSenders,/)
   assert.match(source, /invitationReadErrorIsSkippable\(/)
   assert.ok(source.indexOf('const actorManagesOperatives') < source.indexOf('const invitationQueries'))
 })

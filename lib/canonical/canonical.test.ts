@@ -13281,3 +13281,11 @@ test('1.32.0 review fix (r274 S4): a booking moved or changed in the Daily Overv
   // No rate anywhere: nothing.
   assert.deepEqual(r132.overtimeMultiplierMoveFields({ stored: null, chosen: null, organizationMultiplier: 1.5, newDocument: true }), {})
 })
+
+test('1.32.0 review fix (r274 S5): invitation queries ask the email as stored and lower case', () => {
+  const queries = r132.invitationListConstraints({ organizationId: 'o', email: 'Ann.Smith@X.com', actorManagesOperatives: false })
+  assert.deepEqual(queries.map((q) => q[1][1]), ['Ann.Smith@X.com', 'ann.smith@x.com'])
+  assert.equal(r132.invitationListConstraints({ organizationId: 'o', email: 'a@x.com', actorManagesOperatives: false }).length, 1, 'de-duplicated')
+  const ops = r132.invitationListConstraints({ organizationId: 'o', email: 'Ann@X.com', actorManagesOperatives: true, senderIds: ['uid1'] })
+  assert.deepEqual(ops.map((q) => [q[1][1], q[2][1]]), [['Ann@X.com', 'uid1'], ['ann@x.com', 'uid1']])
+})
