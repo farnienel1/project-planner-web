@@ -10,7 +10,10 @@ import { useProjectStore } from '@/lib/stores/projectStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { useHolidayStore } from '@/lib/stores/holidayStore'
 import { DEFAULT_PAYROLL_POLICY, loadOrganizationDetails, type OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
-import type { PayrollTimePolicyState } from '@/lib/canonical'
+import { organizationOvertimeMultiplier, overtimeMultiplierCreateFields, type PayrollTimePolicyState } from '@/lib/canonical'
+import { CreateOvertimeRateField } from '@/components/overtime/OvertimeRateField'
+import { useOrganizationDocument } from '@/lib/stores/organizationDocumentStore'
+import { dayKeyInZone } from '@/lib/orgTime/zoneTime'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 import { bookableWorks } from '@/lib/access/workAccess'
 import { mergeProjectsAndSmallWorks } from '@/lib/projects/workStatus'
@@ -234,6 +237,18 @@ export function ScheduleOperativeForm({
     })
   }
 
+  // Rulebook 1.32.0 §25 (decision A): one overtime rate for the custom-hours days, pre-filled with the organisation's;
+  // stored per booking only when changed from that day's organisation rate (`overtimeMultiplierCreateFields`).
+  const { data: orgDocument } = useOrganizationDocument()
+  const [customRate, setCustomRate] = useState<number | null>(null)
+  const firstCustomSlot = slotsList.find((slot) => slot.slot === 'CUSTOM') ?? null
+  const rateFieldsFor = (slot: (typeof slotsList)[number]) => {
+    if (slot.slot !== 'CUSTOM') return {}
+    const key = dayKeyInZone(slot.date, timeZone)
+    const organizationMultiplier = organizationOvertimeMultiplier(orgDocument ?? {}, key, timeZone)
+    return overtimeMultiplierCreateFields({ chosen: customRate ?? organizationMultiplier, organizationMultiplier })
+  }
+
   const confirmBooking = async () => {
     if (!organization?.id || !user || !canConfirm) return
 
@@ -257,6 +272,7 @@ export function ScheduleOperativeForm({
               timeSlot: firestoreSlot.timeSlot,
               workStartTime: firestoreSlot.workStartTime,
               workEndTime: firestoreSlot.workEndTime,
+              ...rateFieldsFor(slot),
               bookedBy: user.email,
               status: 'confirmed',
               organizationId: organization.id,
@@ -280,6 +296,7 @@ export function ScheduleOperativeForm({
               locationId: project.id,
               workStartTime: firestoreSlot.workStartTime,
               workEndTime: firestoreSlot.workEndTime,
+              ...rateFieldsFor(slot),
             })
           }
         }
@@ -412,6 +429,11 @@ export function ScheduleOperativeForm({
           onRemoveDate={handleRemoveDate}
         />
       )}
+      {step === 'dates' && firstCustomSlot ? (
+        <div className="card p-4">
+          <CreateOvertimeRateField dayKey={dayKeyInZone(firstCustomSlot.date, timeZone)} value={customRate} onChange={setCustomRate} />
+        </div>
+      ) : null}
 
       {step === 'pick-person' && (
         <SchedulePersonPickerStep

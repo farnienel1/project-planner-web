@@ -26,6 +26,7 @@ import {
   exportIncludesSensitiveFields,
   resolveTimesheetPeriod,
   weekdayPaidHours,
+  timesheetExportOwnSheetNotice,
 } from '@/lib/canonical'
 import { staffAccountRole } from '@/lib/permissions'
 import { loadTaxIds } from '@/lib/sensitiveProfile/taxIdsService'
@@ -222,6 +223,23 @@ export function TimesheetsScreen({
   useEffect(() => {
     void reload()
   }, [reload])
+
+  // Rulebook 1.32.0 §8: the export never includes the exporter's own sheet; say so when theirs is signed and waiting.
+  const [ownSheet, setOwnSheet] = useState<{ signed: boolean; exported: boolean } | null>(null)
+  useEffect(() => {
+    if (teamTab !== 'signed' || !organization?.id || !user?.id) {
+      setOwnSheet(null)
+      return
+    }
+    let live = true
+    loadTimesheetDraft(organization.id, user.id, periodStart, timeZone, periodEnd)
+      .then((draft) => live && setOwnSheet({ signed: Boolean(draft.operativeSignedAt), exported: Boolean(draft.exportedAt) }))
+      .catch(() => live && setOwnSheet(null))
+    return () => {
+      live = false
+    }
+  }, [teamTab, organization?.id, user?.id, periodStart, periodEnd, timeZone])
+  const ownSheetNotice = ownSheet ? timesheetExportOwnSheetNotice({ ownSheetSigned: ownSheet.signed, ownSheetExported: ownSheet.exported }) : null
 
   const visible = useMemo(
     () => (teamTab === 'exported' ? [] : currentPeriodTimesheetMembers(groups, drafts, teamTab, users)),
@@ -573,6 +591,7 @@ export function TimesheetsScreen({
           >
             {exporting ? 'Sending timesheets…' : `Email and export ${visible.length} timesheet${visible.length === 1 ? '' : 's'}`}
           </button>
+          {ownSheetNotice ? <p className="banner" data-hue="warn">{ownSheetNotice}</p> : null}
           {exportMessage ? <p className="muted small">{exportMessage}</p> : null}
         </div>
       ) : null}

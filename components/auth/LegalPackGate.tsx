@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react'
 import { doc, Timestamp, updateDoc } from 'firebase/firestore'
 import { useAuthStore } from '@/lib/stores/authStore'
+import { legalPackAcceptanceWriteFields } from '@/lib/canonical'
 import { getFirebaseDb } from '@/lib/firebase/ensureFirebase'
 import { LEGAL_ENTITY, LEGAL_PACK_DOCUMENTS } from '@/lib/legal/customerLegalPack'
 import { AcceptButton, ScrollAcceptDocument } from '@/components/legal/ScrollAcceptDocument'
@@ -38,11 +39,11 @@ export function LegalPackGate() {
     try {
       const db = getFirebaseDb()
       const now = Timestamp.now()
+      // Rulebook 1.32.0: the shared acceptance write (`legalPackAcceptanceWriteFields`, with write metadata).
+      const acceptance = legalPackAcceptanceWriteFields({ userId: firebaseUser.uid, version: LEGAL_ENTITY.version, acceptedAt: now, platform: 'web' })
+      if (!acceptance) throw new Error('Could not record your acceptance.')
       await updateDoc(doc(db, 'users', firebaseUser.uid), {
-        policyAccepted: true,
-        policyAcceptedAt: now,
-        legalPackVersion: LEGAL_ENTITY.version,
-        legalPackAcceptedAt: now,
+        ...acceptance,
         legalAcceptances: {
           saas: true,
           dpa: true,
