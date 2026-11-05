@@ -615,6 +615,8 @@ test('invitee can finish password setup: own email claim, placeholder get, then 
     ageConfirmedAt: Timestamp.now(),
     // inviteMigrationFormerIdWriteFields: bookings made while pending keep counting.
     formerUserIds: [placeholderId],
+    // 1.31.1 (F1): the web copy keeps every placeholder flag (completeInviteSetup spreads the placeholder).
+    isSuperAdmin: false,
   })
 
   // Claim still names the placeholder: self-create is allowed (pending placeholder, same email, same org) — 1.31.1
@@ -1005,6 +1007,9 @@ test('invite accept: an invitee cannot add privileges the placeholder does not h
     operativeMode: true,
     passwordSet: true,
     isActive: true,
+    adminAccess: false,
+    isSuperAdmin: false,
+    permissions: { operativeMode: true, adminAccess: false },
     ...ageFields(),
   }
   await assertFails(acceptInviteBatch(db, authUid, { ...base, adminAccess: true }, 'invite-op-priv'))
@@ -3913,7 +3918,7 @@ test('1.28.0 B1: invite accept copies the self-manage toggles only as the admin 
   }
   const profile = (extra: Record<string, unknown>) => ({
     email, organizationId: ORG_A, firstName: 'Tia', role: 'admin', adminAccess: true, passwordSet: true, isActive: true,
-    formerUserIds: [placeholderId], ...ageFields(), ...extra,
+    isSuperAdmin: false, formerUserIds: [placeholderId], ...ageFields(), ...extra,
   })
   const db = authDb(authUid, email)
   // Placeholder has both off: the invitee cannot switch them on (top level or permissions map).
@@ -3922,7 +3927,9 @@ test('1.28.0 B1: invite accept copies the self-manage toggles only as the admin 
   await assertFails(acceptInviteBatch(db, authUid, profile({ permissions: { adminAccess: true, timesheetSelfSign: true } }), 'invite-toggles'))
   await assertFails(acceptInviteBatch(db, authUid, profile({ annualLeaveSelfBook: true }), 'invite-toggles'))
   // Legit: copying the placeholder as it is.
-  await assertSucceeds(acceptInviteBatch(db, authUid, profile({ annualLeaveSelfBook: false, timesheetSelfSign: false }), 'invite-toggles'))
+  await assertSucceeds(acceptInviteBatch(db, authUid, profile({
+    annualLeaveSelfBook: false, timesheetSelfSign: false, permissions: { adminAccess: true, annualLeaveSelfBook: false, timesheetSelfSign: false },
+  }), 'invite-toggles'))
   await env.withSecurityRulesDisabled(async (ctx) => {
     await deleteDoc(doc(ctx.firestore(), 'users', authUid))
   })
@@ -4982,4 +4989,22 @@ test('1.31.1 S-D, NIT-1, NIT-2: invitedBy matches the sender email in any case; 
   await assertLogicalDeny(updateDoc(doc(admin, 'invitations', 'n2-used'), { isUsed: false }))
   await assertSucceeds(updateDoc(doc(admin, 'invitations', 'sd-mixed'), { isUsed: true }))
   await assertSucceeds(deleteDoc(doc(mgr, 'invitations', 'sd-mixed')))
+})
+
+// ── Rulebook 1.31.1, sixth review ─────────────────────────────────────────────────────────────────────────────────
+test('1.31.1 F1: an operative invitee cannot drop their operative level, line manager or toggles on accept', async () => {
+  const { placeholderId, email, invitationId, account } = await seedF5Invite('F1', 'operative')
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await updateDoc(doc(ctx.firestore(), 'users', placeholderId), { assignedManagerUserId: ADMIN_A, assignedManagerUserIds: [ADMIN_A], annualLeaveSelfBook: false })
+  })
+  const authUid = 'f1-auth'
+  const db = authDb(authUid, email)
+  const full = { ...account(authUid), assignedManagerUserId: ADMIN_A, assignedManagerUserIds: [ADMIN_A], annualLeaveSelfBook: false }
+  const without = (...keys: string[]) => Object.fromEntries(Object.entries(full).filter(([k]) => !keys.includes(k)))
+  await assertLogicalDeny(acceptInviteBatch(db, authUid, without('role', 'operativeMode', 'permissions'), invitationId))
+  await assertLogicalDeny(acceptInviteBatch(db, authUid, without('role', 'operativeMode'), invitationId))
+  await assertLogicalDeny(acceptInviteBatch(db, authUid, { ...without('role', 'operativeMode'), permissions: { adminAccess: false } }, invitationId))
+  await assertLogicalDeny(acceptInviteBatch(db, authUid, without('assignedManagerUserId', 'assignedManagerUserIds'), invitationId))
+  await assertLogicalDeny(acceptInviteBatch(db, authUid, without('annualLeaveSelfBook'), invitationId))
+  await assertSucceedsWithinBudget(acceptInviteBatch(db, authUid, full, invitationId))
 })

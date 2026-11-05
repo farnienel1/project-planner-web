@@ -237,6 +237,10 @@ service cloud.firestore {
         'dayRate', 'hourlyRate', 'payBasis', 'employmentType', 'employmentTypeTransitionFrom', 'employmentTypeEffectiveAt']) &&
       !pd.changedKeys().union(pd.addedKeys()).hasAny(['isSuperAdmin', 'adminAccess', 'manager', 'operatives', 'operativeMode',
         'annualLeaveSelfBook', 'timesheetSelfSign']) &&
+      !d.removedKeys().hasAny(['role', 'operativeMode', 'isSuperAdmin', 'adminAccess', 'manager', 'operatives',
+        'annualLeaveSelfBook', 'timesheetSelfSign', 'assignedManagerUserId', 'assignedManagerUserIds', 'hasNoLineManager']) &&
+      !pd.removedKeys().hasAny(['operativeMode', 'isSuperAdmin', 'adminAccess', 'manager', 'operatives',
+        'annualLeaveSelfBook', 'timesheetSelfSign']) &&
       selfCreateAliasesWithin(next, placeholder, placeholderId);
   }
 
