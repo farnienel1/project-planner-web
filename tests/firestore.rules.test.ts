@@ -5032,6 +5032,9 @@ test('1.31.1 F9: an operatives manager marks their iOS-shaped invitation used wi
   await assertSucceedsWithinBudget(updateDoc(doc(mgr, 'invitations', 'f9-ios'), { isUsed: true, usedAt: Timestamp.now() }))
   await assertSucceedsWithinBudget(updateDoc(doc(mgr, 'invitations', 'f9-ios-email'), { isUsed: true }))
   await assertLogicalDeny(updateDoc(doc(mgr, 'invitations', 'f9-ios'), { isUsed: false }))
+  // Re-pointing invitedBy to the caller's other identity (users id -> email) stays within budget; to someone else is refused.
+  await assertSucceedsWithinBudget(updateDoc(doc(mgr, 'invitations', 'f9-ios'), { invitedBy: 'ops-mgr-1311@test.com' }))
+  await assertLogicalDeny(updateDoc(doc(mgr, 'invitations', 'f9-ios'), { invitedBy: ADMIN_A }))
 })
 
 test('1.31.1 F11/F12: removing or nulling a top-level flag never unmasks a permissions copy on a self update', async () => {

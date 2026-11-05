@@ -937,9 +937,9 @@ service cloud.firestore {
         let next = request.resource.data;
         return request.method == 'list' ? invitationSentByCaller(resource.data) : (
           request.method == 'delete' ? (invitationSentByCaller(resource.data) && invitationIsOperativeOnly(resource.data)) : (
-            (request.method == 'update' && !next.diff(resource.data).affectedKeys().hasAny(['role', 'permissions', 'invitedBy',
+            (request.method == 'update' && !next.diff(resource.data).affectedKeys().hasAny(['role', 'permissions',
                 'adminAccess', 'isSuperAdmin', 'manager', 'operatives', 'operativeMode']))
-              ? (invitationSentByCaller(resource.data) && invitationIsOperativeOnly(resource.data))
+              ? (invitationSentByCaller(resource.data) && invitationSentByCaller(next) && invitationIsOperativeOnly(resource.data))
               : ((invitationIsOperativeOnly(next) && invitationSentByCaller(next)) ? (
                 request.method == 'create'
                   ? opsManagerEmailFree(invitationOrgId(), next.get('email', null))
