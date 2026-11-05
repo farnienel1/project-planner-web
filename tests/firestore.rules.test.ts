@@ -5092,3 +5092,15 @@ test('1.31.1: a returning member who adds an invitation id still gets the typed-
   await assertLogicalDeny(setDoc(doc(db, 'users', uid), { ...base, invitationId: 'whatever', role: 'Admin' }))
   await assertSucceeds(setDoc(doc(db, 'users', uid), { ...base, invitationId: 'whatever' }))
 })
+
+test('1.31.1 F4: a person cannot delete their own role to drop their operative level', async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'users', 'f4-op'), {
+      email: 'f4-op@test.com', organizationId: ORG_A, role: 'operative', isActive: true, passwordSet: true, permissions: { operativeMode: true },
+    })
+  })
+  const me = doc(authDb('f4-op', 'f4-op@test.com'), 'users', 'f4-op')
+  await assertLogicalDeny(updateDoc(me, { role: deleteField() }))
+  await assertLogicalDeny(updateDoc(me, { role: null }))
+  await assertSucceeds(updateDoc(me, { firstName: 'Fay', role: 'operative' }))
+})

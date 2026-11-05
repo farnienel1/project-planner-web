@@ -645,9 +645,8 @@ service cloud.firestore {
         request.resource.data.organizationId == resource.data.get('organizationId', null)) ||
        ('organizationId' in resource.data &&
         orgIdsMatch(request.resource.data.organizationId, resource.data.organizationId))) ? (
-      (!('role' in request.resource.data) ||
-       ('role' in resource.data && request.resource.data.role == resource.data.role) ||
-       (admin && request.resource.data.role == 'admin')) ? (
+      (request.resource.data.get('role', null) == resource.data.get('role', null) ||
+       (admin && request.resource.data.get('role', null) == 'admin')) ? (
       (request.resource.data.get('adminAccess', null) in [false, null] || admin) ? (
       ((request.resource.data.get('isSuperAdmin', null) in [false, null] ||
         request.resource.data.get('isSuperAdmin', null) == resource.data.get('isSuperAdmin', null)) &&
