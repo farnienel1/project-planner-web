@@ -287,7 +287,10 @@ service cloud.firestore {
         next.get('employmentTypeEffectiveAt', null) != prev.get('employmentTypeEffectiveAt', null));
   }
   function payStaysPrivate(organizationId) {
-    return privatePayOn(organizationId) ? !payValueWritten() : true;
+    return privatePayOn(organizationId) ? (
+      request.resource.data.diff(resource == null ? {} : resource.data).affectedKeys().hasAny(['dayRate', 'hourlyRate',
+        'payBasis', 'employmentType', 'employmentTypeTransitionFrom', 'employmentTypeEffectiveAt'])
+        ? !payValueWritten() : true) : true;
   }
 
   function orgBillingOpen(organizationId) {
@@ -638,6 +641,14 @@ service cloud.firestore {
             'adminAccess' in data.permissions && truthyBool(data.permissions.adminAccess));
   }
 
+  function selfSuperAdminKept() {
+    return ((request.resource.data.get('isSuperAdmin', null) in [false, null] ||
+        request.resource.data.get('isSuperAdmin', null) == resource.data.get('isSuperAdmin', null)) &&
+       (request.resource.data.get('permissions', {}).get('isSuperAdmin', null) in [false, null] ||
+        request.resource.data.get('permissions', {}).get('isSuperAdmin', null) ==
+          resource.data.get('permissions', {}).get('isSuperAdmin', null))) ||
+      staffFlag(resource.data, 'isSuperAdmin');
+  }
   function userSelfUpdateKeepsPrivileges(toggles, admin) {
     return resource == null ? false : (
       (!('organizationId' in request.resource.data) ||
@@ -648,18 +659,13 @@ service cloud.firestore {
       (request.resource.data.get('role', null) == resource.data.get('role', null) ||
        (admin && request.resource.data.get('role', null) == 'admin')) ? (
       (request.resource.data.get('adminAccess', null) in [false, null] || admin) ? (
-      ((request.resource.data.get('isSuperAdmin', null) in [false, null] ||
-        request.resource.data.get('isSuperAdmin', null) == resource.data.get('isSuperAdmin', null)) &&
-       (request.resource.data.get('permissions', {}).get('isSuperAdmin', null) in [false, null] ||
-        request.resource.data.get('permissions', {}).get('isSuperAdmin', null) ==
-          resource.data.get('permissions', {}).get('isSuperAdmin', null)) ||
-       staffFlag(resource.data, 'isSuperAdmin')) ? (
+      (admin ? selfSuperAdminKept() : (request.resource.data.get('isSuperAdmin', null) in [false, null] &&
+        request.resource.data.get('permissions', {}).get('isSuperAdmin', null) in [false, null])) ? (
       (!('permissions' in request.resource.data) ||
        !(request.resource.data.permissions is map) ||
        request.resource.data.permissions.get('adminAccess', null) in [false, null] ||
        admin) ? (
-      (admin || (!(request.resource.data.get('manager', null) == null && resource.data.get('manager', null) != null) && !(request.resource.data.get('operatives', null) == null && resource.data.get('operatives', null) != null) && !(request.resource.data.get('annualLeaveSelfBook', null) == null && resource.data.get('annualLeaveSelfBook', null) != null) && !(request.resource.data.get('timesheetSelfSign', null) == null && resource.data.get('timesheetSelfSign', null) != null))) ?
-        (selfUpdateKeepsIdentityLinks() ? selfUpdateKeepsManagedFields(toggles, admin) : false) : false
+      selfUpdateKeepsIdentityLinks() ? selfUpdateKeepsManagedFields(toggles, admin) : false
       ) : false) : false) : false) : false) : false);
   }
 
@@ -755,8 +761,12 @@ service cloud.firestore {
   function selfUpdateKeepsManagedFields(toggles, admin) {
     let next = request.resource.data;
     let prev = resource.data;
-    let changed = next.diff(prev).affectedKeys();
+    let d = next.diff(prev);
+    let changed = d.affectedKeys();
     return admin ? toggles : (
+      (d.removedKeys().union(d.changedKeys()).hasAny(['isSuperAdmin', 'manager', 'operatives', 'annualLeaveSelfBook',
+          'timesheetSelfSign', 'employmentType'])
+        ? selfKeepsStoredFlags(d, next) : true) ? (
       (changed.hasAny(['dayRate', 'hourlyRate', 'payBasis']) ? (
         next.get('dayRate', null) == prev.get('dayRate', null) &&
         next.get('hourlyRate', null) == prev.get('hourlyRate', null) &&
@@ -769,7 +779,6 @@ service cloud.firestore {
       (changed.hasAny(['assignedManagerUserId', 'assignedManagerUserIds']) ? lineManagersUnchanged(next, prev) : true) ? (
       (changed.hasAny(['employmentType', 'employmentTypeTransitionFrom', 'employmentTypeEffectiveAt']) ? (
         next.get('employmentType', 'paye') == prev.get('employmentType', 'paye') &&
-        !(next.get('employmentType', null) == null && prev.get('employmentType', null) != null) &&
         sameLooseValue(next.get('employmentTypeTransitionFrom', null), prev.get('employmentTypeTransitionFrom', null)) &&
         sameInstantValue(next.get('employmentTypeEffectiveAt', null), prev.get('employmentTypeEffectiveAt', null))
       ) : true) ? (
@@ -779,10 +788,16 @@ service cloud.firestore {
                       'annualLeaveSelfBook', 'timesheetSelfSign', 'weeklyReports', 'subContractors', 'dailyOverview',
                       'wholesalersOrderHistory', 'materials', 'siteAudit', 'operativeMode', 'role'])
         ? selfPermissionsNotRaised(next, prev, changed) : true
-      ) : false) : false) : false) : false) : false
+      ) : false) : false) : false) : false) : false) : false
     );
   }
 
+  function selfKeepsStoredFlags(d, next) {
+    return !d.removedKeys().hasAny(['isSuperAdmin', 'manager', 'operatives', 'annualLeaveSelfBook', 'timesheetSelfSign',
+        'employmentType']) &&
+      !(null in [next.get('isSuperAdmin', 0), next.get('manager', 0), next.get('operatives', 0),
+        next.get('annualLeaveSelfBook', 0), next.get('timesheetSelfSign', 0), next.get('employmentType', 0)]);
+  }
   function lineManagersUnchanged(next, prev) {
     let ids = lineManagerIdList(next);
     return ids == lineManagerIdList(prev) &&
@@ -1034,7 +1049,7 @@ service cloud.firestore {
         let isSelf = userUpdateIsSelf();
         let targetAdmin = isSelf ? alreadyPrivilegedAdmin(resource.data) : false;
         let toggles = targetAdmin ? selfManageTogglesUnchanged(request.resource.data, resource.data) : true;
-        return (isSelf && userSelfUnmasksSuperAdmin()) ? false : ((
+        return (isSelf && targetAdmin && userSelfUnmasksSuperAdmin()) ? false : ((
           (isSelf ? userSelfUpdateKeepsPrivileges(toggles, targetAdmin) : false) ||
           ((request.auth.uid != userId && operativesManagerFlags(home)) ? (canManagerUpdateOperativeProfile(home)
             ? privilegeWriteTyped(request.resource.data, resource.data, true) : false) : false) ||
