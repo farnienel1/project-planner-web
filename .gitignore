@@ -63,3 +63,4 @@ docs/ui-touch-up/screenshots/
 
 # Owner clean-up backups (scripts/data-cleanup.mjs): real company data, never committed
 cleanup-backups/
+__pycache__/
