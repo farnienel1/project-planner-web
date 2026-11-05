@@ -65,7 +65,6 @@ import { PanelHeader } from '@/components/settings/primitives'
 import { ORPHAN_BOOKING_LABEL, canBookOtherLocationsFor } from '@/lib/canonical'
 import { CreateOvertimeRateField, useCreateOvertimeRateFields } from '@/components/overtime/OvertimeRateField'
 import { useOrganizationDocument, useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
-import { mergeProjectsAndSmallWorks } from '@/lib/projects/workStatus'
 import { webJobAccessViewer } from '@/lib/access/readPlan'
 import { enforcedReadsFor } from '@/lib/access/securitySwitches'
 
