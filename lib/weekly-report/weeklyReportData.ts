@@ -62,7 +62,7 @@ import {
   formatSubcontractorBookingLabel,
   resolveSubcontractorBookingPeople,
 } from '@/lib/subcontractors/bookingPeople'
-import { bookingJobLabel, weekdayPaidHours, weeklyReportPayeDay, weeklyReportPayeOvertime, type OvertimeBookingInput, type PayrollTimePolicyState } from '@/lib/canonical'
+import { bookingJobLabel, weekdayPaidHours, weeklyReportPayeDay, weeklyReportPayeOvertime, OVERTIME_RATE_CHANGED_MARK, overtimePersonIds, type OvertimeBookingInput, type PayrollTimePolicyState } from '@/lib/canonical'
 import { normalizeDocumentId } from '@/lib/canonical'
 
 export type WeeklyReportWarningRow = {
@@ -204,7 +204,8 @@ export type WeeklyReportData = {
   payeOvertimeTotal: number
 }
 
-export type WeeklyReportPayeOvertimeRow = { person: string; jobNumber: string; jobName: string; overtimeHours: number; label: string }
+/** 1.32.0: `hoursCell` is the multiplier figure ("2h at ×1.5 = 3h"), with the changed-rate mark on an edited row. */
+export type WeeklyReportPayeOvertimeRow = { person: string; jobNumber: string; jobName: string; overtimeHours: number; label: string; hoursCell?: string; changedFromOrganization?: boolean }
 
 export type SubcontractorBookingRow = {
   id: string
@@ -956,7 +957,8 @@ export function buildWeeklyReportData({
         return {
           id: user.id,
           name: resolveDisplayName(user, operative),
-          ids: [user.id, ...aliasIdsFor(user.id), ...(operative ? [operative.id] : [])],
+          // 1.32.0: the one all-records-per-person rule (`overtimePersonIds`), plus the roster fold's aliases.
+          ids: [...overtimePersonIds({ person: user, roster: users as never, operatives }), ...aliasIdsFor(user.id)],
           employmentType: user.employmentType ?? null,
           employmentTypeTransitionFrom: user.employmentTypeTransitionFrom ?? null,
           employmentTypeEffectiveAt: user.employmentTypeEffectiveAt ?? null,
@@ -966,7 +968,15 @@ export function buildWeeklyReportData({
     organization: policyState,
     timeZone,
     range: { start: dayKeyInZone(period.start, timeZone), end: dayKeyInZone(period.end, timeZone) },
-  }).map((row) => ({ person: row.name, jobNumber: row.jobNumber, jobName: row.jobName, overtimeHours: row.overtimeHours, label: row.label }))
+  }).map((row) => ({
+    person: row.name,
+    jobNumber: row.jobNumber,
+    jobName: row.jobName,
+    overtimeHours: row.overtimeHours,
+    label: row.label,
+    hoursCell: row.changedFromOrganization ? `${row.multiplierText} (${OVERTIME_RATE_CHANGED_MARK}, ×${row.organizationMultiplier})` : row.multiplierText,
+    changedFromOrganization: row.changedFromOrganization,
+  }))
   const payeOvertimeTotal = Math.round(payeOvertimeRows.reduce((sum, row) => sum + row.overtimeHours, 0) * 100) / 100
 
   return {

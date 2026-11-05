@@ -190,10 +190,12 @@ var ProjectPlannerCanonical = (() => {
     ORG_MEMBERSHIP_SELF_FIELDS: () => ORG_MEMBERSHIP_SELF_FIELDS,
     ORPHAN_BOOKING_LABEL: () => ORPHAN_BOOKING_LABEL,
     OVERLAPPING_BOOKING_NOTE: () => OVERLAPPING_BOOKING_NOTE,
+    OVERTIME_APPROVE_LABEL: () => OVERTIME_APPROVE_LABEL,
     OVERTIME_APPROVE_REQUEST_LABEL: () => OVERTIME_APPROVE_REQUEST_LABEL,
     OVERTIME_BOOKING_UNREADABLE_MESSAGE: () => OVERTIME_BOOKING_UNREADABLE_MESSAGE,
     OVERTIME_CANCEL_NOT_ALLOWED_MESSAGE: () => OVERTIME_CANCEL_NOT_ALLOWED_MESSAGE,
     OVERTIME_CANCEL_WARNING: () => OVERTIME_CANCEL_WARNING,
+    OVERTIME_CHANGED_SINCE_REQUEST_LINE_MESSAGE: () => OVERTIME_CHANGED_SINCE_REQUEST_LINE_MESSAGE,
     OVERTIME_COMING_NEXT_MESSAGE: () => OVERTIME_COMING_NEXT_MESSAGE,
     OVERTIME_GENERATE_REPORT_LABEL: () => OVERTIME_GENERATE_REPORT_LABEL,
     OVERTIME_HUB_LABEL: () => OVERTIME_HUB_LABEL,
@@ -206,9 +208,12 @@ var ProjectPlannerCanonical = (() => {
     OVERTIME_MULTIPLIER_MIN: () => OVERTIME_MULTIPLIER_MIN,
     OVERTIME_MULTIPLIER_STEP: () => OVERTIME_MULTIPLIER_STEP,
     OVERTIME_MULTIPLIER_STEPS: () => OVERTIME_MULTIPLIER_STEPS,
+    OVERTIME_NEEDS_ADMIN_LABEL: () => OVERTIME_NEEDS_ADMIN_LABEL,
     OVERTIME_NEEDS_ADMIN_MESSAGE: () => OVERTIME_NEEDS_ADMIN_MESSAGE,
+    OVERTIME_NOTHING_DECIDED_MESSAGE: () => OVERTIME_NOTHING_DECIDED_MESSAGE,
     OVERTIME_NOT_THEIR_BOOKING_MESSAGE: () => OVERTIME_NOT_THEIR_BOOKING_MESSAGE,
     OVERTIME_NO_LINES_MESSAGE: () => OVERTIME_NO_LINES_MESSAGE,
+    OVERTIME_RATE_CHANGED_MARK: () => OVERTIME_RATE_CHANGED_MARK,
     OVERTIME_REPORTS_COLLECTION: () => OVERTIME_REPORTS_COLLECTION,
     OVERTIME_REPORT_TOTAL_LABEL: () => OVERTIME_REPORT_TOTAL_LABEL,
     OVERTIME_REQUESTS_COLLECTION: () => OVERTIME_REQUESTS_COLLECTION,
@@ -240,6 +245,10 @@ var ProjectPlannerCanonical = (() => {
     PAYE_CLAIM_EVIDENCE_UNREADABLE_NOTE: () => PAYE_CLAIM_EVIDENCE_UNREADABLE_NOTE,
     PAYE_CLAIM_KINDS: () => PAYE_CLAIM_KINDS,
     PAYE_CLAIM_REPORTS_COLLECTION: () => PAYE_CLAIM_REPORTS_COLLECTION,
+    PAYE_CLAIM_REVIEWS_COLLECTION: () => PAYE_CLAIM_REVIEWS_COLLECTION,
+    PAYE_CLAIM_REVIEW_DECISIONS: () => PAYE_CLAIM_REVIEW_DECISIONS,
+    PAYE_CLAIM_REVIEW_STATES: () => PAYE_CLAIM_REVIEW_STATES,
+    PAYE_CLAIM_REVIEW_STATE_LABELS: () => PAYE_CLAIM_REVIEW_STATE_LABELS,
     PAYE_CLAIM_TITLE_MAX: () => PAYE_CLAIM_TITLE_MAX,
     PAYE_CLAIM_TITLE_MESSAGE: () => PAYE_CLAIM_TITLE_MESSAGE,
     PAYE_PAYDAY_CONTROL_LABEL: () => PAYE_PAYDAY_CONTROL_LABEL,
@@ -247,7 +256,9 @@ var ProjectPlannerCanonical = (() => {
     PAYE_PAYDAY_INVALID_MESSAGE: () => PAYE_PAYDAY_INVALID_MESSAGE,
     PAYE_PAYDAY_MAX: () => PAYE_PAYDAY_MAX,
     PAYE_PAYDAY_MIN: () => PAYE_PAYDAY_MIN,
+    PAYE_PAYDAY_MISSING_BANNER: () => PAYE_PAYDAY_MISSING_BANNER,
     PAYE_PAYDAY_NOT_SET_MESSAGE: () => PAYE_PAYDAY_NOT_SET_MESSAGE,
+    PAYE_PAYDAY_REQUIRED_MESSAGE: () => PAYE_PAYDAY_REQUIRED_MESSAGE,
     PAYE_PAY_CELL_LABEL: () => PAYE_PAY_CELL_LABEL,
     PAYE_RATE_NOT_USED_NOTE: () => PAYE_RATE_NOT_USED_NOTE,
     PAYMENT_GRACE_MS: () => PAYMENT_GRACE_MS,
@@ -336,6 +347,7 @@ var ProjectPlannerCanonical = (() => {
     TIMESHEET_ENTRY_ARRAY_FIELDS: () => TIMESHEET_ENTRY_ARRAY_FIELDS,
     TIMESHEET_ENTRY_DECISIONS: () => TIMESHEET_ENTRY_DECISIONS,
     TIMESHEET_ENTRY_REVIEWS_FIELD: () => TIMESHEET_ENTRY_REVIEWS_FIELD,
+    TIMESHEET_EXPORT_OWN_SHEET_NOTICE: () => TIMESHEET_EXPORT_OWN_SHEET_NOTICE,
     TIMESHEET_EXPORT_STORAGE_FOLDER: () => TIMESHEET_EXPORT_STORAGE_FOLDER,
     TIMESHEET_INVOICE_EXPORT_LEFTOVER_MS: () => TIMESHEET_INVOICE_EXPORT_LEFTOVER_MS,
     TIMESHEET_MANAGER_SIGN_OFF_FIELDS: () => TIMESHEET_MANAGER_SIGN_OFF_FIELDS,
@@ -438,6 +450,7 @@ var ProjectPlannerCanonical = (() => {
     bookingsToRemoveOnOperativeDelete: () => bookingsToRemoveOnOperativeDelete,
     bookingsToRemoveOnProjectDelete: () => bookingsToRemoveOnProjectDelete,
     calendarDaysBetween: () => calendarDaysBetween,
+    canBookOtherLocationsFor: () => canBookOtherLocationsFor,
     canChangeJobManagers: () => canChangeJobManagers,
     canChangePersonPay: () => canChangePersonPay,
     canCreateJob: () => canCreateJob,
@@ -454,6 +467,7 @@ var ProjectPlannerCanonical = (() => {
     canOpenUserTimesheets: () => canOpenUserTimesheets,
     canRestoreOrganization: () => canRestoreOrganization,
     canReviewFileReports: () => canReviewFileReports,
+    canReviewPayeClaims: () => canReviewPayeClaims,
     canReviewUserTimesheets: () => canReviewUserTimesheets,
     canScheduleOperatives: () => canScheduleOperatives,
     canSeeJob: () => canSeeJob,
@@ -585,7 +599,9 @@ var ProjectPlannerCanonical = (() => {
     intervalsOverlap: () => intervalsOverlap,
     invitationCreateFields: () => invitationCreateFields,
     invitationIsOperativeOnly: () => invitationIsOperativeOnly,
+    invitationListConstraints: () => invitationListConstraints,
     invitationProfileFields: () => invitationProfileFields,
+    invitationReadErrorIsSkippable: () => invitationReadErrorIsSkippable,
     invitationRole: () => invitationRole,
     invitationUsedWriteFields: () => invitationUsedWriteFields,
     inviteAcceptWrites: () => inviteAcceptWrites,
@@ -687,6 +703,7 @@ var ProjectPlannerCanonical = (() => {
     leaveYearBounds: () => leaveYearBounds,
     leaveYearEndMonth: () => leaveYearEndMonth,
     leaveYearStartMonth: () => leaveYearStartMonth,
+    legalPackAcceptanceWriteFields: () => legalPackAcceptanceWriteFields,
     legalPackNeedsAcceptance: () => legalPackNeedsAcceptance,
     lineManagerCandidates: () => lineManagerCandidates,
     lineManagerChangeBlock: () => lineManagerChangeBlock,
@@ -836,16 +853,23 @@ var ProjectPlannerCanonical = (() => {
     overtimeDeciderMayWriteBooking: () => overtimeDeciderMayWriteBooking,
     overtimeDirectWrites: () => overtimeDirectWrites,
     overtimeEditValidationError: () => overtimeEditValidationError,
+    overtimeEditableUntil: () => overtimeEditableUntil,
     overtimeForBooking: () => overtimeForBooking,
     overtimeHubAccess: () => overtimeHubAccess,
     overtimeLineIsStale: () => overtimeLineIsStale,
+    overtimeLineOutcomeLabel: () => overtimeLineOutcomeLabel,
     overtimeLinesTotal: () => overtimeLinesTotal,
+    overtimeMultiplierCreateFields: () => overtimeMultiplierCreateFields,
+    overtimeMultiplierText: () => overtimeMultiplierText,
     overtimeMultiplierValid: () => overtimeMultiplierValid,
     overtimeMultiplierValidationError: () => overtimeMultiplierValidationError,
     overtimeMultiplierWriteFields: () => overtimeMultiplierWriteFields,
+    overtimePersonIds: () => overtimePersonIds,
     overtimeRateControl: () => overtimeRateControl,
+    overtimeRateCreateControl: () => overtimeRateCreateControl,
     overtimeReportRows: () => overtimeReportRows,
     overtimeReportSnapshot: () => overtimeReportSnapshot,
+    overtimeRequestAnyDecided: () => overtimeRequestAnyDecided,
     overtimeRequestFullyDecided: () => overtimeRequestFullyDecided,
     overtimeRequestLineFields: () => overtimeRequestLineFields,
     overtimeRequestRecipients: () => overtimeRequestRecipients,
@@ -897,6 +921,7 @@ var ProjectPlannerCanonical = (() => {
     parsePayRateHistoryDocuments: () => parsePayRateHistoryDocuments,
     parsePayeClaimEvidence: () => parsePayeClaimEvidence,
     parsePayeClaimReportDocument: () => parsePayeClaimReportDocument,
+    parsePayeClaimReviewDocument: () => parsePayeClaimReviewDocument,
     parsePaymentRunDateRanges: () => parsePaymentRunDateRanges,
     parsePaymentRunHistory: () => parsePaymentRunHistory,
     parsePayrollPolicy: () => parsePayrollPolicy,
@@ -949,18 +974,26 @@ var ProjectPlannerCanonical = (() => {
     payeClaimEvidencePathBelongsTo: () => payeClaimEvidencePathBelongsTo,
     payeClaimEvidenceToDelete: () => payeClaimEvidenceToDelete,
     payeClaimEvidenceWriteFields: () => payeClaimEvidenceWriteFields,
+    payeClaimFingerprint: () => payeClaimFingerprint,
     payeClaimListRow: () => payeClaimListRow,
     payeClaimReportReady: () => payeClaimReportReady,
     payeClaimReportRows: () => payeClaimReportRows,
     payeClaimReportSnapshot: () => payeClaimReportSnapshot,
     payeClaimReportsOfKind: () => payeClaimReportsOfKind,
+    payeClaimReviewDocId: () => payeClaimReviewDocId,
+    payeClaimReviewOutcomeLabel: () => payeClaimReviewOutcomeLabel,
+    payeClaimReviewState: () => payeClaimReviewState,
+    payeClaimReviewWrites: () => payeClaimReviewWrites,
     payeClaimsInRange: () => payeClaimsInRange,
     payeClaimsTotal: () => payeClaimsTotal,
     payeCustomRange: () => payeCustomRange,
     payeOvertimeLines: () => payeOvertimeLines,
     payePastPayruns: () => payePastPayruns,
     payePayday: () => payePayday,
+    payePaydayBanner: () => payePaydayBanner,
     payePaydayHistory: () => payePaydayHistory,
+    payePaydayMissing: () => payePaydayMissing,
+    payePaydaySetupError: () => payePaydaySetupError,
     payePaydayValidationError: () => payePaydayValidationError,
     payePaydayWriteFields: () => payePaydayWriteFields,
     payePayrunLabel: () => payePayrunLabel,
@@ -1057,6 +1090,7 @@ var ProjectPlannerCanonical = (() => {
     resolveTimesheetPeriod: () => resolveTimesheetPeriod,
     resolveWeekendCoverageDay: () => resolveWeekendCoverageDay,
     resolvedWarningKeys: () => resolvedWarningKeys,
+    reviewApprovalMessage: () => reviewApprovalMessage,
     rosterAliasIdsFor: () => rosterAliasIdsFor,
     rosterDocumentRank: () => rosterDocumentRank,
     rosterListFor: () => rosterListFor,
@@ -1069,6 +1103,7 @@ var ProjectPlannerCanonical = (() => {
     rosterStatusLabel: () => rosterStatusLabel,
     roundPennies: () => roundPennies,
     rulebookStamp: () => rulebookStamp,
+    rulebookVersionLabel: () => rulebookVersionLabel,
     scheduleOptionsWriteFields: () => scheduleOptionsWriteFields,
     screenMustListen: () => screenMustListen,
     securitySwitchOn: () => securitySwitchOn,
@@ -1130,6 +1165,7 @@ var ProjectPlannerCanonical = (() => {
     timesheetEntryId: () => timesheetEntryId,
     timesheetEntryReviewWriteFields: () => timesheetEntryReviewWriteFields,
     timesheetEntryReviewsAfterWrite: () => timesheetEntryReviewsAfterWrite,
+    timesheetExportOwnSheetNotice: () => timesheetExportOwnSheetNotice,
     timesheetExportStoragePath: () => timesheetExportStoragePath,
     timesheetExportWriteFields: () => timesheetExportWriteFields,
     timesheetFeedCovers: () => timesheetFeedCovers,
@@ -1293,8 +1329,8 @@ var ProjectPlannerCanonical = (() => {
     const { y, m, d } = partsInZone(date, timeZone);
     return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
   }
-  function zoneOffsetMs(instantMs4, timeZone) {
-    const floored = Math.floor(instantMs4 / 6e4) * 6e4;
+  function zoneOffsetMs(instantMs5, timeZone) {
+    const floored = Math.floor(instantMs5 / 6e4) * 6e4;
     const p = partsInZone(new Date(floored), timeZone);
     return Date.UTC(p.y, p.m - 1, p.d, p.h, p.min) - floored;
   }
@@ -1506,8 +1542,8 @@ var ProjectPlannerCanonical = (() => {
     if (typeof value === "number") {
       return Number.isFinite(value) && value >= 0 && value <= 24 * 60 ? Math.round(value) : null;
     }
-    const text30 = String(value ?? "").trim();
-    const match = /^(\d{1,2}):(\d{2})$/.exec(text30);
+    const text31 = String(value ?? "").trim();
+    const match = /^(\d{1,2}):(\d{2})$/.exec(text31);
     if (!match) return null;
     const hours = Number(match[1]);
     const minutes = Number(match[2]);
@@ -2975,6 +3011,13 @@ var ProjectPlannerCanonical = (() => {
     }
     if (!job) return false;
     return isJobManager(viewer, job, managers);
+  }
+  function canBookOtherLocationsFor(viewer, personUserIds) {
+    const ids = (personUserIds || []).map((id2) => typeof id2 === "string" ? id2.trim() : "").filter(Boolean);
+    if (!viewer || ids.length === 0) return false;
+    return ids.every(
+      (userId) => canWriteBooking(viewer, { collection: "managerSiteBookings", userId, locationType: "office", locationId: null }, null, null)
+    );
   }
   function canDeleteBooking(viewer, booking, job, managers) {
     return canWriteBooking(viewer, booking, job, managers);
@@ -4566,15 +4609,15 @@ var ProjectPlannerCanonical = (() => {
   }
   var COVERAGE_CLOCK_RE = /^\d{1,2}:\d{2}$/;
   function clockMinutesOf(value) {
-    const text30 = coverageClock(value);
-    if (!text30) return null;
-    const [h, m] = text30.split(":").map(Number);
+    const text31 = coverageClock(value);
+    if (!text31) return null;
+    const [h, m] = text31.split(":").map(Number);
     return h * 60 + m;
   }
   function coverageClock(value) {
-    const text30 = typeof value === "string" ? value.trim() : "";
-    if (!COVERAGE_CLOCK_RE.test(text30)) return null;
-    const [h, m] = text30.split(":").map(Number);
+    const text31 = typeof value === "string" ? value.trim() : "";
+    if (!COVERAGE_CLOCK_RE.test(text31)) return null;
+    const [h, m] = text31.split(":").map(Number);
     return h >= 0 && h < 24 && m >= 0 && m < 60 ? `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}` : null;
   }
   function parseWeekendCoverage(value, includeWeekends) {
@@ -4906,8 +4949,8 @@ var ProjectPlannerCanonical = (() => {
     const total = plainHoursText(Math.max(0, clock * n - brk));
     return roundHundredths(brk) > 0 ? `${multiplied} \u2212 ${plainHoursText(brk)} break = ${total}` : `${multiplied} = ${total}`;
   }
-  function parseMultipliedHoursText(text30) {
-    const match = /(\d+(?:\.\d+)?)h × (\d+(?:\.\d+)?)(?: − (\d+(?:\.\d+)?)h break)? = \d+(?:\.\d+)?h/.exec(String(text30 ?? ""));
+  function parseMultipliedHoursText(text31) {
+    const match = /(\d+(?:\.\d+)?)h × (\d+(?:\.\d+)?)(?: − (\d+(?:\.\d+)?)h break)? = \d+(?:\.\d+)?h/.exec(String(text31 ?? ""));
     if (!match) return null;
     const clockHours = Number(match[1]);
     const multiplier = Number(match[2]);
@@ -6057,8 +6100,8 @@ var ProjectPlannerCanonical = (() => {
   }
   function formatHours(hours) {
     const rounded = Math.round(hours * 4) / 4;
-    const text30 = Number.isInteger(rounded) ? String(rounded) : String(rounded).replace(/0+$/, "");
-    return `${text30} hour${rounded === 1 ? "" : "s"}`;
+    const text31 = Number.isInteger(rounded) ? String(rounded) : String(rounded).replace(/0+$/, "");
+    return `${text31} hour${rounded === 1 ? "" : "s"}`;
   }
   function joinRanges(intervals) {
     const labels = intervals.map(rangeLabel);
@@ -7689,6 +7732,10 @@ var ProjectPlannerCanonical = (() => {
     if (!seen.has(idKey3(viewer.id))) out.push({ userId: viewer.id, own: true });
     return out;
   }
+  var TIMESHEET_EXPORT_OWN_SHEET_NOTICE = "Your own timesheet is not in this export \u2014 nobody exports their own sheet. Your line manager or another admin exports it.";
+  function timesheetExportOwnSheetNotice(input) {
+    return input.ownSheetSigned && input.ownSheetExported !== true ? TIMESHEET_EXPORT_OWN_SHEET_NOTICE : null;
+  }
 
   // lib/canonical/billingAccess.ts
   var PAYMENT_GRACE_MS = 7 * 24 * 60 * 60 * 1e3;
@@ -7794,6 +7841,27 @@ var ProjectPlannerCanonical = (() => {
       organizationId: typeof organizationId === "string" ? organizationId.trim() : "",
       email: normalizeEmail2(email)
     };
+  }
+  function invitationListConstraints(input) {
+    const organizationId = typeof input.organizationId === "string" ? input.organizationId.trim() : "";
+    const email = typeof input.email === "string" ? input.email.trim() : "";
+    if (!organizationId || !email) return [];
+    const base = [
+      ["organizationId", organizationId],
+      ["email", email]
+    ];
+    if (!input.actorManagesOperatives) return [base];
+    const senders = [];
+    for (const raw of input.senderIds || []) {
+      const value = typeof raw === "string" ? raw.trim() : "";
+      for (const candidate of value.includes("@") ? [value, value.toLowerCase()] : [value]) {
+        if (candidate && !senders.includes(candidate)) senders.push(candidate);
+      }
+    }
+    return senders.map((sender) => [...base, ["invitedBy", sender]]);
+  }
+  function invitationReadErrorIsSkippable(code) {
+    return typeof code === "string" && code.replace(/^firestore\//, "") === "permission-denied";
   }
   function invitePlaceholderUserWriteFields() {
     return {
@@ -8420,6 +8488,19 @@ var ProjectPlannerCanonical = (() => {
     const current = text3(input.currentVersion);
     if (!current) return false;
     return text3(input.acceptedVersion) !== current;
+  }
+  function legalPackAcceptanceWriteFields(input) {
+    const uid = text3(input.userId);
+    const version = text3(input.version);
+    if (!uid || !version) return null;
+    return {
+      policyAccepted: true,
+      policyAcceptedAt: input.acceptedAt,
+      legalPackVersion: version,
+      legalPackAcceptedAt: input.acceptedAt,
+      updatedBy: uid,
+      updatedFrom: input.platform
+    };
   }
 
   // lib/canonical/derivedIds.ts
@@ -9384,8 +9465,8 @@ var ProjectPlannerCanonical = (() => {
     return typeof value === "string" ? value.trim().toLowerCase() : "";
   }
   function dayKeyText(value) {
-    const text30 = typeof value === "string" ? value.trim() : "";
-    return DAY_KEY2.test(text30) ? text30 : null;
+    const text31 = typeof value === "string" ? value.trim() : "";
+    return DAY_KEY2.test(text31) ? text31 : null;
   }
   function compareText(a, b) {
     if (a === b) return 0;
@@ -9513,8 +9594,8 @@ var ProjectPlannerCanonical = (() => {
   function personDayItems(input) {
     const managerIdByKey = /* @__PURE__ */ new Map();
     for (const id2 of input?.managerIds || []) {
-      const text30 = idText2(id2);
-      if (text30) managerIdByKey.set(text30.toLowerCase(), text30);
+      const text31 = idText2(id2);
+      if (text31) managerIdByKey.set(text31.toLowerCase(), text31);
     }
     const people = input?.people || { accounts: [], operatives: [] };
     const managerIdByEmail = /* @__PURE__ */ new Map();
@@ -10457,9 +10538,13 @@ var ProjectPlannerCanonical = (() => {
   // lib/canonical/rulebookStamp.ts
   function rulebookStamp() {
     return {
-      version: true ? "1.31.1" : "",
-      sha256: true ? "062614d44f0b21b5c26c48d6df8d5e169f43ca013c9354842d18689392c934fb" : ""
+      version: true ? "1.32.0" : "",
+      sha256: true ? "a3232ea171b5e856893853e2be45c25335d81045afc500ddf755a31e61b7bca6" : ""
     };
+  }
+  function rulebookVersionLabel(version) {
+    const value = (typeof version === "string" ? version.trim() : "") || rulebookStamp().version;
+    return /^\d+\.\d+\.\d+$/.test(value) ? `Rules ${value}` : "";
   }
 
   // lib/canonical/holidayDocument.ts
@@ -14908,10 +14993,10 @@ var ProjectPlannerCanonical = (() => {
   var WEEKEND_TIME_SLOTS = ["CUSTOM"];
   function isoWeekdayOf(day, timeZone) {
     if (typeof day === "number") return day;
-    const text30 = String(day || "").trim().toLowerCase();
-    if (text30 === "saturday") return 6;
-    if (text30 === "sunday") return 7;
-    if (/^\d{4}-\d{2}-\d{2}$/.test(text30)) return isoWeekdayOfDayKey(text30, zoneOrLondon(timeZone));
+    const text31 = String(day || "").trim().toLowerCase();
+    if (text31 === "saturday") return 6;
+    if (text31 === "sunday") return 7;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(text31)) return isoWeekdayOfDayKey(text31, zoneOrLondon(timeZone));
     return 0;
   }
   function isWeekendDayKey(dayKey, timeZone) {
@@ -15224,7 +15309,7 @@ var ProjectPlannerCanonical = (() => {
   function payProfilePath(organizationId, subjectId) {
     return `organizations/${String(organizationId || "").trim()}/${PAY_PROFILES_COLLECTION}/${String(subjectId || "").trim()}`;
   }
-  function canViewPersonPay(viewer, subject, roster) {
+  function canViewPersonPay(viewer, subject, roster, options) {
     if (!viewer || !subject) return false;
     const viewerIds = new Set(personIdSet(viewer, roster).map(idKey));
     if (viewerIds.size === 0) return false;
@@ -15236,8 +15321,9 @@ var ProjectPlannerCanonical = (() => {
     if (level === "admin") return true;
     const operativesManager = level === "manager" && effectivePermissions(viewer).operatives === true;
     if (subject.catalogueOperative === true) return operativesManager;
-    if (lineManagerIds(subject, roster).some((id2) => viewerIds.has(idKey(id2)))) return true;
-    return operativesManager && permissionLevelOf(subject) === "operative";
+    if (operativesManager && permissionLevelOf(subject) === "operative") return true;
+    if (options?.context !== "timesheetReview") return false;
+    return lineManagerIds(subject, roster).some((id2) => viewerIds.has(idKey(id2)));
   }
   function catalogueOperativePaySubjects(operatives, roster) {
     const rosterIds = /* @__PURE__ */ new Set();
@@ -15318,7 +15404,7 @@ var ProjectPlannerCanonical = (() => {
     };
     add(viewer.id);
     for (const subject of subjects || []) {
-      if (subject && canViewPersonPay(viewer, subject, roster)) add(subject.id);
+      if (subject && canViewPersonPay(viewer, subject, roster, { context: "timesheetReview" })) add(subject.id);
     }
     return out;
   }
@@ -15328,7 +15414,7 @@ var ProjectPlannerCanonical = (() => {
     for (const subject of subjects || []) {
       if (!subject || subject.catalogueOperative !== true) continue;
       const id2 = typeof subject.id === "string" ? subject.id.trim() : "";
-      if (!id2 || seen.has(id2) || !canViewPersonPay(viewer, subject, roster)) continue;
+      if (!id2 || seen.has(id2) || !canViewPersonPay(viewer, subject, roster, { context: "timesheetReview" })) continue;
       seen.add(id2);
       out.push(id2);
     }
@@ -16987,6 +17073,19 @@ var ProjectPlannerCanonical = (() => {
     if (!DAY_KEY8.test(a) || !DAY_KEY8.test(b)) return null;
     return a <= b ? { start: a, end: b } : { start: b, end: a };
   }
+  var PAYE_PAYDAY_REQUIRED_MESSAGE = "Choose the PAYE payday \u2014 PAYE overtime, price work and expenses run on it.";
+  var PAYE_PAYDAY_MISSING_BANNER = "No PAYE payday is set. Set it in Settings \u2192 Payment runs and timesheets so PAYE overtime, price work and expenses can use payruns.";
+  function payePaydayMissing(source) {
+    return payePayday(source) == null;
+  }
+  function payePaydaySetupError(day) {
+    if (day == null || day === "") return PAYE_PAYDAY_REQUIRED_MESSAGE;
+    return payePaydayValidationError(day);
+  }
+  function payePaydayBanner(input) {
+    if (input.loaded === false || !payePaydayMissing(input.organization)) return null;
+    return input.viewerIsAdmin ? PAYE_PAYDAY_MISSING_BANNER : PAYE_PAYDAY_NOT_SET_MESSAGE;
+  }
 
   // lib/canonical/payeOvertime.ts
   var OVERTIME_MIN_MINUTES = 15;
@@ -17010,6 +17109,10 @@ var ProjectPlannerCanonical = (() => {
   var OVERTIME_CANCEL_NOT_ALLOWED_MESSAGE = "All of this booking is outside the working day. Change its hours with the cog, or ask a scheduler to remove it.";
   var OVERTIME_REPORT_TOTAL_LABEL = "Total overtime";
   var OVERTIME_NEEDS_ADMIN_MESSAGE = "This booking is filed under an operatives row, or on a job you do not manage: an admin or the job's manager must approve this request.";
+  var OVERTIME_APPROVE_LABEL = "Approve";
+  var OVERTIME_NEEDS_ADMIN_LABEL = "Needs an admin";
+  var OVERTIME_CHANGED_SINCE_REQUEST_LINE_MESSAGE = "Changed since the request \u2014 ask them to send it again.";
+  var OVERTIME_NOTHING_DECIDED_MESSAGE = "Tick, cross or change at least one line, then press Approve.";
   var OVERTIME_BOOKING_UNREADABLE_MESSAGE = "Can't read this booking \u2014 it is left out of this approval.";
   var OVERTIME_NOT_THEIR_BOOKING_MESSAGE = "This booking is not theirs \u2014 it is left out.";
   var OVERTIME_CANCEL_WARNING = {
@@ -17237,6 +17340,7 @@ var ProjectPlannerCanonical = (() => {
     let best = null;
     for (const request of requests) {
       if (request.status !== "pending") continue;
+      if ([...request.appliedBookingIds || [], ...request.droppedBookingIds || []].some((id2) => idKey(id2) === idKey(bookingId))) continue;
       const line = request.lines.find((row2) => idKey(row2.bookingId) === idKey(bookingId));
       if (!line) continue;
       if (!best || (request.createdAtMs ?? 0) >= (best.request.createdAtMs ?? 0)) best = { request, line };
@@ -17399,12 +17503,32 @@ var ProjectPlannerCanonical = (() => {
     const viewer = input.viewer;
     if (!viewer || !input.isPaye) return "none";
     const day = text24(input.booking?.dayKey);
-    if (input.todayKey && day && day > text24(input.todayKey)) return "none";
+    const limit = text24(input.editableUntilKey) || text24(input.todayKey);
+    if (limit && day && day > limit) return "none";
     const role = viewer.role;
     if (!role) return "none";
+    const rulesMayWrite = !role.isOperativeMode && (role.isAdmin || role.isSuperAdmin || role.isManager && canWriteBooking(viewer, input.booking, input.job ?? null, input.managers));
+    if (input.person !== void 0) {
+      const person = input.person;
+      if (role.isSuperAdmin || isSuperAdminAccount(person)) return rulesMayWrite ? "direct" : "request";
+      if (hasActiveLineManager(person, input.roster || [])) return "request";
+      return rulesMayWrite ? "direct" : "request";
+    }
     if (!role.isOperativeMode && (role.isAdmin || role.isSuperAdmin)) return "direct";
     if (role.isOperativeMode || !role.isManager) return "request";
-    return canWriteBooking(viewer, input.booking, input.job ?? null, input.managers) ? "direct" : "request";
+    return rulesMayWrite ? "direct" : "request";
+  }
+  function overtimeEditableUntil(organization, todayKey4) {
+    const today = text24(todayKey4);
+    const current = payePayrunPeriod(organization, today);
+    return current && current.end > today ? current.end : today;
+  }
+  function overtimePersonIds(input) {
+    const person = input.person;
+    if (!person || !idText(person.id)) return [];
+    const aliasIds = personIdSet(person, input.roster || []);
+    const operatives = (input.operatives || []).filter((row2) => row2 && idText(row2.id)).map((row2) => ({ id: idText(row2.id), email: typeof row2.email === "string" ? row2.email : "" }));
+    return bookingIdsForAccount({ id: idText(person.id), email: typeof person.email === "string" ? person.email : null, aliasIds }, operatives);
   }
   function canDecideOvertimeRequest(viewer, requester, roster) {
     if (!viewer || !requester || !idText(viewer.id)) return false;
@@ -17550,52 +17674,113 @@ var ProjectPlannerCanonical = (() => {
     if (change.kind === "trim") return "trimmed";
     return "edited";
   }
+  function overtimeLineOutcomeLabel(outcome) {
+    switch (outcome) {
+      case "needsAdmin":
+        return OVERTIME_NEEDS_ADMIN_LABEL;
+      case "stale":
+        return OVERTIME_CHANGED_SINCE_REQUEST_LINE_MESSAGE;
+      case "refused":
+        return OVERTIME_CANCEL_NOT_ALLOWED_MESSAGE;
+      case "unreadable":
+        return OVERTIME_BOOKING_UNREADABLE_MESSAGE;
+      case "foreign":
+        return OVERTIME_NOT_THEIR_BOOKING_MESSAGE;
+      case "deleted":
+        return "This booking was deleted \u2014 it is left out.";
+      case "undecided":
+        return "Not decided yet \u2014 it stays waiting.";
+      default:
+        return null;
+    }
+  }
+  function reviewApprovalMessage(input) {
+    const counts = input.counts || {};
+    const phrase = (n, one, many) => n && n > 0 ? `${n} ${n === 1 ? one : many}` : "";
+    const reasons = [
+      phrase(counts.rejected, "rejected", "rejected"),
+      phrase(counts.needsAdmin, "needs an admin", "need an admin"),
+      phrase(counts.stale, "changed since the request", "changed since the request"),
+      phrase(counts.refused, "could not be removed", "could not be removed"),
+      phrase(counts.deleted, "deleted booking left out", "deleted bookings left out"),
+      phrase(counts.unreadable, "booking you can't read left out", "bookings you can't read left out"),
+      phrase(counts.foreign, "booking not theirs left out", "bookings not theirs left out"),
+      phrase(counts.undecided, "not decided yet", "not decided yet")
+    ].filter(Boolean);
+    if (input.approved <= 0) return `Nothing was approved${reasons.length > 0 ? `: ${reasons.join("; ")}` : ""}.`;
+    return `Approved ${input.approved} of ${input.total}.${reasons.length > 0 ? ` ${reasons.join("; ")}.` : ""}`;
+  }
+  function overtimeRequestAnyDecided(request, decisions) {
+    const done = new Set((request.appliedBookingIds || []).map(idKey));
+    const keyed = new Map(Object.entries(decisions || {}).map(([key4, value]) => [idKey(key4), value]));
+    return request.lines.some((line) => !done.has(idKey(line.bookingId)) && Boolean(keyed.get(idKey(line.bookingId))));
+  }
   function overtimeApprovalWrites(input) {
     const request = input.request;
-    if (request.status !== "pending") return { ok: false, reason: "notPending", bookingIds: [], message: OVERTIME_REQUEST_NOT_PENDING_MESSAGE };
-    if (!overtimeRequestFullyDecided(request, input.decisions)) {
-      return { ok: false, reason: "undecided", bookingIds: [], message: OVERTIME_REQUEST_UNDECIDED_MESSAGE };
+    if (request.status !== "pending") {
+      return { ok: false, reason: "notPending", bookingIds: [], lineOutcomes: {}, message: OVERTIME_REQUEST_NOT_PENDING_MESSAGE };
     }
-    const decisions = new Map(Object.entries(input.decisions).map(([key4, value]) => [idKey(key4), value]));
+    const decisions = new Map(Object.entries(input.decisions || {}).map(([key4, value]) => [idKey(key4), value]));
     const live = new Map(Object.entries(input.bookings || {}).map(([key4, value]) => [idKey(key4), value]));
-    const stale = [];
-    const dropped = [];
-    const refused = [];
     const unreadable = new Set((input.unreadableBookingIds || []).map(idKey));
+    const previouslyApplied = new Set((request.appliedBookingIds || []).map(idKey));
+    const previouslyDropped = new Set((request.droppedBookingIds || []).map(idKey));
     const requesterIds = input.requesterIds && input.requesterIds.length > 0 ? input.requesterIds : [request.userId];
-    const unreadableIds = [];
-    const foreign = [];
-    const needsAdmin = [];
+    const outcomes = {};
     const bookingWrites = [];
     const reviewWrites = [];
     const applied = [];
+    const deleted = [];
+    const unreadableIds = [];
+    const foreign = [];
+    const waiting = [];
     const storedDecisions = {};
+    for (const [bookingId, decision] of Object.entries(request.decisions || {})) {
+      storedDecisions[bookingId] = decision.action === "edit" ? { action: "edit", start: clockOf(decision.start), end: clockOf(decision.end), multiplier: decision.multiplier ?? null } : { action: decision.action };
+    }
+    let pendingLines = 0;
     for (const line of request.lines) {
-      if (unreadable.has(idKey(line.bookingId))) {
-        unreadableIds.push(line.bookingId);
+      const key4 = idKey(line.bookingId);
+      if (previouslyApplied.has(key4) || previouslyDropped.has(key4)) {
+        outcomes[line.bookingId] = "alreadyApplied";
         continue;
       }
-      const booking = live.get(idKey(line.bookingId));
+      pendingLines += 1;
+      if (unreadable.has(key4)) {
+        unreadableIds.push(line.bookingId);
+        outcomes[line.bookingId] = "unreadable";
+        continue;
+      }
+      const booking = live.get(key4);
       if (!booking) {
-        dropped.push(line.bookingId);
+        deleted.push(line.bookingId);
+        outcomes[line.bookingId] = "deleted";
         continue;
       }
       if (!overtimeBookingIsTheirs(booking, requesterIds)) {
         foreign.push(line.bookingId);
+        outcomes[line.bookingId] = "foreign";
+        continue;
+      }
+      const decision = decisions.get(key4);
+      if (!decision) {
+        waiting.push(line.bookingId);
+        outcomes[line.bookingId] = "undecided";
         continue;
       }
       if (overtimeBookingFingerprint(booking) !== line.fingerprint) {
-        stale.push(line.bookingId);
+        waiting.push(line.bookingId);
+        outcomes[line.bookingId] = "stale";
         continue;
       }
-      const decision = decisions.get(idKey(line.bookingId));
       const { change, refused: why } = decisionToChange(line, decision, booking, input.organization, input.timeZone);
       if (why) {
-        refused.push(line.bookingId);
+        waiting.push(line.bookingId);
+        outcomes[line.bookingId] = "refused";
         continue;
       }
-      storedDecisions[line.bookingId] = decision.action === "edit" ? { action: "edit", start: clockOf(decision.start), end: clockOf(decision.end), multiplier: decision.multiplier ?? null } : { action: decision.action };
       const next = change ? overtimeBookingAfter(booking, change) : booking;
+      let bookingWrite = null;
       if (change) {
         const fields = overtimeBookingWriteFields(booking, change);
         if (Object.keys(fields.set).length > 0 || fields.remove.length > 0) {
@@ -17605,12 +17790,15 @@ var ProjectPlannerCanonical = (() => {
             deciderIsAdmin: input.deciderIsAdmin,
             writableBookingIds: input.writableBookingIds
           })) {
-            needsAdmin.push(line.bookingId);
+            waiting.push(line.bookingId);
+            outcomes[line.bookingId] = "needsAdmin";
             continue;
           }
-          bookingWrites.push({ collection: line.collection, bookingId: line.bookingId, ...fields });
+          bookingWrite = { collection: line.collection, bookingId: line.bookingId, ...fields };
         }
       }
+      if (bookingWrite) bookingWrites.push(bookingWrite);
+      storedDecisions[line.bookingId] = decision.action === "edit" ? { action: "edit", start: clockOf(decision.start), end: clockOf(decision.end), multiplier: decision.multiplier ?? null } : { action: decision.action };
       reviewWrites.push({
         docId: overtimeReviewDocId(request.userId, line.bookingId),
         fields: {
@@ -17624,25 +17812,43 @@ var ProjectPlannerCanonical = (() => {
         }
       });
       applied.push(line.bookingId);
+      outcomes[line.bookingId] = "applied";
     }
-    if (stale.length > 0) return { ok: false, reason: "stale", bookingIds: stale, message: OVERTIME_REQUEST_STALE_MESSAGE };
-    if (refused.length > 0) return { ok: false, reason: "refused", bookingIds: refused, message: OVERTIME_CANCEL_NOT_ALLOWED_MESSAGE };
-    if (needsAdmin.length > 0) return { ok: false, reason: "needsAdmin", bookingIds: needsAdmin, message: OVERTIME_NEEDS_ADMIN_MESSAGE };
-    const allDropped = [...dropped, ...unreadableIds, ...foreign];
+    const count = (kind) => Object.values(outcomes).filter((value) => value === kind).length;
+    const counts = {
+      needsAdmin: count("needsAdmin"),
+      undecided: count("undecided"),
+      stale: count("stale"),
+      refused: count("refused"),
+      deleted: count("deleted"),
+      unreadable: count("unreadable"),
+      foreign: count("foreign")
+    };
+    const message = reviewApprovalMessage({ approved: applied.length, total: pendingLines, counts });
+    if (applied.length === 0) {
+      return { ok: false, reason: "nothingApproved", bookingIds: [...waiting, ...deleted, ...unreadableIds, ...foreign], lineOutcomes: outcomes, message };
+    }
+    const newlyDropped = [...deleted, ...unreadableIds, ...foreign];
+    const complete = waiting.length === 0;
     return {
       ok: true,
       bookingWrites,
       reviewWrites,
-      droppedBookingIds: allDropped,
-      deletedBookingIds: dropped,
+      appliedBookingIds: applied,
+      droppedBookingIds: newlyDropped,
+      deletedBookingIds: deleted,
       unreadableBookingIds: unreadableIds,
       foreignBookingIds: foreign,
+      waitingBookingIds: waiting,
+      lineOutcomes: outcomes,
+      complete,
+      message,
       requestFields: {
-        status: "approved",
+        status: complete ? "approved" : "pending",
         decisions: storedDecisions,
         decidedBy: text24(input.deciderId),
-        appliedBookingIds: applied,
-        droppedBookingIds: allDropped
+        appliedBookingIds: [...request.appliedBookingIds || [], ...applied],
+        droppedBookingIds: [...request.droppedBookingIds || [], ...newlyDropped]
       }
     };
   }
@@ -17783,6 +17989,11 @@ var ProjectPlannerCanonical = (() => {
     const zone3 = zoneOrLondon(timeZone);
     return employmentTypeOnDay(person, dateFromDayKeyInZone(dayKey, zone3), zone3) === "paye";
   }
+  var OVERTIME_RATE_CHANGED_MARK = "changed from organisation rate";
+  function overtimeMultiplierText(input) {
+    const brk = round22(Number(input.breakHours) || 0);
+    return `${hoursText2(input.clockHours)} at \xD7${round22(input.multiplier)}${brk > 0 ? ` \u2212 ${hoursText2(brk)} break` : ""} = ${hoursText2(input.overtimeHours)}`;
+  }
   function weeklyReportPayeOvertime(input) {
     const zone3 = zoneOrLondon(input.timeZone);
     const rows3 = /* @__PURE__ */ new Map();
@@ -17791,13 +18002,55 @@ var ProjectPlannerCanonical = (() => {
       const lines = payeOvertimeLines({ personIds: ids, bookings: input.bookings, organization: input.organization, timeZone: zone3, range: input.range });
       for (const line of lines) {
         if (line.state === "cancelled" || !line.figures || !weeklyReportPayeDay(person, line.dayKey, zone3)) continue;
-        const key4 = `${idKey(person.id)}|${idKey(line.jobId ?? line.jobNumber)}`;
-        const row2 = rows3.get(key4) ?? { personId: idText(person.id), name: text24(person.name), jobId: line.jobId, jobNumber: line.jobNumber, jobName: line.jobName, overtimeHours: 0 };
-        row2.overtimeHours = round22(row2.overtimeHours + line.figures.overtimeHours);
+        const figures = line.figures;
+        const changed = figures.customMultiplier != null && Math.abs(figures.customMultiplier - figures.organizationMultiplier) > 1e-9;
+        const key4 = `${idKey(person.id)}|${idKey(line.jobId ?? line.jobNumber)}|${figures.multiplier}|${changed ? "c" : "o"}|${figures.organizationMultiplier}`;
+        const row2 = rows3.get(key4) ?? {
+          personId: idText(person.id),
+          name: text24(person.name),
+          jobId: line.jobId,
+          jobNumber: line.jobNumber,
+          jobName: line.jobName,
+          clockHours: 0,
+          breakHours: 0,
+          multiplier: figures.multiplier,
+          organizationMultiplier: figures.organizationMultiplier,
+          changedFromOrganization: changed,
+          overtimeHours: 0
+        };
+        row2.clockHours = round22(row2.clockHours + figures.clockHours);
+        row2.breakHours = round22(row2.breakHours + figures.breakHours);
+        row2.overtimeHours = round22(row2.overtimeHours + figures.overtimeHours);
         rows3.set(key4, row2);
       }
     }
-    return [...rows3.values()].sort((a, b) => a.name.localeCompare(b.name) || a.jobNumber.localeCompare(b.jobNumber)).map((row2) => ({ ...row2, label: [row2.name, row2.jobNumber, hoursText2(row2.overtimeHours)].filter(Boolean).join(" \xB7 ") }));
+    return [...rows3.values()].sort((a, b) => a.name.localeCompare(b.name) || a.jobNumber.localeCompare(b.jobNumber) || a.multiplier - b.multiplier).map((row2) => {
+      const multiplierText2 = overtimeMultiplierText(row2);
+      const mark = row2.changedFromOrganization ? ` \xB7 ${OVERTIME_RATE_CHANGED_MARK} (\xD7${row2.organizationMultiplier})` : "";
+      return { ...row2, multiplierText: multiplierText2, label: `${[row2.name, row2.jobNumber, multiplierText2].filter(Boolean).join(" \xB7 ")}${mark}` };
+    });
+  }
+  function overtimeRateCreateControl(input) {
+    const zone3 = zoneOrLondon(input.timeZone);
+    const day = text24(input.dayKey);
+    const organizationMultiplier = /^\d{4}-\d{2}-\d{2}$/.test(day) ? organizationOvertimeMultiplier(input.organization, day, zone3) : 1.5;
+    const steps = [...OVERTIME_MULTIPLIER_STEPS];
+    if (!steps.some((step) => Math.abs(step - organizationMultiplier) < 1e-9)) steps.push(organizationMultiplier);
+    steps.sort((a, b) => a - b);
+    return {
+      organizationMultiplier,
+      prefill: organizationMultiplier,
+      options: steps.map((value) => {
+        const organization = Math.abs(value - organizationMultiplier) < 1e-9;
+        return { value, label: organization ? `\xD7${value} (organisation rate)` : `\xD7${value}`, organization };
+      })
+    };
+  }
+  function overtimeMultiplierCreateFields(input) {
+    const chosen = input.chosen == null ? null : Number(input.chosen);
+    if (chosen == null || !overtimeMultiplierValid(chosen)) return {};
+    if (Math.abs(chosen - Number(input.organizationMultiplier)) < 1e-9) return {};
+    return { otMultiplierOverride: chosen };
   }
   function overtimeBookingSlot(raw) {
     return normalizeBookingTimeSlot(raw) ?? text24(raw);
@@ -18348,6 +18601,130 @@ var ProjectPlannerCanonical = (() => {
     return (reports || []).filter((row2) => row2.kind === kind).sort((a, b) => (b.generatedAtMs ?? 0) - (a.generatedAtMs ?? 0) || b.rangeEnd.localeCompare(a.rangeEnd));
   }
 
+  // lib/canonical/payeClaimReviews.ts
+  var PAYE_CLAIM_REVIEWS_COLLECTION = "payeClaimReviews";
+  var PAYE_CLAIM_REVIEW_DECISIONS = ["approved", "rejected"];
+  var PAYE_CLAIM_REVIEW_STATES = ["needsReview", "approved", "rejected"];
+  var PAYE_CLAIM_REVIEW_STATE_LABELS = {
+    needsReview: "Needs review",
+    approved: "Approved",
+    rejected: "Rejected"
+  };
+  function text27(value) {
+    return value == null ? "" : String(value).trim();
+  }
+  function instantMs4(raw) {
+    if (raw == null || raw === "") return null;
+    if (typeof raw === "number") return Number.isFinite(raw) ? raw : null;
+    if (raw instanceof Date) return Number.isNaN(raw.getTime()) ? null : raw.getTime();
+    if (typeof raw === "object") {
+      const row2 = raw;
+      if (typeof row2.toMillis === "function") {
+        const ms = Number(row2.toMillis());
+        return Number.isFinite(ms) ? ms : null;
+      }
+      const seconds = Number(row2.seconds ?? row2._seconds);
+      return Number.isFinite(seconds) ? seconds * 1e3 : null;
+    }
+    if (typeof raw === "string") {
+      const ms = Date.parse(raw);
+      return Number.isNaN(ms) ? null : ms;
+    }
+    return null;
+  }
+  function payeClaimReviewDocId(kind, itemId) {
+    return `${kind === "expense" ? "expense" : "priceWork"}_${text27(itemId)}`;
+  }
+  function payeClaimFingerprint(item) {
+    if (!item) return "";
+    const dates = item.kind === "priceWork" ? `${text27(item.startDate)}~${text27(item.endDate)}` : text27(item.date);
+    const amount = (Math.round((Number(item.amount) || 0) * 100) / 100).toFixed(2);
+    return [item.kind, text27(item.title), text27(item.jobNumber), dates, amount, text27(item.currency).toUpperCase(), String((item.evidence || []).length)].join("|");
+  }
+  function parsePayeClaimReviewDocument(docId, data) {
+    const row2 = data && typeof data === "object" ? data : {};
+    return {
+      id: text27(docId),
+      userId: text27(row2.userId),
+      itemId: text27(row2.itemId),
+      kind: text27(row2.kind) === "expense" ? "expense" : "priceWork",
+      decision: text27(row2.decision) === "approved" ? "approved" : "rejected",
+      fingerprint: text27(row2.fingerprint),
+      reviewedBy: text27(row2.reviewedBy) || null,
+      reviewedAtMs: instantMs4(row2.reviewedAt)
+    };
+  }
+  function payeClaimReviewState(item, reviews) {
+    const review = (reviews || []).find((row2) => row2.kind === item.kind && idKey(row2.itemId) === idKey(item.id) && row2.fingerprint === payeClaimFingerprint(item)) ?? null;
+    const state = review ? review.decision : "needsReview";
+    return { state, label: PAYE_CLAIM_REVIEW_STATE_LABELS[state], review };
+  }
+  function canReviewPayeClaims(viewer, subject, roster) {
+    if (!viewer || !subject || !idText(viewer.id) || !idText(subject.id)) return false;
+    if (viewer.isActive === false) return false;
+    const members = roster || [];
+    const subjectIds = new Set(personIdSet(subject, members).map(idKey));
+    const viewerIds = personIdSet(viewer, members).map(idKey);
+    if (viewerIds.some((id2) => subjectIds.has(id2))) return false;
+    if (isAdminOutsideOperativeMode(viewer)) return true;
+    const managers = new Set(lineManagerIds(subject, members).map(idKey));
+    return viewerIds.some((id2) => managers.has(id2));
+  }
+  function payeClaimReviewWrites(input) {
+    const ids = new Set((input.personIds || []).map(idKey).filter(Boolean));
+    const decisions = new Map(Object.entries(input.decisions || {}).map(([key4, value]) => [idKey(key4), value]));
+    const writes = [];
+    const outcomes = {};
+    let approved = 0;
+    let rejected = 0;
+    let needsAdmin = 0;
+    let undecided = 0;
+    let foreign = 0;
+    for (const item of input.items || []) {
+      if (!ids.has(idKey(item.userId))) {
+        outcomes[item.id] = "foreign";
+        foreign += 1;
+        continue;
+      }
+      const decision = decisions.get(idKey(item.id));
+      if (decision !== "approved" && decision !== "rejected") {
+        outcomes[item.id] = "undecided";
+        undecided += 1;
+        continue;
+      }
+      if (!input.reviewerIsAdmin && idKey(item.userId) !== idKey(input.subjectUserId)) {
+        outcomes[item.id] = "needsAdmin";
+        needsAdmin += 1;
+        continue;
+      }
+      const current = payeClaimReviewState(item, input.reviews);
+      if (current.review && current.review.decision === decision) {
+        outcomes[item.id] = "unchanged";
+      } else {
+        writes.push({
+          docId: payeClaimReviewDocId(item.kind, item.id),
+          fields: {
+            userId: text27(item.userId),
+            itemId: text27(item.id),
+            kind: item.kind,
+            decision,
+            fingerprint: payeClaimFingerprint(item),
+            reviewedBy: text27(input.reviewerId)
+          }
+        });
+        outcomes[item.id] = "applied";
+      }
+      if (decision === "approved") approved += 1;
+      else rejected += 1;
+    }
+    const total = (input.items || []).length - foreign;
+    const message = reviewApprovalMessage({ approved, total, counts: { rejected, needsAdmin, undecided } });
+    return { writes, outcomes, approved, rejected, message };
+  }
+  function payeClaimReviewOutcomeLabel(outcome) {
+    return outcome === "needsAdmin" ? OVERTIME_NEEDS_ADMIN_LABEL : outcome === "foreign" ? "Not theirs \u2014 left out." : null;
+  }
+
   // lib/canonical/personalSiteAudits.ts
   var PERSONAL_SITE_AUDITS_COLLECTION = "personalSiteAudits";
   var PERSONAL_SITE_AUDIT_SECTION_LABEL = "Personal";
@@ -18360,7 +18737,7 @@ var ProjectPlannerCanonical = (() => {
   var PERSONAL_SITE_AUDIT_ITEMS_MAX = 100;
   var PERSONAL_SITE_AUDIT_PRIVACY_NOTICE = "Personal site audits are private to the person who created them. A copy attached to an expense or price work item is visible to that person\u2019s line managers and admins, and is kept for recovery if the item is later removed.";
   var DAY_KEY10 = /^\d{4}-\d{2}-\d{2}$/;
-  function text27(value) {
+  function text28(value) {
     return value == null ? "" : String(value).trim();
   }
   function record12(value) {
@@ -18373,25 +18750,25 @@ var ProjectPlannerCanonical = (() => {
     return date.getUTCFullYear() === y && date.getUTCMonth() === m - 1 && date.getUTCDate() === d;
   }
   function personalSiteAuditImagePath(input) {
-    const parts2 = [text27(input.organizationId), text27(input.ownerUserId), text27(input.auditId)];
+    const parts2 = [text28(input.organizationId), text28(input.ownerUserId), text28(input.auditId)];
     if (parts2.some((part) => !part || part.includes("/"))) return null;
     const name = storedFileObjectName({ uid: parts2[1], unixMs: input.unixMs, extension: input.extension });
     return name ? `organizations/${parts2[0]}/${PERSONAL_SITE_AUDITS_COLLECTION}/${parts2[1]}/${parts2[2]}/${name}` : null;
   }
   function canViewPersonalSiteAudit(viewerUserId, audit) {
-    const viewer = text27(viewerUserId);
-    return Boolean(viewer) && text27(audit?.ownerUserId) === viewer;
+    const viewer = text28(viewerUserId);
+    return Boolean(viewer) && text28(audit?.ownerUserId) === viewer;
   }
   function personalSiteAuditValidationError(draft, context) {
-    if (!text27(draft.jobName)) return PERSONAL_SITE_AUDIT_JOB_NAME_MESSAGE;
-    if (!isDayKey3(text27(draft.date))) return PERSONAL_SITE_AUDIT_DATE_MESSAGE;
+    if (!text28(draft.jobName)) return PERSONAL_SITE_AUDIT_JOB_NAME_MESSAGE;
+    if (!isDayKey3(text28(draft.date))) return PERSONAL_SITE_AUDIT_DATE_MESSAGE;
     const items = draft.items || [];
     if (items.length === 0 || items.length > PERSONAL_SITE_AUDIT_ITEMS_MAX) return PERSONAL_SITE_AUDIT_ITEMS_MESSAGE;
     for (const item of items) {
-      if (!text27(item.title)) return PERSONAL_SITE_AUDIT_ITEM_TITLE_MESSAGE;
+      if (!text28(item.title)) return PERSONAL_SITE_AUDIT_ITEM_TITLE_MESSAGE;
       if (context?.organizationId && context.ownerUserId) {
-        const parsed = storedFileKind(text27(item.imagePath));
-        if (!parsed || parsed.kind !== "personal_site_audit" || parsed.organizationId !== text27(context.organizationId) || parsed.ownerUserId !== text27(context.ownerUserId)) {
+        const parsed = storedFileKind(text28(item.imagePath));
+        if (!parsed || parsed.kind !== "personal_site_audit" || parsed.organizationId !== text28(context.organizationId) || parsed.ownerUserId !== text28(context.ownerUserId)) {
           return PERSONAL_SITE_AUDIT_ITEMS_MESSAGE;
         }
       }
@@ -18399,17 +18776,17 @@ var ProjectPlannerCanonical = (() => {
     return null;
   }
   function personalSiteAuditWriteFields(input) {
-    const owner = text27(input.ownerUserId);
+    const owner = text28(input.ownerUserId);
     if (!owner) return null;
     if (personalSiteAuditValidationError(input.draft, { organizationId: input.organizationId, ownerUserId: owner })) return null;
     const items = (input.draft.items || []).map((item, index) => {
       const out = {
-        id: text27(item.id) || `item-${index + 1}`,
-        title: text27(item.title).slice(0, 200),
-        imagePath: text27(item.imagePath)
+        id: text28(item.id) || `item-${index + 1}`,
+        title: text28(item.title).slice(0, 200),
+        imagePath: text28(item.imagePath)
       };
       for (const key4 of ["location", "comments", "assignee", "annotations"]) {
-        const value = text27(item[key4]).slice(0, 2e3);
+        const value = text28(item[key4]).slice(0, 2e3);
         if (value) out[key4] = value;
       }
       const taken = documentInstantMs(item.takenAtMs);
@@ -18418,58 +18795,58 @@ var ProjectPlannerCanonical = (() => {
     });
     return {
       ownerUserId: owner,
-      jobNumber: text27(input.draft.jobNumber).slice(0, 60),
-      jobName: text27(input.draft.jobName).slice(0, 200),
-      type: text27(input.draft.type).slice(0, 60) || "General",
-      customTitle: text27(input.draft.customTitle).slice(0, 200),
-      date: text27(input.draft.date),
-      authorName: text27(input.draft.authorName).slice(0, 200),
+      jobNumber: text28(input.draft.jobNumber).slice(0, 60),
+      jobName: text28(input.draft.jobName).slice(0, 200),
+      type: text28(input.draft.type).slice(0, 60) || "General",
+      customTitle: text28(input.draft.customTitle).slice(0, 200),
+      date: text28(input.draft.date),
+      authorName: text28(input.draft.authorName).slice(0, 200),
       items
     };
   }
   function parsePersonalSiteAuditDocument(docId, data, options) {
     const row2 = record12(data);
     const zone3 = zoneOrLondon(options?.timeZone);
-    const rawDate = text27(row2.date);
+    const rawDate = text28(row2.date);
     const dateMs = isDayKey3(rawDate) ? null : documentInstantMs(row2.date);
     const items = (Array.isArray(row2.items) ? row2.items : []).map((raw, index) => {
       const r = record12(raw);
       return {
-        id: text27(r.id) || `item-${index + 1}`,
-        title: text27(r.title),
-        location: text27(r.location),
-        comments: text27(r.comments),
-        assignee: text27(r.assignee),
-        annotations: text27(r.annotations),
-        imagePath: text27(r.imagePath),
+        id: text28(r.id) || `item-${index + 1}`,
+        title: text28(r.title),
+        location: text28(r.location),
+        comments: text28(r.comments),
+        assignee: text28(r.assignee),
+        annotations: text28(r.annotations),
+        imagePath: text28(r.imagePath),
         takenAtMs: documentInstantMs(r.takenAtMs ?? r.createdAt)
       };
     });
     return {
-      id: text27(docId),
-      ownerUserId: text27(row2.ownerUserId),
-      jobNumber: text27(row2.jobNumber),
-      jobName: text27(row2.jobName),
-      type: text27(row2.type) || "General",
-      customTitle: text27(row2.customTitle),
+      id: text28(docId),
+      ownerUserId: text28(row2.ownerUserId),
+      jobNumber: text28(row2.jobNumber),
+      jobName: text28(row2.jobName),
+      type: text28(row2.type) || "General",
+      customTitle: text28(row2.customTitle),
       date: isDayKey3(rawDate) ? rawDate : dateMs != null ? dayKeyInZone(new Date(dateMs), zone3) : "",
-      authorName: text27(row2.authorName),
+      authorName: text28(row2.authorName),
       items,
       createdAtMs: documentInstantMs(row2.createdAt)
     };
   }
   function personalSiteAuditTitle(audit) {
-    const job = [text27(audit.jobNumber), text27(audit.jobName)].filter(Boolean).join(" ");
-    return [text27(audit.customTitle) || `Site audit (${text27(audit.type) || "General"})`, job, audit.date ? formatPaymentRunDay(audit.date) : ""].filter(Boolean).join(" \xB7 ");
+    const job = [text28(audit.jobNumber), text28(audit.jobName)].filter(Boolean).join(" ");
+    return [text28(audit.customTitle) || `Site audit (${text28(audit.type) || "General"})`, job, audit.date ? formatPaymentRunDay(audit.date) : ""].filter(Boolean).join(" \xB7 ");
   }
   function personalSiteAuditPdfRows(audit, options) {
     const zone3 = zoneOrLondon(options?.timeZone);
     return {
-      title: text27(audit.customTitle) || `Personal site audit \xB7 ${text27(audit.type) || "General"}`,
+      title: text28(audit.customTitle) || `Personal site audit \xB7 ${text28(audit.type) || "General"}`,
       lines: [
-        `Job number: ${text27(audit.jobNumber) || "\u2014"}`,
-        `Job name: ${text27(audit.jobName) || "\u2014"}`,
-        `Author: ${text27(audit.authorName) || "\u2014"}`,
+        `Job number: ${text28(audit.jobNumber) || "\u2014"}`,
+        `Job name: ${text28(audit.jobName) || "\u2014"}`,
+        `Author: ${text28(audit.authorName) || "\u2014"}`,
         `Date: ${audit.date ? formatPaymentRunDay(audit.date) : "\u2014"}`,
         `Items: ${audit.items.length}`
       ],
@@ -18488,11 +18865,11 @@ var ProjectPlannerCanonical = (() => {
   }
   function personalSiteAuditEvidence(audit, path) {
     return {
-      path: text27(path),
+      path: text28(path),
       name: personalSiteAuditTitle(audit),
       kind: "personalSiteAudit",
       contentType: "application/pdf",
-      auditId: text27(audit.id) || null
+      auditId: text28(audit.id) || null
     };
   }
   function personalSiteAuditsFor(audits, viewerUserId) {
@@ -18512,23 +18889,23 @@ var ProjectPlannerCanonical = (() => {
     no_account: "Former manager \u2014 no user account"
   };
   var JOB_MANAGER_NO_CANDIDATES_MESSAGE = "No managers or admins yet. Invite a manager from Manage users, then return here.";
-  function text28(value) {
+  function text29(value) {
     return typeof value === "string" ? value.trim() : "";
   }
   function bareKey(value) {
-    const raw = text28(value);
+    const raw = text29(value);
     return idKey(raw.toLowerCase().startsWith("user:") ? raw.slice(5) : raw);
   }
   function emailKey5(value) {
-    return text28(value).toLowerCase();
+    return text29(value).toLowerCase();
   }
   function groupsOf(roster) {
-    return rosterPersonGroups((roster || []).filter((row2) => row2 && text28(row2.id)));
+    return rosterPersonGroups((roster || []).filter((row2) => row2 && text29(row2.id)));
   }
   function exclusion(row2) {
     if (isAnonymisedDeletedProfile(row2)) return "deleted";
     if (!rosterMemberActive(row2)) return "inactive";
-    if (row2.passwordSet === false || text28(row2.status).toLowerCase() === "pending") return "pending";
+    if (row2.passwordSet === false || text29(row2.status).toLowerCase() === "pending") return "pending";
     return levelOf(row2) === "operative" ? "not_manager" : null;
   }
   function candidateOf(group) {
@@ -18537,7 +18914,7 @@ var ProjectPlannerCanonical = (() => {
     const ids = [];
     const seen = /* @__PURE__ */ new Set();
     const add = (id2) => {
-      const value = text28(id2);
+      const value = text29(id2);
       if (!value || seen.has(idKey(value))) return;
       seen.add(idKey(value));
       ids.push(value);
@@ -18548,9 +18925,9 @@ var ProjectPlannerCanonical = (() => {
       for (const alias of [...member.formerUserIds || [], ...member.sameEmailUserIds || []]) add(alias);
     }
     return {
-      id: text28(row2.id),
+      id: text29(row2.id),
       userIds: ids,
-      email: text28(row2.email),
+      email: text29(row2.email),
       name: rosterPersonName2(row2),
       level: levelOf(row2) === "admin" ? "admin" : "manager"
     };
@@ -18568,7 +18945,7 @@ var ProjectPlannerCanonical = (() => {
   }
   function jobManagerAssignments(job, roster, catalogue) {
     const groups = groupsOf(roster);
-    const rows3 = (catalogue || []).filter((row2) => row2 && text28(row2.id));
+    const rows3 = (catalogue || []).filter((row2) => row2 && text29(row2.id));
     const out = [];
     const seenPeople = /* @__PURE__ */ new Set();
     for (const storedId of jobManagerIds(job)) {
@@ -18601,7 +18978,7 @@ var ProjectPlannerCanonical = (() => {
           storedId,
           state: "former",
           candidate: null,
-          name: `${text28(catalogueRow.firstName)} ${text28(catalogueRow.lastName)}`.trim() || text28(catalogueRow.email),
+          name: `${text29(catalogueRow.firstName)} ${text29(catalogueRow.lastName)}`.trim() || text29(catalogueRow.email),
           reason: "no_account",
           note: JOB_MANAGER_FORMER_NOTES.no_account
         });
@@ -18613,22 +18990,22 @@ var ProjectPlannerCanonical = (() => {
   }
 
   // lib/canonical/peopleAccess.ts
-  function text29(value) {
+  function text30(value) {
     return typeof value === "string" ? value.trim() : "";
   }
   function sameOrg2(value, organizationId) {
-    const raw = text29(value);
+    const raw = text30(value);
     const id2 = raw.includes("/") ? raw.split("/").filter(Boolean).pop() ?? "" : raw;
     return id2 !== "" && id2.toLowerCase() === organizationId.trim().toLowerCase();
   }
   function storedLineManagerIds(row2) {
     if (row2.hasNoLineManager === true) return [];
-    const listed = (row2.assignedManagerUserIds || []).map(text29).filter(Boolean);
-    return listed.length > 0 ? listed : [text29(row2.assignedManagerUserId)].filter(Boolean);
+    const listed = (row2.assignedManagerUserIds || []).map(text30).filter(Boolean);
+    return listed.length > 0 ? listed : [text30(row2.assignedManagerUserId)].filter(Boolean);
   }
   function lineManagerReports(person, roster) {
-    if (!person || !text29(person.id)) return [];
-    const rows3 = (roster || []).filter((row2) => row2 && text29(row2.id));
+    if (!person || !text30(person.id)) return [];
+    const rows3 = (roster || []).filter((row2) => row2 && text30(row2.id));
     const keys = new Set(personIdSet(person, rows3).map(idKey));
     const out = [];
     for (const group of rosterPersonGroups(rows3)) {
@@ -18636,7 +19013,7 @@ var ProjectPlannerCanonical = (() => {
       const primary = group.primary;
       if (!rosterMemberActive(primary) || isAnonymisedDeletedProfile(primary)) continue;
       const reports = group.rows.some((row2) => storedLineManagerIds(row2).some((id2) => keys.has(idKey(id2))));
-      if (reports) out.push({ id: text29(primary.id), name: rosterPersonName2(primary) || text29(primary.id) });
+      if (reports) out.push({ id: text30(primary.id), name: rosterPersonName2(primary) || text30(primary.id) });
     }
     return out.sort((a, b) => a.name.localeCompare(b.name, "en", { sensitivity: "base" }) || a.id.localeCompare(b.id));
   }
@@ -18655,11 +19032,11 @@ var ProjectPlannerCanonical = (() => {
   }
   var JOB_MANAGER_REQUIRED_MESSAGE = "Please assign at least one manager";
   function jobManagerRequiredError(managerIds) {
-    return (managerIds || []).some((id2) => text29(id2) !== "") ? null : JOB_MANAGER_REQUIRED_MESSAGE;
+    return (managerIds || []).some((id2) => text30(id2) !== "") ? null : JOB_MANAGER_REQUIRED_MESSAGE;
   }
   var JOB_MANAGER_REMOVED_NOTICE_TYPE = "job_manager_removed";
   function jobManagerRemovedNoticeText(name, jobCount) {
-    const who = text29(name) || "A manager";
+    const who = text30(name) || "A manager";
     const jobs = jobCount === 1 ? "1 job" : `${jobCount} jobs`;
     return {
       title: "Manager removed from jobs",
@@ -18667,10 +19044,10 @@ var ProjectPlannerCanonical = (() => {
     };
   }
   function jobManagerRemovalWrites(input) {
-    const org = text29(input?.organizationId);
+    const org = text30(input?.organizationId);
     const person = input?.person;
-    if (!org || !person || !text29(person.id) || !changeRemovesJobManager(person, input.change)) return [];
-    const rows3 = (input.roster || []).filter((row2) => row2 && text29(row2.id));
+    if (!org || !person || !text30(person.id) || !changeRemovesJobManager(person, input.change)) return [];
+    const rows3 = (input.roster || []).filter((row2) => row2 && text30(row2.id));
     const keys = /* @__PURE__ */ new Set();
     for (const id2 of personIdSet(person, rows3)) {
       keys.add(idKey(id2));
@@ -18680,29 +19057,29 @@ var ProjectPlannerCanonical = (() => {
     if (idKey(person.email)) emails.add(idKey(person.email));
     for (const row2 of rows3) if (keys.has(idKey(row2.id)) && idKey(row2.email)) emails.add(idKey(row2.email));
     for (const row2 of input.managers || []) {
-      if (!row2 || !text29(row2.id) || !emails.has(idKey(row2.email))) continue;
+      if (!row2 || !text30(row2.id) || !emails.has(idKey(row2.email))) continue;
       keys.add(idKey(row2.id));
       keys.add(idKey(stableManagerId(row2.id)));
     }
     keys.delete("");
     const out = [];
     for (const job of input.jobs || []) {
-      const jobId = text29(job?.id);
+      const jobId = text30(job?.id);
       if (!jobId || jobId.includes("/") || job.collection !== "projects" && job.collection !== "smallWorks") continue;
       if (!jobManagerIds(job).some((id2) => keys.has(idKey(id2)))) continue;
       const set = {};
       const remove = [];
-      const keep = (list) => (list || []).map(text29).filter((id2) => id2 && !keys.has(idKey(id2)));
+      const keep = (list) => (list || []).map(text30).filter((id2) => id2 && !keys.has(idKey(id2)));
       let remainingManagerIds = keep(job.managerIds);
       for (const field of ["managerIds", "managerUserIds", "assignedManagerUserIds"]) {
-        const stored = (job[field] || []).map(text29).filter(Boolean);
+        const stored = (job[field] || []).map(text30).filter(Boolean);
         if (stored.length === 0) continue;
         const kept = keep(stored);
         if (kept.length === stored.length) continue;
         if (kept.length > 0) set[field] = kept;
         else remove.push(field);
       }
-      const primary = text29(job.managerId);
+      const primary = text30(job.managerId);
       if (primary && keys.has(idKey(primary))) {
         if (remainingManagerIds.length === 0) remainingManagerIds = keep(job.managerUserIds);
         if (remainingManagerIds.length > 0) set.managerId = remainingManagerIds[0];
@@ -18714,11 +19091,11 @@ var ProjectPlannerCanonical = (() => {
     return out;
   }
   function superAdminTransferWrites(input) {
-    const org = text29(input?.organizationId);
-    const from = text29(input?.fromUserId);
-    const to = text29(input?.toUserId);
+    const org = text30(input?.organizationId);
+    const from = text30(input?.fromUserId);
+    const to = text30(input?.toUserId);
     if (!org || !to || idKey(to) === idKey(from) || org.includes("/") || to.includes("/")) return null;
-    const rows3 = (input.roster || []).filter((row2) => row2 && text29(row2.id));
+    const rows3 = (input.roster || []).filter((row2) => row2 && text30(row2.id));
     const toRow = rows3.find((row2) => idKey(row2.id) === idKey(to));
     const toKeys = new Set(personIdSet(toRow ?? { id: to }, rows3).map(idKey));
     const writes = [
@@ -18738,7 +19115,7 @@ var ProjectPlannerCanonical = (() => {
     writes.push({ path: `users/${to}`, kind: "userProfile", fields: { ...promote } });
     for (const row2 of rows3) {
       if (idKey(row2.id) !== idKey(to) && toKeys.has(idKey(row2.id)) && inOrg(row2) && idKey(row2.email) === idKey(toRow?.email)) {
-        writes.push({ path: `users/${text29(row2.id)}`, kind: "userProfile", fields: { ...promote, isSuperAdmin: false } });
+        writes.push({ path: `users/${text30(row2.id)}`, kind: "userProfile", fields: { ...promote, isSuperAdmin: false } });
       }
     }
     writes.push({
@@ -18748,12 +19125,12 @@ var ProjectPlannerCanonical = (() => {
     });
     const demote = /* @__PURE__ */ new Map();
     if (from) demote.set(idKey(from), rows3.find((row2) => idKey(row2.id) === idKey(from)) ?? null);
-    const creator = text29(input.previousCreatorUserId);
+    const creator = text30(input.previousCreatorUserId);
     if (creator) demote.set(idKey(creator), rows3.find((row2) => idKey(row2.id) === idKey(creator)) ?? null);
     for (const row2 of rows3) if (storedPermissionFlag(row2, "isSuperAdmin") === true && inOrg(row2)) demote.set(idKey(row2.id), row2);
     for (const key4 of toKeys) demote.delete(key4);
     for (const [key4, row2] of demote) {
-      const id2 = text29(row2?.id) || (idKey(from) === key4 ? from : creator);
+      const id2 = text30(row2?.id) || (idKey(from) === key4 ? from : creator);
       if (!id2 || id2.includes("/")) continue;
       const needsSelfApproval = !hasActiveLineManager(row2 ?? { id: id2 }, rows3);
       const fields = { isSuperAdmin: false, adminAccess: true, role: "admin", "permissions.adminAccess": true };
@@ -18773,8 +19150,8 @@ var ProjectPlannerCanonical = (() => {
     return writes;
   }
   function userActiveWrites(input) {
-    const org = text29(input?.organizationId);
-    const uid = text29(input?.person?.id);
+    const org = text30(input?.organizationId);
+    const uid = text30(input?.person?.id);
     if (!org || !uid || uid.includes("/")) return [];
     const active = input.isActive === true;
     const out = [
@@ -18784,7 +19161,7 @@ var ProjectPlannerCanonical = (() => {
     const seen = /* @__PURE__ */ new Set([idKey(uid)]);
     if (email) {
       for (const row2 of input.roster || []) {
-        const id2 = text29(row2?.id);
+        const id2 = text30(row2?.id);
         if (!id2 || id2.includes("/") || seen.has(idKey(id2)) || idKey(row2.email) !== email || !sameOrg2(row2.organizationId, org)) continue;
         seen.add(idKey(id2));
         out.push({ path: `users/${id2}`, kind: "userProfile", fields: { isActive: active } });

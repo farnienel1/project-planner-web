@@ -284,3 +284,24 @@ test('1.30.1 new price work needs a job number of 1–60 characters; an older it
   await assertSucceeds(updateDoc(orgDoc(SAM, 'priceWorkItems', 'PWOLD'), { jobNumber: 'J-7' }))
   await assertFails(updateDoc(orgDoc(SAM, 'priceWorkItems', 'PW1'), { jobNumber: 'x'.repeat(61) }))
 })
+
+function claimReview(userId: string, itemId: string, extra: Record<string, unknown> = {}) {
+  return { userId, itemId, kind: 'expense', decision: 'approved', fingerprint: 'expense|Fuel', reviewedBy: LM, ...extra }
+}
+
+test('1.32.0 claim reviews: the line manager or an admin approves or rejects; never the person, a peer or another company', async () => {
+  await assertSucceeds(setDoc(orgDoc(LM, 'payeClaimReviews', 'expense_EX1'), claimReview(SAM, 'EX1')))
+  await assertSucceeds(updateDoc(orgDoc(LM, 'payeClaimReviews', 'expense_EX1'), { decision: 'rejected' }))
+  await assertSucceeds(setDoc(orgDoc(ADMIN, 'payeClaimReviews', 'priceWork_PW1'), claimReview(SAM, 'PW1', { kind: 'priceWork', reviewedBy: ADMIN })))
+  await assertSucceeds(getDoc(orgDoc(SAM, 'payeClaimReviews', 'expense_EX1')))
+  await assertFails(getDoc(orgDoc(PEER, 'payeClaimReviews', 'expense_EX1')))
+  await assertFails(setDoc(orgDoc(SAM, 'payeClaimReviews', 'expense_EX2'), claimReview(SAM, 'EX2', { reviewedBy: SAM })), 'never their own')
+  await assertFails(setDoc(orgDoc(MGR2, 'payeClaimReviews', 'expense_EX3'), claimReview(SAM, 'EX3', { reviewedBy: MGR2 })), 'another manager')
+  await assertFails(setDoc(orgDoc(LM, 'payeClaimReviews', 'expense_EX4'), claimReview(SAM, 'EX4', { reviewedBy: ADMIN })), 'reviewedBy is the writer')
+  await assertFails(setDoc(orgDoc(LM, 'payeClaimReviews', 'wrong_id'), claimReview(SAM, 'EX5')), 'id is kind_itemId')
+  await assertFails(setDoc(orgDoc(LM, 'payeClaimReviews', 'expense_EX6'), claimReview(SAM, 'EX6', { decision: 'maybe' })))
+  await assertFails(setDoc(orgDoc(LM, 'payeClaimReviews', 'expense_EX7'), claimReview(SAM, 'EX7', { amount: 1 })), 'no extra fields')
+  await assertFails(setDoc(orgDoc(VISITOR, 'payeClaimReviews', 'expense_EX8'), claimReview(SAM, 'EX8', { reviewedBy: VISITOR })))
+  await assertFails(setDoc(orgDoc(LM, 'payeClaimReviews', 'expense_EXN'), claimReview(NOLM, 'EXN')), 'No line manager stored: admins only')
+  await assertFails(deleteDoc(orgDoc(LM, 'payeClaimReviews', 'expense_EX1')))
+})

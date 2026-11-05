@@ -192,3 +192,15 @@ export function exportedTimesheetHistorySubjects(input: UserTimesheetSubjectsInp
   if (!seen.has(idKey(viewer.id))) out.push({ userId: viewer.id, own: true })
   return out
 }
+
+/**
+ * 1.32.0 (owner decision 4 Nov): the notice on User Timesheets → Signed off when an export skips the exporter's own
+ * sheet. Nobody reviews or exports their own timesheet (1.30.2), so the export never includes it; when the viewer has
+ * a signed, not yet exported sheet of their own for the period being exported, the screen says so. Null otherwise.
+ */
+export const TIMESHEET_EXPORT_OWN_SHEET_NOTICE =
+  'Your own timesheet is not in this export — nobody exports their own sheet. Your line manager or another admin exports it.'
+
+export function timesheetExportOwnSheetNotice(input: { ownSheetSigned: boolean; ownSheetExported?: boolean | null }): string | null {
+  return input.ownSheetSigned && input.ownSheetExported !== true ? TIMESHEET_EXPORT_OWN_SHEET_NOTICE : null
+}

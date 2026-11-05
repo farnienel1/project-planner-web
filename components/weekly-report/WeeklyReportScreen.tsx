@@ -721,9 +721,9 @@ export function WeeklyReportScreen({
 
           <ReportTable
             title="⏱️ PAYE overtime"
-            headers={['Person', 'Job No.', 'Job', 'Overtime hours']}
+            headers={['Person', 'Job No.', 'Job', 'Overtime (hours × rate)']}
             rows={[
-              ...(report.payeOvertimeRows ?? []).map((row) => [row.person, row.jobNumber, row.jobName, `${row.overtimeHours}h`]),
+              ...(report.payeOvertimeRows ?? []).map((row) => [row.person, row.jobNumber, row.jobName, row.hoursCell ?? `${row.overtimeHours}h`]),
               ...((report.payeOvertimeRows ?? []).length > 0 ? [['', '', 'Total', `${report.payeOvertimeTotal}h`]] : []),
             ]}
             empty="No PAYE overtime in this period"

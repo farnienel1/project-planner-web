@@ -478,6 +478,8 @@ export type { RosterPerson, RosterSegment, RosterSegmentProfile } from './userRo
 export {
   inviteEmailHasLiveClaim,
   inviteEmailOrgLookupConstraints,
+  invitationListConstraints,
+  invitationReadErrorIsSkippable,
   invitePlaceholderUserWriteFields,
   inviteWritesOperativeProfile,
   resolveInviteEmailClaim,
@@ -565,7 +567,7 @@ export type {
   CanonicalBookingInput,
 } from './bookings'
 
-export { legalPackNeedsAcceptance } from './legalPack'
+export { legalPackAcceptanceWriteFields, legalPackNeedsAcceptance } from './legalPack'
 
 export {
   SENSITIVE_EXPORT_OPTION_LABEL,
@@ -657,7 +659,7 @@ export type { CurrencyOption, FormatMoneyOptions } from './money'
 export { WRITE_PLATFORMS, writeMetadataFields } from './writeMetadata'
 export type { WriteMetadataFields, WritePlatform } from './writeMetadata'
 export { organizationTimeZone } from './organizationTimeZone'
-export { rulebookStamp } from './rulebookStamp'
+export { rulebookStamp, rulebookVersionLabel } from './rulebookStamp'
 export {
   exclusiveRates,
   historyPayRowOnDay,
@@ -1214,6 +1216,7 @@ export {
   canDeleteBooking,
   canSeeJob,
   canWriteBooking,
+  canBookOtherLocationsFor,
   isJobManager,
   jobManagerIds,
   jobManagerUserIds,
@@ -1447,7 +1450,7 @@ export type {
   BookingHoursLabel,
 } from './bookingSlots'
 export type { SubscriptionAccess } from './billingAccess'
-export type { PayEditorStartingSource, PayEditorStartingValues, PayProfileDocument, PayProfileField, PayProfileReadPlan, PaySubject, PayViewer, RateHistoryQueryPlan, CatalogueOperativeRow } from './payProfile'
+export type { PayEditorStartingSource, PayEditorStartingValues, PayProfileDocument, PayProfileField, PayProfileReadPlan, PaySubject, PayViewer, PayViewContext, RateHistoryQueryPlan, CatalogueOperativeRow } from './payProfile'
 export { parseAnnualLeaveDefaults } from './organizationSettings'
 export {
   SELF_EMAIL_INVALID_MESSAGE,
@@ -1614,6 +1617,7 @@ export * from './payeOvertime'
 // Rulebook 1.30.0 (§26): PAYE price work and expenses (items, evidence, approver candidates, ranges, reports, who sees
 // them) and personal site audits (owner only; the frozen copy attached as evidence).
 export * from './payeClaims'
+export * from './payeClaimReviews'
 export * from './priceWorkJobNumber'
 export * from './personalSiteAudits'
 
@@ -1641,6 +1645,6 @@ export { rosterMemberIsOperativeLevel } from './leaveRequests'
 export { userPermissionFlag } from './permissionLevels'
 export type { UserDeleteOptions } from './userDelete'
 // Rulebook 1.31.0 §8: whose exported timesheets the Exported list shows; the subject of a timesheet document id.
-export { exportedTimesheetHistorySubjects } from './userTimesheetAccess'
+export { exportedTimesheetHistorySubjects, timesheetExportOwnSheetNotice, TIMESHEET_EXPORT_OWN_SHEET_NOTICE } from './userTimesheetAccess'
 export type { ExportedTimesheetHistorySubjectRow } from './userTimesheetAccess'
 export { timesheetDocumentSubjectId } from './timesheetPeriod'

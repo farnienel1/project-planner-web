@@ -284,11 +284,11 @@ export async function buildWeeklyReportPdf(data: WeeklyReportData): Promise<Uint
   section(draw, 'PAYE overtime')
   table(
     draw,
-    ['Person', 'Job Number', 'Job', 'Overtime hours'],
+    ['Person', 'Job Number', 'Job', 'Overtime (hours × rate)'],
     data.payeOvertimeRows.length === 0
       ? [['No PAYE overtime in this period', '', '', '']]
       : [
-          ...data.payeOvertimeRows.map((row) => [row.person, row.jobNumber, row.jobName, `${row.overtimeHours}h`]),
+          ...data.payeOvertimeRows.map((row) => [row.person, row.jobNumber, row.jobName, row.hoursCell ?? `${row.overtimeHours}h`]),
           ['', '', 'Total', `${data.payeOvertimeTotal}h`],
         ]
   )

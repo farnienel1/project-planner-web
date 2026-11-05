@@ -387,6 +387,26 @@ export function canWriteBooking(
   return isJobManager(viewer, job, managers)
 }
 
+/**
+ * 1.32.0 (owner decision 4 Nov, "booking screens follow `canWriteBooking`"), the candidate side of `canWriteBooking`
+ * for the places that are not jobs (Office, Working from home, Site survey, custom items): whether the viewer may book
+ * every one of `personUserIds` there. Admins and super admins: anyone. A manager: only themself (any of their ids) —
+ * never a report or anyone else. Operatives: never. Empty list: false. Every booking screen (Book labour, the Daily
+ * Overview booking sheet, My Schedule, scheduling) offers the non-job places only when this is true, so a save is
+ * never refused after the fact. Jobs stay `bookableJobs` / `canWriteBooking` (managers: the jobs they manage).
+ * `canScheduleOperatives` is a viewer rule (may this person schedule at all); this one is about the people booked.
+ */
+export function canBookOtherLocationsFor(
+  viewer: JobAccessViewer | null | undefined,
+  personUserIds: ReadonlyArray<string> | null | undefined
+): boolean {
+  const ids = (personUserIds || []).map((id) => (typeof id === 'string' ? id.trim() : '')).filter(Boolean)
+  if (!viewer || ids.length === 0) return false
+  return ids.every((userId) =>
+    canWriteBooking(viewer, { collection: 'managerSiteBookings', userId, locationType: 'office', locationId: null }, null, null)
+  )
+}
+
 /** Deleting a booking: the same people as `canWriteBooking` (1.10.0: managers delete on jobs they manage). */
 export function canDeleteBooking(
   viewer: JobAccessViewer | null | undefined,

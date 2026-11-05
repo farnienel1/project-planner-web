@@ -1700,7 +1700,7 @@ service cloud.firestore {
               request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'withdrawnAt', 'updatedAt', 'updatedBy', 'updatedFrom'])) ||
             (resource.data.userId != request.auth.uid &&
               (isOrgAdminOrOwner(organizationId) || callerLineManagesUser(resource.data.userId)) &&
-              request.resource.data.status == 'approved' &&
+              request.resource.data.status in ['approved', 'pending'] &&
               request.resource.data.get('decidedBy', '') == request.auth.uid &&
               request.resource.data.diff(resource.data).affectedKeys().hasOnly([
                 'status', 'decisions', 'decidedBy', 'decidedAt', 'appliedBookingIds', 'droppedBookingIds', 'updatedAt', 'updatedBy', 'updatedFrom'
@@ -1818,6 +1818,20 @@ service cloud.firestore {
           request.resource.data.get('createdBy', '') == resource.data.get('createdBy', '') &&
           expenseItemValid(request.resource.data);
         allow delete: if payeClaimOwnerWriter(resource.data.get('userId', ''));
+      }
+
+      match /payeClaimReviews/{reviewId} {
+        allow read: if overtimeViewer(resource.data.get('userId', ''));
+        allow create, update: if canAccessOrganization(organizationId) &&
+          request.resource.data.keys().hasOnly(['userId', 'itemId', 'kind', 'decision', 'fingerprint', 'reviewedBy', 'reviewedAt', 'updatedAt', 'updatedBy', 'updatedFrom']) &&
+          request.resource.data.kind in ['priceWork', 'expense'] &&
+          reviewId == request.resource.data.kind + '_' + request.resource.data.itemId &&
+          request.resource.data.decision in ['approved', 'rejected'] &&
+          request.resource.data.fingerprint is string &&
+          request.resource.data.reviewedBy == request.auth.uid &&
+          request.resource.data.userId != request.auth.uid &&
+          writeMetadataValidWhenPresent() &&
+          (isOrgAdminOrOwner(organizationId) || callerLineManagesUser(request.resource.data.userId));
       }
 
       match /payeClaimReports/{reportId} {
@@ -2539,7 +2553,7 @@ service cloud.firestore {
           !(collection in ['projects', 'smallWorks', 'bookings', 'managerSiteBookings', 'subcontractorBookings']) &&
           !(collection in ['payProfiles', 'operativeDayRateHistory', 'operativeProfiles', 'settings']) &&
           !(collection in ['overtimeRequests', 'overtimeReviews', 'overtimeReports']) &&
-          !(collection in ['priceWorkItems', 'expenseItems', 'payeClaimReports', 'personalSiteAudits']);
+          !(collection in ['priceWorkItems', 'expenseItems', 'payeClaimReports', 'payeClaimReviews', 'personalSiteAudits']);
       }
     }
 

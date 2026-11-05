@@ -116,7 +116,7 @@ export function buildWeeklyReportHtml(data: WeeklyReportData): string {
     data.payeOvertimeRows.length === 0
       ? []
       : [
-          ...data.payeOvertimeRows.map((row) => [escapeHtml(row.person), escapeHtml(row.jobNumber), escapeHtml(row.jobName), `${row.overtimeHours}h`]),
+          ...data.payeOvertimeRows.map((row) => [escapeHtml(row.person), escapeHtml(row.jobNumber), escapeHtml(row.jobName), escapeHtml(row.hoursCell ?? `${row.overtimeHours}h`)]),
           ['', '', '<strong>Total</strong>', `<strong>${data.payeOvertimeTotal}h</strong>`],
         ]
 
@@ -244,7 +244,7 @@ export function buildWeeklyReportHtml(data: WeeklyReportData): string {
   ${renderTable(['Person', 'Role', 'Location', 'Time', 'Days'], managerRows, 'No additional manager schedule in this period')}
 
   <h2>⏱️ PAYE overtime</h2>
-  ${renderTable(['Person', 'Job Number', 'Job', 'Overtime hours'], payeRows, 'No PAYE overtime in this period')}
+  ${renderTable(['Person', 'Job Number', 'Job', 'Overtime (hours × rate)'], payeRows, 'No PAYE overtime in this period')}
 
   <h2>🧱 Price Work</h2>
   ${renderTable(
@@ -412,7 +412,7 @@ export function buildWeeklyReportSpreadsheetXml(data: WeeklyReportData): string 
     data.payeOvertimeRows.length === 0
       ? [['No PAYE overtime in this period', '', '', '']]
       : [
-          ...data.payeOvertimeRows.map((row) => [row.person, row.jobNumber, row.jobName, `${row.overtimeHours}h`]),
+          ...data.payeOvertimeRows.map((row) => [row.person, row.jobNumber, row.jobName, row.hoursCell ?? `${row.overtimeHours}h`]),
           ['', '', 'Total', `${data.payeOvertimeTotal}h`],
         ]
 
@@ -473,7 +473,7 @@ export function buildWeeklyReportSpreadsheetXml(data: WeeklyReportData): string 
    ${spreadsheetTable(['Person', 'Role', 'Location', 'Time', 'Days'], managerRows)}
    ${spreadsheetRow([''])}
    ${spreadsheetRow(['PAYE OVERTIME'])}
-   ${spreadsheetTable(['Person', 'Job Number', 'Job', 'Overtime hours'], payeRows)}
+   ${spreadsheetTable(['Person', 'Job Number', 'Job', 'Overtime (hours × rate)'], payeRows)}
    ${spreadsheetRow([''])}
    ${spreadsheetRow(['PRICE WORK'])}
    ${spreadsheetTable(
