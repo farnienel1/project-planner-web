@@ -22,7 +22,7 @@ Contract sha256: 7f70ec28920ac6114068b4e44eaf893706d5b6af1b21d77b69f946074d74e12
 Call: CanonicalBusinessEngine — no second calculator in Swift.
 Exports added: none
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, firestore.rules
+Web files that changed the rules: docs/RULEBOOK.md
 Done when:
 - [ ] Packed hash in iOS equals 2b0f44ce7878b020fea0ab1677765aa3c2edf3cdc74a8de3e3f71e28a6a1c6e7
 - [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 58ba98eb43232bb232397f81b7ae46071a2ea0b90e70e71f5badef1ff616068d)
@@ -53,9 +53,6 @@ Done when:
 - **Includes 1.31.2** (rules type-check fixes for console/CLI publish; no behaviour change): no function receives a literal `null` (`rosterRowPrivilegeTyped`, `timesheetSame`, `timesheetSameInstant`, `timesheetOwnerLeaves`); see the 1.31.2 entry below.
 - **iOS files to change** (hand-off): `Views/Overtime/OvertimeViews.swift`, `Core/FirebaseBackend+Overtime.swift`, `Core/Rulebook+PayeOvertime.swift` (approval result, `overtimePersonIds`, `editableUntilKey`, `person` / `roster`, one Approve); `Views/Overtime/PayeClaimsViews.swift`, `Core/Rulebook+PayeClaims.swift` (claims review); `Core/Rulebook+PayPrivacy.swift`, `Views/ManageUsersView.swift`, `Views/WeeklyReportView.swift` (`canViewPersonPay` context, `reportPayForViewer`, multiplier column); `Views/BookLabourFlowView.swift`, `Views/DailyOverviewView.swift`, `Views/ProjectDetailView.swift` (scheduling), `Views/BookingHoursEditSheet.swift`, `MyScheduleView.swift` (`canBookOtherLocationsFor`, create-time rate, `overtimeMultiplierMoveFields`, managers' site booking rate); `OrganisationInvoicingSettingsView.swift`, `SettingsView.swift` (PAYE payday in the main Save and banner, "Rules x.y.z"); `Core/CustomerLegalPack.swift` (`legalPackAcceptanceWriteFields`); `ManageUsersView.swift` / `UserStore.swift` invitation lookups (`invitationListConstraints`).
 
-## New rulebook sections
-
-- 1.31.2 — 2026-11-05
 
 ## Workflow for the iOS agent
 
