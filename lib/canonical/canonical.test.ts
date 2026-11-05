@@ -12251,10 +12251,10 @@ test('1.29.0 review fix: a line manager never writes a booking filed under an op
   ])
   assert.equal(r129.overtimeApprovalWrites({ ...base, decisions: { BR: { action: 'approve' } }, deciderIsAdmin: true }).ok, true)
   assert.equal(r129.overtimeApprovalWrites({ ...base, decisions: { BR: { action: 'approve' } }, writableBookingIds: ['br'] }).ok, true)
-  // A tick on a line that keeps the booking as it is writes only the review: a line manager may.
+  // 1.32.0 review fix (r274 S1): a tick on a keep line under an operatives row needs an admin too (decision A).
   const keepLine = r129.overtimeRequestLineFields({ booking: rowBooking, organization: R129_ORG, timeZone: R129_TZ, proposal: { action: 'keep' } })!
   const keep = r129.parseOvertimeRequestDocument('R7', { userId: 'sam', rangeStart: '2026-11-01', rangeEnd: '2026-11-30', status: 'pending', lines: [keepLine] })
-  assert.equal(r129.overtimeApprovalWrites({ ...base, request: keep, decisions: { BR: { action: 'approve' } } }).ok, true)
+  assert.equal(r129.overtimeApprovalWrites({ ...base, request: keep, decisions: { BR: { action: 'approve' } } }).ok, false)
   // The direct rule the rules apply: the booking's person id is the requester's users id, exactly.
   assert.equal(r129.overtimeDeciderMayWriteBooking({ booking: { id: 'B1', personId: 'sam' }, requesterUserId: 'sam' }), true)
   assert.equal(r129.overtimeDeciderMayWriteBooking({ booking: { id: 'BR', personId: 'row-sam' }, requesterUserId: 'sam' }), false)
@@ -13224,4 +13224,18 @@ test('1.32.0 small rules: rulebook label, export notice, legal pack write, invit
   assert.equal(r132.invitationReadErrorIsSkippable('permission-denied'), true)
   assert.equal(r132.invitationReadErrorIsSkippable('firestore/permission-denied'), true)
   assert.equal(r132.invitationReadErrorIsSkippable('unavailable'), false)
+})
+
+test('1.32.0 review fix (r274 S1): decision A holds for a keep line or a same-times cog — a line manager never approves an operatives-row line', () => {
+  const row = r129Booking('BR', '2026-11-05', '06:30', '14:00', { personId: 'row-sam' })
+  const line = r132.overtimeRequestLineFields({ booking: row, organization: R129_ORG, timeZone: R129_TZ, proposal: { action: 'keep' } })!
+  const request = r132.parseOvertimeRequestDocument('RK', r132.overtimeRequestWriteFields({ userId: 'sam', rangeStart: '2026-11-01', rangeEnd: '2026-11-30', lines: [line] })!)
+  const base = { request, bookings: { BR: row }, organization: R129_ORG, timeZone: R129_TZ, deciderId: 'lm', requesterIds: ['sam', 'row-sam'] }
+  const tick = r132.overtimeApprovalWrites({ ...base, decisions: { BR: { action: 'approve' } } })
+  assert.deepEqual(tick.ok === false && [tick.reason, tick.lineOutcomes.BR], ['nothingApproved', 'needsAdmin'])
+  const sameCog = r132.overtimeApprovalWrites({ ...base, decisions: { BR: { action: 'edit', start: '06:30', end: '14:00', multiplier: null } } })
+  assert.deepEqual(sameCog.ok === false && [sameCog.reason, sameCog.lineOutcomes.BR], ['nothingApproved', 'needsAdmin'])
+  // An admin, or the job's manager (`canWriteBooking`), still may.
+  assert.equal(r132.overtimeApprovalWrites({ ...base, decisions: { BR: { action: 'approve' } }, deciderIsAdmin: true }).ok, true)
+  assert.equal(r132.overtimeApprovalWrites({ ...base, decisions: { BR: { action: 'approve' } }, writableBookingIds: ['BR'] }).ok, true)
 })

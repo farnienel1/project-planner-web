@@ -8,9 +8,9 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ║ FOLLOW-ON — paste into the iOS agent                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
-Rulebook version: 1.31.1 → 1.32.0
-Packed hash: fea42ee1853670f93ba3b107bb24449b8495421c10ce2ac5333eeb9a2a482e6b
-Rulebook sha256: a3232ea171b5e856893853e2be45c25335d81045afc500ddf755a31e61b7bca6
+Rulebook version: 1.32.0 → 1.32.0
+Packed hash: a9cd7bf8486b2f2321a4bc0a94a6f113cd62e2679df57d4b4a83f618ccbdc848
+Rulebook sha256: 11eadb8bf7b5963c7e96323462bde90b7ee2ae243e9a94c1329e80c18e04133a
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -20,12 +20,12 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
   web lib/canonical/cross-platform-contract.json    → iOS ProjectPlannerTests/CrossPlatformContract.json
 Contract sha256: 7f70ec28920ac6114068b4e44eaf893706d5b6af1b21d77b69f946074d74e126
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: OVERTIME_APPROVE_LABEL, OVERTIME_CHANGED_SINCE_REQUEST_LINE_MESSAGE, OVERTIME_NEEDS_ADMIN_LABEL, OVERTIME_NOTHING_DECIDED_MESSAGE, OVERTIME_RATE_CHANGED_MARK, PAYE_CLAIM_REVIEWS_COLLECTION, PAYE_CLAIM_REVIEW_DECISIONS, PAYE_CLAIM_REVIEW_STATES, PAYE_CLAIM_REVIEW_STATE_LABELS, PAYE_PAYDAY_MISSING_BANNER, PAYE_PAYDAY_REQUIRED_MESSAGE, TIMESHEET_EXPORT_OWN_SHEET_NOTICE, canBookOtherLocationsFor, canReviewPayeClaims, invitationListConstraints, invitationReadErrorIsSkippable, legalPackAcceptanceWriteFields, overtimeEditableUntil, overtimeLineOutcomeLabel, overtimeMultiplierCreateFields, overtimeMultiplierText, overtimePersonIds, overtimeRateCreateControl, overtimeRequestAnyDecided, parsePayeClaimReviewDocument, payeClaimFingerprint, payeClaimReviewDocId, payeClaimReviewOutcomeLabel, payeClaimReviewState, payeClaimReviewWrites, payePaydayBanner, payePaydayMissing, payePaydaySetupError, reviewApprovalMessage, rulebookVersionLabel, timesheetExportOwnSheetNotice
+Exports added: none
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, firestore.rules, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/inviteEmailClaim.ts, lib/canonical/legalPack.ts, lib/canonical/parity-fixture.json, lib/canonical/payProfile.ts, lib/canonical/payeOvertime.ts, lib/canonical/payePayrun.ts, lib/canonical/rulebookStamp.ts, lib/canonical/staffAccess.ts, lib/canonical/userTimesheetAccess.ts, lib/canonical/payeClaimReviews.ts
+Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/canonical.test.ts, lib/canonical/payeOvertime.ts
 Done when:
-- [ ] Packed hash in iOS equals fea42ee1853670f93ba3b107bb24449b8495421c10ce2ac5333eeb9a2a482e6b
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 a3232ea171b5e856893853e2be45c25335d81045afc500ddf755a31e61b7bca6)
+- [ ] Packed hash in iOS equals a9cd7bf8486b2f2321a4bc0a94a6f113cd62e2679df57d4b4a83f618ccbdc848
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 11eadb8bf7b5963c7e96323462bde90b7ee2ae243e9a94c1329e80c18e04133a)
 - [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.32.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
@@ -48,9 +48,6 @@ Done when:
 - **Pay visibility narrowed** (§8, owner decisions 5 Nov): `canViewPersonPay(viewer, subject, roster, { context })` — a line manager who is not an admin or an operatives manager sees a report's pay only with `context: 'timesheetReview'`. Read plans keep loading it for the review; firestore.rules pay reads unchanged (needed by the review).
 - **Small shared helpers:** `legalPackAcceptanceWriteFields` (with write metadata), `invitationListConstraints`, `invitationReadErrorIsSkippable` (a clean-up skips only permission-denied invitation reads).
 
-## New rulebook sections
-
-- 1.32.0 — 2026-11-05
 
 ## Workflow for the iOS agent
 

@@ -1117,8 +1117,8 @@ export function overtimeRequestAnyDecided(
  * strike outcome; cog: the decider's times and rate — as a booking write plus one review with the booking's new
  * fingerprint. Every other line stays waiting on the request, or is left out, and is named in `lineOutcomes`:
  * `undecided` (no tick, cross or cog yet), `stale` (the booking no longer matches the request — an old request never
- * overwrites a newer booking), `needsAdmin` (owner decision A: a line manager never writes a booking filed under an
- * `operatives` row or on a job they do not manage; an admin approves it later), `refused` (an X that is not allowed),
+ * overwrites a newer booking), `needsAdmin` (owner decision A: a line manager never decides a line whose booking is filed under
+ * an `operatives` row — tick, cross or cog, written or not — unless they manage its job; an admin approves it later), `refused` (an X that is not allowed),
  * and the left-out `deleted` / `unreadable` / `foreign` bookings. Lines applied by an earlier partial approval are
  * skipped (`alreadyApplied`). The request stays `pending` (with `decisions`, `appliedBookingIds` and `droppedBookingIds`
  * accumulated) until no line is left waiting, then becomes `approved`. Nothing applied at all → `ok: false`,
@@ -1229,6 +1229,20 @@ export function overtimeApprovalWrites(input: {
       outcomes[line.bookingId] = 'stale'
       continue
     }
+    // Owner decision A (1.32.0 review fix r274 S1): who may decide a line follows the booking's person id, whether or not
+    // the decision writes the booking — a keep line or a same-times cog under an `operatives` row needs an admin too.
+    if (
+      !overtimeDeciderMayWriteBooking({
+        booking,
+        requesterUserId: request.userId,
+        deciderIsAdmin: input.deciderIsAdmin,
+        writableBookingIds: input.writableBookingIds,
+      })
+    ) {
+      waiting.push(line.bookingId)
+      outcomes[line.bookingId] = 'needsAdmin'
+      continue
+    }
     const { change, refused: why } = decisionToChange(line, decision, booking, input.organization, input.timeZone)
     if (why) {
       waiting.push(line.bookingId)
@@ -1240,18 +1254,6 @@ export function overtimeApprovalWrites(input: {
     if (change) {
       const fields = overtimeBookingWriteFields(booking, change)
       if (Object.keys(fields.set).length > 0 || fields.remove.length > 0) {
-        if (
-          !overtimeDeciderMayWriteBooking({
-            booking,
-            requesterUserId: request.userId,
-            deciderIsAdmin: input.deciderIsAdmin,
-            writableBookingIds: input.writableBookingIds,
-          })
-        ) {
-          waiting.push(line.bookingId)
-          outcomes[line.bookingId] = 'needsAdmin'
-          continue
-        }
         bookingWrite = { collection: line.collection, bookingId: line.bookingId, ...fields }
       }
     }
