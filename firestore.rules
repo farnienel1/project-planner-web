@@ -1819,18 +1819,29 @@ service cloud.firestore {
         allow delete: if payeClaimOwnerWriter(resource.data.get('userId', ''));
       }
 
+      function claimReviewSubjectIsCaller(uid) {
+        let home = callerHomeData();
+        let path = /databases/(default)/documents/users/$(uid);
+        return uid == request.auth.uid || uid in home.get('formerUserIds', []) || uid in home.get('sameEmailUserIds', []) ||
+          (exists(path) && get(path).data.get('email', '') is string && request.auth.token.email is string &&
+            get(path).data.get('email', '').lower() == request.auth.token.email.lower());
+      }
+      function claimReviewWriteValid(d) {
+        let item = /databases/(default)/documents/organizations/$(organizationId)/$(d.kind == 'expense' ? 'expenseItems' : 'priceWorkItems')/$(d.itemId);
+        return d.keys().hasOnly(['userId', 'itemId', 'kind', 'decision', 'fingerprint', 'reviewedBy', 'reviewedAt', 'updatedAt', 'updatedBy', 'updatedFrom']) &&
+          d.kind in ['priceWork', 'expense'] && d.itemId is string && d.userId is string &&
+          (resource == null || (resource.data.userId == d.userId && resource.data.itemId == d.itemId && resource.data.kind == d.kind)) &&
+          d.decision in ['approved', 'rejected'] && d.fingerprint is string && d.reviewedBy == request.auth.uid &&
+          writeMetadataValidWhenPresent()
+          ? (exists(item) && get(item).data.get('userId', '') == d.userId && !claimReviewSubjectIsCaller(d.userId) &&
+            (isOrgAdminOrOwner(organizationId) || callerLineManagesUser(d.userId)))
+          : false;
+      }
       match /payeClaimReviews/{reviewId} {
         allow read: if overtimeViewer(resource.data.get('userId', ''));
         allow create, update: if canAccessOrganization(organizationId) &&
-          request.resource.data.keys().hasOnly(['userId', 'itemId', 'kind', 'decision', 'fingerprint', 'reviewedBy', 'reviewedAt', 'updatedAt', 'updatedBy', 'updatedFrom']) &&
-          request.resource.data.kind in ['priceWork', 'expense'] &&
-          reviewId == request.resource.data.kind + '_' + request.resource.data.itemId &&
-          request.resource.data.decision in ['approved', 'rejected'] &&
-          request.resource.data.fingerprint is string &&
-          request.resource.data.reviewedBy == request.auth.uid &&
-          request.resource.data.userId != request.auth.uid &&
-          writeMetadataValidWhenPresent() &&
-          (isOrgAdminOrOwner(organizationId) || callerLineManagesUser(request.resource.data.userId));
+          reviewId == request.resource.data.get('kind', '') + '_' + request.resource.data.get('itemId', '') &&
+          claimReviewWriteValid(request.resource.data);
       }
 
       match /payeClaimReports/{reportId} {

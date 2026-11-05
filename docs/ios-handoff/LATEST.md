@@ -9,8 +9,8 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
 Rulebook version: 1.32.0 → 1.32.0
-Packed hash: a9cd7bf8486b2f2321a4bc0a94a6f113cd62e2679df57d4b4a83f618ccbdc848
-Rulebook sha256: 11eadb8bf7b5963c7e96323462bde90b7ee2ae243e9a94c1329e80c18e04133a
+Packed hash: fcff64992a99a142ccdfad21d922950bb2d48511d8ddc485307f38ea67a63204
+Rulebook sha256: 6919f0b4f095668b694db7b4568a7f6b519932025f1f160c5615f55192ae3f91
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -22,10 +22,10 @@ Contract sha256: 7f70ec28920ac6114068b4e44eaf893706d5b6af1b21d77b69f946074d74e12
 Call: CanonicalBusinessEngine — no second calculator in Swift.
 Exports added: none
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/canonical.test.ts, lib/canonical/payeOvertime.ts
+Web files that changed the rules: docs/RULEBOOK.md, firestore.rules
 Done when:
-- [ ] Packed hash in iOS equals a9cd7bf8486b2f2321a4bc0a94a6f113cd62e2679df57d4b4a83f618ccbdc848
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 11eadb8bf7b5963c7e96323462bde90b7ee2ae243e9a94c1329e80c18e04133a)
+- [ ] Packed hash in iOS equals fcff64992a99a142ccdfad21d922950bb2d48511d8ddc485307f38ea67a63204
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 6919f0b4f095668b694db7b4568a7f6b519932025f1f160c5615f55192ae3f91)
 - [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.32.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web

@@ -305,3 +305,27 @@ test('1.32.0 claim reviews: the line manager or an admin approves or rejects; ne
   await assertFails(setDoc(orgDoc(LM, 'payeClaimReviews', 'expense_EXN'), claimReview(NOLM, 'EXN')), 'No line manager stored: admins only')
   await assertFails(deleteDoc(orgDoc(LM, 'payeClaimReviews', 'expense_EX1')))
 })
+
+test('1.32.0 review fix (r274 S2): a claim review is pinned to its item, its person and never the writer under any id', async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const d = ctx.firestore()
+    await setDoc(doc(d, 'organizations', ORG, 'payeClaimReviews', 'expense_EX1'), claimReview(SAM, 'EX1'))
+    await setDoc(doc(d, 'users', 'pc-adm2'), { email: 'pc-adm2@test.com', organizationId: ORG, role: 'admin', adminAccess: true, formerUserIds: ['pc-adm2-old'] })
+    await setDoc(doc(d, 'users', 'pc-adm2-old'), { email: 'pc-adm2@test.com', organizationId: ORG, role: 'admin', adminAccess: true })
+    await setDoc(doc(d, 'organizations', ORG), { name: 'Claims Co', creatorUserId: ADMIN, members: { [ADMIN]: 'admin', [LM]: 'manager', [SAM]: 'member', [PEER]: 'member', [MGR2]: 'manager', 'pc-adm2': 'admin' } })
+    await setDoc(doc(d, 'organizations', ORG, 'expenseItems', 'ADM2OLD'), expense('pc-adm2-old', { evidence: [{ path: `organizations/${ORG}/payeClaims/pc-adm2-old/x_1.jpg`, name: 'r', kind: 'photo' }] }))
+    await setDoc(doc(d, 'organizations', ORG, 'expenseItems', 'LMX'), expense(LM, { evidence: [{ path: `organizations/${ORG}/payeClaims/${LM}/x_1.jpg`, name: 'r', kind: 'photo' }] }))
+  })
+  // Another person's line manager cannot re-file SAM's review under their own report.
+  await assertFails(updateDoc(orgDoc(MGR2, 'payeClaimReviews', 'expense_EX1'), { userId: PEER, decision: 'rejected', reviewedBy: MGR2 }))
+  // A review names the item's own person: LM cannot review their own item filed as SAM's.
+  await assertFails(setDoc(orgDoc(LM, 'payeClaimReviews', 'expense_LMX'), claimReview(SAM, 'LMX')))
+  // An admin never reviews their own item, under their uid or an alias id.
+  await assertFails(setDoc(orgDoc('pc-adm2', 'payeClaimReviews', 'expense_ADM2OLD'), claimReview('pc-adm2-old', 'ADM2OLD', { reviewedBy: 'pc-adm2' })))
+  // The item must exist.
+  await assertFails(setDoc(orgDoc(LM, 'payeClaimReviews', 'expense_NOPE'), claimReview(SAM, 'NOPE')))
+  // The line manager's own update of the review keeps working.
+  await assertSucceeds(updateDoc(orgDoc(LM, 'payeClaimReviews', 'expense_EX1'), { decision: 'rejected', reviewedBy: LM }))
+  // Another admin reviews the alias-filed item.
+  await assertSucceeds(setDoc(orgDoc(ADMIN, 'payeClaimReviews', 'expense_ADM2OLD'), claimReview('pc-adm2-old', 'ADM2OLD', { reviewedBy: ADMIN })))
+})
