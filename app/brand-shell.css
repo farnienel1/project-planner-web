@@ -1069,3 +1069,11 @@ button.tb-new:hover {
   white-space: normal;
   min-width: 120px;
 }
+.dash-home .dash-ch.wrap {
+  flex-wrap: wrap;
+}
+@media (max-width: 820px) {
+  .dash-home .dash-ch.wrap h2 {
+    flex-basis: 100%;
+  }
+}

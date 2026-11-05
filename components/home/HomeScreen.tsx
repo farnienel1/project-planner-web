@@ -98,7 +98,7 @@ import { bookLabourList } from '@/lib/book-labour/bookLabourList'
 import { dateFromDayKey } from '@/lib/ios-parity/londonTime'
 import { filterTasksForView, getTaskDetailHref, resolveProjectName } from '@/lib/tasks/taskUtils'
 import { teamLeaveBookings, teamLeaveDecisionQueue, teamLeavePeople } from '@/lib/annualLeave/teamLeaveQueue'
-import { usersWithoutRequiredLineManager } from '@/lib/annualLeave/holidayApprovalUtils'
+import { getPendingHolidayApprovalsForUser, usersWithoutRequiredLineManager } from '@/lib/annualLeave/holidayApprovalUtils'
 import { matchesRosterSegment } from '@/lib/staff/userRosterUtils'
 import { countUsersForTab, type ManageUsersTab } from '@/lib/staff/manageUsersUtils'
 import { payePaydayBanner } from '@/lib/canonical'
@@ -626,23 +626,21 @@ export function HomeScreen() {
     if (!displayUser || pauseHomeLoads) return []
     const items: WaitingItem[] = []
     const adminViewer = hasAdminAccess(displayUser) && !isOperativeMode(displayUser)
-    if (
-      !isOperativeMode(displayUser) &&
-      isAnnualLeaveFeatureEnabled(displayUser) &&
-      canAccessOperativeAnnualLeaveDirectory(displayUser) &&
-      holidaysReady &&
-      rosterReady &&
-      operativesReady
-    ) {
-      const people = teamLeavePeople(displayUser, users, operatives)
-      const queue = teamLeaveDecisionQueue(teamLeaveBookings(holidays, people), displayUser, users, operatives)
+    if (!isOperativeMode(displayUser) && isAnnualLeaveFeatureEnabled(displayUser) && holidaysReady && rosterReady && operativesReady) {
+      // `leaveDecisionQueue`: on Annual leave → Team for viewers who have that tab; otherwise the same requests are the
+      // approvals list on the Tasks page (`getPendingHolidayApprovalsForUser`), so a line manager without the Team tab
+      // still gets a link that shows exactly these requests.
+      const teamTab = canAccessOperativeAnnualLeaveDirectory(displayUser)
+      const queue = teamTab
+        ? teamLeaveDecisionQueue(teamLeaveBookings(holidays, teamLeavePeople(displayUser, users, operatives)), displayUser, users, operatives)
+        : getPendingHolidayApprovalsForUser(holidays, displayUser, users, operatives)
       if (queue.length > 0) {
         items.push({
           key: 'leave',
           label: queue.length === 1 ? 'Leave request to decide' : 'Leave requests to decide',
-          detail: 'Annual leave → Team',
+          detail: teamTab ? 'Annual leave → Team' : 'Tasks → Approvals',
           count: queue.length,
-          href: '/dashboard/annual-leave?tab=team',
+          href: teamTab ? '/dashboard/annual-leave?tab=team' : '/dashboard/tasks',
         })
       }
     }

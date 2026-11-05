@@ -26,7 +26,7 @@ export function WhosOnTodayCard({ rows }: { rows: WhosOnRow[] | null }) {
 
   return (
     <section className="dash-card" aria-labelledby="whos-on-title">
-      <div className="dash-ch" style={{ flexWrap: 'wrap' }}>
+      <div className="dash-ch wrap">
         <h2 id="whos-on-title">Who&apos;s on today</h2>
         <select className="dash-sel" aria-label="Filter" value={filter} onChange={(e) => setFilter(e.target.value as 'all' | WhosOnKind)}>
           <option value="all">All</option>
