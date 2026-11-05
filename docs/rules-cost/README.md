@@ -28,6 +28,17 @@ Static metric `total` (scripts/rules-cost `metric.py total2`) against in-process
 
 The metric is close to linear in compile time. For example, ablating `jobListsCaller` (−82k) brought 1.31.2 down to 1.30.2's time. The threshold sits between 1.30.2 (passes, but marginal) and 1.31.0. Not proven: whether Google's server runs this same compiler under a fixed deadline. That is the strong inference from the identical type-check messages and the size-independent 503.
 
+## Result: rulebook 1.31.3 (5 Nov, second chat)
+
+The candidate was finished and verified as 1.31.3; the "Candidate" and "Verification status" sections below are the hand-over history. What changed after the hand-over:
+
+- Suites run on port 8080: **220/220** on the candidate and on 1.31.3. Strict (`RULES_STRICT_BUDGET=1`): 1.31.2 = 49 limit refusals, candidate = 48, **1.31.3 = 47**, none new. The coverage sums that "went up" did not turn into refusals.
+- Extra savings on top of the candidate: `canAccessOrganization`, `isOrgCreatorViaParentGet`, `userDocOrganizationMatches`, `userOrgIdMatchesPath`, `callerHomeData` and `isOrganizationAdminAnyBilling` read each path once (lets / `callerHomeData`), and `bookingWriteAllowed` checks the manager's job twice instead of three times.
+- Tried and **dropped**: one `callerManagesJobKind(any, kind, id)` replacing `callerManagesJob` / `callerManagesJobIn` (static total 418,706) — it added 19 strict limit refusals on booking writes. Lesson: a static saving can cost runtime expressions; always run the strict suite.
+- Final: static total **431,665** (1.30.2: 525,898; 1.31.2: 606,643). In-process compile, min of 9, three runs: 1.31.3 2.25–2.47 s, 1.30.2 2.59–2.86 s, 1.31.2 3.2–3.5 s.
+- Emulator type check: 0 errors, 0 warnings.
+- Not re-run: the 2,872-case grid and probe family f (the scratch harness was in the previous container). The 220-test suite and the strict suite are the evidence; the independent review checks the hand edits.
+
 ## Candidate on this branch (`firestore.rules`)
 Changes from `c18915a1`:
 
