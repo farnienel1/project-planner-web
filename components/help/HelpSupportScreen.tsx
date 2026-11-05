@@ -2,6 +2,8 @@
 
 import { useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
+import { useAuthStore } from '@/lib/stores/authStore'
+import { canViewWeeklyReports } from '@/lib/permissions'
 import { openAnalyticsConsentSettings } from '@/lib/analytics/analyticsConsent'
 import {
   CalendarDaysIcon,
@@ -525,7 +527,12 @@ const TOPICS: Topic[] = [
   },
 ]
 
+const WEEKLY_REPORT_HREF = '/dashboard/weekly-report'
+
 export function HelpSupportScreen() {
+  // Rulebook 1.32.0 (owner decision 5 Nov): the Weekly report link only for admins (`canOpenWeeklyReport`).
+  const helpUser = useAuthStore((state) => state.user)
+  const weeklyAllowed = Boolean(helpUser) && canViewWeeklyReports(helpUser)
   const [topicId, setTopicId] = useState(TOPICS[0].id)
   const [articleId, setArticleId] = useState<string | null>(TOPICS[0].articles[0].id)
   const [query, setQuery] = useState('')
@@ -661,7 +668,7 @@ export function HelpSupportScreen() {
                   <li key={paragraph}>{paragraph}</li>
                 ))}
               </ol>
-              {article.href ? (
+              {article.href && (article.href !== WEEKLY_REPORT_HREF || weeklyAllowed) ? (
                 <Link
                   href={article.href}
                   className="mt-5 btn primary"

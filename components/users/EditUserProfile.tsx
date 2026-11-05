@@ -78,6 +78,7 @@ import {
   canManageOperatives,
   lineManagerCandidates,
   lineManagerChangeBlock,
+  canViewPersonPay,
   lineManagerSelectedIds,
   SELF_EMAIL_INVALID_MESSAGE,
   selfEmailChangeAction,
@@ -1258,6 +1259,8 @@ export function EditUserProfile({
                 </FormField>
               )}
 
+              {/* Rulebook 1.32.0 §8: the rate and its history only for viewers `canViewPersonPay` allows (profile context). */}
+              {canViewPersonPay(currentUser as never, target as never, users as never) ? (
               <div className="grid gap-4 sm:grid-cols-2">
                 <PayBasisFields
                   {...payChoiceFromProfile(target)}
@@ -1271,6 +1274,7 @@ export function EditUserProfile({
                 />
                 <PreviousRatesList entries={previousRateEntries} />
               </div>
+              ) : null}
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <FormField label="Trade type">

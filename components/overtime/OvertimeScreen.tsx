@@ -10,7 +10,12 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import {
-  OVERTIME_APPROVE_REQUEST_LABEL,
+  OVERTIME_APPROVE_LABEL,
+  overtimeEditableUntil,
+  overtimeLineOutcomeLabel,
+  overtimePersonIds,
+  overtimeRequestAnyDecided,
+  payePaydayBanner,
   OVERTIME_BOOKING_UNREADABLE_MESSAGE,
   OVERTIME_NOT_THEIR_BOOKING_MESSAGE,
   canWriteBooking,
@@ -34,7 +39,6 @@ import {
   overtimeCogPreview,
   overtimeHubAccess,
   overtimeLinesTotal,
-  overtimeRequestFullyDecided,
   overtimeRequestLineFields,
   overtimeStrikeOutcome,
   overtimeUserSubjects,
@@ -60,7 +64,6 @@ import { useOrganizationDocument, useOrganizationTimeZone } from '@/lib/stores/o
 import { dayKeyInZone } from '@/lib/orgTime/zoneTime'
 import { webJobAccessViewer } from '@/lib/access/readPlan'
 import { rulebookPerson, rulebookRoster } from '@/lib/staff/rulebookPeople'
-import { overtimePersonIds } from '@/lib/overtime/overtimePersonIds'
 import { timesheetsTeamHref, TIMESHEETS_HUB_PATH } from '@/lib/timesheets/timesheetRoutes'
 import {
   OvertimeApprovalRefused,
@@ -112,6 +115,8 @@ export function OvertimeScreen() {
   const viewer = useMemo(() => (user ? rulebookPerson(users.find((row) => row.id === user.id) || user, users) : null), [user, users])
   const access = overtimeHubAccess({ viewer, roster })
   const subjectIds = useMemo(() => (viewer ? overtimeUserSubjects(viewer, roster) : []), [viewer, roster])
+  // Rulebook 1.32.0 §4.5: the PAYE payday banner while none is set (admins are told where to set it).
+  const paydayBanner = payePaydayBanner({ organization: orgDoc, loaded: orgLoaded, viewerIsAdmin: Boolean(viewer && isAdminOutsideOperativeMode(viewer)) })
 
   if (!user || !organization) return null
   const here = { scope, user: userParam, section, range }
@@ -120,6 +125,7 @@ export function OvertimeScreen() {
     return (
       <div className="stack" data-hue="ts">
         <NavBar title={OVERTIME_HUB_LABEL} back={{ label: 'Timesheets', href: TIMESHEETS_HUB_PATH }} />
+        {paydayBanner ? <p className="banner" data-hue="warn">{paydayBanner}</p> : null}
         {!access.showButton ? <p className="muted">This section is for PAYE staff, admins and line managers.</p> : null}
         <div className="grid g2">
           {access.mine ? <Tile title={OVERTIME_MINE_LABEL} subtitle="Your overtime, expenses and price work as PAYE." onClick={() => router.push(overtimeHref({ scope: 'mine' }))} /> : null}
@@ -398,11 +404,13 @@ function OvertimeLines(props: {
   const roster = useMemo(() => rulebookRoster(users), [users])
   const subjectPerson = useMemo(() => rulebookPerson(subject, users), [subject, users])
   const userIds = useMemo(() => personIdSet(subjectPerson, roster), [subjectPerson, roster])
-  // Rulebook §10 `bookingIdsForAccount`: every id the person goes by, plus every operatives row on their email (not one).
+  // Rulebook 1.32.0 `overtimePersonIds`: every id the person goes by, plus every operatives row on their email (not one).
   const operativeIds = useMemo(
-    () => overtimePersonIds(subject, userIds, props.operatives),
-    [subject.id, subject.email, userIds, props.operatives]
+    () => overtimePersonIds({ person: subjectPerson, roster, operatives: props.operatives }),
+    [subjectPerson, roster, props.operatives]
   )
+  // Rulebook 1.32.0 (option 2): ✓ ✕ ⚙ up to the end of the current PAYE payrun.
+  const editableUntilKey = useMemo(() => overtimeEditableUntil(orgDoc ?? {}, props.todayKey), [orgDoc, props.todayKey])
   const [bookings, setBookings] = useState<OvertimeBookingInput[]>([])
   const [reviews, setReviews] = useState<OvertimeReviewRecord[]>([])
   const [requests, setRequests] = useState<OvertimeRequestRecord[]>([])
@@ -458,6 +466,10 @@ function OvertimeLines(props: {
       job: job as unknown as Record<string, unknown> | null,
       managers: props.managers as never,
       todayKey: props.todayKey,
+      editableUntilKey,
+      // 1.32.0: a request when the person has a line manager; direct when none or the Super Admin.
+      person: subjectPerson,
+      roster,
     })
   }
   const anyRequestLines = lines.some((line) => editMode(line) === 'request')
@@ -627,12 +639,8 @@ function OvertimeLines(props: {
                     canWriteBooking: deciderCanWrite,
                   })
                   setDecisions({})
-                  const notes = [
-                    result.deletedBookingIds.length > 0 ? `${result.deletedBookingIds.length} deleted booking(s) left out` : '',
-                    result.unreadableBookingIds.length > 0 ? `${result.unreadableBookingIds.length} booking(s) you can't read left out` : '',
-                    result.foreignBookingIds.length > 0 ? `${result.foreignBookingIds.length} booking(s) not theirs left out` : '',
-                  ].filter(Boolean)
-                  setMessage(notes.length > 0 ? `Approved. ${notes.join('; ')}.` : 'Approved. The bookings are updated.')
+                  // Rulebook 1.32.0 `reviewApprovalMessage`: "Approved 2 of 5. …".
+                  setMessage(result.message)
                 })
               }
             />
@@ -724,7 +732,8 @@ function RequestReview(props: {
   canWriteBooking: (booking: OvertimeBookingInput) => boolean
 }) {
   const { request, decisions } = props
-  const ready = overtimeRequestFullyDecided(request, decisions)
+  // Rulebook 1.32.0: one Approve, enabled once any line is decided; it applies what this decider may (partial approval).
+  const ready = overtimeRequestAnyDecided(request, decisions)
   // The same rule the approval transaction (and the security rules) apply, run on what this screen can read, so the
   // button is never offered for an approval that would be refused.
   const unreadable = request.lines.filter((line) => !props.bookingById.get(line.bookingId.toLowerCase())).map((line) => line.bookingId)
@@ -748,6 +757,8 @@ function RequestReview(props: {
       })
     : null
   const blocked = dryRun && !dryRun.ok ? dryRun : null
+  const outcomes = dryRun ? dryRun.lineOutcomes : {}
+  const applied = new Set(request.appliedBookingIds.map((id) => id.toLowerCase()))
   const decide = (bookingId: string, decision: OvertimeDecision) => props.setDecisions((d) => ({ ...d, [bookingId]: decision }))
   const describe = (line: OvertimeRequestLine): ReactNode =>
     line.cancel
@@ -765,6 +776,8 @@ function RequestReview(props: {
       {request.lines.map((line) => {
         const booking = props.bookingById.get(line.bookingId.toLowerCase())
         const decision = decisions[line.bookingId]
+        if (applied.has(line.bookingId.toLowerCase())) return null
+        const outcomeLabel = decision ? overtimeLineOutcomeLabel(outcomes[line.bookingId]) : null
         return (
           <div key={line.bookingId} className="row" style={{ gap: 8, flexWrap: 'wrap', justifyContent: 'space-between' }}>
             <div className="grow small" style={{ minWidth: 0 }}>
@@ -772,6 +785,9 @@ function RequestReview(props: {
               {decision ? <span className="muted"> · {decision.action === 'approve' ? 'ticked' : decision.action === 'strike' ? 'crossed' : `changed to ${decision.start}–${decision.end}`}</span> : null}
               {!booking ? <span className="muted"> · {OVERTIME_BOOKING_UNREADABLE_MESSAGE}</span> : null}
               {booking && !overtimeBookingIsTheirs(booking, props.requesterIds) ? <span className="muted"> · {OVERTIME_NOT_THEIR_BOOKING_MESSAGE}</span> : null}
+              {outcomeLabel && booking && overtimeBookingIsTheirs(booking, props.requesterIds) ? (
+                <span className="pill" data-hue="warn" style={{ marginLeft: 6 }}>{outcomeLabel}</span>
+              ) : null}
             </div>
             {props.canDecide && booking ? (
               <span className="row" style={{ gap: 6 }}>
@@ -798,7 +814,7 @@ function RequestReview(props: {
         <>
           {blocked ? <p className="small" style={{ color: 'var(--red)' }}>{blocked.message}</p> : null}
           <button type="button" className="btn primary" disabled={!ready || props.busy || Boolean(blocked)} onClick={props.onApprove}>
-            {OVERTIME_APPROVE_REQUEST_LABEL}
+            {OVERTIME_APPROVE_LABEL}
           </button>
         </>
       ) : (

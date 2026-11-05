@@ -11,9 +11,12 @@ test('1.31.1 (F5): the same-email name sync skips pending invite placeholders un
   assert.match(source, /sameEmailUserRefs\(user, orgId, previousEmail, saverIsAdmin\)/)
 })
 
-test('1.31.1 (B-1, S-E): an operatives manager\'s delete-cleanup invitation queries name invitedBy as their id and their email', () => {
+test('1.31.1 (B-1, S-E) / 1.32.0: an operatives manager\'s delete-cleanup invitation queries name invitedBy as their id and their email', () => {
   // iOS stores invitedBy as the users-document email as typed; that can differ in case from the sign-in email.
   assert.match(source, /new Set\(\[invitationActorId, auth\?\.currentUser\?\.email \|\| '', \(auth\?\.currentUser\?\.email \|\| ''\)\.toLowerCase\(\), actor\?\.email \|\| ''\]/)
-  assert.match(source, /actorManagesOperatives\s*\?\s*invitationSenders\.map\(\(sender\) =>\s*query\(collection\(db, 'invitations'\), where\('organizationId', '==', orgId\), where\('email', '==', email\), where\('invitedBy', '==', sender\)\)/)
+  // 1.32.0: the queries are the rulebook's `invitationListConstraints` (one per sender for an operatives manager), and
+  // only a permission-denied read is skipped (`invitationReadErrorIsSkippable`).
+  assert.match(source, /invitationListConstraints\(\{\s*organizationId: orgId,\s*email: typedInvitationEmail,\s*actorManagesOperatives,\s*senderIds: invitationSenders,/)
+  assert.match(source, /invitationReadErrorIsSkippable\(/)
   assert.ok(source.indexOf('const actorManagesOperatives') < source.indexOf('const invitationQueries'))
 })

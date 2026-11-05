@@ -62,7 +62,7 @@ import {
   formatSubcontractorBookingLabel,
   resolveSubcontractorBookingPeople,
 } from '@/lib/subcontractors/bookingPeople'
-import { bookingJobLabel, weekdayPaidHours, weeklyReportPayeDay, weeklyReportPayeOvertime, type OvertimeBookingInput, type PayrollTimePolicyState } from '@/lib/canonical'
+import { bookingJobLabel, weekdayPaidHours, weeklyReportPayeDay, weeklyReportPayeOvertime, OVERTIME_RATE_CHANGED_MARK, overtimePersonIds, type OvertimeBookingInput, type PayrollTimePolicyState } from '@/lib/canonical'
 import { normalizeDocumentId } from '@/lib/canonical'
 
 export type WeeklyReportWarningRow = {
@@ -160,6 +160,11 @@ export type WeeklyReportPayPerson = {
   personTotal: number
   /** `PAYE` when every line is PAYE (`reportPersonPayCell`). */
   personTotalLabel?: string | null
+  /**
+   * Rulebook 1.32.0 §8: whose pay this is (the users document, or a catalogue `operatives` row), so the screen and the
+   * exports ask `canViewPersonPay` before showing a rate or pay (`weeklyReportPayForViewer`).
+   */
+  paySubject?: Record<string, unknown> | null
 }
 
 export type WeeklyReportMoneyRow = {
@@ -196,6 +201,8 @@ export type WeeklyReportData = {
   expenseTotal: number
   paySummary: WeeklyReportPayPerson[]
   grandTotal: number
+  /** Rulebook 1.32.0: people whose rate and pay were hidden for this viewer (`reportPayForViewer`); exports add the note. */
+  payHiddenPeople?: number
   /**
    * Rulebook 1.29.0 §7: PAYE people are not in the hours and pay rows; this section lists their overtime per job,
    * always live (`weeklyReportPayeOvertime`). Hours only.
@@ -204,7 +211,8 @@ export type WeeklyReportData = {
   payeOvertimeTotal: number
 }
 
-export type WeeklyReportPayeOvertimeRow = { person: string; jobNumber: string; jobName: string; overtimeHours: number; label: string }
+/** 1.32.0: `hoursCell` is the multiplier figure ("2h at ×1.5 = 3h"), with the changed-rate mark on an edited row. */
+export type WeeklyReportPayeOvertimeRow = { person: string; jobNumber: string; jobName: string; overtimeHours: number; label: string; hoursCell?: string; changedFromOrganization?: boolean }
 
 export type SubcontractorBookingRow = {
   id: string
@@ -347,7 +355,11 @@ export function buildWeeklyReportData({
     return `name:${name}`
   }
 
-  const addPaySlice = (personKey: string, person: string, role: string, slice: LabourPaySlice) => {
+  const paySubjects = new Map<string, Record<string, unknown> | null>()
+  const subjectFor = (user: User | undefined, operative: Operative | undefined): Record<string, unknown> | null =>
+    user ? (user as unknown as Record<string, unknown>) : operative ? { id: operative.id, email: operative.email ?? '', role: 'operative', operativeMode: true, catalogueOperative: true } : null
+  const addPaySlice = (personKey: string, person: string, role: string, slice: LabourPaySlice, subject?: Record<string, unknown> | null) => {
+    if (subject !== undefined && !paySubjects.has(personKey)) paySubjects.set(personKey, subject)
     if (!(slice.paidHours > 0) && !(slice.pay > 0)) return
     const rateKey = slice.rate == null ? 'none' : slice.rate.toFixed(2)
     // 1.19.0: days under a different standard day or overtime rate are separate rows, never averaged.
@@ -394,7 +406,7 @@ export function buildWeeklyReportData({
     const person = resolveDisplayName(user, operative)
     const role = resolvePersonRole(user, operative)
     const personKey = payPersonKey(user, operative, person)
-    for (const slice of slices) addPaySlice(personKey, person, role, slice)
+    for (const slice of slices) addPaySlice(personKey, person, role, slice, subjectFor(user, operative))
   }
 
   const addProjectRow = (
@@ -834,7 +846,8 @@ export function buildWeeklyReportData({
       week.role,
       // 1.19.0: a signed line keeps its signed amount and multiplier (never re-priced); only its day units are read
       // against the standard day in effect on the line's own day.
-      signedLabourSlice(line, orgDayHours(weekdayPaidHours(policyOn(line.date))), line.otMultiplier ?? null, isPaye)
+      signedLabourSlice(line, orgDayHours(weekdayPaidHours(policyOn(line.date))), line.otMultiplier ?? null, isPaye),
+      subjectFor(weekUser, undefined)
     )
   }
 
@@ -847,7 +860,7 @@ export function buildWeeklyReportData({
     const personKey = `${bucket.personKey}|${bucket.role}`
     let summary = grouped.get(personKey)
     if (!summary) {
-      summary = { person: bucket.person, role: bucket.role, lines: [], personTotal: 0 }
+      summary = { person: bucket.person, role: bucket.role, lines: [], personTotal: 0, paySubject: paySubjects.get(bucket.personKey) ?? null }
       grouped.set(personKey, summary)
     }
     const cell = reportPayCell({ isPaye: bucket.slice.isPaye, pay: shown.pay })
@@ -872,11 +885,12 @@ export function buildWeeklyReportData({
     paySummary.push(summary)
   }
 
-  const addMoneyPay = (person: string, role: string, rateType: string, pay: number) => {
+  const addMoneyPay = (person: string, role: string, rateType: string, pay: number, userId?: string) => {
     if (pay <= 0.0001) return
     let summary = paySummary.find((row) => row.person === person && row.role === role)
     if (!summary) {
-      summary = { person, role, lines: [], personTotal: 0 }
+      const owner = userId ? users.find((entry) => entry.id === userId) : undefined
+      summary = { person, role, lines: [], personTotal: 0, paySubject: owner ? (owner as unknown as Record<string, unknown>) : null }
       paySummary.push(summary)
     }
     summary.lines.push({
@@ -890,10 +904,10 @@ export function buildWeeklyReportData({
     settlePerson(summary)
   }
   for (const { week, line } of timesheetMoneyLines(timesheetWeeks, 'priceWork', period.start, period.end, timeZone)) {
-    addMoneyPay(week.personName, week.role, 'Price work', line.amount)
+    addMoneyPay(week.personName, week.role, 'Price work', line.amount, week.userId)
   }
   for (const { week, line } of timesheetMoneyLines(timesheetWeeks, 'expenses', period.start, period.end, timeZone)) {
-    addMoneyPay(week.personName, week.role, 'Expenses', line.amount)
+    addMoneyPay(week.personName, week.role, 'Expenses', line.amount, week.userId)
   }
 
   grandTotal = reportPayTotal(
@@ -956,7 +970,8 @@ export function buildWeeklyReportData({
         return {
           id: user.id,
           name: resolveDisplayName(user, operative),
-          ids: [user.id, ...aliasIdsFor(user.id), ...(operative ? [operative.id] : [])],
+          // 1.32.0: the one all-records-per-person rule (`overtimePersonIds`), plus the roster fold's aliases.
+          ids: [...overtimePersonIds({ person: user, roster: users as never, operatives }), ...aliasIdsFor(user.id)],
           employmentType: user.employmentType ?? null,
           employmentTypeTransitionFrom: user.employmentTypeTransitionFrom ?? null,
           employmentTypeEffectiveAt: user.employmentTypeEffectiveAt ?? null,
@@ -966,7 +981,15 @@ export function buildWeeklyReportData({
     organization: policyState,
     timeZone,
     range: { start: dayKeyInZone(period.start, timeZone), end: dayKeyInZone(period.end, timeZone) },
-  }).map((row) => ({ person: row.name, jobNumber: row.jobNumber, jobName: row.jobName, overtimeHours: row.overtimeHours, label: row.label }))
+  }).map((row) => ({
+    person: row.name,
+    jobNumber: row.jobNumber,
+    jobName: row.jobName,
+    overtimeHours: row.overtimeHours,
+    label: row.label,
+    hoursCell: row.changedFromOrganization ? `${row.multiplierText} (${OVERTIME_RATE_CHANGED_MARK}, ×${row.organizationMultiplier})` : row.multiplierText,
+    changedFromOrganization: row.changedFromOrganization,
+  }))
   const payeOvertimeTotal = Math.round(payeOvertimeRows.reduce((sum, row) => sum + row.overtimeHours, 0) * 100) / 100
 
   return {

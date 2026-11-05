@@ -128,7 +128,12 @@ test('age write fields use a boolean, a timestamp slot, and years as a number', 
 
 test('age confirmation is create-time only; existing profiles load without those fields', () => {
   const rules = readFileSync(new URL('../../firestore.rules', import.meta.url), 'utf8')
-  assert.match(rules, /allow get: if canReadUserDocument\(userId\);/)
+  // 1.31.3: canReadUserDocument is written out inside the users `allow get` (compile cost); the read never needs the age fields.
+  const usersBlock = rules.indexOf('match /users/{userId} {')
+  const usersGet = rules.slice(usersBlock, rules.indexOf('allow list:', usersBlock))
+  assert.match(usersGet, /allow get: if \(request\.auth != null && \(/)
+  assert.match(usersGet, /request\.auth\.uid == userId/)
+  assert.equal(usersGet.includes('selfCreateHasAgeConfirmation'), false)
   assert.equal(rules.includes('allow get: if selfCreateHasAgeConfirmation'), false)
   assert.equal(rules.includes('allow update: if selfCreateHasAgeConfirmation'), false)
   assert.match(
@@ -136,7 +141,8 @@ test('age confirmation is create-time only; existing profiles load without those
     /allow create: if request\.auth != null &&\s+request\.resource\.data\.members\[request\.auth\.uid\] == 'admin' &&\s+membersValuesTyped\(request\.resource\.data, \{\}\);/
   )
   // 1.31.1 (S1): the bootstrap create is ternary-gated, `isOrgBootstrapAdminProfileCreate(userId) ? (selfCreateHasAgeConfirmation() && …) : false`.
-  assert.match(rules, /isOrgBootstrapAdminProfileCreate\(userId\) \? \(\s*selfCreateHasAgeConfirmation\(\)/)
+  // 1.31.3: isOrgBootstrapAdminProfileCreate is written out inside the users create (compile cost); its last test is the members-map admin entry.
+  assert.match(rules, /\.members\[request\.auth\.uid\] == 'admin'\) \? \(\s*selfCreateHasAgeConfirmation\(\)/)
   const userProfile = readFileSync(new URL('../canonical/userProfile.ts', import.meta.url), 'utf8')
   const documentFieldsBlock = userProfile.slice(
     userProfile.indexOf('export const USER_DOCUMENT_FIELDS'),
@@ -157,7 +163,6 @@ test('founder Activate setDoc and invite accept write the age fields; invite pla
   const founder = readFileSync(new URL('../orgSetup/createOrganization.ts', import.meta.url), 'utf8')
   const inviteAccept = readFileSync(new URL('../invites/completeInviteSetup.ts', import.meta.url), 'utf8')
   const inviteCreate = readFileSync(new URL('../orgSetup/inviteUserCore.ts', import.meta.url), 'utf8')
-  const mergePlaceholder = readFileSync(new URL('../firebase/mergePlaceholderUser.ts', import.meta.url), 'utf8')
   const createBranch = founder.indexOf('} else if (!existingUser)')
   const ageWrite = founder.indexOf('ageConfirmationWriteFields', createBranch)
   const updateBranch = founder.indexOf('if (existingUser && switchActive)')
@@ -166,7 +171,6 @@ test('founder Activate setDoc and invite accept write the age fields; invite pla
   assert.ok(updateBranch > 0 && updateBranch < createBranch)
   assert.equal(founder.slice(updateBranch, createBranch).includes('ageConfirmationWriteFields'), false)
   assert.match(inviteAccept, /ageConfirmationWriteFields/)
-  assert.match(mergePlaceholder, /ageConfirmationWriteFields/)
   assert.equal(inviteCreate.includes('ageConfirmed'), false)
 })
 

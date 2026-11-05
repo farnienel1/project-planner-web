@@ -21399,10 +21399,23 @@
             }
           }
         ],
+        "appliedBookingIds": [
+          "B1",
+          "B4",
+          "B7"
+        ],
         "droppedBookingIds": [],
         "deletedBookingIds": [],
         "unreadableBookingIds": [],
         "foreignBookingIds": [],
+        "waitingBookingIds": [],
+        "lineOutcomes": {
+          "B1": "applied",
+          "B4": "applied",
+          "B7": "applied"
+        },
+        "complete": true,
+        "message": "Approved 3 of 3.",
         "requestFields": {
           "status": "approved",
           "decisions": {
@@ -21430,7 +21443,7 @@
       }
     },
     {
-      "name": "1.29.0 approval refused when a booking changed",
+      "name": "1.32.0 partial approval: a booking changed since the request stays waiting, the rest apply",
       "function": "overtimeApprovalWrites",
       "args": [
         {
@@ -21571,16 +21584,82 @@
         }
       ],
       "expected": {
-        "ok": false,
-        "reason": "stale",
-        "bookingIds": [
+        "ok": true,
+        "bookingWrites": [
+          {
+            "collection": "bookings",
+            "bookingId": "B4",
+            "set": {
+              "status": "Cancelled"
+            },
+            "remove": []
+          }
+        ],
+        "reviewWrites": [
+          {
+            "docId": "sam_B4",
+            "fields": {
+              "userId": "sam",
+              "bookingId": "B4",
+              "collection": "bookings",
+              "decision": "cancelled",
+              "fingerprint": "2026-11-08|CUSTOM HOURS|07:30|14:00|||cancelled",
+              "reviewedBy": "lm",
+              "requestId": "R1"
+            }
+          },
+          {
+            "docId": "sam_B7",
+            "fields": {
+              "userId": "sam",
+              "bookingId": "B7",
+              "collection": "bookings",
+              "decision": "approved",
+              "fingerprint": "2026-11-02|CUSTOM HOURS|18:00|21:00|||confirmed",
+              "reviewedBy": "lm",
+              "requestId": "R1"
+            }
+          }
+        ],
+        "appliedBookingIds": [
+          "B4",
+          "B7"
+        ],
+        "droppedBookingIds": [],
+        "deletedBookingIds": [],
+        "unreadableBookingIds": [],
+        "foreignBookingIds": [],
+        "waitingBookingIds": [
           "B1"
         ],
-        "message": "A booking changed after this request was sent, so it cannot be approved. Ask for the request to be sent again."
+        "lineOutcomes": {
+          "B1": "stale",
+          "B4": "applied",
+          "B7": "applied"
+        },
+        "complete": false,
+        "message": "Approved 2 of 3. 1 changed since the request.",
+        "requestFields": {
+          "status": "pending",
+          "decisions": {
+            "B4": {
+              "action": "approve"
+            },
+            "B7": {
+              "action": "approve"
+            }
+          },
+          "decidedBy": "lm",
+          "appliedBookingIds": [
+            "B4",
+            "B7"
+          ],
+          "droppedBookingIds": []
+        }
       }
     },
     {
-      "name": "1.29.0 approval: a line manager cannot write a booking filed under an operatives row",
+      "name": "1.32.0 approval: a line manager cannot write a booking filed under an operatives row (Needs an admin)",
       "function": "overtimeApprovalWrites",
       "args": [
         {
@@ -21666,11 +21745,14 @@
       ],
       "expected": {
         "ok": false,
-        "reason": "needsAdmin",
+        "reason": "nothingApproved",
         "bookingIds": [
           "BR"
         ],
-        "message": "This booking is filed under an operatives row, or on a job you do not manage: an admin or the job's manager must approve this request."
+        "lineOutcomes": {
+          "BR": "needsAdmin"
+        },
+        "message": "Nothing was approved: 1 needs an admin."
       }
     },
     {
@@ -21805,6 +21887,9 @@
             }
           }
         ],
+        "appliedBookingIds": [
+          "B1"
+        ],
         "droppedBookingIds": [
           "X1"
         ],
@@ -21813,6 +21898,13 @@
         "foreignBookingIds": [
           "X1"
         ],
+        "waitingBookingIds": [],
+        "lineOutcomes": {
+          "B1": "applied",
+          "X1": "foreign"
+        },
+        "complete": true,
+        "message": "Approved 1 of 2. 1 booking not theirs left out.",
         "requestFields": {
           "status": "approved",
           "decisions": {
@@ -21909,7 +22001,7 @@
       "expected": "request"
     },
     {
-      "name": "1.29.0 weekly report PAYE overtime section",
+      "name": "1.32.0 weekly report PAYE overtime section with multipliers",
       "function": "weeklyReportPayeOvertime",
       "args": [
         {
@@ -21999,8 +22091,29 @@
           "jobId": "job-1",
           "jobNumber": "J-1042",
           "jobName": "Riverside Flats",
-          "overtimeHours": 10,
-          "label": "Sam · J-1042 · 10h"
+          "clockHours": 4,
+          "breakHours": 0,
+          "multiplier": 1.5,
+          "organizationMultiplier": 1.5,
+          "changedFromOrganization": false,
+          "overtimeHours": 6,
+          "multiplierText": "4h at ×1.5 = 6h",
+          "label": "Sam · J-1042 · 4h at ×1.5 = 6h"
+        },
+        {
+          "personId": "sam",
+          "name": "Sam",
+          "jobId": "job-1",
+          "jobNumber": "J-1042",
+          "jobName": "Riverside Flats",
+          "clockHours": 2,
+          "breakHours": 0,
+          "multiplier": 2,
+          "organizationMultiplier": 1.5,
+          "changedFromOrganization": true,
+          "overtimeHours": 4,
+          "multiplierText": "2h at ×2 = 4h",
+          "label": "Sam · J-1042 · 2h at ×2 = 4h · changed from organisation rate (×1.5)"
         }
       ]
     },

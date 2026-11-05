@@ -69,7 +69,7 @@ export function AccountMenu({
         aria-label="Account menu"
         aria-expanded={open}
       >
-        <UserAvatar user={user} size={44} gradient="from-[var(--brand-800)] to-[var(--brand-800)]" />
+        <UserAvatar user={user} size={30} gradient="from-[var(--dash-blue-solid)] to-[var(--dash-blue-solid)]" />
       </button>
       {open ? (
         <div className="absolute right-0 z-40 mt-2 w-[300px] overflow-hidden rounded-[18px] bg-[var(--card)] p-2 shadow-[var(--sh-pop)]">

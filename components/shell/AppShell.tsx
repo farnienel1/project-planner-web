@@ -17,6 +17,7 @@ import {
   Bars3Icon,
   MagnifyingGlassIcon,
   ChevronRightIcon,
+  Cog6ToothIcon,
 } from '@heroicons/react/24/solid'
 import '@/app/brand-shell.css'
 import { TeamOnboardingPrompt } from '@/components/onboarding/TeamOnboardingPrompt'
@@ -459,7 +460,7 @@ function AppShellInner({ children }: { children: ReactNode }) {
     <>
       <div className="sb-brand">
         <span className="sb-logo">
-          <AppLogoMark size={44} radius={11} />
+          <AppLogoMark size={28} radius={8} />
         </span>
         <div className="min-w-0">
           <p className="sb-title truncate">Project Planner</p>
@@ -476,6 +477,7 @@ function AppShellInner({ children }: { children: ReactNode }) {
           <div className="sb-label-row">
             <p className="sb-label">Navigate</p>
             <button type="button" onClick={() => setCustomiseOpen(true)} className="sb-link">
+              <Cog6ToothIcon aria-hidden />
               Customise
             </button>
           </div>
@@ -507,32 +509,36 @@ function AppShellInner({ children }: { children: ReactNode }) {
         <Section title="App & account" items={accountItems} pathname={pathname} onClick={closeMenus} />
       </nav>
       <div className="sb-foot">
+        {process.env.NODE_ENV !== 'production' || hasAdminAccess(user) ? (
+          <div className="sb-items sb-foot-links">
+            <Link
+              href="/dashboard/data-health"
+              onClick={closeMenus}
+              aria-current={isDashboardNavActive(pathname, '/dashboard/data-health') ? 'page' : undefined}
+              className={cn('sb-item', isDashboardNavActive(pathname, '/dashboard/data-health') && 'on')}
+            >
+              <NavGlyph path="M3 12h4l3-7 4 14 3-7h4" className="sb-ico" />
+              <span className="min-w-0 flex-1 truncate">Data health</span>
+            </Link>
+          </div>
+        ) : null}
         <div className="sb-user">
-          <UserAvatar user={user} size={36} gradient="from-[var(--brand-600)] to-[var(--brand-500)]" />
+          <UserAvatar user={user} size={30} gradient="from-[var(--dash-blue-solid)] to-[var(--dash-blue-solid)]" />
           <div className="min-w-0">
             <p className="sb-user-name truncate">{`${user.firstName} ${user.surname}`.trim() || user.email}</p>
             <p className="sb-org truncate">{organization?.name || 'Organisation'}</p>
           </div>
+          <button type="button" onClick={confirmSignOut} className="sb-signout" aria-label="Sign out" title="Sign out">
+            <ArrowRightOnRectangleIcon className="h-[17px] w-[17px]" aria-hidden />
+          </button>
         </div>
-        <button type="button" onClick={confirmSignOut} className="sb-signout">
-          <ArrowRightOnRectangleIcon className="h-[18px] w-[18px]" aria-hidden />
-          Sign out
-        </button>
-        <p className="sb-version">
-          v1.0.0 · Project Planner
-          {process.env.NODE_ENV !== 'production' || hasAdminAccess(user) ? (
-            <>
-              {' · '}
-              <Link href="/dashboard/data-health">Data health</Link>
-            </>
-          ) : null}
-        </p>
+        <p className="sb-version">v1.0.0 · Project Planner</p>
       </div>
     </>
   )
 
   return (
-    <div className="min-h-screen bg-[var(--page-bg)] text-[var(--ink)]">
+    <div className="app-frame min-h-screen text-[var(--ink)]">
       <TeamOnboardingPrompt />
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} items={paletteItems} />
       {customiseOpen ? (
@@ -560,13 +566,13 @@ function AppShellInner({ children }: { children: ReactNode }) {
             'sb flex min-h-0 flex-col',
             'max-[1023px]:fixed max-[1023px]:inset-y-0 max-[1023px]:left-0 max-[1023px]:z-[70] max-[1023px]:w-[290px] max-[1023px]:transition-transform',
             menuOpen ? 'max-[1023px]:translate-x-0' : 'max-[1023px]:-translate-x-full',
-            'lg:sticky lg:top-0 lg:flex lg:h-screen lg:w-[268px]'
+            'lg:sticky lg:top-0 lg:flex lg:h-screen lg:w-[244px] lg:shrink-0'
           )}
         >
           <div className="flex h-full flex-col">{sidebar}</div>
         </aside>
 
-        <div className="flex min-w-0 flex-1 flex-col">
+        <div className="app-panel flex min-w-0 flex-1 flex-col">
           {!online ? (
             <div className="bg-[var(--warn)] px-4 py-2 text-center text-sm font-medium text-white">
               You&apos;re offline. Changes will not sync until you reconnect.
@@ -574,10 +580,10 @@ function AppShellInner({ children }: { children: ReactNode }) {
           ) : null}
 
           {showHeader ? (
-            <header className="sticky top-0 z-20 flex h-[66px] min-w-0 items-center gap-3 bg-[color-mix(in_srgb,var(--page-bg)_85%,transparent)] px-6 backdrop-blur-[10px] max-[760px]:h-[60px] max-[760px]:px-3.5">
+            <header className="tb sticky top-0 z-20 flex h-[54px] min-w-0 items-center gap-2 px-5 max-[760px]:px-3.5">
               <button
                 type="button"
-                className="tb-control grid h-11 w-11 place-items-center lg:hidden"
+                className="tb-control grid h-9 w-9 shrink-0 place-items-center lg:hidden"
                 aria-label="Open menu"
                 onClick={() => setMenuOpen(true)}
               >
@@ -612,12 +618,12 @@ function AppShellInner({ children }: { children: ReactNode }) {
               <button
                 type="button"
                 onClick={() => setPaletteOpen(true)}
-                className="tb-control ml-auto flex h-11 w-[min(320px,100%)] min-w-0 shrink items-center gap-2.5 px-3.5 text-[14.5px] max-[1100px]:w-11 max-[1100px]:shrink-0 max-[1100px]:justify-center max-[1100px]:px-0"
+                className="tb-control tb-search ml-auto flex h-8 w-[min(280px,100%)] min-w-0 shrink items-center gap-2 px-2.5 text-[12px] max-[820px]:w-9 max-[820px]:h-9 max-[820px]:shrink-0 max-[820px]:justify-center max-[820px]:px-0"
                 aria-label="Search"
               >
-                <MagnifyingGlassIcon className="h-5 w-5" />
-                <span className="hidden min-[1101px]:inline">Search projects, people, pages</span>
-                <kbd className="ml-auto hidden rounded-md bg-[var(--soft2)] px-1.5 py-0.5 text-[11.5px] font-semibold text-[var(--ink2)] min-[1101px]:inline">
+                <MagnifyingGlassIcon className="h-4 w-4 shrink-0" />
+                <span className="hidden truncate min-[821px]:inline">Search projects, people, pages</span>
+                <kbd className="ml-auto hidden rounded-[5px] px-1.5 text-[10.5px] min-[821px]:inline">
                   ⌘K
                 </kbd>
               </button>
@@ -660,21 +666,21 @@ function AppShellInner({ children }: { children: ReactNode }) {
                 <button
                   type="button"
                   onClick={() => void refresh()}
-                  className="tb-control grid h-11 w-11 place-items-center"
+                  className="tb-control grid h-[30px] w-[30px] place-items-center"
                   aria-label="Refresh data"
                 >
-                  <ArrowPathIcon className={`h-5 w-5 ${refreshing ? 'animate-spin' : ''}`} />
+                  <ArrowPathIcon className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
                 </button>
                 <div className="relative">
                   <button
                     type="button"
                     onClick={() => setNotifOpen((value) => !value)}
-                    className="tb-control relative grid h-11 w-11 place-items-center"
-                    aria-label="Notifications"
+                    className="tb-control relative grid h-[30px] w-[30px] place-items-center"
+                    aria-label={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : 'Notifications'}
                   >
-                    <BellIcon className="h-5 w-5" />
+                    <BellIcon className="h-4 w-4" />
                     {unreadCount > 0 ? (
-                      <span className="absolute -right-1 -top-1 min-w-[18px] rounded-full tb-badge px-1 text-center text-[10px] font-bold leading-[18px] text-white">
+                      <span className="absolute -right-1.5 -top-1.5 min-w-[16px] rounded-full tb-badge px-1 text-center text-[9.5px] font-semibold leading-[16px] text-white" aria-hidden>
                         {unreadCount > 99 ? '99+' : unreadCount}
                       </span>
                     ) : null}
@@ -695,7 +701,7 @@ function AppShellInner({ children }: { children: ReactNode }) {
           ) : null}
 
           <main className="min-w-0 flex-1">
-            <div className={cn('page mx-auto w-full max-w-shell', isHome ? 'px-4 py-4 min-[760px]:px-8 min-[760px]:py-[22px]' : 'px-4 py-6 min-[760px]:px-7 min-[760px]:pb-14')}>
+            <div className={cn('page mx-auto w-full max-w-shell', isHome ? 'px-4 py-4 min-[760px]:px-5 min-[760px]:pb-6 min-[760px]:pt-[18px]' : 'px-4 py-6 min-[760px]:px-7 min-[760px]:pb-14')}>
               {children}
             </div>
           </main>

@@ -18,7 +18,6 @@ import { getFirebaseAuth, getFirebaseDb } from '@/lib/firebase/ensureFirebase'
 import { isFirebaseConfigured } from '@/lib/firebase/env'
 import { loadUserDocumentWithRetry } from '@/lib/firebase/loadUserDocument'
 import { readOrganizationDocument } from '@/lib/firebase/orgDocumentCache'
-import { mergePlaceholderUserDocOntoAuthUidIfNeeded } from '@/lib/firebase/mergePlaceholderUser'
 import { parseAppUserDocument } from '@/lib/ios-parity/converters'
 import type { User, Organization } from '@/types'
 import { parseOrgBilling } from '@/lib/stripe/billing'
@@ -560,15 +559,9 @@ async function loadSignedInProfileInner(firebaseUser: FirebaseUser) {
   const token = ++organizationHydration
   await waitForAuthToken()
   const db = getFirebaseDb()
-  let userDoc = await loadUserDocumentWithRetry(firebaseUser.uid)
-  if (!userDoc.exists() && firebaseUser.email) {
-    await withTimeoutFallback(
-      mergePlaceholderUserDocOntoAuthUidIfNeeded(firebaseUser.uid, firebaseUser.email),
-      PROFILE_STEP_MS,
-      false
-    )
-    userDoc = await loadUserDocumentWithRetry(firebaseUser.uid, 2)
-  }
+  // Rulebook 1.31.1 (F5) / 1.32.0: an invitee's account is written only by the invitation accept
+  // (`completeInviteSetup`); the old sign-in placeholder merge was refused by the rules and is removed.
+  const userDoc = await loadUserDocumentWithRetry(firebaseUser.uid)
 
   if (!userDoc.exists()) {
     if (isPlatformOwnerEmail(firebaseUser.email)) {

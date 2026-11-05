@@ -15,6 +15,7 @@ import { ScheduleOptionsSetupSection } from '@/components/setup/ScheduleOptionsS
 import { WarningsSetupSection } from '@/components/setup/WarningsSetupSection'
 import { WorkingHoursSetupSection } from '@/components/setup/WorkingHoursSetupSection'
 import { validateInvoicingSettings } from '@/lib/settings/invoicingValidation'
+import { payePaydaySetupError } from '@/lib/canonical'
 import { formatCutoffTime, parseCutoffTime } from '@/lib/settings/notificationPreferences'
 import { orgSetupWorkingHoursError, type OrganisationFeaturesSetup } from '@/lib/orgSetup/orgSetupSettings'
 
@@ -98,6 +99,12 @@ export function OrganisationFeaturesStep({
       const invoicingError = validateInvoicingSettings(value.invoicing)
       if (invoicingError) {
         setError(invoicingError)
+        return
+      }
+      // Rulebook 1.32.0 §4.5: the PAYE payday is mandatory at setup.
+      const paydayError = payePaydaySetupError(value.payePayday)
+      if (paydayError) {
+        setError(paydayError)
         return
       }
     }
@@ -236,15 +243,15 @@ export function OrganisationFeaturesStep({
             value={value.invoicing}
             onChange={(invoicing) => patch({ invoicing })}
           />
-          {/* Rulebook 1.29.0 §4.5: optional PAYE payday (can be set later in Settings → Payment runs and timesheets). */}
+          {/* Rulebook 1.32.0 §4.5: the PAYE payday is required (`payePaydaySetupError`). */}
           <label className="mt-5 block text-sm font-semibold text-slate-700">
-            Set PAYE payday (optional)
+            Set PAYE payday
             <select
               className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
               value={value.payePayday == null ? '' : String(value.payePayday)}
               onChange={(e) => patch({ payePayday: e.target.value ? Number(e.target.value) : null })}
             >
-              <option value="">Not now</option>
+              <option value="">Choose a day</option>
               {Array.from({ length: 31 }, (_, i) => i + 1).map((day) => (
                 <option key={day} value={String(day)}>
                   Day {day}

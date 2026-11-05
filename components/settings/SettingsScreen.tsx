@@ -21,12 +21,14 @@ import {
   employmentTypeOnDay,
   formatMoney,
   passwordPolicyError,
+  rulebookVersionLabel,
+  payePaydayBanner,
   SENSITIVE_VALUE_MAX,
   writeMetadataFields,
 } from '@/lib/canonical'
 import { readStoredRates } from '@/lib/canonical/payRate'
 import { loadTaxIds, saveTaxIds } from '@/lib/sensitiveProfile/taxIdsService'
-import { useOrganizationCurrency, useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
+import { useOrganizationCurrency, useOrganizationDocument, useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
 import { loginPathForResetEmail } from '@/lib/auth/emailAction'
 import {
   SectionLabel,
@@ -471,6 +473,9 @@ export default function SettingsScreen({ initialPanel = 'main' }: { initialPanel
     !canAccessOrgHub && isOrganisationHubPanel(requestedPanel) ? 'main' : requestedPanel
   const [panel, setPanel] = useState<Panel>(safeInitialPanel)
   const isAdmin = hasAdminAccess(user)
+  // Rulebook 1.32.0 §4.5: the PAYE payday banner while none is set (admins only on Settings; they can set it).
+  const { data: settingsOrgDocument, loaded: settingsOrgLoaded } = useOrganizationDocument()
+  const paydayBanner = isAdmin ? payePaydayBanner({ organization: settingsOrgDocument, loaded: settingsOrgLoaded, viewerIsAdmin: true }) : null
 
   useEffect(() => {
     setPanel(safeInitialPanel)
@@ -575,6 +580,12 @@ export default function SettingsScreen({ initialPanel = 'main' }: { initialPanel
           <div className="sub">Personal, company-wide and support</div>
         </div>
       </div>
+
+      {paydayBanner ? (
+        <Link href="/dashboard/settings/payment-runs" className="banner block" data-hue="warn">
+          {paydayBanner}
+        </Link>
+      ) : null}
 
       <section className="hero" style={{ padding: '22px 26px' }}>
         <div className="relative z-[1] flex items-center gap-4">
@@ -685,6 +696,10 @@ export default function SettingsScreen({ initialPanel = 'main' }: { initialPanel
       </SettingsCard>
 
       <p className="text-center text-[11px] text-slate-400">{appVersionLabel(process.env.NEXT_PUBLIC_APP_VERSION)}</p>
+      {/* Rulebook 1.32.0 §15: the rules version, shown to everyone. */}
+      {rulebookVersionLabel(process.env.NEXT_PUBLIC_RULEBOOK_VERSION) ? (
+        <p className="text-center text-[11px] text-slate-400">{rulebookVersionLabel(process.env.NEXT_PUBLIC_RULEBOOK_VERSION)}</p>
+      ) : null}
     </div>
   )
 }

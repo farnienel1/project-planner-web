@@ -45,7 +45,9 @@ import type { OverviewPersonRow } from '@/lib/daily-overview/buildDailyOverview'
 import { BookingStatus, type Project } from '@/types'
 import { hasAdminAccess } from '@/lib/permissions'
 import { userCanDeleteBooking } from '@/lib/access/bookingAccess'
-import { normalizeDocumentId } from '@/lib/canonical'
+import { canBookOtherLocationsFor, normalizeDocumentId, organizationOvertimeMultiplier, overtimeMultiplierMoveFields } from '@/lib/canonical'
+import { useOrganizationDocument } from '@/lib/stores/organizationDocumentStore'
+import { webJobAccessViewer } from '@/lib/access/readPlan'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 
 type DestTab = 'other' | 'projects' | 'smallWorks'
@@ -126,6 +128,16 @@ export function DailyOverviewBookingSheet({
     return typeof stored === 'number' ? stored : null
   })()
   const [overtimeRate, setOvertimeRate] = useState<number | null>(storedRate)
+  // Rulebook 1.32.0 (review fix r274 S4): the rate travels with every save — hours, another job, Other — and with a
+  // move to the other collection (a new document); never stored when it equals the organisation's (decision A).
+  const { data: rateOrgDocument } = useOrganizationDocument()
+  const rateFields = (newDocument: boolean) =>
+    overtimeMultiplierMoveFields({
+      stored: storedRate,
+      chosen: overtimeRate,
+      organizationMultiplier: organizationOvertimeMultiplier(rateOrgDocument ?? {}, bookingDayKey(day), timeZone),
+      newDocument,
+    })
   const hoursTouched = useRef(false)
   const leaveCheck = useLeaveConflictCheck(payroll)
   const leaveGate = useBookingConflictGate('Save')
@@ -203,6 +215,8 @@ export function DailyOverviewBookingSheet({
     if (byEmail) return byEmail.id
     return users.find((entry) => normalizeDocumentId(findOperativeForUser(entry, operatives)?.id) === normalizeDocumentId(row.operativeId))?.id
   }, [row.userId, row.operativeId, operatives, users])
+
+  const otherAllowed = canBookOtherLocationsFor(webJobAccessViewer(user), resolvedUserId ? [resolvedUserId] : [])
 
   const linkedOperative = useMemo(() => {
     if (row.operativeId) return operatives.find((entry) => normalizeDocumentId(entry.id) === normalizeDocumentId(row.operativeId))
@@ -291,7 +305,7 @@ export function DailyOverviewBookingSheet({
     try {
       const hours = hoursFields()
       if (row.kind === 'operative') {
-        await updateBooking(row.bookingId, { projectId: project.id, ...hours })
+        await updateBooking(row.bookingId, { projectId: project.id, ...hours, ...rateFields(false) })
       } else if (linkedOperative) {
         await createBooking({
           operativeId: linkedOperative.id,
@@ -304,6 +318,7 @@ export function DailyOverviewBookingSheet({
           workStartTime: hours.workStartTime,
           workEndTime: hours.workEndTime,
           isBreakRemoved: hours.isBreakRemoved,
+          ...(rateFields(true) as { otMultiplierOverride?: number }),
           organizationId: organization.id,
         })
         await deleteManagerSiteBooking(organization.id, row.bookingId)
@@ -313,6 +328,7 @@ export function DailyOverviewBookingSheet({
           locationId: project.id,
           customLocationName: undefined,
           ...hours,
+          ...rateFields(false),
         })
       }
       onClose()
@@ -345,6 +361,7 @@ export function DailyOverviewBookingSheet({
           workStartTime: hours.workStartTime,
           workEndTime: hours.workEndTime,
           isBreakRemoved: hours.isBreakRemoved,
+          ...rateFields(true),
         })
         // The labour booking moves to the manager schedule: whoever may delete it does (`canDeleteBooking`, 1.10.0:
         // admins, and managers on jobs they manage); anyone else cancels it.
@@ -360,6 +377,7 @@ export function DailyOverviewBookingSheet({
           locationId: undefined,
           customLocationName: pick.customLocationName,
           ...hours,
+          ...rateFields(false),
         })
       }
       onClose()
@@ -378,11 +396,11 @@ export function DailyOverviewBookingSheet({
     try {
       const hours = hoursFields()
       if (row.kind === 'operative') {
-        await updateBooking(row.bookingId, { ...hours, ...(overtimeRate !== storedRate ? { otMultiplierOverride: overtimeRate } : {}) })
+        await updateBooking(row.bookingId, { ...hours, ...rateFields(false) })
       } else {
         await updateManagerSiteBooking(organization.id, row.bookingId, {
           ...hours,
-          ...(overtimeRate !== storedRate ? { otMultiplierOverride: overtimeRate } : {}),
+          ...rateFields(false),
         })
       }
       onClose()
@@ -414,7 +432,14 @@ export function DailyOverviewBookingSheet({
           Currently booked to <b>{currentLabel}</b>. Choose Other, a project, or small works, and set the start and finish.
         </p>
         <div className="grid g3" style={{ gap: 8 }}>
-          <button type="button" className={`btn ${tab === 'other' ? 'primary' : ''}`} onClick={() => openTab('other')}>
+          {/* Rulebook 1.32.0 §2: Other only when the viewer may book this person there (`canBookOtherLocationsFor`). */}
+          <button
+            type="button"
+            className={`btn ${tab === 'other' ? 'primary' : ''}`}
+            disabled={!otherAllowed}
+            title={otherAllowed ? undefined : 'Managers book Office, Working from home and Site survey for themselves only.'}
+            onClick={() => openTab('other')}
+          >
             Other
           </button>
           <button type="button" className={`btn ${tab === 'projects' ? 'primary' : ''}`} onClick={() => openTab('projects')}>

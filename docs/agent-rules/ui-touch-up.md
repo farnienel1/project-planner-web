@@ -10,4 +10,4 @@ Spec: `docs/ui-touch-up/` (README, touch-up.css, COMPONENT_EDITS.md, screenshots
 6. `docs/agent-rules/ios-parity-upgrades.md` (behaviour parity) does not apply to this touch-up.
 7. If something cannot be done with a className edit, skip it and list it.
 
-The sidebar and Home follow `docs/DESIGN_TOKENS.md` (brand tokens in `app/brand-shell.css`; one accent colour: every Home quick-action icon is `brand-600` on a `brand-50` tile). Rule 5 applies to the other screens.
+The sidebar, top bar and Home follow `docs/DESIGN_TOKENS.md` (the scoped `--dash-*` tokens in `app/brand-shell.css`, light and dark; owner decision 11, 5 Nov 2026). Rule 5 applies to the other screens.

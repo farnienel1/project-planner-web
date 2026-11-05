@@ -2,7 +2,7 @@ import { doc, getDoc, getDocFromServer, runTransaction, setDoc, updateDoc } from
 import { validateAnnualLeaveDefaults } from '@/lib/canonical/annualLeaveBalance'
 import { db } from '@/lib/firebase/config'
 import { serverTimestamp } from 'firebase/firestore'
-import { weekdayPaidHours, writeMetadataFields } from '@/lib/canonical'
+import { payePaydayWriteFields, weekdayPaidHours, writeMetadataFields } from '@/lib/canonical'
 import { type NotificationPreferences } from '@/lib/settings/notificationPreferences'
 import { dayKey } from '@/lib/ios-parity/londonTime'
 import {
@@ -451,7 +451,9 @@ export async function saveWarningDetection(
 export async function saveInvoicingSettings(
   organizationId: string,
   settings: OrgInvoicingSettings,
-  userId?: string
+  userId?: string,
+  /** Rulebook 1.32.0 §4.5: the PAYE payday picked on the same screen, saved by the same Save (null: unchanged). */
+  payePayday?: number | null
 ): Promise<void> {
   const ref = doc(db, 'organizations', organizationId)
   const data = await readOrganizationData(organizationId)
@@ -481,7 +483,9 @@ export async function saveInvoicingSettings(
   for (const [key, value] of Object.entries(invoicingToFirestore({ ...settings, paymentRunHistory }))) {
     fields[`invoicing.${key}`] = value
   }
-  await updateDoc(ref, { ...fields, ...settingsWriteMetadata(userId) })
+  // Rulebook 1.32.0 §4.5: `payePaydayWriteFields` from the fresh server copy (append-only history), one partial update.
+  const payday = payePayday == null ? null : payePaydayWriteFields(data, payePayday, recordedAtDayKey)
+  await updateDoc(ref, { ...fields, ...(payday ?? {}), ...settingsWriteMetadata(userId) })
 }
 
 /** Writes exactly this list (`scheduleOptionsWriteFields`) — never merged with the stored list. */

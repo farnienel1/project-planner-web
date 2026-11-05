@@ -29,6 +29,101 @@ Firestore evaluates at most 1,000 expressions per request. A request that reache
 - **Tests:** `tests/rulesAssert.ts` `assertLogicalDeny` fails a test whose denial came from the limit; `RULES_STRICT_BUDGET=1 npm run test:rules` makes every suite's `assertFails` strict. In 1.31.1, 49 of the 203 firestore tests (74 at the third review's head `42c69a91`) still contain at least one budget denial (108 on 1.31.0: bookings, invitations, self-create, leave, timesheets, notifications and more); they are a follow-up.
 - **Measuring:** pad the `allow` with N copies of a cheap comparison (a balanced `&&` tree; a flat chain of about 600 terms is refused at compile time as "Expression is too complex to evaluate safely") and find the largest N that still evaluates; each copy is about 7 expressions.
 
+## Compile cost (1.31.3)
+
+Google's rules compiler gave up on 1.31.0–1.31.2 (CLI `firebaserules …:test` 503, console "unknown error"). Its cost tracks the fully inlined size of every allow condition and every function body (the type checker re-resolves a function body at each call site), not the file size. Tools, measurements and method: `docs/rules-cost/README.md` and `scripts/rules-cost/`. Before asking the owner to publish a rules change:
+
+1. `python3 -c "import sys;sys.path.insert(0,'scripts/rules-cost');import metric;print(metric.total2('firestore.rules')[2])"` must stay clearly below live 1.30.2's 525,898 (1.31.3: 431,665).
+2. The emulator type check (`scripts/rules-cost/ctime.py`, PUT `:securityRules`) must report 0 errors.
+3. `RULES_STRICT_BUDGET=1 npm run test:rules` must list no new 1,000-expression refusals. A change that cuts compile cost can raise the per-request count: 1.31.3 dropped a merge of the job-manager checks because it added 19.
+
+1.31.3 changes (no allow/deny change; suites 220/220):
+- bookings, managerSiteBookings and subcontractorBookings: create, update and delete are one allow per collection that calls `bookingWriteAllowed(collection, request.method)` once; `bookingWriteAllowed` checks the manager's job twice instead of three times.
+- `jobListsCaller` builds its pattern once; `canAccessOrganization`, `isOrgCreatorViaParentGet`, `userDocOrganizationMatches`, `userOrgIdMatchesPath`, `callerHomeData` and `isOrganizationAdminAnyBilling` (now `homeIsActiveAdminOf`) read each document path once.
+- 79 helpers that had no `let` and one or two callers were written out inside their callers (`scripts/rules-cost/inline.py`). Their names no longer exist in `firestore.rules`; the notes below keep their headings. Where each went:
+
+| Helper (1.31.2) | Now written out inside |
+|---|---|
+| `actorUserIdValid` | allow create in `/notifications/{notificationId}`, allow update in `/notifications/{notificationId}` |
+| `belongsToOrganization` | allow read in `/materialSendRecords/{recordId}`, `canAccessOrganization` |
+| `canChangePayOfSubject` | allow create in `/payProfiles/{subjectId}`, allow update in `/payProfiles/{subjectId}` |
+| `canClaimLegacyOwnMaterial` | `materialUpdateAllowed` |
+| `canCreateOwnMaterial` | allow create in `/materials/{materialId}` |
+| `canDeleteOwnMaterial` | allow delete in `/materials/{materialId}` |
+| `canDeleteTimesheetSettings` | allow delete in `/settings/{settingId}` |
+| `canManagerUpdateOperativeProfile` | `userUpdateAllowed` |
+| `canReadTimesheetSettings` | allow read in `/settings/{settingId}` |
+| `canReadUserDocument` | allow get in `/users/{userId}`, allow list in `/users/{userId}` |
+| `canUpdateOwnMaterial` | `materialUpdateAllowed` |
+| `canViewPayOf` | allow get in `/payProfiles/{subjectId}` |
+| `canViewPayOfRow` | `canViewPayOfAsMember` |
+| `canWriteMaterialSendRecord` | allow create in `/materialSendRecords/{recordId}`, `isStaffMaterialStatusWrite` |
+| `canWriteTimesheetSettings` | allow create,update in `/settings/{settingId}` |
+| `defaultOnPermissionsOff` | `selfPermissionsNotRaised` |
+| `deletionUnchanged` | allow update in `/organizations/{organizationId}`, `orgRootRemovesOneOperativeMember` |
+| `hbCaller` | `hbCallerIsOperative` |
+| `hbCanDecideBeforeAndAfter` | allow update in `/holidayBookings/{bookingId}` |
+| `hbDatesUnchanged` | `hbOwnerEditAllowed` |
+| `hbDecisionUnchanged` | `hbOwnerEditAllowed` |
+| `hbIsStaffManager` | allow create in `/holidayBookings/{bookingId}` |
+| `hbOwnerUpdateAllowed` | allow update in `/holidayBookings/{bookingId}` |
+| `idListOrMissing` | `selfCreateAliasesWithin` |
+| `invitationAdmin` | `canAdministerInvitation` |
+| `invitationOperativesManager` | `canAdministerInvitation` |
+| `invitedPayCopyFields` | `copiesInvitedPay` |
+| `inviteeOfPlaceholder` | allow delete in `/private/{privateDocId}`, allow read in `/private/{privateDocId}` |
+| `isMemberWritableSettingsDoc` | allow create,update in `/settings/{settingId}`, allow delete in `/settings/{settingId}` |
+| `isOnlyClaimingLegacyOwnMaterial` | `materialUpdateAllowed` |
+| `isOrgAdminViaMembersMapAnyBilling` | `hbIsAdmin`, `isOrgAdminViaMembersMap` |
+| `isOrgBootstrapAdminProfileCreate` | allow create in `/users/{userId}` |
+| `isOrgMemberViaParentGet` | allow read in `/materialSendRecords/{recordId}`, `canAccessOrganization`, `selfCreateJoinsCompany` |
+| `isOrgNonOperativeMember` | allow create in `/materialSendRecords/{recordId}`, `isStaffMaterialStatusWrite` |
+| `isOwnEmailClaimWrite` | allow create,update in `/userEmails/{emailKey}` |
+| `isOwnNotification` | allow read in `/notifications/{notificationId}`, allow update in `/notifications/{notificationId}` |
+| `isOwnTimesheetSettings` | allow read in `/settings/{settingId}`, `timesheetCallerIsSubject` |
+| `isTimesheetReviewer` | allow read in `/settings/{settingId}` |
+| `isVariationSettingsDoc` | allow read in `/settings/{settingId}` |
+| `legacyMaterialAddedByMatchesCurrentUser` | allow delete in `/materials/{materialId}`, `materialUpdateAllowed` |
+| `lockedPermissionFalseMap` | `selfPermissionsNotRaised` |
+| `lockedPermissionsOn` | `selfPermissionsNotRaised` |
+| `managerCanCreateOperativeUser` | allow create in `/users/{userId}` |
+| `managerMayRecordRateRow` | `canWriteRateRow` |
+| `materialManagerLikeUser` | `callerOrgRoleAnyBilling` |
+| `membershipSelfWriteAllowed` | allow create,update in `/orgMemberships/{membershipOrgId}` |
+| `operativeProfileStampOnly` | allow create,update in `/operativeProfiles/{userId}` |
+| `operativeRowBaseAllowed` | allow create,update in `/operatives/{operativeId}` |
+| `operativeRowGuardedWrite` | allow create,update in `/operatives/{operativeId}` |
+| `operativeRowIsCaller` | allow create,update in `/operatives/{operativeId}` |
+| `operativeTarget` | `manageableOperative` |
+| `operativesManagerFlags` | `managerMayManageOperative`, `userUpdateAllowed` |
+| `operativesManagerForOtherRow` | allow create,update in `/operatives/{operativeId}` |
+| `orgRootCallerIsSuperAdmin` | allow update in `/organizations/{organizationId}`, `orgRootSuperAdminRestore` |
+| `orgScheduledForErasure` | allow update in `/organizations/{organizationId}`, `orgRootSuperAdminRestore` |
+| `organizationExists` | allow create in `/users/{userId}`, `userUpdateAllowed` |
+| `overtimeTextFieldValid` | `overtimeLineManagerBookingUpdate` |
+| `payProfileKeysValid` | allow create in `/payProfiles/{subjectId}`, allow update in `/payProfiles/{subjectId}` |
+| `payeClaimCommonValid` | `expenseItemValid`, `priceWorkItemValid` |
+| `permissionValue` | `staffFlag` |
+| `privilegeWriteTypedChanged` | `privilegeWriteTyped` |
+| `rosterRowEmailChanged` | allow create,update in `/managers/{managerId}`, allow create,update in `/operatives/{operativeId}` |
+| `rosterRowLinksManageable` | allow create,update in `/operatives/{operativeId}` |
+| `rosterRowPayKeysChanged` | allow create,update in `/managers/{managerId}`, allow create,update in `/operatives/{operativeId}` |
+| `selfCreateSelfManageOff` | allow create in `/users/{userId}`, `selfCreateJoinsCompany` |
+| `selfKeepsStoredFlags` | `selfUpdateKeepsManagedFields` |
+| `selfSuperAdminKept` | `userUpdateAllowed` |
+| `timesheetManagerFieldsUnchanged` | allow create,update in `/settings/{settingId}` |
+| `timesheetOwnerLeavesList` | `timesheetOwnerReviewFieldsUnchanged` |
+| `timesheetSelfSignsUid` | `timesheetSelfSignedOwnerWrite` |
+| `timesheetStoredManagerSigned` | `timesheetOwnerReviewFieldsUnchanged` |
+| `timesheetSubjectIsCaller` | allow delete in `/settings/{settingId}`, `timesheetCallerIsSubject` |
+| `userAdminUpdateAllowed` | `userUpdateAllowed` |
+| `userCreateBootstrap` | allow create in `/users/{userId}` |
+| `userCreateByAdmin` | allow create in `/users/{userId}` |
+| `userCreateSelfJoin` | allow create in `/users/{userId}` |
+| `userSelfUnmasksSuperAdmin` | `userUpdateAllowed` |
+| `userSelfUpdateKeepsPrivileges` | `userUpdateAllowed` |
+| `userUpdateKeepsOrganization` | `userUpdateAllowed` |
+
 ## Service-level functions
 
 ### `orgIdsMatch`

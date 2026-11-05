@@ -345,3 +345,23 @@ test('reports are read by the person, their line managers and admins only', asyn
   await assertFails(getDoc(orgDoc(OP2, 'overtimeReports', 'REP1')))
   await assertSucceeds(getDocs(query(collection(db(SAM), 'organizations', ORG, 'overtimeReports'), where('userId', '==', SAM))))
 })
+
+test('1.32.0 partial approval: the line manager records what they applied and the request stays pending for an admin', async () => {
+  await assertSucceeds(setDoc(orgDoc(SAM, 'overtimeRequests', 'RP'), requestData(SAM)))
+  await assertSucceeds(
+    updateDoc(orgDoc(LM, 'overtimeRequests', 'RP'), {
+      status: 'pending',
+      decidedBy: LM,
+      decisions: { B1: { action: 'approve' } },
+      appliedBookingIds: ['B1'],
+      droppedBookingIds: [],
+    })
+  )
+  // Still only the decision fields, still never by the person or another manager.
+  await assertFails(updateDoc(orgDoc(LM, 'overtimeRequests', 'RP'), { status: 'pending', decidedBy: LM, lines: [] }))
+  await assertFails(updateDoc(orgDoc(SAM, 'overtimeRequests', 'RP'), { status: 'pending', decidedBy: SAM, appliedBookingIds: ['B1'] }))
+  await assertFails(updateDoc(orgDoc(MGR2, 'overtimeRequests', 'RP'), { status: 'pending', decidedBy: MGR2, appliedBookingIds: ['B1'] }))
+  // The admin completes it.
+  await assertSucceeds(updateDoc(orgDoc(ADMIN, 'overtimeRequests', 'RP'), { status: 'approved', decidedBy: ADMIN, appliedBookingIds: ['B1', 'B2'] }))
+  await assertFails(updateDoc(orgDoc(ADMIN, 'overtimeRequests', 'RP'), { status: 'pending', decidedBy: ADMIN }), 'approved is final')
+})

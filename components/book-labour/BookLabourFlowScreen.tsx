@@ -5,7 +5,7 @@
 'use client'
 
 import { jobKind } from '@/lib/canonical/staffAccess'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useBookingStore } from '@/lib/stores/bookingStore'
@@ -53,21 +53,18 @@ import {
 import type { Booking, Project } from '@/types'
 import {
   bookLabourDayLine,
-  bookLabourListPhase,
-  buildBookLabourCandidates,
   type BookLabourCandidate,
   type BookLabourListPhase,
 } from '@/lib/book-labour/candidates'
+import { bookLabourList } from '@/lib/book-labour/bookLabourList'
 import { HoursTimelinePicker } from '@/components/scheduling/HoursTimelinePicker'
 import { confirmCustomHoursBreak, slotOfferedOnDate, weekendNotesForDates } from '@/lib/scheduling/bookingSlotRules'
 import { useCustomHoursPrefillOnKindChange } from '@/lib/scheduling/useOrganizationPayrollPolicy'
 import { CustomOtherLocationField } from '@/components/scheduling/CustomOtherLocationField'
 import { PanelHeader } from '@/components/settings/primitives'
-import { ORPHAN_BOOKING_LABEL } from '@/lib/canonical'
+import { ORPHAN_BOOKING_LABEL, canBookOtherLocationsFor } from '@/lib/canonical'
+import { CreateOvertimeRateField, useCreateOvertimeRateFields } from '@/components/overtime/OvertimeRateField'
 import { useOrganizationDocument, useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
-import { partitionRowsByOrganization, warningScanUsers } from '@/lib/warnings/warningsScan'
-import { orgWarningScope } from '@/lib/warnings/warningScopeRoster'
-import { mergeProjectsAndSmallWorks } from '@/lib/projects/workStatus'
 import { webJobAccessViewer } from '@/lib/access/readPlan'
 import { enforcedReadsFor } from '@/lib/access/securitySwitches'
 
@@ -190,6 +187,9 @@ export function BookLabourFlowScreen({
   const [customStart, setCustomStart] = useState('07:30')
   const [customEnd, setCustomEnd] = useState('16:00')
   const [breakRemoved, setBreakRemoved] = useState(false)
+  // Rulebook 1.32.0 §25 (decision A): the custom-hours rate, null = left at the organisation's pre-filled rate.
+  const [customRate, setCustomRate] = useState<number | null>(null)
+  const createRateFields = useCreateOvertimeRateFields(dayKey(day), customRate)
   const [scheduleOpts, setScheduleOpts] = useState<MyScheduleOptions>({
     ...DEFAULT_MY_SCHEDULE,
     customItemEnabled: {},
@@ -266,79 +266,70 @@ export function BookLabourFlowScreen({
   ])
 
   const orgId = organization?.id || ''
-  // Rows saved for another company never count for this one (`partitionRowsByOrganization`, `warningScanUsers`).
-  const userScope = useMemo(
-    () => warningScanUsers(users, orgId, Boolean(orgId) && rosterLoadedOrgId === orgId),
-    [users, orgId, rosterLoadedOrgId]
-  )
-  const operativeScope = useMemo(() => partitionRowsByOrganization(operatives, orgId), [operatives, orgId])
-  const bookingScope = useMemo(() => partitionRowsByOrganization(bookings, orgId), [bookings, orgId])
-  const managerScope = useMemo(() => partitionRowsByOrganization(managerSiteBookings, orgId), [managerSiteBookings, orgId])
-  const holidayScope = useMemo(() => partitionRowsByOrganization(holidays, orgId), [holidays, orgId])
-  const projectScope = useMemo(
-    () => partitionRowsByOrganization(mergeProjectsAndSmallWorks(projects, smallWorks), orgId),
-    [projects, smallWorks, orgId]
-  )
-  // Owner decision (4 Nov 2026): Book labour is scoped exactly like the Warnings unbooked list — admins see everyone;
-  // a manager themselves and the people they line-manage (`warningScopeFor`, rulebook 1.31.0 §5).
-  const viewerScope = useMemo(
-    () =>
-      orgWarningScope({
-        viewer: webJobAccessViewer(user),
-        enforcedReads: enforcedReadsFor(),
-        projects: projectScope.rows,
-        users: userScope.rows,
-        userIdAliases,
-        operatives: operativeScope.rows,
-      }),
-    [user, projectScope, userScope, userIdAliases, operativeScope]
-  )
   const settledHere = loadsSettled.orgId === orgId
-  const listPhase = bookLabourListPhase({
-    organization: {
-      ready: Boolean(liveDetails) && liveOrganization.loaded,
-      error: liveOrganization.organizationId === orgId ? liveOrganization.error : null,
-    },
-    roster: { ready: rosterLoadedOrgId === orgId && !userScope.foreign, error: usersError },
-    operatives: { ready: settledHere && loadsSettled.operatives && !operativeScope.foreign, error: operativesError },
-    bookings: { ready: settledHere && loadsSettled.bookings && !bookingsLoading && !bookingScope.foreign, error: bookingsError },
-    managerBookings: { ready: settledHere && loadsSettled.manager && !managerLoading && !managerScope.foreign, error: managerError },
-    holidays: { ready: holidaysLoadedOrgId === orgId && !holidaysLoading && !holidayScope.foreign, error: holidaysError },
-    jobs: { ready: settledHere && loadsSettled.projects && !projectScope.foreign },
-  }, viewerScope)
-
-  const candidates = useMemo(
+  // Owner decision 3 (5 Nov 2026): the list (phase, people, the viewer's Warnings scope) is `bookLabourList`, the one
+  // Home's unbooked banner also counts, so the banner always matches this screen for the same viewer.
+  const { phase: listPhase, candidates } = useMemo(
     () =>
-      listPhase !== 'ready' || !liveDetails
-        ? []
-        : // Rulebook §5 / §6: exactly the `unbookedLabourRowsOnDay` people for the day (Warnings and Daily Overview).
-          buildBookLabourCandidates({
-            dayKey: dayKey(day),
-            timeZone: orgTimeZone,
-            users: userScope.rows,
-            operatives: operativeScope.rows,
-            bookings: bookingScope.rows,
-            managerSiteBookings: managerScope.rows,
-            holidays: holidayScope.rows,
-            warningDetection: liveDetails.warningDetection,
-            payrollPolicy: liveDetails.payrollTimePolicy,
-            payrollPolicyState: liveDetails.payrollTimePolicyState,
-            userIdAliases,
-            scope: viewerScope,
-            focusedUserIds,
-          }),
+      bookLabourList({
+        organizationId: orgId,
+        viewer: user,
+        enforcedReads: enforcedReadsFor(),
+        dayKey: dayKey(day),
+        timeZone: orgTimeZone,
+        users,
+        rosterLoadedOrgId,
+        usersError,
+        userIdAliases,
+        operatives,
+        bookings,
+        managerSiteBookings,
+        holidays,
+        projects,
+        smallWorks,
+        liveDetails,
+        sources: {
+          organization: {
+            ready: Boolean(liveDetails) && liveOrganization.loaded,
+            error: liveOrganization.organizationId === orgId ? liveOrganization.error : null,
+          },
+          operatives: { ready: settledHere && loadsSettled.operatives, error: operativesError },
+          bookings: { ready: settledHere && loadsSettled.bookings && !bookingsLoading, error: bookingsError },
+          managerBookings: { ready: settledHere && loadsSettled.manager && !managerLoading, error: managerError },
+          holidays: { ready: holidaysLoadedOrgId === orgId && !holidaysLoading, error: holidaysError },
+          jobs: { ready: settledHere && loadsSettled.projects },
+        },
+        focusedUserIds,
+      }),
     [
-      listPhase,
-      liveDetails,
+      orgId,
+      user,
       day,
       orgTimeZone,
-      userScope,
-      operativeScope,
-      bookingScope,
-      managerScope,
-      holidayScope,
+      users,
+      rosterLoadedOrgId,
+      usersError,
       userIdAliases,
-      viewerScope,
+      operatives,
+      bookings,
+      managerSiteBookings,
+      holidays,
+      projects,
+      smallWorks,
+      liveDetails,
+      liveOrganization.loaded,
+      liveOrganization.organizationId,
+      liveOrganization.error,
+      settledHere,
+      loadsSettled,
+      operativesError,
+      bookingsLoading,
+      bookingsError,
+      managerLoading,
+      managerError,
+      holidaysLoadedOrgId,
+      holidaysLoading,
+      holidaysError,
       focusedUserIds,
     ]
   )
@@ -378,7 +369,9 @@ export function BookLabourFlowScreen({
   const otherPicks = enabledScheduleLocationPicks(scheduleOpts)
   const activeParty = party.length > 0 ? party : []
   const fallbackPerson = activeParty[0]
-  const otherEnabled = true
+  // Rulebook 1.32.0 §2 (`canBookOtherLocationsFor`): Office / WFH / Site survey / custom items only when the viewer may
+  // book every person in the party there — admins anyone, a manager only themself. Jobs stay `bookableWorks`.
+  const otherEnabled = canBookOtherLocationsFor(webJobAccessViewer(user), activeParty.map((person) => person.user.id))
 
   function closeFlow() {
     if (onClose) {
@@ -562,6 +555,8 @@ export function BookLabourFlowScreen({
     workStart?: string
     workEnd?: string
     breakRemoved?: boolean
+    /** Rulebook 1.32.0: `overtimeMultiplierCreateFields` for custom hours. */
+    rateFields?: { otMultiplierOverride?: number }
     allowOperativeOverlap?: boolean
     /** Users ids the booker dropped from this day in the conflict list. */
     droppedUserIds?: ReadonlySet<string>
@@ -681,6 +676,7 @@ export function BookLabourFlowScreen({
             workStartTime: args.workStart,
             workEndTime: args.workEnd,
             isBreakRemoved: args.breakRemoved === true,
+            ...(args.rateFields ?? {}),
             organizationId: organization.id,
           })
         } else {
@@ -706,6 +702,7 @@ export function BookLabourFlowScreen({
             workStartTime: args.workStart,
             workEndTime: args.workEnd,
             isBreakRemoved: args.breakRemoved === true,
+            ...(args.rateFields ?? {}),
           })
         }
       }
@@ -756,6 +753,7 @@ export function BookLabourFlowScreen({
       workStart: customStart,
       workEnd: customEnd,
       breakRemoved,
+      rateFields: createRateFields,
     })
   }
 
@@ -911,6 +909,7 @@ export function BookLabourFlowScreen({
             onStart={setCustomStart}
             onEnd={setCustomEnd}
             onBreak={setBreakRemoved}
+            rateField={<CreateOvertimeRateField dayKey={dayKey(day)} value={customRate} onChange={setCustomRate} />}
             onSave={() => {
               if (phase.kind === 'pickCustomManager') {
                 validateCustomAndSave(phase.locationType, phase.locationId, phase.customLocationName)
@@ -1376,6 +1375,7 @@ function CustomHoursForm({
   onEnd,
   onBreak,
   onSave,
+  rateField,
 }: {
   start: string
   end: string
@@ -1388,6 +1388,7 @@ function CustomHoursForm({
   onEnd: (value: string) => void
   onBreak: (value: boolean) => void
   onSave: () => void
+  rateField?: ReactNode
 }) {
   return (
     <div className="space-y-4 card p-4">
@@ -1401,6 +1402,7 @@ function CustomHoursForm({
         onEnd={onEnd}
         onBreak={onBreak}
       />
+      {rateField}
       <button
         type="button"
         disabled={saving}
