@@ -8,6 +8,12 @@ Live launch checklist (the owner ticks items there; Claude updates rows as work 
 
 ---
 
+## 0. Progress log (second chat, 5 Nov afternoon)
+
+- **Docs PR #277** opened for this note and the design pack (docs only, CI green).
+- **Rules 1.31.3 finished: PR #278** (`web-rules-1313`). Suites 220/220 on port 8080; strict budget 47 limit refusals vs 49 on 1.31.2 (none new); emulator type check 0 errors / 0 warnings; static cost 431,665 (1.30.2: 525,898; 1.31.2: 606,643); in-process compile 2.25–2.47 s vs 1.30.2 2.59–2.86 s. Extra hand edits on top of the old candidate (org-access helpers read each path once; booking write checks the job twice not three times). A merged job-manager check was tried and **dropped** (+19 strict limit refusals). Grid / probe family f not re-run (harness lost with the old container). Independent review running. Lesson for every later rules release: run the strict suite after every cost cut.
+- Next: review → merge #278 → owner console publish → stage B (port the same treatment to #274).
+
 ## 1. Where things stand (5 Nov, end of the long chat)
 
 | Item | State |
