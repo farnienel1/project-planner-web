@@ -25,33 +25,20 @@ service cloud.firestore {
   }
 
   function userDocOrganizationMatches(userData, organizationId) {
-    return 'organizationId' in userData && (
-      (userData.organizationId is string &&
-       orgIdsMatch(userData.organizationId, organizationId)) ||
-      (userData.organizationId is string &&
-       string(userData.organizationId).lower().matches('(^|.*/)organizations/' + organizationId.lower() + '$')) ||
-      (userData.organizationId is path &&
-       orgIdsMatch(userData.organizationId[4], organizationId)) ||
-      userData.organizationId == /databases/(default)/documents/organizations/$(organizationId) ||
-      (userData.organizationId is path &&
-       string(userData.organizationId).lower().matches('.*/organizations/' + organizationId.lower() + '$'))
-    );
+    let v = userData.get('organizationId', null);
+    let o = organizationId.lower();
+    return (v is string && (orgIdsMatch(v, organizationId) || v.lower().matches('(^|.*/)organizations/' + o + '$'))) ||
+      (v is path && (orgIdsMatch(v[4], organizationId) || string(v).lower().matches('.*/organizations/' + o + '$'))) ||
+      v == /databases/(default)/documents/organizations/$(organizationId);
   }
 
   function userOrgIdMatchesPath(organizationId) {
-    return request.auth != null &&
-           exists(/databases/(default)/documents/users/$(request.auth.uid)) &&
-           userDocOrganizationMatches(
-             get(/databases/(default)/documents/users/$(request.auth.uid)).data,
-             organizationId
-           );
+    return request.auth != null && userDocOrganizationMatches(callerHomeData(), organizationId);
   }
 
   function isOrgCreatorViaParentGet(organizationId) {
-    return request.auth != null &&
-           exists(/databases/(default)/documents/organizations/$(organizationId)) &&
-           'creatorUserId' in get(/databases/(default)/documents/organizations/$(organizationId)).data &&
-           get(/databases/(default)/documents/organizations/$(organizationId)).data.creatorUserId == request.auth.uid;
+    let orgPath = /databases/(default)/documents/organizations/$(organizationId);
+    return request.auth != null && exists(orgPath) && get(orgPath).data.get('creatorUserId', null) == request.auth.uid;
   }
 
   function selfCreateHasAgeConfirmation() {
@@ -269,14 +256,12 @@ service cloud.firestore {
   }
 
   function canAccessOrganization(organizationId) {
+    let orgPath = /databases/(default)/documents/organizations/$(organizationId);
     return isPlatformOwner() || (request.auth != null && orgBillingOpen(organizationId) && (
       userOrgIdMatchesPath(organizationId)
         ? callerHomeData().get('isActive', true) != false
-        : (((request.auth != null &&
-           exists(/databases/(default)/documents/organizations/$(organizationId)) &&
-           'members' in get(/databases/(default)/documents/organizations/$(organizationId)).data &&
-           get(/databases/(default)/documents/organizations/$(organizationId)).data.members[request.auth.uid] != null) || isOrgCreatorViaParentGet(organizationId)) &&
-           !callerMembershipDeactivated(organizationId))
+        : (((exists(orgPath) && get(orgPath).data.get('members', {}).get(request.auth.uid, null) != null) ||
+            isOrgCreatorViaParentGet(organizationId)) && !callerMembershipDeactivated(organizationId))
     ));
   }
 
@@ -304,11 +289,10 @@ service cloud.firestore {
     return isOrganizationAdminAnyBilling(organizationId) && orgBillingOpen(organizationId);
   }
   function isOrganizationAdminAnyBilling(organizationId) {
-    return request.auth != null &&
-           exists(/databases/(default)/documents/users/$(request.auth.uid)) &&
-           userOrgIdMatchesPath(organizationId) &&
-           adminLikeUser(get(/databases/(default)/documents/users/$(request.auth.uid)).data) &&
-           get(/databases/(default)/documents/users/$(request.auth.uid)).data.get('isActive', true) != false;
+    return request.auth != null && homeIsActiveAdminOf(callerHomeData(), organizationId);
+  }
+  function homeIsActiveAdminOf(home, organizationId) {
+    return userDocOrganizationMatches(home, organizationId) && adminLikeUser(home) && home.get('isActive', true) != false;
   }
 
   function callerListedRole(organizationId) {
@@ -316,8 +300,8 @@ service cloud.firestore {
       get(/databases/(default)/documents/organizations/$(organizationId)).data.get('members', {}).get(request.auth.uid, '') : '';
   }
   function callerHomeData() {
-    return exists(/databases/(default)/documents/users/$(request.auth.uid)) ?
-      get(/databases/(default)/documents/users/$(request.auth.uid)).data : {};
+    let p = /databases/(default)/documents/users/$(request.auth.uid);
+    return exists(p) ? get(p).data : {};
   }
   function homeOrgIs(home, organizationId) {
     let v = home.get('organizationId', '');
@@ -1416,15 +1400,13 @@ service cloud.firestore {
         return (op == 'delete' || bookingJobCollectionValid(collection, request.resource.data)) && (
           role == 'admin' || (
             role == 'manager' && (
-              op == 'create' ? managerMayWriteBookingData(collection, request.resource.data) : (
-                managerMayWriteBookingData(collection, resource.data) && (
-                  op != 'update' ||
-                  (bookingJobId(collection, request.resource.data) == bookingJobId(collection, resource.data) &&
-                   bookingHasJob(collection, request.resource.data) == bookingHasJob(collection, resource.data) &&
-                   request.resource.data.get('jobCollection', '') == resource.data.get('jobCollection', '') &&
-                   request.resource.data.get('userId', '') == resource.data.get('userId', '')) ||
-                  managerMayWriteBookingData(collection, request.resource.data)
-                )
+              managerMayWriteBookingData(collection, op == 'create' ? request.resource.data : resource.data) && (
+                op != 'update' ||
+                (bookingJobId(collection, request.resource.data) == bookingJobId(collection, resource.data) &&
+                 bookingHasJob(collection, request.resource.data) == bookingHasJob(collection, resource.data) &&
+                 request.resource.data.get('jobCollection', '') == resource.data.get('jobCollection', '') &&
+                 request.resource.data.get('userId', '') == resource.data.get('userId', '')) ||
+                managerMayWriteBookingData(collection, request.resource.data)
               )
             )
           ) || isPlatformOwner()
