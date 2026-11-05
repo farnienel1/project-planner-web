@@ -120,6 +120,7 @@ How to use it:
 
 | 5 Nov | **Who sees pay rates (owner restatement).** Day and hourly rates are seen by **admins (all users)** and by **managers with the Operatives toggle (operatives only)**. With the toggle on, a manager sees the Operatives page (live, pending, inactive), opens any operative and sees their rate, and can add operative-level users only. With it off, a manager has no Operatives page and sees live operatives only through project and small works scheduling, with no rates. **This differs from rulebook §8 / `canViewPersonPay` (1.13.0), which also lets a person's line managers see their pay** — to be changed in the next rulebook release. Open: the person's own rate on My Profile (§12 shows it read-only) and whether a line manager signing a self-employed timesheet sees its £ amounts (see Open questions). | open (next rulebook release) |
 | 5 Nov | **Private pay switch on before launch** (owner: "yes before launch"). Order: merge rules #264; raise `minimumIosBuild` to at least the iOS 1.26.0 build (changed-fields-only saves) with 1.32; then the owner switches `privatePay` on in `platformConfig/app` with steps Claude sends. Until then pay is hidden on screen only; the stored rate is on the users document that every member can read. | open (before launch) |
+| 5 Nov | **Pay visibility edge cases (answers to the 5 Nov open question).** (a) A person sees their own rate, read-only, on My Profile. (b) A line manager who is not an admin and has no Operatives toggle sees a report's rate **only on the timesheets they review** (rate, overtime calculation and invoice, so every timesheet looks the same) — nowhere else: no Operatives page, no profile rate, no rate history. A level change recalculates all of this (no rights carry over). Rulebook §8 `canViewPersonPay` to be narrowed to this in the next rulebook release. | open (next rulebook release) |
 ## iOS
 
 | Date | Decision | Status |
@@ -130,6 +131,7 @@ How to use it:
 
 | 4 Nov | **Materials catalogue** (add, edit, delete catalogue items and prices) is **admins only** on both apps, through one rulebook rule. iOS `canManageMaterialCatalogue` currently has its own role check (found in the #188 sweep). Sending material orders is unchanged. | open (next rulebook release) |
 | 4 Nov | Very old timesheets with sign-off dates but no signer name or signature image read **Sign Off Pending** (rulebook `isTimesheetFullySigned`), on both apps. No rulebook exception: new organisations only use the new rules. | done (iOS #188, web already) |
+| 5 Nov | **My Profile UI upgrade, iOS and web** (iOS: opened from the Home screen). General UI upgrade with personal metrics, the same on both apps and following the same rules. Metrics come from rulebook functions only (no new calculators); proposed set awaiting owner confirmation. | open (after #264) |
 ## Known rulebook bugs (fix in the next rulebook release)
 
 | Date | Bug | Status |
@@ -149,4 +151,4 @@ How to use it:
 
 | Date | Question |
 |---|---|
-| 5 Nov | Pay visibility edge cases after removing line managers: (a) does a person see their own rate on My Profile (rulebook §12 says yes, read-only)? (b) a line manager who is not an admin or Operatives manager signs a self-employed timesheet — do they see its £ amounts and the invoice, or hours only? Recommended: (a) yes; (b) hours only, £ hidden. |
+| 5 Nov | ANSWERED 5 Nov (see Files, data and privacy). Pay visibility edge cases after removing line managers: (a) does a person see their own rate on My Profile (rulebook §12 says yes, read-only)? (b) a line manager who is not an admin or Operatives manager signs a self-employed timesheet — do they see its £ amounts and the invoice, or hours only? Recommended: (a) yes; (b) hours only, £ hidden. |
