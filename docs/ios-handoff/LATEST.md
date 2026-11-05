@@ -9,8 +9,8 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
 Rulebook version: 1.32.0 → 1.32.0
-Packed hash: cd4f17422c329ff059a61255973f790ff4f7be757890478b89aab35f2d973b2d
-Rulebook sha256: a957c26b3dcfde4480da16288b5777dcbf1dcecf045b45a284c28757129e6090
+Packed hash: 2b0f44ce7878b020fea0ab1677765aa3c2edf3cdc74a8de3e3f71e28a6a1c6e7
+Rulebook sha256: 58ba98eb43232bb232397f81b7ae46071a2ea0b90e70e71f5badef1ff616068d
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -20,12 +20,12 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
   web lib/canonical/cross-platform-contract.json    → iOS ProjectPlannerTests/CrossPlatformContract.json
 Contract sha256: 7f70ec28920ac6114068b4e44eaf893706d5b6af1b21d77b69f946074d74e126
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: canOpenWeeklyReport
+Exports added: none
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/permissionLevels.ts
+Web files that changed the rules: docs/RULEBOOK.md, firestore.rules
 Done when:
-- [ ] Packed hash in iOS equals cd4f17422c329ff059a61255973f790ff4f7be757890478b89aab35f2d973b2d
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 a957c26b3dcfde4480da16288b5777dcbf1dcecf045b45a284c28757129e6090)
+- [ ] Packed hash in iOS equals 2b0f44ce7878b020fea0ab1677765aa3c2edf3cdc74a8de3e3f71e28a6a1c6e7
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 58ba98eb43232bb232397f81b7ae46071a2ea0b90e70e71f5badef1ff616068d)
 - [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.32.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
@@ -50,8 +50,12 @@ Done when:
 - **Small shared helpers:** `legalPackAcceptanceWriteFields` (with write metadata), `invitationListConstraints` (both email forms, as stored and lower case, like iOS `InvitationLookup`), `invitationReadErrorIsSkippable` (a clean-up skips only permission-denied invitation reads).
 - **Managers' own site bookings** (owner decision 4 Nov): Scheduling, Daily Overview and My Schedule show a manager site booking's overtime rate with `bookingHoursLabel` like a labour booking (the stored `otMultiplierOverride`, else the organisation's). Web already passes it; iOS must pass the stored rate on all three.
 - **Review fixes (r274):** decision A holds for keep lines and no-op cogs (`overtimeApprovalWrites` → `needsAdmin` from the booking's person id, whatever the decision); claim reviews are pinned to their item and person in the rules and never written by the person under any id (§16); the weekly report Pay Summary follows `canViewPersonPay` (`reportPayForViewer`, `PAY_HIDDEN_CELL_LABEL`, `PAY_HIDDEN_NOTE`); the Daily Overview booking sheet keeps the rate on every save and move (`overtimeMultiplierMoveFields`). `OVERTIME_APPROVE_REQUEST_LABEL`, `OVERTIME_REQUEST_STALE_MESSAGE`, `OVERTIME_REQUEST_UNDECIDED_MESSAGE` and `overtimeRequestFullyDecided` are deprecated (kept for older iOS builds).
+- **Includes 1.31.2** (rules type-check fixes for console/CLI publish; no behaviour change): no function receives a literal `null` (`rosterRowPrivilegeTyped`, `timesheetSame`, `timesheetSameInstant`, `timesheetOwnerLeaves`); see the 1.31.2 entry below.
 - **iOS files to change** (hand-off): `Views/Overtime/OvertimeViews.swift`, `Core/FirebaseBackend+Overtime.swift`, `Core/Rulebook+PayeOvertime.swift` (approval result, `overtimePersonIds`, `editableUntilKey`, `person` / `roster`, one Approve); `Views/Overtime/PayeClaimsViews.swift`, `Core/Rulebook+PayeClaims.swift` (claims review); `Core/Rulebook+PayPrivacy.swift`, `Views/ManageUsersView.swift`, `Views/WeeklyReportView.swift` (`canViewPersonPay` context, `reportPayForViewer`, multiplier column); `Views/BookLabourFlowView.swift`, `Views/DailyOverviewView.swift`, `Views/ProjectDetailView.swift` (scheduling), `Views/BookingHoursEditSheet.swift`, `MyScheduleView.swift` (`canBookOtherLocationsFor`, create-time rate, `overtimeMultiplierMoveFields`, managers' site booking rate); `OrganisationInvoicingSettingsView.swift`, `SettingsView.swift` (PAYE payday in the main Save and banner, "Rules x.y.z"); `Core/CustomerLegalPack.swift` (`legalPackAcceptanceWriteFields`); `ManageUsersView.swift` / `UserStore.swift` invitation lookups (`invitationListConstraints`).
 
+## New rulebook sections
+
+- 1.31.2 — 2026-11-05
 
 ## Workflow for the iOS agent
 
