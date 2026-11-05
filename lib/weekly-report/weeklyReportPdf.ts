@@ -2,7 +2,7 @@ import { format } from 'date-fns'
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from 'pdf-lib'
 import { formatReportPeriodLabel } from '@/lib/weekly-report/invoicingPeriodUtils'
 import { formatDays } from '@/lib/weekly-report/weeklyReportPayroll'
-import { currencySymbol, formatMoney } from '@/lib/canonical'
+import { currencySymbol, formatMoney, PAY_HIDDEN_NOTE } from '@/lib/canonical'
 import type { WeeklyReportData } from '@/lib/weekly-report/weeklyReportData'
 
 const PAGE_W = 842
@@ -351,6 +351,7 @@ export async function buildWeeklyReportPdf(data: WeeklyReportData): Promise<Uint
     payRows.push(['No pay data for this period', '', '', '', '', ''])
   }
   payRows.push(['', '', '', '', 'Grand Total', money(data.grandTotal)])
+  if (data.payHiddenPeople) payRows.push([PAY_HIDDEN_NOTE, '', '', '', '', ''])
   table(draw, ['Person', 'Role', 'Rate Type', 'Hours / Days', 'Rate', 'Pay'], payRows)
 
   return doc.save()

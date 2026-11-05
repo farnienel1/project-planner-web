@@ -2,7 +2,7 @@ import { format } from 'date-fns'
 import * as XLSX from 'xlsx'
 import { formatReportPeriodLabel } from '@/lib/weekly-report/invoicingPeriodUtils'
 import { formatDays } from '@/lib/weekly-report/weeklyReportPayroll'
-import { formatMoney } from '@/lib/canonical'
+import { formatMoney, PAY_HIDDEN_NOTE } from '@/lib/canonical'
 import type { WeeklyReportData } from '@/lib/weekly-report/weeklyReportData'
 import { escapeHtml } from '@/lib/security/htmlEscape'
 import { neutralizeSpreadsheetFormula } from '@/lib/security/spreadsheetCell'
@@ -143,6 +143,7 @@ export function buildWeeklyReportHtml(data: WeeklyReportData): string {
     payRows.push(['', '', '', '', '', ''])
   }
   payRows.push(['', '', '', '', '<strong>Grand Total</strong>', `<strong>${money(data.grandTotal)}</strong>`])
+  if (data.payHiddenPeople) payRows.push([escapeHtml(PAY_HIDDEN_NOTE), '', '', '', '', ''])
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -432,6 +433,7 @@ export function buildWeeklyReportSpreadsheetXml(data: WeeklyReportData): string 
     payRows.push(['', '', '', '', '', ''])
   }
   payRows.push(['', '', '', '', 'Grand Total', money(data.grandTotal)])
+  if (data.payHiddenPeople) payRows.push([PAY_HIDDEN_NOTE, '', '', '', '', ''])
 
   return `<?xml version="1.0"?>
 <?mso-application progid="Excel.Sheet"?>

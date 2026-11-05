@@ -368,7 +368,7 @@ export {
 } from './payrollHours'
 export { DEFAULT_ANNUAL_LEAVE, parseAnnualLeaveDefaults, parsePayrollPolicy } from './organizationSettings'
 
-export { PAYE_PAY_CELL_LABEL, reportPayCell, reportPayTotal, reportPersonPayCell } from './reportPay'
+export { PAY_HIDDEN_CELL_LABEL, PAY_HIDDEN_NOTE, PAYE_PAY_CELL_LABEL, reportPayCell, reportPayForViewer, reportPayTotal, reportPersonPayCell } from './reportPay'
 
 export {
   SENSITIVE_EXPORT_OPTION_LABEL,

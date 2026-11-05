@@ -6,6 +6,8 @@ import { formatInvoicingSubtitle } from '@/lib/settings/organizationSettings'
 import { formatMoney, organizationTimeZone, type AcceptedClashRecord } from '@/lib/canonical'
 import { addLondonDays, dateFromDayKey, dayKey, startOfLondonWeek } from '@/lib/ios-parity/londonTime'
 import { useAuthStore } from '@/lib/stores/authStore'
+import { PAY_HIDDEN_NOTE, reportPayForViewer } from '@/lib/canonical'
+import { isPlatformOwnerEmail } from '@/lib/platform/owner'
 import { hasAdminAccess } from '@/lib/permissions'
 import { loadAcceptedBookingClashes, unapproveBookingClash, unapproveBookingClashPairs } from '@/lib/warnings/acceptedClashStorage'
 import { loadWarningResolutionKeys } from '@/lib/warnings/warningResolutionStorage'
@@ -192,7 +194,7 @@ export function WeeklyReportScreen({
     [periodMode, invoicing, effectiveInvoicingPeriodId, weekStart, customStart, customEnd, timeZone]
   )
 
-  const report = useMemo(() => {
+  const builtReport = useMemo(() => {
     if (!period) return null
     return buildWeeklyReportData({
       organizationName,
@@ -232,6 +234,16 @@ export function WeeklyReportScreen({
     rateHistory,
     warningDecisions,
   ])
+  // Rulebook 1.32.0 §7 / §8 (owner 5 Nov): each person's rate and pay only for viewers `canViewPersonPay` allows; the
+  // screen and every export (PDF, HTML, XLSX) use this one redacted report, and the grand total covers visible rows only.
+  const report = useMemo(() => {
+    if (!builtReport) return null
+    const shown = reportPayForViewer(builtReport.paySummary, {
+      viewer: viewer ? ({ ...viewer, isPlatformOwner: isPlatformOwnerEmail(viewer.email) } as never) : null,
+      roster: users as never,
+    })
+    return { ...builtReport, paySummary: shown.rows, grandTotal: shown.grandTotal, payHiddenPeople: shown.hiddenPeople }
+  }, [builtReport, viewer, users])
 
   const loadWarningDecisions = async (): Promise<WeeklyReportWarningDecisions | null> => {
     if (!organizationId) return null
@@ -790,6 +802,7 @@ export function WeeklyReportScreen({
             ]}
             empty="No pay data for this period"
           />
+          {report.payHiddenPeople ? <p className="muted small">{PAY_HIDDEN_NOTE}</p> : null}
         </>
       ) : (
           <div className="empty card pad">

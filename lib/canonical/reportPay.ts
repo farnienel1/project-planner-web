@@ -9,6 +9,8 @@
  */
 
 import { normalizeEmploymentType } from './userProfile'
+import { canViewPersonPay } from './payProfile'
+import { permissionLevelOf } from './permissionLevels'
 import { dayKeyInZone } from '../orgTime/zoneTime'
 import { zoneOrLondon } from './dayKeys'
 import { documentInstantMs } from './peopleDocuments'
@@ -247,4 +249,54 @@ export function timesheetInvoiceRows<L extends InvoiceLineInput & { id: string; 
     }
   }
   return rows
+}
+
+// MARK: - 1.32.0: pay on the weekly report follows `canViewPersonPay` (owner decisions 5 Nov, §7, §8)
+
+/** The rate and pay cells of a person whose pay the viewer may not see (hours stay). */
+export const PAY_HIDDEN_CELL_LABEL = '—'
+/** The note under the pay summary when some people's pay is hidden; the grand total covers the people shown. */
+export const PAY_HIDDEN_NOTE = 'Rates and pay are shown only for people whose pay you may see; the grand total covers those people only.'
+
+type ReportPayPersonRow = {
+  lines: ReadonlyArray<{ rate: number; pay: number; rateText?: string; payLabel?: string | null; isPaye?: boolean }>
+  personTotal: number
+  personTotalLabel?: string | null
+  paySubject?: Record<string, unknown> | null
+}
+
+/**
+ * The weekly report pay summary for one viewer (rulebook §7, §8, 1.32.0): each person's rate and pay are shown only when
+ * `canViewPersonPay(viewer, person, roster)` (default context — the weekly report is not a timesheet review): admins
+ * every person; a manager with the Operatives toggle operatives; everyone the person themself. Anyone else sees the
+ * hours with the rate and pay cells `PAY_HIDDEN_CELL_LABEL`. The grand total is `reportPayTotal` over the visible rows
+ * only, so a hidden figure never leaks through a total; `hiddenPeople` counts the rows hidden (show `PAY_HIDDEN_NOTE`).
+ * A row with no known person (`paySubject` missing) is visible to admins only.
+ */
+export function reportPayForViewer<T extends ReportPayPersonRow>(
+  rows: ReadonlyArray<T>,
+  input: { viewer: Record<string, unknown> | null | undefined; roster?: ReadonlyArray<Record<string, unknown>> | null }
+): { rows: T[]; grandTotal: number; hiddenPeople: number } {
+  const viewer = input.viewer ?? null
+  const viewerIsAdmin = Boolean(viewer) && viewer?.isActive !== false && (viewer?.isPlatformOwner === true || permissionLevelOf(viewer) === 'admin')
+  const canView = (subject: Record<string, unknown>) => canViewPersonPay(viewer as never, subject as never, (input.roster || []) as never)
+  let hiddenPeople = 0
+  const out: T[] = []
+  const visibleLines: ReportPayLineInput[] = []
+  for (const row of rows || []) {
+    const visible = row.paySubject ? viewerIsAdmin || canView(row.paySubject) : viewerIsAdmin
+    if (visible) {
+      out.push(row)
+      for (const line of row.lines) visibleLines.push({ isPaye: line.isPaye === true, pay: line.pay })
+      continue
+    }
+    hiddenPeople += 1
+    out.push({
+      ...row,
+      lines: row.lines.map((line) => ({ ...line, rate: 0, pay: 0, rateText: PAY_HIDDEN_CELL_LABEL, payLabel: PAY_HIDDEN_CELL_LABEL })),
+      personTotal: 0,
+      personTotalLabel: PAY_HIDDEN_CELL_LABEL,
+    })
+  }
+  return { rows: out, grandTotal: reportPayTotal(visibleLines), hiddenPeople }
 }

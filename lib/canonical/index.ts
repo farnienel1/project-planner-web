@@ -589,7 +589,7 @@ export type {
   SensitiveProfileWriteResult,
 } from './sensitiveProfile'
 
-export { PAYE_PAY_CELL_LABEL, reportPayCell, reportPayTotal, reportPersonPayCell } from './reportPay'
+export { PAY_HIDDEN_CELL_LABEL, PAY_HIDDEN_NOTE, PAYE_PAY_CELL_LABEL, reportPayCell, reportPayForViewer, reportPayTotal, reportPersonPayCell } from './reportPay'
 export type { ReportPayCell, ReportPayLineInput } from './reportPay'
 export {
   payrollBreakOnDay,

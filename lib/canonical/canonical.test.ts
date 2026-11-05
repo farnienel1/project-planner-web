@@ -13239,3 +13239,31 @@ test('1.32.0 review fix (r274 S1): decision A holds for a keep line or a same-ti
   assert.equal(r132.overtimeApprovalWrites({ ...base, decisions: { BR: { action: 'approve' } }, deciderIsAdmin: true }).ok, true)
   assert.equal(r132.overtimeApprovalWrites({ ...base, decisions: { BR: { action: 'approve' } }, writableBookingIds: ['BR'] }).ok, true)
 })
+
+test('1.32.0 review fix (r274 S3): weekly report pay follows canViewPersonPay — hidden rate and pay, totals over visible rows only', () => {
+  const roster = [
+    { id: 'op', email: 'op@x.com', role: 'operative', operativeMode: true, assignedManagerUserIds: ['lm'], isActive: true },
+    { id: 'mgr', email: 'mgr@x.com', role: 'manager', manager: true, assignedManagerUserIds: ['adm'], isActive: true },
+    { id: 'lm', email: 'lm@x.com', role: 'manager', manager: true, isActive: true },
+    { id: 'om', email: 'om@x.com', role: 'manager', manager: true, permissions: { operatives: true }, isActive: true },
+    { id: 'adm', email: 'adm@x.com', role: 'admin', adminAccess: true, isActive: true },
+  ]
+  const row = (subject: Record<string, unknown> | null, pay: number) => ({
+    person: String(subject?.id ?? 'x'),
+    role: 'r',
+    lines: [{ rateType: 'Day', days: 1, rate: pay, pay, rateText: `£${pay}` }],
+    personTotal: pay,
+    paySubject: subject,
+  })
+  const rows = [row(roster[0], 200), row(roster[1], 300), row(null, 50)]
+  const by = (id: string) => roster.find((r) => r.id === id)!
+  const admin = r132.reportPayForViewer(rows, { viewer: by('adm'), roster })
+  assert.deepEqual([admin.grandTotal, admin.hiddenPeople], [550, 0])
+  const lm = r132.reportPayForViewer(rows, { viewer: by('lm'), roster })
+  assert.deepEqual([lm.grandTotal, lm.hiddenPeople], [0, 3], 'a line manager sees no rate on the weekly report')
+  assert.deepEqual([lm.rows[0].lines[0].rateText, lm.rows[0].lines[0].payLabel, lm.rows[0].personTotalLabel, lm.rows[0].lines[0].days], ['—', '—', '—', 1])
+  const om = r132.reportPayForViewer(rows, { viewer: by('om'), roster })
+  assert.deepEqual([om.grandTotal, om.hiddenPeople], [200, 2], 'an operatives manager sees operatives only')
+  const self = r132.reportPayForViewer(rows, { viewer: by('mgr'), roster })
+  assert.deepEqual([self.grandTotal, self.hiddenPeople], [300, 2], 'everyone sees their own')
+})
