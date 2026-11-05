@@ -5026,3 +5026,27 @@ test('1.31.1 F9: an operatives manager marks their iOS-shaped invitation used wi
   await assertSucceedsWithinBudget(updateDoc(doc(mgr, 'invitations', 'f9-ios-email'), { isUsed: true }))
   await assertLogicalDeny(updateDoc(doc(mgr, 'invitations', 'f9-ios'), { isUsed: false }))
 })
+
+test('1.31.1 F11/F12: removing or nulling a top-level flag never unmasks a permissions copy on a self update', async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    await setDoc(doc(db, 'users', 'f11-mgr'), {
+      email: 'f11-mgr@test.com', organizationId: ORG_A, role: 'manager', manager: true, isActive: true, passwordSet: true,
+      annualLeaveSelfBook: false, timesheetSelfSign: false,
+      permissions: { manager: true, annualLeaveSelfBook: true, timesheetSelfSign: true },
+    })
+    await setDoc(doc(db, 'users', 'f12-admin'), {
+      email: 'f12-admin@test.com', organizationId: ORG_A, role: 'admin', adminAccess: true, isActive: true, passwordSet: true,
+      isSuperAdmin: false, permissions: { adminAccess: true, isSuperAdmin: true },
+    })
+  })
+  const mgr = doc(authDb('f11-mgr', 'f11-mgr@test.com'), 'users', 'f11-mgr')
+  await assertLogicalDeny(updateDoc(mgr, { annualLeaveSelfBook: deleteField() }))
+  await assertLogicalDeny(updateDoc(mgr, { annualLeaveSelfBook: null }))
+  await assertLogicalDeny(updateDoc(mgr, { timesheetSelfSign: deleteField() }))
+  await assertSucceeds(updateDoc(mgr, { firstName: 'Mo' }))
+  const admin = doc(authDb('f12-admin', 'f12-admin@test.com'), 'users', 'f12-admin')
+  await assertLogicalDeny(updateDoc(admin, { isSuperAdmin: deleteField() }))
+  await assertLogicalDeny(updateDoc(admin, { isSuperAdmin: null }))
+  await assertSucceeds(updateDoc(admin, { firstName: 'Ada' }))
+})

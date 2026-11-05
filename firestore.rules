@@ -650,9 +650,12 @@ service cloud.firestore {
        ('role' in resource.data && request.resource.data.role == resource.data.role) ||
        (admin && request.resource.data.role == 'admin')) ? (
       (request.resource.data.get('adminAccess', null) in [false, null] || admin) ? (
-      ((request.resource.data.get('isSuperAdmin', null) in [false, null] &&
-        request.resource.data.get('permissions', {}).get('isSuperAdmin', null) in [false, null]) ||
-       privilegeFlag(resource.data, 'isSuperAdmin')) ? (
+      ((request.resource.data.get('isSuperAdmin', null) in [false, null] ||
+        request.resource.data.get('isSuperAdmin', null) == resource.data.get('isSuperAdmin', null)) &&
+       (request.resource.data.get('permissions', {}).get('isSuperAdmin', null) in [false, null] ||
+        request.resource.data.get('permissions', {}).get('isSuperAdmin', null) ==
+          resource.data.get('permissions', {}).get('isSuperAdmin', null)) ||
+       staffFlag(resource.data, 'isSuperAdmin')) ? (
       (!('permissions' in request.resource.data) ||
        !(request.resource.data.permissions is map) ||
        request.resource.data.permissions.get('adminAccess', null) in [false, null] ||
@@ -697,7 +700,6 @@ service cloud.firestore {
       data.get('permissions', {}) is map ? data.get('permissions', {}).diff(falseMap).changedKeys() : [].toSet()
     );
   }
-
   function defaultOnPermissionsOff(data) {
     return data.diff({'dailyOverview': false, 'wholesalersOrderHistory': false}).unchangedKeys().union(
       data.get('permissions', {}) is map
@@ -1030,12 +1032,19 @@ service cloud.firestore {
         let isSelf = userUpdateIsSelf();
         let targetAdmin = isSelf ? alreadyPrivilegedAdmin(resource.data) : false;
         let toggles = targetAdmin ? selfManageTogglesUnchanged(request.resource.data, resource.data) : true;
-        return (
+        return (isSelf && userSelfUnmasksFlag()) ? false : ((
           (isSelf ? userSelfUpdateKeepsPrivileges(toggles, targetAdmin) : false) ||
           ((request.auth.uid != userId && operativesManagerFlags(home)) ? (canManagerUpdateOperativeProfile(home)
             ? privilegeWriteTyped(request.resource.data, resource.data, true) : false) : false) ||
           (userUpdateCallerAdmin(home, targetAdmin) ? userAdminUpdateAllowed(toggles, targetAdmin) : false)
-        ) ? (userUpdateKeepsOrganization() && payStaysPrivate(resource.data.get('organizationId', ''))) : false;
+        ) ? (userUpdateKeepsOrganization() && payStaysPrivate(resource.data.get('organizationId', ''))) : false);
+      }
+      function userSelfUnmasksFlag() {
+        return (request.resource.data.get('isSuperAdmin', null) == null && resource.data.get('isSuperAdmin', null) != null) ||
+          (request.resource.data.get('manager', null) == null && resource.data.get('manager', null) != null) ||
+          (request.resource.data.get('operatives', null) == null && resource.data.get('operatives', null) != null) ||
+          (request.resource.data.get('annualLeaveSelfBook', null) == null && resource.data.get('annualLeaveSelfBook', null) != null) ||
+          (request.resource.data.get('timesheetSelfSign', null) == null && resource.data.get('timesheetSelfSign', null) != null);
       }
       function userUpdateCallerAdmin(home, targetAdmin) {
         let prevOrg = resource.data.get('organizationId', null);
