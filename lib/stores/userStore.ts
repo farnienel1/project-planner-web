@@ -470,13 +470,24 @@ export const useUserStore = create<UserStoreState>(() => ({
     // Rulebook 1.31.1 (fourth review, B-1): an operatives manager lists only the invitations they sent, so their query
     // names `invitedBy` (the rules refuse any other); an admin's lists every invitation on the email in the organisation.
     const invitationActorId = auth?.currentUser?.uid || actor?.id || ''
-    const invitations = email
-      ? ((await getDocs(
-          actorManagesOperatives
-            ? query(collection(db, 'invitations'), where('organizationId', '==', orgId), where('email', '==', email), where('invitedBy', '==', invitationActorId))
-            : query(collection(db, 'invitations'), where('organizationId', '==', orgId), where('email', '==', email))
-        ).catch(() => null))?.docs.map((row) => ({ id: row.id, email: String(row.data().email || '') })) ?? [])
-      : []
+    // Rulebook 1.31.1 (fifth review, S-E): iOS stores invitedBy as the sender's email, web as their users id; an
+    // operatives manager's clean-up asks for both (the rules let them read only invitations they sent).
+    const invitationSenders = Array.from(
+      new Set([invitationActorId, auth?.currentUser?.email || '', (auth?.currentUser?.email || '').toLowerCase()].filter(Boolean))
+    )
+    const invitationQueries = !email
+      ? []
+      : actorManagesOperatives
+        ? invitationSenders.map((sender) =>
+            query(collection(db, 'invitations'), where('organizationId', '==', orgId), where('email', '==', email), where('invitedBy', '==', sender))
+          )
+        : [query(collection(db, 'invitations'), where('organizationId', '==', orgId), where('email', '==', email))]
+    const invitationRows = new Map<string, { id: string; email: string }>()
+    for (const q of invitationQueries) {
+      const snap = await getDocs(q).catch(() => null)
+      for (const row of snap?.docs ?? []) invitationRows.set(row.id, { id: row.id, email: String(row.data().email || '') })
+    }
+    const invitations = Array.from(invitationRows.values())
     const orgData = useOrganizationDocumentStore.getState().data
     const orgMembers = orgData && typeof orgData.members === 'object' && orgData.members ? (orgData.members as Record<string, unknown>) : null
     const steps = userDeleteWrites({

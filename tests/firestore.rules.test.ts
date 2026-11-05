@@ -4966,6 +4966,8 @@ test('1.31.1 S-D, NIT-1, NIT-2: invitedBy matches the sender email in any case; 
   })
   const mgr = authDb(OPS_MGR_1311, 'ops-mgr-1311@test.com')
   // S-D: iOS stores the sender's email as typed; the match ignores case.
+  // S-E: web deleteUser's clean-up query in the iOS shape (invitedBy = the sender's email as stored).
+  await assertSucceeds(getDocs(query(collection(mgr, 'invitations'), where('organizationId', '==', ORG_A), where('email', '==', 'sd-mixed@test.com'), where('invitedBy', '==', 'Ops-Mgr-1311@Test.com'))))
   await assertSucceeds(updateDoc(doc(mgr, 'invitations', 'sd-mixed'), { firstName: 'Sid' }))
   // NIT-1: an operatives manager deletes only operative invitations, even their own.
   await assertLogicalDeny(deleteDoc(doc(mgr, 'invitations', 'n1-manager')))
