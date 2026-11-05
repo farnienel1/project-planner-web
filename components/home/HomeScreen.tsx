@@ -758,7 +758,7 @@ export function HomeScreen() {
     : 'Overtime'
 
   return (
-    <div className="home">
+    <div className="dash-home">
       <HomeHeader
         greeting={`Hi, ${greetingName(displayUser.firstName, displayUser.email)}`}
         dateLine={formatHomeDateLine(now)}

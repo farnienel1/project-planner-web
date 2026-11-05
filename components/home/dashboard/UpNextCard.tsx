@@ -23,7 +23,7 @@ export function UpNextCard({ sections, showMaintenance }: { sections: HomeUpNext
         ) : (
           rows.map(({ day, row }) => (
             <Link key={row.id} href="/dashboard/my-schedule" className="dash-li">
-              <span className="day" aria-label={day.heading}>
+              <span className="dash-day">
                 {day.heading.slice(0, 3).toUpperCase()}
               </span>
               <span className="grow">
@@ -35,7 +35,7 @@ export function UpNextCard({ sections, showMaintenance }: { sections: HomeUpNext
         )}
         {showMaintenance ? (
           <div className="dash-li soon">
-            <span className="day grey">
+            <span className="dash-day grey">
               <WrenchIcon aria-hidden style={{ width: 15, height: 15 }} />
             </span>
             <span className="grow">
