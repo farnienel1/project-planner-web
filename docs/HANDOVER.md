@@ -8,11 +8,14 @@ Live launch checklist (the owner ticks items there; Claude updates rows as work 
 
 ---
 
-## 0. Progress log (second chat, 5 Nov afternoon)
+## 0. Progress log (second chat, 5 Nov afternoon) — read this first, it overrides §1–§2 where they differ
 
-- **Docs PR #277** opened for this note and the design pack (docs only, CI green).
-- **Rules 1.31.3 finished: PR #278** (`web-rules-1313`). Suites 220/220 on port 8080; strict budget 47 limit refusals vs 49 on 1.31.2 (none new); emulator type check 0 errors / 0 warnings; static cost 431,665 (1.30.2: 525,898; 1.31.2: 606,643); in-process compile 2.25–2.47 s vs 1.30.2 2.59–2.86 s. Extra hand edits on top of the old candidate (org-access helpers read each path once; booking write checks the job twice not three times). A merged job-manager check was tried and **dropped** (+19 strict limit refusals). Grid / probe family f not re-run (harness lost with the old container). Independent review running. Lesson for every later rules release: run the strict suite after every cost cut.
-- Next: review → merge #278 → owner console publish → stage B (port the same treatment to #274).
+- **Rules 1.31.3 merged (#278) and published by the owner** (5 Nov). Static cost 431,665 vs live-then 1.30.2 525,898; suites 220/220; strict 47 vs 49 (none new); independent review clean. A merged job-manager check was tried and dropped (+19 strict limit refusals) — lesson: run the strict suite after every cost cut.
+- **1.32 merged as rulebook 1.32.1 (#274)**: main (1.31.3) merged into `web-1.32`, plus `orgAdminEither` (billing read once in paired admin checks). Static cost 429,072; suites 223/223; strict 43 vs 45 (none new); type check clean; independent review of the merge and the edit clean. **Owner said "rules published i think" for 1.32.1 — confirm** (Rules tab contains `orgAdminEither`).
+- **Web Home #276** brought up to date with main (merge commit `285cc52`; only Home files differ from main; npm test 1,672/1,673, the one failure is `xlsx` missing in the container). Screenshots NOT re-taken: no Firebase config in the container and the Netlify preview uses production data. Owner asked to look at the deploy preview; merge after CI + owner's look.
+- **iOS**: owner sent the 1.31.3 sync prompt to an iOS chat. Still to do: the full 1.32 iOS work (`docs/ios-handoff/v1.32.0.md` + `LATEST.md` = 1.32.1); owner to say whether it runs in the iOS chat or here (needs the iOS repo attached). Then `minimumIosBuild`.
+- Docs PR #277 (this note) open; merge at chat end.
+- Process lessons: every rules release runs `scripts/rules-cost/metric.py`, the emulator type check (`ctime.py`) and `RULES_STRICT_BUDGET=1` before asking the owner to publish (follow-up: put these in CI). `npm ci` fails in the cloud container (xlsx from cdn.sheetjs.com is blocked): install with xlsx temporarily removed from package.json, restore after.
 
 ## 1. Where things stand (5 Nov, end of the long chat)
 
