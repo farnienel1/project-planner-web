@@ -181,7 +181,7 @@ service cloud.firestore {
     ) || (
       (exists(claimPath) && get(claimPath).data.userId == request.auth.uid) ? (
         isOrgMemberViaParentGet(organizationId) ? (
-          (privilegeCreateTyped(request.resource.data, true) && selfCreateKeepsManagedFields(callerListedRole(organizationId))) ? (
+          selfCreateKeepsManagedFields(callerListedRole(organizationId)) ? (
             selfCreateAliasesWithin(request.resource.data, {}, '') &&
             selfCreateSelfManageOff(organizationId) &&
             (
@@ -1006,10 +1006,10 @@ service cloud.firestore {
           ) : false
         ) : false;
       }
-      allow create: if request.auth != null && (
-        userCreateSelfJoin() ? true : (privilegeCreateTyped(request.resource.data, true) ? (
+      allow create: if request.auth != null && privilegeCreateTyped(request.resource.data, true) && (
+        userCreateSelfJoin() ? true : (
           userCreateByAdmin() ? true : (userCreateBootstrap() ? true : (
-            managerCanCreateOperativeUser() || (isPlatformOwner() && request.auth.uid == userId)))) : false)
+            managerCanCreateOperativeUser() || (isPlatformOwner() && request.auth.uid == userId))))
       ) && payStaysPrivate(request.resource.data.get('organizationId', ''));
 
       allow update: if isPlatformOwner() || (request.auth != null && userUpdateAllowed());

@@ -4676,6 +4676,8 @@ test('1.31.1 F5 (c3): a sign-up on the invitee email without the invitation is r
   await assertLogicalDeny(setDoc(doc(db, 'invitations', 'f5-evil-new-invite'), { organizationId: ORG_A, email, isUsed: false }))
   await assertLogicalDeny(updateDoc(doc(db, 'organizations', ORG_A), { name: 'pwn' }))
   await assertLogicalDeny(updateDoc(doc(db, 'users', OP_A), { dayRate: 1 }))
+  // An upsert (no exists precondition) is judged as create and update; the emulator once failed it with an internal error.
+  await assertLogicalDeny(setDoc(doc(db, 'users', OP_A), { dayRate: 1 }, { merge: true }))
   await env.withSecurityRulesDisabled(async (ctx) => {
     const raw = ctx.firestore()
     const left = await getDoc(doc(raw, 'organizations', ORG_A, 'userEmails', email))
