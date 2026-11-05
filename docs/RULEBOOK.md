@@ -1,7 +1,7 @@
 # Project Planner Rulebook
 
-Version: 1.31.1
-Updated: 2026-11-04
+Version: 1.31.2
+Updated: 2026-11-05
 
 This is the one rulebook for every Project Planner platform: web, iOS and (later) Android. It is written platform-neutral. Each rule names the shared function in `lib/canonical` that implements it; platforms call that function (web `@/lib/canonical`, iOS `CanonicalBusinessEngine`, Android the same packed script) and never keep a second copy.
 
@@ -610,6 +610,9 @@ Owner-approved spec of 4 Nov ("PAYE overtime, price work and expenses", release 
 **1.10.0** (full order and checks in `docs/DEPLOY_1.10.0.md`): 1. merge the web change; 2. `node scripts/backfill-job-manager-user-ids.mjs --project <id> --all` (dry run, the default) and review the per-job diff; 3. the same with `--apply` (writes only `managerUserIds`, partial updates, idempotent, no write metadata — `updatedFrom` takes only `web` / `ios` / `android`); 4. `firebase deploy --only firestore:rules,firestore:indexes,functions`; 5. release iOS 1.10.0. The read rules (§17) refuse whole-collection job and booking queries for managers without a job toggle and for operatives, so app builds that predate 1.10.0 lose those lists for them until they update.
 
 ## Changelog
+
+### 1.31.2 — 2026-11-05
+- Rules type-check fixes for console/CLI publish; no behaviour change. The Firebase console and the deploy compile reject 1.31.1's `firestore.rules` with three static type errors ("Invalid type. Received one of [null]") because a literal `null` was passed to a function that uses the parameter as a map (`rosterRowPrivilegeTyped`, `managers` and `operatives` rows) or as a time / number (`sameInstantValue` through `timesheetSameInstant`). The `null` branch now sits at the call site (`resource == null ? … : …`), so no function receives a literal `null`; `timesheetSame` and `timesheetOwnerLeaves` follow the same pattern. Every allow / deny decision is unchanged.
 
 ### 1.31.1 — 2026-11-04
 - firestore.rules slimmed and restructured so it compiles reliably and every `users/{uid}` and `materials` update is decided by the rules, not by Firestore's 1,000-expression limit. The deploy compile (`firebaserules` `:test`) began returning HTTP 503 as the file grew (180 KB at 1.30.2, 188 KB at 1.31.0); it is now 127 KB (comment blocks moved to `docs/firestore-rules-notes.md`, dead and duplicate functions removed, single-use wrappers inlined).

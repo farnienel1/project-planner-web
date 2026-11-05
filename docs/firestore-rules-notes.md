@@ -6,6 +6,12 @@ Each note sits under the rule it described, in file order, with the match path i
 
 When you add a rule, keep the explanation here (or in `docs/RULEBOOK.md`), not as a comment block in `firestore.rules`.
 
+## Static type check (1.31.2)
+
+The Firebase console and the deploy compile run a static type checker that is stricter than the emulator's evaluator. It infers types through function parameters, so passing a literal `null` (or a ternary with a `null` branch, such as `resource == null ? null : resource.data`) to a function that uses that parameter as a map, list, string, number or timestamp is an error, even when the function guards it with `prev == null ? …`. Branch on `resource == null` at the call site (or inside the function on the global `resource`) and never pass a literal `null`.
+
+Check offline before publishing: start the Firestore emulator and `PUT` the file to `http://127.0.0.1:<port>/emulator/v1/projects/<any>:securityRules` with body `{"rules":{"files":[{"name":"firestore.rules","content":…}]}}`. The response lists the same type issues the console reports (as `WARNING`s; the emulator still loads the rules). An empty `{}` means the checker is clean. For `storage.rules`, `StorageRulesRuntime.loadRuleset` in firebase-tools (`lib/emulator/storage/rules/runtime.js`) returns the same issues as `warnings`.
+
 ## Expression budget (1.31.1)
 
 Firestore evaluates at most 1,000 expressions per request. A request that reaches the limit is denied with "maximum of 1000 expressions", whatever the rule would have decided, so a denial can flip to allowed when unrelated rules get cheaper.
