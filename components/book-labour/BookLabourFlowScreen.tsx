@@ -63,7 +63,7 @@ import { confirmCustomHoursBreak, slotOfferedOnDate, weekendNotesForDates } from
 import { useCustomHoursPrefillOnKindChange } from '@/lib/scheduling/useOrganizationPayrollPolicy'
 import { CustomOtherLocationField } from '@/components/scheduling/CustomOtherLocationField'
 import { PanelHeader } from '@/components/settings/primitives'
-import { ORPHAN_BOOKING_LABEL } from '@/lib/canonical'
+import { ORPHAN_BOOKING_LABEL, canBookOtherLocationsFor } from '@/lib/canonical'
 import { useOrganizationDocument, useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
 import { partitionRowsByOrganization, warningScanUsers } from '@/lib/warnings/warningsScan'
 import { orgWarningScope } from '@/lib/warnings/warningScopeRoster'
@@ -378,7 +378,9 @@ export function BookLabourFlowScreen({
   const otherPicks = enabledScheduleLocationPicks(scheduleOpts)
   const activeParty = party.length > 0 ? party : []
   const fallbackPerson = activeParty[0]
-  const otherEnabled = true
+  // Rulebook 1.32.0 §2 (`canBookOtherLocationsFor`): Office / WFH / Site survey / custom items only when the viewer may
+  // book every person in the party there — admins anyone, a manager only themself. Jobs stay `bookableWorks`.
+  const otherEnabled = canBookOtherLocationsFor(webJobAccessViewer(user), activeParty.map((person) => person.user.id))
 
   function closeFlow() {
     if (onClose) {

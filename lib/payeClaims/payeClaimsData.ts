@@ -15,6 +15,7 @@ import {
   serverTimestamp,
   setDoc,
   where,
+  writeBatch,
   type Unsubscribe,
 } from 'firebase/firestore'
 import { deleteObject, getDownloadURL, ref } from 'firebase/storage'
@@ -23,6 +24,9 @@ import {
   PAYE_CLAIM_REPORTS_COLLECTION,
   PERSONAL_SITE_AUDITS_COLLECTION,
   PRICE_WORK_ITEMS_COLLECTION,
+  PAYE_CLAIM_REVIEWS_COLLECTION,
+  parsePayeClaimReviewDocument,
+  type PayeClaimReviewRecord,
   expenseValidationError,
   expenseWriteFields,
   parseExpenseDocument,
@@ -91,6 +95,87 @@ export function listenPayeClaims(
       ),
     (error) => onError?.(error)
   )
+}
+
+/**
+ * Rulebook 1.32.0 (`overtimePersonIds`): live items of one person under every id they go by, one `userId ==` query per
+ * id, merged. The first id is the person's users id; a refused read under another id (a line manager may read only
+ * the users id they manage — those items need an admin, decision A) is left out silently.
+ */
+export function listenPersonPayeClaims(
+  organizationId: string,
+  userIds: ReadonlyArray<string>,
+  kind: PayeClaimKind,
+  timeZone: string,
+  onChange: (rows: PayeClaimItem[]) => void,
+  onError?: (error: Error) => void
+): Unsubscribe {
+  const ids = Array.from(new Set(userIds.filter(Boolean)))
+  const byId = new Map<string, PayeClaimItem[]>()
+  const emit = () => {
+    const seen = new Set<string>()
+    const rows: PayeClaimItem[] = []
+    for (const id of ids) for (const row of byId.get(id) ?? []) if (!seen.has(row.id)) (seen.add(row.id), rows.push(row))
+    onChange(rows)
+  }
+  const stops = ids.map((id, index) =>
+    listenPayeClaims(
+      organizationId,
+      id,
+      kind,
+      timeZone,
+      (rows) => {
+        byId.set(id, rows)
+        emit()
+      },
+      (error) => {
+        if (index === 0) onError?.(error)
+        else {
+          byId.set(id, [])
+          emit()
+        }
+      }
+    )
+  )
+  return () => stops.forEach((stop) => stop())
+}
+
+/** Rulebook 1.32.0 §26: live reviews of one person's price work and expenses (every id they go by; refusals left out). */
+export function listenPayeClaimReviews(
+  organizationId: string,
+  userIds: ReadonlyArray<string>,
+  onChange: (rows: PayeClaimReviewRecord[]) => void
+): Unsubscribe {
+  const ids = Array.from(new Set(userIds.filter(Boolean)))
+  const byId = new Map<string, PayeClaimReviewRecord[]>()
+  const stops = ids.map((id) =>
+    onSnapshot(
+      query(collection(db, 'organizations', organizationId, PAYE_CLAIM_REVIEWS_COLLECTION), where('userId', '==', id)),
+      (snap) => {
+        byId.set(id, snap.docs.map((row) => parsePayeClaimReviewDocument(row.id, row.data())))
+        onChange(ids.flatMap((key) => byId.get(key) ?? []))
+      },
+      () => {
+        byId.set(id, [])
+        onChange(ids.flatMap((key) => byId.get(key) ?? []))
+      }
+    )
+  )
+  return () => stops.forEach((stop) => stop())
+}
+
+/** Rulebook 1.32.0 §26: Approve — every review of `payeClaimReviewWrites` in one batch. */
+export async function savePayeClaimReviews(organizationId: string, writes: ReadonlyArray<{ docId: string; fields: Record<string, unknown> }>): Promise<void> {
+  if (writes.length === 0) return
+  const batch = writeBatch(db)
+  for (const write of writes) {
+    batch.set(doc(db, 'organizations', organizationId, PAYE_CLAIM_REVIEWS_COLLECTION, write.docId), {
+      ...write.fields,
+      reviewedAt: serverTimestamp(),
+      ...metadata(),
+    })
+  }
+  await batch.commit()
 }
 
 /** Live saved report copies of one person. */

@@ -21,6 +21,7 @@ import {
   employmentTypeOnDay,
   formatMoney,
   passwordPolicyError,
+  rulebookVersionLabel,
   SENSITIVE_VALUE_MAX,
   writeMetadataFields,
 } from '@/lib/canonical'
@@ -685,6 +686,10 @@ export default function SettingsScreen({ initialPanel = 'main' }: { initialPanel
       </SettingsCard>
 
       <p className="text-center text-[11px] text-slate-400">{appVersionLabel(process.env.NEXT_PUBLIC_APP_VERSION)}</p>
+      {/* Rulebook 1.32.0 §15: the rules version, shown to everyone. */}
+      {rulebookVersionLabel(process.env.NEXT_PUBLIC_RULEBOOK_VERSION) ? (
+        <p className="text-center text-[11px] text-slate-400">{rulebookVersionLabel(process.env.NEXT_PUBLIC_RULEBOOK_VERSION)}</p>
+      ) : null}
     </div>
   )
 }

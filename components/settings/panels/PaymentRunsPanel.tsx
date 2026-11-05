@@ -136,7 +136,9 @@ export function PaymentRunsPanel({ onBack }: { onBack: () => void }) {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
-  const dirty = isDirty(draft)
+  // Rulebook 1.32.0 §4.5: the PAYE payday pick is part of this screen's draft and saved by its Save.
+  const [paydayPick, setPaydayPick] = useState<number | null>(null)
+  const dirty = isDirty(draft) || paydayPick != null
   useSettingsDirty(dirty)
 
   const live = useLiveOrganizationDetails()
@@ -196,8 +198,10 @@ export function PaymentRunsPanel({ onBack }: { onBack: () => void }) {
           ...draft,
           timesheetSubmission: syncedTimesheetSubmission(draft),
         },
-        user?.id
+        user?.id,
+        paydayPick
       )
+      setPaydayPick(null)
       const savedDraft = {
         ...draft,
         timesheetSubmission: syncedTimesheetSubmission(draft),
@@ -421,8 +425,8 @@ export function PaymentRunsPanel({ onBack }: { onBack: () => void }) {
 
       </SettingsFormBody>
 
-      {/* Rulebook 1.29.0 §4.5: the PAYE payday, saved on its own (not part of the payment-run draft). */}
-      <PayePaydayCard canEdit={hasAdminAccess(user)} step={6} />
+      {/* Rulebook 1.32.0 §4.5: the PAYE payday, saved by this screen's Save. */}
+      <PayePaydayCard canEdit={hasAdminAccess(user)} step={6} picked={paydayPick} onPick={setPaydayPick} />
 
       <SaveBar dirty={dirty} hint={settingsSaveBarHint(loadState)}>
         <SaveButton saving={saving} saved={saved} dirty={dirty} onClick={save} />

@@ -21,6 +21,15 @@ import {
   PRICE_WORK_EMPTY_MESSAGE,
   PRICE_WORK_GENERATE_REPORT_LABEL,
   canViewPayeClaims,
+  canReviewPayeClaims,
+  isAdminOutsideOperativeMode,
+  OVERTIME_APPROVE_LABEL,
+  overtimePersonIds,
+  payeClaimReviewOutcomeLabel,
+  payeClaimReviewState,
+  payeClaimReviewWrites,
+  type PayeClaimReviewDecision,
+  type PayeClaimReviewRecord,
   canWritePayeClaim,
   expenseValidationError,
   formatMoney,
@@ -56,7 +65,9 @@ import {
   discardClaimEvidence,
   attachPersonalAuditCopy,
   listenPayeClaimReports,
-  listenPayeClaims,
+  listenPayeClaimReviews,
+  listenPersonPayeClaims,
+  savePayeClaimReviews,
   listenPersonalSiteAudits,
   loadTimesheetClaimSheets,
   removePayeClaim,
@@ -242,11 +253,23 @@ function ClaimList(props: Omit<Props, 'range'> & { range: { start: string; end: 
     const params = new URLSearchParams(window.location.search)
     if (params.get('add') === '1' && mine) setAdding(true)
   }, [mine])
+  // Rulebook 1.32.0 §26: every record of this person (`overtimePersonIds`), and the review state of each item.
+  const roster = useMemo(() => rulebookRoster(props.users), [props.users])
+  const subjectPerson = useMemo(() => rulebookPerson(subject, props.users), [subject, props.users])
+  const viewerPerson = useMemo(() => rulebookPerson(props.users.find((row) => row.id === props.viewerUser.id) || props.viewerUser, props.users), [props.users, props.viewerUser])
+  const personIds = useMemo(() => overtimePersonIds({ person: subjectPerson, roster }), [subjectPerson, roster])
+  const idsKey = personIds.join('|')
+  const [reviews, setReviews] = useState<PayeClaimReviewRecord[]>([])
+  const [decisions, setDecisions] = useState<Record<string, PayeClaimReviewDecision>>({})
+  const reviewer = !mine && canReviewPayeClaims(viewerPerson, subjectPerson, roster)
+  const reviewerIsAdmin = isAdminOutsideOperativeMode(viewerPerson)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => listenPayeClaimReviews(organizationId, personIds, setReviews), [organizationId, idsKey])
   useEffect(
     () =>
-      listenPayeClaims(
+      listenPersonPayeClaims(
         organizationId,
-        subject.id,
+        personIds,
         kind,
         props.timeZone,
         (rows) => {
@@ -255,9 +278,32 @@ function ClaimList(props: Omit<Props, 'range'> & { range: { start: string; end: 
         },
         (e) => setError(e.message)
       ),
-    [organizationId, subject.id, kind, props.timeZone]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [organizationId, idsKey, kind, props.timeZone]
   )
   const inRange = payeClaimsInRange(items, range)
+  const preview = payeClaimReviewWrites({
+    items: inRange,
+    decisions,
+    reviews,
+    subjectUserId: subject.id,
+    personIds,
+    reviewerId: props.viewerUser.id,
+    reviewerIsAdmin,
+  })
+  const approve = async () => {
+    setBusy(true)
+    setNotice(null)
+    try {
+      await savePayeClaimReviews(organizationId, preview.writes)
+      setDecisions({})
+      setNotice(preview.message)
+    } catch (e: unknown) {
+      setNotice(e instanceof Error ? e.message : 'The review could not be saved.')
+    } finally {
+      setBusy(false)
+    }
+  }
   const ready = payeClaimReportReady(inRange)
   const writable = mine && canWritePayeClaim(props.viewerUser.id, { userId: subject.id })
 
@@ -291,8 +337,12 @@ function ClaimList(props: Omit<Props, 'range'> & { range: { start: string; end: 
       {loaded && inRange.length === 0 ? <p className="muted">{kind === 'priceWork' ? PRICE_WORK_EMPTY_MESSAGE : EXPENSES_EMPTY_MESSAGE}</p> : null}
       {inRange.map((item) => {
         const row = payeClaimListRow(item, currency)
+        const state = payeClaimReviewState(item, reviews)
+        const decision = decisions[item.id]
+        const outcomeLabel = decision ? payeClaimReviewOutcomeLabel(preview.outcomes[item.id]) : null
         return (
-          <button key={item.id} type="button" className="card pad click" style={{ border: 0, textAlign: 'left' }} onClick={() => setOpen(item)}>
+          <div key={item.id} className="card pad" style={{ textAlign: 'left' }}>
+          <button type="button" className="click" style={{ border: 0, background: 'none', padding: 0, textAlign: 'left', width: '100%' }} onClick={() => setOpen(item)}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
               <b>{row.title}</b>
               <b>{row.figure}</b>
@@ -302,6 +352,22 @@ function ClaimList(props: Omit<Props, 'range'> & { range: { start: string; end: 
               {item.evidence.length > 0 ? ` · ${item.evidence.length} evidence` : ''}
             </div>
           </button>
+          <div className="row" style={{ marginTop: 8, gap: 8, flexWrap: 'wrap' }}>
+            <span className="pill" data-hue={state.state === 'approved' ? 'green' : state.state === 'rejected' ? 'red' : 'warn'}>{state.label}</span>
+            {decision ? <span className="pill">{decision === 'approved' ? 'Ticked' : 'Crossed'} (not saved)</span> : null}
+            {outcomeLabel ? <span className="pill" data-hue="warn">{outcomeLabel}</span> : null}
+            {reviewer ? (
+              <span className="row" style={{ gap: 6, marginLeft: 'auto' }}>
+                <button type="button" className="btn sm" aria-label="Reject this item" disabled={busy} onClick={() => setDecisions((d) => ({ ...d, [item.id]: 'rejected' }))}>
+                  ✕
+                </button>
+                <button type="button" className="btn sm" aria-label="Approve this item" disabled={busy} onClick={() => setDecisions((d) => ({ ...d, [item.id]: 'approved' }))}>
+                  ✓
+                </button>
+              </span>
+            ) : null}
+          </div>
+          </div>
         )
       })}
       {inRange.length > 0 ? (
@@ -309,7 +375,12 @@ function ClaimList(props: Omit<Props, 'range'> & { range: { start: string; end: 
           <b>Total {formatMoney(payeClaimsTotal(inRange), currency)}</b>
         </p>
       ) : null}
-      {!mine ? <p className="muted small">Read-only. {personName(subject)} adds and sends these themselves.</p> : null}
+      {!mine ? <p className="muted small">{personName(subject)} adds these themselves.{reviewer ? ' Tick or cross each item, then Approve.' : ''}</p> : null}
+      {reviewer && inRange.length > 0 ? (
+        <button type="button" className="btn primary" disabled={busy || preview.writes.length === 0} onClick={() => void approve()}>
+          {OVERTIME_APPROVE_LABEL}
+        </button>
+      ) : null}
       <div className="stack" style={{ gap: 8 }}>
         {writable ? (
           <button type="button" className="btn" onClick={() => setAdding(true)}>

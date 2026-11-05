@@ -37,7 +37,6 @@ import {
   parseOvertimeReportDocument,
   parseOvertimeRequestDocument,
   parseOvertimeReviewDocument,
-  payePaydayWriteFields,
   writeMetadataFields,
   type OvertimeBookingInput,
   type OvertimeDecision,
@@ -169,14 +168,6 @@ export function listenOvertimeReports(
   )
 }
 
-/** Save the PAYE payday (admins; §4.5). Nothing is written when unchanged. */
-export async function savePayePayday(organizationId: string, organizationDoc: unknown, day: number, todayKey: string): Promise<boolean> {
-  const fields = payePaydayWriteFields(organizationDoc, day, todayKey)
-  if (!fields) return false
-  await updateDoc(doc(db, 'organizations', organizationId), { ...fields, ...metadata() })
-  return true
-}
-
 /**
  * Send for approval (PAYE operative, or a PAYE manager for bookings they cannot edit): withdraws their pending
  * request for the same range and creates the new one in one batch, then notifies the approvers.
@@ -293,9 +284,10 @@ export class OvertimeApprovalRefused extends Error {
 }
 
 /**
- * Approve Overtime Request (line manager or admin): one transaction that re-reads the request and every booking,
- * refuses the whole approval when a booking changed since the request (`overtimeApprovalWrites`), and otherwise
- * writes the bookings, one review per line and the approved request together. Then "Overtime update" to the person.
+ * Approve (line manager or admin): one transaction that re-reads the request and every booking and applies what the
+ * decider may (`overtimeApprovalWrites`, 1.32.0 partial approval): the bookings, one review per applied line and the
+ * request (pending until nothing is left waiting, then approved) together. Nothing applied → refused with the
+ * rulebook message ("Nothing was approved: …"). Then "Overtime update" to the person.
  */
 export async function approveOvertimeRequest(input: {
   organizationId: string
@@ -311,7 +303,15 @@ export async function approveOvertimeRequest(input: {
   deciderIsAdmin: boolean
   /** Whether the decider may write this booking under `canWriteBooking` (jobs they manage). */
   canWriteBooking: (booking: OvertimeBookingInput) => boolean
-}): Promise<{ droppedBookingIds: string[]; unreadableBookingIds: string[]; deletedBookingIds: string[]; foreignBookingIds: string[] }> {
+}): Promise<{
+  droppedBookingIds: string[]
+  unreadableBookingIds: string[]
+  deletedBookingIds: string[]
+  foreignBookingIds: string[]
+  appliedBookingIds: string[]
+  complete: boolean
+  message: string
+}> {
   const orgId = input.organizationId
   // Bookings this decider cannot read (enforced reads) are left out, never read inside the transaction.
   const before = await getDoc(doc(db, 'organizations', orgId, 'overtimeRequests', input.requestId))
@@ -373,6 +373,9 @@ export async function approveOvertimeRequest(input: {
       unreadableBookingIds: writes.unreadableBookingIds,
       deletedBookingIds: writes.deletedBookingIds,
       foreignBookingIds: writes.foreignBookingIds,
+      appliedBookingIds: writes.appliedBookingIds,
+      complete: writes.complete,
+      message: writes.message,
       userId: request.userId,
     }
   })
@@ -384,7 +387,9 @@ export async function approveOvertimeRequest(input: {
         organizationId: orgId,
         type: OVERTIME_REQUEST_REVIEWED_TYPE,
         title: 'Overtime update',
-        message: 'Your overtime request was approved. Open Overtime to see the final hours.',
+        message: result.complete
+          ? 'Your overtime request was approved. Open Overtime to see the final hours.'
+          : `Part of your overtime request was approved (${result.message}). Open Overtime to see the final hours.`,
         userId,
         relatedId: input.requestId,
       }).catch(() => undefined)
@@ -395,6 +400,9 @@ export async function approveOvertimeRequest(input: {
     unreadableBookingIds: result.unreadableBookingIds,
     deletedBookingIds: result.deletedBookingIds,
     foreignBookingIds: result.foreignBookingIds,
+    appliedBookingIds: result.appliedBookingIds,
+    complete: result.complete,
+    message: result.message,
   }
 }
 

@@ -45,7 +45,8 @@ import type { OverviewPersonRow } from '@/lib/daily-overview/buildDailyOverview'
 import { BookingStatus, type Project } from '@/types'
 import { hasAdminAccess } from '@/lib/permissions'
 import { userCanDeleteBooking } from '@/lib/access/bookingAccess'
-import { normalizeDocumentId } from '@/lib/canonical'
+import { canBookOtherLocationsFor, normalizeDocumentId } from '@/lib/canonical'
+import { webJobAccessViewer } from '@/lib/access/readPlan'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 
 type DestTab = 'other' | 'projects' | 'smallWorks'
@@ -203,6 +204,8 @@ export function DailyOverviewBookingSheet({
     if (byEmail) return byEmail.id
     return users.find((entry) => normalizeDocumentId(findOperativeForUser(entry, operatives)?.id) === normalizeDocumentId(row.operativeId))?.id
   }, [row.userId, row.operativeId, operatives, users])
+
+  const otherAllowed = canBookOtherLocationsFor(webJobAccessViewer(user), resolvedUserId ? [resolvedUserId] : [])
 
   const linkedOperative = useMemo(() => {
     if (row.operativeId) return operatives.find((entry) => normalizeDocumentId(entry.id) === normalizeDocumentId(row.operativeId))
@@ -414,7 +417,14 @@ export function DailyOverviewBookingSheet({
           Currently booked to <b>{currentLabel}</b>. Choose Other, a project, or small works, and set the start and finish.
         </p>
         <div className="grid g3" style={{ gap: 8 }}>
-          <button type="button" className={`btn ${tab === 'other' ? 'primary' : ''}`} onClick={() => openTab('other')}>
+          {/* Rulebook 1.32.0 §2: Other only when the viewer may book this person there (`canBookOtherLocationsFor`). */}
+          <button
+            type="button"
+            className={`btn ${tab === 'other' ? 'primary' : ''}`}
+            disabled={!otherAllowed}
+            title={otherAllowed ? undefined : 'Managers book Office, Working from home and Site survey for themselves only.'}
+            onClick={() => openTab('other')}
+          >
             Other
           </button>
           <button type="button" className={`btn ${tab === 'projects' ? 'primary' : ''}`} onClick={() => openTab('projects')}>
