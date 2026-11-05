@@ -35,6 +35,8 @@ Source of truth on web: `app/brand-shell.css` (CSS variables, light, system dark
 
 **Contrast fixes (AA, measured):** design `muted #8B93A1` was 3.09:1 on white → `#667085` 4.97:1 (4.68:1 on `#F7F8FA`); `side-muted #6E7A94` was 4.19:1 on `#0A1530` → `#8D98B0` 6.24:1; white on the badge `#E5484D` was 3.91:1 → fill `#D92D35` 4.80:1; the warnings figure `#D92D35` on `#FFF4F4` was 4.45:1 → `#C4242C` 5.36:1. The teal pill text is `#0E7C78` (4.52:1) and the grey pill text `#5D6679` (5.19:1). Every dark value above passes AA on its background.
 
+**Tokens with one value in both modes (deliberate):** `--dash-side-hi`, `--dash-side-hover`, `--dash-side-line`, `--dash-side-ink`, `--dash-side-muted` (the sidebar is dark in both modes), `--dash-danger`, `--dash-danger-solid` (graphic and badge fills: badge 4.80:1, danger graphic 4.35:1 on the dark card). The ring's On leave (`#F5A524`, 2.04:1) and teal (2.15:1) segments are below the 3:1 non-text guide on white; every segment's count is also shown as text in the legend and the ring has an `aria-label`, so no information depends on the colour alone.
+
 Type: Inter (the app body font). Body 13px, card titles 13.5px semibold, figures 18–22px medium, labels 10.5–11.5px; tabular numbers on Home. Radii: cards 12px, buttons and inputs 8px, icon squares 7px, main panel 14px. Cards have borders, no shadows. No gradients except the avatar.
 
 ## Frame and sidebar

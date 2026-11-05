@@ -19,7 +19,7 @@ import { LabourSummaryCard } from '@/components/home/dashboard/LabourSummaryCard
 import { UnbookedBanner } from '@/components/home/dashboard/UnbookedBanner'
 import { WhosOnTodayCard } from '@/components/home/dashboard/WhosOnTodayCard'
 import { whosOnRows } from '@/components/home/dashboard/whosOnRows'
-import { TasksToDoCard } from '@/components/home/dashboard/TasksToDoCard'
+import { TASKS_SHOWN, TasksToDoCard } from '@/components/home/dashboard/TasksToDoCard'
 import { WaitingForYouCard, type WaitingItem } from '@/components/home/dashboard/WaitingForYouCard'
 import { QuickActionsCard } from '@/components/home/dashboard/QuickActionsCard'
 import { UpNextCard } from '@/components/home/dashboard/UpNextCard'
@@ -609,7 +609,8 @@ export function HomeScreen() {
   const taskRows = useMemo(() => {
     if (!tasksReady) return null
     const list = filterTasksForView(tasks, 'todo', displayUser, operatives, managers ?? [], !operative)
-    return list.map((task) => {
+    // Only the rows the card shows are resolved; `total` is the whole "To do" list.
+    const rows = list.slice(0, TASKS_SHOWN).map((task) => {
       const projectName = resolveProjectName(task, projects, smallWorks)
       return {
         id: task.id,
@@ -619,6 +620,7 @@ export function HomeScreen() {
         href: getTaskDetailHref(task, projects, smallWorks),
       }
     })
+    return { rows, total: list.length }
   }, [tasksReady, tasks, displayUser, operatives, managers, operative, projects, smallWorks])
 
   // ---- Waiting for you (owner decision 12): only items whose data Home already has. ----
@@ -811,7 +813,7 @@ export function HomeScreen() {
       )}
 
       <div className={waitingItems.length > 0 ? 'dash-row' : 'dash-row single'}>
-        <TasksToDoCard pending={tasksPending == null ? '…' : String(tasksPending)} rows={taskRows} total={taskRows?.length ?? 0} />
+        <TasksToDoCard pending={tasksPending == null ? '…' : String(tasksPending)} rows={taskRows?.rows ?? null} total={taskRows?.total ?? 0} />
         <WaitingForYouCard items={waitingItems} />
       </div>
 

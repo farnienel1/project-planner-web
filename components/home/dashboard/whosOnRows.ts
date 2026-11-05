@@ -82,9 +82,10 @@ export function whosOnRows(input: {
   for (const group of model.customGroups) other(group.name, group.bookings)
   other('Site survey', model.siteSurveyBookings)
   if (input.unbookedReady) {
-    for (const name of model.unbookedNames) {
+    model.unbookedNames.forEach((name, index) => {
       rows.push({
-        key: `unbooked-${name}`,
+        // Index keeps two people with the same display name as two rows.
+        key: `unbooked-${index}-${name}`,
         name,
         booking: 'Nothing booked',
         kind: 'unbooked',
@@ -93,7 +94,7 @@ export function whosOnRows(input: {
         hours: '—',
         time: '—',
       })
-    }
+    })
   }
   for (const holiday of model.holidays) {
     rows.push({
