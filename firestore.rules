@@ -945,13 +945,13 @@ service cloud.firestore {
           (invitationOrgId() is string && callerListedRole(invitationOrgId()) == 'admin')));
       }
       allow list, delete: if invitationCallerKnown() ? canAdministerInvitation() : false;
-      allow create: if (invitationCallerKnown() && privilegeCreateTyped(request.resource.data, true)) ? canAdministerInvitation() : false;
+      allow create: if invitationCallerKnown() ? (canAdministerInvitation() && privilegeCreateTyped(request.resource.data, true)) : false;
       allow update: if (request.auth != null && request.auth.token.email is string &&
           resource.data.get('email', null) is string &&
           string(resource.data.email).lower() == request.auth.token.email.lower() &&
           request.resource.data.diff(resource.data).changedKeys().hasOnly(['isUsed', 'usedAt']))
         ? (resource.data.isUsed != true && request.resource.data.isUsed == true && invitationAcceptWrittenWith())
-        : ((invitationCallerKnown() && invitationUpdateKeepsIdentity() && privilegeWriteTyped(request.resource.data, resource.data, true)) ? canAdministerInvitation() : false);
+        : ((invitationCallerKnown() && invitationUpdateKeepsIdentity()) ? (canAdministerInvitation() && privilegeWriteTyped(request.resource.data, resource.data, true)) : false);
       function invitationAcceptWrittenWith() {
         let account = /databases/(default)/documents/users/$(request.auth.uid);
         let membership = /databases/(default)/documents/users/$(request.auth.uid)/orgMemberships/$(resource.data.get('organizationId', '_'));
