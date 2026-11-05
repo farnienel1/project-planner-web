@@ -5056,6 +5056,16 @@ test('1.31.1 F11/F12: removing or nulling a top-level flag never unmasks a permi
   await assertLogicalDeny(updateDoc(admin, { isSuperAdmin: deleteField() }))
   await assertLogicalDeny(updateDoc(admin, { isSuperAdmin: null }))
   await assertSucceeds(updateDoc(admin, { firstName: 'Ada' }))
+  // An admin (not the Super Admin) cannot unmask their own self-manage toggle either.
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'users', 'f11-admin'), {
+      email: 'f11-admin@test.com', organizationId: ORG_A, role: 'admin', adminAccess: true, isActive: true, passwordSet: true,
+      annualLeaveSelfBook: false, permissions: { adminAccess: true, annualLeaveSelfBook: true },
+    })
+  })
+  const admin2 = doc(authDb('f11-admin', 'f11-admin@test.com'), 'users', 'f11-admin')
+  await assertLogicalDeny(updateDoc(admin2, { annualLeaveSelfBook: deleteField() }))
+  await assertLogicalDeny(updateDoc(admin2, { annualLeaveSelfBook: null }))
 })
 
 test('1.31.1 F2: a person never deletes their own employment type (self update, or accept without private pay)', async () => {

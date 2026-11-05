@@ -658,7 +658,8 @@ service cloud.firestore {
        !(request.resource.data.permissions is map) ||
        request.resource.data.permissions.get('adminAccess', null) in [false, null] ||
        admin) ? (
-      selfUpdateKeepsIdentityLinks() ? selfUpdateKeepsManagedFields(toggles, admin) : false
+      (admin || (!(request.resource.data.get('manager', null) == null && resource.data.get('manager', null) != null) && !(request.resource.data.get('operatives', null) == null && resource.data.get('operatives', null) != null) && !(request.resource.data.get('annualLeaveSelfBook', null) == null && resource.data.get('annualLeaveSelfBook', null) != null) && !(request.resource.data.get('timesheetSelfSign', null) == null && resource.data.get('timesheetSelfSign', null) != null))) ?
+        (selfUpdateKeepsIdentityLinks() ? selfUpdateKeepsManagedFields(toggles, admin) : false) : false
       ) : false) : false) : false) : false) : false);
   }
 
@@ -1033,19 +1034,15 @@ service cloud.firestore {
         let isSelf = userUpdateIsSelf();
         let targetAdmin = isSelf ? alreadyPrivilegedAdmin(resource.data) : false;
         let toggles = targetAdmin ? selfManageTogglesUnchanged(request.resource.data, resource.data) : true;
-        return (isSelf && userSelfUnmasksFlag()) ? false : ((
+        return (isSelf && userSelfUnmasksSuperAdmin()) ? false : ((
           (isSelf ? userSelfUpdateKeepsPrivileges(toggles, targetAdmin) : false) ||
           ((request.auth.uid != userId && operativesManagerFlags(home)) ? (canManagerUpdateOperativeProfile(home)
             ? privilegeWriteTyped(request.resource.data, resource.data, true) : false) : false) ||
           (userUpdateCallerAdmin(home, targetAdmin) ? userAdminUpdateAllowed(toggles, targetAdmin) : false)
         ) ? (userUpdateKeepsOrganization() && payStaysPrivate(resource.data.get('organizationId', ''))) : false);
       }
-      function userSelfUnmasksFlag() {
-        return (request.resource.data.get('isSuperAdmin', null) == null && resource.data.get('isSuperAdmin', null) != null) ||
-          (request.resource.data.get('manager', null) == null && resource.data.get('manager', null) != null) ||
-          (request.resource.data.get('operatives', null) == null && resource.data.get('operatives', null) != null) ||
-          (request.resource.data.get('annualLeaveSelfBook', null) == null && resource.data.get('annualLeaveSelfBook', null) != null) ||
-          (request.resource.data.get('timesheetSelfSign', null) == null && resource.data.get('timesheetSelfSign', null) != null);
+      function userSelfUnmasksSuperAdmin() {
+        return request.resource.data.get('isSuperAdmin', null) == null && resource.data.get('isSuperAdmin', null) != null;
       }
       function userUpdateCallerAdmin(home, targetAdmin) {
         let prevOrg = resource.data.get('organizationId', null);
