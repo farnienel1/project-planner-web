@@ -9,8 +9,8 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
 Rulebook version: 1.31.0 → 1.31.1
-Packed hash: af3cc5635531d223ed72e7f79d1b50fc0821023d9160e1e99e3ee57e0c902801
-Rulebook sha256: 6842ae2ca78fb958209ddcd3ab969235d6b2be9197b04e49c7a6fd809b0a853a
+Packed hash: cd94ce1c2647358b1bde873bb5685bc5656904acf1ecc57dcaa8864139c9361e
+Rulebook sha256: c7063d01ae6cafc5a3a1bd7f7792bbdaf85cfc2221a8781f0424124def467a25
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -24,8 +24,8 @@ Exports added: none
 Exports removed: none
 Web files that changed the rules: docs/RULEBOOK.md, firestore.rules, lib/canonical/canonical.test.ts, lib/canonical/userProfile.ts
 Done when:
-- [ ] Packed hash in iOS equals af3cc5635531d223ed72e7f79d1b50fc0821023d9160e1e99e3ee57e0c902801
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 6842ae2ca78fb958209ddcd3ab969235d6b2be9197b04e49c7a6fd809b0a853a)
+- [ ] Packed hash in iOS equals cd94ce1c2647358b1bde873bb5685bc5656904acf1ecc57dcaa8864139c9361e
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 c7063d01ae6cafc5a3a1bd7f7792bbdaf85cfc2221a8781f0424124def467a25)
 - [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.31.1)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
@@ -44,6 +44,7 @@ Done when:
 - **Nobody deletes their own users document** (fourth review NIT, §16): both apps delete accounts through `POST /api/account/delete`, which writes with service credentials; `canDeleteUser` never lets anyone delete themself. The dead rules function `managerOfSameOrg` is gone. An invitation's `invitedBy` names the sender as their users id (web) or their sign-in email (iOS); the rules accept either as the caller.
 - **Deploy order (A0):** the web release with this change goes live **before** the rules deploy. An older web build creates the invitee's account without `invitationId` and marks the invitation used on its own, which these rules refuse, so a person accepting an invitation in between is stuck until the new web is live.
 - **iOS follow-on (no rule divergence):** (1) `ManageUsersView.swift` (about lines 1160, 4393, 4478) marks old invitations used with a query on `email` alone, which the rules refuse for everyone (no `organizationId`); query `organizationId` + `email`, and as an operatives manager also `invitedBy` (the account's id or email as stored). (2) `UserStore.swift` delete clean-up (about line 1928) queries `organizationId` + `email`: as an operatives manager add `invitedBy`. (3) New invitations may keep `invitedBy` = the sender's email (accepted) or move to the users id like web. (4) iOS has no invite-accept write (`mergePlaceholderUserDocOntoAuthUidIfNeeded` stops with `INVITE_SETUP_INCOMPLETE`); keep it that way.
+- **Invitations (fifth review S-D, NIT-1, NIT-2, §11, §16):** `invitedBy` names the sender by users id or by sign-in email in any letter case; an operatives manager deletes only operative invitations they sent; on any update an invitation's `organizationId`, `email` and `role` never change and `isUsed` only goes from false to true (nobody reopens one). No app changes these today (both only mark invitations used).
 - **Self-delete closed on the email path too (fifth review S-A, §16):** the users delete by email match now also requires another account (`request.auth.uid != userId`); before, a signed-up person (`passwordSet` true) could still delete their own users document that way.
 - **Security (fifth review, ROOT, §16): privilege values are typed.** On the write paths to `users/{uid}` (create; the person's own update and an operatives manager's), `users/{uid}/orgMemberships/*`, `organizations/{orgId}.members`, `invitations`, `operatives` and `managers`, a privilege key that is written or changed (`isSuperAdmin`, `adminAccess`, `manager`, `operatives`, `operativeMode`, `annualLeaveSelfBook`, `timesheetSelfSign`, top level and in `permissions`) is a bool or null, and a written `role` (users, memberships, invitations) or `members` value is one the apps write (`admin`, `manager`, `operative`, `member`, plus `basic` / `viewer` from iOS's `UserRole`). An untouched stored legacy value is accepted as it is; readers stay tolerant (`truthyBool`), and the deny-side readers count `1` and `1.0` as on. Before, a double `1.0` passed the deny checks (`in [true, 1]` is type-strict) while `truthyBool(1.0)` granted it (B-A): an operatives manager could make an operative an admin with `permissions.adminAccess: 1.0`. An admin's update of another users document is not type-checked (it already holds every privilege, and the check would put the admin type-change batch over the expression limit); both apps write bools there. (S-B) Accepting an invitation copies the placeholder's privilege flags, role, line manager (`assignedManagerUserId(s)`, `hasNoLineManager`) and self-manage toggles exactly, and its pay (`dayRate`, `hourlyRate`, `payBasis`, `employmentType` and its dates) exactly or not at all (private pay leaves it out) — a person never sets their own pay or line manager (§8).
 - **Invite accept writes the membership with the account (fourth review S-1, §11):** web `completeInviteSetup` writes `users/{authUid}/orgMemberships/{orgId}` in the accept batch in the `inviteMembershipWrites` shape. Before, a non-admin invitee's separate membership write was refused after the account was created ("Missing or insufficient permissions"), and a retry then found the invitation used. A later fallback write never stops the setup.

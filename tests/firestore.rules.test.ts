@@ -4948,3 +4948,34 @@ test('1.31.1 S-A: a signed-up operative, manager or admin cannot delete their ow
     await assertLogicalDeny(deleteDoc(doc(authDb(p.id, p.email), 'users', p.id)))
   }
 })
+
+test('1.31.1 S-D, NIT-1, NIT-2: invitedBy matches the sender email in any case; operative-only deletes; invitation identity is fixed', async () => {
+  await seed1311People()
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    await setDoc(doc(db, 'invitations', 'sd-mixed'), {
+      organizationId: ORG_A, email: 'sd-mixed@test.com', role: 'operative', permissions: { operativeMode: true }, isUsed: false,
+      invitedBy: 'Ops-Mgr-1311@Test.com',
+    })
+    await setDoc(doc(db, 'invitations', 'n1-manager'), {
+      organizationId: ORG_A, email: 'n1-mgr@test.com', role: 'manager', permissions: { manager: true }, isUsed: false, invitedBy: OPS_MGR_1311,
+    })
+    await setDoc(doc(db, 'invitations', 'n2-used'), {
+      organizationId: ORG_A, email: 'n2@test.com', role: 'operative', permissions: { operativeMode: true }, isUsed: true, invitedBy: OPS_MGR_1311,
+    })
+  })
+  const mgr = authDb(OPS_MGR_1311, 'ops-mgr-1311@test.com')
+  // S-D: iOS stores the sender's email as typed; the match ignores case.
+  await assertSucceeds(updateDoc(doc(mgr, 'invitations', 'sd-mixed'), { firstName: 'Sid' }))
+  // NIT-1: an operatives manager deletes only operative invitations, even their own.
+  await assertLogicalDeny(deleteDoc(doc(mgr, 'invitations', 'n1-manager')))
+  // NIT-2: organisation, email and role are fixed; a used invitation is never reopened.
+  await assertLogicalDeny(updateDoc(doc(mgr, 'invitations', 'n2-used'), { isUsed: false }))
+  await assertLogicalDeny(updateDoc(doc(mgr, 'invitations', 'sd-mixed'), { email: 'other@test.com' }))
+  const admin = authDb(ADMIN_A, 'admin-a@test.com')
+  await assertLogicalDeny(updateDoc(doc(admin, 'invitations', 'sd-mixed'), { organizationId: ORG_B }))
+  await assertLogicalDeny(updateDoc(doc(admin, 'invitations', 'sd-mixed'), { role: 'admin', permissions: { adminAccess: true } }))
+  await assertLogicalDeny(updateDoc(doc(admin, 'invitations', 'n2-used'), { isUsed: false }))
+  await assertSucceeds(updateDoc(doc(admin, 'invitations', 'sd-mixed'), { isUsed: true }))
+  await assertSucceeds(deleteDoc(doc(mgr, 'invitations', 'sd-mixed')))
+})

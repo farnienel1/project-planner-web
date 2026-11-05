@@ -912,17 +912,25 @@ service cloud.firestore {
       function invitationSentByCaller(d) {
         let by = d.get('invitedBy', '');
         let email = request.auth.token.get('email', null);
-        return by == request.auth.uid || (email is string && (by == email || by == email.lower()));
+        return by == request.auth.uid || (email is string && by is string && by.lower() == email.lower());
+      }
+      function invitationUpdateKeepsIdentity() {
+        let next = request.resource.data;
+        return next.get('organizationId', null) == resource.data.get('organizationId', null) &&
+          next.get('email', null) == resource.data.get('email', null) &&
+          next.get('role', null) == resource.data.get('role', null) &&
+          (next.get('isUsed', false) == resource.data.get('isUsed', false) ||
+           (resource.data.get('isUsed', false) != true && next.get('isUsed', false) == true));
       }
       function invitationOpsManagerWrite() {
         let next = request.resource.data;
-        return request.method in ['list', 'delete'] ? invitationSentByCaller(resource.data) : (
-          (invitationIsOperativeOnly(next) && invitationSentByCaller(next)) ? (
-            request.method == 'create'
-              ? opsManagerEmailFree(invitationOrgId(), next.get('email', null))
-              : (invitationSentByCaller(resource.data) && invitationIsOperativeOnly(resource.data) &&
-                 (next.get('email', '') == resource.data.get('email', '') || opsManagerEmailFree(invitationOrgId(), next.get('email', null))))
-          ) : false);
+        return request.method == 'list' ? invitationSentByCaller(resource.data) : (
+          request.method == 'delete' ? (invitationSentByCaller(resource.data) && invitationIsOperativeOnly(resource.data)) : (
+            (invitationIsOperativeOnly(next) && invitationSentByCaller(next)) ? (
+              request.method == 'create'
+                ? opsManagerEmailFree(invitationOrgId(), next.get('email', null))
+                : (invitationSentByCaller(resource.data) && invitationIsOperativeOnly(resource.data))
+            ) : false));
       }
       function canAdministerInvitation() {
         return (invitationOperativesManager() && !adminLikeUser(callerHomeData()) &&
@@ -943,7 +951,7 @@ service cloud.firestore {
           string(resource.data.email).lower() == request.auth.token.email.lower() &&
           request.resource.data.diff(resource.data).changedKeys().hasOnly(['isUsed', 'usedAt']))
         ? (resource.data.isUsed != true && request.resource.data.isUsed == true && invitationAcceptWrittenWith())
-        : ((invitationCallerKnown() && privilegeWriteTyped(request.resource.data, resource.data, true)) ? canAdministerInvitation() : false);
+        : ((invitationCallerKnown() && invitationUpdateKeepsIdentity() && privilegeWriteTyped(request.resource.data, resource.data, true)) ? canAdministerInvitation() : false);
       function invitationAcceptWrittenWith() {
         let account = /databases/(default)/documents/users/$(request.auth.uid);
         let membership = /databases/(default)/documents/users/$(request.auth.uid)/orgMemberships/$(resource.data.get('organizationId', '_'));
