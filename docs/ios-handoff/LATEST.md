@@ -1,4 +1,4 @@
-# iOS follow-on — rulebook 1.32.0
+# iOS follow-on — rulebook 1.32.1
 
 Generated 2026-11-05 by `npm run rulebook:handoff` in project-planner-web. Paste this whole file into the iOS agent.
 The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; never edit the iOS mirror by hand.
@@ -8,9 +8,9 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ║ FOLLOW-ON — paste into the iOS agent                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
-Rulebook version: 1.32.0 → 1.32.0
-Packed hash: 2b0f44ce7878b020fea0ab1677765aa3c2edf3cdc74a8de3e3f71e28a6a1c6e7
-Rulebook sha256: 58ba98eb43232bb232397f81b7ae46071a2ea0b90e70e71f5badef1ff616068d
+Rulebook version: 1.32.0 → 1.32.1
+Packed hash: 427d4d314c22ce2a8b3b039cd0a64523fae8b0e824e1d05eb1aa7f25eca669fd
+Rulebook sha256: 5df16b5a6ae38eefabbf46b43b704dd6e38f8784ca1e3a428cbb5e6ad7a8c0e1
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -22,37 +22,24 @@ Contract sha256: 7f70ec28920ac6114068b4e44eaf893706d5b6af1b21d77b69f946074d74e12
 Call: CanonicalBusinessEngine — no second calculator in Swift.
 Exports added: none
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md
+Web files that changed the rules: docs/RULEBOOK.md, firestore.rules
 Done when:
-- [ ] Packed hash in iOS equals 2b0f44ce7878b020fea0ab1677765aa3c2edf3cdc74a8de3e3f71e28a6a1c6e7
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 58ba98eb43232bb232397f81b7ae46071a2ea0b90e70e71f5badef1ff616068d)
-- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.32.0)
+- [ ] Packed hash in iOS equals 427d4d314c22ce2a8b3b039cd0a64523fae8b0e824e1d05eb1aa7f25eca669fd
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 5df16b5a6ae38eefabbf46b43b704dd6e38f8784ca1e3a428cbb5e6ad7a8c0e1)
+- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.32.1)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
 - [ ] Any disagreement traced to its first divergence — no copied screen number
 ```
 
-## What changed in 1.32.0
+## What changed in 1.32.1
 
-- **Overtime multiplier at create** (owner decisions 4 Nov, decision A; §25): every custom-hours create screen shows the rate pre-filled with the organisation's rate for the day (`overtimeRateCreateControl`); `otMultiplierOverride` is stored only when changed (`overtimeMultiplierCreateFields`), so a booking left at the organisation's rate follows later (and scheduled) rate changes.
-- **Weekly report multipliers** (§7): PAYE overtime rows per person, job and multiplier, "2h at ×1.5 = 3h" (`overtimeMultiplierText`), rows changed from the organisation rate marked (`changedFromOrganization`, `OVERTIME_RATE_CHANGED_MARK`). Breaking for readers of `weeklyReportPayeOvertime(...).label` (now carries the multiplier).
-- **PAYE payday required** (§4.5): saved by the main Save of Payment runs and timesheets, mandatory at organisation setup (`payePaydaySetupError`, `PAYE_PAYDAY_REQUIRED_MESSAGE`), a banner while missing (`payePaydayMissing`, `payePaydayBanner`, `PAYE_PAYDAY_MISSING_BANNER`).
-- **Overtime review** (§25): one Approve button (`OVERTIME_APPROVE_LABEL`, `overtimeRequestAnyDecided`); partial approval — `overtimeApprovalWrites` applies what the decider may and returns `lineOutcomes`, `waitingBookingIds`, `appliedBookingIds`, `complete` and `message` (`reviewApprovalMessage`: "Approved 2 of 5…", "Nothing was approved…"); the request stays `pending` until complete; lines under an older operatives-row record show "Needs an admin" (decision A, `OVERTIME_NEEDS_ADMIN_LABEL`, `overtimeLineOutcomeLabel`). A changed booking no longer refuses the whole approval: that line stays waiting. Breaking: the result shape and the `stale` / `needsAdmin` / `refused` / `undecided` refusals are replaced by `nothingApproved` and per-line outcomes.
-- **All records for this person** (§25, §26, platform guardrail 1): `overtimePersonIds({ person, roster, operatives })` for overtime loading, sending and approving and for price work and expenses.
-- **Future days within the current payrun** (owner option 2, §25): `overtimeEditableUntil` → `canEditOwnBookingOvertime({ editableUntilKey })`; later payruns stay locked.
-- **Own overtime edits are requests with a line manager** (§25): `canEditOwnBookingOvertime({ person, roster })` — the Super Admin directly; anyone with an active line manager as a request; anyone without one directly where the rules allow the write.
-- **Price work and expenses review** (§26, `payeClaimReviews.ts`): ✓ ✕ per item, one Approve, `canReviewPayeClaims`, `payeClaimReviewWrites`, `payeClaimReviewState`, `payeClaimFingerprint`, `parsePayeClaimReviewDocument`; new collection `payeClaimReviews` (rules §16).
-- **Export notice** (§8): `timesheetExportOwnSheetNotice`, `TIMESHEET_EXPORT_OWN_SHEET_NOTICE`.
-- **Rules version in Settings** for everyone (§15): `rulebookVersionLabel`.
-- **Booking screens follow `canWriteBooking`** (§2, owner decision 4 Nov): `canBookOtherLocationsFor(viewer, personUserIds)` — Office / WFH / Site survey / custom items only for oneself unless admin.
-- **Pay visibility narrowed** (§8, owner decisions 5 Nov): `canViewPersonPay(viewer, subject, roster, { context })` — a line manager who is not an admin or an operatives manager sees a report's pay only with `context: 'timesheetReview'`. Read plans keep loading it for the review; firestore.rules pay reads unchanged (needed by the review).
-- **Weekly report admin-only** (owner decision 5 Nov, §7, §11): `canOpenWeeklyReport`; `weeklyReports` joins `ADMIN_ONLY_PERMISSION_FIELDS` and its catalogue row is admin-only, so `permissionToggleRows`, `addUserPermissionDefaults`, `lockedPermissionFields` and `effectivePermissions` drop it for managers and operatives; stored values are never rewritten. iOS: hide the Weekly report for non-admins in Home quick actions, the menu and deep links, and drop the toggle from the Manage Users / Add User rows (they come from `permissionToggleRows`).
-- **Small shared helpers:** `legalPackAcceptanceWriteFields` (with write metadata), `invitationListConstraints` (both email forms, as stored and lower case, like iOS `InvitationLookup`), `invitationReadErrorIsSkippable` (a clean-up skips only permission-denied invitation reads).
-- **Managers' own site bookings** (owner decision 4 Nov): Scheduling, Daily Overview and My Schedule show a manager site booking's overtime rate with `bookingHoursLabel` like a labour booking (the stored `otMultiplierOverride`, else the organisation's). Web already passes it; iOS must pass the stored rate on all three.
-- **Review fixes (r274):** decision A holds for keep lines and no-op cogs (`overtimeApprovalWrites` → `needsAdmin` from the booking's person id, whatever the decision); claim reviews are pinned to their item and person in the rules and never written by the person under any id (§16); the weekly report Pay Summary follows `canViewPersonPay` (`reportPayForViewer`, `PAY_HIDDEN_CELL_LABEL`, `PAY_HIDDEN_NOTE`); the Daily Overview booking sheet keeps the rate on every save and move (`overtimeMultiplierMoveFields`). `OVERTIME_APPROVE_REQUEST_LABEL`, `OVERTIME_REQUEST_STALE_MESSAGE`, `OVERTIME_REQUEST_UNDECIDED_MESSAGE` and `overtimeRequestFullyDecided` are deprecated (kept for older iOS builds).
-- **Includes 1.31.2** (rules type-check fixes for console/CLI publish; no behaviour change): no function receives a literal `null` (`rosterRowPrivilegeTyped`, `timesheetSame`, `timesheetSameInstant`, `timesheetOwnerLeaves`); see the 1.31.2 entry below.
-- **iOS files to change** (hand-off): `Views/Overtime/OvertimeViews.swift`, `Core/FirebaseBackend+Overtime.swift`, `Core/Rulebook+PayeOvertime.swift` (approval result, `overtimePersonIds`, `editableUntilKey`, `person` / `roster`, one Approve); `Views/Overtime/PayeClaimsViews.swift`, `Core/Rulebook+PayeClaims.swift` (claims review); `Core/Rulebook+PayPrivacy.swift`, `Views/ManageUsersView.swift`, `Views/WeeklyReportView.swift` (`canViewPersonPay` context, `reportPayForViewer`, multiplier column); `Views/BookLabourFlowView.swift`, `Views/DailyOverviewView.swift`, `Views/ProjectDetailView.swift` (scheduling), `Views/BookingHoursEditSheet.swift`, `MyScheduleView.swift` (`canBookOtherLocationsFor`, create-time rate, `overtimeMultiplierMoveFields`, managers' site booking rate); `OrganisationInvoicingSettingsView.swift`, `SettingsView.swift` (PAYE payday in the main Save and banner, "Rules x.y.z"); `Core/CustomerLegalPack.swift` (`legalPackAcceptanceWriteFields`); `ManageUsersView.swift` / `UserStore.swift` invitation lookups (`invitationListConstraints`).
+- 1.32.0 (never published) on top of 1.31.3's compile-cost restructure, plus one more cut; no behaviour change from 1.32.0. Admin checks that tested the users-document admin and the members-map admin one after the other now read billing once (`orgAdminEither`; `isOrgAdminOrOwner`, memberships, pay profiles, rate history, settings and the other pairs), and `isOrgAdminViaMembersMap` is gone (`membersMapAdminAnyBilling`). Static compile cost 429,072 (1.30.2 live: 525,898; 1.32.0 as built: 614,251); in-process compile 10–17% faster than 1.30.2. Rules suites 223/223; `RULES_STRICT_BUDGET=1` 43 limit refusals vs 45 on 1.32.0, none new; emulator type check clean.
 
+## New rulebook sections
+
+- 1.32.1 — 2026-11-05
+- 1.31.3 — 2026-11-05
 
 ## Workflow for the iOS agent
 
