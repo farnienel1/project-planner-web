@@ -1698,13 +1698,12 @@ service cloud.firestore {
             (resource.data.userId == request.auth.uid &&
               request.resource.data.status == 'withdrawn' &&
               request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'withdrawnAt', 'updatedAt', 'updatedBy', 'updatedFrom'])) ||
-            (resource.data.userId != request.auth.uid &&
-              (isOrgAdminOrOwner(organizationId) || callerLineManagesUser(resource.data.userId)) &&
-              request.resource.data.status in ['approved', 'pending'] &&
+            ((resource.data.userId != request.auth.uid &&
               request.resource.data.get('decidedBy', '') == request.auth.uid &&
+              request.resource.data.status in ['approved', 'pending'] &&
               request.resource.data.diff(resource.data).affectedKeys().hasOnly([
                 'status', 'decisions', 'decidedBy', 'decidedAt', 'appliedBookingIds', 'droppedBookingIds', 'updatedAt', 'updatedBy', 'updatedFrom'
-              ]))
+              ])) ? (isOrgAdminOrOwner(organizationId) || callerLineManagesUser(resource.data.userId)) : false)
           );
       }
 
