@@ -1,62 +1,58 @@
-# Design tokens — sidebar and Home
+# Design tokens — sidebar, top bar and Home
 
 Visual design only. This is not part of the rulebook (`docs/RULEBOOK.md`): no business rule, data, route or permission depends on it. iOS can match it later screen by screen.
 
-Source of truth on web: `app/brand-shell.css` (CSS variables, light and dark) and the `brand`, `danger`, `sidebar-muted`, `signout`, `page-bg`, `card-bg`, `card-border` colours in `tailwind.config.js`, which point at those variables. Components use the variables or the classes in `brand-shell.css`, never a hex value.
+Owner decision 11 (5 Nov 2026, `docs/OWNER_DECISIONS.md` "Web Home dashboard restyle"): the designer palette from the Home dashboard design pack replaces the earlier brand-blue sidebar and hero, as scoped `--dash-*` tokens with dark-mode values, and with the four AA contrast failures in the design fixed.
+
+Source of truth on web: `app/brand-shell.css` (CSS variables, light, system dark under `prefers-color-scheme: dark` guarded by `:root:not([data-theme='light'])`, and `[data-theme='dark']`). Components use the variables or the classes in `brand-shell.css` (`.sb-*`, `.tb*`, `.app-frame`, `.app-panel`, `.home .dash-*`), never a hex value. The older `--brand-*`, `--danger-*`, `--page-bg`, `--card-*` tokens stay defined for the Tailwind aliases in `tailwind.config.js`.
 
 ## Tokens
 
 | Token | Light | Dark | Use |
 |---|---|---|---|
-| `brand-900` | `#0E2A6B` | same | Hero gradient start |
-| `brand-800` | `#17398A` | same | Sidebar background (both themes), active nav text, top-bar avatar |
-| `brand-600` | `#1F56C9` | `#7DA5F5` | Icons and links on Home |
-| `brand-500` | `#2F6FE0` | same | Hero gradient end |
-| `brand-50` | `#E6EEFC` | `#172C4D` | Icon tile background, day chips |
-| `brand-solid` | `#1F56C9` | `#2F6FE0` | Fill behind white text (New button). In light it is `brand-600`; dark keeps white text at AA |
-| `brand-chip-ink` | `#17398A` | `#A9C4FF` | Text on a `brand-50` day chip |
-| `sidebar-muted` | `#C3D1F2` | same | Sidebar secondary text and labels, hero date |
-| `danger-600` | `#DC2626` | `#F87171` | Warnings icon |
-| `danger-50` | `#FEE2E2` | `#3D1717` | Warnings icon tile |
-| `danger-solid` | `#DC2626` | same | Notification badge fill (white text) |
-| `signout` | `#C62828` | same | Sign out text and icon (on a white button in both themes) |
-| `signout-hover` | `#FEE2E2` | same | Sign out button hover |
-| `page-bg` | `#F1F4F9` | `#0B1220` | App content background |
-| `card-bg` | `#FFFFFF` | `#131C2E` | Cards and tiles |
-| `card-border` | `#E3E8F0` | `#24314B` | Card and tile borders |
-| `control-border` | `#DDE3EC` | `#2E3D5C` | Search, refresh, bell, menu buttons |
-| `text` | `#0F1B33` | `#EAF0F8` | Primary text |
-| `text-muted` | `#5F6E84` | `#B0BCCF` | Secondary text, breadcrumb |
+| `dash-side` | `#0A1530` | `#060C1E` | Sidebar and the frame around the main panel |
+| `dash-side-hi` | `rgba(255,255,255,.07)` | same | Active nav item fill (with a `dash-side-line` border) |
+| `dash-side-line` | `rgba(255,255,255,.08)` | same | Sidebar dividers, active item border |
+| `dash-side-ink` | `#D9DFEA` | same | Nav text |
+| `dash-side-muted` | `#8D98B0` | same | Section labels, organisation name, version line, Customise link |
+| `dash-panel` | `#FFFFFF` | `#0F1729` | Top bar |
+| `dash-page` | `#F7F8FA` | `#0B1220` | Area behind the cards (main panel) |
+| `dash-card` / `dash-line` | `#FFFFFF` / `#ECEEF2` | `#131C2E` / `#24314B` | Cards and 1px borders |
+| `dash-ink` / `dash-ink-2` / `dash-muted` | `#101828` / `#344054` / `#667085` | `#EAF0F8` / `#C5CFDE` / `#9AA6BA` | Text |
+| `dash-blue` | `#3E4FD8` | `#8C9BFF` | Links, icons, day chips |
+| `dash-blue-solid` | `#3E4FD8` | `#4A5BE0` | Fill behind white text: New button, booked ring segment, avatar |
+| `dash-navy` | `#1D2B7A` | `#C9D2FF` | Banner text |
+| `dash-teal` | `#2EC4C0` | `#3AD0CC` | Secondary accent |
+| `dash-soft` | `#EEF2FF` | `#1B2550` | Banner and day-chip backgrounds |
+| `dash-danger` | `#E5484D` | same | Warnings triangle, unbooked ring segment (fills, no text) |
+| `dash-danger-solid` | `#D92D35` | same | Notification badge fill (white text) |
+| `dash-amber` | `#F5A524` | `#F5B544` | On-leave ring segment, "Soon" |
+| `dash-warn-bg` / `dash-warn-ink` / `dash-warn-label` | `#FFF4F4` / `#C4242C` / `#B42318` | `#2B1416` / `#FF8F92` / `#FFB1B3` | Active-warnings tile, task-limit alert |
+| `dash-primary-bg` / `dash-primary-ink` | `#101828` / `#FFFFFF` | `#EAF0F8` / `#0B1220` | Book labour (the one black button) |
+| `dash-track`, `dash-icon-bg`, `dash-control-bg`, `dash-hover-*` | `#EEF0F4`, `#F2F4F7`, `#FAFBFC`, `#FAFBFF` / `#CDD5F5` | `#24314B`, `#1A2438`, `#131C2E`, `#18223A` / `#3A4A7A` | Ring track, icon squares, search field, hover |
+| `dash-tag-{blue,teal,red,amber,grey}-{bg,ink}` | see `brand-shell.css` | see `brand-shell.css` | Type pills (Booked, Subcontractor, Unbooked, Leave, Office) |
+| `dash-focus` | `#3E4FD8` | `#8C9BFF` | Keyboard focus ring (2px, offset 2px); white in the sidebar |
 
-`text-muted` is `#5F6E84`, not the design's `#64748B`: `#64748B` is 4.32:1 on `page-bg`, below WCAG AA; `#5F6E84` is 4.70:1 there and 5.19:1 on white.
+**Contrast fixes (AA, measured):** design `muted #8B93A1` was 3.09:1 on white → `#667085` 4.97:1 (4.68:1 on `#F7F8FA`); `side-muted #6E7A94` was 4.19:1 on `#0A1530` → `#8D98B0` 6.24:1; white on the badge `#E5484D` was 3.91:1 → fill `#D92D35` 4.80:1; the warnings figure `#D92D35` on `#FFF4F4` was 4.45:1 → `#C4242C` 5.36:1. The teal pill text is `#0E7C78` (4.52:1) and the grey pill text `#5D6679` (5.19:1). Every dark value above passes AA on its background.
 
-Sidebar overlays (same in both themes): item fill `rgba(255,255,255,.08)`, item border `.16`, item hover `.14`, dividers `.14`, logo ring `.22`.
+Type: Inter (the app body font). Body 13px, card titles 13.5px semibold, figures 18–22px medium, labels 10.5–11.5px; tabular numbers on Home. Radii: cards 12px, buttons and inputs 8px, icon squares 7px, main panel 14px. Cards have borders, no shadows. No gradients except the avatar.
 
-Font: Inter (the app body font). Radii: cards 16px, nav items and buttons 10–12px, icon tiles 12px, hero 22px.
+## Frame and sidebar
 
-## Sidebar
-
-- 268px wide on desktop, full height, solid `brand-800`, padding 22px 16px 18px. The mobile drawer (below 1024px) keeps its behaviour and uses the same styling.
-- Logo block: the app logo (`public/branding/app-logo.png`, `AppLogoMark`) at 44×44 with a 1px `rgba(255,255,255,.22)` ring; "Project Planner" 17px bold white; organisation name 12.5px `sidebar-muted`; 1px divider below.
-- Every item is a button-like link: 40px high, radius 10px, 6px apart, item fill and border above, white 18px icon, white 14.5px medium label, chevron at 55% opacity. Hover uses the hover fill.
-- Active item (whichever page is open, `aria-current="page"`): solid white, `brand-800` text and icon, bold. Home is 44px / 15px.
-- Section labels (NAVIGATE, TOOLS, TEAM, APP & ACCOUNT): 11.5px, weight 700, letter-spacing 0.1em, uppercase, `sidebar-muted`. "Customise" is a white underlined link.
-- Keyboard focus: 2px white outline.
-- Footer pinned to the bottom under a divider: user card (item fill, radius 12px, avatar, white name, organisation in `sidebar-muted`); Sign out is a full-width 40px white button with `signout` text and icon; version line "v1.0.0 · Project Planner · Data health" centred, 11.5px, `sidebar-muted`.
+- Desktop (1024px and up): the page sits in a rounded `dash-page` panel inset 10px from the window on a `dash-side` frame; the sidebar is 244px. Below 1024px the sidebar is the existing drawer (unchanged behaviour) and the panel fills the window.
+- Sections are the existing ones — Home, Navigate (with **Customise**, a small gear link on its label row, which opens the existing Customise sheet: reorder, hide, add), Tools, Team, App & account — so a user's customised Navigate list is kept. No counts.
+- Items: 34px, radius 7px, 16px outline icon, 13px label in `dash-side-ink`; hover a faint fill; the active page (`aria-current="page"`) uses `dash-side-hi` with a border and white text.
+- Foot: Data health link (same gate as before: admins, or not production), the account card (avatar, name, organisation) with a **Sign out** icon button (`aria-label="Sign out"`, same confirm dialog), and "v1.0.0 · Project Planner".
 
 ## Top bar
 
-Breadcrumb in `text-muted` with the current page bold in `text`. Search, refresh, bell and the mobile menu button are `card-bg` with a 1px `control-border` border, radius 12px, 44px. New is `brand-solid` with white text, radius 12px. The unread badge is `danger-solid`. The avatar is a `brand-800` circle with white initials (or the photo).
+54px, `dash-panel` with a bottom `dash-line` border. Breadcrumb 12.5px (organisation muted / page). Search field 280px with ⌘K (icon only below 821px). New is `dash-blue-solid`. Refresh and the bell are 30px bordered icon buttons; the bell's label includes the unread count, and its badge is `dash-danger-solid`. The avatar opens the existing account menu.
 
 ## Home
 
-- Content padding 22px 32px on wide screens; 18px between sections.
-- Hero: radius 22px, padding 28px 30px, `linear-gradient(120deg, brand-900 0%, brand-800 45%, brand-500 100%)` with a 44px grid at `rgba(255,255,255,.06)`. Date 13px semibold `sidebar-muted`; "Hi, name" 38px bold white; subtitle 15px. Stat boxes: fill `.10`, border `.28`, radius 14px. Book labour is solid white with `brand-800` text; other hero buttons are fill `.12`, border `.30`.
-- Warnings and Tasks: white cards, `card-border`, radius 16px, side by side when they sit under the hero. Warnings icon `danger-600` on `danger-50`; Tasks icon `brand-600` on `brand-50`.
-- Up next and Maintenance: the same white card treatment. Day chips are `brand-50` with `brand-chip-ink` bold text.
+- Header: "Hi, name", date · active projects; buttons Customise (admins, opens Dashboard metrics), Daily overview, Weekly report (admins), Book labour (black).
+- Stat strip: the viewer's metric tiles; a warnings tile above 0 gets the solid red triangle on `dash-warn-bg`.
+- Cards: Labour Summary with the ring (admins), Who's on today (admins), unbooked banner (`dash-soft`), Tasks to do, Waiting for you, Quick actions (34px outline buttons, `dash-blue` icons), Up next with day chips.
+- Below 1100px one column; below 820px the stat strip stacks, quick actions are two columns, tables scroll inside their card; no horizontal page scroll at 390px.
 
-## One accent colour
-
-Blue is the only icon colour on Home and in the sidebar. **Every quick-action icon is `brand-600` on a 44px `brand-50` tile, radius 12px**, whatever its section; the old per-section colours (purple, green, orange, pink…) are not used on Home. Tiles are `card-bg` with a `card-border` border, radius 16px, 110px high, label 14px semibold `text`. Red is reserved for warnings, the notification badge and Sign out.
-
-This rule is scoped to the sidebar and Home. Other screens keep the `docs/agent-rules/ui-touch-up.md` rules.
+Other screens keep the `docs/agent-rules/ui-touch-up.md` rules.
