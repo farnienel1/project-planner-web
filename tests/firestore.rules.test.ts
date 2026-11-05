@@ -5008,3 +5008,21 @@ test('1.31.1 F1: an operative invitee cannot drop their operative level, line ma
   await assertLogicalDeny(acceptInviteBatch(db, authUid, without('annualLeaveSelfBook'), invitationId))
   await assertSucceedsWithinBudget(acceptInviteBatch(db, authUid, full, invitationId))
 })
+
+test('1.31.1 F9: an operatives manager marks their iOS-shaped invitation used within the budget', async () => {
+  await seed1311People()
+  const perms = {
+    adminAccess: false, manager: false, operatives: false, skills: false, qualifications: false, materials: true, projects: true,
+    smallWorks: true, operativeMode: true, annualLeaveSelfBook: false, weeklyReports: false, dailyOverview: true, subContractors: false,
+    siteAudit: true, wholesalersOrderHistory: true,
+  }
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    await setDoc(doc(db, 'invitations', 'f9-ios'), { organizationId: ORG_A, email: 'f9-ios@test.com', permissions: perms, isUsed: false, invitedBy: OPS_MGR_1311, firstName: 'I' })
+    await setDoc(doc(db, 'invitations', 'f9-ios-email'), { organizationId: ORG_A, email: 'f9-ios2@test.com', permissions: perms, isUsed: false, invitedBy: 'Ops-Mgr-1311@Test.com' })
+  })
+  const mgr = authDb(OPS_MGR_1311, 'ops-mgr-1311@test.com')
+  await assertSucceedsWithinBudget(updateDoc(doc(mgr, 'invitations', 'f9-ios'), { isUsed: true, usedAt: Timestamp.now() }))
+  await assertSucceedsWithinBudget(updateDoc(doc(mgr, 'invitations', 'f9-ios-email'), { isUsed: true }))
+  await assertLogicalDeny(updateDoc(doc(mgr, 'invitations', 'f9-ios'), { isUsed: false }))
+})
