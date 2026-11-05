@@ -389,7 +389,7 @@ export async function approveOvertimeRequest(input: {
         title: 'Overtime update',
         message: result.complete
           ? 'Your overtime request was approved. Open Overtime to see the final hours.'
-          : `Part of your overtime request was approved (${result.message}). Open Overtime to see the final hours.`,
+          : `Part of your overtime request was approved (${result.message.replace(/\.$/, '')}). Open Overtime to see the final hours.`,
         userId,
         relatedId: input.requestId,
       }).catch(() => undefined)

@@ -152,7 +152,7 @@ How to use it:
 
 | Date | Choice made in PR #274 | Status |
 |---|---|---|
-| 5 Nov | Partial approval: Approve is enabled once **any** line has ✓ ✕ ⚙; undecided lines stay waiting on the request (not refused). A booking changed since the request now stays waiting on its own line instead of refusing the whole approval. | owner to confirm |
+| 5 Nov | Partial approval: Approve is enabled once **any** line has ✓ ✕ ⚙; undecided lines stay waiting on the request (not refused). A booking changed since the request now stays waiting on its own line instead of refusing the whole approval. Note (review r274): a changed (stale) or refused line keeps the request pending until the person sends that range again (which replaces it) or withdraws it; the line reads "Booking changed since request". | accepted by the owner as built (5 Nov) |
 | 5 Nov | Price work and expenses review stores a separate `payeClaimReviews/{kind}_{itemId}` document (the items stay written only by the person) and does **not** gate the person's report. A changed item needs review again. | owner to confirm |
 | 5 Nov | "Own overtime is a request with a line manager" applies to admins with a line manager too; a manager with no line manager edits directly only where `canWriteBooking` allows (else a request). The security rules still accept a direct edit from an admin with a line manager (the app no longer offers it). | owner to confirm |
 | 5 Nov | The PAYE payday banner shows on Settings (admins), Payment runs and the Overtime hub. Settings → Payment runs does not refuse a Save without a payday; only setup requires it. | owner to confirm |

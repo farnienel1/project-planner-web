@@ -53,9 +53,12 @@ export const OVERTIME_USERS_LABEL = "Users' Overtime, Expenses & Price Work"
 export const OVERTIME_COMING_NEXT_MESSAGE = 'Expenses and price work are coming in the next update.'
 export const OVERTIME_SEND_FOR_APPROVAL_LABEL = 'Send for approval'
 export const OVERTIME_GENERATE_REPORT_LABEL = 'Generate overtime report'
+/** @deprecated 1.32.0: use `OVERTIME_APPROVE_LABEL`; kept while iOS builds before the 1.32.0 hand-off read it. */
 export const OVERTIME_APPROVE_REQUEST_LABEL = 'Approve Overtime Request'
+/** @deprecated 1.32.0: a changed line now waits on its own (`OVERTIME_CHANGED_SINCE_REQUEST_LINE_MESSAGE`). */
 export const OVERTIME_REQUEST_STALE_MESSAGE =
   'A booking changed after this request was sent, so it cannot be approved. Ask for the request to be sent again.'
+/** @deprecated 1.32.0: Approve needs one decided line (`overtimeRequestAnyDecided`). */
 export const OVERTIME_REQUEST_UNDECIDED_MESSAGE = 'Tick, cross or change every line before approving the request.'
 export const OVERTIME_REQUEST_NOT_PENDING_MESSAGE = 'This request is no longer waiting for approval.'
 export const OVERTIME_NO_LINES_MESSAGE = 'There is no overtime in this range.'
@@ -69,7 +72,6 @@ export const OVERTIME_APPROVE_LABEL = 'Approve'
 /** 1.32.0 (owner decision A): the line label a line manager sees on a line only an admin may apply. */
 export const OVERTIME_NEEDS_ADMIN_LABEL = 'Needs an admin'
 export const OVERTIME_CHANGED_SINCE_REQUEST_LINE_MESSAGE = 'Changed since the request — ask them to send it again.'
-export const OVERTIME_NOTHING_DECIDED_MESSAGE = 'Tick, cross or change at least one line, then press Approve.'
 export const OVERTIME_BOOKING_UNREADABLE_MESSAGE = "Can't read this booking — it is left out of this approval."
 export const OVERTIME_NOT_THEIR_BOOKING_MESSAGE = 'This booking is not theirs — it is left out.'
 
@@ -1003,7 +1005,11 @@ export function overtimeRequestWithdrawWriteFields(request: Pick<OvertimeRequest
   return request.status === 'pending' ? { status: 'withdrawn' } : null
 }
 
-/** Every line of the request has a decision. */
+/**
+ * Every line of the request has a decision.
+ * @deprecated 1.32.0: the one Approve is enabled by `overtimeRequestAnyDecided`; kept while iOS builds before the 1.32.0
+ * hand-off call it.
+ */
 export function overtimeRequestFullyDecided(request: Pick<OvertimeRequestRecord, 'lines'>, decisions: Record<string, OvertimeDecision | null | undefined>): boolean {
   if (request.lines.length === 0) return false
   const keyed = new Map(Object.entries(decisions || {}).map(([key, value]) => [idKey(key), value]))
