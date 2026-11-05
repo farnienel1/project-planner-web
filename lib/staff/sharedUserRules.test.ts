@@ -139,7 +139,9 @@ test('1.15.0 change user type keeps every saved toggle: manager → admin → ma
   assert.equal(admin.storedPermissions?.projects, false)
   const back = applyAccountTypeChange(admin, 'manager')
   assert.equal(back.permissions.projects, false)
-  assert.equal(back.permissions.weeklyReports, true)
+  // 1.32.0: the Weekly report is admin-only — demoted, the stored toggle reads off (it is kept underneath).
+  assert.equal(back.permissions.weeklyReports, false)
+  assert.equal(back.storedPermissions?.weeklyReports ?? true, true)
   assert.equal(back.permissions.subContractors, false)
   assert.equal(back.permissions.operatives, true)
   assert.equal(back.permissions.adminAccess, false)

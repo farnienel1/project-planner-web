@@ -466,6 +466,7 @@ var ProjectPlannerCanonical = (() => {
     canManageOperatives: () => canManageOperatives,
     canManageVariationTracker: () => canManageVariationTracker,
     canOpenUserTimesheets: () => canOpenUserTimesheets,
+    canOpenWeeklyReport: () => canOpenWeeklyReport,
     canRestoreOrganization: () => canRestoreOrganization,
     canReviewFileReports: () => canReviewFileReports,
     canReviewPayeClaims: () => canReviewPayeClaims,
@@ -2169,7 +2170,7 @@ var ProjectPlannerCanonical = (() => {
 
   // lib/canonical/permissionLevels.ts
   var ADMIN_EDITABLE_PERMISSION_FIELDS = ["annualLeaveSelfBook", "timesheetSelfSign"];
-  var ADMIN_ONLY_PERMISSION_FIELDS = ["timesheetSelfSign"];
+  var ADMIN_ONLY_PERMISSION_FIELDS = ["timesheetSelfSign", "weeklyReports"];
   var MANAGER_LOCKED_ON_PERMISSION_FIELDS = ["materials", "siteAudit"];
   var PERMISSION_DEFAULT_ON = [
     "materials",
@@ -2263,6 +2264,11 @@ var ProjectPlannerCanonical = (() => {
     for (const key4 of MANAGER_LOCKED_ON_PERMISSION_FIELDS) out[key4] = true;
     return out;
   }
+  function canOpenWeeklyReport(user) {
+    if (!user || typeof user !== "object") return false;
+    if (user.isActive === false) return false;
+    return permissionLevelOf(user) === "admin" && effectivePermissions(user).weeklyReports === true;
+  }
   function effectivePermission(user, key4) {
     return effectivePermissions(user)[key4] === true;
   }
@@ -2329,7 +2335,7 @@ var ProjectPlannerCanonical = (() => {
       help: "Sees, adds and edits every small works job. If off, they see only the small works they are assigned to as a manager \u2014 scheduling and other job tools stay available there, but they cannot add small works or change their managers.",
       levels: ["admin", "manager"]
     },
-    { field: "weeklyReports", label: "Weekly Report", help: "Can open Weekly Report from Home. If off, that tile is hidden.", levels: ["admin", "manager"] },
+    { field: "weeklyReports", label: "Weekly Report", help: "Admins and super admins open the Weekly report; it is not offered to managers.", levels: ["admin"] },
     { field: "dailyOverview", label: "Daily Overview", help: "Can open Daily Overview from Home. If off, that tile is hidden.", levels: ["admin", "manager"] },
     {
       field: "subContractors",
@@ -10729,7 +10735,7 @@ var ProjectPlannerCanonical = (() => {
   function rulebookStamp() {
     return {
       version: true ? "1.32.0" : "",
-      sha256: true ? "7fae033a905ddca8cf75fb933a3e1dbb37c35acf6c2b2ecf06b9d8d5d8746c56" : ""
+      sha256: true ? "a957c26b3dcfde4480da16288b5777dcbf1dcecf045b45a284c28757129e6090" : ""
     };
   }
   function rulebookVersionLabel(version) {

@@ -8134,13 +8134,14 @@ test('1.11.0 effectivePermissions / lockedPermissionFields: admins every toggle 
   assert.equal(m.smallWorks, false)
   assert.equal(m.adminAccess, false)
   // 1.28.0: Timesheet self-sign is admins only — locked off for a manager or operative.
-  assert.deepEqual(r3Levels.lockedPermissionFields(manager), ['materials', 'siteAudit', 'timesheetSelfSign'])
+  // 1.32.0: weeklyReports is admin-only (owner decision 5 Nov).
+  assert.deepEqual(r3Levels.lockedPermissionFields(manager), ['materials', 'siteAudit', 'timesheetSelfSign', 'weeklyReports'])
   // Operatives: stored Materials / Site audit, editable.
   const op = r3Levels.effectivePermissions({ role: 'operative', operativeMode: true, materials: true, siteAudit: false })
   assert.equal(op.materials, true)
   assert.equal(op.siteAudit, false)
   assert.equal(op.operativeMode, true)
-  assert.deepEqual(r3Levels.lockedPermissionFields({ role: 'operative' }), ['timesheetSelfSign'])
+  assert.deepEqual(r3Levels.lockedPermissionFields({ role: 'operative' }), ['timesheetSelfSign', 'weeklyReports'])
   // Operatives toggle: managing operatives vs scheduling them.
   assert.equal(r3Levels.canManageOperatives({ role: 'manager', manager: true, operatives: false }), false)
   assert.equal(r3Levels.canScheduleOperatives({ role: 'manager', manager: true, operatives: false }), true)
@@ -8174,7 +8175,7 @@ test('1.11.0 permissionToggleRows: one catalogue for Add User, its summary and E
   assert.ok(admin.some((row) => row.field === 'adminAccess'))
   const manager = visible('manager', 'add')
   assert.deepEqual(manager.map((row) => row.field), [
-    'projects', 'smallWorks', 'weeklyReports', 'dailyOverview', 'subContractors', 'annualLeaveSelfBook', 'operatives',
+    'projects', 'smallWorks', 'dailyOverview', 'subContractors', 'annualLeaveSelfBook', 'operatives',
     'qualifications', 'wholesalersOrderHistory', 'materials', 'siteAudit',
   ])
   assert.deepEqual(manager.filter((row) => !row.editable).map((row) => row.field), ['materials', 'siteAudit'])
@@ -13288,4 +13289,25 @@ test('1.32.0 review fix (r274 S5): invitation queries ask the email as stored an
   assert.equal(r132.invitationListConstraints({ organizationId: 'o', email: 'a@x.com', actorManagesOperatives: false }).length, 1, 'de-duplicated')
   const ops = r132.invitationListConstraints({ organizationId: 'o', email: 'Ann@X.com', actorManagesOperatives: true, senderIds: ['uid1'] })
   assert.deepEqual(ops.map((q) => [q[1][1], q[2][1]]), [['Ann@X.com', 'uid1'], ['ann@x.com', 'uid1']])
+})
+
+test('1.32.0 owner decision 5 Nov: the Weekly report is admin-only; a stored manager weeklyReports is ignored', () => {
+  const manager = { id: 'm', role: 'manager', manager: true, weeklyReports: true, permissions: { weeklyReports: true } }
+  const admin = { id: 'a', role: 'admin', adminAccess: true, weeklyReports: false }
+  const operative = { id: 'o', role: 'operative', operativeMode: true, weeklyReports: true }
+  assert.equal(r132.canOpenWeeklyReport(manager), false, 'a manager with the stored toggle on has no access')
+  assert.equal(r132.canOpenWeeklyReport(admin), true, 'an admin always (the toggle is locked on)')
+  assert.equal(r132.canOpenWeeklyReport(operative), false)
+  assert.equal(r132.canOpenWeeklyReport({ id: 's', isSuperAdmin: true, role: 'admin' }), true)
+  assert.equal(r132.canOpenWeeklyReport(null), false)
+  // A level change recalculates: promoted → has it; demoted → loses it (stored value untouched).
+  assert.equal(r132.canOpenWeeklyReport({ ...manager, adminAccess: true, role: 'admin' }), true)
+  assert.equal(r132.effectivePermissions(manager).weeklyReports, false)
+  // The toggle is not offered to managers or operatives.
+  const rows = (level: 'admin' | 'manager' | 'operative') =>
+    r132.permissionToggleRows({ level, mode: 'edit' }).filter((row) => row.field === 'weeklyReports' && row.visible)
+  assert.equal(rows('manager').length, 0)
+  assert.equal(rows('operative').length, 0)
+  assert.deepEqual(rows('admin').map((row) => [row.value, row.editable]), [[true, false]])
+  assert.equal(r132.addUserPermissionDefaults('manager').weeklyReports, false)
 })

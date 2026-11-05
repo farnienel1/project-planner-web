@@ -9,8 +9,8 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
 Rulebook version: 1.32.0 → 1.32.0
-Packed hash: cf10a3184ea5ae20d7fe867390e9504597538b627d7e2f765eda5e2deba87eb6
-Rulebook sha256: 7fae033a905ddca8cf75fb933a3e1dbb37c35acf6c2b2ecf06b9d8d5d8746c56
+Packed hash: cd4f17422c329ff059a61255973f790ff4f7be757890478b89aab35f2d973b2d
+Rulebook sha256: a957c26b3dcfde4480da16288b5777dcbf1dcecf045b45a284c28757129e6090
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -20,12 +20,12 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
   web lib/canonical/cross-platform-contract.json    → iOS ProjectPlannerTests/CrossPlatformContract.json
 Contract sha256: 7f70ec28920ac6114068b4e44eaf893706d5b6af1b21d77b69f946074d74e126
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: none
-Exports removed: OVERTIME_NOTHING_DECIDED_MESSAGE
-Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/payeOvertime.ts
+Exports added: canOpenWeeklyReport
+Exports removed: none
+Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/permissionLevels.ts
 Done when:
-- [ ] Packed hash in iOS equals cf10a3184ea5ae20d7fe867390e9504597538b627d7e2f765eda5e2deba87eb6
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 7fae033a905ddca8cf75fb933a3e1dbb37c35acf6c2b2ecf06b9d8d5d8746c56)
+- [ ] Packed hash in iOS equals cd4f17422c329ff059a61255973f790ff4f7be757890478b89aab35f2d973b2d
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 a957c26b3dcfde4480da16288b5777dcbf1dcecf045b45a284c28757129e6090)
 - [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.32.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
@@ -46,6 +46,7 @@ Done when:
 - **Rules version in Settings** for everyone (§15): `rulebookVersionLabel`.
 - **Booking screens follow `canWriteBooking`** (§2, owner decision 4 Nov): `canBookOtherLocationsFor(viewer, personUserIds)` — Office / WFH / Site survey / custom items only for oneself unless admin.
 - **Pay visibility narrowed** (§8, owner decisions 5 Nov): `canViewPersonPay(viewer, subject, roster, { context })` — a line manager who is not an admin or an operatives manager sees a report's pay only with `context: 'timesheetReview'`. Read plans keep loading it for the review; firestore.rules pay reads unchanged (needed by the review).
+- **Weekly report admin-only** (owner decision 5 Nov, §7, §11): `canOpenWeeklyReport`; `weeklyReports` joins `ADMIN_ONLY_PERMISSION_FIELDS` and its catalogue row is admin-only, so `permissionToggleRows`, `addUserPermissionDefaults`, `lockedPermissionFields` and `effectivePermissions` drop it for managers and operatives; stored values are never rewritten. iOS: hide the Weekly report for non-admins in Home quick actions, the menu and deep links, and drop the toggle from the Manage Users / Add User rows (they come from `permissionToggleRows`).
 - **Small shared helpers:** `legalPackAcceptanceWriteFields` (with write metadata), `invitationListConstraints` (both email forms, as stored and lower case, like iOS `InvitationLookup`), `invitationReadErrorIsSkippable` (a clean-up skips only permission-denied invitation reads).
 - **Managers' own site bookings** (owner decision 4 Nov): Scheduling, Daily Overview and My Schedule show a manager site booking's overtime rate with `bookingHoursLabel` like a labour booking (the stored `otMultiplierOverride`, else the organisation's). Web already passes it; iOS must pass the stored rate on all three.
 - **Review fixes (r274):** decision A holds for keep lines and no-op cogs (`overtimeApprovalWrites` → `needsAdmin` from the booking's person id, whatever the decision); claim reviews are pinned to their item and person in the rules and never written by the person under any id (§16); the weekly report Pay Summary follows `canViewPersonPay` (`reportPayForViewer`, `PAY_HIDDEN_CELL_LABEL`, `PAY_HIDDEN_NOTE`); the Daily Overview booking sheet keeps the rate on every save and move (`overtimeMultiplierMoveFields`). `OVERTIME_APPROVE_REQUEST_LABEL`, `OVERTIME_REQUEST_STALE_MESSAGE`, `OVERTIME_REQUEST_UNDECIDED_MESSAGE` and `overtimeRequestFullyDecided` are deprecated (kept for older iOS builds).

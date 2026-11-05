@@ -1,7 +1,7 @@
 {
   "rulebookVersion": "1.32.0",
-  "rulebookSha256": "7fae033a905ddca8cf75fb933a3e1dbb37c35acf6c2b2ecf06b9d8d5d8746c56",
-  "bundleSha256": "cf10a3184ea5ae20d7fe867390e9504597538b627d7e2f765eda5e2deba87eb6",
+  "rulebookSha256": "a957c26b3dcfde4480da16288b5777dcbf1dcecf045b45a284c28757129e6090",
+  "bundleSha256": "cd4f17422c329ff059a61255973f790ff4f7be757890478b89aab35f2d973b2d",
   "crossPlatformContractSha256": "7f70ec28920ac6114068b4e44eaf893706d5b6af1b21d77b69f946074d74e126",
   "exports": [
     "ACCOUNT_DELETE_WITH_COMPANY_MESSAGE",
@@ -449,6 +449,7 @@
     "canManageOperatives",
     "canManageVariationTracker",
     "canOpenUserTimesheets",
+    "canOpenWeeklyReport",
     "canRestoreOrganization",
     "canReviewFileReports",
     "canReviewPayeClaims",

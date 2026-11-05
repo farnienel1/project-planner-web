@@ -31,8 +31,10 @@ export const ADMIN_EDITABLE_PERMISSION_FIELDS: ReadonlyArray<UserPermissionField
 /**
  * Toggles that exist for admins only (1.28.0): never shown for a manager or operative, always read off for them, and
  * never written by a save at that level — the stored value stays underneath, so promoting back restores it.
+ * 1.32.0 (owner decision 5 Nov): `weeklyReports` — the Weekly report is for admins and super admins only (locked on for
+ * them); a manager's stored `weeklyReports: true` reads off and is never rewritten.
  */
-export const ADMIN_ONLY_PERMISSION_FIELDS: ReadonlyArray<UserPermissionField> = ['timesheetSelfSign']
+export const ADMIN_ONLY_PERMISSION_FIELDS: ReadonlyArray<UserPermissionField> = ['timesheetSelfSign', 'weeklyReports']
 
 /**
  * Toggles always on for a manager (and an admin), shown on and locked (owner decision, 1.11.0): Materials and Site
@@ -199,6 +201,18 @@ export function effectivePermissions(
   return out
 }
 
+/**
+ * 1.32.0 (owner decision 5 Nov): who may open the Weekly report — admins and super admins only (outside operative mode;
+ * an admin has none, 1.11.0). Read from the level, so a promotion gives it and a demotion takes it away; a manager's
+ * stored `weeklyReports` is ignored. Every way in (menu, Home tile, quick action, deep link, help link, the page itself)
+ * asks this.
+ */
+export function canOpenWeeklyReport(user: unknown): boolean {
+  if (!user || typeof user !== 'object') return false
+  if ((user as { isActive?: unknown }).isActive === false) return false
+  return permissionLevelOf(user) === 'admin' && effectivePermissions(user).weeklyReports === true
+}
+
 /** One permission value in effect (`effectivePermissions(user)[key]`). */
 export function effectivePermission(user: unknown, key: UserPermissionField): boolean {
   return effectivePermissions(user)[key] === true
@@ -328,7 +342,7 @@ export const PERMISSION_TOGGLE_CATALOGUE: ReadonlyArray<CatalogueRow> = [
       'Sees, adds and edits every small works job. If off, they see only the small works they are assigned to as a manager — scheduling and other job tools stay available there, but they cannot add small works or change their managers.',
     levels: ['admin', 'manager'],
   },
-  { field: 'weeklyReports', label: 'Weekly Report', help: 'Can open Weekly Report from Home. If off, that tile is hidden.', levels: ['admin', 'manager'] },
+  { field: 'weeklyReports', label: 'Weekly Report', help: 'Admins and super admins open the Weekly report; it is not offered to managers.', levels: ['admin'] },
   { field: 'dailyOverview', label: 'Daily Overview', help: 'Can open Daily Overview from Home. If off, that tile is hidden.', levels: ['admin', 'manager'] },
   {
     field: 'subContractors',

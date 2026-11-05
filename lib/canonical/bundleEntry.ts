@@ -892,6 +892,7 @@ export {
   canScheduleOperatives,
   effectivePermission,
   effectivePermissions,
+  canOpenWeeklyReport,
   keepStoredLockedPermissions,
   lockedPermissionFields,
   permissionLevelOf,

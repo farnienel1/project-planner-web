@@ -196,7 +196,8 @@ test('menu matrix covers each level and each permission toggle', () => {
     ],
     operatives: ['dashboard_operatives', 'dashboard_add_user', 'dashboard_manage_users'],
     subContractors: ['dashboard_sub_contractors'],
-    weeklyReports: ['dashboard_weekly_report'],
+    // 1.32.0 (owner decision 5 Nov): the Weekly report is admin-only; a manager's toggle opens nothing.
+    weeklyReports: [],
     dailyOverview: ['dashboard_daily_overview'],
     wholesalersOrderHistory: ['dashboard_wholesalers'],
     projects: [],
@@ -220,7 +221,7 @@ test('menu matrix covers each level and each permission toggle', () => {
     assert.equal(has(flipped, 'dashboard_projects'), true, key)
     assert.equal(has(flipped, 'dashboard_small_works'), true, key)
     assert.equal(has(flipped, 'dashboard_qualifications'), true, key)
-    if (key !== 'weeklyReports') assert.equal(has(flipped, 'dashboard_weekly_report'), false, key)
+    assert.equal(has(flipped, 'dashboard_weekly_report'), false, key)
     if (key !== 'dailyOverview') assert.equal(has(flipped, 'dashboard_daily_overview'), false, key)
     if (key !== 'wholesalersOrderHistory') assert.equal(has(flipped, 'dashboard_wholesalers'), false, key)
     if (key !== 'operatives') assert.equal(has(flipped, 'dashboard_operatives'), false, key)
