@@ -119,6 +119,11 @@ service cloud.firestore {
       (!('permissions' in next) || (np is map && [np.get('isSuperAdmin', null), np.get('adminAccess', null), np.get('manager', null), np.get('operatives', null), np.get('operativeMode', null), np.get('annualLeaveSelfBook', null), np.get('timesheetSelfSign', null)].toSet().difference([true, false, null].toSet()).size() == 0)) &&
       (!checkRole || next.get('role', null) in [null, 'admin', 'manager', 'operative', 'member', 'basic', 'viewer']);
   }
+  function rosterRowPrivilegeTyped(next, prev) {
+    return next.keys().hasAny(['isSuperAdmin', 'adminAccess', 'manager', 'operatives', 'operativeMode', 'annualLeaveSelfBook',
+        'timesheetSelfSign', 'permissions'])
+      ? (prev == null ? privilegeCreateTyped(next, false) : privilegeWriteTyped(next, prev, false)) : true;
+  }
   function privilegeWriteTyped(next, prev, checkRole) {
     return next.diff(prev).affectedKeys().hasAny(['isSuperAdmin', 'adminAccess', 'manager', 'operatives', 'operativeMode',
         'annualLeaveSelfBook', 'timesheetSelfSign', 'permissions', 'role'])
@@ -1452,7 +1457,7 @@ service cloud.firestore {
           return (ops ? ((!rosterRowLinkChanged() || rosterRowLinksManageable()) ? true : rosterRowAdmin()) : rosterRowAdmin())
             ? operativeRowBaseAllowed() : false;
         }
-        allow create, update: if (resource == null ? privilegeCreateTyped(request.resource.data, false) : privilegeWriteTyped(request.resource.data, resource.data, false)) ? (
+        allow create, update: if rosterRowPrivilegeTyped(request.resource.data, resource == null ? null : resource.data) ? (
           (rosterRowLinkChanged() || rosterRowPayKeysChanged() || rosterRowEmailChanged())
             ? operativeRowGuardedWrite(operativesManagerForOtherRow()) : operativeRowBaseAllowed()) : false;
         allow delete: if isOrganizationAdmin(organizationId) || (
@@ -2011,7 +2016,7 @@ service cloud.firestore {
 
       match /managers/{managerId} {
         allow read: if canAccessOrganization(organizationId);
-        allow create, update: if ((resource == null ? privilegeCreateTyped(request.resource.data, false) : privilegeWriteTyped(request.resource.data, resource.data, false)) && (rosterRowLinkChanged() ? rosterRowAdmin() : true)) ? (
+        allow create, update: if (rosterRowPrivilegeTyped(request.resource.data, resource == null ? null : resource.data) && (rosterRowLinkChanged() ? rosterRowAdmin() : true)) ? (
           canAccessOrganization(organizationId) &&
           (resource != null || isOrgManagerOrAdmin(organizationId) || isPlatformOwner()) &&
           (!rosterRowPayKeysChanged() || rosterRowAdmin()) &&
