@@ -1063,7 +1063,7 @@ service cloud.firestore {
       allow delete: if request.auth != null && (
         isPlatformOwner() ||
         managerMayManageOperative(userId, resource.data) ||
-        (request.auth.token.email != null && resource.data.email == request.auth.token.email &&
+        (request.auth.uid != userId && request.auth.token.email != null && resource.data.email == request.auth.token.email &&
          (resource.data.get('passwordSet', false) == true || callerAcceptedPlaceholder(userId, resource.data.get('organizationId', '')))) ||
         (
           exists(/databases/(default)/documents/users/$(request.auth.uid)) &&

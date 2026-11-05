@@ -4931,3 +4931,20 @@ test('1.31.1 S-B: an invitee copies the placeholder pay, line manager and toggle
   void _d; void _p; void _e
   await assertSucceedsWithinBudget(acceptInviteBatch(db, authUid, withoutPay, invitationId))
 })
+
+test('1.31.1 S-A: a signed-up operative, manager or admin cannot delete their own users document by its email', async () => {
+  const people = [
+    { id: 'sa-op', email: 'sa-op@test.com', role: 'operative', operativeMode: true },
+    { id: 'sa-mgr', email: 'sa-mgr@test.com', role: 'manager', manager: true },
+    { id: 'sa-admin', email: 'sa-admin@test.com', role: 'admin', adminAccess: true },
+  ]
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    for (const { id, ...rest } of people) {
+      await setDoc(doc(db, 'users', id), { ...rest, organizationId: ORG_A, passwordSet: true, isActive: true })
+    }
+  })
+  for (const p of people) {
+    await assertLogicalDeny(deleteDoc(doc(authDb(p.id, p.email), 'users', p.id)))
+  }
+})
