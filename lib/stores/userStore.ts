@@ -473,7 +473,7 @@ export const useUserStore = create<UserStoreState>(() => ({
     // Rulebook 1.31.1 (fifth review, S-E): iOS stores invitedBy as the sender's email, web as their users id; an
     // operatives manager's clean-up asks for both (the rules let them read only invitations they sent).
     const invitationSenders = Array.from(
-      new Set([invitationActorId, auth?.currentUser?.email || '', (auth?.currentUser?.email || '').toLowerCase()].filter(Boolean))
+      new Set([invitationActorId, auth?.currentUser?.email || '', (auth?.currentUser?.email || '').toLowerCase(), actor?.email || ''].filter(Boolean))
     )
     const invitationQueries = !email
       ? []
