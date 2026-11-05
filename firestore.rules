@@ -1,10 +1,10 @@
 rules_version = '2';
 service cloud.firestore {
   function orgIdsMatch(a, b) {
-    return (a is string && b is string) ? (a == b ? true : (
+    return a is string && b is string && (
       a.lower() == b.lower() ||
       a.lower().matches('^\\s*' + b.lower() + '\\s*$')
-    )) : false;
+    );
   }
 
   function truthyBool(v) {
@@ -33,7 +33,7 @@ service cloud.firestore {
   }
 
   function userDocOrganizationMatches(userData, organizationId) {
-    return userData.get('organizationId', null) == organizationId ? true : 'organizationId' in userData && (
+    return 'organizationId' in userData && (
       (userData.organizationId is string &&
        orgIdsMatch(userData.organizationId, organizationId)) ||
       (userData.organizationId is string &&
