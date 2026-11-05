@@ -36,7 +36,7 @@ import { parseOrgUser } from '@/lib/firebase/parseUser'
 import { operativeRecordForUser } from '@/lib/operatives/operativeRosterUtils'
 import { applyAccountTypeChange } from '@/lib/staff/accountTypeChange'
 import { accountTypeChangeWrites } from '@/lib/canonical/permissionLevels'
-import { parseFormerUserIds, sharedDocumentPayWrite } from '@/lib/canonical'
+import { invitationListConstraints, invitationReadErrorIsSkippable, parseFormerUserIds, sharedDocumentPayWrite } from '@/lib/canonical'
 import { privatePayFor, securitySwitchesReady } from '@/lib/access/securitySwitches'
 import { addPartialDocumentToBatch, firestoreUpdateFields, savePartialDocument } from '@/lib/firebase/partialWrite'
 import { notifyCompanyActivity } from '@/lib/notifications/companyActivity'
@@ -475,16 +475,24 @@ export const useUserStore = create<UserStoreState>(() => ({
     const invitationSenders = Array.from(
       new Set([invitationActorId, auth?.currentUser?.email || '', (auth?.currentUser?.email || '').toLowerCase(), actor?.email || ''].filter(Boolean))
     )
-    const invitationQueries = !email
-      ? []
-      : actorManagesOperatives
-        ? invitationSenders.map((sender) =>
-            query(collection(db, 'invitations'), where('organizationId', '==', orgId), where('email', '==', email), where('invitedBy', '==', sender))
-          )
-        : [query(collection(db, 'invitations'), where('organizationId', '==', orgId), where('email', '==', email))]
+    // Rulebook 1.32.0 `invitationListConstraints`: this organisation and email; an operatives manager's also name
+    // `invitedBy` (one query per sender value).
+    // Rulebook 1.32.0 (review fix r274 S5): the email as stored (not pre-lowered); the helper asks both forms.
+    const typedInvitationEmail = (opts?.email || String(stored.email || '')).trim()
+    const invitationQueries = invitationListConstraints({
+      organizationId: orgId,
+      email: typedInvitationEmail,
+      actorManagesOperatives,
+      senderIds: invitationSenders,
+    }).map((constraints) => query(collection(db, 'invitations'), ...constraints.map(([field, value]) => where(field, '==', value))))
     const invitationRows = new Map<string, { id: string; email: string }>()
     for (const q of invitationQueries) {
-      const snap = await getDocs(q).catch(() => null)
+      // Rulebook 1.32.0 (`invitationReadErrorIsSkippable`): skip only an invitation read the rules refuse; any other
+      // failure stops the delete before anything is written.
+      const snap = await getDocs(q).catch((error: unknown) => {
+        if (invitationReadErrorIsSkippable((error as { code?: unknown })?.code)) return null
+        throw error
+      })
       for (const row of snap?.docs ?? []) invitationRows.set(row.id, { id: row.id, email: String(row.data().email || '') })
     }
     const invitations = Array.from(invitationRows.values())

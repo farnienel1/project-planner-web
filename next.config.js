@@ -48,6 +48,8 @@ const nextConfig = {
   // The version label in Settings comes from package.json, never a hard-coded string.
   env: {
     NEXT_PUBLIC_APP_VERSION: require('./package.json').version,
+    // Rulebook 1.32.0 §15: "Rules 1.32.0" at the bottom of Settings, from docs/RULEBOOK.md's Version line.
+    NEXT_PUBLIC_RULEBOOK_VERSION: ((fs.readFileSync(path.join(__dirname, 'docs/RULEBOOK.md'), 'utf8').match(/^Version: (\S+)/m) || [])[1] || ''),
   },
   ...(deploymentId ? { deploymentId } : {}),
   experimental: {

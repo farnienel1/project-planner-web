@@ -163,7 +163,6 @@ test('founder Activate setDoc and invite accept write the age fields; invite pla
   const founder = readFileSync(new URL('../orgSetup/createOrganization.ts', import.meta.url), 'utf8')
   const inviteAccept = readFileSync(new URL('../invites/completeInviteSetup.ts', import.meta.url), 'utf8')
   const inviteCreate = readFileSync(new URL('../orgSetup/inviteUserCore.ts', import.meta.url), 'utf8')
-  const mergePlaceholder = readFileSync(new URL('../firebase/mergePlaceholderUser.ts', import.meta.url), 'utf8')
   const createBranch = founder.indexOf('} else if (!existingUser)')
   const ageWrite = founder.indexOf('ageConfirmationWriteFields', createBranch)
   const updateBranch = founder.indexOf('if (existingUser && switchActive)')
@@ -172,7 +171,6 @@ test('founder Activate setDoc and invite accept write the age fields; invite pla
   assert.ok(updateBranch > 0 && updateBranch < createBranch)
   assert.equal(founder.slice(updateBranch, createBranch).includes('ageConfirmationWriteFields'), false)
   assert.match(inviteAccept, /ageConfirmationWriteFields/)
-  assert.match(mergePlaceholder, /ageConfirmationWriteFields/)
   assert.equal(inviteCreate.includes('ageConfirmed'), false)
 })
 

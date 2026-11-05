@@ -114,6 +114,53 @@ export function inviteEmailOrgLookupConstraints(
   }
 }
 
+/**
+ * 1.32.0: the `invitations` queries a person's clean-up (delete user) or an invitation list runs, as equality
+ * constraints `[field, value][]` per query. Every query names this organisation and the email — once per stored form
+ * of it, the email as typed and lower case, de-duplicated (review fix r274: older invitations kept the case the
+ * inviter typed; iOS `InvitationLookup` asks both). Pass the email as stored or typed, not pre-lowered. An admin runs
+ * one query per email form; an operatives manager (rules 1.31.1, fourth review B-1) may read only invitations they
+ * sent, so they run one per email form and sender value — their users id and their email as typed and lower case,
+ * because iOS stores `invitedBy` as the sender's email and web as their users id (fifth review S-E). Empty when the
+ * organisation or email is blank.
+ */
+export function invitationListConstraints(input: {
+  organizationId: string
+  email: string
+  actorManagesOperatives: boolean
+  senderIds?: ReadonlyArray<string | null | undefined> | null
+}): Array<Array<[field: 'organizationId' | 'email' | 'invitedBy', value: string]>> {
+  const organizationId = typeof input.organizationId === 'string' ? input.organizationId.trim() : ''
+  const typed = typeof input.email === 'string' ? input.email.trim() : ''
+  if (!organizationId || !typed) return []
+  const emails = Array.from(new Set([typed, typed.toLowerCase()]))
+  const senders: string[] = []
+  for (const raw of input.senderIds || []) {
+    const value = typeof raw === 'string' ? raw.trim() : ''
+    for (const candidate of value.includes('@') ? [value, value.toLowerCase()] : [value]) {
+      if (candidate && !senders.includes(candidate)) senders.push(candidate)
+    }
+  }
+  const out: Array<Array<['organizationId' | 'email' | 'invitedBy', string]>> = []
+  for (const email of emails) {
+    const base: Array<['organizationId' | 'email' | 'invitedBy', string]> = [
+      ['organizationId', organizationId],
+      ['email', email],
+    ]
+    if (!input.actorManagesOperatives) out.push(base)
+    else for (const sender of senders) out.push([...base, ['invitedBy', sender]])
+  }
+  return out
+}
+
+/**
+ * 1.32.0: an invitation read in a clean-up is skipped only when it was refused (`permission-denied`, an invitation the
+ * actor may not read); any other failure stops the clean-up so nothing is half deleted.
+ */
+export function invitationReadErrorIsSkippable(code: unknown): boolean {
+  return typeof code === 'string' && code.replace(/^firestore\//, '') === 'permission-denied'
+}
+
 /** Pending invite placeholder flags. Do not copy self-create age fields onto this map. */
 export function invitePlaceholderUserWriteFields(): {
   passwordSet: false

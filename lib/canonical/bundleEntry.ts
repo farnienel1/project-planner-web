@@ -260,6 +260,8 @@ export {
 export {
   inviteEmailHasLiveClaim,
   inviteEmailOrgLookupConstraints,
+  invitationListConstraints,
+  invitationReadErrorIsSkippable,
   invitePlaceholderUserWriteFields,
   inviteWritesOperativeProfile,
   resolveInviteEmailClaim,
@@ -348,7 +350,7 @@ export {
 export { bookingIdsForAccount, bookingIdsForPerson, bookingPersonKey, resolveBookingPerson, rosterAliasIdsFor } from './bookingPerson'
 export { LEGACY_PLACEHOLDER_DOCUMENT_ID, isLegacyPlaceholderDocumentId } from './bookings'
 
-export { legalPackNeedsAcceptance } from './legalPack'
+export { legalPackAcceptanceWriteFields, legalPackNeedsAcceptance } from './legalPack'
 
 export {
   payrollBreakOnDay,
@@ -366,7 +368,7 @@ export {
 } from './payrollHours'
 export { DEFAULT_ANNUAL_LEAVE, parseAnnualLeaveDefaults, parsePayrollPolicy } from './organizationSettings'
 
-export { PAYE_PAY_CELL_LABEL, reportPayCell, reportPayTotal, reportPersonPayCell } from './reportPay'
+export { PAY_HIDDEN_CELL_LABEL, PAY_HIDDEN_NOTE, PAYE_PAY_CELL_LABEL, reportPayCell, reportPayForViewer, reportPayTotal, reportPersonPayCell } from './reportPay'
 
 export {
   SENSITIVE_EXPORT_OPTION_LABEL,
@@ -412,7 +414,7 @@ export {
 } from './money'
 export { WRITE_PLATFORMS, writeMetadataFields } from './writeMetadata'
 export { organizationTimeZone } from './organizationTimeZone'
-export { rulebookStamp } from './rulebookStamp'
+export { rulebookStamp, rulebookVersionLabel } from './rulebookStamp'
 export {
   exclusiveRates,
   historyPayRowOnDay,
@@ -818,6 +820,7 @@ export {
   canDeleteBooking,
   canSeeJob,
   canWriteBooking,
+  canBookOtherLocationsFor,
   isJobManager,
   jobManagerIds,
   jobManagerUserIds,
@@ -889,6 +892,7 @@ export {
   canScheduleOperatives,
   effectivePermission,
   effectivePermissions,
+  canOpenWeeklyReport,
   keepStoredLockedPermissions,
   lockedPermissionFields,
   permissionLevelOf,
@@ -1175,6 +1179,7 @@ export * from './payeOvertime'
 // Rulebook 1.30.0 (§26): PAYE price work and expenses (items, evidence, approver candidates, ranges, reports, who sees
 // them) and personal site audits (owner only; the frozen copy attached as evidence).
 export * from './payeClaims'
+export * from './payeClaimReviews'
 export * from './priceWorkJobNumber'
 export * from './personalSiteAudits'
 
@@ -1202,6 +1207,6 @@ export { rosterMemberIsOperativeLevel } from './leaveRequests'
 export { userPermissionFlag } from './permissionLevels'
 export type { UserDeleteOptions } from './userDelete'
 // Rulebook 1.31.0 §8: whose exported timesheets the Exported list shows; the subject of a timesheet document id.
-export { exportedTimesheetHistorySubjects } from './userTimesheetAccess'
+export { exportedTimesheetHistorySubjects, timesheetExportOwnSheetNotice, TIMESHEET_EXPORT_OWN_SHEET_NOTICE } from './userTimesheetAccess'
 export type { ExportedTimesheetHistorySubjectRow } from './userTimesheetAccess'
 export { timesheetDocumentSubjectId } from './timesheetPeriod'

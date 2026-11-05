@@ -243,3 +243,32 @@ export function payeCustomRange(start: unknown, end: unknown): { start: string; 
   if (!DAY_KEY.test(a) || !DAY_KEY.test(b)) return null
   return a <= b ? { start: a, end: b } : { start: b, end: a }
 }
+
+// MARK: - 1.32.0: the PAYE payday is required (owner decisions 4 Nov)
+
+export const PAYE_PAYDAY_REQUIRED_MESSAGE = 'Choose the PAYE payday — PAYE overtime, price work and expenses run on it.'
+export const PAYE_PAYDAY_MISSING_BANNER =
+  'No PAYE payday is set. Set it in Settings → Payment runs and timesheets so PAYE overtime, price work and expenses can use payruns.'
+
+/** True when the organisation has no PAYE payday (`payePayday` null). */
+export function payePaydayMissing(source: unknown): boolean {
+  return payePayday(source) == null
+}
+
+/**
+ * Organisation setup (1.32.0): the PAYE payday is mandatory. Null when `day` is 1–31; `PAYE_PAYDAY_REQUIRED_MESSAGE`
+ * when it is missing; `PAYE_PAYDAY_INVALID_MESSAGE` otherwise.
+ */
+export function payePaydaySetupError(day: unknown): string | null {
+  if (day == null || day === '') return PAYE_PAYDAY_REQUIRED_MESSAGE
+  return payePaydayValidationError(day)
+}
+
+/**
+ * The banner shown while no PAYE payday is set (1.32.0): to admins, `PAYE_PAYDAY_MISSING_BANNER` (they can set it);
+ * to everyone else, `PAYE_PAYDAY_NOT_SET_MESSAGE`. Null once a payday is set or before the organisation has loaded.
+ */
+export function payePaydayBanner(input: { organization: unknown; loaded?: boolean | null; viewerIsAdmin: boolean }): string | null {
+  if (input.loaded === false || !payePaydayMissing(input.organization)) return null
+  return input.viewerIsAdmin ? PAYE_PAYDAY_MISSING_BANNER : PAYE_PAYDAY_NOT_SET_MESSAGE
+}

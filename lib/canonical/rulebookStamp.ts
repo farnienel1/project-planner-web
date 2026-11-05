@@ -13,3 +13,13 @@ export function rulebookStamp(): { version: string; sha256: string } {
     sha256: typeof __RULEBOOK_SHA256__ === 'string' ? __RULEBOOK_SHA256__ : '',
   }
 }
+
+/**
+ * 1.32.0 (owner decision 4 Nov): the line shown to everyone at the bottom of Settings on web and iOS, "Rules 1.32.0".
+ * `version` is the app's rulebook version (iOS: `rulebookStamp().version`; web: the version it was built with); with
+ * none given, the packed stamp. '' when unknown (the line is then hidden).
+ */
+export function rulebookVersionLabel(version?: string | null): string {
+  const value = (typeof version === 'string' ? version.trim() : '') || rulebookStamp().version
+  return /^\d+\.\d+\.\d+$/.test(value) ? `Rules ${value}` : ''
+}

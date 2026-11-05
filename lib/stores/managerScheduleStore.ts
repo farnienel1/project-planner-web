@@ -90,6 +90,8 @@ export type SaveManagerSiteBookingInput = {
   isBreakRemoved?: boolean
   /** Rulebook 1.11.0: the job's collection for a job-linked booking; resolved from the job when not given. */
   jobCollection?: 'projects' | 'smallWorks'
+  /** Rulebook 1.32.0 §25 (decision A): set on create only when the person changed the pre-filled organisation rate. */
+  otMultiplierOverride?: number | null
 }
 
 interface ManagerScheduleState {
@@ -179,6 +181,7 @@ export const useManagerScheduleStore = create<ManagerScheduleState>((set, get) =
       workStartTime: booking.workStartTime,
       workEndTime: booking.workEndTime,
       isBreakRemoved: booking.isBreakRemoved === true,
+      ...(typeof booking.otMultiplierOverride === 'number' ? { otMultiplierOverride: booking.otMultiplierOverride } : {}),
       createdAt: now,
       updatedAt: now,
       organizationId,

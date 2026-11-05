@@ -1,4 +1,4 @@
-# iOS follow-on — rulebook 1.31.3
+# iOS follow-on — rulebook 1.32.1
 
 Generated 2026-11-05 by `npm run rulebook:handoff` in project-planner-web. Paste this whole file into the iOS agent.
 The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; never edit the iOS mirror by hand.
@@ -8,9 +8,9 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ║ FOLLOW-ON — paste into the iOS agent                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
-Rulebook version: 1.31.2 → 1.31.3
-Packed hash: 0e947e88f66e0a57fe0d872c48e5c0bc47d92df721562c68ccfd5201efda0400
-Rulebook sha256: 0b2674347e478136cb6848884df6a4789b7202c9ab8d1195271260e2d9958920
+Rulebook version: 1.32.0 → 1.32.1
+Packed hash: 427d4d314c22ce2a8b3b039cd0a64523fae8b0e824e1d05eb1aa7f25eca669fd
+Rulebook sha256: 5df16b5a6ae38eefabbf46b43b704dd6e38f8784ca1e3a428cbb5e6ad7a8c0e1
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -24,20 +24,21 @@ Exports added: none
 Exports removed: none
 Web files that changed the rules: docs/RULEBOOK.md, firestore.rules
 Done when:
-- [ ] Packed hash in iOS equals 0e947e88f66e0a57fe0d872c48e5c0bc47d92df721562c68ccfd5201efda0400
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 0b2674347e478136cb6848884df6a4789b7202c9ab8d1195271260e2d9958920)
-- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.31.3)
+- [ ] Packed hash in iOS equals 427d4d314c22ce2a8b3b039cd0a64523fae8b0e824e1d05eb1aa7f25eca669fd
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 5df16b5a6ae38eefabbf46b43b704dd6e38f8784ca1e3a428cbb5e6ad7a8c0e1)
+- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.32.1)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
 - [ ] Any disagreement traced to its first divergence — no copied screen number
 ```
 
-## What changed in 1.31.3
+## What changed in 1.32.1
 
-- Rules restructured for Google's compile limit; no behaviour change. 1.31.0–1.31.2 could not be published (CLI `firebaserules …:test` 503, console "unknown error"): Google's type checker re-resolves every function body at each call site, and 1.31.2 needed about 15% more of that work than the live 1.30.2. 1.31.3 needs about 17% less than 1.30.2 (static cost 431,665 vs 525,898; in-process compile about 13% faster than 1.30.2 and about 30% faster than 1.31.2): booking create / update / delete are one allow per collection, the manager's job is checked twice instead of three times per booking write, organisation-access helpers read each document path once, and 79 small helpers are written out inside their callers (`docs/firestore-rules-notes.md` "Compile cost"). Rules suites 220/220; no new 1,000-expression refusals (`RULES_STRICT_BUDGET=1`: 47 against 49 on 1.31.2); emulator type check clean. Tools and measurements: `scripts/rules-cost/`, `docs/rules-cost/README.md`.
+- 1.32.0 (never published) on top of 1.31.3's compile-cost restructure, plus one more cut; no behaviour change from 1.32.0. Admin checks that tested the users-document admin and the members-map admin one after the other now read billing once (`orgAdminEither`; `isOrgAdminOrOwner`, memberships, pay profiles, rate history, settings and the other pairs), and `isOrgAdminViaMembersMap` is gone (`membersMapAdminAnyBilling`). Static compile cost 429,072 (1.30.2 live: 525,898; 1.32.0 as built: 614,251); in-process compile 10–17% faster than 1.30.2. Rules suites 223/223; `RULES_STRICT_BUDGET=1` 43 limit refusals vs 45 on 1.32.0, none new; emulator type check clean.
 
 ## New rulebook sections
 
+- 1.32.1 — 2026-11-05
 - 1.31.3 — 2026-11-05
 
 ## Workflow for the iOS agent

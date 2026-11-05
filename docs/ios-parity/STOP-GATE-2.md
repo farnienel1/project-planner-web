@@ -10,7 +10,7 @@
 - 22 unit tests passing. `tsc --noEmit` clean. `next build` pass. Browser: LoginBrand at 1440/1280/1024/390; reset-password wording; signed-out `/dashboard` → `/login`. Signed-in Home not exercised (no test account).
 
 **Files created/changed:**
-- New: `lib/ios-parity/*`, `lib/permissions.ts`, `lib/access/workAccess.ts`, `lib/home/*`, `lib/payroll/policyCatalog.ts`, `lib/firebase/mergePlaceholderUser.ts`, `lib/firebase/subscribeOrgCollection.ts`, `lib/stores/notificationStore.ts`, `components/auth/*`, `components/home/HomeScreen.tsx`, `components/shell/AppShell.tsx`, `components/ios/*`, `app/dashboard/notifications/page.tsx`, `app/dashboard/privacy/page.tsx`, `app/dashboard/data-health/page.tsx`, `.eslintrc.json`, `docs/ios-parity/STOP-GATE-2.md`
+- New: `lib/ios-parity/*`, `lib/permissions.ts`, `lib/access/workAccess.ts`, `lib/home/*`, `lib/payroll/policyCatalog.ts`, `lib/firebase/mergePlaceholderUser.ts` (removed in 1.32.0), `lib/firebase/subscribeOrgCollection.ts`, `lib/stores/notificationStore.ts`, `components/auth/*`, `components/home/HomeScreen.tsx`, `components/shell/AppShell.tsx`, `components/ios/*`, `app/dashboard/notifications/page.tsx`, `app/dashboard/privacy/page.tsx`, `app/dashboard/data-health/page.tsx`, `.eslintrc.json`, `docs/ios-parity/STOP-GATE-2.md`
 - Wired: `app/dashboard/layout.tsx`, `app/dashboard/page.tsx`, `app/login/page.tsx`, `app/reset-password/page.tsx`, `lib/stores/authStore.ts`, `lib/stores/bookingStore.ts`, `lib/stores/managerScheduleStore.ts`, `lib/firebase/parseUser.ts`, `lib/navigation/dashboardNavigation.ts`, tokens in `tailwind.config.js` / `app/globals.css`
 
 **Evidence coverage:** Swift read this phase (not re-read all 210): `AuthenticationView.swift`, `PasswordResetView.swift`, `Views/PrivacyPolicyView.swift` / `PolicyAcceptanceView.swift` (via existing policy copy), `Views/NotificationsView.swift`, `Models/NotificationModel.swift`, `FirebaseBackend.swift` `mergePlaceholderUserDocOntoAuthUidIfNeeded` ~L3319 and `parseAppUserDocument` ~L3349, `Core/UserStore.swift` lastSeen + passwordSet, `Views/HomeView.swift` / `HomeQuickActionRegistry.swift` / `HomeUpNextSupport.swift` / `HomeOverviewCustomization.swift`, `Core/PayrollTimePolicyCatalog.swift`, `Navigation/MainMenuCatalog.swift`, `Views/OfflineStatusBanner.swift`, `ContentView.swift`. Plus Phase 1 docs `01`–`05`.
@@ -21,7 +21,7 @@
 |---|---|---|---|
 | LoginBrand (`AuthenticationView.swift`) | `components/auth/LoginBrandScreen.tsx` | ✅ | Dark navy + cyan; “Sign In”; Forgot password? |
 | PasswordResetView.swift | `app/reset-password/page.tsx` | ✅ | Same wording |
-| Placeholder merge (`FirebaseBackend.swift`:3319) | `lib/firebase/mergePlaceholderUser.ts` | ✅ | Copy onto Auth UID; `passwordSet: true` |
+| Placeholder merge (`FirebaseBackend.swift`:3319) | ~~`lib/firebase/mergePlaceholderUser.ts`~~ removed in 1.32.0 (refused by the rules since 1.31.1 F5; the invite accept `lib/invites/completeInviteSetup.ts` writes the account) | — | Historical row |
 | Policy gate (`policyAccepted == false`) | `PolicyGate` in dashboard layout | ✅ | Writes `policyAccepted` + `policyAcceptedAt` |
 | lastSeenAt throttle 120s (`UserStore.swift`:53) | `authStore.recordLastSeenIfDue` | ✅ | Foreground / visibility |
 | Main Menu catalogue | `AppShell` + `dashboardNavigation.ts` | ⚠️ | Extra desktop rows: Daily overview, Weekly report, Warnings, Tasks, My Schedule |

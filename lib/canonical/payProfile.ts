@@ -71,12 +71,20 @@ export type PaySubject = {
  * Whether `viewer` may see `subject`'s pay (rates, pay basis, employment type, rate history, timesheets and invoices).
  * `viewer` and `subject` are users documents as each app holds them (role, flags and `permissions`); `roster` is the
  * organisation roster (`id`, `email`, `isActive`, alias ids) so line managers are active only and aliases count. An
- * inactive viewer sees only their own. The security rules apply the same test (`canViewPayOf`).
+ * inactive viewer sees only their own.
+ *
+ * 1.32.0 (owner decisions 5 Nov): the person always (My Profile, read-only); admins and super admins every person;
+ * a manager with the Operatives toggle operatives only; the platform owner. A line manager who is neither sees a
+ * report's pay **only on the timesheets they review** (the rate, the overtime calculation and the invoice) — the
+ * caller passes `{ context: 'timesheetReview' }` there and nowhere else (no profile rate, no Operatives page, no rate
+ * history). Read live from the roster, so a level change recalculates it (no rights carry over). The security rules
+ * (`canViewPayOf`) still let a line manager read the report's pay documents, because the timesheet review needs them.
  */
 export function canViewPersonPay(
   viewer: PayViewer | null | undefined,
   subject: PaySubject | null | undefined,
-  roster?: ReadonlyArray<PersonRosterRow> | null
+  roster?: ReadonlyArray<PersonRosterRow> | null,
+  options?: { context?: PayViewContext | null } | null
 ): boolean {
   if (!viewer || !subject) return false
   const viewerIds = new Set(personIdSet(viewer as never, roster).map(idKey))
@@ -91,9 +99,14 @@ export function canViewPersonPay(
   // 1.27.0: a catalogue operative (an `operatives` row with no account) has no line manager and no level of its own:
   // admins, the person on the row's email (above) and managers with the Operatives toggle see its pay.
   if (subject.catalogueOperative === true) return operativesManager
-  if (lineManagerIds(subject, roster as never).some((id) => viewerIds.has(idKey(id)))) return true
-  return operativesManager && permissionLevelOf(subject) === 'operative'
+  if (operativesManager && permissionLevelOf(subject) === 'operative') return true
+  if (options?.context !== 'timesheetReview') return false
+  return lineManagerIds(subject, roster as never).some((id) => viewerIds.has(idKey(id)))
 }
+
+/** 1.32.0: where pay is shown: `profile` (people profile, Manage Users, rate history; the default) or `timesheetReview`. */
+export type PayViewContext = 'profile' | 'timesheetReview'
+
 
 /** An `operatives` row as `catalogueOperativePaySubjects` reads it (`parseOperativeDocument` output, or the stored row). */
 export type CatalogueOperativeRow = {
@@ -255,7 +268,7 @@ function viewablePayIds(
   }
   add(viewer.id)
   for (const subject of subjects || []) {
-    if (subject && canViewPersonPay(viewer, subject, roster)) add(subject.id)
+    if (subject && canViewPersonPay(viewer, subject, roster, { context: 'timesheetReview' })) add(subject.id)
   }
   return out
 }
@@ -270,7 +283,7 @@ function viewableCatalogueIds(
   for (const subject of subjects || []) {
     if (!subject || subject.catalogueOperative !== true) continue
     const id = typeof subject.id === 'string' ? subject.id.trim() : ''
-    if (!id || seen.has(id) || !canViewPersonPay(viewer, subject, roster)) continue
+    if (!id || seen.has(id) || !canViewPersonPay(viewer, subject, roster, { context: 'timesheetReview' })) continue
     seen.add(id)
     out.push(id)
   }

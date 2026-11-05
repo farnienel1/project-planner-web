@@ -38,6 +38,8 @@ import {
 import { AddWeekToCalendarButton } from '@/components/schedule/AddWeekToCalendarButton'
 import { myScheduleStripeClass } from '@/components/schedule/MyScheduleLooks'
 import { HoursTimelinePicker } from '@/components/scheduling/HoursTimelinePicker'
+import { CreateOvertimeRateField } from '@/components/overtime/OvertimeRateField'
+import { organizationOvertimeMultiplier, overtimeMultiplierCreateFields } from '@/lib/canonical'
 import {
   confirmCustomHoursBreak,
   policyForBookingDate,
@@ -233,6 +235,9 @@ export function MyScheduleSelfBookingScreen({
   const [customStart, setCustomStart] = useState('07:30')
   const [customEnd, setCustomEnd] = useState('16:00')
   const [breakRemoved, setBreakRemoved] = useState(false)
+  // Rulebook 1.32.0 §25 (decision A): the custom-hours rate, null = the organisation's pre-filled rate.
+  const [customRate, setCustomRate] = useState<number | null>(null)
+  const { data: rateOrgDocument } = useOrganizationDocument()
   const [scheduleOpts, setScheduleOpts] = useState<MyScheduleOptions>({
     ...DEFAULT_MY_SCHEDULE,
     customItemEnabled: {},
@@ -372,6 +377,12 @@ export function MyScheduleSelfBookingScreen({
           workStartTime: args.timeSlot === 'CUSTOM_HOURS' ? customStart : undefined,
           workEndTime: args.timeSlot === 'CUSTOM_HOURS' ? customEnd : undefined,
           isBreakRemoved: args.timeSlot === 'CUSTOM_HOURS' ? breakRemoved : false,
+          ...(args.timeSlot === 'CUSTOM_HOURS'
+            ? (() => {
+                const organizationMultiplier = organizationOvertimeMultiplier(rateOrgDocument ?? {}, orgDayKey(day, zone), zone)
+                return overtimeMultiplierCreateFields({ chosen: customRate ?? organizationMultiplier, organizationMultiplier })
+              })()
+            : {}),
         })
         wrote += 1
       }
@@ -604,6 +615,11 @@ export function MyScheduleSelfBookingScreen({
             onBreak={setBreakRemoved}
           />
           <p className="mt-2 muted xs">Custom hours uses the times on this 00:00–24:00 bar.</p>
+          {targetDays()[0] ? (
+            <div className="mt-3">
+              <CreateOvertimeRateField dayKey={orgDayKey(targetDays()[0], organizationZoneOr())} value={customRate} onChange={setCustomRate} />
+            </div>
+          ) : null}
           {/* Rulebook 1.17.0 (`weekendBookingNotes`): one Saturday/Sunday line when both follow the same rule. */}
           {weekendNotesForDates(targetDays(), payrollPolicy).map((note) => (
             <p key={note} className="mt-1 muted xs">

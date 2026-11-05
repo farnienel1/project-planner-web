@@ -13,6 +13,7 @@ import {
   type NotificationPreferenceAudience,
   type StaffAccountRole,
   type UserTimesheetSubjectsInput,
+  canOpenWeeklyReport,
 } from '@/lib/canonical'
 import { parseAppUserDocument } from '@/lib/ios-parity/converters'
 import { effectivePermissions, permissionLevelOf } from '@/lib/canonical/permissionLevels'
@@ -279,10 +280,15 @@ export function canManageWorkCatalogue(
   return canEditWorkCatalogue(role, kind, toggles)
 }
 
+/**
+ * Rulebook 1.32.0 (owner decision 5 Nov): the Weekly report is for admins and super admins only (`canOpenWeeklyReport`).
+ * A manager's stored `weeklyReports` toggle is ignored. Every way in (menu, Home tile and quick action, help links, the
+ * page) calls this.
+ */
 export function canViewWeeklyReports(user: PermissionUser, profileLoading = false): boolean {
   if (isOperativeMode(user)) return false
   if (profileLoading || !user) return true
-  return flag(user, 'weeklyReports')
+  return canOpenWeeklyReport(user)
 }
 
 export function canViewDailyOverview(user: PermissionUser, profileLoading = false): boolean {
