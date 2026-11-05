@@ -1,4 +1,4 @@
-# Handover — 5 Nov 2026
+# Handover — 5 Nov 2026 (updated end of second chat)
 
 This file hands the work over from one long Claude Code chat to new chats. A new chat starts with no memory: **read this file first**, then `docs/OWNER_DECISIONS.md`, then the repo rule files (`CLAUDE.md`, `AGENTS.md`, `docs/RULEBOOK.md`, `docs/agent-rules/*`). Update this file at the end of every chat so the next one can carry on.
 
@@ -8,14 +8,25 @@ Live launch checklist (the owner ticks items there; Claude updates rows as work 
 
 ---
 
-## 0. Progress log (second chat, 5 Nov afternoon) — read this first, it overrides §1–§2 where they differ
+## 0. Current state and next steps (end of second chat, 5 Nov) — overrides §1–§2 where they differ
 
-- **Rules 1.31.3 merged (#278) and published by the owner** (5 Nov). Static cost 431,665 vs live-then 1.30.2 525,898; suites 220/220; strict 47 vs 49 (none new); independent review clean. A merged job-manager check was tried and dropped (+19 strict limit refusals) — lesson: run the strict suite after every cost cut.
-- **1.32 merged as rulebook 1.32.1 (#274)**: main (1.31.3) merged into `web-1.32`, plus `orgAdminEither` (billing read once in paired admin checks). Static cost 429,072; suites 223/223; strict 43 vs 45 (none new); type check clean; independent review of the merge and the edit clean. **Owner said "rules published i think" for 1.32.1 — confirm** (Rules tab contains `orgAdminEither`).
-- **Web Home #276** brought up to date with main (merge commit `285cc52`; only Home files differ from main; npm test 1,672/1,673, the one failure is `xlsx` missing in the container). Screenshots NOT re-taken: no Firebase config in the container and the Netlify preview uses production data. Owner asked to look at the deploy preview; merge after CI + owner's look.
-- **iOS**: owner sent the 1.31.3 sync prompt to an iOS chat. Still to do: the full 1.32 iOS work (`docs/ios-handoff/v1.32.0.md` + `LATEST.md` = 1.32.1); owner to say whether it runs in the iOS chat or here (needs the iOS repo attached). Then `minimumIosBuild`.
-- Docs PR #277 (this note) open; merge at chat end.
-- Process lessons: every rules release runs `scripts/rules-cost/metric.py`, the emulator type check (`ctime.py`) and `RULES_STRICT_BUDGET=1` before asking the owner to publish (follow-up: put these in CI). `npm ci` fails in the cloud container (xlsx from cdn.sheetjs.com is blocked): install with xlsx temporarily removed from package.json, restore after.
+**Done in the second chat**
+| Item | State |
+|---|---|
+| Rules 1.31.3 | Merged (#278) and **published by the owner**. Compile cost 431,665 vs 1.30.2's 525,898; suites 220/220; strict 47 vs 49 (none new); independent review clean. |
+| Web + rules 1.32.1 | Merged (#274; 1.32.0 + the 1.31.3 restructure + `orgAdminEither`). Suites 223/223; strict 43 vs 45; independent review clean. Owner published the 1.32.1 rules ("I think" — **confirm**: the console Rules tab contains `orgAdminEither`). Web deploys from `main` automatically. |
+| Web Home #276 | Merged after updating to 1.32.1 and the owner's look at the preview ("looks ok for now"). Screenshots were not re-taken (no Firebase config in the cloud container). |
+| Handover + working style | This note, and `docs/agent-rules/owner-working-style.md` (imported by `CLAUDE.md`, so every chat loads the owner's standing instructions). |
+| Launch checklist | Close-out A done; B in progress. |
+
+**Next, in order (a new chat with BOTH repos attached — owner decision 5 Nov: web + iOS in one chat, as before)**
+1. **iOS 1.31 + 1.32** in `project-planner-ios`: run `scripts/sync-rulebook-from-web.sh` (rulebook 1.32.1); Gap Report first and stop for the owner's approval; then build. Scope: the 1.31.0 iOS follow-ups (changelog 1.31.0 "iOS follow-up" line and `docs/ios-handoff/v1.31.*.md`), the 1.32 work in `docs/ios-handoff/v1.32.0.md` (overtime one Approve / partial approval, claims review `payeClaimReviews`, multiplier at create, `canBookOtherLocationsFor`, Weekly report admin-only, PAYE payday banner + main Save, "Rules x.y.z" footer, `legalPackAcceptanceWriteFields`, `invitationListConstraints`, pay visibility `canViewPersonPay` / `reportPayForViewer`), and the 1.30.2 / 1.30.3 iOS items still open. An owner rule to fix in iOS too: never delete leave when Annual Leave Management changes (`HolidayStore.deleteSelfBookedApprovedHolidaysFor` / `deletePendingHolidayRequestsFor`). Independent review; push only to `main-vr2rt0-uoqzwv`.
+2. Owner raises `minimumIosBuild` once the iOS 1.32 build is on TestFlight (send steps; see #274 "minimumIosBuild needed").
+3. Owner questions still open (§6); 1.32 judgement calls 2–6 in `OWNER_DECISIONS.md`.
+4. Then §4: 1.33 → 1.34 → My Profile → bug fixes → feature freeze, one chat each.
+5. Follow-ups from this chat: put the compile-cost / type-check / strict-budget checks into CI; `docs/rules-cost/1.30.2-plus-critical.rules` (the fallback) can be deleted once 1.32.1 is confirmed live; the 2,872-case grid harness was lost (rebuild only if needed).
+
+**Environment notes for cloud chats**: `npm ci` fails (the `xlsx` tarball on cdn.sheetjs.com is blocked) — install with `xlsx` temporarily removed from `package.json` and restore both files afterwards; `weeklyReportExport.test.ts` then fails locally only. Firestore emulator for the rules suites must use port 8080 (`firebase emulators:exec --only firestore --project demo-project-planner-rules "tsx --test tests/firestore.rules.test.ts tests/overtime.rules.test.ts tests/payeClaims.rules.test.ts"`).
 
 ## 1. Where things stand (5 Nov, end of the long chat)
 
@@ -113,6 +124,9 @@ Live launch checklist (the owner ticks items there; Claude updates rows as work 
 4. Silence so far = keep: the 5-second legal-gate grace on iOS; the Home icon glyph box.
 
 ## 7. How the owner works (standing instructions — follow every time)
+
+Now also in `docs/agent-rules/owner-working-style.md`, loaded automatically by `CLAUDE.md`; that file wins if they differ.
+
 
 - **Every change considers web, iOS and the shared rule**: a 3-factor table (rows Web / iOS / Shared rule) in every brief and PR.
 - **End every message with a status line**: ⏳ Waiting on / Next / Your move.
