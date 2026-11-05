@@ -69,7 +69,8 @@ test('Continue order: Auth, own-email claim read, placeholder read, users/{authU
     'claimedUserIdAfterSignIn(record.organizationId, email)',
     'loadPlaceholderIfOwnInvite(hintedId)',
     // 1.26.0: the users document is `sharedDocumentPayWrite(nextUser, …)` (no pay while `privatePay` is on).
-    "setDoc(doc(db, 'users', authUid), accountUser)",
+    // 1.31.1 (F5): created in one batch with the invitation marked used.
+    "batch.set(doc(db, 'users', authUid), { ...accountUser, invitationId: params.invitationId })",
     "setDoc(doc(db, 'organizations', record.organizationId, 'userEmails', email)",
     "deleteDoc(doc(db, 'users', placeholderId))",
     'ensurePrimaryOrgMembership(',
@@ -92,4 +93,23 @@ test('placeholder is read by id, never found by email, and the invitation write 
   assert.equal(source.includes('query('), false)
   // Rulebook 1.9.0: the shared partial update `invitationUsedWriteFields` → `{ isUsed: true, usedAt }`.
   assert.match(source, /updateDoc\(doc\(db, 'invitations', params\.invitationId\), invitationUsedWriteFields\(Timestamp\.now\(\)\)\.set\)/)
+})
+
+test('1.31.1 (F5): the account is created with the invitation id and the invitation marked used in one batch', () => {
+  const batchAt = source.indexOf("batch.set(doc(db, 'users', authUid), { ...accountUser, invitationId: params.invitationId })")
+  const usedAt = source.indexOf("batch.update(doc(db, 'invitations', params.invitationId), invitationUsedWriteFields(now).set)")
+  assert.ok(batchAt > 0, 'users/{authUid} carries invitationId')
+  assert.ok(usedAt > batchAt, 'the invitation is marked used in the same batch')
+  assert.ok(source.indexOf('await batch.commit()', usedAt) > usedAt)
+  assert.equal(source.includes("await setDoc(doc(db, 'users', authUid), accountUser)"), false)
+})
+
+test('1.31.1 (S-1): the membership is written in the accept batch, in the inviteMembershipWrites shape', () => {
+  const at = source.indexOf("batch.set(doc(db, 'users', authUid), { ...accountUser, invitationId: params.invitationId })")
+  const membership = source.indexOf("batch.set(doc(db, 'users', authUid, 'orgMemberships', membershipWrite.organizationId), membershipWrite.membership)")
+  const used = source.indexOf("batch.update(doc(db, 'invitations', params.invitationId), invitationUsedWriteFields(now).set)")
+  assert.ok(at > 0 && membership > at && used > membership)
+  assert.match(source, /const membershipWrite = inviteMembershipWrites\(\{ invitation: record\.raw, invitationId: params\.invitationId, authUid, now \}\)/)
+  const later = source.indexOf('await ensurePrimaryOrgMembership(authUid, record.organizationId, plan.role)')
+  assert.ok(source.lastIndexOf('try {', later) > used, 'the fallback membership write never stops the setup')
 })

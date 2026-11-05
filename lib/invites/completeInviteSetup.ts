@@ -280,7 +280,20 @@ export async function completeInvitationPasswordSetup(params: {
     // placeholder's pay profile, which readers find through the account's `formerUserIds`.
     await securitySwitchesReady()
     const accountUser = sharedDocumentPayWrite(nextUser, { privatePay: privatePayFor(record.organizationId) })
-    await setDoc(doc(db, 'users', authUid), accountUser)
+    // Rulebook 1.31.1 (F5): the account is created only with proof of the emailed invitation — its secret id on the new
+    // users document and the invitation marked used in the same batch (firestore.rules inviteBeingAccepted). A sign-up
+    // that only knows the invitee's email cannot take the placeholder.
+    const batch = writeBatch(db)
+    batch.set(doc(db, 'users', authUid), { ...accountUser, invitationId: params.invitationId })
+    // Rulebook 1.31.1 (fourth review, S-1): the membership is written in the same batch, in the `inviteMembershipWrites`
+    // shape the rules accept from an invitee (`membershipFromInvitation`). Written later, a non-admin invitee's own
+    // membership write was refused after the account existed, and a retry then found the invitation used.
+    const membershipWrite = inviteMembershipWrites({ invitation: record.raw, invitationId: params.invitationId, authUid, now })
+    if (membershipWrite) {
+      batch.set(doc(db, 'users', authUid, 'orgMemberships', membershipWrite.organizationId), membershipWrite.membership)
+    }
+    batch.update(doc(db, 'invitations', params.invitationId), invitationUsedWriteFields(now).set)
+    await batch.commit()
   }
 
   // 4b. Move the placeholder's tax ids (users/{id}/private/taxIds) before the placeholder goes — only now that
@@ -343,11 +356,24 @@ export async function completeInvitationPasswordSetup(params: {
     }
   }
 
-  await ensurePrimaryOrgMembership(authUid, record.organizationId, plan.role)
+  // The membership normally came with the account (step 4). An account created before 1.31.1 may lack one; that write
+  // is an admin's for a non-admin, so a refusal here never stops the setup.
+  try {
+    await ensurePrimaryOrgMembership(authUid, record.organizationId, plan.role)
+  } catch (error) {
+    console.warn('Organisation membership not written; the users document still names the organisation', error instanceof Error ? error.message : 'unknown')
+  }
 
-  // 7. Mark the invitation used last.
+  // 7. The invitation was marked used with the account (step 4). A retried Continue whose account already exists marks it
+  //    here; the rules allow that only when the account carries this invitation's id (rulebook 1.31.1, F5).
   // Rulebook 1.9.0 `invitationUsedWriteFields`: a partial update, never a rewrite of the invitation.
-  await updateDoc(doc(db, 'invitations', params.invitationId), invitationUsedWriteFields(Timestamp.now()).set)
+  if (!plan.writeProfile) {
+    try {
+      await updateDoc(doc(db, 'invitations', params.invitationId), invitationUsedWriteFields(Timestamp.now()).set)
+    } catch (error) {
+      console.warn('Invitation left unused after a retried setup', error instanceof Error ? error.message : 'unknown')
+    }
+  }
   const { grantMfaSkip } = await import('@/lib/auth/mfa/mfaClient')
   await grantMfaSkip({ invitationId: params.invitationId })
 }

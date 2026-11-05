@@ -10,11 +10,11 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 import {
-  assertFails,
   assertSucceeds,
   initializeTestEnvironment,
   type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing'
+import { assertFails, assertLogicalDeny } from './rulesAssert.ts'
 import { collection, deleteDoc, deleteField, doc, getDoc, getDocs, query, setDoc, updateDoc, where } from 'firebase/firestore'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -205,8 +205,12 @@ test('relink attack: re-pointing an operatives row at a report never grants a bo
       timeSlot: 'CUSTOM_HOURS', workStartTime: '06:30', workEndTime: '14:00', status: 'Confirmed', bookedBy: 'Ada', notes: '',
     })
   })
-  // Members can change the row's link fields, so the rules must not trust them.
-  await assertSucceeds(updateDoc(orgDoc(LM, 'operatives', 'row-x'), { linkedUserId: SAM }))
+  // Rulebook 1.31.1 (S4): only an admin, or an operatives manager linking an operative they manage, changes a row's
+  // account link. Before, any member could, so the booking rules below never trust the link either way.
+  await assertLogicalDeny(updateDoc(orgDoc(LM, 'operatives', 'row-x'), { linkedUserId: SAM }))
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await updateDoc(doc(ctx.firestore(), 'organizations', ORG, 'operatives', 'row-x'), { linkedUserId: SAM })
+  })
   await assertFails(updateDoc(orgDoc(LM, 'bookings', 'BX'), { status: 'Cancelled' }))
   await assertFails(updateDoc(orgDoc(LM, 'bookings', 'BX'), { workStartTime: '07:30' }))
   // Even an operative relinking the row gains nothing.

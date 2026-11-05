@@ -2269,6 +2269,7 @@ test('the iOS JavaScript bundle applies the same warning date order as this modu
 
 test('user notification preferences parse defaults, aliases, and dotted writes', () => {
   assert.ok(USER_DOCUMENT_FIELDS.includes('notificationPreferences'))
+  assert.ok(USER_DOCUMENT_FIELDS.includes('invitationId'))
   const empty = parseUserNotificationPreferences(undefined)
   assert.equal(empty.bookingClashes, true)
   assert.equal(empty.timesheetSubmissionReminder, true)

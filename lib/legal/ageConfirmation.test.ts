@@ -133,9 +133,10 @@ test('age confirmation is create-time only; existing profiles load without those
   assert.equal(rules.includes('allow update: if selfCreateHasAgeConfirmation'), false)
   assert.match(
     rules,
-    /allow create: if request\.auth != null &&\s+request\.resource\.data\.members\[request\.auth\.uid\] == 'admin';/
+    /allow create: if request\.auth != null &&\s+request\.resource\.data\.members\[request\.auth\.uid\] == 'admin' &&\s+membersValuesTyped\(request\.resource\.data, \{\}\);/
   )
-  assert.match(rules, /isOrgBootstrapAdminProfileCreate\(userId\) && selfCreateHasAgeConfirmation\(\)/)
+  // 1.31.1 (S1): the bootstrap create is ternary-gated, `isOrgBootstrapAdminProfileCreate(userId) ? (selfCreateHasAgeConfirmation() && …) : false`.
+  assert.match(rules, /isOrgBootstrapAdminProfileCreate\(userId\) \? \(\s*selfCreateHasAgeConfirmation\(\)/)
   const userProfile = readFileSync(new URL('../canonical/userProfile.ts', import.meta.url), 'utf8')
   const documentFieldsBlock = userProfile.slice(
     userProfile.indexOf('export const USER_DOCUMENT_FIELDS'),

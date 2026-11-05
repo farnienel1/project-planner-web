@@ -114,7 +114,12 @@ function identityFields(user: User): Record<string, unknown> {
  * organisation: a users query on email alone can never be allowed by the rules for another person. Another company's
  * document is never rewritten. A refused read is logged and leaves the list empty (the profile still saves).
  */
-async function sameEmailUserRefs(user: User, organizationId: string, previousEmail?: string) {
+/**
+ * Rulebook 1.31.1 (F5): a pending invite placeholder (`passwordSet` not true) is synced only by an admin — the rules let
+ * a same-email account write it only after accepting that invitation, so a person's own save leaves it alone instead
+ * of failing the whole batch.
+ */
+async function sameEmailUserRefs(user: User, organizationId: string, previousEmail: string | undefined, includePending: boolean) {
   const org = organizationId.trim()
   if (!org) return []
   const emails = [user.email, previousEmail || '']
@@ -126,7 +131,11 @@ async function sameEmailUserRefs(user: User, organizationId: string, previousEma
       const snapshot = await getDocs(
         query(collection(db, 'users'), where('organizationId', '==', org), where('email', '==', email), limit(10))
       )
-      for (const entry of snapshot.docs) if (entry.id !== user.id && !refs.some((ref) => ref.id === entry.id)) refs.push(entry.ref)
+      for (const entry of snapshot.docs) {
+        if (entry.id === user.id || refs.some((ref) => ref.id === entry.id)) continue
+        if (!includePending && entry.data().passwordSet !== true) continue
+        refs.push(entry.ref)
+      }
     } catch (error) {
       console.warn('[userStore] same-email users read skipped', error)
     }
@@ -284,7 +293,7 @@ export const useUserStore = create<UserStoreState>(() => ({
     // one, so a refusal half way left the documents disagreeing. Everything is read first.
     const email = user.email.toLowerCase().trim()
     const [sameEmail, linkedRows] = orgId
-      ? await Promise.all([sameEmailUserRefs(user, orgId, previousEmail), linkedStaffRefs(orgId, user, previousEmail)])
+      ? await Promise.all([sameEmailUserRefs(user, orgId, previousEmail, saverIsAdmin), linkedStaffRefs(orgId, user, previousEmail)])
       : [[], []]
     const batch = writeBatch(db)
     // Rulebook 1.26.0 (`sharedDocumentPayWrite`): with `privatePay` on for this organisation, the users document takes
@@ -454,16 +463,33 @@ export const useUserStore = create<UserStoreState>(() => ({
         if (parsed.ok) managerSiteBookings.push({ id: row.id, userId: parsed.booking.userId, dateMs: parsed.booking.dateMs })
       }
     }
-    const invitations = email
-      ? ((await getDocs(query(collection(db, 'invitations'), where('organizationId', '==', orgId), where('email', '==', email))).catch(() => null))
-          ?.docs.map((row) => ({ id: row.id, email: String(row.data().email || '') })) ?? [])
-      : []
-    const orgData = useOrganizationDocumentStore.getState().data
-    const orgMembers = orgData && typeof orgData.members === 'object' && orgData.members ? (orgData.members as Record<string, unknown>) : null
     const actorManagesOperatives = Boolean(
       actor && !(actor.isSuperAdmin || actor.permissions.adminAccess || actor.role === 'admin') &&
         canManageOperatives({ ...actor.permissions, role: actor.role })
     )
+    // Rulebook 1.31.1 (fourth review, B-1): an operatives manager lists only the invitations they sent, so their query
+    // names `invitedBy` (the rules refuse any other); an admin's lists every invitation on the email in the organisation.
+    const invitationActorId = auth?.currentUser?.uid || actor?.id || ''
+    // Rulebook 1.31.1 (fifth review, S-E): iOS stores invitedBy as the sender's email, web as their users id; an
+    // operatives manager's clean-up asks for both (the rules let them read only invitations they sent).
+    const invitationSenders = Array.from(
+      new Set([invitationActorId, auth?.currentUser?.email || '', (auth?.currentUser?.email || '').toLowerCase(), actor?.email || ''].filter(Boolean))
+    )
+    const invitationQueries = !email
+      ? []
+      : actorManagesOperatives
+        ? invitationSenders.map((sender) =>
+            query(collection(db, 'invitations'), where('organizationId', '==', orgId), where('email', '==', email), where('invitedBy', '==', sender))
+          )
+        : [query(collection(db, 'invitations'), where('organizationId', '==', orgId), where('email', '==', email))]
+    const invitationRows = new Map<string, { id: string; email: string }>()
+    for (const q of invitationQueries) {
+      const snap = await getDocs(q).catch(() => null)
+      for (const row of snap?.docs ?? []) invitationRows.set(row.id, { id: row.id, email: String(row.data().email || '') })
+    }
+    const invitations = Array.from(invitationRows.values())
+    const orgData = useOrganizationDocumentStore.getState().data
+    const orgMembers = orgData && typeof orgData.members === 'object' && orgData.members ? (orgData.members as Record<string, unknown>) : null
     const steps = userDeleteWrites({
       actorManagesOperatives,
       // 1.31.0: remove `members.{uid}` only when it is listed (an operatives manager may remove only a listed entry).
