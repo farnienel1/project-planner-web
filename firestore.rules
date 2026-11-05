@@ -187,6 +187,7 @@ service cloud.firestore {
       (exists(claimPath) && get(claimPath).data.userId == request.auth.uid) ? (
         isOrgMemberViaParentGet(organizationId) ? (
           selfCreateKeepsManagedFields(callerListedRole(organizationId)) ? (
+            privilegeCreateTyped(request.resource.data, true) &&
             selfCreateAliasesWithin(request.resource.data, {}, '') &&
             selfCreateSelfManageOff(organizationId) &&
             (
@@ -232,15 +233,13 @@ service cloud.firestore {
     let np = next.get('permissions', {}) is map ? next.get('permissions', {}) : {};
     let sp = placeholder.get('permissions', {}) is map ? placeholder.get('permissions', {}) : {};
     let pd = np.diff(sp);
-    return !d.changedKeys().union(d.addedKeys()).hasAny(['assignedManagerUserId', 'assignedManagerUserIds', 'hasNoLineManager',
-        'role', 'isSuperAdmin', 'adminAccess', 'manager', 'operatives', 'operativeMode', 'annualLeaveSelfBook', 'timesheetSelfSign',
-        'dayRate', 'hourlyRate', 'payBasis', 'employmentType', 'employmentTypeTransitionFrom', 'employmentTypeEffectiveAt']) &&
-      !pd.changedKeys().union(pd.addedKeys()).hasAny(['isSuperAdmin', 'adminAccess', 'manager', 'operatives', 'operativeMode',
+    let pay = ['dayRate', 'hourlyRate', 'payBasis', 'employmentType', 'employmentTypeTransitionFrom', 'employmentTypeEffectiveAt'];
+    return !d.affectedKeys().hasAny(['assignedManagerUserId', 'assignedManagerUserIds', 'hasNoLineManager', 'role',
+        'isSuperAdmin', 'adminAccess', 'manager', 'operatives', 'operativeMode', 'annualLeaveSelfBook', 'timesheetSelfSign']) &&
+      !pd.affectedKeys().hasAny(['isSuperAdmin', 'adminAccess', 'manager', 'operatives', 'operativeMode',
         'annualLeaveSelfBook', 'timesheetSelfSign']) &&
-      !d.removedKeys().hasAny(['role', 'operativeMode', 'isSuperAdmin', 'adminAccess', 'manager', 'operatives',
-        'annualLeaveSelfBook', 'timesheetSelfSign', 'assignedManagerUserId', 'assignedManagerUserIds', 'hasNoLineManager']) &&
-      !pd.removedKeys().hasAny(['operativeMode', 'isSuperAdmin', 'adminAccess', 'manager', 'operatives',
-        'annualLeaveSelfBook', 'timesheetSelfSign']) &&
+      !d.changedKeys().union(d.addedKeys()).hasAny(pay) &&
+      (d.removedKeys().hasAny(pay) ? privatePayOn(next.get('organizationId', '')) : true) &&
       selfCreateAliasesWithin(next, placeholder, placeholderId);
   }
 
@@ -770,6 +769,7 @@ service cloud.firestore {
       (changed.hasAny(['assignedManagerUserId', 'assignedManagerUserIds']) ? lineManagersUnchanged(next, prev) : true) ? (
       (changed.hasAny(['employmentType', 'employmentTypeTransitionFrom', 'employmentTypeEffectiveAt']) ? (
         next.get('employmentType', 'paye') == prev.get('employmentType', 'paye') &&
+        !(next.get('employmentType', null) == null && prev.get('employmentType', null) != null) &&
         sameLooseValue(next.get('employmentTypeTransitionFrom', null), prev.get('employmentTypeTransitionFrom', null)) &&
         sameInstantValue(next.get('employmentTypeEffectiveAt', null), prev.get('employmentTypeEffectiveAt', null))
       ) : true) ? (
@@ -1020,10 +1020,12 @@ service cloud.firestore {
           ) : false
         ) : false;
       }
-      allow create: if request.auth != null && privilegeCreateTyped(request.resource.data, true) && (
-        userCreateSelfJoin() ? true : (
-          userCreateByAdmin() ? true : (userCreateBootstrap() ? true : (
-            managerCanCreateOperativeUser() || (isPlatformOwner() && request.auth.uid == userId))))
+      allow create: if request.auth != null && (
+        request.resource.data.get('invitationId', '') != '' ? userCreateSelfJoin() : (
+          privilegeCreateTyped(request.resource.data, true) && (
+            userCreateSelfJoin() ? true : (
+              userCreateByAdmin() ? true : (userCreateBootstrap() ? true : (
+                managerCanCreateOperativeUser() || (isPlatformOwner() && request.auth.uid == userId))))))
       ) && payStaysPrivate(request.resource.data.get('organizationId', ''));
 
       allow update: if isPlatformOwner() || (request.auth != null && userUpdateAllowed());

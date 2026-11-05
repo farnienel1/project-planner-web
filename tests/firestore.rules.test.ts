@@ -4935,10 +4935,17 @@ test('1.31.1 S-B: an invitee copies the placeholder pay, line manager and toggle
   ]) {
     await assertLogicalDeny(acceptInviteBatch(db, authUid, { ...account(authUid), ...placed, ...change }, invitationId))
   }
-  // The exact copy passes; with private pay the app leaves pay out, which is allowed too.
+  // Pay may be left out only while private pay is on for the organisation (the app strips it then; F2).
   const { dayRate: _d, payBasis: _p, employmentType: _e, ...withoutPay } = { ...account(authUid), ...placed }
   void _d; void _p; void _e
+  await assertLogicalDeny(acceptInviteBatch(db, authUid, withoutPay, invitationId))
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'platformConfig', 'app'), { privatePayOrganizationIds: [ORG_A] }, { merge: true })
+  })
   await assertSucceedsWithinBudget(acceptInviteBatch(db, authUid, withoutPay, invitationId))
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'platformConfig', 'app'), { privatePayOrganizationIds: [] }, { merge: true })
+  })
 })
 
 test('1.31.1 S-A: a signed-up operative, manager or admin cannot delete their own users document by its email', async () => {
@@ -5049,4 +5056,39 @@ test('1.31.1 F11/F12: removing or nulling a top-level flag never unmasks a permi
   await assertLogicalDeny(updateDoc(admin, { isSuperAdmin: deleteField() }))
   await assertLogicalDeny(updateDoc(admin, { isSuperAdmin: null }))
   await assertSucceeds(updateDoc(admin, { firstName: 'Ada' }))
+})
+
+test('1.31.1 F2: a person never deletes their own employment type (self update, or accept without private pay)', async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'users', 'f2-paye'), {
+      email: 'f2-paye@test.com', organizationId: ORG_A, role: 'operative', operativeMode: true, employmentType: 'paye', isActive: true, passwordSet: true,
+    })
+  })
+  const me = doc(authDb('f2-paye', 'f2-paye@test.com'), 'users', 'f2-paye')
+  await assertLogicalDeny(updateDoc(me, { employmentType: deleteField() }))
+  await assertLogicalDeny(updateDoc(me, { employmentType: null }))
+  await assertSucceeds(updateDoc(me, { firstName: 'Pat' }))
+  // Accept: the copy keeps the placeholder's employment type unless private pay strips it.
+  const { placeholderId, email, invitationId, account } = await seedF5Invite('F2', 'operative')
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await updateDoc(doc(ctx.firestore(), 'users', placeholderId), { employmentType: 'paye' })
+  })
+  const db = authDb('f2-auth', email)
+  await assertLogicalDeny(acceptInviteBatch(db, 'f2-auth', account('f2-auth'), invitationId))
+  await assertSucceedsWithinBudget(acceptInviteBatch(db, 'f2-auth', { ...account('f2-auth'), employmentType: 'paye' }, invitationId))
+})
+
+test('1.31.1: a returning member who adds an invitation id still gets the typed-value check', async () => {
+  const uid = 'typed-returning'
+  const email = 'typed-returning@test.com'
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    await updateDoc(doc(db, 'organizations', ORG_A), { [`members.${uid}`]: 'operative' })
+    await setDoc(doc(db, 'organizations', ORG_A, 'userEmails', email), { userId: uid })
+  })
+  const db = authDb(uid, email)
+  const base = { email, organizationId: ORG_A, role: 'operative', operativeMode: true, ...ageFields() }
+  await assertLogicalDeny(setDoc(doc(db, 'users', uid), { ...base, invitationId: 'whatever', manager: 'true' }))
+  await assertLogicalDeny(setDoc(doc(db, 'users', uid), { ...base, invitationId: 'whatever', role: 'Admin' }))
+  await assertSucceeds(setDoc(doc(db, 'users', uid), { ...base, invitationId: 'whatever' }))
 })
