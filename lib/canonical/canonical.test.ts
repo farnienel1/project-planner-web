@@ -13267,3 +13267,17 @@ test('1.32.0 review fix (r274 S3): weekly report pay follows canViewPersonPay �
   const self = r132.reportPayForViewer(rows, { viewer: by('mgr'), roster })
   assert.deepEqual([self.grandTotal, self.hiddenPeople], [300, 2], 'everyone sees their own')
 })
+
+test('1.32.0 review fix (r274 S4): a booking moved or changed in the Daily Overview sheet keeps its own rate', () => {
+  // A ×2 labour booking moved to Office (a new manager site booking) keeps ×2.
+  assert.deepEqual(r132.overtimeMultiplierMoveFields({ stored: 2, chosen: 2, organizationMultiplier: 1.5, newDocument: true }), { otMultiplierOverride: 2 })
+  assert.deepEqual(r132.overtimeMultiplierMoveFields({ stored: 2, organizationMultiplier: 1.5, newDocument: true }), { otMultiplierOverride: 2 })
+  // Moved to another job in the same collection: nothing to write, the stored ×2 stays.
+  assert.deepEqual(r132.overtimeMultiplierMoveFields({ stored: 2, chosen: 2, organizationMultiplier: 1.5, newDocument: false }), {})
+  // Changed on the sheet: written; set back to the organisation's: removed (decision A).
+  assert.deepEqual(r132.overtimeMultiplierMoveFields({ stored: 2, chosen: 2.5, organizationMultiplier: 1.5, newDocument: false }), { otMultiplierOverride: 2.5 })
+  assert.deepEqual(r132.overtimeMultiplierMoveFields({ stored: 2, chosen: null, organizationMultiplier: 1.5, newDocument: false }), { otMultiplierOverride: null })
+  assert.deepEqual(r132.overtimeMultiplierMoveFields({ stored: 2, chosen: 1.5, organizationMultiplier: 1.5, newDocument: false }), { otMultiplierOverride: null })
+  // No rate anywhere: nothing.
+  assert.deepEqual(r132.overtimeMultiplierMoveFields({ stored: null, chosen: null, organizationMultiplier: 1.5, newDocument: true }), {})
+})

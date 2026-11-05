@@ -1,7 +1,7 @@
 {
   "rulebookVersion": "1.32.0",
-  "rulebookSha256": "8271b73c1b6912e9e70e7252f01cb2426ade9eaf409d3024d792c7e8ea1b0133",
-  "bundleSha256": "3734a105ae3d3375956e273974d26b95f2808e45bb724c78e1cb1fbfc27cb27b",
+  "rulebookSha256": "c268969fe86e09fe4ff2cca81e43c0725855d3bbf59958f27db2ad04b5ce99f7",
+  "bundleSha256": "6187e2cebb9d17e993b37c2c3e1c6b7c69620cfdbe78b5448815c194e7a072e0",
   "crossPlatformContractSha256": "7f70ec28920ac6114068b4e44eaf893706d5b6af1b21d77b69f946074d74e126",
   "exports": [
     "ACCOUNT_DELETE_WITH_COMPANY_MESSAGE",
@@ -845,6 +845,7 @@
     "overtimeLineOutcomeLabel",
     "overtimeLinesTotal",
     "overtimeMultiplierCreateFields",
+    "overtimeMultiplierMoveFields",
     "overtimeMultiplierText",
     "overtimeMultiplierValid",
     "overtimeMultiplierValidationError",

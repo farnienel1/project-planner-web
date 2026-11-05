@@ -1672,6 +1672,30 @@ export function overtimeRateCreateControl(input: { organization: OvertimeOrganiz
 }
 
 /**
+ * 1.32.0 (review fix r274 S4): the booking's own rate when a booking is changed or **moved** (the Daily Overview booking
+ * sheet: hours, another job, Office / WFH / Site survey — including a move to the other collection, which writes a new
+ * document). `chosen` is the rate on screen (null = the organisation's; undefined = not shown, keep the stored rate).
+ * A rate equal to the organisation's is never stored (decision A). `newDocument` true → `{ otMultiplierOverride }` only
+ * when there is a rate to carry; false (an update of the same document) → only when it differs from the stored one,
+ * `null` meaning remove it.
+ */
+export function overtimeMultiplierMoveFields(input: {
+  stored: number | null | undefined
+  chosen?: number | null
+  organizationMultiplier: number
+  newDocument: boolean
+}): { otMultiplierOverride?: number | null } {
+  const norm = (value: number | null | undefined): number | null => {
+    if (value == null || !overtimeMultiplierValid(value)) return null
+    return Math.abs(Number(value) - Number(input.organizationMultiplier)) < 1e-9 ? null : Number(value)
+  }
+  const stored = input.stored == null || !overtimeMultiplierValid(input.stored) ? null : Number(input.stored)
+  const effective = input.chosen === undefined ? norm(stored) : norm(input.chosen)
+  if (input.newDocument) return effective == null ? {} : { otMultiplierOverride: effective }
+  return effective === stored ? {} : { otMultiplierOverride: effective }
+}
+
+/**
  * 1.32.0 (owner decision A): the multiplier field of a new booking. `otMultiplierOverride` is stored only when the
  * person changed the pre-filled organisation rate (`chosen` differs from `organizationMultiplier`); left at the
  * organisation's rate, nothing is stored, so the booking follows later rate changes, scheduled ones included. A chosen

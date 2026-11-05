@@ -9,8 +9,8 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
 Rulebook version: 1.32.0 → 1.32.0
-Packed hash: 3734a105ae3d3375956e273974d26b95f2808e45bb724c78e1cb1fbfc27cb27b
-Rulebook sha256: 8271b73c1b6912e9e70e7252f01cb2426ade9eaf409d3024d792c7e8ea1b0133
+Packed hash: 6187e2cebb9d17e993b37c2c3e1c6b7c69620cfdbe78b5448815c194e7a072e0
+Rulebook sha256: c268969fe86e09fe4ff2cca81e43c0725855d3bbf59958f27db2ad04b5ce99f7
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -20,12 +20,12 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
   web lib/canonical/cross-platform-contract.json    → iOS ProjectPlannerTests/CrossPlatformContract.json
 Contract sha256: 7f70ec28920ac6114068b4e44eaf893706d5b6af1b21d77b69f946074d74e126
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: PAY_HIDDEN_CELL_LABEL, PAY_HIDDEN_NOTE, reportPayForViewer
+Exports added: overtimeMultiplierMoveFields
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/reportPay.ts
+Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/canonical.test.ts, lib/canonical/payeOvertime.ts
 Done when:
-- [ ] Packed hash in iOS equals 3734a105ae3d3375956e273974d26b95f2808e45bb724c78e1cb1fbfc27cb27b
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 8271b73c1b6912e9e70e7252f01cb2426ade9eaf409d3024d792c7e8ea1b0133)
+- [ ] Packed hash in iOS equals 6187e2cebb9d17e993b37c2c3e1c6b7c69620cfdbe78b5448815c194e7a072e0
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 c268969fe86e09fe4ff2cca81e43c0725855d3bbf59958f27db2ad04b5ce99f7)
 - [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.32.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web

@@ -862,6 +862,7 @@ var ProjectPlannerCanonical = (() => {
     overtimeLineOutcomeLabel: () => overtimeLineOutcomeLabel,
     overtimeLinesTotal: () => overtimeLinesTotal,
     overtimeMultiplierCreateFields: () => overtimeMultiplierCreateFields,
+    overtimeMultiplierMoveFields: () => overtimeMultiplierMoveFields,
     overtimeMultiplierText: () => overtimeMultiplierText,
     overtimeMultiplierValid: () => overtimeMultiplierValid,
     overtimeMultiplierValidationError: () => overtimeMultiplierValidationError,
@@ -10724,7 +10725,7 @@ var ProjectPlannerCanonical = (() => {
   function rulebookStamp() {
     return {
       version: true ? "1.32.0" : "",
-      sha256: true ? "8271b73c1b6912e9e70e7252f01cb2426ade9eaf409d3024d792c7e8ea1b0133" : ""
+      sha256: true ? "c268969fe86e09fe4ff2cca81e43c0725855d3bbf59958f27db2ad04b5ce99f7" : ""
     };
   }
   function rulebookVersionLabel(version) {
@@ -18074,6 +18075,16 @@ var ProjectPlannerCanonical = (() => {
         return { value, label: organization ? `\xD7${value} (organisation rate)` : `\xD7${value}`, organization };
       })
     };
+  }
+  function overtimeMultiplierMoveFields(input) {
+    const norm = (value) => {
+      if (value == null || !overtimeMultiplierValid(value)) return null;
+      return Math.abs(Number(value) - Number(input.organizationMultiplier)) < 1e-9 ? null : Number(value);
+    };
+    const stored = input.stored == null || !overtimeMultiplierValid(input.stored) ? null : Number(input.stored);
+    const effective = input.chosen === void 0 ? norm(stored) : norm(input.chosen);
+    if (input.newDocument) return effective == null ? {} : { otMultiplierOverride: effective };
+    return effective === stored ? {} : { otMultiplierOverride: effective };
   }
   function overtimeMultiplierCreateFields(input) {
     const chosen = input.chosen == null ? null : Number(input.chosen);
