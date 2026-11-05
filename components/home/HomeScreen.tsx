@@ -8,21 +8,21 @@
 import { webJobAccessViewer } from '@/lib/access/readPlan'
 import { enforcedReadsFor } from '@/lib/access/securitySwitches'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import Link from 'next/link'
 import { useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
 import { useOrganizationDayKey } from '@/lib/warnings/useOrganizationDayKey'
 import { useRouter } from 'next/navigation'
-import {
-  CalendarDaysIcon,
-  ChartBarIcon,
-  Cog6ToothIcon,
-  PlusIcon,
-  WrenchScrewdriverIcon,
-  XMarkIcon,
-  ExclamationTriangleIcon,
-  ClipboardDocumentCheckIcon,
-} from '@heroicons/react/24/solid'
+import { ExclamationTriangleIcon, PlusIcon } from '@heroicons/react/24/solid'
 import { QuickActionIcon } from '@/components/home/QuickActionIcon'
+import { HomeHeader } from '@/components/home/dashboard/HomeHeader'
+import { HomeStatStrip, type HomeStatTile } from '@/components/home/dashboard/HomeStatStrip'
+import { LabourSummaryCard } from '@/components/home/dashboard/LabourSummaryCard'
+import { UnbookedBanner } from '@/components/home/dashboard/UnbookedBanner'
+import { WhosOnTodayCard } from '@/components/home/dashboard/WhosOnTodayCard'
+import { whosOnRows } from '@/components/home/dashboard/whosOnRows'
+import { TASKS_SHOWN, TasksToDoCard } from '@/components/home/dashboard/TasksToDoCard'
+import { WaitingForYouCard, type WaitingItem } from '@/components/home/dashboard/WaitingForYouCard'
+import { QuickActionsCard } from '@/components/home/dashboard/QuickActionsCard'
+import { UpNextCard } from '@/components/home/dashboard/UpNextCard'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useProjectStore } from '@/lib/stores/projectStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
@@ -32,7 +32,18 @@ import { useManagerScheduleStore } from '@/lib/stores/managerScheduleStore'
 import { useTaskStore } from '@/lib/stores/taskStore'
 import { useHolidayStore } from '@/lib/stores/holidayStore'
 import { useMaterialProjectStore } from '@/lib/stores/materialProjectStore'
-import { canBookWork, canViewDailyOverview, canViewWarnings, canViewWeeklyReports, hasAdminAccess, isOperativeMode } from '@/lib/permissions'
+import {
+  canAccessOperativeAnnualLeaveDirectory,
+  canBookWork,
+  canManageOperativesOnly,
+  canManageUsers,
+  canViewDailyOverview,
+  canViewWarnings,
+  canViewWeeklyReports,
+  hasAdminAccess,
+  isAnnualLeaveFeatureEnabled,
+  isOperativeMode,
+} from '@/lib/permissions'
 import { activeJobsCount } from '@/lib/canonical'
 import { jobAccessViewer } from '@/lib/access/bookingAccess'
 import { worksListContext } from '@/lib/access/workAccess'
@@ -41,7 +52,6 @@ import {
   activeProjectSubtitle,
   readRememberedHomeCount,
   shownHomeCount,
-  warningStatusLabel,
   writeRememberedHomeCount,
   type HomeCountKind,
 } from '@/lib/home/homeLoadDisplay'
@@ -67,7 +77,6 @@ import {
   quickActionMeta,
   saveQuickActionOrder,
 } from '@/lib/home/quickActions'
-import { Hero, StatCard } from '@/components/ui'
 import { IosModal } from '@/components/ios/primitives'
 import { activeOrgWarnings, generateOrgWarnings, type WarningDecisionInputs } from '@/lib/warnings/generateOrgWarnings'
 import { watchAcceptedBookingClashes, type AcceptedBookingClash } from '@/lib/warnings/acceptedClashStorage'
@@ -78,9 +87,30 @@ import { warningScanLanes } from '@/lib/warnings/warningsScan'
 import { loadOrganizationDetails, type OrganizationDetails } from '@/lib/settings/organizationSettings'
 import { mergeProjectsAndSmallWorks } from '@/lib/projects/workStatus'
 import { shouldShowTeamOnboardingPrompt } from '@/lib/orgSetup/teamOnboarding'
+import { useOrganizationDocument } from '@/lib/stores/organizationDocumentStore'
+import { useSubcontractorStore } from '@/lib/stores/subcontractorStore'
+import { organizationDetailsFromData } from '@/lib/settings/organizationSettings'
+import { watchSubcontractorBookings } from '@/lib/weekly-report/loadSubcontractorBookings'
+import type { SubcontractorBookingRow } from '@/lib/weekly-report/weeklyReportData'
+import { useDailyOverviewModel } from '@/lib/daily-overview/useDailyOverviewModel'
+import { dailyOverviewMayPublish, overviewFormatHours } from '@/lib/daily-overview/buildDailyOverview'
+import { bookLabourList } from '@/lib/book-labour/bookLabourList'
+import { dateFromDayKey } from '@/lib/ios-parity/londonTime'
+import { filterTasksForView, getTaskDetailHref, resolveProjectName } from '@/lib/tasks/taskUtils'
+import { teamLeaveBookings, teamLeaveDecisionQueue, teamLeavePeople } from '@/lib/annualLeave/teamLeaveQueue'
+import { getPendingHolidayApprovalsForUser, usersWithoutRequiredLineManager } from '@/lib/annualLeave/holidayApprovalUtils'
+import { matchesRosterSegment } from '@/lib/staff/userRosterUtils'
+import { countUsersForTab, type ManageUsersTab } from '@/lib/staff/manageUsersUtils'
+import { payePaydayBanner } from '@/lib/canonical'
 
-/** One accent on Home (docs/DESIGN_TOKENS.md): every quick-action icon is brand blue. */
-const QUICK_ACTION_HUE = 'blue' as const
+/** The stat-strip icon for a hero metric (the tile's look only; values and links are the hero's). */
+function metricTileKind(id: HomeOverviewMetricID): HomeStatTile['kind'] {
+  if (id === 'warnings') return 'warnings'
+  if (id === 'tasksDueWeekPersonal') return 'tasksWeek'
+  if (id === 'operativesOnSite' || id === 'managersOnSite') return 'people'
+  if (id === 'operativesOnAL' || id === 'managersOnAL') return 'leave'
+  return 'tasks'
+}
 
 function greetingName(firstName: string, email: string): string {
   const name = firstName.trim()
@@ -93,12 +123,24 @@ export function HomeScreen() {
   const { user, organization } = useAuthStore()
   const { projects, smallWorks, loadProjects, loadSmallWorks, projectsLoadedOrgId, smallWorksLoadedOrgId } =
     useProjectStore()
-  const { operatives, managers, loadOperatives, loadManagers, operativesLoadedOrgId } = useOperativeStore()
-  const { users, userIdAliases, loadUsers, rosterLoadedOrgId } = useOrgUserStore()
-  const { bookings, loadBookings, loading: bookingsLoading, ready: bookingsReady } = useBookingStore()
-  const { managerSiteBookings, loadManagerSiteBookings, loading: managerBookingsLoading } = useManagerScheduleStore()
+  const { operatives, managers, loadOperatives, loadManagers, operativesLoadedOrgId, error: operativesError } = useOperativeStore()
+  const { users, userIdAliases, loadUsers, rosterLoadedOrgId, claimedEmails, error: usersError } = useOrgUserStore()
+  const { bookings, loadBookings, loading: bookingsLoading, ready: bookingsReady, error: bookingsError } = useBookingStore()
+  const {
+    managerSiteBookings,
+    loadManagerSiteBookings,
+    loading: managerBookingsLoading,
+    error: managerBookingsError,
+  } = useManagerScheduleStore()
   const { tasks, loadTasks, tasksLoadedOrgId } = useTaskStore()
-  const { bookings: holidays, loadBookings: loadHolidays, loadedOrgId: holidaysLoadedOrgId } = useHolidayStore()
+  const {
+    bookings: holidays,
+    loadBookings: loadHolidays,
+    loadedOrgId: holidaysLoadedOrgId,
+    loading: holidaysLoading,
+    error: holidaysError,
+  } = useHolidayStore()
+  const { subcontractors, loadSubcontractors, loading: subcontractorsLoading } = useSubcontractorStore()
   const { materials, sendRecords, loadAllMaterials, loadSendRecords } = useMaterialProjectStore()
   const [customise, setCustomise] = useState(false)
   const [metricsOpen, setMetricsOpen] = useState(false)
@@ -127,6 +169,11 @@ export function HomeScreen() {
   )
 
   const seeWarningsTile = canViewWarnings(displayUser)
+  // Owner decisions 3 and 4 (5 Nov 2026): the team panels (ring, Who's on today, today's hours) are for admins only,
+  // and only admins load subcontractor bookings on Home. Paused with the other Home loads during team onboarding.
+  const teamPanels = hasAdminAccess(displayUser) && !isOperativeMode(displayUser) && !pauseHomeLoads
+  const [subcontractorBookings, setSubcontractorBookings] = useState<SubcontractorBookingRow[]>([])
+  const [subcontractorBookingsOrgId, setSubcontractorBookingsOrgId] = useState('')
 
   // First paint: the collections the tiles and quick actions read.
   useEffect(() => {
@@ -217,6 +264,29 @@ export function HomeScreen() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- zustand loaders are stable
   }, [organization?.id, pauseHomeLoads, seeWarningsTile])
+
+  // Admins only (owner decision 4): the existing subcontractor listeners Daily Overview uses (rulebook 1.9.0 §1), so
+  // "Who's on today" and today's hours include subcontractors exactly as Daily Overview does.
+  useEffect(() => {
+    const orgId = organization?.id
+    if (!orgId || !teamPanels) return
+    void loadSubcontractors(orgId)
+    setSubcontractorBookings([])
+    setSubcontractorBookingsOrgId('')
+    const stop = watchSubcontractorBookings(
+      orgId,
+      (rows) => {
+        setSubcontractorBookings(rows)
+        setSubcontractorBookingsOrgId(orgId)
+      },
+      () => {
+        setSubcontractorBookings([])
+        setSubcontractorBookingsOrgId(orgId)
+      }
+    )
+    return stop
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- zustand loaders are stable
+  }, [organization?.id, teamPanels])
 
   useEffect(() => {
     if (managerBookingsLoading) {
@@ -407,6 +477,229 @@ export function HomeScreen() {
     return merged.filter((p) => (counts.get(p.id) || 0) >= 500)
   }, [tasks, merged])
 
+
+  // ---- Team panels (admins): Daily Overview's own model for today (owner decisions 3, 5, 7, 10). ----
+  const todayStart = useMemo(() => dateFromDayKey(homeDayKey, homeTimeZone), [homeDayKey, homeTimeZone])
+  const { model: todayModel, settings: todaySettings, settingsLoaded } = useDailyOverviewModel({
+    day: todayStart,
+    today: now,
+    timeZone: homeTimeZone,
+    subcontractorBookings,
+    subcontractors,
+    enabled: teamPanels,
+  })
+  const holidaysReady = Boolean(orgId) && holidaysLoadedOrgId === orgId && !holidaysLoading
+  const rosterReady = Boolean(orgId) && rosterLoadedOrgId === orgId
+  const operativesReady = Boolean(orgId) && operativesLoadedOrgId === orgId
+  const bookingsSettled = bookingsReady && !bookingsLoading
+  const managerSettled = managerBookingsSettled && !managerBookingsLoading
+  // Like Daily Overview's first paint: nothing is shown until every source it reads has loaded for this organisation,
+  // so the ring and table never flash a half-loaded day (subcontractors included for admins).
+  const teamReady =
+    teamPanels &&
+    settingsLoaded &&
+    bookingsSettled &&
+    managerSettled &&
+    holidaysReady &&
+    rosterReady &&
+    operativesReady &&
+    projectsReady &&
+    subcontractorBookingsOrgId === orgId &&
+    !subcontractorsLoading
+  const unbookedReady =
+    teamReady &&
+    dailyOverviewMayPublish({
+      bookingsLoading,
+      bookingCount: bookings.length,
+      managerLoading: managerBookingsLoading,
+      managerBookingCount: managerSiteBookings.length,
+    })
+  const shownToday = teamReady && todayModel ? todayModel : null
+  const whosOn = useMemo(
+    () =>
+      shownToday
+        ? whosOnRows({
+            model: shownToday,
+            unbookedReady,
+            users,
+            operatives,
+            userIdAliases,
+            payrollPolicy: todaySettings.payrollPolicy,
+          })
+        : null,
+    [shownToday, unbookedReady, users, operatives, userIdAliases, todaySettings.payrollPolicy]
+  )
+
+  // ---- Unbooked banner (admins and managers): the Book labour list itself (owner decision 3). ----
+  const liveOrganization = useOrganizationDocument()
+  const liveDetails = useMemo(
+    () =>
+      orgId && liveOrganization.organizationId === orgId && liveOrganization.data
+        ? organizationDetailsFromData(orgId, liveOrganization.data)
+        : null,
+    [orgId, liveOrganization.organizationId, liveOrganization.data]
+  )
+  const bannerViewer = canBookWork(displayUser) && !pauseHomeLoads
+  const bookLabour = useMemo(
+    () =>
+      bannerViewer
+        ? bookLabourList({
+            organizationId: orgId,
+            viewer: useAuthStore.getState().user,
+            enforcedReads: enforcedReadsFor(),
+            dayKey: homeDayKey,
+            timeZone: homeTimeZone,
+            users,
+            rosterLoadedOrgId,
+            usersError,
+            userIdAliases,
+            operatives,
+            bookings,
+            managerSiteBookings,
+            holidays,
+            projects,
+            smallWorks,
+            liveDetails,
+            sources: {
+              organization: {
+                ready: Boolean(liveDetails) && liveOrganization.loaded,
+                error: liveOrganization.organizationId === orgId ? liveOrganization.error : null,
+              },
+              operatives: { ready: operativesReady, error: operativesError },
+              bookings: { ready: bookingsSettled, error: bookingsError },
+              managerBookings: { ready: managerSettled, error: managerBookingsError },
+              holidays: { ready: holidaysReady, error: holidaysError },
+              jobs: { ready: projectsReady },
+            },
+          })
+        : null,
+    [
+      bannerViewer,
+      orgId,
+      homeDayKey,
+      homeTimeZone,
+      users,
+      rosterLoadedOrgId,
+      usersError,
+      userIdAliases,
+      operatives,
+      bookings,
+      managerSiteBookings,
+      holidays,
+      projects,
+      smallWorks,
+      liveDetails,
+      liveOrganization.loaded,
+      liveOrganization.organizationId,
+      liveOrganization.error,
+      operativesReady,
+      operativesError,
+      bookingsSettled,
+      bookingsError,
+      managerSettled,
+      managerBookingsError,
+      holidaysReady,
+      holidaysError,
+      projectsReady,
+    ]
+  )
+  const unbookedCount = bookLabour && bookLabour.phase === 'ready' ? bookLabour.candidates.length : 0
+
+  // ---- Tasks: the Tasks page's "To do" list (owner decision 9). ----
+  const taskRows = useMemo(() => {
+    if (!tasksReady) return null
+    const list = filterTasksForView(tasks, 'todo', displayUser, operatives, managers ?? [], !operative)
+    // Only the rows the card shows are resolved; `total` is the whole "To do" list.
+    const rows = list.slice(0, TASKS_SHOWN).map((task) => {
+      const projectName = resolveProjectName(task, projects, smallWorks)
+      return {
+        id: task.id,
+        title: task.title,
+        subtitle: `${projectName}${task.details ? ` · ${task.details}` : ''}`,
+        status: task.status,
+        href: getTaskDetailHref(task, projects, smallWorks),
+      }
+    })
+    return { rows, total: list.length }
+  }, [tasksReady, tasks, displayUser, operatives, managers, operative, projects, smallWorks])
+
+  // ---- Waiting for you (owner decision 12): only items whose data Home already has. ----
+  const waitingItems = useMemo<WaitingItem[]>(() => {
+    if (!displayUser || pauseHomeLoads) return []
+    const items: WaitingItem[] = []
+    const adminViewer = hasAdminAccess(displayUser) && !isOperativeMode(displayUser)
+    if (!isOperativeMode(displayUser) && isAnnualLeaveFeatureEnabled(displayUser) && holidaysReady && rosterReady && operativesReady) {
+      // `leaveDecisionQueue`: on Annual leave → Team for viewers who have that tab; otherwise the same requests are the
+      // approvals list on the Tasks page (`getPendingHolidayApprovalsForUser`), so a line manager without the Team tab
+      // still gets a link that shows exactly these requests.
+      const teamTab = canAccessOperativeAnnualLeaveDirectory(displayUser)
+      const queue = teamTab
+        ? teamLeaveDecisionQueue(teamLeaveBookings(holidays, teamLeavePeople(displayUser, users, operatives)), displayUser, users, operatives)
+        : getPendingHolidayApprovalsForUser(holidays, displayUser, users, operatives)
+      if (queue.length > 0) {
+        items.push({
+          key: 'leave',
+          label: queue.length === 1 ? 'Leave request to decide' : 'Leave requests to decide',
+          detail: teamTab ? 'Annual leave → Team' : 'Tasks → Approvals',
+          count: queue.length,
+          href: teamTab ? '/dashboard/annual-leave?tab=team' : '/dashboard/tasks',
+        })
+      }
+    }
+    if (adminViewer && rosterReady) {
+      const missing = usersWithoutRequiredLineManager(users).filter((member) => matchesRosterSegment(member, 'active'))
+      if (missing.length > 0) {
+        items.push({
+          key: 'line-manager',
+          label: missing.length === 1 ? 'Person missing a line manager' : 'People missing a line manager',
+          detail: 'Manage users',
+          count: missing.length,
+          href: '/dashboard/settings/users',
+        })
+      }
+    }
+    if (adminViewer) {
+      const payday = payePaydayBanner({
+        organization: liveOrganization.organizationId === orgId ? liveOrganization.data : null,
+        loaded: liveOrganization.organizationId === orgId && liveOrganization.loaded && !liveOrganization.error,
+        viewerIsAdmin: true,
+      })
+      if (payday) {
+        items.push({ key: 'paye-payday', label: 'PAYE payday not set', detail: payday, count: null, href: '/dashboard/settings/payment-runs' })
+      }
+    }
+    if ((canManageUsers(displayUser) || canManageOperativesOnly(displayUser)) && rosterReady) {
+      // The tabs Manage Users shows this viewer (operatives managers: Operatives only), Pending segment.
+      const tabs: ManageUsersTab[] = canManageUsers(displayUser) ? ['admins', 'managers', 'operatives'] : ['operatives']
+      const pending = tabs.reduce((sum, tab) => sum + countUsersForTab(users, tab, 'pending', claimedEmails), 0)
+      if (pending > 0) {
+        items.push({
+          key: 'invites',
+          label: pending === 1 ? 'Pending invite' : 'Pending invites',
+          detail: 'Not signed up yet · Manage users → Pending',
+          count: pending,
+          href: '/dashboard/settings/users',
+        })
+      }
+    }
+    return items
+  }, [
+    displayUser,
+    pauseHomeLoads,
+    holidaysReady,
+    rosterReady,
+    operativesReady,
+    users,
+    operatives,
+    holidays,
+    liveOrganization.organizationId,
+    liveOrganization.data,
+    liveOrganization.loaded,
+    liveOrganization.error,
+    orgId,
+    claimedEmails,
+  ])
+
   if (!displayUser || !user) return null
 
   const eligibleAdd = allEligibleQuickActionIds(displayUser, false, users).filter((id) => !actionIds.includes(id))
@@ -420,22 +713,72 @@ export function HomeScreen() {
   const showDaily = canViewDailyOverview(displayUser)
   const showWeekly = canViewWeeklyReports(displayUser)
 
+  // The stat strip is the old hero's tiles (same metrics, values and links per role), plus the old Warnings card when
+  // the viewer sees warnings and it is not already one of their metrics.
+  const metricRoute = (id: HomeOverviewMetricID) => {
+    const title = HOME_OVERVIEW_PILL_TITLES[id]
+    if (title.startsWith('Tasks') || title.startsWith('Open')) router.push('/dashboard/tasks')
+    else if (title === 'Warnings') router.push('/dashboard/warnings')
+    else if (title.includes('AL')) router.push('/dashboard/annual-leave')
+    else router.push('/dashboard/daily-overview')
+  }
+  const statTiles: HomeStatTile[] = operative
+    ? [
+        { id: 'today', label: 'Tasks Due Today', value: tasksToday == null ? '…' : tasksToday, kind: 'tasks', onClick: () => router.push('/dashboard/tasks') },
+        { id: 'week', label: 'Tasks Due This Week', value: tasksWeek == null ? '…' : tasksWeek, kind: 'tasksWeek', onClick: () => router.push('/dashboard/tasks') },
+        { id: 'overdue', label: 'My Tasks Overdue', value: tasksReady ? metrics.tasksOverdue : '…', kind: 'tasks', onClick: () => router.push('/dashboard/tasks') },
+      ]
+    : shownMetrics.map((id) => ({
+        id,
+        label: HOME_OVERVIEW_PILL_TITLES[id],
+        value: metricDisplay(id),
+        kind: metricTileKind(id),
+        onClick: () => metricRoute(id),
+      }))
+  if (seeWarnings && !(!operative && shownMetrics.includes('warnings'))) {
+    statTiles.push({
+      id: 'warnings-card',
+      label: warningCount == null ? 'Warnings' : 'Active warnings',
+      value: warningCount == null ? 'Scanning…' : warningCount === 0 ? 'All clear' : warningCount,
+      kind: 'warnings',
+      onClick: () => router.push('/dashboard/warnings'),
+    })
+  }
+
+  const quickActions = actionIds
+    .map((id) => quickActionMeta(id, organization?.settings))
+    .filter((m): m is NonNullable<typeof m> => Boolean(m))
+    .map((meta) => ({ id: meta.id, title: meta.title.replace(/\n/g, ' '), href: meta.href, icon: meta.icon }))
+
+  const banner = bannerViewer ? <UnbookedBanner count={unbookedCount} standalone={!teamPanels} /> : null
+  const hoursLabel = shownToday
+    ? `Overtime ${shownToday.overtimeMultiplier}×${
+        shownToday.overtimeBreakHours > 0 ? ` − ${overviewFormatHours(shownToday.overtimeBreakHours)}h break` : ''
+      }`
+    : 'Overtime'
+
   return (
-    <div className="stack home">
+    <div className="dash-home">
+      <HomeHeader
+        greeting={`Hi, ${greetingName(displayUser.firstName, displayUser.email)}`}
+        dateLine={formatHomeDateLine(now)}
+        subtitle={activeProjectSubtitle(projectCount)}
+        onCustomise={admin ? () => setMetricsOpen(true) : undefined}
+        onDailyOverview={showDaily ? () => router.push('/dashboard/daily-overview') : undefined}
+        onWeeklyReport={showWeekly ? () => router.push('/dashboard/weekly-report') : undefined}
+        onBookLabour={showBook ? () => router.push('/dashboard/book-labour') : undefined}
+      />
+
       {admin && taskLimitProjects.length > 0 ? (
-        <div className="banner" data-hue="red">
-          <span className="ico-chip">
-            <ExclamationTriangleIcon className="h-5 w-5" />
-          </span>
+        <div className="dash-alert" role="alert">
+          <ExclamationTriangleIcon aria-hidden />
           <div>
             <b>Task limit reached</b>
             {taskLimitProjects.slice(0, 3).map((p) => (
-              <p key={p.id} className="small">
-                {p.jobNumber}: Delete first 50 completed tasks to clear some space
-              </p>
+              <p key={p.id}>{p.jobNumber}: Delete first 50 completed tasks to clear some space</p>
             ))}
             {taskLimitProjects.length > 3 ? (
-              <p className="small">
+              <p>
                 And {taskLimitProjects.length - 3} more project{taskLimitProjects.length - 3 === 1 ? '' : 's'}...
               </p>
             ) : null}
@@ -443,204 +786,51 @@ export function HomeScreen() {
         </div>
       ) : null}
 
-      <div className="grid gmain">
-        <Hero
-          className="hero-brand"
-          eyebrow={formatHomeDateLine(now)}
-          title={<h1>{`Hi, ${greetingName(displayUser.firstName, displayUser.email)}`}</h1>}
-          subtitle={<span className="hero-sub">{activeProjectSubtitle(projectCount)}</span>}
-          stats={
-            operative
-              ? [
-                  { label: 'Tasks Due Today', value: tasksToday == null ? '…' : tasksToday, onClick: () => router.push('/dashboard/tasks') },
-                  { label: 'Tasks Due This Week', value: tasksWeek == null ? '…' : tasksWeek, onClick: () => router.push('/dashboard/tasks') },
-                  { label: 'My Tasks Overdue', value: tasksReady ? metrics.tasksOverdue : '…', onClick: () => router.push('/dashboard/tasks') },
-                ]
-              : shownMetrics.map((id) => ({
-                  label: HOME_OVERVIEW_PILL_TITLES[id],
-                  value: metricDisplay(id),
-                  onClick: () => {
-                    const title = HOME_OVERVIEW_PILL_TITLES[id]
-                    if (title.startsWith('Tasks') || title.startsWith('Open')) router.push('/dashboard/tasks')
-                    else if (title === 'Warnings') router.push('/dashboard/warnings')
-                    else if (title.includes('AL')) router.push('/dashboard/annual-leave')
-                    else router.push('/dashboard/daily-overview')
-                  },
-                }))
-          }
-          actions={
-            <div className="row wrap">
-              {admin ? (
-                <button
-                  type="button"
-                  onClick={() => setMetricsOpen(true)}
-                  className="btn sm hbtn round"
-                  aria-label="Choose dashboard metrics"
-                >
-                  <Cog6ToothIcon className="h-5 w-5" />
-                </button>
-              ) : null}
-              {showBook ? (
-                <button type="button" className="btn hbtn solid" onClick={() => router.push('/dashboard/book-labour')}>
-                  <PlusIcon className="h-4 w-4" />
-                  Book labour
-                </button>
-              ) : null}
-              {showDaily ? (
-                <button type="button" className="btn hbtn" onClick={() => router.push('/dashboard/daily-overview')}>
-                  <CalendarDaysIcon className="h-4 w-4" />
-                  Daily overview
-                </button>
-              ) : null}
-              {showWeekly ? (
-                <button type="button" className="btn hbtn" onClick={() => router.push('/dashboard/weekly-report')}>
-                  <ChartBarIcon className="h-4 w-4" />
-                  Weekly report
-                </button>
-              ) : null}
-            </div>
-          }
-        />
-
-        <div className="home-side">
-          {seeWarnings ? (
-            <StatCard
-              hue="red"
-              label="Warnings"
-              value={warningStatusLabel(warningCount)}
-              icon={<ExclamationTriangleIcon className="h-6 w-6" />}
-              onClick={() => router.push('/dashboard/warnings')}
-            />
-          ) : null}
-          <StatCard
-            hue="blue"
-            label="Tasks"
-            value={tasksPending == null ? '…' : `${tasksPending} pending`}
-            icon={<ClipboardDocumentCheckIcon className="h-6 w-6" />}
-            onClick={() => router.push('/dashboard/tasks')}
+      {teamPanels ? (
+        <div className="dash-row">
+          <LabourSummaryCard
+            activeProjects={projectCount == null ? '…' : String(projectCount)}
+            hoursBooked={shownToday ? `${overviewFormatHours(shownToday.labourHours)}h` : '…'}
+            overtimeHours={shownToday ? `${overviewFormatHours(shownToday.overtimeWorkedHours)}h` : '…'}
+            overtimeLabel={hoursLabel}
+            counts={
+              shownToday && unbookedReady
+                ? { booked: shownToday.bookedPeopleCount, unbooked: shownToday.unbookedCount, onLeave: shownToday.holidays.length }
+                : null
+            }
+            banner={banner}
           />
-        </div>
-      </div>
-
-      <div className="row" style={{ marginTop: 10 }}>
-        <h2 className="h2">Quick actions</h2>
-        <span className="grow" />
-        <button type="button" className="link" onClick={() => setCustomise((v) => !v)}>
-          {customise ? 'Done' : 'Customise'}
-        </button>
-      </div>
-      {customise && hint ? (
-        <div className="banner" data-hue="blue">
-          <p className="small">
-            Drag the icons to your desired layout.{' '}
-            <button
-              type="button"
-              className="link"
-              onClick={() => {
-                localStorage.setItem(quickActionHintStorageKey(user.id), '1')
-                setHint(false)
-              }}
-            >
-              OK
-            </button>
-          </p>
-        </div>
-      ) : null}
-      <div className="tiles">
-        {actionIds
-          .map((id) => quickActionMeta(id, organization?.settings))
-          .filter((m): m is NonNullable<typeof m> => Boolean(m))
-          .map((meta) => (
-            <div key={meta.id} className="relative">
-              <Link
-                href={meta.href}
-                data-hue={QUICK_ACTION_HUE}
-                className="tile"
-              >
-                <span className="ico-chip">
-                  <QuickActionIcon name={meta.icon} className="h-6 w-6" />
-                </span>
-                {meta.title.replace(/\n/g, ' ')}
-              </Link>
-              {customise ? (
-                <button
-                  type="button"
-                  aria-label={`Remove ${meta.title.replace(/\n/g, ' ')}`}
-                  onClick={() => persistActions(actionIds.filter((id) => id !== meta.id))}
-                  className="absolute -right-1 -top-1 grid h-6 w-6 place-items-center rounded-full bg-[var(--brand-800)] text-white"
-                >
-                  <XMarkIcon className="h-4 w-4" />
-                </button>
-              ) : null}
-            </div>
-          ))}
-        {customise ? (
-          <button type="button" onClick={() => setAddOpen(true)} className="tile" data-hue={QUICK_ACTION_HUE} style={{ opacity: 0.7 }}>
-            <span className="ico-chip">
-              <PlusIcon className="h-6 w-6" />
-            </span>
-            Add
-          </button>
-        ) : null}
-      </div>
-
-      <div className="grid gmain">
-        <section className="card home-card upnext" data-hue="blue">
-          <div className="card-h">
-            <div className="ico-chip sm">
-              <CalendarDaysIcon className="h-[18px] w-[18px]" />
-            </div>
-            <h2 className="h2">Up next</h2>
-            <div className="acts">
-              <Link href="/dashboard/my-schedule" className="btn sm ghost">
-                See all
-              </Link>
-            </div>
+          <div className="dash-col">
+            <HomeStatStrip tiles={statTiles} />
+            <WhosOnTodayCard rows={whosOn} />
           </div>
-          <div className="card-b rows">
-            {upNext.length === 0 ? (
-              <p className="muted small">No upcoming bookings on your schedule.</p>
-            ) : (
-              upNext.flatMap((day) =>
-                day.rows.map((row) => (
-                  <Link
-                    key={row.id}
-                    href="/dashboard/my-schedule"
-                    className="ritem"
-                    data-hue={row.accent === 'blue' ? 'blue' : 'daily'}
-                  >
-                    <span className="ico-chip day-chip" style={{ flexDirection: 'column', lineHeight: 1 }}>
-                      <span className="xs" style={{ fontWeight: 700 }}>
-                        {day.heading.slice(0, 3).toUpperCase()}
-                      </span>
-                    </span>
-                    <span className="grow">
-                      <span className="t">{row.title}</span>
-                      <span className="s">{row.subtitle}</span>
-                    </span>
-                  </Link>
-                ))
-              )
-            )}
-          </div>
-        </section>
+        </div>
+      ) : (
+        <div className="dash-col">
+          <HomeStatStrip tiles={statTiles} />
+          {banner}
+        </div>
+      )}
 
-        {!operative ? (
-          <section className="card pad home-card" data-hue="blue">
-            <div className="row">
-              <div className="ico-chip">
-                <WrenchScrewdriverIcon className="h-5 w-5" />
-              </div>
-              <div className="grow">
-                <b style={{ fontFamily: 'var(--head)' }}>Maintenance</b>{' '}
-                <span className="pill" data-hue="blue">
-                  Soon
-                </span>
-                <div className="muted small">Coming in a future update</div>
-              </div>
-            </div>
-          </section>
-        ) : null}
+      <div className={waitingItems.length > 0 ? 'dash-row' : 'dash-row single'}>
+        <TasksToDoCard pending={tasksPending == null ? '…' : String(tasksPending)} rows={taskRows?.rows ?? null} total={taskRows?.total ?? 0} />
+        <WaitingForYouCard items={waitingItems} />
+      </div>
+
+      <div className="dash-row bottom">
+        <QuickActionsCard
+          actions={quickActions}
+          customise={customise}
+          showHint={hint}
+          onToggleCustomise={() => setCustomise((v) => !v)}
+          onDismissHint={() => {
+            localStorage.setItem(quickActionHintStorageKey(user.id), '1')
+            setHint(false)
+          }}
+          onRemove={(id) => persistActions(actionIds.filter((x) => x !== id))}
+          onAdd={() => setAddOpen(true)}
+        />
+        <UpNextCard sections={upNext} showMaintenance={!operative} />
       </div>
 
       {metricsOpen ? (
@@ -709,7 +899,7 @@ export function HomeScreen() {
                     key={id}
                     type="button"
                     className="ritem"
-                    data-hue={QUICK_ACTION_HUE}
+                    data-hue="blue"
                     onClick={() => {
                       persistActions([...actionIds, id])
                       setAddOpen(false)

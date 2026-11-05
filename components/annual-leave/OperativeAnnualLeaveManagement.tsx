@@ -7,17 +7,15 @@ import { useHolidayStore } from '@/lib/stores/holidayStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { canAccessOperativeAnnualLeaveDirectory } from '@/lib/navigation/menuPermissions'
-import { isPendingHolidayRequest } from '@/lib/stores/holidayStore'
 import {
-  buildAnnualLeavePeople,
-  canManagePersonAnnualLeave,
   resolvePersonName,
   sortAnnualLeavePeople,
   bookingMatchesPerson,
   type AnnualLeavePerson,
   type AnnualLeavePersonSort,
 } from '@/lib/annualLeave/annualLeavePerson'
-import { getPendingHolidayApprovalsForUser, isCancellationRequest } from '@/lib/annualLeave/holidayApprovalUtils'
+import { isCancellationRequest } from '@/lib/annualLeave/holidayApprovalUtils'
+import { teamLeaveBookings, teamLeaveDecisionQueue, teamLeavePeople } from '@/lib/annualLeave/teamLeaveQueue'
 import {
   holidayDecisionActorName,
   notifyHolidayRequestDecisionToUser,
@@ -104,10 +102,8 @@ export function OperativeAnnualLeaveManagement({
   const [search, setSearch] = useState('')
   const [selectedPerson, setSelectedPerson] = useState<AnnualLeavePerson | null>(null)
 
-  const people = useMemo(() => {
-    const rows = buildAnnualLeavePeople(users, operatives)
-    return rows.filter((person) => canManagePersonAnnualLeave(user, person, users))
-  }, [users, operatives, user])
+  // `teamLeaveQueue.ts`: the same people, records and queue Home's "Waiting for you" card counts.
+  const people = useMemo(() => teamLeavePeople(user, users, operatives), [users, operatives, user])
 
   const tradeChoices = useMemo(
     () => Array.from(new Set(people.map((p) => p.tradeLabel).filter(Boolean))).sort(),
@@ -129,10 +125,7 @@ export function OperativeAnnualLeaveManagement({
     return sortAnnualLeavePeople(rows, sortMode)
   }, [people, tradeFilter, search, sortMode])
 
-  const teamBookings = useMemo(
-    () => bookings.filter((b) => people.some((p) => bookingMatchesPerson(b, p))),
-    [bookings, people]
-  )
+  const teamBookings = useMemo(() => teamLeaveBookings(bookings, people), [bookings, people])
 
   const approvedBookings = useMemo(
     () =>
@@ -144,10 +137,7 @@ export function OperativeAnnualLeaveManagement({
 
   // `leaveDecisionQueue`: only requests this viewer may decide (`canDecideLeave` — never their own).
   const pendingRequests = useMemo(
-    () =>
-      getPendingHolidayApprovalsForUser(teamBookings, user, users, operatives)
-        .filter((b) => isPendingHolidayRequest(b))
-        .sort((a, b) => b.startDate.getTime() - a.startDate.getTime()),
+    () => teamLeaveDecisionQueue(teamBookings, user, users, operatives),
     [teamBookings, user, users, operatives]
   )
 
