@@ -389,3 +389,21 @@ test('1.33.0 claim reviews under another of the person\'s ids: the line manager 
   // Admins review it as before.
   await assertSucceeds(setDoc(await orgDoc(ADMIN, 'payeClaimReviews', 'expense_EXOLD2'), claimReview('pc-sam-old', 'EXOLD2', { personUserId: SAM, reviewedBy: ADMIN })))
 })
+
+test('1.33.0 a line manager adds personUserId to a stored review that has none — only the right person; never changed afterwards', async () => {
+  await seedAlias()
+  // A review stored before personUserId existed (an admin's, filed under Sam's former id).
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'organizations', ORG, 'payeClaimReviews', 'expense_EXOLD2'), claimReview('pc-sam-old', 'EXOLD2', { reviewedBy: ADMIN }))
+  })
+  // Another person, or someone who is not Sam's line manager: refused.
+  await assertFails(updateDoc(await orgDoc(LM, 'payeClaimReviews', 'expense_EXOLD2'), { personUserId: PEER, reviewedBy: LM, decision: 'rejected' }))
+  await assertFails(updateDoc(await orgDoc(MGR2, 'payeClaimReviews', 'expense_EXOLD2'), { personUserId: SAM, reviewedBy: MGR2, decision: 'rejected' }))
+  // An admin's update never adds it (unchanged from before).
+  await assertFails(updateDoc(await orgDoc(ADMIN, 'payeClaimReviews', 'expense_EXOLD2'), { personUserId: SAM, decision: 'rejected' }))
+  // Sam's line manager adds Sam (whose users document lists the former id).
+  await assertSucceeds(updateDoc(await orgDoc(LM, 'payeClaimReviews', 'expense_EXOLD2'), { personUserId: SAM, reviewedBy: LM, decision: 'rejected' }))
+  // Once written it is fixed.
+  await assertFails(updateDoc(await orgDoc(LM, 'payeClaimReviews', 'expense_EXOLD2'), { personUserId: PEER, decision: 'approved' }))
+  await assertSucceeds(updateDoc(await orgDoc(LM, 'payeClaimReviews', 'expense_EXOLD2'), { decision: 'approved' }))
+})

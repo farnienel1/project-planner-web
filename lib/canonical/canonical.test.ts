@@ -12160,9 +12160,11 @@ test('1.33.0 Return: one set of writes; ✓ applies the person\'s line (keep, co
   assert.equal(result.ok, true)
   if (!result.ok) return
   assert.deepEqual(result.bookingWrites, [
-    { collection: 'bookings', bookingId: 'B2', set: { workEndTime: '19:00', otMultiplierOverride: 2 }, remove: [] },
-    { collection: 'bookings', bookingId: 'B6', set: { workEndTime: '16:30' }, remove: [] },
+    { collection: 'bookings', bookingId: 'B2', set: { workEndTime: '19:00', otMultiplierOverride: 2, overtimeReturnRequestId: 'R1' }, remove: [] },
+    { collection: 'bookings', bookingId: 'B6', set: { workEndTime: '16:30', overtimeReturnRequestId: 'R1' }, remove: [] },
   ])
+  // The request id rides on each booking change, so the rules can tie the write to the returned request (§16).
+  assert.equal(r129.OVERTIME_RETURN_REQUEST_ID_FIELD, 'overtimeReturnRequestId')
   // Item f: the all-overtime booking is deleted, with a tombstone naming the request; never Cancelled.
   assert.deepEqual(result.bookingDeletes, [
     { collection: 'bookings', bookingId: 'B4', tombstone: { bookingId: 'B4', collection: 'bookings', deletedBy: 'lm', deletedFrom: 'web', overtimeRequestId: 'R1' } },
@@ -12340,7 +12342,7 @@ test('1.33.0 item b: a line manager decides every line of their report, under an
   assert.equal(asLineManager.ok, true)
   if (asLineManager.ok) {
     assert.deepEqual(asLineManager.lineOutcomes, { BR: 'applied' })
-    assert.deepEqual(asLineManager.bookingWrites, [{ collection: 'bookings', bookingId: 'BR', set: { workStartTime: '07:30' }, remove: [] }])
+    assert.deepEqual(asLineManager.bookingWrites, [{ collection: 'bookings', bookingId: 'BR', set: { workStartTime: '07:30', overtimeReturnRequestId: 'R8' }, remove: [] }])
     assert.equal(Object.values(asLineManager.lineOutcomes).includes('needsAdmin' as never), false)
   }
   assert.equal(r129.overtimeDeciderMayWriteBooking({ booking: { id: 'BR', personId: 'row-sam' }, requesterUserId: 'sam', requesterIds: ['sam', 'row-sam'] }), true)

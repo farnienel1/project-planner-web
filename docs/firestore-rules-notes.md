@@ -217,6 +217,16 @@ Design notes (each was measured on the emulator, 1.22.0):
 
 Checked (merged with 1.32.4): suites 238/238 (187 + 32 + 19, each on a fresh emulator on a private port; every 1.33 test context carries claims through `tests/authClaimsContext.ts`); `RULES_STRICT_BUDGET=1`: 9 tests with a limit refusal against 20 on 1.32.4, none new (11 gone with the read changes); emulator type check 0 issues; no `IllegalStateException` in any emulator log. All three rules suites take the emulator port from `RULES_PORT` (default 8080), as 1.32.4's firestore suite already did.
 
+### 1.33.0 review fix — Return under any id (6 Nov)
+
+A line manager's Return failed whole when one line's booking was filed under another of the person's ids (an old invite placeholder id, whose users document is deleted on accept, or a same-email account that does not list the line manager): the line-manager path resolves the person only through `users/{bookingPersonId}` or an `operatives` row. Fix: `overtimeReturnWrites` puts `overtimeReturnRequestId` (the request id) on every booking change. When a booking update writes that field, `overtimeLineManagerBookingUpdate` (same allow, same field list plus that key) takes `overtimeReturnFor` instead of the plain person test: `getAfter(overtimeRequests/{id})` is `approved`, `decidedBy` the caller, lists the booking in `appliedBookingIds`, and `overtimeReturnPersonOk` — the caller line-manages the request's `userId` U (`callerLineManagesUser`) and the booking's person id is U, in `users/{U}.formerUserIds` / `sameEmailUserIds`, or an `operatives` row whose account the caller line-manages (`callerLineManagesRowPerson`). The Return tombstone uses the same test with `deletedBookingIds` (admins: the request test only); `overtimeReturnDeletes` is replaced. The ternary tests read documents (`callerLineManagesUser`) before the branch, and no `get().data` is passed into a function with `let`s (the emulator crash pattern above). Writes without the field (iOS 1.32, web 1.32.4) take the unchanged path.
+
+Not done: checking that `deletedBookingIds` / `appliedBookingIds` hold only the request's own lines — `lines` is a list of maps and the rules cannot search it. The person test bounds a decider to one person they line-manage, whose bookings they could already change.
+
+Also: a line manager may add `personUserId` to a claim review stored without it (`claimReviewWriteValid` `added`; the line-manager branch then checks it is the person whose ids include the item's); an admin's update never adds it.
+
+Measured: static cost 232,589 → 237,518 (+4,929); 141,866 → 142,948 bytes (budget 144,384 unchanged); suites 243/243 (187 + 36 + 20, fresh emulator, private port); `RULES_STRICT_BUDGET=1` the same 9 limit refusals (all in the firestore suite), none new; type check 0 issues; no `IllegalStateException`.
+
 ## Service-level functions
 
 ### `orgIdsMatch`

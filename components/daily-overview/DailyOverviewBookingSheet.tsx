@@ -223,7 +223,7 @@ export function DailyOverviewBookingSheet({
       ? userBookingRemoveAction(
           user,
           { collection: 'bookings', projectId: row.projectId },
-          [...projects, ...smallWorks].find((entry) => entry.id === row.projectId),
+          [...projects, ...smallWorks].find((entry) => normalizeDocumentId(entry.id) === normalizeDocumentId(row.projectId)),
           managers
         )
       : 'delete'
@@ -244,7 +244,7 @@ export function DailyOverviewBookingSheet({
     if (row.locationType === 'working_from_home') return 'Working from home'
     if (row.locationType === 'site_survey') return 'Site survey'
     if (row.locationType === 'custom') return row.customLocationName || 'Custom'
-    const project = allWorks.find((entry) => entry.id === row.projectId)
+    const project = row.projectId ? allWorks.find((entry) => normalizeDocumentId(entry.id) === normalizeDocumentId(row.projectId)) : undefined
     if (project) return `${project.jobNumber} · ${project.siteName}`
     return row.kind === 'operative' ? 'Project booking' : 'Current booking'
   }, [row, allWorks])

@@ -498,3 +498,75 @@ test('1.33.0 delete on Return: a booking under the person\'s own operatives row 
     setDoc(await orgDoc(ADMIN, 'deletedBookings', 'B3'), { bookingId: 'B3', collection: 'bookings', deletedBy: ADMIN, deletedFrom: 'web', deletedAt: serverTimestamp(), note: 'x' })
   )
 })
+
+// MARK: - 1.33.0 review fix: the Return reaches bookings filed under any of the person's ids (former invite id, same-email account)
+
+async function seedReturnAliases() {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const d = ctx.firestore()
+    // Sam's old invite placeholder id (its users document was deleted on accept) and a second account on Sam's email
+    // that does not list LM as line manager.
+    await updateDoc(doc(d, 'users', SAM), { formerUserIds: ['ot-sam-invite'], sameEmailUserIds: ['ot-sam-2'] })
+    await setDoc(doc(d, 'users', 'ot-sam-2'), { email: `${SAM}@test.com`, organizationId: ORG, role: 'operative', operativeMode: true, assignedManagerUserIds: [ADMIN] })
+    const base = { projectId: 'job2', jobCollection: 'projects', date: 1762214400000, timeSlot: 'CUSTOM_HOURS', workStartTime: '06:30', workEndTime: '14:00', status: 'Confirmed', bookedBy: 'Ada', notes: '' }
+    await setDoc(doc(d, 'organizations', ORG, 'bookings', 'BF'), { id: 'BF', operativeId: 'ot-sam-invite', ...base })
+    await setDoc(doc(d, 'organizations', ORG, 'bookings', 'BS'), { id: 'BS', operativeId: 'ot-sam-2', ...base })
+  })
+}
+
+/** A Return's booking change and its request update in one batch (the web transaction writes both). */
+async function returnUpdate(uid: string, bookingId: string, requestId: string, request: Record<string, unknown>, booking: Record<string, unknown> = {}) {
+  const d = await db(uid)
+  const batch = writeBatch(d)
+  batch.update(doc(d, 'organizations', ORG, 'bookings', bookingId), { workStartTime: '07:30', otMultiplierOverride: 2, overtimeReturnRequestId: requestId, ...booking })
+  batch.update(doc(d, 'organizations', ORG, 'overtimeRequests', requestId), {
+    status: 'approved', decidedBy: uid, decisions: {}, droppedBookingIds: [], staleBookingIds: [], deletedBookingIds: [], ...request,
+  })
+  return batch.commit()
+}
+
+test('1.33.0 Return under another id: the line manager changes a booking filed under the person\'s former invite id or same-email account', async () => {
+  await seedReturnAliases()
+  // Without a Return, the plain line-manager path does not reach these ids (the bug the review found).
+  await assertFails(updateDoc(await orgDoc(LM, 'bookings', 'BF'), { workStartTime: '07:30' }))
+  await assertFails(updateDoc(await orgDoc(LM, 'bookings', 'BS'), { workStartTime: '07:30' }))
+  await assertSucceeds(setDoc(await orgDoc(SAM, 'overtimeRequests', 'RA'), requestData(SAM)))
+  await assertSucceeds(returnUpdate(LM, 'BF', 'RA', { appliedBookingIds: ['BF'] }))
+  await assertSucceeds(setDoc(await orgDoc(SAM, 'overtimeRequests', 'RB'), requestData(SAM)))
+  await assertSucceeds(returnUpdate(LM, 'BS', 'RB', { appliedBookingIds: ['BS'] }))
+  // A booking under Sam's own users id goes through the Return path too.
+  await assertSucceeds(setDoc(await orgDoc(SAM, 'overtimeRequests', 'RC'), requestData(SAM)))
+  await assertSucceeds(returnUpdate(LM, 'B1', 'RC', { appliedBookingIds: ['B1'] }))
+})
+
+test('1.33.0 Return under another id: never a field outside the overtime list, never a booking the request does not name', async () => {
+  await seedReturnAliases()
+  await assertSucceeds(setDoc(await orgDoc(SAM, 'overtimeRequests', 'RA'), requestData(SAM)))
+  // The request names B1, not BF.
+  await assertFails(returnUpdate(LM, 'BF', 'RA', { appliedBookingIds: ['B1'] }))
+  // Another field beside the overtime fields.
+  await assertFails(returnUpdate(LM, 'BF', 'RA', { appliedBookingIds: ['BF'] }, { projectId: 'job1' }))
+  // A request id that does not exist / is not decided in this batch.
+  await assertFails(updateDoc(await orgDoc(LM, 'bookings', 'BF'), { workStartTime: '07:30', overtimeReturnRequestId: 'RA' }))
+  await assertFails(updateDoc(await orgDoc(LM, 'bookings', 'BF'), { workStartTime: '07:30', overtimeReturnRequestId: 'nope' }))
+})
+
+test('1.33.0 Return under another id: a different manager, or the line manager using another person\'s request, gets nothing', async () => {
+  await seedReturnAliases()
+  await assertSucceeds(setDoc(await orgDoc(SAM, 'overtimeRequests', 'RA'), requestData(SAM)))
+  // MGR2 (job2's manager but not Sam's line manager) cannot decide Sam's request, so cannot use it.
+  await assertFails(returnUpdate(MGR2, 'BF', 'RA', { appliedBookingIds: ['BF'] }, { workStartTime: '08:00' }))
+  // PM (another report of LM) sends a request; LM returns it naming Sam's alias booking: refused (not PM's booking).
+  await assertSucceeds(setDoc(await orgDoc(PM, 'overtimeRequests', 'RP'), requestData(PM)))
+  await assertFails(returnUpdate(LM, 'BF', 'RP', { appliedBookingIds: ['BF'] }))
+  await assertFails(returnUpdate(LM, 'BS', 'RP', { appliedBookingIds: ['BS'] }))
+  await assertFails(returnDelete(LM, 'BF', 'RP', { deletedBookingIds: ['BF'] }))
+})
+
+test('1.33.0 delete on Return under another id: the line manager deletes the person\'s booking filed under their former invite id', async () => {
+  await seedReturnAliases()
+  await assertSucceeds(setDoc(await orgDoc(SAM, 'overtimeRequests', 'RA'), requestData(SAM)))
+  await assertSucceeds(returnDelete(LM, 'BF', 'RA', { deletedBookingIds: ['BF'] }))
+  await assertSucceeds(setDoc(await orgDoc(SAM, 'overtimeRequests', 'RB'), requestData(SAM)))
+  await assertSucceeds(returnDelete(LM, 'BS', 'RB', { deletedBookingIds: ['BS'] }))
+})
