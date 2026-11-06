@@ -1106,7 +1106,7 @@ textarea.in {
 .stack.work-list .work-grid { gap: 10px; }
 /* Owner, 6 Nov (still "massive"): the filter tiles' Tailwind gap-2 lost to `.grid { gap: 20px }` above, and each
    tile was 18px/20px padded with a 26px figure. Tiles stay ≥ 48px tall (touch target). */
-.stack.work-list > .grid { gap: 8px; }
+.stack.work-list > .grid:not(.work-grid) { gap: 8px; }
 .stack.work-list .stat { padding: 10px 14px; border-radius: 16px; }
 .stack.work-list .stat b { font-size: 20px; }
 .stack.work-list .stat span { font-size: 12.5px; }
