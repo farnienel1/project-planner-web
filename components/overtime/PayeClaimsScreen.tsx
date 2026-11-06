@@ -22,7 +22,6 @@ import {
   PRICE_WORK_GENERATE_REPORT_LABEL,
   canViewPayeClaims,
   canReviewPayeClaims,
-  isAdminOutsideOperativeMode,
   OVERTIME_APPROVE_LABEL,
   overtimePersonIds,
   payeClaimReviewOutcomeLabel,
@@ -262,7 +261,6 @@ function ClaimList(props: Omit<Props, 'range'> & { range: { start: string; end: 
   const [reviews, setReviews] = useState<PayeClaimReviewRecord[]>([])
   const [decisions, setDecisions] = useState<Record<string, PayeClaimReviewDecision>>({})
   const reviewer = !mine && canReviewPayeClaims(viewerPerson, subjectPerson, roster)
-  const reviewerIsAdmin = isAdminOutsideOperativeMode(viewerPerson)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => listenPayeClaimReviews(organizationId, personIds, setReviews), [organizationId, idsKey])
   useEffect(
@@ -289,7 +287,6 @@ function ClaimList(props: Omit<Props, 'range'> & { range: { start: string; end: 
     subjectUserId: subject.id,
     personIds,
     reviewerId: props.viewerUser.id,
-    reviewerIsAdmin,
   })
   const approve = async () => {
     setBusy(true)

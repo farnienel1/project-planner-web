@@ -14,6 +14,7 @@ import {
   type StaffAccountRole,
   type UserTimesheetSubjectsInput,
   canOpenWeeklyReport,
+  canManageMaterialCatalogue as canonicalCanManageMaterialCatalogue,
 } from '@/lib/canonical'
 import { parseAppUserDocument } from '@/lib/ios-parity/converters'
 import { effectivePermissions, permissionLevelOf } from '@/lib/canonical/permissionLevels'
@@ -141,9 +142,10 @@ export function canViewOperatives(user: PermissionUser): boolean {
   return isStaffAccount(user) && flag(user, 'operatives')
 }
 
+/** Rulebook 1.33.0 `canManageMaterialCatalogue`: the Materials catalogue (add, edit, delete items and prices) is admins only. */
 export function canManageMaterialCatalogue(user: PermissionUser): boolean {
-  if (!user || isOperativeMode(user)) return false
-  return hasAdminAccess(user) || flag(user, 'manager')
+  if (!user) return false
+  return canonicalCanManageMaterialCatalogue(staffAccountRole(user))
 }
 
 export function canAccessWholesalers(user: PermissionUser): boolean {

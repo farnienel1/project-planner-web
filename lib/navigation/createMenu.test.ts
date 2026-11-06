@@ -101,6 +101,7 @@ test('managers only see items their flags allow', () => {
   })
   assert.deepEqual(
     createMenuItems(mgr).map((row) => row.id),
-    ['project', 'user', 'client', 'sub-contractor', 'wholesaler', 'material']
+    // 1.33.0 (owner decision 4 Nov, `canManageMaterialCatalogue`): no catalogue item for a manager.
+    ['project', 'user', 'client', 'sub-contractor', 'wholesaler']
   )
 })

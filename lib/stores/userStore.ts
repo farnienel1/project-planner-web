@@ -389,11 +389,13 @@ export const useUserStore = create<UserStoreState>(() => ({
       return
     }
     // Rulebook 1.31.0 `userActiveWrites` (audit finding 9): every users document of the person in this organisation
-    // (their same-email copies included) and the membership, in one batch. Before 1.31.0 only one document changed.
+    // (their same-email copies included) and the membership. Before 1.31.0 only one document changed. 1.33.0: the
+    // person's own document is left out when it names another company, and the membership is only ever updated —
+    // never created (a merge-set made a bare `{ accountActive }` membership).
     const person = (roster || []).find((row) => row.id === userId)
     const writes = userActiveWrites({
       organizationId: orgId,
-      person: { id: userId, email: person?.email ?? null },
+      person: { id: userId, email: person?.email ?? null, organizationId: person?.organizationId ?? null },
       isActive,
       roster: (roster || []).map((row) => ({ id: row.id, email: row.email, organizationId: row.organizationId })),
     })
@@ -401,15 +403,30 @@ export const useUserStore = create<UserStoreState>(() => ({
     const updatedAt = Timestamp.now()
     const actor = useAuthStore.getState().user
     const actorIsAdmin = Boolean(actor && (actor.isSuperAdmin || actor.permissions.adminAccess || actor.role === 'admin'))
+    let profileWrites = 0
+    const memberships: Array<{ path: string; fields: Record<string, unknown> }> = []
     for (const write of writes) {
-      const ref = doc(db, ...(write.path.split('/') as [string, ...string[]]))
-      // Admins can update a membership but cannot read it: a merge-set of the flag (created when missing). A manager
-      // with the Operatives permission (1.31.0) writes the users documents only — memberships are admin writes.
-      if (write.kind === 'membership' && !actorIsAdmin) continue
-      if (write.kind === 'membership') batch.set(ref, { ...write.fields, updatedAt }, { merge: true })
-      else batch.update(ref, { ...write.fields, updatedAt })
+      // A manager with the Operatives permission (1.31.0) writes the users documents only — memberships are admin writes.
+      if (write.kind === 'membership') {
+        if (actorIsAdmin) memberships.push(write)
+        continue
+      }
+      batch.update(doc(db, ...(write.path.split('/') as [string, ...string[]])), { ...write.fields, updatedAt })
+      profileWrites += 1
     }
-    await batch.commit()
+    if (profileWrites === 0 && memberships.length === 0) {
+      throw new Error('This account belongs to another company. Only an admin can change whether it is active here.')
+    }
+    if (profileWrites > 0) await batch.commit()
+    // Admins can update a membership but cannot read it: an update, so a missing membership stays missing (it fails
+    // and is skipped once the users documents are saved, as on iOS). With no users document here, it is the change.
+    for (const membership of memberships) {
+      try {
+        await updateDoc(doc(db, ...(membership.path.split('/') as [string, ...string[]])), { ...membership.fields, updatedAt })
+      } catch (error) {
+        if (profileWrites === 0) throw error
+      }
+    }
   },
 
 

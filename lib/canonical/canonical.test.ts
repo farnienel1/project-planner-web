@@ -13162,7 +13162,7 @@ test('1.32.0 partial approval: line manager approves what they may, the rest nee
   assert.equal(admin.message, 'Approved 2 of 2.')
 })
 
-test('1.32.0 price work and expenses review: ✓ ✕ per item, one Approve, older ids need an admin', () => {
+test('1.32.0 price work and expenses review: ✓ ✕ per item, one Approve (1.33.0: older ids reviewed by the line manager too)', () => {
   const evidence = [{ path: 'organizations/o/payeClaims/sam/a.pdf', name: 'a.pdf', kind: 'file' as const, contentType: 'application/pdf', auditId: null }]
   const item = (id: string, userId: string, amount: number) => ({ kind: 'expense' as const, id, userId, title: 'Fuel', details: '', amount, currency: 'GBP', evidence, createdAtMs: null, createdBy: userId, jobNumber: 'J-1', date: '2026-11-04' })
   const items = [item('E1', 'sam', 20), item('E2', 'sam', 30), item('E3', 'SAM-OLD', 40), item('E4', 'sam', 50), item('X', 'pat', 5)]
@@ -13174,14 +13174,24 @@ test('1.32.0 price work and expenses review: ✓ ✕ per item, one Approve, olde
     reviewerId: 'lm',
     reviewerIsAdmin: false,
   })
-  assert.deepEqual(result.outcomes, { E1: 'applied', E2: 'applied', E3: 'needsAdmin', E4: 'undecided', X: 'foreign' })
-  assert.equal(result.message, 'Approved 1 of 4. 1 rejected; 1 needs an admin; 1 not decided yet.')
-  assert.deepEqual(result.writes.map((w) => [w.docId, w.fields.decision]), [['expense_E1', 'approved'], ['expense_E2', 'rejected']])
+  assert.deepEqual(result.outcomes, { E1: 'applied', E2: 'applied', E3: 'applied', E4: 'undecided', X: 'foreign' })
+  assert.equal(result.message, 'Approved 2 of 4. 1 rejected; 1 not decided yet.')
+  assert.deepEqual(
+    result.writes.map((w) => [w.docId, w.fields.decision, w.fields.userId, w.fields.personUserId]),
+    [['expense_E1', 'approved', 'sam', undefined], ['expense_E2', 'rejected', 'sam', undefined], ['expense_E3', 'approved', 'SAM-OLD', 'sam']],
+    'an item under another of the person\'s ids carries personUserId'
+  )
+  assert.equal(r132.payeClaimReviewOutcomeLabel('foreign'), 'Not theirs — left out.')
+  assert.equal(r132.payeClaimReviewOutcomeLabel('applied'), null)
+  assert.equal(r132.payeClaimReviewOutcomeLabel('undecided'), null)
   const reviews = result.writes.map((w) => r132.parsePayeClaimReviewDocument(w.docId, w.fields))
   assert.equal(r132.payeClaimReviewState(items[0], reviews).label, 'Approved')
   assert.equal(r132.payeClaimReviewState({ ...items[0], amount: 21 }, reviews).state, 'needsReview', 'a changed item needs review again')
+  assert.equal(r132.parsePayeClaimReviewDocument('expense_E3', result.writes[2].fields).personUserId, 'sam')
+  assert.equal(reviews[0].personUserId, null)
   const admin = r132.payeClaimReviewWrites({ items: [items[2]], decisions: { E3: 'approved' }, subjectUserId: 'sam', personIds: ['sam', 'SAM-OLD'], reviewerId: 'adm', reviewerIsAdmin: true })
   assert.equal(admin.message, 'Approved 1 of 1.')
+  assert.deepEqual(admin.writes[0].fields, { ...result.writes[2].fields, reviewedBy: 'adm' }, 'admins and line managers write the same review')
   const roster = [
     { id: 'sam', email: 'sam@x.com', isActive: true, assignedManagerUserIds: ['lm'], role: 'operative', operativeMode: true },
     { id: 'lm', email: 'lm@x.com', isActive: true, role: 'manager', manager: true },
@@ -13514,4 +13524,117 @@ test('1.33.0 bookingDeleteSignedTimesheetWarning: warns (never blocks) on a day 
   assert.equal(R112.bookingDeleteSignedTimesheetWarning('not a day', [operativeSigned]), null)
   assert.equal(R112.bookingDeleteSignedTimesheetWarning('2026-11-09', null), null)
   assert.match(R112.BOOKING_DELETE_SIGNED_TIMESHEET_WARNING, /signed timesheet/)
+})
+
+// MARK: - Rulebook 1.33.0 (W8 bundle: claims every id, pay C1, catalogue, active writes, unbooked inactive)
+
+test('1.33.0 claims every id: a line manager reviews an item under a formerUserIds id; no "Needs an admin"', () => {
+  const item = (id: string, userId: string) => ({ kind: 'priceWork' as const, id, userId, title: 'Tiling', details: '', amount: 100, currency: 'GBP', evidence: [], createdAtMs: null, createdBy: userId, jobNumber: 'J-1', approvedByUserId: 'lm', approvedByName: 'Lee', startDate: '2026-11-02', endDate: '2026-11-03' })
+  const items = [item('P1', 'sam'), item('P2', 'sam-invite'), item('P3', 'Sam-Invite'), item('P4', 'other')]
+  const roster = [
+    { id: 'sam', email: 'sam@x.com', isActive: true, formerUserIds: ['sam-invite'], assignedManagerUserIds: ['lm'], role: 'operative', operativeMode: true },
+    { id: 'lm', email: 'lm@x.com', isActive: true, role: 'manager', manager: true },
+    { id: 'm2', email: 'm2@x.com', isActive: true, role: 'manager', manager: true },
+  ]
+  const personIds = r132.overtimePersonIds({ person: roster[0], roster })
+  assert.ok(personIds.map((id: string) => id.toLowerCase()).includes('sam-invite'))
+  assert.equal(r132.canReviewPayeClaims(roster[1], roster[0], roster), true, 'the line manager reviews')
+  assert.equal(r132.canReviewPayeClaims(roster[2], roster[0], roster), false, 'a manager who is not the line manager does not')
+  assert.equal(r132.canReviewPayeClaims({ ...roster[0], id: 'sam-invite' }, roster[0], roster), false, 'never the person under another id')
+  const result = r132.payeClaimReviewWrites({
+    items,
+    decisions: { P1: 'approved', P2: 'rejected', P3: 'approved', P4: 'approved' },
+    subjectUserId: 'sam',
+    personIds,
+    reviewerId: 'lm',
+  })
+  assert.deepEqual(result.outcomes, { P1: 'applied', P2: 'applied', P3: 'applied', P4: 'foreign' })
+  assert.deepEqual(result.writes.map((w) => w.fields.personUserId ?? null), [null, 'sam', 'sam'], 'personUserId only on items under another id (any letter case)')
+  assert.deepEqual(result.writes.map((w) => w.fields.userId), ['sam', 'sam-invite', 'Sam-Invite'], 'userId stays the item\'s own id')
+  assert.equal(result.message, 'Approved 2 of 3. 1 rejected.')
+  for (const outcome of ['applied', 'undecided', 'unchanged', 'foreign'] as const) {
+    assert.notEqual(r132.payeClaimReviewOutcomeLabel(outcome), 'Needs an admin')
+  }
+  // Review is optional: the report is ready with items in range, reviewed or not.
+  assert.equal(r132.payeClaimReportReady(items), true)
+})
+
+test('1.33.0 pay C1: the read plans ask only for the line manager\'s reports; every other screen shows nobody\'s pay', () => {
+  const lm = { id: 'lm', role: 'manager', manager: true }
+  const report = { id: 'rep', role: 'operative', operativeMode: true, assignedManagerUserIds: ['lm'] }
+  const reportMgr = { id: 'rep-m', role: 'manager', manager: true, assignedManagerUserIds: ['lm'] }
+  const notMine = { id: 'nm', role: 'operative', operativeMode: true, assignedManagerUserIds: ['m2'] }
+  const m2 = { id: 'm2', role: 'manager', manager: true }
+  const catalogueRow = { id: 'OP-ROW', catalogueOperative: true }
+  const roster = [lm, report, reportMgr, notMine, m2].map((p) => ({ ...p, email: `${p.id}@t.com`, isActive: true }))
+  const subjects = [report, reportMgr, notMine, m2, catalogueRow]
+  // Timesheet review reach: their own id and their reports' ids, nobody else, never a catalogue row.
+  assert.deepEqual(R112.payProfileReadPlan(lm as never, subjects as never, roster as never), { kind: 'documents', ids: ['lm', 'rep', 'rep-m'] })
+  assert.deepEqual(R112.rateHistoryQueryPlan(lm as never, subjects as never, roster as never, { privatePay: true }), { kind: 'people', userIds: ['lm', 'rep', 'rep-m'], operativeIds: [] })
+  for (const subject of [report, reportMgr]) {
+    assert.equal(R112.canViewPersonPay(lm as never, subject as never, roster as never, { context: 'timesheetReview' }), true)
+    assert.equal(R112.canViewPersonPay(lm as never, subject as never, roster as never, { context: 'profile' }), false, 'profile context: nobody\'s')
+    assert.equal(R112.canViewPersonPay(lm as never, subject as never, roster as never), false, 'no context = profile')
+  }
+  for (const subject of [notMine, m2, catalogueRow]) {
+    assert.equal(R112.canViewPersonPay(lm as never, subject as never, roster as never, { context: 'timesheetReview' }), false)
+  }
+  // Each line manager asks only for their own reports; a manager who line-manages nobody only for their own.
+  assert.deepEqual(R112.payProfileReadPlan(m2 as never, subjects as never, roster as never), { kind: 'documents', ids: ['m2', 'nm'] })
+  const m3 = { id: 'm3', role: 'manager', manager: true, email: 'm3@t.com', isActive: true }
+  assert.deepEqual(R112.payProfileReadPlan(m3 as never, subjects as never, [...roster, m3] as never), { kind: 'documents', ids: ['m3'] })
+  assert.deepEqual(R112.rateHistoryQueryPlan(m3 as never, subjects as never, [...roster, m3] as never, { privatePay: true }), { kind: 'people', userIds: ['m3'], operativeIds: [] })
+  // An inactive line manager no longer counts (the roster is read live).
+  const lmGone = roster.map((row) => (row.id === 'lm' ? { ...row, isActive: false } : row))
+  assert.deepEqual(R112.payProfileReadPlan(lm as never, subjects as never, lmGone as never), { kind: 'documents', ids: ['lm'] })
+})
+
+test('1.33.0 canManageMaterialCatalogue: admins and super admins outside operative mode only', () => {
+  const role = (over: Partial<{ isSuperAdmin: boolean; isAdmin: boolean; isManager: boolean; isOperativeMode: boolean }>) => ({ isSuperAdmin: false, isAdmin: false, isManager: false, isOperativeMode: false, ...over })
+  assert.equal(R112.canManageMaterialCatalogue(role({ isAdmin: true })), true)
+  assert.equal(R112.canManageMaterialCatalogue(role({ isSuperAdmin: true })), true)
+  assert.equal(R112.canManageMaterialCatalogue(role({ isManager: true })), false, 'managers no longer manage the catalogue')
+  assert.equal(R112.canManageMaterialCatalogue(role({ isOperativeMode: true })), false)
+  assert.equal(R112.canManageMaterialCatalogue(role({ isAdmin: true, isOperativeMode: true })), false)
+  assert.equal(R112.canManageMaterialCatalogue({ level: 'admin' }), true)
+  assert.equal(R112.canManageMaterialCatalogue({ level: 'Manager' }), false)
+  assert.equal(R112.canManageMaterialCatalogue({ level: 'operative' }), false)
+  assert.equal(R112.canManageMaterialCatalogue(null), false)
+  // Sending quotes and orders is unchanged.
+  assert.equal(R112.canSendMaterialOrders(role({ isManager: true })), true)
+})
+
+test('1.33.0 userActiveWrites: another company\'s users document is never written, and no membership is created', () => {
+  const roster = [
+    { id: 'U', email: 'u@x', organizationId: 'OTHER' },
+    { id: 'u-here', email: 'U@x', organizationId: 'ORG' },
+    { id: 'u-b', email: 'u@x', organizationId: 'OTHER' },
+  ]
+  const fromRoster = R112.userActiveWrites({ organizationId: 'ORG', person: { id: 'U', email: 'u@x' }, isActive: false, roster })
+  assert.deepEqual(fromRoster.map((row) => row.path), ['users/u-here', 'users/U/orgMemberships/ORG'], 'home company from the roster row')
+  const fromPerson = R112.userActiveWrites({ organizationId: 'ORG', person: { id: 'U', email: 'u@x', organizationId: 'organizations/OTHER' }, isActive: true, roster: [] })
+  assert.deepEqual(fromPerson.map((row) => row.path), ['users/U/orgMemberships/ORG'])
+  assert.deepEqual(fromPerson[0].fields, { accountActive: true })
+  const here = R112.userActiveWrites({ organizationId: 'ORG', person: { id: 'U', email: 'u@x', organizationId: 'org' }, isActive: false, roster: [], membershipExists: false })
+  assert.deepEqual(here.map((row) => row.path), ['users/U'], 'membershipExists false: no membership write')
+  const unknown = R112.userActiveWrites({ organizationId: 'ORG', person: { id: 'U' }, isActive: false })
+  assert.deepEqual(unknown.map((row) => row.path), ['users/U', 'users/U/orgMemberships/ORG'], 'home company unknown: as before')
+})
+
+test('1.33.0 unbooked labour: an inactive account is never picked for an operatives row on its email', () => {
+  const base = {
+    timeZone: 'Europe/London',
+    startDayKey: '2026-11-04',
+    endDayKey: '2026-11-04',
+    includeWeekends: false,
+    standardPaidHours: 8,
+    bookings: [],
+    holidays: [],
+    operatives: [{ id: 'OP-ADA', email: 'ada@site.test', name: 'Roster Ada', isActive: true, isPlaceholder: false, profileWeight: 0 }],
+  }
+  const person = (id: string, isActive: boolean) => ({ id, email: 'Ada@site.test', name: `Ada ${id}`, isActive, passwordSet: true, status: 'active', isOperativeMode: true, isManager: false, isAdmin: false, isSuperAdmin: false })
+  const inactiveOnly = R112.unbookedLabourRows({ ...base, people: [person('U-OLD', false)] })
+  assert.deepEqual(inactiveOnly, [], 'an inactive person never shows as unbooked through their operatives row')
+  const both = R112.unbookedLabourRows({ ...base, people: [person('U-OLD', false), person('U-NEW', true)] })
+  assert.deepEqual(both.map((row) => row.personKey), ['U-NEW'])
 })
