@@ -45,6 +45,8 @@ const { createAdminEraserStore, eraseDueOrganizations } = require('./organizatio
 const { createSendEmailHandler, resendSender } = require('./email/handler')
 const { createFirestoreReader } = require('./email/firestoreReader')
 const { consumeRateLimit } = require('./email/rateLimit')
+const { FieldPath, FieldValue } = require('firebase-admin/firestore')
+const { createAuthClaimsSync, createAdminAuthClaimsStore } = require('./authClaims')
 
 initializeApp()
 
@@ -269,5 +271,60 @@ exports.eraseDeletedOrganizations = onSchedule(
       logger,
     })
     logger.info('eraseDeletedOrganizations', { erased: report.map((row) => row.orgId) })
+  }
+)
+
+/**
+ * Rulebook 1.32.4 §16: the security rules read a person's role and company facts from their Auth custom claims (`pp`,
+ * `authClaimsForPerson`). These triggers recompute them whenever what they are made of changes — the person's users
+ * document (only the fields in `AUTH_CLAIMS_USER_FIELDS`, or creation / deletion), one of their memberships, or an
+ * organisation's `members` map / `creatorUserId` — set them only when they changed, revoke refresh tokens when access
+ * was taken away, and write the marker `users/{uid}/private/authClaims` that the apps listen to (authClaims.js).
+ * Deploy: `firebase deploy --only functions:authClaimsOnUserWrite,functions:authClaimsOnMembershipWrite,functions:authClaimsOnOrganizationWrite`
+ * (docs/scripts/backfill-auth-claims.md).
+ */
+let authClaimsSync = null
+function claimsSync() {
+  if (authClaimsSync) return authClaimsSync
+  authClaimsSync = createAuthClaimsSync({
+    store: createAdminAuthClaimsStore(getFirestore(), { FieldPath, FieldValue }),
+    auth: getAuth(),
+    canonical,
+    logger,
+  })
+  return authClaimsSync
+}
+
+function eventDocData(snapshot) {
+  return snapshot && snapshot.exists ? snapshot.data() : null
+}
+
+exports.authClaimsOnUserWrite = onDocumentWritten(
+  { document: 'users/{uid}', region: 'us-central1' },
+  async (event) => {
+    const before = eventDocData(event.data && event.data.before)
+    const after = eventDocData(event.data && event.data.after)
+    if (!canonical.authClaimsUserInputsChanged(before, after)) return
+    const result = await claimsSync().syncPerson(event.params.uid)
+    if (result.changed) logger.info('auth claims updated', { uid: result.uid, revoked: result.revoked, source: 'user' })
+  }
+)
+
+exports.authClaimsOnMembershipWrite = onDocumentWritten(
+  { document: 'users/{uid}/orgMemberships/{orgId}', region: 'us-central1' },
+  async (event) => {
+    const result = await claimsSync().syncPerson(event.params.uid)
+    if (result.changed) logger.info('auth claims updated', { uid: result.uid, revoked: result.revoked, source: 'membership' })
+  }
+)
+
+exports.authClaimsOnOrganizationWrite = onDocumentWritten(
+  { document: 'organizations/{orgId}', region: 'us-central1' },
+  async (event) => {
+    const before = eventDocData(event.data && event.data.before)
+    const after = eventDocData(event.data && event.data.after)
+    const report = await claimsSync().syncOrganizationChange(before, after)
+    const changed = report.filter((row) => row.changed).map((row) => row.uid)
+    if (changed.length > 0) logger.info('auth claims updated', { orgId: event.params.orgId, changed, source: 'organization' })
   }
 )

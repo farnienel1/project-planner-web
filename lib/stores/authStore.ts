@@ -84,6 +84,7 @@ import {
 import { waitForAuthToken } from '@/lib/firebase/waitForAuthToken'
 import { MISSING_USER_PROFILE_MESSAGE } from '@/lib/auth/missingProfile'
 import { activeOrganizationIdentity, setActiveOrganizationIdentity } from '@/lib/staff/activeOrganizationIdentity'
+import { AUTH_CLAIMS_REFRESHED_EVENT, watchAuthClaims } from '@/lib/auth/authClaimsRefresh'
 
 interface AuthState {
   user: User | null
@@ -725,7 +726,18 @@ export const useAuthStore = create<AuthState>((set) => {
     const auth = getFirebaseAuth()
     void auth.authStateReady().catch(() => undefined)
 
+    // Rulebook 1.32.4 §16: new auth claims (role or company change) — reload the open organisation's data with them.
+    window.addEventListener(AUTH_CLAIMS_REFRESHED_EVENT, () => {
+      const orgId = currentOrganizationId()
+      if (!orgId) return
+      void import('@/lib/stores/refreshOrgData')
+        .then(({ refreshAllOrgData }) => refreshAllOrgData(orgId))
+        .catch(() => undefined)
+    })
+
     onAuthStateChanged(auth, async (firebaseUser) => {
+      // Rulebook 1.32.4 §16: follow the auth-claims marker of whoever is signed in (stops on sign-out).
+      watchAuthClaims(firebaseUser)
       if (signingIn) {
         if (firebaseUser) {
           useAuthStore.setState({ firebaseUser, loading: true })

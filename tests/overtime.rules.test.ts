@@ -15,6 +15,7 @@ import {
   type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing'
 import { assertFails, assertLogicalDeny } from './rulesAssert.ts'
+import { claimsContext } from './authClaimsContext.ts'
 import { collection, deleteDoc, deleteField, doc, getDoc, getDocs, query, serverTimestamp, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -32,11 +33,12 @@ const ADMIN_B = 'ot-admin-b'
 
 let env: RulesTestEnvironment
 
-function db(uid: string) {
-  return env.authenticatedContext(uid, { email: `${uid}@test.com` }).firestore()
+/** Rulebook 1.32.4: the caller's token carries the auth claims of the seeded data (`tests/authClaimsContext.ts`). */
+async function db(uid: string) {
+  return (await claimsContext(env, uid, { email: `${uid}@test.com` })).firestore()
 }
-function orgDoc(uid: string, ...segments: string[]) {
-  return doc(db(uid), 'organizations', ORG, ...segments)
+async function orgDoc(uid: string, ...segments: string[]) {
+  return doc(await db(uid), 'organizations', ORG, ...segments)
 }
 
 const LINE = { bookingId: 'B1', collection: 'bookings', dayKey: '2026-11-04', fingerprint: 'fp', action: 'keep', cancel: false }
@@ -117,7 +119,7 @@ async function seed() {
 test.before(async () => {
   env = await initializeTestEnvironment({
     projectId: 'demo-project-planner-overtime',
-    firestore: { rules, host: '127.0.0.1', port: Number(process.env.FIRESTORE_EMULATOR_HOST?.split(':')[1] || 8080) },
+    firestore: { rules, host: '127.0.0.1', port: Number(process.env.RULES_PORT || 8080) },
   })
 })
 
@@ -133,68 +135,68 @@ test.after(async () => {
 // MARK: - Bookings: the line manager applies an approved request (overtime fields only)
 
 test('line manager changes their report\'s booking times and overtime rate', async () => {
-  await assertSucceeds(updateDoc(orgDoc(LM, 'bookings', 'B1'), { workStartTime: '07:30', workEndTime: '15:00', otMultiplierOverride: 2, timeSlot: 'CUSTOM_HOURS' }))
+  await assertSucceeds(updateDoc(await orgDoc(LM, 'bookings', 'B1'), { workStartTime: '07:30', workEndTime: '15:00', otMultiplierOverride: 2, timeSlot: 'CUSTOM_HOURS' }))
 })
 
 test('line manager cancels their report\'s booking and removes a custom rate', async () => {
-  await assertSucceeds(updateDoc(orgDoc(LM, 'bookings', 'B1'), { status: 'Cancelled' }))
+  await assertSucceeds(updateDoc(await orgDoc(LM, 'bookings', 'B1'), { status: 'Cancelled' }))
   await env.withSecurityRulesDisabled(async (ctx) => {
     await updateDoc(doc(ctx.firestore(), 'organizations', ORG, 'bookings', 'B1'), { otMultiplierOverride: 2 })
   })
-  await assertSucceeds(updateDoc(orgDoc(LM, 'bookings', 'B1'), { otMultiplierOverride: deleteField() }))
+  await assertSucceeds(updateDoc(await orgDoc(LM, 'bookings', 'B1'), { otMultiplierOverride: deleteField() }))
 })
 
 test('line manager may not change any other booking field or status', async () => {
-  await assertFails(updateDoc(orgDoc(LM, 'bookings', 'B1'), { notes: 'changed' }))
-  await assertFails(updateDoc(orgDoc(LM, 'bookings', 'B1'), { projectId: 'job2' }))
-  await assertFails(updateDoc(orgDoc(LM, 'bookings', 'B1'), { status: 'Tentative' }))
-  await assertFails(updateDoc(orgDoc(LM, 'bookings', 'B1'), { operativeId: LM }))
+  await assertFails(updateDoc(await orgDoc(LM, 'bookings', 'B1'), { notes: 'changed' }))
+  await assertFails(updateDoc(await orgDoc(LM, 'bookings', 'B1'), { projectId: 'job2' }))
+  await assertFails(updateDoc(await orgDoc(LM, 'bookings', 'B1'), { status: 'Tentative' }))
+  await assertFails(updateDoc(await orgDoc(LM, 'bookings', 'B1'), { operativeId: LM }))
 })
 
 test('line manager may only set an overtime rate of 1–3 in 0.25 steps', async () => {
-  await assertFails(updateDoc(orgDoc(LM, 'bookings', 'B1'), { otMultiplierOverride: 3.5 }))
-  await assertFails(updateDoc(orgDoc(LM, 'bookings', 'B1'), { otMultiplierOverride: 1.1 }))
-  await assertFails(updateDoc(orgDoc(LM, 'bookings', 'B1'), { otMultiplierOverride: 0.75 }))
-  await assertSucceeds(updateDoc(orgDoc(LM, 'bookings', 'B1'), { otMultiplierOverride: 1.25 }))
-  await assertSucceeds(updateDoc(orgDoc(LM, 'bookings', 'B1'), { otMultiplierOverride: 3 }))
+  await assertFails(updateDoc(await orgDoc(LM, 'bookings', 'B1'), { otMultiplierOverride: 3.5 }))
+  await assertFails(updateDoc(await orgDoc(LM, 'bookings', 'B1'), { otMultiplierOverride: 1.1 }))
+  await assertFails(updateDoc(await orgDoc(LM, 'bookings', 'B1'), { otMultiplierOverride: 0.75 }))
+  await assertSucceeds(updateDoc(await orgDoc(LM, 'bookings', 'B1'), { otMultiplierOverride: 1.25 }))
+  await assertSucceeds(updateDoc(await orgDoc(LM, 'bookings', 'B1'), { otMultiplierOverride: 3 }))
 })
 
 test('a manager who is not the line manager or the job manager cannot change the booking', async () => {
-  await assertFails(updateDoc(orgDoc(MGR2, 'bookings', 'B1'), { workStartTime: '07:30' }))
+  await assertFails(updateDoc(await orgDoc(MGR2, 'bookings', 'B1'), { workStartTime: '07:30' }))
 })
 
 test('an operative never writes a booking, not even their own', async () => {
-  await assertFails(updateDoc(orgDoc(SAM, 'bookings', 'B1'), { workStartTime: '07:30' }))
-  await assertFails(updateDoc(orgDoc(SAM, 'bookings', 'B1'), { status: 'Cancelled' }))
+  await assertFails(updateDoc(await orgDoc(SAM, 'bookings', 'B1'), { workStartTime: '07:30' }))
+  await assertFails(updateDoc(await orgDoc(SAM, 'bookings', 'B1'), { status: 'Cancelled' }))
 })
 
 test('admins keep writing every booking field', async () => {
-  await assertSucceeds(updateDoc(orgDoc(ADMIN, 'bookings', 'B1'), { notes: 'admin note', otMultiplierOverride: 2 }))
+  await assertSucceeds(updateDoc(await orgDoc(ADMIN, 'bookings', 'B1'), { notes: 'admin note', otMultiplierOverride: 2 }))
 })
 
 test('a PAYE manager changes their own booking only where they manage the job; their line manager may change it', async () => {
-  await assertFails(updateDoc(orgDoc(PM, 'bookings', 'B2'), { workStartTime: '07:30' }))
-  await assertSucceeds(updateDoc(orgDoc(PM, 'bookings', 'B3'), { workStartTime: '07:30' }))
-  await assertSucceeds(updateDoc(orgDoc(LM, 'bookings', 'B2'), { workStartTime: '07:30' }))
+  await assertFails(updateDoc(await orgDoc(PM, 'bookings', 'B2'), { workStartTime: '07:30' }))
+  await assertSucceeds(updateDoc(await orgDoc(PM, 'bookings', 'B3'), { workStartTime: '07:30' }))
+  await assertSucceeds(updateDoc(await orgDoc(LM, 'bookings', 'B2'), { workStartTime: '07:30' }))
 })
 
 test('the line manager rule also covers manager site bookings', async () => {
-  await assertSucceeds(updateDoc(orgDoc(LM, 'managerSiteBookings', 'M1'), { workEndTime: '16:00' }))
-  await assertFails(updateDoc(orgDoc(LM, 'managerSiteBookings', 'M1'), { locationType: 'project' }))
-  await assertFails(updateDoc(orgDoc(MGR2, 'managerSiteBookings', 'M1'), { workEndTime: '16:00' }))
+  await assertSucceeds(updateDoc(await orgDoc(LM, 'managerSiteBookings', 'M1'), { workEndTime: '16:00' }))
+  await assertFails(updateDoc(await orgDoc(LM, 'managerSiteBookings', 'M1'), { locationType: 'project' }))
+  await assertFails(updateDoc(await orgDoc(MGR2, 'managerSiteBookings', 'M1'), { workEndTime: '16:00' }))
 })
 
 test('an admin of another company is no line manager here', async () => {
-  await assertFails(updateDoc(doc(db(ADMIN_B), 'organizations', ORG, 'bookings', 'B1'), { workStartTime: '07:30' }))
+  await assertFails(updateDoc(doc(await db(ADMIN_B), 'organizations', ORG, 'bookings', 'B1'), { workStartTime: '07:30' }))
 })
 
 test('a booking under an operatives row on ANOTHER email is never written through the line-manager path (admins and job managers only)', async () => {
   // row-sam's email is other@test.com, which names no account: 1.33.0's row path (the row's email → userEmails → the
   // users document's line managers) does not match, so only the job's manager and admins write it.
-  await assertFails(updateDoc(orgDoc(LM, 'bookings', 'BR1'), { workStartTime: '07:30' }))
-  await assertFails(updateDoc(orgDoc(LM, 'bookings', 'BR1'), { status: 'Cancelled' }))
-  await assertSucceeds(updateDoc(orgDoc(PM, 'bookings', 'BR1'), { workStartTime: '07:30' }))
-  await assertSucceeds(updateDoc(orgDoc(ADMIN, 'bookings', 'BR1'), { status: 'Cancelled' }))
+  await assertFails(updateDoc(await orgDoc(LM, 'bookings', 'BR1'), { workStartTime: '07:30' }))
+  await assertFails(updateDoc(await orgDoc(LM, 'bookings', 'BR1'), { status: 'Cancelled' }))
+  await assertSucceeds(updateDoc(await orgDoc(PM, 'bookings', 'BR1'), { workStartTime: '07:30' }))
+  await assertSucceeds(updateDoc(await orgDoc(ADMIN, 'bookings', 'BR1'), { status: 'Cancelled' }))
 })
 
 test('relink attack: re-pointing an operatives row at a report never grants a booking write', async () => {
@@ -209,73 +211,73 @@ test('relink attack: re-pointing an operatives row at a report never grants a bo
   })
   // Rulebook 1.31.1 (S4): only an admin, or an operatives manager linking an operative they manage, changes a row's
   // account link. Before, any member could, so the booking rules below never trust the link either way.
-  await assertLogicalDeny(updateDoc(orgDoc(LM, 'operatives', 'row-x'), { linkedUserId: SAM }))
+  await assertLogicalDeny(updateDoc(await orgDoc(LM, 'operatives', 'row-x'), { linkedUserId: SAM }))
   await env.withSecurityRulesDisabled(async (ctx) => {
     await updateDoc(doc(ctx.firestore(), 'organizations', ORG, 'operatives', 'row-x'), { linkedUserId: SAM })
   })
-  await assertFails(updateDoc(orgDoc(LM, 'bookings', 'BX'), { status: 'Cancelled' }))
-  await assertFails(updateDoc(orgDoc(LM, 'bookings', 'BX'), { workStartTime: '07:30' }))
+  await assertFails(updateDoc(await orgDoc(LM, 'bookings', 'BX'), { status: 'Cancelled' }))
+  await assertFails(updateDoc(await orgDoc(LM, 'bookings', 'BX'), { workStartTime: '07:30' }))
   // Even an operative relinking the row gains nothing.
-  await assertFails(updateDoc(orgDoc(OP2, 'bookings', 'BX'), { status: 'Cancelled' }))
+  await assertFails(updateDoc(await orgDoc(OP2, 'bookings', 'BX'), { status: 'Cancelled' }))
 })
 
 test('line manager booking writes: clock times are short text and the slot is a known one', async () => {
-  await assertFails(updateDoc(orgDoc(LM, 'bookings', 'B1'), { workStartTime: 730 }))
-  await assertFails(updateDoc(orgDoc(LM, 'bookings', 'B1'), { workEndTime: 'x'.repeat(40) }))
-  await assertFails(updateDoc(orgDoc(LM, 'bookings', 'B1'), { timeSlot: 'WHATEVER' }))
-  await assertSucceeds(updateDoc(orgDoc(LM, 'bookings', 'B1'), { timeSlot: 'CUSTOM_HOURS', workStartTime: '07:30', workEndTime: '15:00' }))
+  await assertFails(updateDoc(await orgDoc(LM, 'bookings', 'B1'), { workStartTime: 730 }))
+  await assertFails(updateDoc(await orgDoc(LM, 'bookings', 'B1'), { workEndTime: 'x'.repeat(40) }))
+  await assertFails(updateDoc(await orgDoc(LM, 'bookings', 'B1'), { timeSlot: 'WHATEVER' }))
+  await assertSucceeds(updateDoc(await orgDoc(LM, 'bookings', 'B1'), { timeSlot: 'CUSTOM_HOURS', workStartTime: '07:30', workEndTime: '15:00' }))
 })
 
 test('1.33.0 reads: with enforced reads every manager (a line manager who does not manage the job included) reads the booking', async () => {
   // 1.33.0 (owner decision 6 Nov): every manager reads every job and booking, so the 1.29.0 known limit is gone.
-  await assertSucceeds(getDoc(orgDoc(LM, 'bookings', 'B1')))
-  await assertFails(getDoc(orgDoc(OP2, 'bookings', 'B1')))
-  await assertSucceeds(getDoc(orgDoc(PM, 'bookings', 'B1')))
-  await assertSucceeds(getDoc(orgDoc(ADMIN, 'bookings', 'B1')))
+  await assertSucceeds(getDoc(await orgDoc(LM, 'bookings', 'B1')))
+  await assertFails(getDoc(await orgDoc(OP2, 'bookings', 'B1')))
+  await assertSucceeds(getDoc(await orgDoc(PM, 'bookings', 'B1')))
+  await assertSucceeds(getDoc(await orgDoc(ADMIN, 'bookings', 'B1')))
 })
 
 // MARK: - overtimeRequests
 
 test('the person sends their own pending request; never for someone else or already approved', async () => {
-  await assertSucceeds(setDoc(orgDoc(SAM, 'overtimeRequests', 'R1'), requestData(SAM)))
-  await assertFails(setDoc(orgDoc(SAM, 'overtimeRequests', 'R2'), requestData(PM)))
-  await assertFails(setDoc(orgDoc(SAM, 'overtimeRequests', 'R3'), requestData(SAM, { status: 'approved' })))
-  await assertFails(setDoc(orgDoc(SAM, 'overtimeRequests', 'R4'), requestData(SAM, { lines: [] })))
-  await assertFails(setDoc(orgDoc(SAM, 'overtimeRequests', 'R5'), requestData(SAM, { decidedBy: SAM })))
-  await assertFails(setDoc(doc(db(ADMIN_B), 'organizations', ORG, 'overtimeRequests', 'R6'), requestData(ADMIN_B)))
+  await assertSucceeds(setDoc(await orgDoc(SAM, 'overtimeRequests', 'R1'), requestData(SAM)))
+  await assertFails(setDoc(await orgDoc(SAM, 'overtimeRequests', 'R2'), requestData(PM)))
+  await assertFails(setDoc(await orgDoc(SAM, 'overtimeRequests', 'R3'), requestData(SAM, { status: 'approved' })))
+  await assertFails(setDoc(await orgDoc(SAM, 'overtimeRequests', 'R4'), requestData(SAM, { lines: [] })))
+  await assertFails(setDoc(await orgDoc(SAM, 'overtimeRequests', 'R5'), requestData(SAM, { decidedBy: SAM })))
+  await assertFails(setDoc(doc(await db(ADMIN_B), 'organizations', ORG, 'overtimeRequests', 'R6'), requestData(ADMIN_B)))
 })
 
 test('requests are read by the person, their line managers and admins only', async () => {
-  await assertSucceeds(setDoc(orgDoc(SAM, 'overtimeRequests', 'R1'), requestData(SAM)))
-  await assertSucceeds(getDoc(orgDoc(SAM, 'overtimeRequests', 'R1')))
-  await assertSucceeds(getDoc(orgDoc(LM, 'overtimeRequests', 'R1')))
-  await assertSucceeds(getDoc(orgDoc(ADMIN, 'overtimeRequests', 'R1')))
-  await assertFails(getDoc(orgDoc(MGR2, 'overtimeRequests', 'R1')))
-  await assertFails(getDoc(orgDoc(OP2, 'overtimeRequests', 'R1')))
-  await assertFails(getDoc(doc(db(ADMIN_B), 'organizations', ORG, 'overtimeRequests', 'R1')))
-  await assertSucceeds(getDocs(query(collection(db(SAM), 'organizations', ORG, 'overtimeRequests'), where('userId', '==', SAM))))
-  await assertSucceeds(getDocs(query(collection(db(LM), 'organizations', ORG, 'overtimeRequests'), where('userId', '==', SAM))))
-  await assertSucceeds(getDocs(collection(db(ADMIN), 'organizations', ORG, 'overtimeRequests')))
-  await assertFails(getDocs(collection(db(LM), 'organizations', ORG, 'overtimeRequests')))
+  await assertSucceeds(setDoc(await orgDoc(SAM, 'overtimeRequests', 'R1'), requestData(SAM)))
+  await assertSucceeds(getDoc(await orgDoc(SAM, 'overtimeRequests', 'R1')))
+  await assertSucceeds(getDoc(await orgDoc(LM, 'overtimeRequests', 'R1')))
+  await assertSucceeds(getDoc(await orgDoc(ADMIN, 'overtimeRequests', 'R1')))
+  await assertFails(getDoc(await orgDoc(MGR2, 'overtimeRequests', 'R1')))
+  await assertFails(getDoc(await orgDoc(OP2, 'overtimeRequests', 'R1')))
+  await assertFails(getDoc(doc(await db(ADMIN_B), 'organizations', ORG, 'overtimeRequests', 'R1')))
+  await assertSucceeds(getDocs(query(collection(await db(SAM), 'organizations', ORG, 'overtimeRequests'), where('userId', '==', SAM))))
+  await assertSucceeds(getDocs(query(collection(await db(LM), 'organizations', ORG, 'overtimeRequests'), where('userId', '==', SAM))))
+  await assertSucceeds(getDocs(collection(await db(ADMIN), 'organizations', ORG, 'overtimeRequests')))
+  await assertFails(getDocs(collection(await db(LM), 'organizations', ORG, 'overtimeRequests')))
 })
 
 test('the person withdraws their own pending request but never approves it', async () => {
-  await assertSucceeds(setDoc(orgDoc(SAM, 'overtimeRequests', 'R1'), requestData(SAM)))
-  await assertFails(updateDoc(orgDoc(SAM, 'overtimeRequests', 'R1'), { status: 'approved', decidedBy: SAM }))
-  await assertFails(updateDoc(orgDoc(SAM, 'overtimeRequests', 'R1'), { lines: [] }))
-  await assertSucceeds(updateDoc(orgDoc(SAM, 'overtimeRequests', 'R1'), { status: 'withdrawn' }))
+  await assertSucceeds(setDoc(await orgDoc(SAM, 'overtimeRequests', 'R1'), requestData(SAM)))
+  await assertFails(updateDoc(await orgDoc(SAM, 'overtimeRequests', 'R1'), { status: 'approved', decidedBy: SAM }))
+  await assertFails(updateDoc(await orgDoc(SAM, 'overtimeRequests', 'R1'), { lines: [] }))
+  await assertSucceeds(updateDoc(await orgDoc(SAM, 'overtimeRequests', 'R1'), { status: 'withdrawn' }))
   // Withdrawn is final.
-  await assertFails(updateDoc(orgDoc(LM, 'overtimeRequests', 'R1'), { status: 'approved', decidedBy: LM }))
+  await assertFails(updateDoc(await orgDoc(LM, 'overtimeRequests', 'R1'), { status: 'approved', decidedBy: LM }))
 })
 
 test('the line manager or an admin approves; another manager or a changed line cannot', async () => {
-  await assertSucceeds(setDoc(orgDoc(SAM, 'overtimeRequests', 'R1'), requestData(SAM)))
-  await assertFails(updateDoc(orgDoc(MGR2, 'overtimeRequests', 'R1'), { status: 'approved', decidedBy: MGR2 }))
-  await assertFails(updateDoc(orgDoc(LM, 'overtimeRequests', 'R1'), { status: 'approved', decidedBy: ADMIN }))
-  await assertFails(updateDoc(orgDoc(LM, 'overtimeRequests', 'R1'), { status: 'approved', decidedBy: LM, lines: [] }))
-  await assertFails(updateDoc(orgDoc(LM, 'overtimeRequests', 'R1'), { status: 'withdrawn' }))
+  await assertSucceeds(setDoc(await orgDoc(SAM, 'overtimeRequests', 'R1'), requestData(SAM)))
+  await assertFails(updateDoc(await orgDoc(MGR2, 'overtimeRequests', 'R1'), { status: 'approved', decidedBy: MGR2 }))
+  await assertFails(updateDoc(await orgDoc(LM, 'overtimeRequests', 'R1'), { status: 'approved', decidedBy: ADMIN }))
+  await assertFails(updateDoc(await orgDoc(LM, 'overtimeRequests', 'R1'), { status: 'approved', decidedBy: LM, lines: [] }))
+  await assertFails(updateDoc(await orgDoc(LM, 'overtimeRequests', 'R1'), { status: 'withdrawn' }))
   await assertSucceeds(
-    updateDoc(orgDoc(LM, 'overtimeRequests', 'R1'), {
+    updateDoc(await orgDoc(LM, 'overtimeRequests', 'R1'), {
       status: 'approved',
       decidedBy: LM,
       decisions: { B1: { action: 'approve' } },
@@ -283,75 +285,75 @@ test('the line manager or an admin approves; another manager or a changed line c
       droppedBookingIds: [],
     })
   )
-  await assertSucceeds(setDoc(orgDoc(SAM, 'overtimeRequests', 'R2'), requestData(SAM)))
-  await assertSucceeds(updateDoc(orgDoc(ADMIN, 'overtimeRequests', 'R2'), { status: 'approved', decidedBy: ADMIN }))
+  await assertSucceeds(setDoc(await orgDoc(SAM, 'overtimeRequests', 'R2'), requestData(SAM)))
+  await assertSucceeds(updateDoc(await orgDoc(ADMIN, 'overtimeRequests', 'R2'), { status: 'approved', decidedBy: ADMIN }))
 })
 
 test('nobody approves their own request, admins included', async () => {
-  await assertSucceeds(setDoc(orgDoc(ADMIN, 'overtimeRequests', 'RA'), requestData(ADMIN)))
-  await assertFails(updateDoc(orgDoc(ADMIN, 'overtimeRequests', 'RA'), { status: 'approved', decidedBy: ADMIN }))
+  await assertSucceeds(setDoc(await orgDoc(ADMIN, 'overtimeRequests', 'RA'), requestData(ADMIN)))
+  await assertFails(updateDoc(await orgDoc(ADMIN, 'overtimeRequests', 'RA'), { status: 'approved', decidedBy: ADMIN }))
 })
 
 test('requests are never deleted by an app', async () => {
-  await assertSucceeds(setDoc(orgDoc(SAM, 'overtimeRequests', 'R1'), requestData(SAM)))
-  await assertFails(deleteDoc(orgDoc(SAM, 'overtimeRequests', 'R1')))
-  await assertFails(deleteDoc(orgDoc(ADMIN, 'overtimeRequests', 'R1')))
+  await assertSucceeds(setDoc(await orgDoc(SAM, 'overtimeRequests', 'R1'), requestData(SAM)))
+  await assertFails(deleteDoc(await orgDoc(SAM, 'overtimeRequests', 'R1')))
+  await assertFails(deleteDoc(await orgDoc(ADMIN, 'overtimeRequests', 'R1')))
 })
 
 // MARK: - overtimeReviews
 
 test('line managers and admins write a report\'s reviews; the id is {userId}_{bookingId} and reviewedBy the writer', async () => {
-  await assertSucceeds(setDoc(orgDoc(LM, 'overtimeReviews', `${SAM}_B1`), reviewData(SAM, 'B1', LM)))
-  await assertSucceeds(setDoc(orgDoc(ADMIN, 'overtimeReviews', `${SAM}_B1`), reviewData(SAM, 'B1', ADMIN, { decision: 'trimmed' })))
-  await assertFails(setDoc(orgDoc(LM, 'overtimeReviews', 'wrong-id'), reviewData(SAM, 'B1', LM)))
-  await assertFails(setDoc(orgDoc(LM, 'overtimeReviews', `${SAM}_B1`), reviewData(SAM, 'B1', ADMIN)))
-  await assertFails(setDoc(orgDoc(LM, 'overtimeReviews', `${SAM}_B1`), reviewData(SAM, 'B1', LM, { decision: 'whatever' })))
-  await assertFails(setDoc(orgDoc(MGR2, 'overtimeReviews', `${SAM}_B1`), reviewData(SAM, 'B1', MGR2)))
+  await assertSucceeds(setDoc(await orgDoc(LM, 'overtimeReviews', `${SAM}_B1`), reviewData(SAM, 'B1', LM)))
+  await assertSucceeds(setDoc(await orgDoc(ADMIN, 'overtimeReviews', `${SAM}_B1`), reviewData(SAM, 'B1', ADMIN, { decision: 'trimmed' })))
+  await assertFails(setDoc(await orgDoc(LM, 'overtimeReviews', 'wrong-id'), reviewData(SAM, 'B1', LM)))
+  await assertFails(setDoc(await orgDoc(LM, 'overtimeReviews', `${SAM}_B1`), reviewData(SAM, 'B1', ADMIN)))
+  await assertFails(setDoc(await orgDoc(LM, 'overtimeReviews', `${SAM}_B1`), reviewData(SAM, 'B1', LM, { decision: 'whatever' })))
+  await assertFails(setDoc(await orgDoc(MGR2, 'overtimeReviews', `${SAM}_B1`), reviewData(SAM, 'B1', MGR2)))
 })
 
 test('an operative never writes their own review; a PAYE manager only for bookings they may edit', async () => {
-  await assertFails(setDoc(orgDoc(SAM, 'overtimeReviews', `${SAM}_B1`), reviewData(SAM, 'B1', SAM)))
-  await assertSucceeds(setDoc(orgDoc(PM, 'overtimeReviews', `${PM}_B3`), reviewData(PM, 'B3', PM)))
-  await assertFails(setDoc(orgDoc(PM, 'overtimeReviews', `${PM}_B2`), reviewData(PM, 'B2', PM)))
-  await assertSucceeds(setDoc(orgDoc(ADMIN, 'overtimeReviews', `${ADMIN}_B4`), reviewData(ADMIN, 'B4', ADMIN)))
+  await assertFails(setDoc(await orgDoc(SAM, 'overtimeReviews', `${SAM}_B1`), reviewData(SAM, 'B1', SAM)))
+  await assertSucceeds(setDoc(await orgDoc(PM, 'overtimeReviews', `${PM}_B3`), reviewData(PM, 'B3', PM)))
+  await assertFails(setDoc(await orgDoc(PM, 'overtimeReviews', `${PM}_B2`), reviewData(PM, 'B2', PM)))
+  await assertSucceeds(setDoc(await orgDoc(ADMIN, 'overtimeReviews', `${ADMIN}_B4`), reviewData(ADMIN, 'B4', ADMIN)))
 })
 
 test('reviews are read by the person, their line managers and admins only; deleted by admins only', async () => {
-  await assertSucceeds(setDoc(orgDoc(LM, 'overtimeReviews', `${SAM}_B1`), reviewData(SAM, 'B1', LM)))
-  await assertSucceeds(getDoc(orgDoc(SAM, 'overtimeReviews', `${SAM}_B1`)))
-  await assertSucceeds(getDoc(orgDoc(LM, 'overtimeReviews', `${SAM}_B1`)))
-  await assertFails(getDoc(orgDoc(MGR2, 'overtimeReviews', `${SAM}_B1`)))
-  await assertFails(getDoc(orgDoc(OP2, 'overtimeReviews', `${SAM}_B1`)))
-  await assertFails(deleteDoc(orgDoc(LM, 'overtimeReviews', `${SAM}_B1`)))
-  await assertSucceeds(deleteDoc(orgDoc(ADMIN, 'overtimeReviews', `${SAM}_B1`)))
+  await assertSucceeds(setDoc(await orgDoc(LM, 'overtimeReviews', `${SAM}_B1`), reviewData(SAM, 'B1', LM)))
+  await assertSucceeds(getDoc(await orgDoc(SAM, 'overtimeReviews', `${SAM}_B1`)))
+  await assertSucceeds(getDoc(await orgDoc(LM, 'overtimeReviews', `${SAM}_B1`)))
+  await assertFails(getDoc(await orgDoc(MGR2, 'overtimeReviews', `${SAM}_B1`)))
+  await assertFails(getDoc(await orgDoc(OP2, 'overtimeReviews', `${SAM}_B1`)))
+  await assertFails(deleteDoc(await orgDoc(LM, 'overtimeReviews', `${SAM}_B1`)))
+  await assertSucceeds(deleteDoc(await orgDoc(ADMIN, 'overtimeReviews', `${SAM}_B1`)))
 })
 
 // MARK: - overtimeReports
 
 test('the person saves their own report once; it is never changed or deleted', async () => {
-  await assertSucceeds(setDoc(orgDoc(SAM, 'overtimeReports', 'REP1'), reportData(SAM)))
-  await assertFails(setDoc(orgDoc(SAM, 'overtimeReports', 'REP2'), reportData(PM)))
-  await assertFails(setDoc(orgDoc(LM, 'overtimeReports', 'REP3'), reportData(SAM, { generatedBy: LM })))
-  await assertFails(setDoc(orgDoc(SAM, 'overtimeReports', 'REP4'), reportData(SAM, { kind: 'expenses' })))
-  await assertFails(updateDoc(orgDoc(SAM, 'overtimeReports', 'REP1'), { userName: 'Changed' }))
-  await assertFails(deleteDoc(orgDoc(SAM, 'overtimeReports', 'REP1')))
-  await assertFails(deleteDoc(orgDoc(ADMIN, 'overtimeReports', 'REP1')))
+  await assertSucceeds(setDoc(await orgDoc(SAM, 'overtimeReports', 'REP1'), reportData(SAM)))
+  await assertFails(setDoc(await orgDoc(SAM, 'overtimeReports', 'REP2'), reportData(PM)))
+  await assertFails(setDoc(await orgDoc(LM, 'overtimeReports', 'REP3'), reportData(SAM, { generatedBy: LM })))
+  await assertFails(setDoc(await orgDoc(SAM, 'overtimeReports', 'REP4'), reportData(SAM, { kind: 'expenses' })))
+  await assertFails(updateDoc(await orgDoc(SAM, 'overtimeReports', 'REP1'), { userName: 'Changed' }))
+  await assertFails(deleteDoc(await orgDoc(SAM, 'overtimeReports', 'REP1')))
+  await assertFails(deleteDoc(await orgDoc(ADMIN, 'overtimeReports', 'REP1')))
 })
 
 test('reports are read by the person, their line managers and admins only', async () => {
-  await assertSucceeds(setDoc(orgDoc(SAM, 'overtimeReports', 'REP1'), reportData(SAM)))
-  await assertSucceeds(getDoc(orgDoc(SAM, 'overtimeReports', 'REP1')))
-  await assertSucceeds(getDoc(orgDoc(LM, 'overtimeReports', 'REP1')))
-  await assertSucceeds(getDoc(orgDoc(ADMIN, 'overtimeReports', 'REP1')))
-  await assertFails(getDoc(orgDoc(MGR2, 'overtimeReports', 'REP1')))
-  await assertFails(getDoc(orgDoc(OP2, 'overtimeReports', 'REP1')))
-  await assertSucceeds(getDocs(query(collection(db(SAM), 'organizations', ORG, 'overtimeReports'), where('userId', '==', SAM))))
+  await assertSucceeds(setDoc(await orgDoc(SAM, 'overtimeReports', 'REP1'), reportData(SAM)))
+  await assertSucceeds(getDoc(await orgDoc(SAM, 'overtimeReports', 'REP1')))
+  await assertSucceeds(getDoc(await orgDoc(LM, 'overtimeReports', 'REP1')))
+  await assertSucceeds(getDoc(await orgDoc(ADMIN, 'overtimeReports', 'REP1')))
+  await assertFails(getDoc(await orgDoc(MGR2, 'overtimeReports', 'REP1')))
+  await assertFails(getDoc(await orgDoc(OP2, 'overtimeReports', 'REP1')))
+  await assertSucceeds(getDocs(query(collection(await db(SAM), 'organizations', ORG, 'overtimeReports'), where('userId', '==', SAM))))
 })
 
 test('1.32.0 partial approval: the line manager records what they applied and the request stays pending for an admin', async () => {
-  await assertSucceeds(setDoc(orgDoc(SAM, 'overtimeRequests', 'RP'), requestData(SAM)))
+  await assertSucceeds(setDoc(await orgDoc(SAM, 'overtimeRequests', 'RP'), requestData(SAM)))
   await assertSucceeds(
-    updateDoc(orgDoc(LM, 'overtimeRequests', 'RP'), {
+    updateDoc(await orgDoc(LM, 'overtimeRequests', 'RP'), {
       status: 'pending',
       decidedBy: LM,
       decisions: { B1: { action: 'approve' } },
@@ -360,12 +362,12 @@ test('1.32.0 partial approval: the line manager records what they applied and th
     })
   )
   // Still only the decision fields, still never by the person or another manager.
-  await assertFails(updateDoc(orgDoc(LM, 'overtimeRequests', 'RP'), { status: 'pending', decidedBy: LM, lines: [] }))
-  await assertFails(updateDoc(orgDoc(SAM, 'overtimeRequests', 'RP'), { status: 'pending', decidedBy: SAM, appliedBookingIds: ['B1'] }))
-  await assertFails(updateDoc(orgDoc(MGR2, 'overtimeRequests', 'RP'), { status: 'pending', decidedBy: MGR2, appliedBookingIds: ['B1'] }))
+  await assertFails(updateDoc(await orgDoc(LM, 'overtimeRequests', 'RP'), { status: 'pending', decidedBy: LM, lines: [] }))
+  await assertFails(updateDoc(await orgDoc(SAM, 'overtimeRequests', 'RP'), { status: 'pending', decidedBy: SAM, appliedBookingIds: ['B1'] }))
+  await assertFails(updateDoc(await orgDoc(MGR2, 'overtimeRequests', 'RP'), { status: 'pending', decidedBy: MGR2, appliedBookingIds: ['B1'] }))
   // The admin completes it.
-  await assertSucceeds(updateDoc(orgDoc(ADMIN, 'overtimeRequests', 'RP'), { status: 'approved', decidedBy: ADMIN, appliedBookingIds: ['B1', 'B2'] }))
-  await assertFails(updateDoc(orgDoc(ADMIN, 'overtimeRequests', 'RP'), { status: 'pending', decidedBy: ADMIN }), 'approved is final')
+  await assertSucceeds(updateDoc(await orgDoc(ADMIN, 'overtimeRequests', 'RP'), { status: 'approved', decidedBy: ADMIN, appliedBookingIds: ['B1', 'B2'] }))
+  await assertFails(updateDoc(await orgDoc(ADMIN, 'overtimeRequests', 'RP'), { status: 'pending', decidedBy: ADMIN }), 'approved is final')
 })
 
 // MARK: - 1.33.0: Return (staleBookingIds / deletedBookingIds), new review decisions, every id, delete on Return
@@ -388,26 +390,26 @@ async function seed133() {
 
 test('1.33.0 every id: the line manager writes the overtime fields of a booking under the person\'s own operatives row', async () => {
   await seed133()
-  await assertSucceeds(updateDoc(orgDoc(LM, 'bookings', 'BR2'), { workStartTime: '07:30', otMultiplierOverride: 1.5 }))
+  await assertSucceeds(updateDoc(await orgDoc(LM, 'bookings', 'BR2'), { workStartTime: '07:30', otMultiplierOverride: 1.5 }))
   // Never another field, and never through a row on someone else's email or a row with no email (a ghost).
-  await assertFails(updateDoc(orgDoc(LM, 'bookings', 'BR2'), { projectId: 'job1' }))
-  await assertFails(updateDoc(orgDoc(LM, 'bookings', 'BO'), { workStartTime: '07:30' }))
-  await assertFails(updateDoc(orgDoc(LM, 'bookings', 'BG'), { workStartTime: '07:30' }))
+  await assertFails(updateDoc(await orgDoc(LM, 'bookings', 'BR2'), { projectId: 'job1' }))
+  await assertFails(updateDoc(await orgDoc(LM, 'bookings', 'BO'), { workStartTime: '07:30' }))
+  await assertFails(updateDoc(await orgDoc(LM, 'bookings', 'BG'), { workStartTime: '07:30' }))
   // A manager who is not Sam's line manager and does not manage job2 cannot; the job's manager and admins still can.
-  await assertFails(updateDoc(orgDoc(PM, 'bookings', 'BR2'), { workStartTime: '07:45' }))
-  await assertFails(updateDoc(orgDoc(OP2, 'bookings', 'BR2'), { workStartTime: '07:45' }))
-  await assertSucceeds(updateDoc(orgDoc(MGR2, 'bookings', 'BR2'), { workStartTime: '08:00' }))
-  await assertSucceeds(updateDoc(orgDoc(ADMIN, 'bookings', 'BR2'), { workStartTime: '08:15' }))
+  await assertFails(updateDoc(await orgDoc(PM, 'bookings', 'BR2'), { workStartTime: '07:45' }))
+  await assertFails(updateDoc(await orgDoc(OP2, 'bookings', 'BR2'), { workStartTime: '07:45' }))
+  await assertSucceeds(updateDoc(await orgDoc(MGR2, 'bookings', 'BR2'), { workStartTime: '08:00' }))
+  await assertSucceeds(updateDoc(await orgDoc(ADMIN, 'bookings', 'BR2'), { workStartTime: '08:15' }))
   // OP2's line manager (MGR2) reaches OP2's row; Sam's does not.
-  await assertSucceeds(updateDoc(orgDoc(MGR2, 'bookings', 'BO'), { workStartTime: '07:30' }))
+  await assertSucceeds(updateDoc(await orgDoc(MGR2, 'bookings', 'BO'), { workStartTime: '07:30' }))
 })
 
 test('1.33.0 Return: the decider writes approved with staleBookingIds and deletedBookingIds; nothing else', async () => {
-  await assertSucceeds(setDoc(orgDoc(SAM, 'overtimeRequests', 'R1'), requestData(SAM)))
-  await assertFails(updateDoc(orgDoc(LM, 'overtimeRequests', 'R1'), { status: 'approved', decidedBy: LM, staleBookingIds: [], lines: [] }))
-  await assertFails(updateDoc(orgDoc(LM, 'overtimeRequests', 'R1'), { status: 'returned', decidedBy: LM }))
+  await assertSucceeds(setDoc(await orgDoc(SAM, 'overtimeRequests', 'R1'), requestData(SAM)))
+  await assertFails(updateDoc(await orgDoc(LM, 'overtimeRequests', 'R1'), { status: 'approved', decidedBy: LM, staleBookingIds: [], lines: [] }))
+  await assertFails(updateDoc(await orgDoc(LM, 'overtimeRequests', 'R1'), { status: 'returned', decidedBy: LM }))
   await assertSucceeds(
-    updateDoc(orgDoc(LM, 'overtimeRequests', 'R1'), {
+    updateDoc(await orgDoc(LM, 'overtimeRequests', 'R1'), {
       status: 'approved',
       decidedBy: LM,
       decisions: { B1: { action: 'approve' } },
@@ -421,14 +423,14 @@ test('1.33.0 Return: the decider writes approved with staleBookingIds and delete
 
 test('1.33.0 reviews: changed, declined and deleted are decisions; anything else is refused', async () => {
   for (const decision of ['changed', 'declined', 'deleted']) {
-    await assertSucceeds(setDoc(orgDoc(LM, 'overtimeReviews', `${SAM}_B1`), reviewData(SAM, 'B1', LM, { decision, requestId: 'R1' })))
+    await assertSucceeds(setDoc(await orgDoc(LM, 'overtimeReviews', `${SAM}_B1`), reviewData(SAM, 'B1', LM, { decision, requestId: 'R1' })))
   }
-  await assertFails(setDoc(orgDoc(LM, 'overtimeReviews', `${SAM}_B1`), reviewData(SAM, 'B1', LM, { decision: 'returned' })))
-  await assertFails(setDoc(orgDoc(MGR2, 'overtimeReviews', `${SAM}_B1`), reviewData(SAM, 'B1', MGR2, { decision: 'declined' })))
+  await assertFails(setDoc(await orgDoc(LM, 'overtimeReviews', `${SAM}_B1`), reviewData(SAM, 'B1', LM, { decision: 'returned' })))
+  await assertFails(setDoc(await orgDoc(MGR2, 'overtimeReviews', `${SAM}_B1`), reviewData(SAM, 'B1', MGR2, { decision: 'declined' })))
 })
 
-function returnDelete(uid: string, bookingId: string, requestId: string, request: Record<string, unknown>, tombstone: Record<string, unknown> = {}) {
-  const d = db(uid)
+async function returnDelete(uid: string, bookingId: string, requestId: string, request: Record<string, unknown>, tombstone: Record<string, unknown> = {}) {
+  const d = await db(uid)
   const batch = writeBatch(d)
   batch.delete(doc(d, 'organizations', ORG, 'bookings', bookingId))
   batch.set(doc(d, 'organizations', ORG, 'deletedBookings', bookingId), {
@@ -442,11 +444,11 @@ function returnDelete(uid: string, bookingId: string, requestId: string, request
 
 test('1.33.0 delete on Return: the line manager deletes the one booking their returned request names, with its tombstone', async () => {
   await seed133()
-  await assertSucceeds(setDoc(orgDoc(SAM, 'overtimeRequests', 'R1'), requestData(SAM)))
+  await assertSucceeds(setDoc(await orgDoc(SAM, 'overtimeRequests', 'R1'), requestData(SAM)))
   // Not listed in deletedBookingIds, or the tombstone names no request: refused.
   await assertFails(returnDelete(LM, 'B1', 'R1', { deletedBookingIds: [] }))
   {
-    const d = db(LM)
+    const d = await db(LM)
     const batch = writeBatch(d)
     batch.delete(doc(d, 'organizations', ORG, 'bookings', 'B1'))
     batch.set(doc(d, 'organizations', ORG, 'deletedBookings', 'B1'), { bookingId: 'B1', collection: 'bookings', deletedBy: LM, deletedFrom: 'web', deletedAt: serverTimestamp() })
@@ -459,15 +461,15 @@ test('1.33.0 delete on Return: the line manager deletes the one booking their re
 
 test('1.33.0 delete on Return: never another person\'s booking, never by someone who did not decide, never a manager site booking', async () => {
   await seed133()
-  await assertSucceeds(setDoc(orgDoc(SAM, 'overtimeRequests', 'R1'), requestData(SAM)))
+  await assertSucceeds(setDoc(await orgDoc(SAM, 'overtimeRequests', 'R1'), requestData(SAM)))
   // OP2's booking (B4) is not Sam's: LM is not OP2's line manager.
   await assertFails(returnDelete(LM, 'B4', 'R1', { deletedBookingIds: ['B4'] }))
   // A manager who is not Sam's line manager cannot decide, so cannot delete.
   await assertFails(returnDelete(PM, 'B1', 'R1', { deletedBookingIds: ['B1'] }))
   // A request already decided by someone else (ADMIN) gives LM nothing.
-  await assertSucceeds(setDoc(orgDoc(SAM, 'overtimeRequests', 'R2'), requestData(SAM)))
-  await assertSucceeds(updateDoc(orgDoc(ADMIN, 'overtimeRequests', 'R2'), { status: 'approved', decidedBy: ADMIN, deletedBookingIds: ['B1'] }))
-  const d = db(LM)
+  await assertSucceeds(setDoc(await orgDoc(SAM, 'overtimeRequests', 'R2'), requestData(SAM)))
+  await assertSucceeds(updateDoc(await orgDoc(ADMIN, 'overtimeRequests', 'R2'), { status: 'approved', decidedBy: ADMIN, deletedBookingIds: ['B1'] }))
+  const d = await db(LM)
   const batch = writeBatch(d)
   batch.delete(doc(d, 'organizations', ORG, 'bookings', 'B1'))
   batch.set(doc(d, 'organizations', ORG, 'deletedBookings', 'B1'), { bookingId: 'B1', collection: 'bookings', deletedBy: LM, deletedFrom: 'web', deletedAt: serverTimestamp(), overtimeRequestId: 'R2' })
@@ -476,7 +478,7 @@ test('1.33.0 delete on Return: never another person\'s booking, never by someone
   await env.withSecurityRulesDisabled(async (ctx) => {
     await setDoc(doc(ctx.firestore(), 'organizations', ORG, 'deletedBookings', 'B3'), { bookingId: 'B3', collection: 'bookings', deletedBy: LM, deletedFrom: 'web', overtimeRequestId: 'R1' })
   })
-  await assertFails(deleteDoc(orgDoc(LM, 'bookings', 'B3')))
+  await assertFails(deleteDoc(await orgDoc(LM, 'bookings', 'B3')))
   // Manager site bookings never go through this path.
   const m = writeBatch(d)
   m.delete(doc(d, 'organizations', ORG, 'managerSiteBookings', 'M1'))
@@ -487,12 +489,12 @@ test('1.33.0 delete on Return: never another person\'s booking, never by someone
 
 test('1.33.0 delete on Return: a booking under the person\'s own operatives row too; an admin\'s tombstone may name the request', async () => {
   await seed133()
-  await assertSucceeds(setDoc(orgDoc(SAM, 'overtimeRequests', 'R1'), requestData(SAM)))
+  await assertSucceeds(setDoc(await orgDoc(SAM, 'overtimeRequests', 'R1'), requestData(SAM)))
   await assertSucceeds(returnDelete(LM, 'BR2', 'R1', { deletedBookingIds: ['BR2'] }))
-  await assertSucceeds(setDoc(orgDoc(SAM, 'overtimeRequests', 'R3'), requestData(SAM)))
+  await assertSucceeds(setDoc(await orgDoc(SAM, 'overtimeRequests', 'R3'), requestData(SAM)))
   await assertSucceeds(returnDelete(ADMIN, 'B1', 'R3', { deletedBookingIds: ['B1'] }))
   // A tombstone with any other extra key is refused.
   await assertFails(
-    setDoc(orgDoc(ADMIN, 'deletedBookings', 'B3'), { bookingId: 'B3', collection: 'bookings', deletedBy: ADMIN, deletedFrom: 'web', deletedAt: serverTimestamp(), note: 'x' })
+    setDoc(await orgDoc(ADMIN, 'deletedBookings', 'B3'), { bookingId: 'B3', collection: 'bookings', deletedBy: ADMIN, deletedFrom: 'web', deletedAt: serverTimestamp(), note: 'x' })
   )
 })

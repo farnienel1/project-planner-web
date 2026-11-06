@@ -14,6 +14,7 @@ import {
   type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing'
 import { assertFails, assertLogicalDeny, assertSucceedsWithinBudget } from './rulesAssert.ts'
+import { claimsContext } from './authClaimsContext.ts'
 import {
   collection,
   deleteDoc,
@@ -48,8 +49,9 @@ const OP_B = 'op-b'
 
 let env: RulesTestEnvironment
 
-function authDb(uid: string, email: string) {
-  return env.authenticatedContext(uid, { email }).firestore()
+/** Rulebook 1.32.4: the caller's token carries the auth claims of the data seeded so far (`tests/authClaimsContext.ts`). */
+async function authDb(uid: string, email: string) {
+  return (await claimsContext(env, uid, { email })).firestore()
 }
 
 /** Rulebook 1.31.1 (F5): an unused invitation to `email` in `organizationId`, written with the rules off. */
@@ -64,7 +66,7 @@ async function seedInvitation(invitationId: string, organizationId: string, emai
  * invitation used in the same batch (web `completeInviteSetup`). Returns the commit promise.
  */
 function acceptInviteBatch(
-  db: ReturnType<typeof authDb>,
+  db: Awaited<ReturnType<typeof authDb>>,
   authUid: string,
   profile: Record<string, unknown>,
   invitationId: string
@@ -78,7 +80,7 @@ function acceptInviteBatch(
 test.before(async () => {
   env = await initializeTestEnvironment({
     projectId: 'demo-project-planner-rules',
-    firestore: { rules, host: '127.0.0.1', port: Number(process.env.FIRESTORE_EMULATOR_HOST?.split(':')[1] || 8080) },
+    firestore: { rules, host: '127.0.0.1', port: Number(process.env.RULES_PORT || 8080) },
   })
 
   await env.withSecurityRulesDisabled(async (ctx) => {
@@ -192,33 +194,33 @@ test.after(async () => {
 })
 
 test('company A cannot read company B bookings', async () => {
-  const db = authDb(ADMIN_A, 'admin-a@test.com')
+  const db = await authDb(ADMIN_A, 'admin-a@test.com')
   await assertFails(getDoc(doc(db, 'organizations', ORG_B, 'bookings', 'book-b')))
 })
 
 test('company A cannot read company B timesheet settings', async () => {
-  const db = authDb(ADMIN_A, 'admin-a@test.com')
+  const db = await authDb(ADMIN_A, 'admin-a@test.com')
   await assertFails(getDoc(doc(db, 'organizations', ORG_B, 'settings', `timesheet_${OP_B}_1000`)))
 })
 
 test('company A cannot read a company B user document', async () => {
-  const db = authDb(ADMIN_A, 'admin-a@test.com')
+  const db = await authDb(ADMIN_A, 'admin-a@test.com')
   await assertFails(getDoc(doc(db, 'users', OP_B)))
   await assertFails(getDoc(doc(db, 'users', ADMIN_B)))
 })
 
 test('company A cannot read company B materials', async () => {
-  const db = authDb(ADMIN_A, 'admin-a@test.com')
+  const db = await authDb(ADMIN_A, 'admin-a@test.com')
   await assertFails(getDoc(doc(db, 'organizations', ORG_B, 'materials', 'mat-b')))
 })
 
 test('company A cannot read company B holidays', async () => {
-  const db = authDb(ADMIN_A, 'admin-a@test.com')
+  const db = await authDb(ADMIN_A, 'admin-a@test.com')
   await assertFails(getDoc(doc(db, 'organizations', ORG_B, 'holidayBookings', 'hol-b')))
 })
 
 test('an operative cannot make themselves admin', async () => {
-  const db = authDb(OP_A, 'op-a@test.com')
+  const db = await authDb(OP_A, 'op-a@test.com')
   await assertFails(updateDoc(doc(db, 'users', OP_A), { adminAccess: true }))
   await assertFails(updateDoc(doc(db, 'users', OP_A), { role: 'admin' }))
   await assertFails(updateDoc(doc(db, 'users', OP_A), { isSuperAdmin: true }))
@@ -226,7 +228,7 @@ test('an operative cannot make themselves admin', async () => {
 })
 
 test('an outsider cannot join another company by rewriting members', async () => {
-  const db = authDb(ADMIN_A, 'admin-a@test.com')
+  const db = await authDb(ADMIN_A, 'admin-a@test.com')
   await assertFails(
     updateDoc(doc(db, 'organizations', ORG_B), {
       members: { [ADMIN_B]: 'admin', [OP_B]: 'member', [ADMIN_A]: 'admin' },
@@ -235,7 +237,7 @@ test('an outsider cannot join another company by rewriting members', async () =>
 })
 
 test('company A can still read its own bookings and materials', async () => {
-  const db = authDb(ADMIN_A, 'admin-a@test.com')
+  const db = await authDb(ADMIN_A, 'admin-a@test.com')
   const booking = await assertSucceeds(getDoc(doc(db, 'organizations', ORG_A, 'bookings', 'book-a')))
   const material = await assertSucceeds(getDoc(doc(db, 'organizations', ORG_A, 'materials', 'mat-a')))
   const colleague = await assertSucceeds(getDoc(doc(db, 'users', OP_A)))
@@ -245,12 +247,12 @@ test('company A can still read its own bookings and materials', async () => {
 })
 
 test('an operative can still update their own name', async () => {
-  const db = authDb(OP_A, 'op-a@test.com')
+  const db = await authDb(OP_A, 'op-a@test.com')
   await assertSucceeds(updateDoc(doc(db, 'users', OP_A), { firstName: 'Oliver' }))
 })
 
 test('existing users without age confirmation can read and update their own profile', async () => {
-  const db = authDb(ADMIN_A, 'admin-a@test.com')
+  const db = await authDb(ADMIN_A, 'admin-a@test.com')
   const snap = await assertSucceeds(getDoc(doc(db, 'users', ADMIN_A)))
   assert.equal(snap.exists(), true)
   assert.equal(snap.data()?.ageConfirmed, undefined)
@@ -264,12 +266,12 @@ test('invite get-by-id stays public', async () => {
 })
 
 test('company A cannot list company B invitations', async () => {
-  const db = authDb(ADMIN_A, 'admin-a@test.com')
+  const db = await authDb(ADMIN_A, 'admin-a@test.com')
   await assertFails(getDocs(query(collection(db, 'invitations'), where('organizationId', '==', ORG_B))))
 })
 
 test('company A cannot create or change a company B invitation', async () => {
-  const db = authDb(ADMIN_A, 'admin-a@test.com')
+  const db = await authDb(ADMIN_A, 'admin-a@test.com')
   await assertFails(
     setDoc(doc(db, 'invitations', 'invite-from-a'), {
       organizationId: ORG_B,
@@ -282,7 +284,7 @@ test('company A cannot create or change a company B invitation', async () => {
 })
 
 test('admin A can list and create invitations for company A', async () => {
-  const db = authDb(ADMIN_A, 'admin-a@test.com')
+  const db = await authDb(ADMIN_A, 'admin-a@test.com')
   const listed = await assertSucceeds(
     getDocs(query(collection(db, 'invitations'), where('organizationId', '==', ORG_A)))
   )
@@ -300,7 +302,7 @@ test('leftover Auth can create an organisation then self-create only with age co
   const uid = 'leftover-auth'
   const email = 'leftover@test.com'
   const orgId = 'org-leftover'
-  const db = authDb(uid, email)
+  const db = await authDb(uid, email)
   await assertSucceeds(
     setDoc(doc(db, 'organizations', orgId), {
       name: 'Leftover Co',
@@ -332,7 +334,7 @@ test('leftover Auth can create an organisation then self-create only with age co
 test('self-create without age confirmation is denied', async () => {
   const uid = 'founder-no-age'
   const email = 'founder-no-age@test.com'
-  const db = authDb(uid, email)
+  const db = await authDb(uid, email)
   await assertFails(
     setDoc(doc(db, 'users', uid), {
       email,
@@ -368,7 +370,7 @@ test('self-create without age confirmation is denied', async () => {
 test('hole 1: a stranger cannot self-create into a company that never invited them', async () => {
   const uid = 'stranger-1'
   const email = 'stranger-1@test.com'
-  const db = authDb(uid, email)
+  const db = await authDb(uid, email)
   const profile = {
     email,
     organizationId: ORG_A,
@@ -385,7 +387,7 @@ test('hole 1: a stranger cannot self-create into a company that never invited th
 })
 
 test('existing user without ageConfirmed can read and self-update', async () => {
-  const db = authDb(ADMIN_A, 'admin-a@test.com')
+  const db = await authDb(ADMIN_A, 'admin-a@test.com')
   const snap = await assertSucceeds(getDoc(doc(db, 'users', ADMIN_A)))
   assert.equal(snap.data()?.ageConfirmed, undefined)
   await assertSucceeds(updateDoc(doc(db, 'users', ADMIN_A), { lastSeenAt: Timestamp.now() }))
@@ -398,7 +400,7 @@ test('a stale email pointer can be reclaimed, but that alone does not let a non-
     const db = ctx.firestore()
     await setDoc(doc(db, 'organizations', ORG_A, 'userEmails', email), { userId: 'dead-placeholder' })
   })
-  const db = authDb(uid, email)
+  const db = await authDb(uid, email)
   const profile = {
     email,
     organizationId: ORG_A,
@@ -422,7 +424,7 @@ test('a returning member listed in the members map can self-create, without rais
     await updateDoc(doc(db, 'organizations', ORG_A), { [`members.${uid}`]: 'member' })
     await setDoc(doc(db, 'organizations', ORG_A, 'userEmails', email), { userId: uid })
   })
-  const db = authDb(uid, email)
+  const db = await authDb(uid, email)
   const profile = {
     email,
     organizationId: ORG_A,
@@ -444,7 +446,7 @@ test('a returning admin listed as admin in the members map can self-create as ad
     await updateDoc(doc(db, 'organizations', ORG_A), { [`members.${uid}`]: 'admin' })
     await setDoc(doc(db, 'organizations', ORG_A, 'userEmails', email), { userId: uid })
   })
-  const db = authDb(uid, email)
+  const db = await authDb(uid, email)
   await assertSucceeds(
     setDoc(doc(db, 'users', uid), {
       email,
@@ -460,7 +462,7 @@ test('a returning admin listed as admin in the members map can self-create as ad
 })
 
 test('admin invite placeholder create is allowed without age confirmation', async () => {
-  const db = authDb(ADMIN_A, 'admin-a@test.com')
+  const db = await authDb(ADMIN_A, 'admin-a@test.com')
   await assertSucceeds(
     setDoc(doc(db, 'users', 'invite-placeholder-1'), {
       email: 'invited-placeholder@test.com',
@@ -474,7 +476,7 @@ test('admin invite placeholder create is allowed without age confirmation', asyn
 })
 
 test('admin cannot list users by another email across every organisation', async () => {
-  const db = authDb(ADMIN_A, 'admin-a@test.com')
+  const db = await authDb(ADMIN_A, 'admin-a@test.com')
   await assertFails(
     getDocs(query(collection(db, 'users'), where('email', '==', 'brand-new@test.com'), where('passwordSet', '==', true)))
   )
@@ -482,7 +484,7 @@ test('admin cannot list users by another email across every organisation', async
 })
 
 test('admin can list this organisation\'s users by email and organizationId', async () => {
-  const db = authDb(ADMIN_A, 'admin-a@test.com')
+  const db = await authDb(ADMIN_A, 'admin-a@test.com')
   const listed = await assertSucceeds(
     getDocs(
       query(collection(db, 'users'), where('email', '==', 'op-a@test.com'), where('organizationId', '==', ORG_A))
@@ -506,7 +508,7 @@ test('admin invite can reclaim userEmails and overwrite a leftover UUID without 
       userId: 'leftover-uuid-1',
     })
   })
-  const db = authDb(ADMIN_A, 'admin-a@test.com')
+  const db = await authDb(ADMIN_A, 'admin-a@test.com')
   await assertSucceeds(
     setDoc(doc(db, 'users', 'leftover-uuid-1'), {
       email: 'leftover-invite@test.com',
@@ -532,7 +534,7 @@ test('admin invite can reclaim userEmails and overwrite a leftover UUID without 
 
 test('invitee can mark their invitation used', async () => {
   // Rulebook 1.31.1 (F5): only together with the account (or membership) that carries the invitation's id.
-  const db = authDb('invitee-a', 'new-a@test.com')
+  const db = await authDb('invitee-a', 'new-a@test.com')
   await assertLogicalDeny(updateDoc(doc(db, 'invitations', 'invite-a'), { isUsed: true }))
   await env.withSecurityRulesDisabled(async (ctx) => {
     await setDoc(doc(ctx.firestore(), 'users', 'invitee-a'), {
@@ -590,7 +592,7 @@ test('invitee can finish password setup: own email claim, placeholder get, then 
   const signedOut = env.unauthenticatedContext().firestore()
   await assertFails(getDoc(doc(signedOut, 'organizations', ORG_A, 'userEmails', email)))
 
-  const db = authDb(authUid, email)
+  const db = await authDb(authUid, email)
   const claim = await assertSucceeds(getDoc(doc(db, 'organizations', ORG_A, 'userEmails', email)))
   assert.equal(claim.data()?.userId, placeholderId)
   await assertFails(getDoc(doc(db, 'organizations', ORG_A, 'userEmails', 'op-a@test.com')))
@@ -669,7 +671,7 @@ test('self-create is refused when the email claim names a live member or the Del
     ['tombstone-claimant-uid', blankEmail],
   ] as const) {
     await assertFails(
-      setDoc(doc(authDb(uid, email), 'users', uid), {
+      setDoc(doc(await authDb(uid, email), 'users', uid), {
         email,
         organizationId: ORG_A,
         firstName: 'X',
@@ -681,27 +683,27 @@ test('self-create is refused when the email claim names a live member or the Del
       })
     )
   }
-  await assertFails(getDoc(doc(authDb('live-claimant-uid', liveEmail), 'users', tombstoneId)))
+  await assertFails(getDoc(doc(await authDb('live-claimant-uid', liveEmail), 'users', tombstoneId)))
 })
 
 test('company A cannot read a company B notification', async () => {
-  const db = authDb(ADMIN_A, 'admin-a@test.com')
+  const db = await authDb(ADMIN_A, 'admin-a@test.com')
   await assertFails(getDoc(doc(db, 'organizations', ORG_B, 'notifications', 'note-b')))
 })
 
 test('an operative cannot read another person\'s notification', async () => {
-  const db = authDb(OP_A, 'op-a@test.com')
+  const db = await authDb(OP_A, 'op-a@test.com')
   await assertFails(getDoc(doc(db, 'organizations', ORG_A, 'notifications', 'note-a')))
 })
 
 test('a user can read their own notification', async () => {
-  const db = authDb(ADMIN_A, 'admin-a@test.com')
+  const db = await authDb(ADMIN_A, 'admin-a@test.com')
   const snap = await assertSucceeds(getDoc(doc(db, 'organizations', ORG_A, 'notifications', 'note-a')))
   assert.equal(snap.exists(), true)
 })
 
 test('an operative cannot write another person\'s timesheet settings', async () => {
-  const db = authDb(OP_A, 'op-a@test.com')
+  const db = await authDb(OP_A, 'op-a@test.com')
   await assertFails(
     setDoc(
       doc(db, 'organizations', ORG_A, 'settings', `timesheet_${ADMIN_A}_2000`),
@@ -712,7 +714,7 @@ test('an operative cannot write another person\'s timesheet settings', async () 
 })
 
 test('admin A can write their own timesheet settings', async () => {
-  const db = authDb(ADMIN_A, 'admin-a@test.com')
+  const db = await authDb(ADMIN_A, 'admin-a@test.com')
   await assertSucceeds(
     setDoc(
       doc(db, 'organizations', ORG_A, 'settings', `timesheet_${ADMIN_A}_2000`),
@@ -724,7 +726,7 @@ test('admin A can write their own timesheet settings', async () => {
 
 test('clients cannot create interest registrations', async () => {
   const guest = env.unauthenticatedContext().firestore()
-  const member = authDb(ADMIN_A, 'admin-a@test.com')
+  const member = await authDb(ADMIN_A, 'admin-a@test.com')
   const payload = {
     firstName: 'Ada',
     lastName: 'Lovelace',
@@ -750,7 +752,7 @@ test('clients cannot create interest registrations', async () => {
 
 test('clients cannot read or write email suppressions', async () => {
   const guest = env.unauthenticatedContext().firestore()
-  const member = authDb(ADMIN_A, 'admin-a@test.com')
+  const member = await authDb(ADMIN_A, 'admin-a@test.com')
   await env.withSecurityRulesDisabled(async (ctx) => {
     await setDoc(doc(ctx.firestore(), 'emailSuppressions', 'ada@example.com'), {
       email: 'ada@example.com',
@@ -798,7 +800,7 @@ test('hole 1b: deleting your own profile and re-creating it does not move you in
       operativeMode: true,
     })
   })
-  const db = authDb(uid, email)
+  const db = await authDb(uid, email)
   await assertFails(updateDoc(doc(db, 'users', uid), { organizationId: ORG_A }))
   // 1.31.1 (fourth review): nobody deletes their own users document; accounts are deleted through
   // /api/account/delete (service credentials). The document is removed with the rules off to test the re-create.
@@ -811,7 +813,7 @@ test('hole 1b: deleting your own profile and re-creating it does not move you in
 })
 
 test('hole 2: an admin of company B cannot create a user in company A', async () => {
-  const db = authDb(ADMIN_B, 'admin-b@test.com')
+  const db = await authDb(ADMIN_B, 'admin-b@test.com')
   await assertFails(
     setDoc(doc(db, 'users', 'b-sock-puppet'), {
       email: 'puppet@test.com',
@@ -841,7 +843,7 @@ test('hole 2: an admin of company B cannot create a user in company A', async ()
 })
 
 test('hole 3: an admin of company B cannot edit or move users in company A', async () => {
-  const db = authDb(ADMIN_B, 'admin-b@test.com')
+  const db = await authDb(ADMIN_B, 'admin-b@test.com')
   await assertFails(updateDoc(doc(db, 'users', OP_A), { adminAccess: true }))
   await assertFails(updateDoc(doc(db, 'users', OP_A), { firstName: 'Hacked' }))
   await assertFails(updateDoc(doc(db, 'users', OP_A), { organizationId: ORG_B }))
@@ -849,19 +851,19 @@ test('hole 3: an admin of company B cannot edit or move users in company A', asy
 })
 
 test('hole 3b: an admin cannot move their own profile into a company they do not run', async () => {
-  const db = authDb(ADMIN_B, 'admin-b@test.com')
+  const db = await authDb(ADMIN_B, 'admin-b@test.com')
   await assertFails(updateDoc(doc(db, 'users', ADMIN_B), { organizationId: ORG_A }))
   // Their own profile otherwise still saves.
   await assertSucceeds(updateDoc(doc(db, 'users', ADMIN_B), { firstName: 'Beatrice' }))
 })
 
 test('admin A can still edit users in company A', async () => {
-  const db = authDb(ADMIN_A, 'admin-a@test.com')
+  const db = await authDb(ADMIN_A, 'admin-a@test.com')
   await assertSucceeds(updateDoc(doc(db, 'users', OP_A), { firstName: 'Ollie-edited', dayRate: 180 }))
 })
 
 test('hole 4: a signed-in user cannot list every company', async () => {
-  const db = authDb(OP_B, 'op-b@test.com')
+  const db = await authDb(OP_B, 'op-b@test.com')
   await assertFails(getDocs(collection(db, 'organizations')))
   await assertFails(getDocs(query(collection(db, 'organizations'), where('name', '==', 'Company A'))))
   await assertFails(getDocs(query(collection(db, 'organizations'), where(`members.${ADMIN_A}`, '!=', ''))))
@@ -869,7 +871,7 @@ test('hole 4: a signed-in user cannot list every company', async () => {
 })
 
 test('both apps can still list their own companies by membership and by creator', async () => {
-  const db = authDb(ADMIN_A, 'admin-a@test.com')
+  const db = await authDb(ADMIN_A, 'admin-a@test.com')
   const byMember = await assertSucceeds(
     getDocs(query(collection(db, 'organizations'), where(`members.${ADMIN_A}`, '!=', '')))
   )
@@ -882,7 +884,7 @@ test('both apps can still list their own companies by membership and by creator'
 })
 
 test('hole 5: nobody can take over another account\'s email claim or claim an email that is not theirs', async () => {
-  const db = authDb(OP_B, 'op-b@test.com')
+  const db = await authDb(OP_B, 'op-b@test.com')
   await env.withSecurityRulesDisabled(async (ctx) => {
     await setDoc(doc(ctx.firestore(), 'organizations', ORG_A, 'userEmails', 'op-a@test.com'), { userId: OP_A })
   })
@@ -890,7 +892,7 @@ test('hole 5: nobody can take over another account\'s email claim or claim an em
   await assertFails(setDoc(doc(db, 'organizations', ORG_A, 'userEmails', 'op-a@test.com'), { userId: OP_B }))
   await assertFails(setDoc(doc(db, 'organizations', ORG_A, 'userEmails', 'unclaimed@test.com'), { userId: OP_B }))
   // An admin of company B cannot rewrite or delete company A's claims.
-  const adminB = authDb(ADMIN_B, 'admin-b@test.com')
+  const adminB = await authDb(ADMIN_B, 'admin-b@test.com')
   await assertFails(setDoc(doc(adminB, 'organizations', ORG_A, 'userEmails', 'op-a@test.com'), { userId: ADMIN_B }))
   await assertFails(deleteDoc(doc(adminB, 'organizations', ORG_A, 'userEmails', 'op-a@test.com')))
 })
@@ -902,7 +904,7 @@ test('hole 5b: a live claim on your own email for another account is not taken o
     await setDoc(doc(db, 'users', 'live-owner'), { email, organizationId: ORG_A, passwordSet: true })
     await setDoc(doc(db, 'organizations', ORG_A, 'userEmails', email), { userId: 'live-owner' })
   })
-  const db = authDb('second-account', email)
+  const db = await authDb('second-account', email)
   await assertFails(setDoc(doc(db, 'organizations', ORG_A, 'userEmails', email), { userId: 'second-account' }))
 })
 
@@ -910,7 +912,7 @@ test('founder: create a company, claim the email, then self-create as its admin'
   const uid = 'founder-new'
   const email = 'founder-new@test.com'
   const orgId = 'org-founder-new'
-  const db = authDb(uid, email)
+  const db = await authDb(uid, email)
   await assertSucceeds(
     setDoc(doc(db, 'organizations', orgId), {
       name: 'Founder Co',
@@ -956,7 +958,7 @@ test('invite accept: an admin invited as admin copies the admin placeholder', as
     await setDoc(doc(db, 'organizations', ORG_A, 'userEmails', email), { userId: placeholderId })
   })
   await seedInvitation('invite-admin-copy', ORG_A, email, { role: 'admin' })
-  const db = authDb(authUid, email)
+  const db = await authDb(authUid, email)
   const placeholder = await assertSucceeds(getDoc(doc(db, 'users', placeholderId)))
   await assertSucceeds(
     acceptInviteBatch(
@@ -998,7 +1000,7 @@ test('invite accept: an invitee cannot add privileges the placeholder does not h
     await setDoc(doc(db, 'organizations', ORG_A, 'userEmails', email), { userId: placeholderId })
   })
   await seedInvitation('invite-op-priv', ORG_A, email)
-  const db = authDb(authUid, email)
+  const db = await authDb(authUid, email)
   const base = {
     email,
     organizationId: ORG_A,
@@ -1034,7 +1036,7 @@ test('a manager with operatives access can still invite an operative in their ow
       operativeMode: false,
     })
   })
-  const db = authDb(managerId, 'manager-a@test.com')
+  const db = await authDb(managerId, 'manager-a@test.com')
   await assertSucceeds(
     setDoc(doc(db, 'users', 'manager-invited-op'), {
       email: 'mgr-op@test.com',
@@ -1083,12 +1085,12 @@ function fileReport(overrides: Record<string, unknown> = {}) {
 }
 
 test('anyone in the company can report a file as themselves', async () => {
-  const db = authDb(OP_A, 'op-a@test.com')
+  const db = await authDb(OP_A, 'op-a@test.com')
   await assertSucceeds(setDoc(doc(db, 'organizations', ORG_A, 'fileReports', 'REPORT-OK'), fileReport()))
 })
 
 test('a file report cannot be filed for someone else, another company, or already closed', async () => {
-  const db = authDb(OP_A, 'op-a@test.com')
+  const db = await authDb(OP_A, 'op-a@test.com')
   const ref = (id: string) => doc(db, 'organizations', ORG_A, 'fileReports', id)
   await assertFails(setDoc(ref('R-OTHER-USER'), fileReport({ reportedByUserId: ADMIN_A })))
   await assertFails(setDoc(ref('R-OTHER-PATH'), fileReport({ storagePath: `organizations/${ORG_B}/siteAudits/x.jpg` })))
@@ -1109,9 +1111,9 @@ test('only admins read and close file reports, and nobody deletes them', async (
       createdAt: Timestamp.now(),
     })
   })
-  const op = authDb(OP_A, 'op-a@test.com')
-  const admin = authDb(ADMIN_A, 'admin-a@test.com')
-  const otherAdmin = authDb(ADMIN_B, 'admin-b@test.com')
+  const op = await authDb(OP_A, 'op-a@test.com')
+  const admin = await authDb(ADMIN_A, 'admin-a@test.com')
+  const otherAdmin = await authDb(ADMIN_B, 'admin-b@test.com')
   await assertFails(getDoc(doc(op, 'organizations', ORG_A, 'fileReports', 'REPORT-SEED')))
   await assertFails(getDocs(collection(op, 'organizations', ORG_A, 'fileReports')))
   await assertFails(getDoc(doc(otherAdmin, 'organizations', ORG_A, 'fileReports', 'REPORT-SEED')))
@@ -1141,12 +1143,12 @@ test('tax identifiers: the person and their admin read and write; colleagues, ma
     })
     await setDoc(doc(db, 'users', OP_A, 'private', 'taxIds'), { utrNumber: '1111111111', vatNumber: '', updatedByUserId: OP_A, updatedAt: Timestamp.now() })
   })
-  const own = authDb(OP_A, 'op-a@test.com')
-  const admin = authDb(ADMIN_A, 'admin-a@test.com')
-  const manager = authDb(managerId, 'tax-manager-a@test.com')
-  const otherAdmin = authDb(ADMIN_B, 'admin-b@test.com')
-  const colleague = authDb(OP_B, 'op-b@test.com')
-  const ref = (db: ReturnType<typeof authDb>) => doc(db, 'users', OP_A, 'private', 'taxIds')
+  const own = await authDb(OP_A, 'op-a@test.com')
+  const admin = await authDb(ADMIN_A, 'admin-a@test.com')
+  const manager = await authDb(managerId, 'tax-manager-a@test.com')
+  const otherAdmin = await authDb(ADMIN_B, 'admin-b@test.com')
+  const colleague = await authDb(OP_B, 'op-b@test.com')
+  const ref = (db: Awaited<ReturnType<typeof authDb>>) => doc(db, 'users', OP_A, 'private', 'taxIds')
 
   await assertSucceeds(getDoc(ref(own)))
   await assertSucceeds(getDoc(ref(admin)))
@@ -1170,9 +1172,9 @@ test('tax identifiers: an invitee reads and removes the placeholder copy but can
     await setDoc(doc(db, 'users', placeholderId), { email: 'new-tax@test.com', organizationId: ORG_A, passwordSet: false })
     await setDoc(doc(db, 'users', placeholderId, 'private', 'taxIds'), { utrNumber: '2222222222', vatNumber: '', updatedByUserId: ADMIN_A, updatedAt: Timestamp.now() })
   })
-  const invitee = authDb('invitee-tax-uid', 'new-tax@test.com')
-  const stranger = authDb('stranger-uid', 'someone@test.com')
-  const ref = (db: ReturnType<typeof authDb>) => doc(db, 'users', placeholderId, 'private', 'taxIds')
+  const invitee = await authDb('invitee-tax-uid', 'new-tax@test.com')
+  const stranger = await authDb('stranger-uid', 'someone@test.com')
+  const ref = (db: Awaited<ReturnType<typeof authDb>>) => doc(db, 'users', placeholderId, 'private', 'taxIds')
   await assertFails(getDoc(ref(stranger)))
   // 1.31.1 (F5): someone who only signed up on the invitee's email (no accepted account yet) reads nothing.
   await assertLogicalDeny(getDoc(ref(invitee)))
@@ -1228,16 +1230,16 @@ test('job quote and order history: every admin and manager reads it without the 
       lines: [],
     })
   })
-  const ref = (uid: string, email: string) => doc(authDb(uid, email), 'organizations', ORG_A, 'materialSendRecords', 'SEND-HISTORY-1')
-  await assertSucceeds(getDoc(ref(MANAGER_A, 'manager-a-history@test.com')))
-  await assertSucceeds(getDoc(ref(ADMIN_A, 'admin-a@test.com')))
+  const ref = async (uid: string, email: string) => doc(await authDb(uid, email), 'organizations', ORG_A, 'materialSendRecords', 'SEND-HISTORY-1')
+  await assertSucceeds(getDoc(await ref(MANAGER_A, 'manager-a-history@test.com')))
+  await assertSucceeds(getDoc(await ref(ADMIN_A, 'admin-a@test.com')))
   await assertSucceeds(
-    getDocs(query(collection(authDb(MANAGER_A, 'manager-a-history@test.com'), 'organizations', ORG_A, 'materialSendRecords'), where('projectId', '==', 'job-1')))
+    getDocs(query(collection(await authDb(MANAGER_A, 'manager-a-history@test.com'), 'organizations', ORG_A, 'materialSendRecords'), where('projectId', '==', 'job-1')))
   )
-  await assertFails(getDoc(ref(OP_A, 'op-a@test.com')))
+  await assertFails(getDoc(await ref(OP_A, 'op-a@test.com')))
   // 1.11.0: an admin has no operative mode — a stray flag on an admin is ignored (permissionLevelOf).
-  await assertSucceeds(getDoc(ref(ADMIN_OP_A, 'admin-op-a-history@test.com')))
-  await assertFails(getDoc(doc(authDb(ADMIN_B, 'admin-b@test.com'), 'organizations', ORG_A, 'materialSendRecords', 'SEND-HISTORY-1')))
+  await assertSucceeds(getDoc(await ref(ADMIN_OP_A, 'admin-op-a-history@test.com')))
+  await assertFails(getDoc(doc(await authDb(ADMIN_B, 'admin-b@test.com'), 'organizations', ORG_A, 'materialSendRecords', 'SEND-HISTORY-1')))
 })
 
 test('warningResolutions: a manager writes their own approval in their company only; operatives cannot; admins or the resolver delete it', async () => {
@@ -1252,10 +1254,10 @@ test('warningResolutions: a manager writes their own approval in their company o
     })
   })
   const key = 'mgr-clash-INVITED-ID-2026-10-22-0'
-  const mgrRef = doc(authDb(MANAGER_WR, 'manager-a-wr@test.com'), 'organizations', ORG_A, 'warningResolutions', key)
+  const mgrRef = doc(await authDb(MANAGER_WR, 'manager-a-wr@test.com'), 'organizations', ORG_A, 'warningResolutions', key)
   const fields = { resolutionKey: key, status: 'approved', resolvedByUserId: MANAGER_WR, resolvedAt: serverTimestamp() }
   // Operatives never approve or dismiss a warning.
-  const opRef = doc(authDb(OP_A, 'op-a@test.com'), 'organizations', ORG_A, 'warningResolutions', key)
+  const opRef = doc(await authDb(OP_A, 'op-a@test.com'), 'organizations', ORG_A, 'warningResolutions', key)
   await assertFails(setDoc(opRef, { ...fields, resolvedByUserId: OP_A }))
   await assertSucceeds(setDoc(mgrRef, fields))
   await assertSucceeds(getDoc(mgrRef))
@@ -1267,14 +1269,14 @@ test('warningResolutions: a manager writes their own approval in their company o
   await assertFails(setDoc(mgrRef, { ...fields, note: 'x' }))
   await assertFails(setDoc(mgrRef, { resolutionKey: key, status: 'approved', resolvedByUserId: MANAGER_WR }))
   // Another company cannot read or write it.
-  const foreign = doc(authDb(ADMIN_B, 'admin-b@test.com'), 'organizations', ORG_A, 'warningResolutions', key)
+  const foreign = doc(await authDb(ADMIN_B, 'admin-b@test.com'), 'organizations', ORG_A, 'warningResolutions', key)
   await assertFails(getDoc(foreign))
   await assertFails(setDoc(foreign, { ...fields, resolvedByUserId: ADMIN_B }))
   // An operative cannot delete it; the resolver can undo it; an admin can delete anyone's.
   await assertFails(deleteDoc(opRef))
   await assertSucceeds(deleteDoc(mgrRef))
   await assertSucceeds(setDoc(mgrRef, fields))
-  await assertSucceeds(deleteDoc(doc(authDb(ADMIN_A, 'admin-a@test.com'), 'organizations', ORG_A, 'warningResolutions', key)))
+  await assertSucceeds(deleteDoc(doc(await authDb(ADMIN_A, 'admin-a@test.com'), 'organizations', ORG_A, 'warningResolutions', key)))
 })
 
 // ---------------------------------------------------------------------------
@@ -1327,8 +1329,8 @@ function leave(uid: string, status: string, extra: Record<string, unknown> = {})
 
 test('annual leave: a requester asks but never approves their own leave; the line manager or an admin decides', async () => {
   await seedLeaveAndTimesheetPeople()
-  const rep = authDb(REPORT_A, 'report-a@test.com')
-  const ref = (db: ReturnType<typeof authDb>, id: string) => doc(db, 'organizations', ORG_A, 'holidayBookings', id)
+  const rep = await authDb(REPORT_A, 'report-a@test.com')
+  const ref = (db: Awaited<ReturnType<typeof authDb>>, id: string) => doc(db, 'organizations', ORG_A, 'holidayBookings', id)
 
   // Create: pending is fine; approved, or an approval stamp, is not.
   await assertSucceeds(setDoc(ref(rep, 'hol-req-1'), leave(REPORT_A, 'pending'), { merge: true }))
@@ -1342,10 +1344,10 @@ test('annual leave: a requester asks but never approves their own leave; the lin
   await assertSucceeds(setDoc(ref(rep, 'hol-req-1'), { timeSlot: 'AM', operativeId: null, approvedByUserId: null, approvedAt: null, cancellationRequestedAt: null }, { merge: true }))
 
   // A manager who is not the line manager cannot decide; the line manager and an admin can.
-  await assertFails(updateDoc(ref(authDb(MGR_OTHER_A, 'mgr-other-a@test.com'), 'hol-req-1'), { status: 'approved', approvedByUserId: MGR_OTHER_A, approvedAt: Timestamp.now() }))
+  await assertFails(updateDoc(ref(await authDb(MGR_OTHER_A, 'mgr-other-a@test.com'), 'hol-req-1'), { status: 'approved', approvedByUserId: MGR_OTHER_A, approvedAt: Timestamp.now() }))
   const approvedAt = Timestamp.fromMillis(Date.parse('2026-11-01T09:00:00.123Z') + 0.456)
-  await assertSucceeds(updateDoc(ref(authDb(LM_A, 'lm-a@test.com'), 'hol-req-1'), { status: 'approved', approvedByUserId: LM_A, approvedAt }))
-  await assertSucceeds(updateDoc(ref(authDb(ADMIN_A, 'admin-a@test.com'), 'hol-req-1'), { decisionNote: null }))
+  await assertSucceeds(updateDoc(ref(await authDb(LM_A, 'lm-a@test.com'), 'hol-req-1'), { status: 'approved', approvedByUserId: LM_A, approvedAt }))
+  await assertSucceeds(updateDoc(ref(await authDb(ADMIN_A, 'admin-a@test.com'), 'hol-req-1'), { decisionNote: null }))
 
   // The requester asks to cancel an approved booking (full merge resend; approvedAt rounded to ms like web).
   await assertSucceeds(setDoc(ref(rep, 'hol-req-1'), {
@@ -1364,21 +1366,21 @@ test('annual leave: a requester asks but never approves their own leave; the lin
   await assertFails(updateDoc(ref(rep, 'hol-req-1'), { userId: OP_A }))
   await assertFails(deleteDoc(ref(rep, 'hol-req-1')))
   // The line manager approves the cancellation by deleting it.
-  await assertSucceeds(deleteDoc(ref(authDb(LM_A, 'lm-a@test.com'), 'hol-req-1')))
+  await assertSucceeds(deleteDoc(ref(await authDb(LM_A, 'lm-a@test.com'), 'hol-req-1')))
 
   // A requester may withdraw their own pending request.
   await assertSucceeds(setDoc(ref(rep, 'hol-req-5'), leave(REPORT_A, 'pending')))
   await assertSucceeds(deleteDoc(ref(rep, 'hol-req-5')))
 
   // A manager on the Team screen may book a pending request for someone with a line manager.
-  await assertSucceeds(setDoc(ref(authDb(MGR_OTHER_A, 'mgr-other-a@test.com'), 'hol-req-6'), leave(REPORT_A, 'pending')))
-  await assertFails(setDoc(ref(authDb(MGR_OTHER_A, 'mgr-other-a@test.com'), 'hol-req-7'), leave(REPORT_A, 'approved', { approvedByUserId: MGR_OTHER_A })))
+  await assertSucceeds(setDoc(ref(await authDb(MGR_OTHER_A, 'mgr-other-a@test.com'), 'hol-req-6'), leave(REPORT_A, 'pending')))
+  await assertFails(setDoc(ref(await authDb(MGR_OTHER_A, 'mgr-other-a@test.com'), 'hol-req-7'), leave(REPORT_A, 'approved', { approvedByUserId: MGR_OTHER_A })))
 })
 
 test('annual leave: self-bookers save their own leave approved; operatives with a line manager cannot', async () => {
   await seedLeaveAndTimesheetPeople()
-  const ref = (db: ReturnType<typeof authDb>, id: string) => doc(db, 'organizations', ORG_A, 'holidayBookings', id)
-  const selfDb = authDb(SELF_BOOKER_A, 'self-a@test.com')
+  const ref = (db: Awaited<ReturnType<typeof authDb>>, id: string) => doc(db, 'organizations', ORG_A, 'holidayBookings', id)
+  const selfDb = await authDb(SELF_BOOKER_A, 'self-a@test.com')
   // iOS self-book: approved, no approvedByUserId. Web self-book: approvedByUserId == self.
   await assertSucceeds(setDoc(ref(selfDb, 'hol-self-1'), leave(SELF_BOOKER_A, 'approved', { decisionNote: null, cancellationRequestedAt: null }), { merge: true }))
   await assertSucceeds(setDoc(ref(selfDb, 'hol-self-2'), leave(SELF_BOOKER_A, 'approved', { approvedByUserId: SELF_BOOKER_A, approvedAt: Timestamp.now() })))
@@ -1387,17 +1389,17 @@ test('annual leave: self-bookers save their own leave approved; operatives with 
   // Cannot approve as someone else.
   await assertFails(setDoc(ref(selfDb, 'hol-self-3'), leave(SELF_BOOKER_A, 'approved', { approvedByUserId: LM_A })))
   // OP_A has no line manager in the seed. Rulebook 1.2.0: that no longer self-books, it asks.
-  await assertFails(setDoc(ref(authDb(OP_A, 'op-a@test.com'), 'hol-noline-1'), leave(OP_A, 'approved')))
-  await assertSucceeds(setDoc(ref(authDb(OP_A, 'op-a@test.com'), 'hol-noline-1'), leave(OP_A, 'pending')))
+  await assertFails(setDoc(ref(await authDb(OP_A, 'op-a@test.com'), 'hol-noline-1'), leave(OP_A, 'approved')))
+  await assertSucceeds(setDoc(ref(await authDb(OP_A, 'op-a@test.com'), 'hol-noline-1'), leave(OP_A, 'pending')))
   // Another company never writes here.
-  await assertFails(setDoc(ref(authDb(ADMIN_B, 'admin-b@test.com'), 'hol-foreign'), leave(ADMIN_B, 'pending')))
+  await assertFails(setDoc(ref(await authDb(ADMIN_B, 'admin-b@test.com'), 'hol-foreign'), leave(ADMIN_B, 'pending')))
 })
 
 test('timesheets: the owner cannot counter-sign or export their own sheet; the line manager and admins can', async () => {
   await seedLeaveAndTimesheetPeople()
   const id = `timesheet_${REPORT_A}_1760000000`
-  const ref = (db: ReturnType<typeof authDb>) => doc(db, 'organizations', ORG_A, 'settings', id)
-  const rep = authDb(REPORT_A, 'report-a@test.com')
+  const ref = (db: Awaited<ReturnType<typeof authDb>>) => doc(db, 'organizations', ORG_A, 'settings', id)
+  const rep = await authDb(REPORT_A, 'report-a@test.com')
   // Owner creates and signs their own part. Manager fields go as web writes them ('' / null).
   await assertSucceeds(setDoc(ref(rep), {
     userId: REPORT_A, weekStartKey: '2026-10-01', weekEndKey: '2026-10-15',
@@ -1411,9 +1413,9 @@ test('timesheets: the owner cannot counter-sign or export their own sheet; the l
   await assertFails(setDoc(ref(rep), { exportedAt: Timestamp.now() }, { merge: true }))
   await assertFails(setDoc(ref(rep), { managerSignedByUserId: REPORT_A }, { merge: true }))
   // A manager who is not their line manager cannot sign; the line manager can.
-  await assertFails(setDoc(ref(authDb(MGR_OTHER_A, 'mgr-other-a@test.com')), { managerSignedAt: Timestamp.now() }, { merge: true }))
+  await assertFails(setDoc(ref(await authDb(MGR_OTHER_A, 'mgr-other-a@test.com')), { managerSignedAt: Timestamp.now() }, { merge: true }))
   const signed = Timestamp.fromMillis(Date.parse('2026-10-16T10:00:00.123Z') + 0.789)
-  await assertSucceeds(setDoc(ref(authDb(LM_A, 'lm-a@test.com')), {
+  await assertSucceeds(setDoc(ref(await authDb(LM_A, 'lm-a@test.com')), {
     managerSignedAt: signed, managerSignedByName: 'Lou', managerSignedByUserId: LM_A,
     approvedAt: signed, approvedByName: 'Lou',
   }, { merge: true }))
@@ -1427,31 +1429,31 @@ test('timesheets: the owner cannot counter-sign or export their own sheet; the l
   await assertFails(setDoc(ref(rep), { managerSignedAt: null }, { merge: true }))
   await assertFails(deleteDoc(ref(rep)))
   // An admin exports.
-  await assertSucceeds(setDoc(ref(authDb(ADMIN_A, 'admin-a@test.com')), { exportedAt: Timestamp.now() }, { merge: true }))
+  await assertSucceeds(setDoc(ref(await authDb(ADMIN_A, 'admin-a@test.com')), { exportedAt: Timestamp.now() }, { merge: true }))
 })
 
 test('staff warning decisions: operatives cannot accept a booking clash; managers and admins can', async () => {
   await seedLeaveAndTimesheetPeople()
-  const ref = (db: ReturnType<typeof authDb>) => doc(db, 'organizations', ORG_A, 'acceptedBookingClashes', 'A|B')
+  const ref = (db: Awaited<ReturnType<typeof authDb>>) => doc(db, 'organizations', ORG_A, 'acceptedBookingClashes', 'A|B')
   const fields = (uid: string) => ({ bookingAId: 'A', bookingBId: 'B', acceptedByUserId: uid })
-  await assertFails(setDoc(ref(authDb(OP_A, 'op-a@test.com')), fields(OP_A)))
-  await assertSucceeds(setDoc(ref(authDb(MGR_OTHER_A, 'mgr-other-a@test.com')), fields(MGR_OTHER_A)))
-  await assertSucceeds(setDoc(ref(authDb(ADMIN_A, 'admin-a@test.com')), fields(ADMIN_A)))
-  await assertFails(setDoc(ref(authDb(MGR_OTHER_A, 'mgr-other-a@test.com')), { ...fields(MGR_OTHER_A), updatedBy: ADMIN_A }))
-  await assertSucceeds(getDoc(ref(authDb(OP_A, 'op-a@test.com'))))
-  await assertFails(setDoc(ref(authDb(ADMIN_B, 'admin-b@test.com')), fields(ADMIN_B)))
+  await assertFails(setDoc(ref(await authDb(OP_A, 'op-a@test.com')), fields(OP_A)))
+  await assertSucceeds(setDoc(ref(await authDb(MGR_OTHER_A, 'mgr-other-a@test.com')), fields(MGR_OTHER_A)))
+  await assertSucceeds(setDoc(ref(await authDb(ADMIN_A, 'admin-a@test.com')), fields(ADMIN_A)))
+  await assertFails(setDoc(ref(await authDb(MGR_OTHER_A, 'mgr-other-a@test.com')), { ...fields(MGR_OTHER_A), updatedBy: ADMIN_A }))
+  await assertSucceeds(getDoc(ref(await authDb(OP_A, 'op-a@test.com'))))
+  await assertFails(setDoc(ref(await authDb(ADMIN_B, 'admin-b@test.com')), fields(ADMIN_B)))
 })
 
 test('settings: operatives cannot write company settings; managers can; operatives keep deadlines and health & safety', async () => {
   await seedLeaveAndTimesheetPeople()
-  const ref = (db: ReturnType<typeof authDb>, id: string) => doc(db, 'organizations', ORG_A, 'settings', id)
-  const op = authDb(OP_A, 'op-a@test.com')
+  const ref = (db: Awaited<ReturnType<typeof authDb>>, id: string) => doc(db, 'organizations', ORG_A, 'settings', id)
+  const op = await authDb(OP_A, 'op-a@test.com')
   await assertFails(setDoc(ref(op, 'jobTypes'), { jobTypes: ['Hacked'] }))
   await assertFails(setDoc(ref(op, 'tradeTypeInventory'), { trades: ['x'] }, { merge: true }))
   await assertFails(setDoc(ref(op, 'variationTrades'), { trades: ['x'] }))
   await assertFails(setDoc(ref(op, 'somethingNew'), { a: 1 }))
-  await assertSucceeds(setDoc(ref(authDb(MGR_OTHER_A, 'mgr-other-a@test.com'), 'jobTypes'), { jobTypes: ['Fit out'] }))
-  await assertSucceeds(setDoc(ref(authDb(ADMIN_A, 'admin-a@test.com'), 'tradeTypeInventory'), { trades: ['Joiner'] }, { merge: true }))
+  await assertSucceeds(setDoc(ref(await authDb(MGR_OTHER_A, 'mgr-other-a@test.com'), 'jobTypes'), { jobTypes: ['Fit out'] }))
+  await assertSucceeds(setDoc(ref(await authDb(ADMIN_A, 'admin-a@test.com'), 'tradeTypeInventory'), { trades: ['Joiner'] }, { merge: true }))
   await assertSucceeds(getDoc(ref(op, 'jobTypes')))
   await assertSucceeds(setDoc(ref(op, 'deadlines_projects_AAAA-1'), { deadlines: [] }, { merge: true }))
   await assertSucceeds(setDoc(ref(op, 'deadlineAssignments'), { a: 1 }, { merge: true }))
@@ -1460,7 +1462,7 @@ test('settings: operatives cannot write company settings; managers can; operativ
 
 test('self-update: a person cannot change their own pay, line manager, active state, employment type or permissions', async () => {
   await seedLeaveAndTimesheetPeople()
-  const rep = authDb(REPORT_A, 'report-a@test.com')
+  const rep = await authDb(REPORT_A, 'report-a@test.com')
   const me = doc(rep, 'users', REPORT_A)
   await assertFails(updateDoc(me, { dayRate: 999 }))
   await assertFails(updateDoc(me, { hourlyRate: 50 }))
@@ -1493,11 +1495,11 @@ test('self-update: a person cannot change their own pay, line manager, active st
   // Turning a toggle off is not an escalation.
   await assertSucceeds(updateDoc(me, { dailyOverview: false, 'permissions.dailyOverview': false }))
   // A manager's iOS self-save forces materials and siteAudit on: allowed for a non-operative.
-  await assertSucceeds(updateDoc(doc(authDb(MGR_OTHER_A, 'mgr-other-a@test.com'), 'users', MGR_OTHER_A), {
+  await assertSucceeds(updateDoc(doc(await authDb(MGR_OTHER_A, 'mgr-other-a@test.com'), 'users', MGR_OTHER_A), {
     materials: true, siteAudit: true, 'permissions.materials': true, 'permissions.siteAudit': true, firstName: 'Max',
   }))
   // An admin still edits the person's pay and line manager.
-  await assertSucceeds(updateDoc(doc(authDb(ADMIN_A, 'admin-a@test.com'), 'users', REPORT_A), { dayRate: 220, assignedManagerUserIds: [LM_A, MGR_OTHER_A] }))
+  await assertSucceeds(updateDoc(doc(await authDb(ADMIN_A, 'admin-a@test.com'), 'users', REPORT_A), { dayRate: 220, assignedManagerUserIds: [LM_A, MGR_OTHER_A] }))
 })
 
 test('organisation: admins edit; a demoted creator cannot; creatorUserId moves only by the Super Admin to another admin', async () => {
@@ -1516,23 +1518,23 @@ test('organisation: admins edit; a demoted creator cannot; creatorUserId moves o
     await setDoc(doc(db, 'users', ADMIN_C), { email: 'admin-c@test.com', organizationId: ORG_C, role: 'admin', adminAccess: true })
     await setDoc(doc(db, 'users', MEMBER_C), { email: 'member-c@test.com', organizationId: ORG_C, role: 'operative', operativeMode: true })
   })
-  const org = (uid: string, email: string) => doc(authDb(uid, email), 'organizations', ORG_C)
-  await assertSucceeds(updateDoc(org(ADMIN_C, 'admin-c@test.com'), { name: 'Company C Ltd' }))
-  await assertFails(updateDoc(org(MEMBER_C, 'member-c@test.com'), { name: 'Hijack' }))
+  const org = async (uid: string, email: string) => doc(await authDb(uid, email), 'organizations', ORG_C)
+  await assertSucceeds(updateDoc(await org(ADMIN_C, 'admin-c@test.com'), { name: 'Company C Ltd' }))
+  await assertFails(updateDoc(await org(MEMBER_C, 'member-c@test.com'), { name: 'Hijack' }))
   // A plain admin cannot take ownership or give it to an operative; billing stays server-only.
-  await assertFails(updateDoc(org(ADMIN_C, 'admin-c@test.com'), { creatorUserId: ADMIN_C }))
-  await assertFails(updateDoc(org(FOUNDER, 'founder-c@test.com'), { creatorUserId: MEMBER_C }))
-  await assertFails(updateDoc(org(FOUNDER, 'founder-c@test.com'), { billing: { status: 'active', plan: 'free' } }))
+  await assertFails(updateDoc(await org(ADMIN_C, 'admin-c@test.com'), { creatorUserId: ADMIN_C }))
+  await assertFails(updateDoc(await org(FOUNDER, 'founder-c@test.com'), { creatorUserId: MEMBER_C }))
+  await assertFails(updateDoc(await org(FOUNDER, 'founder-c@test.com'), { billing: { status: 'active', plan: 'free' } }))
   // The Super Admin transfers to another admin.
-  await assertSucceeds(updateDoc(org(FOUNDER, 'founder-c@test.com'), { creatorUserId: ADMIN_C }))
+  await assertSucceeds(updateDoc(await org(FOUNDER, 'founder-c@test.com'), { creatorUserId: ADMIN_C }))
   // The old creator is demoted (users doc and members map): they cannot edit any more.
   await env.withSecurityRulesDisabled(async (ctx) => {
     const db = ctx.firestore()
     await setDoc(doc(db, 'users', FOUNDER), { email: 'founder-c@test.com', organizationId: ORG_C, role: 'manager', adminAccess: false, isSuperAdmin: false, manager: true })
     await updateDoc(doc(db, 'organizations', ORG_C), { creatorUserId: FOUNDER, [`members.${FOUNDER}`]: 'member' })
   })
-  await assertFails(updateDoc(org(FOUNDER, 'founder-c@test.com'), { name: 'Mine again' }))
-  await assertFails(updateDoc(org(FOUNDER, 'founder-c@test.com'), { creatorUserId: FOUNDER, [`members.${FOUNDER}`]: 'admin' }))
+  await assertFails(updateDoc(await org(FOUNDER, 'founder-c@test.com'), { name: 'Mine again' }))
+  await assertFails(updateDoc(await org(FOUNDER, 'founder-c@test.com'), { creatorUserId: FOUNDER, [`members.${FOUNDER}`]: 'admin' }))
 })
 
 test('deleted bookings: the delete writes a tombstone and nobody can bring the booking back', async () => {
@@ -1542,9 +1544,9 @@ test('deleted bookings: the delete writes a tombstone and nobody can bring the b
     await setDoc(doc(db, 'organizations', ORG_A, 'bookings', 'BOOK-T1'), { operativeId: OP_A, status: 'Confirmed', notes: '' })
     await setDoc(doc(db, 'organizations', ORG_A, 'managerSiteBookings', 'MSB-T1'), { userId: LM_A, locationType: 'office' })
   })
-  const admin = authDb(ADMIN_A, 'admin-a@test.com')
-  const op = authDb(OP_A, 'op-a@test.com')
-  const tomb = (db: ReturnType<typeof authDb>, id: string) => doc(db, 'organizations', ORG_A, 'deletedBookings', id)
+  const admin = await authDb(ADMIN_A, 'admin-a@test.com')
+  const op = await authDb(OP_A, 'op-a@test.com')
+  const tomb = (db: Awaited<ReturnType<typeof authDb>>, id: string) => doc(db, 'organizations', ORG_A, 'deletedBookings', id)
   const fields = (id: string, collectionName: string, uid: string, from = 'web') => ({
     bookingId: id, collection: collectionName, deletedAt: serverTimestamp(), deletedBy: uid, deletedFrom: from,
   })
@@ -1568,12 +1570,12 @@ test('deleted bookings: the delete writes a tombstone and nobody can bring the b
   await assertFails(setDoc(doc(admin, 'organizations', ORG_A, 'bookings', 'BOOK-T1'), { operativeId: OP_A, status: 'Confirmed' }))
   // The tombstone is read by members, never edited, and removed only by an admin.
   await assertSucceeds(getDoc(tomb(op, 'BOOK-T1')))
-  await assertFails(getDoc(tomb(authDb(ADMIN_B, 'admin-b@test.com'), 'BOOK-T1')))
+  await assertFails(getDoc(tomb(await authDb(ADMIN_B, 'admin-b@test.com'), 'BOOK-T1')))
   await assertFails(setDoc(tomb(admin, 'BOOK-T1'), { deletedFrom: 'ios' }, { merge: true }))
   await assertFails(deleteDoc(tomb(op, 'BOOK-T1')))
 
   // Manager schedule bookings (1.10.0): a manager deletes their own non-job booking, with the tombstone; it cannot come back.
-  const mgr = authDb(LM_A, 'lm-a@test.com')
+  const mgr = await authDb(LM_A, 'lm-a@test.com')
   const msb = writeBatch(mgr)
   msb.delete(doc(mgr, 'organizations', ORG_A, 'managerSiteBookings', 'MSB-T1'))
   msb.set(tomb(mgr, 'MSB-T1'), fields('MSB-T1', 'managerSiteBookings', LM_A, 'ios'))
@@ -1596,16 +1598,16 @@ test('cancelled bookings: an operative replay is refused (1.10.0: operatives nev
     await setDoc(doc(db, 'organizations', ORG_A, 'projects', 'JOB-C1'), { managerIds: [MGR_OTHER_A] })
     await setDoc(doc(db, 'organizations', ORG_A, 'bookings', 'BOOK-C1'), { operativeId: OP_A, projectId: 'JOB-C1', status: 'Cancelled', notes: '' })
   })
-  const op = authDb(OP_A, 'op-a@test.com')
-  const ref = (db: ReturnType<typeof authDb>) => doc(db, 'organizations', ORG_A, 'bookings', 'BOOK-C1')
+  const op = await authDb(OP_A, 'op-a@test.com')
+  const ref = (db: Awaited<ReturnType<typeof authDb>>) => doc(db, 'organizations', ORG_A, 'bookings', 'BOOK-C1')
   await assertFails(setDoc(ref(op), { operativeId: OP_A, status: 'Confirmed', notes: '' }, { merge: true }))
   await assertFails(setDoc(ref(op), { operativeId: OP_A, status: 'Cancelled', notes: 'still off' }, { merge: true }))
-  await assertSucceeds(setDoc(ref(authDb(MGR_OTHER_A, 'mgr-other-a@test.com')), { status: 'Confirmed' }, { merge: true }))
+  await assertSucceeds(setDoc(ref(await authDb(MGR_OTHER_A, 'mgr-other-a@test.com')), { status: 'Confirmed' }, { merge: true }))
 })
 
 test('warning decisions accept optional write metadata (web) and still accept writes without it (iOS)', async () => {
   await seedLeaveAndTimesheetPeople()
-  const mgr = authDb(MGR_OTHER_A, 'mgr-other-a@test.com')
+  const mgr = await authDb(MGR_OTHER_A, 'mgr-other-a@test.com')
   const key = 'meta-key-1'
   const wr = doc(mgr, 'organizations', ORG_A, 'warningResolutions', key)
   const base = { resolutionKey: key, status: 'dismissed', resolvedByUserId: MGR_OTHER_A, resolvedAt: serverTimestamp() }
@@ -1641,7 +1643,7 @@ test('a manager with operatives access edits an operative profile with write met
       updatedBy: ADMIN_A, updatedFrom: 'ios',
     })
   })
-  const ref = doc(authDb(MGR_OPS, 'mgr-ops@test.com'), 'users', OP_META)
+  const ref = doc(await authDb(MGR_OPS, 'mgr-ops@test.com'), 'users', OP_META)
   await assertSucceeds(updateDoc(ref, { dayRate: 160, updatedBy: MGR_OPS, updatedFrom: 'web', updatedAt: serverTimestamp() }))
   // Without metadata (iOS today), even though the stored stamp names someone else.
   await env.withSecurityRulesDisabled(async (ctx) => {
@@ -1693,17 +1695,17 @@ async function seedPayPeople() {
 
 test('operativeProfiles: the person cannot change their own pay; unchanged resends pass; admins and operatives managers can', async () => {
   await seedPayPeople()
-  const ref = (db: ReturnType<typeof authDb>, id: string) => doc(db, 'organizations', ORG_A, 'operativeProfiles', id)
-  const op = authDb(PAY_OP, 'pay-op@test.com')
-  const mgr = authDb(PAY_MGR_OPS, 'pay-mgr-ops@test.com')
-  const admin = authDb(ADMIN_A, 'admin-a@test.com')
+  const ref = (db: Awaited<ReturnType<typeof authDb>>, id: string) => doc(db, 'organizations', ORG_A, 'operativeProfiles', id)
+  const op = await authDb(PAY_OP, 'pay-op@test.com')
+  const mgr = await authDb(PAY_MGR_OPS, 'pay-mgr-ops@test.com')
+  const admin = await authDb(ADMIN_A, 'admin-a@test.com')
 
   // The operative's own pay, line manager or employment on the mirror: refused (update and create).
   await assertFails(setDoc(ref(op, PAY_OP), { userId: PAY_OP, dayRate: 999, updatedAt: Timestamp.now() }, { merge: true }))
   await assertFails(updateDoc(ref(op, PAY_OP), { payBasis: 'hourly', hourlyRate: 80 }))
   await assertFails(updateDoc(ref(op, PAY_OP), { assignedManagerUserId: PAY_OP }))
   await assertFails(updateDoc(ref(op, PAY_OP), { employmentType: 'self_employed' }))
-  await assertFails(setDoc(ref(authDb(REPORT_A, 'report-a@test.com'), REPORT_A), { userId: REPORT_A, dayRate: 999 }))
+  await assertFails(setDoc(ref(await authDb(REPORT_A, 'report-a@test.com'), REPORT_A), { userId: REPORT_A, dayRate: 999 }))
   // Nor anyone else's.
   await assertFails(updateDoc(ref(op, PAY_MGR_OPS), { dayRate: 1 }))
   // iOS saveOperativeProfileMetadataFallback / web saveUser resend of the same values: allowed.
@@ -1719,12 +1721,12 @@ test('operativeProfiles: the person cannot change their own pay; unchanged resen
   // A doc id for someone else whose userId names the manager does not slip through.
   await assertFails(setDoc(ref(mgr, PAY_OP), { userId: PAY_MGR_OPS, dayRate: 999 }, { merge: true }))
   // A manager without operatives access cannot.
-  await assertFails(updateDoc(ref(authDb(LM_A, 'lm-a@test.com'), PAY_OP), { dayRate: 220 }))
+  await assertFails(updateDoc(ref(await authDb(LM_A, 'lm-a@test.com'), PAY_OP), { dayRate: 220 }))
   // Admins can, including a profile that does not exist yet.
   await assertSucceeds(updateDoc(ref(admin, PAY_OP), { dayRate: 230, payBasis: 'day' }))
   await assertSucceeds(setDoc(ref(admin, REPORT_A), { userId: REPORT_A, dayRate: 240 }, { merge: true }))
   // Another company's admin cannot.
-  await assertFails(updateDoc(ref(authDb(ADMIN_B, 'admin-b@test.com'), PAY_OP), { dayRate: 1 }))
+  await assertFails(updateDoc(ref(await authDb(ADMIN_B, 'admin-b@test.com'), PAY_OP), { dayRate: 1 }))
   // Delete: the person's own mirror or a pay manager, not a colleague.
   await assertFails(deleteDoc(ref(op, PAY_MGR_OPS)))
   await assertSucceeds(deleteDoc(ref(mgr, PAY_OP)))
@@ -1732,12 +1734,12 @@ test('operativeProfiles: the person cannot change their own pay; unchanged resen
 
 test('operativeDayRateHistory: nobody records their own rate; admins and operatives managers record an operative\'s', async () => {
   await seedPayPeople()
-  const ref = (db: ReturnType<typeof authDb>, id: string) => doc(db, 'organizations', ORG_A, 'operativeDayRateHistory', id)
+  const ref = (db: Awaited<ReturnType<typeof authDb>>, id: string) => doc(db, 'organizations', ORG_A, 'operativeDayRateHistory', id)
   const row = (extra: Record<string, unknown>) => ({
     dayRate: 999, effectiveAt: Timestamp.fromMillis(Date.parse('2026-10-01T00:00:00Z')), createdAt: Timestamp.now(), ...extra,
   })
-  const op = authDb(PAY_OP, 'pay-op@test.com')
-  const mgr = authDb(PAY_MGR_OPS, 'pay-mgr-ops@test.com')
+  const op = await authDb(PAY_OP, 'pay-op@test.com')
+  const mgr = await authDb(PAY_MGR_OPS, 'pay-mgr-ops@test.com')
 
   // The operative: not their own row (by user id or by their operatives record), not anyone else's.
   await assertFails(setDoc(ref(op, 'r1'), row({ userId: PAY_OP }), { merge: true }))
@@ -1757,20 +1759,20 @@ test('operativeDayRateHistory: nobody records their own rate; admins and operati
   // Rewriting a row about someone else into a row about yourself is refused too.
   await assertFails(updateDoc(ref(mgr, 'r4'), { userId: PAY_MGR_OPS }))
   // A manager without operatives access cannot record pay.
-  await assertFails(setDoc(ref(authDb(LM_A, 'lm-a@test.com'), 'r10'), row({ userId: PAY_OP })))
+  await assertFails(setDoc(ref(await authDb(LM_A, 'lm-a@test.com'), 'r10'), row({ userId: PAY_OP })))
   // Admins can.
-  await assertSucceeds(setDoc(ref(authDb(ADMIN_A, 'admin-a@test.com'), 'r11'), row({ userId: PAY_OP, dayRate: 220 })))
+  await assertSucceeds(setDoc(ref(await authDb(ADMIN_A, 'admin-a@test.com'), 'r11'), row({ userId: PAY_OP, dayRate: 220 })))
   // Everyone in the company still reads history (payRateOnDay on both apps).
   await assertSucceeds(getDoc(ref(op, 'r4')))
-  await assertFails(setDoc(ref(authDb(ADMIN_B, 'admin-b@test.com'), 'r12'), row({ userId: PAY_OP })))
+  await assertFails(setDoc(ref(await authDb(ADMIN_B, 'admin-b@test.com'), 'r12'), row({ userId: PAY_OP })))
 })
 
 test('timesheets: the owner cannot change line reviews, entry decisions or the approved snapshot; the line manager and admins can', async () => {
   await seedPayPeople()
   const id = `timesheet_${REPORT_A}_1770000000`
-  const ref = (db: ReturnType<typeof authDb>) => doc(db, 'organizations', ORG_A, 'settings', id)
-  const rep = authDb(REPORT_A, 'report-a@test.com')
-  const lm = authDb(LM_A, 'lm-a@test.com')
+  const ref = (db: Awaited<ReturnType<typeof authDb>>) => doc(db, 'organizations', ORG_A, 'settings', id)
+  const rep = await authDb(REPORT_A, 'report-a@test.com')
+  const lm = await authDb(LM_A, 'lm-a@test.com')
   // iOS asFirestoreMap shape: the whole draft, manager parts empty, inline decision 'approved'.
   const expense = (amount: number, managerDecision = 'approved', managerRevisedAmount: number | null = null) => ({
     id: 'E1', title: 'Parking', details: '', jobNumber: 'J1',
@@ -1802,7 +1804,7 @@ test('timesheets: the owner cannot change line reviews, entry decisions or the a
     'extraEntryReviews.E1': { decision: 'edited', revisedAmount: 30, reviewedAmount: 50, reviewedByUserId: LM_A, reviewedAtMs: 1 },
   }))
   // An admin can too.
-  await assertSucceeds(updateDoc(ref(authDb(ADMIN_A, 'admin-a@test.com')), { 'payrollLineReviews.op-2': { decision: 'approved', revisedAmount: null } }))
+  await assertSucceeds(updateDoc(ref(await authDb(ADMIN_A, 'admin-a@test.com')), { 'payrollLineReviews.op-2': { decision: 'approved', revisedAmount: null } }))
 
   // The owner's iOS full resend with the same reviews: allowed. Undoing a review: refused.
   const reviews = {
@@ -1843,7 +1845,7 @@ test('timesheets: the owner cannot change line reviews, entry decisions or the a
 test('timesheets: 1.28.0 a person with no line manager signs but never writes a self-signed snapshot or reviews', async () => {
   await seedPayPeople()
   // OP_A has no line manager in the seed (legacy data): their sheet waits for the admins.
-  const ref = doc(authDb(OP_A, 'op-a@test.com'), 'organizations', ORG_A, 'settings', `timesheet_${OP_A}_1770000000`)
+  const ref = doc(await authDb(OP_A, 'op-a@test.com'), 'organizations', ORG_A, 'settings', `timesheet_${OP_A}_1770000000`)
   const signed = {
     userId: OP_A, operativeSignedAt: Timestamp.now(), operativeSignedByName: 'Ollie',
     managerSignedAt: null, managerSignedByName: '', managerSignedByUserId: '', managerSignatureImageBase64: '',
@@ -1865,11 +1867,11 @@ test('roster rows: operatives and managers pay is changed only by admins or an o
       email: 'pay-mgr-ops@test.com', name: 'Morgan', dayRate: 300,
     })
   })
-  const opRow = (db: ReturnType<typeof authDb>, id: string) => doc(db, 'organizations', ORG_A, 'operatives', id)
-  const mgrRow = (db: ReturnType<typeof authDb>, id: string) => doc(db, 'organizations', ORG_A, 'managers', id)
-  const op = authDb(PAY_OP, 'pay-op@test.com')
-  const mgr = authDb(PAY_MGR_OPS, 'pay-mgr-ops@test.com')
-  const admin = authDb(ADMIN_A, 'admin-a@test.com')
+  const opRow = (db: Awaited<ReturnType<typeof authDb>>, id: string) => doc(db, 'organizations', ORG_A, 'operatives', id)
+  const mgrRow = (db: Awaited<ReturnType<typeof authDb>>, id: string) => doc(db, 'organizations', ORG_A, 'managers', id)
+  const op = await authDb(PAY_OP, 'pay-op@test.com')
+  const mgr = await authDb(PAY_MGR_OPS, 'pay-mgr-ops@test.com')
+  const admin = await authDb(ADMIN_A, 'admin-a@test.com')
 
   // An operative cannot change pay on any operatives row, own or not; other fields and unchanged resends pass.
   await assertFails(updateDoc(opRow(op, PAY_OP_ROW), { dayRate: 999 }))
@@ -1887,7 +1889,7 @@ test('roster rows: operatives and managers pay is changed only by admins or an o
   await assertSucceeds(updateDoc(mgrRow(admin, 'pay-mgr-row-a'), { dayRate: 320 }))
   await assertSucceeds(updateDoc(opRow(admin, PAY_MGR_OP_ROW), { dayRate: 310 }))
   // Another company's admin cannot.
-  await assertFails(updateDoc(opRow(authDb(ADMIN_B, 'admin-b@test.com'), PAY_OP_ROW), { dayRate: 1 }))
+  await assertFails(updateDoc(opRow(await authDb(ADMIN_B, 'admin-b@test.com'), PAY_OP_ROW), { dayRate: 1 }))
 })
 
 // ---------------------------------------------------------------------------
@@ -1922,9 +1924,9 @@ async function seedRulebook120People() {
 
 test('1.2.0 decision 2: only the self-book flag (not operative mode) self-books; no line manager alone does not', async () => {
   await seedRulebook120People()
-  const ref = (db: ReturnType<typeof authDb>, id: string) => doc(db, 'organizations', ORG_A, 'holidayBookings', id)
-  const nolm = authDb(NOLM_MGR_A, 'nolm-mgr-a@test.com')
-  const sbOp = authDb(SB_OPMODE_A, 'sb-opmode-a@test.com')
+  const ref = (db: Awaited<ReturnType<typeof authDb>>, id: string) => doc(db, 'organizations', ORG_A, 'holidayBookings', id)
+  const nolm = await authDb(NOLM_MGR_A, 'nolm-mgr-a@test.com')
+  const sbOp = await authDb(SB_OPMODE_A, 'sb-opmode-a@test.com')
   // hasNoLineManager, self-book off: asks, never saves approved, never edits the dates once decided.
   await assertFails(setDoc(ref(nolm, 'hb120-1'), leave(NOLM_MGR_A, 'approved')))
   await assertFails(setDoc(ref(nolm, 'hb120-1'), leave(NOLM_MGR_A, 'approved', { approvedByUserId: NOLM_MGR_A })))
@@ -1934,9 +1936,9 @@ test('1.2.0 decision 2: only the self-book flag (not operative mode) self-books;
   await assertFails(setDoc(ref(sbOp, 'hb120-2'), leave(SB_OPMODE_A, 'approved')))
   await assertSucceeds(setDoc(ref(sbOp, 'hb120-2'), leave(SB_OPMODE_A, 'pending')))
   // Nobody is stranded: an admin (not in operative mode) decides the no-line-manager request.
-  await assertSucceeds(updateDoc(ref(authDb(ADMIN_A, 'admin-a@test.com'), 'hb120-1'), { status: 'approved', approvedByUserId: ADMIN_A, approvedAt: Timestamp.now() }))
+  await assertSucceeds(updateDoc(ref(await authDb(ADMIN_A, 'admin-a@test.com'), 'hb120-1'), { status: 'approved', approvedByUserId: ADMIN_A, approvedAt: Timestamp.now() }))
   // Once approved, a non-self-booker (not a manager) cannot delete it themselves (they ask to cancel).
-  await assertSucceeds(updateDoc(ref(authDb(ADMIN_A, 'admin-a@test.com'), 'hb120-2'), { status: 'approved', approvedByUserId: ADMIN_A, approvedAt: Timestamp.now() }))
+  await assertSucceeds(updateDoc(ref(await authDb(ADMIN_A, 'admin-a@test.com'), 'hb120-2'), { status: 'approved', approvedByUserId: ADMIN_A, approvedAt: Timestamp.now() }))
   await assertFails(deleteDoc(ref(sbOp, 'hb120-2')))
   // A pending request may still be withdrawn.
   await assertSucceeds(setDoc(ref(sbOp, 'hb120-3'), leave(SB_OPMODE_A, 'pending')))
@@ -1945,9 +1947,9 @@ test('1.2.0 decision 2: only the self-book flag (not operative mode) self-books;
 
 test('1.2.0 decision 3: nobody decides their own leave, admins included; an admin in operative mode decides only as line manager', async () => {
   await seedRulebook120People()
-  const ref = (db: ReturnType<typeof authDb>, id: string) => doc(db, 'organizations', ORG_A, 'holidayBookings', id)
-  const admin = authDb(ADMIN_A, 'admin-a@test.com')
-  const adminOp = authDb(ADMIN_OPMODE_A, 'admin-opmode-a@test.com')
+  const ref = (db: Awaited<ReturnType<typeof authDb>>, id: string) => doc(db, 'organizations', ORG_A, 'holidayBookings', id)
+  const admin = await authDb(ADMIN_A, 'admin-a@test.com')
+  const adminOp = await authDb(ADMIN_OPMODE_A, 'admin-opmode-a@test.com')
   const approve = (uid: string) => ({ status: 'approved', approvedByUserId: uid, approvedAt: Timestamp.now() })
 
   // 1.28.0: ADMIN_A is the Super Admin (the organisation's creator), so their own leave saves approved.
@@ -1967,8 +1969,8 @@ test('1.2.0 decision 3: nobody decides their own leave, admins included; an admi
   })
 
   // Requests from people with and without a line manager.
-  await assertSucceeds(setDoc(ref(authDb(REPORT_A, 'report-a@test.com'), 'hb120-rep'), leave(REPORT_A, 'pending')))
-  await assertSucceeds(setDoc(ref(authDb(OP_A, 'op-a@test.com'), 'hb120-noline'), leave(OP_A, 'pending')))
+  await assertSucceeds(setDoc(ref(await authDb(REPORT_A, 'report-a@test.com'), 'hb120-rep'), leave(REPORT_A, 'pending')))
+  await assertSucceeds(setDoc(ref(await authDb(OP_A, 'op-a@test.com'), 'hb120-noline'), leave(OP_A, 'pending')))
   // 1.11.0: an admin with a stray operative-mode flag is an admin (no operative mode) and decides like one —
   // covered by '1.11.0 levels' and the hb120-own-1 decision above.
   // Admin not in operative mode: both.
@@ -1979,7 +1981,7 @@ test('1.2.0 decision 3: nobody decides their own leave, admins included; an admi
   await env.withSecurityRulesDisabled(async (ctx) => {
     await setDoc(doc(ctx.firestore(), 'users', REPORT_A), { assignedManagerUserIds: [ADMIN_OPMODE_A] }, { merge: true })
   })
-  await assertSucceeds(setDoc(ref(authDb(REPORT_A, 'report-a@test.com'), 'hb120-rep-2'), leave(REPORT_A, 'pending')))
+  await assertSucceeds(setDoc(ref(await authDb(REPORT_A, 'report-a@test.com'), 'hb120-rep-2'), leave(REPORT_A, 'pending')))
   await assertSucceeds(updateDoc(ref(adminOp, 'hb120-rep-2'), approve(ADMIN_OPMODE_A)))
   await env.withSecurityRulesDisabled(async (ctx) => {
     await setDoc(doc(ctx.firestore(), 'users', REPORT_A), { assignedManagerUserIds: [] }, { merge: true })
@@ -1988,7 +1990,7 @@ test('1.2.0 decision 3: nobody decides their own leave, admins included; an admi
 
 test('1.2.0 decision 5: managers un-approve a booking clash (delete); operatives and other companies cannot', async () => {
   await seedRulebook120People()
-  const ref = (db: ReturnType<typeof authDb>, id: string) => doc(db, 'organizations', ORG_A, 'acceptedBookingClashes', id)
+  const ref = (db: Awaited<ReturnType<typeof authDb>>, id: string) => doc(db, 'organizations', ORG_A, 'acceptedBookingClashes', id)
   const fields = { bookingAId: 'C', bookingBId: 'D', acceptedByUserId: ADMIN_A }
   await env.withSecurityRulesDisabled(async (ctx) => {
     // One firestore() per context: a second call fails with "Firestore has already been started".
@@ -1996,11 +1998,11 @@ test('1.2.0 decision 5: managers un-approve a booking clash (delete); operatives
     await setDoc(doc(db, 'organizations', ORG_A, 'acceptedBookingClashes', 'C|D'), fields)
     await setDoc(doc(db, 'organizations', ORG_A, 'acceptedBookingClashes', 'E|F'), fields)
   })
-  const mgr = authDb(MGR_OTHER_A, 'mgr-other-a@test.com')
-  await assertFails(deleteDoc(ref(authDb(OP_A, 'op-a@test.com'), 'C|D')))
-  await assertFails(deleteDoc(ref(authDb(ADMIN_B, 'admin-b@test.com'), 'C|D')))
+  const mgr = await authDb(MGR_OTHER_A, 'mgr-other-a@test.com')
+  await assertFails(deleteDoc(ref(await authDb(OP_A, 'op-a@test.com'), 'C|D')))
+  await assertFails(deleteDoc(ref(await authDb(ADMIN_B, 'admin-b@test.com'), 'C|D')))
   await assertSucceeds(deleteDoc(ref(mgr, 'C|D')))
-  await assertSucceeds(deleteDoc(ref(authDb(ADMIN_A, 'admin-a@test.com'), 'E|F')))
+  await assertSucceeds(deleteDoc(ref(await authDb(ADMIN_A, 'admin-a@test.com'), 'E|F')))
 })
 
 test('1.2.0 decision 7 (1.10.0): a manager who does not manage the job cannot delete its labour booking or tombstone it', async () => {
@@ -2008,8 +2010,8 @@ test('1.2.0 decision 7 (1.10.0): a manager who does not manage the job cannot de
   await env.withSecurityRulesDisabled(async (ctx) => {
     await setDoc(doc(ctx.firestore(), 'organizations', ORG_A, 'bookings', 'book-120'), { organizationId: ORG_A, userId: OP_A })
   })
-  const mgr = authDb(MGR_OTHER_A, 'mgr-other-a@test.com')
-  const admin = authDb(ADMIN_A, 'admin-a@test.com')
+  const mgr = await authDb(MGR_OTHER_A, 'mgr-other-a@test.com')
+  const admin = await authDb(ADMIN_A, 'admin-a@test.com')
   const tombstone = (uid: string) => ({ bookingId: 'book-120', collection: 'bookings', deletedAt: serverTimestamp(), deletedBy: uid, deletedFrom: 'web' })
   await assertFails(deleteDoc(doc(mgr, 'organizations', ORG_A, 'bookings', 'book-120')))
   await assertFails(setDoc(doc(mgr, 'organizations', ORG_A, 'deletedBookings', 'book-120'), tombstone(MGR_OTHER_A)))
@@ -2021,15 +2023,15 @@ test('1.2.0 decision 7 (1.10.0): a manager who does not manage the job cannot de
 
 test('1.2.0 decision 14: hasNoLineManager is a line-manager field: never the person; admins; operatives managers for an operative', async () => {
   await seedRulebook120People()
-  const user = (db: ReturnType<typeof authDb>, id: string) => doc(db, 'users', id)
-  const op = authDb(PAY_OP, 'pay-op@test.com')
-  const mgrOps = authDb(PAY_MGR_OPS, 'pay-mgr-ops@test.com')
+  const user = (db: Awaited<ReturnType<typeof authDb>>, id: string) => doc(db, 'users', id)
+  const op = await authDb(PAY_OP, 'pay-op@test.com')
+  const mgrOps = await authDb(PAY_MGR_OPS, 'pay-mgr-ops@test.com')
   // The person never changes their own (on or off).
   await assertFails(updateDoc(user(op, PAY_OP), { hasNoLineManager: true }))
-  await assertFails(updateDoc(user(authDb(NOLM_MGR_A, 'nolm-mgr-a@test.com'), NOLM_MGR_A), { hasNoLineManager: false }))
+  await assertFails(updateDoc(user(await authDb(NOLM_MGR_A, 'nolm-mgr-a@test.com'), NOLM_MGR_A), { hasNoLineManager: false }))
   // Resending the unchanged value passes (missing and false are the same; true stays true).
   await assertSucceeds(updateDoc(user(op, PAY_OP), { hasNoLineManager: false, firstName: 'Pat' }))
-  await assertSucceeds(updateDoc(user(authDb(NOLM_MGR_A, 'nolm-mgr-a@test.com'), NOLM_MGR_A), { hasNoLineManager: true, firstName: 'Nia' }))
+  await assertSucceeds(updateDoc(user(await authDb(NOLM_MGR_A, 'nolm-mgr-a@test.com'), NOLM_MGR_A), { hasNoLineManager: true, firstName: 'Nia' }))
   // 1.31.0 (audit finding 9): "No line manager" is for admins only — an operatives manager never sets it on an
   // operative; they set the line manager (and clear the flag).
   await assertFails(updateDoc(user(mgrOps, PAY_OP), { hasNoLineManager: true, assignedManagerUserIds: [], assignedManagerUserId: '' }))
@@ -2037,26 +2039,26 @@ test('1.2.0 decision 14: hasNoLineManager is a line-manager field: never the per
   await assertFails(updateDoc(user(mgrOps, LM_A), { hasNoLineManager: true }))
   await assertFails(updateDoc(user(mgrOps, PAY_MGR_OPS), { hasNoLineManager: true }))
   // A manager without operatives access cannot.
-  await assertFails(updateDoc(user(authDb(LM_A, 'lm-a@test.com'), PAY_OP), { hasNoLineManager: true }))
+  await assertFails(updateDoc(user(await authDb(LM_A, 'lm-a@test.com'), PAY_OP), { hasNoLineManager: true }))
   // Admins can, for anyone in their company; another company's admin cannot.
-  await assertSucceeds(updateDoc(user(authDb(ADMIN_A, 'admin-a@test.com'), NOLM_MGR_A), { hasNoLineManager: false }))
+  await assertSucceeds(updateDoc(user(await authDb(ADMIN_A, 'admin-a@test.com'), NOLM_MGR_A), { hasNoLineManager: false }))
   // 1.31.0: an admin sets it on an admin only — never on an operative or a manager.
-  await assertFails(updateDoc(user(authDb(ADMIN_A, 'admin-a@test.com'), PAY_OP), { hasNoLineManager: true }))
-  await assertFails(updateDoc(user(authDb(ADMIN_B, 'admin-b@test.com'), PAY_OP), { hasNoLineManager: false }))
+  await assertFails(updateDoc(user(await authDb(ADMIN_A, 'admin-a@test.com'), PAY_OP), { hasNoLineManager: true }))
+  await assertFails(updateDoc(user(await authDb(ADMIN_B, 'admin-b@test.com'), PAY_OP), { hasNoLineManager: false }))
 })
 
 test('1.2.0 decision 15: a cleared-rate history row (dayRate null, payBasis null) is accepted for the same writers', async () => {
   await seedRulebook120People()
-  const ref = (db: ReturnType<typeof authDb>, id: string) => doc(db, 'organizations', ORG_A, 'operativeDayRateHistory', id)
+  const ref = (db: Awaited<ReturnType<typeof authDb>>, id: string) => doc(db, 'organizations', ORG_A, 'operativeDayRateHistory', id)
   const cleared = (extra: Record<string, unknown>) => ({
     dayRate: null, payBasis: null, effectiveAt: Timestamp.fromMillis(Date.parse('2026-11-01T00:00:00Z')), createdAt: Timestamp.now(), ...extra,
   })
-  const op = authDb(PAY_OP, 'pay-op@test.com')
-  const mgr = authDb(PAY_MGR_OPS, 'pay-mgr-ops@test.com')
+  const op = await authDb(PAY_OP, 'pay-op@test.com')
+  const mgr = await authDb(PAY_MGR_OPS, 'pay-mgr-ops@test.com')
   // Same writers as a normal row: operatives manager for an operative (user id or operatives row), admins.
   await assertSucceeds(setDoc(ref(mgr, 'clr-1'), cleared({ userId: PAY_OP, operativeId: PAY_OP_ROW }), { merge: true }))
   await assertSucceeds(setDoc(ref(mgr, 'clr-2'), { ...cleared({ operativeId: PAY_OP_ROW }), updatedAt: serverTimestamp(), updatedBy: PAY_MGR_OPS, updatedFrom: 'ios' }))
-  await assertSucceeds(setDoc(ref(authDb(ADMIN_A, 'admin-a@test.com'), 'clr-3'), cleared({ userId: REPORT_A })))
+  await assertSucceeds(setDoc(ref(await authDb(ADMIN_A, 'admin-a@test.com'), 'clr-3'), cleared({ userId: REPORT_A })))
   // An existing row can be turned into a cleared row by the same writers.
   await assertSucceeds(setDoc(ref(mgr, 'clr-4'), cleared({ userId: PAY_OP, dayRate: 200, payBasis: 'day' })))
   await assertSucceeds(updateDoc(ref(mgr, 'clr-4'), { dayRate: null, payBasis: null }))
@@ -2064,13 +2066,13 @@ test('1.2.0 decision 15: a cleared-rate history row (dayRate null, payBasis null
   await assertFails(setDoc(ref(op, 'clr-5'), cleared({ userId: PAY_OP })))
   await assertFails(setDoc(ref(mgr, 'clr-6'), cleared({ userId: PAY_MGR_OPS })))
   await assertFails(setDoc(ref(mgr, 'clr-7'), cleared({ userId: LM_A })))
-  await assertFails(setDoc(ref(authDb(LM_A, 'lm-a@test.com'), 'clr-8'), cleared({ userId: PAY_OP })))
-  await assertFails(setDoc(ref(authDb(ADMIN_B, 'admin-b@test.com'), 'clr-9'), cleared({ userId: PAY_OP })))
+  await assertFails(setDoc(ref(await authDb(LM_A, 'lm-a@test.com'), 'clr-8'), cleared({ userId: PAY_OP })))
+  await assertFails(setDoc(ref(await authDb(ADMIN_B, 'admin-b@test.com'), 'clr-9'), cleared({ userId: PAY_OP })))
 })
 
 test('1.2.0 holiday delete: only a decider (never on their own leave), the owner withdrawing, or a self-booker deletes', async () => {
   await seedRulebook120People()
-  const ref = (db: ReturnType<typeof authDb>, id: string) => doc(db, 'organizations', ORG_A, 'holidayBookings', id)
+  const ref = (db: Awaited<ReturnType<typeof authDb>>, id: string) => doc(db, 'organizations', ORG_A, 'holidayBookings', id)
   await env.withSecurityRulesDisabled(async (ctx) => {
     const db = ctx.firestore()
     const approved = (uid: string, extra: Record<string, unknown> = {}) => leave(uid, 'approved', { approvedByUserId: ADMIN_A, approvedAt: Timestamp.now(), ...extra })
@@ -2082,33 +2084,33 @@ test('1.2.0 holiday delete: only a decider (never on their own leave), the owner
     }))
     await setDoc(doc(db, 'organizations', ORG_A, 'holidayBookings', 'hbdel-rep-2'), approved(REPORT_A))
   })
-  const lm = authDb(LM_A, 'lm-a@test.com')
+  const lm = await authDb(LM_A, 'lm-a@test.com')
   // A manager (not a self-booker) cannot delete their own approved leave; nor can an admin with Annual Leave
   // Management off (1.28.0: having no line manager no longer self-approves an admin). The Super Admin (the
   // organisation's creator) always self-books and may.
-  await assertFails(deleteDoc(ref(authDb(NOLM_MGR_A, 'nolm-mgr-a@test.com'), 'hbdel-mgr-own')))
-  await assertFails(deleteDoc(ref(authDb(ADMIN_OPMODE_A, 'admin-opmode-a@test.com'), 'hbdel-admin-own')))
-  await assertSucceeds(deleteDoc(ref(authDb(ADMIN_A, 'admin-a@test.com'), 'hbdel-super-own')))
+  await assertFails(deleteDoc(ref(await authDb(NOLM_MGR_A, 'nolm-mgr-a@test.com'), 'hbdel-mgr-own')))
+  await assertFails(deleteDoc(ref(await authDb(ADMIN_OPMODE_A, 'admin-opmode-a@test.com'), 'hbdel-admin-own')))
+  await assertSucceeds(deleteDoc(ref(await authDb(ADMIN_A, 'admin-a@test.com'), 'hbdel-super-own')))
   // A manager who is not the line manager cannot delete a report's booking. (1.11.0: an admin with a stray
   // operative-mode flag is an admin and could; not asserted here so the line manager's delete below still runs.)
-  await assertFails(deleteDoc(ref(authDb(MGR_OTHER_A, 'mgr-other-a@test.com'), 'hbdel-rep-cancel')))
+  await assertFails(deleteDoc(ref(await authDb(MGR_OTHER_A, 'mgr-other-a@test.com'), 'hbdel-rep-cancel')))
   // Another company cannot.
-  await assertFails(deleteDoc(ref(authDb(ADMIN_B, 'admin-b@test.com'), 'hbdel-rep-cancel')))
+  await assertFails(deleteDoc(ref(await authDb(ADMIN_B, 'admin-b@test.com'), 'hbdel-rep-cancel')))
   // The line manager accepts the cancellation by deleting it.
   await assertSucceeds(deleteDoc(ref(lm, 'hbdel-rep-cancel')))
   // An admin (not in operative mode) removes someone else's booking (cleanup, Team screen).
-  await assertSucceeds(deleteDoc(ref(authDb(ADMIN_A, 'admin-a@test.com'), 'hbdel-rep-2')))
+  await assertSucceeds(deleteDoc(ref(await authDb(ADMIN_A, 'admin-a@test.com'), 'hbdel-rep-2')))
   // Another admin may remove ADMIN_A's own booking.
   await env.withSecurityRulesDisabled(async (ctx) => {
     await setDoc(doc(ctx.firestore(), 'users', 'admin-a2'), { email: 'admin-a2@test.com', organizationId: ORG_A, role: 'admin', adminAccess: true })
   })
-  await assertSucceeds(deleteDoc(ref(authDb('admin-a2', 'admin-a2@test.com'), 'hbdel-admin-own')))
+  await assertSucceeds(deleteDoc(ref(await authDb('admin-a2', 'admin-a2@test.com'), 'hbdel-admin-own')))
 })
 
 test('1.2.0 decision 5: any manager un-approves a warning resolution someone else approved; operatives and other companies cannot', async () => {
   await seedRulebook120People()
   const key = 'clash|book-x|book-y'
-  const ref = (db: ReturnType<typeof authDb>) => doc(db, 'organizations', ORG_A, 'warningResolutions', key)
+  const ref = (db: Awaited<ReturnType<typeof authDb>>) => doc(db, 'organizations', ORG_A, 'warningResolutions', key)
   const seed = async () => {
     await env.withSecurityRulesDisabled(async (ctx) => {
       await setDoc(doc(ctx.firestore(), 'organizations', ORG_A, 'warningResolutions', key), {
@@ -2117,11 +2119,11 @@ test('1.2.0 decision 5: any manager un-approves a warning resolution someone els
     })
   }
   await seed()
-  await assertFails(deleteDoc(ref(authDb(OP_A, 'op-a@test.com'))))
-  await assertFails(deleteDoc(ref(authDb(ADMIN_B, 'admin-b@test.com'))))
-  await assertSucceeds(deleteDoc(ref(authDb(MGR_OTHER_A, 'mgr-other-a@test.com'))))
+  await assertFails(deleteDoc(ref(await authDb(OP_A, 'op-a@test.com'))))
+  await assertFails(deleteDoc(ref(await authDb(ADMIN_B, 'admin-b@test.com'))))
+  await assertSucceeds(deleteDoc(ref(await authDb(MGR_OTHER_A, 'mgr-other-a@test.com'))))
   await seed()
-  await assertSucceeds(deleteDoc(ref(authDb(ADMIN_A, 'admin-a@test.com'))))
+  await assertSucceeds(deleteDoc(ref(await authDb(ADMIN_A, 'admin-a@test.com'))))
 })
 
 // ---------------------------------------------------------------------------
@@ -2149,24 +2151,24 @@ async function setAdminLineManagers(ids: string[]) {
 
 test('1.3.0 A5: with no line manager, only admins decide leave — never any manager', async () => {
   await seedRulebook130People()
-  const ref = (db: ReturnType<typeof authDb>, id: string) => doc(db, 'organizations', ORG_A, 'holidayBookings', id)
-  const mgr = authDb(MGR_OTHER_A, 'mgr-other-a@test.com')
+  const ref = (db: Awaited<ReturnType<typeof authDb>>, id: string) => doc(db, 'organizations', ORG_A, 'holidayBookings', id)
+  const mgr = await authDb(MGR_OTHER_A, 'mgr-other-a@test.com')
   const approve = (uid: string) => ({ status: 'approved', approvedByUserId: uid, approvedAt: Timestamp.now() })
   // OP_A has no line manager (legacy data).
-  await assertSucceeds(setDoc(ref(authDb(OP_A, 'op-a@test.com'), 'hb130-legacy'), leave(OP_A, 'pending')))
+  await assertSucceeds(setDoc(ref(await authDb(OP_A, 'op-a@test.com'), 'hb130-legacy'), leave(OP_A, 'pending')))
   await assertFails(updateDoc(ref(mgr, 'hb130-legacy'), approve(MGR_OTHER_A)))
   await assertFails(updateDoc(ref(mgr, 'hb130-legacy'), { status: 'rejected', approvedByUserId: MGR_OTHER_A }))
   await assertFails(deleteDoc(ref(mgr, 'hb130-legacy')))
-  await assertSucceeds(updateDoc(ref(authDb(ADMIN_A, 'admin-a@test.com'), 'hb130-legacy'), approve(ADMIN_A)))
+  await assertSucceeds(updateDoc(ref(await authDb(ADMIN_A, 'admin-a@test.com'), 'hb130-legacy'), approve(ADMIN_A)))
   // A legacy operativeId-only row: admins only too.
   await env.withSecurityRulesDisabled(async (ctx) => {
     await setDoc(doc(ctx.firestore(), 'organizations', ORG_A, 'holidayBookings', 'hb130-opid'), { ...leave(OP_A, 'pending'), userId: null, operativeId: 'legacy-operative-row' })
   })
   await assertFails(updateDoc(ref(mgr, 'hb130-opid'), approve(MGR_OTHER_A)))
-  await assertSucceeds(updateDoc(ref(authDb(ADMIN_A, 'admin-a@test.com'), 'hb130-opid'), approve(ADMIN_A)))
+  await assertSucceeds(updateDoc(ref(await authDb(ADMIN_A, 'admin-a@test.com'), 'hb130-opid'), approve(ADMIN_A)))
   // The line manager still decides their report's request.
-  await assertSucceeds(setDoc(ref(authDb(REPORT_A, 'report-a@test.com'), 'hb130-rep'), leave(REPORT_A, 'pending')))
-  await assertSucceeds(updateDoc(ref(authDb(LM_A, 'lm-a@test.com'), 'hb130-rep'), approve(LM_A)))
+  await assertSucceeds(setDoc(ref(await authDb(REPORT_A, 'report-a@test.com'), 'hb130-rep'), leave(REPORT_A, 'pending')))
+  await assertSucceeds(updateDoc(ref(await authDb(LM_A, 'lm-a@test.com'), 'hb130-rep'), approve(LM_A)))
 })
 
 const ADMIN2_A = 'admin2-a'
@@ -2196,8 +2198,9 @@ async function setUserFields(uid: string, fields: Record<string, unknown>) {
 
 test('1.28.0: an admin self-books leave only with Annual Leave Management (or as the Super Admin); no line manager alone never', async () => {
   await seedRulebook1280People()
-  const ref = (db: ReturnType<typeof authDb>, id: string) => doc(db, 'organizations', ORG_A, 'holidayBookings', id)
-  const admin2 = authDb(ADMIN2_A, 'admin2-a@test.com')
+  const ref = (db: Awaited<ReturnType<typeof authDb>>, id: string) => doc(db, 'organizations', ORG_A, 'holidayBookings', id)
+  // 1.32.4: a fresh context after each change below = the token refresh the claims marker triggers.
+  let admin2 = await authDb(ADMIN2_A, 'admin2-a@test.com')
   const approved = (uid: string) => leave(uid, 'approved', { approvedByUserId: uid, approvedAt: Timestamp.now() })
   try {
     // No line manager, toggle off: asks (the other admins decide), never saves approved.
@@ -2205,12 +2208,14 @@ test('1.28.0: an admin self-books leave only with Annual Leave Management (or as
     await assertSucceeds(setDoc(ref(admin2, 'hb128-a1'), leave(ADMIN2_A, 'pending')))
     await assertFails(updateDoc(ref(admin2, 'hb128-a1'), { status: 'approved', approvedByUserId: ADMIN2_A, approvedAt: Timestamp.now() }))
     // Not stranded: the Super Admin decides it.
-    await assertSucceeds(updateDoc(ref(authDb(ADMIN_A, 'admin-a@test.com'), 'hb128-a1'), { status: 'approved', approvedByUserId: ADMIN_A, approvedAt: Timestamp.now() }))
+    await assertSucceeds(updateDoc(ref(await authDb(ADMIN_A, 'admin-a@test.com'), 'hb128-a1'), { status: 'approved', approvedByUserId: ADMIN_A, approvedAt: Timestamp.now() }))
     // Timesheet self-sign alone does not self-book.
     await setUserFields(ADMIN2_A, { permissions: { adminAccess: true, annualLeaveSelfBook: false, timesheetSelfSign: true } })
+    admin2 = await authDb(ADMIN2_A, 'admin2-a@test.com')
     await assertFails(setDoc(ref(admin2, 'hb128-a2'), approved(ADMIN2_A)))
     // Annual Leave Management on: saves approved, with or without a line manager (the toggles are independent).
     await setUserFields(ADMIN2_A, { permissions: { adminAccess: true, annualLeaveSelfBook: true, timesheetSelfSign: false } })
+    admin2 = await authDb(ADMIN2_A, 'admin2-a@test.com')
     await assertSucceeds(setDoc(ref(admin2, 'hb128-a3'), approved(ADMIN2_A)))
     await setUserFields(ADMIN2_A, { assignedManagerUserIds: [LM_A], assignedManagerUserId: LM_A })
     await assertSucceeds(setDoc(ref(admin2, 'hb128-a4'), approved(ADMIN2_A)))
@@ -2223,29 +2228,29 @@ test('1.28.0: an admin self-books leave only with Annual Leave Management (or as
   // The Super Admin always self-books — the creator even with a line manager and the toggle off, and a flagged one.
   try {
     await setAdminLineManagers([LM_A])
-    await assertSucceeds(setDoc(ref(authDb(ADMIN_A, 'admin-a@test.com'), 'hb128-sa1'), approved(ADMIN_A)))
+    await assertSucceeds(setDoc(ref(await authDb(ADMIN_A, 'admin-a@test.com'), 'hb128-sa1'), approved(ADMIN_A)))
   } finally {
     await setAdminLineManagers([])
   }
-  await assertSucceeds(setDoc(ref(authDb(SUPER_FLAG_A, 'super-flag-a@test.com'), 'hb128-sa2'), approved(SUPER_FLAG_A)))
+  await assertSucceeds(setDoc(ref(await authDb(SUPER_FLAG_A, 'super-flag-a@test.com'), 'hb128-sa2'), approved(SUPER_FLAG_A)))
   // An admin with a stray operative-mode flag and no toggle asks like any admin.
-  await assertFails(setDoc(ref(authDb(ADMIN_OPMODE_A, 'admin-opmode-a@test.com'), 'hb128-aop'), approved(ADMIN_OPMODE_A)))
+  await assertFails(setDoc(ref(await authDb(ADMIN_OPMODE_A, 'admin-opmode-a@test.com'), 'hb128-aop'), approved(ADMIN_OPMODE_A)))
   // A manager with no line manager (and no self-book flag) still asks.
-  await assertFails(setDoc(ref(authDb(NOLM_MGR_A, 'nolm-mgr-a@test.com'), 'hb128-m'), leave(NOLM_MGR_A, 'approved')))
+  await assertFails(setDoc(ref(await authDb(NOLM_MGR_A, 'nolm-mgr-a@test.com'), 'hb128-m'), leave(NOLM_MGR_A, 'approved')))
 })
 
 test('1.28.0: only the Super Admin or an admin with Timesheet self-sign writes their own self-signed snapshot', async () => {
   await seedRulebook1280People()
-  const sheet = (uid: string, email: string) =>
-    doc(authDb(uid, email), 'organizations', ORG_A, 'settings', `timesheet_${uid}_1790000000`)
+  const sheet = async (uid: string, email: string) =>
+    doc(await authDb(uid, email), 'organizations', ORG_A, 'settings', `timesheet_${uid}_1790000000`)
   const save = (uid: string, n: number) => ({
     userId: uid, operativeSignedAt: Timestamp.now(), operativeSignedByName: 'Self',
     weeklyReportOverride: { approvedByUserId: uid, selfSigned: true, lines: [], priceWork: [], expenses: [], n },
   })
   // The Super Admin's own sheet is self-signed (1.30.2: through the owner path — nobody reviews their own sheet).
-  await assertSucceeds(setDoc(sheet(ADMIN_A, 'admin-a@test.com'), save(ADMIN_A, 1), { merge: true }))
+  await assertSucceeds(setDoc(await sheet(ADMIN_A, 'admin-a@test.com'), save(ADMIN_A, 1), { merge: true }))
   // REPORT_A (an operative with an active line manager): never.
-  const rep = sheet(REPORT_A, 'report-a@test.com')
+  const rep = await sheet(REPORT_A, 'report-a@test.com')
   await assertFails(setDoc(rep, save(REPORT_A, 1), { merge: true }))
   try {
     // 1.28.0: with only an inactive line manager (no current one) it is still refused — no line manager no longer
@@ -2261,40 +2266,40 @@ test('1.28.0: only the Super Admin or an admin with Timesheet self-sign writes t
     })
   }
   // The manager with no line manager: never.
-  await assertFails(setDoc(sheet(NOLM_MGR_A, 'nolm-mgr-a@test.com'), save(NOLM_MGR_A, 1), { merge: true }))
+  await assertFails(setDoc(await sheet(NOLM_MGR_A, 'nolm-mgr-a@test.com'), save(NOLM_MGR_A, 1), { merge: true }))
 })
 
 test('1.28.0: nobody changes their own self-manage toggles; another admin sets them; a non-admin never raises them', async () => {
   await seedRulebook1280People()
-  const own = doc(authDb(ADMIN2_A, 'admin2-a@test.com'), 'users', ADMIN2_A)
+  const own = doc(await authDb(ADMIN2_A, 'admin2-a@test.com'), 'users', ADMIN2_A)
   await assertFails(updateDoc(own, { timesheetSelfSign: true }))
   await assertFails(updateDoc(own, { 'permissions.timesheetSelfSign': true }))
   await assertFails(updateDoc(own, { annualLeaveSelfBook: true, 'permissions.annualLeaveSelfBook': true }))
   // Unchanged resends and other fields still pass.
   await assertSucceeds(updateDoc(own, { firstName: 'Abel', 'permissions.timesheetSelfSign': false }))
   // Another admin (here the Super Admin) sets them.
-  const other = doc(authDb(ADMIN_A, 'admin-a@test.com'), 'users', ADMIN2_A)
+  const other = doc(await authDb(ADMIN_A, 'admin-a@test.com'), 'users', ADMIN2_A)
   await assertSucceeds(updateDoc(other, { timesheetSelfSign: true, 'permissions.timesheetSelfSign': true, annualLeaveSelfBook: true, 'permissions.annualLeaveSelfBook': true }))
   // Turning their own off is a change too.
   await assertFails(updateDoc(own, { timesheetSelfSign: false, 'permissions.timesheetSelfSign': false }))
   await assertSucceeds(updateDoc(other, { timesheetSelfSign: false, 'permissions.timesheetSelfSign': false, annualLeaveSelfBook: false, 'permissions.annualLeaveSelfBook': false }))
   // A non-admin never turns Timesheet self-sign on for themself.
-  await assertFails(updateDoc(doc(authDb(NOLM_MGR_A, 'nolm-mgr-a@test.com'), 'users', NOLM_MGR_A), { timesheetSelfSign: true }))
-  await assertFails(updateDoc(doc(authDb(NOLM_MGR_A, 'nolm-mgr-a@test.com'), 'users', NOLM_MGR_A), { 'permissions.timesheetSelfSign': true }))
+  await assertFails(updateDoc(doc(await authDb(NOLM_MGR_A, 'nolm-mgr-a@test.com'), 'users', NOLM_MGR_A), { timesheetSelfSign: true }))
+  await assertFails(updateDoc(doc(await authDb(NOLM_MGR_A, 'nolm-mgr-a@test.com'), 'users', NOLM_MGR_A), { 'permissions.timesheetSelfSign': true }))
 })
 
 test('1.3.0 B: a notification actorUserId, when written, is the signed-in user', async () => {
-  const ref = (db: ReturnType<typeof authDb>, id: string) => doc(db, 'organizations', ORG_A, 'notifications', id)
-  const op = authDb(OP_A, 'op-a@test.com')
+  const ref = (db: Awaited<ReturnType<typeof authDb>>, id: string) => doc(db, 'organizations', ORG_A, 'notifications', id)
+  const op = await authDb(OP_A, 'op-a@test.com')
   const row = (extra: Record<string, unknown> = {}) => ({ userId: ADMIN_A, type: 'holiday_request_submitted', isRead: false, title: 't', message: 'm', ...extra })
   await assertSucceeds(setDoc(ref(op, 'n130-1'), row({ actorUserId: OP_A })))
   await assertSucceeds(setDoc(ref(op, 'n130-2'), row()))
   await assertFails(setDoc(ref(op, 'n130-3'), row({ actorUserId: ADMIN_A })))
   await assertFails(setDoc(ref(op, 'n130-4'), row({ actorUserId: null })))
   // Another company's member cannot write here at all.
-  await assertFails(setDoc(ref(authDb(OP_B, 'op-b@test.com'), 'n130-5'), row({ actorUserId: OP_B })))
+  await assertFails(setDoc(ref(await authDb(OP_B, 'op-b@test.com'), 'n130-5'), row({ actorUserId: OP_B })))
   // The addressee marks it read; nobody rewrites the actor to someone else.
-  const admin = authDb(ADMIN_A, 'admin-a@test.com')
+  const admin = await authDb(ADMIN_A, 'admin-a@test.com')
   await assertSucceeds(updateDoc(ref(admin, 'n130-1'), { isRead: true }))
   await assertFails(updateDoc(ref(admin, 'n130-1'), { actorUserId: OP_A + '-x' }))
   await assertSucceeds(updateDoc(ref(admin, 'n130-1'), { actorUserId: ADMIN_A }))
@@ -2318,7 +2323,7 @@ test('1.9.0: a staff material status write may carry updatedBy / updatedFrom (va
       status: 'draft',
     })
   })
-  const staff = authDb(STAFF_A, 'staff-a-190@test.com')
+  const staff = await authDb(STAFF_A, 'staff-a-190@test.com')
   const ref = doc(staff, 'organizations', ORG_A, 'materials', 'mat-190')
   await assertSucceeds(updateDoc(ref, { status: 'ordered', updatedAt: serverTimestamp(), updatedBy: STAFF_A, updatedFrom: 'ios' }))
   await assertSucceeds(updateDoc(ref, { status: 'ordered', lastSentRequestType: 'order', updatedAt: serverTimestamp() }))
@@ -2329,9 +2334,9 @@ test('1.9.0: a staff material status write may carry updatedBy / updatedFrom (va
 
 test('1.9.0: only admins and managers dismiss a warning (§16)', async () => {
   const row = { kind: 'qualification_expired', dismissKey: 'd190', dismissedByUserId: 'x' }
-  await assertFails(setDoc(doc(authDb(OP_A, 'op-a@test.com'), 'organizations', ORG_A, 'dismissedWarnings', 'd190-op'), { ...row, dismissedByUserId: OP_A }))
-  await assertSucceeds(setDoc(doc(authDb(ADMIN_A, 'admin-a@test.com'), 'organizations', ORG_A, 'dismissedWarnings', 'd190-admin'), { ...row, dismissedByUserId: ADMIN_A }))
-  await assertFails(setDoc(doc(authDb(ADMIN_B, 'admin-b@test.com'), 'organizations', ORG_A, 'dismissedWarnings', 'd190-b'), { ...row, dismissedByUserId: ADMIN_B }))
+  await assertFails(setDoc(doc(await authDb(OP_A, 'op-a@test.com'), 'organizations', ORG_A, 'dismissedWarnings', 'd190-op'), { ...row, dismissedByUserId: OP_A }))
+  await assertSucceeds(setDoc(doc(await authDb(ADMIN_A, 'admin-a@test.com'), 'organizations', ORG_A, 'dismissedWarnings', 'd190-admin'), { ...row, dismissedByUserId: ADMIN_A }))
+  await assertFails(setDoc(doc(await authDb(ADMIN_B, 'admin-b@test.com'), 'organizations', ORG_A, 'dismissedWarnings', 'd190-b'), { ...row, dismissedByUserId: ADMIN_B }))
 })
 
 
@@ -2363,12 +2368,12 @@ const labour = (projectId: string, extra: Record<string, unknown> = {}) => ({ op
 
 test('1.10.0 bookings: admin any job; manager only jobs they manage (uid, user: prefix, managerUserIds, managers-row email); operative never', async () => {
   await seed110()
-  const admin = authDb(ADMIN_A, 'admin-a@test.com')
-  const mgr = authDb(MGR_JOB_A, 'mgr-job-a@test.com')
-  const other = authDb(MGR_OTHER_A, 'mgr-other-a@test.com')
-  const rowMail = authDb(MGR_ROWMAIL_A, 'rowmail@test.com')
-  const op = authDb(OP_A, 'op-a@test.com')
-  const ref = (db: ReturnType<typeof authDb>, coll: string, id: string) => doc(db, 'organizations', ORG_A, coll, id)
+  const admin = await authDb(ADMIN_A, 'admin-a@test.com')
+  const mgr = await authDb(MGR_JOB_A, 'mgr-job-a@test.com')
+  const other = await authDb(MGR_OTHER_A, 'mgr-other-a@test.com')
+  const rowMail = await authDb(MGR_ROWMAIL_A, 'rowmail@test.com')
+  const op = await authDb(OP_A, 'op-a@test.com')
+  const ref = (db: Awaited<ReturnType<typeof authDb>>, coll: string, id: string) => doc(db, 'organizations', ORG_A, coll, id)
 
   await assertSucceeds(setDoc(ref(admin, 'bookings', 'b110-1'), labour('ANY-JOB')))
   await assertSucceeds(setDoc(ref(mgr, 'bookings', 'b110-2'), labour('JOB-110')))
@@ -2405,28 +2410,28 @@ test('1.10.0 booking delete: a manager deletes (with tombstone) on their job; an
   const tomb = (uid: string, id: string, coll: string) => ({ bookingId: id, collection: coll, deletedAt: serverTimestamp(), deletedBy: uid, deletedFrom: 'web' })
   for (const [id, coll] of [['del-110-1', 'bookings'], ['del-110-2', 'subcontractorBookings']]) {
     for (const [uid, email] of [[MGR_OTHER_A, 'mgr-other-a@test.com'], [OP_A, 'op-a@test.com']]) {
-      const db = authDb(uid, email)
+      const db = await authDb(uid, email)
       const batch = writeBatch(db)
       batch.delete(doc(db, 'organizations', ORG_A, coll, id))
       batch.set(doc(db, 'organizations', ORG_A, 'deletedBookings', id), tomb(uid, id, coll))
       await assertFails(batch.commit())
     }
-    const mgr = authDb(MGR_JOB_A, 'mgr-job-a@test.com')
+    const mgr = await authDb(MGR_JOB_A, 'mgr-job-a@test.com')
     const batch = writeBatch(mgr)
     batch.delete(doc(mgr, 'organizations', ORG_A, coll, id))
     batch.set(doc(mgr, 'organizations', ORG_A, 'deletedBookings', id), tomb(MGR_JOB_A, id, coll))
     await assertSucceeds(batch.commit())
     // Tombstoned: cannot come back, even for the admin.
-    await assertFails(setDoc(doc(authDb(ADMIN_A, 'admin-a@test.com'), 'organizations', ORG_A, coll, id), labour('JOB-110')))
+    await assertFails(setDoc(doc(await authDb(ADMIN_A, 'admin-a@test.com'), 'organizations', ORG_A, coll, id), labour('JOB-110')))
   }
   // With the booking already gone, only an admin writes a tombstone.
-  await assertFails(setDoc(doc(authDb(MGR_JOB_A, 'mgr-job-a@test.com'), 'organizations', ORG_A, 'deletedBookings', 'gone-110'), tomb(MGR_JOB_A, 'gone-110', 'bookings')))
-  await assertSucceeds(setDoc(doc(authDb(ADMIN_A, 'admin-a@test.com'), 'organizations', ORG_A, 'deletedBookings', 'gone-110'), tomb(ADMIN_A, 'gone-110', 'bookings')))
+  await assertFails(setDoc(doc(await authDb(MGR_JOB_A, 'mgr-job-a@test.com'), 'organizations', ORG_A, 'deletedBookings', 'gone-110'), tomb(MGR_JOB_A, 'gone-110', 'bookings')))
+  await assertSucceeds(setDoc(doc(await authDb(ADMIN_A, 'admin-a@test.com'), 'organizations', ORG_A, 'deletedBookings', 'gone-110'), tomb(ADMIN_A, 'gone-110', 'bookings')))
 })
 
 test('1.10.0 a manager removed from the job loses booking writes; re-added gets them back', async () => {
   await seed110()
-  const mgr = authDb(MGR_JOB_A, 'mgr-job-a@test.com')
+  const mgr = await authDb(MGR_JOB_A, 'mgr-job-a@test.com')
   const ref = doc(mgr, 'organizations', ORG_A, 'bookings', 'rm-110')
   await assertSucceeds(setDoc(ref, labour('JOB-110')))
   await env.withSecurityRulesDisabled(async (ctx) => {
@@ -2442,7 +2447,7 @@ test('1.10.0 a manager removed from the job loses booking writes; re-added gets 
 
 test('1.10.0 H2: a manager in company B who is an operative in company A is not a manager in A', async () => {
   await seed110()
-  const multi = authDb(MULTI, 'multi@test.com')
+  const multi = await authDb(MULTI, 'multi@test.com')
   // Company A: no manager writes (settings, wholesalers, clash approvals, bookings).
   await assertFails(setDoc(doc(multi, 'organizations', ORG_A, 'settings', 'jobTypes'), { jobTypes: ['X'] }))
   await assertFails(setDoc(doc(multi, 'organizations', ORG_A, 'wholesalers', 'w-110'), { name: 'W' }))
@@ -2458,14 +2463,14 @@ test('1.10.0 H2: a members-map manager of company A whose home company is B is a
   await env.withSecurityRulesDisabled(async (ctx) => {
     await updateDoc(doc(ctx.firestore(), 'organizations', ORG_A), { [`members.${MULTI}`]: 'manager' })
   })
-  const multi = authDb(MULTI, 'multi@test.com')
+  const multi = await authDb(MULTI, 'multi@test.com')
   await assertSucceeds(setDoc(doc(multi, 'organizations', ORG_A, 'wholesalers', 'w-111'), { name: 'W' }))
 })
 
 test('1.10.0 M10: a person cannot raise their own membership role or permissions; an admin of that org can', async () => {
   await seed110()
-  const op = authDb(OP_A, 'op-a@test.com')
-  const ref = (db: ReturnType<typeof authDb>) => doc(db, 'users', OP_A, 'orgMemberships', ORG_A)
+  const op = await authDb(OP_A, 'op-a@test.com')
+  const ref = (db: Awaited<ReturnType<typeof authDb>>) => doc(db, 'users', OP_A, 'orgMemberships', ORG_A)
   // OP_A is 'member' in ORG_A's members map.
   await assertFails(setDoc(ref(op), { role: 'admin', status: 'active' }))
   await assertFails(setDoc(ref(op), { role: 'member', status: 'active', permissions: { adminAccess: true } }))
@@ -2474,9 +2479,9 @@ test('1.10.0 M10: a person cannot raise their own membership role or permissions
   await assertFails(updateDoc(ref(op), { 'permissions.manager': true }))
   await assertFails(updateDoc(ref(op), { accountActive: true }))
   await assertSucceeds(updateDoc(ref(op), { status: 'active', updatedAt: Timestamp.now() }))
-  await assertSucceeds(updateDoc(ref(authDb(ADMIN_A, 'admin-a@test.com')), { role: 'manager', 'permissions.manager': true }))
+  await assertSucceeds(updateDoc(ref(await authDb(ADMIN_A, 'admin-a@test.com')), { role: 'manager', 'permissions.manager': true }))
   // The admin of another company cannot.
-  await assertFails(updateDoc(ref(authDb(ADMIN_B, 'admin-b@test.com')), { role: 'admin' }))
+  await assertFails(updateDoc(ref(await authDb(ADMIN_B, 'admin-b@test.com')), { role: 'admin' }))
 })
 
 test('1.10.0 H1: deleting users/{uid}, its tax ids, membership, email claim and members entry in one batch; an admin cannot delete an admin', async () => {
@@ -2493,7 +2498,7 @@ test('1.10.0 H1: deleting users/{uid}, its tax ids, membership, email claim and 
     await setDoc(doc(db, 'users', ADMIN2), { email: 'admin2@test.com', organizationId: ORG_A, role: 'admin', adminAccess: true })
     await setDoc(doc(db, 'users', ADMIN2, 'private', 'taxIds'), { utrNumber: '2', vatNumber: '', updatedByUserId: ADMIN2, updatedAt: Timestamp.now() })
   })
-  const admin = authDb(ADMIN_A, 'admin-a@test.com')
+  const admin = await authDb(ADMIN_A, 'admin-a@test.com')
   const accountBatch = (target: string, email: string) => {
     const batch = writeBatch(admin)
     batch.delete(doc(admin, 'users', target))
@@ -2543,17 +2548,17 @@ async function seedR2() {
   })
 }
 
-const colA = (db: ReturnType<typeof authDb>, name: string) => collection(db, 'organizations', ORG_A, name)
+const colA = (db: Awaited<ReturnType<typeof authDb>>, name: string) => collection(db, 'organizations', ORG_A, name)
 const since = Timestamp.fromDate(new Date('2026-10-26T00:00:00Z'))
 
 test('1.10.0 r2 / 1.33.0 reads: an admin reads everything; every manager reads every job and booking, toggles or not', async () => {
   await seedR2()
-  const admin = authDb(ADMIN_A, 'admin-a@test.com')
+  const admin = await authDb(ADMIN_A, 'admin-a@test.com')
   for (const name of ['projects', 'smallWorks', 'bookings', 'managerSiteBookings', 'subcontractorBookings']) {
     await assertSucceeds(getDocs(colA(admin, name)))
   }
   await assertSucceeds(getDocs(query(colA(admin, 'bookings'), where('date', '>=', since))))
-  const toggle = authDb(MGR_TOGGLE_A, 'toggle@test.com')
+  const toggle = await authDb(MGR_TOGGLE_A, 'toggle@test.com')
   await assertSucceeds(getDocs(colA(toggle, 'projects')))
   await assertSucceeds(getDocs(colA(toggle, 'smallWorks')))
   await assertSucceeds(getDoc(doc(toggle, 'organizations', ORG_A, 'projects', 'OTHER-R2')))
@@ -2565,7 +2570,7 @@ test('1.10.0 r2 / 1.33.0 reads: an admin reads everything; every manager reads e
     await assertSucceeds(getDocs(query(colA(toggle, name), where('jobCollection', '==', 'smallWorks'))))
   }
   // 1.33.0: a single toggle no longer narrows reads (it governs creating jobs and changing manager lists only).
-  const projOnly = authDb(MGR_PROJ_ONLY_A, 'projonly@test.com')
+  const projOnly = await authDb(MGR_PROJ_ONLY_A, 'projonly@test.com')
   await assertSucceeds(getDocs(colA(projOnly, 'projects')))
   await assertSucceeds(getDocs(colA(projOnly, 'smallWorks')))
   await assertSucceeds(getDocs(colA(projOnly, 'bookings')))
@@ -2574,7 +2579,7 @@ test('1.10.0 r2 / 1.33.0 reads: an admin reads everything; every manager reads e
 
 test('1.10.0 r2 / 1.33.0 reads: a manager without any toggle reads every job, every booking and their own', async () => {
   await seedR2()
-  const mgr = authDb(MGR_JOB_A, 'mgr-job-a@test.com')
+  const mgr = await authDb(MGR_JOB_A, 'mgr-job-a@test.com')
   // 1.33.0 (owner decision 6 Nov): every manager sees every project and small works, and every booking.
   await assertSucceeds(getDocs(colA(mgr, 'projects')))
   await assertSucceeds(getDocs(colA(mgr, 'smallWorks')))
@@ -2594,12 +2599,12 @@ test('1.10.0 r2 / 1.33.0 reads: a manager without any toggle reads every job, ev
   // Writes are unchanged: still only the jobs they manage (1.10.0 r2 jobs / bookings tests).
   await assertFails(updateDoc(doc(mgr, 'organizations', ORG_A, 'projects', 'OTHER-R2'), { name: 'renamed' }))
   // Another company's manager or admin reads nothing here.
-  await assertFails(getDocs(colA(authDb(ADMIN_B, 'admin-b@test.com'), 'bookings')))
+  await assertFails(getDocs(colA(await authDb(ADMIN_B, 'admin-b@test.com'), 'bookings')))
 })
 
 test('1.10.0 r2 reads: an operative reads their own bookings (account id or operatives row) and their jobs by id, never a list', async () => {
   await seedR2()
-  const op = authDb(OP_A, 'op-a@test.com')
+  const op = await authDb(OP_A, 'op-a@test.com')
   const own = await assertSucceeds(getDocs(query(colA(op, 'bookings'), where('operativeId', 'in', [OP_A, 'OPROW-A']), where('date', '>=', since))))
   assert.deepEqual(own.docs.map((d) => d.id).sort(), ['r2-op-row', 'r2-op-uid'])
   await assertSucceeds(getDoc(doc(op, 'organizations', ORG_A, 'bookings', 'r2-op-uid')))
@@ -2613,18 +2618,18 @@ test('1.10.0 r2 reads: an operative reads their own bookings (account id or oper
   await assertFails(getDocs(colA(op, 'projects')))
   await assertFails(getDocs(query(colA(op, 'projects'), where('managerUserIds', 'array-contains', OP_A))))
   // Another company's admin reads nothing here.
-  await assertFails(getDocs(colA(authDb(ADMIN_B, 'admin-b@test.com'), 'projects')))
-  await assertFails(getDoc(doc(authDb(ADMIN_B, 'admin-b@test.com'), 'organizations', ORG_A, 'projects', 'JOB-R2')))
+  await assertFails(getDocs(colA(await authDb(ADMIN_B, 'admin-b@test.com'), 'projects')))
+  await assertFails(getDoc(doc(await authDb(ADMIN_B, 'admin-b@test.com'), 'organizations', ORG_A, 'projects', 'JOB-R2')))
 })
 
 test('1.10.0 r2 jobs: admins and toggle managers add jobs and change manager lists; other managers edit details of their jobs only', async () => {
   await seedR2()
-  const ref = (db: ReturnType<typeof authDb>, coll: string, id: string) => doc(db, 'organizations', ORG_A, coll, id)
-  const admin = authDb(ADMIN_A, 'admin-a@test.com')
-  const toggle = authDb(MGR_TOGGLE_A, 'toggle@test.com')
-  const projOnly = authDb(MGR_PROJ_ONLY_A, 'projonly@test.com')
-  const mgr = authDb(MGR_JOB_A, 'mgr-job-a@test.com')
-  const op = authDb(OP_A, 'op-a@test.com')
+  const ref = (db: Awaited<ReturnType<typeof authDb>>, coll: string, id: string) => doc(db, 'organizations', ORG_A, coll, id)
+  const admin = await authDb(ADMIN_A, 'admin-a@test.com')
+  const toggle = await authDb(MGR_TOGGLE_A, 'toggle@test.com')
+  const projOnly = await authDb(MGR_PROJ_ONLY_A, 'projonly@test.com')
+  const mgr = await authDb(MGR_JOB_A, 'mgr-job-a@test.com')
+  const op = await authDb(OP_A, 'op-a@test.com')
   await assertSucceeds(setDoc(ref(admin, 'projects', 'NEW-ADMIN'), { siteName: 'A', managerIds: [MGR_JOB_A], managerUserIds: [MGR_JOB_A] }))
   await assertSucceeds(setDoc(ref(toggle, 'smallWorks', 'NEW-TOGGLE'), { siteName: 'T', managerIds: [MGR_TOGGLE_A] }))
   await assertSucceeds(setDoc(ref(projOnly, 'projects', 'NEW-PROJONLY'), { siteName: 'P', managerUserIds: [MGR_PROJ_ONLY_A] }))
@@ -2656,7 +2661,7 @@ test('1.10.0 r2 jobs: the toggle of a non-home organisation comes from that orga
     await updateDoc(doc(db, 'organizations', ORG_A), { [`members.${MULTI}`]: 'manager' })
     await setDoc(doc(db, 'users', MULTI, 'orgMemberships', ORG_A), { role: 'manager', permissions: { manager: true, projects: true, smallWorks: false } })
   })
-  const multi = authDb(MULTI, 'multi@test.com')
+  const multi = await authDb(MULTI, 'multi@test.com')
   await assertSucceeds(setDoc(doc(multi, 'organizations', ORG_A, 'projects', 'NEW-MULTI'), { siteName: 'M', managerUserIds: [MULTI] }))
   await assertFails(setDoc(doc(multi, 'organizations', ORG_A, 'smallWorks', 'NEW-MULTI-SW'), { siteName: 'M', managerUserIds: [MULTI] }))
   await assertSucceeds(getDocs(colA(multi, 'projects')))
@@ -2666,11 +2671,11 @@ test('1.10.0 r2 jobs: the toggle of a non-home organisation comes from that orga
 
 test('1.10.0 r2: a manager can never book themselves onto a job they do not manage', async () => {
   await seedR2()
-  const mgr = authDb(MGR_JOB_A, 'mgr-job-a@test.com')
+  const mgr = await authDb(MGR_JOB_A, 'mgr-job-a@test.com')
   await assertFails(setDoc(doc(mgr, 'organizations', ORG_A, 'managerSiteBookings', 'self-other'), { userId: MGR_JOB_A, locationType: 'project', locationId: 'OTHER-R2' }))
   await assertFails(setDoc(doc(mgr, 'organizations', ORG_A, 'bookings', 'self-other-labour'), { operativeId: MGR_JOB_A, projectId: 'OTHER-R2', status: 'Confirmed', timeSlot: 'FULL DAY' }))
   // Even a manager with the toggle (who sees the job) is not its manager.
-  const toggle = authDb(MGR_TOGGLE_A, 'toggle@test.com')
+  const toggle = await authDb(MGR_TOGGLE_A, 'toggle@test.com')
   await assertFails(setDoc(doc(toggle, 'organizations', ORG_A, 'managerSiteBookings', 'self-toggle'), { userId: MGR_TOGGLE_A, locationType: 'project', locationId: 'OTHER-R2' }))
   await assertSucceeds(setDoc(doc(mgr, 'organizations', ORG_A, 'managerSiteBookings', 'self-mine'), { userId: MGR_JOB_A, locationType: 'project', locationId: 'JOB-R2' }))
 })
@@ -2696,22 +2701,22 @@ async function seed111() {
 
 test('1.11.0 / 1.33.0 reads by kind: every manager reads every booking, with or without jobCollection; operatives never list', async () => {
   await seed111()
-  const swOnly = authDb(MGR_SW_ONLY_A, 'swonly@test.com')
+  const swOnly = await authDb(MGR_SW_ONLY_A, 'swonly@test.com')
   for (const id of ['k-sw', 'k-proj', 'k-none']) await assertSucceeds(getDoc(doc(swOnly, 'organizations', ORG_A, 'bookings', id)))
   await assertSucceeds(getDoc(doc(swOnly, 'organizations', ORG_A, 'managerSiteBookings', 'k-msb-sw')))
   await assertSucceeds(getDoc(doc(swOnly, 'organizations', ORG_A, 'subcontractorBookings', 'k-sub-proj')))
   const sw = await assertSucceeds(getDocs(query(colA(swOnly, 'bookings'), where('jobCollection', '==', 'smallWorks'))))
   assert.deepEqual(sw.docs.map((d) => d.id), ['k-sw'])
   await assertSucceeds(getDocs(query(colA(swOnly, 'bookings'), where('jobCollection', '==', 'projects'))))
-  await assertSucceeds(getDoc(doc(authDb(MGR_PROJ_ONLY_A, 'projonly@test.com'), 'organizations', ORG_A, 'bookings', 'k-none')))
-  await assertSucceeds(getDoc(doc(authDb(ADMIN_A, 'admin-a@test.com'), 'organizations', ORG_A, 'bookings', 'k-none')))
+  await assertSucceeds(getDoc(doc(await authDb(MGR_PROJ_ONLY_A, 'projonly@test.com'), 'organizations', ORG_A, 'bookings', 'k-none')))
+  await assertSucceeds(getDoc(doc(await authDb(ADMIN_A, 'admin-a@test.com'), 'organizations', ORG_A, 'bookings', 'k-none')))
   // An operative never lists by kind.
-  await assertFails(getDocs(query(colA(authDb(OP_A, 'op-a@test.com'), 'bookings'), where('jobCollection', '==', 'projects'))))
+  await assertFails(getDocs(query(colA(await authDb(OP_A, 'op-a@test.com'), 'bookings'), where('jobCollection', '==', 'projects'))))
 })
 
 test('1.11.0 writes: jobCollection must name the kind of a job the manager manages; a toggle does not extend writes', async () => {
   await seed111()
-  const mgr = authDb(MGR_JOB_A, 'mgr-job-a@test.com')
+  const mgr = await authDb(MGR_JOB_A, 'mgr-job-a@test.com')
   const base = { operativeId: OP_B, status: 'Confirmed', timeSlot: 'FULL DAY' }
   await assertSucceeds(setDoc(doc(mgr, 'organizations', ORG_A, 'bookings', 'jc-ok'), { ...base, projectId: 'JOB-R2', jobCollection: 'projects' }))
   // The wrong kind for the job, or an unknown kind, is refused.
@@ -2729,9 +2734,9 @@ test('1.11.0 writes: jobCollection must name the kind of a job the manager manag
   await assertSucceeds(updateDoc(doc(mgr, 'organizations', ORG_A, 'bookings', 'jc-old'), { jobCollection: 'projects', notes: 'x' }))
   await assertFails(updateDoc(doc(mgr, 'organizations', ORG_A, 'bookings', 'jc-old'), { jobCollection: 'smallWorks' }))
   // A toggle manager who does not manage the job cannot write its bookings.
-  await assertFails(setDoc(doc(authDb(MGR_PROJ_ONLY_A, 'projonly@test.com'), 'organizations', ORG_A, 'bookings', 'jc-toggle'), { ...base, projectId: 'OTHER-R2', jobCollection: 'projects' }))
+  await assertFails(setDoc(doc(await authDb(MGR_PROJ_ONLY_A, 'projonly@test.com'), 'organizations', ORG_A, 'bookings', 'jc-toggle'), { ...base, projectId: 'OTHER-R2', jobCollection: 'projects' }))
   // Admins write any booking.
-  await assertSucceeds(setDoc(doc(authDb(ADMIN_A, 'admin-a@test.com'), 'organizations', ORG_A, 'bookings', 'jc-admin'), { ...base, projectId: 'OTHER-R2', jobCollection: 'projects' }))
+  await assertSucceeds(setDoc(doc(await authDb(ADMIN_A, 'admin-a@test.com'), 'organizations', ORG_A, 'bookings', 'jc-admin'), { ...base, projectId: 'OTHER-R2', jobCollection: 'projects' }))
 })
 
 test('1.11.0 invites: accepting a genuine unused invitation writes exactly its membership and role in company B — nothing more', async () => {
@@ -2745,7 +2750,7 @@ test('1.11.0 invites: accepting a genuine unused invitation writes exactly its m
     await setDoc(doc(db, 'invitations', 'inv-111-used'), { email, organizationId: ORG_B, role: 'admin', permissions: { adminAccess: true }, invitedBy: ADMIN_B, isUsed: true })
     await setDoc(doc(db, 'invitations', 'inv-111-other'), { email: 'someone@test.com', organizationId: ORG_B, role: 'admin', permissions: { adminAccess: true }, invitedBy: ADMIN_B, isUsed: false })
   })
-  const db = authDb(JOINER, email)
+  const db = await authDb(JOINER, email)
   const membership = (invitationId: string, overrides: Record<string, unknown> = {}) => ({
     organizationId: ORG_B,
     role: 'manager',
@@ -2789,8 +2794,10 @@ test('1.11.0 invites: accepting a genuine unused invitation writes exactly its m
   await assertFails(updateDoc(doc(db, 'users', JOINER, 'orgMemberships', ORG_B), { role: 'admin' }))
   await assertFails(updateDoc(doc(db, 'users', JOINER, 'orgMemberships', ORG_B), { 'permissions.operatives': true }))
   // As a manager in B they read every job there (1.33.0: every manager reads every job; toggles govern writes only).
-  await assertSucceeds(getDocs(collection(db, 'organizations', ORG_B, 'projects')))
-  await assertSucceeds(getDocs(collection(db, 'organizations', ORG_B, 'smallWorks')))
+  // 1.32.4: after the token refresh the claims marker triggers (a fresh context).
+  const joined = await authDb(JOINER, email)
+  await assertSucceeds(getDocs(collection(joined, 'organizations', ORG_B, 'projects')))
+  await assertSucceeds(getDocs(collection(joined, 'organizations', ORG_B, 'smallWorks')))
 })
 
 test('1.11.0 levels: an admin with a stray operative-mode flag is an admin in the rules (no operative mode)', async () => {
@@ -2800,7 +2807,7 @@ test('1.11.0 levels: an admin with a stray operative-mode flag is an admin in th
       email: 'admin-stray@test.com', organizationId: ORG_A, role: 'admin', adminAccess: true, operativeMode: true,
     })
   })
-  const db = authDb('admin-stray-op', 'admin-stray@test.com')
+  const db = await authDb('admin-stray-op', 'admin-stray@test.com')
   await assertSucceeds(getDocs(colA(db, 'bookings')))
   await assertSucceeds(getDocs(colA(db, 'smallWorks')))
 })
@@ -2815,20 +2822,20 @@ test('1.11.0 accountTypeChangeWrites: an admin or super admin writes the users d
     await setDoc(doc(db, 'users', 'type-other-co'), { email: 'other-co@test.com', organizationId: ORG_B, role: 'manager', manager: true })
     await updateDoc(doc(db, 'organizations', ORG_A), { [`members.${TARGET}`]: 'manager', [`members.${SUPER}`]: 'admin', 'members.type-other-co': 'manager' })
   })
-  const change = (db: ReturnType<typeof authDb>, uid: string, role: string) => {
+  const change = (db: Awaited<ReturnType<typeof authDb>>, uid: string, role: string) => {
     const batch = writeBatch(db)
     batch.update(doc(db, 'users', uid), { role, adminAccess: role === 'admin', manager: role !== 'operative', operativeMode: role === 'operative', 'permissions.adminAccess': role === 'admin' })
     batch.update(doc(db, 'organizations', ORG_A), { [`members.${uid}`]: role })
     batch.set(doc(db, 'users', uid, 'orgMemberships', ORG_A), { organizationId: ORG_A, role, status: 'active', permissions: { adminAccess: role === 'admin' } })
     return batch.commit()
   }
-  await assertSucceeds(change(authDb(ADMIN_A, 'admin-a@test.com'), TARGET, 'admin'))
-  await assertSucceeds(change(authDb(SUPER, 'super-a@test.com'), TARGET, 'operative'))
+  await assertSucceeds(change(await authDb(ADMIN_A, 'admin-a@test.com'), TARGET, 'admin'))
+  await assertSucceeds(change(await authDb(SUPER, 'super-a@test.com'), TARGET, 'operative'))
   // A manager (even the person themself) cannot.
-  await assertFails(change(authDb(MGR_OTHER_A, 'manager-other-a@test.com'), TARGET, 'admin'))
-  await assertFails(change(authDb(TARGET, 'type-target@test.com'), TARGET, 'admin'))
+  await assertFails(change(await authDb(MGR_OTHER_A, 'manager-other-a@test.com'), TARGET, 'admin'))
+  await assertFails(change(await authDb(TARGET, 'type-target@test.com'), TARGET, 'admin'))
   // An admin of company A cannot rewrite a profile that belongs to company B (accountTypeChangeWrites refuses it too).
-  await assertFails(change(authDb(ADMIN_A, 'admin-a@test.com'), 'type-other-co', 'admin'))
+  await assertFails(change(await authDb(ADMIN_A, 'admin-a@test.com'), 'type-other-co', 'admin'))
 })
 
 test('1.11.0 roster: a co-member reads a member or the creator whose users document names another company; nobody else does', async () => {
@@ -2842,13 +2849,13 @@ test('1.11.0 roster: a co-member reads a member or the creator whose users docum
     await setDoc(doc(db, 'users', ROAMER), { email: 'roamer@test.com', organizationId: ORG_B, role: 'admin', adminAccess: true })
     await setDoc(doc(db, 'users', CREATOR_ELSEWHERE), { email: 'creator-elsewhere@test.com', organizationId: `organizations/${ORG_B}`, isSuperAdmin: true })
   })
-  const member = authDb('x-member', 'x-member@test.com')
+  const member = await authDb('x-member', 'x-member@test.com')
   await assertSucceeds(getDoc(doc(member, 'users', ROAMER)))
   await assertSucceeds(getDoc(doc(member, 'users', CREATOR_ELSEWHERE)))
   // Someone who is not anchored on X (company B's operative) stays unreadable to X's members.
   await assertFails(getDoc(doc(member, 'users', OP_B)))
   // A member of A does not read X's anchored people.
-  await assertFails(getDoc(doc(authDb(OP_A, 'op-a@test.com'), 'users', ROAMER)))
+  await assertFails(getDoc(doc(await authDb(OP_A, 'op-a@test.com'), 'users', ROAMER)))
 })
 
 test('1.11.0 accountTypeChangeWrites for a profile of another company: an admin writes members and the membership only', async () => {
@@ -2857,7 +2864,7 @@ test('1.11.0 accountTypeChangeWrites for a profile of another company: an admin 
     await setDoc(doc(db, 'users', 'type-other-co-2'), { email: 'other-co-2@test.com', organizationId: ORG_B, role: 'manager', manager: true })
     await updateDoc(doc(db, 'organizations', ORG_A), { 'members.type-other-co-2': 'manager' })
   })
-  const admin = authDb(ADMIN_A, 'admin-a@test.com')
+  const admin = await authDb(ADMIN_A, 'admin-a@test.com')
   const batch = writeBatch(admin)
   batch.update(doc(admin, 'organizations', ORG_A), { 'members.type-other-co-2': 'admin' })
   batch.set(doc(admin, 'users', 'type-other-co-2', 'orgMemberships', ORG_A), { organizationId: ORG_A, role: 'admin', status: 'active', permissions: { adminAccess: true } })
@@ -2885,8 +2892,8 @@ const H_INACTIVE = 'h-inactive'
 const H_ROAM_OFF = 'h-roamer-deactivated'
 const OWNER_EMAIL = 'info@projectplanner.us'
 
-function verifiedDb(uid: string, email: string, emailVerified: boolean) {
-  return env.authenticatedContext(uid, { email, email_verified: emailVerified }).firestore()
+async function verifiedDb(uid: string, email: string, emailVerified: boolean) {
+  return (await claimsContext(env, uid, { email, email_verified: emailVerified })).firestore()
 }
 
 async function seed112() {
@@ -2944,7 +2951,7 @@ async function seed112() {
 
 test('1.12.0 B1: changing your own users email never makes you platform owner; only a verified owner token is', async () => {
   await seed112()
-  const op = authDb(H_OP, 'h-op@test.com')
+  const op = await authDb(H_OP, 'h-op@test.com')
   // Probe P1: the email write is refused, and another company stays closed.
   await assertFails(updateDoc(doc(op, 'users', H_OP), { email: OWNER_EMAIL }))
   await assertFails(updateDoc(doc(op, 'users', H_OP), { email: 'someone-else@test.com' }))
@@ -2954,19 +2961,19 @@ test('1.12.0 B1: changing your own users email never makes you platform owner; o
   await env.withSecurityRulesDisabled(async (ctx) => {
     await updateDoc(doc(ctx.firestore(), 'users', H_OP3), { email: OWNER_EMAIL })
   })
-  await assertFails(getDoc(doc(authDb(H_OP3, 'h-op3@test.com'), 'organizations', ORG_H2)))
+  await assertFails(getDoc(doc(await authDb(H_OP3, 'h-op3@test.com'), 'organizations', ORG_H2)))
   // The owner's token: verified opens it, unverified does not.
-  await assertFails(getDoc(doc(verifiedDb('owner-unverified', OWNER_EMAIL, false), 'organizations', ORG_H2)))
-  await assertSucceeds(getDoc(doc(verifiedDb('owner-verified', OWNER_EMAIL, true), 'organizations', ORG_H2)))
+  await assertFails(getDoc(doc(await verifiedDb('owner-unverified', OWNER_EMAIL, false), 'organizations', ORG_H2)))
+  await assertSucceeds(getDoc(doc(await verifiedDb('owner-verified', OWNER_EMAIL, true), 'organizations', ORG_H2)))
   // The sign-in email sync after Firebase Auth changed the address: the users email may become the token email.
-  await assertSucceeds(updateDoc(doc(authDb(H_OP, 'h-op-new@test.com'), 'users', H_OP), { email: 'h-op-new@test.com' }))
+  await assertSucceeds(updateDoc(doc(await authDb(H_OP, 'h-op-new@test.com'), 'users', H_OP), { email: 'h-op-new@test.com' }))
   // Admins still change a person's email from Manage Users.
-  await assertSucceeds(updateDoc(doc(authDb(H_AD, 'h-ad@test.com'), 'users', H_OP2), { email: 'h-op2-new@test.com' }))
+  await assertSucceeds(updateDoc(doc(await authDb(H_AD, 'h-ad@test.com'), 'users', H_OP2), { email: 'h-op2-new@test.com' }))
 })
 
 test('1.12.0 B2: a manager with operatives access invites operatives only; admins invite any level', async () => {
   await seed112()
-  const mgr = authDb(H_MGR_OPS, 'h-mgr-ops@test.com')
+  const mgr = await authDb(H_MGR_OPS, 'h-mgr-ops@test.com')
   // Probe P4: an admin invitation from a manager is refused, as role or as permissions.
   await assertFails(setDoc(doc(mgr, 'invitations', 'h-evil'), {
     organizationId: ORG_H, email: 'sock@test.com', role: 'admin', permissions: { adminAccess: true }, isUsed: false,
@@ -2992,14 +2999,14 @@ test('1.12.0 B2: a manager with operatives access invites operatives only; admin
   await assertSucceeds(updateDoc(doc(mgr, 'invitations', 'h-op-invite'), { firstName: 'Olly' }))
   await assertSucceeds(deleteDoc(doc(mgr, 'invitations', 'h-op-ok')))
   // Admins invite admins.
-  await assertSucceeds(setDoc(doc(authDb(H_AD, 'h-ad@test.com'), 'invitations', 'h-admin-ok'), {
+  await assertSucceeds(setDoc(doc(await authDb(H_AD, 'h-ad@test.com'), 'invitations', 'h-admin-ok'), {
     organizationId: ORG_H, email: 'new-admin@test.com', role: 'admin', permissions: { adminAccess: true }, isUsed: false,
   }))
 })
 
 test('1.12.0 B3: nobody adds alias ids to their own profile; reviews and bookings stay closed', async () => {
   await seed112()
-  const op3 = authDb(H_OP3, 'h-op3@test.com')
+  const op3 = await authDb(H_OP3, 'h-op3@test.com')
   // Probe P3: the self-update is refused and nothing opens.
   await assertFails(updateDoc(doc(op3, 'users', H_OP3), { formerUserIds: [H_MGR_OPS, H_OP2] }))
   await assertFails(updateDoc(doc(op3, 'users', H_OP3), { sameEmailUserIds: [H_OP2] }))
@@ -3021,8 +3028,8 @@ test('1.12.0 B3: nobody adds alias ids to their own profile; reviews and booking
   await assertSucceeds(setDoc(doc(op3, 'users', H_OP3), back))
   // An unchanged resend still passes, and an admin still records an alias.
   await assertSucceeds(updateDoc(doc(op3, 'users', H_OP3), { firstName: 'Ola' }))
-  await assertSucceeds(updateDoc(doc(authDb(H_AD, 'h-ad@test.com'), 'users', H_OP), { formerUserIds: ['OLD-INVITE-ID'] }))
-  await assertSucceeds(updateDoc(doc(authDb(H_OP, 'h-op@test.com'), 'users', H_OP), { firstName: 'Opal', formerUserIds: ['OLD-INVITE-ID'] }))
+  await assertSucceeds(updateDoc(doc(await authDb(H_AD, 'h-ad@test.com'), 'users', H_OP), { formerUserIds: ['OLD-INVITE-ID'] }))
+  await assertSucceeds(updateDoc(doc(await authDb(H_OP, 'h-op@test.com'), 'users', H_OP), { firstName: 'Opal', formerUserIds: ['OLD-INVITE-ID'] }))
 })
 
 test('1.12.0 B3: alias ids on another company\'s users document do not count here', async () => {
@@ -3033,12 +3040,12 @@ test('1.12.0 B3: alias ids on another company\'s users document do not count her
     await updateDoc(doc(db, 'organizations', ORG_H), { 'members.h2-admin': 'member' })
     await updateDoc(doc(db, 'users', 'h2-admin'), { formerUserIds: [H_OP2] })
   })
-  await assertFails(getDoc(doc(authDb('h2-admin', 'h2-admin@test.com'), 'organizations', ORG_H, 'bookings', 'h-bk-op2')))
+  await assertFails(getDoc(doc(await authDb('h2-admin', 'h2-admin@test.com'), 'organizations', ORG_H, 'bookings', 'h-bk-op2')))
 })
 
 test('1.12.0 B4: only the Super Admin changes isSuperAdmin or ownership; an admin cannot demote the founder', async () => {
   await seed112()
-  const ad = authDb(H_AD, 'h-ad@test.com')
+  const ad = await authDb(H_AD, 'h-ad@test.com')
   // Probe Q1: each step is refused.
   await assertFails(updateDoc(doc(ad, 'users', H_AD), { isSuperAdmin: true }))
   await assertFails(updateDoc(doc(ad, 'organizations', ORG_H), { creatorUserId: H_AD }))
@@ -3062,7 +3069,7 @@ test('1.12.0 B4: only the Super Admin changes isSuperAdmin or ownership; an admi
   await assertSucceeds(updateDoc(doc(ad, 'users', H_SA), { firstName: 'Founder' }))
   await assertSucceeds(updateDoc(doc(ad, 'users', H_MGR), { role: 'operative', operativeMode: true }))
   // The Super Admin hands ownership to another admin (iOS transferOrganizationOwnership, web userStore transfer).
-  const sa = authDb(H_SA, 'h-sa@test.com')
+  const sa = await authDb(H_SA, 'h-sa@test.com')
   await assertSucceeds(updateDoc(doc(sa, 'users', H_AD), { isSuperAdmin: true }))
   await assertSucceeds(updateDoc(doc(sa, 'organizations', ORG_H), { creatorUserId: H_AD }))
   await assertSucceeds(updateDoc(doc(sa, 'users', H_SA), { isSuperAdmin: false }))
@@ -3070,7 +3077,7 @@ test('1.12.0 B4: only the Super Admin changes isSuperAdmin or ownership; an admi
 
 test('1.12.0 H2: a deactivated person reads only their own profile; organisation data is closed', async () => {
   await seed112()
-  const off = authDb(H_INACTIVE, 'h-inactive@test.com')
+  const off = await authDb(H_INACTIVE, 'h-inactive@test.com')
   // Probe Q2.
   await assertFails(getDoc(doc(off, 'organizations', ORG_H, 'settings', `timesheet_${H_OP2}_1000`)))
   await assertFails(setDoc(doc(off, 'organizations', ORG_H, 'clients', 'h-c'), { name: 'x' }))
@@ -3080,21 +3087,21 @@ test('1.12.0 H2: a deactivated person reads only their own profile; organisation
   await assertSucceeds(getDoc(doc(off, 'users', H_INACTIVE)))
   await assertSucceeds(getDocs(collection(off, 'users', H_INACTIVE, 'orgMemberships')))
   // A member from another company whose membership here is deactivated: no role here either.
-  const roam = authDb(H_ROAM_OFF, 'h-roam@test.com')
+  const roam = await authDb(H_ROAM_OFF, 'h-roam@test.com')
   await assertFails(getDoc(doc(roam, 'organizations', ORG_H, 'operatives', 'h-row-op')))
   await assertFails(getDoc(doc(roam, 'organizations', ORG_H, 'projects', 'h-p1')))
   // Active people are unaffected.
-  await assertSucceeds(getDoc(doc(authDb(H_OP, 'h-op@test.com'), 'organizations', ORG_H, 'operatives', 'h-row-op')))
+  await assertSucceeds(getDoc(doc(await authDb(H_OP, 'h-op@test.com'), 'organizations', ORG_H, 'operatives', 'h-row-op')))
 })
 
 test('1.12.0 H3: roster row emails change only by admins (operatives rows: also operatives managers, not their own)', async () => {
   await seed112()
-  const mgr = authDb(H_MGR, 'h-mgr@test.com')
+  const mgr = await authDb(H_MGR, 'h-mgr@test.com')
   // Probe P5: rewriting another manager's row email is refused, so the job stays theirs.
   await assertFails(updateDoc(doc(mgr, 'organizations', ORG_H, 'managers', 'h-row-mgr2'), { email: 'h-mgr@test.com' }))
   await assertFails(setDoc(doc(mgr, 'organizations', ORG_H, 'bookings', 'h-new1'), { projectId: 'h-p1', operativeId: H_OP, date: '2026-11-04' }))
   // Probe P8 (roster part): operatives never add or repoint a row.
-  const op2 = authDb(H_OP2, 'h-op2@test.com')
+  const op2 = await authDb(H_OP2, 'h-op2@test.com')
   await assertFails(setDoc(doc(op2, 'organizations', ORG_H, 'operatives', 'h-orow'), { email: 'h-op2@test.com', name: 'x' }))
   await assertFails(updateDoc(doc(op2, 'organizations', ORG_H, 'operatives', 'h-row-op'), { email: 'h-op2@test.com' }))
   // An operative still saves their own row's qualification maps (iOS My Qualifications).
@@ -3105,8 +3112,8 @@ test('1.12.0 H3: roster row emails change only by admins (operatives rows: also 
   await assertSucceeds(setDoc(doc(mgr, 'organizations', ORG_H, 'managers', 'h-row-new'), { email: 'h-mgr2@test.com', firstName: 'M', lastName: '2' }))
   await assertSucceeds(updateDoc(doc(mgr, 'organizations', ORG_H, 'managers', 'h-row-mgr2'), { name: 'M Two' }))
   // Admins change a managers row email (iOS updateManagerIdentityInPlace); operatives managers an operative's row.
-  await assertSucceeds(updateDoc(doc(authDb(H_AD, 'h-ad@test.com'), 'organizations', ORG_H, 'managers', 'h-row-mgr2'), { email: 'h-mgr2-new@test.com' }))
-  const mops = authDb(H_MGR_OPS, 'h-mgr-ops@test.com')
+  await assertSucceeds(updateDoc(doc(await authDb(H_AD, 'h-ad@test.com'), 'organizations', ORG_H, 'managers', 'h-row-mgr2'), { email: 'h-mgr2-new@test.com' }))
+  const mops = await authDb(H_MGR_OPS, 'h-mgr-ops@test.com')
   await assertSucceeds(updateDoc(doc(mops, 'organizations', ORG_H, 'operatives', 'h-row-op'), { email: 'h-op-new@test.com' }))
   await assertFails(updateDoc(doc(mops, 'organizations', ORG_H, 'operatives', 'h-row-op2'), { email: 'h-mgr-ops@test.com' }))
   await assertFails(updateDoc(doc(mops, 'organizations', ORG_H, 'managers', 'h-row-new'), { email: 'h-mgr-ops@test.com' }))
@@ -3115,43 +3122,45 @@ test('1.12.0 H3: roster row emails change only by admins (operatives rows: also 
 test('1.12.0 H4: inbox rows go only to members of the organisation, never without a userId', async () => {
   await seed112()
   // Probe P6: a stranger's own company cannot address someone elsewhere.
-  const x = authDb('h-stranger', 'h-stranger@test.com')
+  const x = await authDb('h-stranger', 'h-stranger@test.com')
   await assertSucceeds(setDoc(doc(x, 'organizations', 'h-evil-org'), { name: 'E', members: { 'h-stranger': 'admin' }, creatorUserId: 'h-stranger' }))
   await assertFails(setDoc(doc(x, 'organizations', 'h-evil-org', 'notifications', 'n1'), {
     userId: H_OP, type: 'push_test', title: 'Reset your password', message: 'go to evil.example', actorUserId: 'h-stranger',
   }))
-  const mgr = authDb(H_MGR, 'h-mgr@test.com')
+  const mgr = await authDb(H_MGR, 'h-mgr@test.com')
   await assertFails(setDoc(doc(mgr, 'organizations', ORG_H, 'notifications', 'n-out'), { userId: 'h2-admin', type: 'task_created', actorUserId: H_MGR }))
   await assertFails(setDoc(doc(mgr, 'organizations', ORG_H, 'notifications', 'n-none'), { type: 'booking_created', actorUserId: H_MGR }))
   // Members are addressed as before: by members key, creator, or a users document of this company.
   await assertSucceeds(setDoc(doc(mgr, 'organizations', ORG_H, 'notifications', 'n-in'), { userId: H_OP, type: 'task_created', actorUserId: H_MGR, isRead: false }))
   await assertSucceeds(setDoc(doc(mgr, 'organizations', ORG_H, 'notifications', 'n-sa'), { userId: H_SA, type: 'client_created', actorUserId: H_MGR, isRead: false }))
-  await assertSucceeds(setDoc(doc(x, 'organizations', 'h-evil-org', 'notifications', 'n-self'), { userId: 'h-stranger', type: 'push_test', actorUserId: 'h-stranger' }))
+  // 1.32.4: the founder's token carries the new company after the refresh the claims marker triggers (a fresh context).
+  const founder = await authDb('h-stranger', 'h-stranger@test.com')
+  await assertSucceeds(setDoc(doc(founder, 'organizations', 'h-evil-org', 'notifications', 'n-self'), { userId: 'h-stranger', type: 'push_test', actorUserId: 'h-stranger' }))
 })
 
 test('1.12.0 H5: account confirmations are never listed and are marked used only by the signed-in owner of the email', async () => {
   await seed112()
   // Probe P7.
-  await assertFails(getDocs(collection(authDb('h-s2', 'h-s2@test.com'), 'accountConfirmations')))
+  await assertFails(getDocs(collection(await authDb('h-s2', 'h-s2@test.com'), 'accountConfirmations')))
   // Get by id (the emailed token) still works signed out.
   await assertSucceeds(getDoc(doc(env.unauthenticatedContext().firestore(), 'accountConfirmations', 'h-confirm')))
   const used = { isUsed: true, usedAt: Timestamp.now() }
   await assertFails(updateDoc(doc(env.unauthenticatedContext().firestore(), 'accountConfirmations', 'h-confirm'), used))
-  await assertFails(updateDoc(doc(authDb('h-s2', 'h-s2@test.com'), 'accountConfirmations', 'h-confirm'), used))
-  await assertSucceeds(updateDoc(doc(authDb('h-founder', 'H-Founder@test.com'), 'accountConfirmations', 'h-confirm'), used))
+  await assertFails(updateDoc(doc(await authDb('h-s2', 'h-s2@test.com'), 'accountConfirmations', 'h-confirm'), used))
+  await assertSucceeds(updateDoc(doc(await authDb('h-founder', 'H-Founder@test.com'), 'accountConfirmations', 'h-confirm'), used))
   // A confirmation is created by the founder for themselves only.
-  await assertFails(setDoc(doc(authDb('h-s2', 'h-s2@test.com'), 'accountConfirmations', 'h-forged'), { userId: 'h-founder', email: 'h-founder@test.com', isUsed: false }))
-  await assertSucceeds(setDoc(doc(authDb('h-s2', 'h-s2@test.com'), 'accountConfirmations', 'h-own'), { userId: 'h-s2', email: 'h-s2@test.com', isUsed: false }))
+  await assertFails(setDoc(doc(await authDb('h-s2', 'h-s2@test.com'), 'accountConfirmations', 'h-forged'), { userId: 'h-founder', email: 'h-founder@test.com', isUsed: false }))
+  await assertSucceeds(setDoc(doc(await authDb('h-s2', 'h-s2@test.com'), 'accountConfirmations', 'h-own'), { userId: 'h-s2', email: 'h-s2@test.com', isUsed: false }))
 })
 
 test('1.12.0 M3: the qualification and skills catalogues are staff only', async () => {
   await seed112()
-  const op2 = authDb(H_OP2, 'h-op2@test.com')
+  const op2 = await authDb(H_OP2, 'h-op2@test.com')
   // Probe P8 (catalogue part).
   await assertFails(setDoc(doc(op2, 'organizations', ORG_H, 'qualifications', 'q1'), { userId: H_OP2, expiryDate: '2099-01-01' }))
   await assertFails(setDoc(doc(op2, 'organizations', ORG_H, 'skills', 's1'), { name: 'x' }))
   await assertSucceeds(getDoc(doc(op2, 'organizations', ORG_H, 'qualifications', 'q1')))
-  const mgr = authDb(H_MGR, 'h-mgr@test.com')
+  const mgr = await authDb(H_MGR, 'h-mgr@test.com')
   await assertSucceeds(setDoc(doc(mgr, 'organizations', ORG_H, 'qualifications', 'q1'), { name: 'CSCS' }))
   await assertSucceeds(setDoc(doc(mgr, 'organizations', ORG_H, 'skills', 's1'), { name: 'Joiner' }))
 })
@@ -3165,10 +3174,10 @@ test('1.12.0 platformConfig/app: anyone reads it (the forced-update gate runs be
   const signedOut = env.unauthenticatedContext().firestore()
   await assertSucceeds(getDoc(doc(signedOut, 'platformConfig', 'app')))
   await assertFails(getDoc(doc(signedOut, 'platformConfig', 'toolboxLibrary')))
-  await assertSucceeds(getDoc(doc(authDb(OP_A, 'op-a@test.com'), 'platformConfig', 'toolboxLibrary')))
-  await assertFails(setDoc(doc(authDb(ADMIN_A, 'admin-a@test.com'), 'platformConfig', 'app'), { minimumIosBuild: 1 }))
-  await assertFails(setDoc(doc(verifiedDb('owner-unverified', OWNER_EMAIL, false), 'platformConfig', 'app'), { minimumIosBuild: 1 }))
-  await assertSucceeds(setDoc(doc(verifiedDb('owner-verified', OWNER_EMAIL, true), 'platformConfig', 'app'), { minimumIosBuild: 121 }, { merge: true }))
+  await assertSucceeds(getDoc(doc(await authDb(OP_A, 'op-a@test.com'), 'platformConfig', 'toolboxLibrary')))
+  await assertFails(setDoc(doc(await authDb(ADMIN_A, 'admin-a@test.com'), 'platformConfig', 'app'), { minimumIosBuild: 1 }))
+  await assertFails(setDoc(doc(await verifiedDb('owner-unverified', OWNER_EMAIL, false), 'platformConfig', 'app'), { minimumIosBuild: 1 }))
+  await assertSucceeds(setDoc(doc(await verifiedDb('owner-verified', OWNER_EMAIL, true), 'platformConfig', 'app'), { minimumIosBuild: 121 }, { merge: true }))
 })
 
 test('1.12.1 / 1.33.0 enforcedReads: absent or on, a manager without toggles reads every job and booking; operatives stay scoped', async () => {
@@ -3186,7 +3195,7 @@ test('1.12.1 / 1.33.0 enforcedReads: absent or on, a manager without toggles rea
     await setDoc(doc(db, 'organizations', ORG_H, 'subcontractorBookings', 'h-sub1'), { projectId: 'h-p1', date: '2026-11-03' })
   })
   // H_MGR manages nothing and has no Projects / Small works toggle.
-  const mgr = authDb(H_MGR, 'h-mgr@test.com')
+  const mgr = await authDb(H_MGR, 'h-mgr@test.com')
   const reads = () => [
     getDoc(doc(mgr, 'organizations', ORG_H, 'projects', 'h-p1')),
     getDocs(collection(mgr, 'organizations', ORG_H, 'projects')),
@@ -3201,17 +3210,17 @@ test('1.12.1 / 1.33.0 enforcedReads: absent or on, a manager without toggles rea
       await setSwitch(value)
       for (const read of reads()) await assertSucceeds(read)
       // Every 1.12.0 fix stays on: a deactivated person, another company and writes are unaffected by the switch.
-      await assertFails(getDoc(doc(authDb(H_INACTIVE, 'h-inactive@test.com'), 'organizations', ORG_H, 'bookings', 'h-bk-op2')))
-      await assertFails(getDocs(collection(authDb('h2-admin', 'h2-admin@test.com'), 'organizations', ORG_H, 'projects')))
+      await assertFails(getDoc(doc(await authDb(H_INACTIVE, 'h-inactive@test.com'), 'organizations', ORG_H, 'bookings', 'h-bk-op2')))
+      await assertFails(getDocs(collection(await authDb('h2-admin', 'h2-admin@test.com'), 'organizations', ORG_H, 'projects')))
       await assertFails(setDoc(doc(mgr, 'organizations', ORG_H, 'bookings', 'h-new-legacy'), { projectId: 'h-p1', operativeId: H_OP, date: '2026-11-04' }))
       await assertFails(updateDoc(doc(mgr, 'organizations', ORG_H, 'projects', 'h-p1'), { name: 'renamed' }))
     }
     await setSwitch(true)
     // 1.33.0 (owner decision 6 Nov): every manager reads every job and booking with the switch on too.
     for (const read of reads()) await assertSucceeds(read)
-    await assertFails(getDocs(collection(authDb(H_OP2, 'h-op2@test.com'), 'organizations', ORG_H, 'bookings')))
-    await assertFails(getDocs(collection(authDb(H_OP2, 'h-op2@test.com'), 'organizations', ORG_H, 'projects')))
-    const mgr2 = authDb(H_MGR2, 'h-mgr2@test.com')
+    await assertFails(getDocs(collection(await authDb(H_OP2, 'h-op2@test.com'), 'organizations', ORG_H, 'bookings')))
+    await assertFails(getDocs(collection(await authDb(H_OP2, 'h-op2@test.com'), 'organizations', ORG_H, 'projects')))
+    const mgr2 = await authDb(H_MGR2, 'h-mgr2@test.com')
     await assertSucceeds(getDoc(doc(mgr2, 'organizations', ORG_H, 'smallWorks', 'h-sw1')))
     await assertSucceeds(getDoc(doc(mgr2, 'organizations', ORG_H, 'projects', 'h-p1')))
   } finally {
@@ -3236,14 +3245,14 @@ test('1.13.0 Q1: payProfiles — the person, line managers, admins and operative
     await setDoc(doc(db, 'organizations', ORG_A, 'payProfiles', PAY_OP_ROW + '-solo'), { userId: PAY_OP_ROW + '-solo', dayRate: 150 })
     await setDoc(doc(db, 'organizations', ORG_A, 'operatives', PAY_OP_ROW + '-solo'), { email: 'solo@test.com', name: 'Solo', dayRate: 150 })
   })
-  const ref = (db: ReturnType<typeof authDb>, id: string) => doc(db, 'organizations', ORG_A, 'payProfiles', id)
-  const op = authDb(PAY_OP, 'pay-op@test.com')
-  const colleague = authDb(REPORT_A, 'report-a@test.com')
-  const lm = authDb(LM_A, 'lm-a@test.com')
-  const mgrOps = authDb(PAY_MGR_OPS, 'pay-mgr-ops@test.com')
-  const mgrOther = authDb(MGR_OTHER_A, 'mgr-other-a@test.com')
-  const admin = authDb(ADMIN_A, 'admin-a@test.com')
-  const outsider = authDb(ADMIN_B, 'admin-b@test.com')
+  const ref = (db: Awaited<ReturnType<typeof authDb>>, id: string) => doc(db, 'organizations', ORG_A, 'payProfiles', id)
+  const op = await authDb(PAY_OP, 'pay-op@test.com')
+  const colleague = await authDb(REPORT_A, 'report-a@test.com')
+  const lm = await authDb(LM_A, 'lm-a@test.com')
+  const mgrOps = await authDb(PAY_MGR_OPS, 'pay-mgr-ops@test.com')
+  const mgrOther = await authDb(MGR_OTHER_A, 'mgr-other-a@test.com')
+  const admin = await authDb(ADMIN_A, 'admin-a@test.com')
+  const outsider = await authDb(ADMIN_B, 'admin-b@test.com')
 
   await assertSucceeds(getDoc(ref(op, PAY_OP)))
   await assertFails(getDoc(ref(colleague, PAY_OP)))
@@ -3277,14 +3286,14 @@ test('1.13.0 Q1: privatePay — history, operativeProfiles and timesheets are re
     await setDoc(doc(db, 'organizations', ORG_A, 'operativeDayRateHistory', 'h113'), { userId: PAY_OP, dayRate: 200, effectiveAt: Timestamp.now() })
     await setDoc(doc(db, 'organizations', ORG_A, 'settings', `timesheet_${PAY_OP}_1`), { userId: PAY_OP, weekStartKey: 'k113' })
   })
-  const colleague = authDb(REPORT_A, 'report-a@test.com')
-  const op = authDb(PAY_OP, 'pay-op@test.com')
-  const lm = authDb(LM_A, 'lm-a@test.com')
-  const mgrOps = authDb(PAY_MGR_OPS, 'pay-mgr-ops@test.com')
-  const admin = authDb(ADMIN_A, 'admin-a@test.com')
-  const history = (db: ReturnType<typeof authDb>) => doc(db, 'organizations', ORG_A, 'operativeDayRateHistory', 'h113')
-  const sheet = (db: ReturnType<typeof authDb>) => doc(db, 'organizations', ORG_A, 'settings', `timesheet_${PAY_OP}_1`)
-  const mirror = (db: ReturnType<typeof authDb>) => doc(db, 'organizations', ORG_A, 'operativeProfiles', PAY_OP)
+  const colleague = await authDb(REPORT_A, 'report-a@test.com')
+  const op = await authDb(PAY_OP, 'pay-op@test.com')
+  const lm = await authDb(LM_A, 'lm-a@test.com')
+  const mgrOps = await authDb(PAY_MGR_OPS, 'pay-mgr-ops@test.com')
+  const admin = await authDb(ADMIN_A, 'admin-a@test.com')
+  const history = (db: Awaited<ReturnType<typeof authDb>>) => doc(db, 'organizations', ORG_A, 'operativeDayRateHistory', 'h113')
+  const sheet = (db: Awaited<ReturnType<typeof authDb>>) => doc(db, 'organizations', ORG_A, 'settings', `timesheet_${PAY_OP}_1`)
+  const mirror = (db: Awaited<ReturnType<typeof authDb>>) => doc(db, 'organizations', ORG_A, 'operativeProfiles', PAY_OP)
 
   // Off (the default until the release that reads per person): every member reads, as before.
   await setPrivatePay(false)
@@ -3338,9 +3347,9 @@ test('1.13.0 Q3: a lapsed subscription closes the organisation data; the org doc
     await setDoc(doc(db, 'organizations', lapsedOrg, 'holidayBookings', 'h1'), { userId: lapsedOp, status: 'pending' })
     await setDoc(doc(db, 'organizations', lapsedOrg, 'projects', 'p1'), { name: 'Job' })
   })
-  const admin = authDb(lapsedAdmin, 'lapsed-admin@test.com')
-  const op = authDb(lapsedOp, 'lapsed-op@test.com')
-  const c1 = (db: ReturnType<typeof authDb>) => doc(db, 'organizations', lapsedOrg, 'clients', 'c1')
+  const admin = await authDb(lapsedAdmin, 'lapsed-admin@test.com')
+  const op = await authDb(lapsedOp, 'lapsed-op@test.com')
+  const c1 = (db: Awaited<ReturnType<typeof authDb>>) => doc(db, 'organizations', lapsedOrg, 'clients', 'c1')
 
   // Closed: reads and writes of organisation data, for admins too.
   await assertFails(getDoc(c1(admin)))
@@ -3385,14 +3394,14 @@ test('1.13.0 §14: a person moves their own email claim only after Auth changed 
     await setDoc(doc(db, 'organizations', ORG_A, 'userEmails', 'old-113@test.com'), { userId: uid })
     await setDoc(doc(db, 'organizations', ORG_A, 'userEmails', 'other-113@test.com'), { userId: 'someone-else' })
   })
-  const before = env.authenticatedContext(uid, { email: 'old-113@test.com', email_verified: true }).firestore()
+  const before = (await claimsContext(env, uid, { email: 'old-113@test.com', email_verified: true })).firestore()
   // Same email in the token: the claim is current, cannot be deleted by the person; nor can the users email change.
   await assertFails(deleteDoc(doc(before, 'organizations', ORG_A, 'userEmails', 'old-113@test.com')))
   await assertFails(updateDoc(doc(before, 'users', uid), { email: 'new-113@test.com' }))
-  const unverified = env.authenticatedContext(uid, { email: 'new-113@test.com', email_verified: false }).firestore()
+  const unverified = (await claimsContext(env, uid, { email: 'new-113@test.com', email_verified: false })).firestore()
   await assertFails(deleteDoc(doc(unverified, 'organizations', ORG_A, 'userEmails', 'old-113@test.com')))
   // After Auth changed it (verified): the signInEmailSyncWrites writes pass.
-  const after = env.authenticatedContext(uid, { email: 'new-113@test.com', email_verified: true }).firestore()
+  const after = (await claimsContext(env, uid, { email: 'new-113@test.com', email_verified: true })).firestore()
   await assertSucceeds(updateDoc(doc(after, 'users', uid), { email: 'new-113@test.com' }))
   await assertSucceeds(setDoc(doc(after, 'organizations', ORG_A, 'userEmails', 'new-113@test.com'), { userId: uid }))
   await assertSucceeds(deleteDoc(doc(after, 'organizations', ORG_A, 'userEmails', 'old-113@test.com')))
@@ -3402,9 +3411,9 @@ test('1.13.0 §14: a person moves their own email claim only after Auth changed 
 
 test('1.13.0 Q4: a person cannot change their own start date', async () => {
   await seedLeaveAndTimesheetPeople()
-  const db = authDb(REPORT_A, 'report-a@test.com')
+  const db = await authDb(REPORT_A, 'report-a@test.com')
   await assertFails(updateDoc(doc(db, 'users', REPORT_A), { employmentStartDate: '2026-07-01' }))
-  await assertSucceeds(updateDoc(doc(authDb(ADMIN_A, 'admin-a@test.com'), 'users', REPORT_A), { employmentStartDate: '2026-07-01' }))
+  await assertSucceeds(updateDoc(doc(await authDb(ADMIN_A, 'admin-a@test.com'), 'users', REPORT_A), { employmentStartDate: '2026-07-01' }))
 })
 
 // ---------------------------------------------------------------------------
@@ -3463,7 +3472,7 @@ async function tStored(uid: string) {
   return out!
 }
 /** Web `userStore.changeAccountType` (1.12.2): the whole plan as one batch, the membership as a merge-set. */
-function webChangeType(db: ReturnType<typeof authDb>, actor: string, person: Record<string, unknown> & { id: string }, kind: 'admin' | 'manager' | 'operative') {
+function webChangeType(db: Awaited<ReturnType<typeof authDb>>, actor: string, person: Record<string, unknown> & { id: string }, kind: 'admin' | 'manager' | 'operative') {
   const plan = accountTypeChangeWrites({ person, kind, organizationId: ORG_T, roster: [] })
   if (!plan.ok) throw new Error(plan.message)
   const batch = writeBatch(db)
@@ -3478,12 +3487,12 @@ function webChangeType(db: ReturnType<typeof authDb>, actor: string, person: Rec
   return batch.commit()
 }
 /** Web `saveUser` follow-ups after a profile save (1.12.2): the same-email query names the organisation. */
-async function webSaveFollowUps(db: ReturnType<typeof authDb>, email: string) {
+async function webSaveFollowUps(db: Awaited<ReturnType<typeof authDb>>, email: string) {
   await getDocs(query(collection(db, 'users'), where('organizationId', '==', ORG_T), where('email', '==', email)))
   await setDoc(doc(db, 'organizations', ORG_T, 'userEmails', email), { userId: email === 't-ad@test.com' ? T_AD : T_AD2 })
 }
 /** iOS `changeAccountType` (main 30b4df4): users patch, members entry, then the membership read + write. */
-async function iosChangeType(db: ReturnType<typeof authDb>, actor: string, uid: string, role: 'manager' | 'admin') {
+async function iosChangeType(db: Awaited<ReturnType<typeof authDb>>, actor: string, uid: string, role: 'manager' | 'admin') {
   const patch: Record<string, unknown> = { role, updatedAt: Timestamp.now() }
   for (const key of ['adminAccess', 'projects', 'smallWorks', 'weeklyReports', 'wholesalersOrderHistory']) {
     patch[key] = role === 'admin'
@@ -3504,7 +3513,7 @@ async function iosChangeType(db: ReturnType<typeof authDb>, actor: string, uid: 
 
 test('1.12.2: the Super Admin changes an admin to manager (web payload): every document lands, the save follow-ups pass', async () => {
   await seed1122()
-  const sa = authDb(T_SA, 't-sa@test.com')
+  const sa = await authDb(T_SA, 't-sa@test.com')
   const before = await tStored(T_AD)
   await assertSucceeds(webChangeType(sa, T_SA, { ...before.user, id: T_AD }, 'manager'))
   const after = await tStored(T_AD)
@@ -3525,7 +3534,7 @@ test('1.12.2: the Super Admin changes an admin to manager (web payload): every d
 
 test('1.12.2: the Super Admin changes an admin to manager (iOS payload): the membership read is allowed', async () => {
   await seed1122()
-  const sa = authDb(T_SA, 't-sa@test.com')
+  const sa = await authDb(T_SA, 't-sa@test.com')
   await assertSucceeds(iosChangeType(sa, T_SA, T_AD, 'manager'))
   const after = await tStored(T_AD)
   assert.equal(after.user.role, 'manager')
@@ -3542,7 +3551,7 @@ test('1.12.2: the Super Admin changes an admin to manager (iOS payload): the mem
 
 test('1.12.2: an admin (not the Super Admin) demotes another admin and promotes a manager; never the founder or themself', async () => {
   await seed1122()
-  const ad = authDb(T_AD, 't-ad@test.com')
+  const ad = await authDb(T_AD, 't-ad@test.com')
   await assertSucceeds(webChangeType(ad, T_AD, { ...(await tStored(T_AD2)).user, id: T_AD2 }, 'manager'))
   await assertSucceeds(iosChangeType(ad, T_AD, T_MGR, 'admin'))
   assert.equal((await tStored(T_MGR)).member, 'admin')
@@ -3557,7 +3566,7 @@ test('1.12.2: an admin (not the Super Admin) demotes another admin and promotes 
   await assertFails(setDoc(doc(ad, 'users', T_SA, 'orgMemberships', ORG_T), { isSuperAdmin: false }, { merge: true }))
   // Self-promotion stays refused: a manager cannot make themself admin on any of the three documents.
   await seed1122()
-  const mgr = authDb(T_MGR, 't-mgr@test.com')
+  const mgr = await authDb(T_MGR, 't-mgr@test.com')
   await assertFails(updateDoc(doc(mgr, 'users', T_MGR), { role: 'admin', adminAccess: true, 'permissions.adminAccess': true }))
   await assertFails(updateDoc(doc(mgr, 'organizations', ORG_T), { [`members.${T_MGR}`]: 'admin' }))
   await assertFails(setDoc(doc(mgr, 'users', T_MGR, 'orgMemberships', ORG_T), { role: 'admin', permissions: { adminAccess: true } }, { merge: true }))
@@ -3567,13 +3576,13 @@ test('1.12.2: an admin (not the Super Admin) demotes another admin and promotes 
 
 test('1.12.2: a membership is read by the person and the admins of that organisation only', async () => {
   await seed1122()
-  await assertSucceeds(getDoc(doc(authDb(T_AD, 't-ad@test.com'), 'users', T_MGR, 'orgMemberships', ORG_T)))
-  await assertSucceeds(getDoc(doc(authDb(T_MGR, 't-mgr@test.com'), 'users', T_MGR, 'orgMemberships', ORG_T)))
+  await assertSucceeds(getDoc(doc(await authDb(T_AD, 't-ad@test.com'), 'users', T_MGR, 'orgMemberships', ORG_T)))
+  await assertSucceeds(getDoc(doc(await authDb(T_MGR, 't-mgr@test.com'), 'users', T_MGR, 'orgMemberships', ORG_T)))
   // Another member who is not an admin, and an admin of another company, cannot.
-  await assertFails(getDoc(doc(authDb(T_MGR, 't-mgr@test.com'), 'users', T_AD, 'orgMemberships', ORG_T)))
-  await assertFails(getDoc(doc(authDb(ADMIN_B, 'admin-b@test.com'), 'users', T_MGR, 'orgMemberships', ORG_T)))
+  await assertFails(getDoc(doc(await authDb(T_MGR, 't-mgr@test.com'), 'users', T_AD, 'orgMemberships', ORG_T)))
+  await assertFails(getDoc(doc(await authDb(ADMIN_B, 'admin-b@test.com'), 'users', T_MGR, 'orgMemberships', ORG_T)))
   // Listing someone else's memberships stays closed.
-  await assertFails(getDocs(collection(authDb(T_AD, 't-ad@test.com'), 'users', T_MGR, 'orgMemberships')))
+  await assertFails(getDocs(collection(await authDb(T_AD, 't-ad@test.com'), 'users', T_MGR, 'orgMemberships')))
 })
 
 test('1.15.0 §20: a scheduled organisation is locked; the super admin restores it; deletion is server-only otherwise', async () => {
@@ -3600,9 +3609,9 @@ test('1.15.0 §20: a scheduled organisation is locked; the super admin restores 
     await setDoc(doc(db, 'users', op, 'orgMemberships', org), { organizationId: org, role: 'operative' })
     await setDoc(doc(db, 'organizations', org, 'clients', 'c1'), { name: 'Client' })
   })
-  const saDb = authDb(sa, 'sa-del@test.com')
-  const adminDb = authDb(admin, 'admin-del@test.com')
-  const opDb = authDb(op, 'op-del@test.com')
+  const saDb = await authDb(sa, 'sa-del@test.com')
+  const adminDb = await authDb(admin, 'admin-del@test.com')
+  const opDb = await authDb(op, 'op-del@test.com')
   // Locked for everyone, the super admin included.
   await assertFails(getDoc(doc(saDb, 'organizations', org, 'clients', 'c1')))
   await assertFails(getDoc(doc(opDb, 'organizations', org, 'clients', 'c1')))
@@ -3630,9 +3639,9 @@ test('1.15.0 §20: a scheduled organisation is locked; the super admin restores 
 
 test('1.15.0 canSendMaterialOrders: only admins and managers write material send records', async () => {
   const record = (id: string) => ({ id, projectId: 'job-1', requestType: 'Order', sentAt: Timestamp.now(), sentBy: 'X', recipients: [], lines: [] })
-  await assertSucceeds(setDoc(doc(authDb(ADMIN_A, 'admin-a@test.com'), 'organizations', ORG_A, 'materialSendRecords', 'SEND-115-A'), record('SEND-115-A')))
-  await assertFails(setDoc(doc(authDb(OP_A, 'op-a@test.com'), 'organizations', ORG_A, 'materialSendRecords', 'SEND-115-O'), record('SEND-115-O')))
-  await assertFails(setDoc(doc(authDb(ADMIN_B, 'admin-b@test.com'), 'organizations', ORG_A, 'materialSendRecords', 'SEND-115-B'), record('SEND-115-B')))
+  await assertSucceeds(setDoc(doc(await authDb(ADMIN_A, 'admin-a@test.com'), 'organizations', ORG_A, 'materialSendRecords', 'SEND-115-A'), record('SEND-115-A')))
+  await assertFails(setDoc(doc(await authDb(OP_A, 'op-a@test.com'), 'organizations', ORG_A, 'materialSendRecords', 'SEND-115-O'), record('SEND-115-O')))
+  await assertFails(setDoc(doc(await authDb(ADMIN_B, 'admin-b@test.com'), 'organizations', ORG_A, 'materialSendRecords', 'SEND-115-B'), record('SEND-115-B')))
 })
 
 async function step<T>(label: string, run: Promise<T>): Promise<T> {
@@ -3653,9 +3662,9 @@ async function setSwitchConfig(fields: Record<string, unknown>) {
 
 test('1.26.0 enforcedReads per organisation: on only for listed companies; operatives read only their own bookings and jobs by id', async () => {
   await seed112()
-  const mgr = authDb(H_MGR, 'h-mgr@test.com')
-  const op2 = authDb(H_OP2, 'h-op2@test.com')
-  const col = (db: ReturnType<typeof authDb>, name: string) => collection(db, 'organizations', ORG_H, name)
+  const mgr = await authDb(H_MGR, 'h-mgr@test.com')
+  const op2 = await authDb(H_OP2, 'h-op2@test.com')
+  const col = (db: Awaited<ReturnType<typeof authDb>>, name: string) => collection(db, 'organizations', ORG_H, name)
   try {
     // Off for this company (another company listed): reads as before 1.10.0.
     await setSwitchConfig({ enforcedReads: false, enforcedReadsOrganizationIds: [ORG_H2] })
@@ -3677,8 +3686,8 @@ test('1.26.0 enforcedReads per organisation: on only for listed companies; opera
     await assertSucceeds(getDoc(doc(op2, 'organizations', ORG_H, 'projects', 'h-p1')))
     await assertFails(getDocs(col(op2, 'projects')))
     // Admins are unaffected.
-    await assertSucceeds(getDocs(col(authDb(H_AD, 'h-ad@test.com'), 'bookings')))
-    await assertSucceeds(getDocs(col(authDb(H_AD, 'h-ad@test.com'), 'projects')))
+    await assertSucceeds(getDocs(col(await authDb(H_AD, 'h-ad@test.com'), 'bookings')))
+    await assertSucceeds(getDocs(col(await authDb(H_AD, 'h-ad@test.com'), 'projects')))
 
     // A list that is not a list, or a mistyped id, switches nothing on (operatives read every booking again).
     await setSwitchConfig({ enforcedReadsOrganizationIds: ORG_H })
@@ -3698,14 +3707,14 @@ test('1.26.0 privatePay per organisation: a person reads their own pay; a collea
     await setDoc(doc(db, 'organizations', ORG_A, 'operativeDayRateHistory', 'h126'), { userId: PAY_OP, dayRate: 200, effectiveAt: Timestamp.now() })
     await setDoc(doc(db, 'organizations', ORG_A, 'settings', `timesheet_${PAY_OP}_126`), { userId: PAY_OP, weekStartKey: 'k126' })
   })
-  const op = authDb(PAY_OP, 'pay-op@test.com')
-  const colleague = authDb(REPORT_A, 'report-a@test.com')
-  const mgrOther = authDb(MGR_OTHER_A, 'mgr-other-a@test.com')
-  const lm = authDb(LM_A, 'lm-a@test.com')
-  const admin = authDb(ADMIN_A, 'admin-a@test.com')
-  const history = (db: ReturnType<typeof authDb>) => collection(db, 'organizations', ORG_A, 'operativeDayRateHistory')
-  const settings = (db: ReturnType<typeof authDb>) => collection(db, 'organizations', ORG_A, 'settings')
-  const payProfile = (db: ReturnType<typeof authDb>) => doc(db, 'organizations', ORG_A, 'payProfiles', PAY_OP)
+  const op = await authDb(PAY_OP, 'pay-op@test.com')
+  const colleague = await authDb(REPORT_A, 'report-a@test.com')
+  const mgrOther = await authDb(MGR_OTHER_A, 'mgr-other-a@test.com')
+  const lm = await authDb(LM_A, 'lm-a@test.com')
+  const admin = await authDb(ADMIN_A, 'admin-a@test.com')
+  const history = (db: Awaited<ReturnType<typeof authDb>>) => collection(db, 'organizations', ORG_A, 'operativeDayRateHistory')
+  const settings = (db: Awaited<ReturnType<typeof authDb>>) => collection(db, 'organizations', ORG_A, 'settings')
+  const payProfile = (db: Awaited<ReturnType<typeof authDb>>) => doc(db, 'organizations', ORG_A, 'payProfiles', PAY_OP)
   try {
     for (const on of [false, true]) {
       await setSwitchConfig({ enforcedReads: true, privatePayOrganizationIds: on ? [ORG_A] : [ORG_B] })
@@ -3768,7 +3777,7 @@ test('1.27.0 (6) invite accept: with privatePay on the invitee creates their own
       email, organizationId: ORG_A, firstName: 'Ivy', surname: 'New', passwordSet: true, isActive: true, formerUserIds: [placeholderId],
     })
   })
-  const db = authDb(authUid, email)
+  const db = await authDb(authUid, email)
   const own = doc(db, 'organizations', ORG_A, 'payProfiles', authUid)
   const copy = { userId: authUid, payBasis: 'day', dayRate: 185, employmentType: 'self_employed' }
   try {
@@ -3815,7 +3824,7 @@ test('1.27.0 (6) invite accept: with privatePay on the invitee creates their own
     await env.withSecurityRulesDisabled(async (ctx) => {
       await updateDoc(doc(ctx.firestore(), 'users', placeholderId), { organizationId: ORG_A })
     })
-    const stranger = authDb('stranger-127', 'stranger-127@test.com')
+    const stranger = await authDb('stranger-127', 'stranger-127@test.com')
     await step('stranger', assertFails(setDoc(doc(stranger, 'organizations', ORG_A, 'payProfiles', 'stranger-127'), { ...copy, userId: 'stranger-127' })))
     // And it still works for the genuine invitee (sanity: the state above is valid again).
     await step('valid again', assertSucceeds(setDoc(own, copy)))
@@ -3843,12 +3852,12 @@ test('1.27.0 (7) catalogue operatives: operatives managers read their pay profil
       })
     }
   })
-  const mgrOps = authDb(PAY_MGR_OPS, 'pay-mgr-ops@test.com')
-  const lm = authDb(LM_A, 'lm-a@test.com')
-  const colleague = authDb(REPORT_A, 'report-a@test.com')
-  const admin = authDb(ADMIN_A, 'admin-a@test.com')
-  const profile = (db: ReturnType<typeof authDb>, id: string) => doc(db, 'organizations', ORG_A, 'payProfiles', id)
-  const historyQuery = (db: ReturnType<typeof authDb>, id: string) =>
+  const mgrOps = await authDb(PAY_MGR_OPS, 'pay-mgr-ops@test.com')
+  const lm = await authDb(LM_A, 'lm-a@test.com')
+  const colleague = await authDb(REPORT_A, 'report-a@test.com')
+  const admin = await authDb(ADMIN_A, 'admin-a@test.com')
+  const profile = (db: Awaited<ReturnType<typeof authDb>>, id: string) => doc(db, 'organizations', ORG_A, 'payProfiles', id)
+  const historyQuery = (db: Awaited<ReturnType<typeof authDb>>, id: string) =>
     query(collection(db, 'organizations', ORG_A, 'operativeDayRateHistory'), where('operativeId', '==', id), where('userId', '==', ''))
   try {
     await setSwitchConfig({ enforcedReads: true, privatePayOrganizationIds: [ORG_A] })
@@ -3901,7 +3910,7 @@ test('1.28.0 B1: invite accept copies the self-manage toggles only as the admin 
     email, organizationId: ORG_A, firstName: 'Tia', role: 'admin', adminAccess: true, passwordSet: true, isActive: true,
     isSuperAdmin: false, formerUserIds: [placeholderId], ...ageFields(), ...extra,
   })
-  const db = authDb(authUid, email)
+  const db = await authDb(authUid, email)
   // Placeholder has both off: the invitee cannot switch them on (top level or permissions map).
   await seed({ annualLeaveSelfBook: false, timesheetSelfSign: false })
   await assertFails(acceptInviteBatch(db, authUid, profile({ annualLeaveSelfBook: true, timesheetSelfSign: true, hasNoLineManager: true }), 'invite-toggles'))
@@ -3930,7 +3939,7 @@ test('1.28.0 B1: deleting and re-creating your own profile never switches on you
     await setDoc(doc(db, 'organizations', ORG_A, 'userEmails', email), { userId: uid })
     await setDoc(doc(db, 'users', uid), { email, organizationId: ORG_A, role: 'admin', adminAccess: true })
   })
-  const db = authDb(uid, email)
+  const db = await authDb(uid, email)
   // 1.31.1 (fourth review): nobody deletes their own users document; accounts are deleted through
   // /api/account/delete (service credentials). The document is removed with the rules off to test the re-create.
   await assertLogicalDeny(deleteDoc(doc(db, 'users', uid)))
@@ -3947,7 +3956,7 @@ test('1.28.0 B1: the founder (organisation creator) may create their own profile
   const uid = 'founder-toggles'
   const email = 'founder-toggles@test.com'
   const orgId = 'org-founder-toggles'
-  const db = authDb(uid, email)
+  const db = await authDb(uid, email)
   await assertSucceeds(setDoc(doc(db, 'organizations', orgId), { name: 'Toggle Co', members: { [uid]: 'admin' }, creatorUserId: uid }))
   await assertSucceeds(setDoc(doc(db, 'organizations', orgId, 'userEmails', email), { userId: uid }))
   await assertSucceeds(setDoc(doc(db, 'users', uid), {
@@ -3959,7 +3968,7 @@ test('1.28.0 B1: the founder (organisation creator) may create their own profile
   await env.withSecurityRulesDisabled(async (ctx) => {
     await updateDoc(doc(ctx.firestore(), 'organizations', orgId), { [`members.${other}`]: 'admin' })
   })
-  const odb = authDb(other, 'second-admin-toggles@test.com')
+  const odb = await authDb(other, 'second-admin-toggles@test.com')
   await assertFails(setDoc(doc(odb, 'users', other), {
     email: 'second-admin-toggles@test.com', organizationId: orgId, firstName: 'Sam', role: 'admin', adminAccess: true,
     annualLeaveSelfBook: true, timesheetSelfSign: true, ...ageFields(),
@@ -3972,10 +3981,10 @@ test('1.28.0 B1: the founder (organisation creator) may create their own profile
 test('1.28.0 B2: the unflagged creator may change their own self-manage toggles; a non-creator admin may not', async () => {
   await seedRulebook1280People()
   // ADMIN_A is ORG_A's creator with no isSuperAdmin flag in the seed.
-  const own = doc(authDb(ADMIN_A, 'admin-a@test.com'), 'users', ADMIN_A)
+  const own = doc(await authDb(ADMIN_A, 'admin-a@test.com'), 'users', ADMIN_A)
   await assertSucceeds(updateDoc(own, { timesheetSelfSign: true, annualLeaveSelfBook: true }))
   await assertSucceeds(updateDoc(own, { timesheetSelfSign: false, annualLeaveSelfBook: false }))
-  await assertFails(updateDoc(doc(authDb(ADMIN2_A, 'admin2-a@test.com'), 'users', ADMIN2_A), { timesheetSelfSign: true }))
+  await assertFails(updateDoc(doc(await authDb(ADMIN2_A, 'admin2-a@test.com'), 'users', ADMIN2_A), { timesheetSelfSign: true }))
 })
 
 // ── Rulebook 1.30.2: nobody reviews their own timesheet; self-manage toggles are read for THIS organisation ──
@@ -4040,8 +4049,8 @@ async function seedRulebook1302People() {
   })
 }
 
-function sheetRef(org: string, subject: string, uid: string, email: string, n = 1800000000) {
-  return doc(authDb(uid, email), 'organizations', org, 'settings', `timesheet_${subject}_${n}`)
+async function sheetRef(org: string, subject: string, uid: string, email: string, n = 1800000000) {
+  return doc(await authDb(uid, email), 'organizations', org, 'settings', `timesheet_${subject}_${n}`)
 }
 const ownSign = (uid: string) => ({
   userId: uid, weekStartKey: '2026-11-01', weekEndKey: '2026-11-15',
@@ -4061,7 +4070,7 @@ const approvedLeave = (uid: string) => leave(uid, 'approved', { approvedByUserId
 
 /** The owner signs; then counter-sign, snapshot and an entry review on their own sheet — allowed or refused together. */
 async function ownSheetCell(org: string, uid: string, email: string, selfSigned: boolean, n: number) {
-  const ref = sheetRef(org, uid, uid, email, n)
+  const ref = await sheetRef(org, uid, uid, email, n)
   await assertSucceeds(setDoc(ref, ownSign(uid), { merge: true }))
   const check = selfSigned ? assertSucceeds : assertFails
   await check(setDoc(ref, snapshot(uid), { merge: true }))
@@ -4071,47 +4080,47 @@ async function ownSheetCell(org: string, uid: string, email: string, selfSigned:
 
 test('1.30.2 cells: own timesheet counter-sign, snapshot and reviews follow timesheetSelfSigned; own leave follows Annual Leave Management', async () => {
   await seedRulebook1302People()
-  const hb = (org: string, uid: string, email: string, id: string) =>
-    doc(authDb(uid, email), 'organizations', org, 'holidayBookings', id)
+  const hb = async (org: string, uid: string, email: string, id: string) =>
+    doc(await authDb(uid, email), 'organizations', org, 'holidayBookings', id)
   // Super Admin (the creator): self-signed and self-books.
   await ownSheetCell(ORG_A, ADMIN_A, 'admin-a@test.com', true, 1800000001)
-  await assertSucceeds(setDoc(hb(ORG_A, ADMIN_A, 'admin-a@test.com', 'c1302-sa'), approvedLeave(ADMIN_A)))
+  await assertSucceeds(setDoc(await hb(ORG_A, ADMIN_A, 'admin-a@test.com', 'c1302-sa'), approvedLeave(ADMIN_A)))
   // Admin, both toggles, no line manager.
   await ownSheetCell(ORG_A, ADM_BOTH_A, 'adm-both-a@test.com', true, 1800000002)
-  await assertSucceeds(setDoc(hb(ORG_A, ADM_BOTH_A, 'adm-both-a@test.com', 'c1302-both'), approvedLeave(ADM_BOTH_A)))
+  await assertSucceeds(setDoc(await hb(ORG_A, ADM_BOTH_A, 'adm-both-a@test.com', 'c1302-both'), approvedLeave(ADM_BOTH_A)))
   // Admin, leave only, with a line manager: leave approved; own sheet waits for the line manager.
   await ownSheetCell(ORG_A, ADM_LEAVE_A, 'adm-leave-a@test.com', false, 1800000003)
-  await assertSucceeds(setDoc(hb(ORG_A, ADM_LEAVE_A, 'adm-leave-a@test.com', 'c1302-leave'), approvedLeave(ADM_LEAVE_A)))
-  await assertSucceeds(setDoc(sheetRef(ORG_A, ADM_LEAVE_A, LM_A, 'lm-a@test.com', 1800000003), counterSign(LM_A), { merge: true }))
+  await assertSucceeds(setDoc(await hb(ORG_A, ADM_LEAVE_A, 'adm-leave-a@test.com', 'c1302-leave'), approvedLeave(ADM_LEAVE_A)))
+  await assertSucceeds(setDoc(await sheetRef(ORG_A, ADM_LEAVE_A, LM_A, 'lm-a@test.com', 1800000003), counterSign(LM_A), { merge: true }))
   // Admin, timesheet only, with a line manager: own sheet self-signed; leave is a request.
   await ownSheetCell(ORG_A, ADM_TS_A, 'adm-ts-a@test.com', true, 1800000004)
-  await assertFails(setDoc(hb(ORG_A, ADM_TS_A, 'adm-ts-a@test.com', 'c1302-ts'), approvedLeave(ADM_TS_A)))
-  await assertSucceeds(setDoc(hb(ORG_A, ADM_TS_A, 'adm-ts-a@test.com', 'c1302-ts'), leave(ADM_TS_A, 'pending')))
+  await assertFails(setDoc(await hb(ORG_A, ADM_TS_A, 'adm-ts-a@test.com', 'c1302-ts'), approvedLeave(ADM_TS_A)))
+  await assertSucceeds(setDoc(await hb(ORG_A, ADM_TS_A, 'adm-ts-a@test.com', 'c1302-ts'), leave(ADM_TS_A, 'pending')))
   // Admin, no toggles, no line manager: own counter-sign now DENIED (the audit's bug); another admin signs it.
   await ownSheetCell(ORG_A, ADMIN2_A, 'admin2-a@test.com', false, 1800000005)
-  await assertFails(setDoc(sheetRef(ORG_A, ADMIN2_A, ADMIN2_A, 'admin2-a@test.com', 1800000005), { exportedAt: Timestamp.now() }, { merge: true }))
-  await assertFails(setDoc(hb(ORG_A, ADMIN2_A, 'admin2-a@test.com', 'c1302-none'), approvedLeave(ADMIN2_A)))
-  await assertSucceeds(setDoc(sheetRef(ORG_A, ADMIN2_A, ADMIN_A, 'admin-a@test.com', 1800000005), counterSign(ADMIN_A), { merge: true }))
+  await assertFails(setDoc(await sheetRef(ORG_A, ADMIN2_A, ADMIN2_A, 'admin2-a@test.com', 1800000005), { exportedAt: Timestamp.now() }, { merge: true }))
+  await assertFails(setDoc(await hb(ORG_A, ADMIN2_A, 'admin2-a@test.com', 'c1302-none'), approvedLeave(ADMIN2_A)))
+  await assertSucceeds(setDoc(await sheetRef(ORG_A, ADMIN2_A, ADMIN_A, 'admin-a@test.com', 1800000005), counterSign(ADMIN_A), { merge: true }))
   // Signed by someone else: the owner (not self-signed) may not delete it.
-  await assertFails(deleteDoc(sheetRef(ORG_A, ADMIN2_A, ADMIN2_A, 'admin2-a@test.com', 1800000005)))
+  await assertFails(deleteDoc(await sheetRef(ORG_A, ADMIN2_A, ADMIN2_A, 'admin2-a@test.com', 1800000005)))
   // PAYE admin, Annual Leave Management on, Timesheet self-sign off: leave approved; never their own counter-sign.
   await ownSheetCell(ORG_A, ADM_PAYE_A, 'adm-paye-a@test.com', false, 1800000006)
-  await assertSucceeds(setDoc(hb(ORG_A, ADM_PAYE_A, 'adm-paye-a@test.com', 'c1302-paye'), approvedLeave(ADM_PAYE_A)))
+  await assertSucceeds(setDoc(await hb(ORG_A, ADM_PAYE_A, 'adm-paye-a@test.com', 'c1302-paye'), approvedLeave(ADM_PAYE_A)))
   // Demoted manager with Timesheet self-sign kept underneath: never self-signed, leave is a request.
   await ownSheetCell(ORG_A, DEMOTED_MGR_A, 'demoted-mgr-a@test.com', false, 1800000007)
-  await assertFails(setDoc(hb(ORG_A, DEMOTED_MGR_A, 'demoted-mgr-a@test.com', 'c1302-dem'), approvedLeave(DEMOTED_MGR_A)))
+  await assertFails(setDoc(await hb(ORG_A, DEMOTED_MGR_A, 'demoted-mgr-a@test.com', 'c1302-dem'), approvedLeave(DEMOTED_MGR_A)))
 })
 
 test('1.30.2 cells: visitors — toggles come from the membership here, never the home company', async () => {
   await seedRulebook1302People()
-  const hb = (uid: string, email: string, id: string) =>
-    doc(authDb(uid, email), 'organizations', ORG_B, 'holidayBookings', id)
+  const hb = async (uid: string, email: string, id: string) =>
+    doc(await authDb(uid, email), 'organizations', ORG_B, 'holidayBookings', id)
   // Visiting admin in B with the toggles only on the membership (home: operative, toggles off): allowed.
-  await assertSucceeds(setDoc(hb(VISIT_ADMIN, 'visiting-admin@test.com', 'c1302-va'), approvedLeave(VISIT_ADMIN)))
+  await assertSucceeds(setDoc(await hb(VISIT_ADMIN, 'visiting-admin@test.com', 'c1302-va'), approvedLeave(VISIT_ADMIN)))
   await ownSheetCell(ORG_B, VISIT_ADMIN, 'visiting-admin@test.com', true, 1800000011)
   // Visiting manager in B with the flags on at home only: denied.
-  await assertFails(setDoc(hb(VISIT_MGR, 'visiting-mgr@test.com', 'c1302-vm'), approvedLeave(VISIT_MGR)))
-  await assertSucceeds(setDoc(hb(VISIT_MGR, 'visiting-mgr@test.com', 'c1302-vm'), leave(VISIT_MGR, 'pending')))
+  await assertFails(setDoc(await hb(VISIT_MGR, 'visiting-mgr@test.com', 'c1302-vm'), approvedLeave(VISIT_MGR)))
+  await assertSucceeds(setDoc(await hb(VISIT_MGR, 'visiting-mgr@test.com', 'c1302-vm'), leave(VISIT_MGR, 'pending')))
   await ownSheetCell(ORG_B, VISIT_MGR, 'visiting-mgr@test.com', false, 1800000012)
   // The membership's toggles are switched off: the visiting admin is refused too (no home fallback).
   await env.withSecurityRulesDisabled(async (ctx) => {
@@ -4119,7 +4128,7 @@ test('1.30.2 cells: visitors — toggles come from the membership here, never th
       permissions: { adminAccess: true, annualLeaveSelfBook: false, timesheetSelfSign: false },
     }, { merge: true })
   })
-  await assertFails(setDoc(hb(VISIT_ADMIN, 'visiting-admin@test.com', 'c1302-va2'), approvedLeave(VISIT_ADMIN)))
+  await assertFails(setDoc(await hb(VISIT_ADMIN, 'visiting-admin@test.com', 'c1302-va2'), approvedLeave(VISIT_ADMIN)))
   await ownSheetCell(ORG_B, VISIT_ADMIN, 'visiting-admin@test.com', false, 1800000013)
   await env.withSecurityRulesDisabled(async (ctx) => {
     await setDoc(doc(ctx.firestore(), 'users', VISIT_ADMIN, 'orgMemberships', ORG_B), {
@@ -4127,16 +4136,16 @@ test('1.30.2 cells: visitors — toggles come from the membership here, never th
     }, { merge: true })
   })
   // Back on: allowed again (the flag is the membership's).
-  await assertSucceeds(setDoc(hb(VISIT_ADMIN, 'visiting-admin@test.com', 'c1302-va3'), approvedLeave(VISIT_ADMIN)))
+  await assertSucceeds(setDoc(await hb(VISIT_ADMIN, 'visiting-admin@test.com', 'c1302-va3'), approvedLeave(VISIT_ADMIN)))
   // Home company A still reads the home users document: the visiting manager is an admin with both toggles there.
-  await assertSucceeds(setDoc(doc(authDb(VISIT_MGR, 'visiting-mgr@test.com'), 'organizations', ORG_A, 'holidayBookings', 'c1302-vm-home'), approvedLeave(VISIT_MGR)))
+  await assertSucceeds(setDoc(doc(await authDb(VISIT_MGR, 'visiting-mgr@test.com'), 'organizations', ORG_A, 'holidayBookings', 'c1302-vm-home'), approvedLeave(VISIT_MGR)))
   // An admin of B reviews the visitor's sheet; the visitor never reviews their own.
-  await assertSucceeds(setDoc(sheetRef(ORG_B, VISIT_MGR, ADMIN_B, 'admin-b@test.com', 1800000012), counterSign(ADMIN_B), { merge: true }))
+  await assertSucceeds(setDoc(await sheetRef(ORG_B, VISIT_MGR, ADMIN_B, 'admin-b@test.com', 1800000012), counterSign(ADMIN_B), { merge: true }))
 })
 
 test('1.30.2 review fix: the doc id prefix never borrows another person\'s self-signing; the owner never re-attributes a sheet', async () => {
   await seedRulebook1302People()
-  const rep = authDb(REPORT_A, 'report-a@test.com')
+  const rep = await authDb(REPORT_A, 'report-a@test.com')
   const privileged = (subject: string) => ({
     userId: subject, operativeSignedAt: Timestamp.now(), operativeSignedByName: 'X',
     ...counterSign(REPORT_A), exportedAt: Timestamp.now(), ...snapshot(subject),
@@ -4160,7 +4169,7 @@ test('1.30.2 review fix: the doc id prefix never borrows another person\'s self-
   await assertFails(updateDoc(planted, { userId: REPORT_A }))
   await assertFails(deleteDoc(planted))
   // The self-signed admin's own sheet: full write, create and update, still allowed; their userId cannot move either.
-  const own = sheetRef(ORG_A, ADM_BOTH_A, ADM_BOTH_A, 'adm-both-a@test.com', 1800000021)
+  const own = await sheetRef(ORG_A, ADM_BOTH_A, ADM_BOTH_A, 'adm-both-a@test.com', 1800000021)
   await assertSucceeds(setDoc(own, { ...ownSign(ADM_BOTH_A), ...counterSign(ADM_BOTH_A), ...snapshot(ADM_BOTH_A) }))
   await assertSucceeds(updateDoc(own, entryReview(ADM_BOTH_A)))
   await assertFails(updateDoc(own, { userId: REPORT_A }))
@@ -4178,11 +4187,11 @@ test('1.30.2 review fix: a same-email id is the caller — an admin never counte
       await setDoc(doc(db, 'users', ALIAS), { email: 'admin2-a@test.com', organizationId: ORG_A, role: 'operative' })
       await setDoc(doc(db, 'organizations', ORG_A, 'settings', `timesheet_${ALIAS}_1`), ownSign(ALIAS))
     })
-    const aliasSheet = sheetRef(ORG_A, ALIAS, ADMIN2_A, 'admin2-a@test.com', 1)
+    const aliasSheet = await sheetRef(ORG_A, ALIAS, ADMIN2_A, 'admin2-a@test.com', 1)
     await assertFails(setDoc(aliasSheet, counterSign(ADMIN2_A), { merge: true }))
     await assertFails(updateDoc(aliasSheet, entryReview(ADMIN2_A)))
     // Another admin reviews it.
-    await assertSucceeds(setDoc(sheetRef(ORG_A, ALIAS, ADMIN_A, 'admin-a@test.com', 1), counterSign(ADMIN_A), { merge: true }))
+    await assertSucceeds(setDoc(await sheetRef(ORG_A, ALIAS, ADMIN_A, 'admin-a@test.com', 1), counterSign(ADMIN_A), { merge: true }))
   } finally {
     await setUserFields(ADMIN2_A, { sameEmailUserIds: [] })
   }
@@ -4230,13 +4239,13 @@ async function seed1310People() {
 
 test('1.31.0: a manager demoted to operative is nobody’s line manager — no leave decision, no pay read', async () => {
   await seed1310People()
-  const demoted = authDb(DEMOTED_A, 'demoted-a@test.com')
+  const demoted = await authDb(DEMOTED_A, 'demoted-a@test.com')
   const ref = doc(demoted, 'organizations', ORG_A, 'holidayBookings', 'hb1310')
   await assertFails(updateDoc(ref, { status: 'approved', approvedByUserId: DEMOTED_A, approvedAt: Timestamp.now() }))
   await assertFails(getDoc(doc(demoted, 'organizations', ORG_A, 'payProfiles', DEMOTED_REPORT_A)))
   // The current line manager still decides.
   await assertSucceeds(
-    updateDoc(doc(authDb(LM_A, 'lm-a@test.com'), 'organizations', ORG_A, 'holidayBookings', 'hb1310'), {
+    updateDoc(doc(await authDb(LM_A, 'lm-a@test.com'), 'organizations', ORG_A, 'holidayBookings', 'hb1310'), {
       status: 'approved', approvedByUserId: LM_A, approvedAt: Timestamp.now(),
     })
   )
@@ -4251,14 +4260,14 @@ test('1.31.0: one flag reader — a self-manage toggle off at the top level is o
       assignedManagerUserIds: [LM_A], permissions: { manager: true, annualLeaveSelfBook: true },
     })
   })
-  const mixed = authDb(MIXED, 'mixed-a@test.com')
+  const mixed = await authDb(MIXED, 'mixed-a@test.com')
   await assertFails(setDoc(doc(mixed, 'organizations', ORG_A, 'holidayBookings', 'hb-mixed'), leave(MIXED, 'approved')))
   await assertSucceeds(setDoc(doc(mixed, 'organizations', ORG_A, 'holidayBookings', 'hb-mixed'), leave(MIXED, 'pending')))
 })
 
 test('1.31.0 owner decision 7: operatives managers edit and delete operatives (never managers, admins or themselves)', async () => {
   await seed1310People()
-  const mgr = authDb(PAY_MGR_OPS, 'pay-mgr-ops@test.com')
+  const mgr = await authDb(PAY_MGR_OPS, 'pay-mgr-ops@test.com')
   // Edit: names, active flag and the operative toggles; never a privilege or "No line manager".
   await assertSucceeds(updateDoc(doc(mgr, 'users', DEL_OP_A), { firstName: 'Delia', name: 'Delia', isActive: false, materials: true }))
   await assertFails(updateDoc(doc(mgr, 'users', DEL_OP_A), { adminAccess: true }))
@@ -4266,7 +4275,7 @@ test('1.31.0 owner decision 7: operatives managers edit and delete operatives (n
   await assertFails(updateDoc(doc(mgr, 'users', DEL_OP_A), { annualLeaveSelfBook: true }))
   await assertFails(updateDoc(doc(mgr, 'users', LM_A), { firstName: 'Nope' }))
   // A manager without the Operatives permission edits nobody.
-  await assertFails(updateDoc(doc(authDb(LM_A, 'lm-a@test.com'), 'users', DEL_OP_A), { firstName: 'No' }))
+  await assertFails(updateDoc(doc(await authDb(LM_A, 'lm-a@test.com'), 'users', DEL_OP_A), { firstName: 'No' }))
   // Delete: the userDeleteWrites first batch (users, tax ids, membership, email claim, members entry) in one go.
   await assertSucceeds(deleteDoc(doc(mgr, 'users', DEL_OP_A, 'private', 'taxIds')))
   await assertSucceeds(deleteDoc(doc(mgr, 'users', DEL_OP_A, 'orgMemberships', ORG_A)))
@@ -4288,7 +4297,7 @@ test('1.31.0 owner decision 7: operatives managers edit and delete operatives (n
   // Never a manager, an admin or themselves; never another members entry.
   await assertFails(deleteDoc(doc(mgr, 'users', LM_A)))
   await assertFails(deleteDoc(doc(mgr, 'users', ADMIN_A)))
-  await assertFails(deleteDoc(doc(authDb(LM_A, 'lm-a@test.com'), 'users', PAY_OP)))
+  await assertFails(deleteDoc(doc(await authDb(LM_A, 'lm-a@test.com'), 'users', PAY_OP)))
   await assertFails(updateDoc(doc(mgr, 'organizations', ORG_A), { [`members.${ADMIN_A}`]: deleteField() }))
 })
 
@@ -4300,7 +4309,7 @@ test('1.31.0: Change Super Admin is one batch; the outgoing Super Admin keeps se
     await setDoc(doc(db, 'users', NEW_SA), { email: 'new-sa@test.com', organizationId: ORG_A, role: 'admin', adminAccess: true })
     await updateDoc(doc(db, 'organizations', ORG_A), { [`members.${NEW_SA}`]: 'admin' })
   })
-  const admin = authDb(ADMIN_A, 'admin-a@test.com')
+  const admin = await authDb(ADMIN_A, 'admin-a@test.com')
   const batch = writeBatch(admin)
   batch.update(doc(admin, 'organizations', ORG_A), { creatorUserId: NEW_SA, [`members.${NEW_SA}`]: 'admin' })
   batch.update(doc(admin, 'users', NEW_SA), { isSuperAdmin: true, adminAccess: true, role: 'admin', annualLeaveSelfBook: true, timesheetSelfSign: true })
@@ -4357,7 +4366,7 @@ async function seed1311People() {
 
 test('1.31.1: an operatives manager edits an operative\'s users document (§11 owner decision 7)', async () => {
   await seed1311People()
-  const mgr = authDb(OPS_MGR_1311, 'ops-mgr-1311@test.com')
+  const mgr = await authDb(OPS_MGR_1311, 'ops-mgr-1311@test.com')
   const op = (data: Record<string, unknown>) => updateDoc(doc(mgr, 'users', OP_1311), data)
   await assertSucceedsWithinBudget(op({ mobileNumber: '07700 900000', phone: '07700 900000' }))
   await assertSucceedsWithinBudget(op({ dayRate: 180 }))
@@ -4374,7 +4383,7 @@ test('1.31.1: an operatives manager edits an operative\'s users document (§11 o
 
 test('1.31.1: an operatives manager never changes an operative\'s privileges, identity or company (logical deny)', async () => {
   await seed1311People()
-  const mgr = authDb(OPS_MGR_1311, 'ops-mgr-1311@test.com')
+  const mgr = await authDb(OPS_MGR_1311, 'ops-mgr-1311@test.com')
   const op = (data: Record<string, unknown>) => updateDoc(doc(mgr, 'users', OP_1311), data)
   await assertLogicalDeny(op({ role: 'admin' }))
   await assertLogicalDeny(op({ adminAccess: true }))
@@ -4391,17 +4400,17 @@ test('1.31.1: an operatives manager never changes an operative\'s privileges, id
   await assertLogicalDeny(op({ 'permissions.adminAccess': true }))
   await assertLogicalDeny(op({ firstName: 'Ok', dayRate: 200, role: 'manager' }))
   // Not theirs to edit: a manager without the Operatives permission, another manager, an admin, themselves as a privilege.
-  await assertLogicalDeny(updateDoc(doc(authDb(MGR_1311, 'mgr-plain-1311@test.com'), 'users', OP_1311), { mobileNumber: '1' }))
+  await assertLogicalDeny(updateDoc(doc(await authDb(MGR_1311, 'mgr-plain-1311@test.com'), 'users', OP_1311), { mobileNumber: '1' }))
   await assertLogicalDeny(updateDoc(doc(mgr, 'users', MGR_1311), { mobileNumber: '1' }))
   await assertLogicalDeny(updateDoc(doc(mgr, 'users', ADMIN_A), { mobileNumber: '1' }))
   await assertLogicalDeny(updateDoc(doc(mgr, 'users', OPS_MGR_1311), { dayRate: 999 }))
   // Company B's admin never edits company A's operative.
-  await assertLogicalDeny(updateDoc(doc(authDb(ADMIN_B, 'admin-b@test.com'), 'users', OP_1311), { mobileNumber: '1' }))
+  await assertLogicalDeny(updateDoc(doc(await authDb(ADMIN_B, 'admin-b@test.com'), 'users', OP_1311), { mobileNumber: '1' }))
 })
 
 test('1.31.1: an operative edits only their own users document, never another person\'s (logical deny)', async () => {
   await seed1311People()
-  const op = authDb(OP_1311, 'op-1311@test.com')
+  const op = await authDb(OP_1311, 'op-1311@test.com')
   await assertSucceedsWithinBudget(updateDoc(doc(op, 'users', OP_1311), { firstName: 'Me', mobileNumber: '1' }))
   await assertLogicalDeny(updateDoc(doc(op, 'users', OP_1311), { adminAccess: true }))
   await assertLogicalDeny(updateDoc(doc(op, 'users', OP_1311), { dayRate: 999 }))
@@ -4411,20 +4420,20 @@ test('1.31.1: an operative edits only their own users document, never another pe
   await assertLogicalDeny(updateDoc(doc(op, 'users', OP2_1311), { firstName: 'x', dayRate: 1, isActive: false, manager: true }))
   // Nobody switches their own self-manage toggles, on or off (1.28.0; before 1.31.1 this was refused only by the
   // expression limit, and the rules' own logic let an admin switch theirs off).
-  const self = authDb(ADMIN_1311, 'admin-1311@test.com')
+  const self = await authDb(ADMIN_1311, 'admin-1311@test.com')
   await assertLogicalDeny(updateDoc(doc(self, 'users', ADMIN_1311), { timesheetSelfSign: false }))
   await assertLogicalDeny(updateDoc(doc(self, 'users', ADMIN_1311), { annualLeaveSelfBook: false, 'permissions.annualLeaveSelfBook': false }))
   await assertSucceedsWithinBudget(updateDoc(doc(self, 'users', ADMIN_1311), { mobileNumber: '07700 900001' }))
   // An admin edits anyone in their company; only the Super Admin changes another admin's Super Admin flag.
-  const admin = authDb(ADMIN_A, 'admin-a@test.com')
+  const admin = await authDb(ADMIN_A, 'admin-a@test.com')
   await assertSucceedsWithinBudget(updateDoc(doc(admin, 'users', OP_1311), { firstName: 'Opal', dayRate: 160, role: 'manager', manager: true, operativeMode: false }))
 })
 
 test('1.31.1: legacy materials are claimed by name or email; owned materials are never reassigned (logical deny)', async () => {
   await seed1311People()
-  const op = authDb(OP_1311, 'op-1311@test.com')
-  const op2 = authDb(OP2_1311, 'op2-1311@test.com')
-  const mat = (db: ReturnType<typeof authDb>, id: string) => doc(db, 'organizations', ORG_A, 'materials', id)
+  const op = await authDb(OP_1311, 'op-1311@test.com')
+  const op2 = await authDb(OP2_1311, 'op2-1311@test.com')
+  const mat = (db: Awaited<ReturnType<typeof authDb>>, id: string) => doc(db, 'organizations', ORG_A, 'materials', id)
   // A legacy row whose addedBy is the caller's "first surname" / "first last": claim it (only addedByUserId changes).
   await assertSucceedsWithinBudget(updateDoc(mat(op, 'legacy-name-1311'), { addedByUserId: OP_1311 }))
   await assertSucceedsWithinBudget(updateDoc(mat(op2, 'legacy-last-1311'), { addedByUserId: OP2_1311 }))
@@ -4456,7 +4465,7 @@ async function seedFlagsOperative1311() {
 
 test('1.31.1: an operatives manager never sets a privilege flag through permissions (dotted or whole map)', async () => {
   await seedFlagsOperative1311()
-  const mgr = authDb(OPS_MGR_1311, 'ops-mgr-1311@test.com')
+  const mgr = await authDb(OPS_MGR_1311, 'ops-mgr-1311@test.com')
   const ref = doc(mgr, 'users', OPF_1311)
   for (const key of PRIVILEGE_KEYS_1311) {
     await assertLogicalDeny(updateDoc(ref, { [`permissions.${key}`]: true }))
@@ -4468,7 +4477,7 @@ test('1.31.1: an operatives manager never sets a privilege flag through permissi
 
 test('1.31.1: an operatives manager creates operatives only with no privilege flag in either place', async () => {
   await seed1311People()
-  const mgr = authDb(OPS_MGR_1311, 'ops-mgr-1311@test.com')
+  const mgr = await authDb(OPS_MGR_1311, 'ops-mgr-1311@test.com')
   const base = { organizationId: ORG_A, role: 'operative', operativeMode: true, firstName: 'New', surname: 'Op' }
   await assertLogicalDeny(setDoc(doc(mgr, 'users', 'new-op-1311-a'), { ...base, email: 'n1@test.com', adminAccess: false, permissions: { operativeMode: true, adminAccess: true } }))
   await assertLogicalDeny(setDoc(doc(mgr, 'users', 'new-op-1311-b'), { ...base, email: 'n2@test.com', manager: true, operatives: true }))
@@ -4479,16 +4488,16 @@ test('1.31.1: an operatives manager creates operatives only with no privilege fl
 
 test('1.31.1: nobody adds their own alias ids or a privilege through permissions; an admin keeps their own identity links', async () => {
   await seedFlagsOperative1311()
-  const self = authDb(ADMIN_1311, 'admin-1311@test.com')
+  const self = await authDb(ADMIN_1311, 'admin-1311@test.com')
   await assertLogicalDeny(updateDoc(doc(self, 'users', ADMIN_1311), { formerUserIds: [OP_1311] }))
   await assertLogicalDeny(updateDoc(doc(self, 'users', ADMIN_1311), { sameEmailUserIds: [OP_1311] }))
   await assertLogicalDeny(updateDoc(doc(self, 'users', ADMIN_1311), { email: 'someone-else@test.com' }))
-  const op = authDb(OPF_1311, 'op-flags-1311@test.com')
+  const op = await authDb(OPF_1311, 'op-flags-1311@test.com')
   for (const key of PRIVILEGE_KEYS_1311) {
     await assertLogicalDeny(updateDoc(doc(op, 'users', OPF_1311), { [`permissions.${key}`]: true }))
   }
   // Another admin still sets alias ids on someone else.
-  await assertSucceedsWithinBudget(updateDoc(doc(authDb(ADMIN_A, 'admin-a@test.com'), 'users', OP_1311), { formerUserIds: ['old-op-1311'] }))
+  await assertSucceedsWithinBudget(updateDoc(doc(await authDb(ADMIN_A, 'admin-a@test.com'), 'users', OP_1311), { formerUserIds: ['old-op-1311'] }))
 })
 
 // ---------------------------------------------------------------------------
@@ -4497,13 +4506,13 @@ test('1.31.1: nobody adds their own alias ids or a privilege through permissions
 
 test('1.31.1 B1: only the Super Admin creates a Super Admin (top level or permissions)', async () => {
   await seed1311People()
-  const admin = authDb(ADMIN_1311, 'admin-1311@test.com')
+  const admin = await authDb(ADMIN_1311, 'admin-1311@test.com')
   const base = { organizationId: ORG_A, role: 'admin', adminAccess: true }
   await assertLogicalDeny(setDoc(doc(admin, 'users', 'alt-1311a'), { ...base, email: 'alt-1311a@test.com', isSuperAdmin: true }))
   await assertLogicalDeny(setDoc(doc(admin, 'users', 'alt-1311b'), { ...base, email: 'alt-1311b@test.com', permissions: { isSuperAdmin: true } }))
   // An admin still adds an admin; the Super Admin (the creator) may add a Super Admin.
   await assertSucceedsWithinBudget(setDoc(doc(admin, 'users', 'alt-1311c'), { ...base, email: 'alt-1311c@test.com' }))
-  await assertSucceedsWithinBudget(setDoc(doc(authDb(ADMIN_A, 'admin-a@test.com'), 'users', 'alt-1311d'), { ...base, email: 'alt-1311d@test.com', isSuperAdmin: true }))
+  await assertSucceedsWithinBudget(setDoc(doc(await authDb(ADMIN_A, 'admin-a@test.com'), 'users', 'alt-1311d'), { ...base, email: 'alt-1311d@test.com', isSuperAdmin: true }))
 })
 
 const ADMINOP_1311 = 'adminop-1311'
@@ -4523,7 +4532,7 @@ async function seed1311StaffInOperativeMode() {
 
 test('1.31.1 B2: an operatives manager never deletes or pays an admin, Super Admin or manager in operative mode', async () => {
   await seed1311StaffInOperativeMode()
-  const mgr = authDb(OPS_MGR_1311, 'ops-mgr-1311@test.com')
+  const mgr = await authDb(OPS_MGR_1311, 'ops-mgr-1311@test.com')
   const history = (id: string, userId: string) => setDoc(doc(mgr, 'organizations', ORG_A, 'operativeDayRateHistory', id), {
     userId, operativeId: '', dayRate: 999, payBasis: 'day', effectiveAt: Timestamp.now(), createdAt: Timestamp.now(),
   })
@@ -4548,7 +4557,7 @@ test('1.31.1 S1: re-creating your own profile never sets your own pay, line mana
     await setDoc(doc(db, 'organizations', ORG_A, 'userEmails', email), { userId: uid })
     await updateDoc(doc(db, 'organizations', ORG_A), { [`members.${uid}`]: 'operative' })
   })
-  const db = authDb(uid, email)
+  const db = await authDb(uid, email)
   const base = { email, organizationId: ORG_A, firstName: 'Re', surname: 'Create', ...ageFields() }
   await assertLogicalDeny(setDoc(doc(db, 'users', uid), { ...base, role: 'operative', operativeMode: true, dayRate: 999, payBasis: 'day' }))
   await assertLogicalDeny(setDoc(doc(db, 'users', uid), { ...base, role: 'operative', operativeMode: true, hasNoLineManager: true }))
@@ -4564,7 +4573,7 @@ test('1.31.1 S3: an operatives manager creates no alias ids, no "No line manager
   await env.withSecurityRulesDisabled(async (ctx) => {
     await setDoc(doc(ctx.firestore(), 'organizations', ORG_A, 'userEmails', 'admin-1311@test.com'), { userId: ADMIN_1311 })
   })
-  const mgr = authDb(OPS_MGR_1311, 'ops-mgr-1311@test.com')
+  const mgr = await authDb(OPS_MGR_1311, 'ops-mgr-1311@test.com')
   const base = { organizationId: ORG_A, role: 'operative', operativeMode: true, firstName: 'N', surname: 'Op' }
   await assertLogicalDeny(setDoc(doc(mgr, 'users', 's3-a'), { ...base, email: 's3-a@test.com', formerUserIds: [ADMIN_1311] }))
   await assertLogicalDeny(setDoc(doc(mgr, 'users', 's3-b'), { ...base, email: 's3-b@test.com', sameEmailUserIds: [ADMIN_1311] }))
@@ -4585,13 +4594,13 @@ test('1.31.1 S4: an operatives row\'s account link changes only by an admin or a
     await setDoc(doc(db, 'organizations', ORG_A, 'operatives', 'row-s4'), { firstName: 'Otto', surname: 'Two', email: 'op2-1311@test.com', userId: OP2_1311 })
     await setDoc(doc(db, 'organizations', ORG_A, 'managers', 'mrow-s4'), { firstName: 'M', surname: 'Plain', email: 'mgr-plain-1311@test.com', userId: MGR_1311 })
   })
-  const op = authDb(OP_1311, 'op-1311@test.com')
+  const op = await authDb(OP_1311, 'op-1311@test.com')
   await assertLogicalDeny(updateDoc(doc(op, 'organizations', ORG_A, 'operatives', 'row-s4'), { userId: OP_1311 }))
   await assertLogicalDeny(updateDoc(doc(op, 'organizations', ORG_A, 'managers', 'mrow-s4'), { userId: OP_1311 }))
-  const mgr = authDb(OPS_MGR_1311, 'ops-mgr-1311@test.com')
+  const mgr = await authDb(OPS_MGR_1311, 'ops-mgr-1311@test.com')
   await assertLogicalDeny(updateDoc(doc(mgr, 'organizations', ORG_A, 'operatives', 'row-s4'), { userId: ADMIN_1311 }))
   await assertSucceedsWithinBudget(updateDoc(doc(mgr, 'organizations', ORG_A, 'operatives', 'row-s4'), { userId: OP_1311 }))
-  await assertSucceedsWithinBudget(updateDoc(doc(authDb(ADMIN_A, 'admin-a@test.com'), 'organizations', ORG_A, 'managers', 'mrow-s4'), { userId: OPS_MGR_1311 }))
+  await assertSucceedsWithinBudget(updateDoc(doc(await authDb(ADMIN_A, 'admin-a@test.com'), 'organizations', ORG_A, 'managers', 'mrow-s4'), { userId: OPS_MGR_1311 }))
 })
 
 // ── Rulebook 1.31.1 F5: accepting an invitation needs the emailed invitation, not only its email ──────────────────
@@ -4628,7 +4637,7 @@ for (const level of ['operative', 'admin'] as const) {
   test(`1.31.1 F5: a genuine ${level} invite accept still passes every step (batch create + used, tax ids, claim, placeholder)`, async () => {
     const { placeholderId, email, invitationId, account } = await seedF5Invite(`OK-${level.toUpperCase()}`, level)
     const authUid = `f5-ok-${level}-auth`
-    const db = authDb(authUid, email)
+    const db = await authDb(authUid, email)
     await assertSucceeds(getDoc(doc(db, 'organizations', ORG_A, 'userEmails', email)))
     await assertSucceeds(getDoc(doc(db, 'users', placeholderId)))
     await assertSucceedsWithinBudget(acceptInviteBatch(db, authUid, account(authUid), invitationId))
@@ -4645,7 +4654,7 @@ for (const level of ['operative', 'admin'] as const) {
 test('1.31.1 F5 (c3): a sign-up on the invitee email without the invitation is refused at every step', async () => {
   const { placeholderId, email, invitationId, account } = await seedF5Invite('C3', 'admin')
   const evil = 'f5-evil'
-  const db = authDb(evil, email)
+  const db = await authDb(evil, email)
   // 1. The placeholder copy without proof, with proof but the invitation left unused, or with another invitation's id.
   await assertLogicalDeny(setDoc(doc(db, 'users', evil), account(evil)))
   await assertLogicalDeny(setDoc(doc(db, 'users', evil), account(evil, { invitationId })))
@@ -4679,7 +4688,7 @@ test('1.31.1 F5: an account of another company that lists the placeholder id can
   const { placeholderId, email } = await seedF5Invite('ALIAS', 'operative')
   const evil = 'f5-alias-evil'
   const evilOrg = 'org-f5-alias'
-  const db = authDb(evil, email)
+  const db = await authDb(evil, email)
   await env.withSecurityRulesDisabled(async (ctx) => {
     await setDoc(doc(ctx.firestore(), 'users', evil), {
       email, organizationId: evilOrg, role: 'admin', adminAccess: true, passwordSet: true, formerUserIds: [placeholderId],
@@ -4700,7 +4709,7 @@ test('1.31.1 F5: a person\'s own save still syncs names to a same-email account,
     await setDoc(doc(db, 'users', 'f5-sync-copy'), { email, organizationId: ORG_A, role: 'operative', operativeMode: true, passwordSet: true, firstName: 'Sy' })
     await setDoc(doc(db, 'users', 'F5-SYNC-PENDING'), { email, organizationId: ORG_A, role: 'operative', operativeMode: true, passwordSet: false, firstName: 'Sy' })
   })
-  const db = authDb(me, email)
+  const db = await authDb(me, email)
   await assertSucceedsWithinBudget(updateDoc(doc(db, 'users', 'f5-sync-copy'), { firstName: 'Syd' }))
   // Web saveUser leaves it out (sameEmailUserRefs includePending only for admins); the rules refuse it logically.
   await assertLogicalDeny(updateDoc(doc(db, 'users', 'F5-SYNC-PENDING'), { firstName: 'Syd' }))
@@ -4708,7 +4717,7 @@ test('1.31.1 F5: a person\'s own save still syncs names to a same-email account,
 
 test('1.31.1 S4: an operatives manager still creates an operatives row linked to an operative they manage (reviewer matrix)', async () => {
   await seed1311People()
-  const mgr = authDb(OPS_MGR_1311, 'ops-mgr-1311@test.com')
+  const mgr = await authDb(OPS_MGR_1311, 'ops-mgr-1311@test.com')
   // The matrix payload: many link-like fields beside userId. It went over the expression limit after S4's link gate.
   const row = (uid: string) => ({
     userId: uid, operativeId: uid, personId: uid, ownerUserId: uid, addedByUserId: uid, createdBy: uid, createdByUserId: uid,
@@ -4736,7 +4745,7 @@ test('1.31.1 B-1: an operatives manager sees, deletes and creates only their own
     })
     await setDoc(doc(db, 'organizations', ORG_A, 'userEmails', adminEmail), { userId: 'B1-ADMIN-PLACEHOLDER' })
   })
-  const mgr = authDb(OPS_MGR_1311, 'ops-mgr-1311@test.com')
+  const mgr = await authDb(OPS_MGR_1311, 'ops-mgr-1311@test.com')
   const invites = collection(mgr, 'invitations')
   // Listing the organisation's invitations would hand out an admin invitation's secret id.
   await assertLogicalDeny(getDocs(query(invites, where('organizationId', '==', ORG_A))))
@@ -4758,7 +4767,7 @@ test('1.31.1 B-1: an operatives manager sees, deletes and creates only their own
   await assertSucceeds(getDocs(query(invites, where('organizationId', '==', ORG_A), where('invitedBy', '==', 'ops-mgr-1311@test.com'))))
   await assertLogicalDeny(getDocs(query(invites, where('organizationId', '==', ORG_A), where('invitedBy', '==', 'admin-a@test.com'))))
   // Admins still list every invitation of their organisation.
-  await assertSucceeds(getDocs(query(collection(authDb(ADMIN_A, 'admin-a@test.com'), 'invitations'), where('organizationId', '==', ORG_A))))
+  await assertSucceeds(getDocs(query(collection(await authDb(ADMIN_A, 'admin-a@test.com'), 'invitations'), where('organizationId', '==', ORG_A))))
 })
 
 test('1.31.1 B-1: an operative invitation never copies an admin or manager placeholder; a membership takes the invitation role', async () => {
@@ -4775,7 +4784,7 @@ test('1.31.1 B-1: an operative invitation never copies an admin or manager place
       organizationId: ORG_A, email, role: 'operative', permissions: { operativeMode: true }, isUsed: false, invitedBy: 'someone',
     })
   })
-  const db = authDb(evil, email)
+  const db = await authDb(evil, email)
   const copy = {
     email, organizationId: ORG_A, firstName: 'Lev', role: 'admin', adminAccess: true, isSuperAdmin: false, isActive: true,
     permissions: { adminAccess: true }, passwordSet: true, formerUserIds: ['B1-LEVEL-PH'], ...ageFields(),
@@ -4806,7 +4815,7 @@ for (const level of ['operative', 'manager'] as const) {
   test(`1.31.1 S-1: a ${level} invitee finishes setup with no refusal (membership in the accept batch)`, async () => {
     const { placeholderId, email, invitationId, account } = await seedF5Invite(`S1-${level.toUpperCase()}`, level)
     const authUid = `s1-${level}-auth`
-    const db = authDb(authUid, email)
+    const db = await authDb(authUid, email)
     let invitation: Record<string, unknown> = {}
     await env.withSecurityRulesDisabled(async (ctx) => {
       invitation = (await getDoc(doc(ctx.firestore(), 'invitations', invitationId))).data() ?? {}
@@ -4835,7 +4844,7 @@ for (const level of ['operative', 'manager'] as const) {
 
 test('1.31.1 (fourth review): an operatives manager creates a linked operatives row with email and pay', async () => {
   await seed1311People()
-  const mgr = authDb(OPS_MGR_1311, 'ops-mgr-1311@test.com')
+  const mgr = await authDb(OPS_MGR_1311, 'ops-mgr-1311@test.com')
   const row = { name: 'Opal One', firstName: 'Opal', lastName: 'One', email: 'op-1311@test.com', userId: OP_1311, dayRate: 150, payBasis: 'day', isActive: true, organizationId: ORG_A }
   await assertSucceedsWithinBudget(setDoc(doc(mgr, 'organizations', ORG_A, 'operatives', 'row-r4-linked'), row))
   await assertLogicalDeny(setDoc(doc(mgr, 'organizations', ORG_A, 'operatives', 'row-r4-admin'), { ...row, email: 'admin-1311@test.com', userId: ADMIN_1311 }))
@@ -4845,7 +4854,7 @@ test('1.31.1 (fourth review): an operatives manager creates a linked operatives 
 const BAD_FLAG_VALUES: unknown[] = [1, 1.5, 'true', 2]
 test('1.31.1 ROOT: an operatives manager writes no non-bool privilege value onto an operative', async () => {
   await seed1311People()
-  const mgr = authDb(OPS_MGR_1311, 'ops-mgr-1311@test.com')
+  const mgr = await authDb(OPS_MGR_1311, 'ops-mgr-1311@test.com')
   const op = doc(mgr, 'users', OP_1311)
   for (const v of BAD_FLAG_VALUES) {
     await assertLogicalDeny(updateDoc(op, { 'permissions.adminAccess': v }))
@@ -4860,7 +4869,7 @@ test('1.31.1 ROOT: an operatives manager writes no non-bool privilege value onto
 
 test('1.31.1 ROOT: a person writes no non-bool admin or Super Admin value onto themself', async () => {
   await seed1311People()
-  const me = doc(authDb(OP_1311, 'op-1311@test.com'), 'users', OP_1311)
+  const me = doc(await authDb(OP_1311, 'op-1311@test.com'), 'users', OP_1311)
   for (const v of BAD_FLAG_VALUES) {
     await assertLogicalDeny(updateDoc(me, { adminAccess: v }))
     await assertLogicalDeny(updateDoc(me, { 'permissions.adminAccess': v }))
@@ -4871,7 +4880,7 @@ test('1.31.1 ROOT: a person writes no non-bool admin or Super Admin value onto t
 
 test('1.31.1 ROOT: invitations, memberships, members entries and roster rows take only bool flags and known roles', async () => {
   await seed1311People()
-  const admin = authDb(ADMIN_A, 'admin-a@test.com')
+  const admin = await authDb(ADMIN_A, 'admin-a@test.com')
   const inv = (extra: Record<string, unknown>) => ({ organizationId: ORG_A, email: 'root-inv@test.com', isUsed: false, invitedBy: ADMIN_A, ...extra })
   for (const v of BAD_FLAG_VALUES) {
     await assertLogicalDeny(setDoc(doc(admin, 'invitations', 'root-bad'), inv({ role: 'operative', permissions: { operativeMode: true, adminAccess: v } })))
@@ -4906,7 +4915,7 @@ test('1.31.1 S-B: an invitee copies the placeholder pay, line manager and toggle
     })
   })
   const authUid = 'sb-auth'
-  const db = authDb(authUid, email)
+  const db = await authDb(authUid, email)
   const placed = { dayRate: 150, payBasis: 'day', employmentType: 'self_employed', assignedManagerUserId: ADMIN_A, assignedManagerUserIds: [ADMIN_A] }
   for (const change of [
     { dayRate: 999 }, { payBasis: 'hourly', hourlyRate: 50 }, { employmentType: 'paye' }, { employmentTypeEffectiveAt: '2026-11-01' },
@@ -4942,7 +4951,7 @@ test('1.31.1 S-A: a signed-up operative, manager or admin cannot delete their ow
     }
   })
   for (const p of people) {
-    await assertLogicalDeny(deleteDoc(doc(authDb(p.id, p.email), 'users', p.id)))
+    await assertLogicalDeny(deleteDoc(doc(await authDb(p.id, p.email), 'users', p.id)))
   }
 })
 
@@ -4961,7 +4970,7 @@ test('1.31.1 S-D, NIT-1, NIT-2: invitedBy matches the sender email in any case; 
       organizationId: ORG_A, email: 'n2@test.com', role: 'operative', permissions: { operativeMode: true }, isUsed: true, invitedBy: OPS_MGR_1311,
     })
   })
-  const mgr = authDb(OPS_MGR_1311, 'ops-mgr-1311@test.com')
+  const mgr = await authDb(OPS_MGR_1311, 'ops-mgr-1311@test.com')
   // S-D: iOS stores the sender's email as typed; the match ignores case.
   // S-E: web deleteUser's clean-up query in the iOS shape (invitedBy = the sender's email as stored).
   await assertSucceeds(getDocs(query(collection(mgr, 'invitations'), where('organizationId', '==', ORG_A), where('email', '==', 'sd-mixed@test.com'), where('invitedBy', '==', 'Ops-Mgr-1311@Test.com'))))
@@ -4971,7 +4980,7 @@ test('1.31.1 S-D, NIT-1, NIT-2: invitedBy matches the sender email in any case; 
   // NIT-2: organisation, email and role are fixed; a used invitation is never reopened.
   await assertLogicalDeny(updateDoc(doc(mgr, 'invitations', 'n2-used'), { isUsed: false }))
   await assertLogicalDeny(updateDoc(doc(mgr, 'invitations', 'sd-mixed'), { email: 'other@test.com' }))
-  const admin = authDb(ADMIN_A, 'admin-a@test.com')
+  const admin = await authDb(ADMIN_A, 'admin-a@test.com')
   await assertLogicalDeny(updateDoc(doc(admin, 'invitations', 'sd-mixed'), { organizationId: ORG_B }))
   await assertLogicalDeny(updateDoc(doc(admin, 'invitations', 'sd-mixed'), { role: 'admin', permissions: { adminAccess: true } }))
   await assertLogicalDeny(updateDoc(doc(admin, 'invitations', 'n2-used'), { isUsed: false }))
@@ -4986,7 +4995,7 @@ test('1.31.1 F1: an operative invitee cannot drop their operative level, line ma
     await updateDoc(doc(ctx.firestore(), 'users', placeholderId), { assignedManagerUserId: ADMIN_A, assignedManagerUserIds: [ADMIN_A], annualLeaveSelfBook: false })
   })
   const authUid = 'f1-auth'
-  const db = authDb(authUid, email)
+  const db = await authDb(authUid, email)
   const full = { ...account(authUid), assignedManagerUserId: ADMIN_A, assignedManagerUserIds: [ADMIN_A], annualLeaveSelfBook: false }
   const without = (...keys: string[]) => Object.fromEntries(Object.entries(full).filter(([k]) => !keys.includes(k)))
   await assertLogicalDeny(acceptInviteBatch(db, authUid, without('role', 'operativeMode', 'permissions'), invitationId))
@@ -5009,7 +5018,7 @@ test('1.31.1 F9: an operatives manager marks their iOS-shaped invitation used wi
     await setDoc(doc(db, 'invitations', 'f9-ios'), { organizationId: ORG_A, email: 'f9-ios@test.com', permissions: perms, isUsed: false, invitedBy: OPS_MGR_1311, firstName: 'I' })
     await setDoc(doc(db, 'invitations', 'f9-ios-email'), { organizationId: ORG_A, email: 'f9-ios2@test.com', permissions: perms, isUsed: false, invitedBy: 'Ops-Mgr-1311@Test.com' })
   })
-  const mgr = authDb(OPS_MGR_1311, 'ops-mgr-1311@test.com')
+  const mgr = await authDb(OPS_MGR_1311, 'ops-mgr-1311@test.com')
   await assertSucceedsWithinBudget(updateDoc(doc(mgr, 'invitations', 'f9-ios'), { isUsed: true, usedAt: Timestamp.now() }))
   await assertSucceedsWithinBudget(updateDoc(doc(mgr, 'invitations', 'f9-ios-email'), { isUsed: true }))
   await assertLogicalDeny(updateDoc(doc(mgr, 'invitations', 'f9-ios'), { isUsed: false }))
@@ -5031,12 +5040,12 @@ test('1.31.1 F11/F12: removing or nulling a top-level flag never unmasks a permi
       isSuperAdmin: false, permissions: { adminAccess: true, isSuperAdmin: true },
     })
   })
-  const mgr = doc(authDb('f11-mgr', 'f11-mgr@test.com'), 'users', 'f11-mgr')
+  const mgr = doc(await authDb('f11-mgr', 'f11-mgr@test.com'), 'users', 'f11-mgr')
   await assertLogicalDeny(updateDoc(mgr, { annualLeaveSelfBook: deleteField() }))
   await assertLogicalDeny(updateDoc(mgr, { annualLeaveSelfBook: null }))
   await assertLogicalDeny(updateDoc(mgr, { timesheetSelfSign: deleteField() }))
   await assertSucceeds(updateDoc(mgr, { firstName: 'Mo' }))
-  const admin = doc(authDb('f12-admin', 'f12-admin@test.com'), 'users', 'f12-admin')
+  const admin = doc(await authDb('f12-admin', 'f12-admin@test.com'), 'users', 'f12-admin')
   await assertLogicalDeny(updateDoc(admin, { isSuperAdmin: deleteField() }))
   await assertLogicalDeny(updateDoc(admin, { isSuperAdmin: null }))
   await assertSucceeds(updateDoc(admin, { firstName: 'Ada' }))
@@ -5047,7 +5056,7 @@ test('1.31.1 F11/F12: removing or nulling a top-level flag never unmasks a permi
       annualLeaveSelfBook: false, permissions: { adminAccess: true, annualLeaveSelfBook: true },
     })
   })
-  const admin2 = doc(authDb('f11-admin', 'f11-admin@test.com'), 'users', 'f11-admin')
+  const admin2 = doc(await authDb('f11-admin', 'f11-admin@test.com'), 'users', 'f11-admin')
   await assertLogicalDeny(updateDoc(admin2, { annualLeaveSelfBook: deleteField() }))
   await assertLogicalDeny(updateDoc(admin2, { annualLeaveSelfBook: null }))
 })
@@ -5058,7 +5067,7 @@ test('1.31.1 F2: a person never deletes their own employment type (self update, 
       email: 'f2-paye@test.com', organizationId: ORG_A, role: 'operative', operativeMode: true, employmentType: 'paye', isActive: true, passwordSet: true,
     })
   })
-  const me = doc(authDb('f2-paye', 'f2-paye@test.com'), 'users', 'f2-paye')
+  const me = doc(await authDb('f2-paye', 'f2-paye@test.com'), 'users', 'f2-paye')
   await assertLogicalDeny(updateDoc(me, { employmentType: deleteField() }))
   await assertLogicalDeny(updateDoc(me, { employmentType: null }))
   await assertSucceeds(updateDoc(me, { firstName: 'Pat' }))
@@ -5067,7 +5076,7 @@ test('1.31.1 F2: a person never deletes their own employment type (self update, 
   await env.withSecurityRulesDisabled(async (ctx) => {
     await updateDoc(doc(ctx.firestore(), 'users', placeholderId), { employmentType: 'paye' })
   })
-  const db = authDb('f2-auth', email)
+  const db = await authDb('f2-auth', email)
   await assertLogicalDeny(acceptInviteBatch(db, 'f2-auth', account('f2-auth'), invitationId))
   await assertSucceedsWithinBudget(acceptInviteBatch(db, 'f2-auth', { ...account('f2-auth'), employmentType: 'paye' }, invitationId))
 })
@@ -5080,7 +5089,7 @@ test('1.31.1: a returning member who adds an invitation id still gets the typed-
     await updateDoc(doc(db, 'organizations', ORG_A), { [`members.${uid}`]: 'operative' })
     await setDoc(doc(db, 'organizations', ORG_A, 'userEmails', email), { userId: uid })
   })
-  const db = authDb(uid, email)
+  const db = await authDb(uid, email)
   const base = { email, organizationId: ORG_A, role: 'operative', operativeMode: true, ...ageFields() }
   await assertLogicalDeny(setDoc(doc(db, 'users', uid), { ...base, invitationId: 'whatever', manager: 'true' }))
   await assertLogicalDeny(setDoc(doc(db, 'users', uid), { ...base, invitationId: 'whatever', role: 'Admin' }))
@@ -5093,7 +5102,7 @@ test('1.31.1 F4: a person cannot delete their own role to drop their operative l
       email: 'f4-op@test.com', organizationId: ORG_A, role: 'operative', isActive: true, passwordSet: true, permissions: { operativeMode: true },
     })
   })
-  const me = doc(authDb('f4-op', 'f4-op@test.com'), 'users', 'f4-op')
+  const me = doc(await authDb('f4-op', 'f4-op@test.com'), 'users', 'f4-op')
   await assertLogicalDeny(updateDoc(me, { role: deleteField() }))
   await assertLogicalDeny(updateDoc(me, { role: null }))
   await assertSucceeds(updateDoc(me, { firstName: 'Fay', role: 'operative' }))
@@ -5106,7 +5115,7 @@ test('1.33.0 line manager locked: an Operatives manager sets it only on a placeh
   await env.withSecurityRulesDisabled(async (ctx) => {
     await updateDoc(doc(ctx.firestore(), 'users', H_OP), { passwordSet: true })
   })
-  const mops = authDb(H_MGR_OPS, 'h-mgr-ops@test.com')
+  const mops = await authDb(H_MGR_OPS, 'h-mgr-ops@test.com')
   // Accepted (passwordSet true): the line manager is locked for them…
   await assertFails(updateDoc(doc(mops, 'users', H_OP), { assignedManagerUserIds: [H_MGR2] }))
   await assertFails(updateDoc(doc(mops, 'users', H_OP), { assignedManagerUserId: H_MGR2 }))
@@ -5117,12 +5126,12 @@ test('1.33.0 line manager locked: an Operatives manager sets it only on a placeh
   // A placeholder (invite not accepted yet): they may still set it.
   await assertSucceeds(updateDoc(doc(mops, 'users', H_OP2), { assignedManagerUserIds: [H_MGR2] }))
   // Admins change anyone's line manager at any time.
-  await assertSucceeds(updateDoc(doc(authDb(H_AD, 'h-ad@test.com'), 'users', H_OP), { assignedManagerUserIds: [H_MGR2] }))
+  await assertSucceeds(updateDoc(doc(await authDb(H_AD, 'h-ad@test.com'), 'users', H_OP), { assignedManagerUserIds: [H_MGR2] }))
 })
 
 test('1.33.0 line manager locked: an Operatives manager changes it only on their own unused invitation', async () => {
   await seed112()
-  const mops = authDb(H_MGR_OPS, 'h-mgr-ops@test.com')
+  const mops = await authDb(H_MGR_OPS, 'h-mgr-ops@test.com')
   const inv = doc(mops, 'invitations', 'h-op-invite')
   await assertSucceeds(updateDoc(inv, { assignedManagerUserIds: [H_MGR2] }))
   await env.withSecurityRulesDisabled(async (ctx) => {
@@ -5134,7 +5143,7 @@ test('1.33.0 line manager locked: an Operatives manager changes it only on their
 
 test('1.33.0 My Projects / My Small works picks: each person reads and writes only their own list', async () => {
   await seed112()
-  const mgr = authDb(H_MGR, 'h-mgr@test.com')
+  const mgr = await authDb(H_MGR, 'h-mgr@test.com')
   const mine = doc(mgr, 'organizations', ORG_H, 'worksListPicks', H_MGR)
   await assertSucceeds(setDoc(mine, { projects: ['h-p1'], updatedAt: serverTimestamp() }, { merge: true }))
   await assertSucceeds(setDoc(mine, { smallWorks: ['h-sw1'], updatedAt: serverTimestamp() }, { merge: true }))
@@ -5144,21 +5153,77 @@ test('1.33.0 My Projects / My Small works picks: each person reads and writes on
   await assertFails(setDoc(mine, { projects: Array.from({ length: 501 }, (_, i) => `j${i}`), updatedAt: serverTimestamp() }, { merge: true }))
   await assertFails(setDoc(mine, { projects: ['h-p1'], updatedAt: Timestamp.fromMillis(0) }, { merge: true }))
   // Someone else's list: never read or written, not even by an admin.
-  await assertFails(getDoc(doc(authDb(H_MGR2, 'h-mgr2@test.com'), 'organizations', ORG_H, 'worksListPicks', H_MGR)))
-  await assertFails(getDoc(doc(authDb(H_AD, 'h-ad@test.com'), 'organizations', ORG_H, 'worksListPicks', H_MGR)))
-  await assertFails(setDoc(doc(authDb(H_MGR2, 'h-mgr2@test.com'), 'organizations', ORG_H, 'worksListPicks', H_MGR), { projects: [], updatedAt: serverTimestamp() }))
+  await assertFails(getDoc(doc(await authDb(H_MGR2, 'h-mgr2@test.com'), 'organizations', ORG_H, 'worksListPicks', H_MGR)))
+  await assertFails(getDoc(doc(await authDb(H_AD, 'h-ad@test.com'), 'organizations', ORG_H, 'worksListPicks', H_MGR)))
+  await assertFails(setDoc(doc(await authDb(H_MGR2, 'h-mgr2@test.com'), 'organizations', ORG_H, 'worksListPicks', H_MGR), { projects: [], updatedAt: serverTimestamp() }))
   // Another company's member: nothing here.
-  await assertFails(setDoc(doc(authDb('h2-admin', 'h2-admin@test.com'), 'organizations', ORG_H, 'worksListPicks', 'h2-admin'), { projects: [], updatedAt: serverTimestamp() }))
+  await assertFails(setDoc(doc(await authDb('h2-admin', 'h2-admin@test.com'), 'organizations', ORG_H, 'worksListPicks', 'h2-admin'), { projects: [], updatedAt: serverTimestamp() }))
   await assertSucceeds(deleteDoc(mine))
 })
 
 test('1.33.0 materials catalogue: admins only write it; managers and operatives read it', async () => {
   await seed112()
   const item = { name: 'Cement', unit: 'bag' }
-  await assertFails(setDoc(doc(authDb(H_MGR, 'h-mgr@test.com'), 'organizations', ORG_H, 'materialCatalogue', 'c1'), item))
-  await assertFails(setDoc(doc(authDb(H_MGR_OPS, 'h-mgr-ops@test.com'), 'organizations', ORG_H, 'materialCatalogue', 'c1'), item))
-  await assertSucceeds(setDoc(doc(authDb(H_AD, 'h-ad@test.com'), 'organizations', ORG_H, 'materialCatalogue', 'c1'), item))
-  await assertSucceeds(getDoc(doc(authDb(H_MGR, 'h-mgr@test.com'), 'organizations', ORG_H, 'materialCatalogue', 'c1')))
-  await assertFails(updateDoc(doc(authDb(H_MGR, 'h-mgr@test.com'), 'organizations', ORG_H, 'materialCatalogue', 'c1'), { unit: 'kg' }))
-  await assertFails(deleteDoc(doc(authDb(H_MGR, 'h-mgr@test.com'), 'organizations', ORG_H, 'materialCatalogue', 'c1')))
+  await assertFails(setDoc(doc(await authDb(H_MGR, 'h-mgr@test.com'), 'organizations', ORG_H, 'materialCatalogue', 'c1'), item))
+  await assertFails(setDoc(doc(await authDb(H_MGR_OPS, 'h-mgr-ops@test.com'), 'organizations', ORG_H, 'materialCatalogue', 'c1'), item))
+  await assertSucceeds(setDoc(doc(await authDb(H_AD, 'h-ad@test.com'), 'organizations', ORG_H, 'materialCatalogue', 'c1'), item))
+  await assertSucceeds(getDoc(doc(await authDb(H_MGR, 'h-mgr@test.com'), 'organizations', ORG_H, 'materialCatalogue', 'c1')))
+  await assertFails(updateDoc(doc(await authDb(H_MGR, 'h-mgr@test.com'), 'organizations', ORG_H, 'materialCatalogue', 'c1'), { unit: 'kg' }))
+  await assertFails(deleteDoc(doc(await authDb(H_MGR, 'h-mgr@test.com'), 'organizations', ORG_H, 'materialCatalogue', 'c1')))
+})
+
+// ── Rulebook 1.32.4 §16: the rules read the caller's role from the auth claims (`pp`, authClaimsForPerson) ─────────
+test('1.32.4 claims: a token without claims, with another company\'s claims, or with stale claims of a deactivated person is refused', async () => {
+  const STALE = 'claims-1324-stale'
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    await setDoc(doc(db, 'users', STALE), { email: 'stale-1324@test.com', organizationId: ORG_A, role: 'admin', adminAccess: true })
+    await setDoc(doc(db, 'organizations', ORG_A), { members: { [STALE]: 'admin' } }, { merge: true })
+    await setDoc(doc(db, 'organizations', ORG_A, 'clients', 'c-1324'), { name: 'Client' })
+  })
+  const client = (db: Awaited<ReturnType<typeof authDb>>) => doc(db, 'organizations', ORG_A, 'clients', 'c-1324')
+  // With the claims of its data: an admin of A reads and edits A's data.
+  const fresh = await authDb(STALE, 'stale-1324@test.com')
+  await assertSucceeds(getDoc(client(fresh)))
+  await assertSucceeds(updateDoc(client(fresh), { name: 'Client Ltd' }))
+  // No claims at all (before the backfill, or a token issued before the function ran): refused, although the users
+  // document and the members map still say admin.
+  const none = env.authenticatedContext(STALE, { email: 'stale-1324@test.com' }).firestore()
+  await assertLogicalDeny(getDoc(client(none)))
+  await assertLogicalDeny(updateDoc(client(none), { name: 'No claims' }))
+  await assertLogicalDeny(deleteDoc(client(none)))
+  // Claims for another organisation only: refused here.
+  const otherOrg = env.authenticatedContext(STALE, {
+    email: 'stale-1324@test.com',
+    pp: { v: 1, s: 1, h: ORG_B, u: ['a', 'x'], o: { [ORG_B]: ['admin', 'admin', 'c', 'h', 'E', 'H'] } },
+  }).firestore()
+  await assertLogicalDeny(getDoc(client(otherOrg)))
+  await assertLogicalDeny(updateDoc(client(otherOrg), { name: 'Wrong org' }))
+  // Deactivated: the claims the function sets after the change refuse everything role-decided at once.
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await updateDoc(doc(ctx.firestore(), 'users', STALE), { isActive: false })
+  })
+  const deactivated = await authDb(STALE, 'stale-1324@test.com')
+  await assertLogicalDeny(getDoc(client(deactivated)))
+  await assertLogicalDeny(updateDoc(client(deactivated), { name: 'Deactivated' }))
+  await assertLogicalDeny(deleteDoc(client(deactivated)))
+  // Bounded staleness (rulebook §16): a token issued before the deactivation still carries the old claims until it is
+  // refreshed (at most an hour; refresh tokens are revoked). This pins that documented behaviour.
+  await assertSucceeds(getDoc(client(fresh)))
+  // Their own users document stays readable (the deactivated screen), with or without claims.
+  await assertSucceeds(getDoc(doc(deactivated, 'users', STALE)))
+  await assertSucceeds(getDoc(doc(none, 'users', STALE)))
+  // The marker is the person's own to read; nobody writes it from an app.
+  await assertSucceeds(getDoc(doc(deactivated, 'users', STALE, 'private', 'authClaims')))
+  await assertLogicalDeny(getDoc(doc(await authDb(ADMIN_A, 'admin-a@test.com'), 'users', STALE, 'private', 'authClaims')))
+  await assertLogicalDeny(setDoc(doc(fresh, 'users', STALE, 'private', 'authClaims'), { v: 99 }))
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await updateDoc(doc(ctx.firestore(), 'users', STALE), { isActive: true })
+  })
+})
+
+test('1.32.4 claims: a forged claim value cannot widen access (the rules read only the documented shape)', async () => {
+  // A malformed `pp` (not the function's shape) is refused, not an error that grants.
+  const forged = env.authenticatedContext('claims-1324-forged', { email: 'forged-1324@test.com', pp: { o: 'org-a' } }).firestore()
+  await assertFails(getDoc(doc(forged, 'organizations', ORG_A, 'clients', 'c-1324')))
 })
