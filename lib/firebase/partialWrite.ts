@@ -27,6 +27,22 @@ export function plainWritePayload(payload: Record<string, unknown>): Record<stri
   return out
 }
 
+/**
+ * A create payload: every `deleteField()` left out (nothing to remove on a new document, and Firestore refuses the
+ * sentinel in a `setDoc` without merge); every other value and SDK sentinel (e.g. `serverTimestamp()`) kept.
+ * The shared serializers (`serializeManagerSiteBooking`, `serializeBooking`) mark empty optional fields for removal so
+ * edits can clear them; a create must pass its payload through this (bug 6 Nov: an admin booking themself from Daily
+ * Overview failed with "deleteField() cannot be used with set()" since the 1.20.2 plain create).
+ */
+export function createWritePayload(payload: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(payload)) {
+    if (sentinelKind(value) === 'deleteField') continue
+    out[key] = value
+  }
+  return out
+}
+
 /** The Firestore update map for a rulebook write: `set` plus a delete for each `remove`. */
 export function firestoreUpdateFields(write: DocumentWriteFields): Record<string, unknown> {
   const out: Record<string, unknown> = { ...write.set }

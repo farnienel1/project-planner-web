@@ -5,7 +5,7 @@ import { doc, setDoc } from 'firebase/firestore'
 import { deleteBookingWithTombstone } from '@/lib/bookings/bookingTombstoneWrite'
 import { resolveBookingJobCollection } from '@/lib/bookings/jobCollection'
 import { auth, db } from '@/lib/firebase/config'
-import { MissingDocumentError, savePartialDocument } from '@/lib/firebase/partialWrite'
+import { MissingDocumentError, createWritePayload, savePartialDocument } from '@/lib/firebase/partialWrite'
 import { BOOKING_REPLAY_REFUSED_MESSAGE, writeMetadataFields } from '@/lib/canonical'
 import { managerSiteBookingUpdateWriteFields } from '@/lib/canonical/workDocumentReaders'
 import { forgetOrgCollectionDoc, isOrgCollectionSubscribed, subscribeOrgCollection, unsubscribeOrgCollection, type OrgCollectionDoc } from '@/lib/firebase/subscribeOrgCollection'
@@ -195,7 +195,7 @@ export const useManagerScheduleStore = create<ManagerScheduleState>((set, get) =
     // create write (no merge), so it can never land on an existing booking.
     await setDoc(
       doc(firestore, 'organizations', organizationId, 'managerSiteBookings', id),
-      { ...payload, ...(writeMetadataFields(auth?.currentUser?.uid, 'web') ?? {}) }
+      { ...createWritePayload(payload), ...(writeMetadataFields(auth?.currentUser?.uid, 'web') ?? {}) }
     )
     const without = get().managerSiteBookings.filter((row) => row.id !== next.id)
     set({ managerSiteBookings: [...without, next] })

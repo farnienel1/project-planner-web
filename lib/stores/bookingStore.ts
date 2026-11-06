@@ -4,7 +4,7 @@ import { create } from 'zustand'
 import { doc, setDoc } from 'firebase/firestore'
 import { deleteBookingWithTombstone } from '@/lib/bookings/bookingTombstoneWrite'
 import { auth, db } from '@/lib/firebase/config'
-import { MissingDocumentError, savePartialDocument } from '@/lib/firebase/partialWrite'
+import { MissingDocumentError, createWritePayload, savePartialDocument } from '@/lib/firebase/partialWrite'
 import { bookingUpdateWriteFields } from '@/lib/canonical/workDocumentReaders'
 import { BOOKING_REPLAY_REFUSED_MESSAGE } from '@/lib/canonical/bookingTombstones'
 import { forgetOrgCollectionDoc, isOrgCollectionSubscribed, subscribeOrgCollection, unsubscribeOrgCollection, type OrgCollectionDoc } from '@/lib/firebase/subscribeOrgCollection'
@@ -171,7 +171,7 @@ export const useBookingStore = create<BookingState>((set, get) => ({
     // Rulebook §1 / 1.9.0: a create carries write metadata (`writeMetadataFields`).
     await setDoc(
       doc(firestore, 'organizations', organizationId, 'bookings', id),
-      { ...payload, ...(writeMetadataFields(auth?.currentUser?.uid, 'web') ?? {}) }
+      { ...createWritePayload(payload), ...(writeMetadataFields(auth?.currentUser?.uid, 'web') ?? {}) }
     )
     if (!organizationContextStillCurrent(organizationId, captured)) return
     const { bookings } = get()
