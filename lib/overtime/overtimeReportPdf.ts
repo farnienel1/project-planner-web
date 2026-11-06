@@ -1,74 +1,75 @@
 /**
- * Rulebook 1.29.0 §25: the overtime report PDF, rebuilt from the saved copy (`overtimeReports/{id}`) — company name and
- * logo, the person, the range, one line per day and job with the final figures (hours only) and the total. The text
- * is `overtimeReportRows`; this file only lays it out with pdf-lib.
+ * Rulebook 1.33.0 §25 (owner 6 Nov): the overtime report PDF in the invoice / timesheet family — the title block with
+ * the logo (COMPANY / NAME / GENERATED / PERIOD), a navy table header (Day, Job, Start–Finish, Overtime) repeated after
+ * each page break, hairline rows, the navy total box and page numbers. Rebuilt from the saved copy
+ * (`overtimeReports/{id}`). Every text is `overtimeReportRows` (header, table, a declined line's "Declined by {name}",
+ * the out-of-date mark); this file only lays it out (`InvoiceFamilyPdf`). Same layout as iOS `OvertimeReportPDFLayout`.
  */
-import { PDFDocument, StandardFonts, rgb, type PDFImage } from 'pdf-lib'
-import { overtimeReportRows, type OvertimeReportSnapshot } from '@/lib/canonical'
+import { overtimeReportRows, type OvertimeReportRowsExtras, type OvertimeReportSnapshot } from '@/lib/canonical'
+import { familyLogo, InvoiceFamilyPdf, type FamilyColumn } from '@/lib/pdf/invoiceFamilyPdf'
+import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 
-const A4: [number, number] = [595.28, 841.89]
-const MARGIN = 48
-
-/** Standard fonts cannot draw every character; keep the report readable whatever the job names hold. */
-function pdfSafe(text: string): string {
-  return String(text ?? '')
-    .replace(/[–—]/g, '-')
-    .replace(/×/g, 'x')
-    .replace(/−/g, '-')
-    .replace(/·/g, '|')
-    .replace(/[^\x20-\x7E£]/g, '')
-}
-
-async function logoImage(pdf: PDFDocument, url: string | null | undefined): Promise<PDFImage | null> {
-  if (!url) return null
-  try {
-    const response = await fetch(url)
-    if (!response.ok) return null
-    const bytes = new Uint8Array(await response.arrayBuffer())
-    const type = response.headers.get('content-type') || ''
-    if (type.includes('png') || /\.png(\?|$)/i.test(url)) return await pdf.embedPng(bytes)
-    return await pdf.embedJpg(bytes)
-  } catch {
-    return null
-  }
-}
+/** Column widths: Day, Job, Start–Finish, Overtime (fills the 539pt content width, as iOS). */
+const WIDTHS = [112, 205, 92, 130]
+const DECLINED: readonly [number, number, number] = [0.6, 0.2, 0.15]
 
 export async function buildOvertimeReportPdf(
-  snapshot: Pick<OvertimeReportSnapshot, 'userName' | 'companyName' | 'rangeStart' | 'rangeEnd' | 'lines' | 'totals'>,
-  options?: { logoUrl?: string | null }
+  snapshot: Pick<OvertimeReportSnapshot, 'userName' | 'companyName' | 'rangeStart' | 'rangeEnd' | 'lines' | 'totals'> & OvertimeReportRowsExtras,
+  options?: { logoUrl?: string | null; timeZone?: string | null; generatedByName?: string | null }
 ): Promise<Uint8Array> {
-  const pdf = await PDFDocument.create()
-  const font = await pdf.embedFont(StandardFonts.Helvetica)
-  const bold = await pdf.embedFont(StandardFonts.HelveticaBold)
-  const text = overtimeReportRows(snapshot)
-  let page = pdf.addPage(A4)
-  let y = A4[1] - MARGIN
-  const logo = await logoImage(pdf, options?.logoUrl)
-  if (logo) {
-    const scale = Math.min(120 / logo.width, 48 / logo.height, 1)
-    page.drawImage(logo, { x: A4[0] - MARGIN - logo.width * scale, y: y - logo.height * scale + 12, width: logo.width * scale, height: logo.height * scale })
+  const content = overtimeReportRows(snapshot, {
+    timeZone: options?.timeZone || organizationZoneOr(),
+    generatedByName: options?.generatedByName,
+    nowMs: Date.now(),
+  })
+  const w = await InvoiceFamilyPdf.create()
+  const logo = await familyLogo(w.pdf, options?.logoUrl)
+  const columns: FamilyColumn[] = content.columns.map((title, index) => ({
+    title,
+    width: WIDTHS[index] ?? 100,
+    align: index === content.columns.length - 1 ? 'right' : 'left',
+  }))
+  w.titleBlock({
+    title: content.documentTitle,
+    logo,
+    meta: [
+      ['Company', content.companyName],
+      ['Name', content.personName],
+      ['Generated', content.generated],
+      ['Period', content.period],
+    ],
+  })
+  if (content.outOfDate) w.banner(content.outOfDateNote)
+  const runningHeading = () => {
+    w.text([content.documentTitle, content.personName, content.period].filter(Boolean).join(' · '), 28, w.y, {
+      size: 10,
+      bold: true,
+      color: [0.36, 0.42, 0.5],
+      maxWidth: w.width,
+    })
+    w.y += 24
   }
-  page.drawText(pdfSafe(snapshot.companyName || ''), { x: MARGIN, y, size: 12, font: bold, color: rgb(0.2, 0.2, 0.2) })
-  y -= 28
-  page.drawText(pdfSafe(text.title), { x: MARGIN, y, size: 18, font: bold })
-  y -= 20
-  page.drawText(pdfSafe(text.subtitle), { x: MARGIN, y, size: 11, font, color: rgb(0.35, 0.35, 0.35) })
-  y -= 28
-  if (text.rows.length === 0) {
-    page.drawText('No overtime in this range.', { x: MARGIN, y, size: 11, font })
-    y -= 18
+  w.tableHeader(columns)
+  if (content.table.length === 0) {
+    w.y += 8
+    w.paragraph(content.emptyMessage, { size: 11, color: [0.3, 0.3, 0.3] })
   }
-  for (const row of text.rows) {
-    if (y < MARGIN + 40) {
-      page = pdf.addPage(A4)
-      y = A4[1] - MARGIN
-    }
-    page.drawText(pdfSafe(row), { x: MARGIN, y, size: 10.5, font, maxWidth: A4[0] - MARGIN * 2 })
-    y -= 18
+  for (const row of content.table) {
+    w.row(
+      columns,
+      [
+        { text: row.day, bold: true },
+        { text: row.job || '—', bold: true, lines: row.note ? [row.note] : [] },
+        { text: row.time || '—', size: 10, color: [0.36, 0.42, 0.5] },
+        { text: row.overtime, bold: true, color: row.declined ? DECLINED : undefined },
+      ],
+      runningHeading
+    )
   }
-  y -= 10
-  page.drawText(pdfSafe(text.total), { x: MARGIN, y, size: 12, font: bold })
-  return pdf.save()
+  w.tableEnd()
+  w.totalBox(content.totalLabel, content.totalValue)
+  w.footers(content.footer)
+  return w.save()
 }
 
 export function downloadPdf(bytes: Uint8Array, fileName: string): void {

@@ -12176,12 +12176,17 @@ test('1.29.0 direct change by a PAYE manager or admin, the report snapshot and t
   const snapshot = r129.overtimeReportSnapshot({ userId: 'sam', userName: 'Sam', companyName: 'Acme', rangeStart: '2026-10-26', rangeEnd: '2026-11-25', lines, generatedBy: 'sam' })
   assert.deepEqual(snapshot.totals, { overtimeHours: 1.5, clockHours: 1, lineCount: 1 })
   const roundTrip = r129.parseOvertimeReportDocument('REP1', JSON.parse(JSON.stringify(snapshot)))
-  assert.deepEqual(r129.overtimeReportRows(roundTrip), {
-    title: 'Overtime report · Sam',
-    subtitle: 'Mon 26 Oct – Wed 25 Nov',
-    rows: ['Wed 4 Nov · J-1042 Riverside Flats · 06:30–14:00 · 1h × 1.5 = 1.5h'],
-    total: 'Total overtime: 1.5h',
-  })
+  // 1.33.0 adds header and table fields (reportRows.test.ts); the pre-1.33 text fields are unchanged.
+  const reportText = r129.overtimeReportRows(roundTrip)
+  assert.deepEqual(
+    { title: reportText.title, subtitle: reportText.subtitle, rows: reportText.rows, total: reportText.total },
+    {
+      title: 'Overtime report · Sam',
+      subtitle: 'Mon 26 Oct – Wed 25 Nov',
+      rows: ['Wed 4 Nov · J-1042 Riverside Flats · 06:30–14:00 · 1h × 1.5 = 1.5h'],
+      total: 'Total overtime: 1.5h',
+    }
+  )
   const people = [
     { id: 'sam', name: 'Sam', employmentType: 'paye' },
     { id: 'pat', name: 'Pat', employmentType: 'self_employed' },
