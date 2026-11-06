@@ -280,7 +280,7 @@ exports.eraseDeletedOrganizations = onSchedule(
  * document (only the fields in `AUTH_CLAIMS_USER_FIELDS`, or creation / deletion), one of their memberships, or an
  * organisation's `members` map / `creatorUserId` — set them only when they changed, revoke refresh tokens when access
  * was taken away, and write the marker `users/{uid}/private/authClaims` that the apps listen to (authClaims.js).
- * Deploy: `firebase deploy --only functions:authClaimsOnUserWrite,functions:authClaimsOnMembershipWrite,functions:authClaimsOnOrganizationWrite`
+ * Deploy: `firebase deploy --only functions:inbox-push:authClaimsOnUserWrite,functions:inbox-push:authClaimsOnMembershipWrite,functions:inbox-push:authClaimsOnOrganizationWrite`
  * (docs/scripts/backfill-auth-claims.md).
  */
 let authClaimsSync = null
