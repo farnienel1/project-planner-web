@@ -57,3 +57,20 @@ test('createWritePayload: a new manager site booking carries no deleteField (bug
   assert.deepEqual(Object.keys(labour), ['projectId', 'status'])
   assert.ok(isDelete(deleteField()))
 })
+
+test('createWritePayload: an invited admin with "No line manager" carries no deleteField (Add User placeholder)', async () => {
+  const { buildInvitedUserPayload } = await import('./userPayload.ts')
+  const { addUserPermissionDefaults } = await import('../canonical/permissionLevels.ts')
+  const { createWritePayload } = await import('./partialWrite.ts')
+  const isDelete = (v: unknown) => !!v && typeof v === 'object' && (v as { _methodName?: string })._methodName === 'deleteField'
+  const payload = buildInvitedUserPayload({
+    userId: 'NEW-1', email: 'admin2@example.com', organizationId: 'org-1', firstName: 'A', surname: 'Dmin',
+    permissions: { ...addUserPermissionDefaults('admin'), manager: true } as never,
+    hasNoLineManager: true,
+  })
+  assert.ok(Object.values(payload).some(isDelete), 'the builder marks the line manager ids for removal')
+  const create = createWritePayload(payload)
+  assert.equal(Object.values(create).some(isDelete), false)
+  assert.equal('assignedManagerUserIds' in create, false)
+  assert.equal(create.email, 'admin2@example.com')
+})

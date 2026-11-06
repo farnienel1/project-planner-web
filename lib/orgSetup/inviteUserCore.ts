@@ -5,6 +5,7 @@ import { payProfileWriteFieldsFromProfileWrite, PAY_PROFILES_COLLECTION, sharedD
 import { privatePayFor, securitySwitchesReady } from '@/lib/access/securitySwitches'
 import { invitationCreateFields } from '@/lib/canonical/createDocuments'
 import { newUuid } from '@/lib/firebase/firestoreUtils'
+import { createWritePayload } from '@/lib/firebase/partialWrite'
 import { withTimeout } from '@/lib/client/withTimeout'
 import {
   inviteEmailOrgLookupConstraints,
@@ -249,7 +250,8 @@ export async function inviteUserCore(input: InviteUserCoreInput): Promise<Invite
   // profile and the tax ids follow: their rules check the placeholder that this batch creates.
   const batch = writeBatch(db)
   batch.set(doc(db, 'invitations', invitationId), invitationData)
-  batch.set(doc(db, 'users', userId), sharedDocumentPayWrite(placeholder, { privatePay }))
+  // A create: `deleteField()` markers from the payload builder (e.g. an admin with "No line manager") are left out.
+  batch.set(doc(db, 'users', userId), createWritePayload(sharedDocumentPayWrite(placeholder, { privatePay })))
   batch.set(doc(db, 'organizations', input.organizationId, 'userEmails', emailLower), { userId })
   await batch.commit()
   const payFields = privatePay ? payProfileWriteFieldsFromProfileWrite(userId, placeholder) : null
