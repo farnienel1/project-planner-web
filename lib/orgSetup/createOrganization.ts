@@ -10,7 +10,8 @@ import {
 import { newUuid, parseFirestoreDate, sanitizeForFirestore } from '@/lib/firebase/firestoreUtils'
 import { companyLogoPath, uploadFile } from '@/lib/firebase/storageUtils'
 import { prepareClientUpload } from '@/lib/security/stripPhotoLocation'
-import { getFirebaseDb } from '@/lib/firebase/ensureFirebase'
+import { getFirebaseAuth, getFirebaseDb } from '@/lib/firebase/ensureFirebase'
+import { waitForOrganizationClaims } from '@/lib/auth/authClaimsRefresh'
 import { permissionsToFirestoreMap } from '@/lib/firebase/userPayload'
 import { FOUNDER_PERMISSIONS } from '@/lib/orgMembership/orgRoleFlags'
 import { resolveAuthUserIdForOrgSetup } from '@/lib/orgSetup/resolveAuthForOrgSetup'
@@ -208,6 +209,11 @@ export async function createPendingOrganization(
     6000,
     'Could not save the organisation. Click Activate again — your details are still on this page.'
   )
+
+  // Rulebook 1.32.4 §16: the rules decide the seeds below by role, read from the founder's auth claims, which the
+  // auth-claims function sets from this organisation's members map. Wait (bounded) for the token to carry them.
+  const signedIn = getFirebaseAuth().currentUser
+  if (signedIn && signedIn.uid === userId) await waitForOrganizationClaims(signedIn, organizationId)
 
   const logoFile = skipOptional ? null : input.orgSetupSettings?.identity.logoFile
   if (logoFile) {

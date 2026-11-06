@@ -12,6 +12,7 @@ import {
   type UserCredential,
 } from 'firebase/auth'
 import { deleteDoc, doc, getDoc, serverTimestamp, setDoc, Timestamp, updateDoc, writeBatch } from 'firebase/firestore'
+import { waitForOrganizationClaims } from '@/lib/auth/authClaimsRefresh'
 import { getFirebaseAuth, getFirebaseDb } from '@/lib/firebase/ensureFirebase'
 import { isValidUuid } from '@/lib/security/validation'
 import { ensurePrimaryOrgMembership } from '@/lib/orgMembership/membershipService'
@@ -252,6 +253,8 @@ export async function completeInvitationPasswordSetup(params: {
 
   if (plan.mode === 'existingAccount' && plan.joinsAnotherCompany) {
     await acceptIntoAnotherCompany(authUid, record, params.invitationId)
+    // Rulebook 1.32.4 §16: the new company reaches the rules through the auth claims; wait (bounded) for them.
+    await waitForOrganizationClaims(authResult.user, record.organizationId)
     return
   }
 
@@ -374,6 +377,9 @@ export async function completeInvitationPasswordSetup(params: {
       console.warn('Invitation left unused after a retried setup', error instanceof Error ? error.message : 'unknown')
     }
   }
+  // Rulebook 1.32.4 §16: the app opens this company next; its rules read the auth claims the function sets from the
+  // documents written above. Wait (bounded) until the token carries them.
+  await waitForOrganizationClaims(authResult.user, record.organizationId)
   const { grantMfaSkip } = await import('@/lib/auth/mfa/mfaClient')
   await grantMfaSkip({ invitationId: params.invitationId })
 }
