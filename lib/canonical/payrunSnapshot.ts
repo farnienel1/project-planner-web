@@ -31,7 +31,18 @@ import { dateFromDayKeyInZone } from '../orgTime/zoneTime'
 import { zoneOrLondon } from './dayKeys'
 import { hasActiveLineManager, isSuperAdminAccount, type LeaveSelfBookUser } from './leaveRequests'
 import { parseInvoicing } from './organizationSettings'
-import { overtimeReportIsOutOfDate, weeklyReportPayeDay } from './payeOvertime'
+import {
+  overtimePersonIds,
+  overtimeReportIsOutOfDate,
+  overtimeReportOutOfDate,
+  payeOvertimeLines,
+  weeklyReportPayeDay,
+  type OvertimeBookingInput,
+  type OvertimeOrganization,
+  type OvertimeReportSnapshot,
+  type OvertimeRequestRecord,
+  type OvertimeReviewRecord,
+} from './payeOvertime'
 import { payeClaimsInRange, type ExpenseItem, type PayeClaimKind, type PriceWorkItem } from './payeClaims'
 import { PAYE_PAYDAY_NOT_SET_MESSAGE, payeCustomRange, payePayrunLabel, payePayrunPeriod } from './payePayrun'
 import { activePaymentRunSummary, formatPaymentRunDay } from './paymentRuns'
@@ -136,6 +147,8 @@ export type PayrunSnapshotOvertimeReport = {
   rangeEnd: string
   outOfDate?: boolean | null
   outOfDateAtMs?: number | null
+  /** The saved lines (`parseOvertimeReportDocument`): compared with the live lines when `bookings` are passed. */
+  lines?: OvertimeReportSnapshot['lines'] | null
 }
 /** The claim report fields the Snapshot reads (`parsePayeClaimReportDocument`). */
 export type PayrunSnapshotClaimReport = { userId: string; kind: PayeClaimKind; rangeStart: string; rangeEnd: string }
@@ -152,6 +165,16 @@ export type PayrunSnapshotInput = {
   priceWork?: ReadonlyArray<PriceWorkItem> | null
   expenses?: ReadonlyArray<ExpenseItem> | null
   timeZone?: string | null
+  /**
+   * 1.33.0 (owner 6 Nov, reopen): the live overtime inputs. A saved report is never rewritten, so whether it is out of
+   * date is worked out from the live lines of its range (`overtimeReportOutOfDate` over `payeOvertimeLines`, the rule
+   * the person's Overtime page uses). Pass every booking of the organisation (labour and manager site bookings,
+   * `OvertimeBookingInput`), every overtime review and the operatives rows. Without `bookings` only a stored
+   * `outOfDate` / `outOfDateAtMs` mark counts.
+   */
+  bookings?: ReadonlyArray<OvertimeBookingInput> | null
+  overtimeReviews?: ReadonlyArray<OvertimeReviewRecord> | null
+  operatives?: ReadonlyArray<{ id?: string | null; email?: string | null }> | null
 }
 
 export type PayrunSnapshotRow = {
@@ -350,7 +373,8 @@ function overtimeCell(
   roster: ReadonlyArray<PayrunSnapshotPerson>,
   requests: ReadonlyArray<PayrunSnapshotOvertimeRequest>,
   reports: ReadonlyArray<PayrunSnapshotOvertimeReport>,
-  period: { start: string; end: string }
+  period: { start: string; end: string },
+  reportOutOfDate: (report: PayrunSnapshotOvertimeReport) => boolean
 ): PayrunSnapshotCell {
   const link: PayrunSnapshotLink = { kind: 'overtime', personId: person.id, start: period.start, end: period.end }
   if (hasActiveLineManager(person, roster as never)) {
@@ -360,9 +384,37 @@ function overtimeCell(
     return cell('notStarted', PAYRUN_SNAPSHOT_STATE_LABELS.notStarted, 'neutral', link)
   }
   const theirs = reports.filter((report) => ids.has(idKey(report.userId)) && overlaps(period, report.rangeStart, report.rangeEnd))
-  if (theirs.some((report) => !overtimeReportIsOutOfDate(report))) return cell('reportYes', PAYRUN_SNAPSHOT_STATE_LABELS.reportYes, 'good', link)
+  if (theirs.some((report) => !reportOutOfDate(report))) return cell('reportYes', PAYRUN_SNAPSHOT_STATE_LABELS.reportYes, 'good', link)
   if (theirs.length > 0) return cell('reportOutOfDate', PAYRUN_SNAPSHOT_STATE_LABELS.reportOutOfDate, 'warn', link)
   return cell('reportNo', PAYRUN_SNAPSHOT_STATE_LABELS.reportNo, 'neutral', link)
+}
+
+/**
+ * 1.33.0: whether a saved overtime report is out of date — a stored mark, or (when the caller passes `bookings`) its
+ * live lines no longer match it (`overtimeReportOutOfDate`): a line reopened, changed or waiting again since it was
+ * generated. Declined lines (0h, "Declined by {name}") and deleted lines count as finished, so a report that lists them
+ * stays up to date while nothing changes.
+ */
+function overtimeSnapshotReportOutOfDate(
+  report: PayrunSnapshotOvertimeReport,
+  person: PayrunSnapshotPerson,
+  roster: ReadonlyArray<PayrunSnapshotPerson>,
+  input: PayrunSnapshotInput,
+  timeZone: string
+): boolean {
+  if (overtimeReportIsOutOfDate(report)) return true
+  if (!input.bookings) return false
+  const personIds = overtimePersonIds({ person, roster: roster as never, operatives: input.operatives ?? [] })
+  const lines = payeOvertimeLines({
+    personIds,
+    bookings: input.bookings,
+    organization: input.organization as OvertimeOrganization,
+    timeZone,
+    range: { start: report.rangeStart, end: report.rangeEnd },
+    reviews: input.overtimeReviews ?? [],
+    requests: (input.overtimeRequests ?? []) as ReadonlyArray<OvertimeRequestRecord>,
+  })
+  return overtimeReportOutOfDate({ report: { lines: report.lines ?? [] }, lines })
 }
 
 function claimCell(
@@ -432,7 +484,9 @@ export function payrunSnapshotRows(input: PayrunSnapshotInput): PayrunSnapshotRo
     const cells = paye
       ? {
           timesheet: blocked(PAYRUN_SNAPSHOT_PAYE_CELL),
-          overtime: overtimeCell(person, ids, roster, input.overtimeRequests ?? [], input.overtimeReports ?? [], period),
+          overtime: overtimeCell(person, ids, roster, input.overtimeRequests ?? [], input.overtimeReports ?? [], period, (report) =>
+            overtimeSnapshotReportOutOfDate(report, person, roster, input, zone)
+          ),
           expenses: claimCell('expense', person, ids, input.payeClaimReports ?? [], input.expenses ?? [], period),
           priceWork: claimCell('priceWork', person, ids, input.payeClaimReports ?? [], input.priceWork ?? [], period),
         }

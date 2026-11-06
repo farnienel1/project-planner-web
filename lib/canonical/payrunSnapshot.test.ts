@@ -9,6 +9,11 @@ import {
   parseExpenseDocument,
   parseOvertimeReportDocument,
   parseOvertimeRequestDocument,
+  parseOvertimeReviewDocument,
+  overtimeBookingFingerprint,
+  overtimeReportSnapshot,
+  overtimeReviewDocId,
+  payeOvertimeLines,
   parsePayeClaimReportDocument,
   parsePayrunSnapshotSheet,
   parsePriceWorkDocument,
@@ -177,4 +182,65 @@ test('1.33.0 parsePayrunSnapshotSheet: only timesheet documents with a person an
   assert.equal(parsePayrunSnapshotSheet('timesheet_a_1', { weekStartKey: '2026-11-02' }), null)
   const parsed = parsePayrunSnapshotSheet('timesheet_a_1', { userId: 'a', weekStart: '2026-11-02T00:00:00Z' }, TZ)!
   assert.deepEqual([parsed.startDayKey, parsed.endDayKey], ['2026-11-02', ''])
+})
+
+test('1.33.0 payrunSnapshotRows: a report is out of date when its live lines changed (reopen), not for declined or deleted lines', () => {
+  const org = {
+    ...ORGANIZATION,
+    payrollTimePolicy: {
+      standardDayStart: '07:30',
+      standardDayEnd: '16:00',
+      unpaidBreakMinutes: 30,
+      breakWindowStart: '12:00',
+      breakWindowEnd: '12:30',
+      weekdayOutsideStandardMultiplier: 1.5,
+    },
+  }
+  const booking = (id: string, dayKey: string, start: string, end: string) => ({
+    id,
+    collection: 'bookings',
+    personId: 'ann',
+    dayKey,
+    timeSlot: 'CUSTOM_HOURS',
+    workStartTime: start,
+    workEndTime: end,
+    status: 'Confirmed',
+    jobId: 'job-1',
+    jobNumber: 'J-1',
+    jobName: 'Riverside',
+  })
+  const b1 = booking('B1', '2026-11-04', '06:30', '17:00')
+  const b2 = booking('B2', '2026-11-05', '06:30', '17:00')
+  const range = { start: '2026-10-26', end: '2026-11-25' }
+  // B1 confirmed directly (no request); B2 returned Declined by a decider (0h, "Declined by Lee").
+  const request = parseOvertimeRequestDocument('R9', { userId: 'ann', rangeStart: range.start, rangeEnd: range.end, status: 'approved', decidedBy: 'lee', lines: [] })
+  const reviews = [
+    parseOvertimeReviewDocument(overtimeReviewDocId('ann', 'B1'), { userId: 'ann', bookingId: 'B1', collection: 'bookings', decision: 'approved', fingerprint: overtimeBookingFingerprint(b1), reviewedBy: 'ann' }),
+    parseOvertimeReviewDocument(overtimeReviewDocId('ann', 'B2'), { userId: 'ann', bookingId: 'B2', collection: 'bookings', decision: 'declined', fingerprint: overtimeBookingFingerprint(b2), reviewedBy: 'lee', requestId: 'R9' }),
+  ]
+  const lines = payeOvertimeLines({ personIds: ['ann'], bookings: [b1, b2], organization: org, timeZone: TZ, range, reviews, requests: [request], names: { lee: 'Lee' } })
+  assert.deepEqual(lines.map((line) => line.state), ['confirmed', 'returnedDeclined'])
+  const saved = overtimeReportSnapshot({ userId: 'ann', userName: 'Ann', rangeStart: range.start, rangeEnd: range.end, lines, generatedBy: 'ann' })
+  assert.equal(saved.lines.find((line) => line.bookingId === 'B2')?.overtimeHours, 0)
+  const report = parseOvertimeReportDocument('O9', { ...saved })
+  const cellFor = (bookings: ReadonlyArray<ReturnType<typeof booking>> | null) =>
+    byId(
+      payrunSnapshotRows({
+        roster: ROSTER,
+        organization: org,
+        period: PERIOD,
+        timeZone: TZ,
+        overtimeRequests: [request],
+        overtimeReviews: reviews,
+        overtimeReports: [report],
+        bookings,
+      }),
+      'ann'
+    ).cells.overtime
+  // Nothing changed since: the report (with its declined 0h line) is up to date.
+  assert.equal(cellFor([b1, b2]).state, 'reportYes')
+  // A manager moves B1's finish after the report: the line reopens, the report is out of date (never rewritten).
+  assert.deepEqual([cellFor([{ ...b1, workEndTime: '18:00' }, b2]).state, cellFor([{ ...b1, workEndTime: '18:00' }, b2]).tone], ['reportOutOfDate', 'warn'])
+  // Without bookings only a stored mark counts (older callers).
+  assert.equal(cellFor(null).state, 'reportYes')
 })

@@ -382,7 +382,17 @@ export function WeeklyReportScreen({
       </div>
 
       {snapshotOpen && canOpenSnapshot && organizationId ? (
-        <PayrunSnapshot organizationId={organizationId} organization={organizationDocument} users={users} timeZone={timeZone} />
+        <PayrunSnapshot
+          organizationId={organizationId}
+          organization={organizationDocument}
+          users={users}
+          timeZone={timeZone}
+          bookings={bookings}
+          managerSiteBookings={managerSiteBookings}
+          projects={projects}
+          smallWorks={smallWorks}
+          operatives={operatives}
+        />
       ) : null}
 
       <section className="hero" data-hue="rep">

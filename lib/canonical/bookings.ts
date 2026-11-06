@@ -434,8 +434,9 @@ export function bookingsToRemoveOnOperativeDelete(input: {
 /**
  * Rulebook 1.31.0 §2, §11 (owner decision): whether a manager with the Operatives permission may delete a labour
  * booking (with its tombstone) — only when the booking's day is after today in the organisation zone AND its
- * `operativeId` names no users document (a deleted or catalogue operative). Today's and past bookings they may only
- * cancel (status Cancelled, on the jobs they manage, `canWriteBooking`). Admins are unchanged (`canDeleteBooking`).
+ * `operativeId` names no users document (a deleted or catalogue operative). Today's and past bookings stay as history;
+ * 1.33.0: there is no cancel, and only an admin or the job's manager deletes them (`canDeleteBooking`). Admins are
+ * unchanged.
  * The security rules hold the same: the booking's `date` (organisation-zone midnight) is after the request time.
  */
 export function operativesManagerMayDeleteBooking(input: {

@@ -374,7 +374,7 @@ export function bookingJobId(booking: BookingPermissionInput | null | undefined)
 }
 
 /**
- * Create, edit, cancel or delete a booking (§2, §16; owner decision 1.10.0). Labour (`bookings`), manager site
+ * Create, edit or delete a booking (§2, §16; owner decision 1.10.0; 1.33.0: there is no cancel, `bookingRemoveAction`). Labour (`bookings`), manager site
  * (`managerSiteBookings`) and subcontractor (`subcontractorBookings`) bookings:
  *   - admins and super admins outside operative mode: every booking;
  *   - managers: bookings on a job they manage (`isJobManager` on `job`, the booking's project or small works); a

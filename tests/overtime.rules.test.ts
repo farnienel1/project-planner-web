@@ -15,7 +15,7 @@ import {
   type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing'
 import { assertFails, assertLogicalDeny } from './rulesAssert.ts'
-import { collection, deleteDoc, deleteField, doc, getDoc, getDocs, query, setDoc, updateDoc, where } from 'firebase/firestore'
+import { collection, deleteDoc, deleteField, doc, getDoc, getDocs, query, serverTimestamp, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const rules = readFileSync(path.join(root, 'firestore.rules'), 'utf8')
@@ -117,7 +117,7 @@ async function seed() {
 test.before(async () => {
   env = await initializeTestEnvironment({
     projectId: 'demo-project-planner-overtime',
-    firestore: { rules, host: '127.0.0.1', port: 8080 },
+    firestore: { rules, host: '127.0.0.1', port: Number(process.env.FIRESTORE_EMULATOR_HOST?.split(':')[1] || 8080) },
   })
 })
 
@@ -188,7 +188,9 @@ test('an admin of another company is no line manager here', async () => {
   await assertFails(updateDoc(doc(db(ADMIN_B), 'organizations', ORG, 'bookings', 'B1'), { workStartTime: '07:30' }))
 })
 
-test('a booking filed under an operatives row is never written through the line-manager path (admins and job managers only)', async () => {
+test('a booking under an operatives row on ANOTHER email is never written through the line-manager path (admins and job managers only)', async () => {
+  // row-sam's email is other@test.com, which names no account: 1.33.0's row path (the row's email → userEmails → the
+  // users document's line managers) does not match, so only the job's manager and admins write it.
   await assertFails(updateDoc(orgDoc(LM, 'bookings', 'BR1'), { workStartTime: '07:30' }))
   await assertFails(updateDoc(orgDoc(LM, 'bookings', 'BR1'), { status: 'Cancelled' }))
   await assertSucceeds(updateDoc(orgDoc(PM, 'bookings', 'BR1'), { workStartTime: '07:30' }))
@@ -224,10 +226,10 @@ test('line manager booking writes: clock times are short text and the slot is a 
   await assertSucceeds(updateDoc(orgDoc(LM, 'bookings', 'B1'), { timeSlot: 'CUSTOM_HOURS', workStartTime: '07:30', workEndTime: '15:00' }))
 })
 
-test('reads are unchanged: with enforced reads a line manager who does not manage the job reads the booking only as before', async () => {
-  // Known limit (1.29.0, rules expression budget): the line manager's overtime reads of a report's bookings follow the
-  // existing read rules (switch off: every member; switch on: job managers, toggles, the person).
-  await assertFails(getDoc(orgDoc(LM, 'bookings', 'B1')))
+test('1.33.0 reads: with enforced reads every manager (a line manager who does not manage the job included) reads the booking', async () => {
+  // 1.33.0 (owner decision 6 Nov): every manager reads every job and booking, so the 1.29.0 known limit is gone.
+  await assertSucceeds(getDoc(orgDoc(LM, 'bookings', 'B1')))
+  await assertFails(getDoc(orgDoc(OP2, 'bookings', 'B1')))
   await assertSucceeds(getDoc(orgDoc(PM, 'bookings', 'B1')))
   await assertSucceeds(getDoc(orgDoc(ADMIN, 'bookings', 'B1')))
 })
@@ -364,4 +366,133 @@ test('1.32.0 partial approval: the line manager records what they applied and th
   // The admin completes it.
   await assertSucceeds(updateDoc(orgDoc(ADMIN, 'overtimeRequests', 'RP'), { status: 'approved', decidedBy: ADMIN, appliedBookingIds: ['B1', 'B2'] }))
   await assertFails(updateDoc(orgDoc(ADMIN, 'overtimeRequests', 'RP'), { status: 'pending', decidedBy: ADMIN }), 'approved is final')
+})
+
+// MARK: - 1.33.0: Return (staleBookingIds / deletedBookingIds), new review decisions, every id, delete on Return
+
+async function seed133() {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const d = ctx.firestore()
+    // Sam's own operatives row (same email as Sam's account) and the email claim that names Sam.
+    await setDoc(doc(d, 'organizations', ORG, 'userEmails', `${SAM}@test.com`), { userId: SAM })
+    await setDoc(doc(d, 'organizations', ORG, 'operatives', 'row-sam2'), { firstName: 'Sam', email: `${SAM.toUpperCase()}@TEST.COM` })
+    await setDoc(doc(d, 'organizations', ORG, 'operatives', 'row-ghost'), { firstName: 'Ghost' })
+    await setDoc(doc(d, 'organizations', ORG, 'userEmails', `${OP2}@test.com`), { userId: OP2 })
+    await setDoc(doc(d, 'organizations', ORG, 'operatives', 'row-op2'), { firstName: 'Op', email: `${OP2}@test.com` })
+    const base = { projectId: 'job2', jobCollection: 'projects', date: 1762214400000, timeSlot: 'CUSTOM_HOURS', workStartTime: '06:30', workEndTime: '14:00', status: 'Confirmed', bookedBy: 'Ada', notes: '' }
+    await setDoc(doc(d, 'organizations', ORG, 'bookings', 'BR2'), { id: 'BR2', operativeId: 'row-sam2', ...base })
+    await setDoc(doc(d, 'organizations', ORG, 'bookings', 'BG'), { id: 'BG', operativeId: 'row-ghost', ...base })
+    await setDoc(doc(d, 'organizations', ORG, 'bookings', 'BO'), { id: 'BO', operativeId: 'row-op2', ...base })
+  })
+}
+
+test('1.33.0 every id: the line manager writes the overtime fields of a booking under the person\'s own operatives row', async () => {
+  await seed133()
+  await assertSucceeds(updateDoc(orgDoc(LM, 'bookings', 'BR2'), { workStartTime: '07:30', otMultiplierOverride: 1.5 }))
+  // Never another field, and never through a row on someone else's email or a row with no email (a ghost).
+  await assertFails(updateDoc(orgDoc(LM, 'bookings', 'BR2'), { projectId: 'job1' }))
+  await assertFails(updateDoc(orgDoc(LM, 'bookings', 'BO'), { workStartTime: '07:30' }))
+  await assertFails(updateDoc(orgDoc(LM, 'bookings', 'BG'), { workStartTime: '07:30' }))
+  // A manager who is not Sam's line manager and does not manage job2 cannot; the job's manager and admins still can.
+  await assertFails(updateDoc(orgDoc(PM, 'bookings', 'BR2'), { workStartTime: '07:45' }))
+  await assertFails(updateDoc(orgDoc(OP2, 'bookings', 'BR2'), { workStartTime: '07:45' }))
+  await assertSucceeds(updateDoc(orgDoc(MGR2, 'bookings', 'BR2'), { workStartTime: '08:00' }))
+  await assertSucceeds(updateDoc(orgDoc(ADMIN, 'bookings', 'BR2'), { workStartTime: '08:15' }))
+  // OP2's line manager (MGR2) reaches OP2's row; Sam's does not.
+  await assertSucceeds(updateDoc(orgDoc(MGR2, 'bookings', 'BO'), { workStartTime: '07:30' }))
+})
+
+test('1.33.0 Return: the decider writes approved with staleBookingIds and deletedBookingIds; nothing else', async () => {
+  await assertSucceeds(setDoc(orgDoc(SAM, 'overtimeRequests', 'R1'), requestData(SAM)))
+  await assertFails(updateDoc(orgDoc(LM, 'overtimeRequests', 'R1'), { status: 'approved', decidedBy: LM, staleBookingIds: [], lines: [] }))
+  await assertFails(updateDoc(orgDoc(LM, 'overtimeRequests', 'R1'), { status: 'returned', decidedBy: LM }))
+  await assertSucceeds(
+    updateDoc(orgDoc(LM, 'overtimeRequests', 'R1'), {
+      status: 'approved',
+      decidedBy: LM,
+      decisions: { B1: { action: 'approve' } },
+      appliedBookingIds: [],
+      droppedBookingIds: [],
+      staleBookingIds: ['B1'],
+      deletedBookingIds: [],
+    })
+  )
+})
+
+test('1.33.0 reviews: changed, declined and deleted are decisions; anything else is refused', async () => {
+  for (const decision of ['changed', 'declined', 'deleted']) {
+    await assertSucceeds(setDoc(orgDoc(LM, 'overtimeReviews', `${SAM}_B1`), reviewData(SAM, 'B1', LM, { decision, requestId: 'R1' })))
+  }
+  await assertFails(setDoc(orgDoc(LM, 'overtimeReviews', `${SAM}_B1`), reviewData(SAM, 'B1', LM, { decision: 'returned' })))
+  await assertFails(setDoc(orgDoc(MGR2, 'overtimeReviews', `${SAM}_B1`), reviewData(SAM, 'B1', MGR2, { decision: 'declined' })))
+})
+
+function returnDelete(uid: string, bookingId: string, requestId: string, request: Record<string, unknown>, tombstone: Record<string, unknown> = {}) {
+  const d = db(uid)
+  const batch = writeBatch(d)
+  batch.delete(doc(d, 'organizations', ORG, 'bookings', bookingId))
+  batch.set(doc(d, 'organizations', ORG, 'deletedBookings', bookingId), {
+    bookingId, collection: 'bookings', deletedBy: uid, deletedFrom: 'web', deletedAt: serverTimestamp(), overtimeRequestId: requestId, ...tombstone,
+  })
+  batch.update(doc(d, 'organizations', ORG, 'overtimeRequests', requestId), {
+    status: 'approved', decidedBy: uid, decisions: {}, appliedBookingIds: [], droppedBookingIds: [], staleBookingIds: [], ...request,
+  })
+  return batch.commit()
+}
+
+test('1.33.0 delete on Return: the line manager deletes the one booking their returned request names, with its tombstone', async () => {
+  await seed133()
+  await assertSucceeds(setDoc(orgDoc(SAM, 'overtimeRequests', 'R1'), requestData(SAM)))
+  // Not listed in deletedBookingIds, or the tombstone names no request: refused.
+  await assertFails(returnDelete(LM, 'B1', 'R1', { deletedBookingIds: [] }))
+  {
+    const d = db(LM)
+    const batch = writeBatch(d)
+    batch.delete(doc(d, 'organizations', ORG, 'bookings', 'B1'))
+    batch.set(doc(d, 'organizations', ORG, 'deletedBookings', 'B1'), { bookingId: 'B1', collection: 'bookings', deletedBy: LM, deletedFrom: 'web', deletedAt: serverTimestamp() })
+    batch.update(doc(d, 'organizations', ORG, 'overtimeRequests', 'R1'), { status: 'approved', decidedBy: LM, deletedBookingIds: ['B1'] })
+    await assertFails(batch.commit())
+  }
+  // B1 is Sam's, on job1 (PM's job): LM is not the job's manager, but the Return deletes it.
+  await assertSucceeds(returnDelete(LM, 'B1', 'R1', { deletedBookingIds: ['B1'] }))
+})
+
+test('1.33.0 delete on Return: never another person\'s booking, never by someone who did not decide, never a manager site booking', async () => {
+  await seed133()
+  await assertSucceeds(setDoc(orgDoc(SAM, 'overtimeRequests', 'R1'), requestData(SAM)))
+  // OP2's booking (B4) is not Sam's: LM is not OP2's line manager.
+  await assertFails(returnDelete(LM, 'B4', 'R1', { deletedBookingIds: ['B4'] }))
+  // A manager who is not Sam's line manager cannot decide, so cannot delete.
+  await assertFails(returnDelete(PM, 'B1', 'R1', { deletedBookingIds: ['B1'] }))
+  // A request already decided by someone else (ADMIN) gives LM nothing.
+  await assertSucceeds(setDoc(orgDoc(SAM, 'overtimeRequests', 'R2'), requestData(SAM)))
+  await assertSucceeds(updateDoc(orgDoc(ADMIN, 'overtimeRequests', 'R2'), { status: 'approved', decidedBy: ADMIN, deletedBookingIds: ['B1'] }))
+  const d = db(LM)
+  const batch = writeBatch(d)
+  batch.delete(doc(d, 'organizations', ORG, 'bookings', 'B1'))
+  batch.set(doc(d, 'organizations', ORG, 'deletedBookings', 'B1'), { bookingId: 'B1', collection: 'bookings', deletedBy: LM, deletedFrom: 'web', deletedAt: serverTimestamp(), overtimeRequestId: 'R2' })
+  await assertFails(batch.commit())
+  // A tombstone that already existed (not written in this batch) never opens the delete.
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'organizations', ORG, 'deletedBookings', 'B3'), { bookingId: 'B3', collection: 'bookings', deletedBy: LM, deletedFrom: 'web', overtimeRequestId: 'R1' })
+  })
+  await assertFails(deleteDoc(orgDoc(LM, 'bookings', 'B3')))
+  // Manager site bookings never go through this path.
+  const m = writeBatch(d)
+  m.delete(doc(d, 'organizations', ORG, 'managerSiteBookings', 'M1'))
+  m.set(doc(d, 'organizations', ORG, 'deletedBookings', 'M1'), { bookingId: 'M1', collection: 'managerSiteBookings', deletedBy: LM, deletedFrom: 'web', deletedAt: serverTimestamp(), overtimeRequestId: 'R1' })
+  m.update(doc(d, 'organizations', ORG, 'overtimeRequests', 'R1'), { status: 'approved', decidedBy: LM, deletedBookingIds: ['M1'] })
+  await assertFails(m.commit())
+})
+
+test('1.33.0 delete on Return: a booking under the person\'s own operatives row too; an admin\'s tombstone may name the request', async () => {
+  await seed133()
+  await assertSucceeds(setDoc(orgDoc(SAM, 'overtimeRequests', 'R1'), requestData(SAM)))
+  await assertSucceeds(returnDelete(LM, 'BR2', 'R1', { deletedBookingIds: ['BR2'] }))
+  await assertSucceeds(setDoc(orgDoc(SAM, 'overtimeRequests', 'R3'), requestData(SAM)))
+  await assertSucceeds(returnDelete(ADMIN, 'B1', 'R3', { deletedBookingIds: ['B1'] }))
+  // A tombstone with any other extra key is refused.
+  await assertFails(
+    setDoc(orgDoc(ADMIN, 'deletedBookings', 'B3'), { bookingId: 'B3', collection: 'bookings', deletedBy: ADMIN, deletedFrom: 'web', deletedAt: serverTimestamp(), note: 'x' })
+  )
 })

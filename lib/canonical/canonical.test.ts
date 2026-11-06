@@ -12401,6 +12401,7 @@ test('1.30.0 price work validation and write fields: name, from–to dates, requ
     currency: 'GBP',
     evidence: [{ path: `organizations/${ORG130}/payeClaims/sam/sam_1700000000000.jpg`, name: 'receipt.jpg', kind: 'photo', contentType: 'image/jpeg' }],
     createdBy: 'sam',
+    personUserId: 'sam',
   })
   // Someone else writing for Sam is refused.
   assert.equal(r130.priceWorkWriteFields({ userId: 'lm', draft, ...ctx, currency: 'GBP' }), null)
@@ -13934,4 +13935,41 @@ test('1.33.0 notices: Send for approval, Return (line manager / admin wording), 
   // A tombstone carries overtimeRequestId only when given.
   assert.deepEqual(r129.bookingTombstoneWriteFields({ bookingId: 'B4', collection: 'bookings', deletedBy: 'lm', deletedFrom: 'web', overtimeRequestId: ' ' }), { bookingId: 'B4', collection: 'bookings', deletedBy: 'lm', deletedFrom: 'web' })
   assert.equal(r129.overtimeBookingDelete({ booking: { id: 'M1', collection: 'managerSiteBookings' }, deletedBy: 'lm', platform: 'web' }), null)
+})
+
+// MARK: - Rulebook 1.33.0 integration: claim items carry personUserId; Payrun Snapshot reads the overtime branch
+
+test('1.33.0 claim items carry personUserId (the creator) and the backfill stamps older items through every id', () => {
+  assert.deepEqual(R112.payeClaimPersonFields('sam'), { personUserId: 'sam' })
+  assert.deepEqual(R112.payeClaimPersonFields(' '), {})
+  const fields = R112.expenseWriteFields({
+    userId: 'sam',
+    organizationId: 'org1',
+    currency: 'GBP',
+    draft: { title: 'Fuel', details: '', jobNumber: 'J-1', date: '2026-11-04', amount: '20', evidence: [{ path: 'organizations/org1/payeClaims/sam/a.pdf', name: 'a.pdf', kind: 'file', contentType: 'application/pdf', auditId: null }] },
+  } as never)
+  assert.equal(fields?.personUserId, 'sam')
+  assert.equal(R112.parseExpenseDocument('E1', { ...fields }).personUserId, 'sam')
+  assert.equal(R112.parseExpenseDocument('E0', { userId: 'sam', title: 'Old' }).personUserId, null)
+  const users = [
+    { id: 'sam', formerUserIds: ['sam-invite'], sameEmailUserIds: ['SAM-2'] },
+    { id: 'pat', formerUserIds: ['shared'] },
+    { id: 'lee', sameEmailUserIds: ['shared'] },
+  ]
+  const backfill = (item: Record<string, unknown>) => R112.payeClaimPersonUserIdBackfill({ item, users })
+  assert.deepEqual(backfill({ userId: 'sam' }), { personUserId: 'sam' })
+  assert.deepEqual(backfill({ userId: 'Sam-Invite' }), { personUserId: 'sam' }, 'a former id, without case')
+  assert.deepEqual(backfill({ userId: 'sam-2' }), { personUserId: 'sam' }, 'a same-email document')
+  assert.equal(backfill({ userId: 'sam-invite', personUserId: 'sam' }), null, 'already stamped: idempotent')
+  assert.equal(backfill({ userId: 'shared' }), null, 'claimed by two users documents: never guessed')
+  assert.equal(backfill({ userId: 'nobody' }), null)
+  assert.equal(backfill({ userId: '' }), null)
+})
+
+test('1.33.0 integration: the needs-admin label is gone; claims keep reviewApprovalMessage without "need an admin"', () => {
+  assert.equal('OVERTIME_NEEDS_ADMIN_LABEL' in R112, false)
+  assert.equal('OVERTIME_NEEDS_ADMIN_MESSAGE' in R112, false)
+  assert.equal(R112.reviewApprovalMessage({ approved: 2, total: 5, counts: { rejected: 1, undecided: 2 } }), 'Approved 2 of 5. 1 rejected; 2 not decided yet.')
+  assert.equal(R112.reviewApprovalMessage({ approved: 0, total: 1, counts: { undecided: 1 } }), 'Nothing was approved: 1 not decided yet.')
+  assert.doesNotMatch(R112.reviewApprovalMessage({ approved: 1, total: 2, counts: { needsAdmin: 1 } as never }), /admin/)
 })

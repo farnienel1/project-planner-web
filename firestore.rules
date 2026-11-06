@@ -720,7 +720,9 @@ service cloud.firestore {
           request.method == 'delete' ? (invitationSentByCaller(resource.data) && invitationIsOperativeOnly(resource.data)) : (
             (request.method == 'update' && !next.diff(resource.data).affectedKeys().hasAny(['role', 'permissions',
                 'adminAccess', 'isSuperAdmin', 'manager', 'operatives', 'operativeMode']))
-              ? (invitationSentByCaller(resource.data) && invitationSentByCaller(next) && invitationIsOperativeOnly(resource.data))
+              ? (invitationSentByCaller(resource.data) && invitationSentByCaller(next) && invitationIsOperativeOnly(resource.data) &&
+                (resource.data.get('isUsed', false) != true ||
+                 !next.diff(resource.data).affectedKeys().hasAny(['assignedManagerUserId', 'assignedManagerUserIds', 'hasNoLineManager'])))
               : ((invitationIsOperativeOnly(next) && invitationSentByCaller(next)) ? (
                 request.method == 'create'
                   ? opsManagerEmailFree(invitationOrgId(), next.get('email', null))
@@ -905,6 +907,10 @@ service cloud.firestore {
         'updatedFrom'
       ]) ? (
         request.resource.data.get('hasNoLineManager', false) != true &&
+        (resource.data.get('passwordSet', false) != true ||
+         !request.resource.data.diff(resource.data).affectedKeys().hasAny(['assignedManagerUserId', 'assignedManagerUserIds', 'hasNoLineManager']) ||
+         (lineManagersUnchanged(request.resource.data, resource.data) &&
+          request.resource.data.get('hasNoLineManager', false) == resource.data.get('hasNoLineManager', false))) &&
         plainOperative(request.resource.data) &&
         writeMetadataValidWhenPresent()
       ) : false)
@@ -1222,17 +1228,15 @@ service cloud.firestore {
         return role == 'admin' || callerJobToggle(role, kind) || isPlatformOwner();
       }
 
-      function jobGetAllowed(kind) {
+      function jobGetAllowed() {
         let role = callerOrgRole(organizationId);
-        return role in ['operative', 'member'] ||
+        return role in ['admin', 'manager', 'operative', 'member'] ||
           (!enforcedReadsOn(organizationId) && (role != '' || canAccessOrganization(organizationId))) ||
-          (role == 'manager' && resource != null && jobListsCaller(resource.data)) ||
-          callerSeesEveryJob(role, kind);
+          isPlatformOwner();
       }
-      function jobListAllowed(kind) {
+      function jobListAllowed() {
         let role = callerOrgRole(organizationId);
-        return callerSeesEveryJob(role, kind) ||
-          (role == 'manager' && request.auth.uid in resource.data.get('managerUserIds', [])) ||
+        return role in ['admin', 'manager'] || isPlatformOwner() ||
           (!enforcedReadsOn(organizationId) && (role != '' || canAccessOrganization(organizationId)));
       }
       function jobCreateAllowed(kind) {
@@ -1251,38 +1255,31 @@ service cloud.firestore {
           jobListsCaller(resource.data)
         );
       }
-      function jobDocReadable(kind, jobId) {
-        let role = callerOrgRole(organizationId);
-        let path = /databases/(default)/documents/organizations/$(organizationId)/$(kind)/$(jobId);
-        return role in ['operative', 'member'] ||
-          (!enforcedReadsOn(organizationId) && (role != '' || canAccessOrganization(organizationId))) ||
-          (role == 'manager' && exists(path) && jobListsCaller(get(path).data)) ||
-          callerSeesEveryJob(role, kind);
-      }
+
 
       match /projects/{projectId} {
-        allow get: if jobGetAllowed('projects');
-        allow list: if jobListAllowed('projects');
+        allow get: if jobGetAllowed();
+        allow list: if jobListAllowed();
         allow create: if jobCreateAllowed('projects');
         allow update: if jobUpdateAllowed('projects');
         allow delete: if isOrganizationAdmin(organizationId);
 
         match /healthSafety/{documentId} {
-          allow read: if jobDocReadable('projects', projectId);
+          allow read: if jobGetAllowed();
           allow create, update: if canAccessOrganization(organizationId);
           allow delete: if isOrganizationAdmin(organizationId);
         }
       }
 
       match /smallWorks/{smallWorkId} {
-        allow get: if jobGetAllowed('smallWorks');
-        allow list: if jobListAllowed('smallWorks');
+        allow get: if jobGetAllowed();
+        allow list: if jobListAllowed();
         allow create: if jobCreateAllowed('smallWorks');
         allow update: if jobUpdateAllowed('smallWorks');
         allow delete: if isOrganizationAdmin(organizationId);
 
         match /healthSafety/{documentId} {
-          allow read: if jobDocReadable('smallWorks', smallWorkId);
+          allow read: if jobGetAllowed();
           allow create, update: if canAccessOrganization(organizationId);
           allow delete: if isOrganizationAdmin(organizationId);
         }
@@ -1370,7 +1367,7 @@ service cloud.firestore {
       }
       function callerManagesJobIn(kind, jobId) {
         return jobId is string && jobId.size() > 0 && !jobId.matches('.*/.*') && kind in ['projects', 'smallWorks'] && (
-          callerManagesJobInAt(kind, jobId) ||
+          jobListsCaller(get(/databases/(default)/documents/organizations/$(organizationId)/$(kind)/$(jobId)).data) ||
           (jobId != jobId.upper() && callerManagesJobInAt(kind, jobId.upper())) ||
           (jobId != jobId.lower() && callerManagesJobInAt(kind, jobId.lower()))
         );
@@ -1445,34 +1442,31 @@ service cloud.firestore {
       }
       function bookingReadAllowed(collection) {
         let role = callerOrgRole(organizationId);
-        return role == 'admin' ||
+        return role in ['admin', 'manager'] ||
           (!enforcedReadsOn(organizationId) && (role != '' || canAccessOrganization(organizationId))) ||
-          (role == 'manager' && resource.data.get('jobCollection', '') in ['projects', 'smallWorks'] &&
-            callerJobToggle(role, resource.data.get('jobCollection', ''))) ||
-          (collection == 'managerSiteBookings' && role == 'manager' && resource.data.userId == request.auth.uid) ||
           (collection == 'bookings' && role != '' && callerOwnsBookingId(resource.data.operativeId)) ||
-          (role == 'manager' && callerManagesJob(
-            collection == 'managerSiteBookings' ? resource.data.locationId : resource.data.projectId
-          )) ||
           isPlatformOwner();
       }
 
       match /deletedBookings/{bookingId} {
         allow read: if canAccessOrganization(organizationId);
         allow create: if request.auth != null &&
-          request.resource.data.keys().toSet() == ['bookingId', 'collection', 'deletedAt', 'deletedBy', 'deletedFrom'].toSet() &&
+          request.resource.data.keys().hasAll(['bookingId', 'collection', 'deletedAt', 'deletedBy', 'deletedFrom']) &&
+          request.resource.data.keys().hasOnly(['bookingId', 'collection', 'deletedAt', 'deletedBy', 'deletedFrom', 'overtimeRequestId']) &&
           request.resource.data.bookingId == bookingId &&
           request.resource.data.deletedBy == request.auth.uid &&
           request.resource.data.deletedAt == request.time &&
           request.resource.data.deletedFrom in ['web', 'ios', 'android'] &&
           request.resource.data.collection in ['bookings', 'managerSiteBookings', 'subcontractorBookings'] &&
-          bookingTombstoneAllowed(request.resource.data.collection, bookingId);
+          (request.resource.data.get('overtimeRequestId', '') == ''
+            ? bookingTombstoneAllowed(request.resource.data.collection, bookingId)
+            : (request.resource.data.collection == 'bookings' && !request.resource.data.overtimeRequestId.matches('.*/.*') &&
+              overtimeReturnDeletes(bookingId, request.resource.data.overtimeRequestId) &&
+              ((callerLineManagesUserOrRow(get(/databases/(default)/documents/organizations/$(organizationId)/bookings/$(bookingId)).data.get('operativeId', '')) &&
+                overtimeCallerIsStaffHere()) || isOrgAdminOrOwner(organizationId))));
         allow delete: if orgAdminEither(organizationId) || isPlatformOwner();
       }
 
-      function bookingPersonId(collection, data) {
-        return collection == 'managerSiteBookings' ? data.get('userId', '') : data.get('operativeId', '');
-      }
       function callerLineManagesUser(uid) {
         let path = /databases/(default)/documents/users/$(uid);
         return uid is string && uid.size() > 0 && !uid.matches('.*/.*') && uid != request.auth.uid &&
@@ -1496,7 +1490,8 @@ service cloud.firestore {
         let affected = request.resource.data.diff(resource.data).affectedKeys();
         return affected.hasOnly([
             'workStartTime', 'workEndTime', 'timeSlot', 'otMultiplierOverride', 'status', 'updatedAt', 'updatedBy', 'updatedFrom'
-          ]) ? (
+          ]) ? ((collection == 'bookings' ? callerLineManagesUserOrRow(resource.data.get('operativeId', ''))
+            : callerLineManagesUser(resource.data.get('userId', ''))) ? (
           (!('workStartTime' in affected) || (request.resource.data['workStartTime'] is string && request.resource.data['workStartTime'].size() <= 8)) &&
           (!('workEndTime' in affected) || (request.resource.data['workEndTime'] is string && request.resource.data['workEndTime'].size() <= 8)) &&
           (!('timeSlot' in affected) || request.resource.data.timeSlot in ['CUSTOM_HOURS', 'CUSTOM', 'FULL DAY', 'FULL_DAY', 'AM', 'PM']) &&
@@ -1504,8 +1499,33 @@ service cloud.firestore {
             request.resource.data.get('status', null) == 'Cancelled') &&
           overtimeMultiplierWriteValid() &&
           writeMetadataValidWhenPresent() &&
-          callerLineManagesUser(bookingPersonId(collection, resource.data)) &&
-          overtimeCallerIsStaffHere()) : false;
+          overtimeCallerIsStaffHere()) : false) : false;
+      }
+      function callerLineManagesRowPerson(personId) {
+        let email = string(get(/databases/(default)/documents/organizations/$(organizationId)/operatives/$(personId)).data.get('email', '')).lower();
+        return (email.size() > 0 && !email.matches('.*/.*'))
+          ? rowPersonLineManaged(get(/databases/(default)/documents/organizations/$(organizationId)/userEmails/$(email)).data.get('userId', ''))
+          : false;
+      }
+      function rowPersonLineManaged(uid) {
+        let u = get(/databases/(default)/documents/users/$(uid)).data;
+        let ids = u.get('assignedManagerUserIds', []);
+        return ((ids is list && ids.size() > 0) ? request.auth.uid in ids : u.get('assignedManagerUserId', '') == request.auth.uid)
+          ? (uid != request.auth.uid && u.get('hasNoLineManager', false) != true && homeOrgIs(u, organizationId)) : false;
+      }
+      function callerLineManagesUserOrRow(personId) {
+        return (personId is string && personId.size() > 0 && !personId.matches('.*/.*')) ? (
+          exists(/databases/(default)/documents/users/$(personId)) ? callerLineManagesUser(personId) : callerLineManagesRowPerson(personId)
+        ) : false;
+      }
+      function overtimeReturnDeletes(bookingId, requestId) {
+        let req = getAfter(/databases/(default)/documents/organizations/$(organizationId)/overtimeRequests/$(requestId)).data;
+        return req.get('status', '') == 'approved' && req.get('decidedBy', '') == request.auth.uid &&
+          req.get('deletedBookingIds', []).hasAny([bookingId]);
+      }
+      function overtimeReturnTombstoneNew(bookingId) {
+        let tomb = /databases/(default)/documents/organizations/$(organizationId)/deletedBookings/$(bookingId);
+        return existsAfter(tomb) && getAfter(tomb).data.get('overtimeRequestId', '') != '' && !exists(tomb);
       }
       function overtimeViewer(uid) {
         return canAccessOrganization(organizationId) &&
@@ -1537,7 +1557,8 @@ service cloud.firestore {
               request.resource.data.get('decidedBy', '') == request.auth.uid &&
               request.resource.data.status in ['approved', 'pending'] &&
               request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-                'status', 'decisions', 'decidedBy', 'decidedAt', 'appliedBookingIds', 'droppedBookingIds', 'updatedAt', 'updatedBy', 'updatedFrom'
+                'status', 'decisions', 'decidedBy', 'decidedAt', 'appliedBookingIds', 'droppedBookingIds', 'staleBookingIds', 'deletedBookingIds',
+                'updatedAt', 'updatedBy', 'updatedFrom'
               ])) ? (isOrgAdminOrOwner(organizationId) || callerLineManagesUser(resource.data.userId)) : false)
           )));
       }
@@ -1551,7 +1572,7 @@ service cloud.firestore {
           reviewId == request.resource.data.userId + '_' + request.resource.data.bookingId &&
           request.resource.data.reviewedBy == request.auth.uid &&
           request.resource.data.collection in ['bookings', 'managerSiteBookings'] &&
-          request.resource.data.decision in ['approved', 'edited', 'trimmed', 'cancelled'] &&
+          request.resource.data.decision in ['approved', 'edited', 'trimmed', 'cancelled', 'changed', 'declined', 'deleted'] &&
           writeMetadataValidWhenPresent() && (
             request.resource.data.userId == request.auth.uid
               ? overtimeOwnBookingEditable(request.resource.data.collection, request.resource.data.bookingId)
@@ -1604,10 +1625,11 @@ service cloud.firestore {
           (adminLikeUser(d) || (!isOperativeProfile(d) && (staffFlag(d, 'manager') || d.get('role', '') == 'manager')));
       }
       function priceWorkItemValid(data) {
-        return data.keys().hasOnly(['userId', 'title', 'details', 'jobNumber', 'startDate', 'endDate', 'approvedByUserId', 'approvedByName', 'amount', 'currency', 'evidence', 'createdBy', 'createdAt', 'updatedAt', 'updatedBy', 'updatedFrom']) &&
+        return data.keys().hasOnly(['userId', 'personUserId', 'title', 'details', 'jobNumber', 'startDate', 'endDate', 'approvedByUserId', 'approvedByName', 'amount', 'currency', 'evidence', 'createdBy', 'createdAt', 'updatedAt', 'updatedBy', 'updatedFrom']) &&
           data.keys().hasAll(['userId', 'title', 'startDate', 'endDate', 'approvedByUserId', 'amount', 'evidence']) &&
           (data.userId == request.auth.uid &&
           data.get('createdBy', request.auth.uid) == request.auth.uid &&
+          data.get('personUserId', request.auth.uid) == request.auth.uid &&
           payeClaimText(data, 'title', 1, 200) &&
           payeClaimText(data, 'details', 0, 4000) &&
           payeClaimText(data, 'currency', 0, 3) &&
@@ -1620,10 +1642,11 @@ service cloud.firestore {
           priceWorkApproverValid(data.approvedByUserId);
       }
       function expenseItemValid(data) {
-        return data.keys().hasOnly(['userId', 'title', 'details', 'jobNumber', 'date', 'amount', 'currency', 'evidence', 'createdBy', 'createdAt', 'updatedAt', 'updatedBy', 'updatedFrom']) &&
+        return data.keys().hasOnly(['userId', 'personUserId', 'title', 'details', 'jobNumber', 'date', 'amount', 'currency', 'evidence', 'createdBy', 'createdAt', 'updatedAt', 'updatedBy', 'updatedFrom']) &&
           data.keys().hasAll(['userId', 'title', 'date', 'amount', 'evidence']) &&
           (data.userId == request.auth.uid &&
           data.get('createdBy', request.auth.uid) == request.auth.uid &&
+          data.get('personUserId', request.auth.uid) == request.auth.uid &&
           payeClaimText(data, 'title', 1, 200) &&
           payeClaimText(data, 'details', 0, 4000) &&
           payeClaimText(data, 'currency', 0, 3) &&
@@ -1639,7 +1662,8 @@ service cloud.firestore {
       }
 
       match /priceWorkItems/{itemId} {
-        allow read: if overtimeViewer(resource.data.get('userId', ''));
+        allow read: if overtimeViewer(resource.data.get('userId', '')) ||
+          (canAccessOrganization(organizationId) && callerLineManagesUser(resource.data.get('personUserId', '')));
         allow create: if payeClaimOwnerWriter(request.resource.data.get('userId', '')) &&
           payeClaimText(request.resource.data, 'jobNumber', 1, 60) &&
           priceWorkItemValid(request.resource.data);
@@ -1651,7 +1675,8 @@ service cloud.firestore {
       }
 
       match /expenseItems/{itemId} {
-        allow read: if overtimeViewer(resource.data.get('userId', ''));
+        allow read: if overtimeViewer(resource.data.get('userId', '')) ||
+          (canAccessOrganization(organizationId) && callerLineManagesUser(resource.data.get('personUserId', '')));
         allow create: if payeClaimOwnerWriter(request.resource.data.get('userId', '')) && expenseItemValid(request.resource.data);
         allow update: if payeClaimOwnerWriter(resource.data.get('userId', '')) &&
           request.resource.data.userId == resource.data.userId &&
@@ -1669,17 +1694,23 @@ service cloud.firestore {
       }
       function claimReviewWriteValid(d) {
         let item = /databases/(default)/documents/organizations/$(organizationId)/$(d.kind == 'expense' ? 'expenseItems' : 'priceWorkItems')/$(d.itemId);
-        return d.keys().hasOnly(['userId', 'itemId', 'kind', 'decision', 'fingerprint', 'reviewedBy', 'reviewedAt', 'updatedAt', 'updatedBy', 'updatedFrom']) &&
-          d.kind in ['priceWork', 'expense'] && d.itemId is string && d.userId is string &&
-          (resource == null || (resource.data.userId == d.userId && resource.data.itemId == d.itemId && resource.data.kind == d.kind)) &&
+        let person = d.get('personUserId', d.userId);
+        return d.keys().hasOnly(['userId', 'personUserId', 'itemId', 'kind', 'decision', 'fingerprint', 'reviewedBy', 'reviewedAt', 'updatedAt', 'updatedBy', 'updatedFrom']) &&
+          d.kind in ['priceWork', 'expense'] && d.itemId is string && d.userId is string && person is string &&
+          (resource == null || (resource.data.userId == d.userId && resource.data.itemId == d.itemId && resource.data.kind == d.kind &&
+            resource.data.get('personUserId', '') == d.get('personUserId', ''))) &&
           d.decision in ['approved', 'rejected'] && d.fingerprint is string && d.reviewedBy == request.auth.uid &&
           writeMetadataValidWhenPresent()
           ? (exists(item) && get(item).data.get('userId', '') == d.userId && !claimReviewSubjectIsCaller(d.userId) &&
-            (isOrgAdminOrOwner(organizationId) || callerLineManagesUser(d.userId)))
+            (person == d.userId || !claimReviewSubjectIsCaller(person)) &&
+            (isOrgAdminOrOwner(organizationId) || (callerLineManagesUser(person) && (person == d.userId ||
+              get(/databases/(default)/documents/users/$(person)).data.get('formerUserIds', []).hasAny([d.userId]) ||
+              get(/databases/(default)/documents/users/$(person)).data.get('sameEmailUserIds', []).hasAny([d.userId])))))
           : false;
       }
       match /payeClaimReviews/{reviewId} {
-        allow read: if overtimeViewer(resource.data.get('userId', ''));
+        allow read: if overtimeViewer(resource.data.get('userId', '')) ||
+          (canAccessOrganization(organizationId) && callerLineManagesUser(resource.data.get('personUserId', '')));
         allow create, update: if canAccessOrganization(organizationId) &&
           reviewId == request.resource.data.get('kind', '') + '_' + request.resource.data.get('itemId', '') &&
           claimReviewWriteValid(request.resource.data);
@@ -1719,10 +1750,12 @@ service cloud.firestore {
 
       match /bookings/{bookingId} {
         allow read: if bookingReadAllowed('bookings');
-        allow create, update, delete: if (request.method == 'delete'
-            ? operativesManagerRemovesOrphanBooking(resource.data)
-            : (request.method == 'update' && !bookingTombstoned(bookingId) && overtimeLineManagerBookingUpdate('bookings'))) ||
-          ((request.method == 'delete' || !bookingTombstoned(bookingId)) && bookingWriteAllowed('bookings', request.method));
+        allow update: if !bookingTombstoned(bookingId) && overtimeLineManagerBookingUpdate('bookings');
+        allow create, update, delete: if request.method == 'delete' && overtimeReturnTombstoneNew(bookingId)
+          ? getAfter(/databases/(default)/documents/organizations/$(organizationId)/deletedBookings/$(bookingId)).data.deletedBy == request.auth.uid
+          : ((request.method == 'delete' || !bookingTombstoned(bookingId)) && (
+            (request.method == 'delete' && operativesManagerRemovesOrphanBooking(resource.data)) ||
+            bookingWriteAllowed('bookings', request.method)));
       }
 
       match /qualifications/{qualificationId} {
@@ -1978,7 +2011,7 @@ service cloud.firestore {
 
       match /materialCatalogue/{catalogueItemId} {
         allow read: if canAccessOrganization(organizationId);
-        allow create, update, delete: if isOrgManagerOrAdmin(organizationId);
+        allow create, update, delete: if isOrgAdminOrOwner(organizationId);
       }
 
       match /materialSendRecords/{recordId} {
@@ -2009,9 +2042,9 @@ service cloud.firestore {
 
       match /managerSiteBookings/{bookingId} {
         allow read: if bookingReadAllowed('managerSiteBookings');
-        allow create, update, delete: if (request.method == 'update' && !bookingTombstoned(bookingId) &&
-            overtimeLineManagerBookingUpdate('managerSiteBookings')) ||
-          ((request.method == 'delete' || !bookingTombstoned(bookingId)) && bookingWriteAllowed('managerSiteBookings', request.method));
+        allow create, update, delete: if (request.method == 'delete' || !bookingTombstoned(bookingId)) && (
+          (request.method == 'update' && overtimeLineManagerBookingUpdate('managerSiteBookings')) ||
+          bookingWriteAllowed('managerSiteBookings', request.method));
       }
 
       match /subcontractors/{subcontractorId} {
@@ -2377,6 +2410,15 @@ service cloud.firestore {
           request.resource.data.reviewedAt == request.time;
       }
 
+      match /worksListPicks/{pickUserId} {
+        allow get, delete: if request.auth.uid == pickUserId && canAccessOrganization(organizationId);
+        allow create, update: if request.auth.uid == pickUserId && canAccessOrganization(organizationId) &&
+          request.resource.data.keys().hasOnly(['projects', 'smallWorks', 'updatedAt']) &&
+          request.resource.data.get('projects', []) is list && request.resource.data.get('projects', []).size() <= 500 &&
+          request.resource.data.get('smallWorks', []) is list && request.resource.data.get('smallWorks', []).size() <= 500 &&
+          request.resource.data.get('updatedAt', null) == request.time;
+      }
+
       match /dashboardLayouts/{layoutUserId} {
         allow read: if canAccessOrganization(organizationId);
         allow create, update, delete: if canAccessOrganization(organizationId) &&
@@ -2409,7 +2451,7 @@ service cloud.firestore {
           !(collection in ['projects', 'smallWorks', 'bookings', 'managerSiteBookings', 'subcontractorBookings']) &&
           !(collection in ['payProfiles', 'operativeDayRateHistory', 'operativeProfiles', 'settings']) &&
           !(collection in ['overtimeRequests', 'overtimeReviews', 'overtimeReports']) &&
-          !(collection in ['priceWorkItems', 'expenseItems', 'payeClaimReports', 'payeClaimReviews', 'personalSiteAudits']);
+          !(collection in ['priceWorkItems', 'expenseItems', 'payeClaimReports', 'payeClaimReviews', 'personalSiteAudits', 'worksListPicks']);
       }
     }
 

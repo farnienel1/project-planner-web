@@ -137,7 +137,39 @@ export function listenPersonPayeClaims(
       }
     )
   )
+  // 1.33.0: items stamped with the person's current users id (`personUserId`, written on create and by the backfill),
+  // the query the read rules allow the line manager for an item filed under another of the person's ids.
+  const personUserId = ids[0]
+  if (personUserId) {
+    const key = `personUserId:${personUserId}`
+    ids.push(key)
+    stops.push(
+      onSnapshot(
+        query(collection(db, 'organizations', organizationId, COLLECTION[kind]), where('personUserId', '==', personUserId)),
+        (snap) => {
+          byId.set(
+            key,
+            snap.docs.map((row) =>
+              kind === 'priceWork'
+                ? parsePriceWorkDocument(row.id, row.data(), { timeZone, organizationId })
+                : parseExpenseDocument(row.id, row.data(), { timeZone, organizationId })
+            )
+          )
+          emit()
+        },
+        () => {
+          byId.set(key, [])
+          emit()
+        }
+      )
+    )
+  }
   return () => stops.forEach((stop) => stop())
+}
+
+function dedupeReviews(rows: PayeClaimReviewRecord[]): PayeClaimReviewRecord[] {
+  const seen = new Set<string>()
+  return rows.filter((row) => (seen.has(row.id) ? false : (seen.add(row.id), true)))
 }
 
 /** Rulebook 1.32.0 §26: live reviews of one person's price work and expenses (every id they go by; refusals left out). */
@@ -148,16 +180,21 @@ export function listenPayeClaimReviews(
 ): Unsubscribe {
   const ids = Array.from(new Set(userIds.filter(Boolean)))
   const byId = new Map<string, PayeClaimReviewRecord[]>()
-  const stops = ids.map((id) =>
+  // 1.33.0: a review of an item filed under another of the person's ids carries `personUserId` (the person's users id);
+  // the line manager reads those through that field, so it is one more query beside the `userId` ones.
+  const queries = ids.map((id) => ({ key: id, field: 'userId' }))
+  if (ids[0]) queries.push({ key: `personUserId:${ids[0]}`, field: 'personUserId' })
+  const keys = queries.map((row) => row.key)
+  const stops = queries.map(({ key: id, field }) =>
     onSnapshot(
-      query(collection(db, 'organizations', organizationId, PAYE_CLAIM_REVIEWS_COLLECTION), where('userId', '==', id)),
+      query(collection(db, 'organizations', organizationId, PAYE_CLAIM_REVIEWS_COLLECTION), where(field, '==', field === 'userId' ? id : ids[0])),
       (snap) => {
         byId.set(id, snap.docs.map((row) => parsePayeClaimReviewDocument(row.id, row.data())))
-        onChange(ids.flatMap((key) => byId.get(key) ?? []))
+        onChange(dedupeReviews(keys.flatMap((key) => byId.get(key) ?? [])))
       },
       () => {
         byId.set(id, [])
-        onChange(ids.flatMap((key) => byId.get(key) ?? []))
+        onChange(dedupeReviews(keys.flatMap((key) => byId.get(key) ?? [])))
       }
     )
   )

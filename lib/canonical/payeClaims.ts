@@ -107,6 +107,12 @@ export type PayeClaimBase = {
   evidence: PayeClaimEvidence[]
   createdAtMs: number | null
   createdBy: string
+  /**
+   * 1.33.0: the person's current users id (`payeClaimPersonFields`): written on create (= the creator) and by
+   * `scripts/backfill-paye-claim-person-user-id.mjs` on older items, so the security rules let the person's line manager
+   * read an item filed under another of their ids. Null when not stored.
+   */
+  personUserId?: string | null
 }
 
 export type PriceWorkItem = PayeClaimBase & {
@@ -414,6 +420,40 @@ export function expenseValidationError(
 // MARK: - Write fields
 
 /**
+ * 1.33.0 (line manager can always review, owner 6 Nov): the person field every new `priceWorkItems` / `expenseItems`
+ * document carries — `personUserId`, the creator's current users id (the same as `userId` on a create; the rules
+ * require it to be the signed-in account). The person's line manager reads items through it, so an item still filed
+ * under a former id is readable once `payeClaimPersonUserIdBackfill` has stamped it.
+ */
+export function payeClaimPersonFields(creatorUserId: unknown): { personUserId: string } | Record<string, never> {
+  const id = text(creatorUserId)
+  return id ? { personUserId: id } : {}
+}
+
+/**
+ * 1.33.0: the `personUserId` an item stored before 1.33.0 should get (the backfill script; dry run by default). The
+ * users document whose id is the item's `userId`, else the one listing it in `formerUserIds` or `sameEmailUserIds`
+ * (without case). Null when the item already has one, nobody matches, or more than one users document claims the id
+ * (left for an admin to sort out, never guessed).
+ */
+export function payeClaimPersonUserIdBackfill(input: {
+  item: { userId?: unknown; personUserId?: unknown } | null | undefined
+  users: ReadonlyArray<{ id?: unknown; formerUserIds?: unknown; sameEmailUserIds?: unknown }> | null | undefined
+}): { personUserId: string } | null {
+  const item = input.item
+  if (!item || text(item.personUserId)) return null
+  const key = idKey(item.userId)
+  if (!key) return null
+  const users = (input.users || []).filter((row) => row && text(row.id))
+  const own = users.find((row) => idKey(row.id) === key)
+  if (own) return { personUserId: text(own.id) }
+  const listed = (value: unknown) => (Array.isArray(value) ? value.some((id) => idKey(id) === key) : false)
+  const claims = users.filter((row) => listed(row.formerUserIds) || listed(row.sameEmailUserIds))
+  const ids = Array.from(new Set(claims.map((row) => text(row.id))))
+  return ids.length === 1 ? { personUserId: ids[0] } : null
+}
+
+/**
  * The fields of a new `priceWorkItems/{id}` document (a create; the app adds `createdAt` as server time and the write
  * metadata). The approver's name is stored beside the id so the report names them even after they leave. Null when
  * `priceWorkValidationError` refuses the draft.
@@ -445,6 +485,7 @@ export function priceWorkWriteFields(input: {
     currency: normalizeCurrencyCode(input.currency) ?? 'GBP',
     evidence: (input.draft.evidence || []).map(payeClaimEvidenceWriteFields),
     createdBy: userId,
+    ...payeClaimPersonFields(userId),
   }
 }
 
@@ -472,6 +513,7 @@ export function expenseWriteFields(input: {
     currency: normalizeCurrencyCode(input.currency) ?? 'GBP',
     evidence: (input.draft.evidence || []).map(payeClaimEvidenceWriteFields),
     createdBy: userId,
+    ...payeClaimPersonFields(userId),
   }
 }
 
@@ -488,6 +530,7 @@ function baseOf(docId: string, row: Record<string, unknown>, organizationId?: st
     evidence: parsePayeClaimEvidence(row.evidence, { userId: row.userId, organizationId }),
     createdAtMs: documentInstantMs(row.createdAt),
     createdBy: text(row.createdBy),
+    personUserId: text(row.personUserId) || null,
   }
 }
 

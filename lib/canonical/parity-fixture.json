@@ -22672,7 +22672,8 @@
             "contentType": "image/jpeg"
           }
         ],
-        "createdBy": "sam"
+        "createdBy": "sam",
+        "personUserId": "sam"
       }
     },
     {
@@ -22801,7 +22802,8 @@
             "contentType": "image/jpeg"
           }
         ],
-        "createdBy": "sam"
+        "createdBy": "sam",
+        "personUserId": "sam"
       }
     },
     {
@@ -22846,6 +22848,7 @@
         ],
         "createdAtMs": null,
         "createdBy": "",
+        "personUserId": null,
         "kind": "expense",
         "jobNumber": "",
         "date": "2026-11-04"
@@ -22876,6 +22879,7 @@
         "evidence": [],
         "createdAtMs": null,
         "createdBy": "",
+        "personUserId": null,
         "kind": "priceWork",
         "jobNumber": "",
         "startDate": "2026-11-24",
@@ -23294,6 +23298,7 @@
         "evidence": [],
         "createdAtMs": null,
         "createdBy": "",
+        "personUserId": null,
         "kind": "priceWork",
         "jobNumber": "J-7",
         "startDate": "2026-11-03",

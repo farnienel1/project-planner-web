@@ -18,7 +18,6 @@
  * A review informs the person's accounts team; the report (`payeClaimReportReady`) does not wait for it.
  */
 
-import { reviewApprovalMessage } from './payeOvertime'
 import { isAdminOutsideOperativeMode, lineManagerIds, type LeaveSelfBookUser } from './leaveRequests'
 import { idKey, idText, personIdSet } from './personIds'
 import type { NotificationRosterMember } from './notificationRecipients'
@@ -71,6 +70,27 @@ function instantMs(raw: unknown): number | null {
     return Number.isNaN(ms) ? null : ms
   }
   return null
+}
+
+
+/**
+ * The review message price work and expenses use (§26): "Approved 2 of 5. 1 rejected; 1 not decided yet.", or with
+ * nothing approved "Nothing was approved: …". 1.33.0: moved here from `payeOvertime.ts` (overtime uses
+ * `overtimeReturnMessage`); there is no "need an admin" any more.
+ */
+export function reviewApprovalMessage(input: {
+  approved: number
+  total: number
+  counts?: Partial<Record<'rejected' | 'undecided', number>> | null
+}): string {
+  const counts = input.counts || {}
+  const phrase = (n: number | undefined, one: string, many: string) => (n && n > 0 ? `${n} ${n === 1 ? one : many}` : '')
+  const reasons = [
+    phrase(counts.rejected, 'rejected', 'rejected'),
+    phrase(counts.undecided, 'not decided yet', 'not decided yet'),
+  ].filter(Boolean)
+  if (input.approved <= 0) return `Nothing was approved${reasons.length > 0 ? `: ${reasons.join('; ')}` : ''}.`
+  return `Approved ${input.approved} of ${input.total}.${reasons.length > 0 ? ` ${reasons.join('; ')}.` : ''}`
 }
 
 /** `{kind}_{itemId}` as stored. */

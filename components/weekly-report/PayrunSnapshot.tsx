@@ -22,8 +22,10 @@ import {
   type PayrunSnapshotTone,
 } from '@/lib/canonical'
 import { dayKeyInZone } from '@/lib/orgTime/zoneTime'
+import { overtimeBookingInputs } from '@/lib/overtime/overtimeData'
 import { loadPayrunSnapshotInputs, payrunSnapshotHref, payrunSnapshotRowsFor } from '@/lib/weekly-report/payrunSnapshotData'
-import type { User } from '@/types'
+import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
+import type { Booking, Operative, Project, User } from '@/types'
 
 const TONE_HUE: Record<PayrunSnapshotTone, string | undefined> = {
   neutral: undefined,
@@ -54,12 +56,23 @@ export function PayrunSnapshot({
   organization,
   users,
   timeZone,
+  bookings,
+  managerSiteBookings,
+  projects,
+  smallWorks,
+  operatives,
 }: {
   organizationId: string
   /** The organisation document (PAYE payday history and invoicing settings). */
   organization: unknown
   users: User[]
   timeZone: string
+  /** 1.33.0: every booking (the weekly report loads full history), for the overtime reports' out-of-date check. */
+  bookings: Booking[]
+  managerSiteBookings: ManagerSiteBooking[]
+  projects: Project[]
+  smallWorks: Project[]
+  operatives: Operative[]
 }) {
   const todayKey = dayKeyInZone(new Date(), timeZone)
   const periods = useMemo(() => payrunSnapshotPeriods({ organization, todayKey, timeZone }), [organization, todayKey, timeZone])
@@ -86,9 +99,17 @@ export function PayrunSnapshot({
   }, [organizationId, users, timeZone])
 
   const period = kind === 'paye' ? periods.paye : kind === 'paymentRun' ? periods.paymentRun : payrunSnapshotCustomPeriod(customStart, customEnd)
+  const overtimeBookings = useMemo(
+    () => overtimeBookingInputs({ bookings, managerSiteBookings, projects, smallWorks, timeZone }),
+    [bookings, managerSiteBookings, projects, smallWorks, timeZone]
+  )
+  const operativeRows = useMemo(() => operatives.map((row) => ({ id: row.id, email: row.email ?? null })), [operatives])
   const rows = useMemo(
-    () => (loaded && period ? payrunSnapshotRowsFor({ loaded, users, organization, period, timeZone }) : []),
-    [loaded, period?.start, period?.end, users, organization, timeZone] // eslint-disable-line react-hooks/exhaustive-deps
+    () =>
+      loaded && period
+        ? payrunSnapshotRowsFor({ loaded, users, organization, period, timeZone, bookings: overtimeBookings, operatives: operativeRows })
+        : [],
+    [loaded, period?.start, period?.end, users, organization, timeZone, overtimeBookings, operativeRows] // eslint-disable-line react-hooks/exhaustive-deps
   )
 
   const choice = (value: PayrunSnapshotPeriodKind, disabled: boolean, sub: string | null) => (

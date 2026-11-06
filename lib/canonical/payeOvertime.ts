@@ -88,11 +88,6 @@ export const OVERTIME_GENERATE_SAVED_MESSAGE = 'A report for this range is alrea
 export const OVERTIME_REPORT_OUT_OF_DATE_LABEL = 'Out of date'
 /** 1.32.0: the one review button under the lines (Price work / Expenses, §26). Overtime uses `OVERTIME_RETURN_LABEL` from 1.33.0. */
 export const OVERTIME_APPROVE_LABEL = 'Approve'
-/**
- * @deprecated 1.33.0 (owner 6 Nov): a line manager decides every line of their report under any of the person's ids
- * (`overtimeDeciderMayWriteBooking`). Kept only while §26 claims still read it.
- */
-export const OVERTIME_NEEDS_ADMIN_LABEL = 'Needs an admin'
 export const OVERTIME_CHANGED_SINCE_REQUEST_LINE_MESSAGE = 'Changed since they sent it — it goes back to them to send again.'
 export const OVERTIME_BOOKING_UNREADABLE_MESSAGE = "Can't read this booking — it is left out of this Return."
 export const OVERTIME_NOT_THEIR_BOOKING_MESSAGE = 'This booking is not theirs — it is left out.'
@@ -1250,31 +1245,6 @@ export function overtimeLineOutcomeLabel(outcome: OvertimeLineOutcome | string |
     default:
       return null
   }
-}
-
-/**
- * 1.32.0, the review message price work and expenses use (§26): "Approved 2 of 5. 2 need an admin; 1 not decided
- * yet." Overtime uses `overtimeReturnMessage` from 1.33.0.
- */
-export function reviewApprovalMessage(input: {
-  approved: number
-  total: number
-  counts?: Partial<Record<'needsAdmin' | 'undecided' | 'stale' | 'refused' | 'deleted' | 'unreadable' | 'foreign' | 'rejected', number>> | null
-}): string {
-  const counts = input.counts || {}
-  const phrase = (n: number | undefined, one: string, many: string) => (n && n > 0 ? `${n} ${n === 1 ? one : many}` : '')
-  const reasons = [
-    phrase(counts.rejected, 'rejected', 'rejected'),
-    phrase(counts.needsAdmin, 'needs an admin', 'need an admin'),
-    phrase(counts.stale, 'changed since the request', 'changed since the request'),
-    phrase(counts.refused, 'could not be removed', 'could not be removed'),
-    phrase(counts.deleted, 'deleted booking left out', 'deleted bookings left out'),
-    phrase(counts.unreadable, "booking you can't read left out", "bookings you can't read left out"),
-    phrase(counts.foreign, 'booking not theirs left out', 'bookings not theirs left out'),
-    phrase(counts.undecided, 'not decided yet', 'not decided yet'),
-  ].filter(Boolean)
-  if (input.approved <= 0) return `Nothing was approved${reasons.length > 0 ? `: ${reasons.join('; ')}` : ''}.`
-  return `Approved ${input.approved} of ${input.total}.${reasons.length > 0 ? ` ${reasons.join('; ')}.` : ''}`
 }
 
 /**

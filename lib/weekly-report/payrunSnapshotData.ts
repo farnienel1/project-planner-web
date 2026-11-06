@@ -10,16 +10,19 @@ import {
   EXPENSE_ITEMS_COLLECTION,
   OVERTIME_REPORTS_COLLECTION,
   OVERTIME_REQUESTS_COLLECTION,
+  OVERTIME_REVIEWS_COLLECTION,
   PAYE_CLAIM_REPORTS_COLLECTION,
   PRICE_WORK_ITEMS_COLLECTION,
   parseExpenseDocument,
   parseOvertimeReportDocument,
   parseOvertimeRequestDocument,
+  parseOvertimeReviewDocument,
   parsePayeClaimReportDocument,
   parsePayrunSnapshotSheet,
   parsePriceWorkDocument,
   payrunSnapshotRows,
   type ExpenseItem,
+  type OvertimeBookingInput,
   type PayrunSnapshotInput,
   type PayrunSnapshotLink,
   type PayrunSnapshotPerson,
@@ -47,7 +50,7 @@ export function payrunSnapshotPerson(user: User, users: ReadonlyArray<User>): Pa
   } as PayrunSnapshotPerson
 }
 
-type Loaded = Omit<PayrunSnapshotInput, 'roster' | 'organization' | 'period' | 'timeZone'>
+type Loaded = Omit<PayrunSnapshotInput, 'roster' | 'organization' | 'period' | 'timeZone' | 'bookings' | 'operatives'>
 
 async function readAll<T>(organizationId: string, name: string, parse: (id: string, data: Record<string, unknown>) => T): Promise<T[]> {
   const snap = await getDocs(collection(db, 'organizations', organizationId, name))
@@ -72,21 +75,23 @@ async function readSheets(organizationId: string, userIds: ReadonlyArray<string>
 
 /**
  * Reads everything the Snapshot needs once (the period changes only filter it): every overtime request and report,
- * every claim report, price work and expense item of the company, and the timesheets of everyone on the roster.
+ * every overtime review (1.33.0: a report's out-of-date check reads its range's live lines), every claim report, price
+ * work and expense item of the company, and the timesheets of everyone on the roster. The bookings come from the
+ * caller (the weekly report already holds every booking, `fullHistory`).
  */
 export async function loadPayrunSnapshotInputs(input: { organizationId: string; users: ReadonlyArray<User>; timeZone: string }): Promise<Loaded> {
   const { organizationId, timeZone } = input
   const ids = input.users.flatMap((user) => [user.id, ...(user.formerUserIds ?? [])])
-  const [sheets, overtimeRequests, overtimeReports, payeClaimReports, priceWork, expenses] = await Promise.all([
+  const [sheets, overtimeRequests, overtimeReviews, overtimeReports, payeClaimReports, priceWork, expenses] = await Promise.all([
     readSheets(organizationId, ids, timeZone),
     readAll(organizationId, OVERTIME_REQUESTS_COLLECTION, parseOvertimeRequestDocument),
-    // The 1.33.0 out-of-date mark is read by `parseOvertimeReportDocument` once the overtime flow stores it.
+    readAll(organizationId, OVERTIME_REVIEWS_COLLECTION, parseOvertimeReviewDocument),
     readAll(organizationId, OVERTIME_REPORTS_COLLECTION, parseOvertimeReportDocument),
     readAll(organizationId, PAYE_CLAIM_REPORTS_COLLECTION, parsePayeClaimReportDocument),
     readAll<PriceWorkItem>(organizationId, PRICE_WORK_ITEMS_COLLECTION, (id, data) => parsePriceWorkDocument(id, data, { timeZone, organizationId }) as PriceWorkItem),
     readAll<ExpenseItem>(organizationId, EXPENSE_ITEMS_COLLECTION, (id, data) => parseExpenseDocument(id, data, { timeZone, organizationId }) as ExpenseItem),
   ])
-  return { sheets, overtimeRequests, overtimeReports, payeClaimReports, priceWork, expenses }
+  return { sheets, overtimeRequests, overtimeReviews, overtimeReports, payeClaimReports, priceWork, expenses }
 }
 
 /** The rows for one period (`payrunSnapshotRows`). */
@@ -96,6 +101,9 @@ export function payrunSnapshotRowsFor(input: {
   organization: unknown
   period: { start: string; end: string }
   timeZone: string
+  /** Every booking of the company as overtime inputs (`overtimeBookingInputs`), for the reports' out-of-date check. */
+  bookings: ReadonlyArray<OvertimeBookingInput> | null
+  operatives: ReadonlyArray<{ id: string; email?: string | null }>
 }): PayrunSnapshotRow[] {
   const list = input.users.filter((user) => user && user.id)
   return payrunSnapshotRows({
@@ -104,6 +112,8 @@ export function payrunSnapshotRowsFor(input: {
     organization: input.organization,
     period: input.period,
     timeZone: input.timeZone,
+    bookings: input.bookings,
+    operatives: input.operatives,
   })
 }
 
