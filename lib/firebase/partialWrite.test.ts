@@ -26,3 +26,51 @@ test('changeBase: a booking edit writes only the fields the edit changed', () =>
   assert.equal(write.set.status, 'Cancelled')
   assert.equal('notes' in write.set, false)
 })
+
+test('createWritePayload: a new manager site booking carries no deleteField (bug 6 Nov: admin booking themself)', async () => {
+  const { deleteField, serverTimestamp } = await import('firebase/firestore')
+  const { serializeManagerSiteBooking, serializeBooking } = await import('../ios-parity/converters.ts')
+  const { createWritePayload } = await import('./partialWrite.ts')
+  const isDelete = (v: unknown) => !!v && typeof v === 'object' && (v as { _methodName?: string })._methodName === 'deleteField'
+  const now = new Date('2026-11-06T09:00:00Z')
+  // A project booking for the admin themself: no custom place name, no clock times, no booking group.
+  const managerPayload = serializeManagerSiteBooking({
+    id: 'B33C0E70-8C0B-472D-8FC6-267002FAC471',
+    userId: 'admin-1',
+    date: now,
+    timeSlot: 'FULL DAY',
+    locationType: 'project',
+    locationId: 'job-1',
+    isBreakRemoved: false,
+    createdAt: now,
+    updatedAt: now,
+    organizationId: 'org-1',
+  } as Parameters<typeof serializeManagerSiteBooking>[0])
+  assert.ok(Object.values(managerPayload).some(isDelete), 'the serializer marks empty fields for removal (edit path)')
+  const create = createWritePayload({ ...managerPayload, updatedAt: serverTimestamp() })
+  assert.equal(Object.values(create).some(isDelete), false)
+  assert.equal('customLocationName' in create, false)
+  assert.equal(create.locationId, 'job-1')
+  assert.equal((create.updatedAt as { _methodName?: string })._methodName, 'serverTimestamp')
+  // Labour booking creates use the same helper: removal markers left out, everything else kept.
+  const labour = createWritePayload({ projectId: 'job-1', workStartTime: deleteField(), bookingGroupId: deleteField(), status: 'Confirmed' })
+  assert.deepEqual(Object.keys(labour), ['projectId', 'status'])
+  assert.ok(isDelete(deleteField()))
+})
+
+test('createWritePayload: an invited admin with "No line manager" carries no deleteField (Add User placeholder)', async () => {
+  const { buildInvitedUserPayload } = await import('./userPayload.ts')
+  const { addUserPermissionDefaults } = await import('../canonical/permissionLevels.ts')
+  const { createWritePayload } = await import('./partialWrite.ts')
+  const isDelete = (v: unknown) => !!v && typeof v === 'object' && (v as { _methodName?: string })._methodName === 'deleteField'
+  const payload = buildInvitedUserPayload({
+    userId: 'NEW-1', email: 'admin2@example.com', organizationId: 'org-1', firstName: 'A', surname: 'Dmin',
+    permissions: { ...addUserPermissionDefaults('admin'), manager: true } as never,
+    hasNoLineManager: true,
+  })
+  assert.ok(Object.values(payload).some(isDelete), 'the builder marks the line manager ids for removal')
+  const create = createWritePayload(payload)
+  assert.equal(Object.values(create).some(isDelete), false)
+  assert.equal('assignedManagerUserIds' in create, false)
+  assert.equal(create.email, 'admin2@example.com')
+})
