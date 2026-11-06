@@ -127,7 +127,8 @@ test('ghostCreateWrites: the exact users document; no email, phone, hasNoLineMan
   assert.equal(f.dayRate, 150)
   assert.equal(f.firstName, 'Gus')
   assert.equal(f.tradeTypePreset, 'Labourer')
-  for (const key of ['email', 'mobileNumber', 'hasNoLineManager', 'formerUserIds', 'sameEmailUserIds', 'hourlyRate']) {
+  assert.equal(f.email, '')
+  for (const key of ['mobileNumber', 'hasNoLineManager', 'formerUserIds', 'sameEmailUserIds', 'hourlyRate']) {
     assert.equal(key in f, false, key)
   }
   for (const key of ['adminAccess', 'manager', 'operatives', 'isSuperAdmin', 'annualLeaveSelfBook', 'timesheetSelfSign']) {
@@ -373,7 +374,7 @@ test('Conversion: no-login operatives rows become ghost candidates; rows with an
   assert.equal(plan.user.fields.ghost, true)
   assert.equal(plan.user.fields.inviteEmailHint, 'ann@x.com')
   assert.deepEqual(plan.user.fields.formerUserIds, ['row-b'])
-  assert.equal('email' in plan.user.fields, false)
+  assert.equal(plan.user.fields.email, '')
   assert.deepEqual(plan.operativeRow.set, { linkedUserId: 'row-a', email: '' })
   assert.deepEqual(plan.duplicateRows, [{ path: `organizations/${ORG}/operatives/row-b`, set: { linkedUserId: 'row-a', isActive: false } }])
   // No rate and no line manager: refused until the check list fills them.

@@ -36,6 +36,7 @@ import { accountTypeChangeWrites } from '../lib/canonical/permissionLevels.ts'
 import { orgMembershipWriteFields } from '../lib/canonical/orgMembership.ts'
 import { writeMetadataFields } from '../lib/canonical/writeMetadata.ts'
 import { inviteMembershipWrites } from '../lib/canonical/inviteAccept.ts'
+import { ghostCreateWrites } from '../lib/canonical/ghostOperatives.ts'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const rules = readFileSync(path.join(root, 'firestore.rules'), 'utf8')
@@ -5226,4 +5227,51 @@ test('1.32.4 claims: a forged claim value cannot widen access (the rules read on
   // A malformed `pp` (not the function's shape) is refused, not an error that grants.
   const forged = env.authenticatedContext('claims-1324-forged', { email: 'forged-1324@test.com', pp: { o: 'org-a' } }).firestore()
   await assertFails(getDoc(doc(forged, 'organizations', ORG_A, 'clients', 'c-1324')))
+})
+
+// ---------------------------------------------------------------------------
+// Rulebook 1.34.0 §11: ghost operatives (bookable, no app login). More in tests/ghosts.rules.test.ts.
+// ---------------------------------------------------------------------------
+
+function ghost134(id: string, actor: string, lineManager = ADMIN_1311) {
+  const plan = ghostCreateWrites({
+    organizationId: ORG_A,
+    ghostId: id,
+    draft: { firstName: 'Gus', surname: 'Ghost', payBasis: 'day', dayRate: 150, lineManagerIds: [lineManager] },
+    actorUserId: actor,
+    platform: 'web',
+  })
+  if (!plan) throw new Error('no ghost plan')
+  return { ...plan.user.fields, createdAt: Timestamp.now(), updatedAt: Timestamp.now() }
+}
+
+test('1.34.0: an Operatives manager creates a ghost; a manager without the toggle cannot', async () => {
+  await seed1311People()
+  await assertSucceedsWithinBudget(setDoc(doc(await authDb(OPS_MGR_1311, 'ops-mgr-1311@test.com'), 'users', 'ghost-134-a'), ghost134('ghost-134-a', OPS_MGR_1311)))
+  await assertSucceedsWithinBudget(setDoc(doc(await authDb(ADMIN_A, 'admin-a@test.com'), 'users', 'ghost-134-b'), ghost134('ghost-134-b', ADMIN_A)))
+  await assertFails(setDoc(doc(await authDb(MGR_1311, 'mgr-plain-1311@test.com'), 'users', 'ghost-134-c'), ghost134('ghost-134-c', MGR_1311)))
+  const ops = await authDb(OPS_MGR_1311, 'ops-mgr-1311@test.com')
+  await assertLogicalDeny(setDoc(doc(ops, 'users', 'ghost-134-d'), { ...ghost134('ghost-134-d', OPS_MGR_1311), hasNoLineManager: true }))
+  await assertLogicalDeny(setDoc(doc(ops, 'users', 'ghost-134-e'), { ...ghost134('ghost-134-e', OPS_MGR_1311), formerUserIds: [OP_1311] }))
+})
+
+test('1.34.0 R1: an Operatives manager never changes a ghost\'s line manager; an admin does; other fields stay theirs', async () => {
+  await seed1311People()
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'users', 'ghost-134-r1'), ghost134('ghost-134-r1', ADMIN_A))
+  })
+  const ops = await authDb(OPS_MGR_1311, 'ops-mgr-1311@test.com')
+  await assertLogicalDeny(updateDoc(doc(ops, 'users', 'ghost-134-r1'), { assignedManagerUserIds: [OPS_MGR_1311], assignedManagerUserId: OPS_MGR_1311 }))
+  await assertFails(updateDoc(doc(ops, 'users', 'ghost-134-r1'), { ghost: false }))
+  await assertSucceedsWithinBudget(updateDoc(doc(ops, 'users', 'ghost-134-r1'), { firstName: 'Gussie', dayRate: 160 }))
+  await assertSucceedsWithinBudget(updateDoc(doc(await authDb(ADMIN_A, 'admin-a@test.com'), 'users', 'ghost-134-r1'), { assignedManagerUserIds: [MGR_1311], assignedManagerUserId: MGR_1311 }))
+})
+
+test('1.34.0: an Operatives manager deletes a ghost; a plain manager cannot', async () => {
+  await seed1311People()
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'users', 'ghost-134-del'), ghost134('ghost-134-del', ADMIN_A))
+  })
+  await assertFails(deleteDoc(doc(await authDb(MGR_1311, 'mgr-plain-1311@test.com'), 'users', 'ghost-134-del')))
+  await assertSucceedsWithinBudget(deleteDoc(doc(await authDb(OPS_MGR_1311, 'ops-mgr-1311@test.com'), 'users', 'ghost-134-del')))
 })

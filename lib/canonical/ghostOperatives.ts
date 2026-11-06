@@ -206,9 +206,9 @@ function nameFields(firstName: string, surname: string): Record<string, string> 
 /**
  * The create for a new ghost (owner design). `users/{ghostId}`: the organisation, the operative level (role,
  * `operativeMode`, `ghostPermissions` at the top level and in `permissions`), `ghost: true`, `passwordSet: false`,
- * `isActive: true`, `isSuperAdmin: false`, `policyAccepted: false`, `employmentType: 'self_employed'`,
+ * `isActive: true` (no `isSuperAdmin` key), `policyAccepted: false`, `employmentType: 'self_employed'`,
  * `timesheetsEnabled: false`, the line managers (`assignedManagerUserIds` with `assignedManagerUserId`), one pay basis
- * with its rate, the trade when given, and write metadata. No email, phone, `hasNoLineManager`, alias ids or claim —
+ * with its rate, the trade when given, and write metadata. `email: ''`; no phone, `hasNoLineManager`, alias ids or claim —
  * the operatives-manager create rule accepts exactly this. The app adds `createdAt` / `updatedAt` as server time
  * (`serverTimestampFields`). While `privatePay` is on the pay goes to `payProfiles/{ghostId}` instead
  * (`sharedDocumentPayWrite`). Null when the draft fails `ghostCreateError` or an id is missing.
@@ -231,12 +231,16 @@ export function ghostCreateWrites(input: {
   const permissions = ghostPermissions()
   const fields: Record<string, unknown> = {
     organizationId: org,
+    // '' (never a missing key): both apps' readers expect the field, and the Firestore emulator (1.22.0) crashes on an
+    // Operatives manager's users create with no `email` key at all (docs/firestore-rules-notes.md "1.34.0").
+    email: '',
     role: 'operative',
     ...nameFields(idText(input.draft.firstName), idText(input.draft.surname)),
     [GHOST_FIELD]: true,
     passwordSet: false,
     isActive: true,
-    isSuperAdmin: false,
+    // No `isSuperAdmin` key (missing reads false): the Firestore emulator (1.22.0) crashes on an Operatives manager's
+    // users create that carries `isSuperAdmin: false` (docs/firestore-rules-notes.md "1.34.0").
     policyAccepted: false,
     employmentType: 'self_employed',
     timesheetsEnabled: false,
