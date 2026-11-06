@@ -137,7 +137,7 @@ Google's rules compiler gave up on 1.31.0–1.31.2 (CLI `firebaserules …:test`
 
 Google refused to publish 1.32.1 (static cost 429,072; console "unknown error", CLI 409 then 503) although 1.31.3 (431,665) had published, so the margin was gone. 1.32.2 cuts the static cost to **383,790** (−10.6%; 1.30.2 live 525,898) with no allow/deny change. CI now fails above **395,000** (`scripts/check-rules-budget.mjs`, `firestoreRulesMaxCompileCost` in `scripts/rules-budget.json`) and on any type-check error (`scripts/check-rules-typecheck.mjs`, job `rules-typecheck` in `web-ci.yml`).
 
-`let` bindings are lazy (checked on the emulator: an unused `let x = request.auth.uid` does not fail an unauthenticated request, and a `let` is evaluated only where it is used), so moving a pure expression into a `let` never changes a result. What changed:
+`let` bindings are lazy for errors (1.32.3: but not for the expression budget, see below) (checked on the emulator: an unused `let x = request.auth.uid` does not fail an unauthenticated request, and a `let` is evaluated only where it is used), so moving a pure expression into a `let` never changes a result. What changed:
 
 - **Repeated document paths** inside one function are one `let hpN = /databases/…;` (`hoist`: 16 functions, e.g. `selfCreateJoinsCompany`, `callerManagesJobAt`, `hbIsAdmin`, `materialUpdateAllowed`). A path that uses one of the function's own `let`s is left alone; `callerListedRole` and `isManagerWithOperativesAccess` were rewritten the same way by hand.
 - **`userDocOrganizationMatches`** computes the `orgIdsMatch` test once (`let w = v is path ? v[4] : v`, `let m = …` with `o` = `organizationId.lower()`), instead of calling `orgIdsMatch` in both the string and the path branch. `orgIdsMatch` stays for its other callers.
@@ -149,6 +149,31 @@ Google refused to publish 1.32.1 (static cost 429,072; console "unknown error", 
 - **Write allows that all start with `canAccessOrganization(organizationId) &&`** are one allow with a `request.method` ternary, as the booking allows in 1.31.3: holidayBookings (create / update / delete), settings (create, update / delete), notifications (create / update), overtimeRequests (create / update). Reads are never merged with a method test (list queries are checked against the query).
 
 Checked: suites 223/223 (as 1.32.1); `RULES_STRICT_BUDGET=1` the same 43 limit refusals as 1.32.1, none new; emulator type check 0 issues; in-process compile (emulator 1.22.0, min of 7) 1.66 s against 1.79 s for 1.32.1.
+
+### 1.32.3 — third cut (6 Nov)
+
+The 1.33 rules changes (overtime Return flow, line managers approving under every id, booking deletes via overtime, line-manager booking reads; about +5,000 together) did not fit under the 395,000 gate on top of 1.32.2. 1.32.3 cuts the static cost from 383,790 to **367,346** (−16,444, −4.3%) and `firestore.rules` from 142,995 to 142,906 bytes, with no allow/deny change.
+
+**Correction to 1.32.2: `let` bindings and function arguments are evaluated eagerly for the 1,000-expression budget.** Checked on the emulator (1.22.0): a function with two unused `let`s of about 450 expressions each is refused by the limit, and so is a call that passes the same two expressions as unused arguments, while one used `let` of the same size is allowed. An error inside a `let` or an argument is kept as a value and only matters where it is used (an unused `let x = get(<missing doc>).data.a` does not deny), so moving an expression into a `let` never changes a result, but it is not free: the `let` is evaluated whenever the function runs. A trial for 1.32.3 that moved helpers' `let`s into their callers failed three suites with new limit refusals (the Super Admin's admin-to-manager change) and was dropped. Only these are budget-neutral: writing out a helper that has **no** `let` where each parameter is an identifier, a literal, or used once (what `scripts/rules-cost/inline.py` does), and merging allows.
+
+What changed:
+
+- **Invitations**: `allow list, delete`, `allow create` and `allow update` are one `allow list, create, update, delete` with `request.method` tests, so `canAdministerInvitation` and `invitationCallerKnown` appear once. Per method it is the same condition: for `update` the invitee's accept test comes first as before (`request.method == 'update' && …`, which short-circuits for the other methods); then `invitationCallerKnown() && (request.method != 'update' || invitationUpdateKeepsIdentity())` as the ternary's test (for `list`, `create` and `delete` this is `invitationCallerKnown()`), and `canAdministerInvitation() && (create ? privilegeCreateTyped(…) : (update ? privilegeWriteTyped(…) : true))`. `A ? B : false` and `A && B` deny the same requests (an error in `A` denies either way). `allow get: if true` is untouched (reads are not merged with a method test).
+- Nine helpers without a `let` are written out where they were called (`inline.py`'s rules: free variables checked, parameters only substituted when they are an identifier or literal or used once). Their names no longer exist in `firestore.rules`; the headings below keep them.
+
+| Helper (1.32.2) | Now written out inside |
+|---|---|
+| `canAdministerInvitation` | allow list, create, update, delete in `/invitations/{invitationId}` |
+| `invitationCallerKnown` | the same allow |
+| `legacyMemberRead` | `jobGetAllowed`, `jobListAllowed`, `jobDocReadable` |
+| `isOrganizationAdminAnyBilling` | `isOrganizationAdmin`, `hbIsAdmin`, allow update in `/organizations/{organizationId}` |
+| `hbRequesterUid` | `hbRequesterExists`, `hbRequester`, `hbIsOwner` |
+| `isTimesheetSettingsDoc` | allow read and allow create, update, delete in `/settings/{settingId}` |
+| `canChangePayOf` | allow create and allow update in `/payProfiles/{subjectId}`; allow create, update and allow delete in `/operativeProfiles/{userId}` |
+| `hbCallerSelfBooks` | `hbOwnerShapeAllowed`, `hbOwnerEditAllowed`, allow create, update, delete in `/holidayBookings/{bookingId}` |
+| `rosterRowAdmin` | allow create, update in `/operatives/{operativeId}` and in `/managers/{managerId}` |
+
+Checked: suites 223/223 (each run on a fresh emulator; `tests/firestore.rules.test.ts` does not clear data between runs, so a reused emulator gives false failures); `RULES_STRICT_BUDGET=1` the same 43 limit refusals as 1.32.2 (same test names), none new; emulator type check 0 issues.
 
 ## Service-level functions
 
