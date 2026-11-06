@@ -75,7 +75,7 @@ How to use it:
 |---|---|---|
 | 4 Nov | The job manager picker shows active admins and managers, one per person (`jobManagerCandidates`), with former managers in amber. | done web (1.30.3), iOS (#185) |
 | 4 Nov | Job managers are kept across admin ↔ manager. They are removed when the person becomes an operative, is deactivated or deleted, and admins are notified. The job stays, even with no manager. A manager is required only to create a job. | done web (1.31.0); iOS open |
-| 4 Nov | Web: the projects and small works list spacing gets tidied. | open (web only) |
+| 4 Nov | Web: the projects and small works list spacing gets tidied. | done web (spacing, branch web-works-spacing; 6 Nov) |
 | 4 Nov | Blank "Assigned manager" rows made by older iOS builds are removed with an owner-run script (dry run first). | script merged (#260); owner to run |
 
 ## Annual leave
