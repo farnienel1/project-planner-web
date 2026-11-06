@@ -67,6 +67,7 @@ export function SetSitePinButton({
       latitude: payload.latitude,
       longitude: payload.longitude,
       usesMapPinForLocation: true,
+      hiddenOperativeUserIds: project.hiddenOperativeUserIds,
       createdAt: project.createdAt,
       updatedAt: new Date(),
     }

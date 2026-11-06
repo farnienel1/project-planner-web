@@ -14370,7 +14370,7 @@
       ]
     },
     {
-      "name": "1.21.0 an operative sees a job only through a task, and their booked job; cancelled jobs are not shown (1.33.0: a hide list no longer hides a booked job)",
+      "name": "1.21.0 an operative sees a job only through a task, and their booked job; cancelled jobs and jobs hidden from them are not shown (1.33.0: the operatives’ hide list stays)",
       "function": "visibleJobs",
       "args": [
         [
@@ -14459,14 +14459,6 @@
           "id": "J-BOOKED",
           "collection": "projects",
           "isLive": true
-        },
-        {
-          "id": "J-HIDDEN",
-          "collection": "smallWorks",
-          "isLive": true,
-          "hiddenOperativeUserIds": [
-            "u-op"
-          ]
         }
       ]
     },
@@ -15206,6 +15198,7 @@
         "latitude": null,
         "longitude": null,
         "usesMapPinForLocation": false,
+        "hiddenOperativeUserIds": [],
         "status": null,
         "organizationId": null,
         "createdAtMs": null,

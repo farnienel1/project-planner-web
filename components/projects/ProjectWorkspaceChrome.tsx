@@ -12,6 +12,7 @@ import {
   ClipboardDocumentCheckIcon,
   ClockIcon,
   CubeIcon,
+  EyeIcon,
   MapPinIcon,
   PencilSquareIcon,
   PlusIcon,
@@ -57,9 +58,17 @@ function formatLondonDay(date: Date): string {
   }).format(date)
 }
 
+function canConfigureProjectVisibility(user: User | null, isSmallWork: boolean): boolean {
+  if (!user || user.permissions.operativeMode) return false
+  if (user.isSuperAdmin || user.permissions.adminAccess) return true
+  if (!user.permissions.manager) return false
+  return isSmallWork ? user.permissions.smallWorks !== false : user.permissions.projects !== false
+}
+
 const TAB_META: Record<string, { hue: SectionHue; icon: typeof Squares2X2Icon }> = {
   overview: { hue: 'blue', icon: Squares2X2Icon },
   schedule: { hue: 'sched', icon: CalendarDaysIcon },
+  view: { hue: 'user', icon: EyeIcon },
   tasks: { hue: 'task', icon: ClipboardDocumentCheckIcon },
   materials: { hue: 'sw', icon: CubeIcon },
   'health-safety': { hue: 'hs', icon: ShieldCheckIcon },
@@ -74,6 +83,7 @@ function tabFromPath(pathname: string, basePath: string): string {
   const rest = pathname.slice(basePath.length).replace(/^\//, '')
   if (!rest) return 'overview'
   if (rest.startsWith('schedule')) return 'schedule'
+  if (rest.startsWith('view')) return 'view'
   if (rest.startsWith('tasks')) return 'tasks'
   if (rest.startsWith('materials')) return 'materials'
   if (rest.startsWith('health-safety')) return 'health-safety'
@@ -116,6 +126,7 @@ export function ProjectWorkspaceChrome({
   // 1.10.0 round 2 (`canEditJob`): a manager edits the details of a job they manage even without the toggle.
   const canEdit = userCanEditJob(user, project, isSmallWork ? 'smallWorks' : 'projects', useOperativeStore.getState().managers)
   const showBook = canBookWork(user) && !isOperativeMode(user)
+  const showViewTile = canConfigureProjectVisibility(user, isSmallWork)
   const isOperative = isOperativeMode(user)
   const { managers: rosterManagers, loadManagers } = useOperativeStore()
   const { loadUsers } = useOrgUserStore()
@@ -153,6 +164,7 @@ export function ProjectWorkspaceChrome({
 
   const tiles = jobHubTiles({
     isOperative,
+    showViewTile,
     canViewMaterials: canViewMaterials(user),
     canViewSiteAudit: canViewSiteAudit(user),
     showActiveUsers,
@@ -177,7 +189,7 @@ export function ProjectWorkspaceChrome({
       : []),
     ...tiles.map((tile) => ({
       href: tile.href,
-      label: tile.href === 'health-safety' ? 'H&S' : tile.label,
+      label: tile.href === 'view' ? 'View access' : tile.href === 'health-safety' ? 'H&S' : tile.label,
       key: tile.href,
       badge: tile.badge,
     })),

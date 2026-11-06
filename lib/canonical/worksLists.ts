@@ -43,6 +43,8 @@ export type WorksListJob = JobManagerFields & {
   /** A web `Date`, an ISO string, a `YYYY-MM-DD` day key or epoch milliseconds. */
   startDate?: unknown
   endDate?: unknown
+  /** 1.33.0: the per-job hide list for operatives (owner decision 6 Nov); there is no managers' hide list. */
+  hiddenOperativeUserIds?: ReadonlyArray<string> | null
 }
 
 /** The tabs of every job list (Projects, Small works, Site Audit, booking pickers). */
@@ -255,13 +257,18 @@ export function operativeJobIds(viewer: JobAccessViewer | null | undefined, cont
   return out
 }
 
+function hiddenFrom(list: ReadonlyArray<string> | null | undefined, viewerIds: ReadonlySet<string>): boolean {
+  return (list || []).some((id) => viewerIds.has(idKey(id)))
+}
+
 /**
  * The jobs a viewer sees in a job list, in order (§17, §21):
  *   - admins, super admins and (1.33.0) every manager outside operative mode: every job (`canSeeJob`);
- *   - operatives (and operative mode): the jobs of their own bookings, tasks and deadlines (`operativeJobIds`);
+ *   - operatives (and operative mode): the jobs of their own bookings, tasks and deadlines (`operativeJobIds`), less
+ *     the jobs whose `hiddenOperativeUserIds` names them (an operative booked on a hidden job does not see it);
  *   - an account with no staff role: the jobs they manage or are booked onto (labour or manager site booking).
- * 1.33.0 (owner decision 6 Nov): the per-job hide lists (`hiddenManagerUserIds`, `hiddenOperativeUserIds`) are no
- * longer read — stored values are left in place and ignored — so an operative booked on a job always sees it.
+ * 1.33.0 (owner decisions 6 Nov): the managers' hide list (`hiddenManagerUserIds`) is no longer read — stored values
+ * are left in place and ignored; the operatives' hide list stays.
  * The viewer is matched by id and email only, never by name.
  */
 export function visibleJobs<T extends WorksListJob>(
@@ -276,7 +283,7 @@ export function visibleJobs<T extends WorksListJob>(
   const managers = context?.managers ?? null
   if (role.isOperativeMode) {
     const own = new Set(operativeJobIds(viewer, context).map(idKey))
-    return list.filter((job) => own.has(idKey(job.id)))
+    return list.filter((job) => own.has(idKey(job.id)) && !hiddenFrom(job.hiddenOperativeUserIds, viewerIds))
   }
   if (role.isSuperAdmin || role.isAdmin || role.isManager) {
     return list.filter((job) => canSeeJob(viewer, job, managers, jobKind(job, job.collection ?? null)))

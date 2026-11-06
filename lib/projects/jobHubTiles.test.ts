@@ -2,9 +2,10 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { jobHubTiles } from './jobHubTiles.ts'
 
-test('operatives do not see Scheduling, and respect materials/site-audit flags', () => {
+test('operatives do not see Scheduling or View, and respect materials/site-audit flags', () => {
   const tiles = jobHubTiles({
     isOperative: true,
+    showViewTile: true,
     canViewMaterials: false,
     canViewSiteAudit: false,
   })
@@ -14,16 +15,17 @@ test('operatives do not see Scheduling, and respect materials/site-audit flags',
   )
 })
 
-test('managers see Scheduling, materials and site audit (1.33.0: no View tile)', () => {
+test('managers see Scheduling, optional View, materials and site audit', () => {
   const tiles = jobHubTiles({
     isOperative: false,
+    showViewTile: true,
     canViewMaterials: true,
     canViewSiteAudit: true,
     locationCaption: '12 High St',
   })
   assert.deepEqual(
     tiles.map((tile) => tile.label),
-    ['Scheduling', 'Tasks', 'Materials', 'H&S', 'Deadlines', 'Site Audit', 'Location']
+    ['Scheduling', 'View', 'Tasks', 'Materials', 'H&S', 'Deadlines', 'Site Audit', 'Location']
   )
   assert.equal(tiles.at(-1)?.desc, '12 High St')
 })
@@ -31,6 +33,7 @@ test('managers see Scheduling, materials and site audit (1.33.0: no View tile)',
 test('Active users is a manager tile and stays hidden in operative mode', () => {
   const managerTiles = jobHubTiles({
     isOperative: false,
+    showViewTile: false,
     canViewMaterials: true,
     canViewSiteAudit: true,
     showActiveUsers: true,
@@ -40,6 +43,7 @@ test('Active users is a manager tile and stays hidden in operative mode', () => 
 
   const operativeTiles = jobHubTiles({
     isOperative: true,
+    showViewTile: false,
     canViewMaterials: true,
     canViewSiteAudit: true,
     showActiveUsers: true,

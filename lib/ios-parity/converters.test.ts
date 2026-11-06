@@ -356,11 +356,12 @@ test('serializeProject keeps a stored manager name and omits notes', () => {
     jobType: 'CAT A',
     isLive: true,
     managerName: 'Farnie',
+    hiddenOperativeUserIds: ['op-1'],
   })
   assert.equal(payload.manager, 'Farnie')
-  // 1.33.0: the per-job hide lists are never written (stored values are left in place).
+  // 1.33.0: the managers' hide list is never written (a stored one is left in place); the operatives' list is.
   assert.equal('hiddenManagerUserIds' in payload, false)
-  assert.equal('hiddenOperativeUserIds' in payload, false)
+  assert.deepEqual(payload.hiddenOperativeUserIds, ['op-1'])
   assert.equal('notes' in payload, false)
   assert.equal('id' in payload, false)
 })

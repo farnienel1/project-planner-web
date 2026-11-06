@@ -333,6 +333,7 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
               ? initial.manager.name
               : undefined,
         isLive: creating ? true : form.isLive,
+        hiddenOperativeUserIds: initial?.hiddenOperativeUserIds,
         description: form.description,
         notes: form.notes,
         latitude: form.useMapPin ? parseBoundedLatitude(form.latitude) ?? undefined : undefined,

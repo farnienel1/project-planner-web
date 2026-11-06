@@ -166,7 +166,7 @@ test('an account with no staff role still only sees jobs it is assigned to or bo
   assert.deepEqual(visible.map((p) => p.id), ['mine'])
 })
 
-test('operatives only see booked jobs (1.33.0: a hide list no longer hides a booked job)', () => {
+test('operatives only see booked jobs and never ones hidden from them (1.33.0: the operatives\' hide list stays)', () => {
   const opUser: User = {
     id: 'uid',
     email: 'op@x.com',
@@ -209,7 +209,7 @@ test('operatives only see booked jobs (1.33.0: a hide list no longer hides a boo
   const jobs = [
     project('P1'),
     project('P2'),
-    project('P1-hidden', { id: 'PH' }),
+    project('P1-hidden', { id: 'PH', hiddenOperativeUserIds: ['uid'] }),
   ]
   const visible = visibleWorks({
     projects: jobs,
@@ -218,7 +218,7 @@ test('operatives only see booked jobs (1.33.0: a hide list no longer hides a boo
     bookings: [booking, { ...booking, id: 'B2', projectId: 'PH' }],
     managerBookings: [],
   })
-  assert.deepEqual(visible.map((p) => p.id), ['P1', 'PH'])
+  assert.deepEqual(visible.map((p) => p.id), ['P1'])
 })
 
 test('managers with the manager flag see every job when Projects is off (1.33.0)', () => {

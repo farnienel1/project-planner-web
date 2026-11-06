@@ -10614,7 +10614,7 @@ test('1.21.0 an operative sees a job reached only through a task', () => {
   assert.deepEqual(operativeJobIds121(viewer, { ...context, deadlineJobIds: ['J-D'] }), ['j-task', 'J-D'])
 })
 
-test('1.21.0 / 1.33.0 every manager sees every job, toggles or not, and hide lists are not read', () => {
+test('1.21.0 / 1.33.0 every manager sees every job, toggles or not (no managers\' hide list); operatives\' hide list stays', () => {
   const viewer = { role: role121({ isManager: true }), ids: ['U-M'], email: 'm@x.com', toggles: noToggles121 }
   const jobs = [
     { id: 'MINE', collection: 'projects', managerUserIds: ['U-M'] },
@@ -10626,10 +10626,19 @@ test('1.21.0 / 1.33.0 every manager sees every job, toggles or not, and hide lis
   assert.deepEqual(visibleJobs121(jobs, viewer, context).map((j) => j.id), ['MINE', 'BY-ROW', 'OTHER', 'HIDDEN'])
   const toggled = { ...viewer, toggles: { projects: true, smallWorks: false } }
   assert.deepEqual(visibleJobs121(jobs, toggled, context).map((j) => j.id), ['MINE', 'BY-ROW', 'OTHER', 'HIDDEN'])
-  // An operative booked on a job always sees it now (a hide list naming them is ignored).
+  // Owner decision 6 Nov (later the same day): an operative named on a job's hide list does not see it, even when
+  // booked on it (ids without case); a booked job not hiding them stays.
   const op = { role: role121({ isOperativeMode: true }), ids: ['U-OP'], email: 'op@x.com', toggles: noToggles121 }
-  const opJobs = [{ id: 'BOOKED', collection: 'projects', hiddenOperativeUserIds: ['U-OP'] }, { id: 'ELSE', collection: 'projects' }]
-  assert.deepEqual(visibleJobs121(opJobs, op, { bookings: [{ projectId: 'BOOKED', operativeId: 'U-OP', status: 'Confirmed' }] }).map((j) => j.id), ['BOOKED'])
+  const opJobs = [
+    { id: 'BOOKED', collection: 'projects', hiddenOperativeUserIds: ['u-op'] },
+    { id: 'SEEN', collection: 'projects', hiddenOperativeUserIds: ['someone-else'] },
+    { id: 'ELSE', collection: 'projects' },
+  ]
+  const opBookings = [
+    { projectId: 'BOOKED', operativeId: 'U-OP', status: 'Confirmed' },
+    { projectId: 'SEEN', operativeId: 'U-OP', status: 'Confirmed' },
+  ]
+  assert.deepEqual(visibleJobs121(opJobs, op, { bookings: opBookings }).map((j) => j.id), ['SEEN'])
 })
 
 test('1.21.0 bookable jobs exclude inactive and non-writable jobs, never by dates', () => {
@@ -13665,11 +13674,11 @@ test('1.33.0 unbooked labour: an inactive account is never picked for an operati
 
 // MARK: - Rulebook 1.33.0: every manager sees every job; My Projects; Daily Overview team; line manager locked
 
-test('1.33.0 hide lists are not read: parseJobDocument drops them and visibleJobs ignores them', () => {
+test('1.33.0 the managers\' hide list is not read; the operatives\' hide list is (parseJobDocument, visibleJobs)', () => {
   const parsed = R112.parseJobDocument('J', { jobNumber: 'J', hiddenManagerUserIds: ['m'], hiddenOperativeUserIds: ['o'] }, { kind: 'projects', timeZone: 'Europe/London' }) as Record<string, unknown> | null
   assert.ok(parsed)
   assert.equal('hiddenManagerUserIds' in (parsed || {}), false)
-  assert.equal('hiddenOperativeUserIds' in (parsed || {}), false)
+  assert.deepEqual(parsed?.hiddenOperativeUserIds, ['o'])
   const mgr = { role: { isSuperAdmin: false, isAdmin: false, isManager: true, isOperativeMode: false }, ids: ['m'] }
   assert.deepEqual(R112.visibleJobs([{ id: 'J', collection: 'projects', hiddenManagerUserIds: ['m'] } as never], mgr).length, 1)
 })
