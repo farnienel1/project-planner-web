@@ -43,6 +43,7 @@ import { canWriteBooking, type BookingPermissionInput, type JobAccessViewer, typ
 import { employmentTypeOnDay, type EmploymentTypeUser } from './userProfile'
 import { dateFromDayKeyInZone } from '../orgTime/zoneTime'
 import { reportGeneratedText } from './reportHeader'
+import { isGhostUser } from './userRosterSegment'
 
 // MARK: - Constants and copy
 
@@ -1016,7 +1017,8 @@ export function overtimeUserSubjects(
   const seen = new Set<string>()
   for (const member of members) {
     const key = idKey(member.id)
-    if (self.has(key) || seen.has(key) || !rosterMemberActive(member)) continue
+    // 1.34.0: a ghost operative has no overtime, price work or expenses (no app login).
+    if (self.has(key) || seen.has(key) || !rosterMemberActive(member) || isGhostUser(member)) continue
     const managed = lineManagerIds(member, members as never).some((id) => self.has(idKey(id)))
     if (!admin && !managed) continue
     seen.add(key)

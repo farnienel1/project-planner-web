@@ -71,6 +71,10 @@ export const USER_DOCUMENT_FIELDS = [
   // Rulebook 1.31.1 (F5): the invitation an account was created from (written once, with the invitation marked used in
   // the same batch); the security rules accept a placeholder copy only with it.
   'invitationId',
+  // Rulebook 1.34.0 (§11): a ghost operative (bookable, no app login) and, on a converted operatives row, the email kept
+  // aside for "Give app access". Accepting an invitation never copies either onto the account.
+  'ghost',
+  'inviteEmailHint',
 ] as const
 
 /**

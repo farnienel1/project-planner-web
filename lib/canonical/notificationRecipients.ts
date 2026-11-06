@@ -26,6 +26,7 @@ import {
 import { PUSH_TEST_NOTICE_TYPE, notificationDeliversDevicePush } from './notificationPreferences'
 import { idKey, idText, personIdSet, rosterMemberActive, type PersonIdsInput, type PersonRosterRow } from './personIds'
 import type { StaffAccountRole } from './staffAccess'
+import { isGhostUser } from './userRosterSegment'
 
 export { personIdSet } from './personIds'
 export type { PersonIdsInput, PersonRosterRow } from './personIds'
@@ -39,6 +40,8 @@ export type NotificationRosterMember = Omit<PersonRosterRow, 'role'> & {
   /** 1.28.0: admins only (`timesheetSelfSigned`). */
   timesheetSelfSign?: boolean | null
   employmentType?: string | null
+  /** 1.34.0: a ghost operative has no app login and never receives a notice (`isGhostUser`). */
+  ghost?: boolean | null
   permissions?: {
     annualLeaveSelfBook?: boolean | null
     timesheetSelfSign?: boolean | null
@@ -126,7 +129,8 @@ export function notificationRecipientAccountId(
   let best: { id: string; score: number } | null = null
   for (const member of members) {
     const memberKey = idKey(member.id)
-    if (!same.has(memberKey) || !rosterMemberActive(member)) continue
+    // 1.34.0: a ghost operative has no inbox or device; it is never a recipient.
+    if (!same.has(memberKey) || !rosterMemberActive(member) || isGhostUser(member)) continue
     const signedUp = member.passwordSet === true ? 2 : member.passwordSet === false ? 0 : 1
     const score = signedUp * 2 + (formerOfOther.has(memberKey) ? 0 : 1)
     if (!best || score > best.score) best = { id: idText(member.id), score }

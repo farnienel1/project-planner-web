@@ -15,6 +15,7 @@ import { BOOKING_TOMBSTONE_BATCH_DELETE_LIMIT, bookingTombstonePath, bookingTomb
 import { personIdSet, type PersonRosterRow } from './personIds'
 import type { StaffAccountRole } from './staffAccess'
 import type { WritePlatform } from './writeMetadata'
+import { isGhostUser } from './userRosterSegment'
 
 export type UserDeletePerson = {
   id: string
@@ -22,6 +23,8 @@ export type UserDeletePerson = {
   role: StaffAccountRole
   formerUserIds?: ReadonlyArray<string> | null
   sameEmailUserIds?: ReadonlyArray<string> | null
+  /** 1.34.0: a ghost operative has only its users document (no tax ids, membership, email claim or members entry). */
+  ghost?: boolean | null
 }
 
 export type UserDeleteRefusal = 'not_admin' | 'self' | 'super_admin' | 'creator' | 'admin_needs_super_admin' | 'operatives_only'
@@ -156,13 +159,18 @@ export function userDeleteWrites(input: UserDeleteInput): UserDeleteStep[] {
   const idKeys = new Set(ids.map(key))
   const email = key(input.user.email)
 
-  const account: UserDeleteWrite[] = [
-    { op: 'delete', path: `users/${uid}` },
-    { op: 'delete', path: `users/${uid}/private/taxIds` },
-    { op: 'delete', path: `users/${uid}/orgMemberships/${org}` },
-  ]
+  // 1.34.0: a ghost has only its users document — no tax ids, membership or members entry, and an email claim only
+  // once an admin has invited it (Give app access); deleting it touches nothing else.
+  const ghost = isGhostUser(input.user)
+  const account: UserDeleteWrite[] = ghost
+    ? [{ op: 'delete', path: `users/${uid}` }]
+    : [
+        { op: 'delete', path: `users/${uid}` },
+        { op: 'delete', path: `users/${uid}/private/taxIds` },
+        { op: 'delete', path: `users/${uid}/orgMemberships/${org}` },
+      ]
   if (email && !email.includes('/')) account.push({ op: 'delete', path: `organizations/${org}/userEmails/${email}` })
-  if (input.listedInMembers !== false) account.push({ op: 'update', path: `organizations/${org}`, deleteFields: [`members.${uid}`] })
+  if (!ghost && input.listedInMembers !== false) account.push({ op: 'update', path: `organizations/${org}`, deleteFields: [`members.${uid}`] })
   // 1.31.0 (owner decision 7): a manager with the Operatives permission runs the account step one write at a time,
   // in this order — tax ids, membership, email claim (each checked against the users document still there), then the
   // users document, then the members entry (checked against it being gone). The security rules' document-lookup and

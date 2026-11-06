@@ -1278,3 +1278,6 @@ export {
   authClaimsUserInputsChanged,
   parseAuthClaims,
 } from './authClaims'
+
+// Rulebook 1.34.0 §11: ghost operatives (bookable, no app login).
+export * from './ghostOperatives'

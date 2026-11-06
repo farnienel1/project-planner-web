@@ -12,7 +12,7 @@
  */
 
 import { isPersonInWarningScope, type WarningScope } from './staffAccess'
-import { isAnonymisedDeletedProfile, listedCurrentLabourPeople } from './userRosterSegment'
+import { isAnonymisedDeletedProfile, isGhostUser, listedCurrentLabourPeople } from './userRosterSegment'
 import { standardDayCoverage, windowCoverage, parseClockMinutes, type StandardDayBooking } from './engine'
 import { resolveWeekendCoverageDay, type OrgPayrollTimePolicy, type WeekendCoverage } from './organizationSettings'
 import { payrollBreakOnDay } from './payrollHours'
@@ -92,6 +92,8 @@ export type UnverifiedOperativeInput = {
     passwordSet: boolean
     createdAtIso?: string | null
     isOperativeMode: boolean
+    /** 1.34.0: a ghost (an invited one too) is never an unverified account. */
+    ghost?: boolean | null
   }>
 }
 
@@ -121,6 +123,8 @@ export type LabourPerson = {
    * exclusions saved under a former id still belong to this person.
    */
   formerIds?: readonly string[] | null
+  /** 1.34.0: a ghost operative (`isGhostUser`): no app login by design, so it counts as signed up here. */
+  ghost?: boolean | null
 }
 
 export type RosterOperative = {
@@ -329,7 +333,7 @@ function unverifiedOperativeRowsUnscoped(input: UnverifiedOperativeInput): Unver
     const email = emailKey(operative.email)
     if (!email) continue
     const person = input.people.find((candidate) => emailKey(candidate.email) === email && candidate.isOperativeMode)
-    if (!person || person.passwordSet) continue
+    if (!person || person.passwordSet || isGhostUser(person)) continue
     const createdKey = dayKeyFromIso(person.createdAtIso, timeZone)
     if (!createdKey || workingDaysInclusive(createdKey, todayKey, timeZone) < 3) continue
     const operativeName = String(operative.name || '').trim() || operative.email
@@ -396,6 +400,8 @@ export function formerIdAliases(people: readonly Pick<LabourPerson, 'id' | 'form
 }
 
 function hasFinishedSignup(person: LabourPerson): boolean {
+  // 1.34.0: a ghost has no login by design; it is a finished, bookable person (an invited ghost too, Q-G3).
+  if (isGhostUser(person)) return true
   return person.passwordSet === true && person.status !== 'pending'
 }
 
@@ -412,7 +418,7 @@ function isOperativeModeOnly(person: LabourPerson): boolean {
  * picked — before, it was the fallback, so an inactive person could show as unbooked through their `operatives` row.
  */
 function preferFinishedAccount(candidates: readonly LabourPerson[]): LabourPerson | undefined {
-  return candidates.find((person) => person.passwordSet && person.isActive)
+  return candidates.find((person) => (person.passwordSet || isGhostUser(person)) && person.isActive)
 }
 
 function dedupeFinishedPeople(people: readonly LabourPerson[]): LabourPerson[] {
@@ -422,7 +428,8 @@ function dedupeFinishedPeople(people: readonly LabourPerson[]): LabourPerson[] {
     if (!hasFinishedSignup(person)) continue
     const email = emailKey(person.email)
     if (!email) {
-      withoutEmail.push(person)
+      // 1.34.0: people with no email (ghosts) are one row each, keyed by id; an inactive one is never listed.
+      if (person.isActive) withoutEmail.push(person)
       continue
     }
     const list = groups.get(email) || []
