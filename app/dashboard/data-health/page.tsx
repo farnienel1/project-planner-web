@@ -12,6 +12,7 @@ import { getFirebaseDb } from '@/lib/firebase/ensureFirebase'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { hasAdminAccess } from '@/lib/permissions'
 import { BookingHealthScan } from '@/components/dataHealth/BookingHealthScan'
+import { GhostsToCheck } from '@/components/dataHealth/GhostsToCheck'
 import { UsersMissingLevel } from '@/components/dataHealth/UsersMissingLevel'
 import { UsersMissingLineManager } from '@/components/dataHealth/UsersMissingLineManager'
 import {
@@ -118,6 +119,8 @@ export default function DataHealthPage() {
         <UsersMissingLevel organizationId={organization.id} />
         {/* Rulebook 1.28.0 §8, §11: people who need a line manager (`usersMissingLineManager`). */}
         <UsersMissingLineManager organizationId={organization.id} />
+        {/* Rulebook 1.34.0 §11: ghost operatives to check (`ghostsToCheck`). */}
+        <GhostsToCheck organizationId={organization.id} />
         <BookingHealthScan organizationId={organization.id} />
       </div>
     ) : null

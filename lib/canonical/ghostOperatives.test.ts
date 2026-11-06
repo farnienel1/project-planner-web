@@ -388,3 +388,20 @@ test('Conversion: no-login operatives rows become ghost candidates; rows with an
     })
   )
 })
+
+test('ghostsToCheck: missing rate or line manager, and converted rows; ordinary users never', async () => {
+  const { ghostsToCheck } = await import('./index')
+  const ok = ghostDoc('g1')
+  const rows = ghostsToCheck([
+    { ...MANAGER },
+    ok,
+    { ...ghostDoc('g2'), dayRate: 0, assignedManagerUserIds: ['gone'], assignedManagerUserId: 'gone' },
+    { ...ghostDoc('g3'), inviteEmailHint: 'old@x.com' },
+    { ...ghostDoc('g4'), isActive: false, dayRate: 0 },
+    OPERATIVE,
+  ] as never)
+  assert.deepEqual(rows, [
+    { id: 'g2', issues: ['rate', 'lineManager'] },
+    { id: 'g3', issues: ['converted'] },
+  ])
+})

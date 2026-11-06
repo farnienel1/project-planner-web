@@ -42,6 +42,8 @@ export function labourPersonFromUser(user: User, userIdAliases?: Readonly<Record
     isAdmin: Boolean(user.permissions?.adminAccess) || user.role === UserRole.ADMIN,
     isSuperAdmin: Boolean(user.isSuperAdmin),
     formerIds: [...(user.formerUserIds ?? []), ...sameEmail],
+    // Rulebook 1.34.0: a ghost operative counts as signed up for unbooked labour (no login by design).
+    ghost: user.ghost === true,
   }
 }
 

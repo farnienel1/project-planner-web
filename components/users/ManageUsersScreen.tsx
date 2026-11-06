@@ -1,6 +1,6 @@
 'use client'
 
-import { PAY_RATE_REQUIRED_MESSAGE } from '@/lib/canonical'
+import { PAY_RATE_REQUIRED_MESSAGE, ghostBadgeLabel, isGhostUser } from '@/lib/canonical'
 import { usersWithoutPayRate } from '@/lib/staff/payRateRequired'
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -67,7 +67,11 @@ function badgesFor(user: User, showAdminBadge: boolean): Badge[] {
     out.push({ label: trade, cls: 'bg-[#F9F9FB] text-slate-500 ring-1 ring-slate-200' })
   }
 
-  if (!user.isActive && user.passwordSet) {
+  if (isGhostUser(user)) {
+    // Rulebook 1.34.0 `ghostBadgeLabel`: "No app login" (· Invited once an admin gave app access).
+    out.push({ label: ghostBadgeLabel(user), cls: 'bg-[#ECECEF] text-slate-600' })
+    if (!user.isActive) out.push({ label: 'Inactive', cls: 'bg-[#ECECEF] text-slate-500' })
+  } else if (!user.isActive && user.passwordSet) {
     out.push({ label: 'Inactive', cls: 'bg-[#ECECEF] text-slate-500' })
   } else if (user.passwordSet) {
     out.push({ label: 'Verified', cls: 'bg-[#E9F9EF] text-[#15A34A]' })
@@ -447,12 +451,14 @@ export function ManageUsersScreen() {
             const showAdmin =
               effectiveTab === 'managers' && (user.permissions.adminAccess || user.isSuperAdmin)
             const badgeList = badgesFor(user, !!showAdmin)
-            const showReset = user.passwordSet
+            // Rulebook 1.34.0: a ghost has no login — no password reset or sign-up email (Give app access is on its profile).
+            const isGhost = isGhostUser(user)
+            const showReset = user.passwordSet && !isGhost
             const isMgrOrOp =
               (user.permissions.manager || user.permissions.operativeMode) &&
               !user.permissions.adminAccess &&
               !user.isSuperAdmin
-            const showInvite = !user.passwordSet && isMgrOrOp
+            const showInvite = !user.passwordSet && isMgrOrOp && !isGhost
             const busy = busyRow === user.id
 
             return (
@@ -464,7 +470,7 @@ export function ManageUsersScreen() {
                   <UserAvatar user={user} size={48} className="rounded-[14px]" gradient={avatarGradient(user)} />
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-base font-bold text-slate-900">{displayName(user)}</div>
-                    <div className="truncate text-sm text-slate-500">{user.email}</div>
+                    <div className="truncate text-sm text-slate-500">{user.email || ghostBadgeLabel(user)}</div>
                   </div>
                   <svg
                     className="h-4 w-4 shrink-0 text-slate-300"

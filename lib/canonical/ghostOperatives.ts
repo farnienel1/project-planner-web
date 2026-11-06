@@ -117,6 +117,16 @@ export type GhostDraft = {
   email?: string | null
   /** Refused when given: a ghost has no phone. */
   mobileNumber?: string | null
+  /** The annual-leave allowance, as Add user writes it (missing: on, organisation defaults). */
+  annualLeave?: {
+    enabled?: boolean | null
+    daysPerYear?: number | null
+    startMonth?: number | null
+    endMonth?: number | null
+    carriesOver?: boolean | null
+    yearAllowance?: number | null
+    yearAllowanceKey?: string | null
+  } | null
 }
 
 function positiveNumber(value: unknown): number | null {
@@ -238,6 +248,19 @@ export function ghostCreateWrites(input: {
     payBasis: rate.payBasis,
     ...(rate.payBasis === 'day' ? { dayRate: rate.amount } : { hourlyRate: rate.amount }),
     ...(writeMetadataFields(input.actorUserId, input.platform) || {}),
+  }
+  const leave = input.draft.annualLeave
+  if (leave) {
+    if (typeof leave.enabled === 'boolean') fields.annualLeaveEnabled = leave.enabled
+    const finite = (value: unknown) => (typeof value === 'number' && Number.isFinite(value) ? value : null)
+    if (leave.enabled !== false) {
+      if (finite(leave.daysPerYear) != null) fields.annualLeaveDaysPerYear = leave.daysPerYear
+      if (finite(leave.startMonth) != null) fields.annualLeaveYearStartMonth = leave.startMonth
+      if (finite(leave.endMonth) != null) fields.annualLeaveYearEndMonth = leave.endMonth
+      if (typeof leave.carriesOver === 'boolean') fields.annualLeaveCarriesOver = leave.carriesOver
+      if (finite(leave.yearAllowance) != null) fields.annualLeaveYearAllowance = leave.yearAllowance
+      if (idText(leave.yearAllowanceKey)) fields.annualLeaveYearAllowanceKey = idText(leave.yearAllowanceKey)
+    }
   }
   const preset = idText(input.draft.tradeTypePreset)
   if (preset) fields.tradeTypePreset = preset
@@ -653,4 +676,50 @@ export function ghostConversionWrites(input: {
       set: { linkedUserId: candidate.operativeId, isActive: false },
     })),
   }
+}
+
+// MARK: - Data health
+
+export type GhostCheckIssue = 'name' | 'rate' | 'lineManager' | 'converted'
+export const GHOST_CHECK_ISSUE_LABELS: Readonly<Record<GhostCheckIssue, string>> = {
+  name: 'First name and surname missing',
+  rate: 'No day or hourly rate above 0',
+  lineManager: 'No active line manager',
+  converted: 'Converted from a no-login operative: check the name, rate and line manager',
+}
+
+/**
+ * Settings → Data health "Ghosts to check" (admins): every active ghost with something to fix — a missing name, no
+ * rate above 0, no active line manager on the roster — and every ghost converted from an `operatives` row (it still
+ * holds `inviteEmailHint`) for the owner's first check. Roster order. Never writes.
+ */
+export function ghostsToCheck(
+  roster: ReadonlyArray<{
+    id: string
+    ghost?: unknown
+    isActive?: boolean | null
+    firstName?: string | null
+    surname?: string | null
+    payBasis?: string | null
+    dayRate?: number | null
+    hourlyRate?: number | null
+    assignedManagerUserIds?: ReadonlyArray<string> | null
+    assignedManagerUserId?: string | null
+    inviteEmailHint?: string | null
+  }> | null | undefined
+): Array<{ id: string; issues: GhostCheckIssue[] }> {
+  const rows = (roster || []).filter((row) => row && idText(row.id))
+  const active = new Set(rows.filter((row) => row.isActive !== false && !isGhostUser(row)).map((row) => idKey(row.id)))
+  const out: Array<{ id: string; issues: GhostCheckIssue[] }> = []
+  for (const row of rows) {
+    if (!isGhostUser(row) || row.isActive === false) continue
+    const issues: GhostCheckIssue[] = []
+    if (!idText(row.firstName) || !idText(row.surname)) issues.push('name')
+    if (!ghostRate({ payBasis: row.payBasis ?? null, dayRate: row.dayRate ?? null, hourlyRate: row.hourlyRate ?? null })) issues.push('rate')
+    const managers = [...(row.assignedManagerUserIds ?? []), row.assignedManagerUserId ?? ''].map(idKey).filter(Boolean)
+    if (!managers.some((id) => active.has(id))) issues.push('lineManager')
+    if (idText(row.inviteEmailHint)) issues.push('converted')
+    if (issues.length > 0) out.push({ id: idText(row.id), issues })
+  }
+  return out
 }

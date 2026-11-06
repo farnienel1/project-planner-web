@@ -155,6 +155,8 @@ export function computeUnverifiedOperativeWarnings(
       passwordSet: user.passwordSet === true,
       createdAtIso: user.createdAt instanceof Date ? user.createdAt.toISOString() : '',
       isOperativeMode: Boolean(user.permissions?.operativeMode),
+      // Rulebook 1.34.0: an invited ghost is never an unverified account.
+      ghost: user.ghost === true,
     })),
   })
   return rows.map((row) => ({
