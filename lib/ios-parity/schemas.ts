@@ -101,8 +101,6 @@ export const projectWriteSchema = z.object({
   managerIds: z.array(z.string()).optional(),
   isLive: z.boolean(),
   description: z.string(),
-  hiddenManagerUserIds: z.array(z.string()).optional(),
-  hiddenOperativeUserIds: z.array(z.string()).optional(),
   usesMapPinForLocation: z.boolean(),
   latitude: z.number().optional(),
   longitude: z.number().optional(),

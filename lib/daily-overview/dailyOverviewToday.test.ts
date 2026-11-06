@@ -149,8 +149,9 @@ function sharedModel(f: ReturnType<typeof fixture>, viewer: unknown) {
   )
 }
 
-const adminViewer = { id: 'u-admin', email: 'u-admin@site.test', role: 'admin', isAdmin: true, isSuperAdmin: false, isOperativeMode: false }
-const managerViewer = { id: 'u-mgr', email: 'u-mgr@site.test', role: 'manager', isAdmin: false, isSuperAdmin: false, isOperativeMode: false, isManager: true }
+// `JobAccessViewer`s, as `webJobAccessViewer` builds them.
+const adminViewer = { uid: 'u-admin', ids: ['u-admin'], email: 'u-admin@site.test', role: { isAdmin: true, isSuperAdmin: false, isOperativeMode: false, isManager: false } }
+const managerViewer = { uid: 'u-mgr', ids: ['u-mgr'], email: 'u-mgr@site.test', role: { isAdmin: false, isSuperAdmin: false, isOperativeMode: false, isManager: true } }
 
 for (const dayKeyText of ['2026-11-05', '2026-11-07', '2026-11-08']) {
   for (const [label, viewer] of [['admin', adminViewer], ['manager', managerViewer], ['no viewer', null]] as const) {
@@ -190,4 +191,21 @@ test('names on leave and office rows are read as Daily Overview read them', () =
   assert.equal(overviewPersonName('u-mgr', f.users as never), 'Max Test')
   assert.equal(overviewHolidayName({ operativeId: 'op-rae' }, f.users as never, f.operatives), 'Rae Test')
   assert.equal(overviewHolidayName({ userId: 'nobody' }, f.users as never, f.operatives), 'Team member')
+})
+
+test('1.33.0 a manager\'s Daily Overview shows only their own team; admins see everyone and subcontractors', () => {
+  const f = fixture('2026-11-05')
+  // A non-report booked on the manager's job (P1) and a subcontractor there are not shown to the manager.
+  const extra = { ...f, bookings: [...f.bookings, { ...f.bookings[0], id: 'B9', operativeId: 'u-director' }] }
+  const manager = sharedModel(extra as never, managerViewer)
+  const admin = sharedModel(extra as never, adminViewer)
+  const people = (model: typeof manager) => model.projectCards.flatMap((card) => card.people.map((row) => row.operativeId ?? row.userId ?? row.kind))
+  assert.deepEqual(people(manager).sort(), ['U-OP2', 'u-op1'])
+  assert.ok(people(admin).includes('u-director'))
+  assert.ok(admin.projectCards.some((card) => card.people.some((row) => row.kind === 'subcontractor')))
+  assert.equal(manager.projectCards.some((card) => card.people.some((row) => row.kind === 'subcontractor')), false)
+  assert.ok(manager.labourHours < admin.labourHours)
+  // Leave (Rae, a report, on an operatives row on her email) and the manager's own office booking stay.
+  assert.equal(manager.holidays.length, 1)
+  assert.equal(manager.officeBookings.length, 1)
 })

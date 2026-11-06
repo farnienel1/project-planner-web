@@ -12,7 +12,6 @@ export type JobHubTile = {
 
 export function jobHubTiles(input: {
   isOperative: boolean
-  showViewTile: boolean
   canViewMaterials: boolean
   canViewSiteAudit: boolean
   /** iOS shows Active users only for admins and managers assigned to the job. */
@@ -23,9 +22,7 @@ export function jobHubTiles(input: {
   if (!input.isOperative) {
     tiles.push({ href: 'schedule', label: 'Scheduling', desc: 'Bookings and operative schedule' })
   }
-  if (input.showViewTile && !input.isOperative) {
-    tiles.push({ href: 'view', label: 'View', desc: 'Control who can see this project' })
-  }
+  // 1.33.0 (owner decision 6 Nov): the View tile (per-job hide lists) is gone — every manager sees every job.
     tiles.push({ href: 'tasks', label: 'Tasks', desc: 'Tasks and assignments' })
   if (input.canViewMaterials) {
     tiles.push({ href: 'materials', label: 'Materials', desc: 'Materials list and send to wholesaler' })

@@ -14143,7 +14143,7 @@
       ]
     },
     {
-      "name": "1.21.0 an operative sees a job only through a task, and their booked job; cancelled and hidden jobs are not shown",
+      "name": "1.21.0 an operative sees a job only through a task, and their booked job; cancelled jobs are not shown (1.33.0: a hide list no longer hides a booked job)",
       "function": "visibleJobs",
       "args": [
         [
@@ -14232,6 +14232,14 @@
           "id": "J-BOOKED",
           "collection": "projects",
           "isLive": true
+        },
+        {
+          "id": "J-HIDDEN",
+          "collection": "smallWorks",
+          "isLive": true,
+          "hiddenOperativeUserIds": [
+            "u-op"
+          ]
         }
       ]
     },
@@ -14301,7 +14309,7 @@
       ]
     },
     {
-      "name": "1.21.0 a manager without the toggle sees only the jobs they manage (account id or managers row), less hidden ones",
+      "name": "1.33.0 a manager without a toggle sees every job (hide lists are not read)",
       "function": "visibleJobs",
       "args": [
         [
@@ -14383,11 +14391,30 @@
           "managerIds": [
             "MGR-ROW"
           ]
+        },
+        {
+          "id": "NOT-MINE",
+          "collection": "projects",
+          "isLive": true,
+          "managerUserIds": [
+            "U-X"
+          ]
+        },
+        {
+          "id": "HIDDEN",
+          "collection": "projects",
+          "isLive": true,
+          "managerUserIds": [
+            "U-M"
+          ],
+          "hiddenManagerUserIds": [
+            "U-M"
+          ]
         }
       ]
     },
     {
-      "name": "1.21.0 a manager with the Projects toggle sees every project and only their small works",
+      "name": "1.33.0 a manager with the Projects toggle sees every job too (the toggle only adds jobs and changes manager lists)",
       "function": "visibleJobs",
       "args": [
         [
@@ -14476,6 +14503,17 @@
           "isLive": true,
           "managerUserIds": [
             "U-X"
+          ]
+        },
+        {
+          "id": "HIDDEN",
+          "collection": "projects",
+          "isLive": true,
+          "managerUserIds": [
+            "U-M"
+          ],
+          "hiddenManagerUserIds": [
+            "U-M"
           ]
         }
       ]
@@ -14813,7 +14851,7 @@
       "expected": "completed"
     },
     {
-      "name": "1.21.0 home active count = the Active tab of the viewer's lists",
+      "name": "1.21.0 home active count = the Active tab of the viewer's lists (1.33.0: a manager sees every job)",
       "function": "activeJobsCount",
       "args": [
         [
@@ -14889,7 +14927,7 @@
         "2026-11-03",
         "Europe/London"
       ],
-      "expected": 2
+      "expected": 3
     },
     {
       "name": "1.21.0 a numeric job number is read as text",
@@ -14941,8 +14979,6 @@
         "latitude": null,
         "longitude": null,
         "usesMapPinForLocation": false,
-        "hiddenManagerUserIds": [],
-        "hiddenOperativeUserIds": [],
         "status": null,
         "organizationId": null,
         "createdAtMs": null,
@@ -18781,7 +18817,7 @@
       }
     },
     {
-      "name": "1.27.0 materialRequestJobCheck: a manager who does not manage the job is refused (job_not_visible)",
+      "name": "1.27.0 / 1.33.0 materialRequestJobCheck: a manager who does not manage the job may send (every manager sees every job)",
       "function": "materialRequestJobCheck",
       "args": [
         {
@@ -18814,10 +18850,7 @@
         }
       ],
       "expected": {
-        "ok": false,
-        "reason": "job_not_visible",
-        "status": 403,
-        "message": "You cannot send materials for this job."
+        "ok": true
       }
     },
     {
@@ -23189,6 +23222,457 @@
         }
       ],
       "expected": false
+    },
+    {
+      "name": "1.33.0 My Projects never saved: pre-filled with the projects the manager manages",
+      "function": "myWorksList",
+      "args": [
+        [
+          {
+            "id": "MINE",
+            "collection": "projects",
+            "managerUserIds": [
+              "U-M"
+            ]
+          },
+          {
+            "id": "OTHER",
+            "collection": "projects",
+            "managerUserIds": [
+              "U-X"
+            ]
+          },
+          {
+            "id": "SW-MINE",
+            "collection": "smallWorks",
+            "managerIds": [
+              "MGR-ROW"
+            ]
+          }
+        ],
+        {
+          "projects": null,
+          "smallWorks": null
+        },
+        {
+          "role": {
+            "isSuperAdmin": false,
+            "isAdmin": false,
+            "isManager": true,
+            "isOperativeMode": false
+          },
+          "ids": [
+            "U-M"
+          ],
+          "email": "m@x.com",
+          "uid": "U-M",
+          "toggles": {
+            "projects": false,
+            "smallWorks": false
+          }
+        },
+        {
+          "managers": [
+            {
+              "id": "MGR-ROW",
+              "email": "M@x.com"
+            }
+          ]
+        },
+        "projects"
+      ],
+      "expected": [
+        {
+          "id": "MINE",
+          "collection": "projects",
+          "managerUserIds": [
+            "U-M"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "1.33.0 My Small works never saved: a managers row on their email counts",
+      "function": "myWorksList",
+      "args": [
+        [
+          {
+            "id": "MINE",
+            "collection": "projects",
+            "managerUserIds": [
+              "U-M"
+            ]
+          },
+          {
+            "id": "OTHER",
+            "collection": "projects",
+            "managerUserIds": [
+              "U-X"
+            ]
+          },
+          {
+            "id": "SW-MINE",
+            "collection": "smallWorks",
+            "managerIds": [
+              "MGR-ROW"
+            ]
+          }
+        ],
+        null,
+        {
+          "role": {
+            "isSuperAdmin": false,
+            "isAdmin": false,
+            "isManager": true,
+            "isOperativeMode": false
+          },
+          "ids": [
+            "U-M"
+          ],
+          "email": "m@x.com",
+          "uid": "U-M",
+          "toggles": {
+            "projects": false,
+            "smallWorks": false
+          }
+        },
+        {
+          "managers": [
+            {
+              "id": "MGR-ROW",
+              "email": "M@x.com"
+            }
+          ]
+        },
+        "smallWorks"
+      ],
+      "expected": [
+        {
+          "id": "SW-MINE",
+          "collection": "smallWorks",
+          "managerIds": [
+            "MGR-ROW"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "1.33.0 My Projects saved: exactly the picks (ids without case), in list order; a saved empty list is empty",
+      "function": "myWorksList",
+      "args": [
+        [
+          {
+            "id": "MINE",
+            "collection": "projects",
+            "managerUserIds": [
+              "U-M"
+            ]
+          },
+          {
+            "id": "OTHER",
+            "collection": "projects",
+            "managerUserIds": [
+              "U-X"
+            ]
+          },
+          {
+            "id": "SW-MINE",
+            "collection": "smallWorks",
+            "managerIds": [
+              "MGR-ROW"
+            ]
+          }
+        ],
+        {
+          "projects": [
+            "other",
+            "GONE"
+          ],
+          "smallWorks": []
+        },
+        {
+          "role": {
+            "isSuperAdmin": false,
+            "isAdmin": false,
+            "isManager": true,
+            "isOperativeMode": false
+          },
+          "ids": [
+            "U-M"
+          ],
+          "email": "m@x.com",
+          "uid": "U-M",
+          "toggles": {
+            "projects": false,
+            "smallWorks": false
+          }
+        },
+        {
+          "managers": [
+            {
+              "id": "MGR-ROW",
+              "email": "M@x.com"
+            }
+          ]
+        },
+        "projects"
+      ],
+      "expected": [
+        {
+          "id": "OTHER",
+          "collection": "projects",
+          "managerUserIds": [
+            "U-X"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "1.33.0 an operative has no My list",
+      "function": "myWorksList",
+      "args": [
+        [
+          {
+            "id": "MINE",
+            "collection": "projects",
+            "managerUserIds": [
+              "U-M"
+            ]
+          },
+          {
+            "id": "OTHER",
+            "collection": "projects",
+            "managerUserIds": [
+              "U-X"
+            ]
+          },
+          {
+            "id": "SW-MINE",
+            "collection": "smallWorks",
+            "managerIds": [
+              "MGR-ROW"
+            ]
+          }
+        ],
+        {
+          "projects": [
+            "MINE"
+          ],
+          "smallWorks": null
+        },
+        {
+          "role": {
+            "isSuperAdmin": false,
+            "isAdmin": false,
+            "isManager": false,
+            "isOperativeMode": true
+          },
+          "ids": [
+            "U-M"
+          ],
+          "uid": "U-M"
+        },
+        {
+          "managers": [
+            {
+              "id": "MGR-ROW",
+              "email": "M@x.com"
+            }
+          ]
+        },
+        "projects"
+      ],
+      "expected": []
+    },
+    {
+      "name": "1.33.0 ticking and unticking a job on the My list",
+      "function": "myWorksPicksAfterToggle",
+      "args": [
+        [
+          "A",
+          "b"
+        ],
+        "B",
+        false
+      ],
+      "expected": [
+        "A"
+      ]
+    },
+    {
+      "name": "1.33.0 Daily Overview scope: a manager sees themselves and their reports, no job part",
+      "function": "dailyOverviewScopeFor",
+      "args": [
+        {
+          "viewer": {
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": false,
+              "isManager": true,
+              "isOperativeMode": false
+            },
+            "ids": [
+              "U-M"
+            ],
+            "email": "m@x.com",
+            "uid": "U-M",
+            "toggles": {
+              "projects": false,
+              "smallWorks": false
+            }
+          },
+          "roster": [
+            {
+              "id": "U-M",
+              "email": "m@x.com",
+              "role": "manager"
+            },
+            {
+              "id": "U-R",
+              "email": "r@x.com",
+              "assignedManagerUserIds": [
+                "U-M"
+              ]
+            },
+            {
+              "id": "U-N",
+              "email": "n@x.com",
+              "assignedManagerUserIds": [
+                "U-X"
+              ]
+            }
+          ],
+          "operatives": [
+            {
+              "id": "OP-R",
+              "email": "R@x.com"
+            }
+          ],
+          "enforced": true
+        }
+      ],
+      "expected": {
+        "kind": "jobs",
+        "jobIds": [],
+        "personIds": [
+          "u-m",
+          "u-r",
+          "op-r"
+        ],
+        "personEmails": [
+          "m@x.com",
+          "r@x.com"
+        ],
+        "unbookedLabour": true
+      }
+    },
+    {
+      "name": "1.33.0 Daily Overview scope: admins see everything",
+      "function": "dailyOverviewScopeFor",
+      "args": [
+        {
+          "viewer": {
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": true,
+              "isManager": false,
+              "isOperativeMode": false
+            },
+            "ids": [
+              "A"
+            ]
+          }
+        }
+      ],
+      "expected": {
+        "kind": "all"
+      }
+    },
+    {
+      "name": "1.33.0 Daily Overview row: a subcontractor booking only for admins",
+      "function": "isDailyOverviewRowInScope",
+      "args": [
+        {
+          "kind": "jobs",
+          "jobIds": [
+            "j1"
+          ],
+          "personIds": [
+            "u-m"
+          ],
+          "personEmails": [],
+          "unbookedLabour": true
+        },
+        {
+          "subcontractor": true,
+          "personIds": [
+            "u-m"
+          ]
+        }
+      ],
+      "expected": false
+    },
+    {
+      "name": "1.33.0 Daily Overview row: a report by email is in scope",
+      "function": "isDailyOverviewRowInScope",
+      "args": [
+        {
+          "kind": "jobs",
+          "jobIds": [],
+          "personIds": [],
+          "personEmails": [
+            "r@x.com"
+          ],
+          "unbookedLabour": true
+        },
+        {
+          "personIds": [
+            "OTHER-ID"
+          ],
+          "email": "R@x.com"
+        }
+      ],
+      "expected": true
+    },
+    {
+      "name": "1.33.0 materialRequestJobCheck: an operative never sends (job_not_visible)",
+      "function": "materialRequestJobCheck",
+      "args": [
+        {
+          "viewer": {
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": false,
+              "isManager": false,
+              "isOperativeMode": true
+            },
+            "toggles": {
+              "projects": false,
+              "smallWorks": false
+            },
+            "uid": "op-1",
+            "ids": [
+              "op-1"
+            ],
+            "email": "op@example.com"
+          },
+          "job": {
+            "jobNumber": "J-200",
+            "managerIds": [
+              "op-1"
+            ]
+          },
+          "kind": "projects",
+          "managers": [],
+          "jobNumber": "J-200"
+        }
+      ],
+      "expected": {
+        "ok": false,
+        "reason": "job_not_visible",
+        "status": 403,
+        "message": "You cannot send materials for this job."
+      }
     }
   ]
 }

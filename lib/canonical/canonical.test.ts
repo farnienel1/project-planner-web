@@ -1287,10 +1287,9 @@ test('dismissing an expired qualification hides it until the expiry date changes
   assert.equal(upcoming.length, 2)
 })
 
-test('every admin and manager sees every warning; only admins see every job (1.10.0); operatives and role-less accounts do not', () => {
-  assert.equal(seesEveryJob(manager), false)
+test('every admin and manager opens the warning list and (1.33.0) sees every job; operatives and role-less accounts do not', () => {
   for (const role of [superAdmin, admin, manager]) {
-    if (role !== manager) assert.equal(seesEveryJob(role), true)
+    assert.equal(seesEveryJob(role), true)
     assert.equal(canViewStaffWarnings(role), true)
     assert.equal(canSeeVariations(role), true)
     assert.equal(canReviewUserTimesheets(role), true)
@@ -7482,7 +7481,7 @@ import {
 } from './notificationPreferences.ts'
 import { TOMBSTONED_BOOKING_COLLECTIONS as rb110Tombstoned, bookingTombstoneWriteFields as rb110Tombstone } from './bookingTombstones.ts'
 
-test('1.10.0 canSeeJob: admins every job, managers only jobs they manage (any id spelling), operatives none', () => {
+test('1.10.0 / 1.33.0 canSeeJob: admins and every manager see every job; isJobManager matches any id spelling; operatives none', () => {
   const job = { managerIds: ['MGR-ROW-1', 'user:Mgr-Uid-2'], managerId: 'MGR-ROW-1' }
   const managers = [{ id: 'mgr-row-1', email: 'Pat@Example.com' }]
   const pat = { role: manager, ids: ['pat-uid'], email: 'pat@example.com' }
@@ -7490,23 +7489,30 @@ test('1.10.0 canSeeJob: admins every job, managers only jobs they manage (any id
   const stranger = { role: manager, ids: ['someone'], email: 's@example.com' }
   assert.equal(rb110CanSeeJob({ role: admin, ids: ['a'] }, job), true)
   assert.equal(rb110CanSeeJob({ role: superAdmin, ids: ['s'] }, {}), true)
+  // 1.33.0 (owner decision 6 Nov): every manager sees every job, whatever their toggles and whether they manage it.
   assert.equal(rb110CanSeeJob(pat, job, managers), true)
-  assert.equal(rb110CanSeeJob(pat, job), false)
-  assert.equal(rb110CanSeeJob(other, job), true)
-  assert.equal(rb110CanSeeJob(stranger, job, managers), false)
+  assert.equal(rb110CanSeeJob(pat, job), true)
+  assert.equal(rb110CanSeeJob(stranger, job, managers), true)
+  assert.equal(rb110CanSeeJob(stranger, job, managers, 'smallWorks'), true)
   assert.equal(rb110CanSeeJob({ role: operative, ids: ['mgr-uid-2'] }, job), false)
   assert.equal(rb110CanSeeJob({ role: { ...admin, isOperativeMode: true }, ids: ['a'] }, job), false)
-  // Removed as manager → gone; re-added → back.
-  assert.equal(rb110CanSeeJob(other, { managerIds: ['MGR-ROW-1'] }), false)
-  assert.equal(rb110CanSeeJob(other, { managerIds: ['MGR-ROW-1', 'mgr-uid-2'] }), true)
+  assert.equal(rb110CanSeeJob({ role: { ...manager, isOperativeMode: true }, ids: ['mgr-uid-2'] }, job), false)
+  // Whether they manage it (booking writes, warnings' job part) is still `isJobManager`, under every id spelling.
+  assert.equal(rb110IsJobManager(pat, job, managers), true)
+  assert.equal(rb110IsJobManager(pat, job), false)
+  assert.equal(rb110IsJobManager(other, job), true)
+  assert.equal(rb110IsJobManager(stranger, job, managers), false)
+  assert.equal(rb110IsJobManager(other, { managerIds: ['MGR-ROW-1'] }), false)
+  assert.equal(rb110IsJobManager(other, { managerIds: ['MGR-ROW-1', 'mgr-uid-2'] }), true)
   // Former ids count; managerUserIds counts.
-  assert.equal(rb110CanSeeJob({ role: manager, ids: ['new', 'OLD-INVITE'] }, { managerUserIds: ['old-invite'] }), true)
+  assert.equal(rb110IsJobManager({ ids: ['new', 'OLD-INVITE'] }, { managerUserIds: ['old-invite'] }), true)
   // iOS stores a managers row whose id is a user id as its stable hash.
   const hashed = { managerIds: [rb110StableManagerId('pat-row-uid')] }
   assert.equal(rb110IsJobManager(pat, hashed, [{ id: 'pat-row-uid', email: 'pat@example.com' }]), true)
   assert.match(rb110StableManagerId('pat-row-uid'), /^[0-9A-F]{8}-[0-9A-F]{4}-5[0-9A-F]{3}-[89AB][0-9A-F]{3}-[0-9A-F]{12}$/)
   assert.equal(rb110StableManagerId('0f8fad5b-d9cb-469f-a165-70867728950e'), '0F8FAD5B-D9CB-469F-A165-70867728950E')
-  assert.deepEqual(rb110VisibleJobsFor(other, [job, { managerIds: [] }]).length, 1)
+  assert.deepEqual(rb110VisibleJobsFor(other, [job, { managerIds: [] }]).length, 2)
+  assert.deepEqual(rb110VisibleJobsFor({ role: operative, ids: ['mgr-uid-2'] }, [job]).length, 0)
 })
 
 test('1.10.0 canWriteBooking / canDeleteBooking: admin any, manager own jobs and own non-job site bookings, operative never', () => {
@@ -7751,6 +7757,7 @@ import {
   jobWriteWithoutManagerList as r2WithoutManagerList,
   readsEveryBooking as r2ReadsEveryBookingRaw,
   warningScopeFor as r2WarningScopeForRaw,
+  hasWorkCatalogueToggle as r2HasToggle,
   ENFORCED_READS_ACTIVE as ENFORCED_READS_ACTIVE_110,
 } from './staffAccess.ts'
 // The 1.10.0 r2 tests check enforced reads (§17); 1.10.1 keeps them switched off (`ENFORCED_READS_ACTIVE`) until the
@@ -7790,28 +7797,45 @@ test('1.10.0 r2: admins add, edit and change managers; managers only with that k
   assert.deepEqual(r2WithoutManagerList({ siteName: 'A', managerIds: ['x'], managerId: 'x', managerUserIds: ['u'] }), { siteName: 'A' })
 })
 
-test('1.10.0 r2: canSeeJob and seesEveryJob — a toggle shows every job of that kind', () => {
+test('1.10.0 r2 / 1.33.0: seesEveryJob and canSeeJob — every manager sees every job; the toggle is hasWorkCatalogueToggle', () => {
   const togglePm = { role: manager, ids: ['t'], toggles: r2Projects }
-  assert.equal(seesEveryJob(manager, 'projects', r2Projects), true)
-  assert.equal(seesEveryJob(manager, 'smallWorks', r2Projects), false)
-  assert.equal(seesEveryJob(manager, null, r2Projects), false)
-  assert.equal(seesEveryJob(manager, null, r2Both), true)
+  const plainPm = { role: manager, ids: ['p'], toggles: r2Off }
+  for (const kind of ['projects', 'smallWorks', null] as const) {
+    assert.equal(seesEveryJob(manager, kind, r2Projects), true)
+    assert.equal(seesEveryJob(manager, kind, r2Off), true)
+    assert.equal(seesEveryJob(manager, kind, null), true)
+  }
   assert.equal(seesEveryJob(admin), true)
+  assert.equal(seesEveryJob(operative, 'projects', r2Both), false)
+  assert.equal(seesEveryJob({ ...manager, isOperativeMode: true }, 'projects', r2Both), false)
   assert.equal(rb110CanSeeJob(togglePm, { managerIds: [] }, [], 'projects'), true)
-  assert.equal(rb110CanSeeJob(togglePm, { managerIds: [] }, [], 'smallWorks'), false)
-  assert.equal(rb110CanSeeJob(togglePm, { managerIds: ['t'] }, [], 'smallWorks'), true)
+  assert.equal(rb110CanSeeJob(togglePm, { managerIds: [] }, [], 'smallWorks'), true)
+  assert.equal(rb110CanSeeJob(plainPm, { managerIds: [] }, [], 'smallWorks'), true)
+  // The toggle (adding jobs, changing manager lists) is unchanged.
+  assert.equal(r2HasToggle(manager, 'projects', r2Projects), true)
+  assert.equal(r2HasToggle(manager, 'smallWorks', r2Projects), false)
+  assert.equal(r2HasToggle(manager, null, r2Projects), false)
+  assert.equal(r2HasToggle(manager, null, r2Both), true)
+  assert.equal(r2HasToggle(manager, 'projects', null), false)
+  assert.equal(r2HasToggle(admin, 'projects', r2Off), true)
+  assert.equal(r2HasToggle(operative, 'projects', r2Both), false)
 })
 
-test('1.10.0 r2: jobQueryPlan — whole collections, managerUserIds array-contains, or an operative\'s own job documents', () => {
-  assert.deepEqual(r2JobQueryPlan({ role: admin, ids: ['a'] }).queries, [
-    { collection: 'projects', kind: 'all' },
-    { collection: 'smallWorks', kind: 'all' },
-  ])
-  assert.deepEqual(r2JobQueryPlan({ role: manager, ids: ['m'], uid: 'm-uid', toggles: r2Projects }).queries, [
-    { collection: 'projects', kind: 'all' },
-    { collection: 'smallWorks', kind: 'managed', field: 'managerUserIds', op: 'array-contains', value: 'm-uid' },
-  ])
-  assert.deepEqual(r2JobQueryPlan({ role: manager, ids: ['m'] }).queries.map((q) => q.kind), ['managed', 'managed'])
+test('1.10.0 r2 / 1.33.0: jobQueryPlan — whole collections for every admin and manager (switch on or off), an operative\'s own job documents', () => {
+  for (const enforced of [true, false]) {
+    for (const viewer of [
+      { role: admin, ids: ['a'] },
+      { role: manager, ids: ['m'], uid: 'm-uid', toggles: r2Projects },
+      { role: manager, ids: ['m'] },
+    ]) {
+      const plan = r2JobQueryPlanRaw(viewer, { enforced })
+      assert.deepEqual(plan.queries, [
+        { collection: 'projects', kind: 'all' },
+        { collection: 'smallWorks', kind: 'all' },
+      ])
+      assert.deepEqual(plan.seesEvery, { projects: true, smallWorks: true })
+    }
+  }
   const opPlan = r2JobQueryPlan({ role: operative, ids: ['op'] }, { documentIds: ['abc', 'ABC'] })
   assert.deepEqual(opPlan.queries, [
     { collection: 'projects', kind: 'documents', ids: ['abc', 'ABC'] },
@@ -7823,43 +7847,28 @@ test('1.10.0 r2: jobQueryPlan — whole collections, managerUserIds array-contai
   assert.deepEqual(r2JobIdQueryValues(['123']), ['123'])
 })
 
-test('1.10.0 r2 / 1.11.0: bookingQueryPlan — whole collections for admins, by kind for toggle managers, one query per job otherwise, plus own', () => {
-  assert.equal(r2ReadsEveryBooking({ role: admin, ids: ['a'] }), true)
-  // 1.11.0: a toggle manager reads their kind by jobCollection, never a whole collection.
-  assert.equal(r2ReadsEveryBooking({ role: manager, ids: ['m'], toggles: r2Projects }), false)
-  const byKind = r2BookingQueryPlan({ role: manager, ids: ['m'], uid: 'm', toggles: r2Projects }, ['sw-1'], { ownBookingIds: ['m'] })
-  assert.equal(byKind.readsEveryBooking, false)
-  assert.deepEqual(byKind.queries.slice(0, 3), [
-    { collection: 'bookings', kind: 'jobCollection', field: 'jobCollection', op: '==', value: 'projects' },
-    { collection: 'managerSiteBookings', kind: 'jobCollection', field: 'jobCollection', op: '==', value: 'projects' },
-    { collection: 'subcontractorBookings', kind: 'jobCollection', field: 'jobCollection', op: '==', value: 'projects' },
-  ])
-  assert.deepEqual(byKind.queries.filter((q) => q.kind === 'job').map((q) => q.jobId), ['sw-1', 'sw-1', 'sw-1'])
-  assert.equal(r2ReadsEveryBooking({ role: manager, ids: ['m'] }), false)
+test('1.10.0 r2 / 1.33.0: bookingQueryPlan — whole collections for admins and every manager, own labour bookings for operatives', () => {
+  for (const enforced of [true, false]) {
+    for (const viewer of [
+      { role: admin, ids: ['a'] },
+      { role: manager, ids: ['m'], uid: 'm', toggles: r2Projects },
+      { role: manager, ids: ['m-uid'], uid: 'm-uid' },
+    ]) {
+      assert.equal(r2ReadsEveryBookingRaw(viewer, { enforced }), true)
+      const plan = r2BookingQueryPlanRaw(viewer, ['job-a'], { ownBookingIds: ['m-uid'], enforced })
+      assert.equal(plan.readsEveryBooking, true)
+      assert.deepEqual(plan.queries.map((q) => `${q.collection}:${q.kind}`), ['bookings:all', 'managerSiteBookings:all', 'subcontractorBookings:all'])
+    }
+  }
   assert.equal(r2ReadsEveryBooking({ role: operative, ids: ['o'], toggles: r2Both }), false)
-  const all = r2BookingQueryPlan({ role: admin, ids: ['a'] }, ['x'])
-  assert.equal(all.readsEveryBooking, true)
-  assert.deepEqual(all.queries.map((q) => `${q.collection}:${q.kind}`), ['bookings:all', 'managerSiteBookings:all', 'subcontractorBookings:all'])
-  const restricted = r2BookingQueryPlan({ role: manager, ids: ['m-uid'], uid: 'm-uid' }, ['job-a', 'JOB-A', 'job-b'], {
-    ownBookingIds: ['m-uid', 'op-row-1'],
-  })
-  assert.equal(restricted.readsEveryBooking, false)
-  assert.deepEqual(restricted.queries, [
-    { collection: 'bookings', kind: 'job', jobId: 'job-a', field: 'projectId', op: 'in', values: ['job-a', 'JOB-A'] },
-    { collection: 'subcontractorBookings', kind: 'job', jobId: 'job-a', field: 'projectId', op: 'in', values: ['job-a', 'JOB-A'] },
-    { collection: 'managerSiteBookings', kind: 'job', jobId: 'job-a', field: 'locationId', op: 'in', values: ['job-a', 'JOB-A'] },
-    { collection: 'bookings', kind: 'job', jobId: 'job-b', field: 'projectId', op: 'in', values: ['job-b', 'JOB-B'] },
-    { collection: 'subcontractorBookings', kind: 'job', jobId: 'job-b', field: 'projectId', op: 'in', values: ['job-b', 'JOB-B'] },
-    { collection: 'managerSiteBookings', kind: 'job', jobId: 'job-b', field: 'locationId', op: 'in', values: ['job-b', 'JOB-B'] },
-    { collection: 'bookings', kind: 'own', field: 'operativeId', op: 'in', values: ['m-uid', 'op-row-1'] },
-    { collection: 'managerSiteBookings', kind: 'own', field: 'userId', op: '==', values: ['m-uid'] },
-  ])
+  assert.equal(r2ReadsEveryBooking({ role: { ...manager, isOperativeMode: true }, ids: ['o'] }), false)
   const op = r2BookingQueryPlan({ role: operative, ids: ['o'] }, ['job-a'], { ownBookingIds: ['a', 'b', 'c', 'd', 'e'] })
+  assert.equal(op.readsEveryBooking, false)
   assert.deepEqual(op.queries.map((q) => (q.kind === 'own' ? q.values : [])), [['o', 'a', 'b', 'c'], ['d', 'e']])
-  assert.ok(op.queries.every((q) => q.collection === 'bookings'))
+  assert.ok(op.queries.every((q) => q.collection === 'bookings' && q.kind === 'own'))
 })
 
-test('1.10.0 r2 (1.31.0): warning scope — a manager gets their jobs and their people, and no unbooked labour without every booking', () => {
+test('1.10.0 r2 (1.31.0, 1.33.0): warning scope — a manager gets their jobs and their people, and (1.33.0) their unbooked labour with enforced reads on', () => {
   const plain = { role: manager, ids: ['m'] }
   const scope = r2WarningScopeFor({
     viewer: plain,
@@ -7873,7 +7882,10 @@ test('1.10.0 r2 (1.31.0): warning scope — a manager gets their jobs and their 
   assert.deepEqual(scope.jobIds, ['job-a'])
   assert.deepEqual(scope.personEmails, ['one@x.com'])
   assert.ok(scope.personIds.includes('u-1') && scope.personIds.includes('op-1') && !scope.personIds.includes('op-2'))
-  assert.equal(scope.unbookedLabour, false)
+  // 1.33.0: every manager reads every booking (`readsEveryBooking`), so their unbooked rows come back under enforcedReads.
+  assert.equal(scope.unbookedLabour, true)
+  const opScope = r2WarningScopeFor({ viewer: { role: operative, ids: ['o'] } })
+  assert.equal(opScope.kind === 'jobs' && opScope.unbookedLabour, false)
   assert.deepEqual(r2WarningScopeFor({ viewer: { role: admin, ids: ['a'] }, visibleJobIds: [] }), { kind: 'all' })
   assert.equal(r2WarningScopeFor({ viewer: { ...plain, toggles: r2Projects }, visibleJobIds: [] }).kind, 'jobs')
   const unbooked = unbookedLabourRows({
@@ -7885,11 +7897,14 @@ test('1.10.0 r2 (1.31.0): warning scope — a manager gets their jobs and their 
     saturdayCountsAsHours: 8,
     sundayCountsAsHours: 8,
     people: [],
-    operatives: [{ id: 'op-1', email: 'one@x.com', name: 'One', isActive: true, isPlaceholder: false, profileWeight: 1 }],
+    operatives: [
+      { id: 'op-1', email: 'one@x.com', name: 'One', isActive: true, isPlaceholder: false, profileWeight: 1 },
+      { id: 'op-2', email: 'two@x.com', name: 'Two', isActive: true, isPlaceholder: false, profileWeight: 1 },
+    ],
     bookings: [],
     holidays: [],
   })
-  assert.deepEqual(unbooked, [])
+  assert.deepEqual(unbooked.map((row) => row.operativeId), ['op-1'])
   const quals = qualificationExpiryRows({
     scope,
     referenceIso: '2026-11-02T10:00:00Z',
@@ -8270,7 +8285,7 @@ test('1.11.0 invites: the invitation is the only source of role, permissions, pa
   assert.equal(r3InviteMembership({ invitation: {}, invitationId: 'inv', authUid: 'u', now: 1 }), null)
 })
 
-test('1.11.0 job kind: the collection decides; bookings carry jobCollection; reads by kind', () => {
+test('1.11.0 job kind: the collection decides; bookings carry jobCollection (1.33.0: managers read every booking)', () => {
   assert.equal(r3JobKind({ jobType: 'Small Works' }, 'projects'), 'projects')
   assert.equal(r3JobKind({ jobType: 'CAT A' }, 'smallWorks'), 'smallWorks')
   assert.equal(r3JobKind({ jobType: 'small_works' }, null), 'smallWorks')
@@ -8286,14 +8301,9 @@ test('1.11.0 job kind: the collection decides; bookings carry jobCollection; rea
   assert.ok(written.ok && written.fields.jobCollection === 'smallWorks')
   const parsed = r3ParseBooking('B', { operativeId: 'o', projectId: 'p', date: 0, timeSlot: 'AM', status: 'Confirmed', jobCollection: 'projects' })
   assert.ok(parsed.ok && parsed.booking.jobCollection === 'projects')
-  // A single-toggle manager reads that kind by jobCollection and the other kind's managed jobs one by one.
+  // 1.33.0: a single-toggle manager reads every booking (whole collections), switch on or off — no by-kind reads.
   const viewer = { role: { isSuperAdmin: false, isAdmin: false, isManager: true, isOperativeMode: false }, uid: 'm', ids: ['m'], toggles: { projects: false, smallWorks: true } }
-  const plan = r3BookingPlan(viewer, ['P-1'], { enforced: true })
-  assert.deepEqual(plan.queries.filter((q) => q.kind === 'jobCollection').map((q) => [q.collection, q.kind === 'jobCollection' ? q.value : '']), [
-    ['bookings', 'smallWorks'], ['managerSiteBookings', 'smallWorks'], ['subcontractorBookings', 'smallWorks'],
-  ])
-  assert.ok(plan.queries.some((q) => q.kind === 'job' && q.jobId === 'P-1'))
-  // Still switched off (1.10.1): every manager reads whole collections until the backfills.
+  assert.equal(r3BookingPlan(viewer, ['P-1'], { enforced: true }).readsEveryBooking, true)
   assert.equal(r3BookingPlan(viewer, ['P-1']).readsEveryBooking, true)
 })
 
@@ -10602,7 +10612,7 @@ test('1.21.0 an operative sees a job reached only through a task', () => {
   assert.deepEqual(operativeJobIds121(viewer, { ...context, deadlineJobIds: ['J-D'] }), ['j-task', 'J-D'])
 })
 
-test('1.21.0 a manager without the toggle sees only the jobs they manage', () => {
+test('1.21.0 / 1.33.0 every manager sees every job, toggles or not, and hide lists are not read', () => {
   const viewer = { role: role121({ isManager: true }), ids: ['U-M'], email: 'm@x.com', toggles: noToggles121 }
   const jobs = [
     { id: 'MINE', collection: 'projects', managerUserIds: ['U-M'] },
@@ -10611,9 +10621,13 @@ test('1.21.0 a manager without the toggle sees only the jobs they manage', () =>
     { id: 'HIDDEN', collection: 'projects', managerUserIds: ['U-M'], hiddenManagerUserIds: ['u-m'] },
   ]
   const context = { managers: [{ id: 'MGR-ROW', email: 'M@x.com' }] }
-  assert.deepEqual(visibleJobs121(jobs, viewer, context).map((j) => j.id), ['MINE', 'BY-ROW'])
+  assert.deepEqual(visibleJobs121(jobs, viewer, context).map((j) => j.id), ['MINE', 'BY-ROW', 'OTHER', 'HIDDEN'])
   const toggled = { ...viewer, toggles: { projects: true, smallWorks: false } }
-  assert.deepEqual(visibleJobs121(jobs, toggled, context).map((j) => j.id), ['MINE', 'BY-ROW', 'OTHER'])
+  assert.deepEqual(visibleJobs121(jobs, toggled, context).map((j) => j.id), ['MINE', 'BY-ROW', 'OTHER', 'HIDDEN'])
+  // An operative booked on a job always sees it now (a hide list naming them is ignored).
+  const op = { role: role121({ isOperativeMode: true }), ids: ['U-OP'], email: 'op@x.com', toggles: noToggles121 }
+  const opJobs = [{ id: 'BOOKED', collection: 'projects', hiddenOperativeUserIds: ['U-OP'] }, { id: 'ELSE', collection: 'projects' }]
+  assert.deepEqual(visibleJobs121(opJobs, op, { bookings: [{ projectId: 'BOOKED', operativeId: 'U-OP', status: 'Confirmed' }] }).map((j) => j.id), ['BOOKED'])
 })
 
 test('1.21.0 bookable jobs exclude inactive and non-writable jobs, never by dates', () => {
@@ -10659,7 +10673,8 @@ test('1.21.0 home active count equals the Active tabs of the viewer lists', () =
     { id: 'C', collection: 'projects', isLive: false, managerUserIds: ['U-M'], startDayKey: '2026-11-01', endDayKey: '2026-11-30' },
     { id: 'D', collection: 'projects', managerUserIds: ['U-X'], startDayKey: '2026-11-01', endDayKey: '2026-11-30' },
   ]
-  assert.equal(jobsActiveCount121(jobs, viewer, {}, '2026-11-03', 'Europe/London'), 2)
+  // 1.33.0: a manager sees every job, so another manager's active job (D) counts too.
+  assert.equal(jobsActiveCount121(jobs, viewer, {}, '2026-11-03', 'Europe/London'), 3)
 })
 
 test('1.21.0 a numeric job number is read as its text', () => {
@@ -11335,9 +11350,10 @@ test('1.26.0 jobQueryPlan / bookingQueryPlan follow the switch value the app pas
   const manager = { role: { isManager: true }, ids: ['m'], uid: 'm' }
   const plan = (on: boolean) => R112.jobQueryPlan(manager as any, { enforced: r126SwitchOn({ enforcedReadsOrganizationIds: on ? ['o'] : [] }, 'o', 'enforcedReads') })
   assert.deepEqual(plan(false).queries.map((q: any) => q.kind), ['all', 'all'])
-  assert.deepEqual(plan(true).queries.map((q: any) => q.kind), ['managed', 'managed'])
+  // 1.33.0: every manager lists every job and reads every booking with the switch on too.
+  assert.deepEqual(plan(true).queries.map((q: any) => q.kind), ['all', 'all'])
   assert.equal(R112.readsEveryBooking(manager as any, { enforced: false }), true)
-  assert.equal(R112.readsEveryBooking(manager as any, { enforced: true }), false)
+  assert.equal(R112.readsEveryBooking(manager as any, { enforced: true }), true)
   // Operatives read their jobs by id whatever the switch.
   const op = { role: { isOperativeMode: true }, ids: ['op'], uid: 'op' }
   for (const enforced of [false, true]) {
@@ -11493,18 +11509,10 @@ test('1.27.0 (2) material email: the sender must see the job (§17 canSeeJob) an
     R112.materialRequestJobCheck({ viewer: v, job, kind: 'projects', managers: [], jobNumber: 'J-200', ...overrides } as never)
   assert.deepEqual(check(viewer({})), { ok: true })
   assert.equal(viewer({}).email, 'boss@example.com')
-  // A manager who does not manage it and has no Projects toggle: refused.
+  // 1.33.0: every manager sees every job (`canSeeJob`), so a manager who does not manage it may send too, toggles or not.
   const other = viewer({ userId: 'mgr-2', email: 'other@example.com' })
-  assert.deepEqual(check(other), {
-    ok: false,
-    reason: 'job_not_visible',
-    status: 403,
-    message: R112.MATERIAL_REQUEST_JOB_NOT_VISIBLE_MESSAGE,
-  })
-  // ... unless the Projects toggle is on (every project), never for small works.
-  const toggled = viewer({ userId: 'mgr-2', email: 'other@example.com', permissionSource: { permissions: { projects: true } } })
-  assert.equal(check(toggled).ok, true)
-  assert.equal(check(toggled, { kind: 'smallWorks' }).ok, false)
+  assert.deepEqual(check(other), { ok: true })
+  assert.equal(check(other, { kind: 'smallWorks' }).ok, true)
   // A job naming the sender's managers-list row (by email) counts; an alias id counts.
   assert.equal(check(other, { job: { jobNumber: 'J-200', managerIds: ['mrow-9'] }, managers: [{ id: 'mrow-9', email: 'OTHER@example.com' }] }).ok, true)
   assert.equal(check(viewer({ userId: 'new-uid', formerUserIds: ['mgr-1'] })).ok, true)
@@ -12845,9 +12853,9 @@ test('1.31.0 warningScopeFor: a manager with no reports and no jobs sees only wa
   assert.deepEqual(scope.personIds, ['x2'])
   assert.equal(R112.isWarningRowInScope(scope, { jobIds: ['J1'], personIds: ['R'] }), false)
   assert.equal(R112.isPersonInWarningScope(scope, ['X2']), true)
-  // Enforced reads: a manager who cannot read every booking gets no unbooked-labour rows (planning unchanged).
+  // 1.33.0: a manager reads every booking with enforced reads on too, so their unbooked-labour rows stay.
   const enforced = R112.warningScopeFor({ viewer: { role: r1310Manager, ids: ['X2'] }, jobs: [], roster: [], enforced: true })
-  assert.equal(enforced.kind === 'jobs' && enforced.unbookedLabour, false)
+  assert.equal(enforced.kind === 'jobs' && enforced.unbookedLabour, true)
 })
 
 test('1.31.0 jobManagerRemovalWrites: made an operative, deactivated or deleted — off every job; admin ↔ manager keeps them', () => {
@@ -13310,4 +13318,123 @@ test('1.32.0 owner decision 5 Nov: the Weekly report is admin-only; a stored man
   assert.equal(rows('operative').length, 0)
   assert.deepEqual(rows('admin').map((row) => [row.value, row.editable]), [[true, false]])
   assert.equal(r132.addUserPermissionDefaults('manager').weeklyReports, false)
+})
+
+// MARK: - Rulebook 1.33.0: every manager sees every job; My Projects; Daily Overview team; line manager locked
+
+test('1.33.0 hide lists are not read: parseJobDocument drops them and visibleJobs ignores them', () => {
+  const parsed = R112.parseJobDocument('J', { jobNumber: 'J', hiddenManagerUserIds: ['m'], hiddenOperativeUserIds: ['o'] }, { kind: 'projects', timeZone: 'Europe/London' }) as Record<string, unknown> | null
+  assert.ok(parsed)
+  assert.equal('hiddenManagerUserIds' in (parsed || {}), false)
+  assert.equal('hiddenOperativeUserIds' in (parsed || {}), false)
+  const mgr = { role: { isSuperAdmin: false, isAdmin: false, isManager: true, isOperativeMode: false }, ids: ['m'] }
+  assert.deepEqual(R112.visibleJobs([{ id: 'J', collection: 'projects', hiddenManagerUserIds: ['m'] } as never], mgr).length, 1)
+})
+
+test('1.33.0 canCreateJob / canChangeJobManagers still follow the toggle; canWriteBooking still own jobs only', () => {
+  const plain = { role: { isSuperAdmin: false, isAdmin: false, isManager: true, isOperativeMode: false }, ids: ['m'], toggles: { projects: false, smallWorks: false } }
+  assert.equal(R112.canSeeJob(plain, { managerIds: ['x'] }), true)
+  assert.equal(R112.canCreateJob(plain, 'projects'), false)
+  assert.equal(R112.canChangeJobManagers(plain, 'smallWorks'), false)
+  assert.equal(R112.canEditJob(plain, { managerIds: ['x'] }, 'projects'), false)
+  assert.equal(R112.canWriteBooking(plain, { collection: 'bookings', projectId: 'J' }, { managerIds: ['x'] }), false)
+  assert.equal(R112.canWriteBooking(plain, { collection: 'bookings', projectId: 'J' }, { managerIds: ['m'] }), true)
+  assert.equal(R112.canEditWorkCatalogue(plain.role, 'projects', plain.toggles), false)
+})
+
+test('1.33.0 My Projects / My Small works: pre-fill, saved picks, picker rows, toggles, write fields', () => {
+  const mgr = { role: { isSuperAdmin: false, isAdmin: false, isManager: true, isOperativeMode: false }, ids: ['U-M'], email: 'm@x.com', uid: 'U-M' }
+  const admin = { role: { isSuperAdmin: false, isAdmin: true, isManager: false, isOperativeMode: false }, ids: ['A'], uid: 'A' }
+  const op = { role: { isSuperAdmin: false, isAdmin: false, isManager: false, isOperativeMode: true }, ids: ['O'], uid: 'O' }
+  const jobs = [
+    { id: 'P1', collection: 'projects', managerUserIds: ['U-M'] },
+    { id: 'P2', collection: 'projects', managerUserIds: ['X'] },
+    { id: 'S1', collection: 'smallWorks', managerUserIds: ['U-M'] },
+  ]
+  assert.equal(R112.hasMyWorksList(mgr), true)
+  assert.equal(R112.hasMyWorksList(admin), true)
+  assert.equal(R112.hasMyWorksList(op), false)
+  assert.equal(R112.defaultWorksListTab(mgr), 'mine')
+  assert.equal(R112.defaultWorksListTab(op), 'active')
+  assert.deepEqual(R112.myWorksDefaultIds(jobs, mgr, {}, 'projects'), ['P1'])
+  assert.deepEqual(R112.myWorksDefaultIds(jobs, admin, {}, 'projects'), [])
+  assert.deepEqual(R112.myWorksList(jobs, R112.parseMyWorksPicks(null), mgr, {}, 'projects').map((j) => j.id), ['P1'])
+  assert.deepEqual(R112.myWorksList(jobs, R112.parseMyWorksPicks({ projects: ['p2', 'P2', 'gone'] }), mgr, {}, 'projects').map((j) => j.id), ['P2'])
+  assert.deepEqual(R112.myWorksList(jobs, R112.parseMyWorksPicks({ projects: [] }), mgr, {}, 'projects'), [])
+  assert.deepEqual(R112.parseMyWorksPicks({ projects: ['a', 'A', ' b '], smallWorks: 'x' }), { projects: ['a', 'b'], smallWorks: null })
+  assert.deepEqual(R112.myWorksPickerRows(jobs, null, mgr, {}, 'projects').map((r) => [r.job.id, r.picked]), [['P1', true], ['P2', false]])
+  assert.deepEqual(R112.myWorksPicksAfterToggle(['P1'], 'p2', true), ['P1', 'p2'])
+  assert.deepEqual(R112.myWorksPicksAfterToggle(['P1', 'p2'], 'P2', false), ['P1'])
+  assert.deepEqual(R112.myWorksPicksWriteFields('smallWorks', ['S1', 's1'], 'T'), { smallWorks: ['S1'], updatedAt: 'T' })
+  assert.equal(R112.myWorksPicksPath('ORG', 'U-M'), 'organizations/ORG/worksListPicks/U-M')
+  assert.equal(R112.myWorksEmptyTitle('projects'), 'No projects in your list yet')
+  assert.equal(R112.myWorksEmptyTitle('smallWorks'), 'No small works in your list yet')
+  assert.equal(R112.myWorksTabLabel('smallWorks'), 'My Small works')
+})
+
+test('1.33.0 Daily Overview scope: a manager sees themselves and their reports only; admins everything', () => {
+  const mgr = { role: { isSuperAdmin: false, isAdmin: false, isManager: true, isOperativeMode: false }, ids: ['M'], email: 'm@x.com' }
+  const roster = [
+    { id: 'M', email: 'm@x.com', role: 'manager' },
+    { id: 'R', email: 'r@x.com', assignedManagerUserIds: ['M'] },
+    { id: 'N', email: 'n@x.com', assignedManagerUserIds: ['X'] },
+  ]
+  const scope = R112.dailyOverviewScopeFor({ viewer: mgr, roster, enforced: true })
+  assert.ok(scope.kind === 'jobs' && scope.jobIds.length === 0 && scope.unbookedLabour)
+  assert.equal(R112.isDailyOverviewRowInScope(scope, { personIds: ['R'] }), true)
+  assert.equal(R112.isDailyOverviewRowInScope(scope, { personIds: ['N'] }), false)
+  assert.equal(R112.isDailyOverviewRowInScope(scope, { personIds: ['M'], subcontractor: true }), false)
+  const all = R112.dailyOverviewScopeFor({ viewer: { role: { ...mgr.role, isAdmin: true }, ids: ['A'] }, roster })
+  assert.equal(R112.isDailyOverviewRowInScope(all, { subcontractor: true }), true)
+  // The manager's unbooked people are exactly their Book labour / Warnings people.
+  const rows = (s: ReturnType<typeof R112.dailyOverviewScopeFor>) =>
+    R112.unbookedLabourRowsOnDay({
+      scope: s,
+      dayKey: '2026-11-04',
+      timeZone: 'Europe/London',
+      includeWeekends: false,
+      standardPaidHours: 8,
+      people: roster.map((row) => ({ id: row.id, email: row.email, name: row.id, isActive: true, passwordSet: true, isOperativeMode: true, isManager: false, isAdmin: false, isSuperAdmin: false })) as never,
+      operatives: [],
+      bookings: [],
+      holidays: [],
+    } as never).map((row) => row.operativeId ?? row.userId)
+  const warningScope = R112.warningScopeFor({ viewer: mgr, roster, jobs: [{ id: 'J', managerUserIds: ['M'] }], enforced: true })
+  assert.deepEqual(rows(scope).sort(), ['M', 'R'])
+  assert.deepEqual(rows(scope), rows(warningScope))
+  // Home: on site counts only the team.
+  const metrics = R112.homeOverviewMetrics({
+    nowMs: Date.parse('2026-11-04T10:00:00Z'),
+    timeZone: 'Europe/London',
+    viewer: { id: 'M' },
+    roster: roster as never,
+    bookings: [
+      { operativeId: 'R', dayKey: '2026-11-04', status: 'Confirmed' },
+      { operativeId: 'N', dayKey: '2026-11-04', status: 'Confirmed' },
+    ],
+    scope,
+  })
+  assert.equal(metrics.operativesOnSiteToday, 1)
+})
+
+test('1.33.0 canChangeLineManager: set once by an Operatives manager, then admins only', () => {
+  const admin = { id: 'A', adminAccess: true }
+  const opsMgr = { id: 'OM', role: 'manager', manager: true, operatives: true }
+  const plainMgr = { id: 'PM', role: 'manager', manager: true, operatives: false }
+  const operative = { id: 'O', role: 'operative', operativeMode: true }
+  const manager = { id: 'M2', role: 'manager', manager: true }
+  assert.equal(R112.canChangeLineManager(admin, operative), true)
+  assert.equal(R112.canChangeLineManager(admin, manager), true)
+  assert.equal(R112.canChangeLineManager(opsMgr, operative, { isCreate: true }), true)
+  assert.equal(R112.canChangeLineManager(opsMgr, operative), false)
+  assert.equal(R112.canChangeLineManager(opsMgr, operative, { invitation: { accepted: false, invitedBy: 'om' } }), true)
+  assert.equal(R112.canChangeLineManager(opsMgr, operative, { invitation: { accepted: true, invitedBy: 'OM' } }), false)
+  assert.equal(R112.canChangeLineManager(opsMgr, operative, { invitation: { accepted: false, invitedBy: 'someone' } }), false)
+  assert.equal(R112.canChangeLineManager(opsMgr, manager, { isCreate: true }), false)
+  assert.equal(R112.canChangeLineManager(plainMgr, operative, { isCreate: true }), false)
+  assert.equal(R112.canChangeLineManager(operative, operative, { isCreate: true }), false)
+  assert.equal(R112.lineManagerChanged({ assignedManagerUserIds: ['A', 'b'] }, { assignedManagerUserIds: ['B', 'a'] }), false)
+  assert.equal(R112.lineManagerChanged({ assignedManagerUserId: 'A' }, { assignedManagerUserIds: ['A'] }), false)
+  assert.equal(R112.lineManagerChanged({ assignedManagerUserIds: ['A'] }, { assignedManagerUserIds: ['C'] }), true)
+  assert.equal(R112.lineManagerChanged({ assignedManagerUserIds: ['A'] }, { hasNoLineManager: true }), true)
 })

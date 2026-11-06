@@ -536,8 +536,6 @@ export function projectFromJobDocument(docId: string, data: Record<string, unkno
     latitude: job.latitude ?? undefined,
     longitude: job.longitude ?? undefined,
     usesMapPinForLocation: job.usesMapPinForLocation,
-    hiddenManagerUserIds: job.hiddenManagerUserIds,
-    hiddenOperativeUserIds: job.hiddenOperativeUserIds,
     status: job.status ?? undefined,
     organizationId,
     createdAt: job.createdAtMs != null ? new Date(job.createdAtMs) : fallback,
@@ -577,8 +575,6 @@ export function serializeProject(input: {
   latitude?: number
   longitude?: number
   usesMapPinForLocation?: boolean
-  hiddenManagerUserIds?: string[]
-  hiddenOperativeUserIds?: string[]
   managerName?: string
   createdAt?: Date
   updatedAt?: Date
@@ -610,8 +606,6 @@ export function serializeProject(input: {
     managerIds: input.managerIds,
     isLive: input.isLive,
     description: input.description?.trim() || '',
-    hiddenManagerUserIds: input.hiddenManagerUserIds,
-    hiddenOperativeUserIds: input.hiddenOperativeUserIds,
     usesMapPinForLocation: input.usesMapPinForLocation === true,
     latitude: input.latitude,
     longitude: input.longitude,
@@ -644,8 +638,6 @@ export function serializeProject(input: {
   }
   const managerName = input.managerName?.trim()
   if (managerName && managerName.toLowerCase() !== 'custom') payload.manager = managerName
-  if (input.hiddenManagerUserIds) payload.hiddenManagerUserIds = input.hiddenManagerUserIds
-  if (input.hiddenOperativeUserIds) payload.hiddenOperativeUserIds = input.hiddenOperativeUserIds
   if (v.customJobType) payload.customJobType = v.customJobType
   if (v.managerId) payload.managerId = v.managerId
   if (v.managerIds && v.managerIds.length > 0) {

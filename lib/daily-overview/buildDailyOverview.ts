@@ -6,10 +6,10 @@
  * hours worked, never multiplied. Paid hours belong to pay screens.
  */
 
-import { bookingOccupiesDay, formerIdAliases, isStandardWorkingWeekday, jobKind, multipliedHoursText, payrollMultipliedHours, payrollOutsideMultiplier, unbookedLabourRowsOnDay, warningScopeFor, weekdayPaidHours, workedHoursSplit, type JobAccessViewer } from '@/lib/canonical'
+import { bookingOccupiesDay, formerIdAliases, isDailyOverviewRowInScope, isStandardWorkingWeekday, jobKind, multipliedHoursText, payrollMultipliedHours, payrollOutsideMultiplier, unbookedLabourRowsOnDay, weekdayPaidHours, workedHoursSplit, type JobAccessViewer } from '@/lib/canonical'
 import { isoWeekdayInZone } from '@/lib/orgTime/zoneTime'
 import { labourPersonFromUser, labourRosterOperative } from '@/lib/warnings/unbookedLabourWarnings'
-import { warningScopeRoster } from '@/lib/warnings/warningScopeRoster'
+import { orgDailyOverviewScope } from '@/lib/warnings/warningScopeRoster'
 import { findUserByAnyId, rosterDisplayName } from '@/lib/staff/userRosterUtils'
 import { addLondonDays, coversCalendarDay, dayKey, isSameLondonDay } from '@/lib/ios-parity/londonTime'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
@@ -225,8 +225,9 @@ export function buildDailyOverview(params: {
   /** Organisation business zone (`organizationTimeZone`). Default Europe/London. */
   timeZone?: string
   /**
-   * Rulebook 1.10.0 §17: the signed-in user. A manager who does not see every job sees only their jobs' people;
-   * unbooked people are listed only when they read every booking (`warningScopeFor`). Missing → everything.
+   * Rulebook 1.33.0 §6: the signed-in user. Admins see everyone and every subcontractor booking; a manager sees only
+   * themselves and their reports — booked, on leave, unbooked and the day's hours (`dailyOverviewScopeFor`,
+   * `isDailyOverviewRowInScope`). Missing → everything.
    */
   viewer?: JobAccessViewer | null
   /** Rulebook 1.26.0: the `enforcedReads` switch for this organisation (`securitySwitchOn`); missing → off. */
@@ -236,12 +237,39 @@ export function buildDailyOverview(params: {
   // Rulebook §1: the organisation zone (1.9.0: the open organisation's when none is passed, never always London).
   const zone = organizationZoneOr(params.timeZone)
   const today = params.today || new Date()
+  // Rulebook 1.33.0 §6 (owner decision 5 Nov, Q-D1): admins see everyone; a manager only themselves and their reports
+  // (`dailyOverviewScopeFor`, no job part). Every row, count and hour below is taken from the rows in scope.
+  const scope = params.viewer
+    ? orgDailyOverviewScope({
+        viewer: params.viewer,
+        users: params.users,
+        userIdAliases: params.userIdAliases,
+        operatives: params.operatives,
+        enforcedReads: params.enforcedReads === true,
+      })
+    : null
+  const scopeEmailById = new Map<string, string>()
+  for (const operative of params.operatives) scopeEmailById.set(normalizeDocumentId(operative.id), operative.email ?? '')
+  for (const user of params.users) {
+    for (const id of [user.id, ...(user.formerUserIds ?? [])]) {
+      if (!scopeEmailById.get(normalizeDocumentId(id))) scopeEmailById.set(normalizeDocumentId(id), user.email ?? '')
+    }
+  }
+  const personInScope = (...ids: Array<string | null | undefined>): boolean =>
+    isDailyOverviewRowInScope(scope, {
+      personIds: ids,
+      email: ids.map((id) => scopeEmailById.get(normalizeDocumentId(id ?? '')) || '').find(Boolean) || null,
+    })
   const dayBookings = uniqueById(params.bookings).filter(
-    (b) => coversCalendarDay(b.date, day, zone) && bookingOccupiesDay(b.status)
+    (b) => coversCalendarDay(b.date, day, zone) && bookingOccupiesDay(b.status) && personInScope(b.operativeId)
   )
-  const dayManager = uniqueById(params.managerBookings).filter((b) => coversCalendarDay(b.date, day, zone))
+  const dayManager = uniqueById(params.managerBookings).filter(
+    (b) => coversCalendarDay(b.date, day, zone) && personInScope(b.userId)
+  )
   const daySubs = (params.subcontractorBookings || []).filter((b) => {
     if (!coversCalendarDay(b.date, day, zone)) return false
+    // Subcontractor bookings: admins only (`isDailyOverviewRowInScope` with `subcontractor`).
+    if (!isDailyOverviewRowInScope(scope, { subcontractor: true })) return false
     const status = String(b.status || '').toLowerCase()
     return status !== 'cancelled' && status !== 'canceled'
   })
@@ -279,7 +307,7 @@ export function buildDailyOverview(params: {
   const managerIdentity = (userId: string): string =>
     personIdentity(userById.get(userId)?.email, `mgr:${normalizeWorkId(userId)}`)
 
-  const holidays = params.holidays.filter((h) => holidayCovers(h, day))
+  const holidays = params.holidays.filter((h) => holidayCovers(h, day) && personInScope(h.userId, h.operativeId))
 
   const bookingsByProject = new Map<string, Booking[]>()
   for (const b of dayBookings) {
@@ -466,23 +494,6 @@ export function buildDailyOverview(params: {
 
   const overviewDayKey = dayKey(day)
   const payroll = params.payrollPolicy ?? DEFAULT_PAYROLL_POLICY
-  const scope = params.viewer
-    ? // Rulebook 1.31.0 §5, §6: the same scope as the warning list — admins everyone; a manager themselves, their
-      // reports and the jobs they manage (`warningScopeFor`).
-      warningScopeFor({
-        viewer: params.viewer,
-        jobs: params.projects.map((project) => ({
-          id: project.id,
-          managerId: project.managerId ?? null,
-          managerIds: project.managerIds ?? [],
-          managerUserIds: project.managerUserIds ?? [],
-        })),
-        roster: warningScopeRoster(params.users, params.userIdAliases),
-        people: params.users.map((user) => ({ id: user.id, email: user.email, formerIds: user.formerUserIds ?? [] })),
-        operatives: params.operatives.map((operative) => ({ id: operative.id, email: operative.email })),
-        enforced: params.enforcedReads === true,
-      })
-    : null
   const unbookedRows = unbookedLabourRowsOnDay({
     scope,
     timeZone: zone,

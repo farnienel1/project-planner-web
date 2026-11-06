@@ -10,6 +10,7 @@ import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { useOrgUserStore, useRosterDocuments } from '@/lib/stores/siteAuditStore'
 import { useUserStore } from '@/lib/stores/userStore'
 import { useInviteStore } from '@/lib/stores/inviteStore'
+import { loadSentInvitation, type SentInvitation } from '@/lib/orgSetup/openInvitation'
 import { findOperativeForUser, operativeRecordForUser } from '@/lib/operatives/operativeRosterUtils'
 import { displayTradeType, STAFF_TRADE_TYPES } from '@/lib/staff/staffTradeTypes'
 import {
@@ -74,8 +75,11 @@ import { loadOrganisationQualificationsEnsuringStarter } from '@/lib/qualificati
 import { canonicalCertificateUrls, formatCertificateSaveError } from '@/lib/qualifications/certificateUpload'
 import { canManageOrganisationQualifications, staffAccountRole } from '@/lib/permissions'
 import {
+  LINE_MANAGER_LOCKED_MESSAGE,
+  canChangeLineManager,
   canDeleteUser,
   canManageOperatives,
+  lineManagerChanged,
   lineManagerCandidates,
   lineManagerChangeBlock,
   canViewPersonPay,
@@ -556,6 +560,33 @@ export function EditUserProfile({
       (target.permissions.operativeMode || target.permissions.manager || target.permissions.adminAccess)
   )
 
+  // Rulebook 1.33.0 §11 (`canChangeLineManager`): admins change anyone's line manager; an Operatives-toggle manager
+  // only on an operative's invitation they sent that is not accepted yet (adding is Add User). Otherwise locked.
+  const [sentInvitation, setSentInvitation] = useState<SentInvitation | null>(null)
+  const invitationLookupEmail = target && !target.passwordSet && !canAdminTools ? target.email : ''
+  useEffect(() => {
+    setSentInvitation(null)
+    if (!invitationLookupEmail || !organization?.id || !currentUser?.id) return
+    let cancelled = false
+    loadSentInvitation({ organizationId: organization.id, uid: currentUser.id, email: invitationLookupEmail })
+      .then((row) => {
+        if (!cancelled) setSentInvitation(row)
+      })
+      .catch(() => undefined)
+    return () => {
+      cancelled = true
+    }
+  }, [invitationLookupEmail, organization?.id, currentUser?.id])
+  const mayChangeLineManager = Boolean(
+    target &&
+      currentUser &&
+      canChangeLineManager(
+        { ...currentUser.permissions, id: currentUser.id, formerUserIds: currentUser.formerUserIds ?? [], role: currentUser.role, isSuperAdmin: currentUser.isSuperAdmin },
+        { ...target.permissions, role: target.role, isSuperAdmin: target.isSuperAdmin },
+        { invitation: sentInvitation }
+      )
+  )
+
   const effectivePermissions = draftTypePermissions ?? target?.permissions
   const effectiveAccountType = draftAccountType ?? (target ? currentAccountType(target) : 'manager')
   // The person as this screen would save them (a pending account-type change included).
@@ -634,6 +665,11 @@ export function EditUserProfile({
     const deactivating = savedUser.current?.isActive !== false && target.isActive === false
     if (levelChange && lineManagerBlocks(target, levelChange)) return
     if (deactivating && lineManagerBlocks(target, { kind: 'deactivate' })) return
+    // Rulebook 1.33.0 §11: a line manager once set is changed only by an admin (`canChangeLineManager`).
+    if (!mayChangeLineManager && lineManagerChanged(savedUser.current, asSaved)) {
+      setLineManagerError(LINE_MANAGER_LOCKED_MESSAGE)
+      return
+    }
     const lineManagerMessage = userLineManagerRequiredError(asSaved, users)
     setLineManagerError(lineManagerMessage)
     if (lineManagerMessage) {
@@ -1228,14 +1264,16 @@ export function EditUserProfile({
                 <FormField
                   label="Line manager(s)"
                   hint={
-                    mayHaveNoLineManager
+                    !mayChangeLineManager
+                      ? LINE_MANAGER_LOCKED_MESSAGE
+                      : mayHaveNoLineManager
                       ? 'Choose No line manager when this admin has none — Annual Leave Management and Timesheet self-sign must then be on (PAYE: Annual Leave Management).'
                       : 'Required for operatives and managers.'
                   }
                 >
                   <Select
                     value={lineManagerSelectedIds(target as never, users as never)[0] ?? displayedLineManagerId(target)}
-                    disabled={!canEdit || saving || typeSaving}
+                    disabled={!canEdit || !mayChangeLineManager || saving || typeSaving}
                     onChange={(e) => {
                       setLineManagerError(null)
                       setTarget(userWithLineManagerChoice(target, e.target.value))

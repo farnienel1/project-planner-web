@@ -828,7 +828,6 @@ export {
   visibleJobsFor,
   // 1.10.0 round 2: job add/edit/manager list, rules-compatible reads, warning scope (§16, §17).
   FIRESTORE_IN_QUERY_LIMIT,
-  JOBS_PER_BOOKING_QUERY,
   JOB_QUERY_COLLECTIONS,
   JOB_MANAGER_LIST_FIELDS,
   OWN_BOOKING_IDS_PER_QUERY,
@@ -847,6 +846,10 @@ export {
   warningScopeFor,
   isWarningRowInScope,
   managerBookingJobId,
+  // 1.33.0: every manager sees every job; toggles only add jobs and change manager lists; Daily Overview team scope.
+  hasWorkCatalogueToggle,
+  dailyOverviewScopeFor,
+  isDailyOverviewRowInScope,
 } from './staffAccess'
 
 // Rulebook 1.10.0: user delete, organisation memberships, pay change rows, job delete removals.
@@ -1097,6 +1100,22 @@ export {
   worksListPersonIds,
   worksTab,
   worksTabCounts,
+  // 1.33.0: My Projects / My Small works.
+  MY_WORKS_PICKS_COLLECTION,
+  MY_WORKS_PICKS_MAX,
+  defaultWorksListTab,
+  hasMyWorksList,
+  myWorksDefaultIds,
+  myWorksEmptyActionLabel,
+  myWorksEmptyTitle,
+  myWorksIds,
+  myWorksList,
+  myWorksPickerRows,
+  myWorksPicksAfterToggle,
+  myWorksPicksPath,
+  myWorksPicksWriteFields,
+  myWorksTabLabel,
+  parseMyWorksPicks,
 } from './worksLists'
 export type {
   WorksListBooking,
@@ -1106,6 +1125,8 @@ export type {
   WorksListTask,
   WorksTab,
   WorksTabCounts,
+  MyWorksPicks,
+  WorksListTab,
 } from './worksLists'
 
 // Rulebook 1.22.0 (§6–§9, §22): money and leave-report rules (audit findings 6, 7, 8, 15).

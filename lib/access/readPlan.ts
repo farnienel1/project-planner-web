@@ -38,9 +38,6 @@ export function ownBookingIdsFor(
 
 function jobPart(query: JobQuery): OrgPlanPart[] {
   if (query.kind === 'all') return [{ id: 'all' }]
-  if (query.kind === 'managed') {
-    return [{ id: `managed:${query.value}`, constraints: [where(query.field, query.op, query.value)] }]
-  }
   return query.ids.map((id) => ({ id: `doc:${id}`, documentId: id }))
 }
 
@@ -62,10 +59,8 @@ export function jobPlanParts(
 
 function bookingPart(query: BookingQuery, bound: QueryConstraint[], boundId: string): OrgPlanPart {
   if (query.kind === 'all') return { id: `all|${boundId}`, constraints: bound }
-  if (query.kind === 'jobCollection') {
-    return { id: `jobCollection:${query.value}|${boundId}`, constraints: [where('jobCollection', '==', query.value), ...bound] }
-  }
-  const filter = query.op === '==' ? where(query.field, '==', query.values[0]) : where(query.field, 'in', query.values)
+  // 1.33.0: the only other query is an operative's own labour bookings (`operativeId in`).
+  const filter = where(query.field, 'in', query.values)
   return { id: `${query.kind}:${query.field}:${query.values.join(',')}|${boundId}`, constraints: [filter, ...bound] }
 }
 
