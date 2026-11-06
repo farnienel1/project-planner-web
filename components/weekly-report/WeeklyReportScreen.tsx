@@ -3,7 +3,9 @@
 import { useMemo, useState } from 'react'
 import type { OrganizationDetails, OrgInvoicingSettings } from '@/lib/settings/organizationSettings'
 import { formatInvoicingSubtitle } from '@/lib/settings/organizationSettings'
-import { formatMoney, organizationTimeZone, type AcceptedClashRecord } from '@/lib/canonical'
+import { canOpenWeeklyReport, formatMoney, organizationTimeZone, PAYRUN_SNAPSHOT_LABEL, type AcceptedClashRecord } from '@/lib/canonical'
+import { useOrganizationDocument } from '@/lib/stores/organizationDocumentStore'
+import { PayrunSnapshot } from '@/components/weekly-report/PayrunSnapshot'
 import { addLondonDays, dateFromDayKey, dayKey, startOfLondonWeek } from '@/lib/ios-parity/londonTime'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { PAY_HIDDEN_NOTE, reportPayForViewer } from '@/lib/canonical'
@@ -141,6 +143,10 @@ export function WeeklyReportScreen({
   const timeZone = organizationTimeZone(orgDetails?.countryCode)
   const viewer = useAuthStore((state) => state.user)
   const canUnapprove = Boolean(viewer && hasAdminAccess(viewer))
+  // Rulebook 1.33.0 §7: Payrun Snapshot, admins only (the Weekly report's own gate).
+  const canOpenSnapshot = Boolean(viewer && canOpenWeeklyReport(viewer))
+  const [snapshotOpen, setSnapshotOpen] = useState(false)
+  const { data: organizationDocument } = useOrganizationDocument()
   const invoicingOptions = useMemo(
     () => (invoicing ? listInvoicingPeriodOptions(invoicing, new Date(), undefined, timeZone) : []),
     [invoicing, timeZone]
@@ -357,6 +363,11 @@ export function WeeklyReportScreen({
           <div className="sub">Updates as you change the period. Separate from live warnings.</div>
         </div>
         <div className="acts">
+          {canOpenSnapshot && organizationId ? (
+            <button type="button" className={snapshotOpen ? 'btn primary' : 'btn'} onClick={() => setSnapshotOpen((open) => !open)}>
+              {PAYRUN_SNAPSHOT_LABEL}
+            </button>
+          ) : null}
           {generated && report ? (
             <>
               <button type="button" className="btn" onClick={() => printWeeklyReport(buildWeeklyReportHtml(report))}>
@@ -369,6 +380,10 @@ export function WeeklyReportScreen({
           ) : null}
         </div>
       </div>
+
+      {snapshotOpen && canOpenSnapshot && organizationId ? (
+        <PayrunSnapshot organizationId={organizationId} organization={organizationDocument} users={users} timeZone={timeZone} />
+      ) : null}
 
       <section className="hero" data-hue="rep">
         <div className="relative z-[1]">

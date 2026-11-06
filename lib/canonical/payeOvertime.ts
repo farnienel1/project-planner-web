@@ -36,6 +36,7 @@ import { idKey, idText, personIdSet, rosterMemberActive } from './personIds'
 import { canWriteBooking, type BookingPermissionInput, type JobAccessViewer, type JobManagerFields, type JobManagerRosterRow } from './staffAccess'
 import { employmentTypeOnDay, type EmploymentTypeUser } from './userProfile'
 import { dateFromDayKeyInZone } from '../orgTime/zoneTime'
+import { reportGeneratedText } from './reportHeader'
 
 // MARK: - Constants and copy
 
@@ -1532,24 +1533,150 @@ export function parseOvertimeReportDocument(
   }
 }
 
-/** The PDF's text rows: heading, one row per line ("Tue 4 Nov · J-1042 Riverside Flats · 06:30–14:00 · 1h × 1.5 = 1.5h") and the total. */
-export function overtimeReportRows(snapshot: Pick<OvertimeReportSnapshot, 'userName' | 'companyName' | 'rangeStart' | 'rangeEnd' | 'lines' | 'totals'>): {
+/**
+ * The overtime report PDF's content, from the saved copy (1.33.0, owner 6 Nov: laid out like the invoice / timesheet
+ * report). Kept for older readers: `title`, `subtitle`, `rows` (one text row per line, "Tue 4 Nov · J-1042 Riverside
+ * Flats · 06:30–14:00 · 1h × 1.5 = 1.5h") and `total`. 1.33.0 adds the header (`documentTitle`, `companyName`,
+ * `personName`, `period`, `generatedAt` / `generatedBy` / `generated` in the organisation zone, `reportGeneratedText`),
+ * the table (`columns` and `table`: day, job, start–finish, overtime per line), `totalLabel` / `totalValue`,
+ * `emptyMessage`, `footer` and the out-of-date mark. A line the line manager declined (1.33.0 Return, still ✕ at
+ * Generate) is listed at 0h with "Declined by {name}". Field names match iOS `OvertimeReportPDFLayout`.
+ */
+export function overtimeReportRows(
+  snapshot: Pick<OvertimeReportSnapshot, 'userName' | 'companyName' | 'rangeStart' | 'rangeEnd' | 'lines' | 'totals'> & OvertimeReportRowsExtras,
+  options?: OvertimeReportRowsOptions | null
+): OvertimeReportRowsResult {
+  const table: OvertimeReportTableRow[] = snapshot.lines.map((raw) => {
+    const line = raw as OvertimeReportLine & OvertimeReportLineExtras
+    const declinedBy = overtimeReportLineDeclinedBy(line)
+    const declined = declinedBy != null
+    return {
+      bookingId: text(line.bookingId),
+      day: text(line.dayLabel) || (line.dayKey ? formatPaymentRunDay(line.dayKey) : ''),
+      job: [text(line.jobNumber), text(line.jobName)].filter(Boolean).join(' '),
+      time: line.start && line.end ? `${line.start}–${line.end}` : '',
+      overtime: declined ? hoursText(0) : text(line.text),
+      note: declined ? (declinedBy ? `${OVERTIME_REPORT_DECLINED_PREFIX} ${declinedBy}` : OVERTIME_REPORT_DECLINED_PREFIX.replace(/ by$/, '')) : '',
+      declined,
+    }
+  })
+  const rows = table.map((row) => [row.day, row.job, row.time, row.overtime, row.note].filter(Boolean).join(' · '))
+  const totalValue = hoursText(snapshot.totals.overtimeHours)
+  const period = `${formatPaymentRunDay(snapshot.rangeStart)} – ${formatPaymentRunDay(snapshot.rangeEnd)}`
+  const generated = reportGeneratedText({
+    generatedAtMs: snapshot.generatedAtMs,
+    nowMs: options?.nowMs,
+    timeZone: options?.timeZone,
+    generatedBy: snapshot.generatedBy,
+    userId: snapshot.userId,
+    userName: snapshot.userName,
+    generatedByName: options?.generatedByName,
+  })
+  const outOfDate = overtimeReportIsOutOfDate(snapshot)
+  return {
+    title: `${OVERTIME_REPORT_TITLE} · ${text(snapshot.userName)}`,
+    subtitle: period,
+    rows,
+    total: `${OVERTIME_REPORT_TOTAL_LABEL}: ${totalValue}`,
+    documentTitle: OVERTIME_REPORT_TITLE,
+    companyName: text(snapshot.companyName),
+    personName: text(snapshot.userName),
+    period,
+    ...generated,
+    columns: [...OVERTIME_REPORT_COLUMNS],
+    table,
+    totalLabel: OVERTIME_REPORT_TOTAL_LABEL,
+    totalValue,
+    emptyMessage: OVERTIME_NO_LINES_MESSAGE,
+    footer: [text(snapshot.companyName), OVERTIME_REPORT_TITLE, text(snapshot.userName)].filter(Boolean).join(' · '),
+    outOfDate,
+    outOfDateNote: outOfDate ? OVERTIME_REPORT_OUT_OF_DATE_NOTE : '',
+  }
+}
+
+// 1.33.0 report helpers (kept beside `overtimeReportRows`).
+
+export const OVERTIME_REPORT_TITLE = 'Overtime report'
+export const OVERTIME_REPORT_COLUMNS: ReadonlyArray<string> = ['Day', 'Job', 'Start–Finish', 'Overtime']
+export const OVERTIME_REPORT_DECLINED_PREFIX = 'Declined by'
+export const OVERTIME_REPORT_OUT_OF_DATE_NOTE =
+  'Out of date: a booking changed after this report was generated. Generate a replacement report.'
+
+/** Optional saved-copy fields the 1.33.0 overtime flow adds (read when present; older copies have none). */
+export type OvertimeReportRowsExtras = {
+  userId?: string | null
+  generatedBy?: string | null
+  generatedAtMs?: number | null
+  /** 1.33.0 (owner 6 Nov): the report was superseded because a line reopened after it was generated. */
+  outOfDate?: boolean | null
+  outOfDateAtMs?: number | null
+}
+
+/** Optional saved-line fields for a line still declined (red ✕) at Generate. */
+export type OvertimeReportLineExtras = {
+  declined?: boolean | null
+  declinedByName?: string | null
+}
+
+export type OvertimeReportRowsOptions = {
+  /** Organisation zone for the generated time. London when missing. */
+  timeZone?: string | null
+  /** The generator's name when the app can resolve `generatedBy` from the roster. */
+  generatedByName?: string | null
+  /** The time to show while the saved `generatedAt` is not back yet. */
+  nowMs?: number | null
+}
+
+export type OvertimeReportTableRow = {
+  bookingId: string
+  /** "Wed 4 Nov". */
+  day: string
+  /** "J-1042 Riverside Flats". */
+  job: string
+  /** "06:30–14:00", or "" when the saved line has no times. */
+  time: string
+  /** "1h × 1.5 = 1.5h"; "0h" on a declined line. */
+  overtime: string
+  /** "Declined by Lee Manager" on a declined line, else "". */
+  note: string
+  declined: boolean
+}
+
+export type OvertimeReportRowsResult = {
   title: string
   subtitle: string
   rows: string[]
   total: string
-} {
-  const rows = snapshot.lines.map((line) =>
-    [line.dayLabel, [line.jobNumber, line.jobName].filter(Boolean).join(' '), line.start && line.end ? `${line.start}–${line.end}` : '', line.text]
-      .filter(Boolean)
-      .join(' · ')
-  )
-  return {
-    title: `Overtime report · ${text(snapshot.userName)}`,
-    subtitle: `${formatPaymentRunDay(snapshot.rangeStart)} – ${formatPaymentRunDay(snapshot.rangeEnd)}`,
-    rows,
-    total: `${OVERTIME_REPORT_TOTAL_LABEL}: ${hoursText(snapshot.totals.overtimeHours)}`,
-  }
+  documentTitle: string
+  companyName: string
+  personName: string
+  period: string
+  generatedAt: string
+  generatedBy: string
+  generated: string
+  columns: string[]
+  table: OvertimeReportTableRow[]
+  totalLabel: string
+  totalValue: string
+  emptyMessage: string
+  footer: string
+  outOfDate: boolean
+  outOfDateNote: string
+}
+
+/** The decider's name when a saved line was declined ("" when declined without a stored name); null when not declined. */
+export function overtimeReportLineDeclinedBy(line: OvertimeReportLineExtras | null | undefined): string | null {
+  if (!line) return null
+  const name = text(line.declinedByName)
+  if (name) return name
+  return line.declined === true ? '' : null
+}
+
+/** 1.33.0: whether a saved overtime report is marked out of date (`outOfDate` or `outOfDateAtMs` on the copy). */
+export function overtimeReportIsOutOfDate(snapshot: OvertimeReportRowsExtras | null | undefined): boolean {
+  if (!snapshot) return false
+  if (snapshot.outOfDate === true) return true
+  return snapshot.outOfDateAtMs != null && Number.isFinite(Number(snapshot.outOfDateAtMs)) && Number(snapshot.outOfDateAtMs) > 0
 }
 
 // MARK: - Weekly report
