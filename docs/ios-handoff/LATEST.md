@@ -9,8 +9,8 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
 Rulebook version: 1.33.0 → 1.34.0
-Packed hash: 47dfd6e2aeb43d48972e923e176b2911ce82018fc0607833e0fe29f6359fdc18
-Rulebook sha256: 99ea57f15f4d7a1c09f4b962a87be314f393aeb5d3dd6ff16415104b9657e40a
+Packed hash: 51840dde4effbd9f699f2f98b95f0abc9fb64881ca7ebb3cc361ac64b0cf6d88
+Rulebook sha256: 937cb8ba8cde7a1d7898a671fdb3c6e03157b43e2a70b725f01991dcca2e5603
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -24,8 +24,8 @@ Exports added: GHOST_BADGE_LABEL, GHOST_CHECK_ISSUE_LABELS, GHOST_CREATE_REFUSED
 Exports removed: none
 Web files that changed the rules: docs/RULEBOOK.md, firestore.rules, lib/canonical/bundleEntry.ts, lib/canonical/cross-platform-contract.json, lib/canonical/ghostOperatives.test.ts, lib/canonical/ghostOperatives.ts, lib/canonical/index.ts, lib/canonical/inviteAccept.ts, lib/canonical/notificationRecipients.ts, lib/canonical/payeOvertime.ts, lib/canonical/payrunSnapshot.ts, lib/canonical/peopleDocuments.ts, lib/canonical/userDelete.ts, lib/canonical/userProfile.ts, lib/canonical/userRosterSegment.ts, lib/canonical/userTimesheetAccess.ts, lib/canonical/warningRows.ts
 Done when:
-- [ ] Packed hash in iOS equals 47dfd6e2aeb43d48972e923e176b2911ce82018fc0607833e0fe29f6359fdc18
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 99ea57f15f4d7a1c09f4b962a87be314f393aeb5d3dd6ff16415104b9657e40a)
+- [ ] Packed hash in iOS equals 51840dde4effbd9f699f2f98b95f0abc9fb64881ca7ebb3cc361ac64b0cf6d88
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 937cb8ba8cde7a1d7898a671fdb3c6e03157b43e2a70b725f01991dcca2e5603)
 - [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.34.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
