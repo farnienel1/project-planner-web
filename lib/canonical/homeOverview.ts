@@ -17,6 +17,7 @@ import { holidayDocumentDayKey } from './holidayDocument'
 import { idKey, idText, personIdSet, type PersonRosterRow } from './personIds'
 import { rosterListKind, type RosterListRow } from './rosterLists'
 import { bookingOccupiesDay, qualificationExpiryRows } from './warningRows'
+import { isDailyOverviewRowInScope, type DailyOverviewScope } from './staffAccess'
 
 /** A row of the people roster used to fold ids: users documents, `operatives` rows and `managers` rows. */
 export type FoldPersonRow = PersonRosterRow
@@ -80,6 +81,11 @@ export type HomeOverviewInput = {
   }> | null
   /** Bank holidays of the organisation's region (a multi-day leave record skips them, `leaveRecordDayKeys`). */
   nonWorkingDayKeys?: ReadonlyArray<string> | null
+  /**
+   * 1.33.0 (§6, §23): the viewer's Daily Overview scope (`dailyOverviewScopeFor`). The on-site and on-leave figures
+   * count only people in it — a manager's own team, like their Daily Overview. Missing → everyone.
+   */
+  scope?: DailyOverviewScope | null
 }
 
 export type HomeOverviewMetrics = {
@@ -184,12 +190,14 @@ export function homeOverviewMetrics(input: HomeOverviewInput): HomeOverviewMetri
   for (const booking of input.bookings || []) {
     if (!booking || !idText(booking.operativeId) || !bookingOccupiesDay(booking.status)) continue
     if (bookingDay(booking, timeZone) !== today) continue
+    if (!isDailyOverviewRowInScope(input.scope, { personIds: [booking.operativeId] })) continue
     onSiteOperatives.add(fold(booking.operativeId))
   }
   const onSiteManagers = new Set<string>()
   for (const booking of input.managerSiteBookings || []) {
     if (!booking || !idText(booking.userId) || !isSiteLocationType(booking.locationType)) continue
     if (bookingDay(booking, timeZone) !== today) continue
+    if (!isDailyOverviewRowInScope(input.scope, { personIds: [booking.userId] })) continue
     onSiteManagers.add(fold(booking.userId))
   }
   const onSite = new Set([...onSiteOperatives, ...onSiteManagers])
@@ -214,6 +222,7 @@ export function homeOverviewMetrics(input: HomeOverviewInput): HomeOverviewMetri
     if (!leaveRecordDayKeys({ startDayKey: holiday.startDayKey, endDayKey: holiday.endDayKey }, timeZone, input.nonWorkingDayKeys).includes(today)) continue
     const key = fold(idText(holiday.userId) || idText(holiday.operativeId))
     if (!key) continue
+    if (!isDailyOverviewRowInScope(input.scope, { personIds: [holiday.userId, holiday.operativeId] })) continue
     const user = userByKey.get(key)
     if (user) {
       if (user.isActive === false) continue

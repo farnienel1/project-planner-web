@@ -91,8 +91,6 @@ let smallWorksOrgId = ''
 let clientsOrgId = ''
 /** Operatives: the jobs of their own bookings, tasks and deadlines (`jobQueryPlan` documentIds), set by readPlanSync. */
 let jobPlanDocumentIds: string[] = []
-/** Document ids of every job the listeners returned, for `bookingQueryPlan`. */
-const loadedJobIdsByKind: Record<'projects' | 'smallWorks', string[]> = { projects: [], smallWorks: [] }
 
 export function setJobPlanDocumentIds(ids: ReadonlyArray<string>): boolean {
   const next = [...new Set(ids.filter(Boolean))].sort()
@@ -101,14 +99,9 @@ export function setJobPlanDocumentIds(ids: ReadonlyArray<string>): boolean {
   return true
 }
 
-/** Loaded job ids, optionally only of the given kinds (1.11.0: the kinds a manager has no toggle for). */
-export function loadedJobIds(kinds: ReadonlyArray<'projects' | 'smallWorks'> = ['projects', 'smallWorks']): string[] {
-  return kinds.flatMap((kind) => loadedJobIdsByKind[kind])
-}
-
 /**
- * Rulebook 1.10.0 §17: a viewer who may not read the whole collection runs `jobQueryPlan` (their managed jobs, or
- * an operative's own jobs by id); everyone else keeps the whole-collection listener. Firestore rules are not filters,
+ * Rulebook 1.10.0 §17: a viewer who may not read the whole collection runs `jobQueryPlan` (1.33.0: only an operative,
+ * their own jobs by id); everyone else keeps the whole-collection listener. Firestore rules are not filters,
  * so the whole collection is never asked for on their behalf.
  */
 function subscribeJobs(
@@ -119,7 +112,6 @@ function subscribeJobs(
 ): Promise<void> {
   const parts = jobPlanParts(webJobAccessViewer(useAuthStore.getState().user), kind, jobPlanDocumentIds)
   const handle = (docs: OrgCollectionDoc[], meta?: OrgCollectionSnapshotMeta) => {
-    loadedJobIdsByKind[kind] = docs.map((entry) => entry.id)
     onDocs(docs, meta)
     void import('@/lib/access/readPlanSync').then((sync) => sync.jobsChanged()).catch(() => undefined)
   }

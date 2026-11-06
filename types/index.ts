@@ -19,8 +19,6 @@ export interface Project {
   /** Rulebook 1.10.0: account ids of the job managers (`jobManagerUserIds`), read by the security rules. */
   managerUserIds?: string[];
   usesMapPinForLocation?: boolean;
-  hiddenManagerUserIds?: string[];
-  hiddenOperativeUserIds?: string[];
   isLive: boolean;
   description?: string;
   notes?: string;

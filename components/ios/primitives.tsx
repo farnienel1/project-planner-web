@@ -173,7 +173,7 @@ export function StatsRow({
     onClick?: () => void
   }[]
 }) {
-  const columns = items.length >= 4 ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-3'
+  const columns = items.length >= 5 ? 'grid-cols-3 sm:grid-cols-5' : items.length >= 4 ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-3'
   return (
     <div className={`grid ${columns} gap-2`}>
       {items.map((item) => {

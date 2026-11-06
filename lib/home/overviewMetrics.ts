@@ -5,7 +5,7 @@
 
 import type { Booking, HolidayBooking, Manager, Operative, ProjectTask, User } from '@/types'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
-import { homeOverviewMetrics } from '@/lib/canonical'
+import { homeOverviewMetrics, type DailyOverviewScope } from '@/lib/canonical'
 import { holidayBookingDayKeys } from '@/lib/annualLeave/holidayDayKeys'
 
 export const HOME_OVERVIEW_METRIC_IDS = [
@@ -83,6 +83,11 @@ export function computeHomeOverviewMetrics(params: {
   liveProjectCount: number
   timeZone: string
   now?: Date
+  /**
+   * Rulebook 1.33.0 §6 / §23: the viewer's Daily Overview scope (`orgDailyOverviewScope`). On site and on leave count
+   * only a manager's own team, like their Daily Overview; admins everyone. Missing → everyone.
+   */
+  scope?: DailyOverviewScope | null
 }): HomeOverviewMetrics {
   const now = params.now ?? new Date()
   const metrics = homeOverviewMetrics({
@@ -125,6 +130,7 @@ export function computeHomeOverviewMetrics(params: {
       const { startDayKey, endDayKey } = holidayBookingDayKeys(holiday, params.timeZone)
       return { userId: holiday.userId ?? null, operativeId: holiday.operativeId ?? null, startDayKey, endDayKey, status: holiday.status }
     }),
+    scope: params.scope ?? null,
   })
   return {
     liveProjectCount: params.liveProjectCount,

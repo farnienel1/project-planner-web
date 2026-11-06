@@ -356,17 +356,16 @@ test('serializeProject keeps a stored manager name and omits notes', () => {
     jobType: 'CAT A',
     isLive: true,
     managerName: 'Farnie',
-    hiddenManagerUserIds: ['mgr-1'],
-    hiddenOperativeUserIds: ['op-1'],
   })
   assert.equal(payload.manager, 'Farnie')
-  assert.deepEqual(payload.hiddenManagerUserIds, ['mgr-1'])
-  assert.deepEqual(payload.hiddenOperativeUserIds, ['op-1'])
+  // 1.33.0: the per-job hide lists are never written (stored values are left in place).
+  assert.equal('hiddenManagerUserIds' in payload, false)
+  assert.equal('hiddenOperativeUserIds' in payload, false)
   assert.equal('notes' in payload, false)
   assert.equal('id' in payload, false)
 })
 
-test('serializeProject does not invent Custom or empty hidden lists', () => {
+test('serializeProject does not invent Custom or write hide lists (1.33.0)', () => {
   const payload = serializeProject({
     id: 'AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA',
     organizationId: 'ORG',

@@ -1,4 +1,12 @@
-import { WARNING_SCOPE_ALL, warningScopeFor, type JobAccessViewer, type WarningScope, type WarningScopeRosterRow } from '@/lib/canonical'
+import {
+  WARNING_SCOPE_ALL,
+  dailyOverviewScopeFor,
+  warningScopeFor,
+  type DailyOverviewScope,
+  type JobAccessViewer,
+  type WarningScope,
+  type WarningScopeRosterRow,
+} from '@/lib/canonical'
 import type { Operative, Project, User } from '@/types'
 
 /**
@@ -53,6 +61,28 @@ export function orgWarningScope(input: {
       managerUserIds: project.managerUserIds ?? [],
     })),
     managers: input.managers ?? null,
+    roster: warningScopeRoster(input.users, input.userIdAliases),
+    operatives: input.operatives.map((operative) => ({ id: operative.id, email: operative.email })),
+    enforced: input.enforcedReads === true,
+  })
+}
+
+/**
+ * The viewer's Daily Overview scope (`dailyOverviewScopeFor`, rulebook 1.33.0 §6): admins everything; a manager only
+ * themselves and their reports (no job part). Daily Overview, the Home team panels and the Home on-site / on-leave
+ * figures build it here with the same roster rows as `orgWarningScope`, so a manager's unbooked people equal their Book
+ * labour list. No viewer → everything.
+ */
+export function orgDailyOverviewScope(input: {
+  viewer?: JobAccessViewer | null
+  users: ReadonlyArray<User>
+  userIdAliases?: Readonly<Record<string, string>> | null
+  operatives: ReadonlyArray<Pick<Operative, 'id' | 'email'>>
+  enforcedReads?: boolean
+}): DailyOverviewScope {
+  if (!input.viewer) return WARNING_SCOPE_ALL
+  return dailyOverviewScopeFor({
+    viewer: input.viewer,
     roster: warningScopeRoster(input.users, input.userIdAliases),
     operatives: input.operatives.map((operative) => ({ id: operative.id, email: operative.email })),
     enforced: input.enforcedReads === true,

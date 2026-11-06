@@ -19,7 +19,7 @@
 
 import { rosterPersonGroups, rosterPersonName, type LineManagerRosterPerson } from './lineManagers'
 import { canonicalJobTypeName } from './operationsDocuments'
-import { permissionLevelOf, storedPermissionFlag, type PermissionLevel } from './permissionLevels'
+import { canManageOperatives, permissionLevelOf, storedPermissionFlag, type PermissionLevel } from './permissionLevels'
 import { idKey, idText, personIdSet, rosterMemberActive } from './personIds'
 import { jobManagerIds, stableManagerId, type JobManagerRosterRow } from './staffAccess'
 import { isAnonymisedDeletedProfile } from './userRosterSegment'
@@ -100,6 +100,59 @@ export function lineManagerChangeBlock(input: {
       (change.kind === 'level' && change.to === 'operative' && permissionLevelOf(input?.person) !== 'operative'))
   const blocked = removesLineManager && reports.length > 0
   return { blocked, reports, message: blocked ? LINE_MANAGER_REPORTS_BLOCK_MESSAGE : null }
+}
+
+// MARK: - Line manager set once, then locked (1.33.0, owner decision 6 Nov §6d.1)
+
+/** The fields that hold a person's line manager on `users/{uid}` (and an invitation). */
+export const LINE_MANAGER_FIELDS = ['assignedManagerUserIds', 'assignedManagerUserId', 'hasNoLineManager'] as const
+
+export const LINE_MANAGER_LOCKED_MESSAGE = 'Only an admin can change the line manager once this person has been added.'
+
+/**
+ * Who may set or change a person's line manager (`LINE_MANAGER_FIELDS`; rulebook §11, **1.33.0 owner decision:
+ * "line manager set once, then locked"**):
+ *   - admins and super admins (outside operative mode): any person, any time;
+ *   - a manager with the Operatives toggle (`canManageOperatives`): only for an operative, and only while adding them
+ *     (`isCreate`, the Add User / invite form) or on an invitation they sent that is not accepted yet (`invitation`
+ *     with `accepted` false and `invitedBy` one of the actor's ids). After that only an admin changes it — removing
+ *     and re-adding the operative is the accepted way round (owner, 6 Nov);
+ *   - everyone else (managers without the toggle, operatives, the person themself): never.
+ * `actor` and `target` are users documents (or the draft being added); ids compare without case.
+ */
+export function canChangeLineManager(
+  actor: unknown,
+  target: unknown,
+  options?: { isCreate?: boolean | null; invitation?: { accepted?: boolean | null; invitedBy?: string | null } | null } | null
+): boolean {
+  if (!actor || typeof actor !== 'object') return false
+  const actorLevel = permissionLevelOf(actor)
+  if (actorLevel === 'operative') return false
+  if (actorLevel === 'admin') return true
+  if (!canManageOperatives(actor)) return false
+  if (permissionLevelOf(target) !== 'operative') return false
+  if (options?.isCreate === true) return true
+  const invitation = options?.invitation
+  if (!invitation || invitation.accepted === true) return false
+  const row = actor as { id?: unknown; formerUserIds?: unknown }
+  const actorIds = new Set(
+    [row.id, ...(Array.isArray(row.formerUserIds) ? row.formerUserIds : [])].map((id) => idKey(id)).filter(Boolean)
+  )
+  return idKey(invitation.invitedBy) !== '' && actorIds.has(idKey(invitation.invitedBy))
+}
+
+/**
+ * Whether a save changes the line manager: the stored line manager ids (`assignedManagerUserIds`, else the single id)
+ * or `hasNoLineManager` differ between `before` and `after` (ids without case, order ignored). A screen that may not
+ * change it (`canChangeLineManager` false) refuses such a save with `LINE_MANAGER_LOCKED_MESSAGE`.
+ */
+export function lineManagerChanged(before: unknown, after: unknown): boolean {
+  const ids = (row: unknown): string => {
+    const r = (row && typeof row === 'object' ? row : {}) as LineManagerRosterPerson
+    return [...new Set(storedLineManagerIds(r).map(idKey).filter(Boolean))].sort().join('|')
+  }
+  const none = (row: unknown) => (row as { hasNoLineManager?: unknown } | null)?.hasNoLineManager === true
+  return ids(before) !== ids(after) || none(before) !== none(after)
 }
 
 /**
