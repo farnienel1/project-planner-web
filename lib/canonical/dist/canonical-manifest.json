@@ -1,7 +1,7 @@
 {
-  "rulebookVersion": "1.33.0",
-  "rulebookSha256": "88bf246088cda248ee8cd1e0dfe2360afbeae84ebfc6ccda327a25723f67cdcf",
-  "bundleSha256": "e2d9f8ffe5cce59e9b0d25d43fcf8d1f5727df0eb3df407d0a54174eda9d7f34",
+  "rulebookVersion": "1.34.0",
+  "rulebookSha256": "2b45ea093d7ec68f3d6b11c36dba0592b6bf884668da90ca0380e04783273a5d",
+  "bundleSha256": "6d5ca2759327ece9073123eedf7cac5030fd90225f379fb932744d986733160a",
   "crossPlatformContractSha256": "59d6bc6123f250e1f57599240eb3190ab48f5cd2532f8281a99360d9e187d86b",
   "exports": [
     "ACCOUNT_DELETE_WITH_COMPANY_MESSAGE",
@@ -93,6 +93,7 @@
     "FILE_UNDO_WINDOW_MS",
     "FIRESTORE_IN_QUERY_LIMIT",
     "GHOST_BADGE_LABEL",
+    "GHOST_CHECK_ISSUE_LABELS",
     "GHOST_CREATE_REFUSED_MESSAGE",
     "GHOST_EMAIL_REFUSED_MESSAGE",
     "GHOST_FIELD",
@@ -654,6 +655,7 @@
     "ghostRate",
     "ghostUpgradeRefusal",
     "ghostUpgradeWrites",
+    "ghostsToCheck",
     "halfDayWindows",
     "hasAccess",
     "hasActiveLineManager",

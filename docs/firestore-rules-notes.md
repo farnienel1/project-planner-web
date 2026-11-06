@@ -217,6 +217,16 @@ Design notes (each was measured on the emulator, 1.22.0):
 
 Checked (merged with 1.32.4): suites 238/238 (187 + 32 + 19, each on a fresh emulator on a private port; every 1.33 test context carries claims through `tests/authClaimsContext.ts`); `RULES_STRICT_BUDGET=1`: 9 tests with a limit refusal against 20 on 1.32.4, none new (11 gone with the read changes); emulator type check 0 issues; no `IllegalStateException` in any emulator log. All three rules suites take the emulator port from `RULES_PORT` (default 8080), as 1.32.4's firestore suite already did.
 
+### 1.34.0 — ghost operatives (7 Nov)
+
+Two edits, both on existing paths (rulebook §11, §16):
+- **R1** (users update by an Operatives manager): the 1.33.0 exemption that lets them change the line manager of an unaccepted placeholder (`passwordSet` not true) now also needs `ghost` not true — a ghost's line manager is changed by admins only.
+- **R2** (`callerLineManagesUserOrRow`): the users-id branch also needs the users document's `ghost` not true (the same cached `get`), so a ghost's line manager gets no overtime booking write on it.
+
+Static cost 232,589 → 232,779; 141,866 → 142,017 bytes; emulator type check 0 issues. Suites on a private port: firestore 190/190 (3 new), overtime 32/32, payeClaims 19/19, ghosts 3/3 (new `tests/ghosts.rules.test.ts`). `RULES_STRICT_BUDGET=1`: the same 9 limit refusals in the firestore suite as 1.33.0; the new ghost leave test's "another manager cannot book approved leave" is refused by the limit too — the same holiday-rule denial path as the existing test 57, not a new rule.
+
+**Emulator crash (1.22.0), seen while writing these tests:** an Operatives manager's `users` create that carries `isSuperAdmin: false`, or has no `email` key at all, crashes the emulator (`IllegalStateException: ternary operator predicate is always boolean`; the write never answers and the document stays locked). The same documents with `email: ''` and no `isSuperAdmin` key pass. Ghosts are written that way (`ghostCreateWrites`). Web Add user's invite placeholder writes `isSuperAdmin: false` (`invitePlaceholderUserWriteFields`); whether Google's production engine shares the crash is unknown — check after publishing that an Operatives manager can still add an operative with a login (follow-up).
+
 ## Service-level functions
 
 ### `orgIdsMatch`

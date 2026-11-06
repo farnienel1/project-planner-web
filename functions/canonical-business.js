@@ -109,6 +109,24 @@ var ProjectPlannerCanonical = (() => {
     FILE_UNDO_WINDOW_MINUTES: () => FILE_UNDO_WINDOW_MINUTES,
     FILE_UNDO_WINDOW_MS: () => FILE_UNDO_WINDOW_MS,
     FIRESTORE_IN_QUERY_LIMIT: () => FIRESTORE_IN_QUERY_LIMIT,
+    GHOST_BADGE_LABEL: () => GHOST_BADGE_LABEL,
+    GHOST_CHECK_ISSUE_LABELS: () => GHOST_CHECK_ISSUE_LABELS,
+    GHOST_CREATE_REFUSED_MESSAGE: () => GHOST_CREATE_REFUSED_MESSAGE,
+    GHOST_EMAIL_REFUSED_MESSAGE: () => GHOST_EMAIL_REFUSED_MESSAGE,
+    GHOST_FIELD: () => GHOST_FIELD,
+    GHOST_INVITED_BADGE_LABEL: () => GHOST_INVITED_BADGE_LABEL,
+    GHOST_INVITE_EMAIL_HINT_FIELD: () => GHOST_INVITE_EMAIL_HINT_FIELD,
+    GHOST_LINE_MANAGER_INVALID_MESSAGE: () => GHOST_LINE_MANAGER_INVALID_MESSAGE,
+    GHOST_LINE_MANAGER_REQUIRED_MESSAGE: () => GHOST_LINE_MANAGER_REQUIRED_MESSAGE,
+    GHOST_NAME_REQUIRED_MESSAGE: () => GHOST_NAME_REQUIRED_MESSAGE,
+    GHOST_OPERATIVE_EXPLANATION: () => GHOST_OPERATIVE_EXPLANATION,
+    GHOST_PHONE_REFUSED_MESSAGE: () => GHOST_PHONE_REFUSED_MESSAGE,
+    GHOST_RATE_REQUIRED_MESSAGE: () => GHOST_RATE_REQUIRED_MESSAGE,
+    GHOST_TOGGLE_HELP: () => GHOST_TOGGLE_HELP,
+    GHOST_TOGGLE_LABEL: () => GHOST_TOGGLE_LABEL,
+    GHOST_UPGRADE_HELP: () => GHOST_UPGRADE_HELP,
+    GHOST_UPGRADE_LABEL: () => GHOST_UPGRADE_LABEL,
+    GHOST_UPGRADE_REFUSAL_MESSAGES: () => GHOST_UPGRADE_REFUSAL_MESSAGES,
     HEALTH_SAFETY_ARRAY_FIELDS: () => HEALTH_SAFETY_ARRAY_FIELDS,
     HEALTH_SAFETY_FILE_FIELDS: () => HEALTH_SAFETY_FILE_FIELDS,
     HOLIDAY_DOCUMENT_KEYS: () => HOLIDAY_DOCUMENT_KEYS,
@@ -122,6 +140,7 @@ var ProjectPlannerCanonical = (() => {
     HS_SIGNATURE_STATUSES: () => HS_SIGNATURE_STATUSES,
     IDEMPOTENT_MIGRATION_WRITES: () => IDEMPOTENT_MIGRATION_WRITES,
     INBOX_CREATED_AT_SKEW_MS: () => INBOX_CREATED_AT_SKEW_MS,
+    INVITE_ACCEPT_DROPPED_PLACEHOLDER_FIELDS: () => INVITE_ACCEPT_DROPPED_PLACEHOLDER_FIELDS,
     INVITE_DRAFT_PERSON_ID: () => INVITE_DRAFT_PERSON_ID,
     INVITE_MEMBERSHIP_FIELDS: () => INVITE_MEMBERSHIP_FIELDS,
     IOS_SESSION_ORGANIZATION_STORAGE_KEY: () => IOS_SESSION_ORGANIZATION_STORAGE_KEY,
@@ -306,6 +325,7 @@ var ProjectPlannerCanonical = (() => {
     PAYRUN_SNAPSHOT_EMPLOYMENT_LABELS: () => PAYRUN_SNAPSHOT_EMPLOYMENT_LABELS,
     PAYRUN_SNAPSHOT_EMPLOYMENT_NOTE: () => PAYRUN_SNAPSHOT_EMPLOYMENT_NOTE,
     PAYRUN_SNAPSHOT_EMPTY_MESSAGE: () => PAYRUN_SNAPSHOT_EMPTY_MESSAGE,
+    PAYRUN_SNAPSHOT_GHOST_CELL: () => PAYRUN_SNAPSHOT_GHOST_CELL,
     PAYRUN_SNAPSHOT_LABEL: () => PAYRUN_SNAPSHOT_LABEL,
     PAYRUN_SNAPSHOT_LEVEL_LABELS: () => PAYRUN_SNAPSHOT_LEVEL_LABELS,
     PAYRUN_SNAPSHOT_NO_PAYMENT_RUN_MESSAGE: () => PAYRUN_SNAPSHOT_NO_PAYMENT_RUN_MESSAGE,
@@ -510,10 +530,12 @@ var ProjectPlannerCanonical = (() => {
     bookingsToRemoveOnOperativeDelete: () => bookingsToRemoveOnOperativeDelete,
     bookingsToRemoveOnProjectDelete: () => bookingsToRemoveOnProjectDelete,
     calendarDaysBetween: () => calendarDaysBetween,
+    canBookLeaveFor: () => canBookLeaveFor,
     canBookOtherLocationsFor: () => canBookOtherLocationsFor,
     canChangeJobManagers: () => canChangeJobManagers,
     canChangeLineManager: () => canChangeLineManager,
     canChangePersonPay: () => canChangePersonPay,
+    canCreateGhost: () => canCreateGhost,
     canCreateJob: () => canCreateJob,
     canDecideLeave: () => canDecideLeave,
     canDecideOvertimeRequest: () => canDecideOvertimeRequest,
@@ -537,6 +559,7 @@ var ProjectPlannerCanonical = (() => {
     canSeeVariations: () => canSeeVariations,
     canSelfBookAnnualLeave: () => canSelfBookAnnualLeave,
     canSendMaterialOrders: () => canSendMaterialOrders,
+    canUpgradeGhost: () => canUpgradeGhost,
     canViewMaterialOrderHistory: () => canViewMaterialOrderHistory,
     canViewPayeClaims: () => canViewPayeClaims,
     canViewPersonPay: () => canViewPersonPay,
@@ -638,6 +661,18 @@ var ProjectPlannerCanonical = (() => {
     formatPaymentRunDay: () => formatPaymentRunDay,
     formatVariationNumber: () => formatVariationNumber,
     formerIdAliases: () => formerIdAliases,
+    ghostAddFormRows: () => ghostAddFormRows,
+    ghostBadgeLabel: () => ghostBadgeLabel,
+    ghostConversionCandidates: () => ghostConversionCandidates,
+    ghostConversionWrites: () => ghostConversionWrites,
+    ghostCreateError: () => ghostCreateError,
+    ghostCreateWrites: () => ghostCreateWrites,
+    ghostLeaveBooking: () => ghostLeaveBooking,
+    ghostPermissions: () => ghostPermissions,
+    ghostRate: () => ghostRate,
+    ghostUpgradeRefusal: () => ghostUpgradeRefusal,
+    ghostUpgradeWrites: () => ghostUpgradeWrites,
+    ghostsToCheck: () => ghostsToCheck,
     halfDayWindows: () => halfDayWindows,
     hasAccess: () => hasAccess,
     hasActiveLineManager: () => hasActiveLineManager,
@@ -671,6 +706,7 @@ var ProjectPlannerCanonical = (() => {
     invitationReadErrorIsSkippable: () => invitationReadErrorIsSkippable,
     invitationRole: () => invitationRole,
     invitationUsedWriteFields: () => invitationUsedWriteFields,
+    inviteAcceptPlaceholderFields: () => inviteAcceptPlaceholderFields,
     inviteAcceptWrites: () => inviteAcceptWrites,
     inviteDraftLineManagerSubject: () => inviteDraftLineManagerSubject,
     inviteEmailHasLiveClaim: () => inviteEmailHasLiveClaim,
@@ -693,6 +729,8 @@ var ProjectPlannerCanonical = (() => {
     isDailyOverviewRowInScope: () => isDailyOverviewRowInScope,
     isFileReportReason: () => isFileReportReason,
     isFileReportSurface: () => isFileReportSurface,
+    isGhostInvited: () => isGhostInvited,
+    isGhostUser: () => isGhostUser,
     isIdentifiablePendingLeftover: () => isIdentifiablePendingLeftover,
     isInvoiceLine: () => isInvoiceLine,
     isJobInWarningScope: () => isJobInWarningScope,
@@ -1146,6 +1184,7 @@ var ProjectPlannerCanonical = (() => {
     permissionToggleRows: () => permissionToggleRows,
     permissionsWriteMap: () => permissionsWriteMap,
     personDayItems: () => personDayItems,
+    personDedupeKey: () => personDedupeKey,
     personIdSet: () => personIdSet,
     personalSiteAuditEvidence: () => personalSiteAuditEvidence,
     personalSiteAuditImagePath: () => personalSiteAuditImagePath,
@@ -2172,7 +2211,11 @@ var ProjectPlannerCanonical = (() => {
     "formerUserIds",
     // Rulebook 1.31.1 (F5): the invitation an account was created from (written once, with the invitation marked used in
     // the same batch); the security rules accept a placeholder copy only with it.
-    "invitationId"
+    "invitationId",
+    // Rulebook 1.34.0 (§11): a ghost operative (bookable, no app login) and, on a converted operatives row, the email kept
+    // aside for "Give app access". Accepting an invitation never copies either onto the account.
+    "ghost",
+    "inviteEmailHint"
   ];
   var USER_FORMER_IDS_FIELD = "formerUserIds";
   function parseFormerUserIds(data) {
@@ -3394,6 +3437,12 @@ var ProjectPlannerCanonical = (() => {
 
   // lib/canonical/userRosterSegment.ts
   var ANONYMISED_DELETED_USER_NAME = "Deleted user";
+  function isGhostUser(user) {
+    if (!user || typeof user !== "object") return false;
+    const value = user.ghost;
+    if (value === true || value === 1) return true;
+    return typeof value === "string" && value.trim().toLowerCase() === "true";
+  }
   function trimmed(value) {
     return typeof value === "string" ? value.trim() : "";
   }
@@ -3423,6 +3472,7 @@ var ProjectPlannerCanonical = (() => {
   }
   function rosterSegment(profile) {
     if (isAnonymisedDeletedProfile(profile)) return "inactive";
+    if (isGhostUser(profile)) return profile.isActive === false ? "inactive" : "active";
     if (profile.passwordSet === true) return profile.isActive === true ? "active" : "inactive";
     return "pending";
   }
@@ -3442,6 +3492,7 @@ var ProjectPlannerCanonical = (() => {
   function isIdentifiablePendingLeftover(profile, claimedEmails) {
     if (profile.passwordSet === true) return false;
     if (isAnonymisedDeletedProfile(profile)) return false;
+    if (isGhostUser(profile)) return false;
     const email = normalizeEmail(profile.email);
     const name = rosterPersonName(profile);
     const phone = rosterPhone(profile);
@@ -5856,7 +5907,7 @@ var ProjectPlannerCanonical = (() => {
       const email = emailKey(operative.email);
       if (!email) continue;
       const person = input.people.find((candidate) => emailKey(candidate.email) === email && candidate.isOperativeMode);
-      if (!person || person.passwordSet) continue;
+      if (!person || person.passwordSet || isGhostUser(person)) continue;
       const createdKey = dayKeyFromIso(person.createdAtIso, timeZone);
       if (!createdKey || workingDaysInclusive(createdKey, todayKey4, timeZone) < 3) continue;
       const operativeName = String(operative.name || "").trim() || operative.email;
@@ -5901,6 +5952,7 @@ var ProjectPlannerCanonical = (() => {
     return aliases;
   }
   function hasFinishedSignup(person) {
+    if (isGhostUser(person)) return true;
     return person.passwordSet === true && person.status !== "pending";
   }
   function isManagerOrAdmin(person) {
@@ -5910,7 +5962,7 @@ var ProjectPlannerCanonical = (() => {
     return labourBookingKind(person) === "operative";
   }
   function preferFinishedAccount(candidates) {
-    return candidates.find((person) => person.passwordSet && person.isActive);
+    return candidates.find((person) => (person.passwordSet || isGhostUser(person)) && person.isActive);
   }
   function dedupeFinishedPeople(people) {
     const groups = /* @__PURE__ */ new Map();
@@ -5919,7 +5971,7 @@ var ProjectPlannerCanonical = (() => {
       if (!hasFinishedSignup(person)) continue;
       const email = emailKey(person.email);
       if (!email) {
-        withoutEmail.push(person);
+        if (person.isActive) withoutEmail.push(person);
         continue;
       }
       const list = groups.get(email) || [];
@@ -7780,6 +7832,9 @@ var ProjectPlannerCanonical = (() => {
   function memberIsActive(member) {
     return member.isActive !== false;
   }
+  function memberIsGhost(member) {
+    return isGhostUser(member);
+  }
   function isTimesheetUser(role) {
     return role.isOperativeMode || role.isManager || role.isAdmin || role.isSuperAdmin;
   }
@@ -7801,7 +7856,7 @@ var ProjectPlannerCanonical = (() => {
       members.filter((member) => viewerKeys.has(idKey3(member.id))).map((member) => idKey3(member.email)).filter(Boolean)
     );
     const isViewer = (member) => viewerKeys.has(idKey3(member.id)) || idKey3(member.email) !== "" && viewerEmails.has(idKey3(member.email));
-    const active = members.filter((member) => idKey3(member.id) && memberIsActive(member) && !isViewer(member));
+    const active = members.filter((member) => idKey3(member.id) && memberIsActive(member) && !isViewer(member) && !memberIsGhost(member));
     if (seesEveryUserTimesheet(viewer.role)) {
       return active.filter((member) => isTimesheetUser(member.role)).map((member) => ({ userId: member.id }));
     }
@@ -7848,7 +7903,7 @@ var ProjectPlannerCanonical = (() => {
     const seen = /* @__PURE__ */ new Set();
     for (const member of members) {
       const key4 = idKey3(member.id);
-      if (!key4 || seen.has(key4)) continue;
+      if (!key4 || seen.has(key4) || memberIsGhost(member)) continue;
       const own = isViewer(member);
       const inScope = own || listed.has(key4) || (seesEvery ? isTimesheetUser(member.role) : reportsToViewer(member) || idKey3(member.email) !== "" && managedEmails.has(idKey3(member.email)));
       if (!inScope) continue;
@@ -9326,7 +9381,9 @@ var ProjectPlannerCanonical = (() => {
         surname,
         name: text4(row2.name),
         displayName: text4(row2.displayName)
-      })
+      }),
+      ghost: isGhostUser(row2),
+      inviteEmailHint: optionalText(row2.inviteEmailHint)?.toLowerCase() ?? null
     };
   }
   var ROSTER_DOCUMENT_KEYS = {
@@ -9718,6 +9775,7 @@ var ProjectPlannerCanonical = (() => {
   }
   function timesheetDaysForPerson(user, period, timeZone) {
     if (!user || user.isActive === false) return [];
+    if (isGhostUser(user)) return [];
     if (isAnonymisedDeletedProfile({ email: user.email ?? "", name: user.name ?? "" })) return [];
     const start = text4(period?.startDayKey);
     const end = text4(period?.endDayKey);
@@ -10851,8 +10909,8 @@ var ProjectPlannerCanonical = (() => {
   // lib/canonical/rulebookStamp.ts
   function rulebookStamp() {
     return {
-      version: true ? "1.33.0" : "",
-      sha256: true ? "88bf246088cda248ee8cd1e0dfe2360afbeae84ebfc6ccda327a25723f67cdcf" : ""
+      version: true ? "1.34.0" : "",
+      sha256: true ? "2b45ea093d7ec68f3d6b11c36dba0592b6bf884668da90ca0380e04783273a5d" : ""
     };
   }
   function rulebookVersionLabel(version) {
@@ -12489,7 +12547,7 @@ var ProjectPlannerCanonical = (() => {
     let best = null;
     for (const member of members) {
       const memberKey = idKey(member.id);
-      if (!same.has(memberKey) || !rosterMemberActive(member)) continue;
+      if (!same.has(memberKey) || !rosterMemberActive(member) || isGhostUser(member)) continue;
       const signedUp = member.passwordSet === true ? 2 : member.passwordSet === false ? 0 : 1;
       const score = signedUp * 2 + (formerOfOther.has(memberKey) ? 0 : 1);
       if (!best || score > best.score) best = { id: idText(member.id), score };
@@ -14540,13 +14598,14 @@ var ProjectPlannerCanonical = (() => {
     const ids = personIdSet(input.user, input.roster ?? null);
     const idKeys = new Set(ids.map(key2));
     const email = key2(input.user.email);
-    const account = [
+    const ghost = isGhostUser(input.user);
+    const account = ghost ? [{ op: "delete", path: `users/${uid}` }] : [
       { op: "delete", path: `users/${uid}` },
       { op: "delete", path: `users/${uid}/private/taxIds` },
       { op: "delete", path: `users/${uid}/orgMemberships/${org}` }
     ];
     if (email && !email.includes("/")) account.push({ op: "delete", path: `organizations/${org}/userEmails/${email}` });
-    if (input.listedInMembers !== false) account.push({ op: "update", path: `organizations/${org}`, deleteFields: [`members.${uid}`] });
+    if (!ghost && input.listedInMembers !== false) account.push({ op: "update", path: `organizations/${org}`, deleteFields: [`members.${uid}`] });
     const steps = input.actorManagesOperatives === true ? [
       ...account.filter((write) => write.path !== `users/${uid}` && write.op === "delete"),
       ...account.filter((write) => write.path === `users/${uid}`),
@@ -14848,6 +14907,7 @@ var ProjectPlannerCanonical = (() => {
   }
 
   // lib/canonical/inviteAccept.ts
+  var ACCEPT_DROPPED_FIELDS = ["ghost", "inviteEmailHint"];
   function text18(value) {
     return typeof value === "string" ? value.trim() : "";
   }
@@ -14893,7 +14953,8 @@ var ProjectPlannerCanonical = (() => {
         role,
         permissions,
         pay,
-        joinsAnotherCompany: another
+        joinsAnotherCompany: another,
+        dropPlaceholderFields: [...ACCEPT_DROPPED_FIELDS]
       };
     }
     const migrating = Boolean(placeholder);
@@ -14906,7 +14967,8 @@ var ProjectPlannerCanonical = (() => {
       role,
       permissions,
       pay,
-      joinsAnotherCompany: false
+      joinsAnotherCompany: false,
+      dropPlaceholderFields: [...ACCEPT_DROPPED_FIELDS]
     };
   }
   function idList7(value) {
@@ -17992,7 +18054,7 @@ var ProjectPlannerCanonical = (() => {
     const seen = /* @__PURE__ */ new Set();
     for (const member of members) {
       const key4 = idKey(member.id);
-      if (self.has(key4) || seen.has(key4) || !rosterMemberActive(member)) continue;
+      if (self.has(key4) || seen.has(key4) || !rosterMemberActive(member) || isGhostUser(member)) continue;
       const managed = lineManagerIds(member, members).some((id2) => self.has(idKey(id2)));
       if (!admin && !managed) continue;
       seen.add(key4);
@@ -20184,6 +20246,7 @@ var ProjectPlannerCanonical = (() => {
   var PAYRUN_SNAPSHOT_EMPLOYMENT_LABELS = { paye: "PAYE", selfEmployed: "Self-employed" };
   var PAYRUN_SNAPSHOT_PAYE_CELL = "PAYE";
   var PAYRUN_SNAPSHOT_SELF_EMPLOYED_CELL = "Self Employed";
+  var PAYRUN_SNAPSHOT_GHOST_CELL = "No app login";
   var PAYRUN_SNAPSHOT_STATE_LABELS = {
     notStarted: "Not started",
     submitted: "Submitted",
@@ -20397,7 +20460,7 @@ var ProjectPlannerCanonical = (() => {
         expenses: claimCell("expense", person, ids, input.payeClaimReports ?? [], input.expenses ?? [], period),
         priceWork: claimCell("priceWork", person, ids, input.payeClaimReports ?? [], input.priceWork ?? [], period)
       } : {
-        timesheet: timesheetCell(person, ids, roster, theirSheets, payRunsInPeriod(input.organization, period, theirSheets, zone3), period),
+        timesheet: isGhostUser(person) ? cell("notApplicable", PAYRUN_SNAPSHOT_GHOST_CELL, "neutral", null) : timesheetCell(person, ids, roster, theirSheets, payRunsInPeriod(input.organization, period, theirSheets, zone3), period),
         overtime: blocked(PAYRUN_SNAPSHOT_SELF_EMPLOYED_CELL),
         expenses: blocked(PAYRUN_SNAPSHOT_SELF_EMPLOYED_CELL),
         priceWork: blocked(PAYRUN_SNAPSHOT_SELF_EMPLOYED_CELL)
@@ -20748,6 +20811,385 @@ var ProjectPlannerCanonical = (() => {
     const key4 = String(organizationId ?? "").trim().toLowerCase();
     if (!key4) return false;
     return parseAuthClaims(tokenClaims)?.organizations[key4]?.access === true;
+  }
+
+  // lib/canonical/ghostOperatives.ts
+  var GHOST_FIELD = "ghost";
+  var GHOST_INVITE_EMAIL_HINT_FIELD = "inviteEmailHint";
+  var GHOST_BADGE_LABEL = "No app login";
+  var GHOST_INVITED_BADGE_LABEL = "No app login \xB7 Invited";
+  var GHOST_TOGGLE_LABEL = "Ghost account";
+  var GHOST_TOGGLE_HELP = "For someone who works for you but does not use the app.";
+  var GHOST_OPERATIVE_EXPLANATION = "A ghost account is for someone who works for you but does not use the app \u2014 they have no login and no email. Add their name, their day or hourly rate and their line manager. You can then book them onto jobs, see them in Daily Overview and Warnings when they are not booked, book their annual leave, and see their cost on the weekly report. They never log in, and they get no notifications, timesheets, overtime, price work or expenses. An admin can give them app access later, and everything already booked for them stays with them.";
+  var GHOST_UPGRADE_LABEL = "Give app access";
+  var GHOST_UPGRADE_HELP = "Send this person an invitation. They stay bookable as they are until they accept; their bookings, leave and pay history move to their account.";
+  var GHOST_NAME_REQUIRED_MESSAGE = "First name and surname are required.";
+  var GHOST_RATE_REQUIRED_MESSAGE = "Set a day rate or hourly rate above 0 \u2014 a ghost is paid from it.";
+  var GHOST_LINE_MANAGER_REQUIRED_MESSAGE = "Choose a line manager \u2014 they book this person\u2019s leave and see when they are not booked.";
+  var GHOST_LINE_MANAGER_INVALID_MESSAGE = "Choose a line manager from the list (an active admin or manager).";
+  var GHOST_EMAIL_REFUSED_MESSAGE = "A ghost has no email. Turn off Ghost account to invite this person instead.";
+  var GHOST_PHONE_REFUSED_MESSAGE = "A ghost has no phone number.";
+  var GHOST_CREATE_REFUSED_MESSAGE = "Only admins and managers with the Operatives permission can add a ghost.";
+  var GHOST_UPGRADE_REFUSAL_MESSAGES = {
+    not_admin: "Only an admin can give a ghost app access.",
+    not_ghost: "This person already has app access.",
+    inactive: "Reactivate this person before giving them app access.",
+    email_required: "Enter the email address the invitation goes to.",
+    email_invalid: "Enter a valid email address.",
+    already_invited: "This person has already been invited. They can use the email they were sent."
+  };
+  function isGhostInvited(user) {
+    return isGhostUser(user) && idText(user?.email) !== "";
+  }
+  function ghostBadgeLabel(user) {
+    if (!isGhostUser(user)) return "";
+    return isGhostInvited(user) ? GHOST_INVITED_BADGE_LABEL : GHOST_BADGE_LABEL;
+  }
+  function personDedupeKey(person) {
+    const email = idKey(person?.email);
+    if (email) return email;
+    const id2 = idKey(person?.id);
+    return id2 ? `id:${id2}` : "";
+  }
+  function canCreateGhost(viewer) {
+    return canManageOperatives(viewer);
+  }
+  function positiveNumber(value) {
+    const n = typeof value === "number" ? value : typeof value === "string" && value.trim() !== "" ? Number(value) : NaN;
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }
+  function ghostRate(draft) {
+    const basis = draft?.payBasis === "hourly" ? "hourly" : draft?.payBasis === "day" ? "day" : null;
+    if (basis === "hourly") {
+      const amount = positiveNumber(draft?.hourlyRate);
+      return amount == null ? null : { payBasis: "hourly", amount };
+    }
+    if (basis === "day") {
+      const amount = positiveNumber(draft?.dayRate);
+      return amount == null ? null : { payBasis: "day", amount };
+    }
+    const day = positiveNumber(draft?.dayRate);
+    if (day != null) return { payBasis: "day", amount: day };
+    const hourly = positiveNumber(draft?.hourlyRate);
+    return hourly == null ? null : { payBasis: "hourly", amount: hourly };
+  }
+  function lineManagerIdList(draft) {
+    const out = [];
+    for (const raw of draft?.lineManagerIds ?? []) {
+      const id2 = idText(raw);
+      if (id2 && !out.some((existing) => idKey(existing) === idKey(id2))) out.push(id2);
+    }
+    return out;
+  }
+  function ghostCreateError(draft, options) {
+    if (idText(draft?.email)) return GHOST_EMAIL_REFUSED_MESSAGE;
+    if (idText(draft?.mobileNumber)) return GHOST_PHONE_REFUSED_MESSAGE;
+    if (!idText(draft?.firstName) || !idText(draft?.surname)) return GHOST_NAME_REQUIRED_MESSAGE;
+    if (!ghostRate(draft)) return GHOST_RATE_REQUIRED_MESSAGE;
+    const managers = lineManagerIdList(draft);
+    if (managers.length === 0) return GHOST_LINE_MANAGER_REQUIRED_MESSAGE;
+    if (options?.roster) {
+      const offered = new Set(lineManagerCandidates(null, options.roster).map((row2) => idKey(row2.id)));
+      if (managers.some((id2) => !offered.has(idKey(id2)))) return GHOST_LINE_MANAGER_INVALID_MESSAGE;
+    }
+    return null;
+  }
+  function ghostPermissions() {
+    const map = permissionsWriteMap({ permissions: addUserPermissionDefaults("operative") }, "operative");
+    return { ...map, operativeMode: true, materials: false, siteAudit: false };
+  }
+  function nameFields(firstName, surname) {
+    const displayName2 = `${firstName} ${surname}`.trim();
+    return { firstName, surname, lastName: surname, name: displayName2, displayName: displayName2 };
+  }
+  function ghostCreateWrites(input) {
+    const org = idText(input?.organizationId);
+    const ghostId = idText(input?.ghostId);
+    if (!org || !ghostId || org.includes("/") || ghostId.includes("/")) return null;
+    if (ghostCreateError(input.draft, { roster: input.roster ?? null })) return null;
+    const rate = ghostRate(input.draft);
+    const managers = lineManagerIdList(input.draft);
+    const permissions = ghostPermissions();
+    const fields = {
+      organizationId: org,
+      // '' (never a missing key): both apps' readers expect the field, and the Firestore emulator (1.22.0) crashes on an
+      // Operatives manager's users create with no `email` key at all (docs/firestore-rules-notes.md "1.34.0").
+      email: "",
+      role: "operative",
+      ...nameFields(idText(input.draft.firstName), idText(input.draft.surname)),
+      [GHOST_FIELD]: true,
+      passwordSet: false,
+      isActive: true,
+      // No `isSuperAdmin` key (missing reads false): the Firestore emulator (1.22.0) crashes on an Operatives manager's
+      // users create that carries `isSuperAdmin: false` (docs/firestore-rules-notes.md "1.34.0").
+      policyAccepted: false,
+      employmentType: "self_employed",
+      timesheetsEnabled: false,
+      annualLeaveEnabled: true,
+      permissions,
+      ...permissions,
+      assignedManagerUserIds: managers,
+      assignedManagerUserId: managers[0],
+      payBasis: rate.payBasis,
+      ...rate.payBasis === "day" ? { dayRate: rate.amount } : { hourlyRate: rate.amount },
+      ...writeMetadataFields(input.actorUserId, input.platform) || {}
+    };
+    const leave = input.draft.annualLeave;
+    if (leave) {
+      if (typeof leave.enabled === "boolean") fields.annualLeaveEnabled = leave.enabled;
+      const finite5 = (value) => typeof value === "number" && Number.isFinite(value) ? value : null;
+      if (leave.enabled !== false) {
+        if (finite5(leave.daysPerYear) != null) fields.annualLeaveDaysPerYear = leave.daysPerYear;
+        if (finite5(leave.startMonth) != null) fields.annualLeaveYearStartMonth = leave.startMonth;
+        if (finite5(leave.endMonth) != null) fields.annualLeaveYearEndMonth = leave.endMonth;
+        if (typeof leave.carriesOver === "boolean") fields.annualLeaveCarriesOver = leave.carriesOver;
+        if (finite5(leave.yearAllowance) != null) fields.annualLeaveYearAllowance = leave.yearAllowance;
+        if (idText(leave.yearAllowanceKey)) fields.annualLeaveYearAllowanceKey = idText(leave.yearAllowanceKey);
+      }
+    }
+    const preset = idText(input.draft.tradeTypePreset);
+    if (preset) fields.tradeTypePreset = preset;
+    const custom = idText(input.draft.tradeTypeCustom);
+    if (custom && preset === "Other") fields.tradeTypeCustom = custom;
+    const privatePay = input.privatePay === true;
+    const userFields = sharedDocumentPayWrite(fields, { privatePay });
+    const payFields = privatePay ? payProfileWriteFieldsFromProfileWrite(ghostId, fields) : null;
+    return {
+      user: { path: `users/${ghostId}`, fields: userFields, serverTimestampFields: ["createdAt", "updatedAt"] },
+      payProfile: payFields ? {
+        path: payProfilePath(org, ghostId),
+        fields: { ...payFields, ...writeMetadataFields(input.actorUserId, input.platform) || {} },
+        serverTimestampFields: ["updatedAt"]
+      } : null
+    };
+  }
+  var ADD_FORM_ORDER = [
+    "ghostToggle",
+    "accountType",
+    "firstName",
+    "surname",
+    "email",
+    "mobileNumber",
+    "permissions",
+    "taxIds",
+    "annualLeave",
+    "lineManagers",
+    "pay",
+    "trade",
+    "employmentType",
+    "timesheets"
+  ];
+  function ghostAddFormRows(input) {
+    const ghost = input.ghost === true && input.canCreateGhost === true;
+    const ghostFields = {
+      ghostToggle: { visible: true, required: false },
+      accountType: { visible: false, required: false },
+      firstName: { visible: true, required: true },
+      surname: { visible: true, required: true },
+      email: { visible: false, required: false },
+      mobileNumber: { visible: false, required: false },
+      permissions: { visible: false, required: false },
+      taxIds: { visible: false, required: false },
+      annualLeave: { visible: true, required: false },
+      lineManagers: { visible: true, required: true },
+      pay: { visible: true, required: true },
+      trade: { visible: true, required: false },
+      employmentType: { visible: false, required: false },
+      timesheets: { visible: false, required: false }
+    };
+    return ADD_FORM_ORDER.map((field) => {
+      if (field === "ghostToggle") return { field, visible: input.canCreateGhost === true, required: false };
+      if (ghost) return { field, ...ghostFields[field] };
+      return { field, visible: true, required: field === "firstName" || field === "surname" || field === "email" };
+    });
+  }
+  function canBookLeaveFor(viewer, person, roster) {
+    return canDecideLeave(viewer, person, roster);
+  }
+  function ghostLeaveBooking(viewer, ghost, roster) {
+    return { allowed: isGhostUser(ghost) && canBookLeaveFor(viewer, ghost, roster), status: "approved", notify: false };
+  }
+  function ghostUpgradeRefusal(viewer, ghost, email) {
+    if (!viewer || viewer.isActive === false || permissionLevelOf(viewer) !== "admin") return "not_admin";
+    if (!ghost || !isGhostUser(ghost)) return "not_ghost";
+    if (ghost.isActive === false || isAnonymisedDeletedProfile(ghost)) return "inactive";
+    if (isGhostInvited(ghost)) return "already_invited";
+    if (email === void 0) return null;
+    const address = idText(email).toLowerCase();
+    if (!address) return "email_required";
+    if (!/^[^\s@/]+@[^\s@/]+\.[^\s@/]+$/.test(address)) return "email_invalid";
+    return null;
+  }
+  function canUpgradeGhost(viewer, ghost) {
+    return ghostUpgradeRefusal(viewer, ghost) === null;
+  }
+  function ghostUpgradeWrites(input) {
+    const org = idText(input?.organizationId);
+    const ghostId = idText(input?.ghostId);
+    const invitationId = idText(input?.invitationId);
+    if (!org || !ghostId || !invitationId || [org, ghostId, invitationId].some((id2) => id2.includes("/"))) return null;
+    if (ghostUpgradeRefusal(input.viewer, input.ghost, input.email)) return null;
+    const email = idText(input.email).toLowerCase();
+    const ghost = input.ghost || {};
+    const managers = Array.isArray(ghost.assignedManagerUserIds) ? ghost.assignedManagerUserIds.map(idText).filter(Boolean) : idText(ghost.assignedManagerUserId) ? [idText(ghost.assignedManagerUserId)] : [];
+    const invitation = invitationCreateFields({
+      email,
+      organizationId: org,
+      invitedBy: idText(input.invitedBy),
+      firstName: ghost.firstName,
+      surname: ghost.surname ?? ghost.lastName,
+      employmentType: "self_employed",
+      permissions: ghostPermissions(),
+      role: "operative",
+      createdAt: input.now,
+      assignedManagerUserIds: managers,
+      payBasis: ghost.payBasis,
+      dayRate: ghost.dayRate,
+      hourlyRate: ghost.hourlyRate,
+      tradeTypePreset: ghost.tradeTypePreset,
+      tradeTypeCustom: ghost.tradeTypeCustom,
+      timesheetsEnabled: true,
+      annualLeaveEnabled: typeof ghost.annualLeaveEnabled === "boolean" ? ghost.annualLeaveEnabled : void 0
+    });
+    if (!invitation) return null;
+    return {
+      user: {
+        path: `users/${ghostId}`,
+        set: { email, ...writeMetadataFields(input.actorUserId, input.platform) || {} },
+        remove: Object.prototype.hasOwnProperty.call(ghost, GHOST_INVITE_EMAIL_HINT_FIELD) ? [GHOST_INVITE_EMAIL_HINT_FIELD] : []
+      },
+      invitation: { path: `invitations/${invitationId}`, fields: invitation },
+      claim: { path: `organizations/${org}/userEmails/${email}`, fields: { userId: ghostId } }
+    };
+  }
+  var INVITE_ACCEPT_DROPPED_PLACEHOLDER_FIELDS = [GHOST_FIELD, GHOST_INVITE_EMAIL_HINT_FIELD];
+  function inviteAcceptPlaceholderFields(placeholder) {
+    const out = {};
+    for (const [key4, value] of Object.entries(placeholder || {})) {
+      if (INVITE_ACCEPT_DROPPED_PLACEHOLDER_FIELDS.includes(key4)) continue;
+      out[key4] = value;
+    }
+    return out;
+  }
+  function rowName(row2) {
+    const first = idText(row2.firstName);
+    const last = idText(row2.lastName);
+    const full = `${first} ${last}`.trim() || idText(row2.name);
+    if (first || last) return { first, last, full };
+    const parts2 = full.split(/\s+/).filter(Boolean);
+    return { first: parts2[0] ?? "", last: parts2.slice(1).join(" "), full };
+  }
+  function ghostConversionCandidates(input) {
+    const org = idKey(input?.organizationId);
+    const users = (input?.users || []).filter((user) => user && idText(user.id) && (!org || idKey(user.organizationId) === org || !idText(user.organizationId)));
+    const userIds = new Set(users.map((user) => idKey(user.id)));
+    const userEmails = new Set(users.map((user) => idKey(user.email)).filter(Boolean));
+    const rows3 = (input?.operatives || []).filter((row2) => {
+      if (!row2 || !idText(row2.id) || row2.isActive === false) return false;
+      if (isAnonymisedDeletedProfile({ email: row2.email ?? "", firstName: row2.firstName ?? "", surname: row2.lastName ?? "", name: row2.name ?? "" })) return false;
+      if (userIds.has(idKey(row2.id))) return false;
+      if ([row2.linkedUserId, row2.userId, row2.uid].some((id2) => idText(id2) && userIds.has(idKey(id2)))) return false;
+      const email = idKey(row2.email);
+      if (email && userEmails.has(email)) return false;
+      return true;
+    });
+    const groups = /* @__PURE__ */ new Map();
+    for (const row2 of rows3) {
+      const key4 = personDedupeKey(row2);
+      const list = groups.get(key4) || [];
+      list.push(row2);
+      groups.set(key4, list);
+    }
+    const out = [];
+    for (const group of groups.values()) {
+      const sorted = [...group].sort((a, b) => {
+        const ra = positiveNumber(a.dayRate) ?? positiveNumber(a.hourlyRate) ? 0 : 1;
+        const rb = positiveNumber(b.dayRate) ?? positiveNumber(b.hourlyRate) ? 0 : 1;
+        return ra - rb || idKey(a.id).localeCompare(idKey(b.id));
+      });
+      const kept = sorted[0];
+      const name = rowName(kept);
+      const rate = ghostRate({ payBasis: kept.payBasis ?? null, dayRate: kept.dayRate ?? null, hourlyRate: kept.hourlyRate ?? null });
+      const issues = [];
+      if (!name.first || !name.last) issues.push("name");
+      if (!rate) issues.push("rate");
+      out.push({
+        operativeId: idText(kept.id),
+        firstName: name.first,
+        lastName: name.last,
+        name: name.full,
+        email: idText(kept.email).toLowerCase(),
+        trade: idText(kept.tradeTypeCustom) || idText(kept.tradeTypePreset) || idText(kept.trade),
+        payBasis: rate?.payBasis ?? null,
+        rate: rate?.amount ?? null,
+        duplicateOperativeIds: sorted.slice(1).map((row2) => idText(row2.id)),
+        issues
+      });
+    }
+    return out.sort((a, b) => a.name.localeCompare(b.name, "en", { sensitivity: "base" }) || a.operativeId.localeCompare(b.operativeId));
+  }
+  function ghostConversionWrites(input) {
+    const candidate = input?.candidate;
+    if (!candidate || !idText(candidate.operativeId)) return null;
+    const over = input.overrides || {};
+    const payBasis = over.payBasis ?? candidate.payBasis ?? void 0;
+    const draft = {
+      firstName: idText(over.firstName) || candidate.firstName,
+      surname: idText(over.surname) || candidate.lastName,
+      payBasis: payBasis ?? null,
+      dayRate: over.dayRate ?? (candidate.payBasis === "day" ? candidate.rate : null),
+      hourlyRate: over.hourlyRate ?? (candidate.payBasis === "hourly" ? candidate.rate : null),
+      lineManagerIds: input.lineManagerIds,
+      tradeTypePreset: candidate.trade ? "Other" : null,
+      tradeTypeCustom: candidate.trade || null
+    };
+    const plan = ghostCreateWrites({
+      organizationId: input.organizationId,
+      ghostId: candidate.operativeId,
+      draft,
+      actorUserId: input.actorUserId,
+      platform: "web",
+      privatePay: input.privatePay
+    });
+    if (!plan) return null;
+    const org = idText(input.organizationId);
+    const userFields = { ...plan.user.fields };
+    if (candidate.email) userFields[GHOST_INVITE_EMAIL_HINT_FIELD] = candidate.email;
+    if (candidate.duplicateOperativeIds.length > 0) userFields.formerUserIds = [...candidate.duplicateOperativeIds];
+    return {
+      user: { ...plan.user, fields: userFields },
+      payProfile: plan.payProfile,
+      operativeRow: {
+        path: `organizations/${org}/operatives/${candidate.operativeId}`,
+        set: { linkedUserId: candidate.operativeId, email: "" }
+      },
+      duplicateRows: candidate.duplicateOperativeIds.map((id2) => ({
+        path: `organizations/${org}/operatives/${id2}`,
+        set: { linkedUserId: candidate.operativeId, isActive: false }
+      }))
+    };
+  }
+  var GHOST_CHECK_ISSUE_LABELS = {
+    name: "First name and surname missing",
+    rate: "No day or hourly rate above 0",
+    lineManager: "No active line manager",
+    converted: "Converted from a no-login operative: check the name, rate and line manager"
+  };
+  function ghostsToCheck(roster) {
+    const rows3 = (roster || []).filter((row2) => row2 && idText(row2.id));
+    const active = new Set(rows3.filter((row2) => row2.isActive !== false && !isGhostUser(row2)).map((row2) => idKey(row2.id)));
+    const out = [];
+    for (const row2 of rows3) {
+      if (!isGhostUser(row2) || row2.isActive === false) continue;
+      const issues = [];
+      if (!idText(row2.firstName) || !idText(row2.surname)) issues.push("name");
+      if (!ghostRate({ payBasis: row2.payBasis ?? null, dayRate: row2.dayRate ?? null, hourlyRate: row2.hourlyRate ?? null })) issues.push("rate");
+      const managers = [...row2.assignedManagerUserIds ?? [], row2.assignedManagerUserId ?? ""].map(idKey).filter(Boolean);
+      if (!managers.some((id2) => active.has(id2))) issues.push("lineManager");
+      if (idText(row2.inviteEmailHint)) issues.push("converted");
+      if (issues.length > 0) out.push({ id: idText(row2.id), issues });
+    }
+    return out;
   }
   return __toCommonJS(bundleEntry_exports);
 })();
