@@ -1131,6 +1131,10 @@ textarea.in {
   min-width: 0;
   width: 100%;
 }
+/* In a vertical .stack the 12rem flex-basis above became a 192px-tall box with the field centred in it
+   (big empty gaps above and below the search on Projects, Small works, Operatives, Managers…).
+   In a column it takes its own height; in a row toolbar nothing changes. */
+.stack > .search { flex: 0 0 auto; }
 .search svg { position: absolute; left: 15px; color: var(--ink3); pointer-events: none; }
 .search .pp-in,
 .search .in {
