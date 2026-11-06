@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Rulebook 1.33.0 (§16, §26; docs/DEPLOY_1.33.0.md): one-off backfill of `personUserId` on price work and expense
+ * Rulebook 1.33.0 (§16, §26; docs/RULEBOOK.md "Deploy notes" 1.33.0, step 3): one-off backfill of `personUserId` on price work and expense
  * items saved before 1.33.0.
  *
  * Owner decision 6 Nov: a line manager can always review their report's price work and expenses, under every id the

@@ -175,6 +175,30 @@ What changed:
 
 Checked: suites 223/223 (each run on a fresh emulator; `tests/firestore.rules.test.ts` does not clear data between runs, so a reused emulator gives false failures); `RULES_STRICT_BUDGET=1` the same 43 limit refusals as 1.32.2 (same test names), none new; emulator type check 0 issues.
 
+### 1.33.0 — the 1.33 rules (6 Nov)
+
+Static compile cost **365,019** (1.32.3: 367,346; −2,327), 146,905 bytes (`firestoreRulesMaxBytes` raised to 149,504 with that reason). Additions and what each costs (ablation with `metric.total2`, removing only that piece from the 1.33.0 file):
+
+| Change | Cost |
+|---|---:|
+| Staff read every job and booking (`jobGetAllowed`, `jobListAllowed`, `bookingReadAllowed`; `jobDocReadable` removed) | about −8,000 (saving) |
+| Claim items and reviews readable by the line manager of `personUserId` (3 reads) | +2,800 |
+| Line manager's row path (`callerLineManagesUserOrRow`, `callerLineManagesRowPerson`, `rowPersonLineManaged`) on the booking update and the Return tombstone | +1,580 |
+| Line manager locked on users (Operatives-manager branch) | +650 |
+| Claim review `personUserId` alias test, invitation lock, `worksListPicks`, Return keys, review decisions, catalogue admins only | small (under +500 together) |
+| Delete on Return (booking delete trusts the same-batch tombstone; the tombstone holds the request test) | +100 |
+
+Design notes (each was measured on the emulator, 1.22.0):
+
+- **Document lookups are counted per call.** A `get` and an `exists` of the same document count as two of the 10 lookups a single-document write may make (probe: 6 documents with `exists` + `get` each are refused; 10 plain `get`s pass, 11 are refused). A job manager's write on a booking filed under an `operatives` row whose email names an account used 11 lookups when the line manager's row path ran first, and the line manager's own write used 11 when `canWriteBooking` ran first. Two changes fit both under 10: (1) the line manager's overtime write is its **own `allow update`** in `bookings` (the expression budget is per allow statement; the lookup budget is per write), and the row path is taken only when `users/{personId}` does not exist; (2) `callerManagesJobIn` reads the job under its stored id with one `get` (no `exists` first); the other spellings keep `exists`. A get-only lookup in every spelling (tried) added 1,000-expression refusals to denied booking writes, so only the first spelling changed.
+- **`rowPersonLineManaged`** reads the person's users document once (`let u = get(...)`) and tests the caller against `assignedManagerUserIds` (else the legacy single id) before `homeOrgIs`, under a ternary, so a manager who is not the line manager stops after the list test. It does not repeat `callerHomeIsOperative`: the overtime write also requires `overtimeCallerIsStaffHere`.
+- **Delete on Return**: the booking delete does not repeat the request test. It allows a delete whose tombstone is new in this batch (`!exists` before, `existsAfter` after), names a request, and was written by the caller; the tombstone's create rule (which cannot be bypassed) holds the request test (`overtimeReturnDeletes`: `getAfter` the request is `approved`, `decidedBy` the caller, lists the booking in `deletedBookingIds`) and the person test (line manager under any id, or an admin). Only `bookings` (never manager site bookings).
+- **Claim reads** share one `canAccessOrganization` (`overtimeViewerOf` is `overtimeViewer` without it).
+- **New document lookups** (for the custom-claims branch to keep in mind): `operatives/{personId}`, `userEmails/{email}` and `users/{uid}` in the row path; `getAfter(overtimeRequests/{id})` and `existsAfter` / `getAfter(deletedBookings/{bookingId})` for delete on Return; `users/{personUserId}` in the claim review alias test. No new role or membership lookup: role tests call `callerOrgRole`, `isOrgAdminOrOwner`, `overtimeCallerIsStaffHere` and `canAccessOrganization` as before.
+- **Kept for phase 2** (after `minimumIosBuild` is raised): the decider may still write `pending` (1.32 partial approval) and the line manager may still write `status` → `Cancelled`.
+
+Checked: suites 236/236 (185 + 32 + 19, each on a fresh emulator on a private port); `RULES_STRICT_BUDGET=1`: 35 limit refusals against 43 on 1.32.3, none new in an existing test (11 gone with the read changes); three new tests (other managers denied an overtime review, a claim read and a claim review) show the same known refusal class as the 1.32 tests beside them; emulator type check 0 issues. The rules tests now take the emulator port from `FIRESTORE_EMULATOR_HOST` (default 8080).
+
 ## Service-level functions
 
 ### `orgIdsMatch`

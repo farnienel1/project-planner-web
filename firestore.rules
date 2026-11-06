@@ -1528,8 +1528,10 @@ service cloud.firestore {
         return existsAfter(tomb) && getAfter(tomb).data.get('overtimeRequestId', '') != '' && !exists(tomb);
       }
       function overtimeViewer(uid) {
-        return canAccessOrganization(organizationId) &&
-          (isOrgAdminOrOwner(organizationId) || (uid is string && uid.size() > 0 && (uid == request.auth.uid || callerLineManagesUser(uid))));
+        return canAccessOrganization(organizationId) && overtimeViewerOf(uid);
+      }
+      function overtimeViewerOf(uid) {
+        return isOrgAdminOrOwner(organizationId) || (uid is string && uid.size() > 0 && (uid == request.auth.uid || callerLineManagesUser(uid)));
       }
       function overtimeOwnBookingEditable(collection, bookingId) {
         let role = callerOrgRole(organizationId);
@@ -1662,8 +1664,8 @@ service cloud.firestore {
       }
 
       match /priceWorkItems/{itemId} {
-        allow read: if overtimeViewer(resource.data.get('userId', '')) ||
-          (canAccessOrganization(organizationId) && callerLineManagesUser(resource.data.get('personUserId', '')));
+        allow read: if canAccessOrganization(organizationId) &&
+          (overtimeViewerOf(resource.data.get('userId', '')) || callerLineManagesUser(resource.data.get('personUserId', '')));
         allow create: if payeClaimOwnerWriter(request.resource.data.get('userId', '')) &&
           payeClaimText(request.resource.data, 'jobNumber', 1, 60) &&
           priceWorkItemValid(request.resource.data);
@@ -1675,8 +1677,8 @@ service cloud.firestore {
       }
 
       match /expenseItems/{itemId} {
-        allow read: if overtimeViewer(resource.data.get('userId', '')) ||
-          (canAccessOrganization(organizationId) && callerLineManagesUser(resource.data.get('personUserId', '')));
+        allow read: if canAccessOrganization(organizationId) &&
+          (overtimeViewerOf(resource.data.get('userId', '')) || callerLineManagesUser(resource.data.get('personUserId', '')));
         allow create: if payeClaimOwnerWriter(request.resource.data.get('userId', '')) && expenseItemValid(request.resource.data);
         allow update: if payeClaimOwnerWriter(resource.data.get('userId', '')) &&
           request.resource.data.userId == resource.data.userId &&
@@ -1709,8 +1711,8 @@ service cloud.firestore {
           : false;
       }
       match /payeClaimReviews/{reviewId} {
-        allow read: if overtimeViewer(resource.data.get('userId', '')) ||
-          (canAccessOrganization(organizationId) && callerLineManagesUser(resource.data.get('personUserId', '')));
+        allow read: if canAccessOrganization(organizationId) &&
+          (overtimeViewerOf(resource.data.get('userId', '')) || callerLineManagesUser(resource.data.get('personUserId', '')));
         allow create, update: if canAccessOrganization(organizationId) &&
           reviewId == request.resource.data.get('kind', '') + '_' + request.resource.data.get('itemId', '') &&
           claimReviewWriteValid(request.resource.data);
