@@ -417,6 +417,27 @@ export function canDeleteBooking(
   return canWriteBooking(viewer, booking, job, managers)
 }
 
+// MARK: - Removing a booking (1.33.0, owner decision 4 Nov "Cancel is removed as a user action")
+
+export const BOOKING_REMOVE_ACTIONS = ['delete', 'none'] as const
+export type BookingRemoveAction = (typeof BOOKING_REMOVE_ACTIONS)[number]
+
+/**
+ * The one remove control a booking screen shows: `delete` (with its tombstone) for exactly the people
+ * `canDeleteBooking` allows — admins every booking, managers the bookings on jobs they manage and their own non-job
+ * manager bookings — and `none` for everyone else. There is no cancel: bookings are Book / Edit / Delete only, and the
+ * Operatives permission adds no booking power (owner answer Q-E1, 6 Nov). A stored `Cancelled` booking stays hidden
+ * (`bookingOccupiesDay`); no data is changed.
+ */
+export function bookingRemoveAction(
+  viewer: JobAccessViewer | null | undefined,
+  booking: BookingPermissionInput | null | undefined,
+  job: JobManagerFields | Record<string, unknown> | null | undefined,
+  managers?: ReadonlyArray<JobManagerRosterRow> | null
+): BookingRemoveAction {
+  return canDeleteBooking(viewer, booking, job, managers) ? 'delete' : 'none'
+}
+
 /**
  * `managerUserIds` to write on a job beside `managerIds` (1.10.0): the account ids of the job's managers, so the
  * security rules can match the signed-in user without reading the managers list. A stored id that is an account id

@@ -42,9 +42,9 @@ import {
 } from '@/lib/settings/organizationSettings'
 import type { ManagerLocationType, ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import type { OverviewPersonRow } from '@/lib/daily-overview/buildDailyOverview'
-import { BookingStatus, type Project } from '@/types'
+import type { Project } from '@/types'
 import { hasAdminAccess } from '@/lib/permissions'
-import { userCanDeleteBooking } from '@/lib/access/bookingAccess'
+import { userBookingRemoveAction } from '@/lib/access/bookingAccess'
 import { canBookOtherLocationsFor, normalizeDocumentId, organizationOvertimeMultiplier, overtimeMultiplierMoveFields } from '@/lib/canonical'
 import { useOrganizationDocument } from '@/lib/stores/organizationDocumentStore'
 import { webJobAccessViewer } from '@/lib/access/readPlan'
@@ -216,7 +216,19 @@ export function DailyOverviewBookingSheet({
     return users.find((entry) => normalizeDocumentId(findOperativeForUser(entry, operatives)?.id) === normalizeDocumentId(row.operativeId))?.id
   }, [row.userId, row.operativeId, operatives, users])
 
-  const otherAllowed = canBookOtherLocationsFor(webJobAccessViewer(user), resolvedUserId ? [resolvedUserId] : [])
+  // Rulebook §2 (1.33.0): moving a labour booking to Other deletes it (there is no cancel), so it is offered only when
+  // the viewer may also delete that booking (`bookingRemoveAction`), never refused half-way.
+  const labourRemoveAction =
+    row.kind === 'operative' && row.bookingId
+      ? userBookingRemoveAction(
+          user,
+          { collection: 'bookings', projectId: row.projectId },
+          [...projects, ...smallWorks].find((entry) => entry.id === row.projectId),
+          managers
+        )
+      : 'delete'
+  const otherForPerson = canBookOtherLocationsFor(webJobAccessViewer(user), resolvedUserId ? [resolvedUserId] : [])
+  const otherAllowed = otherForPerson && labourRemoveAction === 'delete'
 
   const linkedOperative = useMemo(() => {
     if (row.operativeId) return operatives.find((entry) => normalizeDocumentId(entry.id) === normalizeDocumentId(row.operativeId))
@@ -363,14 +375,9 @@ export function DailyOverviewBookingSheet({
           isBreakRemoved: hours.isBreakRemoved,
           ...rateFields(true),
         })
-        // The labour booking moves to the manager schedule: whoever may delete it does (`canDeleteBooking`, 1.10.0:
-        // admins, and managers on jobs they manage); anyone else cancels it.
-        const job = [...projects, ...smallWorks].find((entry) => entry.id === row.projectId)
-        if (userCanDeleteBooking(user, { collection: 'bookings', projectId: row.projectId }, job, managers)) {
-          await deleteBooking(row.bookingId, organization.id)
-        } else {
-          await updateBooking(row.bookingId, { status: BookingStatus.CANCELLED })
-        }
+        // The labour booking moves to the manager schedule: it is deleted with its tombstone. Other is offered only
+        // when `bookingRemoveAction` is `delete` (`otherAllowed`), so this delete is never refused after the save.
+        await deleteBooking(row.bookingId, organization.id)
       } else if (row.bookingId) {
         await updateManagerSiteBooking(organization.id, row.bookingId, {
           locationType: pick.locationType,
@@ -437,7 +444,13 @@ export function DailyOverviewBookingSheet({
             type="button"
             className={`btn ${tab === 'other' ? 'primary' : ''}`}
             disabled={!otherAllowed}
-            title={otherAllowed ? undefined : 'Managers book Office, Working from home and Site survey for themselves only.'}
+            title={
+              otherAllowed
+                ? undefined
+                : otherForPerson
+                  ? 'Only an admin or a manager of this job can move this booking to Other.'
+                  : 'Managers book Office, Working from home and Site survey for themselves only.'
+            }
             onClick={() => openTab('other')}
           >
             Other

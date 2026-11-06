@@ -2174,12 +2174,239 @@
       "expected": "allowedOffline"
     },
     {
-      "name": "offlineAvailability: delete is online only",
+      "name": "offlineAvailability: a labour or manager schedule delete is queued offline (1.33.0)",
       "function": "offlineAvailability",
       "args": [
         "booking.delete"
       ],
+      "expected": "allowedOffline"
+    },
+    {
+      "name": "offlineAvailability: a subcontractor booking delete is online only (1.33.0)",
+      "function": "offlineAvailability",
+      "args": [
+        "booking.delete_subcontractor"
+      ],
       "expected": "onlineOnly"
+    },
+    {
+      "name": "offlineAvailability: cancel is no longer an action, so it is online only (1.33.0)",
+      "function": "offlineAvailability",
+      "args": [
+        "booking.cancel"
+      ],
+      "expected": "onlineOnly"
+    },
+    {
+      "name": "bookingDeleteFingerprint: ids without case, canonical slot (1.33.0)",
+      "function": "bookingDeleteFingerprint",
+      "args": [
+        {
+          "collection": "bookings",
+          "operativeId": "OP-1",
+          "projectId": "JOB-1",
+          "dayKey": "2026-11-09",
+          "timeSlot": "FULL_DAY",
+          "status": "Confirmed",
+          "notes": ""
+        },
+        "Europe/London"
+      ],
+      "expected": "bookings|op-1|job-1|||2026-11-09|FULL DAY|||||Confirmed|"
+    },
+    {
+      "name": "offlineDeleteReplayDecision: unchanged booking is deleted (1.33.0)",
+      "function": "offlineDeleteReplayDecision",
+      "args": [
+        {
+          "queued": {
+            "bookingId": "B-1",
+            "collection": "bookings",
+            "fingerprint": "bookings|op-1|job-1|||2026-11-09|FULL DAY|||||Confirmed|"
+          },
+          "live": {
+            "collection": "bookings",
+            "operativeId": "OP-1",
+            "projectId": "JOB-1",
+            "dayKey": "2026-11-09",
+            "timeSlot": "FULL_DAY",
+            "status": "Confirmed",
+            "notes": ""
+          },
+          "tombstoned": false,
+          "mayDelete": true,
+          "timeZone": "Europe/London"
+        }
+      ],
+      "expected": "apply"
+    },
+    {
+      "name": "offlineDeleteReplayDecision: changed on another device is refused (1.33.0)",
+      "function": "offlineDeleteReplayDecision",
+      "args": [
+        {
+          "queued": {
+            "bookingId": "B-1",
+            "collection": "bookings",
+            "fingerprint": "bookings|op-1|job-1|||2026-11-09|FULL DAY|||||Confirmed|"
+          },
+          "live": {
+            "collection": "bookings",
+            "operativeId": "OP-1",
+            "projectId": "JOB-1",
+            "dayKey": "2026-11-09",
+            "timeSlot": "CUSTOM_HOURS",
+            "status": "Confirmed",
+            "notes": "",
+            "workStartTime": "08:00",
+            "workEndTime": "15:00"
+          },
+          "tombstoned": false,
+          "mayDelete": true,
+          "timeZone": "Europe/London"
+        }
+      ],
+      "expected": "refuseChanged"
+    },
+    {
+      "name": "offlineDeleteReplayDecision: created and deleted offline sends nothing (1.33.0)",
+      "function": "offlineDeleteReplayDecision",
+      "args": [
+        {
+          "queued": {
+            "bookingId": "B-1",
+            "collection": "bookings",
+            "fingerprint": "bookings|op-1|job-1|||2026-11-09|FULL DAY|||||Confirmed|",
+            "createdOffline": true
+          },
+          "live": null
+        }
+      ],
+      "expected": "dropLocal"
+    },
+    {
+      "name": "offlineDeleteReplayDecision: permission lost is refused (1.33.0)",
+      "function": "offlineDeleteReplayDecision",
+      "args": [
+        {
+          "queued": {
+            "bookingId": "B-1",
+            "collection": "bookings",
+            "fingerprint": "bookings|op-1|job-1|||2026-11-09|FULL DAY|||||Confirmed|"
+          },
+          "live": {
+            "collection": "bookings",
+            "operativeId": "OP-1",
+            "projectId": "JOB-1",
+            "dayKey": "2026-11-09",
+            "timeSlot": "FULL_DAY",
+            "status": "Confirmed",
+            "notes": ""
+          },
+          "tombstoned": false,
+          "mayDelete": false,
+          "timeZone": "Europe/London"
+        }
+      ],
+      "expected": "refusePermission"
+    },
+    {
+      "name": "offlineDeleteReplayDecision: tombstoned is already gone (1.33.0)",
+      "function": "offlineDeleteReplayDecision",
+      "args": [
+        {
+          "queued": {
+            "bookingId": "B-1",
+            "collection": "bookings",
+            "fingerprint": "bookings|op-1|job-1|||2026-11-09|FULL DAY|||||Confirmed|"
+          },
+          "live": null,
+          "tombstoned": true
+        }
+      ],
+      "expected": "alreadyGone"
+    },
+    {
+      "name": "bookingRemoveAction: admin deletes (1.33.0)",
+      "function": "bookingRemoveAction",
+      "args": [
+        {
+          "role": {
+            "isAdmin": true,
+            "isSuperAdmin": false,
+            "isManager": false,
+            "isOperativeMode": false
+          },
+          "ids": [
+            "u-admin"
+          ]
+        },
+        {
+          "collection": "bookings",
+          "projectId": "JOB-1"
+        },
+        {
+          "managerIds": []
+        },
+        []
+      ],
+      "expected": "delete"
+    },
+    {
+      "name": "bookingRemoveAction: a manager of another job has no remove action (1.33.0)",
+      "function": "bookingRemoveAction",
+      "args": [
+        {
+          "role": {
+            "isAdmin": false,
+            "isSuperAdmin": false,
+            "isManager": true,
+            "isOperativeMode": false
+          },
+          "ids": [
+            "u-mgr"
+          ]
+        },
+        {
+          "collection": "bookings",
+          "projectId": "JOB-1"
+        },
+        {
+          "managerUserIds": [
+            "u-other"
+          ]
+        },
+        []
+      ],
+      "expected": "none"
+    },
+    {
+      "name": "bookingRemoveAction: the job's manager deletes (1.33.0)",
+      "function": "bookingRemoveAction",
+      "args": [
+        {
+          "role": {
+            "isAdmin": false,
+            "isSuperAdmin": false,
+            "isManager": true,
+            "isOperativeMode": false
+          },
+          "ids": [
+            "u-mgr"
+          ]
+        },
+        {
+          "collection": "bookings",
+          "projectId": "JOB-1"
+        },
+        {
+          "managerUserIds": [
+            "u-mgr"
+          ]
+        },
+        []
+      ],
+      "expected": "delete"
     },
     {
       "name": "offlineAvailability: views are read-only offline",

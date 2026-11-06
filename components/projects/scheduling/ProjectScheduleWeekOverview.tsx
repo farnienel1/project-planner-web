@@ -24,9 +24,9 @@ import { useAuthStore } from '@/lib/stores/authStore'
 import { useBookingHistoryFrom } from '@/lib/stores/useBookingHistory'
 import { ORG_DATA_REFRESHED_EVENT } from '@/lib/stores/refreshOrgData'
 import { canBookWork, hasAdminAccess } from '@/lib/permissions'
-import { userCanDeleteBooking, userCanWriteBooking } from '@/lib/access/bookingAccess'
+import { userBookingRemoveAction, userCanWriteBooking } from '@/lib/access/bookingAccess'
 import { bookableWorks } from '@/lib/access/workAccess'
-import { BookingStatus, UserRole, type User } from '@/types'
+import { UserRole, type User } from '@/types'
 import { SubcontractorBookingEditSheet } from '@/components/projects/scheduling/SubcontractorBookingEditSheet'
 import { watchSubcontractorBookings } from '@/lib/weekly-report/loadSubcontractorBookings'
 import { managerSiteBookingToScheduleBooking } from '@/lib/scheduling/managerSiteBookingUtils'
@@ -472,19 +472,23 @@ export function ProjectScheduleWeekOverview({
     }
   }
 
-  // Deleting a labour booking (and its tombstone) is admin only; managers cancel it instead (rulebook §2, §16).
-  // Rulebook 1.10.0 (`canDeleteBooking`): admins, and managers on jobs they manage, delete (with the tombstone).
-  const canDeleteLabourBooking = userCanDeleteBooking(currentUser, { collection: 'bookings', projectId: project.id }, project, managers)
-
-  const cancelEditing = async () => {
-    if (!editingRow?.booking) return
-    setSavingEdit(true)
-    try {
-      await updateBooking(editingRow.booking.id, { status: BookingStatus.CANCELLED })
-    } finally {
-      setSavingEdit(false)
-    }
-  }
+  // Rulebook §2 (1.33.0): the remove button is `bookingRemoveAction` — delete (with the tombstone) for admins and
+  // managers of this job (`canDeleteBooking`), nothing for anyone else. There is no cancel.
+  const editingRemoveAction = editingRow?.booking
+    ? userBookingRemoveAction(currentUser, { collection: 'bookings', projectId: project.id }, project, managers)
+    : editingRow?.managerBooking
+      ? userBookingRemoveAction(
+          currentUser,
+          {
+            collection: 'managerSiteBookings',
+            userId: editingRow.managerBooking.userId,
+            locationType: editingRow.managerBooking.locationType,
+            locationId: editingRow.managerBooking.locationId ?? null,
+          },
+          project,
+          managers
+        )
+      : 'none'
 
   const deleteEditing = async () => {
     if (!editingRow) return
@@ -728,8 +732,7 @@ export function ProjectScheduleWeekOverview({
             return person ? leaveCheck.checkFor(person, new Date(editingBooking.date), [editingBooking.id]) : undefined
           })()}
           onSave={saveEditing}
-          onDelete={!editingRow.booking || canDeleteLabourBooking ? deleteEditing : undefined}
-          onCancelBooking={editingRow.booking && !canDeleteLabourBooking ? cancelEditing : undefined}
+          onDelete={editingRemoveAction === 'delete' ? deleteEditing : undefined}
           onClose={() => setEditingRow(null)}
         />
       ) : null}

@@ -9,8 +9,12 @@
  *   - `readOnlyOffline`: shows the last synced data labelled `offlineLastUpdatedLabel` ("Last updated …") and is
  *     never recalculated from unsynced local changes.
  *
- * Action ids are stable strings (iOS `OfflineAction` raw values). Deleting a booking is online-only: the delete
- * and its tombstone (`bookingTombstoneWriteFields`) are not queued. Create, edit and cancel are queued.
+ * Action ids are stable strings (iOS `OfflineAction` raw values). Create, edit and delete a labour or manager schedule
+ * booking are queued (1.33.0, owner decision 4 Nov "Offline delete on iOS"): the delete is queued with its tombstone
+ * (`bookingTombstoneWriteFields`) and replayed through `offlineDeleteReplayDecision`. Deleting a subcontractor
+ * booking stays online only (`booking.delete_subcontractor`; `bookingDeleteOfflineAction` picks the id). There is no
+ * cancel action (1.33.0, owner decision 4 Nov "Cancel is removed as a user action"): an old build asking for
+ * `booking.cancel` gets `onlineOnly`, the answer for an unknown id.
  */
 
 import { partsInZone } from '../orgTime/zoneTime'
@@ -24,12 +28,13 @@ export const OFFLINE_ACTIONS = {
   // Allowed offline
   'booking.create': 'allowedOffline',
   'booking.edit': 'allowedOffline',
-  'booking.cancel': 'allowedOffline',
+  // 1.33.0: labour (`bookings`) and manager schedule (`managerSiteBookings`) deletes, iOS and Android.
+  'booking.delete': 'allowedOffline',
   'annual_leave.request': 'allowedOffline',
   'profile.own_fields': 'allowedOffline',
   'notifications.own_toggles': 'allowedOffline',
-  // Online only: bookings
-  'booking.delete': 'onlineOnly',
+  // Online only: bookings (1.33.0: subcontractor bookings are deleted online only)
+  'booking.delete_subcontractor': 'onlineOnly',
   // Online only: organisation settings
   'settings.company_details': 'onlineOnly',
   'settings.currency': 'onlineOnly',
@@ -76,6 +81,16 @@ export function offlineAvailability(actionId: unknown): OfflineAvailability {
   return Object.prototype.hasOwnProperty.call(OFFLINE_ACTIONS, id)
     ? OFFLINE_ACTIONS[id as OfflineActionId]
     : 'onlineOnly'
+}
+
+/**
+ * 1.33.0: the offline action id for deleting a booking in `collection` — `booking.delete` for labour (`bookings`) and
+ * manager schedule (`managerSiteBookings`) bookings, `booking.delete_subcontractor` (online only) for
+ * `subcontractorBookings` and anything else, so an unlisted collection is never deleted offline.
+ */
+export function bookingDeleteOfflineAction(collection: unknown): 'booking.delete' | 'booking.delete_subcontractor' {
+  const value = typeof collection === 'string' ? collection.trim() : ''
+  return value === 'bookings' || value === 'managerSiteBookings' ? 'booking.delete' : 'booking.delete_subcontractor'
 }
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']

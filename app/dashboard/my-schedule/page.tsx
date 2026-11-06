@@ -6,7 +6,7 @@ import { useAuthStore } from '@/lib/stores/authStore'
 import { useBookingStore } from '@/lib/stores/bookingStore'
 import { useManagerScheduleStore } from '@/lib/stores/managerScheduleStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
-import { userCanDeleteBooking, userCanWriteBooking } from '@/lib/access/bookingAccess'
+import { userBookingRemoveAction, userCanWriteBooking } from '@/lib/access/bookingAccess'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { rosterDisplayName, samePersonIds } from '@/lib/staff/userRosterUtils'
 import { useProjectStore } from '@/lib/stores/projectStore'
@@ -175,14 +175,14 @@ function MySchedulePageContent() {
 
   if (loading || !user || !organization?.id) return null
 
-  // Rulebook 1.10.0 (§2, §16): edit and delete per booking — admins any, managers on jobs they manage, operatives
-  // never (`canWriteBooking` / `canDeleteBooking`).
+  // Rulebook 1.10.0 (§2, §16): edit per booking — admins any, managers on jobs they manage, operatives never
+  // (`canWriteBooking`); the remove button is `bookingRemoveAction` (1.33.0: delete or nothing, never cancel).
   const jobsById = new Map([...projects, ...smallWorks].map((job) => [job.id.toLowerCase(), job]))
   const bookingRef = (booking: Booking) => ({ collection: 'bookings' as const, projectId: booking.projectId })
   const canWriteBookingFor = (booking: Booking) =>
     userCanWriteBooking(user, bookingRef(booking), jobsById.get(String(booking.projectId || '').toLowerCase()), managers)
   const canDeleteBookingFor = (booking: Booking) =>
-    userCanDeleteBooking(user, bookingRef(booking), jobsById.get(String(booking.projectId || '').toLowerCase()), managers)
+    userBookingRemoveAction(user, bookingRef(booking), jobsById.get(String(booking.projectId || '').toLowerCase()), managers) === 'delete'
   const canDeleteLabourBooking = !isOperativeMode(user)
 
   const displayName =

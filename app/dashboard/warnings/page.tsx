@@ -5,8 +5,9 @@ import { enforcedReadsFor } from '@/lib/access/securitySwitches'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/lib/stores/authStore'
-import { canViewWarnings, hasAdminAccess } from '@/lib/permissions'
-import { BookingStatus } from '@/types'
+import { canViewWarnings } from '@/lib/permissions'
+import type { ClashTimelineEntry } from '@/lib/warnings/clashTimeline'
+import { userBookingRemoveAction } from '@/lib/access/bookingAccess'
 import { useProjectStore } from '@/lib/stores/projectStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { useBookingStore } from '@/lib/stores/bookingStore'
@@ -69,9 +70,9 @@ export default function WarningsPage() {
     if (user && !canViewWarnings(user)) router.replace('/dashboard')
   }, [user, router])
   const { projects, smallWorks, loadProjects, loadSmallWorks } = useProjectStore()
-  const { operatives, loadOperatives } = useOperativeStore()
+  const { operatives, managers, loadOperatives } = useOperativeStore()
   const { users, userIdAliases, loadUsers, rosterLoadedOrgId } = useOrgUserStore()
-  const { bookings, loadBookings, deleteBooking, updateBooking, loading: bookingsLoading, ready: bookingsReady } = useBookingStore()
+  const { bookings, loadBookings, deleteBooking, loading: bookingsLoading, ready: bookingsReady } = useBookingStore()
   const { managerSiteBookings, loadManagerSiteBookings, deleteManagerSiteBooking, loading: managerLoading } =
     useManagerScheduleStore()
   const { materials, sendRecords, loadAllMaterials, loadSendRecords } =
@@ -524,11 +525,36 @@ export default function WarningsPage() {
   const handleDeleteBooking = useCallback(
     async (bookingId: string) => {
       if (!organization?.id) return
-      // Deleting a labour booking is admin only (rulebook §2, §16); a manager cancels it instead.
-      if (hasAdminAccess(user)) await deleteBooking(bookingId, organization.id)
-      else await updateBooking(bookingId, { status: BookingStatus.CANCELLED })
+      // Rulebook §2 (1.33.0): a labour booking is deleted with its tombstone; there is no cancel. The ⌫ is shown only
+      // when `bookingRemoveAction` is `delete` (`canRemoveClashEntry`).
+      await deleteBooking(bookingId, organization.id)
     },
-    [deleteBooking, updateBooking, organization?.id, user]
+    [deleteBooking, organization?.id]
+  )
+
+  // Rulebook §2 (1.33.0): the clash row's remove button per booking — `bookingRemoveAction` on the stored booking and
+  // its job (admins every booking, managers the jobs they manage and their own non-job bookings; nobody else).
+  const canRemoveClashEntry = useCallback(
+    (entry: ClashTimelineEntry): boolean => {
+      const jobFor = (id: string | null | undefined) =>
+        id ? mergedWorks.find((job) => job.id.toLowerCase() === String(id).toLowerCase()) : undefined
+      if (entry.managerBookingId) {
+        const row = managerSiteBookings.find((booking) => booking.id === entry.managerBookingId)
+        if (!row) return false
+        return (
+          userBookingRemoveAction(
+            user,
+            { collection: 'managerSiteBookings', userId: row.userId, locationType: row.locationType, locationId: row.locationId ?? null },
+            jobFor(row.locationId),
+            managers
+          ) === 'delete'
+        )
+      }
+      const row = bookings.find((booking) => booking.id === entry.bookingId)
+      if (!row) return false
+      return userBookingRemoveAction(user, { collection: 'bookings', projectId: row.projectId }, jobFor(row.projectId), managers) === 'delete'
+    },
+    [bookings, managerSiteBookings, mergedWorks, managers, user]
   )
 
   const handleDeleteManagerBooking = useCallback(
@@ -589,6 +615,7 @@ export default function WarningsPage() {
       onDismissQualification={handleDismissQualification}
       onDeleteBooking={handleDeleteBooking}
       onDeleteManagerBooking={handleDeleteManagerBooking}
+      canRemoveClashEntry={canRemoveClashEntry}
       sortDirection={sortDirection}
       onSortDirectionChange={setSortDirection}
     />
