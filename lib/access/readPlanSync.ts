@@ -1,17 +1,16 @@
 /**
- * Rulebook 1.10.0 §17: keeps the read plans' inputs current. A manager who reads only their jobs' bookings
- * re-plans the booking listeners when their job list changes (added to or removed from a job); an operative
- * re-plans their job documents when their own bookings change. Loaded lazily by the stores so they never import
- * each other. Admins and managers with a job toggle read whole collections and never re-plan here.
+ * Rulebook 1.10.0 §17: keeps the read plans' inputs current. An operative re-plans their own booking listeners when
+ * their operatives rows change and their job documents when their own bookings change. Loaded lazily by the stores so
+ * they never import each other. 1.33.0: admins and every manager read whole collections and never re-plan here.
  */
 import { ownBookingIdsFor, setBookingPlanInputs, webJobAccessViewer } from '@/lib/access/readPlan'
-import { enforcedReadsFor, onSecuritySwitchChange } from '@/lib/access/securitySwitches'
-import { bookingJobId, readsEveryBooking, seesEveryJob } from '@/lib/canonical'
+import { onSecuritySwitchChange } from '@/lib/access/securitySwitches'
+import { bookingJobId, readsEveryBooking } from '@/lib/canonical'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { bookingsOrganizationId, useBookingStore } from '@/lib/stores/bookingStore'
 import { managerSiteBookingsOrganizationId, useManagerScheduleStore } from '@/lib/stores/managerScheduleStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
-import { loadedJobIds, replanJobs, setJobPlanDocumentIds } from '@/lib/stores/projectStore'
+import { replanJobs, setJobPlanDocumentIds } from '@/lib/stores/projectStore'
 import { useTaskStore } from '@/lib/stores/taskStore'
 import { useDeadlineStore } from '@/lib/stores/deadlineStore'
 import { operativeJobDocumentIds } from '@/lib/access/workAccess'
@@ -20,11 +19,9 @@ let started = false
 
 function replanBookings(): void {
   const viewer = webJobAccessViewer(useAuthStore.getState().user)
-  if (!viewer || readsEveryBooking(viewer, { enforced: enforcedReadsFor() })) return
-  // 1.11.0: a kind the manager has the toggle for is read by `jobCollection`; only the other kind's jobs (their
-  // managed jobs) get per-job booking queries.
-  const untoggled = (['projects', 'smallWorks'] as const).filter((kind) => !seesEveryJob(viewer.role, kind, viewer.toggles ?? null))
-  const changed = setBookingPlanInputs(loadedJobIds(untoggled), ownBookingIdsFor(useAuthStore.getState().user, useOperativeStore.getState().operatives))
+  if (!viewer || readsEveryBooking(viewer)) return
+  // 1.33.0: only an operative gets here; their plan is their own labour bookings (no per-job queries).
+  const changed = setBookingPlanInputs([], ownBookingIdsFor(useAuthStore.getState().user, useOperativeStore.getState().operatives))
   if (!changed) return
   const bookingsOrg = bookingsOrganizationId()
   if (bookingsOrg) void useBookingStore.getState().loadBookings(bookingsOrg).catch(() => undefined)
@@ -63,9 +60,8 @@ function replanOperativeJobs(): void {
 function replanEverything(): void {
   replanJobs()
   const viewer = webJobAccessViewer(useAuthStore.getState().user)
-  if (viewer && !readsEveryBooking(viewer, { enforced: enforcedReadsFor() })) {
-    const untoggled = (['projects', 'smallWorks'] as const).filter((kind) => !seesEveryJob(viewer.role, kind, viewer.toggles ?? null))
-    setBookingPlanInputs(loadedJobIds(untoggled), ownBookingIdsFor(useAuthStore.getState().user, useOperativeStore.getState().operatives))
+  if (viewer && !readsEveryBooking(viewer)) {
+    setBookingPlanInputs([], ownBookingIdsFor(useAuthStore.getState().user, useOperativeStore.getState().operatives))
   }
   const bookingsOrg = bookingsOrganizationId()
   if (bookingsOrg) void useBookingStore.getState().loadBookings(bookingsOrg).catch(() => undefined)

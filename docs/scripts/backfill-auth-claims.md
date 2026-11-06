@@ -21,7 +21,7 @@ Nothing changes for anyone until step 4: the rules that are live today do not re
 1. **Deploy the functions.**
 
    ```
-   firebase deploy --only functions:authClaimsOnUserWrite,functions:authClaimsOnMembershipWrite,functions:authClaimsOnOrganizationWrite
+   firebase deploy --only functions:inbox-push:authClaimsOnUserWrite,functions:inbox-push:authClaimsOnMembershipWrite,functions:inbox-push:authClaimsOnOrganizationWrite
    ```
 
    From now on, any change to a person's account, membership or company members list updates their claims within

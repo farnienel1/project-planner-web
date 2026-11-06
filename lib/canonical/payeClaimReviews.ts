@@ -10,14 +10,14 @@
  * number, dates, figure, currency and evidence count, so an item the person changes after a review needs review again.
  * Items are never rewritten by a reviewer: only the person writes their items (`canWritePayeClaim`).
  *
- * Owner decision A (as for overtime): an item filed under another of the person's ids — an older users id (a former
- * invite id or a same-email document) — is reviewed by admins only; the line manager sees "Needs an admin", because the
- * security rules match a line manager through the users document named on the item.
+ * 1.33.0 (owner, 6 Nov, supersedes decision A for claims): a line manager can always review their report's items,
+ * whichever of the person's ids an item is filed under. An item under another of the person's ids — an older users id
+ * (a former invite id or a same-email document) — carries `personUserId` (the person's current users id) on its
+ * review, so the security rules can match the line manager through that users document. There is no "Needs an admin".
  *
  * A review informs the person's accounts team; the report (`payeClaimReportReady`) does not wait for it.
  */
 
-import { reviewApprovalMessage, OVERTIME_NEEDS_ADMIN_LABEL } from './payeOvertime'
 import { isAdminOutsideOperativeMode, lineManagerIds, type LeaveSelfBookUser } from './leaveRequests'
 import { idKey, idText, personIdSet } from './personIds'
 import type { NotificationRosterMember } from './notificationRecipients'
@@ -44,6 +44,8 @@ export type PayeClaimReviewRecord = {
   fingerprint: string
   reviewedBy: string | null
   reviewedAtMs: number | null
+  /** 1.33.0: the person's current users id, stored only when the item's `userId` is another of their ids. */
+  personUserId: string | null
 }
 
 function text(value: unknown): string {
@@ -68,6 +70,27 @@ function instantMs(raw: unknown): number | null {
     return Number.isNaN(ms) ? null : ms
   }
   return null
+}
+
+
+/**
+ * The review message price work and expenses use (§26): "Approved 2 of 5. 1 rejected; 1 not decided yet.", or with
+ * nothing approved "Nothing was approved: …". 1.33.0: moved here from `payeOvertime.ts` (overtime uses
+ * `overtimeReturnMessage`); there is no "need an admin" any more.
+ */
+export function reviewApprovalMessage(input: {
+  approved: number
+  total: number
+  counts?: Partial<Record<'rejected' | 'undecided', number>> | null
+}): string {
+  const counts = input.counts || {}
+  const phrase = (n: number | undefined, one: string, many: string) => (n && n > 0 ? `${n} ${n === 1 ? one : many}` : '')
+  const reasons = [
+    phrase(counts.rejected, 'rejected', 'rejected'),
+    phrase(counts.undecided, 'not decided yet', 'not decided yet'),
+  ].filter(Boolean)
+  if (input.approved <= 0) return `Nothing was approved${reasons.length > 0 ? `: ${reasons.join('; ')}` : ''}.`
+  return `Approved ${input.approved} of ${input.total}.${reasons.length > 0 ? ` ${reasons.join('; ')}.` : ''}`
 }
 
 /** `{kind}_{itemId}` as stored. */
@@ -95,6 +118,7 @@ export function parsePayeClaimReviewDocument(docId: string, data: Record<string,
     fingerprint: text(row.fingerprint),
     reviewedBy: text(row.reviewedBy) || null,
     reviewedAtMs: instantMs(row.reviewedAt),
+    personUserId: text(row.personUserId) || null,
   }
 }
 
@@ -128,26 +152,28 @@ export function canReviewPayeClaims(
   return viewerIds.some((id) => managers.has(id))
 }
 
-export type PayeClaimReviewOutcome = 'applied' | 'undecided' | 'needsAdmin' | 'foreign' | 'unchanged'
+export type PayeClaimReviewOutcome = 'applied' | 'undecided' | 'foreign' | 'unchanged'
 
 /**
- * Approve on Price work / Expenses (1.32.0): one review write per decided item the reviewer may write. An item on none
- * of `personIds` is left out (`foreign`); an item filed under another of the person's ids than `subjectUserId` needs an
- * admin when the reviewer is not one (`needsAdmin`, owner decision A); an item already reviewed the same way at its
- * current fingerprint is `unchanged`; an item without a ✓ or ✕ stays `undecided`. `message` is
- * `reviewApprovalMessage` ("Approved 2 of 5. 1 rejected; 1 needs an admin; 1 not decided yet."). The app adds
- * `reviewedAt` (server time) and write metadata, and writes every review in one batch.
+ * Approve on Price work / Expenses (1.32.0; 1.33.0 every id): one review write per decided item. An item on none of
+ * `personIds` is left out (`foreign`); an item already reviewed the same way at its current fingerprint is `unchanged`;
+ * an item without a ✓ or ✕ stays `undecided`. An item filed under another of the person's ids than `subjectUserId` is
+ * written like any other, with `personUserId: subjectUserId` added (1.33.0: a line manager reviews every id; the rules
+ * check that id is one of the person's on their users document). Who may review at all stays `canReviewPayeClaims`.
+ * `message` is `reviewApprovalMessage` ("Approved 2 of 5. 1 rejected; 1 not decided yet."). The app adds `reviewedAt`
+ * (server time) and write metadata, and writes every review in one batch.
  */
 export function payeClaimReviewWrites(input: {
   items: ReadonlyArray<PayeClaimItem>
   decisions: Record<string, PayeClaimReviewDecision | null | undefined>
   reviews?: ReadonlyArray<PayeClaimReviewRecord> | null
-  /** The person's users id (the id the rules match a line manager through). */
+  /** The person's current users id (the id the rules match a line manager through). */
   subjectUserId: string
   /** Every id the person goes by (`overtimePersonIds`). */
   personIds: ReadonlyArray<string>
   reviewerId: string
-  reviewerIsAdmin: boolean
+  /** Ignored since 1.33.0 (line managers and admins write the same reviews); kept so older callers still type-check. */
+  reviewerIsAdmin?: boolean
 }): {
   writes: Array<{ docId: string; fields: Record<string, unknown> }>
   outcomes: Record<string, PayeClaimReviewOutcome>
@@ -156,12 +182,12 @@ export function payeClaimReviewWrites(input: {
   message: string
 } {
   const ids = new Set((input.personIds || []).map(idKey).filter(Boolean))
+  const subjectUserId = text(input.subjectUserId)
   const decisions = new Map(Object.entries(input.decisions || {}).map(([key, value]) => [idKey(key), value]))
   const writes: Array<{ docId: string; fields: Record<string, unknown> }> = []
   const outcomes: Record<string, PayeClaimReviewOutcome> = {}
   let approved = 0
   let rejected = 0
-  let needsAdmin = 0
   let undecided = 0
   let foreign = 0
   for (const item of input.items || []) {
@@ -176,37 +202,31 @@ export function payeClaimReviewWrites(input: {
       undecided += 1
       continue
     }
-    if (!input.reviewerIsAdmin && idKey(item.userId) !== idKey(input.subjectUserId)) {
-      outcomes[item.id] = 'needsAdmin'
-      needsAdmin += 1
-      continue
-    }
     const current = payeClaimReviewState(item, input.reviews)
     if (current.review && current.review.decision === decision) {
       outcomes[item.id] = 'unchanged'
     } else {
-      writes.push({
-        docId: payeClaimReviewDocId(item.kind, item.id),
-        fields: {
-          userId: text(item.userId),
-          itemId: text(item.id),
-          kind: item.kind,
-          decision,
-          fingerprint: payeClaimFingerprint(item),
-          reviewedBy: text(input.reviewerId),
-        },
-      })
+      const fields: Record<string, unknown> = {
+        userId: text(item.userId),
+        itemId: text(item.id),
+        kind: item.kind,
+        decision,
+        fingerprint: payeClaimFingerprint(item),
+        reviewedBy: text(input.reviewerId),
+      }
+      if (subjectUserId && idKey(item.userId) !== idKey(subjectUserId)) fields.personUserId = subjectUserId
+      writes.push({ docId: payeClaimReviewDocId(item.kind, item.id), fields })
       outcomes[item.id] = 'applied'
     }
     if (decision === 'approved') approved += 1
     else rejected += 1
   }
   const total = (input.items || []).length - foreign
-  const message = reviewApprovalMessage({ approved, total, counts: { rejected, needsAdmin, undecided } })
+  const message = reviewApprovalMessage({ approved, total, counts: { rejected, undecided } })
   return { writes, outcomes, approved, rejected, message }
 }
 
-/** The per-item label for an item the reviewer cannot apply ("Needs an admin"); null otherwise. */
+/** The per-item label for an item left out of the review ("Not theirs — left out."); null otherwise. No "Needs an admin" since 1.33.0. */
 export function payeClaimReviewOutcomeLabel(outcome: PayeClaimReviewOutcome | null | undefined): string | null {
-  return outcome === 'needsAdmin' ? OVERTIME_NEEDS_ADMIN_LABEL : outcome === 'foreign' ? 'Not theirs — left out.' : null
+  return outcome === 'foreign' ? 'Not theirs — left out.' : null
 }

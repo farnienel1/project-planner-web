@@ -128,7 +128,7 @@ async function seed() {
 test.before(async () => {
   env = await initializeTestEnvironment({
     projectId: 'demo-project-planner-paye-claims',
-    firestore: { rules, host: '127.0.0.1', port: 8080 },
+    firestore: { rules, host: '127.0.0.1', port: Number(process.env.RULES_PORT || 8080) },
   })
 })
 
@@ -330,4 +330,80 @@ test('1.32.0 review fix (r274 S2): a claim review is pinned to its item, its per
   await assertSucceeds(updateDoc(await orgDoc(LM, 'payeClaimReviews', 'expense_EX1'), { decision: 'rejected', reviewedBy: LM }))
   // Another admin reviews the alias-filed item.
   await assertSucceeds(setDoc(await orgDoc(ADMIN, 'payeClaimReviews', 'expense_ADM2OLD'), claimReview('pc-adm2-old', 'ADM2OLD', { reviewedBy: ADMIN })))
+})
+
+// MARK: - 1.33.0: a line manager can always review — items carry personUserId; reviews of alias-filed items
+
+async function seedAlias() {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const d = ctx.firestore()
+    // Sam's former invite id; an item filed under it (stamped by the backfill) and one not stamped yet.
+    await setDoc(doc(d, 'users', SAM), { email: `${SAM}@test.com`, organizationId: ORG, role: 'operative', operativeMode: true, employmentType: 'paye', assignedManagerUserIds: [LM], formerUserIds: ['pc-sam-old'] })
+    const old = { evidence: [{ path: `organizations/${ORG}/payeClaims/pc-sam-old/x_1.jpg`, name: 'r', kind: 'photo' }] }
+    await setDoc(doc(d, 'organizations', ORG, 'expenseItems', 'EXOLD'), expense('pc-sam-old', { ...old, personUserId: SAM }))
+    await setDoc(doc(d, 'organizations', ORG, 'expenseItems', 'EXOLD2'), expense('pc-sam-old', old))
+    // PEER's item, stamped as PEER's.
+    await setDoc(doc(d, 'organizations', ORG, 'expenseItems', 'EXPEER'), expense('pc-peer-old', { ...old, personUserId: PEER }))
+  })
+}
+
+test('1.33.0 items carry personUserId: the creator only, never someone else; it never changes to another person', async () => {
+  await assertSucceeds(setDoc(await orgDoc(SAM, 'expenseItems', 'N1'), expense(SAM, { personUserId: SAM })))
+  await assertSucceeds(setDoc(await orgDoc(SAM, 'priceWorkItems', 'N2'), priceWork(SAM, { personUserId: SAM })))
+  // Older apps send no personUserId: still allowed.
+  await assertSucceeds(setDoc(await orgDoc(SAM, 'expenseItems', 'N3'), expense(SAM)))
+  await assertFails(setDoc(await orgDoc(SAM, 'expenseItems', 'N4'), expense(SAM, { personUserId: PEER })))
+  await assertFails(setDoc(await orgDoc(SAM, 'priceWorkItems', 'N5'), priceWork(SAM, { personUserId: LM })))
+  await assertFails(updateDoc(await orgDoc(SAM, 'expenseItems', 'N1'), { personUserId: PEER }))
+  await assertSucceeds(updateDoc(await orgDoc(SAM, 'expenseItems', 'N3'), { personUserId: SAM }))
+})
+
+test('1.33.0 the line manager reads an item filed under a former id through personUserId; nobody else does', async () => {
+  await seedAlias()
+  await assertSucceeds(getDoc(await orgDoc(LM, 'expenseItems', 'EXOLD')))
+  await assertSucceeds(getDocs(query(collection(await db(LM), 'organizations', ORG, 'expenseItems'), where('personUserId', '==', SAM))))
+  // Not stamped yet (before the backfill): the line manager cannot read it; admins can.
+  await assertFails(getDoc(await orgDoc(LM, 'expenseItems', 'EXOLD2')))
+  await assertSucceeds(getDoc(await orgDoc(ADMIN, 'expenseItems', 'EXOLD2')))
+  // Another manager, a peer, another company: never.
+  await assertFails(getDoc(await orgDoc(MGR2, 'expenseItems', 'EXOLD')))
+  await assertFails(getDoc(await orgDoc(PEER, 'expenseItems', 'EXOLD')))
+  await assertFails(getDocs(query(collection(await db(LM), 'organizations', ORG, 'expenseItems'), where('personUserId', '==', PEER))))
+  await assertFails(getDoc(doc(await db(ADMIN_B), 'organizations', ORG, 'expenseItems', 'EXOLD')))
+})
+
+test('1.33.0 claim reviews under another of the person\'s ids: the line manager reviews with personUserId; never a made-up alias', async () => {
+  await seedAlias()
+  await assertSucceeds(setDoc(await orgDoc(LM, 'payeClaimReviews', 'expense_EXOLD'), claimReview('pc-sam-old', 'EXOLD', { personUserId: SAM })))
+  await assertSucceeds(getDoc(await orgDoc(LM, 'payeClaimReviews', 'expense_EXOLD')))
+  await assertSucceeds(getDocs(query(collection(await db(LM), 'organizations', ORG, 'payeClaimReviews'), where('personUserId', '==', SAM))))
+  await assertFails(getDoc(await orgDoc(MGR2, 'payeClaimReviews', 'expense_EXOLD')))
+  // Without personUserId the alias id names no users document LM manages: refused (1.32 "Needs an admin" case).
+  await assertFails(setDoc(await orgDoc(LM, 'payeClaimReviews', 'expense_EXOLD2'), claimReview('pc-sam-old', 'EXOLD2')))
+  // An alias the person's users document does not list: refused (PEER's old id under SAM).
+  await assertFails(setDoc(await orgDoc(LM, 'payeClaimReviews', 'expense_EXPEER'), claimReview('pc-peer-old', 'EXPEER', { personUserId: SAM })))
+  // personUserId is fixed once written.
+  await assertFails(updateDoc(await orgDoc(LM, 'payeClaimReviews', 'expense_EXOLD'), { personUserId: PEER, decision: 'rejected' }))
+  // The person never reviews their own item under an alias.
+  await assertFails(setDoc(await orgDoc(SAM, 'payeClaimReviews', 'expense_EXOLD2'), claimReview('pc-sam-old', 'EXOLD2', { personUserId: SAM, reviewedBy: SAM })))
+  // Admins review it as before.
+  await assertSucceeds(setDoc(await orgDoc(ADMIN, 'payeClaimReviews', 'expense_EXOLD2'), claimReview('pc-sam-old', 'EXOLD2', { personUserId: SAM, reviewedBy: ADMIN })))
+})
+
+test('1.33.0 a line manager adds personUserId to a stored review that has none — only the right person; never changed afterwards', async () => {
+  await seedAlias()
+  // A review stored before personUserId existed (an admin's, filed under Sam's former id).
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'organizations', ORG, 'payeClaimReviews', 'expense_EXOLD2'), claimReview('pc-sam-old', 'EXOLD2', { reviewedBy: ADMIN }))
+  })
+  // Another person, or someone who is not Sam's line manager: refused.
+  await assertFails(updateDoc(await orgDoc(LM, 'payeClaimReviews', 'expense_EXOLD2'), { personUserId: PEER, reviewedBy: LM, decision: 'rejected' }))
+  await assertFails(updateDoc(await orgDoc(MGR2, 'payeClaimReviews', 'expense_EXOLD2'), { personUserId: SAM, reviewedBy: MGR2, decision: 'rejected' }))
+  // An admin's update never adds it (unchanged from before).
+  await assertFails(updateDoc(await orgDoc(ADMIN, 'payeClaimReviews', 'expense_EXOLD2'), { personUserId: SAM, decision: 'rejected' }))
+  // Sam's line manager adds Sam (whose users document lists the former id).
+  await assertSucceeds(updateDoc(await orgDoc(LM, 'payeClaimReviews', 'expense_EXOLD2'), { personUserId: SAM, reviewedBy: LM, decision: 'rejected' }))
+  // Once written it is fixed.
+  await assertFails(updateDoc(await orgDoc(LM, 'payeClaimReviews', 'expense_EXOLD2'), { personUserId: PEER, decision: 'approved' }))
+  await assertSucceeds(updateDoc(await orgDoc(LM, 'payeClaimReviews', 'expense_EXOLD2'), { decision: 'approved' }))
 })

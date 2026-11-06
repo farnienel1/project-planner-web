@@ -19,7 +19,7 @@
 
 import { rosterPersonGroups, rosterPersonName, type LineManagerRosterPerson } from './lineManagers'
 import { canonicalJobTypeName } from './operationsDocuments'
-import { permissionLevelOf, storedPermissionFlag, type PermissionLevel } from './permissionLevels'
+import { canManageOperatives, permissionLevelOf, storedPermissionFlag, type PermissionLevel } from './permissionLevels'
 import { idKey, idText, personIdSet, rosterMemberActive } from './personIds'
 import { jobManagerIds, stableManagerId, type JobManagerRosterRow } from './staffAccess'
 import { isAnonymisedDeletedProfile } from './userRosterSegment'
@@ -100,6 +100,59 @@ export function lineManagerChangeBlock(input: {
       (change.kind === 'level' && change.to === 'operative' && permissionLevelOf(input?.person) !== 'operative'))
   const blocked = removesLineManager && reports.length > 0
   return { blocked, reports, message: blocked ? LINE_MANAGER_REPORTS_BLOCK_MESSAGE : null }
+}
+
+// MARK: - Line manager set once, then locked (1.33.0, owner decision 6 Nov §6d.1)
+
+/** The fields that hold a person's line manager on `users/{uid}` (and an invitation). */
+export const LINE_MANAGER_FIELDS = ['assignedManagerUserIds', 'assignedManagerUserId', 'hasNoLineManager'] as const
+
+export const LINE_MANAGER_LOCKED_MESSAGE = 'Only an admin can change the line manager once this person has been added.'
+
+/**
+ * Who may set or change a person's line manager (`LINE_MANAGER_FIELDS`; rulebook §11, **1.33.0 owner decision:
+ * "line manager set once, then locked"**):
+ *   - admins and super admins (outside operative mode): any person, any time;
+ *   - a manager with the Operatives toggle (`canManageOperatives`): only for an operative, and only while adding them
+ *     (`isCreate`, the Add User / invite form) or on an invitation they sent that is not accepted yet (`invitation`
+ *     with `accepted` false and `invitedBy` one of the actor's ids). After that only an admin changes it — removing
+ *     and re-adding the operative is the accepted way round (owner, 6 Nov);
+ *   - everyone else (managers without the toggle, operatives, the person themself): never.
+ * `actor` and `target` are users documents (or the draft being added); ids compare without case.
+ */
+export function canChangeLineManager(
+  actor: unknown,
+  target: unknown,
+  options?: { isCreate?: boolean | null; invitation?: { accepted?: boolean | null; invitedBy?: string | null } | null } | null
+): boolean {
+  if (!actor || typeof actor !== 'object') return false
+  const actorLevel = permissionLevelOf(actor)
+  if (actorLevel === 'operative') return false
+  if (actorLevel === 'admin') return true
+  if (!canManageOperatives(actor)) return false
+  if (permissionLevelOf(target) !== 'operative') return false
+  if (options?.isCreate === true) return true
+  const invitation = options?.invitation
+  if (!invitation || invitation.accepted === true) return false
+  const row = actor as { id?: unknown; formerUserIds?: unknown }
+  const actorIds = new Set(
+    [row.id, ...(Array.isArray(row.formerUserIds) ? row.formerUserIds : [])].map((id) => idKey(id)).filter(Boolean)
+  )
+  return idKey(invitation.invitedBy) !== '' && actorIds.has(idKey(invitation.invitedBy))
+}
+
+/**
+ * Whether a save changes the line manager: the stored line manager ids (`assignedManagerUserIds`, else the single id)
+ * or `hasNoLineManager` differ between `before` and `after` (ids without case, order ignored). A screen that may not
+ * change it (`canChangeLineManager` false) refuses such a save with `LINE_MANAGER_LOCKED_MESSAGE`.
+ */
+export function lineManagerChanged(before: unknown, after: unknown): boolean {
+  const ids = (row: unknown): string => {
+    const r = (row && typeof row === 'object' ? row : {}) as LineManagerRosterPerson
+    return [...new Set(storedLineManagerIds(r).map(idKey).filter(Boolean))].sort().join('|')
+  }
+  const none = (row: unknown) => (row as { hasNoLineManager?: unknown } | null)?.hasNoLineManager === true
+  return ids(before) !== ids(after) || none(before) !== none(after)
 }
 
 /**
@@ -315,20 +368,30 @@ export function superAdminTransferWrites(input: {
  * the person in this organisation (their id and each same-email document whose `organizationId` is this one — before
  * 1.31.0 only the one document was written and a same-email copy kept the person active), and `accountActive` on
  * their membership here. One batch. Another company's document is never written.
+ *
+ * 1.33.0 (owner row 4 Nov): the person's own users document is written only when it belongs to this organisation —
+ * `person.organizationId`, else their roster row's; when neither is known it is written as before (the rules decide).
+ * A person whose home company is another one is deactivated here through their membership (and any same-email
+ * document of this organisation) only. The membership write is an **update of an existing membership, never a
+ * create**: with `membershipExists: false` it is left out, and the app updates it (never a merge-set), so a missing
+ * membership is never created as a bare `{ accountActive }` document (a session reads any membership as a level).
  */
 export function userActiveWrites(input: {
   organizationId: string
-  person: { id: string; email?: string | null }
+  person: { id: string; email?: string | null; organizationId?: unknown }
   isActive: boolean
   roster?: ReadonlyArray<{ id: string; email?: string | null; organizationId?: unknown }> | null
+  /** 1.33.0: false when the app knows the person has no membership in this organisation (then none is written). */
+  membershipExists?: boolean | null
 }): Array<{ path: string; kind: 'userProfile' | 'membership'; fields: Record<string, unknown> }> {
   const org = text(input?.organizationId)
   const uid = text(input?.person?.id)
   if (!org || !uid || uid.includes('/')) return []
   const active = input.isActive === true
-  const out: Array<{ path: string; kind: 'userProfile' | 'membership'; fields: Record<string, unknown> }> = [
-    { path: `users/${uid}`, kind: 'userProfile', fields: { isActive: active } },
-  ]
+  const out: Array<{ path: string; kind: 'userProfile' | 'membership'; fields: Record<string, unknown> }> = []
+  const ownRow = (input.roster || []).find((row) => idKey(row?.id) === idKey(uid))
+  const homeOrg = text(input.person.organizationId) ? input.person.organizationId : ownRow?.organizationId
+  if (!text(homeOrg) || sameOrg(homeOrg, org)) out.push({ path: `users/${uid}`, kind: 'userProfile', fields: { isActive: active } })
   const email = idKey(input.person.email)
   const seen = new Set([idKey(uid)])
   if (email) {
@@ -339,7 +402,9 @@ export function userActiveWrites(input: {
       out.push({ path: `users/${id}`, kind: 'userProfile', fields: { isActive: active } })
     }
   }
-  out.push({ path: `users/${uid}/orgMemberships/${org}`, kind: 'membership', fields: { accountActive: active } })
+  if (input.membershipExists !== false) {
+    out.push({ path: `users/${uid}/orgMemberships/${org}`, kind: 'membership', fields: { accountActive: active } })
+  }
   return out
 }
 

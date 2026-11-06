@@ -7,6 +7,7 @@
 
 import { webJobAccessViewer } from '@/lib/access/readPlan'
 import { enforcedReadsFor } from '@/lib/access/securitySwitches'
+import { orgDailyOverviewScope } from '@/lib/warnings/warningScopeRoster'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
 import { useOrganizationDayKey } from '@/lib/warnings/useOrganizationDayKey'
@@ -344,8 +345,16 @@ export function HomeScreen() {
         liveProjectCount: liveCount,
         timeZone: homeTimeZone,
         now,
+        // Rulebook 1.33.0 §6: on site / on leave are the viewer's Daily Overview people (a manager's own team).
+        scope: orgDailyOverviewScope({
+          viewer: jobAccessViewer(displayUser),
+          users,
+          userIdAliases,
+          operatives,
+          enforcedReads: enforcedReadsFor(),
+        }),
       }),
-    [tasks, displayUser?.id, displayUser?.email, operatives, managers, bookings, managerSiteBookings, holidays, users, liveCount, homeTimeZone, now]
+    [tasks, displayUser, operatives, managers, bookings, managerSiteBookings, holidays, users, userIdAliases, liveCount, homeTimeZone, now]
   )
 
   const orgId = organization?.id || ''

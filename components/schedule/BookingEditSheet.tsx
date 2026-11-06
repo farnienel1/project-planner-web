@@ -42,7 +42,6 @@ export function BookingEditSheet({
   projectName,
   onSave,
   onDelete,
-  onCancelBooking,
   onClose,
   saving,
   payroll = DEFAULT_PAYROLL_POLICY,
@@ -53,12 +52,10 @@ export function BookingEditSheet({
   projectName: string
   onSave: (updates: Partial<Booking>) => Promise<void>
   /**
-   * Deleting a labour booking is admin only (rulebook §2, §16): leave it out for managers and pass
-   * `onCancelBooking` instead.
+   * Deletes the booking with its tombstone. Pass it only when `bookingRemoveAction` is `delete` (rulebook §2, 1.33.0:
+   * there is no cancel); without it the sheet offers no remove button.
    */
   onDelete?: () => Promise<void>
-  /** Sets the booking to Cancelled: what a manager does instead of deleting. */
-  onCancelBooking?: () => Promise<void>
   onClose: () => void
   saving?: boolean
   payroll?: OrgPayrollTimePolicy
@@ -148,14 +145,12 @@ export function BookingEditSheet({
     setError(null)
     try {
       if (onDelete) await onDelete()
-      else if (onCancelBooking) await onCancelBooking()
       onClose()
     } catch (e) {
-      setError(e instanceof Error ? e.message : onDelete ? 'Failed to delete booking' : 'Failed to cancel booking')
+      setError(e instanceof Error ? e.message : 'Failed to delete booking')
     }
   }
-  const removeLabel = onDelete ? 'delete booking' : 'cancel booking'
-  const showRemove = Boolean(onDelete || onCancelBooking)
+  const showRemove = Boolean(onDelete)
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center">
@@ -272,7 +267,7 @@ export function BookingEditSheet({
                   : 'border border-red-200 bg-red-50 text-red-700 hover:bg-red-100'
               } disabled:opacity-50`}
             >
-              {confirmDelete ? `Confirm ${removeLabel}` : removeLabel.charAt(0).toUpperCase() + removeLabel.slice(1)}
+              {confirmDelete ? 'Confirm delete booking' : 'Delete booking'}
             </button>
           ) : null}
           {showRemove && confirmDelete && (
@@ -281,7 +276,7 @@ export function BookingEditSheet({
               onClick={() => setConfirmDelete(false)}
               className="text-xs font-medium text-slate-500 hover:text-slate-700"
             >
-              {onDelete ? 'Cancel delete' : 'Keep booking'}
+              Keep booking
             </button>
           )}
         </div>

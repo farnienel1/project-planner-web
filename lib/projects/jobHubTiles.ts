@@ -24,7 +24,8 @@ export function jobHubTiles(input: {
     tiles.push({ href: 'schedule', label: 'Scheduling', desc: 'Bookings and operative schedule' })
   }
   if (input.showViewTile && !input.isOperative) {
-    tiles.push({ href: 'view', label: 'View', desc: 'Control who can see this project' })
+    // 1.33.0 (owner decision 6 Nov): operatives only — every manager sees every job.
+    tiles.push({ href: 'view', label: 'View', desc: 'Hide this job from these operatives' })
   }
     tiles.push({ href: 'tasks', label: 'Tasks', desc: 'Tasks and assignments' })
   if (input.canViewMaterials) {

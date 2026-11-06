@@ -16,6 +16,36 @@ const PAGE_W = 595
 const PAGE_H = 842
 const MARGIN = 28
 
+/**
+ * The invoice / timesheet PDF family's look (rulebook 1.33.0, owner 6 Nov): A4 with a 28pt margin, a big navy title
+ * over the cyan "Project Planner" line and a navy rule, grey COMPANY / NAME / GENERATED / PERIOD labels, a navy table
+ * header, hairline rows and the navy total box. The overtime, price work and expenses report PDFs
+ * (`lib/pdf/invoiceFamilyPdf.ts`) draw with these same values so every report reads as one family.
+ */
+export const INVOICE_PDF_STYLE = {
+  pageWidth: PAGE_W,
+  pageHeight: PAGE_H,
+  margin: MARGIN,
+  navy: [0.055, 0.122, 0.2] as const,
+  cyan: [0.169, 0.733, 0.937] as const,
+  metaLabel: [0.54, 0.54, 0.56] as const,
+  slate: [0.36, 0.42, 0.5] as const,
+  hairline: [0.93, 0.93, 0.93] as const,
+  totalBox: [0.071, 0.149, 0.243] as const,
+  muted: [0.3, 0.3, 0.3] as const,
+  titleSize: 31,
+  brandSize: 10,
+  ruleHeight: 1.6,
+  metaLabelSize: 9,
+  metaValueSize: 12.5,
+  metaRowHeight: 40,
+  tableHeaderHeight: 24,
+  tableHeaderSize: 9.5,
+  totalBoxHeight: 46,
+} as const
+
+const rgbOf = (color: readonly [number, number, number]) => fill(color[0], color[1], color[2])
+
 export type InvoicePdfContext = {
   organizationName: string
   subject: TimesheetSubject
@@ -136,12 +166,12 @@ export function buildTimesheetInvoicePdf(input: InvoicePdfContext): Uint8Array {
 
   const top = (fromTop: number) => PAGE_H - fromTop
 
-  stream += fill(0.055, 0.122, 0.2)
+  stream += rgbOf(INVOICE_PDF_STYLE.navy)
   stream += text(title, MARGIN, (y += 31), 31, true)
-  stream += fill(0.169, 0.733, 0.937)
+  stream += rgbOf(INVOICE_PDF_STYLE.cyan)
   stream += text('Project Planner', MARGIN, (y += 14), 10, true)
   y += 12
-  stream += fill(0.055, 0.122, 0.2)
+  stream += rgbOf(INVOICE_PDF_STYLE.navy)
   stream += rect(MARGIN, top(y), PAGE_W - MARGIN * 2, 1.6, true)
   y += 16
 
@@ -152,9 +182,9 @@ export function buildTimesheetInvoicePdf(input: InvoicePdfContext): Uint8Array {
     x: number,
     rowY: number
   ) => {
-    let chunk = fill(0.54, 0.54, 0.56)
+    let chunk = rgbOf(INVOICE_PDF_STYLE.metaLabel)
     chunk += text(label.toUpperCase(), x, rowY, 9, true)
-    chunk += fill(0.055, 0.122, 0.2)
+    chunk += rgbOf(INVOICE_PDF_STYLE.navy)
     chunk += text(value, x, rowY + 14, 12.5, true, col)
     return chunk
   }
@@ -171,7 +201,7 @@ export function buildTimesheetInvoicePdf(input: InvoicePdfContext): Uint8Array {
   y += 8
 
   const tableWidth = PAGE_W - MARGIN * 2
-  stream += fill(0.055, 0.122, 0.2)
+  stream += rgbOf(INVOICE_PDF_STYLE.navy)
   stream += rect(MARGIN, top(y + 24), tableWidth, 24, true)
   stream += fill(1, 1, 1)
   stream += text('Date / Project', MARGIN + 10, y + 16, 9.5, true)
@@ -187,17 +217,17 @@ export function buildTimesheetInvoicePdf(input: InvoicePdfContext): Uint8Array {
   } else {
     for (const line of lines) {
       ensure(50)
-      stream += fill(0.93, 0.93, 0.93)
+      stream += rgbOf(INVOICE_PDF_STYLE.hairline)
       stream += rect(MARGIN, top(y + 0.8), tableWidth, 0.8, true)
-      stream += fill(0.055, 0.122, 0.2)
+      stream += rgbOf(INVOICE_PDF_STYLE.navy)
       stream += text(line.date, MARGIN + 10, y + 18, 10.5, true)
-      stream += fill(0.36, 0.42, 0.5)
+      stream += rgbOf(INVOICE_PDF_STYLE.slate)
       stream += text(line.jobNumber || '—', MARGIN + 10, y + 32, 9.5)
-      stream += fill(0.055, 0.122, 0.2)
+      stream += rgbOf(INVOICE_PDF_STYLE.navy)
       stream += text(line.projectName || line.description, MARGIN + 84, y + 18, 11.5, true, 190)
-      stream += fill(0.36, 0.42, 0.5)
+      stream += rgbOf(INVOICE_PDF_STYLE.slate)
       stream += text(line.details || line.description, MARGIN + 84, y + 34, 9.5, false, 190)
-      stream += fill(0.055, 0.122, 0.2)
+      stream += rgbOf(INVOICE_PDF_STYLE.navy)
       stream += text(money(formatCurrency(line.amount, currencyCode)), MARGIN + tableWidth - 64, y + 26, 11.5, true, 56)
       y += 50
     }
@@ -205,7 +235,7 @@ export function buildTimesheetInvoicePdf(input: InvoicePdfContext): Uint8Array {
 
   y += 12
   ensure(46)
-  stream += fill(0.071, 0.149, 0.243)
+  stream += rgbOf(INVOICE_PDF_STYLE.totalBox)
   stream += rect(MARGIN, top(y + 46), tableWidth, 46, true)
   stream += fill(1, 1, 1)
   stream += text(input.totalLabel || 'Total invoice amount', MARGIN + 16, y + 28, 12, true)

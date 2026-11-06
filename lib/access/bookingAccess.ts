@@ -8,10 +8,12 @@ import {
   canChangeJobManagers,
   canCreateJob,
   canEditJob,
+  bookingRemoveAction,
   canDeleteBooking,
   canSeeJob,
   canWriteBooking,
   type BookingPermissionCollection,
+  type BookingRemoveAction,
   type JobAccessViewer,
   type JobManagerRosterRow,
 } from '@/lib/canonical'
@@ -53,7 +55,7 @@ export type WebBookingRef = {
   locationId?: string | null
 }
 
-/** `canWriteBooking` (create, edit, cancel) for the signed-in user. */
+/** `canWriteBooking` (create, edit) for the signed-in user. */
 export function userCanWriteBooking(
   user: Parameters<typeof jobAccessViewer>[0],
   booking: WebBookingRef,
@@ -71,6 +73,19 @@ export function userCanDeleteBooking(
   managers?: ReadonlyArray<{ id: string; email?: string | null }> | null
 ): boolean {
   return canDeleteBooking(jobAccessViewer(user), booking, job ?? null, rosterRows(managers))
+}
+
+/**
+ * `bookingRemoveAction` for the signed-in user (rulebook §2, 1.33.0): `delete` exactly when `canDeleteBooking`, else
+ * `none`. Every booking screen asks this for its remove button; there is no cancel.
+ */
+export function userBookingRemoveAction(
+  user: Parameters<typeof jobAccessViewer>[0],
+  booking: WebBookingRef,
+  job: JobLike,
+  managers?: ReadonlyArray<{ id: string; email?: string | null }> | null
+): BookingRemoveAction {
+  return bookingRemoveAction(jobAccessViewer(user), booking, job ?? null, rosterRows(managers))
 }
 
 /** `canCreateJob` for the signed-in user (1.10.0 round 2: admins; managers with that kind's toggle). */

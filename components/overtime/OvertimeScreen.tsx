@@ -7,39 +7,47 @@
  * Routes (one path, query params): `scope` mine | users; `user` (Users'); `section` overtime | expenses | priceWork;
  * `range` current | past | custom; `start` / `end` day keys.
  */
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import {
-  OVERTIME_APPROVE_LABEL,
   overtimeEditableUntil,
   overtimeLineOutcomeLabel,
   overtimePersonIds,
-  overtimeRequestAnyDecided,
   payePaydayBanner,
   OVERTIME_BOOKING_UNREADABLE_MESSAGE,
   OVERTIME_NOT_THEIR_BOOKING_MESSAGE,
-  canWriteBooking,
   isAdminOutsideOperativeMode,
-  overtimeApprovalWrites,
+  hasActiveLineManager,
+  overtimeBookingFingerprint,
   overtimeBookingIsTheirs,
-  OVERTIME_CANCEL_WARNING,
+  overtimeChoiceAfter,
+  overtimeChoiceDecision,
+  overtimeChoiceView,
+  overtimeGenerateReady,
+  overtimeLineChoice,
+  overtimeNotificationRange,
+  overtimeReportOutOfDate,
+  overtimeReturnReady,
+  overtimeSubmitLines,
+  overtimeSubmitReady,
+  OVERTIME_DELETE_WARNING,
   OVERTIME_GENERATE_REPORT_LABEL,
   OVERTIME_HUB_LABEL,
   OVERTIME_MINE_LABEL,
   OVERTIME_MULTIPLIER_STEPS,
   OVERTIME_NO_LINES_MESSAGE,
+  OVERTIME_REPORT_OUT_OF_DATE_LABEL,
+  OVERTIME_RETURN_LABEL,
   OVERTIME_SEND_FOR_APPROVAL_LABEL,
   OVERTIME_USERS_LABEL,
   PAYE_PAYDAY_NOT_SET_MESSAGE,
   canDecideOvertimeRequest,
   canEditOwnBookingOvertime,
-  canGenerateOvertimeReport,
   formatPayePayrunDay,
   organizationOvertimeMultiplier,
   overtimeCogPreview,
   overtimeHubAccess,
   overtimeLinesTotal,
-  overtimeRequestLineFields,
   overtimeStrikeOutcome,
   overtimeUserSubjects,
   payeCustomRange,
@@ -50,6 +58,9 @@ import {
   parseOvertimeReportDocument,
   personIdSet,
   type OvertimeBookingInput,
+  type OvertimeButtonLook,
+  type OvertimeChoice,
+  type OvertimeChoiceEvent,
   type OvertimeDecision,
   type OvertimeLine,
   type OvertimeRequestLine,
@@ -68,7 +79,7 @@ import { timesheetsTeamHref, TIMESHEETS_HUB_PATH } from '@/lib/timesheets/timesh
 import {
   OvertimeApprovalRefused,
   applyDirectOvertime,
-  approveOvertimeRequest,
+  returnOvertimeRequest,
   listenOvertimeReports,
   listenOvertimeRequests,
   listenOvertimeReviews,
@@ -95,6 +106,9 @@ export function OvertimeScreen() {
   const range = params.get('range')
   const start = params.get('start')
   const end = params.get('end')
+  // Rulebook 1.33.0: an overtime notice opens the request's payrun (`request`, `at`; `overtimeNotificationRange`).
+  const requestParam = params.get('request')
+  const atParam = params.get('at')
   const { user, organization } = useAuthStore()
   const { users, loadUsers } = useOrgUserStore()
   const { operatives, managers, loadOperatives } = useOperativeStore()
@@ -221,6 +235,21 @@ export function OvertimeScreen() {
   const overtimeBack = { label: 'Overtime', href: overtimeHref({ scope, user: userParam, section: 'overtime' }) }
   const current = payePayrunPeriod(orgDoc, todayKey)
 
+  if (!range && (requestParam || atParam)) {
+    return (
+      <OvertimeLinkResolver
+        organizationId={organization.id}
+        subjectId={subject.id}
+        orgDoc={orgDoc}
+        orgLoaded={orgLoaded}
+        todayKey={todayKey}
+        requestId={requestParam}
+        dayKey={atParam}
+        onResolve={(target) => router.replace(overtimeHref({ ...here, ...target }))}
+      />
+    )
+  }
+
   if (!range) {
     return (
       <div className="stack" data-hue="ts">
@@ -306,6 +335,38 @@ export function OvertimeScreen() {
   )
 }
 
+/** Rulebook 1.33.0: turns an overtime notice's request id / day into the payrun to open (`overtimeNotificationRange`). */
+function OvertimeLinkResolver(props: {
+  organizationId: string
+  subjectId: string
+  orgDoc: Record<string, unknown> | null
+  orgLoaded: boolean
+  todayKey: string
+  requestId: string | null
+  dayKey: string | null
+  onResolve: (target: { range: string; start?: string; end?: string }) => void
+}) {
+  const [requests, setRequests] = useState<OvertimeRequestRecord[] | null>(null)
+  const { organizationId, subjectId, orgDoc, orgLoaded, todayKey, requestId, dayKey, onResolve } = props
+  useEffect(() => listenOvertimeRequests(organizationId, subjectId, setRequests, () => setRequests([])), [organizationId, subjectId])
+  useEffect(() => {
+    if (!orgLoaded || requests == null) return
+    const request = requestId ? requests.find((row) => row.id.toLowerCase() === requestId.toLowerCase()) : undefined
+    const target = overtimeNotificationRange({
+      organization: orgDoc ?? {},
+      todayKey,
+      rangeStart: request?.rangeStart ?? null,
+      rangeEnd: request?.rangeEnd ?? null,
+      dayKey,
+    })
+    if (!target) onResolve({ range: '' })
+    else if (target.range === 'current') onResolve({ range: 'current' })
+    else onResolve({ range: target.range, start: target.start, end: target.end })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orgLoaded, requests, requestId, dayKey, todayKey])
+  return <p className="muted">Opening overtime…</p>
+}
+
 /** Pending overtime requests of the person, each opening its range (the request push lands here). */
 function PendingRequests({ organizationId, subjectId, onOpen }: { organizationId: string; subjectId: string; onOpen: (request: OvertimeRequestRecord) => void }) {
   const [requests, setRequests] = useState<OvertimeRequestRecord[]>([])
@@ -381,7 +442,69 @@ function SavedReports({ organizationId, subject, logoUrl }: { organizationId: st
   )
 }
 
-type Proposal = { action: 'keep' } | { action: 'strike' } | { action: 'edit'; start: string; end: string; multiplier: number | null }
+type SavedReport = ReturnType<typeof parseOvertimeReportDocument>
+
+function lookClass(look: OvertimeButtonLook, hue: 'green' | 'red' | 'blue'): CSSProperties {
+  if (look === 'filled') return { background: `var(--${hue}, ${hue === 'green' ? '#16a34a' : hue === 'red' ? '#dc2626' : '#2563eb'})`, color: '#fff' }
+  if (look === 'grey') return { opacity: 0.45 }
+  return {}
+}
+
+/** ✕ ✓ ⚙ for one line, drawn from `overtimeChoiceView` (rulebook 1.33.0). */
+function ChoiceButtons(props: {
+  view: ReturnType<typeof overtimeChoiceView>
+  disabled: boolean
+  role: 'person' | 'decider'
+  onCross: () => void
+  onTick: () => void
+  onCog: () => void
+}) {
+  const { view } = props
+  return (
+    <span className="row" style={{ gap: 6, marginLeft: 'auto' }}>
+      <button
+        type="button"
+        className="btn sm"
+        style={lookClass(view.cross, 'red')}
+        aria-pressed={view.cross === 'filled'}
+        aria-label={props.role === 'person' ? "I didn't work these overtime hours" : 'Decline this line'}
+        disabled={props.disabled}
+        onClick={props.onCross}
+      >
+        ✕
+      </button>
+      <button
+        type="button"
+        className="btn sm"
+        style={lookClass(view.tick, 'green')}
+        aria-pressed={view.tick === 'filled'}
+        aria-label={props.role === 'person' ? 'Confirm this line' : 'Approve this line'}
+        disabled={props.disabled}
+        onClick={props.onTick}
+      >
+        ✓
+      </button>
+      <button
+        type="button"
+        className="btn sm"
+        style={lookClass(view.cog, 'blue')}
+        aria-pressed={view.cog === 'filled'}
+        aria-label="Change start, finish or rate"
+        disabled={props.disabled}
+        onClick={props.onCog}
+      >
+        ⚙
+      </button>
+    </span>
+  )
+}
+
+function stateHue(state: OvertimeLine['state']): string {
+  if (state === 'returnedApproved' || state === 'returnedChanged' || state === 'confirmed') return 'green'
+  if (state === 'returnedDeclined' || state === 'deleted' || state === 'cancelled') return 'red'
+  if (state === 'needsReview' || state === 'reopened' || state === 'changedSinceRequest') return 'warn'
+  return 'blue'
+}
 
 function OvertimeLines(props: {
   organizationId: string
@@ -411,16 +534,21 @@ function OvertimeLines(props: {
   )
   // Rulebook 1.32.0 (option 2): ✓ ✕ ⚙ up to the end of the current PAYE payrun.
   const editableUntilKey = useMemo(() => overtimeEditableUntil(orgDoc ?? {}, props.todayKey), [orgDoc, props.todayKey])
+  const hasLineManager = useMemo(() => hasActiveLineManager(subjectPerson as never, roster as never), [subjectPerson, roster])
+  const names = useMemo(() => Object.fromEntries(users.map((row) => [row.id, personName(row)])), [users])
+  const jobRows = useMemo(() => props.jobs.map((job) => ({ id: job.id, jobNumber: job.jobNumber, jobName: job.siteName })), [props.jobs])
   const [bookings, setBookings] = useState<OvertimeBookingInput[]>([])
   const [reviews, setReviews] = useState<OvertimeReviewRecord[]>([])
   const [requests, setRequests] = useState<OvertimeRequestRecord[]>([])
+  const [reports, setReports] = useState<SavedReport[]>([])
   const [loadError, setLoadError] = useState<string | null>(null)
-  const [draft, setDraft] = useState<Record<string, Proposal>>({})
-  const [decisions, setDecisions] = useState<Record<string, OvertimeDecision>>({})
+  // Rulebook 1.33.0 (Q-A7): the person's ✓ ✕ ⚙ before sending, and the decider's before returning, stay on this screen.
+  const [choices, setChoices] = useState<Record<string, OvertimeChoice>>({})
+  const [deciderChoices, setDeciderChoices] = useState<Record<string, OvertimeChoice>>({})
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
-  const [cog, setCog] = useState<{ booking: OvertimeBookingInput; target: 'draft' | 'direct' | 'decision' } | null>(null)
-  const [confirmCancel, setConfirmCancel] = useState<{ summary: string; run: () => void } | null>(null)
+  const [cog, setCog] = useState<{ booking: OvertimeBookingInput; target: 'choice' | 'direct' | 'decision' } | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState<{ summary: string; run: () => void } | null>(null)
 
   const onError = (e: Error) => setLoadError(e.message)
   const idsKey = operativeIds.join('|')
@@ -441,20 +569,22 @@ function OvertimeLines(props: {
   )
   useEffect(() => listenOvertimeReviews(organizationId, subject.id, setReviews, onError), [organizationId, subject.id])
   useEffect(() => listenOvertimeRequests(organizationId, subject.id, setRequests, onError), [organizationId, subject.id])
+  useEffect(() => listenOvertimeReports(organizationId, subject.id, setReports, () => setReports([])), [organizationId, subject.id])
 
   const lines = useMemo(
-    () => payeOvertimeLines({ personIds: operativeIds, bookings, organization, timeZone, range, reviews, requests }),
-    [operativeIds, bookings, organization, timeZone, range, reviews, requests]
+    () => payeOvertimeLines({ personIds: operativeIds, bookings, organization, timeZone, range, reviews, requests, names, jobs: jobRows }),
+    [operativeIds, bookings, organization, timeZone, range, reviews, requests, names, jobRows]
   )
   const bookingById = useMemo(() => new Map(bookings.map((row) => [row.id.toLowerCase(), row])), [bookings])
   const pending = requests
     .filter((row) => row.status === 'pending' && row.rangeStart <= range.end && row.rangeEnd >= range.start)
     .sort((a, b) => (b.createdAtMs ?? 0) - (a.createdAtMs ?? 0))
+  const rangeReports = reports.filter((row) => row.rangeStart === range.start && row.rangeEnd === range.end)
   const viewerAccess = webJobAccessViewer(props.viewerUser)
   const jobFor = (id: string | null) => props.jobs.find((job) => id && job.id.toLowerCase() === id.toLowerCase()) ?? null
 
   const editMode = (line: OvertimeLine) => {
-    if (props.mode !== 'mine' || line.state === 'cancelled') return 'none' as const
+    if (props.mode !== 'mine' || line.state === 'cancelled' || line.state === 'deleted') return 'none' as const
     const job = jobFor(line.jobId)
     return canEditOwnBookingOvertime({
       viewer: viewerAccess,
@@ -472,7 +602,11 @@ function OvertimeLines(props: {
       roster,
     })
   }
-  const anyRequestLines = lines.some((line) => editMode(line) === 'request')
+  const requestLines = lines.filter((line) => editMode(line) === 'request')
+  const anyRequestLines = requestLines.length > 0
+  // Rulebook 1.33.0 button readiness: Send for approval and Generate overtime report.
+  const submit = overtimeSubmitReady({ lines: requestLines, choices })
+  const generate = overtimeGenerateReady({ lines, hasLineManager, choices, reports: rangeReports })
 
   const run = async (work: () => Promise<void>) => {
     setBusy(true)
@@ -492,41 +626,43 @@ function OvertimeLines(props: {
       if (!ok) setMessage('That change is not allowed on this booking.')
     })
 
+  /** The person's red X: warn before an all-overtime booking is removed (`OVERTIME_DELETE_WARNING`). */
   const strike = (booking: OvertimeBookingInput, apply: () => void) => {
     const outcome = overtimeStrikeOutcome({ booking, organization, timeZone })
     if (outcome.kind === 'notAllowed') return setMessage(outcome.message)
     if (outcome.kind === 'none') return setMessage('Nothing on this booking is outside the working day.')
-    if (outcome.kind === 'cancel') return setConfirmCancel({ summary: outcome.warning.summary, run: apply })
+    if (outcome.kind === 'delete') return setConfirmDelete({ summary: outcome.warning.summary, run: apply })
     apply()
   }
+
+  const choose = (line: OvertimeLine, event: OvertimeChoiceEvent) =>
+    setChoices((current) => ({ ...current, [line.bookingId]: overtimeChoiceAfter(overtimeLineChoice(line, current), event) }))
 
   const onTick = (line: OvertimeLine, booking: OvertimeBookingInput) => {
     const mode = editMode(line)
     if (mode === 'direct') void direct(booking, { action: 'approve' })
-    else if (mode === 'request') setDraft((d) => ({ ...d, [line.bookingId]: { action: 'keep' } }))
+    else if (mode === 'request') choose(line, { kind: 'tick' })
   }
   const onCross = (line: OvertimeLine, booking: OvertimeBookingInput) => {
     const mode = editMode(line)
     if (mode === 'direct') strike(booking, () => void direct(booking, { action: 'strike' }))
-    else if (mode === 'request') strike(booking, () => setDraft((d) => ({ ...d, [line.bookingId]: { action: 'strike' } })))
+    else if (mode === 'request') {
+      const current = overtimeLineChoice(line, choices)
+      // Clearing a ✕ needs no warning; setting one on an all-overtime day does.
+      if (current?.mark === 'cross') choose(line, { kind: 'cross' })
+      else strike(booking, () => choose(line, { kind: 'cross' }))
+    }
   }
 
   const sendForApproval = () =>
     run(async () => {
-      const requestLines: OvertimeRequestLine[] = []
-      for (const line of lines) {
-        if (editMode(line) !== 'request') continue
-        const booking = bookingById.get(line.bookingId.toLowerCase())
-        if (!booking) continue
-        const built = overtimeRequestLineFields({ booking, organization, timeZone, proposal: draft[line.bookingId] ?? { action: 'keep' }, personIds: operativeIds })
-        if (built) requestLines.push(built)
-      }
-      if (requestLines.length === 0) {
-        setMessage(OVERTIME_NO_LINES_MESSAGE)
+      const built = overtimeSubmitLines({ lines: requestLines, choices, bookings, organization, timeZone, personIds: operativeIds })
+      if (built.lines.length === 0) {
+        setMessage(submit.message ?? OVERTIME_NO_LINES_MESSAGE)
         return
       }
-      await sendOvertimeRequest({ organizationId, requester: subject, users, rangeStart: range.start, rangeEnd: range.end, lines: requestLines, existing: requests, personIds: operativeIds, bookings })
-      setDraft({})
+      await sendOvertimeRequest({ organizationId, requester: subject, users, rangeStart: range.start, rangeEnd: range.end, lines: built.lines, existing: requests, personIds: operativeIds, bookings })
+      setChoices({})
       setMessage('Sent for approval.')
     })
 
@@ -539,17 +675,6 @@ function OvertimeLines(props: {
     })
 
   const canDecide = props.mode === 'review' && canDecideOvertimeRequest(rulebookPerson(props.viewerUser, users), subjectPerson, roster)
-  // §16: an admin writes every booking; a line manager only the requester's users-id bookings, or jobs they manage.
-  const deciderIsAdmin = isAdminOutsideOperativeMode(rulebookPerson(props.viewerUser, users))
-  const deciderCanWrite = (booking: OvertimeBookingInput) =>
-    canWriteBooking(
-      viewerAccess,
-      booking.collection === 'managerSiteBookings'
-        ? { collection: 'managerSiteBookings', userId: booking.personId, locationType: booking.jobId ? 'project' : 'office', locationId: booking.jobId }
-        : { collection: 'bookings', projectId: booking.jobId },
-      jobFor(booking.jobId ?? null) as unknown as Record<string, unknown> | null,
-      props.managers as never
-    )
 
   return (
     <div className="stack" style={{ gap: 12 }}>
@@ -558,17 +683,16 @@ function OvertimeLines(props: {
       {lines.map((line) => {
         const booking = bookingById.get(line.bookingId.toLowerCase())
         const mode = editMode(line)
-        const proposal = draft[line.bookingId]
-        const preview =
-          booking && proposal && proposal.action !== 'keep'
-            ? overtimeRequestLineFields({ booking, organization, timeZone, proposal })
-            : null
+        const choice = mode === 'request' ? overtimeLineChoice(line, choices) : null
+        const view = booking && choice ? overtimeChoiceView({ choice, booking, organization, timeZone, role: 'person' }) : null
+        const locked = line.state === 'waiting'
+        const struck = line.state === 'cancelled' || line.state === 'deleted' || line.state === 'returnedDeclined'
         const requested = line.requestLine
         return (
-          <div key={`${line.collection}/${line.bookingId}`} className="card pad" style={{ opacity: line.state === 'cancelled' ? 0.6 : 1 }}>
+          <div key={`${line.collection}/${line.bookingId}`} className="card pad" style={{ opacity: line.state === 'cancelled' || line.state === 'deleted' ? 0.6 : 1 }}>
             <div className="row" style={{ justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
               <div className="grow" style={{ minWidth: 0 }}>
-                <b style={{ textDecoration: line.state === 'cancelled' ? 'line-through' : 'none' }}>{line.title}</b>
+                <b style={{ textDecoration: line.state === 'cancelled' || line.state === 'deleted' ? 'line-through' : 'none' }}>{line.title}</b>
                 <div className="muted small">
                   {line.dayLabel} · {line.start && line.end ? `${line.start}–${line.end}` : line.timeSlot}
                   {requested && requested.action === 'edit' && requested.proposedStart ? ` (asked ${requested.proposedStart}–${requested.proposedEnd})` : ''}
@@ -577,28 +701,42 @@ function OvertimeLines(props: {
               </div>
               <div style={{ textAlign: 'right' }}>
                 {line.figures ? (
-                  <div style={{ textDecoration: preview ? 'line-through' : 'none' }}>{line.figures.text}</div>
-                ) : null}
-                {preview ? <div>{preview.cancel ? 'Booking cancelled' : `${preview.overtimeHoursAfter}h`}</div> : null}
+                  <div style={{ textDecoration: view?.figureStruck || struck ? 'line-through' : 'none', color: struck || view?.figureStruck ? 'var(--red)' : undefined }}>
+                    {line.figures.text}
+                  </div>
+                ) : (
+                  <div style={{ textDecoration: 'line-through' }}>0h</div>
+                )}
+                {view?.newFigure ? <div><b>{view.newFigure}</b></div> : null}
               </div>
             </div>
             <div className="row" style={{ marginTop: 8, gap: 8, flexWrap: 'wrap' }}>
-              <span className="pill" data-hue={line.state === 'approved' ? 'green' : line.state === 'needsReview' ? 'warn' : 'blue'}>
-                {line.stateLabel}
-              </span>
-              {proposal ? <span className="pill">{proposal.action === 'keep' ? 'Ticked' : proposal.action === 'strike' ? 'Crossed' : 'Changed'} (not sent)</span> : null}
-              {booking && mode !== 'none' ? (
-                <span className="row" style={{ gap: 6, marginLeft: 'auto' }}>
-                  <button type="button" className="btn sm" aria-label="I didn't work these overtime hours" disabled={busy} onClick={() => onCross(line, booking)}>
-                    ✕
-                  </button>
-                  <button type="button" className="btn sm" aria-label="Approve this line" disabled={busy} onClick={() => onTick(line, booking)}>
-                    ✓
-                  </button>
-                  <button type="button" className="btn sm" aria-label="Change start, finish or rate" disabled={busy} onClick={() => setCog({ booking, target: mode === 'direct' ? 'direct' : 'draft' })}>
-                    ⚙
-                  </button>
-                </span>
+              <span className="pill" data-hue={stateHue(line.state)}>{line.stateLabel}</span>
+              {view?.label && !locked && line.state !== 'returnedApproved' && line.state !== 'returnedChanged' && line.state !== 'returnedDeclined' ? (
+                <span className="pill">{view.label} (not sent)</span>
+              ) : null}
+              {view?.label && !locked && (line.state === 'returnedApproved' || line.state === 'returnedChanged' || line.state === 'returnedDeclined') && submit.bookingIds.includes(line.bookingId) ? (
+                <span className="pill">{view.label} (not sent)</span>
+              ) : null}
+              {booking && mode === 'direct' ? (
+                <ChoiceButtons
+                  view={overtimeChoiceView({ choice: null, booking, organization, timeZone, role: 'person' })}
+                  disabled={busy}
+                  role="person"
+                  onCross={() => onCross(line, booking)}
+                  onTick={() => onTick(line, booking)}
+                  onCog={() => setCog({ booking, target: 'direct' })}
+                />
+              ) : null}
+              {booking && mode === 'request' && view ? (
+                <ChoiceButtons
+                  view={view}
+                  disabled={busy || locked}
+                  role="person"
+                  onCross={() => onCross(line, booking)}
+                  onTick={() => onTick(line, booking)}
+                  onCog={() => setCog({ booking, target: 'choice' })}
+                />
               ) : null}
             </div>
           </div>
@@ -615,17 +753,14 @@ function OvertimeLines(props: {
               organization={organization}
               timeZone={timeZone}
               canDecide={canDecide}
-              decisions={decisions}
-              setDecisions={setDecisions}
+              choices={deciderChoices}
+              setChoices={setDeciderChoices}
               busy={busy}
               requesterIds={operativeIds}
-              deciderIsAdmin={deciderIsAdmin}
-              canWriteBooking={deciderCanWrite}
               onCog={(booking) => setCog({ booking, target: 'decision' })}
-              onStrike={(booking, apply) => strike(booking, apply)}
-              onApprove={() =>
+              onReturn={(decisions) =>
                 run(async () => {
-                  const result = await approveOvertimeRequest({
+                  const result = await returnOvertimeRequest({
                     organizationId,
                     requestId: request.id,
                     decisions,
@@ -635,11 +770,9 @@ function OvertimeLines(props: {
                     requester: subject,
                     users,
                     requesterIds: operativeIds,
-                    deciderIsAdmin,
-                    canWriteBooking: deciderCanWrite,
                   })
-                  setDecisions({})
-                  // Rulebook 1.32.0 `reviewApprovalMessage`: "Approved 2 of 5. …".
+                  setDeciderChoices({})
+                  // Rulebook 1.33.0 `overtimeReturnMessage`: "Returned 5 lines. …".
                   setMessage(result.message)
                 })
               }
@@ -648,23 +781,61 @@ function OvertimeLines(props: {
         : null}
 
       {props.mode === 'mine' ? (
-        <div className="row" style={{ gap: 10, flexWrap: 'wrap' }}>
-          {anyRequestLines ? (
-            <button type="button" className="btn primary" style={{ background: 'var(--green, #16a34a)' }} disabled={busy} onClick={() => void sendForApproval()}>
-              {OVERTIME_SEND_FOR_APPROVAL_LABEL}
+        <div className="stack" style={{ gap: 6 }}>
+          <div className="row" style={{ gap: 10, flexWrap: 'wrap' }}>
+            {anyRequestLines ? (
+              <button
+                type="button"
+                className="btn primary"
+                style={submit.ready ? { background: 'var(--green, #16a34a)' } : undefined}
+                disabled={busy || !submit.ready}
+                onClick={() => void sendForApproval()}
+              >
+                {OVERTIME_SEND_FOR_APPROVAL_LABEL}
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="btn primary"
+              style={generate.ready ? { background: 'var(--green, #16a34a)' } : undefined}
+              disabled={busy || !generate.ready}
+              onClick={() => void generateReport()}
+            >
+              {OVERTIME_GENERATE_REPORT_LABEL}
             </button>
-          ) : null}
-          <button type="button" className="btn primary" disabled={busy || !canGenerateOvertimeReport(lines)} onClick={() => void generateReport()}>
-            {OVERTIME_GENERATE_REPORT_LABEL}
-          </button>
-          {pending.map((request) => (
-            <button key={request.id} type="button" className="btn ghost" disabled={busy} onClick={() => void run(() => withdrawOvertimeRequest(organizationId, request))}>
-              Withdraw request ({formatPayePayrunDay(request.rangeStart)} – {formatPayePayrunDay(request.rangeEnd)})
-            </button>
-          ))}
+            {pending.map((request) => (
+              <button key={request.id} type="button" className="btn ghost" disabled={busy} onClick={() => void run(() => withdrawOvertimeRequest(organizationId, request))}>
+                Withdraw request ({formatPayePayrunDay(request.rangeStart)} – {formatPayePayrunDay(request.rangeEnd)})
+              </button>
+            ))}
+          </div>
+          {anyRequestLines && !submit.ready && submit.message && lines.length > 0 ? <p className="muted small">{submit.message}</p> : null}
+          {!generate.ready && generate.message && lines.length > 0 ? <p className="muted small">{generate.message}</p> : null}
         </div>
       ) : null}
       {message ? <p className="small">{message}</p> : null}
+
+      {rangeReports.length > 0 ? (
+        <div className="stack" style={{ gap: 8 }}>
+          <p className="eyebrow">Saved reports for this range</p>
+          {rangeReports.map((report) => {
+            const outOfDate = overtimeReportOutOfDate({ report, lines })
+            return (
+              <button
+                key={report.id}
+                type="button"
+                className="card pad click"
+                style={{ border: 0, textAlign: 'left' }}
+                onClick={() => void buildOvertimeReportPdf(report, { logoUrl: props.logoUrl }).then((bytes) => downloadPdf(bytes, `overtime-${report.rangeStart}-${report.rangeEnd}.pdf`))}
+              >
+                <b>{report.totals.overtimeHours}h overtime</b>{' '}
+                {outOfDate ? <span className="pill" data-hue="warn">{OVERTIME_REPORT_OUT_OF_DATE_LABEL}</span> : null}
+                <div className="muted small">{report.generatedAtMs ? new Date(report.generatedAtMs).toLocaleString('en-GB') : 'saving…'} · Download PDF</div>
+              </button>
+            )
+          })}
+        </div>
+      ) : null}
 
       {cog ? (
         <CogDialog
@@ -677,38 +848,42 @@ function OvertimeLines(props: {
             const booking = cog.booking
             setCog(null)
             if (target === 'direct') void direct(booking, { action: 'edit', ...edit })
-            else if (target === 'draft') setDraft((d) => ({ ...d, [booking.id]: { action: 'edit', ...edit } }))
-            else setDecisions((d) => ({ ...d, [booking.id]: { action: 'edit', ...edit } }))
+            else if (target === 'choice') {
+              const line = lines.find((row) => row.bookingId.toLowerCase() === booking.id.toLowerCase())
+              if (line) choose(line, { kind: 'cog', ...edit })
+            } else {
+              setDeciderChoices((d) => ({ ...d, [booking.id]: overtimeChoiceAfter(d[booking.id], { kind: 'cog', ...edit }) }))
+            }
           }}
         />
       ) : null}
-      {confirmCancel ? (
+      {confirmDelete ? (
         <Modal
           open
-          title={OVERTIME_CANCEL_WARNING.title}
-          onClose={() => setConfirmCancel(null)}
+          title={OVERTIME_DELETE_WARNING.title}
+          onClose={() => setConfirmDelete(null)}
           footer={
             <div className="row" style={{ gap: 8, justifyContent: 'flex-end' }}>
-              <button type="button" className="btn" onClick={() => setConfirmCancel(null)}>
-                {OVERTIME_CANCEL_WARNING.back}
+              <button type="button" className="btn" onClick={() => setConfirmDelete(null)}>
+                {OVERTIME_DELETE_WARNING.back}
               </button>
               <button
                 type="button"
                 className="btn danger"
                 onClick={() => {
-                  const next = confirmCancel.run
-                  setConfirmCancel(null)
+                  const next = confirmDelete.run
+                  setConfirmDelete(null)
                   next()
                 }}
               >
-                {OVERTIME_CANCEL_WARNING.confirm}
+                {OVERTIME_DELETE_WARNING.confirm}
               </button>
             </div>
           }
         >
-          <p className="small"><b>{confirmCancel.summary}</b></p>
-          <p>{OVERTIME_CANCEL_WARNING.body}</p>
-          <p className="muted small">{OVERTIME_CANCEL_WARNING.footnote}</p>
+          <p className="small"><b>{confirmDelete.summary}</b></p>
+          <p>{OVERTIME_DELETE_WARNING.body}</p>
+          <p className="muted small">{OVERTIME_DELETE_WARNING.footnote}</p>
         </Modal>
       ) : null}
     </div>
@@ -721,100 +896,84 @@ function RequestReview(props: {
   organization: unknown
   timeZone: string
   canDecide: boolean
-  decisions: Record<string, OvertimeDecision>
-  setDecisions: (update: (d: Record<string, OvertimeDecision>) => Record<string, OvertimeDecision>) => void
+  choices: Record<string, OvertimeChoice>
+  setChoices: (update: (d: Record<string, OvertimeChoice>) => Record<string, OvertimeChoice>) => void
   busy: boolean
   onCog: (booking: OvertimeBookingInput) => void
-  onStrike: (booking: OvertimeBookingInput, apply: () => void) => void
-  onApprove: () => void
+  onReturn: (decisions: Record<string, OvertimeDecision>) => void
   requesterIds: ReadonlyArray<string>
-  deciderIsAdmin: boolean
-  canWriteBooking: (booking: OvertimeBookingInput) => boolean
 }) {
-  const { request, decisions } = props
-  // Rulebook 1.32.0: one Approve, enabled once any line is decided; it applies what this decider may (partial approval).
-  const ready = overtimeRequestAnyDecided(request, decisions)
-  // The same rule the approval transaction (and the security rules) apply, run on what this screen can read, so the
-  // button is never offered for an approval that would be refused.
-  const unreadable = request.lines.filter((line) => !props.bookingById.get(line.bookingId.toLowerCase())).map((line) => line.bookingId)
-  const live: Record<string, OvertimeBookingInput> = {}
+  const { request, choices } = props
+  const done = new Set([...request.appliedBookingIds, ...request.droppedBookingIds].map((id) => id.toLowerCase()))
+  // Bookings this screen cannot read, or that are not theirs, are left out of the Return (named) and never block it.
+  const skip = request.lines
+    .filter((line) => {
+      const booking = props.bookingById.get(line.bookingId.toLowerCase())
+      return !booking || !overtimeBookingIsTheirs(booking, props.requesterIds)
+    })
+    .map((line) => line.bookingId)
+  const decisions: Record<string, OvertimeDecision> = {}
   for (const line of request.lines) {
-    const booking = props.bookingById.get(line.bookingId.toLowerCase())
-    if (booking) live[line.bookingId] = booking
+    const decision = overtimeChoiceDecision(choices[line.bookingId])
+    if (decision) decisions[line.bookingId] = decision
   }
-  const dryRun = ready
-    ? overtimeApprovalWrites({
-        request,
-        decisions,
-        bookings: live,
-        organization: props.organization,
-        timeZone: props.timeZone,
-        deciderId: 'preview',
-        requesterIds: props.requesterIds,
-        deciderIsAdmin: props.deciderIsAdmin,
-        writableBookingIds: Object.values(live).filter(props.canWriteBooking).map((row) => row.id),
-        unreadableBookingIds: unreadable,
-      })
-    : null
-  const blocked = dryRun && !dryRun.ok ? dryRun : null
-  const outcomes = dryRun ? dryRun.lineOutcomes : {}
-  const applied = new Set(request.appliedBookingIds.map((id) => id.toLowerCase()))
-  const decide = (bookingId: string, decision: OvertimeDecision) => props.setDecisions((d) => ({ ...d, [bookingId]: decision }))
+  // Rulebook 1.33.0: Return overtime is green only once every waiting line is decided.
+  const ready = overtimeReturnReady({ request, decisions, skipBookingIds: skip })
+  const choose = (bookingId: string, event: OvertimeChoiceEvent) =>
+    props.setChoices((d) => ({ ...d, [bookingId]: overtimeChoiceAfter(d[bookingId], event) }))
   const describe = (line: OvertimeRequestLine): ReactNode =>
     line.cancel
-      ? 'Asks to remove the booking'
+      ? 'Not worked — asks to remove the booking'
       : line.action === 'edit'
-        ? `Asks ${line.proposedStart}–${line.proposedEnd}${line.proposedMultiplier ? ` at ×${line.proposedMultiplier}` : ''}: ${line.overtimeHoursBefore}h → ${line.overtimeHoursAfter}h`
+        ? `Changed to ${line.proposedStart}–${line.proposedEnd}${line.proposedMultiplier ? ` at ×${line.proposedMultiplier}` : ''}: ${line.overtimeHoursBefore}h → ${line.overtimeHoursAfter}h`
         : line.action === 'strike'
-          ? `Asks to trim to ${line.proposedStart}–${line.proposedEnd}: ${line.overtimeHoursBefore}h → ${line.overtimeHoursAfter}h`
-          : `Approve as booked: ${line.overtimeHoursBefore}h`
+          ? `Not worked — trim to ${line.proposedStart}–${line.proposedEnd}: ${line.overtimeHoursBefore}h → ${line.overtimeHoursAfter}h`
+          : `Confirmed as booked: ${line.overtimeHoursBefore}h`
   return (
     <div className="card pad stack" style={{ gap: 10 }}>
       <b>
         Overtime request · {formatPayePayrunDay(request.rangeStart)} – {formatPayePayrunDay(request.rangeEnd)}
       </b>
       {request.lines.map((line) => {
+        if (done.has(line.bookingId.toLowerCase())) return null
         const booking = props.bookingById.get(line.bookingId.toLowerCase())
-        const decision = decisions[line.bookingId]
-        if (applied.has(line.bookingId.toLowerCase())) return null
-        const outcomeLabel = decision ? overtimeLineOutcomeLabel(outcomes[line.bookingId]) : null
+        const theirs = booking ? overtimeBookingIsTheirs(booking, props.requesterIds) : false
+        const view = booking ? overtimeChoiceView({ choice: choices[line.bookingId], booking, organization: props.organization, timeZone: props.timeZone, role: 'decider' }) : null
+        const stale = booking ? overtimeBookingFingerprint(booking) !== line.fingerprint : false
         return (
           <div key={line.bookingId} className="row" style={{ gap: 8, flexWrap: 'wrap', justifyContent: 'space-between' }}>
             <div className="grow small" style={{ minWidth: 0 }}>
               {formatPayePayrunDay(line.dayKey)} · {describe(line)}
-              {decision ? <span className="muted"> · {decision.action === 'approve' ? 'ticked' : decision.action === 'strike' ? 'crossed' : `changed to ${decision.start}–${decision.end}`}</span> : null}
+              {view?.label ? <span className="pill" data-hue={view.cross === 'filled' ? 'red' : view.tick === 'filled' ? 'green' : 'warn'} style={{ marginLeft: 6 }}>{view.label}</span> : null}
+              {view?.newFigure && view.cog === 'filled' ? <span className="muted"> · <s>{view.oldFigure}</s> → <b>{view.newFigure}</b></span> : null}
               {!booking ? <span className="muted"> · {OVERTIME_BOOKING_UNREADABLE_MESSAGE}</span> : null}
-              {booking && !overtimeBookingIsTheirs(booking, props.requesterIds) ? <span className="muted"> · {OVERTIME_NOT_THEIR_BOOKING_MESSAGE}</span> : null}
-              {outcomeLabel && booking && overtimeBookingIsTheirs(booking, props.requesterIds) ? (
-                <span className="pill" data-hue="warn" style={{ marginLeft: 6 }}>{outcomeLabel}</span>
-              ) : null}
+              {booking && !theirs ? <span className="muted"> · {OVERTIME_NOT_THEIR_BOOKING_MESSAGE}</span> : null}
+              {stale && theirs ? <span className="pill" data-hue="warn" style={{ marginLeft: 6 }}>{overtimeLineOutcomeLabel('stale')}</span> : null}
             </div>
-            {props.canDecide && booking ? (
-              <span className="row" style={{ gap: 6 }}>
-                <button type="button" className="btn sm" aria-label="Remove the overtime" disabled={props.busy} onClick={() => props.onStrike(booking, () => decide(line.bookingId, { action: 'strike' }))}>
-                  <span style={{ color: 'var(--red)' }}>✕</span>
-                </button>
-                <button type="button" className="btn sm" aria-label="Approve as asked" disabled={props.busy} onClick={() => decide(line.bookingId, { action: 'approve' })}>
-                  <span style={{ color: 'var(--green)' }}>✓</span>
-                </button>
-                <button type="button" className="btn sm" aria-label="Counter-change" disabled={props.busy} onClick={() => props.onCog(booking)}>
-                  ⚙
-                </button>
-              </span>
-            ) : null}
-            {props.canDecide && !booking ? (
-              <button type="button" className="btn sm" onClick={() => decide(line.bookingId, { action: 'approve' })}>
-                OK
-              </button>
+            {props.canDecide && booking && theirs && view ? (
+              <ChoiceButtons
+                view={view}
+                disabled={props.busy}
+                role="decider"
+                onCross={() => choose(line.bookingId, { kind: 'cross' })}
+                onTick={() => choose(line.bookingId, { kind: 'tick' })}
+                onCog={() => props.onCog(booking)}
+              />
             ) : null}
           </div>
         )
       })}
       {props.canDecide ? (
         <>
-          {blocked ? <p className="small" style={{ color: 'var(--red)' }}>{blocked.message}</p> : null}
-          <button type="button" className="btn primary" disabled={!ready || props.busy || Boolean(blocked)} onClick={props.onApprove}>
-            {OVERTIME_APPROVE_LABEL}
+          {!ready.ready && ready.message ? <p className="muted small">{ready.message}</p> : null}
+          <button
+            type="button"
+            className="btn primary"
+            style={ready.ready ? { background: 'var(--green, #16a34a)' } : undefined}
+            disabled={!ready.ready || props.busy}
+            onClick={() => props.onReturn(decisions)}
+          >
+            {OVERTIME_RETURN_LABEL}
           </button>
         </>
       ) : (

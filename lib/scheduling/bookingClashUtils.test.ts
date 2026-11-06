@@ -45,3 +45,27 @@ test('detectOperativeClashes finds an iOS upper-case booking for a web lower-cas
   })
   assert.deepEqual(clashes.map((c) => c.existingBookingId), ['B-IOS'])
 })
+
+test('1.33.0 h5: detectOperativeClashes ignores letter case both ways (upper-case pick, lower-case stored booking)', () => {
+  const day = londonMidnight(new Date('2026-10-14T12:00:00Z'))
+  const existing = {
+    id: 'B-WEB',
+    operativeId: 'abcd-op-2',
+    projectId: 'P-OTHER',
+    date: day,
+    timeSlot: 'AM',
+    bookedBy: 'x',
+    status: 'Confirmed',
+    createdAt: day,
+    updatedAt: day,
+  } as Booking
+  const clashes = detectOperativeClashes({
+    operativeIds: ['ABCD-OP-2'],
+    slots: [{ date: day, slot: 'FULL DAY' }],
+    bookings: [existing],
+    operatives: [{ id: 'Abcd-Op-2', firstName: 'Bo', lastName: 'Site' } as Operative],
+    projects: [{ id: 'P-OTHER', siteName: 'Other', jobNumber: 'J2' } as Project],
+    timeZone: 'Europe/London',
+  })
+  assert.deepEqual(clashes.map((c) => [c.existingBookingId, c.operativeName]), [['B-WEB', 'Bo Site']])
+})

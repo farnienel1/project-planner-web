@@ -27,7 +27,7 @@ export type ProjectSaveInput = {
   latitude?: number
   longitude?: number
   usesMapPinForLocation?: boolean
-  hiddenManagerUserIds?: string[]
+  /** 1.33.0: the operatives' hide list stays (owner decision 6 Nov); there is no managers' list. */
   hiddenOperativeUserIds?: string[]
   createdAt?: Date
   updatedAt?: Date
@@ -64,7 +64,6 @@ export function buildProjectFirestorePayload(input: ProjectSaveInput): Record<st
   }
   const managerName = input.managerLegacy?.trim()
   if (managerName && managerName.toLowerCase() !== 'custom') payload.manager = managerName
-  if (input.hiddenManagerUserIds) payload.hiddenManagerUserIds = input.hiddenManagerUserIds
   if (input.hiddenOperativeUserIds) payload.hiddenOperativeUserIds = input.hiddenOperativeUserIds
 
   // Rulebook 1.31.0: null is a removal on an edit (`jobWriteFields` removes a field only when it is stored) and is
@@ -130,7 +129,6 @@ export function projectToSaveInput(project: Project, organizationId: string): Pr
     latitude: project.latitude,
     longitude: project.longitude,
     usesMapPinForLocation: project.usesMapPinForLocation,
-    hiddenManagerUserIds: project.hiddenManagerUserIds,
     hiddenOperativeUserIds: project.hiddenOperativeUserIds,
     createdAt: project.createdAt,
     updatedAt: project.updatedAt,

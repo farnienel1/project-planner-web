@@ -355,6 +355,7 @@ export function WarningsScreen({
   onDismissQualification,
   onDeleteBooking,
   onDeleteManagerBooking,
+  canRemoveClashEntry,
   sortDirection,
   onSortDirectionChange,
 }: {
@@ -381,6 +382,8 @@ export function WarningsScreen({
   onDismissQualification?: (warning: QualificationExpiryWarning) => Promise<void>
   onDeleteBooking: (bookingId: string) => Promise<void>
   onDeleteManagerBooking: (bookingId: string) => Promise<void>
+  /** Rulebook §2 (1.33.0): `bookingRemoveAction` is `delete` for this clash row's booking; missing → no remove button. */
+  canRemoveClashEntry?: (entry: ClashTimelineEntry) => boolean
   sortDirection: WarningsSortDirection
   onSortDirectionChange: (direction: WarningsSortDirection) => void
 }) {
@@ -459,9 +462,10 @@ export function WarningsScreen({
 
   const handleRemoveEntry = async (entry: ClashTimelineEntry) => {
     const label = displayTitle(entry)
-    // Labour bookings: admins delete, managers cancel (rulebook §2, §16). Manager bookings are deleted.
-    const deletes = Boolean(entry.managerBookingId) || hasAdminAccess(user)
-    if (!window.confirm(`${deletes ? 'Delete' : 'Cancel'} the booking for ${label}?`)) return
+    // Rulebook §2 (1.33.0): bookings are deleted (with the tombstone), never cancelled; only offered when
+    // `bookingRemoveAction` is `delete`.
+    if (!canRemoveClashEntry?.(entry)) return
+    if (!window.confirm(`Delete the booking for ${label}?`)) return
     const id = entry.managerBookingId || entry.bookingId
     setBusyId(id)
     try {
@@ -655,6 +659,7 @@ export function WarningsScreen({
               }
               onApprove={() => handleAccept(item.warning)}
               onRemove={handleRemoveEntry}
+              canRemove={canRemoveClashEntry}
             />
           )
         }
@@ -672,6 +677,7 @@ export function WarningsScreen({
             }
             onApprove={() => handleAccept(item.warning)}
             onRemove={handleRemoveEntry}
+            canRemove={canRemoveClashEntry}
           />
         )
       })}

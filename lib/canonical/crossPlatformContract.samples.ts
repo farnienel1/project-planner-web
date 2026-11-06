@@ -437,7 +437,7 @@ export const CONTRACT_NO_READER: Readonly<Record<string, string>> = {
   toolboxLibrary: 'Platform content, not organisation data.',
   payProfiles: '1.13.0: parsePayProfileDocument keeps only PAY_PROFILE_FIELDS; samples follow once iOS writes it.',
   overtimeRequests: '1.29.0: parseOvertimeRequestDocument (overtimeRequestWriteFields); samples follow once iOS writes it.',
-  overtimeReviews: '1.29.0: parseOvertimeReviewDocument (overtimeApprovalWrites / overtimeDirectWrites); samples follow once iOS writes it.',
+  overtimeReviews: '1.29.0: parseOvertimeReviewDocument (1.33.0 overtimeReturnWrites / overtimeDirectWrites); samples follow once iOS writes it.',
   overtimeReports: '1.29.0: parseOvertimeReportDocument (overtimeReportSnapshot); samples follow once iOS writes it.',
   priceWorkItems: '1.30.0: parsePriceWorkDocument (priceWorkWriteFields); samples follow once iOS writes it.',
   expenseItems: '1.30.0: parseExpenseDocument (expenseWriteFields); samples follow once iOS writes it.',

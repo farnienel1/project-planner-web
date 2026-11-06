@@ -99,8 +99,8 @@ export function listenPayeClaims(
 
 /**
  * Rulebook 1.32.0 (`overtimePersonIds`): live items of one person under every id they go by, one `userId ==` query per
- * id, merged. The first id is the person's users id; a refused read under another id (a line manager may read only
- * the users id they manage — those items need an admin, decision A) is left out silently.
+ * id, merged. The first id is the person's users id; a refused read under another id is left out silently (the
+ * security rules let a line manager read items only under a users id whose document names them as line manager).
  */
 export function listenPersonPayeClaims(
   organizationId: string,
@@ -137,7 +137,39 @@ export function listenPersonPayeClaims(
       }
     )
   )
+  // 1.33.0: items stamped with the person's current users id (`personUserId`, written on create and by the backfill),
+  // the query the read rules allow the line manager for an item filed under another of the person's ids.
+  const personUserId = ids[0]
+  if (personUserId) {
+    const key = `personUserId:${personUserId}`
+    ids.push(key)
+    stops.push(
+      onSnapshot(
+        query(collection(db, 'organizations', organizationId, COLLECTION[kind]), where('personUserId', '==', personUserId)),
+        (snap) => {
+          byId.set(
+            key,
+            snap.docs.map((row) =>
+              kind === 'priceWork'
+                ? parsePriceWorkDocument(row.id, row.data(), { timeZone, organizationId })
+                : parseExpenseDocument(row.id, row.data(), { timeZone, organizationId })
+            )
+          )
+          emit()
+        },
+        () => {
+          byId.set(key, [])
+          emit()
+        }
+      )
+    )
+  }
   return () => stops.forEach((stop) => stop())
+}
+
+function dedupeReviews(rows: PayeClaimReviewRecord[]): PayeClaimReviewRecord[] {
+  const seen = new Set<string>()
+  return rows.filter((row) => (seen.has(row.id) ? false : (seen.add(row.id), true)))
 }
 
 /** Rulebook 1.32.0 §26: live reviews of one person's price work and expenses (every id they go by; refusals left out). */
@@ -148,23 +180,31 @@ export function listenPayeClaimReviews(
 ): Unsubscribe {
   const ids = Array.from(new Set(userIds.filter(Boolean)))
   const byId = new Map<string, PayeClaimReviewRecord[]>()
-  const stops = ids.map((id) =>
+  // 1.33.0: a review of an item filed under another of the person's ids carries `personUserId` (the person's users id);
+  // the line manager reads those through that field, so it is one more query beside the `userId` ones.
+  const queries = ids.map((id) => ({ key: id, field: 'userId' }))
+  if (ids[0]) queries.push({ key: `personUserId:${ids[0]}`, field: 'personUserId' })
+  const keys = queries.map((row) => row.key)
+  const stops = queries.map(({ key: id, field }) =>
     onSnapshot(
-      query(collection(db, 'organizations', organizationId, PAYE_CLAIM_REVIEWS_COLLECTION), where('userId', '==', id)),
+      query(collection(db, 'organizations', organizationId, PAYE_CLAIM_REVIEWS_COLLECTION), where(field, '==', field === 'userId' ? id : ids[0])),
       (snap) => {
         byId.set(id, snap.docs.map((row) => parsePayeClaimReviewDocument(row.id, row.data())))
-        onChange(ids.flatMap((key) => byId.get(key) ?? []))
+        onChange(dedupeReviews(keys.flatMap((key) => byId.get(key) ?? [])))
       },
       () => {
         byId.set(id, [])
-        onChange(ids.flatMap((key) => byId.get(key) ?? []))
+        onChange(dedupeReviews(keys.flatMap((key) => byId.get(key) ?? [])))
       }
     )
   )
   return () => stops.forEach((stop) => stop())
 }
 
-/** Rulebook 1.32.0 §26: Approve — every review of `payeClaimReviewWrites` in one batch. */
+/**
+ * Rulebook 1.32.0 §26: Approve — every review of `payeClaimReviewWrites` in one batch, fields as given (1.33.0: including
+ * `personUserId` on an item filed under another of the person's ids, so the line manager's review is allowed).
+ */
 export async function savePayeClaimReviews(organizationId: string, writes: ReadonlyArray<{ docId: string; fields: Record<string, unknown> }>): Promise<void> {
   if (writes.length === 0) return
   const batch = writeBatch(db)

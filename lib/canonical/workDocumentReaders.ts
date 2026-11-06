@@ -186,7 +186,7 @@ export type JobDocument = {
   latitude: number | null
   longitude: number | null
   usesMapPinForLocation: boolean
-  hiddenManagerUserIds: string[]
+  /** 1.33.0 (owner decision 6 Nov): kept for operatives only; `hiddenManagerUserIds` is no longer read. */
   hiddenOperativeUserIds: string[]
   status: string | null
   organizationId: string | null
@@ -267,7 +267,7 @@ export function parseJobDocument(
     latitude: documentNumber(row.latitude),
     longitude: documentNumber(row.longitude),
     usesMapPinForLocation: documentBool(row.usesMapPinForLocation) === true,
-    hiddenManagerUserIds: idList(row.hiddenManagerUserIds),
+    // 1.33.0 (owner decision 6 Nov): the operatives' hide list stays; the managers' (`hiddenManagerUserIds`) is not read.
     hiddenOperativeUserIds: idList(row.hiddenOperativeUserIds),
     status: optionalText(row.status),
     organizationId: optionalText(row.organizationId),

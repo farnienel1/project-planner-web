@@ -3,12 +3,11 @@
  * with pdf-lib. The text is the rulebook's (`payeClaimReportRows`, `payeClaimEvidencePages`, `personalSiteAuditPdfRows`);
  * this file only draws it.
  *
- * Report: page 1 is the summary (company name and logo, the person, the range, every item with its figure, the
- * total); then one page per piece of evidence with its heading and details at the top — a JPEG / PNG drawn as large
- * as the page allows, a PDF's own pages appended after its heading page, anything else (or a file that cannot be read)
- * listed with a note.
+ * Report (1.33.0): laid out like the invoice / timesheet PDF (`InvoiceFamilyPdf`) — see `buildPayeClaimReportPdf`.
  */
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFImage, type PDFPage } from 'pdf-lib'
+import { familyLogo, InvoiceFamilyPdf, type FamilyCell, type FamilyColumn } from '@/lib/pdf/invoiceFamilyPdf'
+import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 import {
   PAYE_CLAIM_EVIDENCE_NOT_DRAWN_NOTE,
   PAYE_CLAIM_EVIDENCE_UNREADABLE_NOTE,
@@ -101,54 +100,88 @@ async function embedImage(pdf: PDFDocument, bytes: Uint8Array, contentType: stri
   }
 }
 
-async function logoImage(pdf: PDFDocument, url: string | null | undefined): Promise<PDFImage | null> {
-  if (!url) return null
-  try {
-    const response = await fetch(url)
-    if (!response.ok) return null
-    const bytes = new Uint8Array(await response.arrayBuffer())
-    return await embedImage(pdf, bytes, response.headers.get('content-type') || '', url)
-  } catch {
-    return null
-  }
-}
+/** Summary table column widths (fill the 539pt content width), as iOS `PayeClaimReportTable`. */
+const PRICE_WORK_WIDTHS = [104, 80, 165, 100, 90]
+const EXPENSE_WIDTHS = [96, 96, 252, 95]
 
-/** The report PDF built from a saved copy. `readFile` fetches a stored evidence file (Storage rules apply). */
+/**
+ * The report PDF built from a saved copy (1.33.0, owner 6 Nov: the invoice / timesheet family). Page 1 is the
+ * summary: the title block with the logo (COMPANY / NAME / GENERATED / PERIOD), the item table (date, job number,
+ * name, approver for price work, amount; the description and evidence note under the name), the ITEMS / EVIDENCE
+ * counts and the navy total box. Then one page per piece of evidence, headed by its item (name, date, job number,
+ * amount) and the evidence's own title — a JPEG / PNG drawn as large as the page allows, a PDF's own pages appended
+ * after its heading page, anything else (or a file that cannot be read) listed with a note. Every text is
+ * `payeClaimReportRows` / `payeClaimEvidencePages`. `readFile` fetches a stored evidence file (Storage rules apply).
+ */
 export async function buildPayeClaimReportPdf(
-  snapshot: Pick<PayeClaimReportSnapshot, 'kind' | 'userName' | 'companyName' | 'rangeStart' | 'rangeEnd' | 'currency' | 'items' | 'totals'>,
-  options: { logoUrl?: string | null; readFile: (path: string) => Promise<Uint8Array> }
+  snapshot: Pick<PayeClaimReportSnapshot, 'kind' | 'userName' | 'companyName' | 'rangeStart' | 'rangeEnd' | 'currency' | 'items' | 'totals'> &
+    Partial<Pick<PayeClaimReportSnapshot, 'userId' | 'generatedBy'>> & { generatedAtMs?: number | null },
+  options: { logoUrl?: string | null; readFile: (path: string) => Promise<Uint8Array>; timeZone?: string | null; generatedByName?: string | null }
 ): Promise<{ bytes: Uint8Array; notDrawn: number }> {
-  const pdf = await PDFDocument.create()
-  const font = await pdf.embedFont(StandardFonts.Helvetica)
-  const bold = await pdf.embedFont(StandardFonts.HelveticaBold)
-  const w = new Writer(pdf, font, bold)
-  const text = payeClaimReportRows(snapshot)
-  const logo = await logoImage(pdf, options.logoUrl)
-  if (logo) {
-    const scale = Math.min(120 / logo.width, 48 / logo.height, 1)
-    w.page.drawImage(logo, { x: A4[0] - MARGIN - logo.width * scale, y: w.y - logo.height * scale + 12, width: logo.width * scale, height: logo.height * scale })
+  const content = payeClaimReportRows(snapshot, {
+    timeZone: options.timeZone || organizationZoneOr(),
+    generatedByName: options.generatedByName,
+    nowMs: Date.now(),
+  })
+  const priceWork = snapshot.kind === 'priceWork'
+  const w = await InvoiceFamilyPdf.create({ currencyCode: snapshot.currency })
+  const pdf = w.pdf
+  const logo = await familyLogo(pdf, options.logoUrl)
+  const widths = priceWork ? PRICE_WORK_WIDTHS : EXPENSE_WIDTHS
+  const columns: FamilyColumn[] = content.columns.map((title, index) => ({
+    title,
+    width: widths[index] ?? 80,
+    align: index === content.columns.length - 1 ? 'right' : 'left',
+  }))
+  w.titleBlock({
+    title: content.documentTitle,
+    logo,
+    meta: [
+      ['Company', content.companyName],
+      ['Name', content.personName],
+      ['Generated', content.generated],
+      ['Period', content.period],
+    ],
+  })
+  w.tableHeader(columns)
+  if (content.rows.length === 0) {
+    w.y += 8
+    w.paragraph(content.empty, { size: 11, color: [0.3, 0.3, 0.3] })
   }
-  w.text(snapshot.companyName || '', { size: 12, bold: true, color: [0.2, 0.2, 0.2], gap: 10 })
-  w.text(text.title, { size: 18, bold: true })
-  w.text(text.subtitle, { size: 11, color: [0.35, 0.35, 0.35], gap: 14 })
-  if (text.rows.length === 0) w.text(text.empty)
-  for (const row of text.rows) {
-    w.text(`${row.heading}   ${row.figure}`, { bold: true })
-    for (const line of row.lines) w.text(line, { size: 9.5, color: [0.3, 0.3, 0.3] })
-    w.y -= 6
+  for (const row of content.rows) {
+    const under = [row.description, row.evidenceNote].filter(Boolean)
+    const cells: FamilyCell[] = [
+      { text: row.date, bold: true },
+      { text: row.jobNumber || '—', size: 10, color: [0.36, 0.42, 0.5] },
+      { text: row.name, bold: true, lines: under },
+      ...(priceWork ? [{ text: row.approvedBy || '—', size: 10 }] : []),
+      { text: row.amount, bold: true },
+    ]
+    w.row(columns, cells, () => undefined)
   }
-  w.y -= 6
-  w.text(text.total, { size: 12, bold: true })
+  w.tableEnd()
+  w.counts([
+    ['ITEMS', String(content.itemCount)],
+    ['EVIDENCE', String(content.evidenceCount)],
+  ])
+  w.totalBox(content.totalLabel, content.totalAmount)
 
   let notDrawn = 0
+  const note = (text: string) => w.paragraph(text, { size: 10.5, bold: true, color: [0.6, 0.3, 0] })
   for (const page of payeClaimEvidencePages(snapshot)) {
     w.newPage()
-    w.text(page.heading, { size: 13, bold: true })
-    for (const line of page.details) w.text(line, { size: 10, color: [0.3, 0.3, 0.3] })
-    w.y -= 8
+    const meta: Array<[string, string]> = [
+      ['Date', page.date],
+      ['Job number', page.jobNumber],
+      ['Amount', page.amount],
+    ]
+    if (priceWork) meta.push(['Approved by', page.approvedBy])
+    w.titleBlock({ eyebrow: page.evidenceTitle, title: page.itemName, titleSize: 22, brand: false, logo, meta, columns: meta.length })
+    for (const line of page.notes) w.paragraph(line, { size: 10, color: [0.36, 0.42, 0.5] })
+    w.y += 8
     if (page.drawAs === 'listed') {
       notDrawn += 1
-      w.text(PAYE_CLAIM_EVIDENCE_NOT_DRAWN_NOTE, { color: [0.6, 0.3, 0] })
+      note(PAYE_CLAIM_EVIDENCE_NOT_DRAWN_NOTE)
       continue
     }
     let bytes: Uint8Array
@@ -156,7 +189,7 @@ export async function buildPayeClaimReportPdf(
       bytes = await options.readFile(page.path)
     } catch {
       notDrawn += 1
-      w.text(PAYE_CLAIM_EVIDENCE_UNREADABLE_NOTE, { color: [0.6, 0.3, 0] })
+      note(PAYE_CLAIM_EVIDENCE_UNREADABLE_NOTE)
       continue
     }
     if (page.drawAs === 'image') {
@@ -164,20 +197,22 @@ export async function buildPayeClaimReportPdf(
       if (image) w.image(image)
       else {
         notDrawn += 1
-        w.text(PAYE_CLAIM_EVIDENCE_NOT_DRAWN_NOTE, { color: [0.6, 0.3, 0] })
+        note(PAYE_CLAIM_EVIDENCE_NOT_DRAWN_NOTE)
       }
       continue
     }
     try {
       const source = await PDFDocument.load(bytes, { ignoreEncryption: true })
       const copied = await pdf.copyPages(source, source.getPageIndices())
+      w.paragraph(copied.length === 1 ? "The file's page follows." : `The file's ${copied.length} pages follow.`, { size: 10, color: [0.36, 0.42, 0.5] })
       for (const copy of copied) pdf.addPage(copy)
     } catch {
       notDrawn += 1
-      w.text(PAYE_CLAIM_EVIDENCE_UNREADABLE_NOTE, { color: [0.6, 0.3, 0] })
+      note(PAYE_CLAIM_EVIDENCE_UNREADABLE_NOTE)
     }
   }
-  return { bytes: await pdf.save(), notDrawn }
+  w.footers(content.footer)
+  return { bytes: await w.save(), notDrawn }
 }
 
 /** The frozen PDF copy of a personal site audit (attached as evidence). `readFile` fetches each photo by path. */

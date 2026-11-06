@@ -2174,12 +2174,239 @@
       "expected": "allowedOffline"
     },
     {
-      "name": "offlineAvailability: delete is online only",
+      "name": "offlineAvailability: a labour or manager schedule delete is queued offline (1.33.0)",
       "function": "offlineAvailability",
       "args": [
         "booking.delete"
       ],
+      "expected": "allowedOffline"
+    },
+    {
+      "name": "offlineAvailability: a subcontractor booking delete is online only (1.33.0)",
+      "function": "offlineAvailability",
+      "args": [
+        "booking.delete_subcontractor"
+      ],
       "expected": "onlineOnly"
+    },
+    {
+      "name": "offlineAvailability: cancel is no longer an action, so it is online only (1.33.0)",
+      "function": "offlineAvailability",
+      "args": [
+        "booking.cancel"
+      ],
+      "expected": "onlineOnly"
+    },
+    {
+      "name": "bookingDeleteFingerprint: ids without case, canonical slot (1.33.0)",
+      "function": "bookingDeleteFingerprint",
+      "args": [
+        {
+          "collection": "bookings",
+          "operativeId": "OP-1",
+          "projectId": "JOB-1",
+          "dayKey": "2026-11-09",
+          "timeSlot": "FULL_DAY",
+          "status": "Confirmed",
+          "notes": ""
+        },
+        "Europe/London"
+      ],
+      "expected": "bookings|op-1|job-1|||2026-11-09|FULL DAY|||||Confirmed|"
+    },
+    {
+      "name": "offlineDeleteReplayDecision: unchanged booking is deleted (1.33.0)",
+      "function": "offlineDeleteReplayDecision",
+      "args": [
+        {
+          "queued": {
+            "bookingId": "B-1",
+            "collection": "bookings",
+            "fingerprint": "bookings|op-1|job-1|||2026-11-09|FULL DAY|||||Confirmed|"
+          },
+          "live": {
+            "collection": "bookings",
+            "operativeId": "OP-1",
+            "projectId": "JOB-1",
+            "dayKey": "2026-11-09",
+            "timeSlot": "FULL_DAY",
+            "status": "Confirmed",
+            "notes": ""
+          },
+          "tombstoned": false,
+          "mayDelete": true,
+          "timeZone": "Europe/London"
+        }
+      ],
+      "expected": "apply"
+    },
+    {
+      "name": "offlineDeleteReplayDecision: changed on another device is refused (1.33.0)",
+      "function": "offlineDeleteReplayDecision",
+      "args": [
+        {
+          "queued": {
+            "bookingId": "B-1",
+            "collection": "bookings",
+            "fingerprint": "bookings|op-1|job-1|||2026-11-09|FULL DAY|||||Confirmed|"
+          },
+          "live": {
+            "collection": "bookings",
+            "operativeId": "OP-1",
+            "projectId": "JOB-1",
+            "dayKey": "2026-11-09",
+            "timeSlot": "CUSTOM_HOURS",
+            "status": "Confirmed",
+            "notes": "",
+            "workStartTime": "08:00",
+            "workEndTime": "15:00"
+          },
+          "tombstoned": false,
+          "mayDelete": true,
+          "timeZone": "Europe/London"
+        }
+      ],
+      "expected": "refuseChanged"
+    },
+    {
+      "name": "offlineDeleteReplayDecision: created and deleted offline sends nothing (1.33.0)",
+      "function": "offlineDeleteReplayDecision",
+      "args": [
+        {
+          "queued": {
+            "bookingId": "B-1",
+            "collection": "bookings",
+            "fingerprint": "bookings|op-1|job-1|||2026-11-09|FULL DAY|||||Confirmed|",
+            "createdOffline": true
+          },
+          "live": null
+        }
+      ],
+      "expected": "dropLocal"
+    },
+    {
+      "name": "offlineDeleteReplayDecision: permission lost is refused (1.33.0)",
+      "function": "offlineDeleteReplayDecision",
+      "args": [
+        {
+          "queued": {
+            "bookingId": "B-1",
+            "collection": "bookings",
+            "fingerprint": "bookings|op-1|job-1|||2026-11-09|FULL DAY|||||Confirmed|"
+          },
+          "live": {
+            "collection": "bookings",
+            "operativeId": "OP-1",
+            "projectId": "JOB-1",
+            "dayKey": "2026-11-09",
+            "timeSlot": "FULL_DAY",
+            "status": "Confirmed",
+            "notes": ""
+          },
+          "tombstoned": false,
+          "mayDelete": false,
+          "timeZone": "Europe/London"
+        }
+      ],
+      "expected": "refusePermission"
+    },
+    {
+      "name": "offlineDeleteReplayDecision: tombstoned is already gone (1.33.0)",
+      "function": "offlineDeleteReplayDecision",
+      "args": [
+        {
+          "queued": {
+            "bookingId": "B-1",
+            "collection": "bookings",
+            "fingerprint": "bookings|op-1|job-1|||2026-11-09|FULL DAY|||||Confirmed|"
+          },
+          "live": null,
+          "tombstoned": true
+        }
+      ],
+      "expected": "alreadyGone"
+    },
+    {
+      "name": "bookingRemoveAction: admin deletes (1.33.0)",
+      "function": "bookingRemoveAction",
+      "args": [
+        {
+          "role": {
+            "isAdmin": true,
+            "isSuperAdmin": false,
+            "isManager": false,
+            "isOperativeMode": false
+          },
+          "ids": [
+            "u-admin"
+          ]
+        },
+        {
+          "collection": "bookings",
+          "projectId": "JOB-1"
+        },
+        {
+          "managerIds": []
+        },
+        []
+      ],
+      "expected": "delete"
+    },
+    {
+      "name": "bookingRemoveAction: a manager of another job has no remove action (1.33.0)",
+      "function": "bookingRemoveAction",
+      "args": [
+        {
+          "role": {
+            "isAdmin": false,
+            "isSuperAdmin": false,
+            "isManager": true,
+            "isOperativeMode": false
+          },
+          "ids": [
+            "u-mgr"
+          ]
+        },
+        {
+          "collection": "bookings",
+          "projectId": "JOB-1"
+        },
+        {
+          "managerUserIds": [
+            "u-other"
+          ]
+        },
+        []
+      ],
+      "expected": "none"
+    },
+    {
+      "name": "bookingRemoveAction: the job's manager deletes (1.33.0)",
+      "function": "bookingRemoveAction",
+      "args": [
+        {
+          "role": {
+            "isAdmin": false,
+            "isSuperAdmin": false,
+            "isManager": true,
+            "isOperativeMode": false
+          },
+          "ids": [
+            "u-mgr"
+          ]
+        },
+        {
+          "collection": "bookings",
+          "projectId": "JOB-1"
+        },
+        {
+          "managerUserIds": [
+            "u-mgr"
+          ]
+        },
+        []
+      ],
+      "expected": "delete"
     },
     {
       "name": "offlineAvailability: views are read-only offline",
@@ -14143,7 +14370,7 @@
       ]
     },
     {
-      "name": "1.21.0 an operative sees a job only through a task, and their booked job; cancelled and hidden jobs are not shown",
+      "name": "1.21.0 an operative sees a job only through a task, and their booked job; cancelled jobs and jobs hidden from them are not shown (1.33.0: the operatives’ hide list stays)",
       "function": "visibleJobs",
       "args": [
         [
@@ -14301,7 +14528,7 @@
       ]
     },
     {
-      "name": "1.21.0 a manager without the toggle sees only the jobs they manage (account id or managers row), less hidden ones",
+      "name": "1.33.0 a manager without a toggle sees every job (hide lists are not read)",
       "function": "visibleJobs",
       "args": [
         [
@@ -14383,11 +14610,30 @@
           "managerIds": [
             "MGR-ROW"
           ]
+        },
+        {
+          "id": "NOT-MINE",
+          "collection": "projects",
+          "isLive": true,
+          "managerUserIds": [
+            "U-X"
+          ]
+        },
+        {
+          "id": "HIDDEN",
+          "collection": "projects",
+          "isLive": true,
+          "managerUserIds": [
+            "U-M"
+          ],
+          "hiddenManagerUserIds": [
+            "U-M"
+          ]
         }
       ]
     },
     {
-      "name": "1.21.0 a manager with the Projects toggle sees every project and only their small works",
+      "name": "1.33.0 a manager with the Projects toggle sees every job too (the toggle only adds jobs and changes manager lists)",
       "function": "visibleJobs",
       "args": [
         [
@@ -14476,6 +14722,17 @@
           "isLive": true,
           "managerUserIds": [
             "U-X"
+          ]
+        },
+        {
+          "id": "HIDDEN",
+          "collection": "projects",
+          "isLive": true,
+          "managerUserIds": [
+            "U-M"
+          ],
+          "hiddenManagerUserIds": [
+            "U-M"
           ]
         }
       ]
@@ -14813,7 +15070,7 @@
       "expected": "completed"
     },
     {
-      "name": "1.21.0 home active count = the Active tab of the viewer's lists",
+      "name": "1.21.0 home active count = the Active tab of the viewer's lists (1.33.0: a manager sees every job)",
       "function": "activeJobsCount",
       "args": [
         [
@@ -14889,7 +15146,7 @@
         "2026-11-03",
         "Europe/London"
       ],
-      "expected": 2
+      "expected": 3
     },
     {
       "name": "1.21.0 a numeric job number is read as text",
@@ -14941,7 +15198,6 @@
         "latitude": null,
         "longitude": null,
         "usesMapPinForLocation": false,
-        "hiddenManagerUserIds": [],
         "hiddenOperativeUserIds": [],
         "status": null,
         "organizationId": null,
@@ -18781,7 +19037,7 @@
       }
     },
     {
-      "name": "1.27.0 materialRequestJobCheck: a manager who does not manage the job is refused (job_not_visible)",
+      "name": "1.27.0 / 1.33.0 materialRequestJobCheck: a manager who does not manage the job may send (every manager sees every job)",
       "function": "materialRequestJobCheck",
       "args": [
         {
@@ -18814,10 +19070,7 @@
         }
       ],
       "expected": {
-        "ok": false,
-        "reason": "job_not_visible",
-        "status": 403,
-        "message": "You cannot send materials for this job."
+        "ok": true
       }
     },
     {
@@ -20868,7 +21121,7 @@
           "timeSlot": "CUSTOM_HOURS",
           "fingerprint": "2026-11-02|CUSTOM HOURS|18:00|21:00|||confirmed",
           "state": "changedSinceRequest",
-          "stateLabel": "Booking changed since request",
+          "stateLabel": "Changed since you sent it",
           "figures": {
             "clockHours": 3,
             "multiplier": 1.5,
@@ -20894,7 +21147,23 @@
             "overtimeHoursBefore": 4.5,
             "overtimeHoursAfter": 4.5
           },
-          "review": null
+          "review": null,
+          "decidedBy": null,
+          "deciderName": null,
+          "sentLine": {
+            "bookingId": "B7",
+            "collection": "bookings",
+            "dayKey": "2026-11-02",
+            "jobId": "job-1",
+            "fingerprint": "old",
+            "action": "keep",
+            "proposedStart": null,
+            "proposedEnd": null,
+            "proposedMultiplier": null,
+            "cancel": false,
+            "overtimeHoursBefore": 4.5,
+            "overtimeHoursAfter": 4.5
+          }
         },
         {
           "bookingId": "B1",
@@ -20909,8 +21178,8 @@
           "end": "14:00",
           "timeSlot": "CUSTOM_HOURS",
           "fingerprint": "2026-11-04|CUSTOM HOURS|06:30|14:00|||confirmed",
-          "state": "approved",
-          "stateLabel": "Approved",
+          "state": "confirmed",
+          "stateLabel": "Confirmed",
           "figures": {
             "clockHours": 1,
             "multiplier": 1.5,
@@ -20933,7 +21202,10 @@
             "reviewedBy": "lm",
             "reviewedAtMs": null,
             "requestId": null
-          }
+          },
+          "decidedBy": null,
+          "deciderName": null,
+          "sentLine": null
         },
         {
           "bookingId": "B2",
@@ -20962,7 +21234,10 @@
           },
           "requestId": null,
           "requestLine": null,
-          "review": null
+          "review": null,
+          "decidedBy": null,
+          "deciderName": null,
+          "sentLine": null
         },
         {
           "bookingId": "B4",
@@ -21004,7 +21279,23 @@
             "overtimeHoursBefore": 13,
             "overtimeHoursAfter": 13
           },
-          "review": null
+          "review": null,
+          "decidedBy": null,
+          "deciderName": null,
+          "sentLine": {
+            "bookingId": "B4",
+            "collection": "bookings",
+            "dayKey": "2026-11-08",
+            "jobId": "job-1",
+            "fingerprint": "2026-11-08|CUSTOM HOURS|07:30|14:00|||confirmed",
+            "action": "keep",
+            "proposedStart": null,
+            "proposedEnd": null,
+            "proposedMultiplier": null,
+            "cancel": false,
+            "overtimeHoursBefore": 13,
+            "overtimeHoursAfter": 13
+          }
         }
       ]
     },
@@ -21059,7 +21350,7 @@
       }
     },
     {
-      "name": "1.29.0 red X cancels an every-hour weekend booking with the warning",
+      "name": "1.33.0 red X deletes an every-hour weekend booking after the warning",
       "function": "overtimeStrikeOutcome",
       "args": [
         {
@@ -21103,13 +21394,13 @@
         }
       ],
       "expected": {
-        "kind": "cancel",
+        "kind": "delete",
         "warning": {
           "title": "Remove this booking?",
           "body": "This will remove this booking entirely. Your organisation pays a set multiplier for this day. If you still worked this day, use the cog to set the hours you worked and agreed.",
           "back": "Go back",
           "confirm": "Remove booking",
-          "footnote": "A manager can restore it if this was a mistake.",
+          "footnote": "This cannot be undone. A manager can book it again.",
           "summary": "Sun 8 Nov · J-1042 Riverside Flats · 07:30–14:00"
         }
       }
@@ -21189,8 +21480,8 @@
       }
     },
     {
-      "name": "1.29.0 approval writes",
-      "function": "overtimeApprovalWrites",
+      "name": "1.33.0 Return writes: ✓ trims, ✓ on an all-overtime day deletes with a tombstone, ⚙ applies the decider's values",
+      "function": "overtimeReturnWrites",
       "args": [
         {
           "request": {
@@ -21248,7 +21539,9 @@
             "createdAtMs": null,
             "decidedAtMs": null,
             "appliedBookingIds": [],
-            "droppedBookingIds": []
+            "droppedBookingIds": [],
+            "staleBookingIds": [],
+            "deletedBookingIds": []
           },
           "decisions": {
             "B1": {
@@ -21339,15 +21632,8 @@
             "collection": "bookings",
             "bookingId": "B1",
             "set": {
-              "workStartTime": "07:30"
-            },
-            "remove": []
-          },
-          {
-            "collection": "bookings",
-            "bookingId": "B4",
-            "set": {
-              "status": "Cancelled"
+              "workStartTime": "07:30",
+              "overtimeReturnRequestId": "R1"
             },
             "remove": []
           },
@@ -21356,9 +21642,23 @@
             "bookingId": "B7",
             "set": {
               "workEndTime": "20:00",
-              "otMultiplierOverride": 1.25
+              "otMultiplierOverride": 1.25,
+              "overtimeReturnRequestId": "R1"
             },
             "remove": []
+          }
+        ],
+        "bookingDeletes": [
+          {
+            "collection": "bookings",
+            "bookingId": "B4",
+            "tombstone": {
+              "bookingId": "B4",
+              "collection": "bookings",
+              "deletedBy": "lm",
+              "deletedFrom": "web",
+              "overtimeRequestId": "R1"
+            }
           }
         ],
         "reviewWrites": [
@@ -21380,8 +21680,8 @@
               "userId": "sam",
               "bookingId": "B4",
               "collection": "bookings",
-              "decision": "cancelled",
-              "fingerprint": "2026-11-08|CUSTOM HOURS|07:30|14:00|||cancelled",
+              "decision": "deleted",
+              "fingerprint": "2026-11-08|CUSTOM HOURS|07:30|14:00|||confirmed",
               "reviewedBy": "lm",
               "requestId": "R1"
             }
@@ -21392,7 +21692,7 @@
               "userId": "sam",
               "bookingId": "B7",
               "collection": "bookings",
-              "decision": "edited",
+              "decision": "changed",
               "fingerprint": "2026-11-02|CUSTOM HOURS|18:00|20:00|1.25||confirmed",
               "reviewedBy": "lm",
               "requestId": "R1"
@@ -21404,18 +21704,20 @@
           "B4",
           "B7"
         ],
+        "declinedBookingIds": [],
+        "staleBookingIds": [],
+        "deletedBookingIds": [
+          "B4"
+        ],
         "droppedBookingIds": [],
-        "deletedBookingIds": [],
         "unreadableBookingIds": [],
         "foreignBookingIds": [],
-        "waitingBookingIds": [],
         "lineOutcomes": {
           "B1": "applied",
-          "B4": "applied",
+          "B4": "removed",
           "B7": "applied"
         },
-        "complete": true,
-        "message": "Approved 3 of 3.",
+        "message": "Returned 3 lines.",
         "requestFields": {
           "status": "approved",
           "decisions": {
@@ -21438,13 +21740,17 @@
             "B4",
             "B7"
           ],
-          "droppedBookingIds": []
+          "droppedBookingIds": [],
+          "staleBookingIds": [],
+          "deletedBookingIds": [
+            "B4"
+          ]
         }
       }
     },
     {
-      "name": "1.32.0 partial approval: a booking changed since the request stays waiting, the rest apply",
-      "function": "overtimeApprovalWrites",
+      "name": "1.33.0 Return skip-and-name: a booking changed since it was sent goes back to the person, the rest apply",
+      "function": "overtimeReturnWrites",
       "args": [
         {
           "request": {
@@ -21502,7 +21808,9 @@
             "createdAtMs": null,
             "decidedAtMs": null,
             "appliedBookingIds": [],
-            "droppedBookingIds": []
+            "droppedBookingIds": [],
+            "staleBookingIds": [],
+            "deletedBookingIds": []
           },
           "decisions": {
             "B1": {
@@ -21585,14 +21893,18 @@
       ],
       "expected": {
         "ok": true,
-        "bookingWrites": [
+        "bookingWrites": [],
+        "bookingDeletes": [
           {
             "collection": "bookings",
             "bookingId": "B4",
-            "set": {
-              "status": "Cancelled"
-            },
-            "remove": []
+            "tombstone": {
+              "bookingId": "B4",
+              "collection": "bookings",
+              "deletedBy": "lm",
+              "deletedFrom": "web",
+              "overtimeRequestId": "R1"
+            }
           }
         ],
         "reviewWrites": [
@@ -21602,8 +21914,8 @@
               "userId": "sam",
               "bookingId": "B4",
               "collection": "bookings",
-              "decision": "cancelled",
-              "fingerprint": "2026-11-08|CUSTOM HOURS|07:30|14:00|||cancelled",
+              "decision": "deleted",
+              "fingerprint": "2026-11-08|CUSTOM HOURS|07:30|14:00|||confirmed",
               "reviewedBy": "lm",
               "requestId": "R1"
             }
@@ -21625,22 +21937,24 @@
           "B4",
           "B7"
         ],
-        "droppedBookingIds": [],
-        "deletedBookingIds": [],
-        "unreadableBookingIds": [],
-        "foreignBookingIds": [],
-        "waitingBookingIds": [
+        "declinedBookingIds": [],
+        "staleBookingIds": [
           "B1"
         ],
+        "deletedBookingIds": [
+          "B4"
+        ],
+        "droppedBookingIds": [],
+        "unreadableBookingIds": [],
+        "foreignBookingIds": [],
         "lineOutcomes": {
           "B1": "stale",
-          "B4": "applied",
+          "B4": "removed",
           "B7": "applied"
         },
-        "complete": false,
-        "message": "Approved 2 of 3. 1 changed since the request.",
+        "message": "Returned 2 lines. 1 changed since they sent it — they need to send it again.",
         "requestFields": {
-          "status": "pending",
+          "status": "approved",
           "decisions": {
             "B4": {
               "action": "approve"
@@ -21654,13 +21968,19 @@
             "B4",
             "B7"
           ],
-          "droppedBookingIds": []
+          "droppedBookingIds": [],
+          "staleBookingIds": [
+            "B1"
+          ],
+          "deletedBookingIds": [
+            "B4"
+          ]
         }
       }
     },
     {
-      "name": "1.32.0 approval: a line manager cannot write a booking filed under an operatives row (Needs an admin)",
-      "function": "overtimeApprovalWrites",
+      "name": "1.33.0 Return: a line manager decides a line filed under an operatives row of the person (no Needs an admin)",
+      "function": "overtimeReturnWrites",
       "args": [
         {
           "request": {
@@ -21690,7 +22010,9 @@
             "createdAtMs": null,
             "decidedAtMs": null,
             "appliedBookingIds": [],
-            "droppedBookingIds": []
+            "droppedBookingIds": [],
+            "staleBookingIds": [],
+            "deletedBookingIds": []
           },
           "decisions": {
             "BR": {
@@ -21744,20 +22066,66 @@
         }
       ],
       "expected": {
-        "ok": false,
-        "reason": "nothingApproved",
-        "bookingIds": [
+        "ok": true,
+        "bookingWrites": [
+          {
+            "collection": "bookings",
+            "bookingId": "BR",
+            "set": {
+              "workStartTime": "07:30",
+              "overtimeReturnRequestId": "R3"
+            },
+            "remove": []
+          }
+        ],
+        "bookingDeletes": [],
+        "reviewWrites": [
+          {
+            "docId": "sam_BR",
+            "fields": {
+              "userId": "sam",
+              "bookingId": "BR",
+              "collection": "bookings",
+              "decision": "trimmed",
+              "fingerprint": "2026-11-04|CUSTOM HOURS|07:30|14:00|||confirmed",
+              "reviewedBy": "lm",
+              "requestId": "R3"
+            }
+          }
+        ],
+        "appliedBookingIds": [
           "BR"
         ],
+        "declinedBookingIds": [],
+        "staleBookingIds": [],
+        "deletedBookingIds": [],
+        "droppedBookingIds": [],
+        "unreadableBookingIds": [],
+        "foreignBookingIds": [],
         "lineOutcomes": {
-          "BR": "needsAdmin"
+          "BR": "applied"
         },
-        "message": "Nothing was approved: 1 needs an admin."
+        "message": "Returned 1 line.",
+        "requestFields": {
+          "status": "approved",
+          "decisions": {
+            "BR": {
+              "action": "approve"
+            }
+          },
+          "decidedBy": "lm",
+          "appliedBookingIds": [
+            "BR"
+          ],
+          "droppedBookingIds": [],
+          "staleBookingIds": [],
+          "deletedBookingIds": []
+        }
       }
     },
     {
-      "name": "1.29.0 approval leaves out a booking that is not the requester's",
-      "function": "overtimeApprovalWrites",
+      "name": "1.29.0 / 1.33.0 Return leaves out a booking that is not the requester's",
+      "function": "overtimeReturnWrites",
       "args": [
         {
           "request": {
@@ -21801,7 +22169,9 @@
             "createdAtMs": null,
             "decidedAtMs": null,
             "appliedBookingIds": [],
-            "droppedBookingIds": []
+            "droppedBookingIds": [],
+            "staleBookingIds": [],
+            "deletedBookingIds": []
           },
           "decisions": {
             "B1": {
@@ -21864,7 +22234,6 @@
           },
           "timeZone": "Europe/London",
           "deciderId": "admin",
-          "deciderIsAdmin": true,
           "requesterIds": [
             "sam"
           ]
@@ -21873,6 +22242,7 @@
       "expected": {
         "ok": true,
         "bookingWrites": [],
+        "bookingDeletes": [],
         "reviewWrites": [
           {
             "docId": "sam_B1",
@@ -21890,21 +22260,21 @@
         "appliedBookingIds": [
           "B1"
         ],
+        "declinedBookingIds": [],
+        "staleBookingIds": [],
+        "deletedBookingIds": [],
         "droppedBookingIds": [
           "X1"
         ],
-        "deletedBookingIds": [],
         "unreadableBookingIds": [],
         "foreignBookingIds": [
           "X1"
         ],
-        "waitingBookingIds": [],
         "lineOutcomes": {
           "B1": "applied",
           "X1": "foreign"
         },
-        "complete": true,
-        "message": "Approved 1 of 2. 1 booking not theirs left out.",
+        "message": "Returned 1 line. 1 booking not theirs left out.",
         "requestFields": {
           "status": "approved",
           "decisions": {
@@ -21918,7 +22288,9 @@
           ],
           "droppedBookingIds": [
             "X1"
-          ]
+          ],
+          "staleBookingIds": [],
+          "deletedBookingIds": []
         }
       }
     },
@@ -22296,7 +22668,8 @@
             "contentType": "image/jpeg"
           }
         ],
-        "createdBy": "sam"
+        "createdBy": "sam",
+        "personUserId": "sam"
       }
     },
     {
@@ -22425,7 +22798,8 @@
             "contentType": "image/jpeg"
           }
         ],
-        "createdBy": "sam"
+        "createdBy": "sam",
+        "personUserId": "sam"
       }
     },
     {
@@ -22470,6 +22844,7 @@
         ],
         "createdAtMs": null,
         "createdBy": "",
+        "personUserId": null,
         "kind": "expense",
         "jobNumber": "",
         "date": "2026-11-04"
@@ -22500,6 +22875,7 @@
         "evidence": [],
         "createdAtMs": null,
         "createdBy": "",
+        "personUserId": null,
         "kind": "priceWork",
         "jobNumber": "",
         "startDate": "2026-11-24",
@@ -22918,6 +23294,7 @@
         "evidence": [],
         "createdAtMs": null,
         "createdBy": "",
+        "personUserId": null,
         "kind": "priceWork",
         "jobNumber": "J-7",
         "startDate": "2026-11-03",
@@ -23189,6 +23566,457 @@
         }
       ],
       "expected": false
+    },
+    {
+      "name": "1.33.0 My Projects never saved: pre-filled with the projects the manager manages",
+      "function": "myWorksList",
+      "args": [
+        [
+          {
+            "id": "MINE",
+            "collection": "projects",
+            "managerUserIds": [
+              "U-M"
+            ]
+          },
+          {
+            "id": "OTHER",
+            "collection": "projects",
+            "managerUserIds": [
+              "U-X"
+            ]
+          },
+          {
+            "id": "SW-MINE",
+            "collection": "smallWorks",
+            "managerIds": [
+              "MGR-ROW"
+            ]
+          }
+        ],
+        {
+          "projects": null,
+          "smallWorks": null
+        },
+        {
+          "role": {
+            "isSuperAdmin": false,
+            "isAdmin": false,
+            "isManager": true,
+            "isOperativeMode": false
+          },
+          "ids": [
+            "U-M"
+          ],
+          "email": "m@x.com",
+          "uid": "U-M",
+          "toggles": {
+            "projects": false,
+            "smallWorks": false
+          }
+        },
+        {
+          "managers": [
+            {
+              "id": "MGR-ROW",
+              "email": "M@x.com"
+            }
+          ]
+        },
+        "projects"
+      ],
+      "expected": [
+        {
+          "id": "MINE",
+          "collection": "projects",
+          "managerUserIds": [
+            "U-M"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "1.33.0 My Small works never saved: a managers row on their email counts",
+      "function": "myWorksList",
+      "args": [
+        [
+          {
+            "id": "MINE",
+            "collection": "projects",
+            "managerUserIds": [
+              "U-M"
+            ]
+          },
+          {
+            "id": "OTHER",
+            "collection": "projects",
+            "managerUserIds": [
+              "U-X"
+            ]
+          },
+          {
+            "id": "SW-MINE",
+            "collection": "smallWorks",
+            "managerIds": [
+              "MGR-ROW"
+            ]
+          }
+        ],
+        null,
+        {
+          "role": {
+            "isSuperAdmin": false,
+            "isAdmin": false,
+            "isManager": true,
+            "isOperativeMode": false
+          },
+          "ids": [
+            "U-M"
+          ],
+          "email": "m@x.com",
+          "uid": "U-M",
+          "toggles": {
+            "projects": false,
+            "smallWorks": false
+          }
+        },
+        {
+          "managers": [
+            {
+              "id": "MGR-ROW",
+              "email": "M@x.com"
+            }
+          ]
+        },
+        "smallWorks"
+      ],
+      "expected": [
+        {
+          "id": "SW-MINE",
+          "collection": "smallWorks",
+          "managerIds": [
+            "MGR-ROW"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "1.33.0 My Projects saved: exactly the picks (ids without case), in list order; a saved empty list is empty",
+      "function": "myWorksList",
+      "args": [
+        [
+          {
+            "id": "MINE",
+            "collection": "projects",
+            "managerUserIds": [
+              "U-M"
+            ]
+          },
+          {
+            "id": "OTHER",
+            "collection": "projects",
+            "managerUserIds": [
+              "U-X"
+            ]
+          },
+          {
+            "id": "SW-MINE",
+            "collection": "smallWorks",
+            "managerIds": [
+              "MGR-ROW"
+            ]
+          }
+        ],
+        {
+          "projects": [
+            "other",
+            "GONE"
+          ],
+          "smallWorks": []
+        },
+        {
+          "role": {
+            "isSuperAdmin": false,
+            "isAdmin": false,
+            "isManager": true,
+            "isOperativeMode": false
+          },
+          "ids": [
+            "U-M"
+          ],
+          "email": "m@x.com",
+          "uid": "U-M",
+          "toggles": {
+            "projects": false,
+            "smallWorks": false
+          }
+        },
+        {
+          "managers": [
+            {
+              "id": "MGR-ROW",
+              "email": "M@x.com"
+            }
+          ]
+        },
+        "projects"
+      ],
+      "expected": [
+        {
+          "id": "OTHER",
+          "collection": "projects",
+          "managerUserIds": [
+            "U-X"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "1.33.0 an operative has no My list",
+      "function": "myWorksList",
+      "args": [
+        [
+          {
+            "id": "MINE",
+            "collection": "projects",
+            "managerUserIds": [
+              "U-M"
+            ]
+          },
+          {
+            "id": "OTHER",
+            "collection": "projects",
+            "managerUserIds": [
+              "U-X"
+            ]
+          },
+          {
+            "id": "SW-MINE",
+            "collection": "smallWorks",
+            "managerIds": [
+              "MGR-ROW"
+            ]
+          }
+        ],
+        {
+          "projects": [
+            "MINE"
+          ],
+          "smallWorks": null
+        },
+        {
+          "role": {
+            "isSuperAdmin": false,
+            "isAdmin": false,
+            "isManager": false,
+            "isOperativeMode": true
+          },
+          "ids": [
+            "U-M"
+          ],
+          "uid": "U-M"
+        },
+        {
+          "managers": [
+            {
+              "id": "MGR-ROW",
+              "email": "M@x.com"
+            }
+          ]
+        },
+        "projects"
+      ],
+      "expected": []
+    },
+    {
+      "name": "1.33.0 ticking and unticking a job on the My list",
+      "function": "myWorksPicksAfterToggle",
+      "args": [
+        [
+          "A",
+          "b"
+        ],
+        "B",
+        false
+      ],
+      "expected": [
+        "A"
+      ]
+    },
+    {
+      "name": "1.33.0 Daily Overview scope: a manager sees themselves and their reports, no job part",
+      "function": "dailyOverviewScopeFor",
+      "args": [
+        {
+          "viewer": {
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": false,
+              "isManager": true,
+              "isOperativeMode": false
+            },
+            "ids": [
+              "U-M"
+            ],
+            "email": "m@x.com",
+            "uid": "U-M",
+            "toggles": {
+              "projects": false,
+              "smallWorks": false
+            }
+          },
+          "roster": [
+            {
+              "id": "U-M",
+              "email": "m@x.com",
+              "role": "manager"
+            },
+            {
+              "id": "U-R",
+              "email": "r@x.com",
+              "assignedManagerUserIds": [
+                "U-M"
+              ]
+            },
+            {
+              "id": "U-N",
+              "email": "n@x.com",
+              "assignedManagerUserIds": [
+                "U-X"
+              ]
+            }
+          ],
+          "operatives": [
+            {
+              "id": "OP-R",
+              "email": "R@x.com"
+            }
+          ],
+          "enforced": true
+        }
+      ],
+      "expected": {
+        "kind": "jobs",
+        "jobIds": [],
+        "personIds": [
+          "u-m",
+          "u-r",
+          "op-r"
+        ],
+        "personEmails": [
+          "m@x.com",
+          "r@x.com"
+        ],
+        "unbookedLabour": true
+      }
+    },
+    {
+      "name": "1.33.0 Daily Overview scope: admins see everything",
+      "function": "dailyOverviewScopeFor",
+      "args": [
+        {
+          "viewer": {
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": true,
+              "isManager": false,
+              "isOperativeMode": false
+            },
+            "ids": [
+              "A"
+            ]
+          }
+        }
+      ],
+      "expected": {
+        "kind": "all"
+      }
+    },
+    {
+      "name": "1.33.0 Daily Overview row: a subcontractor booking only for admins",
+      "function": "isDailyOverviewRowInScope",
+      "args": [
+        {
+          "kind": "jobs",
+          "jobIds": [
+            "j1"
+          ],
+          "personIds": [
+            "u-m"
+          ],
+          "personEmails": [],
+          "unbookedLabour": true
+        },
+        {
+          "subcontractor": true,
+          "personIds": [
+            "u-m"
+          ]
+        }
+      ],
+      "expected": false
+    },
+    {
+      "name": "1.33.0 Daily Overview row: a report by email is in scope",
+      "function": "isDailyOverviewRowInScope",
+      "args": [
+        {
+          "kind": "jobs",
+          "jobIds": [],
+          "personIds": [],
+          "personEmails": [
+            "r@x.com"
+          ],
+          "unbookedLabour": true
+        },
+        {
+          "personIds": [
+            "OTHER-ID"
+          ],
+          "email": "R@x.com"
+        }
+      ],
+      "expected": true
+    },
+    {
+      "name": "1.33.0 materialRequestJobCheck: an operative never sends (job_not_visible)",
+      "function": "materialRequestJobCheck",
+      "args": [
+        {
+          "viewer": {
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": false,
+              "isManager": false,
+              "isOperativeMode": true
+            },
+            "toggles": {
+              "projects": false,
+              "smallWorks": false
+            },
+            "uid": "op-1",
+            "ids": [
+              "op-1"
+            ],
+            "email": "op@example.com"
+          },
+          "job": {
+            "jobNumber": "J-200",
+            "managerIds": [
+              "op-1"
+            ]
+          },
+          "kind": "projects",
+          "managers": [],
+          "jobNumber": "J-200"
+        }
+      ],
+      "expected": {
+        "ok": false,
+        "reason": "job_not_visible",
+        "status": 403,
+        "message": "You cannot send materials for this job."
+      }
     }
   ]
 }

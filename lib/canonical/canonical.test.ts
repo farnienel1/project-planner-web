@@ -1287,10 +1287,9 @@ test('dismissing an expired qualification hides it until the expiry date changes
   assert.equal(upcoming.length, 2)
 })
 
-test('every admin and manager sees every warning; only admins see every job (1.10.0); operatives and role-less accounts do not', () => {
-  assert.equal(seesEveryJob(manager), false)
+test('every admin and manager opens the warning list and (1.33.0) sees every job; operatives and role-less accounts do not', () => {
   for (const role of [superAdmin, admin, manager]) {
-    if (role !== manager) assert.equal(seesEveryJob(role), true)
+    assert.equal(seesEveryJob(role), true)
     assert.equal(canViewStaffWarnings(role), true)
     assert.equal(canSeeVariations(role), true)
     assert.equal(canReviewUserTimesheets(role), true)
@@ -5460,12 +5459,14 @@ test('1.2.0 D9: a not-found edit replay is final; the old call shape is unchange
   assert.equal(rulebook.bookingReplayRefusedIsFinal({ code: 'permission-denied', isCreate: true }), true)
 })
 
-test('1.2.0 D1 + D7 + D8 + D10: the offline table matches iOS OfflinePolicy ids; delete is online only', () => {
+test('1.2.0 D1 + D7 + D8 + D10 (1.33.0): the offline table matches iOS OfflinePolicy ids; delete is queued, no cancel', () => {
   const ids = Object.keys(rulebook.OFFLINE_ACTIONS)
   assert.equal(ids.length, 31)
   const allowed = ids.filter((id) => rulebook.offlineAvailability(id) === 'allowedOffline')
-  assert.deepEqual(allowed, ['booking.create', 'booking.edit', 'booking.cancel', 'annual_leave.request', 'profile.own_fields', 'notifications.own_toggles'])
-  assert.equal(rulebook.offlineAvailability('booking.delete'), 'onlineOnly')
+  assert.deepEqual(allowed, ['booking.create', 'booking.edit', 'booking.delete', 'annual_leave.request', 'profile.own_fields', 'notifications.own_toggles'])
+  assert.equal(rulebook.offlineAvailability('booking.delete'), 'allowedOffline')
+  assert.equal(rulebook.offlineAvailability('booking.delete_subcontractor'), 'onlineOnly')
+  assert.equal(rulebook.offlineAvailability('booking.cancel'), 'onlineOnly')
   assert.deepEqual(
     ids.filter((id) => rulebook.offlineAvailability(id) === 'readOnlyOffline'),
     ['view.daily_overview', 'view.warnings', 'view.weekly_report', 'view.my_schedule']
@@ -5478,7 +5479,7 @@ test('1.2.0 D1 + D7 + D8 + D10: the offline table matches iOS OfflinePolicy ids;
   assert.equal(rulebook.offlineLastUpdatedLabel(new Date('2026-09-01T00:00:00Z'), null), 'Last updated 1 Sep 2026, 01:00')
   assert.equal(rulebook.offlineLastUpdatedLabel('not a date', 'Europe/London'), null)
 
-  // The iOS table: every id in OfflinePolicy.swift is here, with the same availability except delete (now online only).
+  // The iOS table: every id in OfflinePolicy.swift is here (1.33.0: no `booking.cancel`, a `booking.delete_subcontractor`).
   // Only when the iOS repo is checked out beside this one (local runs); CI has web alone, and iOS checks
   // the same ids from its side (OfflineBookingTombstoneTests).
   const swiftUrl = new URL('../../../project-planner-ios/Project Planner/Core/Offline/OfflinePolicy.swift', import.meta.url)
@@ -7482,7 +7483,7 @@ import {
 } from './notificationPreferences.ts'
 import { TOMBSTONED_BOOKING_COLLECTIONS as rb110Tombstoned, bookingTombstoneWriteFields as rb110Tombstone } from './bookingTombstones.ts'
 
-test('1.10.0 canSeeJob: admins every job, managers only jobs they manage (any id spelling), operatives none', () => {
+test('1.10.0 / 1.33.0 canSeeJob: admins and every manager see every job; isJobManager matches any id spelling; operatives none', () => {
   const job = { managerIds: ['MGR-ROW-1', 'user:Mgr-Uid-2'], managerId: 'MGR-ROW-1' }
   const managers = [{ id: 'mgr-row-1', email: 'Pat@Example.com' }]
   const pat = { role: manager, ids: ['pat-uid'], email: 'pat@example.com' }
@@ -7490,23 +7491,30 @@ test('1.10.0 canSeeJob: admins every job, managers only jobs they manage (any id
   const stranger = { role: manager, ids: ['someone'], email: 's@example.com' }
   assert.equal(rb110CanSeeJob({ role: admin, ids: ['a'] }, job), true)
   assert.equal(rb110CanSeeJob({ role: superAdmin, ids: ['s'] }, {}), true)
+  // 1.33.0 (owner decision 6 Nov): every manager sees every job, whatever their toggles and whether they manage it.
   assert.equal(rb110CanSeeJob(pat, job, managers), true)
-  assert.equal(rb110CanSeeJob(pat, job), false)
-  assert.equal(rb110CanSeeJob(other, job), true)
-  assert.equal(rb110CanSeeJob(stranger, job, managers), false)
+  assert.equal(rb110CanSeeJob(pat, job), true)
+  assert.equal(rb110CanSeeJob(stranger, job, managers), true)
+  assert.equal(rb110CanSeeJob(stranger, job, managers, 'smallWorks'), true)
   assert.equal(rb110CanSeeJob({ role: operative, ids: ['mgr-uid-2'] }, job), false)
   assert.equal(rb110CanSeeJob({ role: { ...admin, isOperativeMode: true }, ids: ['a'] }, job), false)
-  // Removed as manager → gone; re-added → back.
-  assert.equal(rb110CanSeeJob(other, { managerIds: ['MGR-ROW-1'] }), false)
-  assert.equal(rb110CanSeeJob(other, { managerIds: ['MGR-ROW-1', 'mgr-uid-2'] }), true)
+  assert.equal(rb110CanSeeJob({ role: { ...manager, isOperativeMode: true }, ids: ['mgr-uid-2'] }, job), false)
+  // Whether they manage it (booking writes, warnings' job part) is still `isJobManager`, under every id spelling.
+  assert.equal(rb110IsJobManager(pat, job, managers), true)
+  assert.equal(rb110IsJobManager(pat, job), false)
+  assert.equal(rb110IsJobManager(other, job), true)
+  assert.equal(rb110IsJobManager(stranger, job, managers), false)
+  assert.equal(rb110IsJobManager(other, { managerIds: ['MGR-ROW-1'] }), false)
+  assert.equal(rb110IsJobManager(other, { managerIds: ['MGR-ROW-1', 'mgr-uid-2'] }), true)
   // Former ids count; managerUserIds counts.
-  assert.equal(rb110CanSeeJob({ role: manager, ids: ['new', 'OLD-INVITE'] }, { managerUserIds: ['old-invite'] }), true)
+  assert.equal(rb110IsJobManager({ ids: ['new', 'OLD-INVITE'] }, { managerUserIds: ['old-invite'] }), true)
   // iOS stores a managers row whose id is a user id as its stable hash.
   const hashed = { managerIds: [rb110StableManagerId('pat-row-uid')] }
   assert.equal(rb110IsJobManager(pat, hashed, [{ id: 'pat-row-uid', email: 'pat@example.com' }]), true)
   assert.match(rb110StableManagerId('pat-row-uid'), /^[0-9A-F]{8}-[0-9A-F]{4}-5[0-9A-F]{3}-[89AB][0-9A-F]{3}-[0-9A-F]{12}$/)
   assert.equal(rb110StableManagerId('0f8fad5b-d9cb-469f-a165-70867728950e'), '0F8FAD5B-D9CB-469F-A165-70867728950E')
-  assert.deepEqual(rb110VisibleJobsFor(other, [job, { managerIds: [] }]).length, 1)
+  assert.deepEqual(rb110VisibleJobsFor(other, [job, { managerIds: [] }]).length, 2)
+  assert.deepEqual(rb110VisibleJobsFor({ role: operative, ids: ['mgr-uid-2'] }, [job]).length, 0)
 })
 
 test('1.10.0 canWriteBooking / canDeleteBooking: admin any, manager own jobs and own non-job site bookings, operative never', () => {
@@ -7751,6 +7759,7 @@ import {
   jobWriteWithoutManagerList as r2WithoutManagerList,
   readsEveryBooking as r2ReadsEveryBookingRaw,
   warningScopeFor as r2WarningScopeForRaw,
+  hasWorkCatalogueToggle as r2HasToggle,
   ENFORCED_READS_ACTIVE as ENFORCED_READS_ACTIVE_110,
 } from './staffAccess.ts'
 // The 1.10.0 r2 tests check enforced reads (§17); 1.10.1 keeps them switched off (`ENFORCED_READS_ACTIVE`) until the
@@ -7790,28 +7799,45 @@ test('1.10.0 r2: admins add, edit and change managers; managers only with that k
   assert.deepEqual(r2WithoutManagerList({ siteName: 'A', managerIds: ['x'], managerId: 'x', managerUserIds: ['u'] }), { siteName: 'A' })
 })
 
-test('1.10.0 r2: canSeeJob and seesEveryJob — a toggle shows every job of that kind', () => {
+test('1.10.0 r2 / 1.33.0: seesEveryJob and canSeeJob — every manager sees every job; the toggle is hasWorkCatalogueToggle', () => {
   const togglePm = { role: manager, ids: ['t'], toggles: r2Projects }
-  assert.equal(seesEveryJob(manager, 'projects', r2Projects), true)
-  assert.equal(seesEveryJob(manager, 'smallWorks', r2Projects), false)
-  assert.equal(seesEveryJob(manager, null, r2Projects), false)
-  assert.equal(seesEveryJob(manager, null, r2Both), true)
+  const plainPm = { role: manager, ids: ['p'], toggles: r2Off }
+  for (const kind of ['projects', 'smallWorks', null] as const) {
+    assert.equal(seesEveryJob(manager, kind, r2Projects), true)
+    assert.equal(seesEveryJob(manager, kind, r2Off), true)
+    assert.equal(seesEveryJob(manager, kind, null), true)
+  }
   assert.equal(seesEveryJob(admin), true)
+  assert.equal(seesEveryJob(operative, 'projects', r2Both), false)
+  assert.equal(seesEveryJob({ ...manager, isOperativeMode: true }, 'projects', r2Both), false)
   assert.equal(rb110CanSeeJob(togglePm, { managerIds: [] }, [], 'projects'), true)
-  assert.equal(rb110CanSeeJob(togglePm, { managerIds: [] }, [], 'smallWorks'), false)
-  assert.equal(rb110CanSeeJob(togglePm, { managerIds: ['t'] }, [], 'smallWorks'), true)
+  assert.equal(rb110CanSeeJob(togglePm, { managerIds: [] }, [], 'smallWorks'), true)
+  assert.equal(rb110CanSeeJob(plainPm, { managerIds: [] }, [], 'smallWorks'), true)
+  // The toggle (adding jobs, changing manager lists) is unchanged.
+  assert.equal(r2HasToggle(manager, 'projects', r2Projects), true)
+  assert.equal(r2HasToggle(manager, 'smallWorks', r2Projects), false)
+  assert.equal(r2HasToggle(manager, null, r2Projects), false)
+  assert.equal(r2HasToggle(manager, null, r2Both), true)
+  assert.equal(r2HasToggle(manager, 'projects', null), false)
+  assert.equal(r2HasToggle(admin, 'projects', r2Off), true)
+  assert.equal(r2HasToggle(operative, 'projects', r2Both), false)
 })
 
-test('1.10.0 r2: jobQueryPlan — whole collections, managerUserIds array-contains, or an operative\'s own job documents', () => {
-  assert.deepEqual(r2JobQueryPlan({ role: admin, ids: ['a'] }).queries, [
-    { collection: 'projects', kind: 'all' },
-    { collection: 'smallWorks', kind: 'all' },
-  ])
-  assert.deepEqual(r2JobQueryPlan({ role: manager, ids: ['m'], uid: 'm-uid', toggles: r2Projects }).queries, [
-    { collection: 'projects', kind: 'all' },
-    { collection: 'smallWorks', kind: 'managed', field: 'managerUserIds', op: 'array-contains', value: 'm-uid' },
-  ])
-  assert.deepEqual(r2JobQueryPlan({ role: manager, ids: ['m'] }).queries.map((q) => q.kind), ['managed', 'managed'])
+test('1.10.0 r2 / 1.33.0: jobQueryPlan — whole collections for every admin and manager (switch on or off), an operative\'s own job documents', () => {
+  for (const enforced of [true, false]) {
+    for (const viewer of [
+      { role: admin, ids: ['a'] },
+      { role: manager, ids: ['m'], uid: 'm-uid', toggles: r2Projects },
+      { role: manager, ids: ['m'] },
+    ]) {
+      const plan = r2JobQueryPlanRaw(viewer, { enforced })
+      assert.deepEqual(plan.queries, [
+        { collection: 'projects', kind: 'all' },
+        { collection: 'smallWorks', kind: 'all' },
+      ])
+      assert.deepEqual(plan.seesEvery, { projects: true, smallWorks: true })
+    }
+  }
   const opPlan = r2JobQueryPlan({ role: operative, ids: ['op'] }, { documentIds: ['abc', 'ABC'] })
   assert.deepEqual(opPlan.queries, [
     { collection: 'projects', kind: 'documents', ids: ['abc', 'ABC'] },
@@ -7823,43 +7849,28 @@ test('1.10.0 r2: jobQueryPlan — whole collections, managerUserIds array-contai
   assert.deepEqual(r2JobIdQueryValues(['123']), ['123'])
 })
 
-test('1.10.0 r2 / 1.11.0: bookingQueryPlan — whole collections for admins, by kind for toggle managers, one query per job otherwise, plus own', () => {
-  assert.equal(r2ReadsEveryBooking({ role: admin, ids: ['a'] }), true)
-  // 1.11.0: a toggle manager reads their kind by jobCollection, never a whole collection.
-  assert.equal(r2ReadsEveryBooking({ role: manager, ids: ['m'], toggles: r2Projects }), false)
-  const byKind = r2BookingQueryPlan({ role: manager, ids: ['m'], uid: 'm', toggles: r2Projects }, ['sw-1'], { ownBookingIds: ['m'] })
-  assert.equal(byKind.readsEveryBooking, false)
-  assert.deepEqual(byKind.queries.slice(0, 3), [
-    { collection: 'bookings', kind: 'jobCollection', field: 'jobCollection', op: '==', value: 'projects' },
-    { collection: 'managerSiteBookings', kind: 'jobCollection', field: 'jobCollection', op: '==', value: 'projects' },
-    { collection: 'subcontractorBookings', kind: 'jobCollection', field: 'jobCollection', op: '==', value: 'projects' },
-  ])
-  assert.deepEqual(byKind.queries.filter((q) => q.kind === 'job').map((q) => q.jobId), ['sw-1', 'sw-1', 'sw-1'])
-  assert.equal(r2ReadsEveryBooking({ role: manager, ids: ['m'] }), false)
+test('1.10.0 r2 / 1.33.0: bookingQueryPlan — whole collections for admins and every manager, own labour bookings for operatives', () => {
+  for (const enforced of [true, false]) {
+    for (const viewer of [
+      { role: admin, ids: ['a'] },
+      { role: manager, ids: ['m'], uid: 'm', toggles: r2Projects },
+      { role: manager, ids: ['m-uid'], uid: 'm-uid' },
+    ]) {
+      assert.equal(r2ReadsEveryBookingRaw(viewer, { enforced }), true)
+      const plan = r2BookingQueryPlanRaw(viewer, ['job-a'], { ownBookingIds: ['m-uid'], enforced })
+      assert.equal(plan.readsEveryBooking, true)
+      assert.deepEqual(plan.queries.map((q) => `${q.collection}:${q.kind}`), ['bookings:all', 'managerSiteBookings:all', 'subcontractorBookings:all'])
+    }
+  }
   assert.equal(r2ReadsEveryBooking({ role: operative, ids: ['o'], toggles: r2Both }), false)
-  const all = r2BookingQueryPlan({ role: admin, ids: ['a'] }, ['x'])
-  assert.equal(all.readsEveryBooking, true)
-  assert.deepEqual(all.queries.map((q) => `${q.collection}:${q.kind}`), ['bookings:all', 'managerSiteBookings:all', 'subcontractorBookings:all'])
-  const restricted = r2BookingQueryPlan({ role: manager, ids: ['m-uid'], uid: 'm-uid' }, ['job-a', 'JOB-A', 'job-b'], {
-    ownBookingIds: ['m-uid', 'op-row-1'],
-  })
-  assert.equal(restricted.readsEveryBooking, false)
-  assert.deepEqual(restricted.queries, [
-    { collection: 'bookings', kind: 'job', jobId: 'job-a', field: 'projectId', op: 'in', values: ['job-a', 'JOB-A'] },
-    { collection: 'subcontractorBookings', kind: 'job', jobId: 'job-a', field: 'projectId', op: 'in', values: ['job-a', 'JOB-A'] },
-    { collection: 'managerSiteBookings', kind: 'job', jobId: 'job-a', field: 'locationId', op: 'in', values: ['job-a', 'JOB-A'] },
-    { collection: 'bookings', kind: 'job', jobId: 'job-b', field: 'projectId', op: 'in', values: ['job-b', 'JOB-B'] },
-    { collection: 'subcontractorBookings', kind: 'job', jobId: 'job-b', field: 'projectId', op: 'in', values: ['job-b', 'JOB-B'] },
-    { collection: 'managerSiteBookings', kind: 'job', jobId: 'job-b', field: 'locationId', op: 'in', values: ['job-b', 'JOB-B'] },
-    { collection: 'bookings', kind: 'own', field: 'operativeId', op: 'in', values: ['m-uid', 'op-row-1'] },
-    { collection: 'managerSiteBookings', kind: 'own', field: 'userId', op: '==', values: ['m-uid'] },
-  ])
+  assert.equal(r2ReadsEveryBooking({ role: { ...manager, isOperativeMode: true }, ids: ['o'] }), false)
   const op = r2BookingQueryPlan({ role: operative, ids: ['o'] }, ['job-a'], { ownBookingIds: ['a', 'b', 'c', 'd', 'e'] })
+  assert.equal(op.readsEveryBooking, false)
   assert.deepEqual(op.queries.map((q) => (q.kind === 'own' ? q.values : [])), [['o', 'a', 'b', 'c'], ['d', 'e']])
-  assert.ok(op.queries.every((q) => q.collection === 'bookings'))
+  assert.ok(op.queries.every((q) => q.collection === 'bookings' && q.kind === 'own'))
 })
 
-test('1.10.0 r2 (1.31.0): warning scope — a manager gets their jobs and their people, and no unbooked labour without every booking', () => {
+test('1.10.0 r2 (1.31.0, 1.33.0): warning scope — a manager gets their jobs and their people, and (1.33.0) their unbooked labour with enforced reads on', () => {
   const plain = { role: manager, ids: ['m'] }
   const scope = r2WarningScopeFor({
     viewer: plain,
@@ -7873,7 +7884,10 @@ test('1.10.0 r2 (1.31.0): warning scope — a manager gets their jobs and their 
   assert.deepEqual(scope.jobIds, ['job-a'])
   assert.deepEqual(scope.personEmails, ['one@x.com'])
   assert.ok(scope.personIds.includes('u-1') && scope.personIds.includes('op-1') && !scope.personIds.includes('op-2'))
-  assert.equal(scope.unbookedLabour, false)
+  // 1.33.0: every manager reads every booking (`readsEveryBooking`), so their unbooked rows come back under enforcedReads.
+  assert.equal(scope.unbookedLabour, true)
+  const opScope = r2WarningScopeFor({ viewer: { role: operative, ids: ['o'] } })
+  assert.equal(opScope.kind === 'jobs' && opScope.unbookedLabour, false)
   assert.deepEqual(r2WarningScopeFor({ viewer: { role: admin, ids: ['a'] }, visibleJobIds: [] }), { kind: 'all' })
   assert.equal(r2WarningScopeFor({ viewer: { ...plain, toggles: r2Projects }, visibleJobIds: [] }).kind, 'jobs')
   const unbooked = unbookedLabourRows({
@@ -7885,11 +7899,14 @@ test('1.10.0 r2 (1.31.0): warning scope — a manager gets their jobs and their 
     saturdayCountsAsHours: 8,
     sundayCountsAsHours: 8,
     people: [],
-    operatives: [{ id: 'op-1', email: 'one@x.com', name: 'One', isActive: true, isPlaceholder: false, profileWeight: 1 }],
+    operatives: [
+      { id: 'op-1', email: 'one@x.com', name: 'One', isActive: true, isPlaceholder: false, profileWeight: 1 },
+      { id: 'op-2', email: 'two@x.com', name: 'Two', isActive: true, isPlaceholder: false, profileWeight: 1 },
+    ],
     bookings: [],
     holidays: [],
   })
-  assert.deepEqual(unbooked, [])
+  assert.deepEqual(unbooked.map((row) => row.operativeId), ['op-1'])
   const quals = qualificationExpiryRows({
     scope,
     referenceIso: '2026-11-02T10:00:00Z',
@@ -8270,7 +8287,7 @@ test('1.11.0 invites: the invitation is the only source of role, permissions, pa
   assert.equal(r3InviteMembership({ invitation: {}, invitationId: 'inv', authUid: 'u', now: 1 }), null)
 })
 
-test('1.11.0 job kind: the collection decides; bookings carry jobCollection; reads by kind', () => {
+test('1.11.0 job kind: the collection decides; bookings carry jobCollection (1.33.0: managers read every booking)', () => {
   assert.equal(r3JobKind({ jobType: 'Small Works' }, 'projects'), 'projects')
   assert.equal(r3JobKind({ jobType: 'CAT A' }, 'smallWorks'), 'smallWorks')
   assert.equal(r3JobKind({ jobType: 'small_works' }, null), 'smallWorks')
@@ -8286,14 +8303,9 @@ test('1.11.0 job kind: the collection decides; bookings carry jobCollection; rea
   assert.ok(written.ok && written.fields.jobCollection === 'smallWorks')
   const parsed = r3ParseBooking('B', { operativeId: 'o', projectId: 'p', date: 0, timeSlot: 'AM', status: 'Confirmed', jobCollection: 'projects' })
   assert.ok(parsed.ok && parsed.booking.jobCollection === 'projects')
-  // A single-toggle manager reads that kind by jobCollection and the other kind's managed jobs one by one.
+  // 1.33.0: a single-toggle manager reads every booking (whole collections), switch on or off — no by-kind reads.
   const viewer = { role: { isSuperAdmin: false, isAdmin: false, isManager: true, isOperativeMode: false }, uid: 'm', ids: ['m'], toggles: { projects: false, smallWorks: true } }
-  const plan = r3BookingPlan(viewer, ['P-1'], { enforced: true })
-  assert.deepEqual(plan.queries.filter((q) => q.kind === 'jobCollection').map((q) => [q.collection, q.kind === 'jobCollection' ? q.value : '']), [
-    ['bookings', 'smallWorks'], ['managerSiteBookings', 'smallWorks'], ['subcontractorBookings', 'smallWorks'],
-  ])
-  assert.ok(plan.queries.some((q) => q.kind === 'job' && q.jobId === 'P-1'))
-  // Still switched off (1.10.1): every manager reads whole collections until the backfills.
+  assert.equal(r3BookingPlan(viewer, ['P-1'], { enforced: true }).readsEveryBooking, true)
   assert.equal(r3BookingPlan(viewer, ['P-1']).readsEveryBooking, true)
 })
 
@@ -10602,7 +10614,7 @@ test('1.21.0 an operative sees a job reached only through a task', () => {
   assert.deepEqual(operativeJobIds121(viewer, { ...context, deadlineJobIds: ['J-D'] }), ['j-task', 'J-D'])
 })
 
-test('1.21.0 a manager without the toggle sees only the jobs they manage', () => {
+test('1.21.0 / 1.33.0 every manager sees every job, toggles or not (no managers\' hide list); operatives\' hide list stays', () => {
   const viewer = { role: role121({ isManager: true }), ids: ['U-M'], email: 'm@x.com', toggles: noToggles121 }
   const jobs = [
     { id: 'MINE', collection: 'projects', managerUserIds: ['U-M'] },
@@ -10611,9 +10623,22 @@ test('1.21.0 a manager without the toggle sees only the jobs they manage', () =>
     { id: 'HIDDEN', collection: 'projects', managerUserIds: ['U-M'], hiddenManagerUserIds: ['u-m'] },
   ]
   const context = { managers: [{ id: 'MGR-ROW', email: 'M@x.com' }] }
-  assert.deepEqual(visibleJobs121(jobs, viewer, context).map((j) => j.id), ['MINE', 'BY-ROW'])
+  assert.deepEqual(visibleJobs121(jobs, viewer, context).map((j) => j.id), ['MINE', 'BY-ROW', 'OTHER', 'HIDDEN'])
   const toggled = { ...viewer, toggles: { projects: true, smallWorks: false } }
-  assert.deepEqual(visibleJobs121(jobs, toggled, context).map((j) => j.id), ['MINE', 'BY-ROW', 'OTHER'])
+  assert.deepEqual(visibleJobs121(jobs, toggled, context).map((j) => j.id), ['MINE', 'BY-ROW', 'OTHER', 'HIDDEN'])
+  // Owner decision 6 Nov (later the same day): an operative named on a job's hide list does not see it, even when
+  // booked on it (ids without case); a booked job not hiding them stays.
+  const op = { role: role121({ isOperativeMode: true }), ids: ['U-OP'], email: 'op@x.com', toggles: noToggles121 }
+  const opJobs = [
+    { id: 'BOOKED', collection: 'projects', hiddenOperativeUserIds: ['u-op'] },
+    { id: 'SEEN', collection: 'projects', hiddenOperativeUserIds: ['someone-else'] },
+    { id: 'ELSE', collection: 'projects' },
+  ]
+  const opBookings = [
+    { projectId: 'BOOKED', operativeId: 'U-OP', status: 'Confirmed' },
+    { projectId: 'SEEN', operativeId: 'U-OP', status: 'Confirmed' },
+  ]
+  assert.deepEqual(visibleJobs121(opJobs, op, { bookings: opBookings }).map((j) => j.id), ['SEEN'])
 })
 
 test('1.21.0 bookable jobs exclude inactive and non-writable jobs, never by dates', () => {
@@ -10659,7 +10684,8 @@ test('1.21.0 home active count equals the Active tabs of the viewer lists', () =
     { id: 'C', collection: 'projects', isLive: false, managerUserIds: ['U-M'], startDayKey: '2026-11-01', endDayKey: '2026-11-30' },
     { id: 'D', collection: 'projects', managerUserIds: ['U-X'], startDayKey: '2026-11-01', endDayKey: '2026-11-30' },
   ]
-  assert.equal(jobsActiveCount121(jobs, viewer, {}, '2026-11-03', 'Europe/London'), 2)
+  // 1.33.0: a manager sees every job, so another manager's active job (D) counts too.
+  assert.equal(jobsActiveCount121(jobs, viewer, {}, '2026-11-03', 'Europe/London'), 3)
 })
 
 test('1.21.0 a numeric job number is read as its text', () => {
@@ -11335,9 +11361,10 @@ test('1.26.0 jobQueryPlan / bookingQueryPlan follow the switch value the app pas
   const manager = { role: { isManager: true }, ids: ['m'], uid: 'm' }
   const plan = (on: boolean) => R112.jobQueryPlan(manager as any, { enforced: r126SwitchOn({ enforcedReadsOrganizationIds: on ? ['o'] : [] }, 'o', 'enforcedReads') })
   assert.deepEqual(plan(false).queries.map((q: any) => q.kind), ['all', 'all'])
-  assert.deepEqual(plan(true).queries.map((q: any) => q.kind), ['managed', 'managed'])
+  // 1.33.0: every manager lists every job and reads every booking with the switch on too.
+  assert.deepEqual(plan(true).queries.map((q: any) => q.kind), ['all', 'all'])
   assert.equal(R112.readsEveryBooking(manager as any, { enforced: false }), true)
-  assert.equal(R112.readsEveryBooking(manager as any, { enforced: true }), false)
+  assert.equal(R112.readsEveryBooking(manager as any, { enforced: true }), true)
   // Operatives read their jobs by id whatever the switch.
   const op = { role: { isOperativeMode: true }, ids: ['op'], uid: 'op' }
   for (const enforced of [false, true]) {
@@ -11493,18 +11520,10 @@ test('1.27.0 (2) material email: the sender must see the job (§17 canSeeJob) an
     R112.materialRequestJobCheck({ viewer: v, job, kind: 'projects', managers: [], jobNumber: 'J-200', ...overrides } as never)
   assert.deepEqual(check(viewer({})), { ok: true })
   assert.equal(viewer({}).email, 'boss@example.com')
-  // A manager who does not manage it and has no Projects toggle: refused.
+  // 1.33.0: every manager sees every job (`canSeeJob`), so a manager who does not manage it may send too, toggles or not.
   const other = viewer({ userId: 'mgr-2', email: 'other@example.com' })
-  assert.deepEqual(check(other), {
-    ok: false,
-    reason: 'job_not_visible',
-    status: 403,
-    message: R112.MATERIAL_REQUEST_JOB_NOT_VISIBLE_MESSAGE,
-  })
-  // ... unless the Projects toggle is on (every project), never for small works.
-  const toggled = viewer({ userId: 'mgr-2', email: 'other@example.com', permissionSource: { permissions: { projects: true } } })
-  assert.equal(check(toggled).ok, true)
-  assert.equal(check(toggled, { kind: 'smallWorks' }).ok, false)
+  assert.deepEqual(check(other), { ok: true })
+  assert.equal(check(other, { kind: 'smallWorks' }).ok, true)
   // A job naming the sender's managers-list row (by email) counts; an alias id counts.
   assert.equal(check(other, { job: { jobNumber: 'J-200', managerIds: ['mrow-9'] }, managers: [{ id: 'mrow-9', email: 'OTHER@example.com' }] }).ok, true)
   assert.equal(check(viewer({ userId: 'new-uid', formerUserIds: ['mgr-1'] })).ok, true)
@@ -11973,17 +11992,20 @@ test('1.29.0 overtime lines: weekday outside the day, weekend window, every-hour
   assert.equal(r129.overtimeLinesTotal(lines), 23.5)
 })
 
-test('1.29.0 line state: approved review, pending request, booking changed since request, back to needs review after a change', () => {
+test('1.29.0 / 1.33.0 line state: confirmed review, pending request, booking changed since request, reopened after a change', () => {
   const booking = r129Booking('B1', '2026-11-04', '06:30', '14:00')
   const fingerprint = r129.overtimeBookingFingerprint(booking)
   assert.equal(fingerprint, '2026-11-04|CUSTOM HOURS|06:30|14:00|||confirmed')
   const review = r129.parseOvertimeReviewDocument('sam_B1', { userId: 'sam', bookingId: 'B1', decision: 'approved', fingerprint })
   const range = { start: '2026-11-01', end: '2026-11-30' }
   const base = { personIds: ['sam'], organization: R129_ORG, timeZone: R129_TZ, range }
-  assert.equal(r129.payeOvertimeLines({ ...base, bookings: [booking], reviews: [review] })[0].state, 'approved')
+  // 1.33.0: a review with no request is a direct confirmation (no line manager).
+  assert.equal(r129.payeOvertimeLines({ ...base, bookings: [booking], reviews: [review] })[0].state, 'confirmed')
   const moved = { ...booking, workEndTime: '15:00' }
   assert.equal(r129.overtimeLineIsStale(fingerprint, moved), true)
-  assert.equal(r129.payeOvertimeLines({ ...base, bookings: [moved], reviews: [review] })[0].state, 'needsReview')
+  // 1.33.0: a decided line whose booking changes reopens.
+  assert.equal(r129.payeOvertimeLines({ ...base, bookings: [moved], reviews: [review] })[0].state, 'reopened')
+  assert.equal(r129.payeOvertimeLines({ ...base, bookings: [moved] })[0].state, 'needsReview')
   const line = r129.overtimeRequestLineFields({ booking, organization: R129_ORG, timeZone: R129_TZ, proposal: { action: 'keep' } })!
   const request = r129.parseOvertimeRequestDocument('R1', { userId: 'sam', rangeStart: '2026-11-01', rangeEnd: '2026-11-30', status: 'pending', lines: [line] })
   assert.equal(r129.payeOvertimeLines({ ...base, bookings: [booking], requests: [request] })[0].state, 'waiting')
@@ -11993,18 +12015,19 @@ test('1.29.0 line state: approved review, pending request, booking changed since
   assert.equal(r129.canGenerateOvertimeReport([]), false)
 })
 
-test('1.29.0 red X: trim inside the day or window, cancel when nothing is inside or the weekend pays a multiplier only', () => {
+test('1.29.0 / 1.33.0 red X: trim inside the day or window, delete when nothing is inside or the weekend pays a multiplier only', () => {
   const strike = (b: ReturnType<typeof r129Booking>) => r129.overtimeStrikeOutcome({ booking: b, organization: R129_ORG, timeZone: R129_TZ })
   assert.deepEqual(strike(r129Booking('B1', '2026-11-04', '06:30', '14:00')), { kind: 'trim', start: '07:30', end: '14:00' })
   assert.deepEqual(strike(r129Booking('B3', '2026-11-07', '07:30', '15:00')), { kind: 'trim', start: '07:30', end: '14:00' })
   assert.deepEqual(strike(r129Booking('B5', '2026-11-03', '07:30', '16:00')), { kind: 'none' })
   const sunday = strike(r129Booking('B4', '2026-11-08', '07:30', '14:00'))
-  assert.equal(sunday.kind, 'cancel')
-  assert.deepEqual(sunday.kind === 'cancel' && sunday.warning, {
-    ...r129.OVERTIME_CANCEL_WARNING,
+  assert.equal(sunday.kind, 'delete')
+  assert.deepEqual(sunday.kind === 'delete' && sunday.warning, {
+    ...r129.OVERTIME_DELETE_WARNING,
     summary: 'Sun 8 Nov · J-1042 Riverside Flats · 07:30–14:00',
   })
-  assert.equal(strike(r129Booking('B7', '2026-11-02', '18:00', '21:00')).kind, 'cancel')
+  assert.equal(r129.OVERTIME_DELETE_WARNING.footnote, 'This cannot be undone. A manager can book it again.')
+  assert.equal(strike(r129Booking('B7', '2026-11-02', '18:00', '21:00')).kind, 'delete')
   assert.equal(strike(r129Booking('M', '2026-11-02', '18:00', '21:00', { collection: 'managerSiteBookings' })).kind, 'notAllowed')
   // The writes: only the fields the rules allow; a Full day becomes custom hours when its times change.
   const booking = r129Booking('B1', '2026-11-04', '06:30', '14:00', { timeSlot: 'FULL DAY' })
@@ -12012,7 +12035,6 @@ test('1.29.0 red X: trim inside the day or window, cancel when nothing is inside
     set: { workStartTime: '07:30', timeSlot: 'CUSTOM_HOURS' },
     remove: [],
   })
-  assert.deepEqual(r129.overtimeBookingWriteFields(booking, { kind: 'cancel' }), { set: { status: 'Cancelled' }, remove: [] })
   assert.deepEqual(r129.overtimeBookingWriteFields({ ...booking, otMultiplierOverride: 2 }, { kind: 'edit', start: '06:30', end: '14:00', multiplier: null }), {
     set: {},
     remove: ['otMultiplierOverride'],
@@ -12095,65 +12117,136 @@ test('1.29.0 overtime notices: recipients, push, toggle, destinations, relatedId
   }
 })
 
-test('1.29.0 / 1.32.0 operative request → line manager approval: one set of writes, stale lines wait, deleted bookings are dropped', () => {
+test('1.33.0 Return: one set of writes; ✓ applies the person\'s line (keep, cog, trim, delete), ✕ leaves the booking, ⚙ applies the decider\'s values', () => {
   const b1 = r129Booking('B1', '2026-11-04', '06:30', '14:00')
   const b2 = r129Booking('B2', '2026-11-05', '07:30', '18:00')
   const b4 = r129Booking('B4', '2026-11-08', '07:30', '14:00')
+  const b6 = r129Booking('B6', '2026-11-06', '07:30', '17:00')
+  const b7 = r129Booking('B7', '2026-11-03', '06:30', '14:00')
   const gone = r129Booking('GONE', '2026-11-06', '07:30', '17:00')
+  const line = (booking: ReturnType<typeof r129Booking>, proposal: Parameters<typeof r129.overtimeRequestLineFields>[0]['proposal']) =>
+    r129.overtimeRequestLineFields({ booking, organization: R129_ORG, timeZone: R129_TZ, proposal })!
   const lines = [
-    r129.overtimeRequestLineFields({ booking: b1, organization: R129_ORG, timeZone: R129_TZ, proposal: { action: 'keep' } })!,
-    r129.overtimeRequestLineFields({ booking: b2, organization: R129_ORG, timeZone: R129_TZ, proposal: { action: 'edit', start: '07:30', end: '19:00', multiplier: 2 } })!,
-    r129.overtimeRequestLineFields({ booking: b4, organization: R129_ORG, timeZone: R129_TZ, proposal: { action: 'strike' } })!,
-    r129.overtimeRequestLineFields({ booking: gone, organization: R129_ORG, timeZone: R129_TZ, proposal: { action: 'keep' } })!,
+    line(b1, { action: 'keep' }),
+    line(b2, { action: 'edit', start: '07:30', end: '19:00', multiplier: 2 }),
+    line(b4, { action: 'strike' }),
+    line(b6, { action: 'keep' }),
+    line(b7, { action: 'strike' }),
+    line(gone, { action: 'keep' }),
   ]
   assert.deepEqual([lines[1].overtimeHoursBefore, lines[1].overtimeHoursAfter], [3, 6])
-  assert.equal(lines[2].cancel, true)
+  // An all-overtime day: the line asks for the booking to be removed (0h after).
+  assert.deepEqual([lines[2].cancel, lines[2].overtimeHoursAfter], [true, 0])
   const fields = r129.overtimeRequestWriteFields({ userId: 'sam', rangeStart: '2026-11-01', rangeEnd: '2026-11-30', lines })!
   assert.equal(fields.status, 'pending')
   assert.equal(r129.overtimeRequestWriteFields({ userId: 'sam', rangeStart: '2026-11-01', rangeEnd: '2026-11-30', lines: [] }), null)
   const request = r129.parseOvertimeRequestDocument('R1', { ...fields, createdAt: 1 })
   const decisions = {
     B1: { action: 'approve' as const },
-    B2: { action: 'edit' as const, start: '07:30', end: '18:30', multiplier: 1.5 },
+    B2: { action: 'approve' as const },
     B4: { action: 'approve' as const },
-    GONE: { action: 'approve' as const },
+    B6: { action: 'edit' as const, start: '07:30', end: '16:30', multiplier: null },
+    B7: { action: 'strike' as const },
   }
-  // 1.32.0: nothing decided → nothing approved; B1 decided but deleted → left out, nothing approved.
-  const undecided = r129.overtimeApprovalWrites({ request, decisions: {}, bookings: { B1: b1, B2: b2, B4: b4 }, organization: R129_ORG, timeZone: R129_TZ, deciderId: 'lm' })
-  assert.deepEqual(undecided.ok === false && [undecided.reason, undecided.message], ['nothingApproved', 'Nothing was approved: 1 deleted booking left out; 3 not decided yet.'])
-  const result = r129.overtimeApprovalWrites({ request, decisions, bookings: { b1, B2: b2, B4: b4 }, organization: R129_ORG, timeZone: R129_TZ, deciderId: 'lm' })
+  const bookings = { b1, B2: b2, B4: b4, B6: b6, B7: b7 }
+  // Return needs every line decided (the deleted booking does not block it).
+  assert.deepEqual(r129.overtimeReturnReady({ request, decisions: {}, skipBookingIds: ['GONE'] }), {
+    ready: false, undecidedCount: 5, message: r129.OVERTIME_REQUEST_UNDECIDED_MESSAGE,
+  })
+  assert.equal(r129.overtimeReturnReady({ request, decisions, skipBookingIds: ['GONE'] }).ready, true)
+  const refused = r129.overtimeReturnWrites({ request, decisions: { B1: { action: 'approve' } }, bookings, organization: R129_ORG, timeZone: R129_TZ, deciderId: 'lm' })
+  assert.deepEqual(refused.ok === false && [refused.reason, refused.bookingIds], ['undecided', ['B2', 'B4', 'B6', 'B7']])
+  const result = r129.overtimeReturnWrites({ request, decisions, bookings, organization: R129_ORG, timeZone: R129_TZ, deciderId: 'lm' })
   assert.equal(result.ok, true)
   if (!result.ok) return
   assert.deepEqual(result.bookingWrites, [
-    { collection: 'bookings', bookingId: 'B2', set: { workEndTime: '18:30', otMultiplierOverride: 1.5 }, remove: [] },
-    { collection: 'bookings', bookingId: 'B4', set: { status: 'Cancelled' }, remove: [] },
+    { collection: 'bookings', bookingId: 'B2', set: { workEndTime: '19:00', otMultiplierOverride: 2, overtimeReturnRequestId: 'R1' }, remove: [] },
+    { collection: 'bookings', bookingId: 'B6', set: { workEndTime: '16:30', overtimeReturnRequestId: 'R1' }, remove: [] },
   ])
-  assert.deepEqual(result.droppedBookingIds, ['GONE'])
-  assert.deepEqual(result.reviewWrites.map((row) => [row.docId, row.fields.decision]), [['sam_B1', 'approved'], ['sam_B2', 'edited'], ['sam_B4', 'cancelled']])
-  assert.equal(result.requestFields.status, 'approved')
-  // The approved booking then reads approved; a cancelled one reads cancelled.
-  const after2 = { ...b2, workEndTime: '18:30', otMultiplierOverride: 1.5 }
-  const after4 = { ...b4, status: 'Cancelled' }
-  const reviews = result.reviewWrites.map((row) => r129.parseOvertimeReviewDocument(row.docId, row.fields))
-  const approvedRequest = r129.parseOvertimeRequestDocument('R1', { ...fields, ...result.requestFields })
-  const after = r129.payeOvertimeLines({ personIds: ['sam'], bookings: [b1, after2, after4], organization: R129_ORG, timeZone: R129_TZ, range: { start: '2026-11-01', end: '2026-11-30' }, reviews, requests: [approvedRequest] })
-  assert.deepEqual(after.map((line) => [line.bookingId, line.state]), [['B1', 'approved'], ['B2', 'approved'], ['B4', 'cancelled']])
-  assert.equal(r129.canGenerateOvertimeReport(after), true)
-  assert.equal(result.message, 'Approved 3 of 4. 1 deleted booking left out.')
-  // 1.32.0: a booking changed after sending stays waiting (never overwritten); the other lines apply.
-  const stale = r129.overtimeApprovalWrites({ request, decisions, bookings: { B1: { ...b1, workStartTime: '06:00' }, B2: b2, B4: b4 }, organization: R129_ORG, timeZone: R129_TZ, deciderId: 'lm' })
-  assert.equal(stale.ok, true)
-  if (stale.ok) {
-    assert.deepEqual(stale.waitingBookingIds, ['B1'])
-    assert.equal(stale.lineOutcomes.B1, 'stale')
-    assert.equal(stale.requestFields.status, 'pending')
-    assert.equal(stale.complete, false)
-    assert.equal(stale.message, 'Approved 2 of 4. 1 changed since the request; 1 deleted booking left out.')
-  }
-  // Sending again withdraws the pending request for the same range.
-  assert.deepEqual(r129.overtimeRequestsToReplace([request], 'SAM', '2026-11-01', '2026-11-30'), ['R1'])
+  // The request id rides on each booking change, so the rules can tie the write to the returned request (§16).
+  assert.equal(r129.OVERTIME_RETURN_REQUEST_ID_FIELD, 'overtimeReturnRequestId')
+  // Item f: the all-overtime booking is deleted, with a tombstone naming the request; never Cancelled.
+  assert.deepEqual(result.bookingDeletes, [
+    { collection: 'bookings', bookingId: 'B4', tombstone: { bookingId: 'B4', collection: 'bookings', deletedBy: 'lm', deletedFrom: 'web', overtimeRequestId: 'R1' } },
+  ])
+  assert.deepEqual(result.reviewWrites.map((row) => [row.docId, row.fields.decision]), [
+    ['sam_B1', 'approved'], ['sam_B2', 'edited'], ['sam_B4', 'deleted'], ['sam_B6', 'changed'], ['sam_B7', 'declined'],
+  ])
+  // ✕ = "I don't agree with this line": B7 is not written, its review keeps the booking's fingerprint.
+  assert.equal(result.reviewWrites[4].fields.fingerprint, r129.overtimeBookingFingerprint(b7))
+  assert.deepEqual(result.lineOutcomes, { B1: 'applied', B2: 'applied', B4: 'removed', B6: 'applied', B7: 'declined', GONE: 'deleted' })
+  assert.deepEqual(result.requestFields, {
+    status: 'approved',
+    decisions: { B1: { action: 'approve' }, B2: { action: 'approve' }, B4: { action: 'approve' }, B6: { action: 'edit', start: '07:30', end: '16:30', multiplier: null }, B7: { action: 'strike' } },
+    decidedBy: 'lm',
+    appliedBookingIds: ['B1', 'B2', 'B4', 'B6', 'B7'],
+    droppedBookingIds: ['GONE'],
+    staleBookingIds: [],
+    deletedBookingIds: ['B4'],
+  })
+  assert.equal(result.message, 'Returned 5 lines. 1 deleted booking left out.')
+  // What the person sees after the Return.
+  const after2 = { ...b2, workEndTime: '19:00', otMultiplierOverride: 2 }
+  const after6 = { ...b6, workEndTime: '16:30' }
+  const reviews = result.reviewWrites.map((row) => r129.parseOvertimeReviewDocument(row.docId, { ...row.fields, reviewedAt: 10 }))
+  const returned = r129.parseOvertimeRequestDocument('R1', { ...fields, ...result.requestFields, createdAt: 1, decidedAt: 10 })
+  const range = { start: '2026-11-01', end: '2026-11-30' }
+  const after = r129.payeOvertimeLines({
+    personIds: ['sam'], bookings: [b1, after2, after6, b7], organization: R129_ORG, timeZone: R129_TZ, range, reviews, requests: [returned],
+    names: { lm: 'Lee Manager' }, jobs: [{ id: 'job-1', jobNumber: 'J-1042', jobName: 'Riverside Flats' }],
+  })
+  assert.deepEqual(after.map((row) => [row.bookingId, row.state, row.stateLabel]), [
+    ['B7', 'returnedDeclined', 'Declined'],
+    ['B1', 'returnedApproved', 'Approved'],
+    ['B2', 'returnedApproved', 'Approved'],
+    ['B6', 'returnedChanged', 'Changed by Lee Manager'],
+    ['B4', 'deleted', 'Booking removed — not worked'],
+  ])
+  assert.deepEqual([after[4].title, after[4].start, after[4].end, after[4].figures], ['J-1042 · Riverside Flats', '07:30', '14:00', null])
+  // Declined and deleted lines count 0h.
+  assert.equal(r129.overtimeLinesTotal(after), 1.5 + 6 + 0.75)
+  assert.equal(r129.canGenerateOvertimeReport(after, { hasLineManager: true }), true)
+  // The report lists the declined line at 0h "Declined by {name}" and the deleted one at 0h.
+  const snapshot = r129.overtimeReportSnapshot({ userId: 'sam', userName: 'Sam', rangeStart: range.start, rangeEnd: range.end, lines: after, generatedBy: 'sam' })
+  assert.deepEqual(snapshot.lines.map((row) => [row.bookingId, row.overtimeHours, row.note]), [
+    ['B7', 0, 'Declined by Lee Manager'], ['B1', 1.5, ''], ['B2', 6, ''], ['B6', 0.75, ''], ['B4', 0, 'Booking removed — not worked'],
+  ])
+  assert.equal(snapshot.totals.overtimeHours, 8.25)
+  assert.equal(r129.overtimeReportOutOfDate({ report: snapshot, lines: after }), false)
+  // Generate turns grey while an up-to-date report of the range is saved.
+  assert.deepEqual(r129.overtimeGenerateReady({ lines: after, hasLineManager: true, reports: [snapshot] }), { ready: false, message: r129.OVERTIME_GENERATE_SAVED_MESSAGE })
+  // Withdraw is for pending requests only.
   assert.deepEqual(r129.overtimeRequestWithdrawWriteFields(request), { status: 'withdrawn' })
-  assert.equal(r129.overtimeRequestWithdrawWriteFields(approvedRequest), null)
+  assert.equal(r129.overtimeRequestWithdrawWriteFields(returned), null)
+})
+
+test('1.33.0 Return skip-and-name: a line changed since it was sent goes back to the person; the rest apply; a 1.32 partial request completes', () => {
+  const b1 = r129Booking('B1', '2026-11-04', '06:30', '14:00')
+  const b2 = r129Booking('B2', '2026-11-05', '07:30', '18:00')
+  const lines = [b1, b2].map((booking) => r129.overtimeRequestLineFields({ booking, organization: R129_ORG, timeZone: R129_TZ, proposal: { action: 'keep' } })!)
+  const request = r129.parseOvertimeRequestDocument('R2', { userId: 'sam', rangeStart: '2026-11-01', rangeEnd: '2026-11-30', status: 'pending', lines, createdAt: 1 })
+  const moved = { ...b1, workStartTime: '06:00' }
+  const decisions = { B1: { action: 'approve' as const }, B2: { action: 'approve' as const } }
+  const result = r129.overtimeReturnWrites({ request, decisions, bookings: { B1: moved, B2: b2 }, organization: R129_ORG, timeZone: R129_TZ, deciderId: 'lm' })
+  assert.equal(result.ok, true)
+  if (!result.ok) return
+  assert.deepEqual(result.staleBookingIds, ['B1'])
+  assert.deepEqual(result.lineOutcomes, { B1: 'stale', B2: 'applied' })
+  assert.equal(result.requestFields.status, 'approved')
+  assert.equal(result.message, 'Returned 1 line. 1 changed since they sent it — they need to send it again.')
+  const reviews = result.reviewWrites.map((row) => r129.parseOvertimeReviewDocument(row.docId, { ...row.fields, reviewedAt: 10 }))
+  const returned = r129.parseOvertimeRequestDocument('R2', { ...request, lines, ...result.requestFields, status: 'approved', decidedAt: 10 })
+  const after = r129.payeOvertimeLines({ personIds: ['sam'], bookings: [moved, b2], organization: R129_ORG, timeZone: R129_TZ, range: { start: '2026-11-01', end: '2026-11-30' }, reviews, requests: [returned] })
+  assert.deepEqual(after.map((row) => [row.bookingId, row.state, row.stateLabel]), [['B1', 'changedSinceRequest', 'Changed since you sent it'], ['B2', 'returnedApproved', 'Approved']])
+  assert.deepEqual(r129.overtimeGenerateReady({ lines: after, hasLineManager: true }), { ready: false, message: r129.OVERTIME_GENERATE_NOT_READY_MESSAGE })
+  // A 1.32 request partly applied before 1.33: Return finishes it; the applied line is skipped.
+  const partial = r129.parseOvertimeRequestDocument('R3', { userId: 'sam', rangeStart: '2026-11-01', rangeEnd: '2026-11-30', status: 'pending', lines, appliedBookingIds: ['B1'] })
+  assert.equal(r129.overtimeReturnReady({ request: partial, decisions: { B2: { action: 'approve' } } }).ready, true)
+  const finish = r129.overtimeReturnWrites({ request: partial, decisions: { B2: { action: 'approve' } }, bookings: { B2: b2 }, organization: R129_ORG, timeZone: R129_TZ, deciderId: 'lm' })
+  assert.deepEqual(finish.ok && [finish.lineOutcomes, finish.requestFields.appliedBookingIds], [{ B1: 'alreadyApplied', B2: 'applied' }, ['B1', 'B2']])
+  // Not pending → refused.
+  const notPending = r129.overtimeReturnWrites({ request: returned, decisions, bookings: {}, organization: R129_ORG, timeZone: R129_TZ, deciderId: 'lm' })
+  assert.equal(notPending.ok === false && notPending.reason, 'notPending')
 })
 
 test('1.29.0 direct change by a PAYE manager or admin, the report snapshot and the weekly report PAYE section', () => {
@@ -12176,12 +12269,17 @@ test('1.29.0 direct change by a PAYE manager or admin, the report snapshot and t
   const snapshot = r129.overtimeReportSnapshot({ userId: 'sam', userName: 'Sam', companyName: 'Acme', rangeStart: '2026-10-26', rangeEnd: '2026-11-25', lines, generatedBy: 'sam' })
   assert.deepEqual(snapshot.totals, { overtimeHours: 1.5, clockHours: 1, lineCount: 1 })
   const roundTrip = r129.parseOvertimeReportDocument('REP1', JSON.parse(JSON.stringify(snapshot)))
-  assert.deepEqual(r129.overtimeReportRows(roundTrip), {
-    title: 'Overtime report · Sam',
-    subtitle: 'Mon 26 Oct – Wed 25 Nov',
-    rows: ['Wed 4 Nov · J-1042 Riverside Flats · 06:30–14:00 · 1h × 1.5 = 1.5h'],
-    total: 'Total overtime: 1.5h',
-  })
+  // 1.33.0 adds header and table fields (reportRows.test.ts); the pre-1.33 text fields are unchanged.
+  const reportText = r129.overtimeReportRows(roundTrip)
+  assert.deepEqual(
+    { title: reportText.title, subtitle: reportText.subtitle, rows: reportText.rows, total: reportText.total },
+    {
+      title: 'Overtime report · Sam',
+      subtitle: 'Mon 26 Oct – Wed 25 Nov',
+      rows: ['Wed 4 Nov · J-1042 Riverside Flats · 06:30–14:00 · 1h × 1.5 = 1.5h'],
+      total: 'Total overtime: 1.5h',
+    }
+  )
   const people = [
     { id: 'sam', name: 'Sam', employmentType: 'paye' },
     { id: 'pat', name: 'Pat', employmentType: 'self_employed' },
@@ -12216,16 +12314,15 @@ test('1.29.0 review fix: a request can only name and change the requester\'s own
   })!
   assert.deepEqual((fields.lines as Array<{ bookingId: string }>).map((line) => line.bookingId), ['B1'])
   assert.equal(r129.overtimeRequestWriteFields({ userId: 'sam', rangeStart: '2026-11-01', rangeEnd: '2026-11-30', lines: [forged], personIds: ['sam'], bookings: [theirs] }), null)
-  // A forged stored request: the approval re-checks every live booking and leaves the foreign one out.
+  // A forged stored request: the Return re-checks every live booking and leaves the foreign one out.
   const request = r129.parseOvertimeRequestDocument('R9', { userId: 'sam', rangeStart: '2026-11-01', rangeEnd: '2026-11-30', status: 'pending', lines: [ownLine, forged] })
-  const result = r129.overtimeApprovalWrites({
+  const result = r129.overtimeReturnWrites({
     request,
     decisions: { B1: { action: 'approve' }, X1: { action: 'approve' } },
     bookings: { B1: mine, X1: theirs },
     organization: R129_ORG,
     timeZone: R129_TZ,
     deciderId: 'admin',
-    deciderIsAdmin: true,
     requesterIds: ['sam'],
   })
   assert.equal(result.ok, true)
@@ -12236,37 +12333,27 @@ test('1.29.0 review fix: a request can only name and change the requester\'s own
   assert.deepEqual(result.reviewWrites.map((row) => row.docId), ['sam_B1'])
 })
 
-test('1.29.0 review fix: a line manager never writes a booking filed under an operatives row; an admin or the job manager does', () => {
+test('1.33.0 item b: a line manager decides every line of their report, under any id the person goes by (no "Needs an admin")', () => {
   const rowBooking = r129Booking('BR', '2026-11-04', '06:30', '14:00', { personId: 'row-sam' })
   const line = r129.overtimeRequestLineFields({ booking: rowBooking, organization: R129_ORG, timeZone: R129_TZ, proposal: { action: 'strike' } })!
   const request = r129.parseOvertimeRequestDocument('R8', { userId: 'sam', rangeStart: '2026-11-01', rangeEnd: '2026-11-30', status: 'pending', lines: [line] })
-  const base = {
-    request, bookings: { BR: rowBooking }, organization: R129_ORG, timeZone: R129_TZ, deciderId: 'lm', requesterIds: ['sam', 'row-sam'],
+  const base = { request, bookings: { BR: rowBooking }, organization: R129_ORG, timeZone: R129_TZ, deciderId: 'lm', requesterIds: ['sam', 'row-sam'] }
+  const asLineManager = r129.overtimeReturnWrites({ ...base, decisions: { BR: { action: 'approve' } } })
+  assert.equal(asLineManager.ok, true)
+  if (asLineManager.ok) {
+    assert.deepEqual(asLineManager.lineOutcomes, { BR: 'applied' })
+    assert.deepEqual(asLineManager.bookingWrites, [{ collection: 'bookings', bookingId: 'BR', set: { workStartTime: '07:30', overtimeReturnRequestId: 'R8' }, remove: [] }])
+    assert.equal(Object.values(asLineManager.lineOutcomes).includes('needsAdmin' as never), false)
   }
-  const asLineManager = r129.overtimeApprovalWrites({ ...base, decisions: { BR: { action: 'approve' } } })
-  assert.deepEqual(asLineManager.ok === false && [asLineManager.reason, asLineManager.bookingIds, asLineManager.lineOutcomes.BR, asLineManager.message], [
-    'nothingApproved',
-    ['BR'],
-    'needsAdmin',
-    'Nothing was approved: 1 needs an admin.',
-  ])
-  assert.equal(r129.overtimeApprovalWrites({ ...base, decisions: { BR: { action: 'approve' } }, deciderIsAdmin: true }).ok, true)
-  assert.equal(r129.overtimeApprovalWrites({ ...base, decisions: { BR: { action: 'approve' } }, writableBookingIds: ['br'] }).ok, true)
-  // 1.32.0 review fix (r274 S1): a tick on a keep line under an operatives row needs an admin too (decision A).
-  const keepLine = r129.overtimeRequestLineFields({ booking: rowBooking, organization: R129_ORG, timeZone: R129_TZ, proposal: { action: 'keep' } })!
-  const keep = r129.parseOvertimeRequestDocument('R7', { userId: 'sam', rangeStart: '2026-11-01', rangeEnd: '2026-11-30', status: 'pending', lines: [keepLine] })
-  assert.equal(r129.overtimeApprovalWrites({ ...base, request: keep, decisions: { BR: { action: 'approve' } } }).ok, false)
-  // The direct rule the rules apply: the booking's person id is the requester's users id, exactly.
-  assert.equal(r129.overtimeDeciderMayWriteBooking({ booking: { id: 'B1', personId: 'sam' }, requesterUserId: 'sam' }), true)
+  assert.equal(r129.overtimeDeciderMayWriteBooking({ booking: { id: 'BR', personId: 'row-sam' }, requesterUserId: 'sam', requesterIds: ['sam', 'row-sam'] }), true)
+  // Without the person's ids only their users id counts (1.32 shape); a row on another email is never theirs.
   assert.equal(r129.overtimeDeciderMayWriteBooking({ booking: { id: 'BR', personId: 'row-sam' }, requesterUserId: 'sam' }), false)
-  // An unreadable booking is left out, named, and nothing is written for it.
-  const unreadable = r129.overtimeApprovalWrites({ ...base, decisions: { BR: { action: 'approve' } }, unreadableBookingIds: ['BR'], bookings: {} })
-  // 1.32.0: nothing else to apply, so nothing was approved; the line is named unreadable.
-  assert.deepEqual(unreadable.ok === false && [unreadable.reason, unreadable.lineOutcomes.BR, unreadable.message], [
-    'nothingApproved',
-    'unreadable',
-    "Nothing was approved: 1 booking you can't read left out.",
-  ])
+  const other = r129.overtimeReturnWrites({ ...base, requesterIds: ['sam'], decisions: { BR: { action: 'approve' } } })
+  assert.deepEqual(other.ok && other.lineOutcomes, { BR: 'foreign' })
+  // An unreadable booking is left out, named, and does not block the Return.
+  assert.equal(r129.overtimeReturnReady({ request, decisions: {}, skipBookingIds: ['BR'] }).ready, true)
+  const unreadable = r129.overtimeReturnWrites({ ...base, decisions: {}, unreadableBookingIds: ['BR'], bookings: {} })
+  assert.deepEqual(unreadable.ok && [unreadable.lineOutcomes.BR, unreadable.message], ['unreadable', "Returned 0 lines. 1 booking you can't read left out."])
 })
 
 // MARK: - Rulebook 1.30.0 (§26): PAYE price work, expenses and personal site audits
@@ -12325,6 +12412,7 @@ test('1.30.0 price work validation and write fields: name, from–to dates, requ
     currency: 'GBP',
     evidence: [{ path: `organizations/${ORG130}/payeClaims/sam/sam_1700000000000.jpg`, name: 'receipt.jpg', kind: 'photo', contentType: 'image/jpeg' }],
     createdBy: 'sam',
+    personUserId: 'sam',
   })
   // Someone else writing for Sam is refused.
   assert.equal(r130.priceWorkWriteFields({ userId: 'lm', draft, ...ctx, currency: 'GBP' }), null)
@@ -12845,9 +12933,9 @@ test('1.31.0 warningScopeFor: a manager with no reports and no jobs sees only wa
   assert.deepEqual(scope.personIds, ['x2'])
   assert.equal(R112.isWarningRowInScope(scope, { jobIds: ['J1'], personIds: ['R'] }), false)
   assert.equal(R112.isPersonInWarningScope(scope, ['X2']), true)
-  // Enforced reads: a manager who cannot read every booking gets no unbooked-labour rows (planning unchanged).
+  // 1.33.0: a manager reads every booking with enforced reads on too, so their unbooked-labour rows stay.
   const enforced = R112.warningScopeFor({ viewer: { role: r1310Manager, ids: ['X2'] }, jobs: [], roster: [], enforced: true })
-  assert.equal(enforced.kind === 'jobs' && enforced.unbookedLabour, false)
+  assert.equal(enforced.kind === 'jobs' && enforced.unbookedLabour, true)
 })
 
 test('1.31.0 jobManagerRemovalWrites: made an operative, deactivated or deleted — off every job; admin ↔ manager keeps them', () => {
@@ -13123,44 +13211,7 @@ test('1.32.0 overtimePersonIds: every id plus every operatives row on the email,
   assert.deepEqual(r132.overtimePersonIds({ person: null }), [])
 })
 
-test('1.32.0 partial approval: line manager approves what they may, the rest needs an admin, then the admin completes it', () => {
-  const mine = r129Booking('B1', '2026-11-04', '06:30', '14:00')
-  const row = r129Booking('BR', '2026-11-05', '06:30', '14:00', { personId: 'row-sam' })
-  const undecided = r129Booking('B3', '2026-11-06', '06:30', '14:00')
-  const lines = [mine, row, undecided].map((b) => r132.overtimeRequestLineFields({ booking: b, organization: R129_ORG, timeZone: R129_TZ, proposal: { action: 'strike' } })!)
-  const fields = r132.overtimeRequestWriteFields({ userId: 'sam', rangeStart: '2026-11-01', rangeEnd: '2026-11-30', lines })!
-  const request = r132.parseOvertimeRequestDocument('R1', fields)
-  const bookings = { B1: mine, BR: row, B3: undecided }
-  const common = { request, bookings, organization: R129_ORG, timeZone: R129_TZ, requesterIds: ['sam', 'row-sam'] }
-  assert.equal(r132.overtimeRequestAnyDecided(request, {}), false)
-  assert.equal(r132.overtimeRequestAnyDecided(request, { B1: { action: 'strike' } }), true)
-  const lm = r132.overtimeApprovalWrites({ ...common, deciderId: 'lm', decisions: { B1: { action: 'strike' }, BR: { action: 'strike' } } })
-  assert.equal(lm.ok, true)
-  if (!lm.ok) return
-  assert.deepEqual(lm.appliedBookingIds, ['B1'])
-  assert.deepEqual(lm.lineOutcomes, { B1: 'applied', BR: 'needsAdmin', B3: 'undecided' })
-  assert.equal(lm.message, 'Approved 1 of 3. 1 needs an admin; 1 not decided yet.')
-  assert.equal(lm.requestFields.status, 'pending')
-  assert.equal(r132.overtimeLineOutcomeLabel('needsAdmin'), 'Needs an admin')
-  // The request stays pending with B1 applied: B1's line no longer waits; the others still do.
-  const after = r132.parseOvertimeRequestDocument('R1', { ...fields, ...lm.requestFields })
-  const trimmed = { ...mine, workStartTime: '07:30' }
-  const reviews = lm.reviewWrites.map((w) => r132.parseOvertimeReviewDocument(w.docId, w.fields))
-  const shown = r132.payeOvertimeLines({ personIds: ['sam', 'row-sam'], bookings: [row, undecided, trimmed], organization: R129_ORG, timeZone: R129_TZ, range: { start: '2026-11-01', end: '2026-11-30' }, reviews, requests: [after] })
-  assert.deepEqual(shown.map((line) => [line.bookingId, line.state]), [['BR', 'waiting'], ['B3', 'waiting']])
-  // An admin then completes it: B1 is skipped as already applied.
-  const admin = r132.overtimeApprovalWrites({ ...common, request: after, bookings: { B1: trimmed, BR: row, B3: undecided }, deciderId: 'adm', deciderIsAdmin: true, decisions: { BR: { action: 'strike' }, B3: { action: 'approve' } } })
-  assert.equal(admin.ok, true)
-  if (!admin.ok) return
-  assert.deepEqual(admin.appliedBookingIds, ['BR', 'B3'])
-  assert.equal(admin.lineOutcomes.B1, 'alreadyApplied')
-  assert.equal(admin.complete, true)
-  assert.equal(admin.requestFields.status, 'approved')
-  assert.deepEqual(admin.requestFields.appliedBookingIds, ['B1', 'BR', 'B3'])
-  assert.equal(admin.message, 'Approved 2 of 2.')
-})
-
-test('1.32.0 price work and expenses review: ✓ ✕ per item, one Approve, older ids need an admin', () => {
+test('1.32.0 price work and expenses review: ✓ ✕ per item, one Approve (1.33.0: older ids reviewed by the line manager too)', () => {
   const evidence = [{ path: 'organizations/o/payeClaims/sam/a.pdf', name: 'a.pdf', kind: 'file' as const, contentType: 'application/pdf', auditId: null }]
   const item = (id: string, userId: string, amount: number) => ({ kind: 'expense' as const, id, userId, title: 'Fuel', details: '', amount, currency: 'GBP', evidence, createdAtMs: null, createdBy: userId, jobNumber: 'J-1', date: '2026-11-04' })
   const items = [item('E1', 'sam', 20), item('E2', 'sam', 30), item('E3', 'SAM-OLD', 40), item('E4', 'sam', 50), item('X', 'pat', 5)]
@@ -13172,14 +13223,24 @@ test('1.32.0 price work and expenses review: ✓ ✕ per item, one Approve, olde
     reviewerId: 'lm',
     reviewerIsAdmin: false,
   })
-  assert.deepEqual(result.outcomes, { E1: 'applied', E2: 'applied', E3: 'needsAdmin', E4: 'undecided', X: 'foreign' })
-  assert.equal(result.message, 'Approved 1 of 4. 1 rejected; 1 needs an admin; 1 not decided yet.')
-  assert.deepEqual(result.writes.map((w) => [w.docId, w.fields.decision]), [['expense_E1', 'approved'], ['expense_E2', 'rejected']])
+  assert.deepEqual(result.outcomes, { E1: 'applied', E2: 'applied', E3: 'applied', E4: 'undecided', X: 'foreign' })
+  assert.equal(result.message, 'Approved 2 of 4. 1 rejected; 1 not decided yet.')
+  assert.deepEqual(
+    result.writes.map((w) => [w.docId, w.fields.decision, w.fields.userId, w.fields.personUserId]),
+    [['expense_E1', 'approved', 'sam', undefined], ['expense_E2', 'rejected', 'sam', undefined], ['expense_E3', 'approved', 'SAM-OLD', 'sam']],
+    'an item under another of the person\'s ids carries personUserId'
+  )
+  assert.equal(r132.payeClaimReviewOutcomeLabel('foreign'), 'Not theirs — left out.')
+  assert.equal(r132.payeClaimReviewOutcomeLabel('applied'), null)
+  assert.equal(r132.payeClaimReviewOutcomeLabel('undecided'), null)
   const reviews = result.writes.map((w) => r132.parsePayeClaimReviewDocument(w.docId, w.fields))
   assert.equal(r132.payeClaimReviewState(items[0], reviews).label, 'Approved')
   assert.equal(r132.payeClaimReviewState({ ...items[0], amount: 21 }, reviews).state, 'needsReview', 'a changed item needs review again')
+  assert.equal(r132.parsePayeClaimReviewDocument('expense_E3', result.writes[2].fields).personUserId, 'sam')
+  assert.equal(reviews[0].personUserId, null)
   const admin = r132.payeClaimReviewWrites({ items: [items[2]], decisions: { E3: 'approved' }, subjectUserId: 'sam', personIds: ['sam', 'SAM-OLD'], reviewerId: 'adm', reviewerIsAdmin: true })
   assert.equal(admin.message, 'Approved 1 of 1.')
+  assert.deepEqual(admin.writes[0].fields, { ...result.writes[2].fields, reviewedBy: 'adm' }, 'admins and line managers write the same review')
   const roster = [
     { id: 'sam', email: 'sam@x.com', isActive: true, assignedManagerUserIds: ['lm'], role: 'operative', operativeMode: true },
     { id: 'lm', email: 'lm@x.com', isActive: true, role: 'manager', manager: true },
@@ -13225,20 +13286,6 @@ test('1.32.0 small rules: rulebook label, export notice, legal pack write, invit
   assert.equal(r132.invitationReadErrorIsSkippable('permission-denied'), true)
   assert.equal(r132.invitationReadErrorIsSkippable('firestore/permission-denied'), true)
   assert.equal(r132.invitationReadErrorIsSkippable('unavailable'), false)
-})
-
-test('1.32.0 review fix (r274 S1): decision A holds for a keep line or a same-times cog — a line manager never approves an operatives-row line', () => {
-  const row = r129Booking('BR', '2026-11-05', '06:30', '14:00', { personId: 'row-sam' })
-  const line = r132.overtimeRequestLineFields({ booking: row, organization: R129_ORG, timeZone: R129_TZ, proposal: { action: 'keep' } })!
-  const request = r132.parseOvertimeRequestDocument('RK', r132.overtimeRequestWriteFields({ userId: 'sam', rangeStart: '2026-11-01', rangeEnd: '2026-11-30', lines: [line] })!)
-  const base = { request, bookings: { BR: row }, organization: R129_ORG, timeZone: R129_TZ, deciderId: 'lm', requesterIds: ['sam', 'row-sam'] }
-  const tick = r132.overtimeApprovalWrites({ ...base, decisions: { BR: { action: 'approve' } } })
-  assert.deepEqual(tick.ok === false && [tick.reason, tick.lineOutcomes.BR], ['nothingApproved', 'needsAdmin'])
-  const sameCog = r132.overtimeApprovalWrites({ ...base, decisions: { BR: { action: 'edit', start: '06:30', end: '14:00', multiplier: null } } })
-  assert.deepEqual(sameCog.ok === false && [sameCog.reason, sameCog.lineOutcomes.BR], ['nothingApproved', 'needsAdmin'])
-  // An admin, or the job's manager (`canWriteBooking`), still may.
-  assert.equal(r132.overtimeApprovalWrites({ ...base, decisions: { BR: { action: 'approve' } }, deciderIsAdmin: true }).ok, true)
-  assert.equal(r132.overtimeApprovalWrites({ ...base, decisions: { BR: { action: 'approve' } }, writableBookingIds: ['BR'] }).ok, true)
 })
 
 test('1.32.0 review fix (r274 S3): weekly report pay follows canViewPersonPay — hidden rate and pay, totals over visible rows only', () => {
@@ -13310,4 +13357,630 @@ test('1.32.0 owner decision 5 Nov: the Weekly report is admin-only; a stored man
   assert.equal(rows('operative').length, 0)
   assert.deepEqual(rows('admin').map((row) => [row.value, row.editable]), [[true, false]])
   assert.equal(r132.addUserPermissionDefaults('manager').weeklyReports, false)
+})
+
+// MARK: - 1.33.0 §2: Cancel removed as a user action; iOS / Android offline delete
+
+test('1.33.0 bookingRemoveAction: delete for exactly the canDeleteBooking people, none for everyone else, never cancel', () => {
+  const role = (over: Partial<{ isAdmin: boolean; isSuperAdmin: boolean; isManager: boolean; isOperativeMode: boolean }>) => ({
+    isAdmin: false,
+    isSuperAdmin: false,
+    isManager: false,
+    isOperativeMode: false,
+    ...over,
+  })
+  const admin = { role: role({ isAdmin: true }), ids: ['u-admin'] }
+  const superAdmin = { role: role({ isSuperAdmin: true }), ids: ['u-super'] }
+  const adminInOperativeMode = { role: role({ isAdmin: true, isOperativeMode: true }), ids: ['u-admin'] }
+  const manager = { role: role({ isManager: true }), ids: ['u-mgr'], email: 'mgr@example.com' }
+  // Q-E1 (6 Nov): the Operatives permission gives no booking power.
+  const operativesManager = { role: role({ isManager: true }), ids: ['u-ops'], toggles: { projects: false, smallWorks: false } }
+  const operative = { role: role({}), ids: ['u-op'] }
+  const labour = { collection: 'bookings', projectId: 'JOB-1' }
+  const ownJob = { managerUserIds: ['u-mgr'] }
+  const otherJob = { managerUserIds: ['u-other'] }
+
+  assert.deepEqual([...R112.BOOKING_REMOVE_ACTIONS], ['delete', 'none'])
+  assert.equal(R112.bookingRemoveAction(admin, labour, otherJob), 'delete')
+  assert.equal(R112.bookingRemoveAction(superAdmin, labour, null), 'delete')
+  assert.equal(R112.bookingRemoveAction(adminInOperativeMode, labour, otherJob), 'none')
+  assert.equal(R112.bookingRemoveAction(manager, labour, ownJob), 'delete')
+  assert.equal(R112.bookingRemoveAction(manager, labour, otherJob), 'none')
+  assert.equal(R112.bookingRemoveAction(manager, labour, null), 'none')
+  // A managers-list row with the viewer's email makes them the job's manager.
+  assert.equal(R112.bookingRemoveAction(manager, labour, { managerIds: ['ROW-1'] }, [{ id: 'ROW-1', email: 'MGR@example.com' }]), 'delete')
+  assert.equal(R112.bookingRemoveAction(operativesManager, labour, otherJob), 'none')
+  assert.equal(R112.bookingRemoveAction(operative, labour, { managerUserIds: ['u-op'] }), 'none')
+  assert.equal(R112.bookingRemoveAction(null, labour, ownJob), 'none')
+  assert.equal(R112.bookingRemoveAction(manager, null, ownJob), 'none')
+  // Manager schedule: their own office booking; another manager's office booking is not theirs to delete.
+  const office = (userId: string) => ({ collection: 'managerSiteBookings', userId, locationType: 'office', locationId: null })
+  assert.equal(R112.bookingRemoveAction(manager, office('U-MGR'), null), 'delete')
+  assert.equal(R112.bookingRemoveAction(manager, office('u-other'), null), 'none')
+  assert.equal(R112.bookingRemoveAction(manager, { collection: 'managerSiteBookings', userId: 'u-other', locationType: 'project', locationId: 'JOB-1' }, ownJob), 'delete')
+  assert.equal(R112.bookingRemoveAction(manager, { collection: 'subcontractorBookings', projectId: 'JOB-1' }, ownJob), 'delete')
+  assert.equal(R112.bookingRemoveAction(manager, { collection: 'holidayBookings', projectId: 'JOB-1' }, ownJob), 'none')
+  // Same answer as canDeleteBooking everywhere.
+  for (const viewer of [admin, manager, operativesManager, operative]) {
+    for (const job of [ownJob, otherJob, null]) {
+      assert.equal(R112.bookingRemoveAction(viewer, labour, job) === 'delete', R112.canDeleteBooking(viewer, labour, job))
+    }
+  }
+})
+
+test('1.33.0 offline policy: labour and manager schedule deletes are queued; subcontractor deletes and cancel are online only', () => {
+  assert.equal(R112.offlineAvailability('booking.delete'), 'allowedOffline')
+  assert.equal(R112.offlineAvailability('booking.delete_subcontractor'), 'onlineOnly')
+  assert.equal(R112.offlineAvailability('booking.cancel'), 'onlineOnly')
+  assert.equal(Object.prototype.hasOwnProperty.call(R112.OFFLINE_ACTIONS, 'booking.cancel'), false)
+  assert.equal(R112.bookingDeleteOfflineAction('bookings'), 'booking.delete')
+  assert.equal(R112.bookingDeleteOfflineAction(' managerSiteBookings '), 'booking.delete')
+  assert.equal(R112.bookingDeleteOfflineAction('subcontractorBookings'), 'booking.delete_subcontractor')
+  assert.equal(R112.bookingDeleteOfflineAction('holidayBookings'), 'booking.delete_subcontractor')
+  assert.equal(R112.bookingDeleteOfflineAction(undefined), 'booking.delete_subcontractor')
+  assert.equal(R112.offlineAvailability(R112.bookingDeleteOfflineAction('subcontractorBookings')), 'onlineOnly')
+})
+
+test('1.33.0 bookingTombstoneWriteFields: overtimeRequestId only when given and usable', () => {
+  const base = { bookingId: 'B-1', collection: 'bookings', deletedBy: 'u-1', deletedFrom: 'ios' }
+  assert.deepEqual(R112.bookingTombstoneWriteFields(base), { bookingId: 'B-1', collection: 'bookings', deletedBy: 'u-1', deletedFrom: 'ios' })
+  assert.deepEqual(R112.bookingTombstoneWriteFields({ ...base, overtimeRequestId: ' REQ-1 ' }), {
+    bookingId: 'B-1',
+    collection: 'bookings',
+    deletedBy: 'u-1',
+    deletedFrom: 'ios',
+    overtimeRequestId: 'REQ-1',
+  })
+  assert.equal('overtimeRequestId' in (R112.bookingTombstoneWriteFields({ ...base, overtimeRequestId: '' }) || {}), false)
+  assert.equal('overtimeRequestId' in (R112.bookingTombstoneWriteFields({ ...base, overtimeRequestId: 'a/b' }) || {}), false)
+  assert.equal('overtimeRequestId' in (R112.bookingTombstoneWriteFields({ ...base, overtimeRequestId: 42 }) || {}), false)
+})
+
+test('1.33.0 bookingDeleteFingerprint: every edited field, both apps the same text', () => {
+  const zone = 'Europe/London'
+  const labour = {
+    collection: 'bookings',
+    operativeId: 'OP-1',
+    projectId: 'JOB-1',
+    date: { seconds: Date.parse('2026-11-09T00:00:00Z') / 1000, nanoseconds: 0 },
+    timeSlot: 'custom hours',
+    workStartTime: '7:30',
+    workEndTime: '17:00:00',
+    isBreakRemoved: false,
+    otMultiplierOverride: 1.5,
+    status: 'confirmed',
+    notes: ' Bring PPE ',
+  }
+  const fp = R112.bookingDeleteFingerprint(labour, zone)
+  assert.equal(fp, 'bookings|op-1|job-1|||2026-11-09|CUSTOM_HOURS|07:30|17:00|1.5||Confirmed|Bring PPE')
+  // The same booking given a day key and other spellings reads the same.
+  assert.equal(
+    R112.bookingDeleteFingerprint({ ...labour, date: undefined, dayKey: '2026-11-09', operativeId: 'op-1', projectId: 'job-1', timeSlot: 'CUSTOM_HOURS', workStartTime: '07:30', status: 'Confirmed', notes: 'Bring PPE' }, zone),
+    fp
+  )
+  // A BST date stored as organisation-zone midnight reads its own day.
+  assert.equal(R112.bookingDeleteFingerprint({ ...labour, date: Date.parse('2026-07-08T23:00:00Z'), dayKey: null }, zone).split('|')[5], '2026-07-09')
+  // Each field a booking edit changes moves the fingerprint.
+  const changes: Array<Record<string, unknown>> = [
+    { operativeId: 'OP-2' },
+    { projectId: 'JOB-2' },
+    { date: Date.parse('2026-11-10T00:00:00Z') },
+    { timeSlot: 'FULL_DAY' },
+    { workStartTime: '08:00' },
+    { workEndTime: '16:00' },
+    { isBreakRemoved: true },
+    { otMultiplierOverride: 2 },
+    { otMultiplierOverride: null },
+    { status: 'Tentative' },
+    { notes: 'Other' },
+  ]
+  for (const change of changes) assert.notEqual(R112.bookingDeleteFingerprint({ ...labour, ...change }, zone), fp, JSON.stringify(change))
+  // Missing status reads Confirmed (as stored by older builds).
+  assert.equal(R112.bookingDeleteFingerprint({ ...labour, status: undefined }, zone), fp)
+  // Manager schedule: person, place type, place and custom name.
+  const office = { collection: 'managerSiteBookings', userId: 'U-1', locationType: 'Office', locationId: null, dayKey: '2026-11-09', timeSlot: 'FULL_DAY' }
+  assert.equal(R112.bookingDeleteFingerprint(office, zone), 'managerSiteBookings|u-1||office||2026-11-09|FULL DAY|||||Confirmed|')
+  assert.notEqual(R112.bookingDeleteFingerprint({ ...office, locationType: 'custom', customLocationName: 'Depot' }, zone), R112.bookingDeleteFingerprint(office, zone))
+  assert.equal(R112.bookingDeleteFingerprint(null, zone), '')
+})
+
+test('1.33.0 offlineDeleteReplayDecision: one outcome for each owner case', () => {
+  const zone = 'Europe/London'
+  const live = { operativeId: 'OP-1', projectId: 'JOB-1', dayKey: '2026-11-09', timeSlot: 'FULL_DAY', status: 'Confirmed' }
+  const fingerprint = R112.bookingDeleteFingerprint({ ...live, collection: 'bookings' }, zone)
+  const queued = { bookingId: 'B-1', collection: 'bookings', fingerprint }
+  const decide = (over: Record<string, unknown>) =>
+    R112.offlineDeleteReplayDecision({ queued, live, tombstoned: false, mayDelete: true, timeZone: zone, ...over })
+
+  assert.deepEqual([...R112.OFFLINE_DELETE_REPLAY_DECISIONS], ['apply', 'dropLocal', 'alreadyGone', 'refuseChanged', 'refusePermission'])
+  // Unchanged and allowed: the delete and its tombstone are sent.
+  assert.equal(decide({}), 'apply')
+  assert.equal(decide({ mayDelete: undefined }), 'apply')
+  // Created and deleted offline: nothing is sent, whatever the server holds.
+  assert.equal(decide({ queued: { ...queued, createdOffline: true }, live: null }), 'dropLocal')
+  assert.equal(decide({ queued: { ...queued, createdOffline: true }, tombstoned: true }), 'dropLocal')
+  // Deleted elsewhere (missing, or tombstoned): already gone, no message.
+  assert.equal(decide({ live: null }), 'alreadyGone')
+  assert.equal(decide({ tombstoned: true }), 'alreadyGone')
+  assert.equal(decide({ queued: null }), 'alreadyGone')
+  assert.equal(decide({ queued: { ...queued, bookingId: ' ' } }), 'alreadyGone')
+  // Changed on another device after the offline delete: refused, booking reappears.
+  assert.equal(decide({ live: { ...live, timeSlot: 'AM' } }), 'refuseChanged')
+  assert.equal(decide({ live: { ...live, notes: 'moved' } }), 'refuseChanged')
+  assert.equal(decide({ live: { ...live, status: 'Cancelled' } }), 'refuseChanged')
+  // Permission lost: refused, booking reappears (checked before the change).
+  assert.equal(decide({ mayDelete: false }), 'refusePermission')
+  assert.equal(decide({ mayDelete: false, live: { ...live, timeSlot: 'AM' } }), 'refusePermission')
+  // A subcontractor booking is never deleted offline.
+  assert.equal(decide({ queued: { ...queued, collection: 'subcontractorBookings' } }), 'refusePermission')
+  // Manager schedule bookings replay the same way.
+  const office = { userId: 'U-1', locationType: 'office', dayKey: '2026-11-09', timeSlot: 'AM' }
+  const officeQueued = { bookingId: 'm-1', collection: 'managerSiteBookings', fingerprint: R112.bookingDeleteFingerprint({ ...office, collection: 'managerSiteBookings' }, zone) }
+  assert.equal(R112.offlineDeleteReplayDecision({ queued: officeQueued, live: office, tombstoned: false, timeZone: zone }), 'apply')
+  assert.equal(R112.offlineDeleteReplayDecision({ queued: officeQueued, live: { ...office, locationType: 'wfh' }, timeZone: zone }), 'refuseChanged')
+
+  assert.equal(R112.OFFLINE_DELETE_CHANGED_MESSAGE, 'Changed on another device — not deleted')
+  assert.ok(R112.OFFLINE_DELETE_REFUSED_MESSAGE.startsWith('Not deleted'))
+})
+
+test('1.33.0 offlineDeleteRefusalDecision and bookingReplayRefusedIsFinal cover a queued delete', () => {
+  assert.equal(R112.offlineDeleteRefusalDecision('not-found'), 'alreadyGone')
+  assert.equal(R112.offlineDeleteRefusalDecision(5), 'alreadyGone')
+  assert.equal(R112.offlineDeleteRefusalDecision('firestore/permission-denied'), 'refusePermission')
+  assert.equal(R112.offlineDeleteRefusalDecision(7), 'refusePermission')
+  assert.equal(R112.offlineDeleteRefusalDecision('unavailable'), 'retry')
+  assert.equal(R112.offlineDeleteRefusalDecision('aborted'), 'retry')
+  assert.equal(R112.offlineDeleteRefusalDecision(undefined), 'retry')
+  // A delete is not a create: not-found and permission-denied are both final.
+  assert.equal(R112.bookingReplayRefusedIsFinal({ code: 'not-found', isCreate: false }), true)
+  assert.equal(R112.bookingReplayRefusedIsFinal({ code: 7, isCreate: false }), true)
+  assert.equal(R112.bookingReplayRefusedIsFinal({ code: 'unavailable', isCreate: false }), false)
+})
+
+test('1.33.0 bookingDeleteSignedTimesheetWarning: warns (never blocks) on a day inside a signed or exported timesheet', () => {
+  const signedAt = { seconds: Date.parse('2026-11-16T09:00:00Z') / 1000, nanoseconds: 0 }
+  const period = { startDayKey: '2026-11-01', endDayKey: '2026-11-15' }
+  const operativeSigned = { ...period, operativeSignedAt: signedAt, operativeSignedByName: 'Olga Op' }
+  const managerSigned = { ...period, managerSignedAt: signedAt }
+  const legacyApproved = { ...period, approvedAt: signedAt }
+  const exported = { ...period, exportedAt: signedAt }
+  const unsigned = { ...period }
+  const nameless = { ...period, operativeSignedAt: signedAt }
+
+  assert.equal(R112.bookingDeleteSignedTimesheetWarning('2026-11-09', [operativeSigned]), R112.BOOKING_DELETE_SIGNED_TIMESHEET_WARNING)
+  assert.equal(R112.bookingDeleteSignedTimesheetWarning('2026-11-01', [managerSigned]), R112.BOOKING_DELETE_SIGNED_TIMESHEET_WARNING)
+  assert.equal(R112.bookingDeleteSignedTimesheetWarning('2026-11-15', [legacyApproved]), R112.BOOKING_DELETE_SIGNED_TIMESHEET_WARNING)
+  assert.equal(R112.bookingDeleteSignedTimesheetWarning('2026-11-09', [exported]), R112.BOOKING_DELETE_SIGNED_TIMESHEET_WARNING)
+  assert.equal(R112.bookingDeleteSignedTimesheetWarning('2026-11-09', [unsigned, operativeSigned]), R112.BOOKING_DELETE_SIGNED_TIMESHEET_WARNING)
+  assert.equal(R112.bookingDeleteSignedTimesheetWarning('2026-11-09', [unsigned]), null)
+  assert.equal(R112.bookingDeleteSignedTimesheetWarning('2026-11-09', [nameless]), null)
+  assert.equal(R112.bookingDeleteSignedTimesheetWarning('2026-11-16', [operativeSigned]), null)
+  assert.equal(R112.bookingDeleteSignedTimesheetWarning('2026-10-31', [operativeSigned]), null)
+  assert.equal(R112.bookingDeleteSignedTimesheetWarning('not a day', [operativeSigned]), null)
+  assert.equal(R112.bookingDeleteSignedTimesheetWarning('2026-11-09', null), null)
+  assert.match(R112.BOOKING_DELETE_SIGNED_TIMESHEET_WARNING, /signed timesheet/)
+})
+
+// MARK: - Rulebook 1.33.0 (W8 bundle: claims every id, pay C1, catalogue, active writes, unbooked inactive)
+
+test('1.33.0 claims every id: a line manager reviews an item under a formerUserIds id; no "Needs an admin"', () => {
+  const item = (id: string, userId: string) => ({ kind: 'priceWork' as const, id, userId, title: 'Tiling', details: '', amount: 100, currency: 'GBP', evidence: [], createdAtMs: null, createdBy: userId, jobNumber: 'J-1', approvedByUserId: 'lm', approvedByName: 'Lee', startDate: '2026-11-02', endDate: '2026-11-03' })
+  const items = [item('P1', 'sam'), item('P2', 'sam-invite'), item('P3', 'Sam-Invite'), item('P4', 'other')]
+  const roster = [
+    { id: 'sam', email: 'sam@x.com', isActive: true, formerUserIds: ['sam-invite'], assignedManagerUserIds: ['lm'], role: 'operative', operativeMode: true },
+    { id: 'lm', email: 'lm@x.com', isActive: true, role: 'manager', manager: true },
+    { id: 'm2', email: 'm2@x.com', isActive: true, role: 'manager', manager: true },
+  ]
+  const personIds = r132.overtimePersonIds({ person: roster[0], roster })
+  assert.ok(personIds.map((id: string) => id.toLowerCase()).includes('sam-invite'))
+  assert.equal(r132.canReviewPayeClaims(roster[1], roster[0], roster), true, 'the line manager reviews')
+  assert.equal(r132.canReviewPayeClaims(roster[2], roster[0], roster), false, 'a manager who is not the line manager does not')
+  assert.equal(r132.canReviewPayeClaims({ ...roster[0], id: 'sam-invite' }, roster[0], roster), false, 'never the person under another id')
+  const result = r132.payeClaimReviewWrites({
+    items,
+    decisions: { P1: 'approved', P2: 'rejected', P3: 'approved', P4: 'approved' },
+    subjectUserId: 'sam',
+    personIds,
+    reviewerId: 'lm',
+  })
+  assert.deepEqual(result.outcomes, { P1: 'applied', P2: 'applied', P3: 'applied', P4: 'foreign' })
+  assert.deepEqual(result.writes.map((w) => w.fields.personUserId ?? null), [null, 'sam', 'sam'], 'personUserId only on items under another id (any letter case)')
+  assert.deepEqual(result.writes.map((w) => w.fields.userId), ['sam', 'sam-invite', 'Sam-Invite'], 'userId stays the item\'s own id')
+  assert.equal(result.message, 'Approved 2 of 3. 1 rejected.')
+  for (const outcome of ['applied', 'undecided', 'unchanged', 'foreign'] as const) {
+    assert.notEqual(r132.payeClaimReviewOutcomeLabel(outcome), 'Needs an admin')
+  }
+  // Review is optional: the report is ready with items in range, reviewed or not.
+  assert.equal(r132.payeClaimReportReady(items), true)
+})
+
+test('1.33.0 pay C1: the read plans ask only for the line manager\'s reports; every other screen shows nobody\'s pay', () => {
+  const lm = { id: 'lm', role: 'manager', manager: true }
+  const report = { id: 'rep', role: 'operative', operativeMode: true, assignedManagerUserIds: ['lm'] }
+  const reportMgr = { id: 'rep-m', role: 'manager', manager: true, assignedManagerUserIds: ['lm'] }
+  const notMine = { id: 'nm', role: 'operative', operativeMode: true, assignedManagerUserIds: ['m2'] }
+  const m2 = { id: 'm2', role: 'manager', manager: true }
+  const catalogueRow = { id: 'OP-ROW', catalogueOperative: true }
+  const roster = [lm, report, reportMgr, notMine, m2].map((p) => ({ ...p, email: `${p.id}@t.com`, isActive: true }))
+  const subjects = [report, reportMgr, notMine, m2, catalogueRow]
+  // Timesheet review reach: their own id and their reports' ids, nobody else, never a catalogue row.
+  assert.deepEqual(R112.payProfileReadPlan(lm as never, subjects as never, roster as never), { kind: 'documents', ids: ['lm', 'rep', 'rep-m'] })
+  assert.deepEqual(R112.rateHistoryQueryPlan(lm as never, subjects as never, roster as never, { privatePay: true }), { kind: 'people', userIds: ['lm', 'rep', 'rep-m'], operativeIds: [] })
+  for (const subject of [report, reportMgr]) {
+    assert.equal(R112.canViewPersonPay(lm as never, subject as never, roster as never, { context: 'timesheetReview' }), true)
+    assert.equal(R112.canViewPersonPay(lm as never, subject as never, roster as never, { context: 'profile' }), false, 'profile context: nobody\'s')
+    assert.equal(R112.canViewPersonPay(lm as never, subject as never, roster as never), false, 'no context = profile')
+  }
+  for (const subject of [notMine, m2, catalogueRow]) {
+    assert.equal(R112.canViewPersonPay(lm as never, subject as never, roster as never, { context: 'timesheetReview' }), false)
+  }
+  // Each line manager asks only for their own reports; a manager who line-manages nobody only for their own.
+  assert.deepEqual(R112.payProfileReadPlan(m2 as never, subjects as never, roster as never), { kind: 'documents', ids: ['m2', 'nm'] })
+  const m3 = { id: 'm3', role: 'manager', manager: true, email: 'm3@t.com', isActive: true }
+  assert.deepEqual(R112.payProfileReadPlan(m3 as never, subjects as never, [...roster, m3] as never), { kind: 'documents', ids: ['m3'] })
+  assert.deepEqual(R112.rateHistoryQueryPlan(m3 as never, subjects as never, [...roster, m3] as never, { privatePay: true }), { kind: 'people', userIds: ['m3'], operativeIds: [] })
+  // An inactive line manager no longer counts (the roster is read live).
+  const lmGone = roster.map((row) => (row.id === 'lm' ? { ...row, isActive: false } : row))
+  assert.deepEqual(R112.payProfileReadPlan(lm as never, subjects as never, lmGone as never), { kind: 'documents', ids: ['lm'] })
+})
+
+test('1.33.0 canManageMaterialCatalogue: admins and super admins outside operative mode only', () => {
+  const role = (over: Partial<{ isSuperAdmin: boolean; isAdmin: boolean; isManager: boolean; isOperativeMode: boolean }>) => ({ isSuperAdmin: false, isAdmin: false, isManager: false, isOperativeMode: false, ...over })
+  assert.equal(R112.canManageMaterialCatalogue(role({ isAdmin: true })), true)
+  assert.equal(R112.canManageMaterialCatalogue(role({ isSuperAdmin: true })), true)
+  assert.equal(R112.canManageMaterialCatalogue(role({ isManager: true })), false, 'managers no longer manage the catalogue')
+  assert.equal(R112.canManageMaterialCatalogue(role({ isOperativeMode: true })), false)
+  assert.equal(R112.canManageMaterialCatalogue(role({ isAdmin: true, isOperativeMode: true })), false)
+  assert.equal(R112.canManageMaterialCatalogue({ level: 'admin' }), true)
+  assert.equal(R112.canManageMaterialCatalogue({ level: 'Manager' }), false)
+  assert.equal(R112.canManageMaterialCatalogue({ level: 'operative' }), false)
+  assert.equal(R112.canManageMaterialCatalogue(null), false)
+  // Sending quotes and orders is unchanged.
+  assert.equal(R112.canSendMaterialOrders(role({ isManager: true })), true)
+})
+
+test('1.33.0 userActiveWrites: another company\'s users document is never written, and no membership is created', () => {
+  const roster = [
+    { id: 'U', email: 'u@x', organizationId: 'OTHER' },
+    { id: 'u-here', email: 'U@x', organizationId: 'ORG' },
+    { id: 'u-b', email: 'u@x', organizationId: 'OTHER' },
+  ]
+  const fromRoster = R112.userActiveWrites({ organizationId: 'ORG', person: { id: 'U', email: 'u@x' }, isActive: false, roster })
+  assert.deepEqual(fromRoster.map((row) => row.path), ['users/u-here', 'users/U/orgMemberships/ORG'], 'home company from the roster row')
+  const fromPerson = R112.userActiveWrites({ organizationId: 'ORG', person: { id: 'U', email: 'u@x', organizationId: 'organizations/OTHER' }, isActive: true, roster: [] })
+  assert.deepEqual(fromPerson.map((row) => row.path), ['users/U/orgMemberships/ORG'])
+  assert.deepEqual(fromPerson[0].fields, { accountActive: true })
+  const here = R112.userActiveWrites({ organizationId: 'ORG', person: { id: 'U', email: 'u@x', organizationId: 'org' }, isActive: false, roster: [], membershipExists: false })
+  assert.deepEqual(here.map((row) => row.path), ['users/U'], 'membershipExists false: no membership write')
+  const unknown = R112.userActiveWrites({ organizationId: 'ORG', person: { id: 'U' }, isActive: false })
+  assert.deepEqual(unknown.map((row) => row.path), ['users/U', 'users/U/orgMemberships/ORG'], 'home company unknown: as before')
+})
+
+test('1.33.0 unbooked labour: an inactive account is never picked for an operatives row on its email', () => {
+  const base = {
+    timeZone: 'Europe/London',
+    startDayKey: '2026-11-04',
+    endDayKey: '2026-11-04',
+    includeWeekends: false,
+    standardPaidHours: 8,
+    bookings: [],
+    holidays: [],
+    operatives: [{ id: 'OP-ADA', email: 'ada@site.test', name: 'Roster Ada', isActive: true, isPlaceholder: false, profileWeight: 0 }],
+  }
+  const person = (id: string, isActive: boolean) => ({ id, email: 'Ada@site.test', name: `Ada ${id}`, isActive, passwordSet: true, status: 'active', isOperativeMode: true, isManager: false, isAdmin: false, isSuperAdmin: false })
+  const inactiveOnly = R112.unbookedLabourRows({ ...base, people: [person('U-OLD', false)] })
+  assert.deepEqual(inactiveOnly, [], 'an inactive person never shows as unbooked through their operatives row')
+  const both = R112.unbookedLabourRows({ ...base, people: [person('U-OLD', false), person('U-NEW', true)] })
+  assert.deepEqual(both.map((row) => row.personKey), ['U-NEW'])
+})
+
+// MARK: - Rulebook 1.33.0: every manager sees every job; My Projects; Daily Overview team; line manager locked
+
+test('1.33.0 the managers\' hide list is not read; the operatives\' hide list is (parseJobDocument, visibleJobs)', () => {
+  const parsed = R112.parseJobDocument('J', { jobNumber: 'J', hiddenManagerUserIds: ['m'], hiddenOperativeUserIds: ['o'] }, { kind: 'projects', timeZone: 'Europe/London' }) as Record<string, unknown> | null
+  assert.ok(parsed)
+  assert.equal('hiddenManagerUserIds' in (parsed || {}), false)
+  assert.deepEqual(parsed?.hiddenOperativeUserIds, ['o'])
+  const mgr = { role: { isSuperAdmin: false, isAdmin: false, isManager: true, isOperativeMode: false }, ids: ['m'] }
+  assert.deepEqual(R112.visibleJobs([{ id: 'J', collection: 'projects', hiddenManagerUserIds: ['m'] } as never], mgr).length, 1)
+})
+
+test('1.33.0 canCreateJob / canChangeJobManagers still follow the toggle; canWriteBooking still own jobs only', () => {
+  const plain = { role: { isSuperAdmin: false, isAdmin: false, isManager: true, isOperativeMode: false }, ids: ['m'], toggles: { projects: false, smallWorks: false } }
+  assert.equal(R112.canSeeJob(plain, { managerIds: ['x'] }), true)
+  assert.equal(R112.canCreateJob(plain, 'projects'), false)
+  assert.equal(R112.canChangeJobManagers(plain, 'smallWorks'), false)
+  assert.equal(R112.canEditJob(plain, { managerIds: ['x'] }, 'projects'), false)
+  assert.equal(R112.canWriteBooking(plain, { collection: 'bookings', projectId: 'J' }, { managerIds: ['x'] }), false)
+  assert.equal(R112.canWriteBooking(plain, { collection: 'bookings', projectId: 'J' }, { managerIds: ['m'] }), true)
+  assert.equal(R112.canEditWorkCatalogue(plain.role, 'projects', plain.toggles), false)
+})
+
+test('1.33.0 My Projects / My Small works: pre-fill, saved picks, picker rows, toggles, write fields', () => {
+  const mgr = { role: { isSuperAdmin: false, isAdmin: false, isManager: true, isOperativeMode: false }, ids: ['U-M'], email: 'm@x.com', uid: 'U-M' }
+  const admin = { role: { isSuperAdmin: false, isAdmin: true, isManager: false, isOperativeMode: false }, ids: ['A'], uid: 'A' }
+  const op = { role: { isSuperAdmin: false, isAdmin: false, isManager: false, isOperativeMode: true }, ids: ['O'], uid: 'O' }
+  const jobs = [
+    { id: 'P1', collection: 'projects', managerUserIds: ['U-M'] },
+    { id: 'P2', collection: 'projects', managerUserIds: ['X'] },
+    { id: 'S1', collection: 'smallWorks', managerUserIds: ['U-M'] },
+  ]
+  assert.equal(R112.hasMyWorksList(mgr), true)
+  assert.equal(R112.hasMyWorksList(admin), true)
+  assert.equal(R112.hasMyWorksList(op), false)
+  assert.equal(R112.defaultWorksListTab(mgr), 'mine')
+  assert.equal(R112.defaultWorksListTab(op), 'active')
+  assert.deepEqual(R112.myWorksDefaultIds(jobs, mgr, {}, 'projects'), ['P1'])
+  assert.deepEqual(R112.myWorksDefaultIds(jobs, admin, {}, 'projects'), [])
+  assert.deepEqual(R112.myWorksList(jobs, R112.parseMyWorksPicks(null), mgr, {}, 'projects').map((j) => j.id), ['P1'])
+  assert.deepEqual(R112.myWorksList(jobs, R112.parseMyWorksPicks({ projects: ['p2', 'P2', 'gone'] }), mgr, {}, 'projects').map((j) => j.id), ['P2'])
+  assert.deepEqual(R112.myWorksList(jobs, R112.parseMyWorksPicks({ projects: [] }), mgr, {}, 'projects'), [])
+  assert.deepEqual(R112.parseMyWorksPicks({ projects: ['a', 'A', ' b '], smallWorks: 'x' }), { projects: ['a', 'b'], smallWorks: null })
+  assert.deepEqual(R112.myWorksPickerRows(jobs, null, mgr, {}, 'projects').map((r) => [r.job.id, r.picked]), [['P1', true], ['P2', false]])
+  assert.deepEqual(R112.myWorksPicksAfterToggle(['P1'], 'p2', true), ['P1', 'p2'])
+  assert.deepEqual(R112.myWorksPicksAfterToggle(['P1', 'p2'], 'P2', false), ['P1'])
+  assert.deepEqual(R112.myWorksPicksWriteFields('smallWorks', ['S1', 's1'], 'T'), { smallWorks: ['S1'], updatedAt: 'T' })
+  assert.equal(R112.myWorksPicksPath('ORG', 'U-M'), 'organizations/ORG/worksListPicks/U-M')
+  assert.equal(R112.myWorksEmptyTitle('projects'), 'No projects in your list yet')
+  assert.equal(R112.myWorksEmptyTitle('smallWorks'), 'No small works in your list yet')
+  assert.equal(R112.myWorksTabLabel('smallWorks'), 'My Small works')
+})
+
+test('1.33.0 Daily Overview scope: a manager sees themselves and their reports only; admins everything', () => {
+  const mgr = { role: { isSuperAdmin: false, isAdmin: false, isManager: true, isOperativeMode: false }, ids: ['M'], email: 'm@x.com' }
+  const roster = [
+    { id: 'M', email: 'm@x.com', role: 'manager' },
+    { id: 'R', email: 'r@x.com', assignedManagerUserIds: ['M'] },
+    { id: 'N', email: 'n@x.com', assignedManagerUserIds: ['X'] },
+  ]
+  const scope = R112.dailyOverviewScopeFor({ viewer: mgr, roster, enforced: true })
+  assert.ok(scope.kind === 'jobs' && scope.jobIds.length === 0 && scope.unbookedLabour)
+  assert.equal(R112.isDailyOverviewRowInScope(scope, { personIds: ['R'] }), true)
+  assert.equal(R112.isDailyOverviewRowInScope(scope, { personIds: ['N'] }), false)
+  assert.equal(R112.isDailyOverviewRowInScope(scope, { personIds: ['M'], subcontractor: true }), false)
+  const all = R112.dailyOverviewScopeFor({ viewer: { role: { ...mgr.role, isAdmin: true }, ids: ['A'] }, roster })
+  assert.equal(R112.isDailyOverviewRowInScope(all, { subcontractor: true }), true)
+  // The manager's unbooked people are exactly their Book labour / Warnings people.
+  const rows = (s: ReturnType<typeof R112.dailyOverviewScopeFor>) =>
+    R112.unbookedLabourRowsOnDay({
+      scope: s,
+      dayKey: '2026-11-04',
+      timeZone: 'Europe/London',
+      includeWeekends: false,
+      standardPaidHours: 8,
+      people: roster.map((row) => ({ id: row.id, email: row.email, name: row.id, isActive: true, passwordSet: true, isOperativeMode: true, isManager: false, isAdmin: false, isSuperAdmin: false })) as never,
+      operatives: [],
+      bookings: [],
+      holidays: [],
+    } as never).map((row) => row.operativeId ?? row.userId)
+  const warningScope = R112.warningScopeFor({ viewer: mgr, roster, jobs: [{ id: 'J', managerUserIds: ['M'] }], enforced: true })
+  assert.deepEqual(rows(scope).sort(), ['M', 'R'])
+  assert.deepEqual(rows(scope), rows(warningScope))
+  // Home: on site counts only the team.
+  const metrics = R112.homeOverviewMetrics({
+    nowMs: Date.parse('2026-11-04T10:00:00Z'),
+    timeZone: 'Europe/London',
+    viewer: { id: 'M' },
+    roster: roster as never,
+    bookings: [
+      { operativeId: 'R', dayKey: '2026-11-04', status: 'Confirmed' },
+      { operativeId: 'N', dayKey: '2026-11-04', status: 'Confirmed' },
+    ],
+    scope,
+  })
+  assert.equal(metrics.operativesOnSiteToday, 1)
+})
+
+test('1.33.0 canChangeLineManager: set once by an Operatives manager, then admins only', () => {
+  const admin = { id: 'A', adminAccess: true }
+  const opsMgr = { id: 'OM', role: 'manager', manager: true, operatives: true }
+  const plainMgr = { id: 'PM', role: 'manager', manager: true, operatives: false }
+  const operative = { id: 'O', role: 'operative', operativeMode: true }
+  const manager = { id: 'M2', role: 'manager', manager: true }
+  assert.equal(R112.canChangeLineManager(admin, operative), true)
+  assert.equal(R112.canChangeLineManager(admin, manager), true)
+  assert.equal(R112.canChangeLineManager(opsMgr, operative, { isCreate: true }), true)
+  assert.equal(R112.canChangeLineManager(opsMgr, operative), false)
+  assert.equal(R112.canChangeLineManager(opsMgr, operative, { invitation: { accepted: false, invitedBy: 'om' } }), true)
+  assert.equal(R112.canChangeLineManager(opsMgr, operative, { invitation: { accepted: true, invitedBy: 'OM' } }), false)
+  assert.equal(R112.canChangeLineManager(opsMgr, operative, { invitation: { accepted: false, invitedBy: 'someone' } }), false)
+  assert.equal(R112.canChangeLineManager(opsMgr, manager, { isCreate: true }), false)
+  assert.equal(R112.canChangeLineManager(plainMgr, operative, { isCreate: true }), false)
+  assert.equal(R112.canChangeLineManager(operative, operative, { isCreate: true }), false)
+  assert.equal(R112.lineManagerChanged({ assignedManagerUserIds: ['A', 'b'] }, { assignedManagerUserIds: ['B', 'a'] }), false)
+  assert.equal(R112.lineManagerChanged({ assignedManagerUserId: 'A' }, { assignedManagerUserIds: ['A'] }), false)
+  assert.equal(R112.lineManagerChanged({ assignedManagerUserIds: ['A'] }, { assignedManagerUserIds: ['C'] }), true)
+  assert.equal(R112.lineManagerChanged({ assignedManagerUserIds: ['A'] }, { hasNoLineManager: true }), true)
+})
+
+// MARK: - Rulebook 1.33.0: PAYE overtime ✓ ✕ ⚙ choices, button readiness, Return notices, reopen (§25)
+
+test('1.33.0 choice state machine: ✓ / ✕ toggle and reverse, ⚙ clears the mark and needs ✓, ✕ drops an edit', () => {
+  const empty = r129.OVERTIME_EMPTY_CHOICE
+  const tick = r129.overtimeChoiceAfter(empty, { kind: 'tick' })
+  assert.deepEqual(tick, { mark: 'tick', edit: null })
+  assert.deepEqual(r129.overtimeChoiceAfter(tick, { kind: 'tick' }), { mark: 'none', edit: null })
+  const cross = r129.overtimeChoiceAfter(tick, { kind: 'cross' })
+  assert.deepEqual(cross, { mark: 'cross', edit: null })
+  assert.deepEqual(r129.overtimeChoiceAfter(cross, { kind: 'tick' }), { mark: 'tick', edit: null })
+  assert.deepEqual(r129.overtimeChoiceAfter(cross, { kind: 'cross' }), { mark: 'none', edit: null })
+  const cog = r129.overtimeChoiceAfter(tick, { kind: 'cog', start: '7:30', end: '17:00', multiplier: 2 })
+  assert.deepEqual(cog, { mark: 'none', edit: { start: '07:30', end: '17:00', multiplier: 2 } })
+  const cogTick = r129.overtimeChoiceAfter(cog, { kind: 'tick' })
+  assert.deepEqual(r129.overtimeChoiceDecision(cogTick), { action: 'edit', start: '07:30', end: '17:00', multiplier: 2 })
+  // The cog again unticks and replaces the figure.
+  assert.deepEqual(r129.overtimeChoiceAfter(cogTick, { kind: 'cog', start: '07:30', end: '18:00', multiplier: null }), {
+    mark: 'none', edit: { start: '07:30', end: '18:00', multiplier: null },
+  })
+  assert.deepEqual(r129.overtimeChoiceAfter(cogTick, { kind: 'cross' }), { mark: 'cross', edit: null })
+  // An invalid cog changes nothing.
+  assert.deepEqual(r129.overtimeChoiceAfter(tick, { kind: 'cog', start: '07:30', end: '07:30', multiplier: null }), tick)
+  assert.equal(r129.overtimeChoiceDecision(cog), null)
+  assert.deepEqual(r129.overtimeChoiceDecision(cross), { action: 'strike' })
+  assert.deepEqual(r129.overtimeChoiceDecision(tick), { action: 'approve' })
+  // What both apps draw.
+  const b1 = r129Booking('B1', '2026-11-04', '06:30', '14:00')
+  const view = (choice: typeof tick, role: 'person' | 'decider') => r129.overtimeChoiceView({ choice, booking: b1, organization: R129_ORG, timeZone: R129_TZ, role })
+  assert.deepEqual(view(tick, 'person'), {
+    tick: 'filled', cross: 'grey', cog: 'grey', figureStruck: false, oldFigure: '1h × 1.5 = 1.5h', newFigure: null, label: 'Confirmed', complete: true,
+  })
+  assert.deepEqual([view(cross, 'person').figureStruck, view(cross, 'person').newFigure, view(cross, 'person').label], [true, 'No overtime', 'Not worked'])
+  assert.deepEqual([view(cross, 'decider').newFigure, view(cross, 'decider').label], [null, 'Declined'])
+  assert.deepEqual([view(cog, 'person').label, view(cog, 'person').complete, view(cog, 'person').newFigure], ['Changed — tick or cross it', false, '1h × 2 = 2h'])
+  assert.equal(view(cogTick, 'decider').label, 'Changed')
+  const sunday = r129Booking('B4', '2026-11-08', '07:30', '14:00')
+  assert.equal(r129.overtimeChoiceView({ choice: cross, booking: sunday, organization: R129_ORG, timeZone: R129_TZ, role: 'person' }).newFigure, 'Booking removed')
+})
+
+test('1.33.0 Send for approval: green once every line is marked; after a Return grey until a line changes; only changed lines are sent', () => {
+  const b1 = r129Booking('B1', '2026-11-04', '06:30', '14:00')
+  const b2 = r129Booking('B2', '2026-11-05', '07:30', '18:00')
+  const range = { start: '2026-11-01', end: '2026-11-30' }
+  const base = { personIds: ['sam'], organization: R129_ORG, timeZone: R129_TZ, range }
+  const fresh = r129.payeOvertimeLines({ ...base, bookings: [b1, b2] })
+  assert.deepEqual(r129.overtimeSubmitReady({ lines: fresh, choices: {} }), { ready: false, undecidedCount: 2, bookingIds: [], message: r129.OVERTIME_SUBMIT_UNDECIDED_MESSAGE })
+  const choices = { B1: { mark: 'tick' as const, edit: null }, b2: { mark: 'cross' as const, edit: null } }
+  assert.deepEqual(r129.overtimeSubmitReady({ lines: fresh, choices }), { ready: true, undecidedCount: 0, bookingIds: ['B1', 'B2'], message: null })
+  const built = r129.overtimeSubmitLines({ lines: fresh, choices, bookings: [b1, b2], organization: R129_ORG, timeZone: R129_TZ, personIds: ['sam'] })
+  assert.deepEqual(built.lines.map((line) => [line.bookingId, line.action, line.proposedStart, line.proposedEnd]), [['B1', 'keep', null, null], ['B2', 'strike', '07:30', '16:00']])
+  // Waiting lines are locked; nothing else to send.
+  const request = r129.parseOvertimeRequestDocument('R1', { userId: 'sam', rangeStart: range.start, rangeEnd: range.end, status: 'pending', lines: built.lines, createdAt: 1 })
+  const waiting = r129.payeOvertimeLines({ ...base, bookings: [b1, b2], requests: [request] })
+  assert.deepEqual(waiting.map((line) => line.state), ['waiting', 'waiting'])
+  assert.deepEqual(r129.overtimeLineChoice(waiting[1], { B2: { mark: 'tick', edit: null } }), { mark: 'cross', edit: null })
+  assert.equal(r129.overtimeSubmitReady({ lines: waiting, choices: {} }).message, r129.OVERTIME_SUBMIT_NOTHING_CHANGED_MESSAGE)
+  // Returned: B1 approved, B2 declined (booking left as it was).
+  const result = r129.overtimeReturnWrites({ request, decisions: { B1: { action: 'approve' }, B2: { action: 'strike' } }, bookings: { B1: b1, B2: b2 }, organization: R129_ORG, timeZone: R129_TZ, deciderId: 'lm' })
+  assert.ok(result.ok)
+  if (!result.ok) return
+  const reviews = result.reviewWrites.map((row) => r129.parseOvertimeReviewDocument(row.docId, { ...row.fields, reviewedAt: 10 }))
+  const returned = r129.parseOvertimeRequestDocument('R1', { userId: 'sam', rangeStart: range.start, rangeEnd: range.end, lines: built.lines, ...result.requestFields, createdAt: 1, decidedAt: 10 })
+  const after = r129.payeOvertimeLines({ ...base, bookings: [b1, b2], reviews, requests: [returned] })
+  assert.deepEqual(after.map((line) => line.state), ['returnedApproved', 'returnedDeclined'])
+  assert.deepEqual(r129.overtimeSubmitReady({ lines: after, choices: {} }), { ready: false, undecidedCount: 0, bookingIds: [], message: r129.OVERTIME_SUBMIT_NOTHING_CHANGED_MESSAGE })
+  // ✕ → ✓ on the declined line (challenge): only that line is sent.
+  assert.deepEqual(r129.overtimeSubmitReady({ lines: after, choices: { B2: { mark: 'tick', edit: null } } }).bookingIds, ['B2'])
+  // Generate: every line returned, nothing unsent → green; an unsent change → grey.
+  assert.deepEqual(r129.overtimeGenerateReady({ lines: after, hasLineManager: true, choices: {} }), { ready: true, message: null })
+  assert.deepEqual(r129.overtimeGenerateReady({ lines: after, hasLineManager: true, choices: { B2: { mark: 'tick', edit: null } } }), {
+    ready: false, message: r129.OVERTIME_GENERATE_UNSENT_MESSAGE,
+  })
+  // A pending request whose every waiting line is sent again is withdrawn; one with other lines waiting is kept.
+  assert.deepEqual(r129.overtimeRequestsSuperseded([request], 'SAM', ['B1', 'B2']), ['R1'])
+  assert.deepEqual(r129.overtimeRequestsSuperseded([request], 'sam', ['B1']), [])
+})
+
+test('1.33.0 Generate without a line manager: every line confirmed (direct ✓ ✕ ⚙); a deleted line counts; report out of date after a change', () => {
+  const b1 = r129Booking('B1', '2026-11-04', '06:30', '14:00')
+  const b4 = r129Booking('B4', '2026-11-08', '07:30', '14:00')
+  const range = { start: '2026-11-01', end: '2026-11-30' }
+  const tick = r129.overtimeDirectWrites({ booking: b1, action: { action: 'approve' }, userId: 'adm', reviewerId: 'adm', organization: R129_ORG, timeZone: R129_TZ })!
+  const del = r129.overtimeDirectWrites({ booking: b4, action: { action: 'strike' }, userId: 'adm', reviewerId: 'adm', organization: R129_ORG, timeZone: R129_TZ, platform: 'ios' })!
+  assert.deepEqual(del.bookingDelete, { collection: 'bookings', bookingId: 'B4', tombstone: { bookingId: 'B4', collection: 'bookings', deletedBy: 'adm', deletedFrom: 'ios' } })
+  assert.deepEqual([del.bookingWrite, del.reviewWrite.fields.decision, del.hoursChanged], [null, 'deleted', true])
+  const reviews = [tick, del].map((row) => r129.parseOvertimeReviewDocument(row.reviewWrite.docId, row.reviewWrite.fields))
+  const base = { personIds: ['adm'], organization: R129_ORG, timeZone: R129_TZ, range, reviews }
+  const own = (b: ReturnType<typeof r129Booking>) => ({ ...b, personId: 'adm' })
+  const lines = r129.payeOvertimeLines({ ...base, bookings: [own(b1)] })
+  assert.deepEqual(lines.map((line) => [line.bookingId, line.state]), [['B1', 'confirmed'], ['B4', 'deleted']])
+  assert.equal(r129.canGenerateOvertimeReport(lines, { hasLineManager: false }), true)
+  assert.equal(r129.canGenerateOvertimeReport(lines), true)
+  const report = r129.parseOvertimeReportDocument('REP', JSON.parse(JSON.stringify(r129.overtimeReportSnapshot({ userId: 'adm', userName: 'Ada', rangeStart: range.start, rangeEnd: range.end, lines, generatedBy: 'adm' }))))
+  assert.equal(r129.overtimeReportOutOfDate({ report, lines }), false)
+  assert.equal(r129.canGenerateOvertimeReport(lines, { reports: [report] }), false)
+  // A manager changes the booking: the line reopens, the report is out of date, Generate needs the line again.
+  const moved = r129.payeOvertimeLines({ ...base, bookings: [{ ...own(b1), workEndTime: '15:00' }] })
+  assert.equal(moved[0].state, 'reopened')
+  assert.equal(r129.overtimeReportOutOfDate({ report, lines: moved }), true)
+  assert.equal(r129.overtimeGenerateReady({ lines: moved, hasLineManager: false, reports: [report] }).message, r129.OVERTIME_GENERATE_NOT_MARKED_MESSAGE)
+  // A stored out-of-date mark is honoured.
+  assert.equal(r129.parseOvertimeReportDocument('REP2', { lines: [], outOfDate: true }).outOfDate, true)
+  // A line still red ✕ at Generate is in the report at 0h, "Declined by {name}" (flags for the PDF).
+  const declinedLine = { ...lines[0], state: 'returnedDeclined' as const, deciderName: 'Lee' }
+  const snap = r129.overtimeReportSnapshot({ userId: 'adm', userName: 'Ada', rangeStart: range.start, rangeEnd: range.end, lines: [declinedLine], generatedBy: 'adm' })
+  assert.deepEqual([snap.lines[0].overtimeHours, snap.lines[0].declined, snap.lines[0].declinedByName, snap.lines[0].note], [0, true, 'Lee', 'Declined by Lee'])
+})
+
+test('1.33.0 notices: Send for approval, Return (line manager / admin wording), reopen recipients, and where they open', () => {
+  const roster = [
+    { id: 'sam', email: 'sam@x.com', isActive: true, role: { isOperativeMode: true }, assignedManagerUserIds: ['lm'], employmentType: 'paye' },
+    { id: 'lm', email: 'lm@x.com', isActive: true, role: { isManager: true } },
+    { id: 'adm', email: 'adm@x.com', isActive: true, role: { isAdmin: true } },
+    { id: 'pat', email: 'pat@x.com', isActive: true, role: { isOperativeMode: true }, assignedManagerUserIds: ['lm'], employmentType: 'self_employed' },
+  ] as never
+  assert.deepEqual(r129.overtimeReturnedMessage({ deciderName: 'Lee Manager', deciderIsLineManager: true }), {
+    title: 'Overtime returned', message: 'Your line manager Lee Manager has returned your overtime request',
+  })
+  assert.equal(r129.overtimeReturnedMessage({ deciderName: 'Ada Admin', deciderIsLineManager: false }).message, 'Ada Admin has returned your overtime request')
+  assert.equal(r129.overtimeDeciderIsLineManager('lm', { id: 'sam', assignedManagerUserIds: ['lm'] } as never, roster), true)
+  assert.equal(r129.overtimeDeciderIsLineManager('adm', { id: 'sam', assignedManagerUserIds: ['lm'] } as never, roster), false)
+  assert.deepEqual(r129.overtimeReturnedRecipients('sam', 'lm', roster), ['sam'])
+  assert.equal(r129.overtimeRequestSubmittedMessage({ requesterName: 'Sam', rangeStart: '2026-10-26', rangeEnd: '2026-11-25' }).message, 'Sam sent their overtime for Mon 26 Oct – Wed 25 Nov for approval.')
+  // Reopen: a returned line tells the person and their line manager; a sent-only line the person; never the editor.
+  const b1 = r129Booking('B1', '2026-11-04', '06:30', '14:00')
+  const moved = { ...b1, workEndTime: '15:00' }
+  const fp = r129.overtimeBookingFingerprint(b1)
+  const returnedReview = r129.parseOvertimeReviewDocument('sam_B1', { userId: 'sam', bookingId: 'B1', decision: 'approved', fingerprint: fp, requestId: 'R1' })
+  const reopen = (reviews: unknown, requests: unknown, after: unknown = moved) =>
+    r129.overtimeLineReopened({ before: b1, after: after as never, organization: R129_ORG, timeZone: R129_TZ, reviews: reviews as never, requests: requests as never })
+  assert.deepEqual(reopen([returnedReview], []), { reopened: true, returned: true })
+  assert.deepEqual(reopen([], []), { reopened: false, returned: false })
+  assert.deepEqual(reopen([returnedReview], [], b1), { reopened: false, returned: false })
+  const line = r129.overtimeRequestLineFields({ booking: b1, organization: R129_ORG, timeZone: R129_TZ, proposal: { action: 'keep' } })!
+  const pending = r129.parseOvertimeRequestDocument('R2', { userId: 'sam', status: 'pending', lines: [line] })
+  assert.deepEqual(reopen([], [pending], null), { reopened: true, returned: false })
+  assert.deepEqual(reopen(null, null), { reopened: true, returned: false })
+  assert.deepEqual(r129.overtimeReopenedRecipients({ bookedId: 'SAM', actor: 'adm', roster, returned: true }), ['sam', 'lm'])
+  assert.deepEqual(r129.overtimeReopenedRecipients({ bookedId: 'sam', actor: 'lm', roster, returned: true }), ['sam'])
+  assert.deepEqual(r129.overtimeReopenedRecipients({ bookedId: 'row-sam', actor: 'adm', roster, operatives: [{ id: 'row-sam', email: 'SAM@x.com' }], returned: false }), ['sam'])
+  // Self-employed people are out of scope.
+  assert.deepEqual(r129.overtimeReopenedRecipients({ bookedId: 'pat', actor: 'adm', roster, returned: true }), [])
+  assert.equal(r129.overtimeReopenedMessage({ dayKey: '2026-11-04', jobNumber: 'J-1042' }).message, 'Your booking on Wed 4 Nov (J-1042) changed. Check that overtime line and send it again.')
+  // Where a notice opens: the current payrun, a past payrun, or the request's own range.
+  const org = { invoicing: { payePaydayHistory: [{ day: 25, effectiveFrom: '2026-01-01' }] } }
+  assert.deepEqual(r129.overtimeNotificationRange({ organization: org, todayKey: '2026-11-06', rangeStart: '2026-10-26', rangeEnd: '2026-11-25' }), { range: 'current', start: '2026-10-26', end: '2026-11-25' })
+  assert.deepEqual(r129.overtimeNotificationRange({ organization: org, todayKey: '2026-11-06', dayKey: '2026-10-04' }), { range: 'past', start: '2026-09-26', end: '2026-10-25' })
+  assert.deepEqual(r129.overtimeNotificationRange({ organization: org, todayKey: '2026-11-06', rangeStart: '2026-10-01', rangeEnd: '2026-11-03' }), { range: 'custom', start: '2026-10-01', end: '2026-11-03' })
+  assert.equal(r129.overtimeNotificationRange({ organization: org, todayKey: '2026-11-06' }), null)
+  assert.deepEqual(r129.notificationDestination({ type: 'overtime_request_reviewed', relatedId: 'R1', dayKey: '2026-10-26', role: 'operative' }), { kind: 'overtimeMine', relatedId: 'R1', dayKey: '2026-10-26' })
+  // A tombstone carries overtimeRequestId only when given.
+  assert.deepEqual(r129.bookingTombstoneWriteFields({ bookingId: 'B4', collection: 'bookings', deletedBy: 'lm', deletedFrom: 'web', overtimeRequestId: ' ' }), { bookingId: 'B4', collection: 'bookings', deletedBy: 'lm', deletedFrom: 'web' })
+  assert.equal(r129.overtimeBookingDelete({ booking: { id: 'M1', collection: 'managerSiteBookings' }, deletedBy: 'lm', platform: 'web' }), null)
+})
+
+// MARK: - Rulebook 1.33.0 integration: claim items carry personUserId; Payrun Snapshot reads the overtime branch
+
+test('1.33.0 claim items carry personUserId (the creator) and the backfill stamps older items through every id', () => {
+  assert.deepEqual(R112.payeClaimPersonFields('sam'), { personUserId: 'sam' })
+  assert.deepEqual(R112.payeClaimPersonFields(' '), {})
+  const fields = R112.expenseWriteFields({
+    userId: 'sam',
+    organizationId: 'org1',
+    currency: 'GBP',
+    draft: { title: 'Fuel', details: '', jobNumber: 'J-1', date: '2026-11-04', amount: '20', evidence: [{ path: 'organizations/org1/payeClaims/sam/a.pdf', name: 'a.pdf', kind: 'file', contentType: 'application/pdf', auditId: null }] },
+  } as never)
+  assert.equal(fields?.personUserId, 'sam')
+  assert.equal(R112.parseExpenseDocument('E1', { ...fields }).personUserId, 'sam')
+  assert.equal(R112.parseExpenseDocument('E0', { userId: 'sam', title: 'Old' }).personUserId, null)
+  const users = [
+    { id: 'sam', formerUserIds: ['sam-invite'], sameEmailUserIds: ['SAM-2'] },
+    { id: 'pat', formerUserIds: ['shared'] },
+    { id: 'lee', sameEmailUserIds: ['shared'] },
+  ]
+  const backfill = (item: Record<string, unknown>) => R112.payeClaimPersonUserIdBackfill({ item, users })
+  assert.deepEqual(backfill({ userId: 'sam' }), { personUserId: 'sam' })
+  assert.deepEqual(backfill({ userId: 'Sam-Invite' }), { personUserId: 'sam' }, 'a former id, without case')
+  assert.deepEqual(backfill({ userId: 'sam-2' }), { personUserId: 'sam' }, 'a same-email document')
+  assert.equal(backfill({ userId: 'sam-invite', personUserId: 'sam' }), null, 'already stamped: idempotent')
+  assert.equal(backfill({ userId: 'shared' }), null, 'claimed by two users documents: never guessed')
+  assert.equal(backfill({ userId: 'nobody' }), null)
+  assert.equal(backfill({ userId: '' }), null)
+})
+
+test('1.33.0 integration: the needs-admin label is gone; claims keep reviewApprovalMessage without "need an admin"', () => {
+  assert.equal('OVERTIME_NEEDS_ADMIN_LABEL' in R112, false)
+  assert.equal('OVERTIME_NEEDS_ADMIN_MESSAGE' in R112, false)
+  assert.equal(R112.reviewApprovalMessage({ approved: 2, total: 5, counts: { rejected: 1, undecided: 2 } }), 'Approved 2 of 5. 1 rejected; 2 not decided yet.')
+  assert.equal(R112.reviewApprovalMessage({ approved: 0, total: 1, counts: { undecided: 1 } }), 'Nothing was approved: 1 not decided yet.')
+  assert.doesNotMatch(R112.reviewApprovalMessage({ approved: 1, total: 2, counts: { needsAdmin: 1 } as never }), /admin/)
 })

@@ -1,6 +1,11 @@
 /**
  * iOS parity source: Views/ProjectDetailView.swift ProjectVisibilitySettingsView ~L2517
  * Spec: docs/ios-parity/sections/16-job-tiles.md
+ *
+ * Rulebook 1.33.0 (owner decisions 6 Nov): every manager sees every job, so the managers' hide list
+ * (`hiddenManagerUserIds`) is gone — this page shows only the operatives list ("Hide this job from these
+ * operatives"). `visibleJobs` hides the job from an operative named in `hiddenOperativeUserIds`, even when booked on it.
+ * A stored `hiddenManagerUserIds` is left as it is (never read, never written here).
  */
 'use client'
 
@@ -11,7 +16,6 @@ import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { useProjectStore } from '@/lib/stores/projectStore'
 import { projectToSaveInput } from '@/lib/firebase/projectPayload'
 import {
-  getVisibilityManagerUsers,
   getVisibilityOperativeUsers,
   matchesRosterSegment,
   type RosterSegment,
@@ -19,7 +23,6 @@ import {
 import { ErrorBanner } from '@/components/dashboard/PageShell'
 import type { Project, User } from '@/types'
 
-type VisibilityTab = 'managers' | 'operatives'
 type VisibilitySegment = 'all' | RosterSegment
 
 const FILTERS: { id: VisibilitySegment; label: string }[] = [
@@ -46,13 +49,9 @@ export function ProjectVisibilityPage({
   const { organization } = useAuthStore()
   const { users, claimedEmails, loadUsers } = useOrgUserStore()
   const { saveProject } = useProjectStore()
-  const [tab, setTab] = useState<VisibilityTab>('managers')
   const [segment, setSegment] = useState<VisibilitySegment>('active')
   const [showSearch, setShowSearch] = useState(false)
   const [search, setSearch] = useState('')
-  const [hiddenManagers, setHiddenManagers] = useState<Set<string>>(
-    () => new Set(project.hiddenManagerUserIds ?? [])
-  )
   const [hiddenOperatives, setHiddenOperatives] = useState<Set<string>>(
     () => new Set(project.hiddenOperativeUserIds ?? [])
   )
@@ -68,24 +67,17 @@ export function ProjectVisibilityPage({
   }, [organization, loadUsers])
 
   useEffect(() => {
-    setHiddenManagers(new Set(project.hiddenManagerUserIds ?? []))
     setHiddenOperatives(new Set(project.hiddenOperativeUserIds ?? []))
-  }, [project.id, project.hiddenManagerUserIds, project.hiddenOperativeUserIds])
+  }, [project.id, project.hiddenOperativeUserIds])
 
-  const dirty =
-    !sameIds(hiddenManagers, project.hiddenManagerUserIds) ||
-    !sameIds(hiddenOperatives, project.hiddenOperativeUserIds)
+  const dirty = !sameIds(hiddenOperatives, project.hiddenOperativeUserIds)
 
   const roster = useMemo(() => {
-    const base =
-      tab === 'managers'
-        ? getVisibilityManagerUsers(users, claimedEmails)
-        : getVisibilityOperativeUsers(users, claimedEmails)
-    return base.filter((user) => {
+    return getVisibilityOperativeUsers(users, claimedEmails).filter((user) => {
       if (segment === 'all') return true
       return matchesRosterSegment(user, segment)
     })
-  }, [users, claimedEmails, tab, segment])
+  }, [users, claimedEmails, segment])
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -96,23 +88,15 @@ export function ProjectVisibilityPage({
     })
   }, [roster, search])
 
-  const isHidden = (userId: string) =>
-    tab === 'managers' ? hiddenManagers.has(userId) : hiddenOperatives.has(userId)
+  const isHidden = (userId: string) => hiddenOperatives.has(userId)
 
   const toggleHidden = (user: User) => {
     setSaved(false)
     setError(null)
-    if (tab === 'managers') {
-      const next = new Set(hiddenManagers)
-      if (next.has(user.id)) next.delete(user.id)
-      else next.add(user.id)
-      setHiddenManagers(next)
-    } else {
-      const next = new Set(hiddenOperatives)
-      if (next.has(user.id)) next.delete(user.id)
-      else next.add(user.id)
-      setHiddenOperatives(next)
-    }
+    const next = new Set(hiddenOperatives)
+    if (next.has(user.id)) next.delete(user.id)
+    else next.add(user.id)
+    setHiddenOperatives(next)
   }
 
   const saveVisibility = async () => {
@@ -123,7 +107,6 @@ export function ProjectVisibilityPage({
       const input = projectToSaveInput(
         {
           ...project,
-          hiddenManagerUserIds: Array.from(hiddenManagers),
           hiddenOperativeUserIds: Array.from(hiddenOperatives),
           updatedAt: new Date(),
         },
@@ -141,36 +124,15 @@ export function ProjectVisibilityPage({
   return (
     <div className="grid gmain">
       <div>
-        <h2 className="h2">View access</h2>
+        <h2 className="h2">Hide this job from these operatives</h2>
         <p className="mt-2 muted small" style={{ lineHeight: 1.55 }}>
-          This feature can be used to select who will not be able to view the project or small works. Admins appear
-          under Managers and operatives under Operatives. Admins always have access and cannot be hidden.
-        </p>
-        <p className="mt-2 muted small" style={{ lineHeight: 1.55 }}>
-          When unselected the user will not see this job within their account.
+          Untick an operative to hide this job from them, even when they are booked on it. Admins and managers always
+          see every job.
         </p>
       </div>
 
       <div className="stack">
         {error && <ErrorBanner message={error} />}
-
-        <div className="seg">
-          {(
-            [
-              ['managers', 'Managers'],
-              ['operatives', 'Operatives'],
-            ] as const
-          ).map(([item, label]) => (
-            <button
-              key={item}
-              type="button"
-              className={tab === item ? 'on' : ''}
-              onClick={() => setTab(item)}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
 
         <div className="row wrap">
           <label className="f" style={{ margin: 0 }}>
@@ -221,17 +183,13 @@ export function ProjectVisibilityPage({
             <div className="card-b rows">
               {filtered.map((user) => {
                 const hidden = isHidden(user.id)
-                const locked = tab === 'managers' && (user.isSuperAdmin || user.permissions.adminAccess)
                 return (
                   <button
                     key={user.id}
                     type="button"
-                    onClick={() => {
-                      if (!locked) toggleHidden(user)
-                    }}
+                    onClick={() => toggleHidden(user)}
                     className="ritem"
                     aria-pressed={!hidden}
-                    disabled={locked}
                   >
                     <span className="grow">
                       <span className="t">
@@ -239,7 +197,6 @@ export function ProjectVisibilityPage({
                       </span>
                       <span className="s">
                         {user.email}
-                        {locked ? ' · Admin' : ''}
                       </span>
                     </span>
                     {hidden ? (

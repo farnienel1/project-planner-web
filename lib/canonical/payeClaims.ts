@@ -39,6 +39,7 @@ import { fileDeletePermission, storedFileKind, storedFileObjectName } from './st
 import type { NotificationRosterMember } from './notificationRecipients'
 import { priceWorkJobNumberError, priceWorkJobNumberText, PRICE_WORK_JOB_NUMBER_MAX } from './priceWorkJobNumber'
 import type { TimesheetEntriesDocument } from './workDocumentReaders'
+import { reportGeneratedText } from './reportHeader'
 
 // MARK: - Constants and copy
 
@@ -106,6 +107,12 @@ export type PayeClaimBase = {
   evidence: PayeClaimEvidence[]
   createdAtMs: number | null
   createdBy: string
+  /**
+   * 1.33.0: the person's current users id (`payeClaimPersonFields`): written on create (= the creator) and by
+   * `scripts/backfill-paye-claim-person-user-id.mjs` on older items, so the security rules let the person's line manager
+   * read an item filed under another of their ids. Null when not stored.
+   */
+  personUserId?: string | null
 }
 
 export type PriceWorkItem = PayeClaimBase & {
@@ -300,7 +307,7 @@ export function priceWorkApproverCandidates(
   return lineManagerCandidates(person, rows).filter((candidate) => {
     const row = rows.find((member) => idText(member?.id) === candidate.id)
     if (!row) return false
-    // 1.30.0 review: the same test as the security rules (`priceWorkApproverValid`) — the approver's users document
+    // 1.30.0 review: the same test as the security rules' price work approver check — the approver's users document
     // names this organisation, and they are an admin or carry the manager flag / role (a flagless "member" is not).
     if (org && !homeOrganizationIs(record(row).organizationId, org)) return false
     return candidate.level === 'admin' || storedManager(row)
@@ -413,6 +420,40 @@ export function expenseValidationError(
 // MARK: - Write fields
 
 /**
+ * 1.33.0 (line manager can always review, owner 6 Nov): the person field every new `priceWorkItems` / `expenseItems`
+ * document carries — `personUserId`, the creator's current users id (the same as `userId` on a create; the rules
+ * require it to be the signed-in account). The person's line manager reads items through it, so an item still filed
+ * under a former id is readable once `payeClaimPersonUserIdBackfill` has stamped it.
+ */
+export function payeClaimPersonFields(creatorUserId: unknown): { personUserId: string } | Record<string, never> {
+  const id = text(creatorUserId)
+  return id ? { personUserId: id } : {}
+}
+
+/**
+ * 1.33.0: the `personUserId` an item stored before 1.33.0 should get (the backfill script; dry run by default). The
+ * users document whose id is the item's `userId`, else the one listing it in `formerUserIds` or `sameEmailUserIds`
+ * (without case). Null when the item already has one, nobody matches, or more than one users document claims the id
+ * (left for an admin to sort out, never guessed).
+ */
+export function payeClaimPersonUserIdBackfill(input: {
+  item: { userId?: unknown; personUserId?: unknown } | null | undefined
+  users: ReadonlyArray<{ id?: unknown; formerUserIds?: unknown; sameEmailUserIds?: unknown }> | null | undefined
+}): { personUserId: string } | null {
+  const item = input.item
+  if (!item || text(item.personUserId)) return null
+  const key = idKey(item.userId)
+  if (!key) return null
+  const users = (input.users || []).filter((row) => row && text(row.id))
+  const own = users.find((row) => idKey(row.id) === key)
+  if (own) return { personUserId: text(own.id) }
+  const listed = (value: unknown) => (Array.isArray(value) ? value.some((id) => idKey(id) === key) : false)
+  const claims = users.filter((row) => listed(row.formerUserIds) || listed(row.sameEmailUserIds))
+  const ids = Array.from(new Set(claims.map((row) => text(row.id))))
+  return ids.length === 1 ? { personUserId: ids[0] } : null
+}
+
+/**
  * The fields of a new `priceWorkItems/{id}` document (a create; the app adds `createdAt` as server time and the write
  * metadata). The approver's name is stored beside the id so the report names them even after they leave. Null when
  * `priceWorkValidationError` refuses the draft.
@@ -444,6 +485,7 @@ export function priceWorkWriteFields(input: {
     currency: normalizeCurrencyCode(input.currency) ?? 'GBP',
     evidence: (input.draft.evidence || []).map(payeClaimEvidenceWriteFields),
     createdBy: userId,
+    ...payeClaimPersonFields(userId),
   }
 }
 
@@ -471,6 +513,7 @@ export function expenseWriteFields(input: {
     currency: normalizeCurrencyCode(input.currency) ?? 'GBP',
     evidence: (input.draft.evidence || []).map(payeClaimEvidenceWriteFields),
     createdBy: userId,
+    ...payeClaimPersonFields(userId),
   }
 }
 
@@ -487,6 +530,7 @@ function baseOf(docId: string, row: Record<string, unknown>, organizationId?: st
     evidence: parsePayeClaimEvidence(row.evidence, { userId: row.userId, organizationId }),
     createdAtMs: documentInstantMs(row.createdAt),
     createdBy: text(row.createdBy),
+    personUserId: text(row.personUserId) || null,
   }
 }
 
@@ -825,61 +869,177 @@ function dateText(start: string, end: string): string {
   return !end || end === start ? formatPaymentRunDay(start) : `${formatPaymentRunDay(start)} – ${formatPaymentRunDay(end)}`
 }
 
-/**
- * The summary page's text: title ("Expenses report · Sam Smith"), the range, one row per item (date · job · name ·
- * figure, then its description, approver and evidence count) and the total, money in the report's currency.
- */
-export function payeClaimReportRows(
-  snapshot: Pick<PayeClaimReportSnapshot, 'kind' | 'userName' | 'rangeStart' | 'rangeEnd' | 'currency' | 'items' | 'totals'>
-): {
-  title: string
-  subtitle: string
-  rows: Array<{ heading: string; figure: string; lines: string[] }>
-  total: string
-  empty: string
-} {
-  const priceWork = snapshot.kind === 'priceWork'
-  const rows = snapshot.items.map((item) => ({
-    heading: [dateText(item.startDate, item.endDate), priceWork ? priceWorkJobNumberText(item.jobNumber) : item.jobNumber, item.title].filter(Boolean).join(' · '),
-    figure: formatMoney(item.amount, snapshot.currency),
-    lines: [
-      item.details,
-      priceWork && item.approvedByName ? `Approved by ${item.approvedByName}` : '',
-      item.evidence.length > 0 ? `Evidence: ${item.evidence.length} (${item.evidence.map((entry) => entry.name).join(', ')})` : '',
-    ].filter(Boolean),
-  }))
-  return {
-    title: `${priceWork ? PRICE_WORK_REPORT_TITLE : EXPENSES_REPORT_TITLE} · ${text(snapshot.userName)}`,
-    subtitle: `${formatPaymentRunDay(snapshot.rangeStart)} – ${formatPaymentRunDay(snapshot.rangeEnd)}`,
-    rows,
-    total: `${priceWork ? PRICE_WORK_TOTAL_LABEL : EXPENSES_TOTAL_LABEL}: ${formatMoney(snapshot.totals.amount, snapshot.currency)}`,
-    empty: priceWork ? PRICE_WORK_EMPTY_MESSAGE : EXPENSES_EMPTY_MESSAGE,
-  }
+/** 1.33.0: the summary table's columns, in drawing order (price work adds who approved it). */
+export const PRICE_WORK_REPORT_COLUMNS: ReadonlyArray<string> = ['From – To', 'Job number', 'Name', 'Approved by', 'Amount']
+export const EXPENSES_REPORT_COLUMNS: ReadonlyArray<string> = ['Date', 'Job number', 'Name', 'Amount']
+
+/** One summary row: the old joined text (`heading`, `figure`, `lines`) and, from 1.33.0, each column on its own. */
+export type PayeClaimReportRow = {
+  heading: string
+  figure: string
+  lines: string[]
+  itemId: string
+  /** `formatPaymentRunDay` of the day, or "from – to" for price work over several days. */
+  date: string
+  /** Price work: `priceWorkJobNumberText` ("—" before 1.30.1). Expense: as stored. */
+  jobNumber: string
+  name: string
+  /** Price work only: who approved it. */
+  approvedBy: string
+  /** `formatMoney` in the report's currency. */
+  amount: string
+  description: string
+  /** "Evidence: 2 (a.jpg, b.pdf)", or "". */
+  evidenceNote: string
+}
+
+type ClaimReportHeaderExtras = {
+  userId?: string | null
+  companyName?: string | null
+  generatedBy?: string | null
+  generatedAtMs?: number | null
 }
 
 /**
- * The evidence pages after the summary, in item order: one per piece of evidence with its heading (the item's name,
- * date and figure) and details (the evidence name and the item's description), and how the PDF draws it
- * (`payeClaimEvidenceDrawAs`: an image full size, a PDF's pages appended, otherwise listed with
- * `PAYE_CLAIM_EVIDENCE_NOT_DRAWN_NOTE`).
+ * The summary page's content (1.33.0, owner 6 Nov: laid out like the invoice / timesheet report). Kept for older
+ * readers: `title` ("Expenses report · Sam Smith"), `subtitle` (the range), `rows` (`heading` date · job · name,
+ * `figure`, `lines` description / approver / evidence count), `total`, `empty`. 1.33.0 adds the header
+ * (`documentTitle`, `companyName`, `personName`, `period`, `generatedAt` / `generatedBy` / `generated` in the
+ * organisation zone, `reportGeneratedText`), `columns`, each row's columns on their own, `totalLabel` /
+ * `totalAmount`, `itemCount` / `evidenceCount` and `footer`. Money in the report's currency. Field names match iOS
+ * `PayeClaimReportLayout`.
+ */
+export function payeClaimReportRows(
+  snapshot: Pick<PayeClaimReportSnapshot, 'kind' | 'userName' | 'rangeStart' | 'rangeEnd' | 'currency' | 'items' | 'totals'> & ClaimReportHeaderExtras,
+  options?: { timeZone?: string | null; generatedByName?: string | null; nowMs?: number | null } | null
+): {
+  title: string
+  subtitle: string
+  rows: PayeClaimReportRow[]
+  total: string
+  empty: string
+  documentTitle: string
+  companyName: string
+  personName: string
+  period: string
+  generatedAt: string
+  generatedBy: string
+  generated: string
+  columns: string[]
+  totalLabel: string
+  totalAmount: string
+  itemCount: number
+  evidenceCount: number
+  footer: string
+} {
+  const priceWork = snapshot.kind === 'priceWork'
+  const rows: PayeClaimReportRow[] = snapshot.items.map((item) => {
+    const date = dateText(item.startDate, item.endDate)
+    const jobNumber = priceWork ? priceWorkJobNumberText(item.jobNumber) : text(item.jobNumber)
+    const approvedBy = priceWork ? text(item.approvedByName) : ''
+    const evidenceNote = item.evidence.length > 0 ? `Evidence: ${item.evidence.length} (${item.evidence.map((entry) => entry.name).join(', ')})` : ''
+    const amount = formatMoney(item.amount, snapshot.currency)
+    return {
+      heading: [date, jobNumber, item.title].filter(Boolean).join(' · '),
+      figure: amount,
+      lines: [item.details, approvedBy ? `Approved by ${approvedBy}` : '', evidenceNote].filter(Boolean),
+      itemId: text(item.id),
+      date,
+      jobNumber,
+      name: text(item.title),
+      approvedBy,
+      amount,
+      description: text(item.details),
+      evidenceNote,
+    }
+  })
+  const documentTitle = priceWork ? PRICE_WORK_REPORT_TITLE : EXPENSES_REPORT_TITLE
+  const totalLabel = priceWork ? PRICE_WORK_TOTAL_LABEL : EXPENSES_TOTAL_LABEL
+  const totalAmount = formatMoney(snapshot.totals.amount, snapshot.currency)
+  const period = `${formatPaymentRunDay(snapshot.rangeStart)} – ${formatPaymentRunDay(snapshot.rangeEnd)}`
+  const companyName = text(snapshot.companyName)
+  const personName = text(snapshot.userName)
+  return {
+    title: `${documentTitle} · ${personName}`,
+    subtitle: period,
+    rows,
+    total: `${totalLabel}: ${totalAmount}`,
+    empty: priceWork ? PRICE_WORK_EMPTY_MESSAGE : EXPENSES_EMPTY_MESSAGE,
+    documentTitle,
+    companyName,
+    personName,
+    period,
+    ...reportGeneratedText({
+      generatedAtMs: snapshot.generatedAtMs,
+      nowMs: options?.nowMs,
+      timeZone: options?.timeZone,
+      generatedBy: snapshot.generatedBy,
+      userId: snapshot.userId,
+      userName: snapshot.userName,
+      generatedByName: options?.generatedByName,
+    }),
+    columns: [...(priceWork ? PRICE_WORK_REPORT_COLUMNS : EXPENSES_REPORT_COLUMNS)],
+    totalLabel,
+    totalAmount,
+    itemCount: Number(snapshot.totals.itemCount) || snapshot.items.length,
+    evidenceCount: Number(snapshot.totals.evidenceCount) || snapshot.items.reduce((sum, item) => sum + item.evidence.length, 0),
+    footer: [companyName, documentTitle, personName].filter(Boolean).join(' · '),
+  }
+}
+
+/** One evidence page: the old `heading` / `details` and, from 1.33.0, the item's own fields for the page header. */
+export type PayeClaimEvidencePage = {
+  itemId: string
+  heading: string
+  details: string[]
+  path: string
+  name: string
+  contentType: string
+  drawAs: 'image' | 'pdf' | 'listed'
+  /** The item's name (the page title). */
+  itemName: string
+  date: string
+  jobNumber: string
+  /** Price work only. */
+  approvedBy: string
+  amount: string
+  /** The evidence's own title: "Evidence 2 of 3: receipt.jpg" (" (personal site audit copy)" for an audit). */
+  evidenceTitle: string
+  /** The item's description, when it has one. */
+  notes: string[]
+}
+
+/**
+ * The evidence pages after the summary, in item order: one per piece of evidence, headed by its item (name, date, job
+ * number, amount, and for price work who approved it) and the evidence's own title, then the item's description, and
+ * how the PDF draws it (`payeClaimEvidenceDrawAs`: an image full size, a PDF's pages appended, otherwise listed with
+ * `PAYE_CLAIM_EVIDENCE_NOT_DRAWN_NOTE`). `heading` / `details` keep the pre-1.33.0 joined text.
  */
 export function payeClaimEvidencePages(
-  snapshot: Pick<PayeClaimReportSnapshot, 'items' | 'currency'>
-): Array<{ itemId: string; heading: string; details: string[]; path: string; name: string; contentType: string; drawAs: 'image' | 'pdf' | 'listed' }> {
-  const out: Array<{ itemId: string; heading: string; details: string[]; path: string; name: string; contentType: string; drawAs: 'image' | 'pdf' | 'listed' }> = []
+  snapshot: Pick<PayeClaimReportSnapshot, 'items' | 'currency'> & { kind?: PayeClaimKind | null }
+): PayeClaimEvidencePage[] {
+  const priceWork = snapshot.kind === 'priceWork'
+  const out: PayeClaimEvidencePage[] = []
   for (const item of snapshot.items) {
+    const date = dateText(item.startDate, item.endDate)
+    const amount = formatMoney(item.amount, snapshot.currency)
     item.evidence.forEach((entry, index) => {
+      const evidenceTitle = `Evidence ${index + 1} of ${item.evidence.length}: ${entry.name}${entry.kind === 'personalSiteAudit' ? ' (personal site audit copy)' : ''}`
       out.push({
         itemId: item.id,
-        heading: [item.title, dateText(item.startDate, item.endDate), formatMoney(item.amount, snapshot.currency)].filter(Boolean).join(' · '),
-        details: [
-          `Evidence ${index + 1} of ${item.evidence.length}: ${entry.name}${entry.kind === 'personalSiteAudit' ? ' (personal site audit copy)' : ''}`,
-          item.details,
-        ].filter(Boolean),
+        heading: [item.title, date, amount].filter(Boolean).join(' · '),
+        details: [evidenceTitle, item.details].filter(Boolean),
         path: entry.path,
         name: entry.name,
         contentType: entry.contentType,
         drawAs: payeClaimEvidenceDrawAs(entry),
+        itemName: text(item.title) || 'Untitled',
+        date,
+        jobNumber: priceWork ? priceWorkJobNumberText(item.jobNumber) : text(item.jobNumber),
+        approvedBy: priceWork ? text(item.approvedByName) : '',
+        amount,
+        evidenceTitle,
+        notes: [text(item.details)].filter(Boolean),
       })
     })
   }
