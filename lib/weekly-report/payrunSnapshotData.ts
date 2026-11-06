@@ -21,6 +21,7 @@ import {
   parsePayrunSnapshotSheet,
   parsePriceWorkDocument,
   payrunSnapshotRows,
+  personIdSet,
   type ExpenseItem,
   type OvertimeBookingInput,
   type PayrunSnapshotInput,
@@ -81,7 +82,9 @@ async function readSheets(organizationId: string, userIds: ReadonlyArray<string>
  */
 export async function loadPayrunSnapshotInputs(input: { organizationId: string; users: ReadonlyArray<User>; timeZone: string }): Promise<Loaded> {
   const { organizationId, timeZone } = input
-  const ids = input.users.flatMap((user) => [user.id, ...(user.formerUserIds ?? [])])
+  // Every id each person goes by (own id, former invite ids, same-email ids, roster rows on their email): `personIdSet`.
+  const roster = input.users.filter((user) => user && user.id).map((user) => rulebookPerson(user, input.users))
+  const ids = roster.flatMap((person) => personIdSet(person, roster))
   const [sheets, overtimeRequests, overtimeReviews, overtimeReports, payeClaimReports, priceWork, expenses] = await Promise.all([
     readSheets(organizationId, ids, timeZone),
     readAll(organizationId, OVERTIME_REQUESTS_COLLECTION, parseOvertimeRequestDocument),

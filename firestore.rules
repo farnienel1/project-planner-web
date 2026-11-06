@@ -1410,10 +1410,10 @@ service cloud.firestore {
           request.resource.data.collection in ['bookings', 'managerSiteBookings', 'subcontractorBookings'] &&
           (request.resource.data.get('overtimeRequestId', '') == ''
             ? bookingTombstoneAllowed(request.resource.data.collection, bookingId)
-            : (request.resource.data.collection == 'bookings' && !request.resource.data.overtimeRequestId.matches('.*/.*') &&
-              overtimeReturnDeletes(bookingId, request.resource.data.overtimeRequestId) &&
-              ((callerLineManagesUserOrRow(get(/databases/(default)/documents/organizations/$(organizationId)/bookings/$(bookingId)).data.get('operativeId', '')) &&
-                overtimeCallerIsStaffHere()) || isOrgAdminOrOwner(organizationId))));
+            : (request.resource.data.collection == 'bookings' && (isOrgAdminOrOwner(organizationId)
+              ? overtimeReturnFor(bookingId, request.resource.data.overtimeRequestId, 'deletedBookingIds', '', true)
+              : (overtimeCallerIsStaffHere() && overtimeReturnFor(bookingId, request.resource.data.overtimeRequestId, 'deletedBookingIds',
+                get(/databases/(default)/documents/organizations/$(organizationId)/bookings/$(bookingId)).data.get('operativeId', ''), false)))));
         allow delete: if orgAdminEither(organizationId) || isPlatformOwner();
       }
 
@@ -1436,12 +1436,14 @@ service cloud.firestore {
           ('a' in u || !('o' in u)) && orgBillingOpen(organizationId);
       }
 
-      function overtimeLineManagerBookingUpdate(collection) {
+      function overtimeLineManagerBookingUpdate(collection, bookingId) {
         let affected = request.resource.data.diff(resource.data).affectedKeys();
+        let person = collection == 'bookings' ? resource.data.get('operativeId', '') : resource.data.get('userId', '');
         return affected.hasOnly([
-            'workStartTime', 'workEndTime', 'timeSlot', 'otMultiplierOverride', 'status', 'updatedAt', 'updatedBy', 'updatedFrom'
-          ]) ? ((collection == 'bookings' ? callerLineManagesUserOrRow(resource.data.get('operativeId', ''))
-            : callerLineManagesUser(resource.data.get('userId', ''))) ? (
+            'workStartTime', 'workEndTime', 'timeSlot', 'otMultiplierOverride', 'status', 'overtimeReturnRequestId', 'updatedAt', 'updatedBy', 'updatedFrom'
+          ]) ? (('overtimeReturnRequestId' in affected
+            ? overtimeReturnFor(bookingId, request.resource.data.overtimeReturnRequestId, 'appliedBookingIds', person, false)
+            : (collection == 'bookings' ? callerLineManagesUserOrRow(person) : callerLineManagesUser(person))) ? (
           (!('workStartTime' in affected) || (request.resource.data['workStartTime'] is string && request.resource.data['workStartTime'].size() <= 8)) &&
           (!('workEndTime' in affected) || (request.resource.data['workEndTime'] is string && request.resource.data['workEndTime'].size() <= 8)) &&
           (!('timeSlot' in affected) || request.resource.data.timeSlot in ['CUSTOM_HOURS', 'CUSTOM', 'FULL DAY', 'FULL_DAY', 'AM', 'PM']) &&
@@ -1469,10 +1471,17 @@ service cloud.firestore {
             get(/databases/(default)/documents/users/$(personId)).data.get('ghost', false) != true) : callerLineManagesRowPerson(personId)
         ) : false;
       }
-      function overtimeReturnDeletes(bookingId, requestId) {
+      function overtimeReturnFor(bookingId, requestId, listKey, personId, admin) {
         let req = getAfter(/databases/(default)/documents/organizations/$(organizationId)/overtimeRequests/$(requestId)).data;
-        return req.get('status', '') == 'approved' && req.get('decidedBy', '') == request.auth.uid &&
-          req.get('deletedBookingIds', []).hasAny([bookingId]);
+        return (requestId is string && requestId.size() > 0 && !requestId.matches('.*/.*')) ? (
+          req.get('status', '') == 'approved' && req.get('decidedBy', '') == request.auth.uid &&
+          req.get(listKey, []).hasAny([bookingId]) && (admin || overtimeReturnPersonOk(personId, req.get('userId', '')))) : false;
+      }
+      function overtimeReturnPersonOk(personId, uid) {
+        let u = get(/databases/(default)/documents/users/$(uid)).data;
+        return (personId is string && personId.size() > 0 && !personId.matches('.*/.*') && callerLineManagesUser(uid))
+          ? (personId == uid || personId in u.get('formerUserIds', []) || personId in u.get('sameEmailUserIds', []) ||
+            callerLineManagesRowPerson(personId)) : false;
       }
       function overtimeReturnTombstoneNew(bookingId) {
         let tomb = /databases/(default)/documents/organizations/$(organizationId)/deletedBookings/$(bookingId);
@@ -1648,15 +1657,16 @@ service cloud.firestore {
       function claimReviewWriteValid(d) {
         let item = /databases/(default)/documents/organizations/$(organizationId)/$(d.kind == 'expense' ? 'expenseItems' : 'priceWorkItems')/$(d.itemId);
         let person = d.get('personUserId', d.userId);
+        let added = resource != null && resource.data.get('personUserId', '') == '' && d.get('personUserId', '') != '';
         return d.keys().hasOnly(['userId', 'personUserId', 'itemId', 'kind', 'decision', 'fingerprint', 'reviewedBy', 'reviewedAt', 'updatedAt', 'updatedBy', 'updatedFrom']) &&
           d.kind in ['priceWork', 'expense'] && d.itemId is string && d.userId is string && person is string &&
           (resource == null || (resource.data.userId == d.userId && resource.data.itemId == d.itemId && resource.data.kind == d.kind &&
-            resource.data.get('personUserId', '') == d.get('personUserId', ''))) &&
+            (resource.data.get('personUserId', '') == d.get('personUserId', '') || added))) &&
           d.decision in ['approved', 'rejected'] && d.fingerprint is string && d.reviewedBy == request.auth.uid &&
           writeMetadataValidWhenPresent()
           ? (exists(item) && get(item).data.get('userId', '') == d.userId && !claimReviewSubjectIsCaller(d.userId) &&
             (person == d.userId || !claimReviewSubjectIsCaller(person)) &&
-            (isOrgAdminOrOwner(organizationId) || (callerLineManagesUser(person) && (person == d.userId ||
+            ((!added && isOrgAdminOrOwner(organizationId)) || (callerLineManagesUser(person) && (person == d.userId ||
               get(/databases/(default)/documents/users/$(person)).data.get('formerUserIds', []).hasAny([d.userId]) ||
               get(/databases/(default)/documents/users/$(person)).data.get('sameEmailUserIds', []).hasAny([d.userId])))))
           : false;
@@ -1703,7 +1713,7 @@ service cloud.firestore {
 
       match /bookings/{bookingId} {
         allow read: if bookingReadAllowed('bookings');
-        allow update: if !bookingTombstoned(bookingId) && overtimeLineManagerBookingUpdate('bookings');
+        allow update: if !bookingTombstoned(bookingId) && overtimeLineManagerBookingUpdate('bookings', bookingId);
         allow create, update, delete: if request.method == 'delete' && overtimeReturnTombstoneNew(bookingId)
           ? getAfter(/databases/(default)/documents/organizations/$(organizationId)/deletedBookings/$(bookingId)).data.deletedBy == request.auth.uid
           : ((request.method == 'delete' || !bookingTombstoned(bookingId)) && (
@@ -1988,7 +1998,7 @@ service cloud.firestore {
       match /managerSiteBookings/{bookingId} {
         allow read: if bookingReadAllowed('managerSiteBookings');
         allow create, update, delete: if (request.method == 'delete' || !bookingTombstoned(bookingId)) && (
-          (request.method == 'update' && overtimeLineManagerBookingUpdate('managerSiteBookings')) ||
+          (request.method == 'update' && overtimeLineManagerBookingUpdate('managerSiteBookings', bookingId)) ||
           bookingWriteAllowed('managerSiteBookings', request.method));
       }
 
