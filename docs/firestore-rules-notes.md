@@ -124,6 +124,23 @@ Google's rules compiler gave up on 1.31.0–1.31.2 (CLI `firebaserules …:test`
 | `userSelfUpdateKeepsPrivileges` | `userUpdateAllowed` |
 | `userUpdateKeepsOrganization` | `userUpdateAllowed` |
 
+### 1.32.2 — second cut (6 Nov)
+
+Google refused to publish 1.32.1 (static cost 429,072; console "unknown error", CLI 409 then 503) although 1.31.3 (431,665) had published, so the margin was gone. 1.32.2 cuts the static cost to **383,790** (−10.6%; 1.30.2 live 525,898) with no allow/deny change. CI now fails above **395,000** (`scripts/check-rules-budget.mjs`, `firestoreRulesMaxCompileCost` in `scripts/rules-budget.json`) and on any type-check error (`scripts/check-rules-typecheck.mjs`, job `rules-typecheck` in `web-ci.yml`).
+
+`let` bindings are lazy (checked on the emulator: an unused `let x = request.auth.uid` does not fail an unauthenticated request, and a `let` is evaluated only where it is used), so moving a pure expression into a `let` never changes a result. What changed:
+
+- **Repeated document paths** inside one function are one `let hpN = /databases/…;` (`hoist`: 16 functions, e.g. `selfCreateJoinsCompany`, `callerManagesJobAt`, `hbIsAdmin`, `materialUpdateAllowed`). A path that uses one of the function's own `let`s is left alone; `callerListedRole` and `isManagerWithOperativesAccess` were rewritten the same way by hand.
+- **`userDocOrganizationMatches`** computes the `orgIdsMatch` test once (`let w = v is path ? v[4] : v`, `let m = …` with `o` = `organizationId.lower()`), instead of calling `orgIdsMatch` in both the string and the path branch. `orgIdsMatch` stays for its other callers.
+- **`canAccessOrganization`** reads the caller's users document once (`let home`) and calls `userDocOrganizationMatches(home, …)` directly (it was `userOrgIdMatchesPath`, whose `request.auth != null` is already checked there), and tests the organisation's `members` entry and `creatorUserId` under one `exists(orgPath)`: `(E && M) || (E && C)` = `E && (M || C)` (E is `exists`, which never errors).
+- **`membersMapAdminAnyBilling`** is gone: `orgAdminEither` (its only caller) does the members-map test itself, sharing `let home` with `homeIsActiveAdminOf` and checking `request.auth != null` once.
+- **`callerOrgRoleAnyBilling`**: the second `adminLikeUser(home)` (in the manager test) is removed; it is only reached when the first one was false.
+- **`adminLikeUser`**: `'k' in d && truthyBool(d.k)` is `truthyBool(d.get('k', false))` and `'role' in d && d.role == 'admin'` is `d.get('role', '') == 'admin'` (same value for a missing key, same error for a non-map).
+- **Allows with the same condition** are one allow: clients, tasks, subcontractors and siteAudits `allow read, create, update: if canAccessOrganization(organizationId);`.
+- **Write allows that all start with `canAccessOrganization(organizationId) &&`** are one allow with a `request.method` ternary, as the booking allows in 1.31.3: holidayBookings (create / update / delete), settings (create, update / delete), notifications (create / update), overtimeRequests (create / update). Reads are never merged with a method test (list queries are checked against the query).
+
+Checked: suites 223/223 (as 1.32.1); `RULES_STRICT_BUDGET=1` the same 43 limit refusals as 1.32.1, none new; emulator type check 0 issues; in-process compile (emulator 1.22.0, min of 7) 1.66 s against 1.79 s for 1.32.1.
+
 ## Service-level functions
 
 ### `orgIdsMatch`
