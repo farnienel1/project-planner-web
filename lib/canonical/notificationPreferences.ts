@@ -706,11 +706,13 @@ export function notificationDestination(input: NotificationDestinationInput): No
     case TIMESHEET_SUBMISSION_NOTICE_TYPE:
       return { kind: 'timesheetMine', dayKey }
     // 1.29.0 (§25): a request opens Users' → that person → Overtime (deepLinkUserId = the requester); the update opens
-    // the person's own Overtime page; hours changed by the person open the booking day.
+    // the person's own Overtime page; hours changed by the person open the booking day. 1.33.0: relatedId is the request
+    // id (or the booking id of a reopened line) and dayKey the request's first day (or the booking's day); the screen
+    // opens that payrun with `overtimeNotificationRange`.
     case 'overtime_request_submitted':
-      return userId ? { kind: 'overtimeUser', userId, relatedId } : { kind: 'notifications' }
+      return userId ? { kind: 'overtimeUser', userId, relatedId, ...(dayKey ? { dayKey } : {}) } : { kind: 'notifications' }
     case 'overtime_request_reviewed':
-      return { kind: 'overtimeMine', relatedId }
+      return { kind: 'overtimeMine', relatedId, ...(dayKey ? { dayKey } : {}) }
     case 'booking_hours_changed_by_owner':
       return dayKey ? { kind: 'dailyOverviewDay', dayKey, relatedId } : { kind: 'notifications' }
     default:

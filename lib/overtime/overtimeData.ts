@@ -20,17 +20,21 @@ import {
 } from 'firebase/firestore'
 import {
   BOOKING_HOURS_CHANGED_BY_OWNER_TYPE,
+  BOOKING_TOMBSTONE_COLLECTION,
   OVERTIME_REQUEST_REVIEWED_TYPE,
   OVERTIME_REQUEST_SUBMITTED_TYPE,
   bookingHoursChangedRecipients,
   jobManagerIds,
-  overtimeApprovalWrites,
+  overtimeDeciderIsLineManager,
   overtimeDirectWrites,
   overtimeRequestRecipients,
+  overtimeRequestSubmittedMessage,
   overtimeRequestWithdrawWriteFields,
   overtimeRequestWriteFields,
-  overtimeRequestsToReplace,
-  overtimeReviewedRecipients,
+  overtimeRequestsSuperseded,
+  overtimeReturnWrites,
+  overtimeReturnedMessage,
+  overtimeReturnedRecipients,
   overtimeReportSnapshot,
   parseBookingDocument,
   parseManagerSiteBookingDocument,
@@ -169,8 +173,10 @@ export function listenOvertimeReports(
 }
 
 /**
- * Send for approval (PAYE operative, or a PAYE manager for bookings they cannot edit): withdraws their pending
- * request for the same range and creates the new one in one batch, then notifies the approvers.
+ * Send for approval (a PAYE person with a line manager; rulebook 1.33.0 `overtimeSubmitReady` / `overtimeSubmitLines`
+ * build `lines`): withdraws their pending requests every waiting line of which is sent again
+ * (`overtimeRequestsSuperseded`) and creates the new one in one batch, then notifies the line managers and admins
+ * (`overtimeRequestRecipients`, `overtimeRequestSubmittedMessage`).
  */
 export async function sendOvertimeRequest(input: {
   organizationId: string
@@ -194,7 +200,8 @@ export async function sendOvertimeRequest(input: {
   })
   if (!fields) return null
   const batch = writeBatch(db)
-  for (const id of overtimeRequestsToReplace(input.existing, input.requester.id, input.rangeStart, input.rangeEnd)) {
+  const sentIds = input.lines.map((line) => line.bookingId)
+  for (const id of overtimeRequestsSuperseded(input.existing, input.requester.id, sentIds)) {
     batch.update(doc(db, 'organizations', input.organizationId, 'overtimeRequests', id), {
       status: 'withdrawn',
       withdrawnAt: serverTimestamp(),
@@ -206,16 +213,18 @@ export async function sendOvertimeRequest(input: {
   await batch.commit()
   const recipients = overtimeRequestRecipients(rulebookPerson(input.requester, input.users), rulebookRoster(input.users))
   const name = [input.requester.firstName, input.requester.surname].filter(Boolean).join(' ') || 'Someone'
+  const notice = overtimeRequestSubmittedMessage({ requesterName: name, rangeStart: input.rangeStart, rangeEnd: input.rangeEnd })
   await Promise.all(
     recipients.map((userId) =>
       saveInboxNotification({
         organizationId: input.organizationId,
         type: OVERTIME_REQUEST_SUBMITTED_TYPE,
-        title: `Overtime request from ${name}`,
-        message: `${name} sent their overtime for ${input.rangeStart} to ${input.rangeEnd} for approval.`,
+        title: notice.title,
+        message: notice.message,
         userId,
         relatedId: ref.id,
         deepLinkUserId: input.requester.id,
+        dayKey: input.rangeStart,
       }).catch(() => undefined)
     )
   )
@@ -284,12 +293,14 @@ export class OvertimeApprovalRefused extends Error {
 }
 
 /**
- * Approve (line manager or admin): one transaction that re-reads the request and every booking and applies what the
- * decider may (`overtimeApprovalWrites`, 1.32.0 partial approval): the bookings, one review per applied line and the
- * request (pending until nothing is left waiting, then approved) together. Nothing applied → refused with the
- * rulebook message ("Nothing was approved: …"). Then "Overtime update" to the person.
+ * Return overtime (line manager or admin; rulebook 1.33.0 `overtimeReturnWrites`): one transaction that re-reads the
+ * request and every booking and writes everything together — booking changes, the deletes of all-overtime bookings an
+ * approved red X removes (each with its tombstone carrying `overtimeRequestId`), one review per returned line, and the
+ * request (`approved`, with `staleBookingIds` / `deletedBookingIds`). A line whose booking changed since it was sent goes
+ * back to the person (skip-and-name). Then the person hears "Your line manager {name} has returned your overtime
+ * request" (`overtimeReturnedMessage`).
  */
-export async function approveOvertimeRequest(input: {
+export async function returnOvertimeRequest(input: {
   organizationId: string
   requestId: string
   decisions: Record<string, OvertimeDecision>
@@ -300,18 +311,7 @@ export async function approveOvertimeRequest(input: {
   users: ReadonlyArray<User>
   /** Every id the requester goes by (users ids and their operatives rows). */
   requesterIds: ReadonlyArray<string>
-  deciderIsAdmin: boolean
-  /** Whether the decider may write this booking under `canWriteBooking` (jobs they manage). */
-  canWriteBooking: (booking: OvertimeBookingInput) => boolean
-}): Promise<{
-  droppedBookingIds: string[]
-  unreadableBookingIds: string[]
-  deletedBookingIds: string[]
-  foreignBookingIds: string[]
-  appliedBookingIds: string[]
-  complete: boolean
-  message: string
-}> {
+}): Promise<{ appliedBookingIds: string[]; staleBookingIds: string[]; deletedBookingIds: string[]; droppedBookingIds: string[]; message: string }> {
   const orgId = input.organizationId
   // Bookings this decider cannot read (enforced reads) are left out, never read inside the transaction.
   const before = await getDoc(doc(db, 'organizations', orgId, 'overtimeRequests', input.requestId))
@@ -340,7 +340,7 @@ export async function approveOvertimeRequest(input: {
         ? bookingInputFromDoc(line.collection, snap.id, snap.data() as Record<string, unknown>, input.timeZone)
         : null
     }
-    const writes = overtimeApprovalWrites({
+    const writes = overtimeReturnWrites({
       request,
       decisions: input.decisions,
       bookings,
@@ -348,17 +348,19 @@ export async function approveOvertimeRequest(input: {
       timeZone: input.timeZone,
       deciderId: input.decider.id,
       requesterIds: input.requesterIds,
-      deciderIsAdmin: input.deciderIsAdmin,
-      writableBookingIds: Object.values(bookings)
-        .filter((row): row is OvertimeBookingInput => row != null && input.canWriteBooking(row))
-        .map((row) => row.id),
       unreadableBookingIds: unreadable,
+      platform: 'web',
     })
     if (!writes.ok) throw new OvertimeApprovalRefused(writes.message, writes.bookingIds)
     for (const write of writes.bookingWrites) {
       const update: Record<string, unknown> = { ...write.set, ...metadata() }
       for (const key of write.remove) update[key] = deleteField()
       tx.update(doc(db, 'organizations', orgId, write.collection, write.bookingId), update)
+    }
+    // Rulebook 1.33.0 item f: the booking and its tombstone (naming the request) in the same transaction.
+    for (const del of writes.bookingDeletes) {
+      tx.delete(doc(db, 'organizations', orgId, del.collection, del.bookingId))
+      tx.set(doc(db, 'organizations', orgId, BOOKING_TOMBSTONE_COLLECTION, del.bookingId), { ...del.tombstone, deletedAt: serverTimestamp() })
     }
     for (const review of writes.reviewWrites) {
       tx.set(doc(db, 'organizations', orgId, 'overtimeReviews', review.docId), {
@@ -369,47 +371,50 @@ export async function approveOvertimeRequest(input: {
     }
     tx.update(requestRef, { ...writes.requestFields, decidedAt: serverTimestamp(), ...metadata() })
     return {
-      droppedBookingIds: writes.droppedBookingIds,
-      unreadableBookingIds: writes.unreadableBookingIds,
-      deletedBookingIds: writes.deletedBookingIds,
-      foreignBookingIds: writes.foreignBookingIds,
       appliedBookingIds: writes.appliedBookingIds,
-      complete: writes.complete,
+      staleBookingIds: writes.staleBookingIds,
+      deletedBookingIds: writes.deletedBookingIds,
+      droppedBookingIds: writes.droppedBookingIds,
       message: writes.message,
       userId: request.userId,
+      rangeStart: request.rangeStart,
     }
   })
   const roster = rulebookRoster(input.users)
-  const recipients = overtimeReviewedRecipients(result.userId, rulebookPerson(input.decider, input.users), roster)
+  const deciderPerson = rulebookPerson(input.decider, input.users)
+  const requesterRow = input.users.find((row) => row.id === result.userId) || input.requester
+  const notice = overtimeReturnedMessage({
+    deciderName: [input.decider.firstName, input.decider.surname].filter(Boolean).join(' ') || null,
+    deciderIsLineManager: requesterRow ? overtimeDeciderIsLineManager(deciderPerson, rulebookPerson(requesterRow, input.users), roster) : false,
+  })
+  const recipients = overtimeReturnedRecipients(result.userId, deciderPerson, roster)
   await Promise.all(
     recipients.map((userId) =>
       saveInboxNotification({
         organizationId: orgId,
         type: OVERTIME_REQUEST_REVIEWED_TYPE,
-        title: 'Overtime update',
-        message: result.complete
-          ? 'Your overtime request was approved. Open Overtime to see the final hours.'
-          : `Part of your overtime request was approved (${result.message.replace(/\.$/, '')}). Open Overtime to see the final hours.`,
+        title: notice.title,
+        message: notice.message,
         userId,
         relatedId: input.requestId,
+        dayKey: result.rangeStart || null,
       }).catch(() => undefined)
     )
   )
   return {
-    droppedBookingIds: result.droppedBookingIds,
-    unreadableBookingIds: result.unreadableBookingIds,
-    deletedBookingIds: result.deletedBookingIds,
-    foreignBookingIds: result.foreignBookingIds,
     appliedBookingIds: result.appliedBookingIds,
-    complete: result.complete,
+    staleBookingIds: result.staleBookingIds,
+    deletedBookingIds: result.deletedBookingIds,
+    droppedBookingIds: result.droppedBookingIds,
     message: result.message,
   }
 }
 
 /**
- * A direct tick, X or cog by a PAYE admin or a PAYE manager who may edit the booking: the booking change and the
- * line's review in one batch; when the booking changes, `booking_hours_changed_by_owner` to the job's managers and
- * the person's line managers (inbox only).
+ * A direct tick, X or cog by a PAYE person with no line manager (or the Super Admin) who may edit the booking: the
+ * booking change — 1.33.0 or its delete with the tombstone, for an X on an all-overtime day — and the line's review in
+ * one batch; when the booking changes, `booking_hours_changed_by_owner` to the job's managers and the person's line
+ * managers (inbox only).
  */
 export async function applyDirectOvertime(input: {
   organizationId: string
@@ -428,9 +433,17 @@ export async function applyDirectOvertime(input: {
     reviewerId: input.person.id,
     organization: input.organization,
     timeZone: input.timeZone,
+    platform: 'web',
   })
   if (!writes) return false
   const batch = writeBatch(db)
+  if (writes.bookingDelete) {
+    batch.delete(doc(db, 'organizations', input.organizationId, writes.bookingDelete.collection, writes.bookingDelete.bookingId))
+    batch.set(doc(db, 'organizations', input.organizationId, BOOKING_TOMBSTONE_COLLECTION, writes.bookingDelete.bookingId), {
+      ...writes.bookingDelete.tombstone,
+      deletedAt: serverTimestamp(),
+    })
+  }
   if (writes.bookingWrite) {
     const update: Record<string, unknown> = { ...writes.bookingWrite.set, ...metadata() }
     for (const key of writes.bookingWrite.remove) update[key] = deleteField()
@@ -455,7 +468,9 @@ export async function applyDirectOvertime(input: {
           organizationId: input.organizationId,
           type: BOOKING_HOURS_CHANGED_BY_OWNER_TYPE,
           title: 'Hours changed',
-          message: `${name} changed the hours of their booking on ${input.booking.dayKey}${input.booking.jobNumber ? ` (${input.booking.jobNumber})` : ''}.`,
+          message: writes.bookingDelete
+            ? `${name} removed their booking on ${input.booking.dayKey}${input.booking.jobNumber ? ` (${input.booking.jobNumber})` : ''} (overtime not worked).`
+            : `${name} changed the hours of their booking on ${input.booking.dayKey}${input.booking.jobNumber ? ` (${input.booking.jobNumber})` : ''}.`,
           userId,
           relatedId: input.booking.id,
           dayKey: input.booking.dayKey,
