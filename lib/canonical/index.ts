@@ -1649,3 +1649,33 @@ export type { UserDeleteOptions } from './userDelete'
 export { exportedTimesheetHistorySubjects, timesheetExportOwnSheetNotice, TIMESHEET_EXPORT_OWN_SHEET_NOTICE } from './userTimesheetAccess'
 export type { ExportedTimesheetHistorySubjectRow } from './userTimesheetAccess'
 export { timesheetDocumentSubjectId } from './timesheetPeriod'
+
+// Rulebook 1.32.4 §16: role and company facts as Firebase Auth custom claims (the rules read request.auth.token.pp).
+export {
+  AUTH_CLAIMS_HOME_FLAGS,
+  AUTH_CLAIMS_KEY,
+  AUTH_CLAIMS_MARKER_DOC_ID,
+  AUTH_CLAIMS_MAX_BYTES,
+  AUTH_CLAIMS_ORGANIZATION_FIELDS,
+  AUTH_CLAIMS_ORGANIZATION_FLAGS,
+  AUTH_CLAIMS_USER_FIELDS,
+  AUTH_CLAIMS_VERSION,
+  authClaimsCoverOrganization,
+  authClaimsEqual,
+  authClaimsForPerson,
+  authClaimsHomeOrganizationKey,
+  authClaimsMarkerPath,
+  authClaimsOrganizationAffectedUids,
+  authClaimsRevokeAccess,
+  authClaimsTokenIsStale,
+  authClaimsUserInputsChanged,
+  parseAuthClaims,
+} from './authClaims'
+export type {
+  AuthClaimsInput,
+  AuthClaimsPayload,
+  AuthClaimsResult,
+  AuthClaimsRole,
+  ParsedAuthClaims,
+  ParsedAuthClaimsOrganization,
+} from './authClaims'
