@@ -10,8 +10,10 @@
  *
  * What it does (the decisions are `scripts/cleanup-blank-managers/plan.mjs`, pure and tested):
  * - Finds `organizations/{orgId}/managers/{id}` rows with a blank or missing email, the name "Assigned manager", no
- *   linked account, nothing else typed in, an id that is no users account of the organisation and no manager site
- *   booking on it. Any other blank-email row is printed as "review" and never changed.
+ *   linked account, nothing else typed in, an id that is no users account of the organisation, no manager site
+ *   booking on it, no booking document (`REFERENCE_COLLECTIONS`: labour, manager site, subcontractor and holiday
+ *   bookings, accepted clashes) that mentions its id in any field, and no job that would still mention it outside the
+ *   manager fields after the update. Any other blank-email row is printed as "review" and never changed.
  * - Lists every project and small works whose manager fields (`jobManagerIds`) hold such a row's id.
  * - With --apply: takes the junk ids off those jobs (`jobManagerRemovalWrites`: `managerIds`, `managerId`,
  *   `managerUserIds`, `assignedManagerUserIds`; a list left empty is removed; `managerId` moves to the next manager or is
@@ -34,7 +36,7 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import path from 'node:path'
 import { backupFileBody, loadRulebook as loadPackedRulebook, repoRoot } from './data-cleanup/checks.mjs'
-import { JOB_COLLECTIONS, RULEBOOK_FUNCTIONS, formatReport, planOrg, plannedPaths } from './cleanup-blank-managers/plan.mjs'
+import { JOB_COLLECTIONS, REFERENCE_COLLECTIONS, RULEBOOK_FUNCTIONS, formatReport, planOrg, plannedPaths } from './cleanup-blank-managers/plan.mjs'
 
 const BATCH_LIMIT = 400
 const CHECK_ID = 'blank-managers'
@@ -132,7 +134,16 @@ async function loadInput(orgId, orgData, meta) {
   const jobs = {}
   for (const collection of JOB_COLLECTIONS) jobs[collection] = remember((await orgRef.collection(collection).get()).docs.map(asDoc))
 
-  return { orgId, managers, users: [...users].map(([id, data]) => ({ id, data })), siteBookingUserIds, jobs }
+  // Booking documents read in full, only when there is a blank-email row to check: a row any of them mentions is
+  // listed for review and never deleted.
+  const references = []
+  if (managers.some((row) => !(typeof row.data.email === 'string' && row.data.email.trim()))) {
+    for (const collection of REFERENCE_COLLECTIONS) {
+      for (const doc of (await orgRef.collection(collection).get()).docs) references.push({ collection, id: doc.id, data: doc.data() || {} })
+    }
+  }
+
+  return { orgId, managers, users: [...users].map(([id, data]) => ({ id, data })), siteBookingUserIds, jobs, references }
 }
 
 // ─── write ─────────────────────────────────────────────────────────────────────────────────────────────────────────

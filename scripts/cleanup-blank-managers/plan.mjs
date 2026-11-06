@@ -15,8 +15,11 @@
  * A row is junk only when ALL of: the email is blank or missing; the name reads (`parseManagerDocument`) as exactly
  * "Assigned manager"; no linked-account field; no other details typed in (mobile, phone, notes, department, trade, pay);
  * its id is not a users account of the organisation (id, `formerUserIds`, `sameEmailUserIds`, or the iOS
- * `stableManagerId` of one); and no manager site booking uses it. A blank-email row that fails any test is listed as
- * "ambiguous" and is never changed.
+ * `stableManagerId` of one); no manager site booking uses it; no booking document (`REFERENCE_COLLECTIONS`) mentions
+ * its id anywhere; and once the job updates are applied, no project or small works mentions its id in any other field
+ * (for example `hiddenManagerUserIds`). A blank-email row that fails any test is listed as "ambiguous" and is never
+ * changed, and its jobs are left as they are — so a row is only deleted when nothing it is read through still points
+ * at it.
  *
  * Rulebook functions read from the packed script (read only): `jobManagerIds` (every manager field on a job:
  * `managerIds`, `managerId`, `assignedManagerUserIds`, `managerUserIds`), `stableManagerId` (how iOS stores a managers
@@ -27,6 +30,11 @@
 
 export const PLACEHOLDER_MANAGER_NAME = 'assigned manager'
 export const JOB_COLLECTIONS = ['projects', 'smallWorks']
+/**
+ * Booking collections of the organisation read in full: a junk candidate whose id appears anywhere in one of these
+ * documents (any field, nested, without case) is only listed, never deleted.
+ */
+export const REFERENCE_COLLECTIONS = ['bookings', 'managerSiteBookings', 'subcontractorBookings', 'holidayBookings', 'acceptedBookingClashes']
 /** Functions this clean-up reads from the packed rulebook. */
 export const RULEBOOK_FUNCTIONS = [
   'jobManagerIds',
@@ -69,6 +77,37 @@ function accountKeys(rulebook, users) {
   return keys
 }
 
+/**
+ * The dotted field paths in `value` (any depth, arrays as `[i]`) whose string value matches one of `keys` (compared
+ * with `idKey`: without case and without a `user:` prefix). Map keys are checked too (`members.{id}`).
+ */
+export function fieldsMentioning(value, keys, prefix = '') {
+  const found = []
+  const keySet = keys instanceof Set ? keys : new Set(keys)
+  const walk = (node, at) => {
+    if (typeof node === 'string') {
+      if (keySet.has(idKey(node))) found.push(at || '(value)')
+      return
+    }
+    if (Array.isArray(node)) {
+      node.forEach((item, index) => walk(item, `${at}[${index}]`))
+      return
+    }
+    if (node && typeof node === 'object') {
+      // Firestore Timestamps, references and the like are not ids; only plain objects are walked.
+      const proto = Object.getPrototypeOf(node)
+      if (proto !== Object.prototype && proto !== null) return
+      for (const [field, child] of Object.entries(node)) {
+        const path = at ? `${at}.${field}` : field
+        if (keySet.has(idKey(field))) found.push(path)
+        walk(child, path)
+      }
+    }
+  }
+  walk(value, prefix)
+  return found
+}
+
 /** The keys a job may hold for a managers row: its document id and the iOS stable id of it. */
 export function managerRowKeys(rulebook, rowId) {
   return [...new Set([idKey(rowId), idKey(rulebook.stableManagerId(rowId))].filter(Boolean))]
@@ -76,7 +115,8 @@ export function managerRowKeys(rulebook, rowId) {
 
 /**
  * Sorts the blank-email managers rows into `junk` (safe to remove) and `ambiguous` (listed, never touched).
- * Rows with an email are not looked at. `input`: `{ managers: [{id, data}], users: [{id, data}], siteBookingUserIds }`.
+ * Rows with an email are not looked at. `input`: `{ managers: [{id, data}], users: [{id, data}], siteBookingUserIds,
+ * references: [{ collection, id, data }] }` (`references`: the `REFERENCE_COLLECTIONS` documents).
  */
 export function classifyManagerRows(rulebook, input) {
   const accounts = accountKeys(rulebook, input.users)
@@ -97,6 +137,14 @@ export function classifyManagerRows(rulebook, input) {
     const details = [...DETAIL_FIELDS.filter((field) => text(data[field])), ...PAY_FIELDS.filter((field) => data[field] != null && data[field] !== '')]
     if (details.length > 0) why.push(`has other details filled in (${details.join(', ')})`)
     if (keys.some((key) => siteBookingKeys.has(key))) why.push('a manager site booking uses its id')
+    const usedBy = (input.references || [])
+      .map((doc) => ({ doc, fields: fieldsMentioning(doc?.data || {}, keys) }))
+      .filter((hit) => hit.fields.length > 0)
+    if (usedBy.length > 0) {
+      const shown = usedBy.slice(0, 5).map(({ doc, fields }) => `${doc.collection}/${doc.id} (${fields.join(', ')})`)
+      const more = usedBy.length > shown.length ? ` and ${usedBy.length - shown.length} more` : ''
+      why.push(`still used by ${usedBy.length} booking document(s): ${shown.join('; ')}${more}`)
+    }
     const entry = { id: row.id, name, keys }
     if (why.length > 0) ambiguous.push({ ...entry, why })
     else junk.push(entry)
@@ -169,7 +217,19 @@ function nameLookup(rulebook, input) {
  * `deletes` `{ path, id }`.
  */
 export function planOrg(rulebook, input) {
-  const { junk, ambiguous } = classifyManagerRows(rulebook, input)
+  const classified = classifyManagerRows(rulebook, input)
+  const ambiguous = [...classified.ambiguous]
+  // A candidate a job would still mention after the manager-field updates (for example in `hiddenManagerUserIds`)
+  // cannot be removed cleanly: it is listed for review, and neither it nor its jobs are changed.
+  const residual = residualJobMentions(rulebook, input, classified.junk)
+  const junk = classified.junk.filter((row) => {
+    const hits = residual.get(row.id)
+    if (!hits || hits.length === 0) return true
+    const shown = hits.slice(0, 5).join('; ')
+    const more = hits.length > 5 ? ` and ${hits.length - 5} more` : ''
+    ambiguous.push({ ...row, why: [`a job still mentions its id outside the manager fields: ${shown}${more}`] })
+    return false
+  })
   const nameOf = nameLookup(rulebook, input)
   const byRow = new Map(junk.map((row) => [row.id, { ...row, jobs: [] }]))
   const dataByPath = new Map()
@@ -200,7 +260,45 @@ export function planOrg(rulebook, input) {
     if (remaining.length === 0) leftWithoutManager.push(summary)
   }
   const deletes = junk.map((row) => ({ path: `organizations/${input.orgId}/managers/${row.id}`, id: row.id }))
+  // Review rows are never changed; the jobs that hold one as a manager are named so an admin can check them by hand.
+  for (const row of ambiguous) {
+    row.jobs = []
+    for (const collection of JOB_COLLECTIONS) {
+      for (const job of input.jobs?.[collection] || []) {
+        const data = job.data || {}
+        if (!rulebook.jobManagerIds(data).some((id) => row.keys.includes(idKey(id)))) continue
+        const parsed = rulebook.parseJobDocument(job.id, data, { kind: collection === 'smallWorks' ? 'smallWorks' : 'project' })
+        row.jobs.push({ collection, jobId: job.id, jobNumber: parsed?.jobNumber || text(data.jobNumber), siteName: parsed?.siteName || text(data.siteName) })
+      }
+    }
+  }
   return { orgId: input.orgId, junk: [...byRow.values()], ambiguous, updates, deletes, leftWithoutManager }
+}
+
+/**
+ * For each junk candidate, the job fields that would still hold its id after `jobPatches` ran on every candidate:
+ * `Map<rowId, string[]>` of `collection/jobId field`. The manager fields `jobManagerRemovalWrites` clears are gone by
+ * then, so anything left is a mention the clean-up would leave pointing at a deleted row.
+ */
+export function residualJobMentions(rulebook, input, junk) {
+  const result = new Map()
+  if (junk.length === 0) return result
+  const patches = new Map(jobPatches(rulebook, input.orgId, junk.map((row) => row.id), input.jobs).map((patch) => [patch.path, patch]))
+  for (const collection of JOB_COLLECTIONS) {
+    for (const job of input.jobs?.[collection] || []) {
+      const path = `organizations/${input.orgId}/${collection}/${job.id}`
+      const patch = patches.get(path)
+      const after = patch ? applyPatch(job.data, patch) : job.data || {}
+      for (const row of junk) {
+        const fields = fieldsMentioning(after, row.keys)
+        if (fields.length === 0) continue
+        const list = result.get(row.id) || []
+        list.push(`${collection}/${job.id} ${fields.join(', ')}`)
+        result.set(row.id, list)
+      }
+    }
+  }
+  return result
 }
 
 /** Every document path a plan writes or deletes (backed up first). */
@@ -254,6 +352,9 @@ export function formatReport(results, { apply, projectId, rulebookVersion }) {
     }
     for (const row of plan.ambiguous) {
       lines.push(`  review (never changed) managers/${row.id} "${row.name}", no email: ${row.why.join('; ')}`)
+      for (const job of row.jobs || []) {
+        lines.push(`    manager of ${job.collection}/${job.jobId}  ${job.jobNumber || '—'}  ${job.siteName || '—'} (left as it is)`)
+      }
     }
   }
   lines.push('')

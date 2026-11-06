@@ -7,7 +7,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { loadRulebook } from '../data-cleanup/checks.mjs'
-import { RULEBOOK_FUNCTIONS, applyPatch, classifyManagerRows, formatReport, planOrg, plannedPaths } from './plan.mjs'
+import { REFERENCE_COLLECTIONS, RULEBOOK_FUNCTIONS, applyPatch, classifyManagerRows, fieldsMentioning, formatReport, planOrg, plannedPaths } from './plan.mjs'
 
 const rulebook = loadRulebook()
 
@@ -154,4 +154,89 @@ test('the dry-run report names rows, jobs, the jobs left without a manager and s
   assert.match(text, /J-p1/)
   assert.match(text, /Jobs left with no manager/)
   assert.match(text, /Nothing was written/)
+})
+
+test('fieldsMentioning finds an id at any depth, in any case, with a user: prefix, and as a map key', () => {
+  const keys = new Set([JUNK.toLowerCase()])
+  const data = {
+    operativeId: JUNK.toLowerCase(),
+    nested: { list: ['x', `user:${JUNK}`] },
+    members: { [JUNK]: true },
+    when: new Date(0),
+    other: 'not it',
+  }
+  assert.deepEqual(fieldsMentioning(data, keys).sort(), [`members.${JUNK}`, 'nested.list[1]', 'operativeId'].sort())
+  assert.deepEqual(fieldsMentioning({ a: 1, b: [null, {}] }, keys), [])
+})
+
+test('a candidate that any booking document still mentions is only listed, and its jobs are not changed', () => {
+  assert.ok(REFERENCE_COLLECTIONS.includes('bookings'))
+  assert.ok(REFERENCE_COLLECTIONS.includes('managerSiteBookings'))
+  const input = {
+    orgId: 'org1',
+    managers: [junkRow(), junkRow('OTHER-JUNK')],
+    users: [],
+    references: [{ collection: 'bookings', id: 'b1', data: { operativeId: JUNK.toLowerCase(), dayKey: '2026-11-02' } }],
+    jobs: { projects: [job('p1', { managerIds: [JUNK, 'OTHER-JUNK'], managerId: JUNK })], smallWorks: [] },
+  }
+  const plan = planOrg(rulebook, input)
+  assert.deepEqual(plan.deletes.map((row) => row.id), ['OTHER-JUNK'])
+  assert.equal(plan.ambiguous.length, 1)
+  assert.equal(plan.ambiguous[0].id, JUNK)
+  assert.match(plan.ambiguous[0].why.join(' '), /still used by 1 booking document\(s\): bookings\/b1 \(operativeId\)/)
+  // The job keeps the listed row; only the other junk id comes off.
+  assert.equal(plan.updates.length, 1)
+  const after = applyPatch(input.jobs.projects[0].data, plan.updates[0])
+  assert.deepEqual(after.managerIds, [JUNK])
+  assert.equal(after.managerId, JUNK)
+  assert.deepEqual(plan.leftWithoutManager, [])
+  // The report names the job that still uses the listed row.
+  const report = formatReport([{ orgId: 'org1', plan }], { apply: false, projectId: 'demo', rulebookVersion: 'x' })
+  assert.match(report, new RegExp(`review \\(never changed\\) managers/${JUNK}`))
+  assert.match(report, /manager of projects\/p1 {2}J-p1/)
+})
+
+test('a candidate a job would still mention outside the manager fields is only listed; nothing is written for it', () => {
+  const input = {
+    orgId: 'org1',
+    managers: [junkRow()],
+    users: [],
+    jobs: {
+      projects: [job('p1', { managerIds: [JUNK], managerId: JUNK, hiddenManagerUserIds: [JUNK] })],
+      smallWorks: [job('s1', { managerId: JUNK })],
+    },
+  }
+  const plan = planOrg(rulebook, input)
+  assert.equal(plan.deletes.length, 0)
+  assert.equal(plan.updates.length, 0)
+  assert.equal(plan.ambiguous.length, 1)
+  assert.match(plan.ambiguous[0].why.join(' '), /projects\/p1 hiddenManagerUserIds\[0\]/)
+  assert.deepEqual(plan.ambiguous[0].jobs.map((row) => row.jobId).sort(), ['p1', 's1'])
+})
+
+test('no delete is ever planned for a row that a job or booking would still point at', () => {
+  // Every combination of where the id is stored: after the plan, each deleted row is mentioned by no job (after its
+  // update) and no booking.
+  const cases = [
+    { managerIds: [JUNK] },
+    { managerId: JUNK.toLowerCase() },
+    { managerUserIds: [JUNK] },
+    { assignedManagerUserIds: [`user:${JUNK}`] },
+    { managerIds: [JUNK, REAL_ROW], managerId: JUNK, notes: { by: JUNK } },
+  ]
+  for (const fields of cases) {
+    for (const references of [[], [{ collection: 'holidayBookings', id: 'h1', data: { approvedBy: JUNK } }]]) {
+      const input = { orgId: 'org1', managers: [junkRow(), realRow], users, references, jobs: { projects: [job('p1', fields)], smallWorks: [] } }
+      const plan = planOrg(rulebook, input)
+      for (const del of plan.deletes) {
+        const keys = new Set([del.id.toLowerCase()])
+        for (const doc of references) assert.deepEqual(fieldsMentioning(doc.data, keys), [], JSON.stringify({ fields, doc }))
+        for (const row of input.jobs.projects) {
+          const update = plan.updates.find((u) => u.jobId === row.id)
+          const after = update ? applyPatch(row.data, update) : row.data
+          assert.deepEqual(fieldsMentioning(after, keys), [], JSON.stringify(fields))
+        }
+      }
+    }
+  }
 })
