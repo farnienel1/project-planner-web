@@ -29,6 +29,15 @@ Firestore evaluates at most 1,000 expressions per request. A request that reache
 - **Tests:** `tests/rulesAssert.ts` `assertLogicalDeny` fails a test whose denial came from the limit; `RULES_STRICT_BUDGET=1 npm run test:rules` makes every suite's `assertFails` strict. In 1.31.1, 49 of the 203 firestore tests (74 at the third review's head `42c69a91`) still contain at least one budget denial (108 on 1.31.0: bookings, invitations, self-create, leave, timesheets, notifications and more); they are a follow-up.
 - **Measuring:** pad the `allow` with N copies of a cheap comparison (a balanced `&&` tree; a flat chain of about 600 terms is refused at compile time as "Expression is too complex to evaluate safely") and find the largest N that still evaluates; each copy is about 7 expressions.
 
+## After publishing: check what is really live (6 Nov)
+
+The console's "unknown error" and the CLI's 409 / 503 are not proof that a publish failed. On 6 Nov the console said "Error saving rules – An unknown error occurred", but Google had already saved the ruleset (`ce5ba57d…`, 12:11:56) and pointed the `cloud.firestore` release at it (12:12:05). Earlier "failed" attempts may also have gone live. After every publish, whatever the console says:
+
+1. `GET https://firebaserules.googleapis.com/v1/projects/project-planner-f986c/releases/cloud.firestore` and note `rulesetName` and `updateTime`. The owner can do this on the API Explorer page `projects.releases/get`; a session can do it with a one-hour OAuth token (scope `https://www.googleapis.com/auth/firebase`) saved as a network secret for `firebaserules.googleapis.com`.
+2. `GET …/v1/{rulesetName}` and compare `source.files[0].content` with `firestore.rules` on `main`, byte for byte.
+3. If they differ and a newer uploaded ruleset matches `main` (`GET …/v1/projects/project-planner-f986c/rulesets`), point the release at it with `PATCH …/releases/cloud.firestore` and body `{"release":{"name":"projects/project-planner-f986c/releases/cloud.firestore","rulesetName":"<that ruleset>"}}`. This does not compile again. Note the previous `rulesetName` first, so the change can be rolled back.
+4. Do not press Publish again just because of the error message. Every press uploads another copy.
+
 ## Compile cost (1.31.3)
 
 Google's rules compiler gave up on 1.31.0–1.31.2 (CLI `firebaserules …:test` 503, console "unknown error"). Its cost tracks the fully inlined size of every allow condition and every function body (the type checker re-resolves a function body at each call site), not the file size. Tools, measurements and method: `docs/rules-cost/README.md` and `scripts/rules-cost/`. Before asking the owner to publish a rules change:
@@ -123,6 +132,23 @@ Google's rules compiler gave up on 1.31.0–1.31.2 (CLI `firebaserules …:test`
 | `userSelfUnmasksSuperAdmin` | `userUpdateAllowed` |
 | `userSelfUpdateKeepsPrivileges` | `userUpdateAllowed` |
 | `userUpdateKeepsOrganization` | `userUpdateAllowed` |
+
+### 1.32.2 — second cut (6 Nov)
+
+Google refused to publish 1.32.1 (static cost 429,072; console "unknown error", CLI 409 then 503) although 1.31.3 (431,665) had published, so the margin was gone. 1.32.2 cuts the static cost to **383,790** (−10.6%; 1.30.2 live 525,898) with no allow/deny change. CI now fails above **395,000** (`scripts/check-rules-budget.mjs`, `firestoreRulesMaxCompileCost` in `scripts/rules-budget.json`) and on any type-check error (`scripts/check-rules-typecheck.mjs`, job `rules-typecheck` in `web-ci.yml`).
+
+`let` bindings are lazy (checked on the emulator: an unused `let x = request.auth.uid` does not fail an unauthenticated request, and a `let` is evaluated only where it is used), so moving a pure expression into a `let` never changes a result. What changed:
+
+- **Repeated document paths** inside one function are one `let hpN = /databases/…;` (`hoist`: 16 functions, e.g. `selfCreateJoinsCompany`, `callerManagesJobAt`, `hbIsAdmin`, `materialUpdateAllowed`). A path that uses one of the function's own `let`s is left alone; `callerListedRole` and `isManagerWithOperativesAccess` were rewritten the same way by hand.
+- **`userDocOrganizationMatches`** computes the `orgIdsMatch` test once (`let w = v is path ? v[4] : v`, `let m = …` with `o` = `organizationId.lower()`), instead of calling `orgIdsMatch` in both the string and the path branch. `orgIdsMatch` stays for its other callers.
+- **`canAccessOrganization`** reads the caller's users document once (`let home`) and calls `userDocOrganizationMatches(home, …)` directly (it was `userOrgIdMatchesPath`, whose `request.auth != null` is already checked there), and tests the organisation's `members` entry and `creatorUserId` under one `exists(orgPath)`: `(E && M) || (E && C)` = `E && (M || C)` (E is `exists`, which never errors).
+- **`membersMapAdminAnyBilling`** is gone: `orgAdminEither` (its only caller) does the members-map test itself, sharing `let home` with `homeIsActiveAdminOf` and checking `request.auth != null` once.
+- **`callerOrgRoleAnyBilling`**: the second `adminLikeUser(home)` (in the manager test) is removed; it is only reached when the first one was false.
+- **`adminLikeUser`**: `'k' in d && truthyBool(d.k)` is `truthyBool(d.get('k', false))` and `'role' in d && d.role == 'admin'` is `d.get('role', '') == 'admin'` (same value for a missing key, same error for a non-map).
+- **Allows with the same condition** are one allow: clients, tasks, subcontractors and siteAudits `allow read, create, update: if canAccessOrganization(organizationId);`.
+- **Write allows that all start with `canAccessOrganization(organizationId) &&`** are one allow with a `request.method` ternary, as the booking allows in 1.31.3: holidayBookings (create / update / delete), settings (create, update / delete), notifications (create / update), overtimeRequests (create / update). Reads are never merged with a method test (list queries are checked against the query).
+
+Checked: suites 223/223 (as 1.32.1); `RULES_STRICT_BUDGET=1` the same 43 limit refusals as 1.32.1, none new; emulator type check 0 issues; in-process compile (emulator 1.22.0, min of 7) 1.66 s against 1.79 s for 1.32.1.
 
 ## Service-level functions
 

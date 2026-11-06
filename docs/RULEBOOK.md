@@ -1,7 +1,7 @@
 # Project Planner Rulebook
 
-Version: 1.32.1
-Updated: 2026-11-05
+Version: 1.32.2
+Updated: 2026-11-06
 
 This is the one rulebook for every Project Planner platform: web, iOS and (later) Android. It is written platform-neutral. Each rule names the shared function in `lib/canonical` that implements it; platforms call that function (web `@/lib/canonical`, iOS `CanonicalBusinessEngine`, Android the same packed script) and never keep a second copy.
 
@@ -576,6 +576,8 @@ Owner-approved spec of 4 Nov ("PAYE overtime, price work and expenses", release 
 
 ## Deploy notes
 
+**1.32.2** (= 1.32.1 plus a second compile-cost cut; **publish this instead of 1.32.1**, which Google refused: console "unknown error", CLI 409 / 503): **Firestore rules publish needed** — Firebase console → Firestore → Rules → paste `firestore.rules` → Publish, or `firebase deploy --only firestore:rules --project project-planner-f986c`. No behaviour change from 1.32.1, so everything in the 1.32.1 note below still applies (its order, and raising `minimumIosBuild`). No index, Storage or Functions change; no migration writes; iOS needs no change (the packed script is unchanged apart from the rulebook stamp).
+
 **1.32.1** (= 1.32.0 plus the compile-cost cut; publish this, not 1.32.0): **Firestore rules deploy needed** (`firebase deploy --only firestore:rules --project project-planner-f986c`): the new `payeClaimReviews` rules (and the catch-all exclusion) and the overtime request decider writing `status` `pending` after a partial approval (§16). No index, Storage or Functions change; no migration writes. **`minimumIosBuild` is raised before 1.32 switches on** (owner decision 4 Nov; §18): an older iOS build stores `otMultiplierOverride` on every custom-hours booking it creates differently and approves overtime all-or-nothing, so the owner sets `platformConfig/app.minimumIosBuild` to the first iOS build that ships the 1.32.0 hand-off before announcing 1.32. Order: 1. merge; 2. iOS ships the 1.32.0 hand-off to TestFlight; 3. deploy the rules; 4. web deploy; 5. raise `minimumIosBuild`. Until step 3 a line manager's partial approval and every claim review are refused by the rules (the screens show the refusal).
 
 **1.31.3** (includes 1.31.0–1.31.2, which never published): **Firestore rules publish needed.** Google's compiler refused 1.31.0–1.31.2 (CLI 503, console "unknown error"); 1.31.3 is the same rules with about 17% less compile work than the live 1.30.2. Publish in the Firebase console (Firestore → Rules → paste `firestore.rules` → Publish), or `firebase deploy --only firestore:rules --project project-planner-f986c`. No index, Storage or Functions change; no migration writes. Web is already on 1.31.x. Every 1.31.x behaviour change (rulebook 1.31.0–1.31.2 changelog) takes effect for older iOS builds on publish. If Google still refuses it, the fallback is `docs/rules-cost/1.30.2-plus-critical.rules` (live 1.30.2 plus the critical privilege fixes; see `docs/rules-cost/README.md` for what it leaves open).
@@ -621,6 +623,10 @@ Owner-approved spec of 4 Nov ("PAYE overtime, price work and expenses", release 
 **1.10.0** (full order and checks in `docs/DEPLOY_1.10.0.md`): 1. merge the web change; 2. `node scripts/backfill-job-manager-user-ids.mjs --project <id> --all` (dry run, the default) and review the per-job diff; 3. the same with `--apply` (writes only `managerUserIds`, partial updates, idempotent, no write metadata — `updatedFrom` takes only `web` / `ios` / `android`); 4. `firebase deploy --only firestore:rules,firestore:indexes,functions`; 5. release iOS 1.10.0. The read rules (§17) refuse whole-collection job and booking queries for managers without a job toggle and for operatives, so app builds that predate 1.10.0 lose those lists for them until they update.
 
 ## Changelog
+
+### 1.32.2 — 2026-11-06
+- Compile-cost cut, no behaviour change. Google refused to publish 1.32.1 (console "unknown error", CLI 409 then 503) although 1.31.3 published at a slightly higher static cost, so the margin had gone. Static compile cost (`scripts/rules-cost/metric.py` `total2`) 429,072 → **383,790** (−10.6%; 1.30.2 live 525,898); in-process compile on the emulator's compiler 1.79 s → 1.66 s (min of 7). Every allow/deny decision is unchanged: lazy `let`s for repeated document paths and the caller's users document, `orgIdsMatch` computed once in `userDocOrganizationMatches`, `membersMapAdminAnyBilling` folded into `orgAdminEither`, a redundant `adminLikeUser` removed from `callerOrgRoleAnyBilling`, allows with the same condition merged (clients, tasks, subcontractors, siteAudits) and write allows sharing `canAccessOrganization` merged with a `request.method` ternary (holidayBookings, settings, notifications, overtimeRequests). Details: `docs/firestore-rules-notes.md` "Compile cost". Rules suites 223/223; `RULES_STRICT_BUDGET=1` the same 43 limit refusals as 1.32.1, none new; emulator type check 0 issues.
+- CI: `scripts/check-rules-budget.mjs` fails when the static compile cost is above `firestoreRulesMaxCompileCost` (395,000, `scripts/rules-budget.json`); the new `rules-typecheck` job (`scripts/check-rules-typecheck.mjs`) fails on any emulator type-check error ("Invalid type" included).
 
 ### 1.32.1 — 2026-11-05
 - 1.32.0 (never published) on top of 1.31.3's compile-cost restructure, plus one more cut; no behaviour change from 1.32.0. Admin checks that tested the users-document admin and the members-map admin one after the other now read billing once (`orgAdminEither`; `isOrgAdminOrOwner`, memberships, pay profiles, rate history, settings and the other pairs), and `isOrgAdminViaMembersMap` is gone (`membersMapAdminAnyBilling`). Static compile cost 429,072 (1.30.2 live: 525,898; 1.32.0 as built: 614,251); in-process compile 10–17% faster than 1.30.2. Rules suites 223/223; `RULES_STRICT_BUDGET=1` 43 limit refusals vs 45 on 1.32.0, none new; emulator type check clean.

@@ -30,8 +30,9 @@ jobs:
       - name: No second calculators outside lib/canonical
         # Own weekend cut-offs, browser / London business dates, single-id person matching (feature-completeness.md).
         run: npm run check:calculators
-      - name: Security rules size budget
-        # firestore.rules / storage.rules byte budget in scripts/rules-budget.json (platform-guardrails.md §5).
+      - name: Security rules size and compile-cost budget
+        # firestore.rules / storage.rules byte budget, and firestore.rules static compile cost (scripts/rules-cost/metric.py
+        # total2, needs python3) in scripts/rules-budget.json (platform-guardrails.md §5, firestore-rules-notes.md "Compile cost").
         run: npm run check:rules-budget
       - name: Full test suite
         timeout-minutes: 10
@@ -48,3 +49,19 @@ jobs:
           NEXT_PUBLIC_FIREBASE_APP_ID: '1:000000000000:web:0000000000000000'
           NEXT_PUBLIC_APP_URL: http://localhost:3000
         run: npm run build
+
+  rules-typecheck:
+    # The console refuses rules its type checker reports as "Invalid type" (1.31.2). Same compiler as the emulator.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Firestore rules type check (emulator)
+        run: npx -y firebase-tools@15.34.2 emulators:exec --only firestore --project demo-rules-typecheck "node scripts/check-rules-typecheck.mjs"

@@ -12,11 +12,11 @@ service cloud.firestore {
   }
 
   function adminLikeUser(userData) {
-    return ('isSuperAdmin' in userData && truthyBool(userData.isSuperAdmin)) ||
-           ('adminAccess' in userData && truthyBool(userData.adminAccess)) ||
+    return truthyBool(userData.get('isSuperAdmin', false)) ||
+           truthyBool(userData.get('adminAccess', false)) ||
            ('permissions' in userData && userData.permissions is map &&
              ('adminAccess' in userData.permissions && truthyBool(userData.permissions.adminAccess))) ||
-           ('role' in userData && userData.role == 'admin');
+           userData.get('role', '') == 'admin';
   }
 
   function callerHomeIsOperative() {
@@ -27,8 +27,10 @@ service cloud.firestore {
   function userDocOrganizationMatches(userData, organizationId) {
     let v = userData.get('organizationId', null);
     let o = organizationId.lower();
-    return (v is string && (orgIdsMatch(v, organizationId) || v.lower().matches('(^|.*/)organizations/' + o + '$'))) ||
-      (v is path && (orgIdsMatch(v[4], organizationId) || string(v).lower().matches('.*/organizations/' + o + '$'))) ||
+    let w = v is path ? v[4] : v;
+    let m = w is string && organizationId is string && (w.lower() == o || w.lower().matches('^\\s*' + o + '\\s*$'));
+    return (v is string && (m || v.lower().matches('(^|.*/)organizations/' + o + '$'))) ||
+      (v is path && (m || string(v).lower().matches('.*/organizations/' + o + '$'))) ||
       v == /databases/(default)/documents/organizations/$(organizationId);
   }
 
@@ -124,6 +126,7 @@ service cloud.firestore {
   }
 
   function selfCreateJoinsCompany(organizationId, emailKey) {
+    let hp0 = /databases/(default)/documents/organizations/$(organizationId);
     let claimPath = /databases/(default)/documents/organizations/$(organizationId)/userEmails/$(emailKey);
     return (
       inviteClaimIsPendingPlaceholder(organizationId, emailKey) ? (
@@ -135,9 +138,9 @@ service cloud.firestore {
     ) || (
       (exists(claimPath) && get(claimPath).data.userId == request.auth.uid) ? (
         (request.auth != null &&
-           exists(/databases/(default)/documents/organizations/$(organizationId)) &&
-           'members' in get(/databases/(default)/documents/organizations/$(organizationId)).data &&
-           get(/databases/(default)/documents/organizations/$(organizationId)).data.members[request.auth.uid] != null) ? (
+           exists(hp0) &&
+           'members' in get(hp0).data &&
+           get(hp0).data.members[request.auth.uid] != null) ? (
           selfCreateKeepsManagedFields(callerListedRole(organizationId)) ? (
             privilegeCreateTyped(request.resource.data, true) &&
             selfCreateAliasesWithin(request.resource.data, {}, '') &&
@@ -146,7 +149,7 @@ service cloud.firestore {
            orgCreatorIs(organizationId, request.auth.uid)) &&
             (
               !raisesPrivileges(request.resource.data) ||
-              get(/databases/(default)/documents/organizations/$(organizationId)).data.members[request.auth.uid] == 'admin'
+              get(hp0).data.members[request.auth.uid] == 'admin'
             )
           ) : false
         ) : false
@@ -257,11 +260,13 @@ service cloud.firestore {
 
   function canAccessOrganization(organizationId) {
     let orgPath = /databases/(default)/documents/organizations/$(organizationId);
+    let home = callerHomeData();
+    let org = get(orgPath).data;
     return isPlatformOwner() || (request.auth != null && orgBillingOpen(organizationId) && (
-      userOrgIdMatchesPath(organizationId)
-        ? callerHomeData().get('isActive', true) != false
-        : (((exists(orgPath) && get(orgPath).data.get('members', {}).get(request.auth.uid, null) != null) ||
-            isOrgCreatorViaParentGet(organizationId)) && !callerMembershipDeactivated(organizationId))
+      userDocOrganizationMatches(home, organizationId)
+        ? home.get('isActive', true) != false
+        : (exists(orgPath) && (org.get('members', {}).get(request.auth.uid, null) != null ||
+            org.get('creatorUserId', null) == request.auth.uid) && !callerMembershipDeactivated(organizationId))
     ));
   }
 
@@ -296,8 +301,8 @@ service cloud.firestore {
   }
 
   function callerListedRole(organizationId) {
-    return exists(/databases/(default)/documents/organizations/$(organizationId)) ?
-      get(/databases/(default)/documents/organizations/$(organizationId)).data.get('members', {}).get(request.auth.uid, '') : '';
+    let p = /databases/(default)/documents/organizations/$(organizationId);
+    return exists(p) ? get(p).data.get('members', {}).get(request.auth.uid, '') : '';
   }
   function callerHomeData() {
     let p = /databases/(default)/documents/users/$(request.auth.uid);
@@ -318,7 +323,7 @@ service cloud.firestore {
     return homeOrgIs(home, organizationId) ? (
       home.get('isActive', true) == false ? '' : (
         (listed == 'admin' || adminLikeUser(home)) ? 'admin' : (
-          isOperativeProfile(home) ? 'operative' : ((adminLikeUser(home) ||
+          isOperativeProfile(home) ? 'operative' : ((
            ('manager' in home && truthyBool(home.manager)) ||
            ('permissions' in home && home.permissions is map &&
              ('manager' in home.permissions && truthyBool(home.permissions.manager))) ||
@@ -379,50 +384,48 @@ service cloud.firestore {
     )));
   }
 
-  function membersMapAdminAnyBilling(organizationId) {
-    return request.auth != null &&
-           exists(/databases/(default)/documents/organizations/$(organizationId)) &&
-           'members' in get(/databases/(default)/documents/organizations/$(organizationId)).data &&
-           get(/databases/(default)/documents/organizations/$(organizationId)).data.members[request.auth.uid] == 'admin' &&
-           !callerHomeInactiveIn(organizationId);
-  }
   function orgAdminEither(organizationId) {
-    return orgBillingOpen(organizationId) &&
-      (isOrganizationAdminAnyBilling(organizationId) || membersMapAdminAnyBilling(organizationId));
+    let home = callerHomeData();
+    let p = /databases/(default)/documents/organizations/$(organizationId);
+    return orgBillingOpen(organizationId) && request.auth != null && (
+      homeIsActiveAdminOf(home, organizationId) ||
+      (exists(p) && 'members' in get(p).data && get(p).data.members[request.auth.uid] == 'admin' &&
+        !(home.get('isActive', true) == false && homeOrgIs(home, organizationId))));
   }
 
   function isManagerWithOperativesAccess() {
-    return request.auth != null &&
-           exists(/databases/(default)/documents/users/$(request.auth.uid)) &&
-           !('operativeMode' in get(/databases/(default)/documents/users/$(request.auth.uid)).data &&
-             truthyBool(get(/databases/(default)/documents/users/$(request.auth.uid)).data.operativeMode)) &&
-           ('manager' in get(/databases/(default)/documents/users/$(request.auth.uid)).data &&
-             truthyBool(get(/databases/(default)/documents/users/$(request.auth.uid)).data.manager)) &&
-           ('operatives' in get(/databases/(default)/documents/users/$(request.auth.uid)).data &&
-             truthyBool(get(/databases/(default)/documents/users/$(request.auth.uid)).data.operatives));
+    let p = /databases/(default)/documents/users/$(request.auth.uid);
+    let u = get(p).data;
+    return request.auth != null && exists(p) &&
+           !('operativeMode' in u && truthyBool(u.operativeMode)) &&
+           ('manager' in u && truthyBool(u.manager)) &&
+           ('operatives' in u && truthyBool(u.operatives));
   }
 
   function opsManagerEmailFree(org, email) {
     return (!(email is string) || email.trim() == '') ? true : opsManagerClaimFree(org, email.trim().lower());
   }
   function opsManagerClaimFree(org, key) {
+    let hp0 = /databases/(default)/documents/organizations/$(org)/userEmails/$(key);
     return key.matches('.*/.*') ? false : (
-      !exists(/databases/(default)/documents/organizations/$(org)/userEmails/$(key)) ? true :
-        opsManagerMayHoldClaim(get(/databases/(default)/documents/organizations/$(org)/userEmails/$(key)).data.get('userId', ''))
+      !exists(hp0) ? true :
+        opsManagerMayHoldClaim(get(hp0).data.get('userId', ''))
     );
   }
   function opsManagerMayHoldClaim(uid) {
+    let hp0 = /databases/(default)/documents/users/$(uid);
     return (!(uid is string) || uid == '') ? true : (
       uid.matches('.*/.*') ? false : (
-        !exists(/databases/(default)/documents/users/$(uid)) ? true :
-          managerMayManageOperative(uid, get(/databases/(default)/documents/users/$(uid)).data)
+        !exists(hp0) ? true :
+          managerMayManageOperative(uid, get(hp0).data)
       )
     );
   }
   function opsManagerClaimTarget(uid) {
+    let hp0 = /databases/(default)/documents/users/$(uid);
     return (uid is string && uid != '' && !uid.matches('.*/.*') &&
-            existsAfter(/databases/(default)/documents/users/$(uid))) ?
-      managerMayManageOperative(uid, getAfter(/databases/(default)/documents/users/$(uid)).data) : false;
+            existsAfter(hp0)) ?
+      managerMayManageOperative(uid, getAfter(hp0).data) : false;
   }
 
   function isPlatformOwner() {
@@ -630,9 +633,10 @@ service cloud.firestore {
     return parts.size() > 0 ? parts[parts.size() - 1].trim() : '';
   }
   function orgCreatorIs(org, uid) {
+    let hp0 = /databases/(default)/documents/organizations/$(org);
     return org != '' && !org.matches('.*[.].*') &&
-      exists(/databases/(default)/documents/organizations/$(org)) &&
-      get(/databases/(default)/documents/organizations/$(org)).data.get('creatorUserId', '') == uid;
+      exists(hp0) &&
+      get(hp0).data.get('creatorUserId', '') == uid;
   }
   function selfCreateSuperAdminAllowed() {
     return !privilegeFlag(request.resource.data, 'isSuperAdmin') ||
@@ -961,11 +965,12 @@ service cloud.firestore {
         )
       );
       function adminDeletesUser(targetId, me) {
+        let hp0 = /databases/(default)/documents/organizations/$(resource.data.organizationId);
         return orgIdsMatch(me.organizationId, resource.data.organizationId) && (
           (('isSuperAdmin' in me && me.isSuperAdmin == true) &&
-           (!exists(/databases/(default)/documents/organizations/$(resource.data.organizationId)) ||
-            !('creatorUserId' in get(/databases/(default)/documents/organizations/$(resource.data.organizationId)).data) ||
-            get(/databases/(default)/documents/organizations/$(resource.data.organizationId)).data.creatorUserId != targetId)) ||
+           (!exists(hp0) ||
+            !('creatorUserId' in get(hp0).data) ||
+            get(hp0).data.creatorUserId != targetId)) ||
           (adminLikeUser(me) &&
            !('isSuperAdmin' in me && me.isSuperAdmin == true) &&
            !('isSuperAdmin' in resource.data && resource.data.isSuperAdmin == true) &&
@@ -1146,6 +1151,7 @@ service cloud.firestore {
           request.resource.data.members[request.auth.uid] == invitationRole(inv);
       }
       function orgRootSuperAdminRestore() {
+        let hp0 = /databases/(default)/documents/users/$(request.auth.uid);
         let d = resource.data.get('deletion', {});
         return (resource.data.get('deletion', {}) is map && resource.data.get('deletion', {}).get('status', '') == 'scheduled') &&
           d.get('restoreBy', 'super_admin') != 'platform_owner' &&
@@ -1153,8 +1159,8 @@ service cloud.firestore {
           request.resource.data.diff(resource.data).affectedKeys()
             .hasOnly(['deletion', 'updatedAt', 'updatedBy', 'updatedFrom']) &&
           (resource.data.get('creatorUserId', null) == request.auth.uid || (
-          exists(/databases/(default)/documents/users/$(request.auth.uid)) &&
-          staffFlag(get(/databases/(default)/documents/users/$(request.auth.uid)).data, 'isSuperAdmin') &&
+          exists(hp0) &&
+          staffFlag(get(hp0).data, 'isSuperAdmin') &&
           userOrgIdMatchesPath(organizationId)
         ));
       }
@@ -1288,8 +1294,7 @@ service cloud.firestore {
       }
 
       match /clients/{clientId} {
-        allow read: if canAccessOrganization(organizationId);
-        allow create, update: if canAccessOrganization(organizationId);
+        allow read, create, update: if canAccessOrganization(organizationId);
         allow delete: if isOrganizationAdmin(organizationId);
       }
 
@@ -1353,10 +1358,12 @@ service cloud.firestore {
         return exists(path) && string(get(path).data.get('email', '')).lower() == request.auth.token.email.lower();
       }
       function callerManagesJobAt(jobId) {
-        return (exists(/databases/(default)/documents/organizations/$(organizationId)/projects/$(jobId)) &&
-            jobListsCaller(get(/databases/(default)/documents/organizations/$(organizationId)/projects/$(jobId)).data)) ||
-          (exists(/databases/(default)/documents/organizations/$(organizationId)/smallWorks/$(jobId)) &&
-            jobListsCaller(get(/databases/(default)/documents/organizations/$(organizationId)/smallWorks/$(jobId)).data));
+        let hp0 = /databases/(default)/documents/organizations/$(organizationId)/smallWorks/$(jobId);
+        let hp1 = /databases/(default)/documents/organizations/$(organizationId)/projects/$(jobId);
+        return (exists(hp1) &&
+            jobListsCaller(get(hp1).data)) ||
+          (exists(hp0) &&
+            jobListsCaller(get(hp0).data));
       }
       function callerManagesJob(jobId) {
         return jobId is string && jobId.size() > 0 && !jobId.matches('.*/.*') && (
@@ -1520,17 +1527,15 @@ service cloud.firestore {
 
       match /overtimeRequests/{requestId} {
         allow read: if overtimeViewer(resource.data.get('userId', ''));
-        allow create: if canAccessOrganization(organizationId) &&
-          callerOrgRole(organizationId) != '' &&
+        allow create, update: if canAccessOrganization(organizationId) && (
+          (request.method == 'create') ? (callerOrgRole(organizationId) != '' &&
           request.resource.data.keys().hasOnly(['userId', 'rangeStart', 'rangeEnd', 'status', 'lines', 'createdAt', 'updatedAt', 'updatedBy', 'updatedFrom']) &&
           request.resource.data.keys().hasAll(['userId', 'rangeStart', 'rangeEnd', 'status', 'lines']) &&
           request.resource.data.userId == request.auth.uid &&
           request.resource.data.status == 'pending' &&
           request.resource.data.lines is list && request.resource.data.lines.size() > 0 &&
           request.resource.data.rangeStart is string && request.resource.data.rangeEnd is string &&
-          writeMetadataValidWhenPresent();
-        allow update: if canAccessOrganization(organizationId) &&
-          resource.data.status == 'pending' &&
+          writeMetadataValidWhenPresent()) : (resource.data.status == 'pending' &&
           request.resource.data.userId == resource.data.userId &&
           writeMetadataValidWhenPresent() && (
             (resource.data.userId == request.auth.uid &&
@@ -1542,7 +1547,7 @@ service cloud.firestore {
               request.resource.data.diff(resource.data).affectedKeys().hasOnly([
                 'status', 'decisions', 'decidedBy', 'decidedAt', 'appliedBookingIds', 'droppedBookingIds', 'updatedAt', 'updatedBy', 'updatedFrom'
               ])) ? (isOrgAdminOrOwner(organizationId) || callerLineManagesUser(resource.data.userId)) : false)
-          );
+          )));
       }
 
       match /overtimeReviews/{reviewId} {
@@ -1596,10 +1601,11 @@ service cloud.firestore {
       }
       
       function priceWorkApproverValid(approverId) {
+        let hp0 = /databases/(default)/documents/users/$(approverId);
         return approverId is string && approverId.size() > 0 && !approverId.matches('.*/.*') &&
           approverId != request.auth.uid &&
-          exists(/databases/(default)/documents/users/$(approverId)) &&
-          priceWorkApproverData(get(/databases/(default)/documents/users/$(approverId)).data);
+          exists(hp0) &&
+          priceWorkApproverData(get(hp0).data);
       }
       function priceWorkApproverData(d) {
         return homeOrgIs(d, organizationId) && d.get('isActive', true) != false &&
@@ -1780,12 +1786,13 @@ service cloud.firestore {
         }
         
         function timesheetReviewerOfOthers() {
+          let hp0 = /databases/(default)/documents/users/$(timesheetSubjectUid());
           return (
             orgAdminEither(organizationId) || (
               !callerHomeIsOperative() &&
               timesheetSubjectUid() is string &&
-              exists(/databases/(default)/documents/users/$(timesheetSubjectUid())) &&
-              lineManagerIdList(get(/databases/(default)/documents/users/$(timesheetSubjectUid())).data).hasAny(
+              exists(hp0) &&
+              lineManagerIdList(get(hp0).data).hasAny(
                 [request.auth.uid].concat(
                   callerHomeData().get('formerUserIds', []) is list && homeOrgIs(callerHomeData(), organizationId)
                     ? callerHomeData().get('formerUserIds', [])
@@ -1852,7 +1859,8 @@ service cloud.firestore {
             orgAdminEither(organizationId) || isPlatformOwner() ||
             (timesheetSubjectUid() is string && canViewPayOfAsMember(timesheetSubjectUid())) ||
             (isPlatformOwner() || (!timesheetCallerIsSubject() && timesheetReviewerOfOthers()))));
-        allow create, update: if canAccessOrganization(organizationId) && (
+        allow create, update, delete: if canAccessOrganization(organizationId) && (
+          (request.method != 'delete') ? ((
           isTimesheetSettingsDoc()
             ? (isPlatformOwner() || (timesheetCallerIsSubject() ? (
             timesheetOwnerKeepsSubject() && (
@@ -1869,8 +1877,7 @@ service cloud.firestore {
             : ((settingId.matches('^deadlines_.*') ||
             settingId == 'deadlineAssignments' ||
             settingId.matches('^healthSafety_.*')) || canAccessVariationsStaff(organizationId))
-        );
-        allow delete: if canAccessOrganization(organizationId) && (
+        )) : ((
           isTimesheetSettingsDoc()
             ? (isPlatformOwner() || (timesheetCallerIsSubject() ? (
             (resource.data.get('userId', null) == null || (timesheetSubjectUid() is string && timesheetIdIsCallers(timesheetSubjectUid()))) &&
@@ -1882,12 +1889,11 @@ service cloud.firestore {
             : ((settingId.matches('^deadlines_.*') ||
             settingId == 'deadlineAssignments' ||
             settingId.matches('^healthSafety_.*')) || canAccessVariationsStaff(organizationId))
-        );
+        )));
       }
 
       match /tasks/{taskId} {
-        allow read: if canAccessOrganization(organizationId);
-        allow create, update: if canAccessOrganization(organizationId);
+        allow read, create, update: if canAccessOrganization(organizationId);
         allow delete: if isOrganizationAdmin(organizationId);
       }
 
@@ -1925,14 +1931,13 @@ service cloud.firestore {
           ((resource != null &&
             'userId' in resource.data &&
             resource.data.userId == request.auth.uid) || isOrgAdminOrOwner(organizationId));
-        allow create: if canAccessOrganization(organizationId) && (!('actorUserId' in request.resource.data) ||
-            request.resource.data.actorUserId == request.auth.uid) && notificationRecipientIsMember();
-        allow update: if canAccessOrganization(organizationId) &&
-          ((resource != null &&
+        allow create, update: if canAccessOrganization(organizationId) && (
+          (request.method == 'create') ? ((!('actorUserId' in request.resource.data) ||
+            request.resource.data.actorUserId == request.auth.uid) && notificationRecipientIsMember()) : (((resource != null &&
             'userId' in resource.data &&
             resource.data.userId == request.auth.uid) || isOrgAdminOrOwner(organizationId)) &&
           ((!('actorUserId' in request.resource.data.diff(resource.data).affectedKeys())) || (!('actorUserId' in request.resource.data) ||
-            request.resource.data.actorUserId == request.auth.uid));
+            request.resource.data.actorUserId == request.auth.uid))));
         allow delete: if isOrgAdminOrOwner(organizationId);
       }
 
@@ -1944,6 +1949,7 @@ service cloud.firestore {
            request.resource.data.addedByUserId == request.auth.uid);
         allow update: if materialUpdateAllowed();
         function materialUpdateAllowed() {
+          let hp0 = /databases/(default)/documents/users/$(request.auth.uid);
           let affected = request.resource.data.diff(resource.data).affectedKeys();
           let mine = request.auth != null && resource.data.get('addedByUserId', null) == request.auth.uid;
           let claim = request.auth != null && affected.hasOnly(['addedByUserId']) &&
@@ -1964,9 +1970,9 @@ service cloud.firestore {
             request.resource.data.addedByUserId.size() > 0 &&
             request.resource.data.addedByUserId == request.auth.uid) ? (
       (request.auth != null &&
-           exists(/databases/(default)/documents/users/$(request.auth.uid)) &&
+           exists(hp0) &&
            resource.data.addedBy is string &&
-           addedByNamesUser(resource.data.addedBy.lower(), get(/databases/(default)/documents/users/$(request.auth.uid)).data)) ? (
+           addedByNamesUser(resource.data.addedBy.lower(), get(hp0).data)) ? (
         canAccessOrganization(organizationId) ? userOrgIdMatchesPath(organizationId) : false
       ) : false
     ) : false) &&
@@ -2021,8 +2027,7 @@ service cloud.firestore {
       }
 
       match /subcontractors/{subcontractorId} {
-        allow read: if canAccessOrganization(organizationId);
-        allow create, update: if canAccessOrganization(organizationId);
+        allow read, create, update: if canAccessOrganization(organizationId);
         allow delete: if isOrganizationAdmin(organizationId);
       }
 
@@ -2035,14 +2040,16 @@ service cloud.firestore {
       match /holidayBookings/{bookingId} {
         
         function hbCallerIsOperative() {
-          return exists(/databases/(default)/documents/users/$(request.auth.uid)) &&
-            isOperativeProfile((get(/databases/(default)/documents/users/$(request.auth.uid)).data)) && !adminLikeUser((get(/databases/(default)/documents/users/$(request.auth.uid)).data));
+          let hp0 = /databases/(default)/documents/users/$(request.auth.uid);
+          return exists(hp0) &&
+            isOperativeProfile((get(hp0).data)) && !adminLikeUser((get(hp0).data));
         }
         function hbIsAdmin() {
+          let hp0 = /databases/(default)/documents/organizations/$(organizationId);
           return (request.auth != null &&
-           exists(/databases/(default)/documents/organizations/$(organizationId)) &&
-           'members' in get(/databases/(default)/documents/organizations/$(organizationId)).data &&
-           get(/databases/(default)/documents/organizations/$(organizationId)).data.members[request.auth.uid] == 'admin' &&
+           exists(hp0) &&
+           'members' in get(hp0).data &&
+           get(hp0).data.members[request.auth.uid] == 'admin' &&
            !callerHomeInactiveIn(organizationId)) ||
             isOrganizationAdminAnyBilling(organizationId) ||
             isPlatformOwner();
@@ -2115,12 +2122,12 @@ service cloud.firestore {
         }
 
         allow read: if canAccessOrganization(organizationId);
-        allow create: if canAccessOrganization(organizationId) && (
+        allow create, update, delete: if canAccessOrganization(organizationId) && (
+          (request.method == 'create') ? ((
           (hbIsOwner(request.resource.data) && hbOwnerShapeAllowed(request.resource.data)) ||
           hbCanDecide(request.resource.data) ||
           (hbIsRequestShape(request.resource.data) && (callerOrgRoleAnyBilling(organizationId) in ['admin', 'manager'] || hbIsAdmin()))
-        );
-        allow update: if canAccessOrganization(organizationId) && (
+        )) : (request.method == 'update') ? ((
           (hbIsOwner(resource.data) &&
             hbOwnerEditAllowed(request.resource.data.diff(resource.data).affectedKeys())) ||
           (!hbIsOwner(resource.data) && !hbIsOwner(request.resource.data) && (
@@ -2129,23 +2136,23 @@ service cloud.firestore {
              !hbCallerIsOperative()) ||
             (!hbCallerIsOperative() && hbIsAdmin())
           ))
-        );
-        allow delete: if canAccessOrganization(organizationId) && (
+        )) : ((
           (hbIsOwner(resource.data) && (
             resource.data.get('status', null) in ['pending', 'rejected'] ||
             hbCallerSelfBooks()
           )) ||
           hbCanDecide(resource.data)
-        );
+        )));
       }
 
       function managerMayChangePayOf(subjectUserId) {
+        let hp0 = /databases/(default)/documents/users/$(subjectUserId);
         return subjectUserId is string && subjectUserId.size() > 0 &&
           subjectUserId != request.auth.uid &&
-          exists(/databases/(default)/documents/users/$(subjectUserId)) &&
-          get(/databases/(default)/documents/users/$(subjectUserId)).data.get('organizationId', null) is string &&
-          orgIdsMatch(get(/databases/(default)/documents/users/$(subjectUserId)).data.organizationId, organizationId) &&
-          managerMayManageOperative(subjectUserId, get(/databases/(default)/documents/users/$(subjectUserId)).data);
+          exists(hp0) &&
+          get(hp0).data.get('organizationId', null) is string &&
+          orgIdsMatch(get(hp0).data.organizationId, organizationId) &&
+          managerMayManageOperative(subjectUserId, get(hp0).data);
       }
       function canChangePayOf(subjectUserId) {
         return orgAdminEither(organizationId) ||
@@ -2287,19 +2294,21 @@ service cloud.firestore {
           return data.get('operativeId', '') is string ? data.get('operativeId', '') : '';
         }
         function rateRowOperativeIsCaller(operativeId) {
+          let hp0 = /databases/(default)/documents/organizations/$(organizationId)/operatives/$(operativeId);
           return operativeId.size() > 0 && (
             !(request.auth.token.email is string) ||
-            !exists(/databases/(default)/documents/organizations/$(organizationId)/operatives/$(operativeId)) ||
-            get(/databases/(default)/documents/organizations/$(organizationId)/operatives/$(operativeId)).data.get('email', '') == null ||
-            string(get(/databases/(default)/documents/organizations/$(organizationId)/operatives/$(operativeId)).data.get('email', '')).lower() ==
+            !exists(hp0) ||
+            get(hp0).data.get('email', '') == null ||
+            string(get(hp0).data.get('email', '')).lower() ==
               request.auth.token.email.lower()
           );
         }
         function managerMayRecordOperativeRow(operativeId) {
+          let hp0 = /databases/(default)/documents/users/$(request.auth.uid);
           return operativeId.size() > 0 &&
             isManagerWithOperativesAccess() &&
-            get(/databases/(default)/documents/users/$(request.auth.uid)).data.get('organizationId', null) is string &&
-            orgIdsMatch(get(/databases/(default)/documents/users/$(request.auth.uid)).data.organizationId, organizationId) &&
+            get(hp0).data.get('organizationId', null) is string &&
+            orgIdsMatch(get(hp0).data.organizationId, organizationId) &&
             !rateRowOperativeIsCaller(operativeId);
         }
         
@@ -2324,8 +2333,7 @@ service cloud.firestore {
       }
 
       match /siteAudits/{auditId} {
-        allow read: if canAccessOrganization(organizationId);
-        allow create, update: if canAccessOrganization(organizationId);
+        allow read, create, update: if canAccessOrganization(organizationId);
         allow delete: if isOrganizationAdmin(organizationId);
       }
 

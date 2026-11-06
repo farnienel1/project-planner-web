@@ -8,6 +8,17 @@ Live launch checklist (the owner ticks items there; Claude updates rows as work 
 
 ---
 
+## 0a. 6 Nov update (third chat) — read before §0
+
+| Item | State |
+|---|---|
+| Rules 1.32.1 | **Live** [Certain]: verified through Google's API on 6 Nov. The `cloud.firestore` release points at ruleset `ce5ba57d…` (made live 12:12:05 UTC), and it is byte-identical to `main`. The console said "Error saving rules – An unknown error occurred", but the publish had worked. The earlier CLI 409 / 503 messages may also have hidden successful publishes. |
+| How to publish from now on | Publish once, then always check what is live (`docs/firestore-rules-notes.md` → "After publishing: check what is really live"). Never press Publish again just because of the error. If a newer uploaded ruleset matches `main` but is not live, point the release at it with `releases.patch` (it does not compile again). |
+| Rules 1.32.2 (PR #285, `main-wom3p1`) | Compile cost 383,790, below the new 395,000 CI budget. No allow/deny change: suites 223/223; strict list identical (43/43); type check 0 issues; independent review found no change. CI adds a compile-cost budget and a `rules-typecheck` job. CI is green. Waiting for the owner to approve the merge, then the owner publishes it and checks the live release. |
+| Booking self-book fix (PR #284) | Merged. `deleteField()` sentinels are stripped from creates (`createWritePayload`). The owner has not yet confirmed that admin self-booking from Daily Overview works. |
+| Web 1.33 prompt | The owner has a prompt file "Web agent prompt: 1.33 additions" (overtime Submit → Return flow, claims and overtime PDFs, Payrun Snapshot proposal). Its item 0, the rules publish, is done by 1.32.1 being live and by #285. Paste the rest into a new chat. |
+| Open | Dependabot PRs #279–#283 need review before launch. iPhone 1.31 + 1.32 (iOS #193, #195) are merged but not released. Raise `minimumIosBuild` after the iPhone release. Delete `docs/rules-cost/1.30.2-plus-critical.rules` (1.32.1 is confirmed live). |
+
 ## 0. Current state and next steps (end of second chat, 5 Nov) — overrides §1–§2 where they differ
 
 **Done in the second chat**

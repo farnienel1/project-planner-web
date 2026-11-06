@@ -1,5 +1,6 @@
 {
-  "firestoreRulesMaxBytes": 146432,
+  "firestoreRulesMaxBytes": 145408,
+  "firestoreRulesMaxCompileCost": 395000,
   "storageRulesMaxBytes": 19456,
-  "note": "Set 5 Nov 2026 by rulebook 1.31.3: firestore.rules 143907 bytes after the compile-cost restructure (booking allows merged, 79 helpers written out inside their callers); budget = next KB + 2 KB = 146432. Bytes are a weak proxy: Google's compiler cost tracks the inlined size (docs/firestore-rules-notes.md \u201cCompile cost\u201d, scripts/rules-cost/metric.py; 1.31.3 = 431665, live 1.30.2 = 525898). storage.rules 16862 bytes (17 KB rounded up + 2 KB). Platform guardrails \u00a75. Lower firestoreRulesMaxBytes when the rules are slimmed (new size rounded up to the next KB + 2 KB); raise it only with a stated reason in the PR."
+  "note": "Set 6 Nov 2026 by rulebook 1.32.2: firestore.rules 142995 bytes after the second compile-cost cut; budget = next KB + 2 KB = 145408. Bytes are a weak proxy: Google's compiler cost tracks the inlined size (docs/firestore-rules-notes.md “Compile cost”, scripts/rules-cost/metric.py total2). firestoreRulesMaxCompileCost is that static cost: 1.31.3 = 431665 published, 1.32.1 = 429072 was refused (console “unknown error”, CLI 409/503), 1.32.2 = 383790; never raise it. storage.rules 16862 bytes (17 KB rounded up + 2 KB). Platform guardrails §5. Lower firestoreRulesMaxBytes when the rules are slimmed (new size rounded up to the next KB + 2 KB); raise it only with a stated reason in the PR."
 }
