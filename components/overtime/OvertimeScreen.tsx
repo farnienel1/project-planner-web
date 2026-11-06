@@ -792,10 +792,10 @@ function RequestReview(props: {
             {props.canDecide && booking ? (
               <span className="row" style={{ gap: 6 }}>
                 <button type="button" className="btn sm" aria-label="Remove the overtime" disabled={props.busy} onClick={() => props.onStrike(booking, () => decide(line.bookingId, { action: 'strike' }))}>
-                  ✕
+                  <span style={{ color: 'var(--red)' }}>✕</span>
                 </button>
                 <button type="button" className="btn sm" aria-label="Approve as asked" disabled={props.busy} onClick={() => decide(line.bookingId, { action: 'approve' })}>
-                  ✓
+                  <span style={{ color: 'var(--green)' }}>✓</span>
                 </button>
                 <button type="button" className="btn sm" aria-label="Counter-change" disabled={props.busy} onClick={() => props.onCog(booking)}>
                   ⚙
