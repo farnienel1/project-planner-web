@@ -48,6 +48,7 @@ import {
   weekendWeekdayMixMessage,
 } from '@/lib/scheduling/bookingSlotRules'
 import { BookingEditSheet } from '@/components/schedule/BookingEditSheet'
+import { userBookingRemoveAction } from '@/lib/access/bookingAccess'
 import { useCustomHoursPrefillOnKindChange } from '@/lib/scheduling/useOrganizationPayrollPolicy'
 import {
   conflictRowKey,
@@ -485,6 +486,20 @@ export function MyScheduleSelfBookingScreen({
     void commitBooking({ days, ...args })
   }
 
+  // Rulebook §2 (1.33.0): every remove control here is `bookingRemoveAction` — own non-job bookings and bookings on
+  // jobs you manage: delete; anything else: no remove control (there is no cancel).
+  function removeActionFor(booking: ManagerSiteBooking) {
+    const job = booking.locationId
+      ? [...projects, ...smallWorks].find((entry) => entry.id.toLowerCase() === String(booking.locationId).toLowerCase())
+      : null
+    return userBookingRemoveAction(
+      authUser,
+      { collection: 'managerSiteBookings', userId: booking.userId, locationType: booking.locationType, locationId: booking.locationId ?? null },
+      job,
+      rosterManagers
+    )
+  }
+
   async function removeBooking(booking: ManagerSiteBooking) {
     setBusy(true)
     try {
@@ -792,16 +807,18 @@ export function MyScheduleSelfBookingScreen({
                     >
                       <b>{locationName(booking)}</b>
                       <span className="x">{slotLabel(booking, payrollPolicy)}</span>
-                      <button
-                        type="button"
-                        className="btn xs ghost"
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          void removeBooking(booking)
-                        }}
-                      >
-                        Remove
-                      </button>
+                      {removeActionFor(booking) === 'delete' ? (
+                        <button
+                          type="button"
+                          className="btn xs ghost"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            void removeBooking(booking)
+                          }}
+                        >
+                          Remove
+                        </button>
+                      ) : null}
                     </div>
                   ))
                 : assignedRows.length > 0
@@ -938,7 +955,7 @@ export function MyScheduleSelfBookingScreen({
             [editingManagerBooking.id]
           )}
           onSave={(updates) => saveEditedBooking(editingManagerBooking, updates)}
-          onDelete={() => deleteEditedBooking(editingManagerBooking)}
+          onDelete={removeActionFor(editingManagerBooking) === 'delete' ? () => deleteEditedBooking(editingManagerBooking) : undefined}
           onClose={() => setEditingBookingId(null)}
         />
       ) : null}

@@ -154,6 +154,7 @@ export function ClashWarningCard({
   severity = 'high',
   onApprove,
   onRemove,
+  canRemove,
 }: {
   title: string
   personName: string
@@ -163,6 +164,8 @@ export function ClashWarningCard({
   severity?: 'high' | 'medium'
   onApprove?: () => Promise<void>
   onRemove?: (entry: ClashTimelineEntry) => Promise<void>
+  /** Rulebook §2 (1.33.0): the ⌫ shows only when `bookingRemoveAction` is `delete` for that row's booking. */
+  canRemove?: (entry: ClashTimelineEntry) => boolean
 }) {
   const [timelineOpen, setTimelineOpen] = useState(false)
   const analysis = useMemo(() => analyse(entries, FULL_DAY_WINDOW), [entries])
@@ -257,7 +260,7 @@ export function ClashWarningCard({
                       <span className="font-semibold text-[var(--red)]">{formatDuration(mine)} clashing</span>
                     </p>
                   </div>
-                  {onRemove ? (
+                  {onRemove && canRemove?.(entry) ? (
                     <button
                       type="button"
                       disabled={busy}

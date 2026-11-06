@@ -5460,12 +5460,14 @@ test('1.2.0 D9: a not-found edit replay is final; the old call shape is unchange
   assert.equal(rulebook.bookingReplayRefusedIsFinal({ code: 'permission-denied', isCreate: true }), true)
 })
 
-test('1.2.0 D1 + D7 + D8 + D10: the offline table matches iOS OfflinePolicy ids; delete is online only', () => {
+test('1.2.0 D1 + D7 + D8 + D10 (1.33.0): the offline table matches iOS OfflinePolicy ids; delete is queued, no cancel', () => {
   const ids = Object.keys(rulebook.OFFLINE_ACTIONS)
   assert.equal(ids.length, 31)
   const allowed = ids.filter((id) => rulebook.offlineAvailability(id) === 'allowedOffline')
-  assert.deepEqual(allowed, ['booking.create', 'booking.edit', 'booking.cancel', 'annual_leave.request', 'profile.own_fields', 'notifications.own_toggles'])
-  assert.equal(rulebook.offlineAvailability('booking.delete'), 'onlineOnly')
+  assert.deepEqual(allowed, ['booking.create', 'booking.edit', 'booking.delete', 'annual_leave.request', 'profile.own_fields', 'notifications.own_toggles'])
+  assert.equal(rulebook.offlineAvailability('booking.delete'), 'allowedOffline')
+  assert.equal(rulebook.offlineAvailability('booking.delete_subcontractor'), 'onlineOnly')
+  assert.equal(rulebook.offlineAvailability('booking.cancel'), 'onlineOnly')
   assert.deepEqual(
     ids.filter((id) => rulebook.offlineAvailability(id) === 'readOnlyOffline'),
     ['view.daily_overview', 'view.warnings', 'view.weekly_report', 'view.my_schedule']
@@ -5478,7 +5480,7 @@ test('1.2.0 D1 + D7 + D8 + D10: the offline table matches iOS OfflinePolicy ids;
   assert.equal(rulebook.offlineLastUpdatedLabel(new Date('2026-09-01T00:00:00Z'), null), 'Last updated 1 Sep 2026, 01:00')
   assert.equal(rulebook.offlineLastUpdatedLabel('not a date', 'Europe/London'), null)
 
-  // The iOS table: every id in OfflinePolicy.swift is here, with the same availability except delete (now online only).
+  // The iOS table: every id in OfflinePolicy.swift is here (1.33.0: no `booking.cancel`, a `booking.delete_subcontractor`).
   // Only when the iOS repo is checked out beside this one (local runs); CI has web alone, and iOS checks
   // the same ids from its side (OfflineBookingTombstoneTests).
   const swiftUrl = new URL('../../../project-planner-ios/Project Planner/Core/Offline/OfflinePolicy.swift', import.meta.url)
@@ -13310,4 +13312,206 @@ test('1.32.0 owner decision 5 Nov: the Weekly report is admin-only; a stored man
   assert.equal(rows('operative').length, 0)
   assert.deepEqual(rows('admin').map((row) => [row.value, row.editable]), [[true, false]])
   assert.equal(r132.addUserPermissionDefaults('manager').weeklyReports, false)
+})
+
+// MARK: - 1.33.0 §2: Cancel removed as a user action; iOS / Android offline delete
+
+test('1.33.0 bookingRemoveAction: delete for exactly the canDeleteBooking people, none for everyone else, never cancel', () => {
+  const role = (over: Partial<{ isAdmin: boolean; isSuperAdmin: boolean; isManager: boolean; isOperativeMode: boolean }>) => ({
+    isAdmin: false,
+    isSuperAdmin: false,
+    isManager: false,
+    isOperativeMode: false,
+    ...over,
+  })
+  const admin = { role: role({ isAdmin: true }), ids: ['u-admin'] }
+  const superAdmin = { role: role({ isSuperAdmin: true }), ids: ['u-super'] }
+  const adminInOperativeMode = { role: role({ isAdmin: true, isOperativeMode: true }), ids: ['u-admin'] }
+  const manager = { role: role({ isManager: true }), ids: ['u-mgr'], email: 'mgr@example.com' }
+  // Q-E1 (6 Nov): the Operatives permission gives no booking power.
+  const operativesManager = { role: role({ isManager: true }), ids: ['u-ops'], toggles: { projects: false, smallWorks: false } }
+  const operative = { role: role({}), ids: ['u-op'] }
+  const labour = { collection: 'bookings', projectId: 'JOB-1' }
+  const ownJob = { managerUserIds: ['u-mgr'] }
+  const otherJob = { managerUserIds: ['u-other'] }
+
+  assert.deepEqual([...R112.BOOKING_REMOVE_ACTIONS], ['delete', 'none'])
+  assert.equal(R112.bookingRemoveAction(admin, labour, otherJob), 'delete')
+  assert.equal(R112.bookingRemoveAction(superAdmin, labour, null), 'delete')
+  assert.equal(R112.bookingRemoveAction(adminInOperativeMode, labour, otherJob), 'none')
+  assert.equal(R112.bookingRemoveAction(manager, labour, ownJob), 'delete')
+  assert.equal(R112.bookingRemoveAction(manager, labour, otherJob), 'none')
+  assert.equal(R112.bookingRemoveAction(manager, labour, null), 'none')
+  // A managers-list row with the viewer's email makes them the job's manager.
+  assert.equal(R112.bookingRemoveAction(manager, labour, { managerIds: ['ROW-1'] }, [{ id: 'ROW-1', email: 'MGR@example.com' }]), 'delete')
+  assert.equal(R112.bookingRemoveAction(operativesManager, labour, otherJob), 'none')
+  assert.equal(R112.bookingRemoveAction(operative, labour, { managerUserIds: ['u-op'] }), 'none')
+  assert.equal(R112.bookingRemoveAction(null, labour, ownJob), 'none')
+  assert.equal(R112.bookingRemoveAction(manager, null, ownJob), 'none')
+  // Manager schedule: their own office booking; another manager's office booking is not theirs to delete.
+  const office = (userId: string) => ({ collection: 'managerSiteBookings', userId, locationType: 'office', locationId: null })
+  assert.equal(R112.bookingRemoveAction(manager, office('U-MGR'), null), 'delete')
+  assert.equal(R112.bookingRemoveAction(manager, office('u-other'), null), 'none')
+  assert.equal(R112.bookingRemoveAction(manager, { collection: 'managerSiteBookings', userId: 'u-other', locationType: 'project', locationId: 'JOB-1' }, ownJob), 'delete')
+  assert.equal(R112.bookingRemoveAction(manager, { collection: 'subcontractorBookings', projectId: 'JOB-1' }, ownJob), 'delete')
+  assert.equal(R112.bookingRemoveAction(manager, { collection: 'holidayBookings', projectId: 'JOB-1' }, ownJob), 'none')
+  // Same answer as canDeleteBooking everywhere.
+  for (const viewer of [admin, manager, operativesManager, operative]) {
+    for (const job of [ownJob, otherJob, null]) {
+      assert.equal(R112.bookingRemoveAction(viewer, labour, job) === 'delete', R112.canDeleteBooking(viewer, labour, job))
+    }
+  }
+})
+
+test('1.33.0 offline policy: labour and manager schedule deletes are queued; subcontractor deletes and cancel are online only', () => {
+  assert.equal(R112.offlineAvailability('booking.delete'), 'allowedOffline')
+  assert.equal(R112.offlineAvailability('booking.delete_subcontractor'), 'onlineOnly')
+  assert.equal(R112.offlineAvailability('booking.cancel'), 'onlineOnly')
+  assert.equal(Object.prototype.hasOwnProperty.call(R112.OFFLINE_ACTIONS, 'booking.cancel'), false)
+  assert.equal(R112.bookingDeleteOfflineAction('bookings'), 'booking.delete')
+  assert.equal(R112.bookingDeleteOfflineAction(' managerSiteBookings '), 'booking.delete')
+  assert.equal(R112.bookingDeleteOfflineAction('subcontractorBookings'), 'booking.delete_subcontractor')
+  assert.equal(R112.bookingDeleteOfflineAction('holidayBookings'), 'booking.delete_subcontractor')
+  assert.equal(R112.bookingDeleteOfflineAction(undefined), 'booking.delete_subcontractor')
+  assert.equal(R112.offlineAvailability(R112.bookingDeleteOfflineAction('subcontractorBookings')), 'onlineOnly')
+})
+
+test('1.33.0 bookingTombstoneWriteFields: overtimeRequestId only when given and usable', () => {
+  const base = { bookingId: 'B-1', collection: 'bookings', deletedBy: 'u-1', deletedFrom: 'ios' }
+  assert.deepEqual(R112.bookingTombstoneWriteFields(base), { bookingId: 'B-1', collection: 'bookings', deletedBy: 'u-1', deletedFrom: 'ios' })
+  assert.deepEqual(R112.bookingTombstoneWriteFields({ ...base, overtimeRequestId: ' REQ-1 ' }), {
+    bookingId: 'B-1',
+    collection: 'bookings',
+    deletedBy: 'u-1',
+    deletedFrom: 'ios',
+    overtimeRequestId: 'REQ-1',
+  })
+  assert.equal('overtimeRequestId' in (R112.bookingTombstoneWriteFields({ ...base, overtimeRequestId: '' }) || {}), false)
+  assert.equal('overtimeRequestId' in (R112.bookingTombstoneWriteFields({ ...base, overtimeRequestId: 'a/b' }) || {}), false)
+  assert.equal('overtimeRequestId' in (R112.bookingTombstoneWriteFields({ ...base, overtimeRequestId: 42 }) || {}), false)
+})
+
+test('1.33.0 bookingDeleteFingerprint: every edited field, both apps the same text', () => {
+  const zone = 'Europe/London'
+  const labour = {
+    collection: 'bookings',
+    operativeId: 'OP-1',
+    projectId: 'JOB-1',
+    date: { seconds: Date.parse('2026-11-09T00:00:00Z') / 1000, nanoseconds: 0 },
+    timeSlot: 'custom hours',
+    workStartTime: '7:30',
+    workEndTime: '17:00:00',
+    isBreakRemoved: false,
+    otMultiplierOverride: 1.5,
+    status: 'confirmed',
+    notes: ' Bring PPE ',
+  }
+  const fp = R112.bookingDeleteFingerprint(labour, zone)
+  assert.equal(fp, 'bookings|op-1|job-1|||2026-11-09|CUSTOM_HOURS|07:30|17:00|1.5||Confirmed|Bring PPE')
+  // The same booking given a day key and other spellings reads the same.
+  assert.equal(
+    R112.bookingDeleteFingerprint({ ...labour, date: undefined, dayKey: '2026-11-09', operativeId: 'op-1', projectId: 'job-1', timeSlot: 'CUSTOM_HOURS', workStartTime: '07:30', status: 'Confirmed', notes: 'Bring PPE' }, zone),
+    fp
+  )
+  // A BST date stored as organisation-zone midnight reads its own day.
+  assert.equal(R112.bookingDeleteFingerprint({ ...labour, date: Date.parse('2026-07-08T23:00:00Z'), dayKey: null }, zone).split('|')[5], '2026-07-09')
+  // Each field a booking edit changes moves the fingerprint.
+  const changes: Array<Record<string, unknown>> = [
+    { operativeId: 'OP-2' },
+    { projectId: 'JOB-2' },
+    { date: Date.parse('2026-11-10T00:00:00Z') },
+    { timeSlot: 'FULL_DAY' },
+    { workStartTime: '08:00' },
+    { workEndTime: '16:00' },
+    { isBreakRemoved: true },
+    { otMultiplierOverride: 2 },
+    { otMultiplierOverride: null },
+    { status: 'Tentative' },
+    { notes: 'Other' },
+  ]
+  for (const change of changes) assert.notEqual(R112.bookingDeleteFingerprint({ ...labour, ...change }, zone), fp, JSON.stringify(change))
+  // Missing status reads Confirmed (as stored by older builds).
+  assert.equal(R112.bookingDeleteFingerprint({ ...labour, status: undefined }, zone), fp)
+  // Manager schedule: person, place type, place and custom name.
+  const office = { collection: 'managerSiteBookings', userId: 'U-1', locationType: 'Office', locationId: null, dayKey: '2026-11-09', timeSlot: 'FULL_DAY' }
+  assert.equal(R112.bookingDeleteFingerprint(office, zone), 'managerSiteBookings|u-1||office||2026-11-09|FULL DAY|||||Confirmed|')
+  assert.notEqual(R112.bookingDeleteFingerprint({ ...office, locationType: 'custom', customLocationName: 'Depot' }, zone), R112.bookingDeleteFingerprint(office, zone))
+  assert.equal(R112.bookingDeleteFingerprint(null, zone), '')
+})
+
+test('1.33.0 offlineDeleteReplayDecision: one outcome for each owner case', () => {
+  const zone = 'Europe/London'
+  const live = { operativeId: 'OP-1', projectId: 'JOB-1', dayKey: '2026-11-09', timeSlot: 'FULL_DAY', status: 'Confirmed' }
+  const fingerprint = R112.bookingDeleteFingerprint({ ...live, collection: 'bookings' }, zone)
+  const queued = { bookingId: 'B-1', collection: 'bookings', fingerprint }
+  const decide = (over: Record<string, unknown>) =>
+    R112.offlineDeleteReplayDecision({ queued, live, tombstoned: false, mayDelete: true, timeZone: zone, ...over })
+
+  assert.deepEqual([...R112.OFFLINE_DELETE_REPLAY_DECISIONS], ['apply', 'dropLocal', 'alreadyGone', 'refuseChanged', 'refusePermission'])
+  // Unchanged and allowed: the delete and its tombstone are sent.
+  assert.equal(decide({}), 'apply')
+  assert.equal(decide({ mayDelete: undefined }), 'apply')
+  // Created and deleted offline: nothing is sent, whatever the server holds.
+  assert.equal(decide({ queued: { ...queued, createdOffline: true }, live: null }), 'dropLocal')
+  assert.equal(decide({ queued: { ...queued, createdOffline: true }, tombstoned: true }), 'dropLocal')
+  // Deleted elsewhere (missing, or tombstoned): already gone, no message.
+  assert.equal(decide({ live: null }), 'alreadyGone')
+  assert.equal(decide({ tombstoned: true }), 'alreadyGone')
+  assert.equal(decide({ queued: null }), 'alreadyGone')
+  assert.equal(decide({ queued: { ...queued, bookingId: ' ' } }), 'alreadyGone')
+  // Changed on another device after the offline delete: refused, booking reappears.
+  assert.equal(decide({ live: { ...live, timeSlot: 'AM' } }), 'refuseChanged')
+  assert.equal(decide({ live: { ...live, notes: 'moved' } }), 'refuseChanged')
+  assert.equal(decide({ live: { ...live, status: 'Cancelled' } }), 'refuseChanged')
+  // Permission lost: refused, booking reappears (checked before the change).
+  assert.equal(decide({ mayDelete: false }), 'refusePermission')
+  assert.equal(decide({ mayDelete: false, live: { ...live, timeSlot: 'AM' } }), 'refusePermission')
+  // A subcontractor booking is never deleted offline.
+  assert.equal(decide({ queued: { ...queued, collection: 'subcontractorBookings' } }), 'refusePermission')
+  // Manager schedule bookings replay the same way.
+  const office = { userId: 'U-1', locationType: 'office', dayKey: '2026-11-09', timeSlot: 'AM' }
+  const officeQueued = { bookingId: 'm-1', collection: 'managerSiteBookings', fingerprint: R112.bookingDeleteFingerprint({ ...office, collection: 'managerSiteBookings' }, zone) }
+  assert.equal(R112.offlineDeleteReplayDecision({ queued: officeQueued, live: office, tombstoned: false, timeZone: zone }), 'apply')
+  assert.equal(R112.offlineDeleteReplayDecision({ queued: officeQueued, live: { ...office, locationType: 'wfh' }, timeZone: zone }), 'refuseChanged')
+
+  assert.equal(R112.OFFLINE_DELETE_CHANGED_MESSAGE, 'Changed on another device — not deleted')
+  assert.ok(R112.OFFLINE_DELETE_REFUSED_MESSAGE.startsWith('Not deleted'))
+})
+
+test('1.33.0 offlineDeleteRefusalDecision and bookingReplayRefusedIsFinal cover a queued delete', () => {
+  assert.equal(R112.offlineDeleteRefusalDecision('not-found'), 'alreadyGone')
+  assert.equal(R112.offlineDeleteRefusalDecision(5), 'alreadyGone')
+  assert.equal(R112.offlineDeleteRefusalDecision('firestore/permission-denied'), 'refusePermission')
+  assert.equal(R112.offlineDeleteRefusalDecision(7), 'refusePermission')
+  assert.equal(R112.offlineDeleteRefusalDecision('unavailable'), 'retry')
+  assert.equal(R112.offlineDeleteRefusalDecision('aborted'), 'retry')
+  assert.equal(R112.offlineDeleteRefusalDecision(undefined), 'retry')
+  // A delete is not a create: not-found and permission-denied are both final.
+  assert.equal(R112.bookingReplayRefusedIsFinal({ code: 'not-found', isCreate: false }), true)
+  assert.equal(R112.bookingReplayRefusedIsFinal({ code: 7, isCreate: false }), true)
+  assert.equal(R112.bookingReplayRefusedIsFinal({ code: 'unavailable', isCreate: false }), false)
+})
+
+test('1.33.0 bookingDeleteSignedTimesheetWarning: warns (never blocks) on a day inside a signed or exported timesheet', () => {
+  const signedAt = { seconds: Date.parse('2026-11-16T09:00:00Z') / 1000, nanoseconds: 0 }
+  const period = { startDayKey: '2026-11-01', endDayKey: '2026-11-15' }
+  const operativeSigned = { ...period, operativeSignedAt: signedAt, operativeSignedByName: 'Olga Op' }
+  const managerSigned = { ...period, managerSignedAt: signedAt }
+  const legacyApproved = { ...period, approvedAt: signedAt }
+  const exported = { ...period, exportedAt: signedAt }
+  const unsigned = { ...period }
+  const nameless = { ...period, operativeSignedAt: signedAt }
+
+  assert.equal(R112.bookingDeleteSignedTimesheetWarning('2026-11-09', [operativeSigned]), R112.BOOKING_DELETE_SIGNED_TIMESHEET_WARNING)
+  assert.equal(R112.bookingDeleteSignedTimesheetWarning('2026-11-01', [managerSigned]), R112.BOOKING_DELETE_SIGNED_TIMESHEET_WARNING)
+  assert.equal(R112.bookingDeleteSignedTimesheetWarning('2026-11-15', [legacyApproved]), R112.BOOKING_DELETE_SIGNED_TIMESHEET_WARNING)
+  assert.equal(R112.bookingDeleteSignedTimesheetWarning('2026-11-09', [exported]), R112.BOOKING_DELETE_SIGNED_TIMESHEET_WARNING)
+  assert.equal(R112.bookingDeleteSignedTimesheetWarning('2026-11-09', [unsigned, operativeSigned]), R112.BOOKING_DELETE_SIGNED_TIMESHEET_WARNING)
+  assert.equal(R112.bookingDeleteSignedTimesheetWarning('2026-11-09', [unsigned]), null)
+  assert.equal(R112.bookingDeleteSignedTimesheetWarning('2026-11-09', [nameless]), null)
+  assert.equal(R112.bookingDeleteSignedTimesheetWarning('2026-11-16', [operativeSigned]), null)
+  assert.equal(R112.bookingDeleteSignedTimesheetWarning('2026-10-31', [operativeSigned]), null)
+  assert.equal(R112.bookingDeleteSignedTimesheetWarning('not a day', [operativeSigned]), null)
+  assert.equal(R112.bookingDeleteSignedTimesheetWarning('2026-11-09', null), null)
+  assert.match(R112.BOOKING_DELETE_SIGNED_TIMESHEET_WARNING, /signed timesheet/)
 })

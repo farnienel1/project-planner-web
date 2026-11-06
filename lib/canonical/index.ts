@@ -1649,3 +1649,23 @@ export type { UserDeleteOptions } from './userDelete'
 export { exportedTimesheetHistorySubjects, timesheetExportOwnSheetNotice, TIMESHEET_EXPORT_OWN_SHEET_NOTICE } from './userTimesheetAccess'
 export type { ExportedTimesheetHistorySubjectRow } from './userTimesheetAccess'
 export { timesheetDocumentSubjectId } from './timesheetPeriod'
+// Rulebook 1.33.0 §2: no cancel (one remove action per booking); iOS/Android offline delete and its replay outcomes.
+export { BOOKING_REMOVE_ACTIONS, bookingRemoveAction } from './staffAccess'
+export type { BookingRemoveAction } from './staffAccess'
+export { bookingDeleteOfflineAction } from './offlinePolicy'
+export {
+  BOOKING_DELETE_SIGNED_TIMESHEET_WARNING,
+  OFFLINE_DELETE_CHANGED_MESSAGE,
+  OFFLINE_DELETE_REFUSED_MESSAGE,
+  OFFLINE_DELETE_REPLAY_DECISIONS,
+  bookingDeleteFingerprint,
+  bookingDeleteSignedTimesheetWarning,
+  offlineDeleteRefusalDecision,
+  offlineDeleteReplayDecision,
+} from './bookingTombstones'
+export type {
+  BookingFingerprintInput,
+  OfflineDeleteReplayDecision,
+  QueuedOfflineDelete,
+  SignedTimesheetCandidate,
+} from './bookingTombstones'

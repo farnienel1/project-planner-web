@@ -19,7 +19,7 @@ import {
   getWeek,
 } from 'date-fns'
 import { isRoleOnlyPersonName } from '@/lib/staff/userRosterUtils'
-import { BookingStatus, type Booking } from '@/types'
+import type { Booking } from '@/types'
 import { BookingEditSheet } from '@/components/schedule/BookingEditSheet'
 import { useLeaveConflictCheck } from '@/components/scheduling/useLeaveConflictCheck'
 import { AddWeekToCalendarButton } from '@/components/schedule/AddWeekToCalendarButton'
@@ -263,14 +263,14 @@ function BookingCard({
                 onClick={() => setEditing(true)}
                 className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"
               >
-                {onDelete ? 'Edit or delete booking' : 'Edit or cancel booking'}
+                {onDelete ? 'Edit or delete booking' : 'Edit booking'}
               </button>
             </div>
           )}
         </div>
       )}
     </div>
-    {/* Deleting a labour booking is admin only (rulebook §2, §16): without onDelete the sheet cancels it. */}
+    {/* Rulebook §2 (1.33.0): the sheet deletes only when `bookingRemoveAction` is `delete`; there is no cancel. */}
     {editing && onSave && (
       <LeaveCheckedBookingEditSheet
         booking={booking}
@@ -297,18 +297,6 @@ function BookingCard({
                 }
               }
             : undefined
-        }
-        onCancelBooking={
-          onDelete
-            ? undefined
-            : async () => {
-                setSaving(true)
-                try {
-                  await onSave({ status: BookingStatus.CANCELLED })
-                } finally {
-                  setSaving(false)
-                }
-              }
         }
       />
     )}
