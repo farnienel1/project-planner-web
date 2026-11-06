@@ -119,9 +119,10 @@ async function convertOrg(orgId) {
         overrides: fill.overrides,
         actorUserId: '',
         privatePay,
+        roster: users,
       })
       if (!plan) {
-        console.log(`  skip ${orgId}/${candidate.operativeId}: needs a name, a rate above 0 and a line manager on the check list`)
+        console.log(`  skip ${orgId}/${candidate.operativeId}: needs a name, a rate above 0 and a line manager on the check list who is an active admin or manager of this organisation`)
         skipped += 1
         continue
       }

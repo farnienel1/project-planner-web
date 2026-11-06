@@ -8,9 +8,9 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ║ FOLLOW-ON — paste into the iOS agent                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
-Rulebook version: 1.33.0 → 1.34.0
-Packed hash: 51840dde4effbd9f699f2f98b95f0abc9fb64881ca7ebb3cc361ac64b0cf6d88
-Rulebook sha256: 937cb8ba8cde7a1d7898a671fdb3c6e03157b43e2a70b725f01991dcca2e5603
+Rulebook version: 1.34.0 → 1.34.0
+Packed hash: b386085fd6f4d8a2f6915253817ab525321bfe0e9cf89fb41b3fbbacc1788ae8
+Rulebook sha256: 6c5bcf1fc2576abadfe10db682ef6be95c6ef4cb97fdbe884c6435f7c8d69d5b
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -20,12 +20,12 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
   web lib/canonical/cross-platform-contract.json    → iOS ProjectPlannerTests/CrossPlatformContract.json
 Contract sha256: 59d6bc6123f250e1f57599240eb3190ab48f5cd2532f8281a99360d9e187d86b
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: GHOST_BADGE_LABEL, GHOST_CHECK_ISSUE_LABELS, GHOST_CREATE_REFUSED_MESSAGE, GHOST_EMAIL_REFUSED_MESSAGE, GHOST_FIELD, GHOST_INVITED_BADGE_LABEL, GHOST_INVITE_EMAIL_HINT_FIELD, GHOST_LINE_MANAGER_INVALID_MESSAGE, GHOST_LINE_MANAGER_REQUIRED_MESSAGE, GHOST_NAME_REQUIRED_MESSAGE, GHOST_OPERATIVE_EXPLANATION, GHOST_PHONE_REFUSED_MESSAGE, GHOST_RATE_REQUIRED_MESSAGE, GHOST_TOGGLE_HELP, GHOST_TOGGLE_LABEL, GHOST_UPGRADE_HELP, GHOST_UPGRADE_LABEL, GHOST_UPGRADE_REFUSAL_MESSAGES, INVITE_ACCEPT_DROPPED_PLACEHOLDER_FIELDS, PAYRUN_SNAPSHOT_GHOST_CELL, canBookLeaveFor, canCreateGhost, canUpgradeGhost, ghostAddFormRows, ghostBadgeLabel, ghostConversionCandidates, ghostConversionWrites, ghostCreateError, ghostCreateWrites, ghostLeaveBooking, ghostPermissions, ghostRate, ghostUpgradeRefusal, ghostUpgradeWrites, ghostsToCheck, inviteAcceptPlaceholderFields, isGhostInvited, isGhostUser, personDedupeKey
+Exports added: none
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, firestore.rules, lib/canonical/bundleEntry.ts, lib/canonical/cross-platform-contract.json, lib/canonical/ghostOperatives.test.ts, lib/canonical/ghostOperatives.ts, lib/canonical/index.ts, lib/canonical/inviteAccept.ts, lib/canonical/notificationRecipients.ts, lib/canonical/payeOvertime.ts, lib/canonical/payrunSnapshot.ts, lib/canonical/peopleDocuments.ts, lib/canonical/userDelete.ts, lib/canonical/userProfile.ts, lib/canonical/userRosterSegment.ts, lib/canonical/userTimesheetAccess.ts, lib/canonical/warningRows.ts
+Web files that changed the rules: docs/RULEBOOK.md, firestore.rules, lib/canonical/ghostOperatives.test.ts, lib/canonical/ghostOperatives.ts, lib/canonical/userDelete.ts, lib/canonical/userRosterSegment.ts, lib/canonical/warningRows.ts
 Done when:
-- [ ] Packed hash in iOS equals 51840dde4effbd9f699f2f98b95f0abc9fb64881ca7ebb3cc361ac64b0cf6d88
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 937cb8ba8cde7a1d7898a671fdb3c6e03157b43e2a70b725f01991dcca2e5603)
+- [ ] Packed hash in iOS equals b386085fd6f4d8a2f6915253817ab525321bfe0e9cf89fb41b3fbbacc1788ae8
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 6c5bcf1fc2576abadfe10db682ef6be95c6ef4cb97fdbe884c6435f7c8d69d5b)
 - [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.34.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
@@ -35,9 +35,10 @@ Done when:
 ## What changed in 1.34.0
 
 - **Ghost operatives** (§11, owner design 6 Nov "ghost: all recommended", answers rounds 1–2; new `lib/canonical/ghostOperatives.ts`): a bookable operative with no app login — no email, no phone; a `users/{id}` document with `ghost: true`, `passwordSet: false`, `email: ''`, the operative level, self-employed, a day or hourly rate above 0 and a line manager. Added by admins and Operatives managers (`canCreateGhost`, `ghostCreateError`, `ghostCreateWrites`) from a **Ghost account** toggle at the top of Add user / Add new operative (`ghostAddFormRows`, `GHOST_OPERATIVE_EXPLANATION`); the admins are told (`operative_created` / `operative_deleted`). New: `isGhostUser`, `isGhostInvited`, `ghostBadgeLabel` / `GHOST_BADGE_LABEL`, `personDedupeKey`, `canBookLeaveFor`, `ghostLeaveBooking`, `canUpgradeGhost`, `ghostUpgradeRefusal`, `ghostUpgradeWrites` (admin-only Give app access, owner option 1), `inviteAcceptPlaceholderFields` / `INVITE_ACCEPT_DROPPED_PLACEHOLDER_FIELDS`, `ghostConversionCandidates`, `ghostConversionWrites` (owner-run `scripts/convert-no-login-operatives-to-ghosts.mjs`, Q-G2), `ghostsToCheck` (Data health).
-- Changed for ghosts: `rosterSegment` / `isIdentifiablePendingLeftover` (never Pending or a leftover), `parseUserDocument` and `USER_DOCUMENT_FIELDS` (`ghost`, `inviteEmailHint`; contract regenerated), `unbookedLabourRows` (a ghost counts as signed up; people with no email are one row each and inactive ones are skipped), `unverifiedOperativeRows`, `timesheetDaysForPerson` / `showsMyTimesheets` / `timesheetParticipant`, `userTimesheetSubjects`, `exportedTimesheetHistorySubjects`, `overtimeUserSubjects`, `notificationRecipientAccountId` / `excludeActor` (never a ghost), `userDeleteWrites` (only the users document), `payrunSnapshotRows` (grey "No app login", `PAYRUN_SNAPSHOT_GHOST_CELL`), `inviteAcceptWrites` (`dropPlaceholderFields`).
+- Changed for ghosts: `rosterSegment` / `isIdentifiablePendingLeftover` (never Pending or a leftover), `parseUserDocument` and `USER_DOCUMENT_FIELDS` (`ghost`, `inviteEmailHint`; contract regenerated), `unbookedLabourRows` (a ghost counts as signed up; people with no email are one row each and inactive ones are skipped; an `operatives` row whose id is a person's id is that person, so a converted ghost's leave and exclusion cover its row), `unverifiedOperativeRows`, `timesheetDaysForPerson` / `showsMyTimesheets` / `timesheetParticipant`, `userTimesheetSubjects`, `exportedTimesheetHistorySubjects`, `overtimeUserSubjects`, `notificationRecipientAccountId` / `excludeActor` (never a ghost), `userDeleteWrites` (unchanged plan: the review fix removed the ghost short-cut, so tax ids, membership and a listed `members` entry are always removed), `payrunSnapshotRows` (grey "No app login", `PAYRUN_SNAPSHOT_GHOST_CELL`), `inviteAcceptWrites` (`dropPlaceholderFields`).
 - Fixes found on the way: pickers and web's annual-leave people list folded people on the email alone, so only the first person with no email was offered (`personDedupeKey`); web Edit User pooled the rate history of everyone with an empty email.
-- **Security rules** (§16): R1 — an Operatives manager never changes a ghost's line manager; R2 — a ghost's line manager gets no overtime booking write on it. Static compile cost 237,518 → 237,676 (on 1.33.0 with its review fixes); 142,948 → 143,099 bytes.
+- **Security rules** (§16): R1 — an Operatives manager never changes a ghost's line manager; R2 — a ghost's line manager gets no overtime booking write on it; review fix — nobody sets `ghost` or `inviteEmailHint` on their own users document (update or self-create). Static compile cost 237,518 → 237,676 (on 1.33.0 with its review fixes) → 237,748 with the review fix; 142,948 → 143,099 → 143,357 bytes.
+- Review fixes: `isGhostUser` is the boolean `true` only; `ghostConversionWrites` takes the organisation's `roster` and refuses a line manager `lineManagerCandidates` does not offer.
 - Emulator finding (not a rules change): the Firestore emulator (1.22.0) crashes on an Operatives manager's users create that carries `isSuperAdmin: false` or no `email` key, so a ghost is written with `email: ''` and no `isSuperAdmin` key. Web Add user's invite placeholder carries `isSuperAdmin: false` (`invitePlaceholderUserWriteFields`); whether production shares the crash is unknown (follow-up).
 - Wording fix: the 1.32.4 Deploy notes functions command now names the `inbox-push` codebase (`functions:inbox-push:<name>`); `functions:authClaimsOnUserWrite` gave "No function matches given --only filters".
 
@@ -55,10 +56,8 @@ Every rule goes through `CanonicalBusinessEngine`; no Swift copy of any rule.
 6. **Manage Users** — `Views/ManageUsersView.swift`: for a ghost hide email, phone, password reset / sign-up email, employment type, timesheets and Change user type; line manager read-only for an Operatives manager (rules R1); admins get **Give app access** (`canUpgradeGhost`, `ghostUpgradeRefusal`, `ghostUpgradeWrites`, the same email check as Add user, then the usual set-up email). iOS has no invite-accept flow (the web link does it; `inviteAcceptPlaceholderFields` drops the ghost markers).
 7. **Operative rows** — `Core/OperativeStore.swift`: a converted ghost keeps its `operatives` row under the same id (`linkedUserId` = that id, email cleared); treat it as the ghost, not a separate person.
 8. **Claims function** (1.32.4 auth claims): a ghost has no Firebase Auth user; web `functions/authClaims.js` already skips it (`no-auth-user`). Nothing to do on iOS.
+9. **Review fixes (same 1.34.0 rulebook, re-sync)** — `isGhostUser` is the boolean `true` only (as the rules): `AppUser.isGhost` must read `ghost == true` (Bool), never `1` / `"true"`. `userDeleteWrites` no longer skips anything for a ghost: the account step always holds the users document, tax ids and membership deletes, the email claim when there is an email, and `members.{uid}` when `listedInMembers` — run the plan as returned (no Swift branch on `ghost`). `unbookedLabourRows` reads an `operatives` row whose id is a person's id as that person (no Swift change; pass the rows as today). `ghostConversionWrites` takes an optional `roster` (script only). Never write `ghost` or `inviteEmailHint` on the signed-in user's own users document (the rules refuse it).
 
-## New rulebook sections
-
-- 1.34.0 — 2026-11-07
 
 ## Workflow for the iOS agent
 

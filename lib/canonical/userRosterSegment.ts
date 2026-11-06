@@ -30,15 +30,14 @@ export type RosterSegmentProfile = {
 }
 
 /**
- * Rulebook 1.34.0 §11: a ghost operative — a `users/{uid}` document with `ghost: true` (also 1 / "true" from older
- * writers). A bookable operative with no app login: never pending, never a leftover, never a timesheet, overtime or
- * claim subject, never a notification recipient. False for a missing or any other value.
+ * Rulebook 1.34.0 §11: a ghost operative — a `users/{uid}` document with `ghost: true` (strictly the boolean, the same
+ * test as the security rules' `ghost != true`; review fix F1). A bookable operative with no app login: never pending,
+ * never a leftover, never a timesheet, overtime or claim subject, never a notification recipient. False for anything
+ * else (1, "true", missing).
  */
 export function isGhostUser(user: { ghost?: unknown } | null | undefined): boolean {
   if (!user || typeof user !== 'object') return false
-  const value = (user as { ghost?: unknown }).ghost
-  if (value === true || value === 1) return true
-  return typeof value === 'string' && value.trim().toLowerCase() === 'true'
+  return (user as { ghost?: unknown }).ghost === true
 }
 
 function trimmed(value: unknown): string {

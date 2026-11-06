@@ -42,6 +42,7 @@ import {
   personDedupeKey,
   rosterSegment,
   showsMyTimesheets,
+  unbookedLabourRows,
   unbookedLabourRowsOnDay,
   unverifiedOperativeRows,
   userDeleteWrites,
@@ -70,10 +71,10 @@ function ghostDoc(id: string, extra: Record<string, unknown> = {}) {
 
 const ROSTER = [ADMIN, MANAGER, OPS_MANAGER, OTHER_MANAGER, OPERATIVE]
 
-test('isGhostUser: true / 1 / "true" only; a document without ghost (older shape) is not a ghost', () => {
+test('isGhostUser: the boolean true only (as the rules); a document without ghost (older shape) is not a ghost', () => {
   assert.equal(isGhostUser({ ghost: true }), true)
-  assert.equal(isGhostUser({ ghost: 1 }), true)
-  assert.equal(isGhostUser({ ghost: 'true' }), true)
+  assert.equal(isGhostUser({ ghost: 1 }), false)
+  assert.equal(isGhostUser({ ghost: 'true' }), false)
   assert.equal(isGhostUser({ ghost: false }), false)
   assert.equal(isGhostUser({}), false)
   assert.equal(isGhostUser(null), false)
@@ -231,6 +232,21 @@ test('unbooked labour: two ghosts (no email) are both listed; booked ghost cover
   assert.equal(pending.length, 0)
 })
 
+test('unbooked labour (review fix B2): a converted ghost with its operatives row is one person', () => {
+  const ghost = labour(ghostDoc('G9'))
+  const row = { id: 'g9', email: '', name: 'Gus Ghost G9', isActive: true, isPlaceholder: false, profileWeight: 1 }
+  const base = { dayKey: '2026-11-09', timeZone: 'Europe/London', includeWeekends: false, bookings: [], people: [ghost], operatives: [row] }
+  // No leave: one row, not two (the row's id is the ghost's id, in another letter case).
+  assert.equal(unbookedLabourRowsOnDay({ ...base, holidays: [] }).length, 1)
+  // Approved leave stored under the users id covers the person and the row.
+  const leave = { userId: 'G9', operativeId: null, startDayKey: '2026-11-09', endDayKey: '2026-11-09', approved: true }
+  assert.equal(unbookedLabourRowsOnDay({ ...base, holidays: [leave] as never }).length, 0)
+  // Excluded under the users id: no row from the person or the row.
+  assert.equal(unbookedLabourRowsOnDay({ ...base, holidays: [], excludedUserIds: ['G9'] }).length, 0)
+  // Same over a range (unbookedLabourRows).
+  assert.equal(unbookedLabourRows({ ...base, startDayKey: '2026-11-09', endDayKey: '2026-11-10', holidays: [leave] as never }).length, 1)
+})
+
 test('unverified accounts: an invited ghost is never an unverified operative', () => {
   const rows = unverifiedOperativeRows({
     referenceIso: '2026-11-20T09:00:00Z',
@@ -281,18 +297,33 @@ test('leave: the ghost line manager or an admin books it approved, nobody notifi
   assert.deepEqual(ghostLeaveBooking({ id: 'mgr1', role: mgrRole }, ghost, roster), { allowed: true, status: 'approved', notify: false })
 })
 
-test('delete: a ghost has only its users document', () => {
+test('delete: the ghost flag never skips a document (review fix B1)', () => {
   const opRole = { isAdmin: false, isSuperAdmin: false, isManager: false, isOperativeMode: true }
-  const steps = userDeleteWrites({
+  const accountOf = (steps: ReturnType<typeof userDeleteWrites>) =>
+    steps.filter((step) => step.step === 'account').flatMap((step) => step.writes)
+  // A real ghost (not in `members`): its users document, plus the tax ids and membership deletes (no-ops when missing).
+  const ghost = accountOf(userDeleteWrites({
     orgId: ORG,
     user: { id: 'g1', role: opRole, ghost: true },
     actorUserId: 'mgr2',
     platform: 'web',
     nowIso: '2026-11-07T09:00:00Z',
     actorManagesOperatives: true,
-  })
-  const account = steps.filter((step) => step.step === 'account').flatMap((step) => step.writes)
-  assert.deepEqual(account, [{ op: 'delete', path: 'users/g1' }])
+    listedInMembers: false,
+  }))
+  assert.deepEqual(ghost.map((write) => write.path).sort(), [`users/g1`, `users/g1/orgMemberships/${ORG}`, 'users/g1/private/taxIds'].sort())
+  // Someone who marked themself a ghost but is listed in `members` still loses the entry, membership and tax ids.
+  const flagged = accountOf(userDeleteWrites({
+    orgId: ORG,
+    user: { id: 'self1', role: opRole, email: 'self@x.com', ghost: true },
+    actorUserId: 'admin1',
+    platform: 'web',
+    nowIso: '2026-11-07T09:00:00Z',
+    listedInMembers: true,
+  }))
+  assert.ok(flagged.some((write) => write.path === `users/self1/orgMemberships/${ORG}`))
+  assert.ok(flagged.some((write) => write.path === 'users/self1/private/taxIds'))
+  assert.ok(flagged.some((write) => write.op === 'update' && write.path === `organizations/${ORG}` && write.deleteFields.includes('members.self1')))
   const ordinary = userDeleteWrites({ orgId: ORG, user: { id: 'op1', role: opRole, email: 'op@x.com' }, actorUserId: 'admin1', platform: 'web', nowIso: '2026-11-07T09:00:00Z' })
   assert.equal(ordinary[0].writes.length, 5)
 })
@@ -388,6 +419,12 @@ test('Conversion: no-login operatives rows become ghost candidates; rows with an
       actorUserId: 'admin1',
     })
   )
+  // With the roster, a line manager who is not an active admin or manager of the organisation is refused.
+  const withRoster = (ids: string[]) =>
+    ghostConversionWrites({ organizationId: ORG, candidate: candidates[0], lineManagerIds: ids, actorUserId: 'admin1', roster: ROSTER as never })
+  assert.ok(withRoster(['mgr1']))
+  assert.equal(withRoster(['op1']), null)
+  assert.equal(withRoster(['nobody']), null)
 })
 
 test('ghostsToCheck: missing rate or line manager, and converted rows; ordinary users never', async () => {

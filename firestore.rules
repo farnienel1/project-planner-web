@@ -454,7 +454,7 @@ service cloud.firestore {
              request.auth.token.email is string &&
              request.resource.data.email.trim().lower() == request.auth.token.email.lower()
            )) &&
-           !changed.hasAny(['formerUserIds', 'sameEmailUserIds']);
+           !changed.hasAny(['formerUserIds', 'sameEmailUserIds', 'ghost', 'inviteEmailHint']);
   }
 
   function idSetOf(data, key) {
@@ -776,7 +776,8 @@ service cloud.firestore {
           (request.resource.data.get('email', null) is string &&
            request.auth.token.get('email', null) is string &&
            request.resource.data.get('organizationId', null) is string) ? (
-            (request.resource.data.email.lower() == request.auth.token.email.lower() && selfCreateHasAgeConfirmation()) ? (
+            (request.resource.data.email.lower() == request.auth.token.email.lower() && selfCreateHasAgeConfirmation() &&
+             request.resource.data.get('ghost', false) != true && !('inviteEmailHint' in request.resource.data)) ? (
               selfCreateJoinsCompany(request.resource.data.organizationId, request.resource.data.email.lower()) ?
                 selfCreateSuperAdminAllowed() : false
             ) : false
@@ -787,7 +788,8 @@ service cloud.firestore {
           (request.resource.data.get('email', null) is string &&
            request.auth.token.get('email', null) is string &&
            request.resource.data.get('organizationId', null) is string) ? (
-            (request.resource.data.email.lower() == request.auth.token.email.lower() && selfCreateHasAgeConfirmation()) ? (
+            (request.resource.data.email.lower() == request.auth.token.email.lower() && selfCreateHasAgeConfirmation() &&
+             request.resource.data.get('ghost', false) != true && !('inviteEmailHint' in request.resource.data)) ? (
               selfCreateJoinsCompany(request.resource.data.organizationId, request.resource.data.email.lower()) ?
                 selfCreateSuperAdminAllowed() : false
             ) : false

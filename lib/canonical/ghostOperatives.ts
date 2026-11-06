@@ -640,6 +640,11 @@ export function ghostConversionWrites(input: {
   overrides?: Partial<Pick<GhostDraft, 'firstName' | 'surname' | 'payBasis' | 'dayRate' | 'hourlyRate'>> | null
   actorUserId: string
   privatePay?: boolean | null
+  /**
+   * The organisation's users documents (review follow-up 4): with it, every line manager on the check list must be one
+   * `lineManagerCandidates` offers (`ghostCreateError`), so a mistyped or former id is refused before it is written.
+   */
+  roster?: ReadonlyArray<LineManagerRosterPerson> | null
 }): GhostConversionPlan | null {
   const candidate = input?.candidate
   if (!candidate || !idText(candidate.operativeId)) return null
@@ -655,6 +660,7 @@ export function ghostConversionWrites(input: {
     tradeTypePreset: candidate.trade ? 'Other' : null,
     tradeTypeCustom: candidate.trade || null,
   }
+  if (input.roster && ghostCreateError(draft, { roster: input.roster })) return null
   const plan = ghostCreateWrites({
     organizationId: input.organizationId,
     ghostId: candidate.operativeId,

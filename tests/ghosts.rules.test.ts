@@ -13,8 +13,9 @@ import test from 'node:test'
 import { assertSucceeds, initializeTestEnvironment, type RulesTestEnvironment } from '@firebase/rules-unit-testing'
 import { assertFails, assertLogicalDeny } from './rulesAssert.ts'
 import { claimsContext } from './authClaimsContext.ts'
-import { deleteDoc, doc, setDoc, Timestamp, updateDoc, writeBatch } from 'firebase/firestore'
+import { deleteDoc, deleteField, doc, getDoc, setDoc, Timestamp, updateDoc, writeBatch } from 'firebase/firestore'
 import { ghostCreateWrites, ghostUpgradeWrites } from '../lib/canonical/ghostOperatives.ts'
+import { userDeleteWrites } from '../lib/canonical/userDelete.ts'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const rules = readFileSync(path.join(root, 'firestore.rules'), 'utf8')
@@ -144,3 +145,52 @@ test('Give app access: the admin batch passes; an Operatives manager\'s is refus
   await assertSucceeds(send(ADMIN, adminPlan))
 })
 
+
+test('review fix B1: nobody marks their own users document a ghost or sets its invite email hint', async () => {
+  const op = await db(OP)
+  await assertLogicalDeny(updateDoc(doc(op, 'users', OP), { ghost: true }))
+  await assertLogicalDeny(updateDoc(doc(op, 'users', OP), { inviteEmailHint: 'x@test.com' }))
+  const admin = await db(ADMIN)
+  await assertLogicalDeny(updateDoc(doc(admin, 'users', ADMIN), { ghost: true }))
+  // The person's ordinary own edits still pass.
+  await assertSucceeds(updateDoc(doc(op, 'users', OP), { mobileNumber: '07000 000000' }))
+  // An Operatives manager never flips a ghost back; an admin may on someone else.
+  await assertFails(updateDoc(doc(await db(OPS), 'users', GHOST), { ghost: false }))
+  await assertSucceeds(updateDoc(doc(admin, 'users', GHOST), { inviteEmailHint: 'gus@test.com' }))
+})
+
+test('review fix B1: deleting a "ghost" listed in members still removes its members entry, membership and tax ids', async () => {
+  const SELF = 'gh-self'
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const d = ctx.firestore()
+    await setDoc(doc(d, 'users', SELF), { email: `${SELF}@test.com`, organizationId: ORG, passwordSet: true, isActive: true,
+      role: 'operative', operativeMode: true, assignedManagerUserIds: [LM], ghost: true })
+    await setDoc(doc(d, 'users', SELF, 'orgMemberships', ORG), { organizationId: ORG, role: 'operative', status: 'active' })
+    await setDoc(doc(d, 'users', SELF, 'private', 'taxIds'), { utrNumber: '1' })
+    await updateDoc(doc(d, 'organizations', ORG), { [`members.${SELF}`]: 'operative' })
+  })
+  const steps = userDeleteWrites({
+    orgId: ORG,
+    user: { id: SELF, email: `${SELF}@test.com`, role: { isAdmin: false, isSuperAdmin: false, isManager: false, isOperativeMode: true }, ghost: true },
+    actorUserId: ADMIN,
+    platform: 'web',
+    nowIso: '2026-11-07T09:00:00Z',
+    listedInMembers: true,
+  })
+  const admin = await db(ADMIN)
+  for (const step of steps.filter((s) => s.step === 'account')) {
+    const batch = writeBatch(admin)
+    for (const write of step.writes) {
+      if (write.op === 'delete') batch.delete(doc(admin, write.path))
+      else if (write.op === 'update') batch.update(doc(admin, write.path), Object.fromEntries(write.deleteFields.map((k) => [k, deleteField()])))
+    }
+    await assertSucceeds(batch.commit())
+  }
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const d = ctx.firestore()
+    const org = (await getDoc(doc(d, 'organizations', ORG))).data() as { members: Record<string, unknown> }
+    if (SELF in org.members) throw new Error('members entry left behind')
+    if ((await getDoc(doc(d, 'users', SELF, 'orgMemberships', ORG))).exists()) throw new Error('membership left behind')
+    if ((await getDoc(doc(d, 'users', SELF, 'private', 'taxIds'))).exists()) throw new Error('tax ids left behind')
+  })
+})

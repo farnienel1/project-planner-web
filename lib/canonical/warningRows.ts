@@ -628,6 +628,10 @@ function unbookedLabourRowsUnscoped(input: UnbookedLabourInput): UnbookedLabourR
   }
 
   const roster = operatives.filter((operative) => operative.isActive !== false && !operative.isPlaceholder)
+  // 1.34.0 review fix (B2): an `operatives` row whose id is a person's id (any of their ids, without case) is that
+  // person — a converted ghost keeps its row under its users id with the email cleared. The person's own row above
+  // decides (their leave, exclusion and active flag); the row is never a second, unmatched person.
+  const personIdKeys = new Set(people.flatMap((person) => labourPersonIds(person).map(nid)).filter(Boolean))
   const rows: UnbookedLabourRow[] = []
 
   for (const dayKey of eachDayKey(input.startDayKey, input.endDayKey, timeZone)) {
@@ -699,6 +703,7 @@ function unbookedLabourRowsUnscoped(input: UnbookedLabourInput): UnbookedLabourR
     }
 
     for (const operative of roster) {
+      if (personIdKeys.has(nid(operative.id))) continue
       const email = emailKey(operative.email)
       if (email && operativeUserEmails.has(email)) continue
       const matched = email ? verifiedUserForEmail(email) : undefined

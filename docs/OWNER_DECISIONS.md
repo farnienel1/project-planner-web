@@ -215,6 +215,10 @@ How to use it:
 | 7 Nov | The annual-leave allowance stays on the ghost form (it is needed to book their leave). | done web, owner to confirm |
 | 7 Nov | A ghost is written with `email: ''` and no `isSuperAdmin` key (the emulator crashes on an Operatives manager's create otherwise); no rate-history row is written at create (as Add user), the first change seeds it. | done, owner to confirm |
 | 7 Nov | Conversion script: a duplicate no-login row on the same email is linked to the ghost and made inactive (its id goes on `formerUserIds`); the kept row's email is cleared and kept aside as `inviteEmailHint`. | done (script), owner to confirm before `--apply` |
+| 6 Nov | R1 (review): an Operatives manager can never change a ghost's line manager, not even while it has no login — only admins do (rules: the `passwordSet` lock also applies to `ghost: true`). Deleting and re-adding is the way round for them, as for any operative after sign-up. | done (rules), owner to confirm |
+| 6 Nov | R2 (review): a ghost's line manager gets no overtime booking writes on it (a ghost sends no overtime, so there is nothing to return); its bookings are edited by admins and the job's managers as usual (`canWriteBooking`). | done (rules), owner to confirm |
+| 6 Nov | Release order (review F2): the web Add user **Ghost account** toggle is live as soon as web 1.34.0 deploys, before iOS 1.34 ships. Until `minimumIosBuild` is raised to the iOS 1.34 build, an older iPhone reads a ghost as a pending invite (not bookable, not in Warnings) — nothing is written wrongly. Owner to accept, or ask for the toggle to be hidden until `minimumIosBuild` is raised. | open, owner to confirm |
+| 6 Nov | Review fix B1: nobody changes `ghost` or `inviteEmailHint` on their own users document (rules), and deleting a person always removes their tax ids, membership and (when listed) `members` entry, whatever `ghost` says (`userDeleteWrites`). `isGhostUser` reads only the boolean `true` (F1), the same test as the rules. | done |
 
 ## Open questions for the owner
 
