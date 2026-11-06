@@ -1175,6 +1175,8 @@ export type { FileDeleteInput, FileDeletePermission, FileDeleteReason, StoredFil
 // reports, the weekly report PAYE section and the overtime notices).
 export * from './payePayrun'
 export * from './payeOvertime'
+// Rulebook 1.33.0 (§25): the ✓ ✕ ⚙ state machine and the Send / Return / Generate button readiness.
+export * from './overtimeChoices'
 
 // Rulebook 1.30.0 (§26): PAYE price work and expenses (items, evidence, approver candidates, ranges, reports, who sees
 // them) and personal site audits (owner only; the frozen copy attached as evidence).

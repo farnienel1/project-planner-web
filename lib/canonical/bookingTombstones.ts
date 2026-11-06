@@ -36,6 +36,11 @@ export type BookingTombstoneWriteFields = {
   collection: TombstonedBookingCollection
   deletedBy: string
   deletedFrom: WritePlatform
+  /**
+   * 1.33.0 (PAYE overtime item f): only on a delete made by an overtime Return — the request that approved it, so the
+   * rules can let the person's line manager delete that one booking. Absent on every other delete.
+   */
+  overtimeRequestId?: string
 }
 
 function trimmed(value: unknown): string {
@@ -71,6 +76,8 @@ export function bookingTombstoneWriteFields(input: {
   collection: unknown
   deletedBy: unknown
   deletedFrom: unknown
+  /** 1.33.0: the overtime request whose Return deletes the booking (a document id); omitted when blank. */
+  overtimeRequestId?: unknown
 }): BookingTombstoneWriteFields | null {
   const bookingId = documentId(input.bookingId)
   const collection = trimmed(input.collection)
@@ -79,11 +86,13 @@ export function bookingTombstoneWriteFields(input: {
   if (!bookingId || !deletedBy) return null
   if (!isTombstonedBookingCollection(collection)) return null
   if (!(WRITE_PLATFORMS as readonly string[]).includes(deletedFrom)) return null
+  const overtimeRequestId = documentId(input.overtimeRequestId)
   return {
     bookingId,
     collection,
     deletedBy,
     deletedFrom: deletedFrom as WritePlatform,
+    ...(overtimeRequestId ? { overtimeRequestId } : {}),
   }
 }
 

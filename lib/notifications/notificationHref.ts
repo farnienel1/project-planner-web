@@ -102,12 +102,13 @@ export function hrefForNotificationDestination(dest: NotificationDestination): s
       return '/dashboard/qualifications'
     case 'home':
       return '/dashboard'
-    // Rulebook 1.29.0 §25: the person's own Overtime page; Users' → that person → Overtime.
+    // Rulebook 1.29.0 §25: the person's own Overtime page; Users' → that person → Overtime. 1.33.0: with the request
+    // (`request`) and its first day (`at`) the screen opens that payrun (`overtimeNotificationRange`).
     case 'overtimeMine':
-      return '/dashboard/timesheets/overtime?scope=mine&section=overtime'
+      return `/dashboard/timesheets/overtime?scope=mine&section=overtime${overtimeTarget(dest)}`
     case 'overtimeUser':
       return dest.userId
-        ? `/dashboard/timesheets/overtime?scope=users&user=${encodeURIComponent(dest.userId)}&section=overtime`
+        ? `/dashboard/timesheets/overtime?scope=users&user=${encodeURIComponent(dest.userId)}&section=overtime${overtimeTarget(dest)}`
         : '/dashboard/timesheets/overtime?scope=users'
     case 'notifications':
     default:
@@ -128,4 +129,12 @@ export function inboxNotificationHref(
 
 export function isTimesheetDestinationKind(kind: NotificationDestination['kind']): boolean {
   return TIMESHEET_DESTINATION_KINDS.has(kind)
+}
+
+/** Rulebook 1.33.0 §25: `&request=…&at=…` for an overtime notice (the screen resolves the payrun). */
+function overtimeTarget(dest: { relatedId?: string; dayKey?: string }): string {
+  const parts: string[] = []
+  if (dest.relatedId) parts.push(`request=${encodeURIComponent(dest.relatedId)}`)
+  if (dest.dayKey) parts.push(`at=${encodeURIComponent(dest.dayKey)}`)
+  return parts.length > 0 ? `&${parts.join('&')}` : ''
 }

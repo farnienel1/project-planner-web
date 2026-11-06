@@ -246,6 +246,7 @@ export const useBookingStore = create<BookingState>((set, get) => ({
     set({
       bookings: get().bookings.map((row) => (row.id === id ? next : row)),
     })
+    notifyOvertimeReopenedSoon(booking, next)
   },
 
   deleteBooking: async (id, organizationId) => {
@@ -256,6 +257,8 @@ export const useBookingStore = create<BookingState>((set, get) => ({
       forgetOrgPlanDoc('bookings', organizationId, id)
       forgetOrgCollectionDoc('bookings', organizationId, id)
       set({ bookings: bookings.filter((row) => row.id !== id) })
+      const removed = bookings.find((row) => row.id === id)
+      if (removed) notifyOvertimeReopenedSoon(removed, null)
     } catch (error: unknown) {
       set({ error: error instanceof Error ? error.message : 'Failed to delete booking' })
       throw error
@@ -286,4 +289,36 @@ export const useBookingStore = create<BookingState>((set, get) => ({
 /** The organisation the booking listener is open for ('' before the first load). */
 export function bookingsOrganizationId(): string {
   return bookingDownloadOrgId
+}
+
+/**
+ * Rulebook 1.33.0 §25 (reopen): a changed or deleted booking reopens its PAYE overtime line; the person (and their line
+ * manager when the line had been returned) are told. Best effort, after the write; never blocks it.
+ */
+function notifyOvertimeReopenedSoon(before: Booking, after: Booking | null): void {
+  void (async () => {
+    const [{ notifyOvertimeLineReopened }, { overtimeBookingInputs }, { useOrgUserStore }, { useOperativeStore }, { useProjectStore }] =
+      await Promise.all([
+        import('@/lib/overtime/overtimeReopenNotice'),
+        import('@/lib/overtime/overtimeData'),
+        import('@/lib/stores/siteAuditStore'),
+        import('@/lib/stores/operativeStore'),
+        import('@/lib/stores/projectStore'),
+      ])
+    const { projects, smallWorks } = useProjectStore.getState()
+    const timeZone = organizationZoneOr()
+    const toInput = (row: Booking) =>
+      overtimeBookingInputs({ bookings: [row], managerSiteBookings: [], projects, smallWorks, timeZone })[0] ?? null
+    const beforeInput = toInput(before)
+    if (!beforeInput || !before.organizationId) return
+    await notifyOvertimeLineReopened({
+      organizationId: before.organizationId,
+      before: beforeInput,
+      after: after ? toInput(after) : null,
+      organization: useOrganizationDocumentStore.getState().data ?? {},
+      timeZone,
+      users: useOrgUserStore.getState().users,
+      operatives: useOperativeStore.getState().operatives,
+    })
+  })().catch(() => undefined)
 }

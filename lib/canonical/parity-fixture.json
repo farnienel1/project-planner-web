@@ -20868,7 +20868,7 @@
           "timeSlot": "CUSTOM_HOURS",
           "fingerprint": "2026-11-02|CUSTOM HOURS|18:00|21:00|||confirmed",
           "state": "changedSinceRequest",
-          "stateLabel": "Booking changed since request",
+          "stateLabel": "Changed since you sent it",
           "figures": {
             "clockHours": 3,
             "multiplier": 1.5,
@@ -20894,7 +20894,23 @@
             "overtimeHoursBefore": 4.5,
             "overtimeHoursAfter": 4.5
           },
-          "review": null
+          "review": null,
+          "decidedBy": null,
+          "deciderName": null,
+          "sentLine": {
+            "bookingId": "B7",
+            "collection": "bookings",
+            "dayKey": "2026-11-02",
+            "jobId": "job-1",
+            "fingerprint": "old",
+            "action": "keep",
+            "proposedStart": null,
+            "proposedEnd": null,
+            "proposedMultiplier": null,
+            "cancel": false,
+            "overtimeHoursBefore": 4.5,
+            "overtimeHoursAfter": 4.5
+          }
         },
         {
           "bookingId": "B1",
@@ -20909,8 +20925,8 @@
           "end": "14:00",
           "timeSlot": "CUSTOM_HOURS",
           "fingerprint": "2026-11-04|CUSTOM HOURS|06:30|14:00|||confirmed",
-          "state": "approved",
-          "stateLabel": "Approved",
+          "state": "confirmed",
+          "stateLabel": "Confirmed",
           "figures": {
             "clockHours": 1,
             "multiplier": 1.5,
@@ -20933,7 +20949,10 @@
             "reviewedBy": "lm",
             "reviewedAtMs": null,
             "requestId": null
-          }
+          },
+          "decidedBy": null,
+          "deciderName": null,
+          "sentLine": null
         },
         {
           "bookingId": "B2",
@@ -20962,7 +20981,10 @@
           },
           "requestId": null,
           "requestLine": null,
-          "review": null
+          "review": null,
+          "decidedBy": null,
+          "deciderName": null,
+          "sentLine": null
         },
         {
           "bookingId": "B4",
@@ -21004,7 +21026,23 @@
             "overtimeHoursBefore": 13,
             "overtimeHoursAfter": 13
           },
-          "review": null
+          "review": null,
+          "decidedBy": null,
+          "deciderName": null,
+          "sentLine": {
+            "bookingId": "B4",
+            "collection": "bookings",
+            "dayKey": "2026-11-08",
+            "jobId": "job-1",
+            "fingerprint": "2026-11-08|CUSTOM HOURS|07:30|14:00|||confirmed",
+            "action": "keep",
+            "proposedStart": null,
+            "proposedEnd": null,
+            "proposedMultiplier": null,
+            "cancel": false,
+            "overtimeHoursBefore": 13,
+            "overtimeHoursAfter": 13
+          }
         }
       ]
     },
@@ -21059,7 +21097,7 @@
       }
     },
     {
-      "name": "1.29.0 red X cancels an every-hour weekend booking with the warning",
+      "name": "1.33.0 red X deletes an every-hour weekend booking after the warning",
       "function": "overtimeStrikeOutcome",
       "args": [
         {
@@ -21103,13 +21141,13 @@
         }
       ],
       "expected": {
-        "kind": "cancel",
+        "kind": "delete",
         "warning": {
           "title": "Remove this booking?",
           "body": "This will remove this booking entirely. Your organisation pays a set multiplier for this day. If you still worked this day, use the cog to set the hours you worked and agreed.",
           "back": "Go back",
           "confirm": "Remove booking",
-          "footnote": "A manager can restore it if this was a mistake.",
+          "footnote": "This cannot be undone. A manager can book it again.",
           "summary": "Sun 8 Nov · J-1042 Riverside Flats · 07:30–14:00"
         }
       }
@@ -21189,8 +21227,8 @@
       }
     },
     {
-      "name": "1.29.0 approval writes",
-      "function": "overtimeApprovalWrites",
+      "name": "1.33.0 Return writes: ✓ trims, ✓ on an all-overtime day deletes with a tombstone, ⚙ applies the decider's values",
+      "function": "overtimeReturnWrites",
       "args": [
         {
           "request": {
@@ -21248,7 +21286,9 @@
             "createdAtMs": null,
             "decidedAtMs": null,
             "appliedBookingIds": [],
-            "droppedBookingIds": []
+            "droppedBookingIds": [],
+            "staleBookingIds": [],
+            "deletedBookingIds": []
           },
           "decisions": {
             "B1": {
@@ -21345,20 +21385,25 @@
           },
           {
             "collection": "bookings",
-            "bookingId": "B4",
-            "set": {
-              "status": "Cancelled"
-            },
-            "remove": []
-          },
-          {
-            "collection": "bookings",
             "bookingId": "B7",
             "set": {
               "workEndTime": "20:00",
               "otMultiplierOverride": 1.25
             },
             "remove": []
+          }
+        ],
+        "bookingDeletes": [
+          {
+            "collection": "bookings",
+            "bookingId": "B4",
+            "tombstone": {
+              "bookingId": "B4",
+              "collection": "bookings",
+              "deletedBy": "lm",
+              "deletedFrom": "web",
+              "overtimeRequestId": "R1"
+            }
           }
         ],
         "reviewWrites": [
@@ -21380,8 +21425,8 @@
               "userId": "sam",
               "bookingId": "B4",
               "collection": "bookings",
-              "decision": "cancelled",
-              "fingerprint": "2026-11-08|CUSTOM HOURS|07:30|14:00|||cancelled",
+              "decision": "deleted",
+              "fingerprint": "2026-11-08|CUSTOM HOURS|07:30|14:00|||confirmed",
               "reviewedBy": "lm",
               "requestId": "R1"
             }
@@ -21392,7 +21437,7 @@
               "userId": "sam",
               "bookingId": "B7",
               "collection": "bookings",
-              "decision": "edited",
+              "decision": "changed",
               "fingerprint": "2026-11-02|CUSTOM HOURS|18:00|20:00|1.25||confirmed",
               "reviewedBy": "lm",
               "requestId": "R1"
@@ -21404,18 +21449,20 @@
           "B4",
           "B7"
         ],
+        "declinedBookingIds": [],
+        "staleBookingIds": [],
+        "deletedBookingIds": [
+          "B4"
+        ],
         "droppedBookingIds": [],
-        "deletedBookingIds": [],
         "unreadableBookingIds": [],
         "foreignBookingIds": [],
-        "waitingBookingIds": [],
         "lineOutcomes": {
           "B1": "applied",
-          "B4": "applied",
+          "B4": "removed",
           "B7": "applied"
         },
-        "complete": true,
-        "message": "Approved 3 of 3.",
+        "message": "Returned 3 lines.",
         "requestFields": {
           "status": "approved",
           "decisions": {
@@ -21438,13 +21485,17 @@
             "B4",
             "B7"
           ],
-          "droppedBookingIds": []
+          "droppedBookingIds": [],
+          "staleBookingIds": [],
+          "deletedBookingIds": [
+            "B4"
+          ]
         }
       }
     },
     {
-      "name": "1.32.0 partial approval: a booking changed since the request stays waiting, the rest apply",
-      "function": "overtimeApprovalWrites",
+      "name": "1.33.0 Return skip-and-name: a booking changed since it was sent goes back to the person, the rest apply",
+      "function": "overtimeReturnWrites",
       "args": [
         {
           "request": {
@@ -21502,7 +21553,9 @@
             "createdAtMs": null,
             "decidedAtMs": null,
             "appliedBookingIds": [],
-            "droppedBookingIds": []
+            "droppedBookingIds": [],
+            "staleBookingIds": [],
+            "deletedBookingIds": []
           },
           "decisions": {
             "B1": {
@@ -21585,14 +21638,18 @@
       ],
       "expected": {
         "ok": true,
-        "bookingWrites": [
+        "bookingWrites": [],
+        "bookingDeletes": [
           {
             "collection": "bookings",
             "bookingId": "B4",
-            "set": {
-              "status": "Cancelled"
-            },
-            "remove": []
+            "tombstone": {
+              "bookingId": "B4",
+              "collection": "bookings",
+              "deletedBy": "lm",
+              "deletedFrom": "web",
+              "overtimeRequestId": "R1"
+            }
           }
         ],
         "reviewWrites": [
@@ -21602,8 +21659,8 @@
               "userId": "sam",
               "bookingId": "B4",
               "collection": "bookings",
-              "decision": "cancelled",
-              "fingerprint": "2026-11-08|CUSTOM HOURS|07:30|14:00|||cancelled",
+              "decision": "deleted",
+              "fingerprint": "2026-11-08|CUSTOM HOURS|07:30|14:00|||confirmed",
               "reviewedBy": "lm",
               "requestId": "R1"
             }
@@ -21625,22 +21682,24 @@
           "B4",
           "B7"
         ],
-        "droppedBookingIds": [],
-        "deletedBookingIds": [],
-        "unreadableBookingIds": [],
-        "foreignBookingIds": [],
-        "waitingBookingIds": [
+        "declinedBookingIds": [],
+        "staleBookingIds": [
           "B1"
         ],
+        "deletedBookingIds": [
+          "B4"
+        ],
+        "droppedBookingIds": [],
+        "unreadableBookingIds": [],
+        "foreignBookingIds": [],
         "lineOutcomes": {
           "B1": "stale",
-          "B4": "applied",
+          "B4": "removed",
           "B7": "applied"
         },
-        "complete": false,
-        "message": "Approved 2 of 3. 1 changed since the request.",
+        "message": "Returned 2 lines. 1 changed since they sent it — they need to send it again.",
         "requestFields": {
-          "status": "pending",
+          "status": "approved",
           "decisions": {
             "B4": {
               "action": "approve"
@@ -21654,13 +21713,19 @@
             "B4",
             "B7"
           ],
-          "droppedBookingIds": []
+          "droppedBookingIds": [],
+          "staleBookingIds": [
+            "B1"
+          ],
+          "deletedBookingIds": [
+            "B4"
+          ]
         }
       }
     },
     {
-      "name": "1.32.0 approval: a line manager cannot write a booking filed under an operatives row (Needs an admin)",
-      "function": "overtimeApprovalWrites",
+      "name": "1.33.0 Return: a line manager decides a line filed under an operatives row of the person (no Needs an admin)",
+      "function": "overtimeReturnWrites",
       "args": [
         {
           "request": {
@@ -21690,7 +21755,9 @@
             "createdAtMs": null,
             "decidedAtMs": null,
             "appliedBookingIds": [],
-            "droppedBookingIds": []
+            "droppedBookingIds": [],
+            "staleBookingIds": [],
+            "deletedBookingIds": []
           },
           "decisions": {
             "BR": {
@@ -21744,20 +21811,65 @@
         }
       ],
       "expected": {
-        "ok": false,
-        "reason": "nothingApproved",
-        "bookingIds": [
+        "ok": true,
+        "bookingWrites": [
+          {
+            "collection": "bookings",
+            "bookingId": "BR",
+            "set": {
+              "workStartTime": "07:30"
+            },
+            "remove": []
+          }
+        ],
+        "bookingDeletes": [],
+        "reviewWrites": [
+          {
+            "docId": "sam_BR",
+            "fields": {
+              "userId": "sam",
+              "bookingId": "BR",
+              "collection": "bookings",
+              "decision": "trimmed",
+              "fingerprint": "2026-11-04|CUSTOM HOURS|07:30|14:00|||confirmed",
+              "reviewedBy": "lm",
+              "requestId": "R3"
+            }
+          }
+        ],
+        "appliedBookingIds": [
           "BR"
         ],
+        "declinedBookingIds": [],
+        "staleBookingIds": [],
+        "deletedBookingIds": [],
+        "droppedBookingIds": [],
+        "unreadableBookingIds": [],
+        "foreignBookingIds": [],
         "lineOutcomes": {
-          "BR": "needsAdmin"
+          "BR": "applied"
         },
-        "message": "Nothing was approved: 1 needs an admin."
+        "message": "Returned 1 line.",
+        "requestFields": {
+          "status": "approved",
+          "decisions": {
+            "BR": {
+              "action": "approve"
+            }
+          },
+          "decidedBy": "lm",
+          "appliedBookingIds": [
+            "BR"
+          ],
+          "droppedBookingIds": [],
+          "staleBookingIds": [],
+          "deletedBookingIds": []
+        }
       }
     },
     {
-      "name": "1.29.0 approval leaves out a booking that is not the requester's",
-      "function": "overtimeApprovalWrites",
+      "name": "1.29.0 / 1.33.0 Return leaves out a booking that is not the requester's",
+      "function": "overtimeReturnWrites",
       "args": [
         {
           "request": {
@@ -21801,7 +21913,9 @@
             "createdAtMs": null,
             "decidedAtMs": null,
             "appliedBookingIds": [],
-            "droppedBookingIds": []
+            "droppedBookingIds": [],
+            "staleBookingIds": [],
+            "deletedBookingIds": []
           },
           "decisions": {
             "B1": {
@@ -21864,7 +21978,6 @@
           },
           "timeZone": "Europe/London",
           "deciderId": "admin",
-          "deciderIsAdmin": true,
           "requesterIds": [
             "sam"
           ]
@@ -21873,6 +21986,7 @@
       "expected": {
         "ok": true,
         "bookingWrites": [],
+        "bookingDeletes": [],
         "reviewWrites": [
           {
             "docId": "sam_B1",
@@ -21890,21 +22004,21 @@
         "appliedBookingIds": [
           "B1"
         ],
+        "declinedBookingIds": [],
+        "staleBookingIds": [],
+        "deletedBookingIds": [],
         "droppedBookingIds": [
           "X1"
         ],
-        "deletedBookingIds": [],
         "unreadableBookingIds": [],
         "foreignBookingIds": [
           "X1"
         ],
-        "waitingBookingIds": [],
         "lineOutcomes": {
           "B1": "applied",
           "X1": "foreign"
         },
-        "complete": true,
-        "message": "Approved 1 of 2. 1 booking not theirs left out.",
+        "message": "Returned 1 line. 1 booking not theirs left out.",
         "requestFields": {
           "status": "approved",
           "decisions": {
@@ -21918,7 +22032,9 @@
           ],
           "droppedBookingIds": [
             "X1"
-          ]
+          ],
+          "staleBookingIds": [],
+          "deletedBookingIds": []
         }
       }
     },

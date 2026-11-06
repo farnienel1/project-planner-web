@@ -12,12 +12,17 @@
  * the cog, Edit Booking's "Overtime rate" and older app builds read and write one field; a stored rate is never
  * clamped or re-priced on read.
  *
- * A line's state comes from the person's overtime request and review documents:
+ * A line's state comes from the person's overtime request and review documents (1.33.0, owner decisions 6 Nov):
+ *   - `needsReview` — never sent (or the person has no line manager and has not ticked it yet);
  *   - `waiting` — a pending request names the booking and the booking still matches its fingerprint;
- *   - `changedSinceRequest` — a pending request names it but the booking changed since (it cannot be approved);
- *   - `approved` — a review whose fingerprint is the booking's current fingerprint;
- *   - `cancelled` — the booking was cancelled by an approved strike (shown struck through);
- *   - `needsReview` — anything else (a booking changed after a decision goes back here).
+ *   - `changedSinceRequest` — a pending request names it but the booking changed since, or a Return skipped it because
+ *     it had changed (`staleBookingIds`): the person sends it again;
+ *   - `confirmed` — the person (no line manager) ticked, crossed or changed it directly and it is unchanged since;
+ *   - `returnedApproved` / `returnedChanged` / `returnedDeclined` — a Return decided it ("Approved", "Changed by {name}",
+ *     "Declined") and the booking is unchanged since;
+ *   - `reopened` — it was decided (or confirmed) but the booking changed afterwards: the cycle starts again for it;
+ *   - `deleted` — the booking was removed by an approved red X (1.33.0), shown struck through at 0h;
+ *   - `cancelled` — 1.29–1.32 data: the booking was cancelled by an approved strike (shown struck through).
  * The fingerprint (`overtimeBookingFingerprint`) is the day, slot, start, finish, overtime rate, break toggle and
  * status, so an old request can never overwrite a newer booking.
  */
@@ -27,8 +32,9 @@ import { normalizeBookingStatus, normalizeBookingTimeSlot } from './bookings'
 import { isoWeekdayOfDayKey, zoneOrLondon } from './dayKeys'
 import { hasActiveLineManager, isAdminOutsideOperativeMode, isSuperAdminAccount, lineManagerIds, type LeaveSelfBookUser } from './leaveRequests'
 import { bookingIdsForAccount } from './bookingPerson'
+import { bookingTombstoneWriteFields, type BookingTombstoneWriteFields } from './bookingTombstones'
 import { payePayrunPeriod } from './payePayrun'
-import { excludeActor, type NotificationPerson, type NotificationRosterMember } from './notificationRecipients'
+import { excludeActor, notificationRecipientAccountId, type NotificationPerson, type NotificationRosterMember } from './notificationRecipients'
 import { formatPaymentRunDay } from './paymentRuns'
 import { payrollDayWindows, payrollHoursResult, payrollMultipliedHours, payrollOutsideMultiplier } from './payrollHours'
 import { effectivePayrollTimePolicy } from './payrollPolicySchedule'
@@ -51,48 +57,93 @@ export const OVERTIME_HUB_LABEL = 'Overtime, Expenses & Price Work'
 export const OVERTIME_MINE_LABEL = 'My Overtime, Expenses & Price Work'
 export const OVERTIME_USERS_LABEL = "Users' Overtime, Expenses & Price Work"
 export const OVERTIME_COMING_NEXT_MESSAGE = 'Expenses and price work are coming in the next update.'
+/** The person's button (1.33.0 owner decision 6 Nov: the label stays "Send for approval"); green per `overtimeSubmitReady`. */
 export const OVERTIME_SEND_FOR_APPROVAL_LABEL = 'Send for approval'
 export const OVERTIME_GENERATE_REPORT_LABEL = 'Generate overtime report'
-/** @deprecated 1.32.0: use `OVERTIME_APPROVE_LABEL`; kept while iOS builds before the 1.32.0 hand-off read it. */
+/** 1.33.0: the line manager's (or deciding admin's) one button; green per `overtimeReturnReady`. */
+export const OVERTIME_RETURN_LABEL = 'Return overtime'
+/** @deprecated 1.32.0: use `OVERTIME_RETURN_LABEL` (1.33.0); kept while iOS builds before the 1.32.0 hand-off read it. */
 export const OVERTIME_APPROVE_REQUEST_LABEL = 'Approve Overtime Request'
-/** @deprecated 1.32.0: a changed line now waits on its own (`OVERTIME_CHANGED_SINCE_REQUEST_LINE_MESSAGE`). */
+/** @deprecated 1.32.0: a changed line now goes back on its own (`OVERTIME_CHANGED_SINCE_REQUEST_LINE_MESSAGE`). */
 export const OVERTIME_REQUEST_STALE_MESSAGE =
   'A booking changed after this request was sent, so it cannot be approved. Ask for the request to be sent again.'
-/** @deprecated 1.32.0: Approve needs one decided line (`overtimeRequestAnyDecided`). */
-export const OVERTIME_REQUEST_UNDECIDED_MESSAGE = 'Tick, cross or change every line before approving the request.'
+/** 1.33.0: Return needs every line decided (`overtimeReturnReady`). */
+export const OVERTIME_REQUEST_UNDECIDED_MESSAGE = 'Tick, cross or change every line before returning the request.'
+/** 1.33.0: Send for approval needs every line marked (`overtimeSubmitReady`). */
+export const OVERTIME_SUBMIT_UNDECIDED_MESSAGE = 'Tick, cross or change every line before sending.'
+/** 1.33.0: after a Return, Send for approval stays grey until a line is changed (✕→✓, ✓→✕ or ⚙). */
+export const OVERTIME_SUBMIT_NOTHING_CHANGED_MESSAGE = 'Nothing to send — change a line first.'
 export const OVERTIME_REQUEST_NOT_PENDING_MESSAGE = 'This request is no longer waiting for approval.'
 export const OVERTIME_NO_LINES_MESSAGE = 'There is no overtime in this range.'
 export const OVERTIME_CANCEL_NOT_ALLOWED_MESSAGE =
   'All of this booking is outside the working day. Change its hours with the cog, or ask a scheduler to remove it.'
 export const OVERTIME_REPORT_TOTAL_LABEL = 'Total overtime'
-export const OVERTIME_NEEDS_ADMIN_MESSAGE =
-  'This booking is filed under an operatives row, or on a job you do not manage: an admin or the job\'s manager must approve this request.'
-/** 1.32.0: the one review button under the lines (Users' → a person → Overtime, and Price work / Expenses). */
+/** 1.33.0: why Generate overtime report is grey (`overtimeGenerateReady`). */
+export const OVERTIME_GENERATE_NOT_READY_MESSAGE = 'Every line must be returned by your line manager first.'
+export const OVERTIME_GENERATE_NOT_MARKED_MESSAGE = 'Tick, cross or change every line first.'
+export const OVERTIME_GENERATE_UNSENT_MESSAGE = 'Send your changes for approval first.'
+export const OVERTIME_GENERATE_SAVED_MESSAGE = 'A report for this range is already saved. It is marked out of date if a line changes.'
+/** 1.33.0: a saved report whose lines no longer match the bookings (`overtimeReportOutOfDate`). */
+export const OVERTIME_REPORT_OUT_OF_DATE_LABEL = 'Out of date'
+/** 1.32.0: the one review button under the lines (Price work / Expenses, §26). Overtime uses `OVERTIME_RETURN_LABEL` from 1.33.0. */
 export const OVERTIME_APPROVE_LABEL = 'Approve'
-/** 1.32.0 (owner decision A): the line label a line manager sees on a line only an admin may apply. */
+/**
+ * @deprecated 1.33.0 (owner 6 Nov): a line manager decides every line of their report under any of the person's ids
+ * (`overtimeDeciderMayWriteBooking`). Kept only while §26 claims still read it.
+ */
 export const OVERTIME_NEEDS_ADMIN_LABEL = 'Needs an admin'
-export const OVERTIME_CHANGED_SINCE_REQUEST_LINE_MESSAGE = 'Changed since the request — ask them to send it again.'
-export const OVERTIME_BOOKING_UNREADABLE_MESSAGE = "Can't read this booking — it is left out of this approval."
+export const OVERTIME_CHANGED_SINCE_REQUEST_LINE_MESSAGE = 'Changed since they sent it — it goes back to them to send again.'
+export const OVERTIME_BOOKING_UNREADABLE_MESSAGE = "Can't read this booking — it is left out of this Return."
 export const OVERTIME_NOT_THEIR_BOOKING_MESSAGE = 'This booking is not theirs — it is left out.'
 
-/** The red X cancel warning, the same on every platform. */
-export const OVERTIME_CANCEL_WARNING = {
+/** The red X delete warning (1.33.0: the booking is deleted, not cancelled), the same on every platform. */
+export const OVERTIME_DELETE_WARNING = {
   title: 'Remove this booking?',
   body: 'This will remove this booking entirely. Your organisation pays a set multiplier for this day. If you still worked this day, use the cog to set the hours you worked and agreed.',
   back: 'Go back',
   confirm: 'Remove booking',
-  footnote: 'A manager can restore it if this was a mistake.',
+  footnote: 'This cannot be undone. A manager can book it again.',
 } as const
+/** @deprecated 1.33.0: renamed `OVERTIME_DELETE_WARNING` (the booking is deleted). The same object. */
+export const OVERTIME_CANCEL_WARNING = OVERTIME_DELETE_WARNING
 
-export const OVERTIME_LINE_STATES = ['needsReview', 'waiting', 'approved', 'changedSinceRequest', 'cancelled'] as const
+export const OVERTIME_LINE_STATES = [
+  'needsReview',
+  'waiting',
+  'changedSinceRequest',
+  'confirmed',
+  'returnedApproved',
+  'returnedChanged',
+  'returnedDeclined',
+  'reopened',
+  'deleted',
+  'cancelled',
+] as const
 export type OvertimeLineState = (typeof OVERTIME_LINE_STATES)[number]
+/** `returnedChanged` reads "Changed by {name}" on a line (`OvertimeLine.stateLabel` fills the name). */
 export const OVERTIME_LINE_STATE_LABELS: Readonly<Record<OvertimeLineState, string>> = {
   needsReview: 'Needs review',
   waiting: 'Waiting for line manager',
-  approved: 'Approved',
-  changedSinceRequest: 'Booking changed since request',
+  changedSinceRequest: 'Changed since you sent it',
+  confirmed: 'Confirmed',
+  returnedApproved: 'Approved',
+  returnedChanged: 'Changed by {name}',
+  returnedDeclined: 'Declined',
+  reopened: 'Booking changed — check it again',
+  deleted: 'Booking removed — not worked',
   cancelled: 'Booking cancelled',
 }
+/** 1.33.0: states in which a line is finished (nothing left for the person or the line manager to do). */
+export const OVERTIME_DONE_LINE_STATES: ReadonlyArray<OvertimeLineState> = [
+  'confirmed',
+  'returnedApproved',
+  'returnedChanged',
+  'returnedDeclined',
+  'deleted',
+  'cancelled',
+]
+/** 1.33.0: states the line manager has returned (Generate needs every line in one of these when there is a line manager). */
+export const OVERTIME_RETURNED_LINE_STATES: ReadonlyArray<OvertimeLineState> = ['returnedApproved', 'returnedChanged', 'returnedDeclined']
 
 /** Notification types (§13). */
 export const OVERTIME_REQUEST_SUBMITTED_TYPE = 'overtime_request_submitted'
@@ -299,7 +350,10 @@ export type OvertimeRequestLine = {
   proposedEnd: string | null
   /** The proposed rate; null = the organisation's. Only meaningful for `edit`. */
   proposedMultiplier: number | null
-  /** True when the proposal cancels the booking (a strike of a booking with no hours inside the day). */
+  /**
+   * True when the proposal removes the booking (a strike of a booking with no hours inside the day). The stored name is
+   * kept from 1.29.0; from 1.33.0 an approved line deletes the booking (with a tombstone) instead of cancelling it.
+   */
   cancel: boolean
   overtimeHoursBefore: number
   overtimeHoursAfter: number
@@ -323,9 +377,27 @@ export type OvertimeRequestRecord = {
   decidedAtMs: number | null
   appliedBookingIds: string[]
   droppedBookingIds: string[]
+  /** 1.33.0: lines a Return skipped because the booking changed since it was sent (they go back to the person). */
+  staleBookingIds: string[]
+  /** 1.33.0: bookings this Return deleted (an approved red X on an all-overtime day; the tombstone names the request). */
+  deletedBookingIds: string[]
 }
 
-export type OvertimeReviewDecision = 'approved' | 'edited' | 'trimmed' | 'cancelled'
+/**
+ * `approved` / `edited` / `trimmed`: the line as the person asked (or, without a line manager, as they set it);
+ * `cancelled`: a 1.29–1.32 strike that cancelled the booking. 1.33.0: `changed` (the decider's own cog values),
+ * `declined` (the decider's ✕: the booking was left as it was) and `deleted` (an approved red X removed the booking).
+ */
+export type OvertimeReviewDecision = 'approved' | 'edited' | 'trimmed' | 'cancelled' | 'changed' | 'declined' | 'deleted'
+export const OVERTIME_REVIEW_DECISIONS: ReadonlyArray<OvertimeReviewDecision> = [
+  'approved',
+  'edited',
+  'trimmed',
+  'cancelled',
+  'changed',
+  'declined',
+  'deleted',
+]
 
 export type OvertimeReviewRecord = {
   id: string
@@ -427,6 +499,8 @@ export function parseOvertimeRequestDocument(docId: string, data: Record<string,
     decidedAtMs: instantMs(row.decidedAt),
     appliedBookingIds: ids(row.appliedBookingIds),
     droppedBookingIds: ids(row.droppedBookingIds),
+    staleBookingIds: ids(row.staleBookingIds),
+    deletedBookingIds: ids(row.deletedBookingIds),
   }
 }
 
@@ -439,7 +513,7 @@ export function parseOvertimeReviewDocument(docId: string, data: Record<string, 
     userId: text(row.userId),
     bookingId: text(row.bookingId),
     collection: collectionOf({ collection: text(row.collection) }),
-    decision: decision === 'edited' || decision === 'trimmed' || decision === 'cancelled' ? decision : 'approved',
+    decision: (OVERTIME_REVIEW_DECISIONS as readonly string[]).includes(decision) ? (decision as OvertimeReviewDecision) : 'approved',
     fingerprint: text(row.fingerprint),
     reviewedBy: text(row.reviewedBy) || null,
     reviewedAtMs: instantMs(row.reviewedAt),
@@ -470,13 +544,22 @@ export type OvertimeLine = {
   timeSlot: string
   fingerprint: string
   state: OvertimeLineState
+  /** `OVERTIME_LINE_STATE_LABELS[state]`, with the decider's name in "Changed by {name}". */
   stateLabel: string
-  /** Null for a cancelled line. */
+  /** Null for a cancelled or deleted line. */
   figures: OvertimeFigures | null
   /** The pending request naming this booking, if any. */
   requestId: string | null
   requestLine: OvertimeRequestLine | null
   review: OvertimeReviewRecord | null
+  /** 1.33.0: who returned the line (`review.reviewedBy`) and their name from `names`; null when not returned. */
+  decidedBy: string | null
+  deciderName: string | null
+  /**
+   * 1.33.0: the request line the person last sent for this booking (pending, or the request the Return decided);
+   * the person's ✓ ✕ ⚙ start from it (`overtimeLineBaselineChoice`).
+   */
+  sentLine: OvertimeRequestLine | null
 }
 
 function newestPending(requests: ReadonlyArray<OvertimeRequestRecord>, bookingId: string): { request: OvertimeRequestRecord; line: OvertimeRequestLine } | null {
@@ -492,10 +575,39 @@ function newestPending(requests: ReadonlyArray<OvertimeRequestRecord>, bookingId
   return best
 }
 
+/** 1.33.0: the newest returned (approved) request that names the booking. */
+function newestReturned(requests: ReadonlyArray<OvertimeRequestRecord>, bookingId: string): { request: OvertimeRequestRecord; line: OvertimeRequestLine } | null {
+  let best: { request: OvertimeRequestRecord; line: OvertimeRequestLine } | null = null
+  for (const request of requests) {
+    if (request.status !== 'approved') continue
+    const line = request.lines.find((row) => idKey(row.bookingId) === idKey(bookingId))
+    if (!line) continue
+    const at = request.decidedAtMs ?? request.createdAtMs ?? 0
+    if (!best || at >= (best.request.decidedAtMs ?? best.request.createdAtMs ?? 0)) best = { request, line }
+  }
+  return best
+}
+
+function hasId(list: ReadonlyArray<string> | null | undefined, id: string): boolean {
+  return (list || []).some((row) => idKey(row) === idKey(id))
+}
+
+/** The parts of a fingerprint (`day|slot|start|finish|rate|break|status`) a deleted line is drawn from. */
+function fingerprintParts(fingerprint: string): { dayKey: string; timeSlot: string; start: string; end: string } {
+  const [day, slot, start, end] = text(fingerprint).split('|')
+  return { dayKey: dayKeyOrEmpty(day), timeSlot: text(slot), start: clockOf(start), end: clockOf(end) }
+}
+
+function stateLabelFor(state: OvertimeLineState, deciderName: string | null): string {
+  return OVERTIME_LINE_STATE_LABELS[state].replace('{name}', deciderName || 'your line manager')
+}
+
 /**
  * The overtime lines of one person in `range` (inclusive day keys): every booking on any of `personIds` (without case)
- * with overtime (`overtimeForBooking`), and every booking cancelled by an approved strike (state `cancelled`), each
- * with its state. Sorted by day, then start, then job number.
+ * with overtime (`overtimeForBooking`), every booking cancelled by a 1.29–1.32 approved strike (state `cancelled`) and,
+ * 1.33.0, every booking an approved red X deleted (state `deleted`, drawn from its review — the day, slot and times come
+ * from the review's fingerprint and the job from the request line and `jobs`), each with its state (see the file
+ * header). `names` maps a user id to the name shown in "Changed by {name}". Sorted by day, then start, then job number.
  */
 export function payeOvertimeLines(input: {
   personIds: ReadonlyArray<string>
@@ -505,16 +617,24 @@ export function payeOvertimeLines(input: {
   range: { start: string; end: string }
   reviews?: ReadonlyArray<OvertimeReviewRecord> | null
   requests?: ReadonlyArray<OvertimeRequestRecord> | null
+  /** 1.33.0: user id → display name (the decider's name on returned lines). */
+  names?: Record<string, string> | null
+  /** 1.33.0: job id → number and name, for deleted lines (their booking is gone). */
+  jobs?: ReadonlyArray<{ id: string; jobNumber?: string | null; jobName?: string | null }> | null
 }): OvertimeLine[] {
   const ids = new Set((input.personIds || []).map(idKey).filter(Boolean))
   const start = text(input.range?.start)
   const end = text(input.range?.end)
   const reviews = input.reviews || []
   const requests = input.requests || []
+  const names = new Map(Object.entries(input.names || {}).map(([id, name]) => [idKey(id), text(name)]))
+  const nameOf = (id: string | null) => (id ? names.get(idKey(id)) || null : null)
   const out: OvertimeLine[] = []
   const seen = new Set<string>()
+  const liveIds = new Set<string>()
   for (const booking of input.bookings || []) {
     if (!booking || !ids.has(idKey(booking.personId))) continue
+    liveIds.add(idKey(booking.id))
     const day = text(booking.dayKey)
     if (!day || day < start || day > end) continue
     const bookingKey = `${collectionOf(booking)}/${idKey(booking.id)}`
@@ -523,20 +643,33 @@ export function payeOvertimeLines(input: {
     const fingerprint = overtimeBookingFingerprint(booking)
     const review = reviews.find((row) => idKey(row.bookingId) === idKey(booking.id)) ?? null
     const pending = newestPending(requests, booking.id)
+    const returned = newestReturned(requests, booking.id)
     let state: OvertimeLineState
     let figures: OvertimeFigures | null = null
+    let decidedBy: string | null = null
     if (isCancelled(booking)) {
       if (!review || review.decision !== 'cancelled' || review.fingerprint !== fingerprint) continue
       state = 'cancelled'
     } else {
       figures = overtimeForBooking({ booking, organization: input.organization, timeZone: input.timeZone })
       if (!figures) continue
+      const reviewMatches = Boolean(review && review.fingerprint === fingerprint && review.decision !== 'deleted')
+      const reviewNewerThanReturn =
+        review != null && returned != null && (review.reviewedAtMs ?? 0) > (returned.request.decidedAtMs ?? 0) && review.requestId !== returned.request.id
       if (pending) state = pending.line.fingerprint === fingerprint ? 'waiting' : 'changedSinceRequest'
-      else if (review && review.fingerprint === fingerprint) state = 'approved'
+      else if (reviewMatches && review) {
+        if (!review.requestId) state = 'confirmed'
+        else {
+          state = review.decision === 'changed' ? 'returnedChanged' : review.decision === 'declined' ? 'returnedDeclined' : 'returnedApproved'
+          decidedBy = review.reviewedBy
+        }
+      } else if (returned && hasId(returned.request.staleBookingIds, booking.id) && !reviewNewerThanReturn) state = 'changedSinceRequest'
+      else if (review) state = 'reopened'
       else state = 'needsReview'
     }
     const jobNumber = text(booking.jobNumber)
     const jobName = text(booking.jobName)
+    const deciderName = nameOf(decidedBy)
     out.push({
       bookingId: text(booking.id),
       collection: collectionOf(booking),
@@ -551,11 +684,55 @@ export function payeOvertimeLines(input: {
       timeSlot: text(booking.timeSlot),
       fingerprint,
       state,
-      stateLabel: OVERTIME_LINE_STATE_LABELS[state],
+      stateLabel: stateLabelFor(state, deciderName),
       figures,
       requestId: pending ? pending.request.id : null,
       requestLine: pending ? pending.line : null,
       review,
+      decidedBy,
+      deciderName,
+      sentLine: pending ? pending.line : returned ? returned.line : null,
+    })
+  }
+  // 1.33.0 (item f): a booking an approved red X deleted is still a line, struck through at 0h.
+  const jobs = new Map((input.jobs || []).filter((row) => row && text(row.id)).map((row) => [idKey(row.id), row]))
+  for (const review of reviews) {
+    if (review.decision !== 'deleted' || liveIds.has(idKey(review.bookingId))) continue
+    const key = `${review.collection}/${idKey(review.bookingId)}`
+    if (seen.has(key)) continue
+    const request = review.requestId ? requests.find((row) => idKey(row.id) === idKey(review.requestId)) ?? null : null
+    const line = request ? request.lines.find((row) => idKey(row.bookingId) === idKey(review.bookingId)) ?? null : null
+    const parts = fingerprintParts(review.fingerprint)
+    const day = parts.dayKey || (line ? line.dayKey : '')
+    if (!day || day < start || day > end) continue
+    seen.add(key)
+    const job = line?.jobId ? jobs.get(idKey(line.jobId)) : undefined
+    const jobNumber = text(job?.jobNumber)
+    const jobName = text(job?.jobName)
+    const decidedBy = review.requestId ? review.reviewedBy : null
+    const deciderName = nameOf(decidedBy)
+    out.push({
+      bookingId: review.bookingId,
+      collection: review.collection,
+      dayKey: day,
+      dayLabel: formatPaymentRunDay(day),
+      jobId: line?.jobId ?? null,
+      jobNumber,
+      jobName,
+      title: [jobNumber, jobName].filter(Boolean).join(' · ') || 'Booking',
+      start: parts.start,
+      end: parts.end,
+      timeSlot: parts.timeSlot,
+      fingerprint: review.fingerprint,
+      state: 'deleted',
+      stateLabel: stateLabelFor('deleted', deciderName),
+      figures: null,
+      requestId: null,
+      requestLine: null,
+      review,
+      decidedBy,
+      deciderName,
+      sentLine: line,
     })
   }
   return out.sort((a, b) =>
@@ -563,14 +740,15 @@ export function payeOvertimeLines(input: {
   )
 }
 
-/** Total overtime hours of the lines that are not cancelled. */
-export function overtimeLinesTotal(lines: ReadonlyArray<Pick<OvertimeLine, 'figures' | 'state'>>): number {
-  return round2(lines.reduce((sum, line) => sum + (line.state === 'cancelled' ? 0 : line.figures?.overtimeHours ?? 0), 0))
+/** The overtime hours a line counts for: 0 when cancelled, deleted, or declined by the line manager (1.33.0). */
+export function overtimeLineHours(line: Pick<OvertimeLine, 'figures' | 'state'>): number {
+  if (line.state === 'cancelled' || line.state === 'deleted' || line.state === 'returnedDeclined') return 0
+  return line.figures?.overtimeHours ?? 0
 }
 
-/** Generate overtime report is enabled when there is at least one line and every line is approved (or cancelled by an approval). */
-export function canGenerateOvertimeReport(lines: ReadonlyArray<Pick<OvertimeLine, 'state'>>): boolean {
-  return lines.length > 0 && lines.every((line) => line.state === 'approved' || line.state === 'cancelled')
+/** Total overtime hours of the lines (`overtimeLineHours`: cancelled, deleted and declined lines count 0). */
+export function overtimeLinesTotal(lines: ReadonlyArray<Pick<OvertimeLine, 'figures' | 'state'>>): number {
+  return round2(lines.reduce((sum, line) => sum + overtimeLineHours(line), 0))
 }
 
 // MARK: - The red X, the cog and the booking write
@@ -579,7 +757,7 @@ export type OvertimeStrikeOutcome =
   | { kind: 'none' }
   | { kind: 'trim'; start: string; end: string }
   | {
-      kind: 'cancel'
+      kind: 'delete'
       warning: { title: string; summary: string; body: string; back: string; confirm: string; footnote: string }
     }
   | { kind: 'notAllowed'; message: string }
@@ -588,8 +766,9 @@ export type OvertimeStrikeOutcome =
  * What the red X ("I didn't work these overtime hours") does to a booking: a weekday booking partly outside the
  * working day is trimmed back inside it (06:30–14:00 on 07:30–16:00 → 07:30–14:00); a weekend set-window booking is
  * trimmed to the window; a booking with no hours inside the day (or window), or on a weekend paid at a multiplier
- * only, is cancelled after `OVERTIME_CANCEL_WARNING` (status Cancelled, never deleted). A manager site booking is
- * never cancelled here (`notAllowed`). `none` when there is nothing to trim.
+ * only, is **deleted** after `OVERTIME_DELETE_WARNING` (1.33.0 owner decision 4 Nov, item f; 1.29–1.32 cancelled it) —
+ * with a line manager only when the Return approves it. A manager site booking is never deleted here (`notAllowed`).
+ * `none` when there is nothing to trim.
  */
 export function overtimeStrikeOutcome(input: {
   booking: OvertimeBookingInput
@@ -612,7 +791,7 @@ export function overtimeStrikeOutcome(input: {
     const summary = [formatPaymentRunDay(booking.dayKey), title, `${formatClockMinutes(s)}–${formatClockMinutes(e % (24 * 60))}`]
       .filter(Boolean)
       .join(' · ')
-    return { kind: 'cancel', warning: { ...OVERTIME_CANCEL_WARNING, summary } }
+    return { kind: 'delete', warning: { ...OVERTIME_DELETE_WARNING, summary } }
   }
   if (from === s && to === e) return { kind: 'none' }
   return { kind: 'trim', start: formatClockMinutes(from), end: formatClockMinutes(to) }
@@ -621,7 +800,6 @@ export function overtimeStrikeOutcome(input: {
 export type OvertimeBookingChange =
   | { kind: 'edit'; start: string; end: string; /** undefined: leave the rate; null: the organisation's. */ multiplier?: number | null }
   | { kind: 'trim'; start: string; end: string }
-  | { kind: 'cancel' }
 
 /** The booking as it will read after `change` (exactly `overtimeBookingWriteFields` applied). */
 export function overtimeBookingAfter(booking: OvertimeBookingInput, change: OvertimeBookingChange): OvertimeBookingInput {
@@ -633,17 +811,14 @@ export function overtimeBookingAfter(booking: OvertimeBookingInput, change: Over
 
 /**
  * The partial update of a booking for an overtime change → `{ set, remove }` (empty when nothing changes). Only
- * `workStartTime`, `workEndTime`, `timeSlot` (a Full day becomes `CUSTOM_HOURS` when its times change),
- * `otMultiplierOverride` and `status` (→ `Cancelled`) are ever written — the fields the security rules let a line
- * manager change (§16). The app adds write metadata.
+ * `workStartTime`, `workEndTime`, `timeSlot` (a Full day becomes `CUSTOM_HOURS` when its times change) and
+ * `otMultiplierOverride` are ever written — fields the security rules let a line manager change (§16). 1.33.0: the red X
+ * no longer writes `status` Cancelled; an all-overtime booking is deleted (`overtimeBookingDelete`). The app adds
+ * write metadata.
  */
 export function overtimeBookingWriteFields(booking: OvertimeBookingInput, change: OvertimeBookingChange): { set: Record<string, unknown>; remove: string[] } {
   const set: Record<string, unknown> = {}
   const remove: string[] = []
-  if (change.kind === 'cancel') {
-    if (!isCancelled(booking)) set.status = 'Cancelled'
-    return { set, remove }
-  }
   const start = clockOf(change.start)
   const end = clockOf(change.end)
   if (start && start !== clockOf(booking.workStartTime)) set.workStartTime = start
@@ -793,8 +968,8 @@ export function overtimeEditableUntil(organization: OvertimeOrganization, todayK
  * 1.32.0, the one "all records for this person" rule (platform guardrail 1) for overtime loading, sending and approving
  * and for PAYE price work and expenses: every id the person goes by (`personIdSet` over the roster: own id, former
  * invite ids, same-email ids) plus every `operatives` row on their email (`bookingIdsForAccount`), never one row picked
- * by email. Bookings filed under an `operatives` row are approved by admins only (owner decision A,
- * `overtimeApprovalWrites` → `needsAdmin`).
+ * by email. 1.33.0 (owner 6 Nov, superseding decision A): the person's line manager decides lines under every one of
+ * these ids (`overtimeDeciderMayWriteBooking`); there is no "Needs an admin".
  */
 export function overtimePersonIds(input: {
   person: { id?: string | null; email?: string | null } | null | undefined
@@ -912,14 +1087,15 @@ export function overtimeRequestLineFields(input: {
     const outcome = overtimeStrikeOutcome({ booking, organization: input.organization, timeZone: input.timeZone })
     if (outcome.kind === 'notAllowed' || outcome.kind === 'none') return outcome.kind === 'none' ? base : null
     base.action = 'strike'
-    if (outcome.kind === 'cancel') {
+    if (outcome.kind === 'delete') {
+      // 1.33.0 (item f): asks for the booking to be deleted; nothing changes until the Return approves it.
       base.cancel = true
-      change = { kind: 'cancel' }
-    } else {
-      base.proposedStart = outcome.start
-      base.proposedEnd = outcome.end
-      change = { kind: 'trim', start: outcome.start, end: outcome.end }
+      base.overtimeHoursAfter = 0
+      return base
     }
+    base.proposedStart = outcome.start
+    base.proposedEnd = outcome.end
+    change = { kind: 'trim', start: outcome.start, end: outcome.end }
   }
   const after = overtimeForBooking({ booking: overtimeBookingAfter(booking, change), organization: input.organization, timeZone: input.timeZone, minMinutes: 0 })
   base.overtimeHoursAfter = after?.overtimeHours ?? 0
@@ -972,20 +1148,24 @@ export function overtimeBookingIsTheirs(booking: Pick<OvertimeBookingInput, 'per
 }
 
 /**
- * Whether the decider's booking write for an approved line is one the security rules allow (§16): an admin; a writer
- * of that booking under `canWriteBooking` (the app passes those booking ids as `writableBookingIds`); or the person's
- * line manager — the rules let a line manager write only a booking whose person id is the requester's users id
- * (`request.userId`, exactly as stored), never one filed under an `operatives` row id.
+ * Whether a decider (already allowed by `canDecideOvertimeRequest`) may apply a line to this booking. 1.33.0 (owner
+ * 6 Nov, item b, superseding 4 Nov decision A "Needs an admin"): yes for every booking on any id the requester goes by
+ * (`requesterIds` = `overtimePersonIds`: their users id, former and same-email ids, and `operatives` rows on their
+ * email) — a line manager can always decide their report's lines; also an admin, or a `canWriteBooking` writer
+ * (`writableBookingIds`). Without `requesterIds` only `requesterUserId` counts (the 1.32 behaviour).
  */
 export function overtimeDeciderMayWriteBooking(input: {
   booking: Pick<OvertimeBookingInput, 'id' | 'personId'>
   requesterUserId: string
+  requesterIds?: ReadonlyArray<string> | null
   deciderIsAdmin?: boolean | null
   writableBookingIds?: ReadonlyArray<string> | null
 }): boolean {
   if (input.deciderIsAdmin === true) return true
   if ((input.writableBookingIds || []).some((id) => idKey(id) === idKey(input.booking.id))) return true
-  return text(input.booking.personId) !== '' && text(input.booking.personId) === text(input.requesterUserId)
+  if (text(input.booking.personId) === '') return false
+  const ids = input.requesterIds && input.requesterIds.length > 0 ? input.requesterIds : [input.requesterUserId]
+  return overtimeBookingIsTheirs(input.booking, ids)
 }
 
 /** The person's pending requests for exactly this range (withdrawn when they send again). */
@@ -1005,66 +1185,57 @@ export function overtimeRequestWithdrawWriteFields(request: Pick<OvertimeRequest
   return request.status === 'pending' ? { status: 'withdrawn' } : null
 }
 
-/**
- * Every line of the request has a decision.
- * @deprecated 1.32.0: the one Approve is enabled by `overtimeRequestAnyDecided`; kept while iOS builds before the 1.32.0
- * hand-off call it.
- */
-export function overtimeRequestFullyDecided(request: Pick<OvertimeRequestRecord, 'lines'>, decisions: Record<string, OvertimeDecision | null | undefined>): boolean {
-  if (request.lines.length === 0) return false
-  const keyed = new Map(Object.entries(decisions || {}).map(([key, value]) => [idKey(key), value]))
-  return request.lines.every((line) => Boolean(keyed.get(idKey(line.bookingId))))
-}
-
-function decisionToChange(
-  line: OvertimeRequestLine,
-  decision: OvertimeDecision,
-  live: OvertimeBookingInput,
-  organization: OvertimeOrganization,
-  timeZone?: string | null
-): { change: OvertimeBookingChange | null; refused?: string } {
-  if (decision.action === 'edit') return { change: { kind: 'edit', start: decision.start, end: decision.end, multiplier: decision.multiplier } }
-  if (decision.action === 'approve') {
-    if (line.action === 'keep') return { change: null }
-    if (line.action === 'edit') {
-      if (!line.proposedStart || !line.proposedEnd) return { change: null }
-      return { change: { kind: 'edit', start: line.proposedStart, end: line.proposedEnd, multiplier: line.proposedMultiplier } }
-    }
-  }
-  const outcome = overtimeStrikeOutcome({ booking: live, organization, timeZone })
-  if (outcome.kind === 'trim') return { change: { kind: 'trim', start: outcome.start, end: outcome.end } }
-  if (outcome.kind === 'cancel') return { change: { kind: 'cancel' } }
-  if (outcome.kind === 'notAllowed') return { change: null, refused: outcome.message }
-  return { change: null }
-}
-
-function reviewDecisionFor(change: OvertimeBookingChange | null): OvertimeReviewDecision {
-  if (!change) return 'approved'
-  if (change.kind === 'cancel') return 'cancelled'
-  if (change.kind === 'trim') return 'trimmed'
-  return 'edited'
+function storedDecision(decision: OvertimeDecision): Record<string, unknown> {
+  return decision.action === 'edit'
+    ? { action: 'edit', start: clockOf(decision.start), end: clockOf(decision.end), multiplier: decision.multiplier ?? null }
+    : { action: decision.action }
 }
 
 export type OvertimeBookingWrite = { collection: OvertimeBookingCollection; bookingId: string; set: Record<string, unknown>; remove: string[] }
 export type OvertimeReviewWrite = { docId: string; fields: Record<string, unknown> }
+/**
+ * 1.33.0 (item f): a booking delete and its tombstone (`bookingTombstoneWriteFields`, with `overtimeRequestId` when a
+ * Return deletes it), written in the same transaction. The app adds the tombstone's `deletedAt` (server time).
+ */
+export type OvertimeBookingDelete = {
+  collection: 'bookings'
+  bookingId: string
+  tombstone: BookingTombstoneWriteFields
+}
 
-/** 1.32.0: what happened to one line of an approval (`overtimeApprovalWrites` → `lineOutcomes`). */
+/** 1.33.0: the delete of an all-overtime booking an approved red X removes. Null for a manager site booking or bad ids. */
+export function overtimeBookingDelete(input: {
+  booking: Pick<OvertimeBookingInput, 'id' | 'collection'>
+  deletedBy: string
+  platform: string
+  overtimeRequestId?: string | null
+}): OvertimeBookingDelete | null {
+  if (collectionOf(input.booking) !== 'bookings') return null
+  const tombstone = bookingTombstoneWriteFields({
+    bookingId: input.booking.id,
+    collection: 'bookings',
+    deletedBy: input.deletedBy,
+    deletedFrom: input.platform,
+    overtimeRequestId: input.overtimeRequestId ?? null,
+  })
+  return tombstone ? { collection: 'bookings', bookingId: tombstone.bookingId, tombstone } : null
+}
+
+/** 1.33.0: what happened to one line of a Return (`overtimeReturnWrites` → `lineOutcomes`). */
 export type OvertimeLineOutcome =
   | 'applied'
+  | 'declined'
+  | 'removed'
   | 'alreadyApplied'
-  | 'undecided'
   | 'stale'
-  | 'needsAdmin'
   | 'refused'
   | 'deleted'
   | 'unreadable'
   | 'foreign'
 
-/** 1.32.0: the per-line label for an outcome that leaves the line waiting or out ("Needs an admin", …); null when applied. */
-export function overtimeLineOutcomeLabel(outcome: OvertimeLineOutcome | null | undefined): string | null {
+/** The per-line label of an outcome that leaves a line out of a Return or sends it back; null when it was returned. */
+export function overtimeLineOutcomeLabel(outcome: OvertimeLineOutcome | string | null | undefined): string | null {
   switch (outcome) {
-    case 'needsAdmin':
-      return OVERTIME_NEEDS_ADMIN_LABEL
     case 'stale':
       return OVERTIME_CHANGED_SINCE_REQUEST_LINE_MESSAGE
     case 'refused':
@@ -1075,16 +1246,14 @@ export function overtimeLineOutcomeLabel(outcome: OvertimeLineOutcome | null | u
       return OVERTIME_NOT_THEIR_BOOKING_MESSAGE
     case 'deleted':
       return 'This booking was deleted — it is left out.'
-    case 'undecided':
-      return 'Not decided yet — it stays waiting.'
     default:
       return null
   }
 }
 
 /**
- * 1.32.0, the one review message (overtime, price work and expenses): "Approved 2 of 5. 2 need an admin; 1 not decided
- * yet." or "Nothing was approved: 2 need an admin; 3 not decided yet.". `counts` names why lines stayed waiting or out.
+ * 1.32.0, the review message price work and expenses use (§26): "Approved 2 of 5. 2 need an admin; 1 not decided
+ * yet." Overtime uses `overtimeReturnMessage` from 1.33.0.
  */
 export function reviewApprovalMessage(input: {
   approved: number
@@ -1107,32 +1276,69 @@ export function reviewApprovalMessage(input: {
   return `Approved ${input.approved} of ${input.total}.${reasons.length > 0 ? ` ${reasons.join('; ')}.` : ''}`
 }
 
-/** 1.32.0: at least one line of the request (not yet applied) has a decision — the one Approve button is enabled. */
-export function overtimeRequestAnyDecided(
-  request: Pick<OvertimeRequestRecord, 'lines' | 'appliedBookingIds'>,
-  decisions: Record<string, OvertimeDecision | null | undefined>
-): boolean {
-  const done = new Set((request.appliedBookingIds || []).map(idKey))
-  const keyed = new Map(Object.entries(decisions || {}).map(([key, value]) => [idKey(key), value]))
-  return request.lines.some((line) => !done.has(idKey(line.bookingId)) && Boolean(keyed.get(idKey(line.bookingId))))
+/**
+ * 1.33.0: the message after a Return: "Returned 5 lines." then why any line was left out or sent back — "2 changed
+ * since they sent it — they need to send those again." No "need an admin" and no "not decided yet" (Return needs every
+ * line decided and a line manager decides every line).
+ */
+export function overtimeReturnMessage(input: {
+  returned: number
+  counts?: Partial<Record<'stale' | 'refused' | 'deleted' | 'unreadable' | 'foreign', number>> | null
+}): string {
+  const counts = input.counts || {}
+  const phrase = (n: number | undefined, one: string, many: string) => (n && n > 0 ? `${n} ${n === 1 ? one : many}` : '')
+  const parts = [`Returned ${input.returned} ${input.returned === 1 ? 'line' : 'lines'}.`]
+  if (counts.stale && counts.stale > 0) {
+    parts.push(`${counts.stale} changed since they sent it — they need to send ${counts.stale === 1 ? 'it' : 'those'} again.`)
+  }
+  const left = [
+    phrase(counts.refused, 'could not be removed', 'could not be removed'),
+    phrase(counts.deleted, 'deleted booking left out', 'deleted bookings left out'),
+    phrase(counts.unreadable, "booking you can't read left out", "bookings you can't read left out"),
+    phrase(counts.foreign, 'booking not theirs left out', 'bookings not theirs left out'),
+  ].filter(Boolean)
+  if (left.length > 0) parts.push(`${left.join('; ')}.`)
+  return parts.join(' ')
 }
 
 /**
- * Approve (line manager or admin, online, one transaction that re-reads every booking). 1.32.0, partial approval
- * (owner decisions 4 Nov): each decided line the decider may apply is applied — tick: the request's proposal; X: the
- * strike outcome; cog: the decider's times and rate — as a booking write plus one review with the booking's new
- * fingerprint. Every other line stays waiting on the request, or is left out, and is named in `lineOutcomes`:
- * `undecided` (no tick, cross or cog yet), `stale` (the booking no longer matches the request — an old request never
- * overwrites a newer booking), `needsAdmin` (owner decision A: a line manager never decides a line whose booking is filed under
- * an `operatives` row — tick, cross or cog, written or not — unless they manage its job; an admin approves it later), `refused` (an X that is not allowed),
- * and the left-out `deleted` / `unreadable` / `foreign` bookings. Lines applied by an earlier partial approval are
- * skipped (`alreadyApplied`). The request stays `pending` (with `decisions`, `appliedBookingIds` and `droppedBookingIds`
- * accumulated) until no line is left waiting, then becomes `approved`. Nothing applied at all → `ok: false`,
- * `nothingApproved`, with `reviewApprovalMessage` ("Nothing was approved: …"); otherwise `message` is "Approved X of
- * Y. …". `bookings` maps booking id (any case) → the live booking; a missing entry is a deleted booking. The app adds
- * `decidedAt` / `reviewedAt` (server time) and write metadata.
+ * 1.33.0: Return gating (owner 6 Nov): green only when every line of the request that is still waiting has a decision
+ * (tick, cross, or cog + tick). Lines applied by a 1.32 partial approval are done; `skipBookingIds` (bookings the
+ * decider cannot read, or no longer there) are left out and do not block. Replaces `overtimeRequestAnyDecided`.
  */
-export function overtimeApprovalWrites(input: {
+export function overtimeReturnReady(input: {
+  request: Pick<OvertimeRequestRecord, 'lines' | 'status' | 'appliedBookingIds' | 'droppedBookingIds'>
+  decisions: Record<string, OvertimeDecision | null | undefined>
+  skipBookingIds?: ReadonlyArray<string> | null
+}): { ready: boolean; undecidedCount: number; message: string | null } {
+  const request = input.request
+  if (request.status !== 'pending') return { ready: false, undecidedCount: 0, message: OVERTIME_REQUEST_NOT_PENDING_MESSAGE }
+  const done = new Set([...(request.appliedBookingIds || []), ...(request.droppedBookingIds || []), ...(input.skipBookingIds || [])].map(idKey))
+  const keyed = new Map(Object.entries(input.decisions || {}).map(([key, value]) => [idKey(key), value]))
+  const open = request.lines.filter((line) => !done.has(idKey(line.bookingId)))
+  const undecidedCount = open.filter((line) => !keyed.get(idKey(line.bookingId))).length
+  const ready = undecidedCount === 0 && request.lines.length > 0
+  return { ready, undecidedCount, message: ready ? null : OVERTIME_REQUEST_UNDECIDED_MESSAGE }
+}
+
+/**
+ * Return overtime (line manager or admin, online, one transaction that re-reads the request and every booking).
+ * 1.33.0 (owner decisions 6 Nov) — the only action that writes the bookings and the reviews; every waiting line must
+ * be decided (`overtimeReturnReady`, else `ok: false`, `undecided`). Per line:
+ *   - **✓** applies the person's line: keep (no booking write, review `approved`), their cog (review `edited`), their
+ *     red X — a trim (review `trimmed`) or, on an all-overtime day, the booking **deleted** with a tombstone carrying
+ *     `overtimeRequestId` (`bookingDeletes`, review `deleted`, the id in `deletedBookingIds`);
+ *   - **✕** means "I don't agree with this line at all" (Q-A2): the booking is left as it was, review `declined`;
+ *   - **⚙ + ✓** applies the decider's own start, finish and rate (review `changed`).
+ * Skip-and-name (Q-A1): a line whose booking changed since it was sent is not applied and goes back to the person
+ * (`staleBookingIds`, outcome `stale`); a booking deleted meanwhile, unreadable to the decider, or not the
+ * requester's is left out and named (`droppedBookingIds`). A line applied by a 1.32 partial approval is skipped
+ * (`alreadyApplied`). Every booking on any of `requesterIds` may be decided (`overtimeDeciderMayWriteBooking`, item b).
+ * The request becomes `approved` with `decisions`, `decidedBy`, `appliedBookingIds`, `droppedBookingIds`,
+ * `staleBookingIds` and `deletedBookingIds`. The app adds `decidedAt` / `reviewedAt` / the tombstone's `deletedAt`
+ * (server time) and write metadata.
+ */
+export function overtimeReturnWrites(input: {
   request: OvertimeRequestRecord
   decisions: Record<string, OvertimeDecision>
   bookings: Record<string, OvertimeBookingInput | null | undefined>
@@ -1141,39 +1347,31 @@ export function overtimeApprovalWrites(input: {
   deciderId: string
   /** Every id the requester goes by (`overtimePersonIds`); default `[request.userId]`. */
   requesterIds?: ReadonlyArray<string> | null
-  /** True for an admin outside operative mode (writes every booking). */
-  deciderIsAdmin?: boolean | null
-  /** Bookings the decider may write under `canWriteBooking` (e.g. jobs they manage). */
-  writableBookingIds?: ReadonlyArray<string> | null
   /** Bookings the decider could not read: left out, nothing written for them. */
   unreadableBookingIds?: ReadonlyArray<string> | null
+  /** `web` / `ios` / `android`, for the tombstone's `deletedFrom`. Default `web`. */
+  platform?: string | null
 }):
   | {
       ok: true
       bookingWrites: OvertimeBookingWrite[]
+      bookingDeletes: OvertimeBookingDelete[]
       reviewWrites: OvertimeReviewWrite[]
-      /** Lines applied by this approval. */
+      /** Lines returned by this Return (✓, ✕ and ⚙ alike). */
       appliedBookingIds: string[]
-      /** Deleted, unreadable or not the requester's: left out (all named in the request's `droppedBookingIds`). */
-      droppedBookingIds: string[]
+      declinedBookingIds: string[]
+      staleBookingIds: string[]
+      /** Bookings deleted by this Return (an approved red X on an all-overtime day). */
       deletedBookingIds: string[]
+      /** Deleted meanwhile, unreadable, refused or not the requester's: left out (`droppedBookingIds`). */
+      droppedBookingIds: string[]
       unreadableBookingIds: string[]
       foreignBookingIds: string[]
-      /** Still waiting on the request after this approval. */
-      waitingBookingIds: string[]
       lineOutcomes: Record<string, OvertimeLineOutcome>
       requestFields: Record<string, unknown>
-      /** True when the request is now approved (nothing left waiting). */
-      complete: boolean
       message: string
     }
-  | {
-      ok: false
-      reason: 'notPending' | 'nothingApproved'
-      bookingIds: string[]
-      lineOutcomes: Record<string, OvertimeLineOutcome>
-      message: string
-    } {
+  | { ok: false; reason: 'notPending' | 'undecided'; bookingIds: string[]; lineOutcomes: Record<string, OvertimeLineOutcome>; message: string } {
   const request = input.request
   if (request.status !== 'pending') {
     return { ok: false, reason: 'notPending', bookingIds: [], lineOutcomes: {}, message: OVERTIME_REQUEST_NOT_PENDING_MESSAGE }
@@ -1184,29 +1382,41 @@ export function overtimeApprovalWrites(input: {
   const previouslyApplied = new Set((request.appliedBookingIds || []).map(idKey))
   const previouslyDropped = new Set((request.droppedBookingIds || []).map(idKey))
   const requesterIds = input.requesterIds && input.requesterIds.length > 0 ? input.requesterIds : [request.userId]
+  const platform = text(input.platform) || 'web'
+  const deciderId = text(input.deciderId)
   const outcomes: Record<string, OvertimeLineOutcome> = {}
   const bookingWrites: OvertimeBookingWrite[] = []
+  const bookingDeletes: OvertimeBookingDelete[] = []
   const reviewWrites: OvertimeReviewWrite[] = []
   const applied: string[] = []
+  const declined: string[] = []
+  const stale: string[] = []
+  const removed: string[] = []
   const deleted: string[] = []
   const unreadableIds: string[] = []
   const foreign: string[] = []
-  const waiting: string[] = []
+  const refused: string[] = []
+  const undecided: string[] = []
   const storedDecisions: Record<string, Record<string, unknown>> = {}
-  for (const [bookingId, decision] of Object.entries(request.decisions || {})) {
-    storedDecisions[bookingId] =
-      decision.action === 'edit'
-        ? { action: 'edit', start: clockOf(decision.start), end: clockOf(decision.end), multiplier: decision.multiplier ?? null }
-        : { action: decision.action }
-  }
-  let pendingLines = 0
+  for (const [bookingId, decision] of Object.entries(request.decisions || {})) storedDecisions[bookingId] = storedDecision(decision)
+  const review = (line: OvertimeRequestLine, decision: OvertimeReviewDecision, fingerprint: string): OvertimeReviewWrite => ({
+    docId: overtimeReviewDocId(request.userId, line.bookingId),
+    fields: {
+      userId: request.userId,
+      bookingId: line.bookingId,
+      collection: line.collection,
+      decision,
+      fingerprint,
+      reviewedBy: deciderId,
+      requestId: request.id,
+    },
+  })
   for (const line of request.lines) {
     const key = idKey(line.bookingId)
     if (previouslyApplied.has(key) || previouslyDropped.has(key)) {
       outcomes[line.bookingId] = 'alreadyApplied'
       continue
     }
-    pendingLines += 1
     if (unreadable.has(key)) {
       unreadableIds.push(line.bookingId)
       outcomes[line.bookingId] = 'unreadable'
@@ -1218,115 +1428,127 @@ export function overtimeApprovalWrites(input: {
       outcomes[line.bookingId] = 'deleted'
       continue
     }
-    // A request can only ever change the requester's own bookings.
-    if (!overtimeBookingIsTheirs(booking, requesterIds)) {
+    // A request can only ever change the requester's own bookings (any id they go by — item b).
+    if (
+      !overtimeBookingIsTheirs(booking, requesterIds) ||
+      !overtimeDeciderMayWriteBooking({ booking, requesterUserId: request.userId, requesterIds })
+    ) {
       foreign.push(line.bookingId)
       outcomes[line.bookingId] = 'foreign'
       continue
     }
     const decision = decisions.get(key) as OvertimeDecision | undefined
     if (!decision) {
-      waiting.push(line.bookingId)
-      outcomes[line.bookingId] = 'undecided'
+      undecided.push(line.bookingId)
       continue
     }
     if (overtimeBookingFingerprint(booking) !== line.fingerprint) {
-      waiting.push(line.bookingId)
+      stale.push(line.bookingId)
       outcomes[line.bookingId] = 'stale'
       continue
     }
-    // Owner decision A (1.32.0 review fix r274 S1): who may decide a line follows the booking's person id, whether or not
-    // the decision writes the booking — a keep line or a same-times cog under an `operatives` row needs an admin too.
-    if (
-      !overtimeDeciderMayWriteBooking({
-        booking,
-        requesterUserId: request.userId,
-        deciderIsAdmin: input.deciderIsAdmin,
-        writableBookingIds: input.writableBookingIds,
-      })
-    ) {
-      waiting.push(line.bookingId)
-      outcomes[line.bookingId] = 'needsAdmin'
+    if (decision.action === 'strike') {
+      // ✕: the decider does not agree with the line — the booking stays as it was.
+      reviewWrites.push(review(line, 'declined', overtimeBookingFingerprint(booking)))
+      storedDecisions[line.bookingId] = storedDecision(decision)
+      declined.push(line.bookingId)
+      applied.push(line.bookingId)
+      outcomes[line.bookingId] = 'declined'
       continue
     }
-    const { change, refused: why } = decisionToChange(line, decision, booking, input.organization, input.timeZone)
-    if (why) {
-      waiting.push(line.bookingId)
-      outcomes[line.bookingId] = 'refused'
-      continue
+    let change: OvertimeBookingChange | null = null
+    let reviewDecision: OvertimeReviewDecision = 'approved'
+    if (decision.action === 'edit') {
+      if (overtimeEditValidationError(decision)) {
+        undecided.push(line.bookingId)
+        continue
+      }
+      change = { kind: 'edit', start: decision.start, end: decision.end, multiplier: decision.multiplier }
+      reviewDecision = 'changed'
+    } else if (line.action === 'edit' && line.proposedStart && line.proposedEnd) {
+      change = { kind: 'edit', start: line.proposedStart, end: line.proposedEnd, multiplier: line.proposedMultiplier }
+      reviewDecision = 'edited'
+    } else if (line.action === 'strike') {
+      const outcome = overtimeStrikeOutcome({ booking, organization: input.organization, timeZone: input.timeZone })
+      if (outcome.kind === 'delete') {
+        const del = overtimeBookingDelete({ booking, deletedBy: deciderId, platform, overtimeRequestId: request.id })
+        if (!del) {
+          refused.push(line.bookingId)
+          outcomes[line.bookingId] = 'refused'
+          continue
+        }
+        bookingDeletes.push(del)
+        reviewWrites.push(review(line, 'deleted', overtimeBookingFingerprint(booking)))
+        storedDecisions[line.bookingId] = storedDecision(decision)
+        removed.push(line.bookingId)
+        applied.push(line.bookingId)
+        outcomes[line.bookingId] = 'removed'
+        continue
+      }
+      if (outcome.kind === 'notAllowed') {
+        refused.push(line.bookingId)
+        outcomes[line.bookingId] = 'refused'
+        continue
+      }
+      if (outcome.kind === 'trim') {
+        change = { kind: 'trim', start: outcome.start, end: outcome.end }
+        reviewDecision = 'trimmed'
+      }
     }
-    const next = change ? overtimeBookingAfter(booking, change) : booking
-    let bookingWrite: OvertimeBookingWrite | null = null
+    let next = booking
     if (change) {
       const fields = overtimeBookingWriteFields(booking, change)
       if (Object.keys(fields.set).length > 0 || fields.remove.length > 0) {
-        bookingWrite = { collection: line.collection, bookingId: line.bookingId, ...fields }
+        bookingWrites.push({ collection: line.collection, bookingId: line.bookingId, ...fields })
+        next = overtimeBookingAfter(booking, change)
       }
     }
-    if (bookingWrite) bookingWrites.push(bookingWrite)
-    storedDecisions[line.bookingId] =
-      decision.action === 'edit'
-        ? { action: 'edit', start: clockOf(decision.start), end: clockOf(decision.end), multiplier: decision.multiplier ?? null }
-        : { action: decision.action }
-    reviewWrites.push({
-      docId: overtimeReviewDocId(request.userId, line.bookingId),
-      fields: {
-        userId: request.userId,
-        bookingId: line.bookingId,
-        collection: line.collection,
-        decision: reviewDecisionFor(change),
-        fingerprint: overtimeBookingFingerprint(next),
-        reviewedBy: text(input.deciderId),
-        requestId: request.id,
-      },
-    })
+    reviewWrites.push(review(line, reviewDecision, overtimeBookingFingerprint(next)))
+    storedDecisions[line.bookingId] = storedDecision(decision)
     applied.push(line.bookingId)
     outcomes[line.bookingId] = 'applied'
   }
-  const count = (kind: OvertimeLineOutcome) => Object.values(outcomes).filter((value) => value === kind).length
-  const counts = {
-    needsAdmin: count('needsAdmin'),
-    undecided: count('undecided'),
-    stale: count('stale'),
-    refused: count('refused'),
-    deleted: count('deleted'),
-    unreadable: count('unreadable'),
-    foreign: count('foreign'),
+  if (undecided.length > 0) {
+    return { ok: false, reason: 'undecided', bookingIds: undecided, lineOutcomes: outcomes, message: OVERTIME_REQUEST_UNDECIDED_MESSAGE }
   }
-  const message = reviewApprovalMessage({ approved: applied.length, total: pendingLines, counts })
-  if (applied.length === 0) {
-    return { ok: false, reason: 'nothingApproved', bookingIds: [...waiting, ...deleted, ...unreadableIds, ...foreign], lineOutcomes: outcomes, message }
-  }
-  const newlyDropped = [...deleted, ...unreadableIds, ...foreign]
-  const complete = waiting.length === 0
+  const newlyDropped = [...deleted, ...unreadableIds, ...foreign, ...refused]
+  const message = overtimeReturnMessage({
+    returned: applied.length,
+    counts: { stale: stale.length, refused: refused.length, deleted: deleted.length, unreadable: unreadableIds.length, foreign: foreign.length },
+  })
   return {
     ok: true,
     bookingWrites,
+    bookingDeletes,
     reviewWrites,
     appliedBookingIds: applied,
+    declinedBookingIds: declined,
+    staleBookingIds: stale,
+    deletedBookingIds: removed,
     droppedBookingIds: newlyDropped,
-    deletedBookingIds: deleted,
     unreadableBookingIds: unreadableIds,
     foreignBookingIds: foreign,
-    waitingBookingIds: waiting,
     lineOutcomes: outcomes,
-    complete,
     message,
     requestFields: {
-      status: complete ? 'approved' : 'pending',
+      status: 'approved',
       decisions: storedDecisions,
-      decidedBy: text(input.deciderId),
+      decidedBy: deciderId,
       appliedBookingIds: [...(request.appliedBookingIds || []), ...applied],
       droppedBookingIds: [...(request.droppedBookingIds || []), ...newlyDropped],
+      staleBookingIds: stale,
+      deletedBookingIds: removed,
     },
   }
 }
 
 /**
- * A direct change by a PAYE admin, or a PAYE manager who may edit the booking (`canEditOwnBookingOvertime` = direct):
- * tick (approve as it is), X (strike) or cog (edit). → the booking write (null for a tick) and the review with the
- * booking's new fingerprint; `hoursChanged` is true when the booking changes (then `booking_hours_changed_by_owner`
- * goes to `bookingHoursChangedRecipients`). Null when the X is not allowed (manager site booking with nothing inside).
+ * A direct change by a PAYE person with no line manager (or the Super Admin) who may write the booking
+ * (`canEditOwnBookingOvertime` = direct): tick (as it is), X (strike) or cog (edit) → the booking write (null for a
+ * tick), 1.33.0 the booking delete with its tombstone for an X on an all-overtime day (`bookingDelete`, review
+ * `deleted`), and the review with the booking's new fingerprint; `hoursChanged` is true when the booking changes (then
+ * `booking_hours_changed_by_owner` goes to `bookingHoursChangedRecipients`). Null when the X is not allowed (manager
+ * site booking with nothing inside).
  */
 export function overtimeDirectWrites(input: {
   booking: OvertimeBookingInput
@@ -1335,35 +1557,48 @@ export function overtimeDirectWrites(input: {
   reviewerId: string
   organization: OvertimeOrganization
   timeZone?: string | null
-}): { bookingWrite: OvertimeBookingWrite | null; reviewWrite: OvertimeReviewWrite; hoursChanged: boolean } | null {
+  /** `web` / `ios` / `android`, for a delete's tombstone. Default `web`. */
+  platform?: string | null
+}): { bookingWrite: OvertimeBookingWrite | null; bookingDelete: OvertimeBookingDelete | null; reviewWrite: OvertimeReviewWrite; hoursChanged: boolean } | null {
   const booking = input.booking
   let change: OvertimeBookingChange | null = null
+  let decision: OvertimeReviewDecision = 'approved'
+  const reviewWrite = (reviewDecision: OvertimeReviewDecision, fingerprint: string): OvertimeReviewWrite => ({
+    docId: overtimeReviewDocId(input.userId, booking.id),
+    fields: {
+      userId: text(input.userId),
+      bookingId: text(booking.id),
+      collection: collectionOf(booking),
+      decision: reviewDecision,
+      fingerprint,
+      reviewedBy: text(input.reviewerId),
+      requestId: null,
+    },
+  })
   if (input.action.action === 'edit') {
     if (overtimeEditValidationError(input.action)) return null
     change = { kind: 'edit', start: input.action.start, end: input.action.end, multiplier: input.action.multiplier }
+    decision = 'edited'
   } else if (input.action.action === 'strike') {
     const outcome = overtimeStrikeOutcome({ booking, organization: input.organization, timeZone: input.timeZone })
     if (outcome.kind === 'notAllowed') return null
-    if (outcome.kind === 'trim') change = { kind: 'trim', start: outcome.start, end: outcome.end }
-    if (outcome.kind === 'cancel') change = { kind: 'cancel' }
+    if (outcome.kind === 'trim') {
+      change = { kind: 'trim', start: outcome.start, end: outcome.end }
+      decision = 'trimmed'
+    }
+    if (outcome.kind === 'delete') {
+      const del = overtimeBookingDelete({ booking, deletedBy: input.reviewerId, platform: text(input.platform) || 'web' })
+      if (!del) return null
+      return { bookingWrite: null, bookingDelete: del, reviewWrite: reviewWrite('deleted', overtimeBookingFingerprint(booking)), hoursChanged: true }
+    }
   }
   const fields = change ? overtimeBookingWriteFields(booking, change) : { set: {}, remove: [] as string[] }
   const changed = Object.keys(fields.set).length > 0 || fields.remove.length > 0
   const next = change && changed ? overtimeBookingAfter(booking, change) : booking
   return {
     bookingWrite: changed ? { collection: collectionOf(booking), bookingId: text(booking.id), ...fields } : null,
-    reviewWrite: {
-      docId: overtimeReviewDocId(input.userId, booking.id),
-      fields: {
-        userId: text(input.userId),
-        bookingId: text(booking.id),
-        collection: collectionOf(booking),
-        decision: reviewDecisionFor(changed ? change : null),
-        fingerprint: overtimeBookingFingerprint(next),
-        reviewedBy: text(input.reviewerId),
-        requestId: null,
-      },
-    },
+    bookingDelete: null,
+    reviewWrite: reviewWrite(changed ? decision : 'approved', overtimeBookingFingerprint(next)),
     hoursChanged: changed,
   }
 }
@@ -1385,7 +1620,7 @@ export function overtimeRequestRecipients(requester: NotificationPerson, roster:
   return excludeActor([...managers, ...admins], person, members)
 }
 
-/** `overtime_request_reviewed` ("Overtime update"): the requester, unless they decided. */
+/** `overtime_request_reviewed`: the requester, unless they decided. 1.33.0 name: `overtimeReturnedRecipients`. */
 export function overtimeReviewedRecipients(
   requester: NotificationPerson,
   decider: NotificationPerson,
@@ -1393,6 +1628,152 @@ export function overtimeReviewedRecipients(
 ): string[] {
   const id = typeof requester === 'string' ? idText(requester) : idText(requester?.id)
   return id ? excludeActor([id], decider, roster) : []
+}
+
+/** 1.33.0: who hears that a request was returned (`overtime_request_reviewed`): the requester, unless they decided. */
+export const overtimeReturnedRecipients = overtimeReviewedRecipients
+
+/**
+ * 1.33.0 (owner 6 Nov): the `overtime_request_reviewed` notice after a Return. The person's line manager: "Your line
+ * manager {name} has returned your overtime request"; anyone else (an admin deciding): "{name} has returned your
+ * overtime request". `deciderIsLineManager` comes from `lineManagerIds(requester, roster)`.
+ */
+export function overtimeReturnedMessage(input: { deciderName: string | null | undefined; deciderIsLineManager: boolean }): {
+  title: string
+  message: string
+} {
+  const name = text(input.deciderName) || (input.deciderIsLineManager ? 'Your line manager' : 'An admin')
+  return {
+    title: 'Overtime returned',
+    message: input.deciderIsLineManager
+      ? text(input.deciderName)
+        ? `Your line manager ${name} has returned your overtime request`
+        : 'Your line manager has returned your overtime request'
+      : `${name} has returned your overtime request`,
+  }
+}
+
+/** 1.33.0: whether `decider` is one of the requester's line managers (any id they go by). */
+export function overtimeDeciderIsLineManager(
+  decider: NotificationPerson,
+  requester: (LeaveSelfBookUser & { id?: string | null }) | null | undefined,
+  roster: ReadonlyArray<NotificationRosterMember> | null | undefined
+): boolean {
+  if (!requester) return false
+  const members = (roster || []).filter((member) => member && idText(member.id))
+  const deciderRow =
+    typeof decider === 'string' ? members.find((member) => idKey(member.id) === idKey(decider)) ?? { id: decider } : decider
+  if (!deciderRow || !idText((deciderRow as { id?: string }).id)) return false
+  const deciderIds = new Set(personIdSet(deciderRow as never, members as never).map(idKey))
+  return lineManagerIds(requester, members).some((id) => deciderIds.has(idKey(id)))
+}
+
+/** 1.33.0: the `overtime_request_submitted` notice to the line managers and admins (`overtimeRequestRecipients`). */
+export function overtimeRequestSubmittedMessage(input: { requesterName: string | null | undefined; rangeStart: string; rangeEnd: string }): {
+  title: string
+  message: string
+} {
+  const name = text(input.requesterName) || 'Someone'
+  return {
+    title: `Overtime request from ${name}`,
+    message: `${name} sent their overtime for ${formatPaymentRunDay(input.rangeStart)} – ${formatPaymentRunDay(input.rangeEnd)} for approval.`,
+  }
+}
+
+/**
+ * 1.33.0 (owner 6 Nov, reopen): whether a booking change (by a manager or an admin, in any editor) reopens an overtime
+ * line — the booking's fingerprint changed (or it was deleted) and the line had been sent (a pending request names its
+ * old fingerprint), confirmed or returned (a review with its old fingerprint). `returned` is true when a Return had
+ * decided it (then the person's line manager is told too). When the editor cannot read the person's requests and
+ * reviews (`reviews` / `requests` null), any change to a booking that had or now has overtime counts as reopened and
+ * `returned` is false. The line then shows `reopened` / `changedSinceRequest` (`payeOvertimeLines`) and a saved report
+ * of its range reads out of date (`overtimeReportOutOfDate`).
+ */
+export function overtimeLineReopened(input: {
+  before: OvertimeBookingInput | null | undefined
+  after: OvertimeBookingInput | null | undefined
+  organization: OvertimeOrganization
+  timeZone?: string | null
+  reviews?: ReadonlyArray<OvertimeReviewRecord> | null
+  requests?: ReadonlyArray<OvertimeRequestRecord> | null
+}): { reopened: boolean; returned: boolean } {
+  const before = input.before
+  if (!before || !text(before.id)) return { reopened: false, returned: false }
+  const oldPrint = overtimeBookingFingerprint(before)
+  if (input.after && overtimeBookingFingerprint(input.after) === oldPrint) return { reopened: false, returned: false }
+  if (input.reviews == null || input.requests == null) {
+    const had =
+      overtimeForBooking({ booking: before, organization: input.organization, timeZone: input.timeZone }) != null ||
+      (input.after ? overtimeForBooking({ booking: input.after, organization: input.organization, timeZone: input.timeZone }) != null : false)
+    return { reopened: had, returned: false }
+  }
+  const review = input.reviews.find((row) => idKey(row.bookingId) === idKey(before.id) && row.fingerprint === oldPrint) ?? null
+  const pending = newestPending(input.requests, before.id)
+  const sent = pending != null && pending.line.fingerprint === oldPrint
+  const returned = Boolean(review && review.requestId && review.decision !== 'deleted')
+  return { reopened: sent || Boolean(review), returned }
+}
+
+/**
+ * 1.33.0: who hears that a line reopened: the booked person (any id they go by → their account, PAYE only), plus their
+ * active line managers when the line had been returned — never the person who changed the booking.
+ */
+export function overtimeReopenedRecipients(input: {
+  bookedId: string
+  actor: NotificationPerson
+  roster: ReadonlyArray<NotificationRosterMember> | null | undefined
+  operatives?: ReadonlyArray<{ id?: string | null; email?: string | null }> | null
+  returned: boolean
+}): string[] {
+  const members = (input.roster || []).filter((member) => member && idText(member.id))
+  const catalogue = (input.operatives || []).filter((row) => row && idText(row.id)).map((row) => ({ id: idText(row.id), email: row.email ?? null }))
+  const account = notificationRecipientAccountId(input.bookedId, members, catalogue as never)
+  if (!account) return []
+  const person = members.find((member) => idKey(member.id) === idKey(account))
+  if (!person || text(person.employmentType).toLowerCase() !== 'paye') return []
+  const managers = input.returned ? lineManagerIds(person as LeaveSelfBookUser, members) : []
+  return excludeActor([account, ...managers], input.actor, members)
+}
+
+/** 1.33.0: the reopen notice (sent as `overtime_request_reviewed`, which opens the person's Overtime for that day). */
+export function overtimeReopenedMessage(input: { dayKey: string; jobNumber?: string | null; forLineManager?: boolean; personName?: string | null }): {
+  title: string
+  message: string
+} {
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(text(input.dayKey)) ? formatPaymentRunDay(text(input.dayKey)) : 'a day'
+  const job = text(input.jobNumber) ? ` (${text(input.jobNumber)})` : ''
+  if (input.forLineManager) {
+    const who = text(input.personName) || 'Someone'
+    return { title: 'Overtime line reopened', message: `${who}'s booking on ${day}${job} changed after you returned their overtime. They need to check it and send it again.` }
+  }
+  return { title: 'Overtime line reopened', message: `Your booking on ${day}${job} changed. Check that overtime line and send it again.` }
+}
+
+/**
+ * 1.33.0: where an overtime notice opens (both apps): the current PAYE payrun when the request's range (or the day)
+ * is in it — `{ range: 'current' }` — else that past payrun (`{ range: 'past', start, end }`), else the request's own
+ * range (`{ range: 'custom', start, end }`). Null when nothing usable is given.
+ */
+export function overtimeNotificationRange(input: {
+  organization: OvertimeOrganization
+  todayKey: string
+  rangeStart?: string | null
+  rangeEnd?: string | null
+  dayKey?: string | null
+}): { range: 'current' | 'past' | 'custom'; start: string; end: string } | null {
+  const rangeStart = dayKeyOrEmpty(input.rangeStart)
+  const rangeEnd = dayKeyOrEmpty(input.rangeEnd)
+  const day = rangeStart || dayKeyOrEmpty(input.dayKey)
+  if (!day) return null
+  const current = payePayrunPeriod(input.organization, text(input.todayKey))
+  const containing = payePayrunPeriod(input.organization, day)
+  const fits = (period: { start: string; end: string } | null) =>
+    Boolean(period && day >= period.start && day <= period.end && (!rangeEnd || rangeEnd <= period.end))
+  if (current && fits(current)) return { range: 'current', start: current.start, end: current.end }
+  if (containing && fits(containing)) return { range: 'past', start: containing.start, end: containing.end }
+  if (rangeStart && rangeEnd && rangeStart <= rangeEnd) return { range: 'custom', start: rangeStart, end: rangeEnd }
+  if (containing) return { range: 'past', start: containing.start, end: containing.end }
+  return { range: 'custom', start: day, end: day }
 }
 
 /**
@@ -1427,6 +1808,16 @@ export type OvertimeReportLine = {
   breakHours: number
   overtimeHours: number
   text: string
+  /** 1.33.0: the booking's fingerprint when the report was generated ('' on older reports) — `overtimeReportOutOfDate`. */
+  fingerprint?: string
+  /** 1.33.0: the line's state then (`returnedDeclined` / `deleted` lines are listed at 0h). */
+  state?: string
+  /** 1.33.0: "Declined by {name}" or "Booking removed — not worked" ('' otherwise). */
+  note?: string
+  /** 1.33.0: the line manager declined it (✕); listed at 0h. */
+  declined?: boolean
+  /** 1.33.0: who declined it ('' otherwise). */
+  declinedByName?: string
 }
 
 export type OvertimeReportSnapshot = {
@@ -1443,8 +1834,11 @@ export type OvertimeReportSnapshot = {
 
 /**
  * The saved copy of an overtime report (`overtimeReports/{id}`, created once by the person, never changed): who,
- * the range, one line per day and job with the final figures (hours only) and the totals. Cancelled lines are left
- * out. The app adds `generatedAt` (server time). The PDF is rebuilt from this copy (`overtimeReportRows`).
+ * the range, one line per day and job with the final figures (hours only) and the totals. Cancelled (1.29–1.32) lines
+ * are left out. 1.33.0 (owner 6 Nov): a line the line manager declined is listed at 0h, "Declined by {name}", and a
+ * booking an approved red X deleted at 0h, "Booking removed — not worked"; each line keeps the booking's fingerprint
+ * and state so a later change marks the report out of date (`overtimeReportOutOfDate`). The app adds `generatedAt`
+ * (server time). The PDF is rebuilt from this copy (`overtimeReportRows`).
  */
 export function overtimeReportSnapshot(input: {
   userId: string
@@ -1456,21 +1850,35 @@ export function overtimeReportSnapshot(input: {
   generatedBy: string
 }): OvertimeReportSnapshot {
   const lines: OvertimeReportLine[] = input.lines
-    .filter((line) => line.state !== 'cancelled' && line.figures)
-    .map((line) => ({
-      bookingId: line.bookingId,
-      dayKey: line.dayKey,
-      dayLabel: line.dayLabel,
-      jobNumber: line.jobNumber,
-      jobName: line.jobName,
-      start: line.start,
-      end: line.end,
-      clockHours: line.figures!.clockHours,
-      multiplier: line.figures!.multiplier,
-      breakHours: line.figures!.breakHours,
-      overtimeHours: line.figures!.overtimeHours,
-      text: line.figures!.text,
-    }))
+    .filter((line) => line.state !== 'cancelled' && (line.figures || line.state === 'deleted'))
+    .map((line) => {
+      const zero = line.state === 'deleted' || line.state === 'returnedDeclined'
+      const note =
+        line.state === 'returnedDeclined'
+          ? `Declined by ${line.deciderName || 'your line manager'}`
+          : line.state === 'deleted'
+            ? OVERTIME_LINE_STATE_LABELS.deleted
+            : ''
+      return {
+        bookingId: line.bookingId,
+        dayKey: line.dayKey,
+        dayLabel: line.dayLabel,
+        jobNumber: line.jobNumber,
+        jobName: line.jobName,
+        start: line.start,
+        end: line.end,
+        clockHours: zero ? 0 : line.figures!.clockHours,
+        multiplier: line.figures?.multiplier ?? 1,
+        breakHours: zero ? 0 : line.figures!.breakHours,
+        overtimeHours: zero ? 0 : line.figures!.overtimeHours,
+        text: zero ? `${note} · 0h` : line.figures!.text,
+        fingerprint: line.fingerprint,
+        state: line.state,
+        note,
+        declined: line.state === 'returnedDeclined',
+        declinedByName: line.state === 'returnedDeclined' ? line.deciderName || '' : '',
+      }
+    })
   return {
     userId: text(input.userId),
     userName: text(input.userName),
@@ -1488,11 +1896,42 @@ export function overtimeReportSnapshot(input: {
   }
 }
 
+/**
+ * 1.33.0 (owner 6 Nov): a saved report is **out of date** when the lines of its range no longer match it — a line it
+ * lists changed (its booking's fingerprint, or on reports before 1.33.0 its hours), a line was added or removed, or a
+ * line is no longer finished (reopened, waiting, changed since sent). The report stays as a record, marked
+ * `OVERTIME_REPORT_OUT_OF_DATE_LABEL`, and Generate turns green again for a replacement (`overtimeGenerateReady`).
+ * `lines` are `payeOvertimeLines` for exactly the report's range.
+ */
+export function overtimeReportOutOfDate(input: {
+  report: Pick<OvertimeReportSnapshot, 'lines'> & { outOfDate?: boolean | null; outOfDateAtMs?: number | null }
+  lines: ReadonlyArray<OvertimeLine>
+}): boolean {
+  if (input.report.outOfDate === true || input.report.outOfDateAtMs != null) return true
+  const live = input.lines.filter((line) => line.state !== 'cancelled')
+  if (live.some((line) => !OVERTIME_DONE_LINE_STATES.includes(line.state))) return true
+  const current = new Map(
+    overtimeReportSnapshot({ userId: '', userName: '', rangeStart: '', rangeEnd: '', lines: live, generatedBy: '' }).lines.map((line) => [
+      idKey(line.bookingId),
+      line,
+    ])
+  )
+  const saved = input.report.lines || []
+  if (saved.length !== current.size) return true
+  for (const line of saved) {
+    const now = current.get(idKey(line.bookingId))
+    if (!now) return true
+    if (text(line.fingerprint) && text(line.fingerprint) !== text(now.fingerprint)) return true
+    if (round2(line.overtimeHours) !== round2(now.overtimeHours)) return true
+  }
+  return false
+}
+
 /** Reads `overtimeReports/{id}` back into a snapshot (plus `id` and `generatedAtMs`). Never throws. */
 export function parseOvertimeReportDocument(
   docId: string,
   data: Record<string, unknown> | null | undefined
-): OvertimeReportSnapshot & { id: string; generatedAtMs: number | null } {
+): OvertimeReportSnapshot & { id: string; generatedAtMs: number | null; outOfDate: boolean; outOfDateAtMs: number | null } {
   const row = data && typeof data === 'object' ? data : {}
   const lines = (Array.isArray(row.lines) ? row.lines : []).map((raw) => {
     const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
@@ -1510,6 +1949,11 @@ export function parseOvertimeReportDocument(
       breakHours: round2(Number(r.breakHours) || 0),
       overtimeHours: round2(Number(r.overtimeHours) || 0),
       text: text(r.text),
+      fingerprint: text(r.fingerprint),
+      state: text(r.state),
+      note: text(r.note),
+      declined: r.declined === true,
+      declinedByName: text(r.declinedByName),
     }
   })
   const totals = (row.totals && typeof row.totals === 'object' ? row.totals : {}) as Record<string, unknown>
@@ -1529,6 +1973,9 @@ export function parseOvertimeReportDocument(
     },
     generatedBy: text(row.generatedBy),
     generatedAtMs: instantMs(row.generatedAt),
+    // 1.33.0: a stored out-of-date mark, if one is ever written (today the apps work it out: `overtimeReportOutOfDate`).
+    outOfDate: row.outOfDate === true || instantMs(row.outOfDateAt ?? row.outOfDateAtMs) != null,
+    outOfDateAtMs: instantMs(row.outOfDateAt ?? row.outOfDateAtMs),
   }
 }
 
