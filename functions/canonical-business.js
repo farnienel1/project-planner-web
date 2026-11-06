@@ -251,6 +251,7 @@ var ProjectPlannerCanonical = (() => {
     OVERTIME_REQUEST_UNDECIDED_MESSAGE: () => OVERTIME_REQUEST_UNDECIDED_MESSAGE,
     OVERTIME_RETURNED_LINE_STATES: () => OVERTIME_RETURNED_LINE_STATES,
     OVERTIME_RETURN_LABEL: () => OVERTIME_RETURN_LABEL,
+    OVERTIME_RETURN_REQUEST_ID_FIELD: () => OVERTIME_RETURN_REQUEST_ID_FIELD,
     OVERTIME_REVIEWS_COLLECTION: () => OVERTIME_REVIEWS_COLLECTION,
     OVERTIME_REVIEW_DECISIONS: () => OVERTIME_REVIEW_DECISIONS,
     OVERTIME_SEND_FOR_APPROVAL_LABEL: () => OVERTIME_SEND_FOR_APPROVAL_LABEL,
@@ -10852,7 +10853,7 @@ var ProjectPlannerCanonical = (() => {
   function rulebookStamp() {
     return {
       version: true ? "1.33.0" : "",
-      sha256: true ? "88bf246088cda248ee8cd1e0dfe2360afbeae84ebfc6ccda327a25723f67cdcf" : ""
+      sha256: true ? "add00719eddfce7737a25e609bd3165b8762bf5a0d732769516088d1e764faa5" : ""
     };
   }
   function rulebookVersionLabel(version) {
@@ -18106,6 +18107,7 @@ var ProjectPlannerCanonical = (() => {
     });
     return tombstone ? { collection: "bookings", bookingId: tombstone.bookingId, tombstone } : null;
   }
+  var OVERTIME_RETURN_REQUEST_ID_FIELD = "overtimeReturnRequestId";
   function overtimeLineOutcomeLabel(outcome) {
     switch (outcome) {
       case "stale":
@@ -18271,7 +18273,12 @@ var ProjectPlannerCanonical = (() => {
       if (change) {
         const fields = overtimeBookingWriteFields(booking, change);
         if (Object.keys(fields.set).length > 0 || fields.remove.length > 0) {
-          bookingWrites.push({ collection: line.collection, bookingId: line.bookingId, ...fields });
+          bookingWrites.push({
+            collection: line.collection,
+            bookingId: line.bookingId,
+            set: { ...fields.set, [OVERTIME_RETURN_REQUEST_ID_FIELD]: request.id },
+            remove: fields.remove
+          });
           next = overtimeBookingAfter(booking, change);
         }
       }

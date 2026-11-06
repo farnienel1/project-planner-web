@@ -21632,7 +21632,8 @@
             "collection": "bookings",
             "bookingId": "B1",
             "set": {
-              "workStartTime": "07:30"
+              "workStartTime": "07:30",
+              "overtimeReturnRequestId": "R1"
             },
             "remove": []
           },
@@ -21641,7 +21642,8 @@
             "bookingId": "B7",
             "set": {
               "workEndTime": "20:00",
-              "otMultiplierOverride": 1.25
+              "otMultiplierOverride": 1.25,
+              "overtimeReturnRequestId": "R1"
             },
             "remove": []
           }
@@ -22070,7 +22072,8 @@
             "collection": "bookings",
             "bookingId": "BR",
             "set": {
-              "workStartTime": "07:30"
+              "workStartTime": "07:30",
+              "overtimeReturnRequestId": "R3"
             },
             "remove": []
           }

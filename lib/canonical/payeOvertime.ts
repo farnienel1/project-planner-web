@@ -1217,6 +1217,15 @@ export function overtimeBookingDelete(input: {
   return tombstone ? { collection: 'bookings', bookingId: tombstone.bookingId, tombstone } : null
 }
 
+/**
+ * 1.33.0: a write-only booking field that `overtimeReturnWrites` sets on every booking change of a Return — the id of
+ * the overtime request being returned. The security rules accept a line manager's overtime-field change of a booking
+ * filed under one of the person's other ids (`formerUserIds` / `sameEmailUserIds` on the person's users document) only
+ * when this field names a request they decided in the same transaction that lists the booking in `appliedBookingIds`
+ * (rulebook §16, §25). No reader uses it; it is never removed.
+ */
+export const OVERTIME_RETURN_REQUEST_ID_FIELD = 'overtimeReturnRequestId'
+
 /** 1.33.0: what happened to one line of a Return (`overtimeReturnWrites` → `lineOutcomes`). */
 export type OvertimeLineOutcome =
   | 'applied'
@@ -1470,7 +1479,15 @@ export function overtimeReturnWrites(input: {
     if (change) {
       const fields = overtimeBookingWriteFields(booking, change)
       if (Object.keys(fields.set).length > 0 || fields.remove.length > 0) {
-        bookingWrites.push({ collection: line.collection, bookingId: line.bookingId, ...fields })
+        // The request id rides on the write (`OVERTIME_RETURN_REQUEST_ID_FIELD`) so the security rules can let the
+        // requester's line manager change a booking filed under any id the person goes by (an old invite id, a
+        // same-email account): they read the request after the transaction and check the booking is the person's.
+        bookingWrites.push({
+          collection: line.collection,
+          bookingId: line.bookingId,
+          set: { ...fields.set, [OVERTIME_RETURN_REQUEST_ID_FIELD]: request.id },
+          remove: fields.remove,
+        })
         next = overtimeBookingAfter(booking, change)
       }
     }
