@@ -99,7 +99,7 @@ Static cost 367,346 → 234,347 (−36%), bytes 142,906 → 137,867, inlined loo
 
 ## Rollout (owner steps; also in the README and the PR)
 
-1. Deploy the functions: `firebase deploy --only functions:authClaimsOnUserWrite,functions:authClaimsOnMembershipWrite,functions:authClaimsOnOrganizationWrite` (from `project-planner-web`, with `functions/canonical-business.js` rebuilt by `npm run build:canonical`).
+1. Deploy the functions: `firebase deploy --only functions:inbox-push:authClaimsOnUserWrite,functions:inbox-push:authClaimsOnMembershipWrite,functions:inbox-push:authClaimsOnOrganizationWrite` (from `project-planner-web`, with `functions/canonical-business.js` rebuilt by `npm run build:canonical`).
 2. Backfill: `node scripts/backfill-auth-claims.mjs --project project-planner-f986c` (dry run), read the totals and the "more organisations than fit" list, then `… --apply`.
 3. Wait one hour (every token in use has been refreshed with claims).
 4. Publish the new rules (`firebase deploy --only firestore:rules`) and check what is live (`docs/firestore-rules-notes.md` "After publishing").
