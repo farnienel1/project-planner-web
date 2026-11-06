@@ -1468,6 +1468,7 @@ export {
   MATERIAL_ORDER_TYPED_RECIPIENTS_MESSAGE,
   MATERIAL_REQUEST_FROM_SUFFIX,
   canSendMaterialOrders,
+  canManageMaterialCatalogue,
   materialOrderRecipientCheck,
   materialRequestEmailEnvelope,
   MATERIAL_REQUEST_JOB_NOT_FOUND_MESSAGE,

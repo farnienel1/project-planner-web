@@ -176,7 +176,7 @@ test('menu matrix covers each level and each permission toggle', () => {
     'dashboard_timesheets',
     'dashboard_variations',
     'dashboard_qualifications',
-    'dashboard_materials',
+    // 1.33.0 (owner decision 4 Nov, `canManageMaterialCatalogue`): the Materials catalogue is admins only.
     'dashboard_ideas',
     'dashboard_change_organisation',
     'dashboard_settings',

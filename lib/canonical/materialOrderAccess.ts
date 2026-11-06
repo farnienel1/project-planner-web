@@ -10,6 +10,8 @@
  *     sender's own copy, and at most `MATERIAL_ORDER_TYPED_RECIPIENTS_MAX` (3) typed addresses that are not saved on a
  *     wholesaler, per send. At least one recipient besides the sender.
  *
+ *   - `canManageMaterialCatalogue(viewer)` (1.33.0): the Materials catalogue is admins only.
+ *
  * The security rules (`materialSendRecords` create and read: admins and managers of the organisation), the web send
  * route and the email function (`material_request`) apply the same tests. Pure, JSON in / JSON out.
  */
@@ -43,6 +45,23 @@ export function canSendMaterialOrders(viewer: MaterialOrderViewer): boolean {
     return level === 'admin' || level === 'manager'
   }
   return isStaffAccount(viewer as StaffAccountRole)
+}
+
+/**
+ * 1.33.0 (owner decision 4 Nov): who adds, edits and deletes Materials catalogue items and prices — admins and super
+ * admins outside operative mode only, on both apps. Managers no longer do (they still search the catalogue when adding
+ * material to a job, and still send quotes and orders, `canSendMaterialOrders`); operatives never. The security rules'
+ * `materialCatalogue` writes apply the same test (organisation admins only).
+ */
+export function canManageMaterialCatalogue(viewer: MaterialOrderViewer): boolean {
+  if (!viewer || typeof viewer !== 'object') return false
+  if ('level' in viewer) {
+    const level = typeof viewer.level === 'string' ? viewer.level.trim().toLowerCase() : ''
+    return level === 'admin'
+  }
+  const role = viewer as StaffAccountRole
+  if (role.isOperativeMode) return false
+  return role.isSuperAdmin === true || role.isAdmin === true
 }
 
 function normalizedEmail(value: unknown): string {

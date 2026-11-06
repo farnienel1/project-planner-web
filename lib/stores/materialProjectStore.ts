@@ -441,8 +441,9 @@ export const useMaterialProjectStore = create<MaterialProjectState>((set, get) =
     const now = new Date()
     const next = [...get().materials]
     const writes: Promise<void>[] = []
-    // No write metadata here: firestore.rules `isStaffMaterialStatusWrite` lets staff who are not the line's owner
-    // change only status, lastSentAt, lastSentRequestType and updatedAt.
+    // Only these fields: the security rules' material update path lets staff who are not the line's owner change only
+    // status, lastSentAt, lastSentRequestType and updatedAt (plus updatedBy / updatedFrom, which must name the writer
+    // and the app when present; not sent here).
     for (const materialId of materialIds) {
       const index = next.findIndex((row) => row.id === materialId)
       if (index < 0) continue

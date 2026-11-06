@@ -407,8 +407,12 @@ function isOperativeModeOnly(person: LabourPerson): boolean {
   return labourBookingKind(person) === 'operative'
 }
 
+/**
+ * The finished, active account among same-email candidates. 1.33.0 (owner row 4 Nov): an inactive account is never
+ * picked — before, it was the fallback, so an inactive person could show as unbooked through their `operatives` row.
+ */
 function preferFinishedAccount(candidates: readonly LabourPerson[]): LabourPerson | undefined {
-  return candidates.find((person) => person.passwordSet && person.isActive) ?? candidates.find((person) => person.passwordSet)
+  return candidates.find((person) => person.passwordSet && person.isActive)
 }
 
 function dedupeFinishedPeople(people: readonly LabourPerson[]): LabourPerson[] {

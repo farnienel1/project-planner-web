@@ -300,7 +300,7 @@ export function priceWorkApproverCandidates(
   return lineManagerCandidates(person, rows).filter((candidate) => {
     const row = rows.find((member) => idText(member?.id) === candidate.id)
     if (!row) return false
-    // 1.30.0 review: the same test as the security rules (`priceWorkApproverValid`) — the approver's users document
+    // 1.30.0 review: the same test as the security rules' price work approver check — the approver's users document
     // names this organisation, and they are an admin or carry the manager flag / role (a flagless "member" is not).
     if (org && !homeOrganizationIs(record(row).organizationId, org)) return false
     return candidate.level === 'admin' || storedManager(row)

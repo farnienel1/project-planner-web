@@ -315,20 +315,30 @@ export function superAdminTransferWrites(input: {
  * the person in this organisation (their id and each same-email document whose `organizationId` is this one — before
  * 1.31.0 only the one document was written and a same-email copy kept the person active), and `accountActive` on
  * their membership here. One batch. Another company's document is never written.
+ *
+ * 1.33.0 (owner row 4 Nov): the person's own users document is written only when it belongs to this organisation —
+ * `person.organizationId`, else their roster row's; when neither is known it is written as before (the rules decide).
+ * A person whose home company is another one is deactivated here through their membership (and any same-email
+ * document of this organisation) only. The membership write is an **update of an existing membership, never a
+ * create**: with `membershipExists: false` it is left out, and the app updates it (never a merge-set), so a missing
+ * membership is never created as a bare `{ accountActive }` document (a session reads any membership as a level).
  */
 export function userActiveWrites(input: {
   organizationId: string
-  person: { id: string; email?: string | null }
+  person: { id: string; email?: string | null; organizationId?: unknown }
   isActive: boolean
   roster?: ReadonlyArray<{ id: string; email?: string | null; organizationId?: unknown }> | null
+  /** 1.33.0: false when the app knows the person has no membership in this organisation (then none is written). */
+  membershipExists?: boolean | null
 }): Array<{ path: string; kind: 'userProfile' | 'membership'; fields: Record<string, unknown> }> {
   const org = text(input?.organizationId)
   const uid = text(input?.person?.id)
   if (!org || !uid || uid.includes('/')) return []
   const active = input.isActive === true
-  const out: Array<{ path: string; kind: 'userProfile' | 'membership'; fields: Record<string, unknown> }> = [
-    { path: `users/${uid}`, kind: 'userProfile', fields: { isActive: active } },
-  ]
+  const out: Array<{ path: string; kind: 'userProfile' | 'membership'; fields: Record<string, unknown> }> = []
+  const ownRow = (input.roster || []).find((row) => idKey(row?.id) === idKey(uid))
+  const homeOrg = text(input.person.organizationId) ? input.person.organizationId : ownRow?.organizationId
+  if (!text(homeOrg) || sameOrg(homeOrg, org)) out.push({ path: `users/${uid}`, kind: 'userProfile', fields: { isActive: active } })
   const email = idKey(input.person.email)
   const seen = new Set([idKey(uid)])
   if (email) {
@@ -339,7 +349,9 @@ export function userActiveWrites(input: {
       out.push({ path: `users/${id}`, kind: 'userProfile', fields: { isActive: active } })
     }
   }
-  out.push({ path: `users/${uid}/orgMemberships/${org}`, kind: 'membership', fields: { accountActive: active } })
+  if (input.membershipExists !== false) {
+    out.push({ path: `users/${uid}/orgMemberships/${org}`, kind: 'membership', fields: { accountActive: active } })
+  }
   return out
 }
 

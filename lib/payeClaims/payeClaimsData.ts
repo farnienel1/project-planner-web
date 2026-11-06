@@ -99,8 +99,8 @@ export function listenPayeClaims(
 
 /**
  * Rulebook 1.32.0 (`overtimePersonIds`): live items of one person under every id they go by, one `userId ==` query per
- * id, merged. The first id is the person's users id; a refused read under another id (a line manager may read only
- * the users id they manage — those items need an admin, decision A) is left out silently.
+ * id, merged. The first id is the person's users id; a refused read under another id is left out silently (the
+ * security rules let a line manager read items only under a users id whose document names them as line manager).
  */
 export function listenPersonPayeClaims(
   organizationId: string,
@@ -164,7 +164,10 @@ export function listenPayeClaimReviews(
   return () => stops.forEach((stop) => stop())
 }
 
-/** Rulebook 1.32.0 §26: Approve — every review of `payeClaimReviewWrites` in one batch. */
+/**
+ * Rulebook 1.32.0 §26: Approve — every review of `payeClaimReviewWrites` in one batch, fields as given (1.33.0: including
+ * `personUserId` on an item filed under another of the person's ids, so the line manager's review is allowed).
+ */
 export async function savePayeClaimReviews(organizationId: string, writes: ReadonlyArray<{ docId: string; fields: Record<string, unknown> }>): Promise<void> {
   if (writes.length === 0) return
   const batch = writeBatch(db)
