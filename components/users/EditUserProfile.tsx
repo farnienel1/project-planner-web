@@ -568,7 +568,12 @@ export function EditUserProfile({
     setSentInvitation(null)
     if (!invitationLookupEmail || !organization?.id || !currentUser?.id) return
     let cancelled = false
-    loadSentInvitation({ organizationId: organization.id, uid: currentUser.id, email: invitationLookupEmail })
+    loadSentInvitation({
+      organizationId: organization.id,
+      uid: currentUser.id,
+      email: invitationLookupEmail,
+      senderEmail: currentUser.email,
+    })
       .then((row) => {
         if (!cancelled) setSentInvitation(row)
       })
@@ -576,7 +581,7 @@ export function EditUserProfile({
     return () => {
       cancelled = true
     }
-  }, [invitationLookupEmail, organization?.id, currentUser?.id])
+  }, [invitationLookupEmail, organization?.id, currentUser?.id, currentUser?.email])
   const mayChangeLineManager = Boolean(
     target &&
       currentUser &&
