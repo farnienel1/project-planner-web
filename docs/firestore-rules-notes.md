@@ -29,6 +29,15 @@ Firestore evaluates at most 1,000 expressions per request. A request that reache
 - **Tests:** `tests/rulesAssert.ts` `assertLogicalDeny` fails a test whose denial came from the limit; `RULES_STRICT_BUDGET=1 npm run test:rules` makes every suite's `assertFails` strict. In 1.31.1, 49 of the 203 firestore tests (74 at the third review's head `42c69a91`) still contain at least one budget denial (108 on 1.31.0: bookings, invitations, self-create, leave, timesheets, notifications and more); they are a follow-up.
 - **Measuring:** pad the `allow` with N copies of a cheap comparison (a balanced `&&` tree; a flat chain of about 600 terms is refused at compile time as "Expression is too complex to evaluate safely") and find the largest N that still evaluates; each copy is about 7 expressions.
 
+## After publishing: check what is really live (6 Nov)
+
+The console's "unknown error" and the CLI's 409 / 503 are not proof that a publish failed. On 6 Nov the console said "Error saving rules – An unknown error occurred", but Google had already saved the ruleset (`ce5ba57d…`, 12:11:56) and pointed the `cloud.firestore` release at it (12:12:05). Earlier "failed" attempts may also have gone live. After every publish, whatever the console says:
+
+1. `GET https://firebaserules.googleapis.com/v1/projects/project-planner-f986c/releases/cloud.firestore` and note `rulesetName` and `updateTime`. The owner can do this on the API Explorer page `projects.releases/get`; a session can do it with a one-hour OAuth token (scope `https://www.googleapis.com/auth/firebase`) saved as a network secret for `firebaserules.googleapis.com`.
+2. `GET …/v1/{rulesetName}` and compare `source.files[0].content` with `firestore.rules` on `main`, byte for byte.
+3. If they differ and a newer uploaded ruleset matches `main` (`GET …/v1/projects/project-planner-f986c/rulesets`), point the release at it with `PATCH …/releases/cloud.firestore` and body `{"release":{"name":"projects/project-planner-f986c/releases/cloud.firestore","rulesetName":"<that ruleset>"}}`. This does not compile again. Note the previous `rulesetName` first, so the change can be rolled back.
+4. Do not press Publish again just because of the error message. Every press uploads another copy.
+
 ## Compile cost (1.31.3)
 
 Google's rules compiler gave up on 1.31.0–1.31.2 (CLI `firebaserules …:test` 503, console "unknown error"). Its cost tracks the fully inlined size of every allow condition and every function body (the type checker re-resolves a function body at each call site), not the file size. Tools, measurements and method: `docs/rules-cost/README.md` and `scripts/rules-cost/`. Before asking the owner to publish a rules change:
