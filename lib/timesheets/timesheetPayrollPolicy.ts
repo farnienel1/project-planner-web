@@ -13,9 +13,11 @@ import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 
 function timesheetPerson(
   user: Pick<User, 'employmentType' | 'employmentTypeTransitionFrom' | 'employmentTypeEffectiveAt'> &
-    Partial<Pick<User, 'isActive' | 'email' | 'firstName' | 'surname'>>
+    Partial<Pick<User, 'isActive' | 'email' | 'firstName' | 'surname' | 'ghost'>>
 ): TimesheetPerson {
   return {
+    // Rulebook 1.34.0: a ghost operative never has a timesheet (`timesheetDaysForPerson`).
+    ghost: user.ghost === true,
     isActive: user.isActive,
     email: user.email,
     name: `${user.firstName ?? ''} ${user.surname ?? ''}`.trim(),

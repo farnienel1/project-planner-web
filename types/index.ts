@@ -220,6 +220,10 @@ export interface User {
   updatedAt: Date;
   /** Owner-console flag: exclude from platform metrics unless "Include test data" is on. */
   isInternal?: boolean;
+  /** Rulebook 1.34.0 §11: a ghost operative — bookable, no app login (`isGhostUser`). */
+  ghost?: boolean;
+  /** Rulebook 1.34.0: a converted row's email, kept aside for "Give app access" (never shown as the person's email). */
+  inviteEmailHint?: string;
 }
 
 export interface UserPermissions {

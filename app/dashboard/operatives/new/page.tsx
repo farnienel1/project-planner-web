@@ -1,17 +1,20 @@
 'use client'
 
+import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { FormBackLink } from '@/components/forms/FormShell'
-import { PageHeader } from '@/components/dashboard/PageShell'
-import { OperativeForm } from '@/components/operatives/OperativeForm'
 
+/**
+ * Rulebook 1.34.0 §11: "Create New Operative" wrote an `operatives` catalogue row with no login. That is now a ghost
+ * operative, added from Add user with the Ghost account toggle (`ghostCreateWrites`), so this page only redirects.
+ */
 export default function NewOperativePage() {
   const router = useRouter()
+  useEffect(() => {
+    router.replace('/dashboard/settings/users/new?ghost=1')
+  }, [router])
   return (
-    <div className="space-y-6">
-      <FormBackLink href="/dashboard/operatives" label="Back to operatives" />
-      <PageHeader title="Create New Operative" description="Writes to Firebase organizations/{org}/operatives so iOS and web stay in sync." />
-      <OperativeForm backHref="/dashboard/operatives" onSaved={(id) => router.push(`/dashboard/operatives/${id}`)} />
+    <div className="flex h-64 items-center justify-center">
+      <p className="muted">Opening Add user…</p>
     </div>
   )
 }

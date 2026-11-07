@@ -41,6 +41,8 @@ import { privatePayFor, securitySwitchesReady } from '@/lib/access/securitySwitc
 import { addPartialDocumentToBatch, firestoreUpdateFields, savePartialDocument } from '@/lib/firebase/partialWrite'
 import { notifyCompanyActivity } from '@/lib/notifications/companyActivity'
 import { operativeRowWriteFields } from '@/lib/canonical/peopleDocuments'
+import type { GhostDraft } from '@/lib/canonical'
+import { createGhostOperative } from '@/lib/staff/ghostWrites'
 
 interface UserStoreState {
   saving: boolean
@@ -83,6 +85,8 @@ interface UserStoreState {
     permissions?: object | null
   ) => Promise<string | null>
   syncLinkedOperative: (organizationId: string, user: User, operatives: Operative[]) => Promise<void>
+  /** Rulebook 1.34.0 §11 `ghostCreateWrites`: add a ghost operative (bookable, no app login). Returns its users id. */
+  createGhost: (input: { organizationId: string; actor: User; draft: GhostDraft; roster: ReadonlyArray<User> }) => Promise<string>
   /**
    * Rulebook 1.31.0 `jobManagerRemovalWrites`: a person made an operative, deactivated or deleted is taken off every
    * job they manage (one batch) and the admins are told (`job_manager_removed`). Returns the number of jobs changed.
@@ -460,6 +464,11 @@ export const useUserStore = create<UserStoreState>(() => ({
             ?.docs.map((row) => ({ id: row.id, email: String(row.data().email || '') })) ?? []
         : []
     const [operativeRows, managerRows] = await Promise.all([byEmail('operatives'), byEmail('managers')])
+    // Rulebook 1.34.0: a converted ghost keeps its operatives row under the same id (its email cleared).
+    if (stored.ghost === true && !operativeRows.some((row) => row.id === userId)) {
+      const own = await getDoc(doc(db, 'organizations', orgId, 'operatives', userId)).catch(() => null)
+      if (own?.exists()) operativeRows.push({ id: userId, email: '' })
+    }
     const lookup = Array.from(
       new Set([...personIds, ...operativeRows.map((row) => row.id)].flatMap((id) => [id, id.toUpperCase(), id.toLowerCase()]))
     )
@@ -520,7 +529,7 @@ export const useUserStore = create<UserStoreState>(() => ({
       // 1.31.0: remove `members.{uid}` only when it is listed (an operatives manager may remove only a listed entry).
       listedInMembers: orgMembers ? Object.prototype.hasOwnProperty.call(orgMembers, userId) : true,
       orgId,
-      user: { id: userId, email, role: staffAccountRole(target), formerUserIds: parseFormerUserIds(stored) },
+      user: { id: userId, email, role: staffAccountRole(target), formerUserIds: parseFormerUserIds(stored), ghost: stored.ghost === true },
       actorUserId: auth?.currentUser?.uid || actor?.id || '',
       platform: 'web',
       bookings,
@@ -687,6 +696,8 @@ export const useUserStore = create<UserStoreState>(() => ({
     await batch.commit()
     return plan.note
   },
+
+  createGhost: async (input) => createGhostOperative(input),
 
   syncLinkedOperative: async (organizationId, user, operatives) => {
     if (!user.permissions.operativeMode) return

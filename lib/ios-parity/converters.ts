@@ -7,7 +7,7 @@
  */
 
 import { Timestamp, deleteField } from 'firebase/firestore'
-import { isAnonymisedDeletedProfile } from '@/lib/canonical/userRosterSegment'
+import { isAnonymisedDeletedProfile, isGhostUser } from '@/lib/canonical/userRosterSegment'
 import { storedPermissionFlag } from '@/lib/canonical/permissionLevels'
 import { USER_PERMISSION_FIELDS } from '@/lib/canonical/userProfile'
 import { assignedQualificationWriteFields } from '@/lib/canonical/operativeQualifications'
@@ -156,7 +156,8 @@ export function parseAppUserDocument(userId: string, data: Record<string, unknow
   if (!organizationId) {
     return fail(['email and organizationId are required'])
   }
-  if (!email && !isAnonymisedDeletedProfile(data)) {
+  // Rulebook 1.34.0 §11: a ghost operative has no email by design (`isGhostUser`).
+  if (!email && !isAnonymisedDeletedProfile(data) && !isGhostUser(data)) {
     return fail(['email and organizationId are required'])
   }
   const doc = parseUserDocument(userId, data)
@@ -221,6 +222,8 @@ export function parseAppUserDocument(userId: string, data: Record<string, unknow
     accountConfirmToken: asOptionalString(data.accountConfirmToken),
     createdAt: msDate(doc.createdAtMs) || new Date(),
     updatedAt: msDate(doc.updatedAtMs) || new Date(),
+    ghost: doc.ghost || undefined,
+    inviteEmailHint: doc.inviteEmailHint ?? undefined,
   })
 }
 

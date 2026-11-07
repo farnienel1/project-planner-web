@@ -24,6 +24,7 @@ import {
 } from '@/lib/staff/userRosterUtils'
 import { EmptyState, FilterChip, PageHeader, SearchField, StatusPill } from '@/components/ios/primitives'
 import { UserAvatar } from '@/components/users/UserAvatar'
+import { ghostBadgeLabel } from '@/lib/canonical'
 
 export function OperativesListScreen() {
   const router = useRouter()
@@ -119,8 +120,9 @@ export function OperativesListScreen() {
                 <UserAvatar user={row} size={40} />
                 <span className="grow">
                   <span className="t">{name}</span>
-                  <span className="s">{row.email}</span>
+                  <span className="s">{row.email || ghostBadgeLabel(row)}</span>
                 </span>
+                {ghostBadgeLabel(row) ? <StatusPill label={ghostBadgeLabel(row)} tone="grey" /> : null}
                 {operative?.tradeTypePreset ? <span className="pill" data-hue="lib">{operative.tradeTypePreset}</span> : null}
                 {status === 'Pending' ? <StatusPill label="Pending" tone="amber" /> : null}
                 {status === 'Inactive' ? <StatusPill label="Inactive" tone="grey" /> : null}

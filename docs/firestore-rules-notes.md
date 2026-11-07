@@ -227,6 +227,18 @@ Also: a line manager may add `personUserId` to a claim review stored without it 
 
 Measured: static cost 232,589 → 237,518 (+4,929); 141,866 → 142,948 bytes (budget 144,384 unchanged); suites 243/243 (187 + 36 + 20, fresh emulator, private port); `RULES_STRICT_BUDGET=1` the same 9 limit refusals (all in the firestore suite), none new; type check 0 issues; no `IllegalStateException`.
 
+### 1.34.0 — ghost operatives (7 Nov)
+
+Two edits, both on existing paths (rulebook §11, §16):
+- **R1** (users update by an Operatives manager): the 1.33.0 exemption that lets them change the line manager of an unaccepted placeholder (`passwordSet` not true) now also needs `ghost` not true — a ghost's line manager is changed by admins only.
+- **R2** (`callerLineManagesUserOrRow`): the users-id branch also needs the users document's `ghost` not true (the same cached `get`), so a ghost's line manager gets no overtime booking write on it.
+
+Static cost 237,518 → 237,676 (merged onto 1.33.0 with its review fixes; before the merge 232,589 → 232,779); 142,948 → 143,099 bytes; emulator type check 0 issues; no `IllegalStateException`. Suites on a private port, fresh emulator each: firestore 190/190 (3 new), overtime 36/36, payeClaims 20/20, ghosts 3/3 (new `tests/ghosts.rules.test.ts`). `RULES_STRICT_BUDGET=1`: the same 9 limit refusals in the firestore suite as 1.33.0; the new ghost leave test's "another manager cannot book approved leave" is refused by the limit too — the same holiday-rule denial path as the existing test 57, not a new rule.
+
+**Review fix (B1).** `selfUpdateKeepsIdentityLinks` also refuses a change to `ghost` or `inviteEmailHint` on one's own users document (every self path, admins included, goes through it), and both self-create branches refuse a document carrying `ghost: true` or `inviteEmailHint` (checks on the incoming document only, added to the existing test, so the crash pattern's shape is unchanged). An Operatives manager's update field list already left both out. Static cost 237,676 → 237,748; 143,099 → 143,357 bytes (budget 144,384 unchanged); emulator type check 0 issues; suites firestore 190/190, overtime 36/36, payeClaims 20/20, ghosts 5/5 (2 new), each on a fresh emulator on a private port; `RULES_STRICT_BUDGET=1` the same 9 limit refusals in the firestore suite as before the fix (same test names) and the ghost leave test's known one; no `IllegalStateException`.
+
+**Emulator crash (1.22.0), seen while writing these tests:** an Operatives manager's `users` create that carries `isSuperAdmin: false`, or has no `email` key at all, crashes the emulator (`IllegalStateException: ternary operator predicate is always boolean`; the write never answers and the document stays locked). The same documents with `email: ''` and no `isSuperAdmin` key pass. Ghosts are written that way (`ghostCreateWrites`). Web Add user's invite placeholder writes `isSuperAdmin: false` (`invitePlaceholderUserWriteFields`); whether Google's production engine shares the crash is unknown — check after publishing that an Operatives manager can still add an operative with a login (follow-up).
+
 ## Service-level functions
 
 ### `orgIdsMatch`

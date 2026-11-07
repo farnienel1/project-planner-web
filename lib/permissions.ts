@@ -409,6 +409,8 @@ function userTimesheetAccessInput(
       assignedManagerUserIds: member.assignedManagerUserIds ?? [],
       assignedManagerUserId: member.assignedManagerUserId ?? null,
       hasNoLineManager: member.hasNoLineManager === true,
+      // Rulebook 1.34.0: a ghost operative is never a User Timesheets row.
+      ghost: (member as { ghost?: boolean }).ghost === true,
     })),
   }
 }

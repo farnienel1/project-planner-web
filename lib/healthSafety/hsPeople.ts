@@ -1,5 +1,6 @@
 import { displayTradeType } from '@/lib/staff/staffTradeTypes'
 import { isPendingPerson } from '@/lib/staff/pendingPeople'
+import { isGhostUser } from '@/lib/canonical/userRosterSegment'
 import type { User } from '@/types'
 
 export function userDisplayName(user: Pick<User, 'firstName' | 'surname' | 'email'>): string {
@@ -12,7 +13,8 @@ export function userTradeLabel(user: Pick<User, 'tradeTypePreset' | 'tradeTypeCu
 }
 
 export function isHsRecipient(user: User): boolean {
-  if (!user.isActive || isPendingPerson(user)) return false
+  // Rulebook 1.34.0 (J2): a ghost operative has no login, so it is never a toolbox talk recipient.
+  if (!user.isActive || isPendingPerson(user) || isGhostUser(user)) return false
   return Boolean(
     user.permissions.operativeMode ||
       user.permissions.operatives ||

@@ -454,7 +454,7 @@ service cloud.firestore {
              request.auth.token.email is string &&
              request.resource.data.email.trim().lower() == request.auth.token.email.lower()
            )) &&
-           !changed.hasAny(['formerUserIds', 'sameEmailUserIds']);
+           !changed.hasAny(['formerUserIds', 'sameEmailUserIds', 'ghost', 'inviteEmailHint']);
   }
 
   function idSetOf(data, key) {
@@ -776,7 +776,8 @@ service cloud.firestore {
           (request.resource.data.get('email', null) is string &&
            request.auth.token.get('email', null) is string &&
            request.resource.data.get('organizationId', null) is string) ? (
-            (request.resource.data.email.lower() == request.auth.token.email.lower() && selfCreateHasAgeConfirmation()) ? (
+            (request.resource.data.email.lower() == request.auth.token.email.lower() && selfCreateHasAgeConfirmation() &&
+             request.resource.data.get('ghost', false) != true && !('inviteEmailHint' in request.resource.data)) ? (
               selfCreateJoinsCompany(request.resource.data.organizationId, request.resource.data.email.lower()) ?
                 selfCreateSuperAdminAllowed() : false
             ) : false
@@ -787,7 +788,8 @@ service cloud.firestore {
           (request.resource.data.get('email', null) is string &&
            request.auth.token.get('email', null) is string &&
            request.resource.data.get('organizationId', null) is string) ? (
-            (request.resource.data.email.lower() == request.auth.token.email.lower() && selfCreateHasAgeConfirmation()) ? (
+            (request.resource.data.email.lower() == request.auth.token.email.lower() && selfCreateHasAgeConfirmation() &&
+             request.resource.data.get('ghost', false) != true && !('inviteEmailHint' in request.resource.data)) ? (
               selfCreateJoinsCompany(request.resource.data.organizationId, request.resource.data.email.lower()) ?
                 selfCreateSuperAdminAllowed() : false
             ) : false
@@ -870,7 +872,7 @@ service cloud.firestore {
         'updatedFrom'
       ]) ? (
         request.resource.data.get('hasNoLineManager', false) != true &&
-        (resource.data.get('passwordSet', false) != true ||
+        ((resource.data.get('passwordSet', false) != true && resource.data.get('ghost', false) != true) ||
          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['assignedManagerUserId', 'assignedManagerUserIds', 'hasNoLineManager']) ||
          (lineManagersUnchanged(request.resource.data, resource.data) &&
           request.resource.data.get('hasNoLineManager', false) == resource.data.get('hasNoLineManager', false))) &&
@@ -1467,7 +1469,8 @@ service cloud.firestore {
       }
       function callerLineManagesUserOrRow(personId) {
         return (personId is string && personId.size() > 0 && !personId.matches('.*/.*')) ? (
-          exists(/databases/(default)/documents/users/$(personId)) ? callerLineManagesUser(personId) : callerLineManagesRowPerson(personId)
+          exists(/databases/(default)/documents/users/$(personId)) ? (callerLineManagesUser(personId) &&
+            get(/databases/(default)/documents/users/$(personId)).data.get('ghost', false) != true) : callerLineManagesRowPerson(personId)
         ) : false;
       }
       function overtimeReturnFor(bookingId, requestId, listKey, personId, admin) {

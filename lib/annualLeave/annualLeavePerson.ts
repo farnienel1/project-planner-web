@@ -1,7 +1,7 @@
 import type { Operative, User } from '@/types'
 import { hasAdminAccess } from '@/lib/permissions'
 import { isPendingPerson } from '@/lib/staff/pendingPeople'
-import { lineManagerIds } from '@/lib/canonical'
+import { ghostBadgeLabel, lineManagerIds, personDedupeKey } from '@/lib/canonical'
 import { rulebookPerson, rulebookRoster } from '@/lib/staff/rulebookPeople'
 import { normalizeDocumentId } from '@/lib/canonical'
 
@@ -57,7 +57,8 @@ export function buildAnnualLeavePeople(users: User[], operatives: Operative[]): 
 
   const operativesByEmail = new Map<string, Operative>()
   for (const op of operatives) {
-    operativesByEmail.set(op.email.toLowerCase(), op)
+    const key = (op.email || '').trim().toLowerCase()
+    if (key) operativesByEmail.set(key, op)
   }
 
   for (const user of users) {
@@ -65,11 +66,13 @@ export function buildAnnualLeavePeople(users: User[], operatives: Operative[]): 
     // Invitations stay on Manage users. They are not bookable on the team calendar.
     if (isPendingPerson(user)) continue
     if (user.permissions.annualLeaveSelfBook) continue
-    const email = user.email.toLowerCase()
-    if (seenEmails.has(email)) continue
-    seenEmails.add(email)
+    const email = (user.email || '').toLowerCase()
+    // Rulebook 1.34.0 `personDedupeKey`: the email, else the id — before, every ghost (no email) folded onto ''.
+    const key = personDedupeKey(user)
+    if (seenEmails.has(key)) continue
+    seenEmails.add(key)
 
-    const linkedOp = operativesByEmail.get(email)
+    const linkedOp = email ? operativesByEmail.get(email) : operatives.find((op) => op.id === user.id)
     const trade = userTradeLabel(user, linkedOp)
     const display = displayNameForUser(user)
     const { first, last } = nameParts(display, linkedOp)
@@ -82,7 +85,7 @@ export function buildAnnualLeavePeople(users: User[], operatives: Operative[]): 
     rows.push({
       id: `user-${user.id}`,
       displayName: display,
-      subtitle: `${roleHint} · ${user.email}`,
+      subtitle: `${roleHint} · ${user.email || ghostBadgeLabel(user)}`,
       tradeLabel: trade,
       firstNameSort: first,
       surnameSort: last,
@@ -93,12 +96,14 @@ export function buildAnnualLeavePeople(users: User[], operatives: Operative[]): 
 
   for (const op of operatives) {
     if (!op.isActive) continue
-    const email = op.email.toLowerCase()
-    const linkedUser = users.find((u) => u.email.toLowerCase() === email)
+    const email = (op.email || '').toLowerCase()
+    const linkedUser = email ? users.find((u) => (u.email || '').toLowerCase() === email) : users.find((u) => u.id === op.id)
     if (linkedUser && isPendingPerson(linkedUser)) continue
     if (linkedUser?.permissions.annualLeaveSelfBook) continue
-    if (seenEmails.has(email)) continue
-    seenEmails.add(email)
+    // A converted ghost row keeps the ghost's id; it is the same person as the users row above.
+    const key = linkedUser ? personDedupeKey(linkedUser) : personDedupeKey(op)
+    if (seenEmails.has(key)) continue
+    seenEmails.add(key)
 
     const display = `${op.firstName} ${op.lastName}`.trim() || op.email
     rows.push({

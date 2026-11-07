@@ -22,6 +22,8 @@ export type UserDeletePerson = {
   role: StaffAccountRole
   formerUserIds?: ReadonlyArray<string> | null
   sameEmailUserIds?: ReadonlyArray<string> | null
+  /** 1.34.0: informational only — `userDeleteWrites` never skips a document because of it (review fix B1). */
+  ghost?: boolean | null
 }
 
 export type UserDeleteRefusal = 'not_admin' | 'self' | 'super_admin' | 'creator' | 'admin_needs_super_admin' | 'operatives_only'
@@ -156,6 +158,10 @@ export function userDeleteWrites(input: UserDeleteInput): UserDeleteStep[] {
   const idKeys = new Set(ids.map(key))
   const email = key(input.user.email)
 
+  // 1.34.0 review fix (B1): the plan never trusts `ghost` to skip a document. Anyone can be marked a ghost by a stale
+  // or hostile write, so the tax ids and the membership are always deleted (a delete of a missing document is a no-op
+  // in the rules), and the `members` entry whenever the organisation lists the person (`listedInMembers`) — a ghost
+  // never has one, so the entry is left alone only because it is not there.
   const account: UserDeleteWrite[] = [
     { op: 'delete', path: `users/${uid}` },
     { op: 'delete', path: `users/${uid}/private/taxIds` },

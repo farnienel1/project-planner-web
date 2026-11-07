@@ -99,6 +99,8 @@ export function rulebookPerson(user: User, users: ReadonlyArray<User> = []): Rul
     assignedManagerUserIds: ids(user.assignedManagerUserIds),
     assignedManagerUserId: String(user.assignedManagerUserId ?? '').trim() || null,
     hasNoLineManager: user.hasNoLineManager === true,
+    // Rulebook 1.34.0: a ghost operative is never a notice recipient or a timesheet / overtime subject.
+    ghost: user.ghost === true,
   }
 }
 

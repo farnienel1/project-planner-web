@@ -13,7 +13,8 @@ import { displayTradeType } from '@/lib/staff/staffTradeTypes'
 import { canShowAdminEditProfile, roleLabel } from '@/lib/staff/userEditPermissions'
 import { rosterStatusLabel } from '@/lib/staff/userRosterUtils'
 import { UserAvatar } from '@/components/users/UserAvatar'
-import { canViewPersonPay, formatMoney } from '@/lib/canonical'
+import { GHOST_UPGRADE_HELP, GHOST_UPGRADE_LABEL, canUpgradeGhost, canViewPersonPay, formatMoney, ghostBadgeLabel, isGhostUser } from '@/lib/canonical'
+import { GhostAppAccessCard } from '@/components/users/GhostAppAccessCard'
 import { loadPayProfile } from '@/lib/pay/payProfileService'
 import { personPayRecord, readsPersonPayProfile } from '@/lib/pay/payProfileOverlay'
 import { onSecuritySwitchChange } from '@/lib/access/securitySwitches'
@@ -151,7 +152,11 @@ export function UserProfileSummary({
               <span className="pill" style={{ background: 'rgba(255,255,255,.18)', color: '#fff' }}>
                 {roleLabel(target)}
               </span>
-              {target.passwordSet ? (
+              {isGhostUser(target) ? (
+                <span className="pill dot" style={{ background: 'rgba(255,255,255,.18)', color: '#fff' }}>
+                  {ghostBadgeLabel(target)}
+                </span>
+              ) : target.passwordSet ? (
                 <span className="pill dot" style={{ background: 'rgba(255,255,255,.18)', color: '#fff' }}>
                   Verified
                 </span>
@@ -182,12 +187,15 @@ export function UserProfileSummary({
           Details
         </h2>
         <dl className="grid g2">
-          <SummaryRow label="Email" value={target.email} />
-          <SummaryRow label="Mobile" value={target.mobileNumber || '—'} />
+          {/* Rulebook 1.34.0: a ghost has no email, phone or login (an invited ghost shows the invitation email). */}
+          {!isGhostUser(target) || target.email ? <SummaryRow label="Email" value={target.email} /> : null}
+          {!isGhostUser(target) ? <SummaryRow label="Mobile" value={target.mobileNumber || '—'} /> : null}
+          {!isGhostUser(target) ? (
           <SummaryRow
             label="Last active"
             value={target.lastSeenAt ? format(target.lastSeenAt, "d MMM yyyy 'at' HH:mm") : '—'}
           />
+          ) : null}
           <SummaryRow label="Trade" value={displayTradeType(target.tradeTypePreset, target.tradeTypeCustom)} />
           {payVisible ? <SummaryRow label="Employment" value={employmentLabel(pay?.employmentType)} /> : null}
           <SummaryRow
@@ -201,6 +209,18 @@ export function UserProfileSummary({
           ) : null}
         </dl>
       </section>
+
+      {organization?.id && canUpgradeGhost(currentUser as never, target as never) ? (
+        <GhostAppAccessCard
+          organizationId={organization.id}
+          organizationName={organization.name}
+          viewer={currentUser!}
+          ghost={target}
+          title={GHOST_UPGRADE_LABEL}
+          help={GHOST_UPGRADE_HELP}
+          onDone={() => getUser(userId).then(setTarget)}
+        />
+      ) : null}
 
       {target.permissions.operativeMode ? (
         <section className="card pad" data-hue="rep">

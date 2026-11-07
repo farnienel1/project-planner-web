@@ -1,5 +1,5 @@
 import type { Operative, User } from '@/types'
-import { labourBookingKind } from '@/lib/canonical'
+import { ghostBadgeLabel, labourBookingKind, personDedupeKey } from '@/lib/canonical'
 import { labourPersonFromUser } from '@/lib/warnings/unbookedLabourWarnings'
 import { getActiveOperativesForScheduling } from '@/lib/operatives/operativeRosterUtils'
 import { isPendingPerson } from '@/lib/staff/pendingPeople'
@@ -20,6 +20,8 @@ export type SchedulablePerson = {
   name: string
   email: string
   badge: string
+  /** Rulebook 1.34.0 `ghostBadgeLabel`: "No app login" for a ghost operative. */
+  ghostBadge?: string
 }
 
 function emailKey(value: string | undefined): string {
@@ -79,14 +81,17 @@ export function buildSchedulablePeople(
     if (email && !usersByEmail.has(email)) usersByEmail.set(email, user)
   }
 
-  const seenEmails = new Set<string>()
+  // Rulebook 1.34.0 `personDedupeKey`: the email, else the id — so every person with no email (ghosts) is offered,
+  // not only the first (folding on '' kept one).
+  const seenKeys = new Set<string>()
   const people: SchedulablePerson[] = []
 
   for (const operative of getActiveOperativesForScheduling(operatives)) {
     if (!isCurrentLabourNamedPerson(operative)) continue
     const email = emailKey(operative.email)
     if (email && pendingEmails.has(email)) continue
-    if (email && seenEmails.has(email)) continue
+    const key = personDedupeKey(operative)
+    if (key && seenKeys.has(key)) continue
     const linked = email ? usersByEmail.get(email) : undefined
     // iOS ScheduleBookablePersonBuilder keeps an active operative who has no login.
     // A manager catalogue row with no account is excluded by the manager picker, not here.
@@ -96,28 +101,31 @@ export function buildSchedulablePeople(
       email: operative.email,
     })
     if (!name) continue
-    if (email) seenEmails.add(email)
+    if (key) seenKeys.add(key)
     people.push({
       id: operative.id,
       kind: 'operative',
       name,
       email: operative.email,
       badge: roleBadge(linked),
+      // 1.34.0: a converted no-login row keeps its id as the ghost's users id.
+      ghostBadge: ghostBadgeLabel(users.find((user) => user.id === operative.id)) || undefined,
     })
   }
 
   for (const user of operativeListUsers) {
-    const email = emailKey(user.email)
-    if (email && seenEmails.has(email)) continue
+    const key = personDedupeKey(user)
+    if (key && seenKeys.has(key)) continue
     const name = rosterDisplayName(user)
     if (!name || isRoleOnlyPersonName(name)) continue
-    if (email) seenEmails.add(email)
+    if (key) seenKeys.add(key)
     people.push({
       id: user.id,
       kind: 'operative',
       name,
       email: user.email,
       badge: roleBadge(user),
+      ghostBadge: ghostBadgeLabel(user) || undefined,
     })
   }
 
@@ -127,9 +135,9 @@ export function buildSchedulablePeople(
     (row) => isCurrentLabourUser(row) && row.passwordSet && row.isActive && bookingKindOf(row) === 'manager'
   )
   for (const user of managerCandidates) {
-    const email = emailKey(user.email)
-    if (email && seenEmails.has(email)) continue
-    if (email) seenEmails.add(email)
+    const key = personDedupeKey(user)
+    if (key && seenKeys.has(key)) continue
+    if (key) seenKeys.add(key)
     const name = rosterDisplayName(user)
     if (!name || isRoleOnlyPersonName(name)) continue
     people.push({

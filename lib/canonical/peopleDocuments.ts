@@ -38,7 +38,7 @@ import { isAdminOutsideOperativeMode } from './leaveRequests'
 import { effectivePermissions, keepStoredLockedPermissions } from './permissionLevels'
 import { DEFAULT_ANNUAL_LEAVE, parseAnnualLeaveDefaults, type OrgAnnualLeaveDefaults } from './organizationSettings'
 import { readStoredRates, type PayBasis } from './payRate'
-import { isAnonymisedDeletedProfile } from './userRosterSegment'
+import { isAnonymisedDeletedProfile, isGhostUser } from './userRosterSegment'
 import {
   accountKindFromFlags,
   employmentTypeOnDay,
@@ -329,6 +329,10 @@ export type UserDocument = {
   updatedAtMs: number | null
   /** Empty email and "Deleted user" (`isAnonymisedDeletedProfile`). */
   isAnonymisedDeleted: boolean
+  /** 1.34.0: a ghost operative (`ghost: true`): bookable, no app login (`isGhostUser`). */
+  ghost: boolean
+  /** 1.34.0: the email a converted operatives row had, kept aside for "Give app access". Null when none. */
+  inviteEmailHint: string | null
 }
 
 export type ParseUserDocumentOptions = {
@@ -485,6 +489,8 @@ export function parseUserDocument(
       name: text(row.name),
       displayName: text(row.displayName),
     }),
+    ghost: isGhostUser(row),
+    inviteEmailHint: optionalText(row.inviteEmailHint)?.toLowerCase() ?? null,
   }
 }
 
@@ -1163,6 +1169,8 @@ export type TimesheetPerson = {
   timesheetsEnabled?: boolean | null
   operativeMode?: boolean | null
   permissions?: { operativeMode?: boolean | null } | null
+  /** 1.34.0: a ghost operative never has a timesheet (`isGhostUser`). */
+  ghost?: unknown
 }
 
 /** A timesheet period as organisation-zone day keys, both ends included (`TimesheetPeriodIdentity`). */
@@ -1191,6 +1199,8 @@ export function timesheetDaysForPerson(
   timeZone?: string | null
 ): string[] {
   if (!user || user.isActive === false) return []
+  // 1.34.0: a ghost operative has no app login, so no timesheet, reminder, invoice or User Timesheets row.
+  if (isGhostUser(user)) return []
   if (isAnonymisedDeletedProfile({ email: user.email ?? '', name: user.name ?? '' })) return []
   const start = text(period?.startDayKey)
   const end = text(period?.endDayKey)

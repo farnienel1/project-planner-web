@@ -11,7 +11,7 @@ function normalizeEmail(email: string): string {
 /** Legacy roster rows created during org setup — same rules as iOS OperativeStore.allOperatives. */
 export function isPlaceholderOperative(operative: Operative): boolean {
   const name = `${operative.firstName} ${operative.lastName}`.trim().toLowerCase()
-  const email = operative.email.toLowerCase()
+  const email = (operative.email || '').toLowerCase()
   return name.includes('placeholder') || email.includes('placeholder') || name.includes('initial')
 }
 
@@ -58,6 +58,9 @@ export function dedupeOperativesByEmail(operatives: Operative[]): Operative[] {
 /** The user account that owns this roster operative (same email). */
 export function findUserForOperative(operative: Operative | undefined, users: User[]): User | undefined {
   if (!operative) return undefined
+  // Rulebook 1.34.0: a converted no-login row keeps its id as the ghost's users id (its email is cleared).
+  const sameId = users.find((user) => user.id.toLowerCase() === operative.id.toLowerCase() && user.ghost === true)
+  if (sameId) return sameId
   const email = normalizeEmail(operative.email)
   if (!email) return undefined
   return (
@@ -82,6 +85,7 @@ export function editUserHrefForOperative(
 
 export function findOperativeForUser(user: User, operatives: Operative[]): Operative | undefined {
   const email = normalizeEmail(user.email)
+  if (!email) return operatives.find((operative) => operative.id.toLowerCase() === user.id.toLowerCase())
   return dedupeOperativesByEmail(operatives).find(
     (operative) => normalizeEmail(operative.email) === email
   )

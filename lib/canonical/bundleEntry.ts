@@ -956,6 +956,9 @@ export {
   SECURITY_SWITCH_ORGANIZATION_FIELDS,
   securitySwitchOn,
   securitySwitches,
+  GHOST_ACCOUNTS_SWITCH_FIELD,
+  GHOST_ACCOUNTS_ORGANIZATION_IDS_FIELD,
+  ghostAccountsEnabled,
 } from './platformConfig'
 export { LEAVE_YEAR_MONTHS_MESSAGE, leaveYearEndMonth, validateAnnualLeaveDefaults, validateLeaveYearMonths } from './annualLeaveBalance'
 export { PAY_STANDARD_DAY_MIN_HOURS } from './payRate'
@@ -1278,3 +1281,6 @@ export {
   authClaimsUserInputsChanged,
   parseAuthClaims,
 } from './authClaims'
+
+// Rulebook 1.34.0 §11: ghost operatives (bookable, no app login).
+export * from './ghostOperatives'

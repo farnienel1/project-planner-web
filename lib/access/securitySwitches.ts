@@ -9,13 +9,20 @@
  */
 import { doc, onSnapshot, type Unsubscribe } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
-import { currentOrganizationId, PLATFORM_CONFIG_APP_PATH, securitySwitchOn, type SecuritySwitch } from '@/lib/canonical'
+import {
+  currentOrganizationId,
+  ghostAccountsEnabled,
+  PLATFORM_CONFIG_APP_PATH,
+  securitySwitchOn,
+  type SecuritySwitch,
+} from '@/lib/canonical'
 
 let config: Record<string, unknown> | null = null
 let unsubscribe: Unsubscribe | null = null
 let loaded = false
 let readyWaiters: Array<() => void> = []
 const changeListeners = new Set<(name: SecuritySwitch) => void>()
+const configListeners = new Set<() => void>()
 
 /** How long a store waits for the first read before planning with the last value (ms). */
 const FIRST_READ_WAIT_MS = 3000
@@ -39,6 +46,7 @@ function start(): void {
       config = snap.exists() ? ((snap.data() ?? {}) as Record<string, unknown>) : null
       markLoaded()
       notifyChanges(previous, config)
+      notifyConfigListeners()
     },
     () => markLoaded()
   )
@@ -84,6 +92,33 @@ export function privatePayFor(organizationId?: string | null): boolean {
   return securitySwitchOnFor('privatePay', organizationId)
 }
 
+function notifyConfigListeners() {
+  for (const listener of configListeners) {
+    try {
+      listener()
+    } catch {
+      // A listener's failure never stops the others.
+    }
+  }
+}
+
+/**
+ * Rulebook 1.34.0 §11 / §18 (owner decision 7 Nov "1b"): whether the Ghost account toggle may be shown for this
+ * organisation — `ghostAccountsEnabled(platformConfig/app, organizationId)`. Off before the first read and when the
+ * document or field is missing.
+ */
+export function ghostAccountsEnabledFor(organizationId?: string | null): boolean {
+  start()
+  return ghostAccountsEnabled(config, organizationId ?? currentOrganizationId())
+}
+
+/** Called on every read of `platformConfig/app` (any field). Returns the unsubscribe. */
+export function onPlatformConfigChange(listener: () => void): () => void {
+  start()
+  configListeners.add(listener)
+  return () => configListeners.delete(listener)
+}
+
 /** Called when a switch changes for the open organisation. Returns the unsubscribe. */
 export function onSecuritySwitchChange(listener: (name: SecuritySwitch) => void): () => void {
   start()
@@ -97,4 +132,5 @@ export function setSecuritySwitchConfigForTests(next: Record<string, unknown> | 
   config = next
   loaded = true
   notifyChanges(previous, next)
+  notifyConfigListeners()
 }

@@ -141,7 +141,7 @@ export function SchedulePersonPickerStep({
                 <SchedulePersonPickerRow
                   person={person}
                   selected={Boolean(selected)}
-                  badge={person.badge}
+                  badge={person.ghostBadge ? `${person.badge} · ${person.ghostBadge}` : person.badge}
                   clashLabel={
                     pending ? (doubleBooked && onLeave ? 'Clashes' : onLeave ? 'Annual leave' : 'Already booked') : undefined
                   }
