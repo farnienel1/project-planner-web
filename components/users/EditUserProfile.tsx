@@ -21,7 +21,7 @@ import {
   roleLabel,
   setupSectionTitle,
 } from '@/lib/staff/userEditPermissions'
-import { rosterStatusLabel } from '@/lib/staff/userRosterUtils'
+import { rosterStatusLabel, samePersonIds } from '@/lib/staff/userRosterUtils'
 import { userLineManagerRequiredError, userMayHaveNoLineManager } from '@/lib/annualLeave/holidayApprovalUtils'
 import { UserAvatar } from '@/components/users/UserAvatar'
 import { PayBasisFields, payChoiceFromProfile, payChoiceToRates } from '@/components/users/PayBasisFields'
@@ -52,12 +52,13 @@ import {
   validateLeaveYearMonths,
   ghostBadgeLabel,
   isGhostUser,
+  leaveRecordsForAccount,
 } from '@/lib/canonical'
 import { loadTaxIds, saveTaxIds } from '@/lib/sensitiveProfile/taxIdsService'
 import { LEAVE_DAYS_SAVE_MAX, parseBoundedNumber } from '@/lib/security/boundedValue'
 import { useHolidayStore } from '@/lib/stores/holidayStore'
+import { useOrgBankHolidays } from '@/components/annual-leave/useOrgBankHolidays'
 import {
-  bookingsForPerson,
   remainingOverrideFromBalance,
   userLeaveBalance,
 } from '@/lib/annualLeave/leaveBalance'
@@ -146,6 +147,12 @@ const ACCOUNT_TYPE_OPTIONS: {
     description: 'Full admin access including user management. Saves with the main Save button.',
   },
 ]
+
+/** A `YYYY-MM-DD` key as a local calendar date (for the bank-holiday year range only). */
+function dateFromLeaveDayKey(key: string): Date {
+  const [year, month, day] = key.split('-').map(Number)
+  return new Date(year || 1970, (month || 1) - 1, day || 1)
+}
 
 /**
  * Rulebook 1.11.0 `permissionToggleRows` for Edit User: the person at `level` with `permissions` (a pending account
@@ -284,7 +291,7 @@ export function EditUserProfile({
 }) {
   const router = useRouter()
   const { user: currentUser, organization, reloadSignedInProfile } = useAuthStore()
-  const { users, loadUsers, setListedUserActive, patchListedUser } = useOrgUserStore()
+  const { users, userIdAliases, loadUsers, setListedUserActive, patchListedUser } = useOrgUserStore()
   const { operatives, loadOperatives, patchOperativeQualifications } = useOperativeStore()
   const { getUser, saveUser, setUserActive, deleteUser, sendPasswordReset, applyAccountType, changeAccountType, syncLinkedOperative, transferSuperAdmin, removeFromManagedJobs } =
     useUserStore()
@@ -438,14 +445,43 @@ export function EditUserProfile({
   }, [organization?.id, userId, getUser])
 
   const linkedOperative = target ? operativeRecordForUser(target, operatives) : undefined
+  // Rulebook 1.35.0 §12: the person's leave under every id they go by (`leaveRecordsForAccount`: former and same-email
+  // ids, catalogue rows on their email, the email itself), with the region's bank holidays — the same figure as their
+  // Annual leave screen and My Profile. Before 1.35.0 this matched one users id and one operatives row, no bank holidays.
+  const personLeave = useMemo(
+    () =>
+      target
+        ? leaveRecordsForAccount(
+            holidayBookings,
+            {
+              id: target.id,
+              email: target.email,
+              formerIds: target.formerUserIds ?? [],
+              aliasIds: [
+                ...Array.from(samePersonIds(target.id, users, userIdAliases)),
+                ...(rosterDocs || []).filter((row) => row.id !== target.id && target.email && row.email?.trim().toLowerCase() === target.email.trim().toLowerCase()).map((row) => row.id),
+              ],
+            },
+            operatives
+          )
+        : [],
+    [target, holidayBookings, users, userIdAliases, rosterDocs, operatives]
+  )
+  const leaveYearProbe = useMemo(
+    () => userLeaveBalance({ user: target, bookings: personLeave, orgDefaults: orgLeaveDefaults }),
+    [target, personLeave, orgLeaveDefaults]
+  )
+  const leaveBank = useOrgBankHolidays(dateFromLeaveDayKey(leaveYearProbe.startDayKey), dateFromLeaveDayKey(leaveYearProbe.endDayKey))
+  const leaveBankDayKeys = leaveBank.holidays.map((holiday) => holiday.date).join(',')
   const leaveBalance = useMemo(
     () =>
       userLeaveBalance({
         user: target,
-        bookings: bookingsForPerson(holidayBookings, target?.id, linkedOperative?.id),
+        bookings: personLeave,
         orgDefaults: orgLeaveDefaults,
+        bankHolidayDayKeys: leaveBankDayKeys ? leaveBankDayKeys.split(',') : [],
       }),
-    [target, holidayBookings, linkedOperative?.id, orgLeaveDefaults]
+    [target, personLeave, orgLeaveDefaults, leaveBankDayKeys]
   )
 
   useEffect(() => {

@@ -9,7 +9,7 @@ import { holidayRequestRanges } from '@/lib/canonical'
 import { notifyHolidayRequestSubmitted } from '@/lib/annualLeave/notifyHolidayRequestSubmitted'
 import { userCanSelfBookAnnualLeave, userLeaveSubmitLabel } from '@/lib/annualLeave/holidayApprovalUtils'
 import { getBookingForDay, getDayKindForBookings } from '@/lib/annualLeave/dayStatus'
-import { bookingsForPerson, userLeaveBalance } from '@/lib/annualLeave/leaveBalance'
+import { userLeaveBalance } from '@/lib/annualLeave/leaveBalance'
 import { DEFAULT_ANNUAL_LEAVE, type OrgAnnualLeaveDefaults } from '@/lib/settings/organizationSettings'
 import {
   bookingDayCount,
@@ -159,17 +159,27 @@ export function PersonalLeave({
     run: () => Promise<void>
   } | null>(null)
 
-  const balance = userLeaveBalance({
+  // Rulebook 1.35.0 §12: `myBookings` are already this person's records under every id they go by
+  // (`leaveRecordsForAccount`, AnnualLeaveScreen); count them all, with the region's bank holidays, so the figure
+  // equals My Profile and iOS. (Before 1.35.0 this re-filtered to the one users id and passed no bank holidays.)
+  const yearProbe = userLeaveBalance({
     user,
-    bookings: bookingsForPerson(myBookings, user?.id),
+    bookings: myBookings,
     orgDefaults: orgLeaveDefaults ?? DEFAULT_ANNUAL_LEAVE,
     timeZone,
   })
   const leaveYear = {
-    start: dateFromDayKey(balance.startDayKey),
-    end: dateFromDayKey(balance.endDayKey),
+    start: dateFromDayKey(yearProbe.startDayKey),
+    end: dateFromDayKey(yearProbe.endDayKey),
   }
   const bank = useOrgBankHolidays(leaveYear.start, leaveYear.end)
+  const balance = userLeaveBalance({
+    user,
+    bookings: myBookings,
+    orgDefaults: orgLeaveDefaults ?? DEFAULT_ANNUAL_LEAVE,
+    bankHolidayDayKeys: bank.holidays.map((holiday) => holiday.date),
+    timeZone,
+  })
   const allowance = balance.daysPerYear
   const awaiting = myBookings.filter((booking) => booking.status === 'pending' || booking.cancellationRequestedAt)
   const taken = balance.taken

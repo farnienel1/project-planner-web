@@ -10,7 +10,6 @@ import type { HolidayBooking, User } from '@/types'
 import type { OrgAnnualLeaveDefaults } from '@/lib/settings/organizationSettings'
 import { DEFAULT_ANNUAL_LEAVE } from '@/lib/settings/organizationSettings'
 import { holidayBookingDayKeys } from '@/lib/annualLeave/holidayDayKeys'
-import { normalizeDocumentId } from '@/lib/canonical'
 
 /** Day keys in the organisation business zone (rulebook §1), never London unless that is the organisation's zone. */
 export function holidayToLeaveDay(booking: HolidayBooking, timeZone?: string | null): LeaveDayRecord {
@@ -19,23 +18,6 @@ export function holidayToLeaveDay(booking: HolidayBooking, timeZone?: string | n
     timeSlot: booking.timeSlot,
     status: booking.status,
   }
-}
-
-export function bookingsForPerson(
-  bookings: HolidayBooking[],
-  userId?: string | null,
-  operativeId?: string | null
-): HolidayBooking[] {
-  // Ids compare without case (rulebook §1 `normalizeDocumentId`).
-  const userKey = normalizeDocumentId(userId)
-  const operativeKey = normalizeDocumentId(operativeId)
-  return bookings.filter((booking) => {
-    const bookingUser = normalizeDocumentId(booking.userId)
-    const bookingOperative = normalizeDocumentId(booking.operativeId)
-    if (userKey && (bookingUser === userKey || bookingOperative === userKey)) return true
-    if (operativeKey && (bookingOperative === operativeKey || bookingUser === operativeKey)) return true
-    return false
-  })
 }
 
 export function userLeaveBalance(input: {
