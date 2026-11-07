@@ -228,7 +228,7 @@ How to use it:
 | 7 Nov | **Q2 confirmed:** only admins change a ghost's line manager (R1). | done (rules, 1.34.0) |
 | 7 Nov | **Q4 confirmed:** the iPhone ghost details as built; creating any user, a ghost included, needs a signal (already enforced: rulebook §2 `users.invites` online only; iOS AddUserView disables Create offline). | done |
 | 7 Nov | **Q5: My Profile figures approved** — annual leave left this year, hours booked this week, open tasks, qualifications expiring soon, line manager. Each from an existing rulebook function only. | open (My Profile UI upgrade, after 1.34) |
-| 7 Nov | **Q3:** the owner asked for a ghost's line manager to be able to change a ghost's booking overtime and hours (this would reverse R2). R2 is not changed until this is clarified. | question: being clarified |
+| 7 Nov | **Q3 decided: option (a), keep R2 as built.** To change a ghost's booking hours or overtime you must manage the job (`canWriteBooking`) or be an admin; the line manager gets no extra booking power. Ghost bookings feed the weekly report as normal. | done (1.34.0, web #291 / iOS #203) |
 
 ## Open questions for the owner
 
