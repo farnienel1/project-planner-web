@@ -1155,7 +1155,7 @@ export {
   variationNumberValue,
 } from './variationNumbers'
 export type { VariationNumberRow } from './variationNumbers'
-export { managerCoverageHours } from './managerCoverage'
+export { bookedWorkedHours, managerCoverageHours } from './managerCoverage'
 export type { CoverageBooking, ManagerCoverageHours } from './managerCoverage'
 
 // Rulebook 1.23.0 (§5, §9, §11, §21–§23): People, Home and per-day hours (audit findings 9, 12, 16–22).
@@ -1174,7 +1174,7 @@ export {
   isTaskOverdue,
 } from './dueDates'
 export type { DeadlineUrgency, DueTask } from './dueDates'
-export { homeOverviewMetrics, isSiteLocationType, qualificationExpiryCount } from './homeOverview'
+export { homeBookingDayKey, homeOverviewMetrics, isSiteLocationType, qualificationExpiryCount, tasksAssignedToViewer } from './homeOverview'
 export type { FoldPersonRow, HomeOverviewInput, HomeOverviewMetrics, HomeOverviewTask, QualificationExpiryCountInput } from './homeOverview'
 export { leaveDayKind } from './leaveCalendar'
 export type { LeaveCalendarRecord, LeaveDayKind } from './leaveCalendar'
@@ -1284,3 +1284,14 @@ export {
 
 // Rulebook 1.34.0 §11: ghost operatives (bookable, no app login).
 export * from './ghostOperatives'
+
+// Rulebook 1.35.0 §12: the My Profile personal figures and the organisation week.
+export { organizationWeekDayKeys } from './dayKeys'
+export { myProfileSummary } from './myProfileSummary'
+export type {
+  MyProfileSummary,
+  MyProfileSummaryBooking,
+  MyProfileSummaryInput,
+  MyProfileSummaryManagerSiteBooking,
+  MyProfileSummaryUser,
+} from './myProfileSummary'

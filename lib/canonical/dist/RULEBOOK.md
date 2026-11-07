@@ -1,6 +1,6 @@
 # Project Planner Rulebook
 
-Version: 1.34.0
+Version: 1.35.0
 Updated: 2026-11-07
 
 This is the one rulebook for every Project Planner platform: web, iOS and (later) Android. It is written platform-neutral. Each rule names the shared function in `lib/canonical` that implements it; platforms call that function (web `@/lib/canonical`, iOS `CanonicalBusinessEngine`, Android the same packed script) and never keep a second copy.
@@ -336,6 +336,14 @@ Web `/api/account/delete` answers 409 `handover_required` or `company_delete_req
 
 Matches on every platform and updates live: profile photo (`profilePhotoURL`, with `profilePhotoUpdatedAt` set on every upload so other devices refresh the cached avatar), contact details, day/hourly rate and employment status (read-only), and billing details — VAT number and UTR — stored privately at `users/{uid}/private/taxIds` (`sensitiveProfile`). A photo upload stores a fresh download URL; a stale profile copy never removes or rolls back the photo. **Delete my account** (1.15.0) is on My Profile / Settings; what it does is `accountDeletionPath` (§11): a super admin with other active members hands super admin over first, a super admin alone in the organisation deletes the company with the account (§20), everyone else deletes only their account.
 
+**Personal figures** (1.35.0, owner decisions 7 Nov). My Profile on every platform shows a "Your figures" card for the signed-in person, from `myProfileSummary({ nowMs, timeZone, viewer, user, roster, operatives, managers, leaveDefaults, holidays, nonWorkingDayKeys, tasks, bookings, managerSiteBookings, policyState })`, which only composes existing rules:
+- **Annual leave left this leave year** — `annualLeaveBalance` over the person's records (`leaveRecordsForAccount`: every id they go by, same-email ids, catalogue rows on their email and the email itself), with the region's bank holidays; the figure is `remaining`, which already takes pending requests off (Q4). With no allowance (`hasAllowance` false) the card shows "Days taken this leave year: N" (`usedThisYear`).
+- **Hours booked this week** — the Monday–Sunday organisation week containing today (`organizationWeekDayKeys`, Q2), days later in the week included; each day is `bookedWorkedHours` over the person's labour bookings that occupy the day (`bookingOccupiesDay`) and manager site bookings, matched under every id (`personIdSet`, `bookingIdsForAccount`), under the working hours in effect that day (`payrollTimePolicyForDayFromState`). These are worked hours (Q1): clock time less the unpaid break, never multiplied, overlapping bookings once — `payrollHoursResult.workedHours`, with overlapping bookings merged (`mergeMinuteIntervals`) and priced once. Unlike `managerCoverageHours.paidHours` (§6) a block that spans the standard day is its real hours, not the weekday paid day. (Daily Overview's row labels show paid hours with the multiplier since 1.20.2, §6; the figure here is the hours worked.)
+- **Open tasks** — tasks assigned to any of the person's ids (`tasksAssignedToViewer`, the Home rule, §23) that are not completed, tasks with no due date included (Q3); underneath, the number overdue (`isTaskOverdue`) and due this week (`homeOverviewMetrics.tasksDueThisWeek`, today and the next six days).
+- **Qualifications expiring soon** — `qualificationExpiryCount` on the person's own `operatives` rows (by id or email): expired and expiring within a calendar month; "None" with no row or nothing due.
+- **Line manager** — `lineManagerSummary`; every line manager is listed by name (Q5), never "First +N more"; "No line manager", "Not set" and "Unknown person" as §11.
+Each figure links to its screen (Annual leave, My Schedule, Tasks, qualifications, the line manager's profile when the viewer may open it). The rest of My Profile and Delete my account are unchanged.
+
 ## 13. Notifications
 
 - **My notifications** toggles are personal (`users/{uid}.notificationPreferences`), written as dotted partial updates, and sync across platforms (`parseUserNotificationPreferences`, `userNotificationPreferenceFieldPatch`).
@@ -607,6 +615,8 @@ Owner-approved spec of 4 Nov ("PAYE overtime, price work and expenses", release 
 
 ## Deploy notes
 
+**1.35.0** (My Profile figures, §12): hosting only — merge after 1.34.0; web deploys from `main` by itself. No Firestore rules, index, Storage or Functions change; no migration writes; `minimumIosBuild` unchanged (a new read-only card). iOS 1.35 syncs the rulebook and ships the hand-off.
+
 **1.34.0** (ghost operatives, §11; owner steps, in this order, after 1.33.0 is merged and its rules published):
 1. **Merge** the pull request; web deploys from `main` by itself (Add user's Ghost account toggle (hidden until step 5), ghost badges, Give app access, Data health "Ghosts to check").
 2. **Publish the Firestore rules** — Firebase console → Firestore → Rules → paste `firestore.rules` → Publish, or `firebase deploy --only firestore:rules --project project-planner-f986c` — then check the live release (`docs/firestore-rules-notes.md` "After publishing") and that an Operatives manager can still add and edit an operative. The change is R1 and R2 (§16); static compile cost 237,676 (1.33.0 with its review fixes: 237,518). No index, Storage or Functions change.
@@ -674,6 +684,12 @@ Owner-approved spec of 4 Nov ("PAYE overtime, price work and expenses", release 
 **1.10.0** (full order and checks in `docs/DEPLOY_1.10.0.md`): 1. merge the web change; 2. `node scripts/backfill-job-manager-user-ids.mjs --project <id> --all` (dry run, the default) and review the per-job diff; 3. the same with `--apply` (writes only `managerUserIds`, partial updates, idempotent, no write metadata — `updatedFrom` takes only `web` / `ios` / `android`); 4. `firebase deploy --only firestore:rules,firestore:indexes,functions`; 5. release iOS 1.10.0. The read rules (§17) refuse whole-collection job and booking queries for managers without a job toggle and for operatives, so app builds that predate 1.10.0 lose those lists for them until they update.
 
 ## Changelog
+
+### 1.35.0 — 2026-11-07
+- **My Profile figures** (§12, owner decisions 7 Nov; new `lib/canonical/myProfileSummary.ts`): `myProfileSummary` — annual leave left (`annualLeaveBalance.remaining`, after pending, Q4), hours booked this Monday–Sunday week (worked hours, no multiplier, Q1/Q2), open tasks with overdue and due this week (undated tasks counted, Q3), qualifications expiring soon (`qualificationExpiryCount`) and every line manager by name (`lineManagerSummary`, Q5).
+- New helpers it composes: `organizationWeekDayKeys` (the Monday–Sunday organisation week, `dayKeys.ts`), `bookedWorkedHours` (one person's worked hours on a day, overlaps once, `managerCoverage.ts`), `tasksAssignedToViewer` and `homeBookingDayKey` (factored out of `homeOverviewMetrics`, unchanged behaviour).
+- Web: My Profile "Your figures" card; Annual leave and Edit User now count a person's leave under every id they go by, with the region's bank holidays (`leaveRecordsForAccount`), instead of one id and no bank holidays.
+- No rules, index, Storage or Functions change.
 
 ### 1.34.0 — 2026-11-07
 - **Ghost operatives** (§11, owner design 6 Nov "ghost: all recommended", answers rounds 1–2; new `lib/canonical/ghostOperatives.ts`): a bookable operative with no app login — no email, no phone; a `users/{id}` document with `ghost: true`, `passwordSet: false`, `email: ''`, the operative level, self-employed, a day or hourly rate above 0 and a line manager. Added by admins and Operatives managers (`canCreateGhost`, `ghostCreateError`, `ghostCreateWrites`) from a **Ghost account** toggle at the top of Add user / Add new operative (`ghostAddFormRows`, `GHOST_OPERATIVE_EXPLANATION`); the admins are told (`operative_created` / `operative_deleted`). New: `isGhostUser`, `isGhostInvited`, `ghostBadgeLabel` / `GHOST_BADGE_LABEL`, `personDedupeKey`, `canBookLeaveFor`, `ghostLeaveBooking`, `canUpgradeGhost`, `ghostUpgradeRefusal`, `ghostUpgradeWrites` (admin-only Give app access, owner option 1), `inviteAcceptPlaceholderFields` / `INVITE_ACCEPT_DROPPED_PLACEHOLDER_FIELDS`, `ghostConversionCandidates`, `ghostConversionWrites` (owner-run `scripts/convert-no-login-operatives-to-ghosts.mjs`, Q-G2), `ghostsToCheck` (Data health).

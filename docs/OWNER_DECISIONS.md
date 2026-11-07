@@ -143,7 +143,19 @@ How to use it:
 
 | 4 Nov | **Materials catalogue** (add, edit, delete catalogue items and prices) is **admins only** on both apps, through one rulebook rule. iOS `canManageMaterialCatalogue` currently has its own role check (found in the #188 sweep). Sending material orders is unchanged. | open (next rulebook release) |
 | 4 Nov | Very old timesheets with sign-off dates but no signer name or signature image read **Sign Off Pending** (rulebook `isTimesheetFullySigned`), on both apps. No rulebook exception: new organisations only use the new rules. | done (iOS #188, web already) |
-| 5 Nov | **My Profile UI upgrade, iOS and web** (iOS: opened from the Home screen). General UI upgrade with personal metrics, the same on both apps and following the same rules. Metrics come from rulebook functions only (no new calculators); proposed set awaiting owner confirmation. | open (after #264) |
+| 5 Nov | **My Profile UI upgrade, iOS and web** (iOS: opened from the Home screen). General UI upgrade with personal metrics, the same on both apps and following the same rules. Metrics come from rulebook functions only (no new calculators); proposed set awaiting owner confirmation. | figures confirmed 7 Nov (see My Profile below); done web + rulebook (1.35.0, w135-my-profile); iOS (ios-1.35) |
+
+## My Profile (1.35)
+
+| Date | Decision | Status |
+|---|---|---|
+| 7 Nov | **My Profile figures** (owner approved): five figures from existing rules — annual leave left this year, hours booked this week, open tasks, qualifications expiring soon, your line manager. The rest of My Profile (§12) and Delete my account are unchanged. Each figure links to its screen. | done web + rulebook (1.35.0, `myProfileSummary`); iOS (ios-1.35) |
+| 7 Nov | **Q1 = a**: hours are worked hours — clock time less the unpaid break, no overtime multiplier, overlapping bookings once. | done (1.35.0, `bookedWorkedHours` over `payrollHoursResult.workedHours`) |
+| 7 Nov | **Q2 = yes**: the week is Monday–Sunday in the organisation's time zone and includes days later in the week already booked. | done (1.35.0, `organizationWeekDayKeys`) |
+| 7 Nov | **Q3 = yes**: open tasks include tasks with no due date; the number overdue is shown underneath. | done (1.35.0) |
+| 7 Nov | **Q4 = after**: leave left is `annualLeaveBalance.remaining`, which already takes pending requests off. | done (1.35.0) |
+| 7 Nov | **Q5 = all**: every line manager is listed by name, not "First +N more". | done (1.35.0) |
+
 ## Known rulebook bugs (fix in the next rulebook release)
 
 | Date | Bug | Status |
@@ -227,8 +239,16 @@ How to use it:
 | 7 Nov | **(1b) Ghost account toggle hidden until the iPhone 1.34 update is out.** Both apps hide the Ghost account toggle on Add user / Add new operative until the platform owner sets `platformConfig/app.ghostAccounts` true (or lists the company in `ghostAccountsOrganizationIds`), after `minimumIosBuild` is raised to the iOS 1.34 build. Rule: `ghostAccountsEnabled` / `ghostToggleVisible` (the permission `canCreateGhost` and the switch); missing = off. Existing and converted ghosts display, book and work normally whatever the switch says. UI gate only, no rules change. Replaces the 6 Nov "Release order (review F2)" choice. | done web + rulebook (1.34.0, w134-ghosts); iOS (ios-1.34) |
 | 7 Nov | **Q2 confirmed:** only admins change a ghost's line manager (R1). | done (rules, 1.34.0) |
 | 7 Nov | **Q4 confirmed:** the iPhone ghost details as built; creating any user, a ghost included, needs a signal (already enforced: rulebook §2 `users.invites` online only; iOS AddUserView disables Create offline). | done |
-| 7 Nov | **Q5: My Profile figures approved** — annual leave left this year, hours booked this week, open tasks, qualifications expiring soon, line manager. Each from an existing rulebook function only. | open (My Profile UI upgrade, after 1.34) |
+| 7 Nov | **Q5: My Profile figures approved** — annual leave left this year, hours booked this week, open tasks, qualifications expiring soon, line manager. Each from an existing rulebook function only. | done web + rulebook (1.35.0, w135-my-profile, `myProfileSummary`); iOS (ios-1.35) — see My Profile (1.35) |
 | 7 Nov | **Q3 decided: option (a), keep R2 as built.** To change a ghost's booking hours or overtime you must manage the job (`canWriteBooking`) or be an admin; the line manager gets no extra booking power. Ghost bookings feed the weekly report as normal. | done (1.34.0, web #291 / iOS #203) |
+
+## 1.35.0 judgement calls (owner to confirm)
+
+| Date | Choice | Status |
+|---|---|---|
+| 7 Nov | "Due this week" under open tasks is the Home figure (today and the next six days, `homeOverviewMetrics.tasksDueThisWeek`), not the Monday–Sunday week the hours use, so it matches the Home tile. | done, owner to confirm |
+| 7 Nov | Hours use `bookedWorkedHours`, not `managerCoverageHours.paidHours`: the latter caps a block that spans the standard day at the weekday paid day (06:00–18:00 read 8h, not 11.5h). | done, owner to confirm |
+| 7 Nov | Manager schedule bookings of every place (office, working from home, site survey, jobs) count as hours booked. | done, owner to confirm |
 
 ## Open questions for the owner
 

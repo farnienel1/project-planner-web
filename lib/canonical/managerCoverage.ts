@@ -20,6 +20,7 @@
 import { formatClockMinutes, mergeMinuteIntervals, namedSlotKind, slotInterval, standardDayCoverage, standardDayWindow, type MinuteInterval } from './engine'
 import { weekdayPaidHours, type OrgPayrollTimePolicy } from './organizationSettings'
 import { payrollHoursResult } from './payrollHours'
+import { bookingStandardDayOn } from './payrollPolicySchedule'
 
 export type CoverageBooking = {
   timeSlot?: string | null
@@ -100,4 +101,53 @@ export function managerCoverageHours(input: {
     paid += result.workedHours
   }
   return { ...base, paidHours: round2(paid) }
+}
+
+/**
+ * Rulebook 1.35.0 §12 (owner Q1 = a, 7 Nov): the hours a person worked on one organisation-zone day across all
+ * their bookings — clock time less the unpaid break, never multiplied — with overlapping (or touching) bookings
+ * counted once. Unlike `managerCoverageHours.paidHours` there is no cap at the weekday paid day: a block that spans
+ * the whole standard day (06:00–18:00) is its real hours, and a Saturday or Sunday named slot is that day's own
+ * window (`bookingStandardDayOn`). A booking that overlaps nothing is priced on its own by `payrollHoursResult`
+ * (`workedHours`); bookings that overlap are merged (`mergeMinuteIntervals`) and the block priced once as custom
+ * hours, the unpaid break taken off where the block covers it unless one of them has "No unpaid break".
+ */
+export function bookedWorkedHours(input: {
+  bookings: ReadonlyArray<CoverageBooking> | null | undefined
+  dayKey: string
+  policy: OrgPayrollTimePolicy
+  timeZone?: string | null
+}): number {
+  const bookings = (input.bookings || []).filter(Boolean)
+  if (bookings.length === 0) return 0
+  const policy = input.policy
+  const dayInput = bookingStandardDayOn(policy, input.dayKey) ?? policy
+  const priced = (booking: CoverageBooking) =>
+    payrollHoursResult({ booking: { ...booking }, dayKey: input.dayKey, policy, timeZone: input.timeZone }).workedHours
+  const withInterval: Array<{ booking: CoverageBooking; interval: MinuteInterval }> = []
+  let worked = 0
+  for (const booking of bookings) {
+    const interval = slotInterval(booking, dayInput)
+    if (interval && interval.end > interval.start) withInterval.push({ booking, interval })
+    else worked += priced(booking)
+  }
+  for (const block of mergeMinuteIntervals(withInterval.map((row) => row.interval))) {
+    const inside = withInterval.filter((row) => row.interval.start < block.end && row.interval.end > block.start)
+    if (inside.length === 1) {
+      worked += priced(inside[0].booking)
+      continue
+    }
+    worked += payrollHoursResult({
+      booking: {
+        timeSlot: 'CUSTOM',
+        workStartTime: formatClockMinutes(block.start),
+        workEndTime: formatClockMinutes(block.end > 24 * 60 ? block.end - 24 * 60 : block.end),
+        isBreakRemoved: inside.some((row) => row.booking.isBreakRemoved === true),
+      },
+      dayKey: input.dayKey,
+      policy,
+      timeZone: input.timeZone,
+    }).workedHours
+  }
+  return round2(worked)
 }

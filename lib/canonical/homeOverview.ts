@@ -135,16 +135,10 @@ function taskAssigneeIds(task: HomeOverviewTask): string[] {
     .filter(Boolean)
 }
 
-/**
- * Rulebook 1.23.0 §23: the Home overview figures (tasks due today / this week / overdue, open tasks, people on site,
- * people on leave) on the organisation-zone day, each person once under all their ids. A task is the viewer's when
- * any of its assignees (operative or manager ids) is one of the viewer's ids (`personIdSet` of their account and
- * email over the roster, `operatives` and `managers` rows).
- */
-export function homeOverviewMetrics(input: HomeOverviewInput): HomeOverviewMetrics {
-  const timeZone = input.timeZone
-  const today = holidayDocumentDayKey(input.nowMs, timeZone)
-  const weekEnd = today ? addCalendarDayKeys(today, 7) : ''
+type HomeViewerInput = Pick<HomeOverviewInput, 'viewer' | 'roster' | 'operatives' | 'managers'>
+
+/** The roster fold (users, `operatives` and `managers` rows) and the viewer's ids (without case). */
+function homeViewerIds(input: HomeViewerInput) {
   const users = (input.roster || []).filter((row) => row && idText(row.id))
   const operatives = (input.operatives || []).filter((row) => row && idText(row.id))
   const managers = (input.managers || []).filter((row) => row && idText(row.id))
@@ -158,8 +152,6 @@ export function homeOverviewMetrics(input: HomeOverviewInput): HomeOverviewMetri
     ...operatives.map((row) => ({ id: idText(row.id), email: row.email ?? null })),
     ...managers.map((row) => ({ id: idText(row.id), email: row.email ?? null })),
   ]
-  const fold = personFolder(foldRoster)
-
   const viewerIds = new Set(
     personIdSet({ id: idText(input.viewer?.id) || undefined, email: input.viewer?.email ?? null }, foldRoster)
       .map(idKey)
@@ -170,6 +162,38 @@ export function homeOverviewMetrics(input: HomeOverviewInput): HomeOverviewMetri
   if (viewerEmail) {
     for (const row of foldRoster) if (idKey(row.email) === viewerEmail) for (const id of personIdSet(row, foldRoster)) viewerIds.add(idKey(id))
   }
+  return { users, operatives, managers, foldRoster, viewerIds }
+}
+
+/**
+ * Rulebook 1.35.0 §12, §23: the tasks assigned to the viewer — any assignee (operative or manager ids) is one of the
+ * viewer's ids (`personIdSet` of their account and email over the users, `operatives` and `managers` rows; without
+ * case). The same test `homeOverviewMetrics` uses for its personal task figures. Returned in the given order.
+ */
+export function tasksAssignedToViewer<T extends HomeOverviewTask>(
+  input: HomeViewerInput & { tasks?: ReadonlyArray<T> | null }
+): T[] {
+  const { viewerIds } = homeViewerIds(input)
+  return (input.tasks || []).filter((task) => task && taskAssigneeIds(task).some((id) => viewerIds.has(idKey(id))))
+}
+
+/** The organisation-zone day of a stored booking: its `dayKey` when given, else its `date` (any stored shape). */
+export function homeBookingDayKey(row: { date?: unknown; dayKey?: string | null }, timeZone: string): string {
+  return bookingDay(row, timeZone)
+}
+
+/**
+ * Rulebook 1.23.0 §23: the Home overview figures (tasks due today / this week / overdue, open tasks, people on site,
+ * people on leave) on the organisation-zone day, each person once under all their ids. A task is the viewer's when
+ * any of its assignees (operative or manager ids) is one of the viewer's ids (`personIdSet` of their account and
+ * email over the roster, `operatives` and `managers` rows).
+ */
+export function homeOverviewMetrics(input: HomeOverviewInput): HomeOverviewMetrics {
+  const timeZone = input.timeZone
+  const today = holidayDocumentDayKey(input.nowMs, timeZone)
+  const weekEnd = today ? addCalendarDayKeys(today, 7) : ''
+  const { users, operatives, foldRoster, viewerIds } = homeViewerIds(input)
+  const fold = personFolder(foldRoster)
 
   let tasksDueToday = 0
   let tasksDueThisWeek = 0
