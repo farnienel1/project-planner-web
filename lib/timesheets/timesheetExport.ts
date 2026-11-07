@@ -11,8 +11,8 @@ import { signedLabourSlice } from '@/lib/weekly-report/weeklyReportPayroll'
 import { formatAbbreviatedDayInZone, formatStampInZone } from '@/lib/orgTime/zoneTime'
 import { londonDateParts, dayKey } from '@/lib/ios-parity/londonTime'
 import type { Operative, User } from '@/types'
-import { findOperativeForUser } from '@/lib/operatives/operativeRosterUtils'
-import type { OperativeDayRateHistoryCollection } from '@/lib/timesheets/dayRateHistoryStorage'
+import { personRateHistoryIds } from '@/lib/pay/personRateHistoryIds'
+import type { OperativeDayRateHistoryCollection, OperativeDayRateHistoryEntry } from '@/lib/timesheets/dayRateHistoryStorage'
 import { formatMoney } from '@/lib/canonical/money'
 import { parseMultipliedHoursText } from '@/lib/canonical/payrollHours'
 import { timesheetInvoiceRows } from '@/lib/canonical/reportPay'
@@ -73,27 +73,32 @@ export function invoiceRateChangeNotes({
     return key >= startKey && key <= endKey
   }
   const notes = new Set<string>()
-  for (const entry of (history.byUserId[user.id] || []).filter((row) => inPeriod(row.effectiveAt))) {
+  // 1.36.0 (FU-5): every id the person's rate history may be filed under (`personRateHistoryIds`: `personIdSet`
+  // and every `operatives` row on their email), compared without case — not only `user.id` and one catalogue row.
+  const ids = personRateHistoryIds(user, operatives)
+  const userKeys = new Set(ids.userIds.map((id) => id.toLowerCase()))
+  const operativeKeys = new Set(ids.operativeIds.map((id) => id.toLowerCase()))
+  // Each list notes a row once; a row stored with both ids is noted in both lists, as before.
+  const entriesUnder = (byId: Record<string, OperativeDayRateHistoryEntry[]>, keys: Set<string>) => {
+    const seen = new Set<string>()
+    return Object.entries(byId)
+      .filter(([key]) => keys.has(key.trim().toLowerCase()))
+      .flatMap(([, entries]) => entries)
+      .filter((entry) => inPeriod(entry.effectiveAt) && !seen.has(entry.id) && Boolean(seen.add(entry.id)))
+  }
+  for (const entry of entriesUnder(history.byUserId, userKeys)) {
     notes.add(
       entry.dayRate == null
         ? `Rate cleared from ${formatAbbreviatedDayInZone(entry.effectiveAt, timeZone)}.`
         : `Rate updated to ${formatMoney(entry.dayRate, currencyCode)}${entry.payBasis === 'hourly' ? '/hr' : '/day'} from ${formatAbbreviatedDayInZone(entry.effectiveAt, timeZone)}.`
     )
   }
-  const matched = operatives.filter(
-    (operative) => operative.email.trim().toLowerCase() === user.email.trim().toLowerCase()
-  )
-  const linked = findOperativeForUser(user, operatives)
-  const ids = new Set(matched.map((row) => row.id))
-  if (linked) ids.add(linked.id)
-  for (const operativeId of ids) {
-    for (const entry of (history.byOperativeId[operativeId] || []).filter((row) => inPeriod(row.effectiveAt))) {
-      notes.add(
-        entry.dayRate == null
-          ? `Operative rate cleared from ${formatAbbreviatedDayInZone(entry.effectiveAt, timeZone)}.`
-          : `Operative rate updated to ${formatMoney(entry.dayRate, currencyCode)}${entry.payBasis === 'hourly' ? '/hr' : '/day'} from ${formatAbbreviatedDayInZone(entry.effectiveAt, timeZone)}.`
-      )
-    }
+  for (const entry of entriesUnder(history.byOperativeId, operativeKeys)) {
+    notes.add(
+      entry.dayRate == null
+        ? `Operative rate cleared from ${formatAbbreviatedDayInZone(entry.effectiveAt, timeZone)}.`
+        : `Operative rate updated to ${formatMoney(entry.dayRate, currencyCode)}${entry.payBasis === 'hourly' ? '/hr' : '/day'} from ${formatAbbreviatedDayInZone(entry.effectiveAt, timeZone)}.`
+    )
   }
   return [...notes].sort((a, b) => a.localeCompare(b))
 }

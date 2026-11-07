@@ -224,8 +224,8 @@ export function TasksScreen() {
   }, [searchedTasks, projects, smallWorks])
 
   const myTasks = useMemo(
-    () => tasks.filter((t) => isTaskAssignedToUser(t, user, operatives, managers)),
-    [tasks, user, operatives, managers]
+    () => tasks.filter((t) => isTaskAssignedToUser(t, user, operatives, managers, users)),
+    [tasks, user, operatives, managers, users]
   )
 
   const stats = useMemo(() => {

@@ -21,7 +21,7 @@ import { parseHealthSafetyPayload, mergeHealthSafetyPayload } from '@/lib/health
 import { serializeHealthSafetyPayload } from '@/lib/healthSafety/serializeHealthSafety'
 import type { HSProjectSafetyData, HSToolboxTalk, User } from '@/types'
 import { newUuid, sanitizeForFirestore } from '@/lib/firebase/firestoreUtils'
-import { startOfWeek } from 'date-fns'
+import { organizationWeekStartInstant } from '@/lib/orgTime/organizationWeek'
 import { inboxActorUserId, saveInboxNotification } from '@/lib/firebase/notifyInbox'
 import {
   healthSafetyDocumentId,
@@ -258,7 +258,8 @@ export const useHealthSafetyStore = create<HealthSafetyState>((set, get) => ({
     const current = get().data ?? emptyData()
     const issueId = newUuid()
     const now = new Date()
-    const weekCommencing = options?.weekCommencing ?? startOfWeek(now, { weekStartsOn: 1 })
+    // Rulebook §1 (1.36.0, FU-4): organisation-zone midnight of the organisation week's Monday, not the browser's.
+    const weekCommencing = options?.weekCommencing ?? organizationWeekStartInstant(now)
     const issue = {
       id: issueId,
       projectId,

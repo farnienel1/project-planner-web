@@ -97,6 +97,7 @@ function rateInput({
   history,
   timeZone,
   aliasUserIds,
+  operativeIds: extraOperativeIds = [],
 }: {
   user?: User | null
   operative?: Operative | null
@@ -104,9 +105,10 @@ function rateInput({
   history: OperativeDayRateHistoryCollection
   timeZone?: string
   aliasUserIds: string[]
+  operativeIds?: string[]
 }) {
   const userIds = [user?.id, ...aliasUserIds].filter((id): id is string => Boolean(id))
-  const operativeIds = operative?.id ? [operative.id] : []
+  const operativeIds = [operative?.id, ...extraOperativeIds].filter((id): id is string => Boolean(id))
   return {
     user: user ?? null,
     operative: operative ?? null,
@@ -137,6 +139,7 @@ export function resolvePayrollRate({
   standardDayHours = 8,
   timeZone,
   aliasUserIds = [],
+  operativeIds = [],
 }: {
   user?: User | null
   operative?: Operative | null
@@ -145,9 +148,11 @@ export function resolvePayrollRate({
   standardDayHours?: number
   timeZone?: string
   aliasUserIds?: string[]
+  /** 1.36.0 (FU-5): every `operatives` row of the person (`personRateHistoryIds`), beside `operative`. */
+  operativeIds?: string[]
 }): ResolvedPayrollRate {
   void standardDayHours
-  const input = rateInput({ user, operative, day, history, timeZone, aliasUserIds })
+  const input = rateInput({ user, operative, day, history, timeZone, aliasUserIds, operativeIds })
   // Rate lookup only: the employment rule is applied by `resolveForTimesheetDay` / the caller.
   const withoutEmployment = input.user
     ? { ...input.user, employmentType: 'self_employed', employmentTypeTransitionFrom: null, employmentTypeEffectiveAt: null }
@@ -164,6 +169,7 @@ export function resolveForTimesheetDay({
   standardDayHours = 8,
   timeZone,
   aliasUserIds = [],
+  operativeIds = [],
 }: {
   user?: User | null
   operative?: Operative | null
@@ -172,7 +178,9 @@ export function resolveForTimesheetDay({
   standardDayHours?: number
   timeZone?: string
   aliasUserIds?: string[]
+  /** 1.36.0 (FU-5): every `operatives` row of the person (`personRateHistoryIds`), beside `operative`. */
+  operativeIds?: string[]
 }): ResolvedPayrollRate {
   void standardDayHours
-  return resolvedFromCanonical(payRateOnDay(rateInput({ user, operative, day, history, timeZone, aliasUserIds })))
+  return resolvedFromCanonical(payRateOnDay(rateInput({ user, operative, day, history, timeZone, aliasUserIds, operativeIds })))
 }

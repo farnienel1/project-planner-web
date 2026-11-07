@@ -1,4 +1,5 @@
-import { addMinutes, endOfWeek, format, startOfDay } from 'date-fns'
+import { addMinutes, format, startOfDay } from 'date-fns'
+import { organizationCalendarWeekEnd } from '@/lib/orgTime/organizationWeek'
 import type { Booking } from '@/types'
 import {
   DEFAULT_PAYROLL_POLICY,
@@ -191,7 +192,8 @@ export function outlookWebEventUrl(event: CalendarEventInput): string {
 }
 
 export function bookingsInWeek(bookings: Booking[], weekStart: Date): Booking[] {
-  const weekEnd = endOfWeek(weekStart, { weekStartsOn: 1 })
+  // Rulebook §1 (1.36.0, FU-4): the end of the organisation's Monday–Sunday week.
+  const weekEnd = organizationCalendarWeekEnd(weekStart)
   return bookings.filter((booking) => {
     const day = startOfDay(booking.date instanceof Date ? booking.date : new Date(booking.date))
     return day >= startOfDay(weekStart) && day <= weekEnd

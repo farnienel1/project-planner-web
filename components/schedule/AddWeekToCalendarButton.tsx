@@ -1,7 +1,8 @@
 'use client'
 
 import { useMemo, useRef, useState } from 'react'
-import { format, endOfWeek } from 'date-fns'
+import { format } from 'date-fns'
+import { organizationCalendarWeekEnd } from '@/lib/orgTime/organizationWeek'
 import type { Booking } from '@/types'
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import { DEFAULT_PAYROLL_POLICY } from '@/lib/settings/organizationSettings'
@@ -40,7 +41,7 @@ export function AddWeekToCalendarButton({
     [weekBookings, projectsById, payrollPolicy]
   )
 
-  const weekLabel = `${format(weekStart, 'd MMM')} – ${format(endOfWeek(weekStart, { weekStartsOn: 1 }), 'd MMM yyyy')}`
+  const weekLabel = `${format(weekStart, 'd MMM')} – ${format(organizationCalendarWeekEnd(weekStart), 'd MMM yyyy')}`
   const calendarName = organizationName ? `${organizationName} – My Schedule` : 'My Schedule'
 
   const exportIcs = () => {

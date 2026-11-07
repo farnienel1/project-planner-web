@@ -14,10 +14,9 @@ import {
   addDays,
   format,
   isSameDay,
-  isToday,
   startOfDay,
-  startOfWeek,
 } from 'date-fns'
+import { organizationCalendarWeekStart, organizationCurrentWeekStart, organizationTodayCalendarDate } from '@/lib/orgTime/organizationWeek'
 import { useProjectStore } from '@/lib/stores/projectStore'
 import { useManagerScheduleStore } from '@/lib/stores/managerScheduleStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
@@ -226,10 +225,11 @@ export function MyScheduleSelfBookingScreen({
   useOrganizationDocument()
   const leaveGate = useBookingConflictGate()
 
-  const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: 1 }))
+  // Rulebook §1 (1.36.0, FU-4): the organisation's current week and today, not the browser's.
+  const [weekStart, setWeekStart] = useState(() => organizationCurrentWeekStart())
   // An earlier week reaches before the launch booking download.
   useBookingHistoryFrom(organizationId, weekStart)
-  const [selectedDate, setSelectedDate] = useState<Date>(() => startOfDay(new Date()))
+  const [selectedDate, setSelectedDate] = useState<Date>(() => organizationTodayCalendarDate())
   const [multiDay, setMultiDay] = useState(false)
   const [selectedDates, setSelectedDates] = useState<Date[]>([])
   const [expandedLoc, setExpandedLoc] = useState<string | null>(null)
@@ -710,8 +710,8 @@ export function MyScheduleSelfBookingScreen({
               type="button"
               className="on"
               onClick={() => {
-                const today = startOfDay(new Date())
-                setWeekStart(startOfWeek(today, { weekStartsOn: 1 }))
+                const today = organizationTodayCalendarDate()
+                setWeekStart(organizationCalendarWeekStart(today))
                 setSelectedDate(today)
               }}
             >
@@ -749,7 +749,7 @@ export function MyScheduleSelfBookingScreen({
       <div className="week" data-hue="sched">
         {weekDates.map((day, index) => {
           const isSel = multiDay ? selectedDates.some((d) => isSameDay(d, day)) : isSameDay(day, selectedDate)
-          const today = isToday(day)
+          const today = isSameDay(day, organizationTodayCalendarDate())
           const dayRows = myBookingsOn(day)
           const assignedRows = assignedOn(day)
           const leaveLabel = myScheduleAnnualLeaveLabel(myHolidays, day, undefined, policyForBookingDate(day, payrollPolicy) ?? payrollPolicy)

@@ -5,7 +5,8 @@
 'use client'
 
 import { FormEvent, useEffect, useMemo, useState } from 'react'
-import { format, startOfWeek } from 'date-fns'
+import { format } from 'date-fns'
+import { organizationWeekStartInstant } from '@/lib/orgTime/organizationWeek'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useHealthSafetyStore } from '@/lib/stores/healthSafetyStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
@@ -288,7 +289,7 @@ export function ProjectHealthSafetySection({
     if (recipients.length === 0) return
     await ensureTalkOnProject(issueTalkId)
     await issueToolboxTalk(organization.id, project.id, isSmallWorks, issueTalkId, recipients, user.id, {
-      weekCommencing: startOfWeek(new Date(), { weekStartsOn: 1 }),
+      weekCommencing: organizationWeekStartInstant(new Date()),
       audience: { users, actor: user, talkTitle: talkTitleFor(issueTalkId), siteName: project.siteName },
     })
     setShowIssue(false)
@@ -303,7 +304,7 @@ export function ProjectHealthSafetySection({
     if (recipients.length === 0) return
     await ensureTalkOnProject(scheduleTalkId)
     await issueToolboxTalk(organization.id, project.id, isSmallWorks, scheduleTalkId, recipients, user.id, {
-      weekCommencing: startOfWeek(schedulePublishAt, { weekStartsOn: 1 }),
+      weekCommencing: organizationWeekStartInstant(schedulePublishAt),
       publishAt: schedulePublishAt,
       audience: { users, actor: user, talkTitle: talkTitleFor(scheduleTalkId), siteName: project.siteName },
     })

@@ -116,3 +116,16 @@ export function parseFilledCheckList(text) {
   }
   return out
 }
+
+/**
+ * 1.36.0: the organisation's anchored people (rulebook §1 `rosterMembersForOrganization`): every key of
+ * `organizations/{orgId}.members` and the creator. Their users documents are accounts here whatever company they name.
+ */
+export function anchoredMemberIds(orgData) {
+  const ids = new Set()
+  const members = orgData && typeof orgData.members === 'object' && orgData.members ? orgData.members : {}
+  for (const key of Object.keys(members)) if (key.trim()) ids.add(key.trim())
+  const creator = typeof orgData?.creatorUserId === 'string' ? orgData.creatorUserId.trim() : ''
+  if (creator) ids.add(creator)
+  return [...ids]
+}

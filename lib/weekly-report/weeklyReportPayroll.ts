@@ -202,6 +202,7 @@ export function labourPaySlices({
   operative,
   history = emptyDayRateHistory(),
   aliasUserIds = [],
+  operativeIds = [],
   payroll,
   timeZone,
 }: {
@@ -215,6 +216,8 @@ export function labourPaySlices({
   operative?: Operative
   history?: OperativeDayRateHistoryCollection
   aliasUserIds?: string[]
+  /** 1.36.0 (FU-5): every `operatives` row of the person (`personRateHistoryIds`), for their rate history. */
+  operativeIds?: string[]
   payroll?: OrgPayrollTimePolicy
   timeZone?: string
 }): LabourPaySlice[] {
@@ -235,6 +238,7 @@ export function labourPaySlices({
     standardDayHours: standard,
     timeZone,
     aliasUserIds,
+    operativeIds,
   })
   const isPaye = Boolean(user && employmentTypeOnDay(user, date, timeZone) === 'paye')
   const basis: PayBasis = resolved.basis === 'hourly' ? 'hourly' : 'day'

@@ -1,7 +1,6 @@
 import { format } from 'date-fns'
 import type { Operative, User } from '@/types'
-import { findOperativeForUser } from '@/lib/operatives/operativeRosterUtils'
-import { hasAdminAccess, isOperativeMode } from '@/lib/navigation/menuPermissions'
+import { bookingIdsForAccount, normalizeDocumentId } from '@/lib/canonical'
 
 export type ScheduleFocus = {
   date: Date
@@ -16,12 +15,18 @@ export function shouldScopeScheduleToOperative(
   operatives: Operative[]
 ): boolean {
   if (!viewer) return true
-  const linkedOperativeId = findOperativeForUser(viewer, operatives)?.id
-  if (linkedOperativeId && linkedOperativeId === operativeId) return false
-
-  if (isOperativeMode(viewer)) return operativeId !== linkedOperativeId
-
-  return hasAdminAccess(viewer) || viewer.permissions.manager === true || operativeId !== linkedOperativeId
+  // Rulebook §10 `bookingIdsForAccount` (1.36.0, FU-5): the booking is the viewer's own when it is filed under any id
+  // they go by — their users id, a former invite id, or any `operatives` row on their email — compared without case.
+  // Before, only one catalogue row on the email counted, compared with case, so the viewer's own booking filed under
+  // their users id (or an upper-case iOS id) was treated as someone else's and the schedule was scoped to it.
+  const target = normalizeDocumentId(operativeId)
+  const own = bookingIdsForAccount(
+    { id: viewer.id, email: viewer.email ?? null, formerIds: viewer.formerUserIds ?? [] },
+    operatives.map((row) => ({ id: row.id, email: row.email ?? '' }))
+  ).some((id) => normalizeDocumentId(id) === target)
+  // Someone else's booking scopes the schedule to that person, for every viewer (the old operative / manager / admin
+  // branches all returned true once the booking was not the viewer's own).
+  return !own
 }
 
 export function buildScheduleUrl(

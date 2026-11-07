@@ -9,6 +9,7 @@ import {
   DEFAULT_PAYROLL_POLICY,
   annualLeaveBankHolidayRange,
   bookedWorkedHours,
+  managerCoverageHours,
   myProfileBankHolidayRange,
   myProfileSummary,
   organizationWeekDayKeys,
@@ -275,4 +276,18 @@ test('1.35.0 carry-over needs last leave year\'s bank holidays (Easter Monday 20
   const withBank = myProfileSummary({ ...input, nonWorkingDayKeys: ['2025-04-18', '2025-04-21', '2026-04-03', '2026-04-06'] })
   assert.equal(withBank.leave.carriedForward, 23)
   assert.equal(withBank.leave.remaining, 48)
+})
+
+test('1.36.0 wording: managerCoverageHours.paidHours is hours worked capped at the weekday paid day, not pay', () => {
+  const policy = parsePayrollTimePolicyState(policyDoc, LONDON).current
+  const long = [{ timeSlot: 'CUSTOM', workStartTime: '06:00', workEndTime: '18:00' }]
+  const cover = managerCoverageHours({ bookings: long, dayKey: '2026-11-02', policy, timeZone: LONDON })
+  // Documented in the field and rulebook §6: a block spanning the standard day reads the paid day …
+  assert.equal(cover.paidHours, cover.paidDayHours)
+  assert.equal(cover.covered, true)
+  // … while the person's real hours are `bookedWorkedHours` (never multiplied, no cap).
+  assert.equal(bookedWorkedHours({ bookings: long, dayKey: '2026-11-02', policy, timeZone: LONDON }), 11.5)
+  // A short custom block is clock less break, never multiplied (no 1.5× on hours outside the day).
+  const evening = managerCoverageHours({ bookings: [{ timeSlot: 'CUSTOM', workStartTime: '16:00', workEndTime: '19:00' }], dayKey: '2026-11-02', policy, timeZone: LONDON })
+  assert.equal(evening.paidHours, 3)
 })

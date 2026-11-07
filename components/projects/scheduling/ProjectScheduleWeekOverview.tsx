@@ -1,7 +1,8 @@
 'use client'
 
 import Link from 'next/link'
-import { addDays, endOfWeek, format, isToday as dateFnsIsToday, startOfWeek } from 'date-fns'
+import { addDays, format, isSameDay } from 'date-fns'
+import { organizationCalendarWeekEnd, organizationCurrentWeekStart, organizationTodayCalendarDate } from '@/lib/orgTime/organizationWeek'
 import { useEffect, useMemo, useState } from 'react'
 import { useBookingStore } from '@/lib/stores/bookingStore'
 import { useManagerScheduleStore } from '@/lib/stores/managerScheduleStore'
@@ -194,7 +195,8 @@ export function ProjectScheduleWeekOverview({
     }).length > 0
   const { users, userIdAliases, loadUsers } = useOrgUserStore()
   const { subcontractors, loadSubcontractors } = useSubcontractorStore()
-  const [weekStart, setWeekStart] = useState(startOfWeek(new Date(), { weekStartsOn: 1 }))
+  // Rulebook §1 (1.36.0, FU-4): the organisation's current week and today, not the browser's.
+  const [weekStart, setWeekStart] = useState(() => organizationCurrentWeekStart())
   // An earlier week reaches before the launch booking download.
   useBookingHistoryFrom(organizationId, weekStart)
   const [subBookings, setSubBookings] = useState<SubBooking[]>([])
@@ -263,7 +265,7 @@ export function ProjectScheduleWeekOverview({
   }, [organizationId, project.id])
 
   const weekDays = useMemo(() => weekDaysFrom(weekStart), [weekStart])
-  const weekEnd = endOfWeek(weekStart, { weekStartsOn: 1 })
+  const weekEnd = organizationCalendarWeekEnd(weekStart)
   const projectBookings = useMemo(
     () => bookings.filter((b) => idsMatch(b.projectId, project.id)),
     [bookings, project.id]
@@ -647,7 +649,7 @@ export function ProjectScheduleWeekOverview({
                 Booked in
               </div>
               {weekDays.map((day) => {
-                const isTodayDay = dateFnsIsToday(day)
+                const isTodayDay = isSameDay(day, organizationTodayCalendarDate())
                 return (
                   <div
                     key={day.toISOString()}
@@ -771,7 +773,7 @@ function PersonRow({
       </div>
       {weekDays.map((day, index) => {
         const cell = person.cells[index]
-        const isTodayDay = dateFnsIsToday(day)
+        const isTodayDay = isSameDay(day, organizationTodayCalendarDate())
         return (
           <div
             key={`${person.key}-${day.toISOString()}`}
