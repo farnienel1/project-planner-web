@@ -1,4 +1,5 @@
 import { format } from 'date-fns'
+import { personRateHistoryIds } from '@/lib/pay/personRateHistoryIds'
 import {
   bookingOccupiesDay,
   clashResolutionKey,
@@ -400,6 +401,11 @@ export function buildWeeklyReportData({
       operative,
       history,
       aliasUserIds: user ? aliasIdsFor(user.id) : [],
+      // 1.36.0 (FU-5): the person's rate history under any of their `operatives` rows, not one row on the email.
+      operativeIds: personRateHistoryIds(user ?? null, operatives, {
+        aliasUserIds: user ? aliasIdsFor(user.id) : [],
+        extraOperativeIds: [operative?.id],
+      }).operativeIds,
       payroll: policyOn(date),
       timeZone,
     })

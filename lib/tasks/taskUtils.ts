@@ -1,44 +1,50 @@
 import { isTaskOverdue as projectTaskIsOverdue } from '@/lib/tasks/projectTaskFilters'
 import type { Manager, Operative, Project, ProjectTask, User } from '@/types'
-import { isOperativeMode } from '@/lib/navigation/menuPermissions'
+import { tasksAssignedToViewer } from '@/lib/canonical'
 
-function normalizedEmail(value: string | undefined | null): string {
-  return value?.toLowerCase().trim() ?? ''
-}
-
-/** Whether a task is assigned to the signed-in user (mirrors iOS `ProjectTask.isAssignedToUser`). */
+/**
+ * Whether a task is assigned to the signed-in user: rulebook 1.35.0 `tasksAssignedToViewer` (any assignee — operative
+ * or manager ids — is one of the viewer's ids: `personIdSet` of their account and email over the users, `operatives`
+ * and `managers` rows, without case), the same test Home and My Profile use. 1.36.0: before, web matched one
+ * `managers` row on the email and the `operatives` rows on it with letter case, and never the person's own users id,
+ * so a task assigned under the users id, a second managers row or an iOS upper-case id was missing from My tasks.
+ * The rulebook test matches every task the old one did (never fewer) — `roster` adds the person's other documents.
+ */
 export function isTaskAssignedToUser(
   task: ProjectTask,
   user: User | null,
   operatives: Operative[],
-  managers: Manager[]
+  managers: Manager[],
+  roster: ReadonlyArray<User> = []
 ): boolean {
-  const email = normalizedEmail(user?.email)
-  if (!email) return false
+  return tasksAssignedToUser([task], user, operatives, managers, roster).length > 0
+}
 
-  if (isOperativeMode(user)) {
-    const ids = operatives.filter((op) => normalizedEmail(op.email) === email).map((op) => op.id)
-    if (ids.length === 0) return false
-    return ids.some(
-      (id) => task.assignedOperativeId === id || (task.assignedOperativeIds || []).includes(id)
-    )
-  }
-
-  const manager = managers.find((m) => normalizedEmail(m.email) === email)
-  if (manager && (task.assignedManagerId === manager.id || (task.assignedManagerIds || []).includes(manager.id))) {
-    return true
-  }
-
-  const operativeIds = operatives.filter((op) => normalizedEmail(op.email) === email).map((op) => op.id)
-  if (
-    operativeIds.some(
-      (id) => task.assignedOperativeId === id || (task.assignedOperativeIds || []).includes(id)
-    )
-  ) {
-    return true
-  }
-
-  return false
+/**
+ * The tasks of a list assigned to the signed-in user (`isTaskAssignedToUser` for each), with one call to
+ * `tasksAssignedToViewer`, so the viewer's ids are folded once for the whole list rather than once per task.
+ * Returned in the given order.
+ */
+export function tasksAssignedToUser(
+  tasks: ReadonlyArray<ProjectTask>,
+  user: User | null,
+  operatives: Operative[],
+  managers: Manager[],
+  roster: ReadonlyArray<User> = []
+): ProjectTask[] {
+  if (!user || tasks.length === 0) return []
+  const rows = roster.some((row) => row.id === user.id) ? roster : [user, ...roster]
+  return tasksAssignedToViewer({
+    viewer: { id: user.id, email: user.email ?? null },
+    roster: rows.map((row) => ({
+      id: row.id,
+      email: row.email ?? null,
+      formerUserIds: row.formerUserIds ?? [],
+    })),
+    operatives: operatives.map((row) => ({ id: row.id, email: row.email ?? null })),
+    managers: managers.map((row) => ({ id: row.id, email: row.email ?? null })),
+    tasks,
+  })
 }
 
 /** Rulebook 1.23.0 §23 `isTaskOverdue` on the organisation day. */
@@ -90,7 +96,7 @@ export function filterTasksForView(
 ): ProjectTask[] {
   let list = showAllTasks
     ? tasks
-    : tasks.filter((task) => isTaskAssignedToUser(task, user, operatives, managers))
+    : tasksAssignedToUser(tasks, user, operatives, managers)
 
   switch (filter) {
     case 'todo':

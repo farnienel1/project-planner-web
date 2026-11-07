@@ -1,6 +1,7 @@
 'use client'
 
-import { addDays, format, isSameDay, startOfWeek } from 'date-fns'
+import { addDays, format, isSameDay } from 'date-fns'
+import { organizationCalendarWeekStart } from '@/lib/orgTime/organizationWeek'
 import { coversCalendarDay, isSameLondonDay } from '@/lib/ios-parity/londonTime'
 import type { ReactNode } from 'react'
 import { ReportFileLink } from '@/components/fileReports/ReportFileLink'
@@ -71,7 +72,8 @@ export function FilterChipsRow<T extends string>({
 }
 
 export function weekDaysContaining(anchor: Date): Date[] {
-  const start = startOfWeek(anchor, { weekStartsOn: 1 })
+  // Rulebook §1 (1.36.0, FU-4): the organisation's Monday–Sunday week (`organizationWeekDayKeys`).
+  const start = organizationCalendarWeekStart(anchor)
   return Array.from({ length: 7 }, (_, i) => addDays(start, i))
 }
 

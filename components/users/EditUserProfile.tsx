@@ -12,6 +12,7 @@ import { useUserStore } from '@/lib/stores/userStore'
 import { useInviteStore } from '@/lib/stores/inviteStore'
 import { loadSentInvitation, type SentInvitation } from '@/lib/orgSetup/openInvitation'
 import { findOperativeForUser, operativeRecordForUser } from '@/lib/operatives/operativeRosterUtils'
+import { personRateHistoryIds } from '@/lib/pay/personRateHistoryIds'
 import { displayTradeType, STAFF_TRADE_TYPES } from '@/lib/staff/staffTradeTypes'
 import {
   canEditIdentityDetails,
@@ -510,13 +511,12 @@ export function EditUserProfile({
 
   const previousRateEntries = useMemo(() => {
     if (!target) return []
-    const email = target.email.trim().toLowerCase()
-    // 1.34.0: people with no email (ghosts) never share rate history through the empty email.
-    const ids = email
-      ? users.filter((row) => row.email.trim().toLowerCase() === email).map((row) => row.id)
-      : [target.id]
-    if (!ids.includes(target.id)) ids.push(target.id)
-    return mergedDayRateEntries(rateHistory, ids, findOperativeForUser(target, operatives)?.id)
+    // 1.36.0 (FU-5): every id the person's history may be filed under — `personIdSet` over the roster (same-email
+    // documents, former invite ids) and every `operatives` row on their email (`bookingIdsForAccount`), not one row.
+    // 1.34.0: people with no email (ghosts) never share rate history through the empty email (`personIdSet` folds
+    // on a non-empty email only).
+    const ids = personRateHistoryIds(target, operatives, { roster: users })
+    return mergedDayRateEntries(rateHistory, ids.userIds, ids.operativeIds)
   }, [target, users, operatives, rateHistory])
 
   const canEdit = target ? canEditTargetUser(currentUser, target) : false
@@ -848,10 +848,17 @@ export function EditUserProfile({
       let payHistoryRows: Array<{ id: string; fields: Record<string, unknown> }> = []
       if (rateChanged) {
         const { loadOperativeDayRateHistoryOrNull, payHistoryBatchRows } = await import('@/lib/timesheets/dayRateHistoryStorage')
+        // Every id the stored history may be filed under: read once from the person as stored (`savedUser`, the
+        // loaded profile), never from the email typed in this save — a new email would name another person's rows.
+        const historyIds = personRateHistoryIds(savedUser.current ?? previous, operatives, { roster: users })
         payHistoryRows = payHistoryBatchRows({
           history: await loadOperativeDayRateHistoryOrNull(organization.id),
           userId: toSave.id,
+          // The row keeps one `operativeId` (the linked catalogue row, as before); the "history loaded and empty?"
+          // test reads every id the person's history may be under (1.36.0, FU-5), so no duplicate seed row.
           operativeId: findOperativeForUser(toSave, operatives)?.id,
+          historyUserIds: historyIds.userIds,
+          historyOperativeIds: historyIds.operativeIds,
           previous: { rate: originalDayRate ?? null, payBasis: originalPayBasis ?? null },
           next: { rate: nextRate, payBasis: toSave.payBasis ?? null },
           effectiveAt: decision instanceof Date ? decision : new Date(),

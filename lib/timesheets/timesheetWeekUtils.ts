@@ -1,4 +1,3 @@
-import { startOfWeek, endOfWeek } from 'date-fns'
 import type { Booking, Operative, User } from '@/types'
 import { findOperativeForUser } from '@/lib/operatives/operativeRosterUtils'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
@@ -33,11 +32,6 @@ export type TimesheetDayEntry = {
 /** Monday of the week containing `date`, as an organisation-zone day key (never the browser zone). */
 export function weekStartKey(date: Date, timeZone?: string): string {
   return dayKey(startOfLondonWeek(date, timeZone), timeZone)
-}
-
-export function weekRangeFromStart(weekStart: Date) {
-  const start = startOfWeek(weekStart, { weekStartsOn: 1 })
-  return { start, end: endOfWeek(start, { weekStartsOn: 1 }) }
 }
 
 function isDateInPeriod(date: Date, range: { start: Date; end: Date }): boolean {

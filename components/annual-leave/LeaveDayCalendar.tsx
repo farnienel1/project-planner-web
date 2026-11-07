@@ -7,12 +7,14 @@ import {
   format,
   isSameDay,
   isSameMonth,
-  isToday,
-  isWeekend,
   startOfMonth,
-  startOfWeek,
-  endOfWeek,
 } from 'date-fns'
+import {
+  isOrganizationWeekendCalendarDate,
+  organizationCalendarWeekEnd,
+  organizationCalendarWeekStart,
+  organizationTodayCalendarDate,
+} from '@/lib/orgTime/organizationWeek'
 import type { AnnualLeaveDayKind } from '@/lib/annualLeave/dayStatus'
 
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
@@ -114,9 +116,11 @@ export function LeaveDayCalendar({
   onBankHoliday?: (name: string, day: Date) => void
   dayCaption?: (day: Date) => string | null
 }) {
-  const start = startOfWeek(startOfMonth(month), { weekStartsOn: 1 })
-  const end = endOfWeek(endOfMonth(month), { weekStartsOn: 1 })
+  // Rulebook §1 (1.36.0, FU-4): the Monday–Sunday organisation week and the organisation's today, not the browser's.
+  const start = organizationCalendarWeekStart(startOfMonth(month))
+  const end = organizationCalendarWeekEnd(endOfMonth(month))
   const days = eachDayOfInterval({ start, end })
+  const today = organizationTodayCalendarDate()
 
   return (
     <div>
@@ -161,8 +165,8 @@ export function LeaveDayCalendar({
           const kind = getDayKind(day)
           const isSelected = selectedDay ? isSameDay(day, selectedDay) : false
           const isMultiSelected = selectedDays?.some((d) => isSameDay(d, day)) ?? false
-          const todayDay = isToday(day)
-          const weekend = isWeekend(day)
+          const todayDay = isSameDay(day, today)
+          const weekend = isOrganizationWeekendCalendarDate(day)
           const holiday = inMonth ? bankHolidayName?.(day) || null : null
           const locked = disableLocked && (kind === 'approvedFull' || kind === 'pendingFull')
           const caption = inMonth ? dayCaption?.(day) : null

@@ -18,12 +18,6 @@
     "reason": "Route lookup of the operatives row named in the URL (the document's own id), not person matching."
   },
   {
-    "path": "components/annual-leave/LeaveDayCalendar.tsx",
-    "pattern": "device-week-maths",
-    "count": 3,
-    "reason": "FU-4 (needs canonical rule): week/month grid and weekend test via date-fns in the browser zone; needs an organisation-week rule (week start / weekend of a day key) that iOS Scheduling also lacks (it uses Calendar.current)."
-  },
-  {
     "path": "components/daily-overview/DailyOverviewBookingSheet.tsx",
     "pattern": "findOperativeForUser",
     "count": 2,
@@ -72,52 +66,10 @@
     "reason": "FU-6: 'report made on' label in the browser zone; display only, should use the organisation zone."
   },
   {
-    "path": "components/projects/features/ProjectHealthSafetySection.tsx",
-    "pattern": "device-week-maths",
-    "count": 2,
-    "reason": "FU-4 (needs canonical rule): week/month grid and weekend test via date-fns in the browser zone; needs an organisation-week rule (week start / weekend of a day key) that iOS Scheduling also lacks (it uses Calendar.current)."
-  },
-  {
-    "path": "components/projects/features/ProjectMaterialsSection.tsx",
-    "pattern": "device-week-maths",
-    "count": 1,
-    "reason": "FU-4 (needs canonical rule): week/month grid and weekend test via date-fns in the browser zone; needs an organisation-week rule (week start / weekend of a day key) that iOS Scheduling also lacks (it uses Calendar.current)."
-  },
-  {
-    "path": "components/projects/features/featureUi.tsx",
-    "pattern": "device-week-maths",
-    "count": 1,
-    "reason": "FU-4 (needs canonical rule): week/month grid and weekend test via date-fns in the browser zone; needs an organisation-week rule (week start / weekend of a day key) that iOS Scheduling also lacks (it uses Calendar.current)."
-  },
-  {
-    "path": "components/projects/scheduling/ProjectScheduleWeekOverview.tsx",
-    "pattern": "device-week-maths",
-    "count": 2,
-    "reason": "FU-4 (needs canonical rule): week/month grid and weekend test via date-fns in the browser zone; needs an organisation-week rule (week start / weekend of a day key) that iOS Scheduling also lacks (it uses Calendar.current)."
-  },
-  {
     "path": "components/projects/scheduling/SubcontractorBookingEditSheet.tsx",
     "pattern": "toLocaleDateString",
     "count": 1,
     "reason": "FU-6: subcontractor booking day label in the browser zone; display only, should use the organisation zone."
-  },
-  {
-    "path": "components/schedule/AddWeekToCalendarButton.tsx",
-    "pattern": "device-week-maths",
-    "count": 1,
-    "reason": "FU-4 (needs canonical rule): week/month grid and weekend test via date-fns in the browser zone; needs an organisation-week rule (week start / weekend of a day key) that iOS Scheduling also lacks (it uses Calendar.current)."
-  },
-  {
-    "path": "components/schedule/MyScheduleSelfBookingScreen.tsx",
-    "pattern": "device-week-maths",
-    "count": 2,
-    "reason": "FU-4 (needs canonical rule): week/month grid and weekend test via date-fns in the browser zone; needs an organisation-week rule (week start / weekend of a day key) that iOS Scheduling also lacks (it uses Calendar.current)."
-  },
-  {
-    "path": "components/schedule/ScheduleScreen.tsx",
-    "pattern": "device-week-maths",
-    "count": 5,
-    "reason": "FU-4 (needs canonical rule): week/month grid and weekend test via date-fns in the browser zone; needs an organisation-week rule (week start / weekend of a day key) that iOS Scheduling also lacks (it uses Calendar.current)."
   },
   {
     "path": "components/settings/panels/BillingPanel.tsx",
@@ -128,8 +80,8 @@
   {
     "path": "components/users/EditUserProfile.tsx",
     "pattern": "findOperativeForUser",
-    "count": 2,
-    "reason": "FU-5: rate history merge and the operativeId written on a rate change use one catalogue row on the email; should use bookingIdsForAccount / personIdSet."
+    "count": 1,
+    "reason": "1.36.0: only the single operativeId written on a new rate-history row (the linked catalogue row, as before); the history read and the seed test use personRateHistoryIds (personIdSet + bookingIdsForAccount)."
   },
   {
     "path": "components/users/EmploymentTypeChangeDialog.tsx",
@@ -216,12 +168,6 @@
     "reason": "Definition of the org-zone helpers (zone defaults to organizationZoneOr); LONDON_TIME_ZONE is only re-exported. FU-2 renames them."
   },
   {
-    "path": "lib/navigation/scheduleNavigation.ts",
-    "pattern": "findOperativeForUser",
-    "count": 1,
-    "reason": "FU-5: 'is this my own booking' check uses one catalogue row; should use bookingIdsForAccount."
-  },
-  {
     "path": "lib/operatives/operativeRosterUtils.ts",
     "pattern": "findOperativeForUser",
     "count": 3,
@@ -247,12 +193,6 @@
   },
   {
     "path": "lib/scheduling/bookingCalendarExport.ts",
-    "pattern": "device-week-maths",
-    "count": 1,
-    "reason": "FU-4 (needs canonical rule): calendar export week end uses the device week; move to an organisation-week rule with the other week grids."
-  },
-  {
-    "path": "lib/scheduling/bookingCalendarExport.ts",
     "pattern": "getHours",
     "count": 1,
     "reason": "ICS export writes floating local times for the user's own calendar app; device clock is intended for the calendar file."
@@ -264,22 +204,10 @@
     "reason": "FU-2: londonTime.ts helpers default to the open organisation's zone (organizationZoneOr, rulebook §1 since 1.9.0) despite the London name; rename to org-zone names is a follow-up, not a behaviour change."
   },
   {
-    "path": "lib/scheduling/scheduleUtils.ts",
-    "pattern": "device-week-maths",
-    "count": 4,
-    "reason": "FU-4 (needs canonical rule): week/month grid and weekend test via date-fns in the browser zone; needs an organisation-week rule (week start / weekend of a day key) that iOS Scheduling also lacks (it uses Calendar.current)."
-  },
-  {
     "path": "lib/stores/bookingStore.ts",
     "pattern": "londonMidnight",
     "count": 4,
     "reason": "FU-2: londonTime.ts helpers default to the open organisation's zone (organizationZoneOr, rulebook §1 since 1.9.0) despite the London name; rename to org-zone names is a follow-up, not a behaviour change."
-  },
-  {
-    "path": "lib/stores/healthSafetyStore.ts",
-    "pattern": "device-week-maths",
-    "count": 1,
-    "reason": "FU-4 (needs canonical rule): week/month grid and weekend test via date-fns in the browser zone; needs an organisation-week rule (week start / weekend of a day key) that iOS Scheduling also lacks (it uses Calendar.current)."
   },
   {
     "path": "lib/stores/managerScheduleStore.ts",
@@ -324,12 +252,6 @@
     "reason": "FU-2: londonTime.ts helpers default to the open organisation's zone (organizationZoneOr, rulebook §1 since 1.9.0) despite the London name; rename to org-zone names is a follow-up, not a behaviour change."
   },
   {
-    "path": "lib/timesheets/timesheetExport.ts",
-    "pattern": "findOperativeForUser",
-    "count": 1,
-    "reason": "FU-5: export header takes rate fields from one catalogue row on the email; should come from the pay profile / payRateOnDay."
-  },
-  {
     "path": "lib/timesheets/timesheetHours.ts",
     "pattern": "londonIsoWeekday",
     "count": 1,
@@ -352,12 +274,6 @@
     "pattern": "london-zone-constant",
     "count": 15,
     "reason": "FU-3 (needs canonical rule): timesheet document ids and legacy reads are stamped at London midnight (timesheet_{uid}_{stamp}); changing the zone changes document ids, so the id rule must be defined in lib/canonical first."
-  },
-  {
-    "path": "lib/timesheets/timesheetWeekUtils.ts",
-    "pattern": "device-week-maths",
-    "count": 2,
-    "reason": "FU-4 (needs canonical rule): ISO week bounds via date-fns in the browser zone (legacy weekly timesheets)."
   },
   {
     "path": "lib/timesheets/timesheetWeekUtils.ts",
@@ -405,6 +321,6 @@
     "path": "lib/weekly-report/weeklyReportPayroll.ts",
     "pattern": "findOperativeForUser",
     "count": 1,
-    "reason": "FU-5: pay-row rate fallback picks one catalogue row on the email; should use payRateOnDay with the person's ids."
+    "reason": "1.36.0: only the live-rate fallback row (livePayRate: the user document first, then this row) and display; rate history reads every operatives row of the person (personRateHistoryIds → operativeIds)."
   }
 ]

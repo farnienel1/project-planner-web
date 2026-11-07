@@ -6,7 +6,8 @@
 
 import { canSendMaterialOrders } from '@/lib/canonical/materialOrderAccess'
 import { useEffect, useMemo, useState } from 'react'
-import { addDays, format, startOfDay, startOfWeek } from 'date-fns'
+import { addDays, format, startOfDay } from 'date-fns'
+import { organizationCurrentWeekStart } from '@/lib/orgTime/organizationWeek'
 import { coversCalendarDay } from '@/lib/ios-parity/londonTime'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useMaterialProjectStore } from '@/lib/stores/materialProjectStore'
@@ -111,7 +112,8 @@ export function ProjectMaterialsSection({ project }: { project: Project }) {
   const { materials, sendRecords, loading, error, watchProjectMaterials, deleteMaterialLine } = useMaterialProjectStore()
   const { wholesalers, loadWholesalers } = useWholesalerStore()
 
-  const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: 1 }))
+  // Rulebook §1 (1.36.0, FU-4): the organisation's current Monday–Sunday week, not the browser's.
+  const [weekStart, setWeekStart] = useState(() => organizationCurrentWeekStart())
   const [selectedDate, setSelectedDate] = useState(() => new Date())
   const [showAdd, setShowAdd] = useState(false)
   const [editingLine, setEditingLine] = useState<ProjectMaterialLine | null>(null)

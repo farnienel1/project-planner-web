@@ -6,7 +6,7 @@
  * - **Covered** is `standardDayCoverage` — the same rule as `unbookedLabourRowsOnDay` (Daily Overview) and
  *   unbooked-labour warnings: every minute of the standard day except the lunch-break window is booked. So nobody
  *   is offered in Book labour whom Daily Overview shows as booked, and the reverse.
- * - **Paid hours** merge the bookings' clock intervals (`slotInterval`, `mergeMinuteIntervals`; touching blocks join)
+ * - **Paid hours** (`paidHours` — despite the name, hours worked, not pay; see the field) merge the bookings' clock intervals (`slotInterval`, `mergeMinuteIntervals`; touching blocks join)
  *   and price each merged block once with `payrollHoursResult` under the policy in effect that day — hours worked,
  *   never multiplied, with the unpaid break taken off once, by the pay rule, only where a block covers the break
  *   window. A FULL DAY with no clock times, or blocks spanning the whole standard day, is the weekday paid day
@@ -32,7 +32,13 @@ export type CoverageBooking = {
 export type ManagerCoverageHours = {
   /** The weekday paid day (`weekdayPaidHours`). */
   paidDayHours: number
-  /** Hours worked across the merged bookings, the unpaid break taken off once; overlaps count once. */
+  /**
+   * Despite the name, **hours worked, not pay** (1.36.0 wording; the field name is kept because iOS reads it): the
+   * merged bookings' clock hours less the unpaid break, taken off once, never multiplied; overlaps count once. A FULL
+   * DAY with no clock times, or a block that spans the whole standard day, is capped at the weekday paid day
+   * (`weekdayPaidHours`), so a 06:00–18:00 day reads the paid day, not 11.5h. For a person's real hours on a day use
+   * `bookedWorkedHours`; for pay use `payrollHoursResult`. Book labour decides on `covered`, never on this figure.
+   */
   paidHours: number
   /** The merged clock blocks, minutes from midnight. */
   blocks: MinuteInterval[]

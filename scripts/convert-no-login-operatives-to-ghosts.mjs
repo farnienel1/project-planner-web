@@ -19,14 +19,24 @@
  *   leave and pay history stay attached. A row whose result fails `ghostCreateError` is reported and skipped.
  * - Idempotent: a converted row has a users document now, so it is no longer a candidate; a second run plans nothing
  *   for it. `create()` refuses an existing users document.
- * - Admin credentials (`firebase-admin`, as `scripts/backfill-pay-profiles.mjs`). No write metadata.
+ * - Accounts (1.36.0): users documents with `organizationId` = the id or `organizations/{id}`, plus every `members` key
+ *   and the creator read by id (`anchoredMemberIds`, passed as `memberIds`), so no person with a login is converted.
+ * - Admin credentials (`firebase-admin`, as `scripts/backfill-pay-profiles.mjs`). No write metadata: the script has no
+ *   signed-in user, so `updatedBy` / `updatedFrom` are left out (never written as '').
  */
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import vm from 'node:vm'
-import { checkListCsv, checkListMarkdown, checkListRows, parseFilledCheckList } from './convert-no-login-operatives/plan.mjs'
+import {
+  anchoredMemberIds,
+  checkListCsv,
+  checkListMarkdown,
+  checkListRows,
+  orgUserQueryValues,
+  parseFilledCheckList,
+} from './convert-no-login-operatives/plan.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const root = path.resolve(here, '..')
@@ -93,13 +103,38 @@ function withServerTimes(write) {
   return fields
 }
 
+/**
+ * 1.36.0: every users document that is an account of this organisation, so a person with a login is never converted.
+ * The `organizationId ==` query on the id misses documents that store the organisation as a path (`organizations/{id}`)
+ * or as a DocumentReference (some iOS builds), and members whose users document names another company (rulebook §1
+ * anchored people: every `members` key and the creator), so those are read too (by the path, by the reference, and by
+ * id); the results are merged by document id.
+ */
+async function loadOrgUsers(orgId, orgData) {
+  const byId = new Map()
+  for (const value of orgUserQueryValues(orgId, db.doc(`organizations/${orgId}`))) {
+    for (const doc of (await db.collection('users').where('organizationId', '==', value).get()).docs) byId.set(doc.id, { id: doc.id, ...doc.data() })
+  }
+  const missing = anchoredMemberIds(orgData).filter((id) => !byId.has(id))
+  if (missing.length > 0) {
+    const snaps = await db.getAll(...missing.map((id) => db.collection('users').doc(id)))
+    for (const snap of snaps) if (snap.exists) byId.set(snap.id, { id: snap.id, ...snap.data() })
+  }
+  return [...byId.values()]
+}
+
 async function convertOrg(orgId) {
   const orgRef = db.collection('organizations').doc(orgId)
   const orgSnap = await orgRef.get()
   if (!orgSnap.exists) return { rows: [], converted: 0, skipped: 0, name: orgId }
-  const users = (await db.collection('users').where('organizationId', '==', orgId).get()).docs.map((doc) => ({ id: doc.id, ...doc.data() }))
+  const users = await loadOrgUsers(orgId, orgSnap.data() || {})
   const operatives = (await orgRef.collection('operatives').get()).docs.map((doc) => ({ ...doc.data(), id: doc.id }))
-  const candidates = rulebook.ghostConversionCandidates({ organizationId: orgId, operatives, users })
+  const candidates = rulebook.ghostConversionCandidates({
+    organizationId: orgId,
+    operatives,
+    users,
+    memberIds: anchoredMemberIds(orgSnap.data() || {}),
+  })
   const rows = checkListRows(orgId, candidates)
   let converted = 0
   let skipped = 0
@@ -117,6 +152,8 @@ async function convertOrg(orgId) {
         candidate,
         lineManagerIds: fill.lineManagerIds,
         overrides: fill.overrides,
+        // No signed-in user runs this script: `writeMetadataFields('')` is null, so no `updatedBy` / `updatedFrom` is
+        // written (rulebook §1: never required; `updatedFrom` takes only web / ios / android). Never `updatedBy: ''`.
         actorUserId: '',
         privatePay,
         roster: users,
