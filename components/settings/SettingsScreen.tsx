@@ -70,6 +70,7 @@ import {
 } from '@/lib/settings/settingsNav'
 import { openAnalyticsConsentSettings } from '@/lib/analytics/analyticsConsent'
 import { DeleteAccountRow } from '@/components/settings/DeleteAccountDialog'
+import { MyProfileFigures } from '@/components/settings/MyProfileFigures'
 import { appVersionLabel } from '@/lib/app/appVersion'
 
 // ─── Subpanels ────────────────────────────────────────────────────────────────
@@ -320,6 +321,8 @@ function ProfilePanel({ onBack }: { onBack: () => void }) {
           ) : null}
         </div>
       </SettingsCard>
+
+      <MyProfileFigures />
 
       <div className="space-y-3 card pad">
         <FormField label="First name"><Input value={firstName} onChange={e => setFirstName(e.target.value)} /></FormField>

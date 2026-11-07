@@ -477,6 +477,7 @@ var ProjectPlannerCanonical = (() => {
     addedPushTokens: () => addedPushTokens,
     allowedTimeSlotsOnDay: () => allowedTimeSlotsOnDay,
     annualLeaveBalance: () => annualLeaveBalance,
+    annualLeaveBankHolidayRange: () => annualLeaveBankHolidayRange,
     annualLeavePendingOmitFields: () => annualLeavePendingOmitFields,
     appUpdateRequired: () => appUpdateRequired,
     applyEmploymentTypeChange: () => applyEmploymentTypeChange,
@@ -499,6 +500,7 @@ var ProjectPlannerCanonical = (() => {
     bankHolidayRegionsForCountry: () => bankHolidayRegionsForCountry,
     billingAccessFields: () => billingAccessFields,
     bookableJobs: () => bookableJobs,
+    bookedWorkedHours: () => bookedWorkedHours,
     bookingBelongsToOrganization: () => bookingBelongsToOrganization,
     bookingClock: () => bookingClock,
     bookingCreatedRecipients: () => bookingCreatedRecipients,
@@ -699,6 +701,7 @@ var ProjectPlannerCanonical = (() => {
     holidayRequestRanges: () => holidayRequestRanges,
     holidayRequestRecipients: () => holidayRequestRecipients,
     holidayRequestWriteFields: () => holidayRequestWriteFields,
+    homeBookingDayKey: () => homeBookingDayKey,
     homeOverviewMetrics: () => homeOverviewMetrics,
     ideaRecipients: () => ideaRecipients,
     inboxNotificationVisibleToUser: () => inboxNotificationVisibleToUser,
@@ -876,6 +879,8 @@ var ProjectPlannerCanonical = (() => {
     monthDayOffsetBefore: () => monthDayOffsetBefore,
     monthDayOrdinal: () => monthDayOrdinal,
     multipliedHoursText: () => multipliedHoursText,
+    myProfileBankHolidayRange: () => myProfileBankHolidayRange,
+    myProfileSummary: () => myProfileSummary,
     myWorksDefaultIds: () => myWorksDefaultIds,
     myWorksEmptyActionLabel: () => myWorksEmptyActionLabel,
     myWorksEmptyTitle: () => myWorksEmptyTitle,
@@ -963,6 +968,7 @@ var ProjectPlannerCanonical = (() => {
     organizationScopedKey: () => organizationScopedKey,
     organizationSelfManageFlags: () => organizationSelfManageFlags,
     organizationTimeZone: () => organizationTimeZone,
+    organizationWeekDayKeys: () => organizationWeekDayKeys,
     overlappingBookingIds: () => overlappingBookingIds,
     overlappingIntervalGroups: () => overlappingIntervalGroups,
     overlayPayProfile: () => overlayPayProfile,
@@ -1312,6 +1318,7 @@ var ProjectPlannerCanonical = (() => {
     taskCompletedRecipients: () => taskCompletedRecipients,
     taskFields: () => taskFields,
     taskWriteFields: () => taskWriteFields,
+    tasksAssignedToViewer: () => tasksAssignedToViewer,
     taxIdsDocumentFields: () => taxIdsDocumentFields,
     timeSlotAllowedOnDay: () => timeSlotAllowedOnDay,
     timesheetBelongsToOrganization: () => timesheetBelongsToOrganization,
@@ -2170,6 +2177,15 @@ var ProjectPlannerCanonical = (() => {
       day: "numeric",
       month: "long"
     }).format(date);
+  }
+  function organizationWeekDayKeys(dayKey, timeZone) {
+    const zone3 = zoneOrLondon(timeZone);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dayKey || "").trim())) return { startDayKey: "", endDayKey: "", dayKeys: [] };
+    const day = dateFromDayKeyInZone(dayKey.trim(), zone3);
+    const iso = isoWeekdayInZone(day, zone3);
+    const startDayKey = dayKeyInZone(addDaysInZone(day, -(iso - 1), zone3), zone3);
+    const endDayKey = dayKeyInZone(addDaysInZone(day, 7 - iso, zone3), zone3);
+    return { startDayKey, endDayKey, dayKeys: eachDayKey(startDayKey, endDayKey, zone3, 7) };
   }
 
   // lib/canonical/userProfile.ts
@@ -7007,13 +7023,30 @@ var ProjectPlannerCanonical = (() => {
     const start = dateFromDayKeyInZone(startDayKey, timeZone);
     return dayKeyInZone(addDaysInZone(start, -1, timeZone), timeZone);
   }
+  function balanceYearMonths(input) {
+    const hasAllowance = hasAnnualLeaveAllowance(input.annualLeaveEnabled);
+    const orgStart = clampMonth(input.orgStartMonth, 1);
+    const orgEnd = clampMonth(input.orgEndMonth, 12);
+    return {
+      startMonth: hasAllowance ? clampMonth(input.startMonth, orgStart) : orgStart,
+      endMonth: hasAllowance ? clampMonth(input.endMonth, orgEnd) : orgEnd
+    };
+  }
+  function annualLeaveBankHolidayRange(input) {
+    const timeZone = zoneOrLondon(input.timeZone);
+    const { startMonth, endMonth } = balanceYearMonths(input);
+    const year = leaveYearBounds({ startMonth, endMonth, onDayKey: input.onDayKey });
+    const previous = leaveYearBounds({ startMonth, endMonth, onDayKey: previousYearEndKey(year.startDayKey, timeZone) });
+    const first = Number(previous.startDayKey.slice(0, 4));
+    const last = Number(year.endDayKey.slice(0, 4));
+    const years = [];
+    for (let value = first; Number.isFinite(value) && value <= last; value += 1) years.push(value);
+    return { startDayKey: previous.startDayKey, endDayKey: year.endDayKey, years };
+  }
   function annualLeaveBalance(input) {
     const hasAllowance = hasAnnualLeaveAllowance(input.annualLeaveEnabled);
     const timeZone = zoneOrLondon(input.timeZone);
-    const orgStart = clampMonth(input.orgStartMonth, 1);
-    const orgEnd = clampMonth(input.orgEndMonth, 12);
-    const startMonth = hasAllowance ? clampMonth(input.startMonth, orgStart) : orgStart;
-    const endMonth = hasAllowance ? clampMonth(input.endMonth, orgEnd) : orgEnd;
+    const { startMonth, endMonth } = balanceYearMonths(input);
     const year = leaveYearBounds({ startMonth, endMonth, onDayKey: input.onDayKey });
     const bookings = input.bookings ?? [];
     const nonWorking = input.nonWorkingDayKeys ?? [];
@@ -10914,8 +10947,8 @@ var ProjectPlannerCanonical = (() => {
   // lib/canonical/rulebookStamp.ts
   function rulebookStamp() {
     return {
-      version: true ? "1.34.0" : "",
-      sha256: true ? "d3970a44c3e30be19b29e0d4ef8c01f009ee5fc8e8bdb11f64a8a4e5d56f5f1a" : ""
+      version: true ? "1.35.0" : "",
+      sha256: true ? "285ff41de67c59c0f68436526033b9ec3ae96551a2d1723689dd6383e48270b9" : ""
     };
   }
   function rulebookVersionLabel(version) {
@@ -16856,6 +16889,39 @@ var ProjectPlannerCanonical = (() => {
     }
     return { ...base, paidHours: round2(paid) };
   }
+  function bookedWorkedHours(input) {
+    const bookings = (input.bookings || []).filter(Boolean);
+    if (bookings.length === 0) return 0;
+    const policy = input.policy;
+    const dayInput2 = bookingStandardDayOn(policy, input.dayKey) ?? policy;
+    const priced = (booking) => payrollHoursResult({ booking: { ...booking }, dayKey: input.dayKey, policy, timeZone: input.timeZone }).workedHours;
+    const withInterval = [];
+    let worked = 0;
+    for (const booking of bookings) {
+      const interval2 = slotInterval(booking, dayInput2);
+      if (interval2 && interval2.end > interval2.start) withInterval.push({ booking, interval: interval2 });
+      else worked += priced(booking);
+    }
+    for (const block of mergeMinuteIntervals(withInterval.map((row2) => row2.interval))) {
+      const inside = withInterval.filter((row2) => row2.interval.start < block.end && row2.interval.end > block.start);
+      if (inside.length === 1) {
+        worked += priced(inside[0].booking);
+        continue;
+      }
+      worked += payrollHoursResult({
+        booking: {
+          timeSlot: "CUSTOM",
+          workStartTime: formatClockMinutes(block.start),
+          workEndTime: formatClockMinutes(block.end > 24 * 60 ? block.end - 24 * 60 : block.end),
+          isBreakRemoved: inside.some((row2) => row2.booking.isBreakRemoved === true)
+        },
+        dayKey: input.dayKey,
+        policy,
+        timeZone: input.timeZone
+      }).workedHours;
+    }
+    return round2(worked);
+  }
 
   // lib/canonical/rosterLists.ts
   function rosterListKind(row2) {
@@ -16997,10 +17063,7 @@ var ProjectPlannerCanonical = (() => {
       task.assignedManagerId
     ].map(idText).filter(Boolean);
   }
-  function homeOverviewMetrics(input) {
-    const timeZone = input.timeZone;
-    const today = holidayDocumentDayKey(input.nowMs, timeZone);
-    const weekEnd = today ? addCalendarDayKeys(today, 7) : "";
+  function homeViewerIds(input) {
     const users = (input.roster || []).filter((row2) => row2 && idText(row2.id));
     const operatives = (input.operatives || []).filter((row2) => row2 && idText(row2.id));
     const managers = (input.managers || []).filter((row2) => row2 && idText(row2.id));
@@ -17014,7 +17077,6 @@ var ProjectPlannerCanonical = (() => {
       ...operatives.map((row2) => ({ id: idText(row2.id), email: row2.email ?? null })),
       ...managers.map((row2) => ({ id: idText(row2.id), email: row2.email ?? null }))
     ];
-    const fold = personFolder(foldRoster);
     const viewerIds = new Set(
       personIdSet({ id: idText(input.viewer?.id) || void 0, email: input.viewer?.email ?? null }, foldRoster).map(idKey).filter(Boolean)
     );
@@ -17022,6 +17084,21 @@ var ProjectPlannerCanonical = (() => {
     if (viewerEmail) {
       for (const row2 of foldRoster) if (idKey(row2.email) === viewerEmail) for (const id2 of personIdSet(row2, foldRoster)) viewerIds.add(idKey(id2));
     }
+    return { users, operatives, managers, foldRoster, viewerIds };
+  }
+  function tasksAssignedToViewer(input) {
+    const { viewerIds } = homeViewerIds(input);
+    return (input.tasks || []).filter((task) => task && taskAssigneeIds2(task).some((id2) => viewerIds.has(idKey(id2))));
+  }
+  function homeBookingDayKey(row2, timeZone) {
+    return bookingDay(row2, timeZone);
+  }
+  function homeOverviewMetrics(input) {
+    const timeZone = input.timeZone;
+    const today = holidayDocumentDayKey(input.nowMs, timeZone);
+    const weekEnd = today ? addCalendarDayKeys(today, 7) : "";
+    const { users, operatives, foldRoster, viewerIds } = homeViewerIds(input);
+    const fold = personFolder(foldRoster);
     let tasksDueToday = 0;
     let tasksDueThisWeek = 0;
     let tasksOverdue = 0;
@@ -21213,6 +21290,140 @@ var ProjectPlannerCanonical = (() => {
       if (issues.length > 0) out.push({ id: idText(row2.id), issues });
     }
     return out;
+  }
+
+  // lib/canonical/myProfileSummary.ts
+  function isState2(value) {
+    return Boolean(value && typeof value === "object" && "current" in value && value.current);
+  }
+  function round24(value) {
+    return Math.round(value * 100) / 100;
+  }
+  function profileDayKey(input) {
+    return holidayDocumentDayKey(Number.isFinite(input.nowMs) ? input.nowMs : Date.now(), input.timeZone);
+  }
+  function myProfileBankHolidayRange(input) {
+    const user = input.user || null;
+    const defaults = input.leaveDefaults || {};
+    return annualLeaveBankHolidayRange({
+      annualLeaveEnabled: user?.annualLeaveEnabled,
+      startMonth: user?.annualLeaveYearStartMonth,
+      endMonth: user?.annualLeaveYearEndMonth,
+      orgStartMonth: defaults.startMonth,
+      orgEndMonth: defaults.endMonth,
+      onDayKey: profileDayKey(input),
+      timeZone: input.timeZone
+    });
+  }
+  function myProfileSummary(input) {
+    const timeZone = input.timeZone;
+    const dayKey = profileDayKey(input);
+    const user = input.user || null;
+    const roster = (input.roster || []).filter((row2) => row2 && idText(row2.id));
+    const operatives = (input.operatives || []).filter((row2) => row2 && idText(row2.id));
+    const managers = (input.managers || []).filter((row2) => row2 && idText(row2.id));
+    const accountId = idText(user?.id) || idText(input.viewer?.id);
+    const email = idText(user?.email) || idText(input.viewer?.email);
+    const rosterIds = personIdSet(
+      { id: accountId || void 0, email: email || null, formerUserIds: user?.formerUserIds ?? [], sameEmailUserIds: user?.sameEmailUserIds ?? [] },
+      roster
+    );
+    const account = {
+      id: accountId,
+      email: email || null,
+      formerIds: user?.formerUserIds ?? [],
+      aliasIds: rosterIds.filter((id2) => idKey(id2) !== idKey(accountId))
+    };
+    const catalogue = operatives.map((row2) => ({ id: row2.id, email: row2.email ?? null }));
+    const personIds = new Set([...rosterIds, ...accountId ? bookingIdsForAccount(account, catalogue) : []].map(idKey).filter(Boolean));
+    const defaults = input.leaveDefaults || {};
+    const records = accountId || email ? leaveRecordsForAccount(input.holidays || [], account, catalogue) : [];
+    const leave = annualLeaveBalance({
+      annualLeaveEnabled: user?.annualLeaveEnabled,
+      daysPerYear: user?.annualLeaveDaysPerYear,
+      startMonth: user?.annualLeaveYearStartMonth,
+      endMonth: user?.annualLeaveYearEndMonth,
+      carriesOver: user?.annualLeaveCarriesOver,
+      yearAllowance: user?.annualLeaveYearAllowance,
+      yearAllowanceKey: user?.annualLeaveYearAllowanceKey,
+      orgDaysPerYear: defaults.daysPerYear,
+      orgStartMonth: defaults.startMonth,
+      orgEndMonth: defaults.endMonth,
+      bookings: records.map((row2) => ({
+        startDayKey: row2.startDayKey,
+        endDayKey: row2.endDayKey,
+        timeSlot: row2.timeSlot ?? null,
+        status: row2.status ?? null
+      })),
+      onDayKey: dayKey,
+      timeZone,
+      nonWorkingDayKeys: input.nonWorkingDayKeys ?? [],
+      employmentStartDayKey: user?.employmentStartDate ?? null,
+      maxCarryOverDays: defaults.maxCarryOverDays ?? null
+    });
+    const week = organizationWeekDayKeys(dayKey, timeZone);
+    const state = isState2(input.policyState) ? input.policyState : parsePayrollTimePolicyState(input.policyState ?? {}, timeZone);
+    const byDay = /* @__PURE__ */ new Map();
+    const add = (key4, booking) => {
+      if (!week.dayKeys.includes(key4)) return;
+      const list = byDay.get(key4) || [];
+      list.push({
+        timeSlot: booking.timeSlot ?? null,
+        workStartTime: booking.workStartTime ?? null,
+        workEndTime: booking.workEndTime ?? null,
+        isBreakRemoved: booking.isBreakRemoved === true
+      });
+      byDay.set(key4, list);
+    };
+    for (const booking of input.bookings || []) {
+      if (!booking || !personIds.has(idKey(booking.operativeId)) || !bookingOccupiesDay(booking.status)) continue;
+      add(homeBookingDayKey(booking, timeZone), booking);
+    }
+    for (const booking of input.managerSiteBookings || []) {
+      if (!booking || !personIds.has(idKey(booking.userId))) continue;
+      if (idText(booking.status) && !bookingOccupiesDay(booking.status)) continue;
+      add(homeBookingDayKey(booking, timeZone), booking);
+    }
+    const days = week.dayKeys.map((key4) => ({
+      dayKey: key4,
+      hours: bookedWorkedHours({ bookings: byDay.get(key4) || [], dayKey: key4, policy: payrollTimePolicyForDayFromState(state, key4), timeZone })
+    }));
+    const hoursThisWeek = {
+      startDayKey: week.startDayKey,
+      endDayKey: week.endDayKey,
+      hours: round24(days.reduce((sum, row2) => sum + row2.hours, 0)),
+      days
+    };
+    const viewer = { id: accountId || null, email: email || null };
+    const homeRoster = roster.map((row2) => ({
+      id: idText(row2.id),
+      email: row2.email ?? null,
+      formerUserIds: row2.formerUserIds ?? [],
+      sameEmailUserIds: row2.sameEmailUserIds ?? []
+    }));
+    const homeOperatives = operatives.map((row2) => ({ id: row2.id, email: row2.email ?? null, isActive: row2.isActive ?? null }));
+    const mine = tasksAssignedToViewer({ viewer, roster: homeRoster, operatives: homeOperatives, managers, tasks: input.tasks || [] });
+    const nowMs2 = Number.isFinite(input.nowMs) ? input.nowMs : Date.now();
+    const tasks = {
+      open: mine.filter((task) => !isTaskCompleted(task)).length,
+      overdue: mine.filter((task) => isTaskOverdue(task, nowMs2, timeZone)).length,
+      dueThisWeek: homeOverviewMetrics({ nowMs: nowMs2, timeZone, viewer, roster: homeRoster, operatives: homeOperatives, managers, tasks: mine }).tasksDueThisWeek
+    };
+    const ownOperativeIds = operatives.filter((row2) => personIds.has(idKey(row2.id)) || email && idKey(row2.email) === idKey(email)).map((row2) => row2.id);
+    const qualifications = ownOperativeIds.length === 0 ? { expired: 0, expiringSoon: 0, total: 0 } : qualificationExpiryCount({
+      referenceIso: new Date(nowMs2).toISOString(),
+      timeZone,
+      operatives: operatives.filter((row2) => ownOperativeIds.includes(row2.id)).map((row2) => ({
+        id: row2.id,
+        isActive: row2.isActive !== false,
+        name: idText(row2.name),
+        email: row2.email ?? null,
+        expiries: row2.expiries || []
+      })),
+      operativeIds: ownOperativeIds
+    });
+    const lineManager = lineManagerSummary(user, roster);
+    return { dayKey, leave, hoursThisWeek, tasks, qualifications, lineManager };
   }
   return __toCommonJS(bundleEntry_exports);
 })();

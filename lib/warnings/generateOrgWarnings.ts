@@ -88,6 +88,28 @@ export type OrgWarningsResult = {
   coverageFallbackReason?: CoverageFallbackReason
 }
 
+/**
+ * The web `operatives` store rows as the rulebook's qualification-expiry input (`qualificationExpiryRows`,
+ * `qualificationExpiryCount`, `myProfileSummary`): each row's assigned qualifications with a readable expiry date.
+ */
+export function qualificationExpiryOperatives(operatives: Operative[]) {
+  return operatives.map((operative) => {
+    const names = new Map((operative.qualifications || []).map((qualification) => [qualification.id, qualification.name]))
+    const expiries = Object.entries(operative.qualificationExpiryDates || []).flatMap(([qualificationId, expiry]) => {
+      const name = names.get(qualificationId)
+      if (!name || !(expiry instanceof Date) || Number.isNaN(expiry.getTime())) return []
+      return [{ qualificationId, name, expiryIso: expiry.toISOString() }]
+    })
+    return {
+      id: operative.id,
+      isActive: Boolean(operative.isActive),
+      name: `${operative.firstName} ${operative.lastName}`.trim() || operative.email,
+      email: operative.email,
+      expiries,
+    }
+  })
+}
+
 export function computeQualificationExpiryWarnings(
   operatives: Operative[],
   referenceDate = new Date(),
@@ -98,21 +120,7 @@ export function computeQualificationExpiryWarnings(
     scope,
     referenceIso: referenceDate.toISOString(),
     timeZone,
-    operatives: operatives.map((operative) => {
-      const names = new Map((operative.qualifications || []).map((qualification) => [qualification.id, qualification.name]))
-      const expiries = Object.entries(operative.qualificationExpiryDates || []).flatMap(([qualificationId, expiry]) => {
-        const name = names.get(qualificationId)
-        if (!name || !(expiry instanceof Date) || Number.isNaN(expiry.getTime())) return []
-        return [{ qualificationId, name, expiryIso: expiry.toISOString() }]
-      })
-      return {
-        id: operative.id,
-        isActive: Boolean(operative.isActive),
-        name: `${operative.firstName} ${operative.lastName}`.trim() || operative.email,
-        email: operative.email,
-        expiries,
-      }
-    }),
+    operatives: qualificationExpiryOperatives(operatives),
   })
   return rows.map((row) => ({
     id: row.id,

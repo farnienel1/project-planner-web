@@ -44,3 +44,20 @@ export function formatLongDayKey(dayKey: string, timeZone: string): string {
     month: 'long',
   }).format(date)
 }
+
+/**
+ * Rulebook 1.35.0 §1, §12: the Monday–Sunday organisation week that contains `dayKey` (the week starts on Monday for
+ * every organisation): its first and last day keys and its seven days, in the organisation zone.
+ */
+export function organizationWeekDayKeys(
+  dayKey: string,
+  timeZone?: string | null
+): { startDayKey: string; endDayKey: string; dayKeys: string[] } {
+  const zone = zoneOrLondon(timeZone)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dayKey || '').trim())) return { startDayKey: '', endDayKey: '', dayKeys: [] }
+  const day = dateFromDayKeyInZone(dayKey.trim(), zone)
+  const iso = isoWeekdayInZone(day, zone)
+  const startDayKey = dayKeyInZone(addDaysInZone(day, -(iso - 1), zone), zone)
+  const endDayKey = dayKeyInZone(addDaysInZone(day, 7 - iso, zone), zone)
+  return { startDayKey, endDayKey, dayKeys: eachDayKey(startDayKey, endDayKey, zone, 7) }
+}

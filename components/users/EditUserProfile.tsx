@@ -21,7 +21,7 @@ import {
   roleLabel,
   setupSectionTitle,
 } from '@/lib/staff/userEditPermissions'
-import { rosterStatusLabel } from '@/lib/staff/userRosterUtils'
+import { rosterStatusLabel, samePersonIds } from '@/lib/staff/userRosterUtils'
 import { userLineManagerRequiredError, userMayHaveNoLineManager } from '@/lib/annualLeave/holidayApprovalUtils'
 import { UserAvatar } from '@/components/users/UserAvatar'
 import { PayBasisFields, payChoiceFromProfile, payChoiceToRates } from '@/components/users/PayBasisFields'
@@ -52,14 +52,16 @@ import {
   validateLeaveYearMonths,
   ghostBadgeLabel,
   isGhostUser,
+  leaveRecordsForAccount,
 } from '@/lib/canonical'
 import { loadTaxIds, saveTaxIds } from '@/lib/sensitiveProfile/taxIdsService'
 import { LEAVE_DAYS_SAVE_MAX, parseBoundedNumber } from '@/lib/security/boundedValue'
 import { useHolidayStore } from '@/lib/stores/holidayStore'
+import { useOrgBankHolidays } from '@/components/annual-leave/useOrgBankHolidays'
 import {
-  bookingsForPerson,
   remainingOverrideFromBalance,
   userLeaveBalance,
+  userLeaveBankHolidayRange,
 } from '@/lib/annualLeave/leaveBalance'
 import {
   DEFAULT_ANNUAL_LEAVE,
@@ -146,6 +148,12 @@ const ACCOUNT_TYPE_OPTIONS: {
     description: 'Full admin access including user management. Saves with the main Save button.',
   },
 ]
+
+/** A `YYYY-MM-DD` key as a local calendar date (for the bank-holiday year range only). */
+function dateFromLeaveDayKey(key: string): Date {
+  const [year, month, day] = key.split('-').map(Number)
+  return new Date(year || 1970, (month || 1) - 1, day || 1)
+}
 
 /**
  * Rulebook 1.11.0 `permissionToggleRows` for Edit User: the person at `level` with `permissions` (a pending account
@@ -284,7 +292,7 @@ export function EditUserProfile({
 }) {
   const router = useRouter()
   const { user: currentUser, organization, reloadSignedInProfile } = useAuthStore()
-  const { users, loadUsers, setListedUserActive, patchListedUser } = useOrgUserStore()
+  const { users, userIdAliases, loadUsers, setListedUserActive, patchListedUser } = useOrgUserStore()
   const { operatives, loadOperatives, patchOperativeQualifications } = useOperativeStore()
   const { getUser, saveUser, setUserActive, deleteUser, sendPasswordReset, applyAccountType, changeAccountType, syncLinkedOperative, transferSuperAdmin, removeFromManagedJobs } =
     useUserStore()
@@ -438,22 +446,58 @@ export function EditUserProfile({
   }, [organization?.id, userId, getUser])
 
   const linkedOperative = target ? operativeRecordForUser(target, operatives) : undefined
+  // Rulebook 1.35.0 §12: the person's leave under every id they go by (`leaveRecordsForAccount`: former and same-email
+  // ids, catalogue rows on their email, the email itself), with the region's bank holidays — the same figure as their
+  // Annual leave screen and My Profile. Before 1.35.0 this matched one users id and one operatives row, no bank holidays.
+  const personLeave = useMemo(
+    () =>
+      target
+        ? leaveRecordsForAccount(
+            holidayBookings,
+            {
+              id: target.id,
+              email: target.email,
+              formerIds: target.formerUserIds ?? [],
+              aliasIds: [
+                ...Array.from(samePersonIds(target.id, users, userIdAliases)),
+                ...(rosterDocs || []).filter((row) => row.id !== target.id && target.email && row.email?.trim().toLowerCase() === target.email.trim().toLowerCase()).map((row) => row.id),
+              ],
+            },
+            operatives
+          )
+        : [],
+    [target, holidayBookings, users, userIdAliases, rosterDocs, operatives]
+  )
+  // Rulebook 1.35.0 `annualLeaveBankHolidayRange`: the previous leave year's bank holidays too (carry-over), the same
+  // range My Profile and Annual leave load, so the three show the same figure.
+  const leaveBankRange = useMemo(
+    () => userLeaveBankHolidayRange({ user: target, orgDefaults: orgLeaveDefaults }),
+    [target, orgLeaveDefaults]
+  )
+  const leaveBank = useOrgBankHolidays(
+    dateFromLeaveDayKey(leaveBankRange.startDayKey),
+    dateFromLeaveDayKey(leaveBankRange.endDayKey),
+    { years: leaveBankRange.years }
+  )
+  const leaveBankDayKeys = leaveBank.holidays.map((holiday) => holiday.date).join(',')
   const leaveBalance = useMemo(
     () =>
       userLeaveBalance({
         user: target,
-        bookings: bookingsForPerson(holidayBookings, target?.id, linkedOperative?.id),
+        bookings: personLeave,
         orgDefaults: orgLeaveDefaults,
+        bankHolidayDayKeys: leaveBankDayKeys ? leaveBankDayKeys.split(',') : [],
       }),
-    [target, holidayBookings, linkedOperative?.id, orgLeaveDefaults]
+    [target, personLeave, orgLeaveDefaults, leaveBankDayKeys]
   )
 
   useEffect(() => {
-    if (!target || remainingTouched) return
+    // Wait for the bank holidays: until then `taken` can still count a bank holiday as leave.
+    if (!target || remainingTouched || !leaveBank.loaded) return
     setRemainingDraft(
       leaveBalance.remaining == null ? '' : String(leaveBalance.remaining)
     )
-  }, [target, leaveBalance.remaining, remainingTouched])
+  }, [target, leaveBalance.remaining, remainingTouched, leaveBank.loaded])
 
   // Rulebook §11 `lineManagerCandidates(person, roster)`: the picker list, never the person under any of their ids.
   const managers = useMemo(() => {
@@ -768,6 +812,10 @@ export function EditUserProfile({
       employmentTypeEffectiveAt: employment.employmentTypeEffectiveAt || undefined,
     }
     if (toSave.annualLeaveEnabled !== false && remainingTouched && remainingDraft !== '') {
+      if (!leaveBank.loaded) {
+        setError('Leave figures are still loading. Try again in a moment.')
+        return
+      }
       const remaining = parseBoundedNumber(remainingDraft, { min: 0, max: LEAVE_DAYS_SAVE_MAX })
       if (remaining == null) {
         setError('Enter remaining leave days between 0 and 365.')
@@ -1526,14 +1574,18 @@ export function EditUserProfile({
               </div>
               <FormField
                 label={ANNUAL_LEAVE_ALLOWANCE_COPY.remainingTitle}
-                hint={`${ANNUAL_LEAVE_ALLOWANCE_COPY.remainingNote} Currently ${leaveBalance.taken} taken and ${leaveBalance.pending} awaiting approval this leave year.`}
+                hint={
+                  leaveBank.loaded
+                    ? `${ANNUAL_LEAVE_ALLOWANCE_COPY.remainingNote} Currently ${leaveBalance.taken} taken and ${leaveBalance.pending} awaiting approval this leave year.`
+                    : `${ANNUAL_LEAVE_ALLOWANCE_COPY.remainingNote} Counting leave taken this year…`
+                }
               >
                 <Input
                   type="number"
                   min="0"
                   step="0.5"
                   value={remainingDraft}
-                  disabled={!canEdit}
+                  disabled={!canEdit || !leaveBank.loaded}
                   onChange={(e) => {
                     setRemainingDraft(e.target.value)
                     setRemainingTouched(true)
