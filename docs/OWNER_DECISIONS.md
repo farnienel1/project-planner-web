@@ -249,6 +249,7 @@ How to use it:
 | 7 Nov | "Due this week" under open tasks is the Home figure (today and the next six days, `homeOverviewMetrics.tasksDueThisWeek`), not the Monday–Sunday week the hours use, so it matches the Home tile. | done, owner to confirm |
 | 7 Nov | Hours use `bookedWorkedHours`, not `managerCoverageHours.paidHours`: the latter caps a block that spans the standard day at the weekday paid day (06:00–18:00 read 8h, not 11.5h). | done, owner to confirm |
 | 7 Nov | Manager schedule bookings of every place (office, working from home, site survey, jobs) count as hours booked. | done, owner to confirm |
+| 7 Nov | **Offline wait (owner: "5s ok")**: iOS My Profile waits up to 5 seconds for bank holidays when offline, then shows figures with the cached bank holidays and recalculates once they load. | done, owner confirmed 7 Nov |
 
 ## Open questions for the owner
 
