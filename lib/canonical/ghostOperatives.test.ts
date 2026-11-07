@@ -24,6 +24,10 @@ import {
   excludeActor,
   exportedTimesheetHistorySubjects,
   ghostAddFormRows,
+  ghostAccountsEnabled,
+  ghostToggleVisible,
+  GHOST_ACCOUNTS_SWITCH_FIELD,
+  GHOST_ACCOUNTS_ORGANIZATION_IDS_FIELD,
   ghostBadgeLabel,
   ghostConversionCandidates,
   ghostConversionWrites,
@@ -155,16 +159,57 @@ test('ghostCreateWrites: the exact users document; no email, phone, hasNoLineMan
 })
 
 test('ghostAddFormRows: toggle first; ghost on hides email, phone, permissions, account type, tax, employment, timesheets', () => {
-  const on = ghostAddFormRows({ ghost: true, canCreateGhost: true })
+  const on = ghostAddFormRows({ ghost: true, canCreateGhost: true, ghostAccountsEnabled: true })
   assert.equal(on[0].field, 'ghostToggle')
   const visible = on.filter((row) => row.visible).map((row) => row.field)
   assert.deepEqual(visible, ['ghostToggle', 'firstName', 'surname', 'annualLeave', 'lineManagers', 'pay', 'trade'])
   assert.deepEqual(on.filter((row) => row.required).map((row) => row.field), ['firstName', 'surname', 'lineManagers', 'pay'])
-  const off = ghostAddFormRows({ ghost: false, canCreateGhost: true })
+  const off = ghostAddFormRows({ ghost: false, canCreateGhost: true, ghostAccountsEnabled: true })
   assert.ok(off.find((row) => row.field === 'email')?.visible)
-  const noRight = ghostAddFormRows({ ghost: true, canCreateGhost: false })
+  const noRight = ghostAddFormRows({ ghost: true, canCreateGhost: false, ghostAccountsEnabled: true })
   assert.equal(noRight[0].visible, false)
   assert.ok(noRight.find((row) => row.field === 'email')?.visible)
+})
+
+test('ghostAccountsEnabled (owner decision 7 Nov "1b"): platformConfig/app switch, missing means off', () => {
+  assert.equal(GHOST_ACCOUNTS_SWITCH_FIELD, 'ghostAccounts')
+  assert.equal(GHOST_ACCOUNTS_ORGANIZATION_IDS_FIELD, 'ghostAccountsOrganizationIds')
+  assert.equal(ghostAccountsEnabled(null, ORG), false)
+  assert.equal(ghostAccountsEnabled(undefined, ORG), false)
+  assert.equal(ghostAccountsEnabled({}, ORG), false)
+  assert.equal(ghostAccountsEnabled({ ghostAccounts: false }, ORG), false)
+  assert.equal(ghostAccountsEnabled({ ghostAccounts: 'true' }, ORG), false)
+  assert.equal(ghostAccountsEnabled({ ghostAccounts: 1 }, ORG), false)
+  assert.equal(ghostAccountsEnabled({ ghostAccounts: true }, ORG), true)
+  assert.equal(ghostAccountsEnabled({ ghostAccounts: true }, null), true)
+  assert.equal(ghostAccountsEnabled({ ghostAccountsOrganizationIds: [ORG] }, ORG), true)
+  // Ids compare exactly as stored, like the security switches.
+  assert.equal(ghostAccountsEnabled({ ghostAccountsOrganizationIds: ['ORG1'] }, 'org1'), false)
+  assert.equal(ghostAccountsEnabled({ ghostAccountsOrganizationIds: ['other'] }, ORG), false)
+  assert.equal(ghostAccountsEnabled({ ghostAccountsOrganizationIds: [ORG] }, ''), false)
+  assert.equal(ghostAccountsEnabled({ ghostAccountsOrganizationIds: ORG }, ORG), false)
+  // The security switches never turn ghost accounts on.
+  assert.equal(ghostAccountsEnabled({ enforcedReads: true, privatePay: true }, ORG), false)
+})
+
+test('ghostToggleVisible / ghostAddFormRows: the toggle needs both the permission and the switch', () => {
+  assert.equal(ghostToggleVisible({ canCreateGhost: true, ghostAccountsEnabled: true }), true)
+  assert.equal(ghostToggleVisible({ canCreateGhost: true, ghostAccountsEnabled: false }), false)
+  assert.equal(ghostToggleVisible({ canCreateGhost: true }), false)
+  assert.equal(ghostToggleVisible({ canCreateGhost: true, ghostAccountsEnabled: null }), false)
+  assert.equal(ghostToggleVisible({ canCreateGhost: false, ghostAccountsEnabled: true }), false)
+  // Switch off (or not passed): no toggle, and a ghost flag left on never turns the form into the ghost form.
+  for (const rows of [
+    ghostAddFormRows({ ghost: true, canCreateGhost: true }),
+    ghostAddFormRows({ ghost: true, canCreateGhost: true, ghostAccountsEnabled: false }),
+  ]) {
+    assert.equal(rows.find((row) => row.field === 'ghostToggle')?.visible, false)
+    assert.ok(rows.find((row) => row.field === 'email')?.visible)
+    assert.equal(rows.find((row) => row.field === 'email')?.required, true)
+    assert.ok(rows.find((row) => row.field === 'permissions')?.visible)
+  }
+  // canCreateGhost stays the permission rule, unchanged by the switch.
+  assert.equal(canCreateGhost(ADMIN), true)
 })
 
 test('parseUserDocument and USER_DOCUMENT_FIELDS carry ghost and inviteEmailHint; an older document reads ghost false', () => {

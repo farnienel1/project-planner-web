@@ -28,6 +28,7 @@ import {
   GHOST_TOGGLE_LABEL,
   canCreateGhost,
   ghostAddFormRows,
+  ghostToggleVisible,
   type GhostAddFormField,
 } from '@/lib/canonical'
 import { useUserStore } from '@/lib/stores/userStore'
@@ -50,6 +51,7 @@ import type { UserPermissions } from '@/types'
 import { LineManagerMultiSelect } from '@/components/users/LineManagerMultiSelect'
 import { PayBasisFields, payChoiceToRates } from '@/components/users/PayBasisFields'
 import { maySetPayOf, userPayRateRequiredError } from '@/lib/staff/payRateRequired'
+import { ghostAccountsEnabledFor, onPlatformConfigChange } from '@/lib/access/securitySwitches'
 import { LEAVE_DAYS_SAVE_MAX, parseBoundedNumber } from '@/lib/security/boundedValue'
 import {
   PanelHeader,
@@ -168,11 +170,23 @@ export function AddUserScreen() {
   const { users, loadUsers } = useOrgUserStore()
   const { inviteUser } = useInviteStore()
   const createGhost = useUserStore((state) => state.createGhost)
-  // Rulebook 1.34.0 §11: the Ghost account toggle (`canCreateGhost`, `ghostAddFormRows`) sits at the very top.
+  // Rulebook 1.34.0 §11: the Ghost account toggle (`canCreateGhost`, `ghostAddFormRows`) sits at the very top. It is
+  // shown only while `platformConfig/app` switches ghost accounts on for this organisation (`ghostAccountsEnabled`;
+  // owner decision 7 Nov "1b": hidden until the iPhone 1.34 update is out).
   const mayCreateGhost = Boolean(user && canCreateGhost(user))
+  const organizationId = organization?.id ?? null
+  const [ghostSwitchOn, setGhostSwitchOn] = useState(() => ghostAccountsEnabledFor(organizationId))
+  useEffect(() => {
+    setGhostSwitchOn(ghostAccountsEnabledFor(organizationId))
+    return onPlatformConfigChange(() => setGhostSwitchOn(ghostAccountsEnabledFor(organizationId)))
+  }, [organizationId])
+  const ghostToggleShown = ghostToggleVisible({ canCreateGhost: mayCreateGhost, ghostAccountsEnabled: ghostSwitchOn })
   const [ghost, setGhost] = useState(false)
-  const ghostOn = ghost && mayCreateGhost
-  const formRows = useMemo(() => ghostAddFormRows({ ghost: ghostOn, canCreateGhost: mayCreateGhost }), [ghostOn, mayCreateGhost])
+  const ghostOn = ghost && ghostToggleShown
+  const formRows = useMemo(
+    () => ghostAddFormRows({ ghost: ghostOn, canCreateGhost: mayCreateGhost, ghostAccountsEnabled: ghostSwitchOn }),
+    [ghostOn, mayCreateGhost, ghostSwitchOn]
+  )
   const shows = (field: GhostAddFormField) => formRows.find((row) => row.field === field)?.visible !== false
 
   const canInviteAdmins = canManageUsers(user)

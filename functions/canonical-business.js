@@ -109,6 +109,8 @@ var ProjectPlannerCanonical = (() => {
     FILE_UNDO_WINDOW_MINUTES: () => FILE_UNDO_WINDOW_MINUTES,
     FILE_UNDO_WINDOW_MS: () => FILE_UNDO_WINDOW_MS,
     FIRESTORE_IN_QUERY_LIMIT: () => FIRESTORE_IN_QUERY_LIMIT,
+    GHOST_ACCOUNTS_ORGANIZATION_IDS_FIELD: () => GHOST_ACCOUNTS_ORGANIZATION_IDS_FIELD,
+    GHOST_ACCOUNTS_SWITCH_FIELD: () => GHOST_ACCOUNTS_SWITCH_FIELD,
     GHOST_BADGE_LABEL: () => GHOST_BADGE_LABEL,
     GHOST_CHECK_ISSUE_LABELS: () => GHOST_CHECK_ISSUE_LABELS,
     GHOST_CREATE_REFUSED_MESSAGE: () => GHOST_CREATE_REFUSED_MESSAGE,
@@ -662,6 +664,7 @@ var ProjectPlannerCanonical = (() => {
     formatPaymentRunDay: () => formatPaymentRunDay,
     formatVariationNumber: () => formatVariationNumber,
     formerIdAliases: () => formerIdAliases,
+    ghostAccountsEnabled: () => ghostAccountsEnabled,
     ghostAddFormRows: () => ghostAddFormRows,
     ghostBadgeLabel: () => ghostBadgeLabel,
     ghostConversionCandidates: () => ghostConversionCandidates,
@@ -671,6 +674,7 @@ var ProjectPlannerCanonical = (() => {
     ghostLeaveBooking: () => ghostLeaveBooking,
     ghostPermissions: () => ghostPermissions,
     ghostRate: () => ghostRate,
+    ghostToggleVisible: () => ghostToggleVisible,
     ghostUpgradeRefusal: () => ghostUpgradeRefusal,
     ghostUpgradeWrites: () => ghostUpgradeWrites,
     ghostsToCheck: () => ghostsToCheck,
@@ -10911,7 +10915,7 @@ var ProjectPlannerCanonical = (() => {
   function rulebookStamp() {
     return {
       version: true ? "1.34.0" : "",
-      sha256: true ? "6c5bcf1fc2576abadfe10db682ef6be95c6ef4cb97fdbe884c6435f7c8d69d5b" : ""
+      sha256: true ? "d3970a44c3e30be19b29e0d4ef8c01f009ee5fc8e8bdb11f64a8a4e5d56f5f1a" : ""
     };
   }
   function rulebookVersionLabel(version) {
@@ -15422,11 +15426,14 @@ var ProjectPlannerCanonical = (() => {
     privatePay: "privatePayOrganizationIds"
   };
   function securitySwitchOn(config, organizationId, name) {
+    return platformSwitchOn(config, organizationId, name, SECURITY_SWITCH_ORGANIZATION_FIELDS[name]);
+  }
+  function platformSwitchOn(config, organizationId, field, organizationIdsField) {
     if (!config || typeof config !== "object") return false;
-    if (config[name] === true) return true;
+    if (config[field] === true) return true;
     const id2 = typeof organizationId === "string" ? organizationId : "";
     if (!id2) return false;
-    const list = config[SECURITY_SWITCH_ORGANIZATION_FIELDS[name]];
+    const list = config[organizationIdsField];
     return Array.isArray(list) && list.some((entry) => entry === id2);
   }
   function securitySwitches(config, organizationId) {
@@ -15434,6 +15441,11 @@ var ProjectPlannerCanonical = (() => {
       enforcedReads: securitySwitchOn(config, organizationId, "enforcedReads"),
       privatePay: securitySwitchOn(config, organizationId, "privatePay")
     };
+  }
+  var GHOST_ACCOUNTS_SWITCH_FIELD = "ghostAccounts";
+  var GHOST_ACCOUNTS_ORGANIZATION_IDS_FIELD = "ghostAccountsOrganizationIds";
+  function ghostAccountsEnabled(config, organizationId) {
+    return platformSwitchOn(config, organizationId, GHOST_ACCOUNTS_SWITCH_FIELD, GHOST_ACCOUNTS_ORGANIZATION_IDS_FIELD);
   }
 
   // lib/canonical/bookingSlots.ts
@@ -20985,8 +20997,12 @@ var ProjectPlannerCanonical = (() => {
     "employmentType",
     "timesheets"
   ];
+  function ghostToggleVisible(input) {
+    return input.canCreateGhost === true && input.ghostAccountsEnabled === true;
+  }
   function ghostAddFormRows(input) {
-    const ghost = input.ghost === true && input.canCreateGhost === true;
+    const toggleVisible = ghostToggleVisible(input);
+    const ghost = input.ghost === true && toggleVisible;
     const ghostFields = {
       ghostToggle: { visible: true, required: false },
       accountType: { visible: false, required: false },
@@ -21004,7 +21020,7 @@ var ProjectPlannerCanonical = (() => {
       timesheets: { visible: false, required: false }
     };
     return ADD_FORM_ORDER.map((field) => {
-      if (field === "ghostToggle") return { field, visible: input.canCreateGhost === true, required: false };
+      if (field === "ghostToggle") return { field, visible: toggleVisible, required: false };
       if (ghost) return { field, ...ghostFields[field] };
       return { field, visible: true, required: field === "firstName" || field === "surname" || field === "email" };
     });

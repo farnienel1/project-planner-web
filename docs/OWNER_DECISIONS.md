@@ -215,10 +215,20 @@ How to use it:
 | 7 Nov | The annual-leave allowance stays on the ghost form (it is needed to book their leave). | done web, owner to confirm |
 | 7 Nov | A ghost is written with `email: ''` and no `isSuperAdmin` key (the emulator crashes on an Operatives manager's create otherwise); no rate-history row is written at create (as Add user), the first change seeds it. | done, owner to confirm |
 | 7 Nov | Conversion script: a duplicate no-login row on the same email is linked to the ghost and made inactive (its id goes on `formerUserIds`); the kept row's email is cleared and kept aside as `inviteEmailHint`. | done (script), owner to confirm before `--apply` |
-| 6 Nov | R1 (review): an Operatives manager can never change a ghost's line manager, not even while it has no login — only admins do (rules: the `passwordSet` lock also applies to `ghost: true`). Deleting and re-adding is the way round for them, as for any operative after sign-up. | done (rules), owner to confirm |
+| 6 Nov | R1 (review): an Operatives manager can never change a ghost's line manager, not even while it has no login — only admins do (rules: the `passwordSet` lock also applies to `ghost: true`). Deleting and re-adding is the way round for them, as for any operative after sign-up. | done (rules), confirmed 7 Nov (Q2) |
 | 6 Nov | R2 (review): a ghost's line manager gets no overtime booking writes on it (a ghost sends no overtime, so there is nothing to return); its bookings are edited by admins and the job's managers as usual (`canWriteBooking`). | done (rules), owner to confirm |
-| 6 Nov | Release order (review F2): the web Add user **Ghost account** toggle is live as soon as web 1.34.0 deploys, before iOS 1.34 ships. Until `minimumIosBuild` is raised to the iOS 1.34 build, an older iPhone reads a ghost as a pending invite (not bookable, not in Warnings) — nothing is written wrongly. Owner to accept, or ask for the toggle to be hidden until `minimumIosBuild` is raised. | open, owner to confirm |
+| 6 Nov | Release order (review F2): the web Add user **Ghost account** toggle is live as soon as web 1.34.0 deploys, before iOS 1.34 ships. Until `minimumIosBuild` is raised to the iOS 1.34 build, an older iPhone reads a ghost as a pending invite (not bookable, not in Warnings) — nothing is written wrongly. Owner to accept, or ask for the toggle to be hidden until `minimumIosBuild` is raised. | answered 7 Nov (1b): hidden — see 7 Nov decisions |
 | 6 Nov | Review fix B1: nobody changes `ghost` or `inviteEmailHint` on their own users document (rules), and deleting a person always removes their tax ids, membership and (when listed) `members` entry, whatever `ghost` says (`userDeleteWrites`). `isGhostUser` reads only the boolean `true` (F1), the same test as the rules. | done |
+
+## 7 Nov decisions (for 1.34)
+
+| Date | Decision | Status |
+|---|---|---|
+| 7 Nov | **(1b) Ghost account toggle hidden until the iPhone 1.34 update is out.** Both apps hide the Ghost account toggle on Add user / Add new operative until the platform owner sets `platformConfig/app.ghostAccounts` true (or lists the company in `ghostAccountsOrganizationIds`), after `minimumIosBuild` is raised to the iOS 1.34 build. Rule: `ghostAccountsEnabled` / `ghostToggleVisible` (the permission `canCreateGhost` and the switch); missing = off. Existing and converted ghosts display, book and work normally whatever the switch says. UI gate only, no rules change. Replaces the 6 Nov "Release order (review F2)" choice. | done web + rulebook (1.34.0, w134-ghosts); iOS (ios-1.34) |
+| 7 Nov | **Q2 confirmed:** only admins change a ghost's line manager (R1). | done (rules, 1.34.0) |
+| 7 Nov | **Q4 confirmed:** the iPhone ghost details as built; creating any user, a ghost included, needs a signal (already enforced: rulebook §2 `users.invites` online only; iOS AddUserView disables Create offline). | done |
+| 7 Nov | **Q5: My Profile figures approved** — annual leave left this year, hours booked this week, open tasks, qualifications expiring soon, line manager. Each from an existing rulebook function only. | open (My Profile UI upgrade, after 1.34) |
+| 7 Nov | **Q3:** the owner asked for a ghost's line manager to be able to change a ghost's booking overtime and hours (this would reverse R2). R2 is not changed until this is clarified. | question: being clarified |
 
 ## Open questions for the owner
 

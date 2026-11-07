@@ -323,14 +323,31 @@ const ADD_FORM_ORDER: ReadonlyArray<GhostAddFormField> = [
 ]
 
 /**
- * The Add user (operative) / Add new operative form, in order, for both apps. The Ghost account toggle is first and is
- * shown only to someone who may add a ghost (`canCreateGhost`). With the toggle on, only the fields a ghost needs
- * stay: first name and surname (required), line managers (required), pay (required) and trade (optional), plus the
- * annual-leave allowance; the account type (always operative), email, phone, permissions, tax ids, employment type
- * (always self-employed) and timesheets disappear. With it off the form is the ordinary invite form.
+ * Whether the Ghost account toggle is shown on Add user / Add new operative: the viewer may add a ghost
+ * (`canCreateGhost`, the permission) **and** the platform owner has switched ghost accounts on for the organisation
+ * (`ghostAccountsEnabled` on `platformConfig/app`; owner decision 7 Nov "1b": hidden until the iPhone 1.34 update is
+ * out). A missing switch value is off. Existing ghosts are not affected by the switch.
  */
-export function ghostAddFormRows(input: { ghost: boolean; canCreateGhost: boolean }): GhostAddFormRow[] {
-  const ghost = input.ghost === true && input.canCreateGhost === true
+export function ghostToggleVisible(input: { canCreateGhost: boolean; ghostAccountsEnabled?: boolean | null }): boolean {
+  return input.canCreateGhost === true && input.ghostAccountsEnabled === true
+}
+
+/**
+ * The Add user (operative) / Add new operative form, in order, for both apps. The Ghost account toggle is first and is
+ * shown only when `ghostToggleVisible` (someone who may add a ghost, `canCreateGhost`, while the `ghostAccounts` switch
+ * is on for the organisation, `ghostAccountsEnabled`; a missing `ghostAccountsEnabled` is off). With the toggle on,
+ * only the fields a ghost needs stay: first name and surname (required), line managers (required), pay (required) and
+ * trade (optional), plus the annual-leave allowance; the account type (always operative), email, phone, permissions,
+ * tax ids, employment type (always self-employed) and timesheets disappear. With it off or hidden the form is the
+ * ordinary invite form.
+ */
+export function ghostAddFormRows(input: {
+  ghost: boolean
+  canCreateGhost: boolean
+  ghostAccountsEnabled?: boolean | null
+}): GhostAddFormRow[] {
+  const toggleVisible = ghostToggleVisible(input)
+  const ghost = input.ghost === true && toggleVisible
   const ghostFields: Record<GhostAddFormField, { visible: boolean; required: boolean }> = {
     ghostToggle: { visible: true, required: false },
     accountType: { visible: false, required: false },
@@ -348,7 +365,7 @@ export function ghostAddFormRows(input: { ghost: boolean; canCreateGhost: boolea
     timesheets: { visible: false, required: false },
   }
   return ADD_FORM_ORDER.map((field) => {
-    if (field === 'ghostToggle') return { field, visible: input.canCreateGhost === true, required: false }
+    if (field === 'ghostToggle') return { field, visible: toggleVisible, required: false }
     if (ghost) return { field, ...ghostFields[field] }
     return { field, visible: true, required: field === 'firstName' || field === 'surname' || field === 'email' }
   })
