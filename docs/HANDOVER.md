@@ -40,7 +40,7 @@ Live launch checklist (the owner ticks items there; Claude updates rows as work 
 | iOS **#203** | `ios-1.34` → `main` | Ghost operatives on iPhone | same |
 | web **#292** | `w135-my-profile` → `w134-ghosts` (stacked) | Rulebook 1.35.0: My Profile figures (`myProfileSummary`) | 1a, 2 yes, 3 yes, 4 after, 5 all; 5-second offline wait ok |
 | iOS **#208** | `ios-1.35` → `ios-1.34` (stacked) | My Profile figures and one profile screen | same |
-| 1.36 clean-up | `w136-fixes` (web) / `ios-1.36` (iOS) | **Being built now** (fixes only, no rules change, no change to who sees or is paid what). Not pushed yet when this file was written; check GitHub for its PRs. | owner said "do all" |
+| 1.36 clean-up | `w136-fixes` (web #294) / `ios-1.36` (iOS #209) | Built, independently reviewed, review fixes in, all green (fixes only, no rules change). **Owner decision open:** a person with two or more `operatives` rows now has rate history read across all of them (rulebook §8), so a newer row on a duplicate can change their rate — (a) keep, plus a duplicate clean-up, or (b) linked row only. Read-only report: `scripts/report-duplicate-operative-rate-history.mjs` (#294). Applies to both apps. | owner said "do all" |
 | Dependabot | web #279–#283, iOS #204–#207 | Library bumps. Review before launch; not urgent. | — |
 
 [Certain] CI green was checked on the head commits on 7 Nov: web `8daee7e` (#291), `f2d8391` (#292); iOS `d96955d` (#203), `8227551` (#208).
@@ -97,7 +97,7 @@ Until #291 / #292 merge, their decision rows are on those branches, not on `main
 - **`enforcedReads`** switch on (13–16 Nov), owner steps from `docs/SECURITY_SWITCHES.md`.
 - Web week grids use the browser's week (11 files, sweep FU-4; iOS Scheduling the same) → one organisation-week rule.
 - Web code that picks one operatives row for rates / own-booking checks (`EditUserProfile.tsx`, `weeklyReportPayroll.ts`, `timesheetExport.ts`, `scheduleNavigation.ts`; FU-5).
-- Web clash check compares `operativeId` with letter case (`lib/scheduling/bookingClashUtils.ts`) — check whether 1.36 fixed it.
+- Web clash check letter case: already fixed in 1.33 (#266); confirmed in 1.36.
 - Web task pickers offer a converted ghost's `operatives` row (1.34 J2).
 - Recorded from the 1.35 review, not changed: a weekend stored AM / PM on a set-window day counts half the "counts as" hours (pre-1.13 data only); under a pre-1.20 policy merged blocks can take the half-day snap (rare).
 - Home / help bugs from 5 Nov: operative "N pending" task count vs the Tasks "To do" list; Up next shows raw slot ids; Help "Home tiles" describes an unused editor.
@@ -109,7 +109,7 @@ Until #291 / #292 merge, their decision rows are on those branches, not on `main
 
 Paste this into a new Claude Code chat with **both** repos attached (`farnienel1/project-planner-web` and `farnienel1/project-planner-ios`):
 
-> Read `docs/HANDOVER.md` in project-planner-web first, then `docs/OWNER_DECISIONS.md` (including the newer rows on `origin/w134-ghosts` and `origin/w135-my-profile`) and the rule files. Check the state of web PRs #291, #292 and the 1.36 PR, and iOS PRs #203, #208 and the 1.36 PR on GitHub. Then tell me, in plain English, what the next step is. My 1.33 flow test result is: [paste results, or "all OK — go"].
+> Read `docs/HANDOVER.md` in project-planner-web first, then `docs/OWNER_DECISIONS.md` (including the newer rows on `origin/w134-ghosts` and `origin/w135-my-profile`) and the rule files. Check the state of web PRs #291, #292, #294 and iOS PRs #203, #208, #209 on GitHub. Then tell me, in plain English, what the next step is. My 1.33 flow test result is: [paste results, or "all OK — go"].
 
 ## 6. Environment notes for cloud chats
 
