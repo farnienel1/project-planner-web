@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { anchoredMemberIds, checkListCsv, checkListMarkdown, checkListRows, parseFilledCheckList } from './plan.mjs'
+import { anchoredMemberIds, checkListCsv, checkListMarkdown, checkListRows, orgUserQueryValues, parseFilledCheckList } from './plan.mjs'
 
 const candidate = {
   operativeId: 'row-a',
@@ -68,4 +68,23 @@ test('1.36.0: a member from another company, or a users document storing the org
     assert.equal('updatedBy' in fields, false)
     assert.equal('updatedFrom' in fields, false)
   }
+})
+
+test('1.36.0 review: users are looked up by the id, the path and the DocumentReference, and a reference-stored account is never a ghost', async () => {
+  const ref = { id: 'ORG', path: 'organizations/ORG' }
+  assert.deepEqual(orgUserQueryValues('ORG', ref), ['ORG', 'organizations/ORG', ref])
+  assert.deepEqual(orgUserQueryValues('ORG'), ['ORG', 'organizations/ORG'])
+  const { readFileSync } = await import('node:fs')
+  const vm = await import('node:vm')
+  const context = vm.createContext({})
+  vm.runInContext(readFileSync(new URL('../../lib/canonical/dist/canonical-business.js', import.meta.url), 'utf8'), context)
+  const rulebook = context.ProjectPlannerCanonical
+  const operatives = [
+    { id: 'row-ref', firstName: 'Rae', lastName: 'Ref', email: 'rae@x.com', dayRate: 100, payBasis: 'day' },
+    { id: 'row-ghost', firstName: 'Gus', lastName: 'Ghost', email: 'gus@x.com', dayRate: 100, payBasis: 'day' },
+  ]
+  // An admin SDK DocumentReference exposes `id` and `path`; the rulebook reads it with `documentOrganizationId`.
+  const users = [{ id: 'u-rae', email: 'rae@x.com', organizationId: { id: 'ORG', path: 'organizations/ORG' } }]
+  const ids = rulebook.ghostConversionCandidates({ organizationId: 'ORG', operatives, users }).map((c) => c.operativeId)
+  assert.deepEqual([...ids], ['row-ghost'])
 })

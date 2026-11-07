@@ -267,6 +267,8 @@ export function MyScheduleSelfBookingScreen({
   }, [organizationId, loadManagerSiteBookings, loadUsers, loadProjects, loadSmallWorks])
 
   const weekDates = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart])
+  // The organisation's today, once per render (not once per day cell of the week strip).
+  const todayDate = organizationTodayCalendarDate()
 
   // Rulebook §10 (1.12.2): the person's own annual leave, approved and pending, matched by account — the same as the
   // read-only My Schedule and iOS. Live: `loadBookings` attaches the holidayBookings listener.
@@ -749,7 +751,7 @@ export function MyScheduleSelfBookingScreen({
       <div className="week" data-hue="sched">
         {weekDates.map((day, index) => {
           const isSel = multiDay ? selectedDates.some((d) => isSameDay(d, day)) : isSameDay(day, selectedDate)
-          const today = isSameDay(day, organizationTodayCalendarDate())
+          const today = isSameDay(day, todayDate)
           const dayRows = myBookingsOn(day)
           const assignedRows = assignedOn(day)
           const leaveLabel = myScheduleAnnualLeaveLabel(myHolidays, day, undefined, policyForBookingDate(day, payrollPolicy) ?? payrollPolicy)

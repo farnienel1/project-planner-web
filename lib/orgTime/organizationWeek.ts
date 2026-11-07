@@ -12,6 +12,7 @@
  * Instants that are stored (a toolbox talk's week commencing) use `organizationWeekStartInstant`: organisation-zone
  * midnight of the week's Monday, as every other stored day is (rulebook §1).
  */
+import { format } from 'date-fns'
 import { isWeekendDayKey, organizationWeekDayKeys } from '@/lib/canonical'
 import { dateFromDayKeyInZone, dayKeyInZone } from '@/lib/orgTime/zoneTime'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
@@ -65,4 +66,18 @@ export function organizationWeekStartInstant(instant: Date, timeZone?: string | 
   const zone = organizationZoneOr(timeZone)
   const week = organizationWeekDayKeys(dayKeyInZone(instant, zone), zone)
   return week.startDayKey ? dateFromDayKeyInZone(week.startDayKey, zone) : instant
+}
+
+/**
+ * A stored week commencing (an instant, organisation-zone midnight of its Monday from 1.36.0; older values were
+ * browser-local midnight) as the calendar date of that day in the organisation zone, so a browser in another zone
+ * still shows the organisation's Monday (a London organisation viewed from New York showed Sunday).
+ */
+export function weekCommencingCalendarDate(weekCommencing: Date, timeZone?: string | null): Date {
+  return calendarDateOfKey(dayKeyInZone(weekCommencing, organizationZoneOr(timeZone)))
+}
+
+/** `weekCommencingCalendarDate` formatted with a date-fns pattern (e.g. 'd MMM yyyy'). */
+export function weekCommencingLabel(weekCommencing: Date, pattern: string, timeZone?: string | null): string {
+  return format(weekCommencingCalendarDate(weekCommencing, timeZone), pattern)
 }

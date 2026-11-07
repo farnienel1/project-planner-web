@@ -17,21 +17,34 @@ export function isTaskAssignedToUser(
   managers: Manager[],
   roster: ReadonlyArray<User> = []
 ): boolean {
-  if (!user) return false
+  return tasksAssignedToUser([task], user, operatives, managers, roster).length > 0
+}
+
+/**
+ * The tasks of a list assigned to the signed-in user (`isTaskAssignedToUser` for each), with one call to
+ * `tasksAssignedToViewer`, so the viewer's ids are folded once for the whole list rather than once per task.
+ * Returned in the given order.
+ */
+export function tasksAssignedToUser(
+  tasks: ReadonlyArray<ProjectTask>,
+  user: User | null,
+  operatives: Operative[],
+  managers: Manager[],
+  roster: ReadonlyArray<User> = []
+): ProjectTask[] {
+  if (!user || tasks.length === 0) return []
   const rows = roster.some((row) => row.id === user.id) ? roster : [user, ...roster]
-  return (
-    tasksAssignedToViewer({
-      viewer: { id: user.id, email: user.email ?? null },
-      roster: rows.map((row) => ({
-        id: row.id,
-        email: row.email ?? null,
-        formerUserIds: row.formerUserIds ?? [],
-      })),
-      operatives: operatives.map((row) => ({ id: row.id, email: row.email ?? null })),
-      managers: managers.map((row) => ({ id: row.id, email: row.email ?? null })),
-      tasks: [task],
-    }).length > 0
-  )
+  return tasksAssignedToViewer({
+    viewer: { id: user.id, email: user.email ?? null },
+    roster: rows.map((row) => ({
+      id: row.id,
+      email: row.email ?? null,
+      formerUserIds: row.formerUserIds ?? [],
+    })),
+    operatives: operatives.map((row) => ({ id: row.id, email: row.email ?? null })),
+    managers: managers.map((row) => ({ id: row.id, email: row.email ?? null })),
+    tasks,
+  })
 }
 
 /** Rulebook 1.23.0 §23 `isTaskOverdue` on the organisation day. */
@@ -83,7 +96,7 @@ export function filterTasksForView(
 ): ProjectTask[] {
   let list = showAllTasks
     ? tasks
-    : tasks.filter((task) => isTaskAssignedToUser(task, user, operatives, managers))
+    : tasksAssignedToUser(tasks, user, operatives, managers)
 
   switch (filter) {
     case 'todo':

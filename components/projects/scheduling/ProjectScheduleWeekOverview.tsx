@@ -265,6 +265,8 @@ export function ProjectScheduleWeekOverview({
   }, [organizationId, project.id])
 
   const weekDays = useMemo(() => weekDaysFrom(weekStart), [weekStart])
+  // The organisation's today, once per render (not once per header and grid cell).
+  const todayDate = organizationTodayCalendarDate()
   const weekEnd = organizationCalendarWeekEnd(weekStart)
   const projectBookings = useMemo(
     () => bookings.filter((b) => idsMatch(b.projectId, project.id)),
@@ -649,7 +651,7 @@ export function ProjectScheduleWeekOverview({
                 Booked in
               </div>
               {weekDays.map((day) => {
-                const isTodayDay = isSameDay(day, organizationTodayCalendarDate())
+                const isTodayDay = isSameDay(day, todayDate)
                 return (
                   <div
                     key={day.toISOString()}
@@ -671,6 +673,7 @@ export function ProjectScheduleWeekOverview({
                   key={person.key}
                   person={person}
                   weekDays={weekDays}
+                  todayDate={todayDate}
                   expanded={expanded}
                   onEdit={canQuickAdd ? setEditingRow : () => undefined}
                   onQuickAdd={canQuickAdd && jobBookable ? (target, date) => setQuickAdd({ person: target, date }) : undefined}
@@ -745,12 +748,14 @@ export function ProjectScheduleWeekOverview({
 function PersonRow({
   person,
   weekDays,
+  todayDate,
   expanded,
   onEdit,
   onQuickAdd,
 }: {
   person: PersonWeek
   weekDays: Date[]
+  todayDate: Date
   expanded: boolean
   onEdit: (row: DayRow) => void
   onQuickAdd?: (person: PersonWeek, date: Date) => void
@@ -773,7 +778,7 @@ function PersonRow({
       </div>
       {weekDays.map((day, index) => {
         const cell = person.cells[index]
-        const isTodayDay = isSameDay(day, organizationTodayCalendarDate())
+        const isTodayDay = isSameDay(day, todayDate)
         return (
           <div
             key={`${person.key}-${day.toISOString()}`}

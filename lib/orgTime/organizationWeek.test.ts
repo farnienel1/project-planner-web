@@ -8,7 +8,9 @@ import {
   organizationCurrentWeekStart,
   organizationTodayCalendarDate,
   organizationWeekStartInstant,
+  weekCommencingLabel,
 } from './organizationWeek.ts'
+import { format } from 'date-fns'
 import { setQuickSelectWeekdays, calendarGridDays } from '../scheduling/scheduleUtils.ts'
 
 test('1.36.0 FU-4: the organisation week of a calendar date runs Monday to Sunday', () => {
@@ -50,4 +52,40 @@ test('1.36.0 FU-4: the month grid starts on a Monday and ends on a Sunday', () =
   assert.equal(calendarDayKey(days[0]), '2026-10-26')
   assert.equal(calendarDayKey(days[days.length - 1]), '2026-12-06')
   assert.equal(days.length % 7, 0)
+})
+
+function inBrowserZone<T>(zone: string, run: () => T): T {
+  const previous = process.env.TZ
+  process.env.TZ = zone
+  try {
+    return run()
+  } finally {
+    if (previous === undefined) delete process.env.TZ
+    else process.env.TZ = previous
+  }
+}
+
+test('1.36.0 review: a week commencing shows the organisation Monday in any browser zone', () => {
+  const stored = organizationWeekStartInstant(new Date('2026-11-12T10:00:00Z'), 'Europe/London') // Mon 9 Nov 00:00 GMT
+  // A New York browser: date-fns format alone showed Sunday 8 Nov.
+  inBrowserZone('America/New_York', () => {
+    assert.equal(format(stored, 'd MMM yyyy'), '8 Nov 2026')
+    assert.equal(weekCommencingLabel(stored, 'd MMM yyyy', 'Europe/London'), '9 Nov 2026')
+    assert.equal(weekCommencingLabel(stored, 'EEE d MMM', 'Europe/London'), 'Mon 9 Nov')
+  })
+  // Summer time: Monday 13 Jul 00:00 BST is 12 Jul 23:00 UTC.
+  const summer = organizationWeekStartInstant(new Date('2026-07-15T10:00:00Z'), 'Europe/London')
+  inBrowserZone('UTC', () => assert.equal(weekCommencingLabel(summer, 'd MMM', 'Europe/London'), '13 Jul'))
+  // Auckland organisation viewed from London.
+  const nz = organizationWeekStartInstant(new Date('2026-11-12T10:00:00Z'), 'Pacific/Auckland')
+  inBrowserZone('Europe/London', () => assert.equal(weekCommencingLabel(nz, 'd MMM', 'Pacific/Auckland'), '9 Nov'))
+})
+
+test('1.36.0 review: an older stored week commencing reads as before for a browser in the organisation zone', () => {
+  inBrowserZone('Europe/London', () => {
+    // Before 1.36.0 web stored browser-local midnight of the Monday (London browser).
+    for (const old of [new Date(2026, 10, 9), new Date(2026, 6, 13), new Date(2026, 2, 30)]) {
+      assert.equal(weekCommencingLabel(old, 'd MMM yyyy', 'Europe/London'), format(old, 'd MMM yyyy'))
+    }
+  })
 })

@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { isTaskAssignedToUser } from './taskUtils.ts'
+import { isTaskAssignedToUser, tasksAssignedToUser } from './taskUtils.ts'
 import type { Manager, Operative, ProjectTask, User } from '../../types/index.ts'
 
 /** The helper web used before 1.36.0, kept here only to prove the rulebook test never shows fewer tasks. */
@@ -59,4 +59,14 @@ test('1.36.0: tasks under a second managers row, the users id, a former id or an
   assert.equal(isTaskAssignedToUser(task({ assignedOperativeId: 'op-bob' }), ada, operatives, managers), false)
   assert.equal(isTaskAssignedToUser(task({ assignedManagerId: 'mgr-bob' }), ada, operatives, managers), false)
   assert.equal(isTaskAssignedToUser(task({ assignedOperativeId: 'op-ada' }), null, operatives, managers), false)
+})
+
+test('1.36.0 review: the whole-list helper folds ids once and returns exactly the per-task result, in order', () => {
+  const rosters: User[][] = [[], [ada]]
+  for (const roster of rosters) {
+    const perTask = cases.filter((item) => isTaskAssignedToUser(item, ada, operatives, managers, roster))
+    assert.deepEqual(tasksAssignedToUser(cases, ada, operatives, managers, roster), perTask)
+  }
+  assert.deepEqual(tasksAssignedToUser(cases, null, operatives, managers), [])
+  assert.deepEqual(tasksAssignedToUser([], ada, operatives, managers), [])
 })

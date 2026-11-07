@@ -6,7 +6,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { format } from 'date-fns'
-import { organizationWeekStartInstant } from '@/lib/orgTime/organizationWeek'
+import { organizationWeekStartInstant, weekCommencingLabel } from '@/lib/orgTime/organizationWeek'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useHealthSafetyStore } from '@/lib/stores/healthSafetyStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
@@ -592,7 +592,7 @@ export function ProjectHealthSafetySection({
                     <FeatureCard key={issue.id} className="flex items-center gap-3 p-3">
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-semibold text-slate-900">{talk?.title || 'Toolbox talk'}</p>
-                        <p className="text-xs text-slate-500">W/C {format(issue.weekCommencing, 'd MMM yyyy')}</p>
+                        <p className="text-xs text-slate-500">W/C {weekCommencingLabel(issue.weekCommencing, 'd MMM yyyy')}</p>
                       </div>
                       <div className="flex shrink-0 items-center gap-2">
                         <button

@@ -248,7 +248,9 @@ How to use it:
 |---|---|---|
 | 7 Nov | 1.36.0 is fixes only (owner: "do all"). Figures that change, only where they were wrong: (a) weekly report / timesheet pay for a person whose rate-history row is filed only under a second `operatives` row on their email now uses that rate; (b) Edit User "previous rates" lists rows under a former invite id, another letter case or a second row; a rate change no longer writes a duplicate seed row then; (c) timesheet invoice rate-change notes include those rows; a person with no email no longer picks up every no-email row's notes; (d) My tasks may list more tasks (under the users id, a second managers row, another letter case) — never fewer. | done web, owner to confirm |
 | 7 Nov | "This week" and "today" on web week screens follow the organisation's zone. A browser in the organisation's zone sees no change; one abroad or near midnight opens on the organisation's week. A new toolbox-talk week commencing is stored as organisation-zone midnight of its Monday. | done web, owner to confirm |
-| 7 Nov | Ghost conversion script: a person with a login here — a member from another company, or a users document storing `organizations/{id}` — is never a candidate; re-run the dry run before `--apply` (the check list may be shorter). | done (script), owner to confirm |
+| 7 Nov | Ghost conversion script: a person with a login here — a member from another company, or a users document storing `organizations/{id}` or a DocumentReference (review fix) — is never a candidate; re-run the dry run before `--apply` (the check list may be shorter). | done (script), owner to confirm |
+| 7 Nov | **Pay change — see the open question below (7 Nov).** Item (a) above changes a pay figure for anyone with two or more `operatives` rows on their email whose non-linked row has newer rate history (test: 200 → 260). | question |
+| 7 Nov | Toolbox talk "W/C" shows the organisation's Monday in every browser zone (review fix: a London talk viewed from New York read Sunday); older stored values read as before for a browser in the organisation's zone. | done web |
 
 ## 1.35.0 judgement calls (owner to confirm)
 
@@ -263,4 +265,5 @@ How to use it:
 
 | Date | Question |
 |---|---|
+| 7 Nov | **Pay change in 1.36.0 (owner decision needed before merge).** People with two or more `operatives` rows on one email now have their rate history read across every row (rulebook §8 `payRateOnDay`, "every id"); a newer history row on a non-linked duplicate row now wins over the rate web used before (the PR's test: 200 → 260). (a) keep the rulebook rule: every row counts, the latest dated row wins; (b) only the linked row counts until duplicate rows are cleaned up. **Recommended: (a), plus a clean-up of duplicate rows.** To see who is affected: `node scripts/report-duplicate-operative-rate-history.mjs --project project-planner-f986c --all` (read only; `docs/scripts/report-duplicate-operative-rate-history.md`). |
 | 5 Nov | ANSWERED 5 Nov (see Files, data and privacy). Pay visibility edge cases after removing line managers: (a) does a person see their own rate on My Profile (rulebook §12 says yes, read-only)? (b) a line manager who is not an admin or Operatives manager signs a self-employed timesheet — do they see its £ amounts and the invoice, or hours only? Recommended: (a) yes; (b) hours only, £ hidden. |

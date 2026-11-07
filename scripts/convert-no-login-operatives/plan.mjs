@@ -129,3 +129,15 @@ export function anchoredMemberIds(orgData) {
   if (creator) ids.add(creator)
   return [...ids]
 }
+
+/**
+ * 1.36.0 review: the `users` `organizationId ==` values that name this organisation. Firestore matches by type, so a
+ * users document that stores the organisation as a DocumentReference (some iOS builds) is found only by querying the
+ * reference itself; the id and the path string (`organizations/{id}`) are the other two stored forms. `orgRef` is
+ * `db.doc('organizations/' + orgId)`.
+ */
+export function orgUserQueryValues(orgId, orgRef) {
+  const values = [orgId, `organizations/${orgId}`]
+  if (orgRef) values.push(orgRef)
+  return values
+}

@@ -29,7 +29,14 @@ import { createRequire } from 'node:module'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import vm from 'node:vm'
-import { anchoredMemberIds, checkListCsv, checkListMarkdown, checkListRows, parseFilledCheckList } from './convert-no-login-operatives/plan.mjs'
+import {
+  anchoredMemberIds,
+  checkListCsv,
+  checkListMarkdown,
+  checkListRows,
+  orgUserQueryValues,
+  parseFilledCheckList,
+} from './convert-no-login-operatives/plan.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const root = path.resolve(here, '..')
@@ -98,13 +105,14 @@ function withServerTimes(write) {
 
 /**
  * 1.36.0: every users document that is an account of this organisation, so a person with a login is never converted.
- * The `organizationId ==` query misses documents that store the organisation as a path (`organizations/{id}`, some
- * iOS builds) and members whose users document names another company (rulebook §1 anchored people: every `members`
- * key and the creator), so those are read too (by the path form, and by id).
+ * The `organizationId ==` query on the id misses documents that store the organisation as a path (`organizations/{id}`)
+ * or as a DocumentReference (some iOS builds), and members whose users document names another company (rulebook §1
+ * anchored people: every `members` key and the creator), so those are read too (by the path, by the reference, and by
+ * id); the results are merged by document id.
  */
 async function loadOrgUsers(orgId, orgData) {
   const byId = new Map()
-  for (const value of [orgId, `organizations/${orgId}`]) {
+  for (const value of orgUserQueryValues(orgId, db.doc(`organizations/${orgId}`))) {
     for (const doc of (await db.collection('users').where('organizationId', '==', value).get()).docs) byId.set(doc.id, { id: doc.id, ...doc.data() })
   }
   const missing = anchoredMemberIds(orgData).filter((id) => !byId.has(id))

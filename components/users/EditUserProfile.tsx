@@ -848,14 +848,17 @@ export function EditUserProfile({
       let payHistoryRows: Array<{ id: string; fields: Record<string, unknown> }> = []
       if (rateChanged) {
         const { loadOperativeDayRateHistoryOrNull, payHistoryBatchRows } = await import('@/lib/timesheets/dayRateHistoryStorage')
+        // Every id the stored history may be filed under: read once from the person as stored (`savedUser`, the
+        // loaded profile), never from the email typed in this save — a new email would name another person's rows.
+        const historyIds = personRateHistoryIds(savedUser.current ?? previous, operatives, { roster: users })
         payHistoryRows = payHistoryBatchRows({
           history: await loadOperativeDayRateHistoryOrNull(organization.id),
           userId: toSave.id,
           // The row keeps one `operativeId` (the linked catalogue row, as before); the "history loaded and empty?"
           // test reads every id the person's history may be under (1.36.0, FU-5), so no duplicate seed row.
           operativeId: findOperativeForUser(toSave, operatives)?.id,
-          historyUserIds: personRateHistoryIds(toSave, operatives, { roster: users }).userIds,
-          historyOperativeIds: personRateHistoryIds(toSave, operatives, { roster: users }).operativeIds,
+          historyUserIds: historyIds.userIds,
+          historyOperativeIds: historyIds.operativeIds,
           previous: { rate: originalDayRate ?? null, payBasis: originalPayBasis ?? null },
           next: { rate: nextRate, payBasis: toSave.payBasis ?? null },
           effectiveAt: decision instanceof Date ? decision : new Date(),

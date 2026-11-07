@@ -22,7 +22,7 @@ import {
   filterTasksForView,
   getTaskProjectHref,
   getTaskDetailHref,
-  isTaskAssignedToUser,
+  tasksAssignedToUser,
   isTaskOverdue,
   resolveProjectName,
   type TaskListFilter,
@@ -224,7 +224,7 @@ export function TasksScreen() {
   }, [searchedTasks, projects, smallWorks])
 
   const myTasks = useMemo(
-    () => tasks.filter((t) => isTaskAssignedToUser(t, user, operatives, managers, users)),
+    () => tasksAssignedToUser(tasks, user, operatives, managers, users),
     [tasks, user, operatives, managers, users]
   )
 
