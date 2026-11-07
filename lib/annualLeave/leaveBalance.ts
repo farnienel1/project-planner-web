@@ -1,6 +1,8 @@
 import {
   annualLeaveBalance,
+  annualLeaveBankHolidayRange,
   applyRemainingOverride,
+  type AnnualLeaveBankHolidayRange,
   type AnnualLeaveBalance,
   type LeaveDayRecord,
 } from '@/lib/canonical'
@@ -18,6 +20,29 @@ export function holidayToLeaveDay(booking: HolidayBooking, timeZone?: string | n
     timeSlot: booking.timeSlot,
     status: booking.status,
   }
+}
+
+/**
+ * Rulebook 1.35.0: the bank-holiday range `userLeaveBalance` needs for this person
+ * (`annualLeaveBankHolidayRange`: the previous leave year's start to the current one's end, for carry-over).
+ */
+export function userLeaveBankHolidayRange(input: {
+  user: Pick<User, 'annualLeaveEnabled' | 'annualLeaveYearStartMonth' | 'annualLeaveYearEndMonth'> | null
+  orgDefaults?: OrgAnnualLeaveDefaults | null
+  now?: Date
+  timeZone?: string | null
+}): AnnualLeaveBankHolidayRange {
+  const defaults = input.orgDefaults ?? DEFAULT_ANNUAL_LEAVE
+  const timeZone = organizationZoneOr(input.timeZone)
+  return annualLeaveBankHolidayRange({
+    annualLeaveEnabled: input.user?.annualLeaveEnabled,
+    startMonth: input.user?.annualLeaveYearStartMonth,
+    endMonth: input.user?.annualLeaveYearEndMonth,
+    orgStartMonth: defaults.startMonth,
+    orgEndMonth: defaults.endMonth,
+    onDayKey: dayKeyInZone(input.now ?? new Date(), timeZone),
+    timeZone,
+  })
 }
 
 export function userLeaveBalance(input: {

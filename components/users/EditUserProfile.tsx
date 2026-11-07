@@ -61,6 +61,7 @@ import { useOrgBankHolidays } from '@/components/annual-leave/useOrgBankHolidays
 import {
   remainingOverrideFromBalance,
   userLeaveBalance,
+  userLeaveBankHolidayRange,
 } from '@/lib/annualLeave/leaveBalance'
 import {
   DEFAULT_ANNUAL_LEAVE,
@@ -467,11 +468,17 @@ export function EditUserProfile({
         : [],
     [target, holidayBookings, users, userIdAliases, rosterDocs, operatives]
   )
-  const leaveYearProbe = useMemo(
-    () => userLeaveBalance({ user: target, bookings: personLeave, orgDefaults: orgLeaveDefaults }),
-    [target, personLeave, orgLeaveDefaults]
+  // Rulebook 1.35.0 `annualLeaveBankHolidayRange`: the previous leave year's bank holidays too (carry-over), the same
+  // range My Profile and Annual leave load, so the three show the same figure.
+  const leaveBankRange = useMemo(
+    () => userLeaveBankHolidayRange({ user: target, orgDefaults: orgLeaveDefaults }),
+    [target, orgLeaveDefaults]
   )
-  const leaveBank = useOrgBankHolidays(dateFromLeaveDayKey(leaveYearProbe.startDayKey), dateFromLeaveDayKey(leaveYearProbe.endDayKey))
+  const leaveBank = useOrgBankHolidays(
+    dateFromLeaveDayKey(leaveBankRange.startDayKey),
+    dateFromLeaveDayKey(leaveBankRange.endDayKey),
+    { years: leaveBankRange.years }
+  )
   const leaveBankDayKeys = leaveBank.holidays.map((holiday) => holiday.date).join(',')
   const leaveBalance = useMemo(
     () =>
@@ -485,11 +492,12 @@ export function EditUserProfile({
   )
 
   useEffect(() => {
-    if (!target || remainingTouched) return
+    // Wait for the bank holidays: until then `taken` can still count a bank holiday as leave.
+    if (!target || remainingTouched || !leaveBank.loaded) return
     setRemainingDraft(
       leaveBalance.remaining == null ? '' : String(leaveBalance.remaining)
     )
-  }, [target, leaveBalance.remaining, remainingTouched])
+  }, [target, leaveBalance.remaining, remainingTouched, leaveBank.loaded])
 
   // Rulebook §11 `lineManagerCandidates(person, roster)`: the picker list, never the person under any of their ids.
   const managers = useMemo(() => {
@@ -804,6 +812,10 @@ export function EditUserProfile({
       employmentTypeEffectiveAt: employment.employmentTypeEffectiveAt || undefined,
     }
     if (toSave.annualLeaveEnabled !== false && remainingTouched && remainingDraft !== '') {
+      if (!leaveBank.loaded) {
+        setError('Leave figures are still loading. Try again in a moment.')
+        return
+      }
       const remaining = parseBoundedNumber(remainingDraft, { min: 0, max: LEAVE_DAYS_SAVE_MAX })
       if (remaining == null) {
         setError('Enter remaining leave days between 0 and 365.')
@@ -1562,14 +1574,18 @@ export function EditUserProfile({
               </div>
               <FormField
                 label={ANNUAL_LEAVE_ALLOWANCE_COPY.remainingTitle}
-                hint={`${ANNUAL_LEAVE_ALLOWANCE_COPY.remainingNote} Currently ${leaveBalance.taken} taken and ${leaveBalance.pending} awaiting approval this leave year.`}
+                hint={
+                  leaveBank.loaded
+                    ? `${ANNUAL_LEAVE_ALLOWANCE_COPY.remainingNote} Currently ${leaveBalance.taken} taken and ${leaveBalance.pending} awaiting approval this leave year.`
+                    : `${ANNUAL_LEAVE_ALLOWANCE_COPY.remainingNote} Counting leave taken this year…`
+                }
               >
                 <Input
                   type="number"
                   min="0"
                   step="0.5"
                   value={remainingDraft}
-                  disabled={!canEdit}
+                  disabled={!canEdit || !leaveBank.loaded}
                   onChange={(e) => {
                     setRemainingDraft(e.target.value)
                     setRemainingTouched(true)

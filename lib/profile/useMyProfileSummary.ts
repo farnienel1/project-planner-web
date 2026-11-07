@@ -7,7 +7,12 @@
  */
 
 import { useEffect, useMemo } from 'react'
-import { myProfileSummary, parseAnnualLeaveDefaults, type MyProfileSummary } from '@/lib/canonical'
+import {
+  myProfileBankHolidayRange,
+  myProfileSummary,
+  parseAnnualLeaveDefaults,
+  type MyProfileSummary,
+} from '@/lib/canonical'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useBookingStore } from '@/lib/stores/bookingStore'
 import { useHolidayStore } from '@/lib/stores/holidayStore'
@@ -20,12 +25,6 @@ import { holidayBookingDayKeys } from '@/lib/annualLeave/holidayDayKeys'
 import { useOrgBankHolidays } from '@/components/annual-leave/useOrgBankHolidays'
 import { qualificationExpiryOperatives } from '@/lib/warnings/generateOrgWarnings'
 import { useOrganizationDayKey } from '@/lib/warnings/useOrganizationDayKey'
-
-/** Bank holidays are fetched for last year to next year, so any leave year containing today is covered. */
-function bankHolidayFetchRange(dayKey: string): { start: Date; end: Date } {
-  const year = Number(dayKey.slice(0, 4)) || 1970
-  return { start: new Date(year - 1, 0, 1), end: new Date(year + 1, 11, 31) }
-}
 
 export function useMyProfileSummary(): MyProfileSummary | null {
   const { user, organization } = useAuthStore()
@@ -40,8 +39,26 @@ export function useMyProfileSummary(): MyProfileSummary | null {
   const { operatives, managers, loadOperatives, loadManagers } = useOperativeStore()
   const loadUsers = useOrgUserStore((state) => state.loadUsers)
   const roster = useRosterDocuments(orgId)
-  const range = bankHolidayFetchRange(dayKey)
-  const bank = useOrgBankHolidays(range.start, range.end)
+  // Rulebook 1.35.0 `myProfileBankHolidayRange` (`annualLeaveBankHolidayRange`): the previous leave year's bank
+  // holidays too (carry-over), the same range Annual leave and Edit User load. `dayKey` re-plans it at midnight.
+  // `organizations/{orgId}.annualLeaveDefaults` (rulebook §4.4), not the organisation document itself.
+  const orgLeaveDefaults = parseAnnualLeaveDefaults(
+    ((orgDocument.data ?? {}) as Record<string, unknown>).annualLeaveDefaults as Record<string, unknown> | undefined
+  )
+  const bankRange = useMemo(
+    () =>
+      myProfileBankHolidayRange({
+        nowMs: Date.now(),
+        timeZone,
+        user: (user ?? null) as never,
+        leaveDefaults: orgLeaveDefaults,
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `dayKey` stands in for `Date.now()`
+    [user, timeZone, dayKey, orgLeaveDefaults.startMonth, orgLeaveDefaults.endMonth]
+  )
+  const bank = useOrgBankHolidays(new Date(`${bankRange.startDayKey}T12:00:00`), new Date(`${bankRange.endDayKey}T12:00:00`), {
+    years: bankRange.years,
+  })
 
   useEffect(() => {
     if (!orgId) return
@@ -57,8 +74,10 @@ export function useMyProfileSummary(): MyProfileSummary | null {
 
   const bankDayKeys = bank.holidays.map((holiday) => holiday.date).join(',')
 
+  const bankLoaded = bank.loaded
   return useMemo(() => {
-    if (!user || !orgId) return null
+    // Until the bank holidays load, a bank holiday inside a leave record could still count as leave: show nothing yet.
+    if (!user || !orgId || !bankLoaded) return null
     const orgData = (orgDocument.data ?? {}) as Record<string, unknown>
     return myProfileSummary({
       nowMs: Date.now(),
@@ -82,7 +101,7 @@ export function useMyProfileSummary(): MyProfileSummary | null {
       })),
       operatives: qualificationExpiryOperatives(operatives),
       managers: managers.map((row) => ({ id: row.id, email: row.email ?? null })),
-      leaveDefaults: parseAnnualLeaveDefaults(orgData),
+      leaveDefaults: orgLeaveDefaults,
       holidays: holidays.map((holiday) => ({
         ...holidayBookingDayKeys(holiday, timeZone),
         userId: holiday.userId ?? null,
@@ -120,5 +139,5 @@ export function useMyProfileSummary(): MyProfileSummary | null {
     })
     // `dayKey` moves the figures on at the organisation's midnight.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, orgId, timeZone, dayKey, orgDocument.data, roster, operatives, managers, holidays, bankDayKeys, tasks, bookings, managerSiteBookings])
+  }, [user, orgId, bankLoaded, timeZone, dayKey, orgDocument.data, roster, operatives, managers, holidays, bankDayKeys, tasks, bookings, managerSiteBookings])
 }

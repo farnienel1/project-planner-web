@@ -1009,6 +1009,7 @@ export {
 } from './organizationSettings'
 export { leaveHalfDayWindows, leaveComparableInterval, leaveHalfDayLabel } from './engine'
 export { leaveYearStartMonth, proRataLeaveAllowance } from './annualLeaveBalance'
+export { annualLeaveBankHolidayRange } from './annualLeaveBalance'
 export {
   PAY_PROFILES_COLLECTION,
   PAY_PROFILE_FIELDS,
@@ -1287,7 +1288,7 @@ export * from './ghostOperatives'
 
 // Rulebook 1.35.0 §12: the My Profile personal figures and the organisation week.
 export { organizationWeekDayKeys } from './dayKeys'
-export { myProfileSummary } from './myProfileSummary'
+export { myProfileBankHolidayRange, myProfileSummary } from './myProfileSummary'
 export type {
   MyProfileSummary,
   MyProfileSummaryBooking,

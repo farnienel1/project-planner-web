@@ -9,7 +9,7 @@ import { holidayRequestRanges } from '@/lib/canonical'
 import { notifyHolidayRequestSubmitted } from '@/lib/annualLeave/notifyHolidayRequestSubmitted'
 import { userCanSelfBookAnnualLeave, userLeaveSubmitLabel } from '@/lib/annualLeave/holidayApprovalUtils'
 import { getBookingForDay, getDayKindForBookings } from '@/lib/annualLeave/dayStatus'
-import { userLeaveBalance } from '@/lib/annualLeave/leaveBalance'
+import { userLeaveBalance, userLeaveBankHolidayRange } from '@/lib/annualLeave/leaveBalance'
 import { DEFAULT_ANNUAL_LEAVE, type OrgAnnualLeaveDefaults } from '@/lib/settings/organizationSettings'
 import {
   bookingDayCount,
@@ -33,7 +33,10 @@ function LeaveSummary({
   carriedForward,
   leaveYearStart,
   leaveYearEnd,
+  loading = false,
 }: {
+  /** True until the bank holidays have loaded: the figures are not shown yet (they could still count one as leave). */
+  loading?: boolean
   hasAllowance: boolean
   allowance: number
   remaining: number | null
@@ -76,18 +79,21 @@ function LeaveSummary({
             {hasAllowance ? 'Days remaining' : 'Days taken this leave year'}
           </p>
           <p className={`text-3xl font-bold leading-none ${over ? 'text-[var(--red)]' : 'text-slate-900'}`}>
-            {over
-              ? `${formatLeaveCount(remaining ?? 0)} ${Math.abs(remaining ?? 0) === 1 ? 'day' : 'days'} over`
-              : formatLeaveCount(hasAllowance ? remaining ?? 0 : taken)}
+            {loading
+              ? '…'
+              : over
+                ? `${formatLeaveCount(remaining ?? 0)} ${Math.abs(remaining ?? 0) === 1 ? 'day' : 'days'} over`
+                : formatLeaveCount(hasAllowance ? remaining ?? 0 : taken)}
           </p>
         </div>
       </div>
       <div className={`mt-4 grid gap-2 text-center ${hasAllowance ? 'grid-cols-3' : 'grid-cols-2'}`}>
-        <Tile label="Taken" value={formatLeaveCount(taken)} />
-        <Tile label="Awaiting approval" value={formatLeaveCount(pending)} />
-        {hasAllowance ? <Tile label="Allowance" value={formatLeaveCount(totalAllowance)} /> : null}
+        <Tile label="Taken" value={loading ? '…' : formatLeaveCount(taken)} />
+        <Tile label="Awaiting approval" value={loading ? '…' : formatLeaveCount(pending)} />
+        {hasAllowance ? <Tile label="Allowance" value={loading ? '…' : formatLeaveCount(totalAllowance)} /> : null}
       </div>
-      {hasAllowance && carriedForward ? (
+      {loading ? <p className="mt-2 text-[11px] text-slate-500">Counting leave…</p> : null}
+      {!loading && hasAllowance && carriedForward ? (
         <p className="mt-2 text-[11px] text-slate-500">Includes {formatLeaveCount(carriedForward)} carried forward</p>
       ) : null}
       {!hasAllowance ? (
@@ -172,7 +178,12 @@ export function PersonalLeave({
     start: dateFromDayKey(yearProbe.startDayKey),
     end: dateFromDayKey(yearProbe.endDayKey),
   }
-  const bank = useOrgBankHolidays(leaveYear.start, leaveYear.end)
+  // Rulebook 1.35.0 `annualLeaveBankHolidayRange`: the previous leave year's bank holidays too (carry-over), the same
+  // range My Profile and Edit User load.
+  const bankRange = userLeaveBankHolidayRange({ user, orgDefaults: orgLeaveDefaults ?? DEFAULT_ANNUAL_LEAVE, timeZone })
+  const bank = useOrgBankHolidays(dateFromDayKey(bankRange.startDayKey), dateFromDayKey(bankRange.endDayKey), {
+    years: bankRange.years,
+  })
   const balance = userLeaveBalance({
     user,
     bookings: myBookings,
@@ -313,6 +324,7 @@ export function PersonalLeave({
         carriedForward={carriedForward}
         leaveYearStart={leaveYear.start}
         leaveYearEnd={leaveYear.end}
+        loading={!bank.loaded}
       />
 
       <section className="space-y-3">

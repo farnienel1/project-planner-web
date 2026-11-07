@@ -7,7 +7,9 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   DEFAULT_PAYROLL_POLICY,
+  annualLeaveBankHolidayRange,
   bookedWorkedHours,
+  myProfileBankHolidayRange,
   myProfileSummary,
   organizationWeekDayKeys,
   parsePayrollTimePolicyState,
@@ -226,4 +228,51 @@ test('1.35.0 myProfileSummary line manager: every name, No line manager, Unknown
   assert.equal(noneSet.lineManager.ids.length, 0)
   const unknown = myProfileSummary(base({ user: { id: 'U1', email: 'sam@site.test', assignedManagerUserIds: ['GONE'] } }))
   assert.deepEqual(unknown.lineManager.ids, [{ id: 'GONE', name: 'Unknown person', resolved: false }])
+})
+
+test('1.35.0 annualLeaveBankHolidayRange: previous leave year start to current leave year end', () => {
+  // January leave year, 4 Nov 2026: 1 Jan 2025 – 31 Dec 2026.
+  assert.deepEqual(
+    annualLeaveBankHolidayRange({ annualLeaveEnabled: true, startMonth: 1, endMonth: 12, onDayKey: '2026-11-04', timeZone: LONDON }),
+    { startDayKey: '2025-01-01', endDayKey: '2026-12-31', years: [2025, 2026] }
+  )
+  // April leave year on 10 Feb 2026 (still the 2025–26 year): 1 Apr 2024 – 31 Mar 2026.
+  assert.deepEqual(
+    annualLeaveBankHolidayRange({ annualLeaveEnabled: true, startMonth: 4, endMonth: 3, onDayKey: '2026-02-10', timeZone: LONDON }),
+    { startDayKey: '2024-04-01', endDayKey: '2026-03-31', years: [2024, 2025, 2026] }
+  )
+  // No allowance: the organisation's leave year (April), whatever the person's own months say.
+  assert.deepEqual(
+    annualLeaveBankHolidayRange({
+      annualLeaveEnabled: false, startMonth: 1, endMonth: 12, orgStartMonth: 4, orgEndMonth: 3, onDayKey: '2026-11-04', timeZone: LONDON,
+    }),
+    { startDayKey: '2025-04-01', endDayKey: '2027-03-31', years: [2025, 2026, 2027] }
+  )
+  // myProfileBankHolidayRange reads the same user and leaveDefaults as myProfileSummary.
+  const range = myProfileBankHolidayRange(base({
+    user: { id: 'U1', email: 'sam@site.test', annualLeaveEnabled: true, annualLeaveYearStartMonth: 4, annualLeaveYearEndMonth: 3 },
+  }))
+  assert.equal(range.startDayKey, '2025-04-01')
+  assert.equal(range.endDayKey, '2027-03-31')
+})
+
+test('1.35.0 carry-over needs last leave year\'s bank holidays (Easter Monday 2025)', () => {
+  // April leave year; 2025–26 had a Fri 18 Apr – Tue 22 Apr 2025 record over Good Friday and Easter Monday.
+  const input = base({
+    user: {
+      id: 'U1', email: 'sam@site.test', annualLeaveEnabled: true, annualLeaveDaysPerYear: 25, annualLeaveCarriesOver: true,
+      annualLeaveYearStartMonth: 4, annualLeaveYearEndMonth: 3,
+    },
+    leaveDefaults: { daysPerYear: 25, startMonth: 4, endMonth: 3, carriesOver: true, maxCarryOverDays: null },
+    holidays: [{ userId: 'U1', startDayKey: '2025-04-17', endDayKey: '2025-04-22', timeSlot: 'FULL DAY', status: 'approved' }],
+  })
+  // Without the 2025 bank holidays the record counts Thu, Fri, Mon, Tue = 4 days taken last year → 21 carried.
+  const without = myProfileSummary({ ...input, nonWorkingDayKeys: [] })
+  assert.equal(without.leave.carriedForward, 21)
+  // With the range's years loaded, Good Friday and Easter Monday are not leave: 2 days → 23 carried.
+  const range = myProfileBankHolidayRange(input)
+  assert.ok(range.years.includes(2025))
+  const withBank = myProfileSummary({ ...input, nonWorkingDayKeys: ['2025-04-18', '2025-04-21', '2026-04-03', '2026-04-06'] })
+  assert.equal(withBank.leave.carriedForward, 23)
+  assert.equal(withBank.leave.remaining, 48)
 })

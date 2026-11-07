@@ -18,7 +18,13 @@
  * Pure, JSON in / JSON out, so iOS calls it through `CanonicalBusinessEngine`.
  */
 
-import { annualLeaveBalance, type AnnualLeaveBalance, type LeaveDayRecord } from './annualLeaveBalance'
+import {
+  annualLeaveBalance,
+  annualLeaveBankHolidayRange,
+  type AnnualLeaveBalance,
+  type AnnualLeaveBankHolidayRange,
+  type LeaveDayRecord,
+} from './annualLeaveBalance'
 import { bookingIdsForAccount, leaveRecordsForAccount } from './bookingPerson'
 import { organizationWeekDayKeys } from './dayKeys'
 import { isTaskCompleted, isTaskOverdue } from './dueDates'
@@ -137,9 +143,34 @@ function round2(value: number): number {
 }
 
 /** Rulebook 1.35.0 §12: the My Profile figures for the signed-in person (see the module comment). */
+function profileDayKey(input: { nowMs: number; timeZone: string }): string {
+  return holidayDocumentDayKey(Number.isFinite(input.nowMs) ? input.nowMs : Date.now(), input.timeZone)
+}
+
+/**
+ * Rulebook 1.35.0 §4.4 / §12: the bank-holiday days My Profile's leave figure needs — `annualLeaveBankHolidayRange`
+ * for the person's own leave year on the organisation day of `nowMs` (the previous leave year's start to the current
+ * one's end, for carry-over). Takes the same `user` and `leaveDefaults` as `myProfileSummary`.
+ */
+export function myProfileBankHolidayRange(
+  input: Pick<MyProfileSummaryInput, 'nowMs' | 'timeZone' | 'user' | 'leaveDefaults'>
+): AnnualLeaveBankHolidayRange {
+  const user = input.user || null
+  const defaults = input.leaveDefaults || {}
+  return annualLeaveBankHolidayRange({
+    annualLeaveEnabled: user?.annualLeaveEnabled,
+    startMonth: user?.annualLeaveYearStartMonth,
+    endMonth: user?.annualLeaveYearEndMonth,
+    orgStartMonth: defaults.startMonth,
+    orgEndMonth: defaults.endMonth,
+    onDayKey: profileDayKey(input),
+    timeZone: input.timeZone,
+  })
+}
+
 export function myProfileSummary(input: MyProfileSummaryInput): MyProfileSummary {
   const timeZone = input.timeZone
-  const dayKey = holidayDocumentDayKey(Number.isFinite(input.nowMs) ? input.nowMs : Date.now(), timeZone)
+  const dayKey = profileDayKey(input)
   const user = input.user || null
   const roster = (input.roster || []).filter((row) => row && idText(row.id))
   const operatives = (input.operatives || []).filter((row) => row && idText(row.id))
