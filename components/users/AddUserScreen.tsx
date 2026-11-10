@@ -23,7 +23,15 @@ import {
   leaveYearBounds,
   lineManagerRequiredError,
   snapLeaveDays,
+  GHOST_OPERATIVE_EXPLANATION,
+  GHOST_TOGGLE_HELP,
+  GHOST_TOGGLE_LABEL,
+  canCreateGhost,
+  ghostAddFormRows,
+  ghostToggleVisible,
+  type GhostAddFormField,
 } from '@/lib/canonical'
+import { useUserStore } from '@/lib/stores/userStore'
 import { dayKeyInZone } from '@/lib/orgTime/zoneTime'
 import { DEFAULT_ANNUAL_LEAVE } from '@/lib/settings/organizationSettings'
 import { STAFF_TRADE_TYPES } from '@/lib/staff/staffTradeTypes'
@@ -43,6 +51,7 @@ import type { UserPermissions } from '@/types'
 import { LineManagerMultiSelect } from '@/components/users/LineManagerMultiSelect'
 import { PayBasisFields, payChoiceToRates } from '@/components/users/PayBasisFields'
 import { maySetPayOf, userPayRateRequiredError } from '@/lib/staff/payRateRequired'
+import { ghostAccountsEnabledFor, onPlatformConfigChange } from '@/lib/access/securitySwitches'
 import { LEAVE_DAYS_SAVE_MAX, parseBoundedNumber } from '@/lib/security/boundedValue'
 import {
   PanelHeader,
@@ -160,11 +169,36 @@ export function AddUserScreen() {
   )
   const { users, loadUsers } = useOrgUserStore()
   const { inviteUser } = useInviteStore()
+  const createGhost = useUserStore((state) => state.createGhost)
+  // Rulebook 1.34.0 §11: the Ghost account toggle (`canCreateGhost`, `ghostAddFormRows`) sits at the very top. It is
+  // shown only while `platformConfig/app` switches ghost accounts on for this organisation (`ghostAccountsEnabled`;
+  // owner decision 7 Nov "1b": hidden until the iPhone 1.34 update is out).
+  const mayCreateGhost = Boolean(user && canCreateGhost(user))
+  const organizationId = organization?.id ?? null
+  const [ghostSwitchOn, setGhostSwitchOn] = useState(() => ghostAccountsEnabledFor(organizationId))
+  useEffect(() => {
+    setGhostSwitchOn(ghostAccountsEnabledFor(organizationId))
+    return onPlatformConfigChange(() => setGhostSwitchOn(ghostAccountsEnabledFor(organizationId)))
+  }, [organizationId])
+  const ghostToggleShown = ghostToggleVisible({ canCreateGhost: mayCreateGhost, ghostAccountsEnabled: ghostSwitchOn })
+  const [ghost, setGhost] = useState(false)
+  const ghostOn = ghost && ghostToggleShown
+  const formRows = useMemo(
+    () => ghostAddFormRows({ ghost: ghostOn, canCreateGhost: mayCreateGhost, ghostAccountsEnabled: ghostSwitchOn }),
+    [ghostOn, mayCreateGhost, ghostSwitchOn]
+  )
+  const shows = (field: GhostAddFormField) => formRows.find((row) => row.field === field)?.visible !== false
 
   const canInviteAdmins = canManageUsers(user)
   const operativeInviteOnly = canManageOperativesOnly(user)
   const canAccess = canInviteOperatives(user)
   const pageTitle = operativeInviteOnly ? 'Add operative' : getAddUserLabel(user)
+  function toggleGhost(next: boolean) {
+    setGhost(next)
+    setError(null)
+    // A ghost is always an operative (rulebook 1.34.0).
+    if (next) selectAccountType('operative')
+  }
   const backHref = operativeInviteOnly ? '/dashboard/operatives' : '/dashboard/settings/users'
 
   const [accountType, setAccountType] = useState<AccountType>(
@@ -201,6 +235,16 @@ export function AddUserScreen() {
   useEffect(() => {
     if (organization?.id) loadUsers(organization.id)
   }, [organization?.id, loadUsers])
+
+  // `?ghost=1` (the old "Create New Operative" link) opens with the Ghost account toggle on.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (new URLSearchParams(window.location.search).get('ghost') === '1') setGhost(true)
+  }, [])
+  useEffect(() => {
+    if (ghostOn && accountType !== 'operative') selectAccountType('operative')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ghostOn])
 
   useEffect(() => {
     if (!organization?.id) return
@@ -303,6 +347,45 @@ export function AddUserScreen() {
     const firstName = form.firstName.trim()
     const surname = form.surname.trim()
     const email = form.email.trim()
+
+    if (ghostOn) {
+      // Rulebook 1.34.0 `ghostCreateWrites` / `ghostCreateError`: names, rate above 0, line manager; trade optional.
+      setSaving(true)
+      setError(null)
+      try {
+        await createGhost({
+          organizationId: organization.id,
+          actor: user,
+          roster: users,
+          draft: {
+            firstName,
+            surname,
+            ...payChoiceToRates(form.payBasis, form.rateAmount),
+            lineManagerIds: form.assignedManagerUserIds,
+            tradeTypePreset: form.tradeTypePreset || null,
+            tradeTypeCustom: form.tradeTypePreset === 'Other' ? form.tradeTypeCustom.trim() || null : null,
+            annualLeave: {
+              enabled: form.annualLeaveEnabled,
+              daysPerYear: form.annualLeaveEnabled
+                ? parseBoundedNumber(form.annualLeaveDaysPerYear, { min: 0, max: LEAVE_DAYS_SAVE_MAX }) ??
+                  annualLeaveDefaults.daysPerYear
+                : null,
+              startMonth: annualLeaveDefaults.startMonth,
+              endMonth: annualLeaveDefaults.endMonth,
+              carriesOver: annualLeaveDefaults.carriesOver,
+            },
+          },
+        })
+        setSuccess(`${firstName} ${surname} was added. They have no app login and can be booked straight away.`)
+        setSaved(true)
+        window.setTimeout(() => router.push(backHref), 1800)
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : 'Failed to add this person')
+      } finally {
+        setSaving(false)
+      }
+      return
+    }
 
     if (!firstName || !surname) {
       setError('First name and surname are required.')
@@ -473,7 +556,9 @@ export function AddUserScreen() {
         <PanelHeader title={pageTitle} onBack={() => router.push(backHref)} />
 
         <p className="text-sm text-slate-500">
-          {operativeInviteOnly
+          {ghostOn
+            ? 'Add someone who works for you but does not use the app. They get no email and no login.'
+            : operativeInviteOnly
             ? 'Invite a new operative to your organisation. They will receive an email to set up their account.'
             : "Invite someone to your organisation. They'll receive an email to set up their account — same flow as the iOS app."}
         </p>
@@ -482,7 +567,27 @@ export function AddUserScreen() {
         {success && <SuccessBanner message={success} />}
       </div>
 
-      {!operativeInviteOnly && (
+      {shows('ghostToggle') && (
+        <FormSection>
+          <SettingsCard>
+            <div className="space-y-2 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-sm font-semibold text-slate-900">{GHOST_TOGGLE_LABEL}</div>
+                  <p className="mt-0.5 text-xs text-slate-500">{GHOST_TOGGLE_HELP}</p>
+                </div>
+                <Toggle checked={ghostOn} onChange={toggleGhost} />
+              </div>
+              <details className="text-xs text-slate-600">
+                <summary className="cursor-pointer select-none font-medium text-slate-700">What is a ghost account?</summary>
+                <p className="mt-1 leading-relaxed">{GHOST_OPERATIVE_EXPLANATION}</p>
+              </details>
+            </div>
+          </SettingsCard>
+        </FormSection>
+      )}
+
+      {!operativeInviteOnly && shows('accountType') && (
         <FormSection label="Account type">
           <div className="space-y-2">
             {availableAccountTypes.map((type) => {
@@ -507,7 +612,7 @@ export function AddUserScreen() {
         </FormSection>
       )}
 
-      {operativeInviteOnly && (
+      {operativeInviteOnly && !ghostOn && (
         <FormSection>
           <SettingsCard>
             <div className="p-4 text-sm text-slate-600">
@@ -537,6 +642,7 @@ export function AddUserScreen() {
               onChange={(e) => setForm({ ...form, surname: e.target.value })}
             />
           </FormField>
+          {shows('email') ? (
           <FormField label="Email" hint="Invitation is sent here">
             <Input
               type="email"
@@ -546,6 +652,8 @@ export function AddUserScreen() {
               onChange={(e) => setForm({ ...form, email: e.target.value })}
             />
           </FormField>
+          ) : null}
+          {shows('mobileNumber') ? (
           <FormField label="Mobile number" hint="Optional">
             <Input
               type="tel"
@@ -554,11 +662,12 @@ export function AddUserScreen() {
               onChange={(e) => setForm({ ...form, mobileNumber: e.target.value })}
             />
           </FormField>
+          ) : null}
         </div>
       </SettingsCard>
       </FormSection>
 
-      {permissionRows.length > 0 && (
+      {permissionRows.length > 0 && shows('permissions') && (
         <FormSection
           label={
             permissionLevel === 'admin'
@@ -589,6 +698,7 @@ export function AddUserScreen() {
         </FormSection>
       )}
 
+      {shows('permissions') ? (
       <FormSection label="Permissions summary">
         <SettingsCard>
           <div className="grid grid-cols-1 gap-4 p-4 text-sm sm:grid-cols-2">
@@ -614,8 +724,9 @@ export function AddUserScreen() {
           ) : null}
         </SettingsCard>
       </FormSection>
+      ) : null}
 
-      {canEnterTaxIds ? (
+      {canEnterTaxIds && shows('taxIds') ? (
       <FormSection label="Tax details">
         <SettingsCard>
         <div className="grid grid-cols-1 gap-4 p-4 sm:grid-cols-2">
@@ -638,6 +749,7 @@ export function AddUserScreen() {
       </FormSection>
       ) : null}
 
+      {shows('annualLeave') ? (
       <FormSection label="Annual leave">
         <SettingsCard>
         <div className="space-y-4 p-4">
@@ -693,6 +805,7 @@ export function AddUserScreen() {
         </div>
       </SettingsCard>
       </FormSection>
+      ) : null}
 
       {showSetup && (
         <>
@@ -719,7 +832,7 @@ export function AddUserScreen() {
                     }
                   />
                 </FormField>
-                {mayHaveNoLineManager ? (
+                {mayHaveNoLineManager && !ghostOn ? (
                   <label className="flex items-center gap-2 text-sm text-slate-800">
                     <input
                       type="checkbox"
@@ -778,6 +891,7 @@ export function AddUserScreen() {
             </SettingsCard>
           </FormSection>
 
+          {shows('employmentType') ? (
           <FormSection label="Employment & timesheets">
             <SettingsCard>
               <div className="space-y-4 p-4">
@@ -801,6 +915,7 @@ export function AddUserScreen() {
               </div>
             </SettingsCard>
           </FormSection>
+          ) : null}
         </>
       )}
 
@@ -809,7 +924,9 @@ export function AddUserScreen() {
         {error && <ErrorBanner message={error} />}
         <SaveButton saving={saving} saved={saved} onClick={() => handleSubmit()} />
         <p className="mt-3 text-center text-xs text-slate-400">
-          Creates invitation, user profile and organisation email mapping in Firebase — iOS compatible.
+          {ghostOn
+            ? 'Creates a ghost operative (no login, no invitation) — iOS compatible.'
+            : 'Creates invitation, user profile and organisation email mapping in Firebase — iOS compatible.'}
         </p>
       </div>
     </form>

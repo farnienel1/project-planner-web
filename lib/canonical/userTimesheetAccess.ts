@@ -20,6 +20,7 @@
  */
 
 import { canReviewUserTimesheets, seesEveryUserTimesheet, type StaffAccountRole } from './staffAccess'
+import { isGhostUser } from './userRosterSegment'
 
 export type UserTimesheetViewer = {
   id: string
@@ -40,6 +41,8 @@ export type UserTimesheetMember = {
   /** Legacy single line manager, used only when `assignedManagerUserIds` is empty. */
   assignedManagerUserId?: string | null
   hasNoLineManager?: boolean | null
+  /** 1.34.0: a ghost operative never has a timesheet, so it is never a User Timesheets row. */
+  ghost?: boolean | null
 }
 
 export type UserTimesheetSubjectsInput = {
@@ -62,6 +65,11 @@ function idKey(value: unknown): string {
 
 function memberIsActive(member: UserTimesheetMember): boolean {
   return member.isActive !== false
+}
+
+/** 1.34.0: a ghost operative (no app login) has no timesheets, live or exported. */
+function memberIsGhost(member: UserTimesheetMember): boolean {
+  return isGhostUser(member)
 }
 
 /** Any account kind that keeps a timesheet: operative, manager, admin, or super admin. */
@@ -94,7 +102,7 @@ export function userTimesheetSubjects(input: UserTimesheetSubjectsInput): UserTi
   const isViewer = (member: UserTimesheetMember) =>
     viewerKeys.has(idKey(member.id)) || (idKey(member.email) !== '' && viewerEmails.has(idKey(member.email)))
 
-  const active = members.filter((member) => idKey(member.id) && memberIsActive(member) && !isViewer(member))
+  const active = members.filter((member) => idKey(member.id) && memberIsActive(member) && !isViewer(member) && !memberIsGhost(member))
 
   if (seesEveryUserTimesheet(viewer.role)) {
     return active.filter((member) => isTimesheetUser(member.role)).map((member) => ({ userId: member.id }))
@@ -176,7 +184,7 @@ export function exportedTimesheetHistorySubjects(input: UserTimesheetSubjectsInp
   const seen = new Set<string>()
   for (const member of members) {
     const key = idKey(member.id)
-    if (!key || seen.has(key)) continue
+    if (!key || seen.has(key) || memberIsGhost(member)) continue
     const own = isViewer(member)
     const inScope =
       own ||

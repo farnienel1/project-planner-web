@@ -104,11 +104,25 @@ export function securitySwitchOn(
   organizationId: string | null | undefined,
   name: SecuritySwitch
 ): boolean {
+  return platformSwitchOn(config, organizationId, name, SECURITY_SWITCH_ORGANIZATION_FIELDS[name])
+}
+
+/**
+ * One `platformConfig/app` switch: on for every organisation when `field` is exactly `true`, or for one organisation
+ * when its id (exactly as stored) is in the list `organizationIdsField`. Missing config, a missing field or anything
+ * else → off. Shared by the security switches and the feature switches (`ghostAccounts`).
+ */
+function platformSwitchOn(
+  config: Record<string, unknown> | null | undefined,
+  organizationId: string | null | undefined,
+  field: string,
+  organizationIdsField: string
+): boolean {
   if (!config || typeof config !== 'object') return false
-  if (config[name] === true) return true
+  if (config[field] === true) return true
   const id = typeof organizationId === 'string' ? organizationId : ''
   if (!id) return false
-  const list = config[SECURITY_SWITCH_ORGANIZATION_FIELDS[name]]
+  const list = config[organizationIdsField]
   return Array.isArray(list) && list.some((entry) => entry === id)
 }
 
@@ -121,4 +135,29 @@ export function securitySwitches(
     enforcedReads: securitySwitchOn(config, organizationId, 'enforcedReads'),
     privatePay: securitySwitchOn(config, organizationId, 'privatePay'),
   }
+}
+
+// MARK: - Ghost accounts switch (rulebook §11, §18, 1.34.0; owner decision 7 Nov "1b")
+
+/**
+ * The `platformConfig/app` field that shows the Ghost account toggle on Add user / Add new operative, and its
+ * per-organisation list. Owner decision 7 Nov ("1b"): the toggle stays hidden on both apps until the iPhone 1.34
+ * update is out and `minimumIosBuild` is raised; the platform owner then sets `ghostAccounts` true (or lists one
+ * organisation first). It is a screen switch only: the security rules do not read it, and it never hides, blocks or
+ * changes an existing ghost (from the conversion script or created while it was on) — they display, book and work
+ * the same whatever it says. Only the create toggle follows it.
+ */
+export const GHOST_ACCOUNTS_SWITCH_FIELD = 'ghostAccounts'
+export const GHOST_ACCOUNTS_ORGANIZATION_IDS_FIELD = 'ghostAccountsOrganizationIds'
+
+/**
+ * Whether ghost accounts may be created in `organizationId` under `platformConfig/app` as read (`config`):
+ * `ghostAccounts` exactly `true`, or the organisation's id in `ghostAccountsOrganizationIds`. Missing config, a missing
+ * field, anything but `true`, or an id not in the list → off (the toggle stays hidden).
+ */
+export function ghostAccountsEnabled(
+  config: Record<string, unknown> | null | undefined,
+  organizationId: string | null | undefined
+): boolean {
+  return platformSwitchOn(config, organizationId, GHOST_ACCOUNTS_SWITCH_FIELD, GHOST_ACCOUNTS_ORGANIZATION_IDS_FIELD)
 }

@@ -16,6 +16,7 @@ import { useDeadlineStore } from '@/lib/stores/deadlineStore'
 import { isOperativeMode } from '@/lib/permissions'
 import { liveUserIdsOnJob } from '@/lib/access/workAccess'
 import { isPendingPerson } from '@/lib/staff/pendingPeople'
+import { isGhostUser } from '@/lib/canonical/userRosterSegment'
 import { healthSafetyFilePath, uploadFile } from '@/lib/firebase/storageUtils'
 import { prepareClientUpload } from '@/lib/security/stripPhotoLocation'
 import { dateFromDayKey, dayKey } from '@/lib/ios-parity/londonTime'
@@ -141,7 +142,8 @@ export function ProjectDeadlinesSection({ project, isSmallWorks }: { project: Pr
       users,
     })
     return users
-      .filter((member) => member.isActive !== false && !isPendingPerson(member))
+      // Rulebook 1.34.0 (J2): a ghost operative (no login) is never a deadline assignee.
+      .filter((member) => member.isActive !== false && !isPendingPerson(member) && !isGhostUser(member))
       .map((member) => ({
         id: member.id,
         name: displayName(member),

@@ -78,7 +78,7 @@ function inviteClaimUserFromDoc(
   }
 }
 
-async function loadInviteClaimState(
+export async function loadInviteClaimState(
   organizationId: string,
   emailLower: string
 ): Promise<{

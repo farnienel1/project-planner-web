@@ -56,7 +56,7 @@ import {
   timesheetStoredStartDayKey,
   type TimesheetStatusFields,
 } from './timesheetPeriod'
-import { isAnonymisedDeletedProfile, rosterPersonName, rosterSegment } from './userRosterSegment'
+import { isAnonymisedDeletedProfile, isGhostUser, rosterPersonName, rosterSegment } from './userRosterSegment'
 
 // MARK: - Copy
 
@@ -80,6 +80,8 @@ export const PAYRUN_SNAPSHOT_SUPER_ADMIN_LABEL = 'Admin (Super Admin)'
 export const PAYRUN_SNAPSHOT_EMPLOYMENT_LABELS = { paye: 'PAYE', selfEmployed: 'Self-employed' } as const
 export const PAYRUN_SNAPSHOT_PAYE_CELL = 'PAYE'
 export const PAYRUN_SNAPSHOT_SELF_EMPLOYED_CELL = 'Self Employed'
+/** 1.34.0: a ghost operative's Timesheet cell (grey, no link): they have no app login, so no timesheet. */
+export const PAYRUN_SNAPSHOT_GHOST_CELL = 'No app login'
 export const PAYRUN_SNAPSHOT_STATE_LABELS = {
   notStarted: 'Not started',
   submitted: 'Submitted',
@@ -133,6 +135,8 @@ export type PayrunSnapshotPerson = LeaveSelfBookUser & {
   employmentTypeEffectiveAt?: unknown
   formerUserIds?: ReadonlyArray<string> | null
   sameEmailUserIds?: ReadonlyArray<string> | null
+  /** 1.34.0: a ghost operative (no app login): its Timesheet cell is grey "No app login". */
+  ghost?: boolean | null
 }
 
 /** One self-employed timesheet document (`settings/timesheet_*`), as `parsePayrunSnapshotSheet` reads it. */
@@ -491,7 +495,9 @@ export function payrunSnapshotRows(input: PayrunSnapshotInput): PayrunSnapshotRo
           priceWork: claimCell('priceWork', person, ids, input.payeClaimReports ?? [], input.priceWork ?? [], period),
         }
       : {
-          timesheet: timesheetCell(person, ids, roster, theirSheets, payRunsInPeriod(input.organization, period, theirSheets, zone), period),
+          timesheet: isGhostUser(person)
+            ? cell('notApplicable', PAYRUN_SNAPSHOT_GHOST_CELL, 'neutral', null)
+            : timesheetCell(person, ids, roster, theirSheets, payRunsInPeriod(input.organization, period, theirSheets, zone), period),
           overtime: blocked(PAYRUN_SNAPSHOT_SELF_EMPLOYED_CELL),
           expenses: blocked(PAYRUN_SNAPSHOT_SELF_EMPLOYED_CELL),
           priceWork: blocked(PAYRUN_SNAPSHOT_SELF_EMPLOYED_CELL),

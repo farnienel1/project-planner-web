@@ -25,6 +25,19 @@ export type RosterSegmentProfile = {
   mobileNumber?: string | null
   mobile?: string | null
   phone?: string | null
+  /** 1.34.0: a ghost operative (`users/{uid}.ghost`) — bookable, no app login. */
+  ghost?: boolean | number | string | null
+}
+
+/**
+ * Rulebook 1.34.0 §11: a ghost operative — a `users/{uid}` document with `ghost: true` (strictly the boolean, the same
+ * test as the security rules' `ghost != true`; review fix F1). A bookable operative with no app login: never pending,
+ * never a leftover, never a timesheet, overtime or claim subject, never a notification recipient. False for anything
+ * else (1, "true", missing).
+ */
+export function isGhostUser(user: { ghost?: unknown } | null | undefined): boolean {
+  if (!user || typeof user !== 'object') return false
+  return (user as { ghost?: unknown }).ghost === true
 }
 
 function trimmed(value: unknown): string {
@@ -68,6 +81,8 @@ export function isAnonymisedDeletedProfile(profile: RosterSegmentProfile | null 
 
 export function rosterSegment(profile: RosterSegmentProfile): RosterSegment {
   if (isAnonymisedDeletedProfile(profile)) return 'inactive'
+  // 1.34.0: a ghost has no login by design — Active or Inactive, never Pending (an invited ghost too, Q-G3).
+  if (isGhostUser(profile)) return profile.isActive === false ? 'inactive' : 'active'
   if (profile.passwordSet === true) return profile.isActive === true ? 'active' : 'inactive'
   return 'pending'
 }
@@ -100,6 +115,8 @@ export function isIdentifiablePendingLeftover(
 ): boolean {
   if (profile.passwordSet === true) return false
   if (isAnonymisedDeletedProfile(profile)) return false
+  // 1.34.0: a ghost has no email or claim by design; it is never a leftover invite.
+  if (isGhostUser(profile)) return false
   const email = normalizeEmail(profile.email)
   const name = rosterPersonName(profile)
   const phone = rosterPhone(profile)

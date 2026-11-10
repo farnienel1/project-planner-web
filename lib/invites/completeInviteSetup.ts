@@ -6,6 +6,7 @@ import {
 } from '@/lib/canonical/inviteAccept'
 import { PAY_PROFILES_COLLECTION } from '@/lib/canonical/payProfile'
 import { writeMetadataFields } from '@/lib/canonical/writeMetadata'
+import { inviteAcceptPlaceholderFields } from '@/lib/canonical/ghostOperatives'
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
@@ -262,7 +263,8 @@ export async function completeInvitationPasswordSetup(params: {
   //    still names this invite's pending placeholder).
   const nextUser = migrating && claimedUser
     ? {
-        ...claimedUser,
+        // Rulebook 1.34.0 (`inviteAcceptWrites` dropPlaceholderFields): a ghost given app access stops being a ghost.
+        ...inviteAcceptPlaceholderFields(claimedUser),
         email,
         organizationId: record.organizationId,
         passwordSet: true,

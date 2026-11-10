@@ -50,6 +50,8 @@ import {
   snapLeaveDays,
   type SensitiveProfile,
   validateLeaveYearMonths,
+  ghostBadgeLabel,
+  isGhostUser,
 } from '@/lib/canonical'
 import { loadTaxIds, saveTaxIds } from '@/lib/sensitiveProfile/taxIdsService'
 import { LEAVE_DAYS_SAVE_MAX, parseBoundedNumber } from '@/lib/security/boundedValue'
@@ -465,9 +467,10 @@ export function EditUserProfile({
   const previousRateEntries = useMemo(() => {
     if (!target) return []
     const email = target.email.trim().toLowerCase()
-    const ids = users
-      .filter((row) => row.email.trim().toLowerCase() === email)
-      .map((row) => row.id)
+    // 1.34.0: people with no email (ghosts) never share rate history through the empty email.
+    const ids = email
+      ? users.filter((row) => row.email.trim().toLowerCase() === email).map((row) => row.id)
+      : [target.id]
     if (!ids.includes(target.id)) ids.push(target.id)
     return mergedDayRateEntries(rateHistory, ids, findOperativeForUser(target, operatives)?.id)
   }, [target, users, operatives, rateHistory])
@@ -513,7 +516,9 @@ export function EditUserProfile({
     !target.isSuperAdmin &&
     (target.permissions.operativeMode || target.permissions.manager || target.permissions.adminAccess)
 
-  const showEmploymentType = target && canEditMatrix && !target.isSuperAdmin
+  // Rulebook 1.34.0 §11: a ghost is always self-employed and has no login, timesheets, email or phone.
+  const ghostTarget = Boolean(target && isGhostUser(target))
+  const showEmploymentType = target && canEditMatrix && !target.isSuperAdmin && !ghostTarget
   const showQualifications = Boolean(target && canEdit)
   const canManageOrgQuals = canManageOrganisationQualifications(currentUser)
   const canViewTaxIds = Boolean(
@@ -549,6 +554,7 @@ export function EditUserProfile({
 
   const showPayrollFields =
     target &&
+    !ghostTarget &&
     canEditMatrix &&
     (target.permissions.operativeMode || target.permissions.manager) &&
     !target.permissions.adminAccess &&
@@ -1200,6 +1206,12 @@ export function EditUserProfile({
               onChange={(e) => setTarget({ ...target, surname: e.target.value })}
             />
           </FormField>
+          {ghostTarget ? (
+            <FormField label="App login" hint={target.email ? `Invitation sent to ${target.email}.` : 'An admin can give app access from their profile.'}>
+              <Input value={ghostBadgeLabel(target)} disabled />
+            </FormField>
+          ) : (
+          <>
           <FormField label="Email">
             <Input
               type="email"
@@ -1221,6 +1233,8 @@ export function EditUserProfile({
               disabled
             />
           </FormField>
+          </>
+          )}
           {!canEdit && (
             <FormField label="Trade type">
               <Input value={displayTradeType(target.tradeTypePreset, target.tradeTypeCustom)} disabled />
@@ -1621,7 +1635,9 @@ export function EditUserProfile({
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <div className="text-sm font-semibold text-[var(--ink)]">Active</div>
-                  <p className="mt-0.5 text-xs text-[var(--ink3)]">User can sign in and use the app.</p>
+                  <p className="mt-0.5 text-xs text-[var(--ink3)]">
+                    {ghostTarget ? 'Can be booked and shows in lists. A ghost has no app login.' : 'User can sign in and use the app.'}
+                  </p>
                 </div>
                 <Toggle
                   checked={target.isActive}
@@ -1682,7 +1698,7 @@ export function EditUserProfile({
       {canEdit ? <SectionLabel label="Account actions" /> : null}
       {canEdit ? (
       <div className="space-y-2">
-        {target.passwordSet ? (
+        {ghostTarget ? null : target.passwordSet ? (
           <ActionButton
             title="Send password reset"
             subtitle="Email a password reset link to this user"
@@ -1823,7 +1839,7 @@ export function EditUserProfile({
                 onClick={() => setShowTransfer(true)}
               />
             ) : null}
-            {target.isSuperAdmin ? null : (
+            {target.isSuperAdmin || ghostTarget ? null : (
               <ActionButton
                 title="Change user type"
                 subtitle="Switch between operative, manager, or administrator"

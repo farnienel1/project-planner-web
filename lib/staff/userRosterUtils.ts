@@ -31,6 +31,7 @@ function rosterProfile(user: User): RosterSegmentProfile {
     passwordSet: user.passwordSet,
     isActive: user.isActive,
     mobileNumber: user.mobileNumber,
+    ghost: user.ghost === true,
   }
 }
 

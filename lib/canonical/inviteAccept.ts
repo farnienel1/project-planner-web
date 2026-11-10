@@ -35,7 +35,15 @@ export type InviteAcceptPlan = {
   pay: { payBasis: 'day' | 'hourly'; dayRate: number | null; hourlyRate: number | null } | null
   /** True when the account's own profile names another organisation (a second company). */
   joinsAnotherCompany: boolean
+  /**
+   * 1.34.0: placeholder fields the account never copies — the ghost markers (`ghost`, `inviteEmailHint`) of a ghost an
+   * admin gave app access (`inviteAcceptPlaceholderFields` in ghostOperatives.ts removes them).
+   */
+  dropPlaceholderFields: string[]
 }
+
+/** 1.34.0: see `InviteAcceptPlan.dropPlaceholderFields`. */
+const ACCEPT_DROPPED_FIELDS = ['ghost', 'inviteEmailHint']
 
 function text(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
@@ -117,6 +125,7 @@ export function inviteAcceptWrites(input: {
       permissions,
       pay,
       joinsAnotherCompany: another,
+      dropPlaceholderFields: [...ACCEPT_DROPPED_FIELDS],
     }
   }
   const migrating = Boolean(placeholder)
@@ -130,6 +139,7 @@ export function inviteAcceptWrites(input: {
     permissions,
     pay,
     joinsAnotherCompany: false,
+    dropPlaceholderFields: [...ACCEPT_DROPPED_FIELDS],
   }
 }
 
