@@ -13,6 +13,9 @@ import {
   copyDiff,
   describeDescendants,
   formatPlan,
+  parseForceRefs,
+  plainValue,
+  PLAIN_VALUE_MAX_DEPTH,
   jobIdSpellings,
   keepAndRemove,
   locateCopies,
@@ -166,7 +169,7 @@ test('planRemoval: dry run never applies; blockers refuse --apply unless --force
   const refused = planRemoval({ copies, references: blocked, removedPath, apply: true })
   assert.equal(refused.canApply, false)
   assert.match(refused.refusal, /--force-refs/)
-  assert.equal(planRemoval({ copies, references: blocked, removedPath, apply: true, forceRefs: true }).canApply, true)
+  assert.equal(planRemoval({ copies, references: blocked, removedPath, apply: true, forceRefs: 1 }).canApply, true)
 
   const notReady = planRemoval({ copies: { state: 'already-done', message: 'Nothing to do.' }, references: clean, removedPath, apply: true })
   assert.equal(notReady.canApply, false)
@@ -216,7 +219,7 @@ test('a document stored under the removed copy blocks --apply (with its fields a
   const refused = planRemoval({ copies, references: { blockers: [] }, removedPath, subcollectionDocs, apply: true })
   assert.equal(refused.canApply, false)
   assert.match(refused.blockers[0], /healthSafety\/data holds data \(note, rams, talks\)/)
-  assert.equal(planRemoval({ copies, references: { blockers: [] }, removedPath, subcollectionDocs, apply: true, forceRefs: true }).canApply, true)
+  assert.equal(planRemoval({ copies, references: { blockers: [] }, removedPath, subcollectionDocs, apply: true, forceRefs: 1 }).canApply, true)
   const references = planReferences(rulebook, { jobId: JOB, removedCollection: 'projects', refs: {} })
   const text = formatPlan({ orgId: ORG, jobId: JOB, copies, references, removal: refused, row: () => '' })
   assert.match(text, /healthSafety\/data — note, rams \[0 row\(s\)\], talks \[2 row\(s\)\]/)
@@ -251,7 +254,7 @@ test('a manager only on the removed copy blocks --apply unless --force-refs; sam
   const refused = planRemoval({ copies, references: { blockers: [] }, diff, removedPath, apply: true })
   assert.equal(refused.canApply, false)
   assert.match(refused.blockers[0], /Manager id M2 is on the projects copy but not on the smallWorks copy/)
-  assert.equal(planRemoval({ copies, references: { blockers: [] }, diff, removedPath, apply: true, forceRefs: true }).canApply, true)
+  assert.equal(planRemoval({ copies, references: { blockers: [] }, diff, removedPath, apply: true, forceRefs: 1 }).canApply, true)
   assert.equal(planRemoval({ copies, references: { blockers: [] }, diff: copyDiff(rulebook, copies.kept, copies.removed), removedPath, apply: true }).canApply, true)
 })
 
@@ -273,4 +276,86 @@ test('notifications by relatedId and labour bookings under projectID are listed,
   assert.match(Object.keys(refs.collections.bookings.labels)[0], /job in projectID/)
   // jobCollection on a projectID booking still names the removed copy: that is a blocker as for any booking.
   assert.equal(refs.blockers.length, 1)
+})
+
+test('parseForceRefs: absent, bare, a count, anything else invalid', () => {
+  assert.equal(parseForceRefs(['node', 'x', '--apply']), null)
+  assert.equal(parseForceRefs(['--force-refs']), 'bare')
+  assert.equal(parseForceRefs(['--force-refs=2']), 2)
+  assert.equal(parseForceRefs(['--force-refs=0']), 0)
+  assert.equal(parseForceRefs(['--force-refs=two']), 'invalid')
+  assert.equal(parseForceRefs(['--force-refs=']), 'invalid')
+  assert.equal(parseForceRefs(['--force-refs=-1']), 'invalid')
+  assert.equal(parseForceRefs(['--force-refs=1', '--force-refs=1']), 'invalid')
+})
+
+test('--force-refs: bare always refused; N must equal the blocker count found now', () => {
+  const copies = locateCopies(rulebook, { jobId: JOB, jobs: both() })
+  const removedPath = copies.removed.path
+  const references = { blockers: ['a', 'b'] }
+  const bare = planRemoval({ copies, references, removedPath, apply: true, forceRefs: 'bare' })
+  assert.equal(bare.canApply, false)
+  assert.match(bare.refusal, /--force-refs=2 now\). Send the dry run to Claude/)
+  const wrong = planRemoval({ copies, references, removedPath, apply: true, forceRefs: 1 })
+  assert.equal(wrong.canApply, false)
+  assert.match(wrong.refusal, /--force-refs=1 does not match the 2 blocker\(s\) found now/)
+  assert.equal(planRemoval({ copies, references, removedPath, apply: true, forceRefs: 2 }).canApply, true)
+  assert.equal(planRemoval({ copies, references, removedPath, apply: true, forceRefs: 'invalid' }).canApply, false)
+  // No blockers: bare is still refused, a stale N is refused, =0 and no flag pass.
+  const clean = { blockers: [] }
+  assert.equal(planRemoval({ copies, references: clean, removedPath, apply: true, forceRefs: 'bare' }).canApply, false)
+  assert.equal(planRemoval({ copies, references: clean, removedPath, apply: true, forceRefs: 1 }).canApply, false)
+  assert.equal(planRemoval({ copies, references: clean, removedPath, apply: true, forceRefs: 0 }).canApply, true)
+  assert.equal(planRemoval({ copies, references: clean, removedPath, apply: true }).canApply, true)
+  // The refusal without the flag tells the count, never a bare flag to type.
+  const refused = planRemoval({ copies, references, removedPath, apply: true })
+  assert.match(refused.refusal, /2 blocker\(s\)/)
+  assert.match(refused.refusal, /--force-refs=2/)
+})
+
+test('plainValue: Firestore types are leaves, depth is capped', () => {
+  class DocumentReference {
+    constructor(p) {
+      this.path = p
+      this.id = p.split('/').pop()
+      this.firestore = { huge: { client: { settings: {} } } }
+    }
+  }
+  class GeoPoint {
+    constructor(lat, lng) {
+      this.latitude = lat
+      this.longitude = lng
+    }
+    isEqual() {
+      return false
+    }
+  }
+  class Timestamp {
+    constructor(seconds) {
+      this.seconds = seconds
+      this.nanoseconds = 0
+    }
+    toMillis() {
+      return this.seconds * 1000
+    }
+  }
+  const ref = new DocumentReference('organizations/O/clients/C1')
+  assert.equal(plainValue(ref), 'ref:organizations/O/clients/C1')
+  assert.equal(plainValue(new GeoPoint(51.5, -0.1)), '51.5,-0.1')
+  assert.equal(plainValue(new Timestamp(1700000000)), '2023-11-14T22:13:20.000Z')
+  assert.equal(plainValue(new Date(0)), '1970-01-01T00:00:00.000Z')
+  assert.equal(plainValue(new Uint8Array(3)), 'bytes(3)')
+  assert.deepEqual(plainValue({ b: 1, a: { ref } }), { a: { ref: 'ref:organizations/O/clients/C1' }, b: 1 })
+  let deep = 'leaf'
+  for (let i = 0; i < 20; i += 1) deep = { next: deep }
+  const text = JSON.stringify(plainValue(deep))
+  assert.equal((text.match(/next/g) || []).length, PLAIN_VALUE_MAX_DEPTH)
+  assert.match(text, /…/)
+  const cyclic = { name: 'x' }
+  cyclic.self = cyclic
+  assert.doesNotThrow(() => JSON.stringify(plainValue(cyclic)))
+  // fieldText uses it: a client stored as a reference compares by path.
+  const diff = copyDiff(rulebook, job('smallWorks', JOB, { client: ref }), job('projects', JOB, { client: new DocumentReference('organizations/O/clients/C1') }))
+  assert.equal(diff.rows.find((r) => r.field === 'client').same, true)
+  assert.equal(diff.rows.find((r) => r.field === 'client').kept, '"ref:organizations/O/clients/C1"')
 })

@@ -7,7 +7,8 @@
  *   node scripts/remove-duplicate-project-copy.mjs --project <firebaseProjectId> --org <orgId> --job <jobId>            # dry run
  *   node scripts/remove-duplicate-project-copy.mjs --project <firebaseProjectId> --org <orgId> --job <jobId> --apply    # delete
  *   ... --keep smallWorks|projects   # which copy stays (default smallWorks; the other copy is the one removed)
- *   ... --force-refs                 # delete even when records still name the removed copy's collection (never rewritten)
+ *   ... --force-refs=N               # delete despite the N blockers the dry run showed (refused if the count differs now;
+ *                                    # a bare --force-refs is always refused). Blocked records are never rewritten.
  *   ... --backup-dir <folder>        # where the JSON backup goes (default ./cleanup-backups)
  *
  * What it does (the decisions are `scripts/remove-duplicate-project-copy/plan.mjs`, pure and tested):
@@ -18,7 +19,7 @@
  *   `settings` documents keyed by the job (`healthSafetyDocumentIds`, `deadlinesDocumentId`, `variations_{id}`,
  *   `deadlineAssignments`); and `worksListPicks` lists that hold the id.
  * - Prints a field diff of the two copies (`copyDiff`) and every document stored under the removed copy.
- * - Refuses --apply, unless --force-refs, while a booking carries `jobCollection` = the removed copy's collection, a
+ * - Refuses --apply, unless --force-refs=N with N the current blocker count, while a booking carries `jobCollection` = the removed copy's collection, a
  *   `settings/{healthSafety|deadlines}_{removed}_{KEY}` document holds data, a document under the removed copy holds
  *   fields, or the removed copy lists a manager the kept copy does not (`jobManagerIds`; the security rules'
  *   `callerManagesJobAt` reads either copy). Those records are never rewritten: the owner decides.
@@ -47,6 +48,7 @@ import {
   jobIdSpellings,
   keepAndRemove,
   locateCopies,
+  parseForceRefs,
   planReferences,
   planRemoval,
   settingsDocumentIds,
@@ -55,7 +57,7 @@ import {
 const CHECK_ID = 'duplicate-job-copy'
 const BATCH_LIMIT = 400
 const USAGE = `Usage:
-  node scripts/remove-duplicate-project-copy.mjs --project <firebaseProjectId> --org <orgId> --job <jobId> [--keep smallWorks|projects] [--apply] [--force-refs] [--backup-dir <folder>]
+  node scripts/remove-duplicate-project-copy.mjs --project <firebaseProjectId> --org <orgId> --job <jobId> [--keep smallWorks|projects] [--apply] [--force-refs=N] [--backup-dir <folder>]
 Without --apply nothing is written.`
 
 /** The value after `flag`, or null when absent. A flag with no value is an error, never the next flag. */
@@ -75,7 +77,11 @@ const orgId = arg('--org')
 const jobId = arg('--job')
 const keep = arg('--keep') || 'smallWorks'
 const apply = process.argv.includes('--apply')
-const forceRefs = process.argv.includes('--force-refs')
+const forceRefs = parseForceRefs(process.argv)
+if (forceRefs === 'invalid') {
+  console.error(`--force-refs must be written --force-refs=N (N the blocker count the dry run showed).\n${USAGE}`)
+  process.exit(2)
+}
 const backupRoot = path.resolve(arg('--backup-dir') || 'cleanup-backups')
 
 if (!projectId || !orgId || !jobId) {

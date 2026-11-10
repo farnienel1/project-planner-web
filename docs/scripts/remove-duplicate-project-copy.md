@@ -35,7 +35,9 @@ and on the iPhone. The script deletes the old `projects` copy and keeps the live
    - the `projects` copy lists a manager the `smallWorks` copy does not (the security rules accept a manager listed on
      either copy, so that person could lose access to the job's bookings).
    Nothing is changed by this script except the delete: send the output to Claude and decide together.
-   (`--force-refs` deletes anyway, still without changing any other record — only use it if Claude tells you to.)
+   (Claude may give you a command ending `--force-refs=N` to delete anyway, still without changing any other record.
+   N is the number of blockers your dry run showed; if anything changed since, the script refuses. Never type
+   `--force-refs` on your own: on its own it is always refused.)
 6. With `--apply` it first saves a **backup** of the copy it removes (and everything stored under it) to a file on
    your Mac and prints where, then deletes that copy and everything under it, in one go. If someone changed that copy
    in the meantime, the delete is refused and nothing is deleted.
@@ -144,7 +146,12 @@ steps 4 and 6 are already done — running them again does no harm.
 - `--keep projects` keeps the `projects` copy and removes the `smallWorks` one instead (not needed for C716).
 - `--backup-dir <folder>` puts the backup somewhere else (default `cleanup-backups`, which git ignores).
 
-For developers: the decisions are in `scripts/remove-duplicate-project-copy/plan.mjs` (pure, tested by
+For developers: `--force-refs=N` overrides every blocker of one run together — references naming the removed
+collection (a booking's `jobCollection`, a `settings/{healthSafety|deadlines}_{removed}_{KEY}` document with data),
+documents with fields stored under the removed copy (they are backed up and deleted with it), and manager ids only the
+removed copy lists — and only when N equals the number of blockers found in that run (`parseForceRefs`,
+`planRemoval`). It never rewrites the blocking records. A bare `--force-refs`, a mismatched N or a malformed value is
+refused. The decisions are in `scripts/remove-duplicate-project-copy/plan.mjs` (pure, tested by
 `node --test scripts/remove-duplicate-project-copy/plan.test.mjs`). It reads the packed rulebook only
 (`jobIdsInBothCollections`, `normalizeDocumentId`, `bookingJobId`, `deadlineProjectKey`, `deadlinesDocumentId`,
 `healthSafetyDocumentIds`, `isLegacyPlaceholderDocumentId`, `documentInstantMs`, `jobManagerIds`) and adds no shared rule. The only

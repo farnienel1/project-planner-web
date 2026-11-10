@@ -8,7 +8,7 @@
  *
  * It never decides to rewrite a record: the only write the script makes is the delete of the removed copy and its
  * subcollections. References that carry the removed copy's collection label (a booking `jobCollection`, a
- * `settings/*_{collection}_{KEY}` document) block `--apply` unless the owner passes `--force-refs`.
+ * `settings/*_{collection}_{KEY}` document) block `--apply` unless the owner passes `--force-refs=N` (N the blocker count of the dry run).
  */
 
 export const JOB_COLLECTIONS = ['projects', 'smallWorks']
@@ -127,16 +127,57 @@ export function fieldText(rulebook, field, value) {
       typeof value?.getTime === 'function' ? value.getTime() : typeof value?.toMillis === 'function' ? value.toMillis() : rulebook.documentInstantMs(value)
     if (typeof ms === 'number' && Number.isFinite(ms)) return new Date(ms).toISOString()
   }
-  if (typeof value === 'object') {
-    const plain = (v) =>
-      v && typeof v === 'object'
-        ? Array.isArray(v)
-          ? v.map(plain)
-          : Object.fromEntries(Object.keys(v).sort().map((k) => [k, plain(v[k])]))
-        : v
-    return JSON.stringify(plain(value))
-  }
+  if (typeof value === 'object') return JSON.stringify(plainValue(value))
   return JSON.stringify(value)
+}
+
+/** Nesting below this depth prints as `…` (a stored map can be deep or, in a malformed value, cyclic). */
+export const PLAIN_VALUE_MAX_DEPTH = 6
+
+/**
+ * A stored value as plain JSON-able data with sorted keys. Firestore types are leaves, never walked into (a
+ * DocumentReference holds the whole Firestore client): a reference prints its `path`, a Timestamp or Date its ISO
+ * instant, a GeoPoint `lat,lng`, bytes their length. Deeper than `PLAIN_VALUE_MAX_DEPTH` prints `…`.
+ */
+export function plainValue(value, depth = 0) {
+  if (value === null || typeof value !== 'object') return value
+  const kind = value.constructor?.name
+  if (typeof value.getTime === 'function') {
+    const ms = value.getTime()
+    return Number.isFinite(ms) ? new Date(ms).toISOString() : String(value)
+  }
+  if (typeof value.toMillis === 'function' && typeof value.seconds === 'number') {
+    const ms = value.toMillis()
+    return Number.isFinite(ms) ? new Date(ms).toISOString() : `Timestamp(${value.seconds})`
+  }
+  if (kind === 'DocumentReference' || (typeof value.path === 'string' && typeof value.id === 'string' && 'firestore' in value)) {
+    return `ref:${value.path}`
+  }
+  if (kind === 'GeoPoint' || (typeof value.latitude === 'number' && typeof value.longitude === 'number' && typeof value.isEqual === 'function')) {
+    return `${value.latitude},${value.longitude}`
+  }
+  if (value instanceof Uint8Array) return `bytes(${value.length})`
+  if (depth >= PLAIN_VALUE_MAX_DEPTH) return '…'
+  if (Array.isArray(value)) return value.map((inner) => plainValue(inner, depth + 1))
+  return Object.fromEntries(
+    Object.keys(value)
+      .sort()
+      .map((key) => [key, plainValue(value[key], depth + 1)])
+  )
+}
+
+/**
+ * `--force-refs` from the command line: absent → null; `--force-refs` alone → 'bare' (always refused: the owner sends
+ * the dry run to Claude first); `--force-refs=N` → N, the blocker count the dry run showed; anything else → 'invalid'.
+ */
+export function parseForceRefs(argv) {
+  const args = Array.isArray(argv) ? argv : []
+  const given = args.filter((a) => a === '--force-refs' || String(a).startsWith('--force-refs='))
+  if (given.length === 0) return null
+  if (given.length > 1) return 'invalid'
+  if (given[0] === '--force-refs') return 'bare'
+  const raw = String(given[0]).slice('--force-refs='.length)
+  return /^\d+$/.test(raw) ? Number(raw) : 'invalid'
 }
 
 /**
@@ -335,11 +376,12 @@ export function planReferences(rulebook, { jobId, removedCollection, refs }) {
 /**
  * The full decision. `copies` from `locateCopies`; `references` from `planReferences`; `diff` from `copyDiff`;
  * `subcollectionDocs` the removed copy's descendant documents (`[{ path, data }]`). `apply` / `forceRefs` are the CLI
- * flags. Blockers (each overridable only with `--force-refs`): the reference blockers, any descendant document that
+ * flags (`forceRefs` from `parseForceRefs`: null, 'bare', 'invalid' or N). Blockers (overridden together only by
+ * `--force-refs=N` with N equal to the blocker count found in this run): the reference blockers, any descendant document that
  * holds fields, and any manager id only the removed copy lists. Returns
  * `{ canApply, refusal, blockers, descendants, deletePaths }`: the paths to delete, deepest first, the copy last.
  */
-export function planRemoval({ copies, references, diff, removedPath, subcollectionDocs = [], apply = false, forceRefs = false }) {
+export function planRemoval({ copies, references, diff, removedPath, subcollectionDocs = [], apply = false, forceRefs = null }) {
   if (!copies || copies.state !== 'ready') return { canApply: false, refusal: copies?.message || 'Not ready.', blockers: [], descendants: [], deletePaths: [] }
   const depth = (p) => String(p).split('/').length
   const deletePaths = [...new Set(subcollectionDocs.map((doc) => String(doc.path)))].sort((a, b) => depth(b) - depth(a) || a.localeCompare(b))
@@ -352,14 +394,24 @@ export function planRemoval({ copies, references, diff, removedPath, subcollecti
   for (const id of diff?.managersOnlyOnRemoved || []) {
     blockers.push(`Manager id ${id} is on the ${copies.remove} copy but not on the ${copies.keep} copy: they could lose access to this job's bookings.`)
   }
-  if (blockers.length > 0 && !forceRefs) {
-    return {
-      canApply: false,
-      refusal: `${blockers.length} blocker(s) listed above. --apply is refused; the owner decides (re-run with --force-refs to delete anyway — no other record is ever rewritten).`,
-      blockers,
-      descendants,
-      deletePaths,
-    }
+  const refuse = (refusal) => ({ canApply: false, refusal, blockers, descendants, deletePaths })
+  if (forceRefs === 'bare') {
+    return refuse(
+      `--force-refs needs the blocker count from the dry run (--force-refs=${blockers.length} now). Send the dry run to Claude first; nothing is deleted on a bare --force-refs.`
+    )
+  }
+  if (forceRefs !== null && forceRefs !== undefined && typeof forceRefs !== 'number') {
+    return refuse('--force-refs must be written --force-refs=N, N the blocker count the dry run showed.')
+  }
+  if (typeof forceRefs === 'number' && forceRefs !== blockers.length) {
+    return refuse(
+      `--force-refs=${forceRefs} does not match the ${blockers.length} blocker(s) found now: something changed since the dry run. Run the dry run again and send it to Claude.`
+    )
+  }
+  if (blockers.length > 0 && typeof forceRefs !== 'number') {
+    return refuse(
+      `${blockers.length} blocker(s) listed above. --apply is refused; the owner decides (to delete anyway, Claude may give --force-refs=${blockers.length} — no other record is ever rewritten).`
+    )
   }
   return { canApply: Boolean(apply), refusal: apply ? '' : 'Dry run: nothing was written. Re-run with --apply to delete.', blockers, descendants, deletePaths }
 }
