@@ -8,9 +8,9 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ║ FOLLOW-ON — paste into the iOS agent                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
-Rulebook version: 1.36.0 → 1.36.0
-Packed hash: a49138a8d7d6e8bbf71d49af93bdd8fc8d19ccd362db1f105bf66252673318ad
-Rulebook sha256: 9fb7f3dbaa9b2ce70612e0efca39ee34c3e1ea4e1dfaae8ebfbd83931fba9e39
+Rulebook version: 1.35.0 → 1.36.0
+Packed hash: 52f6f0f49631522db8053c12995e09d6ee0165ea5b6a1d038fd764ade6702834
+Rulebook sha256: f9ce176ab63882541613caedb7d17282b886077156104840aadaba0036566f73
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -20,12 +20,12 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
   web lib/canonical/cross-platform-contract.json    → iOS ProjectPlannerTests/CrossPlatformContract.json
 Contract sha256: 59d6bc6123f250e1f57599240eb3190ab48f5cd2532f8281a99360d9e187d86b
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: DUPLICATE_NAME_NO_EMAIL_LABEL, sameNamePersonContactLabel
+Exports added: DUPLICATE_NAME_CANCEL_LABEL, DUPLICATE_NAME_CONFIRM_LABEL, DUPLICATE_NAME_NO_EMAIL_LABEL, DUPLICATE_NAME_WARNING_MESSAGE, DUPLICATE_NAME_WARNING_TITLE, normalizePersonNamePart, sameNamePersonContactLabel, usersWithSameName
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/duplicateUserNames.test.ts, lib/canonical/duplicateUserNames.ts, lib/canonical/index.ts
+Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/duplicateUserNames.test.ts, lib/canonical/duplicateUserNames.ts, lib/canonical/ghostOperatives.test.ts, lib/canonical/ghostOperatives.ts, lib/canonical/index.ts, lib/canonical/managerCoverage.ts, lib/canonical/myProfileSummary.test.ts, lib/canonical/payrollHours.ts
 Done when:
-- [ ] Packed hash in iOS equals a49138a8d7d6e8bbf71d49af93bdd8fc8d19ccd362db1f105bf66252673318ad
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 9fb7f3dbaa9b2ce70612e0efca39ee34c3e1ea4e1dfaae8ebfbd83931fba9e39)
+- [ ] Packed hash in iOS equals 52f6f0f49631522db8053c12995e09d6ee0165ea5b6a1d038fd764ade6702834
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 f9ce176ab63882541613caedb7d17282b886077156104840aadaba0036566f73)
 - [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.36.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web

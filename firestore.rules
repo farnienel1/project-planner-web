@@ -255,7 +255,7 @@ service cloud.firestore {
     let d = org.get('deletion', {});
     return !(d is map && d.get('status', '') == 'scheduled') && (!(b is map) || (
       b.get('accessOpen', true) != false &&
-      !(b.get('accessClosesAt', null) is timestamp && request.time >= b.get('accessClosesAt', null))
+      !(b.get('accessClosesAt', null) is timestamp && request.time >= b.accessClosesAt)
     ));
   }
 
@@ -702,7 +702,7 @@ service cloud.firestore {
 
       allow get: if true;
 
-      allow list, create, update, delete: if (request.method == 'update' && request.auth != null &&
+      allow list, create, update, delete: if (request.method != 'create' || privilegeCreateTyped(request.resource.data, true)) && ((request.method == 'update' && request.auth != null &&
           request.auth.token.email is string &&
           resource.data.get('email', null) is string &&
           string(resource.data.email).lower() == request.auth.token.email.lower() &&
@@ -720,10 +720,8 @@ service cloud.firestore {
             : (invitationOrgId() is string && invitationOrgId().size() > 0 && (
               isPlatformOwner() ||
               orgAdminEither(invitationOrgId())
-            ))) && (
-            request.method == 'create' ? privilegeCreateTyped(request.resource.data, true) : (
-            request.method != 'update' || privilegeWriteTyped(request.resource.data, resource.data, true))))
-          : false);
+            ))) && (request.method != 'update' || privilegeWriteTyped(request.resource.data, resource.data, true)))
+          : false));
       function invitationAcceptWrittenWith() {
         let account = /databases/(default)/documents/users/$(request.auth.uid);
         let membership = /databases/(default)/documents/users/$(request.auth.uid)/orgMemberships/$(resource.data.get('organizationId', '_'));
@@ -1917,13 +1915,13 @@ service cloud.firestore {
           ((resource != null &&
             'userId' in resource.data &&
             resource.data.userId == request.auth.uid) || isOrgAdminOrOwner(organizationId));
-        allow create, update: if canAccessOrganization(organizationId) && (
-          (request.method == 'create') ? ((!('actorUserId' in request.resource.data) ||
-            request.resource.data.actorUserId == request.auth.uid) && notificationRecipientIsMember()) : (((resource != null &&
-            'userId' in resource.data &&
-            resource.data.userId == request.auth.uid) || isOrgAdminOrOwner(organizationId)) &&
+        allow create: if canAccessOrganization(organizationId) &&
+          (!('actorUserId' in request.resource.data) || request.resource.data.actorUserId == request.auth.uid) &&
+          notificationRecipientIsMember();
+        allow update: if canAccessOrganization(organizationId) &&
+          ((resource != null && 'userId' in resource.data && resource.data.userId == request.auth.uid) || isOrgAdminOrOwner(organizationId)) &&
           ((!('actorUserId' in request.resource.data.diff(resource.data).affectedKeys())) || (!('actorUserId' in request.resource.data) ||
-            request.resource.data.actorUserId == request.auth.uid))));
+            request.resource.data.actorUserId == request.auth.uid));
         allow delete: if isOrgAdminOrOwner(organizationId);
       }
 

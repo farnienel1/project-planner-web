@@ -1,6 +1,6 @@
 # iOS follow-on — rulebook 1.35.0
 
-Generated 2026-11-07 by `npm run rulebook:handoff` in project-planner-web. Paste this whole file into the iOS agent.
+Generated 2026-11-10 by `npm run rulebook:handoff` in project-planner-web. Paste this whole file into the iOS agent.
 The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; never edit the iOS mirror by hand.
 
 ```
@@ -8,9 +8,9 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ║ FOLLOW-ON — paste into the iOS agent                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
-Rulebook version: 1.35.0 → 1.35.0
-Packed hash: bd974088eabd8d29261102b35e0af7b17fe78ac228982f958b2a85a6000ff965
-Rulebook sha256: 285ff41de67c59c0f68436526033b9ec3ae96551a2d1723689dd6383e48270b9
+Rulebook version: 1.34.0 → 1.35.0
+Packed hash: a0f465556ae136a80e94167064fadddf159d4b117063495206f89e290b8af000
+Rulebook sha256: c236db2648833401fc5903a9c5c3b9dd223690d2097cce283b7e3a41fbbaf5e2
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -20,12 +20,12 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
   web lib/canonical/cross-platform-contract.json    → iOS ProjectPlannerTests/CrossPlatformContract.json
 Contract sha256: 59d6bc6123f250e1f57599240eb3190ab48f5cd2532f8281a99360d9e187d86b
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: none
+Exports added: annualLeaveBankHolidayRange, bookedWorkedHours, homeBookingDayKey, myProfileBankHolidayRange, myProfileSummary, organizationWeekDayKeys, tasksAssignedToViewer
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md
+Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/annualLeaveBalance.ts, lib/canonical/bundleEntry.ts, lib/canonical/dayKeys.ts, lib/canonical/homeOverview.ts, lib/canonical/index.ts, lib/canonical/managerCoverage.ts, lib/canonical/myProfileSummary.test.ts, lib/canonical/myProfileSummary.ts
 Done when:
-- [ ] Packed hash in iOS equals bd974088eabd8d29261102b35e0af7b17fe78ac228982f958b2a85a6000ff965
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 285ff41de67c59c0f68436526033b9ec3ae96551a2d1723689dd6383e48270b9)
+- [ ] Packed hash in iOS equals a0f465556ae136a80e94167064fadddf159d4b117063495206f89e290b8af000
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 c236db2648833401fc5903a9c5c3b9dd223690d2097cce283b7e3a41fbbaf5e2)
 - [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.35.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
@@ -51,6 +51,9 @@ Every figure goes through `CanonicalBusinessEngine`; no Swift copy of any rule.
 3. **Figures** — leave `remaining` ("N days left", pending already off; no allowance: "Days taken this leave year: N" from `usedThisYear`); `hoursThisWeek.hours` (Mon–Sun, worked hours, no multiplier); `tasks.open` with `overdue` and `dueThisWeek` underneath; `qualifications` ("None" when `total` is 0); every `lineManager.ids[].name` (never "+N more"). Each links to Annual leave, My Schedule, Tasks, My Qualifications and, for admins, the line manager's profile.
 4. **Bank holidays for a leave balance** (review fix) — `annualLeaveBankHolidayRange` / `myProfileBankHolidayRange` return the previous leave year's start to the current one's end and its calendar `years`. Load the region's bank holidays for those `years` before showing a balance (carry-over needs last year's), on My Profile and on the leave screens (`HolidayView`, `OperativeAnnualLeaveViews`): `BankHolidayService.ensureLoaded(..., alsoYears:)`. Never compute the range in Swift. Don't compute the figures in `body`: work them out in `.task(id:)` when a store changes, and floor `nowMs` to the minute so the memo hits.
 
+## New rulebook sections
+
+- 1.35.0 — 2026-11-10
 
 ## Workflow for the iOS agent
 

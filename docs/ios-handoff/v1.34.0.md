@@ -1,6 +1,6 @@
 # iOS follow-on — rulebook 1.34.0
 
-Generated 2026-11-07 by `npm run rulebook:handoff` in project-planner-web. Paste this whole file into the iOS agent.
+Generated 2026-11-10 by `npm run rulebook:handoff` in project-planner-web. Paste this whole file into the iOS agent.
 The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; never edit the iOS mirror by hand.
 
 ```
@@ -8,9 +8,9 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ║ FOLLOW-ON — paste into the iOS agent                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
-Rulebook version: 1.33.0 → 1.34.0
-Packed hash: 89c203a96bab7ef1837315bfc4c5d6948274e57bb74d7eede4cee812fc117ad5
-Rulebook sha256: d3970a44c3e30be19b29e0d4ef8c01f009ee5fc8e8bdb11f64a8a4e5d56f5f1a
+Rulebook version: 1.33.1 → 1.34.0
+Packed hash: 44c4fab397a663348f6aea04d28d82351a4f51fcb9844c210aa5b86ce7b99c29
+Rulebook sha256: 01c857dbdce04127751200d6ad474b8ff97f7488507e6332358502393f76b77c
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -24,8 +24,8 @@ Exports added: GHOST_ACCOUNTS_ORGANIZATION_IDS_FIELD, GHOST_ACCOUNTS_SWITCH_FIEL
 Exports removed: none
 Web files that changed the rules: docs/RULEBOOK.md, firestore.rules, lib/canonical/bundleEntry.ts, lib/canonical/cross-platform-contract.json, lib/canonical/ghostOperatives.test.ts, lib/canonical/ghostOperatives.ts, lib/canonical/index.ts, lib/canonical/inviteAccept.ts, lib/canonical/notificationRecipients.ts, lib/canonical/payeOvertime.ts, lib/canonical/payrunSnapshot.ts, lib/canonical/peopleDocuments.ts, lib/canonical/platformConfig.ts, lib/canonical/userDelete.ts, lib/canonical/userProfile.ts, lib/canonical/userRosterSegment.ts, lib/canonical/userTimesheetAccess.ts, lib/canonical/warningRows.ts
 Done when:
-- [ ] Packed hash in iOS equals 89c203a96bab7ef1837315bfc4c5d6948274e57bb74d7eede4cee812fc117ad5
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 d3970a44c3e30be19b29e0d4ef8c01f009ee5fc8e8bdb11f64a8a4e5d56f5f1a)
+- [ ] Packed hash in iOS equals 44c4fab397a663348f6aea04d28d82351a4f51fcb9844c210aa5b86ce7b99c29
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 01c857dbdce04127751200d6ad474b8ff97f7488507e6332358502393f76b77c)
 - [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.34.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
@@ -37,7 +37,7 @@ Done when:
 - **Ghost operatives** (§11, owner design 6 Nov "ghost: all recommended", answers rounds 1–2; new `lib/canonical/ghostOperatives.ts`): a bookable operative with no app login — no email, no phone; a `users/{id}` document with `ghost: true`, `passwordSet: false`, `email: ''`, the operative level, self-employed, a day or hourly rate above 0 and a line manager. Added by admins and Operatives managers (`canCreateGhost`, `ghostCreateError`, `ghostCreateWrites`) from a **Ghost account** toggle at the top of Add user / Add new operative (`ghostAddFormRows`, `GHOST_OPERATIVE_EXPLANATION`); the admins are told (`operative_created` / `operative_deleted`). New: `isGhostUser`, `isGhostInvited`, `ghostBadgeLabel` / `GHOST_BADGE_LABEL`, `personDedupeKey`, `canBookLeaveFor`, `ghostLeaveBooking`, `canUpgradeGhost`, `ghostUpgradeRefusal`, `ghostUpgradeWrites` (admin-only Give app access, owner option 1), `inviteAcceptPlaceholderFields` / `INVITE_ACCEPT_DROPPED_PLACEHOLDER_FIELDS`, `ghostConversionCandidates`, `ghostConversionWrites` (owner-run `scripts/convert-no-login-operatives-to-ghosts.mjs`, Q-G2), `ghostsToCheck` (Data health).
 - Changed for ghosts: `rosterSegment` / `isIdentifiablePendingLeftover` (never Pending or a leftover), `parseUserDocument` and `USER_DOCUMENT_FIELDS` (`ghost`, `inviteEmailHint`; contract regenerated), `unbookedLabourRows` (a ghost counts as signed up; people with no email are one row each and inactive ones are skipped; an `operatives` row whose id is a person's id is that person, so a converted ghost's leave and exclusion cover its row), `unverifiedOperativeRows`, `timesheetDaysForPerson` / `showsMyTimesheets` / `timesheetParticipant`, `userTimesheetSubjects`, `exportedTimesheetHistorySubjects`, `overtimeUserSubjects`, `notificationRecipientAccountId` / `excludeActor` (never a ghost), `userDeleteWrites` (unchanged plan: the review fix removed the ghost short-cut, so tax ids, membership and a listed `members` entry are always removed), `payrunSnapshotRows` (grey "No app login", `PAYRUN_SNAPSHOT_GHOST_CELL`), `inviteAcceptWrites` (`dropPlaceholderFields`).
 - Fixes found on the way: pickers and web's annual-leave people list folded people on the email alone, so only the first person with no email was offered (`personDedupeKey`); web Edit User pooled the rate history of everyone with an empty email.
-- **Security rules** (§16): R1 — an Operatives manager never changes a ghost's line manager; R2 — a ghost's line manager gets no overtime booking write on it; review fix — nobody sets `ghost` or `inviteEmailHint` on their own users document (update or self-create). Static compile cost 237,518 → 237,676 (on 1.33.0 with its review fixes) → 237,748 with the review fix; 142,948 → 143,099 → 143,357 bytes.
+- **Security rules** (§16): R1 — an Operatives manager never changes a ghost's line manager; R2 — a ghost's line manager gets no overtime booking write on it; review fix — nobody sets `ghost` or `inviteEmailHint` on their own users document (update or self-create). Static compile cost 237,518 → 237,676 (on 1.33.0 with its review fixes) → 237,748 with the review fix; 142,948 → 143,099 → 143,357 bytes. Merged onto 1.33.1 (10 Nov): 236,475 → 236,705; 142,916 → 143,325 bytes.
 - Review fixes: `isGhostUser` is the boolean `true` only; `ghostConversionWrites` takes the organisation's `roster` and refuses a line manager `lineManagerCandidates` does not offer.
 - Emulator finding (not a rules change): the Firestore emulator (1.22.0) crashes on an Operatives manager's users create that carries `isSuperAdmin: false` or no `email` key, so a ghost is written with `email: ''` and no `isSuperAdmin` key. Web Add user's invite placeholder carries `isSuperAdmin: false` (`invitePlaceholderUserWriteFields`); whether production shares the crash is unknown (follow-up).
 - **Ghost account toggle hidden until the iPhone update is out** (owner decision 7 Nov "1b", §11, §18): new `platformConfig/app` switch `ghostAccounts` / `ghostAccountsOrganizationIds` (`ghostAccountsEnabled`, `GHOST_ACCOUNTS_SWITCH_FIELD`, `GHOST_ACCOUNTS_ORGANIZATION_IDS_FIELD`); `ghostToggleVisible({ canCreateGhost, ghostAccountsEnabled })` and `ghostAddFormRows` take it (missing = off), so both apps show the toggle only while it is on. `canCreateGhost` stays the permission. Existing ghosts are unaffected. UI gate only: no `firestore.rules` change.
@@ -61,7 +61,7 @@ Every rule goes through `CanonicalBusinessEngine`; no Swift copy of any rule.
 
 ## New rulebook sections
 
-- 1.34.0 — 2026-11-07
+- 1.34.0 — 2026-11-10
 
 ## Workflow for the iOS agent
 
