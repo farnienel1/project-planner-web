@@ -1,7 +1,7 @@
 {
   "rulebookVersion": "1.35.0",
-  "rulebookSha256": "285ff41de67c59c0f68436526033b9ec3ae96551a2d1723689dd6383e48270b9",
-  "bundleSha256": "bd974088eabd8d29261102b35e0af7b17fe78ac228982f958b2a85a6000ff965",
+  "rulebookSha256": "c236db2648833401fc5903a9c5c3b9dd223690d2097cce283b7e3a41fbbaf5e2",
+  "bundleSha256": "a0f465556ae136a80e94167064fadddf159d4b117063495206f89e290b8af000",
   "crossPlatformContractSha256": "59d6bc6123f250e1f57599240eb3190ab48f5cd2532f8281a99360d9e187d86b",
   "exports": [
     "ACCOUNT_DELETE_WITH_COMPANY_MESSAGE",

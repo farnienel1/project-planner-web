@@ -77,8 +77,9 @@ How to use it:
 |---|---|---|
 | 4 Nov | The job manager picker shows active admins and managers, one per person (`jobManagerCandidates`), with former managers in amber. | done web (1.30.3), iOS (#185) |
 | 4 Nov | Job managers are kept across admin ↔ manager. They are removed when the person becomes an operative, is deactivated or deleted, and admins are notified. The job stays, even with no manager. A manager is required only to create a job. | done web (1.31.0); iOS open |
-| 4 Nov | Web: the projects and small works list spacing gets tidied. | open (web only) |
+| 4 Nov | Web: the projects and small works list spacing gets tidied. | done web (6 Nov / PR #290) |
 | 4 Nov | Blank "Assigned manager" rows made by older iOS builds are removed with an owner-run script (dry run first). | script merged (#260); owner to run |
+| 10 Nov | The My Projects and My Small works ⚙ picker gets an All / Active / Upcoming / Completed filter (owner said "active, completed and pending"; pending = Upcoming, the rulebook's word), default All, with counts. Tabs are the rulebook's (`worksInTab` / `worksTabCounts`); ticks are kept across filters and Save writes the whole list. | done web (branch web-myworks-filter) + iOS (iOS #210, 1.33.1) |
 
 ## Annual leave
 
@@ -171,6 +172,7 @@ How to use it:
 | 4 Nov | Web: a rate change's `operativeId`, the weekly-report/timesheet-export rate fallback and the "is this my own booking" check each pick one operatives row (`EditUserProfile.tsx`, `weeklyReportPayroll.ts`, `timesheetExport.ts`, `scheduleNavigation.ts`; sweep FU-5). | open |
 | 4 Nov | Web week grids use the browser's week in 11 files; needs a shared "organisation week" rule (sweep FU-4; iOS Scheduling has the same problem). | open (rule release) |
 | 4 Nov | Overtime: until 1.32's partial approval, a request containing one line under an older record cannot be approved by the line manager at all (whole approval refused, "Needs an admin"); admins can. | fixed (1.32.0 / PR #274: partial approval) · superseded by 6 Nov "A line manager can always approve" (1.33.0) |
+| 10 Nov | **Notifications stuck (live rules):** creating an inbox row with a server-time `createdAt` (both apps, rulebook 1.16.0) crashed the rules engine on the combined notifications `allow create, update` (merged in 1.32.2), and so did a notification update written as a merge-set or full set with a server timestamp; the write never answered, Rules metrics showed 21 errors, and an iPhone kept every later write at "Pending sync" behind it. An invitation create with a server timestamp crashed the same way (no app writes one). | fixed (1.33.1 rules: notifications allow split, invitation privilege check hoisted; permanent suite `tests/methodTernary.rules.test.ts`); owner publish pending; stuck "Pending sync" phones expected to clear after publish (untested — owner checks one affected phone) |
 
 ## 1.32.0 judgement calls (owner kept all, 6 Nov)
 
