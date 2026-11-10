@@ -1752,9 +1752,11 @@ export type {
 export {
   DUPLICATE_NAME_CANCEL_LABEL,
   DUPLICATE_NAME_CONFIRM_LABEL,
+  DUPLICATE_NAME_NO_EMAIL_LABEL,
   DUPLICATE_NAME_WARNING_MESSAGE,
   DUPLICATE_NAME_WARNING_TITLE,
   normalizePersonNamePart,
+  sameNamePersonContactLabel,
   usersWithSameName,
 } from './duplicateUserNames'
 export type { SameNamePerson, SameNameRosterRow } from './duplicateUserNames'

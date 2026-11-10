@@ -6,7 +6,9 @@ import test from 'node:test'
 import {
   DUPLICATE_NAME_CANCEL_LABEL,
   DUPLICATE_NAME_CONFIRM_LABEL,
+  DUPLICATE_NAME_NO_EMAIL_LABEL,
   DUPLICATE_NAME_WARNING_MESSAGE,
+  sameNamePersonContactLabel,
   usersWithSameName,
   type SameNameRosterRow,
 } from './duplicateUserNames'
@@ -98,4 +100,11 @@ test('1.36.0 duplicate-name copy', () => {
   assert.equal(DUPLICATE_NAME_WARNING_MESSAGE, 'A user with this name already exists. Are you sure you want to add this user?')
   assert.equal(DUPLICATE_NAME_CONFIRM_LABEL, 'Add anyway')
   assert.equal(DUPLICATE_NAME_CANCEL_LABEL, 'Cancel')
+})
+
+test('1.36.0 sameNamePersonContactLabel: email, else "No app login" for a ghost only, else "No email"', () => {
+  assert.equal(sameNamePersonContactLabel({ email: ' sam@example.com ', ghost: false }), 'sam@example.com')
+  assert.equal(sameNamePersonContactLabel({ email: '', ghost: true }), 'No app login')
+  assert.equal(sameNamePersonContactLabel({ email: '', ghost: false }), DUPLICATE_NAME_NO_EMAIL_LABEL)
+  assert.equal(DUPLICATE_NAME_NO_EMAIL_LABEL, 'No email')
 })

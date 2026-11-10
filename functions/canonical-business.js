@@ -86,6 +86,7 @@ var ProjectPlannerCanonical = (() => {
     DEVICE_PUSH_NOTIFICATION_TYPES: () => DEVICE_PUSH_NOTIFICATION_TYPES,
     DUPLICATE_NAME_CANCEL_LABEL: () => DUPLICATE_NAME_CANCEL_LABEL,
     DUPLICATE_NAME_CONFIRM_LABEL: () => DUPLICATE_NAME_CONFIRM_LABEL,
+    DUPLICATE_NAME_NO_EMAIL_LABEL: () => DUPLICATE_NAME_NO_EMAIL_LABEL,
     DUPLICATE_NAME_WARNING_MESSAGE: () => DUPLICATE_NAME_WARNING_MESSAGE,
     DUPLICATE_NAME_WARNING_TITLE: () => DUPLICATE_NAME_WARNING_TITLE,
     EDIT_OF_MISSING_DOCUMENT_MESSAGE: () => EDIT_OF_MISSING_DOCUMENT_MESSAGE,
@@ -1275,6 +1276,7 @@ var ProjectPlannerCanonical = (() => {
     roundPennies: () => roundPennies,
     rulebookStamp: () => rulebookStamp,
     rulebookVersionLabel: () => rulebookVersionLabel,
+    sameNamePersonContactLabel: () => sameNamePersonContactLabel,
     scheduleOptionsWriteFields: () => scheduleOptionsWriteFields,
     screenMustListen: () => screenMustListen,
     securitySwitchOn: () => securitySwitchOn,
@@ -10954,7 +10956,7 @@ var ProjectPlannerCanonical = (() => {
   function rulebookStamp() {
     return {
       version: true ? "1.36.0" : "",
-      sha256: true ? "2922f666e37a6e71b34588ff0d0da1909d6a00bd45ae8ca7675e6a2ae7a8978b" : ""
+      sha256: true ? "9fb7f3dbaa9b2ce70612e0efca39ee34c3e1ea4e1dfaae8ebfbd83931fba9e39" : ""
     };
   }
   function rulebookVersionLabel(version) {
@@ -21443,6 +21445,7 @@ var ProjectPlannerCanonical = (() => {
   var DUPLICATE_NAME_WARNING_MESSAGE = "A user with this name already exists. Are you sure you want to add this user?";
   var DUPLICATE_NAME_CONFIRM_LABEL = "Add anyway";
   var DUPLICATE_NAME_CANCEL_LABEL = "Cancel";
+  var DUPLICATE_NAME_NO_EMAIL_LABEL = "No email";
   function normalizePersonNamePart(value) {
     return typeof value === "string" ? value.trim().replace(/\s+/g, " ").toLowerCase() : "";
   }
@@ -21491,6 +21494,11 @@ var ProjectPlannerCanonical = (() => {
       segment: segment2,
       ghost: isGhostUser(row2)
     }));
+  }
+  function sameNamePersonContactLabel(person) {
+    const email = idText(person?.email);
+    if (email) return email;
+    return person?.ghost === true ? GHOST_BADGE_LABEL : DUPLICATE_NAME_NO_EMAIL_LABEL;
   }
   return __toCommonJS(bundleEntry_exports);
 })();

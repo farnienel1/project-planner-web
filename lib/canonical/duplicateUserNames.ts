@@ -12,6 +12,7 @@
 
 import { idKey, idText, personIdSet, type PersonIdsInput, type PersonRosterRow } from './personIds'
 import { permissionLevelOf, type PermissionLevel } from './permissionLevels'
+import { GHOST_BADGE_LABEL } from './ghostOperatives'
 import {
   isAnonymisedDeletedProfile,
   isGhostUser,
@@ -26,6 +27,8 @@ export const DUPLICATE_NAME_WARNING_TITLE = 'Name already in use'
 export const DUPLICATE_NAME_WARNING_MESSAGE = 'A user with this name already exists. Are you sure you want to add this user?'
 export const DUPLICATE_NAME_CONFIRM_LABEL = 'Add anyway'
 export const DUPLICATE_NAME_CANCEL_LABEL = 'Cancel'
+/** Shown for a match with no email who is not a ghost (an older record or an invite stored without one). */
+export const DUPLICATE_NAME_NO_EMAIL_LABEL = 'No email'
 
 /** A users document of the organisation as `usersWithSameName` reads it. */
 export type SameNameRosterRow = PersonIdsInput &
@@ -121,4 +124,14 @@ export function usersWithSameName(
     segment,
     ghost: isGhostUser(row),
   }))
+}
+
+/**
+ * What the warning shows next to a match's name: their email; else "No app login" (`GHOST_BADGE_LABEL`) for a ghost
+ * only; else `DUPLICATE_NAME_NO_EMAIL_LABEL`.
+ */
+export function sameNamePersonContactLabel(person: Pick<SameNamePerson, 'email' | 'ghost'> | null | undefined): string {
+  const email = idText(person?.email)
+  if (email) return email
+  return person?.ghost === true ? GHOST_BADGE_LABEL : DUPLICATE_NAME_NO_EMAIL_LABEL
 }

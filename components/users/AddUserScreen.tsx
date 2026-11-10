@@ -34,12 +34,12 @@ import {
   DUPLICATE_NAME_CONFIRM_LABEL,
   DUPLICATE_NAME_WARNING_MESSAGE,
   DUPLICATE_NAME_WARNING_TITLE,
-  GHOST_BADGE_LABEL,
-  ghostCreateError,
-  usersWithSameName,
+  sameNamePersonContactLabel,
+  type GhostDraft,
   type SameNamePerson,
 } from '@/lib/canonical'
 import { Modal } from '@/components/ui/overlays'
+import { addUserNameCheck } from '@/lib/users/addUserNameCheck'
 import { Button } from '@/components/ui/Button'
 import { useUserStore } from '@/lib/stores/userStore'
 import { dayKeyInZone } from '@/lib/orgTime/zoneTime'
@@ -353,14 +353,32 @@ export function AddUserScreen() {
     operativeMode: invitePermissions.operativeMode === true,
   }).allowsNoLineManager
 
-  // Rulebook 1.36.0 `usersWithSameName`: true when the save must stop for the duplicate-name confirmation. Add anyway
-  // submits again with `nameConfirmed`, which goes straight through.
-  const stopForDuplicateName = (firstName: string, surname: string, nameConfirmed: boolean): boolean => {
-    if (nameConfirmed) return false
-    const matches = usersWithSameName(users as never, { firstName, lastName: surname }, { claimedEmails })
-    if (matches.length === 0) return false
-    setDuplicateMatches(matches)
-    return true
+  // Rulebook 1.36.0 `usersWithSameName` (and, for a ghost, `ghostCreateError` first) through `addUserNameCheck`: true
+  // when the save must stop — a refusal, or the duplicate-name confirmation. Add anyway submits again with
+  // `nameConfirmed`, which goes straight through.
+  const stopBeforeSave = (
+    firstName: string,
+    surname: string,
+    nameConfirmed: boolean,
+    ghostDraft?: GhostDraft
+  ): boolean => {
+    const check = addUserNameCheck({
+      firstName,
+      surname,
+      roster: users as never,
+      claimedEmails,
+      nameConfirmed,
+      ghost: ghostDraft ? { draft: ghostDraft, lineManagerRoster: rulebookRoster(users) } : null,
+    })
+    if (check.kind === 'refuse') {
+      setError(check.message)
+      return true
+    }
+    if (check.kind === 'warn') {
+      setDuplicateMatches(check.matches)
+      return true
+    }
+    return false
   }
 
   const handleSubmit = async (e?: FormEvent, options?: { nameConfirmed?: boolean }) => {
@@ -374,7 +392,7 @@ export function AddUserScreen() {
 
     if (ghostOn) {
       // Rulebook 1.34.0 `ghostCreateWrites` / `ghostCreateError`: names, rate above 0, line manager; trade optional.
-      const ghostDraft = {
+      const ghostDraft: GhostDraft = {
             firstName,
             surname,
             ...payChoiceToRates(form.payBasis, form.rateAmount),
@@ -392,13 +410,8 @@ export function AddUserScreen() {
               carriesOver: annualLeaveDefaults.carriesOver,
             },
       }
-      // The form's own refusal first (the store checks it again), then the duplicate-name warning.
-      const ghostRefusal = ghostCreateError(ghostDraft, { roster: rulebookRoster(users) as never })
-      if (ghostRefusal) {
-        setError(ghostRefusal)
-        return
-      }
-      if (stopForDuplicateName(firstName, surname, nameConfirmed)) return
+      // The ghost's own refusal first (the store checks it again), then the duplicate-name warning.
+      if (stopBeforeSave(firstName, surname, nameConfirmed, ghostDraft)) return
       setSaving(true)
       setError(null)
       try {
@@ -472,7 +485,7 @@ export function AddUserScreen() {
       setError(payMessage)
       return
     }
-    if (stopForDuplicateName(firstName, surname, nameConfirmed)) return
+    if (stopBeforeSave(firstName, surname, nameConfirmed)) return
 
     setSaving(true)
     setError(null)
@@ -982,7 +995,9 @@ export function AddUserScreen() {
               {person.email ? (
                 <span className="text-slate-500">{person.email}</span>
               ) : (
-                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">{GHOST_BADGE_LABEL}</span>
+                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
+                  {sameNamePersonContactLabel(person)}
+                </span>
               )}
               {person.segment !== 'active' ? (
                 <span className="text-xs text-slate-500">{person.segment === 'inactive' ? 'Inactive' : 'Pending'}</span>
