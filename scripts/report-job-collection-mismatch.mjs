@@ -20,9 +20,19 @@ import path from 'node:path'
 import { loadRulebook as loadPackedRulebook, repoRoot } from './data-cleanup/checks.mjs'
 import { JOB_COLLECTIONS, RULEBOOK_FUNCTIONS, csvHeader, csvLines, formatReport, planOrg } from './report-job-collection-mismatch/plan.mjs'
 
+const USAGE_LINE = 'Usage: node scripts/report-job-collection-mismatch.mjs --project <firebaseProjectId> (--org <orgId> | --all-orgs) [--csv-only]'
+
+/** The value after `flag`, or null when the flag is absent. A flag given with no value (end of the line, or the next
+ * word is another flag such as `--org --all-orgs`) is an error, never the next flag taken as its value. */
 function arg(flag) {
   const index = process.argv.indexOf(flag)
-  return index >= 0 ? process.argv[index + 1] || null : null
+  if (index < 0) return null
+  const value = process.argv[index + 1]
+  if (value === undefined || value.startsWith('--') || value.trim() === '') {
+    console.error(`${flag} needs a value.\n${USAGE_LINE}`)
+    process.exit(2)
+  }
+  return value
 }
 
 const USAGE = `Usage:
