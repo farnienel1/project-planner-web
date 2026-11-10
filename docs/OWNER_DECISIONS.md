@@ -77,6 +77,7 @@ How to use it:
 | 4 Nov | Job managers are kept across admin ↔ manager. They are removed when the person becomes an operative, is deactivated or deleted, and admins are notified. The job stays, even with no manager. A manager is required only to create a job. | done web (1.31.0); iOS open |
 | 4 Nov | Web: the projects and small works list spacing gets tidied. | done web (6 Nov / PR #290) |
 | 4 Nov | Blank "Assigned manager" rows made by older iOS builds are removed with an owner-run script (dry run first). | script merged (#260); owner to run |
+| 10 Nov | The My Projects and My Small works ⚙ picker gets an All / Active / Upcoming / Completed filter (owner said "active, completed and pending"; pending = Upcoming, the rulebook's word), default All, with counts. Tabs are the rulebook's (`worksInTab` / `worksTabCounts`); ticks are kept across filters and Save writes the whole list. | done web (branch web-myworks-filter) + iOS (iOS #210, 1.33.1) |
 
 ## Annual leave
 
