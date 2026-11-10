@@ -20,9 +20,9 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
   web lib/canonical/cross-platform-contract.json    → iOS ProjectPlannerTests/CrossPlatformContract.json
 Contract sha256: 59d6bc6123f250e1f57599240eb3190ab48f5cd2532f8281a99360d9e187d86b
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: DUPLICATE_NAME_CANCEL_LABEL, DUPLICATE_NAME_CONFIRM_LABEL, DUPLICATE_NAME_WARNING_MESSAGE, DUPLICATE_NAME_WARNING_TITLE, normalizePersonNamePart, usersWithSameName
+Exports added: none
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/duplicateUserNames.test.ts, lib/canonical/duplicateUserNames.ts, lib/canonical/index.ts
+Web files that changed the rules: none recorded
 Done when:
 - [ ] Packed hash in iOS equals 3983e6f1584301aadcc4cbbe9cce5a34de61101f2e7c402ddc2d09be4ad12214
 - [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 2922f666e37a6e71b34588ff0d0da1909d6a00bd45ae8ca7675e6a2ae7a8978b)
@@ -55,7 +55,7 @@ Done when:
    - Week grids and "this week" from `Calendar.current` (Scheduling, My Schedule, materials and H&S weeks): use `organizationWeekDayKeys` / `isWeekendDayKey` on the organisation day (`OrganizationRulebookContext`), the organisation's today, not the device's.
    - A person's rate history read under one `operatives` row on the email (Edit user previous rates, timesheet pay, weekly report pay): match every row of the person (`bookingIdsForAccount`) and every users id (`personIdSet`), without case — as `payRateOnDay` with `person` / `roster` / `operativeIds`.
    - "My tasks" matched by one manager or operative row: use `tasksAssignedToViewer` (1.35.0), the rule Home and My Profile already use.
-4. **Duplicate-name warning on Add User** (owner decision 10 Nov, rulebook §11) — `Views/AddUserView.swift`: on Create / Add (the Ghost account path too), after the form's own checks, call `usersWithSameName(roster, { firstName, lastName }, { claimedEmails })` through `CanonicalBusinessEngine` with the full organisation roster. When it returns anyone, show a confirmation with `DUPLICATE_NAME_WARNING_TITLE` / `DUPLICATE_NAME_WARNING_MESSAGE`, list each match with their email or "No app login" (`GHOST_BADGE_LABEL`), and offer `DUPLICATE_NAME_CONFIRM_LABEL` (save as before) and `DUPLICATE_NAME_CANCEL_LABEL` (back to the form). A warning only; never block the save. Do not compare names in Swift.
+4. **Duplicate-name warning on Add User** (owner decision 10 Nov, rulebook §11) — `Views/AddUserView.swift`: on Create / Add (the Ghost account path too), after the form's own checks, call `usersWithSameName(roster, { firstName, lastName }, { claimedEmails })` through `CanonicalBusinessEngine` with the full organisation roster. When it returns anyone, show a confirmation with `DUPLICATE_NAME_WARNING_TITLE` / `DUPLICATE_NAME_WARNING_MESSAGE`, list each match with their email or "No app login" (`GHOST_BADGE_LABEL`), and offer `DUPLICATE_NAME_CONFIRM_LABEL` (save as before) and `DUPLICATE_NAME_CANCEL_LABEL` (back to the form). A warning only — but when `usersWithSameName` does not answer (the script is unavailable), refuse the save, invite and ghost alike, with "Couldn't check this user — try again." and save nothing (owner decision 10 Nov; Add anyway never bypasses it). Do not compare names in Swift.
 
 
 ## Workflow for the iOS agent
