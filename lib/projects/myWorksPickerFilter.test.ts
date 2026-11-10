@@ -1,12 +1,13 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { Project } from '../../types/index.ts'
-import { myWorksPicksAfterToggle } from '../canonical/index.ts'
+import { myWorksIds, myWorksPickerRows, myWorksPicksAfterToggle, myWorksPicksWriteFields, parseMyWorksPicks } from '../canonical/index.ts'
 import {
   MY_WORKS_PICKER_DEFAULT_TAB,
   MY_WORKS_PICKER_TABS,
   myWorksPickerCounts,
   myWorksPickerShownJobs,
+  myWorksPickerStartIds,
 } from './myWorksPickerFilter.ts'
 
 // Owner request 10 Nov: the My Projects / My Small works ⚙ picker filter. Tabs are rulebook §21 (`worksInTab`,
@@ -60,4 +61,33 @@ test('ticks survive a chip change: the chip only narrows what is shown', () => {
   ids = myWorksPicksAfterToggle(ids, 'P-DONE', true)
   assert.equal(shown('upcoming').includes('P-LIVE'), false)
   assert.deepEqual(ids, ['P-LIVE', 'P-DONE'])
+})
+
+test('Save keeps stored ids of deleted or hidden jobs (rulebook §21: they stay stored; guardrail 3)', () => {
+  const manager = { role: { isManager: true }, ids: ['U-M'], uid: 'U-M' } as never
+  const listJobs = [
+    { id: 'P1', jobNumber: 'P1', collection: 'projects' },
+    { id: 'P2', jobNumber: 'P2', collection: 'projects' },
+  ] as never[]
+  // Stored: a deleted job ('GONE'), a visible ticked job ('P1') and a job the viewer no longer sees ('p-hid-old').
+  const picks = parseMyWorksPicks({ projects: ['GONE', 'P1', 'p-hid-old'] })
+  const rows = myWorksPickerRows(listJobs, picks, manager, {}, 'projects')
+  // The rows shown never include the deleted job, so starting from the ticked rows would lose it.
+  assert.deepEqual(rows.filter((r) => r.picked).map((r) => (r.job as { id: string }).id), ['P1'])
+  const stored = myWorksIds(picks, listJobs, manager, {}, 'projects')
+  let ids = myWorksPickerStartIds(stored)
+  assert.deepEqual(ids, ['GONE', 'P1', 'p-hid-old'])
+  ids = myWorksPicksAfterToggle(ids, 'P2', true)
+  ids = myWorksPicksAfterToggle(ids, 'P1', false)
+  assert.deepEqual(myWorksPicksWriteFields('projects', ids, 'T').projects, ['GONE', 'p-hid-old', 'P2'])
+})
+
+test('a never-saved list opens with the pre-fill (myWorksIds), not an empty list', () => {
+  const manager = { role: { isManager: true }, ids: ['U-M'], uid: 'U-M' } as never
+  const listJobs = [
+    { id: 'P1', jobNumber: 'P1', collection: 'projects', managerUserIds: ['U-M'] },
+    { id: 'P2', jobNumber: 'P2', collection: 'projects', managerUserIds: ['X'] },
+  ] as never[]
+  assert.deepEqual(myWorksPickerStartIds(myWorksIds(parseMyWorksPicks(null), listJobs, manager, {}, 'projects')), ['P1'])
+  assert.deepEqual(myWorksPickerStartIds(null), [])
 })

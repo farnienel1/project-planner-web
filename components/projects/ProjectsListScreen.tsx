@@ -273,6 +273,7 @@ export function ProjectsListScreen() {
         <MyWorksPicker
           kind="projects"
           rows={mine.pickerRows}
+          storedIds={mine.storedIds}
           todayKey={todayKey}
           timeZone={timeZone}
           onCancel={() => setPickerOpen(false)}

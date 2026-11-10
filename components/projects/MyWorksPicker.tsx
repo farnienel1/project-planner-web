@@ -6,7 +6,8 @@
  * `myWorksPicksAfterToggle`); Save writes `organizations/{orgId}/worksListPicks/{uid}`.
  * Owner request 10 Nov: All / Active / Upcoming / Completed chips narrow the rows while ticking (`worksInTab`,
  * `worksTabCounts` on the organisation day, `lib/projects/myWorksPickerFilter.ts`); ticks survive a chip change and Save
- * writes the whole list.
+ * writes the whole list. The ticks start from the whole stored list (`storedIds`, `myWorksIds`), not the rows shown, so
+ * ids of deleted or hidden jobs stay stored after Save (rulebook §21, guardrail 3).
  * Save hands the list to Firestore and closes at once; Cancel is never locked (iOS PR #210). The list screen shows a
  * small notice when the server has not confirmed within 15 s or refused it (`useMyWorksList().saveNotice`).
  */
@@ -19,12 +20,14 @@ import {
   MY_WORKS_PICKER_TABS,
   myWorksPickerCounts,
   myWorksPickerShownJobs,
+  myWorksPickerStartIds,
 } from '@/lib/projects/myWorksPickerFilter'
 import type { Project } from '@/types'
 
 export function MyWorksPicker({
   kind,
   rows,
+  storedIds,
   todayKey,
   timeZone,
   onCancel,
@@ -33,6 +36,8 @@ export function MyWorksPicker({
   kind: WorkCatalogue
   /** `myWorksPickerRows` for the viewer. */
   rows: ReadonlyArray<{ job: Project; picked: boolean }>
+  /** `useMyWorksList().storedIds`: the whole stored list, ids not shown included. */
+  storedIds: ReadonlyArray<string>
   /** The organisation day and zone the list screen uses for its own tabs. */
   todayKey: string
   timeZone: string
@@ -40,7 +45,7 @@ export function MyWorksPicker({
   /** Hands the list to the save and closes; never awaited (the list screen shows a pending / refused notice). */
   onSave: (ids: string[]) => void
 }) {
-  const [ids, setIds] = useState<string[]>(() => rows.filter((row) => row.picked).map((row) => row.job.id))
+  const [ids, setIds] = useState<string[]>(() => myWorksPickerStartIds(storedIds))
   const [search, setSearch] = useState('')
   const [tab, setTab] = useState<WorksTab>(MY_WORKS_PICKER_DEFAULT_TAB)
   const picked = useMemo(() => new Set(ids.map((id) => id.toLowerCase())), [ids])

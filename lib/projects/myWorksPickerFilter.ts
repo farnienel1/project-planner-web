@@ -33,3 +33,12 @@ export function myWorksPickerShownJobs<T extends Project>(
 export function myWorksPickerCounts(jobs: ReadonlyArray<Project>, now: unknown, timeZone: string): WorksTabCounts {
   return worksTabCounts(jobs, now, timeZone)
 }
+
+/**
+ * The ticks the ⚙ opens with: the whole stored list for the kind (`myWorksIds`), in stored order, ids not shown
+ * included (a deleted job, or one now hidden from the viewer). Toggling with `myWorksPicksAfterToggle` and saving the
+ * result keeps them stored (rulebook §21; guardrail 3: never hide or drop old data). Never the visible ticked rows.
+ */
+export function myWorksPickerStartIds(storedIds: ReadonlyArray<string> | null | undefined): string[] {
+  return [...(storedIds || [])]
+}

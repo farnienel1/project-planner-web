@@ -12,6 +12,7 @@ import { getFirebaseDb } from '@/lib/firebase/ensureFirebase'
 import {
   MY_WORKS_PICKS_COLLECTION,
   hasMyWorksList,
+  myWorksIds,
   myWorksList,
   myWorksPickerRows,
   myWorksPicksWriteFields,
@@ -69,10 +70,21 @@ export async function saveMyWorksPicks(
   )
 }
 
-export type MyWorksSaveNotice = { status: 'pending' | 'refused'; message: string }
+/**
+ * `pending`: the server has not confirmed yet (after `WRITE_CONFIRM_TIMEOUT_MS`). `unconfirmed`: still no answer after
+ * `MY_WORKS_SAVE_UNCONFIRMED_AFTER_MS` — a neutral notice, never left saying "Saving…" for ever. `refused`: the server
+ * said no.
+ */
+export type MyWorksSaveNotice = { status: 'pending' | 'unconfirmed' | 'refused'; message: string }
 
-export const MY_WORKS_SAVE_PENDING_MESSAGE =
-  'Your list is saved on this device and will reach the server when the connection allows.'
+/** Web keeps no offline copy (no persistent Firestore cache): a write still waiting is lost if the page closes. */
+export const MY_WORKS_SAVE_PENDING_MESSAGE = "Saving… keep this page open until it's saved."
+
+export const MY_WORKS_SAVE_UNCONFIRMED_MESSAGE =
+  'We could not confirm your list was saved. Reload the page to check it, and save again if it is not right.'
+
+/** How long a pending notice stays before it turns into the neutral `unconfirmed` notice. */
+export const MY_WORKS_SAVE_UNCONFIRMED_AFTER_MS = 60_000
 
 /** The My list for one screen: who gets it, the jobs on it and the ⚙ rows (all from the rulebook). */
 export function useMyWorksList<T extends Project>(input: {
@@ -87,6 +99,12 @@ export function useMyWorksList<T extends Project>(input: {
   loaded: boolean
   list: T[]
   pickerRows: Array<{ job: T; picked: boolean }>
+  /**
+   * The whole stored list for this kind (`myWorksIds`: the saved ids, else the pre-fill), including ids of jobs that
+   * were deleted or are hidden from the viewer. The ⚙ starts from this, so Save keeps those ids (rulebook §21: a saved
+   * id of a deleted job "stays stored").
+   */
+  storedIds: string[]
   /** Hands the list to Firestore and returns at once; the outcome shows in `saveNotice`. */
   save: (ids: string[]) => void
   /** Non-blocking notice for the list screen: the last save still waiting for the server, or refused. */
@@ -103,6 +121,10 @@ export function useMyWorksList<T extends Project>(input: {
     () => (available && loaded ? myWorksPickerRows(input.jobs, picks, viewer, input.context, input.kind) : []),
     [available, loaded, input.jobs, picks, viewer, input.context, input.kind]
   )
+  const storedIds = useMemo(
+    () => (available && loaded ? myWorksIds(picks, input.jobs, viewer, input.context, input.kind) : []),
+    [available, loaded, input.jobs, picks, viewer, input.context, input.kind]
+  )
   const organizationId = input.organizationId
   const uid = input.user?.id
   const kind = input.kind
@@ -110,6 +132,12 @@ export function useMyWorksList<T extends Project>(input: {
   const [notice, setNotice] = useState<(MyWorksSaveNotice & { key: string }) | null>(null)
   // Only the latest save may change the notice (an older, slower write settling later never overwrites it).
   const saveSeq = useRef(0)
+  const unconfirmedTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const clearUnconfirmedTimer = () => {
+    if (unconfirmedTimer.current) clearTimeout(unconfirmedTimer.current)
+    unconfirmedTimer.current = null
+  }
+  useEffect(() => clearUnconfirmedTimer, [])
   const save = useCallback(
     (ids: string[]) => {
       const seq = ++saveSeq.current
@@ -117,16 +145,28 @@ export function useMyWorksList<T extends Project>(input: {
         setNotice({ key: noticeKey, status: 'refused', message: 'Your list was not saved: not signed in to an organisation.' })
         return
       }
+      clearUnconfirmedTimer()
       setNotice(null)
       void watchWrite(saveMyWorksPicks(organizationId, uid, kind, ids), (outcome) => {
         if (saveSeq.current !== seq) return
+        clearUnconfirmedTimer()
         if (outcome.status === 'saved') setNotice(null)
-        else if (outcome.status === 'pending') setNotice({ key: noticeKey, status: 'pending', message: MY_WORKS_SAVE_PENDING_MESSAGE })
-        else setNotice({ key: noticeKey, status: 'refused', message: `Your list was not saved: ${outcome.message}` })
+        else if (outcome.status === 'pending') {
+          setNotice({ key: noticeKey, status: 'pending', message: MY_WORKS_SAVE_PENDING_MESSAGE })
+          unconfirmedTimer.current = setTimeout(() => {
+            unconfirmedTimer.current = null
+            if (saveSeq.current !== seq) return
+            setNotice((current) =>
+              current && current.status === 'pending'
+                ? { key: current.key, status: 'unconfirmed', message: MY_WORKS_SAVE_UNCONFIRMED_MESSAGE }
+                : current
+            )
+          }, MY_WORKS_SAVE_UNCONFIRMED_AFTER_MS)
+        } else setNotice({ key: noticeKey, status: 'refused', message: `Your list was not saved: ${outcome.message}` })
       })
     },
     [organizationId, uid, kind, noticeKey]
   )
   const saveNotice = notice && notice.key === noticeKey ? { status: notice.status, message: notice.message } : null
-  return { available, loaded, list, pickerRows, save, saveNotice }
+  return { available, loaded, list, pickerRows, storedIds, save, saveNotice }
 }

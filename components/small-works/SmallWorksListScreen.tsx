@@ -270,6 +270,7 @@ export function SmallWorksListScreen() {
         <MyWorksPicker
           kind="smallWorks"
           rows={mine.pickerRows}
+          storedIds={mine.storedIds}
           todayKey={todayKey}
           timeZone={timeZone}
           onCancel={() => setPickerOpen(false)}
