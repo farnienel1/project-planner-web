@@ -10,7 +10,10 @@ import { loadRulebook } from '../data-cleanup/checks.mjs'
 import {
   RULEBOOK_FUNCTIONS,
   collectionLabel,
+  copyDiff,
+  describeDescendants,
   formatPlan,
+  jobIdSpellings,
   keepAndRemove,
   locateCopies,
   planReferences,
@@ -71,7 +74,7 @@ test('locateCopies: refuses two case variants in one collection, a bad --keep an
 })
 
 test('settingsDocumentIds: both kinds of health & safety and deadlines, the variation log and deadlineAssignments', () => {
-  const ids = settingsDocumentIds(rulebook, JOB.toLowerCase())
+  const ids = settingsDocumentIds(rulebook, [JOB.toLowerCase()])
   assert.ok(ids.includes(`healthSafety_projects_${JOB}`))
   assert.ok(ids.includes(`healthSafety_projects_${JOB.toLowerCase()}`))
   assert.ok(ids.includes(`healthSafety_smallWorks_${JOB}`))
@@ -151,7 +154,7 @@ test('planReferences: a booking labelled with the removed collection, or its set
 test('planRemoval: dry run never applies; blockers refuse --apply unless --force-refs; children first', () => {
   const copies = locateCopies(rulebook, { jobId: JOB, jobs: both() })
   const removedPath = copies.removed.path
-  const subcollectionDocs = [{ path: `${removedPath}/healthSafety/a` }, { path: `${removedPath}/healthSafety/a/rows/x` }]
+  const subcollectionDocs = [{ path: `${removedPath}/healthSafety/a`, data: {} }, { path: `${removedPath}/healthSafety/a/rows/x`, data: {} }]
   const clean = { blockers: [] }
   const blocked = { blockers: ['bookings/b4 …'] }
 
@@ -159,7 +162,7 @@ test('planRemoval: dry run never applies; blockers refuse --apply unless --force
   assert.equal(dry.canApply, false)
   assert.deepEqual(dry.deletePaths, [`${removedPath}/healthSafety/a/rows/x`, `${removedPath}/healthSafety/a`, removedPath])
 
-  assert.equal(planRemoval({ copies, references: clean, removedPath, apply: true }).canApply, true)
+  assert.equal(planRemoval({ copies, references: clean, removedPath, subcollectionDocs, apply: true }).canApply, true)
   const refused = planRemoval({ copies, references: blocked, removedPath, apply: true })
   assert.equal(refused.canApply, false)
   assert.match(refused.refusal, /--force-refs/)
@@ -179,10 +182,95 @@ test('planRemoval never lists the kept copy', () => {
 test('formatPlan prints both copies, the counts and the delete list', () => {
   const copies = locateCopies(rulebook, { jobId: JOB, jobs: both() })
   const references = planReferences(rulebook, { jobId: JOB, removedCollection: 'projects', refs: refsFixture() })
-  const removal = planRemoval({ copies, references, removedPath: copies.removed.path })
-  const text = formatPlan({ orgId: ORG, jobId: JOB, copies, references, removal, row: (doc) => doc.data.jobNumber })
+  const diff = copyDiff(rulebook, copies.kept, copies.removed)
+  const removal = planRemoval({ copies, references, diff, removedPath: copies.removed.path })
+  const text = formatPlan({ orgId: ORG, jobId: JOB, copies, references, diff, removal, row: (doc) => doc.data.jobNumber })
+  assert.match(text, /Field differences between the copies \(\d+ of \d+ compared\)/)
+  assert.match(text, /jobType:|updatedFrom:/)
+  assert.match(text, /Blocking --apply: none/)
   assert.match(text, /Keep: {3}smallWorks\//)
   assert.match(text, /Remove: projects\//)
   assert.match(text, /bookings\s+2 {3}\(jobCollection=smallWorks: 1; \(none\): 1\)/)
   assert.match(text, /never touched/)
+})
+
+test('settingsDocumentIds reads both copies’ spellings of the id', () => {
+  const ids = settingsDocumentIds(rulebook, [JOB, 'ab-12'])
+  assert.ok(ids.includes(`healthSafety_projects_${JOB}`))
+  assert.ok(ids.includes('healthSafety_projects_AB-12'))
+  assert.ok(ids.includes('healthSafety_projects_ab-12'), 'stored-case id older web builds wrote')
+  assert.ok(ids.includes('deadlines_smallWorks_AB-12'))
+  assert.ok(ids.includes(`variations_${JOB}`))
+  assert.ok(ids.includes('variations_ab-12'))
+  assert.equal(ids.filter((id) => id === 'deadlineAssignments').length, 1)
+  assert.deepEqual(jobIdSpellings('Ab-1', 'AB-1').sort(), ['AB-1', 'Ab-1', 'ab-1'])
+})
+
+test('a document stored under the removed copy blocks --apply (with its fields and row counts) unless --force-refs', () => {
+  const copies = locateCopies(rulebook, { jobId: JOB, jobs: both() })
+  const removedPath = copies.removed.path
+  const subcollectionDocs = [{ path: `${removedPath}/healthSafety/data`, data: { talks: [{}, {}], rams: [], note: 'x' } }]
+  assert.deepEqual(describeDescendants(subcollectionDocs), [
+    { path: `${removedPath}/healthSafety/data`, fields: [{ name: 'note', rows: null }, { name: 'rams', rows: 0 }, { name: 'talks', rows: 2 }] },
+  ])
+  const refused = planRemoval({ copies, references: { blockers: [] }, removedPath, subcollectionDocs, apply: true })
+  assert.equal(refused.canApply, false)
+  assert.match(refused.blockers[0], /healthSafety\/data holds data \(note, rams, talks\)/)
+  assert.equal(planRemoval({ copies, references: { blockers: [] }, removedPath, subcollectionDocs, apply: true, forceRefs: true }).canApply, true)
+  const references = planReferences(rulebook, { jobId: JOB, removedCollection: 'projects', refs: {} })
+  const text = formatPlan({ orgId: ORG, jobId: JOB, copies, references, removal: refused, row: () => '' })
+  assert.match(text, /healthSafety\/data — note, rams \[0 row\(s\)\], talks \[2 row\(s\)\]/)
+})
+
+test('copyDiff compares the listed fields (dates as instants) and finds managers only on the removed copy', () => {
+  const kept = job('smallWorks', JOB, { managerIds: ['M1'], isLive: true, startDate: { seconds: 1700000000, nanoseconds: 0 }, latitude: 51.5 })
+  const removed = job('projects', JOB, {
+    managerIds: ['m1', 'M2'],
+    managerId: 'M3',
+    isLive: true,
+    startDate: new Date(1700000000 * 1000),
+    latitude: 51.6,
+    client: { id: 'c1', name: 'Acme' },
+  })
+  const diff = copyDiff(rulebook, kept, removed)
+  const changed = Object.fromEntries(diff.rows.filter((r) => !r.same).map((r) => [r.field, r]))
+  assert.ok(!('startDate' in changed), 'same instant in two stored shapes')
+  assert.ok(!('isLive' in changed))
+  assert.ok('managerIds' in changed && 'managerId' in changed && 'latitude' in changed && 'client' in changed)
+  assert.equal(changed.client.kept, '(missing)')
+  assert.deepEqual(diff.managersOnlyOnRemoved, ['M2', 'M3'], 'm1 matches M1 without case')
+  for (const field of ['managerUserIds', 'assignedManagerUserIds', 'hiddenOperativeUserIds', 'addressLine1', 'longitude', 'jobNumber', 'siteName', 'endDate']) {
+    assert.ok(diff.rows.some((r) => r.field === field), field)
+  }
+})
+
+test('a manager only on the removed copy blocks --apply unless --force-refs; same managers do not', () => {
+  const copies = locateCopies(rulebook, { jobId: JOB, jobs: both() })
+  const removedPath = copies.removed.path
+  const diff = { rows: [], managersOnlyOnRemoved: ['M2'] }
+  const refused = planRemoval({ copies, references: { blockers: [] }, diff, removedPath, apply: true })
+  assert.equal(refused.canApply, false)
+  assert.match(refused.blockers[0], /Manager id M2 is on the projects copy but not on the smallWorks copy/)
+  assert.equal(planRemoval({ copies, references: { blockers: [] }, diff, removedPath, apply: true, forceRefs: true }).canApply, true)
+  assert.equal(planRemoval({ copies, references: { blockers: [] }, diff: copyDiff(rulebook, copies.kept, copies.removed), removedPath, apply: true }).canApply, true)
+})
+
+test('notifications by relatedId and labour bookings under projectID are listed, never blockers', () => {
+  const refs = planReferences(rulebook, {
+    jobId: JOB,
+    removedCollection: 'projects',
+    refs: {
+      bookings: [{ id: 'old', data: { projectID: JOB.toLowerCase(), jobCollection: 'projects' } }],
+      notifications: [
+        { id: 'n1', data: { relatedId: JOB.toLowerCase(), type: 'booking_created' } },
+        { id: 'n2', data: { relatedId: 'OTHER', type: 'booking_created' } },
+      ],
+    },
+  })
+  assert.equal(refs.collections.notifications.count, 1)
+  assert.deepEqual(refs.collections.notifications.labels, { 'type=booking_created': 1 })
+  assert.equal(refs.collections.bookings.count, 1)
+  assert.match(Object.keys(refs.collections.bookings.labels)[0], /job in projectID/)
+  // jobCollection on a projectID booking still names the removed copy: that is a blocker as for any booking.
+  assert.equal(refs.blockers.length, 1)
 })

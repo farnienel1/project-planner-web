@@ -17,9 +17,13 @@
  *   their `jobCollection`; materials, send records, tasks, site audits, variations, variation trackers; the
  *   `settings` documents keyed by the job (`healthSafetyDocumentIds`, `deadlinesDocumentId`, `variations_{id}`,
  *   `deadlineAssignments`); and `worksListPicks` lists that hold the id.
- * - Refuses --apply while a booking carries `jobCollection` = the removed copy's collection, or a
- *   `settings/{healthSafety|deadlines}_{removed}_{KEY}` document holds data, unless --force-refs. Those records are
- *   never rewritten: the owner decides.
+ * - Prints a field diff of the two copies (`copyDiff`) and every document stored under the removed copy.
+ * - Refuses --apply, unless --force-refs, while a booking carries `jobCollection` = the removed copy's collection, a
+ *   `settings/{healthSafety|deadlines}_{removed}_{KEY}` document holds data, a document under the removed copy holds
+ *   fields, or the removed copy lists a manager the kept copy does not (`jobManagerIds`; the security rules'
+ *   `callerManagesJobAt` reads either copy). Those records are never rewritten: the owner decides.
+ * - Also lists (never blocks) inbox notifications whose `relatedId` is the job id, and labour bookings that store the
+ *   job under `projectID`.
  * - With --apply: saves the removed copy and every document under it (all subcollections, read recursively) as JSON
  *   in `<backup-dir>/<timestamp>/<orgId>/001-duplicate-job-copy.json` (restorable with
  *   `node scripts/data-cleanup.mjs --project <id> --restore <that folder> [--apply]`), then deletes them in one batch
@@ -38,7 +42,9 @@ import {
   JOB_COLLECTIONS,
   REFERENCE_COLLECTIONS,
   RULEBOOK_FUNCTIONS,
+  copyDiff,
   formatPlan,
+  jobIdSpellings,
   keepAndRemove,
   locateCopies,
   planReferences,
@@ -165,19 +171,25 @@ async function main() {
   const refs = {}
   for (const collection of REFERENCE_COLLECTIONS) refs[collection] = (await orgRef.collection(collection).get()).docs.map((snap) => ({ id: snap.id, data: snap.data() || {} }))
   refs.settings = []
-  for (const id of settingsDocumentIds(rulebook, copies.kept.id)) {
+  for (const id of settingsDocumentIds(rulebook, [copies.kept.id, copies.removed.id])) {
     const snap = await orgRef.collection('settings').doc(id).get()
     refs.settings.push({ id, exists: snap.exists, data: snap.exists ? snap.data() || {} : {} })
   }
+  // Inbox rows about the job (listed only): read by `relatedId`, every spelling of the id.
+  refs.notifications = (await orgRef.collection('notifications').where('relatedId', 'in', jobIdSpellings(copies.kept.id, copies.removed.id).slice(0, 30)).get()).docs.map((snap) => ({
+    id: snap.id,
+    data: snap.data() || {},
+  }))
   const references = planReferences(rulebook, { jobId: copies.kept.id, removedCollection: copies.remove, refs })
 
   const removedRef = db.doc(copies.removed.path)
   const subcollectionDocs = await descendants(removedRef)
-  const removal = planRemoval({ copies, references, removedPath: copies.removed.path, subcollectionDocs, apply, forceRefs })
+  const diff = copyDiff(rulebook, copies.kept, copies.removed)
+  const removal = planRemoval({ copies, references, diff, removedPath: copies.removed.path, subcollectionDocs, apply, forceRefs })
 
-  console.log(formatPlan({ orgId, jobId, copies, references, removal, row: describe }))
+  console.log(formatPlan({ orgId, jobId, copies, references, diff, removal, row: describe }))
   console.log('')
-  console.log('This hides no live data: the job stays in the kept collection with every record above.')
+  console.log(`Records above link to the job by its id, which the ${copies.keep} copy keeps. Not removed: Storage files under organizations/${orgId}/healthSafety/${copies.kept.id}/ (shared by both copies).`)
 
   if (!apply) {
     console.log(removal.refusal)
@@ -224,7 +236,8 @@ async function main() {
     process.exit(1)
   }
   console.log(`Deleted ${removal.deletePaths.length} document(s). The ${copies.keep} copy ${copies.keep}/${copies.kept.id} was not touched.`)
-  console.log(`Undo: node scripts/data-cleanup.mjs --project ${projectId} --restore ${path.dirname(dir)} --apply`)
+  console.log('Undo: copy the whole next line. Run it as it is (it only lists what it would restore), then again with --apply on the end.')
+  console.log(`node scripts/data-cleanup.mjs --project ${projectId} --restore "${path.dirname(dir)}"`)
 }
 
 main().catch((error) => {

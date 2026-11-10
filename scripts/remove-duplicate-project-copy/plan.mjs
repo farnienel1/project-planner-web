@@ -23,6 +23,7 @@ export const RULEBOOK_FUNCTIONS = [
   'healthSafetyDocumentIds',
   'isLegacyPlaceholderDocumentId',
   'documentInstantMs',
+  'jobManagerIds',
 ]
 
 /** Booking collections: a booking that names the removed copy's collection in `jobCollection` blocks `--apply`. */
@@ -40,7 +41,8 @@ export const RECORD_COLLECTIONS = {
 
 export const PICKS_COLLECTION = 'worksListPicks'
 
-/** Every collection the script reads for references (besides the two job collections and `settings`). */
+/** Every collection the script reads whole for references (besides the two job collections, `settings` and the
+ * `notifications` read by `relatedId`). */
 export const REFERENCE_COLLECTIONS = [...BOOKING_COLLECTIONS, ...Object.keys(RECORD_COLLECTIONS), PICKS_COLLECTION]
 
 const text = (value) => (value === null || value === undefined ? '' : String(value).trim())
@@ -57,15 +59,119 @@ export function keepAndRemove(keep) {
  * upper-cased key and the stored-case id older web builds wrote) and deadlines (`deadlinesDocumentId`) for both
  * kinds, the variation settings log `variations_{jobId}`, and `deadlineAssignments` (its `projects.{KEY}` map entry).
  */
-export function settingsDocumentIds(rulebook, jobId) {
+export function settingsDocumentIds(rulebook, jobIds) {
   const ids = []
-  for (const isSmallWorks of [false, true]) {
-    ids.push(...Array.from(rulebook.healthSafetyDocumentIds(jobId, isSmallWorks), String))
-    ids.push(String(rulebook.deadlinesDocumentId(jobId, isSmallWorks)))
+  const spellings = [...new Set((Array.isArray(jobIds) ? jobIds : [jobIds]).map(text).filter(Boolean))]
+  for (const jobId of spellings) {
+    for (const isSmallWorks of [false, true]) {
+      ids.push(...Array.from(rulebook.healthSafetyDocumentIds(jobId, isSmallWorks), String))
+      ids.push(String(rulebook.deadlinesDocumentId(jobId, isSmallWorks)))
+    }
+    ids.push(`variations_${jobId}`)
   }
-  ids.push(`variations_${text(jobId)}`)
   ids.push('deadlineAssignments')
   return [...new Set(ids)]
+}
+
+/** Every spelling of the job id the two copies carry (stored case, upper, lower), for id-keyed reads. */
+export function jobIdSpellings(...ids) {
+  const out = new Set()
+  for (const id of ids.map(text).filter(Boolean)) {
+    out.add(id)
+    out.add(id.toUpperCase())
+    out.add(id.toLowerCase())
+  }
+  return [...out]
+}
+
+/** Fields compared between the two copies in the dry run. */
+export const DIFF_FIELDS = [
+  'jobNumber',
+  'siteName',
+  'jobType',
+  'customJobType',
+  'isLive',
+  'managerIds',
+  'managerId',
+  'managerUserIds',
+  'assignedManagerUserIds',
+  'hiddenOperativeUserIds',
+  'client',
+  'clientId',
+  'clientName',
+  'addressLine1',
+  'addressLine2',
+  'townCity',
+  'postcode',
+  'siteAddress',
+  'latitude',
+  'longitude',
+  'startDate',
+  'endDate',
+  'startDayKey',
+  'endDayKey',
+  'createdAt',
+  'updatedAt',
+  'updatedFrom',
+]
+
+const DATE_FIELDS = new Set(['startDate', 'endDate', 'createdAt', 'updatedAt'])
+
+/** A stored value as comparable, readable text (dates as ISO instants through `documentInstantMs`). */
+export function fieldText(rulebook, field, value) {
+  if (value === undefined) return '(missing)'
+  if (value === null) return 'null'
+  if (DATE_FIELDS.has(field)) {
+    // A Date or Timestamp from this realm is read here: the packed rulebook runs in its own vm context.
+    const ms =
+      typeof value?.getTime === 'function' ? value.getTime() : typeof value?.toMillis === 'function' ? value.toMillis() : rulebook.documentInstantMs(value)
+    if (typeof ms === 'number' && Number.isFinite(ms)) return new Date(ms).toISOString()
+  }
+  if (typeof value === 'object') {
+    const plain = (v) =>
+      v && typeof v === 'object'
+        ? Array.isArray(v)
+          ? v.map(plain)
+          : Object.fromEntries(Object.keys(v).sort().map((k) => [k, plain(v[k])]))
+        : v
+    return JSON.stringify(plain(value))
+  }
+  return JSON.stringify(value)
+}
+
+/**
+ * The two copies side by side: `{ rows: [{ field, kept, removed, same }], managersOnlyOnRemoved }`.
+ * `managersOnlyOnRemoved` are `jobManagerIds` of the removed copy that the kept copy does not list (ids without
+ * case). The security rules' job-manager test (`callerManagesJobAt`) reads either copy, so such a manager would lose
+ * booking access when the removed copy goes.
+ */
+export function copyDiff(rulebook, kept, removed) {
+  const k = kept?.data && typeof kept.data === 'object' ? kept.data : {}
+  const r = removed?.data && typeof removed.data === 'object' ? removed.data : {}
+  const rows = DIFF_FIELDS.map((field) => {
+    const keptText = fieldText(rulebook, field, k[field])
+    const removedText = fieldText(rulebook, field, r[field])
+    return { field, kept: keptText, removed: removedText, same: keptText === removedText }
+  })
+  const keptManagers = new Set(Array.from(rulebook.jobManagerIds(k) || [], (id) => rulebook.normalizeDocumentId(id)))
+  const managersOnlyOnRemoved = Array.from(rulebook.jobManagerIds(r) || [], String).filter((id) => !keptManagers.has(rulebook.normalizeDocumentId(id)))
+  return { rows, managersOnlyOnRemoved }
+}
+
+/**
+ * What is stored under the removed copy: `[{ path, fields: [{ name, rows }] }]`, `rows` the length of an array field
+ * (else null). A document with any field is a blocker for `--apply` (the owner decides).
+ */
+export function describeDescendants(subcollectionDocs) {
+  return (Array.isArray(subcollectionDocs) ? subcollectionDocs : []).map((doc) => {
+    const data = doc?.data && typeof doc.data === 'object' ? doc.data : {}
+    return {
+      path: String(doc.path),
+      fields: Object.keys(data)
+        .sort()
+        .map((name) => ({ name, rows: Array.isArray(data[name]) ? data[name].length : null })),
+    }
+  })
 }
 
 /** Which job collection a settings document id belongs to (`projects`, `smallWorks`) or null. */
@@ -162,8 +268,11 @@ export function planReferences(rulebook, { jobId, removedCollection, refs }) {
     for (const doc of Array.isArray(refs?.[collection]) ? refs[collection] : []) {
       const data = doc?.data && typeof doc.data === 'object' ? doc.data : {}
       const jobOf = rulebook.bookingJobId({ collection, ...data })
-      if (!matchesJob(jobOf)) continue
-      const row = { id: text(doc.id), jobId: text(jobOf), jobCollection: text(data.jobCollection), label: collectionLabel(data) }
+      // Older labour bookings stored the job under `projectID`; the security rules read it too.
+      const legacy = collection === 'bookings' && !matchesJob(jobOf) && matchesJob(data.projectID)
+      if (!matchesJob(jobOf) && !legacy) continue
+      const label = legacy ? `${collectionLabel(data)} (job in projectID)` : collectionLabel(data)
+      const row = { id: text(doc.id), jobId: text(legacy ? data.projectID : jobOf), jobCollection: text(data.jobCollection), label }
       rows.push(row)
       if (row.jobCollection === removedCollection) {
         blockers.push(`${collection}/${row.id} carries jobCollection "${removedCollection}" (the copy being removed).`)
@@ -183,6 +292,13 @@ export function planReferences(rulebook, { jobId, removedCollection, refs }) {
     }
     collections[collection] = summarise(rows)
   }
+
+  const notifications = []
+  for (const doc of Array.isArray(refs?.notifications) ? refs.notifications : []) {
+    const data = doc?.data && typeof doc.data === 'object' ? doc.data : {}
+    if (matchesJob(data.relatedId)) notifications.push({ id: text(doc.id), type: text(data.type) || '(none)' })
+  }
+  collections.notifications = summarise(notifications.map((row) => ({ ...row, label: `type=${row.type}` })))
 
   const picks = []
   for (const doc of Array.isArray(refs?.[PICKS_COLLECTION]) ? refs[PICKS_COLLECTION] : []) {
@@ -217,28 +333,39 @@ export function planReferences(rulebook, { jobId, removedCollection, refs }) {
 }
 
 /**
- * The full decision. `copies` from `locateCopies`; `references` from `planReferences`; `subcollectionDocs` the
- * removed copy's subcollection documents (`[{ path }]`). `apply` / `forceRefs` are the CLI flags.
- * Returns `{ canApply, refusal, deletePaths }`: the paths to delete, deepest first, the removed copy last.
+ * The full decision. `copies` from `locateCopies`; `references` from `planReferences`; `diff` from `copyDiff`;
+ * `subcollectionDocs` the removed copy's descendant documents (`[{ path, data }]`). `apply` / `forceRefs` are the CLI
+ * flags. Blockers (each overridable only with `--force-refs`): the reference blockers, any descendant document that
+ * holds fields, and any manager id only the removed copy lists. Returns
+ * `{ canApply, refusal, blockers, descendants, deletePaths }`: the paths to delete, deepest first, the copy last.
  */
-export function planRemoval({ copies, references, removedPath, subcollectionDocs = [], apply = false, forceRefs = false }) {
-  if (!copies || copies.state !== 'ready') return { canApply: false, refusal: copies?.message || 'Not ready.', deletePaths: [] }
+export function planRemoval({ copies, references, diff, removedPath, subcollectionDocs = [], apply = false, forceRefs = false }) {
+  if (!copies || copies.state !== 'ready') return { canApply: false, refusal: copies?.message || 'Not ready.', blockers: [], descendants: [], deletePaths: [] }
   const depth = (p) => String(p).split('/').length
   const deletePaths = [...new Set(subcollectionDocs.map((doc) => String(doc.path)))].sort((a, b) => depth(b) - depth(a) || a.localeCompare(b))
   deletePaths.push(removedPath)
-  const blockers = references?.blockers || []
+  const descendants = describeDescendants(subcollectionDocs)
+  const blockers = [...(references?.blockers || [])]
+  for (const doc of descendants) {
+    if (doc.fields.length > 0) blockers.push(`${doc.path} holds data (${doc.fields.map((f) => f.name).join(', ')}) and would be deleted with the ${copies.remove} copy.`)
+  }
+  for (const id of diff?.managersOnlyOnRemoved || []) {
+    blockers.push(`Manager id ${id} is on the ${copies.remove} copy but not on the ${copies.keep} copy: they could lose access to this job's bookings.`)
+  }
   if (blockers.length > 0 && !forceRefs) {
     return {
       canApply: false,
-      refusal: `${blockers.length} record(s) still name the ${copies.remove} copy. --apply is refused; the owner decides (re-run with --force-refs to delete anyway — those records are never rewritten).`,
+      refusal: `${blockers.length} blocker(s) listed above. --apply is refused; the owner decides (re-run with --force-refs to delete anyway — no other record is ever rewritten).`,
+      blockers,
+      descendants,
       deletePaths,
     }
   }
-  return { canApply: Boolean(apply), refusal: apply ? '' : 'Dry run: nothing was written. Re-run with --apply to delete.', deletePaths }
+  return { canApply: Boolean(apply), refusal: apply ? '' : 'Dry run: nothing was written. Re-run with --apply to delete.', blockers, descendants, deletePaths }
 }
 
 /** Readable report. */
-export function formatPlan({ orgId, jobId, copies, references, removal, row }) {
+export function formatPlan({ orgId, jobId, copies, references, diff, removal, row }) {
   const out = []
   out.push(`Organisation ${orgId} — job ${jobId}`)
   if (copies.state !== 'ready') {
@@ -247,6 +374,16 @@ export function formatPlan({ orgId, jobId, copies, references, removal, row }) {
   }
   out.push(`  Keep:   ${copies.keep}/${copies.kept.id}  ${row(copies.kept)}`)
   out.push(`  Remove: ${copies.remove}/${copies.removed.id}  ${row(copies.removed)}`)
+  if (diff) {
+    const changed = diff.rows.filter((r) => !r.same)
+    out.push(`  Field differences between the copies (${changed.length} of ${diff.rows.length} compared):`)
+    if (changed.length === 0) out.push('    (none)')
+    for (const r of changed) {
+      out.push(`    ${r.field}:`)
+      out.push(`      keep   ${r.kept}`)
+      out.push(`      remove ${r.removed}`)
+    }
+  }
   out.push('  References to this job id (compared without case):')
   for (const [collection, summary] of Object.entries(references.collections)) {
     const labels = Object.entries(summary.labels).map(([label, n]) => `${label}: ${n}`).join('; ')
@@ -259,11 +396,18 @@ export function formatPlan({ orgId, jobId, copies, references, removal, row }) {
   )
   out.push(`    ${PICKS_COLLECTION.padEnd(22)} ${String(references.picks.length).padStart(4)}`)
   for (const p of references.picks) out.push(`      ${PICKS_COLLECTION}/${p.uid} — in its ${p.list} list`)
+  out.push(`  Stored under the ${copies.remove} copy (subcollection documents): ${removal.descendants.length}`)
+  for (const d of removal.descendants) {
+    const fields = d.fields.map((f) => (f.rows === null ? f.name : `${f.name} [${f.rows} row(s)]`)).join(', ')
+    out.push(`    ${d.path} — ${fields || '(no fields)'}`)
+  }
   out.push(`  Will delete ${removal.deletePaths.length} document(s) (the ${copies.remove} copy and its subcollections):`)
   for (const p of removal.deletePaths) out.push(`    ${p}`)
-  if (references.blockers.length) {
+  if (removal.blockers.length) {
     out.push('  Blocking --apply:')
-    for (const b of references.blockers) out.push(`    - ${b}`)
+    for (const b of removal.blockers) out.push(`    - ${b}`)
+  } else {
+    out.push('  Blocking --apply: none — no booking or settings document names the removed copy, nothing is stored under it, and every manager on it is on the kept copy.')
   }
   out.push(`  The ${copies.keep} copy is never touched. No record above is rewritten.`)
   return out.join('\n')

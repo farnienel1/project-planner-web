@@ -19,23 +19,36 @@ and on the iPhone. The script deletes the old `projects` copy and keeps the live
 
 1. It refuses unless the job is really in **both** lists of that company. If only the kept copy is left (for
    example on a second run) it says "Nothing to do" and stops.
-2. It lists everything that still points at the job: labour, manager and subcontractor bookings (with the list name
-   each booking carries, `jobCollection`), materials, material send records, tasks, site audits, variations, variation
-   trackers, the health & safety and deadline settings for the job, deadline assignments, and anyone's My Projects / My
-   Small works picks.
-3. It **refuses to delete** while any booking says `jobCollection: projects` for this job, or a
-   `settings/healthSafety_projects_…` / `settings/deadlines_projects_…` document for it holds data. Those records
-   are never changed by this script: send the output to Claude and decide together. (`--force-refs` deletes anyway,
-   still without changing those records — only use it if Claude tells you to.)
-4. With `--apply` it first saves a **backup** of the copy it removes (and everything stored under it) to a file on
+2. It prints the **differences between the two copies** (job number, site name, type, live flag, managers,
+   hidden operatives, client, address, map pin, dates, who saved it last).
+3. It lists everything that still points at the job: labour, manager and subcontractor bookings (with the list name
+   each booking carries, `jobCollection`, and older labour bookings that store the job under `projectID`),
+   materials, material send records, tasks, site audits, variations, variation trackers, notifications about the
+   job, the health & safety and deadline settings for the job (under both spellings of the id), deadline assignments,
+   and anyone's My Projects / My Small works picks.
+4. It lists every document **stored under** the copy it would remove (for example `…/projects/{id}/healthSafety/data`),
+   with its field names and how many rows each list holds.
+5. It **refuses to delete** while any of these is true:
+   - a booking says `jobCollection: projects` for this job;
+   - a `settings/healthSafety_projects_…` / `settings/deadlines_projects_…` document for it holds data;
+   - a document stored under the `projects` copy holds data (it would be deleted with the copy);
+   - the `projects` copy lists a manager the `smallWorks` copy does not (the security rules accept a manager listed on
+     either copy, so that person could lose access to the job's bookings).
+   Nothing is changed by this script except the delete: send the output to Claude and decide together.
+   (`--force-refs` deletes anyway, still without changing any other record — only use it if Claude tells you to.)
+6. With `--apply` it first saves a **backup** of the copy it removes (and everything stored under it) to a file on
    your Mac and prints where, then deletes that copy and everything under it, in one go. If someone changed that copy
    in the meantime, the delete is refused and nothing is deleted.
-5. It **never touches the kept `smallWorks` copy**, and it writes nothing else.
+7. It **never touches the kept `smallWorks` copy**, and it writes nothing else.
+8. It does **not** remove files in Storage: uploads under `organizations/{company}/healthSafety/{job id}/` are shared
+   by both copies and stay.
 
-**No live data is hidden** (platform guardrail 3): the job, its bookings, tasks, materials and everything else stay
-under Small works, because they are linked by the job id, which is the same for both copies. What changes: the job
-no longer shows under Projects, and if someone had ticked it in their **My Projects** list it stops showing there (it
-still shows under Small works; they can tick it in **My Small works**). The script prints those people under
+**What you can see before deleting** (platform guardrail 3): the bookings, tasks, materials and other records listed
+in the dry run are linked to the job by its id, which the `smallWorks` copy keeps, so they stay with the job under
+Small works. The dry run shows anything that is only on the `projects` copy — differing fields, documents stored
+under it, managers only it lists — and the script refuses to delete while any of those exist. What changes when it
+is deleted: the job no longer shows under Projects, and anyone who had ticked it in **My Projects** stops seeing it
+there (it still shows under Small works; they can tick it in **My Small works**). The dry run lists those people under
 `worksListPicks`.
 
 ## Before you start (once)
@@ -86,9 +99,12 @@ steps 4 and 6 are already done — running them again does no harm.
    **What you will see:**
    - `DRY RUN (nothing is written) — project project-planner-f986c`;
    - `Keep:   smallWorks/94472FA5-…` and `Remove: projects/94472FA5-…`, each with its job number, site name and dates;
+   - `Field differences between the copies (N of 27 compared):` and, for each field that differs, the `keep` and
+     `remove` values;
    - a list of references with a count each, for example `bookings   12   (jobCollection=smallWorks: 12)`;
+   - `Stored under the projects copy (subcollection documents): N` and each one with its fields;
    - `Will delete N document(s)` and the paths it would delete (all under `…/projects/94472FA5-…`);
-   - if anything blocks it, a `Blocking --apply:` list;
+   - `Blocking --apply:` followed by `none — …` or a list of what blocks it;
    - the last line: `Dry run: nothing was written. Re-run with --apply to delete.` or, when blocked,
      `… --apply is refused; the owner decides …`.
 
@@ -102,22 +118,26 @@ steps 4 and 6 are already done — running them again does no harm.
    node scripts/remove-duplicate-project-copy.mjs --project project-planner-f986c --org 2C67391E-D1FE-4F9F-8055-7149ACDE1F96 --job 94472FA5-B93D-4EC5-B60E-F798AD5E490C --apply
    ```
    **You should see** the same list, then `Backup written: …/cleanup-backups/<date-time>/…/001-duplicate-job-copy.json`,
-   then `Deleted N document(s). The smallWorks copy … was not touched.` and an `Undo:` command. Keep the backup file on
-   your Mac (it is company data: never commit or share it).
+   then `Deleted N document(s). The smallWorks copy … was not touched.` then `Undo: copy the whole next line. …` and,
+   under it, a line starting `node scripts/data-cleanup.mjs --project project-planner-f986c --restore "/…"`. **Copy that
+   whole `node …` line into a note** (it holds the exact backup folder on your Mac). Keep the backup file on your Mac (it is company data:
+   never commit or share it).
 
    If you see `REFUSED: …` nothing was deleted: send the message to Claude.
 
 10. Check: run the step 7 command again. **You should see** `The job is only in smallWorks (…). Nothing to do.` Then
     open Small works in the app: C716 Ludgate Hill is there; it is no longer under Projects.
 
+11. If the job ever shows under Projects again later (an old iPhone build could save the `projects` copy back), do
+    not run the script again on your own: tell Claude.
+
 ## Undo (only if Claude asks)
 
-The `Undo:` line printed in step 9 puts the deleted copy back exactly as it was. Run it first without `--apply` (it
-only lists what it would restore), then with `--apply`:
-
-```bash
-node scripts/data-cleanup.mjs --project project-planner-f986c --restore cleanup-backups/<the folder printed in step 9>
-```
+1. Paste the whole `node scripts/data-cleanup.mjs … --restore "/…"` line you saved in step 9, exactly as printed,
+   and press Return. **You should see**
+   `Restore — DRY RUN (nothing is written): N document(s) …` and the paths it would put back. Nothing is written yet.
+2. Paste the same line again, add ` --apply` at the end, and press Return. **You should see** `Restored N
+   document(s).` The `projects` copy is back exactly as it was.
 
 ## Options
 
@@ -127,6 +147,6 @@ node scripts/data-cleanup.mjs --project project-planner-f986c --restore cleanup-
 For developers: the decisions are in `scripts/remove-duplicate-project-copy/plan.mjs` (pure, tested by
 `node --test scripts/remove-duplicate-project-copy/plan.test.mjs`). It reads the packed rulebook only
 (`jobIdsInBothCollections`, `normalizeDocumentId`, `bookingJobId`, `deadlineProjectKey`, `deadlinesDocumentId`,
-`healthSafetyDocumentIds`, `isLegacyPlaceholderDocumentId`, `documentInstantMs`) and adds no shared rule. The only
+`healthSafetyDocumentIds`, `isLegacyPlaceholderDocumentId`, `documentInstantMs`, `jobManagerIds`) and adds no shared rule. The only
 write is one batch of deletes (subcollection documents first, the copy last, with its read `updateTime` as a
 precondition). The backup uses the `scripts/data-cleanup.mjs` format, so `--restore` reads it.
