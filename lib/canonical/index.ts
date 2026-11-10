@@ -1747,3 +1747,14 @@ export type {
   MyProfileSummaryManagerSiteBooking,
   MyProfileSummaryUser,
 } from './myProfileSummary'
+
+// Rulebook 1.36.0 §11 (owner decision 10 Nov): warn about a duplicate name when adding a user.
+export {
+  DUPLICATE_NAME_CANCEL_LABEL,
+  DUPLICATE_NAME_CONFIRM_LABEL,
+  DUPLICATE_NAME_WARNING_MESSAGE,
+  DUPLICATE_NAME_WARNING_TITLE,
+  normalizePersonNamePart,
+  usersWithSameName,
+} from './duplicateUserNames'
+export type { SameNamePerson, SameNameRosterRow } from './duplicateUserNames'

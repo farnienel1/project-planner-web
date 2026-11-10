@@ -30,7 +30,17 @@ import {
   ghostAddFormRows,
   ghostToggleVisible,
   type GhostAddFormField,
+  DUPLICATE_NAME_CANCEL_LABEL,
+  DUPLICATE_NAME_CONFIRM_LABEL,
+  DUPLICATE_NAME_WARNING_MESSAGE,
+  DUPLICATE_NAME_WARNING_TITLE,
+  GHOST_BADGE_LABEL,
+  ghostCreateError,
+  usersWithSameName,
+  type SameNamePerson,
 } from '@/lib/canonical'
+import { Modal } from '@/components/ui/overlays'
+import { Button } from '@/components/ui/Button'
 import { useUserStore } from '@/lib/stores/userStore'
 import { dayKeyInZone } from '@/lib/orgTime/zoneTime'
 import { DEFAULT_ANNUAL_LEAVE } from '@/lib/settings/organizationSettings'
@@ -167,7 +177,7 @@ export function AddUserScreen() {
   const canEnterTaxIds = Boolean(
     user && canViewSensitiveProfile({ viewerRole: staffAccountRole(user), viewerUserId: user.id, subjectUserId: '' })
   )
-  const { users, loadUsers } = useOrgUserStore()
+  const { users, loadUsers, claimedEmails } = useOrgUserStore()
   const { inviteUser } = useInviteStore()
   const createGhost = useUserStore((state) => state.createGhost)
   // Rulebook 1.34.0 §11: the Ghost account toggle (`canCreateGhost`, `ghostAddFormRows`) sits at the very top. It is
@@ -231,6 +241,9 @@ export function AddUserScreen() {
   const [error, setError] = useState<string | null>(null)
   const [rateError, setRateError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+  // Rulebook 1.36.0 §11 (owner decision 10 Nov): people with the same first and last name (`usersWithSameName`).
+  // A warning only — Add anyway saves as before, Cancel returns to the form.
+  const [duplicateMatches, setDuplicateMatches] = useState<SameNamePerson[] | null>(null)
 
   useEffect(() => {
     if (organization?.id) loadUsers(organization.id)
@@ -340,9 +353,20 @@ export function AddUserScreen() {
     operativeMode: invitePermissions.operativeMode === true,
   }).allowsNoLineManager
 
-  const handleSubmit = async (e?: FormEvent) => {
+  // Rulebook 1.36.0 `usersWithSameName`: true when the save must stop for the duplicate-name confirmation. Add anyway
+  // submits again with `nameConfirmed`, which goes straight through.
+  const stopForDuplicateName = (firstName: string, surname: string, nameConfirmed: boolean): boolean => {
+    if (nameConfirmed) return false
+    const matches = usersWithSameName(users as never, { firstName, lastName: surname }, { claimedEmails })
+    if (matches.length === 0) return false
+    setDuplicateMatches(matches)
+    return true
+  }
+
+  const handleSubmit = async (e?: FormEvent, options?: { nameConfirmed?: boolean }) => {
     e?.preventDefault()
     if (!organization?.id || !user) return
+    const nameConfirmed = options?.nameConfirmed === true
 
     const firstName = form.firstName.trim()
     const surname = form.surname.trim()
@@ -350,14 +374,7 @@ export function AddUserScreen() {
 
     if (ghostOn) {
       // Rulebook 1.34.0 `ghostCreateWrites` / `ghostCreateError`: names, rate above 0, line manager; trade optional.
-      setSaving(true)
-      setError(null)
-      try {
-        await createGhost({
-          organizationId: organization.id,
-          actor: user,
-          roster: users,
-          draft: {
+      const ghostDraft = {
             firstName,
             surname,
             ...payChoiceToRates(form.payBasis, form.rateAmount),
@@ -374,7 +391,22 @@ export function AddUserScreen() {
               endMonth: annualLeaveDefaults.endMonth,
               carriesOver: annualLeaveDefaults.carriesOver,
             },
-          },
+      }
+      // The form's own refusal first (the store checks it again), then the duplicate-name warning.
+      const ghostRefusal = ghostCreateError(ghostDraft, { roster: rulebookRoster(users) as never })
+      if (ghostRefusal) {
+        setError(ghostRefusal)
+        return
+      }
+      if (stopForDuplicateName(firstName, surname, nameConfirmed)) return
+      setSaving(true)
+      setError(null)
+      try {
+        await createGhost({
+          organizationId: organization.id,
+          actor: user,
+          roster: users,
+          draft: ghostDraft,
         })
         setSuccess(`${firstName} ${surname} was added. They have no app login and can be booked straight away.`)
         setSaved(true)
@@ -440,6 +472,7 @@ export function AddUserScreen() {
       setError(payMessage)
       return
     }
+    if (stopForDuplicateName(firstName, surname, nameConfirmed)) return
 
     setSaving(true)
     setError(null)
@@ -918,6 +951,46 @@ export function AddUserScreen() {
           ) : null}
         </>
       )}
+
+      <Modal
+        open={duplicateMatches !== null}
+        title={DUPLICATE_NAME_WARNING_TITLE}
+        hue="user"
+        onClose={() => setDuplicateMatches(null)}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setDuplicateMatches(null)}>
+              {DUPLICATE_NAME_CANCEL_LABEL}
+            </Button>
+            <Button
+              variant="primary"
+              onClick={() => {
+                setDuplicateMatches(null)
+                void handleSubmit(undefined, { nameConfirmed: true })
+              }}
+            >
+              {DUPLICATE_NAME_CONFIRM_LABEL}
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-slate-700">{DUPLICATE_NAME_WARNING_MESSAGE}</p>
+        <ul className="mt-3 space-y-2 pb-2">
+          {(duplicateMatches ?? []).map((person) => (
+            <li key={person.id} className="flex flex-wrap items-center gap-2 rounded-xl border border-[var(--line)] px-3 py-2 text-sm">
+              <span className="font-semibold text-slate-900">{person.displayName}</span>
+              {person.email ? (
+                <span className="text-slate-500">{person.email}</span>
+              ) : (
+                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">{GHOST_BADGE_LABEL}</span>
+              )}
+              {person.segment !== 'active' ? (
+                <span className="text-xs text-slate-500">{person.segment === 'inactive' ? 'Inactive' : 'Pending'}</span>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      </Modal>
 
       <div className="space-y-3 pt-2">
         {/* Repeat the refusal next to the button, so the reason is visible where the person pressed Save. */}
