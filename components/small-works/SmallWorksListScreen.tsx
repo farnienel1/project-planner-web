@@ -207,6 +207,15 @@ export function SmallWorksListScreen() {
             </div>
           ) : null}
 
+          {mine.saveNotice ? (
+            <p
+              role="status"
+              className={`text-sm ${mine.saveNotice.status === 'refused' ? 'text-[var(--red)]' : 'text-[var(--ink3)]'}`}
+            >
+              {mine.saveNotice.message}
+            </p>
+          ) : null}
+
           <SearchField value={search} onChange={setSearch} placeholder="Search small works…" />
 
           {emptySearch ? (
@@ -264,8 +273,8 @@ export function SmallWorksListScreen() {
           todayKey={todayKey}
           timeZone={timeZone}
           onCancel={() => setPickerOpen(false)}
-          onSave={async (ids) => {
-            await mine.save(ids)
+          onSave={(ids) => {
+            mine.save(ids)
             setPickerOpen(false)
           }}
         />

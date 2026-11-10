@@ -7,6 +7,8 @@
  * Owner request 10 Nov: All / Active / Upcoming / Completed chips narrow the rows while ticking (`worksInTab`,
  * `worksTabCounts` on the organisation day, `lib/projects/myWorksPickerFilter.ts`); ticks survive a chip change and Save
  * writes the whole list.
+ * Save hands the list to Firestore and closes at once; Cancel is never locked (iOS PR #210). The list screen shows a
+ * small notice when the server has not confirmed within 15 s or refused it (`useMyWorksList().saveNotice`).
  */
 import { useMemo, useState } from 'react'
 import { CheckCircleIcon } from '@heroicons/react/24/solid'
@@ -35,13 +37,12 @@ export function MyWorksPicker({
   todayKey: string
   timeZone: string
   onCancel: () => void
-  onSave: (ids: string[]) => Promise<void>
+  /** Hands the list to the save and closes; never awaited (the list screen shows a pending / refused notice). */
+  onSave: (ids: string[]) => void
 }) {
   const [ids, setIds] = useState<string[]>(() => rows.filter((row) => row.picked).map((row) => row.job.id))
   const [search, setSearch] = useState('')
   const [tab, setTab] = useState<WorksTab>(MY_WORKS_PICKER_DEFAULT_TAB)
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
   const picked = useMemo(() => new Set(ids.map((id) => id.toLowerCase())), [ids])
   const jobs = useMemo(() => rows.map((row) => row.job), [rows])
   const counts = useMemo(() => myWorksPickerCounts(jobs, todayKey, timeZone), [jobs, todayKey, timeZone])
@@ -51,28 +52,17 @@ export function MyWorksPicker({
   )
   const noun = kind === 'smallWorks' ? 'small works' : 'projects'
 
-  const save = async () => {
-    setSaving(true)
-    setError(null)
-    try {
-      await onSave(ids)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not save your list.')
-      setSaving(false)
-    }
-  }
-
   return (
     <IosFormModal
       title={myWorksTabLabel(kind)}
       onCancel={onCancel}
       footer={
         <>
-          <button type="button" className="btn ghost" onClick={onCancel} disabled={saving}>
+          <button type="button" className="btn ghost" onClick={onCancel}>
             Cancel
           </button>
-          <button type="button" className="btn primary" onClick={() => void save()} disabled={saving}>
-            {saving ? 'Saving…' : 'Save'}
+          <button type="button" className="btn primary" onClick={() => onSave(ids)}>
+            Save
           </button>
         </>
       }
@@ -89,7 +79,6 @@ export function MyWorksPicker({
         ))}
       </div>
       <SearchField value={search} onChange={setSearch} placeholder={`Search ${noun}…`} />
-      {error ? <p className="mt-3 text-sm text-[var(--red)]">{error}</p> : null}
       <ul className="mt-3 divide-y divide-[var(--line)]">
         {shown.map((job) => {
           const on = picked.has(job.id.toLowerCase())
