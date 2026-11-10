@@ -12,12 +12,24 @@ import { findUserByAnyId, rosterDisplayName } from '@/lib/staff/userRosterUtils'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { weekDaysFrom } from '@/lib/scheduling/scheduleUtils'
 import {
+  bookingPayrollHours,
   bookingTimesText,
   customHoursRangeLabel,
   formatHoursLabel,
   hoursBreakdown,
   type BookingHoursInput,
 } from '@/lib/scheduling/paidHours'
+import {
+  jobScheduleLeaveMarks,
+  JOB_SCHEDULE_LEGEND,
+  scheduleCellHours,
+  scheduleCellKind,
+  type JobScheduleLeaveMark,
+  type ScheduleCellKind,
+} from '@/lib/canonical'
+import { bookingOnScheduleDay, scheduleColumnDate, scheduleWeekDayKeys } from '@/lib/scheduling/scheduleWeekDays'
+import { useHolidayStore } from '@/lib/stores/holidayStore'
+import { useOrgBankHolidays } from '@/components/annual-leave/useOrgBankHolidays'
 import { BookingEditSheet } from '@/components/schedule/BookingEditSheet'
 import { QuickAddBookingSheet, type QuickAddBookingValues } from '@/components/schedule/QuickAddBookingSheet'
 import { useLeaveConflictCheck, type LeaveCheckPerson } from '@/components/scheduling/useLeaveConflictCheck'
@@ -33,9 +45,8 @@ import { watchSubcontractorBookings } from '@/lib/weekly-report/loadSubcontracto
 import { managerSiteBookingToScheduleBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import type { Booking, Project } from '@/types'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
-import { coversCalendarDay } from '@/lib/ios-parity/londonTime'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
-import { bookingDayKey, policyForBookingDate } from '@/lib/scheduling/bookingSlotRules'
+import { bookingDayKey, policyForBookingDayKey } from '@/lib/scheduling/bookingSlotRules'
 import { DEFAULT_PAYROLL_POLICY, loadOrganizationDetails, type OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import {
   findSubcontractorFirm,
@@ -91,6 +102,11 @@ type DayRow = {
   roleLabel: string
   roleTone: 'operative' | 'manager' | 'subcontractor'
   quickAdd: QuickAddTarget | null
+  /** Every id this row's bookings are filed under (for the leave marks, `jobScheduleLeaveMarks`). */
+  personIds: string[]
+  email: string | null
+  /** Rulebook 1.37.0: the tile's colour (display only, from the pay rule's result). */
+  cell: ScheduleCellKind
   booking?: Booking
   managerBooking?: ManagerSiteBooking
   subBooking?: SubBooking
@@ -111,6 +127,8 @@ type PersonWeek = {
   peopleLabel?: string
   firmName?: string
   quickAdd: QuickAddTarget | null
+  personIds: string[]
+  email: string | null
   cells: DayRow[][]
 }
 
@@ -132,8 +150,10 @@ function roleForUser(user: User | undefined): { label: string; tone: DayRow['rol
   return { label: 'Op', tone: 'operative' }
 }
 
-function bookingRowFromHours(input: BookingHoursInput): Pick<DayRow, 'hours' | 'overtimeEquation' | 'range' | 'slot'> {
+function bookingRowFromHours(input: BookingHoursInput): Pick<DayRow, 'hours' | 'overtimeEquation' | 'range' | 'slot' | 'cell'> {
   const breakdown = hoursBreakdown(input)
+  // Rulebook 1.37.0: the tile colour reads the same pay-rule result the hours come from (`payrollHoursResult`).
+  const cell = scheduleCellKind({ ...scheduleCellHours(bookingPayrollHours(input)), timeSlot: input.timeSlot })
   const range = customHoursRangeLabel(input)
   // Rulebook 1.20.2: "Custom 07:30–14:00" (`bookingTimesText`); hours are the pay rule's for the day (`totalPaidHours`).
   const slotStr = bookingTimesText(input)
@@ -142,6 +162,7 @@ function bookingRowFromHours(input: BookingHoursInput): Pick<DayRow, 'hours' | '
     overtimeEquation: breakdown.overtimeLine || breakdown.overtimeEquation,
     range,
     slot: slotStr,
+    cell,
   }
 }
 
@@ -151,11 +172,17 @@ function toneClass(tone: DayRow['roleTone']) {
   return 'bg-emerald-100 text-emerald-700'
 }
 
-function cellFillClass(tone: DayRow['roleTone']) {
-  if (tone === 'subcontractor') return 'bg-violet-50 border-violet-200 hover:bg-violet-100'
-  if (tone === 'manager') return 'bg-blue-50 border-blue-200 hover:bg-blue-100'
-  return 'bg-emerald-50 border-emerald-200 hover:bg-emerald-100'
+/** Rulebook 1.37.0: the iOS Scheduling colours (`PPBookingColor`): standard blue, overtime amber stripes, leave brown. */
+const STD_BLUE = '#2457D6'
+const HALF_LIGHT = 'rgba(36, 87, 214, 0.35)'
+const OT_STRIPES = 'repeating-linear-gradient(135deg, #F4A640 0 4px, rgba(210, 118, 11, 0.55) 4px 6px)'
+const LEAVE_BROWN = '#9A5B27'
+const LEAVE_PENDING = 'rgba(154, 91, 39, 0.45)'
+
+function leaveColour(mark: JobScheduleLeaveMark): string {
+  return mark.pending ? LEAVE_PENDING : LEAVE_BROWN
 }
+
 
 export function ProjectScheduleWeekOverview({
   project,
@@ -195,6 +222,8 @@ export function ProjectScheduleWeekOverview({
     }).length > 0
   const { users, userIdAliases, loadUsers } = useOrgUserStore()
   const { subcontractors, loadSubcontractors } = useSubcontractorStore()
+  // Rulebook 1.37.0: annual leave on this job's week (live `holidayBookings` listener, rulebook §1).
+  const { bookings: holidays, loadBookings: loadHolidays } = useHolidayStore()
   // Rulebook §1 (1.36.0, FU-4): the organisation's current week and today, not the browser's.
   const [weekStart, setWeekStart] = useState(() => organizationCurrentWeekStart())
   // An earlier week reaches before the launch booking download.
@@ -221,12 +250,13 @@ export function ProjectScheduleWeekOverview({
     loadOperatives(organizationId)
     loadUsers(organizationId)
     loadSubcontractors(organizationId)
+    loadHolidays(organizationId)
     loadOrganizationDetails(organizationId)
       .then((details) => {
         if (details?.payrollTimePolicy) setPayroll(details.payrollTimePolicy)
       })
       .catch(() => {})
-  }, [organizationId, loadBookings, loadManagerSiteBookings, loadOperatives, loadUsers, loadSubcontractors])
+  }, [organizationId, loadBookings, loadManagerSiteBookings, loadOperatives, loadUsers, loadSubcontractors, loadHolidays])
 
   // Rulebook 1.9.0 §1: subcontractor bookings are live while this grid is open.
   useEffect(() => {
@@ -268,6 +298,8 @@ export function ProjectScheduleWeekOverview({
   // The organisation's today, once per render (not once per header and grid cell).
   const todayDate = organizationTodayCalendarDate()
   const weekEnd = organizationCalendarWeekEnd(weekStart)
+  // A multi-day leave record skips the region's bank holidays (`leaveRecordDayKeys`), as the allowance does.
+  const bank = useOrgBankHolidays(weekStart, weekEnd)
   const projectBookings = useMemo(
     () => bookings.filter((b) => idsMatch(b.projectId, project.id)),
     [bookings, project.id]
@@ -292,10 +324,15 @@ export function ProjectScheduleWeekOverview({
     return map
   }, [users])
 
+  // Rulebook 1.37.0 (review #299, 2): one day key per column, the cell's calendar date; bookings (organisation-zone
+  // day of their stored instant) and leave marks are both bucketed by it.
+  const dayKeys = useMemo(() => scheduleWeekDayKeys(weekDays), [weekDays])
   const rowsByDay = useMemo(() => {
-    return weekDays.map((day) => {
+    const zone = organizationZoneOr()
+    return weekDays.map((_day, dayIndex) => {
+      const dayKey = dayKeys[dayIndex]
       const opRows: DayRow[] = projectBookings
-        .filter((b) => coversCalendarDay(new Date(b.date), day, organizationZoneOr()))
+        .filter((b) => bookingOnScheduleDay(b.date, dayKey, zone))
         .flatMap((b) => {
           const op = operatives.find((o) => idsMatch(o.id, b.operativeId))
           // The account decides the colour: an admin or manager with an operative profile stays blue.
@@ -316,18 +353,20 @@ export function ProjectScheduleWeekOverview({
             roleLabel: role.label,
             roleTone: role.tone,
             quickAdd: { kind: 'operative' as const, operativeId: b.operativeId },
+            personIds: [b.operativeId, op?.id, linkedUser?.id].filter((id): id is string => Boolean(id)),
+            email: email?.trim() || null,
             booking: b,
             ...bookingRowFromHours({
               ...b,
               // Rulebook 1.19.0: the working hours in effect on that day (history first), never today's.
-              policy: policyForBookingDate(day, payroll) ?? payroll,
-              dayKey: bookingDayKey(day),
+              policy: policyForBookingDayKey(dayKey, payroll) ?? payroll,
+              dayKey,
             }),
           }]
         })
 
       const managerRows: DayRow[] = projectManagerBookings
-        .filter((b) => coversCalendarDay(new Date(b.date), day, organizationZoneOr()))
+        .filter((b) => bookingOnScheduleDay(b.date, dayKey, zone))
         .flatMap((b) => {
           const manager = findUserByAnyId(users, b.userId, userIdAliases)
           const name = rosterDisplayName(manager)
@@ -347,18 +386,20 @@ export function ProjectScheduleWeekOverview({
             quickAdd: linkedOperative
               ? { kind: 'operative' as const, operativeId: linkedOperative.id }
               : { kind: 'manager' as const, userId: b.userId },
+            personIds: [b.userId, manager?.id, linkedOperative?.id].filter((id): id is string => Boolean(id)),
+            email: email?.trim() || null,
             managerBooking: b,
             ...bookingRowFromHours({
               ...b,
               // Rulebook 1.19.0: the working hours in effect on that day (history first), never today's.
-              policy: policyForBookingDate(day, payroll) ?? payroll,
-              dayKey: bookingDayKey(day),
+              policy: policyForBookingDayKey(dayKey, payroll) ?? payroll,
+              dayKey,
             }),
           }]
         })
 
       const subRows: DayRow[] = subBookings
-        .filter((b) => coversCalendarDay(new Date(b.date), day, organizationZoneOr()))
+        .filter((b) => bookingOnScheduleDay(b.date, dayKey, zone))
         .map((b) => {
           const sub = findSubcontractorFirm(subcontractors, b.subcontractorId)
           const people = resolveSubcontractorBookingPeople(b, sub)
@@ -374,12 +415,14 @@ export function ProjectScheduleWeekOverview({
             roleLabel: 'Sub',
             roleTone: 'subcontractor' as const,
             quickAdd: null,
+            personIds: [],
+            email: null,
             subBooking: b,
             ...bookingRowFromHours({
               ...b,
               // Rulebook 1.19.0: the working hours in effect on that day (history first), never today's.
-              policy: policyForBookingDate(day, payroll) ?? payroll,
-              dayKey: bookingDayKey(day),
+              policy: policyForBookingDayKey(dayKey, payroll) ?? payroll,
+              dayKey,
             }),
           }
         })
@@ -388,6 +431,7 @@ export function ProjectScheduleWeekOverview({
     })
   }, [
     weekDays,
+    dayKeys,
     projectBookings,
     projectManagerBookings,
     subBookings,
@@ -414,6 +458,8 @@ export function ProjectScheduleWeekOverview({
             peopleLabel: row.peopleLabel,
             firmName: row.firmName,
             quickAdd: row.quickAdd,
+            personIds: [],
+            email: null,
             cells: weekDays.map(() => []),
           }
           byKey.set(row.personKey, person)
@@ -429,11 +475,71 @@ export function ProjectScheduleWeekOverview({
           person.roleLabel = row.roleLabel
           person.roleTone = row.roleTone
         }
+        for (const id of row.personIds) if (!person.personIds.includes(id)) person.personIds.push(id)
+        if (!person.email && row.email) person.email = row.email
         person.cells[dayIndex].push(row)
       }
     })
     return order.map((key) => byKey.get(key)!).sort((a, b) => a.name.localeCompare(b.name))
   }, [rowsByDay, weekDays])
+
+  // Rulebook 1.37.0 (`jobScheduleLeaveMarks`): leave marks for the people already on this job's week only — leave
+  // never adds a row. Matched under every id the person goes by, without case; organisation-zone days; per day under
+  // the working hours in effect that day (for the half-day clock in the tooltip).
+  const leaveByPerson = useMemo(() => {
+    // The roster fold's aliases (`userIdAliases`: alias id → the person's users id) are their same-email ids.
+    const aliasesOf = new Map<string, string[]>()
+    for (const [alias, owner] of Object.entries(userIdAliases ?? {})) {
+      aliasesOf.set(owner, [...(aliasesOf.get(owner) ?? []), alias])
+    }
+    const roster = [
+      ...users.map((u) => ({
+        id: u.id,
+        email: u.email ?? null,
+        formerUserIds: u.formerUserIds ?? [],
+        sameEmailUserIds: aliasesOf.get(u.id) ?? [],
+      })),
+      ...operatives.map((o) => ({ id: o.id, email: o.email ?? null })),
+    ]
+    const leavePeople = people
+      .filter((p) => p.roleTone !== 'subcontractor' && p.personIds.length > 0)
+      .map((p) => ({ key: p.key, ids: p.personIds, email: p.email }))
+    // Review #299 (5): no marks until the region's bank holidays have loaded — a multi-day record would otherwise
+    // mark a bank holiday (or the wrong region's) as leave for a moment.
+    if (!bank.loaded) return new Map<string, Array<JobScheduleLeaveMark | null>>()
+    const nonWorkingDayKeys = bank.holidays.map((h) => h.date)
+    // The store reads every record through `parseHolidayDocument` (organisation-zone day keys); older cached rows
+    // without them fall back to their dates in the organisation zone.
+    const leaveRecords = holidays.map((h) => ({
+      id: h.id,
+      userId: h.userId ?? null,
+      operativeId: h.operativeId ?? null,
+      startDayKey: h.startDayKey ?? bookingDayKey(h.startDate),
+      endDayKey: h.endDayKey ?? bookingDayKey(h.endDate),
+      timeSlot: h.timeSlot,
+      status: h.status,
+    }))
+    const zone = organizationZoneOr()
+    const out = new Map<string, Array<JobScheduleLeaveMark | null>>()
+    dayKeys.forEach((dayKey, index) => {
+      const rows = jobScheduleLeaveMarks({
+        people: leavePeople,
+        holidays: leaveRecords,
+        dayKeys: [dayKey],
+        timeZone: zone,
+        nonWorkingDayKeys,
+        roster,
+        day: policyForBookingDayKey(dayKey, payroll) ?? payroll,
+      })
+      for (const row of rows) {
+        const marks = out.get(row.key) ?? weekDays.map(() => null)
+        const mark = row.days[0]
+        marks[index] = mark && mark.onLeave ? mark : null
+        out.set(row.key, marks)
+      }
+    })
+    return out
+  }, [people, users, userIdAliases, operatives, holidays, bank.loaded, bank.holidays, weekDays, dayKeys, payroll])
 
   const weekCounts = useMemo(() => {
     let staff = 0
@@ -672,22 +778,25 @@ export function ProjectScheduleWeekOverview({
                 <PersonRow
                   key={person.key}
                   person={person}
+                  leave={leaveByPerson.get(person.key) ?? null}
                   weekDays={weekDays}
                   todayDate={todayDate}
                   expanded={expanded}
                   onEdit={canQuickAdd ? setEditingRow : () => undefined}
-                  onQuickAdd={canQuickAdd && jobBookable ? (target, date) => setQuickAdd({ person: target, date }) : undefined}
+                  onQuickAdd={
+                    canQuickAdd && jobBookable
+                      ? // Rulebook 1.37.0 (review #299): the column's organisation day, so the sheet, its leave check
+                        // and the saved date are that day whatever the browser zone.
+                        (target, date) => setQuickAdd({ person: target, date: scheduleColumnDate(date, organizationZoneOr()) })
+                      : undefined
+                  }
                 />
               ))}
             </div>
           </div>
         )}
 
-        <div className="mt-3 flex flex-wrap gap-3 px-1 text-[11px] text-slate-500">
-          <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm bg-emerald-400" /> Operative</span>
-          <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm bg-blue-400" /> Manager / Admin</span>
-          <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm bg-violet-400" /> Sub contractor</span>
-        </div>
+        <ScheduleLegend />
       </div>
 
       {editingRow?.subBooking ? (
@@ -747,6 +856,7 @@ export function ProjectScheduleWeekOverview({
 
 function PersonRow({
   person,
+  leave,
   weekDays,
   todayDate,
   expanded,
@@ -754,12 +864,15 @@ function PersonRow({
   onQuickAdd,
 }: {
   person: PersonWeek
+  /** Rulebook 1.37.0: the leave mark per visible day (`jobScheduleLeaveMarks`), null when none. */
+  leave: Array<JobScheduleLeaveMark | null> | null
   weekDays: Date[]
   todayDate: Date
   expanded: boolean
   onEdit: (row: DayRow) => void
   onQuickAdd?: (person: PersonWeek, date: Date) => void
 }) {
+  const minHeight = expanded ? 'min-h-[72px]' : 'min-h-[44px]'
   return (
     <>
       <div className="sticky left-0 z-10 flex items-center gap-2 border-t border-slate-100 bg-white px-3 py-2">
@@ -779,67 +892,213 @@ function PersonRow({
       {weekDays.map((day, index) => {
         const cell = person.cells[index]
         const isTodayDay = isSameDay(day, todayDate)
+        const mark = leave?.[index] ?? null
+        const canQuickAdd = Boolean(onQuickAdd && person.quickAdd)
         return (
           <div
             key={`${person.key}-${day.toISOString()}`}
             className={`border-l border-t border-slate-100 p-1.5 ${isTodayDay ? 'bg-blue-50/40' : 'bg-white'}`}
           >
             {cell.length === 0 ? (
-              onQuickAdd && person.quickAdd ? (
+              mark ? (
+                <LeaveCell
+                  mark={mark}
+                  minHeight={minHeight}
+                  onClick={canQuickAdd ? () => onQuickAdd!(person, day) : undefined}
+                  ariaLabel={`${person.name}, ${format(day, 'EEE d MMM')}: ${mark.title}${canQuickAdd ? '. Opens quick add for a booking.' : ''}`}
+                />
+              ) : canQuickAdd ? (
                 <button
                   type="button"
-                  onClick={() => onQuickAdd(person, day)}
+                  onClick={() => onQuickAdd!(person, day)}
                   aria-label={`Quick add booking for ${person.name} on ${format(day, 'EEE d MMM')}`}
-                  className={`group flex w-full items-center justify-center rounded-lg border border-dashed border-slate-200 text-[11px] font-semibold text-slate-400 transition-colors hover:border-slate-300 hover:bg-slate-50 focus-visible:border-slate-300 focus-visible:bg-slate-50 focus-visible:outline-none ${expanded ? 'min-h-[72px]' : 'min-h-[44px]'}`}
+                  className={`group flex w-full items-center justify-center rounded-lg border border-dashed border-slate-200 text-[11px] font-semibold text-slate-400 transition-colors hover:border-slate-300 hover:bg-slate-50 focus-visible:border-slate-300 focus-visible:bg-slate-50 focus-visible:outline-none ${minHeight}`}
                 >
                   <span className="opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
                     + Quick add
                   </span>
                 </button>
               ) : (
-                <div className={`rounded-lg border border-dashed border-slate-200 ${expanded ? 'min-h-[72px]' : 'min-h-[44px]'}`} />
+                <div className={`rounded-lg border border-dashed border-slate-200 ${minHeight}`} />
               )
             ) : (
               <div className="space-y-1">
-                {cell.map((row) => {
-                  const clickable = Boolean(row.booking || row.managerBooking || row.subBooking)
-                  const nameOnTile = row.peopleLabel || (row.roleTone === 'subcontractor' ? row.name : '')
-                  const inner = expanded ? (
-                    <>
-                      {nameOnTile ? (
-                        <p className="text-[10px] font-semibold leading-tight text-slate-800">{nameOnTile}</p>
-                      ) : null}
-                      <p className="text-[11px] font-semibold leading-tight text-slate-800">{row.slot}</p>
-                      <p className="text-[12px] font-bold text-slate-900">{formatHoursLabel(row.hours)}h</p>
-                      {row.overtimeEquation ? (
-                        <p className="text-[10px] font-semibold leading-tight text-amber-700">{row.overtimeEquation}</p>
-                      ) : null}
-                    </>
-                  ) : (
-                    <>
-                      {nameOnTile ? (
-                        <p className="text-[10px] font-semibold leading-tight text-slate-700">{nameOnTile}</p>
-                      ) : null}
-                      <p className="text-[10px] font-semibold leading-tight text-slate-700">{row.slot}</p>
-                      <p className="text-[11px] font-bold text-slate-900">{formatHoursLabel(row.hours)}h</p>
-                    </>
-                  )
-                  const className = `w-full rounded-lg border px-1.5 ${expanded || nameOnTile ? 'py-1.5 min-h-[72px]' : 'py-1 min-h-[44px]'} text-left ${cellFillClass(row.roleTone)} ${clickable ? '' : 'cursor-default'}`
-                  return clickable ? (
-                    <button key={row.id} type="button" onClick={() => onEdit(row)} className={className}>
-                      {inner}
-                    </button>
-                  ) : (
-                    <div key={row.id} className={className}>
-                      {inner}
-                    </div>
-                  )
-                })}
+                {cell.map((row, rowIndex) => (
+                  <BookingTile
+                    key={row.id}
+                    row={row}
+                    expanded={expanded}
+                    minHeight={minHeight}
+                    // A booking on a leave day keeps its cell and gets a thin brown band across the top (once per day).
+                    leave={rowIndex === 0 ? mark : null}
+                    onEdit={onEdit}
+                  />
+                ))}
               </div>
             )}
           </div>
         )
       })}
     </>
+  )
+}
+
+/** Rulebook 1.37.0: a day of annual leave with no booking on this job — brown "AL" (pending paler, "AL?"). */
+function LeaveCell({
+  mark,
+  minHeight,
+  onClick,
+  ariaLabel,
+}: {
+  mark: JobScheduleLeaveMark
+  minHeight: string
+  onClick?: () => void
+  ariaLabel: string
+}) {
+  // Each half in its own style (`mark.am` / `mark.pm`): approved brown, pending paler, not leave open.
+  const halfColour = (state: JobScheduleLeaveMark['am']) =>
+    state === 'approved' ? LEAVE_BROWN : state === 'pending' ? LEAVE_PENDING : 'transparent'
+  const half = mark.am !== mark.pm
+  const style: React.CSSProperties = half
+    ? { background: `linear-gradient(90deg, ${halfColour(mark.am)} 0 50%, ${halfColour(mark.pm)} 50% 100%)` }
+    : { background: halfColour(mark.am) }
+  const inner = (
+    <span className={`text-[11px] font-extrabold ${half ? 'text-slate-800' : 'text-white'}`} data-testid="schedule-leave-label">
+      {mark.label}
+    </span>
+  )
+  const className = `flex w-full items-center justify-center rounded-lg border ${half ? 'border-[#9A5B27]/40' : 'border-transparent'} ${minHeight}`
+  return onClick ? (
+    <button type="button" onClick={onClick} title={mark.title} aria-label={ariaLabel} className={className} style={style}>
+      {inner}
+    </button>
+  ) : (
+    <div title={mark.title} aria-label={ariaLabel} className={className} style={style}>
+      {inner}
+    </div>
+  )
+}
+
+/** Rulebook 1.37.0: one booking tile in the iOS colours. Its text (slot, hours, overtime line) is unchanged. */
+function BookingTile({
+  row,
+  expanded,
+  minHeight,
+  leave,
+  onEdit,
+}: {
+  row: DayRow
+  expanded: boolean
+  minHeight: string
+  leave: JobScheduleLeaveMark | null
+  onEdit: (row: DayRow) => void
+}) {
+  const clickable = Boolean(row.booking || row.managerBooking || row.subBooking)
+  const nameOnTile = row.peopleLabel || (row.roleTone === 'subcontractor' ? row.name : '')
+  const tall = expanded || Boolean(nameOnTile)
+  const { tone } = row.cell
+  const otInk = 'text-[#5C3800]'
+  const band = leave ? (
+    <div
+      className="flex h-4 items-center justify-center text-[9px] font-extrabold leading-none text-white"
+      style={{ background: leaveColour(leave) }}
+      title={leave.title}
+      data-testid="schedule-leave-band"
+    >
+      {leave.label}
+    </div>
+  ) : null
+  const headline = (ink: string) => (
+    <>
+      {nameOnTile ? <p className={`text-[10px] font-semibold leading-tight ${ink}`}>{nameOnTile}</p> : null}
+      <p className={`${expanded ? 'text-[11px]' : 'text-[10px]'} font-semibold leading-tight ${ink}`}>{row.slot}</p>
+    </>
+  )
+  let body: React.ReactNode
+  if (tone === 'split') {
+    body = (
+      <div className="flex flex-1 flex-col">
+        <div className="px-1.5 py-1 text-white" style={{ background: STD_BLUE }}>
+          {headline('text-white')}
+          <p className={`${expanded ? 'text-[12px]' : 'text-[11px]'} font-bold`}>{formatHoursLabel(row.hours)}h</p>
+          <p className="text-[9px] font-bold uppercase opacity-85">{formatHoursLabel(row.cell.standardHours)}h Std</p>
+        </div>
+        <div className={`flex-1 px-1.5 py-1 ${otInk}`} style={{ background: OT_STRIPES }}>
+          <p className="text-[9px] font-extrabold uppercase">{formatHoursLabel(row.cell.overtimeHours)}h OT</p>
+          {expanded && row.overtimeEquation ? (
+            <p className="text-[10px] font-semibold leading-tight">{row.overtimeEquation}</p>
+          ) : null}
+        </div>
+      </div>
+    )
+  } else {
+    const ink = tone === 'otOnly' ? otInk : 'text-white'
+    const background =
+      tone === 'otOnly'
+        ? OT_STRIPES
+        : tone === 'halfDay'
+          ? row.cell.halfLabel === 'PM'
+            ? `linear-gradient(90deg, ${HALF_LIGHT} 0 50%, ${STD_BLUE} 50% 100%)`
+            : `linear-gradient(90deg, ${STD_BLUE} 0 50%, ${HALF_LIGHT} 50% 100%)`
+          : STD_BLUE
+    const caption = tone === 'otOnly' ? 'OT' : tone === 'halfDay' ? row.cell.halfLabel ?? 'Half day' : 'Std'
+    body = (
+      <div className={`flex-1 px-1.5 ${tall ? 'py-1.5' : 'py-1'} ${ink}`} style={{ background }}>
+        <div className={tone === 'halfDay' ? 'drop-shadow-[0_1px_1px_rgba(0,0,0,0.35)]' : ''}>
+          {headline(ink)}
+          <p className={`${expanded ? 'text-[12px]' : 'text-[11px]'} font-bold`}>{formatHoursLabel(row.hours)}h</p>
+          <p className="text-[9px] font-bold uppercase opacity-85">{caption}</p>
+          {expanded && row.overtimeEquation ? (
+            <p className="text-[10px] font-semibold leading-tight">{row.overtimeEquation}</p>
+          ) : null}
+        </div>
+      </div>
+    )
+  }
+  const className = `flex w-full flex-col overflow-hidden rounded-lg text-left ${tall ? 'min-h-[72px]' : minHeight} ${clickable ? 'hover:brightness-105' : 'cursor-default'}`
+  const content = (
+    <>
+      {band}
+      {body}
+    </>
+  )
+  return clickable ? (
+    <button type="button" onClick={() => onEdit(row)} className={className} data-cell-tone={tone}>
+      {content}
+    </button>
+  ) : (
+    <div className={className} data-cell-tone={tone}>
+      {content}
+    </div>
+  )
+}
+
+/** Rulebook 1.37.0: the iOS Scheduling legend (`JOB_SCHEDULE_LEGEND`), replacing the role-colour legend. */
+function ScheduleLegend() {
+  const swatch = (label: string): React.CSSProperties => {
+    switch (label) {
+      case 'Std + OT':
+        return { background: `linear-gradient(180deg, ${STD_BLUE} 0 50%, transparent 50%), ${OT_STRIPES}` }
+      case 'OT only':
+        return { background: OT_STRIPES }
+      case 'Ann. leave':
+        return { background: LEAVE_BROWN }
+      case 'Half day':
+        return { background: `linear-gradient(90deg, ${STD_BLUE} 0 50%, ${HALF_LIGHT} 50% 100%)` }
+      default:
+        return { background: STD_BLUE }
+    }
+  }
+  return (
+    <div className="mt-3 flex flex-wrap gap-3 px-1 text-[11px] text-slate-500" data-testid="schedule-legend">
+      {JOB_SCHEDULE_LEGEND.map((label) => (
+        <span key={label} className="inline-flex items-center gap-1">
+          <span className="h-2.5 w-2.5 rounded-sm" style={swatch(label)} /> {label}
+        </span>
+      ))}
+      <span className="inline-flex items-center gap-1">
+        <span className="h-2.5 w-2.5 rounded-sm" style={{ background: LEAVE_PENDING }} /> AL? = leave requested
+      </span>
+    </div>
   )
 }
