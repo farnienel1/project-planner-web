@@ -1,0 +1,143 @@
+'use client'
+
+/**
+ * Rulebook 1.35.0 §12: the My Profile "Your figures" card. This hook only loads the stores and maps them to the
+ * rulebook's plain inputs; every figure is `myProfileSummary` (no calculation here). iOS:
+ * `Core/Rulebook+MyProfile.swift` (`CanonicalBusinessEngine.myProfileSummary`).
+ */
+
+import { useEffect, useMemo } from 'react'
+import {
+  myProfileBankHolidayRange,
+  myProfileSummary,
+  parseAnnualLeaveDefaults,
+  type MyProfileSummary,
+} from '@/lib/canonical'
+import { useAuthStore } from '@/lib/stores/authStore'
+import { useBookingStore } from '@/lib/stores/bookingStore'
+import { useHolidayStore } from '@/lib/stores/holidayStore'
+import { useManagerScheduleStore } from '@/lib/stores/managerScheduleStore'
+import { useOperativeStore } from '@/lib/stores/operativeStore'
+import { useOrganizationDocument, useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
+import { useOrgUserStore, useRosterDocuments } from '@/lib/stores/siteAuditStore'
+import { useTaskStore } from '@/lib/stores/taskStore'
+import { holidayBookingDayKeys } from '@/lib/annualLeave/holidayDayKeys'
+import { useOrgBankHolidays } from '@/components/annual-leave/useOrgBankHolidays'
+import { qualificationExpiryOperatives } from '@/lib/warnings/generateOrgWarnings'
+import { useOrganizationDayKey } from '@/lib/warnings/useOrganizationDayKey'
+
+export function useMyProfileSummary(): MyProfileSummary | null {
+  const { user, organization } = useAuthStore()
+  const orgId = organization?.id || ''
+  const timeZone = useOrganizationTimeZone()
+  const dayKey = useOrganizationDayKey(timeZone)
+  const orgDocument = useOrganizationDocument()
+  const { bookings, loadBookings } = useBookingStore()
+  const { managerSiteBookings, loadManagerSiteBookings } = useManagerScheduleStore()
+  const { bookings: holidays, loadBookings: loadHolidays } = useHolidayStore()
+  const { tasks, loadTasks } = useTaskStore()
+  const { operatives, managers, loadOperatives, loadManagers } = useOperativeStore()
+  const loadUsers = useOrgUserStore((state) => state.loadUsers)
+  const roster = useRosterDocuments(orgId)
+  // Rulebook 1.35.0 `myProfileBankHolidayRange` (`annualLeaveBankHolidayRange`): the previous leave year's bank
+  // holidays too (carry-over), the same range Annual leave and Edit User load. `dayKey` re-plans it at midnight.
+  // `organizations/{orgId}.annualLeaveDefaults` (rulebook §4.4), not the organisation document itself.
+  const orgLeaveDefaults = parseAnnualLeaveDefaults(
+    ((orgDocument.data ?? {}) as Record<string, unknown>).annualLeaveDefaults as Record<string, unknown> | undefined
+  )
+  const bankRange = useMemo(
+    () =>
+      myProfileBankHolidayRange({
+        nowMs: Date.now(),
+        timeZone,
+        user: (user ?? null) as never,
+        leaveDefaults: orgLeaveDefaults,
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `dayKey` stands in for `Date.now()`
+    [user, timeZone, dayKey, orgLeaveDefaults.startMonth, orgLeaveDefaults.endMonth]
+  )
+  const bank = useOrgBankHolidays(new Date(`${bankRange.startDayKey}T12:00:00`), new Date(`${bankRange.endDayKey}T12:00:00`), {
+    years: bankRange.years,
+  })
+
+  useEffect(() => {
+    if (!orgId) return
+    loadBookings(orgId)
+    loadManagerSiteBookings(orgId)
+    loadHolidays(orgId)
+    loadTasks(orgId)
+    loadOperatives(orgId)
+    loadManagers(orgId)
+    void Promise.resolve(loadUsers(orgId)).catch(() => undefined)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- zustand loaders are stable
+  }, [orgId])
+
+  const bankDayKeys = bank.holidays.map((holiday) => holiday.date).join(',')
+
+  const bankLoaded = bank.loaded
+  return useMemo(() => {
+    // Until the bank holidays load, a bank holiday inside a leave record could still count as leave: show nothing yet.
+    if (!user || !orgId || !bankLoaded) return null
+    const orgData = (orgDocument.data ?? {}) as Record<string, unknown>
+    return myProfileSummary({
+      nowMs: Date.now(),
+      timeZone,
+      viewer: { id: user.id, email: user.email },
+      user: {
+        ...user,
+        id: user.id,
+        email: user.email,
+        formerUserIds: user.formerUserIds ?? [],
+        employmentStartDate: user.employmentStartDate ?? null,
+      } as never,
+      roster: roster.map((row) => ({
+        id: row.id,
+        email: row.email,
+        firstName: row.firstName,
+        surname: row.surname,
+        isActive: row.isActive,
+        passwordSet: row.passwordSet,
+        formerUserIds: row.formerUserIds ?? [],
+      })),
+      operatives: qualificationExpiryOperatives(operatives),
+      managers: managers.map((row) => ({ id: row.id, email: row.email ?? null })),
+      leaveDefaults: orgLeaveDefaults,
+      holidays: holidays.map((holiday) => ({
+        ...holidayBookingDayKeys(holiday, timeZone),
+        userId: holiday.userId ?? null,
+        operativeId: holiday.operativeId ?? null,
+        timeSlot: holiday.timeSlot,
+        status: holiday.status,
+      })),
+      nonWorkingDayKeys: bankDayKeys ? bankDayKeys.split(',') : [],
+      tasks: tasks.map((task) => ({
+        status: task.status,
+        dueDate: task.dueDate ?? null,
+        assignedOperativeId: task.assignedOperativeId ?? null,
+        assignedOperativeIds: task.assignedOperativeIds ?? [],
+        assignedManagerId: task.assignedManagerId ?? null,
+        assignedManagerIds: task.assignedManagerIds ?? [],
+      })),
+      bookings: bookings.map((booking) => ({
+        operativeId: booking.operativeId,
+        date: booking.date,
+        status: String(booking.status ?? ''),
+        timeSlot: booking.timeSlot,
+        workStartTime: booking.workStartTime ?? null,
+        workEndTime: booking.workEndTime ?? null,
+        isBreakRemoved: booking.isBreakRemoved === true,
+      })),
+      managerSiteBookings: managerSiteBookings.map((booking) => ({
+        userId: booking.userId,
+        date: booking.date,
+        timeSlot: booking.timeSlot,
+        workStartTime: booking.workStartTime ?? null,
+        workEndTime: booking.workEndTime ?? null,
+        isBreakRemoved: booking.isBreakRemoved === true,
+      })),
+      policyState: orgData,
+    })
+    // `dayKey` moves the figures on at the organisation's midnight.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, orgId, bankLoaded, timeZone, dayKey, orgDocument.data, roster, operatives, managers, holidays, bankDayKeys, tasks, bookings, managerSiteBookings])
+}

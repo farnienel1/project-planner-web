@@ -266,13 +266,55 @@ function previousYearEndKey(startDayKey: string, timeZone: string): string {
  * No allowance → `remaining` is null; `usedThisYear` is the running count.
  * An override whose key matches this year replaces days-per-year + carry.
  */
+/** The leave-year months `annualLeaveBalance` uses: the person's own with an allowance, else the organisation's. */
+function balanceYearMonths(input: AnnualLeaveYearInput): { startMonth: number; endMonth: number } {
+  const hasAllowance = hasAnnualLeaveAllowance(input.annualLeaveEnabled)
+  const orgStart = clampMonth(input.orgStartMonth, 1)
+  const orgEnd = clampMonth(input.orgEndMonth, 12)
+  return {
+    startMonth: hasAllowance ? clampMonth(input.startMonth, orgStart) : orgStart,
+    endMonth: hasAllowance ? clampMonth(input.endMonth, orgEnd) : orgEnd,
+  }
+}
+
+/** The fields of `AnnualLeaveBalanceInput` that decide which leave year a day is in. */
+export type AnnualLeaveYearInput = Pick<
+  AnnualLeaveBalanceInput,
+  'annualLeaveEnabled' | 'startMonth' | 'endMonth' | 'orgStartMonth' | 'orgEndMonth' | 'onDayKey' | 'timeZone'
+>
+
+export type AnnualLeaveBankHolidayRange = {
+  /** The first day of the previous leave year (carry-over counts the leave taken in it). */
+  startDayKey: string
+  /** The last day of the leave year containing `onDayKey`. */
+  endDayKey: string
+  /** Every calendar year from `startDayKey` to `endDayKey`, oldest first — the years to load bank holidays for. */
+  years: number[]
+}
+
+/**
+ * Rulebook 1.35.0 §4.4: the days whose bank holidays `annualLeaveBalance` needs for the leave year containing
+ * `onDayKey` — from the first day of the PREVIOUS leave year (carry-over counts the leave taken in it, and a bank
+ * holiday inside a multi-day record is not leave there either) to the last day of the current one. Every screen that
+ * shows a balance loads bank holidays for `years` before it calls `annualLeaveBalance`, so the same person reads the
+ * same figure on My Profile, Annual leave and Edit User on every platform. Pass the balance's own input.
+ */
+export function annualLeaveBankHolidayRange(input: AnnualLeaveYearInput): AnnualLeaveBankHolidayRange {
+  const timeZone = zoneOrLondon(input.timeZone)
+  const { startMonth, endMonth } = balanceYearMonths(input)
+  const year = leaveYearBounds({ startMonth, endMonth, onDayKey: input.onDayKey })
+  const previous = leaveYearBounds({ startMonth, endMonth, onDayKey: previousYearEndKey(year.startDayKey, timeZone) })
+  const first = Number(previous.startDayKey.slice(0, 4))
+  const last = Number(year.endDayKey.slice(0, 4))
+  const years: number[] = []
+  for (let value = first; Number.isFinite(value) && value <= last; value += 1) years.push(value)
+  return { startDayKey: previous.startDayKey, endDayKey: year.endDayKey, years }
+}
+
 export function annualLeaveBalance(input: AnnualLeaveBalanceInput): AnnualLeaveBalance {
   const hasAllowance = hasAnnualLeaveAllowance(input.annualLeaveEnabled)
   const timeZone = zoneOrLondon(input.timeZone)
-  const orgStart = clampMonth(input.orgStartMonth, 1)
-  const orgEnd = clampMonth(input.orgEndMonth, 12)
-  const startMonth = hasAllowance ? clampMonth(input.startMonth, orgStart) : orgStart
-  const endMonth = hasAllowance ? clampMonth(input.endMonth, orgEnd) : orgEnd
+  const { startMonth, endMonth } = balanceYearMonths(input)
   const year = leaveYearBounds({ startMonth, endMonth, onDayKey: input.onDayKey })
   const bookings = input.bookings ?? []
   const nonWorking = input.nonWorkingDayKeys ?? []
