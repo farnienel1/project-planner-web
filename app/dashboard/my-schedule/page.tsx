@@ -23,7 +23,14 @@ import { managerSiteBookingDisplayTitle, managerSiteBookingToScheduleBooking } f
 import { normalizeBookingStatus } from '@/lib/ios-parity/enums'
 import type { AssignedScheduleBooking } from '@/components/schedule/MyScheduleSelfBookingScreen'
 import { loadOrganizationDetails } from '@/lib/settings/organizationSettings'
-import { DEFAULT_PAYROLL_POLICY, type OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
+import {
+  DEFAULT_PAYROLL_POLICY,
+  type OrgInvoicingSettings,
+  type OrgPayrollTimePolicy,
+  type OrgWarningDetectionSettings,
+} from '@/lib/settings/organizationSettings'
+import { webJobAccessViewer } from '@/lib/access/readPlan'
+import { enforcedReadsFor } from '@/lib/access/securitySwitches'
 import { MyScheduleSelfBookingScreen } from '@/components/schedule/MyScheduleSelfBookingScreen'
 import { MyScheduleReadOnlyScreen } from '@/components/schedule/MyScheduleReadOnlyScreen'
 import { LoadingSpinner } from '@/components/dashboard/PageShell'
@@ -43,6 +50,11 @@ function MySchedulePageContent() {
   const { users, userIdAliases, loadUsers } = useOrgUserStore()
   const { projects, smallWorks, loadProjects, loadSmallWorks } = useProjectStore()
   const [payrollPolicy, setPayrollPolicy] = useState<OrgPayrollTimePolicy>(DEFAULT_PAYROLL_POLICY)
+  // 1.39.0 §10: the warning settings and payment runs, for the clash marker's Warnings period (`clashScanDays`).
+  const [warningSettings, setWarningSettings] = useState<{
+    warningDetection: OrgWarningDetectionSettings
+    invoicing: OrgInvoicingSettings
+  } | null>(null)
 
   const selfBooking = canSelfBookMySchedule(user)
 
@@ -51,6 +63,7 @@ function MySchedulePageContent() {
     loadOrganizationDetails(organization.id)
       .then((details) => {
         if (details?.payrollTimePolicy) setPayrollPolicy(details.payrollTimePolicy)
+        if (details) setWarningSettings({ warningDetection: details.warningDetection, invoicing: details.invoicing })
       })
       .catch(() => {})
   }, [organization?.id])
@@ -163,6 +176,8 @@ function MySchedulePageContent() {
     (booking: (typeof managerSiteBookings)[number]) => managerSiteBookingDisplayTitle(booking, projectsById) || 'Booking',
     [projectsById]
   )
+  const clashViewer = useMemo(() => (user ? webJobAccessViewer(user) : null), [user])
+  const clashProjects = useMemo(() => [...projects, ...smallWorks], [projects, smallWorks])
   const clashMarkers = useMyScheduleClashMarkers({
     organizationId: organization?.id,
     labourBookings: ownLabourBookings,
@@ -172,6 +187,12 @@ function MySchedulePageContent() {
     userIdAliases,
     payrollPolicy,
     canOpenWarnings: Boolean(user && canViewWarnings(user)),
+    viewer: clashViewer,
+    projects: clashProjects,
+    managers,
+    enforcedReads: enforcedReadsFor(organization?.id),
+    warningDetection: warningSettings?.warningDetection ?? null,
+    invoicing: warningSettings?.invoicing ?? null,
     viewerIds: viewerIdsForClash,
     viewerEmail: user?.email ?? null,
     placeLabel: clashPlaceLabel,

@@ -141,17 +141,40 @@ test('1.39.0: the explanation never changes a figure — totals equal payrollHou
   }
 })
 
-test('1.39.0 bookingShortfall names what it compares against; none on an every-hour day', () => {
-  assert.deepEqual(bookingShortfall(owner, SAT, 3.69, ZONE), {
-    label: 'Short of a full Saturday (8h)',
-    fullDayHours: 8,
-    missingHours: 4.31,
-    value: '4.31h',
+test('1.39.0 bookingShortfall is coverage of the day (lunch window excluded), never paid hours; none on an every-hour day', () => {
+  const custom = (workStartTime: string, workEndTime: string) => ({ timeSlot: 'CUSTOM_HOURS', workStartTime, workEndTime })
+  // Saturday window 07:30–14:00, lunch 12:00–12:30 (paid): 6h to cover; 07:30–10:30 leaves 3h.
+  assert.deepEqual(bookingShortfall(owner, SAT, [custom('07:30', '10:30')], ZONE), {
+    label: 'Short of a full Saturday (07:30–14:00)',
+    fullDayHours: 6,
+    missingHours: 3,
+    value: '3h',
   })
-  assert.equal(bookingShortfall(owner, MON, 4, ZONE)?.label, 'Short of a full Monday (8h)')
-  assert.equal(bookingShortfall(owner, SAT, 8, ZONE), null)
-  assert.equal(bookingShortfall(owner, SAT, 12, ZONE), null)
-  assert.equal(bookingShortfall(sundayEveryHour, SUN, 6, ZONE), null)
+  // Review case: 05:00–10:00 on a 07:30–16:00 weekday — the 2.5h before the day and their overtime never fill it.
+  assert.deepEqual(bookingShortfall(owner, MON, [custom('05:00', '10:00')], ZONE), {
+    label: 'Short of a full Monday (07:30–16:00)',
+    fullDayHours: 8,
+    missingHours: 5.5,
+    value: '5.5h',
+  })
+  // Either side of lunch covers the weekday; a full day covers it; outside hours alone do not.
+  assert.equal(bookingShortfall(owner, MON, [custom('07:30', '12:00'), custom('12:30', '16:00')], ZONE), null)
+  assert.equal(bookingShortfall(owner, MON, [{ timeSlot: 'FULL DAY' }], ZONE), null)
+  assert.equal(bookingShortfall(owner, MON, [custom('16:00', '22:00')], ZONE)?.missingHours, 8)
+  // Under 0.05h is hidden; a covered Saturday has none; an every-hour Sunday never has one.
+  assert.equal(bookingShortfall(owner, MON, [custom('07:30', '15:58')], ZONE), null)
+  assert.equal(bookingShortfall(owner, SAT, [custom('07:30', '14:00')], ZONE), null)
+  assert.equal(bookingShortfall(sundayEveryHour, SUN, [custom('07:30', '10:30')], ZONE), null)
+  // Not a bookings list (the 1.39.0 draft passed paid hours): no line, never a guess.
+  assert.equal(bookingShortfall(owner, MON, 4 as unknown as [], ZONE), null)
   assert.equal(bookingHoursExplanation(owner, 'not-a-day', { workStartTime: '07:30', workEndTime: '10:30' }, ZONE), null)
   assert.equal(bookingHoursExplanation(owner, SAT, { workStartTime: '07:30', workEndTime: '07:30' }, ZONE), null)
+})
+
+test('1.39.0 review: a booking with its own overtime rate says so in the rule; the steps price at it', () => {
+  const row = bookingHoursExplanation(owner, MON, { workStartTime: '07:30', workEndTime: '18:00', otMultiplierOverride: 2 }, ZONE)
+  assert.ok(row?.rule.endsWith("; this booking's own overtime rate is 2×"), row?.rule)
+  assert.ok(row?.steps.some((step) => step.includes('2h × 2 = 4h')), String(row?.steps))
+  const same = bookingHoursExplanation(owner, MON, { workStartTime: '07:30', workEndTime: '18:00', otMultiplierOverride: 1.5 }, ZONE)
+  assert.ok(!same?.rule.includes('own overtime rate'))
 })

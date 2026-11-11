@@ -235,7 +235,8 @@ export function BookingEditSheet({
             }
             explanation={
               slot === 'CUSTOM'
-                ? weekdayExplanationForDate(new Date(booking.date), workStartTime, workEndTime, breakRemoved, payroll)
+                ? // Review (11 Nov): the booking's own overtime rate is named in the explanation, as on iOS.
+                  weekdayExplanationForDate(new Date(booking.date), workStartTime, workEndTime, breakRemoved, payroll, overtimeRate ?? null)
                 : null
             }
           />

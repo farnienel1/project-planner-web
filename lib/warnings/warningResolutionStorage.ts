@@ -44,6 +44,25 @@ export function watchResolvedWarningKeys(
 }
 
 /**
+ * Live `resolvedKeys` and `approvedKeys` together (rulebook §1 live rule, 1.39.0 My Schedule clash marker): one
+ * listener on `warningResolutions`. A refused or failed listener leaves the last keys alone. Returns the unsubscribe.
+ */
+export function watchWarningResolutionKeys(
+  organizationId: string,
+  onKeys: (keys: { resolvedKeys: string[]; approvedKeys: string[] }) => void,
+  onError?: (error: unknown) => void
+): Unsubscribe {
+  return onSnapshot(
+    collection(db, 'organizations', organizationId, 'warningResolutions'),
+    (snapshot) => {
+      const records = recordsOf(snapshot)
+      onKeys({ resolvedKeys: resolvedWarningKeys(records), approvedKeys: approvedWarningKeys(records) })
+    },
+    (error) => onError?.(error)
+  )
+}
+
+/**
  * One read of `warningResolutions`: `resolvedKeys` (approved and dismissed, what hides a row —
  * `resolvedWarningKeys`) and `approvedKeys` (approvals only, what counts as an approved clash —
  * `approvedWarningKeys`).

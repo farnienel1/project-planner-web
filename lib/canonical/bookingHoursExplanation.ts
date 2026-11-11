@@ -22,7 +22,7 @@
  * ("Short of a full Saturday (8h)"), the day's own full day — none on a day paid every hour at a multiplier.
  */
 
-import { formatClockMinutes, parseClockMinutes } from './engine'
+import { formatClockMinutes, parseClockMinutes, standardDayCoverage, windowCoverage } from './engine'
 import { weekdayPaidHours, type OrgPayrollTimePolicy } from './organizationSettings'
 import {
   payrollBreakOnDay,
@@ -193,7 +193,16 @@ export function bookingHoursExplanation(
   })
   const iso = isoWeekdayOfDayKey(key, zone)
   const label = WEEKDAY_NAMES[iso] || key
-  const { kind, rule, fullDayHours, windowHours } = dayRule(dayPolicy, key, zone)
+  const ruleOfDay = dayRule(dayPolicy, key, zone)
+  const { kind, fullDayHours, windowHours } = ruleOfDay
+  // Review (11 Nov): a booking with its own overtime rate (`otMultiplierOverride`, §25) says so — the steps already
+  // price at it (`payrollHoursResult`), so the day's rule line must not read as if the organisation's rate applied.
+  const own = Number(booking.otMultiplierOverride)
+  const orgRate = payrollOutsideMultiplier({}, isoWeekdayOfDayKey(key, zone), dayPolicy)
+  const rule =
+    Number.isFinite(own) && own > 0 && Math.abs(own - orgRate) > 0.0001
+      ? `${ruleOfDay.rule}; this booking's own overtime rate is ${times(own)}×`
+      : ruleOfDay.rule
   const total = round(paid.totalPaidHours)
   const steps: string[] = []
   let parts = 0
@@ -277,36 +286,67 @@ export function bookingHoursExplanation(
 }
 
 export type BookingShortfall = {
-  /** e.g. "Short of a full Saturday (8h)". */
+  /** e.g. "Short of a full Saturday (07:30–14:00)". */
   label: string
-  /** The hours the day's full day pays, e.g. 8. */
+  /**
+   * The hours of the day that must be booked (`standardDayCoverage.requiredHours` / `windowCoverage.requiredHours`:
+   * the working day or a set-window weekend day's window, lunch-break window excluded). Kept under its 1.39.0 name.
+   */
   fullDayHours: number
-  /** Full day − booked, rounded to hundredths; always above 0. */
+  /** Clock hours of that day not covered by the bookings (lunch window excluded); always 0.05 or more. */
   missingHours: number
-  /** `missingHours` as text, e.g. "4.31h". */
+  /** `missingHours` as text, e.g. "5.5h". */
   value: string
 }
 
+export type BookingShortfallBooking = {
+  timeSlot?: string | null
+  workStartTime?: string | null
+  workEndTime?: string | null
+}
+
 /**
- * Rulebook 1.39.0 §4.3: the "missing hours" line under a picker's booked total, naming what it compares against — the
- * day's own full day (`bookingHoursExplanation.fullDayHours`: the weekday paid day, or a set-window weekend day's
- * "counts as" hours). `bookedHours` is what the picker already shows as booked that day (existing + new). Null when
- * nothing is short, or on a day paid every hour at a multiplier (it has no full day).
+ * Rulebook 1.39.0 §4.3 (review, 11 Nov): the "missing hours" line under a picker's booked total — how much of the
+ * day's working time the person's bookings that day (existing + new) leave unbooked, by COVERAGE, never by paid hours
+ * (hours at a multiplier never fill the day): Monday–Friday `standardDayCoverage` (the working day, start to finish,
+ * lunch window excluded — the Daily Overview and unbooked-labour rule); a set-window Saturday or Sunday
+ * `windowCoverage` of that day's window with that day's own lunch window excluded. Null when nothing is short (under
+ * 0.05h), on a day paid every hour at a multiplier (no full day), or with no policy / day / bookings list.
  */
 export function bookingShortfall(
   policy: OrgPayrollTimePolicy | PayrollTimePolicyState | null | undefined,
   dayKey: string | null | undefined,
-  bookedHours: number | null | undefined,
+  bookings: ReadonlyArray<BookingShortfallBooking> | null | undefined,
   timeZone?: string | null
 ): BookingShortfall | null {
   const key = validDayKey(dayKey)
-  if (!policy || !key) return null
+  if (!policy || !key || !Array.isArray(bookings)) return null
   const zone = zoneOrLondon(timeZone)
   const dayPolicy = dayPolicyOf(policy, key)
-  const { fullDayHours } = dayRule(dayPolicy, key, zone)
-  if (fullDayHours == null || !(fullDayHours > 0)) return null
-  const missing = round(Math.max(0, fullDayHours - Math.max(0, Number(bookedHours) || 0)))
-  if (!(missing > 0)) return null
-  const label = WEEKDAY_NAMES[isoWeekdayOfDayKey(key, zone)] || key
-  return { label: `Short of a full ${label} (${h(fullDayHours)})`, fullDayHours, missingHours: missing, value: h(missing) }
+  const iso = isoWeekdayOfDayKey(key, zone)
+  const label = WEEKDAY_NAMES[iso] || key
+  const rows = bookings.filter(Boolean).map((booking) => ({
+    timeSlot: booking.timeSlot ?? 'CUSTOM_HOURS',
+    workStartTime: booking.workStartTime ?? null,
+    workEndTime: booking.workEndTime ?? null,
+  }))
+  const weekend = weekendRuleForIsoWeekday(iso, dayPolicy)
+  let window: { start: number; end: number } | null
+  let coverage: { requiredHours: number; missingHours: number }
+  if (weekend) {
+    if (weekend.allHoursAtMultiplierMode) return null
+    window = weekendFullDayWindow(dayPolicy, weekend)
+    if (!window) return null
+    const lunch = payrollBreakOnDay(dayPolicy, key, zone)
+    coverage = windowCoverage(window, dayPolicy, rows, lunch && lunch.end > lunch.start ? { start: lunch.start, end: lunch.end } : null)
+  } else {
+    const start = parseClockMinutes(dayPolicy.standardDayStart)
+    const end = parseClockMinutes(dayPolicy.standardDayEnd)
+    window = start != null && end != null && end > start ? { start, end } : null
+    coverage = standardDayCoverage(dayPolicy, rows)
+  }
+  const missing = round(coverage.missingHours)
+  if (!(missing >= 0.05)) return null
+  const span = window ? ` (${formatClockMinutes(window.start)}–${formatClockMinutes(window.end)})` : ''
+  return { label: `Short of a full ${label}${span}`, fullDayHours: round(coverage.requiredHours), missingHours: missing, value: h(missing) }
 }

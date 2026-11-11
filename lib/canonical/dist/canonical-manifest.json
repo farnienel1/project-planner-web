@@ -1,7 +1,7 @@
 {
   "rulebookVersion": "1.39.0",
-  "rulebookSha256": "a6b30672fb8b5c3d29e7a5e0991beb479b94a85d0c6b6970abb13bbbb995659c",
-  "bundleSha256": "a82e4756f49f22529c86130e2a07d17370e61fe76d44444a6dbd2bf9ea618d13",
+  "rulebookSha256": "0a5255ef56f60b111c0b5949d62c4316709e3134018120511d02f677fe0dcc48",
+  "bundleSha256": "00f7afac575c1a2ba9b3c5f2403a0550136fc71649786444b754d24a69acc203",
   "crossPlatformContractSha256": "59d6bc6123f250e1f57599240eb3190ab48f5cd2532f8281a99360d9e187d86b",
   "exports": [
     "ACCOUNT_DELETE_WITH_COMPANY_MESSAGE",
@@ -191,6 +191,8 @@
     "MY_SCHEDULE_CLASH_APPROVED_MESSAGE",
     "MY_SCHEDULE_CLASH_APPROVED_TITLE",
     "MY_SCHEDULE_CLASH_ASK_MANAGER",
+    "MY_SCHEDULE_CLASH_DISMISSED",
+    "MY_SCHEDULE_CLASH_NOT_IN_PERIOD",
     "MY_SCHEDULE_CLASH_OPEN_WARNINGS",
     "MY_SCHEDULE_CLASH_TITLE",
     "MY_WORKS_PICKS_COLLECTION",
@@ -501,6 +503,7 @@
     "bookedWithOvertimeText",
     "bookedWorkedHours",
     "bookingBelongsToOrganization",
+    "bookingBreakDeductionText",
     "bookingBreakText",
     "bookingClock",
     "bookingCreatedRecipients",

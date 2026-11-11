@@ -182,9 +182,10 @@ function BookingCard({
         isHighlighted ? 'shadow-[0_0_0_2px_var(--blue),var(--sh)]' : past ? 'opacity-60' : ''
       }`}
     >
+      <div className="flex items-stretch">
       <button
         type="button"
-        className="flex w-full items-stretch gap-0 text-left"
+        className="flex min-w-0 flex-1 items-stretch gap-0 text-left"
         onClick={() => setExpanded((v) => !v)}
         aria-expanded={expanded}
       >
@@ -195,9 +196,8 @@ function BookingCard({
         />
 
         <div className="min-w-0 flex-1 px-4 py-3">
-          <p className={`flex items-center gap-1.5 truncate text-[15px] font-semibold ${past ? 'text-[var(--ink3)]' : ''}`}>
-            <span className="truncate">{projectName}</span>
-            <MyScheduleClashMarkerButton marker={clashMarker} />
+          <p className={`truncate text-[15px] font-semibold ${past ? 'text-[var(--ink3)]' : ''}`}>
+            {projectName}
           </p>
           <p className="mt-0.5 text-[12px] font-medium text-[var(--ink3)]">
             {myScheduleClockSubtitle(booking)}
@@ -229,6 +229,13 @@ function BookingCard({
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
         </svg>
       </button>
+      {/* Rulebook 1.39.0 §10: the clash marker sits beside the row's button, never inside it. */}
+      {clashMarker ? (
+        <div className="flex shrink-0 items-start pr-3 pt-3">
+          <MyScheduleClashMarkerButton marker={clashMarker} />
+        </div>
+      ) : null}
+      </div>
 
       {expanded && (
         <div className="border-t border-slate-100 bg-slate-50/60 px-5 py-4">

@@ -1,8 +1,9 @@
 'use client'
 
 import { create } from 'zustand'
-import { doc, setDoc, writeBatch } from 'firebase/firestore'
-import { addBookingDeleteWithTombstone, deleteBookingWithTombstone } from '@/lib/bookings/bookingTombstoneWrite'
+import { doc, getDoc, setDoc, writeBatch } from 'firebase/firestore'
+import { addBookingDeleteWithTombstone, commitBookingMove, deleteBookingWithTombstone } from '@/lib/bookings/bookingTombstoneWrite'
+import { BOOKING_TOMBSTONE_COLLECTION, captureOrganizationContext, organizationContextStillCurrent } from '@/lib/canonical'
 import { resolveBookingJobCollection } from '@/lib/bookings/jobCollection'
 import { auth, db } from '@/lib/firebase/config'
 import { MissingDocumentError, createWritePayload, savePartialDocument } from '@/lib/firebase/partialWrite'
@@ -179,6 +180,7 @@ export const useManagerScheduleStore = create<ManagerScheduleState>((set, get) =
     if (!organizationId.trim()) throw new Error('Missing organisation for booking')
     const deletedBy = auth?.currentUser?.uid
     if (!deletedBy) throw new Error('Sign in again to move this booking.')
+    const captured = captureOrganizationContext()
     const { next, payload } = await managerSiteBookingCreate(organizationId, booking)
     const batch = writeBatch(firestore)
     batch.set(doc(firestore, 'organizations', organizationId, 'managerSiteBookings', next.id), {
@@ -186,7 +188,15 @@ export const useManagerScheduleStore = create<ManagerScheduleState>((set, get) =
       ...(writeMetadataFields(deletedBy, 'web') ?? {}),
     })
     addBookingDeleteWithTombstone(firestore, batch, { organizationId, collection: 'bookings', bookingId: fromBookingId, deletedBy })
-    await batch.commit()
+    // Review (11 Nov): a source deleted on another device writes nothing and reads "This was deleted on another device."
+    await commitBookingMove({
+      sourceExists: async () => (await getDoc(doc(firestore, 'organizations', organizationId, 'bookings', fromBookingId))).exists(),
+      tombstoneExists: async () => (await getDoc(doc(firestore, 'organizations', organizationId, BOOKING_TOMBSTONE_COLLECTION, fromBookingId))).exists(),
+      commit: () => batch.commit(),
+      missing: () => new MissingDocumentError(`organizations/${organizationId}/bookings/${fromBookingId}`),
+    })
+    // The organisation was switched while the move was written: the write stands, this screen's lists are not touched.
+    if (!organizationContextStillCurrent(organizationId, captured)) return
     set({ managerSiteBookings: [...get().managerSiteBookings.filter((row) => row.id !== next.id), next] })
     const { notifyBookingRemovedSoon } = await import('@/lib/stores/bookingStore')
     notifyBookingRemovedSoon(fromBookingId)
@@ -306,6 +316,9 @@ export function managerSiteBookingsOrganizationId(): string {
 
 /** A manager site booking moved out by a batched move (1.39.0): its PAYE overtime line reopens, as a delete does. */
 export function notifyManagerSiteBookingRemovedSoon(organizationId: string, bookingId: string): void {
+  // As `deleteManagerSiteBooking`: the plan and collection caches forget the document.
+  forgetOrgPlanDoc('managerSiteBookings', organizationId, bookingId)
+  forgetOrgCollectionDoc('managerSiteBookings', organizationId, bookingId)
   const state = useManagerScheduleStore.getState()
   const removed = state.managerSiteBookings.find((row) => row.id === bookingId)
   if (!removed) return

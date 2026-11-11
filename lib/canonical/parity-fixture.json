@@ -24256,7 +24256,7 @@
       }
     },
     {
-      "name": "1.39.0 owner: short of a full Saturday (8h)",
+      "name": "1.39.0 owner: Saturday 07:30–10:30 leaves part of the window unbooked",
       "function": "bookingShortfall",
       "args": [
         {
@@ -24288,14 +24288,20 @@
           }
         },
         "2026-11-14",
-        3.69,
+        [
+          {
+            "timeSlot": "CUSTOM_HOURS",
+            "workStartTime": "07:30",
+            "workEndTime": "10:30"
+          }
+        ],
         "Europe/London"
       ],
       "expected": {
-        "label": "Short of a full Saturday (8h)",
-        "fullDayHours": 8,
-        "missingHours": 4.31,
-        "value": "4.31h"
+        "label": "Short of a full Saturday (07:30–14:00)",
+        "fullDayHours": 6,
+        "missingHours": 3,
+        "value": "3h"
       }
     },
     {
@@ -24331,7 +24337,13 @@
           }
         },
         "2026-11-15",
-        6,
+        [
+          {
+            "timeSlot": "CUSTOM_HOURS",
+            "workStartTime": "07:30",
+            "workEndTime": "10:30"
+          }
+        ],
         "Europe/London"
       ],
       "expected": null
@@ -24427,7 +24439,8 @@
         "window": "12:00–12:30",
         "paid": false,
         "label": "30 min unpaid break 12:00–12:30",
-        "deducted": "30 mins deducted 12:00–12:30"
+        "deducted": "30 mins deducted 12:00–12:30",
+        "toggleLabel": "Take off unpaid break (30 min, 12:00–12:30)"
       }
     },
     {
@@ -24553,6 +24566,170 @@
           "actionLabel": null
         }
       ]
+    },
+    {
+      "name": "1.39.0 myScheduleClashMarkers: staff, in the Warnings period → Open Warnings",
+      "function": "myScheduleClashMarkers",
+      "args": [
+        {
+          "operativeBookings": [
+            {
+              "id": "A",
+              "operativeId": "op1",
+              "dayKey": "2026-11-16",
+              "timeSlot": "CUSTOM_HOURS",
+              "workStartTime": "07:00",
+              "workEndTime": "12:00",
+              "status": "Confirmed",
+              "placeLabel": "J1"
+            },
+            {
+              "id": "B",
+              "operativeId": "op1",
+              "dayKey": "2026-11-16",
+              "timeSlot": "CUSTOM_HOURS",
+              "workStartTime": "11:00",
+              "workEndTime": "15:00",
+              "status": "Confirmed",
+              "placeLabel": "J2"
+            }
+          ],
+          "people": {
+            "accounts": [],
+            "operatives": [
+              {
+                "id": "op1",
+                "email": "a@x.test"
+              }
+            ]
+          },
+          "managerIds": [],
+          "decisions": {
+            "approvedKeys": [],
+            "resolvedKeys": [],
+            "acceptedClashes": []
+          },
+          "canOpenWarnings": true,
+          "scanDayKeys": [
+            "2026-11-16"
+          ]
+        }
+      ],
+      "expected": [
+        {
+          "bookingId": "A",
+          "state": "clash",
+          "otherBookingIds": [
+            "B"
+          ],
+          "canOpenWarnings": true,
+          "title": "Booking clash",
+          "message": "This booking overlaps Mon 16 Nov · J2 · 11:00–15:00.",
+          "actionLabel": "Open Warnings"
+        },
+        {
+          "bookingId": "B",
+          "state": "clash",
+          "otherBookingIds": [
+            "A"
+          ],
+          "canOpenWarnings": true,
+          "title": "Booking clash",
+          "message": "This booking overlaps Mon 16 Nov · J1 · 07:00–12:00.",
+          "actionLabel": "Open Warnings"
+        }
+      ]
+    },
+    {
+      "name": "1.39.0 bookingBreakDeductionText: whole window",
+      "function": "bookingBreakDeductionText",
+      "args": [
+        {
+          "standardDayStart": "07:30",
+          "standardDayEnd": "16:00",
+          "unpaidBreakMinutes": 30,
+          "standardPaidHours": 8,
+          "breakWindowStart": "12:00",
+          "breakWindowEnd": "12:30",
+          "weekdayOutsideStandardMultiplier": 1.5,
+          "saturday": {
+            "allHoursAtMultiplierMode": false,
+            "allHoursMultiplier": 2,
+            "definedWindowStart": "07:30",
+            "definedWindowEnd": "14:00",
+            "countsAsStandardHours": 8,
+            "outsideWindowMultiplier": 2,
+            "sameAsSaturday": false
+          },
+          "sunday": {
+            "allHoursAtMultiplierMode": true,
+            "allHoursMultiplier": 2,
+            "definedWindowStart": "07:30",
+            "definedWindowEnd": "16:00",
+            "countsAsStandardHours": 8,
+            "outsideWindowMultiplier": 2,
+            "sameAsSaturday": false,
+            "breakPaid": false
+          }
+        },
+        "2026-11-16",
+        {
+          "timeSlot": "CUSTOM_HOURS",
+          "workStartTime": "07:00",
+          "workEndTime": "22:00"
+        },
+        "Europe/London"
+      ],
+      "expected": "30 mins deducted 12:00–12:30"
+    },
+    {
+      "name": "1.39.0 bookingShortfall review: 05:00–10:00 on a weekday",
+      "function": "bookingShortfall",
+      "args": [
+        {
+          "standardDayStart": "07:30",
+          "standardDayEnd": "16:00",
+          "unpaidBreakMinutes": 30,
+          "standardPaidHours": 8,
+          "breakWindowStart": "12:00",
+          "breakWindowEnd": "12:30",
+          "weekdayOutsideStandardMultiplier": 1.5,
+          "saturday": {
+            "allHoursAtMultiplierMode": false,
+            "allHoursMultiplier": 2,
+            "definedWindowStart": "07:30",
+            "definedWindowEnd": "14:00",
+            "countsAsStandardHours": 8,
+            "outsideWindowMultiplier": 2,
+            "sameAsSaturday": false
+          },
+          "sunday": {
+            "allHoursAtMultiplierMode": true,
+            "allHoursMultiplier": 2,
+            "definedWindowStart": "07:30",
+            "definedWindowEnd": "16:00",
+            "countsAsStandardHours": 8,
+            "outsideWindowMultiplier": 2,
+            "sameAsSaturday": false,
+            "breakPaid": false
+          }
+        },
+        "2026-11-16",
+        [
+          {
+            "timeSlot": "CUSTOM_HOURS",
+            "workStartTime": "05:00",
+            "workEndTime": "10:00"
+          }
+        ],
+        "Europe/London"
+      ],
+      "expected": {
+        "label": "Short of a full Monday (07:30–16:00)",
+        "fullDayHours": 8,
+        "missingHours": 5.5,
+        "value": "5.5h"
+      }
     }
   ]
 }

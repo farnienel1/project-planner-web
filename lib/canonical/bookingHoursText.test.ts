@@ -7,6 +7,7 @@ import test from 'node:test'
 import {
   bookedWithOvertimeText,
   bookingBreakText,
+  bookingBreakDeductionText,
   bookingHoursCountText,
   bookingHoursTiles,
   onSiteHoursText,
@@ -16,6 +17,8 @@ import {
 } from './bookingHoursText'
 import {
   MY_SCHEDULE_CLASH_APPROVED_MESSAGE,
+  MY_SCHEDULE_CLASH_DISMISSED,
+  MY_SCHEDULE_CLASH_NOT_IN_PERIOD,
   MY_SCHEDULE_CLASH_ASK_MANAGER,
   myScheduleClashMarkers,
 } from './myScheduleClash'
@@ -72,6 +75,7 @@ test('1.39.0 break text follows the working hours in effect that day (weekday, w
     paid: false,
     label: '30 min unpaid break 11:30–12:00',
     deducted: '30 mins deducted 11:30–12:00',
+    toggleLabel: 'Take off unpaid break (30 min, 11:30–12:00)',
   })
   assert.equal(bookingBreakText(policy, SAT, ZONE)?.label, '45 min unpaid break 12:00–12:45')
   const paid = { ...policy, breakPaid: true } as unknown as OrgPayrollTimePolicy
@@ -146,6 +150,7 @@ test('1.39.0 My Schedule clash marker: a manager in scope gets Open Warnings (ma
     scope: { kind: 'jobs', jobIds: [], personIds: ['mgr-1'], personEmails: ['mgr@example.com'], unbookedLabour: true },
     viewerIds: ['mgr-1'],
     viewerEmail: 'mgr@example.com',
+    scanDayKeys: [MON],
   })
   assert.deepEqual(markers.map((m) => [m.bookingId, m.state, m.actionLabel]), [['M1', 'clash', 'Open Warnings'], ['M2', 'clash', 'Open Warnings']])
   assert.equal(markers[0].message, 'This booking overlaps Mon 16 Nov · Site survey · 10:00–13:00.')
@@ -159,4 +164,49 @@ test('1.39.0 My Schedule clash marker: a manager in scope gets Open Warnings (ma
     canOpenWarnings: true,
   })
   assert.ok(approved.every((m) => m.state === 'approved'))
+})
+
+test('1.39.0 review: "Open Warnings" only when Warnings lists the clash now (scan days, not dismissed)', () => {
+  const m1 = { id: 'M1', userId: 'mgr-1', dayKey: MON, timeSlot: 'CUSTOM_HOURS', workStartTime: '08:00', workEndTime: '12:00', placeLabel: 'Office' }
+  const m2 = { id: 'M2', userId: 'mgr-1', dayKey: MON, timeSlot: 'CUSTOM_HOURS', workStartTime: '10:00', workEndTime: '13:00', placeLabel: 'Site survey' }
+  const base = { people, managerIds: ['mgr-1'], day: policy, managerBookings: [m1, m2], canOpenWarnings: true, viewerIds: ['mgr-1'] }
+  const open = { approvedKeys: [], resolvedKeys: [], acceptedClashes: [] }
+  // Outside the Warnings period (or no period passed): no button, the period note.
+  for (const scanDayKeys of [['2026-11-17'], null]) {
+    const out = myScheduleClashMarkers({ ...base, decisions: open, scanDayKeys })
+    assert.ok(out.every((m) => m.state === 'clash' && m.actionLabel === null && m.message.endsWith(MY_SCHEDULE_CLASH_NOT_IN_PERIOD)))
+  }
+  // Dismissed in Warnings (resolved, not approved): still red, no button, the dismissed note.
+  const dismissed = { approvedKeys: [], resolvedKeys: [`mgr-clash-mgr-1-${MON}-0`], acceptedClashes: [] }
+  const out = myScheduleClashMarkers({ ...base, decisions: dismissed, scanDayKeys: [MON] })
+  assert.ok(out.every((m) => m.state === 'clash' && m.actionLabel === null && m.message.endsWith(MY_SCHEDULE_CLASH_DISMISSED)))
+  // Approvals not loaded: no button.
+  assert.ok(myScheduleClashMarkers({ ...base, decisions: null, scanDayKeys: [MON] }).every((m) => m.actionLabel === null))
+  // A manager outside the clash's scope is asked to speak to their manager.
+  const outOfScope = myScheduleClashMarkers({
+    ...base,
+    decisions: open,
+    scanDayKeys: [MON],
+    scope: { kind: 'jobs', jobIds: [], personIds: ['someone-else'], personEmails: [], unbookedLabour: true },
+  })
+  assert.ok(outOfScope.every((m) => m.actionLabel === null && m.message.endsWith(MY_SCHEDULE_CLASH_ASK_MANAGER)))
+})
+
+test('1.39.0 review: an overnight booking clashes with the next morning — markers on both', () => {
+  const night = { id: 'N', operativeId: 'op-1', dayKey: MON, timeSlot: 'CUSTOM_HOURS', workStartTime: '22:00', workEndTime: '06:00', placeLabel: 'Night' }
+  const morning = { id: 'T', operativeId: 'op-1', dayKey: '2026-11-17', timeSlot: 'CUSTOM_HOURS', workStartTime: '05:00', workEndTime: '08:00', placeLabel: 'Early' }
+  const markers = myScheduleClashMarkers({ people, managerIds: [], day: policy, operativeBookings: [night, morning], decisions: { approvedKeys: [], acceptedClashes: [] } })
+  assert.deepEqual(markers.map((m) => [m.bookingId, m.state]), [['N', 'clash'], ['T', 'clash']])
+})
+
+test('1.39.0 review: bookingBreakDeductionText is what the break takes off THIS booking', () => {
+  const custom = (workStartTime: string, workEndTime: string, isBreakRemoved = false) => ({ timeSlot: 'CUSTOM_HOURS', workStartTime, workEndTime, isBreakRemoved })
+  assert.equal(bookingBreakDeductionText(policy, MON, custom('07:00', '16:00'), ZONE), '30 mins deducted 11:30–12:00')
+  // A policy saved from 1.20.0 (`paidHoursDerived`) prices custom hours on the clock: 15 of the 30 minutes covered.
+  const derived = { ...policy, paidHoursDerived: true } as unknown as OrgPayrollTimePolicy
+  assert.equal(bookingBreakDeductionText(derived, MON, custom('07:00', '11:45'), ZONE), '15 mins deducted (11:30–11:45 covered)')
+  assert.equal(bookingBreakDeductionText(policy, MON, custom('07:00', '11:00'), ZONE), null)
+  assert.equal(bookingBreakDeductionText(policy, MON, custom('07:00', '16:00', true), ZONE), null)
+  const paid = { ...policy, breakPaid: true } as unknown as OrgPayrollTimePolicy
+  assert.equal(bookingBreakDeductionText(paid, MON, custom('07:00', '16:00'), ZONE), null)
 })

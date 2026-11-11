@@ -64,3 +64,29 @@ test('commitBookingDeleteTolerantly: without a tombstone the refusal stands (nev
     /insufficient permissions/
   )
 })
+
+test('1.39.0 commitBookingMove: a source deleted elsewhere writes nothing and gives the missing-document error', async () => {
+  const { commitBookingMove } = await import('./bookingTombstoneWrite.ts')
+  let committed = false
+  const missing = () => new Error('This was deleted on another device.')
+  await assert.rejects(
+    commitBookingMove({ sourceExists: no, tombstoneExists: no, commit: async () => { committed = true }, missing }),
+    /deleted on another device/
+  )
+  await assert.rejects(
+    commitBookingMove({ sourceExists: yes, tombstoneExists: yes, commit: async () => { committed = true }, missing }),
+    /deleted on another device/
+  )
+  assert.equal(committed, false)
+})
+
+test('1.39.0 commitBookingMove: commits once; a refusal is explained only when the source has gone meanwhile', async () => {
+  const { commitBookingMove } = await import('./bookingTombstoneWrite.ts')
+  let commits = 0
+  await commitBookingMove({ sourceExists: yes, tombstoneExists: no, commit: async () => { commits += 1 }, missing: () => new Error('gone') })
+  assert.equal(commits, 1)
+  let reads = 0
+  const goneLater = async () => (reads++ === 0 ? true : false)
+  await assert.rejects(commitBookingMove({ sourceExists: goneLater, tombstoneExists: no, commit: refused, missing: () => new Error('gone') }), /gone/)
+  await assert.rejects(commitBookingMove({ sourceExists: yes, tombstoneExists: no, commit: refused, missing: () => new Error('gone') }), /insufficient permissions/)
+})

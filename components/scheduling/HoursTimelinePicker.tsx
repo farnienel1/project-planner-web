@@ -100,16 +100,17 @@ export function HoursTimelinePicker({
   const bookedDays = dates && dates.length > 0 ? dates : day ? [day] : []
   const breakApplies =
     bookedDays.length > 0 ? bookedDays.some((entry) => unpaidBreakAppliesOnDate(entry, policy)) : policy.breakPaid !== true
-  // Rulebook 1.39.0 (owner answer 11 Nov): the toggle names the day's own break from the working hours in effect on it
-  // ("30 min unpaid break 11:30–12:00", `bookingBreakText`); several days with different breaks keep the plain words.
+  // Rulebook 1.39.0 (owner answer 11 Nov, review): the toggle says what it does and names the day's own break from the
+  // working hours in effect on it ("Take off unpaid break (30 min, 11:30–12:00)", `bookingBreakText.toggleLabel`);
+  // several days with different breaks keep the plain action.
   const breakLabels = Array.from(
     new Set(
       bookedDays
         .filter((entry) => unpaidBreakAppliesOnDate(entry, policy))
-        .map((entry) => bookingBreakText(policyForBookingDate(entry, policy) ?? policy, bookingDayKey(entry))?.label ?? '')
+        .map((entry) => bookingBreakText(policyForBookingDate(entry, policy) ?? policy, bookingDayKey(entry))?.toggleLabel ?? '')
     )
   )
-  const breakToggleLabel = breakLabels.length === 1 && breakLabels[0] ? breakLabels[0] : 'Unpaid break'
+  const breakToggleLabel = breakLabels.length === 1 && breakLabels[0] ? breakLabels[0] : 'Take off unpaid break'
   const standardStart = windows.paidWindow?.start ?? 0
   const standardEnd = windows.paidWindow?.end ?? 0
   const breakStart = windows.unpaidBreak?.start ?? null

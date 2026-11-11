@@ -996,6 +996,7 @@ export {
   onSiteHoursText,
   saveHoursLabel,
   bookingBreakText,
+  bookingBreakDeductionText,
   bookingHoursTiles,
 } from './bookingHoursText'
 export {
@@ -1005,6 +1006,8 @@ export {
   MY_SCHEDULE_CLASH_APPROVED_MESSAGE,
   MY_SCHEDULE_CLASH_ASK_MANAGER,
   MY_SCHEDULE_CLASH_OPEN_WARNINGS,
+  MY_SCHEDULE_CLASH_NOT_IN_PERIOD,
+  MY_SCHEDULE_CLASH_DISMISSED,
 } from './myScheduleClash'
 export { intervalCrossesMidnight, nextCalendarDayKey, overnightCarryInterval } from './engine'
 export {

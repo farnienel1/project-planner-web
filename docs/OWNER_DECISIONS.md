@@ -286,6 +286,8 @@ How to use it:
 | 11 Nov | Daily Overview job line with several overtime rates on one job reads "… (incl. 12h OT)" without a rate, rather than picking one. | done, owner to confirm |
 | 11 Nov | The clash popup's "Open Warnings" is offered to admins and managers for their own clashes (their own bookings are always in their own warning scope); operatives never get it. | done, owner to confirm |
 | 11 Nov | Web has no Edit booking tiles; the hours editor shows "17.5 hours" and the break toggle names the day's break. The Home labour summary keeps its "Overtime 1.5×" wording (not in the owner's list). | done, owner to confirm |
+| 11 Nov | Review fixes: "missing hours" now names the window it measures ("Short of a full Monday (07:30–16:00): 5.5h") and counts only booked clock time inside it, lunch window excluded — overtime before or after the day never fills it. | done, owner to confirm |
+| 11 Nov | Review fixes: a staff viewer's clash that Warnings does not list now reads "This clash isn't in the current Warnings period." (or "This clash was dismissed in Warnings.") with Close only. | done, owner to confirm |
 
 ## 1.37.0 judgement calls (owner to confirm)
 

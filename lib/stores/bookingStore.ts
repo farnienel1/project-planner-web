@@ -1,8 +1,9 @@
 'use client'
 
 import { create } from 'zustand'
-import { doc, setDoc, writeBatch } from 'firebase/firestore'
-import { addBookingDeleteWithTombstone, deleteBookingWithTombstone } from '@/lib/bookings/bookingTombstoneWrite'
+import { doc, getDoc, setDoc, writeBatch } from 'firebase/firestore'
+import { addBookingDeleteWithTombstone, commitBookingMove, deleteBookingWithTombstone } from '@/lib/bookings/bookingTombstoneWrite'
+import { BOOKING_TOMBSTONE_COLLECTION } from '@/lib/canonical'
 import { auth, db } from '@/lib/firebase/config'
 import { MissingDocumentError, createWritePayload, savePartialDocument } from '@/lib/firebase/partialWrite'
 import { bookingUpdateWriteFields } from '@/lib/canonical/workDocumentReaders'
@@ -185,6 +186,7 @@ export const useBookingStore = create<BookingState>((set, get) => ({
     if (!organizationId) throw new Error('Missing organisation for booking')
     const deletedBy = auth?.currentUser?.uid
     if (!deletedBy) throw new Error('Sign in again to move this booking.')
+    const captured = captureOrganizationContext()
     const booking = await newBookingRecord(bookingData, organizationId)
     const id = booking.id
     // The same create payload as `createBooking` (write metadata, a plain create of a fresh id), plus the delete and
@@ -200,7 +202,15 @@ export const useBookingStore = create<BookingState>((set, get) => ({
       bookingId: fromManagerSiteBookingId,
       deletedBy,
     })
-    await batch.commit()
+    // Review (11 Nov): a source deleted on another device writes nothing and reads "This was deleted on another device."
+    await commitBookingMove({
+      sourceExists: async () => (await getDoc(doc(firestore, 'organizations', organizationId, 'managerSiteBookings', fromManagerSiteBookingId))).exists(),
+      tombstoneExists: async () => (await getDoc(doc(firestore, 'organizations', organizationId, BOOKING_TOMBSTONE_COLLECTION, fromManagerSiteBookingId))).exists(),
+      commit: () => batch.commit(),
+      missing: () => new MissingDocumentError(`organizations/${organizationId}/managerSiteBookings/${fromManagerSiteBookingId}`),
+    })
+    // The organisation was switched while the move was written: the write stands, this screen's lists are not touched.
+    if (!organizationContextStillCurrent(organizationId, captured)) return
     if (!get().bookings.some((row) => row.id === id)) set({ bookings: [...get().bookings, booking] })
     notifyBookingCreatedSoon(booking)
     const { notifyManagerSiteBookingRemovedSoon } = await import('@/lib/stores/managerScheduleStore')
@@ -341,6 +351,12 @@ export function bookingsOrganizationId(): string {
 /** A labour booking moved out by a batched move (1.39.0): its PAYE overtime line reopens, as a delete does. */
 export function notifyBookingRemovedSoon(bookingId: string): void {
   const removed = useBookingStore.getState().bookings.find((row) => row.id === bookingId)
+  // As `deleteBooking`: the plan and collection caches forget the document, so a later snapshot cannot bring it back.
+  const organizationId = removed?.organizationId || bookingDownloadOrgId
+  if (organizationId) {
+    forgetOrgPlanDoc('bookings', organizationId, bookingId)
+    forgetOrgCollectionDoc('bookings', organizationId, bookingId)
+  }
   if (!removed) return
   useBookingStore.setState({ bookings: useBookingStore.getState().bookings.filter((row) => row.id !== bookingId) })
   notifyOvertimeReopenedSoon(removed, null)

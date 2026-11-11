@@ -781,9 +781,8 @@ export function MyScheduleSelfBookingScreen({
               ) : null}
               {assignedRows.map((booking) => (
                 <div key={booking.id} className="bk" data-hue="proj">
-                  <b>
-                    {booking.title} <MyScheduleClashMarkerButton marker={clashMarkers?.get(booking.id)} />
-                  </b>
+                  <b>{booking.title}</b>
+                  <MyScheduleClashMarkerButton marker={clashMarkers?.get(booking.id)} />
                   <span className="x">{booking.detail}</span>
                 </div>
               ))}
@@ -813,9 +812,9 @@ export function MyScheduleSelfBookingScreen({
                           }
                         : {})}
                     >
-                      <b>
-                        {locationName(booking)} <MyScheduleClashMarkerButton marker={clashMarkers?.get(booking.id)} />
-                      </b>
+                      <b>{locationName(booking)}</b>
+                      {/* The wrapper stops the marker and its popup reaching this row's Edit booking. */}
+                      <MyScheduleClashMarkerButton marker={clashMarkers?.get(booking.id)} />
                       <span className="x">{slotLabel(booking, payrollPolicy)}</span>
                       {removeActionFor(booking) === 'delete' ? (
                         <button

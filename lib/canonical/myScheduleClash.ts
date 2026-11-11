@@ -6,8 +6,12 @@
  * decides which), approval `isClashApproved` over `approvedWarningKeys` and `acceptedBookingClashes` (keys without case),
  * each booking's named slot under the working hours in effect on its own day. Tapping it opens a styled popup:
  *   not approved: "Booking clash", the other booking(s) (day · place · times) and "Open Warnings" only when the viewer
- *                 may open Warnings and the clash is in their warning scope (`isWarningRowInScope`); otherwise
- *                 "Ask your manager to review this clash." and Close only;
+ *                 may open Warnings, the clash is in their warning scope (`isWarningRowInScope`) AND Warnings lists it
+ *                 now — its day is one of `clashScanDays` and it is not dismissed (operative clusters
+ *                 `isClashGroupApproved` over the resolved keys, manager clashes `isWarningActive`, exactly as the
+ *                 Warnings list filters them). A staff viewer whose clash Warnings does not list reads "This clash
+ *                 isn't in the current Warnings period." (or "This clash was dismissed in Warnings."); anyone else
+ *                 "Ask your manager to review this clash." Close only in those cases;
  *   approved:     "Clash approved" — "This clash was already approved. The booking will have to be adjusted manually."
  * When the approvals have not loaded (`decisions` null) nothing reads as approved: a clash stays red.
  * Display only: nothing is written. Daily Overview does not show it.
@@ -18,6 +22,7 @@ import type { BookingPersonInput } from './bookingPerson'
 import {
   isClashApproved,
   isClashGroupApproved,
+  isWarningActive,
   managerClashGroups,
   operativeClashGroups,
   type PersonDayManagerBooking,
@@ -33,6 +38,8 @@ export const MY_SCHEDULE_CLASH_APPROVED_TITLE = 'Clash approved'
 export const MY_SCHEDULE_CLASH_APPROVED_MESSAGE = 'This clash was already approved. The booking will have to be adjusted manually.'
 export const MY_SCHEDULE_CLASH_ASK_MANAGER = 'Ask your manager to review this clash.'
 export const MY_SCHEDULE_CLASH_OPEN_WARNINGS = 'Open Warnings'
+export const MY_SCHEDULE_CLASH_NOT_IN_PERIOD = "This clash isn't in the current Warnings period."
+export const MY_SCHEDULE_CLASH_DISMISSED = 'This clash was dismissed in Warnings.'
 
 export type MyScheduleClashOperativeBooking = PersonDayOperativeBooking & {
   /** The job's name or number, shown in the popup. */
@@ -97,8 +104,16 @@ export function myScheduleClashMarkers(input: {
   people?: BookingPersonInput | null
   managerIds?: ReadonlyArray<string> | null
   day?: OrgPayrollTimePolicy | PayrollTimePolicyState | null
-  /** Approved keys (`approvedWarningKeys`) and `acceptedBookingClashes`; null while not loaded — nothing reads approved. */
+  /**
+   * `resolvedKeys` (`resolvedWarningKeys`: approved and dismissed), `approvedKeys` (`approvedWarningKeys`) and
+   * `acceptedBookingClashes`; null while not loaded — nothing reads approved and "Open Warnings" is not offered.
+   */
   decisions?: WarningDecisions | null
+  /**
+   * `clashScanDays(...).dayKeys` for today (the days Warnings checks clashes on). Missing → no day is in the Warnings
+   * period, so "Open Warnings" is never offered on a guess.
+   */
+  scanDayKeys?: ReadonlyArray<string> | null
   canOpenWarnings?: boolean | null
   scope?: WarningScope | null
   viewerIds?: ReadonlyArray<string> | null
@@ -125,8 +140,20 @@ export function myScheduleClashMarkers(input: {
       jobIds: bookingIds.map((id) => jobOf.get(id) ?? null),
     })
 
-  const add = (bookingIds: string[], approved: boolean) => {
-    const open = !approved && input?.canOpenWarnings === true && inScope(bookingIds)
+  const scanDays = new Set((input?.scanDayKeys || []).map((key) => String(key)))
+  const staff = input?.canOpenWarnings === true
+
+  // `listed`: Warnings lists the clash today — its day is scanned and it is not dismissed.
+  const add = (bookingIds: string[], approved: boolean, listed: 'listed' | 'notInPeriod' | 'dismissed') => {
+    const scoped = staff && inScope(bookingIds)
+    const open = !approved && scoped && listed === 'listed'
+    const note = open
+      ? ''
+      : !scoped
+        ? MY_SCHEDULE_CLASH_ASK_MANAGER
+        : listed === 'dismissed'
+          ? MY_SCHEDULE_CLASH_DISMISSED
+          : MY_SCHEDULE_CLASH_NOT_IN_PERIOD
     for (const bookingId of bookingIds) {
       const others = bookingIds.filter((id) => id !== bookingId)
       const lines = others.map((id) => describeById.get(id) ?? id)
@@ -151,20 +178,35 @@ export function myScheduleClashMarkers(input: {
               otherBookingIds: others,
               canOpenWarnings: open,
               title: MY_SCHEDULE_CLASH_TITLE,
-              message: `This booking overlaps ${lines.join('; ')}.${open ? '' : ` ${MY_SCHEDULE_CLASH_ASK_MANAGER}`}`,
+              message: `This booking overlaps ${lines.join('; ')}.${note ? ` ${note}` : ''}`,
               actionLabel: open ? MY_SCHEDULE_CLASH_OPEN_WARNINGS : null,
             }
       )
     }
   }
 
+  const listedOn = (dayKey: string, dismissed: boolean): 'listed' | 'notInPeriod' | 'dismissed' => {
+    if (decisions == null || !scanDays.has(dayKey)) return 'notInPeriod'
+    return dismissed ? 'dismissed' : 'listed'
+  }
+
   for (const group of operativeClashGroups({ operativeBookings, people, managerIds, day })) {
-    add([...group.bookingIds], decisions != null && isClashGroupApproved(group, decisions))
+    const approved = decisions != null && isClashGroupApproved(group, decisions)
+    // Warnings hides an operative cluster once every pair is approved, dismissed or accepted (resolved keys).
+    const hidden =
+      decisions != null &&
+      isClashGroupApproved(group, { resolvedKeys: decisions.resolvedKeys, acceptedClashes: decisions.acceptedClashes })
+    add([...group.bookingIds], approved, listedOn(group.dayKey, hidden))
   }
   for (const group of managerClashGroups({ managerBookings, operativeBookings, people, managerIds, day })) {
+    const approved = decisions != null && isClashApproved(group, decisions)
+    const hidden =
+      decisions != null &&
+      !isWarningActive({ resolutionKey: group.resolutionKey, bookingAId: group.bookingAId, bookingBId: group.bookingBId }, decisions)
     add(
       group.items.map((item) => item.bookingId),
-      decisions != null && isClashApproved(group, decisions)
+      approved,
+      listedOn(group.dayKey, hidden)
     )
   }
   return [...markers.values()].sort((a, b) => a.bookingId.localeCompare(b.bookingId))

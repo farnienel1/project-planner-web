@@ -14,7 +14,7 @@
  *                            "30 min paid break 11:30–12:00 (not deducted)"
  */
 
-import { formatClockMinutes } from './engine'
+import { formatClockMinutes, parseClockMinutes } from './engine'
 import type { OrgPayrollTimePolicy } from './organizationSettings'
 import {
   payrollBreakOnDay,
@@ -115,6 +115,8 @@ export type BookingBreakText = {
   label: string
   /** "30 mins deducted 11:30–12:00", or the paid label when the break is paid. */
   deducted: string
+  /** The booking's "take the break off" control: "Take off unpaid break (30 min, 11:30–12:00)" (review 11 Nov). */
+  toggleLabel: string
 }
 
 /**
@@ -135,7 +137,44 @@ export function bookingBreakText(
   const window = `${formatClockMinutes(dayBreak.start)}–${formatClockMinutes(dayBreak.end)}`
   const paid = !unpaidBreakAppliesOnDay(dayPolicy, key, zone)
   const label = paid ? `${dayBreak.minutes} min paid break ${window} (not deducted)` : `${dayBreak.minutes} min unpaid break ${window}`
-  return { minutes: dayBreak.minutes, window, paid, label, deducted: paid ? label : `${dayBreak.minutes} mins deducted ${window}` }
+  return {
+    minutes: dayBreak.minutes,
+    window,
+    paid,
+    label,
+    deducted: paid ? label : `${dayBreak.minutes} mins deducted ${window}`,
+    toggleLabel: `Take off unpaid break (${dayBreak.minutes} min, ${window})`,
+  }
+}
+
+/**
+ * Rulebook 1.39.0 (review 11 Nov): what the unpaid break actually takes off THIS booking — the minutes the pay rule took
+ * (`payrollHoursResult.unpaidBreakHours`) and the part of that day's break window the booking covers: "30 mins
+ * deducted 11:30–12:00" when it covers the whole window, "15 mins deducted (11:30–11:45 covered)" when only part,
+ * null when nothing comes off (a paid break, "No unpaid break", or a booking clear of the window).
+ */
+export function bookingBreakDeductionText(
+  policy: OrgPayrollTimePolicy | PayrollTimePolicyState | null | undefined,
+  dayKey: string | null | undefined,
+  booking: PayrollHoursBooking | null | undefined,
+  timeZone?: string | null
+): string | null {
+  const key = String(dayKey ?? '').trim()
+  if (!policy || !booking || !/^\d{4}-\d{2}-\d{2}$/.test(key)) return null
+  const zone = zoneOrLondon(timeZone)
+  const dayPolicy = dayPolicyOf(policy, key)
+  const result = payrollHoursResult({ booking, dayKey: key, policy: dayPolicy, timeZone: zone })
+  const minutes = Math.round((Number(result.unpaidBreakHours) || 0) * 60)
+  if (!(minutes > 0)) return null
+  const dayBreak = payrollBreakOnDay(dayPolicy, key, zone)
+  const start = parseClockMinutes(booking.workStartTime ?? null)
+  const end = parseClockMinutes(booking.workEndTime ?? null)
+  if (!dayBreak || start == null || end == null) return `${minutes} mins deducted`
+  const from = Math.max(start, dayBreak.start)
+  const to = Math.min(end > start ? end : end + 24 * 60, dayBreak.end)
+  const whole = from <= dayBreak.start && to >= dayBreak.end
+  const span = `${formatClockMinutes(Math.min(from, to))}–${formatClockMinutes(to)}`
+  return whole ? `${minutes} mins deducted ${span}` : `${minutes} mins deducted (${span} covered)`
 }
 
 export type BookingHoursTile = {
