@@ -121,7 +121,7 @@ import { timesheetLeaveLinesForAccount } from '@/lib/timesheets/timesheetLeave'
 import type { TimesheetLeaveLine } from '@/lib/canonical'
 import { useOrgBankHolidays } from '@/components/annual-leave/useOrgBankHolidays'
 import { PayInputsBanner } from '@/components/timesheets/PayInputsBanner'
-import { BriefcaseIcon, CheckCircleIcon, ReceiptPercentIcon } from '@heroicons/react/24/solid'
+import { BriefcaseIcon, CheckCircleIcon, ClockIcon, ReceiptPercentIcon } from '@heroicons/react/24/solid'
 import {
   Card,
   Chip,
@@ -2000,60 +2000,58 @@ function EditHoursSheet({
     policy,
   })
   return (
-    <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/40 p-4 sm:items-center">
-      <div className="max-h-[90vh] w-full max-w-lg space-y-3 overflow-y-auto rounded-2xl bg-[var(--soft)] p-5">
-        <div className="flex items-center justify-between">
-          <button type="button" onClick={onCancel} className="text-[15px] font-semibold text-[#007AFF]">
-            Cancel
-          </button>
-          <p className="text-[17px] font-semibold">Edit Hours</p>
-          <button type="button" onClick={onSave} className="text-[15px] font-semibold text-[#007AFF]">
-            Save
-          </button>
+    <Modal
+      labelledBy="ts-edit-hours-title"
+      title="Edit Hours"
+      tile={<IconTile tone="blue" size="sm"><ClockIcon /></IconTile>}
+      headerStart={
+        <PuButton size="sm" onClick={onCancel}>
+          Cancel
+        </PuButton>
+      }
+      footer={
+        <PuButton variant="primary" onClick={onSave}>
+          Save
+        </PuButton>
+      }
+    >
+      <p className="pu-sub" style={{ textAlign: 'center' }}>
+        {abbreviatedDate(line.date, timeZone)} · {line.jobNumber} {line.projectName}
+      </p>
+      <div>
+        <HoursTimelinePicker
+          start={start}
+          end={end}
+          breakRemoved={breakRemoved}
+          policy={policy}
+          date={line.date}
+          onStart={onStart}
+          onEnd={onEnd}
+          onBreak={onBreak}
+          showBreak={!line.isOvertimeLine}
+        />
+      </div>
+      {line.isOvertimeLine ? (
+        <label className="pu-form-label">
+          Overtime multiplier
+          <input value={otText} onChange={(event) => onOt(event.target.value)} className="pu-inp" inputMode="decimal" />
+        </label>
+      ) : null}
+      <div className="pu-totals" style={{ border: '1px solid var(--pu-line-2)', borderRadius: 12 }}>
+        <div className="r">
+          <span>Paid hours</span>
+          <b>{formatTimesheetHours(paid)}h</b>
         </div>
-        <p className="text-center text-[13px] text-[var(--ink3)]">
-          {abbreviatedDate(line.date, timeZone)} · {line.jobNumber} {line.projectName}
-        </p>
-        <div className="rounded-2xl bg-white p-4">
-          <HoursTimelinePicker
-            start={start}
-            end={end}
-            breakRemoved={breakRemoved}
-            policy={policy}
-            date={line.date}
-            onStart={onStart}
-            onEnd={onEnd}
-            onBreak={onBreak}
-            showBreak={!line.isOvertimeLine}
-          />
+        <div className="r">
+          <span>Overtime</span>
+          <b>{otHoursText ?? `${formatTimesheetHours(ot)}h`}</b>
         </div>
-        {line.isOvertimeLine ? (
-          <label className="block rounded-2xl bg-white px-4 py-3 text-[11px] font-medium uppercase tracking-[0.4px] text-[var(--ink3)]">
-            Overtime multiplier
-            <input
-              value={otText}
-              onChange={(event) => onOt(event.target.value)}
-              className="mt-1 w-full border-0 p-0 text-[14px] font-medium text-[var(--ink)] outline-none"
-              inputMode="decimal"
-            />
-          </label>
-        ) : null}
-        <div className="rounded-2xl bg-white px-4 py-3 text-[14px]">
-          <p className="flex justify-between">
-            <span>Paid hours</span>
-            <span className="font-semibold">{formatTimesheetHours(paid)}h</span>
-          </p>
-          <p className="mt-1 flex justify-between">
-            <span>Overtime</span>
-            <span className="font-semibold">{otHoursText ?? `${formatTimesheetHours(ot)}h`}</span>
-          </p>
-          <p className="mt-2 flex justify-between text-[15px] font-semibold">
-            <span>Revised amount</span>
-            <span>{money(amount, currency)}</span>
-          </p>
+        <div className="r big">
+          <span>Revised amount</span>
+          <span>{money(amount, currency)}</span>
         </div>
       </div>
-    </div>
+    </Modal>
   )
 }
 
@@ -2076,30 +2074,29 @@ function AmountEditSheet({
 }) {
   const currency = useOrganizationCurrency()
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-sm rounded-2xl bg-white p-5">
-        <div className="flex items-center justify-between">
-          <button type="button" onClick={onCancel} className="text-[15px] font-semibold text-[#007AFF]">
-            Cancel
-          </button>
-          <p className="text-[17px] font-semibold">{title}</p>
-          <button type="button" onClick={onSave} className="text-[15px] font-semibold text-[#007AFF]">
-            Save
-          </button>
-        </div>
-        <p className="mt-3 text-[14px] text-[var(--ink3)]">{subtitle}</p>
-        <label className="mt-3 flex items-center gap-2 rounded-xl border px-3 py-2 text-[15px]">
-          {currencySymbol(currency)}
-          <input
-            value={amountText}
-            onChange={(event) => onAmount(event.target.value)}
-            className="w-full border-0 p-0 outline-none"
-            inputMode="decimal"
-          />
-        </label>
-        <p className="mt-2 text-[12px] text-[var(--ink3)]">Original: {money(originalAmount, currency)}</p>
-      </div>
-    </div>
+    <Modal
+      size="sm"
+      labelledBy="ts-amount-edit-title"
+      title={title}
+      tile={<IconTile tone="blue" size="sm"><ReceiptPercentIcon /></IconTile>}
+      headerStart={
+        <PuButton size="sm" onClick={onCancel}>
+          Cancel
+        </PuButton>
+      }
+      footer={
+        <PuButton variant="primary" onClick={onSave}>
+          Save
+        </PuButton>
+      }
+    >
+      <p className="pu-sub" style={{ fontSize: 14 }}>{subtitle}</p>
+      <label className="pu-field" style={{ minWidth: 0 }}>
+        {currencySymbol(currency)}
+        <input value={amountText} onChange={(event) => onAmount(event.target.value)} inputMode="decimal" aria-label="Revised amount" />
+      </label>
+      <span className="pu-sub">Original: {money(originalAmount, currency)}</span>
+    </Modal>
   )
 }
 
@@ -2138,10 +2135,14 @@ function ExtraForm({
   const jobSuggestions = extraFormJobSuggestions(jobs, jobNumber)
   const managerSuggestions = extraFormManagerSuggestions(managers, agreedManagerName)
 
+  const priceWork = mode === 'priceWork'
   return (
-    <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/40 p-4 sm:items-center">
+    <div className="pu-modal-wrap">
       <form
-        className="max-h-[90vh] w-full max-w-lg space-y-3 overflow-y-auto rounded-2xl bg-[var(--soft)] p-5"
+        className="pu-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="ts-extra-form-title"
         onSubmit={(event) => {
           event.preventDefault()
           if (value == null || !canSave) return
@@ -2176,110 +2177,129 @@ function ExtraForm({
           }
         }}
       >
-        <div className="flex items-center justify-between">
-          <button type="button" onClick={onCancel} className="text-[15px] font-semibold text-[#007AFF]">
+        <div className="pu-modal-h">
+          <IconTile tone={priceWork ? 'purple' : 'green'} size="sm">
+            {priceWork ? <BriefcaseIcon /> : <ReceiptPercentIcon />}
+          </IconTile>
+          <h2 id="ts-extra-form-title">{priceWork ? 'Add Price Work' : 'Add Expense'}</h2>
+          <PuButton size="sm" onClick={onCancel}>
             Cancel
-          </button>
-          <p className="text-[17px] font-semibold">{mode === 'priceWork' ? 'Add Price Work' : 'Add Expense'}</p>
-          <button type="submit" disabled={!canSave} className="text-[15px] font-semibold text-[#007AFF] disabled:text-[var(--ink3)]">
-            {mode === 'expense' ? 'Add expense' : 'Add price work'}
-          </button>
+          </PuButton>
         </div>
-        <div className="space-y-0 overflow-hidden rounded-2xl bg-white px-4">
-          <label className="block border-b border-[#E5E5EA] py-3 text-[11px] font-medium uppercase tracking-[0.4px] text-[var(--ink3)]">
+        <div className="pu-modal-b">
+          <label className="pu-form-label">
             {mode === 'expense' ? 'Expense name' : 'Price work name'}
-            <input value={title} onChange={(e) => setTitle(e.target.value)} className="mt-1 w-full border-0 p-0 text-[14px] font-medium text-[var(--ink)] outline-none" />
+            <input value={title} onChange={(e) => setTitle(e.target.value)} className="pu-inp" />
           </label>
-          <label className="block border-b border-[#E5E5EA] py-3 text-[11px] font-medium uppercase tracking-[0.4px] text-[var(--ink3)]">
+          <label className="pu-form-label">
             Description
-            <textarea value={details} onChange={(e) => setDetails(e.target.value)} className="mt-1 min-h-[72px] w-full border-0 p-0 text-[14px] text-[var(--ink)] outline-none" />
+            <textarea value={details} onChange={(e) => setDetails(e.target.value)} className="pu-inp" />
           </label>
-          <label className="block border-b border-[#E5E5EA] py-3 text-[11px] font-medium uppercase tracking-[0.4px] text-[var(--ink3)]">
-            {mode === 'priceWork' ? 'Job number (required)' : 'Job number'}
-            <input
-              value={jobNumber}
-              onChange={(e) => setJobNumber(e.target.value)}
-              maxLength={mode === 'priceWork' ? PRICE_WORK_JOB_NUMBER_MAX : undefined}
-              required={mode === 'priceWork'}
-              className="mt-1 w-full border-0 p-0 text-[14px] font-medium text-[var(--ink)] outline-none"
-            />
-            {jobNumberError && (title.trim() || amount.trim()) ? (
-              <span className="mt-1 block text-[12px] normal-case tracking-normal text-red-600">{jobNumberError}</span>
-            ) : null}
-          </label>
-          {jobSuggestions.length > 0 ? (
-            <div className="flex flex-wrap gap-2 py-2">
-              {jobSuggestions.map((job) => (
-                <button
-                  key={`${job.jobNumber}-${job.siteName}`}
-                  type="button"
-                  onClick={() => setJobNumber(job.jobNumber)}
-                  className="rounded-full bg-[#007AFF]/10 px-3 py-1 text-[12px] font-medium text-[#007AFF]"
-                >
-                  {job.jobNumber}
-                </button>
-              ))}
-            </div>
-          ) : null}
-          <label className="block py-3 text-[11px] font-medium uppercase tracking-[0.4px] text-[var(--ink3)]">
-            Amount
-            <input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder={formatMoney(0, currency)} inputMode="decimal" className="mt-1 w-full border-0 p-0 text-[14px] font-medium text-[var(--ink)] outline-none" required />
-          </label>
-        </div>
-        <div className="overflow-hidden rounded-2xl bg-white px-4 py-3">
-          <label className="block text-[13px] font-medium text-[var(--ink)]">
-            {mode === 'expense' ? 'Date' : 'Start date'}
-            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="mt-1 w-full rounded-lg border px-3 py-2 text-[15px] text-[var(--ink)]" />
-          </label>
-          {mode === 'priceWork' ? (
-            <>
-              <label className="mt-3 flex items-center justify-between text-[13px] font-medium text-[var(--ink)]">
-                Add end date
-                <input type="checkbox" checked={includeEndDate} onChange={(e) => setIncludeEndDate(e.target.checked)} />
+          <div className="pu-form-row">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 }}>
+              <label className="pu-form-label">
+                <span>
+                  Job number{priceWork ? <span className="req"> (required)</span> : null}
+                </span>
+                <input
+                  value={jobNumber}
+                  onChange={(e) => setJobNumber(e.target.value)}
+                  maxLength={mode === 'priceWork' ? PRICE_WORK_JOB_NUMBER_MAX : undefined}
+                  required={mode === 'priceWork'}
+                  className={`pu-inp${jobNumberError && (title.trim() || amount.trim()) ? ' invalid' : ''}`}
+                />
               </label>
-              {includeEndDate ? (
-                <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="mt-2 w-full rounded-lg border px-3 py-2 text-[15px]" />
+              {jobNumberError && (title.trim() || amount.trim()) ? <span className="pu-err">{jobNumberError}</span> : null}
+              {jobSuggestions.length > 0 ? (
+                <div className="pu-sugg">
+                  {jobSuggestions.map((job) => (
+                    <button key={`${job.jobNumber}-${job.siteName}`} type="button" onClick={() => setJobNumber(job.jobNumber)}>
+                      {job.jobNumber}
+                    </button>
+                  ))}
+                </div>
               ) : null}
-            </>
-          ) : null}
-        </div>
-        {mode === 'priceWork' ? (
-          <div className="overflow-hidden rounded-2xl bg-white px-4 py-3">
-            <label className="block text-[11px] font-medium uppercase tracking-[0.4px] text-[var(--ink3)]">
-              Manager who agreed this
-              <input value={agreedManagerName} onChange={(e) => setAgreedManagerName(e.target.value)} className="mt-1 w-full border-0 p-0 text-[14px] font-medium text-[var(--ink)] outline-none" />
+            </div>
+            <label className="pu-form-label">
+              Amount
+              <input
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                placeholder={formatMoney(0, currency)}
+                inputMode="decimal"
+                className="pu-inp"
+                required
+              />
             </label>
-            {managerSuggestions.length > 0 ? (
-              <div className="mt-2 flex flex-wrap gap-2">
-                {managerSuggestions.map((name) => (
-                  <button key={name} type="button" onClick={() => setAgreedManagerName(name)} className="rounded-full bg-[#007AFF]/10 px-3 py-1 text-[12px] font-medium text-[#007AFF]">
-                    {name}
-                  </button>
-                ))}
+          </div>
+          <div className="pu-form-row">
+            <label className="pu-form-label">
+              {mode === 'expense' ? 'Date' : 'Start date'}
+              <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="pu-inp" />
+            </label>
+            {priceWork ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 }}>
+                <label className="pu-form-label" style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 18 }}>
+                  Add end date
+                  <input type="checkbox" checked={includeEndDate} onChange={(e) => setIncludeEndDate(e.target.checked)} />
+                </label>
+                {includeEndDate ? (
+                  <input
+                    type="date"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                    className="pu-inp"
+                    aria-label="End date"
+                  />
+                ) : null}
               </div>
             ) : null}
           </div>
-        ) : (
-          <label className="flex items-center gap-3 rounded-2xl bg-white px-4 py-3 text-[13px] font-medium text-[var(--ink)]">
-            <span className="text-[#007AFF]">📎</span>
-            <span>Upload receipt</span>
-            <span className={`ml-auto text-[12px] ${receiptName ? 'text-[#007AFF]' : 'text-red-600'}`}>{receiptName || 'Required'}</span>
-            <input
-              type="file"
-              accept="image/*"
-              className="sr-only"
-              onChange={(event) => {
-                const file = event.target.files?.[0]
-                if (!file || !file.type.startsWith('image/')) {
-                  setReceiptName(null)
-                  event.target.value = ''
-                  return
-                }
-                setReceiptName(timesheetReceiptStoredName(file.name))
-              }}
-            />
-          </label>
-        )}
+          {priceWork ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <label className="pu-form-label">
+                Manager who agreed this
+                <input value={agreedManagerName} onChange={(e) => setAgreedManagerName(e.target.value)} className="pu-inp" />
+              </label>
+              {managerSuggestions.length > 0 ? (
+                <div className="pu-sugg">
+                  {managerSuggestions.map((name) => (
+                    <button key={name} type="button" onClick={() => setAgreedManagerName(name)}>
+                      {name}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <label className="pu-dashed">
+              <span aria-hidden="true">📎</span>
+              <span>Upload receipt</span>
+              <span style={{ marginLeft: 'auto' }}>
+                {receiptName ? <Chip tone="blue">{receiptName}</Chip> : <Chip tone="red">Required</Chip>}
+              </span>
+              <input
+                type="file"
+                accept="image/*"
+                className="sr-only"
+                onChange={(event) => {
+                  const file = event.target.files?.[0]
+                  if (!file || !file.type.startsWith('image/')) {
+                    setReceiptName(null)
+                    event.target.value = ''
+                    return
+                  }
+                  setReceiptName(timesheetReceiptStoredName(file.name))
+                }}
+              />
+            </label>
+          )}
+        </div>
+        <div className="pu-modal-f">
+          <PuButton type="submit" variant="primary" disabled={!canSave}>
+            {mode === 'expense' ? 'Add expense' : 'Add price work'}
+          </PuButton>
+        </div>
       </form>
     </div>
   )
