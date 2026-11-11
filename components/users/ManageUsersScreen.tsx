@@ -21,6 +21,19 @@ import { matchesRosterSegment, type RosterSegment } from '@/lib/staff/userRoster
 import { displayTradeType } from '@/lib/staff/staffTradeTypes'
 import type { User } from '@/types'
 import { UserAvatar } from '@/components/users/UserAvatar'
+import { ChevronRightIcon, EnvelopeIcon, KeyIcon, MagnifyingGlassIcon, UserGroupIcon } from '@heroicons/react/24/solid'
+import {
+  Card,
+  Chip,
+  DataTable,
+  EmptyState,
+  IconTile,
+  Note,
+  PageBand,
+  PageShell,
+  SegmentedTabs,
+  type PuTone,
+} from '@/components/ui/page'
 import { staffAccountRole } from '@/lib/permissions'
 import { usersWithoutRequiredLineManager } from '@/lib/annualLeave/holidayApprovalUtils'
 import { accountTypeSyncState } from '@/lib/canonical/permissionLevels'
@@ -54,42 +67,83 @@ function avatarGradient(user: User): string {
   return 'from-[#2563EB] to-[#3B82F6]'
 }
 
-type Badge = { label: string; cls: string }
+type BadgeKind = 'role' | 'trade' | 'status'
+type Badge = { label: string; tone: PuTone; kind: BadgeKind }
 
 function badgesFor(user: User, showAdminBadge: boolean): Badge[] {
   const out: Badge[] = []
   if (user.isSuperAdmin) {
-    out.push({ label: 'Super Admin', cls: 'bg-[#FFF4E5] text-[#C2410C]' })
+    out.push({ label: 'Super Admin', tone: 'amber', kind: 'role' })
   } else if (user.permissions.adminAccess) {
-    out.push({ label: 'Administrator', cls: 'bg-[#FDECF1] text-[#E11D48]' })
+    out.push({ label: 'Administrator', tone: 'purple', kind: 'role' })
   } else if (user.permissions.manager) {
-    out.push({ label: 'Manager', cls: 'bg-[var(--blue-t)] text-[var(--blue)]' })
+    out.push({ label: 'Manager', tone: 'blue', kind: 'role' })
   } else if (user.permissions.operativeMode) {
-    out.push({ label: 'Operative', cls: 'bg-[#E9F9EF] text-[#15A34A]' })
+    out.push({ label: 'Operative', tone: 'green', kind: 'role' })
   }
 
   const trade = displayTradeType(user.tradeTypePreset, user.tradeTypeCustom)
   if (trade && trade !== '—') {
-    out.push({ label: trade, cls: 'bg-[#F9F9FB] text-slate-500 ring-1 ring-slate-200' })
+    out.push({ label: trade, tone: 'outline', kind: 'trade' })
   }
 
   if (isGhostUser(user)) {
     // Rulebook 1.34.0 `ghostBadgeLabel`: "No app login" (· Invited once an admin gave app access).
-    out.push({ label: ghostBadgeLabel(user), cls: 'bg-[#ECECEF] text-slate-600' })
-    if (!user.isActive) out.push({ label: 'Inactive', cls: 'bg-[#ECECEF] text-slate-500' })
+    out.push({ label: ghostBadgeLabel(user), tone: 'slate', kind: 'status' })
+    if (!user.isActive) out.push({ label: 'Inactive', tone: 'slate', kind: 'status' })
   } else if (!user.isActive && user.passwordSet) {
-    out.push({ label: 'Inactive', cls: 'bg-[#ECECEF] text-slate-500' })
+    out.push({ label: 'Inactive', tone: 'slate', kind: 'status' })
   } else if (user.passwordSet) {
-    out.push({ label: 'Verified', cls: 'bg-[#E9F9EF] text-[#15A34A]' })
+    out.push({ label: 'Verified', tone: 'green', kind: 'status' })
   } else {
-    out.push({ label: 'Pending invite', cls: 'bg-[#FFF5E6] text-[#E08600]' })
+    out.push({ label: 'Pending invite', tone: 'amber', kind: 'status' })
   }
 
   if (showAdminBadge && !out.some((badge) => badge.label === 'Administrator')) {
-    out.unshift({ label: 'Admin', cls: 'bg-[#FDECF1] text-[#E11D48]' })
+    out.unshift({ label: 'Admin', tone: 'purple', kind: 'role' })
   }
 
   return out
+}
+
+function BadgeCell({ badges, kind }: { badges: Badge[]; kind: BadgeKind }) {
+  const shown = badges.filter((badge) => badge.kind === kind)
+  if (shown.length === 0) return <span className="pu-muted">—</span>
+  return (
+    <span style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+      {shown.map((badge, index) => (
+        <Chip key={index} tone={badge.tone}>
+          {badge.label}
+        </Chip>
+      ))}
+    </span>
+  )
+}
+
+function PeopleNotice({
+  title,
+  detail,
+  people,
+  onOpen,
+}: {
+  title: string
+  detail: string
+  people: User[]
+  onOpen: (user: User) => void
+}) {
+  return (
+    <Note tone="amber">
+      <b>{title}</b>
+      <span style={{ display: 'block', fontSize: 12.5, marginTop: 2 }}>{detail}</span>
+      <span style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px', marginTop: 6 }}>
+        {people.map((user) => (
+          <button key={user.id} type="button" onClick={() => onOpen(user)} className="pu-link" style={{ color: 'inherit' }}>
+            {displayName(user)}
+          </button>
+        ))}
+      </span>
+    </Note>
+  )
 }
 
 export function ManageUsersScreen() {
@@ -252,304 +306,231 @@ export function ManageUsersScreen() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl px-1 pb-16 pt-2">
-      <div className="phead" data-hue="user">
-        <div>
-          <h1>{title}</h1>
-          <div className="sub">Roles, access and invitations for your organisation.</div>
-        </div>
-        {canManage && (
-          <div className="acts">
-          <Link
-            href="/dashboard/settings/users/new"
-            className="btn primary"
-          >
-            Add user
-          </Link>
-          </div>
-        )}
-      </div>
-
-      {toast && (
-        <div
-          className={`mb-4 rounded-2xl border px-4 py-3 text-sm font-semibold ${
-            toast.kind === 'success'
-              ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-              : 'border-red-200 bg-red-50 text-red-800'
-          }`}
-        >
-          {toast.msg}
-        </div>
-      )}
-
-      {typeOutOfSync.length > 0 && (
-        <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          <p className="font-semibold">
-            {typeOutOfSync.length === 1
-              ? "1 person's user type was only partly saved"
-              : `${typeOutOfSync.length} people's user type was only partly saved`}
-          </p>
-          <p className="mt-0.5 text-xs">Open the person and press Save to finish it on every record.</p>
-          <ul className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
-            {typeOutOfSync.map((user) => (
-              <li key={user.id}>
-                <button
-                  type="button"
-                  onClick={() => selectUser(user)}
-                  className="font-semibold underline underline-offset-2 hover:text-amber-700"
-                >
-                  {displayName(user)}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {missingLineManager.length > 0 && (
-        <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          <p className="font-semibold">
-            {missingLineManager.length === 1
-              ? '1 person needs a line manager'
-              : `${missingLineManager.length} people need a line manager`}
-          </p>
-          <p className="mt-0.5 text-xs">
-            Every operative and manager needs a line manager, and so does an admin unless Annual Leave Management and Timesheet self-sign are both on (PAYE: Annual Leave Management). Until fixed, their timesheets and annual leave requests go to the other admins.
-          </p>
-          <ul className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
-            {missingLineManager.map((user) => (
-              <li key={user.id}>
-                <button
-                  type="button"
-                  onClick={() => selectUser(user)}
-                  className="font-semibold underline underline-offset-2 hover:text-amber-700"
-                >
-                  {displayName(user)}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {missingPayRate.length > 0 && (
-        <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          <p className="font-semibold">
-            {missingPayRate.length === 1
-              ? '1 self-employed person needs a pay rate'
-              : `${missingPayRate.length} self-employed people need a pay rate`}
-          </p>
-          <p className="mt-0.5 text-xs">{PAY_RATE_REQUIRED_MESSAGE}</p>
-          <ul className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
-            {missingPayRate.map((user) => (
-              <li key={user.id}>
-                <button
-                  type="button"
-                  onClick={() => selectUser(user)}
-                  className="font-semibold underline underline-offset-2 hover:text-amber-700"
-                >
-                  {displayName(user)}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {canManage && (
-        <div className="mb-3 inline-flex w-full rounded-xl bg-[var(--soft2)] p-0.5">
-          {ROLE_TABS.map(({ tab: roleTab, label }) => (
-            <button
-              key={roleTab}
-              type="button"
-              onClick={() => setTab(roleTab)}
-              className={`flex-1 rounded-[9px] px-4 py-2.5 text-sm font-semibold transition ${
-                tab === roleTab ? 'bg-[var(--card)] text-[var(--ink)] shadow-sm' : 'text-[var(--ink2)] hover:text-[var(--ink)]'
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      )}
-
-      <div className="mb-3 grid grid-cols-3 gap-2">
-        {SEGMENTS.map(({ key, title: segmentTitle }) => {
-          const selected = segment === key
-          return (
-            <button
-              key={key}
-              type="button"
-              onClick={() => setSegment(key)}
-              className={`flex items-center justify-center gap-2 rounded-xl border px-3 py-2 text-sm font-semibold transition ${
-                selected
-                  ? 'border-blue-600 bg-blue-600 text-white shadow-[0_2px_8px_rgba(37,99,235,0.25)]'
-                  : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'
-              }`}
-            >
-              {segmentTitle}
-              {listPhase !== 'loading' && (
-                <span
-                  className={`rounded-full px-1.5 py-0.5 text-[11px] font-bold ${
-                    selected ? 'bg-white/25 text-white' : 'bg-black/[0.07] text-slate-600'
-                  }`}
-                >
-                  {counts[key]}
-                </span>
-              )}
-            </button>
-          )
-        })}
-      </div>
-
-      <div className="mb-4 flex items-center gap-2 rounded-xl bg-[var(--soft2)] px-3 py-2.5">
-        <svg className="h-4 w-4 text-[var(--ink3)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z"
+    <PageShell className="pb-16">
+      <PageBand
+        eyebrow="Team"
+        title={title}
+        subtitle="Roles, access and invitations for your organisation."
+        actions={
+          canManage ? (
+            <Link href="/dashboard/settings/users/new" className="pu-btn white">
+              Add user
+            </Link>
+          ) : undefined
+        }
+      >
+        {canManage ? (
+          <SegmentedTabs
+            dark
+            ariaLabel="User level"
+            items={ROLE_TABS.map(({ tab: roleTab, label }) => ({ id: roleTab, label }))}
+            value={tab}
+            onChange={setTab}
           />
-        </svg>
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder={
-            tab === 'admins'
-              ? 'Search admins by name'
-              : tab === 'managers'
-                ? 'Search managers by name'
-                : 'Search operatives by name'
+        ) : null}
+      </PageBand>
+
+      {toast ? (
+        <Note tone={toast.kind === 'success' ? 'green' : 'red'} role="status">
+          <b>{toast.msg}</b>
+        </Note>
+      ) : null}
+
+      {typeOutOfSync.length > 0 ? (
+        <PeopleNotice
+          title={
+            typeOutOfSync.length === 1
+              ? "1 person's user type was only partly saved"
+              : `${typeOutOfSync.length} people's user type was only partly saved`
           }
-          className="w-full bg-transparent text-sm text-[var(--ink)] placeholder:text-[var(--ink3)] focus:outline-none"
+          detail="Open the person and press Save to finish it on every record."
+          people={typeOutOfSync}
+          onOpen={selectUser}
         />
-      </div>
+      ) : null}
 
-      <div className="mb-2 flex items-center justify-between px-1">
-        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">{section}</span>
-        {filtered.length > 0 && (
-          <span className="text-xs text-slate-500">
-            {filtered.length} {filtered.length === 1 ? 'person' : 'people'}
-          </span>
-        )}
-      </div>
+      {missingLineManager.length > 0 ? (
+        <PeopleNotice
+          title={
+            missingLineManager.length === 1
+              ? '1 person needs a line manager'
+              : `${missingLineManager.length} people need a line manager`
+          }
+          detail="Every operative and manager needs a line manager, and so does an admin unless Annual Leave Management and Timesheet self-sign are both on (PAYE: Annual Leave Management). Until fixed, their timesheets and annual leave requests go to the other admins."
+          people={missingLineManager}
+          onOpen={selectUser}
+        />
+      ) : null}
 
-      {listPhase === 'loading' ? (
-        <div className="flex flex-col items-center justify-center card py-16 text-center">
-          <p className="text-base font-semibold text-slate-600">Loading users...</p>
-        </div>
-      ) : listPhase === 'error' ? (
-        <div className="flex flex-col items-center justify-center card py-16 text-center">
-          <p className="text-base font-semibold text-slate-600">Could not load users</p>
-          <p className="mt-1 max-w-xs text-sm text-slate-400">{rosterError}</p>
-        </div>
-      ) : listPhase === 'empty' ? (
-        <div className="flex flex-col items-center justify-center card py-16 text-center">
-          <p className="text-base font-semibold text-slate-600">
-            No {segment} {section.toLowerCase()}
-          </p>
-          <p className="mt-1 max-w-xs text-sm text-slate-400">
-            Try another filter or add someone new from Add user.
-          </p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-          {filtered.map((user) => {
-            const showAdmin =
-              effectiveTab === 'managers' && (user.permissions.adminAccess || user.isSuperAdmin)
-            const badgeList = badgesFor(user, !!showAdmin)
-            // Rulebook 1.34.0: a ghost has no login — no password reset or sign-up email (Give app access is on its profile).
-            const isGhost = isGhostUser(user)
-            const showReset = user.passwordSet && !isGhost
-            const isMgrOrOp =
-              (user.permissions.manager || user.permissions.operativeMode) &&
-              !user.permissions.adminAccess &&
-              !user.isSuperAdmin
-            const showInvite = !user.passwordSet && isMgrOrOp && !isGhost
-            const busy = busyRow === user.id
+      {missingPayRate.length > 0 ? (
+        <PeopleNotice
+          title={
+            missingPayRate.length === 1
+              ? '1 self-employed person needs a pay rate'
+              : `${missingPayRate.length} self-employed people need a pay rate`
+          }
+          detail={PAY_RATE_REQUIRED_MESSAGE}
+          people={missingPayRate}
+          onOpen={selectUser}
+        />
+      ) : null}
 
-            return (
-              <div
-                key={user.id}
-                className="group relative rounded-2xl border border-black/[0.04] bg-white p-4 shadow-sm transition hover:shadow-md"
-              >
-                <button
-                  type="button"
+      <Card
+        title={<span className="pu-label">{section}</span>}
+        count={filtered.length > 0 ? `${filtered.length} ${filtered.length === 1 ? 'person' : 'people'}` : undefined}
+      >
+        <div className="pu-toolbar">
+          <SegmentedTabs
+            ariaLabel="Status"
+            items={SEGMENTS.map(({ key, title: segmentTitle }) => ({
+              id: key,
+              label: segmentTitle,
+              count: listPhase !== 'loading' ? counts[key] : undefined,
+            }))}
+            value={segment}
+            onChange={setSegment}
+          />
+          <label className="pu-field">
+            <MagnifyingGlassIcon width={16} height={16} aria-hidden="true" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              aria-label={
+                tab === 'admins'
+                  ? 'Search admins by name'
+                  : tab === 'managers'
+                    ? 'Search managers by name'
+                    : 'Search operatives by name'
+              }
+              placeholder={
+                tab === 'admins'
+                  ? 'Search admins by name'
+                  : tab === 'managers'
+                    ? 'Search managers by name'
+                    : 'Search operatives by name'
+              }
+            />
+          </label>
+        </div>
+
+        {listPhase === 'loading' ? (
+          <EmptyState title="Loading users..." />
+        ) : listPhase === 'error' ? (
+          <EmptyState title="Could not load users" description={rosterError ?? undefined} />
+        ) : listPhase === 'empty' ? (
+          <EmptyState
+            tile={<IconTile tone="slate" size="lg"><UserGroupIcon /></IconTile>}
+            title={`No ${segment} ${section.toLowerCase()}`}
+            description="Try another filter or add someone new from Add user."
+          />
+        ) : (
+          <DataTable
+            columns={[
+              { key: 'user', label: 'User' },
+              { key: 'role', label: 'Role' },
+              { key: 'trade', label: 'Trade' },
+              { key: 'status', label: 'Status' },
+              { key: 'actions', label: 'Actions', align: 'right' },
+            ]}
+          >
+            {filtered.map((user) => {
+              const showAdmin =
+                effectiveTab === 'managers' && (user.permissions.adminAccess || user.isSuperAdmin)
+              const badgeList = badgesFor(user, !!showAdmin)
+              // Rulebook 1.34.0: a ghost has no login — no password reset or sign-up email (Give app access is on its profile).
+              const isGhost = isGhostUser(user)
+              const showReset = user.passwordSet && !isGhost
+              const isMgrOrOp =
+                (user.permissions.manager || user.permissions.operativeMode) &&
+                !user.permissions.adminAccess &&
+                !user.isSuperAdmin
+              const showInvite = !user.passwordSet && isMgrOrOp && !isGhost
+              const busy = busyRow === user.id
+
+              return (
+                <tr
+                  key={user.id}
+                  className="click"
                   onClick={() => selectUser(user)}
                   onPointerEnter={() => prefetch(userHref(user))}
-                  onFocus={() => prefetch(userHref(user))}
                   aria-busy={pendingHref === userHref(user) || undefined}
-                  className="flex w-full items-center gap-3 text-left"
                 >
-                  <UserAvatar user={user} size={48} className="rounded-[14px]" gradient={avatarGradient(user)} />
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-base font-bold text-slate-900">{displayName(user)}</div>
-                    <div className="truncate text-sm text-slate-500">{user.email || ghostBadgeLabel(user)}</div>
-                  </div>
-                  {pendingHref === userHref(user) ? (
-                    <PendingSpinner className="h-4 w-4 shrink-0 text-slate-400" />
-                  ) : (
-                    <svg
-                      className="h-4 w-4 shrink-0 text-slate-300"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth={2.5}
-                    >
-                      <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
-                    </svg>
-                  )}
-                </button>
-
-                {badgeList.length > 0 && (
-                  <div className="mt-3 flex flex-wrap gap-1.5">
-                    {badgeList.map((badge, index) => (
-                      <span key={index} className={`rounded-md px-2 py-0.5 text-[11px] font-semibold ${badge.cls}`}>
-                        {badge.label}
+                  <td>
+                    <span className="pu-who">
+                      <UserAvatar user={user} size={36} className="rounded-full" gradient={avatarGradient(user)} />
+                      <span style={{ minWidth: 0 }}>
+                        <button
+                          type="button"
+                          className="pu-rowbtn"
+                          onFocus={() => prefetch(userHref(user))}
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            selectUser(user)
+                          }}
+                        >
+                          <b className="truncate">{displayName(user)}</b>
+                        </button>
+                        <small className="truncate">{user.email || ghostBadgeLabel(user)}</small>
                       </span>
-                    ))}
-                  </div>
-                )}
-
-                {canManage && (
-                  <div className="absolute right-14 top-4 flex items-center gap-2">
-                    {showReset && (
+                    </span>
+                  </td>
+                  <td>
+                    <BadgeCell badges={badgeList} kind="role" />
+                  </td>
+                  <td>
+                    <BadgeCell badges={badgeList} kind="trade" />
+                  </td>
+                  <td>
+                    <BadgeCell badges={badgeList} kind="status" />
+                  </td>
+                  <td className="actions">
+                    <span style={{ display: 'inline-flex', gap: 6 }} onClick={(event) => event.stopPropagation()}>
+                      {canManage && showReset ? (
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => sendReset(user)}
+                          title="Send password reset email"
+                          aria-label={`Send password reset email to ${displayName(user)}`}
+                          className="pu-btn icon sm"
+                        >
+                          <KeyIcon width={16} height={16} aria-hidden="true" />
+                        </button>
+                      ) : null}
+                      {canManage && showInvite ? (
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => resendInvite(user)}
+                          title="Resend sign-up email with verification code"
+                          aria-label={`Resend sign-up email with verification code to ${displayName(user)}`}
+                          className="pu-btn icon sm"
+                        >
+                          <EnvelopeIcon width={16} height={16} aria-hidden="true" />
+                        </button>
+                      ) : null}
                       <button
                         type="button"
-                        disabled={busy}
-                        onClick={() => sendReset(user)}
-                        title="Send password reset email"
-                        className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#EEEDFE] text-[#534AB7] hover:brightness-95 disabled:opacity-50"
+                        onClick={() => selectUser(user)}
+                        onFocus={() => prefetch(userHref(user))}
+                        aria-label={`Open ${displayName(user)}`}
+                        aria-busy={pendingHref === userHref(user) || undefined}
+                        className="pu-btn icon sm"
                       >
-                        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
-                          <path
-                            fillRule="evenodd"
-                            d="M15.75 1.5a6.75 6.75 0 0 0-6.651 7.906c.067.39-.032.717-.221.906l-6.5 6.499a3 3 0 0 0-.878 2.121v2.818c0 .414.336.75.75.75H6a.75.75 0 0 0 .75-.75v-1.5h1.5A.75.75 0 0 0 9 19.5V18h1.5a.75.75 0 0 0 .53-.22l2.658-2.658c.19-.189.517-.288.906-.22A6.75 6.75 0 1 0 15.75 1.5Zm0 3a.75.75 0 0 0 0 1.5A2.25 2.25 0 0 1 18 8.25a.75.75 0 0 0 1.5 0 3.75 3.75 0 0 0-3.75-3.75Z"
-                            clipRule="evenodd"
-                          />
-                        </svg>
+                        {pendingHref === userHref(user) ? (
+                          <PendingSpinner />
+                        ) : (
+                          <ChevronRightIcon width={16} height={16} aria-hidden="true" />
+                        )}
                       </button>
-                    )}
-                    {showInvite && (
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => resendInvite(user)}
-                        title="Resend sign-up email with verification code"
-                        className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--blue-t)] text-[#2563EB] hover:brightness-95 disabled:opacity-50"
-                      >
-                        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
-                          <path d="M1.5 8.67v8.58a3 3 0 0 0 3 3h15a3 3 0 0 0 3-3V8.67l-8.928 5.493a3 3 0 0 1-3.144 0L1.5 8.67Z" />
-                          <path d="M22.5 6.908V6.75a3 3 0 0 0-3-3h-15a3 3 0 0 0-3 3v.158l9.714 5.978a1.5 1.5 0 0 0 1.572 0L22.5 6.908Z" />
-                        </svg>
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
-            )
-          })}
-        </div>
-      )}
-    </div>
+                    </span>
+                  </td>
+                </tr>
+              )
+            })}
+          </DataTable>
+        )}
+      </Card>
+    </PageShell>
   )
 }

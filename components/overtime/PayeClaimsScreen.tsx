@@ -77,7 +77,8 @@ import {
 } from '@/lib/payeClaims/payeClaimsData'
 import { prepareAuditPhoto } from '@/lib/siteAudit/prepareAuditPhoto'
 import { uploadLimitError } from '@/lib/security/uploadLimits'
-import { CustomRangeForm, NavBar, Tile, isPaye, orgLogo, overtimeHref, personName } from '@/components/overtime/overtimeUi'
+import { CustomRangeForm, ListTile, NavBar, Tile, isPaye, orgLogo, overtimeHref, personName } from '@/components/overtime/overtimeUi'
+import { Card, EmptyState, Note, PageShell } from '@/components/ui/page'
 import type { User } from '@/types'
 
 import { downloadPdf } from '@/lib/pdf/downloadPdf'
@@ -121,83 +122,91 @@ export function PayeClaimsSection(props: Props) {
   const sectionHref = overtimeHref({ ...here })
   const selfEmployed = !isPaye(subject)
 
-  if (!allowed) return <p className="muted">You cannot see this person&apos;s {title.toLowerCase()}.</p>
+  if (!allowed) return <Note tone="info">You cannot see this person&apos;s {title.toLowerCase()}.</Note>
 
   if (!range) {
     return (
-      <div className="stack" data-hue="ts">
-        <NavBar title={title} back={props.sectionBack} />
-        {selfEmployed ? <p className="muted small">{personName(subject)} is self-employed: these are the entries on their timesheets, read-only.</p> : null}
-        <p className="muted small">{!props.orgLoaded ? 'Loading…' : current ? payePayrunLabel(current) : PAYE_PAYDAY_NOT_SET_MESSAGE}</p>
-        <div className="grid g2">
-          <Tile title="Current PAYE payrun" disabled={!current} onClick={() => router.push(overtimeHref({ ...here, range: 'current' }))} />
-          <Tile title="Past PAYE payruns" disabled={!current && payePastPayruns(orgDoc, todayKey).length === 0} onClick={() => router.push(overtimeHref({ ...here, range: 'past' }))} />
-          <Tile title="Custom date range" onClick={() => router.push(overtimeHref({ ...here, range: 'custom' }))} />
+      <PageShell>
+        <NavBar
+          title={title}
+          back={props.sectionBack}
+          subtitle={selfEmployed ? `${personName(subject)} is self-employed: these are the entries on their timesheets, read-only.` : undefined}
+        >
+          <Note tone="dark">{!props.orgLoaded ? 'Loading…' : current ? payePayrunLabel(current) : PAYE_PAYDAY_NOT_SET_MESSAGE}</Note>
+        </NavBar>
+        <div className="pu-gridAuto">
+          <Tile tone="blue" title="Current PAYE payrun" disabled={!current} onClick={() => router.push(overtimeHref({ ...here, range: 'current' }))} />
+          <Tile tone="slate" title="Past PAYE payruns" disabled={!current && payePastPayruns(orgDoc, todayKey).length === 0} onClick={() => router.push(overtimeHref({ ...here, range: 'past' }))} />
+          <Tile tone="purple" title="Custom date range" onClick={() => router.push(overtimeHref({ ...here, range: 'custom' }))} />
           {mine && !selfEmployed ? (
-            <Tile title={kind === 'priceWork' ? PRICE_WORK_ADD_LABEL : EXPENSE_ADD_LABEL} subtitle="Online only" onClick={() => router.push(overtimeHref({ ...here, range: 'current', add: '1' }))} disabled={!current} />
+            <Tile tone="green" title={kind === 'priceWork' ? PRICE_WORK_ADD_LABEL : EXPENSE_ADD_LABEL} subtitle="Online only" onClick={() => router.push(overtimeHref({ ...here, range: 'current', add: '1' }))} disabled={!current} />
           ) : null}
         </div>
         {mine && !selfEmployed && !current ? (
-          <p className="muted small">Open Custom date range to add {kind === 'priceWork' ? 'price work' : 'an expense'} until the PAYE payday is set.</p>
+          <Note tone="info">Open Custom date range to add {kind === 'priceWork' ? 'price work' : 'an expense'} until the PAYE payday is set.</Note>
         ) : null}
-      </div>
+      </PageShell>
     )
   }
 
   if (range === 'past' && !(start && end)) {
     const past = payePastPayruns(orgDoc, todayKey)
     return (
-      <div className="stack" data-hue="ts">
+      <PageShell>
         <NavBar title="Past PAYE payruns" back={{ label: title, href: sectionHref }} />
-        {past.length === 0 ? <p className="muted">{current ? 'No past PAYE payruns yet.' : PAYE_PAYDAY_NOT_SET_MESSAGE}</p> : null}
-        <div className="stack" style={{ gap: 8 }}>
-          {past.map((run) => (
-            <Tile
-              key={run.start}
-              title={`${formatPayePayrunDay(run.start)} – ${formatPayePayrunDay(run.end)}`}
-              subtitle={`Paid ${formatPayePayrunDay(run.payDate)}`}
-              onClick={() => router.push(overtimeHref({ ...here, range: 'past', start: run.start, end: run.end }))}
-            />
-          ))}
-        </div>
+        {past.length === 0 ? <Note tone="info">{current ? 'No past PAYE payruns yet.' : PAYE_PAYDAY_NOT_SET_MESSAGE}</Note> : null}
+        {past.length > 0 ? (
+          <Card>
+            <div className="pu-list">
+              {past.map((run) => (
+                <ListTile
+                  key={run.start}
+                  title={`${formatPayePayrunDay(run.start)} – ${formatPayePayrunDay(run.end)}`}
+                  subtitle={`Paid ${formatPayePayrunDay(run.payDate)}`}
+                  onClick={() => router.push(overtimeHref({ ...here, range: 'past', start: run.start, end: run.end }))}
+                />
+              ))}
+            </div>
+          </Card>
+        ) : null}
         {!selfEmployed ? <SavedClaimReports kind={kind} organizationId={props.organizationId} subjectId={subject.id} logoUrl={orgLogo(orgDoc)} /> : null}
-      </div>
+      </PageShell>
     )
   }
 
   if (range === 'custom' && !(start && end)) {
     return (
-      <div className="stack" data-hue="ts">
+      <PageShell>
         <NavBar title="Custom date range" back={{ label: title, href: sectionHref }} />
         <CustomRangeForm onView={(a, b) => router.push(overtimeHref({ ...here, range: 'custom', start: a, end: b }))} />
-      </div>
+      </PageShell>
     )
   }
 
   const window = range === 'current' ? (current ? { start: current.start, end: current.end } : null) : payeCustomRange(start, end)
   if (!window) {
     return (
-      <div className="stack" data-hue="ts">
+      <PageShell>
         <NavBar title={title} back={{ label: title, href: sectionHref }} />
-        <p className="muted">{PAYE_PAYDAY_NOT_SET_MESSAGE}</p>
-      </div>
+        <Note tone="amber">{PAYE_PAYDAY_NOT_SET_MESSAGE}</Note>
+      </PageShell>
     )
   }
   const back = range === 'past' ? { label: 'Past PAYE payruns', href: overtimeHref({ ...here, range: 'past' }) } : { label: title, href: sectionHref }
   const heading = `${title} · ${formatPayePayrunDay(window.start)} – ${formatPayePayrunDay(window.end)}`
   if (selfEmployed) {
     return (
-      <div className="stack" data-hue="ts">
+      <PageShell>
         <NavBar title={heading} back={back} />
         <TimesheetClaims kind={kind} organizationId={props.organizationId} subject={subject} timeZone={props.timeZone} range={window} />
-      </div>
+      </PageShell>
     )
   }
   return (
-    <div className="stack" data-hue="ts">
+    <PageShell>
       <NavBar title={heading} back={back} />
       <ClaimList {...props} range={window} />
-    </div>
+    </PageShell>
   )
 }
 
@@ -215,29 +224,38 @@ function TimesheetClaims({ kind, organizationId, subject, timeZone, range }: { k
       live = false
     }
   }, [organizationId, subject.id, timeZone, kind, range])
-  if (error) return <p className="muted">{error}</p>
-  if (!rows) return <p className="muted">Loading…</p>
-  if (rows.length === 0) return <p className="muted">{kind === 'priceWork' ? PRICE_WORK_EMPTY_MESSAGE : EXPENSES_EMPTY_MESSAGE}</p>
+  if (error) return <Note tone="red">{error}</Note>
+  if (!rows) return <Note tone="info">Loading…</Note>
+  if (rows.length === 0)
+    return (
+      <Card>
+        <EmptyState title={kind === 'priceWork' ? PRICE_WORK_EMPTY_MESSAGE : EXPENSES_EMPTY_MESSAGE} />
+      </Card>
+    )
   return (
-    <div className="stack" style={{ gap: 8 }}>
+    <Card>
+      <div className="pu-list">
       {rows.map((row) => (
-        <div key={`${row.sheetId}-${row.id}`} className="card pad">
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+        <div key={`${row.sheetId}-${row.id}`} className="pu-item" style={{ alignItems: 'flex-start' }}>
+          <span className="grow">
             <b>{row.title}</b>
-            <b>{formatMoney(row.amount, currency)}</b>
-          </div>
-          <div className="muted small">
+          <span className="pu-sub">
             {[row.startDate === row.endDate ? formatPayePayrunDay(row.startDate) : `${formatPayePayrunDay(row.startDate)} – ${formatPayePayrunDay(row.endDate)}`, kind === 'priceWork' ? priceWorkJobNumberText(row.jobNumber) : row.jobNumber, row.approvedByName ? `Agreed by ${row.approvedByName}` : '', `Timesheet: ${row.managerDecision}`]
               .filter(Boolean)
               .join(' · ')}
-          </div>
-          {row.details ? <div className="small">{row.details}</div> : null}
+          </span>
+          {row.details ? <span className="pu-sub">{row.details}</span> : null}
+          </span>
+          <b>{formatMoney(row.amount, currency)}</b>
         </div>
       ))}
-      <p className="small">
-        <b>Total {formatMoney(payeClaimsTotal(rows), currency)}</b> · read-only, from their timesheets
-      </p>
-    </div>
+      </div>
+      <div className="pu-totals">
+        <span>
+          <b>Total {formatMoney(payeClaimsTotal(rows), currency)}</b> · read-only, from their timesheets
+        </span>
+      </div>
+    </Card>
   )
 }
 
@@ -333,22 +351,22 @@ function ClaimList(props: Omit<Props, 'range'> & { range: { start: string; end: 
 
   return (
     <div className="stack" style={{ gap: 10 }}>
-      {error ? <p className="muted">{error}</p> : null}
-      {!loaded && !error ? <p className="muted">Loading…</p> : null}
-      {loaded && inRange.length === 0 ? <p className="muted">{kind === 'priceWork' ? PRICE_WORK_EMPTY_MESSAGE : EXPENSES_EMPTY_MESSAGE}</p> : null}
+      {error ? <p className="pu-muted">{error}</p> : null}
+      {!loaded && !error ? <p className="pu-muted">Loading…</p> : null}
+      {loaded && inRange.length === 0 ? <p className="pu-muted">{kind === 'priceWork' ? PRICE_WORK_EMPTY_MESSAGE : EXPENSES_EMPTY_MESSAGE}</p> : null}
       {inRange.map((item) => {
         const row = payeClaimListRow(item, currency)
         const state = payeClaimReviewState(item, reviews)
         const decision = decisions[item.id]
         const outcomeLabel = decision ? payeClaimReviewOutcomeLabel(preview.outcomes[item.id]) : null
         return (
-          <div key={item.id} className="card pad" style={{ textAlign: 'left' }}>
+          <div key={item.id} className="pu-card pu-pad" style={{ textAlign: 'left' }}>
           <button type="button" className="click" style={{ border: 0, background: 'none', padding: 0, textAlign: 'left', width: '100%' }} onClick={() => setOpen(item)}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
               <b>{row.title}</b>
               <b>{row.figure}</b>
             </div>
-            <div className="muted small">
+            <div className="pu-sub">
               {row.subtitle}
               {item.evidence.length > 0 ? ` · ${item.evidence.length} evidence` : ''}
             </div>
@@ -359,10 +377,10 @@ function ClaimList(props: Omit<Props, 'range'> & { range: { start: string; end: 
             {outcomeLabel ? <span className="pill" data-hue="warn">{outcomeLabel}</span> : null}
             {reviewer ? (
               <span className="row" style={{ gap: 6, marginLeft: 'auto' }}>
-                <button type="button" className="btn sm" aria-label="Reject this item" disabled={busy} onClick={() => setDecisions((d) => ({ ...d, [item.id]: 'rejected' }))}>
+                <button type="button" className="pu-btn sm" aria-label="Reject this item" disabled={busy} onClick={() => setDecisions((d) => ({ ...d, [item.id]: 'rejected' }))}>
                   ✕
                 </button>
-                <button type="button" className="btn sm" aria-label="Approve this item" disabled={busy} onClick={() => setDecisions((d) => ({ ...d, [item.id]: 'approved' }))}>
+                <button type="button" className="pu-btn sm" aria-label="Approve this item" disabled={busy} onClick={() => setDecisions((d) => ({ ...d, [item.id]: 'approved' }))}>
                   ✓
                 </button>
               </span>
@@ -376,22 +394,22 @@ function ClaimList(props: Omit<Props, 'range'> & { range: { start: string; end: 
           <b>Total {formatMoney(payeClaimsTotal(inRange), currency)}</b>
         </p>
       ) : null}
-      {!mine ? <p className="muted small">{personName(subject)} adds these themselves.{reviewer ? ' Tick or cross each item, then Approve.' : ''}</p> : null}
+      {!mine ? <p className="pu-sub">{personName(subject)} adds these themselves.{reviewer ? ' Tick or cross each item, then Approve.' : ''}</p> : null}
       {reviewer && inRange.length > 0 ? (
-        <button type="button" className="btn primary" disabled={busy || preview.writes.length === 0} onClick={() => void approve()}>
+        <button type="button" className="pu-btn primary" disabled={busy || preview.writes.length === 0} onClick={() => void approve()}>
           {OVERTIME_APPROVE_LABEL}
         </button>
       ) : null}
       <div className="stack" style={{ gap: 8 }}>
         {writable ? (
-          <button type="button" className="btn" onClick={() => setAdding(true)}>
+          <button type="button" className="pu-btn" onClick={() => setAdding(true)}>
             {kind === 'priceWork' ? PRICE_WORK_ADD_LABEL : EXPENSE_ADD_LABEL}
           </button>
         ) : null}
         {mine ? (
           <button
             type="button"
-            className="btn primary"
+            className="pu-btn primary"
             style={ready ? { background: 'var(--green, #16a34a)' } : undefined}
             disabled={!ready || busy}
             onClick={() => void generate()}
@@ -399,7 +417,7 @@ function ClaimList(props: Omit<Props, 'range'> & { range: { start: string; end: 
             {busy ? 'Making report…' : kind === 'priceWork' ? PRICE_WORK_GENERATE_REPORT_LABEL : EXPENSES_GENERATE_REPORT_LABEL}
           </button>
         ) : null}
-        {notice ? <p className="muted small">{notice}</p> : null}
+        {notice ? <p className="pu-sub">{notice}</p> : null}
       </div>
       {adding ? (
         <AddClaimSheet
@@ -441,7 +459,7 @@ function SavedClaimReports({ kind, organizationId, subjectId, logoUrl }: { kind:
   if (rows.length === 0) return null
   return (
     <div className="stack" style={{ gap: 8 }}>
-      <p className="eyebrow">Saved reports</p>
+      <p className="pu-label">Saved reports</p>
       {rows.map((report) => (
         <Tile
           key={report.id}
@@ -450,7 +468,7 @@ function SavedClaimReports({ kind, organizationId, subjectId, logoUrl }: { kind:
           onClick={() => void downloadClaimReport(report, logoUrl, setNotice).catch((e: unknown) => setNotice(e instanceof Error ? e.message : 'The report could not be made.'))}
         />
       ))}
-      {notice ? <p className="muted small">{notice}</p> : null}
+      {notice ? <p className="pu-sub">{notice}</p> : null}
     </div>
   )
 }
@@ -460,7 +478,7 @@ function EvidenceLink({ entry }: { entry: PayeClaimEvidence }) {
   return (
     <button
       type="button"
-      className="link small"
+      className="pu-link"
       style={{ border: 0, background: 'none', padding: 0, textAlign: 'left' }}
       onClick={() =>
         void storedFileUrl(entry.path)
@@ -480,22 +498,22 @@ function ClaimDetail({ item, currency, canRemove, organizationId, onClose }: { i
   const [error, setError] = useState<string | null>(null)
   return (
     <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/40 p-4 sm:items-center" role="dialog" aria-label={row.title}>
-      <div className="card pad stack w-full max-w-lg" style={{ gap: 10, maxHeight: '90vh', overflowY: 'auto' }}>
-        <button type="button" className="btn sm ghost" style={{ alignSelf: 'flex-start' }} onClick={onClose}>
+      <div className="pu-card pu-pad stack w-full max-w-lg" style={{ gap: 10, maxHeight: '90vh', overflowY: 'auto' }}>
+        <button type="button" className="pu-btn sm" style={{ alignSelf: 'flex-start' }} onClick={onClose}>
           Close
         </button>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
           <b>{row.title}</b>
           <b>{row.figure}</b>
         </div>
-        <div className="muted small">{row.subtitle}</div>
+        <div className="pu-sub">{row.subtitle}</div>
         {item.details ? <p className="small">{item.details}</p> : null}
-        <p className="eyebrow">Evidence</p>
-        {item.evidence.length === 0 ? <p className="muted small">None</p> : item.evidence.map((entry) => <EvidenceLink key={entry.path} entry={entry} />)}
+        <p className="pu-label">Evidence</p>
+        {item.evidence.length === 0 ? <p className="pu-sub">None</p> : item.evidence.map((entry) => <EvidenceLink key={entry.path} entry={entry} />)}
         {canRemove ? (
           <button
             type="button"
-            className="btn sm"
+            className="pu-btn sm"
             style={{ color: 'var(--red)' }}
             onClick={() =>
               void removePayeClaim(organizationId, item)
@@ -506,7 +524,7 @@ function ClaimDetail({ item, currency, canRemove, organizationId, onClose }: { i
             Remove
           </button>
         ) : null}
-        {error ? <p className="muted small">{error}</p> : null}
+        {error ? <p className="pu-sub">{error}</p> : null}
       </div>
     </div>
   )
@@ -636,7 +654,7 @@ function AddClaimSheet(props: {
   return (
     <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/40 p-4 sm:items-center" role="dialog" aria-label={label}>
       <form
-        className="card pad stack w-full max-w-lg"
+        className="pu-card pu-pad stack w-full max-w-lg"
         style={{ gap: 12, maxHeight: '92vh', overflowY: 'auto' }}
         onSubmit={(event) => {
           event.preventDefault()
@@ -644,7 +662,7 @@ function AddClaimSheet(props: {
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <button type="button" className="btn sm ghost" onClick={props.onClose}>
+          <button type="button" className="pu-btn sm" onClick={props.onClose}>
             Cancel
           </button>
           <b>{label}</b>
@@ -652,21 +670,21 @@ function AddClaimSheet(props: {
         </div>
         <label className="small">
           {priceWork ? 'Price work name' : 'Expense name'}
-          <input className="input" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={200} />
+          <input className="pu-inp" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={200} />
         </label>
         <label className="small">
           Description
-          <textarea className="input" value={details} onChange={(e) => setDetails(e.target.value)} rows={3} maxLength={4000} />
+          <textarea className="pu-inp" value={details} onChange={(e) => setDetails(e.target.value)} rows={3} maxLength={4000} />
         </label>
         <label className="small">
           {priceWork ? 'Job number (required)' : 'Job number'}
-          <input className="input" value={jobNumber} onChange={(e) => setJobNumber(e.target.value)} maxLength={PRICE_WORK_JOB_NUMBER_MAX} required={priceWork} />
+          <input className="pu-inp" value={jobNumber} onChange={(e) => setJobNumber(e.target.value)} maxLength={PRICE_WORK_JOB_NUMBER_MAX} required={priceWork} />
         </label>
-        <div className="grid g2" style={{ gap: 8 }}>
+        <div className="pu-gridAuto" style={{ gap: 8 }}>
           <label className="small">
             {priceWork ? 'From' : 'Date'}
             <input
-              className="input"
+              className="pu-inp"
               type="date"
               value={from}
               onChange={(e) => {
@@ -678,14 +696,14 @@ function AddClaimSheet(props: {
           {priceWork ? (
             <label className="small">
               To
-              <input className="input" type="date" value={to} min={from} onChange={(e) => setTo(e.target.value)} />
+              <input className="pu-inp" type="date" value={to} min={from} onChange={(e) => setTo(e.target.value)} />
             </label>
           ) : null}
         </div>
         {priceWork ? (
           <label className="small">
             Approved by (required)
-            <select className="input" value={approver} onChange={(e) => setApprover(e.target.value)}>
+            <select className="pu-inp" value={approver} onChange={(e) => setApprover(e.target.value)}>
               <option value="">Choose an admin or manager</option>
               {approvers.map((row) => (
                 <option key={row.id} value={row.id}>
@@ -693,40 +711,40 @@ function AddClaimSheet(props: {
                 </option>
               ))}
             </select>
-            <span className="muted">{PAYE_CLAIM_APPROVER_NOT_NOTIFIED_NOTE}</span>
+            <span className="pu-muted">{PAYE_CLAIM_APPROVER_NOT_NOTIFIED_NOTE}</span>
           </label>
         ) : null}
         <label className="small">
           Amount ({currency})
-          <input className="input" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder={formatMoney(0, currency)} />
+          <input className="pu-inp" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder={formatMoney(0, currency)} />
         </label>
         <div className="stack" style={{ gap: 6 }}>
           <b className="small">Evidence {priceWork ? '(optional)' : '(at least one)'}</b>
           {evidence.map((entry) => (
             <div key={entry.key} className="small" style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
               <span>{entry.label}</span>
-              <button type="button" className="link" style={{ border: 0, background: 'none' }} onClick={() => setEvidence((current) => current.filter((row) => row.key !== entry.key))}>
+              <button type="button" className="pu-link" style={{ border: 0, background: 'none' }} onClick={() => setEvidence((current) => current.filter((row) => row.key !== entry.key))}>
                 Remove
               </button>
             </div>
           ))}
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <label className="btn sm">
+            <label className="pu-btn sm">
               File
               <input type="file" accept="application/pdf,image/*" className="sr-only" multiple onChange={(e) => { void addFiles(e.target.files, false); e.target.value = '' }} />
             </label>
-            <label className="btn sm">
+            <label className="pu-btn sm">
               Photo
               <input type="file" accept="image/*" capture="environment" className="sr-only" onChange={(e) => { void addFiles(e.target.files, true); e.target.value = '' }} />
             </label>
-            <button type="button" className="btn sm" onClick={() => setPickAudit(true)}>
+            <button type="button" className="pu-btn sm" onClick={() => setPickAudit(true)}>
               Personal site audit
             </button>
           </div>
         </div>
         {pickAudit ? <PersonalAuditPicker organizationId={organizationId} ownerId={subject.id} timeZone={props.timeZone} onPick={addAudit} onCancel={() => setPickAudit(false)} /> : null}
         {error || (draftError && (title || amount)) ? <p className="small" style={{ color: 'var(--red)' }}>{error || draftError}</p> : null}
-        <button type="submit" className="btn primary" disabled={Boolean(draftError) || saving}>
+        <button type="submit" className="pu-btn primary" disabled={Boolean(draftError) || saving}>
           {saving ? 'Adding…' : label}
         </button>
       </form>
@@ -740,17 +758,17 @@ function PersonalAuditPicker({ organizationId, ownerId, timeZone, onPick, onCanc
   useEffect(() => listenPersonalSiteAudits(organizationId, ownerId, timeZone, setAudits, () => setAudits([])), [organizationId, ownerId, timeZone])
   const rows = personalSiteAuditsFor(audits, ownerId)
   return (
-    <div className="card pad stack" style={{ gap: 6 }}>
+    <div className="pu-card pu-pad stack" style={{ gap: 6 }}>
       <b className="small">Choose a personal site audit</b>
-      {audits == null ? <p className="muted small">Loading…</p> : null}
-      {audits != null && rows.length === 0 ? <p className="muted small">You have no personal site audits. Create one in Site audits → Personal.</p> : null}
+      {audits == null ? <p className="pu-sub">Loading…</p> : null}
+      {audits != null && rows.length === 0 ? <p className="pu-sub">You have no personal site audits. Create one in Site audits → Personal.</p> : null}
       {rows.map((audit) => (
-        <button key={audit.id} type="button" className="btn sm" style={{ textAlign: 'left' }} onClick={() => onPick(audit)}>
+        <button key={audit.id} type="button" className="pu-btn sm" style={{ textAlign: 'left' }} onClick={() => onPick(audit)}>
           {personalSiteAuditTitle(audit)}
         </button>
       ))}
-      <p className="muted small">A frozen copy (PDF) is attached; your line managers and admins see the copy, never your list.</p>
-      <button type="button" className="btn sm ghost" onClick={onCancel}>
+      <p className="pu-sub">A frozen copy (PDF) is attached; your line managers and admins see the copy, never your list.</p>
+      <button type="button" className="pu-btn sm" onClick={onCancel}>
         Close
       </button>
     </div>
