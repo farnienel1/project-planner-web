@@ -98,12 +98,11 @@ export function DailyOverviewBookingSheet({
 }) {
   const { user, organization } = useAuthStore()
   const deadlineAssignedProjectIds = useDeadlineAssignedProjectIds()
-  const { bookings, createBooking, updateBooking, deleteBooking } = useBookingStore()
+  const { bookings, updateBooking, moveManagerSiteBookingIntoBookings } = useBookingStore()
   const {
     managerSiteBookings,
     updateManagerSiteBooking,
-    saveManagerSiteBooking,
-    deleteManagerSiteBooking,
+    moveBookingIntoManagerSchedule,
   } = useManagerScheduleStore()
   const { projects, smallWorks, loadProjects, loadSmallWorks } = useProjectStore()
   const { operatives, managers } = useOperativeStore()
@@ -320,7 +319,9 @@ export function DailyOverviewBookingSheet({
       if (row.kind === 'operative') {
         await updateBooking(row.bookingId, { projectId: project.id, ...hours, ...rateFields(false) })
       } else if (linkedOperative) {
-        await createBooking({
+        // Owner answer 11 Nov (item 4): the new labour booking and the manager site booking's delete with its
+        // tombstone are one batch, so a refused write leaves both bookings as they were.
+        await moveManagerSiteBookingIntoBookings({
           operativeId: linkedOperative.id,
           projectId: project.id,
           date: day,
@@ -333,8 +334,7 @@ export function DailyOverviewBookingSheet({
           isBreakRemoved: hours.isBreakRemoved,
           ...(rateFields(true) as { otMultiplierOverride?: number }),
           organizationId: organization.id,
-        })
-        await deleteManagerSiteBooking(organization.id, row.bookingId)
+        }, row.bookingId)
       } else {
         await updateManagerSiteBooking(organization.id, row.bookingId, {
           locationType: asSmallWork ? 'small_work' : 'project',
@@ -365,7 +365,10 @@ export function DailyOverviewBookingSheet({
     try {
       const hours = hoursFields()
       if (row.kind === 'operative' && row.bookingId) {
-        await saveManagerSiteBooking(organization.id, {
+        // The labour booking moves to the manager schedule: the new manager site booking and the labour booking's
+        // delete with its tombstone are one batch (owner answer 11 Nov, item 4). Other is offered only when
+        // `bookingRemoveAction` is `delete` (`otherAllowed`), so the delete is not refused.
+        await moveBookingIntoManagerSchedule(organization.id, {
           userId: resolvedUserId,
           date: day,
           timeSlot: managerSlotFromRaw('CUSTOM_HOURS'),
@@ -375,10 +378,7 @@ export function DailyOverviewBookingSheet({
           workEndTime: hours.workEndTime,
           isBreakRemoved: hours.isBreakRemoved,
           ...rateFields(true),
-        })
-        // The labour booking moves to the manager schedule: it is deleted with its tombstone. Other is offered only
-        // when `bookingRemoveAction` is `delete` (`otherAllowed`), so this delete is never refused after the save.
-        await deleteBooking(row.bookingId, organization.id)
+        }, row.bookingId)
       } else if (row.bookingId) {
         await updateManagerSiteBooking(organization.id, row.bookingId, {
           locationType: pick.locationType,

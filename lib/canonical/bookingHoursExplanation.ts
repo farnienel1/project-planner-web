@@ -47,6 +47,11 @@ export type BookingHoursExplanation = {
   rule: string
   /** How this booking is priced, one line per part, e.g. ["07:30–14:00 = 8h (full day)", "+ 14:00–16:00 = 2h × 2 = 4h", "→ 12h"]. */
   steps: string[]
+  /**
+   * The same in one line (owner answer 11 Nov), e.g. "07:00–22:00 = 8.5h (day, less 30 min unpaid break) + 6h × 1.5 =
+   * 9h → 17.5h" or "07:30–16:00 = 8h (full day) + 2h × 2 = 4h → 12h".
+   */
+  summary: string
   /** `payrollHoursResult.totalPaidHours`, rounded to hundredths. */
   totalPaidHours: number
   /** What a full day of this day pays (weekday paid day, a weekend day's "counts as" hours), null on an every-hour day. */
@@ -203,41 +208,72 @@ export function bookingHoursExplanation(
       startMinutes != null && endMinutes != null ? `${formatClockMinutes(startMinutes)}–${formatClockMinutes(endMinutes)}` : label
     const insideBreak = unpaidBreakAppliesOnDay(dayPolicy, key, zone) && booking.isBreakRemoved !== true
     steps.push(insideBreak ? `${range} is inside the unpaid break = 0h` : `${range} = 0h`)
-    return { dayKey: key, weekdayLabel: label, kind, rule, steps, totalPaidHours: 0, fullDayHours }
+    return { dayKey: key, weekdayLabel: label, kind, rule, steps, summary: steps[0], totalPaidHours: 0, fullDayHours }
   }
+  // Rulebook 1.39.0 (owner answer 11 Nov): every break word comes from the working hours in effect that day — the
+  // minutes the pay rule took off, a paid break the booking covers, or "no unpaid break" on the booking.
+  const dayBreak = payrollBreakOnDay(dayPolicy, key, zone)
+  const unpaidApplies = unpaidBreakAppliesOnDay(dayPolicy, key, zone)
+  const breakNote = (row: PayrollHoursSegment, brk: number): string => {
+    if (brk > 0) return `less ${Math.round(brk * 60)} min unpaid break`
+    const start = parseClockMinutes(row.clockStart ?? null)
+    const end = parseClockMinutes(row.clockEnd ?? null)
+    if (!dayBreak || !(dayBreak.minutes > 0) || start == null || end == null) return ''
+    const covers = Math.min(end > start ? end : end + 24 * 60, dayBreak.end) > Math.max(start, dayBreak.start)
+    if (!covers) return ''
+    if (!unpaidApplies) return `${dayBreak.minutes} min paid break`
+    return booking.isBreakRemoved === true ? 'no unpaid break on this booking' : ''
+  }
+  const summaryParts: string[] = []
+  let multipliedBreak = false
   for (const row of segments) {
     const brk = round(row.unpaidBreakHours ?? 0)
     const range = rangeOf(row)
     const prefix = parts > 0 ? '+ ' : ''
     if (row.kind === 'standardWindow') {
       const clock = clockSpanHours(row) ?? row.workedHours + (row.unpaidBreakHours ?? 0)
+      const note = breakNote(row, brk)
       if (kind === 'weekendWindow') {
         // A set window credits its "counts as" hours, pro rata for the part of the window worked; the break comes off them.
         const credited = row.baseHours + (row.unpaidBreakHours ?? 0)
         const full = fullDayHours != null && Math.abs(round(credited) - fullDayHours) < 0.001
-        if (full) steps.push(`${prefix}${range ?? label} = ${h(credited)} (full day)`)
-        else if (windowHours && fullDayHours != null && range) {
-          steps.push(
-            `${prefix}Booked ${range} = ${h(clock)} of the ${h(windowHours)} window → ${h(fullDayHours)} × ${round(clock)} ÷ ${round(windowHours)} = ${h(credited)}`
-          )
-        } else steps.push(`${prefix}${range ?? label} = ${h(credited)}`)
+        if (full) {
+          const why = brk > 0 ? `full day ${h(credited)}, ${note}` : note ? `full day, ${note}` : 'full day'
+          steps.push(`${prefix}${range ?? label} = ${h(row.baseHours)} (${why})`)
+          summaryParts.push(`${h(row.baseHours)} (${why})`)
+        } else if (windowHours && fullDayHours != null && range) {
+          const proRata = `${h(fullDayHours)} × ${round(clock)} ÷ ${round(windowHours)} = ${h(credited)}`
+          const tail = brk > 0 ? `, ${note} = ${h(row.baseHours)}` : note ? ` (${note})` : ''
+          steps.push(`${prefix}Booked ${range} = ${h(clock)} of the ${h(windowHours)} window → ${proRata}${tail}`)
+          summaryParts.push(`${proRata}${tail} (part of the ${h(windowHours)} window)`)
+        } else {
+          steps.push(`${prefix}${range ?? label} = ${h(row.baseHours)}${note ? ` (${note})` : ''}`)
+          summaryParts.push(`${h(row.baseHours)}${note ? ` (${note})` : ''}`)
+        }
       } else {
-        steps.push(`${prefix}${range ?? label} = ${h(clock)}`)
+        const why = note ? `day, ${note}` : 'day'
+        steps.push(`${prefix}${range ?? label} = ${h(row.baseHours)} (${why})`)
+        summaryParts.push(`${h(row.baseHours)} (${why})`)
       }
       parts += 1
     } else {
       const clock = clockSpanHours(row) ?? row.baseHours + (row.multiplier > 0 ? (row.unpaidBreakHours ?? 0) / row.multiplier : 0)
       const multiplied = clock * row.multiplier
       steps.push(`${prefix}${range ?? label} = ${h(clock)} × ${times(row.multiplier)} = ${h(multiplied)}`)
+      // An unpaid break in hours at a multiplier is plain hours, taken off after the multiplier (1.20.3).
+      if (brk > 0) {
+        steps.push(`− ${h(brk)} unpaid break`)
+        multipliedBreak = true
+      }
+      summaryParts.push(`${h(clock)} × ${times(row.multiplier)} = ${h(multiplied)}${brk > 0 ? ` − ${h(brk)} unpaid break` : ''}`)
       parts += 1
     }
-    if (brk > 0) {
-      steps.push(`− ${h(brk)} unpaid break`)
-      breaks += 1
-    }
   }
-  if (parts > 1 || breaks > 0) steps.push(`→ ${h(total)}`)
-  return { dayKey: key, weekdayLabel: label, kind, rule, steps, totalPaidHours: total, fullDayHours }
+  if (parts > 1 || multipliedBreak) steps.push(`→ ${h(total)}`)
+  const whole =
+    startMinutes != null && endMinutes != null ? `${formatClockMinutes(startMinutes)}–${formatClockMinutes(endMinutes)}` : label
+  const summary = `${whole} = ${summaryParts.join(' + ')}${parts > 1 || multipliedBreak ? ` → ${h(total)}` : ''}`
+  return { dayKey: key, weekdayLabel: label, kind, rule, steps, summary, totalPaidHours: total, fullDayHours }
 }
 
 export type BookingShortfall = {

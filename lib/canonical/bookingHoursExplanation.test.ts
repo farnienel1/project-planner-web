@@ -65,7 +65,8 @@ test('1.39.0 owner example: Saturday 07:30–10:30 on a 07:30–14:00 window cou
 
 test('1.39.0 owner example: Saturday 07:30–16:00 = full day + outside hours × 2 = 12h', () => {
   const row = explain(owner, SAT, '07:30', '16:00')
-  assert.deepEqual(row.steps, ['07:30–14:00 = 8h (full day)', '+ 14:00–16:00 = 2h × 2 = 4h', '→ 12h'])
+  assert.deepEqual(row.steps, ['07:30–14:00 = 8h (full day, 30 min paid break)', '+ 14:00–16:00 = 2h × 2 = 4h', '→ 12h'])
+  assert.equal(row.summary, '07:30–16:00 = 8h (full day, 30 min paid break) + 2h × 2 = 4h → 12h')
   assert.equal(row.totalPaidHours, 12)
   // Sunday "same as Saturday" (the owner's Schedule booking screenshot) reads the same.
   assert.deepEqual(explain(owner, SUN, '07:30', '16:00').steps, row.steps)
@@ -83,21 +84,30 @@ test('1.39.0: a multiplier-only day says so; an unpaid break is its own deductio
 
 test('1.39.0: an unpaid Saturday break inside the window comes off the credited hours', () => {
   const unpaid = { ...owner, saturday: { ...(owner as any).saturday, breakPaid: false } } as unknown as OrgPayrollTimePolicy
-  assert.deepEqual(explain(unpaid, SAT, '07:30', '14:00').steps, ['07:30–14:00 = 8h (full day)', '− 0.5h unpaid break', '→ 7.5h'])
+  assert.deepEqual(explain(unpaid, SAT, '07:30', '14:00').steps, ['07:30–14:00 = 7.5h (full day 8h, less 30 min unpaid break)'])
+  assert.deepEqual(explain(unpaid, SAT, '07:30', '13:00').steps, [
+    'Booked 07:30–13:00 = 5.5h of the 6.5h window → 8h × 5.5 ÷ 6.5 = 6.77h, less 30 min unpaid break = 6.27h',
+  ])
 })
 
 test('1.39.0: weekdays get the same kind of line — working day, unpaid break, overtime at the multiplier', () => {
   const full = explain(owner, MON, '07:30', '16:00')
   assert.equal(full.rule, 'Monday full day: 07:30–16:00 − 30 min unpaid break (12:00–12:30) = 8h, hours outside it at 1.5×')
-  assert.deepEqual(full.steps, ['07:30–16:00 = 8.5h', '− 0.5h unpaid break', '→ 8h'])
+  assert.deepEqual(full.steps, ['07:30–16:00 = 8h (day, less 30 min unpaid break)'])
   assert.deepEqual(explain(owner, MON, '06:30', '18:00').steps, [
     '06:30–07:30 = 1h × 1.5 = 1.5h',
-    '+ 07:30–16:00 = 8.5h',
-    '− 0.5h unpaid break',
+    '+ 07:30–16:00 = 8h (day, less 30 min unpaid break)',
     '+ 16:00–18:00 = 2h × 1.5 = 3h',
     '→ 12.5h',
   ])
-  assert.deepEqual(explain(owner, MON, '09:00', '12:00').steps, ['09:00–12:00 = 3h'])
+  assert.deepEqual(explain(owner, MON, '09:00', '12:00').steps, ['09:00–12:00 = 3h (day)'])
+  // Owner example (11 Nov): working day 07:00–16:00, 30 min unpaid break, booked 07:00–22:00.
+  const early = { ...owner, standardDayStart: '07:00', breakWindowStart: '11:30', breakWindowEnd: '12:00' } as unknown as OrgPayrollTimePolicy
+  assert.equal(explain(early, MON, '07:00', '22:00').summary, '07:00–22:00 = 8.5h (day, less 30 min unpaid break) + 6h × 1.5 = 9h → 17.5h')
+  // A paid break the booking covers is named, not deducted; "No unpaid break" on the booking is named too.
+  const paid = { ...owner, breakPaid: true } as unknown as OrgPayrollTimePolicy
+  assert.deepEqual(explain(paid, MON, '07:30', '16:00').steps, ['07:30–16:00 = 8.5h (day, 30 min paid break)'])
+  assert.deepEqual(explain(owner, MON, '07:30', '16:00', true).steps, ['07:30–16:00 = 8.5h (day, no unpaid break on this booking)'])
   assert.deepEqual(explain(owner, MON, '12:00', '12:30').steps, ['12:00–12:30 is inside the unpaid break = 0h'])
 })
 

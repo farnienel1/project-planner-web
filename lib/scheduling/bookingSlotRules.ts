@@ -43,7 +43,8 @@ function openOrganizationZone(): string {
  * The open organisation's working-hours state from the live document (`parsePayrollTimePolicyState`, promoted to
  * today with `payrollTimePolicyTimeline`), or null when the live document is not loaded for the open organisation.
  */
-function livePayrollState(): PayrollTimePolicyState | null {
+/** The open organisation's working-hours state (for rules read per booking day), or null before it loads. */
+export function livePayrollState(): PayrollTimePolicyState | null {
   const { organizationId, data } = useOrganizationDocumentStore.getState()
   const openId = useAuthStore.getState().organization?.id || ''
   if (!data || !openId || organizationId !== openId) return null

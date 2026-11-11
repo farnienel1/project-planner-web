@@ -1,8 +1,8 @@
 'use client'
 
 import { create } from 'zustand'
-import { doc, setDoc } from 'firebase/firestore'
-import { deleteBookingWithTombstone } from '@/lib/bookings/bookingTombstoneWrite'
+import { doc, setDoc, writeBatch } from 'firebase/firestore'
+import { addBookingDeleteWithTombstone, deleteBookingWithTombstone } from '@/lib/bookings/bookingTombstoneWrite'
 import { auth, db } from '@/lib/firebase/config'
 import { MissingDocumentError, createWritePayload, savePartialDocument } from '@/lib/firebase/partialWrite'
 import { bookingUpdateWriteFields } from '@/lib/canonical/workDocumentReaders'
@@ -91,6 +91,14 @@ interface BookingState {
    * merge, so a new booking can never land on (and overwrite fields of) an existing booking.
    */
   createBooking: (booking: Omit<Booking, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>
+  /**
+   * Owner answer 11 Nov (item 4): a manager site booking moved onto a job as a labour booking — the new labour booking
+   * and the delete of the manager site booking with its tombstone in ONE batch, so a failure leaves both as they were.
+   */
+  moveManagerSiteBookingIntoBookings: (
+    booking: Omit<Booking, 'id' | 'createdAt' | 'updatedAt'>,
+    fromManagerSiteBookingId: string
+  ) => Promise<void>
   updateBooking: (id: string, updates: Partial<Booking>) => Promise<void>
   deleteBooking: (id: string, organizationId: string) => Promise<void>
   getBookingsForDate: (date: Date) => Booking[]
@@ -179,26 +187,45 @@ export const useBookingStore = create<BookingState>((set, get) => ({
       set({ bookings: [...bookings, booking] })
     }
     // Rulebook 1.10.0 §13: the booked person gets `booking_created` (never the booker).
-    void (async () => {
-      const [{ notifyBookingCreated }, { useOrgUserStore }, { useOperativeStore }, { useProjectStore }, { useAuthStore }] =
-        await Promise.all([
-          import('@/lib/notifications/bookingNotices'),
-          import('@/lib/stores/siteAuditStore'),
-          import('@/lib/stores/operativeStore'),
-          import('@/lib/stores/projectStore'),
-          import('@/lib/stores/authStore'),
-        ])
-      const { projects, smallWorks } = useProjectStore.getState()
-      const job = [...projects, ...smallWorks].find((row) => row.id.toLowerCase() === String(booking.projectId || '').toLowerCase())
-      await notifyBookingCreated({
-        booking,
-        job,
-        actor: useAuthStore.getState().user,
-        users: useOrgUserStore.getState().users,
-        operatives: useOperativeStore.getState().operatives,
-        timeZone: organizationZoneOr(),
-      })
-    })().catch(() => undefined)
+    notifyBookingCreatedSoon(booking)
+  },
+
+  moveManagerSiteBookingIntoBookings: async (bookingData, fromManagerSiteBookingId) => {
+    const firestore = requireDb()
+    const organizationId = bookingData.organizationId?.trim() || ''
+    if (!organizationId) throw new Error('Missing organisation for booking')
+    const deletedBy = auth?.currentUser?.uid
+    if (!deletedBy) throw new Error('Sign in again to move this booking.')
+    const id = newUppercaseUuid()
+    const now = new Date()
+    const jobCollection = bookingData.jobCollection ?? (await resolveBookingJobCollection(organizationId, bookingData.projectId)) ?? undefined
+    const booking: Booking = {
+      ...bookingData,
+      id,
+      date: londonMidnight(bookingData.date instanceof Date ? bookingData.date : new Date(bookingData.date), organizationZoneOr()),
+      createdAt: now,
+      updatedAt: now,
+      organizationId,
+      ...(jobCollection ? { jobCollection } : {}),
+    }
+    // The same create payload as `createBooking` (write metadata, a plain create of a fresh id), plus the delete and
+    // its tombstone (`bookingTombstoneWriteFields`) in the same batch.
+    const batch = writeBatch(firestore)
+    batch.set(doc(firestore, 'organizations', organizationId, 'bookings', id), {
+      ...createWritePayload(serializeBooking(booking)),
+      ...(writeMetadataFields(deletedBy, 'web') ?? {}),
+    })
+    addBookingDeleteWithTombstone(firestore, batch, {
+      organizationId,
+      collection: 'managerSiteBookings',
+      bookingId: fromManagerSiteBookingId,
+      deletedBy,
+    })
+    await batch.commit()
+    if (!get().bookings.some((row) => row.id === id)) set({ bookings: [...get().bookings, booking] })
+    notifyBookingCreatedSoon(booking)
+    const { notifyManagerSiteBookingRemovedSoon } = await import('@/lib/stores/managerScheduleStore')
+    notifyManagerSiteBookingRemovedSoon(organizationId, fromManagerSiteBookingId)
   },
 
   updateBooking: async (id, updates) => {
@@ -286,6 +313,31 @@ export const useBookingStore = create<BookingState>((set, get) => ({
   },
 }))
 
+
+/** Rulebook 1.10.0 §13: the booked person gets `booking_created` (never the booker). Best effort, after the write. */
+function notifyBookingCreatedSoon(booking: Booking): void {
+  void (async () => {
+    const [{ notifyBookingCreated }, { useOrgUserStore }, { useOperativeStore }, { useProjectStore }, { useAuthStore }] =
+      await Promise.all([
+        import('@/lib/notifications/bookingNotices'),
+        import('@/lib/stores/siteAuditStore'),
+        import('@/lib/stores/operativeStore'),
+        import('@/lib/stores/projectStore'),
+        import('@/lib/stores/authStore'),
+      ])
+    const { projects, smallWorks } = useProjectStore.getState()
+    const job = [...projects, ...smallWorks].find((row) => row.id.toLowerCase() === String(booking.projectId || '').toLowerCase())
+    await notifyBookingCreated({
+      booking,
+      job,
+      actor: useAuthStore.getState().user,
+      users: useOrgUserStore.getState().users,
+      operatives: useOperativeStore.getState().operatives,
+      timeZone: organizationZoneOr(),
+    })
+  })().catch(() => undefined)
+}
+
 /** The organisation the booking listener is open for ('' before the first load). */
 export function bookingsOrganizationId(): string {
   return bookingDownloadOrgId
@@ -295,6 +347,14 @@ export function bookingsOrganizationId(): string {
  * Rulebook 1.33.0 §25 (reopen): a changed or deleted booking reopens its PAYE overtime line; the person (and their line
  * manager when the line had been returned) are told. Best effort, after the write; never blocks it.
  */
+/** A labour booking moved out by a batched move (1.39.0): its PAYE overtime line reopens, as a delete does. */
+export function notifyBookingRemovedSoon(bookingId: string): void {
+  const removed = useBookingStore.getState().bookings.find((row) => row.id === bookingId)
+  if (!removed) return
+  useBookingStore.setState({ bookings: useBookingStore.getState().bookings.filter((row) => row.id !== bookingId) })
+  notifyOvertimeReopenedSoon(removed, null)
+}
+
 function notifyOvertimeReopenedSoon(before: Booking, after: Booking | null): void {
   void (async () => {
     const [{ notifyOvertimeLineReopened }, { overtimeBookingInputs }, { useOrgUserStore }, { useOperativeStore }, { useProjectStore }] =

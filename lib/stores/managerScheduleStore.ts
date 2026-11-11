@@ -1,8 +1,8 @@
 'use client'
 
 import { create } from 'zustand'
-import { doc, setDoc } from 'firebase/firestore'
-import { deleteBookingWithTombstone } from '@/lib/bookings/bookingTombstoneWrite'
+import { doc, setDoc, writeBatch } from 'firebase/firestore'
+import { addBookingDeleteWithTombstone, deleteBookingWithTombstone } from '@/lib/bookings/bookingTombstoneWrite'
 import { resolveBookingJobCollection } from '@/lib/bookings/jobCollection'
 import { auth, db } from '@/lib/firebase/config'
 import { MissingDocumentError, createWritePayload, savePartialDocument } from '@/lib/firebase/partialWrite'
@@ -104,6 +104,15 @@ interface ManagerScheduleState {
     options?: BookingDownloadRequest & { force?: boolean }
   ) => Promise<void>
   saveManagerSiteBooking: (organizationId: string, booking: SaveManagerSiteBookingInput) => Promise<void>
+  /**
+   * Owner answer 11 Nov (item 4): a labour booking moved to the manager schedule (Other) — the new manager site booking
+   * and the delete of the labour booking with its tombstone in ONE batch.
+   */
+  moveBookingIntoManagerSchedule: (
+    organizationId: string,
+    booking: SaveManagerSiteBookingInput,
+    fromBookingId: string
+  ) => Promise<void>
   updateManagerSiteBooking: (
     organizationId: string,
     bookingId: string,
@@ -165,36 +174,32 @@ export const useManagerScheduleStore = create<ManagerScheduleState>((set, get) =
     )
   },
 
+  moveBookingIntoManagerSchedule: async (organizationId: string, booking: SaveManagerSiteBookingInput, fromBookingId: string) => {
+    const firestore = requireDb()
+    if (!organizationId.trim()) throw new Error('Missing organisation for booking')
+    const deletedBy = auth?.currentUser?.uid
+    if (!deletedBy) throw new Error('Sign in again to move this booking.')
+    const { next, payload } = await managerSiteBookingCreate(organizationId, booking)
+    const batch = writeBatch(firestore)
+    batch.set(doc(firestore, 'organizations', organizationId, 'managerSiteBookings', next.id), {
+      ...createWritePayload(payload),
+      ...(writeMetadataFields(deletedBy, 'web') ?? {}),
+    })
+    addBookingDeleteWithTombstone(firestore, batch, { organizationId, collection: 'bookings', bookingId: fromBookingId, deletedBy })
+    await batch.commit()
+    set({ managerSiteBookings: [...get().managerSiteBookings.filter((row) => row.id !== next.id), next] })
+    const { notifyBookingRemovedSoon } = await import('@/lib/stores/bookingStore')
+    notifyBookingRemovedSoon(fromBookingId)
+  },
+
   saveManagerSiteBooking: async (organizationId: string, booking: SaveManagerSiteBookingInput) => {
     const firestore = requireDb()
     if (!organizationId.trim()) throw new Error('Missing organisation for booking')
-    const id = newUppercaseUuid()
-    const now = new Date()
-    const next: ManagerSiteBooking = {
-      id,
-      userId: booking.userId,
-      date: londonMidnight(booking.date, organizationZoneOr()),
-      timeSlot: booking.timeSlot,
-      locationType: booking.locationType,
-      locationId: booking.locationId,
-      customLocationName: booking.customLocationName,
-      workStartTime: booking.workStartTime,
-      workEndTime: booking.workEndTime,
-      isBreakRemoved: booking.isBreakRemoved === true,
-      ...(typeof booking.otMultiplierOverride === 'number' ? { otMultiplierOverride: booking.otMultiplierOverride } : {}),
-      createdAt: now,
-      updatedAt: now,
-      organizationId,
-    }
-    // Rulebook 1.11.0: a job-linked manager booking carries its job's collection (`jobCollection`).
-    if (booking.locationType === 'project' || booking.locationType === 'small_work') {
-      next.jobCollection = booking.jobCollection ?? (await resolveBookingJobCollection(organizationId, booking.locationId)) ?? undefined
-    }
-    const payload = serializeManagerSiteBooking({ ...next, organizationId })
+    const { next, payload } = await managerSiteBookingCreate(organizationId, booking)
     // Rulebook §1 / 1.9.0: a create carries write metadata (`writeMetadataFields`). 1.20.2: a fresh id and a plain
     // create write (no merge), so it can never land on an existing booking.
     await setDoc(
-      doc(firestore, 'organizations', organizationId, 'managerSiteBookings', id),
+      doc(firestore, 'organizations', organizationId, 'managerSiteBookings', next.id),
       { ...createWritePayload(payload), ...(writeMetadataFields(auth?.currentUser?.uid, 'web') ?? {}) }
     )
     const without = get().managerSiteBookings.filter((row) => row.id !== next.id)
@@ -263,6 +268,37 @@ export const useManagerScheduleStore = create<ManagerScheduleState>((set, get) =
   },
 }))
 
+
+/** The new manager site booking and its create payload (a fresh id), shared by a save and a move (1.39.0). */
+async function managerSiteBookingCreate(
+  organizationId: string,
+  booking: SaveManagerSiteBookingInput
+): Promise<{ next: ManagerSiteBooking; payload: ReturnType<typeof serializeManagerSiteBooking> }> {
+    const id = newUppercaseUuid()
+    const now = new Date()
+    const next: ManagerSiteBooking = {
+      id,
+      userId: booking.userId,
+      date: londonMidnight(booking.date, organizationZoneOr()),
+      timeSlot: booking.timeSlot,
+      locationType: booking.locationType,
+      locationId: booking.locationId,
+      customLocationName: booking.customLocationName,
+      workStartTime: booking.workStartTime,
+      workEndTime: booking.workEndTime,
+      isBreakRemoved: booking.isBreakRemoved === true,
+      ...(typeof booking.otMultiplierOverride === 'number' ? { otMultiplierOverride: booking.otMultiplierOverride } : {}),
+      createdAt: now,
+      updatedAt: now,
+      organizationId,
+    }
+    // Rulebook 1.11.0: a job-linked manager booking carries its job's collection (`jobCollection`).
+    if (booking.locationType === 'project' || booking.locationType === 'small_work') {
+      next.jobCollection = booking.jobCollection ?? (await resolveBookingJobCollection(organizationId, booking.locationId)) ?? undefined
+    }
+    return { next, payload: serializeManagerSiteBooking({ ...next, organizationId }) }
+}
+
 /** The organisation the manager site booking listener is open for ('' before the first load). */
 export function managerSiteBookingsOrganizationId(): string {
   return managerDownloadOrgId
@@ -273,6 +309,15 @@ export function managerSiteBookingsOrganizationId(): string {
  * manager's own site booking carries overtime like a labour booking); the person, and their line manager when the line
  * had been returned, are told. Best effort, after the write; never blocks it. The labour twin is in `bookingStore.ts`.
  */
+/** A manager site booking moved out by a batched move (1.39.0): its PAYE overtime line reopens, as a delete does. */
+export function notifyManagerSiteBookingRemovedSoon(organizationId: string, bookingId: string): void {
+  const state = useManagerScheduleStore.getState()
+  const removed = state.managerSiteBookings.find((row) => row.id === bookingId)
+  if (!removed) return
+  useManagerScheduleStore.setState({ managerSiteBookings: state.managerSiteBookings.filter((row) => row.id !== bookingId) })
+  notifyOvertimeReopenedSoon(organizationId, removed, null)
+}
+
 function notifyOvertimeReopenedSoon(organizationId: string, before: ManagerSiteBooking, after: ManagerSiteBooking | null): void {
   void (async () => {
     const [{ notifyOvertimeLineReopened }, { overtimeBookingInputs }, { useOrgUserStore }, { useOperativeStore }, { useProjectStore }] =

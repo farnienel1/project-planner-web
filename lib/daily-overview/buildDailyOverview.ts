@@ -392,7 +392,7 @@ export function buildDailyOverview(params: {
         name,
         initials: initialsFrom(name),
         subtitle: bookingTimesText(b),
-        pillText: shown.label,
+        pillText: `${shown.hours}h`, // 1.39.0 (owner answer 11 Nov): the hours pill only; the sum is in Edit booking.
         hours,
         bookedOperativeNames: [],
         kind: 'operative',
@@ -424,7 +424,7 @@ export function buildDailyOverview(params: {
         name,
         initials: initialsFrom(name),
         subtitle: bookingTimesText(b),
-        pillText: shown.label,
+        pillText: `${shown.hours}h`, // 1.39.0 (owner answer 11 Nov): the hours pill only; the sum is in Edit booking.
         hours,
         bookedOperativeNames: [],
         kind: 'manager',
@@ -452,7 +452,7 @@ export function buildDailyOverview(params: {
         name,
         initials: initialsFrom(firm?.name || name),
         subtitle: bookingTimesText(b),
-        pillText: shown.label,
+        pillText: `${shown.hours}h`, // 1.39.0 (owner answer 11 Nov): the hours pill only; the sum is in Edit booking.
         hours,
         bookedOperativeNames: people,
         kind: 'subcontractor',

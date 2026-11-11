@@ -5,8 +5,8 @@
 'use client'
 
 import { overviewFormatHours, parseMinutes } from '@/lib/daily-overview/buildDailyOverview'
-import { bookingPayrollHours, formatOvertimeEquation } from '@/lib/scheduling/paidHours'
-import { multipliedHoursText, payrollMultipliedHours, weekdayPaidHours, workedHoursSplit } from '@/lib/canonical'
+import { bookingPayrollHours } from '@/lib/scheduling/paidHours'
+import { overtimeIncludedText, payrollMultipliedHours, weekdayPaidHours, workedHoursSplit } from '@/lib/canonical'
 import { bookingRowHours } from '@/lib/scheduling/bookingRowHours'
 import { namedSlotKind } from '@/lib/scheduling/paidHours'
 import { bookingDayKey, policyForBookingDate } from '@/lib/scheduling/bookingSlotRules'
@@ -186,8 +186,9 @@ export function MyScheduleTotalHoursCard({
             <p className="text-[18px] font-medium text-[var(--ink)]">{overviewFormatHours(paid)}</p>
             <p className="text-[10px] font-medium text-[var(--ink3)]">hrs</p>
             {ot > 0.05 ? (
+              // Rulebook 1.39.0 (owner answer 11 Nov): the overtime is part of the total — "incl. 6h OT × 1.5 = 9h".
               <p className="text-[10px] font-semibold text-[#854F0B]">
-                OT {otBreak > 0 ? multipliedHoursText({ clockHours: ot, multiplier: otMultiplier, breakHours: otBreak }) : formatOvertimeEquation(ot, otMultiplier)}
+                {overtimeIncludedText({ clockHours: ot, multiplier: otMultiplier, breakHours: otBreak })}
               </p>
             ) : null}
           </div>
