@@ -2,7 +2,7 @@
 
 import { create } from 'zustand'
 import { addPayProfileWrite } from '@/lib/pay/payProfileService'
-import { payEditorRecord } from '@/lib/pay/payProfileOverlay'
+import { payEditorRecord, startPayEditorProfileRead } from '@/lib/pay/payProfileOverlay'
 import { collection, deleteField, doc, getDoc, getDocs, limit, query, serverTimestamp, setDoc, updateDoc, Timestamp, where, writeBatch } from 'firebase/firestore'
 import { sendPasswordResetEmail } from 'firebase/auth'
 import { passwordResetActionSettings } from '@/lib/auth/passwordResetSettings'
@@ -222,14 +222,16 @@ export const useUserStore = create<UserStoreState>(() => ({
   error: null,
 
   getUser: async (userId, options) => {
+    const openOrgId = useAuthStore.getState().organization?.id || ''
+    // The pay editor's own pay profile is read alongside the users document, not after it (same reads, same result).
+    const loadProfile = options?.payEditor ? startPayEditorProfileRead(openOrgId, userId) : undefined
     const snap = await getDoc(doc(db, 'users', userId))
     if (!snap.exists()) return null
     const stored = snap.data() as Record<string, unknown>
     const orgOnDoc = typeof stored.organizationId === 'string' ? stored.organizationId.trim() : ''
-    const openOrgId = useAuthStore.getState().organization?.id || ''
     // Rulebook 1.26.1 §8 (`payEditorStartingValues`): a pay editor's copy has the pay profile laid over only while
     // `privatePay` is on for the open organisation; off (and for every other caller) `stored` is used unchanged.
-    const data = options?.payEditor ? await payEditorRecord(openOrgId || orgOnDoc, snap.id, stored) : stored
+    const data = options?.payEditor ? await payEditorRecord(openOrgId || orgOnDoc, snap.id, stored, loadProfile) : stored
     if (orgOnDoc) return parseOrgUser(snap.id, data)
     const fallback = openOrgId || useAuthStore.getState().user?.organizationId || ''
     if (!fallback) return parseOrgUser(snap.id, data)

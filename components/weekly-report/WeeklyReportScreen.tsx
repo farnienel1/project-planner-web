@@ -33,13 +33,16 @@ import {
   downloadWeeklyReportWorkbook,
   printWeeklyReport,
 } from '@/lib/weekly-report/weeklyReportGenerator'
-import { buildWeeklyReportPdf, downloadWeeklyReportPdf } from '@/lib/weekly-report/weeklyReportPdf'
 import { formatDays } from '@/lib/weekly-report/weeklyReportPayroll'
 import { loadWeeklyReportTimesheetFeed } from '@/lib/weekly-report/loadTimesheetFeed'
 import type { ApprovedTimesheetWeek } from '@/lib/weekly-report/timesheetFeed'
 import { emptyDayRateHistory, loadOperativeDayRateHistory, type OperativeDayRateHistoryCollection } from '@/lib/timesheets/dayRateHistoryStorage'
 import type { Booking, HolidayBooking, Operative, Project, Subcontractor, User } from '@/types'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
+
+
+// The PDF builders (pdf-lib) load only when a PDF is made.
+const buildWeeklyReportPdf: typeof import('@/lib/weekly-report/weeklyReportPdf').buildWeeklyReportPdf = (...args) => import('@/lib/weekly-report/weeklyReportPdf').then((module) => module.buildWeeklyReportPdf(...args))
 
 function ReportTable({
   title,
@@ -324,12 +327,13 @@ export function WeeklyReportScreen({
   const handleDownload = () => {
     if (!report || !period) return
     const filename = `WeeklyReport-${dayKey(period.start, timeZone).replace(/-/g, '')}.xlsx`
-    downloadWeeklyReportWorkbook(report, filename)
+    void downloadWeeklyReportWorkbook(report, filename)
   }
 
   const handleDownloadPdf = async () => {
     if (!report || !period) return
     const bytes = await buildWeeklyReportPdf(report)
+    const { downloadWeeklyReportPdf } = await import('@/lib/weekly-report/weeklyReportPdf')
     downloadWeeklyReportPdf(bytes, `WeeklyReport-${dayKey(period.start, timeZone).replace(/-/g, '')}.pdf`)
   }
 

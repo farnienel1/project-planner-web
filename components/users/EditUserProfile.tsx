@@ -4,6 +4,8 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { reseedUntouchedPayFields, watchPayEditorPrivatePay, withPayFieldsFrom } from '@/lib/pay/payEditorSwitchReload'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { usePendingNavigation } from '@/lib/navigation/usePendingNavigation'
+import { RouteLoading } from '@/components/shell/RouteLoading'
 import { format } from 'date-fns'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
@@ -292,6 +294,7 @@ export function EditUserProfile({
   hubHref?: string
 }) {
   const router = useRouter()
+  const { navigate: navigateBack, pending: backPending } = usePendingNavigation()
   const { user: currentUser, organization, reloadSignedInProfile } = useAuthStore()
   const { users, userIdAliases, loadUsers, setListedUserActive, patchListedUser } = useOrgUserStore()
   const { operatives, loadOperatives, patchOperativeQualifications } = useOperativeStore()
@@ -386,7 +389,9 @@ export function EditUserProfile({
         if (details?.annualLeaveDefaults) setOrgLeaveDefaults(details.annualLeaveDefaults)
       })
       .catch(() => undefined)
-    void loadOrganisationQualificationsEnsuringStarter(organization.id, { fromServer: true })
+    // A plain read (the web cache is memory-only, so online it is the server's answer); the starter check and its
+    // idempotent seed are unchanged.
+    void loadOrganisationQualificationsEnsuringStarter(organization.id)
       .then((existing) => {
         const assigned = assignedQualificationTemplates(useOperativeStore.getState().operatives)
         setQualificationTemplates(mergeQualificationTemplates(existing, assigned))
@@ -1109,13 +1114,7 @@ export function EditUserProfile({
     }
   }
 
-  if (loading) {
-    return (
-      <div className="flex h-64 items-center justify-center">
-        <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-blue-600" />
-      </div>
-    )
-  }
+  if (loading) return <RouteLoading variant="form" />
 
   if (!target) {
     return (
@@ -1150,8 +1149,9 @@ export function EditUserProfile({
         title={pageTitle}
         onBack={() => {
           if (saving || typeSaving) return
-          router.push(backHref)
+          navigateBack(backHref)
         }}
+        backPending={backPending}
         rightAction={
           canEdit && dirty ? (
             <button

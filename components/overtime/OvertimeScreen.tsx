@@ -88,10 +88,14 @@ import {
   sendOvertimeRequest,
   withdrawOvertimeRequest,
 } from '@/lib/overtime/overtimeData'
-import { buildOvertimeReportPdf, downloadPdf } from '@/lib/overtime/overtimeReportPdf'
 import { Modal } from '@/components/ui'
 import { CustomRangeForm, NavBar, OVERTIME_PATH, Tile, isPaye, orgLogo, overtimeHref, personName } from '@/components/overtime/overtimeUi'
 import { PayeClaimsSection } from '@/components/overtime/PayeClaimsScreen'
+
+import { downloadPdf } from '@/lib/pdf/downloadPdf'
+
+// The PDF builders (pdf-lib) load only when a PDF is made.
+const buildOvertimeReportPdf: typeof import('@/lib/overtime/overtimeReportPdf').buildOvertimeReportPdf = (...args) => import('@/lib/overtime/overtimeReportPdf').then((module) => module.buildOvertimeReportPdf(...args))
 
 export { OVERTIME_PATH, overtimeHref }
 import type { Project, User } from '@/types'

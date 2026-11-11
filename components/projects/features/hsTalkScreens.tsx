@@ -13,11 +13,15 @@ import {
 } from '@heroicons/react/24/outline'
 import type { HSToolboxIssue, HSToolboxSignature, HSToolboxTalk, User } from '@/types'
 import { signedPercent } from '@/lib/healthSafety/hsTracking'
-import { buildToolboxTalkPdf, isCustomUploadedTalk } from '@/lib/healthSafety/toolboxTalkPdf'
+import { isCustomUploadedTalk } from '@/lib/healthSafety/toolboxTalkFiles'
 import { FeatureCard, FeatureSectionLabel } from '@/components/projects/features/featureUi'
 import { ReportFileLink } from '@/components/fileReports/ReportFileLink'
 import { StoredFileLink } from '@/components/projects/features/StoredFileLink'
 import { resolveStoredFileUrl } from '@/lib/healthSafety/openStoredFile'
+
+// The PDF builder (pdf-lib) loads only when a talk PDF is drawn.
+const buildToolboxTalkPdf = (input: import('@/lib/healthSafety/toolboxTalkPdf').ToolboxTalkPdfInput) =>
+  import('@/lib/healthSafety/toolboxTalkPdf').then((module) => module.buildToolboxTalkPdf(input))
 
 export function HsTalkBody({
   talk,

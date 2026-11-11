@@ -3,7 +3,8 @@
 import { PAY_RATE_REQUIRED_MESSAGE, ghostBadgeLabel, isGhostUser } from '@/lib/canonical'
 import { usersWithoutPayRate } from '@/lib/staff/payRateRequired'
 import { useEffect, useMemo, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { usePendingNavigation } from '@/lib/navigation/usePendingNavigation'
+import { PendingSpinner } from '@/components/shell/PendingSpinner'
 import Link from 'next/link'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
@@ -37,6 +38,11 @@ const SEGMENTS: { key: RosterSegment; title: string }[] = [
   { key: 'inactive', title: 'Inactive' },
   { key: 'pending', title: 'Pending' },
 ]
+
+/** A person's profile, opened from Manage Users (unchanged URL). */
+function userHref(user: User): string {
+  return `/dashboard/users/${user.id}?from=users`
+}
 
 function displayName(user: User): string {
   return `${user.firstName} ${user.surname}`.trim() || user.email
@@ -87,7 +93,7 @@ function badgesFor(user: User, showAdminBadge: boolean): Badge[] {
 }
 
 export function ManageUsersScreen() {
-  const router = useRouter()
+  const { navigate: navigateTo, prefetch, pendingHref } = usePendingNavigation()
   const { user: currentUser, organization } = useAuthStore()
   const { users, error: rosterError, rosterLoadedOrgId, claimedEmails, loadUsers } = useOrgUserStore()
   const { sendPasswordReset } = useUserStore()
@@ -202,7 +208,7 @@ export function ManageUsersScreen() {
   }
 
   function selectUser(user: User) {
-    router.push(`/dashboard/users/${user.id}?from=users`)
+    navigateTo(userHref(user))
   }
 
   async function sendReset(user: User) {
@@ -466,21 +472,32 @@ export function ManageUsersScreen() {
                 key={user.id}
                 className="group relative rounded-2xl border border-black/[0.04] bg-white p-4 shadow-sm transition hover:shadow-md"
               >
-                <button type="button" onClick={() => selectUser(user)} className="flex w-full items-center gap-3 text-left">
+                <button
+                  type="button"
+                  onClick={() => selectUser(user)}
+                  onPointerEnter={() => prefetch(userHref(user))}
+                  onFocus={() => prefetch(userHref(user))}
+                  aria-busy={pendingHref === userHref(user) || undefined}
+                  className="flex w-full items-center gap-3 text-left"
+                >
                   <UserAvatar user={user} size={48} className="rounded-[14px]" gradient={avatarGradient(user)} />
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-base font-bold text-slate-900">{displayName(user)}</div>
                     <div className="truncate text-sm text-slate-500">{user.email || ghostBadgeLabel(user)}</div>
                   </div>
-                  <svg
-                    className="h-4 w-4 shrink-0 text-slate-300"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth={2.5}
-                  >
-                    <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
-                  </svg>
+                  {pendingHref === userHref(user) ? (
+                    <PendingSpinner className="h-4 w-4 shrink-0 text-slate-400" />
+                  ) : (
+                    <svg
+                      className="h-4 w-4 shrink-0 text-slate-300"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth={2.5}
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+                    </svg>
+                  )}
                 </button>
 
                 {badgeList.length > 0 && (

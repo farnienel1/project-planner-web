@@ -75,12 +75,16 @@ import {
   storedFileUrl,
   uploadClaimEvidence,
 } from '@/lib/payeClaims/payeClaimsData'
-import { buildPayeClaimReportPdf, buildPersonalSiteAuditPdf } from '@/lib/payeClaims/payeClaimReportPdf'
-import { downloadPdf } from '@/lib/overtime/overtimeReportPdf'
 import { prepareAuditPhoto } from '@/lib/siteAudit/prepareAuditPhoto'
 import { uploadLimitError } from '@/lib/security/uploadLimits'
 import { CustomRangeForm, NavBar, Tile, isPaye, orgLogo, overtimeHref, personName } from '@/components/overtime/overtimeUi'
 import type { User } from '@/types'
+
+import { downloadPdf } from '@/lib/pdf/downloadPdf'
+
+// The PDF builders (pdf-lib) load only when a PDF is made.
+const buildPayeClaimReportPdf: typeof import('@/lib/payeClaims/payeClaimReportPdf').buildPayeClaimReportPdf = (...args) => import('@/lib/payeClaims/payeClaimReportPdf').then((module) => module.buildPayeClaimReportPdf(...args))
+const buildPersonalSiteAuditPdf: typeof import('@/lib/payeClaims/payeClaimReportPdf').buildPersonalSiteAuditPdf = (...args) => import('@/lib/payeClaims/payeClaimReportPdf').then((module) => module.buildPersonalSiteAuditPdf(...args))
 
 type Props = {
   kind: PayeClaimKind

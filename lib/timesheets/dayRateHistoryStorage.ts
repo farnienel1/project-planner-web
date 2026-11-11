@@ -4,6 +4,7 @@
  */
 import { collection, doc, getDocs, query, serverTimestamp, setDoc, Timestamp, where, type QueryConstraint, type Unsubscribe } from 'firebase/firestore'
 import { watchOrgCollection } from '@/lib/firebase/watchOrgQuery'
+import { createSharedListener } from '@/lib/firebase/sharedListener'
 import { privatePayFor, securitySwitchesReady } from '@/lib/access/securitySwitches'
 import { rateHistoryQueryPlan, type RateHistoryQueryPlan } from '@/lib/canonical'
 import { useAuthStore } from '@/lib/stores/authStore'
@@ -165,12 +166,36 @@ export async function loadOperativeDayRateHistory(
   }
 }
 
-/** Rulebook 1.9.0 §1 (`LIVE_COLLECTIONS`): pay history is live while a screen showing it is open. */
+const sharedRateHistory = createSharedListener<OperativeDayRateHistoryCollection>()
+
+/**
+ * Rulebook 1.9.0 §1 (`LIVE_COLLECTIONS`): pay history is live while a screen showing it is open.
+ *
+ * One listener is shared by every screen that opens it with the same organisation, viewer and query plan, and stays
+ * open for a minute after the last one closes (`createSharedListener`), so moving between a person's profile, their
+ * Edit page and the next person shows the history at once instead of waiting for a new listener each time. A
+ * different organisation, viewer or plan (`rateHistoryQueryPlan`) starts a new listener, exactly as before.
+ */
 export function watchOperativeDayRateHistory(
   organizationId: string,
   onHistory: (history: OperativeDayRateHistoryCollection) => void
 ): Unsubscribe {
   const plan = rateHistoryPlanFor(organizationId)
+  const viewerId = useAuthStore.getState().user?.id || ''
+  const key = JSON.stringify([organizationId, viewerId, plan])
+  return sharedRateHistory.subscribe(key, (emit) => startRateHistoryListener(organizationId, plan, emit), onHistory)
+}
+
+/** Tests and sign-out: stop the shared pay-history listener now. */
+export function resetSharedRateHistoryListener(): void {
+  sharedRateHistory.reset()
+}
+
+function startRateHistoryListener(
+  organizationId: string,
+  plan: RateHistoryQueryPlan,
+  onHistory: (history: OperativeDayRateHistoryCollection) => void
+): Unsubscribe {
   if (plan.kind === 'all') {
     return watchOrgCollection(organizationId, 'operativeDayRateHistory', (docs) => onHistory(historyFromDocs(docs)))
   }

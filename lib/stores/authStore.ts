@@ -1009,6 +1009,8 @@ export const useAuthStore = create<AuthState>((set) => {
       unsubscribeOrgCollectionsOutside(currentOrganizationId())
       // 1.16.0: the inbox listener and rows never outlive the session.
       void import('@/lib/stores/notificationStore').then(({ useNotificationStore }) => useNotificationStore.getState().reset())
+      // The shared pay-history listener (kept open briefly between profile pages) never outlives the session.
+      void import('@/lib/timesheets/dayRateHistoryStorage').then(({ resetSharedRateHistoryListener }) => resetSharedRateHistoryListener())
       const signedOutId = useAuthStore.getState().user?.id
       if (signedOutId) clearRememberedOrgDenied(signedOutId)
       // Keep pp.webActiveOrg:{userId}. Same-user login must reopen this company.
