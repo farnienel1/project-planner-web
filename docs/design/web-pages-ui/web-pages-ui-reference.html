@@ -1,0 +1,855 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Web Pages UI Reference</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --side:#0B1631; --side-hi:rgba(255,255,255,.08); --side-ink:#D5DCEA; --side-muted:#6F7C97;
+  --navy:#0E1B36; --navy-2:#16264A; --hmuted:#93A1BC; --hsoft:#C7D0E1;
+  --bg:#F2F4F8; --card:#FFFFFF; --line:#E3E8F0; --line-2:#EEF1F6; --field:#F6F8FC;
+  --ink:#0F1B33; --ink-2:#334155; --muted:#64748B;
+  --blue:#2F6FE0; --blue-2:#3B7BF0; --blue-soft:#E6EEFC; --blue-ink:#17398A;
+  --amber:#F5A524; --amber-soft:#FDF1DC; --amber-ink:#8A5300;
+  --red:#E5484D; --red-soft:#FDECEC; --red-ink:#B42318;
+  --green-soft:#EAF7F1; --green-ink:#0B6B47;
+  --slate-soft:#EEF1F6; --slate-ink:#475569;
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:Inter,system-ui,sans-serif;font-size:14px;color:var(--ink);background:var(--side);-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums}
+button,input,select{font:inherit}
+button{cursor:pointer}
+a{color:inherit;text-decoration:none}
+svg.ic{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
+.app{display:flex;min-height:100vh}
+
+/* Sidebar (existing structure, light polish only) */
+.side{width:236px;flex-shrink:0;color:var(--side-ink);display:flex;flex-direction:column;padding:18px 12px 12px;position:sticky;top:0;height:100vh;overflow:auto}
+.brand{display:flex;align-items:center;gap:10px;padding:0 8px 18px}
+.brand b{display:block;color:#fff;font-size:15.5px;font-weight:600}
+.brand small{font-size:11.5px;color:var(--side-muted)}
+.sec{display:flex;justify-content:space-between;align-items:center;padding:14px 10px 6px;font-size:10.5px;font-weight:600;letter-spacing:.1em;color:var(--side-muted)}
+.sec span{display:flex;align-items:center;gap:4px;letter-spacing:0;font-weight:500;font-size:11.5px;color:var(--hsoft)}
+.nav a{display:flex;align-items:center;gap:11px;height:32px;padding:0 10px;border-radius:8px;font-size:13px;color:var(--side-ink);border:1px solid transparent}
+.nav a:hover{background:rgba(255,255,255,.04)}
+.nav a.on{background:var(--side-hi);border-color:rgba(255,255,255,.08);color:#fff}
+.side hr{border:0;border-top:1px solid rgba(255,255,255,.07);margin:10px 6px}
+.me{margin-top:auto;display:flex;align-items:center;gap:10px;padding:10px;border-radius:12px;background:rgba(255,255,255,.06)}
+.av{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:12px;flex-shrink:0;background:linear-gradient(160deg,#5B8CF0,#2F5FD0)}
+.av.p{background:linear-gradient(160deg,#8B7CF6,#5B46D6)}.av.g{background:linear-gradient(160deg,#34C38F,#12936A)}.av.a{background:linear-gradient(160deg,#FBBF4A,#E08A0B)}
+.me b{display:block;color:#fff;font-size:12.5px;font-weight:600}.me small{font-size:11px;color:var(--side-muted)}
+.me button{margin-left:auto;background:none;border:0;color:var(--side-muted);display:flex}
+.ver{font-size:10.5px;color:var(--side-muted);padding:8px 10px 0}
+
+/* Main */
+.main{flex:1;min-width:0;background:var(--bg);margin:10px 10px 10px 0;border-radius:16px;overflow:hidden;display:flex;flex-direction:column}
+.top{height:56px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;padding:0 20px;flex-shrink:0}
+.crumb{flex:1;min-width:180px;font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.crumb b{color:var(--ink);font-weight:600}
+.search{display:flex;align-items:center;gap:8px;width:260px;flex-shrink:1;min-width:160px;height:36px;border:1px solid var(--line);border-radius:10px;padding:0 10px;color:var(--muted);background:var(--field);font-size:13px}
+.search input{border:0;outline:0;background:transparent;flex:1;min-width:0;color:var(--ink)}
+.search kbd{font:inherit;font-size:11px;border:1px solid var(--line);border-radius:5px;padding:0 5px;background:#fff}
+.ib{position:relative;width:36px;height:36px;border-radius:10px;border:1px solid var(--line);background:#fff;color:var(--ink-2);display:flex;align-items:center;justify-content:center}
+.ib .n{position:absolute;top:-5px;right:-5px;min-width:17px;height:17px;border-radius:9px;background:var(--red);color:#fff;font-size:10.5px;font-weight:700;display:flex;align-items:center;justify-content:center}
+.btn{height:36px;padding:0 14px;border-radius:10px;border:1px solid var(--line);background:#fff;color:var(--ink);display:inline-flex;align-items:center;gap:7px;font-size:13px;font-weight:600;white-space:nowrap}
+.btn.primary{border:0;background:linear-gradient(180deg,#3B7BF0,#2559D6);color:#fff;box-shadow:0 3px 10px rgba(37,89,214,.25)}
+.btn.ghost-dark{background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.16);color:#fff}
+.btn.white{background:#fff;border-color:#fff;color:var(--blue-ink)}
+.btn.sm{height:30px;padding:0 10px;font-size:12.5px;border-radius:8px}
+.content{padding:22px 24px 40px;display:flex;flex-direction:column;gap:16px;overflow:auto}
+.view{display:none;flex-direction:column;gap:16px}
+.view.on{display:flex}
+
+/* Navy band (iOS header language) */
+.band{border-radius:18px;padding:22px 24px;color:#fff;background-color:var(--navy);background-image:linear-gradient(rgba(255,255,255,.045) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.045) 1px,transparent 1px);background-size:28px 28px;display:flex;flex-direction:column;gap:18px}
+.band-top{display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap}
+.band-top .t{flex:1;min-width:240px;display:flex;flex-direction:column;gap:4px}
+.eyebrow{font-size:11px;font-weight:600;letter-spacing:.14em;color:var(--hmuted);text-transform:uppercase}
+.band h1{margin:0;font-size:26px;font-weight:700;letter-spacing:-.02em}
+.band h1 small{font-size:17px;font-weight:500;color:var(--hmuted)}
+.band p{margin:0;color:var(--hsoft);font-size:13.5px}
+.back{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--hsoft);margin-bottom:4px}
+.stats{display:flex;flex-wrap:wrap}
+.stat{display:flex;flex-direction:column;gap:3px;padding:0 22px;border-left:1px solid rgba(255,255,255,.12)}
+.stat:first-child{padding-left:0;border-left:0}
+.stat b{font-size:28px;font-weight:700;line-height:1.05}
+.stat span{font-size:12.5px;color:var(--hmuted)}
+.stat.link{cursor:pointer;border-radius:0}
+.glass{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:14px;padding:12px 14px;display:flex;flex-direction:column;gap:8px}
+.track{height:10px;border-radius:5px;background:rgba(255,255,255,.08);display:flex;overflow:hidden}
+.legend{display:flex;gap:16px;font-size:12px;color:var(--hsoft);flex-wrap:wrap}
+.legend span{display:flex;align-items:center;gap:6px}
+.legend i{width:8px;height:8px;border-radius:2px;display:block}
+.datenav{display:flex;align-items:center;gap:6px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:5px}
+.datenav button{height:32px;min-width:32px;border:0;border-radius:8px;background:transparent;color:#fff;display:flex;align-items:center;justify-content:center;padding:0 10px;font-size:13px;font-weight:600}
+.datenav button.on{background:#fff;color:var(--navy)}
+.datenav input{height:32px;border:0;border-radius:8px;background:rgba(255,255,255,.1);color:#fff;padding:0 10px;color-scheme:dark}
+
+/* Cards, tables */
+.grid2{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:16px;align-items:start}
+.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;min-width:0}
+.ch{display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--line-2)}
+.ch h2{margin:0;font-size:15px;font-weight:700;flex:1}
+.ch .count{font-size:12.5px;color:var(--muted);font-weight:500}
+.label{font-size:11px;font-weight:700;letter-spacing:.1em;color:var(--muted);text-transform:uppercase}
+.tile{width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center;color:#fff;flex-shrink:0}
+.t-blue{background:linear-gradient(160deg,#5B8CF0,#2F5FD0)}.t-purple{background:linear-gradient(160deg,#8B7CF6,#5B46D6)}.t-green{background:linear-gradient(160deg,#34C38F,#12936A)}.t-amber{background:linear-gradient(160deg,#FBBF4A,#E08A0B)}.t-red{background:linear-gradient(160deg,#F2666B,#D92D35)}
+.chip{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;padding:3px 9px;border-radius:999px;white-space:nowrap}
+.c-blue{background:var(--blue-soft);color:var(--blue-ink)}.c-amber{background:var(--amber-soft);color:var(--amber-ink)}.c-red{background:var(--red-soft);color:var(--red-ink)}.c-green{background:var(--green-soft);color:var(--green-ink)}.c-slate{background:var(--slate-soft);color:var(--slate-ink)}.c-purple{background:#F0EDFD;color:#4B3BB8}.c-orange{background:#FFF0E5;color:#B5470E}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th{text-align:left;font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--muted);text-transform:uppercase;padding:10px 18px;background:#FAFBFD;border-bottom:1px solid var(--line-2);white-space:nowrap}
+td{padding:12px 18px;border-bottom:1px solid var(--line-2);vertical-align:middle}
+tr:last-child td{border-bottom:0}
+tbody tr:hover{background:#FAFBFF}
+td.num{font-weight:600;text-align:right;white-space:nowrap}
+th.num{text-align:right}
+.who{display:flex;align-items:center;gap:12px}
+.who b{display:block;font-weight:600}.who small{color:var(--muted);font-size:12.5px}
+.tw{overflow-x:auto}
+.seg{display:inline-flex;gap:4px;background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:4px}
+.seg button{height:32px;padding:0 14px;border:0;border-radius:8px;background:transparent;color:var(--ink-2);font-size:13px;font-weight:500;display:flex;align-items:center;gap:7px;white-space:nowrap}
+.seg button.on{background:var(--navy);color:#fff;font-weight:600}
+.seg button .k{font-size:11px;font-weight:700;min-width:20px;padding:1px 6px;border-radius:999px;background:#fff;color:var(--ink-2);border:1px solid var(--line)}
+.seg button.on .k{background:rgba(255,255,255,.18);color:#fff;border-color:transparent}
+.toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:14px 18px;border-bottom:1px solid var(--line-2)}
+.field{display:flex;align-items:center;gap:8px;height:38px;border:1px solid var(--line);border-radius:10px;background:var(--field);padding:0 12px;color:var(--muted);min-width:240px;flex:1}
+.field input{border:0;outline:0;background:transparent;flex:1;min-width:0;color:var(--ink)}
+select.sel{height:38px;border:1px solid var(--line);border-radius:10px;background:var(--field);padding:0 12px;color:var(--ink);min-width:200px}
+.inp{height:40px;border:1px solid var(--line);border-radius:10px;background:var(--field);padding:0 12px;width:100%;color:var(--ink);outline:0}
+.inp:focus{border-color:var(--blue);background:#fff}
+.note{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:12px;font-size:13px}
+.note.amber{background:var(--amber-soft);color:#6B4100}.note.blue{background:#EEF3FD;color:#1E3A7A}.note.dark{background:rgba(255,255,255,.07);color:var(--hsoft);border:1px solid rgba(255,255,255,.08)}
+.empty{padding:40px 24px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:8px}
+.empty .tile{width:52px;height:52px;border-radius:16px}
+.empty b{font-size:15.5px}.empty span{color:var(--muted);max-width:440px;line-height:1.5;font-size:13.5px}
+.action{display:flex;flex-direction:column;gap:14px;padding:18px;border-radius:16px;background:#fff;border:1px solid var(--line);transition:border-color .15s, box-shadow .15s}
+.action:hover{border-color:#C3D1F2;box-shadow:0 6px 18px rgba(15,27,51,.06)}
+.action .row{display:flex;gap:14px;align-items:flex-start}
+.action h3{margin:0 0 3px;font-size:16px}
+.action p{margin:0;color:var(--muted);font-size:13px;line-height:1.45}
+.action .go{margin-top:auto;display:flex;align-items:center;justify-content:space-between;font-size:13px;font-weight:600;color:var(--blue);padding-top:12px;border-top:1px solid var(--line-2)}
+.mini{display:grid;grid-template-columns:repeat(3,1fr);border:1px solid var(--line-2);border-radius:12px;overflow:hidden}
+.mini div{padding:10px 12px;display:flex;flex-direction:column;gap:2px}
+.mini div + div{border-left:1px solid var(--line-2)}
+.mini b{font-size:20px}.mini span{font-size:11.5px;color:var(--muted)}
+.proj{display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--line-2);background:#FAFBFD}
+.proj b{font-size:15px}.proj small{display:block;color:var(--muted);font-size:12.5px}
+.hrs{display:inline-flex;align-items:center;gap:6px}
+.hbar{width:84px;height:8px;border-radius:4px;background:var(--line-2);display:flex;overflow:hidden}
+.prev-pill{font-size:11px;font-weight:600;color:var(--amber-ink);background:var(--amber-soft);padding:3px 9px;border-radius:999px}
+.pagetabs{display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:10px 12px;border:1.5px dashed #C9D2E3;border-radius:14px;background:#FAFBFD}
+.pagetabs .ptl{font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--amber-ink);background:var(--amber-soft);padding:4px 9px;border-radius:999px;margin-right:4px}
+.pagetabs a{font-size:12.5px;font-weight:600;padding:6px 11px;border-radius:999px;background:#fff;border:1px solid var(--line);color:var(--ink-2)}
+.pagetabs a.on{background:var(--navy);border-color:var(--navy);color:#fff}
+
+@media (max-width:1100px){.grid2,.grid3{grid-template-columns:1fr}}
+@media (max-width:820px){.side{display:none}.main{margin:0;border-radius:0}.search{display:none}.content{padding:14px}.band{padding:18px}.stat{padding:0 14px}.stat b{font-size:22px}.field{min-width:0}}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <symbol id="home" viewBox="0 0 24 24"><path d="M3 11l9-7 9 7v10h-6v-6H9v6H3z"/></symbol>
+  <symbol id="cal" viewBox="0 0 24 24"><path d="M4 6h16v14H4zM4 10h16M8 3v4M16 3v4"/></symbol>
+  <symbol id="folder" viewBox="0 0 24 24"><path d="M3 6h6l2 2h10v11H3z"/></symbol>
+  <symbol id="tools" viewBox="0 0 24 24"><path d="M14 6l4-4 4 4-4 4M18 6L7 17M4 20l3-3"/></symbol>
+  <symbol id="hat" viewBox="0 0 24 24"><path d="M3 17h18M5 17v-2a7 7 0 0 1 14 0v2M10 9V6h4v3"/></symbol>
+  <symbol id="doc" viewBox="0 0 24 24"><path d="M6 3h8l5 5v13H6zM14 3v5h5M9 13h6M9 17h6"/></symbol>
+  <symbol id="user" viewBox="0 0 24 24"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21a8 8 0 0 1 16 0"/></symbol>
+  <symbol id="users" viewBox="0 0 24 24"><path d="M9 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM2 20a7 7 0 0 1 14 0M16 4.5a3.5 3.5 0 0 1 0 6.5M18 14a6 6 0 0 1 4 6"/></symbol>
+  <symbol id="sun" viewBox="0 0 24 24"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5L19 19M5 19l1.5-1.5M17.5 6.5L19 5"/></symbol>
+  <symbol id="sheet" viewBox="0 0 24 24"><path d="M6 3h12v18H6zM9 8h6M9 12h6M9 16h4"/></symbol>
+  <symbol id="clock" viewBox="0 0 24 24"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 7v5l3 2"/></symbol>
+  <symbol id="warn" viewBox="0 0 24 24"><path d="M12 3l10 18H2zM12 10v5M12 17.5v.5"/></symbol>
+  <symbol id="tasks" viewBox="0 0 24 24"><path d="M4 4h16v16H4zM8 12l3 3 5-6"/></symbol>
+  <symbol id="shield" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6zM9 12l2 2 4-4"/></symbol>
+  <symbol id="brief" viewBox="0 0 24 24"><path d="M3 7h18v13H3zM9 7V4h6v3M3 12h18"/></symbol>
+  <symbol id="badge" viewBox="0 0 24 24"><path d="M12 3l2.5 5 5.5.8-4 3.9.9 5.5L12 15.6 7.1 18.2 8 12.7 4 8.8l5.5-.8z"/></symbol>
+  <symbol id="tag" viewBox="0 0 24 24"><path d="M3 12V4h8l10 10-8 8zM7.5 7.5h.5"/></symbol>
+  <symbol id="cart" viewBox="0 0 24 24"><path d="M3 4h2l2 12h11l2-8H6M9 20h.5M17 20h.5"/></symbol>
+  <symbol id="box" viewBox="0 0 24 24"><path d="M3 7l9-4 9 4v10l-9 4-9-4zM3 7l9 4 9-4M12 11v10"/></symbol>
+  <symbol id="sub" viewBox="0 0 24 24"><path d="M4 21V4h11v17M15 9h5v12M8 8h3M8 12h3M8 16h3M3 21h18"/></symbol>
+  <symbol id="chat" viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/></symbol>
+  <symbol id="adduser" viewBox="0 0 24 24"><path d="M10 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM3 21a7 7 0 0 1 12-5M19 14v6M16 17h6"/></symbol>
+  <symbol id="pulse" viewBox="0 0 24 24"><path d="M3 12h4l3-7 4 14 3-7h4"/></symbol>
+  <symbol id="gear" viewBox="0 0 24 24"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2"/></symbol>
+  <symbol id="out" viewBox="0 0 24 24"><path d="M14 4h5v16h-5M10 8l-4 4 4 4M6 12h10"/></symbol>
+  <symbol id="search" viewBox="0 0 24 24"><path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM21 21l-5-5"/></symbol>
+  <symbol id="plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="refresh" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/></symbol>
+  <symbol id="bell" viewBox="0 0 24 24"><path d="M6 16v-5a6 6 0 0 1 12 0v5l2 2H4zM10 21h4"/></symbol>
+  <symbol id="left" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></symbol>
+  <symbol id="right" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
+  <symbol id="arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+  <symbol id="key" viewBox="0 0 24 24"><path d="M8 15a4 4 0 1 1 3.5-6H21v3h-2v3h-3v-3h-4.5A4 4 0 0 1 8 15z"/></symbol>
+  <symbol id="check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+  <symbol id="pound" viewBox="0 0 24 24"><path d="M17 20H7c2-2 2-4 2-7V8a3 3 0 0 1 6 0M6 13h8"/></symbol>
+  <symbol id="bolt" viewBox="0 0 24 24"><path d="M13 3L5 13h6l-1 8 8-10h-6z"/></symbol>
+  <symbol id="ruler" viewBox="0 0 24 24"><path d="M3 17L17 3l4 4L7 21zM7 13l2 2M10 10l2 2M13 7l2 2"/></symbol>
+  <symbol id="info" viewBox="0 0 24 24"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 11v5M12 8v.5"/></symbol>
+  <symbol id="download" viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M4 20h16"/></symbol>
+</defs></svg>
+
+<div class="app">
+  <aside class="side" aria-label="Main navigation">
+    <div class="brand">
+      <svg viewBox="0 0 44 44" width="32" height="32" aria-hidden="true"><defs><linearGradient id="pp" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#2563EB"/><stop offset="1" stop-color="#38BDF8"/></linearGradient></defs><rect width="44" height="44" rx="11" fill="#1A2A50"/><rect x="11" y="22" width="5.5" height="11" rx="1.6" fill="url(#pp)"/><rect x="19.25" y="12" width="5.5" height="21" rx="1.6" fill="url(#pp)"/><rect x="27.5" y="17" width="5.5" height="16" rx="1.6" fill="url(#pp)"/></svg>
+      <div><b>Project Planner</b><small>Raccord MEP</small></div>
+    </div>
+    <nav class="nav"><a href="#"><svg class="ic"><use href="#home"/></svg>Home</a></nav>
+    <div class="sec">NAVIGATE <span><svg class="ic" style="width:12px;height:12px"><use href="#gear"/></svg>Customise</span></div>
+    <nav class="nav" id="nav">
+      <a href="#daily" data-v="daily"><svg class="ic"><use href="#cal"/></svg>Daily overview</a>
+      <a href="#"><svg class="ic"><use href="#folder"/></svg>Projects</a>
+      <a href="#"><svg class="ic"><use href="#tools"/></svg>Small works</a>
+      <a href="#"><svg class="ic"><use href="#hat"/></svg>Operatives</a>
+      <a href="#"><svg class="ic"><use href="#doc"/></svg>Weekly report</a>
+      <a href="#"><svg class="ic"><use href="#user"/></svg>My Schedule</a>
+      <a href="#"><svg class="ic"><use href="#sun"/></svg>Annual leave</a>
+      <a href="#ts" data-v="ts"><svg class="ic"><use href="#sheet"/></svg>Timesheets</a>
+      <a href="#users" data-v="users"><svg class="ic"><use href="#users"/></svg>Manage users</a>
+      <a href="#"><svg class="ic"><use href="#warn"/></svg>Warnings</a>
+      <a href="#"><svg class="ic"><use href="#tasks"/></svg>Tasks</a>
+      <a href="#"><svg class="ic"><use href="#shield"/></svg>Site audit</a>
+      <a href="#"><svg class="ic"><use href="#brief"/></svg>Managers</a>
+    </nav>
+    <hr>
+    <div class="sec">TOOLS</div>
+    <nav class="nav">
+      <a href="#"><svg class="ic"><use href="#badge"/></svg>Qualifications</a>
+      <a href="#"><svg class="ic"><use href="#tag"/></svg>Job types</a>
+      <a href="#"><svg class="ic"><use href="#cart"/></svg>Wholesalers</a>
+      <a href="#"><svg class="ic"><use href="#box"/></svg>Material catalogue</a>
+      <a href="#"><svg class="ic"><use href="#sub"/></svg>Sub Contractors</a>
+      <a href="#"><svg class="ic"><use href="#chat"/></svg>Feedback</a>
+    </nav>
+    <hr>
+    <div class="sec">TEAM</div>
+    <nav class="nav">
+      <a href="#"><svg class="ic"><use href="#adduser"/></svg>Add user</a>
+      <a href="#"><svg class="ic"><use href="#pulse"/></svg>Data health</a>
+    </nav>
+    <div class="me" style="margin-top:14px"><div class="av">TA</div><div><b>Test Admin</b><small>Raccord MEP</small></div><button aria-label="Sign out"><svg class="ic"><use href="#out"/></svg></button></div>
+    <div class="ver">v1.0.0 · Project Planner</div>
+  </aside>
+
+  <div class="main">
+    <header class="top">
+      <div class="crumb">Raccord MEP / <b id="crumb">Daily overview</b></div>
+      <label class="search"><svg class="ic"><use href="#search"/></svg><input placeholder="Search projects, people, pages" aria-label="Search"><kbd>⌘K</kbd></label>
+      <button class="btn primary"><svg class="ic"><use href="#plus"/></svg>New</button>
+      <button class="ib" aria-label="Refresh"><svg class="ic"><use href="#refresh"/></svg></button>
+      <button class="ib" aria-label="Notifications, 3 unread"><svg class="ic"><use href="#bell"/></svg><span class="n">3</span></button>
+      <div class="av">TA</div>
+    </header>
+
+    <div class="content">
+      <nav class="pagetabs" aria-label="Preview screens" id="pagetabs">
+        <span class="ptl">PREVIEW ONLY · screen switcher, not part of the design · sample data</span>
+        <a href="#daily" data-v="daily">Daily overview</a>
+        <a href="#daily2" data-v="daily2">↳ Day with unbooked</a>
+        <a href="#daily3" data-v="daily3">↳ Empty day</a>
+        <a href="#ts" data-v="ts">Timesheets</a>
+        <a href="#my" data-v="my">My timesheets</a>
+        <a href="#tsd" data-v="tsd">↳ Timesheet</a>
+        <a href="#sign" data-v="sign">↳ Sign</a>
+        <a href="#uts" data-v="uts">User timesheets</a>
+        <a href="#otx" data-v="otx">OT, expenses &amp; price work</a>
+        <a href="#otxl" data-v="otxl">↳ People</a>
+        <a href="#otxp" data-v="otxp">↳ Person</a>
+        <a href="#otxe" data-v="otxe">↳ Expenses</a>
+        <a href="#users" data-v="users">Manage users</a>
+      </nav>
+
+      <!-- ============ DAILY OVERVIEW ============ -->
+      <section class="view" id="v-daily" data-crumb="Daily overview">
+        <div class="band">
+          <div class="band-top">
+            <div class="t">
+              <span class="eyebrow">Daily overview · Tuesday, 10 November 2026</span>
+              <h1>60.5h booked <small>· 3 people</small></h1>
+              <p>Who is where, and who still needs booking.</p>
+            </div>
+            <div class="datenav">
+              <button aria-label="Previous day"><svg class="ic"><use href="#left"/></svg></button>
+              <button class="on">Today</button>
+              <button aria-label="Next day"><svg class="ic"><use href="#right"/></svg></button>
+              <input type="date" value="2026-11-10" aria-label="Pick a date">
+            </div>
+          </div>
+          <div class="stats">
+            <div class="stat"><b>42.5</b><span>Standard hrs</span></div>
+            <div class="stat"><b style="color:var(--amber)">12</b><span>Overtime 1.5×</span></div>
+            <div class="stat"><b>1</b><span>Job active</span></div>
+            <div class="stat"><b>0</b><span>Unbooked</span></div>
+          </div>
+          <div class="glass">
+            <div style="display:flex;justify-content:space-between;font-size:11px;font-weight:600;letter-spacing:.12em;color:var(--hmuted)"><span>WHERE THE TEAM IS</span><span style="letter-spacing:0;font-weight:500">3 booked · 0 unbooked</span></div>
+            <div class="track"><div style="width:100%;background:#3B7BF0"></div></div>
+            <div class="legend"><span><i style="background:#3B7BF0"></i>3 On site</span><span><i style="background:#8B7CF6"></i>0 Office</span><span><i style="background:#34C38F"></i>0 WFH</span><span><i style="background:#E5484D"></i>0 Unbooked</span></div>
+          </div>
+        </div>
+
+        <div class="grid2">
+          <div class="card">
+            <div class="ch"><h2>By project</h2><span class="count">1 job · 3 people</span></div>
+            <div class="proj">
+              <div class="tile t-green"><svg class="ic" style="width:19px;height:19px"><use href="#folder"/></svg></div>
+              <div style="flex:1"><b><span class="chip c-blue" style="margin-right:6px">C646</span>1 Carnaby Street</b><small>3 people · 60.5h booked</small></div>
+              <button class="btn sm">Open project<svg class="ic" style="width:14px;height:14px"><use href="#arrow"/></svg></button>
+            </div>
+            <div class="tw"><table>
+              <thead><tr><th>Person</th><th>Booking</th><th>Type</th><th class="num">Hours</th><th></th></tr></thead>
+              <tbody>
+                <tr><td><div class="who"><div class="av g">FN</div><b>Farnie Nel</b></div></td><td><b style="font-weight:600;display:block">Full day</b><small style="color:var(--muted)">Custom 07:00–22:00</small></td><td><span class="chip c-blue">Std + OT</span></td><td class="num"><span class="hrs"><span class="hbar"><i style="width:60%;background:#3B7BF0"></i><i style="width:40%;background:repeating-linear-gradient(-45deg,#F5A524 0 3px,#E39412 3px 6px)"></i></span>26h</span></td><td style="text-align:right"><button class="btn sm">Change</button></td></tr>
+                <tr><td><div class="who"><div class="av">TA</div><b>Test Admin</b></div></td><td><b style="font-weight:600;display:block">Full day</b><small style="color:var(--muted)">Custom 07:00–22:00</small></td><td><span class="chip c-blue">Std + OT</span></td><td class="num"><span class="hrs"><span class="hbar"><i style="width:60%;background:#3B7BF0"></i><i style="width:40%;background:repeating-linear-gradient(-45deg,#F5A524 0 3px,#E39412 3px 6px)"></i></span>26h</span></td><td style="text-align:right"><button class="btn sm">Change</button></td></tr>
+                <tr><td><div class="who"><div class="av p">TM</div><b>Test Manager</b></div></td><td><b style="font-weight:600;display:block">Full day</b><small style="color:var(--muted)">Standard hours</small></td><td><span class="chip c-blue">Standard</span></td><td class="num"><span class="hrs"><span class="hbar"><i style="width:100%;background:#3B7BF0"></i></span>8.5h</span></td><td style="text-align:right"><button class="btn sm">Change</button></td></tr>
+              </tbody>
+            </table></div>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:16px">
+            <div class="card">
+              <div class="ch"><h2>Annual leave</h2><span class="count">1</span></div>
+              <div style="display:flex;align-items:center;gap:12px;padding:14px 18px">
+                <div class="tile t-amber" style="width:36px;height:36px;border-radius:10px"><svg class="ic"><use href="#sun"/></svg></div>
+                <div style="flex:1"><b style="display:block;font-weight:600">Team member</b><small style="color:var(--muted);font-size:12.5px">Annual leave · Full day</small></div>
+                <span class="chip c-red">Off</span>
+              </div>
+            </div>
+            <div class="card">
+              <div class="ch"><h2>Unbooked</h2><span class="count">0</span></div>
+              <div style="display:flex;align-items:center;gap:10px;padding:14px 18px;color:var(--green-ink);font-size:13px;font-weight:500"><svg class="ic"><use href="#check"/></svg>Everyone is booked for this day</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ TIMESHEETS HUB ============ -->
+      <section class="view" id="v-ts" data-crumb="Timesheets">
+        <div class="band">
+          <div class="band-top">
+            <div class="t">
+              <span class="eyebrow">Timesheets · Current payment run</span>
+              <h1>1 – 15 November 2026</h1>
+              <p>Paid on 20 November 2026 · Sign your hours and sign off your team.</p>
+            </div>
+            <div class="stats" style="align-self:flex-end">
+              <div class="stat"><b style="color:var(--amber)">0</b><span>Awaiting sign-off</span></div>
+              <div class="stat"><b>0</b><span>Signed off</span></div>
+              <div class="stat"><b>4</b><span>Exported</span></div>
+            </div>
+          </div>
+          <div class="note dark"><svg class="ic"><use href="#info"/></svg>If your timesheet displays 0 GBP then your day/hourly rate hasn't been set by your line manager.</div>
+        </div>
+
+        <div class="grid3">
+          <a class="action" href="#my">
+            <div class="row"><div class="tile t-blue"><svg class="ic" style="width:19px;height:19px"><use href="#clock"/></svg></div><div><h3>My timesheets</h3><p>Your own hours, expenses and price work.</p></div></div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap"><span class="chip c-blue">Current pay run</span><span class="chip c-slate">1 – 15 November 2026</span></div>
+            <div class="go">Open my timesheets<svg class="ic"><use href="#arrow"/></svg></div>
+          </a>
+          <a class="action" href="#uts">
+            <div class="row"><div class="tile t-purple"><svg class="ic" style="width:19px;height:19px"><use href="#users"/></svg></div><div><h3>User timesheets</h3><p>Review, sign off and export company timesheets.</p></div></div>
+            <div class="mini"><div><b style="color:var(--amber-ink)">0</b><span>Awaiting sign-off</span></div><div><b style="color:var(--green-ink)">0</b><span>Signed off</span></div><div><b>4</b><span>Exported</span></div></div>
+            <div class="go">Open user timesheets<svg class="ic"><use href="#arrow"/></svg></div>
+          </a>
+          <a class="action" href="#otx">
+            <div class="row"><div class="tile t-amber"><svg class="ic" style="width:19px;height:19px"><use href="#bolt"/></svg></div><div><h3>Overtime, expenses &amp; price work</h3><p>Your team's overtime, expenses and price work.</p></div></div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap"><span class="chip c-amber">Overtime</span><span class="chip c-green">Expenses</span><span class="chip c-purple">Price work</span></div>
+            <div class="go">Open<svg class="ic"><use href="#arrow"/></svg></div>
+          </a>
+        </div>
+      </section>
+
+      <!-- ============ MY TIMESHEETS ============ -->
+      <section class="view" id="v-my" data-crumb="Timesheets">
+        <div class="band">
+          <div class="band-top">
+            <div class="t">
+              <a class="back" href="#ts"><svg class="ic" style="width:14px;height:14px"><use href="#left"/></svg>Timesheets</a>
+              <span class="eyebrow">My timesheets · Current pay run period</span>
+              <h1>1 – 15 November 2026</h1>
+              <p>Review bookings, add extras, and sign your timesheet.</p>
+            </div>
+            <a class="btn white" href="#tsd" style="align-self:flex-end"><svg class="ic"><use href="#clock"/></svg>Open current timesheet</a>
+          </div>
+        </div>
+        <div class="card">
+          <div class="ch"><h2>Past timesheets</h2><span class="count">View breakdown, signatures, and generate invoice again.</span></div>
+          <div class="tw"><table>
+            <thead><tr><th>Pay run period</th><th>Status</th><th></th></tr></thead>
+            <tbody id="past"></tbody>
+          </table></div>
+        </div>
+      </section>
+
+      <!-- ============ USER TIMESHEETS ============ -->
+      <section class="view" id="v-uts" data-crumb="Timesheets">
+        <div class="band">
+          <div class="band-top">
+            <div class="t">
+              <a class="back" href="#ts"><svg class="ic" style="width:14px;height:14px"><use href="#left"/></svg>Timesheets</a>
+              <span class="eyebrow">User timesheets · Current pay run period</span>
+              <h1>1 – 15 November 2026</h1>
+            </div>
+          </div>
+          <div class="stats">
+            <div class="stat"><b style="color:var(--amber)">0</b><span>Awaiting sign-off</span></div>
+            <div class="stat"><b>0</b><span>Signed off</span></div>
+            <div class="stat"><b>4</b><span>Exported</span></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="toolbar">
+            <div class="seg" role="tablist" id="utsTabs">
+              <button data-t="await"><svg class="ic" style="width:14px;height:14px"><use href="#clock"/></svg>Awaiting sign-off<span class="k">0</span></button>
+              <button data-t="signed"><svg class="ic" style="width:14px;height:14px"><use href="#check"/></svg>Signed off<span class="k">0</span></button>
+              <button data-t="exp" class="on"><svg class="ic" style="width:14px;height:14px"><use href="#download"/></svg>Exported<span class="k">4</span></button>
+            </div>
+          </div>
+          <div id="uts-await" class="utsp" style="display:none">
+            <div style="padding:14px 18px 0"><div class="note amber"><svg class="ic"><use href="#clock"/></svg>Operative signed: yellow pending clock until you counter-sign.</div></div>
+            <div class="empty"><div class="tile t-amber"><svg class="ic" style="width:22px;height:22px"><use href="#clock"/></svg></div><b>No timesheets awaiting sign-off</b><span>People appear here only after they have signed their own timesheet. Unsigned booked hours stay on My Timesheets until they sign.</span></div>
+          </div>
+          <div id="uts-signed" class="utsp" style="display:none">
+            <div class="empty"><div class="tile t-green"><svg class="ic" style="width:22px;height:22px"><use href="#check"/></svg></div><b>No signed-off timesheets</b><span>Uses the existing Signed off view and its existing text.</span></div>
+          </div>
+          <div id="uts-exp" class="utsp">
+            <div style="padding:14px 18px 0"><div class="note blue"><svg class="ic"><use href="#info"/></svg>Exported timesheets stay here for years and remain openable.</div></div>
+            <div class="toolbar" style="border-bottom:1px solid var(--line-2)">
+              <label class="field"><svg class="ic"><use href="#search"/></svg><input placeholder="Name or payment run" aria-label="Search"></label>
+              <div class="seg" aria-label="Sort"><button>First name</button><button>Last name</button><button class="on">Date newest</button><button>Date oldest</button></div>
+              <select class="sel" aria-label="Payment run"><option>All payment runs</option></select>
+            </div>
+            <div class="tw"><table>
+              <thead><tr><th>Person</th><th>Pay run</th><th>Exported</th><th class="num">Hrs</th><th class="num">OT</th><th class="num">PW</th><th class="num">Exp</th><th>Role</th><th>Line manager</th><th>Status</th></tr></thead>
+              <tbody>
+                <tr><td><div class="who"><div class="av">TA</div><b>Test Admin</b></div></td><td style="color:var(--blue);font-weight:600">1 – 15 October 2026</td><td style="color:var(--muted)">12 Oct 2026, 15:59</td><td class="num">71.5</td><td class="num">6.5</td><td class="num">£0.00</td><td class="num">£0.00</td><td>Admin</td><td style="color:var(--muted)">Unassigned</td><td><span class="chip c-slate">Exported</span></td></tr>
+                <tr><td><div class="who"><div class="av">TA</div><b>Test Admin</b></div></td><td style="color:var(--blue);font-weight:600">8 – 8 June 2026</td><td style="color:var(--muted)">18 Jun 2026, 17:59</td><td class="num">8.5</td><td class="num">0</td><td class="num">£0.00</td><td class="num">£0.00</td><td>Admin</td><td style="color:var(--muted)">Unassigned</td><td><span class="chip c-slate">Exported</span></td></tr>
+                <tr><td><div class="who"><div class="av">TA</div><b>Test Admin</b></div></td><td style="color:var(--blue);font-weight:600">7 – 7 June 2026</td><td style="color:var(--muted)">17 Jun 2026, 05:45</td><td class="num">25</td><td class="num">12.5</td><td class="num">£0.00</td><td class="num">£0.00</td><td>Admin</td><td style="color:var(--muted)">Unassigned</td><td><span class="chip c-slate">Exported</span></td></tr>
+                <tr><td><div class="who"><div class="av">TA</div><b>Test Admin</b></div></td><td style="color:var(--blue);font-weight:600">25 – 25 May 2026</td><td style="color:var(--muted)">1 Jun 2026, 22:27</td><td class="num">…</td><td class="num">…</td><td class="num">…</td><td class="num">…</td><td>Admin</td><td style="color:var(--muted)">…</td><td><span class="chip c-slate">Exported</span></td></tr>
+              </tbody>
+            </table></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ OT / EXPENSES / PRICE WORK ============ -->
+      <section class="view" id="v-otx" data-crumb="Timesheets">
+        <div class="band">
+          <div class="band-top"><div class="t">
+            <a class="back" href="#ts"><svg class="ic" style="width:14px;height:14px"><use href="#left"/></svg>Timesheets</a>
+            <span class="eyebrow">Timesheets</span>
+            <h1>Overtime, expenses &amp; price work</h1>
+          </div></div>
+        </div>
+        <div class="grid3">
+          <a class="action" href="#otxl">
+            <div class="row"><div class="tile t-amber"><svg class="ic" style="width:19px;height:19px"><use href="#users"/></svg></div><div><h3>Users' overtime, expenses &amp; price work</h3><p>Everyone you can see. Read-only except approvals.</p></div></div>
+            <div class="go">Open<svg class="ic"><use href="#arrow"/></svg></div>
+          </a>
+        </div>
+      </section>
+
+      <section class="view" id="v-otxl" data-crumb="Timesheets">
+        <div class="band">
+          <div class="band-top"><div class="t">
+            <a class="back" href="#otx"><svg class="ic" style="width:14px;height:14px"><use href="#left"/></svg>Overtime, expenses &amp; price work</a>
+            <h1>Users' overtime, expenses &amp; price work</h1>
+            <p>Everyone you can see. Read-only except approvals.</p>
+          </div></div>
+        </div>
+        <div class="card">
+          <div class="toolbar">
+            <label class="field"><svg class="ic"><use href="#search"/></svg><input placeholder="Search people" aria-label="Search people"></label>
+            <div class="seg"><button class="on">Everyone</button><button>PAYE</button><button>Self-employed</button></div>
+          </div>
+          <div class="tw"><table>
+            <thead><tr><th>Person</th><th>Employment type</th><th></th></tr></thead>
+            <tbody>
+              <tr onclick="location.hash='otxp'" style="cursor:pointer"><td><div class="who"><div class="av g">FN</div><b>Farnie Nel</b></div></td><td><span class="chip c-amber">Self-employed</span></td><td style="text-align:right;color:var(--muted)"><svg class="ic"><use href="#right"/></svg></td></tr>
+              <tr style="cursor:pointer"><td><div class="who"><div class="av p">TM</div><b>Test Manager</b></div></td><td><span class="chip c-slate">PAYE</span></td><td style="text-align:right;color:var(--muted)"><svg class="ic"><use href="#right"/></svg></td></tr>
+              <tr style="cursor:pointer"><td><div class="who"><div class="av">TU</div><b>Test User</b></div></td><td><span class="chip c-slate">PAYE</span></td><td style="text-align:right;color:var(--muted)"><svg class="ic"><use href="#right"/></svg></td></tr>
+            </tbody>
+          </table></div>
+        </div>
+      </section>
+
+      <section class="view" id="v-otxp" data-crumb="Timesheets">
+        <div class="band">
+          <div class="band-top">
+            <div class="av g" style="width:56px;height:56px;font-size:19px">FN</div>
+            <div class="t">
+              <a class="back" href="#otxl"><svg class="ic" style="width:14px;height:14px"><use href="#left"/></svg>Users' overtime, expenses &amp; price work</a>
+              <h1>Farnie Nel</h1>
+              <p><span class="chip c-amber">Self-employed</span></p>
+            </div>
+          </div>
+        </div>
+        <div class="grid3">
+          <a class="action" href="#"><div class="row"><div class="tile t-amber"><svg class="ic" style="width:19px;height:19px"><use href="#bolt"/></svg></div><div><h3>Overtime</h3><p>Overtime for this person.</p></div></div><div class="go">Open<svg class="ic"><use href="#arrow"/></svg></div></a>
+          <a class="action" href="#otxe"><div class="row"><div class="tile t-green"><svg class="ic" style="width:19px;height:19px"><use href="#pound"/></svg></div><div><h3>Expenses</h3><p>Expenses for this person.</p></div></div><div class="go">Open<svg class="ic"><use href="#arrow"/></svg></div></a>
+          <a class="action" href="#"><div class="row"><div class="tile t-purple"><svg class="ic" style="width:19px;height:19px"><use href="#ruler"/></svg></div><div><h3>Price work</h3><p>Price work for this person.</p></div></div><div class="go">Open<svg class="ic"><use href="#arrow"/></svg></div></a>
+        </div>
+      </section>
+
+
+      <!-- ============ DAILY: unbooked ============ -->
+      <section class="view" id="v-daily2" data-crumb="Daily overview">
+        <div class="band">
+          <div class="band-top">
+            <div class="t">
+              <span class="eyebrow">Daily overview · Sunday, 8 November 2026</span>
+              <h1>8h booked <small>· 1 person</small></h1>
+              <p>Who is where, and who still needs booking.</p>
+            </div>
+            <div class="datenav">
+              <button aria-label="Previous day"><svg class="ic"><use href="#left"/></svg></button>
+              <button>Back to today</button>
+              <button aria-label="Next day"><svg class="ic"><use href="#right"/></svg></button>
+              <input type="date" value="2026-11-08" aria-label="Pick a date">
+            </div>
+          </div>
+          <div class="stats">
+            <div class="stat"><b>8</b><span>Standard hrs</span></div>
+            <div class="stat"><b style="color:var(--amber)">0</b><span>Overtime 2×</span></div>
+            <div class="stat"><b>1</b><span>Job active</span></div>
+            <div class="stat"><b style="color:#FF8A8E">2</b><span>Unbooked</span></div>
+          </div>
+          <div class="glass">
+            <div style="display:flex;justify-content:space-between;font-size:11px;font-weight:600;letter-spacing:.12em;color:var(--hmuted)"><span>WHERE THE TEAM IS</span><span style="letter-spacing:0;font-weight:500">1 booked · 2 unbooked</span></div>
+            <div class="track"><div style="width:33.3%;background:#3B7BF0"></div><div style="width:66.7%;background:repeating-linear-gradient(-45deg,#E5484D 0 3px,#A51D24 3px 6px)"></div></div>
+            <div class="legend"><span><i style="background:#3B7BF0"></i>1 On site</span><span><i style="background:#8B7CF6"></i>0 Office</span><span><i style="background:#34C38F"></i>0 WFH</span><span><i style="background:#E5484D"></i>2 Unbooked</span></div>
+          </div>
+        </div>
+        <div class="grid2">
+          <div class="card">
+            <div class="ch"><h2>By project</h2><span class="count">1 job · 1 person</span></div>
+            <div class="proj">
+              <div class="tile t-green"><svg class="ic" style="width:19px;height:19px"><use href="#folder"/></svg></div>
+              <div style="flex:1"><b><span class="chip c-blue" style="margin-right:6px">C984</span>71 Broadwick Street</b><small>1 person · 8h booked</small></div>
+              <button class="btn sm">Open project<svg class="ic" style="width:14px;height:14px"><use href="#arrow"/></svg></button>
+            </div>
+            <div class="tw"><table>
+              <thead><tr><th>Person</th><th>Booking</th><th>Type</th><th class="num">Hours</th><th></th></tr></thead>
+              <tbody>
+                <tr><td><div class="who"><div class="av g">FN</div><b>Farnie Nel</b></div></td><td><b style="font-weight:600;display:block">Custom</b><small style="color:var(--muted)">07:30–14:00</small></td><td><span class="chip c-blue">Standard</span></td><td class="num"><span class="hrs"><span class="hbar"><i style="width:100%;background:#3B7BF0"></i></span>8h</span></td><td style="text-align:right"><button class="btn sm">Change</button></td></tr>
+              </tbody>
+            </table></div>
+          </div>
+          <div class="card" style="border-color:#F4B4B7">
+            <div class="ch"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M10.3 3.6a2 2 0 0 1 3.4 0l8.4 14.6a2 2 0 0 1-1.7 3H3.6a2 2 0 0 1-1.7-3z" fill="#E5484D"/><path d="M12 9v5" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/><circle cx="12" cy="17.3" r="1.3" fill="#fff"/></svg><h2>Unbooked labour</h2><span class="chip c-red">2</span></div>
+            <div style="display:flex;flex-direction:column">
+              <div style="display:flex;align-items:center;gap:12px;padding:12px 18px;border-bottom:1px solid var(--line-2)"><div class="av">TA</div><div style="flex:1"><b style="display:block;font-weight:600">Test Admin</b><small style="color:var(--red-ink);font-size:12.5px">Missing 8.5h</small></div><span class="chip c-red">Unbooked</span></div>
+              <div style="display:flex;align-items:center;gap:12px;padding:12px 18px"><div class="av p">TM</div><div style="flex:1"><b style="display:block;font-weight:600">Test Manager</b><small style="color:var(--red-ink);font-size:12.5px">Missing 8.5h</small></div><span class="chip c-red">Unbooked</span></div>
+            </div>
+            <div style="padding:12px 18px 16px"><button class="btn primary" style="width:100%;justify-content:center"><svg class="ic"><use href="#plus"/></svg>Book labour</button></div>
+          </div>
+        </div>
+        <div class="card"><div class="ch"><h2>Overtime breakdown example</h2><span class="count">From Fri 13 Nov in your recording</span></div>
+          <div class="tw"><table><tbody><tr><td><div class="who"><div class="av">TA</div><b>Test Admin</b></div></td><td><b style="font-weight:600;display:block">Custom</b><small style="color:var(--muted)">07:00–18:30</small></td><td><span class="chip c-blue">Std + OT</span></td><td class="num"><span class="hrs"><span class="hbar"><i style="width:63%;background:#3B7BF0"></i><i style="width:37%;background:repeating-linear-gradient(-45deg,#F5A524 0 3px,#E39412 3px 6px)"></i></span>13.5h</span><small style="display:block;color:var(--muted);font-weight:500">8.5h + 2.5h × 2</small></td><td style="text-align:right"><button class="btn sm">Change</button></td></tr></tbody></table></div>
+        </div>
+      </section>
+
+      <!-- ============ DAILY: empty ============ -->
+      <section class="view" id="v-daily3" data-crumb="Daily overview">
+        <div class="band">
+          <div class="band-top">
+            <div class="t">
+              <span class="eyebrow">Daily overview · Saturday, 7 November 2026</span>
+              <h1>0h booked <small>· 0 people</small></h1>
+              <p>Who is where, and who still needs booking.</p>
+            </div>
+            <div class="datenav">
+              <button aria-label="Previous day"><svg class="ic"><use href="#left"/></svg></button>
+              <button>Back to today</button>
+              <button aria-label="Next day"><svg class="ic"><use href="#right"/></svg></button>
+              <input type="date" value="2026-11-07" aria-label="Pick a date">
+            </div>
+          </div>
+          <div class="stats">
+            <div class="stat"><b>0</b><span>Standard hrs</span></div>
+            <div class="stat"><b>0</b><span>Overtime 2×</span></div>
+            <div class="stat"><b>0</b><span>Jobs active</span></div>
+            <div class="stat"><b>0</b><span>Unbooked</span></div>
+          </div>
+        </div>
+        <div class="grid2">
+          <div class="card">
+            <div class="ch"><h2>By project</h2></div>
+            <div class="empty"><div class="tile t-blue"><svg class="ic" style="width:22px;height:22px"><use href="#cal"/></svg></div><b>Nothing booked yet</b><span>No one is booked onto a job for this day.</span><button class="btn primary" style="margin-top:6px"><svg class="ic"><use href="#plus"/></svg>Book labour</button></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ TIMESHEET DETAIL ============ -->
+      <section class="view" id="v-tsd" data-crumb="Timesheets">
+        <div class="band">
+          <div class="band-top">
+            <div class="t">
+              <a class="back" href="#my"><svg class="ic" style="width:14px;height:14px"><use href="#left"/></svg>My timesheets</a>
+              <span class="eyebrow">Timesheet · This period</span>
+              <h1>1 – 15 November 2026</h1>
+              
+            </div>
+            <div style="align-self:flex-end;text-align:right"><span class="eyebrow">Total</span><div style="font-size:34px;font-weight:700;line-height:1.1">£3,328.16</div></div>
+          </div>
+          <div class="stats">
+            <div class="stat"><b>£2,359.41</b><span>Hours subtotal</span></div>
+            <div class="stat"><b style="color:var(--amber)">£968.75</b><span>Overtime</span></div>
+            <div class="stat"><b>£0.00</b><span>Price work</span></div>
+            <div class="stat"><b>£0.00</b><span>Expenses</span></div>
+          </div>
+        </div>
+        <div class="grid2">
+          <div class="card">
+            <div class="ch"><h2>This period</h2></div>
+            <div class="tw"><table>
+              <thead><tr><th>Day</th><th>Booking</th><th>Calculation</th><th class="num">Amount</th></tr></thead>
+              <tbody id="tsdRows"></tbody>
+            </table></div>
+            <div style="border-top:1px solid var(--line);padding:14px 18px;display:flex;flex-direction:column;gap:6px">
+              <div style="display:flex;justify-content:space-between;color:var(--ink-2)"><span>Hours subtotal</span><b>£2,359.41</b></div>
+              <div style="display:flex;justify-content:space-between;color:var(--ink-2)"><span>Overtime</span><b>£968.75</b></div>
+              <div style="display:flex;justify-content:space-between;font-size:17px;padding-top:8px;border-top:1px solid var(--line-2)"><b>Total</b><b>£3,328.16</b></div>
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:16px;position:sticky;top:0">
+            <div class="card">
+              <div class="ch"><h2>Add to this timesheet</h2></div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:14px 18px">
+                <button class="action" style="padding:12px;gap:8px;text-align:left" onclick="document.getElementById('pwModal').style.display='flex'"><div class="tile t-purple" style="width:34px;height:34px;border-radius:10px"><svg class="ic"><use href="#ruler"/></svg></div><b>Price work</b><span style="color:var(--muted);font-size:12px">Agreed extras</span></button>
+                <button class="action" style="padding:12px;gap:8px;text-align:left" onclick="document.getElementById('exModal').style.display='flex'"><div class="tile t-green" style="width:34px;height:34px;border-radius:10px"><svg class="ic"><use href="#pound"/></svg></div><b>Expenses</b><span style="color:var(--muted);font-size:12px">+ receipts</span></button>
+              </div>
+            </div>
+            <div class="card" style="padding:14px 18px;display:flex;flex-direction:column;gap:12px">
+              <div class="note" style="background:var(--red-soft);color:#9F1C22;padding:10px 12px"><svg viewBox="0 0 24 24" width="18" height="18" style="flex-shrink:0" aria-hidden="true"><path d="M10.3 3.6a2 2 0 0 1 3.4 0l8.4 14.6a2 2 0 0 1-1.7 3H3.6a2 2 0 0 1-1.7-3z" fill="#E5484D"/><path d="M12 9v5" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/><circle cx="12" cy="17.3" r="1.3" fill="#fff"/></svg>If you don't agree with the hours shown, amend your booking schedule before signing. Agreed changes appear on a new timesheet.</div>
+              <a href="#sign" class="btn primary" style="height:44px;justify-content:center">Continue to sign<svg class="ic"><use href="#arrow"/></svg></a>
+              <button class="btn" disabled style="height:44px;justify-content:center;color:var(--muted);background:var(--bg);cursor:not-allowed"><svg class="ic"><use href="#doc"/></svg>Generate invoice</button>
+              <span style="font-size:12px;color:var(--muted);text-align:center">Add any expenses or price work, then confirm and approve your timesheet to unlock Generate invoice.</span>
+            </div>
+            <div class="card">
+              <div class="ch"><h2>Payment runs &amp; timesheets</h2></div>
+              <div style="padding:12px 18px;display:grid;grid-template-columns:1fr 1fr;gap:8px">
+                <div class="mini" style="grid-column:span 2;grid-template-columns:1fr 1fr"><div><span>Run</span><b style="font-size:16px">1 – 15</b><span>Payout day 20</span></div><div><span>Run</span><b style="font-size:16px">16 – 31</b><span>Payout day 5</span></div></div>
+                <span style="grid-column:span 2;font-size:12px;color:var(--muted)"><b style="color:var(--ink-2)">Note:</b> If your timesheet displays 0 GBP then your day/hourly rate hasn't been set by your line manager.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="pwModal" style="display:none;position:fixed;inset:0;background:rgba(6,12,26,.5);align-items:center;justify-content:center;z-index:20" onclick="if(event.target===this)this.style.display='none'">
+          <div class="card" style="width:min(460px,92vw);overflow:hidden">
+            <div class="ch"><div class="tile t-purple" style="width:32px;height:32px;border-radius:9px"><svg class="ic"><use href="#ruler"/></svg></div><h2>Add price work</h2><button class="btn sm" onclick="document.getElementById('pwModal').style.display='none'">Cancel</button></div>
+            <div style="padding:16px 18px;display:flex;flex-direction:column;gap:12px">
+              <label style="display:flex;flex-direction:column;gap:5px"><span class="label">Price work name</span><input class="inp" style="min-width:0"></label>
+              <label style="display:flex;flex-direction:column;gap:5px"><span class="label">Description</span><textarea class="inp" style="height:70px;padding:10px 12px;min-width:0;resize:vertical"></textarea></label>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+                <label style="display:flex;flex-direction:column;gap:5px"><span class="label">Job number <span style="color:var(--red-ink)">(required)</span></span><input class="inp" style="min-width:0;border-color:#F4B4B7"><small style="color:var(--red-ink)">Add the job number for this price work.</small></label>
+                <label style="display:flex;flex-direction:column;gap:5px"><span class="label">Amount</span><input class="inp" placeholder="£0.00" style="min-width:0"></label>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:end">
+                <label style="display:flex;flex-direction:column;gap:5px"><span class="label">Start date</span><input type="date" class="inp" value="2026-11-10" style="min-width:0"></label>
+                <label style="display:flex;align-items:center;gap:8px;height:38px;font-size:13px"><input type="checkbox">Add end date</label>
+              </div>
+              <label style="display:flex;flex-direction:column;gap:5px"><span class="label">Manager who agreed this</span><select class="sel" style="min-width:0"><option>Choose…</option></select></label>
+              <button class="btn primary" style="height:42px;justify-content:center">Add price work</button>
+            </div>
+          </div>
+        </div>
+        <div id="exModal" style="display:none;position:fixed;inset:0;background:rgba(6,12,26,.5);align-items:center;justify-content:center;z-index:20" onclick="if(event.target===this)this.style.display='none'">
+          <div class="card" style="width:min(460px,92vw);overflow:hidden">
+            <div class="ch"><div class="tile t-green" style="width:32px;height:32px;border-radius:9px"><svg class="ic"><use href="#pound"/></svg></div><h2>Add expense</h2><button class="btn sm" onclick="document.getElementById('exModal').style.display='none'">Cancel</button></div>
+            <div style="padding:16px 18px;display:flex;flex-direction:column;gap:12px">
+              <label style="display:flex;flex-direction:column;gap:5px"><span class="label">Expense name</span><input class="inp" style="min-width:0"></label>
+              <label style="display:flex;flex-direction:column;gap:5px"><span class="label">Description</span><textarea class="inp" style="height:70px;padding:10px 12px;min-width:0;resize:vertical"></textarea></label>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+                <label style="display:flex;flex-direction:column;gap:5px"><span class="label">Job number</span><input class="inp" style="min-width:0"></label>
+                <label style="display:flex;flex-direction:column;gap:5px"><span class="label">Amount</span><input class="inp" placeholder="£0.00" style="min-width:0"></label>
+              </div>
+              <label style="display:flex;flex-direction:column;gap:5px"><span class="label">Date</span><input type="date" class="inp" value="2026-11-10" style="min-width:0"></label>
+              <button class="btn" style="height:42px;justify-content:space-between;border-style:dashed"><span style="display:flex;align-items:center;gap:8px"><svg class="ic"><use href="#download"/></svg>Upload receipt</span><span class="chip c-red">Required</span></button>
+              <button class="btn primary" style="height:42px;justify-content:center">Add expense</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ SIGN ============ -->
+      <section class="view" id="v-sign" data-crumb="Timesheets">
+        <div class="band">
+          <div class="band-top">
+            <div class="t">
+              <a class="back" href="#tsd"><svg class="ic" style="width:14px;height:14px"><use href="#left"/></svg>Back</a>
+              <span class="eyebrow">Sign timesheet · You're approving</span>
+              <h1>1 – 15 November 2026</h1>
+            </div>
+            <div style="align-self:flex-end;text-align:right"><span class="eyebrow">Timesheet total</span><div style="font-size:34px;font-weight:700;line-height:1.1">£3,328.16</div></div>
+          </div>
+          <div class="stats">
+            <div class="stat"><b>£3,328.16</b><span>Hours</span></div>
+            <div class="stat"><b>£0.00</b><span>Price work</span></div>
+            <div class="stat"><b>£0.00</b><span>Expenses</span></div>
+          </div>
+        </div>
+        <div class="grid2">
+        <div class="card">
+          <div class="ch"><h2>Timesheet summary</h2><span class="count">Read-only · what you're signing</span></div>
+          <div class="tw"><table>
+            <thead><tr><th>Day</th><th>Booking</th><th>Calculation</th><th class="num">Amount</th></tr></thead>
+            <tbody id="signRows"></tbody>
+          </table></div>
+          <div style="border-top:1px solid var(--line);padding:14px 18px;display:flex;flex-direction:column;gap:6px">
+            <div style="display:flex;justify-content:space-between;color:var(--ink-2)"><span>Hours subtotal</span><b>£2,359.41</b></div>
+            <div style="display:flex;justify-content:space-between;color:var(--ink-2)"><span>Overtime</span><b>£968.75</b></div>
+            <div style="display:flex;justify-content:space-between;color:var(--ink-2)"><span>Price work</span><b>£0.00</b></div>
+            <div style="display:flex;justify-content:space-between;color:var(--ink-2)"><span>Expenses</span><b>£0.00</b></div>
+            <div style="display:flex;justify-content:space-between;font-size:17px;padding-top:8px;border-top:1px solid var(--line-2)"><b>Timesheet total</b><b>£3,328.16</b></div>
+          </div>
+        </div>
+        <div class="card" style="position:sticky;top:0">
+          <div class="ch"><h2>Your signature</h2><span class="count">Signing as Test Admin</span><button class="btn sm">Clear</button></div>
+          <div style="padding:16px 18px;display:flex;flex-direction:column;gap:12px">
+            <label style="display:flex;flex-direction:column;gap:5px"><span class="label">Type your name</span><input class="inp" value="Farnie Nel" style="min-width:0"></label>
+            <div style="height:150px;border:1.5px dashed #C3D1F2;border-radius:14px;background:var(--field);display:flex;align-items:center;justify-content:center;font-family:'Brush Script MT',cursive;font-size:40px;color:#1E2F6B">Farnie Nel</div>
+            <span style="font-size:12px;color:var(--muted)">Type your name to fill the box in handwriting, or draw. You can do both.</span>
+            <div class="note" style="background:var(--red-soft);color:#9F1C22"><svg class="ic"><use href="#info"/></svg>By signing you confirm these hours match the work you carried out.</div>
+            <button class="btn" style="height:46px;justify-content:center;background:#12936A;border-color:#12936A;color:#fff"><svg class="ic"><use href="#check"/></svg>Confirm signature and approve</button>
+          </div>
+        </div>
+        </div>
+      </section>
+
+      <!-- ============ PERSON › EXPENSES ============ -->
+      <section class="view" id="v-otxe" data-crumb="Timesheets">
+        <div class="band">
+          <div class="band-top"><div class="t">
+            <a class="back" href="#otxp"><svg class="ic" style="width:14px;height:14px"><use href="#left"/></svg>Farnie Nel</a>
+            <span class="eyebrow">Farnie Nel</span>
+            <h1>Expenses</h1>
+            <p>Farnie Nel is self-employed: these are the entries on their timesheets, read-only.</p>
+          </div></div>
+          <div class="note dark"><svg class="ic"><use href="#cal"/></svg>PAYE payrun: 26 Oct – 25 Nov · paid 25 Nov</div>
+        </div>
+        <div class="grid3">
+          <a class="action" href="#"><div class="row"><div class="tile t-blue"><svg class="ic" style="width:19px;height:19px"><use href="#cal"/></svg></div><div><h3>Current PAYE payrun</h3></div></div><div class="go">Open<svg class="ic"><use href="#arrow"/></svg></div></a>
+          <a class="action" href="#"><div class="row"><div class="tile t-purple"><svg class="ic" style="width:19px;height:19px"><use href="#clock"/></svg></div><div><h3>Past PAYE payruns</h3></div></div><div class="go">Open<svg class="ic"><use href="#arrow"/></svg></div></a>
+          <a class="action" href="#"><div class="row"><div class="tile t-green"><svg class="ic" style="width:19px;height:19px"><use href="#ruler"/></svg></div><div><h3>Custom date range</h3></div></div><div class="go">Open<svg class="ic"><use href="#arrow"/></svg></div></a>
+        </div>
+        <div class="grid2">
+          <div class="card"><div class="ch"><h2>Overtime</h2><span class="count">Same person</span></div><div style="padding:14px 18px"><div class="note blue"><svg class="ic"><use href="#info"/></svg>Farnie Nel is self-employed: their overtime is on their timesheet.&nbsp;<a href="#uts" style="font-weight:600;text-decoration:underline">Open User Timesheets</a></div></div></div>
+          <div class="card"><div class="ch"><h2>Price work · 26 Oct – 25 Nov</h2></div><div class="empty" style="padding:24px"><div class="tile t-purple"><svg class="ic" style="width:22px;height:22px"><use href="#ruler"/></svg></div><b>No price work in this range.</b></div></div>
+        </div>
+      </section>
+
+      <!-- ============ MANAGE USERS ============ -->
+      <section class="view" id="v-users" data-crumb="Manage users">
+        <div class="band">
+          <div class="band-top">
+            <div class="t">
+              <span class="eyebrow">Team</span>
+              <h1>Manage users</h1>
+              <p>Roles, access and invitations for your organisation.</p>
+            </div>
+            <button class="btn white" style="align-self:flex-end"><svg class="ic"><use href="#adduser"/></svg>Add user</button>
+          </div>
+          <div class="seg" id="roleTabs" style="background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.1);align-self:flex-start">
+            <button data-r="admins" class="on" style="color:#fff">Admins</button>
+            <button data-r="managers" style="color:#fff">Managers</button>
+            <button data-r="ops" style="color:#fff">Operatives</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="toolbar">
+            <div class="seg" id="statusTabs"></div>
+            <label class="field"><svg class="ic"><use href="#search"/></svg><input id="userSearch" placeholder="Search admins by name" aria-label="Search by name"></label>
+          </div>
+          <div class="ch" style="border-bottom:1px solid var(--line-2)"><span class="label" id="roleLabel" style="flex:1">Administrators</span><span class="count" id="roleCount">2 people</span></div>
+          <div class="tw"><table>
+            <thead><tr><th>User</th><th>Role</th><th>Trade</th><th>Status</th><th style="text-align:right">Actions</th></tr></thead>
+            <tbody id="userRows"></tbody>
+          </table></div>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<script>
+// Past timesheets (from screenshot)
+const past = [['16 – 31 October 2026','Signed off'],['1 – 15 October 2026','Saved draft'],['1 – 1 October 2026','Exported'],['17 – 17 September 2026','Saved draft'],['16 – 30 September 2026','Saved draft'],['1 – 15 September 2026','Saved draft'],['1 – 1 September 2026','Saved draft'],['16 – 31 August 2026','Saved draft']];
+const sc = {'Signed off':'c-green','Saved draft':'c-amber','Exported':'c-slate'};
+document.getElementById('past').innerHTML = past.map(([p,s]) => `<tr style="cursor:pointer"><td><div class="who"><div class="tile t-blue" style="width:34px;height:34px;border-radius:10px"><svg class="ic"><use href="#clock"/></svg></div><b>${p}</b></div></td><td><span class="chip ${sc[s]}">${s}</span></td><td style="text-align:right"><button class="btn sm">View breakdown<svg class="ic" style="width:14px;height:14px"><use href="#right"/></svg></button></td></tr>`).join('');
+
+// Timesheet lines (from recording)
+const L = (d,proj,time,calc,amt,flag) => ({d,proj,time,calc,amt,flag});
+const lines = [
+  L('Mon 9 Nov','C646 · 1 Carnaby Street','','1.06 days × £250.00/day = £265.63','£265.63'),
+  L('Mon 9 Nov','Annual leave (full day)','07:00–16:00','','No hours or pay','leave'),
+  L('Tue 10 Nov','C646 · 1 Carnaby Street','07:00–22:00','1.06 days × £250.00/day = £265.63','£265.63','overlap'),
+  L('Tue 10 Nov','C646 · 1 Carnaby Street (Overtime)','','0.75 days × £375.00/day = £281.25','£281.25','ot overlap'),
+  L('Wed 11 Nov','C646 · 1 Carnaby Street','07:00–22:00','1.06 days × £250.00/day = £265.63','£265.63','overlap'),
+  L('Wed 11 Nov','C646 · 1 Carnaby Street (Overtime)','','0.75 days × £375.00/day = £281.25','£281.25','ot overlap'),
+  L('Wed 11 Nov','Annual leave (full day)','07:00–16:00','','No hours or pay','leave'),
+  L('Thu 12 Nov','C646 · 1 Carnaby Street','07:00–19:00','1.06 days × £250.00/day = £265.63','£265.63'),
+  L('Thu 12 Nov','C646 · 1 Carnaby Street (Overtime)','','0.50 days × £500.00/day = £250.00','£250.00','ot'),
+  L('Fri 13 Nov','C646 · 1 Carnaby Street','07:00–18:30','1.06 days × £250.00/day = £265.63','£265.63'),
+  L('Fri 13 Nov','C646 · 1 Carnaby Street (Overtime)','','0.31 days × £500.00/day = £156.25','£156.25','ot'),
+  L('Sat 14 Nov','C646 · 1 Carnaby Street','07:30–14:00 · no break','1.00 day × £250.00/day = £250.00','£250.00'),
+  L('Sun 15 Nov','C646 · 1 Carnaby Street','07:30–14:00 · no break','1.00 day × £250.00/day = £250.00','£250.00'),
+];
+document.getElementById('tsdRows').innerHTML = lines.map(x => {
+  const leave = (x.flag||'').includes('leave'), ot = (x.flag||'').includes('ot'), ov = (x.flag||'').includes('overlap');
+  const bg = leave ? 'background:#F3F7FE' : '';
+  return `<tr style="${bg}"><td style="white-space:nowrap;font-weight:600">${x.d}</td><td><b style="font-weight:500;display:block">${x.proj} ${ot?'<span class="chip c-amber" style="margin-left:4px">Overtime</span>':''}${leave?'<span class="chip c-blue" style="margin-left:4px">Leave</span>':''}</b>${x.time?`<small style="color:var(--muted)">${x.time}</small>`:''}${ov?`<div class="note amber" style="padding:5px 9px;margin-top:6px;font-size:12px;border-radius:8px"><svg class="ic" style="width:13px;height:13px"><use href="#warn"/></svg>Overlaps another booking — check with your manager</div>`:''}</td><td style="color:var(--muted);font-size:12.5px;white-space:nowrap">${x.calc}</td><td class="num" style="${leave?'color:var(--muted);font-weight:500':''}">${x.amt}</td></tr>`;
+}).join('');
+
+document.getElementById('signRows').innerHTML = document.getElementById('tsdRows').innerHTML;
+
+// Manage users (from screenshots)
+const roles = {
+  admins: {label:'Administrators', search:'Search admins by name', counts:[2,0,0], rows:[
+    ['TA','Test Admin','farnienelyt@gmail.com',[['Super Admin','c-orange']],'—','av'],
+    ['TM','Test Manager','farnie@raccordmep.co.uk',[['Administrator','c-red']],'Electrician','av p']]},
+  managers: {label:'Managers', search:'Search managers by name', counts:[null,null,null], rows:[]},
+  ops: {label:'Operatives', search:'Search operatives by name', counts:[1,1,0], rows:[
+    ['FN','Farnie Nel','farnienel@hotmail.com',[['Operative','c-green']],'Electrician','av g']]}
+};
+function renderRole(r){
+  const d = roles[r];
+  document.querySelectorAll('#roleTabs button').forEach(b => { b.classList.toggle('on', b.dataset.r===r); b.style.background = b.dataset.r===r ? '#fff' : 'transparent'; b.style.color = b.dataset.r===r ? 'var(--navy)' : '#fff'; });
+  const names = ['Active','Inactive','Pending'];
+  document.getElementById('statusTabs').innerHTML = names.map((n,k) => `<button class="${k===0?'on':''}">${n}<span class="k">${d.counts[k] ?? '–'}</span></button>`).join('');
+  document.getElementById('userSearch').placeholder = d.search;
+  document.getElementById('roleLabel').textContent = d.label;
+  document.getElementById('roleCount').textContent = d.rows.length ? `${d.rows.length} ${d.rows.length===1?'person':'people'}` : '';
+  document.getElementById('userRows').innerHTML = d.rows.length ? d.rows.map(([ini,name,email,tags,trade,av]) => `<tr style="cursor:pointer"><td><div class="who"><div class="${av}">${ini}</div><div><b>${name}</b><small>${email}</small></div></div></td><td>${tags.map(([t,c])=>`<span class="chip ${c}">${t}</span>`).join(' ')}</td><td>${trade==='—'?'<span style="color:var(--muted)">—</span>':`<span class="chip c-slate">${trade}</span>`}</td><td><span class="chip c-green"><svg class="ic" style="width:12px;height:12px"><use href="#check"/></svg>Verified</span></td><td style="text-align:right;white-space:nowrap"><button class="btn sm" aria-label="Key action for ${name} (existing)" title="Existing key action"><svg class="ic" style="width:14px;height:14px"><use href="#key"/></svg></button> <button class="btn sm" aria-label="Open ${name}"><svg class="ic" style="width:14px;height:14px"><use href="#right"/></svg></button></td></tr>`).join('')
+    : `<tr><td colspan="5"><div class="empty"><div class="tile t-purple"><svg class="ic" style="width:22px;height:22px"><use href="#users"/></svg></div><b>Not in your screenshots</b><span>This tab uses the existing Managers list and its existing empty state.</span></div></td></tr>`;
+}
+document.querySelectorAll('#roleTabs button').forEach(b => b.onclick = () => renderRole(b.dataset.r));
+renderRole('admins');
+
+// User timesheets tabs
+document.querySelectorAll('#utsTabs button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('#utsTabs button').forEach(x => x.classList.toggle('on', x===b));
+  document.querySelectorAll('.utsp').forEach(p => p.style.display = p.id === 'uts-'+b.dataset.t ? '' : 'none');
+});
+
+// View switching
+function show(){
+  const v = (location.hash || '#daily').slice(1);
+  const el = document.getElementById('v-'+v) || document.getElementById('v-daily');
+  document.querySelectorAll('.view').forEach(x => x.classList.toggle('on', x===el));
+  const key = el.id.slice(2);
+  document.querySelectorAll('#pagetabs a').forEach(a => a.classList.toggle('on', a.dataset.v===key));
+  const navKey = key.startsWith('daily') ? 'daily' : key==='users' ? 'users' : 'ts';
+  document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('on', a.dataset.v===navKey));
+  document.getElementById('crumb').textContent = el.dataset.crumb;
+  window.scrollTo(0,0);
+}
+window.addEventListener('hashchange', show); show();
+</script>
+</body>
+</html>
