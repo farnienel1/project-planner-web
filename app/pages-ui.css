@@ -339,3 +339,11 @@ button.pu-item:disabled { cursor: not-allowed; opacity: 0.55; }
   .pu-form-row { grid-template-columns: 1fr; }
   .pu-table td, .pu-table th { padding-left: 12px; padding-right: 12px; }
 }
+
+/* Helpers for screens restyled in place (overtime, claims) */
+.pu-pad { padding: 16px 18px; }
+.pu-muted { color: var(--pu-muted); }
+.pu-clickcard { cursor: pointer; text-align: left; width: 100%; font: inherit; color: inherit; display: block; }
+.pu-clickcard:hover { border-color: var(--dash-hover-line); }
+.pu-btn.danger { border: 0; background: #C4242C; color: #fff; }
+.pu-page .pill { font-variant-numeric: tabular-nums; }

@@ -90,7 +90,9 @@ import {
 } from '@/lib/overtime/overtimeData'
 import { buildOvertimeReportPdf, downloadPdf } from '@/lib/overtime/overtimeReportPdf'
 import { Modal } from '@/components/ui'
-import { CustomRangeForm, NavBar, OVERTIME_PATH, Tile, isPaye, orgLogo, overtimeHref, personName } from '@/components/overtime/overtimeUi'
+import { CustomRangeForm, ListTile, NavBar, OVERTIME_PATH, Tile, isPaye, orgLogo, overtimeHref, personName } from '@/components/overtime/overtimeUi'
+import { BriefcaseIcon, ChevronRightIcon, ClockIcon, MagnifyingGlassIcon, ReceiptPercentIcon, UserGroupIcon } from '@heroicons/react/24/solid'
+import { Card, Chip, DataTable, EmptyState, IconTile, Note, PageShell, SegmentedTabs, initialsOf } from '@/components/ui/page'
 import { PayeClaimsSection } from '@/components/overtime/PayeClaimsScreen'
 
 export { OVERTIME_PATH, overtimeHref }
@@ -137,58 +139,74 @@ export function OvertimeScreen() {
 
   if (!scope) {
     return (
-      <div className="stack" data-hue="ts">
-        <NavBar title={OVERTIME_HUB_LABEL} back={{ label: 'Timesheets', href: TIMESHEETS_HUB_PATH }} />
-        {paydayBanner ? <p className="banner" data-hue="warn">{paydayBanner}</p> : null}
-        {!access.showButton ? <p className="muted">This section is for PAYE staff, admins and line managers.</p> : null}
-        <div className="grid g2">
-          {access.mine ? <Tile title={OVERTIME_MINE_LABEL} subtitle="Your overtime, expenses and price work as PAYE." onClick={() => router.push(overtimeHref({ scope: 'mine' }))} /> : null}
+      <PageShell>
+        <NavBar eyebrow="Timesheets" title={OVERTIME_HUB_LABEL} back={{ label: 'Timesheets', href: TIMESHEETS_HUB_PATH }} />
+        {paydayBanner ? <Note tone="amber">{paydayBanner}</Note> : null}
+        {!access.showButton ? <Note tone="info">This section is for PAYE staff, admins and line managers.</Note> : null}
+        <div className="pu-gridAuto">
+          {access.mine ? <Tile tone="amber" icon={<ClockIcon />} title={OVERTIME_MINE_LABEL} subtitle="Your overtime, expenses and price work as PAYE." onClick={() => router.push(overtimeHref({ scope: 'mine' }))} /> : null}
           {access.users ? (
             <Tile
+              tone="purple"
+              icon={<UserGroupIcon />}
               title={OVERTIME_USERS_LABEL}
               subtitle={access.mine ? 'The people you manage.' : 'Everyone you can see. Read-only except approvals.'}
               onClick={() => router.push(overtimeHref({ scope: 'users' }))}
             />
           ) : null}
         </div>
-      </div>
+      </PageShell>
     )
   }
 
   const mine = scope === 'mine'
   if (!mine && !access.users) {
-    return <p className="muted">Users&apos; overtime is for admins and line managers.</p>
+    return <PageShell><Note tone="info">Users&apos; overtime is for admins and line managers.</Note></PageShell>
   }
   if (mine && !access.mine) {
-    return <p className="muted">My Overtime, Expenses &amp; Price Work is for PAYE staff.</p>
+    return <PageShell><Note tone="info">My Overtime, Expenses &amp; Price Work is for PAYE staff.</Note></PageShell>
   }
 
   if (!mine && !userParam) {
     return (
-      <div className="stack" data-hue="ts">
+      <PageShell>
         <NavBar title={OVERTIME_USERS_LABEL} back={{ label: OVERTIME_HUB_LABEL, href: overtimeHref({}) }} />
         <UsersList users={users.filter((row) => subjectIds.includes(row.id))} onOpen={(id) => router.push(overtimeHref({ scope: 'users', user: id }))} />
-      </div>
+      </PageShell>
     )
   }
 
   const subject = mine ? users.find((row) => row.id === user.id) || user : users.find((row) => row.id === userParam)
   if (!subject || (!mine && !subjectIds.includes(subject.id))) {
-    return <p className="muted">{users.length === 0 ? 'Loading…' : 'This person is not one you can see here.'}</p>
+    return <PageShell><Note tone="info">{users.length === 0 ? 'Loading…' : 'This person is not one you can see here.'}</Note></PageShell>
   }
   const baseTitle = mine ? OVERTIME_MINE_LABEL : personName(subject)
   const upHref = mine ? overtimeHref({}) : overtimeHref({ scope: 'users' })
 
   if (!section) {
     return (
-      <div className="stack" data-hue="ts">
-        <NavBar title={baseTitle} back={{ label: mine ? OVERTIME_HUB_LABEL : OVERTIME_USERS_LABEL, href: upHref }} />
-        <div className="grid g2">
-          <Tile title="Overtime" onClick={() => router.push(overtimeHref({ ...here, section: 'overtime' }))} />
-          <Tile title="Expenses" onClick={() => router.push(overtimeHref({ ...here, section: 'expenses' }))} />
-          <Tile title="Price work" onClick={() => router.push(overtimeHref({ ...here, section: 'priceWork' }))} />
+      <PageShell>
+        <NavBar
+          eyebrow={mine ? OVERTIME_HUB_LABEL : OVERTIME_USERS_LABEL}
+          title={
+            mine ? (
+              baseTitle
+            ) : (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                <IconTile tone="blue" round>{initialsOf(baseTitle)}</IconTile>
+                {baseTitle}
+                <Chip tone={isPaye(subject) ? 'slate' : 'amber'}>{isPaye(subject) ? 'PAYE' : 'Self-employed'}</Chip>
+              </span>
+            )
+          }
+          back={{ label: mine ? OVERTIME_HUB_LABEL : OVERTIME_USERS_LABEL, href: upHref }}
+        />
+        <div className="pu-grid3">
+          <Tile tone="amber" icon={<ClockIcon />} title="Overtime" onClick={() => router.push(overtimeHref({ ...here, section: 'overtime' }))} />
+          <Tile tone="green" icon={<ReceiptPercentIcon />} title="Expenses" onClick={() => router.push(overtimeHref({ ...here, section: 'expenses' }))} />
+          <Tile tone="purple" icon={<BriefcaseIcon />} title="Price work" onClick={() => router.push(overtimeHref({ ...here, section: 'priceWork' }))} />
         </div>
-      </div>
+      </PageShell>
     )
   }
 
@@ -216,19 +234,17 @@ export function OvertimeScreen() {
       />
     )
   }
-  if (section !== 'overtime') return <p className="muted">Unknown section.</p>
+  if (section !== 'overtime') return <PageShell><Note tone="info">Unknown section.</Note></PageShell>
 
   if (!mine && !isPaye(subject)) {
     return (
-      <div className="stack" data-hue="ts">
+      <PageShell>
         <NavBar title="Overtime" back={sectionBack} />
-        <div className="card pad">
-          <p>
-            {personName(subject)} is self-employed: their overtime is on their timesheet.{' '}
-            <a className="link" href={timesheetsTeamHref({ user: subject.id })}>Open User Timesheets</a>
-          </p>
-        </div>
-      </div>
+        <Note tone="info">
+          {personName(subject)} is self-employed: their overtime is on their timesheet.{' '}
+          <a className="pu-link" href={timesheetsTeamHref({ user: subject.id })}>Open User Timesheets</a>
+        </Note>
+      </PageShell>
     )
   }
 
@@ -252,65 +268,70 @@ export function OvertimeScreen() {
 
   if (!range) {
     return (
-      <div className="stack" data-hue="ts">
-        <NavBar title="Overtime" back={sectionBack} />
-        <p className="muted small">{!orgLoaded ? 'Loading…' : current ? payePayrunLabel(current) : PAYE_PAYDAY_NOT_SET_MESSAGE}</p>
-        <div className="grid g2">
-          <Tile title="Current PAYE payrun" disabled={!current} onClick={() => router.push(overtimeHref({ ...here, range: 'current' }))} />
-          <Tile title="Past PAYE payruns" disabled={!current && payePastPayruns(orgDoc, todayKey).length === 0} onClick={() => router.push(overtimeHref({ ...here, range: 'past' }))} />
-          <Tile title="Custom date range" onClick={() => router.push(overtimeHref({ ...here, range: 'custom' }))} />
+      <PageShell>
+        <NavBar title="Overtime" back={sectionBack}>
+          <Note tone="dark">{!orgLoaded ? 'Loading…' : current ? payePayrunLabel(current) : PAYE_PAYDAY_NOT_SET_MESSAGE}</Note>
+        </NavBar>
+        <div className="pu-grid3">
+          <Tile tone="blue" title="Current PAYE payrun" disabled={!current} onClick={() => router.push(overtimeHref({ ...here, range: 'current' }))} />
+          <Tile tone="slate" title="Past PAYE payruns" disabled={!current && payePastPayruns(orgDoc, todayKey).length === 0} onClick={() => router.push(overtimeHref({ ...here, range: 'past' }))} />
+          <Tile tone="purple" title="Custom date range" onClick={() => router.push(overtimeHref({ ...here, range: 'custom' }))} />
         </div>
         <PendingRequests
           organizationId={organization.id}
           subjectId={subject.id}
           onOpen={(request) => router.push(overtimeHref({ ...here, range: 'custom', start: request.rangeStart, end: request.rangeEnd }))}
         />
-      </div>
+      </PageShell>
     )
   }
 
   if (range === 'past' && !(start && end)) {
     const past = payePastPayruns(orgDoc, todayKey)
     return (
-      <div className="stack" data-hue="ts">
+      <PageShell>
         <NavBar title="Past PAYE payruns" back={overtimeBack} />
-        {past.length === 0 ? <p className="muted">{current ? 'No past PAYE payruns yet.' : PAYE_PAYDAY_NOT_SET_MESSAGE}</p> : null}
-        <div className="stack" style={{ gap: 8 }}>
-          {past.map((run) => (
-            <Tile
-              key={run.start}
-              title={`${formatPayePayrunDay(run.start)} – ${formatPayePayrunDay(run.end)}`}
-              subtitle={`Paid ${formatPayePayrunDay(run.payDate)}`}
-              onClick={() => router.push(overtimeHref({ ...here, start: run.start, end: run.end }))}
-            />
-          ))}
-        </div>
+        {past.length === 0 ? <Note tone="info">{current ? 'No past PAYE payruns yet.' : PAYE_PAYDAY_NOT_SET_MESSAGE}</Note> : null}
+        {past.length > 0 ? (
+          <Card>
+            <div className="pu-list">
+              {past.map((run) => (
+                <ListTile
+                  key={run.start}
+                  title={`${formatPayePayrunDay(run.start)} – ${formatPayePayrunDay(run.end)}`}
+                  subtitle={`Paid ${formatPayePayrunDay(run.payDate)}`}
+                  onClick={() => router.push(overtimeHref({ ...here, start: run.start, end: run.end }))}
+                />
+              ))}
+            </div>
+          </Card>
+        ) : null}
         <SavedReports organizationId={organization.id} subject={subject} logoUrl={orgLogo(orgDoc)} />
-      </div>
+      </PageShell>
     )
   }
 
   if (range === 'custom' && !(start && end)) {
     return (
-      <div className="stack" data-hue="ts">
+      <PageShell>
         <NavBar title="Custom date range" back={overtimeBack} />
         <CustomRangeForm onView={(a, b) => router.push(overtimeHref({ ...here, start: a, end: b }))} />
-      </div>
+      </PageShell>
     )
   }
 
   const window = range === 'current' ? (current ? { start: current.start, end: current.end } : null) : payeCustomRange(start, end)
   if (!window) {
     return (
-      <div className="stack" data-hue="ts">
+      <PageShell>
         <NavBar title="Overtime" back={overtimeBack} />
-        <p className="muted">{PAYE_PAYDAY_NOT_SET_MESSAGE}</p>
-      </div>
+        <Note tone="amber">{PAYE_PAYDAY_NOT_SET_MESSAGE}</Note>
+      </PageShell>
     )
   }
 
   return (
-    <div className="stack" data-hue="ts" key={pathname}>
+    <PageShell key={pathname}>
       <NavBar
         title={`Overtime · ${formatPayePayrunDay(window.start)} – ${formatPayePayrunDay(window.end)}`}
         back={range === 'past' ? { label: 'Past PAYE payruns', href: overtimeHref({ ...here, range: 'past' }) } : overtimeBack}
@@ -331,7 +352,7 @@ export function OvertimeScreen() {
         managers={managers}
         jobs={[...projects, ...smallWorks]}
       />
-    </div>
+    </PageShell>
   )
 }
 
@@ -364,7 +385,7 @@ function OvertimeLinkResolver(props: {
     else onResolve({ range: target.range, start: target.start, end: target.end })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgLoaded, requests, requestId, dayKey, todayKey])
-  return <p className="muted">Opening overtime…</p>
+  return <p className="pu-muted">Opening overtime…</p>
 }
 
 /** Pending overtime requests of the person, each opening its range (the request push lands here). */
@@ -374,17 +395,19 @@ function PendingRequests({ organizationId, subjectId, onOpen }: { organizationId
   const pending = requests.filter((row) => row.status === 'pending').sort((a, b) => (b.createdAtMs ?? 0) - (a.createdAtMs ?? 0))
   if (pending.length === 0) return null
   return (
-    <div className="stack" style={{ gap: 8 }}>
-      <p className="eyebrow">Waiting for approval</p>
-      {pending.map((request) => (
-        <Tile
-          key={request.id}
-          title={`Overtime request · ${formatPayePayrunDay(request.rangeStart)} – ${formatPayePayrunDay(request.rangeEnd)}`}
-          subtitle={`${request.lines.length} line(s)`}
-          onClick={() => onOpen(request)}
-        />
-      ))}
-    </div>
+    <Card title="Waiting for approval" count={pending.length}>
+      <div className="pu-list">
+        {pending.map((request) => (
+          <ListTile
+            key={request.id}
+            title={`Overtime request · ${formatPayePayrunDay(request.rangeStart)} – ${formatPayePayrunDay(request.rangeEnd)}`}
+            subtitle={`${request.lines.length} line(s)`}
+            chip={<Chip tone="amber">Pending</Chip>}
+            onClick={() => onOpen(request)}
+          />
+        ))}
+      </div>
+    </Card>
   )
 }
 
@@ -396,20 +419,64 @@ function UsersList({ users, onOpen }: { users: User[]; onOpen: (id: string) => v
     .filter((row) => personName(row).toLowerCase().includes(search.trim().toLowerCase()))
     .sort((a, b) => personName(a).localeCompare(personName(b)))
   return (
-    <div className="stack" style={{ gap: 10 }}>
-      <input className="input" placeholder="Search people" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search people" />
-      <div className="seg">
-        {(['all', 'paye', 'self'] as const).map((value) => (
-          <button key={value} type="button" className={filter === value ? 'on' : ''} onClick={() => setFilter(value)}>
-            {value === 'all' ? 'Everyone' : value === 'paye' ? 'PAYE' : 'Self-employed'}
-          </button>
-        ))}
+    <Card>
+      <div className="pu-toolbar">
+        <label className="pu-field">
+          <MagnifyingGlassIcon width={16} height={16} aria-hidden="true" />
+          <input placeholder="Search people" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search people" />
+        </label>
+        <SegmentedTabs
+          ariaLabel="Employment type"
+          items={[
+            { id: 'all', label: 'Everyone' },
+            { id: 'paye', label: 'PAYE' },
+            { id: 'self', label: 'Self-employed' },
+          ]}
+          value={filter}
+          onChange={setFilter}
+        />
       </div>
-      {rows.length === 0 ? <p className="muted">Nobody to show.</p> : null}
-      {rows.map((row) => (
-        <Tile key={row.id} title={personName(row)} subtitle={isPaye(row) ? 'PAYE' : 'Self-employed'} onClick={() => onOpen(row.id)} />
-      ))}
-    </div>
+      {rows.length === 0 ? <EmptyState title="Nobody to show." /> : null}
+      {rows.length > 0 ? (
+        <DataTable
+          columns={[
+            { key: 'person', label: 'Person' },
+            { key: 'type', label: 'Employment type' },
+            { key: 'open', label: 'Open', srOnly: true },
+          ]}
+        >
+          {rows.map((row) => (
+            <tr key={row.id} className="click" onClick={() => onOpen(row.id)}>
+              <td>
+                <span className="pu-who">
+                  <IconTile tone={isPaye(row) ? 'slate' : 'amber'} size="sm" round>
+                    {initialsOf(personName(row))}
+                  </IconTile>
+                  <span>
+                    <button
+                      type="button"
+                      className="pu-rowbtn"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        onOpen(row.id)
+                      }}
+                    >
+                      <b>{personName(row)}</b>
+                    </button>
+                  </span>
+                </span>
+              </td>
+              <td>
+                <Chip tone={isPaye(row) ? 'slate' : 'amber'}>{isPaye(row) ? 'PAYE' : 'Self-employed'}</Chip>
+              </td>
+              <td className="actions">
+                <ChevronRightIcon width={16} height={16} aria-hidden="true" style={{ color: 'var(--pu-muted)' }} />
+              </td>
+            </tr>
+          ))}
+        </DataTable>
+      ) : null}
+    </Card>
   )
 }
 
@@ -417,28 +484,30 @@ function SavedReports({ organizationId, subject, logoUrl }: { organizationId: st
   const [reports, setReports] = useState<Array<ReturnType<typeof parseOvertimeReportDocument>>>([])
   const [error, setError] = useState<string | null>(null)
   useEffect(() => listenOvertimeReports(organizationId, subject.id, setReports, (e) => setError(e.message)), [organizationId, subject.id])
-  if (error) return <p className="muted small">Saved reports could not be loaded.</p>
+  if (error) return <Note tone="red">Saved reports could not be loaded.</Note>
   if (reports.length === 0) return null
   return (
-    <div className="stack" style={{ gap: 8 }}>
-      <p className="eyebrow">Saved overtime reports</p>
+    <Card title="Saved overtime reports" count={reports.length}>
+      <div className="pu-list">
       {reports.map((report) => (
         <button
           key={report.id}
           type="button"
-          className="card pad click"
-          style={{ border: 0, textAlign: 'left' }}
+          className="pu-item"
           onClick={() => void buildOvertimeReportPdf(report, { logoUrl }).then((bytes) => downloadPdf(bytes, `overtime-${report.rangeStart}-${report.rangeEnd}.pdf`))}
         >
-          <b>
-            {formatPayePayrunDay(report.rangeStart)} – {formatPayePayrunDay(report.rangeEnd)}
-          </b>
-          <div className="muted small">
-            {report.totals.overtimeHours}h overtime · {report.generatedAtMs ? new Date(report.generatedAtMs).toLocaleString('en-GB') : 'saving…'} · Download PDF
-          </div>
+          <span className="grow">
+            <b>
+              {formatPayePayrunDay(report.rangeStart)} – {formatPayePayrunDay(report.rangeEnd)}
+            </b>
+            <span className="pu-sub">
+              {report.totals.overtimeHours}h overtime · {report.generatedAtMs ? new Date(report.generatedAtMs).toLocaleString('en-GB') : 'saving…'} · Download PDF
+            </span>
+          </span>
         </button>
       ))}
-    </div>
+      </div>
+    </Card>
   )
 }
 
@@ -464,7 +533,7 @@ function ChoiceButtons(props: {
     <span className="row" style={{ gap: 6, marginLeft: 'auto' }}>
       <button
         type="button"
-        className="btn sm"
+        className="pu-btn sm"
         style={lookClass(view.cross, 'red')}
         aria-pressed={view.cross === 'filled'}
         aria-label={props.role === 'person' ? "I didn't work these overtime hours" : 'Decline this line'}
@@ -475,7 +544,7 @@ function ChoiceButtons(props: {
       </button>
       <button
         type="button"
-        className="btn sm"
+        className="pu-btn sm"
         style={lookClass(view.tick, 'green')}
         aria-pressed={view.tick === 'filled'}
         aria-label={props.role === 'person' ? 'Confirm this line' : 'Approve this line'}
@@ -486,7 +555,7 @@ function ChoiceButtons(props: {
       </button>
       <button
         type="button"
-        className="btn sm"
+        className="pu-btn sm"
         style={lookClass(view.cog, 'blue')}
         aria-pressed={view.cog === 'filled'}
         aria-label="Change start, finish or rate"
@@ -678,8 +747,8 @@ function OvertimeLines(props: {
 
   return (
     <div className="stack" style={{ gap: 12 }}>
-      {loadError ? <p className="banner" data-hue="warn">Some overtime data could not be loaded: {loadError}</p> : null}
-      {lines.length === 0 ? <p className="muted">{OVERTIME_NO_LINES_MESSAGE}</p> : null}
+      {loadError ? <Note tone="amber">Some overtime data could not be loaded: {loadError}</Note> : null}
+      {lines.length === 0 ? <Card><EmptyState tile={<IconTile tone="amber" size="lg"><ClockIcon /></IconTile>} title={OVERTIME_NO_LINES_MESSAGE} /></Card> : null}
       {lines.map((line) => {
         const booking = bookingById.get(line.bookingId.toLowerCase())
         const mode = editMode(line)
@@ -689,11 +758,11 @@ function OvertimeLines(props: {
         const struck = line.state === 'cancelled' || line.state === 'deleted' || line.state === 'returnedDeclined'
         const requested = line.requestLine
         return (
-          <div key={`${line.collection}/${line.bookingId}`} className="card pad" style={{ opacity: line.state === 'cancelled' || line.state === 'deleted' ? 0.6 : 1 }}>
+          <div key={`${line.collection}/${line.bookingId}`} className="pu-card pu-pad" style={{ opacity: line.state === 'cancelled' || line.state === 'deleted' ? 0.6 : 1 }}>
             <div className="row" style={{ justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
               <div className="grow" style={{ minWidth: 0 }}>
                 <b style={{ textDecoration: line.state === 'cancelled' || line.state === 'deleted' ? 'line-through' : 'none' }}>{line.title}</b>
-                <div className="muted small">
+                <div className="pu-sub">
                   {line.dayLabel} · {line.start && line.end ? `${line.start}–${line.end}` : line.timeSlot}
                   {requested && requested.action === 'edit' && requested.proposedStart ? ` (asked ${requested.proposedStart}–${requested.proposedEnd})` : ''}
                   {line.figures?.dayWindow ? ` · day ${line.figures.dayWindow}` : ''}
@@ -786,7 +855,7 @@ function OvertimeLines(props: {
             {anyRequestLines ? (
               <button
                 type="button"
-                className="btn primary"
+                className="pu-btn primary"
                 style={submit.ready ? { background: 'var(--green, #16a34a)' } : undefined}
                 disabled={busy || !submit.ready}
                 onClick={() => void sendForApproval()}
@@ -796,7 +865,7 @@ function OvertimeLines(props: {
             ) : null}
             <button
               type="button"
-              className="btn primary"
+              className="pu-btn primary"
               style={generate.ready ? { background: 'var(--green, #16a34a)' } : undefined}
               disabled={busy || !generate.ready}
               onClick={() => void generateReport()}
@@ -804,33 +873,33 @@ function OvertimeLines(props: {
               {OVERTIME_GENERATE_REPORT_LABEL}
             </button>
             {pending.map((request) => (
-              <button key={request.id} type="button" className="btn ghost" disabled={busy} onClick={() => void run(() => withdrawOvertimeRequest(organizationId, request))}>
+              <button key={request.id} type="button" className="pu-btn" disabled={busy} onClick={() => void run(() => withdrawOvertimeRequest(organizationId, request))}>
                 Withdraw request ({formatPayePayrunDay(request.rangeStart)} – {formatPayePayrunDay(request.rangeEnd)})
               </button>
             ))}
           </div>
-          {anyRequestLines && !submit.ready && submit.message && lines.length > 0 ? <p className="muted small">{submit.message}</p> : null}
-          {!generate.ready && generate.message && lines.length > 0 ? <p className="muted small">{generate.message}</p> : null}
+          {anyRequestLines && !submit.ready && submit.message && lines.length > 0 ? <p className="pu-sub">{submit.message}</p> : null}
+          {!generate.ready && generate.message && lines.length > 0 ? <p className="pu-sub">{generate.message}</p> : null}
         </div>
       ) : null}
       {message ? <p className="small">{message}</p> : null}
 
       {rangeReports.length > 0 ? (
         <div className="stack" style={{ gap: 8 }}>
-          <p className="eyebrow">Saved reports for this range</p>
+          <p className="pu-label">Saved reports for this range</p>
           {rangeReports.map((report) => {
             const outOfDate = overtimeReportOutOfDate({ report, lines })
             return (
               <button
                 key={report.id}
                 type="button"
-                className="card pad click"
+                className="pu-card pu-pad pu-clickcard"
                 style={{ border: 0, textAlign: 'left' }}
                 onClick={() => void buildOvertimeReportPdf(report, { logoUrl: props.logoUrl }).then((bytes) => downloadPdf(bytes, `overtime-${report.rangeStart}-${report.rangeEnd}.pdf`))}
               >
                 <b>{report.totals.overtimeHours}h overtime</b>{' '}
                 {outOfDate ? <span className="pill" data-hue="warn">{OVERTIME_REPORT_OUT_OF_DATE_LABEL}</span> : null}
-                <div className="muted small">{report.generatedAtMs ? new Date(report.generatedAtMs).toLocaleString('en-GB') : 'saving…'} · Download PDF</div>
+                <div className="pu-sub">{report.generatedAtMs ? new Date(report.generatedAtMs).toLocaleString('en-GB') : 'saving…'} · Download PDF</div>
               </button>
             )
           })}
@@ -864,12 +933,12 @@ function OvertimeLines(props: {
           onClose={() => setConfirmDelete(null)}
           footer={
             <div className="row" style={{ gap: 8, justifyContent: 'flex-end' }}>
-              <button type="button" className="btn" onClick={() => setConfirmDelete(null)}>
+              <button type="button" className="pu-btn" onClick={() => setConfirmDelete(null)}>
                 {OVERTIME_DELETE_WARNING.back}
               </button>
               <button
                 type="button"
-                className="btn danger"
+                className="pu-btn danger"
                 onClick={() => {
                   const next = confirmDelete.run
                   setConfirmDelete(null)
@@ -883,7 +952,7 @@ function OvertimeLines(props: {
         >
           <p className="small"><b>{confirmDelete.summary}</b></p>
           <p>{OVERTIME_DELETE_WARNING.body}</p>
-          <p className="muted small">{OVERTIME_DELETE_WARNING.footnote}</p>
+          <p className="pu-sub">{OVERTIME_DELETE_WARNING.footnote}</p>
         </Modal>
       ) : null}
     </div>
@@ -930,7 +999,7 @@ function RequestReview(props: {
           ? `Not worked — trim to ${line.proposedStart}–${line.proposedEnd}: ${line.overtimeHoursBefore}h → ${line.overtimeHoursAfter}h`
           : `Confirmed as booked: ${line.overtimeHoursBefore}h`
   return (
-    <div className="card pad stack" style={{ gap: 10 }}>
+    <div className="pu-card pu-pad stack" style={{ gap: 10 }}>
       <b>
         Overtime request · {formatPayePayrunDay(request.rangeStart)} – {formatPayePayrunDay(request.rangeEnd)}
       </b>
@@ -945,9 +1014,9 @@ function RequestReview(props: {
             <div className="grow small" style={{ minWidth: 0 }}>
               {formatPayePayrunDay(line.dayKey)} · {describe(line)}
               {view?.label ? <span className="pill" data-hue={view.cross === 'filled' ? 'red' : view.tick === 'filled' ? 'green' : 'warn'} style={{ marginLeft: 6 }}>{view.label}</span> : null}
-              {view?.newFigure && view.cog === 'filled' ? <span className="muted"> · <s>{view.oldFigure}</s> → <b>{view.newFigure}</b></span> : null}
-              {!booking ? <span className="muted"> · {OVERTIME_BOOKING_UNREADABLE_MESSAGE}</span> : null}
-              {booking && !theirs ? <span className="muted"> · {OVERTIME_NOT_THEIR_BOOKING_MESSAGE}</span> : null}
+              {view?.newFigure && view.cog === 'filled' ? <span className="pu-muted"> · <s>{view.oldFigure}</s> → <b>{view.newFigure}</b></span> : null}
+              {!booking ? <span className="pu-muted"> · {OVERTIME_BOOKING_UNREADABLE_MESSAGE}</span> : null}
+              {booking && !theirs ? <span className="pu-muted"> · {OVERTIME_NOT_THEIR_BOOKING_MESSAGE}</span> : null}
               {stale && theirs ? <span className="pill" data-hue="warn" style={{ marginLeft: 6 }}>{overtimeLineOutcomeLabel('stale')}</span> : null}
             </div>
             {props.canDecide && booking && theirs && view ? (
@@ -965,10 +1034,10 @@ function RequestReview(props: {
       })}
       {props.canDecide ? (
         <>
-          {!ready.ready && ready.message ? <p className="muted small">{ready.message}</p> : null}
+          {!ready.ready && ready.message ? <p className="pu-sub">{ready.message}</p> : null}
           <button
             type="button"
-            className="btn primary"
+            className="pu-btn primary"
             style={ready.ready ? { background: 'var(--green, #16a34a)' } : undefined}
             disabled={!ready.ready || props.busy}
             onClick={() => props.onReturn(decisions)}
@@ -977,7 +1046,7 @@ function RequestReview(props: {
           </button>
         </>
       ) : (
-        <p className="muted small">Waiting for their line manager or an admin.</p>
+        <p className="pu-sub">Waiting for their line manager or an admin.</p>
       )}
     </div>
   )
@@ -1005,10 +1074,10 @@ function CogDialog(props: {
       onClose={props.onClose}
       footer={
         <div className="row" style={{ gap: 8, justifyContent: 'flex-end' }}>
-          <button type="button" className="btn" onClick={props.onClose}>
+          <button type="button" className="pu-btn" onClick={props.onClose}>
             Cancel
           </button>
-          <button type="button" className="btn primary" disabled={Boolean(preview.error) || !preview.changed} onClick={() => props.onSave({ start, end, multiplier })}>
+          <button type="button" className="pu-btn primary" disabled={Boolean(preview.error) || !preview.changed} onClick={() => props.onSave({ start, end, multiplier })}>
             Save
           </button>
         </div>
@@ -1017,15 +1086,15 @@ function CogDialog(props: {
       <div className="stack" style={{ gap: 10 }}>
         <label className="small">
           Start
-          <input className="input" type="time" step={900} value={start} onChange={(e) => setStart(e.target.value)} />
+          <input className="pu-inp" type="time" step={900} value={start} onChange={(e) => setStart(e.target.value)} />
         </label>
         <label className="small">
           Finish
-          <input className="input" type="time" step={900} value={end} onChange={(e) => setEnd(e.target.value)} />
+          <input className="pu-inp" type="time" step={900} value={end} onChange={(e) => setEnd(e.target.value)} />
         </label>
         <label className="small">
           Overtime rate
-          <select className="input" value={multiplier == null ? 'org' : String(multiplier)} onChange={(e) => setMultiplier(e.target.value === 'org' ? null : Number(e.target.value))}>
+          <select className="pu-inp" value={multiplier == null ? 'org' : String(multiplier)} onChange={(e) => setMultiplier(e.target.value === 'org' ? null : Number(e.target.value))}>
             <option value="org">Organisation (×{orgRate})</option>
             {OVERTIME_MULTIPLIER_STEPS.map((step) => (
               <option key={step} value={String(step)}>
