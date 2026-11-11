@@ -21,9 +21,19 @@ export type SharedListenerOptions = {
 }
 
 export type SharedListener<T> = {
-  subscribe: (key: string, start: (emit: (value: T) => void) => Unsubscribe, onValue: (value: T) => void) => Unsubscribe
+  /**
+   * `start` receives `emit` for each snapshot and `fail` for a listener error: a failed listener is stopped and
+   * forgotten at once, so it is never handed to a later subscriber (the next one starts afresh).
+   */
+  subscribe: (
+    key: string,
+    start: (emit: (value: T) => void, fail: () => void) => Unsubscribe,
+    onValue: (value: T) => void
+  ) => Unsubscribe
   /** Stops the open listener now (sign-out, tests). */
   reset: () => void
+  /** Stops the open listener unless `keep(key)` says it still belongs (an organisation switch). */
+  resetUnless: (keep: (key: string) => boolean) => void
   /** Tests: the key of the open listener, if any. */
   activeKey: () => string | null
 }
@@ -35,47 +45,66 @@ export function createSharedListener<T>(options: SharedListenerOptions = {}): Sh
   const setTimer = options.setTimer ?? ((fn: () => void, ms: number) => setTimeout(fn, ms))
   const clearTimer = options.clearTimer ?? ((handle: unknown) => clearTimeout(handle as ReturnType<typeof setTimeout>))
 
-  let entry: {
+  type Entry = {
     key: string
-    stop: Unsubscribe
+    stop: Unsubscribe | null
+    stopped: boolean
     subscribers: Set<(value: T) => void>
     hasValue: boolean
     last: T | undefined
     idle: unknown
-  } | null = null
+  }
+  /** The one entry a new subscriber may share. A failed or superseded entry is never here. */
+  let entry: Entry | null = null
+
+  const stopListener = (target: Entry) => {
+    if (target.stopped) return
+    target.stopped = true
+    if (target.idle != null) clearTimer(target.idle)
+    target.idle = null
+    target.subscribers.clear()
+    target.stop?.()
+  }
+
+  /** Take `target` out of sharing; it keeps serving the screens already on it and stops when the last one leaves. */
+  const retire = (target: Entry) => {
+    if (entry === target) entry = null
+    if (target.subscribers.size === 0 && target.stop) stopListener(target)
+  }
 
   const stopEntry = () => {
     if (!entry) return
     const current = entry
     entry = null
-    if (current.idle != null) clearTimer(current.idle)
-    current.subscribers.clear()
-    current.stop()
+    stopListener(current)
   }
 
   const subscribe: SharedListener<T>['subscribe'] = (key, start, onValue) => {
-    if (entry && entry.key !== key) stopEntry()
-    if (!entry) {
-      const created = {
-        key,
-        stop: (() => undefined) as Unsubscribe,
-        subscribers: new Set<(value: T) => void>(),
-        hasValue: false,
-        last: undefined as T | undefined,
-        idle: null as unknown,
-      }
+    if (entry && entry.key !== key) retire(entry)
+    let current = entry
+    if (!current) {
+      const created: Entry = { key, stop: null, stopped: false, subscribers: new Set(), hasValue: false, last: undefined, idle: null }
       entry = created
-      const stop = start((value) => {
-        if (entry !== created) return
-        created.hasValue = true
-        created.last = value
-        for (const subscriber of [...created.subscribers]) subscriber(value)
-      })
-      created.stop = stop
-      // `start` may have been replaced by a nested subscribe; stop this one then.
-      if (entry !== created) stop()
+      created.stop = start(
+        (value) => {
+          if (created.stopped) return
+          created.hasValue = true
+          created.last = value
+          for (const subscriber of [...created.subscribers]) subscriber(value)
+        },
+        () => retire(created)
+      )
+      // Failed while starting (before anyone was on it): stop it; this subscriber gets nothing, as a dead listener.
+      if (entry !== created) {
+        stopListener(created)
+        return () => undefined
+      }
+      current = created
     }
-    const current = entry
+    return attach(current, onValue)
+  }
+
+  function attach(current: Entry, onValue: (value: T) => void): Unsubscribe {
     if (current.idle != null) {
       clearTimer(current.idle)
       current.idle = null
@@ -86,9 +115,12 @@ export function createSharedListener<T>(options: SharedListenerOptions = {}): Sh
     return () => {
       if (left) return
       left = true
-      if (entry !== current) return
       current.subscribers.delete(onValue)
-      if (current.subscribers.size > 0) return
+      if (current.stopped || current.subscribers.size > 0) return
+      if (entry !== current) {
+        stopListener(current)
+        return
+      }
       current.idle = setTimer(() => {
         if (entry === current && current.subscribers.size === 0) stopEntry()
       }, keepAliveMs)
@@ -98,6 +130,9 @@ export function createSharedListener<T>(options: SharedListenerOptions = {}): Sh
   return {
     subscribe,
     reset: stopEntry,
+    resetUnless: (keep) => {
+      if (entry && !keep(entry.key)) stopEntry()
+    },
     activeKey: () => entry?.key ?? null,
   }
 }

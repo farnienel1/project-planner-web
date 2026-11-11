@@ -186,6 +186,8 @@ export function WeeklyReportScreen({
   const [warningDecisions, setWarningDecisions] = useState<WeeklyReportWarningDecisions | null>(null)
   const [unapprovingKey, setUnapprovingKey] = useState<string | null>(null)
   const [unapproveError, setUnapproveError] = useState('')
+  // The workbook and PDF libraries load on demand; a failed load (e.g. offline) is shown, never silent.
+  const [downloadError, setDownloadError] = useState('')
 
   const effectiveInvoicingPeriodId = invoicingPeriodId || invoicingOptions[0]?.id || ''
 
@@ -327,14 +329,22 @@ export function WeeklyReportScreen({
   const handleDownload = () => {
     if (!report || !period) return
     const filename = `WeeklyReport-${dayKey(period.start, timeZone).replace(/-/g, '')}.xlsx`
-    void downloadWeeklyReportWorkbook(report, filename)
+    setDownloadError('')
+    void downloadWeeklyReportWorkbook(report, filename).catch(() =>
+      setDownloadError('The Excel file could not be made. Check your connection and try again.')
+    )
   }
 
   const handleDownloadPdf = async () => {
     if (!report || !period) return
-    const bytes = await buildWeeklyReportPdf(report)
-    const { downloadWeeklyReportPdf } = await import('@/lib/weekly-report/weeklyReportPdf')
-    downloadWeeklyReportPdf(bytes, `WeeklyReport-${dayKey(period.start, timeZone).replace(/-/g, '')}.pdf`)
+    setDownloadError('')
+    try {
+      const bytes = await buildWeeklyReportPdf(report)
+      const { downloadWeeklyReportPdf } = await import('@/lib/weekly-report/weeklyReportPdf')
+      downloadWeeklyReportPdf(bytes, `WeeklyReport-${dayKey(period.start, timeZone).replace(/-/g, '')}.pdf`)
+    } catch {
+      setDownloadError('The PDF could not be made. Check your connection and try again.')
+    }
   }
 
   const changePeriod = (next: () => void) => {
@@ -365,6 +375,11 @@ export function WeeklyReportScreen({
         <div>
           <h1>Weekly Report</h1>
           <div className="sub">Updates as you change the period. Separate from live warnings.</div>
+          {downloadError ? (
+            <p role="alert" className="small" style={{ color: 'var(--red, #b91c1c)', marginTop: 6 }}>
+              {downloadError}
+            </p>
+          ) : null}
         </div>
         <div className="acts">
           {canOpenSnapshot && organizationId ? (

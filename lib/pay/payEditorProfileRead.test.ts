@@ -52,3 +52,17 @@ test('pay editor: another organisation or id is read normally; no organisation m
   assert.equal(startPayEditorProfileRead('', 'u1', load), load)
   setSecuritySwitchConfigForTests(null)
 })
+
+test('pay editor: the organisation switched while the users document was read — the early read is not used', async () => {
+  setSecuritySwitchConfigForTests({ privatePayOrganizationIds: ['org-a', 'org-b'] })
+  const reads: string[] = []
+  const load = async (org: string, id: string) => {
+    reads.push(`${org}/${id}`)
+    return { subjectId: id, fields: { dayRate: org === 'org-b' ? 200 : 150 } }
+  }
+  const early = startPayEditorProfileRead('org-a', 'u1', load)
+  const record = await payEditorRecord('org-b', 'u1', stored, early)
+  assert.equal(record.dayRate, 200, 'the open organisation after the users document read decides, as before')
+  assert.ok(reads.includes('org-b/u1'))
+  setSecuritySwitchConfigForTests(null)
+})

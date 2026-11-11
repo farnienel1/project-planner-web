@@ -222,13 +222,17 @@ export const useUserStore = create<UserStoreState>(() => ({
   error: null,
 
   getUser: async (userId, options) => {
-    const openOrgId = useAuthStore.getState().organization?.id || ''
-    // The pay editor's own pay profile is read alongside the users document, not after it (same reads, same result).
-    const loadProfile = options?.payEditor ? startPayEditorProfileRead(openOrgId, userId) : undefined
+    // The pay editor's own pay profile is read alongside the users document, not after it. It is used only when the
+    // users document exists and the organisation open after that read is still the one it was started for;
+    // otherwise `payEditorRecord` reads as before (same reads, same result).
+    const provisionalOrgId = useAuthStore.getState().organization?.id || ''
+    const loadProfile = options?.payEditor ? startPayEditorProfileRead(provisionalOrgId, userId) : undefined
     const snap = await getDoc(doc(db, 'users', userId))
     if (!snap.exists()) return null
     const stored = snap.data() as Record<string, unknown>
     const orgOnDoc = typeof stored.organizationId === 'string' ? stored.organizationId.trim() : ''
+    // Read after the users document, exactly as before.
+    const openOrgId = useAuthStore.getState().organization?.id || ''
     // Rulebook 1.26.1 §8 (`payEditorStartingValues`): a pay editor's copy has the pay profile laid over only while
     // `privatePay` is on for the open organisation; off (and for every other caller) `stored` is used unchanged.
     const data = options?.payEditor ? await payEditorRecord(openOrgId || orgOnDoc, snap.id, stored, loadProfile) : stored

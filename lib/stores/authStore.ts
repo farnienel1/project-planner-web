@@ -35,6 +35,7 @@ import {
 } from '@/lib/canonical'
 // Rulebook 1.9.0 §1: listeners belong to the open organisation and stop when it changes.
 import { unsubscribeOrgCollectionsOutside } from '@/lib/firebase/subscribeOrgCollection'
+import { resetSharedRateHistoryListener, resetSharedRateHistoryOutsideCurrentOrganization } from '@/lib/timesheets/sharedRateHistory'
 import {
   applyRememberedWebOrganization,
   clearRememberedOrgDenied,
@@ -488,6 +489,7 @@ async function hydrateSignedInOrganization(
       )
       adoptCurrentOrganization(sessionUser.organizationId || '', firebaseUser.uid)
       unsubscribeOrgCollectionsOutside(currentOrganizationId())
+      resetSharedRateHistoryOutsideCurrentOrganization()
       useAuthStore.setState((state) => {
         if (token !== organizationHydration || signingOut || state.user?.id !== firebaseUser.uid) return state
         const organization =
@@ -676,6 +678,7 @@ async function loadSignedInProfileInner(firebaseUser: FirebaseUser) {
 
   adoptCurrentOrganization(sessionUser.organizationId || '', firebaseUser.uid)
   unsubscribeOrgCollectionsOutside(currentOrganizationId())
+  resetSharedRateHistoryOutsideCurrentOrganization()
   const currentOrganization = useAuthStore.getState().organization
   useAuthStore.setState({
     user: sessionUser,
@@ -786,6 +789,7 @@ export const useAuthStore = create<AuthState>((set) => {
           invalidateOrganizationHydration()
           adoptCurrentOrganization('', '')
           unsubscribeOrgCollectionsOutside(currentOrganizationId())
+          resetSharedRateHistoryOutsideCurrentOrganization()
           set({ user: null, firebaseUser: null, currentUserDocument: null, organization: null, loading: false, error: null })
           return
         }
@@ -1007,10 +1011,11 @@ export const useAuthStore = create<AuthState>((set) => {
       stopCurrentUserWatch()
       adoptCurrentOrganization('', '')
       unsubscribeOrgCollectionsOutside(currentOrganizationId())
+      resetSharedRateHistoryOutsideCurrentOrganization()
       // 1.16.0: the inbox listener and rows never outlive the session.
       void import('@/lib/stores/notificationStore').then(({ useNotificationStore }) => useNotificationStore.getState().reset())
-      // The shared pay-history listener (kept open briefly between profile pages) never outlives the session.
-      void import('@/lib/timesheets/dayRateHistoryStorage').then(({ resetSharedRateHistoryListener }) => resetSharedRateHistoryListener())
+      // The shared pay-history listener (kept open briefly between Edit User pages) never outlives the session.
+      resetSharedRateHistoryListener()
       const signedOutId = useAuthStore.getState().user?.id
       if (signedOutId) clearRememberedOrgDenied(signedOutId)
       // Keep pp.webActiveOrg:{userId}. Same-user login must reopen this company.

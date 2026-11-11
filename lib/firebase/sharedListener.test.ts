@@ -80,21 +80,74 @@ test('re-subscribing inside the keep-alive cancels the stop (profile â†’ edit â†
   stop2()
 })
 
-test('a different key (another organisation, viewer or plan) stops the old listener and never hands on its rows', () => {
+test('a different key (another organisation, viewer or plan) never hands on the old rows; the old one stops when its screen leaves', () => {
   const timers = fakeTimers()
   const shared = createSharedListener<number>(timers)
   const first = fakeSource()
   const second = fakeSource()
-  shared.subscribe('org-1', first.start, () => undefined)
+  const stopFirst = shared.subscribe('org-1', first.start, () => undefined)
   first.emit(7)
   const seen: number[] = []
   shared.subscribe('org-2', second.start, (v) => seen.push(v))
-  assert.equal(first.stops(), 1)
+  assert.equal(shared.activeKey(), 'org-2')
   assert.deepEqual(seen, [], 'no snapshot of org-1')
   first.emit(8)
   assert.deepEqual(seen, [], 'a late org-1 snapshot is dropped')
   second.emit(9)
   assert.deepEqual(seen, [9])
+  assert.equal(first.stops(), 0, 'the screen still on org-1 keeps its listener until it leaves')
+  stopFirst()
+  assert.equal(first.stops(), 1, 'stopped at once, no keep-alive for a superseded listener')
+  // A third subscriber to org-1 starts afresh, never the superseded one.
+  shared.subscribe('org-1', first.start, () => undefined)
+  assert.equal(first.starts(), 2)
+})
+
+test('a listener error: the entry is never reused; the next subscriber gets a fresh listener', () => {
+  const timers = fakeTimers()
+  const shared = createSharedListener<number>(timers)
+  let fail: () => void = () => undefined
+  let starts = 0
+  let stops = 0
+  const start = (emit: (v: number) => void, onFail: () => void) => {
+    starts += 1
+    fail = onFail
+    emit(1)
+    return () => {
+      stops += 1
+    }
+  }
+  const stopA = shared.subscribe('k', start, () => undefined)
+  fail()
+  assert.equal(shared.activeKey(), null)
+  assert.equal(stops, 0, 'the screen already on it keeps it')
+  const seen: number[] = []
+  shared.subscribe('k', start, (v) => seen.push(v))
+  assert.equal(starts, 2, 'fresh listener')
+  stopA()
+  assert.equal(stops, 1, 'the failed one stops when its screen leaves, with no keep-alive')
+  assert.equal(timers.count(), 0)
+  // Failing with nobody on it stops it at once.
+  fail()
+  assert.equal(stops, 1, 'the second is still serving its subscriber')
+})
+
+test('a listener that fails while starting gives nothing and is stopped', () => {
+  const shared = createSharedListener<number>(fakeTimers())
+  let stops = 0
+  const seen: number[] = []
+  shared.subscribe(
+    'k',
+    (_emit, fail) => {
+      fail()
+      return () => {
+        stops += 1
+      }
+    },
+    (v) => seen.push(v)
+  )
+  assert.equal(stops, 1)
+  assert.equal(shared.activeKey(), null)
 })
 
 test('a snapshot emitted while starting reaches the first subscriber; unsubscribe twice is harmless; reset stops now', () => {

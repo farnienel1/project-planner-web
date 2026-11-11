@@ -95,6 +95,7 @@ import { PayeClaimsSection } from '@/components/overtime/PayeClaimsScreen'
 import { downloadPdf } from '@/lib/pdf/downloadPdf'
 
 // The PDF builders (pdf-lib) load only when a PDF is made.
+const OVERTIME_PDF_FAILED_MESSAGE = 'The PDF could not be made. Check your connection and try again.'
 const buildOvertimeReportPdf: typeof import('@/lib/overtime/overtimeReportPdf').buildOvertimeReportPdf = (...args) => import('@/lib/overtime/overtimeReportPdf').then((module) => module.buildOvertimeReportPdf(...args))
 
 export { OVERTIME_PATH, overtimeHref }
@@ -420,19 +421,26 @@ function UsersList({ users, onOpen }: { users: User[]; onOpen: (id: string) => v
 function SavedReports({ organizationId, subject, logoUrl }: { organizationId: string; subject: User; logoUrl: string | null }) {
   const [reports, setReports] = useState<Array<ReturnType<typeof parseOvertimeReportDocument>>>([])
   const [error, setError] = useState<string | null>(null)
+  const [pdfError, setPdfError] = useState<string | null>(null)
   useEffect(() => listenOvertimeReports(organizationId, subject.id, setReports, (e) => setError(e.message)), [organizationId, subject.id])
   if (error) return <p className="muted small">Saved reports could not be loaded.</p>
   if (reports.length === 0) return null
   return (
     <div className="stack" style={{ gap: 8 }}>
       <p className="eyebrow">Saved overtime reports</p>
+      {pdfError ? <p role="alert" className="banner" data-hue="warn">{pdfError}</p> : null}
       {reports.map((report) => (
         <button
           key={report.id}
           type="button"
           className="card pad click"
           style={{ border: 0, textAlign: 'left' }}
-          onClick={() => void buildOvertimeReportPdf(report, { logoUrl }).then((bytes) => downloadPdf(bytes, `overtime-${report.rangeStart}-${report.rangeEnd}.pdf`))}
+          onClick={() => {
+            setPdfError(null)
+            void buildOvertimeReportPdf(report, { logoUrl })
+              .then((bytes) => downloadPdf(bytes, `overtime-${report.rangeStart}-${report.rangeEnd}.pdf`))
+              .catch(() => setPdfError(OVERTIME_PDF_FAILED_MESSAGE))
+          }}
         >
           <b>
             {formatPayePayrunDay(report.rangeStart)} – {formatPayePayrunDay(report.rangeEnd)}
@@ -830,7 +838,12 @@ function OvertimeLines(props: {
                 type="button"
                 className="card pad click"
                 style={{ border: 0, textAlign: 'left' }}
-                onClick={() => void buildOvertimeReportPdf(report, { logoUrl: props.logoUrl }).then((bytes) => downloadPdf(bytes, `overtime-${report.rangeStart}-${report.rangeEnd}.pdf`))}
+                onClick={() => {
+                  setMessage(null)
+                  void buildOvertimeReportPdf(report, { logoUrl: props.logoUrl })
+                    .then((bytes) => downloadPdf(bytes, `overtime-${report.rangeStart}-${report.rangeEnd}.pdf`))
+                    .catch(() => setMessage(OVERTIME_PDF_FAILED_MESSAGE))
+                }}
               >
                 <b>{report.totals.overtimeHours}h overtime</b>{' '}
                 {outOfDate ? <span className="pill" data-hue="warn">{OVERTIME_REPORT_OUT_OF_DATE_LABEL}</span> : null}
