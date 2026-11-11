@@ -95,10 +95,12 @@ import { Card, Chip, DataTable, EmptyState, IconTile, Note, PageShell, Segmented
 import { PayeClaimsSection } from '@/components/overtime/PayeClaimsScreen'
 
 import { downloadPdf } from '@/lib/pdf/downloadPdf'
+import { PDF_LOAD_FAILED_MESSAGE, loadExportModule } from '@/lib/pdf/loadExportModule'
 
 // The PDF builders (pdf-lib) load only when a PDF is made.
-const OVERTIME_PDF_FAILED_MESSAGE = 'The PDF could not be made. Check your connection and try again.'
-const buildOvertimeReportPdf: typeof import('@/lib/overtime/overtimeReportPdf').buildOvertimeReportPdf = (...args) => import('@/lib/overtime/overtimeReportPdf').then((module) => module.buildOvertimeReportPdf(...args))
+const OVERTIME_PDF_FAILED_MESSAGE = PDF_LOAD_FAILED_MESSAGE
+const buildOvertimeReportPdf: typeof import('@/lib/overtime/overtimeReportPdf').buildOvertimeReportPdf = (...args) =>
+  loadExportModule(() => import('@/lib/overtime/overtimeReportPdf')).then((module) => module.buildOvertimeReportPdf(...args))
 
 export { OVERTIME_PATH, overtimeHref }
 import type { Project, User } from '@/types'

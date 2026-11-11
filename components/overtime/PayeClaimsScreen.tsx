@@ -82,10 +82,13 @@ import { Card, EmptyState, Note, PageShell } from '@/components/ui/page'
 import type { User } from '@/types'
 
 import { downloadPdf } from '@/lib/pdf/downloadPdf'
+import { loadExportModule } from '@/lib/pdf/loadExportModule'
 
 // The PDF builders (pdf-lib) load only when a PDF is made.
-const buildPayeClaimReportPdf: typeof import('@/lib/payeClaims/payeClaimReportPdf').buildPayeClaimReportPdf = (...args) => import('@/lib/payeClaims/payeClaimReportPdf').then((module) => module.buildPayeClaimReportPdf(...args))
-const buildPersonalSiteAuditPdf: typeof import('@/lib/payeClaims/payeClaimReportPdf').buildPersonalSiteAuditPdf = (...args) => import('@/lib/payeClaims/payeClaimReportPdf').then((module) => module.buildPersonalSiteAuditPdf(...args))
+const buildPayeClaimReportPdf: typeof import('@/lib/payeClaims/payeClaimReportPdf').buildPayeClaimReportPdf = (...args) =>
+  loadExportModule(() => import('@/lib/payeClaims/payeClaimReportPdf')).then((module) => module.buildPayeClaimReportPdf(...args))
+const buildPersonalSiteAuditPdf: typeof import('@/lib/payeClaims/payeClaimReportPdf').buildPersonalSiteAuditPdf = (...args) =>
+  loadExportModule(() => import('@/lib/payeClaims/payeClaimReportPdf')).then((module) => module.buildPersonalSiteAuditPdf(...args))
 
 type Props = {
   kind: PayeClaimKind

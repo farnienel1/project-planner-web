@@ -4,6 +4,7 @@ import {
   resetSharedRateHistoryListener,
   resetSharedRateHistoryOutsideCurrentOrganization,
   sharedRateHistoryKey,
+  sharedRateHistoryKeyIsCurrent,
   sharedRateHistoryListener,
 } from './sharedRateHistory.ts'
 import { adoptCurrentOrganization, captureOrganizationContext } from '../canonical/engine.ts'
@@ -59,4 +60,13 @@ test('the key carries the organisation epoch: a stale epoch never matches a fres
   assert.equal(after.starts, 1)
   assert.equal(before.stops, 1)
   resetSharedRateHistoryListener()
+})
+
+test('the organisation is compared with organizationIdsMatch (an id in another letter case is the same organisation)', () => {
+  adoptCurrentOrganization('Org-A', 'adm')
+  const context = captureOrganizationContext()
+  const key = sharedRateHistoryKey({ organizationId: 'org-a', epoch: context.epoch, viewerId: 'adm', plan: { kind: 'all' } })
+  assert.equal(sharedRateHistoryKeyIsCurrent(key, context), true)
+  assert.equal(sharedRateHistoryKeyIsCurrent(key, { ...context, epoch: context.epoch + 1 }), false)
+  assert.equal(sharedRateHistoryKeyIsCurrent(key, { ...context, organizationId: 'org-b' }), false)
 })

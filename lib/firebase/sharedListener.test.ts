@@ -180,3 +180,40 @@ test('navigationMayStart: a second click while a navigation is pending is ignore
   assert.equal(navigationMayStart(undefined), true)
   assert.equal(navigationMayStart('/dashboard/users/a'), false)
 })
+
+test('reset and resetUnless also stop superseded and failed listeners still open for a screen', () => {
+  const timers = fakeTimers()
+  const shared = createSharedListener<number>(timers)
+  const org1 = fakeSource()
+  const org2 = fakeSource()
+  shared.subscribe('org-1', org1.start, () => undefined) // a screen stays on org-1
+  shared.subscribe('org-2', org2.start, () => undefined) // supersedes org-1 (retired, still open)
+  assert.equal(shared.retiredCount(), 1)
+  assert.equal(org1.stops(), 0)
+  // Organisation switch to org-2: the retired org-1 listener stops, org-2 stays.
+  shared.resetUnless((key) => key === 'org-2')
+  assert.equal(org1.stops(), 1)
+  assert.equal(org2.stops(), 0)
+  assert.equal(shared.retiredCount(), 0)
+
+  // A failed listener still serving a screen is stopped by sign-out (reset).
+  let fail: () => void = () => undefined
+  let failedStops = 0
+  shared.subscribe(
+    'org-3',
+    (_emit, onFail) => {
+      fail = onFail
+      return () => {
+        failedStops += 1
+      }
+    },
+    () => undefined
+  )
+  fail()
+  assert.equal(shared.retiredCount(), 2, 'org-2 superseded by org-3, and org-3 failed: both still serving a screen')
+  shared.reset()
+  assert.equal(failedStops, 1)
+  assert.equal(org2.stops(), 1)
+  assert.equal(shared.retiredCount(), 0)
+  assert.equal(shared.activeKey(), null)
+})

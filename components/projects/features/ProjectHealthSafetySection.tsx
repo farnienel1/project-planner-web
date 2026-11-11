@@ -69,9 +69,11 @@ import {
   HsTalkPicker,
 } from '@/components/projects/features/hsUi'
 
+import { loadExportModule } from '@/lib/pdf/loadExportModule'
+
 // The PDF builder (pdf-lib) loads only when a talk PDF is downloaded.
 const buildToolboxTalkPdf = (input: import('@/lib/healthSafety/toolboxTalkPdf').ToolboxTalkPdfInput) =>
-  import('@/lib/healthSafety/toolboxTalkPdf').then((module) => module.buildToolboxTalkPdf(input))
+  loadExportModule(() => import('@/lib/healthSafety/toolboxTalkPdf')).then((module) => module.buildToolboxTalkPdf(input))
 
 type ManagerTab = 'hub' | 'library' | 'tracking' | 'rams' | 'other'
 

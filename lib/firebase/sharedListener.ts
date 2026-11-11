@@ -30,12 +30,14 @@ export type SharedListener<T> = {
     start: (emit: (value: T) => void, fail: () => void) => Unsubscribe,
     onValue: (value: T) => void
   ) => Unsubscribe
-  /** Stops the open listener now (sign-out, tests). */
+  /** Stops every listener now, the shared one and any failed or superseded one still open (sign-out, tests). */
   reset: () => void
-  /** Stops the open listener unless `keep(key)` says it still belongs (an organisation switch). */
+  /** Stops every listener whose key `keep` does not accept (an organisation switch), retired ones included. */
   resetUnless: (keep: (key: string) => boolean) => void
   /** Tests: the key of the open listener, if any. */
   activeKey: () => string | null
+  /** Tests: how many failed or superseded listeners are still open for the screens on them. */
+  retiredCount: () => number
 }
 
 export const SHARED_LISTENER_KEEP_ALIVE_MS = 60_000
@@ -56,10 +58,13 @@ export function createSharedListener<T>(options: SharedListenerOptions = {}): Sh
   }
   /** The one entry a new subscriber may share. A failed or superseded entry is never here. */
   let entry: Entry | null = null
+  /** Failed or superseded entries still serving a screen; `reset` / `resetUnless` stop them too. */
+  const retired = new Set<Entry>()
 
   const stopListener = (target: Entry) => {
     if (target.stopped) return
     target.stopped = true
+    retired.delete(target)
     if (target.idle != null) clearTimer(target.idle)
     target.idle = null
     target.subscribers.clear()
@@ -70,6 +75,7 @@ export function createSharedListener<T>(options: SharedListenerOptions = {}): Sh
   const retire = (target: Entry) => {
     if (entry === target) entry = null
     if (target.subscribers.size === 0 && target.stop) stopListener(target)
+    else if (!target.stopped) retired.add(target)
   }
 
   const stopEntry = () => {
@@ -77,6 +83,11 @@ export function createSharedListener<T>(options: SharedListenerOptions = {}): Sh
     const current = entry
     entry = null
     stopListener(current)
+  }
+  /** Sign-out: stop everything, shared and retired. */
+  const stopAll = () => {
+    stopEntry()
+    for (const target of [...retired]) stopListener(target)
   }
 
   const subscribe: SharedListener<T>['subscribe'] = (key, start, onValue) => {
@@ -129,10 +140,12 @@ export function createSharedListener<T>(options: SharedListenerOptions = {}): Sh
 
   return {
     subscribe,
-    reset: stopEntry,
+    reset: stopAll,
     resetUnless: (keep) => {
       if (entry && !keep(entry.key)) stopEntry()
+      for (const target of [...retired]) if (!keep(target.key)) stopListener(target)
     },
     activeKey: () => entry?.key ?? null,
+    retiredCount: () => retired.size,
   }
 }

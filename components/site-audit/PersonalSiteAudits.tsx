@@ -26,9 +26,11 @@ import { SITE_AUDIT_TYPES } from '@/components/projects/features/featureUi'
 import { discardPersonalAuditPhotos, listenPersonalSiteAudits, savePersonalSiteAudit, storedFileBytes, storedFileUrl, uploadPersonalAuditPhoto } from '@/lib/payeClaims/payeClaimsData'
 
 import { downloadPdf } from '@/lib/pdf/downloadPdf'
+import { loadExportModule } from '@/lib/pdf/loadExportModule'
 
 // The PDF builders (pdf-lib) load only when a PDF is made.
-const buildPersonalSiteAuditPdf: typeof import('@/lib/payeClaims/payeClaimReportPdf').buildPersonalSiteAuditPdf = (...args) => import('@/lib/payeClaims/payeClaimReportPdf').then((module) => module.buildPersonalSiteAuditPdf(...args))
+const buildPersonalSiteAuditPdf: typeof import('@/lib/payeClaims/payeClaimReportPdf').buildPersonalSiteAuditPdf = (...args) =>
+  loadExportModule(() => import('@/lib/payeClaims/payeClaimReportPdf')).then((module) => module.buildPersonalSiteAuditPdf(...args))
 
 /** Live list of the signed-in person's personal audits (never anyone else's). */
 export function usePersonalSiteAudits(): { audits: PersonalSiteAudit[]; loaded: boolean; error: string | null } {

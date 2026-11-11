@@ -389,9 +389,7 @@ export function EditUserProfile({
         if (details?.annualLeaveDefaults) setOrgLeaveDefaults(details.annualLeaveDefaults)
       })
       .catch(() => undefined)
-    // A plain read (the web cache is memory-only, so online it is the server's answer); the starter check and its
-    // idempotent seed are unchanged.
-    void loadOrganisationQualificationsEnsuringStarter(organization.id)
+    void loadOrganisationQualificationsEnsuringStarter(organization.id, { fromServer: true })
       .then((existing) => {
         const assigned = assignedQualificationTemplates(useOperativeStore.getState().operatives)
         setQualificationTemplates(mergeQualificationTemplates(existing, assigned))

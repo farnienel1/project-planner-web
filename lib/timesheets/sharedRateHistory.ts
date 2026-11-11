@@ -3,7 +3,7 @@
  * no store imports, so the auth store can stop it on every organisation change and sign-out without an import cycle.
  */
 import { createSharedListener } from '@/lib/firebase/sharedListener'
-import { captureOrganizationContext } from '@/lib/canonical/engine'
+import { captureOrganizationContext, organizationIdsMatch } from '@/lib/canonical/engine'
 
 export type SharedRateHistoryKeyParts = { organizationId: string; epoch: number; viewerId: string; plan: unknown }
 
@@ -18,7 +18,7 @@ export function sharedRateHistoryKey(parts: SharedRateHistoryKeyParts): string {
 export function sharedRateHistoryKeyIsCurrent(key: string, context = captureOrganizationContext()): boolean {
   try {
     const [organizationId, epoch] = JSON.parse(key) as [string, number]
-    return organizationId === context.organizationId && epoch === context.epoch
+    return organizationIdsMatch(organizationId, context.organizationId) && epoch === context.epoch
   } catch {
     return false
   }

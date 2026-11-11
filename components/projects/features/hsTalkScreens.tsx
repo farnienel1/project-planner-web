@@ -19,9 +19,11 @@ import { ReportFileLink } from '@/components/fileReports/ReportFileLink'
 import { StoredFileLink } from '@/components/projects/features/StoredFileLink'
 import { resolveStoredFileUrl } from '@/lib/healthSafety/openStoredFile'
 
+import { loadExportModule } from '@/lib/pdf/loadExportModule'
+
 // The PDF builder (pdf-lib) loads only when a talk PDF is drawn.
 const buildToolboxTalkPdf = (input: import('@/lib/healthSafety/toolboxTalkPdf').ToolboxTalkPdfInput) =>
-  import('@/lib/healthSafety/toolboxTalkPdf').then((module) => module.buildToolboxTalkPdf(input))
+  loadExportModule(() => import('@/lib/healthSafety/toolboxTalkPdf')).then((module) => module.buildToolboxTalkPdf(input))
 
 export function HsTalkBody({
   talk,
