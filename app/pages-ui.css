@@ -337,6 +337,8 @@ button.pu-item:disabled { cursor: not-allowed; opacity: 0.55; }
   .pu-field { min-width: 0; }
   .pu-sel { min-width: 0; flex: 1; }
   .pu-form-row { grid-template-columns: 1fr; }
+  .pu-toolbar .pu-seg { width: 100%; }
+  .pu-toolbar .pu-seg button { flex: 1; justify-content: center; }
   .pu-table td, .pu-table th { padding-left: 12px; padding-right: 12px; }
 }
 
