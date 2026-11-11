@@ -271,8 +271,8 @@ textarea.pu-inp { height: auto; min-height: 76px; padding: 10px 12px; resize: ve
 .pu-action p { margin: 0; color: var(--pu-muted); font-size: 13px; line-height: 1.45; }
 .pu-action .pu-go { margin-top: auto; display: flex; align-items: center; justify-content: space-between; font-size: 13px; font-weight: 600; color: var(--pu-blue); padding-top: 12px; border-top: 1px solid var(--pu-line-2); }
 .pu-mini { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--pu-line-2); border-radius: 12px; overflow: hidden; }
-.pu-mini div { padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; }
-.pu-mini div + div { border-left: 1px solid var(--pu-line-2); }
+.pu-mini > * { padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; }
+.pu-mini > * + * { border-left: 1px solid var(--pu-line-2); }
 .pu-mini b { font-size: 20px; }
 .pu-mini span { font-size: 11.5px; color: var(--pu-muted); }
 .pu-mini .amber b { color: var(--pu-c-amber-ink); }

@@ -314,7 +314,7 @@ export function Modal({
   /** e.g. the existing Cancel control. */
   headerStart?: ReactNode
   headerEnd?: ReactNode
-  children: ReactNode
+  children?: ReactNode
   footer?: ReactNode
   size?: 'sm'
   labelledBy?: string
@@ -328,7 +328,7 @@ export function Modal({
           {headerStart}
           {headerEnd}
         </div>
-        <div className="pu-modal-b">{children}</div>
+        {children ? <div className="pu-modal-b">{children}</div> : null}
         {footer ? <div className="pu-modal-f">{footer}</div> : null}
       </div>
     </div>

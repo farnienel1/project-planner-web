@@ -5,7 +5,7 @@
 'use client'
 
 import { rulebookRoster } from '@/lib/staff/rulebookPeople'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { Booking, Operative, Project, User } from '@/types'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import {
@@ -121,6 +121,22 @@ import { timesheetLeaveLinesForAccount } from '@/lib/timesheets/timesheetLeave'
 import type { TimesheetLeaveLine } from '@/lib/canonical'
 import { useOrgBankHolidays } from '@/components/annual-leave/useOrgBankHolidays'
 import { PayInputsBanner } from '@/components/timesheets/PayInputsBanner'
+import { BriefcaseIcon, CheckCircleIcon, ReceiptPercentIcon } from '@heroicons/react/24/solid'
+import {
+  Card,
+  Chip,
+  DataTable,
+  EmptyState,
+  IconTile,
+  InfoIcon,
+  Modal,
+  Note,
+  PageBand,
+  PuButton,
+  StatRow,
+  WarnIcon,
+  type StatItem,
+} from '@/components/ui/page'
 import { TimesheetInputsNotReadyError, type TimesheetInputsState } from '@/lib/timesheets/timesheetInputs'
 import type { PayrollTimePolicyState } from '@/lib/canonical'
 
@@ -156,8 +172,14 @@ export function TimesheetPeriodPage({
   history = emptyDayRateHistory(),
   scheduleOptions = DEFAULT_MY_SCHEDULE,
   payInputs,
+  heading = 'Timesheet',
+  back,
 }: {
   payInputs: TimesheetInputsState
+  /** Page name shown in the band eyebrow (was the nav bar title). */
+  heading?: string
+  /** The nav bar's existing back control: same label and handler. */
+  back?: { label: string; onClick: () => void }
   subjectUser: User
   mode: 'mine' | 'review'
   periodStart: Date
@@ -812,6 +834,23 @@ export function TimesheetPeriodPage({
         }
         managerMode={managerSignOpen}
         busy={busy}
+        summaryRows={sheetRows.map((row) =>
+          row.kind === 'leave' ? (
+            <LeaveInfoLine key={row.key} leave={row.leave} timeZone={timeZone} />
+          ) : (
+            <PayrollLine
+              key={row.key}
+              line={row.line}
+              draft={draft}
+              managerHasSigned={managerHasSigned}
+              canReview={false}
+              timeZone={timeZone}
+              onApprove={() => undefined}
+              onDecline={() => undefined}
+              onEdit={() => undefined}
+            />
+          )
+        )}
         onCancel={() => {
           setSignOpen(false)
           setManagerSignOpen(false)
@@ -822,25 +861,50 @@ export function TimesheetPeriodPage({
     )
   }
 
-  return (
-    <div className="space-y-4 pb-10">
-      <p className="text-[15px] font-semibold text-[var(--ink3)]">{periodTitle}</p>
-      <PayInputsBanner inputs={payInputs} />
-      {error ? <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-800">{error}</p> : null}
-      {updatedElsewhere ? (
-        <p className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          This timesheet was updated on another device. It will refresh when you finish this change.
-        </p>
-      ) : null}
+  const reviewName = `${subjectUser.firstName} ${subjectUser.surname}`.trim() || subjectUser.email
+  const bandStats: StatItem[] =
+    mode === 'review'
+      ? [
+          {
+            value: money(hoursSubtotal, currency),
+            label: `Hours · ${payroll.shiftCount} shifts (${formatTimesheetHours(payroll.totalHours)}h)`,
+          },
+          { value: money(overtimeAmount, currency), label: 'Overtime', tone: 'amber' },
+          { value: money(extrasTotal, currency), label: `Price work · ${draft.priceWorkEntries.length}` },
+          { value: money(expensesAmount, currency), label: `Expenses · ${draft.expenseEntries.length}` },
+        ]
+      : [
+          { value: money(hoursSubtotal, currency), label: 'Hours subtotal' },
+          ...(overtimeAmount > 0 ? [{ value: money(overtimeAmount, currency), label: 'Overtime', tone: 'amber' as const }] : []),
+          ...(extrasTotal + expensesAmount > 0
+            ? [{ value: money(totals.extras, currency), label: managerHasSigned ? 'Approved extras' : 'Extras (price work & expenses)' }]
+            : []),
+        ]
+  const totalLabel = mode === 'review' && managerHasSigned ? 'Approved total' : 'Total'
 
-      {mode === 'review' ? (
-        <div className="rounded-2xl bg-white p-4 shadow-[0_1px_2px_rgba(0,0,0,0.10)]">
-          <p className="text-[20px] font-semibold">
-            {`${subjectUser.firstName} ${subjectUser.surname}`.trim() || subjectUser.email}
-          </p>
-          <p className="mt-1 text-[15px] text-[var(--ink3)]">{periodTitle}</p>
-          <ReviewStatusCapsule signed={Boolean(draft.operativeSignedAt)} />
-        </div>
+  return (
+    <>
+      <PageBand
+        back={back}
+        eyebrow={`${heading} · ${mode === 'review' ? 'Breakdown' : 'This period'}`}
+        title={mode === 'review' ? reviewName : periodTitle}
+        subtitle={mode === 'review' ? periodTitle : undefined}
+        actions={mode === 'review' ? <ReviewStatusCapsule signed={Boolean(draft.operativeSignedAt)} /> : undefined}
+        aside={
+          <>
+            <span>{totalLabel}</span>
+            <b>{money(total, currency)}</b>
+          </>
+        }
+      >
+        <StatRow items={bandStats} />
+      </PageBand>
+      <PayInputsBanner inputs={payInputs} />
+      {error ? <Note tone="red" role="alert">{error}</Note> : null}
+      {updatedElsewhere ? (
+        <Note tone="amber" role="status">
+          This timesheet was updated on another device. It will refresh when you finish this change.
+        </Note>
       ) : null}
 
       {managerHasSigned && managerAdjustmentCount(draft) > 0 ? (
@@ -850,102 +914,101 @@ export function TimesheetPeriodPage({
         />
       ) : null}
 
-      <section className="overflow-hidden rounded-2xl bg-white shadow-[0_1px_2px_rgba(0,0,0,0.10)]">
-        <div className="px-4 pt-4">
-          <p className="text-[13px] font-semibold uppercase tracking-[0.4px] text-[var(--ink3)]">
-            {mode === 'review' ? 'Breakdown' : 'This period'}
-          </p>
-          {canManagerReview ? (
-            <p className="mt-1 text-[13px] text-[var(--ink3)]">
-              Review each day, expense and price-work line. Use ✓ approve, ✕ decline, or edit. Changes are shown to the
-              operative when you sign off.
-            </p>
-          ) : null}
-        </div>
-        {sheetRows.length === 0 ? (
-          <p className="p-4 text-[14px] text-[var(--ink3)]">
-            {mode === 'review'
-              ? 'No bookings found for this period.'
-              : 'No bookings found for this payment period yet. Hours from site, office, site survey and other schedule entries will appear here automatically.'}
-          </p>
-        ) : (
-          <ul className="divide-y divide-slate-100">
-            {sheetRows.map((row) =>
-              row.kind === 'leave' ? (
-                <LeaveInfoLine key={row.key} leave={row.leave} timeZone={timeZone} />
-              ) : (
-              <PayrollLine
-                key={row.key}
-                line={row.line}
-                draft={draft}
-                managerHasSigned={managerHasSigned}
-                canReview={canManagerReview}
-                timeZone={timeZone}
-                onApprove={() => setLineDecision(row.line.id, 'approved')}
-                onDecline={() => setLineDecision(row.line.id, 'declined')}
-                onEdit={() => openPayrollHoursEditor(row.line)}
+      <div className="pu-grid2">
+        <div className="pu-col">
+          <Card
+            title={mode === 'review' ? 'Breakdown' : 'This period'}
+            subtitle={
+              canManagerReview
+                ? 'Review each day, expense and price-work line. Use ✓ approve, ✕ decline, or edit. Changes are shown to the operative when you sign off.'
+                : undefined
+            }
+          >
+            {sheetRows.length === 0 ? (
+              <EmptyState
+                title={
+                  mode === 'review'
+                    ? 'No bookings found for this period.'
+                    : 'No bookings found for this payment period yet. Hours from site, office, site survey and other schedule entries will appear here automatically.'
+                }
               />
-              )
-            )}
-          </ul>
-        )}
-        <div className="space-y-2 border-t border-slate-100 px-4 py-4">
-          {mode === 'review' ? (
-            <>
-              <Row
-                label={`Hours · ${payroll.shiftCount} shifts (${formatTimesheetHours(payroll.totalHours)}h)`}
-                value={money(hoursSubtotal, currency)}
-              />
-              <Row label="Overtime" value={money(overtimeAmount, currency)} />
-              <Row label={`Price work · ${draft.priceWorkEntries.length}`} value={money(extrasTotal, currency)} />
-              <Row label={`Expenses · ${draft.expenseEntries.length}`} value={money(expensesAmount, currency)} />
-            </>
-          ) : (
-            <>
-              <Row label="Hours subtotal" value={money(hoursSubtotal, currency)} strong />
-              {overtimeAmount > 0 ? <Row label="Overtime" value={money(overtimeAmount, currency)} /> : null}
-              {extrasTotal + expensesAmount > 0 ? (
-                <div className="flex justify-between text-[15px]">
-                  <span>{managerHasSigned ? 'Approved extras' : 'Extras (price work & expenses)'}</span>
-                  {managerHasSigned && totals.extras !== totals.submittedExtras ? (
-                    <span className="text-right">
-                      <span className="block text-[12px] text-[var(--ink3)] line-through">
-                        {money(totals.submittedExtras, currency)}
-                      </span>
-                      <span className="font-semibold text-[#34C759]">{money(totals.extras, currency)}</span>
-                    </span>
+            ) : (
+              <DataTable
+                columns={[
+                  { key: 'day', label: 'Day' },
+                  { key: 'booking', label: 'Booking' },
+                  { key: 'calc', label: 'Calculation' },
+                  { key: 'amount', label: 'Amount', align: 'right' },
+                ]}
+              >
+                {sheetRows.map((row) =>
+                  row.kind === 'leave' ? (
+                    <LeaveInfoLine key={row.key} leave={row.leave} timeZone={timeZone} />
                   ) : (
-                    <span className="font-semibold">
-                      {money(totals.extras, currency)}
-                    </span>
-                  )}
+                    <PayrollLine
+                      key={row.key}
+                      line={row.line}
+                      draft={draft}
+                      managerHasSigned={managerHasSigned}
+                      canReview={canManagerReview}
+                      timeZone={timeZone}
+                      onApprove={() => setLineDecision(row.line.id, 'approved')}
+                      onDecline={() => setLineDecision(row.line.id, 'declined')}
+                      onEdit={() => openPayrollHoursEditor(row.line)}
+                    />
+                  )
+                )}
+              </DataTable>
+            )}
+            <div className="pu-totals">
+              {mode === 'review' ? (
+                <>
+                  <Row
+                    label={`Hours · ${payroll.shiftCount} shifts (${formatTimesheetHours(payroll.totalHours)}h)`}
+                    value={money(hoursSubtotal, currency)}
+                  />
+                  <Row label="Overtime" value={money(overtimeAmount, currency)} />
+                  <Row label={`Price work · ${draft.priceWorkEntries.length}`} value={money(extrasTotal, currency)} />
+                  <Row label={`Expenses · ${draft.expenseEntries.length}`} value={money(expensesAmount, currency)} />
+                </>
+              ) : (
+                <>
+                  <Row label="Hours subtotal" value={money(hoursSubtotal, currency)} strong />
+                  {overtimeAmount > 0 ? <Row label="Overtime" value={money(overtimeAmount, currency)} /> : null}
+                  {extrasTotal + expensesAmount > 0 ? (
+                    <div className="r">
+                      <span>{managerHasSigned ? 'Approved extras' : 'Extras (price work & expenses)'}</span>
+                      {managerHasSigned && totals.extras !== totals.submittedExtras ? (
+                        <span style={{ textAlign: 'right' }}>
+                          <span className="pu-sub" style={{ textDecoration: 'line-through' }}>
+                            {money(totals.submittedExtras, currency)}
+                          </span>
+                          <b style={{ color: 'var(--pu-c-green-ink)' }}>{money(totals.extras, currency)}</b>
+                        </span>
+                      ) : (
+                        <b>{money(totals.extras, currency)}</b>
+                      )}
+                    </div>
+                  ) : null}
+                </>
+              )}
+              <div className="r big">
+                <span>{totalLabel}</span>
+                <span>{money(total, currency)}</span>
+              </div>
+              {mode === 'review' && draft.managerNote.trim() ? (
+                <div style={{ paddingTop: 8 }}>
+                  <b>Note to manager</b>
+                  <p className="pu-sub" style={{ fontSize: 13.5, marginTop: 2 }}>{draft.managerNote}</p>
                 </div>
               ) : null}
-            </>
-          )}
-          <div className="flex items-baseline justify-between pt-1">
-            <p className="text-[17px] font-semibold">
-              {mode === 'review' && managerHasSigned ? 'Approved total' : 'Total'}
-            </p>
-            <p className="text-[22px] font-bold">{money(total, currency)}</p>
-          </div>
-          {mode === 'review' && draft.managerNote.trim() ? (
-            <div className="border-t border-slate-100 pt-3">
-              <p className="text-[15px] font-semibold">Note to manager</p>
-              <p className="mt-1 text-[14px] text-[var(--ink3)]">{draft.managerNote}</p>
+              {managerHasSigned && managerAdjustmentCount(draft) > 0 ? (
+                <span className="pu-sub">Includes line manager adjustments</span>
+              ) : null}
             </div>
-          ) : null}
-          {managerHasSigned && managerAdjustmentCount(draft) > 0 ? (
-            <p className="text-[12px] text-[var(--ink3)]">Includes line manager adjustments</p>
-          ) : null}
-        </div>
-      </section>
+          </Card>
 
-      {mode === 'mine' ? <PaymentRunsBox invoicing={invoicing} /> : null}
-
-      {mode === 'mine' ? (
-        <>
-          {draft.priceWorkEntries.length > 0 ? (
+          {mode === 'mine' && draft.priceWorkEntries.length > 0 ? (
             <ExtraList
               title={managerHasSigned ? 'Price work (after review)' : 'Price Work'}
               items={draft.priceWorkEntries.map((item) => ({
@@ -961,7 +1024,7 @@ export function TimesheetPeriodPage({
               managerHasSigned={managerHasSigned}
             />
           ) : null}
-          {draft.expenseEntries.length > 0 ? (
+          {mode === 'mine' && draft.expenseEntries.length > 0 ? (
             <ExtraList
               title={managerHasSigned ? 'Expenses (after review)' : 'Expenses'}
               items={draft.expenseEntries.map((item) => ({
@@ -977,169 +1040,169 @@ export function TimesheetPeriodPage({
               managerHasSigned={managerHasSigned}
             />
           ) : null}
-
-          <p className="text-[13px] font-semibold uppercase tracking-[0.4px] text-[var(--ink3)]">Add to this timesheet</p>
-          <div className="grid grid-cols-2 gap-3">
-            <button type="button" onClick={() => beginExtra('priceWork')} className="rounded-2xl bg-white p-4 text-left shadow-[0_1px_2px_rgba(0,0,0,0.10)]">
-              <p className="text-[16px] font-semibold text-[#5449B7]">Price Work</p>
-              <p className="text-[13px] text-[var(--ink3)]">Agreed extras</p>
-            </button>
-            <button type="button" onClick={() => beginExtra('expense')} className="rounded-2xl bg-white p-4 text-left shadow-[0_1px_2px_rgba(0,0,0,0.10)]">
-              <p className="text-[16px] font-semibold text-[#B45309]">Expenses</p>
-              <p className="text-[13px] text-[var(--ink3)]">+ receipts</p>
-            </button>
-          </div>
-
-          {needsCounterSign ? (
-            <label className="block rounded-2xl bg-white p-4 shadow-[0_1px_2px_rgba(0,0,0,0.10)]">
-              <span className="text-[15px] font-semibold">Note to manager</span>
-              <textarea
-                value={draft.managerNote}
-                onChange={(event) => {
-                  localEdits.current = true
-                  setDraft({ ...draft, managerNote: event.target.value })
-                }}
-                onBlur={(event) => void persistOrReport({ ...draft, managerNote: event.currentTarget.value })}
-                className="mt-2 min-h-[74px] w-full rounded-xl bg-[#F7F8FC] p-3 text-[15px]"
-              />
-            </label>
-          ) : null}
-
-          <div className="flex gap-3 rounded-xl bg-[#FDEAEA] p-3 text-[13px] text-[#7F1D1D]">
-            <span className="text-lg">⚠</span>
-            <p>{hoursWarningCopy(subjectUser, users)}</p>
-          </div>
-
-          {!draft.operativeSignedAt ? (
-            <button
-              type="button"
-              disabled={!payInputs.ready}
-              onClick={() => setSignOpen(true)}
-              className="w-full rounded-xl bg-[#007AFF] py-3.5 text-[16px] font-semibold text-white disabled:opacity-50"
-            >
-              Continue to sign
-            </button>
-          ) : (
-            <SignedBlock
-              base64={draft.operativeSignatureImageBase64}
-              caption={`Signed by ${draft.operativeSignedByName || 'Operative'} on ${signedStamp(draft.operativeSignedAt, timeZone)}`}
-            />
-          )}
-
-          {needsCounterSign && draft.managerSignedAt ? (
-            <SignedBlock
-              base64={draft.managerSignatureImageBase64}
-              caption={`Manager: ${draft.managerSignedByName || 'Line manager'} · ${signedStamp(draft.managerSignedAt, timeZone)}`}
+          {mode === 'review' ? (
+            <ReviewExtras
+              draft={draft}
+              canReview={canManagerReview}
+              timeZone={timeZone}
+              onSave={(next) => void persistOrReport(next)}
+              onEditExtra={(type, id, title, _original, current) => {
+                setEditingExtra({ type, id, title, original: current })
+                setEditAmount(current.toFixed(2))
+              }}
             />
           ) : null}
+        </div>
 
-          {fullyApproved ? (
+        <div className="pu-col">
+          {mode === 'mine' ? (
             <>
-            {needsCounterSign ? (
-              <p className="text-[13px] text-[var(--ink3)]">{SIGNED_OFF_EDIT_NOTE}</p>
-            ) : null}
-            {canViewSubjectTaxIds ? (
-              <label className="flex items-center gap-2 text-[14px] text-[var(--ink2)]">
-                <input type="checkbox" checked={includeTaxIds} onChange={(e) => setIncludeTaxIds(e.target.checked)} />
-                {SENSITIVE_EXPORT_OPTION_LABEL}
-              </label>
-            ) : null}
-            <button
-              type="button"
-              disabled={busy || !payInputs.ready}
-              onClick={() => void handleInvoice()}
-              className="w-full rounded-xl bg-[#16A34A] py-3.5 text-[16px] font-semibold text-white disabled:opacity-60"
-            >
-              Generate Invoice
-            </button>
-            </>
-          ) : (
-            <div className="space-y-2">
-              <div className="w-full rounded-xl bg-[#D1D1D6] py-3.5 text-center text-[16px] font-semibold text-slate-500">
-                Generate Invoice
-              </div>
-              <p className="text-center text-[13px] text-[var(--ink3)]">
-                {!draft.operativeSignedAt
-                  ? needsCounterSign
-                    ? 'Add any expenses or price work, then sign your timesheet. Your line manager will counter-sign before you can invoice.'
-                    : 'Add any expenses or price work, then confirm and approve your timesheet to unlock Generate Invoice.'
-                  : needsCounterSign
-                    ? 'Timesheet pending manager signature — Generate Invoice unlocks after your line manager counter-signs.'
-                    : 'Re-sign your timesheet to generate an invoice.'}
-              </p>
-            </div>
-          )}
-        </>
-      ) : (
-        <ReviewExtras
-          draft={draft}
-          canReview={canManagerReview}
-          timeZone={timeZone}
-          onSave={(next) => void persistOrReport(next)}
-          onEditExtra={(type, id, title, _original, current) => {
-            setEditingExtra({ type, id, title, original: current })
-            setEditAmount(current.toFixed(2))
-          }}
-        />
-      )}
+              <PaymentRunsBox invoicing={invoicing} />
 
-      {mode === 'review' ? (
-        <>
-          <div className="rounded-2xl bg-white p-4 shadow-[0_1px_2px_rgba(0,0,0,0.10)]">
-            <p className="text-[17px] font-semibold">Signatures</p>
-            {draft.operativeSignedAt ? (
-              <SignedBlock
-                base64={draft.operativeSignatureImageBase64}
-                caption={`Operative: ${draft.operativeSignedByName || `${subjectUser.firstName} ${subjectUser.surname}`.trim()} · ${signedStamp(draft.operativeSignedAt, timeZone)}`}
-              />
-            ) : (
-              <p className="mt-2 text-[14px] text-amber-700">Operative has not signed this week yet.</p>
-            )}
-            {needsCounterSign ? (
-              draft.managerSignedAt ? (
+              <Card title="Add to this timesheet">
+                <div className="pu-card-b" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  <button type="button" onClick={() => beginExtra('priceWork')} className="pu-tilebtn">
+                    <IconTile tone="purple" size="sm"><BriefcaseIcon /></IconTile>
+                    <span style={{ minWidth: 0 }}>
+                      <b>Price Work</b>
+                      <small>Agreed extras</small>
+                    </span>
+                  </button>
+                  <button type="button" onClick={() => beginExtra('expense')} className="pu-tilebtn">
+                    <IconTile tone="green" size="sm"><ReceiptPercentIcon /></IconTile>
+                    <span style={{ minWidth: 0 }}>
+                      <b>Expenses</b>
+                      <small>+ receipts</small>
+                    </span>
+                  </button>
+                </div>
+              </Card>
+
+              {needsCounterSign ? (
+                <Card title="Note to manager">
+                  <div className="pu-card-b">
+                    <textarea
+                      aria-label="Note to manager"
+                      value={draft.managerNote}
+                      onChange={(event) => {
+                        localEdits.current = true
+                        setDraft({ ...draft, managerNote: event.target.value })
+                      }}
+                      onBlur={(event) => void persistOrReport({ ...draft, managerNote: event.currentTarget.value })}
+                      className="pu-inp"
+                    />
+                  </div>
+                </Card>
+              ) : null}
+
+              <Note tone="red">{hoursWarningCopy(subjectUser, users)}</Note>
+
+              {!draft.operativeSignedAt ? (
+                <PuButton variant="primary" block disabled={!payInputs.ready} onClick={() => setSignOpen(true)}>
+                  Continue to sign
+                </PuButton>
+              ) : (
+                <SignedBlock
+                  base64={draft.operativeSignatureImageBase64}
+                  caption={`Signed by ${draft.operativeSignedByName || 'Operative'} on ${signedStamp(draft.operativeSignedAt, timeZone)}`}
+                />
+              )}
+
+              {needsCounterSign && draft.managerSignedAt ? (
                 <SignedBlock
                   base64={draft.managerSignatureImageBase64}
-                  caption={`Manager approved: ${draft.managerSignedByName || 'Manager'} · ${signedStamp(draft.managerSignedAt, timeZone)}`}
+                  caption={`Manager: ${draft.managerSignedByName || 'Line manager'} · ${signedStamp(draft.managerSignedAt, timeZone)}`}
                 />
-              ) : (
-                <div className="mt-3 flex h-[82px] items-center justify-center rounded-[10px] border border-dashed border-slate-300 italic text-slate-500">
-                  Manager signature
-                </div>
-              )
-            ) : null}
-          </div>
-          {fullyApproved ? (
-            <div className="space-y-2">
-              <div className="rounded-xl bg-green-100 py-3.5 text-center text-[16px] font-semibold text-green-700">
-                Signed off
-              </div>
-              <p className="text-[13px] text-[var(--ink3)]">{SIGNED_OFF_EDIT_NOTE}</p>
-            </div>
-          ) : needsCounterSign && !draft.managerSignedAt ? (
-            <div className="space-y-2">
-              {extrasPendingReview(draft) && (draft.expenseEntries.length > 0 || draft.priceWorkEntries.length > 0) ? (
-                <p className="text-[13px] text-amber-700">
-                  Approve, decline or edit every expense and price-work line before signing off.
-                </p>
               ) : null}
-              <button
-                type="button"
-                disabled={!draft.operativeSignedAt || !payInputs.ready}
-                onClick={() => {
-                  if (extrasPendingReview(draft) && (draft.expenseEntries.length > 0 || draft.priceWorkEntries.length > 0)) {
-                    setExtrasReviewAlert(true)
-                    return
-                  }
-                  setManagerSignOpen(true)
-                }}
-                className="w-full rounded-xl bg-[#16A34A] py-3.5 text-[16px] font-semibold text-white disabled:opacity-50"
-              >
-                Sign off & finalise
-              </button>
-            </div>
-          ) : null}
-        </>
-      ) : null}
+
+              {fullyApproved ? (
+                <>
+                  {needsCounterSign ? <Note tone="green">{SIGNED_OFF_EDIT_NOTE}</Note> : null}
+                  {canViewSubjectTaxIds ? (
+                    <label className="pu-form-label" style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <input type="checkbox" checked={includeTaxIds} onChange={(e) => setIncludeTaxIds(e.target.checked)} />
+                      {SENSITIVE_EXPORT_OPTION_LABEL}
+                    </label>
+                  ) : null}
+                  <PuButton variant="green" block disabled={busy || !payInputs.ready} onClick={() => void handleInvoice()}>
+                    Generate Invoice
+                  </PuButton>
+                </>
+              ) : (
+                <>
+                  <PuButton block disabled aria-disabled="true">
+                    Generate Invoice
+                  </PuButton>
+                  <p className="pu-sub" style={{ textAlign: 'center' }}>
+                    {!draft.operativeSignedAt
+                      ? needsCounterSign
+                        ? 'Add any expenses or price work, then sign your timesheet. Your line manager will counter-sign before you can invoice.'
+                        : 'Add any expenses or price work, then confirm and approve your timesheet to unlock Generate Invoice.'
+                      : needsCounterSign
+                        ? 'Timesheet pending manager signature — Generate Invoice unlocks after your line manager counter-signs.'
+                        : 'Re-sign your timesheet to generate an invoice.'}
+                  </p>
+                </>
+              )}
+            </>
+          ) : (
+            <>
+              <Card title="Signatures">
+                <div className="pu-card-b">
+                  {draft.operativeSignedAt ? (
+                    <SignedBlock
+                      base64={draft.operativeSignatureImageBase64}
+                      caption={`Operative: ${draft.operativeSignedByName || `${subjectUser.firstName} ${subjectUser.surname}`.trim()} · ${signedStamp(draft.operativeSignedAt, timeZone)}`}
+                    />
+                  ) : (
+                    <Note tone="amber">Operative has not signed this week yet.</Note>
+                  )}
+                  {needsCounterSign ? (
+                    draft.managerSignedAt ? (
+                      <SignedBlock
+                        base64={draft.managerSignatureImageBase64}
+                        caption={`Manager approved: ${draft.managerSignedByName || 'Manager'} · ${signedStamp(draft.managerSignedAt, timeZone)}`}
+                      />
+                    ) : (
+                      <div className="pu-dashed" style={{ height: 82, justifyContent: 'center', fontStyle: 'italic', cursor: 'default', color: 'var(--pu-muted)' }}>
+                        Manager signature
+                      </div>
+                    )
+                  ) : null}
+                </div>
+              </Card>
+              {fullyApproved ? (
+                <>
+                  <Note tone="green" icon={<CheckCircleIcon />}>
+                    <b>Signed off</b>
+                  </Note>
+                  <p className="pu-sub">{SIGNED_OFF_EDIT_NOTE}</p>
+                </>
+              ) : needsCounterSign && !draft.managerSignedAt ? (
+                <>
+                  {extrasPendingReview(draft) && (draft.expenseEntries.length > 0 || draft.priceWorkEntries.length > 0) ? (
+                    <Note tone="amber">Approve, decline or edit every expense and price-work line before signing off.</Note>
+                  ) : null}
+                  <PuButton
+                    variant="green"
+                    block
+                    disabled={!draft.operativeSignedAt || !payInputs.ready}
+                    onClick={() => {
+                      if (extrasPendingReview(draft) && (draft.expenseEntries.length > 0 || draft.priceWorkEntries.length > 0)) {
+                        setExtrasReviewAlert(true)
+                        return
+                      }
+                      setManagerSignOpen(true)
+                    }}
+                  >
+                    Sign off & finalise
+                  </PuButton>
+                </>
+              ) : null}
+            </>
+          )}
+        </div>
+      </div>
 
       {extraMode ? (
         <ExtraForm
@@ -1198,89 +1261,90 @@ export function TimesheetPeriodPage({
       ) : null}
 
       {pendingExtraMode ? (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-sm rounded-2xl bg-white p-5">
-            <p className="text-[17px] font-semibold">Re-sign required</p>
-            <p className="mt-3 text-[15px] text-[var(--ink3)]">{postSignExtraWarningCopy(subjectUser, draft, users)}</p>
-            <button
-              type="button"
-              onClick={() => void acceptPostSignExtra()}
-              className="mt-5 w-full rounded-xl bg-[#007AFF] py-3 text-[16px] font-semibold text-white"
-            >
-              Accept — add anyway
-            </button>
-            <button
-              type="button"
-              onClick={() => setPendingExtraMode(null)}
-              className="mt-2 w-full py-2 text-[15px] font-semibold text-[var(--ink3)]"
-            >
-              Decline
-            </button>
-          </div>
-        </div>
+        <Modal
+          size="sm"
+          labelledBy="ts-resign-title"
+          title="Re-sign required"
+          tile={<IconTile tone="amber" size="sm"><WarnIcon /></IconTile>}
+          footer={
+            <>
+              <PuButton onClick={() => setPendingExtraMode(null)}>Decline</PuButton>
+              <PuButton variant="primary" onClick={() => void acceptPostSignExtra()}>
+                Accept — add anyway
+              </PuButton>
+            </>
+          }
+        >
+          <p className="pu-sub" style={{ fontSize: 14 }}>{postSignExtraWarningCopy(subjectUser, draft, users)}</p>
+        </Modal>
       ) : null}
 
       {extrasReviewAlert ? (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-sm rounded-2xl bg-white p-5">
-            <p className="text-[17px] font-semibold">Review required</p>
-            <p className="mt-3 text-[15px] text-[var(--ink3)]">
-              Please approve, decline or edit each expense and price-work item using the buttons provided.
-            </p>
-            <button
-              type="button"
-              onClick={() => setExtrasReviewAlert(false)}
-              className="mt-5 w-full rounded-xl bg-[#007AFF] py-3 text-[16px] font-semibold text-white"
-            >
+        <Modal
+          size="sm"
+          labelledBy="ts-review-required-title"
+          title="Review required"
+          tile={<IconTile tone="amber" size="sm"><WarnIcon /></IconTile>}
+          footer={
+            <PuButton variant="primary" onClick={() => setExtrasReviewAlert(false)}>
               OK
-            </button>
-          </div>
-        </div>
+            </PuButton>
+          }
+        >
+          <p className="pu-sub" style={{ fontSize: 14 }}>
+            Please approve, decline or edit each expense and price-work item using the buttons provided.
+          </p>
+        </Modal>
       ) : null}
 
       {utrWarningOpen ? (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-sm rounded-2xl bg-white p-5">
-            <button type="button" onClick={() => setUtrWarningOpen(false)} className="text-[15px] font-medium text-[var(--blue)]">
-              Back
-            </button>
-            <p className="mt-3 text-[17px] font-semibold">Before you invoice</p>
-            <p className="mt-3 text-[15px] text-[var(--ink3)]">
-              The UTR number is blank. Ask an admin to add it on Edit user so invoices are paid promptly.
-            </p>
-            <button
-              type="button"
-              onClick={() => {
-                setUtrWarningOpen(false)
-                runInvoiceGeneration()
-              }}
-              className="mt-5 w-full rounded-xl bg-[#16A34A] py-3 text-[16px] font-semibold text-white"
-            >
-              Accept
-            </button>
-          </div>
-        </div>
+        <Modal
+          size="sm"
+          labelledBy="ts-utr-title"
+          title="Before you invoice"
+          tile={<IconTile tone="amber" size="sm"><WarnIcon /></IconTile>}
+          footer={
+            <>
+              <PuButton onClick={() => setUtrWarningOpen(false)}>Back</PuButton>
+              <PuButton
+                variant="green"
+                onClick={() => {
+                  setUtrWarningOpen(false)
+                  runInvoiceGeneration()
+                }}
+              >
+                Accept
+              </PuButton>
+            </>
+          }
+        >
+          <p className="pu-sub" style={{ fontSize: 14 }}>
+            The UTR number is blank. Ask an admin to add it on Edit user so invoices are paid promptly.
+          </p>
+        </Modal>
       ) : null}
 
       {invoiceHtml ? (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-sm rounded-2xl bg-white p-6 text-center">
-            <div className="flex justify-end">
-              <button
-                type="button"
-                onClick={() => {
-                  setInvoiceHtml(null)
-                  setInvoicePdf(null)
-                }}
-                className="text-[15px] font-medium text-[var(--blue)]"
-              >
-                Done
-              </button>
-            </div>
-            <p className="mt-2 text-[40px] leading-none text-[#16A34A]">✓</p>
-            <p className="mt-4 text-[20px] font-semibold">Invoice generated successfully</p>
-            <button
-              type="button"
+        <Modal
+          size="sm"
+          labelledBy="ts-invoice-done-title"
+          title="Invoice generated successfully"
+          tile={<IconTile tone="green" size="sm"><CheckCircleIcon /></IconTile>}
+          headerEnd={
+            <PuButton
+              size="sm"
+              onClick={() => {
+                setInvoiceHtml(null)
+                setInvoicePdf(null)
+              }}
+            >
+              Done
+            </PuButton>
+          }
+          footer={
+            <PuButton
+              variant="green"
+              block
               onClick={() => {
                 if (invoicePdf) {
                   void shareTimesheetPdf(
@@ -1291,27 +1355,27 @@ export function TimesheetPeriodPage({
                 }
                 printTimesheetInvoice(invoiceHtml)
               }}
-              className="mt-6 w-full rounded-xl bg-[#16A34A] py-3.5 text-[16px] font-semibold text-white"
             >
               Share invoice
-            </button>
-          </div>
-        </div>
+            </PuButton>
+          }
+        >
+        </Modal>
       ) : null}
-    </div>
+    </>
   )
 }
 
 function ReviewStatusCapsule({ signed }: { signed: boolean }) {
-  return signed ? (
-    <span className="mt-2 inline-flex rounded-full bg-[#34C759]/15 px-2 py-0.5 text-[12px] font-semibold text-[#34C759]">
-      Operative signed
-    </span>
-  ) : (
-    <span className="mt-2 inline-flex rounded-full bg-[#FF9500]/15 px-2 py-0.5 text-[12px] font-semibold text-[#FF9500]">
-      Awaiting operative signature
-    </span>
-  )
+  return signed ? <Chip tone="green">Operative signed</Chip> : <Chip tone="amber">Awaiting operative signature</Chip>
+}
+
+/** Chip colour for a review decision (display only; the label is `decisionLabel`). */
+function decisionTone(decision: TimesheetManagerDecision): 'green' | 'red' | 'blue' | 'amber' {
+  if (decision === 'approved') return 'green'
+  if (decision === 'declined') return 'red'
+  if (decision === 'edited') return 'blue'
+  return 'amber'
 }
 
 function AdjustmentSummaryCard({
@@ -1322,30 +1386,31 @@ function AdjustmentSummaryCard({
   rows: ReturnType<typeof managerAdjustmentRows>
 }) {
   return (
-    <section className="rounded-[14px] border border-[#007AFF]/20 bg-[#007AFF]/[0.06] p-3.5">
-      <p className="text-[17px] font-semibold">Line manager adjustments</p>
-      <p className="mt-1 text-[12px] text-[var(--ink3)]">
-        {managerName} reviewed your timesheet. Struck-through amounts are what you submitted; coloured amounts are what
-        will be paid.
-      </p>
-      <ul className="mt-3 space-y-2">
+    <Card
+      title="Line manager adjustments"
+      subtitle={`${managerName} reviewed your timesheet. Struck-through amounts are what you submitted; coloured amounts are what will be paid.`}
+      icon={<IconTile tone="blue" size="sm"><InfoIcon /></IconTile>}
+    >
+      <div className="pu-list">
         {rows.map((row) => (
-          <li key={`${row.title}-${row.decision}`} className="flex items-start gap-2">
-            <span
-              className="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase"
-              style={{ color: decisionTint(row.decision), background: `${decisionTint(row.decision)}24` }}
-            >
-              {decisionLabel(row.decision)}
+          <div key={`${row.title}-${row.decision}`} className="pu-item">
+            <Chip tone={decisionTone(row.decision)}>{decisionLabel(row.decision)}</Chip>
+            <span className="grow">
+              <b>{row.title}</b>
+              {row.detail ? <span className="pu-sub">{row.detail}</span> : null}
             </span>
-            <div>
-              <p className="text-[15px] font-semibold">{row.title}</p>
-              {row.detail ? <p className="text-[12px] text-[var(--ink3)]">{row.detail}</p> : null}
-            </div>
-          </li>
+          </div>
         ))}
-      </ul>
-    </section>
+      </div>
+    </Card>
   )
+}
+
+const DECISION_INK: Record<string, string> = {
+  approved: 'var(--pu-c-green-ink)',
+  declined: 'var(--pu-c-red-ink)',
+  edited: 'var(--pu-blue)',
+  pending: 'var(--pu-c-amber-ink)',
 }
 
 function AdjustedAmountText({
@@ -1372,17 +1437,18 @@ function AdjustedAmountText({
     })
   ) {
     return (
-      <div className="text-right">
-        <p className={`text-[12px] text-[var(--ink3)] ${decision === 'declined' || decision === 'edited' ? 'line-through' : ''}`}>
+      <span style={{ display: 'block', textAlign: 'right' }}>
+        <span
+          className="pu-sub"
+          style={{ textDecoration: decision === 'declined' || decision === 'edited' ? 'line-through' : undefined }}
+        >
           {money(original, currency)}
-        </p>
-        <p className="text-[15px] font-bold" style={{ color: decisionTint(decision) }}>
-          {money(effective, currency)}
-        </p>
-      </div>
+        </span>
+        <b style={{ color: DECISION_INK[decision] ?? 'inherit' }}>{money(effective, currency)}</b>
+      </span>
     )
   }
-  return <p className="text-[15px] font-bold">{money(original, currency)}</p>
+  return <b>{money(original, currency)}</b>
 }
 
 /** iOS managerExtraRow while canReview: declined is strikethrough original only, no £0. */
@@ -1398,23 +1464,23 @@ function LiveReviewExtraAmount({
   const currency = useOrganizationCurrency()
   if (decision === 'edited' && revisedAmount != null && Math.abs(revisedAmount - amount) >= 0.01) {
     return (
-      <div className="text-right">
-        <p className="text-[12px] text-[var(--ink3)] line-through">{money(amount, currency)}</p>
-        <p className="text-[15px] font-bold text-[#007AFF]">{money(revisedAmount, currency)}</p>
-      </div>
+      <span style={{ display: 'block' }}>
+        <span className="pu-sub" style={{ textDecoration: 'line-through' }}>{money(amount, currency)}</span>
+        <b style={{ color: 'var(--pu-blue)' }}>{money(revisedAmount, currency)}</b>
+      </span>
     )
   }
   if (decision === 'declined') {
-    return <p className="text-[15px] font-bold text-[var(--ink3)] line-through">{money(amount, currency)}</p>
+    return <b style={{ color: 'var(--pu-muted)', textDecoration: 'line-through' }}>{money(amount, currency)}</b>
   }
-  return <p className="text-[15px] font-bold">{money(amount, currency)}</p>
+  return <b>{money(amount, currency)}</b>
 }
 
 function Row({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
   return (
-    <div className="flex justify-between text-[15px]">
-      <span className={strong ? 'font-semibold' : ''}>{label}</span>
-      <span className={strong ? 'font-semibold' : ''}>{value}</span>
+    <div className="r" style={strong ? { fontWeight: 600 } : undefined}>
+      <span>{label}</span>
+      <span>{value}</span>
     </div>
   )
 }
@@ -1445,24 +1511,37 @@ function PayrollLine({
   const orange = line.isPayeDay || (line.dayRate <= 0 && !line.hourlyRate)
   // `overlappingBookingIds`: still paid, shown amber for the person and their line manager.
   const overlapping = line.isOverlapping === true
+  const strike = removed ? { textDecoration: 'line-through' as const } : undefined
   return (
-    <li
-      className={`flex gap-3 px-4 py-3 ${removed ? 'opacity-55' : ''} ${overlapping ? 'border-l-4 border-amber-400 bg-amber-50' : ''}`}
-    >
-      <div className="min-w-0 flex-1">
-        <p className={`text-[15px] font-bold ${removed ? 'line-through' : ''}`}>{abbreviatedDate(line.date, timeZone)}</p>
-        <p className={`text-[13px] text-[var(--ink3)] ${removed ? 'line-through' : ''}`}>
-          {line.jobNumber} · {line.projectName}
-        </p>
+    <tr className={[overlapping ? 'overlap' : '', removed ? 'removed' : ''].join(' ').trim() || undefined}>
+      <td style={{ whiteSpace: 'nowrap' }}>
+        <b style={strike}>{abbreviatedDate(line.date, timeZone)}</b>
+      </td>
+      <td>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+          <span style={strike}>
+            {line.jobNumber} · {line.projectName}
+          </span>
+          {line.isOvertimeLine ? <Chip tone="amber">Overtime</Chip> : null}
+        </span>
         {/\d{1,2}:\d{2}/.test(line.details) ? (
-          <p className={`text-[12px] text-[var(--ink3)] ${removed ? 'line-through' : ''}`}>{line.details}</p>
+          <span className="pu-sub" style={strike}>{line.details}</span>
         ) : null}
-        <p className={`text-[12px] font-medium ${orange ? 'text-orange-500' : ''} ${removed ? 'line-through' : ''}`}>
+        {overlapping ? (
+          <span style={{ display: 'block', marginTop: 6 }}>
+            <Note tone="amber">{OVERLAPPING_BOOKING_NOTE}</Note>
+          </span>
+        ) : null}
+      </td>
+      <td>
+        <span
+          className="pu-sub"
+          style={{ ...strike, color: orange ? 'var(--pu-c-amber-ink)' : undefined, fontWeight: orange ? 600 : undefined }}
+        >
           {timesheetHoursRateLine(line, currency)}
-        </p>
-        {overlapping ? <p className="text-[12px] font-semibold text-amber-700">{OVERLAPPING_BOOKING_NOTE}</p> : null}
-      </div>
-      <div className="text-right">
+        </span>
+      </td>
+      <td className="num">
         <AdjustedAmountText
           original={line.amount}
           effective={effective}
@@ -1471,24 +1550,32 @@ function PayrollLine({
           applyLiveReview={canReview}
         />
         {canReview ? <TickCross decision={decision} onApprove={onApprove} onDecline={onDecline} onEdit={onEdit} /> : null}
-      </div>
-    </li>
+      </td>
+    </tr>
   )
 }
 
 /** Approved annual leave on this period: no hours, no pay, no edit, never on the invoice. */
 function LeaveInfoLine({ leave, timeZone }: { leave: TimesheetLeaveLine; timeZone: string }) {
   return (
-    <li className="flex gap-3 bg-sky-50 px-4 py-3">
-      <div className="min-w-0 flex-1">
-        <p className="text-[15px] font-bold">{abbreviatedDate(dateFromDayKey(leave.dayKey, timeZone), timeZone)}</p>
-        <p className="text-[13px] font-medium text-sky-800">
-          {leave.label}
-          {leave.timeRange ? ` · ${leave.timeRange}` : ''}
-        </p>
-      </div>
-      <p className="self-center text-[12px] text-[var(--ink3)]">No hours or pay</p>
-    </li>
+    <tr className="leave">
+      <td style={{ whiteSpace: 'nowrap' }}>
+        <b>{abbreviatedDate(dateFromDayKey(leave.dayKey, timeZone), timeZone)}</b>
+      </td>
+      <td>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+          <span>
+            {leave.label}
+            {leave.timeRange ? ` · ${leave.timeRange}` : ''}
+          </span>
+          <Chip tone="blue">Leave</Chip>
+        </span>
+      </td>
+      <td>
+        <span className="pu-sub">No hours or pay</span>
+      </td>
+      <td className="num" />
+    </tr>
   )
 }
 
@@ -1506,45 +1593,44 @@ function TickCross({
   const selected = reviewSelection(decision)
   const approved = selected === 'approved' || selected === 'edited'
   const declined = selected === 'declined'
+  const base = { width: 34, height: 34, borderRadius: 9, border: 0, fontWeight: 700, fontSize: 13, cursor: 'pointer' }
   return (
-    <div className="mt-2 flex justify-end gap-2">
+    <span style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, marginTop: 8 }}>
       <button
         type="button"
         onClick={onApprove}
-        className={`flex h-[34px] w-[34px] items-center justify-center rounded-[9px] text-[13px] font-bold ${
-          approved
-            ? 'bg-[#34C759] text-white'
-            : declined
-              ? 'bg-[var(--soft2)] text-[#C7C7CC]'
-              : 'bg-[#34C759]/15 text-[#34C759] ring-1 ring-[#34C759]/25'
-        }`}
+        style={{
+          ...base,
+          background: approved ? '#12825A' : declined ? 'var(--pu-line-2)' : 'var(--pu-c-green-bg)',
+          color: approved ? '#fff' : declined ? 'var(--pu-muted)' : 'var(--pu-c-green-ink)',
+        }}
         aria-label="Approve"
+        aria-pressed={approved}
       >
         ✓
       </button>
       <button
         type="button"
         onClick={onDecline}
-        className={`flex h-[34px] w-[34px] items-center justify-center rounded-[9px] text-[13px] font-bold ${
-          declined
-            ? 'bg-[#FF3B30] text-white'
-            : approved
-              ? 'bg-[var(--soft2)] text-[#C7C7CC]'
-              : 'bg-[#FF3B30]/15 text-[#FF3B30] ring-1 ring-[#FF3B30]/25'
-        }`}
+        style={{
+          ...base,
+          background: declined ? '#C4242C' : approved ? 'var(--pu-line-2)' : 'var(--pu-c-red-bg)',
+          color: declined ? '#fff' : approved ? 'var(--pu-muted)' : 'var(--pu-c-red-ink)',
+        }}
         aria-label="Decline"
+        aria-pressed={declined}
       >
         ✕
       </button>
       <button
         type="button"
         onClick={onEdit}
-        className="flex h-[34px] w-[34px] items-center justify-center rounded-[9px] bg-[#007AFF]/12 text-[13px] text-[#007AFF] ring-1 ring-[#007AFF]/25"
+        style={{ ...base, background: 'var(--pu-c-blue-bg)', color: 'var(--pu-c-blue-ink)' }}
         aria-label="Edit"
       >
         ⚙
       </button>
-    </div>
+    </span>
   )
 }
 
@@ -1568,31 +1654,30 @@ function ExtraList({
   managerHasSigned: boolean
 }) {
   return (
-    <section className="rounded-2xl bg-white p-4 shadow-[0_1px_2px_rgba(0,0,0,0.10)]">
-      <p className="text-[17px] font-semibold">{title}</p>
-      <ul className="mt-2 space-y-3">
+    <Card title={title}>
+      <div className="pu-list">
         {items.map((item) => (
-          <li key={item.id} className={`flex justify-between gap-3 ${item.removed ? 'opacity-55' : ''}`}>
-            <div>
-              <p className={`font-semibold ${item.removed ? 'line-through' : ''}`}>{item.title}</p>
-              {item.jobNumber ? <p className="text-[12px] text-[var(--ink3)]">Job {item.jobNumber}</p> : null}
-              <p className="text-[12px] text-[var(--ink3)]">{item.details}</p>
+          <div key={item.id} className="pu-item" style={item.removed ? { opacity: 0.55 } : undefined}>
+            <span className="grow">
+              <b style={item.removed ? { textDecoration: 'line-through' } : undefined}>{item.title}</b>
+              {item.jobNumber ? <span className="pu-sub">Job {item.jobNumber}</span> : null}
+              <span className="pu-sub">{item.details}</span>
               {managerHasSigned && item.decision !== 'pending' ? (
-                <p className="text-[11px] font-bold uppercase" style={{ color: decisionTint(item.decision) }}>
-                  {decisionLabel(item.decision)}
-                </p>
+                <span style={{ display: 'inline-block', marginTop: 4 }}>
+                  <Chip tone={decisionTone(item.decision)}>{decisionLabel(item.decision)}</Chip>
+                </span>
               ) : null}
-            </div>
+            </span>
             <AdjustedAmountText
               original={item.original}
               effective={item.amount}
               decision={item.decision}
               managerHasSigned={managerHasSigned}
             />
-          </li>
+          </div>
         ))}
-      </ul>
-    </section>
+      </div>
+    </Card>
   )
 }
 
@@ -1619,118 +1704,120 @@ function ReviewExtras({
   return (
     <>
       {draft.expenseEntries.length > 0 ? (
-        <section className="rounded-2xl bg-white p-4 shadow-[0_1px_2px_rgba(0,0,0,0.10)]">
-          <p className="text-[17px] font-semibold">{canReview ? 'Expenses — review required' : 'Expenses'}</p>
-          {draft.expenseEntries.map((entry, index) => {
-            const effective = effectiveExpenseAmount(entry, !canReview, canReview)
-            const removed = entry.managerDecision === 'declined'
-            return (
-            <div key={entry.id} className={`mt-3 flex items-start justify-between gap-3 ${removed ? 'opacity-55' : ''}`}>
-              <div>
-                <p className={`font-semibold ${removed ? 'line-through' : ''}`}>{entry.title}</p>
-                <p className={`text-[12px] text-[var(--ink3)] ${removed ? 'line-through' : ''}`}>
-                  {abbreviatedDate(entry.date, timeZone)} · {entry.jobNumber}
-                </p>
-                {canReview ? (
-                  <LiveReviewExtraAmount
-                    amount={entry.amount}
-                    decision={entry.managerDecision}
-                    revisedAmount={entry.managerRevisedAmount}
-                  />
-                ) : (
-                  <AdjustedAmountText
-                    original={entry.amount}
-                    effective={effective}
-                    decision={entry.managerDecision}
-                    managerHasSigned
-                  />
-                )}
-              </div>
-              {canReview ? (
-                <TickCross
-                  decision={entry.managerDecision}
-                  onApprove={() => {
-                    const next = [...draft.expenseEntries]
-                    next[index] = { ...entry, managerDecision: 'approved', managerRevisedAmount: null }
-                    onSave({ ...draft, expenseEntries: next })
-                  }}
-                  onDecline={() => {
-                    const next = [...draft.expenseEntries]
-                    next[index] = { ...entry, managerDecision: 'declined', managerRevisedAmount: null }
-                    onSave({ ...draft, expenseEntries: next })
-                  }}
-                  onEdit={() =>
-                    onEditExtra(
-                      'expense',
-                      entry.id,
-                      entry.title,
-                      entry.amount,
-                      entry.managerRevisedAmount ?? entry.amount
-                    )
-                  }
-                />
-              ) : null}
-            </div>
-            )
-          })}
-        </section>
+        <Card title={canReview ? 'Expenses — review required' : 'Expenses'}>
+          <div className="pu-list">
+            {draft.expenseEntries.map((entry, index) => {
+              const effective = effectiveExpenseAmount(entry, !canReview, canReview)
+              const removed = entry.managerDecision === 'declined'
+              return (
+                <div key={entry.id} className="pu-item" style={{ alignItems: 'flex-start', opacity: removed ? 0.55 : undefined }}>
+                  <span className="grow">
+                    <b style={removed ? { textDecoration: 'line-through' } : undefined}>{entry.title}</b>
+                    <span className="pu-sub" style={removed ? { textDecoration: 'line-through' } : undefined}>
+                      {abbreviatedDate(entry.date, timeZone)} · {entry.jobNumber}
+                    </span>
+                    {canReview ? (
+                      <LiveReviewExtraAmount
+                        amount={entry.amount}
+                        decision={entry.managerDecision}
+                        revisedAmount={entry.managerRevisedAmount}
+                      />
+                    ) : (
+                      <AdjustedAmountText
+                        original={entry.amount}
+                        effective={effective}
+                        decision={entry.managerDecision}
+                        managerHasSigned
+                      />
+                    )}
+                  </span>
+                  {canReview ? (
+                    <TickCross
+                      decision={entry.managerDecision}
+                      onApprove={() => {
+                        const next = [...draft.expenseEntries]
+                        next[index] = { ...entry, managerDecision: 'approved', managerRevisedAmount: null }
+                        onSave({ ...draft, expenseEntries: next })
+                      }}
+                      onDecline={() => {
+                        const next = [...draft.expenseEntries]
+                        next[index] = { ...entry, managerDecision: 'declined', managerRevisedAmount: null }
+                        onSave({ ...draft, expenseEntries: next })
+                      }}
+                      onEdit={() =>
+                        onEditExtra(
+                          'expense',
+                          entry.id,
+                          entry.title,
+                          entry.amount,
+                          entry.managerRevisedAmount ?? entry.amount
+                        )
+                      }
+                    />
+                  ) : null}
+                </div>
+              )
+            })}
+          </div>
+        </Card>
       ) : null}
       {draft.priceWorkEntries.length > 0 ? (
-        <section className="rounded-2xl bg-white p-4 shadow-[0_1px_2px_rgba(0,0,0,0.10)]">
-          <p className="text-[17px] font-semibold">{canReview ? 'Price work — review required' : 'Price work'}</p>
-          {draft.priceWorkEntries.map((entry, index) => {
-            const effective = effectivePriceWorkAmount(entry, !canReview, canReview)
-            const removed = entry.managerDecision === 'declined'
-            return (
-            <div key={entry.id} className={`mt-3 flex items-start justify-between gap-3 ${removed ? 'opacity-55' : ''}`}>
-              <div>
-                <p className={`font-semibold ${removed ? 'line-through' : ''}`}>{entry.title}</p>
-                <p className={`text-[12px] text-[var(--ink3)] ${removed ? 'line-through' : ''}`}>
-                  Agreed with: {entry.agreedManagerName} · {abbreviatedDate(entry.startDate, timeZone)} · {priceWorkJobNumberText(entry.jobNumber)}
-                </p>
-                {canReview ? (
-                  <LiveReviewExtraAmount
-                    amount={entry.amount}
-                    decision={entry.managerDecision}
-                    revisedAmount={entry.managerRevisedAmount}
-                  />
-                ) : (
-                  <AdjustedAmountText
-                    original={entry.amount}
-                    effective={effective}
-                    decision={entry.managerDecision}
-                    managerHasSigned
-                  />
-                )}
-              </div>
-              {canReview ? (
-                <TickCross
-                  decision={entry.managerDecision}
-                  onApprove={() => {
-                    const next = [...draft.priceWorkEntries]
-                    next[index] = { ...entry, managerDecision: 'approved', managerRevisedAmount: null }
-                    onSave({ ...draft, priceWorkEntries: next })
-                  }}
-                  onDecline={() => {
-                    const next = [...draft.priceWorkEntries]
-                    next[index] = { ...entry, managerDecision: 'declined', managerRevisedAmount: null }
-                    onSave({ ...draft, priceWorkEntries: next })
-                  }}
-                  onEdit={() =>
-                    onEditExtra(
-                      'priceWork',
-                      entry.id,
-                      entry.title,
-                      entry.amount,
-                      entry.managerRevisedAmount ?? entry.amount
-                    )
-                  }
-                />
-              ) : null}
-            </div>
-            )
-          })}
-        </section>
+        <Card title={canReview ? 'Price work — review required' : 'Price work'}>
+          <div className="pu-list">
+            {draft.priceWorkEntries.map((entry, index) => {
+              const effective = effectivePriceWorkAmount(entry, !canReview, canReview)
+              const removed = entry.managerDecision === 'declined'
+              return (
+                <div key={entry.id} className="pu-item" style={{ alignItems: 'flex-start', opacity: removed ? 0.55 : undefined }}>
+                  <span className="grow">
+                    <b style={removed ? { textDecoration: 'line-through' } : undefined}>{entry.title}</b>
+                    <span className="pu-sub" style={removed ? { textDecoration: 'line-through' } : undefined}>
+                      Agreed with: {entry.agreedManagerName} · {abbreviatedDate(entry.startDate, timeZone)} · {priceWorkJobNumberText(entry.jobNumber)}
+                    </span>
+                    {canReview ? (
+                      <LiveReviewExtraAmount
+                        amount={entry.amount}
+                        decision={entry.managerDecision}
+                        revisedAmount={entry.managerRevisedAmount}
+                      />
+                    ) : (
+                      <AdjustedAmountText
+                        original={entry.amount}
+                        effective={effective}
+                        decision={entry.managerDecision}
+                        managerHasSigned
+                      />
+                    )}
+                  </span>
+                  {canReview ? (
+                    <TickCross
+                      decision={entry.managerDecision}
+                      onApprove={() => {
+                        const next = [...draft.priceWorkEntries]
+                        next[index] = { ...entry, managerDecision: 'approved', managerRevisedAmount: null }
+                        onSave({ ...draft, priceWorkEntries: next })
+                      }}
+                      onDecline={() => {
+                        const next = [...draft.priceWorkEntries]
+                        next[index] = { ...entry, managerDecision: 'declined', managerRevisedAmount: null }
+                        onSave({ ...draft, priceWorkEntries: next })
+                      }}
+                      onEdit={() =>
+                        onEditExtra(
+                          'priceWork',
+                          entry.id,
+                          entry.title,
+                          entry.amount,
+                          entry.managerRevisedAmount ?? entry.amount
+                        )
+                      }
+                    />
+                  ) : null}
+                </div>
+              )
+            })}
+          </div>
+        </Card>
       ) : null}
     </>
   )
@@ -1741,49 +1828,52 @@ function PaymentRunsBox({ invoicing }: { invoicing: OrgInvoicingSettings }) {
     if (invoicing.paymentDateMode === 'specific_dates') {
       const dates = invoicing.paymentDates || []
       if (index >= dates.length) return null
-      return `• Payout day ${dates[index]}`
+      return `Payout day ${dates[index]}`
     }
-    return `• Payout every ${capitalizeDay(invoicing.recurringPaymentDay)}`
+    return `Payout every ${capitalizeDay(invoicing.recurringPaymentDay)}`
   }
   return (
-    <section className="card p-4">
-      <p className="text-[17px] font-semibold">Payment runs &amp; timesheets</p>
-      {invoicing.paymentRunMode === 'date_ranges' ? (
-        invoicing.paymentRunDateRanges.map((range, index) => (
-          <div key={`${range.startDay}-${range.endDay}`} className="mt-1 text-[15px]">
-            <p>• Run: {range.startDay} - {range.endDay}</p>
-            {payout(index) ? <p>{payout(index)}</p> : null}
-          </div>
-        ))
-      ) : (
-        <div className="mt-1 text-[15px]">
-          <p>• {recurringRunDisplaySummary(invoicing)}</p>
-          {payout(0) ? <p>{payout(0)}</p> : null}
+    <Card title="Payment runs & timesheets">
+      <div className="pu-card-b">
+        <div className="pu-runs">
+          {invoicing.paymentRunMode === 'date_ranges' ? (
+            invoicing.paymentRunDateRanges.map((range, index) => (
+              <div key={`${range.startDay}-${range.endDay}`}>
+                <span>Run</span>
+                <b>
+                  {range.startDay} - {range.endDay}
+                </b>
+                {payout(index) ? <span>{payout(index)}</span> : null}
+              </div>
+            ))
+          ) : (
+            <div>
+              <b>{recurringRunDisplaySummary(invoicing)}</b>
+              {payout(0) ? <span>{payout(0)}</span> : null}
+            </div>
+          )}
         </div>
-      )}
-      {invoicing.noteToUsers.trim() ? (
-        <>
-          <p className="mt-3 text-[15px] font-semibold">Note</p>
-          <p className="text-[15px] text-[var(--ink3)]">{invoicing.noteToUsers}</p>
-        </>
-      ) : null}
-    </section>
+        {invoicing.noteToUsers.trim() ? (
+          <Note tone="info">
+            <b>Note</b>
+            <br />
+            {invoicing.noteToUsers}
+          </Note>
+        ) : null}
+      </div>
+    </Card>
   )
 }
 
 function SignedBlock({ base64, caption }: { base64?: string | null; caption: string }) {
   const src = signaturePngSrc(base64)
   return (
-    <div className="space-y-2">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       {src ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={src}
-          alt="Signature"
-          className="h-[88px] w-full rounded-xl border border-slate-200 bg-white object-contain"
-        />
+        <img src={src} alt="Signature" className="pu-sigimg" />
       ) : null}
-      <p className="text-center text-[13px] font-semibold text-green-700">{caption}</p>
+      <Note tone="green" icon={<CheckCircleIcon />}>{caption}</Note>
     </div>
   )
 }
@@ -1799,9 +1889,12 @@ function SignSheet({
   confirmTitle,
   managerMode,
   busy,
+  summaryRows: _summaryRows,
   onCancel,
   onConfirm,
 }: {
+  /** The timesheet's own line rows, read-only (spec §4.6). */
+  summaryRows?: ReactNode
   periodTitle: string
   hoursAmount: number
   priceWorkAmount: number

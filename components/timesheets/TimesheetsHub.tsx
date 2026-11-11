@@ -79,6 +79,20 @@ import type { User } from '@/types'
 import { OVERTIME_HUB_LABEL, overtimeHubAccess } from '@/lib/canonical'
 import { rulebookPerson, rulebookRoster } from '@/lib/staff/rulebookPeople'
 import { OVERTIME_PATH } from '@/components/overtime/OvertimeScreen'
+import {
+  ActionCard,
+  Card,
+  Chip,
+  DataTable,
+  EmptyState,
+  IconTile,
+  Note,
+  PageBand,
+  PageShell,
+  PuButton,
+  SegmentedTabs,
+  StatRow,
+} from '@/components/ui/page'
 
 const PAYE_DISABLED_BODY =
   'My Timesheets is for self-employed pay. PAYE accounts keep the current pay run until it is paid, then schedule hours no longer fill the next timesheet. Switch the person back to self-employed if they need timesheets again.'
@@ -231,6 +245,8 @@ export function TimesheetsHub() {
   ])
 
   const runCopy = useMemo(() => currentPaymentRunCopy(invoicing, new Date(), timeZone), [invoicing, timeZone])
+  // The User timesheets tile's own counts (loaded by the tile as before), repeated display-only in the band.
+  const [hubStats, setHubStats] = useState<{ awaiting: number; signed: number; exported: number } | null>(null)
   const currentPeriod = useMemo(
     () => computeInvoicingPeriod(new Date(), invoicing, timeZone),
     [invoicing, timeZone]
@@ -266,10 +282,15 @@ export function TimesheetsHub() {
   if (legacyRedirect) return <p className="muted">Opening timesheets…</p>
   if (!canOpen) {
     return (
-      <div className="empty card pad" data-hue="ts">
-        <h3>Timesheets unavailable</h3>
-        <p>No timesheet section is available for this account.</p>
-      </div>
+      <PageShell>
+        <Card>
+          <EmptyState
+            tile={<IconTile tone="slate" size="lg"><ClockIcon /></IconTile>}
+            title="Timesheets unavailable"
+            description="No timesheet section is available for this account."
+          />
+        </Card>
+      </PageShell>
     )
   }
 
@@ -305,15 +326,17 @@ export function TimesheetsHub() {
       (period) => timesheetDayKeysForPeriod(subject, period.start, period.end, timeZone).length > 0
     )
     if (!showMine && minePastPeriods.length === 0 && !periodParam) return null
+    const mineBackHref = timesheetNestedParentHref({ surface: 'mine', hasDetail: Boolean(periodParam) })
     return (
-      <div className="space-y-5 pb-10">
-        <TimesheetsNavBar
-          href={timesheetNestedParentHref({ surface: 'mine', hasDetail: Boolean(periodParam) })}
-          title={periodParam ? 'Timesheet' : 'My Timesheets'}
-          backLabel={periodParam ? 'My Timesheets' : undefined}
-        />
+      <PageShell className="pb-10">
         {periodParam ? (
-          <TimesheetPeriodPage {...periodPageProps} subjectUser={subject} mode="mine" />
+          <TimesheetPeriodPage
+            {...periodPageProps}
+            subjectUser={subject}
+            mode="mine"
+            heading="Timesheet"
+            back={{ label: 'My Timesheets', onClick: () => router.replace(mineBackHref) }}
+          />
         ) : (
           <MineTimesheetsList
             organizationId={organization?.id}
@@ -326,7 +349,7 @@ export function TimesheetsHub() {
             timeZone={timeZone}
           />
         )}
-      </div>
+      </PageShell>
     )
   }
 
@@ -342,38 +365,39 @@ export function TimesheetsHub() {
       userParam && openable.includes(userParam)
         ? users.find((row) => row.id === userParam) ?? (user && user.id === userParam ? user : undefined)
         : undefined
+    const teamTitle = hasAdminAccess(user) ? 'User Timesheets' : 'Operative Timesheets'
+    const teamBackHref = timesheetNestedParentHref({ surface: 'team', hasDetail: Boolean(userParam), tab })
     return (
-      <div className="space-y-5 pb-10">
-        <TimesheetsNavBar
-          href={timesheetNestedParentHref({ surface: 'team', hasDetail: Boolean(userParam), tab })}
-          title={selectedUser ? 'Review Timesheet' : hasAdminAccess(user) ? 'User Timesheets' : 'Operative Timesheets'}
-          backLabel={
-            userParam ? (hasAdminAccess(user) ? 'User Timesheets' : 'Operative Timesheets') : undefined
-          }
-        />
+      <PageShell className="pb-10">
         {selectedUser ? (
-          <TimesheetPeriodPage {...periodPageProps} subjectUser={selectedUser} mode="review" />
+          <TimesheetPeriodPage
+            {...periodPageProps}
+            subjectUser={selectedUser}
+            mode="review"
+            heading="Review Timesheet"
+            back={{ label: teamTitle, onClick: () => router.replace(teamBackHref) }}
+          />
         ) : (
           <>
-            <p className="muted small">Current pay run period · {runCopy.periodLine}</p>
-            <div className="seg">
-              {TEAM_TABS.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  className={tab === item.id ? 'on' : ''}
-                  onClick={() => router.replace(timesheetsTeamHref({ tab: item.id }))}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
-            <div className="banner" data-hue="warn">
-              <div className="ico-chip">
-                <ClockIcon className="h-[18px] w-[18px]" />
-              </div>
-              <div className="grow small">{TEAM_TABS.find((item) => item.id === tab)?.help}</div>
-            </div>
+            {userParam ? (
+              // A `?user=` this viewer cannot open: the page shows the list with the same back control as before.
+              <PageBand
+                back={{ label: teamTitle, onClick: () => router.replace(teamBackHref) }}
+                eyebrow={`${teamTitle} · Current pay run period`}
+                title={runCopy.periodLine}
+              />
+            ) : (
+              <PageBand eyebrow={`${teamTitle} · Current pay run period`} title={runCopy.periodLine} />
+            )}
+            <SegmentedTabs
+              ariaLabel={teamTitle}
+              items={TEAM_TABS.map((item) => ({ id: item.id, label: item.label }))}
+              value={tab}
+              onChange={(id) => router.replace(timesheetsTeamHref({ tab: id }))}
+            />
+            <Note tone={tab === 'exported' ? 'info' : 'amber'} icon={<ClockIcon />}>
+              {TEAM_TABS.find((item) => item.id === tab)?.help}
+            </Note>
             <TimesheetsScreen
               bookings={bookings}
               managerSiteBookings={managerSiteBookings}
@@ -397,90 +421,63 @@ export function TimesheetsHub() {
             />
           </>
         )}
-      </div>
+      </PageShell>
     )
   }
 
-  return (
-    <div className="stack" data-hue="ts">
-      <div className="phead" data-hue="ts">
-        <div className="badge-ico">
-          <ClockIcon className="h-6 w-6" />
-        </div>
-        <div>
-          <h1>Timesheets</h1>
-          <div className="sub">Sign your hours and sign off your team</div>
-        </div>
-      </div>
+  const hubStatItems = showTeam && hubStats
+    ? [
+        { value: hubStats.awaiting, label: 'Awaiting sign-off', tone: 'amber' as const },
+        { value: hubStats.signed, label: 'Signed off' },
+        { value: hubStats.exported, label: 'Exported' },
+      ]
+    : []
 
-      <section className="hero" data-hue="ts">
-        <div className="relative z-[1]">
-          <p className="eb">Current payment run</p>
-          <div className="big">{runCopy.periodLine}</div>
-          <p className="mt-1.5 opacity-85">{runCopy.paidLine}</p>
-          {runCopy.note ? <p className="mt-3 max-w-2xl text-[13px] opacity-80">{runCopy.note}</p> : null}
-        </div>
-      </section>
+  return (
+    <PageShell>
+      <PageBand
+        eyebrow="Timesheets · Current payment run"
+        title={runCopy.periodLine}
+        subtitle={`${runCopy.paidLine} · Sign your hours and sign off your team`}
+      >
+        <StatRow items={hubStatItems} />
+        {runCopy.note ? <Note tone="dark">{runCopy.note}</Note> : null}
+      </PageBand>
 
       {showDisabled && !showMine && !showTeam && !overtimeAccess.showButton ? (
         <DisabledCard />
       ) : (
-        <div className="grid g2">
+        <div className="pu-gridAuto">
           {showMine ? (
-            <button
-              type="button"
-              className="card pad click"
-              data-hue="blue"
+            <ActionCard
+              tile={<IconTile tone="blue"><ClockIcon /></IconTile>}
+              title="My timesheets"
+              description={
+                showTeam
+                  ? 'Your own hours, expenses and price work'
+                  : 'Current pay run, pending sign-off, and past timesheets.'
+              }
               onClick={() => router.push(timesheetsMineHref())}
-              style={{ border: 0, textAlign: 'left' }}
             >
-              <div className="row">
-                <span className="ico-chip lg">
-                  <ClockIcon className="h-7 w-7" />
-                </span>
-                <span className="grow">
-                  <b style={{ fontFamily: 'var(--head)', fontSize: 20 }}>My timesheets</b>
-                  <div className="muted">
-                    {showTeam
-                      ? 'Your own hours, expenses and price work'
-                      : 'Current pay run, pending sign-off, and past timesheets.'}
-                  </div>
-                </span>
-              </div>
-              <div className="row" style={{ marginTop: 18, gap: 10 }}>
-                <span className="pill" data-hue="blue">
-                  Current pay run
-                </span>
-                <span className="pill" data-hue="ts">
-                  {runCopy.periodLine}
-                </span>
-              </div>
-            </button>
+              <span style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <Chip tone="blue">Current pay run</Chip>
+                <Chip tone="slate">{runCopy.periodLine}</Chip>
+              </span>
+            </ActionCard>
           ) : null}
           {overtimeAccess.showButton ? (
-            <button
-              type="button"
-              className="card pad click"
-              data-hue="ts"
+            <ActionCard
+              tile={<IconTile tone="amber"><CalendarDaysIcon /></IconTile>}
+              title={OVERTIME_HUB_LABEL}
+              description={
+                overtimeAccess.mine && overtimeAccess.users
+                  ? 'Your PAYE overtime, and your team’s'
+                  : overtimeAccess.mine
+                    ? 'Your PAYE overtime'
+                    : 'Your team’s overtime, expenses and price work'
+              }
               onClick={() => router.push(OVERTIME_PATH)}
-              style={{ border: 0, textAlign: 'left' }}
-            >
-              <div className="row">
-                <span className="ico-chip lg">
-                  <CalendarDaysIcon className="h-7 w-7" />
-                </span>
-                <span className="grow">
-                  <b style={{ fontFamily: 'var(--head)', fontSize: 20 }}>{OVERTIME_HUB_LABEL}</b>
-                  <div className="muted">
-                    {overtimeAccess.mine && overtimeAccess.users
-                      ? 'Your PAYE overtime, and your team’s'
-                      : overtimeAccess.mine
-                        ? 'Your PAYE overtime'
-                        : 'Your team’s overtime, expenses and price work'}
-                  </div>
-                </span>
-              </div>
-            </button>
+            />
           ) : null}
           {showTeam && user ? (
             <ManagerTimesheetsTile
@@ -491,12 +488,13 @@ export function TimesheetsHub() {
               periodEnd={currentPeriod.end}
               invoicing={invoicing}
               timeZone={timeZone}
+              onStats={setHubStats}
               onClick={() => router.push(timesheetsTeamHref({ tab: 'awaiting' }))}
             />
           ) : null}
         </div>
       )}
-    </div>
+    </PageShell>
   )
 }
 
@@ -615,122 +613,101 @@ function MineTimesheetsList({
   const pendingKeys = new Set(pending.map((period) => periodKey(period)))
   const pastVisible = discoveredPast.filter((period) => !pendingKeys.has(periodKey(period)))
 
+  const openCurrent = () =>
+    router.push(timesheetsMineHref(periodStartKey(currentPeriod.start, timeZone), dayKey(currentPeriod.end, timeZone)))
+  const openPeriod = (period: { start: Date; end: Date }) =>
+    router.push(timesheetsMineHref(periodStartKey(period.start, timeZone), dayKey(period.end, timeZone)))
+
   return (
-    <div className="space-y-4">
-      <HubCard
-        icon={<CalendarDaysIcon className="h-6 w-6" />}
-        title="Current pay run period"
-        subtitle={runCopyPeriodLine}
-        detail="Review bookings, add extras, and sign your timesheet."
-        tint="text-[var(--blue)] bg-[var(--blue-t)]"
-        onClick={() =>
-          router.push(
-            timesheetsMineHref(periodStartKey(currentPeriod.start, timeZone), dayKey(currentPeriod.end, timeZone))
-          )
+    <>
+      <PageBand
+        eyebrow="My Timesheets · Current pay run period"
+        title={runCopyPeriodLine}
+        subtitle="Review bookings, add extras, and sign your timesheet."
+        actions={
+          <PuButton variant="white" onClick={openCurrent}>
+            Open current timesheet
+          </PuButton>
         }
       />
       {pending.length > 0 ? (
-        <div className="space-y-2">
-          <p className="px-1 text-[11px] font-bold uppercase tracking-[0.4px] text-[var(--ink3)]">Pending timesheets</p>
-          {pending.map((period) => (
-            <HubCard
-              key={`pending-${periodKey(period)}`}
-              icon={<ClockIcon className="h-6 w-6" />}
-              title={formatPaymentPeriodLine(period.start, period.end, timeZone)}
-              subtitle="Timesheet pending manager signature"
-              detail="You signed — waiting for your line manager to counter-sign."
-              tint="text-amber-600 bg-amber-50"
-              onClick={() =>
-                router.push(timesheetsMineHref(periodStartKey(period.start, timeZone), dayKey(period.end, timeZone)))
-              }
-            />
-          ))}
-        </div>
+        <Card title="Pending timesheets" subtitle="You signed — waiting for your line manager to counter-sign.">
+          <DataTable
+            columns={[
+              { key: 'period', label: 'Pay run period' },
+              { key: 'status', label: 'Status' },
+              { key: 'open', label: 'Open', srOnly: true },
+            ]}
+          >
+            {pending.map((period) => (
+              <tr key={`pending-${periodKey(period)}`} className="click" onClick={() => openPeriod(period)}>
+                <td>
+                  <b>{formatPaymentPeriodLine(period.start, period.end, timeZone)}</b>
+                </td>
+                <td>
+                  <Chip tone="amber">Timesheet pending manager signature</Chip>
+                </td>
+                <td className="actions">
+                  <PuButton
+                    size="sm"
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      openPeriod(period)
+                    }}
+                  >
+                    View breakdown
+                  </PuButton>
+                </td>
+              </tr>
+            ))}
+          </DataTable>
+        </Card>
       ) : null}
       {pastVisible.length > 0 ? (
-        <div className="space-y-2">
-          <p className="px-1 text-[11px] font-bold uppercase tracking-[0.4px] text-[var(--ink3)]">Past timesheets</p>
-          {pastVisible.map((period) => {
-            const draft = drafts.get(periodKey(period))
-            return (
-              <HubCard
-                key={periodKey(period)}
-                icon={<ClockIcon className="h-6 w-6" />}
-                title={formatPaymentPeriodLine(period.start, period.end, timeZone)}
-                subtitle={pastSubtitle(draft, subject, users)}
-                detail="View breakdown, signatures, and generate invoice again."
-                tint="text-slate-500 bg-slate-100"
-                onClick={() =>
-                  router.push(timesheetsMineHref(periodStartKey(period.start, timeZone), dayKey(period.end, timeZone)))
-                }
-              />
-            )
-          })}
-        </div>
+        <Card title="Past timesheets" subtitle="View breakdown, signatures, and generate invoice again.">
+          <DataTable
+            columns={[
+              { key: 'period', label: 'Pay run period' },
+              { key: 'status', label: 'Status' },
+              { key: 'open', label: 'Open', srOnly: true },
+            ]}
+          >
+            {pastVisible.map((period) => {
+              const status = pastSubtitle(drafts.get(periodKey(period)), subject, users)
+              return (
+                <tr key={periodKey(period)} className="click" onClick={() => openPeriod(period)}>
+                  <td>
+                    <b>{formatPaymentPeriodLine(period.start, period.end, timeZone)}</b>
+                  </td>
+                  <td>
+                    <Chip tone={pastStatusTone(status)}>{status}</Chip>
+                  </td>
+                  <td className="actions">
+                    <PuButton
+                      size="sm"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        openPeriod(period)
+                      }}
+                    >
+                      View breakdown
+                    </PuButton>
+                  </td>
+                </tr>
+              )
+            })}
+          </DataTable>
+        </Card>
       ) : null}
-    </div>
+    </>
   )
 }
 
-function TimesheetsNavBar({
-  href,
-  title,
-  backLabel,
-}: {
-  href: string
-  title: string
-  backLabel?: string
-}) {
-  const router = useRouter()
-  return (
-    <div className="phead" data-hue="ts">
-      {backLabel ? (
-        <button
-          type="button"
-          onClick={() => {
-            router.replace(href)
-          }}
-          className="btn sm ghost"
-        >
-          {backLabel}
-        </button>
-      ) : null}
-      <div>
-        <h1>{title}</h1>
-      </div>
-    </div>
-  )
-}
-
-function HubCard({
-  icon,
-  title,
-  subtitle,
-  detail,
-  tint: _tint,
-  onClick,
-}: {
-  icon: ReactNode
-  title: string
-  subtitle: string
-  detail: string
-  tint: string
-  onClick: () => void
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="ritem"
-    >
-      <span className="ico-chip" data-hue="ts">{icon}</span>
-      <div className="min-w-0">
-        <p className="text-[17px] font-semibold">{title}</p>
-        <p className="mt-0.5 text-[14px] font-semibold text-[var(--ts)]">{subtitle}</p>
-        <p className="mt-1 text-[13px] text-[var(--ink3)]">{detail}</p>
-      </div>
-    </button>
-  )
+/** Chip colour for a status `pastSubtitle` already chose (display only). */
+function pastStatusTone(status: string): 'green' | 'amber' | 'slate' {
+  if (status === 'Signed off') return 'green'
+  if (status === 'Exported' || status === 'Previous period') return 'slate'
+  return 'amber'
 }
 
 function ManagerTimesheetsTile({
@@ -741,6 +718,7 @@ function ManagerTimesheetsTile({
   periodEnd,
   invoicing,
   timeZone,
+  onStats,
   onClick,
 }: {
   user: User
@@ -750,6 +728,8 @@ function ManagerTimesheetsTile({
   periodEnd: Date
   invoicing: OrgInvoicingSettings
   timeZone: string
+  /** Reports the counts this tile loads so the hub band can repeat them (display only). */
+  onStats?: (stats: { awaiting: number; signed: number; exported: number } | null) => void
   onClick: () => void
 }) {
   const [stats, setStats] = useState<{ awaiting: number; signed: number; exported: number } | null>(null)
@@ -806,52 +786,45 @@ function ManagerTimesheetsTile({
     }
   }, [organizationId, users.length, currentRosterIds, currentGroups, exportedRoster, periodStart, periodEnd, timeZone])
 
+  useEffect(() => {
+    onStats?.(stats)
+  }, [stats, onStats])
+
   return (
-    <button type="button" className="card pad click" data-hue="ts" onClick={onClick} style={{ border: 0, textAlign: 'left' }}>
-      <div className="row">
-        <span className="ico-chip lg">
-          <UserGroupIcon className="h-7 w-7" />
+    <ActionCard
+      tile={<IconTile tone="purple"><UserGroupIcon /></IconTile>}
+      title={hasAdminAccess(user) ? 'User timesheets' : 'Operative timesheets'}
+      description={
+        hasAdminAccess(user)
+          ? 'Review, sign off and export company timesheets'
+          : "Review, sign off and export your team's sheets"
+      }
+      onClick={onClick}
+    >
+      <span className="pu-mini">
+        <span className="amber" style={{ display: 'flex', flexDirection: 'column' }}>
+          <b>{stats?.awaiting ?? '–'}</b>
+          <span>Awaiting sign-off</span>
         </span>
-        <span className="grow">
-          <b style={{ fontFamily: 'var(--head)', fontSize: 20 }}>
-            {hasAdminAccess(user) ? 'User timesheets' : 'Operative timesheets'}
-          </b>
-          <div className="muted">
-            {hasAdminAccess(user)
-              ? 'Review, sign off and export company timesheets'
-              : "Review, sign off and export your team's sheets"}
-          </div>
+        <span className="green" style={{ display: 'flex', flexDirection: 'column' }}>
+          <b>{stats?.signed ?? '–'}</b>
+          <span>Signed off</span>
         </span>
-      </div>
-      <div className="grid g3" style={{ marginTop: 18, gap: 10 }}>
-        <div data-hue="warn" style={{ background: 'var(--ht)', borderRadius: 14, padding: 10, textAlign: 'center' }}>
-          <b style={{ fontFamily: 'var(--head)', fontSize: 22, color: 'var(--h)' }}>{stats?.awaiting ?? '–'}</b>
-          <div className="xs" style={{ fontWeight: 600, color: 'var(--h)' }}>
-            Awaiting sign-off
-          </div>
-        </div>
-        <div data-hue="green" style={{ background: 'var(--ht)', borderRadius: 14, padding: 10, textAlign: 'center' }}>
-          <b style={{ fontFamily: 'var(--head)', fontSize: 22, color: 'var(--h)' }}>{stats?.signed ?? '–'}</b>
-          <div className="xs" style={{ fontWeight: 600, color: 'var(--h)' }}>
-            Signed off
-          </div>
-        </div>
-        <div data-hue="lib" style={{ background: 'var(--ht)', borderRadius: 14, padding: 10, textAlign: 'center' }}>
-          <b style={{ fontFamily: 'var(--head)', fontSize: 22, color: 'var(--h)' }}>{stats?.exported ?? '–'}</b>
-          <div className="xs" style={{ fontWeight: 600, color: 'var(--h)' }}>
-            Exported
-          </div>
-        </div>
-      </div>
-    </button>
+        <span className="slate" style={{ display: 'flex', flexDirection: 'column' }}>
+          <b>{stats?.exported ?? '–'}</b>
+          <span>Exported</span>
+        </span>
+      </span>
+    </ActionCard>
   )
 }
 
 function DisabledCard() {
   return (
-    <div className="card pad" data-hue="ts">
-      <h2 className="h2">Timesheets follow employment type</h2>
-      <p className="muted" style={{ marginTop: 8 }}>{PAYE_DISABLED_BODY}</p>
-    </div>
+    <Card title="Timesheets follow employment type">
+      <div className="pu-card-b">
+        <p className="pu-sub" style={{ fontSize: 13.5 }}>{PAYE_DISABLED_BODY}</p>
+      </div>
+    </Card>
   )
 }
