@@ -1,7 +1,7 @@
 {
-  "rulebookVersion": "1.37.0",
-  "rulebookSha256": "1d54c2d23e02d11f369c27d851ec6ec0d1012d745d68dadd49275c85cced5640",
-  "bundleSha256": "f2b163368a252f500a6e1bb9e6f1028ed61ad7f532e76dc7cefd54ec7724a9da",
+  "rulebookVersion": "1.39.0",
+  "rulebookSha256": "6516250c32db29df26531c84927bf02162d6bc7bc93702066bb4bf7bd0496653",
+  "bundleSha256": "5f1eae2fa2147cc3f7876a459f2e4cc92e5741daf6bda51233e81737a2e8ef1e",
   "crossPlatformContractSha256": "59d6bc6123f250e1f57599240eb3190ab48f5cd2532f8281a99360d9e187d86b",
   "exports": [
     "ACCOUNT_DELETE_WITH_COMPANY_MESSAGE",
@@ -504,6 +504,7 @@
     "bookingDeleteSignedTimesheetWarning",
     "bookingHealthRows",
     "bookingHoursChangedRecipients",
+    "bookingHoursExplanation",
     "bookingHoursLabel",
     "bookingIdsForAccount",
     "bookingIdsForPerson",
@@ -520,6 +521,7 @@
     "bookingReplayRefusedIsFinal",
     "bookingRequestClashIds",
     "bookingRequestIdentity",
+    "bookingShortfall",
     "bookingStandardDayOn",
     "bookingTombstonePath",
     "bookingTombstoneWriteFields",

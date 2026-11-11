@@ -1,17 +1,21 @@
 import type { HoursBreakdown } from '@/lib/scheduling/paidHours'
 import type { BookingDayBreakdownRow } from '@/lib/canonical'
 import { BookingDayBreakdownRows } from '@/components/scheduling/BookingDayBreakdownRows'
+import { BookingHoursExplanation } from '@/components/scheduling/BookingHoursExplanation'
 
 /**
  * The hours breakdown of one booking. Rulebook 1.18.0: on a Saturday or Sunday, `dayRows`
- * (`weekendBookingBreakdown`) replace the weekday summary, so the day's own rule is shown.
+ * (`weekendBookingBreakdown`) replace the weekday summary, so the day's own rule is shown. Rulebook 1.39.0: on a weekday,
+ * `explanation` (`bookingHoursExplanation`) is shown under the figures — the working day, unpaid break and overtime.
  */
 export function HoursBreakdownCard({
   breakdown,
   dayRows,
+  explanation,
 }: {
   breakdown: HoursBreakdown
   dayRows?: ReadonlyArray<BookingDayBreakdownRow>
+  explanation?: { rule: string; steps: ReadonlyArray<string> } | null
 }) {
   if (dayRows && dayRows.length > 0) return <BookingDayBreakdownRows rows={dayRows} title="Hours breakdown" />
   return (
@@ -52,6 +56,9 @@ export function HoursBreakdownCard({
           )
         })}
       </dl>
+      {explanation ? (
+        <BookingHoursExplanation rule={explanation.rule} steps={explanation.steps} className="mt-2 border-t border-slate-200 pt-2" />
+      ) : null}
     </div>
   )
 }

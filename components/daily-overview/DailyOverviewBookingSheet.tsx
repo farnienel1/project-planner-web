@@ -13,6 +13,7 @@ import {
   customHoursPrefillForDate,
   policyForBookingDate,
   weekendBreakdownForDates,
+  weekdayExplanationForDate,
 } from '@/lib/scheduling/bookingSlotRules'
 import { CustomOtherLocationField } from '@/components/scheduling/CustomOtherLocationField'
 import { useAuthStore } from '@/lib/stores/authStore'
@@ -569,6 +570,7 @@ export function DailyOverviewBookingSheet({
           <HoursBreakdownCard
             breakdown={breakdown}
             dayRows={weekendBreakdownForDates([day], workStartTime, workEndTime, breakRemoved, payroll)}
+            explanation={weekdayExplanationForDate(day, workStartTime, workEndTime, breakRemoved, payroll)}
           />
           <button type="button" className="btn primary" disabled={saving || !hoursValid} onClick={() => void saveHoursOnly()}>
             Save hours on this booking

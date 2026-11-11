@@ -987,6 +987,7 @@ export {
   bookingHoursLabel,
 } from './bookingSlots'
 export { weekendFullDayWindow, weekendRuleForIsoWeekday } from './payrollHours'
+export { bookingHoursExplanation, bookingShortfall } from './bookingHoursExplanation'
 export { intervalCrossesMidnight, nextCalendarDayKey, overnightCarryInterval } from './engine'
 export {
   SUBSCRIPTION_LAPSED_ADMIN_NOTE,

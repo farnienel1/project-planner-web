@@ -11884,7 +11884,15 @@
               "label": "Total paid hours",
               "value": "7.5h"
             }
-          ]
+          ],
+          "explanation": {
+            "rule": "Saturday full day: 07:30–14:00 counts as 8h, hours outside it at 1.5×, unpaid break 12:00–12:30 (30 min)",
+            "steps": [
+              "07:30–14:00 = 8h (full day)",
+              "− 0.5h unpaid break",
+              "→ 7.5h"
+            ]
+          }
         },
         {
           "dayKey": "2026-11-08",
@@ -11915,7 +11923,15 @@
               "label": "Total paid hours",
               "value": "12.5h"
             }
-          ]
+          ],
+          "explanation": {
+            "rule": "Sunday every hour at 2×, unpaid break 12:00–12:30 (30 min)",
+            "steps": [
+              "07:30–14:00 = 6.5h × 2 = 13h",
+              "− 0.5h unpaid break",
+              "→ 12.5h"
+            ]
+          }
         }
       ]
     },
@@ -13911,7 +13927,15 @@
                 "label": "Total paid hours",
                 "value": "16.5h"
               }
-            ]
+            ],
+            "explanation": {
+              "rule": "Sunday every hour at 2×, unpaid break 12:00–12:30 (30 min)",
+              "steps": [
+                "07:30–16:00 = 8.5h × 2 = 17h",
+                "− 0.5h unpaid break",
+                "→ 16.5h"
+              ]
+            }
           }
         ]
       }
@@ -24017,6 +24041,299 @@
         "status": 403,
         "message": "You cannot send materials for this job."
       }
+    },
+    {
+      "name": "1.39.0 owner: Saturday 07:30–10:30 explained (8h × 3 ÷ 6.5 = 3.69h)",
+      "function": "bookingHoursExplanation",
+      "args": [
+        {
+          "standardDayStart": "07:30",
+          "standardDayEnd": "16:00",
+          "unpaidBreakMinutes": 30,
+          "standardPaidHours": 8,
+          "breakWindowStart": "12:00",
+          "breakWindowEnd": "12:30",
+          "weekdayOutsideStandardMultiplier": 1.5,
+          "saturday": {
+            "allHoursAtMultiplierMode": false,
+            "allHoursMultiplier": 2,
+            "definedWindowStart": "07:30",
+            "definedWindowEnd": "14:00",
+            "countsAsStandardHours": 8,
+            "outsideWindowMultiplier": 2,
+            "sameAsSaturday": false
+          },
+          "sunday": {
+            "allHoursAtMultiplierMode": true,
+            "allHoursMultiplier": 2,
+            "definedWindowStart": "07:30",
+            "definedWindowEnd": "16:00",
+            "countsAsStandardHours": 8,
+            "outsideWindowMultiplier": 2,
+            "sameAsSaturday": false,
+            "breakPaid": false
+          }
+        },
+        "2026-11-14",
+        {
+          "workStartTime": "07:30",
+          "workEndTime": "10:30"
+        },
+        "Europe/London"
+      ],
+      "expected": {
+        "dayKey": "2026-11-14",
+        "weekdayLabel": "Saturday",
+        "kind": "weekendWindow",
+        "rule": "Saturday full day: 07:30–14:00 counts as 8h, hours outside it at 2×, paid break 12:00–12:30 (30 min)",
+        "steps": [
+          "Booked 07:30–10:30 = 3h of the 6.5h window → 8h × 3 ÷ 6.5 = 3.69h"
+        ],
+        "totalPaidHours": 3.69,
+        "fullDayHours": 8
+      }
+    },
+    {
+      "name": "1.39.0 owner: Saturday 07:30–16:00 explained (8h full day + 2h × 2 = 12h)",
+      "function": "bookingHoursExplanation",
+      "args": [
+        {
+          "standardDayStart": "07:30",
+          "standardDayEnd": "16:00",
+          "unpaidBreakMinutes": 30,
+          "standardPaidHours": 8,
+          "breakWindowStart": "12:00",
+          "breakWindowEnd": "12:30",
+          "weekdayOutsideStandardMultiplier": 1.5,
+          "saturday": {
+            "allHoursAtMultiplierMode": false,
+            "allHoursMultiplier": 2,
+            "definedWindowStart": "07:30",
+            "definedWindowEnd": "14:00",
+            "countsAsStandardHours": 8,
+            "outsideWindowMultiplier": 2,
+            "sameAsSaturday": false
+          },
+          "sunday": {
+            "allHoursAtMultiplierMode": true,
+            "allHoursMultiplier": 2,
+            "definedWindowStart": "07:30",
+            "definedWindowEnd": "16:00",
+            "countsAsStandardHours": 8,
+            "outsideWindowMultiplier": 2,
+            "sameAsSaturday": false,
+            "breakPaid": false
+          }
+        },
+        "2026-11-14",
+        {
+          "workStartTime": "07:30",
+          "workEndTime": "16:00"
+        },
+        "Europe/London"
+      ],
+      "expected": {
+        "dayKey": "2026-11-14",
+        "weekdayLabel": "Saturday",
+        "kind": "weekendWindow",
+        "rule": "Saturday full day: 07:30–14:00 counts as 8h, hours outside it at 2×, paid break 12:00–12:30 (30 min)",
+        "steps": [
+          "07:30–14:00 = 8h (full day)",
+          "+ 14:00–16:00 = 2h × 2 = 4h",
+          "→ 12h"
+        ],
+        "totalPaidHours": 12,
+        "fullDayHours": 8
+      }
+    },
+    {
+      "name": "1.39.0: Sunday every hour at 2× with an unpaid break",
+      "function": "bookingHoursExplanation",
+      "args": [
+        {
+          "standardDayStart": "07:30",
+          "standardDayEnd": "16:00",
+          "unpaidBreakMinutes": 30,
+          "standardPaidHours": 8,
+          "breakWindowStart": "12:00",
+          "breakWindowEnd": "12:30",
+          "weekdayOutsideStandardMultiplier": 1.5,
+          "saturday": {
+            "allHoursAtMultiplierMode": false,
+            "allHoursMultiplier": 2,
+            "definedWindowStart": "07:30",
+            "definedWindowEnd": "14:00",
+            "countsAsStandardHours": 8,
+            "outsideWindowMultiplier": 2,
+            "sameAsSaturday": false
+          },
+          "sunday": {
+            "allHoursAtMultiplierMode": true,
+            "allHoursMultiplier": 2,
+            "definedWindowStart": "07:30",
+            "definedWindowEnd": "16:00",
+            "countsAsStandardHours": 8,
+            "outsideWindowMultiplier": 2,
+            "sameAsSaturday": false,
+            "breakPaid": false
+          }
+        },
+        "2026-11-15",
+        {
+          "workStartTime": "07:30",
+          "workEndTime": "14:00"
+        },
+        "Europe/London"
+      ],
+      "expected": {
+        "dayKey": "2026-11-15",
+        "weekdayLabel": "Sunday",
+        "kind": "weekendAllHours",
+        "rule": "Sunday every hour at 2×, unpaid break 12:00–12:30 (30 min)",
+        "steps": [
+          "07:30–14:00 = 6.5h × 2 = 13h",
+          "− 0.5h unpaid break",
+          "→ 12.5h"
+        ],
+        "totalPaidHours": 12.5,
+        "fullDayHours": null
+      }
+    },
+    {
+      "name": "1.39.0: Monday 06:30–18:00 explained",
+      "function": "bookingHoursExplanation",
+      "args": [
+        {
+          "standardDayStart": "07:30",
+          "standardDayEnd": "16:00",
+          "unpaidBreakMinutes": 30,
+          "standardPaidHours": 8,
+          "breakWindowStart": "12:00",
+          "breakWindowEnd": "12:30",
+          "weekdayOutsideStandardMultiplier": 1.5,
+          "saturday": {
+            "allHoursAtMultiplierMode": false,
+            "allHoursMultiplier": 2,
+            "definedWindowStart": "07:30",
+            "definedWindowEnd": "14:00",
+            "countsAsStandardHours": 8,
+            "outsideWindowMultiplier": 2,
+            "sameAsSaturday": false
+          },
+          "sunday": {
+            "allHoursAtMultiplierMode": true,
+            "allHoursMultiplier": 2,
+            "definedWindowStart": "07:30",
+            "definedWindowEnd": "16:00",
+            "countsAsStandardHours": 8,
+            "outsideWindowMultiplier": 2,
+            "sameAsSaturday": false,
+            "breakPaid": false
+          }
+        },
+        "2026-11-16",
+        {
+          "workStartTime": "06:30",
+          "workEndTime": "18:00"
+        },
+        "Europe/London"
+      ],
+      "expected": {
+        "dayKey": "2026-11-16",
+        "weekdayLabel": "Monday",
+        "kind": "weekday",
+        "rule": "Monday full day: 07:30–16:00 − 30 min unpaid break (12:00–12:30) = 8h, hours outside it at 1.5×",
+        "steps": [
+          "06:30–07:30 = 1h × 1.5 = 1.5h",
+          "+ 07:30–16:00 = 8.5h",
+          "− 0.5h unpaid break",
+          "+ 16:00–18:00 = 2h × 1.5 = 3h",
+          "→ 12.5h"
+        ],
+        "totalPaidHours": 12.5,
+        "fullDayHours": 8
+      }
+    },
+    {
+      "name": "1.39.0 owner: short of a full Saturday (8h)",
+      "function": "bookingShortfall",
+      "args": [
+        {
+          "standardDayStart": "07:30",
+          "standardDayEnd": "16:00",
+          "unpaidBreakMinutes": 30,
+          "standardPaidHours": 8,
+          "breakWindowStart": "12:00",
+          "breakWindowEnd": "12:30",
+          "weekdayOutsideStandardMultiplier": 1.5,
+          "saturday": {
+            "allHoursAtMultiplierMode": false,
+            "allHoursMultiplier": 2,
+            "definedWindowStart": "07:30",
+            "definedWindowEnd": "14:00",
+            "countsAsStandardHours": 8,
+            "outsideWindowMultiplier": 2,
+            "sameAsSaturday": false
+          },
+          "sunday": {
+            "allHoursAtMultiplierMode": true,
+            "allHoursMultiplier": 2,
+            "definedWindowStart": "07:30",
+            "definedWindowEnd": "16:00",
+            "countsAsStandardHours": 8,
+            "outsideWindowMultiplier": 2,
+            "sameAsSaturday": false,
+            "breakPaid": false
+          }
+        },
+        "2026-11-14",
+        3.69,
+        "Europe/London"
+      ],
+      "expected": {
+        "label": "Short of a full Saturday (8h)",
+        "fullDayHours": 8,
+        "missingHours": 4.31,
+        "value": "4.31h"
+      }
+    },
+    {
+      "name": "1.39.0: no shortfall on an every-hour day",
+      "function": "bookingShortfall",
+      "args": [
+        {
+          "standardDayStart": "07:30",
+          "standardDayEnd": "16:00",
+          "unpaidBreakMinutes": 30,
+          "standardPaidHours": 8,
+          "breakWindowStart": "12:00",
+          "breakWindowEnd": "12:30",
+          "weekdayOutsideStandardMultiplier": 1.5,
+          "saturday": {
+            "allHoursAtMultiplierMode": false,
+            "allHoursMultiplier": 2,
+            "definedWindowStart": "07:30",
+            "definedWindowEnd": "14:00",
+            "countsAsStandardHours": 8,
+            "outsideWindowMultiplier": 2,
+            "sameAsSaturday": false
+          },
+          "sunday": {
+            "allHoursAtMultiplierMode": true,
+            "allHoursMultiplier": 2,
+            "definedWindowStart": "07:30",
+            "definedWindowEnd": "16:00",
+            "countsAsStandardHours": 8,
+            "outsideWindowMultiplier": 2,
+            "sameAsSaturday": false,
+            "breakPaid": false
+          }
+        },
+        "2026-11-15",
+        6,
+        "Europe/London"
+      ],
+      "expected": null
     }
   ]
 }

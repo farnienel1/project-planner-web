@@ -20,6 +20,7 @@ import { weekendBreakFor, type OrgPayrollTimePolicy } from './organizationSettin
 import { payrollBreakOnDay, payrollHoursResult, payrollOutsideClockHours, type PayrollHoursResult, unpaidBreakAppliesOnDay, weekendFullDayWindow, weekendRuleForIsoWeekday } from './payrollHours'
 import { isoWeekdayOfDayKey, zoneOrLondon } from './dayKeys'
 import { payrollTimePolicyForDayFromState, type PayrollTimePolicyState } from './payrollPolicySchedule'
+import { bookingHoursExplanation } from './bookingHoursExplanation'
 
 /** The slot values a booking picker may offer, in picker order. Stored spellings stay each collection's own. */
 export type BookingSlotChoice = 'FULL DAY' | 'AM' | 'PM' | 'CUSTOM'
@@ -274,6 +275,12 @@ export type BookingDayBreakdownRow = {
    * break, outside hours with the multiplier, total. Values only; screens lay them out.
    */
   lines: BookingDayBreakdownLine[]
+  /**
+   * Rulebook 1.39.0: the words that explain the figure (`bookingHoursExplanation`) — the day's rule, e.g. "Saturday full
+   * day: 07:30–14:00 counts as 8h, hours outside it at 2×", and one step per part, e.g. "Booked 07:30–10:30 = 3h of the
+   * 6.5h window → 8h × 3 ÷ 6.5 = 3.69h". Screens show these under `line`; no figure changes.
+   */
+  explanation: { rule: string; steps: string[] }
 }
 
 export type BookingDayBreakdownLine = {
@@ -385,6 +392,12 @@ export function weekendBookingBreakdown(
       lines.push({ kind: 'outside', label: 'Outside hours', value: `${hoursText(overtimeHours)} × ${multiplier}` })
     }
     lines.push({ kind: 'total', label: 'Total paid hours', value: hoursText(total) })
+    const explained = bookingHoursExplanation(
+      dayPolicy,
+      dayKey,
+      { timeSlot: 'CUSTOM_HOURS', workStartTime: startText, workEndTime: endText, isBreakRemoved: isBreakRemoved === true },
+      timeZone
+    )
     return {
       dayKey,
       weekdayLabel: label,
@@ -399,6 +412,7 @@ export function weekendBookingBreakdown(
       unpaidBreakHours,
       line,
       lines,
+      explanation: { rule: explained?.rule ?? '', steps: explained?.steps ?? [] },
     }
   })
 }

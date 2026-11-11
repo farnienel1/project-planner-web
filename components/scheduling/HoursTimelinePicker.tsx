@@ -11,8 +11,10 @@ import {
   policyForBookingDate,
   unpaidBreakAppliesOnDate,
   weekendBreakdownForDates,
+  weekdayExplanationForDate,
 } from '@/lib/scheduling/bookingSlotRules'
 import { BookingDayBreakdownRows } from '@/components/scheduling/BookingDayBreakdownRows'
+import { BookingHoursExplanationList } from '@/components/scheduling/BookingHoursExplanation'
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i)
 const MINUTES = [0, 15, 30, 45]
@@ -133,6 +135,12 @@ export function HoursTimelinePicker({
 
   // Rulebook 1.18.0 (`weekendBookingBreakdown`): a weekend selection shows each day as pay prices it, not one summary.
   const dayRows = valid ? weekendBreakdownForDates(dates ?? (date ? [date] : []), start, end, breakRemoved, policy) : []
+  // Rulebook 1.39.0 (`bookingHoursExplanation`): a weekday selection explains its hours the same way (working day,
+  // unpaid break, hours at the overtime multiplier). Weekend rows carry their own explanation.
+  const weekdayExplanations =
+    valid && dayRows.length === 0
+      ? (dates ?? (date ? [date] : [])).map((booked) => weekdayExplanationForDate(booked, start, end, breakRemoved, policy))
+      : []
 
   function minutesFromClientX(clientX: number, rect: DOMRect): number {
     const raw = ((clientX - rect.left) / rect.width) * DAY_MINUTES
@@ -271,6 +279,7 @@ export function HoursTimelinePicker({
             {breakdown.overtimeLine ? (
               <p className="mt-1 text-[12px] font-semibold text-[#854F0B]">{breakdown.overtimeLine}</p>
             ) : null}
+            <BookingHoursExplanationList explanations={weekdayExplanations} className="mt-1.5" />
           </>
         )}
       </div>

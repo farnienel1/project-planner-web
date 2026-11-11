@@ -261,6 +261,22 @@ How to use it:
 | 10 Nov | **One booking colour scheme.** Web booking cells adopt the iOS scheme and legend: Standard (blue), Std + OT (blue with orange hatched OT part), OT only (orange hatched), Ann. leave (brown), Half day. The web legend "Operative / Manager / Admin / Sub contractor" is removed; the coloured role pill under each name stays (Op green, Admin/Manager blue, Sub purple). Rule: `JOB_SCHEDULE_LEGEND`. | done web + rulebook (1.37.0); iOS legend unchanged |
 | 10 Nov | **Build now, before launch, working on both apps.** | done (1.37.0 web + iOS PRs), owner to test |
 
+## 11 Nov decisions (for 1.39)
+
+| Date | Decision | Status |
+|---|---|---|
+| 11 Nov | **Booking hours explained on every booking picker** (owner request from iPhone screenshots: "Saturday 07:30–10:30 = 3.69h" and "Missing to standard day 4.31h" did not say why). Each day shows its rule ("Saturday full day: 07:30–14:00 counts as 8h, hours outside it at 2×"; "Sunday every hour at 2×"; weekdays the working day, unpaid break and overtime rate) and the steps ("Booked 07:30–10:30 = 3h of the 6.5h window → 8h × 3 ÷ 6.5 = 3.69h"; "07:30–14:00 = 8h (full day) + 14:00–16:00 = 2h × 2 = 4h → 12h"; an unpaid break as its own "− 0.5h unpaid break" line). "Missing to standard day" on iOS names what it compares against ("Short of a full Saturday (8h)"). Wording only, figures unchanged, same text on both apps. Rule: `bookingHoursExplanation`, `bookingShortfall`, `weekendBookingBreakdown` `explanation` (§4.3). | done web + rulebook (1.39.0, w139-booking-breakdown); iOS (ios-1.39) |
+| 11 Nov | **Tap anywhere on a person's tile to select them** (iOS scheduling Select people; every similar people picker on both apps). Keep accessibility (button, selected state). UI only (guardrail 7). | done iOS (ios-1.39); web already whole-row buttons, `aria-pressed` added (1.39.0) |
+
+## 1.39.0 judgement calls (owner to confirm)
+
+| Date | Choice | Status |
+|---|---|---|
+| 11 Nov | The shortfall is compared with **that day's own full day**: a set-window weekend day's "counts as" hours, a weekday's paid day. Before, iOS compared every day with the Monday–Friday paid day; for the owner's organisation both are 8h, so no figure moves there, but a company whose Saturday counts as, say, 6h now sees "Short of a full Saturday (6h)". A day paid every hour at a multiplier has no full day, so the line is not shown there. | done, owner to confirm |
+| 11 Nov | On weekend rows the explanation replaces the small "Set hours / Outside hours / Total paid hours" list under each row (same figures, now with the reason). Saturday and Sunday share one row only when both the figure and the explanation read the same. | done, owner to confirm |
+| 11 Nov | The explanation uses the organisation's overtime rate, as the existing breakdowns do; a booking's own custom rate (`otMultiplierOverride`) is not yet shown in the picker breakdown (unchanged behaviour). | done, follow-up if wanted |
+| 11 Nov | Weekday explanations name the day ("Monday full day: 07:30–16:00 − 30 min unpaid break (12:00–12:30) = 8h, hours outside it at 1.5×"). | done, owner to confirm |
+
 ## 1.37.0 judgement calls (owner to confirm)
 
 | Date | Choice | Status |
