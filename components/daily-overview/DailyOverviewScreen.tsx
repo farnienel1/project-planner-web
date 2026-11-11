@@ -247,7 +247,7 @@ export function DailyOverviewScreen() {
           </div>
           <div className="card-b rows">
             {model.projectCards.length > 0 ? (
-              model.projectCards.map(({ project, people, peopleCount, bookedHours, isSmallWorks }) => (
+              model.projectCards.map(({ project, people, peopleCount, bookedText, isSmallWorks }) => (
                 <div key={project.id} className="card pad" data-hue={isSmallWorks ? 'sw' : 'proj'} style={{ boxShadow: 'none', background: 'var(--soft)' }}>
                   <div className="row">
                     <div className="ico-chip">
@@ -257,7 +257,7 @@ export function DailyOverviewScreen() {
                       <span className="tag">{project.jobNumber}</span>{' '}
                       <b style={{ fontFamily: 'var(--head)', fontSize: 16 }}>{project.siteName}</b>
                       <div className="muted small">
-                        {peopleCount} {peopleCount === 1 ? 'person' : 'people'} · {overviewFormatHours(bookedHours)}h booked
+                        {peopleCount} {peopleCount === 1 ? 'person' : 'people'} · {bookedText}
                       </div>
                     </div>
                     <Link

@@ -17,22 +17,31 @@ export function MyScheduleClashMarkerButton({ marker }: { marker: MyScheduleClas
   const red = marker.state === 'clash'
   return (
     <>
-      <button
-        type="button"
-        className="inline-grid h-6 w-6 place-items-center rounded-full"
+      {/* A span, not a button: the marker sits inside row buttons (the My Schedule booking card). */}
+      <span
+        role="button"
+        tabIndex={0}
+        className="inline-grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded-full align-middle"
         aria-label={red ? 'Booking clash' : 'Clash approved'}
         data-testid="my-schedule-clash-marker"
         data-state={marker.state}
         onClick={(event: ReactMouseEvent) => {
           event.stopPropagation()
+          event.preventDefault()
           setOpen(true)
         }}
-        onKeyDown={(event) => event.stopPropagation()}
+        onKeyDown={(event) => {
+          event.stopPropagation()
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault()
+            setOpen(true)
+          }
+        }}
       >
         <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden fill={red ? '#C62828' : '#9AA3AE'}>
           <path d="M12 3 1.5 21h21L12 3Zm-1 6h2v6h-2V9Zm0 8h2v2h-2v-2Z" />
         </svg>
-      </button>
+      </span>
       <Modal
         open={open}
         title={marker.title}

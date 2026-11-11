@@ -56,6 +56,7 @@ test('1.39.0 labels: OT tile, booked line, "incl." line, hours not "paid", Save 
   assert.equal(overtimeTotalText({ clockHours: 0, multiplier: 1.5 }), '')
   assert.equal(bookedWithOvertimeText({ bookedHours: 60.5, clockHours: 12, multiplier: 1.5 }), '60.5h booked (incl. 12h OT × 1.5)')
   assert.equal(bookedWithOvertimeText({ bookedHours: 40, clockHours: 0, multiplier: 1.5 }), '40h booked')
+  assert.equal(bookedWithOvertimeText({ bookedHours: 30, clockHours: 4, multiplier: null }), '30h booked (incl. 4h OT)')
   assert.equal(overtimeIncludedText({ clockHours: 6, multiplier: 1.5 }), 'incl. 6h OT × 1.5 = 9h')
   assert.equal(overtimeIncludedText({ clockHours: 0, multiplier: 1.5 }), '')
   assert.equal(bookingHoursCountText(17.5), '17.5 hours')

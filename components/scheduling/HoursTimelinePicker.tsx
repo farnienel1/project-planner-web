@@ -4,7 +4,7 @@ import { useMemo, useRef } from 'react'
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import { DEFAULT_PAYROLL_POLICY } from '@/lib/settings/organizationSettings'
 import { parseHhMm } from '@/lib/ios-parity/londonTime'
-import { bookingPayrollHours, formatHoursLabel, hoursBreakdown } from '@/lib/scheduling/paidHours'
+import { bookingPayrollHours, hoursBreakdown } from '@/lib/scheduling/paidHours'
 import {
   bookingDayKey,
   payrollDayWindowsForDate,
@@ -15,6 +15,7 @@ import {
 } from '@/lib/scheduling/bookingSlotRules'
 import { BookingDayBreakdownRows } from '@/components/scheduling/BookingDayBreakdownRows'
 import { BookingHoursExplanationList } from '@/components/scheduling/BookingHoursExplanation'
+import { bookingBreakText, bookingHoursCountText } from '@/lib/canonical'
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i)
 const MINUTES = [0, 15, 30, 45]
@@ -99,6 +100,16 @@ export function HoursTimelinePicker({
   const bookedDays = dates && dates.length > 0 ? dates : day ? [day] : []
   const breakApplies =
     bookedDays.length > 0 ? bookedDays.some((entry) => unpaidBreakAppliesOnDate(entry, policy)) : policy.breakPaid !== true
+  // Rulebook 1.39.0 (owner answer 11 Nov): the toggle names the day's own break from the working hours in effect on it
+  // ("30 min unpaid break 11:30–12:00", `bookingBreakText`); several days with different breaks keep the plain words.
+  const breakLabels = Array.from(
+    new Set(
+      bookedDays
+        .filter((entry) => unpaidBreakAppliesOnDate(entry, policy))
+        .map((entry) => bookingBreakText(policyForBookingDate(entry, policy) ?? policy, bookingDayKey(entry))?.label ?? '')
+    )
+  )
+  const breakToggleLabel = breakLabels.length === 1 && breakLabels[0] ? breakLabels[0] : 'Unpaid break'
   const standardStart = windows.paidWindow?.start ?? 0
   const standardEnd = windows.paidWindow?.end ?? 0
   const breakStart = windows.unpaidBreak?.start ?? null
@@ -273,7 +284,7 @@ export function HoursTimelinePicker({
           <>
             <p className="mt-2 text-[12px] tabular-nums text-[var(--ink3)]">
               {valid
-                ? `${format(startHm.hour, startHm.minute)}–${format(endHm.hour, endHm.minute)} · ${formatHoursLabel(breakdown.totalPaidHours)}h paid`
+                ? `${format(startHm.hour, startHm.minute)}–${format(endHm.hour, endHm.minute)} · ${bookingHoursCountText(breakdown.totalPaidHours)}`
                 : 'Finish must be after start'}
             </p>
             {breakdown.overtimeLine ? (
@@ -302,7 +313,7 @@ export function HoursTimelinePicker({
       </div>
       {showBreak && breakApplies ? (
       <label className="flex items-center justify-between rounded-xl border border-[var(--line)] bg-white px-3.5 py-3 text-[13px] font-medium">
-        Unpaid break included
+        {breakToggleLabel}
         <input
           type="checkbox"
           checked={!breakRemoved}

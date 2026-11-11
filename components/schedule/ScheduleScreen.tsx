@@ -39,7 +39,8 @@ import { dayKey } from '@/lib/ios-parity/londonTime'
 import { bookingJobLabel } from '@/lib/canonical'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useBookingHistoryFrom } from '@/lib/stores/useBookingHistory'
-import { normalizeDocumentId } from '@/lib/canonical'
+import { normalizeDocumentId, type MyScheduleClashMarker } from '@/lib/canonical'
+import { MyScheduleClashMarkerButton } from '@/components/schedule/MyScheduleClashMarker'
 
 /** A role word is not a person. Prefer the looked-up name, then the signed-in name. */
 function personLabel(primary?: string, fallback?: string): string {
@@ -138,6 +139,7 @@ function LeaveCheckedBookingEditSheet(props: Parameters<typeof BookingEditSheet>
 }
 
 function BookingCard({
+  clashMarker,
   booking,
   operativeName,
   projectName,
@@ -146,6 +148,7 @@ function BookingCard({
   onSave,
   onDelete,
 }: {
+  clashMarker?: MyScheduleClashMarker | null
   booking: Booking
   operativeName: string
   projectName: string
@@ -192,8 +195,9 @@ function BookingCard({
         />
 
         <div className="min-w-0 flex-1 px-4 py-3">
-          <p className={`truncate text-[15px] font-semibold ${past ? 'text-[var(--ink3)]' : ''}`}>
-            {projectName}
+          <p className={`flex items-center gap-1.5 truncate text-[15px] font-semibold ${past ? 'text-[var(--ink3)]' : ''}`}>
+            <span className="truncate">{projectName}</span>
+            <MyScheduleClashMarkerButton marker={clashMarker} />
           </p>
           <p className="mt-0.5 text-[12px] font-medium text-[var(--ink3)]">
             {myScheduleClockSubtitle(booking)}
@@ -317,6 +321,7 @@ function DaySection({
   selfDisplayName,
   canWriteBookingFor,
   canDeleteBookingFor,
+  clashMarkers,
 }: {
   date: Date
   bookings: Booking[]
@@ -332,6 +337,7 @@ function DaySection({
   /** Rulebook 1.10.0 `canWriteBooking` / `canDeleteBooking` per booking; missing → allowed by the flags above. */
   canWriteBookingFor?: (booking: Booking) => boolean
   canDeleteBookingFor?: (booking: Booking) => boolean
+  clashMarkers?: ReadonlyMap<string, MyScheduleClashMarker>
 }) {
   const today = isToday(date)
   const past = isPast(startOfDay(date)) && !today
@@ -392,6 +398,7 @@ function DaySection({
             <BookingCard
               key={b.id}
               booking={b}
+              clashMarker={clashMarkers?.get(b.id) ?? null}
               operativeName={
                 b.source === 'manager' && b.bookedBy
                   ? personLabel(peopleById?.get(b.bookedBy), selfDisplayName)
@@ -457,6 +464,7 @@ export function ScheduleScreen({
   payrollPolicy,
   canWriteBookingFor,
   canDeleteBookingFor,
+  clashMarkers,
 }: {
   variant?: 'overview' | 'personal'
   organizationName: string
@@ -477,6 +485,8 @@ export function ScheduleScreen({
   /** Rulebook 1.10.0 `canWriteBooking` / `canDeleteBooking` per booking; missing → allowed by the flags above. */
   canWriteBookingFor?: (booking: Booking) => boolean
   canDeleteBookingFor?: (booking: Booking) => boolean
+  /** Rulebook 1.39.0 §10: My Schedule only — the clash marker per booking id. */
+  clashMarkers?: ReadonlyMap<string, MyScheduleClashMarker>
 }) {
   const isPersonal = variant === 'personal'
   const [filterStatus, setFilterStatus] = useState<FilterStatus>('all')
@@ -815,6 +825,7 @@ export function ScheduleScreen({
                 onDeleteBooking={onDeleteBooking}
                 canWriteBookingFor={canWriteBookingFor}
                 canDeleteBookingFor={canDeleteBookingFor}
+                clashMarkers={isPersonal ? clashMarkers : undefined}
                 selfDisplayName={variant === 'personal' ? focusOperativeName || undefined : undefined}
               />
             )

@@ -274,29 +274,29 @@ async function managerSiteBookingCreate(
   organizationId: string,
   booking: SaveManagerSiteBookingInput
 ): Promise<{ next: ManagerSiteBooking; payload: ReturnType<typeof serializeManagerSiteBooking> }> {
-    const id = newUppercaseUuid()
-    const now = new Date()
-    const next: ManagerSiteBooking = {
-      id,
-      userId: booking.userId,
-      date: londonMidnight(booking.date, organizationZoneOr()),
-      timeSlot: booking.timeSlot,
-      locationType: booking.locationType,
-      locationId: booking.locationId,
-      customLocationName: booking.customLocationName,
-      workStartTime: booking.workStartTime,
-      workEndTime: booking.workEndTime,
-      isBreakRemoved: booking.isBreakRemoved === true,
-      ...(typeof booking.otMultiplierOverride === 'number' ? { otMultiplierOverride: booking.otMultiplierOverride } : {}),
-      createdAt: now,
-      updatedAt: now,
-      organizationId,
-    }
-    // Rulebook 1.11.0: a job-linked manager booking carries its job's collection (`jobCollection`).
-    if (booking.locationType === 'project' || booking.locationType === 'small_work') {
-      next.jobCollection = booking.jobCollection ?? (await resolveBookingJobCollection(organizationId, booking.locationId)) ?? undefined
-    }
-    return { next, payload: serializeManagerSiteBooking({ ...next, organizationId }) }
+  const id = newUppercaseUuid()
+  const now = new Date()
+  const next: ManagerSiteBooking = {
+    id,
+    userId: booking.userId,
+    date: londonMidnight(booking.date, organizationZoneOr()),
+    timeSlot: booking.timeSlot,
+    locationType: booking.locationType,
+    locationId: booking.locationId,
+    customLocationName: booking.customLocationName,
+    workStartTime: booking.workStartTime,
+    workEndTime: booking.workEndTime,
+    isBreakRemoved: booking.isBreakRemoved === true,
+    ...(typeof booking.otMultiplierOverride === 'number' ? { otMultiplierOverride: booking.otMultiplierOverride } : {}),
+    createdAt: now,
+    updatedAt: now,
+    organizationId,
+  }
+  // Rulebook 1.11.0: a job-linked manager booking carries its job's collection (`jobCollection`).
+  if (booking.locationType === 'project' || booking.locationType === 'small_work') {
+    next.jobCollection = booking.jobCollection ?? (await resolveBookingJobCollection(organizationId, booking.locationId)) ?? undefined
+  }
+  return { next, payload: serializeManagerSiteBooking({ ...next, organizationId }) }
 }
 
 /** The organisation the manager site booking listener is open for ('' before the first load). */
@@ -304,11 +304,6 @@ export function managerSiteBookingsOrganizationId(): string {
   return managerDownloadOrgId
 }
 
-/**
- * Rulebook 1.33.0 §25 (reopen): a changed or deleted manager site booking reopens its PAYE overtime line (a PAYE
- * manager's own site booking carries overtime like a labour booking); the person, and their line manager when the line
- * had been returned, are told. Best effort, after the write; never blocks it. The labour twin is in `bookingStore.ts`.
- */
 /** A manager site booking moved out by a batched move (1.39.0): its PAYE overtime line reopens, as a delete does. */
 export function notifyManagerSiteBookingRemovedSoon(organizationId: string, bookingId: string): void {
   const state = useManagerScheduleStore.getState()
@@ -318,6 +313,11 @@ export function notifyManagerSiteBookingRemovedSoon(organizationId: string, book
   notifyOvertimeReopenedSoon(organizationId, removed, null)
 }
 
+/**
+ * Rulebook 1.33.0 §25 (reopen): a changed or deleted manager site booking reopens its PAYE overtime line (a PAYE
+ * manager's own site booking carries overtime like a labour booking); the person, and their line manager when the line
+ * had been returned, are told. Best effort, after the write; never blocks it. The labour twin is in `bookingStore.ts`.
+ */
 function notifyOvertimeReopenedSoon(organizationId: string, before: ManagerSiteBooking, after: ManagerSiteBooking | null): void {
   void (async () => {
     const [{ notifyOvertimeLineReopened }, { overtimeBookingInputs }, { useOrgUserStore }, { useOperativeStore }, { useProjectStore }] =

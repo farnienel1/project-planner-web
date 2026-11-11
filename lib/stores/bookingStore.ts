@@ -161,19 +161,8 @@ export const useBookingStore = create<BookingState>((set, get) => ({
     const firestore = requireDb()
     const organizationId = bookingData.organizationId?.trim() || ''
     if (!organizationId) throw new Error('Missing organisation for booking')
-    const id = newUppercaseUuid()
-    const now = new Date()
-    // Rulebook 1.11.0: every booking carries its job's collection (`jobCollection`).
-    const jobCollection = bookingData.jobCollection ?? (await resolveBookingJobCollection(organizationId, bookingData.projectId)) ?? undefined
-    const booking: Booking = {
-      ...bookingData,
-      id,
-      date: londonMidnight(bookingData.date instanceof Date ? bookingData.date : new Date(bookingData.date), organizationZoneOr()),
-      createdAt: now,
-      updatedAt: now,
-      organizationId,
-      ...(jobCollection ? { jobCollection } : {}),
-    }
+    const booking = await newBookingRecord(bookingData, organizationId)
+    const id = booking.id
     const payload = serializeBooking(booking)
     const captured = captureOrganizationContext()
     // Rulebook §1 / 1.9.0: a create carries write metadata (`writeMetadataFields`).
@@ -196,18 +185,8 @@ export const useBookingStore = create<BookingState>((set, get) => ({
     if (!organizationId) throw new Error('Missing organisation for booking')
     const deletedBy = auth?.currentUser?.uid
     if (!deletedBy) throw new Error('Sign in again to move this booking.')
-    const id = newUppercaseUuid()
-    const now = new Date()
-    const jobCollection = bookingData.jobCollection ?? (await resolveBookingJobCollection(organizationId, bookingData.projectId)) ?? undefined
-    const booking: Booking = {
-      ...bookingData,
-      id,
-      date: londonMidnight(bookingData.date instanceof Date ? bookingData.date : new Date(bookingData.date), organizationZoneOr()),
-      createdAt: now,
-      updatedAt: now,
-      organizationId,
-      ...(jobCollection ? { jobCollection } : {}),
-    }
+    const booking = await newBookingRecord(bookingData, organizationId)
+    const id = booking.id
     // The same create payload as `createBooking` (write metadata, a plain create of a fresh id), plus the delete and
     // its tombstone (`bookingTombstoneWriteFields`) in the same batch.
     const batch = writeBatch(firestore)
@@ -314,6 +293,22 @@ export const useBookingStore = create<BookingState>((set, get) => ({
 }))
 
 
+/** A new labour booking (a fresh id, organisation-zone day, its job's collection) for a create or a move (1.39.0). */
+async function newBookingRecord(bookingData: Omit<Booking, 'id' | 'createdAt' | 'updatedAt'>, organizationId: string): Promise<Booking> {
+  const now = new Date()
+  // Rulebook 1.11.0: every booking carries its job's collection (`jobCollection`).
+  const jobCollection = bookingData.jobCollection ?? (await resolveBookingJobCollection(organizationId, bookingData.projectId)) ?? undefined
+  return {
+    ...bookingData,
+    id: newUppercaseUuid(),
+    date: londonMidnight(bookingData.date instanceof Date ? bookingData.date : new Date(bookingData.date), organizationZoneOr()),
+    createdAt: now,
+    updatedAt: now,
+    organizationId,
+    ...(jobCollection ? { jobCollection } : {}),
+  }
+}
+
 /** Rulebook 1.10.0 §13: the booked person gets `booking_created` (never the booker). Best effort, after the write. */
 function notifyBookingCreatedSoon(booking: Booking): void {
   void (async () => {
@@ -343,10 +338,6 @@ export function bookingsOrganizationId(): string {
   return bookingDownloadOrgId
 }
 
-/**
- * Rulebook 1.33.0 §25 (reopen): a changed or deleted booking reopens its PAYE overtime line; the person (and their line
- * manager when the line had been returned) are told. Best effort, after the write; never blocks it.
- */
 /** A labour booking moved out by a batched move (1.39.0): its PAYE overtime line reopens, as a delete does. */
 export function notifyBookingRemovedSoon(bookingId: string): void {
   const removed = useBookingStore.getState().bookings.find((row) => row.id === bookingId)
@@ -355,6 +346,10 @@ export function notifyBookingRemovedSoon(bookingId: string): void {
   notifyOvertimeReopenedSoon(removed, null)
 }
 
+/**
+ * Rulebook 1.33.0 §25 (reopen): a changed or deleted booking reopens its PAYE overtime line; the person (and their line
+ * manager when the line had been returned) are told. Best effort, after the write; never blocks it.
+ */
 function notifyOvertimeReopenedSoon(before: Booking, after: Booking | null): void {
   void (async () => {
     const [{ notifyOvertimeLineReopened }, { overtimeBookingInputs }, { useOrgUserStore }, { useOperativeStore }, { useProjectStore }] =

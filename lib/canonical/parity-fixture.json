@@ -11888,9 +11888,7 @@
           "explanation": {
             "rule": "Saturday full day: 07:30–14:00 counts as 8h, hours outside it at 1.5×, unpaid break 12:00–12:30 (30 min)",
             "steps": [
-              "07:30–14:00 = 8h (full day)",
-              "− 0.5h unpaid break",
-              "→ 7.5h"
+              "07:30–14:00 = 7.5h (full day 8h, less 30 min unpaid break)"
             ]
           }
         },
@@ -24089,6 +24087,7 @@
         "steps": [
           "Booked 07:30–10:30 = 3h of the 6.5h window → 8h × 3 ÷ 6.5 = 3.69h"
         ],
+        "summary": "07:30–10:30 = 8h × 3 ÷ 6.5 = 3.69h (part of the 6.5h window)",
         "totalPaidHours": 3.69,
         "fullDayHours": 8
       }
@@ -24138,10 +24137,11 @@
         "kind": "weekendWindow",
         "rule": "Saturday full day: 07:30–14:00 counts as 8h, hours outside it at 2×, paid break 12:00–12:30 (30 min)",
         "steps": [
-          "07:30–14:00 = 8h (full day)",
+          "07:30–14:00 = 8h (full day, 30 min paid break, not deducted)",
           "+ 14:00–16:00 = 2h × 2 = 4h",
           "→ 12h"
         ],
+        "summary": "07:30–16:00 = 8h (full day, 30 min paid break, not deducted) + 2h × 2 = 4h → 12h",
         "totalPaidHours": 12,
         "fullDayHours": 8
       }
@@ -24195,6 +24195,7 @@
           "− 0.5h unpaid break",
           "→ 12.5h"
         ],
+        "summary": "07:30–14:00 = 6.5h × 2 = 13h − 0.5h unpaid break → 12.5h",
         "totalPaidHours": 12.5,
         "fullDayHours": null
       }
@@ -24245,11 +24246,11 @@
         "rule": "Monday full day: 07:30–16:00 − 30 min unpaid break (12:00–12:30) = 8h, hours outside it at 1.5×",
         "steps": [
           "06:30–07:30 = 1h × 1.5 = 1.5h",
-          "+ 07:30–16:00 = 8.5h",
-          "− 0.5h unpaid break",
+          "+ 07:30–16:00 = 8h (day, less 30 min unpaid break)",
           "+ 16:00–18:00 = 2h × 1.5 = 3h",
           "→ 12.5h"
         ],
+        "summary": "06:30–18:00 = 1h × 1.5 = 1.5h + 8h (day, less 30 min unpaid break) + 2h × 1.5 = 3h → 12.5h",
         "totalPaidHours": 12.5,
         "fullDayHours": 8
       }
@@ -24334,6 +24335,224 @@
         "Europe/London"
       ],
       "expected": null
+    },
+    {
+      "name": "1.39.0 overtimeTotalText: 12h OT × 1.5 = 18h",
+      "function": "overtimeTotalText",
+      "args": [
+        {
+          "clockHours": 12,
+          "multiplier": 1.5
+        }
+      ],
+      "expected": "12h OT × 1.5 = 18h"
+    },
+    {
+      "name": "1.39.0 overtimeIncludedText with a break",
+      "function": "overtimeIncludedText",
+      "args": [
+        {
+          "clockHours": 6.5,
+          "multiplier": 2,
+          "breakHours": 0.5
+        }
+      ],
+      "expected": "incl. 6.5h OT × 2 − 0.5h break = 12.5h"
+    },
+    {
+      "name": "1.39.0 bookedWithOvertimeText",
+      "function": "bookedWithOvertimeText",
+      "args": [
+        {
+          "bookedHours": 60.5,
+          "clockHours": 12,
+          "multiplier": 1.5
+        }
+      ],
+      "expected": "60.5h booked (incl. 12h OT × 1.5)"
+    },
+    {
+      "name": "1.39.0 bookingHoursCountText",
+      "function": "bookingHoursCountText",
+      "args": [
+        17.5
+      ],
+      "expected": "17.5 hours"
+    },
+    {
+      "name": "1.39.0 saveHoursLabel",
+      "function": "saveHoursLabel",
+      "args": [
+        17.5
+      ],
+      "expected": "Save · 17.5 hours"
+    },
+    {
+      "name": "1.39.0 bookingBreakText: Monday unpaid break",
+      "function": "bookingBreakText",
+      "args": [
+        {
+          "standardDayStart": "07:30",
+          "standardDayEnd": "16:00",
+          "unpaidBreakMinutes": 30,
+          "standardPaidHours": 8,
+          "breakWindowStart": "12:00",
+          "breakWindowEnd": "12:30",
+          "weekdayOutsideStandardMultiplier": 1.5,
+          "saturday": {
+            "allHoursAtMultiplierMode": false,
+            "allHoursMultiplier": 2,
+            "definedWindowStart": "07:30",
+            "definedWindowEnd": "14:00",
+            "countsAsStandardHours": 8,
+            "outsideWindowMultiplier": 2,
+            "sameAsSaturday": false
+          },
+          "sunday": {
+            "allHoursAtMultiplierMode": true,
+            "allHoursMultiplier": 2,
+            "definedWindowStart": "07:30",
+            "definedWindowEnd": "16:00",
+            "countsAsStandardHours": 8,
+            "outsideWindowMultiplier": 2,
+            "sameAsSaturday": false,
+            "breakPaid": false
+          }
+        },
+        "2026-11-16",
+        "Europe/London"
+      ],
+      "expected": {
+        "minutes": 30,
+        "window": "12:00–12:30",
+        "paid": false,
+        "label": "30 min unpaid break 12:00–12:30",
+        "deducted": "30 mins deducted 12:00–12:30"
+      }
+    },
+    {
+      "name": "1.39.0 bookingHoursTiles: Monday 07:00–22:00",
+      "function": "bookingHoursTiles",
+      "args": [
+        {
+          "standardDayStart": "07:30",
+          "standardDayEnd": "16:00",
+          "unpaidBreakMinutes": 30,
+          "standardPaidHours": 8,
+          "breakWindowStart": "12:00",
+          "breakWindowEnd": "12:30",
+          "weekdayOutsideStandardMultiplier": 1.5,
+          "saturday": {
+            "allHoursAtMultiplierMode": false,
+            "allHoursMultiplier": 2,
+            "definedWindowStart": "07:30",
+            "definedWindowEnd": "14:00",
+            "countsAsStandardHours": 8,
+            "outsideWindowMultiplier": 2,
+            "sameAsSaturday": false
+          },
+          "sunday": {
+            "allHoursAtMultiplierMode": true,
+            "allHoursMultiplier": 2,
+            "definedWindowStart": "07:30",
+            "definedWindowEnd": "16:00",
+            "countsAsStandardHours": 8,
+            "outsideWindowMultiplier": 2,
+            "sameAsSaturday": false,
+            "breakPaid": false
+          }
+        },
+        "2026-11-16",
+        {
+          "timeSlot": "CUSTOM_HOURS",
+          "workStartTime": "07:00",
+          "workEndTime": "22:00"
+        },
+        "Europe/London"
+      ],
+      "expected": [
+        {
+          "kind": "standard",
+          "value": "8.5",
+          "label": "Standard (−0.5 break)",
+          "paidHours": 8
+        },
+        {
+          "kind": "overtime",
+          "value": "6.5",
+          "label": "OT",
+          "paidHours": 9.75
+        }
+      ]
+    },
+    {
+      "name": "1.39.0 myScheduleClashMarkers: two overlapping bookings, not approved",
+      "function": "myScheduleClashMarkers",
+      "args": [
+        {
+          "operativeBookings": [
+            {
+              "id": "A",
+              "operativeId": "op1",
+              "dayKey": "2026-11-16",
+              "timeSlot": "CUSTOM_HOURS",
+              "workStartTime": "07:00",
+              "workEndTime": "12:00",
+              "status": "Confirmed",
+              "placeLabel": "J1 Site"
+            },
+            {
+              "id": "B",
+              "operativeId": "op1",
+              "dayKey": "2026-11-16",
+              "timeSlot": "CUSTOM_HOURS",
+              "workStartTime": "11:00",
+              "workEndTime": "15:00",
+              "status": "Confirmed",
+              "placeLabel": "J2 Other"
+            }
+          ],
+          "people": {
+            "accounts": [],
+            "operatives": [
+              {
+                "id": "op1",
+                "email": "a@x.test"
+              }
+            ]
+          },
+          "managerIds": [],
+          "decisions": {
+            "approvedKeys": [],
+            "acceptedClashes": []
+          },
+          "canOpenWarnings": false
+        }
+      ],
+      "expected": [
+        {
+          "bookingId": "A",
+          "state": "clash",
+          "otherBookingIds": [
+            "B"
+          ],
+          "canOpenWarnings": false,
+          "title": "Booking clash",
+          "message": "This booking overlaps Mon 16 Nov · J2 Other · 11:00–15:00. Ask your manager to review this clash.",
+          "actionLabel": null
+        },
+        {
+          "bookingId": "B",
+          "state": "clash",
+          "otherBookingIds": [
+            "A"
+          ],
+          "canOpenWarnings": false,
+          "title": "Booking clash",
+          "message": "This booking overlaps Mon 16 Nov · J1 Site · 07:00–12:00. Ask your manager to review this clash.",
+          "actionLabel": null
+        }
+      ]
     }
   ]
 }

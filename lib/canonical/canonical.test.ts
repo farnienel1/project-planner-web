@@ -9550,7 +9550,7 @@ test('1.18.0: weekendBookingBreakdown — one row per selected day, priced by th
     { dayKey: SUN, weekdayLabel: 'Sunday', start: '07:30', end: '14:00', workedHours: 6.5, countsAsHours: null, standardHours: 0, overtimeHours: 6.5, multiplier: 2, paidHoursEquivalent: 13, unpaidBreakHours: 0, line: undefined, lines: undefined, explanation: undefined }
   )
   // 1.39.0: each row explains its figure (`bookingHoursExplanation`).
-  assert.deepEqual(rows[0].explanation.steps, ['07:30–14:00 = 8h (full day)'])
+  assert.deepEqual(rows[0].explanation.steps, ['07:30–14:00 = 8h (full day, 30 min paid break, not deducted)'])
   assert.deepEqual(rows[1].explanation.steps, ['07:30–14:00 = 6.5h × 2 = 13h'])
   // Each figure is the timesheet pay rule's for that day.
   for (const row of rows) {

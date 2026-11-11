@@ -221,7 +221,7 @@ export function bookingHoursExplanation(
     if (!dayBreak || !(dayBreak.minutes > 0) || start == null || end == null) return ''
     const covers = Math.min(end > start ? end : end + 24 * 60, dayBreak.end) > Math.max(start, dayBreak.start)
     if (!covers) return ''
-    if (!unpaidApplies) return `${dayBreak.minutes} min paid break`
+    if (!unpaidApplies) return `${dayBreak.minutes} min paid break, not deducted`
     return booking.isBreakRemoved === true ? 'no unpaid break on this booking' : ''
   }
   const summaryParts: string[] = []

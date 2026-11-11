@@ -67,12 +67,17 @@ export function overtimeIncludedText(input: OvertimeFigures | null | undefined):
   return text ? `incl. ${text}` : ''
 }
 
-/** "60.5h booked (incl. 12h OT × 1.5)", or "60.5h booked" with no overtime. `bookedHours` already includes the OT. */
+/**
+ * "60.5h booked (incl. 12h OT × 1.5)", or "60.5h booked" with no overtime. `bookedHours` already includes the OT. A
+ * null `multiplier` (several rates summed) gives "60.5h booked (incl. 12h OT)".
+ */
 export function bookedWithOvertimeText(input: { bookedHours: number; clockHours?: number | null; multiplier?: number | null }): string {
   const booked = `${h(Math.max(0, Number(input?.bookedHours) || 0))} booked`
   const clock = Math.max(0, Number(input?.clockHours) || 0)
   if (!(round(clock) > 0)) return booked
-  return `${booked} (incl. ${h(clock)} OT × ${round(multiplierOf(input?.multiplier))})`
+  // Different multipliers summed together: the rate is left out rather than one of them shown.
+  if (input?.multiplier == null) return `${booked} (incl. ${h(clock)} OT)`
+  return `${booked} (incl. ${h(clock)} OT × ${round(multiplierOf(input.multiplier))})`
 }
 
 /** "17.5 hours" ("1 hour"). The word is hours, never "paid" (owner answer 11 Nov). */

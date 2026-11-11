@@ -1,6 +1,7 @@
 'use client'
 
-import { enabledScheduleLocations } from '@/lib/canonical'
+import { enabledScheduleLocations, type MyScheduleClashMarker } from '@/lib/canonical'
+import { MyScheduleClashMarkerButton } from '@/components/schedule/MyScheduleClashMarker'
 import { intervalsOverlap, operativeClashInterval } from '@/lib/warnings/clashIntervals'
 import {
   useEffect,
@@ -199,6 +200,7 @@ export function MyScheduleSelfBookingScreen({
   payrollPolicy = DEFAULT_PAYROLL_POLICY,
   assignedBookings = [],
   canEditBookings = false,
+  clashMarkers,
 }: {
   userId: string
   organizationId: string
@@ -207,6 +209,8 @@ export function MyScheduleSelfBookingScreen({
   assignedBookings?: AssignedScheduleBooking[]
   /** Same gate as Daily Overview editing (`canBookWork`). Opens the shared BookingEditSheet. */
   canEditBookings?: boolean
+  /** Rulebook 1.39.0 §10: the clash marker per booking id (`myScheduleClashMarkers`). */
+  clashMarkers?: ReadonlyMap<string, MyScheduleClashMarker>
 }) {
   const { projects, smallWorks, loadProjects, loadSmallWorks } = useProjectStore()
   const {
@@ -777,7 +781,9 @@ export function MyScheduleSelfBookingScreen({
               ) : null}
               {assignedRows.map((booking) => (
                 <div key={booking.id} className="bk" data-hue="proj">
-                  <b>{booking.title}</b>
+                  <b>
+                    {booking.title} <MyScheduleClashMarkerButton marker={clashMarkers?.get(booking.id)} />
+                  </b>
                   <span className="x">{booking.detail}</span>
                 </div>
               ))}
@@ -807,7 +813,9 @@ export function MyScheduleSelfBookingScreen({
                           }
                         : {})}
                     >
-                      <b>{locationName(booking)}</b>
+                      <b>
+                        {locationName(booking)} <MyScheduleClashMarkerButton marker={clashMarkers?.get(booking.id)} />
+                      </b>
                       <span className="x">{slotLabel(booking, payrollPolicy)}</span>
                       {removeActionFor(booking) === 'delete' ? (
                         <button

@@ -17,8 +17,9 @@ import {
   operativeIdsForEmail,
 } from '@/lib/operatives/operativeRosterUtils'
 import { canSelfBookMySchedule, isOperativeMode } from '@/lib/navigation/menuPermissions'
-import { canBookWork, hasAdminAccess } from '@/lib/permissions'
-import { managerSiteBookingToScheduleBooking } from '@/lib/scheduling/managerSiteBookingUtils'
+import { canBookWork, canViewWarnings, hasAdminAccess } from '@/lib/permissions'
+import { useMyScheduleClashMarkers } from '@/lib/schedule/myScheduleClashMarkers'
+import { managerSiteBookingDisplayTitle, managerSiteBookingToScheduleBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import { normalizeBookingStatus } from '@/lib/ios-parity/enums'
 import type { AssignedScheduleBooking } from '@/components/schedule/MyScheduleSelfBookingScreen'
 import { loadOrganizationDetails } from '@/lib/settings/organizationSettings'
@@ -142,6 +143,41 @@ function MySchedulePageContent() {
     return merged.sort((a, b) => a.date.getTime() - b.date.getTime())
   }, [bookings, linkedOperativeIds, managerSiteBookings, projectsById, organization?.id, user?.id, users, userIdAliases])
 
+  // Rulebook 1.39.0 §10: the clash marker on the viewer's own bookings (`myScheduleClashMarkers`), computed from the
+  // same labour and manager site bookings this page shows, exactly as Warnings groups them.
+  const ownLabourBookings = useMemo(() => {
+    const ids = new Set(linkedOperativeIds.map((id) => id.toLowerCase()))
+    return ids.size > 0 ? bookings.filter((b) => ids.has(String(b.operativeId || '').toLowerCase())) : []
+  }, [bookings, linkedOperativeIds])
+  const ownManagerBookings = useMemo(() => {
+    if (!user?.id) return []
+    const mineIds = samePersonIds(user.id, users, userIdAliases)
+    return managerSiteBookings.filter((b) => mineIds.has(b.userId))
+  }, [managerSiteBookings, user?.id, users, userIdAliases])
+  const viewerIdsForClash = useMemo(
+    () => (user?.id ? Array.from(new Set([...linkedOperativeIds, ...samePersonIds(user.id, users, userIdAliases)])) : []),
+    [user?.id, linkedOperativeIds, users, userIdAliases]
+  )
+  const clashPlaceLabel = useCallback((jobId: string | null | undefined) => projectsById.get(String(jobId || '')) || 'Booking', [projectsById])
+  const clashManagerPlaceLabel = useCallback(
+    (booking: (typeof managerSiteBookings)[number]) => managerSiteBookingDisplayTitle(booking, projectsById) || 'Booking',
+    [projectsById]
+  )
+  const clashMarkers = useMyScheduleClashMarkers({
+    organizationId: organization?.id,
+    labourBookings: ownLabourBookings,
+    managerBookings: ownManagerBookings,
+    users,
+    operatives,
+    userIdAliases,
+    payrollPolicy,
+    canOpenWarnings: Boolean(user && canViewWarnings(user)),
+    viewerIds: viewerIdsForClash,
+    viewerEmail: user?.email ?? null,
+    placeLabel: clashPlaceLabel,
+    managerPlaceLabel: clashManagerPlaceLabel,
+  })
+
   const peopleById = useMemo(() => {
     const map = new Map<string, string>()
     for (const row of users) {
@@ -229,6 +265,7 @@ function MySchedulePageContent() {
         payrollPolicy={payrollPolicy}
         assignedBookings={assignedBookings}
         canEditBookings={canBookWork(user)}
+        clashMarkers={clashMarkers}
       />
     )
   }
@@ -250,6 +287,7 @@ function MySchedulePageContent() {
       canWriteBookingFor={canWriteBookingFor}
       canDeleteBookingFor={canDeleteBookingFor}
       payrollPolicy={payrollPolicy}
+      clashMarkers={clashMarkers}
     />
   )
 }
