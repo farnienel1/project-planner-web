@@ -2,7 +2,7 @@
 
 import { formatMoney } from '@/lib/canonical/money'
 import { useOrganizationCurrency } from '@/lib/stores/organizationDocumentStore'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { hasAdminAccess } from '@/lib/navigation/menuPermissions'
@@ -63,6 +63,19 @@ import { timesheetsTeamHref } from '@/lib/timesheets/timesheetRoutes'
 import { computeInvoicingPeriod } from '@/lib/warnings/warningLookahead'
 import { formatStampInZone } from '@/lib/orgTime/zoneTime'
 import { PayInputsBanner } from '@/components/timesheets/PayInputsBanner'
+import { ClockIcon, MagnifyingGlassIcon } from '@heroicons/react/24/solid'
+import {
+  Card,
+  Chip,
+  DataTable,
+  EmptyState,
+  IconTile,
+  Note,
+  PuButton,
+  SegmentedTabs,
+  WarnIcon,
+  type DataColumn,
+} from '@/components/ui/page'
 import type { TimesheetInputsState } from '@/lib/timesheets/timesheetInputs'
 import type { PayrollTimePolicyState } from '@/lib/canonical'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
@@ -479,13 +492,17 @@ export function TimesheetsScreen({
 
   if (loadError) {
     return (
-      <div className="empty card pad">
-        <h3>Timesheets did not load</h3>
-        <p>{loadError}</p>
-        <button type="button" className="btn sm" onClick={() => void reload()}>
-          Try again
-        </button>
-      </div>
+      <Card>
+        <EmptyState
+          tile={<IconTile tone="red" size="lg"><WarnIcon /></IconTile>}
+          title="Timesheets did not load"
+          description={loadError}
+        >
+          <PuButton size="sm" onClick={() => void reload()}>
+            Try again
+          </PuButton>
+        </EmptyState>
+      </Card>
     )
   }
 
@@ -535,18 +552,23 @@ export function TimesheetsScreen({
 
   if (visible.length === 0) {
     return (
-      <div className="empty card pad">
-        <h3>{emptyTitle}</h3>
-        <p>{emptyDescription}</p>
-        {checkingEarlier ? <p className="muted">Checking the rest of the team…</p> : null}
-      </div>
+      <Card>
+        <EmptyState
+          tile={<IconTile tone={teamTab === 'signed' ? 'green' : 'amber'} size="lg"><ClockIcon /></IconTile>}
+          title={emptyTitle}
+          description={emptyDescription}
+        >
+          {checkingEarlier ? <span>Checking the rest of the team…</span> : null}
+        </EmptyState>
+      </Card>
     )
   }
 
   return (
-    <div className="stack" style={{ gap: 12 }}>
-      {checkingEarlier ? <p className="muted">Checking the rest of the team…</p> : null}
-      <div className="rows">
+    <>
+      {checkingEarlier ? <Note tone="info">Checking the rest of the team…</Note> : null}
+      <Card>
+      <MemberTable viewer={user}>
         {visible.map((member) => {
           const draft = drafts.get(member.id)
           const summary = summaryFor(member, draft, periodStart, periodEnd)
@@ -572,36 +594,55 @@ export function TimesheetsScreen({
             />
           )
         })}
-      </div>
+      </MemberTable>
+      </Card>
       {teamTab === 'signed' ? (
-        <div className="stack" style={{ gap: 8 }}>
-          <p className="muted small">{SIGNED_OFF_EDIT_NOTE}</p>
+        <Card>
+        <div className="pu-card-b">
+          <Note tone="green">{SIGNED_OFF_EDIT_NOTE}</Note>
           {user && canViewSensitiveProfile({ viewerRole: staffAccountRole(user), viewerUserId: user.id, subjectUserId: '' }) ? (
-            <label className="flex items-center gap-2 text-[14px] text-[var(--ink2)]">
+            <label className="pu-form-label" style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
               <input type="checkbox" checked={exportTaxIds} onChange={(e) => setExportTaxIds(e.target.checked)} />
               {SENSITIVE_EXPORT_OPTION_LABEL}
             </label>
           ) : null}
           <PayInputsBanner inputs={payInputs} />
-          <button
-            type="button"
-            disabled={exporting || !payInputs.ready}
-            onClick={() => void exportSigned()}
-            className="btn primary block"
-          >
+          <PuButton variant="primary" block disabled={exporting || !payInputs.ready} onClick={() => void exportSigned()}>
             {exporting ? 'Sending timesheets…' : `Email and export ${visible.length} timesheet${visible.length === 1 ? '' : 's'}`}
-          </button>
-          {ownSheetNotice ? <p className="banner" data-hue="warn">{ownSheetNotice}</p> : null}
-          {exportMessage ? <p className="muted small">{exportMessage}</p> : null}
+          </PuButton>
+          {ownSheetNotice ? <Note tone="amber">{ownSheetNotice}</Note> : null}
+          {exportMessage ? <span className="pu-sub">{exportMessage}</span> : null}
         </div>
+        </Card>
       ) : null}
-    </div>
+    </>
   )
 }
 
 function formatQueueHours(hours: number): string {
   const rounded = Math.round(hours * 2) / 2
   return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1)
+}
+
+/** Table shell for User Timesheets rows: the Line manager column only when the rows show it (admins). */
+function MemberTable({ viewer, exported, children }: { viewer: User | null; exported?: boolean; children: ReactNode }) {
+  const columns: DataColumn[] = [
+    { key: 'person', label: 'Person' },
+    ...(exported
+      ? [
+          { key: 'run', label: 'Pay run' },
+          { key: 'exported', label: 'Exported' },
+        ]
+      : []),
+    { key: 'hrs', label: 'Hrs', align: 'right' as const },
+    { key: 'ot', label: 'OT', align: 'right' as const },
+    { key: 'pw', label: 'PW', align: 'right' as const },
+    { key: 'exp', label: 'Exp', align: 'right' as const },
+    { key: 'role', label: 'Role' },
+    ...(hasAdminAccess(viewer) ? [{ key: 'lm', label: 'Line manager' }] : []),
+    { key: 'status', label: 'Status' },
+  ]
+  return <DataTable columns={columns}>{children}</DataTable>
 }
 
 function MemberRow({
@@ -636,25 +677,45 @@ function MemberRow({
     const manager = users.find((row) => row.id === managerId)
     return manager ? displayName(manager) : 'Unknown'
   })()
+  const name = displayName(member)
+  const exportedColumns = periodLine !== undefined
   return (
-    <button type="button" onClick={onClick} className="ritem" data-hue="ts">
-      <span className="ico-chip">{initials(displayName(member))}</span>
-      <span className="grow">
-        <span className="t">{displayName(member)}</span>
-        {periodLine ? <span className="s" style={{ color: 'var(--ts)', fontWeight: 600 }}>{periodLine}</span> : null}
-        {exportedAt && timeZone ? (
-          <span className="s">Exported {formatStampInZone(exportedAt, timeZone)}</span>
-        ) : null}
-        <span className="s">
-          Hrs {formatQueueHours(summary.hours)} · OT {formatQueueHours(summary.overtimeHours)} · PW{' '}
-          {formatMoney(summary.priceWork, currency)} · Exp {formatMoney(summary.expenses, currency)} · {role}
+    <tr className="click" onClick={onClick}>
+      <td>
+        <span className="pu-who">
+          <IconTile tone={role === 'Operative' ? 'green' : role === 'Admin' ? 'purple' : 'blue'} size="sm" round>
+            {initials(name)}
+          </IconTile>
+          <span>
+            <button
+              type="button"
+              className="pu-rowbtn"
+              onClick={(event) => {
+                event.stopPropagation()
+                onClick()
+              }}
+            >
+              <b>{name}</b>
+            </button>
+          </span>
         </span>
-        {lineManager ? <span className="s">Line manager: {lineManager}</span> : null}
-      </span>
-      <span className="pill" data-hue={pillHue}>
-        {pill}
-      </span>
-    </button>
+      </td>
+      {exportedColumns ? (
+        <>
+          <td style={{ color: 'var(--pu-blue)', fontWeight: 600, whiteSpace: 'nowrap' }}>{periodLine}</td>
+          <td style={{ whiteSpace: 'nowrap' }}>{exportedAt && timeZone ? formatStampInZone(exportedAt, timeZone) : ''}</td>
+        </>
+      ) : null}
+      <td className="num">{formatQueueHours(summary.hours)}</td>
+      <td className="num">{formatQueueHours(summary.overtimeHours)}</td>
+      <td className="num">{formatMoney(summary.priceWork, currency)}</td>
+      <td className="num">{formatMoney(summary.expenses, currency)}</td>
+      <td>{role}</td>
+      {lineManager != null ? <td>{lineManager}</td> : null}
+      <td>
+        <Chip tone={pillHue === 'warn' ? 'amber' : pillHue === 'green' ? 'green' : 'slate'}>{pill}</Chip>
+      </td>
+    </tr>
   )
 }
 
@@ -737,47 +798,34 @@ function ExportedTimesheetsList({
     })
 
   return (
-    <div className="stack" style={{ gap: 12 }}>
-      <div className="card pad" data-hue="ts">
-        <label className="muted small" htmlFor="exported-search">
-          Search
+    <Card>
+      <div className="pu-toolbar">
+        <label className="pu-field" htmlFor="exported-search">
+          <span className="sr-only">Search</span>
+          <MagnifyingGlassIcon width={16} height={16} aria-hidden="true" />
+          <input
+            id="exported-search"
+            type="search"
+            value={search}
+            onChange={(event) => onSearch(event.target.value)}
+            placeholder="Name or payment run"
+          />
         </label>
-        <input
-          id="exported-search"
-          type="search"
-          value={search}
-          onChange={(event) => onSearch(event.target.value)}
-          placeholder="Name or payment run"
-          className="pp-in"
-          style={{ width: '100%', marginTop: 6 }}
+        <SegmentedTabs
+          ariaLabel="Sort exported timesheets"
+          items={[
+            { id: 'firstName', label: 'First name' },
+            { id: 'lastName', label: 'Last name' },
+            { id: 'dateNewest', label: 'Date newest' },
+            { id: 'dateOldest', label: 'Date oldest' },
+          ]}
+          value={sort}
+          onChange={onSort}
         />
-        <p className="muted small" style={{ marginTop: 12 }}>
-          Filter
-        </p>
-        <div className="seg" role="group" aria-label="Sort exported timesheets">
-          {(
-            [
-              ['firstName', 'First name'],
-              ['lastName', 'Last name'],
-              ['dateNewest', 'Date newest'],
-              ['dateOldest', 'Date oldest'],
-            ] as const
-          ).map(([id, label]) => (
-            <button key={id} type="button" className={sort === id ? 'on' : ''} onClick={() => onSort(id)}>
-              {label}
-            </button>
-          ))}
-        </div>
-        <label className="muted small" htmlFor="exported-run" style={{ display: 'block', marginTop: 12 }}>
+        <label htmlFor="exported-run" className="sr-only">
           Payment run
         </label>
-        <select
-          id="exported-run"
-          value={runKey}
-          onChange={(event) => onRunKey(event.target.value)}
-          className="pp-in"
-          style={{ width: '100%', marginTop: 6 }}
-        >
+        <select id="exported-run" value={runKey} onChange={(event) => onRunKey(event.target.value)} className="pu-sel">
           <option value="all">All payment runs</option>
           {runs.map((period) => {
             const key = `${periodStartKey(period.start, timeZone)}|${dayKey(period.end, timeZone)}`
@@ -790,12 +838,13 @@ function ExportedTimesheetsList({
         </select>
       </div>
       {filtered.length === 0 ? (
-        <div className="empty card pad">
-          <h3>{rows.length === 0 ? emptyTitle : 'No matching exported timesheets'}</h3>
-          <p>{rows.length === 0 ? emptyDescription : 'Try another name, sort, or payment run.'}</p>
-        </div>
+        <EmptyState
+          tile={<IconTile tone="slate" size="lg"><ClockIcon /></IconTile>}
+          title={rows.length === 0 ? emptyTitle : 'No matching exported timesheets'}
+          description={rows.length === 0 ? emptyDescription : 'Try another name, sort, or payment run.'}
+        />
       ) : (
-        <div className="rows">
+        <MemberTable viewer={viewer} exported>
           {filtered.map(({ row, period }) => {
             const summary = summaryFor(row.user, row.draft, period.start, period.end)
             return (
@@ -814,8 +863,8 @@ function ExportedTimesheetsList({
               />
             )
           })}
-        </div>
+        </MemberTable>
       )}
-    </div>
+    </Card>
   )
 }
