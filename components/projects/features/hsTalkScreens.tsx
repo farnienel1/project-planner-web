@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { format } from 'date-fns'
+import { weekCommencingLabel } from '@/lib/orgTime/organizationWeek'
 import {
   ArrowDownTrayIcon,
   BellAlertIcon,
@@ -302,7 +303,7 @@ export function HsTrackingIssueCard({
             <p className="text-sm font-semibold text-slate-900">{title}</p>
             <p className="text-xs text-slate-500">
               {reference ? `${reference} · ` : ''}
-              Issued {format(issuedAt, 'd MMM yyyy')} · W/C {format(weekCommencing, 'd MMM')}
+              Issued {format(issuedAt, 'd MMM yyyy')} · W/C {weekCommencingLabel(weekCommencing, 'd MMM')}
             </p>
           </div>
           <span className="shrink-0 text-sm font-extrabold text-[#0fae9e]">{percent}%</span>
@@ -358,7 +359,7 @@ export function HsIssueDetail({
       <h1 className="text-lg font-extrabold text-slate-900">{talk?.title || 'Toolbox talk'}</h1>
       <p className="text-xs text-slate-500">
         {talk?.referenceCode ? `${talk.referenceCode} · ` : ''}
-        Issued {format(issue.issuedAt, 'd MMM yyyy')} · W/C {format(issue.weekCommencing, 'd MMM yyyy')}
+        Issued {format(issue.issuedAt, 'd MMM yyyy')} · W/C {weekCommencingLabel(issue.weekCommencing, 'd MMM yyyy')}
       </p>
       <HsSignedProgress signatures={signatures} recipientCount={issue.recipientUserIds.length} />
       <FeatureSectionLabel>Actions</FeatureSectionLabel>

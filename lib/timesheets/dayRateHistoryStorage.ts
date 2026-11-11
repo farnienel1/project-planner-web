@@ -59,11 +59,15 @@ export function mergedDayRateEntries(
     seen.add(entry.id)
     out.push(entry)
   }
-  for (const id of idList(userId)) {
-    for (const entry of history.byUserId[id] || []) push(entry)
+  // 1.36.0 (FU-5): ids compare without case (rulebook §1 `normalizeDocumentId`), so a row filed under an iOS
+  // upper-case id, or a person's id in another letter case, is still that person's history.
+  const userKeys = new Set(idList(userId).map((id) => id.toLowerCase()))
+  const operativeKeys = new Set(idList(operativeId).map((id) => id.toLowerCase()))
+  for (const [key, entries] of Object.entries(history.byUserId)) {
+    if (userKeys.has(key.trim().toLowerCase())) for (const entry of entries) push(entry)
   }
-  for (const id of idList(operativeId)) {
-    for (const entry of history.byOperativeId[id] || []) push(entry)
+  for (const [key, entries] of Object.entries(history.byOperativeId)) {
+    if (operativeKeys.has(key.trim().toLowerCase())) for (const entry of entries) push(entry)
   }
   return out.sort((a, b) => {
     const byEffective = a.effectiveAt.getTime() - b.effectiveAt.getTime()
@@ -333,13 +337,27 @@ export function payHistoryBatchRows(input: {
   history: OperativeDayRateHistoryCollection | null
   userId?: string | null
   operativeId?: string | null
+  /**
+   * 1.36.0 (FU-5): every id the person's existing history may be filed under (`personRateHistoryIds`), so a person
+   * whose rows sit under a former invite id or another `operatives` row is not treated as having no history (which
+   * wrote a duplicate seed row). Defaults to `userId` / `operativeId`. The written row still carries `userId` /
+   * `operativeId`.
+   */
+  historyUserIds?: string[]
+  historyOperativeIds?: string[]
   previous: { rate: number | null | undefined; payBasis?: PayBasis | null }
   next: { rate: number | null | undefined; payBasis?: PayBasis | null }
   effectiveAt: Date
   seedEffective?: Date | null
   timeZone?: string | null
 }): PayHistoryBatchRow[] {
-  const personRows = input.history ? mergedDayRateEntries(input.history, input.userId, input.operativeId) : null
+  const personRows = input.history
+    ? mergedDayRateEntries(
+        input.history,
+        [input.userId ?? '', ...(input.historyUserIds ?? [])],
+        [input.operativeId ?? '', ...(input.historyOperativeIds ?? [])]
+      )
+    : null
   const result = payRateChangeWrites({
     userId: input.userId,
     operativeId: input.operativeId,

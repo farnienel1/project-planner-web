@@ -112,3 +112,19 @@ test('PAYE timesheet days return nil rates even when history exists', () => {
   assert.equal(resolved.dayRate, null)
   assert.equal(resolved.hourlyRate, null)
 })
+
+test('1.36.0 FU-5: a rate history row filed under the person\'s second operatives row counts (operativeIds)', () => {
+  // A catalogue rate change (userId '') under row op2, before the person had an account; the linked row is op1.
+  const history: OperativeDayRateHistoryCollection = {
+    byUserId: {},
+    byOperativeId: {
+      op2: [{ id: 'h-op2', userId: '', operativeId: 'op2', dayRate: 260, effectiveAt: new Date('2026-01-01T00:00:00Z'), createdAt: new Date('2026-01-01T00:00:00Z') }],
+    },
+  }
+  const person = user({ id: 'u1', dayRate: 200 })
+  const day = new Date('2026-10-14T12:00:00Z')
+  const before = resolvePayrollRate({ user: person, operative, day, history, timeZone: 'Europe/London' })
+  assert.equal(before.dayRate, 200)
+  const after = resolvePayrollRate({ user: person, operative, day, history, timeZone: 'Europe/London', operativeIds: ['op2'] })
+  assert.equal(after.dayRate, 260)
+})

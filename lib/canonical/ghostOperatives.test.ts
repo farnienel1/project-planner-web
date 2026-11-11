@@ -488,3 +488,21 @@ test('ghostsToCheck: missing rate or line manager, and converted rows; ordinary 
     { id: 'g3', issues: ['converted'] },
   ])
 })
+
+test('1.36.0 conversion: users storing the organisation as a path, and anchored members, are accounts (never ghosts)', () => {
+  const operatives = [
+    { id: 'row-visitor', firstName: 'Vic', lastName: 'Visitor', email: 'vic@other.com', dayRate: 100, payBasis: 'day' as const },
+    { id: 'row-path', firstName: 'Pat', lastName: 'Path', email: 'pat@x.com', dayRate: 100, payBasis: 'day' as const },
+    { id: 'row-ref', firstName: 'Rae', lastName: 'Ref', email: 'rae@x.com', dayRate: 100, payBasis: 'day' as const },
+    { id: 'row-ghost', firstName: 'Gus', lastName: 'Ghost', email: 'gus@x.com', dayRate: 100, payBasis: 'day' as const },
+  ]
+  const users = [
+    { id: 'u-vic', email: 'vic@other.com', organizationId: 'OTHER' },
+    { id: 'u-pat', email: 'pat@x.com', organizationId: `organizations/${ORG}` },
+    { id: 'u-rae', email: 'rae@x.com', organizationId: { id: ORG, path: `organizations/${ORG}` } },
+  ]
+  const ids = (memberIds?: string[]) =>
+    ghostConversionCandidates({ organizationId: ORG, operatives, users, memberIds }).map((c) => c.operativeId)
+  assert.deepEqual(ids(), ['row-ghost', 'row-visitor'])
+  assert.deepEqual(ids(['u-vic']), ['row-ghost'])
+})

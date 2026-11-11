@@ -2,14 +2,17 @@ import {
   addDays,
   addMonths,
   endOfMonth,
-  endOfWeek,
   format,
   isSameDay,
   isSameMonth,
   startOfDay,
   startOfMonth,
-  startOfWeek,
 } from 'date-fns'
+import {
+  organizationCalendarWeekEnd,
+  organizationCalendarWeekStart,
+  organizationTodayCalendarDate,
+} from '@/lib/orgTime/organizationWeek'
 
 export type ScheduleSlotChoice = 'AM' | 'PM' | 'FULL DAY' | 'CUSTOM'
 
@@ -31,9 +34,10 @@ export function weekDaysFrom(weekStart: Date): Date[] {
 
 export function calendarGridDays(month: Date): Date[] {
   const monthStart = startOfMonth(month)
-  const gridStart = startOfWeek(monthStart, { weekStartsOn: 1 })
+  // Rulebook §1 (1.36.0, FU-4): rows are organisation weeks (Monday–Sunday, `organizationWeekDayKeys`).
+  const gridStart = organizationCalendarWeekStart(monthStart)
   const monthEnd = endOfMonth(month)
-  const gridEnd = endOfWeek(monthEnd, { weekStartsOn: 1 })
+  const gridEnd = organizationCalendarWeekEnd(monthEnd)
   const days: Date[] = []
   let current = gridStart
   while (current <= gridEnd) {
@@ -117,7 +121,9 @@ export function toggleSelectedDateChecked(
   const message = rules.mixMessage([...Array.from(selected.values()).map((slot) => slot.date), startOfDay(date)])
   if (message) return { slots: selected, error: message }
   const next = new Map(selected)
-  if (rules.isWeekend(date)) {
+  // `rules.isWeekend` is the organisation-zone weekend test (`useScheduleDateRules` → `isWeekendDayKey`).
+  const weekendDay = rules.isWeekend
+  if (weekendDay(date)) {
     const hours = rules.prefill(date)
     next.set(key, { date: startOfDay(date), slot: 'CUSTOM', workStartTime: hours.start, workEndTime: hours.end })
   } else {
@@ -127,12 +133,18 @@ export function toggleSelectedDateChecked(
 }
 
 /** Quick select N working days from today, skipping Saturdays and Sundays (as iOS `quickSelect`). */
-export function setQuickSelectWeekdays(days: number, isWeekend: (date: Date) => boolean): Map<string, ScheduleDateSlot> {
+export function setQuickSelectWeekdays(
+  days: number,
+  weekendDay: (date: Date) => boolean,
+  today: Date = organizationTodayCalendarDate()
+): Map<string, ScheduleDateSlot> {
   const next = new Map<string, ScheduleDateSlot>()
-  let cursor = startOfDay(new Date())
+  // Rulebook §1 (1.36.0, FU-4): from the organisation's today, not the browser's (a browser abroad or near midnight
+  // started the next N working days on the wrong day).
+  let cursor = startOfDay(today)
   let guard = 0
   while (next.size < days && guard < 60) {
-    if (!isWeekend(cursor)) next.set(slotKey(cursor), { date: cursor, slot: 'FULL DAY' })
+    if (!weekendDay(cursor)) next.set(slotKey(cursor), { date: cursor, slot: 'FULL DAY' })
     cursor = addDays(cursor, 1)
     guard += 1
   }

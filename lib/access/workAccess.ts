@@ -49,42 +49,6 @@ export function managerMatching(email: string | undefined, managers: Manager[]):
   return managers.find((m) => normalizedEmail(m.email) === needle)
 }
 
-function allAssignedOperativeIds(task: ProjectTask): string[] {
-  const ids = new Set<string>()
-  if (task.assignedOperativeId) ids.add(task.assignedOperativeId)
-  for (const id of task.assignedOperativeIds || []) {
-    if (id) ids.add(id)
-  }
-  return [...ids]
-}
-
-function allAssignedManagerIdsOnTask(task: ProjectTask): string[] {
-  const ids = new Set<string>()
-  if (task.assignedManagerId) ids.add(task.assignedManagerId)
-  return [...ids]
-}
-
-export function isTaskAssignedToUser(params: {
-  task: ProjectTask
-  userEmail?: string | null
-  operatives: Operative[]
-  managers: Manager[]
-  isOperativeMode: boolean
-}): boolean {
-  const raw = normalizedEmail(params.userEmail)
-  if (!raw) return false
-  if (params.isOperativeMode) {
-    const ids = params.operatives.filter((o) => normalizedEmail(o.email) === raw).map((o) => o.id)
-    const assigned = allAssignedOperativeIds(params.task)
-    return ids.some((id) => assigned.includes(id))
-  }
-  const mgr = params.managers.find((m) => normalizedEmail(m.email) === raw)
-  if (mgr && allAssignedManagerIdsOnTask(params.task).includes(mgr.id)) return true
-  const op = params.operatives.find((o) => normalizedEmail(o.email) === raw)
-  if (op && allAssignedOperativeIds(params.task).includes(op.id)) return true
-  return false
-}
-
 export type WorkAccessParams = {
   projects: Project[]
   catalogue?: JobCatalogue

@@ -213,3 +213,28 @@ test('Email and export PDF uses raw payroll, skips declined extras, and uses rev
   assert.equal(priceWork?.details, 'Extra first fix · 0h · rate not set')
   assert.equal(priceWork?.amount, 60)
 })
+
+test('1.36.0 FU-5: invoiceRateChangeNotes includes history under a former invite id and every operatives row, without case', () => {
+  const notes = invoiceRateChangeNotes({
+    history: {
+      byUserId: {
+        'INVITE-OLD': [{ id: 'h1', userId: 'INVITE-OLD', dayRate: 230, effectiveAt: new Date('2026-09-20T00:00:00Z'), createdAt: new Date('2026-09-20T00:00:00Z') }],
+      },
+      byOperativeId: {
+        'OP-2': [{ id: 'h2', userId: '', operativeId: 'OP-2', dayRate: 240, effectiveAt: new Date('2026-09-22T00:00:00Z'), createdAt: new Date('2026-09-22T00:00:00Z') }],
+        'op-blank': [{ id: 'h3', userId: '', operativeId: 'op-blank', dayRate: 999, effectiveAt: new Date('2026-09-22T00:00:00Z'), createdAt: new Date('2026-09-22T00:00:00Z') }],
+      },
+    },
+    user: { id: 'u1', email: 'ada@x.com', formerUserIds: ['invite-old'] } as unknown as User,
+    operatives: [
+      { id: 'op-2', email: 'Ada@x.com' },
+      { id: 'op-blank', email: '' },
+    ] as never,
+    periodStart: new Date('2026-09-16T00:00:00Z'),
+    periodEnd: new Date('2026-09-30T00:00:00Z'),
+    timeZone: 'Europe/London',
+  })
+  assert.equal(notes.length, 2)
+  assert.ok(notes.some((note) => /^Rate updated to £230.00/.test(note)))
+  assert.ok(notes.some((note) => /^Operative rate updated to £240.00/.test(note)))
+})

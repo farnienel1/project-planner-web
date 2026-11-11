@@ -13,6 +13,7 @@ import {
   type MyScheduleOptions,
   type OrgPayrollTimePolicy,
 } from '@/lib/settings/organizationSettings'
+import { personRateHistoryIds } from '@/lib/pay/personRateHistoryIds'
 import { findOperativeForUser } from '@/lib/operatives/operativeRosterUtils'
 import { bookingIdsForAccount, bookingOccupiesDay, formatMoney, overlappingBookingIds, payrollMultipliedHours, weekdayPaidHours } from '@/lib/canonical'
 import { employmentTypeOnDay } from '@/lib/ios-parity/employmentType'
@@ -200,6 +201,7 @@ export function collectTimesheetPayroll({
     ).map((id) => id.toLowerCase())
   )
   if (linked) operativeIds.add(linked.id.toLowerCase())
+  const rateHistoryOperativeIds = personRateHistoryIds(user, operatives, { aliasUserIds }).operativeIds
   // Rulebook 1.11.0 `timesheetDaysForPerson`: only the days the person is self-employed count. A PAYE day never
   // produces a timesheet line (it stays a booking for warnings, Daily Overview and Weekly Report hours).
   const zone = timeZone || organizationZoneOr()
@@ -267,6 +269,8 @@ export function collectTimesheetPayroll({
       standardDayHours,
       timeZone,
       aliasUserIds,
+      // 1.36.0 (FU-5): rate history filed under any of the person's `operatives` rows, not only one.
+      operativeIds: rateHistoryOperativeIds,
     })
     const hasRate = payrollRateHasValue(resolved)
     // 1.20.3: hours at the multiplier as clock hours, with any unpaid break as plain hours (display only).

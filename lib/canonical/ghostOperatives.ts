@@ -24,6 +24,7 @@
 import { invitationCreateFields } from './createDocuments'
 import { canDecideLeave, type LeaveApproverMember, type LeaveDecisionViewer, type LeaveRequester } from './leaveRequests'
 import { lineManagerCandidates, type LineManagerRosterPerson } from './lineManagers'
+import { documentOrganizationId } from './peopleDocuments'
 import { payProfilePath, payProfileWriteFieldsFromProfileWrite, sharedDocumentPayWrite } from './payProfile'
 import { canManageOperatives, permissionLevelOf, permissionsWriteMap, addUserPermissionDefaults } from './permissionLevels'
 import { idKey, idText } from './personIds'
@@ -543,7 +544,8 @@ export type GhostConversionOperativeRow = {
 export type GhostConversionUser = {
   id: string
   email?: string | null
-  organizationId?: string | null
+  /** The id, a path (`organizations/{id}`) or a DocumentReference (`documentOrganizationId`). */
+  organizationId?: unknown
   ghost?: unknown
 }
 
@@ -584,9 +586,24 @@ export function ghostConversionCandidates(input: {
   organizationId: string
   operatives: ReadonlyArray<GhostConversionOperativeRow>
   users: ReadonlyArray<GhostConversionUser>
+  /**
+   * 1.36.0: the organisation's anchored people (§1 `rosterMembersForOrganization`: every key of `members` and the
+   * creator). Their users documents count as accounts here whatever company the document names, so a member from
+   * another company whose `operatives` row is on their email is never converted into a ghost.
+   */
+  memberIds?: ReadonlyArray<string> | null
 }): GhostConversionCandidate[] {
   const org = idKey(input?.organizationId)
-  const users = (input?.users || []).filter((user) => user && idText(user.id) && (!org || idKey(user.organizationId) === org || !idText(user.organizationId)))
+  const memberKeys = new Set((input?.memberIds || []).map(idKey).filter(Boolean))
+  // 1.36.0: a stored organisation reference is read with `documentOrganizationId` (an id, a path or a reference), so a
+  // users document that stores `organizations/{id}` is this organisation's account, not missing (before, its row was
+  // a ghost candidate and the conversion would have created a second person).
+  const users = (input?.users || []).filter((user) => {
+    if (!user || !idText(user.id)) return false
+    if (!org || memberKeys.has(idKey(user.id))) return true
+    const stored = documentOrganizationId(user.organizationId)
+    return !stored || idKey(stored) === org
+  })
   const userIds = new Set(users.map((user) => idKey(user.id)))
   const userEmails = new Set(users.map((user) => idKey(user.email)).filter(Boolean))
   const rows = (input?.operatives || []).filter((row) => {

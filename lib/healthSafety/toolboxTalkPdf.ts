@@ -1,4 +1,5 @@
 import { format } from 'date-fns'
+import { weekCommencingLabel } from '@/lib/orgTime/organizationWeek'
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from 'pdf-lib'
 import { userDisplayName, userTradeLabel } from '@/lib/healthSafety/hsPeople'
 import { stripPngDataUrl } from '@/lib/signature/signatureImage'
@@ -247,7 +248,7 @@ export async function buildToolboxTalkPdf(input: ToolboxTalkPdfInput): Promise<U
   pen.top += 34
 
   const projectLabel = pdfText(input.projectLabel || (issue ? 'Project' : 'Library talk'))
-  const weekLabel = issue ? `W/C ${format(issue.weekCommencing, 'd MMM yyyy')}` : 'W/C -'
+  const weekLabel = issue ? `W/C ${weekCommencingLabel(issue.weekCommencing, 'd MMM yyyy')}` : 'W/C -'
   const cards: Array<[string, string]> = [
     ['PROJECT', projectLabel],
     ['WEEK COMMENCING', weekLabel],

@@ -4,8 +4,6 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import {
   format,
-  startOfWeek,
-  endOfWeek,
   addWeeks,
   subWeeks,
   addDays,
@@ -18,6 +16,7 @@ import {
   differenceInCalendarDays,
   getWeek,
 } from 'date-fns'
+import { organizationCalendarWeekEnd, organizationCalendarWeekStart, organizationCurrentWeekStart, organizationTodayCalendarDate } from '@/lib/orgTime/organizationWeek'
 import { isRoleOnlyPersonName } from '@/lib/staff/userRosterUtils'
 import type { Booking } from '@/types'
 import { BookingEditSheet } from '@/components/schedule/BookingEditSheet'
@@ -483,9 +482,10 @@ export function ScheduleScreen({
   const [filterStatus, setFilterStatus] = useState<FilterStatus>('all')
   const [search, setSearch] = useState('')
   const [weekStart, setWeekStart] = useState(() =>
-    startOfWeek(focusDate ?? new Date(), { weekStartsOn: 1 })
+    // Rulebook §1 (1.36.0, FU-4): the organisation's week (and its current week when no day is focused).
+    focusDate ? organizationCalendarWeekStart(focusDate) : organizationCurrentWeekStart()
   )
-  const [selectedDate, setSelectedDate] = useState<Date | null>(focusDate ?? new Date())
+  const [selectedDate, setSelectedDate] = useState<Date | null>(focusDate ?? organizationTodayCalendarDate())
   const [showPast, setShowPast] = useState(() =>
     focusDate ? isPast(startOfDay(focusDate)) && !isToday(focusDate) : false
   )
@@ -493,7 +493,7 @@ export function ScheduleScreen({
   useEffect(() => {
     if (focusDate) {
       setSelectedDate(focusDate)
-      setWeekStart(startOfWeek(focusDate, { weekStartsOn: 1 }))
+      setWeekStart(organizationCalendarWeekStart(focusDate))
       if (isPast(startOfDay(focusDate)) && !isToday(focusDate)) setShowPast(true)
     }
   }, [focusDate])
@@ -579,7 +579,7 @@ export function ScheduleScreen({
   const todayCount = filteredBookings.filter((b) => isToday(b.date instanceof Date ? b.date : new Date(b.date))).length
   const thisWeekCount = filteredBookings.filter((b) => {
     const d = b.date instanceof Date ? b.date : new Date(b.date)
-    return d >= weekStart && d <= endOfWeek(weekStart, { weekStartsOn: 1 })
+    return d >= weekStart && d <= organizationCalendarWeekEnd(weekStart)
   }).length
   const pastCount = filteredBookings.filter((b) => {
     const d = b.date instanceof Date ? b.date : new Date(b.date)
@@ -664,7 +664,7 @@ export function ScheduleScreen({
         <div className="mb-2 flex items-center justify-between px-1">
           <p className="text-xs font-semibold text-slate-700">
             Week {getWeek(weekStart)} · {format(weekStart, 'MMM d')} –{' '}
-            {format(endOfWeek(weekStart, { weekStartsOn: 1 }), 'MMM d, yyyy')}
+            {format(organizationCalendarWeekEnd(weekStart), 'MMM d, yyyy')}
           </p>
           <div className="flex items-center gap-1">
             <button
@@ -681,8 +681,8 @@ export function ScheduleScreen({
             <button
               type="button"
               onClick={() => {
-                setWeekStart(startOfWeek(new Date(), { weekStartsOn: 1 }))
-                setSelectedDate(new Date())
+                setWeekStart(organizationCurrentWeekStart())
+                setSelectedDate(organizationTodayCalendarDate())
               }}
               className="rounded-lg border border-slate-200 px-2.5 py-1 text-[11px] font-semibold text-slate-600 transition hover:bg-slate-50"
             >

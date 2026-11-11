@@ -115,8 +115,9 @@ function dayInput(policy: OrgPayrollTimePolicy) {
 
 /** Multiplier for outside hours: the booking override, else the weekend day's, else the weekday one. */
 /**
- * Hours worked inside and outside the standard window, never multiplied: Daily Overview's
- * Standard and Overtime figures. An all-hours weekend day is all outside. The two add up to `workedHours`.
+ * Hours worked inside and outside the standard window, never multiplied. An all-hours weekend day is all outside.
+ * The two add up to `workedHours`. Not Daily Overview's figures: since 1.20.2 Daily Overview shows the pay rule's
+ * hours (`totalPaidHours`, `standardHours`, `outsideHours`; rulebook §6). 1.36.0: wording only.
  */
 export function workedHoursSplit(result: Pick<PayrollHoursResult, 'segments'>): {
   standardWorkedHours: number

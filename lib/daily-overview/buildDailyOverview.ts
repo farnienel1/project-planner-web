@@ -2,8 +2,10 @@
  * iOS parity source: Views/DailyOverviewView.swift grouping + unbooked labour
  * Spec: docs/ios-parity/sections/22-daily-overview.md
  *
- * Hours are the rulebook's `payrollHoursResult.workedHours` for the viewed day:
- * hours worked, never multiplied. Paid hours belong to pay screens.
+ * Hours (rulebook §6, 1.20.2) are the pay rule's for the viewed day: each row's `payrollHoursResult.totalPaidHours`
+ * with `bookingHoursLabel` (the multiplier sum shown beside it), and the day's total is the sum of `totalPaidHours`,
+ * split into standard hours and hours at the multiplier. Before 1.20.2 they were clock hours worked (`workedHours`);
+ * this comment said so until 1.36.0.
  */
 
 import { bookingOccupiesDay, formerIdAliases, isDailyOverviewRowInScope, isStandardWorkingWeekday, jobKind, multipliedHoursText, payrollMultipliedHours, payrollOutsideMultiplier, unbookedLabourRowsOnDay, weekdayPaidHours, workedHoursSplit, type JobAccessViewer } from '@/lib/canonical'
@@ -114,7 +116,7 @@ export type DailyOverviewModel = {
   isToday: boolean
   isWeekday: boolean
   labourHours: number
-  /** Of `labourHours`, hours worked inside the standard window (`workedHoursSplit`). */
+  /** Of `labourHours`, the standard hours (`payrollHoursResult.standardHours`, the pay rule's, not clock hours). */
   standardWorkedHours: number
   /** Of `labourHours`, clock hours at the multiplier, before it (1.20.3: before any unpaid break taken off them). */
   overtimeWorkedHours: number
