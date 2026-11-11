@@ -58,3 +58,7 @@ Type: Inter (the app body font). Body 13px, card titles 13.5px semibold, figures
 - Below 1100px one column; below 820px the stat strip stacks, quick actions are two columns, tables scroll inside their card; no horizontal page scroll at 390px.
 
 Other screens keep the `docs/agent-rules/ui-touch-up.md` rules.
+
+## Page pack tokens — Daily overview, Timesheets, Manage users (`pu-*`)
+
+Spec: `docs/design/web-pages-ui/web-pages-ui-spec.md` (UI only). Source of truth: `app/pages-ui.css`; components in `components/ui/page/` (`PageBand`, `StatRow`, `Card`, `DataTable`, `SegmentedTabs`, `Chip`, `IconTile`, `ActionCard`, `EmptyState`, `Note`, `Modal`). Owner decision U7 (11 Nov 2026): the colours are the Home pack's `--dash-*` tokens, so the whole site matches — the navy band is `--dash-side`, cards and lines `--dash-card` / `--dash-line`, links `--dash-blue`, the primary button `--dash-blue-solid`, amber / red / blue / grey chips the `--dash-tag-*` pairs. U6: every token has a dark value (light text on dark surfaces). The few colours the Home pack lacks are defined in `pages-ui.css`, light and dark, each AA on its background: green chip `#0B6B47` on `#E7F6EE` (dark `#7EE2AE` on `#10301F`), purple chip `#4B3BB8` on `#F0EDFD`, brown (leave) chip `#7A4A1E` on `#F5EBE0`, notes (info / amber / red), band label `#9AA7C0` on the band (7.0:1). U8: the gradient icon tiles (blue, purple, green, amber, red, brown, slate) carry white icons only; their meaning is always also in text.
