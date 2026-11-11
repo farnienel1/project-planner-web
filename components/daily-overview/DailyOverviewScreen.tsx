@@ -203,11 +203,14 @@ export function DailyOverviewScreen() {
             {/* Rulebook 1.39.0 (owner answer 11 Nov): "12h OT × 1.5 = 18h" (`overtimeTotalText`); clock hours at the
                 multiplier, an unpaid break in them off as plain hours (1.20.3). */}
             <b>
-              {overtimeTotalText({
-                clockHours: model.overtimeWorkedHours,
-                multiplier: model.overtimeMultiplier,
-                breakHours: model.overtimeBreakHours,
-              }) || '0h OT'}
+              {/* Several rates on one day: the clock hours only (no single rate to show), as iOS. */}
+              {model.overtimeWorkedHours > 0 && !model.overtimeText
+                ? `${overviewFormatHours(model.overtimeWorkedHours)}h OT`
+                : overtimeTotalText({
+                    clockHours: model.overtimeWorkedHours,
+                    multiplier: model.overtimeMultiplier,
+                    breakHours: model.overtimeBreakHours,
+                  }) || '0h OT'}
             </b>
             <span>Overtime</span>
           </div>
