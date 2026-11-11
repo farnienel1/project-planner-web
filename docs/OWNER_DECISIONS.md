@@ -301,6 +301,26 @@ How to use it:
 | 7 Nov | Manager schedule bookings of every place (office, working from home, site survey, jobs) count as hours booked. | done, owner to confirm |
 | 7 Nov | **Offline wait (owner: "5s ok")**: iOS My Profile waits up to 5 seconds for bank holidays when offline, then shows figures with the cached bank holidays and recalculates once they load. | done, owner confirmed 7 Nov |
 
+## 11 Nov decisions (for 1.41)
+
+| Date | Decision | Status |
+|---|---|---|
+| 11 Nov | **Scheduling week, a person with several bookings on one day: option (a).** One tile per person-day on both apps reading the day total and the number of bookings ("26h · 2 bookings"), with standard and overtime underneath (clock overtime × rate as elsewhere). Rule: `scheduleDayCell`. Web now combines per person-day like iOS (owner: one scheme on both apps); a tile with several bookings opens a chooser so each booking stays editable. | done web + rulebook (1.41.0, w141-schedule-replace); iOS (ios-1.41) |
+| 11 Nov | **On a leave day (brown AL band) drop the small "STD" / "OT" words** so the figures fit (owner yes). `scheduleDayCell` `onLeave`; "AM" / "PM" stay. | done web + rulebook (1.41.0); iOS (ios-1.41) |
+| 11 Nov | **A booked person is never unknown.** iOS (#216) resolves rows through `resolveBookingPerson`; for an id that names nobody, iOS now matches web exactly — the booking is left off the grid — and records the drop in the device log. | done iOS (ios-1.41); web unchanged (already drops) |
+| 11 Nov | **"Replace existing booking", build before launch.** A third choice on every orange double-booking row beside ✓ (book both) and ✕ (drop): Replace, offered only when the viewer `canDeleteBooking` every overlapping booking; the new booking and the old booking's delete + tombstone in ONE batch (`bookingReplaceOffer`, `bookingReplaceWrites`). Web: Schedule wizard, Book labour, Daily Overview sheet, Quick Add, booking edit (job week). iOS: Select Operatives / Scheduling wizard, Quick Add, Book labour. | done web + rulebook (1.41.0); iOS (ios-1.41) |
+
+## 1.41.0 judgement calls (owner to confirm)
+
+| Date | Choice | Status |
+|---|---|---|
+| 11 Nov | **Replace is online only on iOS** (`booking.replace` in `OFFLINE_ACTIONS`, disabled offline with "Connect to the internet to change this"). A safe offline Replace needs a new kind of queued item replayed in a transaction (re-read the old booking and its tombstone, keep the new booking and tell the person when the old one could not be removed); building and proving that without a device build was too risky for this release. ✓ and ✕ on the row still work offline. Can follow as its own release. | done, owner to confirm |
+| 11 Nov | A one-booking tile shows no count ("8h", not "8h · 1 booking") and keeps its slot text; the count appears from two bookings. | done, owner to confirm |
+| 11 Nov | A day's colour with several bookings comes from the summed hours (a stored AM / PM or OVERTIME slot decides it only when it is the day's one booking), as iOS already did. | done, owner to confirm |
+| 11 Nov | Replace is offered only when EVERY overlapping booking on the row may be deleted by the viewer; it removes all of them. A row overlapping a booking on a job the viewer does not manage shows ✓ and ✕ only. | done, owner to confirm |
+| 11 Nov | Web My Schedule (self-booking and the read-only screen's edit) does not offer Replace (not in the owner's list); its orange rows keep ✓ / ✕. | done, owner to confirm |
+| 11 Nov | Subcontractor firm rows on the week grid also combine per day (web and iOS) with the same chooser; before, iOS showed only the firm's first booking that day. | done, owner to confirm |
+
 ## Open questions for the owner
 
 | Date | Question |

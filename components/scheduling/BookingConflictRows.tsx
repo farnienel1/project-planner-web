@@ -4,14 +4,25 @@
  * Rulebook 1.16.0 §5: one conflict list for every booking flow. Double bookings are orange (`--warn`), annual leave
  * purple (`--purple`, `bookingLeaveConflicts`); pending leave is shown softer. Each row is ticked (book anyway) or ✕
  * (drop that day for that person); the flow saves only when every row is one or the other (`conflictsResolved`).
+ * Rulebook 1.41.0 §5 (owner decision 11 Nov): an orange row also offers Replace when the viewer may delete every
+ * overlapping booking on it (`bookingReplaceOffer`, carried as `row.replace`); the flow then saves the new booking and
+ * deletes the old ones with their tombstones in one batch (`bookingReplaceWrites`).
  */
 import { useCallback, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { BOOKING_CONFLICTS_HEADING, type BookingLeaveConflict } from '@/lib/canonical'
+import {
+  BOOKING_CONFLICTS_HEADING,
+  BOOKING_REPLACE_CHOSEN_TEXT,
+  BOOKING_REPLACE_HELP,
+  BOOKING_REPLACE_LABEL,
+  type BookingConflictDecisionValue,
+  type BookingLeaveConflict,
+  type BookingReplaceRef,
+} from '@/lib/canonical'
 import { leaveConflictDetail } from '@/lib/scheduling/leaveConflicts'
 
 export type BookingConflictKind = 'double_booking' | 'annual_leave'
-export type BookingConflictDecision = 'confirm' | 'drop'
+export type BookingConflictDecision = BookingConflictDecisionValue
 
 export type BookingConflictRow = {
   /** Stable key: `${personId}|${dayKey}|${kind}`. */
@@ -24,6 +35,8 @@ export type BookingConflictRow = {
   detail: string
   /** Annual leave only: pending leave is shown softer. */
   pending?: boolean
+  /** Double booking only (1.41.0): the bookings Replace would remove, present only when `bookingReplaceOffer` offers it. */
+  replace?: { bookings: BookingReplaceRef[] }
 }
 
 export function conflictRowKey(personId: string, dayKey: string, kind: BookingConflictKind): string {
@@ -35,7 +48,35 @@ export function conflictsResolved(
   rows: ReadonlyArray<BookingConflictRow>,
   decisions: Readonly<Record<string, BookingConflictDecision | undefined>>
 ): boolean {
-  return rows.every((row) => decisions[row.key] === 'confirm' || decisions[row.key] === 'drop')
+  return rows.every((row) => {
+    const decision = decisions[row.key]
+    if (decision === 'confirm' || decision === 'drop') return true
+    return decision === 'replace' && Boolean(row.replace?.bookings.length)
+  })
+}
+
+/**
+ * 1.41.0: the bookings to replace, per `${personId}|${dayKey}` the booker chose Replace for (`row.replace.bookings`).
+ */
+export function replacedPersonDays(
+  rows: ReadonlyArray<BookingConflictRow>,
+  decisions: Readonly<Record<string, BookingConflictDecision | undefined>>
+): Map<string, BookingReplaceRef[]> {
+  const out = new Map<string, BookingReplaceRef[]>()
+  for (const row of rows) {
+    if (decisions[row.key] !== 'replace' || !row.replace?.bookings.length) continue
+    const key = `${row.personId}|${row.dayKey}`
+    out.set(key, [...(out.get(key) ?? []), ...row.replace.bookings])
+  }
+  return out
+}
+
+/** What the booker chose on the conflict list: dropped person-days and the bookings to replace per person-day. */
+export type BookingConflictChoices = { dropped: Set<string>; replaced: Map<string, BookingReplaceRef[]> }
+
+/** Every booking to replace, in row order (single-booking sheets). */
+export function allReplacedBookings(choices: BookingConflictChoices | null | undefined): BookingReplaceRef[] {
+  return choices ? [...choices.replaced.values()].flat() : []
 }
 
 /** `${personId}|${dayKey}` pairs the booker dropped. */
@@ -101,7 +142,13 @@ export function BookingConflictRows({
               </p>
               <p className="text-xs font-medium" style={{ color: decision === 'drop' ? 'var(--ink3)' : tone }}>
                 {row.detail}
-                {decision === 'confirm' ? ' · confirmed' : decision === 'drop' ? ' · day dropped' : ''}
+                {decision === 'confirm'
+                  ? ' · confirmed'
+                  : decision === 'drop'
+                    ? ' · day dropped'
+                    : decision === 'replace'
+                      ? ` · ${BOOKING_REPLACE_CHOSEN_TEXT}`
+                      : ''}
               </p>
             </div>
             <div className="flex shrink-0 items-center gap-2">
@@ -119,6 +166,24 @@ export function BookingConflictRows({
               >
                 ✕
               </button>
+              {row.kind === 'double_booking' && row.replace ? (
+                <button
+                  type="button"
+                  onClick={() => onDecide(row.key, 'replace')}
+                  className="flex h-8 items-center justify-center rounded-full border px-2.5 text-xs font-bold"
+                  style={{
+                    borderColor: 'var(--warn)',
+                    color: decision === 'replace' ? 'var(--card)' : 'var(--warn)',
+                    background: decision === 'replace' ? 'var(--warn)' : 'var(--card)',
+                  }}
+                  title={BOOKING_REPLACE_HELP}
+                  aria-label={`${BOOKING_REPLACE_HELP}: ${row.dayLabel} for ${row.personName}`}
+                  aria-pressed={decision === 'replace'}
+                  data-testid="booking-conflict-replace"
+                >
+                  {BOOKING_REPLACE_LABEL}
+                </button>
+              ) : null}
               <button
                 type="button"
                 onClick={() => onDecide(row.key, 'confirm')}
@@ -157,7 +222,7 @@ export function BookingConflictsDialog({
   decisions: Readonly<Record<string, BookingConflictDecision | undefined>>
   onDecide: (key: string, decision: BookingConflictDecision) => void
   onCancel: () => void
-  onConfirm: (dropped: Set<string>) => void
+  onConfirm: (dropped: Set<string>, replaced: Map<string, BookingReplaceRef[]>) => void
   confirmLabel?: string
 }) {
   const ready = conflictsResolved(rows, decisions)
@@ -181,7 +246,7 @@ export function BookingConflictsDialog({
             type="button"
             disabled={!ready}
             className="rounded-xl bg-[var(--blue)] px-4 py-2 text-[13px] font-semibold text-white disabled:opacity-50"
-            onClick={() => onConfirm(droppedPersonDays(rows, decisions))}
+            onClick={() => onConfirm(droppedPersonDays(rows, decisions), replacedPersonDays(rows, decisions))}
           >
             {confirmLabel}
           </button>
@@ -218,17 +283,27 @@ export function leaveConflictRows(
 export function useBookingConflictGate(confirmLabel?: string) {
   const [state, setState] = useState<{
     rows: BookingConflictRow[]
-    resolve: (value: Set<string> | null) => void
+    resolve: (value: BookingConflictChoices | null) => void
   } | null>(null)
   const [decisions, setDecisions] = useState<Record<string, BookingConflictDecision | undefined>>({})
 
-  const check = useCallback((rows: BookingConflictRow[]): Promise<Set<string> | null> => {
-    if (rows.length === 0) return Promise.resolve(new Set<string>())
+  /** 1.41.0: the dropped person-days and the bookings to replace, or null when cancelled. */
+  const choose = useCallback((rows: BookingConflictRow[]): Promise<BookingConflictChoices | null> => {
+    if (rows.length === 0) return Promise.resolve({ dropped: new Set<string>(), replaced: new Map() })
     return new Promise((resolve) => {
       setDecisions({})
       setState({ rows, resolve })
     })
   }, [])
+
+  /** The dropped person-days only (flows that do not offer Replace: their rows carry no `replace`). */
+  const check = useCallback(
+    async (rows: BookingConflictRow[]): Promise<Set<string> | null> => {
+      const choices = await choose(rows.map((row) => (row.replace ? { ...row, replace: undefined } : row)))
+      return choices ? choices.dropped : null
+    },
+    [choose]
+  )
 
   const dialog = state ? (
     <BookingConflictsDialog
@@ -240,14 +315,14 @@ export function useBookingConflictGate(confirmLabel?: string) {
         state.resolve(null)
         setState(null)
       }}
-      onConfirm={(dropped) => {
-        state.resolve(dropped)
+      onConfirm={(dropped, replaced) => {
+        state.resolve({ dropped, replaced })
         setState(null)
       }}
     />
   ) : null
 
-  return { check, dialog }
+  return { check, choose, dialog }
 }
 
 /** The rows a single-booking sheet asks about for the slot being saved (built by the parent from its stores). */

@@ -6,13 +6,14 @@ import { clockText } from '@/lib/warnings/clashIntervals'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import { slotKey, slotToFirestore, type ScheduleDateSlot } from '@/lib/scheduling/scheduleUtils'
 import type { SchedulablePerson, SchedulablePersonKind } from '@/lib/scheduling/scheduleRosterUtils'
-import { ORPHAN_BOOKING_LABEL, bookingRequestClashIds, type BookingLeaveConflict, type PayrollTimePolicyState } from '@/lib/canonical'
+import { ORPHAN_BOOKING_LABEL, bookingRequestClashIds, type BookingLeaveConflict, type BookingReplaceRef, type PayrollTimePolicyState } from '@/lib/canonical'
 import { dayKey as orgDayKey } from '@/lib/ios-parity/londonTime'
 import { leaveConflictsForBooking } from '@/lib/scheduling/leaveConflicts'
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import type { HolidayBooking } from '@/types'
 
-export type DayBookingState = 'free' | 'clash_pending' | 'clash_accepted' | 'removed'
+/** Rulebook 1.41.0 §5: `clash_replace` — the day books and its overlapping bookings are replaced (one batch). */
+export type DayBookingState = 'free' | 'clash_pending' | 'clash_accepted' | 'clash_replace' | 'removed'
 
 export type DraftBookingPerson = {
   personId: string
@@ -24,6 +25,8 @@ export type DraftBookingPerson = {
   clashByDay: Record<string, OperativeBookingClash[]>
   /** Rulebook 1.16.0: annual leave on that day (`bookingLeaveConflicts`); the day waits for a tick or ✕ like a clash. */
   leaveByDay?: Record<string, BookingLeaveConflict>
+  /** Rulebook 1.41.0 §5: on a `clash_replace` day, the overlapping bookings Replace removes with the new booking. */
+  replaceByDay?: Record<string, BookingReplaceRef[]>
 }
 
 export type WizardStep = 'dates' | 'pick-person' | 'review'
@@ -103,6 +106,7 @@ function detectManagerDayClashes({
         existingProjectId: existing.locationId || '',
         existingTimeSlot: existing.timeSlot,
         existingProjectLabel: existing.locationId ? projectLabel(existing.locationId, projects) : 'Another booking',
+        existingCollection: 'managerSiteBookings' as const,
       },
     ]
   })
@@ -217,11 +221,16 @@ export function personHasPendingClashes(person: DraftBookingPerson): boolean {
 }
 
 export function personHasBookableDays(person: DraftBookingPerson): boolean {
-  return Object.values(person.dayStates).some((s) => s === 'free' || s === 'clash_accepted')
+  return Object.values(person.dayStates).some((s) => dayStateBooks(s))
+}
+
+/** The day is booked: free, ✓ book anyway, or (1.41.0) Replace. */
+export function dayStateBooks(state: DayBookingState | undefined): boolean {
+  return state === 'free' || state === 'clash_accepted' || state === 'clash_replace'
 }
 
 export function personHasAcceptedClashes(person: DraftBookingPerson): boolean {
-  return Object.values(person.dayStates).some((s) => s === 'clash_accepted')
+  return Object.values(person.dayStates).some((s) => s === 'clash_accepted' || s === 'clash_replace')
 }
 
 export function draftPersonNeedsWarning(person: DraftBookingPerson): boolean {
@@ -246,10 +255,18 @@ export function isExactDuplicateManagerBooking(
   )
 }
 
+function withoutReplace(person: DraftBookingPerson, dateKey: string): Record<string, BookingReplaceRef[]> | undefined {
+  if (!person.replaceByDay?.[dateKey]) return person.replaceByDay
+  const next = { ...person.replaceByDay }
+  delete next[dateKey]
+  return next
+}
+
 export function acceptDayClash(person: DraftBookingPerson, dateKey: string): DraftBookingPerson {
   return {
     ...person,
     dayStates: { ...person.dayStates, [dateKey]: 'clash_accepted' },
+    replaceByDay: withoutReplace(person, dateKey),
   }
 }
 
@@ -257,6 +274,17 @@ export function removeDayFromPerson(person: DraftBookingPerson, dateKey: string)
   return {
     ...person,
     dayStates: { ...person.dayStates, [dateKey]: 'removed' },
+    replaceByDay: withoutReplace(person, dateKey),
+  }
+}
+
+/** Rulebook 1.41.0 §5: book the day and replace its overlapping bookings (`refs` from `bookingReplaceOffer`). */
+export function replaceDayClash(person: DraftBookingPerson, dateKey: string, refs: ReadonlyArray<BookingReplaceRef>): DraftBookingPerson {
+  if (refs.length === 0) return person
+  return {
+    ...person,
+    dayStates: { ...person.dayStates, [dateKey]: 'clash_replace' },
+    replaceByDay: { ...(person.replaceByDay ?? {}), [dateKey]: [...refs] },
   }
 }
 
@@ -271,8 +299,7 @@ export function slotsForPerson(
   slots: ScheduleDateSlot[]
 ): ScheduleDateSlot[] {
   return slots.filter((slot) => {
-    const state = person.dayStates[slotKey(slot.date)]
-    return state === 'free' || state === 'clash_accepted'
+    return dayStateBooks(person.dayStates[slotKey(slot.date)])
   })
 }
 
@@ -288,11 +315,22 @@ export function allDraftPeopleResolved(people: DraftBookingPerson[]): boolean {
  */
 export function carryDayDecisions(previous: DraftBookingPerson, rebuilt: DraftBookingPerson): DraftBookingPerson {
   const dayStates = { ...rebuilt.dayStates }
+  const replaceByDay: Record<string, BookingReplaceRef[]> = {}
   for (const [key, state] of Object.entries(rebuilt.dayStates)) {
     const before = previous.dayStates[key]
     if (state === 'clash_pending' && (before === 'clash_accepted' || before === 'removed')) dayStates[key] = before
+    // 1.41.0: a Replace is kept only while the day still clashes with exactly the bookings it would remove.
+    const refs = previous.replaceByDay?.[key]
+    if (state === 'clash_pending' && before === 'clash_replace' && refs?.length) {
+      const now = new Set((rebuilt.clashByDay[key] || []).map((c) => c.existingBookingId.toLowerCase()))
+      const same = now.size === refs.length && refs.every((ref) => now.has(ref.bookingId.toLowerCase()))
+      if (same) {
+        dayStates[key] = 'clash_replace'
+        replaceByDay[key] = refs
+      }
+    }
   }
-  return { ...rebuilt, dayStates }
+  return { ...rebuilt, dayStates, ...(Object.keys(replaceByDay).length ? { replaceByDay } : {}) }
 }
 
 /** A person stays in the request while any day is bookable or still waiting for ✓ / ✕. */

@@ -1,7 +1,8 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { useBookingConflictGate, type BookingSlotConflictCheck } from '@/components/scheduling/BookingConflictRows'
+import { allReplacedBookings, useBookingConflictGate, type BookingSlotConflictCheck } from '@/components/scheduling/BookingConflictRows'
+import type { BookingReplaceOptions } from '@/lib/stores/bookingStore'
 import type { Booking } from '@/types'
 import { slotToFirestore, type ScheduleSlotChoice } from '@/lib/scheduling/scheduleUtils'
 import { HoursTimelinePicker } from '@/components/scheduling/HoursTimelinePicker'
@@ -46,11 +47,12 @@ export function BookingEditSheet({
   saving,
   payroll = DEFAULT_PAYROLL_POLICY,
   conflictsFor,
+  allowReplace = false,
 }: {
   booking: Booking
   operativeName: string
   projectName: string
-  onSave: (updates: Partial<Booking>) => Promise<void>
+  onSave: (updates: Partial<Booking>, options?: BookingReplaceOptions) => Promise<void>
   /**
    * Deletes the booking with its tombstone. Pass it only when `bookingRemoveAction` is `delete` (rulebook §2, 1.33.0:
    * there is no cancel); without it the sheet offers no remove button.
@@ -61,6 +63,11 @@ export function BookingEditSheet({
   payroll?: OrgPayrollTimePolicy
   /** Rulebook 1.16.0: annual leave (and double bookings) on the day for this slot, asked before saving. */
   conflictsFor?: BookingSlotConflictCheck
+  /**
+   * Rulebook 1.41.0 §5: offer Replace on the orange row (when `bookingReplaceOffer` allows it); the chosen bookings
+   * reach `onSave` as `options.replaces`, written in the same batch. Off for callers that do not pass them on.
+   */
+  allowReplace?: boolean
 }) {
   const conflictGate = useBookingConflictGate()
   // Rulebook 1.17.0 §4.3: the live organisation document, so the weekend note, prefill and break check read the
@@ -114,8 +121,10 @@ export function BookingEditSheet({
       (checkedSlot.workStartTime || '') !== (booking.workStartTime || '') ||
       (checkedSlot.workEndTime || '') !== (booking.workEndTime || '')
     const isNew = !booking.id
-    const dropped = await conflictGate.check(conflictsFor && (slotChanged || isNew) ? conflictsFor(checkedSlot) : [])
-    if (dropped === null) return
+    const rows = conflictsFor && (slotChanged || isNew) ? conflictsFor(checkedSlot) : []
+    const choices = allowReplace ? await conflictGate.choose(rows) : await conflictGate.check(rows).then((dropped) => (dropped ? { dropped, replaced: new Map() } : null))
+    if (choices === null) return
+    const dropped = choices.dropped
     if (dropped.size > 0) {
       onClose()
       return
@@ -130,7 +139,7 @@ export function BookingEditSheet({
         notes,
         // Only when changed: a number sets it, null removes it (the converter deletes the field); untouched keeps it.
         ...(overtimeRate !== storedRate ? { otMultiplierOverride: overtimeRate } : {}),
-      })
+      }, { replaces: allReplacedBookings(choices) })
       onClose()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to save booking')

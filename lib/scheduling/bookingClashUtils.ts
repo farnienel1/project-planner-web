@@ -45,6 +45,8 @@ export interface OperativeBookingClash {
   existingProjectId: string
   existingTimeSlot: string
   existingProjectLabel: string
+  /** Rulebook 1.41.0: the existing booking's collection (labour when missing), for Replace. */
+  existingCollection?: 'bookings' | 'managerSiteBookings'
 }
 
 export interface OperativeBookingClashWarning {

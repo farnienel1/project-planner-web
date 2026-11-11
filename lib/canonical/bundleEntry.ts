@@ -1182,6 +1182,7 @@ export {
   jobScheduleLeaveMarks,
   scheduleCellHours,
   scheduleCellKind,
+  scheduleDayCell,
   JOB_SCHEDULE_LEAVE_LABEL,
   JOB_SCHEDULE_LEAVE_PENDING_LABEL,
   JOB_SCHEDULE_LEAVE_TITLE,
@@ -1319,3 +1320,13 @@ export {
   usersWithSameName,
 } from './duplicateUserNames'
 export type { SameNamePerson, SameNameRosterRow } from './duplicateUserNames'
+// Rulebook 1.41.0 §5: Replace an overlapping booking from a double-booking row (one batch with its tombstone).
+export {
+  BOOKING_CONFLICT_DECISIONS,
+  BOOKING_REPLACE_CHOSEN_TEXT,
+  BOOKING_REPLACE_COLLECTIONS,
+  BOOKING_REPLACE_HELP,
+  BOOKING_REPLACE_LABEL,
+  bookingReplaceOffer,
+  bookingReplaceWrites,
+} from './bookingReplace'

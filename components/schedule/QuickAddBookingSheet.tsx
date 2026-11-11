@@ -11,7 +11,8 @@ import {
   weekendNotesForDates,
 } from '@/lib/scheduling/bookingSlotRules'
 import { useMemo, useState } from 'react'
-import { useBookingConflictGate, type BookingSlotConflictCheck } from '@/components/scheduling/BookingConflictRows'
+import { allReplacedBookings, useBookingConflictGate, type BookingSlotConflictCheck } from '@/components/scheduling/BookingConflictRows'
+import type { BookingReplaceOptions } from '@/lib/stores/bookingStore'
 import { format } from 'date-fns'
 import { calendarDateOfKey } from '@/lib/orgTime/organizationWeek'
 import { slotToFirestore, type ScheduleSlotChoice } from '@/lib/scheduling/scheduleUtils'
@@ -46,6 +47,7 @@ export function QuickAddBookingSheet({
   onSave,
   onClose,
   conflictsFor,
+  allowReplace = false,
 }: {
   personName: string
   roleLabel?: string
@@ -54,10 +56,15 @@ export function QuickAddBookingSheet({
   showNotes?: boolean
   saving?: boolean
   payroll?: OrgPayrollTimePolicy
-  onSave: (values: QuickAddBookingValues) => Promise<void>
+  onSave: (values: QuickAddBookingValues, options?: BookingReplaceOptions) => Promise<void>
   onClose: () => void
   /** Rulebook 1.16.0: annual leave (and double bookings) on the day for this slot, asked before saving. */
   conflictsFor?: BookingSlotConflictCheck
+  /**
+   * Rulebook 1.41.0 §5: offer Replace on the orange row (when `bookingReplaceOffer` allows it); the chosen bookings
+   * reach `onSave` as `options.replaces`, written in the same batch. Off for callers that do not pass them on.
+   */
+  allowReplace?: boolean
 }) {
   const conflictGate = useBookingConflictGate()
   // Rulebook 1.17.0 §4.3: the live organisation document, so the weekend note, prefill and break check read the
@@ -113,8 +120,10 @@ export function QuickAddBookingSheet({
     }
     const checkedSlot = slotToFirestore({ date, slot, workStartTime, workEndTime })
     // 1.16.0 (§5): tick to book anyway, or ✕ to drop the day — dropping the only day saves nothing.
-    const dropped = await conflictGate.check(conflictsFor ? conflictsFor(checkedSlot) : [])
-    if (dropped === null) return
+    const rows = conflictsFor ? conflictsFor(checkedSlot) : []
+    const choices = allowReplace ? await conflictGate.choose(rows) : await conflictGate.check(rows).then((dropped) => (dropped ? { dropped, replaced: new Map() } : null))
+    if (choices === null) return
+    const dropped = choices.dropped
     if (dropped.size > 0) {
       onClose()
       return
@@ -127,7 +136,7 @@ export function QuickAddBookingSheet({
         workEndTime: firestoreSlot.workEndTime,
         isBreakRemoved: slot === 'CUSTOM' ? breakRemoved : false,
         notes: notes.trim(),
-      })
+      }, { replaces: allReplacedBookings(choices) })
       onClose()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to add booking')

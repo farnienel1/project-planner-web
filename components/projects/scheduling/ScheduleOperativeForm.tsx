@@ -26,6 +26,7 @@ import {
   isExactDuplicateManagerBooking,
   personHasBookableDays,
   personHasPendingClashes,
+  dayStateBooks,
   type DraftBookingPerson,
   type WizardStep,
 } from '@/lib/scheduling/draftProjectBooking'
@@ -256,13 +257,12 @@ export function ScheduleOperativeForm({
     setError(null)
     try {
       for (const person of draftPeople) {
-        const personSlots = slotsList.filter((slot) => {
-          const state = person.dayStates[slotKey(slot.date)]
-          return state === 'free' || state === 'clash_accepted'
-        })
+        const personSlots = slotsList.filter((slot) => dayStateBooks(person.dayStates[slotKey(slot.date)]))
 
         for (const slot of personSlots) {
           const firestoreSlot = slotToFirestore(slot)
+          // Rulebook 1.41.0 §5: Replace — the overlapping bookings go in the same batch as this create.
+          const replaces = person.replaceByDay?.[slotKey(slot.date)]
           if (person.kind === 'operative') {
             if (isExactDuplicateBooking(bookings, project.id, person.personId, slot)) continue
             await createBooking({
@@ -276,7 +276,7 @@ export function ScheduleOperativeForm({
               bookedBy: user.email,
               status: 'confirmed',
               organizationId: organization.id,
-            })
+            }, { replaces })
           } else {
             if (
               isExactDuplicateManagerBooking(
@@ -297,7 +297,7 @@ export function ScheduleOperativeForm({
               workStartTime: firestoreSlot.workStartTime,
               workEndTime: firestoreSlot.workEndTime,
               ...rateFieldsFor(slot),
-            })
+            }, { replaces })
           }
         }
       }

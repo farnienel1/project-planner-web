@@ -24,7 +24,7 @@ import { leaveHalfDayLabel, type StandardDayInput } from './engine'
 import { personIdSet, type PersonRosterRow } from './personIds'
 import { standardDayOn } from './payrollPolicySchedule'
 import { namedSlotKind } from './engine'
-import type { PayrollHoursResult } from './payrollHours'
+import { multipliedHoursText, type PayrollHoursResult } from './payrollHours'
 
 export const JOB_SCHEDULE_LEAVE_LABEL = 'AL'
 export const JOB_SCHEDULE_LEAVE_PENDING_LABEL = 'AL?'
@@ -262,4 +262,99 @@ export function scheduleCellKind(input: { paidHours?: number | null; overtimeHou
   if (ot > CELL_EPSILON && std > CELL_EPSILON) return { tone: 'split', standardHours: hundredths(std), overtimeHours: hundredths(ot), halfLabel: null }
   if (ot > CELL_EPSILON) return { tone: 'otOnly', standardHours: 0, overtimeHours: hundredths(ot), halfLabel: null }
   return { tone: 'standard', standardHours: hundredths(total), overtimeHours: 0, halfLabel: null }
+}
+
+// MARK: - One tile per person-day (1.41.0, owner decision 11 Nov, option a)
+
+/** One booking on a person's day, as `scheduleCellHours` gives it, plus its overtime clock figures. */
+export type ScheduleDayBooking = {
+  /** `payrollHoursResult.totalPaidHours`. */
+  paidHours?: number | null
+  /** The paid hours of its multiplied segments (`scheduleCellHours.overtimeHours`). */
+  overtimeHours?: number | null
+  timeSlot?: string | null
+  /**
+   * `payrollMultipliedHours(result)` (clock hours at the multiplier, the multiplier and the unpaid break taken off
+   * them); null or missing when the booking has no hours at a multiplier.
+   */
+  overtime?: { clockHours?: number | null; multiplier?: number | null; breakHours?: number | null } | null
+}
+
+export type ScheduleDayCell = ScheduleCellKind & {
+  /** Every booking's paid hours added up, to the hundredth. */
+  totalHours: number
+  bookingCount: number
+  /** "26h". */
+  hoursText: string
+  /** "2 bookings" when there is more than one, else null. */
+  countText: string | null
+  /** "26h · 2 bookings", or "8h" for one booking. */
+  headline: string
+  /** The word under a one-colour tile: "Std", "OT", "AM" / "PM"; null on a split tile and, for Std / OT, on leave. */
+  caption: string | null
+  /** "18h Std" ("18h" on a leave day); null when there are no standard hours. */
+  standardText: string | null
+  /** "8h OT" ("8h" on a leave day); null when there are no overtime hours. */
+  overtimeText: string | null
+  /** The clock hours at each multiplier, "4h × 2 = 8h" (`multipliedHoursText`), bookings at one rate added together. */
+  overtimeLines: string[]
+}
+
+function dayHoursText(value: number): string {
+  return `${hundredths(value)}h`
+}
+
+/**
+ * Rulebook 1.41.0 §21 (owner decision 11 Nov, option a: one scheme on both apps): a job's scheduling week shows ONE
+ * tile per person per day. With several bookings the tile reads the day total and the number of bookings —
+ * "26h · 2 bookings" — with the standard and overtime hours underneath and the clock overtime at each rate
+ * (`multipliedHoursText`, as every pay screen). The colour is `scheduleCellKind` of the summed hours (a named half day
+ * or OVERTIME slot decides it only when it is the day's one booking). On a day of annual leave (the brown band) the
+ * "Std" / "OT" words are left off so the figures fit (`onLeave`); "AM" / "PM" stay. Display only: it never changes a
+ * figure, and every booking stays reachable for edit (the apps open a chooser of the day's bookings). Null with no
+ * booking.
+ */
+export function scheduleDayCell(input: { bookings: ReadonlyArray<ScheduleDayBooking | null | undefined> | null | undefined; onLeave?: boolean | null } | null | undefined): ScheduleDayCell | null {
+  const bookings = (input?.bookings || []).filter((b): b is ScheduleDayBooking => Boolean(b && typeof b === 'object'))
+  if (bookings.length === 0) return null
+  const onLeave = input?.onLeave === true
+  let paid = 0
+  let overtime = 0
+  const byRate = new Map<number, { clock: number; brk: number }>()
+  for (const booking of bookings) {
+    paid += Math.max(0, Number(booking.paidHours) || 0)
+    overtime += Math.max(0, Number(booking.overtimeHours) || 0)
+    const clock = Math.max(0, Number(booking.overtime?.clockHours) || 0)
+    if (clock > 0) {
+      const rate = Number(booking.overtime?.multiplier) > 0 ? hundredths(Number(booking.overtime?.multiplier)) : 1
+      const row = byRate.get(rate) ?? { clock: 0, brk: 0 }
+      row.clock += clock
+      row.brk += Math.max(0, Number(booking.overtime?.breakHours) || 0)
+      byRate.set(rate, row)
+    }
+  }
+  const single = bookings.length === 1
+  const kind = scheduleCellKind({ paidHours: paid, overtimeHours: overtime, timeSlot: single ? bookings[0].timeSlot ?? null : null })
+  const totalHours = hundredths(paid)
+  const hoursText = dayHoursText(totalHours)
+  const countText = single ? null : `${bookings.length} bookings`
+  const caption =
+    kind.tone === 'halfDay' ? kind.halfLabel : kind.tone === 'split' || onLeave ? null : kind.tone === 'otOnly' ? 'OT' : 'Std'
+  const standardText = kind.standardHours > 0 ? (onLeave ? dayHoursText(kind.standardHours) : `${dayHoursText(kind.standardHours)} Std`) : null
+  const overtimeText = kind.overtimeHours > 0 ? (onLeave ? dayHoursText(kind.overtimeHours) : `${dayHoursText(kind.overtimeHours)} OT`) : null
+  const overtimeLines = [...byRate.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([multiplier, row]) => multipliedHoursText({ clockHours: row.clock, multiplier, breakHours: row.brk }))
+  return {
+    ...kind,
+    totalHours,
+    bookingCount: bookings.length,
+    hoursText,
+    countText,
+    headline: countText ? `${hoursText} · ${countText}` : hoursText,
+    caption,
+    standardText,
+    overtimeText,
+    overtimeLines,
+  }
 }

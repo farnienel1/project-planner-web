@@ -1,6 +1,6 @@
-# iOS follow-on — rulebook 1.37.0
+# iOS follow-on — rulebook 1.41.0
 
-Generated 2026-11-10 by `npm run rulebook:handoff` in project-planner-web. Paste this whole file into the iOS agent.
+Generated 2026-11-11 by `npm run rulebook:handoff` in project-planner-web. Paste this whole file into the iOS agent.
 The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; never edit the iOS mirror by hand.
 
 ```
@@ -8,9 +8,9 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ║ FOLLOW-ON — paste into the iOS agent                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
-Rulebook version: 1.36.0 → 1.37.0
-Packed hash: f2b163368a252f500a6e1bb9e6f1028ed61ad7f532e76dc7cefd54ec7724a9da
-Rulebook sha256: 1d54c2d23e02d11f369c27d851ec6ec0d1012d745d68dadd49275c85cced5640
+Rulebook version: 1.37.0 → 1.41.0
+Packed hash: 9a1c002e597fe01c745edec10dec6bcc2e8ab5308ef594772eb35e19c88e54d2
+Rulebook sha256: ef0847f4c94fb71cc158b55c2c7730de86f1b23d46315323a3047b30d0611b86
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -20,39 +20,36 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
   web lib/canonical/cross-platform-contract.json    → iOS ProjectPlannerTests/CrossPlatformContract.json
 Contract sha256: 59d6bc6123f250e1f57599240eb3190ab48f5cd2532f8281a99360d9e187d86b
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: JOB_SCHEDULE_LEAVE_LABEL, JOB_SCHEDULE_LEAVE_PENDING_LABEL, JOB_SCHEDULE_LEAVE_PENDING_TITLE, JOB_SCHEDULE_LEAVE_TITLE, JOB_SCHEDULE_LEGEND, jobScheduleLeaveMarks, scheduleCellHours, scheduleCellKind
+Exports added: BOOKING_CONFLICT_DECISIONS, BOOKING_REPLACE_CHOSEN_TEXT, BOOKING_REPLACE_COLLECTIONS, BOOKING_REPLACE_HELP, BOOKING_REPLACE_LABEL, bookingReplaceOffer, bookingReplaceWrites, scheduleDayCell
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/jobScheduleLeave.ts
+Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bookingReplace.ts, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/jobScheduleLeave.ts, lib/canonical/offlinePolicy.ts, lib/canonical/scheduleReplace141.test.ts
 Done when:
-- [ ] Packed hash in iOS equals f2b163368a252f500a6e1bb9e6f1028ed61ad7f532e76dc7cefd54ec7724a9da
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 1d54c2d23e02d11f369c27d851ec6ec0d1012d745d68dadd49275c85cced5640)
-- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.37.0)
+- [ ] Packed hash in iOS equals 9a1c002e597fe01c745edec10dec6bcc2e8ab5308ef594772eb35e19c88e54d2
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 ef0847f4c94fb71cc158b55c2c7730de86f1b23d46315323a3047b30d0611b86)
+- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.41.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
 - [ ] Any disagreement traced to its first divergence — no copied screen number
 ```
 
-## What changed in 1.37.0
+## What changed in 1.41.0
 
-- **Annual leave on project and small works scheduling** (§21, owner decisions 10 Nov): new `jobScheduleLeaveMarks`, `JOB_SCHEDULE_LEAVE_LABEL`, `JOB_SCHEDULE_LEAVE_PENDING_LABEL`, `JOB_SCHEDULE_LEAVE_TITLE`, `JOB_SCHEDULE_LEAVE_PENDING_TITLE` (new `jobScheduleLeave.ts`, on `leaveDayKind`, `leaveHalfDayLabel`, `personIdSet`, `standardDayOn`; the emails of the person's roster rows count, AM + PM on one day is a full day). Only people booked on the job are listed; for them, full-day leave is a brown "AL" cell, a half day "AL AM" / "AL PM", pending leave paler "AL?", rejected never; a booking on a leave day keeps its cell with a thin brown "AL" band across the top.
-- **One booking colour scheme** (owner decision 10 Nov): `JOB_SCHEDULE_LEGEND` — Standard, Std + OT, OT only, Ann. leave, Half day — and `scheduleCellKind` / `scheduleCellHours` on both apps (iOS `SchedulingV2CellKindBuilder` now calls the rulebook; a 0h booking is a Standard 0h tile on both — iOS showed an empty dashed chip); web booking cells move from role colours to the iOS scheme (role pills unchanged). Display only: no booking figure, count, warning or write changes.
-- Web week grid columns are calendar day keys; bookings and leave are both bucketed by them (a browser east of the organisation zone put bookings a column out).
-- iOS now matches leave under every id without case (it matched exact ids) and shows half-day, pending and booked-day leave (it showed approved full days on unbooked days only).
-- No rules, index, Storage or Functions change.
+- **One tile per person-day on a job's scheduling week** (§21, owner decision 11 Nov, option a): new `scheduleDayCell` — the day total and the number of bookings ("26h · 2 bookings"), standard and overtime underneath, the clock overtime at each rate (`multipliedHoursText`); on a leave day (brown band) the "Std" / "OT" words are dropped (owner yes). Web now combines a person's day into one tile like iOS; a tile with several bookings opens a chooser so every booking stays editable (iOS opened only the longest booking).
+- **A booked person is never unknown** (§21): iOS leaves a booking whose id names nobody off the grid, as web does, and logs it (`SCHEDULE_BOOKING_PERSON_UNRESOLVED`); tests lock that former ids, same-email ids, `operatives` rows and ghosts resolve (`resolveBookingPerson`).
+- **Replace existing booking** (§5, §2, owner decision 11 Nov, build before launch): a third choice, Replace, on every orange double-booking row, offered only when the viewer may delete every overlapping booking (`bookingReplaceOffer`); the new booking, the old booking's delete and its tombstone are one batch (`bookingReplaceWrites`); `BOOKING_CONFLICT_DECISIONS`, `BOOKING_REPLACE_LABEL`, `BOOKING_REPLACE_HELP`, `BOOKING_REPLACE_CHOSEN_TEXT`, `BOOKING_REPLACE_COLLECTIONS`. Online only on iOS and Android (`booking.replace` in `OFFLINE_ACTIONS`). No rules change (emulator test).
 
-## iOS work for 1.37.0
+## iOS work for 1.41.0
 
-**Sync first.** 1.37.0 is display only: annual leave on a job's scheduling week and one booking colour scheme (owner decisions 10 Nov). No Firestore field, rules or `minimumIosBuild` change; new exports `jobScheduleLeaveMarks`, `JOB_SCHEDULE_LEAVE_*`, `JOB_SCHEDULE_LEGEND` only.
+**Sync first.** 1.41.0: one tile per person-day on the Scheduling week (owner option a), unknown rows dropped like web, and Replace on every orange double-booking row (owner decision 11 Nov). No Firestore field, rules or `minimumIosBuild` change; the Replace batch passes the live rules (web `tests/bookingReplace.rules.test.ts`).
 
 1. **Sync** — `WEB_REPO=<web worktree> bash scripts/sync-rulebook-from-web.sh`.
-2. **Bridge** — `Core/Rulebook+ScheduleLeave.swift`: `CanonicalBusinessEngine.jobScheduleLeaveMarks(people:holidays:dayKeys:timeZone:nonWorkingDayKeys:roster:day:)` → per person key, per day key `{ kind, onLeave, pending, slot, label, title, recordId, am, pm }` (shade each half by `am` / `pm`). Holidays come from `HolidayStore.bookings` (all statuses; the rule drops rejected), day keys on the organisation calendar (`OrganizationRulebookContext`), the roster = organisation users (id, email, `formerUserIds`) plus `operatives` rows (id, email), bank holidays from the cached region list.
-3. **Scheduling grid** — `Views/ProjectDetailView.swift` (`schedulingCombinedDayCell` / `makeSchedulingPersonRow`): replace `isPersonOnAnnualLeave` (exact ids, approved full days only) with the marks. The grid's people are still only those booked on the job in the week (`ScheduleWeekGrid.staffRows`); leave never adds a row. An unbooked leave day → the brown `.annualLeave` cell with the label ("AL", "AL AM", "AL PM", pending "AL?" paler); a booked day keeps its chip and gets a thin brown band across the top with the label. Day headcounts do not count leave.
-4. **Legend** — `Views/ProjectSchedulingV2Support.swift` `SchedulingV2Legend`: the five items are `JOB_SCHEDULE_LEGEND` (already the iOS wording); add the pending swatch "AL? = leave requested" to match web.
-5. **Chip colour** — `SchedulingV2CellKindBuilder.fromBooking` calls `scheduleCellKind` (no Swift thresholds); a 0h booking is a Standard 0h chip, never the empty dashed one. One `jobScheduleLeaveMarks` call per grid render for every person and day. Do not change chip hours or tap actions.
+2. **Day tile** — `Views/ProjectDetailView.swift` (`schedulingCombinedDayCell`, subcontractor rows too) and `Views/ProjectSchedulingV2Support.swift`: the chip reads `scheduleDayCell({ bookings: [{ paidHours, overtimeHours, timeSlot, overtime }], onLeave })` — `headline` ("26h · 2 bookings"), `standardText` / `overtimeText` underneath, `caption` (nil on a leave day for Std / OT). A tap on a day with one booking opens it; with several, a chooser of that day's bookings (each with its times and hours) — never only the longest.
+3. **Unknown rows** — `Core/ScheduleWeekGrid.swift` `staffRows`: a bucket that `resolveBookingPerson` (or the no-script fallback) cannot name is left off the grid, as web does, and logged with `NSLog("SCHEDULE_BOOKING_PERSON_UNRESOLVED …")`. Former ids, same-email ids, `operatives` rows and ghosts keep resolving.
+4. **Replace** — `Core/Rulebook+BookingReplace.swift`: `bookingReplaceOffer`, `bookingReplaceWrites`, `BOOKING_REPLACE_*`. Every orange row (Select Operatives / Scheduling wizard, Quick Add, Book labour) shows Replace beside ✓ and ✕ only when the offer says so (`canDeleteBooking` on every overlapping booking, `JobAccessContext.bookingRemoveAction == "delete"`). The save is ONE Firestore batch: the new booking's create + each replaced booking's delete + its tombstone (`deletedAt` server timestamp). Online only: `OfflineAction.bookingReplace` (`booking.replace`) is `onlineOnly`, so offline the Replace button is disabled with `OFFLINE_ONLINE_ONLY_MESSAGE`; ✓ and ✕ still work offline.
 
 ## New rulebook sections
 
-- 1.37.0 — 2026-11-10
+- 1.41.0 — 2026-11-11
 
 ## Workflow for the iOS agent
 

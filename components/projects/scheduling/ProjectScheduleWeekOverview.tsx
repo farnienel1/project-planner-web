@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { addDays, format, isSameDay } from 'date-fns'
 import { organizationCalendarWeekEnd, organizationCurrentWeekStart, organizationTodayCalendarDate } from '@/lib/orgTime/organizationWeek'
 import { useEffect, useMemo, useState } from 'react'
-import { useBookingStore } from '@/lib/stores/bookingStore'
+import { useBookingStore, type BookingReplaceOptions } from '@/lib/stores/bookingStore'
 import { useManagerScheduleStore } from '@/lib/stores/managerScheduleStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { useSubcontractorStore } from '@/lib/stores/subcontractorStore'
@@ -22,10 +22,14 @@ import {
 import {
   jobScheduleLeaveMarks,
   JOB_SCHEDULE_LEGEND,
+  payrollMultipliedHours,
   scheduleCellHours,
   scheduleCellKind,
+  scheduleDayCell,
   type JobScheduleLeaveMark,
   type ScheduleCellKind,
+  type ScheduleDayBooking,
+  type ScheduleDayCell,
 } from '@/lib/canonical'
 import { bookingOnScheduleDay, scheduleColumnDate, scheduleWeekDayKeys } from '@/lib/scheduling/scheduleWeekDays'
 import { useHolidayStore } from '@/lib/stores/holidayStore'
@@ -107,6 +111,8 @@ type DayRow = {
   email: string | null
   /** Rulebook 1.37.0: the tile's colour (display only, from the pay rule's result). */
   cell: ScheduleCellKind
+  /** Rulebook 1.41.0: this booking's hours as `scheduleDayCell` adds them up for the person's day. */
+  dayBooking: ScheduleDayBooking
   booking?: Booking
   managerBooking?: ManagerSiteBooking
   subBooking?: SubBooking
@@ -150,10 +156,19 @@ function roleForUser(user: User | undefined): { label: string; tone: DayRow['rol
   return { label: 'Op', tone: 'operative' }
 }
 
-function bookingRowFromHours(input: BookingHoursInput): Pick<DayRow, 'hours' | 'overtimeEquation' | 'range' | 'slot' | 'cell'> {
+function bookingRowFromHours(input: BookingHoursInput): Pick<DayRow, 'hours' | 'overtimeEquation' | 'range' | 'slot' | 'cell' | 'dayBooking'> {
   const breakdown = hoursBreakdown(input)
   // Rulebook 1.37.0: the tile colour reads the same pay-rule result the hours come from (`payrollHoursResult`).
-  const cell = scheduleCellKind({ ...scheduleCellHours(bookingPayrollHours(input)), timeSlot: input.timeSlot })
+  const result = bookingPayrollHours(input)
+  const cellHours = scheduleCellHours(result)
+  const cell = scheduleCellKind({ ...cellHours, timeSlot: input.timeSlot })
+  // Rulebook 1.41.0: the clock overtime at its rate (`payrollMultipliedHours`) for the day tile's overtime lines.
+  const multiplied = payrollMultipliedHours(result)
+  const dayBooking: ScheduleDayBooking = {
+    ...cellHours,
+    timeSlot: input.timeSlot,
+    overtime: multiplied ? { clockHours: multiplied.clockHours, multiplier: multiplied.multiplier, breakHours: multiplied.breakHours } : null,
+  }
   const range = customHoursRangeLabel(input)
   // Rulebook 1.20.2: "Custom 07:30–14:00" (`bookingTimesText`); hours are the pay rule's for the day (`totalPaidHours`).
   const slotStr = bookingTimesText(input)
@@ -163,6 +178,7 @@ function bookingRowFromHours(input: BookingHoursInput): Pick<DayRow, 'hours' | '
     range,
     slot: slotStr,
     cell,
+    dayBooking,
   }
 }
 
@@ -231,6 +247,8 @@ export function ProjectScheduleWeekOverview({
   const [subBookings, setSubBookings] = useState<SubBooking[]>([])
   const [expanded, setExpanded] = useState(variant !== 'hub')
   const [editingRow, setEditingRow] = useState<DayRow | null>(null)
+  // Rulebook 1.41.0 §21: a person-day with several bookings is one tile; tapping it lists them to pick one to edit.
+  const [choosing, setChoosing] = useState<{ title: string; rows: DayRow[] } | null>(null)
   const [savingEdit, setSavingEdit] = useState(false)
   const [quickAdd, setQuickAdd] = useState<{ person: PersonWeek; date: Date } | null>(null)
   const [savingQuickAdd, setSavingQuickAdd] = useState(false)
@@ -563,19 +581,25 @@ export function ProjectScheduleWeekOverview({
     return null
   }, [editingRow, project.id, project.jobNumber, project.siteName])
 
-  const saveEditing = async (updates: Partial<Booking>) => {
+  const saveEditing = async (updates: Partial<Booking>, options?: BookingReplaceOptions) => {
     if (!editingRow) return
     setSavingEdit(true)
     try {
+      // Rulebook 1.41.0 §5: `options.replaces` — the overlapping bookings Replace removes in the same batch.
       if (editingRow.booking) {
-        await updateBooking(editingRow.booking.id, updates)
+        await updateBooking(editingRow.booking.id, updates, options)
       } else if (editingRow.managerBooking) {
-        await updateManagerSiteBooking(organizationId, editingRow.managerBooking.id, {
-          timeSlot: String(updates.timeSlot || editingRow.managerBooking.timeSlot),
-          workStartTime: updates.workStartTime,
-          workEndTime: updates.workEndTime,
-          isBreakRemoved: updates.isBreakRemoved,
-        })
+        await updateManagerSiteBooking(
+          organizationId,
+          editingRow.managerBooking.id,
+          {
+            timeSlot: String(updates.timeSlot || editingRow.managerBooking.timeSlot),
+            workStartTime: updates.workStartTime,
+            workEndTime: updates.workEndTime,
+            isBreakRemoved: updates.isBreakRemoved,
+          },
+          options
+        )
       }
     } finally {
       setSavingEdit(false)
@@ -617,7 +641,7 @@ export function ProjectScheduleWeekOverview({
   const isSmallWork = scheduleBasePath.includes('/small-works/')
   const projectLabel = `${project.jobNumber} ${project.siteName}`.trim()
 
-  const saveQuickAdd = async (values: QuickAddBookingValues) => {
+  const saveQuickAdd = async (values: QuickAddBookingValues, options?: BookingReplaceOptions) => {
     if (!quickAdd?.person.quickAdd || !currentUser) return
     const target = quickAdd.person.quickAdd
     setSavingQuickAdd(true)
@@ -635,7 +659,7 @@ export function ProjectScheduleWeekOverview({
           bookedBy: currentUser.email,
           status: 'confirmed',
           organizationId,
-        })
+        }, options)
       } else {
         await saveManagerSiteBooking(organizationId, {
           userId: target.userId,
@@ -646,7 +670,7 @@ export function ProjectScheduleWeekOverview({
           workStartTime: values.workStartTime,
           workEndTime: values.workEndTime,
           isBreakRemoved: values.isBreakRemoved,
-        })
+        }, options)
       }
     } finally {
       setSavingQuickAdd(false)
@@ -783,6 +807,11 @@ export function ProjectScheduleWeekOverview({
                   todayDate={todayDate}
                   expanded={expanded}
                   onEdit={canQuickAdd ? setEditingRow : () => undefined}
+                  onChoose={
+                    canQuickAdd
+                      ? (rows, day) => setChoosing({ title: `${person.peopleLabel || person.name} · ${format(day, 'EEE d MMM')}`, rows })
+                      : undefined
+                  }
                   onQuickAdd={
                     canQuickAdd && jobBookable
                       ? // Rulebook 1.37.0 (review #299): the column's organisation day, so the sheet, its leave check
@@ -799,6 +828,17 @@ export function ProjectScheduleWeekOverview({
         <ScheduleLegend />
       </div>
 
+      {choosing ? (
+        <DayBookingChooser
+          title={choosing.title}
+          rows={choosing.rows}
+          onPick={(row) => {
+            setChoosing(null)
+            setEditingRow(row)
+          }}
+          onClose={() => setChoosing(null)}
+        />
+      ) : null}
       {editingRow?.subBooking ? (
         <SubcontractorBookingEditSheet
           organizationId={organizationId}
@@ -831,6 +871,7 @@ export function ProjectScheduleWeekOverview({
             return person ? leaveCheck.checkFor(person, quickAdd.date) : undefined
           })()}
           onSave={saveQuickAdd}
+          allowReplace
           onClose={() => setQuickAdd(null)}
         />
       ) : null}
@@ -846,6 +887,7 @@ export function ProjectScheduleWeekOverview({
             return person ? leaveCheck.checkFor(person, new Date(editingBooking.date), [editingBooking.id]) : undefined
           })()}
           onSave={saveEditing}
+          allowReplace
           onDelete={editingRemoveAction === 'delete' ? deleteEditing : undefined}
           onClose={() => setEditingRow(null)}
         />
@@ -861,6 +903,7 @@ function PersonRow({
   todayDate,
   expanded,
   onEdit,
+  onChoose,
   onQuickAdd,
 }: {
   person: PersonWeek
@@ -870,6 +913,8 @@ function PersonRow({
   todayDate: Date
   expanded: boolean
   onEdit: (row: DayRow) => void
+  /** Rulebook 1.41.0: a day with several bookings opens a chooser of them (undefined when the viewer may not edit). */
+  onChoose?: (rows: DayRow[], day: Date) => void
   onQuickAdd?: (person: PersonWeek, date: Date) => void
 }) {
   const minHeight = expanded ? 'min-h-[72px]' : 'min-h-[44px]'
@@ -922,19 +967,17 @@ function PersonRow({
                 <div className={`rounded-lg border border-dashed border-slate-200 ${minHeight}`} />
               )
             ) : (
-              <div className="space-y-1">
-                {cell.map((row, rowIndex) => (
-                  <BookingTile
-                    key={row.id}
-                    row={row}
-                    expanded={expanded}
-                    minHeight={minHeight}
-                    // A booking on a leave day keeps its cell and gets a thin brown band across the top (once per day).
-                    leave={rowIndex === 0 ? mark : null}
-                    onEdit={onEdit}
-                  />
-                ))}
-              </div>
+              <DayTile
+                rows={cell}
+                expanded={expanded}
+                minHeight={minHeight}
+                // A booking on a leave day keeps its cell and gets a thin brown band across the top.
+                leave={mark}
+                onOpen={() => {
+                  if (cell.length === 1) onEdit(cell[0])
+                  else onChoose?.(cell, day)
+                }}
+              />
             )}
           </div>
         )
@@ -979,24 +1022,33 @@ function LeaveCell({
   )
 }
 
-/** Rulebook 1.37.0: one booking tile in the iOS colours. Its text (slot, hours, overtime line) is unchanged. */
-function BookingTile({
-  row,
+/**
+ * Rulebook 1.41.0 §21 (owner option a): one tile per person-day in the iOS colours, from `scheduleDayCell` — the day
+ * total and, with several bookings, their number ("26h · 2 bookings"), standard and overtime underneath, the clock
+ * overtime per rate when expanded; on a leave day (brown band) the Std / OT words are left off. One booking keeps its
+ * slot text ("Custom 07:30–14:00").
+ */
+function DayTile({
+  rows,
   expanded,
   minHeight,
   leave,
-  onEdit,
+  onOpen,
 }: {
-  row: DayRow
+  rows: DayRow[]
   expanded: boolean
   minHeight: string
   leave: JobScheduleLeaveMark | null
-  onEdit: (row: DayRow) => void
+  onOpen: () => void
 }) {
-  const clickable = Boolean(row.booking || row.managerBooking || row.subBooking)
-  const nameOnTile = row.peopleLabel || (row.roleTone === 'subcontractor' ? row.name : '')
-  const tall = expanded || Boolean(nameOnTile)
-  const { tone } = row.cell
+  const day: ScheduleDayCell | null = scheduleDayCell({ bookings: rows.map((row) => row.dayBooking), onLeave: Boolean(leave) })
+  if (!day) return null
+  const first = rows[0]
+  const single = rows.length === 1
+  const clickable = rows.some((row) => Boolean(row.booking || row.managerBooking || row.subBooking))
+  const nameOnTile = first.peopleLabel || (first.roleTone === 'subcontractor' ? first.name : '')
+  const tall = expanded || Boolean(nameOnTile) || !single
+  const { tone } = day
   const otInk = 'text-[#5C3800]'
   const band = leave ? (
     <div
@@ -1008,26 +1060,35 @@ function BookingTile({
       {leave.label}
     </div>
   ) : null
+  const hoursSize = expanded ? 'text-[12px]' : 'text-[11px]'
   const headline = (ink: string) => (
     <>
       {nameOnTile ? <p className={`text-[10px] font-semibold leading-tight ${ink}`}>{nameOnTile}</p> : null}
-      <p className={`${expanded ? 'text-[11px]' : 'text-[10px]'} font-semibold leading-tight ${ink}`}>{row.slot}</p>
+      {single ? <p className={`${expanded ? 'text-[11px]' : 'text-[10px]'} font-semibold leading-tight ${ink}`}>{first.slot}</p> : null}
+      <p className={`${hoursSize} font-bold ${ink}`} data-testid="schedule-day-headline">
+        {day.headline}
+      </p>
     </>
   )
+  const overtimeLines = (ink: string) =>
+    expanded && day.overtimeLines.length > 0
+      ? day.overtimeLines.map((line) => (
+          <p key={line} className={`text-[10px] font-semibold leading-tight ${ink}`}>
+            {line}
+          </p>
+        ))
+      : null
   let body: React.ReactNode
   if (tone === 'split') {
     body = (
       <div className="flex flex-1 flex-col">
         <div className="px-1.5 py-1 text-white" style={{ background: STD_BLUE }}>
           {headline('text-white')}
-          <p className={`${expanded ? 'text-[12px]' : 'text-[11px]'} font-bold`}>{formatHoursLabel(row.hours)}h</p>
-          <p className="text-[9px] font-bold uppercase opacity-85">{formatHoursLabel(row.cell.standardHours)}h Std</p>
+          {day.standardText ? <p className="text-[9px] font-bold uppercase opacity-85">{day.standardText}</p> : null}
         </div>
         <div className={`flex-1 px-1.5 py-1 ${otInk}`} style={{ background: OT_STRIPES }}>
-          <p className="text-[9px] font-extrabold uppercase">{formatHoursLabel(row.cell.overtimeHours)}h OT</p>
-          {expanded && row.overtimeEquation ? (
-            <p className="text-[10px] font-semibold leading-tight">{row.overtimeEquation}</p>
-          ) : null}
+          {day.overtimeText ? <p className="text-[9px] font-extrabold uppercase">{day.overtimeText}</p> : null}
+          {overtimeLines(otInk)}
         </div>
       </div>
     )
@@ -1037,20 +1098,16 @@ function BookingTile({
       tone === 'otOnly'
         ? OT_STRIPES
         : tone === 'halfDay'
-          ? row.cell.halfLabel === 'PM'
+          ? day.halfLabel === 'PM'
             ? `linear-gradient(90deg, ${HALF_LIGHT} 0 50%, ${STD_BLUE} 50% 100%)`
             : `linear-gradient(90deg, ${STD_BLUE} 0 50%, ${HALF_LIGHT} 50% 100%)`
           : STD_BLUE
-    const caption = tone === 'otOnly' ? 'OT' : tone === 'halfDay' ? row.cell.halfLabel ?? 'Half day' : 'Std'
     body = (
       <div className={`flex-1 px-1.5 ${tall ? 'py-1.5' : 'py-1'} ${ink}`} style={{ background }}>
         <div className={tone === 'halfDay' ? 'drop-shadow-[0_1px_1px_rgba(0,0,0,0.35)]' : ''}>
           {headline(ink)}
-          <p className={`${expanded ? 'text-[12px]' : 'text-[11px]'} font-bold`}>{formatHoursLabel(row.hours)}h</p>
-          <p className="text-[9px] font-bold uppercase opacity-85">{caption}</p>
-          {expanded && row.overtimeEquation ? (
-            <p className="text-[10px] font-semibold leading-tight">{row.overtimeEquation}</p>
-          ) : null}
+          {day.caption ? <p className="text-[9px] font-bold uppercase opacity-85">{day.caption}</p> : null}
+          {overtimeLines(ink)}
         </div>
       </div>
     )
@@ -1063,12 +1120,63 @@ function BookingTile({
     </>
   )
   return clickable ? (
-    <button type="button" onClick={() => onEdit(row)} className={className} data-cell-tone={tone}>
+    <button
+      type="button"
+      onClick={onOpen}
+      className={className}
+      data-cell-tone={tone}
+      data-booking-count={day.bookingCount}
+      aria-label={single ? undefined : `${day.headline}. Opens a list of the bookings to edit one.`}
+    >
       {content}
     </button>
   ) : (
-    <div className={className} data-cell-tone={tone}>
+    <div className={className} data-cell-tone={tone} data-booking-count={day.bookingCount}>
       {content}
+    </div>
+  )
+}
+
+/** Rulebook 1.41.0 §21: the bookings of one person-day, to pick the one to open (each keeps its own edit sheet). */
+function DayBookingChooser({
+  title,
+  rows,
+  onPick,
+  onClose,
+}: {
+  title: string
+  rows: DayRow[]
+  onPick: (row: DayRow) => void
+  onClose: () => void
+}) {
+  return (
+    <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/30 p-4" role="dialog" aria-modal="true" aria-label={title}>
+      <div className="w-full max-w-sm rounded-2xl bg-white p-4 shadow-xl">
+        <p className="text-[15px] font-semibold text-slate-900">{title}</p>
+        <p className="mt-0.5 text-xs text-slate-500">{rows.length} bookings — pick one to edit.</p>
+        <div className="mt-3 space-y-2">
+          {rows.map((row) => (
+            <button
+              key={row.id}
+              type="button"
+              onClick={() => onPick(row)}
+              className="flex w-full items-center justify-between gap-3 rounded-xl border border-slate-200 px-3 py-2 text-left hover:bg-slate-50"
+              data-testid="schedule-day-chooser-row"
+            >
+              <span className="min-w-0">
+                <span className="block text-[13px] font-semibold text-slate-900">{row.slot}</span>
+                {row.overtimeEquation ? <span className="block text-[11px] text-slate-500">{row.overtimeEquation}</span> : null}
+              </span>
+              <span className="shrink-0 text-[13px] font-bold text-slate-700">{formatHoursLabel(row.hours)}h</span>
+            </button>
+          ))}
+        </div>
+        <div className="mt-4 flex justify-end">
+          <button type="button" onClick={onClose} className="rounded-xl border border-slate-200 px-4 py-2 text-[13px] font-medium text-slate-700">
+            Close
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

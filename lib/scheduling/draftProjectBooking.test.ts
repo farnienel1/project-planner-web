@@ -232,3 +232,43 @@ test('carryDayDecisions keeps ✓ / ✕ on days still in the request and still c
   assert.equal(draftPersonStillListed({ ...base, dayStates: { '2026-11-05': 'clash_pending' } }), true)
   assert.equal(draftPersonStillListed({ ...base, dayStates: { '2026-11-05': 'removed' } }), false)
 })
+
+// Rulebook 1.41.0 §5: Replace in the Schedule wizard.
+test('1.41.0 replaceDayClash books the day and keeps the bookings to replace; ✓ or ✕ afterwards clears them', async () => {
+  const mod = await import('./draftProjectBooking')
+  const person = {
+    personId: 'p1',
+    kind: 'operative' as const,
+    name: 'P',
+    email: '',
+    badge: 'Op',
+    dayStates: { '2026-11-12': 'clash_pending' as const },
+    clashByDay: {},
+  }
+  const refs = [{ collection: 'bookings' as const, bookingId: 'OLD1' }]
+  const replaced = mod.replaceDayClash(person, '2026-11-12', refs)
+  assert.equal(replaced.dayStates['2026-11-12'], 'clash_replace')
+  assert.deepEqual(replaced.replaceByDay?.['2026-11-12'], refs)
+  assert.equal(mod.personHasBookableDays(replaced), true)
+  assert.equal(mod.dayStateBooks('clash_replace'), true)
+  assert.equal(mod.acceptDayClash(replaced, '2026-11-12').replaceByDay?.['2026-11-12'], undefined)
+  assert.equal(mod.removeDayFromPerson(replaced, '2026-11-12').replaceByDay?.['2026-11-12'], undefined)
+  assert.equal(mod.replaceDayClash(person, '2026-11-12', []), person, 'nothing to replace changes nothing')
+})
+
+test('1.41.0 carryDayDecisions keeps a Replace only while the day clashes with exactly those bookings', async () => {
+  const mod = await import('./draftProjectBooking')
+  const clash = (id: string) => ({
+    operativeId: 'p1', operativeName: 'P', date: new Date(), newTimeSlot: 'FULL DAY', existingBookingId: id,
+    existingProjectId: 'J', existingTimeSlot: 'FULL DAY', existingProjectLabel: 'J',
+  })
+  const previous = {
+    personId: 'p1', kind: 'operative' as const, name: 'P', email: '', badge: 'Op',
+    dayStates: { d: 'clash_replace' as const }, clashByDay: { d: [clash('OLD1')] },
+    replaceByDay: { d: [{ collection: 'bookings' as const, bookingId: 'OLD1' }] },
+  }
+  const same = { ...previous, dayStates: { d: 'clash_pending' as const }, replaceByDay: undefined }
+  assert.equal(mod.carryDayDecisions(previous, same).dayStates.d, 'clash_replace')
+  const other = { ...same, clashByDay: { d: [clash('OLD1'), clash('OLD2')] } }
+  assert.equal(mod.carryDayDecisions(previous, other).dayStates.d, 'clash_pending', 'a new overlapping booking asks again')
+})

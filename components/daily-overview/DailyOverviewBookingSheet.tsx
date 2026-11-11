@@ -20,7 +20,8 @@ import { useBookingStore } from '@/lib/stores/bookingStore'
 import { useManagerScheduleStore } from '@/lib/stores/managerScheduleStore'
 import { useProjectStore } from '@/lib/stores/projectStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
-import { useBookingConflictGate } from '@/components/scheduling/BookingConflictRows'
+import { allReplacedBookings, useBookingConflictGate } from '@/components/scheduling/BookingConflictRows'
+import type { BookingReplaceOptions } from '@/lib/stores/bookingStore'
 import { useLeaveConflictCheck } from '@/components/scheduling/useLeaveConflictCheck'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { bookableWorks } from '@/lib/access/workAccess'
@@ -282,12 +283,13 @@ export function DailyOverviewBookingSheet({
   const breakConfirmed = () => confirmCustomHoursBreak(payroll, day, hoursFields())
 
   // Rulebook 1.16.0 §5 (`bookingLeaveConflicts`): annual leave on this day is asked before the change saves; ✕ drops
-  // the day, so nothing is saved.
-  const leaveConfirmed = async (): Promise<boolean> => {
+  // the day, so nothing is saved. 1.41.0: Replace on the orange row gives the bookings to remove in the same batch
+  // (`options.replaces`); null when nothing is to be saved.
+  const leaveConfirmed = async (): Promise<BookingReplaceOptions | null> => {
     const operativeId = row.kind === 'operative' ? row.operativeId : linkedOperative?.id
     const userId = resolvedUserId || row.userId || null
     const personId = operativeId || userId
-    if (!personId) return true
+    if (!personId) return {}
     const rows = leaveCheck.checkFor(
       {
         id: personId,
@@ -299,25 +301,26 @@ export function DailyOverviewBookingSheet({
       day,
       row.bookingId ? [row.bookingId] : []
     )(hoursFields())
-    const dropped = await leaveGate.check(rows)
-    if (dropped === null) return false
-    if (dropped.size > 0) {
+    const choices = await leaveGate.choose(rows)
+    if (choices === null) return null
+    if (choices.dropped.size > 0) {
       onClose()
-      return false
+      return null
     }
-    return true
+    return { replaces: allReplacedBookings(choices) }
   }
 
   const saveToProject = async (project: Project, asSmallWork: boolean) => {
     if (!organization?.id || !row.bookingId || !user || !hoursValid) return
     if (!breakConfirmed()) return
-    if (!(await leaveConfirmed())) return
+    const replace = await leaveConfirmed()
+    if (!replace) return
     setSaving(true)
     setError(null)
     try {
       const hours = hoursFields()
       if (row.kind === 'operative') {
-        await updateBooking(row.bookingId, { projectId: project.id, ...hours, ...rateFields(false) })
+        await updateBooking(row.bookingId, { projectId: project.id, ...hours, ...rateFields(false) }, replace)
       } else if (linkedOperative) {
         await createBooking({
           operativeId: linkedOperative.id,
@@ -332,7 +335,7 @@ export function DailyOverviewBookingSheet({
           isBreakRemoved: hours.isBreakRemoved,
           ...(rateFields(true) as { otMultiplierOverride?: number }),
           organizationId: organization.id,
-        })
+        }, replace)
         await deleteManagerSiteBooking(organization.id, row.bookingId)
       } else {
         await updateManagerSiteBooking(organization.id, row.bookingId, {
@@ -341,7 +344,7 @@ export function DailyOverviewBookingSheet({
           customLocationName: undefined,
           ...hours,
           ...rateFields(false),
-        })
+        }, replace)
       }
       onClose()
     } catch (err: unknown) {
@@ -354,7 +357,8 @@ export function DailyOverviewBookingSheet({
   const saveToOther = async (pick: ScheduleLocationPick) => {
     if (!organization?.id || !hoursValid) return
     if (!breakConfirmed()) return
-    if (!(await leaveConfirmed())) return
+    const replace = await leaveConfirmed()
+    if (!replace) return
     if (!resolvedUserId) {
       setError('This person needs a user account to be booked to Other.')
       return
@@ -374,7 +378,7 @@ export function DailyOverviewBookingSheet({
           workEndTime: hours.workEndTime,
           isBreakRemoved: hours.isBreakRemoved,
           ...rateFields(true),
-        })
+        }, replace)
         // The labour booking moves to the manager schedule: it is deleted with its tombstone. Other is offered only
         // when `bookingRemoveAction` is `delete` (`otherAllowed`), so this delete is never refused after the save.
         await deleteBooking(row.bookingId, organization.id)
@@ -385,7 +389,7 @@ export function DailyOverviewBookingSheet({
           customLocationName: pick.customLocationName,
           ...hours,
           ...rateFields(false),
-        })
+        }, replace)
       }
       onClose()
     } catch (err: unknown) {
@@ -397,18 +401,19 @@ export function DailyOverviewBookingSheet({
 
   const saveHoursOnly = async () => {
     if (!organization?.id || !row.bookingId || !hoursValid) return
-    if (!(await leaveConfirmed())) return
+    const replace = await leaveConfirmed()
+    if (!replace) return
     setSaving(true)
     setError(null)
     try {
       const hours = hoursFields()
       if (row.kind === 'operative') {
-        await updateBooking(row.bookingId, { ...hours, ...rateFields(false) })
+        await updateBooking(row.bookingId, { ...hours, ...rateFields(false) }, replace)
       } else {
         await updateManagerSiteBooking(organization.id, row.bookingId, {
           ...hours,
           ...rateFields(false),
-        })
+        }, replace)
       }
       onClose()
     } catch (err: unknown) {

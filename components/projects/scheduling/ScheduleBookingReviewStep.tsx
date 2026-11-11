@@ -3,9 +3,11 @@
 import { format } from 'date-fns'
 import { formatClashSummary } from '@/lib/scheduling/bookingClashUtils'
 import {
+  dayStateBooks,
   draftPersonNeedsWarning,
   type DraftBookingPerson,
 } from '@/lib/scheduling/draftProjectBooking'
+import { BOOKING_REPLACE_LABEL } from '@/lib/canonical'
 import { slotKey, slotToFirestore, type ScheduleDateSlot } from '@/lib/scheduling/scheduleUtils'
 import { weekendBreakdownForDates } from '@/lib/scheduling/bookingSlotRules'
 import { useOrganizationPayrollPolicy } from '@/lib/scheduling/useOrganizationPayrollPolicy'
@@ -93,10 +95,7 @@ export function ScheduleBookingReviewStep({
         {people.map((person) => {
           const hasWarning = draftPersonNeedsWarning(person)
           const expanded = expandedPersonId === person.personId
-          const bookableDays = slots.filter((slot) => {
-            const state = person.dayStates[slotKey(slot.date)]
-            return state === 'free' || state === 'clash_accepted'
-          })
+          const bookableDays = slots.filter((slot) => dayStateBooks(person.dayStates[slotKey(slot.date)]))
           // Rulebook 1.18.0 (`weekendBookingBreakdown`): each weekend day this person is booked on, priced by its rule.
           const weekendRows = bookableDays.flatMap((slot) => {
             const stored = slotToFirestore(slot)
@@ -164,13 +163,18 @@ export function ScheduleBookingReviewStep({
                   <p className="text-xs font-semibold uppercase tracking-wide text-amber-800">Overlap warnings</p>
                   <div className="mt-2 space-y-2">
                     {slots
-                      .filter((slot) => person.dayStates[slotKey(slot.date)] === 'clash_accepted')
+                      .filter((slot) => {
+                        const state = person.dayStates[slotKey(slot.date)]
+                        return state === 'clash_accepted' || state === 'clash_replace'
+                      })
                       .map((slot) => {
                         const key = slotKey(slot.date)
                         const clashes = person.clashByDay[key] || []
+                        const replacing = person.dayStates[key] === 'clash_replace'
                         return (
                           <p key={key} className="text-xs text-amber-900">
-                            {format(slot.date, 'EEE d MMM')}: {formatClashSummary(clashes)}
+                            {format(slot.date, 'EEE d MMM')}: {replacing ? `${BOOKING_REPLACE_LABEL} · ` : ''}
+                            {formatClashSummary(clashes)}
                           </p>
                         )
                       })}

@@ -1,11 +1,13 @@
 'use client'
 
 import { create } from 'zustand'
-import { doc, setDoc } from 'firebase/firestore'
+import { doc, getDoc, setDoc, writeBatch } from 'firebase/firestore'
 import { deleteBookingWithTombstone } from '@/lib/bookings/bookingTombstoneWrite'
 import { resolveBookingJobCollection } from '@/lib/bookings/jobCollection'
 import { auth, db } from '@/lib/firebase/config'
-import { MissingDocumentError, createWritePayload, savePartialDocument } from '@/lib/firebase/partialWrite'
+import { MissingDocumentError, addPartialDocumentToBatch, createWritePayload, savePartialDocument } from '@/lib/firebase/partialWrite'
+import { addBookingReplaceToBatch, commitBookingReplace, forgetReplacedBookings } from '@/lib/bookings/bookingReplaceWrite'
+import type { BookingReplaceOptions } from '@/lib/stores/bookingStore'
 import { BOOKING_REPLAY_REFUSED_MESSAGE, writeMetadataFields } from '@/lib/canonical'
 import { managerSiteBookingUpdateWriteFields } from '@/lib/canonical/workDocumentReaders'
 import { forgetOrgCollectionDoc, isOrgCollectionSubscribed, subscribeOrgCollection, unsubscribeOrgCollection, type OrgCollectionDoc } from '@/lib/firebase/subscribeOrgCollection'
@@ -103,11 +105,12 @@ interface ManagerScheduleState {
     organizationId: string,
     options?: BookingDownloadRequest & { force?: boolean }
   ) => Promise<void>
-  saveManagerSiteBooking: (organizationId: string, booking: SaveManagerSiteBookingInput) => Promise<void>
+  saveManagerSiteBooking: (organizationId: string, booking: SaveManagerSiteBookingInput, options?: BookingReplaceOptions) => Promise<void>
   updateManagerSiteBooking: (
     organizationId: string,
     bookingId: string,
-    updates: Partial<SaveManagerSiteBookingInput>
+    updates: Partial<SaveManagerSiteBookingInput>,
+    options?: BookingReplaceOptions
   ) => Promise<void>
   deleteManagerSiteBooking: (organizationId: string, bookingId: string) => Promise<void>
 }
@@ -165,7 +168,7 @@ export const useManagerScheduleStore = create<ManagerScheduleState>((set, get) =
     )
   },
 
-  saveManagerSiteBooking: async (organizationId: string, booking: SaveManagerSiteBookingInput) => {
+  saveManagerSiteBooking: async (organizationId: string, booking: SaveManagerSiteBookingInput, options) => {
     const firestore = requireDb()
     if (!organizationId.trim()) throw new Error('Missing organisation for booking')
     const id = newUppercaseUuid()
@@ -193,15 +196,25 @@ export const useManagerScheduleStore = create<ManagerScheduleState>((set, get) =
     const payload = serializeManagerSiteBooking({ ...next, organizationId })
     // Rulebook §1 / 1.9.0: a create carries write metadata (`writeMetadataFields`). 1.20.2: a fresh id and a plain
     // create write (no merge), so it can never land on an existing booking.
-    await setDoc(
-      doc(firestore, 'organizations', organizationId, 'managerSiteBookings', id),
-      { ...createWritePayload(payload), ...(writeMetadataFields(auth?.currentUser?.uid, 'web') ?? {}) }
-    )
+    const createFields = { ...createWritePayload(payload), ...(writeMetadataFields(auth?.currentUser?.uid, 'web') ?? {}) }
+    const replaces = options?.replaces ?? []
+    if (replaces.length > 0) {
+      // Rulebook 1.41.0 §5 (`bookingReplaceWrites`): the create and each replaced delete + tombstone in one batch.
+      const removed = await commitBookingReplace(firestore, {
+        organizationId,
+        booking: { collection: 'managerSiteBookings', bookingId: id },
+        replaced: replaces,
+        write: (batch, ref) => batch.set(ref, createFields),
+      })
+      await forgetReplacedBookings(organizationId, removed)
+    } else {
+      await setDoc(doc(firestore, 'organizations', organizationId, 'managerSiteBookings', id), createFields)
+    }
     const without = get().managerSiteBookings.filter((row) => row.id !== next.id)
     set({ managerSiteBookings: [...without, next] })
   },
 
-  updateManagerSiteBooking: async (organizationId, bookingId, updates) => {
+  updateManagerSiteBooking: async (organizationId, bookingId, updates, options) => {
     const firestore = requireDb()
     const existing = get().managerSiteBookings.find((row) => row.id === bookingId)
     if (!existing) throw new Error('Booking not found')
@@ -226,17 +239,31 @@ export const useManagerScheduleStore = create<ManagerScheduleState>((set, get) =
     // Rulebook 1.9.0 `managerSiteBookingUpdateWriteFields`: only the changed fields, with write metadata; an edit of
     // a booking deleted on another device is refused, never re-created.
     try {
-      await savePartialDocument(
-        doc(firestore, 'organizations', organizationId, 'managerSiteBookings', bookingId),
-        payload,
-        managerSiteBookingUpdateWriteFields,
-        {
+      const replaces = options?.replaces ?? []
+      const ref = doc(firestore, 'organizations', organizationId, 'managerSiteBookings', bookingId)
+      if (replaces.length > 0) {
+        // Rulebook 1.41.0 §5: the edit and each replaced delete + tombstone in one batch (a missing booking is refused).
+        if (!(await getDoc(ref)).exists()) throw new MissingDocumentError(ref.path)
+        const batch = writeBatch(firestore)
+        await addPartialDocumentToBatch(batch, ref, payload, managerSiteBookingUpdateWriteFields, {
+          userId: auth?.currentUser?.uid ?? null,
+          base: serializeManagerSiteBooking({ ...existing, organizationId }),
+        })
+        const removed = addBookingReplaceToBatch(firestore, batch, {
+          organizationId,
+          booking: { collection: 'managerSiteBookings', bookingId },
+          replaced: replaces,
+        })
+        await batch.commit()
+        await forgetReplacedBookings(organizationId, removed)
+      } else {
+        await savePartialDocument(ref, payload, managerSiteBookingUpdateWriteFields, {
           userId: auth?.currentUser?.uid ?? null,
           missing: 'refuse',
           // Diff against the booking this edit started from: only `updates` are written.
           base: serializeManagerSiteBooking({ ...existing, organizationId }),
-        }
-      )
+        })
+      }
     } catch (error: unknown) {
       if (error instanceof MissingDocumentError) {
         set({ managerSiteBookings: get().managerSiteBookings.filter((row) => row.id !== bookingId) })
