@@ -2034,11 +2034,14 @@ service cloud.firestore {
           return data.get('userId', null) == request.auth.uid ||
             data.get('operativeId', null) == request.auth.uid;
         }
+        // 1.40.0: the line manager of leave filed only under an operatives row (no users document on userId) decides too.
+        function hbLineManages(data) {
+          let op = data.get('operativeId', '');
+          return hbRequesterExists(data) ? request.auth.uid in lineManagerIdList(hbRequester(data))
+            : (op is string && op.size() > 0 && !op.matches('.*/.*') && callerLineManagesRowPerson(op));
+        }
         function hbCanDecide(data) {
-          return !hbIsOwner(data) && (
-            (hbRequesterExists(data) && request.auth.uid in lineManagerIdList(hbRequester(data)) && !hbCallerIsOperative()) ||
-            (!hbCallerIsOperative() && hbIsAdmin())
-          );
+          return (hbIsOwner(data) || hbCallerIsOperative()) ? false : (hbIsAdmin() ? true : hbLineManages(data));
         }
 
         function hbIsRequestShape(next) {
@@ -2088,14 +2091,10 @@ service cloud.firestore {
           hbCanDecide(request.resource.data) ||
           (hbIsRequestShape(request.resource.data) && (callerOrgRoleAnyBilling(organizationId) in ['admin', 'manager'] || hbIsAdmin()))
         )) : (request.method == 'update') ? ((
-          (hbIsOwner(resource.data) &&
-            hbOwnerEditAllowed(request.resource.data.diff(resource.data).affectedKeys())) ||
-          (!hbIsOwner(resource.data) && !hbIsOwner(request.resource.data) && (
-            (hbRequesterExists(resource.data) && request.auth.uid in lineManagerIdList(hbRequester(resource.data)) &&
-             hbRequesterExists(request.resource.data) && request.auth.uid in lineManagerIdList(hbRequester(request.resource.data)) &&
-             !hbCallerIsOperative()) ||
-            (!hbCallerIsOperative() && hbIsAdmin())
-          ))
+          hbIsOwner(resource.data) ? hbOwnerEditAllowed(request.resource.data.diff(resource.data).affectedKeys())
+          : ((hbIsOwner(request.resource.data) || hbCallerIsOperative()) ? false : (hbIsAdmin() ? true :
+            ((hbKeySame(request.resource.data.diff(resource.data).affectedKeys(), 'userId') &&
+              hbKeySame(request.resource.data.diff(resource.data).affectedKeys(), 'operativeId')) ? hbLineManages(resource.data) : false)))
         )) : ((
           (hbIsOwner(resource.data) && (
             resource.data.get('status', null) in ['pending', 'rejected'] ||
@@ -2103,6 +2102,23 @@ service cloud.firestore {
           )) ||
           hbCanDecide(resource.data)
         )));
+      }
+
+      // 1.40.0 §4.4: manual annual-leave adjustments — create only (append-only history), by an admin or the person's
+      // line manager, never the person; read by the person, their line managers and admins.
+      match /annualLeaveAdjustments/{adjustmentId} {
+        allow read: if overtimeViewerOf(resource.data.get('userId', ''));
+        allow create: if request.resource.data.keys().hasOnly(['userId', 'days', 'reason', 'yearKey', 'createdBy', 'createdByName', 'createdAt', 'updatedAt', 'updatedBy', 'updatedFrom']) &&
+          request.resource.data.keys().hasAll(['userId', 'days', 'reason', 'yearKey', 'createdBy']) &&
+          request.resource.data.createdBy == request.auth.uid && request.resource.data.userId is string && request.resource.data.userId.size() > 0 && !request.resource.data.userId.matches('.*/.*') &&
+          request.resource.data.userId != request.auth.uid &&
+          request.resource.data.days is number && request.resource.data.days != 0 && request.resource.data.days >= -365 && request.resource.data.days <= 365 && request.resource.data.days * 2 == math.floor(request.resource.data.days * 2) &&
+          payeClaimText(request.resource.data, 'reason', 1, 200) && payeClaimText(request.resource.data, 'createdByName', 0, 120) && payeClaimDayKey(request.resource.data.yearKey) &&
+          writeMetadataValidWhenPresent()
+          ? (isOrgAdminOrOwner(organizationId)
+            ? !(request.resource.data.userId in callerHomeData().get('formerUserIds', [])) && !(request.resource.data.userId in callerHomeData().get('sameEmailUserIds', []))
+            : canAccessOrganization(organizationId) && callerLineManagesUser(request.resource.data.userId))
+          : false;
       }
 
       function managerMayChangePayOf(subjectUserId) {
@@ -2392,7 +2408,7 @@ service cloud.firestore {
           !(collection in ['projects', 'smallWorks', 'bookings', 'managerSiteBookings', 'subcontractorBookings']) &&
           !(collection in ['payProfiles', 'operativeDayRateHistory', 'operativeProfiles', 'settings']) &&
           !(collection in ['overtimeRequests', 'overtimeReviews', 'overtimeReports']) &&
-          !(collection in ['priceWorkItems', 'expenseItems', 'payeClaimReports', 'payeClaimReviews', 'personalSiteAudits', 'worksListPicks']);
+          !(collection in ['priceWorkItems', 'expenseItems', 'payeClaimReports', 'payeClaimReviews', 'personalSiteAudits', 'worksListPicks', 'annualLeaveAdjustments']);
       }
     }
 

@@ -7,13 +7,22 @@
 
 import { isPendingHolidayRequest } from '@/lib/stores/holidayStore'
 import type { HolidayBooking, Operative, User } from '@/types'
-import { bookingMatchesPerson, buildAnnualLeavePeople, canManagePersonAnnualLeave, type AnnualLeavePerson } from './annualLeavePerson'
+import { bookingMatchesPerson, teamLeavePeopleFor, teamLeaveTabVisible, type AnnualLeavePerson } from './annualLeavePerson'
 import { getPendingHolidayApprovalsForUser } from './holidayApprovalUtils'
 
-/** The people Annual leave → Team lists for this viewer. */
-export function teamLeavePeople(user: User | null, users: User[], operatives: Operative[]): AnnualLeavePerson[] {
-  const rows = buildAnnualLeavePeople(users, operatives)
-  return rows.filter((person) => canManagePersonAnnualLeave(user, person, users))
+/** The people Annual leave → Team lists for this viewer (rulebook 1.40.0 `annualLeaveTeamPeople`). */
+export function teamLeavePeople(
+  user: User | null,
+  users: User[],
+  operatives: Operative[],
+  userIdAliases?: Record<string, string>
+): AnnualLeavePerson[] {
+  return teamLeavePeopleFor(user, users, operatives, userIdAliases)
+}
+
+/** Whether Annual leave shows the Team tab (rulebook 1.40.0 `annualLeaveTeamTabVisible`). */
+export function teamLeaveTab(user: User | null, users: User[], operatives: Operative[]): boolean {
+  return teamLeaveTabVisible(user, users, operatives)
 }
 
 /** Leave records of those people. */

@@ -5772,7 +5772,7 @@ test('1.4.0: company activity goes to active admins outside operative mode, neve
   const recipients = rulebook.companyActivityRecipients('A1', roster as never)
   assert.deepEqual(recipients, ['A2', 'A4'])
   assert.deepEqual(rulebook.companyActivityRecipients('M1', roster as never), ['A1', 'A2', 'A4'])
-  assert.deepEqual([...rulebook.COMPANY_ACTIVITY_NOTICE_TYPES].sort(), ['client_created', 'job_manager_removed', 'manager_created', 'operative_created', 'operative_deleted', 'project_created', 'small_works_created', 'warning_removed'])
+  assert.deepEqual([...rulebook.COMPANY_ACTIVITY_NOTICE_TYPES].sort(), ['annual_leave_adjusted', 'client_created', 'job_manager_removed', 'manager_created', 'operative_created', 'operative_deleted', 'project_created', 'small_works_created', 'warning_removed'])
   for (const type of rulebook.COMPANY_ACTIVITY_NOTICE_TYPES) {
     assert.equal(rulebook.notificationPreferenceKeyForType(type), 'companyActivity', type)
     assert.equal(rulebook.notificationDeliversDevicePush(type), true, type)

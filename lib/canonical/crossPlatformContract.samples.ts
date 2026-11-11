@@ -10,6 +10,7 @@
  */
 
 import { writeFileSync } from 'node:fs'
+import { annualLeaveAdjustmentCreateFields } from './annualLeaveAdjustments'
 import { bookingWriteFields } from './bookings'
 import { readCrossPlatformSample } from './crossPlatformContract'
 import { holidayRequestWriteFields } from './leaveRequests'
@@ -168,6 +169,17 @@ export function webWrittenSamples(): Record<string, { docId: string; data: Doc }
     jobTypes: { docId: 'jobTypes', data: must(jobTypesWriteFields([], ['CAT A', 'Small Works', 'Fit out'])).set },
     variationTrades: { docId: 'variationTrades', data: must(variationTradesWriteFields(null, { add: ['Electrical', 'Joinery'] })).set },
     tradeTypeInventory: { docId: 'tradeTypeInventory', data: must(tradeTypeInventoryWriteFields(null, ['Plumber', 'Bricklayer'])).set },
+    // 1.40.0: a manual annual-leave adjustment (web store adds createdAt and the write metadata).
+    annualLeaveAdjustments: {
+      docId: 'adj-web-1',
+      data: {
+        ...must(annualLeaveAdjustmentCreateFields({ userId: 'user-web-1', days: 2, reason: 'Long service', yearKey: '2026-01-01', createdBy: 'user-web-2', createdByName: 'Ada Admin' })),
+        createdAt: ts(UPDATED),
+        updatedAt: ts(UPDATED),
+        updatedBy: 'user-web-2',
+        updatedFrom: 'web',
+      },
+    },
   }
 }
 
@@ -286,6 +298,7 @@ export const CONTRACT_BUILDER_WRITERS: Readonly<Record<string, (input: never) =>
   variationTradesWriteFields: ((input: { stored: unknown; change: { add?: string[]; remove?: string[] } }) =>
     variationTradesWriteFields(input.stored as never, input.change)) as never,
   tradeTypeInventoryWriteFields: ((input: { stored: unknown; trades: string[] }) => tradeTypeInventoryWriteFields(input.stored as never, input.trades)) as never,
+  annualLeaveAdjustmentCreateFields: annualLeaveAdjustmentCreateFields as never,
 }
 
 /** Runs a `builder`: the writer, unwrapped (`fields`, `set`, else the result), epoch ms → Timestamp, then `appAdds`. */
@@ -358,6 +371,15 @@ const IOS_BUILT_SAMPLES: Record<string, { docId: string; iosWriter: string; buil
     iosWriter: 'Trade type inventory save (tradeTypeInventoryWriteFields)',
     builder: { writer: 'tradeTypeInventoryWriteFields', input: { stored: null, trades: ['Labourer'] } },
   },
+  annualLeaveAdjustments: {
+    docId: 'ADJ10000-0000-4000-8000-000000000002',
+    iosWriter: 'AnnualLeaveAdjustment save (annualLeaveAdjustmentCreateFields)',
+    builder: {
+      writer: 'annualLeaveAdjustmentCreateFields',
+      input: { userId: 'USER-IOS-1', days: -0.5, reason: 'Half day unpaid', yearKey: '2026-04-01', createdBy: 'USER-IOS-2', createdByName: 'Ian Ios' },
+      appAdds: { createdAt: ts(UPDATED), updatedAt: ts(UPDATED), updatedBy: 'USER-IOS-2', updatedFrom: 'ios' },
+    },
+  },
 }
 
 /** Documents older iOS builds wrote that the readers must still read (1.11.0: read-only cases). */
@@ -427,6 +449,7 @@ export const CONTRACT_READER_FOR: Readonly<Record<string, { reader: string; read
   tradeTypeInventory: { reader: 'parseTradeTypeInventory' },
   taxIds: { reader: 'resolveSensitiveProfile' },
   orgMemberships: { reader: 'parseOrgMembershipDocument' },
+  annualLeaveAdjustments: { reader: 'parseAnnualLeaveAdjustmentDocument' },
 }
 
 /** Live collections without a shared reader yet, with the reason (the test checks this list is complete). */

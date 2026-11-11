@@ -1302,6 +1302,7 @@ export const NOTIFICATION_RELATED_ID: Readonly<Record<string, NotificationRelate
   warning_removed: 'warningKey',
   operative_deleted: 'user',
   job_manager_removed: 'user',
+  annual_leave_adjusted: 'user',
   qualification_expiry: 'none',
   idea_status: 'feedbackIdea',
   idea_shipped: 'feedbackIdea',

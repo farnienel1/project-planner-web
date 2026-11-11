@@ -3440,6 +3440,101 @@
           }
         }
       ]
+    },
+    {
+      "id": "annualLeaveAdjustments",
+      "reader": "parseAnnualLeaveAdjustmentDocument",
+      "webWriter": "rulebook writer (see crossPlatformContract.samples.ts webWrittenSamples)",
+      "iosWriter": "AnnualLeaveAdjustment save (annualLeaveAdjustmentCreateFields)",
+      "samples": [
+        {
+          "platform": "web",
+          "docId": "adj-web-1",
+          "data": {
+            "userId": "user-web-1",
+            "days": 2,
+            "reason": "Long service",
+            "yearKey": "2026-01-01",
+            "createdBy": "user-web-2",
+            "createdByName": "Ada Admin",
+            "createdAt": {
+              "seconds": 1790937000,
+              "nanoseconds": 0
+            },
+            "updatedAt": {
+              "seconds": 1790937000,
+              "nanoseconds": 0
+            },
+            "updatedBy": "user-web-2",
+            "updatedFrom": "web"
+          },
+          "expected": {
+            "id": "adj-web-1",
+            "userId": "user-web-1",
+            "days": 2,
+            "reason": "Long service",
+            "yearKey": "2026-01-01",
+            "createdBy": "user-web-2",
+            "createdByName": "Ada Admin",
+            "createdAtMs": 1790937000000
+          }
+        },
+        {
+          "platform": "ios",
+          "docId": "ADJ10000-0000-4000-8000-000000000002",
+          "data": {
+            "userId": "USER-IOS-1",
+            "days": -0.5,
+            "reason": "Half day unpaid",
+            "yearKey": "2026-04-01",
+            "createdBy": "USER-IOS-2",
+            "createdByName": "Ian Ios",
+            "createdAt": {
+              "seconds": 1790937000,
+              "nanoseconds": 0
+            },
+            "updatedAt": {
+              "seconds": 1790937000,
+              "nanoseconds": 0
+            },
+            "updatedBy": "USER-IOS-2",
+            "updatedFrom": "ios"
+          },
+          "builder": {
+            "writer": "annualLeaveAdjustmentCreateFields",
+            "input": {
+              "userId": "USER-IOS-1",
+              "days": -0.5,
+              "reason": "Half day unpaid",
+              "yearKey": "2026-04-01",
+              "createdBy": "USER-IOS-2",
+              "createdByName": "Ian Ios"
+            },
+            "appAdds": {
+              "createdAt": {
+                "seconds": 1790937000,
+                "nanoseconds": 0
+              },
+              "updatedAt": {
+                "seconds": 1790937000,
+                "nanoseconds": 0
+              },
+              "updatedBy": "USER-IOS-2",
+              "updatedFrom": "ios"
+            }
+          },
+          "expected": {
+            "id": "ADJ10000-0000-4000-8000-000000000002",
+            "userId": "USER-IOS-1",
+            "days": -0.5,
+            "reason": "Half day unpaid",
+            "yearKey": "2026-04-01",
+            "createdBy": "USER-IOS-2",
+            "createdByName": "Ian Ios",
+            "createdAtMs": 1790937000000
+          }
+        }
+      ]
     }
   ]
 }

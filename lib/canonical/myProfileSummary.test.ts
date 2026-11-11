@@ -51,6 +51,7 @@ function base(overrides: Partial<MyProfileSummaryInput> = {}): MyProfileSummaryI
       id: 'U1',
       email: 'sam@site.test',
       annualLeaveEnabled: true,
+      employmentType: 'paye',
       annualLeaveDaysPerYear: 25,
       assignedManagerUserIds: ['LM1'],
     },
@@ -178,14 +179,14 @@ test('1.35.0 myProfileSummary leave: no allowance, pro rata and the carry-over c
   assert.equal(none.leave.usedThisYear, 1)
 
   const joined = myProfileSummary(base({
-    user: { id: 'U1', email: 'sam@site.test', annualLeaveEnabled: true, annualLeaveDaysPerYear: 25, employmentStartDate: '2026-07-01' },
+    user: { id: 'U1', email: 'sam@site.test', annualLeaveEnabled: true, employmentType: 'paye', annualLeaveDaysPerYear: 25, employmentStartDate: '2026-07-01' },
   }))
   assert.equal(joined.leave.proRata, true)
   assert.equal(joined.leave.yearEntitlement, 13)
   assert.equal(joined.leave.remaining, 13)
 
   const capped = myProfileSummary(base({
-    user: { id: 'U1', email: 'sam@site.test', annualLeaveEnabled: true, annualLeaveDaysPerYear: 25, annualLeaveCarriesOver: true },
+    user: { id: 'U1', email: 'sam@site.test', annualLeaveEnabled: true, employmentType: 'paye', annualLeaveDaysPerYear: 25, annualLeaveCarriesOver: true },
     leaveDefaults: { daysPerYear: 25, startMonth: 1, endMonth: 12, carriesOver: true, maxCarryOverDays: 5 },
   }))
   assert.equal(capped.leave.carriedForward, 5)
@@ -234,12 +235,12 @@ test('1.35.0 myProfileSummary line manager: every name, No line manager, Unknown
 test('1.35.0 annualLeaveBankHolidayRange: previous leave year start to current leave year end', () => {
   // January leave year, 4 Nov 2026: 1 Jan 2025 – 31 Dec 2026.
   assert.deepEqual(
-    annualLeaveBankHolidayRange({ annualLeaveEnabled: true, startMonth: 1, endMonth: 12, onDayKey: '2026-11-04', timeZone: LONDON }),
+    annualLeaveBankHolidayRange({ annualLeaveEnabled: true, employmentType: 'paye', startMonth: 1, endMonth: 12, onDayKey: '2026-11-04', timeZone: LONDON }),
     { startDayKey: '2025-01-01', endDayKey: '2026-12-31', years: [2025, 2026] }
   )
   // April leave year on 10 Feb 2026 (still the 2025–26 year): 1 Apr 2024 – 31 Mar 2026.
   assert.deepEqual(
-    annualLeaveBankHolidayRange({ annualLeaveEnabled: true, startMonth: 4, endMonth: 3, onDayKey: '2026-02-10', timeZone: LONDON }),
+    annualLeaveBankHolidayRange({ annualLeaveEnabled: true, employmentType: 'paye', startMonth: 4, endMonth: 3, onDayKey: '2026-02-10', timeZone: LONDON }),
     { startDayKey: '2024-04-01', endDayKey: '2026-03-31', years: [2024, 2025, 2026] }
   )
   // No allowance: the organisation's leave year (April), whatever the person's own months say.
@@ -251,7 +252,7 @@ test('1.35.0 annualLeaveBankHolidayRange: previous leave year start to current l
   )
   // myProfileBankHolidayRange reads the same user and leaveDefaults as myProfileSummary.
   const range = myProfileBankHolidayRange(base({
-    user: { id: 'U1', email: 'sam@site.test', annualLeaveEnabled: true, annualLeaveYearStartMonth: 4, annualLeaveYearEndMonth: 3 },
+    user: { id: 'U1', email: 'sam@site.test', annualLeaveEnabled: true, employmentType: 'paye', annualLeaveYearStartMonth: 4, annualLeaveYearEndMonth: 3 },
   }))
   assert.equal(range.startDayKey, '2025-04-01')
   assert.equal(range.endDayKey, '2027-03-31')
@@ -261,7 +262,7 @@ test('1.35.0 carry-over needs last leave year\'s bank holidays (Easter Monday 20
   // April leave year; 2025–26 had a Fri 18 Apr – Tue 22 Apr 2025 record over Good Friday and Easter Monday.
   const input = base({
     user: {
-      id: 'U1', email: 'sam@site.test', annualLeaveEnabled: true, annualLeaveDaysPerYear: 25, annualLeaveCarriesOver: true,
+      id: 'U1', email: 'sam@site.test', annualLeaveEnabled: true, employmentType: 'paye', annualLeaveDaysPerYear: 25, annualLeaveCarriesOver: true,
       annualLeaveYearStartMonth: 4, annualLeaveYearEndMonth: 3,
     },
     leaveDefaults: { daysPerYear: 25, startMonth: 4, endMonth: 3, carriesOver: true, maxCarryOverDays: null },

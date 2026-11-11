@@ -27,7 +27,15 @@ export function holidayToLeaveDay(booking: HolidayBooking, timeZone?: string | n
  * (`annualLeaveBankHolidayRange`: the previous leave year's start to the current one's end, for carry-over).
  */
 export function userLeaveBankHolidayRange(input: {
-  user: Pick<User, 'annualLeaveEnabled' | 'annualLeaveYearStartMonth' | 'annualLeaveYearEndMonth'> | null
+  user: Pick<
+    User,
+    | 'annualLeaveEnabled'
+    | 'annualLeaveYearStartMonth'
+    | 'annualLeaveYearEndMonth'
+    | 'employmentType'
+    | 'employmentTypeTransitionFrom'
+    | 'employmentTypeEffectiveAt'
+  > | null
   orgDefaults?: OrgAnnualLeaveDefaults | null
   now?: Date
   timeZone?: string | null
@@ -42,7 +50,22 @@ export function userLeaveBankHolidayRange(input: {
     orgEndMonth: defaults.endMonth,
     onDayKey: dayKeyInZone(input.now ?? new Date(), timeZone),
     timeZone,
+    employment: leaveEmployment(input.user),
   })
+}
+
+/**
+ * Rulebook 1.40.0 (§4.4, G25–G27): the person's employment-type fields — the allowance applies only on days they are
+ * PAYE (`employmentTypeOnDay`); a missing type reads as self-employed (rulebook §8).
+ */
+export function leaveEmployment(
+  user: Pick<User, 'employmentType' | 'employmentTypeTransitionFrom' | 'employmentTypeEffectiveAt'> | null | undefined
+) {
+  return {
+    employmentType: user?.employmentType ?? null,
+    employmentTypeTransitionFrom: user?.employmentTypeTransitionFrom ?? null,
+    employmentTypeEffectiveAt: user?.employmentTypeEffectiveAt ?? null,
+  }
 }
 
 export function userLeaveBalance(input: {
@@ -56,8 +79,13 @@ export function userLeaveBalance(input: {
     | 'annualLeaveYearAllowance'
     | 'annualLeaveYearAllowanceKey'
     | 'employmentStartDate'
+    | 'employmentType'
+    | 'employmentTypeTransitionFrom'
+    | 'employmentTypeEffectiveAt'
   > | null
   bookings: HolidayBooking[]
+  /** Rulebook 1.40.0: the person's manual adjustments (`useAnnualLeaveAdjustments`); this leave year's count. */
+  adjustments?: ReadonlyArray<{ days: number; yearKey: string }>
   orgDefaults?: OrgAnnualLeaveDefaults | null
   now?: Date
   /** Bank holidays inside a multi-day record are not taken from the allowance. */
@@ -86,6 +114,9 @@ export function userLeaveBalance(input: {
     employmentStartDayKey: user?.employmentStartDate ?? null,
     maxCarryOverDays: defaults.maxCarryOverDays ?? null,
     timeZone,
+    // Rulebook 1.40.0: PAYE days only; adjustments on top for this leave year.
+    employment: leaveEmployment(user),
+    adjustments: input.adjustments ?? [],
   })
 }
 
