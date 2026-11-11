@@ -16,6 +16,7 @@
 
 import {
   collection,
+  getCountFromServer,
   getDocsFromServer,
   onSnapshot,
   query,
@@ -27,10 +28,10 @@ import {
 import { db } from '@/lib/firebase/config'
 import { isRetryableAuthLoadError, authLoadRetryDelayMs } from '@/lib/auth/authBoot'
 import { waitForAuthToken } from '@/lib/firebase/waitForAuthToken'
-import { retainLoadedRows } from '@/lib/staff/rosterRetain'
 import { unsubscribeOrgPlansOutside } from '@/lib/firebase/subscribeOrgPlan'
+import { mergeOrgCollectionSnapshot, type OrgCollectionDoc } from '@/lib/firebase/orgCollectionMerge'
 
-export type OrgCollectionDoc = { id: string; data: Record<string, unknown> }
+export type { OrgCollectionDoc } from '@/lib/firebase/orgCollectionMerge'
 
 const unsubs = new Map<string, Unsubscribe>()
 const orgs = new Map<string, string>()
@@ -41,6 +42,8 @@ const lastDocs = new Map<string, OrgCollectionDoc[]>()
 const removedDocIds = new Map<string, Set<string>>()
 /** `{orgId}|{queryId}` of the listener that has delivered at least one snapshot, per key. */
 const delivered = new Map<string, string>()
+/** Keys whose listener the server refused (kept for the data check, rulebook 1.38.0 §27, until it re-attaches). */
+const failedKeys = new Set<string>()
 const firstSnapshotWaiters = new Map<string, Array<{ resolve: () => void; reject: (error: unknown) => void }>>()
 /**
  * How a published list was read. `authoritative` is true for a server snapshot or a server re-read: rows missing
@@ -135,18 +138,16 @@ export function subscribeOrgCollection(
     if (orgs.get(key) !== organizationId) return
     const current = activeCallback(key)
     if (!current) return
-    const removed = removedDocIds.get(storedKey)
-    const docs = snap.docs
-      .filter((entry) => !removed?.has(entry.id))
-      .map((entry) => ({
-        id: entry.id,
-        data: entry.data() as Record<string, unknown>,
-      }))
-    const previous = (lastDocs.get(storedKey) ?? []).filter((entry) => !removed?.has(entry.id))
-    // An empty cache snapshot must not wipe bookings or the other live org collections. A server snapshot is
-    // the collection: a row deleted on another device (even the last one) leaves the list.
-    const authoritative = snap.metadata ? !snap.metadata.fromCache : false
-    const kept = retainLoadedRows(previous, docs, { authoritative })
+    // An empty cache snapshot must not wipe bookings or the other live org collections, and a shorter one never
+    // drops a row (rulebook 1.38.0 §27). A server snapshot is the collection: a row deleted on another device
+    // (even the last one) leaves the list. The merge is pure (`mergeOrgCollectionSnapshot`) so the data-parity
+    // fixture runs it in tests.
+    const { docs: kept, authoritative } = mergeOrgCollectionSnapshot({
+      previous: lastDocs.get(storedKey) ?? [],
+      docs: snap.docs.map((entry) => ({ id: entry.id, data: entry.data() as Record<string, unknown> })),
+      removedIds: removedDocIds.get(storedKey) ?? null,
+      fromCache: snap.metadata ? snap.metadata.fromCache : null,
+    })
     lastDocs.set(storedKey, kept)
     current.onDocs(kept, { authoritative })
   }
@@ -180,6 +181,7 @@ export function subscribeOrgCollection(
       unsubs.get(key)?.()
       unsubs.delete(key)
       delivered.delete(key)
+      failedKeys.add(key)
       activeCallback(key)?.onError?.(error)
       settleFirstSnapshot(key, error)
     }
@@ -189,6 +191,7 @@ export function subscribeOrgCollection(
       source,
       (snap) => {
         if (!stillThisQuery()) return
+        failedKeys.delete(key)
         emit(snap)
         delivered.set(key, `${organizationId}|${queryId}`)
         settleFirstSnapshot(key, null)
@@ -244,7 +247,77 @@ export async function refreshOrgCollections(organizationId: string): Promise<voi
   await Promise.all(work)
 }
 
+/**
+ * Rulebook 1.38.0 §27 (the data check): one listener's query and the documents this app holds for it, before any
+ * rulebook filtering. Null until the listener has delivered a snapshot or been refused. `live` is false for a
+ * listener the server refused (its last documents are still what the app shows).
+ */
+export function orgCollectionParitySource(
+  key: string,
+  organizationId: string
+): { collectionName: string; constraints: QueryConstraint[]; docs: OrgCollectionDoc[]; live: boolean } | null {
+  const collectionName = collectionNames.get(key)
+  if (!organizationId || orgs.get(key) !== organizationId || !collectionName) return null
+  const queryId = queryIds.get(key) ?? ''
+  const hasDelivered = delivered.get(key) === `${organizationId}|${queryId}`
+  if (!hasDelivered && !failedKeys.has(key)) return null
+  return {
+    collectionName,
+    constraints: queryConstraints.get(key) ?? [],
+    docs: lastDocs.get(cacheKey(key, organizationId)) ?? [],
+    live: unsubs.has(key),
+  }
+}
+
+/** The server's `count()` of exactly the listener's query (server source); null when it cannot be read. */
+export async function countOrgCollectionFromServer(key: string, organizationId: string): Promise<number | null> {
+  const source = orgCollectionParitySource(key, organizationId)
+  if (!db || !source) return null
+  const col = collection(db, 'organizations', organizationId, source.collectionName)
+  const counted: Query = source.constraints.length > 0 ? query(col, ...source.constraints) : col
+  try {
+    await waitForAuthToken()
+    const snap = await getCountFromServer(counted)
+    return snap.data().count
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Self-heal for one listener (rulebook 1.38.0 §27): read its query from the server and publish it as authoritative,
+ * and start the listener again when the server had refused it. Documents deleted in this app stay hidden.
+ */
+export async function reloadOrgCollectionFromServer(key: string, organizationId: string): Promise<boolean> {
+  const collectionName = collectionNames.get(key)
+  const current = activeCallback(key)
+  if (!db || !organizationId || orgs.get(key) !== organizationId || !collectionName || !current) return false
+  const storedKey = cacheKey(key, organizationId)
+  const constraints = queryConstraints.get(key) ?? []
+  const queryId = queryIds.get(key) ?? ''
+  const col = collection(db, 'organizations', organizationId, collectionName)
+  const source: Query = constraints.length > 0 ? query(col, ...constraints) : col
+  try {
+    await waitForAuthToken()
+    const snap = await getDocsFromServer(source)
+    if (orgs.get(key) !== organizationId || (queryIds.get(key) ?? '') !== queryId) return false
+    const removed = removedDocIds.get(storedKey)
+    const docs = snap.docs
+      .filter((entry) => !removed?.has(entry.id))
+      .map((entry) => ({ id: entry.id, data: entry.data() as Record<string, unknown> }))
+    lastDocs.set(storedKey, docs)
+    activeCallback(key)?.onDocs(docs, { authoritative: true })
+  } catch {
+    return false
+  }
+  if (!unsubs.has(key)) {
+    subscribeOrgCollection(key, organizationId, collectionName, current.onDocs, current.onError, { constraints, queryId })
+  }
+  return true
+}
+
 export function unsubscribeOrgCollection(key: string): void {
+  failedKeys.delete(key)
   unsubs.get(key)?.()
   unsubs.delete(key)
   orgs.delete(key)

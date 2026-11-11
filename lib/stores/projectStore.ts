@@ -28,7 +28,8 @@ import { markRowsRemoved, retainScopedRows } from '@/lib/staff/rosterRetain'
 import { trackEvent } from '@/lib/analytics/trackEvent'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { newUuid } from '@/lib/firebase/firestoreUtils'
-import { parseClient as parseClientDoc, projectFromJobDocument, serializeClient } from '@/lib/ios-parity/converters'
+import { parseClient as parseClientDoc, serializeClient } from '@/lib/ios-parity/converters'
+import { jobsFromListenerDocs, mapProjectDoc } from '@/lib/stores/jobListMerge'
 import { savePartialDocument } from '@/lib/firebase/partialWrite'
 import { clientWriteFields } from '@/lib/canonical/peopleDocuments'
 import { jobWriteFields } from '@/lib/canonical/workDocumentReaders'
@@ -38,20 +39,7 @@ import {
 } from '@/lib/projects/legacyPlaceholderWork'
 import { removeFutureBookingsForProject } from '@/lib/bookings/removeBookingsOnDelete'
 
-/**
- * A job document as the web `Project`. Reading is the rulebook's `parseJobDocument` (§1): ids in stored case,
- * the client id as stored (never a fresh id), start day `startDate` else `createdAt`, end day `endDate` else the start.
- */
-export function mapProjectDoc(
-  docId: string,
-  data: Record<string, unknown>,
-  organizationId: string,
-  collection?: 'projects' | 'smallWorks'
-): Project {
-  const project = projectFromJobDocument(docId, data, organizationId)
-  // Rulebook 1.11.0 `jobKind`: the collection decides the kind, never `jobType`.
-  return collection ? { ...project, collection } : project
-}
+export { mapProjectDoc } from '@/lib/stores/jobListMerge'
 
 interface ProjectState {
   projects: Project[]
@@ -154,14 +142,9 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       const planMode = jobPlanParts(webJobAccessViewer(useAuthStore.getState().user), 'projects', jobPlanDocumentIds) !== null
       await subscribeJobs('projectStore:projects', organizationId, 'projects', (docs, meta) => {
         if (!liveResultStillCurrent(organizationId)) return
-        let projects = docs
-          .filter((entry) => !isLegacyPlaceholderDocumentId(entry.id))
-          .map((entry) => mapProjectDoc(entry.id, entry.data, organizationId, 'projects'))
         const previous = projectsOrgId === organizationId ? get().projects : []
         // A plan's parts are exact queries: a job that left them (manager removed) leaves the list now.
-        projects = withoutLegacyPlaceholderDocuments(
-          planMode ? projects : retainScopedRows(`projects:${organizationId}`, previous, projects, meta)
-        )
+        const projects = jobsFromListenerDocs({ organizationId, kind: 'projects', docs, meta, previous, planMode })
         projectsOrgId = organizationId
         set({ projects, loading: false, projectsLoadedOrgId: organizationId })
       })
@@ -184,13 +167,8 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       const planMode = jobPlanParts(webJobAccessViewer(useAuthStore.getState().user), 'smallWorks', jobPlanDocumentIds) !== null
       await subscribeJobs('projectStore:smallWorks', organizationId, 'smallWorks', (docs, meta) => {
         if (!liveResultStillCurrent(organizationId)) return
-        const mapped = docs
-          .filter((entry) => !isLegacyPlaceholderDocumentId(entry.id))
-          .map((entry) => mapProjectDoc(entry.id, entry.data, organizationId, 'smallWorks'))
         const previous = smallWorksOrgId === organizationId ? get().smallWorks : []
-        const smallWorks = withoutLegacyPlaceholderDocuments(
-          planMode ? mapped : retainScopedRows(`smallWorks:${organizationId}`, previous, mapped, meta)
-        )
+        const smallWorks = jobsFromListenerDocs({ organizationId, kind: 'smallWorks', docs, meta, previous, planMode })
         smallWorksOrgId = organizationId
         set({ smallWorks, loading: false, smallWorksLoadedOrgId: organizationId })
       })

@@ -261,6 +261,21 @@ How to use it:
 | 10 Nov | **One booking colour scheme.** Web booking cells adopt the iOS scheme and legend: Standard (blue), Std + OT (blue with orange hatched OT part), OT only (orange hatched), Ann. leave (brown), Half day. The web legend "Operative / Manager / Admin / Sub contractor" is removed; the coloured role pill under each name stays (Op green, Admin/Manager blue, Sub purple). Rule: `JOB_SCHEDULE_LEGEND`. | done web + rulebook (1.37.0); iOS legend unchanged |
 | 10 Nov | **Build now, before launch, working on both apps.** | done (1.37.0 web + iOS PRs), owner to test |
 
+## 11 Nov decisions (for 1.38)
+
+| Date | Decision | Status |
+|---|---|---|
+| 11 Nov | **Launch safeguards for loading** (owner: "Yes do all that"), after an iPhone listed 6 projects for a session while the database and web had 7. (A) **In-app data check, both apps, read-only:** on open, on return to the foreground, every 10 minutes while open and from Settings → Data health **Check now** (admins), each list (projects, small works, users, operatives, managers, clients, bookings and manager site bookings in the loaded window, annual leave, tasks) compares the server `count()` of the listener's own query with what the app holds; a list that differs is re-read and its listener re-attached, then checked again; the last 20 results stay on the device; admins see "Data check: all lists match (checked 14:05)" or the lists that differ. No writes, no rules change, no new collection; throttled to once per 10 minutes, never offline. Rule: `dataParityCheck`, `dataParityCheckDue`, `DATA_PARITY_CHECKS` (§27). (B) **Two-app comparison in CI:** a shared fixture of raw documents and listener events (`data-parity-fixture.json`, mirrored to iOS) run through each app's own store and merge code on every PR, so a release that drops a record cannot merge. The specific iOS refresh bug is fixed separately (branch `ios-1.37.1-list-refresh`). | done web + rulebook (1.38.0, w138-data-parity); iOS (ios-1.38) · panel visibility **superseded** by the next row |
+| 11 Nov | **Data check invisible in the launch app** (owner change: it must not look half-done). No panel, row or text in Settings or Data health for normal users or admins. The silent read-only check and self-heal (reload on mismatch) keep running; results stay in the device log only. The admin panel sits behind a new `platformConfig/app` switch `dataCheckPanel` (missing = off, the `ghostAccounts` pattern; `dataCheckPanelEnabled`, `dataCheckPanelVisible`). The CI two-app comparison is unaffected. | done web + rulebook (1.38.0); iOS (ios-1.38) |
+
+## 1.38.0 judgement calls (owner to confirm)
+
+| Date | Choice | Status |
+|---|---|---|
+| 11 Nov | The fixture found a web gap: a cache snapshot shorter than the list on screen replaced it (rows could vanish until the next server snapshot). Web now only adds and updates on a cache snapshot, like iOS; only a server snapshot removes a row. | done web, owner to confirm |
+| 11 Nov | The check runs for everyone (the self-heal helps everyone); only admins can see the result, and only while `dataCheckPanel` is on. A list a viewer reads one document at a time (an operative's jobs) is not counted. The first check waits 20 seconds after the app opens so the listeners have loaded. | done, owner to confirm |
+| 11 Nov | Web compares the projects and small works lists the store holds; the other lists are compared at the listener (the documents it holds before the screens' filters); users are the ids the live roster query returned. | done web, owner to confirm |
+
 ## 1.37.0 judgement calls (owner to confirm)
 
 | Date | Choice | Status |

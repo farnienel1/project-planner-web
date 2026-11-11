@@ -14,11 +14,11 @@ import { securitySwitchesReady } from '@/lib/access/securitySwitches'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { captureOrganizationContext, organizationContextStillCurrent, writeMetadataFields } from '@/lib/canonical'
 import { organizationIdsMatch } from '@/lib/orgMembership/webActiveOrg'
-import { retainParsedRows } from '@/lib/staff/rosterRetain'
+import { bookingsFromListenerDocs } from '@/lib/stores/bookingListMerge'
 import { newUppercaseUuid } from '@/lib/ios-parity/uuid'
 import { londonMidnight } from '@/lib/ios-parity/londonTime'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
-import { logSkippedDocument, parseBooking, serializeBooking } from '@/lib/ios-parity/converters'
+import { serializeBooking } from '@/lib/ios-parity/converters'
 import { resolveBookingJobCollection } from '@/lib/bookings/jobCollection'
 import type { Booking } from '@/types'
 import {
@@ -134,16 +134,10 @@ export const useBookingStore = create<BookingState>((set, get) => ({
     else if (already || current.length > 0) set({ loading: false })
     else set({ loading: true, error: null })
     subscribeBookingsFor('bookings', organizationId, 'bookings', (docs) => {
-      const bookings: Booking[] = []
-      for (const entry of docs) {
-        const parsed = parseBooking(entry.id, entry.data, organizationId)
-        if (parsed.ok) bookings.push(parsed.value)
-        else logSkippedDocument('bookings', entry.id, parsed.errors)
-      }
       const previous = get().bookings.filter(
         (row) => !row.organizationId || organizationIdsMatch(row.organizationId, organizationId)
       )
-      set({ bookings: retainParsedRows(docs.length, previous, bookings), loading: false, ready: true })
+      set({ bookings: bookingsFromListenerDocs({ organizationId, docs, previous }), loading: false, ready: true })
     }, (error) => {
       set({ error: error.message, loading: false })
     }, { queryId, constraints: bookingDownloadConstraints(bookingDownload) })

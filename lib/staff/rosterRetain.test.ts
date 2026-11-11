@@ -228,3 +228,12 @@ test('retainScopedRows: an authoritative empty snapshot removes the last row', a
   assert.deepEqual(retainScopedRows('test:authoritative', [{ id: 'a' }], [], { authoritative: true }), [])
   assert.deepEqual(retainScopedRows('test:authoritative', [{ id: 'a' }], []), [{ id: 'a' }])
 })
+
+test('1.38.0 §27: a cache snapshot shorter than the list only adds and updates; no options keeps the older behaviour', () => {
+  assert.deepEqual(
+    retainLoadedRows([{ id: 'a', v: 1 }, { id: 'b', v: 1 }], [{ id: 'b', v: 2 }, { id: 'c', v: 1 }].slice(0, 1), { authoritative: false }),
+    [{ id: 'a', v: 1 }, { id: 'b', v: 2 }]
+  )
+  assert.deepEqual(retainLoadedRows([{ id: 'a' }, { id: 'b' }], [{ id: 'b' }]), [{ id: 'b' }])
+  assert.deepEqual(retainLoadedRows([{ id: 'a' }, { id: 'b' }], [{ id: 'b' }], { authoritative: true }), [{ id: 'b' }])
+})

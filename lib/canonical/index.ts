@@ -1771,3 +1771,37 @@ export {
   usersWithSameName,
 } from './duplicateUserNames'
 export type { SameNamePerson, SameNameRosterRow } from './duplicateUserNames'
+
+// Rulebook 1.38.0 §27 (owner decision 11 Nov): the in-app data check (server count vs device count per list).
+export {
+  DATA_PARITY_CHECKS,
+  DATA_PARITY_LOG_LIMIT,
+  DATA_PARITY_MIN_INTERVAL_MS,
+  DATA_PARITY_SKIP_REASONS,
+  DATA_PARITY_TRIGGERS,
+  dataParityCheck,
+  dataParityCheckDefinition,
+  dataParityCheckDue,
+  dataParityLogAppend,
+  dataParityLogEntry,
+  dataParitySumCounts,
+  dataParitySummary,
+} from './dataParity'
+export {
+  DATA_CHECK_PANEL_ORGANIZATION_IDS_FIELD,
+  DATA_CHECK_PANEL_SWITCH_FIELD,
+  dataCheckPanelEnabled,
+  dataCheckPanelVisible,
+} from './platformConfig'
+export type {
+  DataParityCheckDefinition,
+  DataParityListInput,
+  DataParityListKey,
+  DataParityLogEntry,
+  DataParityLogMismatch,
+  DataParityMismatch,
+  DataParityResult,
+  DataParitySkipReason,
+  DataParitySummary,
+  DataParityTrigger,
+} from './dataParity'

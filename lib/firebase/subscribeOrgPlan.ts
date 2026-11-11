@@ -11,6 +11,7 @@
 import {
   collection,
   doc,
+  getCountFromServer,
   onSnapshot,
   query,
   type FirestoreError,
@@ -36,6 +37,8 @@ type PlanState = {
 }
 
 const plans = new Map<string, PlanState>()
+/** Each plan's part definitions, for the data check's counts and restart (rulebook 1.38.0 §27). */
+const planPartDefinitions = new Map<string, Map<string, OrgPlanPart>>()
 
 function emit(state: PlanState) {
   const byId = new Map<string, OrgCollectionDoc>()
@@ -125,6 +128,7 @@ export function subscribeOrgPlan(
   state.onDocs = onDocs
   state.onError = onError
   const wanted = new Map(parts.map((part) => [part.id, part]))
+  planPartDefinitions.set(key, wanted)
   for (const [id, part] of [...state.parts]) {
     if (wanted.has(id)) continue
     part.unsub?.()
@@ -164,6 +168,7 @@ export function unsubscribeOrgPlan(key: string): void {
   if (!state) return
   for (const part of state.parts.values()) part.unsub?.()
   plans.delete(key)
+  planPartDefinitions.delete(key)
   for (const resolve of state.waiters.splice(0)) resolve()
 }
 
@@ -174,4 +179,64 @@ export function unsubscribeOrgPlansOutside(organizationId: string): void {
     if (keep && state.organizationId.trim().toLowerCase() === keep) continue
     unsubscribeOrgPlan(key)
   }
+}
+
+/**
+ * Rulebook 1.38.0 §27 (the data check): the plan's parts and the merged documents this app holds for it. A plan
+ * with a part read by document id (an operative's jobs) is not counted (`documentReads`).
+ */
+export function orgPlanParitySource(
+  key: string,
+  organizationId: string
+): { collectionName: string; documentReads: boolean; docs: OrgCollectionDoc[]; settled: boolean } | null {
+  const state = plans.get(key)
+  if (!state || state.organizationId !== organizationId) return null
+  const byId = new Map<string, OrgCollectionDoc>()
+  for (const part of state.parts.values()) {
+    for (const entry of part.docs) if (!state.removed.has(entry.id)) byId.set(entry.id, entry)
+  }
+  const parts = [...state.parts.values()]
+  return {
+    collectionName: state.collectionName,
+    documentReads: [...state.parts.keys()].some((id) => planPartDefinitions.get(key)?.get(id)?.documentId),
+    docs: [...byId.values()],
+    settled: parts.every((part) => part.settled),
+  }
+}
+
+/** The server count of each part (summed by the caller with `dataParitySumCounts`); null for a part not counted. */
+export async function countOrgPlanPartsFromServer(key: string, organizationId: string): Promise<Array<number | null>> {
+  const state = plans.get(key)
+  const definitions = planPartDefinitions.get(key)
+  if (!db || !state || state.organizationId !== organizationId || !definitions) return [null]
+  const firestore = db
+  await waitForAuthToken()
+  return Promise.all(
+    [...state.parts.keys()].map(async (id) => {
+      const part = definitions.get(id)
+      if (!part || part.documentId) return null
+      const col = collection(firestore, 'organizations', organizationId, state.collectionName)
+      try {
+        const snap = await getCountFromServer(part.constraints?.length ? query(col, ...part.constraints) : col)
+        return snap.data().count
+      } catch {
+        return null
+      }
+    })
+  )
+}
+
+/** Self-heal (rulebook 1.38.0 §27): close and start again every part of the plan. */
+export function restartOrgPlan(key: string, organizationId: string): boolean {
+  const state = plans.get(key)
+  const definitions = planPartDefinitions.get(key)
+  if (!state || state.organizationId !== organizationId || !definitions) return false
+  for (const [id, part] of [...state.parts]) {
+    part.unsub?.()
+    state.parts.delete(id)
+    const definition = definitions.get(id)
+    if (definition) state.parts.set(id, startPart(key, state, definition))
+  }
+  emit(state)
+  return true
 }
