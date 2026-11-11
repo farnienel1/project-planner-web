@@ -78,7 +78,6 @@ import { invoiceLinesForTimesheet, invoiceLinesTotal, invoiceRateChangeNotes } f
 import { emptyDayRateHistory, type OperativeDayRateHistoryCollection } from '@/lib/timesheets/dayRateHistoryStorage'
 import {
   decisionLabel,
-  decisionTint,
   emptyTimesheetDraft,
   reviewSelection,
   type TimesheetDraft,
@@ -801,7 +800,13 @@ export function TimesheetPeriodPage({
     })
   }
 
-  if (loading) return <LoadingSpinner />
+  if (loading)
+    return (
+      <>
+        <PageBand back={back} title={heading} />
+        <LoadingSpinner />
+      </>
+    )
 
   if (signOpen || managerSignOpen) {
     const signTotals = draftTimesheetTotals({
@@ -834,7 +839,9 @@ export function TimesheetPeriodPage({
         }
         managerMode={managerSignOpen}
         busy={busy}
-        summaryRows={sheetRows.map((row) =>
+        heading={heading}
+        outerBack={back}
+        summaryRows={sheetRows.length === 0 ? undefined : sheetRows.map((row) =>
           row.kind === 'leave' ? (
             <LeaveInfoLine key={row.key} leave={row.leave} timeZone={timeZone} />
           ) : (
@@ -1518,19 +1525,16 @@ function PayrollLine({
         <b style={strike}>{abbreviatedDate(line.date, timeZone)}</b>
       </td>
       <td>
-        <span style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-          <span style={strike}>
-            {line.jobNumber} · {line.projectName}
-          </span>
-          {line.isOvertimeLine ? <Chip tone="amber">Overtime</Chip> : null}
-        </span>
+        <div style={strike}>
+          {line.jobNumber} · {line.projectName}
+        </div>
         {/\d{1,2}:\d{2}/.test(line.details) ? (
-          <span className="pu-sub" style={strike}>{line.details}</span>
+          <div className="pu-sub" style={strike}>{line.details}</div>
         ) : null}
         {overlapping ? (
-          <span style={{ display: 'block', marginTop: 6 }}>
+          <div style={{ marginTop: 6 }}>
             <Note tone="amber">{OVERLAPPING_BOOKING_NOTE}</Note>
-          </span>
+          </div>
         ) : null}
       </td>
       <td>
@@ -1563,13 +1567,10 @@ function LeaveInfoLine({ leave, timeZone }: { leave: TimesheetLeaveLine; timeZon
         <b>{abbreviatedDate(dateFromDayKey(leave.dayKey, timeZone), timeZone)}</b>
       </td>
       <td>
-        <span style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-          <span>
-            {leave.label}
-            {leave.timeRange ? ` · ${leave.timeRange}` : ''}
-          </span>
-          <Chip tone="blue">Leave</Chip>
-        </span>
+        <div>
+          {leave.label}
+          {leave.timeRange ? ` · ${leave.timeRange}` : ''}
+        </div>
       </td>
       <td>
         <span className="pu-sub">No hours or pay</span>
@@ -1828,31 +1829,28 @@ function PaymentRunsBox({ invoicing }: { invoicing: OrgInvoicingSettings }) {
     if (invoicing.paymentDateMode === 'specific_dates') {
       const dates = invoicing.paymentDates || []
       if (index >= dates.length) return null
-      return `Payout day ${dates[index]}`
+      return `• Payout day ${dates[index]}`
     }
-    return `Payout every ${capitalizeDay(invoicing.recurringPaymentDay)}`
+    return `• Payout every ${capitalizeDay(invoicing.recurringPaymentDay)}`
   }
   return (
     <Card title="Payment runs & timesheets">
-      <div className="pu-card-b">
-        <div className="pu-runs">
-          {invoicing.paymentRunMode === 'date_ranges' ? (
-            invoicing.paymentRunDateRanges.map((range, index) => (
-              <div key={`${range.startDay}-${range.endDay}`}>
-                <span>Run</span>
-                <b>
-                  {range.startDay} - {range.endDay}
-                </b>
-                {payout(index) ? <span>{payout(index)}</span> : null}
-              </div>
-            ))
-          ) : (
-            <div>
-              <b>{recurringRunDisplaySummary(invoicing)}</b>
-              {payout(0) ? <span>{payout(0)}</span> : null}
+      <div className="pu-card-b pu-list-text">
+        {invoicing.paymentRunMode === 'date_ranges' ? (
+          invoicing.paymentRunDateRanges.map((range, index) => (
+            <div key={`${range.startDay}-${range.endDay}`}>
+              <p>
+                • Run: {range.startDay} - {range.endDay}
+              </p>
+              {payout(index) ? <p>{payout(index)}</p> : null}
             </div>
-          )}
-        </div>
+          ))
+        ) : (
+          <div>
+            <p>• {recurringRunDisplaySummary(invoicing)}</p>
+            {payout(0) ? <p>{payout(0)}</p> : null}
+          </div>
+        )}
         {invoicing.noteToUsers.trim() ? (
           <Note tone="info">
             <b>Note</b>
@@ -1890,11 +1888,16 @@ function SignSheet({
   managerMode,
   busy,
   summaryRows,
+  heading,
+  outerBack,
   onCancel,
   onConfirm,
 }: {
-  /** The timesheet's own line rows, read-only (spec §4.6). */
+  /** The timesheet's own booking and leave rows, read-only (spec §4.6); undefined when there are none. */
   summaryRows?: ReactNode
+  /** The page heading and the way back to the list, kept visible as on the screen before (Timesheet / Review Timesheet). */
+  heading: string
+  outerBack?: { label: string; onClick: () => void }
   periodTitle: string
   hoursAmount: number
   priceWorkAmount: number
@@ -1922,10 +1925,18 @@ function SignSheet({
       {confirmTitle}
     </PuButton>
   )
+  const cancel = { label: managerMode ? 'Cancel' : 'Back', onClick: onCancel }
+  // The list link stays the band's back link; the sheet's own Back / Cancel sits beside it, as before.
+  const bandBack = outerBack ?? cancel
+  const bandActions = outerBack ? (
+    <PuButton variant="ghost-dark" size="sm" onClick={onCancel}>
+      {cancel.label}
+    </PuButton>
+  ) : undefined
   if (managerMode) {
     return (
       <>
-        <PageBand back={{ label: 'Cancel', onClick: onCancel }} eyebrow="Sign Off" title={periodTitle} />
+        <PageBand back={bandBack} eyebrow={heading} title="Sign Off" subtitle={periodTitle} actions={bandActions} />
         <Note tone="info">Sign as {signerName} to finalise this timesheet.</Note>
         {signatureCard}
         {confirm}
@@ -1935,9 +1946,10 @@ function SignSheet({
   return (
     <>
       <PageBand
-        back={{ label: 'Back', onClick: onCancel }}
-        eyebrow="Sign Timesheet · You're approving"
-        title={periodTitle}
+        back={bandBack}
+        eyebrow={heading}
+        title="Sign Timesheet"
+        actions={bandActions}
         aside={
           <>
             <span>Timesheet total</span>
@@ -1954,8 +1966,10 @@ function SignSheet({
         />
       </PageBand>
       <div className="pu-grid2">
-        <Card title="Timesheet summary" subtitle="Read-only · what you're signing">
+        <Card title="You're approving">
           {summaryRows ? (
+            <>
+            <p className="pu-label pu-pad" style={{ paddingBottom: 0 }}>Bookings and leave</p>
             <DataTable
               columns={[
                 { key: 'day', label: 'Day' },
@@ -1966,6 +1980,7 @@ function SignSheet({
             >
               {summaryRows}
             </DataTable>
+            </>
           ) : null}
           <div className="pu-totals">
             <Row label="Period" value={periodTitle} />

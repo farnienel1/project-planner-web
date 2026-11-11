@@ -195,7 +195,6 @@ export function OvertimeScreen() {
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
                 <IconTile tone="blue" round>{initialsOf(baseTitle)}</IconTile>
                 {baseTitle}
-                <Chip tone={isPaye(subject) ? 'slate' : 'amber'}>{isPaye(subject) ? 'PAYE' : 'Self-employed'}</Chip>
               </span>
             )
           }
@@ -402,7 +401,6 @@ function PendingRequests({ organizationId, subjectId, onOpen }: { organizationId
             key={request.id}
             title={`Overtime request · ${formatPayePayrunDay(request.rangeStart)} – ${formatPayePayrunDay(request.rangeEnd)}`}
             subtitle={`${request.lines.length} line(s)`}
-            chip={<Chip tone="amber">Pending</Chip>}
             onClick={() => onOpen(request)}
           />
         ))}

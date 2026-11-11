@@ -229,8 +229,8 @@ export function ActionCard({
       <span className="pu-action-row">
         {tile}
         <span style={{ minWidth: 0 }}>
-          <h3>{title}</h3>
-          {description ? <p>{description}</p> : null}
+          <span className="pu-action-title">{title}</span>
+          {description ? <span className="pu-action-desc">{description}</span> : null}
         </span>
       </span>
       {children}

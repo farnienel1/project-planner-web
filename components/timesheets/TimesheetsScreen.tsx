@@ -799,43 +799,52 @@ function ExportedTimesheetsList({
 
   return (
     <Card>
-      <div className="pu-toolbar">
-        <label className="pu-field" htmlFor="exported-search">
-          <span className="sr-only">Search</span>
-          <MagnifyingGlassIcon width={16} height={16} aria-hidden="true" />
-          <input
-            id="exported-search"
-            type="search"
-            value={search}
-            onChange={(event) => onSearch(event.target.value)}
-            placeholder="Name or payment run"
+      <div className="pu-toolbar" style={{ alignItems: 'flex-end' }}>
+        <div className="pu-toolbar-group">
+          <label className="pu-form-label" htmlFor="exported-search">
+            Search
+          </label>
+          <span className="pu-field">
+            <MagnifyingGlassIcon width={16} height={16} aria-hidden="true" />
+            <input
+              id="exported-search"
+              type="search"
+              value={search}
+              onChange={(event) => onSearch(event.target.value)}
+              placeholder="Name or payment run"
+            />
+          </span>
+        </div>
+        <div className="pu-toolbar-group">
+          <p className="pu-form-label">Filter</p>
+          <SegmentedTabs
+            ariaLabel="Sort exported timesheets"
+            items={[
+              { id: 'firstName', label: 'First name' },
+              { id: 'lastName', label: 'Last name' },
+              { id: 'dateNewest', label: 'Date newest' },
+              { id: 'dateOldest', label: 'Date oldest' },
+            ]}
+            value={sort}
+            onChange={onSort}
           />
-        </label>
-        <SegmentedTabs
-          ariaLabel="Sort exported timesheets"
-          items={[
-            { id: 'firstName', label: 'First name' },
-            { id: 'lastName', label: 'Last name' },
-            { id: 'dateNewest', label: 'Date newest' },
-            { id: 'dateOldest', label: 'Date oldest' },
-          ]}
-          value={sort}
-          onChange={onSort}
-        />
-        <label htmlFor="exported-run" className="sr-only">
-          Payment run
-        </label>
-        <select id="exported-run" value={runKey} onChange={(event) => onRunKey(event.target.value)} className="pu-sel">
-          <option value="all">All payment runs</option>
-          {runs.map((period) => {
-            const key = `${periodStartKey(period.start, timeZone)}|${dayKey(period.end, timeZone)}`
-            return (
-              <option key={key} value={key}>
-                {formatPaymentPeriodLine(period.start, period.end, timeZone)}
-              </option>
-            )
-          })}
-        </select>
+        </div>
+        <div className="pu-toolbar-group">
+          <label htmlFor="exported-run" className="pu-form-label">
+            Payment run
+          </label>
+          <select id="exported-run" value={runKey} onChange={(event) => onRunKey(event.target.value)} className="pu-sel">
+            <option value="all">All payment runs</option>
+            {runs.map((period) => {
+              const key = `${periodStartKey(period.start, timeZone)}|${dayKey(period.end, timeZone)}`
+              return (
+                <option key={key} value={key}>
+                  {formatPaymentPeriodLine(period.start, period.end, timeZone)}
+                </option>
+              )
+            })}
+          </select>
+        </div>
       </div>
       {filtered.length === 0 ? (
         <EmptyState

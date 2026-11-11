@@ -4,7 +4,7 @@
  */
 'use client'
 
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { CalendarDaysIcon, ClockIcon, UserGroupIcon } from '@heroicons/react/24/solid'
 import { withTimeoutFallback } from '@/lib/client/withTimeout'
@@ -89,7 +89,6 @@ import {
   Note,
   PageBand,
   PageShell,
-  PuButton,
   SegmentedTabs,
   StatRow,
 } from '@/components/ui/page'
@@ -620,43 +619,34 @@ function MineTimesheetsList({
 
   return (
     <>
-      <PageBand
-        eyebrow="My Timesheets · Current pay run period"
-        title={runCopyPeriodLine}
-        subtitle="Review bookings, add extras, and sign your timesheet."
-        actions={
-          <PuButton variant="white" onClick={openCurrent}>
-            Open current timesheet
-          </PuButton>
+      <PageBand title="My Timesheets" />
+      <ActionCard
+        tile={
+          <IconTile tone="blue">
+            <CalendarDaysIcon />
+          </IconTile>
         }
-      />
+        title="Current pay run period"
+        description={runCopyPeriodLine}
+        onClick={openCurrent}
+      >
+        <span className="pu-sub">Review bookings, add extras, and sign your timesheet.</span>
+      </ActionCard>
       {pending.length > 0 ? (
         <Card title="Pending timesheets" subtitle="You signed — waiting for your line manager to counter-sign.">
           <DataTable
             columns={[
               { key: 'period', label: 'Pay run period' },
               { key: 'status', label: 'Status' },
-              { key: 'open', label: 'Open', srOnly: true },
             ]}
           >
             {pending.map((period) => (
               <tr key={`pending-${periodKey(period)}`} className="click" onClick={() => openPeriod(period)}>
                 <td>
-                  <b>{formatPaymentPeriodLine(period.start, period.end, timeZone)}</b>
+                  <PeriodButton label={formatPaymentPeriodLine(period.start, period.end, timeZone)} onClick={() => openPeriod(period)} />
                 </td>
                 <td>
                   <Chip tone="amber">Timesheet pending manager signature</Chip>
-                </td>
-                <td className="actions">
-                  <PuButton
-                    size="sm"
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      openPeriod(period)
-                    }}
-                  >
-                    View breakdown
-                  </PuButton>
                 </td>
               </tr>
             ))}
@@ -669,7 +659,6 @@ function MineTimesheetsList({
             columns={[
               { key: 'period', label: 'Pay run period' },
               { key: 'status', label: 'Status' },
-              { key: 'open', label: 'Open', srOnly: true },
             ]}
           >
             {pastVisible.map((period) => {
@@ -677,21 +666,10 @@ function MineTimesheetsList({
               return (
                 <tr key={periodKey(period)} className="click" onClick={() => openPeriod(period)}>
                   <td>
-                    <b>{formatPaymentPeriodLine(period.start, period.end, timeZone)}</b>
+                    <PeriodButton label={formatPaymentPeriodLine(period.start, period.end, timeZone)} onClick={() => openPeriod(period)} />
                   </td>
                   <td>
                     <Chip tone={pastStatusTone(status)}>{status}</Chip>
-                  </td>
-                  <td className="actions">
-                    <PuButton
-                      size="sm"
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        openPeriod(period)
-                      }}
-                    >
-                      View breakdown
-                    </PuButton>
                   </td>
                 </tr>
               )
@@ -700,6 +678,22 @@ function MineTimesheetsList({
         </Card>
       ) : null}
     </>
+  )
+}
+
+/** The period line as the row's keyboard control (the whole row opens it too, as the card did before). */
+function PeriodButton({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      className="pu-link"
+      onClick={(event) => {
+        event.stopPropagation()
+        onClick()
+      }}
+    >
+      <b>{label}</b>
+    </button>
   )
 }
 

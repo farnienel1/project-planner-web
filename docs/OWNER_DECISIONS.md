@@ -328,6 +328,9 @@ UI only, web only (`docs/design/web-pages-ui/web-pages-ui-spec.md`; branch `w-ui
 | 11 Nov | Manage users rows gain an explicit open (chevron) button beside the existing key / resend buttons; it calls the same handler as the row. | done, owner to confirm |
 | 11 Nov | The Sign Off (line manager) step keeps its own copy and has no summary table (the spec's summary is for the person's own sign). | done, owner to confirm |
 | 11 Nov | The Add Price Work / Add Expense submit moved from the header to the foot of the dialog (same form submit and disabled rule); "Add end date" stays a checkbox that reveals the date. | done, owner to confirm |
+| 11 Nov | Review fixes (U9, keep today's wording): no new chips or button text on My Timesheets, timesheet rows, the overtime person title or pending requests; payment runs read "• Run: X - Y" as before; Exported keeps its visible Search / Filter / Payment run labels. While a timesheet loads and on Sign / Sign Off, the band keeps "Timesheet" / "Review Timesheet" and the list back link, with the sheet's own Back / Cancel beside it. | done |
+| 11 Nov | Sign Timesheet: the read-only rows are labelled "Bookings and leave" (price work and expenses are not listed as rows; their totals sit beside it, unchanged), and the table is hidden when there are none. The card keeps the old heading "You're approving". | done, owner to confirm |
+| 11 Nov | Action cards (hub tiles, My Timesheets current period, overtime tiles) show a small "Open →" cue under the card; it is decoration on the same button, but it is new text. | done, owner to confirm (remove if U9 should cover it) |
 
 ## Open questions for the owner
 

@@ -52,6 +52,7 @@
   --pu-ot-stripe: repeating-linear-gradient(-45deg, #F5A524 0 3px, #E39412 3px 6px);
   --pu-unbooked-stripe: repeating-linear-gradient(-45deg, #E5484D 0 3px, #C93A3F 3px 6px);
   --pu-std: #3E6FE0;
+  --pu-card-red-line: #F3B8BA;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -75,6 +76,9 @@
     --pu-note-red-bg: #3A1719;
     --pu-note-red-ink: #FFB1B3;
     --pu-std: #6F93F0;
+    --pu-card-red-line: #6B2A2D;
+    /* --dash-danger has no dark value; the page pack's red stays light enough on dark cards. */
+    --pu-red: #FF7A7E;
   }
 }
 
@@ -98,6 +102,8 @@
   --pu-note-red-bg: #3A1719;
   --pu-note-red-ink: #FFB1B3;
   --pu-std: #6F93F0;
+  --pu-card-red-line: #6B2A2D;
+  --pu-red: #FF7A7E;
 }
 
 .pu-page { display: flex; flex-direction: column; gap: 16px; color: var(--pu-ink); font-variant-numeric: tabular-nums; min-width: 0; }
@@ -166,7 +172,7 @@
 .pu-gridAuto { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
 .pu-col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 .pu-card { background: var(--pu-card); border: 1px solid var(--pu-line); border-radius: 16px; min-width: 0; overflow: hidden; }
-.pu-card.red { border-color: #F3B8BA; }
+.pu-card.red { border-color: var(--pu-card-red-line); }
 .pu-card-h { display: flex; align-items: center; gap: 10px; padding: 14px 18px; border-bottom: 1px solid var(--pu-line-2); flex-wrap: wrap; }
 .pu-card-h h2 { margin: 0; font-size: 15px; font-weight: 700; flex: 1; min-width: 0; color: var(--pu-ink); }
 .pu-card-h .pu-count { font-size: 12.5px; color: var(--pu-muted); font-weight: 500; }
@@ -231,6 +237,7 @@
 .pu-seg.full { display: flex; width: 100%; }
 .pu-seg.full button { flex: 1; justify-content: center; }
 
+.pu-toolbar-group { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .pu-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 14px 18px; border-bottom: 1px solid var(--pu-line-2); }
 .pu-field { display: flex; align-items: center; gap: 8px; height: 38px; border: 1px solid var(--pu-line); border-radius: 10px; background: var(--pu-field); padding: 0 12px; color: var(--pu-muted); min-width: 220px; flex: 1; }
 .pu-field input { border: 0; outline: 0; background: transparent; flex: 1; min-width: 0; color: var(--pu-ink); font: inherit; font-size: 13.5px; }
@@ -267,8 +274,8 @@ textarea.pu-inp { height: auto; min-height: 76px; padding: 10px 12px; resize: ve
 .pu-action:hover { border-color: var(--dash-hover-line); box-shadow: 0 6px 18px rgba(15, 27, 51, 0.06); }
 .pu-action:disabled { opacity: 0.55; cursor: not-allowed; box-shadow: none; }
 .pu-action .pu-action-row { display: flex; gap: 14px; align-items: flex-start; }
-.pu-action h3 { margin: 0 0 3px; font-size: 16px; font-weight: 700; }
-.pu-action p { margin: 0; color: var(--pu-muted); font-size: 13px; line-height: 1.45; }
+.pu-action .pu-action-title { display: block; margin: 0 0 3px; font-size: 16px; font-weight: 700; }
+.pu-action .pu-action-desc { display: block; margin: 0; color: var(--pu-muted); font-size: 13px; line-height: 1.45; }
 .pu-action .pu-go { margin-top: auto; display: flex; align-items: center; justify-content: space-between; font-size: 13px; font-weight: 600; color: var(--pu-blue); padding-top: 12px; border-top: 1px solid var(--pu-line-2); }
 .pu-mini { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--pu-line-2); border-radius: 12px; overflow: hidden; }
 .pu-mini > * { padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; }
