@@ -1889,7 +1889,7 @@ function SignSheet({
   confirmTitle,
   managerMode,
   busy,
-  summaryRows: _summaryRows,
+  summaryRows,
   onCancel,
   onConfirm,
 }: {
@@ -1910,51 +1910,81 @@ function SignSheet({
 }) {
   const currency = useOrganizationCurrency()
   const total = hoursAmount + priceWorkAmount + expensesAmount
+  const signatureCard = (
+    <Card title="Your signature" subtitle={`Signing as ${signerName}`}>
+      <div className="pu-card-b">
+        <SignaturePad value={signature} onChange={onSignature} />
+      </div>
+    </Card>
+  )
+  const confirm = (
+    <PuButton variant="green" block disabled={!signature || busy} onClick={onConfirm}>
+      {confirmTitle}
+    </PuButton>
+  )
+  if (managerMode) {
+    return (
+      <>
+        <PageBand back={{ label: 'Cancel', onClick: onCancel }} eyebrow="Sign Off" title={periodTitle} />
+        <Note tone="info">Sign as {signerName} to finalise this timesheet.</Note>
+        {signatureCard}
+        {confirm}
+      </>
+    )
+  }
   return (
-    <div className="space-y-4 pb-10">
-      <button type="button" onClick={onCancel} className="text-[15px] font-medium text-[var(--blue)]">
-        {managerMode ? 'Cancel' : 'Back'}
-      </button>
-      <h2 className="text-[22px] font-semibold">{managerMode ? 'Sign Off' : 'Sign Timesheet'}</h2>
-      {!managerMode ? (
-        <section className="rounded-2xl bg-white p-4 shadow-[0_1px_2px_rgba(0,0,0,0.10)]">
-          <p className="text-[17px] font-semibold">You&apos;re approving</p>
-          <div className="mt-3 space-y-2 text-[15px]">
+    <>
+      <PageBand
+        back={{ label: 'Back', onClick: onCancel }}
+        eyebrow="Sign Timesheet · You're approving"
+        title={periodTitle}
+        aside={
+          <>
+            <span>Timesheet total</span>
+            <b>{money(total, currency)}</b>
+          </>
+        }
+      >
+        <StatRow
+          items={[
+            { value: money(hoursAmount, currency), label: 'Hours' },
+            { value: money(priceWorkAmount, currency), label: 'Price work' },
+            { value: money(expensesAmount, currency), label: 'Expenses' },
+          ]}
+        />
+      </PageBand>
+      <div className="pu-grid2">
+        <Card title="Timesheet summary" subtitle="Read-only · what you're signing">
+          {summaryRows ? (
+            <DataTable
+              columns={[
+                { key: 'day', label: 'Day' },
+                { key: 'booking', label: 'Booking' },
+                { key: 'calc', label: 'Calculation' },
+                { key: 'amount', label: 'Amount', align: 'right' },
+              ]}
+            >
+              {summaryRows}
+            </DataTable>
+          ) : null}
+          <div className="pu-totals">
             <Row label="Period" value={periodTitle} />
             <Row label="Hours" value={money(hoursAmount, currency)} />
             <Row label="Price work" value={money(priceWorkAmount, currency)} />
             <Row label="Expenses" value={money(expensesAmount, currency)} />
+            <div className="r big">
+              <span>Timesheet total</span>
+              <span>{money(total, currency)}</span>
+            </div>
           </div>
-          <div className="mt-3 flex justify-between rounded-xl bg-[#0E1F33] p-3 text-white">
-            <span className="text-white/75">Timesheet total</span>
-            <span className="text-[20px] font-bold">{money(total, currency)}</span>
-          </div>
-        </section>
-      ) : (
-        <p className="text-[14px] text-[var(--ink3)]">Sign as {signerName} to finalise this timesheet.</p>
-      )}
-      <section className="rounded-2xl bg-white p-4 shadow-[0_1px_2px_rgba(0,0,0,0.10)]">
-        <p className="text-[17px] font-semibold">Your signature</p>
-        <p className="text-[12px] text-[var(--ink3)]">Signing as {signerName}</p>
-        <div className="mt-3">
-          <SignaturePad value={signature} onChange={onSignature} />
+        </Card>
+        <div className="pu-col">
+          {signatureCard}
+          <Note tone="red">By signing you confirm these hours match the work you carried out.</Note>
+          {confirm}
         </div>
-      </section>
-      {!managerMode ? (
-        <div className="flex gap-3 rounded-xl bg-[#FDEAEA] p-3 text-[13px] text-[#7F1D1D]">
-          <span>⚠</span>
-          <p>By signing you confirm these hours match the work you carried out.</p>
-        </div>
-      ) : null}
-      <button
-        type="button"
-        disabled={!signature || busy}
-        onClick={onConfirm}
-        className="w-full rounded-xl bg-[#16A34A] py-3.5 text-[16px] font-semibold text-white disabled:opacity-50"
-      >
-        {confirmTitle}
-      </button>
-    </div>
+      </div>
+    </>
   )
 }
 
