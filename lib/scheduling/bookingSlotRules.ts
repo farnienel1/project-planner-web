@@ -58,6 +58,11 @@ function policyOnBookingDay(dayKey: string, fallback?: OrgPayrollTimePolicy | nu
   return state ? effectivePayrollTimePolicy(state, dayKey, openOrganizationZone()) : fallback ?? null
 }
 
+/** `policyForBookingDate` for an organisation day key already known (a week-grid calendar day, rulebook 1.37.0). */
+export function policyForBookingDayKey(dayKey: string, fallback?: OrgPayrollTimePolicy | null): OrgPayrollTimePolicy | null {
+  return policyOnBookingDay(dayKey, fallback)
+}
+
 /**
  * Rulebook 1.19.0: the working hours in effect on a booking date (history first, `effectivePayrollTimePolicy`), for
  * hours previews and breakdowns. Falls back to the policy the screen passed when the live document is not loaded.

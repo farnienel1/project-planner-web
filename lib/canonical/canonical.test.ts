@@ -13984,3 +13984,170 @@ test('1.33.0 integration: the needs-admin label is gone; claims keep reviewAppro
   assert.equal(R112.reviewApprovalMessage({ approved: 0, total: 1, counts: { undecided: 1 } }), 'Nothing was approved: 1 not decided yet.')
   assert.doesNotMatch(R112.reviewApprovalMessage({ approved: 1, total: 2, counts: { needsAdmin: 1 } as never }), /admin/)
 })
+
+// Rulebook 1.37.0 §21 (owner decisions 10 Nov): annual leave on a job's scheduling week.
+test('1.37.0 jobScheduleLeaveMarks: full, half, pending, rejected, every id without case, organisation zone', () => {
+  const tz = 'Europe/London'
+  // Mon 23 Nov – Sun 29 Nov 2026
+  const dayKeys = ['2026-11-23', '2026-11-24', '2026-11-25', '2026-11-26', '2026-11-27', '2026-11-28', '2026-11-29']
+  const roster = [
+    { id: 'user-a', email: 'a@x.com', formerUserIds: ['INVITE-A'] },
+    { id: 'OP-A', email: 'A@X.com' },
+    { id: 'user-b', email: 'b@x.com' },
+  ]
+  const policy = { standardDayStart: '06:30', standardDayEnd: '14:30', breakWindowStart: '10:00', breakWindowEnd: '10:45' }
+  const holidays = [
+    // Multi-day approved leave filed under the operatives row (upper case): Mon–Wed; weekend days skipped.
+    { id: 'h1', operativeId: 'op-a', startDayKey: '2026-11-23', endDayKey: '2026-11-25', timeSlot: 'FULL DAY', status: 'approved' },
+    // AM half day under a former invite id.
+    { id: 'h2', userId: 'invite-a', startDayKey: '2026-11-26', endDayKey: '2026-11-26', timeSlot: 'AM', status: 'approved' },
+    // Pending full day under the email (older iOS).
+    { id: 'h3', userId: 'A@x.com', startDayKey: '2026-11-27', endDayKey: '2026-11-27', timeSlot: 'FULL DAY', status: 'requested' },
+    // Rejected never shows.
+    { id: 'h4', userId: 'user-a', startDayKey: '2026-11-28', endDayKey: '2026-11-28', timeSlot: 'FULL DAY', status: 'declined' },
+    // Pending PM half for B; someone else's leave never marks A.
+    { id: 'h5', userId: 'USER-B', startDayKey: '2026-11-23', endDayKey: '2026-11-23', timeSlot: 'PM', status: 'pending' },
+    // Bank holiday inside B's multi-day record is not a leave day.
+    { id: 'h6', userId: 'user-b', startDayKey: '2026-11-24', endDayKey: '2026-11-26', timeSlot: 'FULL DAY', status: 'approved' },
+  ]
+  const rows = R112.jobScheduleLeaveMarks({
+    people: [
+      { key: 'a', ids: ['user-a'], email: 'a@x.com' },
+      { key: 'b', ids: ['user-b'], email: null },
+      { key: 'ghost', ids: ['ghost-1'], email: '' },
+    ],
+    holidays,
+    dayKeys,
+    timeZone: tz,
+    nonWorkingDayKeys: ['2026-11-25'],
+    roster,
+    day: policy,
+  })
+  const a = rows.find((r) => r.key === 'a')!.days
+  assert.deepEqual(a.map((d) => d.label), ['AL', 'AL', '', 'AL AM', 'AL?', '', ''])
+  // Wed 25 is a bank holiday in the region, so not a leave day of h1.
+  assert.equal(a[0].kind, 'approvedFull')
+  assert.equal(a[0].recordId, 'h1')
+  assert.equal(a[3].kind, 'approvedHalf')
+  assert.equal(a[3].slot, 'AM')
+  assert.equal(a[3].title, 'Annual leave · AM 06:30–10:30')
+  assert.equal(a[4].pending, true)
+  assert.equal(a[4].title, 'Annual leave requested · Full day')
+  assert.equal(a[5].onLeave, false)
+  const b = rows.find((r) => r.key === 'b')!.days
+  assert.deepEqual(b.map((d) => d.label), ['AL? PM', 'AL', '', 'AL', '', '', ''])
+  assert.equal(b[0].title, 'Annual leave requested · PM 10:30–14:30')
+  const ghost = rows.find((r) => r.key === 'ghost')!.days
+  assert.equal(ghost.every((d) => !d.onLeave), true)
+  // Leave never adds a person: only the people given come back.
+  assert.deepEqual(rows.map((r) => r.key), ['a', 'b', 'ghost'])
+  assert.deepEqual([...R112.JOB_SCHEDULE_LEGEND], ['Standard', 'Std + OT', 'OT only', 'Ann. leave', 'Half day'])
+})
+
+test('1.37.0 jobScheduleLeaveMarks: full beats half, pending beats approved, policy state read per day', () => {
+  const holidays = [
+    { id: 'p', userId: 'u', startDayKey: '2026-11-23', endDayKey: '2026-11-23', timeSlot: 'PM', status: 'approved' },
+    { id: 'f', userId: 'u', startDayKey: '2026-11-23', endDayKey: '2026-11-23', timeSlot: 'FULL DAY', status: 'pending' },
+    { id: 'q', userId: 'u', startDayKey: '2026-11-24', endDayKey: '2026-11-24', timeSlot: 'AM', status: 'approved' },
+  ]
+  const state = {
+    current: { standardDayStart: '08:00', standardDayEnd: '16:00' },
+    effectiveFrom: '2026-11-24',
+    prior: { standardDayStart: '06:30', standardDayEnd: '14:30' },
+    scheduled: null,
+    history: [],
+  }
+  const [row] = R112.jobScheduleLeaveMarks({
+    people: [{ key: 'u', ids: ['U'] }],
+    holidays,
+    dayKeys: ['2026-11-23', '2026-11-24'],
+    timeZone: 'Europe/London',
+    day: state as never,
+  })
+  // Monday is before the change: the prior day 06:30–14:30; Tuesday the current 08:00–16:00.
+  assert.equal(row.days[0].title, 'Annual leave requested · Full day')
+  assert.equal(row.days[0].label, 'AL?')
+  assert.equal(row.days[0].kind, 'pendingFull')
+  assert.equal(row.days[1].title, 'Annual leave · AM 08:00–12:00')
+  assert.deepEqual(R112.jobScheduleLeaveMarks({ people: null, holidays: null, dayKeys: null }), [])
+})
+
+// Review #299 (1): leave stored under the person's email matches without the caller passing the email.
+test('1.37.0 jobScheduleLeaveMarks: a roster row pulled in by personIdSet brings its email', () => {
+  const [row] = R112.jobScheduleLeaveMarks({
+    people: [{ key: 'a', ids: ['OP-ROW'] }],
+    holidays: [{ id: 'e', userId: 'Ann@Example.com', startDayKey: '2026-11-23', endDayKey: '2026-11-23', timeSlot: 'FULL DAY', status: 'approved' }],
+    dayKeys: ['2026-11-23'],
+    timeZone: 'Europe/London',
+    roster: [
+      { id: 'op-row', email: 'ann@example.com' },
+      { id: 'someone', email: 'other@example.com' },
+    ],
+  })
+  assert.equal(row.days[0].label, 'AL')
+  const [none] = R112.jobScheduleLeaveMarks({
+    people: [{ key: 'b', ids: ['someone'] }],
+    holidays: [{ id: 'e', userId: 'Ann@Example.com', startDayKey: '2026-11-23', endDayKey: '2026-11-23', timeSlot: 'FULL DAY', status: 'approved' }],
+    dayKeys: ['2026-11-23'],
+    timeZone: 'Europe/London',
+    roster: [{ id: 'op-row', email: 'ann@example.com' }, { id: 'someone', email: 'other@example.com' }],
+  })
+  assert.equal(none.days[0].onLeave, false)
+})
+
+// Review #299 (6): AM and PM on one day are the whole day.
+test('1.37.0 jobScheduleLeaveMarks: AM + PM on one day is a full day; mixed shows both', () => {
+  const marks = (amStatus: string, pmStatus: string) =>
+    R112.jobScheduleLeaveMarks({
+      people: [{ key: 'u', ids: ['u'] }],
+      holidays: [
+        { id: 'am', userId: 'u', startDayKey: '2026-11-23', endDayKey: '2026-11-23', timeSlot: 'AM', status: amStatus },
+        { id: 'pm', userId: 'u', startDayKey: '2026-11-23', endDayKey: '2026-11-23', timeSlot: 'PM', status: pmStatus },
+      ],
+      dayKeys: ['2026-11-23'],
+      timeZone: 'Europe/London',
+    })[0].days[0]
+  const both = marks('approved', 'approved')
+  assert.equal(both.label, 'AL')
+  assert.equal(both.kind, 'approvedFull')
+  assert.equal(both.slot, 'FULL DAY')
+  assert.equal(marks('pending', 'pending').label, 'AL?')
+  const mixed = marks('approved', 'pending')
+  assert.equal(mixed.label, 'AL AM · AL? PM')
+  assert.equal(mixed.slot, 'AM')
+  assert.equal(mixed.pending, false)
+  // Review #299 (re-review 2): both halves shaded in their own style; the record is the approved half's.
+  assert.equal(mixed.am, 'approved')
+  assert.equal(mixed.pm, 'pending')
+  assert.equal(mixed.recordId, 'am')
+  const mixedPm = marks('pending', 'approved')
+  assert.equal(mixedPm.label, 'AL? AM · AL PM')
+  assert.deepEqual([mixedPm.am, mixedPm.pm, mixedPm.slot, mixedPm.recordId], ['pending', 'approved', 'PM', 'pm'])
+  assert.deepEqual([both.am, both.pm], ['approved', 'approved'])
+  const amOnly = marks('approved', 'rejected')
+  assert.deepEqual([amOnly.am, amOnly.pm], ['approved', null])
+  assert.equal(marks('approved', 'rejected').label, 'AL AM')
+})
+
+// Review #299 (3): one tile colour rule for both apps, from the pay rule's result.
+test('1.37.0 scheduleCellKind / scheduleCellHours: the iOS scheme; a 0h booking is a Standard 0h tile', () => {
+  assert.deepEqual(R112.scheduleCellKind({ paidHours: 8.5, overtimeHours: 0, timeSlot: 'FULL DAY' }), { tone: 'standard', standardHours: 8.5, overtimeHours: 0, halfLabel: null })
+  assert.deepEqual(R112.scheduleCellKind({ paidHours: 11.875, overtimeHours: 3.375, timeSlot: 'CUSTOM_HOURS' }), { tone: 'split', standardHours: 8.5, overtimeHours: 3.38, halfLabel: null })
+  assert.equal(R112.scheduleCellKind({ paidHours: 4.5, overtimeHours: 4.5, timeSlot: 'CUSTOM_HOURS' }).tone, 'otOnly')
+  assert.equal(R112.scheduleCellKind({ paidHours: 3, overtimeHours: 0, timeSlot: 'Overtime' }).tone, 'otOnly')
+  assert.deepEqual(R112.scheduleCellKind({ paidHours: 4, timeSlot: 'Morning' }), { tone: 'halfDay', standardHours: 4, overtimeHours: 0, halfLabel: 'AM' })
+  assert.deepEqual(R112.scheduleCellKind({ paidHours: 0, overtimeHours: 0, timeSlot: 'CUSTOM_HOURS' }), { tone: 'standard', standardHours: 0, overtimeHours: 0, halfLabel: null })
+  // Re-review (3): a 0h AM / PM is a Half day 0h chip — the same answer iOS reads (ScheduleLeaveMarksTests).
+  assert.deepEqual(R112.scheduleCellKind({ paidHours: 0, overtimeHours: 0, timeSlot: 'AM' }), { tone: 'halfDay', standardHours: 0, overtimeHours: 0, halfLabel: 'AM' })
+  assert.deepEqual(R112.scheduleCellKind(null), { tone: 'standard', standardHours: 0, overtimeHours: 0, halfLabel: null })
+  const result = R112.payrollHoursResult({
+    booking: { timeSlot: 'CUSTOM_HOURS', workStartTime: '07:00', workEndTime: '18:15' },
+    dayKey: '2026-11-23',
+    policy: { standardDayStart: '07:00', standardDayEnd: '16:00', breakPaid: false, unpaidBreakMinutes: 30, breakWindowStart: '12:00', breakWindowEnd: '12:30', weekdayOutsideStandardMultiplier: 1.5, paidHoursDerived: true } as never,
+  })
+  const hours = R112.scheduleCellHours(result)
+  assert.equal(hours.paidHours, result.totalPaidHours)
+  const cell = R112.scheduleCellKind({ ...hours, timeSlot: 'CUSTOM_HOURS' })
+  assert.equal(cell.tone, 'split')
+  assert.equal(Math.round((cell.standardHours + cell.overtimeHours) * 100), Math.round(result.totalPaidHours * 100))
+})

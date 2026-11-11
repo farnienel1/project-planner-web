@@ -1619,7 +1619,18 @@ export type { DeadlineUrgency, DueTask } from './dueDates'
 export { homeBookingDayKey, homeOverviewMetrics, isSiteLocationType, qualificationExpiryCount, tasksAssignedToViewer } from './homeOverview'
 export type { FoldPersonRow, HomeOverviewInput, HomeOverviewMetrics, HomeOverviewTask, QualificationExpiryCountInput } from './homeOverview'
 export { leaveDayKind } from './leaveCalendar'
+export {
+  jobScheduleLeaveMarks,
+  scheduleCellHours,
+  scheduleCellKind,
+  JOB_SCHEDULE_LEAVE_LABEL,
+  JOB_SCHEDULE_LEAVE_PENDING_LABEL,
+  JOB_SCHEDULE_LEAVE_TITLE,
+  JOB_SCHEDULE_LEAVE_PENDING_TITLE,
+  JOB_SCHEDULE_LEGEND,
+} from './jobScheduleLeave'
 export type { LeaveCalendarRecord, LeaveDayKind } from './leaveCalendar'
+export type { JobScheduleLeaveMark, JobScheduleLeavePerson, JobScheduleLeaveRecord, JobScheduleLeaveRow, ScheduleCellKind, ScheduleCellTone } from './jobScheduleLeave'
 export { jobTileBadges, mergeVariationSources, openVariationCount, siteMapPins } from './jobBadges'
 export type { JobBadgeLabourBooking, JobBadgeManagerBooking, JobTileBadges, SiteMapPin } from './jobBadges'
 

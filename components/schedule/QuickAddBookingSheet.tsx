@@ -13,6 +13,7 @@ import {
 import { useMemo, useState } from 'react'
 import { useBookingConflictGate, type BookingSlotConflictCheck } from '@/components/scheduling/BookingConflictRows'
 import { format } from 'date-fns'
+import { calendarDateOfKey } from '@/lib/orgTime/organizationWeek'
 import { slotToFirestore, type ScheduleSlotChoice } from '@/lib/scheduling/scheduleUtils'
 import { HoursTimelinePicker } from '@/components/scheduling/HoursTimelinePicker'
 import { hoursBreakdown } from '@/lib/scheduling/paidHours'
@@ -144,7 +145,7 @@ export function QuickAddBookingSheet({
               <p className="mt-1 text-base font-semibold text-slate-900">{projectName}</p>
               <p className="text-sm text-slate-500">
                 {personName}
-                {roleLabel ? ` · ${roleLabel}` : ''} · {format(date, 'EEE d MMM yyyy')}
+                {roleLabel ? ` · ${roleLabel}` : ''} · {format(calendarDateOfKey(bookingDayKey(date)), 'EEE d MMM yyyy')}
               </p>
             </div>
             <button

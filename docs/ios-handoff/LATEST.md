@@ -1,4 +1,4 @@
-# iOS follow-on — rulebook 1.36.0
+# iOS follow-on — rulebook 1.37.0
 
 Generated 2026-11-10 by `npm run rulebook:handoff` in project-planner-web. Paste this whole file into the iOS agent.
 The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; never edit the iOS mirror by hand.
@@ -8,9 +8,9 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ║ FOLLOW-ON — paste into the iOS agent                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
-Rulebook version: 1.35.0 → 1.36.0
-Packed hash: 52f6f0f49631522db8053c12995e09d6ee0165ea5b6a1d038fd764ade6702834
-Rulebook sha256: f9ce176ab63882541613caedb7d17282b886077156104840aadaba0036566f73
+Rulebook version: 1.36.0 → 1.37.0
+Packed hash: f2b163368a252f500a6e1bb9e6f1028ed61ad7f532e76dc7cefd54ec7724a9da
+Rulebook sha256: 1d54c2d23e02d11f369c27d851ec6ec0d1012d745d68dadd49275c85cced5640
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -20,46 +20,39 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
   web lib/canonical/cross-platform-contract.json    → iOS ProjectPlannerTests/CrossPlatformContract.json
 Contract sha256: 59d6bc6123f250e1f57599240eb3190ab48f5cd2532f8281a99360d9e187d86b
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: DUPLICATE_NAME_CANCEL_LABEL, DUPLICATE_NAME_CONFIRM_LABEL, DUPLICATE_NAME_NO_EMAIL_LABEL, DUPLICATE_NAME_WARNING_MESSAGE, DUPLICATE_NAME_WARNING_TITLE, normalizePersonNamePart, sameNamePersonContactLabel, usersWithSameName
+Exports added: JOB_SCHEDULE_LEAVE_LABEL, JOB_SCHEDULE_LEAVE_PENDING_LABEL, JOB_SCHEDULE_LEAVE_PENDING_TITLE, JOB_SCHEDULE_LEAVE_TITLE, JOB_SCHEDULE_LEGEND, jobScheduleLeaveMarks, scheduleCellHours, scheduleCellKind
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/duplicateUserNames.test.ts, lib/canonical/duplicateUserNames.ts, lib/canonical/ghostOperatives.test.ts, lib/canonical/ghostOperatives.ts, lib/canonical/index.ts, lib/canonical/managerCoverage.ts, lib/canonical/myProfileSummary.test.ts, lib/canonical/payrollHours.ts
+Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/jobScheduleLeave.ts
 Done when:
-- [ ] Packed hash in iOS equals 52f6f0f49631522db8053c12995e09d6ee0165ea5b6a1d038fd764ade6702834
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 f9ce176ab63882541613caedb7d17282b886077156104840aadaba0036566f73)
-- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.36.0)
+- [ ] Packed hash in iOS equals f2b163368a252f500a6e1bb9e6f1028ed61ad7f532e76dc7cefd54ec7724a9da
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 1d54c2d23e02d11f369c27d851ec6ec0d1012d745d68dadd49275c85cced5640)
+- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.37.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
 - [ ] Any disagreement traced to its first divergence — no copied screen number
 ```
 
-## What changed in 1.36.0
+## What changed in 1.37.0
 
-- Fixes only (owner 7 Nov "do all"); nobody sees or is paid differently except where a figure was wrong (below).
-- **Person ids (sweep FU-5, guardrail 1).** Web never picks one `operatives` row on the email to match a person's rate history or bookings: new web composer `personRateHistoryIds` (`personIdSet` + `bookingIdsForAccount`). Edit User's previous rates and its "history loaded and empty?" test (no duplicate seed row when the history sits under a former invite id or a second row), the timesheet invoice rate-change notes (former ids, every row on the email, without case; a person with no email no longer picks up every row with an empty email), and the weekly report and timesheet pay rate (`resolvePayrollRate` / `resolveForTimesheetDay` `operativeIds`: a history row filed only under a second `operatives` row of the person now counts) — the live-rate fallback row is unchanged. The schedule's "is this my own booking" (`shouldScopeScheduleToOperative`) is `bookingIdsForAccount` without case. Web's rate-history merge (`mergedDayRateEntries`) matches ids without case.
-- **Organisation week (sweep FU-4, guardrail 2).** Web week grids, week navigation, the leave calendar, the materials and H&S weeks, calendar export and Schedule quick-select use the organisation's Monday–Sunday week (`organizationWeekDayKeys`, `isWeekendDayKey`) and the organisation's today, not the browser's; a stored toolbox-talk week commencing is organisation-zone midnight of its Monday. Same result for a browser in the organisation's zone.
-- **My tasks** (web): `isTaskAssignedToUser` is `tasksAssignedToViewer` (1.35.0) — tasks under the person's users id, a second `managers` row or another letter case now show; never fewer than before (test against the old helper).
-- **Wording**: §6 says `managerCoverageHours.paidHours` is hours worked, capped at the weekday paid day, not pay and not the Daily Overview figure (field name kept); Daily Overview's hours are the pay rule's (`totalPaidHours`) since 1.20.2 (web comments said `workedHours`).
-- **Ghost conversion** (§11): `ghostConversionCandidates` takes `memberIds` and reads a stored organisation reference with `documentOrganizationId`, so a person with a login — a member from another company, or a users document storing `organizations/{id}` — is never converted into a second (ghost) person; the script reads those users documents and writes no write metadata.
-- Verified fixed earlier (no change): booking clash letter case (#266 / 1.33.0), `preferFinishedAccount` inactive accounts and `userActiveWrites` / `setUserActive` (1.33.0).
-- **Duplicate-name warning** (§11, owner decision 10 Nov; owner-requested addition to this release): `usersWithSameName`, `normalizePersonNamePart`, `sameNamePersonContactLabel`, `DUPLICATE_NAME_NO_EMAIL_LABEL`, `DUPLICATE_NAME_WARNING_TITLE`, `DUPLICATE_NAME_WARNING_MESSAGE`, `DUPLICATE_NAME_CONFIRM_LABEL`, `DUPLICATE_NAME_CANCEL_LABEL` (new `duplicateUserNames.ts`). Add User asks before saving when the first and last name match an existing person; Add anyway saves as before. Warning only.
-- **Rate history across duplicate `operatives` rows** (owner decision 10 Nov, option (a)): every record on the person's email counts (§8 `payRateOnDay` / `personIdSet`), as built above; no rule change.
+- **Annual leave on project and small works scheduling** (§21, owner decisions 10 Nov): new `jobScheduleLeaveMarks`, `JOB_SCHEDULE_LEAVE_LABEL`, `JOB_SCHEDULE_LEAVE_PENDING_LABEL`, `JOB_SCHEDULE_LEAVE_TITLE`, `JOB_SCHEDULE_LEAVE_PENDING_TITLE` (new `jobScheduleLeave.ts`, on `leaveDayKind`, `leaveHalfDayLabel`, `personIdSet`, `standardDayOn`; the emails of the person's roster rows count, AM + PM on one day is a full day). Only people booked on the job are listed; for them, full-day leave is a brown "AL" cell, a half day "AL AM" / "AL PM", pending leave paler "AL?", rejected never; a booking on a leave day keeps its cell with a thin brown "AL" band across the top.
+- **One booking colour scheme** (owner decision 10 Nov): `JOB_SCHEDULE_LEGEND` — Standard, Std + OT, OT only, Ann. leave, Half day — and `scheduleCellKind` / `scheduleCellHours` on both apps (iOS `SchedulingV2CellKindBuilder` now calls the rulebook; a 0h booking is a Standard 0h tile on both — iOS showed an empty dashed chip); web booking cells move from role colours to the iOS scheme (role pills unchanged). Display only: no booking figure, count, warning or write changes.
+- Web week grid columns are calendar day keys; bookings and leave are both bucketed by them (a browser east of the organisation zone put bookings a column out).
+- iOS now matches leave under every id without case (it matched exact ids) and shows half-day, pending and booked-day leave (it showed approved full days on unbooked days only).
 - No rules, index, Storage or Functions change.
 
-## iOS work for 1.36.0
+## iOS work for 1.37.0
 
-**Sync first.** 1.36.0 is a fixes-only release plus one owner-requested warning (10 Nov). No Firestore field or rules change; new exports `usersWithSameName`, `sameNamePersonContactLabel` and the `DUPLICATE_NAME_*` copy only. **`minimumIosBuild` is raised to the iOS 1.36 build before 1.36 web goes live** (rate history under every `operatives` row of the person changes a pay figure; guardrail 4).
+**Sync first.** 1.37.0 is display only: annual leave on a job's scheduling week and one booking colour scheme (owner decisions 10 Nov). No Firestore field, rules or `minimumIosBuild` change; new exports `jobScheduleLeaveMarks`, `JOB_SCHEDULE_LEAVE_*`, `JOB_SCHEDULE_LEGEND` only.
 
-1. **Sync** — `WEB_REPO=<web worktree> bash scripts/sync-rulebook-from-web.sh`. The packed script changes in `usersWithSameName` (new, step 4) and in `ghostConversionCandidates` (new optional `memberIds`; a stored organisation reference read with `documentOrganizationId`), comments and the stamp. iOS does not call `ghostConversionCandidates` (the conversion is a web script), so nothing else is needed for it.
-2. **Wording** — `managerCoverageHours.paidHours` is hours worked capped at the weekday paid day, not pay (rulebook §6). If any Swift screen shows it as "paid" hours, relabel it or use `bookedWorkedHours` for a person's real hours; Book labour decides on `covered` only.
-3. **Same bugs, iOS side (check and report, do not diverge)** — web fixed these in 1.36.0; the iOS equivalents to check:
-   - Week grids and "this week" from `Calendar.current` (Scheduling, My Schedule, materials and H&S weeks): use `organizationWeekDayKeys` / `isWeekendDayKey` on the organisation day (`OrganizationRulebookContext`), the organisation's today, not the device's.
-   - A person's rate history read under one `operatives` row on the email (Edit user previous rates, timesheet pay, weekly report pay): match every row of the person (`bookingIdsForAccount`) and every users id (`personIdSet`), without case — as `payRateOnDay` with `person` / `roster` / `operativeIds`.
-   - "My tasks" matched by one manager or operative row: use `tasksAssignedToViewer` (1.35.0), the rule Home and My Profile already use.
-4. **Duplicate-name warning on Add User** (owner decision 10 Nov, rulebook §11) — `Views/AddUserView.swift`: on Create / Add (the Ghost account path too), after the form's own checks, call `usersWithSameName(roster, { firstName, lastName }, { claimedEmails })` through `CanonicalBusinessEngine` with the full organisation roster. When it returns anyone, show a confirmation with `DUPLICATE_NAME_WARNING_TITLE` / `DUPLICATE_NAME_WARNING_MESSAGE`, list each match with `sameNamePersonContactLabel` (their email; "No app login" for a ghost only; else "No email"), and offer `DUPLICATE_NAME_CONFIRM_LABEL` (save as before) and `DUPLICATE_NAME_CANCEL_LABEL` (back to the form). A warning only — but when `usersWithSameName` does not answer (the script is unavailable), refuse the save, invite and ghost alike, with "Couldn't check this user — try again." and save nothing (owner decision 10 Nov; Add anyway never bypasses it). Do not compare names in Swift.
+1. **Sync** — `WEB_REPO=<web worktree> bash scripts/sync-rulebook-from-web.sh`.
+2. **Bridge** — `Core/Rulebook+ScheduleLeave.swift`: `CanonicalBusinessEngine.jobScheduleLeaveMarks(people:holidays:dayKeys:timeZone:nonWorkingDayKeys:roster:day:)` → per person key, per day key `{ kind, onLeave, pending, slot, label, title, recordId, am, pm }` (shade each half by `am` / `pm`). Holidays come from `HolidayStore.bookings` (all statuses; the rule drops rejected), day keys on the organisation calendar (`OrganizationRulebookContext`), the roster = organisation users (id, email, `formerUserIds`) plus `operatives` rows (id, email), bank holidays from the cached region list.
+3. **Scheduling grid** — `Views/ProjectDetailView.swift` (`schedulingCombinedDayCell` / `makeSchedulingPersonRow`): replace `isPersonOnAnnualLeave` (exact ids, approved full days only) with the marks. The grid's people are still only those booked on the job in the week (`ScheduleWeekGrid.staffRows`); leave never adds a row. An unbooked leave day → the brown `.annualLeave` cell with the label ("AL", "AL AM", "AL PM", pending "AL?" paler); a booked day keeps its chip and gets a thin brown band across the top with the label. Day headcounts do not count leave.
+4. **Legend** — `Views/ProjectSchedulingV2Support.swift` `SchedulingV2Legend`: the five items are `JOB_SCHEDULE_LEGEND` (already the iOS wording); add the pending swatch "AL? = leave requested" to match web.
+5. **Chip colour** — `SchedulingV2CellKindBuilder.fromBooking` calls `scheduleCellKind` (no Swift thresholds); a 0h booking is a Standard 0h chip, never the empty dashed one. One `jobScheduleLeaveMarks` call per grid render for every person and day. Do not change chip hours or tap actions.
 
 ## New rulebook sections
 
-- 1.36.0 — 2026-11-10
+- 1.37.0 — 2026-11-10
 
 ## Workflow for the iOS agent
 

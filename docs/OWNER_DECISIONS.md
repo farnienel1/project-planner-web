@@ -251,6 +251,28 @@ How to use it:
 | 10 Nov | **Rate history across duplicate Operatives records: option (a), follow the rulebook.** A person is identified by their email (their login), never their name. (a) every record on the person's email counts (rulebook §8: `payRateOnDay` matches history under `personIdSet` — the person's own id, former ids and same-email ids); the read-only report `scripts/report-duplicate-operative-rate-history.mjs` is available but not required. Answers the 7 Nov open question. | done web (1.36.0, w136-fixes); rule since 1.10.0 |
 | 10 Nov | **Duplicate-name warning when adding a user.** Add User / Add new operative (the Ghost account path included): when the first and last name match an existing person of the organisation, show "A user with this name already exists. Are you sure you want to add this user?" with **Add anyway** and **Cancel** before saving. Email stays the identity; a warning only, never a block. Rule: `usersWithSameName` + `DUPLICATE_NAME_*` (rulebook §11). | done web + rulebook (1.36.0, w136-fixes); iOS (ios-1.36) |
 
+## 10 Nov decisions (for 1.37)
+
+| Date | Decision | Status |
+|---|---|---|
+| 10 Nov | **Who is on a job's schedule.** The project and small works week grid (web and iOS) lists only people booked on that job somewhere in the visible days. Leave never adds a person to a job's list. | done web + rulebook (1.37.0, w137-leave-grid); iOS (ios-1.37) — unchanged behaviour, now written in §21 |
+| 10 Nov | **Annual leave on the job's schedule, in brown** (iOS "Ann. leave"; web matches). For people on the list: full day = brown cell "AL"; half day "AL AM" / "AL PM" (the iOS half-day split style); a booking on a leave day keeps its booking cell with a thin brown band across the top marked "AL"; overtime keeps its own marking with the band on top. Rule: `jobScheduleLeaveMarks` (§21). | done web + rulebook (1.37.0); iOS (ios-1.37) |
+| 10 Nov | **Pending leave shows too**, paler brown, "AL?". Rejected never. | done web + rulebook (1.37.0); iOS (ios-1.37) |
+| 10 Nov | **One booking colour scheme.** Web booking cells adopt the iOS scheme and legend: Standard (blue), Std + OT (blue with orange hatched OT part), OT only (orange hatched), Ann. leave (brown), Half day. The web legend "Operative / Manager / Admin / Sub contractor" is removed; the coloured role pill under each name stays (Op green, Admin/Manager blue, Sub purple). Rule: `JOB_SCHEDULE_LEGEND`. | done web + rulebook (1.37.0); iOS legend unchanged |
+| 10 Nov | **Build now, before launch, working on both apps.** | done (1.37.0 web + iOS PRs), owner to test |
+
+## 1.37.0 judgement calls (owner to confirm)
+
+| Date | Choice | Status |
+|---|---|---|
+| 10 Nov | A half-day pending request reads "AL? AM" / "AL? PM" (the owner named "AL?" for pending and "AL AM" / "AL PM" for halves). | done, owner to confirm |
+| 10 Nov | An unbooked leave day on the grid can still be tapped to quick add (web) / open scheduling (iOS); the leave conflict check runs before any save, as today. | done, owner to confirm |
+| 10 Nov | Web cells keep one tile per booking (two bookings on one day stay two tiles, each coloured by its own hours); iOS keeps one combined cell per day, as before. The leave band is drawn once per day, on the first tile. | done, owner to confirm |
+| 10 Nov | A leave day under a multi-day request skips weekends and the region's bank holidays (the days the allowance counts, `leaveRecordDayKeys`); a single-day request on a Saturday or Sunday shows. | done (rule), owner to confirm |
+| 10 Nov | The tile colour (Standard / Std + OT / OT only / Half day) is one rulebook function on both apps (`scheduleCellKind`, review #299). A booking that pays 0 hours shows as a Standard 0h tile (iOS used to show an empty dashed chip for it), so it is never hidden. Figures are unchanged. | done, owner to confirm |
+| 10 Nov | AM leave and PM leave on the same day show as a full day ("AL"; "AL?" when both are pending); one approved and one pending shows both, "AL AM · AL? PM" (review #299). | done, owner to confirm |
+| 10 Nov | Web legend adds one extra swatch, "AL? = leave requested", so pending leave is explained. | done web, owner to confirm |
+
 ## 1.36.0 judgement calls, 10 Nov (owner to confirm)
 
 | Date | Choice | Status |
