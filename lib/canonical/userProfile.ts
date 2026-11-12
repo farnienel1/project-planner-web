@@ -158,14 +158,9 @@ export const USER_PERMISSION_FIELDS = [
 
 export type UserPermissionField = (typeof USER_PERMISSION_FIELDS)[number]
 
-/**
- * 1.40.0: read without case or surrounding spaces — "PAYE", "Paye" and " paye " are PAYE (before 1.40.0 only the exact
- * text `paye` was, so an older document storing "PAYE" read as self-employed here while other rules read it as PAYE).
- * Anything else, a missing value included, is self-employed (§8).
- */
 export function normalizeEmploymentType(raw: unknown): EmploymentType {
-  const value = typeof raw === 'string' ? raw.trim().toLowerCase() : ''
-  if (value === 'paye') return 'paye'
+  if (raw === 'paye') return 'paye'
+  if (raw === 'self_employed' || raw === 'selfEmployed') return 'self_employed'
   return 'self_employed'
 }
 

@@ -497,16 +497,22 @@ export function usersMissingPayRate(
   return out
 }
 
-/** 1.40.0 (review r306 #4): Data health text for a person with no stored employment type. */
+/** 1.40.0 (review r306 #4): Data health text for a person with no valid stored employment type. */
 export const USER_MISSING_EMPLOYMENT_TYPE_MESSAGE =
-  'No employment type stored: reads as self-employed, so no annual leave allowance. Open in Manage Users and choose PAYE or self-employed.'
+  'No valid employment type stored (it must be exactly PAYE or self-employed as the apps save it): reads as self-employed, so no annual leave allowance. Open in Manage Users and choose PAYE or self-employed.'
+
+/** The two stored values the apps write (`paye`, `self_employed`). Anything else reads as self-employed (§8). */
+function storedEmploymentTypeValid(value: unknown): boolean {
+  return value === 'paye' || value === 'self_employed'
+}
 
 /**
  * 1.40.0 (review r306 #4): the active people (not anonymised, once per person by `personIdSet`) none of whose users
- * documents stores an employment type (`employmentType` missing or blank). They read as self-employed (§8), so from
- * 1.40.0 they have no annual-leave allowance; admins see them in Settings → Data health. Pass the roster as the
- * screens read it (with the pay profile laid over while `privatePay` is on, where the employment type then lives).
- * Never writes.
+ * documents stores a valid employment type — missing, blank, or anything but exactly `paye` / `self_employed` (e.g.
+ * "PAYE", " paye ", "selfEmployed"). `normalizeEmploymentType` reads those as self-employed (§8), so from 1.40.0 they
+ * have no annual-leave allowance; admins see them in Settings → Data health and fix the data. Pass the documents as
+ * stored (with the pay profile laid over while `privatePay` is on, where the employment type then lives). Never
+ * writes.
  */
 export function usersMissingEmploymentType(
   roster: ReadonlyArray<PersonRosterRow & { employmentType?: unknown; isActive?: unknown }> | null | undefined
@@ -523,7 +529,7 @@ export function usersMissingEmploymentType(
     for (const member of group) done.add(member.id.trim().toLowerCase())
     const active = group.filter((member) => member.isActive !== false && !isAnonymisedDeletedProfile(member as never))
     if (active.length === 0) continue
-    if (active.some((member) => typeof member.employmentType === 'string' && member.employmentType.trim() !== '')) continue
+    if (active.some((member) => storedEmploymentTypeValid(member.employmentType))) continue
     out.push(active[0].id.trim())
   }
   return out

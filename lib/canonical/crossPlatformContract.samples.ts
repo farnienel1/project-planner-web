@@ -134,12 +134,14 @@ export function webWrittenSamples(): Record<string, { docId: string; data: Doc }
   })
   const notification = must(notificationCreateFields({
     organizationId: ORG,
-    type: 'holiday_request_submitted',
-    title: 'Annual leave request',
-    message: 'Ada asked for 4–6 Nov.',
+    // 1.40.0: an adjustment notice, with the inbox-only `detail` (the reason; never pushed).
+    type: 'annual_leave_adjusted',
+    title: 'Annual leave adjusted',
+    message: "Ada Admin adjusted Olly Op's annual leave by +2 days this leave year.",
+    detail: 'Reason: Long service',
     userId: 'mgr-web-1',
     actorUserId: 'user-web-1',
-    relatedId: 'H0000000-0000-4000-8000-000000000001',
+    relatedId: 'user-web-3',
     createdAt: ts(UPDATED),
   })).set
   const membership = must(orgMembershipWriteFields({
@@ -353,7 +355,7 @@ const IOS_BUILT_SAMPLES: Record<string, { docId: string; iosWriter: string; buil
     iosWriter: 'NotificationService create (notificationCreateFields)',
     builder: {
       writer: 'notificationCreateFields',
-      input: { organizationId: ORG, type: 'variation_added', title: 'Variation added', message: 'Move door', userId: 'USER-IOS-2', actorUserId: 'USER-IOS-1', relatedId: 'V1000-IOS', createdAt: ts(UPDATED) },
+      input: { organizationId: ORG, type: 'variation_added', title: 'Variation added', message: 'Move door', detail: 'Door moved 300mm left', userId: 'USER-IOS-2', actorUserId: 'USER-IOS-1', relatedId: 'V1000-IOS', createdAt: ts(UPDATED) },
     },
   },
   jobTypes: {

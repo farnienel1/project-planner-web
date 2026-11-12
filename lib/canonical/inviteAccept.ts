@@ -8,7 +8,7 @@
  * the first company's profile.
  */
 
-import { accountKindFromFlags, normalizeEmploymentType } from './userProfile'
+import { accountKindFromFlags } from './userProfile'
 
 export type InviteAcceptMode =
   /** No account yet: `users/{authUid}` is created from the invitation. */
@@ -208,7 +208,7 @@ export function invitationProfileFields(invitation: Record<string, unknown> | nu
     for (const [key, value] of Object.entries(permissions)) if (typeof value === 'boolean') out[key] = value
   }
   const employment = text(row.employmentType)
-  if (employment) out.employmentType = normalizeEmploymentType(employment)
+  if (employment) out.employmentType = employment === 'paye' ? 'paye' : 'self_employed'
   const basis = text(row.payBasis)
   if (basis === 'hourly' && finite(row.hourlyRate) != null) {
     out.payBasis = 'hourly'

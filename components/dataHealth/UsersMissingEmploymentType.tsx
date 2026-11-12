@@ -13,7 +13,7 @@ import Link from 'next/link'
 import { collection, getDocs, query, where } from 'firebase/firestore'
 import { USER_MISSING_EMPLOYMENT_TYPE_MESSAGE, usersMissingEmploymentType } from '@/lib/canonical'
 import { db } from '@/lib/firebase/config'
-import { overlayRosterPay } from '@/lib/pay/payProfileOverlay'
+import { overlayRosterPay, payProfilesSettled } from '@/lib/pay/payProfileOverlay'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { rosterDisplayName } from '@/lib/staff/userRosterUtils'
 
@@ -21,6 +21,9 @@ type Row = { id: string; firstName?: string; surname?: string; email?: string }
 
 export function UsersMissingEmploymentType({ organizationId }: { organizationId: string }) {
   const { loadUsers, rosterLoadedOrgId } = useOrgUserStore()
+  // The roster store re-reads its users once their pay profiles are laid over (privatePay on): the check runs again
+  // then, so it never lists someone whose employment type sits on a pay profile not loaded yet (review r306 #3).
+  const users = useOrgUserStore((state) => state.users)
   const [missing, setMissing] = useState<Row[] | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -31,7 +34,8 @@ export function UsersMissingEmploymentType({ organizationId }: { organizationId:
   useEffect(() => {
     if (rosterLoadedOrgId !== organizationId) return
     let cancelled = false
-    getDocs(query(collection(db, 'users'), where('organizationId', '==', organizationId)))
+    payProfilesSettled()
+      .then(() => getDocs(query(collection(db, 'users'), where('organizationId', '==', organizationId))))
       .then((snap) => {
         if (cancelled) return
         const docs: Array<Record<string, unknown> & { id: string }> = snap.docs.map((row) => ({
@@ -56,7 +60,7 @@ export function UsersMissingEmploymentType({ organizationId }: { organizationId:
     return () => {
       cancelled = true
     }
-  }, [organizationId, rosterLoadedOrgId])
+  }, [organizationId, rosterLoadedOrgId, users])
 
   if (rosterLoadedOrgId !== organizationId) return null
 

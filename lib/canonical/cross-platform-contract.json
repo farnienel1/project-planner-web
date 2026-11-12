@@ -2887,11 +2887,11 @@
           "docId": "N0000000-0000-4000-8000-000000000001",
           "data": {
             "organizationId": "ORG-1",
-            "type": "holiday_request_submitted",
-            "title": "Annual leave request",
-            "message": "Ada asked for 4–6 Nov.",
+            "type": "annual_leave_adjusted",
+            "title": "Annual leave adjusted",
+            "message": "Ada Admin adjusted Olly Op's annual leave by +2 days this leave year.",
             "userId": "mgr-web-1",
-            "relatedId": "H0000000-0000-4000-8000-000000000001",
+            "relatedId": "user-web-3",
             "requiresPermission": null,
             "deepLinkUserId": null,
             "isRead": false,
@@ -2899,19 +2899,20 @@
               "seconds": 1790937000,
               "nanoseconds": 0
             },
-            "actorUserId": "user-web-1"
+            "actorUserId": "user-web-1",
+            "detail": "Reason: Long service"
           },
           "expected": {
             "id": "N0000000-0000-4000-8000-000000000001",
             "organizationId": "ORG-1",
-            "type": "holiday_request_submitted",
+            "type": "annual_leave_adjusted",
             "known": true,
-            "title": "Annual leave request",
-            "message": "Ada asked for 4–6 Nov.",
-            "detail": null,
+            "title": "Annual leave adjusted",
+            "message": "Ada Admin adjusted Olly Op's annual leave by +2 days this leave year.",
+            "detail": "Reason: Long service",
             "userId": "mgr-web-1",
             "actorUserId": "user-web-1",
-            "relatedId": "H0000000-0000-4000-8000-000000000001",
+            "relatedId": "user-web-3",
             "isRead": false,
             "readAtMs": null,
             "createdAtMs": 1790937000000,
@@ -2940,7 +2941,8 @@
               "seconds": 1790937000,
               "nanoseconds": 0
             },
-            "actorUserId": "USER-IOS-1"
+            "actorUserId": "USER-IOS-1",
+            "detail": "Door moved 300mm left"
           },
           "builder": {
             "writer": "notificationCreateFields",
@@ -2949,6 +2951,7 @@
               "type": "variation_added",
               "title": "Variation added",
               "message": "Move door",
+              "detail": "Door moved 300mm left",
               "userId": "USER-IOS-2",
               "actorUserId": "USER-IOS-1",
               "relatedId": "V1000-IOS",
@@ -2965,7 +2968,7 @@
             "known": true,
             "title": "Variation added",
             "message": "Move door",
-            "detail": null,
+            "detail": "Door moved 300mm left",
             "userId": "USER-IOS-2",
             "actorUserId": "USER-IOS-1",
             "relatedId": "V1000-IOS",

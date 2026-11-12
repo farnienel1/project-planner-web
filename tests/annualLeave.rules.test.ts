@@ -170,6 +170,20 @@ test('adjustments (review r306 #6): a deactivated person reads none, their own i
   await assertSucceeds(getDocs(query(await adjustments(LM), where('userId', '==', OP))))
 })
 
+test('adjustments (re-review): nobody but the platform owner reads them while billing has lapsed or deletion is scheduled', async () => {
+  const own = async () => getDocs(query(await adjustments(OP), where('userId', '==', OP)))
+  await assertSucceeds(own())
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await updateDoc(doc(ctx.firestore(), 'organizations', ORG), { billing: { accessOpen: false } })
+  })
+  await assertLogicalDeny(own())
+  await assertLogicalDeny(getDocs(query(await adjustments(LM), where('userId', '==', OP))))
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await updateDoc(doc(ctx.firestore(), 'organizations', ORG), { billing: { accessOpen: true }, deletion: { status: 'scheduled' } })
+  })
+  await assertLogicalDeny(own())
+})
+
 test('leave filed under an operatives row: its person\'s line manager decides it; another manager cannot', async () => {
   const ref = async (uid: string, id: string) => doc(await db(uid), 'organizations', ORG, 'holidayBookings', id)
   await assertLogicalDeny(updateDoc(await ref(OTHER, 'H-ROW'), { status: 'approved', approvedByUserId: OTHER, approvedAt: Timestamp.now() }))

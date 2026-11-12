@@ -32,7 +32,6 @@ import {
   notificationCreateFields,
   parseNotificationDocument,
   normalizeEmploymentType,
-  employmentTypeLabel,
   employmentTypeOnDay,
   annualLeaveEmploymentInput,
   annualLeaveBalanceNotes,
@@ -303,27 +302,13 @@ test('1.40.0 annual_leave_adjusted: every admin but the actor, company activity,
   assert.equal(parseNotificationDocument('n2', { type: 'x', message: 'm' })?.detail, null)
 })
 
-test('1.40.0 review r306 #4: employment type reads without case or spaces; a missing one is self-employed', () => {
-  for (const raw of ['paye', 'PAYE', 'Paye', ' paye ']) assert.equal(normalizeEmploymentType(raw), 'paye', raw)
-  for (const raw of ['self_employed', 'SELF_EMPLOYED', 'selfEmployed', '', null, undefined, 3, 'contractor']) {
+test('1.40.0 review r306 #4: employment type stays exact (owner question open); Data health lists any other stored value', () => {
+  // Unchanged reading (no owner sign-off to move pay): only the exact stored words.
+  assert.equal(normalizeEmploymentType('paye'), 'paye')
+  for (const raw of ['PAYE', 'Paye', ' paye ', '', null, undefined, 3, 'contractor']) {
     assert.equal(normalizeEmploymentType(raw), 'self_employed', String(raw))
   }
-  assert.equal(employmentTypeLabel('PAYE'), 'PAYE')
-  // A stored "PAYE" now gets an allowance (before 1.40.0 review it read as self-employed here).
-  const balance = annualLeaveBalance({
-    annualLeaveEnabled: true,
-    daysPerYear: 20,
-    startMonth: 1,
-    endMonth: 12,
-    onDayKey: '2026-06-01',
-    timeZone: LONDON,
-    employment: { employmentType: 'PAYE' },
-  })
-  assert.equal(balance.hasAllowance, true)
-  assert.equal(balance.remaining, 20)
-})
-
-test('1.40.0 review r306 #4: Data health lists active people with no stored employment type, once per person', () => {
+  assert.equal(normalizeEmploymentType('selfEmployed'), 'self_employed')
   const ids = usersMissingEmploymentType([
     { id: 'A', email: 'a@x.com', employmentType: 'paye' },
     { id: 'B', email: 'b@x.com' },
@@ -333,8 +318,11 @@ test('1.40.0 review r306 #4: Data health lists active people with no stored empl
     { id: 'E', email: 'e@x.com', employmentType: 'self_employed' },
     { id: 'F', email: 'f@x.com' },
     { id: 'F2', email: 'f@x.com', employmentType: 'paye' },
+    { id: 'G', email: 'g@x.com', employmentType: 'PAYE' },
+    { id: 'H', email: 'h@x.com', employmentType: ' paye ' },
+    { id: 'I', email: 'i@x.com', employmentType: 'selfEmployed' },
   ] as never)
-  assert.deepEqual(ids, ['B', 'C'])
+  assert.deepEqual(ids, ['B', 'C', 'G', 'H', 'I'])
   assert.match(USER_MISSING_EMPLOYMENT_TYPE_MESSAGE, /self-employed/)
 })
 
@@ -374,7 +362,11 @@ test('1.40.0 review r306 #8: the PAYE window comes from the stored change, the s
       last = key
     }
     const counted = ['2026-02-02', '2026-06-01'].filter((day) => first != null && day >= first && day <= last!).length
-    if (balance.hasAllowance) assert.equal(balance.allowanceTaken, counted, JSON.stringify(employment))
+    // Every case is checked: the allowance on the day shown, and what comes out of it.
+    const payeOnDay = employmentTypeOnDay(employment, new Date('2026-01-10T12:00:00Z'), LONDON) === 'paye'
+    assert.equal(balance.hasAllowance, payeOnDay, JSON.stringify(employment))
+    assert.equal(balance.allowanceTaken, payeOnDay ? counted : balance.taken, JSON.stringify(employment))
+    assert.equal(balance.taken, 2, JSON.stringify(employment))
   }
 })
 
