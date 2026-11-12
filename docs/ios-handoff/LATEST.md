@@ -1,6 +1,6 @@
-# iOS follow-on — rulebook 1.37.0
+# iOS follow-on — rulebook 1.39.0
 
-Generated 2026-11-10 by `npm run rulebook:handoff` in project-planner-web. Paste this whole file into the iOS agent.
+Generated 2026-11-12 by `npm run rulebook:handoff` in project-planner-web. Paste this whole file into the iOS agent.
 The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; never edit the iOS mirror by hand.
 
 ```
@@ -8,9 +8,9 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ║ FOLLOW-ON — paste into the iOS agent                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
-Rulebook version: 1.36.0 → 1.37.0
-Packed hash: f2b163368a252f500a6e1bb9e6f1028ed61ad7f532e76dc7cefd54ec7724a9da
-Rulebook sha256: 1d54c2d23e02d11f369c27d851ec6ec0d1012d745d68dadd49275c85cced5640
+Rulebook version: 1.39.0 → 1.39.0
+Packed hash: b01fe373682cb504974ccd5442e91c96e5139dbf3df158b07fc4f4b443220c3e
+Rulebook sha256: ff316930fe06e1fd5f289aa61d6533879389037877f3564fa83234967c1f0c33
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -18,41 +18,38 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
   web docs/RULEBOOK.md                              → iOS docs/RULEBOOK.md
   web lib/canonical/parity-fixture.json             → iOS ProjectPlannerTests/CanonicalParityFixture.json
   web lib/canonical/cross-platform-contract.json    → iOS ProjectPlannerTests/CrossPlatformContract.json
+  web lib/canonical/data-parity-fixture.json        → iOS ProjectPlannerTests/DataParityFixture.json
 Contract sha256: 59d6bc6123f250e1f57599240eb3190ab48f5cd2532f8281a99360d9e187d86b
+Data-parity fixture sha256: c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: JOB_SCHEDULE_LEAVE_LABEL, JOB_SCHEDULE_LEAVE_PENDING_LABEL, JOB_SCHEDULE_LEAVE_PENDING_TITLE, JOB_SCHEDULE_LEAVE_TITLE, JOB_SCHEDULE_LEGEND, jobScheduleLeaveMarks, scheduleCellHours, scheduleCellKind
+Exports added: DATA_CHECK_PANEL_ORGANIZATION_IDS_FIELD, DATA_CHECK_PANEL_SWITCH_FIELD, DATA_PARITY_CHECKS, DATA_PARITY_CONFIRM_DELAY_MS, DATA_PARITY_LOG_LIMIT, DATA_PARITY_MIN_INTERVAL_MS, DATA_PARITY_SKIP_REASONS, DATA_PARITY_TRIGGERS, dataCheckPanelEnabled, dataCheckPanelVisible, dataParityCheck, dataParityCheckDefinition, dataParityCheckDue, dataParityConfirm, dataParityLogAppend, dataParityLogEntry, dataParitySumCounts, dataParitySummary
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/jobScheduleLeave.ts
+Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/data-parity-fixture.json, lib/canonical/dataParity.test.ts, lib/canonical/dataParity.ts, lib/canonical/index.ts, lib/canonical/platformConfig.ts
 Done when:
-- [ ] Packed hash in iOS equals f2b163368a252f500a6e1bb9e6f1028ed61ad7f532e76dc7cefd54ec7724a9da
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 1d54c2d23e02d11f369c27d851ec6ec0d1012d745d68dadd49275c85cced5640)
-- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.37.0)
+- [ ] Packed hash in iOS equals b01fe373682cb504974ccd5442e91c96e5139dbf3df158b07fc4f4b443220c3e
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 ff316930fe06e1fd5f289aa61d6533879389037877f3564fa83234967c1f0c33)
+- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.39.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
 - [ ] Any disagreement traced to its first divergence — no copied screen number
 ```
 
-## What changed in 1.37.0
+## What changed in 1.39.0
 
-- **Annual leave on project and small works scheduling** (§21, owner decisions 10 Nov): new `jobScheduleLeaveMarks`, `JOB_SCHEDULE_LEAVE_LABEL`, `JOB_SCHEDULE_LEAVE_PENDING_LABEL`, `JOB_SCHEDULE_LEAVE_TITLE`, `JOB_SCHEDULE_LEAVE_PENDING_TITLE` (new `jobScheduleLeave.ts`, on `leaveDayKind`, `leaveHalfDayLabel`, `personIdSet`, `standardDayOn`; the emails of the person's roster rows count, AM + PM on one day is a full day). Only people booked on the job are listed; for them, full-day leave is a brown "AL" cell, a half day "AL AM" / "AL PM", pending leave paler "AL?", rejected never; a booking on a leave day keeps its cell with a thin brown "AL" band across the top.
-- **One booking colour scheme** (owner decision 10 Nov): `JOB_SCHEDULE_LEGEND` — Standard, Std + OT, OT only, Ann. leave, Half day — and `scheduleCellKind` / `scheduleCellHours` on both apps (iOS `SchedulingV2CellKindBuilder` now calls the rulebook; a 0h booking is a Standard 0h tile on both — iOS showed an empty dashed chip); web booking cells move from role colours to the iOS scheme (role pills unchanged). Display only: no booking figure, count, warning or write changes.
-- Web week grid columns are calendar day keys; bookings and leave are both bucketed by them (a browser east of the organisation zone put bookings a column out).
-- iOS now matches leave under every id without case (it matched exact ids) and shows half-day, pending and booked-day leave (it showed approved full days on unbooked days only).
-- No rules, index, Storage or Functions change.
-
-## iOS work for 1.37.0
-
-**Sync first.** 1.37.0 is display only: annual leave on a job's scheduling week and one booking colour scheme (owner decisions 10 Nov). No Firestore field, rules or `minimumIosBuild` change; new exports `jobScheduleLeaveMarks`, `JOB_SCHEDULE_LEAVE_*`, `JOB_SCHEDULE_LEGEND` only.
-
-1. **Sync** — `WEB_REPO=<web worktree> bash scripts/sync-rulebook-from-web.sh`.
-2. **Bridge** — `Core/Rulebook+ScheduleLeave.swift`: `CanonicalBusinessEngine.jobScheduleLeaveMarks(people:holidays:dayKeys:timeZone:nonWorkingDayKeys:roster:day:)` → per person key, per day key `{ kind, onLeave, pending, slot, label, title, recordId, am, pm }` (shade each half by `am` / `pm`). Holidays come from `HolidayStore.bookings` (all statuses; the rule drops rejected), day keys on the organisation calendar (`OrganizationRulebookContext`), the roster = organisation users (id, email, `formerUserIds`) plus `operatives` rows (id, email), bank holidays from the cached region list.
-3. **Scheduling grid** — `Views/ProjectDetailView.swift` (`schedulingCombinedDayCell` / `makeSchedulingPersonRow`): replace `isPersonOnAnnualLeave` (exact ids, approved full days only) with the marks. The grid's people are still only those booked on the job in the week (`ScheduleWeekGrid.staffRows`); leave never adds a row. An unbooked leave day → the brown `.annualLeave` cell with the label ("AL", "AL AM", "AL PM", pending "AL?" paler); a booked day keeps its chip and gets a thin brown band across the top with the label. Day headcounts do not count leave.
-4. **Legend** — `Views/ProjectSchedulingV2Support.swift` `SchedulingV2Legend`: the five items are `JOB_SCHEDULE_LEGEND` (already the iOS wording); add the pending swatch "AL? = leave requested" to match web.
-5. **Chip colour** — `SchedulingV2CellKindBuilder.fromBooking` calls `scheduleCellKind` (no Swift thresholds); a 0h booking is a Standard 0h chip, never the empty dashed one. One `jobScheduleLeaveMarks` call per grid render for every person and day. Do not change chip hours or tap actions.
+- **Booking hours explained** (§4.3, owner request 11 Nov): new `bookingHoursExplanation` and `bookingShortfall` (new `bookingHoursExplanation.ts`); `weekendBookingBreakdown` rows gain `explanation: { rule, steps }`. Every booking picker on both apps shows the day's rule and the steps behind each figure (owner examples: "Booked 07:30–10:30 = 3h of the 6.5h window → 8h × 3 ÷ 6.5 = 3.69h"; "07:30–14:00 = 8h (full day) + 14:00–16:00 = 2h × 2 = 4h → 12h"; "Sunday every hour at 2×: 07:30–10:30 = 3h × 2 = 6h"), and weekdays the same (working day, unpaid break, overtime at the multiplier). iOS "Missing to standard day" becomes `bookingShortfall`'s "Short of a full Saturday (8h)", compared with that day's own full day; none on a day paid every hour at a multiplier. Wording only — no figure, write or rule changes; the parity fixture gains the `explanation` field and six cases.
+- **Whole-row selection** (owner request 11 Nov, UI only): on iOS a person's whole tile selects or deselects them on Select people and the other people pickers; web rows were already whole-row buttons and now say whether they are selected (`aria-pressed`). No rule change.
+- **Hours, overtime and break labels** (§4.3, owner answers 11 Nov): new `overtimeTotalText`, `overtimeIncludedText`, `bookedWithOvertimeText`, `bookingHoursCountText`, `onSiteHoursText`, `saveHoursLabel`, `bookingBreakText`, `bookingHoursTiles` (new `bookingHoursText.ts`). Daily Overview tile "12 OT 1.5×" → "12h OT × 1.5 = 18h"; job line "60.5h booked · +12h OT" → "60.5h booked (incl. 12h OT × 1.5)"; Daily Overview booking rows show the times and the hours pill only; My Schedule total "incl. 6h OT × 1.5 = 9h"; Edit booking tiles "9 Standard (−0.5 break)", "6 OT" (no break tile); "break included" → "30 min unpaid break 11:30–12:00"; "30 mins deducted around midday" → "30 mins deducted 11:30–12:00"; "17.5h paid" → "17.5 hours", "Save · 17.5 hours". Figures unchanged.
+- **The break in the hours explanation** (§4.3, owner answer 11 Nov): `bookingHoursExplanation` names the lunch break on the part it falls in, from that day's working hours (unpaid and taken off, paid and not deducted, or removed on the booking), and gains `summary` (one line). Its `steps` change wording: a weekday or set-window break is no longer a separate "− 0.5h unpaid break" step (hours at a multiplier keep it); the parity fixture is regenerated.
+- **My Schedule booking clash marker** (§10, owner answer 11 Nov): new `myScheduleClashMarkers`, `MY_SCHEDULE_CLASH_TITLE`, `MY_SCHEDULE_CLASH_APPROVED_TITLE`, `MY_SCHEDULE_CLASH_APPROVED_MESSAGE`, `MY_SCHEDULE_CLASH_ASK_MANAGER`, `MY_SCHEDULE_CLASH_OPEN_WARNINGS` (new `myScheduleClash.ts`), on the Warnings clash rules. Display only.
+- **Review fixes (11 Nov)**: `myScheduleClashMarkers` takes `scanDayKeys` and offers "Open Warnings" only for a clash Warnings lists now (`MY_SCHEDULE_CLASH_NOT_IN_PERIOD`, `MY_SCHEDULE_CLASH_DISMISSED`), with the viewer's real scope; `bookingShortfall` takes the day's bookings and measures coverage of the working day (lunch window excluded), never paid hours (breaking for the 1.39.0 draft that took paid hours); new `bookingBreakDeductionText`; `bookingBreakText.toggleLabel`; `bookingHoursExplanation` names a booking's own overtime rate.
+- **Daily Overview moves in one batch** (§6, owner answer 11 Nov, web): the new booking, the old booking's delete and its tombstone are one write (was a create then a delete).
+- Not in this release (reported to the owner): "Replace existing booking" beside a double-booking row (item 2) — see the PR.
+- Merges after 1.38.0 (data parity, merged 12 Nov).
 
 ## New rulebook sections
 
-- 1.37.0 — 2026-11-10
+- 27. Data check (1.38.0)
+- 1.38.0 — 2026-11-11
 
 ## Workflow for the iOS agent
 

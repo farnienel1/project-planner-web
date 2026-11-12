@@ -110,3 +110,32 @@ export async function deleteBookingsWithTombstones(
     }
   }
 }
+
+/**
+ * Rulebook 1.39.0 (owner answer 11 Nov, review): commit a move between booking collections — the new booking, the old
+ * booking's delete and its tombstone in one batch. The source is read first: when it was already deleted on another
+ * device (gone, or tombstoned) nothing is written and the user sees `EDIT_OF_MISSING_DOCUMENT_MESSAGE` (the rulebook's
+ * "This was deleted on another device."), never a raw permission error. A refusal after that read is explained the
+ * same way when the source has gone meanwhile; any other failure is rethrown as it is.
+ */
+export async function commitBookingMove(steps: {
+  sourceExists: () => Promise<boolean>
+  tombstoneExists: () => Promise<boolean>
+  commit: () => Promise<void>
+  missing: () => Error
+}): Promise<void> {
+  const gone = async () => {
+    try {
+      return !(await steps.sourceExists()) || (await steps.tombstoneExists())
+    } catch {
+      return false
+    }
+  }
+  if (await gone()) throw steps.missing()
+  try {
+    await steps.commit()
+  } catch (error) {
+    if (await gone()) throw steps.missing()
+    throw error
+  }
+}

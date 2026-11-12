@@ -15,6 +15,7 @@ import {
   customHoursPrefillForDate,
   slotOfferedOnDate,
   weekendBreakdownForDates,
+  weekdayExplanationForDate,
   weekendNotesForDates,
 } from '@/lib/scheduling/bookingSlotRules'
 import { useOrganizationDocument } from '@/lib/stores/organizationDocumentStore'
@@ -231,6 +232,12 @@ export function BookingEditSheet({
               slot === 'CUSTOM'
                 ? weekendBreakdownForDates([new Date(booking.date)], workStartTime, workEndTime, breakRemoved, payroll)
                 : []
+            }
+            explanation={
+              slot === 'CUSTOM'
+                ? // Review (11 Nov): the booking's own overtime rate is named in the explanation, as on iOS.
+                  weekdayExplanationForDate(new Date(booking.date), workStartTime, workEndTime, breakRemoved, payroll, overtimeRate ?? null)
+                : null
             }
           />
 

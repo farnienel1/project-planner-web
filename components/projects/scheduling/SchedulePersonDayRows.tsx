@@ -160,6 +160,8 @@ export function SchedulePersonPickerRow({
     <button
       type="button"
       onClick={onSelect}
+      aria-pressed={selected}
+      data-testid="schedule-person-row"
       className={`ritem w-full ${selected ? 'sel' : ''}`}
     >
       <SelectionDot selected={selected} />
