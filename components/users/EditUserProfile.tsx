@@ -59,10 +59,12 @@ import { LEAVE_DAYS_SAVE_MAX, parseBoundedNumber } from '@/lib/security/boundedV
 import { useHolidayStore } from '@/lib/stores/holidayStore'
 import { useOrgBankHolidays } from '@/components/annual-leave/useOrgBankHolidays'
 import {
+  leaveBalanceShowsEmploymentType,
   userLeaveBalance,
   userLeaveBankHolidayRange,
 } from '@/lib/annualLeave/leaveBalance'
 import { useAnnualLeaveAdjustments } from '@/lib/annualLeave/leaveAdjustments'
+import { useLeaveEmployment } from '@/lib/annualLeave/useLeaveEmployment'
 import {
   DEFAULT_ANNUAL_LEAVE,
   loadOrganizationDetails,
@@ -87,6 +89,7 @@ import {
   lineManagerCandidates,
   lineManagerChangeBlock,
   canViewPersonPay,
+  annualLeaveBalanceNotes,
   lineManagerSelectedIds,
   SELF_EMAIL_INVALID_MESSAGE,
   selfEmailChangeAction,
@@ -467,9 +470,12 @@ export function EditUserProfile({
   )
   // Rulebook 1.35.0 `annualLeaveBankHolidayRange`: the previous leave year's bank holidays too (carry-over), the same
   // range My Profile and Annual leave load, so the three show the same figure.
+  // Rulebook 1.40.0 (review r306 #2): the employment type from the person's stored pay record (the pay profile while
+  // `privatePay` is on), never the unsaved draft and never the users document alone.
+  const leaveEmployment = useLeaveEmployment(organization?.id, target ? savedUser.current ?? target : null)
   const leaveBankRange = useMemo(
-    () => userLeaveBankHolidayRange({ user: target, orgDefaults: orgLeaveDefaults }),
-    [target, orgLeaveDefaults]
+    () => userLeaveBankHolidayRange({ user: target, employment: leaveEmployment.employment, orgDefaults: orgLeaveDefaults }),
+    [target, leaveEmployment.employment, orgLeaveDefaults]
   )
   const leaveBank = useOrgBankHolidays(
     dateFromLeaveDayKey(leaveBankRange.startDayKey),
@@ -478,18 +484,23 @@ export function EditUserProfile({
   )
   const leaveBankDayKeys = leaveBank.holidays.map((holiday) => holiday.date).join(',')
   // Rulebook 1.40.0: the person's adjustments (empty when this viewer may not read them).
-  const { adjustments: leaveAdjustments } = useAnnualLeaveAdjustments(organization?.id, target?.id)
+  const leaveAdjustmentsRead = useAnnualLeaveAdjustments(organization?.id, target?.id)
+  const leaveAdjustments = leaveAdjustmentsRead.adjustments
   const leaveBalance = useMemo(
     () =>
       userLeaveBalance({
         user: target,
+        employment: leaveEmployment.employment,
         bookings: personLeave,
         orgDefaults: orgLeaveDefaults,
         bankHolidayDayKeys: leaveBankDayKeys ? leaveBankDayKeys.split(',') : [],
         adjustments: leaveAdjustments,
       }),
-    [target, personLeave, orgLeaveDefaults, leaveBankDayKeys, leaveAdjustments]
+    [target, leaveEmployment.employment, personLeave, orgLeaveDefaults, leaveBankDayKeys, leaveAdjustments]
   )
+  const leaveNotes = annualLeaveBalanceNotes(leaveBalance, {
+    showsEmploymentType: leaveBalanceShowsEmploymentType(currentUser, target, users),
+  })
 
 
   // Rulebook §11 `lineManagerCandidates(person, roster)`: the picker list, never the person under any of their ids.
@@ -1552,11 +1563,13 @@ export function EditUserProfile({
                   reason, added on the person's annual leave page (Annual leave → Team); a stored override still counts
                   until its leave year ends. */}
               <div className="rounded-xl bg-slate-50 px-3 py-2 text-sm text-[var(--ink2)]">
-                {!leaveBank.loaded
-                  ? 'Counting leave taken this year…'
-                  : leaveBalance.hasAllowance
-                    ? `Remaining this leave year: ${leaveBalance.remaining} (${leaveBalance.allowanceTaken} taken, ${leaveBalance.allowancePending} awaiting approval${leaveBalance.adjustmentDays ? `, ${leaveBalance.adjustmentDays > 0 ? '+' : ''}${leaveBalance.adjustmentDays} adjusted` : ''}).`
-                    : `No paid allowance (self-employed): ${leaveBalance.taken} days taken this leave year.`}
+                {leaveAdjustmentsRead.error
+                  ? leaveAdjustmentsRead.error
+                  : !leaveBank.loaded || !leaveEmployment.ready || !leaveAdjustmentsRead.loaded
+                    ? 'Counting leave taken this year…'
+                    : leaveBalance.hasAllowance
+                      ? `Remaining this leave year: ${leaveBalance.remaining} (${leaveBalance.shownTaken} taken, ${leaveBalance.shownPending} awaiting approval${leaveBalance.adjustmentDays ? `, ${leaveBalance.adjustmentDays > 0 ? '+' : ''}${leaveBalance.adjustmentDays} adjusted` : ''}).${leaveNotes.notCounted ? ` ${leaveNotes.notCounted}` : ''}`
+                      : `${leaveNotes.noAllowance ?? 'No paid allowance.'} ${leaveBalance.taken} days taken this leave year.`}
                 <p className="mt-1 text-xs text-[var(--ink3)]">
                   To add or take off days, open this person on{' '}
                   <Link href={`/dashboard/annual-leave?tab=team&person=${encodeURIComponent(target.id)}`} className="font-semibold text-blue-600">

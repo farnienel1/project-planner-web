@@ -19,9 +19,10 @@ import {
   notifyHolidayRequestDecisionToUser,
   notifyLeaveChangedForPerson,
 } from '@/lib/annualLeave/notifyHolidayRequestDecision'
-import { userLeaveBalance, userLeaveBankHolidayRange } from '@/lib/annualLeave/leaveBalance'
+import { leaveBalanceShowsEmploymentType, userLeaveBalance, userLeaveBankHolidayRange } from '@/lib/annualLeave/leaveBalance'
+import { useLeaveEmployment } from '@/lib/annualLeave/useLeaveEmployment'
 import { addAnnualLeaveAdjustment, useAnnualLeaveAdjustments } from '@/lib/annualLeave/leaveAdjustments'
-import { canAdjustAnnualLeave, canViewAnnualLeaveAdjustments } from '@/lib/canonical'
+import { annualLeaveBalanceNotes, canAdjustAnnualLeave, canViewAnnualLeaveAdjustments } from '@/lib/canonical'
 import { rulebookPerson, rulebookRoster } from '@/lib/staff/rulebookPeople'
 import { useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
 import { DEFAULT_ANNUAL_LEAVE, loadOrganizationDetails, type OrgAnnualLeaveDefaults } from '@/lib/settings/organizationSettings'
@@ -153,14 +154,18 @@ export function OperativeAnnualLeaveCalendar({
   const viewerMaySeeAdjustments = Boolean(
     user && subject && canViewAnnualLeaveAdjustments(rulebookPerson(user, users), rulebookPerson(subject, users), rulebookRoster(users))
   )
-  const { adjustments } = useAnnualLeaveAdjustments(organization?.id, viewerMaySeeAdjustments ? subject?.id : null)
-  const balanceRange = userLeaveBankHolidayRange({ user: subject, orgDefaults: orgLeaveDefaults, timeZone })
+  const adjustmentsRead = useAnnualLeaveAdjustments(organization?.id, viewerMaySeeAdjustments ? subject?.id : null)
+  const adjustments = adjustmentsRead.adjustments
+  // Rulebook 1.40.0 (review r306 #2): the employment type from the person's pay record.
+  const leaveEmployment = useLeaveEmployment(organization?.id, subject)
+  const balanceRange = userLeaveBankHolidayRange({ user: subject, employment: leaveEmployment.employment, orgDefaults: orgLeaveDefaults, timeZone })
   const balanceBank = useOrgBankHolidays(dayFromKey(balanceRange.startDayKey), dayFromKey(balanceRange.endDayKey), {
     years: balanceRange.years,
   })
   const balance = subject
     ? userLeaveBalance({
         user: subject,
+        employment: leaveEmployment.employment,
         bookings: personBookings,
         orgDefaults: orgLeaveDefaults,
         bankHolidayDayKeys: balanceBank.holidays.map((holiday) => holiday.date),
@@ -397,15 +402,17 @@ export function OperativeAnnualLeaveCalendar({
             hasAllowance={balance.hasAllowance}
             allowance={balance.allowanceBeforeAdjustments - balance.carriedForward}
             remaining={balance.remaining}
-            taken={balance.hasAllowance ? balance.allowanceTaken : balance.taken}
-            pending={balance.hasAllowance ? balance.allowancePending : balance.pending}
+            taken={balance.shownTaken}
+            pending={balance.shownPending}
             carriedForward={balance.carriedForward}
             adjustmentDays={balance.adjustmentDays}
-            notCountedTaken={balance.hasAllowance ? balance.taken - balance.allowanceTaken : 0}
-            proRata={balance.proRata}
+            notes={annualLeaveBalanceNotes(balance, { showsEmploymentType: leaveBalanceShowsEmploymentType(user, subject, users) })}
             leaveYearStart={dayFromKey(balance.startDayKey)}
             leaveYearEnd={dayFromKey(balance.endDayKey)}
-            loading={!balanceBank.loaded}
+            loading={
+              !balanceBank.loaded || !leaveEmployment.ready || (viewerMaySeeAdjustments && !adjustmentsRead.loaded && !adjustmentsRead.error)
+            }
+            error={viewerMaySeeAdjustments ? adjustmentsRead.error : null}
           />
           {viewerMayAdjust && balance.hasAllowance && subject && organization?.id && user ? (
             <LeaveAdjustmentForm
@@ -428,7 +435,7 @@ export function OperativeAnnualLeaveCalendar({
             />
           ) : null}
           {viewerMaySeeAdjustments ? (
-            <LeaveAdjustmentsList adjustments={adjustments} yearKey={balance.yearKey} showAuthor hasAllowance={balance.hasAllowance} />
+            <LeaveAdjustmentsList adjustments={adjustments} yearKey={balance.yearKey} showAuthor hasAllowance={balance.hasAllowance} roster={users} />
           ) : null}
         </>
       ) : null}

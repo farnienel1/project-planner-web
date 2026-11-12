@@ -118,6 +118,7 @@ export default function NotificationsPage() {
                 <Link href={href} className="block">
                   <h2 className="text-[17px] font-semibold text-[var(--blue)]">{row.title}</h2>
                   <p className="mt-1 whitespace-pre-wrap text-[15px] text-[var(--ink3)]">{row.message}</p>
+                  {row.detail ? <p className="mt-1 whitespace-pre-wrap text-[14px] text-[var(--ink3)]">{row.detail}</p> : null}
                   <p className="mt-2 text-[12px] font-semibold text-[var(--blue)]">Open</p>
                 </Link>
                 <p className="mt-2 text-[12px] text-[var(--ink3)]">

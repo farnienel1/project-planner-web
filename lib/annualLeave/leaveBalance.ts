@@ -2,8 +2,11 @@ import {
   annualLeaveBalance,
   annualLeaveBankHolidayRange,
   applyRemainingOverride,
+  canViewPersonPay,
+  isPlatformOwnerEmail,
   type AnnualLeaveBankHolidayRange,
   type AnnualLeaveBalance,
+  type EmploymentTypeUser,
   type LeaveDayRecord,
 } from '@/lib/canonical'
 import { dayKeyInZone } from '@/lib/orgTime/zoneTime'
@@ -32,10 +35,12 @@ export function userLeaveBankHolidayRange(input: {
     | 'annualLeaveEnabled'
     | 'annualLeaveYearStartMonth'
     | 'annualLeaveYearEndMonth'
-    | 'employmentType'
-    | 'employmentTypeTransitionFrom'
-    | 'employmentTypeEffectiveAt'
   > | null
+  /**
+   * Rulebook 1.40.0: the person's employment-type fields from their pay record (`useLeaveEmployment` /
+   * `annualLeaveEmploymentInput`), never the users document alone; null when it could not be read.
+   */
+  employment: EmploymentTypeUser | null
   orgDefaults?: OrgAnnualLeaveDefaults | null
   now?: Date
   timeZone?: string | null
@@ -50,22 +55,8 @@ export function userLeaveBankHolidayRange(input: {
     orgEndMonth: defaults.endMonth,
     onDayKey: dayKeyInZone(input.now ?? new Date(), timeZone),
     timeZone,
-    employment: leaveEmployment(input.user),
+    employment: input.employment,
   })
-}
-
-/**
- * Rulebook 1.40.0 (§4.4, G25–G27): the person's employment-type fields — the allowance applies only on days they are
- * PAYE (`employmentTypeOnDay`); a missing type reads as self-employed (rulebook §8).
- */
-export function leaveEmployment(
-  user: Pick<User, 'employmentType' | 'employmentTypeTransitionFrom' | 'employmentTypeEffectiveAt'> | null | undefined
-) {
-  return {
-    employmentType: user?.employmentType ?? null,
-    employmentTypeTransitionFrom: user?.employmentTypeTransitionFrom ?? null,
-    employmentTypeEffectiveAt: user?.employmentTypeEffectiveAt ?? null,
-  }
 }
 
 export function userLeaveBalance(input: {
@@ -79,11 +70,14 @@ export function userLeaveBalance(input: {
     | 'annualLeaveYearAllowance'
     | 'annualLeaveYearAllowanceKey'
     | 'employmentStartDate'
-    | 'employmentType'
-    | 'employmentTypeTransitionFrom'
-    | 'employmentTypeEffectiveAt'
   > | null
   bookings: HolidayBooking[]
+  /**
+   * Rulebook 1.40.0: the person's employment-type fields from their pay record (`useLeaveEmployment` /
+   * `annualLeaveEmploymentInput`), never the users document alone; null when it could not be read (the whole year
+   * counts, as before 1.40.0).
+   */
+  employment: EmploymentTypeUser | null
   /** Rulebook 1.40.0: the person's manual adjustments (`useAnnualLeaveAdjustments`); this leave year's count. */
   adjustments?: ReadonlyArray<{ days: number; yearKey: string }>
   orgDefaults?: OrgAnnualLeaveDefaults | null
@@ -115,7 +109,7 @@ export function userLeaveBalance(input: {
     maxCarryOverDays: defaults.maxCarryOverDays ?? null,
     timeZone,
     // Rulebook 1.40.0: PAYE days only; adjustments on top for this leave year.
-    employment: leaveEmployment(user),
+    employment: input.employment,
     adjustments: input.adjustments ?? [],
   })
 }
@@ -130,4 +124,18 @@ export function remainingOverrideFromBalance(
     pending: balance.pending,
     yearKey: balance.yearKey,
   })
+}
+
+/**
+ * Rulebook 1.40.0 (review r306 #2): whether a balance's notes may name the person's employment type — the viewer may
+ * see the person's pay (`canViewPersonPay`, profile context: the person, admins, an Operatives manager for an
+ * operative, the platform owner). Anyone else sees the same figures with neutral notes (`annualLeaveBalanceNotes`).
+ */
+export function leaveBalanceShowsEmploymentType(
+  viewer: User | null | undefined,
+  subject: User | null | undefined,
+  users: ReadonlyArray<User>
+): boolean {
+  if (!viewer || !subject) return false
+  return canViewPersonPay({ ...viewer, isPlatformOwner: isPlatformOwnerEmail(viewer.email) } as never, subject as never, users as never)
 }

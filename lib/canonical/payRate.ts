@@ -496,3 +496,35 @@ export function usersMissingPayRate(
   }
   return out
 }
+
+/** 1.40.0 (review r306 #4): Data health text for a person with no stored employment type. */
+export const USER_MISSING_EMPLOYMENT_TYPE_MESSAGE =
+  'No employment type stored: reads as self-employed, so no annual leave allowance. Open in Manage Users and choose PAYE or self-employed.'
+
+/**
+ * 1.40.0 (review r306 #4): the active people (not anonymised, once per person by `personIdSet`) none of whose users
+ * documents stores an employment type (`employmentType` missing or blank). They read as self-employed (§8), so from
+ * 1.40.0 they have no annual-leave allowance; admins see them in Settings → Data health. Pass the roster as the
+ * screens read it (with the pay profile laid over while `privatePay` is on, where the employment type then lives).
+ * Never writes.
+ */
+export function usersMissingEmploymentType(
+  roster: ReadonlyArray<PersonRosterRow & { employmentType?: unknown; isActive?: unknown }> | null | undefined
+): string[] {
+  const rows = (roster || []).filter((row) => row && typeof row.id === 'string' && row.id.trim())
+  const done = new Set<string>()
+  const out: string[] = []
+  for (const row of rows) {
+    const key = row.id.trim().toLowerCase()
+    if (done.has(key)) continue
+    const ids = new Set(personIdSet(row, rows).map((id) => id.toLowerCase()))
+    ids.add(key)
+    const group = rows.filter((other) => ids.has(other.id.trim().toLowerCase()))
+    for (const member of group) done.add(member.id.trim().toLowerCase())
+    const active = group.filter((member) => member.isActive !== false && !isAnonymisedDeletedProfile(member as never))
+    if (active.length === 0) continue
+    if (active.some((member) => typeof member.employmentType === 'string' && member.employmentType.trim() !== '')) continue
+    out.push(active[0].id.trim())
+  }
+  return out
+}

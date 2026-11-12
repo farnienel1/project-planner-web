@@ -29,6 +29,16 @@ import {
   notificationRelatedIdFor,
   parseAnnualLeaveAdjustmentDocument,
   proRataLeaveAllowance,
+  notificationCreateFields,
+  parseNotificationDocument,
+  normalizeEmploymentType,
+  employmentTypeLabel,
+  employmentTypeOnDay,
+  annualLeaveEmploymentInput,
+  annualLeaveBalanceNotes,
+  annualLeaveAdjustmentAuthorName,
+  usersMissingEmploymentType,
+  USER_MISSING_EMPLOYMENT_TYPE_MESSAGE,
   type StaffAccountRole,
 } from './index'
 
@@ -245,8 +255,8 @@ test('1.40.0 adjustments: validation, create fields and reader', () => {
   assert.equal(annualLeaveAdjustmentValidationError({ days: -1.5, reason: 'Long service' }), null)
   assert.equal(annualLeaveAdjustmentValidationError({ days: '2.5', reason: 'ok' }), null)
   assert.deepEqual(
-    annualLeaveAdjustmentCreateFields({ userId: 'OP1', days: '-1.5', reason: '  Unpaid day ', yearKey: '2026-01-01', createdBy: 'ADMIN1', createdByName: 'Ann Admin' }),
-    { userId: 'OP1', days: -1.5, reason: 'Unpaid day', yearKey: '2026-01-01', createdBy: 'ADMIN1', createdByName: 'Ann Admin' }
+    annualLeaveAdjustmentCreateFields({ userId: 'OP1', days: '-1.5', reason: '  Unpaid day ', yearKey: '2026-01-01', createdBy: 'ADMIN1' }),
+    { userId: 'OP1', days: -1.5, reason: 'Unpaid day', yearKey: '2026-01-01', createdBy: 'ADMIN1' }
   )
   assert.equal(annualLeaveAdjustmentCreateFields({ userId: 'OP1', days: 1, reason: 'x', yearKey: '2026', createdBy: 'A' }), null)
   const read = parseAnnualLeaveAdjustmentDocument('ADJ1', { userId: 'OP1', days: '2', reason: 'x', yearKey: '2026-01-01', createdBy: 'ADMIN1', createdAt: { seconds: 1700000000, nanoseconds: 0 } })
@@ -284,5 +294,176 @@ test('1.40.0 annual_leave_adjusted: every admin but the actor, company activity,
   assert.equal(notificationRelatedIdFor('annual_leave_adjusted', 'OP1'), 'OP1')
   assert.deepEqual(notificationDestination({ type: 'annual_leave_adjusted', relatedId: 'OP1', role: 'admin' }), { kind: 'annualLeavePerson', relatedId: 'OP1', userId: 'OP1' })
   const text = annualLeaveAdjustedNoticeText({ personName: 'Olly Op', actorName: 'Mo Manager', days: 2, reason: 'Long service' })
-  assert.equal(text.message, "Mo Manager adjusted Olly Op's annual leave by +2 days this leave year: Long service")
+  // Review r306 #10: the reason is never in the pushed message; it is the inbox row's detail.
+  assert.equal(text.message, "Mo Manager adjusted Olly Op's annual leave by +2 days this leave year.")
+  assert.equal(text.detail, 'Reason: Long service')
+  const row = notificationCreateFields({ organizationId: 'O', type: 'annual_leave_adjusted', title: text.title, message: text.message, detail: text.detail, userId: 'A', createdAt: null })
+  assert.equal(row?.set.detail, 'Reason: Long service')
+  assert.equal(parseNotificationDocument('n1', row?.set as never)?.detail, 'Reason: Long service')
+  assert.equal(parseNotificationDocument('n2', { type: 'x', message: 'm' })?.detail, null)
+})
+
+test('1.40.0 review r306 #4: employment type reads without case or spaces; a missing one is self-employed', () => {
+  for (const raw of ['paye', 'PAYE', 'Paye', ' paye ']) assert.equal(normalizeEmploymentType(raw), 'paye', raw)
+  for (const raw of ['self_employed', 'SELF_EMPLOYED', 'selfEmployed', '', null, undefined, 3, 'contractor']) {
+    assert.equal(normalizeEmploymentType(raw), 'self_employed', String(raw))
+  }
+  assert.equal(employmentTypeLabel('PAYE'), 'PAYE')
+  // A stored "PAYE" now gets an allowance (before 1.40.0 review it read as self-employed here).
+  const balance = annualLeaveBalance({
+    annualLeaveEnabled: true,
+    daysPerYear: 20,
+    startMonth: 1,
+    endMonth: 12,
+    onDayKey: '2026-06-01',
+    timeZone: LONDON,
+    employment: { employmentType: 'PAYE' },
+  })
+  assert.equal(balance.hasAllowance, true)
+  assert.equal(balance.remaining, 20)
+})
+
+test('1.40.0 review r306 #4: Data health lists active people with no stored employment type, once per person', () => {
+  const ids = usersMissingEmploymentType([
+    { id: 'A', email: 'a@x.com', employmentType: 'paye' },
+    { id: 'B', email: 'b@x.com' },
+    { id: 'B2', email: 'B@x.com', employmentType: '' },
+    { id: 'C', email: 'c@x.com', employmentType: '  ' },
+    { id: 'D', email: 'd@x.com', isActive: false },
+    { id: 'E', email: 'e@x.com', employmentType: 'self_employed' },
+    { id: 'F', email: 'f@x.com' },
+    { id: 'F2', email: 'f@x.com', employmentType: 'paye' },
+  ] as never)
+  assert.deepEqual(ids, ['B', 'C'])
+  assert.match(USER_MISSING_EMPLOYMENT_TYPE_MESSAGE, /self-employed/)
+})
+
+test('1.40.0 review r306 #8: the PAYE window comes from the stored change, the same as employmentTypeOnDay day by day', () => {
+  const cases = [
+    { employmentType: 'paye' },
+    { employmentType: 'self_employed' },
+    { employmentType: 'paye', employmentTypeTransitionFrom: 'self_employed', employmentTypeEffectiveAt: '2026-04-15T00:00:00+01:00' },
+    { employmentType: 'self_employed', employmentTypeTransitionFrom: 'paye', employmentTypeEffectiveAt: '2026-04-15T00:00:00+01:00' },
+    { employmentType: 'paye', employmentTypeTransitionFrom: 'paye', employmentTypeEffectiveAt: '2026-04-15T00:00:00+01:00' },
+    { employmentType: 'paye', employmentTypeTransitionFrom: 'self_employed', employmentTypeEffectiveAt: '2025-03-01T00:00:00Z' },
+    { employmentType: 'self_employed', employmentTypeTransitionFrom: 'paye', employmentTypeEffectiveAt: '2027-03-01T00:00:00Z' },
+    { employmentType: 'paye', employmentTypeTransitionFrom: 'self_employed', employmentTypeEffectiveAt: '2026-01-01T00:00:00Z' },
+    { employmentType: 'paye', employmentTypeTransitionFrom: 'self_employed', employmentTypeEffectiveAt: 'not a date' },
+  ]
+  for (const employment of cases) {
+    const balance = annualLeaveBalance({
+      annualLeaveEnabled: true,
+      daysPerYear: 24,
+      startMonth: 1,
+      endMonth: 12,
+      onDayKey: '2026-01-10',
+      timeZone: LONDON,
+      employment,
+      bookings: [
+        { startDayKey: '2026-02-02', endDayKey: '2026-02-02', timeSlot: 'FULL DAY', status: 'approved' },
+        { startDayKey: '2026-06-01', endDayKey: '2026-06-01', timeSlot: 'FULL DAY', status: 'approved' },
+      ],
+    })
+    // Day-by-day reference: the PAYE days of 2026.
+    let first: string | null = null
+    let last: string | null = null
+    for (let t = Date.UTC(2026, 0, 1); t <= Date.UTC(2026, 11, 31); t += 86_400_000) {
+      const key = new Date(t).toISOString().slice(0, 10)
+      if (employmentTypeOnDay(employment, new Date(`${key}T12:00:00Z`), LONDON) !== 'paye') continue
+      first ??= key
+      last = key
+    }
+    const counted = ['2026-02-02', '2026-06-01'].filter((day) => first != null && day >= first && day <= last!).length
+    if (balance.hasAllowance) assert.equal(balance.allowanceTaken, counted, JSON.stringify(employment))
+  }
+})
+
+test('1.40.0 review r306 #11: the balance carries the sums screens show', () => {
+  const balance = annualLeaveBalance({
+    annualLeaveEnabled: true,
+    daysPerYear: 20,
+    startMonth: 1,
+    endMonth: 12,
+    onDayKey: '2026-08-01',
+    timeZone: LONDON,
+    employment: { employmentType: 'paye', employmentTypeTransitionFrom: 'self_employed', employmentTypeEffectiveAt: '2026-07-01T00:00:00+01:00' },
+    bookings: [
+      { startDayKey: '2026-03-02', endDayKey: '2026-03-03', timeSlot: 'FULL DAY', status: 'approved' },
+      { startDayKey: '2026-08-03', endDayKey: '2026-08-03', timeSlot: 'FULL DAY', status: 'approved' },
+      { startDayKey: '2026-03-10', endDayKey: '2026-03-10', timeSlot: 'AM', status: 'pending' },
+      { startDayKey: '2026-09-01', endDayKey: '2026-09-01', timeSlot: 'FULL DAY', status: 'pending' },
+    ],
+  })
+  assert.equal(balance.shownTaken, 1)
+  assert.equal(balance.shownPending, 1)
+  assert.equal(balance.notCountedTaken, 2)
+  assert.equal(balance.notCountedPending, 0.5)
+  const none = annualLeaveBalance({ annualLeaveEnabled: true, onDayKey: '2026-08-01', timeZone: LONDON, employment: { employmentType: 'self_employed' }, bookings: [{ startDayKey: '2026-03-02', endDayKey: '2026-03-02', timeSlot: 'FULL DAY', status: 'approved' }] })
+  assert.equal(none.hasAllowance, false)
+  assert.equal(none.shownTaken, 1)
+  assert.equal(none.notCountedTaken, 0)
+})
+
+test('1.40.0 review r306 #2: the employment type comes from the pay record; a refused pay profile counts the whole year', () => {
+  const person = { id: 'U1', employmentType: 'self_employed' }
+  // privatePay off: the users document as read.
+  assert.deepEqual(annualLeaveEmploymentInput({ person, privatePay: false, payProfileRead: true }), {
+    employmentType: 'self_employed',
+    employmentTypeTransitionFrom: null,
+    employmentTypeEffectiveAt: null,
+  })
+  // A pay profile is ignored while privatePay is off (it may be stale).
+  assert.equal(
+    annualLeaveEmploymentInput({ person, payProfile: { fields: { employmentType: 'paye' } }, privatePay: false, payProfileRead: true })?.employmentType,
+    'self_employed'
+  )
+  // privatePay on: the pay profile wins (a stripped users document has no type).
+  const stripped = { id: 'U1' }
+  assert.equal(
+    annualLeaveEmploymentInput({ person: stripped, payProfile: { fields: { employmentType: 'paye' } }, privatePay: true, payProfileRead: true })?.employmentType,
+    'paye'
+  )
+  // privatePay on, no pay profile stored: the person's document.
+  assert.equal(annualLeaveEmploymentInput({ person, payProfile: null, privatePay: true, payProfileRead: true })?.employmentType, 'self_employed')
+  // privatePay on, the read refused: null — the balance counts the whole year (as before 1.40.0), never "no allowance".
+  assert.equal(annualLeaveEmploymentInput({ person: stripped, privatePay: true, payProfileRead: false }), null)
+  const balance = annualLeaveBalance({ annualLeaveEnabled: true, daysPerYear: 20, onDayKey: '2026-08-01', timeZone: LONDON, employment: null })
+  assert.equal(balance.remaining, 20)
+  // A Firestore Timestamp-like effective date reads as epoch ms.
+  const at = annualLeaveEmploymentInput({
+    person: { employmentType: 'paye', employmentTypeTransitionFrom: 'self_employed', employmentTypeEffectiveAt: { seconds: 1_780_000_000, nanoseconds: 0 } },
+    privatePay: false,
+    payProfileRead: true,
+  })
+  assert.equal(at?.employmentTypeEffectiveAt, 1_780_000_000_000)
+})
+
+test('1.40.0 review r306 #2: balance notes name the employment type only for viewers who may see pay', () => {
+  const partial = { hasAllowance: true, proRata: true, notCountedTaken: 2 }
+  const named = annualLeaveBalanceNotes(partial, { showsEmploymentType: true })
+  const neutral = annualLeaveBalanceNotes(partial, { showsEmploymentType: false })
+  assert.match(named.notCounted ?? '', /self-employed/)
+  assert.match(named.proRata ?? '', /PAYE/)
+  for (const note of Object.values(neutral)) assert.doesNotMatch(note ?? '', /self-employed|PAYE/i)
+  assert.equal(neutral.notCounted, '2 days taken this leave year do not come out of the allowance.')
+  const none = annualLeaveBalanceNotes({ hasAllowance: false, proRata: false, notCountedTaken: 0 }, { showsEmploymentType: false })
+  assert.doesNotMatch(none.noAllowance ?? '', /self-employed/)
+  assert.equal(annualLeaveBalanceNotes({ hasAllowance: true, proRata: false, notCountedTaken: 0 }, { showsEmploymentType: true }).notCounted, null)
+})
+
+test('1.40.0 review r306 #6: no stored author name; the writer is named from the roster; never for oneself or another year', () => {
+  const fields = annualLeaveAdjustmentCreateFields({ userId: 'OP1', days: 1, reason: 'x', yearKey: '2026-01-01', createdBy: 'A1' })
+  assert.ok(fields && !('createdByName' in fields))
+  assert.equal(annualLeaveAdjustmentCreateFields({ userId: 'op1', days: 1, reason: 'x', yearKey: '2026-01-01', createdBy: 'OP1' }), null)
+  assert.equal(annualLeaveAdjustmentCreateFields({ userId: 'OP1', days: 1, reason: 'x', yearKey: '2027-01-01', createdBy: 'A1', allowedYearKeys: ['2026-01-01'] }), null)
+  assert.ok(annualLeaveAdjustmentCreateFields({ userId: 'OP1', days: 1, reason: 'x', yearKey: '2026-01-01', createdBy: 'A1', allowedYearKeys: ['2026-01-01'] }))
+  // A stored free-text name is never read back.
+  assert.ok(!('createdByName' in (parseAnnualLeaveAdjustmentDocument('a', { userId: 'OP1', days: 1, yearKey: '2026-01-01', createdBy: 'A1', createdByName: 'Fake Boss' }) ?? {})))
+  const roster = [
+    { id: 'A1', email: 'ann@x.com', firstName: 'Ann', surname: 'Admin' },
+    { id: 'A1-NEW', email: 'bob@x.com', firstName: 'Bob', surname: 'Boss', formerUserIds: ['a1-old'] },
+  ]
+  assert.equal(annualLeaveAdjustmentAuthorName({ createdBy: 'a1' }, roster), 'Ann Admin')
+  assert.equal(annualLeaveAdjustmentAuthorName({ createdBy: 'A1-OLD' }, roster), 'Bob Boss')
+  assert.equal(annualLeaveAdjustmentAuthorName({ createdBy: 'GONE' }, roster), 'Someone')
 })

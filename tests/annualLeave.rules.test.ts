@@ -15,7 +15,7 @@ import test from 'node:test'
 import { assertSucceeds, initializeTestEnvironment, type RulesTestEnvironment } from '@firebase/rules-unit-testing'
 import { assertLogicalDeny } from './rulesAssert.ts'
 import { claimsContext } from './authClaimsContext.ts'
-import { addDoc, collection, deleteDoc, doc, getDocs, query, setDoc, Timestamp, updateDoc, where } from 'firebase/firestore'
+import { addDoc, collection, deleteDoc, doc, getDocs, query, serverTimestamp, setDoc, Timestamp, updateDoc, where } from 'firebase/firestore'
 import { annualLeaveAdjustmentCreateFields } from '../lib/canonical/annualLeaveAdjustments.ts'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -35,10 +35,18 @@ async function db(uid: string) {
   return (await claimsContext(env, uid, { email: `${uid}@test.com` })).firestore()
 }
 
+// The current calendar year's first day: inside the rules' window (a year either side of the request time).
+const YEAR_KEY = `${new Date().getUTCFullYear()}-01-01`
+
 function adjustment(userId: string, by: string, extra: Record<string, unknown> = {}) {
-  const fields = annualLeaveAdjustmentCreateFields({ userId, days: 2, reason: 'Long service', yearKey: '2026-01-01', createdBy: by, createdByName: 'Someone' })
+  const fields = annualLeaveAdjustmentCreateFields({ userId, days: 2, reason: 'Long service', yearKey: YEAR_KEY, createdBy: by })
   if (!fields) throw new Error('no fields')
-  return { ...fields, createdAt: Timestamp.now(), updatedAt: Timestamp.now(), updatedBy: by, updatedFrom: 'web', ...extra }
+  // As both apps write it: createdAt is the server time (the rules require the request time).
+  return { ...fields, createdAt: serverTimestamp(), updatedAt: serverTimestamp(), updatedBy: by, updatedFrom: 'web', ...extra }
+}
+/** A stored adjustment (seeded with the rules off; a server timestamp is not allowed there). */
+function storedAdjustment(userId: string, by: string) {
+  return { ...adjustment(userId, by), createdAt: Timestamp.now(), updatedAt: Timestamp.now() }
 }
 
 function leave(fields: Record<string, unknown>) {
@@ -71,9 +79,11 @@ async function seed() {
     // An operatives row on ROWUSER's email; leave filed only under the row id (older iOS shape).
     await setDoc(doc(d, 'organizations', ORG, 'operatives', ROW), { firstName: 'Rowan', lastName: 'Row', email: `${ROWUSER}@test.com`, isActive: true })
     await setDoc(doc(d, 'organizations', ORG, 'userEmails', `${ROWUSER}@test.com`), { userId: ROWUSER })
+    // An operatives row on the admin's own email (review r306 #6: an admin never adjusts it).
+    await setDoc(doc(d, 'organizations', ORG, 'operatives', 'al-admin-row'), { firstName: 'Ada', lastName: 'Admin', email: `${ADMIN}@test.com`, isActive: true })
     await setDoc(doc(d, 'organizations', ORG, 'holidayBookings', 'H-ROW'), leave({ operativeId: ROW, status: 'pending' }))
     await setDoc(doc(d, 'organizations', ORG, 'holidayBookings', 'H-OP'), leave({ userId: OP, status: 'pending' }))
-    await setDoc(doc(d, 'organizations', ORG, 'annualLeaveAdjustments', 'ADJ-OP'), adjustment(OP, ADMIN))
+    await setDoc(doc(d, 'organizations', ORG, 'annualLeaveAdjustments', 'ADJ-OP'), storedAdjustment(OP, ADMIN))
   })
 }
 
@@ -99,8 +109,9 @@ test('adjustments: an admin and the line manager add one; another manager, the p
   await assertSucceeds(addDoc(await adjustments(ADMIN), adjustment(OP, ADMIN)))
   await assertSucceeds(addDoc(await adjustments(LM), adjustment(OP, LM)))
   await assertLogicalDeny(addDoc(await adjustments(OTHER), adjustment(OP, OTHER)))
-  await assertLogicalDeny(addDoc(await adjustments(OP), adjustment(OP, OP)))
-  await assertLogicalDeny(addDoc(await adjustments(ADMIN), adjustment(ADMIN, ADMIN)))
+  // For oneself (the rulebook refuses to build it, so the document is written by hand).
+  await assertLogicalDeny(addDoc(await adjustments(OP), { ...adjustment(LM, OP), userId: OP }))
+  await assertLogicalDeny(addDoc(await adjustments(ADMIN), { ...adjustment(OP, ADMIN), userId: ADMIN }))
   // Written by someone else's name.
   await assertLogicalDeny(addDoc(await adjustments(LM), adjustment(OP, ADMIN)))
 })
@@ -113,6 +124,26 @@ test('adjustments: half days only, a reason, a day-key year, known fields', asyn
   await assertLogicalDeny(addDoc(await adjustments(ADMIN), adjustment(OP, ADMIN, { yearKey: '2026' })))
   await assertLogicalDeny(addDoc(await adjustments(ADMIN), adjustment(OP, ADMIN, { extra: true })))
   await assertSucceeds(addDoc(await adjustments(ADMIN), adjustment(OP, ADMIN, { days: -1.5 })))
+})
+
+test('adjustments (review r306 #6): server-time createdAt, a year near today, a non-blank reason, no author name, never the admin\'s own row', async () => {
+  // createdAt from the client clock, or missing.
+  await assertLogicalDeny(addDoc(await adjustments(ADMIN), adjustment(OP, ADMIN, { createdAt: Timestamp.fromMillis(Date.now() - 60_000) })))
+  const { createdAt: _drop, ...noCreatedAt } = adjustment(OP, ADMIN)
+  await assertLogicalDeny(addDoc(await adjustments(ADMIN), noCreatedAt))
+  // A year more than a year away.
+  await assertLogicalDeny(addDoc(await adjustments(ADMIN), adjustment(OP, ADMIN, { yearKey: `${new Date().getUTCFullYear() + 2}-01-01` })))
+  await assertLogicalDeny(addDoc(await adjustments(ADMIN), adjustment(OP, ADMIN, { yearKey: `${new Date().getUTCFullYear() - 2}-01-01` })))
+  // The next leave year is allowed by the rules (the apps offer the current one only).
+  await assertSucceeds(addDoc(await adjustments(ADMIN), adjustment(OP, ADMIN, { yearKey: `${new Date().getUTCFullYear() + 1}-01-01` })))
+  // A reason of spaces only, or too long.
+  await assertLogicalDeny(addDoc(await adjustments(ADMIN), adjustment(OP, ADMIN, { reason: '   ' })))
+  await assertLogicalDeny(addDoc(await adjustments(ADMIN), adjustment(OP, ADMIN, { reason: 'x'.repeat(201) })))
+  // A free-text author name is no longer stored.
+  await assertLogicalDeny(addDoc(await adjustments(ADMIN), adjustment(OP, ADMIN, { createdByName: 'The Boss' })))
+  // The admin's own operatives row.
+  await assertLogicalDeny(addDoc(await adjustments(ADMIN), adjustment('al-admin-row', ADMIN)))
+  await assertSucceeds(addDoc(await adjustments(ADMIN), adjustment(ROW, ADMIN)))
 })
 
 test('adjustments: append-only — never updated or deleted, admins included', async () => {
@@ -129,6 +160,14 @@ test('adjustments: read by the person, their line manager and admins only', asyn
   await assertLogicalDeny(byPerson(OTHER))
   await assertSucceeds(getDocs(await adjustments(ADMIN)))
   await assertLogicalDeny(getDocs(await adjustments(OTHER)))
+})
+
+test('adjustments (review r306 #6): a deactivated person reads none, their own included', async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await updateDoc(doc(ctx.firestore(), 'users', OP), { isActive: false })
+  })
+  await assertLogicalDeny(getDocs(query(await adjustments(OP), where('userId', '==', OP))))
+  await assertSucceeds(getDocs(query(await adjustments(LM), where('userId', '==', OP))))
 })
 
 test('leave filed under an operatives row: its person\'s line manager decides it; another manager cannot', async () => {

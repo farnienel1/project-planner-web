@@ -5,7 +5,8 @@ import { format, isSameDay, startOfDay } from 'date-fns'
 import type { HolidayRequestCreate } from '@/lib/stores/holidayStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
-import { holidayRequestRanges } from '@/lib/canonical'
+import { annualLeaveBalanceNotes, holidayRequestRanges, type AnnualLeaveBalanceNotes } from '@/lib/canonical'
+import { useLeaveEmployment } from '@/lib/annualLeave/useLeaveEmployment'
 import { notifyHolidayRequestSubmitted } from '@/lib/annualLeave/notifyHolidayRequestSubmitted'
 import { userCanSelfBookAnnualLeave, userLeaveSubmitLabel } from '@/lib/annualLeave/holidayApprovalUtils'
 import { getBookingForDay, getDayKindForBookings } from '@/lib/annualLeave/dayStatus'
@@ -34,12 +35,14 @@ export function LeaveSummary({
   pending,
   carriedForward,
   adjustmentDays = 0,
-  notCountedTaken = 0,
-  proRata = false,
+  notes = null,
   leaveYearStart,
   leaveYearEnd,
   loading = false,
+  error = null,
 }: {
+  /** Rulebook 1.40.0: a read the figures need was refused — shown instead of the figures, never a zero. */
+  error?: string | null
   /** True until the bank holidays have loaded: the figures are not shown yet (they could still count one as leave). */
   loading?: boolean
   hasAllowance: boolean
@@ -51,9 +54,11 @@ export function LeaveSummary({
   carriedForward?: number
   /** Rulebook 1.40.0: this year's manual adjustments (`annualLeaveBalance.adjustmentDays`). */
   adjustmentDays?: number
-  /** Rulebook 1.40.0: leave taken this year on self-employed days, which does not come out of the allowance. */
-  notCountedTaken?: number
-  proRata?: boolean
+  /**
+   * Rulebook 1.40.0: the notes under the figures (`annualLeaveBalanceNotes`): they name the employment type only when
+   * the viewer may see the person's pay (`canViewPersonPay`).
+   */
+  notes?: AnnualLeaveBalanceNotes | null
   leaveYearStart: Date
   leaveYearEnd: Date
 }) {
@@ -62,6 +67,14 @@ export function LeaveSummary({
   const ratio = hasAllowance && totalAllowance > 0 ? Math.min(1, used / totalAllowance) : taken > 0 ? 1 : 0
   const circumference = 2 * Math.PI * 28
   const over = hasAllowance && remaining != null && remaining < 0
+
+  if (error) {
+    return (
+      <div role="alert" className="rounded-2xl border border-[var(--red)] bg-[var(--card)] p-4 text-sm text-[var(--red)] shadow-sm">
+        {error}
+      </div>
+    )
+  }
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-[var(--card)] p-4 shadow-sm">
@@ -112,19 +125,9 @@ export function LeaveSummary({
           Includes {adjustmentDays > 0 ? '+' : '−'}{formatLeaveCount(Math.abs(adjustmentDays))} adjusted this leave year
         </p>
       ) : null}
-      {!loading && hasAllowance && proRata ? (
-        <p className="mt-2 text-[11px] text-slate-500">Pro rata: the allowance counts only from the start date or the day PAYE began.</p>
-      ) : null}
-      {!loading && hasAllowance && notCountedTaken > 0 ? (
-        <p className="mt-2 text-[11px] text-slate-500">
-          {formatLeaveCount(notCountedTaken)} taken while self-employed {notCountedTaken === 1 ? 'does' : 'do'} not come out of the allowance.
-        </p>
-      ) : null}
-      {!hasAllowance ? (
-        <p className="mt-2 text-[11px] text-slate-500">
-          No paid allowance: self-employed, or the allowance is switched off. The count resets at the end of the company leave year.
-        </p>
-      ) : null}
+      {!loading && notes?.proRata ? <p className="mt-2 text-[11px] text-slate-500">{notes.proRata}</p> : null}
+      {!loading && notes?.notCounted ? <p className="mt-2 text-[11px] text-slate-500">{notes.notCounted}</p> : null}
+      {!loading && notes?.noAllowance ? <p className="mt-2 text-[11px] text-slate-500">{notes.noAllowance}</p> : null}
     </div>
   )
 }
@@ -192,8 +195,11 @@ export function PersonalLeave({
   // Rulebook 1.35.0 §12: `myBookings` are already this person's records under every id they go by
   // (`leaveRecordsForAccount`, AnnualLeaveScreen); count them all, with the region's bank holidays, so the figure
   // equals My Profile and iOS. (Before 1.35.0 this re-filtered to the one users id and passed no bank holidays.)
+  // Rulebook 1.40.0 (review r306 #2): the employment type from the person's pay record, never the users document alone.
+  const leaveEmployment = useLeaveEmployment(organization?.id, user)
   const yearProbe = userLeaveBalance({
     user,
+    employment: leaveEmployment.employment,
     bookings: myBookings,
     orgDefaults: orgLeaveDefaults ?? DEFAULT_ANNUAL_LEAVE,
     timeZone,
@@ -204,14 +210,16 @@ export function PersonalLeave({
   }
   // Rulebook 1.35.0 `annualLeaveBankHolidayRange`: the previous leave year's bank holidays too (carry-over), the same
   // range My Profile and Edit User load.
-  const bankRange = userLeaveBankHolidayRange({ user, orgDefaults: orgLeaveDefaults ?? DEFAULT_ANNUAL_LEAVE, timeZone })
+  const bankRange = userLeaveBankHolidayRange({ user, employment: leaveEmployment.employment, orgDefaults: orgLeaveDefaults ?? DEFAULT_ANNUAL_LEAVE, timeZone })
   const bank = useOrgBankHolidays(dateFromDayKey(bankRange.startDayKey), dateFromDayKey(bankRange.endDayKey), {
     years: bankRange.years,
   })
   // Rulebook 1.40.0: the person's manual adjustments (shown below with their reason and date).
-  const { adjustments } = useAnnualLeaveAdjustments(organization?.id, user?.id)
+  const adjustmentsRead = useAnnualLeaveAdjustments(organization?.id, user?.id)
+  const adjustments = adjustmentsRead.adjustments
   const balance = userLeaveBalance({
     user,
+    employment: leaveEmployment.employment,
     bookings: myBookings,
     orgDefaults: orgLeaveDefaults ?? DEFAULT_ANNUAL_LEAVE,
     bankHolidayDayKeys: bank.holidays.map((holiday) => holiday.date),
@@ -220,9 +228,12 @@ export function PersonalLeave({
   })
   const allowance = balance.allowanceBeforeAdjustments - balance.carriedForward
   const awaiting = myBookings.filter((booking) => booking.status === 'pending' || booking.cancellationRequestedAt)
-  // 1.40.0: with an allowance, the leave that comes out of it (PAYE days only).
-  const taken = balance.hasAllowance ? balance.allowanceTaken : balance.taken
-  const pending = balance.hasAllowance ? balance.allowancePending : balance.pending
+  // 1.40.0: with an allowance, the leave that comes out of it (PAYE days only) — the rulebook's shown sums.
+  const taken = balance.shownTaken
+  const pending = balance.shownPending
+  // The person's own balance: they may see their own employment type (`canViewPersonPay`).
+  const notes = annualLeaveBalanceNotes(balance, { showsEmploymentType: true })
+  const figuresLoading = !bank.loaded || !leaveEmployment.ready || !adjustmentsRead.loaded
   const carriedForward = balance.carriedForward
   const remaining = balance.remaining ?? 0
   const hasAllowance = balance.hasAllowance
@@ -351,11 +362,11 @@ export function PersonalLeave({
         pending={pending}
         carriedForward={carriedForward}
         adjustmentDays={balance.adjustmentDays}
-        notCountedTaken={balance.hasAllowance ? balance.taken - balance.allowanceTaken : 0}
-        proRata={balance.proRata}
+        notes={notes}
         leaveYearStart={leaveYear.start}
         leaveYearEnd={leaveYear.end}
-        loading={!bank.loaded}
+        loading={figuresLoading}
+        error={adjustmentsRead.error}
       />
       <LeaveAdjustmentsList adjustments={adjustments} yearKey={balance.yearKey} showAuthor={false} hasAllowance={balance.hasAllowance} />
 

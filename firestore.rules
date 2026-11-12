@@ -2084,6 +2084,11 @@ service cloud.firestore {
           );
         }
 
+        // The diff's affected keys are computed once per update (passed in as `changed`).
+        function hbPersonSame(changed) {
+          return hbKeySame(changed, 'userId') && hbKeySame(changed, 'operativeId');
+        }
+
         allow read: if canAccessOrganization(organizationId);
         allow create, update, delete: if canAccessOrganization(organizationId) && (
           (request.method == 'create') ? ((
@@ -2093,8 +2098,7 @@ service cloud.firestore {
         )) : (request.method == 'update') ? ((
           hbIsOwner(resource.data) ? hbOwnerEditAllowed(request.resource.data.diff(resource.data).affectedKeys())
           : ((hbIsOwner(request.resource.data) || hbCallerIsOperative()) ? false : (hbIsAdmin() ? true :
-            ((hbKeySame(request.resource.data.diff(resource.data).affectedKeys(), 'userId') &&
-              hbKeySame(request.resource.data.diff(resource.data).affectedKeys(), 'operativeId')) ? hbLineManages(resource.data) : false)))
+            (hbPersonSame(request.resource.data.diff(resource.data).affectedKeys()) ? hbLineManages(resource.data) : false)))
         )) : ((
           (hbIsOwner(resource.data) && (
             resource.data.get('status', null) in ['pending', 'rejected'] ||
@@ -2106,19 +2110,32 @@ service cloud.firestore {
 
       // 1.40.0 §4.4: manual annual-leave adjustments — create only (append-only history), by an admin or the person's
       // line manager, never the person; read by the person, their line managers and admins.
+      // 1.40.0 review r306 #6: createdAt is the request time, the year a day key within a year either side of today
+      // (the app allows the current leave year only), a reason with a non-space character, and no free-text author
+      // name (screens show the writer's roster name by `createdBy`). Every required field is read below, so a missing
+      // one is refused without a hasAll. An admin never adjusts their own former, same-email or operatives-row id; a
+      // deactivated person reads none ('c': an active member, from the auth claims).
       match /annualLeaveAdjustments/{adjustmentId} {
-        allow read: if overtimeViewerOf(resource.data.get('userId', ''));
-        allow create: if request.resource.data.keys().hasOnly(['userId', 'days', 'reason', 'yearKey', 'createdBy', 'createdByName', 'createdAt', 'updatedAt', 'updatedBy', 'updatedFrom']) &&
-          request.resource.data.keys().hasAll(['userId', 'days', 'reason', 'yearKey', 'createdBy']) &&
-          request.resource.data.createdBy == request.auth.uid && request.resource.data.userId is string && request.resource.data.userId.size() > 0 && !request.resource.data.userId.matches('.*/.*') &&
+        allow read: if ('c' in callerOrg(organizationId) || isPlatformOwner()) && overtimeViewerOf(resource.data.get('userId', ''));
+        allow create: if request.resource.data.keys().hasOnly(['userId', 'days', 'reason', 'yearKey', 'createdBy', 'createdAt', 'updatedAt', 'updatedBy', 'updatedFrom']) &&
+          request.resource.data.createdBy == request.auth.uid && request.resource.data.createdAt == request.time &&
+          request.resource.data.userId is string && request.resource.data.userId.size() > 0 && !request.resource.data.userId.matches('.*/.*') &&
           request.resource.data.userId != request.auth.uid &&
           request.resource.data.days is number && request.resource.data.days != 0 && request.resource.data.days >= -365 && request.resource.data.days <= 365 && request.resource.data.days * 2 == math.floor(request.resource.data.days * 2) &&
-          payeClaimText(request.resource.data, 'reason', 1, 200) && payeClaimText(request.resource.data, 'createdByName', 0, 120) && payeClaimDayKey(request.resource.data.yearKey) &&
+          request.resource.data.reason is string && request.resource.data.reason.size() <= 200 && request.resource.data.reason.matches('[\\s\\S]*\\S[\\s\\S]*') &&
+          payeClaimDayKey(request.resource.data.yearKey) &&
+          math.abs(timestamp.date(int(request.resource.data.yearKey[0:4]), int(request.resource.data.yearKey[5:7]), int(request.resource.data.yearKey[8:10])).toMillis() - request.time.toMillis()) <= 31622400000 &&
           writeMetadataValidWhenPresent()
           ? (isOrgAdminOrOwner(organizationId)
-            ? !(request.resource.data.userId in callerHomeData().get('formerUserIds', [])) && !(request.resource.data.userId in callerHomeData().get('sameEmailUserIds', []))
+            ? leaveAdjustmentAdminTargetOk(request.resource.data.userId)
             : canAccessOrganization(organizationId) && callerLineManagesUser(request.resource.data.userId))
           : false;
+      }
+      function leaveAdjustmentAdminTargetOk(uid) {
+        let home = callerHomeData();
+        let row = /databases/(default)/documents/organizations/$(organizationId)/operatives/$(uid);
+        return !(uid in home.get('formerUserIds', [])) && !(uid in home.get('sameEmailUserIds', [])) &&
+          !(exists(row) && string(get(row).data.get('email', '')).lower() == string(request.auth.token.get('email', '')).lower());
       }
 
       function managerMayChangePayOf(subjectUserId) {

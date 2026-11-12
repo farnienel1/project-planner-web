@@ -14,6 +14,7 @@ import { format } from 'date-fns'
 import {
   ANNUAL_LEAVE_ADJUSTMENT_NOTE,
   ANNUAL_LEAVE_ADJUSTMENT_REASON_MAX,
+  annualLeaveAdjustmentAuthorName,
   annualLeaveAdjustmentLabel,
   annualLeaveAdjustmentValidationError,
   type AnnualLeaveAdjustment,
@@ -28,7 +29,10 @@ export function LeaveAdjustmentsList({
   yearKey,
   showAuthor,
   hasAllowance,
+  roster = [],
 }: {
+  /** The organisation roster: the author is shown by name from it (`annualLeaveAdjustmentAuthorName`, by `createdBy`). */
+  roster?: ReadonlyArray<{ id: string; email?: string | null; firstName?: string | null; surname?: string | null; formerUserIds?: string[] | null }>
   adjustments: AnnualLeaveAdjustment[]
   /** The leave year shown (`annualLeaveBalance.yearKey`): only its adjustments are listed. */
   yearKey: string
@@ -42,7 +46,7 @@ export function LeaveAdjustmentsList({
     <section className="rounded-2xl border border-slate-200 bg-[var(--card)] p-4 shadow-sm">
       <p className="text-sm font-bold text-slate-900">Adjustments this leave year</p>
       {!hasAllowance ? (
-        <p className="mt-0.5 text-xs text-slate-500">Kept, but not counted while there is no paid allowance (self-employed).</p>
+        <p className="mt-0.5 text-xs text-slate-500">Kept, but not counted while there is no paid allowance.</p>
       ) : null}
       <ul className="mt-2 divide-y divide-slate-100">
         {rows.map((row) => (
@@ -51,7 +55,7 @@ export function LeaveAdjustmentsList({
               <p className="text-sm text-slate-800">{row.reason || 'No reason given'}</p>
               <p className="text-xs text-slate-500">
                 {when(row.createdAtMs)}
-                {showAuthor && row.createdByName ? ` · by ${row.createdByName}` : ''}
+                {showAuthor ? ` · by ${annualLeaveAdjustmentAuthorName(row, roster as never)}` : ''}
               </p>
             </div>
             <span className={`shrink-0 text-sm font-bold ${row.days < 0 ? 'text-[var(--red)]' : 'text-emerald-700'}`}>

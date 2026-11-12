@@ -14,6 +14,7 @@ import { hasAdminAccess } from '@/lib/permissions'
 import { BookingHealthScan } from '@/components/dataHealth/BookingHealthScan'
 import { GhostsToCheck } from '@/components/dataHealth/GhostsToCheck'
 import { UsersMissingLevel } from '@/components/dataHealth/UsersMissingLevel'
+import { UsersMissingEmploymentType } from '@/components/dataHealth/UsersMissingEmploymentType'
 import { UsersMissingLineManager } from '@/components/dataHealth/UsersMissingLineManager'
 import {
   parseAppUserDocument,
@@ -117,6 +118,7 @@ export default function DataHealthPage() {
       <div className="space-y-4">
         {/* Rulebook 1.23.1 §11: people with no user level (`usersMissingLevel`). */}
         <UsersMissingLevel organizationId={organization.id} />
+        <UsersMissingEmploymentType organizationId={organization.id} />
         {/* Rulebook 1.28.0 §8, §11: people who need a line manager (`usersMissingLineManager`). */}
         <UsersMissingLineManager organizationId={organization.id} />
         {/* Rulebook 1.34.0 §11: ghost operatives to check (`ghostsToCheck`). */}

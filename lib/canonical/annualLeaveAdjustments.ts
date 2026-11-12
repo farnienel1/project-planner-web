@@ -2,8 +2,8 @@
  * Manual annual-leave adjustments (rulebook 1.40.0 §4.4, owner decisions 11 Nov H28–H35).
  *
  * An admin or the person's line manager (never the person) adds or takes off days for ONE leave year with a reason:
- * `organizations/{orgId}/annualLeaveAdjustments/{id}` `{ userId, days, reason, yearKey, createdBy, createdByName,
- * createdAt }`, written once, never changed or deleted (append-only history). `annualLeaveBalance` adds the
+ * `organizations/{orgId}/annualLeaveAdjustments/{id}` `{ userId, days, reason, yearKey, createdBy, createdAt }`
+ * (createdAt the server time), written once, never changed or deleted (append-only history). `annualLeaveBalance` adds the
  * adjustments of the year shown on top of the allowance (after pro rata and carry-over), only while the person has an
  * allowance (PAYE); never carried over. Remaining may go below zero (owner answer).
  *
@@ -47,7 +47,6 @@ export type AnnualLeaveAdjustment = {
   /** The leave year it belongs to: the year's first day (`leaveYearBounds(...).yearKey`). */
   yearKey: string
   createdBy: string
-  createdByName: string
   createdAtMs: number | null
 }
 
@@ -116,9 +115,11 @@ export function canViewAnnualLeaveAdjustments(
 }
 
 /**
- * The fields of a new `annualLeaveAdjustments/{id}` document (the app adds `createdAt` as server time and the write
- * metadata). Days snapped to half days, reason trimmed. Null when the input is refused
- * (`annualLeaveAdjustmentValidationError`, a missing person, author or year).
+ * The fields of a new `annualLeaveAdjustments/{id}` document (the app adds `createdAt` as server time — the rules
+ * require the request time — and the write metadata). Days snapped to half days, reason trimmed. No author name is
+ * stored (review r306 #6): screens show the writer's roster name by `createdBy` (`annualLeaveAdjustmentAuthorName`).
+ * Null when the input is refused (`annualLeaveAdjustmentValidationError`, a missing person, author or year, the
+ * person themself, or a year not in `allowedYearKeys` — the apps pass the current leave year only).
  */
 export function annualLeaveAdjustmentCreateFields(input: {
   userId: unknown
@@ -126,12 +127,14 @@ export function annualLeaveAdjustmentCreateFields(input: {
   reason: unknown
   yearKey: unknown
   createdBy: unknown
-  createdByName?: unknown
-}): { userId: string; days: number; reason: string; yearKey: string; createdBy: string; createdByName: string } | null {
+  /** The leave years an adjustment may be added to (the screen's current leave year). Missing: any day key. */
+  allowedYearKeys?: ReadonlyArray<string> | null
+}): { userId: string; days: number; reason: string; yearKey: string; createdBy: string } | null {
   const userId = text(input.userId)
   const yearKey = text(input.yearKey)
   const createdBy = text(input.createdBy)
-  if (!userId || !createdBy || !isDayKey(yearKey)) return null
+  if (!userId || !createdBy || !isDayKey(yearKey) || idKey(userId) === idKey(createdBy)) return null
+  if (input.allowedYearKeys && !input.allowedYearKeys.map(text).includes(yearKey)) return null
   if (annualLeaveAdjustmentValidationError({ days: input.days, reason: input.reason })) return null
   return {
     userId,
@@ -139,8 +142,26 @@ export function annualLeaveAdjustmentCreateFields(input: {
     reason: text(input.reason),
     yearKey,
     createdBy,
-    createdByName: text(input.createdByName).slice(0, 120),
   }
+}
+
+/**
+ * 1.40.0 (review r306 #6): who made an adjustment, from the roster by `createdBy` (any id the writer goes by, without
+ * case), never a stored free-text name. "Someone" when the writer is not on the roster (a deleted account).
+ */
+export function annualLeaveAdjustmentAuthorName(
+  adjustment: { createdBy?: unknown } | null | undefined,
+  roster: ReadonlyArray<PersonRosterRow & { firstName?: string | null; surname?: string | null; lastName?: string | null }> | null | undefined
+): string {
+  const by = idKey(text(adjustment?.createdBy))
+  if (!by) return 'Someone'
+  const members = (roster || []).filter((row) => row && idText(row.id))
+  const row =
+    members.find((member) => idKey(member.id) === by) ??
+    members.find((member) => personIdSet(member, members as PersonRosterRow[]).some((id) => idKey(id) === by))
+  if (!row) return 'Someone'
+  const name = `${text(row.firstName)} ${text(row.surname) || text(row.lastName)}`.trim()
+  return name || text(row.email) || 'Someone'
 }
 
 /** Reads `annualLeaveAdjustments/{id}`. Null without a person, a year or a number of days. Never drops one for its reason. */
@@ -158,7 +179,6 @@ export function parseAnnualLeaveAdjustmentDocument(docId: unknown, data: unknown
     reason: text(row.reason),
     yearKey,
     createdBy: text(row.createdBy),
-    createdByName: text(row.createdByName),
     createdAtMs: documentInstantMs(row.createdAt),
   }
 }
@@ -205,12 +225,15 @@ export function annualLeaveAdjustedNoticeText(input: {
   actorName: unknown
   days: unknown
   reason: unknown
-}): { title: string; message: string } {
+}): { title: string; message: string; detail: string | null } {
   const person = text(input.personName) || 'Someone'
   const actor = text(input.actorName) || 'Someone'
   const reason = text(input.reason)
   return {
     title: 'Annual leave adjusted',
-    message: `${actor} adjusted ${person}'s annual leave by ${annualLeaveAdjustmentLabel(input.days)} this leave year${reason ? `: ${reason}` : '.'}`,
+    // 1.40.0 (review r306 #10): the push sends `title` and `message` only, so the reason is never on a lock screen;
+    // it is the inbox row's `detail`.
+    message: `${actor} adjusted ${person}'s annual leave by ${annualLeaveAdjustmentLabel(input.days)} this leave year.`,
+    detail: reason ? `Reason: ${reason}` : null,
   }
 }

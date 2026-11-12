@@ -41,23 +41,37 @@ export function listenAnnualLeaveAdjustments(
   )
 }
 
-/** One person's adjustments, live while the screen is open (empty until loaded, or when the read is refused). */
+/**
+ * One person's adjustments, live while the screen is open. Rulebook 1.40.0 (review r306 #9): `loaded` is false until
+ * the first answer, and a refused or failed read sets `error` (never an empty list read as "no adjustments"), so a
+ * screen shows no balance until the adjustments it includes are known.
+ */
+export const LEAVE_ADJUSTMENTS_READ_ERROR = 'Could not load the leave adjustments, so the balance is not shown. Try again.'
+
 export function useAnnualLeaveAdjustments(organizationId: string | null | undefined, userId: string | null | undefined): {
   adjustments: AnnualLeaveAdjustment[]
   loaded: boolean
+  error: string | null
 } {
-  const [state, setState] = useState<{ key: string; adjustments: AnnualLeaveAdjustment[]; loaded: boolean }>({ key: '', adjustments: [], loaded: false })
+  const [state, setState] = useState<{ key: string; adjustments: AnnualLeaveAdjustment[]; loaded: boolean; error: string | null }>({
+    key: '',
+    adjustments: [],
+    loaded: false,
+    error: null,
+  })
   const key = organizationId && userId ? `${organizationId}|${userId}` : ''
   useEffect(() => {
     if (!organizationId || !userId) return undefined
     return listenAnnualLeaveAdjustments(
       organizationId,
       userId,
-      (rows) => setState({ key: `${organizationId}|${userId}`, adjustments: rows, loaded: true }),
-      () => setState({ key: `${organizationId}|${userId}`, adjustments: [], loaded: true })
+      (rows) => setState({ key: `${organizationId}|${userId}`, adjustments: rows, loaded: true, error: null }),
+      () => setState({ key: `${organizationId}|${userId}`, adjustments: [], loaded: false, error: LEAVE_ADJUSTMENTS_READ_ERROR })
     )
   }, [organizationId, userId])
-  return state.key === key ? { adjustments: state.adjustments, loaded: state.loaded } : { adjustments: [], loaded: false }
+  return state.key === key
+    ? { adjustments: state.adjustments, loaded: state.loaded, error: state.error }
+    : { adjustments: [], loaded: false, error: null }
 }
 
 /**
@@ -80,7 +94,8 @@ export async function addAnnualLeaveAdjustment(input: {
     reason: input.reason,
     yearKey: input.yearKey,
     createdBy: auth.currentUser?.uid ?? input.actor.id,
-    createdByName: actorName,
+    // The screen's current leave year (`annualLeaveBalance.yearKey`) is the only year offered (review r306 #6).
+    allowedYearKeys: [input.yearKey],
   })
   if (!fields) return null
   const ref = await addDoc(collection(db, 'organizations', input.organizationId, ANNUAL_LEAVE_ADJUSTMENTS_COLLECTION), {
@@ -97,6 +112,7 @@ export async function addAnnualLeaveAdjustment(input: {
       type: 'annual_leave_adjusted',
       title: text.title,
       message: text.message,
+      detail: text.detail,
       relatedId: input.subject.id,
       actor: input.actor,
       users: input.users,

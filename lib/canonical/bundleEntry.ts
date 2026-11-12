@@ -1320,7 +1320,16 @@ export {
 } from './duplicateUserNames'
 export type { SameNamePerson, SameNameRosterRow } from './duplicateUserNames'
 // 1.40.0 (§4.4, §9, owner decisions 11 Nov): Team list, employment-type allowance, manual adjustments.
-export { annualLeaveAdjustmentDaysForYear, balanceHasAllowance, leaveAllowanceForWindow } from './annualLeaveBalance'
+export {
+  annualLeaveAdjustmentDaysForYear,
+  annualLeaveBalanceNotes,
+  annualLeaveEmploymentInput,
+  balanceHasAllowance,
+  leaveAllowanceForWindow,
+  type AnnualLeaveBalanceNotes,
+} from './annualLeaveBalance'
+export { employmentTypeTransition } from './userProfile'
+export { USER_MISSING_EMPLOYMENT_TYPE_MESSAGE, usersMissingEmploymentType } from './payRate'
 export {
   ANNUAL_LEAVE_TEAM_EMPTY_ADMIN,
   ANNUAL_LEAVE_TEAM_EMPTY_MANAGER,
@@ -1342,6 +1351,7 @@ export {
   annualLeaveAdjustedNoticeText,
   annualLeaveAdjustedRecipients,
   annualLeaveAdjustmentCreateFields,
+  annualLeaveAdjustmentAuthorName,
   annualLeaveAdjustmentLabel,
   annualLeaveAdjustmentValidationError,
   annualLeaveAdjustmentsForPerson,

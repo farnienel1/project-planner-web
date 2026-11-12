@@ -158,9 +158,14 @@ export const USER_PERMISSION_FIELDS = [
 
 export type UserPermissionField = (typeof USER_PERMISSION_FIELDS)[number]
 
+/**
+ * 1.40.0: read without case or surrounding spaces — "PAYE", "Paye" and " paye " are PAYE (before 1.40.0 only the exact
+ * text `paye` was, so an older document storing "PAYE" read as self-employed here while other rules read it as PAYE).
+ * Anything else, a missing value included, is self-employed (§8).
+ */
 export function normalizeEmploymentType(raw: unknown): EmploymentType {
-  if (raw === 'paye') return 'paye'
-  if (raw === 'self_employed' || raw === 'selfEmployed') return 'self_employed'
+  const value = typeof raw === 'string' ? raw.trim().toLowerCase() : ''
+  if (value === 'paye') return 'paye'
   return 'self_employed'
 }
 
@@ -188,6 +193,25 @@ function validDay(value: unknown): Date | undefined {
     return Number.isNaN(parsed.getTime()) ? undefined : parsed
   }
   return undefined
+}
+
+/**
+ * 1.40.0: the stored effective-dated change, as organisation-zone day keys: `before` until `effectiveDayKey`, `after`
+ * from it. Null when no change is stored (or its date does not read): the person is `employmentType` on every day.
+ * The same reading as `employmentTypeOnDay`, for callers that need a whole range at once.
+ */
+export function employmentTypeTransition(
+  user: EmploymentTypeUser,
+  timeZone?: string | null
+): { before: EmploymentType; after: EmploymentType; effectiveDayKey: string } | null {
+  const from = user.employmentTypeTransitionFrom
+  const effectiveAt = validDay(user.employmentTypeEffectiveAt)
+  if (!from || !effectiveAt) return null
+  return {
+    before: normalizeEmploymentType(from),
+    after: normalizeEmploymentType(user.employmentType),
+    effectiveDayKey: dayKeyInZone(effectiveAt, zoneOrLondon(timeZone)),
+  }
 }
 
 /**

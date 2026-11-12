@@ -1176,6 +1176,8 @@ export type NotificationDocument = {
   /** In `KNOWN_NOTIFICATION_TYPES`. */
   known: boolean
   title: string
+  /** 1.40.0: inbox-only text under the message (never pushed); null when none. */
+  detail: string | null
   message: string
   userId: string | null
   actorUserId: string | null
@@ -1220,6 +1222,7 @@ export function parseNotificationDocument(
     known: isKnownNotificationType(type),
     title: text(row.title),
     message: text(row.message),
+    detail: optionalText(row.detail),
     userId: optionalText(row.userId),
     actorUserId: optionalText(row.actorUserId),
     relatedId,
@@ -1422,6 +1425,11 @@ export type NotificationCreateInput = {
   dayKey?: unknown
   catalogue?: unknown
   /**
+   * 1.40.0: extra text shown on the inbox row under `message` and never pushed (the push sends `title` and `message`
+   * only), e.g. the reason for an annual-leave adjustment. Written only when non-blank, at most 300 characters.
+   */
+  detail?: unknown
+  /**
    * The row's due instant. 1.16.0: kept only for a scheduled type written ahead of time
    * (`SCHEDULED_NOTIFICATION_TYPES`); for every other type `serverTimestamp` is written instead when given.
    */
@@ -1469,6 +1477,8 @@ export function notificationCreateFields(
   if (DAY_KEY.test(day)) set.dayKey = day
   const catalogue = text(input?.catalogue)
   if (catalogue === 'projects' || catalogue === 'smallWorks') set.catalogue = catalogue
+  const detail = text(input?.detail)
+  if (detail) set.detail = detail.slice(0, 300)
   return { set }
 }
 

@@ -173,7 +173,7 @@ export function webWrittenSamples(): Record<string, { docId: string; data: Doc }
     annualLeaveAdjustments: {
       docId: 'adj-web-1',
       data: {
-        ...must(annualLeaveAdjustmentCreateFields({ userId: 'user-web-1', days: 2, reason: 'Long service', yearKey: '2026-01-01', createdBy: 'user-web-2', createdByName: 'Ada Admin' })),
+        ...must(annualLeaveAdjustmentCreateFields({ userId: 'user-web-1', days: 2, reason: 'Long service', yearKey: '2026-01-01', createdBy: 'user-web-2' })),
         createdAt: ts(UPDATED),
         updatedAt: ts(UPDATED),
         updatedBy: 'user-web-2',
@@ -376,7 +376,7 @@ const IOS_BUILT_SAMPLES: Record<string, { docId: string; iosWriter: string; buil
     iosWriter: 'AnnualLeaveAdjustment save (annualLeaveAdjustmentCreateFields)',
     builder: {
       writer: 'annualLeaveAdjustmentCreateFields',
-      input: { userId: 'USER-IOS-1', days: -0.5, reason: 'Half day unpaid', yearKey: '2026-04-01', createdBy: 'USER-IOS-2', createdByName: 'Ian Ios' },
+      input: { userId: 'USER-IOS-1', days: -0.5, reason: 'Half day unpaid', yearKey: '2026-04-01', createdBy: 'USER-IOS-2' },
       appAdds: { createdAt: ts(UPDATED), updatedAt: ts(UPDATED), updatedBy: 'USER-IOS-2', updatedFrom: 'ios' },
     },
   },

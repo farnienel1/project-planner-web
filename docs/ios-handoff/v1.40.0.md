@@ -1,6 +1,6 @@
 # iOS follow-on — rulebook 1.40.0
 
-Generated 2026-11-11 by `npm run rulebook:handoff` in project-planner-web. Paste this whole file into the iOS agent.
+Generated 2026-11-12 by `npm run rulebook:handoff` in project-planner-web. Paste this whole file into the iOS agent.
 The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; never edit the iOS mirror by hand.
 
 ```
@@ -8,9 +8,9 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ║ FOLLOW-ON — paste into the iOS agent                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
-Rulebook version: 1.37.0 → 1.40.0
-Packed hash: df63ddd76d294eedae3a3cff20c763724da2004b86b8dc19ea364139d9b80a0d
-Rulebook sha256: 8b9fd5c90bec6af28520c54d088b90f1718eb2858ed0f1a4fbbffb43e38810ac
+Rulebook version: 1.40.0 → 1.40.0
+Packed hash: b4cd67b6388fc7c140f589997fd37efa8eafccbe9fb35d6e056065ddd9ef0b3e
+Rulebook sha256: 11fa7bf379600e816c62d1cad58819e7201c29aeaeddc71ee0506b19ecb39d57
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -18,14 +18,14 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
   web docs/RULEBOOK.md                              → iOS docs/RULEBOOK.md
   web lib/canonical/parity-fixture.json             → iOS ProjectPlannerTests/CanonicalParityFixture.json
   web lib/canonical/cross-platform-contract.json    → iOS ProjectPlannerTests/CrossPlatformContract.json
-Contract sha256: 9a5099b35cf530bb8aba407fe55c220b2e927c807f006510e617d9e4251b7fcb
+Contract sha256: 920a4a7cc0c1c4f5f95045a8713d7d52cff84f1d91be1559fe83f7a964f45045
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: ANNUAL_LEAVE_ADJUSTED_NOTICE_TYPE, ANNUAL_LEAVE_ADJUSTMENTS_COLLECTION, ANNUAL_LEAVE_ADJUSTMENT_DAYS_MESSAGE, ANNUAL_LEAVE_ADJUSTMENT_MAX_DAYS, ANNUAL_LEAVE_ADJUSTMENT_NOTE, ANNUAL_LEAVE_ADJUSTMENT_NOT_ALLOWED_MESSAGE, ANNUAL_LEAVE_ADJUSTMENT_REASON_MAX, ANNUAL_LEAVE_ADJUSTMENT_REASON_MESSAGE, ANNUAL_LEAVE_ADJUSTMENT_REASON_TOO_LONG_MESSAGE, ANNUAL_LEAVE_TEAM_EMPTY_ADMIN, ANNUAL_LEAVE_TEAM_EMPTY_MANAGER, annualLeaveAdjustedNoticeText, annualLeaveAdjustedRecipients, annualLeaveAdjustmentCreateFields, annualLeaveAdjustmentDaysForYear, annualLeaveAdjustmentLabel, annualLeaveAdjustmentValidationError, annualLeaveAdjustmentsForPerson, annualLeaveTeamEmptyMessage, annualLeaveTeamPeople, annualLeaveTeamPersonIsCurrent, annualLeaveTeamTabVisible, balanceHasAllowance, canAdjustAnnualLeave, canViewAnnualLeaveAdjustments, leaveAllowanceForWindow, parseAnnualLeaveAdjustmentDocument
+Exports added: USER_MISSING_EMPLOYMENT_TYPE_MESSAGE, annualLeaveAdjustmentAuthorName, annualLeaveBalanceNotes, annualLeaveEmploymentInput, employmentTypeTransition, usersMissingEmploymentType
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, firestore.rules, lib/canonical/annualLeave140.test.ts, lib/canonical/annualLeaveAdjustments.ts, lib/canonical/annualLeaveBalance.ts, lib/canonical/annualLeaveTeam.ts, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/cross-platform-contract.json, lib/canonical/crossPlatformContract.samples.ts, lib/canonical/crossPlatformContract.ts, lib/canonical/index.ts, lib/canonical/liveSources.ts, lib/canonical/myProfileSummary.test.ts, lib/canonical/myProfileSummary.ts, lib/canonical/notificationPreferences.ts, lib/canonical/notificationRecipients.ts, lib/canonical/organizationSettings.ts, lib/canonical/recordsDocuments.ts
+Web files that changed the rules: docs/RULEBOOK.md, firestore.rules, lib/canonical/annualLeave140.test.ts, lib/canonical/annualLeaveAdjustments.ts, lib/canonical/annualLeaveBalance.ts, lib/canonical/bundleEntry.ts, lib/canonical/createDocuments.ts, lib/canonical/cross-platform-contract.json, lib/canonical/crossPlatformContract.samples.ts, lib/canonical/index.ts, lib/canonical/inviteAccept.ts, lib/canonical/myProfileSummary.ts, lib/canonical/payRate.ts, lib/canonical/recordsDocuments.ts, lib/canonical/userProfile.ts
 Done when:
-- [ ] Packed hash in iOS equals df63ddd76d294eedae3a3cff20c763724da2004b86b8dc19ea364139d9b80a0d
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 8b9fd5c90bec6af28520c54d088b90f1718eb2858ed0f1a4fbbffb43e38810ac)
+- [ ] Packed hash in iOS equals b4cd67b6388fc7c140f589997fd37efa8eafccbe9fb35d6e056065ddd9ef0b3e
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 11fa7bf379600e816c62d1cad58819e7201c29aeaeddc71ee0506b19ecb39d57)
 - [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.40.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
@@ -38,11 +38,9 @@ Done when:
 - **Allowance by employment type** (§4.4, G25–G27): `annualLeaveBalance` takes `employment` — the allowance applies only on PAYE days (`balanceHasAllowance`, `leaveAllowanceForWindow`); new result fields `allowanceTaken`, `allowancePending`, `allowanceBeforeAdjustments`; no carry-over out of a self-employed year. `annualLeaveBankHolidayRange` and `myProfileSummary` take it too. Guardrail 3: self-employed people (ghosts included) and anyone with no stored `employmentType` see days taken instead of a remaining balance; no record changes.
 - **Manual adjustments** (§4.4, H28–H35; new `annualLeaveAdjustments.ts`, collection `annualLeaveAdjustments`): `annualLeaveAdjustmentCreateFields`, `annualLeaveAdjustmentValidationError`, `parseAnnualLeaveAdjustmentDocument`, `annualLeaveAdjustmentsForPerson`, `annualLeaveAdjustmentLabel`, `canAdjustAnnualLeave`, `canViewAnnualLeaveAdjustments`, `annualLeaveAdjustedRecipients`, `annualLeaveAdjustedNoticeText`, `annualLeaveAdjustmentDaysForYear`; `annualLeaveBalance` `adjustments` → `adjustmentDays`. New notice type `annual_leave_adjusted` (push, company activity, destination `annualLeavePerson`). The "set remaining" override is no longer offered (still read until its year ends). `LIVE_COLLECTIONS`, `OPERATIONAL_COLLECTION_PATHS` and the cross-platform contract list the collection.
 - **Fixes from the 11 Nov scan**: web writes `holiday_booked_for_you` / `holiday_cancelled_by_manager`; iOS checks `canDecideLeave` before booking leave for someone; the line manager of leave filed under an `operatives` row decides it (rules); the 4 Nov "never delete leave" decision is marked done (iOS deletes are gone).
-- **Security rules** (§16): `annualLeaveAdjustments` create-only rules and read scope, catch-all exclusion; `holidayBookings` line manager via an operatives row, and a line manager never moves leave to another person. Leave reads are not narrowed (follow-up; see §16). Static compile cost 236,705 → 240,265.
+- **Security rules** (§16): `annualLeaveAdjustments` create-only rules and read scope, catch-all exclusion; `holidayBookings` line manager via an operatives row, and a line manager never moves leave to another person. Leave reads are not narrowed (follow-up; see §16).
+- **Review r306 fixes** (same release): the allowance reads the employment type from the pay record (`annualLeaveEmploymentInput`; the pay profile while `privatePay` is on; unreadable → the whole year counts) and its notes name the type only for viewers who may see pay (`annualLeaveBalanceNotes`, `canViewPersonPay`); `normalizeEmploymentType` reads without case or spaces ("PAYE" was self-employed there; `createDocuments` and `inviteAcceptWrites` use it too) and Data health lists people with none stored (`usersMissingEmploymentType`); the balance returns the shown sums (`shownTaken`, `shownPending`, `notCountedTaken`, `notCountedPending`); the PAYE window comes from the stored change (`employmentTypeTransition`), never a walk over every day; screens show no balance until the pay record and adjustments have loaded, and a refused adjustments read is an error; adjustments store no author name (`annualLeaveAdjustmentAuthorName` from the roster), are never for the writer and only for the current leave year (`allowedYearKeys`); the adjustment push carries no reason (inbox `detail`, new optional notification field). Rules: `createdAt` the request time, a year within a year of today, a reason with a non-space character, no `createdByName`, an admin never adjusts their own operatives row, a deactivated person reads none; the holiday update computes its diff's person keys once (`hbPersonSame`). Static compile cost 236,705 → 240,656 (240,265 before the review: the cuts — no `hasAll`, one year computation, the cheaper active check — paid for most of the new checks).
 
-## New rulebook sections
-
-- 1.40.0 — 2026-11-11
 
 ## Workflow for the iOS agent
 

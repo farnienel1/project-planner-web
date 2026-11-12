@@ -461,6 +461,7 @@ var ProjectPlannerCanonical = (() => {
     USER_DOCUMENT_FIELDS: () => USER_DOCUMENT_FIELDS,
     USER_DOCUMENT_KEYS: () => USER_DOCUMENT_KEYS,
     USER_FORMER_IDS_FIELD: () => USER_FORMER_IDS_FIELD,
+    USER_MISSING_EMPLOYMENT_TYPE_MESSAGE: () => USER_MISSING_EMPLOYMENT_TYPE_MESSAGE,
     USER_MISSING_LEVEL_MESSAGE: () => USER_MISSING_LEVEL_MESSAGE,
     USER_NAME_WRITE_GROUP: () => USER_NAME_WRITE_GROUP,
     USER_SELF_CREATE_AGE_FIELDS: () => USER_SELF_CREATE_AGE_FIELDS,
@@ -499,13 +500,16 @@ var ProjectPlannerCanonical = (() => {
     allowedTimeSlotsOnDay: () => allowedTimeSlotsOnDay,
     annualLeaveAdjustedNoticeText: () => annualLeaveAdjustedNoticeText,
     annualLeaveAdjustedRecipients: () => annualLeaveAdjustedRecipients,
+    annualLeaveAdjustmentAuthorName: () => annualLeaveAdjustmentAuthorName,
     annualLeaveAdjustmentCreateFields: () => annualLeaveAdjustmentCreateFields,
     annualLeaveAdjustmentDaysForYear: () => annualLeaveAdjustmentDaysForYear,
     annualLeaveAdjustmentLabel: () => annualLeaveAdjustmentLabel,
     annualLeaveAdjustmentValidationError: () => annualLeaveAdjustmentValidationError,
     annualLeaveAdjustmentsForPerson: () => annualLeaveAdjustmentsForPerson,
     annualLeaveBalance: () => annualLeaveBalance,
+    annualLeaveBalanceNotes: () => annualLeaveBalanceNotes,
     annualLeaveBankHolidayRange: () => annualLeaveBankHolidayRange,
+    annualLeaveEmploymentInput: () => annualLeaveEmploymentInput,
     annualLeavePendingOmitFields: () => annualLeavePendingOmitFields,
     annualLeaveTeamEmptyMessage: () => annualLeaveTeamEmptyMessage,
     annualLeaveTeamPeople: () => annualLeaveTeamPeople,
@@ -676,6 +680,7 @@ var ProjectPlannerCanonical = (() => {
     effectivePermissions: () => effectivePermissions,
     employmentEffectiveLabel: () => employmentEffectiveLabel,
     employmentTypeOnDay: () => employmentTypeOnDay,
+    employmentTypeTransition: () => employmentTypeTransition,
     enabledScheduleLocations: () => enabledScheduleLocations,
     erasedOrganizationAuditFields: () => erasedOrganizationAuditFields,
     excludeActor: () => excludeActor,
@@ -1431,6 +1436,7 @@ var ProjectPlannerCanonical = (() => {
     userProfileWriteFields: () => userProfileWriteFields,
     userRosterSegment: () => userRosterSegment,
     userTimesheetSubjects: () => userTimesheetSubjects,
+    usersMissingEmploymentType: () => usersMissingEmploymentType,
     usersMissingLevel: () => usersMissingLevel,
     usersMissingLineManager: () => usersMissingLineManager,
     usersMissingPayRate: () => usersMissingPayRate,
@@ -2328,8 +2334,8 @@ var ProjectPlannerCanonical = (() => {
     "dailyOverview"
   ];
   function normalizeEmploymentType(raw) {
-    if (raw === "paye") return "paye";
-    if (raw === "self_employed" || raw === "selfEmployed") return "self_employed";
+    const value = typeof raw === "string" ? raw.trim().toLowerCase() : "";
+    if (value === "paye") return "paye";
     return "self_employed";
   }
   function accountKindFromFlags(flags2) {
@@ -2345,6 +2351,16 @@ var ProjectPlannerCanonical = (() => {
       return Number.isNaN(parsed.getTime()) ? void 0 : parsed;
     }
     return void 0;
+  }
+  function employmentTypeTransition(user, timeZone) {
+    const from = user.employmentTypeTransitionFrom;
+    const effectiveAt = validDay(user.employmentTypeEffectiveAt);
+    if (!from || !effectiveAt) return null;
+    return {
+      before: normalizeEmploymentType(from),
+      after: normalizeEmploymentType(user.employmentType),
+      effectiveDayKey: dayKeyInZone(effectiveAt, zoneOrLondon(timeZone))
+    };
   }
   function employmentTypeOnDay(user, date, timeZone) {
     const current = normalizeEmploymentType(user.employmentType);
@@ -7075,23 +7091,24 @@ var ProjectPlannerCanonical = (() => {
     const fraction = (to - from + 1) / (last - first + 1);
     return { allowance: Math.min(full, Math.ceil(full * fraction * 2 - 1e-9) / 2), proRata: true };
   }
-  function keyFromDayNumber(n) {
-    const date = new Date(n * 864e5);
-    return `${date.getUTCFullYear()}-${pad22(date.getUTCMonth() + 1)}-${pad22(date.getUTCDate())}`;
-  }
   function payeWindow(employment, year, timeZone) {
-    const first = dayNumber(year.startDayKey);
-    const last = dayNumber(year.endDayKey);
-    if (first == null || last == null) return null;
-    let from = null;
-    let to = null;
-    for (let n = first; n <= last; n += 1) {
-      const key5 = keyFromDayNumber(n);
-      if (employmentTypeOnDay(employment, dateFromDayKeyInZone(key5, timeZone), timeZone) !== "paye") continue;
-      if (from == null) from = n;
-      to = n;
+    if (!parseDayKey(year.startDayKey) || !parseDayKey(year.endDayKey)) return null;
+    const change = employmentTypeTransition(employment, timeZone);
+    if (!change) {
+      return normalizeEmploymentType(employment.employmentType) === "paye" ? { fromDayKey: year.startDayKey, toDayKey: year.endDayKey } : null;
     }
-    return from == null || to == null ? null : { fromDayKey: keyFromDayNumber(from), toDayKey: keyFromDayNumber(to) };
+    const pieces = [];
+    const eff = change.effectiveDayKey;
+    if (change.before === "paye" && eff > year.startDayKey) {
+      const dayBefore = addDaysInZone(dateFromDayKeyInZone(eff, timeZone), -1, timeZone);
+      const lastBefore = dayKeyInZone(dayBefore, timeZone);
+      pieces.push({ fromDayKey: year.startDayKey, toDayKey: lastBefore < year.endDayKey ? lastBefore : year.endDayKey });
+    }
+    if (change.after === "paye" && eff <= year.endDayKey) {
+      pieces.push({ fromDayKey: eff > year.startDayKey ? eff : year.startDayKey, toDayKey: year.endDayKey });
+    }
+    if (!pieces.length) return null;
+    return { fromDayKey: pieces[0].fromDayKey, toDayKey: pieces[pieces.length - 1].toDayKey };
   }
   function laterDayKey(a, b) {
     const left = String(a || "").trim();
@@ -7218,7 +7235,11 @@ var ProjectPlannerCanonical = (() => {
       allowancePending,
       adjustmentDays,
       allowanceBeforeAdjustments,
-      remaining
+      remaining,
+      shownTaken: hasAllowance ? allowanceTaken : taken,
+      shownPending: hasAllowance ? allowancePending : pending,
+      notCountedTaken: hasAllowance ? Math.max(0, snapLeaveDays(taken - allowanceTaken)) : 0,
+      notCountedPending: hasAllowance ? Math.max(0, snapLeaveDays(pending - allowancePending)) : 0
     };
   }
   function applyRemainingOverride(input) {
@@ -7228,6 +7249,51 @@ var ProjectPlannerCanonical = (() => {
     return {
       annualLeaveYearAllowance: snapLeaveDays(remaining + taken + pending),
       annualLeaveYearAllowanceKey: String(input.yearKey || "").trim()
+    };
+  }
+  function annualLeaveEmploymentInput(input) {
+    const person = input.person ?? {};
+    let record14 = person;
+    if (input.privatePay) {
+      if (!input.payProfileRead) return null;
+      if (input.payProfile) record14 = { ...person, ...input.payProfile.fields };
+    }
+    const str = (value) => typeof value === "string" && value.trim() ? value : null;
+    const at = record14.employmentTypeEffectiveAt;
+    return {
+      employmentType: str(record14.employmentType),
+      employmentTypeTransitionFrom: str(record14.employmentTypeTransitionFrom),
+      employmentTypeEffectiveAt: at instanceof Date || typeof at === "string" || typeof at === "number" ? at : documentInstant(at)
+    };
+  }
+  function documentInstant(value) {
+    if (!value || typeof value !== "object") return null;
+    const v = value;
+    if (typeof v.toMillis === "function") {
+      const ms = v.toMillis();
+      return Number.isFinite(ms) ? ms : null;
+    }
+    const seconds = Number(v.seconds ?? v._seconds);
+    return Number.isFinite(seconds) ? seconds * 1e3 : null;
+  }
+  function leaveCount(days) {
+    const n = snapLeaveDays(days);
+    return `${n} ${n === 1 ? "day" : "days"}`;
+  }
+  function annualLeaveBalanceNotes(balance, options) {
+    const named = options.showsEmploymentType;
+    if (!balance.hasAllowance) {
+      return {
+        proRata: null,
+        notCounted: null,
+        noAllowance: named ? "No paid allowance: self-employed, or the allowance is switched off. The count resets at the end of the company leave year." : "No paid allowance this leave year. The count resets at the end of the company leave year."
+      };
+    }
+    const notCounted = balance.notCountedTaken > 0 ? named ? `${leaveCount(balance.notCountedTaken)} taken while self-employed ${balance.notCountedTaken === 1 ? "does" : "do"} not come out of the allowance.` : `${leaveCount(balance.notCountedTaken)} taken this leave year ${balance.notCountedTaken === 1 ? "does" : "do"} not come out of the allowance.` : null;
+    return {
+      proRata: balance.proRata ? named ? "Pro rata: the allowance counts only from the start date or the day PAYE began." : "Pro rata: the allowance counts only from part of this leave year." : null,
+      notCounted,
+      noAllowance: null
     };
   }
 
@@ -9088,6 +9154,25 @@ var ProjectPlannerCanonical = (() => {
       const active = group.filter((member) => member.isActive !== false && !isAnonymisedDeletedProfile(member));
       if (active.length === 0) continue;
       if (active.some((member) => payRateRequiredError(member) == null)) continue;
+      out.push(active[0].id.trim());
+    }
+    return out;
+  }
+  var USER_MISSING_EMPLOYMENT_TYPE_MESSAGE = "No employment type stored: reads as self-employed, so no annual leave allowance. Open in Manage Users and choose PAYE or self-employed.";
+  function usersMissingEmploymentType(roster) {
+    const rows3 = (roster || []).filter((row2) => row2 && typeof row2.id === "string" && row2.id.trim());
+    const done = /* @__PURE__ */ new Set();
+    const out = [];
+    for (const row2 of rows3) {
+      const key5 = row2.id.trim().toLowerCase();
+      if (done.has(key5)) continue;
+      const ids = new Set(personIdSet(row2, rows3).map((id2) => id2.toLowerCase()));
+      ids.add(key5);
+      const group = rows3.filter((other) => ids.has(other.id.trim().toLowerCase()));
+      for (const member of group) done.add(member.id.trim().toLowerCase());
+      const active = group.filter((member) => member.isActive !== false && !isAnonymisedDeletedProfile(member));
+      if (active.length === 0) continue;
+      if (active.some((member) => typeof member.employmentType === "string" && member.employmentType.trim() !== "")) continue;
       out.push(active[0].id.trim());
     }
     return out;
@@ -11071,7 +11156,7 @@ var ProjectPlannerCanonical = (() => {
   function rulebookStamp() {
     return {
       version: true ? "1.40.0" : "",
-      sha256: true ? "8b9fd5c90bec6af28520c54d088b90f1718eb2858ed0f1a4fbbffb43e38810ac" : ""
+      sha256: true ? "11fa7bf379600e816c62d1cad58819e7201c29aeaeddc71ee0506b19ecb39d57" : ""
     };
   }
   function rulebookVersionLabel(version) {
@@ -14270,6 +14355,7 @@ var ProjectPlannerCanonical = (() => {
       known: isKnownNotificationType(type),
       title: text14(row2.title),
       message: text14(row2.message),
+      detail: optionalText4(row2.detail),
       userId: optionalText4(row2.userId),
       actorUserId: optionalText4(row2.actorUserId),
       relatedId,
@@ -14422,6 +14508,8 @@ var ProjectPlannerCanonical = (() => {
     if (DAY_KEY6.test(day)) set.dayKey = day;
     const catalogue = text14(input?.catalogue);
     if (catalogue === "projects" || catalogue === "smallWorks") set.catalogue = catalogue;
+    const detail = text14(input?.detail);
+    if (detail) set.detail = detail.slice(0, 300);
     return { set };
   }
   function sharedWarningResolutionKey(key5, timeZone) {
@@ -14635,7 +14723,7 @@ var ProjectPlannerCanonical = (() => {
       invitedBy: text15(input.invitedBy),
       firstName: text15(input.firstName),
       surname: text15(input.surname),
-      employmentType: text15(input.employmentType) === "paye" ? "paye" : "self_employed",
+      employmentType: normalizeEmploymentType(input.employmentType),
       permissions,
       role: inviteRoleFor(input.role, permissions),
       inviteType: "new_user",
@@ -15067,16 +15155,25 @@ var ProjectPlannerCanonical = (() => {
     const userId = text18(input.userId);
     const yearKey = text18(input.yearKey);
     const createdBy = text18(input.createdBy);
-    if (!userId || !createdBy || !isDayKey2(yearKey)) return null;
+    if (!userId || !createdBy || !isDayKey2(yearKey) || idKey(userId) === idKey(createdBy)) return null;
+    if (input.allowedYearKeys && !input.allowedYearKeys.map(text18).includes(yearKey)) return null;
     if (annualLeaveAdjustmentValidationError({ days: input.days, reason: input.reason })) return null;
     return {
       userId,
       days: Math.round(Number(input.days) * 2) / 2,
       reason: text18(input.reason),
       yearKey,
-      createdBy,
-      createdByName: text18(input.createdByName).slice(0, 120)
+      createdBy
     };
+  }
+  function annualLeaveAdjustmentAuthorName(adjustment, roster) {
+    const by = idKey(text18(adjustment?.createdBy));
+    if (!by) return "Someone";
+    const members = (roster || []).filter((row3) => row3 && idText(row3.id));
+    const row2 = members.find((member) => idKey(member.id) === by) ?? members.find((member) => personIdSet(member, members).some((id2) => idKey(id2) === by));
+    if (!row2) return "Someone";
+    const name = `${text18(row2.firstName)} ${text18(row2.surname) || text18(row2.lastName)}`.trim();
+    return name || text18(row2.email) || "Someone";
   }
   function parseAnnualLeaveAdjustmentDocument(docId, data) {
     const id2 = text18(docId);
@@ -15092,7 +15189,6 @@ var ProjectPlannerCanonical = (() => {
       reason: text18(row2.reason),
       yearKey,
       createdBy: text18(row2.createdBy),
-      createdByName: text18(row2.createdByName),
       createdAtMs: documentInstantMs(row2.createdAt)
     };
   }
@@ -15117,7 +15213,10 @@ var ProjectPlannerCanonical = (() => {
     const reason = text18(input.reason);
     return {
       title: "Annual leave adjusted",
-      message: `${actor} adjusted ${person}'s annual leave by ${annualLeaveAdjustmentLabel(input.days)} this leave year${reason ? `: ${reason}` : "."}`
+      // 1.40.0 (review r306 #10): the push sends `title` and `message` only, so the reason is never on a lock screen;
+      // it is the inbox row's `detail`.
+      message: `${actor} adjusted ${person}'s annual leave by ${annualLeaveAdjustmentLabel(input.days)} this leave year.`,
+      detail: reason ? `Reason: ${reason}` : null
     };
   }
 
@@ -15284,7 +15383,7 @@ var ProjectPlannerCanonical = (() => {
       for (const [key5, value] of Object.entries(permissions)) if (typeof value === "boolean") out[key5] = value;
     }
     const employment = text19(row2.employmentType);
-    if (employment) out.employmentType = employment === "paye" ? "paye" : "self_employed";
+    if (employment) out.employmentType = normalizeEmploymentType(employment);
     const basis = text19(row2.payBasis);
     if (basis === "hourly" && finite3(row2.hourlyRate) != null) {
       out.payBasis = "hourly";
@@ -21695,8 +21794,12 @@ var ProjectPlannerCanonical = (() => {
       orgEndMonth: defaults.endMonth,
       onDayKey: profileDayKey(input),
       timeZone: input.timeZone,
-      employment: employmentOf(user)
+      employment: employmentFor(input)
     });
+  }
+  function employmentFor(input) {
+    if (Object.prototype.hasOwnProperty.call(input, "leaveEmployment")) return input.leaveEmployment ?? null;
+    return employmentOf(input.user || null);
   }
   function employmentOf(user) {
     return {
@@ -21750,7 +21853,7 @@ var ProjectPlannerCanonical = (() => {
       nonWorkingDayKeys: input.nonWorkingDayKeys ?? [],
       employmentStartDayKey: user?.employmentStartDate ?? null,
       maxCarryOverDays: defaults.maxCarryOverDays ?? null,
-      employment: employmentOf(user),
+      employment: employmentFor(input),
       adjustments: input.leaveAdjustments ?? []
     });
     const week = organizationWeekDayKeys(dayKey, timeZone);

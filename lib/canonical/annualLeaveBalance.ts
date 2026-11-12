@@ -10,7 +10,7 @@
 import { addDaysInZone, dateFromDayKeyInZone, dayKeyInZone } from '../orgTime/zoneTime'
 import { zoneOrLondon } from './dayKeys'
 import { leaveRecordDayKeys } from './leaveRequests'
-import { employmentTypeOnDay, type EmploymentTypeUser } from './userProfile'
+import { employmentTypeOnDay, employmentTypeTransition, normalizeEmploymentType, type EmploymentTypeUser } from './userProfile'
 
 export const DEFAULT_ANNUAL_LEAVE_DAYS = 25
 
@@ -247,6 +247,17 @@ export type AnnualLeaveBalance = {
   allowanceBeforeAdjustments: number
   /** May be below 0 (owner decision 11 Nov: an adjustment or an overrun can take it below zero). */
   remaining: number | null
+  /**
+   * 1.40.0: the "taken" figure a screen shows — `allowanceTaken` with an allowance, else `taken` (days taken only).
+   * Screens show these sums; they never subtract themselves.
+   */
+  shownTaken: number
+  /** 1.40.0: the "awaiting approval" figure a screen shows — `allowancePending` with an allowance, else `pending`. */
+  shownPending: number
+  /** 1.40.0: approved leave this year that does not come out of the allowance (days not PAYE); 0 with no allowance. */
+  notCountedTaken: number
+  /** 1.40.0: pending leave this year that will not come out of the allowance; 0 with no allowance. */
+  notCountedPending: number
 }
 
 function dayNumber(dayKey: string): number | null {
@@ -307,24 +318,35 @@ function keyFromDayNumber(n: number): string {
 /**
  * 1.40.0: the days of a leave year on which the person is PAYE (`employmentTypeOnDay`, effective-dated), as one
  * from–to window (one stored transition gives one contiguous PAYE part), or null when they are PAYE on none.
+ * Worked out from the stored change (`employmentTypeTransition`), never day by day: with no change the whole year is
+ * one type.
  */
 function payeWindow(
   employment: EmploymentTypeUser,
   year: { startDayKey: string; endDayKey: string },
   timeZone: string
 ): { fromDayKey: string; toDayKey: string } | null {
-  const first = dayNumber(year.startDayKey)
-  const last = dayNumber(year.endDayKey)
-  if (first == null || last == null) return null
-  let from: number | null = null
-  let to: number | null = null
-  for (let n = first; n <= last; n += 1) {
-    const key = keyFromDayNumber(n)
-    if (employmentTypeOnDay(employment, dateFromDayKeyInZone(key, timeZone), timeZone) !== 'paye') continue
-    if (from == null) from = n
-    to = n
+  if (!parseDayKey(year.startDayKey) || !parseDayKey(year.endDayKey)) return null
+  const change = employmentTypeTransition(employment, timeZone)
+  if (!change) {
+    return normalizeEmploymentType(employment.employmentType) === 'paye'
+      ? { fromDayKey: year.startDayKey, toDayKey: year.endDayKey }
+      : null
   }
-  return from == null || to == null ? null : { fromDayKey: keyFromDayNumber(from), toDayKey: keyFromDayNumber(to) }
+  const pieces: Array<{ fromDayKey: string; toDayKey: string }> = []
+  const eff = change.effectiveDayKey
+  // Before the change (days < eff): the earlier type.
+  if (change.before === 'paye' && eff > year.startDayKey) {
+    const dayBefore = addDaysInZone(dateFromDayKeyInZone(eff, timeZone), -1, timeZone)
+    const lastBefore = dayKeyInZone(dayBefore, timeZone)
+    pieces.push({ fromDayKey: year.startDayKey, toDayKey: lastBefore < year.endDayKey ? lastBefore : year.endDayKey })
+  }
+  // From the change (days >= eff): the current type.
+  if (change.after === 'paye' && eff <= year.endDayKey) {
+    pieces.push({ fromDayKey: eff > year.startDayKey ? eff : year.startDayKey, toDayKey: year.endDayKey })
+  }
+  if (!pieces.length) return null
+  return { fromDayKey: pieces[0].fromDayKey, toDayKey: pieces[pieces.length - 1].toDayKey }
 }
 
 function laterDayKey(a: string | null | undefined, b: string | null | undefined): string | null {
@@ -520,6 +542,10 @@ export function annualLeaveBalance(input: AnnualLeaveBalanceInput): AnnualLeaveB
     adjustmentDays,
     allowanceBeforeAdjustments,
     remaining,
+    shownTaken: hasAllowance ? allowanceTaken : taken,
+    shownPending: hasAllowance ? allowancePending : pending,
+    notCountedTaken: hasAllowance ? Math.max(0, snapLeaveDays(taken - allowanceTaken)) : 0,
+    notCountedPending: hasAllowance ? Math.max(0, snapLeaveDays(pending - allowancePending)) : 0,
   }
 }
 
@@ -545,5 +571,100 @@ export function applyRemainingOverride(input: {
   return {
     annualLeaveYearAllowance: snapLeaveDays(remaining + taken + pending),
     annualLeaveYearAllowanceKey: String(input.yearKey || '').trim(),
+  }
+}
+
+/**
+ * 1.40.0 (§4.4, review r306 #2): the employment-type input of `annualLeaveBalance` for one person, read from the same
+ * pay record every other screen uses (`payEditorStartingValues`): the person's `users` / `operatives` document while
+ * `privatePay` is off; while it is on, that document with its pay profile laid over (`payProfiles/{id}`, the person's
+ * id, else a former id), because the employment type is pay data (`PAY_PROFILE_FIELDS`) and a stripped users document
+ * no longer holds it.
+ *
+ * `payProfileRead` false (privatePay on and the pay profile could not be read — refused, offline, not loaded) gives
+ * null: the balance then counts the whole year as before 1.40.0 (no employment filter) rather than reading a stripped
+ * document as self-employed with no allowance. `payProfile` null with `payProfileRead` true means none is stored: the
+ * person's document is the record.
+ */
+export function annualLeaveEmploymentInput(input: {
+  person: Record<string, unknown> | null | undefined
+  payProfile?: { fields: Record<string, unknown> } | null
+  privatePay: boolean
+  payProfileRead: boolean
+}): EmploymentTypeUser | null {
+  const person = input.person ?? {}
+  let record: Record<string, unknown> = person
+  if (input.privatePay) {
+    if (!input.payProfileRead) return null
+    if (input.payProfile) record = { ...person, ...input.payProfile.fields }
+  }
+  const str = (value: unknown) => (typeof value === 'string' && value.trim() ? value : null)
+  const at = record.employmentTypeEffectiveAt
+  return {
+    employmentType: str(record.employmentType),
+    employmentTypeTransitionFrom: str(record.employmentTypeTransitionFrom),
+    employmentTypeEffectiveAt:
+      at instanceof Date || typeof at === 'string' || typeof at === 'number' ? (at as Date | string | number) : documentInstant(at),
+  }
+}
+
+function documentInstant(value: unknown): number | null {
+  if (!value || typeof value !== 'object') return null
+  const v = value as { toMillis?: () => number; seconds?: unknown; _seconds?: unknown }
+  if (typeof v.toMillis === 'function') {
+    const ms = v.toMillis()
+    return Number.isFinite(ms) ? ms : null
+  }
+  const seconds = Number(v.seconds ?? v._seconds)
+  return Number.isFinite(seconds) ? seconds * 1000 : null
+}
+
+export type AnnualLeaveBalanceNotes = {
+  /** Shown when the allowance this year is pro rata. */
+  proRata: string | null
+  /** Shown when some leave this year does not come out of the allowance. */
+  notCounted: string | null
+  /** Shown instead of a remaining figure when there is no allowance. */
+  noAllowance: string | null
+}
+
+function leaveCount(days: number): string {
+  const n = snapLeaveDays(days)
+  return `${n} ${n === 1 ? 'day' : 'days'}`
+}
+
+/**
+ * 1.40.0 (§4.4, review r306 #2): the notes under a balance. They name the employment type only when the viewer may see
+ * the person's pay (`showsEmploymentType` = `canViewPersonPay(viewer, person, roster)`: the person, admins, an
+ * Operatives manager for an operative). Anyone else — a line manager who is neither — sees the same figures with
+ * neutral wording, because the employment type is pay data (§8).
+ */
+export function annualLeaveBalanceNotes(
+  balance: Pick<AnnualLeaveBalance, 'hasAllowance' | 'proRata' | 'notCountedTaken'>,
+  options: { showsEmploymentType: boolean }
+): AnnualLeaveBalanceNotes {
+  const named = options.showsEmploymentType
+  if (!balance.hasAllowance) {
+    return {
+      proRata: null,
+      notCounted: null,
+      noAllowance: named
+        ? 'No paid allowance: self-employed, or the allowance is switched off. The count resets at the end of the company leave year.'
+        : 'No paid allowance this leave year. The count resets at the end of the company leave year.',
+    }
+  }
+  const notCounted = balance.notCountedTaken > 0
+    ? named
+      ? `${leaveCount(balance.notCountedTaken)} taken while self-employed ${balance.notCountedTaken === 1 ? 'does' : 'do'} not come out of the allowance.`
+      : `${leaveCount(balance.notCountedTaken)} taken this leave year ${balance.notCountedTaken === 1 ? 'does' : 'do'} not come out of the allowance.`
+    : null
+  return {
+    proRata: balance.proRata
+      ? named
+        ? 'Pro rata: the allowance counts only from the start date or the day PAYE began.'
+        : 'Pro rata: the allowance counts only from part of this leave year.'
+      : null,
+    notCounted,
+    noAllowance: null,
   }
 }
