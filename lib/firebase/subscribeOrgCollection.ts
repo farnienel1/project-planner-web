@@ -29,7 +29,7 @@ import { db } from '@/lib/firebase/config'
 import { isRetryableAuthLoadError, authLoadRetryDelayMs } from '@/lib/auth/authBoot'
 import { waitForAuthToken } from '@/lib/firebase/waitForAuthToken'
 import { unsubscribeOrgPlansOutside } from '@/lib/firebase/subscribeOrgPlan'
-import { mergeOrgCollectionSnapshot, type OrgCollectionDoc } from '@/lib/firebase/orgCollectionMerge'
+import { isMetadataOnlySnapshot, mergeOrgCollectionSnapshot, type OrgCollectionDoc } from '@/lib/firebase/orgCollectionMerge'
 
 export type { OrgCollectionDoc } from '@/lib/firebase/orgCollectionMerge'
 
@@ -203,9 +203,30 @@ export function subscribeOrgCollection(
     unsubs.get(key)?.()
     const unsub = onSnapshot(
       source,
+      // Rulebook 1.38.0 §27: metadata changes only tell the data check the server answered (see below).
+      { includeMetadataChanges: true },
       (snap) => {
         if (!stillThisQuery()) return
         failedKeys.delete(key)
+        const thisQuery = `${organizationId}|${queryId}`
+        const held = lastDocs.get(cacheKey(key, organizationId)) ?? []
+        // A server confirmation while rows kept from a cache snapshot or an older bound are still held is published
+        // (it is the collection, and drops them); otherwise a metadata-only snapshot only updates the flags.
+        const heldIds = new Set(held.map((row) => row.id))
+        const heldIsSnapshot = held.length === snap.docs.length && snap.docs.every((entry) => heldIds.has(entry.id))
+        if (
+          (snap.metadata.fromCache || heldIsSnapshot) &&
+          isMetadataOnlySnapshot({ documentChangeCount: snap.docChanges().length, deliveredBefore: delivered.get(key) === thisQuery })
+        ) {
+          // The server confirmed the cached copy or acknowledged a write; no document changed. Flags only — the
+          // store is not called, so it sees exactly the snapshots it saw before.
+          if (!snap.metadata.fromCache) serverDelivered.set(key, thisQuery)
+          pendingWrites.set(key, {
+            any: snap.metadata.hasPendingWrites,
+            ids: new Set(snap.docs.filter((entry) => entry.metadata.hasPendingWrites).map((entry) => entry.id)),
+          })
+          return
+        }
         emit(snap)
         delivered.set(key, `${organizationId}|${queryId}`)
         if (!snap.metadata.fromCache) serverDelivered.set(key, `${organizationId}|${queryId}`)

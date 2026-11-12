@@ -12,7 +12,12 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import fixture from '@/lib/canonical/data-parity-fixture.json'
 import { dataParityCheck, isLegacyPlaceholderDocumentId, worksListMembership } from '@/lib/canonical'
-import { mergeOrgCollectionSnapshot, readerDroppedJobDocuments, type OrgCollectionDoc } from '@/lib/firebase/orgCollectionMerge'
+import {
+  isMetadataOnlySnapshot,
+  mergeOrgCollectionSnapshot,
+  readerDroppedJobDocuments,
+  type OrgCollectionDoc,
+} from '@/lib/firebase/orgCollectionMerge'
 import { jobsFromListenerDocs } from '@/lib/stores/jobListMerge'
 import { bookingsFromListenerDocs } from '@/lib/stores/bookingListMerge'
 import { rosterDocumentsAfter } from '@/lib/staff/rosterDocuments'
@@ -150,4 +155,12 @@ test('1.38.0: the fixture catches a data check that counts the store list or col
     }
     assert.equal(dataParityCheck({ lists: [{ key: list, serverCount: raw.length, localIds: raw }] }).ok, true)
   }
+})
+
+test('1.38.0 re-review: a metadata-only snapshot (server confirms the cache, no document changed) only updates flags', () => {
+  // The first snapshot is the listener's load, even with no documents.
+  assert.equal(isMetadataOnlySnapshot({ documentChangeCount: 0, deliveredBefore: false }), false)
+  // After it: no document added, changed or removed = metadata only (the store is not called).
+  assert.equal(isMetadataOnlySnapshot({ documentChangeCount: 0, deliveredBefore: true }), true)
+  assert.equal(isMetadataOnlySnapshot({ documentChangeCount: 1, deliveredBefore: true }), false)
 })

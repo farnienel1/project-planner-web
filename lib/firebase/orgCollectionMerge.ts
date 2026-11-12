@@ -28,3 +28,13 @@ export function mergeOrgCollectionSnapshot(input: {
 export function readerDroppedJobDocuments(docs: readonly OrgCollectionDoc[], isPlaceholder: (id: string) => boolean): number {
   return docs.filter((row) => isPlaceholder(row.id)).length
 }
+
+/**
+ * Rulebook 1.38.0 §27 (re-review fix): the listeners run with `includeMetadataChanges` so the data check learns when
+ * the server answered — a cache-first listener whose server confirmation changes no document raises only a metadata
+ * snapshot otherwise never seen. Such a snapshot (no document added, changed or removed, after the listener's first)
+ * only updates the check's flags; the store never sees it, so it gets exactly the snapshots it got before.
+ */
+export function isMetadataOnlySnapshot(input: { documentChangeCount: number; deliveredBefore: boolean }): boolean {
+  return input.deliveredBefore && input.documentChangeCount === 0
+}

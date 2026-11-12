@@ -25,6 +25,7 @@ import { parseOrgUser } from '@/lib/firebase/parseUser'
 import { aliasIdsForRoster, dedupeUsersByEmail } from '@/lib/staff/userRosterUtils'
 import { mergeRetainedRoster, missingOrganizationIdPatch, retainScopedRows, rosterParseRecord } from '@/lib/staff/rosterRetain'
 import { rosterDocumentsAfter } from '@/lib/staff/rosterDocuments'
+import { isMetadataOnlySnapshot } from '@/lib/firebase/orgCollectionMerge'
 import {
   catalogueRowNeedsRead,
   explicitAccountIds,
@@ -690,8 +691,15 @@ function startLiveRoster(organizationId: string, fallbackIds: string[]): void {
   liveRosterUnsubs.push(
     onSnapshot(
       query(collection(db, 'users'), where('organizationId', '==', organizationId)),
+      // Rulebook 1.38.0 §27: metadata changes only tell the data check the server answered.
+      { includeMetadataChanges: true },
       (snap) => {
         if (!stillLive()) return
+        if (isMetadataOnlySnapshot({ documentChangeCount: snap.docChanges().length, deliveredBefore: liveRosterQueryIds !== null })) {
+          if (!snap.metadata.fromCache) liveRosterServerSnapshot = true
+          liveRosterPendingWrites = snap.metadata.hasPendingWrites
+          return
+        }
         const rows: User[] = []
         let removed = false
         const heldIds = liveRosterQueryIds ?? new Set<string>()

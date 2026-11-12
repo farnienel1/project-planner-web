@@ -9,8 +9,8 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
 Rulebook version: 1.38.0 → 1.38.0
-Packed hash: e4c969a1556c90f63338b69de796594a0c4f53951efbb59da3e4e095c22e6067
-Rulebook sha256: 2002de68e07fcd46fd1e269a83e61df443a53e9f9da6879b6ee78b16cb5d5b3d
+Packed hash: c6044a495a3481c282116ae3b9905e206c68fb2374ade3e2f0f5e0aa9984c454
+Rulebook sha256: d6d2d6e8c4836d644ef97825dfdca8a919bea5d1c7f5ca69fafcae3bf6e4828a
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -22,12 +22,12 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
 Contract sha256: 59d6bc6123f250e1f57599240eb3190ab48f5cd2532f8281a99360d9e187d86b
 Data-parity fixture sha256: c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: DATA_PARITY_CONFIRM_DELAY_MS, dataParityConfirm
+Exports added: none
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/data-parity-fixture.json, lib/canonical/dataParity.test.ts, lib/canonical/dataParity.ts, lib/canonical/index.ts
+Web files that changed the rules: docs/RULEBOOK.md
 Done when:
-- [ ] Packed hash in iOS equals e4c969a1556c90f63338b69de796594a0c4f53951efbb59da3e4e095c22e6067
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 2002de68e07fcd46fd1e269a83e61df443a53e9f9da6879b6ee78b16cb5d5b3d)
+- [ ] Packed hash in iOS equals c6044a495a3481c282116ae3b9905e206c68fb2374ade3e2f0f5e0aa9984c454
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 d6d2d6e8c4836d644ef97825dfdca8a919bea5d1c7f5ca69fafcae3bf6e4828a)
 - [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.38.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
@@ -37,7 +37,7 @@ Done when:
 ## What changed in 1.38.0
 
 - **Data check** (new §27, owner decision 11 Nov): each app compares the server's `count()` of each listener's own query with the documents it holds for that query (projects, small works, users, operatives, managers, clients, bookings and manager site bookings in the loaded window, annual leave, tasks), re-reads and re-attaches a list that differs, checks again and keeps the last 20 results on the device. Nothing is shown in the launch build (owner change 11 Nov): the admin panel in Settings → Data health, with **Check now**, appears only while `platformConfig/app.dataCheckPanel` is on (`DATA_CHECK_PANEL_SWITCH_FIELD`, `DATA_CHECK_PANEL_ORGANIZATION_IDS_FIELD`, `dataCheckPanelEnabled`, `dataCheckPanelVisible`; missing = off). Read-only: no writes, no rules change. `DATA_PARITY_CHECKS`, `dataParityCheck`, `dataParityCheckDue`, `DATA_PARITY_MIN_INTERVAL_MS`, `dataParityLogEntry`, `dataParityLogAppend`, `DATA_PARITY_LOG_LIMIT`, `dataParitySummary`, `dataParitySumCounts`, `dataParityCheckDefinition`, `DATA_PARITY_SKIP_REASONS` (with `pendingWrites` and `awaitingServerSnapshot`), `DATA_PARITY_TRIGGERS`, `dataParityConfirm`, `DATA_PARITY_CONFIRM_DELAY_MS`.
-- **Review fixes (before release):** the device count is the listener's documents by stored id with case kept (iOS counted its filtered store lists and case-folded UUIDs, so placeholder rows, nameless clients and unreadable documents read as differences); lists with unconfirmed local writes or no server answer yet are skipped; a difference is re-read only after a second look finds it again (`dataParityConfirm`); a re-read keeps this device's unconfirmed documents and a plan restart keeps its rows until the server answers (no flicker); the throttle is shared by every browser tab; no console or device-log output in production builds; the panel sits under Data health on both apps (iOS Settings → Data health). The fixture gains operatives, managers and clients (`rawLists`).
+- **Review fixes (before release):** the device count is the listener's documents by stored id with case kept (iOS counted its filtered store lists and case-folded UUIDs, so placeholder rows, nameless clients and unreadable documents read as differences); lists with unconfirmed local writes or no server answer yet are skipped; a difference is re-read only after a second look finds it again (`dataParityConfirm`); a re-read keeps this device's unconfirmed documents and a plan restart keeps its rows until the server answers (no flicker); the throttle is shared by every browser tab; no console or device-log output in production builds; the panel sits under Data health on both apps (iOS Settings → Data health). The fixture gains operatives, managers and clients (`rawLists`). Re-review: listeners run with metadata changes so a quiet list's server answer is seen (metadata-only snapshots stop at the check's flags); a heal never runs after a company switch; iOS forgets confirmed jobs of a re-attached job list.
 - **Two-app comparison in CI** (§27): `lib/canonical/data-parity-fixture.json`, mirrored to iOS (`ProjectPlannerTests/DataParityFixture.json`, `dataParityFixtureSha256` in the manifest), fed through each app's own store and merge code by web `lib/dataParity/dataParityFixture.test.ts` and iOS `DataParityFixtureTests`.
 - **Web fix found by the fixture:** a cache snapshot shorter than the list on screen no longer replaces it (it only adds and updates rows, like iOS); only a server snapshot removes a row (`retainLoadedRows` with `authoritative: false`). The listener and store merges are now pure modules (`lib/firebase/orgCollectionMerge.ts`, `lib/stores/jobListMerge.ts`, `lib/stores/bookingListMerge.ts`, `lib/staff/rosterDocuments.ts`).
 

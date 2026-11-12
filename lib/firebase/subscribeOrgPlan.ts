@@ -21,7 +21,7 @@ import {
 import { db } from '@/lib/firebase/config'
 import { waitForAuthToken } from '@/lib/firebase/waitForAuthToken'
 import type { OrgCollectionDoc } from '@/lib/firebase/subscribeOrgCollection'
-import { mergeOrgCollectionSnapshot } from '@/lib/firebase/orgCollectionMerge'
+import { isMetadataOnlySnapshot, mergeOrgCollectionSnapshot } from '@/lib/firebase/orgCollectionMerge'
 
 /** One query of a plan: `constraints` on the collection, or one `documentId`. `id` names it stably. */
 export type OrgPlanPart = { id: string; constraints?: QueryConstraint[]; documentId?: string }
@@ -40,6 +40,8 @@ type PartState = {
    * part's first server snapshot; a cache snapshot before it only adds and updates (`mergeOrgCollectionSnapshot`).
    */
   seeded?: boolean
+  /** A snapshot of this part has been published (its first is never metadata-only). */
+  delivered?: boolean
 }
 type PlanState = {
   organizationId: string
@@ -112,8 +114,19 @@ function startPart(key: string, state: PlanState, part: OrgPlanPart, seed?: read
     const source = part.constraints?.length ? query(col, ...part.constraints) : col
     partState.unsub = onSnapshot(
       source,
+      // Rulebook 1.38.0 §27: metadata changes only tell the data check the server answered.
+      { includeMetadataChanges: true },
       (snap) => {
         if (!live()) return
+        if (
+          !partState.seeded &&
+          isMetadataOnlySnapshot({ documentChangeCount: snap.docChanges().length, deliveredBefore: partState.delivered === true })
+        ) {
+          partState.serverSnapshot = partState.serverSnapshot || !snap.metadata.fromCache
+          partState.pendingWrites = snap.metadata.hasPendingWrites
+          return
+        }
+        partState.delivered = true
         const docs = snap.docs.map((entry) => ({ id: entry.id, data: entry.data() as Record<string, unknown> }))
         if (partState.seeded && snap.metadata.fromCache) {
           // Restarted by the data check: until the server answers, a cache snapshot never drops a row on screen.
