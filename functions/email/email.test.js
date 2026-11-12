@@ -93,6 +93,7 @@ function makeHandler(options = {}) {
       return { id: `msg-${sent.length}` }
     },
     serverKey: () => options.serverKey ?? 'server-secret',
+    ...(options.requestDedupe ? { requestDedupe: options.requestDedupe } : {}),
     logger: { info: (...a) => logs.push(['info', ...a]), warn: (...a) => logs.push(['warn', ...a]), error: (...a) => logs.push(['error', ...a]) },
     now: () => new Date('2026-11-03T09:15:00Z'),
   })
@@ -720,4 +721,213 @@ test("1.24.0 material_request: a jobId outside the caller's organisation, unknow
     assert.equal(sent.length, 0)
     assert.equal(rateCalls.length, 0)
   }
+})
+
+// ---------------------------------------------------------------------------------------------------------------
+// Request id idempotency (requestDedupe.js): a replayed request is answered from the first send, never sent twice.
+
+const {
+  PENDING_STALE_MS,
+  createAdminRequestDedupe,
+  parseRequestId,
+  pendingRecord,
+  requestDedupeDecision,
+  requestDedupeKey,
+} = require('./requestDedupe')
+
+/** In-memory store with the Admin store's semantics (claim decides with the pure step, then writes pending). */
+function memoryDedupe() {
+  const docs = new Map()
+  const calls = []
+  return {
+    docs,
+    calls,
+    async claim(key, details, nowMs) {
+      calls.push(['claim', key])
+      const decision = requestDedupeDecision(docs.get(key) || null, nowMs)
+      if (decision.action === 'claim') docs.set(key, pendingRecord(details, nowMs))
+      return decision
+    },
+    async complete(key, response, nowMs) {
+      calls.push(['complete', key])
+      docs.set(key, { ...docs.get(key), status: 'sent', sentAtMs: nowMs, response })
+    },
+    async release(key) {
+      calls.push(['release', key])
+      docs.delete(key)
+    },
+  }
+}
+
+const REQ = '6F1D2C3B-4A5E-4F60-8172-93A4B5C6D7E8'
+
+test('request id: absent is "", a UUID in any case is kept, anything else is a 400', () => {
+  assert.equal(parseRequestId(undefined), '')
+  assert.equal(parseRequestId(null), '')
+  assert.equal(parseRequestId(''), '')
+  assert.equal(parseRequestId(REQ), REQ)
+  assert.equal(parseRequestId(REQ.toLowerCase()), REQ.toLowerCase())
+  for (const bad of ['short', 'has space inside it', '../../etc', 42, {}, 'x'.repeat(129)]) {
+    assert.throws(() => parseRequestId(bad), (error) => error.status === 400, String(bad))
+  }
+})
+
+test('request id: the key depends on caller, organisation, template, id and recipients (order and case aside)', () => {
+  const base = { callerKey: 'M', orgId: ORG, template: 'material_request', requestId: REQ, recipients: ['a@x.example', 'B@x.example'] }
+  const key = requestDedupeKey(base)
+  assert.equal(key, requestDedupeKey({ ...base, recipients: [' b@x.example', 'A@X.example'] }))
+  assert.notEqual(key, requestDedupeKey({ ...base, callerKey: 'A' }))
+  assert.notEqual(key, requestDedupeKey({ ...base, orgId: 'other-org' }))
+  assert.notEqual(key, requestDedupeKey({ ...base, template: 'web_rendered' }))
+  assert.notEqual(key, requestDedupeKey({ ...base, requestId: `${REQ}-2` }))
+  assert.notEqual(key, requestDedupeKey({ ...base, recipients: ['a@x.example'] }))
+  assert.match(key, /^[0-9a-f]{64}$/)
+})
+
+test('request id: decision — none claims, sent replays, a fresh pending waits, a stale pending is taken over', () => {
+  const t = Date.UTC(2026, 10, 12, 9, 0, 0)
+  assert.deepEqual(requestDedupeDecision(null, t), { action: 'claim' })
+  const response = { sent: true, sentCount: 1 }
+  assert.deepEqual(requestDedupeDecision({ status: 'sent', response }, t), { action: 'replay', response })
+  assert.deepEqual(requestDedupeDecision({ status: 'pending', claimedAtMs: t - 1000 }, t), { action: 'inProgress' })
+  assert.deepEqual(requestDedupeDecision({ status: 'pending', claimedAtMs: t - PENDING_STALE_MS }, t), { action: 'claim' })
+  assert.deepEqual(requestDedupeDecision({ status: 'pending' }, t), { action: 'claim' })
+})
+
+test('request id: an iOS replay of a sent order is answered from the first send — no second email, no rate-limit count', async () => {
+  const store = memoryDedupe()
+  const { handler, sent, rateCalls } = makeHandler({ requestDedupe: store })
+  const body = { ...iosMaterialBody({ jobId: 'proj-1', jobNumber: 'J-200' }), requestId: REQ }
+  const first = await call(handler, { headers: auth('M'), body })
+  assert.equal(first.code, 200, JSON.stringify(first.payload))
+  assert.equal(first.payload.deduped, undefined)
+  assert.equal(sent.length, 1)
+  assert.equal(rateCalls.length, 1)
+  const again = await call(handler, { headers: auth('M'), body })
+  assert.equal(again.code, 200, JSON.stringify(again.payload))
+  assert.equal(again.payload.deduped, true)
+  assert.equal(again.payload.sentCount, first.payload.sentCount)
+  assert.deepEqual(again.payload.results, first.payload.results)
+  assert.equal(sent.length, 1)
+  assert.equal(rateCalls.length, 1)
+  assert.equal(store.docs.size, 1)
+  const [record] = [...store.docs.values()]
+  assert.equal(record.status, 'sent')
+  assert.equal(record.orgId, ORG)
+  assert.equal(record.uid, 'M')
+  assert.equal(record.jobId, 'proj-1')
+})
+
+test('request id: another sender, or the same id to other recipients, is a separate request', async () => {
+  const store = memoryDedupe()
+  const { handler, sent } = makeHandler({ requestDedupe: store })
+  const body = { ...iosMaterialBody(), requestId: REQ }
+  assert.equal((await call(handler, { headers: auth('M'), body })).code, 200)
+  assert.equal((await call(handler, { headers: auth('A'), body })).code, 200)
+  assert.equal(sent.length, 2)
+})
+
+test('request id: while the first call is still sending, a repeat waits (409) and sends nothing', async () => {
+  const store = memoryDedupe()
+  const { handler, sent } = makeHandler({ requestDedupe: store })
+  const body = { ...iosMaterialBody(), requestId: REQ }
+  const key = requestDedupeKey({ callerKey: 'M', orgId: ORG, template: 'material_request', requestId: REQ, recipients: ['wendy@pipes.example'] })
+  store.docs.set(key, { status: 'pending', claimedAtMs: Date.parse('2026-11-03T09:14:30Z') })
+  const res = await call(handler, { headers: auth('M'), body })
+  assert.equal(res.code, 409, JSON.stringify(res.payload))
+  assert.equal(res.payload.inProgress, true)
+  assert.equal(sent.length, 0)
+})
+
+test('request id: rate limited or refused by the provider releases the claim, so a retry sends', async () => {
+  for (const options of [{ rateLimited: true }, { providerFails: true }]) {
+    const store = memoryDedupe()
+    const { handler, sent } = makeHandler({ ...options, requestDedupe: store })
+    const res = await call(handler, { headers: auth('M'), body: { ...iosMaterialBody(), requestId: REQ } })
+    assert.notEqual(res.code, 200)
+    assert.equal(sent.length, 0)
+    assert.equal(store.docs.size, 0, JSON.stringify(options))
+    assert.deepEqual(store.calls.map(([kind]) => kind), ['claim', 'release'])
+  }
+})
+
+test('request id: every existing check still runs first — a refused request claims nothing', async () => {
+  for (const [uid, body, code] of [
+    ['O', { ...iosMaterialBody(), requestId: REQ }, 403],
+    ['M', { ...iosMaterialBody({ jobId: 'proj-1', jobNumber: 'J-201' }), requestId: REQ }, 409],
+    ['M', { ...iosMaterialBody({ jobId: 'proj-x' }), requestId: REQ }, 404],
+  ]) {
+    const store = memoryDedupe()
+    const { handler, sent } = makeHandler({ requestDedupe: store })
+    const res = await call(handler, { headers: auth(uid), body })
+    assert.equal(res.code, code, JSON.stringify(res.payload))
+    assert.equal(sent.length, 0)
+    assert.equal(store.calls.length, 0)
+  }
+})
+
+test('request id: a malformed id is a 400 and sends nothing; no id behaves exactly as before', async () => {
+  const store = memoryDedupe()
+  const { handler, sent } = makeHandler({ requestDedupe: store })
+  const bad = await call(handler, { headers: auth('M'), body: { ...iosMaterialBody(), requestId: 'bad id!' } })
+  assert.equal(bad.code, 400)
+  assert.equal(sent.length, 0)
+  for (let i = 0; i < 2; i += 1) {
+    assert.equal((await call(handler, { headers: auth('M'), body: iosMaterialBody() })).code, 200)
+  }
+  assert.equal(sent.length, 2)
+  assert.equal(store.calls.length, 0)
+})
+
+test('request id: web server mode — one id per Send, one key per recipient, a retried call is not sent twice', async () => {
+  const store = memoryDedupe()
+  const { handler, sent } = makeHandler({ requestDedupe: store })
+  const headers = { 'X-Project-Planner-Server-Key': 'server-secret', ...auth('M') }
+  const body = (to) => ({ template: 'web_rendered', orgId: ORG, to: [to], requestId: REQ, data: { subject: 'Hi', html: '<p>Hi</p>' } })
+  assert.equal((await call(handler, { headers, body: body('one@shop.example') })).code, 200)
+  assert.equal((await call(handler, { headers, body: body('two@shop.example') })).code, 200)
+  const retried = await call(handler, { headers, body: body('one@shop.example') })
+  assert.equal(retried.payload.deduped, true)
+  assert.equal(sent.length, 2)
+})
+
+test('request id: Admin store claims in a transaction, completes with merge and releases with delete', async () => {
+  const stored = new Map()
+  const ops = []
+  const doc = (key) => ({
+    key,
+    async set(value, options) {
+      ops.push(['set', key, options])
+      stored.set(key, options && options.merge ? { ...(stored.get(key) || {}), ...value } : value)
+    },
+    async delete() {
+      ops.push(['delete', key])
+      stored.delete(key)
+    },
+  })
+  const db = {
+    collection: (name) => {
+      assert.equal(name, 'emailRequestSends')
+      return { doc }
+    },
+    runTransaction: async (fn) =>
+      fn({
+        get: async (ref) => ({ exists: stored.has(ref.key), data: () => stored.get(ref.key) }),
+        set: (ref, value) => {
+          ops.push(['tx.set', ref.key])
+          stored.set(ref.key, value)
+        },
+      }),
+  }
+  const dedupe = createAdminRequestDedupe(db)
+  const t = Date.UTC(2026, 10, 12, 9, 0, 0)
+  assert.deepEqual(await dedupe.claim('k1', { orgId: ORG, uid: 'M', template: 'material_request', recipientCount: 1 }, t), { action: 'claim' })
+  assert.equal(stored.get('k1').status, 'pending')
+  assert.ok(stored.get('k1').expireAt instanceof Date)
+  assert.deepEqual(await dedupe.claim('k1', {}, t + 1000), { action: 'inProgress' })
+  await dedupe.complete('k1', { sent: true, sentCount: 1 }, t + 2000)
+  assert.equal((await dedupe.claim('k1', {}, t + 3000)).action, 'replay')
+  await dedupe.release('k1')
+  assert.equal(stored.has('k1'), false)
+  assert.deepEqual(ops.map(([kind]) => kind), ['tx.set', 'set', 'delete'])
 })

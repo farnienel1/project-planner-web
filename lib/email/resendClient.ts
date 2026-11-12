@@ -61,6 +61,11 @@ export async function sendProjectPlannerEmail(params: {
   fromCaller?: boolean
   /** CC the signed-in user on this one message (`data.ccCaller`). Needs `idToken`. */
   ccCaller?: boolean
+  /**
+   * Idempotency key (functions/email/requestDedupe.js): the function sends a request with the same id to the same
+   * recipient once and answers a repeat with the first send's result. Reuse it when retrying the same request.
+   */
+  requestId?: string
 }): Promise<ProjectPlannerEmailResult> {
   const key = serverKey()
   if (!key) {
@@ -82,6 +87,7 @@ export async function sendProjectPlannerEmail(params: {
     data,
   }
   if (params.orgId?.trim()) payload.orgId = params.orgId.trim()
+  if (params.requestId?.trim()) payload.requestId = params.requestId.trim()
   if (params.attachments?.length) {
     payload.attachments = params.attachments.map((attachment) => ({
       filename: attachment.filename,

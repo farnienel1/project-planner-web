@@ -29,6 +29,7 @@ const canonical = require('../loadCanonical')
 const { AttachmentError, parseAttachments } = require('./attachments')
 const { RecipientError, resolveRecipients } = require('./recipients')
 const { SERVER_LIMITS, USER_LIMITS } = require('./rateLimit')
+const { RequestIdError, parseRequestId, requestDedupeKey } = require('./requestDedupe')
 const { SERVER_TEMPLATES, TEMPLATES, TemplateDataError } = require('./templates')
 const { clamp, isValidEmail, normalizeEmail, sanitizeDisplayName } = require('./text')
 
@@ -183,6 +184,8 @@ function serverHeaders(raw) {
  * @param {(message: object) => Promise<{ id?: string }>} deps.sendMessage  one Resend message
  * @param {() => string} deps.serverKey  EMAIL_SERVER_KEY ('' when not set: server mode is then refused)
  * @param {{ info: Function, warn: Function, error: Function }} deps.logger
+ * @param {{ claim: Function, complete: Function, release: Function }} [deps.requestDedupe]  idempotency store
+ *        (requestDedupe.js `createAdminRequestDedupe`); without it a `requestId` is ignored
  * @param {() => Date} [deps.now]
  */
 function createSendEmailHandler(deps) {
@@ -341,8 +344,57 @@ function createSendEmailHandler(deps) {
     )
 
     const rateKey = caller ? caller.uid : 'server'
-    const limited = await deps.consumeRateLimit(rateKey, recipients.length, caller ? USER_LIMITS : SERVER_LIMITS)
+
+    // Idempotency (requestDedupe.js, docs/EMAIL_FUNCTION.md "Request id"): every check above has passed. A request
+    // that names itself with `requestId` claims its key first; a repeat (an iPhone replaying a queued order after a
+    // crash or a timeout) gets the first answer back without sending again and without counting the rate limit.
+    // Without `requestId` nothing changes (older builds).
+    const requestId = parseRequestId(body.requestId)
+    let dedupeKey = ''
+    if (requestId && deps.requestDedupe) {
+      dedupeKey = requestDedupeKey({
+        callerKey: rateKey,
+        orgId,
+        template: templateName,
+        requestId,
+        recipients: recipients.map((row) => row.email),
+      })
+      const claim = await deps.requestDedupe.claim(dedupeKey, {
+        orgId,
+        uid: caller ? caller.uid : null,
+        template: templateName,
+        jobId: data.jobId,
+        recipientCount: recipients.length,
+      }, now().getTime())
+      if (claim.action === 'replay') {
+        logger.info('sendEmail: repeated request, not sent again', { template: templateName, orgId: orgId || null })
+        return { ...claim.response, deduped: true }
+      }
+      if (claim.action === 'inProgress') {
+        throw new HttpError(409, 'This email is already being sent. Wait a minute, then check your sent items.', {
+          inProgress: true,
+        })
+      }
+    }
+    // A claim is released when nothing was sent, so a retry sends; a failed release is only logged.
+    const releaseClaim = async () => {
+      if (!dedupeKey) return
+      try {
+        await deps.requestDedupe.release(dedupeKey)
+      } catch (error) {
+        logger.error('sendEmail: could not release a request claim', { error: String(error && error.message) })
+      }
+    }
+
+    let limited
+    try {
+      limited = await deps.consumeRateLimit(rateKey, recipients.length, caller ? USER_LIMITS : SERVER_LIMITS)
+    } catch (error) {
+      await releaseClaim()
+      throw error
+    }
     if (!limited.allowed) {
+      await releaseClaim()
       throw new HttpError(429, 'Too many emails. Try again later.', { retryAfterSec: limited.retryAfterSec })
     }
 
@@ -393,10 +445,20 @@ function createSendEmailHandler(deps) {
     })
 
     if (results.length === 0) {
+      await releaseClaim()
       const reason = failures[0] ? `: ${failures[0].error}` : ''
       throw new HttpError(502, `The email provider did not accept the message${reason}`, { failed })
     }
-    return { sent: failed.length === 0, sentCount: results.length, failed, results, from, ccSupported: true }
+    const response = { sent: failed.length === 0, sentCount: results.length, failed, results, from, ccSupported: true }
+    if (dedupeKey) {
+      try {
+        await deps.requestDedupe.complete(dedupeKey, response, now().getTime())
+      } catch (error) {
+        // The messages went: the caller still gets its success. The claim stays `pending` and goes stale.
+        logger.error('sendEmail: could not record a sent request', { error: String(error && error.message) })
+      }
+    }
+    return response
   }
 
   return async function sendEmailHandler(req, res) {
@@ -411,7 +473,7 @@ function createSendEmailHandler(deps) {
         status = error.status
         message = error.message
         extra = error.extra
-      } else if (error instanceof RecipientError || error instanceof AttachmentError) {
+      } else if (error instanceof RecipientError || error instanceof AttachmentError || error instanceof RequestIdError) {
         status = error.status
         message = error.message
       } else if (error instanceof TemplateDataError) {
