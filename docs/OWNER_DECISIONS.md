@@ -353,8 +353,8 @@ UI only, web only (`docs/design/web-pages-ui/web-pages-ui-spec.md`; branch `w-ui
 
 | Date | Decision | Status |
 |---|---|---|
-| 11 Nov | **U1** Daily overview rows get the Type chip (Standard / Std + OT / OT only) and the standard / overtime mini bar, from the existing rule (`scheduleCellKind` / `scheduleCellHours`) as a small labelled change in `buildDailyOverview`, no new calculation. | open (after 1.39 / #302 merges) |
-| 11 Nov | **U2** Daily overview shift and times on two lines, built from the booking's structured fields, never by parsing the subtitle string. | open (after #302) |
+| 11 Nov | **U1** Daily overview rows get the Type chip (Standard / Std + OT / OT only) and the standard / overtime mini bar, from the existing rule (`scheduleCellKind` / `scheduleCellHours`) as a small labelled change in `buildDailyOverview`, no new calculation. | done web (w-ui-daily-overview: `scheduleCellHours` → `scheduleCellKind` per row, summed for a merged row; chip words from `JOB_SCHEDULE_LEGEND`) |
+| 11 Nov | **U2** Daily overview shift and times on two lines, built from the booking's structured fields, never by parsing the subtitle string. | done web (w-ui-daily-overview: `bookingTimesParts`, which `bookingTimesText` now joins) |
 | 11 Nov | **U3** Only figures already loaded on a page; no new fetches. User Timesheets tabs get no counts; the hub band repeats the User timesheets tile's own counts. | done web (w-ui-restyle) |
 | 11 Nov | **U4** The Sign page summary uses exactly the figures the Sign page already uses (Hours, Price work, Expenses, Timesheet total) and re-displays the timesheet's own line rows read-only. | done web (w-ui-restyle) |
 | 11 Nov | **U5** "Manager who agreed this" stays free text with its suggestions (no select). | done web (w-ui-restyle) |
@@ -362,8 +362,8 @@ UI only, web only (`docs/design/web-pages-ui/web-pages-ui-spec.md`; branch `w-ui
 | 11 Nov | **U7** Use the Home page `--dash-*` colours so the whole site matches. | done web (w-ui-restyle) |
 | 11 Nov | **U8** Gradient icon tiles allowed on these pages. | done web (w-ui-restyle) |
 | 11 Nov | **U9** Keep today's wording (where the reference HTML differs, the code's text stays). | done web (w-ui-restyle) |
-| 11 Nov | **U10** Daily overview uses the 1.39 wording (#302, `w139-booking-breakdown`). | open (after #302) |
-| 11 Nov | **U11** Restyle the pages §4 did not list (PAYE overtime lines, claims screens, manager review, Other / Site survey cards, Manage users notices, resend invite) with the same building blocks, no behaviour change. | done web for timesheets, overtime, claims, Manage users (w-ui-restyle); Daily overview parts open (after #302) |
+| 11 Nov | **U10** Daily overview uses the 1.39 wording (#302, `w139-booking-breakdown`). | done web (w-ui-daily-overview: `overtimeTotalText`, `bookedWithOvertimeText`, hours pill only) |
+| 11 Nov | **U11** Restyle the pages §4 did not list (PAYE overtime lines, claims screens, manager review, Other / Site survey cards, Manage users notices, resend invite) with the same building blocks, no behaviour change. | done web for timesheets, overtime, claims, Manage users (w-ui-restyle); Daily overview Other / Site survey cards done (w-ui-daily-overview) |
 
 ## UI pack judgement calls (owner to confirm)
 
@@ -377,6 +377,8 @@ UI only, web only (`docs/design/web-pages-ui/web-pages-ui-spec.md`; branch `w-ui
 | 11 Nov | Review fixes (U9, keep today's wording): no new chips or button text on My Timesheets, timesheet rows, the overtime person title or pending requests; payment runs read "• Run: X - Y" as before; Exported keeps its visible Search / Filter / Payment run labels. While a timesheet loads and on Sign / Sign Off, the band keeps "Timesheet" / "Review Timesheet" and the list back link, with the sheet's own Back / Cancel beside it. | done |
 | 11 Nov | Sign Timesheet: the read-only rows are labelled "Bookings and leave" (price work and expenses are not listed as rows; their totals sit beside it, unchanged), and the table is hidden when there are none. The card keeps the old heading "You're approving". | done, owner to confirm |
 | 11 Nov | Action cards (hub tiles, My Timesheets current period, overtime tiles) show a small "Open →" cue under the card; it is decoration on the same button, but it is new text. | done, owner to confirm (remove if U9 should cover it) |
+| 12 Nov | Daily overview: "Daily overview" stays the page's heading (h1), shown in the band's small top line with the date (spec §4.1), also while loading; the booked line is a paragraph styled as the title; "· Tap to change booking" is no longer shown under each row — the row and its **Change** button open the same booking sheet (spec §4.1); the "Where the team is" legend adds "N Unbooked" (the same count as the header); a half-day booking's Type chip reads "Half day" (the scheduling legend's word); the Type and Hours column headers are new; the Overtime figure is amber and the Unbooked figure turns red when above 0 (spec §4.1); the bar runs on site, office, WFH, then unbooked in red stripes (before: office, WFH, on site; the legend keeps Office, WFH, On site), with fixed colours on the navy band (`--pu-team-*` tokens). | done, owner to confirm |
+| 12 Nov | Daily overview: a person with two bookings on one job is still one row (as today). The Booking column lists each booking's shift and times, skipping one that reads the same as what is shown (as the old subtitle did). The Type chip adds the hours up first (`scheduleCellHours` summed, then `scheduleCellKind`); when every booking of the row has the same stored slot that slot is passed too (AM + AM stays "Half day", an OVERTIME slot stays "OT only"); when the slots differ the summed hours alone decide. | done, owner to confirm |
 
 ## Open questions for the owner
 
