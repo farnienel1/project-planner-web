@@ -1,5 +1,4 @@
 import { format } from 'date-fns'
-import * as XLSX from 'xlsx'
 import { formatReportPeriodLabel } from '@/lib/weekly-report/invoicingPeriodUtils'
 import { formatDays } from '@/lib/weekly-report/weeklyReportPayroll'
 import { formatMoney, PAY_HIDDEN_NOTE } from '@/lib/canonical'
@@ -289,14 +288,16 @@ export function downloadWeeklyReport(html: string, filename: string): void {
   downloadTextFile(html, filename, 'text/html;charset=utf-8')
 }
 
-export function buildWeeklyReportXlsx(data: WeeklyReportData): ArrayBuffer {
+/** The workbook bytes. The spreadsheet library (xlsx) is loaded only here, when a workbook is made. */
+export async function buildWeeklyReportXlsx(data: WeeklyReportData): Promise<ArrayBuffer> {
+  const XLSX = await import('xlsx')
   const xml = buildWeeklyReportSpreadsheetXml(data)
   const parsed = XLSX.read(xml, { type: 'string' })
   return XLSX.write(parsed, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer
 }
 
-export function downloadWeeklyReportWorkbook(data: WeeklyReportData, filename: string): void {
-  const bytes = buildWeeklyReportXlsx(data)
+export async function downloadWeeklyReportWorkbook(data: WeeklyReportData, filename: string): Promise<void> {
+  const bytes = await buildWeeklyReportXlsx(data)
   const blob = new Blob([bytes], {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   })

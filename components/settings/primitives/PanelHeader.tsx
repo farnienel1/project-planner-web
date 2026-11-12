@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { PendingSpinner } from '@/components/shell/PendingSpinner'
 
 /**
  * Settings page header. `description`, `iconPath` and `hue` are optional, so
@@ -11,6 +12,7 @@ export function PanelHeader({
   description,
   iconPath,
   hue = 'lib',
+  backPending = false,
 }: {
   title: string
   onBack: () => void
@@ -18,18 +20,26 @@ export function PanelHeader({
   description?: string
   iconPath?: string
   hue?: string
+  /** True while the Back navigation is on its way: the button is disabled and shows a spinner (no double clicks). */
+  backPending?: boolean
 }) {
   return (
     <div className="mb-6">
       <button
         type="button"
         onClick={onBack}
-        className="mb-3 inline-flex items-center gap-1.5 rounded-lg px-1.5 py-1 text-[13px] font-semibold text-[var(--ink3)] transition hover:text-[var(--ink)]"
+        disabled={backPending}
+        aria-busy={backPending || undefined}
+        className="mb-3 inline-flex items-center gap-1.5 rounded-lg px-1.5 py-1 text-[13px] font-semibold text-[var(--ink3)] transition hover:text-[var(--ink)] disabled:opacity-60"
         aria-label="Back"
       >
-        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-        </svg>
+        {backPending ? (
+          <PendingSpinner />
+        ) : (
+          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+        )}
         Back
       </button>
       <div className="flex items-start gap-3.5" data-hue={hue}>

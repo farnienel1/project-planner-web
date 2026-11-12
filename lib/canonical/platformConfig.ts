@@ -161,3 +161,28 @@ export function ghostAccountsEnabled(
 ): boolean {
   return platformSwitchOn(config, organizationId, GHOST_ACCOUNTS_SWITCH_FIELD, GHOST_ACCOUNTS_ORGANIZATION_IDS_FIELD)
 }
+
+// MARK: - Data check panel switch (rulebook §27, §18, 1.38.0; owner change 11 Nov)
+
+/**
+ * The `platformConfig/app` field that shows the Data check panel in Settings → Data health, and its per-organisation
+ * list. Owner change 11 Nov: the data check (§27) runs silently on every device — the read-only comparison and the
+ * self-heal never stop — but nothing about it is shown in the launch build; its results stay in the device log. The
+ * platform owner may show the admin panel by setting `dataCheckPanel` true (or listing one organisation). A screen
+ * switch only: the security rules do not read it, and it never turns the check itself on or off.
+ */
+export const DATA_CHECK_PANEL_SWITCH_FIELD = 'dataCheckPanel'
+export const DATA_CHECK_PANEL_ORGANIZATION_IDS_FIELD = 'dataCheckPanelOrganizationIds'
+
+/** `dataCheckPanel` exactly `true`, or the organisation's id in `dataCheckPanelOrganizationIds`; anything else → off. */
+export function dataCheckPanelEnabled(
+  config: Record<string, unknown> | null | undefined,
+  organizationId: string | null | undefined
+): boolean {
+  return platformSwitchOn(config, organizationId, DATA_CHECK_PANEL_SWITCH_FIELD, DATA_CHECK_PANEL_ORGANIZATION_IDS_FIELD)
+}
+
+/** The Data check panel is shown only to an admin, and only while `dataCheckPanelEnabled`. */
+export function dataCheckPanelVisible(input: { viewerIsAdmin: boolean; dataCheckPanelEnabled?: boolean | null }): boolean {
+  return input.viewerIsAdmin === true && input.dataCheckPanelEnabled === true
+}

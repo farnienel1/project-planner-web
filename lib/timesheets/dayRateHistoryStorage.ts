@@ -4,6 +4,8 @@
  */
 import { collection, doc, getDocs, query, serverTimestamp, setDoc, Timestamp, where, type QueryConstraint, type Unsubscribe } from 'firebase/firestore'
 import { watchOrgCollection } from '@/lib/firebase/watchOrgQuery'
+import { captureOrganizationContext } from '@/lib/canonical/engine'
+import { sharedRateHistoryKey, sharedRateHistoryListener } from '@/lib/timesheets/sharedRateHistory'
 import { privatePayFor, securitySwitchesReady } from '@/lib/access/securitySwitches'
 import { rateHistoryQueryPlan, type RateHistoryQueryPlan } from '@/lib/canonical'
 import { useAuthStore } from '@/lib/stores/authStore'
@@ -165,14 +167,37 @@ export async function loadOperativeDayRateHistory(
   }
 }
 
-/** Rulebook 1.9.0 §1 (`LIVE_COLLECTIONS`): pay history is live while a screen showing it is open. */
+/**
+ * Rulebook 1.9.0 §1 (`LIVE_COLLECTIONS`): pay history is live while a screen showing it is open.
+ *
+ * One listener is shared by the Edit User pages (its only caller) that open it with the same organisation context
+ * (organisation and epoch), viewer and query plan, and stays
+ * open for a minute after the last one closes (`createSharedListener`), so moving between a person's profile, their
+ * Edit page and the next person shows the history at once instead of waiting for a new listener each time. A
+ * different organisation, viewer or plan (`rateHistoryQueryPlan`) starts a new listener, exactly as before.
+ */
 export function watchOperativeDayRateHistory(
   organizationId: string,
   onHistory: (history: OperativeDayRateHistoryCollection) => void
 ): Unsubscribe {
   const plan = rateHistoryPlanFor(organizationId)
+  const viewerId = useAuthStore.getState().user?.id || ''
+  const key = sharedRateHistoryKey({ organizationId, epoch: captureOrganizationContext().epoch, viewerId, plan })
+  return sharedRateHistoryListener.subscribe(
+    key,
+    (emit, fail) => startRateHistoryListener(organizationId, plan, emit as (history: OperativeDayRateHistoryCollection) => void, fail),
+    onHistory as (value: unknown) => void
+  )
+}
+
+function startRateHistoryListener(
+  organizationId: string,
+  plan: RateHistoryQueryPlan,
+  onHistory: (history: OperativeDayRateHistoryCollection) => void,
+  onError: () => void
+): Unsubscribe {
   if (plan.kind === 'all') {
-    return watchOrgCollection(organizationId, 'operativeDayRateHistory', (docs) => onHistory(historyFromDocs(docs)))
+    return watchOrgCollection(organizationId, 'operativeDayRateHistory', (docs) => onHistory(historyFromDocs(docs)), { onError })
   }
   // 1.26.0: one listener per person (`rateHistoryQueryPlan`), merged.
   const perPerson = new Map<string, Array<{ id: string; data: Record<string, unknown> }>>()
@@ -189,7 +214,7 @@ export function watchOperativeDayRateHistory(
         perPerson.set(entry.key, docs)
         emit()
       },
-      { constraints: entry.constraints }
+      { constraints: entry.constraints, onError }
     )
   )
   if (stops.length === 0) onHistory(emptyDayRateHistory())

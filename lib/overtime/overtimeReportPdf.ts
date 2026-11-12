@@ -72,14 +72,5 @@ export async function buildOvertimeReportPdf(
   return w.save()
 }
 
-export function downloadPdf(bytes: Uint8Array, fileName: string): void {
-  const blob = new Blob([bytes as BlobPart], { type: 'application/pdf' })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = fileName
-  document.body.appendChild(link)
-  link.click()
-  link.remove()
-  setTimeout(() => URL.revokeObjectURL(url), 5_000)
-}
+// Kept here for existing imports; the download trigger itself has no PDF library in it.
+export { downloadPdf } from '@/lib/pdf/downloadPdf'

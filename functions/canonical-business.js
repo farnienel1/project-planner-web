@@ -61,6 +61,14 @@ var ProjectPlannerCanonical = (() => {
     CROSS_PLATFORM_CONTRACT_READERS: () => CROSS_PLATFORM_CONTRACT_READERS,
     CURRENCY_OPTIONS: () => CURRENCY_OPTIONS,
     CUSTOM_HOURS_BREAK_WARNING: () => CUSTOM_HOURS_BREAK_WARNING,
+    DATA_CHECK_PANEL_ORGANIZATION_IDS_FIELD: () => DATA_CHECK_PANEL_ORGANIZATION_IDS_FIELD,
+    DATA_CHECK_PANEL_SWITCH_FIELD: () => DATA_CHECK_PANEL_SWITCH_FIELD,
+    DATA_PARITY_CHECKS: () => DATA_PARITY_CHECKS,
+    DATA_PARITY_CONFIRM_DELAY_MS: () => DATA_PARITY_CONFIRM_DELAY_MS,
+    DATA_PARITY_LOG_LIMIT: () => DATA_PARITY_LOG_LIMIT,
+    DATA_PARITY_MIN_INTERVAL_MS: () => DATA_PARITY_MIN_INTERVAL_MS,
+    DATA_PARITY_SKIP_REASONS: () => DATA_PARITY_SKIP_REASONS,
+    DATA_PARITY_TRIGGERS: () => DATA_PARITY_TRIGGERS,
     DEADLINE_ASSIGNMENTS_DOCUMENT_ID: () => DEADLINE_ASSIGNMENTS_DOCUMENT_ID,
     DEADLINE_STATUSES: () => DEADLINE_STATUSES,
     DEFAULT_ANNUAL_LEAVE: () => DEFAULT_ANNUAL_LEAVE,
@@ -614,6 +622,16 @@ var ProjectPlannerCanonical = (() => {
     customHoursBreakWarning: () => customHoursBreakWarning,
     customHoursPrefillForDays: () => customHoursPrefillForDays,
     dailyOverviewScopeFor: () => dailyOverviewScopeFor,
+    dataCheckPanelEnabled: () => dataCheckPanelEnabled,
+    dataCheckPanelVisible: () => dataCheckPanelVisible,
+    dataParityCheck: () => dataParityCheck,
+    dataParityCheckDefinition: () => dataParityCheckDefinition,
+    dataParityCheckDue: () => dataParityCheckDue,
+    dataParityConfirm: () => dataParityConfirm,
+    dataParityLogAppend: () => dataParityLogAppend,
+    dataParityLogEntry: () => dataParityLogEntry,
+    dataParitySumCounts: () => dataParitySumCounts,
+    dataParitySummary: () => dataParitySummary,
     dayKeyInOrganizationZone: () => dayKeyInOrganizationZone,
     deadlineAssignedProjectIds: () => deadlineAssignedProjectIds,
     deadlineAssignedRecipients: () => deadlineAssignedRecipients,
@@ -4987,11 +5005,11 @@ var ProjectPlannerCanonical = (() => {
     const fromOrg = asSettingsRecord(input.organizationMaterialCutOff) ?? (settings ? asSettingsRecord(settings.materialCutOff) : void 0);
     return parseMaterialCutOff(fromOrg);
   }
-  function materialCutOffClockMinutes(clock2) {
-    return clock2.materialCutOffHour * 60 + clock2.materialCutOffMinute;
+  function materialCutOffClockMinutes(clock3) {
+    return clock3.materialCutOffHour * 60 + clock3.materialCutOffMinute;
   }
-  function formatMaterialCutOffClock(clock2) {
-    return formatClockMinutes(materialCutOffClockMinutes(clock2));
+  function formatMaterialCutOffClock(clock3) {
+    return formatClockMinutes(materialCutOffClockMinutes(clock3));
   }
   function materialCutOffToFirestore(prefs) {
     return {
@@ -5122,8 +5140,8 @@ var ProjectPlannerCanonical = (() => {
     return policy.weekdayOutsideStandardMultiplier;
   }
   function segment(kind, baseHours, multiplier, start, end, workedHours = baseHours, unpaidBreakHours = 0) {
-    const clock2 = (value) => value == null ? void 0 : typeof value === "number" ? formatClockMinutes(value > 24 * 60 ? value - 24 * 60 : Math.min(value, 24 * 60 - 1)) : value;
-    const row2 = { kind, clockStart: clock2(start), clockEnd: clock2(end), baseHours, multiplier, paidHours: baseHours * multiplier, workedHours };
+    const clock3 = (value) => value == null ? void 0 : typeof value === "number" ? formatClockMinutes(value > 24 * 60 ? value - 24 * 60 : Math.min(value, 24 * 60 - 1)) : value;
+    const row2 = { kind, clockStart: clock3(start), clockEnd: clock3(end), baseHours, multiplier, paidHours: baseHours * multiplier, workedHours };
     if (unpaidBreakHours > 0) row2.unpaidBreakHours = unpaidBreakHours;
     return row2;
   }
@@ -5135,15 +5153,15 @@ var ProjectPlannerCanonical = (() => {
     return row2;
   }
   function payrollOutsideClockHours(result2) {
-    let clock2 = 0;
+    let clock3 = 0;
     let brk = 0;
     for (const row2 of result2?.segments ?? []) {
       if (row2.kind === "standardWindow") continue;
       const b = row2.unpaidBreakHours ?? 0;
-      clock2 += row2.baseHours + (b > 0 && row2.multiplier > 0 ? b / row2.multiplier : 0);
+      clock3 += row2.baseHours + (b > 0 && row2.multiplier > 0 ? b / row2.multiplier : 0);
       brk += b;
     }
-    return { outsideClockHours: clock2, outsideBreakHours: brk };
+    return { outsideClockHours: clock3, outsideBreakHours: brk };
   }
   function roundHundredths(value) {
     return Math.round(value * 100) / 100;
@@ -5152,11 +5170,11 @@ var ProjectPlannerCanonical = (() => {
     return `${roundHundredths(hours)}h`;
   }
   function multipliedHoursText(input) {
-    const clock2 = Math.max(0, Number(input.clockHours) || 0);
+    const clock3 = Math.max(0, Number(input.clockHours) || 0);
     const n = Number(input.multiplier) > 0 ? Number(input.multiplier) : 1;
     const brk = Math.max(0, Number(input.breakHours) || 0);
-    const multiplied = `${plainHoursText(clock2)} \xD7 ${roundHundredths(n)}`;
-    const total = plainHoursText(Math.max(0, clock2 * n - brk));
+    const multiplied = `${plainHoursText(clock3)} \xD7 ${roundHundredths(n)}`;
+    const total = plainHoursText(Math.max(0, clock3 * n - brk));
     return roundHundredths(brk) > 0 ? `${multiplied} \u2212 ${plainHoursText(brk)} break = ${total}` : `${multiplied} = ${total}`;
   }
   function parseMultipliedHoursText(text34) {
@@ -10214,11 +10232,11 @@ var ProjectPlannerCanonical = (() => {
       const id2 = idText2(booking?.id);
       const day = dayKeyText(booking?.dayKey);
       if (!id2 || !day || seen.has(id2.toLowerCase()) || !occupiesDay(booking.status)) continue;
-      const clock2 = { timeSlot: booking.timeSlot, workStartTime: booking.workStartTime, workEndTime: booking.workEndTime };
+      const clock3 = { timeSlot: booking.timeSlot, workStartTime: booking.workStartTime, workEndTime: booking.workEndTime };
       let interval2 = null;
-      if (day === dayKey) interval2 = slotInterval(clock2, standard);
+      if (day === dayKey) interval2 = slotInterval(clock3, standard);
       else if (nextCalendarDayKey(day) === dayKey) {
-        const own = slotInterval(clock2, bookingStandardDayOn(input.day, day));
+        const own = slotInterval(clock3, bookingStandardDayOn(input.day, day));
         interval2 = own && intervalCrossesMidnight(own) ? overnightCarryInterval(own) : null;
       }
       if (!interval2 || !intervalsOverlap(probe, interval2)) continue;
@@ -10963,8 +10981,8 @@ var ProjectPlannerCanonical = (() => {
   // lib/canonical/rulebookStamp.ts
   function rulebookStamp() {
     return {
-      version: true ? "1.37.0" : "",
-      sha256: true ? "1d54c2d23e02d11f369c27d851ec6ec0d1012d745d68dadd49275c85cced5640" : ""
+      version: true ? "1.38.0" : "",
+      sha256: true ? "d6d2d6e8c4836d644ef97825dfdca8a919bea5d1c7f5ca69fafcae3bf6e4828a" : ""
     };
   }
   function rulebookVersionLabel(version) {
@@ -12465,14 +12483,14 @@ var ProjectPlannerCanonical = (() => {
     const timeZone = zoneOrLondon(input.timeZone);
     const now = instant(input.now);
     if (Number.isNaN(now.getTime())) return [];
-    const clock2 = resolveMaterialCutOffClock({ organizationMaterialCutOff: input.cutOff ?? null });
-    if (clock2.materialOrderCutOff === false) return [];
+    const clock3 = resolveMaterialCutOffClock({ organizationMaterialCutOff: input.cutOff ?? null });
+    if (clock3.materialOrderCutOff === false) return [];
     const parts2 = partsInZone(now, timeZone);
-    if (parts2.h * 60 + parts2.min < materialCutOffClockMinutes(clock2)) return [];
+    if (parts2.h * 60 + parts2.min < materialCutOffClockMinutes(clock3)) return [];
     const tomorrow = addDaysInZone(midnightInZone(now, timeZone), 1, timeZone);
     const weekday2 = isoWeekdayInZone(tomorrow, timeZone);
-    if (weekday2 === 6 && clock2.materialCutOffOnSaturday !== true) return [];
-    if (weekday2 === 7 && clock2.materialCutOffOnSunday !== true) return [];
+    if (weekday2 === 6 && clock3.materialCutOffOnSaturday !== true) return [];
+    if (weekday2 === 7 && clock3.materialCutOffOnSunday !== true) return [];
     const tomorrowKey = dayKeyInZone(tomorrow, timeZone);
     const bookedProjectIds = [];
     const seen = /* @__PURE__ */ new Set();
@@ -12486,7 +12504,7 @@ var ProjectPlannerCanonical = (() => {
     }
     const projectsById = new Map((input.projects || []).map((project) => [text12(project.id), project]));
     const ordered = orderedMaterialIds(input.sendRecords);
-    const cutOffLabel = formatMaterialCutOffClock(clock2);
+    const cutOffLabel = formatMaterialCutOffClock(clock3);
     const rows3 = [];
     for (const projectId of bookedProjectIds) {
       const project = projectsById.get(projectId);
@@ -15496,6 +15514,14 @@ var ProjectPlannerCanonical = (() => {
   function ghostAccountsEnabled(config, organizationId) {
     return platformSwitchOn(config, organizationId, GHOST_ACCOUNTS_SWITCH_FIELD, GHOST_ACCOUNTS_ORGANIZATION_IDS_FIELD);
   }
+  var DATA_CHECK_PANEL_SWITCH_FIELD = "dataCheckPanel";
+  var DATA_CHECK_PANEL_ORGANIZATION_IDS_FIELD = "dataCheckPanelOrganizationIds";
+  function dataCheckPanelEnabled(config, organizationId) {
+    return platformSwitchOn(config, organizationId, DATA_CHECK_PANEL_SWITCH_FIELD, DATA_CHECK_PANEL_ORGANIZATION_IDS_FIELD);
+  }
+  function dataCheckPanelVisible(input) {
+    return input.viewerIsAdmin === true && input.dataCheckPanelEnabled === true;
+  }
 
   // lib/canonical/bookingSlots.ts
   var WEEKDAY_TIME_SLOTS = ["FULL DAY", "CUSTOM"];
@@ -15770,7 +15796,7 @@ var ProjectPlannerCanonical = (() => {
     const kind = namedSlotKind(input.timeSlot);
     const slot = kind === "UNKNOWN" ? identityPart(input.timeSlot) : kind;
     const custom = kind === "CUSTOM";
-    const clock2 = (value) => {
+    const clock3 = (value) => {
       const minutes = parseClockMinutes(value ?? null);
       return minutes === null ? identityPart(value) : String(minutes);
     };
@@ -15781,8 +15807,8 @@ var ProjectPlannerCanonical = (() => {
       identityPart(input.locationType),
       identityPart(input.locationId),
       identityPart(input.customLocationName),
-      custom ? clock2(input.workStartTime) : "",
-      custom ? clock2(input.workEndTime) : "",
+      custom ? clock3(input.workStartTime) : "",
+      custom ? clock3(input.workEndTime) : "",
       input.isBreakRemoved === true ? "break-off" : ""
     ].join("|");
   }
@@ -15793,9 +15819,9 @@ var ProjectPlannerCanonical = (() => {
     if (!result2) return { hours: 0, label: "0h" };
     const total = roundHours(Number(result2.totalPaidHours) || 0);
     const standard = roundHours(Number(result2.standardHours) || 0);
-    const clock2 = result2.segments ? payrollOutsideClockHours({ segments: result2.segments }) : null;
-    const outside = roundHours(clock2 ? clock2.outsideClockHours : Number(result2.outsideHours) || 0);
-    const outsideBreak = roundHours(clock2 ? clock2.outsideBreakHours : 0);
+    const clock3 = result2.segments ? payrollOutsideClockHours({ segments: result2.segments }) : null;
+    const outside = roundHours(clock3 ? clock3.outsideClockHours : Number(result2.outsideHours) || 0);
+    const outsideBreak = roundHours(clock3 ? clock3.outsideBreakHours : 0);
     const multiplier = roundHours(Number(result2.outsideMultiplier) || 1);
     if (outside > 0 && Math.abs(multiplier - 1) > 1e-3) {
       const multiplied = standard > 0 ? `${hoursText(standard)} + ${hoursText(outside)} \xD7 ${multiplier}` : `${hoursText(outside)} \xD7 ${multiplier}`;
@@ -21646,6 +21672,216 @@ var ProjectPlannerCanonical = (() => {
     const email = idText(person?.email);
     if (email) return email;
     return person?.ghost === true ? GHOST_BADGE_LABEL : DUPLICATE_NAME_NO_EMAIL_LABEL;
+  }
+
+  // lib/canonical/dataParity.ts
+  var DATA_PARITY_CHECKS = Object.freeze([
+    { key: "projects", collection: "projects", scope: "organization", windowed: false, label: "Projects" },
+    { key: "smallWorks", collection: "smallWorks", scope: "organization", windowed: false, label: "Small works" },
+    { key: "users", collection: "users", scope: "users", windowed: false, label: "Users" },
+    { key: "operatives", collection: "operatives", scope: "organization", windowed: false, label: "Operatives" },
+    { key: "managers", collection: "managers", scope: "organization", windowed: false, label: "Managers" },
+    { key: "clients", collection: "clients", scope: "organization", windowed: false, label: "Clients" },
+    { key: "bookings", collection: "bookings", scope: "organization", windowed: true, label: "Bookings" },
+    {
+      key: "managerSiteBookings",
+      collection: "managerSiteBookings",
+      scope: "organization",
+      windowed: true,
+      label: "Manager schedule bookings"
+    },
+    { key: "holidayBookings", collection: "holidayBookings", scope: "organization", windowed: false, label: "Annual leave" },
+    { key: "tasks", collection: "tasks", scope: "organization", windowed: false, label: "Tasks" }
+  ]);
+  var DATA_PARITY_CONFIRM_DELAY_MS = 5e3;
+  var DATA_PARITY_MIN_INTERVAL_MS = 10 * 60 * 1e3;
+  var DATA_PARITY_LOG_LIMIT = 20;
+  var DATA_PARITY_TRIGGERS = Object.freeze(["open", "foreground", "timer", "manual"]);
+  var DATA_PARITY_SKIP_REASONS = Object.freeze({
+    notListening: "This device is not listening to this list.",
+    documentReads: "This viewer reads the list one document at a time (read plan), so it is not counted.",
+    serverCountUnavailable: "The server count could not be read (offline, refused or timed out).",
+    pendingWrites: "This device has changes to this list the server has not confirmed yet, so it is checked next time.",
+    awaitingServerSnapshot: "The listener has not had a server answer for its current query yet, so it is checked next time.",
+    unknownList: "Not a list the data check knows."
+  });
+  function dataParityCheckDefinition(key5) {
+    return DATA_PARITY_CHECKS.find((check) => check.key === key5) ?? null;
+  }
+  function dataParityCheckDue(input) {
+    if (!input.online) return false;
+    if (input.trigger === "manual") return true;
+    if (!DATA_PARITY_TRIGGERS.includes(input.trigger)) return false;
+    const last = typeof input.lastCheckedMs === "number" && Number.isFinite(input.lastCheckedMs) ? input.lastCheckedMs : null;
+    if (last === null) return true;
+    const interval2 = typeof input.minIntervalMs === "number" && Number.isFinite(input.minIntervalMs) && input.minIntervalMs >= 0 ? input.minIntervalMs : DATA_PARITY_MIN_INTERVAL_MS;
+    if (input.nowMs < last) return true;
+    return input.nowMs - last >= interval2;
+  }
+  function wholeCount(value) {
+    if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return null;
+    return Math.floor(value);
+  }
+  function dataParityCheck(input) {
+    const byKey = /* @__PURE__ */ new Map();
+    const skipped = [];
+    for (const list of input.lists ?? []) {
+      if (!list || typeof list.key !== "string") continue;
+      if (!dataParityCheckDefinition(list.key)) {
+        skipped.push({ key: String(list.key), reason: "unknownList" });
+        continue;
+      }
+      byKey.set(list.key, list);
+    }
+    const mismatches = [];
+    const checked = [];
+    for (const definition of DATA_PARITY_CHECKS) {
+      const list = byKey.get(definition.key);
+      if (!list) continue;
+      if (list.skipped) {
+        skipped.push({ key: definition.key, reason: list.skipped });
+        continue;
+      }
+      const serverCount = wholeCount(list.serverCount);
+      if (serverCount === null) {
+        skipped.push({ key: definition.key, reason: "serverCountUnavailable" });
+        continue;
+      }
+      const held = Array.isArray(list.localIds) ? new Set(list.localIds.filter((id2) => typeof id2 === "string" && id2 !== "")).size : wholeCount(list.localCount);
+      if (held === null) {
+        skipped.push({ key: definition.key, reason: "notListening" });
+        continue;
+      }
+      const localCount = held + (wholeCount(list.readerDroppedCount) ?? 0);
+      checked.push(definition.key);
+      if (localCount === serverCount) continue;
+      mismatches.push({
+        key: definition.key,
+        label: definition.label,
+        serverCount,
+        localCount,
+        difference: localCount - serverCount,
+        direction: localCount < serverCount ? "missingOnDevice" : "extraOnDevice"
+      });
+    }
+    return {
+      ok: mismatches.length === 0,
+      action: mismatches.length === 0 ? "none" : "reload",
+      mismatches,
+      reloadKeys: mismatches.map((mismatch) => mismatch.key),
+      checked,
+      skipped
+    };
+  }
+  function dataParityConfirm(input) {
+    const first = input.first;
+    const confirm = input.confirm ?? null;
+    const mismatches = [];
+    const skipped = [...first.skipped];
+    const checked = [];
+    for (const key5 of first.checked) {
+      const wasMismatch = first.mismatches.some((row2) => row2.key === key5);
+      if (!wasMismatch) {
+        checked.push(key5);
+        continue;
+      }
+      const again = confirm?.mismatches.find((row2) => row2.key === key5);
+      if (again) {
+        checked.push(key5);
+        mismatches.push({ ...again });
+        continue;
+      }
+      if (confirm && confirm.checked.includes(key5)) {
+        checked.push(key5);
+        continue;
+      }
+      const reason = confirm?.skipped.find((row2) => row2.key === key5)?.reason ?? "serverCountUnavailable";
+      skipped.push({ key: key5, reason });
+    }
+    return {
+      ok: mismatches.length === 0,
+      action: mismatches.length === 0 ? "none" : "reload",
+      mismatches,
+      reloadKeys: mismatches.map((row2) => row2.key),
+      checked,
+      skipped
+    };
+  }
+  function dataParityLogEntry(input) {
+    const recheck = input.recheck ?? null;
+    const mismatches = input.first.mismatches.map((mismatch) => {
+      if (!recheck) {
+        return { ...mismatch, healed: null, afterServerCount: null, afterLocalCount: null };
+      }
+      const after = recheck.mismatches.find((row2) => row2.key === mismatch.key);
+      if (after) {
+        return { ...pickMismatch(mismatch), healed: false, afterServerCount: after.serverCount, afterLocalCount: after.localCount };
+      }
+      const healed = recheck.checked.includes(mismatch.key);
+      return { ...pickMismatch(mismatch), healed: healed ? true : null, afterServerCount: null, afterLocalCount: null };
+    });
+    return {
+      atMs: input.atMs,
+      trigger: String(input.trigger),
+      ok: mismatches.every((row2) => row2.healed === true),
+      checked: [...input.first.checked],
+      skipped: [...input.first.skipped],
+      mismatches
+    };
+  }
+  function pickMismatch(mismatch) {
+    return { key: mismatch.key, label: mismatch.label, serverCount: mismatch.serverCount, localCount: mismatch.localCount };
+  }
+  function dataParityLogAppend(log, entry, limit = DATA_PARITY_LOG_LIMIT) {
+    const kept = Array.isArray(log) ? log.filter((row2) => row2 && typeof row2.atMs === "number") : [];
+    const next = [...kept, entry];
+    const cap = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : DATA_PARITY_LOG_LIMIT;
+    return next.slice(Math.max(0, next.length - cap));
+  }
+  function clock2(atMs, timeZone) {
+    const parts2 = partsInZone(new Date(atMs), zoneOrLondon(timeZone));
+    return `${String(parts2.h).padStart(2, "0")}:${String(parts2.min).padStart(2, "0")}`;
+  }
+  function dataParitySummary(input) {
+    const entry = input.entry;
+    if (!entry || typeof entry.atMs !== "number") {
+      return { tone: "none", title: "Data check has not run on this device yet.", lines: [] };
+    }
+    const at = clock2(entry.atMs, input.timeZone);
+    if (entry.mismatches.length === 0) {
+      return { tone: "ok", title: `Data check: all lists match (checked ${at})`, lines: [] };
+    }
+    const lines = entry.mismatches.map((row2) => {
+      const base = `${row2.label}: server ${row2.serverCount}, this device ${row2.localCount}`;
+      if (row2.healed === true) return `${base} \u2014 reloaded, now matches`;
+      if (row2.healed === false) {
+        return `${base} \u2014 reloaded, still differs (server ${row2.afterServerCount ?? "?"}, this device ${row2.afterLocalCount ?? "?"})`;
+      }
+      return `${base} \u2014 not re-checked`;
+    });
+    if (entry.ok) {
+      const n = entry.mismatches.length;
+      return {
+        tone: "ok",
+        title: `Data check: ${n} ${n === 1 ? "list was" : "lists were"} reloaded and now match (checked ${at})`,
+        lines
+      };
+    }
+    const open = entry.mismatches.filter((row2) => row2.healed !== true).length;
+    return {
+      tone: "warning",
+      title: `Data check: ${open} ${open === 1 ? "list does" : "lists do"} not match the server (checked ${at})`,
+      lines
+    };
+  }
+  function dataParitySumCounts(counts) {
+    let total = 0;
+    for (const value of counts) {
+      const whole = wholeCount(value);
+      if (whole === null) return null;
+      total += whole;
+    }
+    return total;
   }
   return __toCommonJS(bundleEntry_exports);
 })();

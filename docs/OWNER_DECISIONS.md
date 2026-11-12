@@ -261,6 +261,24 @@ How to use it:
 | 10 Nov | **One booking colour scheme.** Web booking cells adopt the iOS scheme and legend: Standard (blue), Std + OT (blue with orange hatched OT part), OT only (orange hatched), Ann. leave (brown), Half day. The web legend "Operative / Manager / Admin / Sub contractor" is removed; the coloured role pill under each name stays (Op green, Admin/Manager blue, Sub purple). Rule: `JOB_SCHEDULE_LEGEND`. | done web + rulebook (1.37.0); iOS legend unchanged |
 | 10 Nov | **Build now, before launch, working on both apps.** | done (1.37.0 web + iOS PRs), owner to test |
 
+## 11 Nov decisions (for 1.38)
+
+| Date | Decision | Status |
+|---|---|---|
+| 11 Nov | **Launch safeguards for loading** (owner: "Yes do all that"), after an iPhone listed 6 projects for a session while the database and web had 7. (A) **In-app data check, both apps, read-only:** on open, on return to the foreground, every 10 minutes while open and from Settings → Data health **Check now** (admins), each list (projects, small works, users, operatives, managers, clients, bookings and manager site bookings in the loaded window, annual leave, tasks) compares the server `count()` of the listener's own query with what the app holds; a list that differs is re-read and its listener re-attached, then checked again; the last 20 results stay on the device; admins see "Data check: all lists match (checked 14:05)" or the lists that differ. No writes, no rules change, no new collection; throttled to once per 10 minutes, never offline. Rule: `dataParityCheck`, `dataParityCheckDue`, `DATA_PARITY_CHECKS` (§27). (B) **Two-app comparison in CI:** a shared fixture of raw documents and listener events (`data-parity-fixture.json`, mirrored to iOS) run through each app's own store and merge code on every PR, so a release that drops a record cannot merge. The specific iOS refresh bug is fixed separately (branch `ios-1.37.1-list-refresh`). | done web + rulebook (1.38.0, w138-data-parity); iOS (ios-1.38) · panel visibility **superseded** by the next row |
+| 11 Nov | **Data check invisible in the launch app** (owner change: it must not look half-done). No panel, row or text in Settings or Data health for normal users or admins. The silent read-only check and self-heal (reload on mismatch) keep running; results stay in the device log only. The admin panel sits behind a new `platformConfig/app` switch `dataCheckPanel` (missing = off, the `ghostAccounts` pattern; `dataCheckPanelEnabled`, `dataCheckPanelVisible`). The CI two-app comparison is unaffected. | done web + rulebook (1.38.0); iOS (ios-1.38) |
+
+## 1.38.0 judgement calls (owner to confirm)
+
+| Date | Choice | Status |
+|---|---|---|
+| 11 Nov | The fixture found a web gap: a cache snapshot shorter than the list on screen replaced it (rows could vanish until the next server snapshot). Web now only adds and updates on a cache snapshot, like iOS; only a server snapshot removes a row. | done web, owner to confirm |
+| 11 Nov | The check runs for everyone (the self-heal helps everyone); only admins can see the result, and only while `dataCheckPanel` is on. A list a viewer reads one document at a time (an operative's jobs) is not counted. The first check waits 20 seconds after the app opens so the listeners have loaded. | done, owner to confirm |
+| 11 Nov | Web compares the projects and small works lists the store holds; the other lists are compared at the listener (the documents it holds before the screens' filters); users are the ids the live roster query returned. | done web, owner to confirm |
+| 12 Nov | Review fixes: both apps count the listener's documents by stored id with case kept (iOS counted its filtered store lists and folded id case, so a placeholder row or nameless client looked like a lost record); a list with this device's unsaved changes, or whose listener has not heard from the server yet, is skipped that time; a list is reloaded only when a second look 5 seconds later still differs; no console / device-log output in production builds. | done web + iOS, owner to confirm |
+| 12 Nov | The cache-snapshot rule (`retainLoadedRows`, kept to match iOS) means a row the server no longer holds can stay on screen until the next server snapshot (seconds online; until reconnect offline), including bookings from an older window after the bookings window moves. The data check waits for that server snapshot instead of counting those rows. | done web, owner to confirm |
+| 12 Nov | Where the panel lives (when the switch is on): web Data health page, iOS Settings → Data health (iOS had put it in Manage Users). Nothing shows anywhere while the switch is off. | done web + iOS, owner to confirm |
+
 ## 1.37.0 judgement calls (owner to confirm)
 
 | Date | Choice | Status |
@@ -300,6 +318,37 @@ How to use it:
 | 7 Nov | Hours use `bookedWorkedHours`, not `managerCoverageHours.paidHours`: the latter caps a block that spans the standard day at the weekday paid day (06:00–18:00 read 8h, not 11.5h). | done, owner to confirm |
 | 7 Nov | Manager schedule bookings of every place (office, working from home, site survey, jobs) count as hours booked. | done, owner to confirm |
 | 7 Nov | **Offline wait (owner: "5s ok")**: iOS My Profile waits up to 5 seconds for bank holidays when offline, then shows figures with the cached bank holidays and recalculates once they load. | done, owner confirmed 7 Nov |
+
+## 11 Nov decisions (web pages UI pack — Daily overview, Timesheets, Manage users)
+
+UI only, web only (`docs/design/web-pages-ui/web-pages-ui-spec.md`; branch `w-ui-restyle`). Answers to the Phase 1 "decision needed" list.
+
+| Date | Decision | Status |
+|---|---|---|
+| 11 Nov | **U1** Daily overview rows get the Type chip (Standard / Std + OT / OT only) and the standard / overtime mini bar, from the existing rule (`scheduleCellKind` / `scheduleCellHours`) as a small labelled change in `buildDailyOverview`, no new calculation. | open (after 1.39 / #302 merges) |
+| 11 Nov | **U2** Daily overview shift and times on two lines, built from the booking's structured fields, never by parsing the subtitle string. | open (after #302) |
+| 11 Nov | **U3** Only figures already loaded on a page; no new fetches. User Timesheets tabs get no counts; the hub band repeats the User timesheets tile's own counts. | done web (w-ui-restyle) |
+| 11 Nov | **U4** The Sign page summary uses exactly the figures the Sign page already uses (Hours, Price work, Expenses, Timesheet total) and re-displays the timesheet's own line rows read-only. | done web (w-ui-restyle) |
+| 11 Nov | **U5** "Manager who agreed this" stays free text with its suggestions (no select). | done web (w-ui-restyle) |
+| 11 Nov | **U6** Matching dark-mode tokens with AA contrast: light text on dark surfaces, no clashes. | done web (w-ui-restyle, `app/pages-ui.css`) |
+| 11 Nov | **U7** Use the Home page `--dash-*` colours so the whole site matches. | done web (w-ui-restyle) |
+| 11 Nov | **U8** Gradient icon tiles allowed on these pages. | done web (w-ui-restyle) |
+| 11 Nov | **U9** Keep today's wording (where the reference HTML differs, the code's text stays). | done web (w-ui-restyle) |
+| 11 Nov | **U10** Daily overview uses the 1.39 wording (#302, `w139-booking-breakdown`). | open (after #302) |
+| 11 Nov | **U11** Restyle the pages §4 did not list (PAYE overtime lines, claims screens, manager review, Other / Site survey cards, Manage users notices, resend invite) with the same building blocks, no behaviour change. | done web for timesheets, overtime, claims, Manage users (w-ui-restyle); Daily overview parts open (after #302) |
+
+## UI pack judgement calls (owner to confirm)
+
+| Date | Choice | Status |
+|---|---|---|
+| 11 Nov | No new back links: a band shows a back control only where the page had one before (spec §1 "no new click targets" overrides §4.3's "back link to Timesheets" on My Timesheets). | done, owner to confirm |
+| 11 Nov | Timesheet detail band figures follow what the page shows today: My Timesheets shows Hours subtotal, Overtime (when above 0) and Extras (when above 0, combined as today); review shows Hours · shifts, Overtime, Price work · N, Expenses · N. | done, owner to confirm |
+| 11 Nov | Manage users rows gain an explicit open (chevron) button beside the existing key / resend buttons; it calls the same handler as the row. | done, owner to confirm |
+| 11 Nov | The Sign Off (line manager) step keeps its own copy and has no summary table (the spec's summary is for the person's own sign). | done, owner to confirm |
+| 11 Nov | The Add Price Work / Add Expense submit moved from the header to the foot of the dialog (same form submit and disabled rule); "Add end date" stays a checkbox that reveals the date. | done, owner to confirm |
+| 11 Nov | Review fixes (U9, keep today's wording): no new chips or button text on My Timesheets, timesheet rows, the overtime person title or pending requests; payment runs read "• Run: X - Y" as before; Exported keeps its visible Search / Filter / Payment run labels. While a timesheet loads and on Sign / Sign Off, the band keeps "Timesheet" / "Review Timesheet" and the list back link, with the sheet's own Back / Cancel beside it. | done |
+| 11 Nov | Sign Timesheet: the read-only rows are labelled "Bookings and leave" (price work and expenses are not listed as rows; their totals sit beside it, unchanged), and the table is hidden when there are none. The card keeps the old heading "You're approving". | done, owner to confirm |
+| 11 Nov | Action cards (hub tiles, My Timesheets current period, overtime tiles) show a small "Open →" cue under the card; it is decoration on the same button, but it is new text. | done, owner to confirm (remove if U9 should cover it) |
 
 ## Open questions for the owner
 
