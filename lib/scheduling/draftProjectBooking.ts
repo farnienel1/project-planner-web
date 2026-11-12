@@ -347,21 +347,38 @@ export function draftPersonStillListed(person: DraftBookingPerson): boolean {
 }
 
 /**
- * Review 1.41 #10: one Replace choice per day, but an overnight booking can overlap two selected days. Each booking is
- * replaced once — in the first day's save (days in date order) — and dropped from later days, so a later batch never
- * tries to delete a booking that is already gone and is refused part way. `alreadyReplaced` is updated in place
- * (lower-cased `collection/bookingId`).
+ * Review 1.41 #10 (re-review #2): one Replace choice per day, but an overnight booking can overlap two selected days.
+ * The replaces of a day that are not yet done — a booking already replaced by an earlier day's save is left out, so a
+ * later batch never deletes it twice. Pure: the caller marks a booking done (`markReplaced`) only after its save
+ * succeeded, so a refused or skipped day leaves it for the next day to replace.
  */
 export function replacesNotYetTaken(
   replaces: ReadonlyArray<BookingReplaceRef> | null | undefined,
-  alreadyReplaced: Set<string>
+  alreadyReplaced: ReadonlySet<string>
 ): BookingReplaceRef[] | undefined {
   if (!replaces || replaces.length === 0) return undefined
-  const kept = replaces.filter((ref) => {
-    const key = `${ref.collection}/${ref.bookingId}`.toLowerCase()
-    if (alreadyReplaced.has(key)) return false
-    alreadyReplaced.add(key)
-    return true
-  })
+  const kept = replaces.filter((ref) => !alreadyReplaced.has(replaceKey(ref)))
   return kept.length > 0 ? kept : undefined
+}
+
+/** Records `replaces` as done once their save succeeded (lower-cased `collection/bookingId`). */
+export function markReplaced(replaces: ReadonlyArray<BookingReplaceRef> | null | undefined, alreadyReplaced: Set<string>): void {
+  for (const ref of replaces ?? []) alreadyReplaced.add(replaceKey(ref))
+}
+
+function replaceKey(ref: BookingReplaceRef): string {
+  return `${ref.collection}/${ref.bookingId}`.toLowerCase()
+}
+
+/**
+ * Re-review 1.41 #6: when a multi-day save stops part way (a refused Replace, a cancelled signed-timesheet confirm),
+ * the message names the days already saved instead of saying nothing was saved. `saved` are display labels.
+ */
+export function partialSaveMessage(message: string, saved: ReadonlyArray<string>): string {
+  if (saved.length === 0) return message
+  const stopped = message
+    .replace(/\s*—\s*nothing was saved\.?/i, '.')
+    .replace(/\s*Nothing was saved\.?/i, '')
+    .trim()
+  return `${stopped} Already saved: ${saved.join('; ')}. The rest were not saved.`
 }

@@ -30,6 +30,8 @@ import {
   type DraftBookingPerson,
   type WizardStep,
   replacesNotYetTaken,
+  markReplaced,
+  partialSaveMessage,
 } from '@/lib/scheduling/draftProjectBooking'
 import type { ManagerLocationType } from '@/lib/scheduling/managerSiteBookingUtils'
 import type { SchedulablePerson } from '@/lib/scheduling/scheduleRosterUtils'
@@ -256,12 +258,16 @@ export function ScheduleOperativeForm({
 
     setSaving(true)
     setError(null)
+    // Re-review 1.41 #6: the days already saved, named if a later day stops the save.
+    const savedDays: string[] = []
+    const dayLabel = (date: Date) =>
+      new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone }).format(date)
     try {
       for (const person of draftPeople) {
         const personSlots = slotsList
           .filter((slot) => dayStateBooks(person.dayStates[slotKey(slot.date)]))
           .sort((a, b) => a.date.getTime() - b.date.getTime())
-        // Review 1.41 #10: a booking overlapping two selected days is replaced once, on the first.
+        // Review 1.41 #10: a booking overlapping two selected days is replaced once, on the first day that saves it.
         const alreadyReplaced = new Set<string>()
 
         for (const slot of personSlots) {
@@ -282,6 +288,8 @@ export function ScheduleOperativeForm({
               status: 'confirmed',
               organizationId: organization.id,
             }, { replaces })
+            markReplaced(replaces, alreadyReplaced)
+            savedDays.push(`${person.name} — ${dayLabel(slot.date)}`)
           } else {
             if (
               isExactDuplicateManagerBooking(
@@ -303,12 +311,14 @@ export function ScheduleOperativeForm({
               workEndTime: firestoreSlot.workEndTime,
               ...rateFieldsFor(slot),
             }, { replaces })
+            markReplaced(replaces, alreadyReplaced)
+            savedDays.push(`${person.name} — ${dayLabel(slot.date)}`)
           }
         }
       }
       router.push(scheduleBasePath)
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to create bookings')
+      setError(partialSaveMessage(e instanceof Error ? e.message : 'Failed to create bookings', savedDays))
     } finally {
       setSaving(false)
     }

@@ -15,7 +15,7 @@ import assert from 'node:assert/strict'
 import { assertSucceeds, initializeTestEnvironment, type RulesTestEnvironment } from '@firebase/rules-unit-testing'
 import { assertFails } from './rulesAssert.ts'
 import { claimsContext } from './authClaimsContext.ts'
-import { doc, getDoc, serverTimestamp, setDoc, Timestamp, writeBatch, type Firestore } from 'firebase/firestore'
+import { doc, getDoc, runTransaction, serverTimestamp, setDoc, Timestamp, writeBatch, type Firestore } from 'firebase/firestore'
 import { bookingReplaceWrites } from '../lib/canonical/bookingReplace.ts'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -186,4 +186,45 @@ test('an edit with Replace: the edit and the replaced delete + tombstone in one 
     ]).commit()
   )
   assert.equal(await exists(`organizations/${ORG}/bookings/OLD1`), false)
+})
+
+/** The Replace as both apps write it from 1.41 review: a transaction that reads each replaced booking and its (missing)
+ * tombstone first, then writes the create and each delete + tombstone. */
+async function replaceTransaction(
+  d: Firestore,
+  uid: string,
+  booking: { collection: 'bookings' | 'managerSiteBookings'; bookingId: string; data: Record<string, unknown> },
+  replaced: Array<{ collection: 'bookings' | 'managerSiteBookings'; bookingId: string }>
+) {
+  const plan = bookingReplaceWrites({ organizationId: ORG, booking, replaced, deletedBy: uid, deletedFrom: 'web' })
+  assert.ok(plan, 'the rulebook builds a plan')
+  await runTransaction(d, async (tx) => {
+    for (const row of plan.deletes) {
+      const live = await tx.get(doc(d, row.path))
+      const tombstone = await tx.get(doc(d, row.tombstonePath))
+      assert.equal(live.exists(), true, 'the replaced booking is read live')
+      assert.equal(tombstone.exists(), false, 'its tombstone is read and is missing')
+    }
+    tx.set(doc(d, plan.bookingPath), { ...booking.data, updatedAt: serverTimestamp(), updatedBy: uid, updatedFrom: 'web' })
+    for (const row of plan.deletes) {
+      tx.delete(doc(d, row.path))
+      tx.set(doc(d, row.tombstonePath), { ...row.tombstone, deletedAt: serverTimestamp() })
+    }
+  })
+}
+
+test('transaction shape: the job\'s manager reads the live booking and its missing tombstone, then replaces it', async () => {
+  const d = await db(MGR)
+  await assertSucceeds(replaceTransaction(d, MGR, { collection: 'bookings', bookingId: 'NEWT', data: labour('NEWT', 'job1') }, [{ collection: 'bookings', bookingId: 'OLD1' }]))
+  assert.equal(await exists(`organizations/${ORG}/bookings/NEWT`), true)
+  assert.equal(await exists(`organizations/${ORG}/bookings/OLD1`), false)
+  assert.equal(await exists(`organizations/${ORG}/deletedBookings/OLD1`), true)
+})
+
+test('transaction shape: a manager who may not delete the booking is refused whole, nothing changes', async () => {
+  const d = await db(MGR)
+  await assertFails(replaceTransaction(d, MGR, { collection: 'bookings', bookingId: 'NEWT2', data: labour('NEWT2', 'job1') }, [{ collection: 'bookings', bookingId: 'ON2' }]))
+  assert.equal(await exists(`organizations/${ORG}/bookings/NEWT2`), false)
+  assert.equal(await exists(`organizations/${ORG}/bookings/ON2`), true)
+  assert.equal(await exists(`organizations/${ORG}/deletedBookings/ON2`), false)
 })

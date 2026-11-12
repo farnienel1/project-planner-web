@@ -4,8 +4,9 @@
  * signed-in user on the booking's job. The screens build the overlapping bookings; this only maps them to the rule.
  */
 
-import { bookingReplaceOffer, type BookingReplaceRef } from '@/lib/canonical'
+import { bookingReplaceOffer } from '@/lib/canonical'
 import { userBookingRemoveAction } from '@/lib/access/bookingAccess'
+import { stampShownReplaceRefs, type SeenBookingReplaceRef } from '@/lib/bookings/bookingReplaceSeen'
 
 type Job = { id: string } & Record<string, unknown>
 
@@ -15,7 +16,7 @@ export function rowReplaceOffer(input: {
   jobs: ReadonlyArray<Job>
   labour: ReadonlyArray<{ id: string; projectId?: string | null }>
   manager: ReadonlyArray<{ id: string; userId: string; locationType?: string | null; locationId?: string | null }>
-}): { replace?: { bookings: BookingReplaceRef[] } } {
+}): { replace?: { bookings: SeenBookingReplaceRef[] } } {
   const jobFor = (id: unknown) =>
     (input.jobs.find((job) => String(job.id).toLowerCase() === String(id ?? '').toLowerCase()) ?? null) as Parameters<typeof userBookingRemoveAction>[2]
   const clashing = [
@@ -44,5 +45,6 @@ export function rowReplaceOffer(input: {
     })),
   ]
   const offer = bookingReplaceOffer({ clashing })
-  return offer.offered ? { replace: { bookings: offer.bookings } } : {}
+  // Re-review 1.41 #3: each ref carries the fingerprint of the booking as shown on this row.
+  return offer.offered ? { replace: { bookings: stampShownReplaceRefs(offer.bookings) } } : {}
 }

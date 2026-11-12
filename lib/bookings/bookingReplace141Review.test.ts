@@ -5,7 +5,7 @@ import { serializeBooking, serializeManagerSiteBooking } from '../ios-parity/con
 import { createWritePayload } from '../firebase/partialWrite.ts'
 import { londonMidnight } from '../ios-parity/londonTime.ts'
 import { detectOperativeClashes } from '../scheduling/bookingClashUtils.ts'
-import { replacesNotYetTaken } from '../scheduling/draftProjectBooking.ts'
+import { markReplaced, partialSaveMessage, replacesNotYetTaken } from '../scheduling/draftProjectBooking.ts'
 import type { Booking, Operative, Project, User } from '../../types/index.ts'
 
 const DAY = londonMidnight(new Date('2026-11-17T12:00:00Z'))
@@ -97,12 +97,35 @@ test('1.41 review #6: without the roster only the picked id counts (unchanged)',
   assert.deepEqual(clashes, [])
 })
 
-test('1.41 review #10: a booking overlapping two selected days is replaced once, on the first day', () => {
+test('1.41 review #10: a booking overlapping two selected days is replaced once, on the first day that saves it', () => {
   const taken = new Set<string>()
   const night = { collection: 'bookings' as const, bookingId: 'NIGHT' }
   const other = { collection: 'bookings' as const, bookingId: 'B-2' }
-  assert.deepEqual(replacesNotYetTaken([night], taken), [night])
+  const first = replacesNotYetTaken([night], taken)
+  assert.deepEqual(first, [night])
+  markReplaced(first, taken)
   assert.deepEqual(replacesNotYetTaken([{ ...night, bookingId: 'night' }, other], taken), [other])
   assert.equal(replacesNotYetTaken([night], taken), undefined)
   assert.equal(replacesNotYetTaken(undefined, taken), undefined)
+})
+
+test('1.41 re-review #1/#2: a day that was not saved leaves its booking for the next day to replace', () => {
+  const taken = new Set<string>()
+  const night = { collection: 'bookings' as const, bookingId: 'NIGHT' }
+  // Day 1 offers it but its save is refused or skipped: nothing is marked.
+  assert.deepEqual(replacesNotYetTaken([night], taken), [night])
+  // Day 2 still replaces it.
+  assert.deepEqual(replacesNotYetTaken([night], taken), [night])
+})
+
+test('1.41 re-review #6: a save that stops part way names the days already saved', () => {
+  assert.equal(partialSaveMessage('Not replaced — nothing was saved.', []), 'Not replaced — nothing was saved.')
+  assert.equal(
+    partialSaveMessage('Not replaced — nothing was saved.', ['Ada Site — Mon 17 Nov']),
+    'Not replaced. Already saved: Ada Site — Mon 17 Nov. The rest were not saved.'
+  )
+  assert.equal(
+    partialSaveMessage('Changed on another device — not replaced.', ['A — Mon 17 Nov', 'A — Tue 18 Nov']),
+    'Changed on another device — not replaced. Already saved: A — Mon 17 Nov; A — Tue 18 Nov. The rest were not saved.'
+  )
 })
