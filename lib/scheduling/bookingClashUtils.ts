@@ -35,6 +35,7 @@ import {
 } from '@/lib/canonical'
 import { normalizeDocumentId } from '@/lib/canonical'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
+import { samePersonBookingIds } from '@/lib/bookings/bookingPeople'
 
 export interface OperativeBookingClash {
   operativeId: string
@@ -133,6 +134,7 @@ export function detectOperativeClashes({
   bookings,
   operatives,
   projects,
+  users = [],
   day = null,
   timeZone,
 }: {
@@ -141,6 +143,8 @@ export function detectOperativeClashes({
   bookings: Booking[]
   operatives: Operative[]
   projects: Project[]
+  /** The roster, so a booking stored under any id of the person counts (review 1.41 #6, `samePersonBookingIds`). */
+  users?: ReadonlyArray<Pick<User, 'id' | 'email' | 'formerUserIds'>>
   day?: OrgPayrollTimePolicy | PayrollTimePolicyState | null
   timeZone?: string
 }): OperativeBookingClash[] {
@@ -150,7 +154,10 @@ export function detectOperativeClashes({
   for (const operativeId of operativeIds) {
     const operative = operatives.find((o) => normalizeDocumentId(o.id) === normalizeDocumentId(operativeId))
     const operativeName = operative ? `${operative.firstName} ${operative.lastName}`.trim() : 'Operative'
-    const own = bookings.filter((existing) => normalizeDocumentId(existing.operativeId) === normalizeDocumentId(operativeId))
+    // Platform guardrail 1: the person under every id they go by (former ids, same-email accounts, catalogue rows).
+    const personIds = samePersonBookingIds(operativeId, users, operatives)
+    personIds.add(normalizeDocumentId(operativeId))
+    const own = bookings.filter((existing) => personIds.has(normalizeDocumentId(existing.operativeId)))
     const byId = new Map(own.map((existing) => [existing.id, existing]))
 
     for (const slot of slots) {

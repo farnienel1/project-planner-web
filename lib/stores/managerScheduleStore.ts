@@ -1,12 +1,12 @@
 'use client'
 
 import { create } from 'zustand'
-import { doc, getDoc, setDoc, writeBatch } from 'firebase/firestore'
+import { doc, setDoc } from 'firebase/firestore'
 import { deleteBookingWithTombstone } from '@/lib/bookings/bookingTombstoneWrite'
 import { resolveBookingJobCollection } from '@/lib/bookings/jobCollection'
 import { auth, db } from '@/lib/firebase/config'
 import { MissingDocumentError, addPartialDocumentToBatch, createWritePayload, savePartialDocument } from '@/lib/firebase/partialWrite'
-import { addBookingReplaceToBatch, commitBookingReplace, forgetReplacedBookings } from '@/lib/bookings/bookingReplaceWrite'
+import { commitBookingReplace, forgetReplacedBookings } from '@/lib/bookings/bookingReplaceWrite'
 import type { BookingReplaceOptions } from '@/lib/stores/bookingStore'
 import { BOOKING_REPLAY_REFUSED_MESSAGE, writeMetadataFields } from '@/lib/canonical'
 import { managerSiteBookingUpdateWriteFields } from '@/lib/canonical/workDocumentReaders'
@@ -199,12 +199,14 @@ export const useManagerScheduleStore = create<ManagerScheduleState>((set, get) =
     const createFields = { ...createWritePayload(payload), ...(writeMetadataFields(auth?.currentUser?.uid, 'web') ?? {}) }
     const replaces = options?.replaces ?? []
     if (replaces.length > 0) {
-      // Rulebook 1.41.0 §5 (`bookingReplaceWrites`): the create and each replaced delete + tombstone in one batch.
+      // Rulebook 1.41.0 §5 (`bookingReplaceWrites`): the create and each replaced delete + tombstone in one checked transaction.
       const removed = await commitBookingReplace(firestore, {
         organizationId,
         booking: { collection: 'managerSiteBookings', bookingId: id },
         replaced: replaces,
-        write: (batch, ref) => batch.set(ref, createFields),
+        write: (tx, ref) => {
+          tx.set(ref, createFields)
+        },
       })
       await forgetReplacedBookings(organizationId, removed)
     } else {
@@ -243,18 +245,18 @@ export const useManagerScheduleStore = create<ManagerScheduleState>((set, get) =
       const ref = doc(firestore, 'organizations', organizationId, 'managerSiteBookings', bookingId)
       if (replaces.length > 0) {
         // Rulebook 1.41.0 §5: the edit and each replaced delete + tombstone in one batch (a missing booking is refused).
-        if (!(await getDoc(ref)).exists()) throw new MissingDocumentError(ref.path)
-        const batch = writeBatch(firestore)
-        await addPartialDocumentToBatch(batch, ref, payload, managerSiteBookingUpdateWriteFields, {
-          userId: auth?.currentUser?.uid ?? null,
-          base: serializeManagerSiteBooking({ ...existing, organizationId }),
-        })
-        const removed = addBookingReplaceToBatch(firestore, batch, {
+        const removed = await commitBookingReplace(firestore, {
           organizationId,
-          booking: { collection: 'managerSiteBookings', bookingId },
+          booking: { collection: 'managerSiteBookings', bookingId: bookingId },
           replaced: replaces,
+          existing: true,
+          write: async (tx, ref) => {
+            await addPartialDocumentToBatch(tx, ref, payload, managerSiteBookingUpdateWriteFields, {
+              userId: auth?.currentUser?.uid ?? null,
+              base: serializeManagerSiteBooking({ ...existing, organizationId }),
+            })
+          },
         })
-        await batch.commit()
         await forgetReplacedBookings(organizationId, removed)
       } else {
         await savePartialDocument(ref, payload, managerSiteBookingUpdateWriteFields, {
@@ -300,7 +302,7 @@ export function managerSiteBookingsOrganizationId(): string {
  * manager's own site booking carries overtime like a labour booking); the person, and their line manager when the line
  * had been returned, are told. Best effort, after the write; never blocks it. The labour twin is in `bookingStore.ts`.
  */
-function notifyOvertimeReopenedSoon(organizationId: string, before: ManagerSiteBooking, after: ManagerSiteBooking | null): void {
+export function notifyOvertimeReopenedSoon(organizationId: string, before: ManagerSiteBooking, after: ManagerSiteBooking | null): void {
   void (async () => {
     const [{ notifyOvertimeLineReopened }, { overtimeBookingInputs }, { useOrgUserStore }, { useOperativeStore }, { useProjectStore }] =
       await Promise.all([

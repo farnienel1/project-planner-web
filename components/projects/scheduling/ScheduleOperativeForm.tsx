@@ -29,6 +29,7 @@ import {
   dayStateBooks,
   type DraftBookingPerson,
   type WizardStep,
+  replacesNotYetTaken,
 } from '@/lib/scheduling/draftProjectBooking'
 import type { ManagerLocationType } from '@/lib/scheduling/managerSiteBookingUtils'
 import type { SchedulablePerson } from '@/lib/scheduling/scheduleRosterUtils'
@@ -257,12 +258,16 @@ export function ScheduleOperativeForm({
     setError(null)
     try {
       for (const person of draftPeople) {
-        const personSlots = slotsList.filter((slot) => dayStateBooks(person.dayStates[slotKey(slot.date)]))
+        const personSlots = slotsList
+          .filter((slot) => dayStateBooks(person.dayStates[slotKey(slot.date)]))
+          .sort((a, b) => a.date.getTime() - b.date.getTime())
+        // Review 1.41 #10: a booking overlapping two selected days is replaced once, on the first.
+        const alreadyReplaced = new Set<string>()
 
         for (const slot of personSlots) {
           const firestoreSlot = slotToFirestore(slot)
           // Rulebook 1.41.0 §5: Replace — the overlapping bookings go in the same batch as this create.
-          const replaces = person.replaceByDay?.[slotKey(slot.date)]
+          const replaces = replacesNotYetTaken(person.replaceByDay?.[slotKey(slot.date)], alreadyReplaced)
           if (person.kind === 'operative') {
             if (isExactDuplicateBooking(bookings, project.id, person.personId, slot)) continue
             await createBooking({

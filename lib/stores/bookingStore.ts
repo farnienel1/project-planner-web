@@ -1,14 +1,14 @@
 'use client'
 
 import { create } from 'zustand'
-import { doc, getDoc, setDoc, writeBatch } from 'firebase/firestore'
+import { doc, setDoc } from 'firebase/firestore'
 import { deleteBookingWithTombstone } from '@/lib/bookings/bookingTombstoneWrite'
 import { auth, db } from '@/lib/firebase/config'
 import { MissingDocumentError, addPartialDocumentToBatch, createWritePayload, savePartialDocument } from '@/lib/firebase/partialWrite'
 import { bookingUpdateWriteFields } from '@/lib/canonical/workDocumentReaders'
 import { BOOKING_REPLAY_REFUSED_MESSAGE } from '@/lib/canonical/bookingTombstones'
 import type { BookingReplaceRef } from '@/lib/canonical/bookingReplace'
-import { addBookingReplaceToBatch, commitBookingReplace, forgetReplacedBookings } from '@/lib/bookings/bookingReplaceWrite'
+import { commitBookingReplace, forgetReplacedBookings } from '@/lib/bookings/bookingReplaceWrite'
 
 /** Rulebook 1.41.0 §5: the bookings this save replaces (deleted with their tombstones in the same batch). */
 export type BookingReplaceOptions = { replaces?: ReadonlyArray<BookingReplaceRef> | null }
@@ -177,12 +177,14 @@ export const useBookingStore = create<BookingState>((set, get) => ({
     const createFields = { ...createWritePayload(payload), ...(writeMetadataFields(auth?.currentUser?.uid, 'web') ?? {}) }
     const replaces = options?.replaces ?? []
     if (replaces.length > 0) {
-      // Rulebook 1.41.0 §5 (`bookingReplaceWrites`): the create and each replaced delete + tombstone in one batch.
+      // Rulebook 1.41.0 §5 (`bookingReplaceWrites`): the create and each replaced delete + tombstone in one checked transaction.
       const removed = await commitBookingReplace(firestore, {
         organizationId,
         booking: { collection: 'bookings', bookingId: id },
         replaced: replaces,
-        write: (batch, ref) => batch.set(ref, createFields),
+        write: (tx, ref) => {
+          tx.set(ref, createFields)
+        },
       })
       await forgetReplacedBookings(organizationId, removed)
     } else {
@@ -247,19 +249,18 @@ export const useBookingStore = create<BookingState>((set, get) => ({
       if (replaces.length > 0) {
         // Rulebook 1.41.0 §5: the edit and each replaced delete + tombstone in one batch; an edit of a booking deleted
         // on another device is still refused, never re-created.
-        const ref = doc(firestore, 'organizations', organizationId, 'bookings', id)
-        if (!(await getDoc(ref)).exists()) throw new MissingDocumentError(ref.path)
-        const batch = writeBatch(firestore)
-        await addPartialDocumentToBatch(batch, ref, payload, bookingUpdateWriteFields, {
-          userId: auth?.currentUser?.uid ?? null,
-          base: serializeBooking(booking),
-        })
-        const removed = addBookingReplaceToBatch(firestore, batch, {
+        const removed = await commitBookingReplace(firestore, {
           organizationId,
           booking: { collection: 'bookings', bookingId: id },
           replaced: replaces,
+          existing: true,
+          write: async (tx, ref) => {
+            await addPartialDocumentToBatch(tx, ref, payload, bookingUpdateWriteFields, {
+              userId: auth?.currentUser?.uid ?? null,
+              base: serializeBooking(booking),
+            })
+          },
         })
-        await batch.commit()
         await forgetReplacedBookings(organizationId, removed)
       } else {
         await savePartialDocument(doc(firestore, 'organizations', organizationId, 'bookings', id), payload, bookingUpdateWriteFields, {
@@ -330,7 +331,7 @@ export function bookingsOrganizationId(): string {
  * Rulebook 1.33.0 §25 (reopen): a changed or deleted booking reopens its PAYE overtime line; the person (and their line
  * manager when the line had been returned) are told. Best effort, after the write; never blocks it.
  */
-function notifyOvertimeReopenedSoon(before: Booking, after: Booking | null): void {
+export function notifyOvertimeReopenedSoon(before: Booking, after: Booking | null): void {
   void (async () => {
     const [{ notifyOvertimeLineReopened }, { overtimeBookingInputs }, { useOrgUserStore }, { useOperativeStore }, { useProjectStore }] =
       await Promise.all([

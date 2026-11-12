@@ -6,9 +6,10 @@ import { clockText } from '@/lib/warnings/clashIntervals'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import { slotKey, slotToFirestore, type ScheduleDateSlot } from '@/lib/scheduling/scheduleUtils'
 import type { SchedulablePerson, SchedulablePersonKind } from '@/lib/scheduling/scheduleRosterUtils'
-import { ORPHAN_BOOKING_LABEL, bookingRequestClashIds, type BookingLeaveConflict, type BookingReplaceRef, type PayrollTimePolicyState } from '@/lib/canonical'
+import { ORPHAN_BOOKING_LABEL, bookingRequestClashIds, normalizeDocumentId, type BookingLeaveConflict, type BookingReplaceRef, type PayrollTimePolicyState } from '@/lib/canonical'
 import { dayKey as orgDayKey } from '@/lib/ios-parity/londonTime'
 import { leaveConflictsForBooking } from '@/lib/scheduling/leaveConflicts'
+import { samePersonBookingIds } from '@/lib/bookings/bookingPeople'
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import type { HolidayBooking } from '@/types'
 
@@ -64,8 +65,11 @@ function detectManagerDayClashes({
   projects,
   day,
   timeZone,
+  personIds,
 }: {
   userId: string
+  /** Lower-cased ids the person goes by (review 1.41 #6); the manager's own id when not given. */
+  personIds?: ReadonlySet<string>
   slot: ScheduleDateSlot
   managerSiteBookings: ManagerSiteBooking[]
   projects: Project[]
@@ -74,9 +78,11 @@ function detectManagerDayClashes({
   timeZone?: string
 }): OperativeBookingClash[] {
   const firestoreSlot = slotToFirestore(slot)
-  const own = managerSiteBookings.filter((existing) => existing.userId === userId)
+  const ids = new Set(personIds ?? [])
+  ids.add(normalizeDocumentId(userId))
+  const own = managerSiteBookings.filter((existing) => ids.has(normalizeDocumentId(existing.userId)))
   const byId = new Map(own.map((existing) => [existing.id, existing]))
-  const ids = bookingRequestClashIds({
+  const clashIds = bookingRequestClashIds({
     request: {
       dayKey: orgDayKey(slot.date, timeZone),
       timeSlot: firestoreSlot.timeSlot,
@@ -93,7 +99,7 @@ function detectManagerDayClashes({
     day,
   })
 
-  return ids.flatMap((id) => {
+  return clashIds.flatMap((id) => {
     const existing = byId.get(id)
     if (!existing) return []
     return [
@@ -162,6 +168,7 @@ export function buildDraftPersonDayStates({
           bookings,
           operatives,
           projects,
+          users,
           day: payrollPolicy,
           timeZone: timeZone ?? undefined,
         }).map((clash) => ({ ...clash, operativeName: person.name }))
@@ -172,6 +179,7 @@ export function buildDraftPersonDayStates({
       clashes.push(
         ...detectManagerDayClashes({
           userId: managerUserId,
+          personIds: samePersonBookingIds(managerUserId, users, operatives),
           slot,
           managerSiteBookings,
           projects,
@@ -336,4 +344,24 @@ export function carryDayDecisions(previous: DraftBookingPerson, rebuilt: DraftBo
 /** A person stays in the request while any day is bookable or still waiting for ✓ / ✕. */
 export function draftPersonStillListed(person: DraftBookingPerson): boolean {
   return personHasBookableDays(person) || personHasPendingClashes(person)
+}
+
+/**
+ * Review 1.41 #10: one Replace choice per day, but an overnight booking can overlap two selected days. Each booking is
+ * replaced once — in the first day's save (days in date order) — and dropped from later days, so a later batch never
+ * tries to delete a booking that is already gone and is refused part way. `alreadyReplaced` is updated in place
+ * (lower-cased `collection/bookingId`).
+ */
+export function replacesNotYetTaken(
+  replaces: ReadonlyArray<BookingReplaceRef> | null | undefined,
+  alreadyReplaced: Set<string>
+): BookingReplaceRef[] | undefined {
+  if (!replaces || replaces.length === 0) return undefined
+  const kept = replaces.filter((ref) => {
+    const key = `${ref.collection}/${ref.bookingId}`.toLowerCase()
+    if (alreadyReplaced.has(key)) return false
+    alreadyReplaced.add(key)
+    return true
+  })
+  return kept.length > 0 ? kept : undefined
 }
