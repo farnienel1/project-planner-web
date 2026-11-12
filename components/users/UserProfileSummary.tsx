@@ -2,7 +2,9 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { usePendingNavigation } from '@/lib/navigation/usePendingNavigation'
+import { RouteLoading } from '@/components/shell/RouteLoading'
+import { PendingSpinner } from '@/components/shell/PendingSpinner'
 import { format } from 'date-fns'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
@@ -36,7 +38,7 @@ export function UserProfileSummary({
   backHref: string
   from: string
 }) {
-  const router = useRouter()
+  const { navigate, prefetch, pending: backPending } = usePendingNavigation()
   const { user: currentUser, organization } = useAuthStore()
   const currencyCode = useOrganizationCurrency()
   const { users, loadUsers } = useOrgUserStore()
@@ -111,13 +113,7 @@ export function UserProfileSummary({
     return users.find((row) => row.id === target.assignedManagerUserId) || null
   }, [users, target?.assignedManagerUserId])
 
-  if (loading) {
-    return (
-      <div className="flex h-64 items-center justify-center">
-        <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-[var(--blue)]" />
-      </div>
-    )
-  }
+  if (loading) return <RouteLoading />
 
   if (!target) {
     return (
@@ -139,7 +135,16 @@ export function UserProfileSummary({
 
   return (
     <div className="stack" data-hue="user">
-      <button type="button" onClick={() => router.push(backHref)} className="btn sm ghost self-start">
+      <button
+        type="button"
+        onClick={() => navigate(backHref)}
+        onPointerEnter={() => prefetch(backHref)}
+        onFocus={() => prefetch(backHref)}
+        disabled={backPending}
+        aria-busy={backPending || undefined}
+        className="btn sm ghost self-start"
+      >
+        {backPending ? <PendingSpinner /> : null}
         Back
       </button>
 
