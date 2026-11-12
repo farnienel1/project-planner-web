@@ -8,7 +8,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { ChevronLeftIcon, ChevronRightIcon, CalendarDaysIcon, FolderIcon, WrenchScrewdriverIcon } from '@heroicons/react/24/solid'
+import { ChevronLeftIcon, ChevronRightIcon, CalendarDaysIcon, FolderIcon, SunIcon, WrenchScrewdriverIcon } from '@heroicons/react/24/solid'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
 import { useOrganizationDayKey } from '@/lib/warnings/useOrganizationDayKey'
@@ -22,7 +22,8 @@ import { useHolidayStore } from '@/lib/stores/holidayStore'
 import { useSubcontractorStore } from '@/lib/stores/subcontractorStore'
 import { canViewDailyOverview, hasAdminAccess } from '@/lib/permissions'
 import { dateFromDayKey, dayKey, londonMidnight } from '@/lib/ios-parity/londonTime'
-import { leaveHalfDayLabel, overtimeTotalText } from '@/lib/canonical'
+import { leaveHalfDayLabel, overtimeTotalText, type JOB_SCHEDULE_LEGEND, type ScheduleCellTone } from '@/lib/canonical'
+import { Card, Chip, DataTable, EmptyState, IconTile, Note, PageBand, PageShell, PuButton, StatRow, WarnIcon, type PuTone } from '@/components/ui/page'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 import { watchSubcontractorBookings } from '@/lib/weekly-report/loadSubcontractorBookings'
 import type { SubcontractorBookingRow } from '@/lib/weekly-report/weeklyReportData'
@@ -139,139 +140,158 @@ export function DailyOverviewScreen() {
 
   if (user && !canViewDailyOverview(user)) return null
 
+  const legendTotal = Math.max(1, model.officeCount + model.wfhCount + model.onSiteCount + model.unbookedCount)
+  const share = (count: number) => `${(100 * count) / legendTotal}%`
+  const overtimeValue =
+    // Several rates on one day: the clock hours only (no single rate to show), as iOS.
+    model.overtimeWorkedHours > 0 && !model.overtimeText
+      ? `${overviewFormatHours(model.overtimeWorkedHours)}h OT`
+      : // Rulebook 1.39.0 (owner answer 11 Nov): "12h OT × 1.5 = 18h" (`overtimeTotalText`); clock hours at the
+        // multiplier, an unpaid break in them off as plain hours (1.20.3).
+        overtimeTotalText({
+          clockHours: model.overtimeWorkedHours,
+          multiplier: model.overtimeMultiplier,
+          breakHours: model.overtimeBreakHours,
+        }) || '0h OT'
+  const openManagerBooking = (booking: ManagerSiteBooking) =>
+    setEditingRow(managerBookingToTarget(booking, personName(booking.userId, users, userIdAliases)))
+
   return (
     <>
-    <div className="stack" data-hue="daily">
-      <div className="phead" data-hue="daily">
-        <div className="badge-ico">
-          <CalendarDaysIcon className="h-6 w-6" />
-        </div>
-        <div>
-          <h1>Daily overview</h1>
-          <div className="sub">Who is where, and who still needs booking</div>
-        </div>
-        <div className="acts">
-          <div className="seg">
+    <PageShell>
+      <PageBand
+        eyebrow={firstPaint ? 'Daily overview' : `Daily overview · ${model.dayLabel}`}
+        title={
+          firstPaint
+            ? undefined
+            : `${overviewFormatHours(model.labourHours)}h booked`
+        }
+        titleSuffix={firstPaint ? undefined : `· ${model.peopleCount === 1 ? '1 person' : `${model.peopleCount} people`}`}
+        subtitle="Who is where, and who still needs booking"
+        actions={
+          <div className="pu-datenav">
             <button type="button" aria-label="Previous day" onClick={() => setDay(shiftOverviewDay(day, -1))}>
-              <ChevronLeftIcon className="h-5 w-5" />
+              <ChevronLeftIcon width={18} height={18} aria-hidden="true" />
             </button>
-            <button type="button" className={model.isToday ? 'on' : ''} onClick={() => setDay(londonMidnight(new Date(), organizationZoneOr()))}>
+            <button
+              type="button"
+              className={model.isToday ? 'on' : undefined}
+              onClick={() => setDay(londonMidnight(new Date(), organizationZoneOr()))}
+            >
               {model.isToday ? 'Today' : 'Back to today'}
             </button>
             <button type="button" aria-label="Next day" onClick={() => setDay(shiftOverviewDay(day, 1))}>
-              <ChevronRightIcon className="h-5 w-5" />
+              <ChevronRightIcon width={18} height={18} aria-hidden="true" />
             </button>
+            <input
+              type="date"
+              value={dateParam}
+              aria-label="View by date"
+              onChange={(e) => {
+                if (/^\d{4}-\d{2}-\d{2}$/.test(e.target.value)) setDay(dateFromDayKey(e.target.value))
+              }}
+            />
           </div>
-          <input
-            type="date"
-            value={dateParam}
-            aria-label="View by date"
-            onChange={(e) => {
-              if (/^\d{4}-\d{2}-\d{2}$/.test(e.target.value)) setDay(dateFromDayKey(e.target.value))
-            }}
-            className="in"
-            style={{ width: 170, height: 44 }}
-          />
-        </div>
-      </div>
+        }
+      >
+        {firstPaint ? null : (
+          <>
+            <StatRow
+              items={[
+                { value: overviewFormatHours(model.standardWorkedHours), label: 'Standard hrs' },
+                { value: overtimeValue, label: 'Overtime', tone: 'amber' },
+                { value: model.jobsCount, label: model.jobsCount === 1 ? 'Job active' : 'Jobs active' },
+                {
+                  value: mayPublish ? model.unbookedCount : '…',
+                  label: 'Unbooked',
+                  tone: mayPublish && model.unbookedCount > 0 ? 'red' : undefined,
+                },
+              ]}
+            />
+            <div className="pu-glass">
+              <div className="pu-glass-head">
+                <b>Where the team is</b>
+                <span style={{ flex: 1 }} />
+                <span>
+                  {model.bookedPeopleCount} booked · {mayPublish ? model.unbookedCount : '…'} unbooked
+                </span>
+              </div>
+              <div className="pu-track" aria-hidden="true">
+                {model.onSiteCount > 0 ? <i style={{ width: share(model.onSiteCount), background: TEAM_COLOURS.onSite }} /> : null}
+                {model.officeCount > 0 ? <i style={{ width: share(model.officeCount), background: TEAM_COLOURS.office }} /> : null}
+                {model.wfhCount > 0 ? <i style={{ width: share(model.wfhCount), background: TEAM_COLOURS.wfh }} /> : null}
+                {mayPublish && model.unbookedCount > 0 ? (
+                  <i style={{ width: share(model.unbookedCount), background: 'var(--pu-unbooked-stripe)' }} />
+                ) : null}
+              </div>
+              <div className="pu-legend">
+                <span>
+                  <i style={{ background: TEAM_COLOURS.office }} />
+                  {model.officeCount} Office
+                </span>
+                <span>
+                  <i style={{ background: TEAM_COLOURS.wfh }} />
+                  {model.wfhCount} WFH
+                </span>
+                <span>
+                  <i style={{ background: TEAM_COLOURS.onSite }} />
+                  {model.onSiteCount} On site
+                </span>
+                <span>
+                  <i style={{ background: 'var(--pu-unbooked-stripe)' }} />
+                  {mayPublish ? model.unbookedCount : '…'} Unbooked
+                </span>
+              </div>
+            </div>
+          </>
+        )}
+      </PageBand>
 
       {bookingsError ? (
-        <div className="banner" data-hue="red">
+        <Note tone="red" role="alert">
           Could not load bookings from Firebase: {bookingsError}
-        </div>
+        </Note>
       ) : null}
 
-      {firstPaint ? <p className="muted py-8 text-center">Loading daily overview…</p> : (
-      <section className="hero" data-hue="daily">
-        <div className="row" style={{ position: 'relative', zIndex: 1 }}>
-          <div className="grow">
-            <div className="eb">{model.dayLabel}</div>
-            <div className="big" style={{ marginTop: 4 }}>
-              {overviewFormatHours(model.labourHours)}h booked{' '}
-              <span style={{ fontSize: 18, opacity: 0.8 }}>
-                · {model.peopleCount === 1 ? '1 person' : `${model.peopleCount} people`}
-              </span>
-            </div>
-          </div>
-        </div>
-        <div className="stats">
-          <div className="st">
-            <b>{overviewFormatHours(model.standardWorkedHours)}</b>
-            <span>Standard hrs</span>
-          </div>
-          <div className="st">
-            {/* Rulebook 1.39.0 (owner answer 11 Nov): "12h OT × 1.5 = 18h" (`overtimeTotalText`); clock hours at the
-                multiplier, an unpaid break in them off as plain hours (1.20.3). */}
-            <b>
-              {/* Several rates on one day: the clock hours only (no single rate to show), as iOS. */}
-              {model.overtimeWorkedHours > 0 && !model.overtimeText
-                ? `${overviewFormatHours(model.overtimeWorkedHours)}h OT`
-                : overtimeTotalText({
-                    clockHours: model.overtimeWorkedHours,
-                    multiplier: model.overtimeMultiplier,
-                    breakHours: model.overtimeBreakHours,
-                  }) || '0h OT'}
-            </b>
-            <span>Overtime</span>
-          </div>
-          <div className="st">
-            <b>{model.jobsCount}</b>
-            <span>{model.jobsCount === 1 ? 'Job active' : 'Jobs active'}</span>
-          </div>
-          <div className="st">
-            <b>{mayPublish ? model.unbookedCount : '…'}</b>
-            <span>Unbooked</span>
-          </div>
-        </div>
-        <div style={{ marginTop: 18, position: 'relative', zIndex: 1 }}>
-          <div className="row small" style={{ opacity: 0.9, marginBottom: 8 }}>
-            <b>Where the team is</b>
-            <span className="grow" />
-            {model.bookedPeopleCount} booked · {mayPublish ? model.unbookedCount : '…'} unbooked
-          </div>
-          <div style={{ display: 'flex', height: 12, borderRadius: 99, overflow: 'hidden', background: 'rgba(255,255,255,.18)' }}>
-            {model.officeCount > 0 ? <i style={{ width: `${(100 * model.officeCount) / Math.max(1, model.officeCount + model.wfhCount + model.onSiteCount + model.unbookedCount)}%`, background: '#fff' }} /> : null}
-            {model.wfhCount > 0 ? <i style={{ width: `${(100 * model.wfhCount) / Math.max(1, model.officeCount + model.wfhCount + model.onSiteCount + model.unbookedCount)}%`, background: 'rgba(255,255,255,.6)' }} /> : null}
-            {model.onSiteCount > 0 ? <i style={{ width: `${(100 * model.onSiteCount) / Math.max(1, model.officeCount + model.wfhCount + model.onSiteCount + model.unbookedCount)}%`, background: 'rgba(255,255,255,.85)' }} /> : null}
-          </div>
-          <div className="row small" style={{ marginTop: 8, gap: 18, opacity: 0.9 }}>
-            <span>● {model.officeCount} Office</span>
-            <span>● {model.wfhCount} WFH</span>
-            <span>● {model.onSiteCount} On site</span>
-          </div>
-        </div>
-      </section>
-      )}
-
-      {firstPaint ? null : <div className="grid gmain">
-        <section className="card">
-          <div className="card-h">
-            <h2 className="h2">By project</h2>
-          </div>
-          <div className="card-b rows">
+      {firstPaint ? (
+        <Card>
+          <EmptyState title="Loading daily overview…" />
+        </Card>
+      ) : (
+        <div className="pu-grid2">
+          <Card title="By project">
             {model.projectCards.length > 0 ? (
               model.projectCards.map(({ project, people, peopleCount, bookedText, isSmallWorks }) => (
-                <div key={project.id} className="card pad" data-hue={isSmallWorks ? 'sw' : 'proj'} style={{ boxShadow: 'none', background: 'var(--soft)' }}>
-                  <div className="row">
-                    <div className="ico-chip">
-                      {isSmallWorks ? <WrenchScrewdriverIcon className="h-5 w-5" /> : <FolderIcon className="h-5 w-5" />}
-                    </div>
-                    <div className="grow">
-                      <span className="tag">{project.jobNumber}</span>{' '}
-                      <b style={{ fontFamily: 'var(--head)', fontSize: 16 }}>{project.siteName}</b>
-                      <div className="muted small">
+                <div key={project.id}>
+                  <div className="pu-proj">
+                    <IconTile tone={isSmallWorks ? 'amber' : 'green'} size="sm">
+                      {isSmallWorks ? <WrenchScrewdriverIcon /> : <FolderIcon />}
+                    </IconTile>
+                    <span>
+                      <b>
+                        <Chip tone="blue">{project.jobNumber}</Chip> {project.siteName}
+                      </b>
+                      <small>
                         {peopleCount} {peopleCount === 1 ? 'person' : 'people'} · {bookedText}
-                      </div>
-                    </div>
+                      </small>
+                    </span>
                     <Link
                       href={isSmallWorks ? `/dashboard/small-works/${project.id}` : `/dashboard/projects/${project.id}`}
-                      className="btn sm tint"
+                      className="pu-btn sm"
                     >
                       {isSmallWorks ? 'Open small works' : 'Open project'}
                     </Link>
                   </div>
                   {people.length > 0 ? (
-                    <div className="rows" style={{ marginTop: 12 }}>
+                    <DataTable
+                      columns={[
+                        { key: 'person', label: 'Person' },
+                        { key: 'booking', label: 'Booking' },
+                        { key: 'type', label: 'Type' },
+                        { key: 'hours', label: 'Hours', align: 'right' },
+                        { key: 'change', label: 'Change', srOnly: true },
+                      ]}
+                    >
                       {people.map((row) => (
                         <PersonRow
                           key={row.personKey}
@@ -287,110 +307,106 @@ export function DailyOverviewScreen() {
                           }
                         />
                       ))}
-                    </div>
+                    </DataTable>
                   ) : (
-                    <p className="muted small" style={{ marginTop: 8 }}>
-                      No named people on this job today.
-                    </p>
+                    <p className="pu-muted pu-pad">No named people on this job today.</p>
                   )}
                 </div>
               ))
-            ) : !firstPaint && model.empty ? (
-              <div className="empty">
-                <h3>Nothing booked yet</h3>
-                <p>No one is booked onto a job for this day.</p>
+            ) : model.empty ? (
+              <EmptyState
+                tile={
+                  <IconTile tone="blue" size="lg">
+                    <CalendarDaysIcon />
+                  </IconTile>
+                }
+                title="Nothing booked yet"
+                description="No one is booked onto a job for this day."
+              >
                 {canBook ? (
-                  <button type="button" className="btn primary" onClick={() => setBookLabourOpen(true)}>
+                  <PuButton variant="primary" onClick={() => setBookLabourOpen(true)}>
                     Book labour
-                  </button>
+                  </PuButton>
                 ) : null}
-              </div>
+              </EmptyState>
+            ) : null}
+          </Card>
+
+          <div className="pu-col">
+            {mayPublish && model.unbookedNames.length > 0 ? (
+              <Card
+                tone="red"
+                title="Unbooked labour"
+                icon={
+                  <IconTile tone="red" size="sm">
+                    <WarnIcon />
+                  </IconTile>
+                }
+                actions={<Chip tone="red">{model.unbookedNames.length}</Chip>}
+              >
+                <div className="pu-list">
+                  {model.unbookedNames.map((name) => (
+                    <div key={name} className="pu-item">
+                      <IconTile tone="slate" size="sm">
+                        {initialsFrom(name)}
+                      </IconTile>
+                      <span className="grow">
+                        <b>{name}</b>
+                      </span>
+                      <Chip tone="red">Unbooked</Chip>
+                    </div>
+                  ))}
+                </div>
+                {canBook ? (
+                  <div className="pu-card-b">
+                    <PuButton variant="primary" block onClick={() => setBookLabourOpen(true)}>
+                      Book labour
+                    </PuButton>
+                  </div>
+                ) : null}
+              </Card>
+            ) : null}
+
+            {model.holidays.length > 0 ? (
+              <Card title="Annual leave">
+                <div className="pu-list">
+                  {model.holidays.map((row) => (
+                    <div key={row.id} className="pu-item">
+                      <IconTile tone="amber" size="sm">
+                        <SunIcon />
+                      </IconTile>
+                      <span className="grow">
+                        <b>{holidayName(row, users, operatives, userIdAliases)}</b>
+                        {/* Rulebook 1.20.0 §9: a leave half is the exact middle of the day (`leaveHalfDayWindows`). */}
+                        <span className="pu-sub">Annual leave · {leaveHalfDayLabel(row.timeSlot, payrollPolicy)}</span>
+                      </span>
+                      <Chip tone="brown">Off</Chip>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            ) : null}
+
+            {model.officeBookings.length > 0 || model.wfhBookings.length > 0 || model.customGroups.length > 0 ? (
+              <OtherBlock
+                office={model.officeBookings}
+                wfh={model.wfhBookings}
+                custom={model.customGroups}
+                users={users}
+                aliases={userIdAliases}
+                onOpen={openManagerBooking}
+              />
+            ) : null}
+
+            {model.siteSurveyBookings.length > 0 ? (
+              <Card title="Site survey">
+                <ManagerList bookings={model.siteSurveyBookings} users={users} aliases={userIdAliases} onOpen={openManagerBooking} />
+              </Card>
             ) : null}
           </div>
-        </section>
-
-        <div className="stack">
-          {mayPublish && model.unbookedNames.length > 0 ? (
-            <section className="card" data-hue="red">
-              <div className="card-h">
-                <div className="ico-chip sm" aria-hidden="true">
-                  <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M12 2.4 1.4 21h21.2L12 2.4zm1.15 13.3h-2.3v-5.1h2.3v5.1zm0 3.3h-2.3v-2h2.3v2z" />
-                  </svg>
-                </div>
-                <h2 className="h2">Unbooked labour</h2>
-                <div className="acts">
-                  <span className="count" data-hue="red">
-                    {model.unbookedNames.length}
-                  </span>
-                </div>
-              </div>
-              <div className="card-b rows">
-                {model.unbookedNames.map((name) => (
-                  <div key={name} className="ritem" style={{ cursor: 'default' }}>
-                    <span className="ico-chip sm">{initialsFrom(name)}</span>
-                    <span className="grow">
-                      <span className="t">{name}</span>
-                    </span>
-                    <span className="pill" data-hue="red">
-                      Unbooked
-                    </span>
-                  </div>
-                ))}
-                {canBook ? (
-                  <button type="button" className="btn primary block" onClick={() => setBookLabourOpen(true)}>
-                    Book labour
-                  </button>
-                ) : null}
-              </div>
-            </section>
-          ) : null}
-
-          {model.holidays.length > 0 ? (
-            <section className="card" data-hue="leave">
-              <div className="card-h">
-                <h2 className="h2">Annual leave</h2>
-              </div>
-              <div className="card-b rows">
-                {model.holidays.map((row) => (
-                  <div key={row.id} className="ritem" style={{ cursor: 'default' }}>
-                    <span className="grow">
-                      <span className="t">{holidayName(row, users, operatives, userIdAliases)}</span>
-                      {/* Rulebook 1.20.0 §9: a leave half is the exact middle of the day (`leaveHalfDayWindows`). */}
-                      <span className="s">Annual leave · {leaveHalfDayLabel(row.timeSlot, payrollPolicy)}</span>
-                    </span>
-                    <span className="pill" data-hue="leave">
-                      Off
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </section>
-          ) : null}
-
-          {model.officeBookings.length > 0 || model.wfhBookings.length > 0 || model.customGroups.length > 0 ? (
-            <OtherBlock
-              office={model.officeBookings}
-              wfh={model.wfhBookings}
-              custom={model.customGroups}
-              users={users}
-              aliases={userIdAliases}
-              onOpen={(booking) => setEditingRow(managerBookingToTarget(booking, personName(booking.userId, users, userIdAliases)))}
-            />
-          ) : null}
-
-          {model.siteSurveyBookings.length > 0 ? (
-            <ManagerCard
-              title="Site survey"
-              bookings={model.siteSurveyBookings}
-              users={users}
-              aliases={userIdAliases}
-              onOpen={(booking) => setEditingRow(managerBookingToTarget(booking, personName(booking.userId, users, userIdAliases)))}
-            />
-          ) : null}
         </div>
-      </div>}
-    </div>
+      )}
+    </PageShell>
     {bookLabourOpen ? (
       <div className="fixed inset-0 z-[80] overflow-y-auto bg-[var(--bg)]">
         <div className="mx-auto max-w-2xl px-4 py-6 lg:px-10 lg:py-8">
@@ -405,106 +421,121 @@ export function DailyOverviewScreen() {
   )
 }
 
+/** Display colours of the "Where the team is" bar (the Home `--dash-*` family). */
+const TEAM_COLOURS = { onSite: '#3B7BF0', office: '#8B7CF6', wfh: '#34C38F' } as const
+
+/** The scheduling week's own words for a tile kind (`JOB_SCHEDULE_LEGEND`, rulebook 1.37.0). */
+const CELL_LABELS: Record<ScheduleCellTone, { label: (typeof JOB_SCHEDULE_LEGEND)[number]; tone: PuTone }> = {
+  standard: { label: 'Standard', tone: 'blue' },
+  split: { label: 'Std + OT', tone: 'blue' },
+  otOnly: { label: 'OT only', tone: 'amber' },
+  halfDay: { label: 'Half day', tone: 'slate' },
+}
+
 function PersonRow({ row, onOpen }: { row: OverviewPersonRow; onOpen?: () => void }) {
-  const inner = (
-    <>
-      <span className="ico-chip sm">{row.initials}</span>
-      <span className="grow">
-        <span className="t">{row.name}</span>
-        <span className="s">{row.subtitle}{onOpen ? ' · Tap to change booking' : ''}</span>
-      </span>
-      <span className="pill" data-hue="proj">
-        {row.pillText}
-      </span>
-      {onOpen ? (
-        <span className="muted xs" style={{ fontWeight: 700 }}>
-          Change
-        </span>
-      ) : null}
-    </>
-  )
-  if (onOpen) {
-    return (
-      <button
-        type="button"
-        className="ritem click"
-        style={{ marginTop: 12, position: 'relative', zIndex: 1 }}
-        data-hue="proj"
-        onClick={(event) => {
-          event.preventDefault()
-          event.stopPropagation()
-          onOpen()
-        }}
-        aria-label={`Change booking for ${row.name}`}
-      >
-        {inner}
-      </button>
-    )
-  }
+  const kind = CELL_LABELS[row.cell.tone]
+  const barTotal = row.cell.standardHours + row.cell.overtimeHours
+  const stdWidth = barTotal > 0 ? (100 * row.cell.standardHours) / barTotal : 0
+  const otWidth = barTotal > 0 ? (100 * row.cell.overtimeHours) / barTotal : 0
   return (
-    <div className="ritem" style={{ cursor: 'default', marginTop: 12 }} data-hue="proj">
-      {inner}
-    </div>
+    <tr className={onOpen ? 'click' : undefined} onClick={onOpen}>
+      <td>
+        <div className="pu-who">
+          <IconTile tone="blue" size="sm" round>
+            {row.initials}
+          </IconTile>
+          <span>
+            <b>{row.name}</b>
+          </span>
+        </div>
+      </td>
+      <td>
+        {row.bookingParts.map((part, index) => (
+          <div key={index} style={index > 0 ? { marginTop: 6 } : undefined}>
+            <b style={{ display: 'block', fontWeight: 600 }}>{part.shift}</b>
+            {part.times ? <span className="pu-sub">{part.times}</span> : null}
+          </div>
+        ))}
+      </td>
+      <td>
+        <Chip tone={kind.tone}>{kind.label}</Chip>
+      </td>
+      <td className="num">
+        <span className="pu-hrs">
+          <span className="pu-hbar" aria-hidden="true">
+            {stdWidth > 0 ? <i className="std" style={{ width: `${stdWidth}%` }} /> : null}
+            {otWidth > 0 ? <i className="ot" style={{ width: `${otWidth}%` }} /> : null}
+          </span>
+          {row.pillText}
+        </span>
+      </td>
+      <td className="actions">
+        {onOpen ? (
+          <PuButton
+            size="sm"
+            aria-label={`Change booking for ${row.name}`}
+            onClick={(event) => {
+              event.preventDefault()
+              event.stopPropagation()
+              onOpen()
+            }}
+          >
+            Change
+          </PuButton>
+        ) : null}
+      </td>
+    </tr>
   )
 }
 
-function ManagerCard({
-  title,
+function ManagerList({
   bookings,
   users,
   aliases,
   onOpen,
 }: {
-  title: string
   bookings: ManagerSiteBooking[]
   users: User[]
   aliases?: Record<string, string>
   onOpen?: (booking: ManagerSiteBooking) => void
 }) {
   return (
-    <section className="card" data-hue="user">
-      <div className="card-h">
-        <h2 className="h2">{title}</h2>
-      </div>
-      <div className="card-b rows">
-        {bookings.map((b) => {
-          const name = personName(b.userId, users, aliases)
-          if (!name) return null
-          const inner = (
-            <>
-              <span className="grow">
-                <span className="t">{name}</span>
-              </span>
-              <span className="pill" data-hue="sched">
-                {b.timeSlot}
-              </span>
-            </>
-          )
-          return onOpen ? (
-            <button
-              key={b.id}
-              type="button"
-              className="ritem click"
-              onClick={(event) => {
-                event.preventDefault()
-                event.stopPropagation()
-                onOpen(b)
-              }}
-              aria-label={`Change booking for ${name}`}
-            >
-              {inner}
-              <span className="muted xs" style={{ fontWeight: 700 }}>
-                Change
-              </span>
-            </button>
-          ) : (
-            <div key={b.id} className="ritem" style={{ cursor: 'default' }}>
-              {inner}
-            </div>
-          )
-        })}
-      </div>
-    </section>
+    <div className="pu-list">
+      {bookings.map((b) => {
+        const name = personName(b.userId, users, aliases)
+        if (!name) return null
+        const inner = (
+          <>
+            <span className="grow">
+              <b>{name}</b>
+            </span>
+            <Chip tone="slate">{b.timeSlot}</Chip>
+          </>
+        )
+        return onOpen ? (
+          <button
+            key={b.id}
+            type="button"
+            className="pu-item"
+            onClick={(event) => {
+              event.preventDefault()
+              event.stopPropagation()
+              onOpen(b)
+            }}
+            aria-label={`Change booking for ${name}`}
+          >
+            {inner}
+            <span className="pu-btn sm" aria-hidden="true">
+              Change
+            </span>
+          </button>
+        ) : (
+          <div key={b.id} className="pu-item">
+            {inner}
+          </div>
+        )
+      })}
+    </div>
   )
 }
 
@@ -524,23 +555,21 @@ function OtherBlock({
   onOpen?: (booking: ManagerSiteBooking) => void
 }) {
   const people = new Set([...office, ...wfh, ...custom.flatMap((g) => g.bookings)].map((b) => b.userId))
+  const groups = [
+    ...(office.length > 0 ? [{ name: 'Office', bookings: office }] : []),
+    ...(wfh.length > 0 ? [{ name: 'Working from home', bookings: wfh }] : []),
+    ...custom,
+  ]
   return (
-    <section className="card" data-hue="lib">
-      <div className="card-h">
-        <h2 className="h2">Other</h2>
-        <div className="acts">
-          <span className="muted small">
-            {people.size} person{people.size === 1 ? '' : 's'}
-          </span>
+    <Card title="Other" count={`${people.size} person${people.size === 1 ? '' : 's'}`}>
+      {groups.map((group) => (
+        <div key={group.name}>
+          <p className="pu-label pu-pad" style={{ paddingBottom: 0 }}>
+            {group.name}
+          </p>
+          <ManagerList bookings={group.bookings} users={users} aliases={aliases} onOpen={onOpen} />
         </div>
-      </div>
-      <div className="card-b stack" style={{ gap: 12 }}>
-        {office.length > 0 ? <ManagerCard title="Office" bookings={office} users={users} aliases={aliases} onOpen={onOpen} /> : null}
-        {wfh.length > 0 ? <ManagerCard title="Working from home" bookings={wfh} users={users} aliases={aliases} onOpen={onOpen} /> : null}
-        {custom.map((g) => (
-          <ManagerCard key={g.name} title={g.name} bookings={g.bookings} users={users} aliases={aliases} onOpen={onOpen} />
-        ))}
-      </div>
-    </section>
+      ))}
+    </Card>
   )
 }
