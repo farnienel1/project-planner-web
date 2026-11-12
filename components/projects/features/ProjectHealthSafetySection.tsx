@@ -19,13 +19,12 @@ import { loadPlatformToolboxLibrary, mergeToolboxTalkLibraries } from '@/lib/hea
 import { blankToolboxTalkTemplate } from '@/lib/healthSafety/mergeToolboxTalks'
 import { downloadBlankTalkExcel, readBlankTalkFile } from '@/lib/healthSafety/blankTalkWorkbook'
 import {
-  buildToolboxTalkPdf,
   customTalkDownloadName,
   downloadPdfFile,
   downloadRemoteFile,
   isCustomUploadedTalk,
   toolboxTalkPdfFilename,
-} from '@/lib/healthSafety/toolboxTalkPdf'
+} from '@/lib/healthSafety/toolboxTalkFiles'
 import { findTalkForIssue, issueSignatures, trackingAwaitingCount } from '@/lib/healthSafety/hsTracking'
 import {
   HsIssueDetail,
@@ -69,6 +68,12 @@ import {
   HsSheet,
   HsTalkPicker,
 } from '@/components/projects/features/hsUi'
+
+import { loadExportModule } from '@/lib/pdf/loadExportModule'
+
+// The PDF builder (pdf-lib) loads only when a talk PDF is downloaded.
+const buildToolboxTalkPdf = (input: import('@/lib/healthSafety/toolboxTalkPdf').ToolboxTalkPdfInput) =>
+  loadExportModule(() => import('@/lib/healthSafety/toolboxTalkPdf')).then((module) => module.buildToolboxTalkPdf(input))
 
 type ManagerTab = 'hub' | 'library' | 'tracking' | 'rams' | 'other'
 

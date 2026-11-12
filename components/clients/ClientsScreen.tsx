@@ -8,6 +8,8 @@
 import { jobKind } from '@/lib/canonical/staffAccess'
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { usePendingNavigation } from '@/lib/navigation/usePendingNavigation'
+import { PendingSpinner } from '@/components/shell/PendingSpinner'
 import {
   EnvelopeIcon,
   PhoneIcon,
@@ -67,9 +69,33 @@ function Field({
   )
 }
 
-function ClientCard({ client, onClick, selected }: { client: Client; onClick: () => void; selected?: boolean }) {
+const clientHref = (client: Client) => `/dashboard/clients/${client.id}`
+
+function ClientCard({
+  client,
+  onClick,
+  onWarm,
+  selected,
+  pending,
+}: {
+  client: Client
+  onClick: () => void
+  /** Prefetch the client's page on hover or focus. */
+  onWarm?: () => void
+  selected?: boolean
+  /** True while this client's page is on its way. */
+  pending?: boolean
+}) {
   return (
-    <button type="button" onClick={onClick} className={`ritem ${selected ? 'sel' : ''}`} data-hue="blue">
+    <button
+      type="button"
+      onClick={onClick}
+      onPointerEnter={onWarm}
+      onFocus={onWarm}
+      aria-busy={pending || undefined}
+      className={`ritem ${selected ? 'sel' : ''}`}
+      data-hue="blue"
+    >
       <span className="ico-chip">
         <UserGroupIcon className="h-5 w-5" />
       </span>
@@ -77,6 +103,7 @@ function ClientCard({ client, onClick, selected }: { client: Client; onClick: ()
         <span className="t">{client.name}</span>
         <span className="s">{client.email || client.phone || client.address || 'No contact details'}</span>
       </span>
+      {pending ? <PendingSpinner /> : null}
     </button>
   )
 }
@@ -111,6 +138,7 @@ function ClientInfo({ client }: { client: Client }) {
 
 export function ClientsScreen({ selectedId }: { selectedId?: string }) {
   const router = useRouter()
+  const { navigate: navigateTo, prefetch, pendingHref } = usePendingNavigation()
   const { user, organization } = useAuthStore()
   const { clients, projects, loading, loadClients, loadProjects, createClient, updateClient, deleteClient } =
     useProjectStore()
@@ -208,7 +236,7 @@ export function ClientsScreen({ selectedId }: { selectedId?: string }) {
   }
 
   const selectClient = (client: Client) => {
-    router.push(`/dashboard/clients/${client.id}`)
+    navigateTo(clientHref(client))
   }
 
   const handleCreate = async (e: FormEvent) => {
@@ -307,6 +335,8 @@ export function ClientsScreen({ selectedId }: { selectedId?: string }) {
             key={client.id}
             client={client}
             selected={selected?.id === client.id}
+            pending={pendingHref === clientHref(client)}
+            onWarm={() => prefetch(clientHref(client))}
             onClick={() => selectClient(client)}
           />
         ))
