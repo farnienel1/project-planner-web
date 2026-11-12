@@ -1,9 +1,9 @@
 {
   "rulebookVersion": "1.38.0",
-  "rulebookSha256": "d16fc1fab710b4673e804276a8adff24d1753ae264f90eacf548cc873830eee9",
-  "bundleSha256": "d18ef9db540b51d78cc0e5ef1fd49f44f98319572424bec70dd4a58ea9a2abe7",
+  "rulebookSha256": "2002de68e07fcd46fd1e269a83e61df443a53e9f9da6879b6ee78b16cb5d5b3d",
+  "bundleSha256": "e4c969a1556c90f63338b69de796594a0c4f53951efbb59da3e4e095c22e6067",
   "crossPlatformContractSha256": "59d6bc6123f250e1f57599240eb3190ab48f5cd2532f8281a99360d9e187d86b",
-  "dataParityFixtureSha256": "20cf09a9cfe3f9b942ee79be3440911269b06dcf0fdd22167e719ff094195158",
+  "dataParityFixtureSha256": "c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f",
   "exports": [
     "ACCOUNT_DELETE_WITH_COMPANY_MESSAGE",
     "ACCOUNT_HANDOVER_REQUIRED_MESSAGE",
@@ -48,6 +48,7 @@
     "DATA_CHECK_PANEL_ORGANIZATION_IDS_FIELD",
     "DATA_CHECK_PANEL_SWITCH_FIELD",
     "DATA_PARITY_CHECKS",
+    "DATA_PARITY_CONFIRM_DELAY_MS",
     "DATA_PARITY_LOG_LIMIT",
     "DATA_PARITY_MIN_INTERVAL_MS",
     "DATA_PARITY_SKIP_REASONS",
@@ -610,6 +611,7 @@
     "dataParityCheck",
     "dataParityCheckDefinition",
     "dataParityCheckDue",
+    "dataParityConfirm",
     "dataParityLogAppend",
     "dataParityLogEntry",
     "dataParitySumCounts",

@@ -65,4 +65,9 @@ jobs:
             echo "::error::iOS docs/RULEBOOK.md differs from web. It must be an exact mirror."
             exit 1
           fi
+          # Rulebook 1.38.0 §27: the two-app data-parity fixture is mirrored byte for byte too.
+          if ! cmp -s lib/canonical/data-parity-fixture.json ../project-planner-ios/ProjectPlannerTests/DataParityFixture.json; then
+            echo "::error::iOS ProjectPlannerTests/DataParityFixture.json differs from web lib/canonical/data-parity-fixture.json. Run scripts/sync-rulebook-from-web.sh in the iOS repo."
+            exit 1
+          fi
           echo "iOS mirrors rulebook $version."

@@ -8,6 +8,8 @@ import {
   DATA_PARITY_MIN_INTERVAL_MS,
   dataParityCheck,
   dataParityCheckDue,
+  dataParityConfirm,
+  DATA_PARITY_CONFIRM_DELAY_MS,
   dataParityLogAppend,
   dataParityLogEntry,
   dataParitySumCounts,
@@ -140,7 +142,7 @@ test('1.38.0 data-parity fixture: every server snapshot leaves exactly the datab
       if (write.op === 'set') db[write.list].push({ id: write.id, data: write.data as Record<string, unknown> })
     }
     for (const event of step.events) {
-      if (event.source === 'server') assert.deepEqual(step.expectedHeld[event.list], real(event.list), `${step.id} ${event.list}`)
+      if (event.source === 'server') assert.deepEqual([...step.expectedHeld[event.list]].sort(), real(event.list), `${step.id} ${event.list}`)
     }
     const result = dataParityCheck({
       lists: fixture.lists.map((key) => ({
@@ -170,4 +172,34 @@ test('1.38.0 (owner change 11 Nov): the Data check panel is hidden unless platfo
   assert.equal(dataCheckPanelVisible({ viewerIsAdmin: true, dataCheckPanelEnabled: true }), true)
   assert.equal(dataCheckPanelVisible({ viewerIsAdmin: true, dataCheckPanelEnabled: false }), false)
   assert.equal(dataCheckPanelVisible({ viewerIsAdmin: false, dataCheckPanelEnabled: true }), false)
+})
+
+test('1.38.0 data check: a difference is re-read only when a second look finds it again', () => {
+  const first = dataParityCheck({
+    lists: [
+      { key: 'projects', serverCount: 7, localCount: 6 },
+      { key: 'clients', serverCount: 3, localCount: 4 },
+      { key: 'tasks', serverCount: 2, localCount: 1 },
+      { key: 'operatives', serverCount: 5, localCount: 5 },
+    ],
+  })
+  assert.deepEqual(first.reloadKeys, ['clients', 'tasks', 'projects'].sort((a, b) =>
+    DATA_PARITY_CHECKS.findIndex((c) => c.key === a) - DATA_PARITY_CHECKS.findIndex((c) => c.key === b)))
+  const confirm = dataParityCheck({
+    lists: [
+      { key: 'projects', serverCount: 7, localCount: 5 },
+      { key: 'clients', serverCount: 4, localCount: 4 },
+      { key: 'tasks', skipped: 'pendingWrites' },
+    ],
+  })
+  const confirmed = dataParityConfirm({ first, confirm })
+  assert.deepEqual(confirmed.reloadKeys, ['projects'])
+  assert.equal(confirmed.mismatches[0].localCount, 5)
+  assert.deepEqual(confirmed.checked, ['projects', 'operatives', 'clients'])
+  assert.deepEqual(confirmed.skipped, [{ key: 'tasks', reason: 'pendingWrites' }])
+  // No second look: nothing is confirmed, nothing is re-read.
+  const none = dataParityConfirm({ first, confirm: null })
+  assert.equal(none.action, 'none')
+  assert.deepEqual(none.reloadKeys, [])
+  assert.ok(DATA_PARITY_CONFIRM_DELAY_MS > 0)
 })

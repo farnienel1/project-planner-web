@@ -55,6 +55,11 @@ export const DATA_PARITY_CHECKS: ReadonlyArray<DataParityCheckDefinition> = Obje
   { key: 'tasks', collection: 'tasks', scope: 'organization', windowed: false, label: 'Tasks' },
 ] as DataParityCheckDefinition[])
 
+/**
+ * A difference is acted on (a list re-read) only when a second comparison this long after the first still finds the
+ * same list different (`dataParityConfirm`): a save in flight or a snapshot on its way is not a lost record.
+ */
+export const DATA_PARITY_CONFIRM_DELAY_MS = 5000
 /** No automatic check runs within this long of the last one on this device (the "Check now" button is exempt). */
 export const DATA_PARITY_MIN_INTERVAL_MS = 10 * 60 * 1000
 /** How many results this device keeps (newest last). */
@@ -66,6 +71,8 @@ export const DATA_PARITY_SKIP_REASONS = Object.freeze({
   notListening: 'This device is not listening to this list.',
   documentReads: 'This viewer reads the list one document at a time (read plan), so it is not counted.',
   serverCountUnavailable: 'The server count could not be read (offline, refused or timed out).',
+  pendingWrites: 'This device has changes to this list the server has not confirmed yet, so it is checked next time.',
+  awaitingServerSnapshot: 'The listener has not had a server answer for its current query yet, so it is checked next time.',
   unknownList: 'Not a list the data check knows.',
 } as const)
 export type DataParitySkipReason = keyof typeof DATA_PARITY_SKIP_REASONS
@@ -195,6 +202,47 @@ export function dataParityCheck(input: { lists?: ReadonlyArray<DataParityListInp
     action: mismatches.length === 0 ? 'none' : 'reload',
     mismatches,
     reloadKeys: mismatches.map((mismatch) => mismatch.key),
+    checked,
+    skipped,
+  }
+}
+
+/**
+ * The two-look rule: `first` with only the mismatches that `confirm` (a second comparison of `first.reloadKeys`,
+ * `DATA_PARITY_CONFIRM_DELAY_MS` later) found again — with the second look's figures. A list that matched on the
+ * second look counts as checked and matching; a list the second look skipped (for example `pendingWrites`) moves to
+ * `skipped` with that reason. Without a second look nothing is confirmed, so nothing is re-read.
+ */
+export function dataParityConfirm(input: { first: DataParityResult; confirm?: DataParityResult | null }): DataParityResult {
+  const first = input.first
+  const confirm = input.confirm ?? null
+  const mismatches: DataParityMismatch[] = []
+  const skipped: DataParityResult['skipped'] = [...first.skipped]
+  const checked: DataParityListKey[] = []
+  for (const key of first.checked) {
+    const wasMismatch = first.mismatches.some((row) => row.key === key)
+    if (!wasMismatch) {
+      checked.push(key)
+      continue
+    }
+    const again = confirm?.mismatches.find((row) => row.key === key)
+    if (again) {
+      checked.push(key)
+      mismatches.push({ ...again })
+      continue
+    }
+    if (confirm && confirm.checked.includes(key)) {
+      checked.push(key)
+      continue
+    }
+    const reason = confirm?.skipped.find((row) => row.key === key)?.reason ?? 'serverCountUnavailable'
+    skipped.push({ key, reason })
+  }
+  return {
+    ok: mismatches.length === 0,
+    action: mismatches.length === 0 ? 'none' : 'reload',
+    mismatches,
+    reloadKeys: mismatches.map((row) => row.key),
     checked,
     skipped,
   }

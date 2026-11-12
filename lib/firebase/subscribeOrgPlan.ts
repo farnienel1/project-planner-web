@@ -21,11 +21,26 @@ import {
 import { db } from '@/lib/firebase/config'
 import { waitForAuthToken } from '@/lib/firebase/waitForAuthToken'
 import type { OrgCollectionDoc } from '@/lib/firebase/subscribeOrgCollection'
+import { mergeOrgCollectionSnapshot } from '@/lib/firebase/orgCollectionMerge'
 
 /** One query of a plan: `constraints` on the collection, or one `documentId`. `id` names it stably. */
 export type OrgPlanPart = { id: string; constraints?: QueryConstraint[]; documentId?: string }
 
-type PartState = { unsub: Unsubscribe | null; docs: OrgCollectionDoc[]; settled: boolean; failed?: boolean }
+type PartState = {
+  unsub: Unsubscribe | null
+  docs: OrgCollectionDoc[]
+  settled: boolean
+  failed?: boolean
+  /** Rulebook 1.38.0 §27: a server (not cache) snapshot of this part has arrived. */
+  serverSnapshot?: boolean
+  /** The last snapshot carried this device's writes the server has not confirmed yet. */
+  pendingWrites?: boolean
+  /**
+   * Restarted by the data check (`restartOrgPlan`): `docs` are the old part's documents, kept on screen until this
+   * part's first server snapshot; a cache snapshot before it only adds and updates (`mergeOrgCollectionSnapshot`).
+   */
+  seeded?: boolean
+}
 type PlanState = {
   organizationId: string
   collectionName: string
@@ -56,8 +71,8 @@ function settle(state: PlanState) {
   for (const resolve of waiters) resolve()
 }
 
-function startPart(key: string, state: PlanState, part: OrgPlanPart): PartState {
-  const partState: PartState = { unsub: null, docs: [], settled: false }
+function startPart(key: string, state: PlanState, part: OrgPlanPart, seed?: readonly OrgCollectionDoc[]): PartState {
+  const partState: PartState = { unsub: null, docs: seed ? [...seed] : [], settled: false, seeded: Boolean(seed) }
   if (!db) {
     partState.settled = true
     return partState
@@ -68,6 +83,7 @@ function startPart(key: string, state: PlanState, part: OrgPlanPart): PartState 
     if (!live()) return
     const onError = (error: FirestoreError) => {
       if (!live()) return
+      partState.seeded = false
       partState.docs = []
       partState.settled = true
       partState.failed = true
@@ -81,6 +97,9 @@ function startPart(key: string, state: PlanState, part: OrgPlanPart): PartState 
         (snap) => {
           if (!live()) return
           partState.docs = snap.exists() ? [{ id: snap.id, data: (snap.data() ?? {}) as Record<string, unknown> }] : []
+          partState.seeded = false
+          partState.serverSnapshot = partState.serverSnapshot || !snap.metadata.fromCache
+          partState.pendingWrites = snap.metadata.hasPendingWrites
           partState.settled = true
           emit(state)
           settle(state)
@@ -95,7 +114,16 @@ function startPart(key: string, state: PlanState, part: OrgPlanPart): PartState 
       source,
       (snap) => {
         if (!live()) return
-        partState.docs = snap.docs.map((entry) => ({ id: entry.id, data: entry.data() as Record<string, unknown> }))
+        const docs = snap.docs.map((entry) => ({ id: entry.id, data: entry.data() as Record<string, unknown> }))
+        if (partState.seeded && snap.metadata.fromCache) {
+          // Restarted by the data check: until the server answers, a cache snapshot never drops a row on screen.
+          partState.docs = mergeOrgCollectionSnapshot({ previous: partState.docs, docs, fromCache: true }).docs
+        } else {
+          partState.docs = docs
+          partState.seeded = false
+        }
+        partState.serverSnapshot = partState.serverSnapshot || !snap.metadata.fromCache
+        partState.pendingWrites = snap.metadata.hasPendingWrites
         partState.settled = true
         emit(state)
         settle(state)
@@ -188,7 +216,15 @@ export function unsubscribeOrgPlansOutside(organizationId: string): void {
 export function orgPlanParitySource(
   key: string,
   organizationId: string
-): { collectionName: string; documentReads: boolean; docs: OrgCollectionDoc[]; settled: boolean } | null {
+): {
+  collectionName: string
+  documentReads: boolean
+  docs: OrgCollectionDoc[]
+  settled: boolean
+  /** Every query part has had a server answer (or was refused). */
+  serverSnapshot: boolean
+  pendingWrites: boolean
+} | null {
   const state = plans.get(key)
   if (!state || state.organizationId !== organizationId) return null
   const byId = new Map<string, OrgCollectionDoc>()
@@ -201,6 +237,8 @@ export function orgPlanParitySource(
     documentReads: [...state.parts.keys()].some((id) => planPartDefinitions.get(key)?.get(id)?.documentId),
     docs: [...byId.values()],
     settled: parts.every((part) => part.settled),
+    serverSnapshot: parts.every((part) => part.failed === true || part.serverSnapshot === true),
+    pendingWrites: parts.some((part) => part.pendingWrites === true),
   }
 }
 
@@ -226,7 +264,11 @@ export async function countOrgPlanPartsFromServer(key: string, organizationId: s
   )
 }
 
-/** Self-heal (rulebook 1.38.0 §27): close and start again every part of the plan. */
+/**
+ * Self-heal (rulebook 1.38.0 §27): close and start again every part of the plan. Each new part starts with the old
+ * part's documents and keeps them until its own first server snapshot, so nothing on screen empties or flickers
+ * while the parts re-attach (nothing is published until a new part answers).
+ */
 export function restartOrgPlan(key: string, organizationId: string): boolean {
   const state = plans.get(key)
   const definitions = planPartDefinitions.get(key)
@@ -235,8 +277,7 @@ export function restartOrgPlan(key: string, organizationId: string): boolean {
     part.unsub?.()
     state.parts.delete(id)
     const definition = definitions.get(id)
-    if (definition) state.parts.set(id, startPart(key, state, definition))
+    if (definition) state.parts.set(id, startPart(key, state, definition, part.failed ? undefined : part.docs))
   }
-  emit(state)
   return true
 }

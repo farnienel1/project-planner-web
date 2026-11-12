@@ -44,6 +44,14 @@ const removedDocIds = new Map<string, Set<string>>()
 const delivered = new Map<string, string>()
 /** Keys whose listener the server refused (kept for the data check, rulebook 1.38.0 §27, until it re-attaches). */
 const failedKeys = new Set<string>()
+/**
+ * Rulebook 1.38.0 §27 (the data check), per key: `{orgId}|{queryId}` of the listener that has delivered a server
+ * (not cache) snapshot. Rows held from an earlier bound (the bookings window moved) or from the cache linger until
+ * that server snapshot arrives, so the check waits for it instead of counting them.
+ */
+const serverDelivered = new Map<string, string>()
+/** Per key: whether the last snapshot carried this device's unconfirmed writes, and which documents did. */
+const pendingWrites = new Map<string, { any: boolean; ids: Set<string> }>()
 const firstSnapshotWaiters = new Map<string, Array<{ resolve: () => void; reject: (error: unknown) => void }>>()
 /**
  * How a published list was read. `authoritative` is true for a server snapshot or a server re-read: rows missing
@@ -130,8 +138,8 @@ export function subscribeOrgCollection(
   const col = collection(db, 'organizations', organizationId, collectionName)
   const source: Query = constraints.length > 0 ? query(col, ...constraints) : col
   const emit = (snap: {
-    docs: { id: string; data: () => Record<string, unknown> }[]
-    metadata?: { fromCache: boolean }
+    docs: { id: string; data: () => Record<string, unknown>; metadata?: { hasPendingWrites: boolean } }[]
+    metadata?: { fromCache: boolean; hasPendingWrites?: boolean }
   }) => {
     // A listener started for organisation A must not publish into the callback
     // that was replaced when the user switched to organisation B.
@@ -149,6 +157,10 @@ export function subscribeOrgCollection(
       fromCache: snap.metadata ? snap.metadata.fromCache : null,
     })
     lastDocs.set(storedKey, kept)
+    pendingWrites.set(key, {
+      any: snap.metadata?.hasPendingWrites === true,
+      ids: new Set(snap.docs.filter((entry) => entry.metadata?.hasPendingWrites === true).map((entry) => entry.id)),
+    })
     current.onDocs(kept, { authoritative })
   }
 
@@ -159,6 +171,8 @@ export function subscribeOrgCollection(
   unsubs.get(key)?.()
   unsubs.delete(key)
   delivered.delete(key)
+  serverDelivered.delete(key)
+  pendingWrites.delete(key)
   orgs.set(key, organizationId)
   collectionNames.set(key, collectionName)
   queryIds.set(key, queryId)
@@ -194,6 +208,7 @@ export function subscribeOrgCollection(
         failedKeys.delete(key)
         emit(snap)
         delivered.set(key, `${organizationId}|${queryId}`)
+        if (!snap.metadata.fromCache) serverDelivered.set(key, `${organizationId}|${queryId}`)
         settleFirstSnapshot(key, null)
       },
       fail
@@ -205,6 +220,21 @@ export function subscribeOrgCollection(
     if (!stillThisQuery()) return
     listen(0)
   })
+}
+
+/**
+ * A document this device just created or changed whose write the server has not confirmed yet is not in a server
+ * read: keep this device's copy (appended to `docs`), so a re-read never drops it — the listener's next snapshot
+ * settles it. Documents this app deleted stay out.
+ */
+function withPendingLocalDocs(key: string, storedKey: string, docs: OrgCollectionDoc[]): void {
+  const pendingIds = pendingWrites.get(key)?.ids
+  if (!pendingIds || pendingIds.size === 0) return
+  const removed = removedDocIds.get(storedKey)
+  const fetched = new Set(docs.map((entry) => entry.id))
+  for (const entry of lastDocs.get(storedKey) ?? []) {
+    if (pendingIds.has(entry.id) && !fetched.has(entry.id) && !removed?.has(entry.id)) docs.push(entry)
+  }
 }
 
 /**
@@ -236,6 +266,7 @@ export async function refreshOrgCollections(organizationId: string): Promise<voi
           const docs = snap.docs
             .filter((entry) => !removed?.has(entry.id))
             .map((entry) => ({ id: entry.id, data: entry.data() as Record<string, unknown> }))
+          withPendingLocalDocs(key, storedKey, docs)
           lastDocs.set(storedKey, docs)
           activeCallback(key)?.onDocs(docs, { authoritative: true })
         })
@@ -255,7 +286,16 @@ export async function refreshOrgCollections(organizationId: string): Promise<voi
 export function orgCollectionParitySource(
   key: string,
   organizationId: string
-): { collectionName: string; constraints: QueryConstraint[]; docs: OrgCollectionDoc[]; live: boolean } | null {
+): {
+  collectionName: string
+  constraints: QueryConstraint[]
+  docs: OrgCollectionDoc[]
+  live: boolean
+  /** A server snapshot of the current query has arrived (or the listener was refused: its rows are what is shown). */
+  serverSnapshot: boolean
+  /** The last snapshot carried this device's writes the server has not confirmed yet. */
+  pendingWrites: boolean
+} | null {
   const collectionName = collectionNames.get(key)
   if (!organizationId || orgs.get(key) !== organizationId || !collectionName) return null
   const queryId = queryIds.get(key) ?? ''
@@ -266,6 +306,8 @@ export function orgCollectionParitySource(
     constraints: queryConstraints.get(key) ?? [],
     docs: lastDocs.get(cacheKey(key, organizationId)) ?? [],
     live: unsubs.has(key),
+    serverSnapshot: failedKeys.has(key) || serverDelivered.get(key) === `${organizationId}|${queryId}`,
+    pendingWrites: pendingWrites.get(key)?.any === true,
   }
 }
 
@@ -305,6 +347,7 @@ export async function reloadOrgCollectionFromServer(key: string, organizationId:
     const docs = snap.docs
       .filter((entry) => !removed?.has(entry.id))
       .map((entry) => ({ id: entry.id, data: entry.data() as Record<string, unknown> }))
+    withPendingLocalDocs(key, storedKey, docs)
     lastDocs.set(storedKey, docs)
     activeCallback(key)?.onDocs(docs, { authoritative: true })
   } catch {
@@ -318,6 +361,8 @@ export async function reloadOrgCollectionFromServer(key: string, organizationId:
 
 export function unsubscribeOrgCollection(key: string): void {
   failedKeys.delete(key)
+  serverDelivered.delete(key)
+  pendingWrites.delete(key)
   unsubs.get(key)?.()
   unsubs.delete(key)
   orgs.delete(key)

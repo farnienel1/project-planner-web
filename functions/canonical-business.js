@@ -64,6 +64,7 @@ var ProjectPlannerCanonical = (() => {
     DATA_CHECK_PANEL_ORGANIZATION_IDS_FIELD: () => DATA_CHECK_PANEL_ORGANIZATION_IDS_FIELD,
     DATA_CHECK_PANEL_SWITCH_FIELD: () => DATA_CHECK_PANEL_SWITCH_FIELD,
     DATA_PARITY_CHECKS: () => DATA_PARITY_CHECKS,
+    DATA_PARITY_CONFIRM_DELAY_MS: () => DATA_PARITY_CONFIRM_DELAY_MS,
     DATA_PARITY_LOG_LIMIT: () => DATA_PARITY_LOG_LIMIT,
     DATA_PARITY_MIN_INTERVAL_MS: () => DATA_PARITY_MIN_INTERVAL_MS,
     DATA_PARITY_SKIP_REASONS: () => DATA_PARITY_SKIP_REASONS,
@@ -626,6 +627,7 @@ var ProjectPlannerCanonical = (() => {
     dataParityCheck: () => dataParityCheck,
     dataParityCheckDefinition: () => dataParityCheckDefinition,
     dataParityCheckDue: () => dataParityCheckDue,
+    dataParityConfirm: () => dataParityConfirm,
     dataParityLogAppend: () => dataParityLogAppend,
     dataParityLogEntry: () => dataParityLogEntry,
     dataParitySumCounts: () => dataParitySumCounts,
@@ -10980,7 +10982,7 @@ var ProjectPlannerCanonical = (() => {
   function rulebookStamp() {
     return {
       version: true ? "1.38.0" : "",
-      sha256: true ? "d16fc1fab710b4673e804276a8adff24d1753ae264f90eacf548cc873830eee9" : ""
+      sha256: true ? "2002de68e07fcd46fd1e269a83e61df443a53e9f9da6879b6ee78b16cb5d5b3d" : ""
     };
   }
   function rulebookVersionLabel(version) {
@@ -21691,6 +21693,7 @@ var ProjectPlannerCanonical = (() => {
     { key: "holidayBookings", collection: "holidayBookings", scope: "organization", windowed: false, label: "Annual leave" },
     { key: "tasks", collection: "tasks", scope: "organization", windowed: false, label: "Tasks" }
   ]);
+  var DATA_PARITY_CONFIRM_DELAY_MS = 5e3;
   var DATA_PARITY_MIN_INTERVAL_MS = 10 * 60 * 1e3;
   var DATA_PARITY_LOG_LIMIT = 20;
   var DATA_PARITY_TRIGGERS = Object.freeze(["open", "foreground", "timer", "manual"]);
@@ -21698,6 +21701,8 @@ var ProjectPlannerCanonical = (() => {
     notListening: "This device is not listening to this list.",
     documentReads: "This viewer reads the list one document at a time (read plan), so it is not counted.",
     serverCountUnavailable: "The server count could not be read (offline, refused or timed out).",
+    pendingWrites: "This device has changes to this list the server has not confirmed yet, so it is checked next time.",
+    awaitingServerSnapshot: "The listener has not had a server answer for its current query yet, so it is checked next time.",
     unknownList: "Not a list the data check knows."
   });
   function dataParityCheckDefinition(key5) {
@@ -21764,6 +21769,40 @@ var ProjectPlannerCanonical = (() => {
       action: mismatches.length === 0 ? "none" : "reload",
       mismatches,
       reloadKeys: mismatches.map((mismatch) => mismatch.key),
+      checked,
+      skipped
+    };
+  }
+  function dataParityConfirm(input) {
+    const first = input.first;
+    const confirm = input.confirm ?? null;
+    const mismatches = [];
+    const skipped = [...first.skipped];
+    const checked = [];
+    for (const key5 of first.checked) {
+      const wasMismatch = first.mismatches.some((row2) => row2.key === key5);
+      if (!wasMismatch) {
+        checked.push(key5);
+        continue;
+      }
+      const again = confirm?.mismatches.find((row2) => row2.key === key5);
+      if (again) {
+        checked.push(key5);
+        mismatches.push({ ...again });
+        continue;
+      }
+      if (confirm && confirm.checked.includes(key5)) {
+        checked.push(key5);
+        continue;
+      }
+      const reason = confirm?.skipped.find((row2) => row2.key === key5)?.reason ?? "serverCountUnavailable";
+      skipped.push({ key: key5, reason });
+    }
+    return {
+      ok: mismatches.length === 0,
+      action: mismatches.length === 0 ? "none" : "reload",
+      mismatches,
+      reloadKeys: mismatches.map((row2) => row2.key),
       checked,
       skipped
     };

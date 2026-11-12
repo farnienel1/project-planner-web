@@ -1,5 +1,5 @@
 {
-  "description": "Rulebook 1.38.0 §27: raw Firestore documents of a test company and a sequence of listener events. Each app feeds them through its own store and merge code and must hold exactly expectedHeld (ids compared without case) after every step; expectedVisible is worksListMembership of the held jobs; expectedParityMismatches is what dataParityCheck reports when the server count is the database and the local count is what the app holds. Test machines only, never production.",
+  "description": "Rulebook 1.38.0 §27: raw Firestore documents of a test company and a sequence of listener events. Each app feeds them through its own store and merge code and must hold exactly expectedHeld (ids compared without case, except rawLists) after every step; expectedVisible is worksListMembership of the held jobs; expectedParityMismatches is what dataParityCheck reports when the server count is the database and the local count is what the app holds. Test machines only, never production. rawLists (operatives, managers, clients) are held as the documents the listener received, by stored document id with case kept, before any reader or store filter — exactly what each app's data check counts — so a placeholder row, a nameless client and two documents whose ids differ only in case each count once.",
   "version": 1,
   "organizationId": "org-parity",
   "timeZone": "Europe/London",
@@ -7,7 +7,10 @@
     "projects",
     "smallWorks",
     "users",
-    "bookings"
+    "bookings",
+    "operatives",
+    "managers",
+    "clients"
   ],
   "initialDatabase": {
     "projects": [
@@ -284,6 +287,96 @@
           "createdAt": "2026-10-01T09:00:00.000Z"
         }
       }
+    ],
+    "operatives": [
+      {
+        "id": "f6000000-0000-4000-8000-000000000001",
+        "data": {
+          "organizationId": "org-parity",
+          "firstName": "Olu",
+          "lastName": "Operative",
+          "email": "olu@parity.test",
+          "isActive": true
+        }
+      },
+      {
+        "id": "F6000000-0000-4000-8000-0000000000AB",
+        "data": {
+          "organizationId": "org-parity",
+          "firstName": "Bea",
+          "lastName": "Builder",
+          "email": "bea@parity.test",
+          "isActive": true
+        }
+      },
+      {
+        "id": "f6000000-0000-4000-8000-0000000000ab",
+        "data": {
+          "organizationId": "org-parity",
+          "firstName": "Bea",
+          "lastName": "Builder (lower-case copy)",
+          "email": "bea.copy@parity.test",
+          "isActive": true
+        }
+      },
+      {
+        "id": "f6000000-0000-4000-8000-000000000009",
+        "data": {
+          "organizationId": "org-parity",
+          "firstName": "Initial",
+          "lastName": "placeholder",
+          "email": "placeholder@parity.test",
+          "isActive": true
+        }
+      }
+    ],
+    "managers": [
+      {
+        "id": "c7000000-0000-4000-8000-000000000001",
+        "data": {
+          "organizationId": "org-parity",
+          "firstName": "Mia",
+          "lastName": "Manager",
+          "email": "mia@parity.test",
+          "isActive": true
+        }
+      },
+      {
+        "id": "C7000000-0000-4000-8000-000000000002",
+        "data": {
+          "organizationId": "org-parity",
+          "firstName": "Max",
+          "lastName": "Manager",
+          "email": "max@parity.test",
+          "isActive": true
+        }
+      },
+      {
+        "id": "c7000000-0000-4000-8000-000000000099",
+        "data": {
+          "organizationId": "org-parity",
+          "name": "Initial manager placeholder system",
+          "email": "placeholder@parity.test"
+        }
+      }
+    ],
+    "clients": [
+      {
+        "id": "d8000000-0000-4000-8000-000000000001",
+        "data": {
+          "organizationId": "org-parity",
+          "name": "Client One",
+          "email": "one@client.test"
+        }
+      },
+      {
+        "id": "D8000000-0000-4000-8000-000000000002",
+        "data": {
+          "organizationId": "org-parity",
+          "name": "",
+          "email": ""
+        }
+      }
     ]
   },
   "steps": [
@@ -307,6 +400,18 @@
         {
           "list": "bookings",
           "source": "server"
+        },
+        {
+          "list": "operatives",
+          "source": "server"
+        },
+        {
+          "list": "managers",
+          "source": "server"
+        },
+        {
+          "list": "clients",
+          "source": "server"
         }
       ],
       "expectedHeld": {
@@ -332,6 +437,21 @@
           "E5000000-0000-4000-8000-000000000002",
           "E5000000-0000-4000-8000-000000000003",
           "e5000000-0000-4000-8000-000000000001"
+        ],
+        "operatives": [
+          "f6000000-0000-4000-8000-000000000001",
+          "F6000000-0000-4000-8000-0000000000AB",
+          "f6000000-0000-4000-8000-0000000000ab",
+          "f6000000-0000-4000-8000-000000000009"
+        ],
+        "managers": [
+          "c7000000-0000-4000-8000-000000000001",
+          "C7000000-0000-4000-8000-000000000002",
+          "c7000000-0000-4000-8000-000000000099"
+        ],
+        "clients": [
+          "d8000000-0000-4000-8000-000000000001",
+          "D8000000-0000-4000-8000-000000000002"
         ]
       },
       "expectedVisible": {
@@ -350,7 +470,7 @@
     },
     {
       "id": "cache-partial",
-      "description": "Cache snapshots holding only some documents (offline cache): nothing on screen is lost.",
+      "description": "Cache snapshots holding only some documents (offline cache): nothing on screen is lost. An operatives cache snapshot with one row keeps all four.",
       "writes": [],
       "events": [
         {
@@ -366,6 +486,13 @@
           "source": "cache",
           "ids": [
             "e5000000-0000-4000-8000-000000000001"
+          ]
+        },
+        {
+          "list": "operatives",
+          "source": "cache",
+          "ids": [
+            "F6000000-0000-4000-8000-0000000000AB"
           ]
         }
       ],
@@ -392,6 +519,21 @@
           "E5000000-0000-4000-8000-000000000002",
           "E5000000-0000-4000-8000-000000000003",
           "e5000000-0000-4000-8000-000000000001"
+        ],
+        "operatives": [
+          "f6000000-0000-4000-8000-000000000001",
+          "F6000000-0000-4000-8000-0000000000AB",
+          "f6000000-0000-4000-8000-0000000000ab",
+          "f6000000-0000-4000-8000-000000000009"
+        ],
+        "managers": [
+          "c7000000-0000-4000-8000-000000000001",
+          "C7000000-0000-4000-8000-000000000002",
+          "c7000000-0000-4000-8000-000000000099"
+        ],
+        "clients": [
+          "d8000000-0000-4000-8000-000000000001",
+          "D8000000-0000-4000-8000-000000000002"
         ]
       },
       "expectedVisible": {
@@ -422,6 +564,11 @@
           "list": "users",
           "source": "cache",
           "ids": []
+        },
+        {
+          "list": "clients",
+          "source": "cache",
+          "ids": []
         }
       ],
       "expectedHeld": {
@@ -447,6 +594,21 @@
           "E5000000-0000-4000-8000-000000000002",
           "E5000000-0000-4000-8000-000000000003",
           "e5000000-0000-4000-8000-000000000001"
+        ],
+        "operatives": [
+          "f6000000-0000-4000-8000-000000000001",
+          "F6000000-0000-4000-8000-0000000000AB",
+          "f6000000-0000-4000-8000-0000000000ab",
+          "f6000000-0000-4000-8000-000000000009"
+        ],
+        "managers": [
+          "c7000000-0000-4000-8000-000000000001",
+          "C7000000-0000-4000-8000-000000000002",
+          "c7000000-0000-4000-8000-000000000099"
+        ],
+        "clients": [
+          "d8000000-0000-4000-8000-000000000001",
+          "D8000000-0000-4000-8000-000000000002"
         ]
       },
       "expectedVisible": {
@@ -583,6 +745,21 @@
           "op": "delete",
           "list": "bookings",
           "id": "E5000000-0000-4000-8000-000000000002"
+        },
+        {
+          "op": "delete",
+          "list": "managers",
+          "id": "C7000000-0000-4000-8000-000000000002"
+        },
+        {
+          "op": "set",
+          "list": "clients",
+          "id": "d8000000-0000-4000-8000-000000000003",
+          "data": {
+            "organizationId": "org-parity",
+            "name": "Client Three",
+            "email": "three@client.test"
+          }
         }
       ],
       "events": [
@@ -600,6 +777,14 @@
         },
         {
           "list": "bookings",
+          "source": "server"
+        },
+        {
+          "list": "managers",
+          "source": "server"
+        },
+        {
+          "list": "clients",
           "source": "server"
         }
       ],
@@ -626,6 +811,21 @@
           "E5000000-0000-4000-8000-000000000003",
           "e5000000-0000-4000-8000-000000000001",
           "e5000000-0000-4000-8000-000000000004"
+        ],
+        "operatives": [
+          "f6000000-0000-4000-8000-000000000001",
+          "F6000000-0000-4000-8000-0000000000AB",
+          "f6000000-0000-4000-8000-0000000000ab",
+          "f6000000-0000-4000-8000-000000000009"
+        ],
+        "managers": [
+          "c7000000-0000-4000-8000-000000000001",
+          "c7000000-0000-4000-8000-000000000099"
+        ],
+        "clients": [
+          "d8000000-0000-4000-8000-000000000001",
+          "D8000000-0000-4000-8000-000000000002",
+          "d8000000-0000-4000-8000-000000000003"
         ]
       },
       "expectedVisible": {
@@ -699,6 +899,21 @@
           "E5000000-0000-4000-8000-000000000003",
           "e5000000-0000-4000-8000-000000000001",
           "e5000000-0000-4000-8000-000000000004"
+        ],
+        "operatives": [
+          "f6000000-0000-4000-8000-000000000001",
+          "F6000000-0000-4000-8000-0000000000AB",
+          "f6000000-0000-4000-8000-0000000000ab",
+          "f6000000-0000-4000-8000-000000000009"
+        ],
+        "managers": [
+          "c7000000-0000-4000-8000-000000000001",
+          "c7000000-0000-4000-8000-000000000099"
+        ],
+        "clients": [
+          "d8000000-0000-4000-8000-000000000001",
+          "D8000000-0000-4000-8000-000000000002",
+          "d8000000-0000-4000-8000-000000000003"
         ]
       },
       "expectedVisible": {
@@ -752,6 +967,21 @@
           "E5000000-0000-4000-8000-000000000003",
           "e5000000-0000-4000-8000-000000000001",
           "e5000000-0000-4000-8000-000000000004"
+        ],
+        "operatives": [
+          "f6000000-0000-4000-8000-000000000001",
+          "F6000000-0000-4000-8000-0000000000AB",
+          "f6000000-0000-4000-8000-0000000000ab",
+          "f6000000-0000-4000-8000-000000000009"
+        ],
+        "managers": [
+          "c7000000-0000-4000-8000-000000000001",
+          "c7000000-0000-4000-8000-000000000099"
+        ],
+        "clients": [
+          "d8000000-0000-4000-8000-000000000001",
+          "D8000000-0000-4000-8000-000000000002",
+          "d8000000-0000-4000-8000-000000000003"
         ]
       },
       "expectedVisible": {
@@ -809,6 +1039,21 @@
           "E5000000-0000-4000-8000-000000000003",
           "e5000000-0000-4000-8000-000000000001",
           "e5000000-0000-4000-8000-000000000004"
+        ],
+        "operatives": [
+          "f6000000-0000-4000-8000-000000000001",
+          "F6000000-0000-4000-8000-0000000000AB",
+          "f6000000-0000-4000-8000-0000000000ab",
+          "f6000000-0000-4000-8000-000000000009"
+        ],
+        "managers": [
+          "c7000000-0000-4000-8000-000000000001",
+          "c7000000-0000-4000-8000-000000000099"
+        ],
+        "clients": [
+          "d8000000-0000-4000-8000-000000000001",
+          "D8000000-0000-4000-8000-000000000002",
+          "d8000000-0000-4000-8000-000000000003"
         ]
       },
       "expectedVisible": {
@@ -826,5 +1071,10 @@
       },
       "expectedParityMismatches": []
     }
+  ],
+  "rawLists": [
+    "operatives",
+    "managers",
+    "clients"
   ]
 }

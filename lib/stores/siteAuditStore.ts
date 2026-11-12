@@ -577,6 +577,9 @@ let liveFallbackKey = ''
  */
 let liveRosterQueryIds: Set<string> | null = null
 let liveRosterQueryLive = false
+/** A server (not cache) snapshot of the roster query has arrived; the last snapshot carried unconfirmed writes. */
+let liveRosterServerSnapshot = false
+let liveRosterPendingWrites = false
 let liveReloadTimer: ReturnType<typeof setTimeout> | null = null
 const LIVE_FALLBACK_LIMIT = 60
 
@@ -587,14 +590,23 @@ function stopLiveRoster(): void {
   liveFallbackKey = ''
   liveRosterQueryIds = null
   liveRosterQueryLive = false
+  liveRosterServerSnapshot = false
+  liveRosterPendingWrites = false
   if (liveReloadTimer) clearTimeout(liveReloadTimer)
   liveReloadTimer = null
 }
 
 /** Rulebook 1.38.0 §27: the roster listener's held ids for the data check, or null when it is not listening. */
-export function liveRosterParitySource(organizationId: string): { heldIds: string[]; live: boolean } | null {
+export function liveRosterParitySource(
+  organizationId: string
+): { heldIds: string[]; live: boolean; serverSnapshot: boolean; pendingWrites: boolean } | null {
   if (!organizationId || liveRosterOrgId !== organizationId || !liveRosterQueryIds) return null
-  return { heldIds: [...liveRosterQueryIds], live: liveRosterQueryLive }
+  return {
+    heldIds: [...liveRosterQueryIds],
+    live: liveRosterQueryLive,
+    serverSnapshot: liveRosterServerSnapshot || !liveRosterQueryLive,
+    pendingWrites: liveRosterPendingWrites,
+  }
 }
 
 /** Rulebook 1.38.0 §27 self-heal: start the roster listener again and reload the roster from the server. */
@@ -700,6 +712,8 @@ function startLiveRoster(organizationId: string, fallbackIds: string[]): void {
           if (user) rows.push(user.organizationId ? user : { ...user, organizationId })
         }
         liveRosterQueryIds = heldIds
+        if (!snap.metadata.fromCache) liveRosterServerSnapshot = true
+        liveRosterPendingWrites = snap.metadata.hasPendingWrites
         applyLiveRosterRows(organizationId, rows)
         // A document leaving the query moved company or was deleted: the full load decides.
         if (removed && !snap.metadata.fromCache) scheduleLiveRosterReload(organizationId)

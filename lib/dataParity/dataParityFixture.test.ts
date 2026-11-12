@@ -23,7 +23,11 @@ type Step = {
   id: string
   description: string
   writes: Array<{ op: 'set' | 'delete'; list: string; id: string; data?: Record<string, unknown> }>
-  events: Array<{ list: 'projects' | 'smallWorks' | 'users' | 'bookings'; source: 'server' | 'cache' | 'refused'; ids?: string[] }>
+  events: Array<{
+    list: 'projects' | 'smallWorks' | 'users' | 'bookings' | 'operatives' | 'managers' | 'clients'
+    source: 'server' | 'cache' | 'refused'
+    ids?: string[]
+  }>
   expectedHeld: Record<string, string[]>
   expectedVisible: Record<string, string[]>
   expectedParityMismatches: string[]
@@ -31,11 +35,21 @@ type Step = {
 
 const ids = (rows: ReadonlyArray<{ id: string }>) => rows.map((row) => row.id.toLowerCase()).sort()
 const lower = (list: readonly string[]) => list.map((id) => id.toLowerCase()).sort()
+/** rawLists: ids exactly as stored (case kept), as the data check counts them. */
+const exact = (list: readonly string[]) => [...list].sort()
+const rawLists: readonly string[] = (fixture as { rawLists?: string[] }).rawLists ?? []
 
 test('1.38.0 data-parity fixture: the web stores hold exactly the database after every listener event', () => {
   const org = fixture.organizationId
   const db: Record<string, OrgCollectionDoc[]> = JSON.parse(JSON.stringify(fixture.initialDatabase))
-  const listenerDocs: Record<string, OrgCollectionDoc[]> = { projects: [], smallWorks: [], bookings: [] }
+  const listenerDocs: Record<string, OrgCollectionDoc[]> = {
+    projects: [],
+    smallWorks: [],
+    bookings: [],
+    operatives: [],
+    managers: [],
+    clients: [],
+  }
   let projects: Project[] = []
   let smallWorks: Project[] = []
   let bookings: Booking[] = []
@@ -80,8 +94,15 @@ test('1.38.0 data-parity fixture: the web stores hold exactly the database after
       users: ids(rosterDocs),
       bookings: ids(bookings),
     }
+    // What the web data check counts (`dataParityMonitor` probes): the listener's documents by stored id, for every
+    // list but the jobs (the store's list plus the placeholder) and the roster (its document list).
+    const counted: Record<string, string[]> = { projects: held.projects, smallWorks: held.smallWorks, users: held.users }
+    for (const list of ['bookings', ...rawLists]) counted[list] = listenerDocs[list].map((row) => row.id)
+    for (const list of rawLists) held[list] = exact(listenerDocs[list].map((row) => row.id))
+    const expectedHeld = step.expectedHeld as Record<string, string[]>
     for (const list of fixture.lists) {
-      assert.deepEqual(held[list], lower(step.expectedHeld[list]), `${step.id}: ${list} (${step.description})`)
+      const expected = rawLists.includes(list) ? exact(expectedHeld[list]) : lower(expectedHeld[list])
+      assert.deepEqual(held[list], expected, `${step.id}: ${list} (${step.description})`)
     }
     assert.deepEqual(ids(worksListMembership(projects, 'projects')), lower(step.expectedVisible.projects), `${step.id}: visible projects`)
     assert.deepEqual(ids(worksListMembership(smallWorks, 'smallWorks')), lower(step.expectedVisible.smallWorks), `${step.id}: visible small works`)
@@ -89,7 +110,7 @@ test('1.38.0 data-parity fixture: the web stores hold exactly the database after
       lists: fixture.lists.map((key) => ({
         key,
         serverCount: db[key].length,
-        localIds: held[key],
+        localIds: counted[key],
         readerDroppedCount: key === 'projects' || key === 'smallWorks'
           ? readerDroppedJobDocuments(listenerDocs[key], isLegacyPlaceholderDocumentId)
           : 0,
@@ -106,4 +127,27 @@ test('1.38.0: a cache snapshot never drops a held row; a server snapshot does', 
   assert.deepEqual(mergeOrgCollectionSnapshot({ previous: [a, b], docs: [b], fromCache: false }).docs.map((d) => d.id), ['b'])
   assert.deepEqual(mergeOrgCollectionSnapshot({ previous: [a, b], docs: [], fromCache: true }).docs.map((d) => d.id), ['a', 'b'])
   assert.deepEqual(mergeOrgCollectionSnapshot({ previous: [a, b], docs: [b], removedIds: new Set(['a']), fromCache: true }).docs.map((d) => d.id), ['b'])
+})
+
+test('1.38.0: the fixture catches a data check that counts the store list or collapses ids by case', () => {
+  const db = fixture.initialDatabase as unknown as Record<string, OrgCollectionDoc[]>
+  for (const list of rawLists) {
+    const raw = db[list].map((row) => row.id)
+    // Case-collapsed ids (a UUID type) and a store list without the placeholder / nameless rows both differ.
+    const collapsed = [...new Set(raw.map((id) => id.toLowerCase()))]
+    const filtered = db[list]
+      .filter((row) => {
+        const data = row.data as Record<string, unknown>
+        const name = `${data.firstName ?? ''} ${data.lastName ?? ''} ${data.name ?? ''}`.toLowerCase()
+        return !name.includes('placeholder') && name.trim() !== ''
+      })
+      .map((row) => row.id)
+    const wrong = collapsed.length < raw.length ? [collapsed, filtered] : [filtered]
+    if (list === 'operatives') assert.ok(collapsed.length < raw.length, 'operatives holds two ids that differ only in case')
+    for (const localIds of wrong) {
+      const result = dataParityCheck({ lists: [{ key: list, serverCount: raw.length, localIds }] })
+      assert.deepEqual(result.reloadKeys, [list], `${list}: a wrong count must be reported`)
+    }
+    assert.equal(dataParityCheck({ lists: [{ key: list, serverCount: raw.length, localIds: raw }] }).ok, true)
+  }
 })

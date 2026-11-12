@@ -1323,6 +1323,7 @@ export type { SameNamePerson, SameNameRosterRow } from './duplicateUserNames'
 // Rulebook 1.38.0 §27 (owner decision 11 Nov): the in-app data check (server count vs device count per list).
 export {
   DATA_PARITY_CHECKS,
+  DATA_PARITY_CONFIRM_DELAY_MS,
   DATA_PARITY_LOG_LIMIT,
   DATA_PARITY_MIN_INTERVAL_MS,
   DATA_PARITY_SKIP_REASONS,
@@ -1330,6 +1331,7 @@ export {
   dataParityCheck,
   dataParityCheckDefinition,
   dataParityCheckDue,
+  dataParityConfirm,
   dataParityLogAppend,
   dataParityLogEntry,
   dataParitySumCounts,
