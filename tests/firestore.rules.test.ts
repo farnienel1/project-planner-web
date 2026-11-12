@@ -2430,6 +2430,57 @@ test('1.10.0 booking delete: a manager deletes (with tombstone) on their job; an
   await assertSucceeds(setDoc(doc(await authDb(ADMIN_A, 'admin-a@test.com'), 'organizations', ORG_A, 'deletedBookings', 'gone-110'), tomb(ADMIN_A, 'gone-110', 'bookings')))
 })
 
+test('1.39.0 Daily Overview move: a job manager writes create + delete + tombstone in ONE batch, within the lookup budget', async () => {
+  await seed110()
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    await setDoc(doc(db, 'organizations', ORG_A, 'bookings', 'mv-139-1'), labour('JOB-110'))
+    await setDoc(doc(db, 'organizations', ORG_A, 'managerSiteBookings', 'mv-139-2'), {
+      userId: MGR_JOB_A,
+      locationType: 'project',
+      locationId: 'JOB-110',
+      timeSlot: 'CUSTOM_HOURS',
+    })
+  })
+  const tomb = (uid: string, id: string, coll: string) => ({ bookingId: id, collection: coll, deletedAt: serverTimestamp(), deletedBy: uid, deletedFrom: 'web' })
+  const meta = (uid: string) => ({ updatedAt: serverTimestamp(), updatedBy: uid, updatedFrom: 'web' })
+  const mgr = await authDb(MGR_JOB_A, 'mgr-job-a@test.com')
+  // Labour booking → Other (the manager's own manager site booking), as `moveBookingIntoManagerSchedule` writes it.
+  const toOther = writeBatch(mgr)
+  toOther.set(doc(mgr, 'organizations', ORG_A, 'managerSiteBookings', 'mv-139-new-1'), {
+    userId: MGR_JOB_A,
+    locationType: 'office',
+    timeSlot: 'CUSTOM_HOURS',
+    workStartTime: '07:00',
+    workEndTime: '12:00',
+    ...meta(MGR_JOB_A),
+  })
+  toOther.delete(doc(mgr, 'organizations', ORG_A, 'bookings', 'mv-139-1'))
+  toOther.set(doc(mgr, 'organizations', ORG_A, 'deletedBookings', 'mv-139-1'), tomb(MGR_JOB_A, 'mv-139-1', 'bookings'))
+  await assertSucceedsWithinBudget(toOther.commit())
+  // Manager site booking at the job → a labour booking on the job, as `moveManagerSiteBookingIntoBookings` writes it.
+  const toJob = writeBatch(mgr)
+  toJob.set(doc(mgr, 'organizations', ORG_A, 'bookings', 'mv-139-new-2'), { ...labour('JOB-110', { jobCollection: 'projects' }), ...meta(MGR_JOB_A) })
+  toJob.delete(doc(mgr, 'organizations', ORG_A, 'managerSiteBookings', 'mv-139-2'))
+  toJob.set(doc(mgr, 'organizations', ORG_A, 'deletedBookings', 'mv-139-2'), tomb(MGR_JOB_A, 'mv-139-2', 'managerSiteBookings'))
+  await assertSucceedsWithinBudget(toJob.commit())
+  // A manager of another job may do neither: the whole batch is refused, nothing half applied.
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'organizations', ORG_A, 'bookings', 'mv-139-3'), labour('JOB-110'))
+  })
+  const other = await authDb(MGR_OTHER_A, 'mgr-other-a@test.com')
+  const refused = writeBatch(other)
+  refused.set(doc(other, 'organizations', ORG_A, 'managerSiteBookings', 'mv-139-new-3'), { userId: MGR_OTHER_A, locationType: 'office', ...meta(MGR_OTHER_A) })
+  refused.delete(doc(other, 'organizations', ORG_A, 'bookings', 'mv-139-3'))
+  refused.set(doc(other, 'organizations', ORG_A, 'deletedBookings', 'mv-139-3'), tomb(MGR_OTHER_A, 'mv-139-3', 'bookings'))
+  await assertFails(refused.commit())
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    assert.equal((await getDoc(doc(db, 'organizations', ORG_A, 'bookings', 'mv-139-3'))).exists(), true)
+    assert.equal((await getDoc(doc(db, 'organizations', ORG_A, 'managerSiteBookings', 'mv-139-new-3'))).exists(), false)
+  })
+})
+
 test('1.10.0 a manager removed from the job loses booking writes; re-added gets them back', async () => {
   await seed110()
   const mgr = await authDb(MGR_JOB_A, 'mgr-job-a@test.com')

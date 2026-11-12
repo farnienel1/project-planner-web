@@ -6,6 +6,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useDataParityMonitor } from '@/lib/dataParity/useDataParityMonitor'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import {
@@ -210,6 +211,9 @@ function AppShellInner({ children }: { children: ReactNode }) {
       window.removeEventListener('offline', off)
     }
   }, [])
+
+  // Rulebook 1.38.0 §27: the read-only data check (server count vs this browser's lists), self-healing a list that differs.
+  useDataParityMonitor(user ? organization?.id : null)
 
   useEffect(() => {
     // Rulebook 1.13.0 §14 (`signInEmailSyncWrites`): once per signed-in account.

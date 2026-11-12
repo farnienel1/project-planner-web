@@ -12,6 +12,9 @@ import { getFirebaseDb } from '@/lib/firebase/ensureFirebase'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { hasAdminAccess } from '@/lib/permissions'
 import { BookingHealthScan } from '@/components/dataHealth/BookingHealthScan'
+import { DataParityCheck } from '@/components/dataHealth/DataParityCheck'
+import { dataCheckPanelVisible } from '@/lib/canonical'
+import { dataCheckPanelEnabledFor, onPlatformConfigChange } from '@/lib/access/securitySwitches'
 import { GhostsToCheck } from '@/components/dataHealth/GhostsToCheck'
 import { UsersMissingLevel } from '@/components/dataHealth/UsersMissingLevel'
 import { UsersMissingEmploymentType } from '@/components/dataHealth/UsersMissingEmploymentType'
@@ -113,9 +116,18 @@ export default function DataHealthPage() {
   }, [organization?.id, user])
 
   const isAdmin = hasAdminAccess(user)
+  const [dataCheckPanelOn, setDataCheckPanelOn] = useState(() => dataCheckPanelEnabledFor(organization?.id))
+  useEffect(() => {
+    setDataCheckPanelOn(dataCheckPanelEnabledFor(organization?.id))
+    return onPlatformConfigChange(() => setDataCheckPanelOn(dataCheckPanelEnabledFor(organization?.id)))
+  }, [organization?.id])
   const scan =
     isAdmin && organization?.id ? (
       <div className="space-y-4">
+        {/* Rulebook 1.38.0 §27: the data check panel, hidden unless platformConfig/app.dataCheckPanel (owner 11 Nov). */}
+        {dataCheckPanelVisible({ viewerIsAdmin: isAdmin, dataCheckPanelEnabled: dataCheckPanelOn }) ? (
+          <DataParityCheck organizationId={organization.id} />
+        ) : null}
         {/* Rulebook 1.23.1 §11: people with no user level (`usersMissingLevel`). */}
         <UsersMissingLevel organizationId={organization.id} />
         <UsersMissingEmploymentType organizationId={organization.id} />

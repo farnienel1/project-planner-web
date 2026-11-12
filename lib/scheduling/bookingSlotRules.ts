@@ -15,7 +15,9 @@ import {
   weekendBookingNotes,
   customHoursPrefillForDays,
   weekendBookingBreakdown,
+  bookingHoursExplanation,
   type BookingDayBreakdownRow,
+  type BookingHoursExplanation,
   formatClockMinutes,
   halfDayWindows,
   type CustomHoursPrefill,
@@ -41,7 +43,8 @@ function openOrganizationZone(): string {
  * The open organisation's working-hours state from the live document (`parsePayrollTimePolicyState`, promoted to
  * today with `payrollTimePolicyTimeline`), or null when the live document is not loaded for the open organisation.
  */
-function livePayrollState(): PayrollTimePolicyState | null {
+/** The open organisation's working-hours state (for rules read per booking day), or null before it loads. */
+export function livePayrollState(): PayrollTimePolicyState | null {
   const { organizationId, data } = useOrganizationDocumentStore.getState()
   const openId = useAuthStore.getState().organization?.id || ''
   if (!data || !openId || organizationId !== openId) return null
@@ -175,6 +178,32 @@ export function weekendBreakdownForDates(
   const keys = dates.map((date) => bookingDayKey(date))
   if (!keys.some((key) => isWeekendDayKey(key, zone))) return []
   return weekendBookingBreakdown(livePayrollState() ?? policy ?? null, keys, start, end, breakRemoved, zone)
+}
+
+/**
+ * Rulebook 1.39.0 (`bookingHoursExplanation`): the words that explain one custom-hours booking's hours on a weekday —
+ * the working day, the unpaid break and the hours at the overtime multiplier — read under the working hours in effect
+ * on that day. Weekend days carry the same explanation on their `weekendBreakdownForDates` rows. Null on a weekend
+ * day (its rows explain it) or invalid times.
+ */
+export function weekdayExplanationForDate(
+  date: Date | string | number | null | undefined,
+  start: string | null | undefined,
+  end: string | null | undefined,
+  breakRemoved: boolean | null | undefined,
+  policy?: OrgPayrollTimePolicy | null,
+  otMultiplierOverride?: number | null
+): BookingHoursExplanation | null {
+  if (date == null) return null
+  const zone = openOrganizationZone()
+  const key = bookingDayKey(date)
+  if (isWeekendDayKey(key, zone)) return null
+  return bookingHoursExplanation(
+    livePayrollState() ?? policy ?? null,
+    key,
+    { workStartTime: start, workEndTime: end, isBreakRemoved: breakRemoved === true, otMultiplierOverride: otMultiplierOverride ?? null },
+    zone
+  )
 }
 
 /** `WEEKEND_WEEKDAY_MIX_MESSAGE` when the dates mix weekdays and weekend days (`bookingDaysMixWeekdayAndWeekend`). */

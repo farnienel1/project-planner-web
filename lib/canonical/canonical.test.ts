@@ -9542,13 +9542,16 @@ test('1.18.0: weekendBookingBreakdown — one row per selected day, priced by th
     'Sunday 07:30–14:00 = 6.5h × 2 = 13h',
   ])
   assert.deepEqual(
-    { ...rows[0], line: undefined, lines: undefined },
-    { dayKey: SAT, weekdayLabel: 'Saturday', start: '07:30', end: '14:00', workedHours: 6.5, countsAsHours: 8, standardHours: 8, overtimeHours: 0, multiplier: 1.5, paidHoursEquivalent: 8, unpaidBreakHours: 0, line: undefined, lines: undefined }
+    { ...rows[0], line: undefined, lines: undefined, explanation: undefined },
+    { dayKey: SAT, weekdayLabel: 'Saturday', start: '07:30', end: '14:00', workedHours: 6.5, countsAsHours: 8, standardHours: 8, overtimeHours: 0, multiplier: 1.5, paidHoursEquivalent: 8, unpaidBreakHours: 0, line: undefined, lines: undefined, explanation: undefined }
   )
   assert.deepEqual(
-    { ...rows[1], line: undefined, lines: undefined },
-    { dayKey: SUN, weekdayLabel: 'Sunday', start: '07:30', end: '14:00', workedHours: 6.5, countsAsHours: null, standardHours: 0, overtimeHours: 6.5, multiplier: 2, paidHoursEquivalent: 13, unpaidBreakHours: 0, line: undefined, lines: undefined }
+    { ...rows[1], line: undefined, lines: undefined, explanation: undefined },
+    { dayKey: SUN, weekdayLabel: 'Sunday', start: '07:30', end: '14:00', workedHours: 6.5, countsAsHours: null, standardHours: 0, overtimeHours: 6.5, multiplier: 2, paidHoursEquivalent: 13, unpaidBreakHours: 0, line: undefined, lines: undefined, explanation: undefined }
   )
+  // 1.39.0: each row explains its figure (`bookingHoursExplanation`).
+  assert.deepEqual(rows[0].explanation.steps, ['07:30–14:00 = 8h (full day, 30 min paid break, not deducted)'])
+  assert.deepEqual(rows[1].explanation.steps, ['07:30–14:00 = 6.5h × 2 = 13h'])
   // Each figure is the timesheet pay rule's for that day.
   for (const row of rows) {
     const paid = R112.payrollHoursResult({ booking: { timeSlot: 'CUSTOM_HOURS', workStartTime: '07:30', workEndTime: '14:00' }, dayKey: row.dayKey, policy, timeZone: zone })
@@ -9560,7 +9563,14 @@ test('1.18.0: weekendBookingBreakdown — one row per selected day, priced by th
   const same = { ...policy, sunday: { ...satWindow, sameAsSaturday: true } }
   const sameRows = R112.weekendBookingBreakdown(same, [SAT, SUN], '07:30', '14:00', false, zone)
   assert.equal(sameRows.length, 2)
-  assert.deepEqual({ ...sameRows[0], dayKey: '', weekdayLabel: '', line: sameRows[0].line.replace('Saturday', '') }, { ...sameRows[1], dayKey: '', weekdayLabel: '', line: sameRows[1].line.replace('Sunday', '') })
+  const sameBody = (row: (typeof sameRows)[number], day: string) => ({
+    ...row,
+    dayKey: '',
+    weekdayLabel: '',
+    line: row.line.replace(day, ''),
+    explanation: { ...row.explanation, rule: row.explanation.rule.replace(day, '') },
+  })
+  assert.deepEqual(sameBody(sameRows[0], 'Saturday'), sameBody(sameRows[1], 'Sunday'))
   // A scheduled change between the two days: each day under the rules in effect on it.
   const doc = {
     countryCode: 'GB',

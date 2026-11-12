@@ -12,6 +12,7 @@ import { db } from '@/lib/firebase/config'
 import {
   currentOrganizationId,
   ghostAccountsEnabled,
+  dataCheckPanelEnabled,
   PLATFORM_CONFIG_APP_PATH,
   securitySwitchOn,
   type SecuritySwitch,
@@ -110,6 +111,16 @@ function notifyConfigListeners() {
 export function ghostAccountsEnabledFor(organizationId?: string | null): boolean {
   start()
   return ghostAccountsEnabled(config, organizationId ?? currentOrganizationId())
+}
+
+/**
+ * Rulebook 1.38.0 §27 (owner change 11 Nov): whether the Data check panel may be shown for this organisation —
+ * `dataCheckPanelEnabled(platformConfig/app, organizationId)`. Off before the first read and when missing. The check
+ * itself always runs, silently.
+ */
+export function dataCheckPanelEnabledFor(organizationId?: string | null): boolean {
+  start()
+  return dataCheckPanelEnabled(config, organizationId ?? currentOrganizationId())
 }
 
 /** Called on every read of `platformConfig/app` (any field). Returns the unsubscribe. */

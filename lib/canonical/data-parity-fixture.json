@@ -1,0 +1,1080 @@
+{
+  "description": "Rulebook 1.38.0 §27: raw Firestore documents of a test company and a sequence of listener events. Each app feeds them through its own store and merge code and must hold exactly expectedHeld (ids compared without case, except rawLists) after every step; expectedVisible is worksListMembership of the held jobs; expectedParityMismatches is what dataParityCheck reports when the server count is the database and the local count is what the app holds. Test machines only, never production. rawLists (operatives, managers, clients) are held as the documents the listener received, by stored document id with case kept, before any reader or store filter — exactly what each app's data check counts — so a placeholder row, a nameless client and two documents whose ids differ only in case each count once.",
+  "version": 1,
+  "organizationId": "org-parity",
+  "timeZone": "Europe/London",
+  "lists": [
+    "projects",
+    "smallWorks",
+    "users",
+    "bookings",
+    "operatives",
+    "managers",
+    "clients"
+  ],
+  "initialDatabase": {
+    "projects": [
+      {
+        "id": "a1000000-0000-4000-8000-000000000001",
+        "data": {
+          "id": "a1000000-0000-4000-8000-000000000001",
+          "jobNumber": "J-1",
+          "siteName": "Lower-case id job",
+          "organizationId": "org-parity",
+          "isLive": true,
+          "startDate": "2026-11-02",
+          "endDate": "2026-12-18",
+          "jobType": "CAT A",
+          "managerIds": [
+            "user:user-admin"
+          ],
+          "managerUserIds": [
+            "user-admin"
+          ],
+          "createdAt": "2026-10-01T09:00:00.000Z"
+        }
+      },
+      {
+        "id": "A1000000-0000-4000-8000-000000000002",
+        "data": {
+          "id": "A1000000-0000-4000-8000-000000000002",
+          "jobNumber": 4521,
+          "siteName": "Numeric job number",
+          "organizationId": "org-parity",
+          "isLive": true,
+          "startDate": "2026-11-02",
+          "endDate": "2026-12-18",
+          "jobType": "CAT A",
+          "managerIds": [
+            "user:user-admin"
+          ],
+          "managerUserIds": [
+            "user-admin"
+          ],
+          "createdAt": "2026-10-01T09:00:00.000Z"
+        }
+      },
+      {
+        "id": "A1000000-0000-4000-8000-000000000003",
+        "data": {
+          "id": "A1000000-0000-4000-8000-000000000003",
+          "jobNumber": "J-3",
+          "siteName": "1 Carnaby Street",
+          "organizationId": "org-parity",
+          "isLive": true,
+          "startDate": null,
+          "endDate": null,
+          "jobType": "CAT A",
+          "managerIds": [
+            "user:user-admin"
+          ],
+          "managerUserIds": [
+            "user-admin"
+          ],
+          "createdAt": "2026-10-01T09:00:00.000Z"
+        }
+      },
+      {
+        "id": "B2000000-0000-4000-8000-0000000000AA",
+        "data": {
+          "id": "B2000000-0000-4000-8000-0000000000AA",
+          "jobNumber": "TW-1",
+          "siteName": "Twin id (project copy)",
+          "organizationId": "org-parity",
+          "isLive": true,
+          "startDate": "2026-11-02",
+          "endDate": "2026-12-18",
+          "jobType": "CAT A",
+          "managerIds": [
+            "user:user-admin"
+          ],
+          "managerUserIds": [
+            "user-admin"
+          ],
+          "createdAt": "2026-10-01T09:00:00.000Z"
+        }
+      },
+      {
+        "id": "INITIAL-PLACEHOLDER",
+        "data": {
+          "siteName": "placeholder",
+          "organizationId": "org-parity"
+        }
+      }
+    ],
+    "smallWorks": [
+      {
+        "id": "c3000000-0000-4000-8000-000000000001",
+        "data": {
+          "id": "c3000000-0000-4000-8000-000000000001",
+          "jobNumber": "SW-1",
+          "siteName": "Lower-case id small work",
+          "organizationId": "org-parity",
+          "isLive": true,
+          "startDate": "2026-11-09",
+          "endDate": "2026-11-13",
+          "jobType": "Small Works",
+          "managerIds": [
+            "user:user-admin"
+          ],
+          "managerUserIds": [
+            "user-admin"
+          ],
+          "createdAt": "2026-10-01T09:00:00.000Z"
+        }
+      },
+      {
+        "id": "B2000000-0000-4000-8000-0000000000AA",
+        "data": {
+          "id": "B2000000-0000-4000-8000-0000000000AA",
+          "jobNumber": "TW-1",
+          "siteName": "Twin id (small works copy)",
+          "organizationId": "org-parity",
+          "isLive": true,
+          "startDate": "2026-11-09",
+          "endDate": "2026-11-13",
+          "jobType": "Small Works",
+          "managerIds": [
+            "user:user-admin"
+          ],
+          "managerUserIds": [
+            "user-admin"
+          ],
+          "createdAt": "2026-10-01T09:00:00.000Z"
+        }
+      }
+    ],
+    "users": [
+      {
+        "id": "user-admin",
+        "data": {
+          "organizationId": "org-parity",
+          "isActive": true,
+          "passwordSet": true,
+          "createdAt": "2026-10-01T09:00:00.000Z",
+          "email": "ada@parity.test",
+          "firstName": "Ada",
+          "surname": "Admin",
+          "role": "admin",
+          "adminAccess": true,
+          "isSuperAdmin": true,
+          "hasNoLineManager": true
+        }
+      },
+      {
+        "id": "user-op-1",
+        "data": {
+          "organizationId": "org-parity",
+          "isActive": true,
+          "passwordSet": true,
+          "createdAt": "2026-10-01T09:00:00.000Z",
+          "email": "olly@parity.test",
+          "firstName": "Olly",
+          "surname": "Operative",
+          "role": "operative",
+          "operativeMode": true,
+          "assignedManagerUserIds": [
+            "user-admin"
+          ]
+        }
+      },
+      {
+        "id": "user-ghost-1",
+        "data": {
+          "organizationId": "org-parity",
+          "isActive": true,
+          "passwordSet": true,
+          "createdAt": "2026-10-01T09:00:00.000Z",
+          "email": "",
+          "firstName": "Gus",
+          "surname": "Ghost",
+          "role": "operative",
+          "operativeMode": true,
+          "ghost": true,
+          "assignedManagerUserIds": [
+            "user-admin"
+          ],
+          "payBasis": "day",
+          "dayRate": 180
+        }
+      },
+      {
+        "id": "user-inactive",
+        "data": {
+          "organizationId": "org-parity",
+          "isActive": false,
+          "passwordSet": true,
+          "createdAt": "2026-10-01T09:00:00.000Z",
+          "email": "ivy@parity.test",
+          "firstName": "Ivy",
+          "surname": "Inactive",
+          "role": "operative",
+          "operativeMode": true
+        }
+      },
+      {
+        "id": "user-deleted",
+        "data": {
+          "organizationId": "org-parity",
+          "isActive": false,
+          "passwordSet": true,
+          "createdAt": "2026-10-01T09:00:00.000Z",
+          "email": "",
+          "firstName": "Deleted",
+          "surname": "user",
+          "role": "operative",
+          "operativeMode": true
+        }
+      },
+      {
+        "id": "D4000000-0000-4000-8000-000000000001",
+        "data": {
+          "organizationId": "org-parity",
+          "isActive": true,
+          "passwordSet": false,
+          "createdAt": "2026-10-01T09:00:00.000Z",
+          "email": "pending@parity.test",
+          "firstName": "Pat",
+          "surname": "Pending",
+          "role": "operative",
+          "operativeMode": true
+        }
+      }
+    ],
+    "bookings": [
+      {
+        "id": "e5000000-0000-4000-8000-000000000001",
+        "data": {
+          "id": "e5000000-0000-4000-8000-000000000001",
+          "operativeId": "user-op-1",
+          "projectId": "a1000000-0000-4000-8000-000000000001",
+          "date": "2026-11-16",
+          "timeSlot": "FULL DAY",
+          "status": "Confirmed",
+          "bookedBy": "Ada Admin",
+          "isBreakRemoved": false,
+          "jobCollection": "projects",
+          "createdAt": "2026-10-01T09:00:00.000Z"
+        }
+      },
+      {
+        "id": "E5000000-0000-4000-8000-000000000002",
+        "data": {
+          "id": "E5000000-0000-4000-8000-000000000002",
+          "operativeId": "user-op-1",
+          "projectId": "A1000000-0000-4000-8000-000000000002",
+          "date": "2026-11-17",
+          "timeSlot": "FULL DAY",
+          "status": "Confirmed",
+          "bookedBy": "Ada Admin",
+          "isBreakRemoved": false,
+          "jobCollection": "projects",
+          "createdAt": "2026-10-01T09:00:00.000Z"
+        }
+      },
+      {
+        "id": "E5000000-0000-4000-8000-000000000003",
+        "data": {
+          "id": "E5000000-0000-4000-8000-000000000003",
+          "operativeId": "user-ghost-1",
+          "projectId": "B2000000-0000-4000-8000-0000000000AA",
+          "date": "2026-11-18",
+          "timeSlot": "FULL DAY",
+          "status": "Confirmed",
+          "bookedBy": "Ada Admin",
+          "isBreakRemoved": false,
+          "jobCollection": "projects",
+          "createdAt": "2026-10-01T09:00:00.000Z"
+        }
+      }
+    ],
+    "operatives": [
+      {
+        "id": "f6000000-0000-4000-8000-000000000001",
+        "data": {
+          "organizationId": "org-parity",
+          "firstName": "Olu",
+          "lastName": "Operative",
+          "email": "olu@parity.test",
+          "isActive": true
+        }
+      },
+      {
+        "id": "F6000000-0000-4000-8000-0000000000AB",
+        "data": {
+          "organizationId": "org-parity",
+          "firstName": "Bea",
+          "lastName": "Builder",
+          "email": "bea@parity.test",
+          "isActive": true
+        }
+      },
+      {
+        "id": "f6000000-0000-4000-8000-0000000000ab",
+        "data": {
+          "organizationId": "org-parity",
+          "firstName": "Bea",
+          "lastName": "Builder (lower-case copy)",
+          "email": "bea.copy@parity.test",
+          "isActive": true
+        }
+      },
+      {
+        "id": "f6000000-0000-4000-8000-000000000009",
+        "data": {
+          "organizationId": "org-parity",
+          "firstName": "Initial",
+          "lastName": "placeholder",
+          "email": "placeholder@parity.test",
+          "isActive": true
+        }
+      }
+    ],
+    "managers": [
+      {
+        "id": "c7000000-0000-4000-8000-000000000001",
+        "data": {
+          "organizationId": "org-parity",
+          "firstName": "Mia",
+          "lastName": "Manager",
+          "email": "mia@parity.test",
+          "isActive": true
+        }
+      },
+      {
+        "id": "C7000000-0000-4000-8000-000000000002",
+        "data": {
+          "organizationId": "org-parity",
+          "firstName": "Max",
+          "lastName": "Manager",
+          "email": "max@parity.test",
+          "isActive": true
+        }
+      },
+      {
+        "id": "c7000000-0000-4000-8000-000000000099",
+        "data": {
+          "organizationId": "org-parity",
+          "name": "Initial manager placeholder system",
+          "email": "placeholder@parity.test"
+        }
+      }
+    ],
+    "clients": [
+      {
+        "id": "d8000000-0000-4000-8000-000000000001",
+        "data": {
+          "organizationId": "org-parity",
+          "name": "Client One",
+          "email": "one@client.test"
+        }
+      },
+      {
+        "id": "D8000000-0000-4000-8000-000000000002",
+        "data": {
+          "organizationId": "org-parity",
+          "name": "",
+          "email": ""
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "id": "initial-server",
+      "description": "First server snapshot of every list.",
+      "writes": [],
+      "events": [
+        {
+          "list": "projects",
+          "source": "server"
+        },
+        {
+          "list": "smallWorks",
+          "source": "server"
+        },
+        {
+          "list": "users",
+          "source": "server"
+        },
+        {
+          "list": "bookings",
+          "source": "server"
+        },
+        {
+          "list": "operatives",
+          "source": "server"
+        },
+        {
+          "list": "managers",
+          "source": "server"
+        },
+        {
+          "list": "clients",
+          "source": "server"
+        }
+      ],
+      "expectedHeld": {
+        "projects": [
+          "A1000000-0000-4000-8000-000000000002",
+          "A1000000-0000-4000-8000-000000000003",
+          "B2000000-0000-4000-8000-0000000000AA",
+          "a1000000-0000-4000-8000-000000000001"
+        ],
+        "smallWorks": [
+          "B2000000-0000-4000-8000-0000000000AA",
+          "c3000000-0000-4000-8000-000000000001"
+        ],
+        "users": [
+          "D4000000-0000-4000-8000-000000000001",
+          "user-admin",
+          "user-deleted",
+          "user-ghost-1",
+          "user-inactive",
+          "user-op-1"
+        ],
+        "bookings": [
+          "E5000000-0000-4000-8000-000000000002",
+          "E5000000-0000-4000-8000-000000000003",
+          "e5000000-0000-4000-8000-000000000001"
+        ],
+        "operatives": [
+          "f6000000-0000-4000-8000-000000000001",
+          "F6000000-0000-4000-8000-0000000000AB",
+          "f6000000-0000-4000-8000-0000000000ab",
+          "f6000000-0000-4000-8000-000000000009"
+        ],
+        "managers": [
+          "c7000000-0000-4000-8000-000000000001",
+          "C7000000-0000-4000-8000-000000000002",
+          "c7000000-0000-4000-8000-000000000099"
+        ],
+        "clients": [
+          "d8000000-0000-4000-8000-000000000001",
+          "D8000000-0000-4000-8000-000000000002"
+        ]
+      },
+      "expectedVisible": {
+        "projects": [
+          "A1000000-0000-4000-8000-000000000002",
+          "A1000000-0000-4000-8000-000000000003",
+          "B2000000-0000-4000-8000-0000000000AA",
+          "a1000000-0000-4000-8000-000000000001"
+        ],
+        "smallWorks": [
+          "B2000000-0000-4000-8000-0000000000AA",
+          "c3000000-0000-4000-8000-000000000001"
+        ]
+      },
+      "expectedParityMismatches": []
+    },
+    {
+      "id": "cache-partial",
+      "description": "Cache snapshots holding only some documents (offline cache): nothing on screen is lost. An operatives cache snapshot with one row keeps all four.",
+      "writes": [],
+      "events": [
+        {
+          "list": "projects",
+          "source": "cache",
+          "ids": [
+            "a1000000-0000-4000-8000-000000000001",
+            "A1000000-0000-4000-8000-000000000002"
+          ]
+        },
+        {
+          "list": "bookings",
+          "source": "cache",
+          "ids": [
+            "e5000000-0000-4000-8000-000000000001"
+          ]
+        },
+        {
+          "list": "operatives",
+          "source": "cache",
+          "ids": [
+            "F6000000-0000-4000-8000-0000000000AB"
+          ]
+        }
+      ],
+      "expectedHeld": {
+        "projects": [
+          "A1000000-0000-4000-8000-000000000002",
+          "A1000000-0000-4000-8000-000000000003",
+          "B2000000-0000-4000-8000-0000000000AA",
+          "a1000000-0000-4000-8000-000000000001"
+        ],
+        "smallWorks": [
+          "B2000000-0000-4000-8000-0000000000AA",
+          "c3000000-0000-4000-8000-000000000001"
+        ],
+        "users": [
+          "D4000000-0000-4000-8000-000000000001",
+          "user-admin",
+          "user-deleted",
+          "user-ghost-1",
+          "user-inactive",
+          "user-op-1"
+        ],
+        "bookings": [
+          "E5000000-0000-4000-8000-000000000002",
+          "E5000000-0000-4000-8000-000000000003",
+          "e5000000-0000-4000-8000-000000000001"
+        ],
+        "operatives": [
+          "f6000000-0000-4000-8000-000000000001",
+          "F6000000-0000-4000-8000-0000000000AB",
+          "f6000000-0000-4000-8000-0000000000ab",
+          "f6000000-0000-4000-8000-000000000009"
+        ],
+        "managers": [
+          "c7000000-0000-4000-8000-000000000001",
+          "C7000000-0000-4000-8000-000000000002",
+          "c7000000-0000-4000-8000-000000000099"
+        ],
+        "clients": [
+          "d8000000-0000-4000-8000-000000000001",
+          "D8000000-0000-4000-8000-000000000002"
+        ]
+      },
+      "expectedVisible": {
+        "projects": [
+          "A1000000-0000-4000-8000-000000000002",
+          "A1000000-0000-4000-8000-000000000003",
+          "B2000000-0000-4000-8000-0000000000AA",
+          "a1000000-0000-4000-8000-000000000001"
+        ],
+        "smallWorks": [
+          "B2000000-0000-4000-8000-0000000000AA",
+          "c3000000-0000-4000-8000-000000000001"
+        ]
+      },
+      "expectedParityMismatches": []
+    },
+    {
+      "id": "cache-empty",
+      "description": "Empty cache snapshots: the lists on screen stay.",
+      "writes": [],
+      "events": [
+        {
+          "list": "smallWorks",
+          "source": "cache",
+          "ids": []
+        },
+        {
+          "list": "users",
+          "source": "cache",
+          "ids": []
+        },
+        {
+          "list": "clients",
+          "source": "cache",
+          "ids": []
+        }
+      ],
+      "expectedHeld": {
+        "projects": [
+          "A1000000-0000-4000-8000-000000000002",
+          "A1000000-0000-4000-8000-000000000003",
+          "B2000000-0000-4000-8000-0000000000AA",
+          "a1000000-0000-4000-8000-000000000001"
+        ],
+        "smallWorks": [
+          "B2000000-0000-4000-8000-0000000000AA",
+          "c3000000-0000-4000-8000-000000000001"
+        ],
+        "users": [
+          "D4000000-0000-4000-8000-000000000001",
+          "user-admin",
+          "user-deleted",
+          "user-ghost-1",
+          "user-inactive",
+          "user-op-1"
+        ],
+        "bookings": [
+          "E5000000-0000-4000-8000-000000000002",
+          "E5000000-0000-4000-8000-000000000003",
+          "e5000000-0000-4000-8000-000000000001"
+        ],
+        "operatives": [
+          "f6000000-0000-4000-8000-000000000001",
+          "F6000000-0000-4000-8000-0000000000AB",
+          "f6000000-0000-4000-8000-0000000000ab",
+          "f6000000-0000-4000-8000-000000000009"
+        ],
+        "managers": [
+          "c7000000-0000-4000-8000-000000000001",
+          "C7000000-0000-4000-8000-000000000002",
+          "c7000000-0000-4000-8000-000000000099"
+        ],
+        "clients": [
+          "d8000000-0000-4000-8000-000000000001",
+          "D8000000-0000-4000-8000-000000000002"
+        ]
+      },
+      "expectedVisible": {
+        "projects": [
+          "A1000000-0000-4000-8000-000000000002",
+          "A1000000-0000-4000-8000-000000000003",
+          "B2000000-0000-4000-8000-0000000000AA",
+          "a1000000-0000-4000-8000-000000000001"
+        ],
+        "smallWorks": [
+          "B2000000-0000-4000-8000-0000000000AA",
+          "c3000000-0000-4000-8000-000000000001"
+        ]
+      },
+      "expectedParityMismatches": []
+    },
+    {
+      "id": "server-changes",
+      "description": "Adds, edits and removals on another device arrive as server snapshots.",
+      "writes": [
+        {
+          "op": "set",
+          "list": "projects",
+          "id": "A1000000-0000-4000-8000-000000000004",
+          "data": {
+            "id": "A1000000-0000-4000-8000-000000000004",
+            "jobNumber": "J-4",
+            "siteName": "New project",
+            "organizationId": "org-parity",
+            "isLive": true,
+            "startDate": "2026-11-02",
+            "endDate": "2026-12-18",
+            "jobType": "CAT A",
+            "managerIds": [
+              "user:user-admin"
+            ],
+            "managerUserIds": [
+              "user-admin"
+            ],
+            "createdAt": "2026-10-01T09:00:00.000Z"
+          }
+        },
+        {
+          "op": "set",
+          "list": "projects",
+          "id": "A1000000-0000-4000-8000-000000000002",
+          "data": {
+            "id": "A1000000-0000-4000-8000-000000000002",
+            "jobNumber": 4521,
+            "siteName": "Numeric job number (renamed)",
+            "organizationId": "org-parity",
+            "isLive": true,
+            "startDate": "2026-11-02",
+            "endDate": "2026-12-18",
+            "jobType": "CAT A",
+            "managerIds": [
+              "user:user-admin"
+            ],
+            "managerUserIds": [
+              "user-admin"
+            ],
+            "createdAt": "2026-10-01T09:00:00.000Z"
+          }
+        },
+        {
+          "op": "delete",
+          "list": "projects",
+          "id": "a1000000-0000-4000-8000-000000000001"
+        },
+        {
+          "op": "set",
+          "list": "smallWorks",
+          "id": "C3000000-0000-4000-8000-000000000002",
+          "data": {
+            "id": "C3000000-0000-4000-8000-000000000002",
+            "jobNumber": "SW-2",
+            "siteName": "New small work",
+            "organizationId": "org-parity",
+            "isLive": true,
+            "startDate": "2026-11-09",
+            "endDate": "2026-11-13",
+            "jobType": "Small Works",
+            "managerIds": [
+              "user:user-admin"
+            ],
+            "managerUserIds": [
+              "user-admin"
+            ],
+            "createdAt": "2026-10-01T09:00:00.000Z"
+          }
+        },
+        {
+          "op": "set",
+          "list": "users",
+          "id": "user-op-1",
+          "data": {
+            "organizationId": "org-parity",
+            "isActive": true,
+            "passwordSet": true,
+            "createdAt": "2026-10-01T09:00:00.000Z",
+            "email": "olly@parity.test",
+            "firstName": "Olly",
+            "surname": "Operative-Renamed",
+            "role": "operative",
+            "operativeMode": true,
+            "assignedManagerUserIds": [
+              "user-admin"
+            ]
+          }
+        },
+        {
+          "op": "delete",
+          "list": "users",
+          "id": "user-inactive"
+        },
+        {
+          "op": "set",
+          "list": "bookings",
+          "id": "e5000000-0000-4000-8000-000000000004",
+          "data": {
+            "id": "e5000000-0000-4000-8000-000000000004",
+            "operativeId": "user-op-1",
+            "projectId": "A1000000-0000-4000-8000-000000000004",
+            "date": "2026-11-19",
+            "timeSlot": "FULL DAY",
+            "status": "Confirmed",
+            "bookedBy": "Ada Admin",
+            "isBreakRemoved": false,
+            "jobCollection": "projects",
+            "createdAt": "2026-10-01T09:00:00.000Z"
+          }
+        },
+        {
+          "op": "delete",
+          "list": "bookings",
+          "id": "E5000000-0000-4000-8000-000000000002"
+        },
+        {
+          "op": "delete",
+          "list": "managers",
+          "id": "C7000000-0000-4000-8000-000000000002"
+        },
+        {
+          "op": "set",
+          "list": "clients",
+          "id": "d8000000-0000-4000-8000-000000000003",
+          "data": {
+            "organizationId": "org-parity",
+            "name": "Client Three",
+            "email": "three@client.test"
+          }
+        }
+      ],
+      "events": [
+        {
+          "list": "projects",
+          "source": "server"
+        },
+        {
+          "list": "smallWorks",
+          "source": "server"
+        },
+        {
+          "list": "users",
+          "source": "server"
+        },
+        {
+          "list": "bookings",
+          "source": "server"
+        },
+        {
+          "list": "managers",
+          "source": "server"
+        },
+        {
+          "list": "clients",
+          "source": "server"
+        }
+      ],
+      "expectedHeld": {
+        "projects": [
+          "A1000000-0000-4000-8000-000000000002",
+          "A1000000-0000-4000-8000-000000000003",
+          "A1000000-0000-4000-8000-000000000004",
+          "B2000000-0000-4000-8000-0000000000AA"
+        ],
+        "smallWorks": [
+          "B2000000-0000-4000-8000-0000000000AA",
+          "C3000000-0000-4000-8000-000000000002",
+          "c3000000-0000-4000-8000-000000000001"
+        ],
+        "users": [
+          "D4000000-0000-4000-8000-000000000001",
+          "user-admin",
+          "user-deleted",
+          "user-ghost-1",
+          "user-op-1"
+        ],
+        "bookings": [
+          "E5000000-0000-4000-8000-000000000003",
+          "e5000000-0000-4000-8000-000000000001",
+          "e5000000-0000-4000-8000-000000000004"
+        ],
+        "operatives": [
+          "f6000000-0000-4000-8000-000000000001",
+          "F6000000-0000-4000-8000-0000000000AB",
+          "f6000000-0000-4000-8000-0000000000ab",
+          "f6000000-0000-4000-8000-000000000009"
+        ],
+        "managers": [
+          "c7000000-0000-4000-8000-000000000001",
+          "c7000000-0000-4000-8000-000000000099"
+        ],
+        "clients": [
+          "d8000000-0000-4000-8000-000000000001",
+          "D8000000-0000-4000-8000-000000000002",
+          "d8000000-0000-4000-8000-000000000003"
+        ]
+      },
+      "expectedVisible": {
+        "projects": [
+          "A1000000-0000-4000-8000-000000000002",
+          "A1000000-0000-4000-8000-000000000003",
+          "A1000000-0000-4000-8000-000000000004",
+          "B2000000-0000-4000-8000-0000000000AA"
+        ],
+        "smallWorks": [
+          "B2000000-0000-4000-8000-0000000000AA",
+          "C3000000-0000-4000-8000-000000000002",
+          "c3000000-0000-4000-8000-000000000001"
+        ]
+      },
+      "expectedParityMismatches": []
+    },
+    {
+      "id": "refused",
+      "description": "The projects listener is refused (permission-denied) and stops; a project is added meanwhile. The device still holds the old list: the data check sees the difference.",
+      "writes": [
+        {
+          "op": "set",
+          "list": "projects",
+          "id": "a1000000-0000-4000-8000-000000000005",
+          "data": {
+            "id": "a1000000-0000-4000-8000-000000000005",
+            "jobNumber": "J-5",
+            "siteName": "Added while the listener was down",
+            "organizationId": "org-parity",
+            "isLive": true,
+            "startDate": "2026-11-02",
+            "endDate": "2026-12-18",
+            "jobType": "CAT A",
+            "managerIds": [
+              "user:user-admin"
+            ],
+            "managerUserIds": [
+              "user-admin"
+            ],
+            "createdAt": "2026-10-01T09:00:00.000Z"
+          }
+        }
+      ],
+      "events": [
+        {
+          "list": "projects",
+          "source": "refused"
+        }
+      ],
+      "expectedHeld": {
+        "projects": [
+          "A1000000-0000-4000-8000-000000000002",
+          "A1000000-0000-4000-8000-000000000003",
+          "A1000000-0000-4000-8000-000000000004",
+          "B2000000-0000-4000-8000-0000000000AA"
+        ],
+        "smallWorks": [
+          "B2000000-0000-4000-8000-0000000000AA",
+          "C3000000-0000-4000-8000-000000000002",
+          "c3000000-0000-4000-8000-000000000001"
+        ],
+        "users": [
+          "D4000000-0000-4000-8000-000000000001",
+          "user-admin",
+          "user-deleted",
+          "user-ghost-1",
+          "user-op-1"
+        ],
+        "bookings": [
+          "E5000000-0000-4000-8000-000000000003",
+          "e5000000-0000-4000-8000-000000000001",
+          "e5000000-0000-4000-8000-000000000004"
+        ],
+        "operatives": [
+          "f6000000-0000-4000-8000-000000000001",
+          "F6000000-0000-4000-8000-0000000000AB",
+          "f6000000-0000-4000-8000-0000000000ab",
+          "f6000000-0000-4000-8000-000000000009"
+        ],
+        "managers": [
+          "c7000000-0000-4000-8000-000000000001",
+          "c7000000-0000-4000-8000-000000000099"
+        ],
+        "clients": [
+          "d8000000-0000-4000-8000-000000000001",
+          "D8000000-0000-4000-8000-000000000002",
+          "d8000000-0000-4000-8000-000000000003"
+        ]
+      },
+      "expectedVisible": {
+        "projects": [
+          "A1000000-0000-4000-8000-000000000002",
+          "A1000000-0000-4000-8000-000000000003",
+          "A1000000-0000-4000-8000-000000000004",
+          "B2000000-0000-4000-8000-0000000000AA"
+        ],
+        "smallWorks": [
+          "B2000000-0000-4000-8000-0000000000AA",
+          "C3000000-0000-4000-8000-000000000002",
+          "c3000000-0000-4000-8000-000000000001"
+        ]
+      },
+      "expectedParityMismatches": [
+        "projects"
+      ]
+    },
+    {
+      "id": "reattach",
+      "description": "The data check re-attaches the projects listener; its server snapshot brings the list back in line.",
+      "writes": [],
+      "events": [
+        {
+          "list": "projects",
+          "source": "server"
+        }
+      ],
+      "expectedHeld": {
+        "projects": [
+          "A1000000-0000-4000-8000-000000000002",
+          "A1000000-0000-4000-8000-000000000003",
+          "A1000000-0000-4000-8000-000000000004",
+          "B2000000-0000-4000-8000-0000000000AA",
+          "a1000000-0000-4000-8000-000000000005"
+        ],
+        "smallWorks": [
+          "B2000000-0000-4000-8000-0000000000AA",
+          "C3000000-0000-4000-8000-000000000002",
+          "c3000000-0000-4000-8000-000000000001"
+        ],
+        "users": [
+          "D4000000-0000-4000-8000-000000000001",
+          "user-admin",
+          "user-deleted",
+          "user-ghost-1",
+          "user-op-1"
+        ],
+        "bookings": [
+          "E5000000-0000-4000-8000-000000000003",
+          "e5000000-0000-4000-8000-000000000001",
+          "e5000000-0000-4000-8000-000000000004"
+        ],
+        "operatives": [
+          "f6000000-0000-4000-8000-000000000001",
+          "F6000000-0000-4000-8000-0000000000AB",
+          "f6000000-0000-4000-8000-0000000000ab",
+          "f6000000-0000-4000-8000-000000000009"
+        ],
+        "managers": [
+          "c7000000-0000-4000-8000-000000000001",
+          "c7000000-0000-4000-8000-000000000099"
+        ],
+        "clients": [
+          "d8000000-0000-4000-8000-000000000001",
+          "D8000000-0000-4000-8000-000000000002",
+          "d8000000-0000-4000-8000-000000000003"
+        ]
+      },
+      "expectedVisible": {
+        "projects": [
+          "A1000000-0000-4000-8000-000000000002",
+          "A1000000-0000-4000-8000-000000000003",
+          "A1000000-0000-4000-8000-000000000004",
+          "B2000000-0000-4000-8000-0000000000AA",
+          "a1000000-0000-4000-8000-000000000005"
+        ],
+        "smallWorks": [
+          "B2000000-0000-4000-8000-0000000000AA",
+          "C3000000-0000-4000-8000-000000000002",
+          "c3000000-0000-4000-8000-000000000001"
+        ]
+      },
+      "expectedParityMismatches": []
+    },
+    {
+      "id": "twin-removal",
+      "description": "The small works copy of the twin id is deleted: the project copy stays on Projects, Small works loses it.",
+      "writes": [
+        {
+          "op": "delete",
+          "list": "smallWorks",
+          "id": "B2000000-0000-4000-8000-0000000000AA"
+        }
+      ],
+      "events": [
+        {
+          "list": "smallWorks",
+          "source": "server"
+        }
+      ],
+      "expectedHeld": {
+        "projects": [
+          "A1000000-0000-4000-8000-000000000002",
+          "A1000000-0000-4000-8000-000000000003",
+          "A1000000-0000-4000-8000-000000000004",
+          "B2000000-0000-4000-8000-0000000000AA",
+          "a1000000-0000-4000-8000-000000000005"
+        ],
+        "smallWorks": [
+          "C3000000-0000-4000-8000-000000000002",
+          "c3000000-0000-4000-8000-000000000001"
+        ],
+        "users": [
+          "D4000000-0000-4000-8000-000000000001",
+          "user-admin",
+          "user-deleted",
+          "user-ghost-1",
+          "user-op-1"
+        ],
+        "bookings": [
+          "E5000000-0000-4000-8000-000000000003",
+          "e5000000-0000-4000-8000-000000000001",
+          "e5000000-0000-4000-8000-000000000004"
+        ],
+        "operatives": [
+          "f6000000-0000-4000-8000-000000000001",
+          "F6000000-0000-4000-8000-0000000000AB",
+          "f6000000-0000-4000-8000-0000000000ab",
+          "f6000000-0000-4000-8000-000000000009"
+        ],
+        "managers": [
+          "c7000000-0000-4000-8000-000000000001",
+          "c7000000-0000-4000-8000-000000000099"
+        ],
+        "clients": [
+          "d8000000-0000-4000-8000-000000000001",
+          "D8000000-0000-4000-8000-000000000002",
+          "d8000000-0000-4000-8000-000000000003"
+        ]
+      },
+      "expectedVisible": {
+        "projects": [
+          "A1000000-0000-4000-8000-000000000002",
+          "A1000000-0000-4000-8000-000000000003",
+          "A1000000-0000-4000-8000-000000000004",
+          "B2000000-0000-4000-8000-0000000000AA",
+          "a1000000-0000-4000-8000-000000000005"
+        ],
+        "smallWorks": [
+          "C3000000-0000-4000-8000-000000000002",
+          "c3000000-0000-4000-8000-000000000001"
+        ]
+      },
+      "expectedParityMismatches": []
+    }
+  ],
+  "rawLists": [
+    "operatives",
+    "managers",
+    "clients"
+  ]
+}
