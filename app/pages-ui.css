@@ -53,6 +53,10 @@
   --pu-unbooked-stripe: repeating-linear-gradient(-45deg, #E5484D 0 3px, #C93A3F 3px 6px);
   --pu-std: #3E6FE0;
   --pu-card-red-line: #F3B8BA;
+  /* "Where the team is" bar: it sits on the navy band in both themes, so one set of values. */
+  --pu-team-onsite: #3B7BF0;
+  --pu-team-office: #8B7CF6;
+  --pu-team-wfh: #34C38F;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -119,9 +123,9 @@
 .pu-band :focus-visible { outline-color: #fff; }
 .pu-band-top { display: flex; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
 .pu-band-text { flex: 1; min-width: 220px; display: flex; flex-direction: column; gap: 4px; }
-.pu-eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 0.14em; color: var(--pu-band-muted); text-transform: uppercase; }
-.pu-band h1 { margin: 0; font-size: 26px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.2; color: #fff; }
-.pu-band h1 small { font-size: 17px; font-weight: 500; color: var(--pu-band-muted); }
+.pu-eyebrow, .pu-band h1.pu-eyebrow { margin: 0; line-height: 1.4; letter-spacing: 0.14em; font-size: 11px; font-weight: 600; letter-spacing: 0.14em; color: var(--pu-band-muted); text-transform: uppercase; }
+.pu-band h1, .pu-band .pu-band-title { margin: 0; font-size: 26px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.2; color: #fff; }
+.pu-band h1 small, .pu-band .pu-band-title small { font-size: 17px; font-weight: 500; color: var(--pu-band-muted); }
 .pu-band-sub { margin: 0; color: var(--pu-band-soft); font-size: 13.5px; }
 .pu-band-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .pu-back { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--pu-band-soft); background: none; border: 0; padding: 0; margin-bottom: 4px; cursor: pointer; align-self: flex-start; }
@@ -339,7 +343,7 @@ button.pu-item:disabled { cursor: not-allowed; opacity: 0.55; }
   .pu-band { padding: 18px; }
   .pu-stat { padding: 0 14px; }
   .pu-stat b { font-size: 22px; }
-  .pu-band h1 { font-size: 22px; }
+  .pu-band h1, .pu-band .pu-band-title { font-size: 22px; }
   .pu-band-aside { text-align: left; }
   .pu-field { min-width: 0; }
   .pu-sel { min-width: 0; flex: 1; }

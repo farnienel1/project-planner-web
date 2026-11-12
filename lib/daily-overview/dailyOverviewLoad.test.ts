@@ -216,6 +216,20 @@ test('UI pack U1 / U2: each row carries its scheduling tile kind and its shift a
   assert.equal(twice[0].bookingParts.length, 2)
   assert.equal(twice[0].cellPaidHours, twice[0].hours)
   assert.equal(twice[0].cell.tone, 'split')
+  // Same stored slot on every booking of the row: the slot still decides (AM + AM stays a half day).
+  const halves = build('2026-10-22', [booking('B6', thuDay, 'AM'), booking('B7', thuDay, 'AM')]).projectCards[0].people
+  assert.equal(halves.length, 1)
+  assert.equal(halves[0].cell.tone, 'halfDay')
+  // A booking line that reads the same is shown once, as the old subtitle did.
+  assert.deepEqual(halves[0].bookingParts, [bookingTimesParts({ timeSlot: 'AM' })])
+  assert.equal(halves[0].subtitle, bookingTimesText({ timeSlot: 'AM' }))
+  const fullTwice = build('2026-10-22', [booking('B8', thuDay, 'FULL DAY'), booking('B9', thuDay, 'FULL DAY')]).projectCards[0].people[0]
+  assert.equal(fullTwice.bookingParts.length, 1)
+  // Different slots: the summed hours decide the kind.
+  const mixed = build('2026-10-22', [booking('B10', thuDay, 'AM'), booking('B11', thuDay, 'CUSTOM_HOURS', '16:00', '18:00')]).projectCards[0].people[0]
+  assert.equal(mixed.cellSlot, null)
+  assert.deepEqual(mixed.cell, scheduleCellKind({ paidHours: mixed.cellPaidHours, overtimeHours: mixed.cellOvertimeHours }))
+  assert.equal(mixed.bookingParts.length, 2)
   // `bookingTimesText` is the two parts joined, for every slot.
   for (const input of [
     { timeSlot: 'CUSTOM_HOURS', workStartTime: '07:30', workEndTime: '14:00' },

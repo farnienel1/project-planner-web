@@ -79,6 +79,8 @@ export type OverviewPersonRow = {
   cellPaidHours: number
   cellOvertimeHours: number
   cell: ScheduleCellKind
+  /** The stored slot every booking of this row shares, or null once two of them differ (for `scheduleCellKind`). */
+  cellSlot: string | null
   /** Display only (UI pack U2): each booking's shift and clock range (`bookingTimesParts`), in `subtitle` order. */
   bookingParts: { shift: string; times: string | null }[]
 }
@@ -99,14 +101,20 @@ function holidayCovers(booking: HolidayBooking, day: Date): boolean {
 function cellFields(
   priced: Parameters<typeof scheduleCellHours>[0],
   booking: { timeSlot?: string | null; workStartTime?: string | null; workEndTime?: string | null }
-): Pick<OverviewPersonRow, 'cellPaidHours' | 'cellOvertimeHours' | 'cell' | 'bookingParts'> {
+): Pick<OverviewPersonRow, 'cellPaidHours' | 'cellOvertimeHours' | 'cell' | 'cellSlot' | 'bookingParts'> {
   const hours = scheduleCellHours(priced)
   return {
     cellPaidHours: hours.paidHours,
     cellOvertimeHours: hours.overtimeHours,
     cell: scheduleCellKind({ ...hours, timeSlot: booking.timeSlot ?? null }),
+    cellSlot: booking.timeSlot ?? '',
     bookingParts: [bookingTimesParts(booking)],
   }
+}
+
+/** A stored slot compared without case, spaces or underscores (display grouping only). */
+function slotKey(slot: string | null | undefined): string {
+  return String(slot ?? '').toUpperCase().replace(/[\s_]+/g, '')
 }
 
 export function initialsFrom(name: string): string {
@@ -374,12 +382,18 @@ export function buildDailyOverview(params: {
       existing.hours += row.hours
       existing.otClockHours = (existing.otClockHours ?? 0) + (row.otClockHours ?? 0)
       existing.otMultipliers = [...(existing.otMultipliers ?? []), ...(row.otMultipliers ?? [])]
-      // Rulebook 1.37.0 (`scheduleCellHours`): several bookings add up before `scheduleCellKind`; a merged row has no
-      // single stored slot, so its kind comes from the hours.
+      // Rulebook 1.37.0 (`scheduleCellHours`): several bookings add up before `scheduleCellKind`; the stored slot is
+      // passed only while every booking of the row has the same one (AM + AM stays a half day), else the hours decide.
       existing.cellPaidHours += row.cellPaidHours
       existing.cellOvertimeHours += row.cellOvertimeHours
-      existing.cell = scheduleCellKind({ paidHours: existing.cellPaidHours, overtimeHours: existing.cellOvertimeHours })
-      existing.bookingParts = [...existing.bookingParts, ...row.bookingParts]
+      if (existing.cellSlot !== null && slotKey(existing.cellSlot) !== slotKey(row.cellSlot)) existing.cellSlot = null
+      existing.cell = scheduleCellKind({
+        paidHours: existing.cellPaidHours,
+        overtimeHours: existing.cellOvertimeHours,
+        timeSlot: existing.cellSlot,
+      })
+      // As the subtitle below: a booking line that reads the same as what is already shown is not repeated.
+      if (existing.subtitle !== row.subtitle) existing.bookingParts = [...existing.bookingParts, ...row.bookingParts]
       existing.pillText = `${overviewFormatHours(existing.hours)}h`
       if (existing.subtitle !== row.subtitle) {
         existing.subtitle = `${existing.subtitle} · ${row.subtitle}`

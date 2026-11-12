@@ -160,6 +160,7 @@ export function DailyOverviewScreen() {
     <>
     <PageShell>
       <PageBand
+        eyebrowIsHeading
         eyebrow={firstPaint ? 'Daily overview' : `Daily overview · ${model.dayLabel}`}
         title={
           firstPaint
@@ -421,8 +422,8 @@ export function DailyOverviewScreen() {
   )
 }
 
-/** Display colours of the "Where the team is" bar (the Home `--dash-*` family). */
-const TEAM_COLOURS = { onSite: '#3B7BF0', office: '#8B7CF6', wfh: '#34C38F' } as const
+/** Display colours of the "Where the team is" bar (`app/pages-ui.css` tokens). */
+const TEAM_COLOURS = { onSite: 'var(--pu-team-onsite)', office: 'var(--pu-team-office)', wfh: 'var(--pu-team-wfh)' } as const
 
 /** The scheduling week's own words for a tile kind (`JOB_SCHEDULE_LEGEND`, rulebook 1.37.0). */
 const CELL_LABELS: Record<ScheduleCellTone, { label: (typeof JOB_SCHEDULE_LEGEND)[number]; tone: PuTone }> = {
