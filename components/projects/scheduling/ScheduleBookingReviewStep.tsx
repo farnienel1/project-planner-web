@@ -9,9 +9,10 @@ import {
 } from '@/lib/scheduling/draftProjectBooking'
 import { BOOKING_REPLACE_LABEL } from '@/lib/canonical'
 import { slotKey, slotToFirestore, type ScheduleDateSlot } from '@/lib/scheduling/scheduleUtils'
-import { weekendBreakdownForDates } from '@/lib/scheduling/bookingSlotRules'
+import { weekdayExplanationForDate, weekendBreakdownForDates } from '@/lib/scheduling/bookingSlotRules'
 import { useOrganizationPayrollPolicy } from '@/lib/scheduling/useOrganizationPayrollPolicy'
 import { BookingDayBreakdownRows } from '@/components/scheduling/BookingDayBreakdownRows'
+import { BookingHoursExplanationList } from '@/components/scheduling/BookingHoursExplanation'
 
 function DayChip({
   date,
@@ -103,6 +104,13 @@ export function ScheduleBookingReviewStep({
               ? weekendBreakdownForDates([slot.date], stored.workStartTime, stored.workEndTime, false, policy)
               : []
           })
+          // Rulebook 1.39.0 (`bookingHoursExplanation`): custom weekday hours explained the same way.
+          const weekdayExplanations = bookableDays.map((slot) => {
+            const stored = slotToFirestore(slot)
+            return stored.timeSlot === 'CUSTOM_HOURS'
+              ? weekdayExplanationForDate(slot.date, stored.workStartTime, stored.workEndTime, false, policy)
+              : null
+          })
 
           return (
             <div key={person.personId} className="overflow-hidden card shadow-sm">
@@ -147,6 +155,7 @@ export function ScheduleBookingReviewStep({
                         <BookingDayBreakdownRows rows={weekendRows} />
                       </div>
                     ) : null}
+                    <BookingHoursExplanationList explanations={weekdayExplanations} className="mt-2" />
                   </div>
                 </button>
                 <button

@@ -24,6 +24,8 @@ import { UserRole, type SiteAudit, type SiteAuditItem, type User } from '@/types
 import { parseOrgUser } from '@/lib/firebase/parseUser'
 import { aliasIdsForRoster, dedupeUsersByEmail } from '@/lib/staff/userRosterUtils'
 import { mergeRetainedRoster, missingOrganizationIdPatch, retainScopedRows, rosterParseRecord } from '@/lib/staff/rosterRetain'
+import { rosterDocumentsAfter } from '@/lib/staff/rosterDocuments'
+import { isMetadataOnlySnapshot } from '@/lib/firebase/orgCollectionMerge'
 import {
   catalogueRowNeedsRead,
   explicitAccountIds,
@@ -570,6 +572,15 @@ async function confirmMissingUserDocuments(
 let liveRosterOrgId = ''
 let liveRosterUnsubs: Unsubscribe[] = []
 let liveFallbackKey = ''
+/**
+ * Rulebook 1.38.0 §27 (the data check): the users document ids the live `organizationId ==` query currently returns
+ * on this device, kept from its document changes. Null until its first snapshot; false when the server refused it.
+ */
+let liveRosterQueryIds: Set<string> | null = null
+let liveRosterQueryLive = false
+/** A server (not cache) snapshot of the roster query has arrived; the last snapshot carried unconfirmed writes. */
+let liveRosterServerSnapshot = false
+let liveRosterPendingWrites = false
 let liveReloadTimer: ReturnType<typeof setTimeout> | null = null
 const LIVE_FALLBACK_LIMIT = 60
 
@@ -578,8 +589,35 @@ function stopLiveRoster(): void {
   liveRosterUnsubs = []
   liveRosterOrgId = ''
   liveFallbackKey = ''
+  liveRosterQueryIds = null
+  liveRosterQueryLive = false
+  liveRosterServerSnapshot = false
+  liveRosterPendingWrites = false
   if (liveReloadTimer) clearTimeout(liveReloadTimer)
   liveReloadTimer = null
+}
+
+/** Rulebook 1.38.0 §27: the roster listener's held ids for the data check, or null when it is not listening. */
+export function liveRosterParitySource(
+  organizationId: string
+): { heldIds: string[]; live: boolean; serverSnapshot: boolean; pendingWrites: boolean } | null {
+  if (!organizationId || liveRosterOrgId !== organizationId || !liveRosterQueryIds) return null
+  return {
+    heldIds: [...liveRosterQueryIds],
+    live: liveRosterQueryLive,
+    serverSnapshot: liveRosterServerSnapshot || !liveRosterQueryLive,
+    pendingWrites: liveRosterPendingWrites,
+  }
+}
+
+/** Rulebook 1.38.0 §27 self-heal: start the roster listener again and reload the roster from the server. */
+export async function reattachLiveRoster(organizationId: string): Promise<boolean> {
+  if (!organizationId || liveRosterOrgId !== organizationId) return false
+  const fallback = liveFallbackKey ? liveFallbackKey.split('|') : []
+  stopLiveRoster()
+  startLiveRoster(organizationId, fallback)
+  await useOrgUserStore.getState().loadUsers(organizationId, { force: true }).catch(() => undefined)
+  return true
 }
 
 function scheduleLiveRosterReload(organizationId: string): void {
@@ -605,10 +643,8 @@ function sortRoster(users: User[]): User[] {
  */
 function upsertRosterDocuments(organizationId: string, rows: readonly User[], replace = false): void {
   const state = useOrgUserStore.getState()
-  const current = !replace && state.rosterDocumentsOrgId === organizationId ? state.rosterDocuments : []
-  const byId = new Map(current.map((row) => [row.id, row]))
-  for (const row of rows) byId.set(row.id, row)
-  useOrgUserStore.setState({ rosterDocuments: [...byId.values()], rosterDocumentsOrgId: organizationId })
+  const current = state.rosterDocumentsOrgId === organizationId ? state.rosterDocuments : []
+  useOrgUserStore.setState({ rosterDocuments: rosterDocumentsAfter(current, rows, replace), rosterDocumentsOrgId: organizationId })
 }
 
 function applyLiveRosterRows(organizationId: string, rows: User[]): void {
@@ -655,15 +691,26 @@ function startLiveRoster(organizationId: string, fallbackIds: string[]): void {
   liveRosterUnsubs.push(
     onSnapshot(
       query(collection(db, 'users'), where('organizationId', '==', organizationId)),
+      // Rulebook 1.38.0 §27: metadata changes only tell the data check the server answered.
+      { includeMetadataChanges: true },
       (snap) => {
         if (!stillLive()) return
+        if (isMetadataOnlySnapshot({ documentChangeCount: snap.docChanges().length, deliveredBefore: liveRosterQueryIds !== null })) {
+          if (!snap.metadata.fromCache) liveRosterServerSnapshot = true
+          liveRosterPendingWrites = snap.metadata.hasPendingWrites
+          return
+        }
         const rows: User[] = []
         let removed = false
+        const heldIds = liveRosterQueryIds ?? new Set<string>()
+        liveRosterQueryLive = true
         for (const change of snap.docChanges()) {
           if (change.type === 'removed') {
+            heldIds.delete(change.doc.id)
             removed = true
             continue
           }
+          heldIds.add(change.doc.id)
           const user = userForThisOrganisation(
             change.doc.id,
             change.doc.data() as Record<string, unknown>,
@@ -672,12 +719,17 @@ function startLiveRoster(organizationId: string, fallbackIds: string[]): void {
           )
           if (user) rows.push(user.organizationId ? user : { ...user, organizationId })
         }
+        liveRosterQueryIds = heldIds
+        if (!snap.metadata.fromCache) liveRosterServerSnapshot = true
+        liveRosterPendingWrites = snap.metadata.hasPendingWrites
         applyLiveRosterRows(organizationId, rows)
         // A document leaving the query moved company or was deleted: the full load decides.
         if (removed && !snap.metadata.fromCache) scheduleLiveRosterReload(organizationId)
       },
       () => {
         /* The roster already on screen stands; the next visit reloads it. */
+        liveRosterQueryLive = false
+        if (!liveRosterQueryIds) liveRosterQueryIds = new Set()
       }
     )
   )

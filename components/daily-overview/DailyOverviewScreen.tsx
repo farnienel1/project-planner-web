@@ -22,7 +22,7 @@ import { useHolidayStore } from '@/lib/stores/holidayStore'
 import { useSubcontractorStore } from '@/lib/stores/subcontractorStore'
 import { canViewDailyOverview, hasAdminAccess } from '@/lib/permissions'
 import { dateFromDayKey, dayKey, londonMidnight } from '@/lib/ios-parity/londonTime'
-import { leaveHalfDayLabel } from '@/lib/canonical'
+import { leaveHalfDayLabel, overtimeTotalText } from '@/lib/canonical'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 import { watchSubcontractorBookings } from '@/lib/weekly-report/loadSubcontractorBookings'
 import type { SubcontractorBookingRow } from '@/lib/weekly-report/weeklyReportData'
@@ -200,12 +200,19 @@ export function DailyOverviewScreen() {
             <span>Standard hrs</span>
           </div>
           <div className="st">
-            <b>{overviewFormatHours(model.overtimeWorkedHours)}</b>
-            {/* Rulebook 1.20.3: clock hours at the multiplier; an unpaid break comes off them as plain hours. */}
-            <span>
-              Overtime {model.overtimeMultiplier}×
-              {model.overtimeBreakHours > 0 ? ` − ${overviewFormatHours(model.overtimeBreakHours)}h break` : ''}
-            </span>
+            {/* Rulebook 1.39.0 (owner answer 11 Nov): "12h OT × 1.5 = 18h" (`overtimeTotalText`); clock hours at the
+                multiplier, an unpaid break in them off as plain hours (1.20.3). */}
+            <b>
+              {/* Several rates on one day: the clock hours only (no single rate to show), as iOS. */}
+              {model.overtimeWorkedHours > 0 && !model.overtimeText
+                ? `${overviewFormatHours(model.overtimeWorkedHours)}h OT`
+                : overtimeTotalText({
+                    clockHours: model.overtimeWorkedHours,
+                    multiplier: model.overtimeMultiplier,
+                    breakHours: model.overtimeBreakHours,
+                  }) || '0h OT'}
+            </b>
+            <span>Overtime</span>
           </div>
           <div className="st">
             <b>{model.jobsCount}</b>
@@ -243,7 +250,7 @@ export function DailyOverviewScreen() {
           </div>
           <div className="card-b rows">
             {model.projectCards.length > 0 ? (
-              model.projectCards.map(({ project, people, peopleCount, bookedHours, isSmallWorks }) => (
+              model.projectCards.map(({ project, people, peopleCount, bookedText, isSmallWorks }) => (
                 <div key={project.id} className="card pad" data-hue={isSmallWorks ? 'sw' : 'proj'} style={{ boxShadow: 'none', background: 'var(--soft)' }}>
                   <div className="row">
                     <div className="ico-chip">
@@ -253,7 +260,7 @@ export function DailyOverviewScreen() {
                       <span className="tag">{project.jobNumber}</span>{' '}
                       <b style={{ fontFamily: 'var(--head)', fontSize: 16 }}>{project.siteName}</b>
                       <div className="muted small">
-                        {peopleCount} {peopleCount === 1 ? 'person' : 'people'} · {overviewFormatHours(bookedHours)}h booked
+                        {peopleCount} {peopleCount === 1 ? 'person' : 'people'} · {bookedText}
                       </div>
                     </div>
                     <Link

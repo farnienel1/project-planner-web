@@ -987,6 +987,28 @@ export {
   bookingHoursLabel,
 } from './bookingSlots'
 export { weekendFullDayWindow, weekendRuleForIsoWeekday } from './payrollHours'
+export { bookingHoursExplanation, bookingShortfall } from './bookingHoursExplanation'
+export {
+  overtimeTotalText,
+  overtimeIncludedText,
+  bookedWithOvertimeText,
+  bookingHoursCountText,
+  onSiteHoursText,
+  saveHoursLabel,
+  bookingBreakText,
+  bookingBreakDeductionText,
+  bookingHoursTiles,
+} from './bookingHoursText'
+export {
+  myScheduleClashMarkers,
+  MY_SCHEDULE_CLASH_TITLE,
+  MY_SCHEDULE_CLASH_APPROVED_TITLE,
+  MY_SCHEDULE_CLASH_APPROVED_MESSAGE,
+  MY_SCHEDULE_CLASH_ASK_MANAGER,
+  MY_SCHEDULE_CLASH_OPEN_WARNINGS,
+  MY_SCHEDULE_CLASH_NOT_IN_PERIOD,
+  MY_SCHEDULE_CLASH_DISMISSED,
+} from './myScheduleClash'
 export { intervalCrossesMidnight, nextCalendarDayKey, overnightCarryInterval } from './engine'
 export {
   SUBSCRIPTION_LAPSED_ADMIN_NOTE,
@@ -1320,6 +1342,42 @@ export {
   usersWithSameName,
 } from './duplicateUserNames'
 export type { SameNamePerson, SameNameRosterRow } from './duplicateUserNames'
+
+// Rulebook 1.38.0 §27 (owner decision 11 Nov): the in-app data check (server count vs device count per list).
+export {
+  DATA_PARITY_CHECKS,
+  DATA_PARITY_CONFIRM_DELAY_MS,
+  DATA_PARITY_LOG_LIMIT,
+  DATA_PARITY_MIN_INTERVAL_MS,
+  DATA_PARITY_SKIP_REASONS,
+  DATA_PARITY_TRIGGERS,
+  dataParityCheck,
+  dataParityCheckDefinition,
+  dataParityCheckDue,
+  dataParityConfirm,
+  dataParityLogAppend,
+  dataParityLogEntry,
+  dataParitySumCounts,
+  dataParitySummary,
+} from './dataParity'
+export {
+  DATA_CHECK_PANEL_ORGANIZATION_IDS_FIELD,
+  DATA_CHECK_PANEL_SWITCH_FIELD,
+  dataCheckPanelEnabled,
+  dataCheckPanelVisible,
+} from './platformConfig'
+export type {
+  DataParityCheckDefinition,
+  DataParityListInput,
+  DataParityListKey,
+  DataParityLogEntry,
+  DataParityLogMismatch,
+  DataParityMismatch,
+  DataParityResult,
+  DataParitySkipReason,
+  DataParitySummary,
+  DataParityTrigger,
+} from './dataParity'
 // Rulebook 1.41.0 §5: Replace an overlapping booking from a double-booking row (one batch with its tombstone).
 export {
   BOOKING_CONFLICT_DECISIONS,

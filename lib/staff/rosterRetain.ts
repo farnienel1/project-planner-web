@@ -137,7 +137,45 @@ export type RetainOptions = { authoritative?: boolean } | null | undefined
 export function retainLoadedRows<T>(previous: readonly T[], next: readonly T[], options?: RetainOptions): T[] {
   if (options?.authoritative) return [...next]
   if (next.length === 0 && previous.length > 0) return [...previous]
+  // Rulebook 1.38.0 §27 (data-parity fixture, step "cache-partial"): a snapshot known to come from the local cache
+  // (`authoritative: false`) that is shorter than the list on screen only adds and updates rows — it never drops
+  // one, as iOS `LiveSnapshotMerge.apply` does. Only a server snapshot removes a row. A caller that does not say
+  // where the rows came from (`options` missing) keeps the older behaviour.
+  if (options && options.authoritative === false && next.length < previous.length) {
+    return mergeById(previous, next)
+  }
   return [...next]
+}
+
+function rowId(row: unknown): string | null {
+  if (row && typeof row === 'object' && typeof (row as { id?: unknown }).id === 'string') return (row as { id: string }).id
+  return null
+}
+
+/** `previous` in order with each row replaced by its `next` copy, then the rows only `next` has. */
+function mergeById<T>(previous: readonly T[], next: readonly T[]): T[] {
+  const incoming = new Map<string, T>()
+  for (const row of next) {
+    const id = rowId(row)
+    if (id === null) return [...next]
+    incoming.set(id, row)
+  }
+  const out: T[] = []
+  const seen = new Set<string>()
+  for (const row of previous) {
+    const id = rowId(row)
+    if (id === null) return [...next]
+    if (seen.has(id)) continue
+    seen.add(id)
+    out.push(incoming.get(id) ?? row)
+  }
+  for (const row of next) {
+    const id = rowId(row) as string
+    if (seen.has(id)) continue
+    seen.add(id)
+    out.push(row)
+  }
+  return out
 }
 
 /**

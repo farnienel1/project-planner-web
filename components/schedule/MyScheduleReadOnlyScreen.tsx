@@ -2,6 +2,7 @@
 
 import { ScheduleScreen } from '@/components/schedule/ScheduleScreen'
 import type { Booking } from '@/types'
+import type { MyScheduleClashMarker } from '@/lib/canonical'
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 
 /** Read-only personal schedule for operatives and managers without self-booking enabled. */
@@ -21,6 +22,7 @@ export function MyScheduleReadOnlyScreen({
   payrollPolicy,
   canWriteBookingFor,
   canDeleteBookingFor,
+  clashMarkers,
 }: {
   organizationName: string
   organizationId?: string
@@ -37,6 +39,8 @@ export function MyScheduleReadOnlyScreen({
   payrollPolicy?: OrgPayrollTimePolicy
   canWriteBookingFor?: (booking: Booking) => boolean
   canDeleteBookingFor?: (booking: Booking) => boolean
+  /** Rulebook 1.39.0 §10: the clash marker per booking id (`myScheduleClashMarkers`). */
+  clashMarkers?: ReadonlyMap<string, MyScheduleClashMarker>
 }) {
   return (
     <ScheduleScreen
@@ -56,6 +60,7 @@ export function MyScheduleReadOnlyScreen({
       payrollPolicy={payrollPolicy}
       canWriteBookingFor={canWriteBookingFor}
       canDeleteBookingFor={canDeleteBookingFor}
+      clashMarkers={clashMarkers}
     />
   )
 }

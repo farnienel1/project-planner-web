@@ -8,6 +8,7 @@ import {
   isWeekendDate,
   slotOfferedOnDate,
   weekendBreakdownForDates,
+  weekdayExplanationForDate,
   weekendNotesForDates,
 } from '@/lib/scheduling/bookingSlotRules'
 import { useMemo, useState } from 'react'
@@ -208,6 +209,7 @@ export function QuickAddBookingSheet({
           <HoursBreakdownCard
             breakdown={breakdown}
             dayRows={slot === 'CUSTOM' ? weekendBreakdownForDates([date], workStartTime, workEndTime, breakRemoved, payroll) : []}
+            explanation={slot === 'CUSTOM' ? weekdayExplanationForDate(date, workStartTime, workEndTime, breakRemoved, payroll) : null}
           />
 
           {showNotes ? (

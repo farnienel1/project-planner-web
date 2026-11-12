@@ -8,7 +8,7 @@
  * this comment said so until 1.36.0.
  */
 
-import { bookingOccupiesDay, formerIdAliases, isDailyOverviewRowInScope, isStandardWorkingWeekday, jobKind, multipliedHoursText, payrollMultipliedHours, payrollOutsideMultiplier, unbookedLabourRowsOnDay, weekdayPaidHours, workedHoursSplit, type JobAccessViewer } from '@/lib/canonical'
+import { bookedWithOvertimeText, bookingOccupiesDay, formerIdAliases, isDailyOverviewRowInScope, isStandardWorkingWeekday, jobKind, multipliedHoursText, payrollMultipliedHours, payrollOutsideMultiplier, unbookedLabourRowsOnDay, weekdayPaidHours, workedHoursSplit, type JobAccessViewer } from '@/lib/canonical'
 import { isoWeekdayInZone } from '@/lib/orgTime/zoneTime'
 import { labourPersonFromUser, labourRosterOperative } from '@/lib/warnings/unbookedLabourWarnings'
 import { orgDailyOverviewScope } from '@/lib/warnings/warningScopeRoster'
@@ -68,6 +68,9 @@ export type OverviewPersonRow = {
   timeSlotRaw?: string
   workStartTime?: string
   workEndTime?: string
+  /** 1.39.0: clock hours at the multiplier in this row and their multiplier (`payrollMultipliedHours`), for the job line. */
+  otClockHours?: number
+  otMultipliers?: number[]
 }
 
 /** Shown when a booking's person id matches no user or operative. The booking still appears. */
@@ -149,6 +152,8 @@ export type DailyOverviewModel = {
     people: OverviewPersonRow[]
     peopleCount: number
     bookedHours: number
+    /** 1.39.0: "60.5h booked (incl. 12h OT × 1.5)" (`bookedWithOvertimeText`). */
+    bookedText: string
   }[]
   empty: boolean
 }
@@ -343,6 +348,8 @@ export function buildDailyOverview(params: {
         continue
       }
       existing.hours += row.hours
+      existing.otClockHours = (existing.otClockHours ?? 0) + (row.otClockHours ?? 0)
+      existing.otMultipliers = [...(existing.otMultipliers ?? []), ...(row.otMultipliers ?? [])]
       existing.pillText = `${overviewFormatHours(existing.hours)}h`
       if (existing.subtitle !== row.subtitle) {
         existing.subtitle = `${existing.subtitle} · ${row.subtitle}`
@@ -381,7 +388,9 @@ export function buildDailyOverview(params: {
       // A booking is never hidden because its person cannot be named.
       const name = operativeDisplayName(op, b.operativeId, params.users, userIdAliases) || UNKNOWN_BOOKED_PERSON
       // Rulebook 1.20.2 (`bookingHoursLabel`): the pay rule's hours for the day, e.g. "13h (6.5h × 2)", never clock hours.
-      const shown = bookingHoursLabel(bookingPayrollHours({ ...b, policy: params.payrollPolicy ?? DEFAULT_PAYROLL_POLICY, date: params.day, timeZone: zone }))
+      const priced = bookingPayrollHours({ ...b, policy: params.payrollPolicy ?? DEFAULT_PAYROLL_POLICY, date: params.day, timeZone: zone })
+      const shown = bookingHoursLabel(priced)
+      const ot = payrollMultipliedHours(priced)
       const hours = shown.hours
       const linkedUser = op
         ? params.users.find((row) => row.email.trim().toLowerCase() === op.email.trim().toLowerCase())
@@ -392,8 +401,10 @@ export function buildDailyOverview(params: {
         name,
         initials: initialsFrom(name),
         subtitle: bookingTimesText(b),
-        pillText: shown.label,
+        pillText: `${shown.hours}h`, // 1.39.0 (owner answer 11 Nov): the hours pill only; the sum is in Edit booking.
         hours,
+        otClockHours: ot?.clockHours ?? 0,
+        otMultipliers: ot ? [ot.multiplier] : [],
         bookedOperativeNames: [],
         kind: 'operative',
         bookingId: b.id,
@@ -416,7 +427,9 @@ export function buildDailyOverview(params: {
       const user = userById.get(b.userId) || findUserByAnyId(params.users, b.userId, userIdAliases)
       const name = rosterDisplayName(user) || UNKNOWN_BOOKED_PERSON
       // Rulebook 1.20.2 (`bookingHoursLabel`): the pay rule's hours for the day, e.g. "13h (6.5h × 2)", never clock hours.
-      const shown = bookingHoursLabel(bookingPayrollHours({ ...b, policy: params.payrollPolicy ?? DEFAULT_PAYROLL_POLICY, date: params.day, timeZone: zone }))
+      const priced = bookingPayrollHours({ ...b, policy: params.payrollPolicy ?? DEFAULT_PAYROLL_POLICY, date: params.day, timeZone: zone })
+      const shown = bookingHoursLabel(priced)
+      const ot = payrollMultipliedHours(priced)
       const hours = shown.hours
       rows.push({
         id: `mgr-${b.id}`,
@@ -424,8 +437,10 @@ export function buildDailyOverview(params: {
         name,
         initials: initialsFrom(name),
         subtitle: bookingTimesText(b),
-        pillText: shown.label,
+        pillText: `${shown.hours}h`, // 1.39.0 (owner answer 11 Nov): the hours pill only; the sum is in Edit booking.
         hours,
+        otClockHours: ot?.clockHours ?? 0,
+        otMultipliers: ot ? [ot.multiplier] : [],
         bookedOperativeNames: [],
         kind: 'manager',
         bookingId: b.id,
@@ -444,7 +459,9 @@ export function buildDailyOverview(params: {
       const people = resolveSubcontractorBookingPeople(b, firm)
       const name = formatSubcontractorBookingLabel(firm?.name || 'Subcontractor', people)
       // Rulebook 1.20.2 (`bookingHoursLabel`): the pay rule's hours for the day, e.g. "13h (6.5h × 2)", never clock hours.
-      const shown = bookingHoursLabel(bookingPayrollHours({ ...b, policy: params.payrollPolicy ?? DEFAULT_PAYROLL_POLICY, date: params.day, timeZone: zone }))
+      const priced = bookingPayrollHours({ ...b, policy: params.payrollPolicy ?? DEFAULT_PAYROLL_POLICY, date: params.day, timeZone: zone })
+      const shown = bookingHoursLabel(priced)
+      const ot = payrollMultipliedHours(priced)
       const hours = shown.hours
       rows.push({
         id: `sub-${b.id}`,
@@ -452,8 +469,10 @@ export function buildDailyOverview(params: {
         name,
         initials: initialsFrom(firm?.name || name),
         subtitle: bookingTimesText(b),
-        pillText: shown.label,
+        pillText: `${shown.hours}h`, // 1.39.0 (owner answer 11 Nov): the hours pill only; the sum is in Edit booking.
         hours,
+        otClockHours: ot?.clockHours ?? 0,
+        otMultipliers: ot ? [ot.multiplier] : [],
         bookedOperativeNames: people,
         kind: 'subcontractor',
       })
@@ -468,6 +487,15 @@ export function buildDailyOverview(params: {
       const bookings = bookingsByProject.get(id) || []
       const people = personRowsForProject(id)
       const bookedHours = people.reduce((sum, row) => sum + row.hours, 0)
+      // Rulebook 1.39.0 (owner answer 11 Nov): the overtime is part of the booked hours — "60.5h booked (incl. 12h OT ×
+      // 1.5)"; with different multipliers on one job the rate is left out rather than one of them shown.
+      const otClock = people.reduce((sum, row) => sum + (row.otClockHours ?? 0), 0)
+      const otRates = new Set(people.flatMap((row) => row.otMultipliers ?? []))
+      const bookedText = bookedWithOvertimeText({
+        bookedHours,
+        clockHours: otClock,
+        multiplier: otRates.size === 1 ? [...otRates][0] : null,
+      })
       return {
         project,
         bookings,
@@ -476,6 +504,7 @@ export function buildDailyOverview(params: {
         people,
         peopleCount: people.length,
         bookedHours,
+        bookedText,
       }
     })
     .sort(

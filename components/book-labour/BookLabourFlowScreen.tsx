@@ -1108,6 +1108,7 @@ function PickPerson({
             key={person.id}
             type="button"
             onClick={() => (multiSelect ? onToggleId(person.id) : onPick(person))}
+            aria-pressed={multiSelect ? selectedIds.has(person.id) : undefined}
             className="flex w-full items-center gap-3 px-3.5 py-3 text-left hover:bg-[var(--bg)]"
           >
             {multiSelect ? (

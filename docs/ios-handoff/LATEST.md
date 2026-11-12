@@ -1,6 +1,6 @@
 # iOS follow-on — rulebook 1.41.0
 
-Generated 2026-11-11 by `npm run rulebook:handoff` in project-planner-web. Paste this whole file into the iOS agent.
+Generated 2026-11-12 by `npm run rulebook:handoff` in project-planner-web. Paste this whole file into the iOS agent.
 The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; never edit the iOS mirror by hand.
 
 ```
@@ -8,9 +8,9 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ║ FOLLOW-ON — paste into the iOS agent                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
-Rulebook version: 1.37.0 → 1.41.0
-Packed hash: 9a1c002e597fe01c745edec10dec6bcc2e8ab5308ef594772eb35e19c88e54d2
-Rulebook sha256: ef0847f4c94fb71cc158b55c2c7730de86f1b23d46315323a3047b30d0611b86
+Rulebook version: 1.41.0 → 1.41.0
+Packed hash: ab7e673f1f3dfdc260e39a4c3d534a431cf58a06d7eb2e8c98a73881f16700ee
+Rulebook sha256: c890f1162ee91e16a048ad2b83502a50093d127104cf4121ac19c2adc6f4e945
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -18,14 +18,16 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
   web docs/RULEBOOK.md                              → iOS docs/RULEBOOK.md
   web lib/canonical/parity-fixture.json             → iOS ProjectPlannerTests/CanonicalParityFixture.json
   web lib/canonical/cross-platform-contract.json    → iOS ProjectPlannerTests/CrossPlatformContract.json
+  web lib/canonical/data-parity-fixture.json        → iOS ProjectPlannerTests/DataParityFixture.json
 Contract sha256: 59d6bc6123f250e1f57599240eb3190ab48f5cd2532f8281a99360d9e187d86b
+Data-parity fixture sha256: c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: BOOKING_CONFLICT_DECISIONS, BOOKING_REPLACE_CHOSEN_TEXT, BOOKING_REPLACE_COLLECTIONS, BOOKING_REPLACE_HELP, BOOKING_REPLACE_LABEL, bookingReplaceOffer, bookingReplaceWrites, scheduleDayCell
+Exports added: DATA_CHECK_PANEL_ORGANIZATION_IDS_FIELD, DATA_CHECK_PANEL_SWITCH_FIELD, DATA_PARITY_CHECKS, DATA_PARITY_CONFIRM_DELAY_MS, DATA_PARITY_LOG_LIMIT, DATA_PARITY_MIN_INTERVAL_MS, DATA_PARITY_SKIP_REASONS, DATA_PARITY_TRIGGERS, MY_SCHEDULE_CLASH_APPROVED_MESSAGE, MY_SCHEDULE_CLASH_APPROVED_TITLE, MY_SCHEDULE_CLASH_ASK_MANAGER, MY_SCHEDULE_CLASH_DISMISSED, MY_SCHEDULE_CLASH_NOT_IN_PERIOD, MY_SCHEDULE_CLASH_OPEN_WARNINGS, MY_SCHEDULE_CLASH_TITLE, bookedWithOvertimeText, bookingBreakDeductionText, bookingBreakText, bookingHoursCountText, bookingHoursExplanation, bookingHoursTiles, bookingShortfall, dataCheckPanelEnabled, dataCheckPanelVisible, dataParityCheck, dataParityCheckDefinition, dataParityCheckDue, dataParityConfirm, dataParityLogAppend, dataParityLogEntry, dataParitySumCounts, dataParitySummary, myScheduleClashMarkers, onSiteHoursText, overtimeIncludedText, overtimeTotalText, saveHoursLabel
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bookingReplace.ts, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/jobScheduleLeave.ts, lib/canonical/offlinePolicy.ts, lib/canonical/scheduleReplace141.test.ts
+Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bookingHoursExplanation.test.ts, lib/canonical/bookingHoursExplanation.ts, lib/canonical/bookingHoursText.test.ts, lib/canonical/bookingHoursText.ts, lib/canonical/bookingSlots.ts, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/data-parity-fixture.json, lib/canonical/dataParity.test.ts, lib/canonical/dataParity.ts, lib/canonical/index.ts, lib/canonical/myScheduleClash.ts, lib/canonical/parity-fixture.json, lib/canonical/platformConfig.ts
 Done when:
-- [ ] Packed hash in iOS equals 9a1c002e597fe01c745edec10dec6bcc2e8ab5308ef594772eb35e19c88e54d2
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 ef0847f4c94fb71cc158b55c2c7730de86f1b23d46315323a3047b30d0611b86)
+- [ ] Packed hash in iOS equals ab7e673f1f3dfdc260e39a4c3d534a431cf58a06d7eb2e8c98a73881f16700ee
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 c890f1162ee91e16a048ad2b83502a50093d127104cf4121ac19c2adc6f4e945)
 - [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.41.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
@@ -49,7 +51,9 @@ Done when:
 
 ## New rulebook sections
 
-- 1.41.0 — 2026-11-11
+- 27. Data check (1.38.0)
+- 1.39.0 — 2026-11-11
+- 1.38.0 — 2026-11-11
 
 ## Workflow for the iOS agent
 
