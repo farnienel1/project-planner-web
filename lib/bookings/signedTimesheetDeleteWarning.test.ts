@@ -67,3 +67,14 @@ test('signedTimesheetDeleteWarningFromDocs: an exported sheet warns too', () => 
   const exported = { id: 'timesheet_U-SAM_x', data: { userId: 'U-SAM', weekStartKey: '2026-11-01', weekEndKey: '2026-11-15', exportedAt: '2026-11-16T09:00:00Z' } }
   assert.equal(signedTimesheetDeleteWarningFromDocs('2026-11-02', [exported], 'Europe/London'), BOOKING_DELETE_SIGNED_TIMESHEET_WARNING)
 })
+
+test('signedTimesheetCandidatesFromDocs: a sheet stored without userId is read through its document id', () => {
+  const noUserId = {
+    id: 'timesheet_U-SAM_1793404800',
+    data: { weekStartKey: '2026-11-01', weekEndKey: '2026-11-15', managerSignedAt: '2026-11-16T09:00:00Z' },
+  }
+  assert.equal(signedTimesheetCandidatesFromDocs([noUserId], 'Europe/London').length, 1)
+  assert.equal(signedTimesheetDeleteWarningFromDocs('2026-11-09', [noUserId], 'Europe/London'), BOOKING_DELETE_SIGNED_TIMESHEET_WARNING)
+  // Not a timesheet document id: nothing.
+  assert.equal(signedTimesheetCandidatesFromDocs([{ id: 'jobTypes', data: noUserId.data }], 'Europe/London').length, 0)
+})

@@ -6,13 +6,17 @@
  * text once in an alert titled "Booking deleted" (`BookingDeleteNotice` here).
  *
  * The person's timesheets are `settings` documents where `userId ==` each of their ids — the query User Timesheets,
- * the weekly report feed and the Payrun Snapshot already make. A read the viewer may not make (private pay on, a
+ * the weekly report feed and the Payrun Snapshot already make — and, for a sheet stored without `userId`, the
+ * `timesheet_{id}_…` document ids (`timesheetDocumentSubjectId`). A read the viewer may not make (private pay on, a
  * manager who is not a pay viewer) gives no sheets and so no warning, as on iOS.
  */
 
-import { collection, getDocs, query, where } from 'firebase/firestore'
+import { collection, documentId, getDocs, query, where } from 'firebase/firestore'
 import { create } from 'zustand'
 import { db } from '@/lib/firebase/config'
+import { captureOrganizationContext, organizationContextStillCurrent } from '@/lib/canonical'
+import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
+import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { dayKeyInZone } from '@/lib/orgTime/zoneTime'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 import { bookedPersonTimesheetUserIds, signedTimesheetDeleteWarningFromDocs } from '@/lib/bookings/signedTimesheetDeleteWarning'
@@ -33,11 +37,21 @@ export const useBookingDeleteNoticeStore = create<BookingDeleteNoticeState>((set
   clear: () => set({ message: null }),
 }))
 
+/**
+ * The person's `settings/timesheet_*` documents: one `userId ==` query per id (the query User Timesheets, the weekly
+ * report feed and the Payrun Snapshot make), plus one document-id range per id (`timesheet_{id}_…`) for a sheet stored
+ * without `userId` (`timesheetDocumentSubjectId`). Whole documents are read only to answer yes / no. A query the viewer
+ * may not make (private pay on) is skipped.
+ */
 async function personTimesheetDocs(organizationId: string, userIds: ReadonlyArray<string>) {
+  const settings = collection(db, 'organizations', organizationId, 'settings')
   const results = await Promise.all(
-    userIds.map((userId) =>
-      getDocs(query(collection(db, 'organizations', organizationId, 'settings'), where('userId', '==', userId))).catch(() => null)
-    )
+    userIds.flatMap((userId) => [
+      getDocs(query(settings, where('userId', '==', userId))).catch(() => null),
+      getDocs(
+        query(settings, where(documentId(), '>=', `timesheet_${userId}_`), where(documentId(), '<', `timesheet_${userId}_\uf8ff`))
+      ).catch(() => null),
+    ])
   )
   const seen = new Set<string>()
   const docs: Array<{ id: string; data: Record<string, unknown> }> = []
@@ -54,24 +68,25 @@ async function personTimesheetDocs(organizationId: string, userIds: ReadonlyArra
 /**
  * Best effort, after a delete that went through: reads the booked person's timesheets and shows the warning when the
  * rulebook gives one. `personId` is the booking's stored person (`operativeId` for a labour booking, `userId` for a
- * manager schedule booking); `date` its day. Never throws.
+ * manager schedule booking); `date` its day. The roster, the zone and the organisation context are taken before any
+ * read; nothing is shown when the organisation changed meanwhile. Never throws.
  */
 export function announceSignedTimesheetDelete(input: { organizationId: string; personId: string | null | undefined; date: Date | string | number | null | undefined }): void {
+  const organizationId = String(input.organizationId ?? '').trim()
+  if (!organizationId || !db || input.date == null) return
+  const date = input.date instanceof Date ? input.date : new Date(input.date)
+  if (Number.isNaN(date.getTime())) return
+  const captured = captureOrganizationContext()
+  if (!organizationContextStillCurrent(organizationId, captured)) return
+  const { users, userIdAliases } = useOrgUserStore.getState()
+  const ids = bookedPersonTimesheetUserIds(input.personId, users, useOperativeStore.getState().operatives, userIdAliases)
+  if (ids.length === 0) return
+  const timeZone = organizationZoneOr()
+  const dayKey = dayKeyInZone(date, timeZone)
   void (async () => {
-    const organizationId = String(input.organizationId ?? '').trim()
-    if (!organizationId || !db || input.date == null) return
-    const date = input.date instanceof Date ? input.date : new Date(input.date)
-    if (Number.isNaN(date.getTime())) return
-    const [{ useOrgUserStore }, { useOperativeStore }] = await Promise.all([
-      import('@/lib/stores/siteAuditStore'),
-      import('@/lib/stores/operativeStore'),
-    ])
-    const { users, userIdAliases } = useOrgUserStore.getState()
-    const ids = bookedPersonTimesheetUserIds(input.personId, users, useOperativeStore.getState().operatives, userIdAliases)
-    if (ids.length === 0) return
-    const timeZone = organizationZoneOr()
     const docs = await personTimesheetDocs(organizationId, ids)
-    const warning = signedTimesheetDeleteWarningFromDocs(dayKeyInZone(date, timeZone), docs, timeZone)
+    if (!organizationContextStillCurrent(organizationId, captured)) return
+    const warning = signedTimesheetDeleteWarningFromDocs(dayKey, docs, timeZone)
     if (warning) useBookingDeleteNoticeStore.getState().show(warning)
   })().catch(() => undefined)
 }

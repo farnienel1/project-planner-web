@@ -17,6 +17,7 @@ import {
   personIdSet,
   resolveBookingPerson,
   rosterAliasIdsFor,
+  timesheetDocumentSubjectId,
   type SignedTimesheetCandidate,
 } from '@/lib/canonical'
 import { rulebookPerson, rulebookRoster } from '@/lib/staff/rulebookPeople'
@@ -70,9 +71,12 @@ export function signedTimesheetCandidatesFromDocs(
 ): SignedTimesheetCandidate[] {
   const out: SignedTimesheetCandidate[] = []
   for (const row of docs || []) {
-    const sheet = parsePayrunSnapshotSheet(row.id, row.data, timeZone)
+    // A sheet stored without `userId` names its person in its document id (`timesheetDocumentSubjectId`).
+    const data = row.data || {}
+    const subject = typeof data.userId === 'string' && data.userId.trim() ? null : timesheetDocumentSubjectId(row.id)
+    const sheet = parsePayrunSnapshotSheet(row.id, subject ? { ...data, userId: subject } : data, timeZone)
     if (!sheet || !sheet.endDayKey) continue
-    out.push({ ...(row.data || {}), startDayKey: sheet.startDayKey, endDayKey: sheet.endDayKey })
+    out.push({ ...data, startDayKey: sheet.startDayKey, endDayKey: sheet.endDayKey })
   }
   return out
 }
