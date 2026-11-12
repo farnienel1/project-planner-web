@@ -1,6 +1,6 @@
 # iOS follow-on — rulebook 1.39.0
 
-Generated 2026-11-11 by `npm run rulebook:handoff` in project-planner-web. Paste this whole file into the iOS agent.
+Generated 2026-11-12 by `npm run rulebook:handoff` in project-planner-web. Paste this whole file into the iOS agent.
 The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; never edit the iOS mirror by hand.
 
 ```
@@ -9,8 +9,8 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
 Rulebook version: 1.39.0 → 1.39.0
-Packed hash: 00f7afac575c1a2ba9b3c5f2403a0550136fc71649786444b754d24a69acc203
-Rulebook sha256: 0a5255ef56f60b111c0b5949d62c4316709e3134018120511d02f677fe0dcc48
+Packed hash: b01fe373682cb504974ccd5442e91c96e5139dbf3df158b07fc4f4b443220c3e
+Rulebook sha256: ff316930fe06e1fd5f289aa61d6533879389037877f3564fa83234967c1f0c33
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -18,14 +18,16 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
   web docs/RULEBOOK.md                              → iOS docs/RULEBOOK.md
   web lib/canonical/parity-fixture.json             → iOS ProjectPlannerTests/CanonicalParityFixture.json
   web lib/canonical/cross-platform-contract.json    → iOS ProjectPlannerTests/CrossPlatformContract.json
+  web lib/canonical/data-parity-fixture.json        → iOS ProjectPlannerTests/DataParityFixture.json
 Contract sha256: 59d6bc6123f250e1f57599240eb3190ab48f5cd2532f8281a99360d9e187d86b
+Data-parity fixture sha256: c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: MY_SCHEDULE_CLASH_DISMISSED, MY_SCHEDULE_CLASH_NOT_IN_PERIOD, bookingBreakDeductionText
+Exports added: DATA_CHECK_PANEL_ORGANIZATION_IDS_FIELD, DATA_CHECK_PANEL_SWITCH_FIELD, DATA_PARITY_CHECKS, DATA_PARITY_CONFIRM_DELAY_MS, DATA_PARITY_LOG_LIMIT, DATA_PARITY_MIN_INTERVAL_MS, DATA_PARITY_SKIP_REASONS, DATA_PARITY_TRIGGERS, dataCheckPanelEnabled, dataCheckPanelVisible, dataParityCheck, dataParityCheckDefinition, dataParityCheckDue, dataParityConfirm, dataParityLogAppend, dataParityLogEntry, dataParitySumCounts, dataParitySummary
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bookingHoursExplanation.test.ts, lib/canonical/bookingHoursExplanation.ts, lib/canonical/bookingHoursText.test.ts, lib/canonical/bookingHoursText.ts, lib/canonical/bundleEntry.ts, lib/canonical/index.ts, lib/canonical/myScheduleClash.ts, lib/canonical/parity-fixture.json
+Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/data-parity-fixture.json, lib/canonical/dataParity.test.ts, lib/canonical/dataParity.ts, lib/canonical/index.ts, lib/canonical/platformConfig.ts
 Done when:
-- [ ] Packed hash in iOS equals 00f7afac575c1a2ba9b3c5f2403a0550136fc71649786444b754d24a69acc203
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 0a5255ef56f60b111c0b5949d62c4316709e3134018120511d02f677fe0dcc48)
+- [ ] Packed hash in iOS equals b01fe373682cb504974ccd5442e91c96e5139dbf3df158b07fc4f4b443220c3e
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 ff316930fe06e1fd5f289aa61d6533879389037877f3564fa83234967c1f0c33)
 - [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.39.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
@@ -42,8 +44,12 @@ Done when:
 - **Review fixes (11 Nov)**: `myScheduleClashMarkers` takes `scanDayKeys` and offers "Open Warnings" only for a clash Warnings lists now (`MY_SCHEDULE_CLASH_NOT_IN_PERIOD`, `MY_SCHEDULE_CLASH_DISMISSED`), with the viewer's real scope; `bookingShortfall` takes the day's bookings and measures coverage of the working day (lunch window excluded), never paid hours (breaking for the 1.39.0 draft that took paid hours); new `bookingBreakDeductionText`; `bookingBreakText.toggleLabel`; `bookingHoursExplanation` names a booking's own overtime rate.
 - **Daily Overview moves in one batch** (§6, owner answer 11 Nov, web): the new booking, the old booking's delete and its tombstone are one write (was a create then a delete).
 - Not in this release (reported to the owner): "Replace existing booking" beside a double-booking row (item 2) — see the PR.
-- Merges after 1.38.0 (data parity, in flight); version 1.38.0 is that release's.
+- Merges after 1.38.0 (data parity, merged 12 Nov).
 
+## New rulebook sections
+
+- 27. Data check (1.38.0)
+- 1.38.0 — 2026-11-11
 
 ## Workflow for the iOS agent
 
