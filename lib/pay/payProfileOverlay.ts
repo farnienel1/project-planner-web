@@ -117,6 +117,31 @@ export async function payEditorRecord(
   return payEditorStartingValues(data, profile, { privatePay }).record
 }
 
+/**
+ * Starts reading `subjectId`'s own pay profile now, while the caller is still reading the users document, and returns
+ * a loader for `payEditorRecord` that answers that one read from the read already started (every other id is read as
+ * before). Same documents, same result: only the two reads overlap instead of running one after the other. The early
+ * read is made only while `privatePay` is on for `organizationId`; if it was off then and `payEditorRecord` finds it
+ * on, the loader reads again.
+ */
+export function startPayEditorProfileRead(
+  organizationId: string | null | undefined,
+  subjectId: string,
+  load: (organizationId: string, subjectId: string) => Promise<PayProfileDocument | null> = defaultLoadPayProfile
+): (organizationId: string, subjectId: string) => Promise<PayProfileDocument | null> {
+  if (!organizationId || !subjectId) return load
+  const early = (async (): Promise<{ read: boolean; profile: PayProfileDocument | null }> => {
+    await securitySwitchesReady()
+    if (!readsPersonPayProfile(organizationId)) return { read: false, profile: null }
+    return { read: true, profile: await load(organizationId, subjectId).catch(() => null) }
+  })()
+  return async (org, id) => {
+    if (org !== organizationId || id !== subjectId) return load(org, id)
+    const result = await early
+    return result.read ? result.profile : load(org, id)
+  }
+}
+
 function defaultLoadPayProfile(organizationId: string, subjectId: string): Promise<PayProfileDocument | null> {
   return loadPayProfile(organizationId, subjectId)
 }
