@@ -8,7 +8,7 @@
  * this comment said so until 1.36.0.
  */
 
-import { bookedWithOvertimeText, bookingOccupiesDay, formerIdAliases, isDailyOverviewRowInScope, isStandardWorkingWeekday, jobKind, multipliedHoursText, payrollMultipliedHours, payrollOutsideMultiplier, unbookedLabourRowsOnDay, weekdayPaidHours, workedHoursSplit, type JobAccessViewer } from '@/lib/canonical'
+import { bookedWithOvertimeText, bookingOccupiesDay, scheduleCellHours, scheduleCellKind, type ScheduleCellKind, formerIdAliases, isDailyOverviewRowInScope, isStandardWorkingWeekday, jobKind, multipliedHoursText, payrollMultipliedHours, payrollOutsideMultiplier, unbookedLabourRowsOnDay, weekdayPaidHours, workedHoursSplit, type JobAccessViewer } from '@/lib/canonical'
 import { isoWeekdayInZone } from '@/lib/orgTime/zoneTime'
 import { labourPersonFromUser, labourRosterOperative } from '@/lib/warnings/unbookedLabourWarnings'
 import { orgDailyOverviewScope } from '@/lib/warnings/warningScopeRoster'
@@ -24,7 +24,7 @@ import {
 } from '@/lib/scheduling/paidHours'
 import { DEFAULT_PAYROLL_POLICY, type OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import { bookingHoursLabel } from '@/lib/canonical/bookingSlots'
-import { bookingTimesText } from '@/lib/scheduling/paidHours'
+import { bookingTimesParts, bookingTimesText } from '@/lib/scheduling/paidHours'
 import type { Booking, HolidayBooking, Operative, Project, User } from '@/types'
 import type { ManagerLocationType, ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import {
@@ -71,6 +71,16 @@ export type OverviewPersonRow = {
   /** 1.39.0: clock hours at the multiplier in this row and their multiplier (`payrollMultipliedHours`), for the job line. */
   otClockHours?: number
   otMultipliers?: number[]
+  /**
+   * Display only (UI pack U1): the row's paid hours and the paid hours at a multiplier (`scheduleCellHours` of each
+   * booking's `payrollHoursResult`, added up when one person has several bookings on the job) and the tile kind the
+   * scheduling week shows for them (`scheduleCellKind`). Never changes a figure.
+   */
+  cellPaidHours: number
+  cellOvertimeHours: number
+  cell: ScheduleCellKind
+  /** Display only (UI pack U2): each booking's shift and clock range (`bookingTimesParts`), in `subtitle` order. */
+  bookingParts: { shift: string; times: string | null }[]
 }
 
 /** Shown when a booking's person id matches no user or operative. The booking still appears. */
@@ -83,6 +93,20 @@ function holidayCovers(booking: HolidayBooking, day: Date): boolean {
   const key = dayKey(day)
   const { startDayKey, endDayKey } = holidayBookingDayKeys(booking)
   return startDayKey <= key && key <= endDayKey
+}
+
+/** UI pack U1 / U2 display fields of one booking row: `scheduleCellHours` → `scheduleCellKind`, `bookingTimesParts`. */
+function cellFields(
+  priced: Parameters<typeof scheduleCellHours>[0],
+  booking: { timeSlot?: string | null; workStartTime?: string | null; workEndTime?: string | null }
+): Pick<OverviewPersonRow, 'cellPaidHours' | 'cellOvertimeHours' | 'cell' | 'bookingParts'> {
+  const hours = scheduleCellHours(priced)
+  return {
+    cellPaidHours: hours.paidHours,
+    cellOvertimeHours: hours.overtimeHours,
+    cell: scheduleCellKind({ ...hours, timeSlot: booking.timeSlot ?? null }),
+    bookingParts: [bookingTimesParts(booking)],
+  }
 }
 
 export function initialsFrom(name: string): string {
@@ -344,12 +368,18 @@ export function buildDailyOverview(params: {
     for (const row of rows) {
       const existing = byPerson.get(row.personKey)
       if (!existing) {
-        byPerson.set(row.personKey, { ...row, bookedOperativeNames: [...row.bookedOperativeNames] })
+        byPerson.set(row.personKey, { ...row, bookedOperativeNames: [...row.bookedOperativeNames], bookingParts: [...row.bookingParts] })
         continue
       }
       existing.hours += row.hours
       existing.otClockHours = (existing.otClockHours ?? 0) + (row.otClockHours ?? 0)
       existing.otMultipliers = [...(existing.otMultipliers ?? []), ...(row.otMultipliers ?? [])]
+      // Rulebook 1.37.0 (`scheduleCellHours`): several bookings add up before `scheduleCellKind`; a merged row has no
+      // single stored slot, so its kind comes from the hours.
+      existing.cellPaidHours += row.cellPaidHours
+      existing.cellOvertimeHours += row.cellOvertimeHours
+      existing.cell = scheduleCellKind({ paidHours: existing.cellPaidHours, overtimeHours: existing.cellOvertimeHours })
+      existing.bookingParts = [...existing.bookingParts, ...row.bookingParts]
       existing.pillText = `${overviewFormatHours(existing.hours)}h`
       if (existing.subtitle !== row.subtitle) {
         existing.subtitle = `${existing.subtitle} · ${row.subtitle}`
@@ -405,6 +435,7 @@ export function buildDailyOverview(params: {
         hours,
         otClockHours: ot?.clockHours ?? 0,
         otMultipliers: ot ? [ot.multiplier] : [],
+        ...cellFields(priced, b),
         bookedOperativeNames: [],
         kind: 'operative',
         bookingId: b.id,
@@ -441,6 +472,7 @@ export function buildDailyOverview(params: {
         hours,
         otClockHours: ot?.clockHours ?? 0,
         otMultipliers: ot ? [ot.multiplier] : [],
+        ...cellFields(priced, b),
         bookedOperativeNames: [],
         kind: 'manager',
         bookingId: b.id,
@@ -473,6 +505,7 @@ export function buildDailyOverview(params: {
         hours,
         otClockHours: ot?.clockHours ?? 0,
         otMultipliers: ot ? [ot.multiplier] : [],
+        ...cellFields(priced, b),
         bookedOperativeNames: people,
         kind: 'subcontractor',
       })
