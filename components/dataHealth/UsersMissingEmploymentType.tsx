@@ -34,7 +34,10 @@ export function UsersMissingEmploymentType({ organizationId }: { organizationId:
     getDocs(query(collection(db, 'users'), where('organizationId', '==', organizationId)))
       .then((snap) => {
         if (cancelled) return
-        const docs = snap.docs.map((row) => ({ id: row.id, ...overlayRosterPay(organizationId, row.id, row.data() as Record<string, unknown>) }))
+        const docs: Array<Record<string, unknown> & { id: string }> = snap.docs.map((row) => ({
+          ...overlayRosterPay(organizationId, row.id, row.data() as Record<string, unknown>),
+          id: row.id,
+        }))
         const ids = new Set(usersMissingEmploymentType(docs as never))
         setMissing(
           docs

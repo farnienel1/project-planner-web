@@ -20,9 +20,9 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
   web lib/canonical/cross-platform-contract.json    → iOS ProjectPlannerTests/CrossPlatformContract.json
 Contract sha256: 920a4a7cc0c1c4f5f95045a8713d7d52cff84f1d91be1559fe83f7a964f45045
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: USER_MISSING_EMPLOYMENT_TYPE_MESSAGE, annualLeaveAdjustmentAuthorName, annualLeaveBalanceNotes, annualLeaveEmploymentInput, employmentTypeTransition, usersMissingEmploymentType
+Exports added: none
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, firestore.rules, lib/canonical/annualLeave140.test.ts, lib/canonical/annualLeaveAdjustments.ts, lib/canonical/annualLeaveBalance.ts, lib/canonical/bundleEntry.ts, lib/canonical/createDocuments.ts, lib/canonical/cross-platform-contract.json, lib/canonical/crossPlatformContract.samples.ts, lib/canonical/index.ts, lib/canonical/inviteAccept.ts, lib/canonical/myProfileSummary.ts, lib/canonical/payRate.ts, lib/canonical/recordsDocuments.ts, lib/canonical/userProfile.ts
+Web files that changed the rules: none recorded
 Done when:
 - [ ] Packed hash in iOS equals b4cd67b6388fc7c140f589997fd37efa8eafccbe9fb35d6e056065ddd9ef0b3e
 - [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 11fa7bf379600e816c62d1cad58819e7201c29aeaeddc71ee0506b19ecb39d57)
