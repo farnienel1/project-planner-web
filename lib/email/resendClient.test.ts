@@ -147,3 +147,21 @@ test('sendProjectPlannerEmail against a function without CC support reports no C
   }, new Response(JSON.stringify({ sent: true, results: [{ to: 'a@example.com', id: 'x' }] }), { status: 200 }))
   assert.deepEqual(result, { ids: ['x'], cc: [], ccSupported: false })
 })
+
+test('sendProjectPlannerEmail forwards requestId (the email function sends one request to one recipient once)', async () => {
+  const calls = await capture(() =>
+    sendProjectPlannerEmail({
+      to: 'wendy@pipes.example',
+      subject: 'Quote request',
+      html: '<p>Hi</p>',
+      orgId: 'org-1',
+      idToken: 'id-token-1',
+      requestId: ' 6f1d2c3b-4a5e-4f60-8172-93a4b5c6d7e8 ',
+    })
+  )
+  assert.equal(calls[0].body.requestId, '6f1d2c3b-4a5e-4f60-8172-93a4b5c6d7e8')
+  const without = await capture(() =>
+    sendProjectPlannerEmail({ to: 'wendy@pipes.example', subject: 'Quote request', html: '<p>Hi</p>' })
+  )
+  assert.equal('requestId' in without[0].body, false)
+})

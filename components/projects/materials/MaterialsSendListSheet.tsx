@@ -319,6 +319,8 @@ export function MaterialsSendListSheet({
     const items = materials.filter((item) => materialIds.includes(item.id))
     const recipients = buildRecipientSnapshots(wholesalers, selectedContactIds, effectiveOneOffRecipients)
     const senderName = `${user.firstName || ''} ${user.surname || ''}`.trim() || user.email
+    // One id for this Send press: the email function never sends this request to the same recipient twice.
+    const requestId = newUuid()
     try {
       const headers = await jsonAuthHeaders()
       const response = await fetch('/api/materials/send-request-email', {
@@ -326,6 +328,7 @@ export function MaterialsSendListSheet({
         headers,
         body: JSON.stringify({
           organizationId: organization.id,
+          requestId,
           requestType: type,
           sendAsPlainText,
           // Rulebook 1.27.0 (§16, `materialRequestJobCheck`): the job's document id, so the route checks the sender
