@@ -3,7 +3,8 @@
 import { PAY_RATE_REQUIRED_MESSAGE, ghostBadgeLabel, isGhostUser } from '@/lib/canonical'
 import { usersWithoutPayRate } from '@/lib/staff/payRateRequired'
 import { useEffect, useMemo, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { usePendingNavigation } from '@/lib/navigation/usePendingNavigation'
+import { PendingSpinner } from '@/components/shell/PendingSpinner'
 import Link from 'next/link'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
@@ -50,6 +51,11 @@ const SEGMENTS: { key: RosterSegment; title: string }[] = [
   { key: 'inactive', title: 'Inactive' },
   { key: 'pending', title: 'Pending' },
 ]
+
+/** A person's profile, opened from Manage Users (unchanged URL). */
+function userHref(user: User): string {
+  return `/dashboard/users/${user.id}?from=users`
+}
 
 function displayName(user: User): string {
   return `${user.firstName} ${user.surname}`.trim() || user.email
@@ -141,7 +147,7 @@ function PeopleNotice({
 }
 
 export function ManageUsersScreen() {
-  const router = useRouter()
+  const { navigate: navigateTo, prefetch, pendingHref } = usePendingNavigation()
   const { user: currentUser, organization } = useAuthStore()
   const { users, error: rosterError, rosterLoadedOrgId, claimedEmails, loadUsers } = useOrgUserStore()
   const { sendPasswordReset } = useUserStore()
@@ -256,7 +262,7 @@ export function ManageUsersScreen() {
   }
 
   function selectUser(user: User) {
-    router.push(`/dashboard/users/${user.id}?from=users`)
+    navigateTo(userHref(user))
   }
 
   async function sendReset(user: User) {
@@ -442,7 +448,13 @@ export function ManageUsersScreen() {
               const busy = busyRow === user.id
 
               return (
-                <tr key={user.id} className="click" onClick={() => selectUser(user)}>
+                <tr
+                  key={user.id}
+                  className="click"
+                  onClick={() => selectUser(user)}
+                  onPointerEnter={() => prefetch(userHref(user))}
+                  aria-busy={pendingHref === userHref(user) || undefined}
+                >
                   <td>
                     <span className="pu-who">
                       <UserAvatar user={user} size={36} className="rounded-full" gradient={avatarGradient(user)} />
@@ -450,6 +462,7 @@ export function ManageUsersScreen() {
                         <button
                           type="button"
                           className="pu-rowbtn"
+                          onFocus={() => prefetch(userHref(user))}
                           onClick={(event) => {
                             event.stopPropagation()
                             selectUser(user)
@@ -499,10 +512,16 @@ export function ManageUsersScreen() {
                       <button
                         type="button"
                         onClick={() => selectUser(user)}
+                        onFocus={() => prefetch(userHref(user))}
                         aria-label={`Open ${displayName(user)}`}
+                        aria-busy={pendingHref === userHref(user) || undefined}
                         className="pu-btn icon sm"
                       >
-                        <ChevronRightIcon width={16} height={16} aria-hidden="true" />
+                        {pendingHref === userHref(user) ? (
+                          <PendingSpinner />
+                        ) : (
+                          <ChevronRightIcon width={16} height={16} aria-hidden="true" />
+                        )}
                       </button>
                     </span>
                   </td>
