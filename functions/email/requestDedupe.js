@@ -2,23 +2,30 @@
 
 /**
  * Idempotency for `sendEmail` (docs/EMAIL_FUNCTION.md "Request id"). A caller that may send the same request twice —
- * the iPhone replaying a queued material order after a crash or a timeout, or the web route retried — names it with
- * `requestId`. The first call claims `emailRequestSends/{key}` in a Firestore transaction and sends; any later call
- * with the same key gets the first call's answer back (`deduped: true`) without sending again and without counting
- * against the rate limit. A request without `requestId` is unchanged (older app builds).
+ * the iPhone replaying a queued material order after a crash or a timeout, or retrying after an online timeout —
+ * names it with `requestId`. Once the caller has passed the membership and level checks, the first call claims
+ * `emailRequestSends/{key}` in a Firestore transaction and sends; any later call with the same key gets the first
+ * call's answer back (`deduped: true`) without sending again, without counting against the rate limit and without
+ * re-running the checks that can change between sends (job number, wholesaler contacts) — nothing new is sent. A
+ * request without `requestId` is unchanged (older app builds).
  *
- * The key is the SHA-256 of the caller (uid, or `server`), the organisation, the template, the request id and the
- * recipients that will be sent to (trimmed, lower case, sorted). So the web route, which makes one call per recipient
- * with one request id, gets one key per recipient; and nobody can block another caller's request by reusing its id.
+ * The key is the SHA-256 of the caller (uid, or `server`), the organisation, the template, the request id, the
+ * recipients asked for (trimmed, lower case, sorted) and a hash of the request's content (`requestContentHash`: the
+ * template data and attachments the message is rendered from). The rendered message itself is not hashed because it
+ * carries the send time. So a reused id with different content is a different request and is sent, never swallowed;
+ * the web route (one call per recipient, one id) gets one key per recipient; and nobody can block another caller's
+ * request by reusing its id.
  *
  * States: `pending` while the first call is sending, `sent` once it answered. A `pending` claim younger than
- * `PENDING_STALE_MS` makes a second call wait (409, try again later); an older one belongs to a call that died
- * before it finished (the function times out after 60 s) and is taken over. A claim is released (deleted) when
- * nothing was sent — rate limited or every message refused — so a retry sends.
+ * `PENDING_STALE_MS` makes a second call wait (409 `inProgress`); an older one belongs to a call that died before it
+ * finished (the function times out after 60 s) and is taken over. A claim is released (deleted) when nothing was sent
+ * — refused by a later check, rate limited or every message refused — so a retry sends.
  *
- * Only the Admin SDK touches the collection: the security rules have no match for it (top-level, like
- * `emailRateLimits`), so apps can neither read nor clear it. Each record carries `expireAt` (30 days) so the owner may
- * add a Firestore TTL policy on it; nothing depends on that.
+ * A record holds counts and ids only (organisation, uid, template, job id, recipient count, Resend message ids and the
+ * positions of failed recipients in the request's own `to` list) — never an email address, CC or From name. A
+ * replay rebuilds the answer from the request (`replayResponse`). Only the Admin SDK touches the collection: the
+ * security rules have no match for it (top-level, like `emailRateLimits`), so apps can neither read nor clear it. Each
+ * record carries `expireAt` (30 days) for an optional Firestore TTL policy; nothing depends on it.
  */
 
 const crypto = require('crypto')
@@ -47,26 +54,97 @@ function parseRequestId(value) {
   return id
 }
 
-function requestDedupeKey({ callerKey, orgId, template, requestId, recipients }) {
-  const to = [...new Set((recipients || []).map((email) => String(email || '').trim().toLowerCase()).filter(Boolean))].sort()
-  const material = JSON.stringify([String(callerKey || ''), String(orgId || ''), String(template || ''), String(requestId), to])
+/** Recipients as the key and a replay read them: trimmed, lower case, once each, sorted. */
+function requestRecipients(to) {
+  const list = Array.isArray(to) ? to : []
+  return [...new Set(list.map((email) => String(email == null ? '' : email).trim().toLowerCase()).filter(Boolean))].sort()
+}
+
+/** JSON with object keys sorted at every level, so the same content always hashes the same. */
+function stableStringify(value) {
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value)
+      .sort()
+      .filter((key) => value[key] !== undefined)
+      .map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`)
+      .join(',')}}`
+  }
+  return JSON.stringify(value === undefined ? null : value)
+}
+
+/** SHA-256 of the content a message is rendered from: the template data and each attachment's name and bytes. */
+function requestContentHash({ data, attachments }) {
+  const files = (Array.isArray(attachments) ? attachments : []).map((row) => ({
+    filename: row && typeof row.filename === 'string' ? row.filename : '',
+    content: crypto.createHash('sha256').update(String((row && row.content) || '')).digest('hex'),
+  }))
+  return crypto.createHash('sha256').update(stableStringify({ data: data || {}, files })).digest('hex')
+}
+
+function requestDedupeKey({ callerKey, orgId, template, requestId, recipients, contentHash }) {
+  const material = JSON.stringify([
+    String(callerKey || ''),
+    String(orgId || ''),
+    String(template || ''),
+    String(requestId),
+    requestRecipients(recipients),
+    String(contentHash || ''),
+  ])
   return crypto.createHash('sha256').update(material).digest('hex')
 }
 
 /**
  * Pure step: what a call does given the stored record.
- * @returns {{ action: 'claim' } | { action: 'replay', response: object } | { action: 'inProgress' }}
+ * @returns {{ action: 'claim' } | { action: 'replay', record: object } | { action: 'inProgress' }}
  */
 function requestDedupeDecision(stored, nowMs) {
   if (!stored || typeof stored !== 'object') return { action: 'claim' }
-  if (stored.status === 'sent' && stored.response && typeof stored.response === 'object') {
-    return { action: 'replay', response: stored.response }
-  }
+  if (stored.status === 'sent' && Number.isFinite(Number(stored.sentCount))) return { action: 'replay', record: stored }
   const claimedAtMs = Number(stored.claimedAtMs)
   if (stored.status === 'pending' && Number.isFinite(claimedAtMs) && nowMs - claimedAtMs < PENDING_STALE_MS) {
     return { action: 'inProgress' }
   }
   return { action: 'claim' }
+}
+
+/**
+ * The fields written once a call has sent: counts, Resend ids and positions only. `results` / `failed` are the
+ * handler's (`{ to, id }` and emails); each address is kept as its position `i` in `keyRecipients` (-1 when the
+ * template does not send to the request's `to`, e.g. an invitation).
+ */
+function sentRecordFields({ results, failed, keyRecipients }, nowMs) {
+  const position = (email) => keyRecipients.indexOf(String(email || '').trim().toLowerCase())
+  return {
+    status: 'sent',
+    sentAtMs: nowMs,
+    sentCount: results.length,
+    failedCount: failed.length,
+    failedPositions: failed.map(position),
+    messages: results.map((row) => ({ i: position(row.to), id: row.id || null })),
+  }
+}
+
+/** The answer to a repeat, rebuilt from the stored counts and ids and this (identical) request. */
+function replayResponse(record, { keyRecipients, ccFor, from }) {
+  const at = (i) => (Number.isInteger(i) && i >= 0 && i < keyRecipients.length ? keyRecipients[i] : null)
+  const messages = Array.isArray(record.messages) ? record.messages : []
+  const failedPositions = Array.isArray(record.failedPositions) ? record.failedPositions : []
+  const results = messages.map((row) => {
+    const to = at(row && row.i)
+    return { ...(to ? { to } : {}), id: (row && row.id) || null, cc: ccFor(to) }
+  })
+  const failed = failedPositions.map(at).filter(Boolean)
+  const failedCount = Number(record.failedCount) || failed.length
+  return {
+    sent: failedCount === 0,
+    sentCount: Number(record.sentCount) || results.length,
+    failed,
+    results,
+    from,
+    ccSupported: true,
+    deduped: true,
+  }
 }
 
 /** The record written when a call claims a key (no message contents; ids only). */
@@ -95,8 +173,8 @@ function createAdminRequestDedupe(db) {
         return decision
       })
     },
-    async complete(key, response, nowMs = Date.now()) {
-      await ref(key).set({ status: 'sent', sentAtMs: nowMs, response }, { merge: true })
+    async complete(key, fields) {
+      await ref(key).set(fields, { merge: true })
     },
     async release(key) {
       await ref(key).delete()
@@ -111,6 +189,11 @@ module.exports = {
   createAdminRequestDedupe,
   parseRequestId,
   pendingRecord,
+  replayResponse,
+  requestContentHash,
   requestDedupeDecision,
   requestDedupeKey,
+  requestRecipients,
+  sentRecordFields,
+  stableStringify,
 }
