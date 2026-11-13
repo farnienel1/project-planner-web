@@ -2,8 +2,10 @@
  * Rulebook 1.40.0 (§4.4, §9, §16; owner decisions 11 Nov): security rules for annual leave.
  *  - `annualLeaveAdjustments`: create only (append-only history), by an admin or the person's line manager, never the
  *    person; read by the person, their line managers and admins; the catch-all never re-opens it.
- *  - `holidayBookings`: the line manager of leave filed only under an `operatives` row (no users document on `userId`)
- *    decides it, through the row's email claim; a line manager never moves leave to another person.
+ *  - `holidayBookings` (owner decision 13 Nov, item 17): leave filed only under an `operatives` row (no users document
+ *    on `userId`) is decided by admins only — never through the row's email claim, which an Operatives manager could
+ *    repoint; a line manager decides leave filed under the users id that lists them and never moves leave to another
+ *    person.
  * Emulator only (own project id).
  *
  *   npm run test:rules
@@ -184,14 +186,49 @@ test('adjustments (re-review): nobody but the platform owner reads them while bi
   await assertLogicalDeny(own())
 })
 
-test('leave filed under an operatives row: its person\'s line manager decides it; another manager cannot', async () => {
+test('leave filed only under an operatives row: admins decide it, never a line manager through the row (owner 13 Nov, item 17)', async () => {
+  const ref = async (uid: string, id: string) => doc(await db(uid), 'organizations', ORG, 'holidayBookings', id)
+  const approve = (uid: string) => ({ status: 'approved', approvedByUserId: uid, approvedAt: Timestamp.now() })
+  // The row's own person's line manager no longer decides it through the row's email claim.
+  await assertLogicalDeny(updateDoc(await ref(LM, 'H-ROW'), approve(LM)))
+  await assertLogicalDeny(setDoc(await ref(LM, 'H-ROW-2'), leave({ operativeId: ROW, ...approve(LM) })))
+  await assertLogicalDeny(deleteDoc(await ref(LM, 'H-ROW')))
+  await assertLogicalDeny(updateDoc(await ref(OTHER, 'H-ROW'), approve(OTHER)))
+  // Admins do.
+  await assertSucceeds(updateDoc(await ref(ADMIN, 'H-ROW'), approve(ADMIN)))
+  await assertSucceeds(deleteDoc(await ref(ADMIN, 'H-ROW')))
+})
+
+test('the attack: an Operatives manager repoints a row at someone they line-manage and still cannot decide its leave', async () => {
+  const VICTIM = 'al-victim'
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const d = ctx.firestore()
+    await updateDoc(doc(d, 'users', OTHER), { operatives: true })
+    await setDoc(doc(d, 'users', VICTIM), {
+      email: `${VICTIM}@test.com`, organizationId: ORG, passwordSet: true, isActive: true,
+      role: 'operative', operativeMode: true, assignedManagerUserIds: [OTHER],
+    })
+    await updateDoc(doc(d, 'organizations', ORG), { [`members.${VICTIM}`]: 'operative' })
+    await setDoc(doc(d, 'organizations', ORG, 'userEmails', `${VICTIM}@test.com`), { userId: VICTIM })
+    // The repoint (an Operatives manager may change a row's email, §16 Roster rows).
+    await updateDoc(doc(d, 'organizations', ORG, 'operatives', ROW), { email: `${VICTIM}@test.com` })
+  })
   const ref = async (uid: string, id: string) => doc(await db(uid), 'organizations', ORG, 'holidayBookings', id)
   await assertLogicalDeny(updateDoc(await ref(OTHER, 'H-ROW'), { status: 'approved', approvedByUserId: OTHER, approvedAt: Timestamp.now() }))
-  await assertSucceeds(updateDoc(await ref(LM, 'H-ROW'), { status: 'approved', approvedByUserId: LM, approvedAt: Timestamp.now() }))
-  await assertSucceeds(setDoc(await ref(LM, 'H-ROW-2'), leave({ operativeId: ROW, status: 'approved', approvedByUserId: LM, approvedAt: Timestamp.now() })))
-  await assertSucceeds(deleteDoc(await ref(LM, 'H-ROW')))
-  // The users-document path is unchanged.
-  await assertSucceeds(updateDoc(await ref(LM, 'H-OP'), { status: 'approved', approvedByUserId: LM, approvedAt: Timestamp.now() }))
+  await assertLogicalDeny(deleteDoc(await ref(OTHER, 'H-ROW')))
+  await assertLogicalDeny(setDoc(await ref(OTHER, 'H-ROW-3'), leave({ operativeId: ROW, status: 'approved', approvedByUserId: OTHER, approvedAt: Timestamp.now() })))
+  // Their real report's leave (filed under the users id) is theirs to decide.
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'organizations', ORG, 'holidayBookings', 'H-VICTIM'), leave({ userId: VICTIM, status: 'pending' }))
+  })
+  await assertSucceeds(updateDoc(await ref(OTHER, 'H-VICTIM'), { status: 'approved', approvedByUserId: OTHER, approvedAt: Timestamp.now() }))
+})
+
+test('legit line managers: leave filed under the users id is decided by its line manager, never another manager', async () => {
+  const ref = async (uid: string) => doc(await db(uid), 'organizations', ORG, 'holidayBookings', 'H-OP')
+  await assertLogicalDeny(updateDoc(await ref(OTHER), { status: 'approved', approvedByUserId: OTHER, approvedAt: Timestamp.now() }))
+  await assertSucceeds(updateDoc(await ref(LM), { status: 'approved', approvedByUserId: LM, approvedAt: Timestamp.now() }))
+  await assertSucceeds(deleteDoc(await ref(LM)))
 })
 
 test('a line manager never moves leave to another person; an admin still may', async () => {

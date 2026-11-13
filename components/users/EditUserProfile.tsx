@@ -66,6 +66,7 @@ import {
   userLeaveBankHolidayRange,
 } from '@/lib/annualLeave/leaveBalance'
 import { useAnnualLeaveAdjustments } from '@/lib/annualLeave/leaveAdjustments'
+import { useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
 import { useLeaveEmployment } from '@/lib/annualLeave/useLeaveEmployment'
 import {
   DEFAULT_ANNUAL_LEAVE,
@@ -298,6 +299,7 @@ export function EditUserProfile({
   const router = useRouter()
   const { navigate: navigateBack, pending: backPending } = usePendingNavigation()
   const { user: currentUser, organization, reloadSignedInProfile } = useAuthStore()
+  const organizationTimeZone = useOrganizationTimeZone()
   const { users, userIdAliases, loadUsers, setListedUserActive, patchListedUser } = useOrgUserStore()
   const { operatives, loadOperatives, patchOperativeQualifications } = useOperativeStore()
   const { getUser, saveUser, setUserActive, deleteUser, sendPasswordReset, applyAccountType, changeAccountType, syncLinkedOperative, transferSuperAdmin, removeFromManagedJobs } =
@@ -810,6 +812,8 @@ export function EditUserProfile({
       previousTransitionFrom: toSave.employmentTypeTransitionFrom,
       previousEffectiveAt: toSave.employmentTypeEffectiveAt,
       effectiveAt: employmentWhen === 'immediate' ? 'immediate' : employmentWhen,
+      // Rulebook 1.40.0 (13 Nov item 18): "immediately" stores today in the organisation zone.
+      timeZone: organizationTimeZone,
     })
     toSave = {
       ...toSave,

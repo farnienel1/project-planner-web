@@ -8,6 +8,7 @@
  * Instants pass through as given (each app adds its SDK timestamp). Pure, never throw.
  */
 
+import { normalizeEmploymentType } from './userProfile'
 import { readStoredRates } from './payRate'
 import { sensitiveProfileWriteFields } from './sensitiveProfile'
 
@@ -95,7 +96,7 @@ export function invitationCreateFields(input: InvitationCreateInput): Record<str
     invitedBy: text(input.invitedBy),
     firstName: text(input.firstName),
     surname: text(input.surname),
-    employmentType: text(input.employmentType) === 'paye' ? 'paye' : 'self_employed',
+    employmentType: normalizeEmploymentType(input.employmentType),
     permissions,
     role: inviteRoleFor(input.role, permissions),
     inviteType: 'new_user',

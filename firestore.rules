@@ -2022,13 +2022,12 @@ service cloud.firestore {
           return data.get('userId', null) == request.auth.uid ||
             data.get('operativeId', null) == request.auth.uid;
         }
-        // 1.40.0: an admin, or the requester's line manager — also of leave filed only under an operatives row (no users
-        // document on userId: the line manager of the person the row's email claim names).
+        // An admin, or the line manager listed on the users document the record's userId names. 1.40.0 (owner
+        // decision 13 Nov, item 17): never through an operatives row's email — an Operatives manager may change a
+        // row's email, so leave filed only under a row (no users document on userId) is decided by admins only.
         function hbCanDecide(data) {
-          let op = data.get('operativeId', '');
           return (hbIsOwner(data) || hbCallerIsOperative()) ? false : (hbIsAdmin() ? true :
-            (hbRequesterExists(data) ? request.auth.uid in lineManagerIdList(hbRequester(data))
-              : (op is string && op.size() > 0 && !op.matches('.*/.*') && callerLineManagesRowPerson(op))));
+            (hbRequesterExists(data) && request.auth.uid in lineManagerIdList(hbRequester(data))));
         }
 
         function hbIsRequestShape(next) {

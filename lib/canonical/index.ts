@@ -1806,6 +1806,7 @@ export {
   type AnnualLeaveBalanceNotes,
 } from './annualLeaveBalance'
 export { employmentTypeTransition } from './userProfile'
+export { leaveDecisionRequester } from './leaveRequests'
 export { USER_MISSING_EMPLOYMENT_TYPE_MESSAGE, usersMissingEmploymentType } from './payRate'
 export {
   ANNUAL_LEAVE_TEAM_EMPTY_ADMIN,

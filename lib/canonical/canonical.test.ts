@@ -1515,9 +1515,23 @@ test('employment type on a day uses the scheduled transition, and a future date 
     nextType: 'paye',
     effectiveAt: 'immediate',
     now: new Date('2026-10-09T12:00:00Z'),
+    timeZone: 'Europe/London',
   })
-  assert.equal(today.employmentTypeTransitionFrom, null)
-  assert.equal(today.employmentTypeEffectiveAt, null)
+  // 1.40.0 (owner decision 13 Nov, item 18): "immediately" stores today (organisation midnight) and the old type, so
+  // every earlier day keeps it.
+  assert.equal(today.employmentTypeTransitionFrom, 'self_employed')
+  assert.equal(today.employmentTypeEffectiveAt?.toISOString(), '2026-10-08T23:00:00.000Z')
+  assert.equal(employmentTypeOnDay(today, new Date('2026-10-08T12:00:00Z'), 'Europe/London'), 'self_employed')
+  assert.equal(employmentTypeOnDay(today, new Date('2026-10-09T12:00:00Z'), 'Europe/London'), 'paye')
+  // A backdated date stores today as well (past days never change).
+  const backdated = applyEmploymentTypeChange({
+    previousType: 'self_employed',
+    nextType: 'paye',
+    effectiveAt: new Date('2026-09-01T12:00:00Z'),
+    now: new Date('2026-10-09T12:00:00Z'),
+    timeZone: 'Europe/London',
+  })
+  assert.equal(backdated.employmentTypeEffectiveAt?.toISOString(), '2026-10-08T23:00:00.000Z')
   assert.equal(employmentEffectiveLabel({ employmentType: 'paye' }), 'Effective immediately')
   assert.equal(accountKindFromFlags({ operativeMode: true }), 'operative')
   assert.equal(accountKindFromFlags({ adminAccess: true }), 'admin')

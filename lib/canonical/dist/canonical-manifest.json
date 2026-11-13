@@ -1,7 +1,7 @@
 {
   "rulebookVersion": "1.40.0",
-  "rulebookSha256": "d1cb6230b645a2d17a4d8a138b9cdd4c7e0b96cb82134ad012c1fac14c680208",
-  "bundleSha256": "62df4b35cbca85be33dbdd7162fe0420353fcfca9842459ff93ae2080ae3d4a4",
+  "rulebookSha256": "14e6cb8d53a42ce71c6ec229365cdb8b0416f529fe991d7051dabc90ffe848f3",
+  "bundleSha256": "55cb3e1a34c18c25e5e30f9ee90bc86793b95482bdacc1923883df306429819a",
   "crossPlatformContractSha256": "1e4c0f21055264d532ebc2040e480aaf3e2f594fa9c9f7e2dc809bf0255930ae",
   "dataParityFixtureSha256": "c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f",
   "exports": [
@@ -863,6 +863,7 @@
     "leaveDayKind",
     "leaveDaysInRange",
     "leaveDecisionQueue",
+    "leaveDecisionRequester",
     "leaveHalfDayLabel",
     "leaveHalfDayWindows",
     "leaveRecordDayKeys",

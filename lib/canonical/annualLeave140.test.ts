@@ -38,6 +38,10 @@ import {
   annualLeaveAdjustmentAuthorName,
   usersMissingEmploymentType,
   USER_MISSING_EMPLOYMENT_TYPE_MESSAGE,
+  leaveDecisionRequester,
+  leaveDecisionQueue,
+  canDecideLeave,
+  invitationCreateFields,
   type StaffAccountRole,
 } from './index'
 
@@ -302,13 +306,20 @@ test('1.40.0 annual_leave_adjusted: every admin but the actor, company activity,
   assert.equal(parseNotificationDocument('n2', { type: 'x', message: 'm' })?.detail, null)
 })
 
-test('1.40.0 review r306 #4: employment type stays exact (owner question open); Data health lists any other stored value', () => {
-  // Unchanged reading (no owner sign-off to move pay): only the exact stored words.
-  assert.equal(normalizeEmploymentType('paye'), 'paye')
-  for (const raw of ['PAYE', 'Paye', ' paye ', '', null, undefined, 3, 'contractor']) {
+test('1.40.0 (owner 13 Nov, item 19): "PAYE" in any case or with spaces is PAYE; Data health still lists non-exact stored values', () => {
+  for (const raw of ['paye', 'PAYE', 'Paye', ' paye ']) assert.equal(normalizeEmploymentType(raw), 'paye', raw)
+  for (const raw of ['self_employed', 'SELF_EMPLOYED', 'selfEmployed', '', null, undefined, 3, 'contractor']) {
     assert.equal(normalizeEmploymentType(raw), 'self_employed', String(raw))
   }
-  assert.equal(normalizeEmploymentType('selfEmployed'), 'self_employed')
+  // A stored "PAYE" now gets an allowance (and is PAYE for timesheets and pay).
+  const balance = annualLeaveBalance({
+    annualLeaveEnabled: true, daysPerYear: 20, startMonth: 1, endMonth: 12, onDayKey: '2026-06-01', timeZone: LONDON,
+    employment: { employmentType: 'PAYE' },
+  })
+  assert.equal(balance.hasAllowance, true)
+  assert.equal(balance.remaining, 20)
+  // The write paths store the lower-case word.
+  assert.equal(invitationCreateFields({ organizationId: 'O', email: 'a@x.com', invitedBy: 'A', employmentType: ' PAYE ' } as never)?.employmentType, 'paye')
   const ids = usersMissingEmploymentType([
     { id: 'A', email: 'a@x.com', employmentType: 'paye' },
     { id: 'B', email: 'b@x.com' },
@@ -324,6 +335,34 @@ test('1.40.0 review r306 #4: employment type stays exact (owner question open); 
   ] as never)
   assert.deepEqual(ids, ['B', 'C', 'G', 'H', 'I'])
   assert.match(USER_MISSING_EMPLOYMENT_TYPE_MESSAGE, /self-employed/)
+})
+
+test('1.40.0 (owner 13 Nov, item 17): leave decisions are judged on the users document named by the record, never a row email', () => {
+  const roster = [
+    { id: 'ADMIN', email: 'admin@x.com', role: 'admin', isActive: true, adminAccess: true },
+    { id: 'LM', email: 'lm@x.com', role: 'manager', isActive: true, manager: true },
+    { id: 'OPS', email: 'ops@x.com', role: 'manager', isActive: true, manager: true, operatives: true },
+    { id: 'OP', email: 'op@x.com', role: 'operative', isActive: true, operativeMode: true, assignedManagerUserIds: ['LM'] },
+    { id: 'VICTIM', email: 'victim@x.com', role: 'operative', isActive: true, operativeMode: true, assignedManagerUserIds: ['OPS'] },
+  ]
+  // Filed under the users id: that person (case does not matter).
+  assert.equal((leaveDecisionRequester({ userId: 'op' }, roster) as { id: string }).id, 'OP')
+  // Filed only under an operatives row id: nobody on the roster — no line manager, admins only.
+  assert.deepEqual(leaveDecisionRequester({ operativeId: 'ROW-1' }, roster), { id: 'ROW-1' })
+  // A converted ghost's row keeps the users id: that person.
+  assert.equal((leaveDecisionRequester({ operativeId: 'VICTIM' }, roster) as { id: string }).id, 'VICTIM')
+  assert.equal(leaveDecisionRequester({}, roster), null)
+  const manager: StaffAccountRole = MANAGER
+  const queue = leaveDecisionQueue(
+    { id: 'OPS', role: manager },
+    [
+      { userId: null, operativeId: 'ROW-1', status: 'pending' },
+      { userId: 'VICTIM', operativeId: null, status: 'pending' },
+    ],
+    roster as never
+  )
+  assert.deepEqual(queue.map((row) => row.userId ?? row.operativeId), ['VICTIM'])
+  assert.equal(canDecideLeave({ id: 'ADMIN', role: ADMIN }, leaveDecisionRequester({ operativeId: 'ROW-1' }, roster), roster as never), true)
 })
 
 test('1.40.0 review r306 #8: the PAYE window comes from the stored change, the same as employmentTypeOnDay day by day', () => {

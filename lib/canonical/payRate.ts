@@ -499,7 +499,7 @@ export function usersMissingPayRate(
 
 /** 1.40.0 (review r306 #4): Data health text for a person with no valid stored employment type. */
 export const USER_MISSING_EMPLOYMENT_TYPE_MESSAGE =
-  'No valid employment type stored (it must be exactly PAYE or self-employed as the apps save it): reads as self-employed, so no annual leave allowance. Open in Manage Users and choose PAYE or self-employed.'
+  'Employment type missing or not stored as the apps save it. A missing one reads as self-employed (no annual leave allowance). Open in Manage Users and choose PAYE or self-employed so it is saved cleanly.'
 
 /** The two stored values the apps write (`paye`, `self_employed`). Anything else reads as self-employed (§8). */
 function storedEmploymentTypeValid(value: unknown): boolean {
@@ -508,9 +508,10 @@ function storedEmploymentTypeValid(value: unknown): boolean {
 
 /**
  * 1.40.0 (review r306 #4): the active people (not anonymised, once per person by `personIdSet`) none of whose users
- * documents stores a valid employment type — missing, blank, or anything but exactly `paye` / `self_employed` (e.g.
- * "PAYE", " paye ", "selfEmployed"). `normalizeEmploymentType` reads those as self-employed (§8), so from 1.40.0 they
- * have no annual-leave allowance; admins see them in Settings → Data health and fix the data. Pass the documents as
+ * documents stores a clean employment type — missing, blank, or anything but exactly `paye` / `self_employed` (e.g.
+ * "PAYE", " paye ", "selfEmployed"). A missing one reads as self-employed (§8, no annual-leave allowance from 1.40.0);
+ * "PAYE" in another case reads as PAYE (owner decision 13 Nov, item 19) but is listed so the stored value is cleaned;
+ * admins see them in Settings → Data health. Pass the documents as
  * stored (with the pay profile laid over while `privatePay` is on, where the employment type then lives). Never
  * writes.
  */
