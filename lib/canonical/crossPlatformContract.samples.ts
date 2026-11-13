@@ -10,6 +10,7 @@
  */
 
 import { writeFileSync } from 'node:fs'
+import { annualLeaveAdjustmentCreateFields } from './annualLeaveAdjustments'
 import { bookingWriteFields } from './bookings'
 import { readCrossPlatformSample } from './crossPlatformContract'
 import { holidayRequestWriteFields } from './leaveRequests'
@@ -133,12 +134,14 @@ export function webWrittenSamples(): Record<string, { docId: string; data: Doc }
   })
   const notification = must(notificationCreateFields({
     organizationId: ORG,
-    type: 'holiday_request_submitted',
-    title: 'Annual leave request',
-    message: 'Ada asked for 4–6 Nov.',
+    // 1.40.0: an adjustment notice, with the inbox-only `detail` (the reason; never pushed).
+    type: 'annual_leave_adjusted',
+    title: 'Annual leave adjusted',
+    message: "Ada Admin adjusted Olly Op's annual leave by +2 days this leave year.",
+    detail: 'Reason: Long service',
     userId: 'mgr-web-1',
     actorUserId: 'user-web-1',
-    relatedId: 'H0000000-0000-4000-8000-000000000001',
+    relatedId: 'user-web-3',
     createdAt: ts(UPDATED),
   })).set
   const membership = must(orgMembershipWriteFields({
@@ -168,6 +171,17 @@ export function webWrittenSamples(): Record<string, { docId: string; data: Doc }
     jobTypes: { docId: 'jobTypes', data: must(jobTypesWriteFields([], ['CAT A', 'Small Works', 'Fit out'])).set },
     variationTrades: { docId: 'variationTrades', data: must(variationTradesWriteFields(null, { add: ['Electrical', 'Joinery'] })).set },
     tradeTypeInventory: { docId: 'tradeTypeInventory', data: must(tradeTypeInventoryWriteFields(null, ['Plumber', 'Bricklayer'])).set },
+    // 1.40.0: a manual annual-leave adjustment (web store adds createdAt and the write metadata).
+    annualLeaveAdjustments: {
+      docId: 'adj-web-1',
+      data: {
+        ...must(annualLeaveAdjustmentCreateFields({ userId: 'user-web-1', days: 2, reason: 'Long service', yearKey: '2026-01-01', createdBy: 'user-web-2' })),
+        createdAt: ts(UPDATED),
+        updatedAt: ts(UPDATED),
+        updatedBy: 'user-web-2',
+        updatedFrom: 'web',
+      },
+    },
   }
 }
 
@@ -286,6 +300,7 @@ export const CONTRACT_BUILDER_WRITERS: Readonly<Record<string, (input: never) =>
   variationTradesWriteFields: ((input: { stored: unknown; change: { add?: string[]; remove?: string[] } }) =>
     variationTradesWriteFields(input.stored as never, input.change)) as never,
   tradeTypeInventoryWriteFields: ((input: { stored: unknown; trades: string[] }) => tradeTypeInventoryWriteFields(input.stored as never, input.trades)) as never,
+  annualLeaveAdjustmentCreateFields: annualLeaveAdjustmentCreateFields as never,
 }
 
 /** Runs a `builder`: the writer, unwrapped (`fields`, `set`, else the result), epoch ms → Timestamp, then `appAdds`. */
@@ -340,7 +355,7 @@ const IOS_BUILT_SAMPLES: Record<string, { docId: string; iosWriter: string; buil
     iosWriter: 'NotificationService create (notificationCreateFields)',
     builder: {
       writer: 'notificationCreateFields',
-      input: { organizationId: ORG, type: 'variation_added', title: 'Variation added', message: 'Move door', userId: 'USER-IOS-2', actorUserId: 'USER-IOS-1', relatedId: 'V1000-IOS', createdAt: ts(UPDATED) },
+      input: { organizationId: ORG, type: 'variation_added', title: 'Variation added', message: 'Move door', detail: 'Door moved 300mm left', userId: 'USER-IOS-2', actorUserId: 'USER-IOS-1', relatedId: 'V1000-IOS', createdAt: ts(UPDATED) },
     },
   },
   jobTypes: {
@@ -357,6 +372,15 @@ const IOS_BUILT_SAMPLES: Record<string, { docId: string; iosWriter: string; buil
     docId: 'tradeTypeInventory',
     iosWriter: 'Trade type inventory save (tradeTypeInventoryWriteFields)',
     builder: { writer: 'tradeTypeInventoryWriteFields', input: { stored: null, trades: ['Labourer'] } },
+  },
+  annualLeaveAdjustments: {
+    docId: 'ADJ10000-0000-4000-8000-000000000002',
+    iosWriter: 'AnnualLeaveAdjustment save (annualLeaveAdjustmentCreateFields)',
+    builder: {
+      writer: 'annualLeaveAdjustmentCreateFields',
+      input: { userId: 'USER-IOS-1', days: -0.5, reason: 'Half day unpaid', yearKey: '2026-04-01', createdBy: 'USER-IOS-2' },
+      appAdds: { createdAt: ts(UPDATED), updatedAt: ts(UPDATED), updatedBy: 'USER-IOS-2', updatedFrom: 'ios' },
+    },
   },
 }
 
@@ -427,6 +451,7 @@ export const CONTRACT_READER_FOR: Readonly<Record<string, { reader: string; read
   tradeTypeInventory: { reader: 'parseTradeTypeInventory' },
   taxIds: { reader: 'resolveSensitiveProfile' },
   orgMemberships: { reader: 'parseOrgMembershipDocument' },
+  annualLeaveAdjustments: { reader: 'parseAnnualLeaveAdjustmentDocument' },
 }
 
 /** Live collections without a shared reader yet, with the reason (the test checks this list is complete). */

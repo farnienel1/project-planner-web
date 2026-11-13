@@ -1515,9 +1515,23 @@ test('employment type on a day uses the scheduled transition, and a future date 
     nextType: 'paye',
     effectiveAt: 'immediate',
     now: new Date('2026-10-09T12:00:00Z'),
+    timeZone: 'Europe/London',
   })
-  assert.equal(today.employmentTypeTransitionFrom, null)
-  assert.equal(today.employmentTypeEffectiveAt, null)
+  // 1.40.0 (owner decision 13 Nov, item 18): "immediately" stores today (organisation midnight) and the old type, so
+  // every earlier day keeps it.
+  assert.equal(today.employmentTypeTransitionFrom, 'self_employed')
+  assert.equal(today.employmentTypeEffectiveAt?.toISOString(), '2026-10-08T23:00:00.000Z')
+  assert.equal(employmentTypeOnDay(today, new Date('2026-10-08T12:00:00Z'), 'Europe/London'), 'self_employed')
+  assert.equal(employmentTypeOnDay(today, new Date('2026-10-09T12:00:00Z'), 'Europe/London'), 'paye')
+  // A backdated date stores today as well (past days never change).
+  const backdated = applyEmploymentTypeChange({
+    previousType: 'self_employed',
+    nextType: 'paye',
+    effectiveAt: new Date('2026-09-01T12:00:00Z'),
+    now: new Date('2026-10-09T12:00:00Z'),
+    timeZone: 'Europe/London',
+  })
+  assert.equal(backdated.employmentTypeEffectiveAt?.toISOString(), '2026-10-08T23:00:00.000Z')
   assert.equal(employmentEffectiveLabel({ employmentType: 'paye' }), 'Effective immediately')
   assert.equal(accountKindFromFlags({ operativeMode: true }), 'operative')
   assert.equal(accountKindFromFlags({ adminAccess: true }), 'admin')
@@ -5772,7 +5786,7 @@ test('1.4.0: company activity goes to active admins outside operative mode, neve
   const recipients = rulebook.companyActivityRecipients('A1', roster as never)
   assert.deepEqual(recipients, ['A2', 'A4'])
   assert.deepEqual(rulebook.companyActivityRecipients('M1', roster as never), ['A1', 'A2', 'A4'])
-  assert.deepEqual([...rulebook.COMPANY_ACTIVITY_NOTICE_TYPES].sort(), ['client_created', 'job_manager_removed', 'manager_created', 'operative_created', 'operative_deleted', 'project_created', 'small_works_created', 'warning_removed'])
+  assert.deepEqual([...rulebook.COMPANY_ACTIVITY_NOTICE_TYPES].sort(), ['annual_leave_adjusted', 'client_created', 'job_manager_removed', 'manager_created', 'operative_created', 'operative_deleted', 'project_created', 'small_works_created', 'warning_removed'])
   for (const type of rulebook.COMPANY_ACTIVITY_NOTICE_TYPES) {
     assert.equal(rulebook.notificationPreferenceKeyForType(type), 'companyActivity', type)
     assert.equal(rulebook.notificationDeliversDevicePush(type), true, type)

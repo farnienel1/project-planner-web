@@ -613,6 +613,25 @@ function cancellationRequested(request: LeaveQueueRequest): boolean {
 }
 
 /**
+ * 1.40.0 (owner decision 13 Nov, item 17): the requester a leave decision is judged against — the users document of
+ * this roster whose id is the record's `userId` (else its `operativeId`, the id a converted ghost's row keeps), ids
+ * without case. Never resolved through an `operatives` row's email: an Operatives manager may change a row's email
+ * (§16 Roster rows), so pointing it at a person they line-manage must not give them that person's leave decisions.
+ * Leave filed only under a catalogue row with no account (or a row whose id is no users document) has no line
+ * manager: only admins decide it. The security rules hold the same (`hbCanDecide`).
+ */
+export function leaveDecisionRequester<T extends LeaveRequester>(
+  request: { userId?: string | null; operativeId?: string | null } | null | undefined,
+  roster: ReadonlyArray<T> | null | undefined
+): T | LeaveRequester | null {
+  const ids = [text(request?.userId), text(request?.operativeId)].filter(Boolean)
+  if (ids.length === 0) return null
+  const members = (roster || []).filter((member) => member && text(member.id))
+  const byId = new Map(members.map((member) => [text(member.id).toLowerCase(), member]))
+  return ids.map((id) => byId.get(id.toLowerCase())).find(Boolean) ?? { id: ids[0] }
+}
+
+/**
  * The requests waiting for this viewer's decision, in input order: pending requests and approved leave with a
  * cancellation request, filtered with `canDecideLeave`. The requester is the roster person whose id matches the
  * request's `userId` (else `operativeId`), ids compared without case; a requester not on the roster has no line
@@ -624,16 +643,13 @@ export function leaveDecisionQueue<T extends LeaveQueueRequest>(
   roster: ReadonlyArray<LeaveRosterMember> | null | undefined
 ): T[] {
   const members = (roster || []).filter((member) => member && text(member.id))
-  const byId = new Map(members.map((member) => [text(member.id).toLowerCase(), member]))
   return (requests || []).filter((request) => {
     if (!request) return false
     const status = normalizeHolidayStatus(request.status)
     const waiting = status === 'pending' || (status === 'approved' && cancellationRequested(request))
     if (!waiting) return false
-    const ids = [text(request.userId), text(request.operativeId)].filter(Boolean)
-    if (ids.length === 0) return false
-    const member = ids.map((id) => byId.get(id.toLowerCase())).find(Boolean)
-    const requester: LeaveRequester = member ?? { id: ids[0] }
+    const requester = leaveDecisionRequester(request, members)
+    if (!requester) return false
     return canDecideLeave(viewer, requester, members)
   })
 }

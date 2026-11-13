@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { format, isSameDay, startOfDay } from 'date-fns'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useHolidayStore } from '@/lib/stores/holidayStore'
@@ -17,12 +17,27 @@ import { canDecideHoliday, leaveSaveStatus } from '@/lib/annualLeave/holidayAppr
 import {
   holidayDecisionActorName,
   notifyHolidayRequestDecisionToUser,
+  notifyLeaveChangedForPerson,
 } from '@/lib/annualLeave/notifyHolidayRequestDecision'
+import { leaveBalanceShowsEmploymentType, userLeaveBalance, userLeaveBankHolidayRange } from '@/lib/annualLeave/leaveBalance'
+import { useLeaveEmployment } from '@/lib/annualLeave/useLeaveEmployment'
+import { addAnnualLeaveAdjustment, useAnnualLeaveAdjustments } from '@/lib/annualLeave/leaveAdjustments'
+import { annualLeaveBalanceNotes, canAdjustAnnualLeave, canViewAnnualLeaveAdjustments } from '@/lib/canonical'
+import { rulebookPerson, rulebookRoster } from '@/lib/staff/rulebookPeople'
+import { useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
+import { DEFAULT_ANNUAL_LEAVE, loadOrganizationDetails, type OrgAnnualLeaveDefaults } from '@/lib/settings/organizationSettings'
+import { LeaveSummary } from './PersonalLeave'
+import { LeaveAdjustmentForm, LeaveAdjustmentsList } from './LeaveAdjustments'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import type { HolidayBooking, HolidayTimeSlot } from '@/types'
 import { AnnualLeaveLegend, LeaveDayCalendar } from './LeaveDayCalendar'
 import { useOrgBankHolidays } from './useOrgBankHolidays'
+
+function dayFromKey(key: string): Date {
+  const [year, month, day] = key.split('-').map(Number)
+  return new Date(year, (month || 1) - 1, day || 1)
+}
 
 function fmtDate(d: Date) {
   return formatLeaveDate(d)
@@ -123,6 +138,42 @@ export function OperativeAnnualLeaveCalendar({
     [bookings, person]
   )
 
+  // Rulebook 1.40.0: this person's balance (PAYE days only), their adjustments, and who may adjust them.
+  const timeZone = useOrganizationTimeZone()
+  const subject = useMemo(() => (person.userId ? users.find((row) => row.id === person.userId) ?? null : null), [person.userId, users])
+  const [orgLeaveDefaults, setOrgLeaveDefaults] = useState<OrgAnnualLeaveDefaults>(DEFAULT_ANNUAL_LEAVE)
+  useEffect(() => {
+    if (!organization?.id) return
+    loadOrganizationDetails(organization.id)
+      .then((details) => {
+        if (details?.annualLeaveDefaults) setOrgLeaveDefaults(details.annualLeaveDefaults)
+      })
+      .catch(() => undefined)
+  }, [organization?.id])
+  const viewerMayAdjust = Boolean(user && subject && canAdjustAnnualLeave(rulebookPerson(user, users), rulebookPerson(subject, users), rulebookRoster(users)))
+  const viewerMaySeeAdjustments = Boolean(
+    user && subject && canViewAnnualLeaveAdjustments(rulebookPerson(user, users), rulebookPerson(subject, users), rulebookRoster(users))
+  )
+  const adjustmentsRead = useAnnualLeaveAdjustments(organization?.id, viewerMaySeeAdjustments ? subject?.id : null)
+  const adjustments = adjustmentsRead.adjustments
+  // Rulebook 1.40.0 (review r306 #2): the employment type from the person's pay record.
+  const leaveEmployment = useLeaveEmployment(organization?.id, subject)
+  const balanceRange = userLeaveBankHolidayRange({ user: subject, employment: leaveEmployment.employment, orgDefaults: orgLeaveDefaults, timeZone })
+  const balanceBank = useOrgBankHolidays(dayFromKey(balanceRange.startDayKey), dayFromKey(balanceRange.endDayKey), {
+    years: balanceRange.years,
+  })
+  const balance = subject
+    ? userLeaveBalance({
+        user: subject,
+        employment: leaveEmployment.employment,
+        bookings: personBookings,
+        orgDefaults: orgLeaveDefaults,
+        bankHolidayDayKeys: balanceBank.holidays.map((holiday) => holiday.date),
+        timeZone,
+        adjustments,
+      })
+    : null
+
   // `canDecideLeave`: approve, decline, change and remove only for someone who may decide this person's leave
   // (never your own; admins decide any; otherwise `leaveApproverIds`).
   const canDecide = useMemo(
@@ -189,7 +240,7 @@ export function OperativeAnnualLeaveCalendar({
     setSaving(true)
     try {
       const day = format(selectedDay, 'yyyy-MM-dd')
-      await createRequests(organization.id, [
+      const saved = await createRequests(organization.id, [
         {
           userId: person.userId,
           operativeId: person.operativeId,
@@ -200,6 +251,20 @@ export function OperativeAnnualLeaveCalendar({
           approvedByUserId: status === 'approved' ? user.id : null,
         },
       ])
+      // Rulebook §13 (web from 1.40.0): the person hears that leave was booked for them (`holidayDecisionRecipients`).
+      if (status === 'approved') {
+        for (const booking of saved ?? []) {
+          await notifyLeaveChangedForPerson({
+            organizationId: organization.id,
+            booking,
+            kind: 'booked',
+            actorName: holidayDecisionActorName(user),
+            actorUserId: user.id,
+            users,
+            operatives,
+          })
+        }
+      }
       setMessage(`Annual leave booked for ${person.displayName}.`)
       setSelectedDay(null)
       setTimeout(() => setMessage(null), 3000)
@@ -259,6 +324,18 @@ export function OperativeAnnualLeaveCalendar({
     setSaving(true)
     try {
       await deleteBooking(organization.id, booking.id)
+      // Rulebook §13 (web from 1.40.0): the person hears that their leave was removed (`holiday_cancelled_by_manager`).
+      if (user) {
+        await notifyLeaveChangedForPerson({
+          organizationId: organization.id,
+          booking,
+          kind: 'removed',
+          actorName: holidayDecisionActorName(user),
+          actorUserId: user.id,
+          users,
+          operatives,
+        })
+      }
       setMessage('Annual leave removed.')
       if (approvedBooking?.id === booking.id) setSelectedDay(null)
       setTimeout(() => setMessage(null), 3000)
@@ -318,6 +395,50 @@ export function OperativeAnnualLeaveCalendar({
           </span>
         )}
       </div>
+
+      {balance ? (
+        <>
+          <LeaveSummary
+            hasAllowance={balance.hasAllowance}
+            allowance={balance.allowanceBeforeAdjustments - balance.carriedForward}
+            remaining={balance.remaining}
+            taken={balance.shownTaken}
+            pending={balance.shownPending}
+            carriedForward={balance.carriedForward}
+            adjustmentDays={balance.adjustmentDays}
+            notes={annualLeaveBalanceNotes(balance, { showsEmploymentType: leaveBalanceShowsEmploymentType(user, subject, users) })}
+            leaveYearStart={dayFromKey(balance.startDayKey)}
+            leaveYearEnd={dayFromKey(balance.endDayKey)}
+            loading={
+              !balanceBank.loaded || !leaveEmployment.ready || (viewerMaySeeAdjustments && !adjustmentsRead.loaded && !adjustmentsRead.error)
+            }
+            error={viewerMaySeeAdjustments ? adjustmentsRead.error : null}
+          />
+          {viewerMayAdjust && balance.hasAllowance && subject && organization?.id && user ? (
+            <LeaveAdjustmentForm
+              personName={person.displayName}
+              remaining={balance.remaining}
+              onSave={async (days, reason) => {
+                const id = await addAnnualLeaveAdjustment({
+                  organizationId: organization.id,
+                  subject,
+                  actor: user,
+                  users,
+                  days,
+                  reason,
+                  yearKey: balance.yearKey,
+                })
+                if (!id) throw new Error('That adjustment could not be saved.')
+                setMessage(`Annual leave adjusted for ${person.displayName}.`)
+                setTimeout(() => setMessage(null), 3000)
+              }}
+            />
+          ) : null}
+          {viewerMaySeeAdjustments ? (
+            <LeaveAdjustmentsList adjustments={adjustments} yearKey={balance.yearKey} showAuthor hasAllowance={balance.hasAllowance} roster={users} />
+          ) : null}
+        </>
+      ) : null}
 
       <AnnualLeaveLegend />
       <p className="text-xs leading-relaxed text-slate-500">{bank.sentence}</p>

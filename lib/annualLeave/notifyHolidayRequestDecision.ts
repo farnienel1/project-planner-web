@@ -288,3 +288,76 @@ export async function notifyHolidayRequestDecisionToUser(input: {
     // Booking status is already saved. A missed inbox row must not undo that.
   }
 }
+
+export const HOLIDAY_BOOKED_FOR_YOU = 'holiday_booked_for_you'
+export const HOLIDAY_CANCELLED_BY_MANAGER = 'holiday_cancelled_by_manager'
+
+/**
+ * Rulebook §13 (1.10.0 types; web writes them from 1.40.0, owner decision 11 Nov): a manager or admin books approved
+ * leave for someone (`holiday_booked_for_you`) or removes someone's leave (`holiday_cancelled_by_manager`). One row to
+ * `holidayDecisionRecipients(person, actor, roster)` — the person, never the actor (nobody when they did it themselves,
+ * and never a ghost). The same copy and de-dupe keys as iOS `NotificationService`.
+ */
+export function buildLeaveChangedForPersonNotification(input: {
+  organizationId: string
+  booking: HolidayBooking
+  kind: 'booked' | 'removed'
+  actorName: string
+  actorUserId?: string | null
+  users?: ReadonlyArray<User>
+  operatives?: ReadonlyArray<Operative>
+}): { dedupeKey: string; organizationId: string; type: string; title: string; message: string; userId: string; relatedId: string } | null {
+  const organizationId = trimmed(input.organizationId)
+  const personId = holidayDecisionRecipientUserId(input.booking, input.users, input.operatives)
+  if (!organizationId || !personId) return null
+  const users = input.users ?? []
+  const personUser = users.find((row) => row.id === personId)
+  const actorId = trimmed(input.actorUserId)
+  const actorUser = actorId ? users.find((row) => row.id === actorId) : undefined
+  const [userId] = holidayDecisionRecipients(
+    personUser ? rulebookPerson(personUser, users) : personId,
+    actorUser ? rulebookPerson(actorUser, users) : actorId || null,
+    rulebookRoster(users)
+  )
+  if (!userId) return null
+  const who = trimmed(input.actorName) || 'Manager'
+  const dateText = annualLeaveDecisionDateText(input.booking)
+  if (input.kind === 'booked') {
+    return {
+      dedupeKey: `annualLeaveBooked|${input.booking.id}|${userId}`,
+      organizationId,
+      type: HOLIDAY_BOOKED_FOR_YOU,
+      title: 'Annual Leave Booking Confirmation',
+      message: `${who} booked your annual leave for ${dateText}. Tap to view your annual leave.`,
+      userId,
+      relatedId: input.booking.id,
+    }
+  }
+  return {
+    dedupeKey: `annualLeaveCancelled|${input.booking.id}|${userId}`,
+    organizationId,
+    type: HOLIDAY_CANCELLED_BY_MANAGER,
+    title: 'Annual Leave Cancelled',
+    message: `${who} has cancelled your annual leave request for ${dateText}.`,
+    userId,
+    relatedId: input.booking.id,
+  }
+}
+
+export async function notifyLeaveChangedForPerson(input: Parameters<typeof buildLeaveChangedForPersonNotification>[0]): Promise<void> {
+  const payload = buildLeaveChangedForPersonNotification(input)
+  if (!payload) return
+  try {
+    await saveInboxNotification({
+      id: await syntheticUuidFromKey(payload.dedupeKey),
+      organizationId: payload.organizationId,
+      type: payload.type,
+      title: payload.title,
+      message: payload.message,
+      userId: payload.userId,
+      relatedId: payload.relatedId,
+    })
+  } catch {
+    // The leave change is saved; a missed inbox row must not undo it.
+  }
+}

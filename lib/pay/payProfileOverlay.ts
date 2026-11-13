@@ -230,6 +230,15 @@ export async function refreshPayProfiles(
   }
 }
 
+/**
+ * Rulebook 1.40.0 (review r306 #3): resolves once the security switches have answered and any pay-profile read in
+ * flight has finished, so a caller that overlays raw documents (`overlayRosterPay`) does not read them half laid over.
+ */
+export async function payProfilesSettled(): Promise<void> {
+  await securitySwitchesReady()
+  if (inFlight) await inFlight.catch(() => false)
+}
+
 /** Tests only. */
 export function setPayProfilesForTests(organizationId: string, rows: PayProfileDocument[]): void {
   cacheOrganizationId = organizationId

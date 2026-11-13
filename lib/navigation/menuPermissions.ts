@@ -30,7 +30,6 @@ export {
   canManageUsers,
   canManageOperativesOnly,
   canInviteOperatives,
-  canAccessOperativeAnnualLeaveDirectory,
   canAccessTeamSection,
   canViewHelp,
   canAccessDeveloperDashboard,

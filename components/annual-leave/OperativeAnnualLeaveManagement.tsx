@@ -6,7 +6,9 @@ import { useAuthStore } from '@/lib/stores/authStore'
 import { useHolidayStore } from '@/lib/stores/holidayStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
-import { canAccessOperativeAnnualLeaveDirectory } from '@/lib/navigation/menuPermissions'
+import { useSearchParams } from 'next/navigation'
+import { annualLeaveTeamEmptyMessage, normalizeDocumentId } from '@/lib/canonical'
+import { rulebookPerson } from '@/lib/staff/rulebookPeople'
 import {
   resolvePersonName,
   sortAnnualLeavePeople,
@@ -15,7 +17,7 @@ import {
   type AnnualLeavePersonSort,
 } from '@/lib/annualLeave/annualLeavePerson'
 import { isCancellationRequest } from '@/lib/annualLeave/holidayApprovalUtils'
-import { teamLeaveBookings, teamLeaveDecisionQueue, teamLeavePeople } from '@/lib/annualLeave/teamLeaveQueue'
+import { teamLeaveBookings, teamLeaveDecisionQueue, teamLeavePeople, teamLeaveTab } from '@/lib/annualLeave/teamLeaveQueue'
 import {
   holidayDecisionActorName,
   notifyHolidayRequestDecisionToUser,
@@ -89,6 +91,7 @@ export function OperativeAnnualLeaveManagement({
   const { bookings, saveBooking, deleteBooking, decideBooking } = useHolidayStore()
   const { operatives, loadOperatives } = useOperativeStore()
   const { users, loadUsers } = useOrgUserStore()
+  const userIdAliases = useOrgUserStore((state) => state.userIdAliases)
 
   useEffect(() => {
     if (!organization?.id) return
@@ -103,7 +106,22 @@ export function OperativeAnnualLeaveManagement({
   const [selectedPerson, setSelectedPerson] = useState<AnnualLeavePerson | null>(null)
 
   // `teamLeaveQueue.ts`: the same people, records and queue Home's "Waiting for you" card counts.
-  const people = useMemo(() => teamLeavePeople(user, users, operatives), [users, operatives, user])
+  // Rulebook 1.40.0 `annualLeaveTeamPeople`: admins every current person (self-bookers included), anyone else the people
+  // they line-manage; never the viewer, a deleted profile or a pending invite.
+  const people = useMemo(() => teamLeavePeople(user, users, operatives, userIdAliases), [users, operatives, user, userIdAliases])
+  // A notification (`annual_leave_adjusted` → `annualLeavePerson`) opens one person: `?person=<users id>`.
+  const searchParams = useSearchParams()
+  const requestedPersonId = searchParams?.get('person') ?? ''
+  useEffect(() => {
+    if (!requestedPersonId) return
+    // Every id the person goes by (`leaveIds`, from `leaveRecordsForAccount`), without case.
+    const wanted = normalizeDocumentId(requestedPersonId)
+    const match = people.find((p) => (p.leaveIds ?? []).includes(wanted))
+    if (match) {
+      setActiveTab('manage')
+      setSelectedPerson(match)
+    }
+  }, [requestedPersonId, people])
 
   const tradeChoices = useMemo(
     () => Array.from(new Set(people.map((p) => p.tradeLabel).filter(Boolean))).sort(),
@@ -149,7 +167,8 @@ export function OperativeAnnualLeaveManagement({
   const [declineTarget, setDeclineTarget] = useState<HolidayBooking | null>(null)
   const [declineNote, setDeclineNote] = useState('')
   const [holidayNote, setHolidayNote] = useState<string | null>(null)
-  const bankYear = new Date().getFullYear()
+  // The bank holidays of the year the calendar shows (the month being viewed), not the browser's current year.
+  const bankYear = awayMonth.getFullYear()
   const bank = useOrgBankHolidays(new Date(bankYear, 0, 1), new Date(bankYear, 11, 31))
 
   const awayCaption = (day: Date) => {
@@ -206,10 +225,10 @@ export function OperativeAnnualLeaveManagement({
     })
   }
 
-  if (!canAccessOperativeAnnualLeaveDirectory(user)) {
+  if (!teamLeaveTab(user, users, operatives)) {
     return (
       <div className="mx-auto max-w-xl pb-10">
-        <p className="text-sm text-slate-600">You do not have access to manage operative annual leave.</p>
+        <p className="text-sm text-slate-600">You do not line-manage anyone, so there is no team annual leave to show.</p>
         <Link href="/dashboard/annual-leave" className="mt-4 inline-block text-sm font-semibold text-blue-600">
           Back to annual leave
         </Link>
@@ -346,9 +365,13 @@ export function OperativeAnnualLeaveManagement({
             Your team · {filteredPeople.length}
           </p>
 
-          {filteredPeople.length === 0 ? (
+          {people.length === 0 ? (
             <p className="rounded-2xl border border-slate-200 bg-white px-4 py-6 text-sm text-slate-500">
-              Nobody matches those filters. Clear the trade or search to see the people you can manage.
+              {annualLeaveTeamEmptyMessage(user ? rulebookPerson(user, users) : null)}
+            </p>
+          ) : filteredPeople.length === 0 ? (
+            <p className="rounded-2xl border border-slate-200 bg-white px-4 py-6 text-sm text-slate-500">
+              Nobody matches those filters. Clear the trade or search to see your team.
             </p>
           ) : (
             <div className="space-y-2">
