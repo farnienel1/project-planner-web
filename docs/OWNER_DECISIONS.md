@@ -88,7 +88,7 @@ How to use it:
 
 | Date | Decision | Status |
 |---|---|---|
-| 4 Nov | **Never delete leave** when the Annual Leave Management toggle changes. The toggle only decides whether *future* leave saves straight away or is requested. Existing approved and pending leave stays as it is. (The iOS app deleted approved leave on switch-off and pending requests on switch-on: `HolidayStore.deleteSelfBookedApprovedHolidaysFor` / `deletePendingHolidayRequestsFor`.) Until fixed, change the toggle on web only. | open (iOS 1.31 removes the deletes; rulebook §9 sentence in the next rule release) |
+| 4 Nov | **Never delete leave** when the Annual Leave Management toggle changes. The toggle only decides whether *future* leave saves straight away or is requested. Existing approved and pending leave stays as it is. (The iOS app deleted approved leave on switch-off and pending requests on switch-on: `HolidayStore.deleteSelfBookedApprovedHolidaysFor` / `deletePendingHolidayRequestsFor`.) Until fixed, change the toggle on web only. | done: rulebook §9 sentence ("Never delete leave when the toggle changes"); iOS deletes removed in iOS #187 (1.31, guarded by `Rulebook1310Tests`); iOS Change user type wording fixed to "existing leave is kept" in iOS #225 (1.42.0); web has no such copy |
 
 ## Timesheets
 
