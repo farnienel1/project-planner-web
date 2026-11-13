@@ -7,6 +7,7 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useDataParityMonitor } from '@/lib/dataParity/useDataParityMonitor'
+import { useOnlineStatus } from '@/lib/hooks/useOnlineStatus'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import {
@@ -189,7 +190,8 @@ function AppShellInner({ children }: { children: ReactNode }) {
   // Every id of the signed-in person (`personIdSet`): the inbox owner ids.
   const ownerIds = useMemo(() => inboxOwnerIds(user, users), [user, users])
   const [notificationPrefs, setNotificationPrefs] = useState(DEFAULT_USER_NOTIFICATION_PREFERENCES)
-  const [online, setOnline] = useState(true)
+  // The browser's offline flag can stick at false; the hook confirms it with a real request (lib/onlineStatus.ts).
+  const online = useOnlineStatus()
   const [menuOpen, setMenuOpen] = useState(false)
   const [newOpen, setNewOpen] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
@@ -200,18 +202,6 @@ function AppShellInner({ children }: { children: ReactNode }) {
   const [analyticsAllowed, setAnalyticsAllowed] = useState(false)
   const { projects, smallWorks, loadProjects, loadSmallWorks } = useProjectStore()
   const prefetchedNav = useRef(false)
-
-  useEffect(() => {
-    const on = () => setOnline(true)
-    const off = () => setOnline(false)
-    setOnline(typeof navigator === 'undefined' ? true : navigator.onLine)
-    window.addEventListener('online', on)
-    window.addEventListener('offline', off)
-    return () => {
-      window.removeEventListener('online', on)
-      window.removeEventListener('offline', off)
-    }
-  }, [])
 
   // Rulebook 1.38.0 §27: the read-only data check (server count vs this browser's lists), self-healing a list that differs.
   useDataParityMonitor(user ? organization?.id : null)
