@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { NextRequest } from 'next/server'
 import { bearerToken, firestoreGet, firestoreListCollection, firestoreQueryEqual, restFieldsToPlain } from '@/lib/owner/firestoreRest'
 import { defaultMaterialRequestSendDeps, sendMaterialRequestMessages } from '@/lib/email/materialRequestSend'
+import { MATERIAL_EMAIL_UNCONFIRMED_MESSAGE } from '@/lib/email/resendClient'
 import { buildMaterialRequestEmail } from '@/lib/email/materialRequestEmail'
 import {
   defaultMaterialDeliveryRequiredAt,
@@ -313,6 +314,10 @@ export async function POST(request: NextRequest) {
     }
   )
   const { sent, copies, failed, failures, messageIds } = outcome
+  if (outcome.unconfirmed) {
+    // It may have gone: never "Email not sent". The same request id is never sent twice by the function.
+    return Response.json({ ok: false, unconfirmed: true, error: MATERIAL_EMAIL_UNCONFIRMED_MESSAGE }, { status: 502 })
+  }
 
   if (sent === 0) {
     const reason = failures[0]?.reason ? `: ${failures[0].reason}` : ''

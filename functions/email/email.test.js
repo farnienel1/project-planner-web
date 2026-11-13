@@ -99,7 +99,7 @@ function makeHandler(options = {}) {
     ...(options.sendBatch ? { sendBatch: options.sendBatch } : {}),
     ...(options.reader ? { reader: options.reader(reader) } : {}),
     logger: { info: (...a) => logs.push(['info', ...a]), warn: (...a) => logs.push(['warn', ...a]), error: (...a) => logs.push(['error', ...a]) },
-    now: () => new Date('2026-11-03T09:15:00Z'),
+    now: options.now || (() => new Date('2026-11-03T09:15:00Z')),
   })
   return { handler, sent, logs, rateCalls, org, sendOptionsLog }
 }
@@ -753,7 +753,7 @@ function memoryDedupe() {
     async claim(key, details, nowMs) {
       calls.push(['claim', key])
       const decision = requestDedupeDecision(docs.get(key) || null, nowMs)
-      if (decision.action === 'claim') docs.set(key, pendingRecord(details, nowMs))
+      if (decision.action === 'claim') docs.set(key, pendingRecord(details, nowMs, decision.renderAtMs))
       return decision
     },
     async complete(key, fields) {
@@ -810,12 +810,20 @@ test('request id: the key depends on caller, organisation, template, id, recipie
 
 test('request id: decision — none claims, sent replays, a fresh pending waits, a stale pending is taken over', () => {
   const t = Date.UTC(2026, 10, 12, 9, 0, 0)
-  assert.deepEqual(requestDedupeDecision(null, t), { action: 'claim' })
+  assert.deepEqual(requestDedupeDecision(null, t), { action: 'claim', renderAtMs: t })
   const record = { status: 'sent', sentCount: 1 }
   assert.deepEqual(requestDedupeDecision(record, t), { action: 'replay', record })
   assert.deepEqual(requestDedupeDecision({ status: 'pending', claimedAtMs: t - 1000 }, t), { action: 'inProgress' })
-  assert.deepEqual(requestDedupeDecision({ status: 'pending', claimedAtMs: t - PENDING_STALE_MS }, t), { action: 'claim' })
-  assert.deepEqual(requestDedupeDecision({ status: 'pending' }, t), { action: 'claim' })
+  assert.deepEqual(requestDedupeDecision({ status: 'pending', claimedAtMs: t - PENDING_STALE_MS }, t), {
+    action: 'claim',
+    renderAtMs: t - PENDING_STALE_MS,
+  })
+  assert.deepEqual(
+    requestDedupeDecision({ status: 'pending', claimedAtMs: t - PENDING_STALE_MS, renderAtMs: t - 2 * PENDING_STALE_MS }, t),
+    { action: 'claim', renderAtMs: t - 2 * PENDING_STALE_MS },
+    'a second takeover keeps the first render time'
+  )
+  assert.deepEqual(requestDedupeDecision({ status: 'pending' }, t), { action: 'claim', renderAtMs: t })
 })
 
 test('request id: a stored record holds counts and ids only; a replay rebuilds to, cc and failed from the request', () => {
@@ -1073,7 +1081,7 @@ test('request id: Admin store claims in a transaction, completes with merge and 
   }
   const dedupe = createAdminRequestDedupe(db)
   const t = Date.UTC(2026, 10, 12, 9, 0, 0)
-  assert.deepEqual(await dedupe.claim('k1', { orgId: ORG, uid: 'M', template: 'material_request', recipientCount: 1 }, t), { action: 'claim' })
+  assert.deepEqual(await dedupe.claim('k1', { orgId: ORG, uid: 'M', template: 'material_request', recipientCount: 1 }, t), { action: 'claim', renderAtMs: t })
   assert.equal(stored.get('k1').status, 'pending')
   assert.ok(stored.get('k1').expireAt instanceof Date)
   assert.deepEqual(await dedupe.claim('k1', {}, t + 1000), { action: 'inProgress' })
@@ -1337,4 +1345,31 @@ test('web_rendered_batch: server key only; one call, each recipient gets its own
     body: { ...body, data: { ...body.data, messages: [body.data.messages[0], body.data.messages[0]] } },
   })
   assert.equal(dup.code, 400, 'two.example still has no message of its own')
+})
+
+test('speed: a takeover after an unconfirmed batch re-sends the identical batch under the same key (rendered at the first claim time)', async () => {
+  const store = memoryDedupe()
+  let clock = Date.parse('2026-11-03T09:15:00Z')
+  const batches = []
+  let failFirst = true
+  const { handler } = makeHandler({
+    requestDedupe: store,
+    now: () => new Date(clock),
+    sendBatch: async (messages, options) => {
+      batches.push({ body: JSON.stringify(messages), key: options && options.idempotencyKey })
+      if (failFirst) {
+        failFirst = false
+        throw new Error('Resend 503: busy')
+      }
+      return messages.map((_, i) => ({ id: `b-${i}` }))
+    },
+  })
+  const body = { ...iosMaterialBody(), to: ['wendy@pipes.example', 'one@shop.example'], requestId: REQ }
+  assert.equal((await call(handler, { headers: auth('M'), body })).code, 502)
+  clock += 6 * 60 * 1000
+  const retried = await call(handler, { headers: auth('M'), body })
+  assert.equal(retried.code, 200, JSON.stringify(retried.payload))
+  assert.equal(batches.length, 2)
+  assert.equal(batches[1].key, batches[0].key, 'same Resend key')
+  assert.equal(batches[1].body, batches[0].body, 'byte-for-byte the same payload, so Resend replays instead of 409')
 })

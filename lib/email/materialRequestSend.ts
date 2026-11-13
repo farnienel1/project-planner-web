@@ -1,4 +1,9 @@
-import { EmailBatchUnsupportedError, sendProjectPlannerEmail, sendProjectPlannerEmailBatch } from './resendClient'
+import {
+  EmailBatchUnsupportedError,
+  EmailUnconfirmedError,
+  sendProjectPlannerEmail,
+  sendProjectPlannerEmailBatch,
+} from './resendClient'
 
 /**
  * How the material quote / order route hands its rendered emails to the email function (transport only — who may
@@ -23,6 +28,8 @@ export type MaterialRequestSendOutcome = {
   messageIds: string[]
   /** 'batch' when one call carried every recipient; 'single' when the older one-call-per-recipient path ran. */
   mode: 'batch' | 'single'
+  /** The function could not confirm the send: it may have gone. Say "check your sent items", never "not sent". */
+  unconfirmed?: boolean
 }
 
 export type MaterialRequestSendDeps = {
@@ -86,10 +93,20 @@ export async function sendMaterialRequestMessages(
     log('batch', { sent: outcome.sent, failed: outcome.failed.length })
     return outcome
   } catch (error) {
+    if (error instanceof EmailUnconfirmedError) {
+      return {
+        sent: 0,
+        copies: 0,
+        failed: [],
+        failures: [],
+        messageIds: [],
+        mode: 'batch',
+        unconfirmed: true,
+      }
+    }
     if (!(error instanceof EmailBatchUnsupportedError)) {
       const message = error instanceof Error ? error.message : String(error)
-      // Nothing is known to have gone (no answer, or refused before sending): report every recipient as failed.
-      // Retrying with the same request id is safe — the function never sends one request twice.
+      // Refused before sending: report every recipient as failed.
       return {
         sent: 0,
         copies: 0,

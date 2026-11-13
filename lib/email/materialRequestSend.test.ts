@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { EmailBatchUnsupportedError, sendProjectPlannerEmailBatch } from './resendClient.ts'
+import { EmailBatchUnsupportedError, EmailUnconfirmedError, sendProjectPlannerEmailBatch } from './resendClient.ts'
 import { sendMaterialRequestMessages, type MaterialRequestSendDeps } from './materialRequestSend.ts'
 
 const messages = [
@@ -187,4 +187,28 @@ test('sendProjectPlannerEmailBatch: an older function (unknown template) throws 
   await withFetch(new Response(JSON.stringify({ sent: false, error: 'Too many emails. Try again later.' }), { status: 429 }), async () => {
     await assert.rejects(sendProjectPlannerEmailBatch({ messages: [{ to: 'a@x.example', subject: 'S', html: 'h' }] }), /Too many emails/)
   })
+})
+
+test('material request: a send the function could not confirm is "unconfirmed", never "not sent", and is not retried', async () => {
+  const d = deps({
+    sendBatch: async () => {
+      throw new EmailUnconfirmedError()
+    },
+  })
+  const outcome = await sendMaterialRequestMessages(input, d)
+  assert.equal(outcome.unconfirmed, true)
+  assert.deepEqual(outcome.failed, [])
+  assert.equal(d.oneCalls.length, 0)
+})
+
+test('sendProjectPlannerEmailBatch: a 502 with unconfirmed: true throws EmailUnconfirmedError', async () => {
+  await withFetch(
+    new Response(JSON.stringify({ sent: false, unconfirmed: true, error: 'not confirmed', failed: ['a@x.example'] }), { status: 502 }),
+    async () => {
+      await assert.rejects(
+        sendProjectPlannerEmailBatch({ messages: [{ to: 'a@x.example', subject: 'S', html: 'h' }] }),
+        (error) => error instanceof EmailUnconfirmedError && /may not have been sent/.test((error as Error).message)
+      )
+    }
+  )
 })

@@ -139,6 +139,20 @@ export class EmailBatchUnsupportedError extends Error {
   }
 }
 
+/**
+ * The email function could not confirm whether the messages went (no answer in time, or its batch call to the
+ * provider failed ambiguously, `unconfirmed: true`). They may have been sent: never report them as "not sent".
+ */
+export class EmailUnconfirmedError extends Error {
+  constructor(message = MATERIAL_EMAIL_UNCONFIRMED_MESSAGE) {
+    super(message)
+    this.name = 'EmailUnconfirmedError'
+  }
+}
+
+export const MATERIAL_EMAIL_UNCONFIRMED_MESSAGE =
+  'The email may not have been sent. Check your sent items before sending again.'
+
 /** Per-recipient outcome of one `web_rendered_batch` call. */
 export type ProjectPlannerEmailBatchResult = {
   results: Array<{ to: string; id: string | null; cc: string[] }>
@@ -154,7 +168,8 @@ export type ProjectPlannerEmailBatchResult = {
  * recipient. `fromCaller`, `ccCaller` and `replyTo` apply to every message. A partial failure answers with the
  * refused recipients in `failed`; when every message failed the function answers 502 and this returns them all in
  * `failed` with its reason (it does not throw). Throws `EmailBatchUnsupportedError` when the deployed function does
- * not know the template yet (deploy order), and an Error for anything else (no answer, refused before sending).
+ * not know the template yet (deploy order), `EmailUnconfirmedError` when the send may have gone (no answer in time,
+ * or the function's `unconfirmed: true`), and an Error for anything else (refused before sending).
  */
 export async function sendProjectPlannerEmailBatch(params: {
   messages: Array<{ to: string; subject: string; html: string; text?: string }>
@@ -203,7 +218,7 @@ export async function sendProjectPlannerEmailBatch(params: {
     })
   } catch (error) {
     if (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')) {
-      throw new Error('The email service did not answer in time. Check your sent items before sending again.')
+      throw new EmailUnconfirmedError()
     }
     throw error
   }
@@ -211,6 +226,7 @@ export async function sendProjectPlannerEmailBatch(params: {
   let parsed: {
     error?: string
     message?: string
+    unconfirmed?: boolean
     failed?: unknown
     results?: Array<{ to?: unknown; id?: unknown; cc?: unknown }>
   } = {}
@@ -222,6 +238,8 @@ export async function sendProjectPlannerEmailBatch(params: {
   const detail = parsed.error || parsed.message || text || `Email function error (${response.status})`
   if (!response.ok) {
     if (response.status === 400 && /unknown template web_rendered_batch/i.test(detail)) throw new EmailBatchUnsupportedError()
+    // The function's batch call failed ambiguously: the messages may have gone (functions/email/handler.js).
+    if (parsed.unconfirmed === true) throw new EmailUnconfirmedError()
     // 502: the provider refused every message — report them as failed, like a partial failure.
     if (response.status === 502) {
       const failed = Array.isArray(parsed.failed) ? parsed.failed.filter((row): row is string => typeof row === 'string') : []

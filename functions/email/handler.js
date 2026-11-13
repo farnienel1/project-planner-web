@@ -355,6 +355,9 @@ function createSendEmailHandler(deps) {
     const requestId = parseRequestId(body.requestId)
     const keyRecipients = requestRecipients(body.to)
     let dedupeKey = ''
+    // With a request id, messages are rendered at the claim's time (kept across a takeover), so every send of one
+    // request is the same payload under the same Resend key.
+    let renderAtMs = null
     if (requestId && deps.requestDedupe) {
       dedupeKey = requestDedupeKey({
         callerKey: rateKey,
@@ -375,6 +378,7 @@ function createSendEmailHandler(deps) {
         logger.info('sendEmail: repeated request, not sent again', { template: templateName, orgId: orgId || null })
         return replayResponse(claim.record, { keyRecipients, ccFor, from })
       }
+      if (claim.action === 'claim' && Number.isFinite(Number(claim.renderAtMs))) renderAtMs = Number(claim.renderAtMs)
       if (claim.action === 'inProgress') {
         throw new HttpError(409, 'This email is already being sent. Wait a minute, then check your sent items.', {
           inProgress: true,
@@ -441,7 +445,7 @@ function createSendEmailHandler(deps) {
       const recipients = !serverMode && cc.length ? resolved.filter((row) => !row.isSelf) : resolved
       if (recipients.length === 0) throw new HttpError(400, 'At least one recipient other than yourself is required')
 
-      const sentAt = now()
+      const sentAt = renderAtMs != null ? new Date(renderAtMs) : now()
       const firstContactName = (recipients.find((row) => row.contactName) || {}).contactName || ''
       const rendered = recipients.map((recipient) =>
         template.render({ data, org: org || {}, orgName, caller: caller || {}, recipient, now: sentAt, attachments, firstContactName })
