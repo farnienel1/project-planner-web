@@ -20,9 +20,10 @@
  * and is not in this codebase (`inbox-push`), so a deploy here neither replaces nor deletes it; the owner deletes it
  * once both apps call `sendEmail`.
  *
- * After sendEachForMulticast, pruneDeadPushTokens drops only tokens whose
- * result is invalid APNs credential, unregistered, or invalid registration
- * token. Accepted tokens stay. One failure must not clear the array.
+ * After sendEachForMulticast, pruneDeadPushTokens drops only tokens whose result is unregistered or an invalid
+ * registration token. A credential failure (Invalid APNs credential, third-party-auth-error, mismatched-credential)
+ * is the project's fault and is logged as an error; no token is dropped for it. Accepted tokens stay.
+ * Every run logs one line: sent (with success / failure counts and error codes) or skipped (with the reason).
  */
 
 const { initializeApp } = require('firebase-admin/app')
@@ -31,7 +32,7 @@ const { getMessaging } = require('firebase-admin/messaging')
 const { onDocumentCreated, onDocumentWritten } = require('firebase-functions/v2/firestore')
 const { logger } = require('firebase-functions')
 const canonical = require('./loadCanonical')
-const { pruneDeadPushTokens } = require('./prunePushTokens')
+const { pruneDeadPushTokens, sendFailureSummaries } = require('./prunePushTokens')
 const { skipPushForActor } = require('./pushActorGuard')
 const { recipientMayReceivePush } = require('./pushRecipientGuard')
 const { removeTokenFromOtherAccounts } = require('./pushTokenOwner')
@@ -93,18 +94,25 @@ exports.sendDevicePushOnNotificationCreate = onDocumentCreated(
     const userId = trimmed(data.userId)
     const orgId = trimmed(event.params.orgId)
     const notificationId = trimmed(event.params.notificationId)
-    if (!type || !userId || !orgId || !notificationId) return
-    if (!canonical.notificationDeliversDevicePush(type)) return
+    // One log line per run (Cloud Functions logs), so a push that never arrives can be traced to its reason.
+    const base = { notificationId, orgId, type, userId: userId || null }
+    const skip = (reason, extra = {}) => {
+      logger.info('device push skipped', { ...base, reason, ...extra })
+    }
+    if (!type || !userId || !orgId || !notificationId) return skip(!userId ? 'no userId on the row' : 'missing type or id')
+    if (!canonical.notificationDeliversDevicePush(type)) return skip('type does not send a device push')
     // Never push a row to the person who caused it (cheap check before any read).
-    if (skipPushForActor(canonical, type, data.actorUserId, userId, null)) return
+    if (skipPushForActor(canonical, type, data.actorUserId, userId, null)) return skip('recipient is the actor')
     // A row dated in the future is not in the inbox yet (1.10.0), so it is not pushed now.
-    if (!canonical.inboxNotificationVisibleToUser(asInboxRow(notificationId, data), userId, Date.now())) return
+    if (!canonical.inboxNotificationVisibleToUser(asInboxRow(notificationId, data), userId, Date.now())) {
+      return skip('scheduled for the future (createdAt after now)')
+    }
 
     const db = getFirestore()
     const userSnap = await db.doc(`users/${userId}`).get()
-    if (!userSnap.exists) return
+    if (!userSnap.exists) return skip('recipient users document missing')
     const user = userSnap.data() || {}
-    if (skipPushForActor(canonical, type, data.actorUserId, userId, user)) return
+    if (skipPushForActor(canonical, type, data.actorUserId, userId, user)) return skip('recipient is the actor (former id)')
     // 1.12.0 (H4): only an active member of this organisation (`organizationMemberActive`) — never a uid from another
     // company or a person this organisation has deactivated.
     const [orgSnap, membershipSnap] = await Promise.all([
@@ -120,10 +128,10 @@ exports.sendDevicePushOnNotificationCreate = onDocumentCreated(
         membership: membershipSnap.exists ? membershipSnap.data() : null,
       })
     ) {
-      return
+      return skip('recipient is not an active member of this organisation')
     }
     const prefs = canonical.parseUserNotificationPreferences(user.notificationPreferences)
-    if (!canonical.notificationPreferenceAllowsDelivery(prefs, type)) return
+    if (!canonical.notificationPreferenceAllowsDelivery(prefs, type)) return skip('recipient turned this notification off')
 
     // 1.16.0 (§13): never push to a token that is also on the actor's own users document — the phone in the actor's
     // hand hears nothing about what its own user did, even while an old token still sits on this document.
@@ -133,8 +141,13 @@ exports.sendDevicePushOnNotificationCreate = onDocumentCreated(
       const actorSnap = await db.doc(`users/${actorUserId}`).get().catch(() => null)
       actorTokens = actorSnap && actorSnap.exists ? pushTokenList((actorSnap.data() || {}).pushTokens) : []
     }
-    const tokens = canonical.pushTokensExcludingActor(pushTokenList(user.pushTokens), actorTokens)
-    if (tokens.length === 0) return
+    const storedTokens = pushTokenList(user.pushTokens)
+    const tokens = canonical.pushTokensExcludingActor(storedTokens, actorTokens)
+    if (tokens.length === 0) {
+      return skip(storedTokens.length === 0 ? 'recipient has no push tokens saved' : 'every token is also on the actor', {
+        storedTokenCount: storedTokens.length,
+      })
+    }
 
     // Only this recipient's unread rows, bounded (never the whole organisation's inbox).
     const unreadSnap = await db
@@ -174,6 +187,23 @@ exports.sendDevicePushOnNotificationCreate = onDocumentCreated(
           },
         },
       })
+      const failures = sendFailureSummaries(tokens, batch.responses)
+      const summary = {
+        ...base,
+        recipientCount: 1,
+        tokensFound: tokens.length,
+        successCount: batch.successCount,
+        failureCount: batch.failureCount,
+        errorCodes: failures.map((row) => row.code),
+        failures,
+      }
+      if (failures.some((row) => row.credentialProblem)) {
+        logger.error('device push sent with CREDENTIAL errors', summary)
+      } else if (batch.failureCount > 0) {
+        logger.warn('device push sent with failures', summary)
+      } else {
+        logger.info('device push sent', summary)
+      }
       try {
         await pruneDeadPushTokens({
           db,
@@ -183,10 +213,15 @@ exports.sendDevicePushOnNotificationCreate = onDocumentCreated(
           logger,
         })
       } catch (error) {
-        logger.error('push token prune failed', { notificationId, orgId, userId, error })
+        logger.error('push token prune failed', { ...base, code: (error && error.code) || null, error })
       }
     } catch (error) {
-      logger.error('device push failed', { notificationId, orgId, userId, error })
+      logger.error('device push failed', {
+        ...base,
+        tokensFound: tokens.length,
+        code: (error && (error.code || (error.errorInfo && error.errorInfo.code))) || null,
+        message: (error && error.message) || String(error),
+      })
     }
   }
 )

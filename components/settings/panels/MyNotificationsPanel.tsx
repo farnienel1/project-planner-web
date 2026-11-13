@@ -24,6 +24,7 @@ import {
   SaveButton,
 } from '@/components/settings/primitives'
 import { settingsSaveBarHint } from '@/lib/settings/settingsDirty'
+import { PUSH_TEST_SENT_MESSAGE, sendPushTestToSelf } from '@/lib/notifications/pushTest'
 import {
   SettingsFormBody,
   useSettingsBaseline,
@@ -44,6 +45,7 @@ export function MyNotificationsPanel({ onBack }: { onBack: () => void }) {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [feedback, setFeedback] = useState<{ kind: 'success' | 'error'; msg: string } | null>(null)
+  const [testState, setTestState] = useState<{ kind: 'idle' | 'sending' | 'sent' | 'error'; msg?: string }>({ kind: 'idle' })
   const dirty = isDirty(prefs)
   useSettingsDirty(dirty)
 
@@ -80,6 +82,21 @@ export function MyNotificationsPanel({ onBack }: { onBack: () => void }) {
     }
   }
 
+  // Rulebook §13 `push_test`: one inbox row to the signed-in user, pushed to every phone signed in to this account.
+  async function sendTest() {
+    if (!user?.id) return
+    setTestState({ kind: 'sending' })
+    try {
+      const written = await sendPushTestToSelf({ organizationId: user.organizationId ?? '', userId: user.id })
+      setTestState(written > 0 ? { kind: 'sent', msg: PUSH_TEST_SENT_MESSAGE } : { kind: 'error', msg: 'Sign in again, then try once more.' })
+    } catch (error) {
+      setTestState({
+        kind: 'error',
+        msg: error instanceof Error && error.message ? `Not sent: ${error.message}` : 'Not sent — try again.',
+      })
+    }
+  }
+
   return (
     <div className="space-y-5">
       <PanelHeader title="My notifications" onBack={() => requestLeave(onBack)} />
@@ -108,6 +125,29 @@ export function MyNotificationsPanel({ onBack }: { onBack: () => void }) {
         })}
       </SettingsCard>
       </SettingsFormBody>
+
+      <SettingsCard>
+        <SettingsRow
+          icon={BELL_ICON}
+          iconBg="bg-blue-50"
+          iconColor="text-blue-600"
+          label="Send test notification"
+          description={
+            testState.kind === 'sent' || testState.kind === 'error'
+              ? testState.msg
+              : 'Sends a notification to your own phone. It also appears in your notification centre.'
+          }
+        >
+          <button
+            type="button"
+            className="btn sm"
+            onClick={sendTest}
+            disabled={!user?.id || testState.kind === 'sending'}
+          >
+            {testState.kind === 'sending' ? 'Sending…' : 'Send'}
+          </button>
+        </SettingsRow>
+      </SettingsCard>
 
       <SaveBar dirty={dirty} hint={settingsSaveBarHint(loadState)}>
         <SaveButton saving={saving} saved={saved} dirty={dirty} onClick={save} />
