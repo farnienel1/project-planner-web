@@ -2706,6 +2706,26 @@ test('1.10.0 r2 jobs: admins and toggle managers add jobs and change manager lis
   await assertFails(updateDoc(ref(projOnly, 'smallWorks', 'Sw-Mix'), { managerUserIds: [] }))
 })
 
+test('1.42.0 jobs: a toggle manager creates a job with two or more managers and changes the list; a manager without the toggle cannot', async () => {
+  await seedR2()
+  const ref = (db: Awaited<ReturnType<typeof authDb>>, coll: string, id: string) => doc(db, 'organizations', ORG_A, coll, id)
+  const toggle = await authDb(MGR_TOGGLE_A, 'toggle@test.com')
+  const mgr = await authDb(MGR_JOB_A, 'mgr-job-a@test.com')
+  const three = [MGR_TOGGLE_A, MGR_JOB_A, MGR_OTHER_A]
+  // Create with several managers, projects and small works (the shape both apps write: managerId = the first).
+  await assertSucceeds(setDoc(ref(toggle, 'projects', 'NEW-142'), { siteName: 'P', managerId: three[0], managerIds: three, managerUserIds: three }))
+  await assertSucceeds(setDoc(ref(toggle, 'smallWorks', 'NEW-142-SW'), { siteName: 'S', managerId: MGR_TOGGLE_A, managerIds: [MGR_TOGGLE_A, MGR_JOB_A], managerUserIds: [MGR_TOGGLE_A, MGR_JOB_A] }))
+  // Edit: add a manager, then remove one, on a job they do not manage.
+  await assertSucceeds(updateDoc(ref(toggle, 'projects', 'OTHER-R2'), { managerIds: [MGR_OTHER_A, MGR_JOB_A, MGR_TOGGLE_A], managerUserIds: [MGR_OTHER_A, MGR_JOB_A, MGR_TOGGLE_A] }))
+  await assertSucceeds(updateDoc(ref(toggle, 'projects', 'OTHER-R2'), { managerId: MGR_JOB_A, managerIds: [MGR_JOB_A, MGR_TOGGLE_A], managerUserIds: [MGR_JOB_A, MGR_TOGGLE_A] }))
+  // A manager without the toggle: no create with several managers, no change to the list of a job they manage…
+  await assertFails(setDoc(ref(mgr, 'projects', 'NEW-142-MGR'), { siteName: 'M', managerId: MGR_JOB_A, managerIds: [MGR_JOB_A, MGR_OTHER_A], managerUserIds: [MGR_JOB_A, MGR_OTHER_A] }))
+  await assertFails(updateDoc(ref(mgr, 'projects', 'JOB-R2'), { managerIds: [MGR_JOB_A, MGR_OTHER_A], managerUserIds: [MGR_JOB_A, MGR_OTHER_A] }))
+  await assertFails(updateDoc(ref(mgr, 'projects', 'OTHER-R2'), { managerIds: [MGR_JOB_A], managerUserIds: [MGR_JOB_A] }))
+  // …but still edits its details (option B).
+  await assertSucceeds(updateDoc(ref(mgr, 'projects', 'JOB-R2'), { siteName: 'Renamed 1.42' }))
+})
+
 test('1.10.0 r2 jobs: the toggle of a non-home organisation comes from that organisation\'s membership document', async () => {
   await seedR2()
   await env.withSecurityRulesDisabled(async (ctx) => {

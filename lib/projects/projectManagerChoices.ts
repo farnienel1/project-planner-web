@@ -282,3 +282,20 @@ export function projectManagerIdsWithout(
   const person = personOf(id)
   return selectedIds.filter((existing) => !managerIdsMatch(existing, id) && (!person || personOf(existing) !== person))
 }
+
+/**
+ * 1.42.0 (owner decision 13 Nov): a job has as many managers as are picked. The ids on the form with `choice` added
+ * at the end — unless the same person is already on the form under any id they go by (`projectManagerChoiceSelected`),
+ * then unchanged. Create and edit, projects and small works.
+ */
+export function projectManagerIdsWith(
+  selectedIds: readonly string[],
+  choice: ProjectManagerChoice,
+  managers: readonly ProjectManagerRosterRow[],
+  users: readonly ProjectManagerAccount[],
+  organizationId?: string
+): string[] {
+  const entries = projectManagerSelectedEntries(selectedIds, managers, users, organizationId)
+  if (projectManagerChoiceSelected(choice, entries, managers, users, organizationId)) return [...selectedIds]
+  return [...selectedIds, choice.id]
+}

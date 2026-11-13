@@ -69,3 +69,23 @@ test('1.31.0 a new job never stores null fields', () => {
   const create = jobWriteFields(null, plainWritePayload(payload))
   assert.equal(Object.values(create.set).includes(null), false)
 })
+
+test('1.42.0 a new job with two managers stores both, the first as managerId', () => {
+  const input = { ...projectToSaveInput(stored(), 'ORG'), managerId: 'M1', managerIds: ['M1', 'M2'], managerUserIds: ['U1', 'U2'] }
+  const create = jobWriteFields(null, plainWritePayload(buildProjectFirestorePayload(input)))
+  assert.deepEqual(create.set.managerIds, ['M1', 'M2'])
+  assert.equal(create.set.managerId, 'M1')
+  assert.deepEqual(create.set.managerUserIds, ['U1', 'U2'])
+})
+
+test('1.42.0 adding a third manager and removing one writes the manager group, nothing else', () => {
+  const job = stored()
+  const added = diff(job, { ...projectToSaveInput(job, 'ORG'), managerIds: ['M1', 'M2', 'M3'], managerUserIds: ['M1', 'M2', 'M3'] })
+  assert.deepEqual(added.set.managerIds, ['M1', 'M2', 'M3'])
+  assert.deepEqual(added.set.managerUserIds, ['M1', 'M2', 'M3'])
+  assert.deepEqual(Object.keys(added.set).filter((key) => !key.startsWith('manager')), [])
+  const removed = diff(job, { ...projectToSaveInput(job, 'ORG'), managerId: 'M2', managerIds: ['M2'], managerUserIds: ['M2'] })
+  assert.deepEqual(removed.set.managerIds, ['M2'])
+  assert.equal(removed.set.managerId, 'M2')
+  assert.deepEqual(removed.remove, [])
+})
