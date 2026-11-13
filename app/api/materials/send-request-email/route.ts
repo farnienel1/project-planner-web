@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { NextRequest } from 'next/server'
 import { bearerToken, firestoreGet, firestoreListCollection, firestoreQueryEqual, restFieldsToPlain } from '@/lib/owner/firestoreRest'
 import { sendProjectPlannerEmail } from '@/lib/email/resendClient'
@@ -57,7 +58,15 @@ type SendBody = {
   recipients?: RecipientBody[]
   materials?: MaterialBody[]
   deliveryRequiredAt?: string
+  /**
+   * One id per Send press (the sheet makes it), reused if the same request reaches this route again. Passed to the
+   * email function as `requestId`, which never sends the same request to the same recipient twice
+   * (functions/email/requestDedupe.js). Optional: without it a new one is made here.
+   */
+  requestId?: string
 }
+
+const REQUEST_ID_PATTERN = /^[A-Za-z0-9_-]{8,128}$/
 
 function parseMaterials(rows: MaterialBody[] | undefined) {
   if (!Array.isArray(rows) || rows.length === 0) return null
@@ -249,6 +258,9 @@ export async function POST(request: NextRequest) {
     caller: { name: senderName, email: senderEmail },
   })
   const idToken = bearerToken(request)
+  const givenRequestId = typeof body.value.requestId === 'string' ? body.value.requestId.trim() : ''
+  if (givenRequestId && !REQUEST_ID_PATTERN.test(givenRequestId)) return jsonError('requestId is not valid', 400)
+  const requestId = givenRequestId || randomUUID()
   const failed: string[] = []
   const failures: Array<{ email: string; reason: string }> = []
   const messageIds: string[] = []
@@ -287,6 +299,7 @@ export async function POST(request: NextRequest) {
           idToken,
           fromCaller: true,
           ccCaller: true,
+          requestId,
         })
         return { recipient, subject, html, result, error: null as string | null }
       } catch (error) {

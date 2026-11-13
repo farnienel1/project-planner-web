@@ -25,6 +25,7 @@ export function PageBand({
   actions,
   aside,
   children,
+  eyebrowIsHeading,
 }: {
   eyebrow?: ReactNode
   title?: ReactNode
@@ -37,7 +38,14 @@ export function PageBand({
   aside?: ReactNode
   /** StatRow and glass panels. */
   children?: ReactNode
+  /**
+   * The eyebrow names the page (it is the page's h1, styled as the eyebrow) and the title is a paragraph styled as a
+   * title — for a page whose big line is a figure, not its name.
+   */
+  eyebrowIsHeading?: boolean
 }) {
+  const Eyebrow = eyebrowIsHeading ? 'h1' : 'div'
+  const Title = eyebrowIsHeading ? 'p' : 'h1'
   return (
     <section className="pu-band">
       <div className="pu-band-top">
@@ -47,12 +55,12 @@ export function PageBand({
               <span aria-hidden="true">‹</span> {back.label}
             </button>
           ) : null}
-          {eyebrow ? <div className="pu-eyebrow">{eyebrow}</div> : null}
+          {eyebrow ? <Eyebrow className="pu-eyebrow">{eyebrow}</Eyebrow> : null}
           {title != null ? (
-            <h1>
+            <Title className={eyebrowIsHeading ? 'pu-band-title' : undefined}>
               {title}
               {titleSuffix ? <small> {titleSuffix}</small> : null}
-            </h1>
+            </Title>
           ) : null}
           {subtitle ? <p className="pu-band-sub">{subtitle}</p> : null}
         </div>

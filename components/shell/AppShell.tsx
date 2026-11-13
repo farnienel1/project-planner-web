@@ -45,6 +45,7 @@ import { AccountMenu } from '@/components/shell/AccountMenu'
 import { CommandPalette } from '@/components/shell/CommandPalette'
 import { NotificationsPopover } from '@/components/shell/NotificationsPopover'
 import { ToastProvider, useToast } from '@/components/ui/ToastProvider'
+import { BookingDeleteNotice } from '@/components/schedule/BookingDeleteNotice'
 import { Button, IconChip } from '@/components/ui'
 import { useNotificationStore } from '@/lib/stores/notificationStore'
 import {
@@ -719,6 +720,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   return (
     <ToastProvider>
       <AppShellInner>{children}</AppShellInner>
+      <BookingDeleteNotice />
     </ToastProvider>
   )
 }

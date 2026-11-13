@@ -168,3 +168,78 @@ test('1.20.3: Daily Overview shows hours at the multiplier as clock hours with t
   assert.equal(model.overtimeText, '6.5h × 2 − 0.5h break = 12.5h')
   assert.equal(model.projectCards[0].people[0].pillText, '12.5h')
 })
+
+test('UI pack U1 / U2: each row carries its scheduling tile kind and its shift and times, from the pay rule only', async () => {
+  const { buildDailyOverview } = await import('./buildDailyOverview.ts')
+  const { dateFromDayKey } = await import('../ios-parity/londonTime.ts')
+  const { bookingPayrollHours, bookingTimesParts, bookingTimesText } = await import('../scheduling/paidHours.ts')
+  const { scheduleCellHours, scheduleCellKind } = await import('../canonical/index.ts')
+  const booking = (id: string, day: Date, timeSlot: string, workStartTime?: string, workEndTime?: string, operativeId = 'op') =>
+    ({ id, operativeId, projectId: 'P1', date: day, timeSlot, workStartTime, workEndTime, status: 'Confirmed', bookedBy: 'a', createdAt: day, updatedAt: day })
+  const build = (dayKey: string, bookings: ReturnType<typeof booking>[]) => {
+    const day = dateFromDayKey(dayKey)
+    return buildDailyOverview({
+      day,
+      today: day,
+      projects: [{ id: 'P1', jobNumber: 'J1', siteName: 'Site', jobType: 'CAT A' } as never],
+      bookings: bookings as never,
+      managerBookings: [],
+      holidays: [],
+      users: [],
+      operatives: [],
+    })
+  }
+  const wedDay = dateFromDayKey('2026-10-21')
+  const wed = build('2026-10-21', [booking('B1', wedDay, 'CUSTOM_HOURS', '06:00', '17:45')])
+  const row = wed.projectCards[0].people[0]
+  // The same calls the scheduling week makes, on the same booking: no figure of its own.
+  const expected = scheduleCellKind({ ...scheduleCellHours(bookingPayrollHours({ ...booking('B1', wedDay, 'CUSTOM_HOURS', '06:00', '17:45'), date: wedDay })), timeSlot: 'CUSTOM_HOURS' })
+  assert.deepEqual(row.cell, expected)
+  assert.equal(row.cell.tone, 'split')
+  assert.equal(row.cell.standardHours, 8)
+  assert.deepEqual(row.bookingParts, [{ shift: 'Custom', times: '06:00–17:45' }])
+  // The figures the row already showed are unchanged.
+  assert.equal(row.pillText, '12.88h')
+  assert.equal(row.subtitle, 'Custom 06:00–17:45')
+  const sunDay = dateFromDayKey('2026-10-25')
+  assert.equal(build('2026-10-25', [booking('B2', sunDay, 'CUSTOM_HOURS', '08:00', '12:00')]).projectCards[0].people[0].cell.tone, 'otOnly')
+  const thuDay = dateFromDayKey('2026-10-22')
+  const thu = build('2026-10-22', [booking('B3', thuDay, 'FULL DAY')]).projectCards[0].people[0]
+  assert.equal(thu.cell.tone, 'standard')
+  assert.deepEqual(thu.bookingParts, [{ shift: thu.subtitle, times: null }])
+  // One person with two bookings on the job: one row, the hours added up before the kind, both bookings listed.
+  const twice = build('2026-10-22', [
+    booking('B4', thuDay, 'CUSTOM_HOURS', '07:30', '12:00'),
+    booking('B5', thuDay, 'CUSTOM_HOURS', '16:00', '18:00'),
+  ]).projectCards[0].people
+  assert.equal(twice.length, 1)
+  assert.equal(twice[0].bookingParts.length, 2)
+  assert.equal(twice[0].cellPaidHours, twice[0].hours)
+  assert.equal(twice[0].cell.tone, 'split')
+  // Same stored slot on every booking of the row: the slot still decides (AM + AM stays a half day).
+  const halves = build('2026-10-22', [booking('B6', thuDay, 'AM'), booking('B7', thuDay, 'AM')]).projectCards[0].people
+  assert.equal(halves.length, 1)
+  assert.equal(halves[0].cell.tone, 'halfDay')
+  // A booking line that reads the same is shown once, as the old subtitle did.
+  assert.deepEqual(halves[0].bookingParts, [bookingTimesParts({ timeSlot: 'AM' })])
+  assert.equal(halves[0].subtitle, bookingTimesText({ timeSlot: 'AM' }))
+  const fullTwice = build('2026-10-22', [booking('B8', thuDay, 'FULL DAY'), booking('B9', thuDay, 'FULL DAY')]).projectCards[0].people[0]
+  assert.equal(fullTwice.bookingParts.length, 1)
+  // Different slots: the summed hours decide the kind.
+  const mixed = build('2026-10-22', [booking('B10', thuDay, 'AM'), booking('B11', thuDay, 'CUSTOM_HOURS', '16:00', '18:00')]).projectCards[0].people[0]
+  assert.equal(mixed.cellSlot, null)
+  assert.deepEqual(mixed.cell, scheduleCellKind({ paidHours: mixed.cellPaidHours, overtimeHours: mixed.cellOvertimeHours }))
+  assert.equal(mixed.bookingParts.length, 2)
+  // `bookingTimesText` is the two parts joined, for every slot.
+  for (const input of [
+    { timeSlot: 'CUSTOM_HOURS', workStartTime: '07:30', workEndTime: '14:00' },
+    { timeSlot: 'CUSTOM_HOURS' },
+    { timeSlot: 'FULL DAY' },
+    { timeSlot: 'AM' },
+    { timeSlot: 'PM' },
+    { timeSlot: undefined },
+  ]) {
+    const { shift, times } = bookingTimesParts(input)
+    assert.equal(times ? `${shift} ${times}` : shift, bookingTimesText(input))
+  }
+})

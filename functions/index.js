@@ -45,6 +45,7 @@ const { createAdminEraserStore, eraseDueOrganizations } = require('./organizatio
 const { createSendEmailHandler, resendSender } = require('./email/handler')
 const { createFirestoreReader } = require('./email/firestoreReader')
 const { consumeRateLimit } = require('./email/rateLimit')
+const { createAdminRequestDedupe } = require('./email/requestDedupe')
 const { FieldPath, FieldValue } = require('firebase-admin/firestore')
 const { createAuthClaimsSync, createAdminAuthClaimsStore } = require('./authClaims')
 
@@ -228,6 +229,8 @@ function emailHandler() {
     verifyAppCheck: (token) => getAppCheck().verifyToken(token),
     reader: createFirestoreReader(db),
     consumeRateLimit: (key, count, limits) => consumeRateLimit(db, key, count, limits),
+    // `requestId` idempotency: `emailRequestSends/{key}` (Admin SDK only; no security rule matches it).
+    requestDedupe: createAdminRequestDedupe(db),
     sendMessage: resendSender(() => RESEND_API_KEY.value()),
     // Trimmed: a secret set from a file keeps its trailing newline (handler `sameSecret` trims too).
     serverKey: () => String(EMAIL_SERVER_KEY.value() || '').trim(),
