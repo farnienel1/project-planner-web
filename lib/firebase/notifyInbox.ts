@@ -22,6 +22,8 @@ export async function saveInboxNotification(input: {
   deepLinkWeekStart?: Date | null
   dayKey?: string | null
   catalogue?: 'projects' | 'smallWorks' | null
+  /** Rulebook 1.40.0 `notificationCreateFields`: inbox-only text under the message, never pushed. */
+  detail?: string | null
   id?: string
   /**
    * Rulebook §13: who caused the row. Defaults to the signed-in user (security rules require exactly that uid when
@@ -68,6 +70,7 @@ export async function saveInboxNotification(input: {
       actorUserId: inboxActorUserId(input.actorUserId) || null,
       dayKey: input.dayKey ?? null,
       catalogue: input.catalogue ?? null,
+      detail: input.detail ?? null,
       createdAt: input.scheduledAt ?? null,
       serverTimestamp: serverTimestamp(),
     } as NotificationCreateInput,

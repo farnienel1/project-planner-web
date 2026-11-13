@@ -16,6 +16,8 @@ export async function notifyCompanyActivity(input: {
   type: CompanyActivityType
   title: string
   message: string
+  /** Rulebook 1.40.0: inbox-only text under the message, never pushed. */
+  detail?: string | null
   relatedId?: string | null
   requiresPermission?: string | null
   /** The signed-in user who caused it. */
@@ -34,6 +36,7 @@ export async function notifyCompanyActivity(input: {
         type: input.type,
         title: input.title,
         message: input.message,
+        detail: input.detail ?? null,
         userId,
         relatedId: input.relatedId ?? null,
         requiresPermission: input.requiresPermission ?? null,

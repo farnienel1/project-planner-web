@@ -26,6 +26,7 @@ import {
   type LeaveDayRecord,
 } from './annualLeaveBalance'
 import { bookingIdsForAccount, leaveRecordsForAccount } from './bookingPerson'
+import type { EmploymentTypeUser } from './userProfile'
 import { organizationWeekDayKeys } from './dayKeys'
 import { isTaskCompleted, isTaskOverdue } from './dueDates'
 import { holidayDocumentDayKey } from './holidayDocument'
@@ -60,6 +61,10 @@ export type MyProfileSummaryUser = LineManagerSubject & {
   annualLeaveYearAllowanceKey?: string | null
   /** `users/{uid}.employmentStartDate` (organisation-zone day key). */
   employmentStartDate?: string | null
+  /** 1.40.0: the allowance applies only on PAYE days (`employmentTypeOnDay`); a missing type reads as self-employed. */
+  employmentType?: string | null
+  employmentTypeTransitionFrom?: string | null
+  employmentTypeEffectiveAt?: Date | string | number | null
 }
 
 export type MyProfileSummaryBooking = CoverageBooking & {
@@ -111,6 +116,14 @@ export type MyProfileSummaryInput = {
   holidays?: ReadonlyArray<LeaveDayRecord & { userId?: string | null; operativeId?: string | null }> | null
   /** Bank holidays of the organisation's region. */
   nonWorkingDayKeys?: ReadonlyArray<string> | null
+  /** 1.40.0: the person's manual adjustments (`parseAnnualLeaveAdjustmentDocument`), any year; this year's count. */
+  leaveAdjustments?: ReadonlyArray<{ days?: unknown; yearKey?: unknown }> | null
+  /**
+   * 1.40.0 (review r306 #2): the person's employment-type fields from their pay record (`annualLeaveEmploymentInput`:
+   * the pay profile while `privatePay` is on). When given — null included, meaning it could not be read — it is used
+   * instead of the `user` fields.
+   */
+  leaveEmployment?: EmploymentTypeUser | null
   tasks?: ReadonlyArray<HomeOverviewTask> | null
   /** Labour bookings (`bookings`). */
   bookings?: ReadonlyArray<MyProfileSummaryBooking> | null
@@ -153,7 +166,7 @@ function profileDayKey(input: { nowMs: number; timeZone: string }): string {
  * one's end, for carry-over). Takes the same `user` and `leaveDefaults` as `myProfileSummary`.
  */
 export function myProfileBankHolidayRange(
-  input: Pick<MyProfileSummaryInput, 'nowMs' | 'timeZone' | 'user' | 'leaveDefaults'>
+  input: Pick<MyProfileSummaryInput, 'nowMs' | 'timeZone' | 'user' | 'leaveDefaults' | 'leaveEmployment'>
 ): AnnualLeaveBankHolidayRange {
   const user = input.user || null
   const defaults = input.leaveDefaults || {}
@@ -165,7 +178,23 @@ export function myProfileBankHolidayRange(
     orgEndMonth: defaults.endMonth,
     onDayKey: profileDayKey(input),
     timeZone: input.timeZone,
+    employment: employmentFor(input),
   })
+}
+
+/** 1.40.0: the employment-type input — `leaveEmployment` when the caller passed it, else the `user` fields. */
+function employmentFor(input: Pick<MyProfileSummaryInput, 'user' | 'leaveEmployment'>): EmploymentTypeUser | null {
+  if (Object.prototype.hasOwnProperty.call(input, 'leaveEmployment')) return input.leaveEmployment ?? null
+  return employmentOf(input.user || null)
+}
+
+/** 1.40.0: the employment-type fields `annualLeaveBalance` reads. */
+function employmentOf(user: MyProfileSummaryUser | null) {
+  return {
+    employmentType: user?.employmentType ?? null,
+    employmentTypeTransitionFrom: user?.employmentTypeTransitionFrom ?? null,
+    employmentTypeEffectiveAt: user?.employmentTypeEffectiveAt ?? null,
+  }
 }
 
 export function myProfileSummary(input: MyProfileSummaryInput): MyProfileSummary {
@@ -218,6 +247,8 @@ export function myProfileSummary(input: MyProfileSummaryInput): MyProfileSummary
     nonWorkingDayKeys: input.nonWorkingDayKeys ?? [],
     employmentStartDayKey: user?.employmentStartDate ?? null,
     maxCarryOverDays: defaults.maxCarryOverDays ?? null,
+    employment: employmentFor(input),
+    adjustments: input.leaveAdjustments ?? [],
   })
 
   // 2. Hours booked this Monday–Sunday week (worked hours, no multiplier).

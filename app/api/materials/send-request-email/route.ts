@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import { NextRequest } from 'next/server'
 import { bearerToken, firestoreGet, firestoreListCollection, firestoreQueryEqual, restFieldsToPlain } from '@/lib/owner/firestoreRest'
-import { sendProjectPlannerEmail } from '@/lib/email/resendClient'
+import { defaultMaterialRequestSendDeps, sendMaterialRequestMessages } from '@/lib/email/materialRequestSend'
+import { MATERIAL_EMAIL_UNCONFIRMED_MESSAGE } from '@/lib/email/resendClient'
 import { buildMaterialRequestEmail } from '@/lib/email/materialRequestEmail'
 import {
   defaultMaterialDeliveryRequiredAt,
@@ -92,11 +93,13 @@ function parseMaterials(rows: MaterialBody[] | undefined) {
 function parseRecipients(rows: RecipientBody[] | undefined) {
   if (!Array.isArray(rows) || rows.length === 0) return null
   if (rows.length > 40) return null
-  const recipients = []
+  const recipients: Array<{ name: string; email: string }> = []
   for (const row of rows) {
     const name = clampString(row.name, 120)
     const email = clampString(row.email, 254)
     if (!name || !email || !isValidEmail(email)) return null
+    // The same address twice (two wholesalers sharing a contact, a typed address that is also saved) gets one email.
+    if (recipients.some((row) => row.email === email.toLowerCase())) continue
     recipients.push({ name, email: email.toLowerCase() })
   }
   return recipients
@@ -116,6 +119,15 @@ async function materialJobCheck(
   jobId: string,
   jobNumber: string
 ): Promise<{ ok: true } | { ok: false; status: number; message: string }> {
+  const email = (user.email || '').trim().toLowerCase()
+  // The sender's own documents and managers-list rows do not depend on the job: read them while the job is read.
+  const callerReads = Promise.all([
+    plainDoc(idToken, `users/${user.uid}`).catch(() => null),
+    plainDoc(idToken, `users/${user.uid}/orgMemberships/${organizationId}`).catch(() => null),
+    email
+      ? firestoreQueryEqual(idToken, `organizations/${organizationId}`, 'managers', 'email', email).catch(() => [] as string[])
+      : Promise.resolve([] as string[]),
+  ])
   let job: Record<string, unknown> | null = null
   let kind: 'projects' | 'smallWorks' | null = null
   try {
@@ -129,8 +141,7 @@ async function materialJobCheck(
     // The rules refused the read: this sender may not see the job.
     return { ok: false, status: 403, message: MATERIAL_REQUEST_JOB_NOT_VISIBLE_MESSAGE }
   }
-  const userDoc = await plainDoc(idToken, `users/${user.uid}`).catch(() => null)
-  const membershipDoc = await plainDoc(idToken, `users/${user.uid}/orgMemberships/${organizationId}`).catch(() => null)
+  const [userDoc, membershipDoc, managerPaths] = await callerReads
   const level = organizationLevelFor({
     organizationId,
     userId: user.uid,
@@ -139,10 +150,6 @@ async function materialJobCheck(
     membersRole: membership.role === 'none' ? undefined : membership.role,
     creatorUserId: membership.isCreator ? user.uid : '',
   })
-  const email = (user.email || '').trim().toLowerCase()
-  const managerPaths = email
-    ? await firestoreQueryEqual(idToken, `organizations/${organizationId}`, 'managers', 'email', email).catch(() => [])
-    : []
   const list = (value: unknown) => (Array.isArray(value) ? value.filter((id): id is string => typeof id === 'string') : [])
   const viewer = materialRequestJobViewer({
     userId: user.uid,
@@ -202,6 +209,11 @@ export async function POST(request: NextRequest) {
   // Rulebook 1.27.0 (§16, §17, owner decision 2) `materialRequestJobCheck`: when the request names its job, the sender
   // must see that job (`canSeeJob`, the same rule as the email function's `material_request`) and the job number must
   // be the stored one. Read with the caller's own token, so the security rules apply too.
+  // The organisation's wholesalers (for `materialOrderRecipientCheck` below) do not depend on the job check, so
+  // they are read at the same time; the job check still decides first.
+  const wholesalerRows = firestoreListCollection(bearerToken(request), `organizations/${access.organizationId}/wholesalers`)
+  wholesalerRows.catch(() => {})
+
   const rawJobId = typeof body.value.jobId === 'string' ? body.value.jobId.trim() : ''
   if (body.value.jobId != null && body.value.jobId !== '') {
     if (!rawJobId || rawJobId.length > 128 || !/^[A-Za-z0-9_-]+$/.test(rawJobId)) return jsonError('jobId is not valid', 400)
@@ -217,7 +229,7 @@ export async function POST(request: NextRequest) {
   // Rulebook 1.15.0 `materialOrderRecipientCheck`: saved wholesaler contacts, plus at most 3 typed addresses.
   let savedContactEmails: string[] = []
   try {
-    const rows = await firestoreListCollection(bearerToken(request), `organizations/${access.organizationId}/wholesalers`)
+    const rows = await wholesalerRows
     savedContactEmails = rows.flatMap((row) => {
       const firm = parseWholesalerDocument(row.id, restFieldsToPlain(row.fields))
       return firm ? firm.contacts.map((contact) => contact.email) : []
@@ -246,7 +258,7 @@ export async function POST(request: NextRequest) {
     : undefined
   // Owner (3 Nov): one email per recipient — the recipient in To and the sending user in CC — sent as
   // "<user> via Project Planner" from the verified address with Reply-To the user (the email function decides the
-  // name and CC from the verified caller). All recipients are sent at once, not one after another. A function
+  // name and CC from the verified caller). Every recipient goes in one call to the function (below). A function
   // deployed before CC support ignores `ccCaller`; the route then sends the user's copy as before.
   // Rulebook 1.24.0 `materialRequestEmailEnvelope`: the subject and Reply-To / CC address, shared with the email
   // function's `material_request`. The From name ("<user> via Project Planner") and the CC are applied by the email
@@ -261,88 +273,50 @@ export async function POST(request: NextRequest) {
   const givenRequestId = typeof body.value.requestId === 'string' ? body.value.requestId.trim() : ''
   if (givenRequestId && !REQUEST_ID_PATTERN.test(givenRequestId)) return jsonError('requestId is not valid', 400)
   const requestId = givenRequestId || randomUUID()
-  const failed: string[] = []
-  const failures: Array<{ email: string; reason: string }> = []
-  const messageIds: string[] = []
-  let sent = 0
-  let copies = 0
-
-  const outcomes = await Promise.all(
-    recipients.map(async (recipient) => {
-      const { html } = buildMaterialRequestEmail({
-        context: {
-          supplierName: recipient.name,
-          userName: senderName,
-          userEmail: senderEmail.toLowerCase(),
-          userPhone: clampString(body.value.senderPhone, 40),
-          userCompany: senderCompany,
-          jobNumber,
-          siteName: clampString(body.value.siteName, 200),
-          deliveryAddress: clampString(body.value.siteAddress, 400),
-          companyLogoURL: clampString(body.value.companyLogoURL, 500),
-          materials,
-          sentAt,
-          deliveryRequiredLabel,
-        },
-        isQuote,
-        sendAsPlainText,
-        contactName: recipient.name,
-      })
-      const subject = envelope.subject
-      try {
-        const result = await sendProjectPlannerEmail({
-          to: recipient.email,
-          subject,
-          html,
-          replyTo: envelope.replyTo,
-          orgId: access.organizationId,
-          idToken,
-          fromCaller: true,
-          ccCaller: true,
-          requestId,
-        })
-        return { recipient, subject, html, result, error: null as string | null }
-      } catch (error) {
-        return { recipient, subject, html, result: null, error: error instanceof Error ? error.message : String(error) }
-      }
+  // Every recipient's message is rendered here (each greets its own contact), then all of them go to the email
+  // function in ONE call (`sendMaterialRequestMessages`): one cold start, one rate-limit count and one Resend batch,
+  // instead of one call per recipient at the same time.
+  const messages = recipients.map((recipient) => {
+    const { html } = buildMaterialRequestEmail({
+      context: {
+        supplierName: recipient.name,
+        userName: senderName,
+        userEmail: senderEmail.toLowerCase(),
+        userPhone: clampString(body.value.senderPhone, 40),
+        userCompany: senderCompany,
+        jobNumber,
+        siteName: clampString(body.value.siteName, 200),
+        deliveryAddress: clampString(body.value.siteAddress, 400),
+        companyLogoURL: clampString(body.value.companyLogoURL, 500),
+        materials,
+        sentAt,
+        deliveryRequiredLabel,
+      },
+      isQuote,
+      sendAsPlainText,
+      contactName: recipient.name,
     })
+    return { to: recipient.email, subject: envelope.subject, html }
+  })
+  const outcome = await sendMaterialRequestMessages(
+    {
+      messages,
+      senderEmail,
+      replyTo: envelope.replyTo,
+      orgId: access.organizationId,
+      idToken,
+      requestId,
+    },
+    {
+      ...defaultMaterialRequestSendDeps,
+      reason: (message) => clientSafeMessage(new Error(message), 'The email was not sent'),
+      log: (event, details) => console.info('[materials/send-request-email]', event, details),
+    }
   )
-
-  for (const outcome of outcomes) {
-    if (!outcome.result) {
-      console.error('[materials/send-request-email] failed', outcome.recipient.email, outcome.error)
-      failed.push(outcome.recipient.email)
-      failures.push({
-        email: outcome.recipient.email,
-        reason: clientSafeMessage(new Error(outcome.error || ''), 'The email was not sent'),
-      })
-      continue
-    }
-    sent += 1
-    messageIds.push(...outcome.result.ids)
-    console.info('[materials/send-request-email] sent', {
-      to: outcome.recipient.email,
-      resendIds: outcome.result.ids,
-      cc: outcome.result.cc,
-    })
-    if (outcome.result.cc.length > 0) {
-      copies += 1
-      continue
-    }
-    // Older function deploy without CC: the user's separate copy, as before.
-    try {
-      await sendProjectPlannerEmail({
-        to: senderEmail.toLowerCase(),
-        subject: `Copy: ${outcome.subject}`,
-        html: outcome.html,
-        replyTo: envelope.replyTo,
-        orgId: access.organizationId,
-        idToken,
-      })
-      copies += 1
-    } catch (error) {
-      console.error('[materials/send-request-email] user copy', senderEmail, error)
-    }
+  const { sent, copies, failed, failures, messageIds } = outcome
+  if (outcome.unconfirmed) {
+    // It may have gone: never "Email not sent". The same request id is never sent twice by the function.
+    return Response.json({ ok: false, unconfirmed: true, error: MATERIAL_EMAIL_UNCONFIRMED_MESSAGE }, { status: 502 })
   }
 
   if (sent === 0) {

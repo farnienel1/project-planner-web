@@ -7,6 +7,7 @@ import {
   canSelfBookAnnualLeave,
   leaveApproverIds,
   leaveDecisionQueue,
+  leaveDecisionRequester,
   lineManagerIds,
   leaveSubmitLabel,
   lineManagerRequired,
@@ -88,10 +89,13 @@ export function usersWithoutRequiredLineManager(users: User[]): User[] {
   return users.filter((member) => ids.has(member.id))
 }
 
-function requesterFor(request: HolidayBooking, users: User[], operatives: Operative[]) {
-  const requester = holidayRequester(request, users, operatives)
-  if (requester) return leaveUser(requester, users)
-  return { id: request.userId || request.operativeId || null }
+/**
+ * The requester a decision is judged against (rulebook 1.40.0, owner decision 13 Nov item 17:
+ * `leaveDecisionRequester`): the users document whose id is the record's userId (else operativeId) — never the person
+ * an operatives row's email points at, so repointing a row never hands out leave decisions. `operatives` is not read.
+ */
+function requesterFor(request: HolidayBooking, users: User[], _operatives: Operative[]) {
+  return leaveDecisionRequester(request, leaveRoster(users)) ?? { id: null }
 }
 
 /** `leaveApproverIds`: every current line manager, else the admins. */
@@ -164,10 +168,10 @@ export function getPendingHolidayApprovalsForUser(
   const queued = leaveDecisionQueue(
     { id: user.id, role: staffAccountRole(user) },
     getPendingHolidayRequests(bookings).map((booking) => {
-      const requester = holidayRequester(booking, users, operatives)
+      // Rulebook 1.40.0 (13 Nov item 17): the stored ids, never an account found through a row's email.
       return {
         booking,
-        userId: requester?.id ?? booking.userId ?? null,
+        userId: booking.userId ?? null,
         operativeId: booking.operativeId ?? null,
         status: booking.status,
         cancellationRequestedAt: booking.cancellationRequestedAt ? booking.cancellationRequestedAt.getTime() : null,

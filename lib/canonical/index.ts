@@ -1800,6 +1800,49 @@ export {
   usersWithSameName,
 } from './duplicateUserNames'
 export type { SameNamePerson, SameNameRosterRow } from './duplicateUserNames'
+// 1.40.0 (§4.4, §9, owner decisions 11 Nov): Team list, employment-type allowance, manual adjustments.
+export {
+  annualLeaveAdjustmentDaysForYear,
+  annualLeaveBalanceNotes,
+  annualLeaveEmploymentInput,
+  balanceHasAllowance,
+  leaveAllowanceForWindow,
+  type AnnualLeaveBalanceNotes,
+} from './annualLeaveBalance'
+export { employmentTypeTransition } from './userProfile'
+export { leaveDecisionRequester } from './leaveRequests'
+export { USER_MISSING_EMPLOYMENT_TYPE_MESSAGE, usersMissingEmploymentType } from './payRate'
+export {
+  ANNUAL_LEAVE_TEAM_EMPTY_ADMIN,
+  ANNUAL_LEAVE_TEAM_EMPTY_MANAGER,
+  annualLeaveTeamEmptyMessage,
+  annualLeaveTeamPeople,
+  annualLeaveTeamPersonIsCurrent,
+  annualLeaveTeamTabVisible,
+} from './annualLeaveTeam'
+export {
+  ANNUAL_LEAVE_ADJUSTED_NOTICE_TYPE,
+  ANNUAL_LEAVE_ADJUSTMENTS_COLLECTION,
+  ANNUAL_LEAVE_ADJUSTMENT_DAYS_MESSAGE,
+  ANNUAL_LEAVE_ADJUSTMENT_MAX_DAYS,
+  ANNUAL_LEAVE_ADJUSTMENT_NOTE,
+  ANNUAL_LEAVE_ADJUSTMENT_NOT_ALLOWED_MESSAGE,
+  ANNUAL_LEAVE_ADJUSTMENT_REASON_MAX,
+  ANNUAL_LEAVE_ADJUSTMENT_REASON_MESSAGE,
+  ANNUAL_LEAVE_ADJUSTMENT_REASON_TOO_LONG_MESSAGE,
+  annualLeaveAdjustedNoticeText,
+  annualLeaveAdjustedRecipients,
+  annualLeaveAdjustmentCreateFields,
+  annualLeaveAdjustmentAuthorName,
+  annualLeaveAdjustmentLabel,
+  annualLeaveAdjustmentValidationError,
+  annualLeaveAdjustmentsForPerson,
+  canAdjustAnnualLeave,
+  canViewAnnualLeaveAdjustments,
+  parseAnnualLeaveAdjustmentDocument,
+} from './annualLeaveAdjustments'
+export type { AnnualLeaveTeamCandidate, AnnualLeaveTeamInput, AnnualLeaveTeamViewer } from './annualLeaveTeam'
+export type { AnnualLeaveAdjustment } from './annualLeaveAdjustments'
 
 // Rulebook 1.38.0 §27 (owner decision 11 Nov): the in-app data check (server count vs device count per list).
 export {

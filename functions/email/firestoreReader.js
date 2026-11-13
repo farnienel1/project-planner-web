@@ -20,9 +20,12 @@ function createFirestoreReader(db) {
      */
     async getJob(orgId, jobId) {
       if (!orgId || !jobId) return null
-      const project = await getData(`organizations/${orgId}/projects/${jobId}`)
+      // Both collections are read at once; the project still wins when both exist (older iOS builds, §17).
+      const [project, smallWorks] = await Promise.all([
+        getData(`organizations/${orgId}/projects/${jobId}`),
+        getData(`organizations/${orgId}/smallWorks/${jobId}`),
+      ])
       if (project) return { kind: 'projects', data: project }
-      const smallWorks = await getData(`organizations/${orgId}/smallWorks/${jobId}`)
       return smallWorks ? { kind: 'smallWorks', data: smallWorks } : null
     },
     /** The organisation's `managers` rows on this email (a job may name the caller's managers-list row, §17). */

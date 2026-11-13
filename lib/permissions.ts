@@ -309,12 +309,6 @@ export function isActingManagerOperativeManagementOnly(user: PermissionUser): bo
   return flag(user, 'manager') && flag(user, 'operatives')
 }
 
-export function canAccessOperativeAnnualLeaveDirectory(user: PermissionUser): boolean {
-  if (!user || isOperativeMode(user)) return false
-  if (hasAdminAccess(user)) return true
-  return flag(user, 'manager') && flag(user, 'operatives')
-}
-
 export function canViewReports(user: PermissionUser): boolean {
   return !isOperativeMode(user)
 }

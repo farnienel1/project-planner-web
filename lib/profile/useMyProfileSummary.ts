@@ -23,6 +23,8 @@ import { useOrgUserStore, useRosterDocuments } from '@/lib/stores/siteAuditStore
 import { useTaskStore } from '@/lib/stores/taskStore'
 import { holidayBookingDayKeys } from '@/lib/annualLeave/holidayDayKeys'
 import { useOrgBankHolidays } from '@/components/annual-leave/useOrgBankHolidays'
+import { useAnnualLeaveAdjustments } from '@/lib/annualLeave/leaveAdjustments'
+import { useLeaveEmployment } from '@/lib/annualLeave/useLeaveEmployment'
 import { qualificationExpiryOperatives } from '@/lib/warnings/generateOrgWarnings'
 import { useOrganizationDayKey } from '@/lib/warnings/useOrganizationDayKey'
 
@@ -45,6 +47,8 @@ export function useMyProfileSummary(): MyProfileSummary | null {
   const orgLeaveDefaults = parseAnnualLeaveDefaults(
     ((orgDocument.data ?? {}) as Record<string, unknown>).annualLeaveDefaults as Record<string, unknown> | undefined
   )
+  // Rulebook 1.40.0 (review r306 #2): the employment type from the person's own pay record.
+  const leaveEmployment = useLeaveEmployment(orgId, user)
   const bankRange = useMemo(
     () =>
       myProfileBankHolidayRange({
@@ -52,9 +56,10 @@ export function useMyProfileSummary(): MyProfileSummary | null {
         timeZone,
         user: (user ?? null) as never,
         leaveDefaults: orgLeaveDefaults,
+        leaveEmployment: leaveEmployment.employment,
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `dayKey` stands in for `Date.now()`
-    [user, timeZone, dayKey, orgLeaveDefaults.startMonth, orgLeaveDefaults.endMonth]
+    [user, timeZone, dayKey, orgLeaveDefaults.startMonth, orgLeaveDefaults.endMonth, leaveEmployment.employment]
   )
   const bank = useOrgBankHolidays(new Date(`${bankRange.startDayKey}T12:00:00`), new Date(`${bankRange.endDayKey}T12:00:00`), {
     years: bankRange.years,
@@ -75,9 +80,15 @@ export function useMyProfileSummary(): MyProfileSummary | null {
   const bankDayKeys = bank.holidays.map((holiday) => holiday.date).join(',')
 
   const bankLoaded = bank.loaded
+  // Rulebook 1.40.0: the person's own manual adjustments (this leave year's are added to the allowance).
+  // 1.40.0 (review r306 #9): nothing is shown until the adjustments have loaded; a refused read shows nothing.
+  const adjustmentsRead = useAnnualLeaveAdjustments(orgId, user?.id)
+  const leaveAdjustments = adjustmentsRead.adjustments
+  const adjustmentsLoaded = adjustmentsRead.loaded
+  const employmentReady = leaveEmployment.ready
   return useMemo(() => {
     // Until the bank holidays load, a bank holiday inside a leave record could still count as leave: show nothing yet.
-    if (!user || !orgId || !bankLoaded) return null
+    if (!user || !orgId || !bankLoaded || !adjustmentsLoaded || !employmentReady) return null
     const orgData = (orgDocument.data ?? {}) as Record<string, unknown>
     return myProfileSummary({
       nowMs: Date.now(),
@@ -110,6 +121,8 @@ export function useMyProfileSummary(): MyProfileSummary | null {
         status: holiday.status,
       })),
       nonWorkingDayKeys: bankDayKeys ? bankDayKeys.split(',') : [],
+      leaveAdjustments,
+      leaveEmployment: leaveEmployment.employment,
       tasks: tasks.map((task) => ({
         status: task.status,
         dueDate: task.dueDate ?? null,
@@ -139,5 +152,5 @@ export function useMyProfileSummary(): MyProfileSummary | null {
     })
     // `dayKey` moves the figures on at the organisation's midnight.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, orgId, bankLoaded, timeZone, dayKey, orgDocument.data, roster, operatives, managers, holidays, bankDayKeys, tasks, bookings, managerSiteBookings])
+  }, [user, orgId, bankLoaded, timeZone, dayKey, orgDocument.data, roster, operatives, managers, holidays, bankDayKeys, tasks, bookings, managerSiteBookings, leaveAdjustments, adjustmentsLoaded, employmentReady, leaveEmployment.employment])
 }
