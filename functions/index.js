@@ -253,11 +253,7 @@ exports.sendEmail = onRequest(
     invoker: 'public',
     cors: false,
     maxInstances: 10,
-    // One warm instance so a material order is not held up by a cold start (a few seconds on the first email after
-    // a quiet spell). Costs one idle instance around the clock (docs/EMAIL_FUNCTION.md "Speed"). A whole vCPU (the
-    // default for 512MiB is a third of one) makes the start-up and rendering faster when a second instance starts.
-    minInstances: 1,
-    cpu: 1,
+    // No always-on instance (owner decision 13 Nov: stay on the free setting until there are users; docs/EMAIL_FUNCTION.md "Speed").
     memory: '512MiB',
     timeoutSeconds: 60,
   },
