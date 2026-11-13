@@ -25,4 +25,4 @@ Loaded automatically through `CLAUDE.md`. These were given by the owner over sev
 - Never touch production data, billing, signing, TestFlight or the App Store (App Store work is parked until the owner says "lets get ready to launch to app store").
 - No model identifier in commits, PRs or code. Commit trailers: `Co-Authored-By` plus the chat's `Claude-Session:` URL; PR bodies end with the Claude Code line and session URL; GitHub comments end with the Claude Code footer.
 - Never use a bare `git stash`. Keep secrets out of chat and code. Never revoke push key BSA6D294ZA.
-- iOS pushes go only to `main-vr2rt0-uoqzwv` (force-with-lease, restarted from `main` after the previous PR merged). Never merge without the independent review.
+- Every change, web and iOS, has its own branch and PR, merged to `main` after the independent review (owner decision 13 Nov, item 10; the old rule that iOS pushed only to `main-vr2rt0-uoqzwv` is dropped).

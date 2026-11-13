@@ -34,7 +34,6 @@ import { useTaskStore } from '@/lib/stores/taskStore'
 import { useHolidayStore } from '@/lib/stores/holidayStore'
 import { useMaterialProjectStore } from '@/lib/stores/materialProjectStore'
 import {
-  canAccessOperativeAnnualLeaveDirectory,
   canBookWork,
   canManageOperativesOnly,
   canManageUsers,
@@ -98,7 +97,7 @@ import { dailyOverviewMayPublish, overviewFormatHours } from '@/lib/daily-overvi
 import { bookLabourList } from '@/lib/book-labour/bookLabourList'
 import { dateFromDayKey } from '@/lib/ios-parity/londonTime'
 import { filterTasksForView, getTaskDetailHref, resolveProjectName } from '@/lib/tasks/taskUtils'
-import { teamLeaveBookings, teamLeaveDecisionQueue, teamLeavePeople } from '@/lib/annualLeave/teamLeaveQueue'
+import { teamLeaveBookings, teamLeaveDecisionQueue, teamLeavePeople, teamLeaveTab } from '@/lib/annualLeave/teamLeaveQueue'
 import { getPendingHolidayApprovalsForUser, usersWithoutRequiredLineManager } from '@/lib/annualLeave/holidayApprovalUtils'
 import { matchesRosterSegment } from '@/lib/staff/userRosterUtils'
 import { countUsersForTab, type ManageUsersTab } from '@/lib/staff/manageUsersUtils'
@@ -641,7 +640,8 @@ export function HomeScreen() {
       // `leaveDecisionQueue`: on Annual leave → Team for viewers who have that tab; otherwise the same requests are the
       // approvals list on the Tasks page (`getPendingHolidayApprovalsForUser`), so a line manager without the Team tab
       // still gets a link that shows exactly these requests.
-      const teamTab = canAccessOperativeAnnualLeaveDirectory(displayUser)
+      // Rulebook 1.40.0 `annualLeaveTeamTabVisible`: every line manager has the Team tab now (not the Operatives toggle).
+      const teamTab = teamLeaveTab(displayUser, users, operatives)
       const queue = teamTab
         ? teamLeaveDecisionQueue(teamLeaveBookings(holidays, teamLeavePeople(displayUser, users, operatives)), displayUser, users, operatives)
         : getPendingHolidayApprovalsForUser(holidays, displayUser, users, operatives)

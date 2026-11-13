@@ -29,6 +29,15 @@ const canonical = require('../loadCanonical')
 const { AttachmentError, parseAttachments } = require('./attachments')
 const { RecipientError, resolveRecipients } = require('./recipients')
 const { SERVER_LIMITS, USER_LIMITS } = require('./rateLimit')
+const {
+  RequestIdError,
+  parseRequestId,
+  replayResponse,
+  requestContentHash,
+  requestDedupeKey,
+  requestRecipients,
+  sentRecordFields,
+} = require('./requestDedupe')
 const { SERVER_TEMPLATES, TEMPLATES, TemplateDataError } = require('./templates')
 const { clamp, isValidEmail, normalizeEmail, sanitizeDisplayName } = require('./text')
 
@@ -183,6 +192,8 @@ function serverHeaders(raw) {
  * @param {(message: object) => Promise<{ id?: string }>} deps.sendMessage  one Resend message
  * @param {() => string} deps.serverKey  EMAIL_SERVER_KEY ('' when not set: server mode is then refused)
  * @param {{ info: Function, warn: Function, error: Function }} deps.logger
+ * @param {{ claim: Function, complete: Function, release: Function }} [deps.requestDedupe]  idempotency store
+ *        (requestDedupe.js `createAdminRequestDedupe`); without it a `requestId` is ignored
  * @param {() => Date} [deps.now]
  */
 function createSendEmailHandler(deps) {
@@ -198,11 +209,14 @@ function createSendEmailHandler(deps) {
     if (rawJobId == null || rawJobId === '') return
     const jobId = typeof rawJobId === 'string' ? rawJobId.trim() : ''
     if (!jobId || jobId.length > 128 || !/^[A-Za-z0-9_-]+$/.test(jobId)) throw new HttpError(400, 'jobId is not valid')
-    const found = await deps.reader.getJob(orgId, jobId)
-    const managers =
-      found && callerJob.email && typeof deps.reader.managersByEmail === 'function'
-        ? await deps.reader.managersByEmail(orgId, callerJob.email)
-        : []
+    // The job and the caller's managers-list rows are read together; the rows are used only when the job exists.
+    const [found, managerRows] = await Promise.all([
+      deps.reader.getJob(orgId, jobId),
+      callerJob.email && typeof deps.reader.managersByEmail === 'function'
+        ? deps.reader.managersByEmail(orgId, callerJob.email)
+        : [],
+    ])
+    const managers = found ? managerRows : []
     const viewer = canonical.materialRequestJobViewer({
       userId: callerJob.uid,
       email: callerJob.email,
@@ -264,21 +278,32 @@ function createSendEmailHandler(deps) {
     const orgId = parseOrgId(body.orgId, !serverMode)
     const data = body.data && typeof body.data === 'object' && !Array.isArray(body.data) ? body.data : {}
 
-    let org = null
-    if (orgId) {
-      org = await deps.reader.getOrganization(orgId)
-      if (!org && !serverMode) throw new HttpError(404, 'Organisation not found')
+    // The organisation, the caller's users document and their membership are independent reads: fetched together
+    // (one round trip instead of three), then checked in the same order as before — a missing organisation is still
+    // refused before membership, and nothing has been sent or counted yet.
+    const [orgSettled, userSettled, membershipSettled] = await Promise.allSettled([
+      orgId ? deps.reader.getOrganization(orgId) : null,
+      decoded ? deps.reader.getUser(decoded.uid) : null,
+      decoded && !serverMode ? deps.reader.getMembership(decoded.uid, orgId) : null,
+    ])
+    const settledValue = (row) => {
+      if (row.status === 'rejected') throw row.reason
+      return row.value
     }
+    const org = orgId ? settledValue(orgSettled) : null
+    if (orgId && !org && !serverMode) throw new HttpError(404, 'Organisation not found')
+    const userRead = settledValue(userSettled)
+    const membershipRead = settledValue(membershipSettled)
     const orgName = org ? canonical.parseOrganizationName(org) || '' : ''
 
     let caller = null
     // What the job check (`materialRequestJobViewer`) needs about an app caller; null in server mode.
     let callerJob = null
     if (decoded) {
-      const user = await deps.reader.getUser(decoded.uid)
+      const user = userRead
       caller = callerProfile(decoded, user)
       if (!serverMode) {
-        const membership = await deps.reader.getMembership(decoded.uid, orgId)
+        const membership = membershipRead
         const active = canonical.organizationMemberActive({ organizationId: orgId, userId: decoded.uid, organization: org, user, membership })
         if (!active || !active.member || !active.active) {
           throw new HttpError(403, 'You are not an active member of this organisation')
@@ -312,91 +337,228 @@ function createSendEmailHandler(deps) {
       }
     }
 
-    // Rulebook 1.24.0 / 1.27.0 (§16): a template that names a job (`jobCheck`) and a request that sends `data.jobId`
-    // (`checkRequestJob`). A request without `jobId` is still accepted (older iOS builds send only the job number).
-    if (template.jobCheck === true && !serverMode) await checkRequestJob(data, orgId, callerJob || {})
-
-    const attachments = parseAttachments(body.attachments, template.attachments)
-    const resolved = await resolveRecipients(template, body.to, {
-      orgId,
-      org,
-      data,
-      caller: caller || {},
-      reader: deps.reader,
-    })
     // Web server mail may ask for the signed-in caller as the display name (`fromCaller`) and as CC (`ccCaller`): one
     // message, the recipient in To and the sender in CC. App callers get the same on templates that opt in
     // (`callerEnvelope`). Only the verified caller's own name and address are used.
     const envelope = callerEnvelopeFields({ serverMode, template, data, caller })
     const cc = envelope.cc
-    // The caller is already copied on every message: their own "Copy:" message (`isSelf`) is dropped, so they get one
-    // email per recipient, not two. Recipient checks (`materialOrderRecipientCheck`) ran on the full list above.
-    const recipients = !serverMode && cc.length ? resolved.filter((row) => !row.isSelf) : resolved
-    if (recipients.length === 0) throw new HttpError(400, 'At least one recipient other than yourself is required')
-
-    const sentAt = now()
-    const firstContactName = (recipients.find((row) => row.contactName) || {}).contactName || ''
-    const rendered = recipients.map((recipient) =>
-      template.render({ data, org: org || {}, orgName, caller: caller || {}, recipient, now: sentAt, attachments, firstContactName })
-    )
-
-    const rateKey = caller ? caller.uid : 'server'
-    const limited = await deps.consumeRateLimit(rateKey, recipients.length, caller ? USER_LIMITS : SERVER_LIMITS)
-    if (!limited.allowed) {
-      throw new HttpError(429, 'Too many emails. Try again later.', { retryAfterSec: limited.retryAfterSec })
-    }
-
-    let replyTo = FROM_ADDRESS
-    if (template.replyToCaller && caller && isValidEmail(caller.email)) replyTo = caller.email
-    if (envelope.replyTo) replyTo = envelope.replyTo
-    if (serverMode && isValidEmail(data.replyTo)) replyTo = normalizeEmail(data.replyTo)
+    const ccFor = (email) => (cc.length && !cc.includes(normalizeEmail(email)) ? cc : [])
     const from = envelope.from || fromHeader(orgName)
-    const extraHeaders = serverMode ? serverHeaders(data.headers) : undefined
+    const rateKey = caller ? caller.uid : 'server'
 
-    const results = []
-    const failed = []
-    const failures = []
-    for (let index = 0; index < recipients.length; index += 1) {
-      const message = {
-        from,
-        to: [recipients[index].email],
-        subject: rendered[index].subject,
-        html: rendered[index].html,
-        reply_to: replyTo,
+    // Idempotency (requestDedupe.js, docs/EMAIL_FUNCTION.md "Request id"). The caller has passed the membership and
+    // level checks above. A request that names itself with `requestId` claims its key now; a repeat (an iPhone
+    // replaying a queued order after a crash or a timeout) gets the first answer back without sending again, without
+    // counting the rate limit and without re-running the checks below that can change between sends (job number,
+    // wholesaler contacts) — nothing new is sent. A claim is released whenever nothing was sent. Without `requestId`
+    // nothing changes (older builds).
+    const requestId = parseRequestId(body.requestId)
+    const keyRecipients = requestRecipients(body.to)
+    let dedupeKey = ''
+    // With a request id, messages are rendered at the claim's time (kept across a takeover), so every send of one
+    // request is the same payload under the same Resend key.
+    let renderAtMs = null
+    if (requestId && deps.requestDedupe) {
+      dedupeKey = requestDedupeKey({
+        callerKey: rateKey,
+        orgId,
+        template: templateName,
+        requestId,
+        recipients: keyRecipients,
+        contentHash: requestContentHash({ data, attachments: body.attachments }),
+      })
+      const claim = await deps.requestDedupe.claim(dedupeKey, {
+        orgId,
+        uid: caller ? caller.uid : null,
+        template: templateName,
+        jobId: data.jobId,
+        recipientCount: keyRecipients.length,
+      }, now().getTime())
+      if (claim.action === 'replay') {
+        logger.info('sendEmail: repeated request, not sent again', { template: templateName, orgId: orgId || null })
+        return replayResponse(claim.record, { keyRecipients, ccFor, from })
       }
-      if (cc.length && !cc.includes(normalizeEmail(recipients[index].email))) message.cc = cc
-      if (rendered[index].text) message.text = rendered[index].text
-      if (extraHeaders) message.headers = extraHeaders
-      if (attachments.length) {
-        message.attachments = attachments.map((row) => ({ filename: row.filename, content: row.content, content_type: row.contentType }))
+      if (claim.action === 'claim' && Number.isFinite(Number(claim.renderAtMs))) renderAtMs = Number(claim.renderAtMs)
+      if (claim.action === 'inProgress') {
+        throw new HttpError(409, 'This email is already being sent. Wait a minute, then check your sent items.', {
+          inProgress: true,
+        })
       }
+    }
+    // A claim is released when nothing was sent, so a retry sends; a failed release is only logged.
+    const releaseClaim = async () => {
+      if (!dedupeKey) return
       try {
-        const sent = await deps.sendMessage(message)
-        results.push({ to: recipients[index].email, id: (sent && sent.id) || null, cc: message.cc || [] })
+        await deps.requestDedupe.release(dedupeKey)
       } catch (error) {
-        logger.error('sendEmail: provider refused a message', { template: templateName, orgId, error: String(error && error.message) })
-        failed.push(recipients[index].email)
-        failures.push({ to: recipients[index].email, error: String((error && error.message) || error).slice(0, 300) })
+        logger.error('sendEmail: could not release a request claim', { error: String(error && error.message) })
       }
     }
 
-    logger.info('sendEmail', {
-      template: templateName,
-      orgId: orgId || null,
-      uid: caller ? caller.uid : null,
-      mode: serverMode ? 'server' : 'app',
-      recipients: recipients.length,
-      sent: results.length,
-      ids: results.map((row) => row.id),
-      cc: cc.length,
-      attachments: attachments.length,
-    })
-
-    if (results.length === 0) {
-      const reason = failures[0] ? `: ${failures[0].error}` : ''
-      throw new HttpError(502, `The email provider did not accept the message${reason}`, { failed })
+    let delivered = null
+    try {
+      delivered = await deliver({ dedupeKey })
+    } catch (error) {
+      // A batch that may have gone (no answer, 5xx, an idempotency conflict) keeps its claim `pending`, like a call
+      // that died: a repeat within 5 minutes is told "still sending", and a later one re-sends the same batch with
+      // the same Resend key. Everything else sent nothing, so the claim is released and a retry sends.
+      if (!(error && error.keepClaim)) await releaseClaim()
+      throw error
     }
-    return { sent: failed.length === 0, sentCount: results.length, failed, results, from, ccSupported: true }
+    if (dedupeKey) {
+      try {
+        await deps.requestDedupe.complete(dedupeKey, sentRecordFields({ ...delivered, keyRecipients }, now().getTime()))
+      } catch (error) {
+        // The messages went: the caller still gets its success. The claim stays `pending` and goes stale.
+        logger.error('sendEmail: could not record a sent request', { error: String(error && error.message) })
+      }
+    }
+    return delivered.response
+
+    // Every check that can change between two sends of one request, then the rate limit and the messages. Throws
+    // when nothing was sent.
+    async function deliver({ dedupeKey: key }) {
+      // The wholesaler list does not depend on the job check, so it is read at the same time. The check still runs
+      // first: a refused job throws here before any recipient is resolved or anything is sent.
+      let wholesalers = null
+      if (template.recipients === 'wholesaler_or_self' && orgId) {
+        wholesalers = Promise.resolve().then(() => deps.reader.listWholesalers(orgId))
+        // Observed below; this only stops an unhandled rejection when the job check refuses first.
+        wholesalers.catch(() => {})
+      }
+      const reader = wholesalers ? { ...deps.reader, listWholesalers: () => wholesalers } : deps.reader
+
+      // Rulebook 1.24.0 / 1.27.0 (§16): a template that names a job (`jobCheck`) and a request that sends `data.jobId`
+      // (`checkRequestJob`). A request without `jobId` is still accepted (older iOS builds send only the job number).
+      if (template.jobCheck === true && !serverMode) await checkRequestJob(data, orgId, callerJob || {})
+
+      const attachments = parseAttachments(body.attachments, template.attachments)
+      const resolved = await resolveRecipients(template, body.to, {
+        orgId,
+        org,
+        data,
+        caller: caller || {},
+        reader,
+      })
+      // The caller is already copied on every message: their own "Copy:" message (`isSelf`) is dropped, so they get
+      // one email per recipient, not two. Recipient checks (`materialOrderRecipientCheck`) ran on the full list above.
+      const recipients = !serverMode && cc.length ? resolved.filter((row) => !row.isSelf) : resolved
+      if (recipients.length === 0) throw new HttpError(400, 'At least one recipient other than yourself is required')
+
+      const sentAt = renderAtMs != null ? new Date(renderAtMs) : now()
+      const firstContactName = (recipients.find((row) => row.contactName) || {}).contactName || ''
+      const rendered = recipients.map((recipient) =>
+        template.render({ data, org: org || {}, orgName, caller: caller || {}, recipient, now: sentAt, attachments, firstContactName })
+      )
+
+      const limited = await deps.consumeRateLimit(rateKey, recipients.length, caller ? USER_LIMITS : SERVER_LIMITS)
+      if (!limited.allowed) {
+        throw new HttpError(429, 'Too many emails. Try again later.', { retryAfterSec: limited.retryAfterSec })
+      }
+
+      let replyTo = FROM_ADDRESS
+      if (template.replyToCaller && caller && isValidEmail(caller.email)) replyTo = caller.email
+      if (envelope.replyTo) replyTo = envelope.replyTo
+      if (serverMode && isValidEmail(data.replyTo)) replyTo = normalizeEmail(data.replyTo)
+      const extraHeaders = serverMode ? serverHeaders(data.headers) : undefined
+
+      const messages = recipients.map((recipient, index) => {
+        const message = {
+          from,
+          to: [recipient.email],
+          subject: rendered[index].subject,
+          html: rendered[index].html,
+          reply_to: replyTo,
+        }
+        const messageCc = ccFor(recipient.email)
+        if (messageCc.length) message.cc = messageCc
+        if (rendered[index].text) message.text = rendered[index].text
+        if (extraHeaders) message.headers = extraHeaders
+        if (attachments.length) {
+          message.attachments = attachments.map((row) => ({ filename: row.filename, content: row.content, content_type: row.contentType }))
+        }
+        return message
+      })
+
+      const results = []
+      const failed = []
+      const failures = []
+      const recorded = new Set()
+      const record = (index, sent) => {
+        recorded.add(index)
+        results.push({ to: recipients[index].email, id: (sent && sent.id) || null, cc: messages[index].cc || [] })
+      }
+
+      // Several messages without attachments go to Resend in one batch call (`/emails/batch`, `sendBatchMessages`):
+      // one request instead of one per recipient. Resend checks a batch whole, so a batch it refuses as invalid
+      // (400 / 422) sent nothing and the messages are then sent one by one below to find which one it refuses. Any
+      // other batch failure (no answer, 429, 5xx, a 409 on the idempotency key) is ambiguous — Resend may have taken
+      // the batch — so it is never retried one by one: the call answers 502 "not confirmed" and keeps the request
+      // claim pending (`keepClaim`), so the same request id is not sent again for 5 minutes and is then re-sent as
+      // the same batch with the same key. Correctness inside those 5 minutes does not depend on Resend's key.
+      const batchSender = typeof deps.sendBatch === 'function' ? deps.sendBatch : null
+      let pending = messages.map((_, index) => index)
+      if (batchSender && messages.length > 1 && attachments.length === 0) {
+        try {
+          await sendBatchMessages({ batchSender, messages, key, record })
+          pending = []
+        } catch (error) {
+          if (!(error && error.batchInvalid)) {
+            logger.error('sendEmail: batch not confirmed', { template: templateName, orgId, error: String(error && error.message) })
+            const unconfirmed = new HttpError(
+              502,
+              'The email service did not confirm the send. Wait a few minutes and check your sent items before sending again.',
+              { failed: recipients.map((row) => row.email), unconfirmed: true }
+            )
+            unconfirmed.keepClaim = true
+            throw unconfirmed
+          } else {
+            // Only the first chunk can be refused this way (`sendBatchMessages`), so nothing was recorded yet.
+            logger.warn('sendEmail: batch refused as invalid, sending one by one', { template: templateName, orgId })
+          }
+        }
+      }
+
+      for (const index of pending) {
+        // With a request id, Resend gets its own idempotency key per message (`<dedupe key>-<index>`), so a message it
+        // already accepted is not sent again even if this call dies before it records the send.
+        const options = key ? { idempotencyKey: `${key}-${index}` } : undefined
+        try {
+          record(index, await deps.sendMessage(messages[index], options))
+        } catch (error) {
+          if (error && error.alreadyAccepted) {
+            // Resend already has this message under its idempotency key: it went, do not count it as failed.
+            record(index, null)
+            continue
+          }
+          logger.error('sendEmail: provider refused a message', { template: templateName, orgId, error: String(error && error.message) })
+          failed.push(recipients[index].email)
+          failures.push({ to: recipients[index].email, error: String((error && error.message) || error).slice(0, 300) })
+        }
+      }
+
+      logger.info('sendEmail', {
+        template: templateName,
+        orgId: orgId || null,
+        uid: caller ? caller.uid : null,
+        mode: serverMode ? 'server' : 'app',
+        recipients: recipients.length,
+        sent: results.length,
+        ids: results.map((row) => row.id),
+        cc: cc.length,
+        attachments: attachments.length,
+      })
+
+      if (results.length === 0) {
+        const reason = failures[0] ? `: ${failures[0].error}` : ''
+        throw new HttpError(502, `The email provider did not accept the message${reason}`, { failed })
+      }
+      return {
+        results,
+        failed,
+        response: { sent: failed.length === 0, sentCount: results.length, failed, results, from, ccSupported: true },
+      }
+    }
   }
 
   return async function sendEmailHandler(req, res) {
@@ -411,7 +573,7 @@ function createSendEmailHandler(deps) {
         status = error.status
         message = error.message
         extra = error.extra
-      } else if (error instanceof RecipientError || error instanceof AttachmentError) {
+      } else if (error instanceof RecipientError || error instanceof AttachmentError || error instanceof RequestIdError) {
         status = error.status
         message = error.message
       } else if (error instanceof TemplateDataError) {
@@ -426,23 +588,101 @@ function createSendEmailHandler(deps) {
   }
 }
 
-/** One message to Resend's REST API. */
+/** Resend accepts at most this many messages in one `/emails/batch` call. */
+const RESEND_BATCH_MAX = 100
+
+/**
+ * Sends `messages` through `batchSender` in chunks of `RESEND_BATCH_MAX`, recording each message's result in order.
+ * With a request id each chunk carries Resend's idempotency key `<dedupe key>-batch-<chunk>`. Throws on the first
+ * chunk that fails; a later chunk is only reached when the earlier ones went, so a refused first chunk sent nothing.
+ */
+async function sendBatchMessages({ batchSender, messages, key, record }) {
+  for (let start = 0, chunk = 0; start < messages.length; start += RESEND_BATCH_MAX, chunk += 1) {
+    const slice = messages.slice(start, start + RESEND_BATCH_MAX)
+    const options = key ? { idempotencyKey: `${key}-batch-${chunk}` } : undefined
+    let answers
+    try {
+      answers = await batchSender(slice, options)
+    } catch (error) {
+      // A later chunk failing after an earlier one went must not be retried one by one (the earlier ones went).
+      if (start > 0 && error) error.batchInvalid = false
+      throw error
+    }
+    const rows = Array.isArray(answers) ? answers : []
+    slice.forEach((_, offset) => record(start + offset, rows[offset] || null))
+  }
+}
+
+/** Resend's idempotency header (`Idempotency-Key`, at most 256 characters, kept by Resend for about 24 hours). */
+const RESEND_IDEMPOTENCY_HEADER = 'Idempotency-Key'
+const RESEND_IDEMPOTENCY_KEY_MAX = 256
+
+/**
+ * One message to Resend's REST API. With `options.idempotencyKey` the request carries Resend's `Idempotency-Key`
+ * header; a 409 from Resend that names the idempotency key means it already accepted that message, and is thrown with
+ * `alreadyAccepted: true` so the handler counts it as sent rather than failed.
+ */
 function resendSender(apiKey, fetchImpl = fetch) {
-  return async function sendMessage(message) {
+  return async function sendMessage(message, options = {}) {
     const key = typeof apiKey === 'function' ? apiKey() : apiKey
     if (!key) throw new Error('RESEND_API_KEY is not set')
+    const headers = { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' }
+    const idempotencyKey = options && typeof options.idempotencyKey === 'string' ? options.idempotencyKey.trim() : ''
+    if (idempotencyKey && idempotencyKey.length <= RESEND_IDEMPOTENCY_KEY_MAX) headers[RESEND_IDEMPOTENCY_HEADER] = idempotencyKey
     const response = await fetchImpl('https://api.resend.com/emails', {
       method: 'POST',
-      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify(message),
     })
     const text = await response.text()
-    if (!response.ok) throw new Error(`Resend ${response.status}: ${text.slice(0, 300)}`)
+    if (!response.ok) {
+      const error = new Error(`Resend ${response.status}: ${text.slice(0, 300)}`)
+      if (headers[RESEND_IDEMPOTENCY_HEADER] && response.status === 409 && /idempot/i.test(text)) error.alreadyAccepted = true
+      throw error
+    }
     try {
       return JSON.parse(text)
     } catch {
       return {}
     }
+  }
+}
+
+/**
+ * Several messages to Resend's batch API (`POST /emails/batch`, at most `RESEND_BATCH_MAX`, no attachments) in one
+ * request. Resolves to `[{ id }]` in the order given. A 400 / 422 (Resend refused the batch as invalid; it checks the
+ * batch whole, so nothing was sent) is thrown with `batchInvalid: true`; every other failure, a 409 included, is
+ * thrown plain (the handler treats it as "not confirmed").
+ */
+function resendBatchSender(apiKey, fetchImpl = fetch) {
+  return async function sendBatch(messages, options = {}) {
+    const key = typeof apiKey === 'function' ? apiKey() : apiKey
+    if (!key) throw new Error('RESEND_API_KEY is not set')
+    const headers = { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' }
+    const idempotencyKey = options && typeof options.idempotencyKey === 'string' ? options.idempotencyKey.trim() : ''
+    if (idempotencyKey && idempotencyKey.length <= RESEND_IDEMPOTENCY_KEY_MAX) headers[RESEND_IDEMPOTENCY_HEADER] = idempotencyKey
+    const response = await fetchImpl('https://api.resend.com/emails/batch', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(messages),
+    })
+    const text = await response.text()
+    if (!response.ok) {
+      const error = new Error(`Resend ${response.status}: ${text.slice(0, 300)}`)
+      error.status = response.status
+      // 400 / 422: Resend refused the batch as invalid and sent nothing. Anything else — a 409 on the idempotency key
+      // (a different payload, or the same key still in progress) included — is not "sent" and not "nothing sent".
+      if (response.status === 400 || response.status === 422) error.batchInvalid = true
+      throw error
+    }
+    let parsed = {}
+    try {
+      parsed = JSON.parse(text)
+    } catch {
+      parsed = {}
+    }
+    const rows = Array.isArray(parsed) ? parsed : parsed && Array.isArray(parsed.data) ? parsed.data : []
+    return messages.map((_, index) => (rows[index] && typeof rows[index] === 'object' ? rows[index] : {}))
   }
 }
 
@@ -452,9 +692,12 @@ module.exports = {
   callerFromHeader,
   APP_CHECK_HEADER,
   FROM_ADDRESS,
+  RESEND_IDEMPOTENCY_HEADER,
   SERVER_KEY_HEADER,
   createSendEmailHandler,
   fromHeader,
   sameSecret,
+  RESEND_BATCH_MAX,
+  resendBatchSender,
   resendSender,
 }

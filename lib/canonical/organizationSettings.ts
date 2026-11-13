@@ -232,6 +232,8 @@ export const OPERATIONAL_COLLECTION_PATHS = {
   expenseItems: 'organizations/{orgId}/expenseItems',
   payeClaimReports: 'organizations/{orgId}/payeClaimReports',
   personalSiteAudits: 'organizations/{orgId}/personalSiteAudits',
+  /** 1.40.0 (§4.4): manual annual-leave adjustments, written once (`annualLeaveAdjustmentCreateFields`). */
+  annualLeaveAdjustments: 'organizations/{orgId}/annualLeaveAdjustments',
 } as const
 
 /**

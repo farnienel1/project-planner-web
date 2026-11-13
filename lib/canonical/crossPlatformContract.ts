@@ -14,6 +14,7 @@
 
 import { parseBookingDocument, parseManagerSiteBookingDocument } from './bookings'
 import { parseCompanyDetails } from './companyDetails'
+import { parseAnnualLeaveAdjustmentDocument } from './annualLeaveAdjustments'
 import { parseHolidayDocument } from './holidayDocument'
 import { resolveOrganizationCurrency } from './money'
 import { parseUserNotificationPreferences } from './notificationPreferences'
@@ -92,6 +93,7 @@ export const CROSS_PLATFORM_CONTRACT_READERS: Readonly<Record<string, Reader>> =
   parseTimesheetStatusFields: (_id, data) => parseTimesheetStatusFields(data),
   resolveSensitiveProfile: (_id, data) => resolveSensitiveProfile({ privateDoc: data }),
   parseOrgMembershipDocument: (id, data) => parseOrgMembershipDocument(id, data),
+  parseAnnualLeaveAdjustmentDocument: (id, data) => parseAnnualLeaveAdjustmentDocument(id, data),
   /** `organizations/{orgId}`: the settings readers together. */
   organizationDocument: (_id, data) => ({
     name: parseOrganizationName(data),

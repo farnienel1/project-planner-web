@@ -61,6 +61,11 @@ export async function sendProjectPlannerEmail(params: {
   fromCaller?: boolean
   /** CC the signed-in user on this one message (`data.ccCaller`). Needs `idToken`. */
   ccCaller?: boolean
+  /**
+   * Idempotency key (functions/email/requestDedupe.js): the function sends a request with the same id to the same
+   * recipient once and answers a repeat with the first send's result. Reuse it when retrying the same request.
+   */
+  requestId?: string
 }): Promise<ProjectPlannerEmailResult> {
   const key = serverKey()
   if (!key) {
@@ -82,6 +87,7 @@ export async function sendProjectPlannerEmail(params: {
     data,
   }
   if (params.orgId?.trim()) payload.orgId = params.orgId.trim()
+  if (params.requestId?.trim()) payload.requestId = params.requestId.trim()
   if (params.attachments?.length) {
     payload.attachments = params.attachments.map((attachment) => ({
       filename: attachment.filename,
@@ -123,6 +129,131 @@ export async function sendProjectPlannerEmail(params: {
     throw new Error(detail)
   }
   return parseEmailFunctionResult(body)
+}
+
+/** The deployed email function predates `web_rendered_batch`: send one call per recipient instead. */
+export class EmailBatchUnsupportedError extends Error {
+  constructor() {
+    super('The email function does not support web_rendered_batch yet')
+    this.name = 'EmailBatchUnsupportedError'
+  }
+}
+
+/**
+ * The email function could not confirm whether the messages went (no answer in time, or its batch call to the
+ * provider failed ambiguously, `unconfirmed: true`). They may have been sent: never report them as "not sent".
+ */
+export class EmailUnconfirmedError extends Error {
+  constructor(message = MATERIAL_EMAIL_UNCONFIRMED_MESSAGE) {
+    super(message)
+    this.name = 'EmailUnconfirmedError'
+  }
+}
+
+export const MATERIAL_EMAIL_UNCONFIRMED_MESSAGE =
+  'The email may not have been sent. Check your sent items before sending again.'
+
+/** Per-recipient outcome of one `web_rendered_batch` call. */
+export type ProjectPlannerEmailBatchResult = {
+  results: Array<{ to: string; id: string | null; cc: string[] }>
+  /** Recipients the provider refused (lower case). */
+  failed: string[]
+  /** The function's own reason when it refused the whole request. */
+  error?: string
+}
+
+/**
+ * Several messages the route rendered (one per recipient) in ONE call to the email function (`web_rendered_batch`,
+ * functions/email/templates.js): one cold start, one rate-limit count, one Resend batch, instead of a call per
+ * recipient. `fromCaller`, `ccCaller` and `replyTo` apply to every message. A partial failure answers with the
+ * refused recipients in `failed`; when every message failed the function answers 502 and this returns them all in
+ * `failed` with its reason (it does not throw). Throws `EmailBatchUnsupportedError` when the deployed function does
+ * not know the template yet (deploy order), `EmailUnconfirmedError` when the send may have gone (no answer in time,
+ * or the function's `unconfirmed: true`), and an Error for anything else (refused before sending).
+ */
+export async function sendProjectPlannerEmailBatch(params: {
+  messages: Array<{ to: string; subject: string; html: string; text?: string }>
+  replyTo?: string
+  orgId?: string
+  idToken?: string | null
+  fromCaller?: boolean
+  ccCaller?: boolean
+  requestId?: string
+}): Promise<ProjectPlannerEmailBatchResult> {
+  const key = serverKey()
+  if (!key) {
+    throw new Error('Email is not configured on this server (EMAIL_SERVER_KEY is not set).')
+  }
+  const messages = params.messages.map((row) => ({
+    to: row.to.trim().toLowerCase(),
+    subject: row.subject,
+    html: row.html,
+    ...(row.text?.trim() ? { text: row.text } : {}),
+  }))
+  const data: Record<string, unknown> = { messages }
+  if (params.replyTo?.trim()) data.replyTo = params.replyTo.trim()
+  if (params.fromCaller) data.fromCaller = true
+  if (params.ccCaller) data.ccCaller = true
+  const payload: Record<string, unknown> = {
+    template: 'web_rendered_batch',
+    to: messages.map((row) => row.to),
+    data,
+  }
+  if (params.orgId?.trim()) payload.orgId = params.orgId.trim()
+  if (params.requestId?.trim()) payload.requestId = params.requestId.trim()
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    [EMAIL_SERVER_KEY_HEADER]: key,
+  }
+  if (params.idToken?.trim()) headers.Authorization = `Bearer ${params.idToken.trim()}`
+
+  let response: Response
+  try {
+    response = await fetch(emailFunctionUrl(), {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(EMAIL_FUNCTION_TIMEOUT_MS),
+    })
+  } catch (error) {
+    if (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')) {
+      throw new EmailUnconfirmedError()
+    }
+    throw error
+  }
+  const text = await response.text()
+  let parsed: {
+    error?: string
+    message?: string
+    unconfirmed?: boolean
+    failed?: unknown
+    results?: Array<{ to?: unknown; id?: unknown; cc?: unknown }>
+  } = {}
+  try {
+    parsed = JSON.parse(text)
+  } catch {
+    parsed = {}
+  }
+  const detail = parsed.error || parsed.message || text || `Email function error (${response.status})`
+  if (!response.ok) {
+    if (response.status === 400 && /unknown template web_rendered_batch/i.test(detail)) throw new EmailBatchUnsupportedError()
+    // The function's batch call failed ambiguously: the messages may have gone (functions/email/handler.js).
+    if (parsed.unconfirmed === true) throw new EmailUnconfirmedError()
+    // 502: the provider refused every message — report them as failed, like a partial failure.
+    if (response.status === 502) {
+      const failed = Array.isArray(parsed.failed) ? parsed.failed.filter((row): row is string => typeof row === 'string') : []
+      return { results: [], failed: failed.length ? failed : messages.map((row) => row.to), error: detail }
+    }
+    throw new Error(detail)
+  }
+  const results = (Array.isArray(parsed.results) ? parsed.results : []).map((row) => ({
+    to: typeof row?.to === 'string' ? row.to.toLowerCase() : '',
+    id: typeof row?.id === 'string' ? row.id : null,
+    cc: Array.isArray(row?.cc) ? row.cc.filter((value): value is string => typeof value === 'string') : [],
+  }))
+  const failed = Array.isArray(parsed.failed) ? parsed.failed.filter((row): row is string => typeof row === 'string') : []
+  return { results, failed: failed.map((row) => row.toLowerCase()) }
 }
 
 /** What the email function reports for a send: the Resend message ids and whether it honoured `ccCaller`. */

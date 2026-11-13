@@ -5,6 +5,7 @@ import { doc, getDoc, setDoc, writeBatch } from 'firebase/firestore'
 import { addBookingDeleteWithTombstone, commitBookingMove, deleteBookingWithTombstone } from '@/lib/bookings/bookingTombstoneWrite'
 import { BOOKING_TOMBSTONE_COLLECTION, captureOrganizationContext, organizationContextStillCurrent } from '@/lib/canonical'
 import { resolveBookingJobCollection } from '@/lib/bookings/jobCollection'
+import { announceSignedTimesheetDelete } from '@/lib/bookings/signedTimesheetDeleteNotice'
 import { auth, db } from '@/lib/firebase/config'
 import { MissingDocumentError, addPartialDocumentToBatch, createWritePayload, savePartialDocument } from '@/lib/firebase/partialWrite'
 import { commitBookingReplace, forgetReplacedBookings } from '@/lib/bookings/bookingReplaceWrite'
@@ -298,7 +299,12 @@ export const useManagerScheduleStore = create<ManagerScheduleState>((set, get) =
     const firestore = requireDb()
     const removed = get().managerSiteBookings.find((booking) => booking.id === bookingId)
     await deleteBookingWithTombstone(firestore, { organizationId, collection: 'managerSiteBookings', bookingId })
-    if (removed) notifyOvertimeReopenedSoon(organizationId, removed, null)
+    if (removed) {
+      notifyOvertimeReopenedSoon(organizationId, removed, null)
+      // Rulebook 1.33.0 §2: a day on a signed or exported timesheet warns (`bookingDeleteSignedTimesheetWarning`);
+      // the delete has already gone ahead.
+      announceSignedTimesheetDelete({ organizationId, personId: removed.userId, date: removed.date })
+    }
     forgetOrgPlanDoc('managerSiteBookings', organizationId, bookingId)
     forgetOrgCollectionDoc('managerSiteBookings', organizationId, bookingId)
     set({

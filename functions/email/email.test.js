@@ -6,7 +6,7 @@ const { nextRateLimitState, USER_LIMITS } = require('./rateLimit')
 const { parseAttachments, MAX_TOTAL_BYTES } = require('./attachments')
 const { resolveRecipients } = require('./recipients')
 const { TEMPLATES, SERVER_TEMPLATES } = require('./templates')
-const { createSendEmailHandler, resendSender, sameSecret } = require('./handler')
+const { createSendEmailHandler, resendBatchSender, resendSender, sameSecret, RESEND_BATCH_MAX } = require('./handler')
 
 const ORG = 'org-1'
 const INVITE_ID = '3f2c8a51-7d1e-4b6a-9c0f-2a4b6c8d0e1f'
@@ -73,6 +73,7 @@ function makeHandler(options = {}) {
   const sent = []
   const logs = []
   const rateCalls = []
+  const sendOptionsLog = []
   const handler = createSendEmailHandler({
     verifyIdToken: async (token) => {
       if (!token.startsWith('token-')) throw new Error('bad token')
@@ -87,16 +88,20 @@ function makeHandler(options = {}) {
       rateCalls.push({ key, count, limits })
       return options.rateLimited ? { allowed: false, retryAfterSec: 120 } : { allowed: true }
     },
-    sendMessage: async (message) => {
+    sendMessage: async (message, sendOptions) => {
       if (options.providerFails) throw new Error('provider down')
+      sendOptionsLog.push(sendOptions)
       sent.push(message)
       return { id: `msg-${sent.length}` }
     },
     serverKey: () => options.serverKey ?? 'server-secret',
+    ...(options.requestDedupe ? { requestDedupe: options.requestDedupe } : {}),
+    ...(options.sendBatch ? { sendBatch: options.sendBatch } : {}),
+    ...(options.reader ? { reader: options.reader(reader) } : {}),
     logger: { info: (...a) => logs.push(['info', ...a]), warn: (...a) => logs.push(['warn', ...a]), error: (...a) => logs.push(['error', ...a]) },
-    now: () => new Date('2026-11-03T09:15:00Z'),
+    now: options.now || (() => new Date('2026-11-03T09:15:00Z')),
   })
-  return { handler, sent, logs, rateCalls, org }
+  return { handler, sent, logs, rateCalls, org, sendOptionsLog }
 }
 
 async function call(handler, { headers = {}, body, method = 'POST' }) {
@@ -720,4 +725,651 @@ test("1.24.0 material_request: a jobId outside the caller's organisation, unknow
     assert.equal(sent.length, 0)
     assert.equal(rateCalls.length, 0)
   }
+})
+
+// ---------------------------------------------------------------------------------------------------------------
+// Request id idempotency (requestDedupe.js): a replayed request is answered from the first send, never sent twice.
+
+const {
+  PENDING_STALE_MS,
+  createAdminRequestDedupe,
+  parseRequestId,
+  pendingRecord,
+  replayResponse,
+  requestContentHash,
+  requestDedupeDecision,
+  requestDedupeKey,
+  sentRecordFields,
+} = require('./requestDedupe')
+const { RESEND_IDEMPOTENCY_HEADER } = require('./handler')
+
+/** In-memory store with the Admin store's semantics (claim decides with the pure step, then writes pending). */
+function memoryDedupe() {
+  const docs = new Map()
+  const calls = []
+  return {
+    docs,
+    calls,
+    async claim(key, details, nowMs) {
+      calls.push(['claim', key])
+      const decision = requestDedupeDecision(docs.get(key) || null, nowMs)
+      if (decision.action === 'claim') docs.set(key, pendingRecord(details, nowMs, decision.renderAtMs))
+      return decision
+    },
+    async complete(key, fields) {
+      calls.push(['complete', key])
+      docs.set(key, { ...docs.get(key), ...fields })
+    },
+    async release(key) {
+      calls.push(['release', key])
+      docs.delete(key)
+    },
+  }
+}
+
+const REQ = '6F1D2C3B-4A5E-4F60-8172-93A4B5C6D7E8'
+const keyFor = (body, callerKey = 'M') =>
+  requestDedupeKey({
+    callerKey,
+    orgId: body.orgId,
+    template: body.template,
+    requestId: body.requestId,
+    recipients: body.to,
+    contentHash: requestContentHash({ data: body.data, attachments: body.attachments }),
+  })
+
+test('request id: absent is "", a UUID in any case is kept, anything else is a 400', () => {
+  assert.equal(parseRequestId(undefined), '')
+  assert.equal(parseRequestId(null), '')
+  assert.equal(parseRequestId(''), '')
+  assert.equal(parseRequestId(REQ), REQ)
+  assert.equal(parseRequestId(REQ.toLowerCase()), REQ.toLowerCase())
+  for (const bad of ['short', 'has space inside it', '../../etc', 42, {}, 'x'.repeat(129)]) {
+    assert.throws(() => parseRequestId(bad), (error) => error.status === 400, String(bad))
+  }
+})
+
+test('request id: the key depends on caller, organisation, template, id, recipients and content (order and case aside)', () => {
+  const hash = requestContentHash({ data: { a: 1, b: { c: 2 } } })
+  const base = { callerKey: 'M', orgId: ORG, template: 'material_request', requestId: REQ, recipients: ['a@x.example', 'B@x.example'], contentHash: hash }
+  const key = requestDedupeKey(base)
+  assert.equal(key, requestDedupeKey({ ...base, recipients: [' b@x.example', 'A@X.example'] }))
+  assert.equal(hash, requestContentHash({ data: { b: { c: 2 }, a: 1 } }), 'key order in the data does not matter')
+  assert.notEqual(key, requestDedupeKey({ ...base, callerKey: 'A' }))
+  assert.notEqual(key, requestDedupeKey({ ...base, orgId: 'other-org' }))
+  assert.notEqual(key, requestDedupeKey({ ...base, template: 'web_rendered' }))
+  assert.notEqual(key, requestDedupeKey({ ...base, requestId: `${REQ}-2` }))
+  assert.notEqual(key, requestDedupeKey({ ...base, recipients: ['a@x.example'] }))
+  assert.notEqual(key, requestDedupeKey({ ...base, contentHash: requestContentHash({ data: { a: 2, b: { c: 2 } } }) }))
+  assert.notEqual(
+    requestContentHash({ data: {}, attachments: [{ filename: 'a.pdf', content: pdf(3) }] }),
+    requestContentHash({ data: {}, attachments: [{ filename: 'a.pdf', content: pdf(4) }] })
+  )
+  assert.match(key, /^[0-9a-f]{64}$/)
+})
+
+test('request id: decision — none claims, sent replays, a fresh pending waits, a stale pending is taken over', () => {
+  const t = Date.UTC(2026, 10, 12, 9, 0, 0)
+  assert.deepEqual(requestDedupeDecision(null, t), { action: 'claim', renderAtMs: t })
+  const record = { status: 'sent', sentCount: 1 }
+  assert.deepEqual(requestDedupeDecision(record, t), { action: 'replay', record })
+  assert.deepEqual(requestDedupeDecision({ status: 'pending', claimedAtMs: t - 1000 }, t), { action: 'inProgress' })
+  assert.deepEqual(requestDedupeDecision({ status: 'pending', claimedAtMs: t - PENDING_STALE_MS }, t), {
+    action: 'claim',
+    renderAtMs: t - PENDING_STALE_MS,
+  })
+  assert.deepEqual(
+    requestDedupeDecision({ status: 'pending', claimedAtMs: t - PENDING_STALE_MS, renderAtMs: t - 2 * PENDING_STALE_MS }, t),
+    { action: 'claim', renderAtMs: t - 2 * PENDING_STALE_MS },
+    'a second takeover keeps the first render time'
+  )
+  assert.deepEqual(requestDedupeDecision({ status: 'pending' }, t), { action: 'claim', renderAtMs: t })
+})
+
+test('request id: a stored record holds counts and ids only; a replay rebuilds to, cc and failed from the request', () => {
+  const keyRecipients = ['pat@x.example', 'sam@x.example']
+  const fields = sentRecordFields(
+    { results: [{ to: 'sam@x.example', id: 're_1', cc: ['me@x.example'] }], failed: ['pat@x.example'], keyRecipients },
+    123
+  )
+  assert.deepEqual(fields, {
+    status: 'sent',
+    sentAtMs: 123,
+    sentCount: 1,
+    failedCount: 1,
+    failedPositions: [0],
+    messages: [{ i: 1, id: 're_1' }],
+  })
+  assert.equal(JSON.stringify(fields).includes('@'), false, 'no email address is stored')
+  const replay = replayResponse(fields, { keyRecipients, ccFor: () => ['me@x.example'], from: '"Me via Project Planner" <info@projectplanner.us>' })
+  assert.deepEqual(replay, {
+    sent: false,
+    sentCount: 1,
+    failed: ['pat@x.example'],
+    results: [{ to: 'sam@x.example', id: 're_1', cc: ['me@x.example'] }],
+    from: '"Me via Project Planner" <info@projectplanner.us>',
+    ccSupported: true,
+    deduped: true,
+  })
+})
+
+test('request id: an iOS replay of a sent order is answered from the first send — no second email, no rate-limit count', async () => {
+  const store = memoryDedupe()
+  const { handler, sent, rateCalls } = makeHandler({ requestDedupe: store })
+  const body = { ...iosMaterialBody({ jobId: 'proj-1', jobNumber: 'J-200' }), requestId: REQ }
+  const first = await call(handler, { headers: auth('M'), body })
+  assert.equal(first.code, 200, JSON.stringify(first.payload))
+  assert.equal(first.payload.deduped, undefined)
+  assert.equal(sent.length, 1)
+  assert.equal(rateCalls.length, 1)
+  const again = await call(handler, { headers: auth('M'), body })
+  assert.equal(again.code, 200, JSON.stringify(again.payload))
+  assert.equal(again.payload.deduped, true)
+  // The fields iOS reads (sentCount, results[].id, results[].cc, failed) are the first send's.
+  assert.equal(again.payload.sentCount, first.payload.sentCount)
+  assert.deepEqual(again.payload.results, first.payload.results)
+  assert.deepEqual(again.payload.failed, first.payload.failed)
+  assert.equal(again.payload.from, first.payload.from)
+  assert.equal(again.payload.ccSupported, true)
+  assert.equal(sent.length, 1)
+  assert.equal(rateCalls.length, 1)
+  assert.equal(store.docs.size, 1)
+  const [record] = [...store.docs.values()]
+  assert.equal(record.status, 'sent')
+  assert.equal(record.orgId, ORG)
+  assert.equal(record.uid, 'M')
+  assert.equal(record.jobId, 'proj-1')
+  assert.equal(JSON.stringify(record).includes('@'), false, 'no email address, CC or From is stored')
+  assert.equal(JSON.stringify(record).includes('via Project Planner'), false)
+})
+
+test('request id: a reused id with different content is a new request and is sent, not swallowed', async () => {
+  const store = memoryDedupe()
+  const { handler, sent } = makeHandler({ requestDedupe: store })
+  const first = { ...iosMaterialBody({ jobId: 'proj-1', jobNumber: 'J-200' }), requestId: REQ }
+  assert.equal((await call(handler, { headers: auth('M'), body: first })).code, 200)
+  const changed = {
+    ...iosMaterialBody({ jobId: 'proj-1', jobNumber: 'J-200', materials: [{ material: '15mm pipe', quantity: 9, unit: 'length' }] }),
+    requestId: REQ,
+  }
+  const res = await call(handler, { headers: auth('M'), body: changed })
+  assert.equal(res.code, 200, JSON.stringify(res.payload))
+  assert.equal(res.payload.deduped, undefined)
+  assert.equal(sent.length, 2)
+})
+
+test('request id: another sender, or the same id to other recipients, is a separate request', async () => {
+  const store = memoryDedupe()
+  const { handler, sent } = makeHandler({ requestDedupe: store })
+  const body = { ...iosMaterialBody(), requestId: REQ }
+  assert.equal((await call(handler, { headers: auth('M'), body })).code, 200)
+  assert.equal((await call(handler, { headers: auth('A'), body })).code, 200)
+  assert.equal(sent.length, 2)
+})
+
+test('request id: while the first call is still sending, a repeat waits (409 inProgress) and sends nothing', async () => {
+  const store = memoryDedupe()
+  const { handler, sent } = makeHandler({ requestDedupe: store })
+  const body = { ...iosMaterialBody(), requestId: REQ }
+  store.docs.set(keyFor(body), { status: 'pending', claimedAtMs: Date.parse('2026-11-03T09:14:30Z') })
+  const res = await call(handler, { headers: auth('M'), body })
+  assert.equal(res.code, 409, JSON.stringify(res.payload))
+  assert.equal(res.payload.inProgress, true)
+  assert.equal(sent.length, 0)
+})
+
+test('request id: rate limited or refused by the provider releases the claim, so a retry sends', async () => {
+  for (const options of [{ rateLimited: true }, { providerFails: true }]) {
+    const store = memoryDedupe()
+    const { handler, sent } = makeHandler({ ...options, requestDedupe: store })
+    const res = await call(handler, { headers: auth('M'), body: { ...iosMaterialBody(), requestId: REQ } })
+    assert.notEqual(res.code, 200)
+    assert.equal(sent.length, 0)
+    assert.equal(store.docs.size, 0, JSON.stringify(options))
+    assert.deepEqual(store.calls.map(([kind]) => kind), ['claim', 'release'])
+  }
+})
+
+test('request id: membership and level are checked before any claim; a later check refusing releases the claim', async () => {
+  // Membership / level (operative on a manager-only template; a deactivated member): no claim at all.
+  for (const uid of ['O', 'X', 'S']) {
+    const store = memoryDedupe()
+    const { handler, sent } = makeHandler({ requestDedupe: store })
+    const res = await call(handler, { headers: auth(uid), body: { ...iosMaterialBody(), requestId: REQ } })
+    assert.equal(res.code, 403, `${uid}: ${JSON.stringify(res.payload)}`)
+    assert.equal(sent.length, 0)
+    assert.equal(store.calls.length, 0)
+  }
+  // Checks that can change between sends (job, job number, recipients): the claim is made, then released.
+  for (const [body, code] of [
+    [{ ...iosMaterialBody({ jobId: 'proj-1', jobNumber: 'J-201' }), requestId: REQ }, 409],
+    [{ ...iosMaterialBody({ jobId: 'proj-x' }), requestId: REQ }, 404],
+    [{ ...iosMaterialBody(), to: ['manager@example.com'], requestId: REQ }, 400],
+  ]) {
+    const store = memoryDedupe()
+    const { handler, sent } = makeHandler({ requestDedupe: store })
+    const res = await call(handler, { headers: auth('M'), body })
+    assert.equal(res.code, code, JSON.stringify(res.payload))
+    assert.equal(res.payload.inProgress, undefined)
+    assert.equal(sent.length, 0)
+    assert.deepEqual(store.calls.map(([kind]) => kind), ['claim', 'release'])
+    assert.equal(store.docs.size, 0)
+  }
+})
+
+test('request id: a repeat of a sent request is answered even if a check has changed since (nothing new is sent)', async () => {
+  const store = memoryDedupe()
+  const first = makeHandler({ requestDedupe: store })
+  const body = { ...iosMaterialBody({ jobId: 'proj-1', jobNumber: 'J-200' }), requestId: REQ }
+  assert.equal((await call(first.handler, { headers: auth('M'), body })).code, 200)
+  // The job number was changed on the job since: a new send would be refused (409), the repeat is answered.
+  const later = makeHandler({ requestDedupe: store, fixture: { jobs: { [ORG]: { 'proj-1': { kind: 'projects', data: { jobNumber: 'J-999', managerIds: ['M'] } } } } } })
+  const res = await call(later.handler, { headers: auth('M'), body })
+  assert.equal(res.code, 200, JSON.stringify(res.payload))
+  assert.equal(res.payload.deduped, true)
+  assert.equal(later.sent.length, 0)
+  // But a caller who has since lost access is still refused first.
+  const gone = makeHandler({ requestDedupe: store, fixture: { users: { M: { email: 'manager@example.com', organizationId: ORG, role: 'manager', manager: true, isActive: false } } } })
+  assert.equal((await call(gone.handler, { headers: auth('M'), body })).code, 403)
+})
+
+test('request id: a malformed id is a 400 and sends nothing; no id behaves exactly as before', async () => {
+  const store = memoryDedupe()
+  const { handler, sent, sendOptionsLog } = makeHandler({ requestDedupe: store })
+  const bad = await call(handler, { headers: auth('M'), body: { ...iosMaterialBody(), requestId: 'bad id!' } })
+  assert.equal(bad.code, 400)
+  assert.equal(sent.length, 0)
+  for (let i = 0; i < 2; i += 1) {
+    assert.equal((await call(handler, { headers: auth('M'), body: iosMaterialBody() })).code, 200)
+  }
+  assert.equal(sent.length, 2)
+  assert.equal(store.calls.length, 0)
+  assert.deepEqual(sendOptionsLog, [undefined, undefined], 'no Resend idempotency key without a request id')
+})
+
+test('request id: each message gets a Resend idempotency key "<dedupe key>-<index>"', async () => {
+  const store = memoryDedupe()
+  const { handler, sendOptionsLog } = makeHandler({ requestDedupe: store })
+  const body = { ...iosMaterialBody(), to: ['wendy@pipes.example', 'one@shop.example'], requestId: REQ }
+  assert.equal((await call(handler, { headers: auth('M'), body })).code, 200)
+  const key = keyFor(body)
+  assert.deepEqual(sendOptionsLog.map((row) => row && row.idempotencyKey), [`${key}-0`, `${key}-1`])
+})
+
+test('request id: web server mode — one id per Send, one key per recipient, a retried call is not sent twice', async () => {
+  const store = memoryDedupe()
+  const { handler, sent } = makeHandler({ requestDedupe: store })
+  const headers = { 'X-Project-Planner-Server-Key': 'server-secret', ...auth('M') }
+  const body = (to) => ({ template: 'web_rendered', orgId: ORG, to: [to], requestId: REQ, data: { subject: 'Hi', html: '<p>Hi</p>' } })
+  assert.equal((await call(handler, { headers, body: body('one@shop.example') })).code, 200)
+  assert.equal((await call(handler, { headers, body: body('two@shop.example') })).code, 200)
+  const retried = await call(handler, { headers, body: body('one@shop.example') })
+  assert.equal(retried.payload.deduped, true)
+  assert.deepEqual(retried.payload.results.map((row) => row.to), ['one@shop.example'])
+  assert.equal(sent.length, 2)
+})
+
+test('resendSender: Idempotency-Key only when given; a 409 naming the key is "already accepted"', async () => {
+  const calls = []
+  const send = resendSender('re_test', async (url, init) => {
+    calls.push(init)
+    return { ok: true, text: async () => JSON.stringify({ id: 'abc' }) }
+  })
+  await send({ to: ['a@example.com'] })
+  await send({ to: ['a@example.com'] }, { idempotencyKey: 'k-0' })
+  assert.equal(RESEND_IDEMPOTENCY_HEADER, 'Idempotency-Key')
+  assert.equal(calls[0].headers['Idempotency-Key'], undefined)
+  assert.equal(calls[1].headers['Idempotency-Key'], 'k-0')
+  const replayed = resendSender('re_test', async () => ({ ok: false, status: 409, text: async () => '{"name":"invalid_idempotent_request"}' }))
+  await assert.rejects(replayed({}, { idempotencyKey: 'k-0' }), (error) => error.alreadyAccepted === true)
+  const otherConflict = resendSender('re_test', async () => ({ ok: false, status: 409, text: async () => 'conflict' }))
+  await assert.rejects(otherConflict({}, { idempotencyKey: 'k-0' }), (error) => !error.alreadyAccepted)
+  await assert.rejects(replayed({}), (error) => !error.alreadyAccepted, 'without a key a 409 is a plain failure')
+})
+
+test('request id: a message Resend already accepted under its key counts as sent', async () => {
+  const store = memoryDedupe()
+  const { org, users, reader } = fixture()
+  void org
+  const handler = createSendEmailHandler({
+    verifyIdToken: async (token) => ({ uid: token.slice(6), email: users[token.slice(6)].email }),
+    verifyAppCheck: async () => {},
+    reader,
+    consumeRateLimit: async () => ({ allowed: true }),
+    sendMessage: async () => {
+      const error = new Error('Resend 409: invalid_idempotent_request')
+      error.alreadyAccepted = true
+      throw error
+    },
+    serverKey: () => 'server-secret',
+    logger: { info() {}, warn() {}, error() {} },
+    requestDedupe: store,
+  })
+  const res = await call(handler, { headers: auth('M'), body: { ...iosMaterialBody(), requestId: REQ } })
+  assert.equal(res.code, 200, JSON.stringify(res.payload))
+  assert.equal(res.payload.sentCount, 1)
+  assert.deepEqual(res.payload.failed, [])
+})
+
+test('request id: Admin store claims in a transaction, completes with merge and releases with delete', async () => {
+  const stored = new Map()
+  const ops = []
+  const doc = (key) => ({
+    key,
+    async set(value, options) {
+      ops.push(['set', key, options])
+      stored.set(key, options && options.merge ? { ...(stored.get(key) || {}), ...value } : value)
+    },
+    async delete() {
+      ops.push(['delete', key])
+      stored.delete(key)
+    },
+  })
+  const db = {
+    collection: (name) => {
+      assert.equal(name, 'emailRequestSends')
+      return { doc }
+    },
+    runTransaction: async (fn) =>
+      fn({
+        get: async (ref) => ({ exists: stored.has(ref.key), data: () => stored.get(ref.key) }),
+        set: (ref, value) => {
+          ops.push(['tx.set', ref.key])
+          stored.set(ref.key, value)
+        },
+      }),
+  }
+  const dedupe = createAdminRequestDedupe(db)
+  const t = Date.UTC(2026, 10, 12, 9, 0, 0)
+  assert.deepEqual(await dedupe.claim('k1', { orgId: ORG, uid: 'M', template: 'material_request', recipientCount: 1 }, t), { action: 'claim', renderAtMs: t })
+  assert.equal(stored.get('k1').status, 'pending')
+  assert.ok(stored.get('k1').expireAt instanceof Date)
+  assert.deepEqual(await dedupe.claim('k1', {}, t + 1000), { action: 'inProgress' })
+  await dedupe.complete('k1', sentRecordFields({ results: [{ to: 'a@x.example', id: 're_1' }], failed: [], keyRecipients: ['a@x.example'] }, t + 2000))
+  assert.equal((await dedupe.claim('k1', {}, t + 3000)).action, 'replay')
+  assert.ok(stored.get('k1').expireAt instanceof Date, 'complete keeps expireAt')
+  await dedupe.release('k1')
+  assert.equal(stored.has('k1'), false)
+  assert.deepEqual(ops.map(([kind]) => kind), ['tx.set', 'set', 'delete'])
+})
+
+// ---------------------------------------------------------------------------------------------------------------
+// Speed: parallel reads, one Resend batch per request, web_rendered_batch
+
+/** A reader whose reads wait for `release()`: shows which reads are in flight at the same time. */
+function gatedReader(base, names = Object.keys(base)) {
+  const started = []
+  let open
+  const gate = new Promise((resolve) => (open = resolve))
+  const wrap = (name) => async (...args) => {
+    started.push(name)
+    if (names.includes(name)) await gate
+    return base[name](...args)
+  }
+  const reader = {}
+  for (const name of Object.keys(base)) reader[name] = wrap(name)
+  return { reader, started, release: () => open() }
+}
+
+const settle = async () => {
+  for (let i = 0; i < 5; i += 1) await new Promise((resolve) => setImmediate(resolve))
+}
+
+test('speed: organisation, user and membership are read together; a missing organisation is still a 404', async () => {
+  let gated = null
+  const { handler, sent } = makeHandler({
+    reader: (base) => {
+      gated = gatedReader(base)
+      return gated.reader
+    },
+  })
+  const pending = call(handler, { headers: auth('M'), body: iosMaterialBody() })
+  await settle()
+  assert.deepEqual([...gated.started].sort(), ['getMembership', 'getOrganization', 'getUser'])
+  gated.release()
+  const res = await pending
+  assert.equal(res.code, 200, JSON.stringify(res.payload))
+  assert.equal(sent.length, 1)
+
+  const missing = makeHandler()
+  const res404 = await call(missing.handler, { headers: auth('M'), body: { ...iosMaterialBody(), orgId: 'no-such-org' } })
+  assert.equal(res404.code, 404)
+  assert.equal(missing.sent.length, 0)
+})
+
+test('speed: the job, the managers rows and the wholesaler list are read together; a refused job still sends nothing', async () => {
+  let gated = null
+  const second = ['getJob', 'managersByEmail', 'listWholesalers']
+  const { handler, sent } = makeHandler({
+    reader: (base) => {
+      gated = gatedReader(base, second)
+      return gated.reader
+    },
+  })
+  const pending = call(handler, { headers: auth('M'), body: iosMaterialBody({ jobId: 'proj-1' }) })
+  await settle()
+  // All three are in flight before any of them has answered.
+  assert.deepEqual(gated.started.filter((name) => second.includes(name)).sort(), [...second].sort())
+  gated.release()
+  const res = await pending
+  assert.equal(res.code, 200, JSON.stringify(res.payload))
+  assert.equal(sent.length, 1)
+
+  const refused = makeHandler()
+  const bad = await call(refused.handler, { headers: auth('M'), body: iosMaterialBody({ jobId: 'proj-1', jobNumber: 'WRONG' }) })
+  assert.equal(bad.code, 409)
+  assert.equal(refused.sent.length, 0)
+  assert.equal(refused.rateCalls.length, 0)
+})
+
+test('speed: a material request to several wholesalers is one Resend batch call with the same per-recipient results', async () => {
+  const batches = []
+  const store = memoryDedupe()
+  const { handler, sent, rateCalls } = makeHandler({
+    requestDedupe: store,
+    sendBatch: async (messages, options) => {
+      batches.push({ messages, options })
+      return messages.map((_, index) => ({ id: `batch-${index}` }))
+    },
+  })
+  const body = { ...iosMaterialBody(), to: ['wendy@pipes.example', 'one@shop.example', 'two@shop.example'], requestId: REQ }
+  const res = await call(handler, { headers: auth('M'), body })
+  assert.equal(res.code, 200, JSON.stringify(res.payload))
+  assert.equal(sent.length, 0, 'no one-by-one sends')
+  assert.equal(batches.length, 1)
+  assert.deepEqual(batches[0].messages.map((m) => m.to[0]), ['wendy@pipes.example', 'one@shop.example', 'two@shop.example'])
+  assert.ok(batches[0].messages.every((m) => m.cc && m.cc[0] === 'manager@example.com'))
+  assert.equal(batches[0].options.idempotencyKey, `${keyFor(body)}-batch-0`)
+  assert.equal(res.payload.sentCount, 3)
+  assert.deepEqual(res.payload.failed, [])
+  assert.deepEqual(res.payload.results.map((r) => [r.to, r.id]), [
+    ['wendy@pipes.example', 'batch-0'],
+    ['one@shop.example', 'batch-1'],
+    ['two@shop.example', 'batch-2'],
+  ])
+  assert.deepEqual(rateCalls.map((r) => r.count), [3], 'one rate-limit count for the whole request')
+  const replay = await call(handler, { headers: auth('M'), body })
+  assert.equal(replay.payload.deduped, true)
+  assert.equal(batches.length, 1)
+})
+
+test('speed: one recipient or attachments still send one message at a time', async () => {
+  const batches = []
+  const { handler, sent } = makeHandler({ sendBatch: async (messages) => (batches.push(messages), messages.map(() => ({ id: 'b' }))) })
+  assert.equal((await call(handler, { headers: auth('M'), body: iosMaterialBody() })).code, 200)
+  assert.equal(batches.length, 0)
+  assert.equal(sent.length, 1)
+})
+
+test('speed: a batch Resend refuses as invalid is sent one by one; any other batch failure is unconfirmed (claim kept)', async () => {
+  const invalid = makeHandler({
+    sendBatch: async () => {
+      const error = new Error('Resend 422: invalid')
+      error.batchInvalid = true
+      throw error
+    },
+  })
+  const body = { ...iosMaterialBody(), to: ['wendy@pipes.example', 'one@shop.example'] }
+  const res = await call(invalid.handler, { headers: auth('M'), body })
+  assert.equal(res.code, 200, JSON.stringify(res.payload))
+  assert.equal(invalid.sent.length, 2)
+  assert.equal(res.payload.sentCount, 2)
+
+  const store = memoryDedupe()
+  const down = makeHandler({
+    requestDedupe: store,
+    sendBatch: async () => {
+      throw new Error('Resend 503: busy')
+    },
+  })
+  const failedRes = await call(down.handler, { headers: auth('M'), body: { ...body, requestId: REQ } })
+  assert.equal(failedRes.code, 502)
+  assert.equal(failedRes.payload.unconfirmed, true)
+  assert.deepEqual(failedRes.payload.failed, ['wendy@pipes.example', 'one@shop.example'])
+  assert.equal(down.sent.length, 0, 'not retried one by one: Resend may have taken the batch')
+  assert.equal(store.docs.size, 1, 'claim kept pending: the batch may have gone')
+  const again = await call(down.handler, { headers: auth('M'), body: { ...body, requestId: REQ } })
+  assert.equal(again.code, 409, 'a repeat within 5 minutes is "still sending", never a second send')
+  assert.equal(again.payload.inProgress, true)
+})
+
+test('speed: a 409 on the batch key is not counted as sent; it is unconfirmed and the claim is kept', async () => {
+  const store = memoryDedupe()
+  const { handler, sent } = makeHandler({
+    requestDedupe: store,
+    sendBatch: async () => {
+      throw new Error('Resend 409: invalid_idempotent_request')
+    },
+  })
+  const res = await call(handler, { headers: auth('M'), body: { ...iosMaterialBody(), to: ['wendy@pipes.example', 'one@shop.example'], requestId: REQ } })
+  assert.equal(res.code, 502)
+  assert.equal(res.payload.unconfirmed, true)
+  assert.equal(sent.length, 0)
+  assert.equal(store.docs.size, 1)
+})
+
+test('speed: a repeated address in the request is one message (two wholesalers sharing a contact)', async () => {
+  const batches = []
+  const { handler } = makeHandler({ sendBatch: async (messages) => (batches.push(messages), messages.map((_, i) => ({ id: `b-${i}` }))) })
+  const res = await call(handler, {
+    headers: { 'X-Project-Planner-Server-Key': 'server-secret', ...auth('M') },
+    body: {
+      template: 'web_rendered_batch',
+      orgId: ORG,
+      to: ['one@shop.example', 'One@Shop.example', 'two@shop.example'],
+      data: {
+        messages: [
+          { to: 'one@shop.example', subject: 'S', html: '<p>first</p>' },
+          { to: 'ONE@shop.example', subject: 'S', html: '<p>second</p>' },
+          { to: 'two@shop.example', subject: 'S', html: '<p>two</p>' },
+        ],
+      },
+    },
+  })
+  assert.equal(res.code, 200, JSON.stringify(res.payload))
+  assert.deepEqual(batches[0].map((m) => [m.to[0], m.html]), [
+    ['one@shop.example', '<p>first</p>'],
+    ['two@shop.example', '<p>two</p>'],
+  ])
+})
+
+test('speed: a missing organisation is still a 404 when the user read fails', async () => {
+  const { handler } = makeHandler({
+    reader: (base) => ({ ...base, getUser: async () => { throw new Error('read failed') } }),
+  })
+  const res = await call(handler, { headers: auth('M'), body: { ...iosMaterialBody(), orgId: 'no-such-org' } })
+  assert.equal(res.code, 404)
+})
+
+test('resendBatchSender: posts the array to /emails/batch with the key; 422 is batchInvalid, a 409 is a plain failure', async () => {
+  const calls = []
+  const send = resendBatchSender('re_test', async (url, init) => {
+    calls.push({ url, init })
+    return { ok: true, text: async () => JSON.stringify({ data: [{ id: 'a' }, { id: 'b' }] }) }
+  })
+  const ids = await send([{ to: ['x@example.com'] }, { to: ['y@example.com'] }], { idempotencyKey: 'k-batch-0' })
+  assert.deepEqual(ids, [{ id: 'a' }, { id: 'b' }])
+  assert.equal(calls[0].url, 'https://api.resend.com/emails/batch')
+  assert.equal(calls[0].init.headers.Authorization, 'Bearer re_test')
+  assert.equal(calls[0].init.headers['Idempotency-Key'], 'k-batch-0')
+  assert.equal(JSON.parse(calls[0].init.body).length, 2)
+  const invalid = resendBatchSender('re_test', async () => ({ ok: false, status: 422, text: async () => 'bad' }))
+  await assert.rejects(invalid([{}], {}), (error) => error.batchInvalid === true && !error.alreadyAccepted)
+  const taken = resendBatchSender('re_test', async () => ({ ok: false, status: 409, text: async () => 'invalid_idempotent_request' }))
+  await assert.rejects(taken([{}], { idempotencyKey: 'k' }), (error) => !error.alreadyAccepted && !error.batchInvalid)
+  const busy = resendBatchSender('re_test', async () => ({ ok: false, status: 500, text: async () => 'oops' }))
+  await assert.rejects(busy([{}], {}), (error) => !error.batchInvalid && !error.alreadyAccepted)
+  assert.ok(RESEND_BATCH_MAX >= SERVER_TEMPLATES.web_rendered_batch.maxRecipients)
+  assert.ok(RESEND_BATCH_MAX >= TEMPLATES.material_request.maxRecipients)
+})
+
+test('web_rendered_batch: server key only; one call, each recipient gets its own rendered message, one rate count', async () => {
+  const batches = []
+  const { handler, sent, rateCalls } = makeHandler({ sendBatch: async (messages) => (batches.push(messages), messages.map((_, i) => ({ id: `w-${i}` }))) })
+  const body = {
+    template: 'web_rendered_batch',
+    orgId: ORG,
+    to: ['One@Shop.example', 'two@shop.example'],
+    data: {
+      fromCaller: true,
+      ccCaller: true,
+      replyTo: 'manager@example.com',
+      messages: [
+        { to: 'one@shop.example', subject: 'Order J-1', html: '<p>Dear One</p>' },
+        { to: 'TWO@shop.example', subject: 'Order J-1', html: '<p>Dear Two</p>' },
+      ],
+    },
+  }
+  const appTry = await call(handler, { headers: auth('M'), body })
+  assert.equal(appTry.code, 400, 'not available to an app')
+  const res = await call(handler, { headers: { 'X-Project-Planner-Server-Key': 'server-secret', ...auth('M') }, body })
+  assert.equal(res.code, 200, JSON.stringify(res.payload))
+  assert.equal(batches.length, 1)
+  assert.deepEqual(batches[0].map((m) => [m.to[0], m.html]), [
+    ['one@shop.example', '<p>Dear One</p>'],
+    ['two@shop.example', '<p>Dear Two</p>'],
+  ])
+  assert.ok(batches[0].every((m) => m.from === '"Max Manager via Project Planner" <info@projectplanner.us>'))
+  assert.ok(batches[0].every((m) => m.cc[0] === 'manager@example.com'))
+  assert.deepEqual(rateCalls.map((r) => r.count), [2], 'one rate-limit count for both messages')
+  assert.deepEqual(res.payload.results.map((r) => r.id), ['w-0', 'w-1'])
+  assert.equal(sent.length, 0)
+
+  const missing = await call(handler, {
+    headers: { 'X-Project-Planner-Server-Key': 'server-secret', ...auth('M') },
+    body: { ...body, data: { ...body.data, messages: [body.data.messages[0]] } },
+  })
+  assert.equal(missing.code, 400, 'every recipient needs its message')
+  const dup = await call(handler, {
+    headers: { 'X-Project-Planner-Server-Key': 'server-secret', ...auth('M') },
+    body: { ...body, data: { ...body.data, messages: [body.data.messages[0], body.data.messages[0]] } },
+  })
+  assert.equal(dup.code, 400, 'two.example still has no message of its own')
+})
+
+test('speed: a takeover after an unconfirmed batch re-sends the identical batch under the same key (rendered at the first claim time)', async () => {
+  const store = memoryDedupe()
+  let clock = Date.parse('2026-11-03T09:15:00Z')
+  const batches = []
+  let failFirst = true
+  const { handler } = makeHandler({
+    requestDedupe: store,
+    now: () => new Date(clock),
+    sendBatch: async (messages, options) => {
+      batches.push({ body: JSON.stringify(messages), key: options && options.idempotencyKey })
+      if (failFirst) {
+        failFirst = false
+        throw new Error('Resend 503: busy')
+      }
+      return messages.map((_, i) => ({ id: `b-${i}` }))
+    },
+  })
+  const body = { ...iosMaterialBody(), to: ['wendy@pipes.example', 'one@shop.example'], requestId: REQ }
+  assert.equal((await call(handler, { headers: auth('M'), body })).code, 502)
+  clock += 6 * 60 * 1000
+  const retried = await call(handler, { headers: auth('M'), body })
+  assert.equal(retried.code, 200, JSON.stringify(retried.payload))
+  assert.equal(batches.length, 2)
+  assert.equal(batches[1].key, batches[0].key, 'same Resend key')
+  assert.equal(batches[1].body, batches[0].body, 'byte-for-byte the same payload, so Resend replays instead of 409')
 })

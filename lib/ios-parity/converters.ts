@@ -1090,6 +1090,8 @@ export interface AppInboxNotification {
   type: string
   title: string
   message: string
+  /** Rulebook 1.40.0: inbox-only text under the message (never pushed). */
+  detail?: string
   userId?: string
   relatedId?: string
   isRead: boolean
@@ -1120,6 +1122,7 @@ export function parseNotification(
     type: parsed.type,
     title: parsed.title,
     message: parsed.message,
+    detail: parsed.detail ?? undefined,
     userId: parsed.userId ?? undefined,
     relatedId: parsed.relatedId ?? undefined,
     isRead: parsed.isRead,

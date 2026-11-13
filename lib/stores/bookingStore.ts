@@ -26,6 +26,7 @@ import { londonMidnight } from '@/lib/ios-parity/londonTime'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 import { serializeBooking } from '@/lib/ios-parity/converters'
 import { resolveBookingJobCollection } from '@/lib/bookings/jobCollection'
+import { announceSignedTimesheetDelete } from '@/lib/bookings/signedTimesheetDeleteNotice'
 import type { Booking } from '@/types'
 import {
   bookingDownloadConstraints,
@@ -304,7 +305,12 @@ export const useBookingStore = create<BookingState>((set, get) => ({
       forgetOrgCollectionDoc('bookings', organizationId, id)
       set({ bookings: bookings.filter((row) => row.id !== id) })
       const removed = bookings.find((row) => row.id === id)
-      if (removed) notifyOvertimeReopenedSoon(removed, null)
+      if (removed) {
+        notifyOvertimeReopenedSoon(removed, null)
+        // Rulebook 1.33.0 §2: a day on a signed or exported timesheet warns (`bookingDeleteSignedTimesheetWarning`);
+        // the delete has already gone ahead.
+        announceSignedTimesheetDelete({ organizationId, personId: removed.operativeId, date: removed.date })
+      }
     } catch (error: unknown) {
       set({ error: error instanceof Error ? error.message : 'Failed to delete booking' })
       throw error

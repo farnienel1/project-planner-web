@@ -64,6 +64,11 @@ export function hrefForNotificationDestination(dest: NotificationDestination): s
       return '/dashboard/annual-leave'
     case 'annualLeavePending':
       return '/dashboard/annual-leave?tab=team'
+    // Rulebook 1.40.0: one person's annual leave page (`annual_leave_adjusted`).
+    case 'annualLeavePerson':
+      return dest.userId || dest.relatedId
+        ? `/dashboard/annual-leave?tab=team&person=${encodeURIComponent(dest.userId || dest.relatedId || '')}`
+        : '/dashboard/annual-leave?tab=team'
     case 'projectDetail':
       return id ? `/dashboard/projects/${id}` : '/dashboard/projects'
     case 'projectsList':

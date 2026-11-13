@@ -423,11 +423,23 @@ export function hoursBreakdown(input: BookingHoursInput): HoursBreakdown {
   }
 }
 
-/** Rulebook 1.20.2: a booking row's times — "Custom 07:30–14:00" for custom hours with times, else the slot's name. */
-export function bookingTimesText(input: { timeSlot?: string | null; workStartTime?: string | null; workEndTime?: string | null }): string {
+/**
+ * `bookingTimesText` in two parts, from the booking's own fields (display only): the shift ("Custom", "Full day",
+ * "Custom hours" when no times are stored) and the clock range when custom hours have one, else null.
+ */
+export function bookingTimesParts(input: { timeSlot?: string | null; workStartTime?: string | null; workEndTime?: string | null }): {
+  shift: string
+  times: string | null
+} {
   if (namedSlotKind(input.timeSlot ?? undefined) === 'custom') {
     const range = formatClockRange(input.workStartTime, input.workEndTime, '–')
-    return range ? `Custom ${range}` : 'Custom hours'
+    return range ? { shift: 'Custom', times: range } : { shift: 'Custom hours', times: null }
   }
-  return namedSlotLabel(input.timeSlot ?? undefined)
+  return { shift: namedSlotLabel(input.timeSlot ?? undefined), times: null }
+}
+
+/** Rulebook 1.20.2: a booking row's times — "Custom 07:30–14:00" for custom hours with times, else the slot's name. */
+export function bookingTimesText(input: { timeSlot?: string | null; workStartTime?: string | null; workEndTime?: string | null }): string {
+  const { shift, times } = bookingTimesParts(input)
+  return times ? `${shift} ${times}` : shift
 }

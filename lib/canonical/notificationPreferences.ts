@@ -108,6 +108,8 @@ const TYPE_TO_PREFERENCE: Record<string, NotificationPreferenceKey> = {
   // 1.31.0 (§11, owner decisions): operative deleted, manager taken off jobs.
   operative_deleted: 'companyActivity',
   job_manager_removed: 'companyActivity',
+  // 1.40.0 (§4.4, owner decision 11 Nov): a manual annual-leave adjustment tells every admin.
+  annual_leave_adjusted: 'companyActivity',
   task_created: 'tasksAssignedOrCompleted',
   task_completed: 'tasksAssignedOrCompleted',
   deadline_assigned: 'tasksAssignedOrCompleted',
@@ -162,6 +164,8 @@ export type NotificationDestinationKind =
   | 'home'
   | 'overtimeMine'
   | 'overtimeUser'
+  /** 1.40.0: one person's annual leave page (Annual leave → Team → that person); `userId` is the person. */
+  | 'annualLeavePerson'
 
 export type NotificationDestination = {
   kind: NotificationDestinationKind
@@ -321,7 +325,7 @@ export function notificationPreferenceCopy(
     lineManagerPeerUpdates: 'When another line manager actions a shared request.',
     timesheetSubmissionReminder: 'Reminder to submit before the payment-run deadline.',
     variations: 'When a variation is added to a job you manage, or variation numbers are updated.',
-    companyActivity: 'People, clients, jobs added and warnings removed.',
+    companyActivity: 'People, clients, jobs added, warnings removed and annual leave adjusted.',
     overtime: 'Overtime requests and updates, and hours changed on bookings you manage.',
   }
   return { label: PREFERENCE_LABELS[key], description: descriptions[key] }
@@ -441,6 +445,7 @@ export const DEVICE_PUSH_NOTIFICATION_TYPES = [
   'warning_removed',
   'operative_deleted',
   'job_manager_removed',
+  'annual_leave_adjusted',
   'operative_created',
   'manager_created',
   'client_created',
@@ -670,6 +675,9 @@ export function notificationDestination(input: NotificationDestinationInput): No
       return relatedId ? { kind: 'userEdit', relatedId } : { kind: 'manageUsers' }
     case 'operative_deleted':
       return { kind: 'manageUsers' }
+    // 1.40.0: relatedId is the person whose leave was adjusted; admins open that person's annual leave page.
+    case 'annual_leave_adjusted':
+      return relatedId ? { kind: 'annualLeavePerson', relatedId, userId: relatedId } : { kind: 'annualLeave' }
     case 'client_created':
       return { kind: 'clients', relatedId }
     case 'warning_removed':

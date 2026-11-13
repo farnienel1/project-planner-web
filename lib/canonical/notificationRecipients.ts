@@ -301,6 +301,8 @@ export const COMPANY_ACTIVITY_NOTICE_TYPES = [
   // 1.31.0 (§11): an operative deleted (by an admin or an operatives manager) and a manager taken off jobs.
   'operative_deleted',
   'job_manager_removed',
+  // 1.40.0 (§4.4): a manual annual-leave adjustment.
+  'annual_leave_adjusted',
 ] as const
 
 /**
@@ -438,6 +440,8 @@ export const NOTIFICATION_CATALOG: ReadonlyArray<NotificationCatalogRow> = [
     'one row per admin (userId + actorUserId); relatedId the deleted user id. Toggle: companyActivity. iOS: write it when an operative is deleted.'),
   row('job_manager_removed', 'A manager made an operative, deactivated or deleted is taken off their jobs (1.31.0)', 'companyActivityRecipients', ['web'],
     'one row per admin (userId + actorUserId); relatedId the person. Toggle: companyActivity. iOS: write it with jobManagerRemovalWrites.'),
+  row('annual_leave_adjusted', 'An admin or line manager adds or takes off annual leave days for one leave year (1.40.0)', 'companyActivityRecipients', ['web', 'ios'],
+    'one row per admin (userId + actorUserId); relatedId the person; opens their annual leave page. Toggle: companyActivity.'),
   row('idea_status', 'Feedback idea status changed', 'ideaRecipients', ['web'], 'web: the actor is not removed; use ideaRecipients.'),
   row('idea_shipped', 'Feedback idea shipped', 'ideaRecipients', ['web'], 'web: the actor is not removed; use ideaRecipients.'),
   row('idea_comment', 'Comment on a feedback idea', 'ideaRecipients', ['web'],
