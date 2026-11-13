@@ -42,7 +42,7 @@ const { getAppCheck } = require('firebase-admin/app-check')
 const { getStorage } = require('firebase-admin/storage')
 const { onSchedule } = require('firebase-functions/v2/scheduler')
 const { createAdminEraserStore, eraseDueOrganizations } = require('./organizationEraser')
-const { createSendEmailHandler, resendSender } = require('./email/handler')
+const { createSendEmailHandler, resendBatchSender, resendSender } = require('./email/handler')
 const { createFirestoreReader } = require('./email/firestoreReader')
 const { consumeRateLimit } = require('./email/rateLimit')
 const { createAdminRequestDedupe } = require('./email/requestDedupe')
@@ -232,6 +232,8 @@ function emailHandler() {
     // `requestId` idempotency: `emailRequestSends/{key}` (Admin SDK only; no security rule matches it).
     requestDedupe: createAdminRequestDedupe(db),
     sendMessage: resendSender(() => RESEND_API_KEY.value()),
+    // Several messages without attachments (every wholesaler of one material request) in one Resend batch call.
+    sendBatch: resendBatchSender(() => RESEND_API_KEY.value()),
     // Trimmed: a secret set from a file keeps its trailing newline (handler `sameSecret` trims too).
     serverKey: () => String(EMAIL_SERVER_KEY.value() || '').trim(),
     logger,
@@ -251,6 +253,7 @@ exports.sendEmail = onRequest(
     invoker: 'public',
     cors: false,
     maxInstances: 10,
+    // No always-on instance (owner decision 13 Nov: stay on the free setting until there are users; docs/EMAIL_FUNCTION.md "Speed").
     memory: '512MiB',
     timeoutSeconds: 60,
   },

@@ -96,16 +96,22 @@ function requestDedupeKey({ callerKey, orgId, template, requestId, recipients, c
 
 /**
  * Pure step: what a call does given the stored record.
- * @returns {{ action: 'claim' } | { action: 'replay', record: object } | { action: 'inProgress' }}
+ * @returns {{ action: 'claim', renderAtMs: number } | { action: 'replay', record: object } | { action: 'inProgress' }}
+ *   `renderAtMs` is the time the messages are rendered with (the first claim's, kept on a takeover).
  */
 function requestDedupeDecision(stored, nowMs) {
-  if (!stored || typeof stored !== 'object') return { action: 'claim' }
+  if (!stored || typeof stored !== 'object') return { action: 'claim', renderAtMs: nowMs }
   if (stored.status === 'sent' && Number.isFinite(Number(stored.sentCount))) return { action: 'replay', record: stored }
   const claimedAtMs = Number(stored.claimedAtMs)
   if (stored.status === 'pending' && Number.isFinite(claimedAtMs) && nowMs - claimedAtMs < PENDING_STALE_MS) {
     return { action: 'inProgress' }
   }
-  return { action: 'claim' }
+  // Taking over a claim whose call died (or whose batch was not confirmed): the messages are rendered at the first
+  // claim's time, so the re-send is byte-for-byte the same and Resend answers it from its idempotency key instead of
+  // refusing a "different payload" for the same key.
+  const firstRender = Number(stored.renderAtMs)
+  const renderAtMs = Number.isFinite(firstRender) ? firstRender : Number.isFinite(claimedAtMs) ? claimedAtMs : nowMs
+  return { action: 'claim', renderAtMs }
 }
 
 /**
@@ -148,10 +154,11 @@ function replayResponse(record, { keyRecipients, ccFor, from }) {
 }
 
 /** The record written when a call claims a key (no message contents; ids only). */
-function pendingRecord({ orgId, uid, template, jobId, recipientCount }, nowMs) {
+function pendingRecord({ orgId, uid, template, jobId, recipientCount }, nowMs, renderAtMs = nowMs) {
   return {
     status: 'pending',
     claimedAtMs: nowMs,
+    renderAtMs: Number.isFinite(Number(renderAtMs)) ? Number(renderAtMs) : nowMs,
     expireAt: new Date(nowMs + RECORD_TTL_MS),
     orgId: orgId || null,
     uid: uid || null,
@@ -169,7 +176,7 @@ function createAdminRequestDedupe(db) {
       return db.runTransaction(async (tx) => {
         const snap = await tx.get(ref(key))
         const decision = requestDedupeDecision(snap.exists ? snap.data() : null, nowMs)
-        if (decision.action === 'claim') tx.set(ref(key), pendingRecord(details, nowMs))
+        if (decision.action === 'claim') tx.set(ref(key), pendingRecord(details, nowMs, decision.renderAtMs))
         return decision
       })
     },
