@@ -42,6 +42,7 @@ import { waitForAuthToken } from '@/lib/firebase/waitForAuthToken'
 import { liveRosterParitySource, reattachLiveRoster } from '@/lib/stores/siteAuditStore'
 import { useProjectStore } from '@/lib/stores/projectStore'
 import { readerDroppedJobDocuments } from '@/lib/firebase/orgCollectionMerge'
+import { browserOnlineForChecks } from '@/lib/onlineStatus'
 
 /** The listener key each list is held under on web (stores' own keys). */
 export const WEB_DATA_PARITY_LISTENER_KEYS: Record<Exclude<DataParityListKey, 'users'>, string> = {
@@ -245,7 +246,8 @@ export const useDataParityStore = create<DataParityState>((set, get) => ({
   run: async (organizationId, trigger) => {
     if (!organizationId || get().running) return null
     get().load(organizationId)
-    const online = typeof navigator === 'undefined' ? true : navigator.onLine !== false
+    // The banner's confirmed status (lib/onlineStatus.ts), so a stuck `navigator.onLine` false does not skip the check.
+    const online = browserOnlineForChecks(typeof navigator === 'undefined' ? undefined : navigator.onLine)
     const nowMs = Date.now()
     // Read at check time: another tab of this browser may have run the check since this one loaded its log.
     const lastCheckedMs = lastCheckedAcrossTabs(organizationId, get().lastCheckedMs)
