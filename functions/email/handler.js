@@ -209,11 +209,14 @@ function createSendEmailHandler(deps) {
     if (rawJobId == null || rawJobId === '') return
     const jobId = typeof rawJobId === 'string' ? rawJobId.trim() : ''
     if (!jobId || jobId.length > 128 || !/^[A-Za-z0-9_-]+$/.test(jobId)) throw new HttpError(400, 'jobId is not valid')
-    const found = await deps.reader.getJob(orgId, jobId)
-    const managers =
-      found && callerJob.email && typeof deps.reader.managersByEmail === 'function'
-        ? await deps.reader.managersByEmail(orgId, callerJob.email)
-        : []
+    // The job and the caller's managers-list rows are read together; the rows are used only when the job exists.
+    const [found, managerRows] = await Promise.all([
+      deps.reader.getJob(orgId, jobId),
+      callerJob.email && typeof deps.reader.managersByEmail === 'function'
+        ? deps.reader.managersByEmail(orgId, callerJob.email)
+        : [],
+    ])
+    const managers = found ? managerRows : []
     const viewer = canonical.materialRequestJobViewer({
       userId: callerJob.uid,
       email: callerJob.email,
@@ -275,21 +278,26 @@ function createSendEmailHandler(deps) {
     const orgId = parseOrgId(body.orgId, !serverMode)
     const data = body.data && typeof body.data === 'object' && !Array.isArray(body.data) ? body.data : {}
 
-    let org = null
-    if (orgId) {
-      org = await deps.reader.getOrganization(orgId)
-      if (!org && !serverMode) throw new HttpError(404, 'Organisation not found')
-    }
+    // The organisation, the caller's users document and their membership are independent reads: fetched together
+    // (one round trip instead of three), then checked in the same order as before — a missing organisation is still
+    // refused before membership, and nothing has been sent or counted yet.
+    const [orgRead, userRead, membershipRead] = await Promise.all([
+      orgId ? deps.reader.getOrganization(orgId) : null,
+      decoded ? deps.reader.getUser(decoded.uid) : null,
+      decoded && !serverMode ? deps.reader.getMembership(decoded.uid, orgId) : null,
+    ])
+    const org = orgId ? orgRead : null
+    if (orgId && !org && !serverMode) throw new HttpError(404, 'Organisation not found')
     const orgName = org ? canonical.parseOrganizationName(org) || '' : ''
 
     let caller = null
     // What the job check (`materialRequestJobViewer`) needs about an app caller; null in server mode.
     let callerJob = null
     if (decoded) {
-      const user = await deps.reader.getUser(decoded.uid)
+      const user = userRead
       caller = callerProfile(decoded, user)
       if (!serverMode) {
-        const membership = await deps.reader.getMembership(decoded.uid, orgId)
+        const membership = membershipRead
         const active = canonical.organizationMemberActive({ organizationId: orgId, userId: decoded.uid, organization: org, user, membership })
         if (!active || !active.member || !active.active) {
           throw new HttpError(403, 'You are not an active member of this organisation')
@@ -397,6 +405,16 @@ function createSendEmailHandler(deps) {
     // Every check that can change between two sends of one request, then the rate limit and the messages. Throws
     // when nothing was sent.
     async function deliver({ dedupeKey: key }) {
+      // The wholesaler list does not depend on the job check, so it is read at the same time. The check still runs
+      // first: a refused job throws here before any recipient is resolved or anything is sent.
+      let wholesalers = null
+      if (template.recipients === 'wholesaler_or_self' && orgId) {
+        wholesalers = Promise.resolve().then(() => deps.reader.listWholesalers(orgId))
+        // Observed below; this only stops an unhandled rejection when the job check refuses first.
+        wholesalers.catch(() => {})
+      }
+      const reader = wholesalers ? { ...deps.reader, listWholesalers: () => wholesalers } : deps.reader
+
       // Rulebook 1.24.0 / 1.27.0 (§16): a template that names a job (`jobCheck`) and a request that sends `data.jobId`
       // (`checkRequestJob`). A request without `jobId` is still accepted (older iOS builds send only the job number).
       if (template.jobCheck === true && !serverMode) await checkRequestJob(data, orgId, callerJob || {})
@@ -407,7 +425,7 @@ function createSendEmailHandler(deps) {
         org,
         data,
         caller: caller || {},
-        reader: deps.reader,
+        reader,
       })
       // The caller is already copied on every message: their own "Copy:" message (`isSelf`) is dropped, so they get
       // one email per recipient, not two. Recipient checks (`materialOrderRecipientCheck`) ran on the full list above.
@@ -431,34 +449,70 @@ function createSendEmailHandler(deps) {
       if (serverMode && isValidEmail(data.replyTo)) replyTo = normalizeEmail(data.replyTo)
       const extraHeaders = serverMode ? serverHeaders(data.headers) : undefined
 
-      const results = []
-      const failed = []
-      const failures = []
-      for (let index = 0; index < recipients.length; index += 1) {
+      const messages = recipients.map((recipient, index) => {
         const message = {
           from,
-          to: [recipients[index].email],
+          to: [recipient.email],
           subject: rendered[index].subject,
           html: rendered[index].html,
           reply_to: replyTo,
         }
-        const messageCc = ccFor(recipients[index].email)
+        const messageCc = ccFor(recipient.email)
         if (messageCc.length) message.cc = messageCc
         if (rendered[index].text) message.text = rendered[index].text
         if (extraHeaders) message.headers = extraHeaders
         if (attachments.length) {
           message.attachments = attachments.map((row) => ({ filename: row.filename, content: row.content, content_type: row.contentType }))
         }
+        return message
+      })
+
+      const results = []
+      const failed = []
+      const failures = []
+      const recorded = new Set()
+      const record = (index, sent) => {
+        recorded.add(index)
+        results.push({ to: recipients[index].email, id: (sent && sent.id) || null, cc: messages[index].cc || [] })
+      }
+
+      // Several messages without attachments go to Resend in one batch call (`/emails/batch`, `sendBatchMessages`):
+      // one request instead of one per recipient. Resend checks a batch whole, so a batch it refuses as invalid
+      // (400 / 422) sent nothing and the messages are then sent one by one below to find which one it refuses. Any
+      // other batch failure (no answer, 429, 5xx) is not retried one by one — Resend may have taken the batch — and
+      // counts every message as failed, which releases the request claim; a retry with the same request id sends the
+      // same batch idempotency key, so Resend never sends it twice.
+      const batchSender = typeof deps.sendBatch === 'function' ? deps.sendBatch : null
+      let pending = messages.map((_, index) => index)
+      if (batchSender && messages.length > 1 && attachments.length === 0) {
+        try {
+          await sendBatchMessages({ batchSender, messages, key, record })
+          pending = []
+        } catch (error) {
+          if (!(error && error.batchInvalid)) {
+            logger.error('sendEmail: provider refused a batch', { template: templateName, orgId, error: String(error && error.message) })
+            for (const index of pending.filter((row) => !recorded.has(row))) {
+              failed.push(recipients[index].email)
+              failures.push({ to: recipients[index].email, error: String((error && error.message) || error).slice(0, 300) })
+            }
+            pending = []
+          } else {
+            // Only the first chunk can be refused this way (`sendBatchMessages`), so nothing was recorded yet.
+            logger.warn('sendEmail: batch refused as invalid, sending one by one', { template: templateName, orgId })
+          }
+        }
+      }
+
+      for (const index of pending) {
         // With a request id, Resend gets its own idempotency key per message (`<dedupe key>-<index>`), so a message it
         // already accepted is not sent again even if this call dies before it records the send.
         const options = key ? { idempotencyKey: `${key}-${index}` } : undefined
         try {
-          const sent = await deps.sendMessage(message, options)
-          results.push({ to: recipients[index].email, id: (sent && sent.id) || null, cc: message.cc || [] })
+          record(index, await deps.sendMessage(messages[index], options))
         } catch (error) {
           if (error && error.alreadyAccepted) {
             // Resend already has this message under its idempotency key: it went, do not count it as failed.
-            results.push({ to: recipients[index].email, id: null, cc: message.cc || [] })
+            record(index, null)
             continue
           }
           logger.error('sendEmail: provider refused a message', { template: templateName, orgId, error: String(error && error.message) })
@@ -518,6 +572,36 @@ function createSendEmailHandler(deps) {
   }
 }
 
+/** Resend accepts at most this many messages in one `/emails/batch` call. */
+const RESEND_BATCH_MAX = 100
+
+/**
+ * Sends `messages` through `batchSender` in chunks of `RESEND_BATCH_MAX`, recording each message's result in order.
+ * With a request id each chunk carries Resend's idempotency key `<dedupe key>-batch-<chunk>`. A chunk Resend already
+ * accepted under its key (`alreadyAccepted`) counts as sent. Throws on the first chunk that fails; a later chunk is
+ * only reached when the earlier ones went, so a refused first chunk sent nothing.
+ */
+async function sendBatchMessages({ batchSender, messages, key, record }) {
+  for (let start = 0, chunk = 0; start < messages.length; start += RESEND_BATCH_MAX, chunk += 1) {
+    const slice = messages.slice(start, start + RESEND_BATCH_MAX)
+    const options = key ? { idempotencyKey: `${key}-batch-${chunk}` } : undefined
+    let answers
+    try {
+      answers = await batchSender(slice, options)
+    } catch (error) {
+      if (error && error.alreadyAccepted) {
+        slice.forEach((_, offset) => record(start + offset, null))
+        continue
+      }
+      // A later chunk failing after an earlier one went must not be retried one by one (the earlier ones went).
+      if (start > 0 && error) error.batchInvalid = false
+      throw error
+    }
+    const rows = Array.isArray(answers) ? answers : []
+    slice.forEach((_, offset) => record(start + offset, rows[offset] || null))
+  }
+}
+
 /** Resend's idempotency header (`Idempotency-Key`, at most 256 characters, kept by Resend for about 24 hours). */
 const RESEND_IDEMPOTENCY_HEADER = 'Idempotency-Key'
 const RESEND_IDEMPOTENCY_KEY_MAX = 256
@@ -553,6 +637,43 @@ function resendSender(apiKey, fetchImpl = fetch) {
   }
 }
 
+/**
+ * Several messages to Resend's batch API (`POST /emails/batch`, at most `RESEND_BATCH_MAX`, no attachments) in one
+ * request. Resolves to `[{ id }]` in the order given. A 400 / 422 (Resend refused the batch as invalid; it checks the
+ * batch whole, so nothing was sent) is thrown with `batchInvalid: true`; a 409 naming the idempotency key with
+ * `alreadyAccepted: true` (that batch was already taken).
+ */
+function resendBatchSender(apiKey, fetchImpl = fetch) {
+  return async function sendBatch(messages, options = {}) {
+    const key = typeof apiKey === 'function' ? apiKey() : apiKey
+    if (!key) throw new Error('RESEND_API_KEY is not set')
+    const headers = { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' }
+    const idempotencyKey = options && typeof options.idempotencyKey === 'string' ? options.idempotencyKey.trim() : ''
+    if (idempotencyKey && idempotencyKey.length <= RESEND_IDEMPOTENCY_KEY_MAX) headers[RESEND_IDEMPOTENCY_HEADER] = idempotencyKey
+    const response = await fetchImpl('https://api.resend.com/emails/batch', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(messages),
+    })
+    const text = await response.text()
+    if (!response.ok) {
+      const error = new Error(`Resend ${response.status}: ${text.slice(0, 300)}`)
+      error.status = response.status
+      if (headers[RESEND_IDEMPOTENCY_HEADER] && response.status === 409 && /idempot/i.test(text)) error.alreadyAccepted = true
+      if (response.status === 400 || response.status === 422) error.batchInvalid = true
+      throw error
+    }
+    let parsed = {}
+    try {
+      parsed = JSON.parse(text)
+    } catch {
+      parsed = {}
+    }
+    const rows = Array.isArray(parsed) ? parsed : parsed && Array.isArray(parsed.data) ? parsed.data : []
+    return messages.map((_, index) => (rows[index] && typeof rows[index] === 'object' ? rows[index] : {}))
+  }
+}
+
 module.exports = {
   ALLOWED_SERVER_HEADERS,
   callerEnvelopeFields,
@@ -564,5 +685,7 @@ module.exports = {
   createSendEmailHandler,
   fromHeader,
   sameSecret,
+  RESEND_BATCH_MAX,
+  resendBatchSender,
   resendSender,
 }

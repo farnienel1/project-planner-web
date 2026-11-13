@@ -6,7 +6,7 @@ const { nextRateLimitState, USER_LIMITS } = require('./rateLimit')
 const { parseAttachments, MAX_TOTAL_BYTES } = require('./attachments')
 const { resolveRecipients } = require('./recipients')
 const { TEMPLATES, SERVER_TEMPLATES } = require('./templates')
-const { createSendEmailHandler, resendSender, sameSecret } = require('./handler')
+const { createSendEmailHandler, resendBatchSender, resendSender, sameSecret, RESEND_BATCH_MAX } = require('./handler')
 
 const ORG = 'org-1'
 const INVITE_ID = '3f2c8a51-7d1e-4b6a-9c0f-2a4b6c8d0e1f'
@@ -96,6 +96,8 @@ function makeHandler(options = {}) {
     },
     serverKey: () => options.serverKey ?? 'server-secret',
     ...(options.requestDedupe ? { requestDedupe: options.requestDedupe } : {}),
+    ...(options.sendBatch ? { sendBatch: options.sendBatch } : {}),
+    ...(options.reader ? { reader: options.reader(reader) } : {}),
     logger: { info: (...a) => logs.push(['info', ...a]), warn: (...a) => logs.push(['warn', ...a]), error: (...a) => logs.push(['error', ...a]) },
     now: () => new Date('2026-11-03T09:15:00Z'),
   })
@@ -1081,4 +1083,219 @@ test('request id: Admin store claims in a transaction, completes with merge and 
   await dedupe.release('k1')
   assert.equal(stored.has('k1'), false)
   assert.deepEqual(ops.map(([kind]) => kind), ['tx.set', 'set', 'delete'])
+})
+
+// ---------------------------------------------------------------------------------------------------------------
+// Speed: parallel reads, one Resend batch per request, web_rendered_batch
+
+/** A reader whose reads wait for `release()`: shows which reads are in flight at the same time. */
+function gatedReader(base, names = Object.keys(base)) {
+  const started = []
+  let open
+  const gate = new Promise((resolve) => (open = resolve))
+  const wrap = (name) => async (...args) => {
+    started.push(name)
+    if (names.includes(name)) await gate
+    return base[name](...args)
+  }
+  const reader = {}
+  for (const name of Object.keys(base)) reader[name] = wrap(name)
+  return { reader, started, release: () => open() }
+}
+
+const settle = async () => {
+  for (let i = 0; i < 5; i += 1) await new Promise((resolve) => setImmediate(resolve))
+}
+
+test('speed: organisation, user and membership are read together; a missing organisation is still a 404', async () => {
+  let gated = null
+  const { handler, sent } = makeHandler({
+    reader: (base) => {
+      gated = gatedReader(base)
+      return gated.reader
+    },
+  })
+  const pending = call(handler, { headers: auth('M'), body: iosMaterialBody() })
+  await settle()
+  assert.deepEqual([...gated.started].sort(), ['getMembership', 'getOrganization', 'getUser'])
+  gated.release()
+  const res = await pending
+  assert.equal(res.code, 200, JSON.stringify(res.payload))
+  assert.equal(sent.length, 1)
+
+  const missing = makeHandler()
+  const res404 = await call(missing.handler, { headers: auth('M'), body: { ...iosMaterialBody(), orgId: 'no-such-org' } })
+  assert.equal(res404.code, 404)
+  assert.equal(missing.sent.length, 0)
+})
+
+test('speed: the job, the managers rows and the wholesaler list are read together; a refused job still sends nothing', async () => {
+  let gated = null
+  const second = ['getJob', 'managersByEmail', 'listWholesalers']
+  const { handler, sent } = makeHandler({
+    reader: (base) => {
+      gated = gatedReader(base, second)
+      return gated.reader
+    },
+  })
+  const pending = call(handler, { headers: auth('M'), body: iosMaterialBody({ jobId: 'proj-1' }) })
+  await settle()
+  // All three are in flight before any of them has answered.
+  assert.deepEqual(gated.started.filter((name) => second.includes(name)).sort(), [...second].sort())
+  gated.release()
+  const res = await pending
+  assert.equal(res.code, 200, JSON.stringify(res.payload))
+  assert.equal(sent.length, 1)
+
+  const refused = makeHandler()
+  const bad = await call(refused.handler, { headers: auth('M'), body: iosMaterialBody({ jobId: 'proj-1', jobNumber: 'WRONG' }) })
+  assert.equal(bad.code, 409)
+  assert.equal(refused.sent.length, 0)
+  assert.equal(refused.rateCalls.length, 0)
+})
+
+test('speed: a material request to several wholesalers is one Resend batch call with the same per-recipient results', async () => {
+  const batches = []
+  const store = memoryDedupe()
+  const { handler, sent, rateCalls } = makeHandler({
+    requestDedupe: store,
+    sendBatch: async (messages, options) => {
+      batches.push({ messages, options })
+      return messages.map((_, index) => ({ id: `batch-${index}` }))
+    },
+  })
+  const body = { ...iosMaterialBody(), to: ['wendy@pipes.example', 'one@shop.example', 'two@shop.example'], requestId: REQ }
+  const res = await call(handler, { headers: auth('M'), body })
+  assert.equal(res.code, 200, JSON.stringify(res.payload))
+  assert.equal(sent.length, 0, 'no one-by-one sends')
+  assert.equal(batches.length, 1)
+  assert.deepEqual(batches[0].messages.map((m) => m.to[0]), ['wendy@pipes.example', 'one@shop.example', 'two@shop.example'])
+  assert.ok(batches[0].messages.every((m) => m.cc && m.cc[0] === 'manager@example.com'))
+  assert.equal(batches[0].options.idempotencyKey, `${keyFor(body)}-batch-0`)
+  assert.equal(res.payload.sentCount, 3)
+  assert.deepEqual(res.payload.failed, [])
+  assert.deepEqual(res.payload.results.map((r) => [r.to, r.id]), [
+    ['wendy@pipes.example', 'batch-0'],
+    ['one@shop.example', 'batch-1'],
+    ['two@shop.example', 'batch-2'],
+  ])
+  assert.deepEqual(rateCalls.map((r) => r.count), [3], 'one rate-limit count for the whole request')
+  const replay = await call(handler, { headers: auth('M'), body })
+  assert.equal(replay.payload.deduped, true)
+  assert.equal(batches.length, 1)
+})
+
+test('speed: one recipient or attachments still send one message at a time', async () => {
+  const batches = []
+  const { handler, sent } = makeHandler({ sendBatch: async (messages) => (batches.push(messages), messages.map(() => ({ id: 'b' }))) })
+  assert.equal((await call(handler, { headers: auth('M'), body: iosMaterialBody() })).code, 200)
+  assert.equal(batches.length, 0)
+  assert.equal(sent.length, 1)
+})
+
+test('speed: a batch Resend refuses as invalid is sent one by one; any other batch failure fails every message (claim released)', async () => {
+  const invalid = makeHandler({
+    sendBatch: async () => {
+      const error = new Error('Resend 422: invalid')
+      error.batchInvalid = true
+      throw error
+    },
+  })
+  const body = { ...iosMaterialBody(), to: ['wendy@pipes.example', 'one@shop.example'] }
+  const res = await call(invalid.handler, { headers: auth('M'), body })
+  assert.equal(res.code, 200, JSON.stringify(res.payload))
+  assert.equal(invalid.sent.length, 2)
+  assert.equal(res.payload.sentCount, 2)
+
+  const store = memoryDedupe()
+  const down = makeHandler({
+    requestDedupe: store,
+    sendBatch: async () => {
+      throw new Error('Resend 503: busy')
+    },
+  })
+  const failedRes = await call(down.handler, { headers: auth('M'), body: { ...body, requestId: REQ } })
+  assert.equal(failedRes.code, 502)
+  assert.deepEqual(failedRes.payload.failed, ['wendy@pipes.example', 'one@shop.example'])
+  assert.equal(down.sent.length, 0, 'not retried one by one: Resend may have taken the batch')
+  assert.equal(store.docs.size, 0, 'claim released so a retry (same batch key) sends')
+})
+
+test('speed: a batch Resend already took under its key counts as sent', async () => {
+  const { handler } = makeHandler({
+    sendBatch: async () => {
+      const error = new Error('Resend 409: idempotent')
+      error.alreadyAccepted = true
+      throw error
+    },
+  })
+  const res = await call(handler, { headers: auth('M'), body: { ...iosMaterialBody(), to: ['wendy@pipes.example', 'one@shop.example'], requestId: REQ } })
+  assert.equal(res.code, 200, JSON.stringify(res.payload))
+  assert.equal(res.payload.sentCount, 2)
+})
+
+test('resendBatchSender: posts the array to /emails/batch with the key; 422 is batchInvalid, a 409 on the key alreadyAccepted', async () => {
+  const calls = []
+  const send = resendBatchSender('re_test', async (url, init) => {
+    calls.push({ url, init })
+    return { ok: true, text: async () => JSON.stringify({ data: [{ id: 'a' }, { id: 'b' }] }) }
+  })
+  const ids = await send([{ to: ['x@example.com'] }, { to: ['y@example.com'] }], { idempotencyKey: 'k-batch-0' })
+  assert.deepEqual(ids, [{ id: 'a' }, { id: 'b' }])
+  assert.equal(calls[0].url, 'https://api.resend.com/emails/batch')
+  assert.equal(calls[0].init.headers.Authorization, 'Bearer re_test')
+  assert.equal(calls[0].init.headers['Idempotency-Key'], 'k-batch-0')
+  assert.equal(JSON.parse(calls[0].init.body).length, 2)
+  const invalid = resendBatchSender('re_test', async () => ({ ok: false, status: 422, text: async () => 'bad' }))
+  await assert.rejects(invalid([{}], {}), (error) => error.batchInvalid === true && !error.alreadyAccepted)
+  const taken = resendBatchSender('re_test', async () => ({ ok: false, status: 409, text: async () => 'invalid_idempotent_request' }))
+  await assert.rejects(taken([{}], { idempotencyKey: 'k' }), (error) => error.alreadyAccepted === true)
+  const busy = resendBatchSender('re_test', async () => ({ ok: false, status: 500, text: async () => 'oops' }))
+  await assert.rejects(busy([{}], {}), (error) => !error.batchInvalid && !error.alreadyAccepted)
+  assert.ok(RESEND_BATCH_MAX >= SERVER_TEMPLATES.web_rendered_batch.maxRecipients)
+  assert.ok(RESEND_BATCH_MAX >= TEMPLATES.material_request.maxRecipients)
+})
+
+test('web_rendered_batch: server key only; one call, each recipient gets its own rendered message, one rate count', async () => {
+  const batches = []
+  const { handler, sent, rateCalls } = makeHandler({ sendBatch: async (messages) => (batches.push(messages), messages.map((_, i) => ({ id: `w-${i}` }))) })
+  const body = {
+    template: 'web_rendered_batch',
+    orgId: ORG,
+    to: ['One@Shop.example', 'two@shop.example'],
+    data: {
+      fromCaller: true,
+      ccCaller: true,
+      replyTo: 'manager@example.com',
+      messages: [
+        { to: 'one@shop.example', subject: 'Order J-1', html: '<p>Dear One</p>' },
+        { to: 'TWO@shop.example', subject: 'Order J-1', html: '<p>Dear Two</p>' },
+      ],
+    },
+  }
+  const appTry = await call(handler, { headers: auth('M'), body })
+  assert.equal(appTry.code, 400, 'not available to an app')
+  const res = await call(handler, { headers: { 'X-Project-Planner-Server-Key': 'server-secret', ...auth('M') }, body })
+  assert.equal(res.code, 200, JSON.stringify(res.payload))
+  assert.equal(batches.length, 1)
+  assert.deepEqual(batches[0].map((m) => [m.to[0], m.html]), [
+    ['one@shop.example', '<p>Dear One</p>'],
+    ['two@shop.example', '<p>Dear Two</p>'],
+  ])
+  assert.ok(batches[0].every((m) => m.from === '"Max Manager via Project Planner" <info@projectplanner.us>'))
+  assert.ok(batches[0].every((m) => m.cc[0] === 'manager@example.com'))
+  assert.deepEqual(rateCalls.map((r) => r.count), [2], 'one rate-limit count for both messages')
+  assert.deepEqual(res.payload.results.map((r) => r.id), ['w-0', 'w-1'])
+  assert.equal(sent.length, 0)
+
+  const missing = await call(handler, {
+    headers: { 'X-Project-Planner-Server-Key': 'server-secret', ...auth('M') },
+    body: { ...body, data: { ...body.data, messages: [body.data.messages[0]] } },
+  })
+  assert.equal(missing.code, 400, 'every recipient needs its message')
+  const dup = await call(handler, {
+    headers: { 'X-Project-Planner-Server-Key': 'server-secret', ...auth('M') },
+    body: { ...body, data: { ...body.data, messages: [body.data.messages[0], body.data.messages[0]] } },
+  })
+  assert.equal(dup.code, 400)
 })

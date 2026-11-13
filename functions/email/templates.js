@@ -308,6 +308,40 @@ function renderWebRendered(input) {
   return { subject, html, text }
 }
 
+/** At most this many messages in one `web_rendered_batch` request (the web material route allows 40 recipients). */
+const WEB_RENDERED_BATCH_MAX = 40
+/** Total HTML of one `web_rendered_batch` request (each message is also held to `renderWebRendered`'s own limit). */
+const WEB_RENDERED_BATCH_MAX_HTML = 8_000_000
+
+/**
+ * `web_rendered_batch`: several messages the web route rendered (one per recipient, e.g. each wholesaler's material
+ * request with its contact's name), sent in one function call so there is one cold start, one rate-limit count and
+ * one Resend batch. `data.messages` is `[{ to, subject, html, text? }]`, exactly one per address in `to`; every other
+ * field (`fromCaller`, `ccCaller`, `replyTo`, `headers`) applies to every message, as on `web_rendered`.
+ */
+function webRenderedBatchMessages(data) {
+  const rows = Array.isArray(data && data.messages) ? data.messages : null
+  if (!rows || rows.length === 0) throw new TemplateDataError('messages is required')
+  if (rows.length > WEB_RENDERED_BATCH_MAX) throw new TemplateDataError(`At most ${WEB_RENDERED_BATCH_MAX} messages`)
+  const byEmail = new Map()
+  let total = 0
+  for (const row of rows) {
+    const to = row && typeof row.to === 'string' ? row.to.trim().toLowerCase() : ''
+    if (!to) throw new TemplateDataError('Every message needs its recipient')
+    if (byEmail.has(to)) throw new TemplateDataError('One message per recipient')
+    total += row && typeof row.html === 'string' ? row.html.length : 0
+    byEmail.set(to, row)
+  }
+  if (total > WEB_RENDERED_BATCH_MAX_HTML) throw new TemplateDataError('html is too long')
+  return byEmail
+}
+
+function renderWebRenderedBatch(input) {
+  const message = webRenderedBatchMessages(input.data).get(String(input.recipient.email || '').toLowerCase())
+  if (!message) throw new TemplateDataError('Every recipient needs its message')
+  return renderWebRendered({ ...input, data: { subject: message.subject, html: message.html, text: message.text } })
+}
+
 const TEMPLATES = Object.freeze({
   invite_setup: {
     minRole: 'staff',
@@ -362,6 +396,13 @@ const SERVER_TEMPLATES = Object.freeze({
     attachments: ['pdf', 'xlsx', 'csv'],
     render: renderWebRendered,
   },
+  web_rendered_batch: {
+    minRole: null,
+    recipients: 'server',
+    maxRecipients: WEB_RENDERED_BATCH_MAX,
+    attachments: [],
+    render: renderWebRenderedBatch,
+  },
 })
 
 module.exports = {
@@ -370,6 +411,7 @@ module.exports = {
   SERVER_TEMPLATES,
   TEMPLATES,
   TemplateDataError,
+  WEB_RENDERED_BATCH_MAX,
   isUuid,
   managerExportEmailHTML,
   sentLabel,
