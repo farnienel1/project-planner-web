@@ -92,11 +92,13 @@ function parseMaterials(rows: MaterialBody[] | undefined) {
 function parseRecipients(rows: RecipientBody[] | undefined) {
   if (!Array.isArray(rows) || rows.length === 0) return null
   if (rows.length > 40) return null
-  const recipients = []
+  const recipients: Array<{ name: string; email: string }> = []
   for (const row of rows) {
     const name = clampString(row.name, 120)
     const email = clampString(row.email, 254)
     if (!name || !email || !isValidEmail(email)) return null
+    // The same address twice (two wholesalers sharing a contact, a typed address that is also saved) gets one email.
+    if (recipients.some((row) => row.email === email.toLowerCase())) continue
     recipients.push({ name, email: email.toLowerCase() })
   }
   return recipients

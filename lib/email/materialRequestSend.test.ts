@@ -80,7 +80,7 @@ test('material request: no answer from the function fails every recipient and ne
   assert.equal(d.oneCalls.length, 0)
 })
 
-test('material request: an older function without web_rendered_batch falls back to one call per recipient, one after another', async () => {
+test('material request: an older function without web_rendered_batch falls back to one call per recipient, all at once as before', async () => {
   let inFlight = 0
   let maxInFlight = 0
   const d = deps({
@@ -99,7 +99,7 @@ test('material request: an older function without web_rendered_batch falls back 
   const outcome = await sendMaterialRequestMessages(input, d)
   assert.equal(outcome.mode, 'single')
   assert.equal(outcome.sent, 3)
-  assert.equal(maxInFlight, 1, 'sequential, not all at once')
+  assert.equal(maxInFlight, 3, 'all at once, as before (sequential calls could outlast the host request limit)')
   assert.ok(d.oneCalls.every((row) => row.requestId === input.requestId && row.ccCaller === true))
 })
 

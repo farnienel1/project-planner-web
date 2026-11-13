@@ -1,9 +1,4 @@
-import {
-  EmailBatchUnsupportedError,
-  sendProjectPlannerEmail,
-  sendProjectPlannerEmailBatch,
-  type ProjectPlannerEmailResult,
-} from './resendClient'
+import { EmailBatchUnsupportedError, sendProjectPlannerEmail, sendProjectPlannerEmailBatch } from './resendClient'
 
 /**
  * How the material quote / order route hands its rendered emails to the email function (transport only — who may
@@ -15,7 +10,7 @@ import {
  * to three instances and three rate-limit transactions on the same document fought each other.
  *
  * If the deployed function does not know `web_rendered_batch` yet (the web deploys before the function), the route
- * falls back to one call per recipient, one after another (not all at once), each with the same request id as before.
+ * falls back to one call per recipient, all at once as before, each with the same request id as before.
  */
 
 export type MaterialRequestMessage = { to: string; subject: string; html: string }
@@ -107,27 +102,34 @@ export async function sendMaterialRequestMessages(
     log('batch unsupported, sending one by one', {})
   }
 
-  // Older function deploy: one call per recipient, one after another.
+  // Older function deploy: one call per recipient, all at once as before (sequential calls of up to 20 s each could
+  // outlast the host's request limit after some had gone). The function should be deployed before the website.
   const outcome: MaterialRequestSendOutcome = { sent: 0, copies: 0, failed: [], failures: [], messageIds: [], mode: 'single' }
-  for (const message of input.messages) {
-    const to = message.to.trim().toLowerCase()
-    let result: ProjectPlannerEmailResult
-    try {
-      result = await deps.sendOne({
-        to,
-        subject: message.subject,
-        html: message.html,
-        replyTo: input.replyTo,
-        orgId: input.orgId,
-        idToken: input.idToken,
-        fromCaller: true,
-        ccCaller: true,
-        requestId: input.requestId,
-      })
-    } catch (error) {
-      const text = error instanceof Error ? error.message : String(error)
+  const results = await Promise.all(
+    input.messages.map(async (message) => {
+      const to = message.to.trim().toLowerCase()
+      try {
+        const result = await deps.sendOne({
+          to,
+          subject: message.subject,
+          html: message.html,
+          replyTo: input.replyTo,
+          orgId: input.orgId,
+          idToken: input.idToken,
+          fromCaller: true,
+          ccCaller: true,
+          requestId: input.requestId,
+        })
+        return { message, to, result, error: null as string | null }
+      } catch (error) {
+        return { message, to, result: null, error: error instanceof Error ? error.message : String(error) }
+      }
+    })
+  )
+  for (const { message, to, result, error } of results) {
+    if (!result) {
       outcome.failed.push(to)
-      outcome.failures.push({ email: to, reason: deps.reason(text) })
+      outcome.failures.push({ email: to, reason: deps.reason(error || '') })
       continue
     }
     outcome.sent += 1

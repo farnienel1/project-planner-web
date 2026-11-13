@@ -281,13 +281,19 @@ function createSendEmailHandler(deps) {
     // The organisation, the caller's users document and their membership are independent reads: fetched together
     // (one round trip instead of three), then checked in the same order as before — a missing organisation is still
     // refused before membership, and nothing has been sent or counted yet.
-    const [orgRead, userRead, membershipRead] = await Promise.all([
+    const [orgSettled, userSettled, membershipSettled] = await Promise.allSettled([
       orgId ? deps.reader.getOrganization(orgId) : null,
       decoded ? deps.reader.getUser(decoded.uid) : null,
       decoded && !serverMode ? deps.reader.getMembership(decoded.uid, orgId) : null,
     ])
-    const org = orgId ? orgRead : null
+    const settledValue = (row) => {
+      if (row.status === 'rejected') throw row.reason
+      return row.value
+    }
+    const org = orgId ? settledValue(orgSettled) : null
     if (orgId && !org && !serverMode) throw new HttpError(404, 'Organisation not found')
+    const userRead = settledValue(userSettled)
+    const membershipRead = settledValue(membershipSettled)
     const orgName = org ? canonical.parseOrganizationName(org) || '' : ''
 
     let caller = null
@@ -389,7 +395,10 @@ function createSendEmailHandler(deps) {
     try {
       delivered = await deliver({ dedupeKey })
     } catch (error) {
-      await releaseClaim()
+      // A batch that may have gone (no answer, 5xx, an idempotency conflict) keeps its claim `pending`, like a call
+      // that died: a repeat within 5 minutes is told "still sending", and a later one re-sends the same batch with
+      // the same Resend key. Everything else sent nothing, so the claim is released and a retry sends.
+      if (!(error && error.keepClaim)) await releaseClaim()
       throw error
     }
     if (dedupeKey) {
@@ -479,9 +488,10 @@ function createSendEmailHandler(deps) {
       // Several messages without attachments go to Resend in one batch call (`/emails/batch`, `sendBatchMessages`):
       // one request instead of one per recipient. Resend checks a batch whole, so a batch it refuses as invalid
       // (400 / 422) sent nothing and the messages are then sent one by one below to find which one it refuses. Any
-      // other batch failure (no answer, 429, 5xx) is not retried one by one — Resend may have taken the batch — and
-      // counts every message as failed, which releases the request claim; a retry with the same request id sends the
-      // same batch idempotency key, so Resend never sends it twice.
+      // other batch failure (no answer, 429, 5xx, a 409 on the idempotency key) is ambiguous — Resend may have taken
+      // the batch — so it is never retried one by one: the call answers 502 "not confirmed" and keeps the request
+      // claim pending (`keepClaim`), so the same request id is not sent again for 5 minutes and is then re-sent as
+      // the same batch with the same key. Correctness inside those 5 minutes does not depend on Resend's key.
       const batchSender = typeof deps.sendBatch === 'function' ? deps.sendBatch : null
       let pending = messages.map((_, index) => index)
       if (batchSender && messages.length > 1 && attachments.length === 0) {
@@ -490,12 +500,14 @@ function createSendEmailHandler(deps) {
           pending = []
         } catch (error) {
           if (!(error && error.batchInvalid)) {
-            logger.error('sendEmail: provider refused a batch', { template: templateName, orgId, error: String(error && error.message) })
-            for (const index of pending.filter((row) => !recorded.has(row))) {
-              failed.push(recipients[index].email)
-              failures.push({ to: recipients[index].email, error: String((error && error.message) || error).slice(0, 300) })
-            }
-            pending = []
+            logger.error('sendEmail: batch not confirmed', { template: templateName, orgId, error: String(error && error.message) })
+            const unconfirmed = new HttpError(
+              502,
+              'The email service did not confirm the send. Wait a few minutes and check your sent items before sending again.',
+              { failed: recipients.map((row) => row.email), unconfirmed: true }
+            )
+            unconfirmed.keepClaim = true
+            throw unconfirmed
           } else {
             // Only the first chunk can be refused this way (`sendBatchMessages`), so nothing was recorded yet.
             logger.warn('sendEmail: batch refused as invalid, sending one by one', { template: templateName, orgId })
@@ -577,9 +589,8 @@ const RESEND_BATCH_MAX = 100
 
 /**
  * Sends `messages` through `batchSender` in chunks of `RESEND_BATCH_MAX`, recording each message's result in order.
- * With a request id each chunk carries Resend's idempotency key `<dedupe key>-batch-<chunk>`. A chunk Resend already
- * accepted under its key (`alreadyAccepted`) counts as sent. Throws on the first chunk that fails; a later chunk is
- * only reached when the earlier ones went, so a refused first chunk sent nothing.
+ * With a request id each chunk carries Resend's idempotency key `<dedupe key>-batch-<chunk>`. Throws on the first
+ * chunk that fails; a later chunk is only reached when the earlier ones went, so a refused first chunk sent nothing.
  */
 async function sendBatchMessages({ batchSender, messages, key, record }) {
   for (let start = 0, chunk = 0; start < messages.length; start += RESEND_BATCH_MAX, chunk += 1) {
@@ -589,10 +600,6 @@ async function sendBatchMessages({ batchSender, messages, key, record }) {
     try {
       answers = await batchSender(slice, options)
     } catch (error) {
-      if (error && error.alreadyAccepted) {
-        slice.forEach((_, offset) => record(start + offset, null))
-        continue
-      }
       // A later chunk failing after an earlier one went must not be retried one by one (the earlier ones went).
       if (start > 0 && error) error.batchInvalid = false
       throw error
@@ -640,8 +647,8 @@ function resendSender(apiKey, fetchImpl = fetch) {
 /**
  * Several messages to Resend's batch API (`POST /emails/batch`, at most `RESEND_BATCH_MAX`, no attachments) in one
  * request. Resolves to `[{ id }]` in the order given. A 400 / 422 (Resend refused the batch as invalid; it checks the
- * batch whole, so nothing was sent) is thrown with `batchInvalid: true`; a 409 naming the idempotency key with
- * `alreadyAccepted: true` (that batch was already taken).
+ * batch whole, so nothing was sent) is thrown with `batchInvalid: true`; every other failure, a 409 included, is
+ * thrown plain (the handler treats it as "not confirmed").
  */
 function resendBatchSender(apiKey, fetchImpl = fetch) {
   return async function sendBatch(messages, options = {}) {
@@ -659,7 +666,8 @@ function resendBatchSender(apiKey, fetchImpl = fetch) {
     if (!response.ok) {
       const error = new Error(`Resend ${response.status}: ${text.slice(0, 300)}`)
       error.status = response.status
-      if (headers[RESEND_IDEMPOTENCY_HEADER] && response.status === 409 && /idempot/i.test(text)) error.alreadyAccepted = true
+      // 400 / 422: Resend refused the batch as invalid and sent nothing. Anything else — a 409 on the idempotency key
+      // (a different payload, or the same key still in progress) included — is not "sent" and not "nothing sent".
       if (response.status === 400 || response.status === 422) error.batchInvalid = true
       throw error
     }

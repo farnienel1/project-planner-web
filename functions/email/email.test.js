@@ -1193,7 +1193,7 @@ test('speed: one recipient or attachments still send one message at a time', asy
   assert.equal(sent.length, 1)
 })
 
-test('speed: a batch Resend refuses as invalid is sent one by one; any other batch failure fails every message (claim released)', async () => {
+test('speed: a batch Resend refuses as invalid is sent one by one; any other batch failure is unconfirmed (claim kept)', async () => {
   const invalid = makeHandler({
     sendBatch: async () => {
       const error = new Error('Resend 422: invalid')
@@ -1216,25 +1216,64 @@ test('speed: a batch Resend refuses as invalid is sent one by one; any other bat
   })
   const failedRes = await call(down.handler, { headers: auth('M'), body: { ...body, requestId: REQ } })
   assert.equal(failedRes.code, 502)
+  assert.equal(failedRes.payload.unconfirmed, true)
   assert.deepEqual(failedRes.payload.failed, ['wendy@pipes.example', 'one@shop.example'])
   assert.equal(down.sent.length, 0, 'not retried one by one: Resend may have taken the batch')
-  assert.equal(store.docs.size, 0, 'claim released so a retry (same batch key) sends')
+  assert.equal(store.docs.size, 1, 'claim kept pending: the batch may have gone')
+  const again = await call(down.handler, { headers: auth('M'), body: { ...body, requestId: REQ } })
+  assert.equal(again.code, 409, 'a repeat within 5 minutes is "still sending", never a second send')
+  assert.equal(again.payload.inProgress, true)
 })
 
-test('speed: a batch Resend already took under its key counts as sent', async () => {
-  const { handler } = makeHandler({
+test('speed: a 409 on the batch key is not counted as sent; it is unconfirmed and the claim is kept', async () => {
+  const store = memoryDedupe()
+  const { handler, sent } = makeHandler({
+    requestDedupe: store,
     sendBatch: async () => {
-      const error = new Error('Resend 409: idempotent')
-      error.alreadyAccepted = true
-      throw error
+      throw new Error('Resend 409: invalid_idempotent_request')
     },
   })
   const res = await call(handler, { headers: auth('M'), body: { ...iosMaterialBody(), to: ['wendy@pipes.example', 'one@shop.example'], requestId: REQ } })
-  assert.equal(res.code, 200, JSON.stringify(res.payload))
-  assert.equal(res.payload.sentCount, 2)
+  assert.equal(res.code, 502)
+  assert.equal(res.payload.unconfirmed, true)
+  assert.equal(sent.length, 0)
+  assert.equal(store.docs.size, 1)
 })
 
-test('resendBatchSender: posts the array to /emails/batch with the key; 422 is batchInvalid, a 409 on the key alreadyAccepted', async () => {
+test('speed: a repeated address in the request is one message (two wholesalers sharing a contact)', async () => {
+  const batches = []
+  const { handler } = makeHandler({ sendBatch: async (messages) => (batches.push(messages), messages.map((_, i) => ({ id: `b-${i}` }))) })
+  const res = await call(handler, {
+    headers: { 'X-Project-Planner-Server-Key': 'server-secret', ...auth('M') },
+    body: {
+      template: 'web_rendered_batch',
+      orgId: ORG,
+      to: ['one@shop.example', 'One@Shop.example', 'two@shop.example'],
+      data: {
+        messages: [
+          { to: 'one@shop.example', subject: 'S', html: '<p>first</p>' },
+          { to: 'ONE@shop.example', subject: 'S', html: '<p>second</p>' },
+          { to: 'two@shop.example', subject: 'S', html: '<p>two</p>' },
+        ],
+      },
+    },
+  })
+  assert.equal(res.code, 200, JSON.stringify(res.payload))
+  assert.deepEqual(batches[0].map((m) => [m.to[0], m.html]), [
+    ['one@shop.example', '<p>first</p>'],
+    ['two@shop.example', '<p>two</p>'],
+  ])
+})
+
+test('speed: a missing organisation is still a 404 when the user read fails', async () => {
+  const { handler } = makeHandler({
+    reader: (base) => ({ ...base, getUser: async () => { throw new Error('read failed') } }),
+  })
+  const res = await call(handler, { headers: auth('M'), body: { ...iosMaterialBody(), orgId: 'no-such-org' } })
+  assert.equal(res.code, 404)
+})
+
+test('resendBatchSender: posts the array to /emails/batch with the key; 422 is batchInvalid, a 409 is a plain failure', async () => {
   const calls = []
   const send = resendBatchSender('re_test', async (url, init) => {
     calls.push({ url, init })
@@ -1249,7 +1288,7 @@ test('resendBatchSender: posts the array to /emails/batch with the key; 422 is b
   const invalid = resendBatchSender('re_test', async () => ({ ok: false, status: 422, text: async () => 'bad' }))
   await assert.rejects(invalid([{}], {}), (error) => error.batchInvalid === true && !error.alreadyAccepted)
   const taken = resendBatchSender('re_test', async () => ({ ok: false, status: 409, text: async () => 'invalid_idempotent_request' }))
-  await assert.rejects(taken([{}], { idempotencyKey: 'k' }), (error) => error.alreadyAccepted === true)
+  await assert.rejects(taken([{}], { idempotencyKey: 'k' }), (error) => !error.alreadyAccepted && !error.batchInvalid)
   const busy = resendBatchSender('re_test', async () => ({ ok: false, status: 500, text: async () => 'oops' }))
   await assert.rejects(busy([{}], {}), (error) => !error.batchInvalid && !error.alreadyAccepted)
   assert.ok(RESEND_BATCH_MAX >= SERVER_TEMPLATES.web_rendered_batch.maxRecipients)
@@ -1297,5 +1336,5 @@ test('web_rendered_batch: server key only; one call, each recipient gets its own
     headers: { 'X-Project-Planner-Server-Key': 'server-secret', ...auth('M') },
     body: { ...body, data: { ...body.data, messages: [body.data.messages[0], body.data.messages[0]] } },
   })
-  assert.equal(dup.code, 400)
+  assert.equal(dup.code, 400, 'two.example still has no message of its own')
 })

@@ -316,7 +316,7 @@ const WEB_RENDERED_BATCH_MAX_HTML = 8_000_000
 /**
  * `web_rendered_batch`: several messages the web route rendered (one per recipient, e.g. each wholesaler's material
  * request with its contact's name), sent in one function call so there is one cold start, one rate-limit count and
- * one Resend batch. `data.messages` is `[{ to, subject, html, text? }]`, exactly one per address in `to`; every other
+ * one Resend batch. `data.messages` is `[{ to, subject, html, text? }]`, one per address in `to` (a repeated address keeps its first message); every other
  * field (`fromCaller`, `ccCaller`, `replyTo`, `headers`) applies to every message, as on `web_rendered`.
  */
 function webRenderedBatchMessages(data) {
@@ -328,7 +328,9 @@ function webRenderedBatchMessages(data) {
   for (const row of rows) {
     const to = row && typeof row.to === 'string' ? row.to.trim().toLowerCase() : ''
     if (!to) throw new TemplateDataError('Every message needs its recipient')
-    if (byEmail.has(to)) throw new TemplateDataError('One message per recipient')
+    // The same address twice (two wholesalers sharing a contact, a typed address that is also saved): one message,
+    // the first one given, as `to` itself is de-duplicated.
+    if (byEmail.has(to)) continue
     total += row && typeof row.html === 'string' ? row.html.length : 0
     byEmail.set(to, row)
   }
