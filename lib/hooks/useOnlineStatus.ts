@@ -1,17 +1,18 @@
 /**
- * Whether to treat the browser as online for the offline banner (UI only). The decision is
- * `shouldShowOfflineBanner` in lib/onlineStatus.ts: the browser's "offline" is confirmed with a real
- * request after a short grace period, re-checked on focus, on the tab being shown and on a timer,
- * and cleared as soon as any check succeeds.
+ * Whether to treat the browser as online for the offline banner (UI only). The transitions are
+ * `onlineStatusStep` in lib/onlineStatus.ts; this hook wires them to browser events, one timer and
+ * `probeReachability`, and publishes the result for background checks (`setConfirmedOffline`).
  */
 'use client'
 
 import { useEffect, useState } from 'react'
 import {
-  OFFLINE_GRACE_MS,
-  OFFLINE_RECHECK_MS,
+  INITIAL_ONLINE_STATUS,
+  onlineStatusStep,
   probeReachability,
-  shouldShowOfflineBanner,
+  registerOnlineStatusOwner,
+  setConfirmedOffline,
+  type OnlineStatusEvent,
 } from '@/lib/onlineStatus'
 
 function navigatorOnline(): boolean {
@@ -23,71 +24,59 @@ export function useOnlineStatus(): boolean {
 
   useEffect(() => {
     let disposed = false
-    let offlineSinceMs: number | null = null
+    let state = INITIAL_ONLINE_STATUS
     let timer: number | null = null
-    let probing = false
+    registerOnlineStatusOwner(true)
 
     const clearTimer = () => {
       if (timer != null) window.clearTimeout(timer)
       timer = null
     }
-    const schedule = (ms: number) => {
-      clearTimer()
-      timer = window.setTimeout(() => void check(), ms)
-    }
-    const backOnline = () => {
-      offlineSinceMs = null
-      clearTimer()
-      setOnline(true)
-    }
 
-    const check = async () => {
-      if (disposed || probing) return
-      if (navigatorOnline()) return backOnline()
-      if (offlineSinceMs == null) offlineSinceMs = Date.now()
-      probing = true
-      const probe = await probeReachability()
-      probing = false
+    const dispatch = (event: OnlineStatusEvent) => {
       if (disposed) return
-      const nowMs = Date.now()
-      const nav = navigatorOnline()
-      if (nav || probe === 'ok') {
-        // The network works: hide now. If the browser still says offline (a stuck false), keep a slow re-check.
-        setOnline(true)
-        if (nav) return backOnline()
-        offlineSinceMs = nowMs
-        return schedule(OFFLINE_RECHECK_MS)
+      const next = onlineStatusStep(state, event)
+      state = next.state
+      setConfirmedOffline(state.showBanner)
+      setOnline(!state.showBanner)
+      if (next.effects.schedule !== 'keep') {
+        clearTimer()
+        if (next.effects.schedule != null) {
+          timer = window.setTimeout(() => {
+            timer = null
+            dispatch({
+              type: 'timer',
+              navigatorOnline: navigatorOnline(),
+              nowMs: Date.now(),
+              hidden: document.visibilityState === 'hidden',
+            })
+          }, next.effects.schedule)
+        }
       }
-      const show = shouldShowOfflineBanner({ navigatorOnline: nav, offlineSinceMs, nowMs, probe })
-      setOnline(!show)
-      const graceLeft = offlineSinceMs + OFFLINE_GRACE_MS - nowMs
-      schedule(show ? OFFLINE_RECHECK_MS : Math.max(graceLeft, 0) || OFFLINE_RECHECK_MS)
+      if (next.effects.probe) {
+        void probeReachability().then((probe) =>
+          dispatch({ type: 'probeResult', probe, navigatorOnline: navigatorOnline(), nowMs: Date.now() })
+        )
+      }
     }
 
-    const suspect = () => {
-      if (offlineSinceMs == null) offlineSinceMs = Date.now()
-      schedule(OFFLINE_GRACE_MS)
-    }
-    const recheckNow = () => {
-      if (navigatorOnline()) return backOnline()
-      if (offlineSinceMs == null) return suspect()
-      void check()
-    }
+    const recheck = () => dispatch({ type: 'recheck', navigatorOnline: navigatorOnline(), nowMs: Date.now() })
     const onVisible = () => {
-      if (document.visibilityState === 'visible') recheckNow()
+      if (document.visibilityState === 'visible') recheck()
     }
 
-    if (!navigatorOnline()) suspect()
-    window.addEventListener('online', backOnline)
-    window.addEventListener('offline', suspect)
-    window.addEventListener('focus', recheckNow)
+    recheck()
+    window.addEventListener('online', recheck)
+    window.addEventListener('offline', recheck)
+    window.addEventListener('focus', recheck)
     document.addEventListener('visibilitychange', onVisible)
     return () => {
       disposed = true
       clearTimer()
-      window.removeEventListener('online', backOnline)
-      window.removeEventListener('offline', suspect)
-      window.removeEventListener('focus', recheckNow)
+      registerOnlineStatusOwner(false)
+      window.removeEventListener('online', recheck)
+      window.removeEventListener('offline', recheck)
+      window.removeEventListener('focus', recheck)
       document.removeEventListener('visibilitychange', onVisible)
     }
   }, [])
