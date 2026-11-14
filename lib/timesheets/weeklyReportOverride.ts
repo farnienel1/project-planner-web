@@ -114,6 +114,9 @@ function labourLine(
     days,
     amount,
     payBasis: line.payrollBasis === 'hourly' ? 'hourly' : 'day',
+    // 1.46.0: the signed row's own PAYE / leave flags (a signed row is decided only from its stored data).
+    isPayeDay: line.isPayeDay === true,
+    isLeave: false,
     isOvertime: line.isOvertimeLine,
     otMultiplier: line.isOvertimeLine ? line.otMultiplier ?? null : null,
     decision,
@@ -303,6 +306,11 @@ function reapplyReviews(existing: WeeklyReportOverride, input: WeeklyReportOverr
     }
   }
   const byId = new Map(existing.lines.map((line) => [line.id.toLowerCase(), line]))
+  const flagged = (row: WeeklyReportLabourLine): WeeklyReportLabourLine => ({
+    ...row,
+    isPayeDay: row.isPayeDay === true,
+    isLeave: row.isLeave === true,
+  })
   const lines = existing.lines.flatMap((line): WeeklyReportLabourLine[] => {
     // 1.46.0 (fourth review): a `{booking}-ot` line an Edit hours review added follows its standard line's current
     // review — recomputed with it, 0 when that review is declined or no longer pays overtime, unchanged when that review
@@ -322,7 +330,7 @@ function reapplyReviews(existing: WeeklyReportOverride, input: WeeklyReportOverr
             paidHours: recomputed.paidHours,
             days: recomputed.days,
             amount: recomputed.amount,
-            isOvertime: true,
+            isOvertime: recomputed.isOvertime,
             otMultiplier: recomputed.otMultiplier,
             decision: 'edited' as const,
             appliedReviewKey: recomputed.appliedReviewKey,
@@ -364,7 +372,7 @@ function reapplyReviews(existing: WeeklyReportOverride, input: WeeklyReportOverr
       viewerName ||
       existing.approvedByName,
     selfSigned: userTimesheetSelfSigned(input.user, input.users ?? []),
-    lines,
+    lines: lines.map(flagged),
     priceWork: money.priceWork,
     expenses: money.expenses,
   }

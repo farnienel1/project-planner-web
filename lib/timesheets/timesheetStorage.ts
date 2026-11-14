@@ -189,6 +189,8 @@ function mapLabourLine(row: Record<string, unknown>): WeeklyReportLabourLine | n
     days: finiteNumber(row.days),
     amount: finiteNumber(row.amount),
     payBasis: row.payBasis === 'hourly' ? 'hourly' : row.payBasis === 'day' ? 'day' : undefined,
+    isPayeDay: row.isPayeDay === true,
+    isLeave: row.isLeave === true,
     isOvertime: row.isOvertime === true,
     otMultiplier: typeof row.otMultiplier === 'number' ? row.otMultiplier : null,
     decision: asDecision(row.decision),
@@ -252,6 +254,9 @@ export function weeklyReportOverrideToFirestore(override: WeeklyReportOverride):
       days: line.days,
       amount: line.amount,
       ...(line.payBasis === 'hourly' || line.payBasis === 'day' ? { payBasis: line.payBasis } : {}),
+      // 1.46.0: the signed row's own PAYE / leave flags, on every line written.
+      isPayeDay: line.isPayeDay === true,
+      isLeave: line.isLeave === true,
       isOvertime: line.isOvertime,
       ...(line.isOvertime && line.otMultiplier != null ? { otMultiplier: line.otMultiplier } : {}),
       decision: line.decision,

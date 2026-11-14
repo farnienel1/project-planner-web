@@ -65,6 +65,12 @@ export type WeeklyReportLabourLine = {
   amount: number
   /** Missing on older snapshots means day rate. */
   payBasis?: 'day' | 'hourly'
+  /**
+   * Rulebook 1.46.0: the signed line's own PAYE / leave flags (`isInvoiceLine` reads them; a signed row is never
+   * filtered by the live lines). Written on every snapshot line; missing on older snapshots means false.
+   */
+  isPayeDay?: boolean
+  isLeave?: boolean
   isOvertime: boolean
   /** Written on new overtime snapshots. Missing on older lines. */
   otMultiplier?: number | null

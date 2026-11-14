@@ -701,3 +701,25 @@ test('1.46.0 review 4: an overtime line added by a review follows that review af
   const stored = weeklyReportOverrideFromFirestore(weeklyReportOverrideToFirestore(signed.weeklyReportOverride!))
   assert.equal(stored?.lines.find((line) => line.id === 'op-b1-ot')?.reviewPartOf, 'op-b1-normal')
 })
+
+test('1.46.0 review 6: every snapshot line carries isPayeDay and isLeave, at signing, on re-apply and through Firestore', () => {
+  const now = [booking146('07:00', '16:00')]
+  const signed = applyWeeklyReportOverride({
+    ...base146,
+    bookings: now,
+    draft: { ...emptyTimesheetDraft(), ...signed146, payrollLineReviews: editReviews146(now, '07:00', '19:00') },
+  })
+  const flags = (draft: typeof signed) => draft.weeklyReportOverride?.lines.map((line) => [line.id, line.isPayeDay, line.isLeave])
+  assert.deepEqual(flags(signed), [['op-b1-normal', false, false], ['op-b1-ot', false, false]])
+  const stored = weeklyReportOverrideToFirestore(signed.weeklyReportOverride!)
+  assert.ok(stored.lines.every((line: Record<string, unknown>) => line.isPayeDay === false && line.isLeave === false))
+  // An older snapshot without the flags gets them on the next save.
+  const older = { ...signed, weeklyReportOverride: { ...signed.weeklyReportOverride!, lines: signed.weeklyReportOverride!.lines.map(({ isPayeDay: _p, isLeave: _l, ...line }) => line) } }
+  const next = applyWeeklyReportOverride({ ...base146, bookings: now, draft: older })
+  assert.deepEqual(flags(next), [['op-b1-normal', false, false], ['op-b1-ot', false, false]])
+  const readBack = weeklyReportOverrideFromFirestore(stored)
+  assert.equal(readBack?.lines[0].isPayeDay, false)
+  // A line flagged PAYE on the signed copy never reaches the invoice.
+  const paye = weeklyReportOverrideFromFirestore({ ...stored, lines: [{ ...stored.lines[0], isPayeDay: true }] })
+  assert.equal(paye?.lines[0].isPayeDay, true)
+})
