@@ -12034,7 +12034,7 @@ test('1.29.0 overtime lines: weekday outside the day, weekend window, every-hour
 test('1.29.0 / 1.33.0 line state: confirmed review, pending request, booking changed since request, reopened after a change', () => {
   const booking = r129Booking('B1', '2026-11-04', '06:30', '14:00')
   const fingerprint = r129.overtimeBookingFingerprint(booking)
-  assert.equal(fingerprint, '2026-11-04|CUSTOM HOURS|06:30|14:00|||confirmed')
+  assert.equal(fingerprint, '2026-11-04|CUSTOM_HOURS|06:30|14:00|||confirmed')
   const review = r129.parseOvertimeReviewDocument('sam_B1', { userId: 'sam', bookingId: 'B1', decision: 'approved', fingerprint })
   const range = { start: '2026-11-01', end: '2026-11-30' }
   const base = { personIds: ['sam'], organization: R129_ORG, timeZone: R129_TZ, range }
@@ -15397,4 +15397,40 @@ test('1.46.0 review 5: a signed sheet keeps its invoice and totals after a back-
   }
   // An unsigned sheet still follows the PAYE days.
   assert.equal(R112.timesheetTotals({ sheet: {}, payrollLines: livePaye, extrasMode: 'decided', timesheetDays: [] }).total, 0)
+})
+
+test('1.46.0 cross-platform: every stored spelling of a slot gives one booking fingerprint; stored 1.29 fingerprints still match', () => {
+  const base = { id: 'b1', personId: '', dayKey: '2026-11-18', workStartTime: '07:00', workEndTime: '19:00', otMultiplierOverride: 2 }
+  const custom = ['CUSTOM', 'CUSTOM_HOURS', 'CUSTOM HOURS', 'custom hours', 'Custom', 'custom-hours'].map((timeSlot) => R112.overtimeBookingFingerprint({ ...base, timeSlot }))
+  assert.equal(new Set(custom).size, 1)
+  assert.equal(custom[0], '2026-11-18|CUSTOM_HOURS|07:00|19:00|2||confirmed')
+  const full = ['FULL DAY', 'Full day', 'FULL_DAY', 'full-day'].map((timeSlot) => R112.overtimeBookingFingerprint({ ...base, timeSlot }))
+  assert.equal(new Set(full).size, 1)
+  assert.equal(R112.overtimeBookingFingerprint({ ...base, timeSlot: 'morning' }), R112.overtimeBookingFingerprint({ ...base, timeSlot: 'AM' }))
+  // Fingerprints stored before 1.46.0 (1.29.0 overtime reviews / requests) wrote the slot with spaces, or as stored.
+  for (const stored of ['2026-11-18|CUSTOM HOURS|07:00|19:00|2||confirmed', '2026-11-18|CUSTOM|07:00|19:00|2||confirmed']) {
+    assert.equal(R112.overtimeFingerprintsMatch(stored, custom[0]), true)
+    assert.equal(R112.overtimeLineIsStale(stored, { ...base, timeSlot: 'CUSTOM_HOURS' }), false)
+    assert.equal(R112.overtimeLineIsStale(stored, { ...base, timeSlot: 'CUSTOM', workEndTime: '18:00' }), true)
+  }
+  assert.equal(R112.overtimeFingerprintsMatch('', ''), false)
+  assert.equal(R112.overtimeFingerprintsMatch('2026-11-18|FULL DAY|||||confirmed', custom[0]), false)
+})
+
+test('1.46.0 cross-platform: an Edit hours review written on web (CUSTOM) is not stale on iOS (CUSTOM_HOURS), and the reverse', () => {
+  const base = { id: 'b1', personId: '', dayKey: '2026-11-18', workStartTime: '07:00', workEndTime: '16:00', otMultiplierOverride: 2 }
+  const webFp = R112.overtimeBookingFingerprint({ ...base, timeSlot: 'CUSTOM' })
+  const iosFp = R112.overtimeBookingFingerprint({ ...base, timeSlot: 'CUSTOM_HOURS' })
+  const { edit } = rates146Edit({ bookingFingerprint: webFp })
+  const sheet = { managerSignedAt: '2026-11-20T10:00:00Z', payrollLineReviews: { 'op-b1-normal': { decision: 'edited', ...edit.reviewFields.standard } } }
+  const line = { id: 'op-b1-normal', bookingId: 'op-b1', amount: 250, paidHours: 8.5, dayKey: '2026-11-18', isOvertimeLine: false }
+  assert.equal(R112.timesheetTotals({ sheet, payrollLines: [{ ...line, bookingFingerprint: iosFp }], extrasMode: 'decided' }).total, 426.47)
+  // A review stored with the pre-canonical form (spaces) still applies.
+  const older = { ...sheet, payrollLineReviews: { 'op-b1-normal': { ...sheet.payrollLineReviews['op-b1-normal'], reviewedBookingFingerprint: '2026-11-18|CUSTOM HOURS|07:00|16:00|2||confirmed' } } }
+  assert.equal(R112.timesheetTotals({ sheet: older, payrollLines: [{ ...line, bookingFingerprint: webFp }], extrasMode: 'decided' }).total, 426.47)
+  // The applied-review key is the same whichever spelling the review stored.
+  assert.equal(
+    R112.payrollLineReviewKey(R112.payrollLineReview(sheet, 'op-b1-normal')),
+    R112.payrollLineReviewKey(R112.payrollLineReview(older, 'op-b1-normal'))
+  )
 })

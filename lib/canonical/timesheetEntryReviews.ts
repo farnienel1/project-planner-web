@@ -36,6 +36,7 @@ import { personIdSet, type PersonRosterRow } from './personIds'
 import { parseTimesheetStatusFields } from './timesheetPeriod'
 import { documentInstantMs, documentWriteFields, type DocumentWriteFields } from './peopleDocuments'
 import { roundPennies } from './payRate'
+import { overtimeFingerprintKey, overtimeFingerprintsMatch } from './bookingFingerprint'
 
 export type TimesheetEntryDecision = 'pending' | 'approved' | 'declined' | 'edited'
 
@@ -555,7 +556,7 @@ export function payrollLineReviewKey(review: PayrollLineReview | null | undefine
     n(review.revisedOvertimeMultiplier),
     n(review.revisedStandardAmount),
     n(review.revisedOvertimeAmount),
-    review.reviewedBookingFingerprint ?? '',
+    overtimeFingerprintKey(review.reviewedBookingFingerprint ?? ''),
   ].join('|')
 }
 
@@ -600,7 +601,9 @@ export function payrollLineReview(
   // reviews and callers without one keep the review.
   const storedFingerprint = typeof row.reviewedBookingFingerprint === 'string' ? row.reviewedBookingFingerprint.trim() : ''
   const liveFingerprint = typeof live?.bookingFingerprint === 'string' ? live.bookingFingerprint.trim() : null
-  if (storedFingerprint && liveFingerprint != null && storedFingerprint !== liveFingerprint) return null
+  // Slot spellings compared canonically (`overtimeFingerprintsMatch`): a review written on one app matches the booking
+  // read on the other (`CUSTOM` on web, `CUSTOM_HOURS` on iOS).
+  if (storedFingerprint && liveFingerprint != null && !overtimeFingerprintsMatch(storedFingerprint, liveFingerprint)) return null
   const num = (value: unknown): number | null => (typeof value === 'number' && Number.isFinite(value) ? value : null)
   // 1.46.0 (review): a standard-line review that carries overtime money was made when the booking had no overtime
   // line. The fingerprint does not cover the working hours, so if a working-hours change has since given the booking

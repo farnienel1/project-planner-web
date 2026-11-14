@@ -1494,3 +1494,5 @@ export type {
   RevisedPayrollLineInput,
 } from './timesheetLineEdit'
 export { payrollLineBookingKey } from './reportPay'
+// Rulebook 1.46.0: one slot spelling in booking fingerprints, compared canonically across apps.
+export { bookingFingerprintSlot, overtimeFingerprintKey, overtimeFingerprintsMatch } from './bookingFingerprint'

@@ -19,6 +19,7 @@ import {
   isAdminOutsideOperativeMode,
   hasActiveLineManager,
   overtimeBookingFingerprint,
+  overtimeFingerprintsMatch,
   overtimeBookingIsTheirs,
   overtimeChoiceAfter,
   overtimeChoiceDecision,
@@ -1025,7 +1026,7 @@ function RequestReview(props: {
         const booking = props.bookingById.get(line.bookingId.toLowerCase())
         const theirs = booking ? overtimeBookingIsTheirs(booking, props.requesterIds) : false
         const view = booking ? overtimeChoiceView({ choice: choices[line.bookingId], booking, organization: props.organization, timeZone: props.timeZone, role: 'decider' }) : null
-        const stale = booking ? overtimeBookingFingerprint(booking) !== line.fingerprint : false
+        const stale = booking ? !overtimeFingerprintsMatch(overtimeBookingFingerprint(booking), line.fingerprint) : false
         return (
           <div key={line.bookingId} className="row" style={{ gap: 8, flexWrap: 'wrap', justifyContent: 'space-between' }}>
             <div className="grow small" style={{ minWidth: 0 }}>
