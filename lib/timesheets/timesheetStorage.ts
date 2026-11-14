@@ -436,17 +436,25 @@ async function mapInBatches<T, R>(items: T[], batchSize: number, mapper: (item: 
   return output
 }
 
+/**
+ * Reads every document id the period's sheet can be stored under (`candidateTimesheetDocIds`). `allMissing` is true
+ * only when every one of those reads answered and none exists — never when a read failed (`readDoc` throws then, and
+ * so does this).
+ */
 async function loadTimesheetDraftByCandidates(
   organizationId: string,
   userId: string,
   weekStart: Date,
   timeZone: string,
   includeSignatures = true
-): Promise<TimesheetDraft | null> {
+): Promise<{ draft: TimesheetDraft | null; allMissing: boolean }> {
   const unique = [...new Set(candidateTimesheetDocIds(userId, weekStart, timeZone))]
   const hits = await Promise.all(unique.map(async (id) => ({ id, data: await readDoc(organizationId, id) })))
   const hit = hits.find((row) => row.data)
-  return hit?.data ? rememberSource(draftFromFirestoreMap(hit.data, { includeSignatures, sheetDocId: hit.id }), hit.id) : null
+  if (hit?.data) {
+    return { draft: rememberSource(draftFromFirestoreMap(hit.data, { includeSignatures, sheetDocId: hit.id, timeZone }), hit.id), allMissing: false }
+  }
+  return { draft: null, allMissing: unique.length > 0 && hits.every((row) => row.data == null) }
 }
 
 function storedEndDayKey(data: Record<string, unknown>, timeZone: string): string | null {
@@ -468,7 +476,7 @@ function timesheetStateFromDoc(
     documentId,
     weekStart,
     endDayKey: storedEndDayKey(data, timeZone),
-    draft: rememberSource(draftFromFirestoreMap(data, { includeSignatures, sheetDocId: documentId }), documentId),
+    draft: rememberSource(draftFromFirestoreMap(data, { includeSignatures, sheetDocId: documentId, timeZone }), documentId),
   }
 }
 
@@ -478,7 +486,9 @@ const USER_ID_QUERY_CHUNK = 10
 async function loadTimesheetCandidatesByUserIds(
   organizationId: string,
   userIds: string[],
-  includeSignatures: boolean
+  includeSignatures: boolean,
+  // 1.43.0 (guardrail 2): stored end days are read in the organisation's zone, never London by default.
+  timeZone: string
 ): Promise<Map<string, TimesheetPeriodCandidate[]>> {
   const grouped = new Map<string, TimesheetPeriodCandidate[]>()
   for (const userId of userIds) grouped.set(userId, [])
@@ -497,7 +507,7 @@ async function loadTimesheetCandidatesByUserIds(
       const data = entry.data() as Record<string, unknown>
       const userId = typeof data.userId === 'string' ? data.userId : ''
       if (!grouped.has(userId)) continue
-      const row = timesheetStateFromDoc(entry.id, data, includeSignatures, LONDON_TIME_ZONE)
+      const row = timesheetStateFromDoc(entry.id, data, includeSignatures, timeZone)
       if (row) grouped.get(userId)?.push(row)
     }
   }
@@ -511,8 +521,8 @@ export async function loadTimesheetDraft(
   timeZone: string = LONDON_TIME_ZONE,
   periodEnd?: Date
 ): Promise<TimesheetDraft> {
-  const fromCandidates = await loadTimesheetDraftByCandidates(organizationId, userId, weekStart, timeZone)
-  if (fromCandidates) return fromCandidates
+  const direct = await loadTimesheetDraftByCandidates(organizationId, userId, weekStart, timeZone)
+  if (direct.draft) return direct.draft
   try {
     const key = dayKey(weekStart, timeZone)
     const snap = await getDocs(
@@ -520,9 +530,9 @@ export async function loadTimesheetDraft(
     )
     for (const entry of snap.docs) {
       const data = entry.data() as Record<string, unknown>
-      if (data.userId === userId) return rememberSource(draftFromFirestoreMap(data, { sheetDocId: entry.id }), entry.id)
+      if (data.userId === userId) return rememberSource(draftFromFirestoreMap(data, { sheetDocId: entry.id, timeZone }), entry.id)
       if (weekStartMatches(data, weekStart, timeZone) && entry.id.includes(userId)) {
-        return rememberSource(draftFromFirestoreMap(data, { sheetDocId: entry.id }), entry.id)
+        return rememberSource(draftFromFirestoreMap(data, { sheetDocId: entry.id, timeZone }), entry.id)
       }
     }
   } catch {
@@ -530,14 +540,17 @@ export async function loadTimesheetDraft(
   }
   const end = periodEnd || weekStart
   try {
-    const grouped = await loadTimesheetCandidatesByUserIds(organizationId, [userId], true)
+    const grouped = await loadTimesheetCandidatesByUserIds(organizationId, [userId], true, timeZone)
     const picked = pickTimesheetDraftForPeriod(grouped.get(userId) || [], weekStart, end, timeZone)
     if (picked) return picked.draft
   } catch (error) {
-    if (fromCandidates) return fromCandidates
+    // 1.43.0 (review r318, 2nd round): a failed history query is shown as an error with Retry
+    // (`TIMESHEET_HISTORY_LOAD_FAILED_MESSAGE` on the period page) — never an empty new sheet, because a sheet may be
+    // stored under an id the direct reads did not try, and a save would then create a second one.
+    console.warn('[timesheets] history query failed', { allExpectedIdsMissing: direct.allMissing, error })
     throw error
   }
-  return fromCandidates || emptyTimesheetDraft()
+  return emptyTimesheetDraft()
 }
 
 function applyKeyedTimesheetDocs(
@@ -564,7 +577,7 @@ export async function loadTimesheetDraftsByUserHistory(
 ): Promise<Map<string, TimesheetDraft>> {
   const results = new Map<string, TimesheetDraft>()
   if (userIds.length === 0) return results
-  const grouped = await loadTimesheetCandidatesByUserIds(organizationId, userIds, false)
+  const grouped = await loadTimesheetCandidatesByUserIds(organizationId, userIds, false, timeZone)
   const end = periodEnd || weekStart
   for (const userId of userIds) {
     const picked = pickTimesheetDraftForPeriod(grouped.get(userId) || [], weekStart, end, timeZone)
@@ -592,7 +605,7 @@ async function loadTimesheetDraftsOnce(
     getDocs(query(collection(db, 'organizations', organizationId, 'settings'), where('weekStartKey', '==', key))).catch(
       () => null // iOS docs often have no weekStartKey. The userId query covers them.
     ),
-    loadTimesheetCandidatesByUserIds(organizationId, userIds, false).catch(() => null),
+    loadTimesheetCandidatesByUserIds(organizationId, userIds, false, timeZone).catch(() => null),
   ])
   applyKeyedTimesheetDocs(results, wanted, keyed)
   if (grouped) {
@@ -607,7 +620,7 @@ async function loadTimesheetDraftsOnce(
   const missing = userIds.filter((id) => !results.has(id))
   if (missing.length > 0 && !grouped) {
     const extras = await mapInBatches(missing, 12, async (userId) => {
-      const draft = await loadTimesheetDraftByCandidates(organizationId, userId, weekStart, timeZone, false)
+      const { draft } = await loadTimesheetDraftByCandidates(organizationId, userId, weekStart, timeZone, false)
       return [userId, draft] as const
     })
     for (const [userId, draft] of extras) {
@@ -663,7 +676,7 @@ export async function loadTimesheetDraftsForStarts(
   if (probe.length > 0) {
     const extras = await Promise.all(
       probe.map(async (start) => {
-        const draft = await loadTimesheetDraftByCandidates(organizationId, userId, start, timeZone)
+        const { draft } = await loadTimesheetDraftByCandidates(organizationId, userId, start, timeZone)
         return [dayKey(start, timeZone), draft || emptyTimesheetDraft()] as const
       })
     )
@@ -910,7 +923,9 @@ export async function listTimesheetStates(
     }
     rows.sort((a, b) => b.weekStart.getTime() - a.weekStart.getTime())
     return rows.slice(0, Math.max(1, limit))
-  } catch {
+  } catch (error) {
+    // 1.43.0: never an error on screen; logged so a refused query (rules) is visible in the console.
+    console.warn('[timesheets] listTimesheetStates query failed', error)
     return []
   }
 }

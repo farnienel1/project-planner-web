@@ -545,6 +545,38 @@ export {
 } from './bookings'
 
 export { bookingIdsForAccount, bookingIdsForPerson, bookingPersonKey, resolveBookingPerson, rosterAliasIdsFor } from './bookingPerson'
+// 1.44.0 §21, §11: bookings whose person id names nobody — never hidden, linked from Data health.
+export {
+  LINK_BOOKING_PERSON_ACTION,
+  LINK_BOOKING_PERSON_ALREADY_MESSAGE,
+  LINK_BOOKING_PERSON_PAY_ACK_LABEL,
+  LINK_BOOKING_PERSON_PAY_WARNING,
+  LINK_BOOKING_PERSON_SELF_NOTE,
+  UNKNOWN_BOOKING_PERSON_LABEL,
+  UNRESOLVED_BOOKING_PERSON_CHIP,
+  UNRESOLVED_BOOKINGS_EMPTY,
+  UNRESOLVED_BOOKINGS_HEADING,
+  UNRESOLVED_BOOKINGS_HELP,
+  bookingPersonIdHint,
+  linkBookingPersonCandidates,
+  linkBookingPersonConfirmMessage,
+  linkBookingPersonDoneMessage,
+  linkBookingPersonImpact,
+  linkBookingPersonRefusal,
+  linkBookingPersonWriteFields,
+  scheduleRowPerson,
+  unresolvedBookingPeople,
+} from './unresolvedBookingPeople'
+export type {
+  LinkBookingPersonFiledUnder,
+  LinkBookingPersonImpact,
+  LinkBookingPersonRefusal,
+  LinkCandidate,
+  LinkCandidateProfile,
+  ScheduleRowPerson,
+  UnresolvedBookingInput,
+  UnresolvedBookingPerson,
+} from './unresolvedBookingPeople'
 export { LEGACY_PLACEHOLDER_DOCUMENT_ID, isLegacyPlaceholderDocumentId } from './bookings'
 export type {
   BookingPersonAccount,
@@ -604,8 +636,10 @@ export {
   multipliedHoursText,
   payrollMultipliedHours,
   parseMultipliedHoursText,
+  payrollLineClockRanges,
+  timesheetLineClockText,
 } from './payrollHours'
-export type { PayrollHoursBooking, PayrollHoursInput, PayrollHoursResult, PayrollHoursSegment } from './payrollHours'
+export type { PayrollHoursBooking, PayrollHoursInput, PayrollHoursResult, PayrollHoursSegment, PayrollLineClockRanges } from './payrollHours'
 
 export {
   WARNING_RESOLUTION_STATUSES,
@@ -1454,6 +1488,8 @@ export {
   weekendBreakFor,
   derivedWeekdayPaidHours,
   weekdayPaidHours,
+  weekendCountsAsHours,
+  DEFAULT_WEEKEND_COUNTS_AS_HOURS,
   withDerivedWeekdayPaidHours,
   weekdayPaidDayPreview,
 } from './organizationSettings'
@@ -1653,6 +1689,7 @@ export {
   scheduleCellHours,
   scheduleCellKind,
   scheduleDayCell,
+  subcontractorScheduleCell,
   JOB_SCHEDULE_LEAVE_LABEL,
   JOB_SCHEDULE_LEAVE_PENDING_LABEL,
   JOB_SCHEDULE_LEAVE_TITLE,
@@ -1892,3 +1929,15 @@ export {
 } from './bookingReplace'
 export type { BookingConflictDecisionValue, BookingReplaceCandidate, BookingReplaceCollection, BookingReplaceDelete, BookingReplaceRef, BookingReplaceWritePlan } from './bookingReplace'
 export type { ScheduleDayBooking, ScheduleDayCell } from './jobScheduleLeave'
+// Rulebook 1.43.0 §8: when a signed timesheet's snapshot may be built or rebuilt, and when extras may still be added.
+export {
+  TIMESHEET_PAY_INPUTS_LOADING_MESSAGE,
+  TIMESHEET_SIGNED_OFF_EXTRAS_MESSAGE,
+  TIMESHEET_SNAPSHOT_FAILED_MESSAGE,
+  TIMESHEET_SNAPSHOT_LOADING_MESSAGE,
+  timesheetOwnerCanAddExtras,
+  timesheetSnapshotNeedsRebuild,
+  timesheetSnapshotReady,
+} from './timesheetSnapshot'
+export type { TimesheetExtrasSheet, TimesheetLiveLabourLine, TimesheetSnapshotReadyInput, TimesheetSnapshotSheet } from './timesheetSnapshot'
+export type { SubcontractorScheduleBooking, SubcontractorScheduleCell } from './jobScheduleLeave'

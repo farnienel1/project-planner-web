@@ -30,7 +30,7 @@
  */
 
 import { formatClockMinutes, halfDayWindows, namedSlotKind, parseClockMinutes, slotInterval, type MinuteInterval } from './engine'
-import { weekdayPaidHours, weekendBreakFor, type OrgPayrollTimePolicy, type WeekendPayrollSettings } from './organizationSettings'
+import { weekdayPaidHours, weekendBreakFor, weekendCountsAsHours, type OrgPayrollTimePolicy, type WeekendPayrollSettings } from './organizationSettings'
 import { dateFromDayKeyInZone, isoWeekdayInZone } from '../orgTime/zoneTime'
 import { zoneOrLondon } from './dayKeys'
 
@@ -100,8 +100,9 @@ function standardPaid(policy: OrgPayrollTimePolicy): number {
   return Math.max(Number(weekdayPaidHours(policy)) || 0, 0)
 }
 
-function countsAs(weekend: WeekendPayrollSettings, policy: OrgPayrollTimePolicy): number {
-  return weekend.countsAsStandardHours ?? Number(policy.standardPaidHours)
+function countsAs(weekend: WeekendPayrollSettings): number {
+  // 1.44.0: one fallback with the reader (`weekendCountsAsHours`: stored, else 8), never the weekday paid day.
+  return weekendCountsAsHours(weekend)
 }
 
 function dayInput(policy: OrgPayrollTimePolicy) {
@@ -265,6 +266,56 @@ export function payrollMultipliedHours(
   }
 }
 
+export type PayrollLineClockRanges = {
+  /** The clock ranges of the standard hours (the working day, or a set-window weekend day's window), earliest first. */
+  standard: string[]
+  /** The clock ranges paid at the multiplier (before / after the day or window, or a whole every-hour day), earliest first. */
+  overtime: string[]
+  /** `standard` joined with " + " ('' when none), e.g. "07:00–16:00". */
+  standardText: string
+  /** `overtime` joined with " + " ('' when none), e.g. "05:00–07:00 + 16:00–19:00". */
+  overtimeText: string
+}
+
+function clockStartMinutes(row: PayrollHoursSegment): number {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(String(row.clockStart ?? '').trim())
+  return match ? Number(match[1]) * 60 + Number(match[2]) : Number.MAX_SAFE_INTEGER
+}
+
+/**
+ * Rulebook 1.43.0 §8 (owner rule, 14 Nov): the clock times of a booking's standard and overtime parts, from the pay
+ * rule's own segments (`payrollHoursResult`), so a timesheet's standard line shows the standard-window times and its
+ * overtime line the overtime times — working day 07:00–16:00, booked 07:00–19:00 → standard "07:00–16:00", overtime
+ * "16:00–19:00"; an early start and a late finish are two overtime ranges ("05:00–07:00 + 16:00–19:00"); a set-window
+ * weekend day's window is standard and the hours outside it overtime; every hour of an every-hour day is overtime; an
+ * overnight booking's range runs past midnight as stored ("16:00–02:00"). Wording only: no figure changes.
+ */
+export function payrollLineClockRanges(result: Pick<PayrollHoursResult, 'segments'> | null | undefined): PayrollLineClockRanges {
+  const standard: string[] = []
+  const overtime: string[] = []
+  const rows = [...(result?.segments ?? [])].sort((a, b) => clockStartMinutes(a) - clockStartMinutes(b))
+  for (const row of rows) {
+    const start = String(row.clockStart ?? '').trim()
+    const end = String(row.clockEnd ?? '').trim()
+    if (!start || !end || start === end) continue
+    const range = `${start}–${end}`
+    const target = row.kind === 'standardWindow' ? standard : overtime
+    if (!target.includes(range)) target.push(range)
+  }
+  return { standard, overtime, standardText: standard.join(' + '), overtimeText: overtime.join(' + ') }
+}
+
+/**
+ * Rulebook 1.43.0 §8: the clock part of a timesheet line's stored details — "16:00–19:00 · OT 6.5h × 2 − 0.5h break =
+ * 12.5h" → "16:00–19:00" (the multiplied text after " · OT " is read by `parseMultipliedHoursText`, and the rate line
+ * already shows it), so screens never print the equation twice. Other text is returned trimmed, unchanged.
+ */
+export function timesheetLineClockText(details: string | null | undefined): string {
+  const text = String(details ?? '').trim()
+  const cut = text.indexOf(' · OT ')
+  return cut >= 0 ? text.slice(0, cut).trim() : text
+}
+
 function result(segments: PayrollHoursSegment[], outsideMultiplier: number): PayrollHoursResult {
   let total = 0
   let standard = 0
@@ -304,10 +355,11 @@ function isNamedHalf(booking: PayrollHoursBooking): boolean {
 function isHalfDayPaid(booking: PayrollHoursBooking, policy: OrgPayrollTimePolicy, allHoursDay: boolean, weekdayDay = false): boolean {
   if (isNamedHalf(booking)) return true
   if (namedSlotKind(booking.timeSlot) !== 'CUSTOM' || allHoursDay) return false
-  // 1.20.0 §4.3 / §8: Monday–Friday offers Full day or Custom only, so under a policy saved from 1.20.0 custom weekday
-  // hours are paid on the clock (inside the day less the unpaid-break overlap, outside at the multiplier) and are never
-  // snapped to a half day. A policy saved earlier keeps the 20-minute snap exactly as before.
-  if (weekdayDay && policy.paidHoursDerived === true) return false
+  // 1.20.0 §4.3 / §8: Monday–Friday offers Full day or Custom only, so custom weekday hours are paid on the clock (inside
+  // the day less the unpaid-break overlap, outside at the multiplier) and are never snapped to a half day. 1.44.0 (owner
+  // decision 14 Nov, question A option 1): for every policy — the 20-minute snap of policies saved before 1.20.0 is gone
+  // with the stored paid day it went with.
+  if (weekdayDay) return false
   const span = interval(booking, policy)
   if (!span) return false
   const windows = halfDayWindows(dayInput(policy))
@@ -317,7 +369,7 @@ function isHalfDayPaid(booking: PayrollHoursBooking, policy: OrgPayrollTimePolic
 }
 
 function halfDayPaid(booking: PayrollHoursBooking, policy: OrgPayrollTimePolicy, weekend: WeekendPayrollSettings | null, multiplier: number): PayrollHoursResult {
-  const paid = weekend && !weekend.allHoursAtMultiplierMode ? Math.max(countsAs(weekend, policy), 0) / 2 : standardPaid(policy) / 2
+  const paid = weekend && !weekend.allHoursAtMultiplierMode ? Math.max(countsAs(weekend), 0) / 2 : standardPaid(policy) / 2
   const span = interval(booking, policy)
   return result([segment('standardWindow', paid, 1, span?.start, span?.end)], multiplier)
 }
@@ -580,7 +632,7 @@ function weekendDay(booking: PayrollHoursBooking, policy: OrgPayrollTimePolicy, 
     return result([segment('allHoursMultiplier', wall, multiplier, booking.workStartTime ?? undefined, booking.workEndTime ?? undefined)], multiplier)
   }
   if (isHalfDayPaid(booking, policy, false)) return halfDayPaid(booking, policy, weekend, multiplier)
-  const credit = countsAs(weekend, policy)
+  const credit = countsAs(weekend)
   const rows: PayrollHoursSegment[] = []
   const overlapStart = Math.max(span.start, ws)
   const overlapEnd = Math.min(span.end, we)

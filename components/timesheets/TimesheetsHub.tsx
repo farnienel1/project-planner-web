@@ -4,6 +4,7 @@
  */
 'use client'
 
+import { bookingCoverageIsArchive } from '@/lib/firebase/orgCollectionMerge'
 import { useEffect, useMemo, useState } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { CalendarDaysIcon, ClockIcon, UserGroupIcon } from '@heroicons/react/24/solid'
@@ -72,6 +73,7 @@ import {
 } from '@/lib/timesheets/dayRateHistoryStorage'
 import {
   timesheetInputsStatus,
+  withBookingsGate,
   type TimesheetInputLoad,
   type TimesheetInputsState,
 } from '@/lib/timesheets/timesheetInputs'
@@ -125,8 +127,13 @@ export function TimesheetsHub() {
   const userParam = searchParams.get('user')
   const tabParam = (searchParams.get('tab') as TeamTimesheetTab | null) || 'awaiting'
   const { user, organization } = useAuthStore()
-  const { bookings, loadBookings } = useBookingStore()
-  const { managerSiteBookings, loadManagerSiteBookings } = useManagerScheduleStore()
+  const { bookings, loadBookings, coverage: bookingCoverage, error: bookingsError } = useBookingStore()
+  const {
+    managerSiteBookings,
+    loadManagerSiteBookings,
+    coverage: managerCoverage,
+    error: managerBookingsError,
+  } = useManagerScheduleStore()
   const { operatives, loadOperatives } = useOperativeStore()
   const { users, loadUsers, loading: usersLoading } = useOrgUserStore()
   const { projects, smallWorks, loadProjects, loadSmallWorks } = useProjectStore()
@@ -299,8 +306,17 @@ export function TimesheetsHub() {
     retry: () => setInputsAttempt((value) => value + 1),
   }
 
+  // Rulebook 1.43.0 (`timesheetSnapshotReady`): the whole booking archive this screen asked for has arrived for the
+  // open organisation (labour and manager site bookings) — never just the rows an earlier, narrower listener held.
+  // `coverage` is set only from a server answer of the query (every part of a plan), never cached or partial rows.
+  const bookingsLoaded =
+    bookingCoverageIsArchive(bookingCoverage, organization?.id) && bookingCoverageIsArchive(managerCoverage, organization?.id)
+  const bookingsFailed = !bookingsLoaded && Boolean(bookingsError || managerBookingsError)
+
   const periodPageProps = {
     payInputs,
+    bookingsLoaded,
+    bookingsFailed,
     periodStart: selectedPeriod.start,
     periodEnd: selectedPeriod.end,
     invoicing,
@@ -416,7 +432,9 @@ export function TimesheetsHub() {
               timeZone={timeZone}
               history={history}
               scheduleOptions={scheduleOptions}
-              payInputs={payInputs}
+              // Rulebook 1.43.0 (review r318): export stamps and freezes the signed snapshot, so it waits for the
+              // server-confirmed bookings as signing does (`withBookingsGate` → `timesheetSnapshotReady`).
+              payInputs={withBookingsGate(payInputs, { bookingsLoaded, bookingsFailed })}
             />
           </>
         )}

@@ -29,7 +29,13 @@ import { db } from '@/lib/firebase/config'
 import { isRetryableAuthLoadError, authLoadRetryDelayMs } from '@/lib/auth/authBoot'
 import { waitForAuthToken } from '@/lib/firebase/waitForAuthToken'
 import { unsubscribeOrgPlansOutside } from '@/lib/firebase/subscribeOrgPlan'
-import { isMetadataOnlySnapshot, mergeOrgCollectionSnapshot, type OrgCollectionDoc } from '@/lib/firebase/orgCollectionMerge'
+import {
+  cachedReplayAuthoritative,
+  isMetadataOnlySnapshot,
+  mergeOrgCollectionSnapshot,
+  republishHeldAsAuthoritative,
+  type OrgCollectionDoc,
+} from '@/lib/firebase/orgCollectionMerge'
 
 export type { OrgCollectionDoc } from '@/lib/firebase/orgCollectionMerge'
 
@@ -50,6 +56,8 @@ const failedKeys = new Set<string>()
  * that server snapshot arrives, so the check waits for it instead of counting them.
  */
 const serverDelivered = new Map<string, string>()
+/** 1.43.0: whether the last rows published to the store for this key were authoritative (a server answer). */
+const lastPublishAuthoritative = new Map<string, boolean>()
 /** Per key: whether the last snapshot carried this device's unconfirmed writes, and which documents did. */
 const pendingWrites = new Map<string, { any: boolean; ids: Set<string> }>()
 const firstSnapshotWaiters = new Map<string, Array<{ resolve: () => void; reject: (error: unknown) => void }>>()
@@ -131,7 +139,17 @@ export function subscribeOrgCollection(
   const storedKey = cacheKey(key, organizationId)
   const cached = lastDocs.get(storedKey)
   if (cached) {
-    onDocs(cached, { authoritative: false })
+    // 1.43.0: the remembered list is the server's copy of THIS query only when the live listener is this query and
+    // has had a server snapshot (the cache is keyed by key + organisation, not by query: a widened bound replays the
+    // narrower rows first).
+    const serverCopyOfThisQuery = cachedReplayAuthoritative({
+      liveQueryId: orgs.get(key) === organizationId && unsubs.has(key) ? (queryIds.get(key) ?? '') : null,
+      requestedQueryId: queryId,
+      serverDeliveredQuery: serverDelivered.get(key) ?? null,
+      organizationId,
+    })
+    lastPublishAuthoritative.set(key, serverCopyOfThisQuery)
+    onDocs(cached, { authoritative: serverCopyOfThisQuery })
   }
 
   if (!db) return
@@ -161,7 +179,12 @@ export function subscribeOrgCollection(
       any: snap.metadata?.hasPendingWrites === true,
       ids: new Set(snap.docs.filter((entry) => entry.metadata?.hasPendingWrites === true).map((entry) => entry.id)),
     })
-    current.onDocs(kept, { authoritative })
+    // 1.43.0 (review r318): rows carrying this device's unconfirmed writes are not the server's answer for the store
+    // (the confirmation re-publishes them, `republishHeldAsAuthoritative`); the merge above still treats a server
+    // snapshot as the collection.
+    const serverAnswer = authoritative && snap.metadata?.hasPendingWrites !== true
+    lastPublishAuthoritative.set(key, serverAnswer)
+    current.onDocs(kept, { authoritative: serverAnswer })
   }
 
   if (isOrgCollectionSubscribed(key, organizationId, queryId)) {
@@ -172,6 +195,7 @@ export function subscribeOrgCollection(
   unsubs.delete(key)
   delivered.delete(key)
   serverDelivered.delete(key)
+  lastPublishAuthoritative.delete(key)
   pendingWrites.delete(key)
   orgs.set(key, organizationId)
   collectionNames.set(key, collectionName)
@@ -219,12 +243,25 @@ export function subscribeOrgCollection(
           isMetadataOnlySnapshot({ documentChangeCount: snap.docChanges().length, deliveredBefore: delivered.get(key) === thisQuery })
         ) {
           // The server confirmed the cached copy or acknowledged a write; no document changed. Flags only — the
-          // store is not called, so it sees exactly the snapshots it saw before.
+          // store is not called, so it sees exactly the snapshots it saw before — except when the last publish was
+          // not authoritative (the query's first server answer, or a cached change published during a network
+          // blip): 1.43.0 re-publishes the same rows as authoritative (`republishHeldAsAuthoritative`), so a screen
+          // waiting for the server (a timesheet's bookings, `timesheetSnapshotReady`) learns the rows are complete.
+          const republish = republishHeldAsAuthoritative({
+            fromCache: snap.metadata.fromCache,
+            hasPendingWrites: snap.metadata.hasPendingWrites,
+            heldIsSnapshot,
+            lastPublishAuthoritative: lastPublishAuthoritative.get(key) === true,
+          })
           if (!snap.metadata.fromCache) serverDelivered.set(key, thisQuery)
           pendingWrites.set(key, {
             any: snap.metadata.hasPendingWrites,
             ids: new Set(snap.docs.filter((entry) => entry.metadata.hasPendingWrites).map((entry) => entry.id)),
           })
+          if (republish) {
+            lastPublishAuthoritative.set(key, true)
+            activeCallback(key)?.onDocs(held, { authoritative: true })
+          }
           return
         }
         emit(snap)
@@ -289,6 +326,7 @@ export async function refreshOrgCollections(organizationId: string): Promise<voi
             .map((entry) => ({ id: entry.id, data: entry.data() as Record<string, unknown> }))
           withPendingLocalDocs(key, storedKey, docs)
           lastDocs.set(storedKey, docs)
+          lastPublishAuthoritative.set(key, true)
           activeCallback(key)?.onDocs(docs, { authoritative: true })
         })
         .catch(() => {
@@ -383,6 +421,7 @@ export async function reloadOrgCollectionFromServer(key: string, organizationId:
 export function unsubscribeOrgCollection(key: string): void {
   failedKeys.delete(key)
   serverDelivered.delete(key)
+  lastPublishAuthoritative.delete(key)
   pendingWrites.delete(key)
   unsubs.get(key)?.()
   unsubs.delete(key)

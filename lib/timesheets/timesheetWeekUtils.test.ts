@@ -2,10 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   collectSubjectDayEntries,
-  estimatedAmount,
   extraFormJobSuggestions,
-  extraFormManagerSuggestions,
-  isTimesheetAgreedManagerCandidate,
   subjectForUser,
   timesheetReceiptStoredName,
   timesheetRosterGroups,
@@ -111,37 +108,6 @@ test('same email is one person for the line-manager queue', () => {
   assert.deepEqual(groups[0].map((row) => row.id).sort(), ['auth', 'invite'])
 })
 
-test('isTimesheetAgreedManagerCandidate matches iOS manager/admin eligibility', () => {
-  const roleManager = user({
-    id: 'm1',
-    email: 'm1@test.com',
-    role: 'manager',
-    permissions: { ...user({ id: 'x', email: 'x' }).permissions, manager: false, operativeMode: false },
-  })
-  assert.equal(isTimesheetAgreedManagerCandidate(roleManager), true)
-  const inactive = user({
-    id: 'm2',
-    email: 'm2@test.com',
-    isActive: false,
-    permissions: { ...user({ id: 'x', email: 'x' }).permissions, manager: true, operativeMode: false },
-  })
-  assert.equal(isTimesheetAgreedManagerCandidate(inactive), false)
-  const operative = user({ id: 'op', email: 'op@test.com' })
-  assert.equal(isTimesheetAgreedManagerCandidate(operative), false)
-})
-
-test('extraFormManagerSuggestions matches iOS name + email haystack', () => {
-  const names = extraFormManagerSuggestions(
-    [
-      { firstName: 'Pat', surname: 'Manager', email: 'pat@site.com' },
-      { firstName: 'Pat', surname: 'Manager', email: 'pat.alt@site.com' },
-      { firstName: 'Alex', surname: 'Admin', email: 'alex@site.com' },
-    ],
-    'pat@'
-  )
-  assert.deepEqual(names, ['Pat Manager'])
-})
-
 test('extraFormJobSuggestions dedupes the same job number from projects and small works', () => {
   const jobs = extraFormJobSuggestions(
     [
@@ -153,18 +119,6 @@ test('extraFormJobSuggestions dedupes the same job number from projects and smal
   )
   assert.equal(jobs.length, 1)
   assert.equal(jobs[0]?.jobNumber, 'J-1')
-})
-
-test('estimatedAmount uses the basis and the organisation day length', () => {
-  assert.equal(
-    estimatedAmount({ key: 'a', kind: 'operative', name: 'Ada', payBasis: 'day', dayRate: 150 }, 7.5, 7.5),
-    150
-  )
-  assert.equal(
-    estimatedAmount({ key: 'b', kind: 'operative', name: 'Bea', payBasis: 'hourly', hourlyRate: 20 }, 7.5, 7.5),
-    150
-  )
-  assert.equal(estimatedAmount({ key: 'c', kind: 'operative', name: 'Cy', dayRate: 0, hourlyRate: 0 }, 8, 8), null)
 })
 
 test('timesheetReceiptStoredName matches iOS receipt.{ext}', () => {

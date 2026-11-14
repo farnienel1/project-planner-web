@@ -136,7 +136,6 @@ export function resolvePayrollRate({
   operative,
   day,
   history = emptyDayRateHistory(),
-  standardDayHours = 8,
   timeZone,
   aliasUserIds = [],
   operativeIds = [],
@@ -145,13 +144,11 @@ export function resolvePayrollRate({
   operative?: Operative | null
   day: Date
   history?: OperativeDayRateHistoryCollection
-  standardDayHours?: number
   timeZone?: string
   aliasUserIds?: string[]
   /** 1.36.0 (FU-5): every `operatives` row of the person (`personRateHistoryIds`), beside `operative`. */
   operativeIds?: string[]
 }): ResolvedPayrollRate {
-  void standardDayHours
   const input = rateInput({ user, operative, day, history, timeZone, aliasUserIds, operativeIds })
   // Rate lookup only: the employment rule is applied by `resolveForTimesheetDay` / the caller.
   const withoutEmployment = input.user
@@ -166,7 +163,6 @@ export function resolveForTimesheetDay({
   operative,
   day,
   history = emptyDayRateHistory(),
-  standardDayHours = 8,
   timeZone,
   aliasUserIds = [],
   operativeIds = [],
@@ -175,12 +171,10 @@ export function resolveForTimesheetDay({
   operative?: Operative | null
   day: Date
   history?: OperativeDayRateHistoryCollection
-  standardDayHours?: number
   timeZone?: string
   aliasUserIds?: string[]
   /** 1.36.0 (FU-5): every `operatives` row of the person (`personRateHistoryIds`), beside `operative`. */
   operativeIds?: string[]
 }): ResolvedPayrollRate {
-  void standardDayHours
   return resolvedFromCanonical(payRateOnDay(rateInput({ user, operative, day, history, timeZone, aliasUserIds, operativeIds })))
 }

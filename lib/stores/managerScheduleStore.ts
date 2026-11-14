@@ -1,5 +1,6 @@
 'use client'
 
+import { bookingCoverageAfterPublish, bookingCoverageOnSubscribe } from '@/lib/firebase/orgCollectionMerge'
 import { create } from 'zustand'
 import { doc, getDoc, setDoc, writeBatch } from 'firebase/firestore'
 import { addBookingDeleteWithTombstone, commitBookingMove, deleteBookingWithTombstone } from '@/lib/bookings/bookingTombstoneWrite'
@@ -50,7 +51,7 @@ function subscribeBookingsFor(
   key: string,
   organizationId: string,
   collectionName: 'managerSiteBookings',
-  onDocs: (docs: OrgCollectionDoc[]) => void,
+  onDocs: (docs: OrgCollectionDoc[], meta?: { authoritative: boolean }) => void,
   onError: (error: { message: string }) => void,
   options: { queryId: string; constraints: ReturnType<typeof bookingDownloadConstraints> }
 ): void {
@@ -102,6 +103,8 @@ interface ManagerScheduleState {
   managerSiteBookings: ManagerSiteBooking[]
   loading: boolean
   error: string | null
+  /** Rulebook 1.43.0: what the last snapshot covers (see `useBookingStore.coverage`). */
+  coverage: { organizationId: string; fullHistory: boolean; fromDayKey: string | null } | null
   /** Same listener bound as bookings (canonical `bookingLoadStart`); see `useBookingStore.loadBookings`. */
   loadManagerSiteBookings: (
     organizationId: string,
@@ -130,6 +133,7 @@ export const useManagerScheduleStore = create<ManagerScheduleState>((set, get) =
   managerSiteBookings: [],
   loading: false,
   error: null,
+  coverage: null,
 
   loadManagerSiteBookings: async (organizationId, options) => {
     if (!organizationId || !db) return
@@ -152,14 +156,17 @@ export const useManagerScheduleStore = create<ManagerScheduleState>((set, get) =
       current.length > 0 &&
       current.every((row) => row.organizationId && !organizationIdsMatch(row.organizationId, organizationId))
     const already = isOrgCollectionSubscribed('managerSiteBookings', organizationId, queryId)
-    if (foreign) set({ managerSiteBookings: [], loading: true, error: null })
+    if (foreign) set({ managerSiteBookings: [], loading: true, error: null, coverage: null })
     else if (already || current.length > 0) set({ loading: false })
     else set({ loading: true, error: null })
+    // Review r318: a new query (a wider bound, a re-plan) starts with no coverage until it answers.
+    set({ coverage: bookingCoverageOnSubscribe(get().coverage, already) })
+    const coverage = { organizationId, fullHistory: managerDownload.fullHistory, fromDayKey: managerDownload.loadedFromDayKey }
     subscribeBookingsFor(
       'managerSiteBookings',
       organizationId,
       'managerSiteBookings',
-      (docs) => {
+      (docs, meta) => {
         const managerSiteBookings: ManagerSiteBooking[] = []
         for (const entry of docs) {
           const parsed = parseManagerSiteBooking(entry.id, entry.data, organizationId)
@@ -169,10 +176,9 @@ export const useManagerScheduleStore = create<ManagerScheduleState>((set, get) =
         const previous = get().managerSiteBookings.filter(
           (row) => !row.organizationId || organizationIdsMatch(row.organizationId, organizationId)
         )
-        set({
-          managerSiteBookings: retainParsedRows(docs.length, previous, managerSiteBookings),
-          loading: false,
-        })
+        const rows = retainParsedRows(docs.length, previous, managerSiteBookings)
+        // 1.43.0: `coverage` only from a server answer of this query (see `useBookingStore`).
+        set({ managerSiteBookings: rows, loading: false, coverage: bookingCoverageAfterPublish(coverage, meta) })
       },
       (error) => set({ error: error.message, loading: false }),
       { queryId, constraints: bookingDownloadConstraints(managerDownload) }

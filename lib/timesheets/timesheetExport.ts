@@ -14,7 +14,7 @@ import type { Operative, User } from '@/types'
 import { personRateHistoryIds } from '@/lib/pay/personRateHistoryIds'
 import type { OperativeDayRateHistoryCollection, OperativeDayRateHistoryEntry } from '@/lib/timesheets/dayRateHistoryStorage'
 import { formatMoney } from '@/lib/canonical/money'
-import { parseMultipliedHoursText } from '@/lib/canonical/payrollHours'
+import { parseMultipliedHoursText, timesheetLineClockText } from '@/lib/canonical/payrollHours'
 import { timesheetInvoiceRows } from '@/lib/canonical/reportPay'
 import { priceWorkJobNumberText } from '@/lib/canonical/priceWorkJobNumber'
 import { emailDocument, emailHeading, emailLink, emailList, emailStrong, emailText } from '@/lib/email/emailTheme'
@@ -133,7 +133,8 @@ function signedOverrideDetails(
   const equation = payLineDisplay({
     payBasis: slice.payBasis,
     paidHours: slice.paidHours,
-    standardDayHours: standard,
+    // 1.44.0 §8: the signed line's own paid day (stored days), never today's.
+    standardDayHours: slice.standardDayHours ?? standard,
     rate: slice.rate,
     pay: slice.pay,
     currencyCode,
@@ -141,7 +142,9 @@ function signedOverrideDetails(
       ? { isOvertime: true, otMultiplier: slice.otMultiplier, clockHours: slice.clockHours ?? null, breakHours: slice.breakHours ?? null }
       : {}),
   }).equation
-  const clock = line.details && isClockSpanLabel(line.details) ? `${line.details} · ` : ''
+  // 1.43.0: the clock part only (`timesheetLineClockText`); the multiplied text is in the equation.
+  const clockPart = timesheetLineClockText(line.details)
+  const clock = clockPart && isClockSpanLabel(clockPart) ? `${clockPart} · ` : ''
   return `${clock}${equation}`
 }
 
@@ -150,7 +153,7 @@ export function invoiceLinesForTimesheet({
   draft,
   timeZone,
   extrasMode,
-  standardDayHours = 8,
+  standardDayHours,
   standardDayHoursOn,
   currencyCode,
   timesheetDays,
@@ -159,7 +162,8 @@ export function invoiceLinesForTimesheet({
   draft: TimesheetDraft
   timeZone: string
   extrasMode: 'raw' | 'export'
-  standardDayHours?: number
+  /** 1.44.0: the organisation's paid day (`weekdayPaidHours`); required, no 8-hour default. */
+  standardDayHours: number
   /**
    * Rulebook 1.19.0: the standard paid day in effect on a line's own day (`effectivePayrollTimePolicy`), for the day
    * units shown on a signed line. Display only — a signed line's amount is never re-priced. Missing → `standardDayHours`.
