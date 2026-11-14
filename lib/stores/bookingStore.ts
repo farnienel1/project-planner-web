@@ -5,9 +5,14 @@ import { doc, getDoc, setDoc, writeBatch } from 'firebase/firestore'
 import { addBookingDeleteWithTombstone, commitBookingMove, deleteBookingWithTombstone } from '@/lib/bookings/bookingTombstoneWrite'
 import { BOOKING_TOMBSTONE_COLLECTION } from '@/lib/canonical'
 import { auth, db } from '@/lib/firebase/config'
-import { MissingDocumentError, createWritePayload, savePartialDocument } from '@/lib/firebase/partialWrite'
+import { MissingDocumentError, addPartialDocumentToBatch, createWritePayload, savePartialDocument } from '@/lib/firebase/partialWrite'
 import { bookingUpdateWriteFields } from '@/lib/canonical/workDocumentReaders'
 import { BOOKING_REPLAY_REFUSED_MESSAGE } from '@/lib/canonical/bookingTombstones'
+import type { BookingReplaceRef } from '@/lib/canonical/bookingReplace'
+import { commitBookingReplace, forgetReplacedBookings } from '@/lib/bookings/bookingReplaceWrite'
+
+/** Rulebook 1.41.0 §5: the bookings this save replaces (deleted with their tombstones in the same batch). */
+export type BookingReplaceOptions = { replaces?: ReadonlyArray<BookingReplaceRef> | null }
 import { forgetOrgCollectionDoc, isOrgCollectionSubscribed, subscribeOrgCollection, unsubscribeOrgCollection, type OrgCollectionDoc } from '@/lib/firebase/subscribeOrgCollection'
 import { forgetOrgPlanDoc, subscribeOrgPlan, unsubscribeOrgPlan } from '@/lib/firebase/subscribeOrgPlan'
 import { bookingPlanInputs, bookingPlanParts, webJobAccessViewer } from '@/lib/access/readPlan'
@@ -92,7 +97,7 @@ interface BookingState {
    * Rulebook 1.20.2: a create always gets a fresh document id and a plain create write — never a caller-chosen id or a
    * merge, so a new booking can never land on (and overwrite fields of) an existing booking.
    */
-  createBooking: (booking: Omit<Booking, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>
+  createBooking: (booking: Omit<Booking, 'id' | 'createdAt' | 'updatedAt'>, options?: BookingReplaceOptions) => Promise<void>
   /**
    * Owner answer 11 Nov (item 4): a manager site booking moved onto a job as a labour booking — the new labour booking
    * and the delete of the manager site booking with its tombstone in ONE batch, so a failure leaves both as they were.
@@ -101,7 +106,7 @@ interface BookingState {
     booking: Omit<Booking, 'id' | 'createdAt' | 'updatedAt'>,
     fromManagerSiteBookingId: string
   ) => Promise<void>
-  updateBooking: (id: string, updates: Partial<Booking>) => Promise<void>
+  updateBooking: (id: string, updates: Partial<Booking>, options?: BookingReplaceOptions) => Promise<void>
   deleteBooking: (id: string, organizationId: string) => Promise<void>
   getBookingsForDate: (date: Date) => Booking[]
   getBookingsForOperative: (operativeId: string, date: Date) => Booking[]
@@ -153,7 +158,7 @@ export const useBookingStore = create<BookingState>((set, get) => ({
     }, { queryId, constraints: bookingDownloadConstraints(bookingDownload) })
   },
 
-  createBooking: async (bookingData) => {
+  createBooking: async (bookingData, options) => {
     const firestore = requireDb()
     const organizationId = bookingData.organizationId?.trim() || ''
     if (!organizationId) throw new Error('Missing organisation for booking')
@@ -162,10 +167,22 @@ export const useBookingStore = create<BookingState>((set, get) => ({
     const payload = serializeBooking(booking)
     const captured = captureOrganizationContext()
     // Rulebook §1 / 1.9.0: a create carries write metadata (`writeMetadataFields`).
-    await setDoc(
-      doc(firestore, 'organizations', organizationId, 'bookings', id),
-      { ...createWritePayload(payload), ...(writeMetadataFields(auth?.currentUser?.uid, 'web') ?? {}) }
-    )
+    const createFields = { ...createWritePayload(payload), ...(writeMetadataFields(auth?.currentUser?.uid, 'web') ?? {}) }
+    const replaces = options?.replaces ?? []
+    if (replaces.length > 0) {
+      // Rulebook 1.41.0 §5 (`bookingReplaceWrites`): the create and each replaced delete + tombstone in one checked transaction.
+      const removed = await commitBookingReplace(firestore, {
+        organizationId,
+        booking: { collection: 'bookings', bookingId: id },
+        replaced: replaces,
+        write: (tx, ref) => {
+          tx.set(ref, createFields)
+        },
+      })
+      await forgetReplacedBookings(organizationId, removed)
+    } else {
+      await setDoc(doc(firestore, 'organizations', organizationId, 'bookings', id), createFields)
+    }
     if (!organizationContextStillCurrent(organizationId, captured)) return
     const { bookings } = get()
     if (!bookings.some((row) => row.id === id)) {
@@ -212,7 +229,7 @@ export const useBookingStore = create<BookingState>((set, get) => ({
     notifyManagerSiteBookingRemovedSoon(organizationId, fromManagerSiteBookingId)
   },
 
-  updateBooking: async (id, updates) => {
+  updateBooking: async (id, updates, options) => {
     const firestore = requireDb()
     const { bookings } = get()
     const booking = bookings.find((row) => row.id === id)
@@ -239,13 +256,32 @@ export const useBookingStore = create<BookingState>((set, get) => ({
     // Rulebook §1/§2: only the changed fields (`bookingUpdateWriteFields`); an edit never re-creates a booking
     // that was deleted elsewhere.
     try {
-      await savePartialDocument(doc(firestore, 'organizations', organizationId, 'bookings', id), payload, bookingUpdateWriteFields, {
-        userId: auth?.currentUser?.uid ?? null,
-        missing: 'refuse',
-        // Diff against the booking this edit started from, so only `updates` are written (never a stale field
-        // over another device's change).
-        base: serializeBooking(booking),
-      })
+      const replaces = options?.replaces ?? []
+      if (replaces.length > 0) {
+        // Rulebook 1.41.0 §5: the edit and each replaced delete + tombstone in one batch; an edit of a booking deleted
+        // on another device is still refused, never re-created.
+        const removed = await commitBookingReplace(firestore, {
+          organizationId,
+          booking: { collection: 'bookings', bookingId: id },
+          replaced: replaces,
+          existing: true,
+          write: async (tx, ref) => {
+            await addPartialDocumentToBatch(tx, ref, payload, bookingUpdateWriteFields, {
+              userId: auth?.currentUser?.uid ?? null,
+              base: serializeBooking(booking),
+            })
+          },
+        })
+        await forgetReplacedBookings(organizationId, removed)
+      } else {
+        await savePartialDocument(doc(firestore, 'organizations', organizationId, 'bookings', id), payload, bookingUpdateWriteFields, {
+          userId: auth?.currentUser?.uid ?? null,
+          missing: 'refuse',
+          // Diff against the booking this edit started from, so only `updates` are written (never a stale field
+          // over another device's change).
+          base: serializeBooking(booking),
+        })
+      }
     } catch (error: unknown) {
       if (error instanceof MissingDocumentError) {
         set({ bookings: get().bookings.filter((row) => row.id !== id), error: BOOKING_REPLAY_REFUSED_MESSAGE })
@@ -366,7 +402,7 @@ export function notifyBookingRemovedSoon(bookingId: string): void {
  * Rulebook 1.33.0 §25 (reopen): a changed or deleted booking reopens its PAYE overtime line; the person (and their line
  * manager when the line had been returned) are told. Best effort, after the write; never blocks it.
  */
-function notifyOvertimeReopenedSoon(before: Booking, after: Booking | null): void {
+export function notifyOvertimeReopenedSoon(before: Booking, after: Booking | null): void {
   void (async () => {
     const [{ notifyOvertimeLineReopened }, { overtimeBookingInputs }, { useOrgUserStore }, { useOperativeStore }, { useProjectStore }] =
       await Promise.all([

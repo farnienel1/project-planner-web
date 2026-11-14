@@ -21,7 +21,8 @@ import { useBookingStore } from '@/lib/stores/bookingStore'
 import { useManagerScheduleStore } from '@/lib/stores/managerScheduleStore'
 import { useProjectStore } from '@/lib/stores/projectStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
-import { useBookingConflictGate } from '@/components/scheduling/BookingConflictRows'
+import { allReplacedBookings, useBookingConflictGate } from '@/components/scheduling/BookingConflictRows'
+import type { BookingReplaceOptions } from '@/lib/stores/bookingStore'
 import { useLeaveConflictCheck } from '@/components/scheduling/useLeaveConflictCheck'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { bookableWorks } from '@/lib/access/workAccess'
@@ -86,6 +87,14 @@ function managerSlotFromRaw(raw?: string): string {
   const kind = slotKindFromRaw(raw)
   return kind === 'FULL' ? 'FULL_DAY' : kind
 }
+
+/**
+ * Rulebook 1.41.0 §5 with the 1.39 moves: moving a booking to the other kind is one batch (create + the source's delete
+ * and tombstone), and a Replace needs its own checked transaction, so the two are not combined. A move that would also
+ * replace says so and writes nothing (choose ✓ to book both, or ✕).
+ */
+const REPLACE_ON_MOVE_MESSAGE =
+  'Replace is not available when the booking moves to a different kind of booking. Nothing was saved — choose ✓ to keep both, or ✕.'
 
 export function DailyOverviewBookingSheet({
   row,
@@ -282,12 +291,13 @@ export function DailyOverviewBookingSheet({
   const breakConfirmed = () => confirmCustomHoursBreak(payroll, day, hoursFields())
 
   // Rulebook 1.16.0 §5 (`bookingLeaveConflicts`): annual leave on this day is asked before the change saves; ✕ drops
-  // the day, so nothing is saved.
-  const leaveConfirmed = async (): Promise<boolean> => {
+  // the day, so nothing is saved. 1.41.0: Replace on the orange row gives the bookings to remove in the same batch
+  // (`options.replaces`); null when nothing is to be saved.
+  const leaveConfirmed = async (): Promise<BookingReplaceOptions | null> => {
     const operativeId = row.kind === 'operative' ? row.operativeId : linkedOperative?.id
     const userId = resolvedUserId || row.userId || null
     const personId = operativeId || userId
-    if (!personId) return true
+    if (!personId) return {}
     const rows = leaveCheck.checkFor(
       {
         id: personId,
@@ -299,26 +309,28 @@ export function DailyOverviewBookingSheet({
       day,
       row.bookingId ? [row.bookingId] : []
     )(hoursFields())
-    const dropped = await leaveGate.check(rows)
-    if (dropped === null) return false
-    if (dropped.size > 0) {
+    const choices = await leaveGate.choose(rows)
+    if (choices === null) return null
+    if (choices.dropped.size > 0) {
       onClose()
-      return false
+      return null
     }
-    return true
+    return { replaces: allReplacedBookings(choices) }
   }
 
   const saveToProject = async (project: Project, asSmallWork: boolean) => {
     if (!organization?.id || !row.bookingId || !user || !hoursValid) return
     if (!breakConfirmed()) return
-    if (!(await leaveConfirmed())) return
+    const replace = await leaveConfirmed()
+    if (!replace) return
     setSaving(true)
     setError(null)
     try {
       const hours = hoursFields()
       if (row.kind === 'operative') {
-        await updateBooking(row.bookingId, { projectId: project.id, ...hours, ...rateFields(false) })
+        await updateBooking(row.bookingId, { projectId: project.id, ...hours, ...rateFields(false) }, replace)
       } else if (linkedOperative) {
+        if (replace.replaces?.length) throw new Error(REPLACE_ON_MOVE_MESSAGE)
         // Owner answer 11 Nov (item 4): the new labour booking and the manager site booking's delete with its
         // tombstone are one batch, so a refused write leaves both bookings as they were.
         await moveManagerSiteBookingIntoBookings({
@@ -342,7 +354,7 @@ export function DailyOverviewBookingSheet({
           customLocationName: undefined,
           ...hours,
           ...rateFields(false),
-        })
+        }, replace)
       }
       onClose()
     } catch (err: unknown) {
@@ -355,7 +367,8 @@ export function DailyOverviewBookingSheet({
   const saveToOther = async (pick: ScheduleLocationPick) => {
     if (!organization?.id || !hoursValid) return
     if (!breakConfirmed()) return
-    if (!(await leaveConfirmed())) return
+    const replace = await leaveConfirmed()
+    if (!replace) return
     if (!resolvedUserId) {
       setError('This person needs a user account to be booked to Other.')
       return
@@ -365,6 +378,7 @@ export function DailyOverviewBookingSheet({
     try {
       const hours = hoursFields()
       if (row.kind === 'operative' && row.bookingId) {
+        if (replace.replaces?.length) throw new Error(REPLACE_ON_MOVE_MESSAGE)
         // The labour booking moves to the manager schedule: the new manager site booking and the labour booking's
         // delete with its tombstone are one batch (owner answer 11 Nov, item 4). Other is offered only when
         // `bookingRemoveAction` is `delete` (`otherAllowed`), so the delete is not refused.
@@ -386,7 +400,7 @@ export function DailyOverviewBookingSheet({
           customLocationName: pick.customLocationName,
           ...hours,
           ...rateFields(false),
-        })
+        }, replace)
       }
       onClose()
     } catch (err: unknown) {
@@ -398,18 +412,19 @@ export function DailyOverviewBookingSheet({
 
   const saveHoursOnly = async () => {
     if (!organization?.id || !row.bookingId || !hoursValid) return
-    if (!(await leaveConfirmed())) return
+    const replace = await leaveConfirmed()
+    if (!replace) return
     setSaving(true)
     setError(null)
     try {
       const hours = hoursFields()
       if (row.kind === 'operative') {
-        await updateBooking(row.bookingId, { ...hours, ...rateFields(false) })
+        await updateBooking(row.bookingId, { ...hours, ...rateFields(false) }, replace)
       } else {
         await updateManagerSiteBooking(organization.id, row.bookingId, {
           ...hours,
           ...rateFields(false),
-        })
+        }, replace)
       }
       onClose()
     } catch (err: unknown) {

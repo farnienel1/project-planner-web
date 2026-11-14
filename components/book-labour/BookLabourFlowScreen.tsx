@@ -39,7 +39,10 @@ import { dayKey as orgDayKey } from '@/lib/ios-parity/londonTime'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 import { bookingRequestIdentity } from '@/lib/canonical/bookingSlots'
 import { managerBookingIdentity } from '@/lib/scheduling/bookingRequestIdentity'
-import { bookingRequestClashIds, type PayrollTimePolicyState } from '@/lib/canonical'
+import { bookingRequestClashIds, type BookingReplaceRef, type PayrollTimePolicyState } from '@/lib/canonical'
+import { rowReplaceOffer } from '@/lib/scheduling/bookingReplaceOffer'
+
+type ReplaceJobs = Parameters<typeof rowReplaceOffer>[0]['jobs']
 import { samePersonBookingIds } from '@/lib/bookings/bookingPeople'
 import { dateFromDayKey, dayKey, parseHhMm } from '@/lib/ios-parity/londonTime'
 import { IosWriteValidationError } from '@/lib/ios-parity/firestoreCodec'
@@ -516,14 +519,26 @@ export function BookLabourFlowScreen({
   }
 
   /** The manager's own bookings that clash with this slot on the booked day (`bookingRequestClashIds`), as labels. */
-  function managerClashLines(userId: string, slot: ManagerSlot, workStart?: string, workEnd?: string): string[] | null {
+  /**
+   * The person's overlapping manager schedule bookings as text, and Replace when the viewer may delete every one of
+   * them (rulebook 1.41.0 §5, `bookingReplaceOffer`).
+   */
+  function managerClashLines(
+    userId: string,
+    slot: ManagerSlot,
+    workStart?: string,
+    workEnd?: string
+  ): { lines: string[]; replace?: { bookings: BookingReplaceRef[] } } | null {
     const existing = managerSiteBookings.filter((booking) => booking.userId === userId)
     if (existing.length === 0) return null
     const clashing = clashIdsOnDay(existing, slot, workStart, workEnd)
     const overlapping = existing.filter((row) => clashing.has(row.id))
     if (overlapping.length === 0) return null
     const titles = new Map(allWorks.map((work) => [work.id, `${work.jobNumber ?? ''} ${work.siteName ?? ''}`.trim() || work.id]))
-    return overlapping.map((row) => `${row.timeSlot} · ${managerSiteBookingDisplayTitle(row, titles)}`)
+    return {
+      lines: overlapping.map((row) => `${row.timeSlot} · ${managerSiteBookingDisplayTitle(row, titles)}`),
+      ...rowReplaceOffer({ user, managers, jobs: allWorks as unknown as ReplaceJobs, labour: [], manager: overlapping }),
+    }
   }
 
   function operativeClashLines(
@@ -533,18 +548,21 @@ export function BookLabourFlowScreen({
     workStart?: string,
     workEnd?: string,
     _breakOff?: boolean
-  ): string[] | null {
+  ): { lines: string[]; replace?: { bookings: BookingReplaceRef[] } } | null {
     const personIds = samePersonBookingIds(operativeId, users, operatives)
     const existing = bookings.filter((booking) => personIds.has(String(booking.operativeId || '').toLowerCase()))
     if (existing.length === 0) return null
     const clashing = clashIdsOnDay(existing, slot, workStart, workEnd)
     const overlapping = existing.filter((row) => clashing.has(row.id))
     if (overlapping.length === 0) return null
-    return overlapping.map((booking) => {
-      const project = allWorks.find((p) => p.id === booking.projectId)
-      const label = project ? `${project.jobNumber} ${project.siteName}` : ORPHAN_BOOKING_LABEL
-      return `${booking.timeSlot} · ${label}`
-    })
+    return {
+      lines: overlapping.map((booking) => {
+        const project = allWorks.find((p) => p.id === booking.projectId)
+        const label = project ? `${project.jobNumber} ${project.siteName}` : ORPHAN_BOOKING_LABEL
+        return `${booking.timeSlot} · ${label}`
+      }),
+      ...rowReplaceOffer({ user, managers, jobs: allWorks as unknown as ReplaceJobs, labour: overlapping, manager: [] }),
+    }
   }
 
   async function savePartyBookings(args: {
@@ -560,6 +578,8 @@ export function BookLabourFlowScreen({
     allowOperativeOverlap?: boolean
     /** Users ids the booker dropped from this day in the conflict list. */
     droppedUserIds?: ReadonlySet<string>
+    /** Rulebook 1.41.0 §5: per users id, the overlapping bookings Replace removes with this booking (one batch). */
+    replacedByUserId?: ReadonlyMap<string, BookingReplaceRef[]>
   }) {
     const people = activeParty.filter((person) => !args.droppedUserIds?.has(person.user.id))
     if (people.length === 0 || !organization?.id || !user?.id) return
@@ -595,7 +615,8 @@ export function BookLabourFlowScreen({
               kind: 'double_booking',
               personName: person.displayName,
               dayLabel: dayLine,
-              detail: `Already booked · ${managerLines.join(', ')}`,
+              detail: `Already booked · ${managerLines.lines.join(', ')}`,
+              ...(managerLines.replace ? { replace: managerLines.replace } : {}),
             })
           }
           continue
@@ -619,7 +640,8 @@ export function BookLabourFlowScreen({
             kind: 'double_booking',
             personName: person.displayName,
             dayLabel: dayLine,
-            detail: `Already booked · ${lines.join(', ')}`,
+            detail: `Already booked · ${lines.lines.join(', ')}`,
+            ...(lines.replace ? { replace: lines.replace } : {}),
           })
         }
       }
@@ -638,11 +660,13 @@ export function BookLabourFlowScreen({
         ).map((row) => ({ ...row, dayLabel: dayLine }))
       )
       if (rows.length > 0) {
-        const dropped = await conflictGate.check(rows)
-        if (dropped === null) return
-        const droppedUserIds = new Set([...dropped].map((pair) => pair.split('|')[0]))
+        const choices = await conflictGate.choose(rows)
+        if (choices === null) return
+        const droppedUserIds = new Set([...choices.dropped].map((pair) => pair.split('|')[0]))
         if (people.every((person) => droppedUserIds.has(person.user.id))) return
-        void savePartyBookings({ ...args, allowOperativeOverlap: true, droppedUserIds })
+        // Rulebook 1.41.0 §5: Replace — keyed `${usersId}|${dayKey}`; one day here.
+        const replacedByUserId = new Map([...choices.replaced].map(([pair, refs]) => [pair.split('|')[0], refs]))
+        void savePartyBookings({ ...args, allowOperativeOverlap: true, droppedUserIds, replacedByUserId })
         return
       }
     }
@@ -678,7 +702,7 @@ export function BookLabourFlowScreen({
             isBreakRemoved: args.breakRemoved === true,
             ...(args.rateFields ?? {}),
             organizationId: organization.id,
-          })
+          }, { replaces: args.replacedByUserId?.get(person.user.id) })
         } else {
           if (duplicateManager(
             person.user.id,
@@ -703,7 +727,7 @@ export function BookLabourFlowScreen({
             workEndTime: args.workEnd,
             isBreakRemoved: args.breakRemoved === true,
             ...(args.rateFields ?? {}),
-          })
+          }, { replaces: args.replacedByUserId?.get(person.user.id) })
         }
       }
       closeFlow()

@@ -6,13 +6,15 @@ import { clockText } from '@/lib/warnings/clashIntervals'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import { slotKey, slotToFirestore, type ScheduleDateSlot } from '@/lib/scheduling/scheduleUtils'
 import type { SchedulablePerson, SchedulablePersonKind } from '@/lib/scheduling/scheduleRosterUtils'
-import { ORPHAN_BOOKING_LABEL, bookingRequestClashIds, type BookingLeaveConflict, type PayrollTimePolicyState } from '@/lib/canonical'
+import { ORPHAN_BOOKING_LABEL, bookingRequestClashIds, normalizeDocumentId, type BookingLeaveConflict, type BookingReplaceRef, type PayrollTimePolicyState } from '@/lib/canonical'
 import { dayKey as orgDayKey } from '@/lib/ios-parity/londonTime'
 import { leaveConflictsForBooking } from '@/lib/scheduling/leaveConflicts'
+import { samePersonBookingIds } from '@/lib/bookings/bookingPeople'
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import type { HolidayBooking } from '@/types'
 
-export type DayBookingState = 'free' | 'clash_pending' | 'clash_accepted' | 'removed'
+/** Rulebook 1.41.0 §5: `clash_replace` — the day books and its overlapping bookings are replaced (one batch). */
+export type DayBookingState = 'free' | 'clash_pending' | 'clash_accepted' | 'clash_replace' | 'removed'
 
 export type DraftBookingPerson = {
   personId: string
@@ -24,6 +26,8 @@ export type DraftBookingPerson = {
   clashByDay: Record<string, OperativeBookingClash[]>
   /** Rulebook 1.16.0: annual leave on that day (`bookingLeaveConflicts`); the day waits for a tick or ✕ like a clash. */
   leaveByDay?: Record<string, BookingLeaveConflict>
+  /** Rulebook 1.41.0 §5: on a `clash_replace` day, the overlapping bookings Replace removes with the new booking. */
+  replaceByDay?: Record<string, BookingReplaceRef[]>
 }
 
 export type WizardStep = 'dates' | 'pick-person' | 'review'
@@ -61,8 +65,11 @@ function detectManagerDayClashes({
   projects,
   day,
   timeZone,
+  personIds,
 }: {
   userId: string
+  /** Lower-cased ids the person goes by (review 1.41 #6); the manager's own id when not given. */
+  personIds?: ReadonlySet<string>
   slot: ScheduleDateSlot
   managerSiteBookings: ManagerSiteBooking[]
   projects: Project[]
@@ -71,9 +78,11 @@ function detectManagerDayClashes({
   timeZone?: string
 }): OperativeBookingClash[] {
   const firestoreSlot = slotToFirestore(slot)
-  const own = managerSiteBookings.filter((existing) => existing.userId === userId)
+  const ids = new Set(personIds ?? [])
+  ids.add(normalizeDocumentId(userId))
+  const own = managerSiteBookings.filter((existing) => ids.has(normalizeDocumentId(existing.userId)))
   const byId = new Map(own.map((existing) => [existing.id, existing]))
-  const ids = bookingRequestClashIds({
+  const clashIds = bookingRequestClashIds({
     request: {
       dayKey: orgDayKey(slot.date, timeZone),
       timeSlot: firestoreSlot.timeSlot,
@@ -90,7 +99,7 @@ function detectManagerDayClashes({
     day,
   })
 
-  return ids.flatMap((id) => {
+  return clashIds.flatMap((id) => {
     const existing = byId.get(id)
     if (!existing) return []
     return [
@@ -103,6 +112,7 @@ function detectManagerDayClashes({
         existingProjectId: existing.locationId || '',
         existingTimeSlot: existing.timeSlot,
         existingProjectLabel: existing.locationId ? projectLabel(existing.locationId, projects) : 'Another booking',
+        existingCollection: 'managerSiteBookings' as const,
       },
     ]
   })
@@ -158,6 +168,7 @@ export function buildDraftPersonDayStates({
           bookings,
           operatives,
           projects,
+          users,
           day: payrollPolicy,
           timeZone: timeZone ?? undefined,
         }).map((clash) => ({ ...clash, operativeName: person.name }))
@@ -168,6 +179,7 @@ export function buildDraftPersonDayStates({
       clashes.push(
         ...detectManagerDayClashes({
           userId: managerUserId,
+          personIds: samePersonBookingIds(managerUserId, users, operatives),
           slot,
           managerSiteBookings,
           projects,
@@ -217,11 +229,16 @@ export function personHasPendingClashes(person: DraftBookingPerson): boolean {
 }
 
 export function personHasBookableDays(person: DraftBookingPerson): boolean {
-  return Object.values(person.dayStates).some((s) => s === 'free' || s === 'clash_accepted')
+  return Object.values(person.dayStates).some((s) => dayStateBooks(s))
+}
+
+/** The day is booked: free, ✓ book anyway, or (1.41.0) Replace. */
+export function dayStateBooks(state: DayBookingState | undefined): boolean {
+  return state === 'free' || state === 'clash_accepted' || state === 'clash_replace'
 }
 
 export function personHasAcceptedClashes(person: DraftBookingPerson): boolean {
-  return Object.values(person.dayStates).some((s) => s === 'clash_accepted')
+  return Object.values(person.dayStates).some((s) => s === 'clash_accepted' || s === 'clash_replace')
 }
 
 export function draftPersonNeedsWarning(person: DraftBookingPerson): boolean {
@@ -246,10 +263,18 @@ export function isExactDuplicateManagerBooking(
   )
 }
 
+function withoutReplace(person: DraftBookingPerson, dateKey: string): Record<string, BookingReplaceRef[]> | undefined {
+  if (!person.replaceByDay?.[dateKey]) return person.replaceByDay
+  const next = { ...person.replaceByDay }
+  delete next[dateKey]
+  return next
+}
+
 export function acceptDayClash(person: DraftBookingPerson, dateKey: string): DraftBookingPerson {
   return {
     ...person,
     dayStates: { ...person.dayStates, [dateKey]: 'clash_accepted' },
+    replaceByDay: withoutReplace(person, dateKey),
   }
 }
 
@@ -257,6 +282,17 @@ export function removeDayFromPerson(person: DraftBookingPerson, dateKey: string)
   return {
     ...person,
     dayStates: { ...person.dayStates, [dateKey]: 'removed' },
+    replaceByDay: withoutReplace(person, dateKey),
+  }
+}
+
+/** Rulebook 1.41.0 §5: book the day and replace its overlapping bookings (`refs` from `bookingReplaceOffer`). */
+export function replaceDayClash(person: DraftBookingPerson, dateKey: string, refs: ReadonlyArray<BookingReplaceRef>): DraftBookingPerson {
+  if (refs.length === 0) return person
+  return {
+    ...person,
+    dayStates: { ...person.dayStates, [dateKey]: 'clash_replace' },
+    replaceByDay: { ...(person.replaceByDay ?? {}), [dateKey]: [...refs] },
   }
 }
 
@@ -271,8 +307,7 @@ export function slotsForPerson(
   slots: ScheduleDateSlot[]
 ): ScheduleDateSlot[] {
   return slots.filter((slot) => {
-    const state = person.dayStates[slotKey(slot.date)]
-    return state === 'free' || state === 'clash_accepted'
+    return dayStateBooks(person.dayStates[slotKey(slot.date)])
   })
 }
 
@@ -288,14 +323,62 @@ export function allDraftPeopleResolved(people: DraftBookingPerson[]): boolean {
  */
 export function carryDayDecisions(previous: DraftBookingPerson, rebuilt: DraftBookingPerson): DraftBookingPerson {
   const dayStates = { ...rebuilt.dayStates }
+  const replaceByDay: Record<string, BookingReplaceRef[]> = {}
   for (const [key, state] of Object.entries(rebuilt.dayStates)) {
     const before = previous.dayStates[key]
     if (state === 'clash_pending' && (before === 'clash_accepted' || before === 'removed')) dayStates[key] = before
+    // 1.41.0: a Replace is kept only while the day still clashes with exactly the bookings it would remove.
+    const refs = previous.replaceByDay?.[key]
+    if (state === 'clash_pending' && before === 'clash_replace' && refs?.length) {
+      const now = new Set((rebuilt.clashByDay[key] || []).map((c) => c.existingBookingId.toLowerCase()))
+      const same = now.size === refs.length && refs.every((ref) => now.has(ref.bookingId.toLowerCase()))
+      if (same) {
+        dayStates[key] = 'clash_replace'
+        replaceByDay[key] = refs
+      }
+    }
   }
-  return { ...rebuilt, dayStates }
+  return { ...rebuilt, dayStates, ...(Object.keys(replaceByDay).length ? { replaceByDay } : {}) }
 }
 
 /** A person stays in the request while any day is bookable or still waiting for ✓ / ✕. */
 export function draftPersonStillListed(person: DraftBookingPerson): boolean {
   return personHasBookableDays(person) || personHasPendingClashes(person)
+}
+
+/**
+ * Review 1.41 #10 (re-review #2): one Replace choice per day, but an overnight booking can overlap two selected days.
+ * The replaces of a day that are not yet done — a booking already replaced by an earlier day's save is left out, so a
+ * later batch never deletes it twice. Pure: the caller marks a booking done (`markReplaced`) only after its save
+ * succeeded, so a refused or skipped day leaves it for the next day to replace.
+ */
+export function replacesNotYetTaken(
+  replaces: ReadonlyArray<BookingReplaceRef> | null | undefined,
+  alreadyReplaced: ReadonlySet<string>
+): BookingReplaceRef[] | undefined {
+  if (!replaces || replaces.length === 0) return undefined
+  const kept = replaces.filter((ref) => !alreadyReplaced.has(replaceKey(ref)))
+  return kept.length > 0 ? kept : undefined
+}
+
+/** Records `replaces` as done once their save succeeded (lower-cased `collection/bookingId`). */
+export function markReplaced(replaces: ReadonlyArray<BookingReplaceRef> | null | undefined, alreadyReplaced: Set<string>): void {
+  for (const ref of replaces ?? []) alreadyReplaced.add(replaceKey(ref))
+}
+
+function replaceKey(ref: BookingReplaceRef): string {
+  return `${ref.collection}/${ref.bookingId}`.toLowerCase()
+}
+
+/**
+ * Re-review 1.41 #6: when a multi-day save stops part way (a refused Replace, a cancelled signed-timesheet confirm),
+ * the message names the days already saved instead of saying nothing was saved. `saved` are display labels.
+ */
+export function partialSaveMessage(message: string, saved: ReadonlyArray<string>): string {
+  if (saved.length === 0) return message
+  const stopped = message
+    .replace(/\s*—\s*nothing was saved\.?/i, '.')
+    .replace(/\s*Nothing was saved\.?/i, '')
+    .trim()
+  return `${stopped} Already saved: ${saved.join('; ')}. The rest were not saved.`
 }

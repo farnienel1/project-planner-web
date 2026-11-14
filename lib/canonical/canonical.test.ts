@@ -5475,11 +5475,12 @@ test('1.2.0 D9: a not-found edit replay is final; the old call shape is unchange
 
 test('1.2.0 D1 + D7 + D8 + D10 (1.33.0): the offline table matches iOS OfflinePolicy ids; delete is queued, no cancel', () => {
   const ids = Object.keys(rulebook.OFFLINE_ACTIONS)
-  assert.equal(ids.length, 31)
+  assert.equal(ids.length, 32) // 1.41.0: booking.replace (online only)
   const allowed = ids.filter((id) => rulebook.offlineAvailability(id) === 'allowedOffline')
   assert.deepEqual(allowed, ['booking.create', 'booking.edit', 'booking.delete', 'annual_leave.request', 'profile.own_fields', 'notifications.own_toggles'])
   assert.equal(rulebook.offlineAvailability('booking.delete'), 'allowedOffline')
   assert.equal(rulebook.offlineAvailability('booking.delete_subcontractor'), 'onlineOnly')
+  assert.equal(rulebook.offlineAvailability('booking.replace'), 'onlineOnly')
   assert.equal(rulebook.offlineAvailability('booking.cancel'), 'onlineOnly')
   assert.deepEqual(
     ids.filter((id) => rulebook.offlineAvailability(id) === 'readOnlyOffline'),

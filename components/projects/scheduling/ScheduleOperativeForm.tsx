@@ -26,8 +26,12 @@ import {
   isExactDuplicateManagerBooking,
   personHasBookableDays,
   personHasPendingClashes,
+  dayStateBooks,
   type DraftBookingPerson,
   type WizardStep,
+  replacesNotYetTaken,
+  markReplaced,
+  partialSaveMessage,
 } from '@/lib/scheduling/draftProjectBooking'
 import type { ManagerLocationType } from '@/lib/scheduling/managerSiteBookingUtils'
 import type { SchedulablePerson } from '@/lib/scheduling/scheduleRosterUtils'
@@ -254,15 +258,22 @@ export function ScheduleOperativeForm({
 
     setSaving(true)
     setError(null)
+    // Re-review 1.41 #6: the days already saved, named if a later day stops the save.
+    const savedDays: string[] = []
+    const dayLabel = (date: Date) =>
+      new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone }).format(date)
     try {
       for (const person of draftPeople) {
-        const personSlots = slotsList.filter((slot) => {
-          const state = person.dayStates[slotKey(slot.date)]
-          return state === 'free' || state === 'clash_accepted'
-        })
+        const personSlots = slotsList
+          .filter((slot) => dayStateBooks(person.dayStates[slotKey(slot.date)]))
+          .sort((a, b) => a.date.getTime() - b.date.getTime())
+        // Review 1.41 #10: a booking overlapping two selected days is replaced once, on the first day that saves it.
+        const alreadyReplaced = new Set<string>()
 
         for (const slot of personSlots) {
           const firestoreSlot = slotToFirestore(slot)
+          // Rulebook 1.41.0 §5: Replace — the overlapping bookings go in the same batch as this create.
+          const replaces = replacesNotYetTaken(person.replaceByDay?.[slotKey(slot.date)], alreadyReplaced)
           if (person.kind === 'operative') {
             if (isExactDuplicateBooking(bookings, project.id, person.personId, slot)) continue
             await createBooking({
@@ -276,7 +287,9 @@ export function ScheduleOperativeForm({
               bookedBy: user.email,
               status: 'confirmed',
               organizationId: organization.id,
-            })
+            }, { replaces })
+            markReplaced(replaces, alreadyReplaced)
+            savedDays.push(`${person.name} — ${dayLabel(slot.date)}`)
           } else {
             if (
               isExactDuplicateManagerBooking(
@@ -297,13 +310,15 @@ export function ScheduleOperativeForm({
               workStartTime: firestoreSlot.workStartTime,
               workEndTime: firestoreSlot.workEndTime,
               ...rateFieldsFor(slot),
-            })
+            }, { replaces })
+            markReplaced(replaces, alreadyReplaced)
+            savedDays.push(`${person.name} — ${dayLabel(slot.date)}`)
           }
         }
       }
       router.push(scheduleBasePath)
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to create bookings')
+      setError(partialSaveMessage(e instanceof Error ? e.message : 'Failed to create bookings', savedDays))
     } finally {
       setSaving(false)
     }

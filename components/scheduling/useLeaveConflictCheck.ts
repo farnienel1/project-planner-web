@@ -26,6 +26,7 @@ import { useManagerScheduleStore } from '@/lib/stores/managerScheduleStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { useProjectStore } from '@/lib/stores/projectStore'
 import { bookingRequestClashIds, ORPHAN_BOOKING_LABEL, type PayrollTimePolicyState } from '@/lib/canonical'
+import { rowReplaceOffer } from '@/lib/scheduling/bookingReplaceOffer'
 import { samePersonBookingIds } from '@/lib/bookings/bookingPeople'
 import { clockText } from '@/lib/warnings/clashIntervals'
 import { managerSiteBookingDisplayTitle } from '@/lib/scheduling/managerSiteBookingUtils'
@@ -45,6 +46,8 @@ export function useLeaveConflictCheck(payrollOverride?: OrgPayrollTimePolicy | P
   const bookings = useBookingStore((state) => state.bookings)
   const managerSiteBookings = useManagerScheduleStore((state) => state.managerSiteBookings)
   const operatives = useOperativeStore((state) => state.operatives)
+  const managers = useOperativeStore((state) => state.managers)
+  const currentUser = useAuthStore((state) => state.user)
   const projects = useProjectStore((state) => state.projects)
   const smallWorks = useProjectStore((state) => state.smallWorks)
   const [payroll, setPayroll] = useState<OrgPayrollTimePolicy | PayrollTimePolicyState | null>(null)
@@ -155,6 +158,14 @@ export function useLeaveConflictCheck(payrollOverride?: OrgPayrollTimePolicy | P
         if (clashing.has(`m:${booking.id}`)) lines.push(`${booking.timeSlot} · ${managerSiteBookingDisplayTitle(booking, titles)}`)
       }
       if (lines.length === 0) return []
+      // Rulebook 1.41.0 §5: Replace only when the viewer may delete every overlapping booking (`canDeleteBooking`).
+      const offer = rowReplaceOffer({
+        user: currentUser,
+        managers,
+        jobs: [...projects, ...smallWorks] as unknown as Array<{ id: string } & Record<string, unknown>>,
+        labour: labour.filter((booking) => clashing.has(`o:${booking.id}`)),
+        manager: manager.filter((booking) => clashing.has(`m:${booking.id}`)),
+      })
       return [
         {
           key: conflictRowKey(person.id, key, 'double_booking'),
@@ -164,10 +175,11 @@ export function useLeaveConflictCheck(payrollOverride?: OrgPayrollTimePolicy | P
           personName: person.name,
           dayLabel: format(dateFromDayKey(key, timeZone), 'EEE d MMM yyyy'),
           detail: `Already booked · ${lines.join(', ')}`,
+          ...offer,
         },
       ]
     },
-    [bookings, managerSiteBookings, operatives, projects, smallWorks, users, policy]
+    [bookings, managerSiteBookings, operatives, projects, smallWorks, users, policy, currentUser, managers]
   )
 
   /**
