@@ -67,3 +67,40 @@ export async function runTimesheetExport<M, T>(input: TimesheetExportRunInput<M,
   }
   return { stamped, skipped, stopped }
 }
+
+/** Where an exported sheet's PDF can be fetched again (the Exported tab rebuilds it from the saved snapshot). */
+export const EXPORT_RECOVER_HINT = 'Open Exported to download any timesheet again.'
+
+/**
+ * The message after an export (review r318): what was exported, what was sent, what could not be sent and why —
+ * never "Export failed." once anything was stamped.
+ */
+export function exportSummaryMessage(input: {
+  stamped: ReadonlyArray<string>
+  notSent: ReadonlyArray<string>
+  emailProblem: string | null
+  recipientEmail: string | null
+  sentCount: number
+  backupSkipped: ReadonlyArray<string>
+  skipped: ReadonlyArray<string>
+  stampError: string | null
+}): string {
+  const parts: string[] = []
+  const n = input.stamped.length
+  if (n === 0) {
+    parts.push(input.stampError ? `Nothing was exported (${input.stampError}).` : 'Nothing to export.')
+  } else {
+    parts.push(`${n} exported.`)
+    if (input.sentCount > 0 && !input.emailProblem && input.recipientEmail) {
+      parts.push(`Sent: ${input.sentCount} emailed to ${input.recipientEmail} for filing.`)
+    }
+    const couldNot: string[] = [...input.notSent]
+    if (input.emailProblem) couldNot.push(`the email (${input.emailProblem})`)
+    if (couldNot.length > 0) parts.push(`Couldn't send: ${couldNot.join(', ')}.`)
+    if (input.stampError) parts.push(`Export stopped before the rest (${input.stampError}); try again for them.`)
+    if (input.backupSkipped.length > 0) parts.push(`Storage backup skipped: ${input.backupSkipped.join(', ')}.`)
+  }
+  if (input.skipped.length > 0) parts.push(`Already exported, left as it was: ${input.skipped.join(', ')}.`)
+  if (n > 0 && (input.notSent.length > 0 || input.emailProblem || input.stampError)) parts.push(EXPORT_RECOVER_HINT)
+  return parts.join(' ')
+}

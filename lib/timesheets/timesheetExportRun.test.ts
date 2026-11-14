@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { runTimesheetExport } from './timesheetExportRun.ts'
+import { EXPORT_RECOVER_HINT, exportSummaryMessage, runTimesheetExport } from './timesheetExportRun.ts'
 
 type Member = { id: string; name: string; exported?: boolean }
 const members: Member[] = [
@@ -57,4 +57,20 @@ test('review r318: a stamp that fails part-way still delivers and forgets histor
   assert.deepEqual(log, ['stamp:a', 'forget', 'deliver:sheet-a'])
   assert.deepEqual(result.stamped.map((row) => row.memberId), ['a'])
   assert.equal(result.stopped?.reason, 'stamp')
+})
+
+test('review r318: after stamping, the message is a summary — never "Export failed."', () => {
+  const base = { emailProblem: null, recipientEmail: 'lm@example.test', backupSkipped: [], skipped: [], stampError: null }
+  assert.equal(
+    exportSummaryMessage({ ...base, stamped: ['Ann', 'Cat'], notSent: [], sentCount: 2 }),
+    '2 exported. Sent: 2 emailed to lm@example.test for filing.'
+  )
+  const partial = exportSummaryMessage({ ...base, stamped: ['Ann', 'Cat'], notSent: ['Cat (pdf build failed)'], sentCount: 1 })
+  assert.match(partial, /^2 exported\. Sent: 1 emailed/)
+  assert.match(partial, /Couldn't send: Cat \(pdf build failed\)\./)
+  assert.ok(partial.endsWith(EXPORT_RECOVER_HINT))
+  const emailDown = exportSummaryMessage({ ...base, stamped: ['Ann'], notSent: [], sentCount: 1, emailProblem: 'mail service down' })
+  assert.match(emailDown, /Couldn't send: the email \(mail service down\)/)
+  assert.doesNotMatch(emailDown, /Export failed/)
+  assert.match(exportSummaryMessage({ ...base, stamped: [], notSent: [], sentCount: 0, skipped: ['Bob'] }), /Already exported, left as it was: Bob/)
 })
