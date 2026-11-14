@@ -72,3 +72,29 @@ export function bookingCoverageIsArchive(
 ): boolean {
   return Boolean(coverage && organizationId && coverage.organizationId === organizationId && coverage.fullHistory)
 }
+
+export type BookingCoverage = { organizationId: string; fullHistory: boolean; fromDayKey: string | null }
+
+/**
+ * 1.43.0 (review r318, second round): a booking store's `coverage` after one publish of its listener — the listener's
+ * own coverage when the publish is authoritative (a server answer of the whole query), else none. A cache replay, a
+ * plan that was re-planned or restarted by the data check, or a part that has not answered yet clears it until the new
+ * query answers, so a timesheet is never signed on rows from an earlier query.
+ */
+export function bookingCoverageAfterPublish(
+  listenerCoverage: BookingCoverage,
+  meta: { authoritative?: boolean } | null | undefined
+): BookingCoverage | null {
+  return meta?.authoritative === true ? listenerCoverage : null
+}
+
+/**
+ * 1.43.0: `coverage` when a listener is (re)started — kept only when the same live query keeps running; any new query
+ * (a wider bound, a new plan) starts with none.
+ */
+export function bookingCoverageOnSubscribe(
+  current: BookingCoverage | null,
+  sameLiveQuery: boolean
+): BookingCoverage | null {
+  return sameLiveQuery ? current : null
+}

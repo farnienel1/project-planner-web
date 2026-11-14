@@ -257,10 +257,14 @@ export function applyWeeklyReportOverride(input: WeeklyReportOverrideInput): Tim
     // exported the sheet. Signatures and who approved it stay as stored. A snapshot with any labour line is never
     // rebuilt or re-priced.
     if (existing.lines.length === 0 && !input.draft.exportedAt) {
-      // Review r318: only bookings that existed when the sheet was approved count (PAYE days left out), so a booking
+      // Review r318: only bookings created and last written by the time the sheet was approved count (PAYE days left out), so a booking
       // added to the period later never re-prices a sheet that was signed with price work or expenses only.
       const summary = payrollSummaryFor(input)
-      const live = summary.lineItems.map((line) => ({ isPayeDay: line.isPayeDay, bookingCreatedAt: line.bookingCreatedAt ?? null }))
+      const live = summary.lineItems.map((line) => ({
+        isPayeDay: line.isPayeDay,
+        bookingCreatedAt: line.bookingCreatedAt ?? null,
+        bookingUpdatedAt: line.bookingUpdatedAt ?? null,
+      }))
       if (timesheetSnapshotNeedsRebuild(input.draft, live)) {
         const fresh = makeOverride(input, summary)
         return {

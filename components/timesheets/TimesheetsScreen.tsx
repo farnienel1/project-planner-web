@@ -299,8 +299,10 @@ export function TimesheetsScreen({
       const documentId = timesheetSourceDocumentId(full)
       const source = full.operativeSignedAt ? full : listed
       if (!source.operativeSignedAt) continue
-      const agreed = applyWeeklyReportOverride({
-        draft: { ...source, exportedAt },
+      // Rulebook 1.43.0 (review r318): build (and, if it was frozen empty, rebuild — `timesheetSnapshotNeedsRebuild`)
+      // the snapshot BEFORE the sheet is stamped exported; an exported snapshot is never rebuilt afterwards.
+      const built = applyWeeklyReportOverride({
+        draft: { ...source, exportedAt: null },
         user: member,
         users,
         viewer: user,
@@ -319,6 +321,7 @@ export function TimesheetsScreen({
         scheduleOptions,
         timeZone,
       })
+      const agreed = { ...built, exportedAt }
       await saveTimesheetDraft({
         organizationId: organization.id,
         userId: member.id,
@@ -373,8 +376,9 @@ export function TimesheetsScreen({
           scheduleOptions,
           aliasUserIds: userIdsSharingEmail(member, users),
         })
-        const agreed = applyWeeklyReportOverride({
-          draft: { ...draft, exportedAt },
+        // 1.43.0: the same snapshot the stamp above saved (built before `exportedAt`, so an empty one is rebuilt).
+        const builtForInvoice = applyWeeklyReportOverride({
+          draft: { ...draft, exportedAt: null },
           user: member,
           users,
           viewer: user,
@@ -393,6 +397,7 @@ export function TimesheetsScreen({
           scheduleOptions,
           timeZone,
         })
+        const agreed = { ...builtForInvoice, exportedAt }
         const lines = invoiceLinesForTimesheet({
           payroll,
           draft: agreed,

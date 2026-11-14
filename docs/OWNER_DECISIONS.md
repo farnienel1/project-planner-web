@@ -468,11 +468,11 @@ UI only, web only (`docs/design/web-pages-ui/web-pages-ui-spec.md`; branch `w-ui
 |---|---|---|
 | 14 Nov | An overtime line with an unpaid break keeps its multiplied text after the times ("16:00–19:00 · OT 6.5h × 2 − 0.5h break = 12.5h") so a signed copy still shows the break; screens show only the times beside the rate line. A booking with no standard part keeps its own times on the (0h) standard line; FULL DAY / AM / PM keep their names. | done, owner to confirm |
 | 14 Nov | "Loading bookings…" holds every save that builds the snapshot (signing, counter-signing, invoice, adding extras, notes), not only the sign buttons, for the few seconds the bookings take. | done, owner to confirm |
-| 14 Nov | The empty-snapshot rebuild runs once per visit, by the line manager / an admin (or a self-signed owner) opening the sheet; there is no script for sheets nobody opens. Review r318: only when a booking that already existed when the sheet was approved is missing from it — a sheet signed with price work / expenses only is never re-priced by a booking added later. | done, owner to confirm |
+| 14 Nov | The empty-snapshot rebuild runs once per visit, by the line manager / an admin (or a self-signed owner) opening the sheet; there is no script for sheets nobody opens. Review r318: only when a booking created and last written by the time the sheet was approved is missing from it — a sheet signed with price work / expenses only is never re-priced by a booking added, moved or changed later. Export rebuilds before it stamps the sheet exported. | done, owner to confirm |
 | 14 Nov | A self-signed sheet (no line manager signs it) still lets the person add extras; they sign again. | done, owner to confirm |
 | 14 Nov | Agreed-manager suggestions match the name only (the old web list also matched the email) and only people whose users document names this organisation (the approvers' rule). | done, owner to confirm |
 | 14 Nov | Subcontractor tiles are one plain blue (no overtime stripes); the day chooser shows the times with no hours. | done, owner to confirm |
-| 14 Nov | When the history query is refused, the period opens as a new sheet (saved at the expected id) only when every direct read of the period's ids answered "missing"; otherwise the error is shown (review r318). | done, owner to confirm |
+| 14 Nov | When the history query fails, the period shows "Couldn't check older timesheets — try again." with Retry and saves nothing until it loads (review r318, 2nd round; never a blank new sheet). | done, owner to confirm |
 
 ## Open questions for the owner
 

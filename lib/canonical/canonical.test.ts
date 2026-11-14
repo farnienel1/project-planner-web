@@ -14332,17 +14332,28 @@ test('1.43.0 timesheetSnapshotReady: sign-off waits for the period\'s bookings a
 
 test('1.43.0 timesheetSnapshotNeedsRebuild: only a snapshot frozen empty while its bookings already existed', () => {
   const approvedAt = new Date('2026-11-10T09:00:00Z')
-  const before = { isPayeDay: false, bookingCreatedAt: new Date('2026-11-03T08:00:00Z') }
-  const after = { isPayeDay: false, bookingCreatedAt: new Date('2026-11-12T08:00:00Z') }
+  const before = { isPayeDay: false, bookingCreatedAt: new Date('2026-11-03T08:00:00Z'), bookingUpdatedAt: new Date('2026-11-04T08:00:00Z') }
+  const after = { isPayeDay: false, bookingCreatedAt: new Date('2026-11-12T08:00:00Z'), bookingUpdatedAt: new Date('2026-11-12T08:00:00Z') }
+  // Review r318 (2nd): created before approval but moved into the period (written) after it.
+  const movedLater = { isPayeDay: false, bookingCreatedAt: new Date('2026-11-03T08:00:00Z'), bookingUpdatedAt: new Date('2026-11-11T08:00:00Z') }
   const empty = { weeklyReportOverride: { lines: [], approvedAt } }
   // A booking that existed when the sheet was signed but is missing from the snapshot: the loading bug.
   assert.equal(R112.timesheetSnapshotNeedsRebuild(empty, [before]), true)
   // Any stored instant shape; the approval instant may come from the sheet when the snapshot has none.
-  assert.equal(R112.timesheetSnapshotNeedsRebuild({ weeklyReportOverride: { lines: [] }, managerSignedAt: { seconds: 1762765200 } }, [{ bookingCreatedAt: 1762157000000 }]), true)
+  assert.equal(
+    R112.timesheetSnapshotNeedsRebuild({ weeklyReportOverride: { lines: [] }, managerSignedAt: { seconds: 1762765200 } }, [
+      { bookingCreatedAt: 1762157000000, bookingUpdatedAt: '2025-11-04T08:00:00Z' },
+    ]),
+    true
+  )
   // Review r318: a legitimately empty snapshot (price work / expenses only) is never re-priced by a booking added later,
   // nor by one whose creation time is unknown.
   assert.equal(R112.timesheetSnapshotNeedsRebuild(empty, [after]), false)
+  assert.equal(R112.timesheetSnapshotNeedsRebuild(empty, [movedLater]), false)
   assert.equal(R112.timesheetSnapshotNeedsRebuild(empty, [{ isPayeDay: false }]), false)
+  // Either time unknown: never.
+  assert.equal(R112.timesheetSnapshotNeedsRebuild(empty, [{ bookingCreatedAt: before.bookingCreatedAt }]), false)
+  assert.equal(R112.timesheetSnapshotNeedsRebuild(empty, [{ bookingUpdatedAt: before.bookingUpdatedAt }]), false)
   // PAYE days never count; no live labour: nothing to rebuild.
   assert.equal(R112.timesheetSnapshotNeedsRebuild(empty, [{ ...before, isPayeDay: true }]), false)
   assert.equal(R112.timesheetSnapshotNeedsRebuild(empty, []), false)

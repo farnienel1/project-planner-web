@@ -145,7 +145,12 @@ import {
   WarnIcon,
   type StatItem,
 } from '@/components/ui/page'
-import { TimesheetInputsNotReadyError, type TimesheetInputsState } from '@/lib/timesheets/timesheetInputs'
+import {
+  TIMESHEET_HISTORY_LOAD_FAILED_MESSAGE,
+  TimesheetInputsNotReadyError,
+  withBookingsGate,
+  type TimesheetInputsState,
+} from '@/lib/timesheets/timesheetInputs'
 import type { PayrollTimePolicyState } from '@/lib/canonical'
 
 function money(value: number, currency: string): string {
@@ -227,10 +232,7 @@ export function TimesheetPeriodPage({
     payProfileLoaded: payInputsProp.ready,
     rateHistoryLoaded: payInputsProp.ready,
   })
-  const payInputs: TimesheetInputsState =
-    !payInputsProp.ready || snapshotState.ready
-      ? payInputsProp
-      : { ready: false, failed: snapshotState.failed, message: snapshotState.message, retry: payInputsProp.retry }
+  const payInputs: TimesheetInputsState = withBookingsGate(payInputsProp, { bookingsLoaded, bookingsFailed })
   const [draft, setDraft] = useState<TimesheetDraft>(emptyTimesheetDraft())
   const sourceDocumentId = useRef<string | null>(null)
   // Rulebook 1.9.0 §1: the open sheet is live. A sign-off or edit on another device replaces the draft — unless this
@@ -244,6 +246,9 @@ export function TimesheetPeriodPage({
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // 1.43.0 (review r318): the sheet could not be loaded; nothing is saved until Retry loads it (never a blank new sheet).
+  const [loadFailed, setLoadFailed] = useState(false)
+  const [loadAttempt, setLoadAttempt] = useState(0)
   const [signOpen, setSignOpen] = useState(false)
   const [managerSignOpen, setManagerSignOpen] = useState(false)
   const [signature, setSignature] = useState<string | null>(null)
@@ -388,6 +393,8 @@ export function TimesheetPeriodPage({
   const persist = useCallback(
     async (next: TimesheetDraft) => {
       if (!organization?.id) return
+      // 1.43.0: never save over a sheet that could not be loaded (a second copy under another id).
+      if (loadFailed) throw new Error(TIMESHEET_HISTORY_LOAD_FAILED_MESSAGE)
       // Never build `weeklyReportOverride` or save pay figures from defaults / an empty history (failed load).
       if (!payInputs.ready) throw new TimesheetInputsNotReadyError(payInputs.message ?? undefined)
       localEdits.current = false
@@ -442,6 +449,7 @@ export function TimesheetPeriodPage({
     },
     [
       organization?.id,
+      loadFailed,
       payInputs.ready,
       payInputs.message,
       subjectUser,
@@ -484,6 +492,7 @@ export function TimesheetPeriodPage({
     if (!organization?.id) return
     let cancelled = false
     setLoading(true)
+    setLoadFailed(false)
     loadTimesheetDraft(organization.id, subjectUser.id, periodStart, timeZone, periodEnd)
       .then((loaded) => {
         if (cancelled) return
@@ -492,7 +501,10 @@ export function TimesheetPeriodPage({
         setDraft(applySelfApprovalIfNoLineManager(loaded, subjectRef.current, usersRef.current))
       })
       .catch((err: unknown) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load timesheet')
+        if (cancelled) return
+        console.warn('[timesheets] period load failed', err)
+        setLoadFailed(true)
+        setError(null)
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -500,7 +512,7 @@ export function TimesheetPeriodPage({
     return () => {
       cancelled = true
     }
-  }, [organization?.id, subjectUser.id, periodStart, periodEnd, timeZone])
+  }, [organization?.id, subjectUser.id, periodStart, periodEnd, timeZone, loadAttempt])
 
   // Listen to the open sheet document once it has loaded (its stored id, else the id a new sheet is created at).
   useEffect(() => {
@@ -966,6 +978,19 @@ export function TimesheetPeriodPage({
         <StatRow items={bandStats} />
       </PageBand>
       <PayInputsBanner inputs={payInputs} />
+      {loadFailed ? (
+        <Note tone="red" role="alert">
+          {TIMESHEET_HISTORY_LOAD_FAILED_MESSAGE}{' '}
+          <button
+            type="button"
+            className="pu-link"
+            style={{ fontWeight: 600, textDecoration: 'underline' }}
+            onClick={() => setLoadAttempt((value) => value + 1)}
+          >
+            Retry
+          </button>
+        </Note>
+      ) : null}
       {error ? <Note tone="red" role="alert">{error}</Note> : null}
       {updatedElsewhere ? (
         <Note tone="amber" role="status">

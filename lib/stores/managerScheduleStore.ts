@@ -1,5 +1,6 @@
 'use client'
 
+import { bookingCoverageAfterPublish, bookingCoverageOnSubscribe } from '@/lib/firebase/orgCollectionMerge'
 import { create } from 'zustand'
 import { doc, getDoc, setDoc, writeBatch } from 'firebase/firestore'
 import { addBookingDeleteWithTombstone, commitBookingMove, deleteBookingWithTombstone } from '@/lib/bookings/bookingTombstoneWrite'
@@ -158,6 +159,8 @@ export const useManagerScheduleStore = create<ManagerScheduleState>((set, get) =
     if (foreign) set({ managerSiteBookings: [], loading: true, error: null, coverage: null })
     else if (already || current.length > 0) set({ loading: false })
     else set({ loading: true, error: null })
+    // Review r318: a new query (a wider bound, a re-plan) starts with no coverage until it answers.
+    set({ coverage: bookingCoverageOnSubscribe(get().coverage, already) })
     const coverage = { organizationId, fullHistory: managerDownload.fullHistory, fromDayKey: managerDownload.loadedFromDayKey }
     subscribeBookingsFor(
       'managerSiteBookings',
@@ -175,7 +178,7 @@ export const useManagerScheduleStore = create<ManagerScheduleState>((set, get) =
         )
         const rows = retainParsedRows(docs.length, previous, managerSiteBookings)
         // 1.43.0: `coverage` only from a server answer of this query (see `useBookingStore`).
-        set(meta?.authoritative === true ? { managerSiteBookings: rows, loading: false, coverage } : { managerSiteBookings: rows, loading: false })
+        set({ managerSiteBookings: rows, loading: false, coverage: bookingCoverageAfterPublish(coverage, meta) })
       },
       (error) => set({ error: error.message, loading: false }),
       { queryId, constraints: bookingDownloadConstraints(managerDownload) }

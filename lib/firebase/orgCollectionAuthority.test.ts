@@ -4,7 +4,13 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { bookingCoverageIsArchive, cachedReplayAuthoritative, orgPlanAuthoritative } from './orgCollectionMerge.ts'
+import {
+  bookingCoverageAfterPublish,
+  bookingCoverageIsArchive,
+  bookingCoverageOnSubscribe,
+  cachedReplayAuthoritative,
+  orgPlanAuthoritative,
+} from './orgCollectionMerge.ts'
 
 test('a plan is authoritative only when every part has a server snapshot and none was refused', () => {
   // The publish when the plan starts: no part has answered.
@@ -42,4 +48,24 @@ test('the timesheet screens need the whole archive of the open organisation', ()
   assert.equal(bookingCoverageIsArchive({ organizationId: 'org-2', fullHistory: true }, 'org-1'), false)
   assert.equal(bookingCoverageIsArchive(null, 'org-1'), false)
   assert.equal(bookingCoverageIsArchive({ organizationId: 'org-1', fullHistory: true }, null), false)
+})
+
+test('review r318 (2): coverage is cleared by a non-authoritative publish and by a new query', () => {
+  const full = { organizationId: 'org-1', fullHistory: true, fromDayKey: null }
+  // A server answer of the whole query sets it.
+  assert.deepEqual(bookingCoverageAfterPublish(full, { authoritative: true }), full)
+  // A cache replay, a re-planned or restarted plan, or a publish that does not say: cleared until the new query answers.
+  assert.equal(bookingCoverageAfterPublish(full, { authoritative: false }), null)
+  assert.equal(bookingCoverageAfterPublish(full, undefined), null)
+  // Starting a new query (wider bound, new plan) drops what the old one covered; the same live query keeps it.
+  assert.equal(bookingCoverageOnSubscribe(full, false), null)
+  assert.deepEqual(bookingCoverageOnSubscribe(full, true), full)
+  // The sequence a timesheet sees: answered → re-plan publishes before its parts answer → answered again.
+  let coverage: typeof full | null = bookingCoverageAfterPublish(full, { authoritative: true })
+  assert.equal(bookingCoverageIsArchive(coverage, 'org-1'), true)
+  coverage = bookingCoverageOnSubscribe(coverage, false)
+  coverage = bookingCoverageAfterPublish(full, { authoritative: orgPlanAuthoritative([{ settled: false }]) })
+  assert.equal(bookingCoverageIsArchive(coverage, 'org-1'), false)
+  coverage = bookingCoverageAfterPublish(full, { authoritative: orgPlanAuthoritative([{ settled: true, serverSnapshot: true }]) })
+  assert.equal(bookingCoverageIsArchive(coverage, 'org-1'), true)
 })
