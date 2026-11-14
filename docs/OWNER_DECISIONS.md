@@ -433,8 +433,8 @@ UI only, web only (`docs/design/web-pages-ui/web-pages-ui-spec.md`; branch `w-ui
 | 13 Nov | **2** Managers edit only the jobs they manage (kept); several managers per job is being built in 1.42. Toggle option **B** (wording only, built in 1.42). | confirmed; multi-manager and toggle B open (1.42) |
 | 13 Nov | **3** The 1.39 booking-hours wording is fine. | confirmed (1.39.0) |
 | 13 Nov | **4** UI restyle: keep the "Open →" cue and the headings. | confirmed |
-| 13 Nov | **5** Site audit PDF: option (a). | decided; build in its own release |
-| 13 Nov | **6** Drafts: yes. | decided |
+| 13 Nov | **5** Site audit PDF: option (a). | done (iOS #223, 14 Nov) |
+| 13 Nov | **6** Drafts: yes. | done (iOS #223, 14 Nov) |
 | 13 Nov | **7–9** The proposed wordings and the retry timing: yes. | decided |
 | 13 Nov | **10** Drop the "iPhone pushes only to `main-vr2rt0-uoqzwv`" rule: every change on both repos has its own branch and PR, merged to `main` after the independent review. | done (`docs/agent-rules/owner-working-style.md` updated) |
 | 13 Nov | **11–16** The 1.41 choices as proposed. | decided (1.41) |
@@ -443,6 +443,7 @@ UI only, web only (`docs/design/web-pages-ui/web-pages-ui-spec.md`; branch `w-ui
 | 13 Nov | **19** "PAYE" in any letter case or with spaces counts as PAYE everywhere (pay and timesheets follow it for those people). | done (1.40.0, `normalizeEmploymentType`; Data health still lists non-exact stored values; `minimumIosBuild` raised with 1.40) |
 | 13 Nov | **20–24** As proposed. | decided |
 | 13 Nov | **25** New users stay self-employed by default unless set up as PAYE. | confirmed — unchanged |
+| 14 Nov | **Site audit drafts after a forced sign-out: (a) keep them.** When someone is signed out by force (expired session, blocked trial), their unsent site audit drafts stay on the phone, hidden, until they sign back in; another person's sign-out on that phone never deletes them, and the sign-out warning counts only your own drafts. A sign-out you choose removes your own drafts. | done (iOS #223, 14 Nov) |
 | 13 Nov | **26** As proposed. | decided |
 | 13 Nov | **27–31** Daily Overview choices as proposed. | decided |
 | 13 Nov | **32–35** Email dedupe choices as proposed, including the TTL clean-up. | decided |
