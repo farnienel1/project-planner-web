@@ -538,8 +538,15 @@ export type PayrollLineReview = {
   reviewedBookingFingerprint?: string | null
 }
 
-/** A live payroll line as the review is checked against it: the booking's fingerprint as it is now. */
-export type PayrollLineLiveBooking = { bookingFingerprint?: string | null }
+/**
+ * A live payroll line as the review is checked against it: the booking's fingerprint as it is now, whether the line is
+ * an overtime line, and whether the booking now has its own overtime line on the sheet.
+ */
+export type PayrollLineLiveBooking = {
+  bookingFingerprint?: string | null
+  isOvertimeLine?: boolean | null
+  bookingHasOvertimeLine?: boolean | null
+}
 
 /**
  * The line manager's review of one payroll (labour) line, `sheet.payrollLineReviews[lineId]`. The line id is matched
@@ -573,6 +580,17 @@ export function payrollLineReview(
   const liveFingerprint = typeof live?.bookingFingerprint === 'string' ? live.bookingFingerprint.trim() : null
   if (storedFingerprint && liveFingerprint != null && storedFingerprint !== liveFingerprint) return null
   const num = (value: unknown): number | null => (typeof value === 'number' && Number.isFinite(value) ? value : null)
+  // 1.46.0 (review): a standard-line review that carries overtime money was made when the booking had no overtime
+  // line. The fingerprint does not cover the working hours, so if a working-hours change has since given the booking
+  // its own overtime line, the review is stale too — the overtime is never paid on both lines.
+  if (
+    decision === 'edited' &&
+    live?.isOvertimeLine !== true &&
+    live?.bookingHasOvertimeLine === true &&
+    ((num(row.revisedOvertimeAmount) ?? 0) > 0 || (num(row.revisedOvertimeHours) ?? 0) > 0)
+  ) {
+    return null
+  }
   if (decision !== 'edited') return { decision, revisedAmount: null }
   const review: PayrollLineReview = { decision, revisedAmount: revised }
   const standardHours = num(row.revisedStandardHours)

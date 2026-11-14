@@ -94,6 +94,8 @@ export type TimesheetPayrollLineItem = {
    * review is stale (`payrollLineReview`), so a changed booking is never paid twice.
    */
   bookingFingerprint?: string
+  /** Rulebook 1.46.0 (never stored): whether this line's booking has its own overtime line on the sheet. */
+  bookingHasOvertimeLine?: boolean
   /** Rulebook 1.43.0 (rebuild check only, never stored): when the line's booking was created and last written. */
   bookingCreatedAt?: Date
   bookingUpdatedAt?: Date
@@ -472,6 +474,9 @@ export function collectTimesheetPayroll({
   }
   const overlapping = new Set(overlappingBookingIds(paidBookings, overlapState))
   for (const line of lineItems) line.isOverlapping = Boolean(line.bookingId && overlapping.has(line.bookingId))
+  // 1.46.0: a standard-line Edit hours review that carries overtime is stale once the booking has its own overtime line.
+  const bookingsWithOvertime = new Set(lineItems.filter((line) => line.isOvertimeLine && line.bookingId).map((line) => line.bookingId))
+  for (const line of lineItems) line.bookingHasOvertimeLine = Boolean(line.bookingId && bookingsWithOvertime.has(line.bookingId))
 
   lineItems.sort((a, b) => {
     if (a.date.getTime() !== b.date.getTime()) return a.date.getTime() - b.date.getTime()

@@ -9,7 +9,8 @@ import { payPeriodsOverlapping } from './timesheetPayrollPolicy.ts'
 import { invoiceLinesForTimesheet } from './timesheetExport.ts'
 import { buildWeeklyReportData } from '../weekly-report/weeklyReportData.ts'
 import type { ApprovedTimesheetWeek } from '../weekly-report/timesheetFeed.ts'
-import type { TimesheetPayrollSummary } from './timesheetPayrollCollector.ts'
+import { collectTimesheetPayroll, type TimesheetPayrollSummary } from './timesheetPayrollCollector.ts'
+import { payrollLineEdit } from './payrollLineBookingLookup.ts'
 
 function user(partial: Partial<User> & { id: string }): User {
   return {
@@ -551,4 +552,96 @@ test('1.43.0: export rebuilds a frozen-empty snapshot before stamping exportedAt
   const exported = { ...built, exportedAt }
   assert.equal(exported.weeklyReportOverride?.lines.length, 1)
   assert.equal(exported.exportedAt, exportedAt)
+})
+
+// Rulebook 1.46.0 (second independent review): Edit hours reviews never re-price a signed sheet or pay twice.
+const OWNER_POLICY_146 = {
+  ...DEFAULT_PAYROLL_POLICY,
+  standardDayStart: '07:00',
+  standardDayEnd: '16:00',
+  unpaidBreakMinutes: 30,
+  breakWindowStart: '12:00',
+  breakWindowEnd: '12:30',
+  breakPaid: false,
+  paidHoursDerived: true,
+  standardPaidHours: 8.5,
+}
+const day146 = new Date('2026-11-18T09:00:00Z')
+const base146 = {
+  ...base,
+  user: user({ id: 'u1', dayRate: 250 }),
+  operatives: [{ ...operative, dayRate: 250 }],
+  weekStart: new Date('2026-11-16T00:00:00Z'),
+  weekEnd: new Date('2026-11-22T00:00:00Z'),
+  payrollPolicy: OWNER_POLICY_146,
+}
+function booking146(start: string, end: string): Booking {
+  return booking({ date: day146, timeSlot: 'CUSTOM_HOURS', workStartTime: start, workEndTime: end, otMultiplierOverride: 2 } as Partial<Booking>)
+}
+function editReviews146(lineBookings: Booking[], start: string, end: string) {
+  const summary = collectTimesheetPayroll({
+    user: base146.user,
+    bookings: lineBookings,
+    managerSiteBookings: [],
+    operatives: base146.operatives,
+    projects: base146.projects,
+    smallWorks: [],
+    periodStart: base146.weekStart,
+    periodEnd: base146.weekEnd,
+    payrollPolicy: OWNER_POLICY_146,
+    timeZone: 'Europe/London',
+  })
+  const row = summary.lineItems.find((line) => line.id === 'op-b1-normal')!
+  const edit = payrollLineEdit({ row, lines: summary.lineItems, startTime: start, endTime: end, breakRemoved: false, policy: OWNER_POLICY_146, timeZone: 'Europe/London' })
+  return Object.fromEntries(Object.entries(edit.reviewFieldsByLineId).map(([id, fields]) => [id, { decision: 'edited' as const, ...fields }]))
+}
+const signed146 = { operativeSignedAt: day146, operativeSignedByName: 'Ada Booked', managerSignedAt: day146, managerSignedByUserId: 'mgr', managerSignedByName: 'Morgan Manager' }
+const labourTotal146 = (draft: { weeklyReportOverride?: { lines: { amount: number }[] } | null }) =>
+  Math.round((draft.weeklyReportOverride?.lines ?? []).reduce((sum, line) => sum + line.amount, 0) * 100) / 100
+
+test('1.46.0 review: a signed sheet is never re-priced by a stale Edit hours review on the next save', () => {
+  // Edited 07:00–16:00 → 07:00–19:00, then the booking itself changed to 07:00–14:00, then signed.
+  const reviews = editReviews146([booking146('07:00', '16:00')], '07:00', '19:00')
+  assert.equal(reviews['op-b1-normal'].revisedAmount, 426.47)
+  const later = [booking146('07:00', '14:00')]
+  const signed = applyWeeklyReportOverride({ ...base146, bookings: later, draft: { ...emptyTimesheetDraft(), ...signed146, payrollLineReviews: reviews } })
+  const atSigning = labourTotal146(signed)
+  assert.ok(atSigning > 190 && atSigning < 192, `signed ${atSigning}`)
+  assert.ok(signed.weeklyReportOverride?.lines.every((line) => line.bookingFingerprint))
+  // The next save keeps what was signed — never 426.47, never an added overtime line.
+  const next = applyWeeklyReportOverride({ ...base146, bookings: later, draft: signed })
+  assert.equal(labourTotal146(next), atSigning)
+  assert.equal(next.weeklyReportOverride?.lines.length, signed.weeklyReportOverride?.lines.length)
+  // Stored and read back through Firestore, the fingerprint survives.
+  const roundTrip = weeklyReportOverrideFromFirestore(weeklyReportOverrideToFirestore(signed.weeklyReportOverride!))
+  assert.equal(roundTrip?.lines[0].bookingFingerprint, signed.weeklyReportOverride?.lines[0].bookingFingerprint)
+})
+
+test('1.46.0 review: an unchanged booking signs the edit as two parts and keeps them on the next save', () => {
+  const now = [booking146('07:00', '16:00')]
+  const reviews = editReviews146(now, '07:00', '19:00')
+  const signed = applyWeeklyReportOverride({ ...base146, bookings: now, draft: { ...emptyTimesheetDraft(), ...signed146, payrollLineReviews: reviews } })
+  const ids = signed.weeklyReportOverride?.lines.map((line) => [line.id, line.paidHours, line.amount])
+  assert.deepEqual(ids, [['op-b1-normal', 8.5, 250], ['op-b1-ot', 3, 176.47]])
+  const next = applyWeeklyReportOverride({ ...base146, bookings: now, draft: signed })
+  assert.deepEqual(next.weeklyReportOverride?.lines.map((line) => [line.id, line.paidHours, line.amount]), ids)
+})
+
+test('1.46.0 review: a working-hours change that gives the booking its own overtime line makes the review stale (no 476.47, no duplicate -ot)', () => {
+  const now = [booking146('07:00', '19:00')]
+  // Reviewed under a day that ran to 19:00 (no overtime line), then the working day goes back to 07:00–16:00.
+  const longDay = { ...OWNER_POLICY_146, standardDayEnd: '19:00' }
+  const summary = collectTimesheetPayroll({
+    user: base146.user, bookings: now, managerSiteBookings: [], operatives: base146.operatives, projects: base146.projects, smallWorks: [],
+    periodStart: base146.weekStart, periodEnd: base146.weekEnd, payrollPolicy: longDay, timeZone: 'Europe/London',
+  })
+  const row = summary.lineItems.find((line) => line.id === 'op-b1-normal')!
+  const edit = payrollLineEdit({ row, lines: summary.lineItems, startTime: '07:00', endTime: '20:00', breakRemoved: false, policy: longDay, timeZone: 'Europe/London' })
+  const reviews = Object.fromEntries(Object.entries(edit.reviewFieldsByLineId).map(([id, fields]) => [id, { decision: 'edited' as const, ...fields }]))
+  assert.ok((reviews['op-b1-normal'].revisedOvertimeAmount ?? 0) > 0)
+  const signed = applyWeeklyReportOverride({ ...base146, bookings: now, draft: { ...emptyTimesheetDraft(), ...signed146, payrollLineReviews: reviews } })
+  const lines = signed.weeklyReportOverride?.lines ?? []
+  assert.equal(new Set(lines.map((line) => line.id)).size, lines.length)
+  // The live booking under 07:00–16:00: 250 + 3h × 2 = 426.47 — the stale review is not paid on top.
+  assert.equal(labourTotal146(signed), 426.47)
 })

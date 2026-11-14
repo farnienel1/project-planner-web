@@ -14,7 +14,7 @@
 
 import { roundPennies } from './payRate'
 import { normalizeDocumentId } from './scheduleSources'
-import { timesheetEntryDecision, timesheetTrustedFingerprint } from './timesheetEntryReviews'
+import { payrollLineReview, timesheetEntryDecision, timesheetTrustedFingerprint } from './timesheetEntryReviews'
 import { timesheetInvoiceRows, type InvoiceLineInput, type TimesheetInvoiceRowsInput } from './reportPay'
 
 /** One payroll line as each app's collector builds it (web `TimesheetPayrollLineItem`, iOS `TimesheetPayrollLine`). */
@@ -33,8 +33,6 @@ export type TimesheetTotalsLine = InvoiceLineInput & {
    */
   bookingPaidHours?: number | null
   bookingOvertimeHours?: number | null
-  /** 1.46.0: the booking the line comes from (web `op-{id}` / `mgr-{id}`); groups a booking's lines. */
-  bookingId?: string | null
 }
 
 export type TimesheetTotalsInput<L extends TimesheetTotalsLine = TimesheetTotalsLine> = TimesheetInvoiceRowsInput<L>
@@ -148,6 +146,8 @@ export function timesheetTotals<L extends TimesheetTotalsLine>(input: TimesheetT
     if (days && (days.size === 0 || (line.dayKey && !days.has(line.dayKey)))) continue
     const paid = finite(line.paidHours)
     if (reviewedGroups.size > 0 && reviewedGroups.has(groupOf(line))) {
+      // A declined line of an edited booking counts no hours (its money is 0 too).
+      if (payrollLineReview(sheet, line.id, line)?.decision === 'declined') continue
       const review = reviewedLines.get(normalizeDocumentId(line.id))
       if (review) {
         const overtimeBase = finite(review.revisedOvertimeHours)

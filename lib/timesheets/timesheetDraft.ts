@@ -70,6 +70,11 @@ export type WeeklyReportLabourLine = {
   otMultiplier?: number | null
   decision: TimesheetManagerDecision
   bookingId: string
+  /**
+   * Rulebook 1.46.0: the booking as it was when the line was signed (`overtimeBookingFingerprint`). A later Edit hours
+   * review made against another version of the booking is never applied to the signed line.
+   */
+  bookingFingerprint?: string | null
 }
 
 /** Shared with iOS `TimesheetWeeklyReportMoneyLine`. */

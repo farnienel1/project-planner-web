@@ -87,6 +87,10 @@ export type InvoiceLineInput = ReportPayLineInput & {
    * older version of the booking is stale (`payrollLineReview`). Missing = not checked.
    */
   bookingFingerprint?: string | null
+  /** 1.46.0: an overtime line; the booking it comes from; whether that booking has its own overtime line now. */
+  isOvertimeLine?: boolean | null
+  bookingId?: string | null
+  bookingHasOvertimeLine?: boolean | null
 }
 
 /**
@@ -244,13 +248,22 @@ export function timesheetInvoiceRows<L extends InvoiceLineInput & { id: string; 
   const decided = input.extrasMode === 'decided'
   const managerSigned = parseTimesheetStatusFields(sheet).managerSignedAtMs != null
   const labourReviews = input.applyLabourReviews == null ? managerSigned : input.applyLabourReviews === true
+  // 1.46.0 (review): which bookings have their own overtime line now (by `bookingId`, else the id without its
+  // `-normal` / `-ot` suffix), unless the line says so itself.
+  const groupOf = (line: L) =>
+    normalizeDocumentId(line.bookingId ? String(line.bookingId) : String(line.id).replace(/-(?:normal|ot)$/i, ''))
+  const groupsWithOvertime = new Set(lines.filter((line) => line && line.isOvertimeLine === true).map(groupOf))
   for (const line of invoiceLines(lines)) {
     if (!onCountedDay(line.dayKey)) continue
     let amount = line.amount
     let applied: PayrollLineReview | null = null
     if (decided && labourReviews) {
       // 1.46.0: a review made against a booking that has changed since is stale (null): the line at its live amount.
-      const review = payrollLineReview(sheet, line.id, line)
+      const review = payrollLineReview(sheet, line.id, {
+        bookingFingerprint: line.bookingFingerprint,
+        isOvertimeLine: line.isOvertimeLine,
+        bookingHasOvertimeLine: line.bookingHasOvertimeLine ?? groupsWithOvertime.has(groupOf(line)),
+      })
       if (review?.decision === 'declined') continue
       // 1.46.0: the revised amount in pennies (`roundPennies`), so the invoice rows add up to the invoice total.
       if (review?.decision === 'edited' && review.revisedAmount != null) {

@@ -15289,3 +15289,38 @@ test('1.46.0 review: the packed iOS script makes a changed booking stale (426.47
   assert.equal(bundle.revisedPayrollLineAmounts({ ...base, startTime: '07:00', endTime: '07:00' }), null)
   assert.equal(bundle.revisedPayrollLineAmounts({ ...base, startTime: '', endTime: '19:00' }), null)
 })
+
+test('1.46.0 review 2: a standard-line review carrying overtime is stale once the booking has its own overtime line (working-hours change)', () => {
+  const { fp, edit } = rates146Edit()
+  const sheet = { managerSignedAt: '2026-11-20T10:00:00Z', payrollLineReviews: { 'op-b1-normal': { decision: 'edited', ...edit.reviewFields.standard } } }
+  // Same booking (same fingerprint), but a working-hours change now gives it an overtime line of its own.
+  const lines = [
+    { id: 'op-b1-normal', bookingId: 'op-b1', amount: 250, paidHours: 8.5, dayKey: '2026-11-18', isOvertimeLine: false, bookingFingerprint: fp },
+    { id: 'op-b1-ot', bookingId: 'op-b1', amount: 176.47, paidHours: 3, otMultiplier: 2, dayKey: '2026-11-18', isOvertimeLine: true, bookingFingerprint: fp },
+  ]
+  const totals = R112.timesheetTotals({ sheet, payrollLines: lines, extrasMode: 'decided' })
+  assert.equal(totals.total, 426.47) // was 602.94
+  assert.equal(totals.hours, 14.5)
+  assert.equal(R112.payrollLineReview(sheet, 'op-b1-normal', { bookingFingerprint: fp, bookingHasOvertimeLine: true }), null)
+  assert.ok(R112.payrollLineReview(sheet, 'op-b1-normal', { bookingFingerprint: fp, bookingHasOvertimeLine: false }))
+})
+
+test('1.46.0 review 2: a declined line of an edited booking counts no hours', () => {
+  const now = R112.overtimeBookingFingerprint({ id: 'b1', personId: '', dayKey: '2026-11-18', timeSlot: 'CUSTOM_HOURS', workStartTime: '07:00', workEndTime: '19:00', otMultiplierOverride: 2 })
+  const edit = R112.revisedPayrollLineAmounts({
+    dayKey: '2026-11-18', timeZone: 'Europe/London', policy: RATES146_POLICY, startTime: '07:00', endTime: '17:00', otMultiplierOverride: 2,
+    payBasis: 'day', dayRate: 250, bookingHasOvertimeLine: true, overtimeLineMinHours: 0.05, bookingFingerprint: now,
+  })!
+  const sheet = {
+    managerSignedAt: '2026-11-20T10:00:00Z',
+    payrollLineReviews: { 'op-b1-normal': { decision: 'edited', ...edit.reviewFields.standard }, 'op-b1-ot': { decision: 'declined' } },
+  }
+  const lines = [
+    { id: 'op-b1-normal', bookingId: 'op-b1', amount: 250, paidHours: 8.5, dayKey: '2026-11-18', isOvertimeLine: false, bookingFingerprint: now },
+    { id: 'op-b1-ot', bookingId: 'op-b1', amount: 176.47, paidHours: 3, otMultiplier: 2, dayKey: '2026-11-18', isOvertimeLine: true, bookingFingerprint: now },
+  ]
+  const totals = R112.timesheetTotals({ sheet, payrollLines: lines, extrasMode: 'decided' })
+  assert.equal(totals.total, 250)
+  assert.equal(totals.hours, 8.5)
+  assert.equal(totals.overtimeHours, 0)
+})
