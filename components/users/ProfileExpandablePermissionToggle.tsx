@@ -3,6 +3,9 @@
 import { useState } from 'react'
 import type { UserPermissions } from '@/types'
 import type { PermissionToggleDef } from '@/lib/staff/userPermissionDescriptions'
+import { cn } from '@/lib/ui/cn'
+import { Chip } from '@/components/ui/page'
+import { ProfileIcon, permissionIconFor } from '@/components/users/profile-ui'
 
 export function ProfileExpandablePermissionToggle({
   def,
@@ -11,6 +14,7 @@ export function ProfileExpandablePermissionToggle({
   disabled,
   lockedMessage,
   onLocked,
+  variant,
 }: {
   def: PermissionToggleDef
   checked: boolean
@@ -18,8 +22,51 @@ export function ProfileExpandablePermissionToggle({
   disabled?: boolean
   lockedMessage?: string
   onLocked?: (message: string) => void
+  /** `profile`: the Edit user look (docs/design/user-profile-ui/). Same buttons, states and handlers. */
+  variant?: 'profile'
 }) {
   const [expanded, setExpanded] = useState(false)
+  const onSwitch = () => {
+    if (lockedMessage) {
+      onLocked?.(lockedMessage)
+      return
+    }
+    if (!disabled) onChange(!checked)
+  }
+
+  if (variant === 'profile') {
+    const lockedOn = Boolean(lockedMessage) && checked
+    return (
+      <div className={cn('up-perm', disabled && 'dim')}>
+        <button type="button" onClick={() => setExpanded((v) => !v)} className="up-perm-main" aria-expanded={expanded}>
+          <span className={cn('up-pchev', expanded && 'open')}>
+            <ProfileIcon name="right" />
+          </span>
+          <span className={cn('up-ptile', checked && 'on')} aria-hidden="true">
+            <ProfileIcon name={permissionIconFor(def.key)} />
+          </span>
+          <span className="up-ptxt">
+            <b>
+              {def.title}
+              {lockedOn ? <Chip tone="green">Locked on</Chip> : null}
+            </b>
+            {expanded ? <small>{def.description}</small> : null}
+          </span>
+        </button>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={checked}
+          aria-label={def.title}
+          disabled={disabled && !lockedMessage}
+          onClick={onSwitch}
+          className={cn('up-sw', checked && 'on', lockedOn && 'locked')}
+        >
+          <i aria-hidden="true" />
+        </button>
+      </div>
+    )
+  }
 
   return (
     <div className={disabled ? 'opacity-60' : ''}>
@@ -49,13 +96,7 @@ export function ProfileExpandablePermissionToggle({
           role="switch"
           aria-checked={checked}
           disabled={disabled && !lockedMessage}
-          onClick={() => {
-            if (lockedMessage) {
-              onLocked?.(lockedMessage)
-              return
-            }
-            if (!disabled) onChange(!checked)
-          }}
+          onClick={onSwitch}
           className={`
             relative inline-flex h-[28px] w-[50px] flex-shrink-0 cursor-pointer items-center
             rounded-full border-2 border-transparent transition-colors duration-200
@@ -133,6 +174,7 @@ export function PermissionRowsList({
   excludeFields,
   lockedMessage,
   onLocked,
+  variant,
 }: {
   rows: ReadonlyArray<{
     field: string
@@ -149,6 +191,8 @@ export function PermissionRowsList({
   excludeFields?: string[]
   lockedMessage?: string
   onLocked?: (message: string) => void
+  /** Passed to each row (`ProfileExpandablePermissionToggle`). */
+  variant?: 'profile'
 }) {
   return (
     <>
@@ -163,6 +207,7 @@ export function PermissionRowsList({
             disabled={disabled || !row.editable}
             lockedMessage={!row.editable && !disabled ? row.note || lockedMessage : undefined}
             onLocked={onLocked}
+            variant={variant}
           />
         ))}
     </>

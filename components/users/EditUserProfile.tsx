@@ -116,7 +116,7 @@ import {
 } from '@/lib/staff/userPermissionDescriptions'
 import { SUPER_ADMIN_SUCCESSOR_EMPTY, superAdminSuccessors } from '@/lib/staff/superAdminTransfer'
 import { displayedLineManagerId, userWithLineManagerChoice } from '@/lib/firebase/userPayload'
-import { Field, FieldGrid, FormSection, SectionBlock, Switch, ToggleRow, ProfileBack, ProfileBand, ProfileBanner, SaveState, type ProfileIconName } from '@/components/users/profile-ui'
+import { Field, FieldGrid, FormSection, SectionBlock, Switch, ToggleRow, ProfileBack, ProfileBand, ProfileBanner, SaveState, ProfileIcon, type ProfileIconName } from '@/components/users/profile-ui'
 import {
   SectionLabel,
   SettingsCard,
@@ -1653,30 +1653,24 @@ export function EditUserProfile({
       )}
 
       {target.isSuperAdmin ? (
-        <>
-          <SectionLabel label="Permissions" />
-          <SettingsCard>
-            <div className="flex items-start gap-3 p-4">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-orange-50 text-orange-600">
-                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                  <path d="M12 2a5 5 0 0 0-5 5v3H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-1V7a5 5 0 0 0-5-5Zm-3 8V7a3 3 0 1 1 6 0v3H9Z" />
-                </svg>
-              </div>
-              <div>
-                <p className="text-[13px] font-semibold text-orange-600">Super Admin</p>
-                <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
-                  The Super Admin&apos;s permissions cannot be changed. Super Admin is passed on with Change Super Admin.
-                </p>
-              </div>
+        <FormSection title="Permissions" icon="shield" tone="blue">
+          <div className="up-lockcard">
+            <span className="up-atile amber" aria-hidden="true">
+              <ProfileIcon name="key" />
+            </span>
+            <div>
+              <b>Super Admin</b>
+              <small>
+                The Super Admin&apos;s permissions cannot be changed. Super Admin is passed on with Change Super Admin.
+              </small>
             </div>
-          </SettingsCard>
-        </>
+          </div>
+        </FormSection>
       ) : canEditMatrix && effectivePermissions ? (
-        <>
-          <SectionLabel label="Permissions" />
-          <SettingsCard>
-            <div className="divide-y divide-slate-100">
+        <FormSection title="Permissions" icon="shield" tone="blue">
+          <div>
               <PermissionRowsList
+                variant="profile"
                 rows={editUserPermissionRows(target, effectiveAccountType, effectivePermissions, currentUser?.id, users)}
                 onChange={updatePermissions}
                 disabled={!canEdit || target.isSuperAdmin}
@@ -1684,10 +1678,9 @@ export function EditUserProfile({
                 lockedMessage={lockedPermissionMessage(effectiveAccountType)}
                 onLocked={setLockedNotice}
               />
-              {lockedNotice ? <p className="px-5 py-3 text-sm text-slate-600">{lockedNotice}</p> : null}
-            </div>
-          </SettingsCard>
-        </>
+          </div>
+          {lockedNotice ? <p className="up-lock-note">{lockedNotice}</p> : null}
+        </FormSection>
       ) : null}
 
       {canEdit && dirty ? (
