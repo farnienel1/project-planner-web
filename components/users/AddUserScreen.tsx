@@ -47,7 +47,7 @@ import {
   lineManagerOptions,
   lineManagerSelectionAfterLevelChange,
 } from '@/lib/canonical/lineManagers'
-import { rulebookRoster } from '@/lib/staff/rulebookPeople'
+import { lineManagerPickerRoster, rulebookRoster } from '@/lib/staff/rulebookPeople'
 import {
   type PermissionToggleDef,
 } from '@/lib/staff/userPermissionDescriptions'
@@ -277,7 +277,7 @@ export function AddUserScreen() {
   // Rulebook §11 `lineManagerCandidates(person, roster)`: the picker list (iOS AddUserView the same).
   const lineManagers = useMemo(() => {
     const byId = new Map(users.map((row) => [row.id, row]))
-    return lineManagerCandidates(invitePerson, users as never)
+    return lineManagerCandidates(invitePerson, lineManagerPickerRoster(users) as never)
       .map((candidate) => byId.get(candidate.id))
       .filter((row): row is (typeof users)[number] => Boolean(row))
   }, [users, invitePerson])
@@ -360,7 +360,7 @@ export function AddUserScreen() {
       roster: users as never,
       claimedEmails,
       nameConfirmed,
-      ghost: ghostDraft ? { draft: ghostDraft, lineManagerRoster: rulebookRoster(users) } : null,
+      ghost: ghostDraft ? { draft: ghostDraft, lineManagerRoster: lineManagerPickerRoster(users) as never } : null,
     })
     if (check.kind === 'refuse') {
       setError(check.message)

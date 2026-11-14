@@ -104,6 +104,17 @@ export function rulebookPerson(user: User, users: ReadonlyArray<User> = []): Rul
   }
 }
 
+/**
+ * The roster the line-manager picker reads (`lineManagerCandidates`) and the ghost save checks against
+ * (`ghostCreateError` / `ghostCreateWrites`): the organisation's `users` rows as stored, so both read the same level
+ * (`permissionLevelOf`). Not `rulebookRoster`: its `role` is the `staffAccountRole` object, which reads a person with
+ * no level flag as operative, while the rulebook (1.23.1) and the picker read them as manager — so a flagless manager
+ * the picker offered was refused on save ("Choose a line manager from the list").
+ */
+export function lineManagerPickerRoster(users: ReadonlyArray<User>): User[] {
+  return (users || []).filter((user) => user && user.id)
+}
+
 /** The organisation roster for the rules: one `rulebookPerson` per `users` row. */
 export function rulebookRoster(users: ReadonlyArray<User>): RulebookPerson[] {
   const list = (users || []).filter((user) => user && user.id)

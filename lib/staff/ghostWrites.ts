@@ -18,7 +18,7 @@ import {
   type GhostDraft,
   type GhostWrite,
 } from '@/lib/canonical'
-import { rulebookRoster } from '@/lib/staff/rulebookPeople'
+import { lineManagerPickerRoster } from '@/lib/staff/rulebookPeople'
 import { loadInviteClaimState } from '@/lib/orgSetup/inviteUserCore'
 import { resolveInviteEmailClaim } from '@/lib/canonical/inviteEmailClaim'
 import type { User } from '@/types'
@@ -37,7 +37,8 @@ export async function createGhostOperative(input: {
   roster: ReadonlyArray<User>
 }): Promise<string> {
   if (!canCreateGhost(input.actor)) throw new Error(GHOST_CREATE_REFUSED_MESSAGE)
-  const roster = rulebookRoster(input.roster)
+  // The same rows the Add user picker offers from (`lineManagerPickerRoster`), so a picked line manager always passes.
+  const roster = lineManagerPickerRoster(input.roster)
   const refusal = ghostCreateError(input.draft, { roster: roster as never })
   if (refusal) throw new Error(refusal)
   await securitySwitchesReady()
