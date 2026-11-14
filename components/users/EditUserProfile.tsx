@@ -116,7 +116,7 @@ import {
 } from '@/lib/staff/userPermissionDescriptions'
 import { SUPER_ADMIN_SUCCESSOR_EMPTY, superAdminSuccessors } from '@/lib/staff/superAdminTransfer'
 import { displayedLineManagerId, userWithLineManagerChoice } from '@/lib/firebase/userPayload'
-import { Field, FieldGrid, FormSection, ProfileBack, ProfileBand, ProfileBanner, SaveState } from '@/components/users/profile-ui'
+import { Field, FieldGrid, FormSection, ProfileBack, ProfileBand, ProfileBanner, SaveState, type ProfileIconName } from '@/components/users/profile-ui'
 import {
   SectionLabel,
   SettingsCard,
@@ -193,6 +193,14 @@ function currentAccountType(user: User): 'operative' | 'manager' | 'admin' {
     manager: user.permissions.manager,
     operativeMode: user.permissions.operativeMode,
   })
+}
+
+/** Icon of the "[Role] setup" section (display only), in the same order as `setupSectionTitle`. */
+export function setupSectionIcon(user: User): ProfileIconName {
+  if (user.isSuperAdmin || user.permissions.adminAccess || user.role === 'admin') return 'shield'
+  if (user.permissions.operativeMode) return 'hat'
+  if (user.permissions.manager) return 'brief'
+  return 'user'
 }
 
 function cloneUser(user: User): User {
@@ -1270,12 +1278,15 @@ export function EditUserProfile({
       </FormSection>
 
       {showSetupCard && (
-        <>
-          <SectionLabel label={setupSectionTitle(target)} />
-          <SettingsCard>
-            <div className="space-y-4 p-4">
+        <FormSection
+          title={setupSectionTitle(target)}
+          icon={setupSectionIcon(target)}
+          tone={target.isSuperAdmin ? 'blue' : 'purple'}
+        >
+          <FieldGrid>
               {(target.permissions.operativeMode || target.permissions.manager || target.permissions.adminAccess) && (
-                <FormField
+                <Field
+                  wide
                   label="Line manager(s)"
                   hint={
                     !mayChangeLineManager
@@ -1304,17 +1315,18 @@ export function EditUserProfile({
                     ))}
                   </Select>
                   {lineManagerError ? (
-                    <p role="alert" className="mt-1.5 text-sm font-medium text-[var(--red,#dc2626)]">
+                    <p role="alert" className="up-err">
                       {lineManagerError}
                     </p>
                   ) : null}
-                </FormField>
+                </Field>
               )}
 
               {/* Rulebook 1.32.0 §8: the rate and its history only for viewers `canViewPersonPay` allows (profile context). */}
               {canViewPersonPay(currentUser as never, target as never, users as never) ? (
-              <div className="grid gap-4 sm:grid-cols-2">
+              <>
                 <PayBasisFields
+                  variant="profile"
                   {...payChoiceFromProfile(target)}
                   placeholder="manage"
                   disabled={!canEdit}
@@ -1324,12 +1336,15 @@ export function EditUserProfile({
                     setTarget({ ...target, ...payChoiceToRates(next.payBasis, next.amount) })
                   }}
                 />
-                <PreviousRatesList entries={previousRateEntries} />
-              </div>
+                {previousRateEntries.length > 0 ? (
+                  <div className="up-f wide">
+                    <PreviousRatesList entries={previousRateEntries} />
+                  </div>
+                ) : null}
+              </>
               ) : null}
 
-              <div className="grid gap-4 sm:grid-cols-2">
-                <FormField label="Trade type">
+              <Field label="Trade type">
                   <Select
                     value={target.tradeTypePreset || ''}
                     disabled={!canEdit}
@@ -1342,27 +1357,23 @@ export function EditUserProfile({
                       </option>
                     ))}
                   </Select>
-                </FormField>
+                </Field>
                 {target.tradeTypePreset === 'Other' && (
-                  <FormField label="Custom trade">
+                  <Field label="Custom trade">
                     <Input
                       value={target.tradeTypeCustom || ''}
                       disabled={!canEdit}
                       onChange={(e) => setTarget({ ...target, tradeTypeCustom: e.target.value })}
                     />
-                  </FormField>
+                  </Field>
                 )}
-              </div>
 
-              <p className="text-sm text-[var(--ink2)]">
+              <p className="up-f-hint" style={{ gridColumn: '1 / -1' }}>
                 Current trade:{' '}
-                <span className="font-medium text-[var(--ink)]">
-                  {displayTradeType(target.tradeTypePreset, target.tradeTypeCustom)}
-                </span>
+                <b>{displayTradeType(target.tradeTypePreset, target.tradeTypeCustom)}</b>
               </p>
-            </div>
-          </SettingsCard>
-        </>
+          </FieldGrid>
+        </FormSection>
       )}
 
       {showQualifications ? (
