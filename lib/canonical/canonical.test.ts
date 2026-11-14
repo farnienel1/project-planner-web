@@ -15324,3 +15324,24 @@ test('1.46.0 review 2: a declined line of an edited booking counts no hours', ()
   assert.equal(totals.hours, 8.5)
   assert.equal(totals.overtimeHours, 0)
 })
+
+test('1.46.0 review 3: payrollLineBookingKey keeps two collections apart; payrollLineReviewKey identifies a review', () => {
+  assert.notEqual(
+    R112.payrollLineBookingKey({ id: 'x-normal', bookingId: 'B1', bookingCollection: 'bookings' }),
+    R112.payrollLineBookingKey({ id: 'y-normal', bookingId: 'b1', bookingCollection: 'managerSiteBookings' })
+  )
+  assert.equal(R112.payrollLineBookingKey({ id: 'op-b1-ot' }), R112.payrollLineBookingKey({ id: 'OP-B1-normal' }))
+  assert.equal(R112.payrollLineReviewKey(null), '')
+  const { edit } = rates146Edit()
+  const sheet = { payrollLineReviews: { a: { decision: 'edited', ...edit.reviewFields.standard }, b: { decision: 'edited', ...edit.reviewFields.standard, revisedAmount: 1 } } }
+  assert.notEqual(R112.payrollLineReviewKey(R112.payrollLineReview(sheet, 'a')), R112.payrollLineReviewKey(R112.payrollLineReview(sheet, 'b')))
+  // A labour booking and a manager site booking sharing an id: only the labour booking has an overtime line, so a
+  // review on the manager site booking's standard line is not made stale by it.
+  const fp = 'fp'
+  const review = { payrollLineReviews: { 'mgr-normal': { decision: 'edited', ...edit.reviewFields.standard, reviewedBookingFingerprint: fp } }, managerSignedAt: '2026-11-20T10:00:00Z' }
+  const lines = [
+    { id: 'mgr-normal', bookingId: 'b1', bookingCollection: 'managerSiteBookings', amount: 250, paidHours: 8.5, dayKey: '2026-11-18', isOvertimeLine: false, bookingFingerprint: fp },
+    { id: 'op-ot', bookingId: 'b1', bookingCollection: 'bookings', amount: 10, paidHours: 1, otMultiplier: 2, dayKey: '2026-11-18', isOvertimeLine: true },
+  ]
+  assert.equal(R112.timesheetInvoiceRows({ sheet: review, payrollLines: lines, extrasMode: 'decided' })[0].amount, 426.47)
+})

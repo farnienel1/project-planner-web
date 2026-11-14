@@ -90,7 +90,20 @@ export type InvoiceLineInput = ReportPayLineInput & {
   /** 1.46.0: an overtime line; the booking it comes from; whether that booking has its own overtime line now. */
   isOvertimeLine?: boolean | null
   bookingId?: string | null
+  /** The booking's collection (`bookings`, `managerSiteBookings`), so two collections sharing an id stay apart. */
+  bookingCollection?: string | null
   bookingHasOvertimeLine?: boolean | null
+}
+
+/**
+ * Rulebook 1.46.0: the key of the booking a payroll line comes from — its collection (when the line carries it) and
+ * `bookingId`, else the line id without its `-normal` / `-ot` suffix; ids without case.
+ */
+export function payrollLineBookingKey(line: { id?: unknown; bookingId?: unknown; bookingCollection?: unknown } | null | undefined): string {
+  if (!line) return ''
+  const id = line.bookingId ? String(line.bookingId) : String(line.id ?? '').replace(/-(?:normal|ot)$/i, '')
+  const collection = typeof line.bookingCollection === 'string' ? line.bookingCollection.trim() : ''
+  return `${collection}|${normalizeDocumentId(id)}`
 }
 
 /**
@@ -250,8 +263,7 @@ export function timesheetInvoiceRows<L extends InvoiceLineInput & { id: string; 
   const labourReviews = input.applyLabourReviews == null ? managerSigned : input.applyLabourReviews === true
   // 1.46.0 (review): which bookings have their own overtime line now (by `bookingId`, else the id without its
   // `-normal` / `-ot` suffix), unless the line says so itself.
-  const groupOf = (line: L) =>
-    normalizeDocumentId(line.bookingId ? String(line.bookingId) : String(line.id).replace(/-(?:normal|ot)$/i, ''))
+  const groupOf = (line: L) => payrollLineBookingKey(line)
   const groupsWithOvertime = new Set(lines.filter((line) => line && line.isOvertimeLine === true).map(groupOf))
   for (const line of invoiceLines(lines)) {
     if (!onCountedDay(line.dayKey)) continue

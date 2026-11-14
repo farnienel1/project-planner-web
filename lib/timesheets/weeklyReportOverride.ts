@@ -25,7 +25,7 @@ import {
 import { emptyDayRateHistory, type OperativeDayRateHistoryCollection } from '@/lib/timesheets/dayRateHistoryStorage'
 import { orgDayHours } from '@/lib/timesheets/payBasis'
 import type { PayrollTimePolicyState } from '@/lib/canonical'
-import { payrollLineReviewSnapshotParts, timesheetSnapshotNeedsRebuild, weekdayPaidHours } from '@/lib/canonical'
+import { payrollLineReviewKey, payrollLineReviewSnapshotParts, timesheetSnapshotNeedsRebuild, weekdayPaidHours } from '@/lib/canonical'
 import type {
   TimesheetDraft,
   TimesheetManagerDecision,
@@ -186,8 +186,14 @@ function makeOverride(input: WeeklyReportOverrideInput, prepared?: ReturnType<ty
   }
   for (const line of summary.lineItems) {
     const review = draftPayrollLineReview(input.draft, line.id, line)
+    // 1.46.0 (third review): each signed line records the booking's state at signing and the review applied, so a later
+    // save tests a review against the sheet as signed (`reapplyReviews`), never against today's bookings.
+    const signedState = {
+      bookingHadOvertimeLine: line.bookingHasOvertimeLine === true,
+      appliedReviewKey: payrollLineReviewKey(review),
+    }
     if (isPayrollLineRemoved(line, input.draft, managerHasSigned, true)) {
-      pushLine(labourLine(line, 'declined', 0, 0, input.managerSiteBookings))
+      pushLine({ ...labourLine(line, 'declined', 0, 0, input.managerSiteBookings), ...signedState })
       continue
     }
     const amount = effectivePayrollAmount(line, input.draft, managerHasSigned, true)
@@ -210,6 +216,7 @@ function makeOverride(input: WeeklyReportOverrideInput, prepared?: ReturnType<ty
         if (part.id !== line.id && liveIds.has(part.id.toLowerCase())) continue
         pushLine({
           ...labourLine(line, 'edited', part.amount, part.paidHours / standard, input.managerSiteBookings),
+          ...signedState,
           id: part.id,
           paidHours: part.paidHours,
           isOvertime: part.isOvertime,
@@ -220,7 +227,7 @@ function makeOverride(input: WeeklyReportOverrideInput, prepared?: ReturnType<ty
       continue
     }
     const days = scaledDays(line, amount, weekdayPaidHours(linePolicy))
-    pushLine(labourLine(line, agreedDecision(review?.decision), amount, days, input.managerSiteBookings))
+    pushLine({ ...labourLine(line, agreedDecision(review?.decision), amount, days, input.managerSiteBookings), ...signedState })
   }
   const money = moneyLines(input.draft, managerHasSigned)
   const viewerName = personName(input.viewer)
@@ -244,23 +251,33 @@ function reapplyReviews(existing: WeeklyReportOverride, input: WeeklyReportOverr
   const money = moneyLines(input.draft, managerHasSigned)
   const viewerName = personName(input.viewer)
   const existingIds = new Set(existing.lines.map((line) => line.id.toLowerCase()))
-  // 1.46.0 (review): a signed line is never re-priced by an Edit hours review made against another version of the
-  // booking — the line keeps what was signed when the review's fingerprint differs from the line's (or the line, signed
-  // before 1.46.0, has none).
+  // 1.46.0 (reviews of #324): a signed line is never re-priced by an Edit hours review that is stale against the sheet
+  // AS SIGNED — the same test as at signing (`payrollLineReview`): the booking fingerprint the line was signed with (a
+  // line signed before 1.46.0 has none, so a fingerprinted review never applies to it), and a standard-line review
+  // carrying overtime while the booking had its own overtime line at signing (`bookingHadOvertimeLine`; a part the
+  // review added itself is not such a line). A review that is the one applied at signing (`appliedReviewKey`) changes
+  // nothing.
   const reviewFor = (line: WeeklyReportLabourLine) => {
-    const stored = draftPayrollLineReview(input.draft, line.id)
-    return stored?.reviewedBookingFingerprint && stored.reviewedBookingFingerprint !== (line.bookingFingerprint ?? '') ? null : stored
+    const review = draftPayrollLineReview(input.draft, line.id, {
+      bookingFingerprint: line.bookingFingerprint ?? '',
+      isOvertimeLine: line.isOvertime,
+      bookingHasOvertimeLine: line.bookingHadOvertimeLine === true,
+    })
+    if (review && line.appliedReviewKey != null && payrollLineReviewKey(review) === line.appliedReviewKey) return 'unchanged' as const
+    return review
   }
   // Rulebook 1.46.0: an Edit hours review signs the hours and money of each part (`payrollLineReviewSnapshotParts`),
-  // applied to the snapshot line of that id — including a `{booking}-ot` line added for a standard line's overtime.
+  // applied to the snapshot line of that id — including a `{booking}-ot` line added for a standard line's overtime. When
+  // two reviews give a part of one id, the line's own review wins, else the first line in snapshot order.
   const partsFrom = new Map<string, WeeklyReportLabourLine[]>()
-  const partById = new Map<string, WeeklyReportLabourLine>()
+  const partById = new Map<string, { row: WeeklyReportLabourLine; own: boolean }>()
   for (const line of existing.lines) {
     const review = reviewFor(line)
-    if (!review || review.decision === 'declined') continue
+    if (!review || review === 'unchanged' || review.decision === 'declined') continue
     const parts = payrollLineReviewSnapshotParts({ id: line.id, isOvertimeLine: line.isOvertime }, review)
     if (!parts) continue
     const standardDay = line.days > 0.0001 && line.paidHours > 0 ? line.paidHours / line.days : null
+    const appliedReviewKey = payrollLineReviewKey(review)
     const rows = parts.map((part) => ({
       ...line,
       id: part.id,
@@ -270,23 +287,36 @@ function reapplyReviews(existing: WeeklyReportOverride, input: WeeklyReportOverr
       isOvertime: part.isOvertime,
       otMultiplier: part.isOvertime ? part.otMultiplier : null,
       decision: 'edited' as const,
+      appliedReviewKey,
     }))
     partsFrom.set(line.id.toLowerCase(), rows)
-    for (const row of rows) partById.set(row.id.toLowerCase(), row)
+    for (const row of rows) {
+      const key = row.id.toLowerCase()
+      const own = key === line.id.toLowerCase()
+      const held = partById.get(key)
+      if (held && (held.own || !own)) continue
+      partById.set(key, { row, own })
+    }
   }
   const lines = existing.lines.flatMap((line): WeeklyReportLabourLine[] => {
     const review = reviewFor(line)
+    if (review === 'unchanged') return [line]
     const decision = review?.decision ?? line.decision
     if (decision === 'declined') {
-      return [{ ...line, amount: 0, days: 0, decision: 'declined' as const }]
+      return [{ ...line, amount: 0, days: 0, decision: 'declined' as const, appliedReviewKey: payrollLineReviewKey(review) }]
     }
     const added = (partsFrom.get(line.id.toLowerCase()) ?? []).filter((row) => !existingIds.has(row.id.toLowerCase()))
     const part = partById.get(line.id.toLowerCase())
-    if (part) return [{ ...part, bookingFingerprint: line.bookingFingerprint }, ...added]
-    if (decision === 'edited' && typeof review?.revisedAmount === 'number') {
+    if (part) {
+      return [
+        { ...part.row, bookingFingerprint: line.bookingFingerprint, bookingHadOvertimeLine: line.bookingHadOvertimeLine },
+        ...added,
+      ]
+    }
+    if (decision === 'edited' && review && typeof review.revisedAmount === 'number') {
       const revised = review.revisedAmount
       const days = line.amount > 0.0001 ? line.days * (revised / line.amount) : line.days
-      return [{ ...line, days, amount: revised, decision: 'edited' as const }]
+      return [{ ...line, days, amount: revised, decision: 'edited' as const, appliedReviewKey: payrollLineReviewKey(review) }]
     }
     return [{ ...line, decision: agreedDecision(decision) }, ...added]
   })

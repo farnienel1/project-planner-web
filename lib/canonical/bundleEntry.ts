@@ -899,7 +899,8 @@ export { IDEMPOTENT_MIGRATION_WRITES } from './liveSources'
 
 // Rulebook 1.10.0 (hunt C): invoice rows, payroll line reviews, invite accept plan, timesheet participants, pay maths.
 export { timesheetInvoiceRows } from './reportPay'
-export { payrollLineReview } from './timesheetEntryReviews'
+export { payrollLineReview, payrollLineReviewKey } from './timesheetEntryReviews'
+export type { PayrollLineLiveBooking } from './timesheetEntryReviews'
 export { inviteAcceptWrites } from './inviteAccept'
 export { timesheetParticipant } from './peopleDocuments'
 export { orgDayHours, payForHours, roundPennies } from './payRate'
@@ -1492,3 +1493,4 @@ export type {
   RevisedPayrollLineAmounts,
   RevisedPayrollLineInput,
 } from './timesheetLineEdit'
+export { payrollLineBookingKey } from './reportPay'

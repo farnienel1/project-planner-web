@@ -644,4 +644,29 @@ test('1.46.0 review: a working-hours change that gives the booking its own overt
   assert.equal(new Set(lines.map((line) => line.id)).size, lines.length)
   // The live booking under 07:00–16:00: 250 + 3h × 2 = 426.47 — the stale review is not paid on top.
   assert.equal(labourTotal146(signed), 426.47)
+  assert.equal(reviews['op-b1-normal'].revisedAmount, 293.48)
+  // Saved again after signing (third review of #324): the review is tested against the sheet as signed, so the
+  // signed 426.47 holds — never re-priced down to the stale 293.48.
+  const next = applyWeeklyReportOverride({ ...base146, bookings: now, draft: signed })
+  assert.equal(labourTotal146(next), 426.47)
+  assert.deepEqual(
+    next.weeklyReportOverride?.lines.map((line) => [line.id, line.amount]),
+    signed.weeklyReportOverride?.lines.map((line) => [line.id, line.amount])
+  )
+  // And after a round trip through Firestore.
+  const stored = weeklyReportOverrideFromFirestore(weeklyReportOverrideToFirestore(signed.weeklyReportOverride!))
+  const again = applyWeeklyReportOverride({ ...base146, bookings: now, draft: { ...signed, weeklyReportOverride: stored } })
+  assert.equal(labourTotal146(again), 426.47)
+})
+
+test('1.46.0 review 3: a review changed after signing is applied once; the same review again changes nothing', () => {
+  const now = [booking146('07:00', '16:00')]
+  const signed = applyWeeklyReportOverride({ ...base146, bookings: now, draft: { ...emptyTimesheetDraft(), ...signed146 } })
+  assert.equal(labourTotal146(signed), 250)
+  // A review written after counter-signing still re-prices the signed sheet (as before 1.46.0; an owner question).
+  const reviews = editReviews146(now, '07:00', '19:00')
+  const edited = applyWeeklyReportOverride({ ...base146, bookings: now, draft: { ...signed, payrollLineReviews: reviews } })
+  assert.equal(labourTotal146(edited), 426.47)
+  const again = applyWeeklyReportOverride({ ...base146, bookings: now, draft: edited })
+  assert.deepEqual(again.weeklyReportOverride?.lines, edited.weeklyReportOverride?.lines)
 })

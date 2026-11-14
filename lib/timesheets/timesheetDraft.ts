@@ -75,6 +75,10 @@ export type WeeklyReportLabourLine = {
    * review made against another version of the booking is never applied to the signed line.
    */
   bookingFingerprint?: string | null
+  /** Rulebook 1.46.0: whether the booking had its own overtime line on the sheet when signed (a review's added part is not). */
+  bookingHadOvertimeLine?: boolean
+  /** Rulebook 1.46.0: `payrollLineReviewKey` of the review applied when the line was signed ('' when none). */
+  appliedReviewKey?: string | null
 }
 
 /** Shared with iOS `TimesheetWeeklyReportMoneyLine`. */

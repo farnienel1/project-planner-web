@@ -539,8 +539,30 @@ export type PayrollLineReview = {
 }
 
 /**
+ * Rulebook 1.46.0: the identity of a review as it applies to a line — its decision, amount, the Edit hours fields and
+ * the booking fingerprint — so a signed snapshot line can record which review was applied when it was signed
+ * (`appliedReviewKey`) and a later save re-applies a review only when it is a different one. '' for no review.
+ */
+export function payrollLineReviewKey(review: PayrollLineReview | null | undefined): string {
+  if (!review) return ''
+  const n = (value: number | null | undefined) => (typeof value === 'number' && Number.isFinite(value) ? String(value) : '')
+  return [
+    review.decision,
+    n(review.revisedAmount),
+    n(review.revisedStandardHours),
+    n(review.revisedOvertimeHours),
+    n(review.revisedOvertimeClockHours),
+    n(review.revisedOvertimeMultiplier),
+    n(review.revisedStandardAmount),
+    n(review.revisedOvertimeAmount),
+    review.reviewedBookingFingerprint ?? '',
+  ].join('|')
+}
+
+/**
  * A live payroll line as the review is checked against it: the booking's fingerprint as it is now, whether the line is
- * an overtime line, and whether the booking now has its own overtime line on the sheet.
+ * an overtime line, and whether the booking now has its own overtime line on the sheet. A signed snapshot line is
+ * checked the same way with the values it was signed with (`bookingFingerprint`, `bookingHadOvertimeLine`).
  */
 export type PayrollLineLiveBooking = {
   bookingFingerprint?: string | null

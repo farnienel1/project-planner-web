@@ -15,7 +15,7 @@
 import { roundPennies } from './payRate'
 import { normalizeDocumentId } from './scheduleSources'
 import { payrollLineReview, timesheetEntryDecision, timesheetTrustedFingerprint } from './timesheetEntryReviews'
-import { timesheetInvoiceRows, type InvoiceLineInput, type TimesheetInvoiceRowsInput } from './reportPay'
+import { payrollLineBookingKey, timesheetInvoiceRows, type InvoiceLineInput, type TimesheetInvoiceRowsInput } from './reportPay'
 
 /** One payroll line as each app's collector builds it (web `TimesheetPayrollLineItem`, iOS `TimesheetPayrollLine`). */
 export type TimesheetTotalsLine = InvoiceLineInput & {
@@ -135,8 +135,7 @@ export function timesheetTotals<L extends TimesheetTotalsLine>(input: TimesheetT
       reviewedLines.set(normalizeDocumentId(row.id), row.review)
     }
   }
-  const groupOf = (line: TimesheetTotalsLine) =>
-    normalizeDocumentId(line.bookingId ? String(line.bookingId) : String(line.id).replace(/-(?:normal|ot)$/i, ''))
+  const groupOf = (line: TimesheetTotalsLine) => payrollLineBookingKey(line)
   const reviewedGroups = new Set<string>()
   for (const line of input.payrollLines || []) {
     if (line && reviewedLines.has(normalizeDocumentId(line.id))) reviewedGroups.add(groupOf(line))

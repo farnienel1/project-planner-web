@@ -195,6 +195,8 @@ function mapLabourLine(row: Record<string, unknown>): WeeklyReportLabourLine | n
     bookingId,
     // 1.46.0: the booking as signed, so a later Edit hours review of another version never re-prices the line.
     ...(typeof row.bookingFingerprint === 'string' && row.bookingFingerprint ? { bookingFingerprint: row.bookingFingerprint } : {}),
+    ...(typeof row.bookingHadOvertimeLine === 'boolean' ? { bookingHadOvertimeLine: row.bookingHadOvertimeLine } : {}),
+    ...(typeof row.appliedReviewKey === 'string' ? { appliedReviewKey: row.appliedReviewKey } : {}),
   }
 }
 
@@ -254,6 +256,8 @@ export function weeklyReportOverrideToFirestore(override: WeeklyReportOverride):
       decision: line.decision,
       bookingId: line.bookingId || '',
       ...(line.bookingFingerprint ? { bookingFingerprint: line.bookingFingerprint } : {}),
+      ...(line.bookingHadOvertimeLine != null ? { bookingHadOvertimeLine: line.bookingHadOvertimeLine } : {}),
+      ...(line.appliedReviewKey != null ? { appliedReviewKey: line.appliedReviewKey } : {}),
     })),
     priceWork: override.priceWork.map(money),
     expenses: override.expenses.map(money),

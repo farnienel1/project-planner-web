@@ -1326,8 +1326,10 @@ var ProjectPlannerCanonical = (() => {
     payrollDayKeyFromValue: () => payrollDayKeyFromValue,
     payrollDayWindows: () => payrollDayWindows,
     payrollHoursResult: () => payrollHoursResult,
+    payrollLineBookingKey: () => payrollLineBookingKey,
     payrollLineClockRanges: () => payrollLineClockRanges,
     payrollLineReview: () => payrollLineReview,
+    payrollLineReviewKey: () => payrollLineReviewKey,
     payrollLineReviewSnapshotParts: () => payrollLineReviewSnapshotParts,
     payrollMultipliedHours: () => payrollMultipliedHours,
     payrollOutsideClockHours: () => payrollOutsideClockHours,
@@ -11254,6 +11256,21 @@ var ProjectPlannerCanonical = (() => {
     };
     return documentWriteFields(strip(base) ?? null, strip(next) ?? {}, { createOnly: ["userId"] });
   }
+  function payrollLineReviewKey(review) {
+    if (!review) return "";
+    const n = (value) => typeof value === "number" && Number.isFinite(value) ? String(value) : "";
+    return [
+      review.decision,
+      n(review.revisedAmount),
+      n(review.revisedStandardHours),
+      n(review.revisedOvertimeHours),
+      n(review.revisedOvertimeClockHours),
+      n(review.revisedOvertimeMultiplier),
+      n(review.revisedStandardAmount),
+      n(review.revisedOvertimeAmount),
+      review.reviewedBookingFingerprint ?? ""
+    ].join("|");
+  }
   function payrollLineReview(sheet, lineId, live) {
     const raw = sheet && typeof sheet === "object" ? sheet.payrollLineReviews : null;
     if (!raw || typeof raw !== "object") return null;
@@ -11320,6 +11337,12 @@ var ProjectPlannerCanonical = (() => {
     }
     return { pay: reportPayTotal(lines), label: null, countsTowardPayTotal: true };
   }
+  function payrollLineBookingKey(line) {
+    if (!line) return "";
+    const id2 = line.bookingId ? String(line.bookingId) : String(line.id ?? "").replace(/-(?:normal|ot)$/i, "");
+    const collection = typeof line.bookingCollection === "string" ? line.bookingCollection.trim() : "";
+    return `${collection}|${normalizeDocumentId(id2)}`;
+  }
   function isInvoiceLine(line) {
     if (!line) return false;
     if (line.isPayeDay === true || lineIsPaye(line)) return false;
@@ -11382,7 +11405,7 @@ var ProjectPlannerCanonical = (() => {
     const decided = input.extrasMode === "decided";
     const managerSigned = parseTimesheetStatusFields(sheet).managerSignedAtMs != null;
     const labourReviews = input.applyLabourReviews == null ? managerSigned : input.applyLabourReviews === true;
-    const groupOf = (line) => normalizeDocumentId(line.bookingId ? String(line.bookingId) : String(line.id).replace(/-(?:normal|ot)$/i, ""));
+    const groupOf = (line) => payrollLineBookingKey(line);
     const groupsWithOvertime = new Set(lines.filter((line) => line && line.isOvertimeLine === true).map(groupOf));
     for (const line of invoiceLines(lines)) {
       if (!onCountedDay(line.dayKey)) continue;
@@ -11724,7 +11747,7 @@ var ProjectPlannerCanonical = (() => {
   function rulebookStamp() {
     return {
       version: true ? "1.46.0" : "",
-      sha256: true ? "bbf98143ea95da68d50ddecc3d50fbe8f630086a8e82156313a565c368a27775" : ""
+      sha256: true ? "9d1912f8c860c0e0237cc40270ae982c2174c67a83d93e05ef561b34c0720608" : ""
     };
   }
   function rulebookVersionLabel(version) {
@@ -18035,7 +18058,7 @@ var ProjectPlannerCanonical = (() => {
         reviewedLines.set(normalizeDocumentId(row2.id), row2.review);
       }
     }
-    const groupOf = (line) => normalizeDocumentId(line.bookingId ? String(line.bookingId) : String(line.id).replace(/-(?:normal|ot)$/i, ""));
+    const groupOf = (line) => payrollLineBookingKey(line);
     const reviewedGroups = /* @__PURE__ */ new Set();
     for (const line of input.payrollLines || []) {
       if (line && reviewedLines.has(normalizeDocumentId(line.id))) reviewedGroups.add(groupOf(line));

@@ -15,6 +15,7 @@ import {
   timesheetEntryReviewWriteFields,
   timesheetEntryReviewsAfterWrite,
   timesheetEntryFingerprintMap,
+  type PayrollLineLiveBooking,
   type PayrollLineReview,
 } from '@/lib/canonical/timesheetEntryReviews'
 import { timesheetTotals, type TimesheetTotals } from '@/lib/canonical/timesheetTotals'
@@ -27,7 +28,7 @@ export function draftPayrollLineReview(
   draft: TimesheetDraft,
   lineId: string | null | undefined,
   /** 1.46.0: the live line, so a review made against an older version of the booking reads as pending (stale). */
-  live?: { bookingFingerprint?: string | null } | null
+  live?: PayrollLineLiveBooking | null
 ): PayrollLineReview | null {
   return payrollLineReview(draft as unknown as Record<string, unknown>, lineId, live)
 }

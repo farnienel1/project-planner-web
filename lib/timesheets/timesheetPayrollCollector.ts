@@ -96,6 +96,8 @@ export type TimesheetPayrollLineItem = {
   bookingFingerprint?: string
   /** Rulebook 1.46.0 (never stored): whether this line's booking has its own overtime line on the sheet. */
   bookingHasOvertimeLine?: boolean
+  /** Rulebook 1.46.0 (never stored): the booking's collection, so a labour and a manager site booking never group. */
+  bookingCollection?: string
   /** Rulebook 1.43.0 (rebuild check only, never stored): when the line's booking was created and last written. */
   bookingCreatedAt?: Date
   bookingUpdatedAt?: Date
@@ -387,6 +389,7 @@ export function collectTimesheetPayroll({
       ...(workStartTime && workEndTime ? { bookingStartTime: workStartTime, bookingEndTime: workEndTime, bookingBreakRemoved: isBreakRemoved === true } : {}),
       ...(otMultiplierOverride != null ? { bookingOtMultiplierOverride: otMultiplierOverride } : {}),
         bookingFingerprint,
+        bookingCollection: idPrefix === 'mgr' ? 'managerSiteBookings' : 'bookings',
       ...(bookingCreatedAt instanceof Date && !Number.isNaN(bookingCreatedAt.getTime()) ? { bookingCreatedAt } : {}),
       ...(bookingUpdatedAt instanceof Date && !Number.isNaN(bookingUpdatedAt.getTime()) ? { bookingUpdatedAt } : {}),
       dayKey: lineDayKey,
@@ -416,6 +419,7 @@ export function collectTimesheetPayroll({
         ...(workStartTime && workEndTime ? { bookingStartTime: workStartTime, bookingEndTime: workEndTime, bookingBreakRemoved: isBreakRemoved === true } : {}),
         ...(otMultiplierOverride != null ? { bookingOtMultiplierOverride: otMultiplierOverride } : {}),
         bookingFingerprint,
+        bookingCollection: idPrefix === 'mgr' ? 'managerSiteBookings' : 'bookings',
         ...(bookingCreatedAt instanceof Date && !Number.isNaN(bookingCreatedAt.getTime()) ? { bookingCreatedAt } : {}),
         ...(bookingUpdatedAt instanceof Date && !Number.isNaN(bookingUpdatedAt.getTime()) ? { bookingUpdatedAt } : {}),
         dayKey: lineDayKey,
