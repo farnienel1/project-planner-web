@@ -411,6 +411,34 @@ UI only, web only (`docs/design/web-pages-ui/web-pages-ui-spec.md`; branch `w-ui
 | 12 Nov | Daily overview: "Daily overview" stays the page's heading (h1), shown in the band's small top line with the date (spec §4.1), also while loading; the booked line is a paragraph styled as the title; "· Tap to change booking" is no longer shown under each row — the row and its **Change** button open the same booking sheet (spec §4.1); the "Where the team is" legend adds "N Unbooked" (the same count as the header); a half-day booking's Type chip reads "Half day" (the scheduling legend's word); the Type and Hours column headers are new; the Overtime figure is amber and the Unbooked figure turns red when above 0 (spec §4.1); the bar runs on site, office, WFH, then unbooked in red stripes (before: office, WFH, on site; the legend keeps Office, WFH, On site), with fixed colours on the navy band (`--pu-team-*` tokens). | done, owner to confirm |
 | 12 Nov | Daily overview: a person with two bookings on one job is still one row (as today). The Booking column lists each booking's shift and times, skipping one that reads the same as what is shown (as the old subtitle did). The Type chip adds the hours up first (`scheduleCellHours` summed, then `scheduleCellKind`); when every booking of the row has the same stored slot that slot is passed too (AM + AM stays "Half day", an OVERTIME slot stays "OT only"); when the slots differ the summed hours alone decide. | done, owner to confirm |
 
+## 14 Nov decisions (User profile and Edit user restyle, UI only)
+
+UI only, web only (`docs/design/user-profile-ui/user-profile-ui-spec.md`; branch `w-ui-user-profile`). Owner answered "yes to all" to the Phase 1 recommendations.
+
+| Date | Decision | Status |
+|---|---|---|
+| 14 Nov | **P1** Only the User profile and Edit user pages change. Shared components (`OperativeQualificationsEditor`, `ProfileExpandablePermissionToggle` / `PermissionRowsList`, `PayBasisFields`, `GhostAppAccessCard`) get an opt-in `variant="profile"`; everywhere else they look as today. `components/settings/primitives/*` and `RouteLoading` are not touched. | done web (w-ui-user-profile) |
+| 14 Nov | **P2** The qualifications Add qualifications / Save / Saved bar stays where it is (sticky on mobile), restyled. | done web (w-ui-user-profile) |
+| 14 Nov | **P3** Both Save controls stay: the band keeps the Save button / "No changes" / "View only" in the old header position, and the lower Save button stays, restyled. | done web (w-ui-user-profile) |
+| 14 Nov | **P4** Employment type stays a dropdown (restyled), same options in the same order. | done web (w-ui-user-profile) |
+| 14 Nov | **P5** No certificate status chip on the profile page (it would need a new read). | done web (w-ui-user-profile: the expiry text shows as a chip instead) |
+| 14 Nov | **P6** Band figures are display only; Employment and Rate keep the `canViewPersonPay` gate; the line manager shows as today. | done web (w-ui-user-profile) |
+| 14 Nov | **P7** Everything spec §3 did not list is kept in its nearest section in the new style with identical behaviour and text: resend sign-up email, View only, User not found, Pending chip, every banner (reports block, account type out of sync, saving, type change pending), Previous rates, rate and line-manager errors, Custom trade, VAT / UTR extras, the fix-email form, the draft permission list in Change user type, the operatives-manager Deactivate / Delete operative rows, every dialog, the qualification extras, the ghost Give app access card, the lower Save and "Administrator setup". | done web (w-ui-user-profile) |
+| 14 Nov | **P8** The ghost's Edit user header chip stays as today (Verified / Pending from `passwordSet`). | done web (w-ui-user-profile) |
+| 14 Nov | **P9** "Annual leave in app" and "Annual leave" content kept exactly; merging them into one section is allowed. | done web (w-ui-user-profile: one section titled "Annual leave") |
+| 14 Nov | **P10** 240px left-column settings layout at ≥1024px; the page widens. Dark mode with matching tokens and AA contrast. | done web (w-ui-user-profile: page up to 1180px) |
+
+## User profile restyle judgement calls (owner to confirm)
+
+| Date | Choice | Status |
+|---|---|---|
+| 14 Nov | The merged annual leave section is titled "Annual leave" (spec §3.2 recommendation), so the heading "Annual leave in app" is no longer shown; the section and its title show whenever the allowance toggle showed before, and the fields only while it is on, as before. | done, owner to confirm |
+| 14 Nov | New display text from the spec: the profile band's top line "User profile", the qualification card's "Choose file" (the browser's own "Choose File / No file chosen" no longer shows; a chosen file still shows in the existing "Ready to upload" block), a "Locked on" chip on locked permission rows that are on (every locked admin row shows it), "days remaining" under the large remaining figure, and a ✓ in the "Certificate uploaded" chip. | done, owner to confirm |
+| 14 Nov | The profile page's qualification rows show the existing expiry text ("Expires …" / "No expiry") as a chip on the right (P5: no certificate status). | done, owner to confirm |
+| 14 Nov | Account actions keep today's order: when Change user type is open, the chooser panel sits above the Change Super Admin / Change user type rows and the Change user type row stays visible (the reference hid it). | done, owner to confirm |
+| 14 Nov | No "Pay" label above the pay row (the reference had one; it would be new text). Previous rates sit full width under the pay row. | done, owner to confirm |
+| 14 Nov | Accessibility only: switches carry their row title as a label, permission rows say whether they are expanded, and the three confirmation dialogs are marked as dialogs. No handler or text changed. | done, owner to confirm |
+
 ## 1.40.0 judgement calls (owner to confirm)
 
 | Date | Choice | Status |
