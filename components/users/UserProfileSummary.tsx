@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { usePendingNavigation } from '@/lib/navigation/usePendingNavigation'
-import { RouteLoading } from '@/components/shell/RouteLoading'
+import { UserProfileSkeleton } from '@/components/users/profile-ui/skeletons'
 import { format } from 'date-fns'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
@@ -114,7 +114,7 @@ export function UserProfileSummary({
     return users.find((row) => row.id === target.assignedManagerUserId) || null
   }, [users, target?.assignedManagerUserId])
 
-  if (loading) return <RouteLoading />
+  if (loading) return <UserProfileSkeleton />
 
   if (!target) {
     return (

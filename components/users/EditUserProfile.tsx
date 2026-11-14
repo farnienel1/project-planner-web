@@ -5,7 +5,7 @@ import { reseedUntouchedPayFields, watchPayEditorPrivatePay, withPayFieldsFrom }
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { usePendingNavigation } from '@/lib/navigation/usePendingNavigation'
-import { RouteLoading } from '@/components/shell/RouteLoading'
+import { EditUserSkeleton } from '@/components/users/profile-ui/skeletons'
 import { format } from 'date-fns'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
@@ -1102,7 +1102,7 @@ export function EditUserProfile({
     }
   }
 
-  if (loading) return <RouteLoading variant="form" />
+  if (loading) return <EditUserSkeleton />
 
   if (!target) {
     return (

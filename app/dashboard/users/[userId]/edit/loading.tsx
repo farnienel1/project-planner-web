@@ -1,5 +1,5 @@
-import { RouteLoading } from '@/components/shell/RouteLoading'
+import { EditUserSkeleton } from '@/components/users/profile-ui/skeletons'
 
 export default function Loading() {
-  return <RouteLoading variant="form" />
+  return <EditUserSkeleton />
 }
