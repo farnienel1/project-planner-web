@@ -442,6 +442,7 @@ export function ScheduleOperativeForm({
           onDateSlotsChange={setDateSlots}
           onSlotChange={handleSlotChange}
           onRemoveDate={handleRemoveDate}
+          otMultiplierOverride={customRate}
         />
       )}
       {step === 'dates' && firstCustomSlot ? (
@@ -474,6 +475,7 @@ export function ScheduleOperativeForm({
           }
           onAddAnother={goToPickPerson}
           onChangeDates={goToDates}
+          otMultiplierOverride={customRate}
         />
       )}
 

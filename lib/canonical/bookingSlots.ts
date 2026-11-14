@@ -314,9 +314,12 @@ export function weekendBookingBreakdown(
   start: string | null | undefined,
   end: string | null | undefined,
   isBreakRemoved: boolean | null | undefined,
-  timeZone?: string | null
+  timeZone?: string | null,
+  otMultiplierOverride?: number | null
 ): BookingDayBreakdownRow[] {
   if (!policy) return []
+  // 1.43.0 §25: a booking's own overtime rate prices its hours at the multiplier (missing = the organisation's).
+  const ownRate = Number(otMultiplierOverride) > 0 ? Number(otMultiplierOverride) : null
   const startMinutes = parseClockMinutes(start)
   const endMinutes = parseClockMinutes(end)
   if (startMinutes == null || endMinutes == null || startMinutes === endMinutes) return []
@@ -329,7 +332,13 @@ export function weekendBookingBreakdown(
     const dayPolicy = isPolicyState(policy) ? payrollTimePolicyForDayFromState(policy, dayKey) : policy
     const iso = isoWeekdayOf(dayKey, timeZone)
     const paid = payrollHoursResult({
-      booking: { timeSlot: 'CUSTOM_HOURS', workStartTime: startText, workEndTime: endText, isBreakRemoved: isBreakRemoved === true },
+      booking: {
+        timeSlot: 'CUSTOM_HOURS',
+        workStartTime: startText,
+        workEndTime: endText,
+        isBreakRemoved: isBreakRemoved === true,
+        ...(ownRate != null ? { otMultiplierOverride: ownRate } : {}),
+      },
       dayKey,
       policy: dayPolicy,
       timeZone,
@@ -395,7 +404,7 @@ export function weekendBookingBreakdown(
     const explained = bookingHoursExplanation(
       dayPolicy,
       dayKey,
-      { timeSlot: 'CUSTOM_HOURS', workStartTime: startText, workEndTime: endText, isBreakRemoved: isBreakRemoved === true },
+      { timeSlot: 'CUSTOM_HOURS', workStartTime: startText, workEndTime: endText, isBreakRemoved: isBreakRemoved === true, otMultiplierOverride: ownRate },
       timeZone
     )
     return {

@@ -1749,7 +1749,7 @@ service cloud.firestore {
           return (next == null || timesheetIdIsCallers(next)) && (
             resource == null ||
             next == resource.data.get('userId', null) ||
-            (resource.data.get('userId', null) == null && next == request.auth.uid)
+            (resource.data.get('userId', null) == null && next is string && settingId.matches('^timesheet_' + next + '_.*'))
           );
         }
         function timesheetSelfSignedOwnerWrite() {
@@ -1819,7 +1819,7 @@ service cloud.firestore {
             ));
         }
 
-        allow read: if canAccessOrganization(organizationId) &&
+        allow read: if canAccessOrganization(organizationId) && ((resource.data.get('userId', null) == request.auth.uid && (request.method == 'list' || settingId.matches('^timesheet_.*'))) ||
           (!(settingId.matches('^variations_.*') || settingId.matches('^variationItem_.*')) || canAccessVariationsStaff(organizationId)) &&
           (!settingId.matches('^timesheet_.*') || (!privatePayOn(organizationId) || (request.auth != null && (
             (resource != null && 'userId' in resource.data && resource.data.userId == request.auth.uid) ||
@@ -1830,7 +1830,7 @@ service cloud.firestore {
           )) ||
             orgAdminEither(organizationId) || isPlatformOwner() ||
             (timesheetSubjectUid() is string && canViewPayOfAsMember(timesheetSubjectUid())) ||
-            (isPlatformOwner() || (!timesheetCallerIsSubject() && timesheetReviewerOfOthers()))));
+            (isPlatformOwner() || (!timesheetCallerIsSubject() && timesheetReviewerOfOthers())))));
         allow create, update, delete: if canAccessOrganization(organizationId) && (
           (request.method != 'delete') ? ((
           (settingId.matches('^timesheet_.*'))
@@ -1846,9 +1846,10 @@ service cloud.firestore {
               timesheetSelfSignedOwnerWrite()
             )
           ) : timesheetReviewerOfOthers()))
-            : ((settingId.matches('^deadlines_.*') ||
+            : (request.resource.data.get('userId', null) == (resource == null ? null : resource.data.get('userId', null)) &&
+              ((settingId.matches('^deadlines_.*') ||
             settingId == 'deadlineAssignments' ||
-            settingId.matches('^healthSafety_.*')) || canAccessVariationsStaff(organizationId))
+            settingId.matches('^healthSafety_.*')) || canAccessVariationsStaff(organizationId)))
         )) : ((
           (settingId.matches('^timesheet_.*'))
             ? (isPlatformOwner() || (timesheetCallerIsSubject() ? (

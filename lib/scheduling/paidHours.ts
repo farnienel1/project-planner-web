@@ -10,7 +10,7 @@
  * the previous custom span.
  */
 
-import { payrollHoursResult, payrollOutsideClockHours, weekdayPaidHours, type PayrollHoursResult } from '@/lib/canonical'
+import { payrollHoursResult, payrollLineClockRanges, payrollOutsideClockHours, weekdayPaidHours, type PayrollHoursResult } from '@/lib/canonical'
 import { DEFAULT_PAYROLL_POLICY, type OrgPayrollTimePolicy } from '@/lib/canonical/organizationSettings'
 import { dayKey as londonDayKey, londonMinutesOfDay } from '@/lib/ios-parity/londonTime'
 
@@ -214,59 +214,6 @@ function overlapMinutes(a0: number, a1: number, b0: number, b1: number): number 
   return Math.max(0, Math.min(a1, b1) - Math.max(a0, b0))
 }
 
-export type OvertimeSegment = { start: number; end: number }
-
-export function overtimeSegments(input: {
-  timeSlot?: string
-  workStartTime?: string
-  workEndTime?: string
-  standardDayStart?: string
-  standardDayEnd?: string
-}): OvertimeSegment[] {
-  const kind = namedSlotKind(input.timeSlot)
-  if (kind === 'am' || kind === 'pm' || kind === 'full' || kind === 'evening') return []
-  const start = parseMinutes(input.workStartTime)
-  const end = parseMinutes(input.workEndTime)
-  if (start == null || end == null || end === start) return []
-  const span = workSpan(start, end)
-  const windowStart = parseMinutes(input.standardDayStart || FALLBACK_DAY_START) ?? 7 * 60 + 30
-  const windowEnd = parseMinutes(input.standardDayEnd || FALLBACK_DAY_END) ?? 16 * 60
-  const segments: OvertimeSegment[] = []
-  if (span.start < windowStart) {
-    segments.push({ start: span.start, end: Math.min(span.end, windowStart) })
-  }
-  if (span.end > windowEnd) {
-    segments.push({ start: Math.max(span.start, windowEnd), end: span.end })
-  }
-  return segments.filter((seg) => seg.end > seg.start)
-}
-
-export function overtimeSegmentsLabel(input: {
-  timeSlot?: string
-  workStartTime?: string
-  workEndTime?: string
-  standardDayStart?: string
-  standardDayEnd?: string
-}): string | null {
-  const segments = overtimeSegments(input)
-  if (segments.length === 0) return null
-  return segments
-    .map((seg) => `${formatClockFromMinutes(seg.start)} - ${formatClockFromMinutes(seg.end)}`)
-    .join(' + ')
-}
-
-/** Raw overtime hours outside the standard window — not the already-multiplied equivalent. */
-export function overtimeRawHours(input: {
-  timeSlot?: string
-  workStartTime?: string
-  workEndTime?: string
-  standardDayStart?: string
-  standardDayEnd?: string
-}): number {
-  const ot = overtimeSegments(input).reduce((sum, seg) => sum + (seg.end - seg.start), 0)
-  return Math.max(0, ot / 60)
-}
-
 export function formatOvertimeEquation(rawHours: number, multiplier = FALLBACK_OT_MULTIPLIER): string {
   const equivalent = Math.round(rawHours * multiplier * 100) / 100
   return `${formatHoursLabel(rawHours)} × ${formatHoursLabel(multiplier)} = ${formatHoursLabel(equivalent)}`
@@ -317,7 +264,9 @@ export function hoursBreakdown(input: BookingHoursInput): HoursBreakdown {
   const rawOt = Math.round(outsideClock * 100) / 100
   const equivalent = Math.round(rawOt * multiplier * 100) / 100
   const overtimeEquation = rawOt > 0 ? formatOvertimeEquation(rawOt, multiplier) : null
-  const segmentsLabel = overtimeSegmentsLabel({ ...input, standardDayStart: dayStart, standardDayEnd: dayEnd })
+  // 1.43.0: the overtime times are the pay rule's own (`payrollLineClockRanges`): a weekend set window and every-hour
+  // days included, never a second split of the weekday window here.
+  const segmentsLabel = payrollLineClockRanges(paid).overtimeText || null
   const overtimeLine =
     overtimeEquation && segmentsLabel ? `${segmentsLabel} = ${overtimeEquation}` : overtimeEquation
 

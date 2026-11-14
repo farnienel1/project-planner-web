@@ -54,18 +54,6 @@ export function subjectForUser(user: User, operatives: Operative[]): TimesheetSu
   }
 }
 
-/** iOS TimesheetMoneyEntrySheet managerSuggestions eligibility. */
-export function isTimesheetAgreedManagerCandidate(user: User): boolean {
-  if (user.isActive === false) return false
-  return (
-    user.permissions.manager ||
-    user.permissions.adminAccess ||
-    user.isSuperAdmin ||
-    user.role === 'manager' ||
-    user.role === 'admin'
-  )
-}
-
 /** iOS TimesheetMoneyEntrySheet jobSuggestions — unique job numbers, skip exact query. */
 export function extraFormJobSuggestions(
   jobs: Array<{ jobNumber: string; siteName: string }>,
@@ -86,27 +74,6 @@ export function extraFormJobSuggestions(
     if (matches.length >= 6) break
   }
   return matches
-}
-
-/** iOS TimesheetMoneyEntrySheet managerSuggestions — name + email haystack, unique names. */
-export function extraFormManagerSuggestions(
-  candidates: Array<{ firstName: string; surname: string; email: string }>,
-  query: string
-): string[] {
-  const needle = query.trim().toLowerCase()
-  if (!needle) return []
-  const seen = new Set<string>()
-  const names: string[] = []
-  for (const candidate of candidates) {
-    const name = `${candidate.firstName} ${candidate.surname}`.trim()
-    if (!name) continue
-    const haystack = `${name} ${candidate.firstName} ${candidate.surname} ${candidate.email}`.toLowerCase()
-    if (!haystack.includes(needle) || name.toLowerCase() === needle || seen.has(name.toLowerCase())) continue
-    seen.add(name.toLowerCase())
-    names.push(name)
-    if (names.length >= 6) break
-  }
-  return names
 }
 
 /** iOS TimesheetMoneyEntrySheet receiptName = receipt.{ext} or receipt-uploaded. */

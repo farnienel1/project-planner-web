@@ -265,6 +265,56 @@ export function payrollMultipliedHours(
   }
 }
 
+export type PayrollLineClockRanges = {
+  /** The clock ranges of the standard hours (the working day, or a set-window weekend day's window), earliest first. */
+  standard: string[]
+  /** The clock ranges paid at the multiplier (before / after the day or window, or a whole every-hour day), earliest first. */
+  overtime: string[]
+  /** `standard` joined with " + " ('' when none), e.g. "07:00–16:00". */
+  standardText: string
+  /** `overtime` joined with " + " ('' when none), e.g. "05:00–07:00 + 16:00–19:00". */
+  overtimeText: string
+}
+
+function clockStartMinutes(row: PayrollHoursSegment): number {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(String(row.clockStart ?? '').trim())
+  return match ? Number(match[1]) * 60 + Number(match[2]) : Number.MAX_SAFE_INTEGER
+}
+
+/**
+ * Rulebook 1.43.0 §8 (owner rule, 14 Nov): the clock times of a booking's standard and overtime parts, from the pay
+ * rule's own segments (`payrollHoursResult`), so a timesheet's standard line shows the standard-window times and its
+ * overtime line the overtime times — working day 07:00–16:00, booked 07:00–19:00 → standard "07:00–16:00", overtime
+ * "16:00–19:00"; an early start and a late finish are two overtime ranges ("05:00–07:00 + 16:00–19:00"); a set-window
+ * weekend day's window is standard and the hours outside it overtime; every hour of an every-hour day is overtime; an
+ * overnight booking's range runs past midnight as stored ("16:00–02:00"). Wording only: no figure changes.
+ */
+export function payrollLineClockRanges(result: Pick<PayrollHoursResult, 'segments'> | null | undefined): PayrollLineClockRanges {
+  const standard: string[] = []
+  const overtime: string[] = []
+  const rows = [...(result?.segments ?? [])].sort((a, b) => clockStartMinutes(a) - clockStartMinutes(b))
+  for (const row of rows) {
+    const start = String(row.clockStart ?? '').trim()
+    const end = String(row.clockEnd ?? '').trim()
+    if (!start || !end || start === end) continue
+    const range = `${start}–${end}`
+    const target = row.kind === 'standardWindow' ? standard : overtime
+    if (!target.includes(range)) target.push(range)
+  }
+  return { standard, overtime, standardText: standard.join(' + '), overtimeText: overtime.join(' + ') }
+}
+
+/**
+ * Rulebook 1.43.0 §8: the clock part of a timesheet line's stored details — "16:00–19:00 · OT 6.5h × 2 − 0.5h break =
+ * 12.5h" → "16:00–19:00" (the multiplied text after " · OT " is read by `parseMultipliedHoursText`, and the rate line
+ * already shows it), so screens never print the equation twice. Other text is returned trimmed, unchanged.
+ */
+export function timesheetLineClockText(details: string | null | undefined): string {
+  const text = String(details ?? '').trim()
+  const cut = text.indexOf(' · OT ')
+  return cut >= 0 ? text.slice(0, cut).trim() : text
+}
+
 function result(segments: PayrollHoursSegment[], outsideMultiplier: number): PayrollHoursResult {
   let total = 0
   let standard = 0

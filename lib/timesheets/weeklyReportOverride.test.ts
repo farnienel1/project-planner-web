@@ -483,3 +483,72 @@ test('pay periods overlapping a midweek report stay on that pay run', () => {
   assert.equal(periods[0].start.toISOString().slice(0, 10) <= '2026-09-16', true)
   assert.equal(periods[0].end.toISOString().slice(0, 10) >= '2026-09-16', true)
 })
+
+// Rulebook 1.43.0 (`timesheetSnapshotNeedsRebuild`): a counter-signature made before the period's bookings had loaded
+// froze a snapshot with no labour lines (the invoice then showed only price work). The next save once the bookings
+// have loaded rebuilds it from them, with the signatures and approver as stored; a snapshot with labour lines is never
+// rebuilt, and an exported sheet is left alone.
+test('1.43.0: an empty frozen snapshot is rebuilt from the live bookings; signatures and approver kept', () => {
+  const signedAt = new Date('2026-09-18T09:00:00Z')
+  const signed = {
+    ...emptyTimesheetDraft(),
+    operativeSignedAt: day,
+    operativeSignedByName: 'Ada Booked',
+    managerSignedAt: signedAt,
+    managerSignedByUserId: 'mgr',
+    managerSignedByName: 'Morgan Manager',
+  }
+  // Signed while no bookings had loaded: the snapshot has no labour lines.
+  const frozen = applyWeeklyReportOverride({ ...base, bookings: [], draft: signed })
+  assert.equal(frozen.weeklyReportOverride?.lines.length, 0)
+  // Review r318: a booking created after the sheet was approved never rebuilds it (a signed sheet is never re-priced).
+  const addedLater = booking({ createdAt: new Date('2026-09-25T09:00:00Z'), updatedAt: new Date('2026-09-25T09:00:00Z') })
+  assert.equal(applyWeeklyReportOverride({ ...base, bookings: [addedLater], draft: frozen }).weeklyReportOverride?.lines.length, 0)
+  // A booking created before approval but moved into the period (written) after it never rebuilds it either.
+  const movedLater = booking({ createdAt: new Date('2026-09-10T09:00:00Z'), updatedAt: new Date('2026-09-25T09:00:00Z') })
+  assert.equal(applyWeeklyReportOverride({ ...base, bookings: [movedLater], draft: frozen }).weeklyReportOverride?.lines.length, 0)
+  // The booking that already existed, unchanged since, arrives: the next save rebuilds it.
+  const existed = booking({ createdAt: new Date('2026-09-10T09:00:00Z'), updatedAt: new Date('2026-09-11T09:00:00Z') })
+  const rebuilt = applyWeeklyReportOverride({ ...base, bookings: [existed], draft: frozen })
+  assert.equal(rebuilt.weeklyReportOverride?.lines.length, 1)
+  assert.equal(rebuilt.weeklyReportOverride?.lines[0].bookingId, 'b1')
+  assert.equal(rebuilt.weeklyReportOverride?.approvedAt.getTime(), frozen.weeklyReportOverride?.approvedAt.getTime())
+  assert.equal(rebuilt.weeklyReportOverride?.approvedByName, 'Morgan Manager')
+  assert.equal(rebuilt.managerSignedAt, signedAt)
+  assert.equal(rebuilt.operativeSignedAt, day)
+  // Exported: left as it is.
+  const exported = applyWeeklyReportOverride({ ...base, bookings: [existed], draft: { ...frozen, exportedAt: new Date('2026-09-20T09:00:00Z') } })
+  assert.equal(exported.weeklyReportOverride?.lines.length, 0)
+  // A snapshot with labour lines is never re-priced, even when the bookings later change.
+  const later = applyWeeklyReportOverride({
+    ...base,
+    bookings: [existed, booking({ id: 'b2', timeSlot: 'AM', createdAt: new Date('2026-09-10T09:00:00Z'), updatedAt: new Date('2026-09-10T09:00:00Z') })],
+    draft: rebuilt,
+  })
+  assert.deepEqual(later.weeklyReportOverride?.lines.map((line) => line.bookingId), ['b1'])
+})
+
+// Review r318 (2nd): Export builds the snapshot BEFORE it stamps `exportedAt` (TimesheetsScreen `persistExportedFlag`),
+// because an exported snapshot is never rebuilt: built with `exportedAt` already set, a frozen-empty sheet stayed empty.
+test('1.43.0: export rebuilds a frozen-empty snapshot before stamping exportedAt', () => {
+  const signedAt = new Date('2026-09-18T09:00:00Z')
+  const signed = {
+    ...emptyTimesheetDraft(),
+    operativeSignedAt: day,
+    operativeSignedByName: 'Ada Booked',
+    managerSignedAt: signedAt,
+    managerSignedByUserId: 'mgr',
+    managerSignedByName: 'Morgan Manager',
+  }
+  const frozen = applyWeeklyReportOverride({ ...base, bookings: [], draft: signed })
+  const existed = booking({ createdAt: new Date('2026-09-10T09:00:00Z'), updatedAt: new Date('2026-09-11T09:00:00Z') })
+  const exportedAt = new Date('2026-09-20T09:00:00Z')
+  // The old order (stamp, then build) keeps it empty for ever.
+  const stampedFirst = applyWeeklyReportOverride({ ...base, bookings: [existed], draft: { ...frozen, exportedAt } })
+  assert.equal(stampedFirst.weeklyReportOverride?.lines.length, 0)
+  // The export's order: build with no export stamp, then stamp.
+  const built = applyWeeklyReportOverride({ ...base, bookings: [existed], draft: { ...frozen, exportedAt: null } })
+  const exported = { ...built, exportedAt }
+  assert.equal(exported.weeklyReportOverride?.lines.length, 1)
+  assert.equal(exported.exportedAt, exportedAt)
+})

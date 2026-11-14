@@ -272,7 +272,7 @@
   {
     "path": "lib/timesheets/timesheetStorage.ts",
     "pattern": "london-zone-constant",
-    "count": 15,
+    "count": 14,
     "reason": "FU-3 (needs canonical rule): timesheet document ids and legacy reads are stamped at London midnight (timesheet_{uid}_{stamp}); changing the zone changes document ids, so the id rule must be defined in lib/canonical first."
   },
   {

@@ -59,6 +59,7 @@ export function HoursTimelinePicker({
   onEnd,
   onBreak,
   showBreak = true,
+  otMultiplierOverride = null,
 }: {
   start: string
   end: string
@@ -72,6 +73,11 @@ export function HoursTimelinePicker({
   onEnd: (value: string) => void
   onBreak: (value: boolean) => void
   showBreak?: boolean
+  /**
+   * Rulebook 1.43.0 (§25): the booking's own overtime rate (`otMultiplierOverride`; null = the organisation's), so the
+   * bands, the hours figure and the explanation price the overtime at the rate on screen.
+   */
+  otMultiplierOverride?: number | null
 }) {
   const startHm = parse(start)
   const endHm = parse(end)
@@ -123,6 +129,7 @@ export function HoursTimelinePicker({
       workStartTime: start,
       workEndTime: end,
       isBreakRemoved: breakRemoved,
+      otMultiplierOverride,
       policy: dayPolicy,
       dayKey: dayKeyOfBooking,
     })
@@ -134,24 +141,25 @@ export function HoursTimelinePicker({
       out.push({ kind: row.kind === 'standardWindow' ? 'standard' : 'overtime', start: lo, end: hi })
     }
     return out
-  }, [valid, start, end, breakRemoved, dayPolicy, dayKeyOfBooking])
+  }, [valid, start, end, breakRemoved, otMultiplierOverride, dayPolicy, dayKeyOfBooking])
 
   const breakdown = hoursBreakdown({
     timeSlot: 'CUSTOM_HOURS',
     workStartTime: start,
     workEndTime: end,
     isBreakRemoved: breakRemoved,
+    otMultiplierOverride,
     policy: dayPolicy,
     dayKey: dayKeyOfBooking,
   })
 
   // Rulebook 1.18.0 (`weekendBookingBreakdown`): a weekend selection shows each day as pay prices it, not one summary.
-  const dayRows = valid ? weekendBreakdownForDates(dates ?? (date ? [date] : []), start, end, breakRemoved, policy) : []
+  const dayRows = valid ? weekendBreakdownForDates(dates ?? (date ? [date] : []), start, end, breakRemoved, policy, otMultiplierOverride) : []
   // Rulebook 1.39.0 (`bookingHoursExplanation`): a weekday selection explains its hours the same way (working day,
   // unpaid break, hours at the overtime multiplier). Weekend rows carry their own explanation.
   const weekdayExplanations =
     valid && dayRows.length === 0
-      ? (dates ?? (date ? [date] : [])).map((booked) => weekdayExplanationForDate(booked, start, end, breakRemoved, policy))
+      ? (dates ?? (date ? [date] : [])).map((booked) => weekdayExplanationForDate(booked, start, end, breakRemoved, policy, otMultiplierOverride))
       : []
 
   function minutesFromClientX(clientX: number, rect: DOMRect): number {

@@ -631,6 +631,7 @@ export function MyScheduleSelfBookingScreen({
             breakRemoved={breakRemoved}
             policy={payrollPolicy}
             dates={targetDays()}
+            otMultiplierOverride={customRate}
             onStart={setCustomStart}
             onEnd={setCustomEnd}
             onBreak={setBreakRemoved}

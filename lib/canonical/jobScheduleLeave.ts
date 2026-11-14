@@ -20,9 +20,9 @@
 
 import { leaveDayKind, type LeaveDayKind } from './leaveCalendar'
 import { normalizeHolidayStatus, normalizeHolidayTimeSlot, type HolidayTimeSlotValue } from './leaveRequests'
-import { leaveHalfDayLabel, type StandardDayInput } from './engine'
+import { formatClockMinutes, leaveHalfDayLabel, slotInterval, type StandardDayInput } from './engine'
 import { personIdSet, type PersonRosterRow } from './personIds'
-import { standardDayOn } from './payrollPolicySchedule'
+import { bookingStandardDayOn, standardDayOn } from './payrollPolicySchedule'
 import { namedSlotKind } from './engine'
 import { multipliedHoursText, type PayrollHoursResult } from './payrollHours'
 
@@ -356,5 +356,74 @@ export function scheduleDayCell(input: { bookings: ReadonlyArray<ScheduleDayBook
     standardText,
     overtimeText,
     overtimeLines,
+  }
+}
+
+export type SubcontractorScheduleBooking = {
+  timeSlot?: string | null
+  workStartTime?: string | null
+  workEndTime?: string | null
+}
+
+export type SubcontractorScheduleCell = ScheduleDayCell & {
+  /** Each booking's working window, "07:30–16:00", earliest first. */
+  times: string[]
+  /** `times` joined with " + ", e.g. "07:30–12:00 + 13:00–16:00". */
+  timesText: string
+}
+
+/**
+ * Rulebook 1.43.0 §21 (owner rule, 14 Nov): a subcontractor booking on a job's scheduling week shows only its working
+ * window — start to finish — and, with several bookings that day, their number. Never the standard / overtime split
+ * or paid hours: a firm's booking is not priced by the organisation's working hours. Custom hours are their clock
+ * times (an overnight booking keeps its stored finish, "22:00–06:00"); a named slot (FULL DAY, AM, PM) is that slot's
+ * clock window on the day under the working hours in effect on it (`slotInterval` on `bookingStandardDayOn`; a
+ * set-window weekend day's own window). The tile is one plain colour (`tone` standard) and carries no hours. Null with
+ * no booking. Display only.
+ */
+export function subcontractorScheduleCell(
+  input:
+    | {
+        bookings: ReadonlyArray<SubcontractorScheduleBooking | null | undefined> | null | undefined
+        /** The working hours (a policy, or the policy state) — for a named slot's window. */
+        day?: Parameters<typeof bookingStandardDayOn>[0]
+        dayKey?: string | null
+      }
+    | null
+    | undefined
+): SubcontractorScheduleCell | null {
+  const bookings = (input?.bookings || []).filter((b): b is SubcontractorScheduleBooking => Boolean(b && typeof b === 'object'))
+  if (bookings.length === 0) return null
+  const dayInput = bookingStandardDayOn(input?.day ?? null, input?.dayKey ?? null)
+  const spans = bookings
+    .map((booking) => {
+      const interval = slotInterval(booking, dayInput)
+      if (!interval) return null
+      const end = interval.end >= 24 * 60 ? interval.end - 24 * 60 : interval.end
+      return { start: interval.start, text: `${formatClockMinutes(interval.start)}–${formatClockMinutes(end)}` }
+    })
+    .filter((row): row is { start: number; text: string } => row != null)
+    .sort((a, b) => a.start - b.start)
+  const times: string[] = []
+  for (const span of spans) if (!times.includes(span.text)) times.push(span.text)
+  const timesText = times.join(' + ')
+  const countText = bookings.length > 1 ? `${bookings.length} bookings` : null
+  const label = timesText || 'Booked'
+  return {
+    tone: 'standard',
+    standardHours: 0,
+    overtimeHours: 0,
+    halfLabel: null,
+    totalHours: 0,
+    bookingCount: bookings.length,
+    hoursText: '',
+    countText,
+    headline: countText ? `${label} · ${countText}` : label,
+    caption: null,
+    standardText: null,
+    overtimeText: null,
+    overtimeLines: [],
+    times,
+    timesText,
   }
 }
