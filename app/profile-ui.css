@@ -247,6 +247,11 @@
 .up-fixform { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
 .up-act .pu-btn { align-self: flex-start; margin-top: 8px; }
 
+/* The lower Save (existing SaveButton), restyled in place */
+.up-savebar { display: flex; justify-content: flex-end; }
+.up-page .up-savebar .btn.primary { width: 100%; max-width: 320px; height: 44px; border-radius: 12px; border: 0; background: var(--pu-primary); color: var(--pu-primary-ink); font-weight: 600; box-shadow: 0 3px 10px rgba(37, 89, 214, 0.25); }
+@media (max-width: 640px) { .up-page .up-savebar .btn.primary { max-width: none; } }
+
 /* Change user type chooser */
 .up-cut { display: flex; flex-direction: column; gap: 10px; margin: 0; padding: 14px 18px 16px; background: var(--up-cut-bg); }
 .up-cut-head b { display: block; font-weight: 700; }

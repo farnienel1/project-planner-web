@@ -116,14 +116,10 @@ import {
 } from '@/lib/staff/userPermissionDescriptions'
 import { SUPER_ADMIN_SUCCESSOR_EMPTY, superAdminSuccessors } from '@/lib/staff/superAdminTransfer'
 import { displayedLineManagerId, userWithLineManagerChoice } from '@/lib/firebase/userPayload'
-import { Field, FieldGrid, FormSection, SectionBlock, Switch, ToggleRow, ProfileBack, ProfileBand, ProfileBanner, SaveState, ProfileIcon, type ProfileIconName } from '@/components/users/profile-ui'
+import { ActionPanel, ActionRow, Field, FieldGrid, FormSection, SectionBlock, Switch, ToggleRow, ProfileBack, ProfileBand, ProfileBanner, SaveState, ProfileIcon, type ProfileIconName } from '@/components/users/profile-ui'
 import {
-  SectionLabel,
-  SettingsCard,
-  Toggle,
   Input,
   Select,
-  FormField,
   SaveButton,
 } from '@/components/settings/primitives'
 
@@ -215,45 +211,44 @@ function initialsOf(user: User): string {
   return initials.trim() || user.email.slice(0, 2).toUpperCase()
 }
 
+/** An account action row (`ActionRow`): same title, subtitle, busy state and handler as before; colour by consequence. */
 function ActionButton({
   title,
   subtitle,
   tone = 'neutral',
+  icon,
   busy,
   onClick,
 }: {
   title: string
   subtitle?: string
   tone?: 'neutral' | 'amber' | 'red' | 'purple'
+  icon: ProfileIconName
   busy?: boolean
   onClick: () => void
 }) {
-  const toneCls = {
-    neutral: 'border-slate-200 text-slate-900 hover:bg-slate-50',
-    amber: 'border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100',
-    red: 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100',
-    purple: 'border-[#EEEDFE] bg-[#EEEDFE] text-[#534AB7] hover:brightness-95',
-  }[tone]
-
   return (
-    <button
-      type="button"
+    <ActionRow
+      title={title}
+      subtitle={subtitle}
+      tone={tone === 'neutral' ? 'blue' : tone}
+      icon={icon}
+      busy={busy}
       onClick={onClick}
-      disabled={busy}
-      className={`flex w-full items-center justify-between rounded-xl border px-4 py-3 text-left transition disabled:opacity-60 ${toneCls}`}
-    >
-      <span>
-        <span className="block text-sm font-semibold">{title}</span>
-        {subtitle && <span className="mt-0.5 block text-xs opacity-80">{subtitle}</span>}
-      </span>
-      {busy && (
-        <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
-          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8v4a4 4 0 0 0-4 4H4Z" />
-        </svg>
-      )}
-    </button>
+    />
   )
+}
+
+/** Change user type chooser: icon and tile colour per option (display only). */
+const ACCOUNT_TYPE_ICON: Record<'operative' | 'manager' | 'admin', ProfileIconName> = {
+  operative: 'hat',
+  manager: 'brief',
+  admin: 'shield',
+}
+const ACCOUNT_TYPE_TONE: Record<'operative' | 'manager' | 'admin', 'amber' | 'purple' | 'blue'> = {
+  operative: 'amber',
+  manager: 'purple',
+  admin: 'blue',
 }
 
 function profileSnapshot(
@@ -1684,19 +1679,20 @@ export function EditUserProfile({
       ) : null}
 
       {canEdit && dirty ? (
-        <div className="mt-6">
+        <div className="up-savebar">
           <SaveButton saving={saving} saved={saved} dirty={!payReloading} onClick={() => handleSave()} />
         </div>
       ) : null}
 
       {/* Account actions */}
-      {canEdit ? <SectionLabel label="Account actions" /> : null}
       {canEdit ? (
-      <div className="space-y-2">
+      <FormSection title="Account actions" icon="gear" tone="slate">
+      <div className="up-actions">
         {ghostTarget ? null : target.passwordSet ? (
           <ActionButton
             title="Send password reset"
             subtitle="Email a password reset link to this user"
+            icon="refresh"
             busy={busyAction === 'reset'}
             onClick={handlePasswordReset}
           />
@@ -1704,18 +1700,19 @@ export function EditUserProfile({
           <ActionButton
             title="Resend sign-up email with verification code"
             subtitle="They haven't finished setting a password yet."
+            icon="mail"
             busy={busyAction === 'invite'}
             onClick={handleResendInvite}
           />
         )}
         {canAdminTools ? (
-          <div className="rounded-xl border border-slate-200 bg-white p-4">
-            <p className="text-sm font-semibold text-slate-900">Wrong login email? Ask Project Planner to fix it</p>
-            <p className="mt-1 text-xs text-slate-500">
+          <ActionPanel icon="chat" tone="blue">
+            <b>Wrong login email? Ask Project Planner to fix it</b>
+            <small>
               Sends a support request to the platform owner. They will change the login email; you never see or set a password.
-            </p>
+            </small>
             {fixOpen ? (
-              <div className="mt-3 space-y-2">
+              <div className="up-fixform">
                 <input
                   className="pp-in"
                   placeholder="Correct email"
@@ -1730,7 +1727,8 @@ export function EditUserProfile({
                 />
                 <button
                   type="button"
-                  className="btn sm primary"
+                  className="pu-btn primary sm"
+                  style={{ alignSelf: 'flex-start' }}
                   disabled={busyAction === 'fix-email'}
                   onClick={async () => {
                     if (!organization?.id || !target) return
@@ -1766,22 +1764,22 @@ export function EditUserProfile({
                 </button>
               </div>
             ) : (
-              <button type="button" className="btn sm ghost mt-2" onClick={() => setFixOpen(true)}>
+              <button type="button" className="pu-btn sm" onClick={() => setFixOpen(true)}>
                 Ask Project Planner to fix it
               </button>
             )}
-          </div>
+          </ActionPanel>
         ) : null}
 
         {canAdminTools && (
           <>
             {showChangeType && (
-              <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-sm font-semibold text-slate-900">Change user type</p>
-                <p className="text-xs leading-relaxed text-slate-500">
-                  Choose how this account should behave. Changes apply when you press Save.
-                </p>
-                <div className="space-y-2">
+              <div className="up-cut">
+                <div className="up-cut-head">
+                  <b>Change user type</b>
+                  <small>Choose how this account should behave. Changes apply when you press Save.</small>
+                </div>
+                <div className="up-form" style={{ gap: 8 }}>
                   {ACCOUNT_TYPE_OPTIONS.map((option) => {
                     const selected = effectiveAccountType === option.id
                     return (
@@ -1789,21 +1787,26 @@ export function EditUserProfile({
                         key={option.id}
                         type="button"
                         onClick={() => selectDraftAccountType(option.id)}
-                        className={`w-full rounded-xl border px-4 py-3 text-left transition-colors ${
-                          selected
-                            ? 'border-blue-400 bg-blue-50'
-                            : 'border-slate-200 bg-white hover:border-slate-300'
-                        }`}
+                        className={selected ? 'up-opt on' : 'up-opt'}
                       >
-                        <p className="text-sm font-semibold text-slate-900">{option.title}</p>
-                        <p className="mt-1 text-xs leading-relaxed text-slate-500">{option.description}</p>
+                        <span className={`up-atile ${ACCOUNT_TYPE_TONE[option.id]}`} aria-hidden="true">
+                          <ProfileIcon name={ACCOUNT_TYPE_ICON[option.id]} />
+                        </span>
+                        <span className="up-opt-text">
+                          <b>{option.title}</b>
+                          <small>{option.description}</small>
+                        </span>
+                        <span className={selected ? 'up-radio on' : 'up-radio'} aria-hidden="true">
+                          {selected ? <ProfileIcon name="check" size={13} /> : null}
+                        </span>
                       </button>
                     )
                   })}
                 </div>
                 {draftTypePermissions && (
-                  <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                  <div className="up-cut-perms">
                     <PermissionRowsList
+                      variant="profile"
                       rows={editUserPermissionRows(target, effectiveAccountType, draftTypePermissions, currentUser?.id, users)}
                       onChange={(patch) => setDraftTypePermissions({ ...draftTypePermissions, ...patch })}
                       excludeFields={suppressAdminAccessToggle ? ['adminAccess'] : undefined}
@@ -1819,7 +1822,8 @@ export function EditUserProfile({
                     setDraftAccountType(null)
                     setDraftTypePermissions(null)
                   }}
-                  className="text-sm font-medium text-slate-500 hover:text-slate-700"
+                  className="pu-btn sm"
+                  style={{ alignSelf: 'flex-start' }}
                 >
                   Cancel type change
                 </button>
@@ -1831,6 +1835,7 @@ export function EditUserProfile({
                 title="Change Super Admin"
                 subtitle="Pass super admin to another administrator"
                 tone="purple"
+                icon="key"
                 onClick={() => setShowTransfer(true)}
               />
             ) : null}
@@ -1839,6 +1844,7 @@ export function EditUserProfile({
                 title="Change user type"
                 subtitle="Switch between operative, manager, or administrator"
                 tone="purple"
+                icon="users"
                 onClick={() => setShowChangeType(true)}
               />
             )}
@@ -1847,6 +1853,7 @@ export function EditUserProfile({
                 title={target.isActive ? 'Deactivate user' : 'Reactivate user'}
                 subtitle={target.isActive ? 'Suspend access, keep history' : 'Restore sign-in access'}
                 tone="amber"
+                icon="clock"
                 busy={activeSaving}
                 onClick={handleToggleActive}
               />
@@ -1856,6 +1863,7 @@ export function EditUserProfile({
                 title="Delete user"
                 subtitle="Permanently remove account"
                 tone="red"
+                icon="warn"
                 onClick={() => setConfirmDelete(true)}
               />
             )}
@@ -1867,6 +1875,7 @@ export function EditUserProfile({
               title={target.isActive ? 'Deactivate operative' : 'Reactivate operative'}
               subtitle={target.isActive ? 'Suspend access, keep history' : 'Restore sign-in access'}
               tone="amber"
+              icon="clock"
               busy={activeSaving}
               onClick={handleToggleActive}
             />
@@ -1875,29 +1884,31 @@ export function EditUserProfile({
                 title="Delete operative"
                 subtitle="Permanently remove this operative"
                 tone="red"
+                icon="warn"
                 onClick={() => setConfirmDelete(true)}
               />
             )}
           </>
         )}
       </div>
+      </FormSection>
       ) : null}
 
       {confirmDelete && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          className="up-dialog-wrap"
           onClick={() => setConfirmDelete(false)}
         >
-          <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <h2 className="text-lg font-bold text-slate-900">Delete user?</h2>
-            <p className="mt-2 text-sm text-slate-600">
+          <div className="up-dialog" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+            <h2>Delete user?</h2>
+            <p>
               Are you sure you want to delete {target.firstName} {target.surname}? This action cannot be undone.
             </p>
-            <div className="mt-5 flex justify-end gap-2">
+            <div className="up-dialog-f">
               <button
                 type="button"
                 onClick={() => setConfirmDelete(false)}
-                className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+                className="pu-btn"
               >
                 Cancel
               </button>
@@ -1905,7 +1916,7 @@ export function EditUserProfile({
                 type="button"
                 onClick={handleDelete}
                 disabled={busyAction === 'delete'}
-                className="rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+                className="pu-btn danger"
               >
                 Delete
               </button>
@@ -1916,37 +1927,36 @@ export function EditUserProfile({
 
       {showTransfer && target && currentUser?.isSuperAdmin && target.id === currentUser.id && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          className="up-dialog-wrap"
           onClick={() => setShowTransfer(false)}
         >
-          <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <h2 className="text-lg font-bold text-slate-900">Change Super Admin</h2>
+          <div className="up-dialog" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+            <h2>Change Super Admin</h2>
             {superAdminSuccessors(users, currentUser.id).length === 0 ? (
-              <p className="mt-2 text-sm text-slate-600">{SUPER_ADMIN_SUCCESSOR_EMPTY}</p>
+              <p>{SUPER_ADMIN_SUCCESSOR_EMPTY}</p>
             ) : (
-              <ul className="mt-3 max-h-64 space-y-2 overflow-y-auto">
+              <ul>
                 {superAdminSuccessors(users, currentUser.id).map((person) => (
                   <li key={person.id}>
                     <button
                       type="button"
                       disabled={transferring}
                       onClick={() => void handleTransfer(person.id)}
-                      className="w-full rounded-xl border border-slate-200 px-4 py-3 text-left hover:bg-slate-50 disabled:opacity-60"
                     >
-                      <span className="block text-sm font-semibold text-slate-900">
+                      <b>
                         {person.firstName} {person.surname}
-                      </span>
-                      <span className="mt-0.5 block text-xs text-slate-500">{person.email}</span>
+                      </b>
+                      <small>{person.email}</small>
                     </button>
                   </li>
                 ))}
               </ul>
             )}
-            <div className="mt-5 flex justify-end">
+            <div className="up-dialog-f">
               <button
                 type="button"
                 onClick={() => setShowTransfer(false)}
-                className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+                className="pu-btn"
               >
                 Cancel
               </button>
@@ -1957,20 +1967,20 @@ export function EditUserProfile({
 
       {confirmAdmin && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          className="up-dialog-wrap"
           onClick={() => setConfirmAdmin(false)}
         >
-          <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <h2 className="text-lg font-bold text-slate-900">Make this user an administrator?</h2>
-            <p className="mt-2 text-sm text-slate-600">
+          <div className="up-dialog" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+            <h2>Make this user an administrator?</h2>
+            <p>
               {target.firstName} {target.surname} will get full administrator access, including user management and
               organisation settings. Only another administrator can change this later.
             </p>
-            <div className="mt-5 flex justify-end gap-2">
+            <div className="up-dialog-f">
               <button
                 type="button"
                 onClick={() => setConfirmAdmin(false)}
-                className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+                className="pu-btn"
               >
                 Cancel
               </button>
@@ -1981,7 +1991,7 @@ export function EditUserProfile({
                   void persistAccountType('admin')
                 }}
                 disabled={typeSaving}
-                className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+                className="pu-btn primary"
               >
                 {typeSaving ? 'Saving…' : 'Yes, make administrator'}
               </button>
