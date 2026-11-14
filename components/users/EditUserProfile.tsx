@@ -27,6 +27,7 @@ import {
 import { rosterStatusLabel, samePersonIds } from '@/lib/staff/userRosterUtils'
 import { userLineManagerRequiredError, userMayHaveNoLineManager } from '@/lib/annualLeave/holidayApprovalUtils'
 import { UserAvatar } from '@/components/users/UserAvatar'
+import { setupSectionIcon } from '@/lib/users/profileUi'
 import { PayBasisFields, payChoiceFromProfile, payChoiceToRates } from '@/components/users/PayBasisFields'
 import { maySetPayOf, userPayRateRequiredError } from '@/lib/staff/payRateRequired'
 import { PreviousRatesList, usePaySaveGate } from '@/components/users/PayRateChangeDialogs'
@@ -189,14 +190,6 @@ function currentAccountType(user: User): 'operative' | 'manager' | 'admin' {
     manager: user.permissions.manager,
     operativeMode: user.permissions.operativeMode,
   })
-}
-
-/** Icon of the "[Role] setup" section (display only), in the same order as `setupSectionTitle`. */
-export function setupSectionIcon(user: User): ProfileIconName {
-  if (user.isSuperAdmin || user.permissions.adminAccess || user.role === 'admin') return 'shield'
-  if (user.permissions.operativeMode) return 'hat'
-  if (user.permissions.manager) return 'brief'
-  return 'user'
 }
 
 function cloneUser(user: User): User {

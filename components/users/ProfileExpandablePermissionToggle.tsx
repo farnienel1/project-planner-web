@@ -4,8 +4,7 @@ import { useState } from 'react'
 import type { UserPermissions } from '@/types'
 import type { PermissionToggleDef } from '@/lib/staff/userPermissionDescriptions'
 import { cn } from '@/lib/ui/cn'
-import { Chip } from '@/components/ui/page'
-import { ProfileIcon, permissionIconFor } from '@/components/users/profile-ui'
+import { ProfileIcon, permissionIconFor } from '@/components/users/profile-ui/icons'
 
 export function ProfileExpandablePermissionToggle({
   def,
@@ -48,7 +47,8 @@ export function ProfileExpandablePermissionToggle({
           <span className="up-ptxt">
             <b>
               {def.title}
-              {lockedOn ? <Chip tone="green">Locked on</Chip> : null}
+              {lockedOn ? ' ' : null}
+              {lockedOn ? <span className="pu-chip pu-c-green">Locked on</span> : null}
             </b>
             {expanded ? <small>{def.description}</small> : null}
           </span>

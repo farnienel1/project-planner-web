@@ -16,8 +16,9 @@ import { rosterStatusLabel } from '@/lib/staff/userRosterUtils'
 import { UserAvatar } from '@/components/users/UserAvatar'
 import { Chip, IconTile } from '@/components/ui/page'
 import { ProfileBack, ProfileBand, ProfileIcon, ProfilePage, SaveState } from '@/components/users/profile-ui'
-import { GHOST_UPGRADE_HELP, GHOST_UPGRADE_LABEL, canUpgradeGhost, canViewPersonPay, formatMoney, ghostBadgeLabel, isGhostUser } from '@/lib/canonical'
+import { GHOST_UPGRADE_HELP, GHOST_UPGRADE_LABEL, canUpgradeGhost, canViewPersonPay, ghostBadgeLabel, isGhostUser } from '@/lib/canonical'
 import { GhostAppAccessCard } from '@/components/users/GhostAppAccessCard'
+import { profileRateRow } from '@/lib/users/profileUi'
 import { loadPayProfile } from '@/lib/pay/payProfileService'
 import { personPayRecord, readsPersonPayProfile } from '@/lib/pay/payProfileOverlay'
 import { onSecuritySwitchChange } from '@/lib/access/securitySwitches'
@@ -247,23 +248,6 @@ export function UserProfileSummary({
 
     </ProfilePage>
   )
-}
-
-/**
- * The rate line the profile shows (Details and the band): hourly when the stored basis is hourly with a rate, day when
- * it is day with a rate, else none. Display only — the same test the page used before the restyle.
- */
-export function profileRateRow(
-  pay: { payBasis?: string; dayRate?: number | null; hourlyRate?: number | null } | null | undefined,
-  currencyCode: string
-): { label: string; value: string } | null {
-  if (pay?.payBasis === 'hourly' && pay.hourlyRate != null) {
-    return { label: 'Hourly rate', value: `${formatMoney(Number(pay.hourlyRate), currencyCode)}/hr` }
-  }
-  if (pay?.payBasis === 'day' && pay.dayRate != null) {
-    return { label: 'Day rate', value: `${formatMoney(Number(pay.dayRate), currencyCode)}/day` }
-  }
-  return null
 }
 
 function SummaryRow({ label, value }: { label: string; value: string }) {

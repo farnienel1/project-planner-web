@@ -31,6 +31,7 @@ const PATHS = {
   scan: 'M4 8V4h4M16 4h4v4M20 16v4h-4M8 20H4v-4M8 12h8',
   pulse: 'M3 12h4l3-7 4 14 3-7h4',
   star: 'M12 3v18M3 12h18',
+  info: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 11v5M12 8v.5',
 } as const
 
 export type ProfileIconName = keyof typeof PATHS

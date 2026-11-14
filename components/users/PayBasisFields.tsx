@@ -7,7 +7,7 @@ import { MONEY_SAVE_MAX, parseBoundedNumber } from '@/lib/security/boundedValue'
 import { readStoredRates } from '@/lib/timesheets/payBasis'
 import { currencySymbol } from '@/lib/canonical'
 import { useOrganizationCurrency } from '@/lib/stores/organizationDocumentStore'
-import { Note } from '@/components/ui/page'
+import { ProfileIcon } from '@/components/users/profile-ui/icons'
 
 // Rulebook 1.11.0 §8: the pay copy is the rulebook's, so web and iOS say the same (one basis; saving one removes the other).
 const DAY_HELP = PAY_BASIS_DAY_HELP
@@ -81,7 +81,10 @@ export function PayBasisFields({
           </p>
         ) : null}
         <p className="up-f-hint">{hourly ? HOURLY_HELP : DAY_HELP}</p>
-        <Note tone="info">{PAY_BASIS_SAVE_NOTE}</Note>
+        <div className="pu-note info">
+          <ProfileIcon name="info" />
+          <div>{PAY_BASIS_SAVE_NOTE}</div>
+        </div>
       </div>
     )
   }
