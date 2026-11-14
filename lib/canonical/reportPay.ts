@@ -230,7 +230,6 @@ export function timesheetInvoiceRows<L extends InvoiceLineInput & { id: string; 
   const rows: TimesheetInvoiceRow<L>[] = []
   const days = input.timesheetDays ? new Set(input.timesheetDays.map((day) => String(day).trim())) : null
   const zone = zoneOrLondon(input.timeZone)
-  if (days && days.size === 0) return rows
   const onCountedDay = (dayKey: string | null | undefined): boolean => !days || !dayKey || days.has(dayKey)
   const entryDay = (entry: Record<string, unknown>): string | null => {
     const ms = documentInstantMs(entry.date) ?? documentInstantMs(entry.startDate)
@@ -247,20 +246,22 @@ export function timesheetInvoiceRows<L extends InvoiceLineInput & { id: string; 
       if (row.decision === 'declined' || amount <= INVOICE_AMOUNT_EPSILON) continue
       const id = String(row.id ?? '').trim()
       const live = liveById.get(normalizeDocumentId(id)) ?? null
-      if (live && !isInvoiceLine(live)) continue
-      if (!onCountedDay(live?.dayKey ?? null)) continue
+      // 1.46.0 (fifth review): the signed copy is final — a row is left out only by its own stored data (a PAYE or
+      // leave flag on the signed row), never by the live line or today's employment, so a later back-dated change to
+      // PAYE never removes a signed row from the invoice or the totals.
+      if (!isInvoiceLine(row as InvoiceLineInput)) continue
       rows.push({ kind: 'labour', id, amount, source: 'override', line: live, stored: row, jobNumber: jobNumberOf(live && (live as unknown as Record<string, unknown>).jobNumber, row.jobNumber) })
     }
     for (const [kind, key] of [['priceWork', 'priceWork'], ['expense', 'expenses']] as const) {
       for (const row of rowsOf(snapshot[key])) {
         const amount = amountOf(row.amount)
         if (row.decision === 'declined' || amount <= INVOICE_AMOUNT_EPSILON) continue
-        if (!onCountedDay(entryDay(row))) continue
         rows.push({ kind, id: String(row.id ?? '').trim(), amount, source: 'override', line: null, stored: row, jobNumber: jobNumberOf(row.jobNumber) })
       }
     }
     return rows
   }
+  if (days && days.size === 0) return rows
 
   const decided = input.extrasMode === 'decided'
   const managerSigned = parseTimesheetStatusFields(sheet).managerSignedAtMs != null

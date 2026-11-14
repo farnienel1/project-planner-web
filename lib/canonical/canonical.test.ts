@@ -8018,11 +8018,20 @@ test('1.10.0 hunt C H1: timesheetInvoiceRows — signed snapshot first, then rev
     expenses: [{ id: 'E1', amount: 12.5 }],
   }
   const signed = hcInvoiceRows({ sheet: { weeklyReportOverride: override }, payrollLines: lines, extrasMode: 'decided' })
+  // 1.46.0 (fifth review of #324): the signed copy is final — a signed row is left out only by its own stored flags,
+  // never because its live line is (now) a PAYE day. Before 1.46.0 the live L2 being PAYE dropped the signed L2.
   assert.deepEqual(signed.map((row) => [row.kind, row.id, row.amount, row.source]), [
     ['labour', 'l1', 90, 'override'],
+    ['labour', 'L2', 50, 'override'],
     ['priceWork', 'P1', 30, 'override'],
     ['expense', 'E1', 12.5, 'override'],
   ])
+  const flagged = hcInvoiceRows({
+    sheet: { weeklyReportOverride: { ...override, lines: [{ id: 'L2', amount: 50, isPayeDay: true }, { id: 'L3', amount: 5, isLeave: true }] } },
+    payrollLines: lines,
+    extrasMode: 'decided',
+  })
+  assert.deepEqual(flagged.filter((row) => row.kind === 'labour'), [])
   const sheet = {
     managerSignedAt: '2026-11-01T10:00:00Z',
     payrollLineReviews: { l4: { decision: 'declined' }, L1: { decision: 'edited', revisedAmount: 95 } },
@@ -15363,4 +15372,29 @@ test('1.46.0 review 4: payrollLineBookingKey reads a missing collection as labou
     { id: 'op-b1-ot', bookingId: 'op-b1', bookingCollection: 'bookings', amount: 176.47, paidHours: 3, otMultiplier: 2, dayKey: '2026-11-18', isOvertimeLine: true, bookingFingerprint: fp },
   ]
   assert.equal(R112.timesheetTotals({ sheet, payrollLines: lines, extrasMode: 'decided' }).total, 426.47)
+})
+
+test('1.46.0 review 5: a signed sheet keeps its invoice and totals after a back-dated change to PAYE', () => {
+  const sheet = {
+    managerSignedAt: '2026-11-20T10:00:00Z',
+    weeklyReportOverride: {
+      lines: [
+        { id: 'op-b1-normal', amount: 250, decision: 'approved', isOvertime: false, date: '2026-11-18T00:00:00Z' },
+        { id: 'op-b1-ot', amount: 176.47, decision: 'edited', isOvertime: true, date: '2026-11-18T00:00:00Z' },
+      ],
+      priceWork: [{ id: 'P1', amount: 30, date: '2026-11-18T00:00:00Z' }],
+      expenses: [],
+    },
+  }
+  const before = R112.timesheetTotals({ sheet, payrollLines: [], extrasMode: 'decided', timesheetDays: ['2026-11-16', '2026-11-17', '2026-11-18'], timeZone: 'Europe/London' })
+  assert.equal(before.total, 456.47)
+  // Now PAYE from before the signed days: the live sheet counts no days and the live line is a PAYE day.
+  const livePaye = [{ id: 'op-b1-normal', amount: 0, isPayeDay: true, dayKey: '2026-11-18' }]
+  for (const timesheetDays of [[], ['2026-11-16']]) {
+    const totals = R112.timesheetTotals({ sheet, payrollLines: livePaye, extrasMode: 'decided', timesheetDays, timeZone: 'Europe/London' })
+    assert.equal(totals.total, 456.47)
+    assert.equal(R112.timesheetInvoiceRows({ sheet, payrollLines: livePaye, extrasMode: 'decided', timesheetDays, timeZone: 'Europe/London' }).length, 3)
+  }
+  // An unsigned sheet still follows the PAYE days.
+  assert.equal(R112.timesheetTotals({ sheet: {}, payrollLines: livePaye, extrasMode: 'decided', timesheetDays: [] }).total, 0)
 })

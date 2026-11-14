@@ -690,6 +690,13 @@ test('1.46.0 review 4: an overtime line added by a review follows that review af
   assert.equal(labourTotal146(resave({ 'op-b1-normal': { decision: 'approved' } })), 426.47)
   // Edited again to 07:00–18:00: both parts recomputed together (250 + 2h × 2 = 367.65).
   assert.equal(labourTotal146(resave(editReviews146(now, '07:00', '18:00'))), 367.65)
+  // The recomputed overtime part keeps its own label and overtime flag (fifth review).
+  const ot = resave(editReviews146(now, '07:00', '18:00')).weeklyReportOverride?.lines.find((line) => line.id === 'op-b1-ot')
+  assert.equal(ot?.projectName, signed.weeklyReportOverride?.lines.find((line) => line.id === 'op-b1-ot')?.projectName)
+  assert.match(ot?.projectName ?? '', /\(Overtime\)$/)
+  assert.equal(ot?.isOvertime, true)
+  // The standard line's review deleted after signing: both parts keep their signed amounts.
+  assert.equal(labourTotal146(resave({})), 426.47)
   // A round trip through Firestore keeps the link.
   const stored = weeklyReportOverrideFromFirestore(weeklyReportOverrideToFirestore(signed.weeklyReportOverride!))
   assert.equal(stored?.lines.find((line) => line.id === 'op-b1-ot')?.reviewPartOf, 'op-b1-normal')

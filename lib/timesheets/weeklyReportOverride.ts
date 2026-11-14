@@ -289,7 +289,9 @@ function reapplyReviews(existing: WeeklyReportOverride, input: WeeklyReportOverr
       otMultiplier: part.isOvertime ? part.otMultiplier : null,
       decision: 'edited' as const,
       appliedReviewKey,
-      ...(part.id.toLowerCase() !== line.id.toLowerCase() ? { reviewPartOf: line.id } : {}),
+      ...(part.id.toLowerCase() !== line.id.toLowerCase()
+        ? { reviewPartOf: line.id, ...(part.isOvertime && !line.isOvertime ? { projectName: `${line.projectName} (Overtime)` } : {}) }
+        : {}),
     }))
     partsFrom.set(line.id.toLowerCase(), rows)
     for (const row of rows) {
@@ -313,7 +315,19 @@ function reapplyReviews(existing: WeeklyReportOverride, input: WeeklyReportOverr
       if (sourceReview.decision === 'declined') return [{ ...line, amount: 0, days: 0, decision: 'declined' as const, appliedReviewKey: key }]
       const recomputed = (partsFrom.get(source.id.toLowerCase()) ?? []).find((row) => row.id.toLowerCase() === line.id.toLowerCase())
       if (recomputed) {
-        return [{ ...recomputed, bookingFingerprint: line.bookingFingerprint, bookingHadOvertimeLine: line.bookingHadOvertimeLine, reviewPartOf: line.reviewPartOf }]
+        // Fifth review: the part keeps its own label and overtime flag; only its figures follow the review.
+        return [
+          {
+            ...line,
+            paidHours: recomputed.paidHours,
+            days: recomputed.days,
+            amount: recomputed.amount,
+            isOvertime: true,
+            otMultiplier: recomputed.otMultiplier,
+            decision: 'edited' as const,
+            appliedReviewKey: recomputed.appliedReviewKey,
+          },
+        ]
       }
       if (sourceReview.decision === 'edited' && sourceReview.revisedStandardHours != null) {
         return [{ ...line, amount: 0, paidHours: 0, days: 0, decision: 'edited' as const, appliedReviewKey: key }]
