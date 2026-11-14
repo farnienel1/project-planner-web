@@ -116,8 +116,8 @@ import {
 } from '@/lib/staff/userPermissionDescriptions'
 import { SUPER_ADMIN_SUCCESSOR_EMPTY, superAdminSuccessors } from '@/lib/staff/superAdminTransfer'
 import { displayedLineManagerId, userWithLineManagerChoice } from '@/lib/firebase/userPayload'
+import { ProfileBack, ProfileBand, ProfileBanner, SaveState } from '@/components/users/profile-ui'
 import {
-  PanelHeader,
   SectionLabel,
   SettingsCard,
   Toggle,
@@ -125,8 +125,6 @@ import {
   Select,
   FormField,
   SaveButton,
-  SuccessBanner,
-  ErrorBanner,
 } from '@/components/settings/primitives'
 
 const MONTHS = [
@@ -1125,106 +1123,66 @@ export function EditUserProfile({
   const status = rosterStatusLabel(target)
 
   return (
-    <form onSubmit={handleSave} className="mx-auto max-w-2xl pb-16">
+    <form onSubmit={handleSave} className="pu-page up-page">
       {payDialogs}
       {employmentDialogs}
-      <PanelHeader
-        title={pageTitle}
-        onBack={() => {
+      <ProfileBack
+        onClick={() => {
           if (saving || typeSaving) return
           navigateBack(backHref)
         }}
-        backPending={backPending}
-        rightAction={
+        pending={backPending}
+      />
+
+      <ProfileBand
+        avatar={<UserAvatar user={target} size={64} className="up-avatar-ring" gradient="from-[#7F77DD] to-[#534AB7]" />}
+        eyebrow={pageTitle}
+        name={`${target.firstName} ${target.surname}`}
+        chips={[
+          { label: roleLabel(target), tone: target.isSuperAdmin ? 'super' : undefined },
+          target.passwordSet ? { label: 'Verified', dot: 'green' } : { label: 'Pending', dot: 'amber', tone: 'warn' },
+          { label: status, dot: status === 'Active' ? 'blue' : 'slate' },
+        ]}
+        aside={
           canEdit && dirty ? (
             <button
               type="button"
               disabled={saving || typeSaving || payReloading}
               onClick={() => handleSave()}
-              className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:opacity-50"
+              className="pu-btn primary"
             >
               {saving || typeSaving ? 'Saving…' : 'Save'}
             </button>
           ) : canEdit ? (
-            <span className="px-2 text-[11px] font-medium text-slate-400">No changes</span>
+            <SaveState>No changes</SaveState>
           ) : (
-            <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold text-slate-500">
-              View only
-            </span>
+            <SaveState tone="view">View only</SaveState>
           )
         }
       />
 
-      {error && (
-        <div className="mt-4">
-          <ErrorBanner message={error} />
-        </div>
-      )}
+      {error && <ProfileBanner tone="red">{error}</ProfileBanner>}
       {reportsBlock && reportsBlock.length > 0 ? (
-        <div className="mt-2 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          <ul className="list-disc pl-5">
+        <ProfileBanner tone="amber">
+          <ul>
             {reportsBlock.map((report) => (
               <li key={report.id}>
-                <Link href={`/dashboard/users/${encodeURIComponent(report.id)}`} className="underline">
-                  {report.name}
-                </Link>
+                <Link href={`/dashboard/users/${encodeURIComponent(report.id)}`}>{report.name}</Link>
               </li>
             ))}
           </ul>
-        </div>
+        </ProfileBanner>
       ) : null}
       {canEdit && accountTypeRepair && !draftAccountType ? (
-        <div className="mt-4 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          {ACCOUNT_TYPE_OUT_OF_SYNC_MESSAGE}
-        </div>
+        <ProfileBanner tone="amber">{ACCOUNT_TYPE_OUT_OF_SYNC_MESSAGE}</ProfileBanner>
       ) : null}
-      {success && !saved && (
-        <div className="mt-4">
-          <SuccessBanner message={success} />
-        </div>
-      )}
-      {typeSaving && (
-        <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
-          Saving account type…
-        </div>
-      )}
+      {success && !saved && <ProfileBanner tone="green">{success}</ProfileBanner>}
+      {typeSaving && <ProfileBanner tone="blue">Saving account type…</ProfileBanner>}
       {draftAccountType && (
-        <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+        <ProfileBanner tone="blue">
           Account type will change to <strong className="capitalize">{draftAccountType}</strong> when you press Save.
-        </div>
+        </ProfileBanner>
       )}
-
-      {/* Profile header */}
-      <div className="mt-4 flex items-center gap-4 card p-5 shadow-sm">
-        <UserAvatar user={target} size={64} className="rounded-2xl" gradient="from-[#7F77DD] to-[#534AB7]" />
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-lg font-bold text-[var(--ink)]">
-            {target.firstName} {target.surname}
-          </div>
-          <div className="text-sm text-slate-500">{roleLabel(target)}</div>
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            <span
-              className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ring-1 ${
-                target.passwordSet
-                  ? 'bg-emerald-50 text-emerald-700 ring-emerald-100'
-                  : 'bg-amber-50 text-amber-700 ring-amber-100'
-              }`}
-            >
-              {target.passwordSet ? 'Verified' : 'Pending'}
-            </span>
-            <span
-              className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ring-1 ${
-                status === 'Active'
-                  ? 'bg-blue-50 text-blue-700 ring-blue-100'
-                  : 'bg-slate-100 text-slate-600 ring-slate-200'
-              }`}
-            >
-              <span className={`h-1.5 w-1.5 rounded-full ${status === 'Active' ? 'bg-blue-500' : 'bg-slate-400'}`} />
-              {status}
-            </span>
-          </div>
-        </div>
-      </div>
 
       {/* Identity */}
       <SectionLabel label="User details" />
