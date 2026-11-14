@@ -11,7 +11,7 @@
  * manager who is not a pay viewer) gives no sheets and so no warning, as on iOS.
  */
 
-import { collection, documentId, getDocs, query, where } from 'firebase/firestore'
+import { collection, documentId, getDocs, query, where, type Firestore } from 'firebase/firestore'
 import { create } from 'zustand'
 import { db } from '@/lib/firebase/config'
 import { captureOrganizationContext, organizationContextStillCurrent } from '@/lib/canonical'
@@ -41,10 +41,16 @@ export const useBookingDeleteNoticeStore = create<BookingDeleteNoticeState>((set
  * The person's `settings/timesheet_*` documents: one `userId ==` query per id (the query User Timesheets, the weekly
  * report feed and the Payrun Snapshot make), plus one document-id range per id (`timesheet_{id}_…`) for a sheet stored
  * without `userId` (`timesheetDocumentSubjectId`). Whole documents are read only to answer yes / no. A query the viewer
- * may not make (private pay on) is skipped.
+ * may not make (private pay on) is skipped. Also used by Replace (`bookingReplaceWrite.ts`), so both warnings read the
+ * same sheets.
  */
-async function personTimesheetDocs(organizationId: string, userIds: ReadonlyArray<string>) {
-  const settings = collection(db, 'organizations', organizationId, 'settings')
+export async function personTimesheetDocs(
+  organizationId: string,
+  userIds: ReadonlyArray<string>,
+  firestore: Firestore | null | undefined = db
+): Promise<Array<{ id: string; data: Record<string, unknown> }>> {
+  if (!firestore) return []
+  const settings = collection(firestore, 'organizations', organizationId, 'settings')
   const results = await Promise.all(
     userIds.flatMap((userId) => [
       getDocs(query(settings, where('userId', '==', userId))).catch(() => null),

@@ -11,13 +11,9 @@
  */
 
 import {
-  collection,
   doc,
-  getDocs,
-  query,
   runTransaction,
   serverTimestamp,
-  where,
   type DocumentReference,
   type Firestore,
   type Transaction,
@@ -25,12 +21,7 @@ import {
 import { auth } from '@/lib/firebase/config'
 import { MissingDocumentError } from '@/lib/firebase/partialWrite'
 import { storedReplaceFingerprint, type SeenBookingReplaceRef } from '@/lib/bookings/bookingReplaceSeen'
-import {
-  bookingDeleteSignedTimesheetWarning,
-  bookingReplaceWrites,
-  resolveBookingPerson,
-  type BookingReplaceRef,
-} from '@/lib/canonical'
+import { bookingReplaceWrites, type BookingReplaceRef } from '@/lib/canonical'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 
 export const BOOKING_REPLACE_REFUSED_MESSAGE = 'Not replaced — you can no longer remove the existing booking.'
@@ -86,37 +77,27 @@ async function replacedCopies(organizationId: string, refs: ReadonlyArray<Bookin
 }
 
 /**
- * Rulebook 1.33.0 `bookingDeleteSignedTimesheetWarning` for the replaced bookings: the booked person's timesheets
- * (`settings` where `userId ==`, read as iOS does); a sheet this viewer cannot read gives no warning. The text, or null.
+ * Rulebook 1.33.0 `bookingDeleteSignedTimesheetWarning` for the replaced bookings, on exactly the inputs the delete
+ * notice uses (platform guardrail 1): every id the booked person goes by (`bookedPersonTimesheetUserIds`) and their
+ * `settings/timesheet_*` documents, sheets stored without `userId` included (`personTimesheetDocs`). A sheet this
+ * viewer cannot read gives no warning. The text, or null.
  */
 async function signedTimesheetWarning(db: Firestore, organizationId: string, copies: ReadonlyArray<ReplacedCopy>): Promise<string | null> {
-  const [{ useOrgUserStore }, { useOperativeStore }] = await Promise.all([
+  const [{ useOrgUserStore }, { useOperativeStore }, { personTimesheetDocs }, { signedTimesheetWarningForBookings }] = await Promise.all([
     import('@/lib/stores/siteAuditStore'),
     import('@/lib/stores/operativeStore'),
+    import('@/lib/bookings/signedTimesheetDeleteNotice'),
+    import('@/lib/bookings/signedTimesheetDeleteWarning'),
   ])
-  const users = useOrgUserStore.getState().users
-  const operatives = useOperativeStore.getState().operatives
-  for (const copy of copies) {
-    if (!copy.personId || !copy.dayKey) continue
-    const person = resolveBookingPerson(copy.personId, {
-      accounts: users.map((u) => ({ id: u.id, email: u.email ?? null, formerIds: u.formerUserIds ?? [] })),
-      operatives: operatives.map((o) => ({ id: o.id, email: o.email ?? null })),
-    })
-    const userId = person.accountId ?? copy.personId
-    try {
-      const snap = await getDocs(query(collection(db, 'organizations', organizationId, 'settings'), where('userId', '==', userId)))
-      const sheets = snap.docs
-        .filter((d) => d.id.startsWith('timesheet_'))
-        .map((d) => d.data() as Record<string, unknown>)
-        .filter((data) => typeof data.weekStartKey === 'string' && typeof data.weekEndKey === 'string')
-        .map((data) => ({ ...data, startDayKey: String(data.weekStartKey), endDayKey: String(data.weekEndKey) }))
-      const warning = bookingDeleteSignedTimesheetWarning(copy.dayKey, sheets)
-      if (warning) return warning
-    } catch {
-      // Not readable for this viewer: no warning (the replace never depends on it).
-    }
-  }
-  return null
+  const { users, userIdAliases } = useOrgUserStore.getState()
+  return signedTimesheetWarningForBookings({
+    bookings: copies,
+    users,
+    operatives: useOperativeStore.getState().operatives,
+    userIdAliases,
+    timeZone: organizationZoneOr(),
+    loadDocs: (userIds) => personTimesheetDocs(organizationId, userIds, db),
+  })
 }
 
 function errorCode(error: unknown): string {
