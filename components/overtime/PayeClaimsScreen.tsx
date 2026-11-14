@@ -202,7 +202,7 @@ export function PayeClaimsSection(props: Props) {
     return (
       <PageShell>
         <NavBar title={heading} back={back} />
-        <TimesheetClaims kind={kind} organizationId={props.organizationId} subject={subject} timeZone={props.timeZone} range={window} />
+        <TimesheetClaims kind={kind} organizationId={props.organizationId} subject={subject} users={props.users} timeZone={props.timeZone} range={window} />
       </PageShell>
     )
   }
@@ -215,19 +215,24 @@ export function PayeClaimsSection(props: Props) {
 }
 
 /** Read-only list of a self-employed person's timesheet entries in the range. */
-function TimesheetClaims({ kind, organizationId, subject, timeZone, range }: { kind: PayeClaimKind; organizationId: string; subject: User; timeZone: string; range: { start: string; end: string } }) {
+function TimesheetClaims({ kind, organizationId, subject, users, timeZone, range }: { kind: PayeClaimKind; organizationId: string; subject: User; users: User[]; timeZone: string; range: { start: string; end: string } }) {
   const currency = useOrganizationCurrency()
+  // Rulebook 1.45.0 (guardrail 1): every id the person goes by, so sheets filed under an older id — and their
+  // evidence — show here too (`overtimePersonIds`, the same ids the PAYE lists read).
+  const personIds = useMemo(() => overtimePersonIds({ person: rulebookPerson(subject, users), roster: rulebookRoster(users) }), [subject, users])
+  const idsKey = personIds.join('|')
   const [rows, setRows] = useState<TimesheetClaimRow[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   useEffect(() => {
     let live = true
-    loadTimesheetClaimSheets(organizationId, subject.id, timeZone)
+    loadTimesheetClaimSheets(organizationId, personIds.length > 0 ? personIds : [subject.id], timeZone)
       .then((sheets) => live && setRows(timesheetClaimRows(sheets, kind, range)))
       .catch((e: unknown) => live && setError(e instanceof Error ? e.message : 'Their timesheets could not be read.'))
     return () => {
       live = false
     }
-  }, [organizationId, subject.id, timeZone, kind, range])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [organizationId, idsKey, timeZone, kind, range])
   if (error) return <Note tone="red">{error}</Note>
   if (!rows) return <Note tone="info">Loading…</Note>
   if (rows.length === 0)

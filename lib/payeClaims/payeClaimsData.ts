@@ -66,6 +66,7 @@ import {
 import { auth, db, storage } from '@/lib/firebase/config'
 import { uploadFile } from '@/lib/firebase/storageUtils'
 import { fileExtension } from '@/lib/security/uploadLimits'
+import { timesheetClaimSheetsFromDocs, type TimesheetClaimSheet } from '@/lib/payeClaims/timesheetClaimSheets'
 
 function uid(): string {
   return auth?.currentUser?.uid || ''
@@ -370,16 +371,30 @@ export async function savePayeClaimReport(input: {
   return { ...snapshot, id: created.id }
 }
 
-/** A self-employed person's timesheets (`settings/timesheet_*` with their `userId`), read through `parseTimesheetEntries`. */
+/**
+ * A self-employed person's timesheets (`settings/timesheet_*`) under every id they go by (`userIds`, `personIdSet`; the
+ * first is their users id), one `userId ==` query per id, merged by document id and read through
+ * `parseTimesheetEntries` with all of those ids as the owner's (rulebook 1.45.0, guardrail 1). A refused read under
+ * another id is left out; a refused read under the first id fails the load.
+ */
 export async function loadTimesheetClaimSheets(
   organizationId: string,
-  userId: string,
+  userIds: string | ReadonlyArray<string>,
   timeZone: string
-): Promise<Array<{ id: string; entries: TimesheetEntriesDocument }>> {
-  const snap = await getDocs(query(collection(db, 'organizations', organizationId, 'settings'), where('userId', '==', userId)))
-  return snap.docs
-    .filter((row) => row.id.startsWith('timesheet_'))
-    .map((row) => ({ id: row.id, entries: parseTimesheetEntries(row.id, row.data(), { timeZone }) }))
+): Promise<TimesheetClaimSheet[]> {
+  const ids = Array.from(new Set((typeof userIds === 'string' ? [userIds] : userIds).filter(Boolean)))
+  const reads = await Promise.all(
+    ids.map(async (id, index) => {
+      try {
+        const snap = await getDocs(query(collection(db, 'organizations', organizationId, 'settings'), where('userId', '==', id)))
+        return snap.docs.map((row) => ({ id: row.id, data: row.data() as Record<string, unknown> }))
+      } catch (error) {
+        if (index === 0) throw error
+        return []
+      }
+    })
+  )
+  return timesheetClaimSheetsFromDocs(reads.flat(), ids, timeZone)
 }
 
 /** A download URL for a stored path (the Storage rules decide who may read it). */
