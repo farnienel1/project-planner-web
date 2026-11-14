@@ -80,6 +80,7 @@ export const LIVE_COLLECTIONS: ReadonlyArray<LiveCollection> = [
   { id: 'expenseItems', path: 'organizations/{orgId}/expenseItems', scope: 'organization', listen: true, note: '1.30.0: PAYE expenses (parseExpenseDocument); the person\'s own, or read-only for their line managers and admins, while the screen is open.' },
   { id: 'payeClaimReports', path: 'organizations/{orgId}/payeClaimReports', scope: 'organization', listen: false, note: '1.30.0: saved price work / expenses report copies, written once and never changed (parsePayeClaimReportDocument); read when Past PAYE payruns opens.' },
   { id: 'personalSiteAudits', path: 'organizations/{orgId}/personalSiteAudits', scope: 'organization', listen: true, note: '1.30.0: personal site audits (parsePersonalSiteAuditDocument); the owner\'s only, while Site audits → Personal is open.' },
+  { id: 'annualLeaveAdjustments', path: 'organizations/{orgId}/annualLeaveAdjustments', scope: 'organization', listen: true, note: '1.40.0: manual annual-leave adjustments (parseAnnualLeaveAdjustmentDocument), written once and never changed; the person\'s own, or the people an admin or line manager may adjust, while an annual leave screen is open.' },
   { id: 'deletedBookings', path: 'organizations/{orgId}/deletedBookings', scope: 'organization', listen: false, note: 'Write-only tombstones; never shown.' },
 ]
 

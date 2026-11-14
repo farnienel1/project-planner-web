@@ -35,6 +35,8 @@ export const OFFLINE_ACTIONS = {
   'notifications.own_toggles': 'allowedOffline',
   // Online only: bookings (1.33.0: subcontractor bookings are deleted online only)
   'booking.delete_subcontractor': 'onlineOnly',
+  // 1.41.0 (owner decision 11 Nov): Replace on a double-booking row (create + delete + tombstone in one batch).
+  'booking.replace': 'onlineOnly',
   // Online only: organisation settings
   'settings.company_details': 'onlineOnly',
   'settings.currency': 'onlineOnly',

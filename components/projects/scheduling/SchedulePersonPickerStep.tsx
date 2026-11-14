@@ -12,8 +12,16 @@ import {
   acceptDayClash,
   personHasPendingClashes,
   removeDayFromPerson,
+  replaceDayClash,
   type DraftBookingPerson,
 } from '@/lib/scheduling/draftProjectBooking'
+import type { OperativeBookingClash } from '@/lib/scheduling/bookingClashUtils'
+import { rowReplaceOffer } from '@/lib/scheduling/bookingReplaceOffer'
+import { useAuthStore } from '@/lib/stores/authStore'
+import { useOperativeStore } from '@/lib/stores/operativeStore'
+import { useProjectStore } from '@/lib/stores/projectStore'
+import { useManagerScheduleStore } from '@/lib/stores/managerScheduleStore'
+import type { BookingReplaceRef } from '@/lib/canonical'
 import { SchedulePersonPickerRow } from '@/components/projects/scheduling/SchedulePersonDayRows'
 import { slotKey, type ScheduleDateSlot } from '@/lib/scheduling/scheduleUtils'
 import {
@@ -32,7 +40,9 @@ import { leaveConflictDetail } from '@/lib/scheduling/leaveConflicts'
  */
 function draftConflictRows(
   person: DraftBookingPerson,
-  slots: ReadonlyArray<ScheduleDateSlot>
+  slots: ReadonlyArray<ScheduleDateSlot>,
+  /** Rulebook 1.41.0 §5: Replace for a day's clashes, when the viewer may delete every one. */
+  replaceFor?: (clashes: ReadonlyArray<OperativeBookingClash>) => { replace?: { bookings: BookingReplaceRef[] } }
 ): { rows: BookingConflictRow[]; decisions: Record<string, BookingConflictDecision | undefined> } {
   const rows: BookingConflictRow[] = []
   const decisions: Record<string, BookingConflictDecision | undefined> = {}
@@ -43,11 +53,11 @@ function draftConflictRows(
     if (clashes.length === 0 && !leave) continue
     const state = person.dayStates[day]
     const decision: BookingConflictDecision | undefined =
-      state === 'clash_accepted' ? 'confirm' : state === 'removed' ? 'drop' : undefined
+      state === 'clash_accepted' ? 'confirm' : state === 'removed' ? 'drop' : state === 'clash_replace' ? 'replace' : undefined
     const base = { personId: person.personId, dayKey: day, personName: person.name, dayLabel: format(slot.date, 'EEE d MMM yyyy') }
     if (clashes.length > 0) {
       const key = conflictRowKey(person.personId, day, 'double_booking')
-      rows.push({ ...base, key, kind: 'double_booking', detail: `Already booked · ${formatClashSummary(clashes)}` })
+      rows.push({ ...base, key, kind: 'double_booking', detail: `Already booked · ${formatClashSummary(clashes)}`, ...(replaceFor?.(clashes) ?? {}) })
       decisions[key] = decision
     }
     if (leave) {
@@ -77,6 +87,29 @@ export function SchedulePersonPickerStep({
 }) {
   const [search, setSearch] = useState('')
   const [kindFilter, setKindFilter] = useState<'all' | SchedulablePersonKind>('all')
+  // Rulebook 1.41.0 §5: Replace on a clash row — offered when the viewer may delete every overlapping booking.
+  const viewer = useAuthStore((state) => state.user)
+  const managers = useOperativeStore((state) => state.managers)
+  const projects = useProjectStore((state) => state.projects)
+  const smallWorks = useProjectStore((state) => state.smallWorks)
+  const managerSiteBookings = useManagerScheduleStore((state) => state.managerSiteBookings)
+  const replaceFor = (clashes: ReadonlyArray<OperativeBookingClash>) => {
+    const labour = clashes
+      .filter((clash) => (clash.existingCollection ?? 'bookings') === 'bookings')
+      .map((clash) => ({ id: clash.existingBookingId, projectId: clash.existingProjectId }))
+    const manager = clashes
+      .filter((clash) => clash.existingCollection === 'managerSiteBookings')
+      .map((clash) => managerSiteBookings.find((row) => row.id === clash.existingBookingId))
+    // A manager booking not loaded here cannot be judged: no Replace.
+    if (manager.some((row) => !row)) return {}
+    return rowReplaceOffer({
+      user: viewer,
+      managers,
+      jobs: [...projects, ...smallWorks] as unknown as Parameters<typeof rowReplaceOffer>[0]['jobs'],
+      labour,
+      manager: manager.filter((row): row is NonNullable<typeof row> => Boolean(row)),
+    })
+  }
 
   const selectedById = useMemo(
     () => new Map(draftPeople.map((person) => [person.personId, person])),
@@ -95,7 +128,7 @@ export function SchedulePersonPickerStep({
         <p className="h2">Add operative or manager</p>
         <p className="mt-1 muted small">
           Select one or more people. If they are already booked or on annual leave, tick ✓ to book that day anyway
-          or ✕ to remove it from this selection.
+          or ✕ to remove it from this selection. Where you may delete the existing booking, Replace swaps it for this one.
         </p>
       </div>
 
@@ -135,7 +168,7 @@ export function SchedulePersonPickerStep({
             const pending = selected ? personHasPendingClashes(selected) : false
             const onLeave = Boolean(selected && Object.keys(selected.leaveByDay ?? {}).length > 0)
             const doubleBooked = Boolean(selected && Object.values(selected.clashByDay).some((list) => list.length > 0))
-            const conflicts = selected ? draftConflictRows(selected, slots) : null
+            const conflicts = selected ? draftConflictRows(selected, slots, replaceFor) : null
             return (
               <div key={person.id} className="space-y-2">
                 <SchedulePersonPickerRow
@@ -154,8 +187,13 @@ export function SchedulePersonPickerStep({
                       rows={conflicts.rows}
                       decisions={conflicts.decisions}
                       onDecide={(key, decision) => {
-                        const day = conflicts.rows.find((row) => row.key === key)?.dayKey
+                        const row = conflicts.rows.find((entry) => entry.key === key)
+                        const day = row?.dayKey
                         if (!day) return
+                        if (decision === 'replace' && row?.replace) {
+                          onPersonChange(replaceDayClash(selected, day, row.replace.bookings))
+                          return
+                        }
                         onPersonChange(decision === 'drop' ? removeDayFromPerson(selected, day) : acceptDayClash(selected, day))
                       }}
                     />

@@ -496,3 +496,42 @@ export function usersMissingPayRate(
   }
   return out
 }
+
+/** 1.40.0 (review r306 #4): Data health text for a person with no valid stored employment type. */
+export const USER_MISSING_EMPLOYMENT_TYPE_MESSAGE =
+  'Employment type missing or not stored as the apps save it. A missing one reads as self-employed (no annual leave allowance). Open in Manage Users and choose PAYE or self-employed so it is saved cleanly.'
+
+/** The two stored values the apps write (`paye`, `self_employed`). Anything else reads as self-employed (§8). */
+function storedEmploymentTypeValid(value: unknown): boolean {
+  return value === 'paye' || value === 'self_employed'
+}
+
+/**
+ * 1.40.0 (review r306 #4): the active people (not anonymised, once per person by `personIdSet`) none of whose users
+ * documents stores a clean employment type — missing, blank, or anything but exactly `paye` / `self_employed` (e.g.
+ * "PAYE", " paye ", "selfEmployed"). A missing one reads as self-employed (§8, no annual-leave allowance from 1.40.0);
+ * "PAYE" in another case reads as PAYE (owner decision 13 Nov, item 19) but is listed so the stored value is cleaned;
+ * admins see them in Settings → Data health. Pass the documents as
+ * stored (with the pay profile laid over while `privatePay` is on, where the employment type then lives). Never
+ * writes.
+ */
+export function usersMissingEmploymentType(
+  roster: ReadonlyArray<PersonRosterRow & { employmentType?: unknown; isActive?: unknown }> | null | undefined
+): string[] {
+  const rows = (roster || []).filter((row) => row && typeof row.id === 'string' && row.id.trim())
+  const done = new Set<string>()
+  const out: string[] = []
+  for (const row of rows) {
+    const key = row.id.trim().toLowerCase()
+    if (done.has(key)) continue
+    const ids = new Set(personIdSet(row, rows).map((id) => id.toLowerCase()))
+    ids.add(key)
+    const group = rows.filter((other) => ids.has(other.id.trim().toLowerCase()))
+    for (const member of group) done.add(member.id.trim().toLowerCase())
+    const active = group.filter((member) => member.isActive !== false && !isAnonymisedDeletedProfile(member as never))
+    if (active.length === 0) continue
+    if (active.some((member) => storedEmploymentTypeValid(member.employmentType))) continue
+    out.push(active[0].id.trim())
+  }
+  return out
+}

@@ -17,12 +17,8 @@ import {
 import { staffAccountRole } from '@/lib/permissions'
 import {
   ANNUAL_LEAVE_ALLOWANCE_COPY,
-  applyRemainingOverride,
-  CANONICAL_TIME_ZONE,
   canViewSensitiveProfile,
-  leaveYearBounds,
   lineManagerRequiredError,
-  snapLeaveDays,
   GHOST_OPERATIVE_EXPLANATION,
   GHOST_TOGGLE_HELP,
   GHOST_TOGGLE_LABEL,
@@ -42,7 +38,6 @@ import { Modal } from '@/components/ui/overlays'
 import { addUserNameCheck } from '@/lib/users/addUserNameCheck'
 import { Button } from '@/components/ui/Button'
 import { useUserStore } from '@/lib/stores/userStore'
-import { dayKeyInZone } from '@/lib/orgTime/zoneTime'
 import { DEFAULT_ANNUAL_LEAVE } from '@/lib/settings/organizationSettings'
 import { STAFF_TRADE_TYPES } from '@/lib/staff/staffTradeTypes'
 import {
@@ -232,8 +227,6 @@ export function AddUserScreen() {
     utrNumber: '',
     annualLeaveEnabled: true,
     annualLeaveDaysPerYear: String(DEFAULT_ANNUAL_LEAVE.daysPerYear),
-    remainingDays: String(DEFAULT_ANNUAL_LEAVE.daysPerYear),
-    remainingTouched: false,
   })
   const [annualLeaveDefaults, setAnnualLeaveDefaults] = useState(DEFAULT_ANNUAL_LEAVE)
   const [saving, setSaving] = useState(false)
@@ -268,7 +261,6 @@ export function AddUserScreen() {
         setForm((prev) => ({
           ...prev,
           annualLeaveDaysPerYear: String(defaults.daysPerYear),
-          remainingDays: prev.remainingTouched ? prev.remainingDays : String(defaults.daysPerYear),
         }))
       })
       .catch(() => {})
@@ -520,20 +512,6 @@ export function AddUserScreen() {
         annualLeaveYearStartMonth: form.annualLeaveEnabled ? annualLeaveDefaults.startMonth : undefined,
         annualLeaveYearEndMonth: form.annualLeaveEnabled ? annualLeaveDefaults.endMonth : undefined,
         annualLeaveCarriesOver: form.annualLeaveEnabled ? annualLeaveDefaults.carriesOver : undefined,
-        ...(form.annualLeaveEnabled && form.remainingTouched
-          ? applyRemainingOverride({
-              remaining: snapLeaveDays(
-                parseBoundedNumber(form.remainingDays, { min: 0, max: LEAVE_DAYS_SAVE_MAX }) ?? 0
-              ),
-              taken: 0,
-              pending: 0,
-              yearKey: leaveYearBounds({
-                startMonth: annualLeaveDefaults.startMonth,
-                endMonth: annualLeaveDefaults.endMonth,
-                onDayKey: dayKeyInZone(new Date(), CANONICAL_TIME_ZONE),
-              }).yearKey,
-            })
-          : {}),
         hasNoLineManager: mayHaveNoLineManager && form.hasNoLineManager,
       })
 
@@ -827,25 +805,12 @@ export function AddUserScreen() {
                     setForm({
                       ...form,
                       annualLeaveDaysPerYear: e.target.value,
-                      remainingDays: form.remainingTouched ? form.remainingDays : e.target.value,
                     })
                   }
                 />
               </FormField>
-              <FormField
-                label={ANNUAL_LEAVE_ALLOWANCE_COPY.remainingTitle}
-                hint={ANNUAL_LEAVE_ALLOWANCE_COPY.remainingNote}
-              >
-                <Input
-                  type="number"
-                  min="0"
-                  step="0.5"
-                  value={form.remainingDays}
-                  onChange={(e) =>
-                    setForm({ ...form, remainingDays: e.target.value, remainingTouched: true })
-                  }
-                />
-              </FormField>
+              {/* Rulebook 1.40.0 (H35): no "set remaining" here any more — a joiner is pro rata from their start date,
+                  and any extra days are an adjustment with a reason on their annual leave page. */}
             </>
           )}
         </div>

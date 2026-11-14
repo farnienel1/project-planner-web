@@ -1208,6 +1208,7 @@ export {
   jobScheduleLeaveMarks,
   scheduleCellHours,
   scheduleCellKind,
+  scheduleDayCell,
   JOB_SCHEDULE_LEAVE_LABEL,
   JOB_SCHEDULE_LEAVE_PENDING_LABEL,
   JOB_SCHEDULE_LEAVE_TITLE,
@@ -1345,6 +1346,47 @@ export {
   usersWithSameName,
 } from './duplicateUserNames'
 export type { SameNamePerson, SameNameRosterRow } from './duplicateUserNames'
+// 1.40.0 (§4.4, §9, owner decisions 11 Nov): Team list, employment-type allowance, manual adjustments.
+export {
+  annualLeaveAdjustmentDaysForYear,
+  annualLeaveBalanceNotes,
+  annualLeaveEmploymentInput,
+  balanceHasAllowance,
+  leaveAllowanceForWindow,
+  type AnnualLeaveBalanceNotes,
+} from './annualLeaveBalance'
+export { employmentTypeTransition } from './userProfile'
+export { leaveDecisionRequester } from './leaveRequests'
+export { USER_MISSING_EMPLOYMENT_TYPE_MESSAGE, usersMissingEmploymentType } from './payRate'
+export {
+  ANNUAL_LEAVE_TEAM_EMPTY_ADMIN,
+  ANNUAL_LEAVE_TEAM_EMPTY_MANAGER,
+  annualLeaveTeamEmptyMessage,
+  annualLeaveTeamPeople,
+  annualLeaveTeamPersonIsCurrent,
+  annualLeaveTeamTabVisible,
+} from './annualLeaveTeam'
+export {
+  ANNUAL_LEAVE_ADJUSTED_NOTICE_TYPE,
+  ANNUAL_LEAVE_ADJUSTMENTS_COLLECTION,
+  ANNUAL_LEAVE_ADJUSTMENT_DAYS_MESSAGE,
+  ANNUAL_LEAVE_ADJUSTMENT_MAX_DAYS,
+  ANNUAL_LEAVE_ADJUSTMENT_NOTE,
+  ANNUAL_LEAVE_ADJUSTMENT_NOT_ALLOWED_MESSAGE,
+  ANNUAL_LEAVE_ADJUSTMENT_REASON_MAX,
+  ANNUAL_LEAVE_ADJUSTMENT_REASON_MESSAGE,
+  ANNUAL_LEAVE_ADJUSTMENT_REASON_TOO_LONG_MESSAGE,
+  annualLeaveAdjustedNoticeText,
+  annualLeaveAdjustedRecipients,
+  annualLeaveAdjustmentCreateFields,
+  annualLeaveAdjustmentAuthorName,
+  annualLeaveAdjustmentLabel,
+  annualLeaveAdjustmentValidationError,
+  annualLeaveAdjustmentsForPerson,
+  canAdjustAnnualLeave,
+  canViewAnnualLeaveAdjustments,
+  parseAnnualLeaveAdjustmentDocument,
+} from './annualLeaveAdjustments'
 
 // Rulebook 1.38.0 §27 (owner decision 11 Nov): the in-app data check (server count vs device count per list).
 export {
@@ -1381,3 +1423,13 @@ export type {
   DataParitySummary,
   DataParityTrigger,
 } from './dataParity'
+// Rulebook 1.41.0 §5: Replace an overlapping booking from a double-booking row (one batch with its tombstone).
+export {
+  BOOKING_CONFLICT_DECISIONS,
+  BOOKING_REPLACE_CHOSEN_TEXT,
+  BOOKING_REPLACE_COLLECTIONS,
+  BOOKING_REPLACE_HELP,
+  BOOKING_REPLACE_LABEL,
+  bookingReplaceOffer,
+  bookingReplaceWrites,
+} from './bookingReplace'

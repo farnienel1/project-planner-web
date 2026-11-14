@@ -7,7 +7,9 @@ import { BOOKING_TOMBSTONE_COLLECTION, captureOrganizationContext, organizationC
 import { resolveBookingJobCollection } from '@/lib/bookings/jobCollection'
 import { announceSignedTimesheetDelete } from '@/lib/bookings/signedTimesheetDeleteNotice'
 import { auth, db } from '@/lib/firebase/config'
-import { MissingDocumentError, createWritePayload, savePartialDocument } from '@/lib/firebase/partialWrite'
+import { MissingDocumentError, addPartialDocumentToBatch, createWritePayload, savePartialDocument } from '@/lib/firebase/partialWrite'
+import { commitBookingReplace, forgetReplacedBookings } from '@/lib/bookings/bookingReplaceWrite'
+import type { BookingReplaceOptions } from '@/lib/stores/bookingStore'
 import { BOOKING_REPLAY_REFUSED_MESSAGE, writeMetadataFields } from '@/lib/canonical'
 import { managerSiteBookingUpdateWriteFields } from '@/lib/canonical/workDocumentReaders'
 import { forgetOrgCollectionDoc, isOrgCollectionSubscribed, subscribeOrgCollection, unsubscribeOrgCollection, type OrgCollectionDoc } from '@/lib/firebase/subscribeOrgCollection'
@@ -105,7 +107,7 @@ interface ManagerScheduleState {
     organizationId: string,
     options?: BookingDownloadRequest & { force?: boolean }
   ) => Promise<void>
-  saveManagerSiteBooking: (organizationId: string, booking: SaveManagerSiteBookingInput) => Promise<void>
+  saveManagerSiteBooking: (organizationId: string, booking: SaveManagerSiteBookingInput, options?: BookingReplaceOptions) => Promise<void>
   /**
    * Owner answer 11 Nov (item 4): a labour booking moved to the manager schedule (Other) — the new manager site booking
    * and the delete of the labour booking with its tombstone in ONE batch.
@@ -118,7 +120,8 @@ interface ManagerScheduleState {
   updateManagerSiteBooking: (
     organizationId: string,
     bookingId: string,
-    updates: Partial<SaveManagerSiteBookingInput>
+    updates: Partial<SaveManagerSiteBookingInput>,
+    options?: BookingReplaceOptions
   ) => Promise<void>
   deleteManagerSiteBooking: (organizationId: string, bookingId: string) => Promise<void>
 }
@@ -203,21 +206,33 @@ export const useManagerScheduleStore = create<ManagerScheduleState>((set, get) =
     notifyBookingRemovedSoon(fromBookingId)
   },
 
-  saveManagerSiteBooking: async (organizationId: string, booking: SaveManagerSiteBookingInput) => {
+  saveManagerSiteBooking: async (organizationId: string, booking: SaveManagerSiteBookingInput, options) => {
     const firestore = requireDb()
     if (!organizationId.trim()) throw new Error('Missing organisation for booking')
     const { next, payload } = await managerSiteBookingCreate(organizationId, booking)
     // Rulebook §1 / 1.9.0: a create carries write metadata (`writeMetadataFields`). 1.20.2: a fresh id and a plain
     // create write (no merge), so it can never land on an existing booking.
-    await setDoc(
-      doc(firestore, 'organizations', organizationId, 'managerSiteBookings', next.id),
-      { ...createWritePayload(payload), ...(writeMetadataFields(auth?.currentUser?.uid, 'web') ?? {}) }
-    )
+    const createFields = { ...createWritePayload(payload), ...(writeMetadataFields(auth?.currentUser?.uid, 'web') ?? {}) }
+    const replaces = options?.replaces ?? []
+    if (replaces.length > 0) {
+      // Rulebook 1.41.0 §5 (`bookingReplaceWrites`): the create and each replaced delete + tombstone in one checked transaction.
+      const removed = await commitBookingReplace(firestore, {
+        organizationId,
+        booking: { collection: 'managerSiteBookings', bookingId: next.id },
+        replaced: replaces,
+        write: (tx, ref) => {
+          tx.set(ref, createFields)
+        },
+      })
+      await forgetReplacedBookings(organizationId, removed)
+    } else {
+      await setDoc(doc(firestore, 'organizations', organizationId, 'managerSiteBookings', next.id), createFields)
+    }
     const without = get().managerSiteBookings.filter((row) => row.id !== next.id)
     set({ managerSiteBookings: [...without, next] })
   },
 
-  updateManagerSiteBooking: async (organizationId, bookingId, updates) => {
+  updateManagerSiteBooking: async (organizationId, bookingId, updates, options) => {
     const firestore = requireDb()
     const existing = get().managerSiteBookings.find((row) => row.id === bookingId)
     if (!existing) throw new Error('Booking not found')
@@ -242,17 +257,31 @@ export const useManagerScheduleStore = create<ManagerScheduleState>((set, get) =
     // Rulebook 1.9.0 `managerSiteBookingUpdateWriteFields`: only the changed fields, with write metadata; an edit of
     // a booking deleted on another device is refused, never re-created.
     try {
-      await savePartialDocument(
-        doc(firestore, 'organizations', organizationId, 'managerSiteBookings', bookingId),
-        payload,
-        managerSiteBookingUpdateWriteFields,
-        {
+      const replaces = options?.replaces ?? []
+      const ref = doc(firestore, 'organizations', organizationId, 'managerSiteBookings', bookingId)
+      if (replaces.length > 0) {
+        // Rulebook 1.41.0 §5: the edit and each replaced delete + tombstone in one batch (a missing booking is refused).
+        const removed = await commitBookingReplace(firestore, {
+          organizationId,
+          booking: { collection: 'managerSiteBookings', bookingId: bookingId },
+          replaced: replaces,
+          existing: true,
+          write: async (tx, ref) => {
+            await addPartialDocumentToBatch(tx, ref, payload, managerSiteBookingUpdateWriteFields, {
+              userId: auth?.currentUser?.uid ?? null,
+              base: serializeManagerSiteBooking({ ...existing, organizationId }),
+            })
+          },
+        })
+        await forgetReplacedBookings(organizationId, removed)
+      } else {
+        await savePartialDocument(ref, payload, managerSiteBookingUpdateWriteFields, {
           userId: auth?.currentUser?.uid ?? null,
           missing: 'refuse',
           // Diff against the booking this edit started from: only `updates` are written.
           base: serializeManagerSiteBooking({ ...existing, organizationId }),
-        }
-      )
+        })
+      }
     } catch (error: unknown) {
       if (error instanceof MissingDocumentError) {
         set({ managerSiteBookings: get().managerSiteBookings.filter((row) => row.id !== bookingId) })
@@ -337,7 +366,7 @@ export function notifyManagerSiteBookingRemovedSoon(organizationId: string, book
  * manager's own site booking carries overtime like a labour booking); the person, and their line manager when the line
  * had been returned, are told. Best effort, after the write; never blocks it. The labour twin is in `bookingStore.ts`.
  */
-function notifyOvertimeReopenedSoon(organizationId: string, before: ManagerSiteBooking, after: ManagerSiteBooking | null): void {
+export function notifyOvertimeReopenedSoon(organizationId: string, before: ManagerSiteBooking, after: ManagerSiteBooking | null): void {
   void (async () => {
     const [{ notifyOvertimeLineReopened }, { overtimeBookingInputs }, { useOrgUserStore }, { useOperativeStore }, { useProjectStore }] =
       await Promise.all([

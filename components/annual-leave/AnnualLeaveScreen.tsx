@@ -5,10 +5,6 @@ import { useSearchParams } from 'next/navigation'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useHolidayStore } from '@/lib/stores/holidayStore'
 import { DEFAULT_ANNUAL_LEAVE, loadOrganizationDetails, type OrgAnnualLeaveDefaults } from '@/lib/settings/organizationSettings'
-import {
-  canAccessOperativeAnnualLeaveDirectory,
-  isOperativeMode,
-} from '@/lib/navigation/menuPermissions'
 import { ErrorBanner } from '@/components/dashboard/PageShell'
 import { OperativeAnnualLeaveManagement } from './OperativeAnnualLeaveManagement'
 import { PersonalLeave } from './PersonalLeave'
@@ -17,11 +13,11 @@ import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { leaveRecordsForAccount } from '@/lib/canonical/bookingPerson'
 import { samePersonIds } from '@/lib/staff/userRosterUtils'
+import { teamLeaveTab } from '@/lib/annualLeave/teamLeaveQueue'
 
 export function AnnualLeaveScreen() {
   const { organization, user } = useAuthStore()
   const { bookings, error, saveBooking, createRequests, deleteBooking, requestCancellation } = useHolidayStore()
-  const isOperative = isOperativeMode(user)
   const rosterUsers = useOrgUserStore((state) => state.users)
   const users = rosterUsers
   const userIdAliases = useOrgUserStore((state) => state.userIdAliases)
@@ -33,7 +29,9 @@ export function AnnualLeaveScreen() {
   // `canSelfBookAnnualLeave(user, roster)`: the self-book permission outside operative mode, or the Super Admin
   // (rulebook 1.28.0). Having no line manager is not self-booking for anyone.
   const booksOwnLeave = userCanSelfBookAnnualLeave(user, rosterUsers)
-  const canTeam = !isOperative && canAccessOperativeAnnualLeaveDirectory(user)
+  // Rulebook 1.40.0 `annualLeaveTeamTabVisible`: admins, and anyone who line-manages at least one current person —
+  // the Operatives toggle plays no part (a line manager without it had no Team tab on web before).
+  const canTeam = teamLeaveTab(user, users, operatives)
   const searchParams = useSearchParams()
   const requestedTab = searchParams.get('tab') === 'team' ? 'team' : 'mine'
   const [tab, setTab] = useState<'mine' | 'team'>(requestedTab)

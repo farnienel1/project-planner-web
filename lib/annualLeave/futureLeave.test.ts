@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { UserRole, type HolidayBooking, type User } from '../../types/index.ts'
-import { bookingMatchesPerson, canManagePersonAnnualLeave, type AnnualLeavePerson } from './annualLeavePerson.ts'
+import { bookingMatchesPerson, teamLeavePeopleFor, type AnnualLeavePerson } from './annualLeavePerson.ts'
 import { isFutureAcceptedAnnualLeave } from './holidayApprovalUtils.ts'
 
 function booking(partial: Partial<HolidayBooking> & { id: string; startDate: Date; endDate: Date }): HolidayBooking {
@@ -143,13 +143,12 @@ test('admins manage every person and managers only their line reports', () => {
   const report = member({ id: 'op', assignedManagerUserIds: ['mgr'] })
   const other = member({ id: 'other', assignedManagerUserId: 'someone-else' })
   const users = [admin, manager, report, other]
-  const reportPerson = person({ id: 'user-op', userId: 'op' })
-  const otherPerson = person({ id: 'user-other', userId: 'other', displayName: 'Other' })
-
-  assert.equal(canManagePersonAnnualLeave(admin, reportPerson, users), true)
-  assert.equal(canManagePersonAnnualLeave(admin, otherPerson, users), true)
-  assert.equal(canManagePersonAnnualLeave(manager, reportPerson, users), true)
-  assert.equal(canManagePersonAnnualLeave(manager, otherPerson, users), false)
+  // Rulebook 1.40.0 `annualLeaveTeamPeople`.
+  const ids = (viewer: User) => teamLeavePeopleFor(viewer, users, []).map((row) => row.userId)
+  assert.ok(ids(admin).includes('op'))
+  assert.ok(ids(admin).includes('other'))
+  assert.ok(ids(manager).includes('op'))
+  assert.ok(!ids(manager).includes('other'))
 })
 
 test('a person calendar matches a booking stored under either id', () => {

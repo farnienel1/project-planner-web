@@ -6,10 +6,9 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { UserRole, type HolidayBooking, type User } from '../../types/index.ts'
-import { bookingMatchesPerson, buildAnnualLeavePeople, canManagePersonAnnualLeave } from './annualLeavePerson.ts'
 import { getPendingHolidayApprovalsForUser } from './holidayApprovalUtils.ts'
 import { isPendingHolidayRequest } from '../stores/holidayStore.ts'
-import { teamLeaveBookings, teamLeaveDecisionQueue, teamLeavePeople } from './teamLeaveQueue.ts'
+import { teamLeaveBookings, teamLeaveDecisionQueue, teamLeavePeople, teamLeaveTab } from './teamLeaveQueue.ts'
 
 function person(id: string, partial: Partial<User> = {}): User {
   return {
@@ -44,17 +43,28 @@ const bookings = [
   leave('L4', 'mgr', 'pending', '2026-11-14T00:00:00Z'),
 ]
 
-for (const viewer of [admin, mgr, op1]) {
-  test(`the Team queue is unchanged by the move (${viewer.id})`, () => {
-    const people = buildAnnualLeavePeople(users, []).filter((p) => canManagePersonAnnualLeave(viewer, p, users))
-    const team = bookings.filter((b) => people.some((p) => bookingMatchesPerson(b, p)))
-    const before = getPendingHolidayApprovalsForUser(team, viewer, users, [])
+test('1.40.0: the Team list is annualLeaveTeamPeople — admins everyone but themself, managers their reports, operatives nobody', () => {
+  const ids = (viewer: User) => teamLeavePeople(viewer, users, []).map((p) => p.userId)
+  assert.deepEqual(ids(admin), ['mgr', 'op1', 'op2'])
+  assert.deepEqual(ids(mgr), ['op1'])
+  assert.deepEqual(ids(op1), [])
+  assert.equal(teamLeaveTab(admin, users, []), true)
+  assert.equal(teamLeaveTab(mgr, users, []), true)
+  assert.equal(teamLeaveTab(op1, users, []), false)
+  // A self-booker is still on their line manager's list (owner decision 11 Nov).
+  const selfBooker = { ...op1, permissions: { ...op1.permissions, annualLeaveSelfBook: true } } as User
+  assert.deepEqual(teamLeavePeople(mgr, [admin, mgr, selfBooker, op2], []).map((p) => p.userId), ['op1'])
+})
+
+test('1.40.0: the queue is leaveDecisionQueue over the Team list', () => {
+  for (const viewer of [admin, mgr, op1]) {
+    const team = teamLeaveBookings(bookings, teamLeavePeople(viewer, users, []))
+    const expected = getPendingHolidayApprovalsForUser(team, viewer, users, [])
       .filter((b) => isPendingHolidayRequest(b))
       .sort((a, b) => b.startDate.getTime() - a.startDate.getTime())
-    const after = teamLeaveDecisionQueue(teamLeaveBookings(bookings, teamLeavePeople(viewer, users, [])), viewer, users, [])
-    assert.deepEqual(after.map((b) => b.id), before.map((b) => b.id))
-  })
-}
+    assert.deepEqual(teamLeaveDecisionQueue(team, viewer, users, []).map((b) => b.id), expected.map((b) => b.id))
+  }
+})
 
 test('a line manager decides only their reports; nobody decides their own', () => {
   const queue = (viewer: User) =>

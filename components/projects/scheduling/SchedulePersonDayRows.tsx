@@ -11,7 +11,7 @@ import { slotKey, type ScheduleDateSlot } from '@/lib/scheduling/scheduleUtils'
 import { leaveConflictDetail } from '@/lib/scheduling/leaveConflicts'
 
 function DayStateIcon({ state }: { state: DraftBookingPerson['dayStates'][string] }) {
-  if (state === 'free' || state === 'clash_accepted') {
+  if (state === 'free' || state === 'clash_accepted' || state === 'clash_replace') {
     return (
       <span className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white">
         ✓
