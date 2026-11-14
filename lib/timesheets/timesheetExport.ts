@@ -14,7 +14,7 @@ import type { Operative, User } from '@/types'
 import { personRateHistoryIds } from '@/lib/pay/personRateHistoryIds'
 import type { OperativeDayRateHistoryCollection, OperativeDayRateHistoryEntry } from '@/lib/timesheets/dayRateHistoryStorage'
 import { formatMoney } from '@/lib/canonical/money'
-import { parseMultipliedHoursText } from '@/lib/canonical/payrollHours'
+import { parseMultipliedHoursText, timesheetLineClockText } from '@/lib/canonical/payrollHours'
 import { timesheetInvoiceRows } from '@/lib/canonical/reportPay'
 import { priceWorkJobNumberText } from '@/lib/canonical/priceWorkJobNumber'
 import { emailDocument, emailHeading, emailLink, emailList, emailStrong, emailText } from '@/lib/email/emailTheme'
@@ -141,7 +141,9 @@ function signedOverrideDetails(
       ? { isOvertime: true, otMultiplier: slice.otMultiplier, clockHours: slice.clockHours ?? null, breakHours: slice.breakHours ?? null }
       : {}),
   }).equation
-  const clock = line.details && isClockSpanLabel(line.details) ? `${line.details} · ` : ''
+  // 1.43.0: the clock part only (`timesheetLineClockText`); the multiplied text is in the equation.
+  const clockPart = timesheetLineClockText(line.details)
+  const clock = clockPart && isClockSpanLabel(clockPart) ? `${clockPart} · ` : ''
   return `${clock}${equation}`
 }
 

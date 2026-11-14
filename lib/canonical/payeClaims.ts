@@ -314,6 +314,36 @@ export function priceWorkApproverCandidates(
   })
 }
 
+export const AGREED_MANAGER_SUGGESTIONS_MAX = 6
+
+/**
+ * Rulebook 1.43.0 §8 (timesheet price work "Manager who agreed this"): the names offered as the person types — the
+ * same people `priceWorkApproverCandidates` offers (active admins and managers of the organisation, one per person,
+ * never the person themself), whose name contains the typed text anywhere, without case. At most
+ * `AGREED_MANAGER_SUGGESTIONS_MAX` (6), in the candidates' order; nothing for an empty query, and a name typed exactly
+ * is not offered again. The field stays free text: a suggestion only fills it.
+ */
+export function agreedManagerSuggestions(
+  query: string | null | undefined,
+  person: LineManagerSubject | null | undefined,
+  roster: ReadonlyArray<LineManagerRosterPerson> | null | undefined,
+  options?: { organizationId?: string | null } | null
+): string[] {
+  const needle = text(query).toLowerCase()
+  if (!needle) return []
+  const names: string[] = []
+  const seen = new Set<string>()
+  for (const candidate of priceWorkApproverCandidates(person, roster, options)) {
+    const name = text(candidate.name)
+    const key = name.toLowerCase()
+    if (!name || key === needle || seen.has(key) || !key.includes(needle)) continue
+    seen.add(key)
+    names.push(name)
+    if (names.length >= AGREED_MANAGER_SUGGESTIONS_MAX) break
+  }
+  return names
+}
+
 /** A stored organisation reference (id, `organizations/{id}` path) names `organizationId` (without case). */
 function homeOrganizationIs(value: unknown, organizationId: string): boolean {
   const raw = typeof value === 'string' ? value : value && typeof value === 'object' && 'path' in (value as object) ? String((value as { path: unknown }).path) : ''

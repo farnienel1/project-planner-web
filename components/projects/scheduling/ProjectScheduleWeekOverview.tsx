@@ -26,6 +26,7 @@ import {
   scheduleCellHours,
   scheduleCellKind,
   scheduleDayCell,
+  subcontractorScheduleCell,
   type JobScheduleLeaveMark,
   type ScheduleCellKind,
   type ScheduleDayBooking,
@@ -116,6 +117,11 @@ type DayRow = {
   booking?: Booking
   managerBooking?: ManagerSiteBooking
   subBooking?: SubBooking
+  /**
+   * Rulebook 1.43.0 §21: a subcontractor row's day — the working hours in effect that day and its key — so its tile
+   * shows only the working window (`subcontractorScheduleCell`), never paid hours or an overtime split.
+   */
+  subDay?: { policy: OrgPayrollTimePolicy; dayKey: string }
   peopleLabel?: string
   firmName?: string
 }
@@ -179,6 +185,28 @@ function bookingRowFromHours(input: BookingHoursInput): Pick<DayRow, 'hours' | '
     slot: slotStr,
     cell,
     dayBooking,
+  }
+}
+
+/**
+ * Rulebook 1.43.0 §21 (owner rule): a subcontractor booking shows only its working window (start–finish), never the
+ * standard / overtime split or paid hours (`subcontractorScheduleCell`). The tile and the day's chooser read the times.
+ */
+function subcontractorRow(
+  booking: { timeSlot?: string; workStartTime?: string; workEndTime?: string },
+  policy: OrgPayrollTimePolicy,
+  dayKey: string
+): Pick<DayRow, 'hours' | 'overtimeEquation' | 'range' | 'slot' | 'cell' | 'dayBooking' | 'subDay'> {
+  const cell = subcontractorScheduleCell({ bookings: [booking], day: policy, dayKey })
+  const times = cell?.timesText || bookingTimesText(booking)
+  return {
+    hours: 0,
+    overtimeEquation: null,
+    range: cell?.timesText || null,
+    slot: times,
+    cell: { tone: 'standard', standardHours: 0, overtimeHours: 0, halfLabel: null },
+    dayBooking: { paidHours: 0, overtimeHours: 0, timeSlot: booking.timeSlot ?? null, overtime: null },
+    subDay: { policy, dayKey },
   }
 }
 
@@ -436,12 +464,7 @@ export function ProjectScheduleWeekOverview({
             personIds: [],
             email: null,
             subBooking: b,
-            ...bookingRowFromHours({
-              ...b,
-              // Rulebook 1.19.0: the working hours in effect on that day (history first), never today's.
-              policy: policyForBookingDayKey(dayKey, payroll) ?? payroll,
-              dayKey,
-            }),
+            ...subcontractorRow(b, policyForBookingDayKey(dayKey, payroll) ?? payroll, dayKey),
           }
         })
 
@@ -1041,9 +1064,17 @@ function DayTile({
   leave: JobScheduleLeaveMark | null
   onOpen: () => void
 }) {
-  const day: ScheduleDayCell | null = scheduleDayCell({ bookings: rows.map((row) => row.dayBooking), onLeave: Boolean(leave) })
-  if (!day) return null
   const first = rows[0]
+  // Rulebook 1.43.0 §21: a subcontractor's day shows its working window(s) only (`subcontractorScheduleCell`).
+  const subOnly = rows.length > 0 && rows.every((row) => row.roleTone === 'subcontractor' && row.subBooking)
+  const day: ScheduleDayCell | null = subOnly
+    ? subcontractorScheduleCell({
+        bookings: rows.map((row) => row.subBooking ?? null),
+        day: first.subDay?.policy ?? null,
+        dayKey: first.subDay?.dayKey ?? null,
+      })
+    : scheduleDayCell({ bookings: rows.map((row) => row.dayBooking), onLeave: Boolean(leave) })
+  if (!day) return null
   const single = rows.length === 1
   const clickable = rows.some((row) => Boolean(row.booking || row.managerBooking || row.subBooking))
   const nameOnTile = first.peopleLabel || (first.roleTone === 'subcontractor' ? first.name : '')
@@ -1064,7 +1095,7 @@ function DayTile({
   const headline = (ink: string) => (
     <>
       {nameOnTile ? <p className={`text-[10px] font-semibold leading-tight ${ink}`}>{nameOnTile}</p> : null}
-      {single ? <p className={`${expanded ? 'text-[11px]' : 'text-[10px]'} font-semibold leading-tight ${ink}`}>{first.slot}</p> : null}
+      {single && !subOnly ? <p className={`${expanded ? 'text-[11px]' : 'text-[10px]'} font-semibold leading-tight ${ink}`}>{first.slot}</p> : null}
       <p className={`${hoursSize} font-bold ${ink}`} data-testid="schedule-day-headline">
         {day.headline}
       </p>
@@ -1167,7 +1198,7 @@ function DayBookingChooser({
                 <span className="block text-[13px] font-semibold text-slate-900">{row.slot}</span>
                 {row.overtimeEquation ? <span className="block text-[11px] text-slate-500">{row.overtimeEquation}</span> : null}
               </span>
-              <span className="shrink-0 text-[13px] font-bold text-slate-700">{formatHoursLabel(row.hours)}h</span>
+              {row.subBooking ? null : <span className="shrink-0 text-[13px] font-bold text-slate-700">{formatHoursLabel(row.hours)}h</span>}
             </button>
           ))}
         </div>

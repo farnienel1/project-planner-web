@@ -48,6 +48,7 @@ export function ScheduleBookingReviewStep({
   onRemovePerson,
   onAddAnother,
   onChangeDates,
+  otMultiplierOverride = null,
 }: {
   people: DraftBookingPerson[]
   slots: ScheduleDateSlot[]
@@ -57,6 +58,8 @@ export function ScheduleBookingReviewStep({
   onAddAnother: () => void
   /** Back to the dates step; the people chosen stay. */
   onChangeDates?: () => void
+  /** Rulebook 1.43.0: the overtime rate chosen for the booking (null = the organisation's), priced in the review. */
+  otMultiplierOverride?: number | null
 }) {
   const policy = useOrganizationPayrollPolicy()
   if (people.length === 0) {
@@ -101,14 +104,14 @@ export function ScheduleBookingReviewStep({
           const weekendRows = bookableDays.flatMap((slot) => {
             const stored = slotToFirestore(slot)
             return stored.timeSlot === 'CUSTOM_HOURS'
-              ? weekendBreakdownForDates([slot.date], stored.workStartTime, stored.workEndTime, false, policy)
+              ? weekendBreakdownForDates([slot.date], stored.workStartTime, stored.workEndTime, false, policy, otMultiplierOverride)
               : []
           })
           // Rulebook 1.39.0 (`bookingHoursExplanation`): custom weekday hours explained the same way.
           const weekdayExplanations = bookableDays.map((slot) => {
             const stored = slotToFirestore(slot)
             return stored.timeSlot === 'CUSTOM_HOURS'
-              ? weekdayExplanationForDate(slot.date, stored.workStartTime, stored.workEndTime, false, policy)
+              ? weekdayExplanationForDate(slot.date, stored.workStartTime, stored.workEndTime, false, policy, otMultiplierOverride)
               : null
           })
 

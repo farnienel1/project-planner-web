@@ -57,6 +57,11 @@ export function initialHoursChoice(input: {
       breakRemoved: Boolean(managerBooking.isBreakRemoved),
     }
   }
+  // 1.43.0: a line's details show only its own part (standard or overtime times), so the booking's whole times
+  // come from the line's booking fields; older lines without them are read from their details as before.
+  if (row.bookingStartTime && row.bookingEndTime) {
+    return { startTime: row.bookingStartTime, endTime: row.bookingEndTime, breakRemoved: row.bookingBreakRemoved === true }
+  }
   const parsed = timesFromPayrollLineDetails(row.details)
   if (parsed) return parsed
   if (row.details.includes(':')) {

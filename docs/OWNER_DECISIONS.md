@@ -412,6 +412,34 @@ UI only, web only (`docs/design/web-pages-ui/web-pages-ui-spec.md`; branch `w-ui
 | 12 Nov | Daily overview: "Daily overview" stays the page's heading (h1), shown in the band's small top line with the date (spec §4.1), also while loading; the booked line is a paragraph styled as the title; "· Tap to change booking" is no longer shown under each row — the row and its **Change** button open the same booking sheet (spec §4.1); the "Where the team is" legend adds "N Unbooked" (the same count as the header); a half-day booking's Type chip reads "Half day" (the scheduling legend's word); the Type and Hours column headers are new; the Overtime figure is amber and the Unbooked figure turns red when above 0 (spec §4.1); the bar runs on site, office, WFH, then unbooked in red stripes (before: office, WFH, on site; the legend keeps Office, WFH, On site), with fixed colours on the navy band (`--pu-team-*` tokens). | done, owner to confirm |
 | 12 Nov | Daily overview: a person with two bookings on one job is still one row (as today). The Booking column lists each booking's shift and times, skipping one that reads the same as what is shown (as the old subtitle did). The Type chip adds the hours up first (`scheduleCellHours` summed, then `scheduleCellKind`); when every booking of the row has the same stored slot that slot is passed too (AM + AM stays "Half day", an OVERTIME slot stays "OT only"); when the slots differ the summed hours alone decide. | done, owner to confirm |
 
+## 14 Nov decisions (User profile and Edit user restyle, UI only)
+
+UI only, web only (`docs/design/user-profile-ui/user-profile-ui-spec.md`; branch `w-ui-user-profile`). Owner answered "yes to all" to the Phase 1 recommendations.
+
+| Date | Decision | Status |
+|---|---|---|
+| 14 Nov | **P1** Only the User profile and Edit user pages change. Shared components (`OperativeQualificationsEditor`, `ProfileExpandablePermissionToggle` / `PermissionRowsList`, `PayBasisFields`, `GhostAppAccessCard`) get an opt-in `variant="profile"`; everywhere else they look as today. `components/settings/primitives/*` and `RouteLoading` are not touched. | done web (w-ui-user-profile) |
+| 14 Nov | **P2** The qualifications Add qualifications / Save / Saved bar stays where it is (sticky on mobile), restyled. | done web (w-ui-user-profile) |
+| 14 Nov | **P3** Both Save controls stay: the band keeps the Save button / "No changes" / "View only" in the old header position, and the lower Save button stays, restyled. | done web (w-ui-user-profile) |
+| 14 Nov | **P4** Employment type stays a dropdown (restyled), same options in the same order. | done web (w-ui-user-profile) |
+| 14 Nov | **P5** No certificate status chip on the profile page (it would need a new read). | done web (w-ui-user-profile: the expiry text shows as a chip instead) |
+| 14 Nov | **P6** Band figures are display only; Employment and Rate keep the `canViewPersonPay` gate; the line manager shows as today. | done web (w-ui-user-profile) |
+| 14 Nov | **P7** Everything spec §3 did not list is kept in its nearest section in the new style with identical behaviour and text: resend sign-up email, View only, User not found, Pending chip, every banner (reports block, account type out of sync, saving, type change pending), Previous rates, rate and line-manager errors, Custom trade, VAT / UTR extras, the fix-email form, the draft permission list in Change user type, the operatives-manager Deactivate / Delete operative rows, every dialog, the qualification extras, the ghost Give app access card, the lower Save and "Administrator setup". | done web (w-ui-user-profile) |
+| 14 Nov | **P8** The ghost's Edit user header chip stays as today (Verified / Pending from `passwordSet`). | done web (w-ui-user-profile) |
+| 14 Nov | **P9** "Annual leave in app" and "Annual leave" content kept exactly; merging them into one section is allowed. | done web (w-ui-user-profile: one section titled "Annual leave") |
+| 14 Nov | **P10** 240px left-column settings layout at ≥1024px; the page widens. Dark mode with matching tokens and AA contrast. | done web (w-ui-user-profile: page up to 1180px) |
+
+## User profile restyle judgement calls (owner to confirm)
+
+| Date | Choice | Status |
+|---|---|---|
+| 14 Nov | The merged annual leave section is titled "Annual leave" (spec §3.2 recommendation), so the heading "Annual leave in app" is no longer shown; the section and its title show whenever the allowance toggle showed before, and the fields only while it is on, as before. | done, owner to confirm |
+| 14 Nov | New display text from the spec: the profile band's top line "User profile", the qualification card's "Choose file" (the browser's own "Choose File / No file chosen" no longer shows; a chosen file still shows in the existing "Ready to upload" block), a "Locked on" chip on locked permission rows that are on (every locked admin row shows it), "days remaining" under the large remaining figure, and a ✓ in the "Certificate uploaded" chip. | done, owner to confirm |
+| 14 Nov | The profile page's qualification rows show the existing expiry text ("Expires …" / "No expiry") as a chip on the right (P5: no certificate status). | done, owner to confirm |
+| 14 Nov | Account actions keep today's order: when Change user type is open, the chooser panel sits above the Change Super Admin / Change user type rows and the Change user type row stays visible (the reference hid it). | done, owner to confirm |
+| 14 Nov | No "Pay" label above the pay row (the reference had one; it would be new text). Previous rates sit full width under the pay row. | done, owner to confirm |
+| 14 Nov | Accessibility only: switches carry their row title as a label, permission rows say whether they are expanded, and the three confirmation dialogs are marked as dialogs. No handler or text changed. | done, owner to confirm |
+
 ## 1.40.0 judgement calls (owner to confirm)
 
 | Date | Choice | Status |
@@ -450,10 +478,38 @@ UI only, web only (`docs/design/web-pages-ui/web-pages-ui-spec.md`; branch `w-ui
 | 13 Nov | **32–35** Email dedupe choices as proposed, including the TTL clean-up. | decided |
 | 13 Nov | **36** No extra signed-timesheet warnings on moves or bulk deletes (both apps unchanged). | confirmed — unchanged |
 
+## 14 Nov decisions (for 1.43, timesheet fixes)
+
+| Date | Decision | Status |
+|---|---|---|
+| 14 Nov | **Edit booking shows the booking's own overtime rate in its hours.** Owner example: working day 07:00–16:00, 30 min unpaid break, organisation rate 1.5; a booking 07:00–19:00 at ×2 reads "8.5h + 3h × 2 = 6h → 14.5h". Every booking editor and create screen prices the rate on screen. | done web + rulebook (1.43.0, w143-timesheet-fixes); iOS open (hand-off v1.43.0) |
+| 14 Nov | **On a timesheet the standard line shows the standard-window times and the overtime line the overtime times** (07:00–16:00 and 16:00–19:00; an early start and a late finish are two overtime ranges). Wording only; signed sheets keep their stored text. | done web + rulebook (1.43.0, `payrollLineClockRanges`); iOS open |
+| 14 Nov | **Operatives can list their own timesheets** (the settings read rule refused their own `userId` query). | done web + rules (1.43.0); owner rules publish pending |
+| 14 Nov | **A counter-signature never freezes an empty snapshot**: sign / counter-sign wait for the period's bookings ("Loading bookings…"); a snapshot already frozen empty is rebuilt from the live bookings with its signatures kept; a snapshot with labour lines is never re-priced. | done web + rulebook (1.43.0, `timesheetSnapshotReady`, `timesheetSnapshotNeedsRebuild`); iOS open |
+| 14 Nov | **No price work or expenses once the line manager has signed** — option 1: the add controls are off with "This timesheet is signed off — add it to your next timesheet."; the person's signature is never cleared (it left the sheet half signed). | done web + rulebook (1.43.0, `timesheetOwnerCanAddExtras`), **owner confirmation of option 1 pending**; iOS open |
+| 14 Nov | **Subcontractor bookings on the job week grid show only the working window** (start–finish), never the standard / overtime split or paid hours. | done web + rulebook (1.43.0, `subcontractorScheduleCell`); iOS open |
+| 14 Nov | **"Manager who agreed this" suggestions follow the price work approvers' rule** (one rule for both apps). | done web + rulebook (1.43.0, `agreedManagerSuggestions`); iOS open |
+| 14 Nov | **How hours are divided by the paid day (8 vs 8.5)** — not changed in 1.43.0; waiting on the owner. | question |
+
+## 1.43.0 judgement calls (owner to confirm)
+
+| Date | Choice | Status |
+|---|---|---|
+| 14 Nov | An overtime line with an unpaid break keeps its multiplied text after the times ("16:00–19:00 · OT 6.5h × 2 − 0.5h break = 12.5h") so a signed copy still shows the break; screens show only the times beside the rate line. A booking with no standard part keeps its own times on the (0h) standard line; FULL DAY / AM / PM keep their names. | done, owner to confirm |
+| 14 Nov | "Loading bookings…" holds every save that builds the snapshot (signing, counter-signing, invoice, adding extras, notes), not only the sign buttons, for the few seconds the bookings take. | done, owner to confirm |
+| 14 Nov | The empty-snapshot rebuild runs once per visit, by the line manager / an admin (or a self-signed owner) opening the sheet; there is no script for sheets nobody opens. Review r318: only when a booking created and last written by the time the sheet was approved is missing from it — a sheet signed with price work / expenses only is never re-priced by a booking added, moved or changed later. Export rebuilds before it stamps the sheet exported. | done, owner to confirm |
+| 14 Nov | A self-signed sheet (no line manager signs it) still lets the person add extras; they sign again. | done, owner to confirm |
+| 14 Nov | Agreed-manager suggestions match the name only (the old web list also matched the email) and only people whose users document names this organisation (the approvers' rule). | done, owner to confirm |
+| 14 Nov | Subcontractor tiles are one plain blue (no overtime stripes); the day chooser shows the times with no hours. | done, owner to confirm |
+| 14 Nov | Exported list gets a "Download PDF" action on each row (rebuilt from the saved snapshot, never re-stamped), so a sheet whose email or backup failed during Export can always be fetched again (review r318). | done, owner to confirm |
+| 14 Nov | Download PDF of an older exported sheet with no saved snapshot rebuilds it from today's bookings, rates and working hours: a confirm says it may differ from the one sent, and the PDF carries "Rebuilt on {date} — may differ from the original export." Sheets with a saved snapshot are drawn from it unchanged (review r318). | done, owner to confirm |
+| 14 Nov | When the history query fails, the period shows "Couldn't check older timesheets — try again." with Retry and saves nothing until it loads (review r318, 2nd round; never a blank new sheet). | done, owner to confirm |
+
 ## Open questions for the owner
 
 | Date | Question |
 |---|---|
+| 14 Nov | **Sheets already half signed** (the person's signature cleared after their line manager signed, before 1.43.0): `timesheetListBucket` reads them `unsigned`, so they are in neither Awaiting nor Signed off on User Timesheets and Generate invoice is grey. Options: (a) leave them; the person signs again and the sheet returns to Signed off (their line manager's signature and snapshot are still stored); (b) list them under Awaiting with a "Needs the person's signature again" note; (c) a one-off owner-run script lists them for you to check. Recommended (a) + (c). Not changed in 1.43.0. |
 | 11 Nov | ANSWERED 13 Nov (item 18: from today, done in 1.40.0). **Employment-type changes made "immediately" or backdated store no date** (`applyEmploymentTypeChange` clears the transition), so the leave rule reads the whole year as the new type: switching someone to PAYE today gives a full-year allowance, not pro rata from today. Only a change scheduled for a future day gives pro rata from D. Fix: keep the date for every change — but that also changes which days are on that person's timesheet (pay), so it needs your yes. Recommended: yes, in its own release with `minimumIosBuild` raised. |
 | 12 Nov | ANSWERED 13 Nov (item 18: from today, done in 1.40.0). **(Review r306 #3, same question, more detail.)** An "immediately" type change also re-types the **whole year, carry-over included**: PAYE → self-employed today removes this year's allowance *and* what was carried in; self-employed → PAYE today gives the full year plus carry-over from a year that was self-employed (nothing, since no carry-over comes out of a self-employed year — but a year that was PAYE before a backdated change counts as self-employed and carries nothing). Not changed in 1.40.0 (behaviour as built). Options: (a) keep as built; (b) store the effective date for every change (fixes pro rata and carry-over; also moves timesheet days — pay). Recommended (b), own release. |
 | 12 Nov | ANSWERED 13 Nov (item 19: any case is PAYE, done in 1.40.0). **(Review r306 #4.)** Treat "PAYE" in any letter case (and with spaces, e.g. " paye ") as PAYE everywhere? Today only the exact stored word `paye` is PAYE; anything else reads as self-employed, so such a person has no timesheet-free PAYE days, is paid as self-employed and (from 1.40.0) has no leave allowance. Changing the reading would change pay and timesheets for those people. Not changed in 1.40.0; Settings → Data health now lists them so an admin can fix the stored value. Options: (a) keep exact and fix the data (recommended first); (b) read any case as PAYE (own release, `minimumIosBuild` raised). |

@@ -15,7 +15,16 @@ import {
 } from '@/lib/settings/organizationSettings'
 import { personRateHistoryIds } from '@/lib/pay/personRateHistoryIds'
 import { findOperativeForUser } from '@/lib/operatives/operativeRosterUtils'
-import { bookingIdsForAccount, bookingOccupiesDay, formatMoney, overlappingBookingIds, payrollMultipliedHours, weekdayPaidHours } from '@/lib/canonical'
+import {
+  bookingIdsForAccount,
+  bookingOccupiesDay,
+  formatMoney,
+  overlappingBookingIds,
+  payrollLineClockRanges,
+  payrollMultipliedHours,
+  timesheetLineClockText,
+  weekdayPaidHours,
+} from '@/lib/canonical'
 import { employmentTypeOnDay } from '@/lib/ios-parity/employmentType'
 import { emptyDayRateHistory, type OperativeDayRateHistoryCollection } from '@/lib/timesheets/dayRateHistoryStorage'
 import {
@@ -65,6 +74,17 @@ export type TimesheetPayrollLineItem = {
   hasRate: boolean
   /** The booking (operative or manager) this line comes from. */
   bookingId?: string
+  /**
+   * Rulebook 1.43.0 (display only, never stored): the booking's own clock times and break toggle. `details` now shows
+   * only this line's part (`payrollLineClockRanges`), so Edit hours reads the whole booking from these when the live
+   * booking is not loaded.
+   */
+  bookingStartTime?: string
+  bookingEndTime?: string
+  bookingBreakRemoved?: boolean
+  /** Rulebook 1.43.0 (rebuild check only, never stored): when the line's booking was created and last written. */
+  bookingCreatedAt?: Date
+  bookingUpdatedAt?: Date
   dayKey?: string
   /**
    * `overlappingBookingIds`: this booking overlaps another on the same day. Every booking is
@@ -141,8 +161,23 @@ export function timesheetHoursRateLine(line: TimesheetPayrollLineItem, currencyC
 /** Clock span may sit beside the equation. A slot name such as FULL DAY is not the quantity. */
 export function timesheetLabourDetails(line: TimesheetPayrollLineItem, currencyCode?: string): string {
   const equation = timesheetHoursRateLine(line, currencyCode)
-  if (isClockSpanLabel(line.details)) return `${line.details} · ${equation}`
+  // 1.43.0: only the clock part of the details (`timesheetLineClockText`), so the multiplied text is not shown twice.
+  const clock = timesheetLineClockText(line.details)
+  if (isClockSpanLabel(clock)) return `${clock} · ${equation}`
   return equation
+}
+
+function toDateOrNull(value: unknown): Date | null {
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value
+  if (typeof value === 'number' || typeof value === 'string') {
+    const date = new Date(value)
+    return Number.isNaN(date.getTime()) ? null : date
+  }
+  if (value && typeof value === 'object' && typeof (value as { toDate?: unknown }).toDate === 'function') {
+    const date = (value as { toDate: () => Date }).toDate()
+    return date instanceof Date && !Number.isNaN(date.getTime()) ? date : null
+  }
+  return null
 }
 
 export function collectTimesheetPayroll({
@@ -240,7 +275,9 @@ export function collectTimesheetPayroll({
     isBreakRemoved: boolean | undefined,
     labels: { jobNumber: string; siteName: string },
     operative?: Operative | null,
-    otMultiplierOverride?: number | null
+    otMultiplierOverride?: number | null,
+    bookingCreatedAt?: Date | null,
+    bookingUpdatedAt?: Date | null
   ) => {
     if (!isDateInPeriod(date, periodStart, periodEnd, timeZone)) return
     if (!countedDays.has(dayKey(date, zone))) return
@@ -275,6 +312,21 @@ export function collectTimesheetPayroll({
     const hasRate = payrollRateHasValue(resolved)
     // 1.20.3: hours at the multiplier as clock hours, with any unpaid break as plain hours (display only).
     const multiplied = payrollMultipliedHours(hours)
+    // 1.43.0 (owner rule, `payrollLineClockRanges`): a booking with clock times shows the standard-window times on its
+    // standard line and the overtime times on its overtime line. Wording only; a booking with no standard part keeps
+    // its own times, and a named slot (FULL DAY, AM, PM) keeps its name.
+    const clockRanges = workStartTime && workEndTime ? payrollLineClockRanges(hours) : null
+    const standardDetails = clockRanges?.standardText
+      ? isBreakRemoved
+        ? `${clockRanges.standardText} · no break`
+        : clockRanges.standardText
+      : scheduleLabel(timeSlot, workStartTime, workEndTime, isBreakRemoved)
+    const multipliedText = multiplied && multiplied.breakHours > 0 ? `OT ${multiplied.text}` : null
+    const overtimeDetails = clockRanges?.overtimeText
+      ? multipliedText
+        ? `${clockRanges.overtimeText} · ${multipliedText}`
+        : clockRanges.overtimeText
+      : multipliedText ?? `OT ${formatTimesheetHours(multiplied ? multiplied.clockHours : otHours)}h`
     shiftCount += 1
     totalHours += paidHours
     overtimeHours += multiplied ? multiplied.clockHours : otHours
@@ -289,7 +341,7 @@ export function collectTimesheetPayroll({
       date,
       jobNumber: labels.jobNumber,
       projectName: labels.siteName,
-      details: scheduleLabel(timeSlot, workStartTime, workEndTime, isBreakRemoved),
+      details: standardDetails,
       paidHours: normalHours,
       payrollBasis: resolved.basis,
       dayRate: resolved.dayRate ?? 0,
@@ -302,6 +354,9 @@ export function collectTimesheetPayroll({
       isOvertimeLine: false,
       hasRate,
       bookingId: lineBookingId,
+      ...(workStartTime && workEndTime ? { bookingStartTime: workStartTime, bookingEndTime: workEndTime, bookingBreakRemoved: isBreakRemoved === true } : {}),
+      ...(bookingCreatedAt instanceof Date && !Number.isNaN(bookingCreatedAt.getTime()) ? { bookingCreatedAt } : {}),
+      ...(bookingUpdatedAt instanceof Date && !Number.isNaN(bookingUpdatedAt.getTime()) ? { bookingUpdatedAt } : {}),
       dayKey: lineDayKey,
     })
     if (otHours > 0.05) {
@@ -313,10 +368,7 @@ export function collectTimesheetPayroll({
         date,
         jobNumber: labels.jobNumber,
         projectName: `${labels.siteName} (Overtime)`,
-        details:
-          multiplied && multiplied.breakHours > 0
-            ? `OT ${multiplied.text}`
-            : `OT ${formatTimesheetHours(multiplied ? multiplied.clockHours : otHours)}h`,
+        details: overtimeDetails,
         paidHours: otHours,
         ...(multiplied && multiplied.breakHours > 0 ? { otClockHours: multiplied.clockHours, otBreakHours: multiplied.breakHours } : {}),
         payrollBasis: resolved.basis,
@@ -329,6 +381,9 @@ export function collectTimesheetPayroll({
         isOvertimeLine: true,
         hasRate,
         bookingId: lineBookingId,
+        ...(workStartTime && workEndTime ? { bookingStartTime: workStartTime, bookingEndTime: workEndTime, bookingBreakRemoved: isBreakRemoved === true } : {}),
+        ...(bookingCreatedAt instanceof Date && !Number.isNaN(bookingCreatedAt.getTime()) ? { bookingCreatedAt } : {}),
+        ...(bookingUpdatedAt instanceof Date && !Number.isNaN(bookingUpdatedAt.getTime()) ? { bookingUpdatedAt } : {}),
         dayKey: lineDayKey,
       })
     }
@@ -348,7 +403,9 @@ export function collectTimesheetPayroll({
       booking.isBreakRemoved,
       projectLabel(booking.projectId, projects, smallWorks),
       matchedOperative,
-      booking.otMultiplierOverride
+      booking.otMultiplierOverride,
+      toDateOrNull(booking.createdAt),
+      toDateOrNull(booking.updatedAt)
     )
   }
 
@@ -367,7 +424,9 @@ export function collectTimesheetPayroll({
       managerLabels(booking, projects, smallWorks),
       linked || matched[0],
       // Rulebook 1.29.0: a manager site booking's own overtime rate prices its overtime part too.
-      booking.otMultiplierOverride
+      booking.otMultiplierOverride,
+      toDateOrNull(booking.createdAt),
+      toDateOrNull(booking.updatedAt)
     )
   }
 

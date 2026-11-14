@@ -273,11 +273,13 @@ export function DailyOverviewBookingSheet({
         workStartTime,
         workEndTime,
         isBreakRemoved: breakRemoved,
+        // Rulebook 1.43.0 (§25): the booking's own overtime rate as chosen on screen (null = the organisation's).
+        otMultiplierOverride: overtimeRate,
         // Rulebook 1.19.0: the working hours in effect on the day shown.
         policy: policyForBookingDate(day, payroll) ?? payroll,
         dayKey: bookingDayKey(day),
       }),
-    [workStartTime, workEndTime, breakRemoved, payroll, day]
+    [workStartTime, workEndTime, breakRemoved, overtimeRate, payroll, day]
   )
 
   const hoursFields = () => ({
@@ -557,6 +559,7 @@ export function DailyOverviewBookingSheet({
             policy={payroll}
             date={day}
             showBreak
+            otMultiplierOverride={overtimeRate}
             onStart={(value) => {
               hoursTouched.current = true
               setWorkStartTime(value)
@@ -584,8 +587,8 @@ export function DailyOverviewBookingSheet({
           ) : null}
           <HoursBreakdownCard
             breakdown={breakdown}
-            dayRows={weekendBreakdownForDates([day], workStartTime, workEndTime, breakRemoved, payroll)}
-            explanation={weekdayExplanationForDate(day, workStartTime, workEndTime, breakRemoved, payroll)}
+            dayRows={weekendBreakdownForDates([day], workStartTime, workEndTime, breakRemoved, payroll, overtimeRate)}
+            explanation={weekdayExplanationForDate(day, workStartTime, workEndTime, breakRemoved, payroll, overtimeRate)}
           />
           <button type="button" className="btn primary" disabled={saving || !hoursValid} onClick={() => void saveHoursOnly()}>
             Save hours on this booking

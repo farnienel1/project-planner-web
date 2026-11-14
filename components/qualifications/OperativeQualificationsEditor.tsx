@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import type { Operative, Qualification } from '@/types'
 import { IosFormModal } from '@/components/ios/primitives'
 import { Button } from '@/components/ui'
@@ -20,8 +20,28 @@ import {
 import { QualificationLibraryBrowser } from './QualificationLibraryBrowser'
 import { ReportFileLink } from '@/components/fileReports/ReportFileLink'
 import { settingsDraftIsDirty } from '@/lib/settings/settingsDirty'
+import { Chip } from '@/components/ui/page'
+import { ProfileIcon } from '@/components/users/profile-ui'
 
 type LinkedOperative = Operative
+
+/**
+ * Profile look only: the existing file input inside a dashed "Choose file" area (a label, so a click opens the same
+ * picker). The input itself, its accept list, limits and onChange are unchanged. Default look: the input as before.
+ */
+function wrapFile(pv: boolean, disabled: boolean, input: ReactNode) {
+  if (!pv) return input
+  return (
+    <label className={disabled ? 'up-drop disabled' : 'up-drop'}>
+      <ProfileIcon name="upload" />
+      <span>
+        <b>Choose file</b>
+        <small>{QUALIFICATION_CERT_HINT}</small>
+      </span>
+      {input}
+    </label>
+  )
+}
 
 export function OperativeQualificationsEditor({
   linked,
@@ -31,6 +51,7 @@ export function OperativeQualificationsEditor({
   organizationId,
   canManageOrg,
   showReportLink = false,
+  variant,
 }: {
   linked?: LinkedOperative
   templates: Qualification[]
@@ -40,7 +61,13 @@ export function OperativeQualificationsEditor({
   canManageOrg: boolean
   /** Someone else's certificates (Edit User). Off on My Qualifications. */
   showReportLink?: boolean
+  /**
+   * `profile`: the Edit user look (docs/design/user-profile-ui/). Same controls, handlers, limits and text; only the
+   * styling and the layout of each card change. My Qualifications keeps the default look.
+   */
+  variant?: 'profile'
 }) {
+  const pv = variant === 'profile'
   const [draft, setDraft] = useState(linked)
   // `editing` stops a live update replacing the draft; `dirty` (below) is whether it differs from what is saved.
   const [editing, setDirty] = useState(false)
@@ -153,9 +180,9 @@ export function OperativeQualificationsEditor({
 
   if (!linked || !draft) {
     return (
-      <div className="rounded-[18px] bg-[var(--card)] p-6 shadow-[var(--sh)]">
-        <p className="text-[18px] font-semibold">Profile not linked</p>
-        <p className="mt-2 text-[15px] text-[var(--ink3)]">
+      <div className={pv ? 'up-qempty' : 'rounded-[18px] bg-[var(--card)] p-6 shadow-[var(--sh)]'}>
+        <p className={pv ? undefined : 'text-[18px] font-semibold'}>{pv ? <b>Profile not linked</b> : 'Profile not linked'}</p>
+        <p className={pv ? undefined : 'mt-2 text-[15px] text-[var(--ink3)]'}>
           No operative record matches this email. Ask an admin to check the account email matches the
           operative profile.
         </p>
@@ -166,13 +193,13 @@ export function OperativeQualificationsEditor({
   if (draft.qualifications.length === 0) {
     return (
       <>
-        <div className="rounded-[18px] bg-[var(--card)] p-6 shadow-[var(--sh)]">
-          <p className="text-[15px] text-[var(--ink3)]">
+        <div className={pv ? 'up-qempty' : 'rounded-[18px] bg-[var(--card)] p-6 shadow-[var(--sh)]'}>
+          <p className={pv ? undefined : 'text-[15px] text-[var(--ink3)]'}>
             {templates.length === 0
               ? 'No qualifications have been set up for your organisation yet. Ask a manager or admin to add qualification templates.'
               : 'No qualifications on this profile yet. Click Add qualifications to pick from the organisation library, then set expiry dates and certificates below.'}
           </p>
-          <Button variant="primary" className="mt-4" onClick={openPicker}>
+          <Button variant="primary" className={pv ? undefined : 'mt-4'} onClick={openPicker}>
             Add qualifications
           </Button>
         </div>
@@ -220,7 +247,13 @@ export function OperativeQualificationsEditor({
 
   return (
     <div className="space-y-4">
-      <div className="sticky bottom-20 z-10 flex flex-wrap items-center justify-end gap-3 rounded-[18px] bg-[color-mix(in_srgb,var(--card)_95%,transparent)] p-3 shadow-[var(--sh)] backdrop-blur lg:bottom-4">
+      <div
+        className={
+          pv
+            ? 'up-qbar'
+            : 'sticky bottom-20 z-10 flex flex-wrap items-center justify-end gap-3 rounded-[18px] bg-[color-mix(in_srgb,var(--card)_95%,transparent)] p-3 shadow-[var(--sh)] backdrop-blur lg:bottom-4'
+        }
+      >
         <Button variant="ghost" onClick={openPicker}>
           Add qualifications
         </Button>
@@ -228,22 +261,22 @@ export function OperativeQualificationsEditor({
           {uploading || saving ? 'Saving…' : dirty ? 'Save' : 'Saved'}
         </Button>
       </div>
-      {localError ? <p className="text-sm font-medium text-red-600">{localError}</p> : null}
+      {localError ? <p className={pv ? 'up-err' : 'text-sm font-medium text-red-600'}>{localError}</p> : null}
       {dirty ? (
-        <p className="text-right text-[13px] text-amber-700">
+        <p className={pv ? 'up-f-hint' : 'text-right text-[13px] text-amber-700'} style={pv ? { textAlign: 'right', color: 'var(--pu-c-amber-ink)' } : undefined}>
           Unsaved changes — click Save to keep expiry dates and certificates.
         </p>
       ) : null}
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className={pv ? 'up-qgrid' : 'grid gap-4 md:grid-cols-2'}>
         {draft.qualifications.map((qual) => {
           const expiry = draft.qualificationExpiryDates?.[qual.id]
           const cert = certificateUrlForQualification(draft.qualificationCertificateURLs, qual.id)
           const pending = pendingFiles[qual.id]
           const preview = previewUrls[qual.id]
           return (
-            <div key={qual.id} className="rounded-[18px] bg-[var(--card)] p-5 shadow-[var(--sh)]">
-              <p className="text-[17px] font-semibold">{qual.name}</p>
-              <label className="mt-3 block text-[13px] font-medium text-[var(--ink3)]">
+            <div key={qual.id} className={pv ? 'up-qcard' : 'rounded-[18px] bg-[var(--card)] p-5 shadow-[var(--sh)]'}>
+              {pv ? <b>{qual.name}</b> : <p className="text-[17px] font-semibold">{qual.name}</p>}
+              <label className={pv ? 'up-f up-f-label' : 'mt-3 block text-[13px] font-medium text-[var(--ink3)]'}>
                 Expiry date
                 <input
                   type="date"
@@ -258,10 +291,13 @@ export function OperativeQualificationsEditor({
                       return { ...current, qualificationExpiryDates: nextDates }
                     })
                   }}
-                  className="mt-1 w-full rounded-[13px] border-[1.5px] border-[var(--line2)] bg-[var(--card)] px-3.5 py-2.5"
+                  className={pv ? 'pp-in' : 'mt-1 w-full rounded-[13px] border-[1.5px] border-[var(--line2)] bg-[var(--card)] px-3.5 py-2.5'}
                 />
               </label>
-              <p className="mt-3 text-[12px] text-[var(--ink3)]">{QUALIFICATION_CERT_HINT}</p>
+              {pv ? null : <p className="mt-3 text-[12px] text-[var(--ink3)]">{QUALIFICATION_CERT_HINT}</p>}
+              {wrapFile(
+                pv,
+                saving || uploading,
               <input
                 type="file"
                 accept={QUALIFICATION_CERT_ACCEPT}
@@ -279,21 +315,27 @@ export function OperativeQualificationsEditor({
                   setPendingFiles((current) => ({ ...current, [qual.id]: picked }))
                   setDirty(true)
                 }}
-                className="mt-2 text-sm"
+                className={pv ? undefined : 'mt-2 text-sm'}
               />
+              )}
               {pending ? (
-                <div className="mt-2 rounded-xl bg-[#E6EBFF] px-3 py-2 text-[13px] text-[#3D56D1]">
+                <div className={pv ? 'up-qpending' : 'mt-2 rounded-xl bg-[#E6EBFF] px-3 py-2 text-[13px] text-[#3D56D1]'}>
                   <p className="font-semibold">Ready to upload: {pending.name}</p>
                   <p>Save to store this certificate.</p>
                   {preview ? (
-                    <a href={preview} target="_blank" rel="noreferrer" className="mt-1 inline-block font-semibold text-[var(--blue)]">
+                    <a href={preview} target="_blank" rel="noreferrer" className={pv ? 'up-lk' : 'mt-1 inline-block font-semibold text-[var(--blue)]'}>
                       View new certificate
                     </a>
                   ) : null}
                 </div>
               ) : cert ? (
-                <div className="mt-3 flex flex-wrap gap-3 text-sm">
-                  <a href={cert} target="_blank" rel="noreferrer" className="font-semibold text-[var(--blue)]">
+                <div className={pv ? 'up-qlinks' : 'mt-3 flex flex-wrap gap-3 text-sm'}>
+                  {pv ? (
+                    <Chip tone="green">
+                      <span aria-hidden="true">✓</span> Certificate uploaded
+                    </Chip>
+                  ) : null}
+                  <a href={cert} target="_blank" rel="noreferrer" className={pv ? 'up-lk' : 'font-semibold text-[var(--blue)]'}>
                     View certificate
                   </a>
                   {showReportLink && draft?.id ? (
@@ -301,7 +343,7 @@ export function OperativeQualificationsEditor({
                   ) : null}
                   <button
                     type="button"
-                    className="font-semibold text-red-600"
+                    className={pv ? 'up-lk rd' : 'font-semibold text-red-600'}
                     onClick={() => {
                       setPendingFiles((current) => {
                         const next = { ...current }
@@ -317,19 +359,25 @@ export function OperativeQualificationsEditor({
                   >
                     Remove Certificate
                   </button>
-                  <span className="text-emerald-700">Certificate uploaded</span>
+                  {pv ? null : <span className="text-emerald-700">Certificate uploaded</span>}
                 </div>
               ) : (
-                <p className="mt-2 text-[13px] text-[var(--ink3)]">No certificate uploaded</p>
+                pv ? (
+                  <span style={{ alignSelf: 'flex-start' }}>
+                    <Chip tone="slate">No certificate uploaded</Chip>
+                  </span>
+                ) : (
+                  <p className="mt-2 text-[13px] text-[var(--ink3)]">No certificate uploaded</p>
+                )
               )}
               {pending && cert ? (
-                <div className="mt-2 flex flex-wrap gap-3 text-sm">
-                  <a href={cert} target="_blank" rel="noreferrer" className="font-semibold text-[var(--blue)]">
+                <div className={pv ? 'up-qlinks' : 'mt-2 flex flex-wrap gap-3 text-sm'}>
+                  <a href={cert} target="_blank" rel="noreferrer" className={pv ? 'up-lk' : 'font-semibold text-[var(--blue)]'}>
                     View current certificate
                   </a>
                   <button
                     type="button"
-                    className="font-semibold text-red-600"
+                    className={pv ? 'up-lk rd' : 'font-semibold text-red-600'}
                     onClick={() => {
                       setPendingFiles((current) => {
                         const next = { ...current }

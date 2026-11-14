@@ -7,9 +7,9 @@ import {
   formatHoursLabel,
   formatOvertimeEquation,
   hoursBreakdown,
-  overtimeRawHours,
   parseMinutes,
 } from './paidHours.ts'
+import { DEFAULT_PAYROLL_POLICY } from '../canonical/organizationSettings.ts'
 
 test('parseMinutes reads clock strings, AM/PM, ISO, and hour numbers', () => {
   assert.equal(parseMinutes('07:30'), 7 * 60 + 30)
@@ -96,32 +96,30 @@ test('AM/PM slots stay at 4h with leftover custom times; a FULL DAY with stored 
 })
 
 test('overtime copy uses raw hours × multiplier = equivalent, not equivalent × multiplier', () => {
-  assert.equal(
-    overtimeRawHours({
-      timeSlot: 'CUSTOM_HOURS',
-      workStartTime: '07:30',
-      workEndTime: '17:00',
-    }),
-    1
-  )
-  assert.equal(
-    overtimeRawHours({
-      timeSlot: 'CUSTOM_HOURS',
-      workStartTime: '07:30',
-      workEndTime: '18:00',
-    }),
-    2
-  )
+  assert.equal(hoursBreakdown({ timeSlot: 'CUSTOM_HOURS', workStartTime: '07:30', workEndTime: '17:00' }).overtimeRawHours, 1)
+  assert.equal(hoursBreakdown({ timeSlot: 'CUSTOM_HOURS', workStartTime: '07:30', workEndTime: '18:00' }).overtimeRawHours, 2)
   assert.equal(formatOvertimeEquation(1, 1.5), '1 × 1.5 = 1.5')
   assert.equal(formatOvertimeEquation(2, 1.5), '2 × 1.5 = 3')
-  assert.equal(
-    overtimeRawHours({
-      timeSlot: 'AM',
-      workStartTime: '07:30',
-      workEndTime: '18:00',
-    }),
-    0
-  )
+  assert.equal(hoursBreakdown({ timeSlot: 'AM', workStartTime: '07:30', workEndTime: '18:00' }).overtimeRawHours, 0)
+})
+
+test('1.43.0: Edit booking prices the booking\'s own overtime rate (owner example: 07:00–19:00 at ×2 = 14.5h)', () => {
+  const policy = {
+    ...DEFAULT_PAYROLL_POLICY,
+    standardDayStart: '07:00',
+    standardDayEnd: '16:00',
+    unpaidBreakMinutes: 30,
+    breakWindowStart: '12:00',
+    breakWindowEnd: '12:30',
+    breakPaid: false,
+    weekdayOutsideStandardMultiplier: 1.5,
+  }
+  const own = hoursBreakdown({ timeSlot: 'CUSTOM_HOURS', workStartTime: '07:00', workEndTime: '19:00', otMultiplierOverride: 2, policy, dayKey: '2026-11-11' })
+  assert.equal(own.totalPaidHours, 14.5)
+  assert.equal(own.overtimeMultiplier, 2)
+  assert.equal(own.overtimeLine, '16:00–19:00 = 3 × 2 = 6')
+  const org = hoursBreakdown({ timeSlot: 'CUSTOM_HOURS', workStartTime: '07:00', workEndTime: '19:00', policy, dayKey: '2026-11-11' })
+  assert.equal(org.totalPaidHours, 13)
 })
 
 test('hours breakdown for half day does not mention leftover full-day hours', () => {
@@ -159,8 +157,8 @@ test('custom hours 06:00-22:00 uses standard window, break, OT multiplier, then 
   assert.equal(breakdown.breakHours, 0.5)
   assert.equal(breakdown.overtimeRawHours, 7.5)
   assert.equal(breakdown.overtimeEquivalentHours, 11.25)
-  assert.equal(breakdown.overtimeSegmentsLabel, '06:00 - 07:30 + 16:00 - 22:00')
-  assert.equal(breakdown.overtimeLine, '06:00 - 07:30 + 16:00 - 22:00 = 7.5 × 1.5 = 11.25')
+  assert.equal(breakdown.overtimeSegmentsLabel, '06:00–07:30 + 16:00–22:00')
+  assert.equal(breakdown.overtimeLine, '06:00–07:30 + 16:00–22:00 = 7.5 × 1.5 = 11.25')
   assert.equal(breakdown.clockPaidHours, 15.5)
   assert.equal(breakdown.totalPaidHours, 19.25)
   assert.equal(breakdown.headline, 'Total paid hours 19.25')

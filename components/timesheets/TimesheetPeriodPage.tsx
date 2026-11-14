@@ -91,8 +91,6 @@ import {
 } from '@/lib/timesheets/invoicePdf'
 import {
   extraFormJobSuggestions,
-  extraFormManagerSuggestions,
-  isTimesheetAgreedManagerCandidate,
   subjectForUser,
   timesheetReceiptStoredName,
   userIdsSharingEmail,
@@ -113,7 +111,18 @@ import {
   revisedPayrollAmount,
 } from '@/lib/timesheets/payrollLineBookingLookup'
 import { extraReviewAfterSave, payrollReviewAfterSave } from '@/lib/timesheets/managerReviewSave'
-import { OVERLAPPING_BOOKING_NOTE, currencySymbol, formatMoney, timesheetLeaveLines, weekdayPaidHours } from '@/lib/canonical'
+import {
+  OVERLAPPING_BOOKING_NOTE,
+  agreedManagerSuggestions,
+  currencySymbol,
+  formatMoney,
+  timesheetLeaveLines,
+  timesheetLineClockText,
+  timesheetOwnerCanAddExtras,
+  timesheetSnapshotNeedsRebuild,
+  timesheetSnapshotReady,
+  weekdayPaidHours,
+} from '@/lib/canonical'
 import { useOrganizationCurrency } from '@/lib/stores/organizationDocumentStore'
 import { useHolidayStore } from '@/lib/stores/holidayStore'
 import { timesheetLeaveLinesForAccount } from '@/lib/timesheets/timesheetLeave'
@@ -136,7 +145,12 @@ import {
   WarnIcon,
   type StatItem,
 } from '@/components/ui/page'
-import { TimesheetInputsNotReadyError, type TimesheetInputsState } from '@/lib/timesheets/timesheetInputs'
+import {
+  TIMESHEET_HISTORY_LOAD_FAILED_MESSAGE,
+  TimesheetInputsNotReadyError,
+  withBookingsGate,
+  type TimesheetInputsState,
+} from '@/lib/timesheets/timesheetInputs'
 import type { PayrollTimePolicyState } from '@/lib/canonical'
 
 function money(value: number, currency: string): string {
@@ -170,11 +184,20 @@ export function TimesheetPeriodPage({
   timeZone,
   history = emptyDayRateHistory(),
   scheduleOptions = DEFAULT_MY_SCHEDULE,
-  payInputs,
+  payInputs: payInputsProp,
+  bookingsLoaded = true,
+  bookingsFailed = false,
   heading = 'Timesheet',
   back,
 }: {
   payInputs: TimesheetInputsState
+  /**
+   * Rulebook 1.43.0 (`timesheetSnapshotReady`): the period's bookings (labour and manager site, the whole archive) have
+   * arrived. Until then nothing that builds the signed snapshot — signing, counter-signing, invoices, saves — runs.
+   */
+  bookingsLoaded?: boolean
+  /** The bookings could not be loaded. */
+  bookingsFailed?: boolean
   /** Page name shown in the band eyebrow (was the nav bar title). */
   heading?: string
   /** The nav bar's existing back control: same label and handler. */
@@ -201,6 +224,15 @@ export function TimesheetPeriodPage({
   const currency = useOrganizationCurrency()
   const { user: viewer, organization } = useAuthStore()
   const { users } = useOrgUserStore()
+  // Rulebook 1.43.0 (`timesheetSnapshotReady`): the pay inputs AND the period's bookings. A counter-signature made before
+  // the bookings arrived froze a snapshot with no labour lines (the invoice then showed only price work).
+  const snapshotState = timesheetSnapshotReady({
+    bookingsLoaded,
+    bookingsFailed,
+    payProfileLoaded: payInputsProp.ready,
+    rateHistoryLoaded: payInputsProp.ready,
+  })
+  const payInputs: TimesheetInputsState = withBookingsGate(payInputsProp, { bookingsLoaded, bookingsFailed })
   const [draft, setDraft] = useState<TimesheetDraft>(emptyTimesheetDraft())
   const sourceDocumentId = useRef<string | null>(null)
   // Rulebook 1.9.0 §1: the open sheet is live. A sign-off or edit on another device replaces the draft — unless this
@@ -214,6 +246,9 @@ export function TimesheetPeriodPage({
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // 1.43.0 (review r318): the sheet could not be loaded; nothing is saved until Retry loads it (never a blank new sheet).
+  const [loadFailed, setLoadFailed] = useState(false)
+  const [loadAttempt, setLoadAttempt] = useState(0)
   const [signOpen, setSignOpen] = useState(false)
   const [managerSignOpen, setManagerSignOpen] = useState(false)
   const [signature, setSignature] = useState<string | null>(null)
@@ -336,6 +371,9 @@ export function TimesheetPeriodPage({
   })()
   const managerHasSigned = Boolean(draft.managerSignedAt)
   const fullyApproved = isTimesheetFullyApproved(draft, subjectUser, users)
+  // Rulebook 1.43.0 §8: the person adds price work or expenses only until their line manager signs (a self-signed
+  // sheet stays open; adding asks them to sign again).
+  const extrasAllowed = timesheetOwnerCanAddExtras(draft, { selfSigned: userTimesheetSelfSigned(subjectUser, users) })
   // Rulebook 1.22.0 (§8): every figure below is `timesheetTotals` — the invoice rows summed — never an app sum.
   const sheetDays = subjectUser ? timesheetDayKeysForPeriod(subjectUser, periodStart, periodEnd, timeZone) : null
   const totals = draftTimesheetTotals({
@@ -355,6 +393,8 @@ export function TimesheetPeriodPage({
   const persist = useCallback(
     async (next: TimesheetDraft) => {
       if (!organization?.id) return
+      // 1.43.0: never save over a sheet that could not be loaded (a second copy under another id).
+      if (loadFailed) throw new Error(TIMESHEET_HISTORY_LOAD_FAILED_MESSAGE)
       // Never build `weeklyReportOverride` or save pay figures from defaults / an empty history (failed load).
       if (!payInputs.ready) throw new TimesheetInputsNotReadyError(payInputs.message ?? undefined)
       localEdits.current = false
@@ -409,6 +449,7 @@ export function TimesheetPeriodPage({
     },
     [
       organization?.id,
+      loadFailed,
       payInputs.ready,
       payInputs.message,
       subjectUser,
@@ -442,20 +483,28 @@ export function TimesheetPeriodPage({
   // The roster at load time, without reloading the sheet each time the roster listener republishes.
   const usersRef = useRef(users)
   usersRef.current = users
+  // 1.43.0: the subject as a ref, so a roster refresh (a new object for the same person) neither reloads the sheet nor
+  // re-subscribes its listener; both depend on the subject's id only.
+  const subjectRef = useRef(subjectUser)
+  subjectRef.current = subjectUser
 
   useEffect(() => {
     if (!organization?.id) return
     let cancelled = false
     setLoading(true)
+    setLoadFailed(false)
     loadTimesheetDraft(organization.id, subjectUser.id, periodStart, timeZone, periodEnd)
       .then((loaded) => {
         if (cancelled) return
         sourceDocumentId.current = timesheetSourceDocumentId(loaded)
         baseDraft.current = sourceDocumentId.current ? loaded : null
-        setDraft(applySelfApprovalIfNoLineManager(loaded, subjectUser, usersRef.current))
+        setDraft(applySelfApprovalIfNoLineManager(loaded, subjectRef.current, usersRef.current))
       })
       .catch((err: unknown) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load timesheet')
+        if (cancelled) return
+        console.warn('[timesheets] period load failed', err)
+        setLoadFailed(true)
+        setError(null)
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -463,35 +512,46 @@ export function TimesheetPeriodPage({
     return () => {
       cancelled = true
     }
-  }, [organization?.id, subjectUser.id, periodStart, periodEnd, timeZone, subjectUser])
+  }, [organization?.id, subjectUser.id, periodStart, periodEnd, timeZone, loadAttempt])
 
   // Listen to the open sheet document once it has loaded (its stored id, else the id a new sheet is created at).
   useEffect(() => {
     const orgId = organization?.id
     if (!orgId || loading) return
     const docId = sourceDocumentId.current || timesheetDocId(subjectUser.id, periodStart, timeZone)
-    let first = true
     return watchOrgDocument(orgId, ['settings', docId], (data, meta) => {
-      // The first snapshot is the copy just loaded; this device's own unsent write is not news.
-      if (first) {
-        first = false
-        return
-      }
+      // This device's own unsent write is not news.
       if (!data || meta.hasPendingWrites) return
       // The server's echo of this screen's own save (same user, from web, just now) is not a remote change.
       const ownEcho =
         data.updatedBy === viewer?.id && data.updatedFrom === 'web' && Date.now() - lastPersistAt.current < 10_000
       if (ownEcho) return
       sourceDocumentId.current = docId
-      const remote = applySelfApprovalIfNoLineManager(
-        draftFromFirestoreMap(data, { sheetDocId: docId, timeZone }),
-        subjectUser,
-        usersRef.current
-      )
+      const parsed = draftFromFirestoreMap(data, { sheetDocId: docId, timeZone })
+      // 1.43.0: the first snapshot is no longer skipped (a change saved between the load and the listener starting
+      // was lost); a snapshot that equals the sheet as loaded or last saved is simply not news.
+      if (baseDraft.current && JSON.stringify(parsed) === JSON.stringify(baseDraft.current)) return
+      const remote = applySelfApprovalIfNoLineManager(parsed, subjectRef.current, usersRef.current)
       pendingRemote.current = remote
       setUpdatedElsewhere(true)
     })
-  }, [organization?.id, loading, subjectUser, periodStart, timeZone, viewer?.id])
+  }, [organization?.id, loading, subjectUser.id, periodStart, timeZone, viewer?.id])
+
+  // Rulebook 1.43.0 (`timesheetSnapshotNeedsRebuild`): a signed snapshot frozen with no labour lines (signed before the
+  // bookings loaded) is rebuilt from the live bookings once they have, by someone who may write it (the line manager
+  // or an admin; a self-signed owner) — signatures unchanged. Once per sheet per visit; never an exported sheet, never
+  // a snapshot that has labour lines (those are never re-priced).
+  const rebuildTried = useRef<string | null>(null)
+  useEffect(() => {
+    if (loading || busy || !payInputs.ready || localEdits.current || updatedElsewhere) return
+    if (!timesheetSnapshotNeedsRebuild(draft, payroll.lineItems)) return
+    const selfSigned = userTimesheetSelfSigned(subjectUser, users)
+    if (!(viewerIsReviewer || (mode === 'mine' && selfSigned))) return
+    const key = `${sourceDocumentId.current ?? ''}|${periodStart.getTime()}`
+    if (rebuildTried.current === key) return
+    rebuildTried.current = key
+    void persistOrReport(draft)
+  }, [loading, busy, payInputs.ready, updatedElsewhere, draft, payroll.lineItems, subjectUser, users, viewerIsReviewer, mode, periodStart, persistOrReport])
 
   // Apply a remote change when nothing local is in progress.
   useEffect(() => {
@@ -504,6 +564,12 @@ export function TimesheetPeriodPage({
   }, [updatedElsewhere, busy, editingLineId, extraMode, signOpen, managerSignOpen, draft])
 
   const beginExtra = (kind: 'priceWork' | 'expense') => {
+    // Rulebook 1.43.0 (`timesheetOwnerCanAddExtras`): never once the line manager has signed — and never clear only
+    // the person's signature (that left the sheet half signed).
+    if (!extrasAllowed.allowed) {
+      setError(extrasAllowed.message)
+      return
+    }
     if (fullyApproved) {
       setPendingExtraMode(kind)
       return
@@ -514,6 +580,11 @@ export function TimesheetPeriodPage({
   const acceptPostSignExtra = async () => {
     const kind = pendingExtraMode
     if (!kind) return
+    if (!extrasAllowed.allowed) {
+      setPendingExtraMode(null)
+      setError(extrasAllowed.message)
+      return
+    }
     try {
       await persist(clearSignatures(draft))
     } catch (err: unknown) {
@@ -808,6 +879,26 @@ export function TimesheetPeriodPage({
       </>
     )
 
+  // 1.43.0 (review r318): the sheet could not be loaded. No blank sheet is shown to edit, sign or add to — only the
+  // message and Retry, until it loads.
+  if (loadFailed)
+    return (
+      <>
+        <PageBand back={back} title={heading} />
+        <Note tone="red" role="alert">
+          {TIMESHEET_HISTORY_LOAD_FAILED_MESSAGE}{' '}
+          <button
+            type="button"
+            className="pu-link"
+            style={{ fontWeight: 600, textDecoration: 'underline' }}
+            onClick={() => setLoadAttempt((value) => value + 1)}
+          >
+            Retry
+          </button>
+        </Note>
+      </>
+    )
+
   if (signOpen || managerSignOpen) {
     const signTotals = draftTimesheetTotals({
       lines: payroll.lineItems,
@@ -1067,15 +1158,34 @@ export function TimesheetPeriodPage({
               <PaymentRunsBox invoicing={invoicing} />
 
               <Card title="Add to this timesheet">
+                {!extrasAllowed.allowed ? (
+                  <div className="pu-card-b" style={{ paddingBottom: 0 }}>
+                    <Note tone="amber">{extrasAllowed.message}</Note>
+                  </div>
+                ) : null}
                 <div className="pu-card-b pu-tiles">
-                  <button type="button" onClick={() => beginExtra('priceWork')} className="pu-tilebtn">
+                  <button
+                    type="button"
+                    onClick={() => beginExtra('priceWork')}
+                    className="pu-tilebtn"
+                    disabled={!extrasAllowed.allowed}
+                    aria-disabled={!extrasAllowed.allowed}
+                    style={extrasAllowed.allowed ? undefined : { opacity: 0.5, cursor: 'not-allowed' }}
+                  >
                     <IconTile tone="purple" size="sm"><BriefcaseIcon /></IconTile>
                     <span className="pu-tilebtn-t">
                       <b>Price Work</b>
                       <small>Agreed extras</small>
                     </span>
                   </button>
-                  <button type="button" onClick={() => beginExtra('expense')} className="pu-tilebtn">
+                  <button
+                    type="button"
+                    onClick={() => beginExtra('expense')}
+                    className="pu-tilebtn"
+                    disabled={!extrasAllowed.allowed}
+                    aria-disabled={!extrasAllowed.allowed}
+                    style={extrasAllowed.allowed ? undefined : { opacity: 0.5, cursor: 'not-allowed' }}
+                  >
                     <IconTile tone="green" size="sm"><ReceiptPercentIcon /></IconTile>
                     <span className="pu-tilebtn-t">
                       <b>Expenses</b>
@@ -1106,7 +1216,7 @@ export function TimesheetPeriodPage({
 
               {!draft.operativeSignedAt ? (
                 <PuButton variant="primary" block disabled={!payInputs.ready} onClick={() => setSignOpen(true)}>
-                  Continue to sign
+                  {!payInputs.ready && snapshotState.message && !snapshotState.ready ? snapshotState.message : 'Continue to sign'}
                 </PuButton>
               ) : (
                 <SignedBlock
@@ -1202,7 +1312,7 @@ export function TimesheetPeriodPage({
                       setManagerSignOpen(true)
                     }}
                   >
-                    Sign off & finalise
+                    {!payInputs.ready && snapshotState.message && !snapshotState.ready ? snapshotState.message : 'Sign off & finalise'}
                   </PuButton>
                 </>
               ) : null}
@@ -1215,7 +1325,16 @@ export function TimesheetPeriodPage({
         <ExtraForm
           mode={extraMode}
           jobs={mergeProjectsAndSmallWorks(projects, smallWorks).filter((row) => row.jobNumber.trim())}
-          managers={users.filter(isTimesheetAgreedManagerCandidate)}
+          // Rulebook 1.43.0 (`agreedManagerSuggestions`): the price work approvers' rule, never a role check here. The
+          // approver's users document must name this organisation (as the rules check), so read each home company.
+          suggestManagers={(query) =>
+            agreedManagerSuggestions(
+              query,
+              subjectUser as never,
+              users.map((row) => ({ ...row, organizationId: row.homeOrganizationId || row.organizationId })) as never,
+              { organizationId: organization?.id ?? null }
+            )
+          }
           timeZone={timeZone}
           onCancel={() => setExtraMode(null)}
           onSave={async (entry) => {
@@ -1528,8 +1647,8 @@ function PayrollLine({
         <div style={strike}>
           {line.jobNumber} · {line.projectName}
         </div>
-        {/\d{1,2}:\d{2}/.test(line.details) ? (
-          <div className="pu-sub" style={strike}>{line.details}</div>
+        {/\d{1,2}:\d{2}/.test(timesheetLineClockText(line.details)) ? (
+          <div className="pu-sub" style={strike}>{timesheetLineClockText(line.details)}</div>
         ) : null}
         {overlapping ? (
           <div style={{ marginTop: 6 }}>
@@ -2148,14 +2267,15 @@ function AmountEditSheet({
 function ExtraForm({
   mode,
   jobs,
-  managers,
+  suggestManagers,
   timeZone,
   onCancel,
   onSave,
 }: {
   mode: 'priceWork' | 'expense'
   jobs: Array<{ jobNumber: string; siteName: string }>
-  managers: Array<{ firstName: string; surname: string; email: string }>
+  /** Names to offer for "Manager who agreed this" as the person types (`agreedManagerSuggestions`). */
+  suggestManagers: (query: string) => string[]
   timeZone: string
   onCancel: () => void
   onSave: (entry: {
@@ -2178,7 +2298,7 @@ function ExtraForm({
   const jobNumberError = mode === 'priceWork' ? priceWorkJobNumberError(jobNumber) : null
   const canSave = value != null && (mode === 'priceWork' ? !jobNumberError : Boolean(receiptName))
   const jobSuggestions = extraFormJobSuggestions(jobs, jobNumber)
-  const managerSuggestions = extraFormManagerSuggestions(managers, agreedManagerName)
+  const managerSuggestions = suggestManagers(agreedManagerName)
 
   const priceWork = mode === 'priceWork'
   return (

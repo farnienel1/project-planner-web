@@ -172,12 +172,14 @@ export function weekendBreakdownForDates(
   start: string | null | undefined,
   end: string | null | undefined,
   breakRemoved: boolean | null | undefined,
-  policy?: OrgPayrollTimePolicy | null
+  policy?: OrgPayrollTimePolicy | null,
+  otMultiplierOverride?: number | null
 ): BookingDayBreakdownRow[] {
   const zone = openOrganizationZone()
   const keys = dates.map((date) => bookingDayKey(date))
   if (!keys.some((key) => isWeekendDayKey(key, zone))) return []
-  return weekendBookingBreakdown(livePayrollState() ?? policy ?? null, keys, start, end, breakRemoved, zone)
+  // 1.43.0: the booking's own overtime rate prices the hours outside the window (`otMultiplierOverride`).
+  return weekendBookingBreakdown(livePayrollState() ?? policy ?? null, keys, start, end, breakRemoved, zone, otMultiplierOverride ?? null)
 }
 
 /**

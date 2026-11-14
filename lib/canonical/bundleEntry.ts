@@ -365,6 +365,8 @@ export {
   multipliedHoursText,
   payrollMultipliedHours,
   parseMultipliedHoursText,
+  payrollLineClockRanges,
+  timesheetLineClockText,
 } from './payrollHours'
 export { DEFAULT_ANNUAL_LEAVE, parseAnnualLeaveDefaults, parsePayrollPolicy } from './organizationSettings'
 
@@ -1209,6 +1211,7 @@ export {
   scheduleCellHours,
   scheduleCellKind,
   scheduleDayCell,
+  subcontractorScheduleCell,
   JOB_SCHEDULE_LEAVE_LABEL,
   JOB_SCHEDULE_LEAVE_PENDING_LABEL,
   JOB_SCHEDULE_LEAVE_TITLE,
@@ -1433,3 +1436,13 @@ export {
   bookingReplaceOffer,
   bookingReplaceWrites,
 } from './bookingReplace'
+// Rulebook 1.43.0 §8: when a signed timesheet's snapshot may be built or rebuilt, and when extras may still be added.
+export {
+  TIMESHEET_PAY_INPUTS_LOADING_MESSAGE,
+  TIMESHEET_SIGNED_OFF_EXTRAS_MESSAGE,
+  TIMESHEET_SNAPSHOT_FAILED_MESSAGE,
+  TIMESHEET_SNAPSHOT_LOADING_MESSAGE,
+  timesheetOwnerCanAddExtras,
+  timesheetSnapshotNeedsRebuild,
+  timesheetSnapshotReady,
+} from './timesheetSnapshot'

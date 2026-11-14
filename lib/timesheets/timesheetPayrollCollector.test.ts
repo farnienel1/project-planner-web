@@ -406,11 +406,14 @@ test('1.20.3: overtime lines show clock hours and the break, never "6.25h × 2";
   assert.deepEqual([satStd.amount, satOt.paidHours, satOt.amount], [80, 2.75, 110])
   assert.equal(summary.baseAmount + summary.overtimeAmount, 440)
   // The text: clock hours × N, then the break as plain hours, at the base rate.
-  assert.equal(sunOt.details, 'OT 6.5h × 2 − 0.5h break = 12.5h')
+  // 1.43.0: the overtime line carries the overtime times first (`payrollLineClockRanges`).
+  assert.equal(sunOt.details, '07:30–14:00 · OT 6.5h × 2 − 0.5h break = 12.5h')
   assert.equal(timesheetHoursRateLine(sunOt), '6.5h × 2 − 0.5h break = 12.5h × £20.00/hr = £250.00')
   // The live invoice line's details are the same text (`invoiceLinesForTimesheet` → `timesheetLabourDetails`).
-  assert.equal(timesheetLabourDetails(sunOt), '6.5h × 2 − 0.5h break = 12.5h × £20.00/hr = £250.00')
-  assert.equal(satOt.details, 'OT 3h × 2 − 0.5h break = 5.5h')
+  assert.equal(timesheetLabourDetails(sunOt), '07:30–14:00 · 6.5h × 2 − 0.5h break = 12.5h × £20.00/hr = £250.00')
+  assert.equal(satOt.details, '11:00–14:00 · OT 3h × 2 − 0.5h break = 5.5h')
+  // The standard line shows the set window's times, not the whole booking.
+  assert.equal(satStd.details, '07:30–11:00')
   assert.equal(timesheetHoursRateLine(satOt), '3h × 2 − 0.5h break = 5.5h × £20.00/hr = £110.00')
   for (const line of summary.lineItems) assert.equal(/6\.25|2\.75/.test(timesheetHoursRateLine(line)), false, line.id)
   // The queue's OT figure is the clock hours at the multiplier (3 + 6.5), not the back-calculated 2.75 + 6.25.
@@ -424,4 +427,59 @@ test('1.20.3: a day-rate overtime line with a break shows the hours that pay as 
   // 6.25 / 8 × 2 × £200 = £312.50 = 12.5h / 8 × £200.
   assert.equal(sunOt.amount, 312.5)
   assert.equal(timesheetHoursRateLine(sunOt), '6.5h × 2 − 0.5h break = 12.5h = 1.56 days × £200.00/day = £312.50')
+})
+
+// Rulebook 1.43.0 (owner rule, `payrollLineClockRanges`): the standard line shows the standard-window times and the
+// overtime line the overtime times; pay is unchanged.
+test('1.43.0: timesheet lines show the standard window and the overtime times (owner example 07:00–19:00)', async () => {
+  const { initialHoursChoice } = await import('./payrollLineBookingLookup.ts')
+  const policy = {
+    ...DEFAULT_PAYROLL_POLICY,
+    standardDayStart: '07:00',
+    standardDayEnd: '16:00',
+    unpaidBreakMinutes: 30,
+    breakWindowStart: '12:00',
+    breakWindowEnd: '12:30',
+    breakPaid: false,
+    weekdayOutsideStandardMultiplier: 1.5,
+  }
+  const run = (start: string, end: string, extra: Partial<Booking> = {}) =>
+    collectTimesheetPayroll({
+      user: user({ id: 'u1' }),
+      bookings: [{ ...booking('b1', new Date('2026-11-11T10:00:00Z')), timeSlot: 'CUSTOM_HOURS', workStartTime: start, workEndTime: end, ...extra } as Booking],
+      managerSiteBookings: [],
+      operatives: [operative],
+      projects: [project],
+      smallWorks: [],
+      periodStart: new Date('2026-11-01T00:00:00Z'),
+      periodEnd: new Date('2026-11-15T00:00:00Z'),
+      payrollPolicy: policy,
+      timeZone: 'Europe/London',
+    })
+  const summary = run('07:00', '19:00')
+  const normal = summary.lineItems.find((line) => line.id === 'op-b1-normal')
+  const ot = summary.lineItems.find((line) => line.id === 'op-b1-ot')
+  assert.equal(normal?.details, '07:00–16:00')
+  assert.equal(ot?.details, '16:00–19:00')
+  // Pay unchanged: 8.5h standard, 3h at 1.5.
+  assert.deepEqual([normal?.paidHours, ot?.paidHours, ot?.otMultiplier], [8.5, 3, 1.5])
+  // An early start and a late finish: two overtime ranges; "no break" stays on the standard line.
+  const both = run('05:00', '19:00', { isBreakRemoved: true })
+  assert.equal(both.lineItems.find((line) => line.id === 'op-b1-ot')?.details, '05:00–07:00 + 16:00–19:00')
+  assert.equal(both.lineItems.find((line) => line.id === 'op-b1-normal')?.details, '07:00–16:00 · no break')
+  // A named slot keeps its name.
+  const full = run('', '', { timeSlot: 'FULL DAY', workStartTime: undefined, workEndTime: undefined })
+  assert.equal(full.lineItems.find((line) => line.id === 'op-b1-normal')?.details, 'FULL DAY')
+  // Edit hours still opens on the whole booking when the live booking is not loaded — from the line's stored booking
+  // times, never from its standard-window details (review r318).
+  assert.deepEqual(initialHoursChoice({ row: normal!, operativeBooking: null, managerBooking: null, policy }), {
+    startTime: '07:00',
+    endTime: '19:00',
+    breakRemoved: false,
+  })
+  assert.deepEqual(initialHoursChoice({ row: ot!, operativeBooking: null, managerBooking: null, policy }), {
+    startTime: '07:00',
+    endTime: '19:00',
+    breakRemoved: false,
+  })
 })

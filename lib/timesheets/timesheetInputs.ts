@@ -5,7 +5,12 @@
  * `emptyDayRateHistory()` / `DEFAULT_PAYROLL_POLICY` / `DEFAULT_INVOICING` (rulebook §8: a failed history load is
  * never treated as empty).
  */
+import { timesheetSnapshotReady } from '@/lib/canonical'
+
 export type TimesheetInputLoad = 'loading' | 'loaded' | 'failed'
+
+/** 1.43.0: the period page could not check the person's earlier timesheets; nothing is saved until a Retry loads it. */
+export const TIMESHEET_HISTORY_LOAD_FAILED_MESSAGE = "Couldn't check older timesheets — try again."
 
 export type TimesheetInputsState = {
   ready: boolean
@@ -39,3 +44,25 @@ export class TimesheetInputsNotReadyError extends Error {
     this.name = 'TimesheetInputsNotReadyError'
   }
 }
+
+/**
+ * Rulebook 1.43.0 (`timesheetSnapshotReady`): the pay inputs AND the period's bookings, as one state for every screen
+ * that signs, counter-signs, invoices or exports a sheet (each builds or stamps `weeklyReportOverride`). `bookingsLoaded`
+ * is a server answer of the booking listeners' whole query (the stores' `coverage`), never cached or partial rows.
+ */
+export function withBookingsGate(
+  inputs: TimesheetInputsState,
+  bookings: { bookingsLoaded: boolean; bookingsFailed?: boolean }
+): TimesheetInputsState {
+  if (!inputs.ready) return inputs
+  const snapshot = timesheetSnapshotReady({
+    bookingsLoaded: bookings.bookingsLoaded,
+    bookingsFailed: bookings.bookingsFailed === true,
+    payProfileLoaded: true,
+    rateHistoryLoaded: true,
+  })
+  return snapshot.ready ? inputs : { ready: false, failed: snapshot.failed, message: snapshot.message, retry: inputs.retry }
+}
+
+/** 1.43.0 (review r318): Export stops before the next person when the bookings gate closes mid-export. */
+export const EXPORT_STOPPED_MESSAGE = 'Export stopped: the bookings are reloading. Try again in a moment.'
