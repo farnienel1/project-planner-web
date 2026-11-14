@@ -1636,26 +1636,20 @@ export function EditUserProfile({
 
       {/* Account status */}
       {canAdminTools && (
-        <>
-          <SectionLabel label="Account status" />
-          <SettingsCard>
-            <div className="p-4">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <div className="text-sm font-semibold text-[var(--ink)]">Active</div>
-                  <p className="mt-0.5 text-xs text-[var(--ink3)]">
-                    {ghostTarget ? 'Can be booked and shows in lists. A ghost has no app login.' : 'User can sign in and use the app.'}
-                  </p>
-                </div>
-                <Toggle
-                  checked={target.isActive}
-                  disabled={!canEdit || activeSaving}
-                  onChange={() => void handleToggleActive()}
-                />
-              </div>
-            </div>
-          </SettingsCard>
-        </>
+        <FormSection title="Account status" icon="check" tone="green">
+          <ToggleRow
+            title="Active"
+            descriptions={[ghostTarget ? 'Can be booked and shows in lists. A ghost has no app login.' : 'User can sign in and use the app.']}
+            control={
+              <Switch
+                label="Active"
+                checked={target.isActive}
+                disabled={!canEdit || activeSaving}
+                onChange={() => void handleToggleActive()}
+              />
+            }
+          />
+        </FormSection>
       )}
 
       {target.isSuperAdmin ? (

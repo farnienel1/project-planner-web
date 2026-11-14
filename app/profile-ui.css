@@ -152,6 +152,7 @@
 .up-seg [role='tab'] { height: 32px; border-radius: 8px; padding: 0 14px; font-weight: 500; color: var(--pu-ink-2); background: transparent; box-shadow: none; white-space: nowrap; }
 .up-seg [role='tab'][aria-selected='true'] { background: var(--pu-seg-on); color: var(--pu-seg-on-ink); font-weight: 600; }
 .up-payrow { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.up-payrow > .pp-in { flex: 1 1 160px; width: auto; }
 .up-money { flex: 1 1 200px; display: flex; align-items: center; height: 42px; border: 1px solid var(--pu-line); border-radius: 11px; background: var(--pu-field); padding: 0 12px; gap: 6px; }
 .up-money:focus-within { border-color: var(--pu-blue); background: var(--pu-card); box-shadow: 0 0 0 3px var(--up-focus-ring); }
 .up-money > span { font-weight: 700; color: var(--pu-muted); }
