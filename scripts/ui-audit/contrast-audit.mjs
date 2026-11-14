@@ -242,6 +242,18 @@ for (const scheme of ['light', 'dark']) {
         if (submit) { await submit.click(); await page.waitForTimeout(400); await record(page, `${p} (errors)`, mode) }
       }
     }
+    // Client-side navigation: React writes inline styles in its own form (rgb(), not the source
+    // hex), so styles that only hold for server-rendered HTML show up here.
+    if (want('/') && want('/features')) {
+      await page.goto(BASE + '/privacy', { waitUntil: 'networkidle', timeout: 180000 })
+      for (const [href, name] of [['/', '/ (client nav from /privacy)'], ['/features', '/features (client nav from /)']]) {
+        await page.locator(`.mkt a[href="${href}"]:visible`).first().click() // the nav, or the footer on a phone
+        await page.waitForURL((u) => new URL(u).pathname === href, { timeout: 60000 })
+        await page.waitForLoadState('networkidle')
+        await scrollThrough(page)
+        await record(page, name, mode)
+      }
+    }
     if (want('/setup')) {
       for (const step of WIZARD_STEPS) {
         await page.goto(BASE + '/', { waitUntil: 'domcontentloaded' })

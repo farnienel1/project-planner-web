@@ -129,7 +129,9 @@
 
 /* .mkt: the public marketing pages (MarketingShell, app/marketing.css) always use the dark look,
    whatever the visitor's saved or system theme. Scoped to the .mkt element, so <html data-theme>
-   and the signed-in app's saved preference are never touched. */
+   and the signed-in app's saved preference are never touched.
+   Not covered for .mkt: brand-shell.css (--dash-*, --brand-*), pages-ui.css (--pu-*) and
+   `.dark .btn.hue` — a marketing component that uses those must add .mkt to their dark rules. */
 :root[data-theme='dark'],
 .dark,
 .mkt {

@@ -15,6 +15,11 @@ function cellStyle(kind?: string) {
   return { background: 'var(--sched-t)', borderLeft: '4px solid var(--sched)' }
 }
 
+/** Avatar fills dark enough for white initials (the marketing pages are always dark, so the other
+ * fills take dark initials from `.mkt .av`). A class, not a style match, so it holds after
+ * client-side navigation too. */
+const AVATAR_FILLS_WITH_WHITE_INITIALS = new Set(['#6A45E6'])
+
 export function SchedulePanel() {
   const days = ['Mon 21', 'Tue 22', 'Wed 23', 'Thu 24', 'Fri 25']
   const C = (t: string, s: string, h: string, k?: string): Cell => ({ t, s, h, k })
@@ -83,7 +88,7 @@ export function SchedulePanel() {
           ))}
           {rows.map((row) => (
             <div key={row[0]} style={{ display: 'contents' }}>
-              <span className="av" style={{ background: row[2], width: 36, height: 36 }} title={row[1]}>
+              <span className={AVATAR_FILLS_WITH_WHITE_INITIALS.has(row[2]) ? 'av on-dark' : 'av'} style={{ background: row[2], width: 36, height: 36 }} title={row[1]}>
                 {row[0]}
               </span>
               {row[3].map((cell, idx) =>

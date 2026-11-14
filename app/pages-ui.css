@@ -321,7 +321,7 @@ button.pu-item:disabled { cursor: not-allowed; opacity: 0.55; }
 .pu-tilebtn b { display: block; font-size: 14.5px; }
 .pu-tilebtn small { color: var(--pu-muted); font-size: 12.5px; }
 /* "Add to this timesheet": the tiles sit in the narrow right column, so they stack there and
-   sit side by side only when the column is wide (full width below 1100px). Text never runs off a tile. */
+   sit side by side only when there is room for two 180px tiles (auto-fit; no breakpoint). Text never runs off a tile. */
 .pu-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: 10px; }
 .pu-tilebtn > :first-child { flex: none; }
 .pu-tilebtn-t { flex: 1; min-width: 0; overflow-wrap: anywhere; }

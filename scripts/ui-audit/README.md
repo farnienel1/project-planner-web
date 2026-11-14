@@ -8,6 +8,7 @@ It also checks:
 - placeholders: 4.5:1;
 - the focus indicator of the first three fields on each page: 3:1;
 - that no page scrolls sideways;
+- the same text checks after client-side navigation (`/privacy` → `/` → `/features`), where React writes inline styles in its own `rgb()` form;
 - that the app pages follow the app's own theme rather than the forced dark;
 - form fields without a 3:1 boundary, reported as a warning.
 
