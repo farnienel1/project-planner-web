@@ -96,13 +96,17 @@ export type InvoiceLineInput = ReportPayLineInput & {
 }
 
 /**
- * Rulebook 1.46.0: the key of the booking a payroll line comes from — its collection (when the line carries it) and
- * `bookingId`, else the line id without its `-normal` / `-ot` suffix; ids without case.
+ * Rulebook 1.46.0: the key of the booking a payroll line comes from — its collection (the line's `bookingCollection`, else
+ * `managerSiteBookings` for a `mgr-` id and `bookings` otherwise) and `bookingId`, else the line id without its
+ * `-normal` / `-ot` suffix; ids without case.
  */
 export function payrollLineBookingKey(line: { id?: unknown; bookingId?: unknown; bookingCollection?: unknown } | null | undefined): string {
   if (!line) return ''
   const id = line.bookingId ? String(line.bookingId) : String(line.id ?? '').replace(/-(?:normal|ot)$/i, '')
-  const collection = typeof line.bookingCollection === 'string' ? line.bookingCollection.trim() : ''
+  // A line without its collection is a labour booking (`bookings`) unless its id says manager site (`mgr-`), so a pair
+  // where only one line carries the collection still groups together (fourth review of #324).
+  const stored = typeof line.bookingCollection === 'string' ? line.bookingCollection.trim() : ''
+  const collection = stored || (/^mgr-/i.test(id) || /^mgr-/i.test(String(line.id ?? '')) ? 'managerSiteBookings' : 'bookings')
   return `${collection}|${normalizeDocumentId(id)}`
 }
 

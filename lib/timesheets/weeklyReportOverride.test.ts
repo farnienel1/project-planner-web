@@ -670,3 +670,27 @@ test('1.46.0 review 3: a review changed after signing is applied once; the same 
   const again = applyWeeklyReportOverride({ ...base146, bookings: now, draft: edited })
   assert.deepEqual(again.weeklyReportOverride?.lines, edited.weeklyReportOverride?.lines)
 })
+
+test('1.46.0 review 4: an overtime line added by a review follows that review after signing (declined, edited, approved)', () => {
+  const now = [booking146('07:00', '16:00')]
+  const signed = applyWeeklyReportOverride({
+    ...base146,
+    bookings: now,
+    draft: { ...emptyTimesheetDraft(), ...signed146, payrollLineReviews: editReviews146(now, '07:00', '19:00') },
+  })
+  assert.equal(labourTotal146(signed), 426.47)
+  assert.equal(signed.weeklyReportOverride?.lines.find((line) => line.id === 'op-b1-ot')?.reviewPartOf, 'op-b1-normal')
+  const resave = (payrollLineReviews: Record<string, unknown>) =>
+    applyWeeklyReportOverride({ ...base146, bookings: now, draft: { ...signed, payrollLineReviews: payrollLineReviews as never } })
+  // Declined afterwards: the added overtime goes with it (was 0 + 176.47).
+  assert.equal(labourTotal146(resave({ 'op-b1-normal': { decision: 'declined' } })), 0)
+  // Edited again to 07:00–15:00 (no overtime): 220.59 only (was 220.59 + 176.47 = 397.06).
+  assert.equal(labourTotal146(resave(editReviews146(now, '07:00', '15:00'))), 220.59)
+  // Approved afterwards: the signed figures stay, as before 1.46.0.
+  assert.equal(labourTotal146(resave({ 'op-b1-normal': { decision: 'approved' } })), 426.47)
+  // Edited again to 07:00–18:00: both parts recomputed together (250 + 2h × 2 = 367.65).
+  assert.equal(labourTotal146(resave(editReviews146(now, '07:00', '18:00'))), 367.65)
+  // A round trip through Firestore keeps the link.
+  const stored = weeklyReportOverrideFromFirestore(weeklyReportOverrideToFirestore(signed.weeklyReportOverride!))
+  assert.equal(stored?.lines.find((line) => line.id === 'op-b1-ot')?.reviewPartOf, 'op-b1-normal')
+})

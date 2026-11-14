@@ -217,6 +217,7 @@ function makeOverride(input: WeeklyReportOverrideInput, prepared?: ReturnType<ty
         pushLine({
           ...labourLine(line, 'edited', part.amount, part.paidHours / standard, input.managerSiteBookings),
           ...signedState,
+          ...(part.id !== line.id ? { reviewPartOf: line.id } : {}),
           id: part.id,
           paidHours: part.paidHours,
           isOvertime: part.isOvertime,
@@ -288,6 +289,7 @@ function reapplyReviews(existing: WeeklyReportOverride, input: WeeklyReportOverr
       otMultiplier: part.isOvertime ? part.otMultiplier : null,
       decision: 'edited' as const,
       appliedReviewKey,
+      ...(part.id.toLowerCase() !== line.id.toLowerCase() ? { reviewPartOf: line.id } : {}),
     }))
     partsFrom.set(line.id.toLowerCase(), rows)
     for (const row of rows) {
@@ -298,7 +300,26 @@ function reapplyReviews(existing: WeeklyReportOverride, input: WeeklyReportOverr
       partById.set(key, { row, own })
     }
   }
+  const byId = new Map(existing.lines.map((line) => [line.id.toLowerCase(), line]))
   const lines = existing.lines.flatMap((line): WeeklyReportLabourLine[] => {
+    // 1.46.0 (fourth review): a `{booking}-ot` line an Edit hours review added follows its standard line's current
+    // review — recomputed with it, 0 when that review is declined or no longer pays overtime, unchanged when that review
+    // is unchanged, stale, an approval or an amount-only edit. A booking's own overtime line keeps its own review.
+    if (line.reviewPartOf) {
+      const source = byId.get(line.reviewPartOf.toLowerCase())
+      const sourceReview = source ? reviewFor(source) : null
+      if (!source || !sourceReview || sourceReview === 'unchanged') return [line]
+      const key = payrollLineReviewKey(sourceReview)
+      if (sourceReview.decision === 'declined') return [{ ...line, amount: 0, days: 0, decision: 'declined' as const, appliedReviewKey: key }]
+      const recomputed = (partsFrom.get(source.id.toLowerCase()) ?? []).find((row) => row.id.toLowerCase() === line.id.toLowerCase())
+      if (recomputed) {
+        return [{ ...recomputed, bookingFingerprint: line.bookingFingerprint, bookingHadOvertimeLine: line.bookingHadOvertimeLine, reviewPartOf: line.reviewPartOf }]
+      }
+      if (sourceReview.decision === 'edited' && sourceReview.revisedStandardHours != null) {
+        return [{ ...line, amount: 0, paidHours: 0, days: 0, decision: 'edited' as const, appliedReviewKey: key }]
+      }
+      return [line]
+    }
     const review = reviewFor(line)
     if (review === 'unchanged') return [line]
     const decision = review?.decision ?? line.decision

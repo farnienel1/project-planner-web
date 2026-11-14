@@ -15345,3 +15345,22 @@ test('1.46.0 review 3: payrollLineBookingKey keeps two collections apart; payrol
   ]
   assert.equal(R112.timesheetInvoiceRows({ sheet: review, payrollLines: lines, extrasMode: 'decided' })[0].amount, 426.47)
 })
+
+test('1.46.0 review 4: payrollLineBookingKey reads a missing collection as labour (mgr- ids as manager site)', () => {
+  assert.equal(
+    R112.payrollLineBookingKey({ id: 'op-b1-normal', bookingId: 'op-b1' }),
+    R112.payrollLineBookingKey({ id: 'op-b1-ot', bookingId: 'op-b1', bookingCollection: 'bookings' })
+  )
+  assert.equal(
+    R112.payrollLineBookingKey({ id: 'mgr-b1-normal', bookingId: 'mgr-b1' }),
+    R112.payrollLineBookingKey({ id: 'mgr-b1-ot', bookingId: 'mgr-b1', bookingCollection: 'managerSiteBookings' })
+  )
+  // A partly-filled pair still groups, so the overtime-line staleness check applies (426.47, never 602.94).
+  const { fp, edit } = rates146Edit()
+  const sheet = { managerSignedAt: '2026-11-20T10:00:00Z', payrollLineReviews: { 'op-b1-normal': { decision: 'edited', ...edit.reviewFields.standard } } }
+  const lines = [
+    { id: 'op-b1-normal', bookingId: 'op-b1', amount: 250, paidHours: 8.5, dayKey: '2026-11-18', isOvertimeLine: false, bookingFingerprint: fp },
+    { id: 'op-b1-ot', bookingId: 'op-b1', bookingCollection: 'bookings', amount: 176.47, paidHours: 3, otMultiplier: 2, dayKey: '2026-11-18', isOvertimeLine: true, bookingFingerprint: fp },
+  ]
+  assert.equal(R112.timesheetTotals({ sheet, payrollLines: lines, extrasMode: 'decided' }).total, 426.47)
+})

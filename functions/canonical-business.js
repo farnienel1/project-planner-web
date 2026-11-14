@@ -11340,7 +11340,8 @@ var ProjectPlannerCanonical = (() => {
   function payrollLineBookingKey(line) {
     if (!line) return "";
     const id2 = line.bookingId ? String(line.bookingId) : String(line.id ?? "").replace(/-(?:normal|ot)$/i, "");
-    const collection = typeof line.bookingCollection === "string" ? line.bookingCollection.trim() : "";
+    const stored = typeof line.bookingCollection === "string" ? line.bookingCollection.trim() : "";
+    const collection = stored || (/^mgr-/i.test(id2) || /^mgr-/i.test(String(line.id ?? "")) ? "managerSiteBookings" : "bookings");
     return `${collection}|${normalizeDocumentId(id2)}`;
   }
   function isInvoiceLine(line) {
@@ -11747,7 +11748,7 @@ var ProjectPlannerCanonical = (() => {
   function rulebookStamp() {
     return {
       version: true ? "1.46.0" : "",
-      sha256: true ? "9d1912f8c860c0e0237cc40270ae982c2174c67a83d93e05ef561b34c0720608" : ""
+      sha256: true ? "d66a6415cabb1eff5f57098460fc893df52c38d67676ff9ee3b533d6e7525785" : ""
     };
   }
   function rulebookVersionLabel(version) {

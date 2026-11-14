@@ -197,6 +197,7 @@ function mapLabourLine(row: Record<string, unknown>): WeeklyReportLabourLine | n
     ...(typeof row.bookingFingerprint === 'string' && row.bookingFingerprint ? { bookingFingerprint: row.bookingFingerprint } : {}),
     ...(typeof row.bookingHadOvertimeLine === 'boolean' ? { bookingHadOvertimeLine: row.bookingHadOvertimeLine } : {}),
     ...(typeof row.appliedReviewKey === 'string' ? { appliedReviewKey: row.appliedReviewKey } : {}),
+    ...(typeof row.reviewPartOf === 'string' && row.reviewPartOf ? { reviewPartOf: row.reviewPartOf } : {}),
   }
 }
 
@@ -258,6 +259,7 @@ export function weeklyReportOverrideToFirestore(override: WeeklyReportOverride):
       ...(line.bookingFingerprint ? { bookingFingerprint: line.bookingFingerprint } : {}),
       ...(line.bookingHadOvertimeLine != null ? { bookingHadOvertimeLine: line.bookingHadOvertimeLine } : {}),
       ...(line.appliedReviewKey != null ? { appliedReviewKey: line.appliedReviewKey } : {}),
+      ...(line.reviewPartOf ? { reviewPartOf: line.reviewPartOf } : {}),
     })),
     priceWork: override.priceWork.map(money),
     expenses: override.expenses.map(money),

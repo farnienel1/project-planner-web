@@ -79,6 +79,11 @@ export type WeeklyReportLabourLine = {
   bookingHadOvertimeLine?: boolean
   /** Rulebook 1.46.0: `payrollLineReviewKey` of the review applied when the line was signed ('' when none). */
   appliedReviewKey?: string | null
+  /**
+   * Rulebook 1.46.0: on a `{booking}-ot` line an Edit hours review added for a standard line's overtime, that standard
+   * line's id — the line follows that line's current review (recomputed together, 0 when it no longer pays overtime).
+   */
+  reviewPartOf?: string | null
 }
 
 /** Shared with iOS `TimesheetWeeklyReportMoneyLine`. */
