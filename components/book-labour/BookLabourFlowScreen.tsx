@@ -934,6 +934,7 @@ export function BookLabourFlowScreen({
             onEnd={setCustomEnd}
             onBreak={setBreakRemoved}
             rateField={<CreateOvertimeRateField dayKey={dayKey(day)} value={customRate} onChange={setCustomRate} />}
+            otMultiplierOverride={customRate}
             onSave={() => {
               if (phase.kind === 'pickCustomManager') {
                 validateCustomAndSave(phase.locationType, phase.locationId, phase.customLocationName)
@@ -1401,6 +1402,7 @@ function CustomHoursForm({
   onBreak,
   onSave,
   rateField,
+  otMultiplierOverride = null,
 }: {
   start: string
   end: string
@@ -1414,6 +1416,8 @@ function CustomHoursForm({
   onBreak: (value: boolean) => void
   onSave: () => void
   rateField?: ReactNode
+  /** Rulebook 1.43.0: the overtime rate chosen in `rateField` (null = the organisation's), priced in the preview. */
+  otMultiplierOverride?: number | null
 }) {
   return (
     <div className="space-y-4 card p-4">
@@ -1423,6 +1427,7 @@ function CustomHoursForm({
         breakRemoved={breakRemoved}
         policy={policy}
         date={date}
+        otMultiplierOverride={otMultiplierOverride}
         onStart={onStart}
         onEnd={onEnd}
         onBreak={onBreak}

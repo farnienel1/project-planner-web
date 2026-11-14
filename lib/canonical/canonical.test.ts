@@ -14235,3 +14235,183 @@ test('1.42.0 option B: the toggle text matches the rules — every manager sees 
   assert.equal(R112.canEditJob(without, theirs, 'projects'), true)
   assert.equal(R112.canEditJob(without, someoneElses, 'projects'), false)
 })
+
+// Rulebook 1.43.0 (owner reports 14 Nov): timesheet wording, snapshot timing, extras after sign-off, subcontractor tiles.
+const policy143 = {
+  ...R112.DEFAULT_PAYROLL_POLICY,
+  standardDayStart: '07:00',
+  standardDayEnd: '16:00',
+  unpaidBreakMinutes: 30,
+  breakWindowStart: '12:00',
+  breakWindowEnd: '12:30',
+  breakPaid: false,
+  weekdayOutsideStandardMultiplier: 1.5,
+}
+
+test('1.43.0 payrollLineClockRanges: standard-window times on the standard line, overtime times on the overtime line', () => {
+  const priced = (start: string, end: string, dayKey = '2026-11-11', policy: typeof policy143 = policy143) =>
+    R112.payrollLineClockRanges(
+      R112.payrollHoursResult({ booking: { timeSlot: 'CUSTOM_HOURS', workStartTime: start, workEndTime: end }, dayKey, policy })
+    )
+  // Owner example: working day 07:00–16:00, booked 07:00–19:00.
+  assert.deepEqual(priced('07:00', '19:00'), {
+    standard: ['07:00–16:00'],
+    overtime: ['16:00–19:00'],
+    standardText: '07:00–16:00',
+    overtimeText: '16:00–19:00',
+  })
+  // An early start and a late finish are two overtime ranges, earliest first.
+  assert.equal(priced('05:00', '19:00').overtimeText, '05:00–07:00 + 16:00–19:00')
+  assert.equal(priced('05:00', '19:00').standardText, '07:00–16:00')
+  // Inside the day: no overtime.
+  assert.deepEqual(priced('08:00', '15:00').overtime, [])
+  // Entirely outside the day: no standard part.
+  assert.equal(priced('17:00', '20:00').standardText, '')
+  assert.equal(priced('17:00', '20:00').overtimeText, '17:00–20:00')
+  // Overnight: the overtime range runs past midnight as stored.
+  assert.equal(priced('22:00', '06:00').overtimeText, '22:00–06:00')
+  assert.equal(priced('05:00', '02:00').overtimeText, '05:00–07:00 + 16:00–02:00')
+  // Weekend set window (default Saturday 07:30–13:00): the window is standard, the rest overtime.
+  const saturday = priced('06:00', '18:00', '2026-11-14', R112.DEFAULT_PAYROLL_POLICY as typeof policy143)
+  assert.equal(saturday.standardText, '07:30–13:00')
+  assert.equal(saturday.overtimeText, '06:00–07:30 + 13:00–18:00')
+  // Every-hour Sunday (default): every hour is overtime.
+  const sunday = priced('06:00', '18:00', '2026-11-15', R112.DEFAULT_PAYROLL_POLICY as typeof policy143)
+  assert.equal(sunday.standardText, '')
+  assert.equal(sunday.overtimeText, '06:00–18:00')
+  assert.deepEqual(R112.payrollLineClockRanges(null), { standard: [], overtime: [], standardText: '', overtimeText: '' })
+  // Wording only: the figures are the pay rule's, unchanged.
+  const result = R112.payrollHoursResult({ booking: { timeSlot: 'CUSTOM_HOURS', workStartTime: '07:00', workEndTime: '19:00' }, dayKey: '2026-11-11', policy: policy143 })
+  assert.equal(result.totalPaidHours, 13)
+})
+
+test('1.43.0 timesheetLineClockText: the clock part of a line, never the multiplied text twice', () => {
+  assert.equal(R112.timesheetLineClockText('16:00–19:00 · OT 6.5h × 2 − 0.5h break = 12.5h'), '16:00–19:00')
+  assert.equal(R112.timesheetLineClockText('07:00–16:00 · no break'), '07:00–16:00 · no break')
+  assert.equal(R112.timesheetLineClockText('OT 3h'), 'OT 3h')
+  assert.equal(R112.timesheetLineClockText(null), '')
+  // The multiplied text stays readable for a signed line (`parseMultipliedHoursText`).
+  assert.deepEqual(R112.parseMultipliedHoursText('16:00–19:00 · OT 6.5h × 2 − 0.5h break = 12.5h'), { clockHours: 6.5, multiplier: 2, breakHours: 0.5 })
+})
+
+test('1.43.0 Edit booking: the booking\'s own overtime rate prices its hours and its weekend rows (owner example 14.5h)', () => {
+  const explained = R112.bookingHoursExplanation(
+    policy143,
+    '2026-11-11',
+    { workStartTime: '07:00', workEndTime: '19:00', isBreakRemoved: false, otMultiplierOverride: 2 },
+    'Europe/London'
+  )
+  assert.equal(explained?.summary, '07:00–19:00 = 8.5h (day, less 30 min unpaid break) + 3h × 2 = 6h → 14.5h')
+  assert.equal(explained?.totalPaidHours, 14.5)
+  // Weekend rows (`weekendBookingBreakdown`) price the booking's own rate when given; without it the organisation's.
+  const org = R112.weekendBookingBreakdown(R112.DEFAULT_PAYROLL_POLICY, ['2026-11-14'], '06:00', '18:00', false, 'Europe/London')
+  const own = R112.weekendBookingBreakdown(R112.DEFAULT_PAYROLL_POLICY, ['2026-11-14'], '06:00', '18:00', false, 'Europe/London', 3)
+  assert.equal(org[0].multiplier, R112.DEFAULT_PAYROLL_POLICY.saturday.outsideWindowMultiplier)
+  assert.equal(own[0].multiplier, 3)
+  assert.equal(own[0].overtimeHours, org[0].overtimeHours)
+  assert.ok(own[0].paidHoursEquivalent > org[0].paidHoursEquivalent)
+  assert.match(own[0].explanation.rule, /own overtime rate is 3×/)
+})
+
+test('1.43.0 timesheetSnapshotReady: sign-off waits for the period\'s bookings and pay inputs', () => {
+  assert.deepEqual(R112.timesheetSnapshotReady({ bookingsLoaded: false }), {
+    ready: false,
+    failed: false,
+    message: R112.TIMESHEET_SNAPSHOT_LOADING_MESSAGE,
+  })
+  assert.equal(R112.TIMESHEET_SNAPSHOT_LOADING_MESSAGE, 'Loading bookings…')
+  assert.equal(R112.timesheetSnapshotReady({ bookingsLoaded: false, bookingsFailed: true }).failed, true)
+  assert.equal(R112.timesheetSnapshotReady({ bookingsLoaded: true, rateHistoryLoaded: false }).ready, false)
+  assert.equal(R112.timesheetSnapshotReady({ bookingsLoaded: true, payProfileLoaded: false }).ready, false)
+  assert.deepEqual(R112.timesheetSnapshotReady({ bookingsLoaded: true, payProfileLoaded: true, rateHistoryLoaded: true }), {
+    ready: true,
+    failed: false,
+    message: null,
+  })
+})
+
+test('1.43.0 timesheetSnapshotNeedsRebuild: only an empty, unexported snapshot with live labour lines', () => {
+  const empty = { weeklyReportOverride: { lines: [] } }
+  assert.equal(R112.timesheetSnapshotNeedsRebuild(empty, [{ isPayeDay: false }]), true)
+  assert.equal(R112.timesheetSnapshotNeedsRebuild(empty, 2), true)
+  // No live labour (or only PAYE days): nothing to rebuild.
+  assert.equal(R112.timesheetSnapshotNeedsRebuild(empty, []), false)
+  assert.equal(R112.timesheetSnapshotNeedsRebuild(empty, [{ isPayeDay: true }]), false)
+  // A snapshot with labour lines is never re-priced.
+  assert.equal(R112.timesheetSnapshotNeedsRebuild({ weeklyReportOverride: { lines: [{}] } }, [{}, {}]), false)
+  // Exported: left as it is.
+  assert.equal(R112.timesheetSnapshotNeedsRebuild({ ...empty, exportedAt: new Date('2026-11-10T09:00:00Z') }, [{}]), false)
+  // No snapshot at all: not this rule (the snapshot is built on full approval).
+  assert.equal(R112.timesheetSnapshotNeedsRebuild({ weeklyReportOverride: null }, [{}]), false)
+  assert.equal(R112.timesheetSnapshotNeedsRebuild(null, [{}]), false)
+})
+
+test('1.43.0 timesheetOwnerCanAddExtras: no price work or expenses once the line manager has signed', () => {
+  const signed = { managerSignedAt: new Date('2026-11-10T09:00:00Z') }
+  assert.deepEqual(R112.timesheetOwnerCanAddExtras(signed), { allowed: false, message: R112.TIMESHEET_SIGNED_OFF_EXTRAS_MESSAGE })
+  assert.equal(R112.TIMESHEET_SIGNED_OFF_EXTRAS_MESSAGE, 'This timesheet is signed off — add it to your next timesheet.')
+  // The older approval field counts the same (the security rules test both).
+  assert.equal(R112.timesheetOwnerCanAddExtras({ approvedAt: 1762765200000 }).allowed, false)
+  // Not signed by the line manager yet (or only by the person): still open.
+  assert.equal(R112.timesheetOwnerCanAddExtras({ managerSignedAt: null }).allowed, true)
+  assert.equal(R112.timesheetOwnerCanAddExtras(null).allowed, true)
+  // A self-signed sheet stays open (the person signs it again).
+  assert.equal(R112.timesheetOwnerCanAddExtras(signed, { selfSigned: true }).allowed, true)
+})
+
+test('1.43.0 subcontractorScheduleCell: only the working window, never paid hours or an overtime split', () => {
+  const one = R112.subcontractorScheduleCell({
+    bookings: [{ timeSlot: 'CUSTOM_HOURS', workStartTime: '07:00', workEndTime: '19:00' }],
+    day: policy143,
+    dayKey: '2026-11-11',
+  })
+  assert.equal(one?.headline, '07:00–19:00')
+  assert.equal(one?.tone, 'standard')
+  assert.equal(one?.standardText, null)
+  assert.equal(one?.overtimeText, null)
+  assert.deepEqual(one?.overtimeLines, [])
+  assert.equal(one?.hoursText, '')
+  // Two bookings: both windows, earliest first, with their number.
+  const two = R112.subcontractorScheduleCell({
+    bookings: [
+      { timeSlot: 'CUSTOM_HOURS', workStartTime: '13:00', workEndTime: '16:00' },
+      { timeSlot: 'CUSTOM_HOURS', workStartTime: '07:00', workEndTime: '12:00' },
+    ],
+  })
+  assert.equal(two?.timesText, '07:00–12:00 + 13:00–16:00')
+  assert.equal(two?.headline, '07:00–12:00 + 13:00–16:00 · 2 bookings')
+  // A named slot is its clock window under the working hours in effect that day; a weekend day its own window.
+  assert.equal(R112.subcontractorScheduleCell({ bookings: [{ timeSlot: 'FULL DAY' }], day: policy143, dayKey: '2026-11-11' })?.timesText, '07:00–16:00')
+  assert.equal(
+    R112.subcontractorScheduleCell({ bookings: [{ timeSlot: 'FULL DAY' }], day: R112.DEFAULT_PAYROLL_POLICY, dayKey: '2026-11-14' })?.timesText,
+    '07:30–13:00'
+  )
+  // Overnight keeps its stored finish.
+  assert.equal(R112.subcontractorScheduleCell({ bookings: [{ timeSlot: 'CUSTOM_HOURS', workStartTime: '22:00', workEndTime: '06:00' }] })?.timesText, '22:00–06:00')
+  assert.equal(R112.subcontractorScheduleCell({ bookings: [] }), null)
+})
+
+test('1.43.0 agreedManagerSuggestions: the price work approvers, by any part of the name, at most six', () => {
+  const ORG = 'org-143'
+  const roster = [
+    { id: 'op', firstName: 'Olly', surname: 'Operative', email: 'op@x.com', role: 'operative', operativeMode: true, isActive: true, passwordSet: true, organizationId: ORG },
+    { id: 'pat', firstName: 'Pat', surname: 'Manager', email: 'pat@x.com', role: 'manager', manager: true, isActive: true, passwordSet: true, organizationId: ORG },
+    { id: 'ann', firstName: 'Ann', surname: 'Admin', email: 'ann@x.com', role: 'admin', adminAccess: true, isActive: true, passwordSet: true, organizationId: ORG },
+    { id: 'old', firstName: 'Patricia', surname: 'Gone', email: 'old@x.com', role: 'manager', manager: true, isActive: false, passwordSet: true, organizationId: ORG },
+    { id: 'op2', firstName: 'Patrick', surname: 'Worker', email: 'op2@x.com', role: 'operative', operativeMode: true, isActive: true, passwordSet: true, organizationId: ORG },
+  ]
+  const person = roster[0]
+  // Any part of the name, without case; never an operative or an inactive person.
+  assert.deepEqual(R112.agreedManagerSuggestions('PAT', person, roster, { organizationId: ORG }), ['Pat Manager'])
+  assert.deepEqual(R112.agreedManagerSuggestions('min', person, roster, { organizationId: ORG }), ['Ann Admin'])
+  assert.deepEqual(R112.agreedManagerSuggestions('an', person, roster, { organizationId: ORG }).sort(), ['Ann Admin', 'Pat Manager'])
+  // Never the person themself; the exact name is not offered again; nothing for an empty query.
+  assert.deepEqual(R112.agreedManagerSuggestions('pat', roster[1], roster, { organizationId: ORG }), [])
+  assert.deepEqual(R112.agreedManagerSuggestions('Pat Manager', person, roster, { organizationId: ORG }), [])
+  assert.deepEqual(R112.agreedManagerSuggestions('  ', person, roster), [])
+  // At most six.
+  const many = Array.from({ length: 9 }, (_, i) => ({
+    id: `m${i}`, firstName: `Manager${i}`, surname: 'Smith', email: `m${i}@x.com`, role: 'manager', manager: true, isActive: true, passwordSet: true, organizationId: ORG,
+  }))
+  assert.equal(R112.agreedManagerSuggestions('smith', person, [person, ...many], { organizationId: ORG }).length, R112.AGREED_MANAGER_SUGGESTIONS_MAX)
+})

@@ -984,6 +984,10 @@ Job types and other org settings (only jobTypes doc is used today). Org members 
 
 ## `/databases/{database}/documents/organizations/{organizationId}/settings/{settingId}`
 
+### `allow read` — own documents first (1.43.0)
+
+`resource.data.get('userId', null) == request.auth.uid || (…the 1.42 condition…)`. A query cannot prove that it never returns a `variations_*` / `variationItem_*` document, so before 1.43.0 the read's first clause (staff for variation documents) refused every operative's own-timesheet query (`userId ==` their uid, or `in [their uid]`). With the caller's own `userId` tried first, that query is provable; nothing else opens (a settings document carries a top-level `userId` only for a timesheet, which the person may already read). Static compile cost 234,014 → 234,033 (+19); emulator type check 0 issues. Suite `tests/timesheetSettings.rules.test.ts`. Under `RULES_STRICT_BUDGET=1` its two operative denials (another person's `userId` query, a whole-collection list) are refused by the 1,000-expression limit — the same as on the 1.42 rules (measured), not a new refusal.
+
 ### `isOwnTimesheetSettings`
 
 Doc id is timesheet_{userId}_{unix} (userId may itself contain underscores). Prefer stored userId; fall back to id prefix timesheet_{auth.uid}_. matches() is whole-string — the .* is required.

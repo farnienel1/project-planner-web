@@ -483,3 +483,40 @@ test('pay periods overlapping a midweek report stay on that pay run', () => {
   assert.equal(periods[0].start.toISOString().slice(0, 10) <= '2026-09-16', true)
   assert.equal(periods[0].end.toISOString().slice(0, 10) >= '2026-09-16', true)
 })
+
+// Rulebook 1.43.0 (`timesheetSnapshotNeedsRebuild`): a counter-signature made before the period's bookings had loaded
+// froze a snapshot with no labour lines (the invoice then showed only price work). The next save once the bookings
+// have loaded rebuilds it from them, with the signatures and approver as stored; a snapshot with labour lines is never
+// rebuilt, and an exported sheet is left alone.
+test('1.43.0: an empty frozen snapshot is rebuilt from the live bookings; signatures and approver kept', () => {
+  const signedAt = new Date('2026-09-18T09:00:00Z')
+  const signed = {
+    ...emptyTimesheetDraft(),
+    operativeSignedAt: day,
+    operativeSignedByName: 'Ada Booked',
+    managerSignedAt: signedAt,
+    managerSignedByUserId: 'mgr',
+    managerSignedByName: 'Morgan Manager',
+  }
+  // Signed while no bookings had loaded: the snapshot has no labour lines.
+  const frozen = applyWeeklyReportOverride({ ...base, bookings: [], draft: signed })
+  assert.equal(frozen.weeklyReportOverride?.lines.length, 0)
+  // The bookings arrive: the next save rebuilds it.
+  const rebuilt = applyWeeklyReportOverride({ ...base, draft: frozen })
+  assert.equal(rebuilt.weeklyReportOverride?.lines.length, 1)
+  assert.equal(rebuilt.weeklyReportOverride?.lines[0].bookingId, 'b1')
+  assert.equal(rebuilt.weeklyReportOverride?.approvedAt.getTime(), frozen.weeklyReportOverride?.approvedAt.getTime())
+  assert.equal(rebuilt.weeklyReportOverride?.approvedByName, 'Morgan Manager')
+  assert.equal(rebuilt.managerSignedAt, signedAt)
+  assert.equal(rebuilt.operativeSignedAt, day)
+  // Exported: left as it is.
+  const exported = applyWeeklyReportOverride({ ...base, draft: { ...frozen, exportedAt: new Date('2026-09-20T09:00:00Z') } })
+  assert.equal(exported.weeklyReportOverride?.lines.length, 0)
+  // A snapshot with labour lines is never re-priced, even when the bookings later change.
+  const later = applyWeeklyReportOverride({
+    ...base,
+    bookings: [booking({ id: 'b1' }), booking({ id: 'b2', timeSlot: 'AM' })],
+    draft: rebuilt,
+  })
+  assert.deepEqual(later.weeklyReportOverride?.lines.map((line) => line.bookingId), ['b1'])
+})

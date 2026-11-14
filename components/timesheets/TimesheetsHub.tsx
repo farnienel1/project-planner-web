@@ -125,8 +125,13 @@ export function TimesheetsHub() {
   const userParam = searchParams.get('user')
   const tabParam = (searchParams.get('tab') as TeamTimesheetTab | null) || 'awaiting'
   const { user, organization } = useAuthStore()
-  const { bookings, loadBookings } = useBookingStore()
-  const { managerSiteBookings, loadManagerSiteBookings } = useManagerScheduleStore()
+  const { bookings, loadBookings, coverage: bookingCoverage, error: bookingsError } = useBookingStore()
+  const {
+    managerSiteBookings,
+    loadManagerSiteBookings,
+    coverage: managerCoverage,
+    error: managerBookingsError,
+  } = useManagerScheduleStore()
   const { operatives, loadOperatives } = useOperativeStore()
   const { users, loadUsers, loading: usersLoading } = useOrgUserStore()
   const { projects, smallWorks, loadProjects, loadSmallWorks } = useProjectStore()
@@ -299,8 +304,17 @@ export function TimesheetsHub() {
     retry: () => setInputsAttempt((value) => value + 1),
   }
 
+  // Rulebook 1.43.0 (`timesheetSnapshotReady`): the whole booking archive this screen asked for has arrived for the
+  // open organisation (labour and manager site bookings) — never just the rows an earlier, narrower listener held.
+  const coversArchive = (coverage: { organizationId: string; fullHistory: boolean } | null) =>
+    Boolean(coverage && organization?.id && coverage.organizationId === organization.id && coverage.fullHistory)
+  const bookingsLoaded = coversArchive(bookingCoverage) && coversArchive(managerCoverage)
+  const bookingsFailed = !bookingsLoaded && Boolean(bookingsError || managerBookingsError)
+
   const periodPageProps = {
     payInputs,
+    bookingsLoaded,
+    bookingsFailed,
     periodStart: selectedPeriod.start,
     periodEnd: selectedPeriod.end,
     invoicing,

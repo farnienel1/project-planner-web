@@ -604,8 +604,10 @@ export {
   multipliedHoursText,
   payrollMultipliedHours,
   parseMultipliedHoursText,
+  payrollLineClockRanges,
+  timesheetLineClockText,
 } from './payrollHours'
-export type { PayrollHoursBooking, PayrollHoursInput, PayrollHoursResult, PayrollHoursSegment } from './payrollHours'
+export type { PayrollHoursBooking, PayrollHoursInput, PayrollHoursResult, PayrollHoursSegment, PayrollLineClockRanges } from './payrollHours'
 
 export {
   WARNING_RESOLUTION_STATUSES,
@@ -1653,6 +1655,7 @@ export {
   scheduleCellHours,
   scheduleCellKind,
   scheduleDayCell,
+  subcontractorScheduleCell,
   JOB_SCHEDULE_LEAVE_LABEL,
   JOB_SCHEDULE_LEAVE_PENDING_LABEL,
   JOB_SCHEDULE_LEAVE_TITLE,
@@ -1892,3 +1895,15 @@ export {
 } from './bookingReplace'
 export type { BookingConflictDecisionValue, BookingReplaceCandidate, BookingReplaceCollection, BookingReplaceDelete, BookingReplaceRef, BookingReplaceWritePlan } from './bookingReplace'
 export type { ScheduleDayBooking, ScheduleDayCell } from './jobScheduleLeave'
+// Rulebook 1.43.0 §8: when a signed timesheet's snapshot may be built or rebuilt, and when extras may still be added.
+export {
+  TIMESHEET_PAY_INPUTS_LOADING_MESSAGE,
+  TIMESHEET_SIGNED_OFF_EXTRAS_MESSAGE,
+  TIMESHEET_SNAPSHOT_FAILED_MESSAGE,
+  TIMESHEET_SNAPSHOT_LOADING_MESSAGE,
+  timesheetOwnerCanAddExtras,
+  timesheetSnapshotNeedsRebuild,
+  timesheetSnapshotReady,
+} from './timesheetSnapshot'
+export type { TimesheetExtrasSheet, TimesheetLiveLabourLine, TimesheetSnapshotReadyInput, TimesheetSnapshotSheet } from './timesheetSnapshot'
+export type { SubcontractorScheduleBooking, SubcontractorScheduleCell } from './jobScheduleLeave'

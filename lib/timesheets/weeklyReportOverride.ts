@@ -25,7 +25,7 @@ import {
 import { emptyDayRateHistory, type OperativeDayRateHistoryCollection } from '@/lib/timesheets/dayRateHistoryStorage'
 import { orgDayHours } from '@/lib/timesheets/payBasis'
 import type { PayrollTimePolicyState } from '@/lib/canonical'
-import { weekdayPaidHours } from '@/lib/canonical'
+import { timesheetSnapshotNeedsRebuild, weekdayPaidHours } from '@/lib/canonical'
 import type {
   TimesheetDraft,
   TimesheetManagerDecision,
@@ -245,8 +245,28 @@ export function applyWeeklyReportOverride(input: WeeklyReportOverrideInput): Tim
     if (!input.draft.weeklyReportOverride) return input.draft
     return { ...input.draft, weeklyReportOverride: null }
   }
-  if (input.draft.weeklyReportOverride) {
-    return { ...input.draft, weeklyReportOverride: reapplyReviews(input.draft.weeklyReportOverride, input) }
+  const existing = input.draft.weeklyReportOverride
+  if (existing) {
+    // Rulebook 1.43.0 (`timesheetSnapshotNeedsRebuild`): a snapshot frozen with no labour lines (signed before the
+    // period's bookings had loaded) is rebuilt from the live bookings when they hold labour lines and nobody has
+    // exported the sheet. Signatures and who approved it stay as stored. A snapshot with any labour line is never
+    // rebuilt or re-priced.
+    if (existing.lines.length === 0 && !input.draft.exportedAt) {
+      const fresh = makeOverride(input)
+      if (timesheetSnapshotNeedsRebuild(input.draft, fresh.lines.length)) {
+        return {
+          ...input.draft,
+          weeklyReportOverride: {
+            ...fresh,
+            approvedAt: existing.approvedAt,
+            approvedByUserId: existing.approvedByUserId,
+            approvedByName: existing.approvedByName,
+            selfSigned: existing.selfSigned,
+          },
+        }
+      }
+    }
+    return { ...input.draft, weeklyReportOverride: reapplyReviews(existing, input) }
   }
   return { ...input.draft, weeklyReportOverride: makeOverride(input) }
 }

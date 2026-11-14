@@ -534,10 +534,12 @@ export async function loadTimesheetDraft(
     const picked = pickTimesheetDraftForPeriod(grouped.get(userId) || [], weekStart, end, timeZone)
     if (picked) return picked.draft
   } catch (error) {
-    if (fromCandidates) return fromCandidates
-    throw error
+    // 1.43.0: the direct reads of this period's document ids answered (the sheet is not there), so a refused or
+    // failed history query is not shown to the person as an error — the period opens as a new sheet. Only those
+    // direct reads failing (thrown above) is an error.
+    console.warn('[timesheets] history query failed after the direct reads; opening an empty sheet', error)
   }
-  return fromCandidates || emptyTimesheetDraft()
+  return emptyTimesheetDraft()
 }
 
 function applyKeyedTimesheetDocs(
@@ -910,7 +912,9 @@ export async function listTimesheetStates(
     }
     rows.sort((a, b) => b.weekStart.getTime() - a.weekStart.getTime())
     return rows.slice(0, Math.max(1, limit))
-  } catch {
+  } catch (error) {
+    // 1.43.0: never an error on screen; logged so a refused query (rules) is visible in the console.
+    console.warn('[timesheets] listTimesheetStates query failed', error)
     return []
   }
 }

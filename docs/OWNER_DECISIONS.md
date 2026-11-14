@@ -449,10 +449,36 @@ UI only, web only (`docs/design/web-pages-ui/web-pages-ui-spec.md`; branch `w-ui
 | 13 Nov | **32–35** Email dedupe choices as proposed, including the TTL clean-up. | decided |
 | 13 Nov | **36** No extra signed-timesheet warnings on moves or bulk deletes (both apps unchanged). | confirmed — unchanged |
 
+## 14 Nov decisions (for 1.43, timesheet fixes)
+
+| Date | Decision | Status |
+|---|---|---|
+| 14 Nov | **Edit booking shows the booking's own overtime rate in its hours.** Owner example: working day 07:00–16:00, 30 min unpaid break, organisation rate 1.5; a booking 07:00–19:00 at ×2 reads "8.5h + 3h × 2 = 6h → 14.5h". Every booking editor and create screen prices the rate on screen. | done web + rulebook (1.43.0, w143-timesheet-fixes); iOS open (hand-off v1.43.0) |
+| 14 Nov | **On a timesheet the standard line shows the standard-window times and the overtime line the overtime times** (07:00–16:00 and 16:00–19:00; an early start and a late finish are two overtime ranges). Wording only; signed sheets keep their stored text. | done web + rulebook (1.43.0, `payrollLineClockRanges`); iOS open |
+| 14 Nov | **Operatives can list their own timesheets** (the settings read rule refused their own `userId` query). | done web + rules (1.43.0); owner rules publish pending |
+| 14 Nov | **A counter-signature never freezes an empty snapshot**: sign / counter-sign wait for the period's bookings ("Loading bookings…"); a snapshot already frozen empty is rebuilt from the live bookings with its signatures kept; a snapshot with labour lines is never re-priced. | done web + rulebook (1.43.0, `timesheetSnapshotReady`, `timesheetSnapshotNeedsRebuild`); iOS open |
+| 14 Nov | **No price work or expenses once the line manager has signed** — option 1: the add controls are off with "This timesheet is signed off — add it to your next timesheet."; the person's signature is never cleared (it left the sheet half signed). | done web + rulebook (1.43.0, `timesheetOwnerCanAddExtras`), **owner confirmation of option 1 pending**; iOS open |
+| 14 Nov | **Subcontractor bookings on the job week grid show only the working window** (start–finish), never the standard / overtime split or paid hours. | done web + rulebook (1.43.0, `subcontractorScheduleCell`); iOS open |
+| 14 Nov | **"Manager who agreed this" suggestions follow the price work approvers' rule** (one rule for both apps). | done web + rulebook (1.43.0, `agreedManagerSuggestions`); iOS open |
+| 14 Nov | **How hours are divided by the paid day (8 vs 8.5)** — not changed in 1.43.0; waiting on the owner. | question |
+
+## 1.43.0 judgement calls (owner to confirm)
+
+| Date | Choice | Status |
+|---|---|---|
+| 14 Nov | An overtime line with an unpaid break keeps its multiplied text after the times ("16:00–19:00 · OT 6.5h × 2 − 0.5h break = 12.5h") so a signed copy still shows the break; screens show only the times beside the rate line. A booking with no standard part keeps its own times on the (0h) standard line; FULL DAY / AM / PM keep their names. | done, owner to confirm |
+| 14 Nov | "Loading bookings…" holds every save that builds the snapshot (signing, counter-signing, invoice, adding extras, notes), not only the sign buttons, for the few seconds the bookings take. | done, owner to confirm |
+| 14 Nov | The empty-snapshot rebuild runs once per visit, by the line manager / an admin (or a self-signed owner) opening the sheet; there is no script for sheets nobody opens. | done, owner to confirm |
+| 14 Nov | A self-signed sheet (no line manager signs it) still lets the person add extras; they sign again. | done, owner to confirm |
+| 14 Nov | Agreed-manager suggestions match the name only (the old web list also matched the email) and only people whose users document names this organisation (the approvers' rule). | done, owner to confirm |
+| 14 Nov | Subcontractor tiles are one plain blue (no overtime stripes); the day chooser shows the times with no hours. | done, owner to confirm |
+| 14 Nov | When the history query is refused after the period's direct reads answered, the period opens as a new sheet (logged), not an error. | done, owner to confirm |
+
 ## Open questions for the owner
 
 | Date | Question |
 |---|---|
+| 14 Nov | **Sheets already half signed** (the person's signature cleared after their line manager signed, before 1.43.0): `timesheetListBucket` reads them `unsigned`, so they are in neither Awaiting nor Signed off on User Timesheets and Generate invoice is grey. Options: (a) leave them; the person signs again and the sheet returns to Signed off (their line manager's signature and snapshot are still stored); (b) list them under Awaiting with a "Needs the person's signature again" note; (c) a one-off owner-run script lists them for you to check. Recommended (a) + (c). Not changed in 1.43.0. |
 | 11 Nov | ANSWERED 13 Nov (item 18: from today, done in 1.40.0). **Employment-type changes made "immediately" or backdated store no date** (`applyEmploymentTypeChange` clears the transition), so the leave rule reads the whole year as the new type: switching someone to PAYE today gives a full-year allowance, not pro rata from today. Only a change scheduled for a future day gives pro rata from D. Fix: keep the date for every change — but that also changes which days are on that person's timesheet (pay), so it needs your yes. Recommended: yes, in its own release with `minimumIosBuild` raised. |
 | 12 Nov | ANSWERED 13 Nov (item 18: from today, done in 1.40.0). **(Review r306 #3, same question, more detail.)** An "immediately" type change also re-types the **whole year, carry-over included**: PAYE → self-employed today removes this year's allowance *and* what was carried in; self-employed → PAYE today gives the full year plus carry-over from a year that was self-employed (nothing, since no carry-over comes out of a self-employed year — but a year that was PAYE before a backdated change counts as self-employed and carries nothing). Not changed in 1.40.0 (behaviour as built). Options: (a) keep as built; (b) store the effective date for every change (fixes pro rata and carry-over; also moves timesheet days — pay). Recommended (b), own release. |
 | 12 Nov | ANSWERED 13 Nov (item 19: any case is PAYE, done in 1.40.0). **(Review r306 #4.)** Treat "PAYE" in any letter case (and with spaces, e.g. " paye ") as PAYE everywhere? Today only the exact stored word `paye` is PAYE; anything else reads as self-employed, so such a person has no timesheet-free PAYE days, is paid as self-employed and (from 1.40.0) has no leave allowance. Changing the reading would change pay and timesheets for those people. Not changed in 1.40.0; Settings → Data health now lists them so an admin can fix the stored value. Options: (a) keep exact and fix the data (recommended first); (b) read any case as PAYE (own release, `minimumIosBuild` raised). |

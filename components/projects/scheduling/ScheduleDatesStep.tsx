@@ -21,6 +21,7 @@ export function ScheduleDatesStep({
   onDateSlotsChange,
   onSlotChange,
   onRemoveDate,
+  otMultiplierOverride = null,
 }: {
   month: Date
   onMonthChange: (date: Date) => void
@@ -30,6 +31,8 @@ export function ScheduleDatesStep({
   onDateSlotsChange: (slots: Map<string, ScheduleDateSlot>) => void
   onSlotChange: (date: Date, patch: Partial<ScheduleDateSlot>) => void
   onRemoveDate: (date: Date) => void
+  /** Rulebook 1.43.0: the overtime rate chosen for the booking (null = the organisation's). */
+  otMultiplierOverride?: number | null
 }) {
   const slotsList = sortedDateSlots(dateSlots)
   const [mixError, setMixError] = useState<string | null>(null)
@@ -72,6 +75,7 @@ export function ScheduleDatesStep({
           onSlotChange={onSlotChange}
           onRemove={onRemoveDate}
           accent="blue"
+          otMultiplierOverride={otMultiplierOverride}
         />
       </section>
     </div>

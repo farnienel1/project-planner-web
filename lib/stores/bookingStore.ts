@@ -87,6 +87,12 @@ interface BookingState {
   ready: boolean
   error: string | null
   /**
+   * Rulebook 1.43.0 (`timesheetSnapshotReady`): what the last snapshot delivered covers — the organisation and whether
+   * it is the whole archive — so a timesheet is never signed before its period's bookings have arrived. `loading`
+   * alone is not enough: widening an open listener to the full archive keeps the rows already shown.
+   */
+  coverage: { organizationId: string; fullHistory: boolean; fromDayKey: string | null } | null
+  /**
    * Live bookings for the organisation. Without options the listener starts at canonical
    * `bookingLoadStart` (this week's Monday or the warning window start, whichever is earlier).
    * `fromDayKey` moves the start earlier for a screen showing older days; `fullHistory` loads
@@ -123,6 +129,7 @@ export const useBookingStore = create<BookingState>((set, get) => ({
   loading: false,
   ready: false,
   error: null,
+  coverage: null,
 
   loadBookings: async (organizationId: string, options?: LoadBookingsOptions) => {
     if (!organizationId || !db) return
@@ -145,14 +152,15 @@ export const useBookingStore = create<BookingState>((set, get) => ({
       current.length > 0 &&
       current.every((row) => row.organizationId && !organizationIdsMatch(row.organizationId, organizationId))
     const already = isOrgCollectionSubscribed('bookings', organizationId, queryId)
-    if (foreign) set({ bookings: [], loading: true, ready: false, error: null })
+    if (foreign) set({ bookings: [], loading: true, ready: false, error: null, coverage: null })
     else if (already || current.length > 0) set({ loading: false })
     else set({ loading: true, error: null })
+    const coverage = { organizationId, fullHistory: bookingDownload.fullHistory, fromDayKey: bookingDownload.loadedFromDayKey }
     subscribeBookingsFor('bookings', organizationId, 'bookings', (docs) => {
       const previous = get().bookings.filter(
         (row) => !row.organizationId || organizationIdsMatch(row.organizationId, organizationId)
       )
-      set({ bookings: bookingsFromListenerDocs({ organizationId, docs, previous }), loading: false, ready: true })
+      set({ bookings: bookingsFromListenerDocs({ organizationId, docs, previous }), loading: false, ready: true, coverage })
     }, (error) => {
       set({ error: error.message, loading: false })
     }, { queryId, constraints: bookingDownloadConstraints(bookingDownload) })

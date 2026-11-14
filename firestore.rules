@@ -1819,7 +1819,7 @@ service cloud.firestore {
             ));
         }
 
-        allow read: if canAccessOrganization(organizationId) &&
+        allow read: if canAccessOrganization(organizationId) && (resource.data.get('userId', null) == request.auth.uid ||
           (!(settingId.matches('^variations_.*') || settingId.matches('^variationItem_.*')) || canAccessVariationsStaff(organizationId)) &&
           (!settingId.matches('^timesheet_.*') || (!privatePayOn(organizationId) || (request.auth != null && (
             (resource != null && 'userId' in resource.data && resource.data.userId == request.auth.uid) ||
@@ -1830,7 +1830,7 @@ service cloud.firestore {
           )) ||
             orgAdminEither(organizationId) || isPlatformOwner() ||
             (timesheetSubjectUid() is string && canViewPayOfAsMember(timesheetSubjectUid())) ||
-            (isPlatformOwner() || (!timesheetCallerIsSubject() && timesheetReviewerOfOthers()))));
+            (isPlatformOwner() || (!timesheetCallerIsSubject() && timesheetReviewerOfOthers())))));
         allow create, update, delete: if canAccessOrganization(organizationId) && (
           (request.method != 'delete') ? ((
           (settingId.matches('^timesheet_.*'))

@@ -12,11 +12,14 @@ export function ScheduleSelectedDates({
   onSlotChange,
   onRemove,
   accent = 'blue',
+  otMultiplierOverride = null,
 }: {
   slots: ScheduleDateSlot[]
   onSlotChange: (date: Date, patch: Partial<ScheduleDateSlot>) => void
   onRemove: (date: Date) => void
   accent?: 'blue' | 'purple'
+  /** Rulebook 1.43.0: the overtime rate chosen for the booking (null = the organisation's), priced in the preview. */
+  otMultiplierOverride?: number | null
 }) {
   const activeClass = accent === 'purple' ? 'bg-purple-600 text-white' : 'bg-blue-600 text-white'
   const policy = useOrganizationPayrollPolicy()
@@ -94,6 +97,7 @@ export function ScheduleSelectedDates({
                   policy={policy}
                   date={entry.date}
                   showBreak={false}
+                  otMultiplierOverride={otMultiplierOverride}
                   onStart={(value) => onSlotChange(entry.date, { workStartTime: value })}
                   onEnd={(value) => onSlotChange(entry.date, { workEndTime: value })}
                   onBreak={() => {}}
