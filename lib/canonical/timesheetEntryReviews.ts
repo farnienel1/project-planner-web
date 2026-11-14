@@ -129,17 +129,23 @@ function fingerprintText(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
 }
 
+export type TimesheetFingerprintKind = 'priceWork' | 'expense'
+
 /**
- * Rulebook 1.45.0 §8: the fingerprint of a timesheet price work or expense entry's own fields — name, description,
- * job number, the manager who agreed it (read as the reader does: blank is "Manager"), its dates (any stored shape,
- * as instants), amount (to the penny) and evidence paths in order (`claimEvidenceSameList` style). Works on the stored
- * row and on an app's draft entry alike. A line manager's review stores it (`reviewedFingerprint`); when the entry's
- * fingerprint later differs, the review is stale and the entry is pending again (`timesheetEntryDecision`).
- * Decisions and revised amounts are not part of it.
+ * Rulebook 1.45.0 §8 (review #322): the fingerprint of a timesheet price work or expense entry **as stored** — the
+ * row's own name, description, job number, agreed manager (price work), dates, amount (to the penny) and evidence
+ * paths (as stored, all of them, sorted, so a reorder never reopens a review). Nothing is defaulted: a missing date or
+ * agreed manager fingerprints as missing. `kind` is the array the row is in (`priceWorkEntries` / `expenseEntries`),
+ * never guessed from its fields. Decisions and revised amounts are not part of it.
+ *
+ * One input everywhere: the reader (`parseTimesheetEntries`) computes it from the stored row and returns it as each
+ * entry's `reviewFingerprint`; an app keeps that value on its loaded copy, and `timesheetEntryDecision` /
+ * `timesheetEntryReviewWriteFields` use a row's `reviewFingerprint` when it carries one, so a display copy (dates
+ * filled in, evidence filtered to the owner's files) never decides. A line manager's review stores it
+ * (`reviewedFingerprint`); when the stored entry's fingerprint later differs, the review is stale.
  */
-export function timesheetEntryFingerprint(entry: Record<string, unknown> | null | undefined): string {
+export function timesheetEntryFingerprint(entry: Record<string, unknown> | null | undefined, kind: TimesheetFingerprintKind): string {
   const row = entry || {}
-  const kind = row.startDate != null || row.agreedManagerName != null ? 'priceWork' : 'expense'
   const when = (value: unknown) => {
     const ms = documentInstantMs(value)
     return ms == null ? '' : String(ms)
@@ -148,18 +154,39 @@ export function timesheetEntryFingerprint(entry: Record<string, unknown> | null 
   const evidence = (Array.isArray(row.evidence) ? row.evidence : [])
     .map((item) => (item && typeof item === 'object' ? fingerprintText((item as Record<string, unknown>).path) : ''))
     .filter(Boolean)
+    .sort()
   return JSON.stringify([
     kind,
     fingerprintText(row.title),
     fingerprintText(row.details),
     fingerprintText(row.jobNumber),
-    kind === 'priceWork' ? fingerprintText(row.agreedManagerName) || 'Manager' : '',
-    when(row.date),
-    when(row.startDate),
-    when(row.endDate),
+    kind === 'priceWork' ? fingerprintText(row.agreedManagerName) : '',
+    kind === 'expense' ? when(row.date) : '',
+    kind === 'priceWork' ? when(row.startDate ?? row.date) : '',
+    kind === 'priceWork' ? when(row.endDate) : '',
     amount == null ? '' : (Math.round(amount * 100) / 100).toFixed(2),
     evidence,
   ])
+}
+
+/** The array a stored entry id is in (`priceWorkEntries` first), else `fallback`. */
+function entryKindInSheet(sheet: Record<string, unknown> | null | undefined, id: string, fallback: TimesheetFingerprintKind): TimesheetFingerprintKind {
+  const key = normalizeDocumentId(id)
+  if (!key || !sheet) return fallback
+  const has = (field: string) =>
+    Array.isArray(sheet[field]) &&
+    (sheet[field] as unknown[]).some((row) => row && typeof row === 'object' && normalizeDocumentId((row as Record<string, unknown>).id) === key)
+  if (has('priceWorkEntries')) return 'priceWork'
+  if (has('expenseEntries')) return 'expense'
+  return fallback
+}
+
+/**
+ * The fingerprint a row stands for: the stored-row value it carries (`reviewFingerprint`, from the reader), else the
+ * row's own fingerprint (it is the stored row).
+ */
+function rowFingerprint(row: Record<string, unknown>, kind: TimesheetFingerprintKind): string {
+  return text(row.reviewFingerprint) || timesheetEntryFingerprint(row, kind)
 }
 
 /** The stored map, or null when the sheet has no `extraEntryReviews` field (a legacy sheet). */
@@ -209,7 +236,9 @@ export function timesheetEntryEffectiveAmount(
  */
 export function timesheetEntryDecision(
   sheet: Record<string, unknown> | null | undefined,
-  entry: Record<string, unknown> | null | undefined
+  entry: Record<string, unknown> | null | undefined,
+  /** 1.45.0: the array the entry is in; found in `sheet` by id when not given. */
+  kind?: TimesheetFingerprintKind | null
 ): TimesheetEntryDecisionResult {
   const row = entry || {}
   const id = text(row.id)
@@ -233,7 +262,10 @@ export function timesheetEntryDecision(
     const review = id ? reviewFor(reviews, id) : undefined
     if (!review) {
       base = { decision: 'approved', revisedAmount: null, source: 'unreviewed' }
-    } else if (review.reviewedFingerprint != null && review.reviewedFingerprint !== timesheetEntryFingerprint(row)) {
+    } else if (
+      review.reviewedFingerprint != null &&
+      review.reviewedFingerprint !== rowFingerprint(row, kind ?? entryKindInSheet(sheet, id, row.startDate != null ? 'priceWork' : 'expense'))
+    ) {
       // 1.45.0: any change to the entry's own fields or evidence since the review reopens it.
       base = { decision: 'pending', revisedAmount: null, source: 'stale-review' }
     } else if (review.reviewedAmount != null && Math.abs(review.reviewedAmount - amount) >= AMOUNT_EPSILON) {
@@ -256,10 +288,10 @@ export type TimesheetEntryReviewInput = {
   managerDecision: TimesheetEntryDecision
   managerRevisedAmount?: number | null
   /**
-   * 1.45.0: the entry's own fields (`title`, `details`, `jobNumber`, `agreedManagerName`, dates, `evidence`). When
-   * `title` is given the review stores `reviewedFingerprint` (`timesheetEntryFingerprint`); without it (an older
-   * caller passing only id and amount) the review is written as before, amount-only.
+   * 1.45.0: the stored row's fingerprint as the reader returned it (`reviewFingerprint`). With it the review stores
+   * `reviewedFingerprint`; without it (an older caller passing only id and amount) the review is written amount-only.
    */
+  reviewFingerprint?: string | null
   title?: unknown
   [field: string]: unknown
 }
@@ -293,18 +325,20 @@ export function timesheetEntryReviewWriteFields(input: {
     const decision = parseTimesheetEntryDecision(entry.managerDecision)
     const revisedAmount = decision === 'edited' ? finite(entry.managerRevisedAmount) : null
     const amount = finite(entry.amount) ?? 0
-    const fingerprint = entry.title != null ? timesheetEntryFingerprint(entry as Record<string, unknown>) : null
-    const prior = stored[id]
-    if (
-      input.stored &&
-      prior &&
-      prior.decision === decision &&
-      sameNumber(prior.revisedAmount, revisedAmount) &&
-      sameNumber(prior.reviewedAmount, amount) &&
-      (fingerprint == null || prior.reviewedFingerprint === fingerprint)
-    ) {
-      continue
-    }
+    const fingerprint = text(entry.reviewFingerprint) || null
+    const prior = input.stored ? reviewFor(stored, id) : undefined
+    // Whether the stored review still applies to the entry as stored (the reader's rule, `timesheetEntryDecision`).
+    const priorCurrent =
+      prior != null &&
+      (prior.reviewedFingerprint != null && fingerprint != null
+        ? prior.reviewedFingerprint === fingerprint
+        : prior.reviewedAmount == null || sameNumber(prior.reviewedAmount, amount))
+    // 1.45.0 (review #322, §1 partial writes): only the reviews this save changes are written — a current review whose
+    // decision and revised amount are unchanged is never rewritten (its reviewer, time and stored fields stay, an
+    // older review is not stamped with a fingerprint); an entry still pending with no current review has nothing to
+    // record.
+    if (input.stored && prior && priorCurrent && prior.decision === decision && sameNumber(prior.revisedAmount, revisedAmount)) continue
+    if (input.stored && decision === 'pending' && !priorCurrent) continue
     output[`${TIMESHEET_ENTRY_REVIEWS_FIELD}.${id}`] = {
       decision,
       revisedAmount,

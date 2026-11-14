@@ -21,6 +21,8 @@ export type TimesheetExpenseEntry = {
   receiptName?: string | null
   /** Rulebook 1.45.0 §8: files, photos and frozen site audit copies (the PAYE claim evidence shape). */
   evidence?: PayeClaimEvidence[]
+  /** Rulebook 1.45.0: the stored row's fingerprint (`parseTimesheetEntries`); never written back. */
+  reviewFingerprint?: string
   managerDecision: TimesheetManagerDecision
   managerRevisedAmount?: number | null
 }
@@ -36,6 +38,8 @@ export type TimesheetPriceWorkEntry = {
   amount: number
   /** Rulebook 1.45.0 §8: optional evidence (the PAYE claim evidence shape). */
   evidence?: PayeClaimEvidence[]
+  /** Rulebook 1.45.0: the stored row's fingerprint (`parseTimesheetEntries`); never written back. */
+  reviewFingerprint?: string
   managerDecision: TimesheetManagerDecision
   managerRevisedAmount?: number | null
 }

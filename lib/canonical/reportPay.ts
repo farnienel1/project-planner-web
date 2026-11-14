@@ -241,7 +241,7 @@ export function timesheetInvoiceRows<L extends InvoiceLineInput & { id: string; 
       const own = amountOf(entry.amount)
       let amount = own
       if (decided) {
-        const decision = timesheetEntryDecision(sheet, entry)
+        const decision = timesheetEntryDecision(sheet, entry, kind)
         if (decision.decision === 'declined') continue
         amount = timesheetEntryEffectiveAmount(decision.decision, decision.revisedAmount, own)
       }

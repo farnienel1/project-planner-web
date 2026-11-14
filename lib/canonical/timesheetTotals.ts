@@ -149,7 +149,7 @@ export function timesheetTotals<L extends TimesheetTotalsLine>(input: TimesheetT
   ] as const) {
     for (const entry of rowsOf(sheet[key])) {
       add(finite(entry.amount))
-      if (timesheetEntryDecision(sheet, entry).decision === 'pending') pendingEntries += 1
+      if (timesheetEntryDecision(sheet, entry, key === 'priceWorkEntries' ? 'priceWork' : 'expense').decision === 'pending') pendingEntries += 1
     }
   }
 

@@ -43,7 +43,7 @@ import {
 } from './peopleDocuments'
 import { derivedDocumentId, derivedRowId } from './derivedIds'
 import { normalizeDocumentId } from './scheduleSources'
-import { timesheetEntryDecision, type TimesheetEntryDecision, type TimesheetEntryDecisionSource } from './timesheetEntryReviews'
+import { timesheetEntryDecision, timesheetEntryFingerprint, type TimesheetEntryDecision, type TimesheetEntryDecisionSource } from './timesheetEntryReviews'
 import { parsePayeClaimEvidence, type PayeClaimEvidence } from './claimEvidence'
 import { timesheetDocumentSubjectId } from './timesheetPeriod'
 
@@ -585,6 +585,11 @@ type TimesheetEntryBase = {
   managerRevisedAmount: number | null
   decisionSource: TimesheetEntryDecisionSource
   /**
+   * 1.45.0 (review #322): `timesheetEntryFingerprint` of the stored row (its own fields, every stored evidence path).
+   * Apps keep it on their loaded copy so a review decision and a review write always use the stored row's value.
+   */
+  reviewFingerprint: string
+  /**
    * 1.45.0 (owner decision 14 Nov): files, photos and frozen personal site audit copies the sheet's owner attached
    * (`evidence[]`, the PAYE claim evidence shape, `parsePayeClaimEvidence`). Only the owner's own claim files are kept
    * (`timesheetEvidenceOwnerIds`); an entry stored before 1.45.0 has none.
@@ -642,7 +647,9 @@ function entryBase(
   if (!title) return null
   const id = timesheetEntryId(sheetDocId, kind, index, row)
   const amount = documentNumber(row.amount) ?? 0
-  const decision = timesheetEntryDecision(sheet, { ...row, id, amount })
+  const fingerprintKind = kind === 'priceWork' ? 'priceWork' : 'expense'
+  const reviewFingerprint = timesheetEntryFingerprint(row, fingerprintKind)
+  const decision = timesheetEntryDecision(sheet, { ...row, id, amount, reviewFingerprint }, fingerprintKind)
   return {
     id,
     idStored: Boolean(text(row.id)),
@@ -653,6 +660,7 @@ function entryBase(
     managerDecision: decision.decision,
     managerRevisedAmount: decision.revisedAmount,
     decisionSource: decision.source,
+    reviewFingerprint,
     evidence: parsePayeClaimEvidence(row.evidence, { userIds: owner.userIds, organizationId: owner.organizationId }),
   }
 }
