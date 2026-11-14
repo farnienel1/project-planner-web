@@ -257,6 +257,28 @@ export function weeklyReportOverrideToFirestore(override: WeeklyReportOverride):
   }
 }
 
+const PAYROLL_LINE_EDIT_NUMBER_FIELDS = [
+  'revisedStandardHours',
+  'revisedOvertimeHours',
+  'revisedOvertimeClockHours',
+  'revisedOvertimeMultiplier',
+  'revisedStandardAmount',
+  'revisedOvertimeAmount',
+] as const
+
+/** Rulebook 1.46.0: the Edit hours fields of a review, only those stored (an older review gets none). */
+function payrollLineEditFieldsOf(row: Record<string, unknown> | TimesheetPayrollLineReview): Partial<TimesheetPayrollLineReview> {
+  const source = row as Record<string, unknown>
+  const out: Record<string, unknown> = {}
+  for (const key of PAYROLL_LINE_EDIT_NUMBER_FIELDS) {
+    const value = source[key]
+    if (typeof value === 'number' && Number.isFinite(value)) out[key] = value
+    else if (value === null && key === 'revisedOvertimeMultiplier' && typeof source.revisedStandardHours === 'number') out[key] = null
+  }
+  if (typeof source.reviewedBookingFingerprint === 'string') out.reviewedBookingFingerprint = source.reviewedBookingFingerprint
+  return out as Partial<TimesheetPayrollLineReview>
+}
+
 function mapReviews(raw: unknown): Record<string, TimesheetPayrollLineReview> {
   if (!raw || typeof raw !== 'object') return {}
   const output: Record<string, TimesheetPayrollLineReview> = {}
@@ -265,6 +287,8 @@ function mapReviews(raw: unknown): Record<string, TimesheetPayrollLineReview> {
     output[key] = {
       decision: asDecision(row.decision),
       revisedAmount: typeof row.revisedAmount === 'number' ? row.revisedAmount : null,
+      // 1.46.0: Edit hours keeps its hours, parts and booking fingerprint (`PayrollLineEditReviewFields`).
+      ...payrollLineEditFieldsOf(row),
     }
   }
   return output
@@ -338,7 +362,7 @@ export function draftToFirestoreMap(draft: TimesheetDraft): Record<string, unkno
     payrollLineReviews: Object.fromEntries(
       Object.entries(draft.payrollLineReviews).map(([key, review]) => [
         key,
-        { decision: review.decision, revisedAmount: review.revisedAmount ?? null },
+        { decision: review.decision, revisedAmount: review.revisedAmount ?? null, ...payrollLineEditFieldsOf(review) },
       ])
     ),
     weeklyReportOverride: draft.weeklyReportOverride

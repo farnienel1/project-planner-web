@@ -23,8 +23,13 @@ import { timesheetTotals, type TimesheetTotals } from '@/lib/canonical/timesheet
  * The line manager's review of a payroll line (canonical `payrollLineReview`): the line id as stored, then without
  * case, so a review iOS keyed by an upper-case id counts on screen exactly as it does on the invoice.
  */
-export function draftPayrollLineReview(draft: TimesheetDraft, lineId: string | null | undefined): PayrollLineReview | null {
-  return payrollLineReview(draft as unknown as Record<string, unknown>, lineId)
+export function draftPayrollLineReview(
+  draft: TimesheetDraft,
+  lineId: string | null | undefined,
+  /** 1.46.0: the live line, so a review made against an older version of the booking reads as pending (stale). */
+  live?: { bookingFingerprint?: string | null } | null
+): PayrollLineReview | null {
+  return payrollLineReview(draft as unknown as Record<string, unknown>, lineId, live)
 }
 
 export type ManagerAdjustmentRow = {
@@ -41,7 +46,7 @@ export function effectivePayrollAmount(
 ): number {
   const applyDecisions = managerHasSigned || applyLiveReview
   if (!applyDecisions) return line.amount
-  const review = draftPayrollLineReview(draft, line.id)
+  const review = draftPayrollLineReview(draft, line.id, line)
   if (!review) return line.amount
   return timesheetEntryEffectiveAmount(review.decision, review.revisedAmount, line.amount)
 }
@@ -54,7 +59,7 @@ export function isPayrollLineRemoved(
 ): boolean {
   const applyDecisions = managerHasSigned || applyLiveReview
   if (!applyDecisions) return false
-  return draftPayrollLineReview(draft, line.id)?.decision === 'declined'
+  return draftPayrollLineReview(draft, line.id, line)?.decision === 'declined'
 }
 
 export function effectiveExpenseAmount(

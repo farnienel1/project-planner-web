@@ -20,6 +20,7 @@ import {
   bookingOccupiesDay,
   formatMoney,
   overlappingBookingIds,
+  overtimeBookingFingerprint,
   payrollLineClockRanges,
   payrollMultipliedHours,
   timesheetLineClockText,
@@ -87,6 +88,12 @@ export type TimesheetPayrollLineItem = {
    * the booking at it (`revisedPayrollLineAmounts`). Missing = the organisation's rate.
    */
   bookingOtMultiplierOverride?: number | null
+  /**
+   * Rulebook 1.46.0 (never stored on the line): the booking as it is now (`overtimeBookingFingerprint`), on both lines
+   * of a booking. Edit hours stores it on its review (`reviewedBookingFingerprint`); once the booking changes the
+   * review is stale (`payrollLineReview`), so a changed booking is never paid twice.
+   */
+  bookingFingerprint?: string
   /** Rulebook 1.43.0 (rebuild check only, never stored): when the line's booking was created and last written. */
   bookingCreatedAt?: Date
   bookingUpdatedAt?: Date
@@ -344,6 +351,16 @@ export function collectTimesheetPayroll({
     const isPaye = employmentTypeOnDay(user, date, timeZone) === 'paye'
     const lineBookingId = `${idPrefix}-${bookingId}`
     const lineDayKey = dayKey(date, timeZone)
+    const bookingFingerprint = overtimeBookingFingerprint({
+      id: bookingId,
+      personId: '',
+      dayKey: lineDayKey,
+      timeSlot,
+      workStartTime,
+      workEndTime,
+      isBreakRemoved: isBreakRemoved === true,
+      otMultiplierOverride: otMultiplierOverride ?? null,
+    })
     paidBookings.push({ id: lineBookingId, dayKey: lineDayKey, timeSlot, workStartTime, workEndTime })
     const normalAmount = payForHours(resolved, normalHours, standardDayHours)
     baseAmount += normalAmount
@@ -367,6 +384,7 @@ export function collectTimesheetPayroll({
       bookingId: lineBookingId,
       ...(workStartTime && workEndTime ? { bookingStartTime: workStartTime, bookingEndTime: workEndTime, bookingBreakRemoved: isBreakRemoved === true } : {}),
       ...(otMultiplierOverride != null ? { bookingOtMultiplierOverride: otMultiplierOverride } : {}),
+        bookingFingerprint,
       ...(bookingCreatedAt instanceof Date && !Number.isNaN(bookingCreatedAt.getTime()) ? { bookingCreatedAt } : {}),
       ...(bookingUpdatedAt instanceof Date && !Number.isNaN(bookingUpdatedAt.getTime()) ? { bookingUpdatedAt } : {}),
       dayKey: lineDayKey,
@@ -395,6 +413,7 @@ export function collectTimesheetPayroll({
         bookingId: lineBookingId,
         ...(workStartTime && workEndTime ? { bookingStartTime: workStartTime, bookingEndTime: workEndTime, bookingBreakRemoved: isBreakRemoved === true } : {}),
         ...(otMultiplierOverride != null ? { bookingOtMultiplierOverride: otMultiplierOverride } : {}),
+        bookingFingerprint,
         ...(bookingCreatedAt instanceof Date && !Number.isNaN(bookingCreatedAt.getTime()) ? { bookingCreatedAt } : {}),
         ...(bookingUpdatedAt instanceof Date && !Number.isNaN(bookingUpdatedAt.getTime()) ? { bookingUpdatedAt } : {}),
         dayKey: lineDayKey,

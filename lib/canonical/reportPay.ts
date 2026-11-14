@@ -17,7 +17,7 @@ import { documentInstantMs } from './peopleDocuments'
 import { roundPennies } from './payRate'
 import { normalizeDocumentId } from './scheduleSources'
 import { parseTimesheetStatusFields } from './timesheetPeriod'
-import { payrollLineReview, timesheetEntryDecision, timesheetEntryEffectiveAmount, timesheetTrustedFingerprint } from './timesheetEntryReviews'
+import { payrollLineReview, timesheetEntryDecision, timesheetEntryEffectiveAmount, timesheetTrustedFingerprint, type PayrollLineReview } from './timesheetEntryReviews'
 
 /** Text in a PAYE person's pay cell, on screen and in every export. */
 export const PAYE_PAY_CELL_LABEL = 'PAYE'
@@ -82,6 +82,11 @@ export type InvoiceLineInput = ReportPayLineInput & {
   kind?: string | null
   /** The line's organisation-zone day key; with `timesheetDays` a line on another day is left out (1.11.0). */
   dayKey?: string | null
+  /**
+   * 1.46.0: the line's booking as it is now (`overtimeBookingFingerprint`), so an Edit hours review made against an
+   * older version of the booking is stale (`payrollLineReview`). Missing = not checked.
+   */
+  bookingFingerprint?: string | null
 }
 
 /**
@@ -125,6 +130,11 @@ export type TimesheetInvoiceRow<L> = {
    * (`priceWorkJobNumberText`); never rewritten.
    */
   jobNumber: string
+  /**
+   * 1.46.0: the line manager's review applied to a live labour row (`payrollLineReview` against the live line's
+   * `bookingFingerprint`), so totals can split an edited row into its standard and overtime parts. Null otherwise.
+   */
+  review?: PayrollLineReview | null
 }
 
 export type TimesheetInvoiceRowsInput<L extends InvoiceLineInput & { id: string; amount: number }> = {
@@ -237,13 +247,18 @@ export function timesheetInvoiceRows<L extends InvoiceLineInput & { id: string; 
   for (const line of invoiceLines(lines)) {
     if (!onCountedDay(line.dayKey)) continue
     let amount = line.amount
+    let applied: PayrollLineReview | null = null
     if (decided && labourReviews) {
-      const review = payrollLineReview(sheet, line.id)
+      // 1.46.0: a review made against a booking that has changed since is stale (null): the line at its live amount.
+      const review = payrollLineReview(sheet, line.id, line)
       if (review?.decision === 'declined') continue
       // 1.46.0: the revised amount in pennies (`roundPennies`), so the invoice rows add up to the invoice total.
-      if (review?.decision === 'edited' && review.revisedAmount != null) amount = roundPennies(review.revisedAmount)
+      if (review?.decision === 'edited' && review.revisedAmount != null) {
+        amount = roundPennies(review.revisedAmount)
+        applied = review
+      }
     }
-    rows.push({ kind: 'labour', id: line.id, amount, source: 'live', line, stored: null, jobNumber: jobNumberOf((line as unknown as Record<string, unknown>).jobNumber) })
+    rows.push({ kind: 'labour', id: line.id, amount, source: 'live', line, stored: null, jobNumber: jobNumberOf((line as unknown as Record<string, unknown>).jobNumber), review: applied })
   }
   for (const [kind, key] of [['priceWork', 'priceWorkEntries'], ['expense', 'expenseEntries']] as const) {
     for (const entry of rowsOf((sheet as Record<string, unknown>)[key])) {

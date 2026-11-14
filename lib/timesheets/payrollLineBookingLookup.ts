@@ -9,7 +9,14 @@
 import type { Booking } from '@/types'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
-import { revisedPayrollLineAmounts, type RevisedPayrollLineAmounts } from '@/lib/canonical/timesheetLineEdit'
+import {
+  PAYROLL_LINE_EDIT_TIMES_MESSAGE,
+  revisedPayrollLineAmounts,
+  revisedPayrollLineTimesError,
+  type PayrollLineEditReviewFields,
+  type RevisedPayrollLineAmounts,
+} from '@/lib/canonical/timesheetLineEdit'
+import type { EmploymentTypeUser } from '@/lib/canonical/userProfile'
 import { dayKeyInZone } from '@/lib/orgTime/zoneTime'
 import { TIMESHEET_OVERTIME_LINE_MIN_HOURS, type TimesheetPayrollLineItem } from '@/lib/timesheets/timesheetPayrollCollector'
 
@@ -96,9 +103,14 @@ export function payrollLineEdit(input: {
   policy: OrgPayrollTimePolicy
   /** The organisation zone (`organizationTimeZone`). */
   timeZone: string
+  /** The person's employment fields: a PAYE day pays 0 (`employmentTypeOnDay`). */
+  employment?: EmploymentTypeUser | null
 }): {
-  amounts: RevisedPayrollLineAmounts
-  revisedByLineId: Record<string, number>
+  /** `revisedPayrollLineTimesError` when the times cannot be priced (Save stays off); else null. */
+  error: string | null
+  amounts: RevisedPayrollLineAmounts | null
+  /** The review fields to store on each line of the booking (`PayrollLineEditReviewFields`), by line id. */
+  reviewFieldsByLineId: Record<string, PayrollLineEditReviewFields>
   standardLine: TimesheetPayrollLineItem | null
   overtimeLine: TimesheetPayrollLineItem | null
 } {
@@ -111,22 +123,33 @@ export function payrollLineEdit(input: {
   const multiplier = row.isOvertimeLine && row.otMultiplier && row.otMultiplier > 0 ? row.otMultiplier : 1
   const dayRate = standardLine ? standardLine.dayRate : (row.dayRate ?? 0) / multiplier
   const hourlyRate = standardLine ? standardLine.hourlyRate : row.hourlyRate == null ? null : row.hourlyRate / multiplier
-  const amounts = revisedPayrollLineAmounts({
-    dayKey: row.dayKey ?? dayKeyInZone(row.date, input.timeZone),
-    timeZone: input.timeZone,
-    policy: input.policy,
-    startTime: input.startTime,
-    endTime: input.endTime,
-    isBreakRemoved: input.breakRemoved,
-    otMultiplierOverride: input.otMultiplierOverride ?? rateLine.bookingOtMultiplierOverride ?? null,
-    payBasis: rateLine.payrollBasis === 'hourly' ? 'hourly' : 'day',
-    dayRate: rateLine.hasRate === false ? null : dayRate,
-    hourlyRate: rateLine.hasRate === false ? null : hourlyRate ?? null,
-    bookingHasOvertimeLine: overtimeLine != null,
-    overtimeLineMinHours: TIMESHEET_OVERTIME_LINE_MIN_HOURS,
-  })
-  const revisedByLineId: Record<string, number> = {}
-  if (standardLine) revisedByLineId[standardLine.id] = amounts.standardLineAmount
-  if (overtimeLine && amounts.overtimeLineAmount != null) revisedByLineId[overtimeLine.id] = amounts.overtimeLineAmount
-  return { amounts, revisedByLineId, standardLine, overtimeLine }
+  const timesError = revisedPayrollLineTimesError(input.startTime, input.endTime)
+  const amounts = timesError
+    ? null
+    : revisedPayrollLineAmounts({
+        dayKey: row.dayKey ?? dayKeyInZone(row.date, input.timeZone),
+        timeZone: input.timeZone,
+        policy: input.policy,
+        startTime: input.startTime,
+        endTime: input.endTime,
+        isBreakRemoved: input.breakRemoved,
+        otMultiplierOverride: input.otMultiplierOverride ?? rateLine.bookingOtMultiplierOverride ?? null,
+        payBasis: rateLine.payrollBasis === 'hourly' ? 'hourly' : 'day',
+        dayRate: rateLine.hasRate === false ? null : dayRate,
+        hourlyRate: rateLine.hasRate === false ? null : hourlyRate ?? null,
+        employment: input.employment ?? null,
+        bookingHasOvertimeLine: overtimeLine != null,
+        overtimeLineMinHours: TIMESHEET_OVERTIME_LINE_MIN_HOURS,
+        bookingFingerprint: rateLine.bookingFingerprint ?? row.bookingFingerprint ?? null,
+      })
+  const reviewFieldsByLineId: Record<string, PayrollLineEditReviewFields> = {}
+  if (amounts && standardLine) reviewFieldsByLineId[standardLine.id] = amounts.reviewFields.standard
+  if (amounts && overtimeLine && amounts.reviewFields.overtime) reviewFieldsByLineId[overtimeLine.id] = amounts.reviewFields.overtime
+  return {
+    error: amounts ? null : timesError ?? PAYROLL_LINE_EDIT_TIMES_MESSAGE,
+    amounts,
+    reviewFieldsByLineId,
+    standardLine,
+    overtimeLine,
+  }
 }

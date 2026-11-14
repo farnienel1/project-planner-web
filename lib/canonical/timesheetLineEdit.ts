@@ -22,6 +22,10 @@ import { weekdayPaidHours } from './organizationSettings'
 import { payrollHoursResult, payrollMultipliedHours, type PayrollHoursResult } from './payrollHours'
 import { payrollTimePolicyForDayFromState, type PayrollTimePolicyState } from './payrollPolicySchedule'
 import { orgDayHours, payForHours, roundPennies } from './payRate'
+import { employmentTypeOnDay, type EmploymentTypeUser } from './userProfile'
+import { dateFromDayKeyInZone } from '../orgTime/zoneTime'
+import { zoneOrLondon } from './dayKeys'
+import type { PayrollLineReview } from './timesheetEntryReviews'
 
 const HOURS_EPSILON = 1e-9
 
@@ -32,6 +36,30 @@ function roundHours(value: number): number {
 function basisOf(value: unknown): 'hourly' | 'day' {
   const text = String(value ?? '').trim().toLowerCase()
   return text === 'hourly' || text === 'hour' ? 'hourly' : 'day'
+}
+
+/** Shown on Edit hours (both apps) when the times cannot be priced: blank, not a clock time, or start equal to finish. */
+export const PAYROLL_LINE_EDIT_TIMES_MESSAGE = 'Enter a start and a finish time that are different.'
+
+function clockMinutes(value: unknown): number | null {
+  const match = String(value ?? '').trim().match(/^(\d{1,2}):(\d{2})$/)
+  if (!match) return null
+  const hours = Number(match[1])
+  const minutes = Number(match[2])
+  if (hours > 23 || minutes > 59) return null
+  return hours * 60 + minutes
+}
+
+/**
+ * Rulebook 1.46.0 (§8): why Edit hours cannot price these times — `PAYROLL_LINE_EDIT_TIMES_MESSAGE` when the start or
+ * finish is blank or not `HH:mm`, or the start equals the finish (0 hours) — else null. A finish before the start is an
+ * overnight booking and is allowed. Before 1.46.0 a blank time priced as a full day.
+ */
+export function revisedPayrollLineTimesError(startTime: unknown, endTime: unknown): string | null {
+  const start = clockMinutes(startTime)
+  const end = clockMinutes(endTime)
+  if (start == null || end == null || start === end) return PAYROLL_LINE_EDIT_TIMES_MESSAGE
+  return null
 }
 
 export type RevisedPayrollLineInput = {
@@ -54,29 +82,65 @@ export type RevisedPayrollLineInput = {
   payBasis?: string | null
   dayRate?: number | null
   hourlyRate?: number | null
+  /**
+   * The person's employment fields (`employmentType`, `employmentTypeTransitionFrom`, `employmentTypeEffectiveAt`):
+   * a PAYE day (`employmentTypeOnDay`) keeps its hours and pays 0. Missing = self-employed.
+   */
+  employment?: EmploymentTypeUser | null
   /** Whether the booking has its own overtime line on the sheet (`{prefix}-{bookingId}-ot`). */
   bookingHasOvertimeLine: boolean
   /**
    * The overtime a booking needs before the collector gives it an overtime line (web and iOS collectors: 0.05h;
-   * an owner question in 1.46.0). With no overtime line, overtime at or below this is not paid, exactly as the
-   * collector does. Default 0.
+   * an owner question in 1.46.0). Overtime at or below this is not paid and counts no hours, exactly as the collector
+   * does, whether or not the booking already has an overtime line. Default 0.
    */
   overtimeLineMinHours?: number | null
+  /**
+   * The live booking's fingerprint when the review is made (`overtimeBookingFingerprint` of the booking as the sheet
+   * shows it; web and iOS put it on each payroll line as `bookingFingerprint`). Stored on each review as
+   * `reviewedBookingFingerprint`; once the booking changes the review is stale (`payrollLineReview`).
+   */
+  bookingFingerprint?: string | null
+}
+
+/**
+ * The fields stored on one line's review by Edit hours (1.46.0), beside `decision: 'edited'`, in
+ * `payrollLineReviews[lineId]`. Field names are fixed for web and iOS.
+ */
+export type PayrollLineEditReviewFields = {
+  /** `revisedStandardAmount + revisedOvertimeAmount`, pennies. */
+  revisedAmount: number
+  /** Hours inside the working day this line now pays (0 on an overtime line). */
+  revisedStandardHours: number
+  /** Hours at the multiplier this line now pays (`payrollHoursResult.outsideHours`, the base before the multiplier). */
+  revisedOvertimeHours: number
+  /** The clock hours of that overtime (`payrollMultipliedHours.clockHours`, else `revisedOvertimeHours`), display. */
+  revisedOvertimeClockHours: number
+  /** The overtime multiplier (null when the line pays no overtime). */
+  revisedOvertimeMultiplier: number | null
+  revisedStandardAmount: number
+  revisedOvertimeAmount: number
+  /** The live booking's fingerprint when the review was made; '' when the caller had none. */
+  reviewedBookingFingerprint: string
 }
 
 export type RevisedPayrollLineAmounts = {
   /** Hours inside the working day (`payrollHoursResult.standardHours`). */
   standardHours: number
-  /** Hours at the multiplier (`payrollHoursResult.outsideHours`). */
+  /** Hours at the multiplier (`payrollHoursResult.outsideHours`); 0 at or below the overtime-line cut-off. */
   overtimeHours: number
+  /** Clock hours of the overtime (`payrollMultipliedHours`), display. */
+  overtimeClockHours: number
   overtimeMultiplier: number
-  /** Weighted paid hours (`totalPaidHours`). */
+  /** Weighted paid hours: `standardHours + overtimeHours × overtimeMultiplier`. */
   totalPaidHours: number
   /** The paid day a day rate is divided by (`weekdayPaidHours` of the policy in effect that day). */
   standardDayHours: number
+  /** True on a PAYE day (`employmentTypeOnDay`): hours kept, every amount 0. */
+  isPayeDay: boolean
   /** `payForHours` of the standard hours, rounded to pennies. */
   standardAmount: number
-  /** `payForHours` of the overtime hours at the multiplier, rounded to pennies (0 when not paid, see above). */
+  /** `payForHours` of the overtime hours at the multiplier, rounded to pennies. */
   overtimeAmount: number
   /**
    * What to store as the revised amount of each line of the booking (`payrollLineReviews[lineId].revisedAmount`).
@@ -86,15 +150,19 @@ export type RevisedPayrollLineAmounts = {
    */
   standardLineAmount: number
   overtimeLineAmount: number | null
+  /** The review fields to store on each line (`PayrollLineEditReviewFields`); `overtime` null with no overtime line. */
+  reviewFields: { standard: PayrollLineEditReviewFields; overtime: PayrollLineEditReviewFields | null }
   /** `standardLineAmount + (overtimeLineAmount ?? 0)`: the booking as edited. */
   total: number
 }
 
 /**
  * Re-price a timesheet booking whose hours the line manager edited (rulebook §8, 1.46.0). The result equals what the
- * timesheet collector produces for a booking with those times on that day, at that rate.
+ * timesheet collector produces for a booking with those times on that day, at that rate. Null when the times cannot be
+ * priced (`revisedPayrollLineTimesError`: blank, not a clock time, or start equal to finish).
  */
-export function revisedPayrollLineAmounts(input: RevisedPayrollLineInput): RevisedPayrollLineAmounts {
+export function revisedPayrollLineAmounts(input: RevisedPayrollLineInput): RevisedPayrollLineAmounts | null {
+  if (revisedPayrollLineTimesError(input.startTime, input.endTime)) return null
   const dayKey = String(input.dayKey || '').trim()
   const policy = input.policyState
     ? payrollTimePolicyForDayFromState(input.policyState, dayKey)
@@ -102,8 +170,8 @@ export function revisedPayrollLineAmounts(input: RevisedPayrollLineInput): Revis
   const hours = payrollHoursResult({
     booking: {
       timeSlot: 'CUSTOM_HOURS',
-      workStartTime: input.startTime,
-      workEndTime: input.endTime,
+      workStartTime: String(input.startTime).trim(),
+      workEndTime: String(input.endTime).trim(),
       isBreakRemoved: input.isBreakRemoved === true,
       otMultiplierOverride: input.otMultiplierOverride ?? undefined,
     },
@@ -111,30 +179,94 @@ export function revisedPayrollLineAmounts(input: RevisedPayrollLineInput): Revis
     policy,
     timeZone: input.timeZone,
   })
+  const zone = zoneOrLondon(input.timeZone)
+  const isPayeDay = Boolean(input.employment) && employmentTypeOnDay(input.employment as EmploymentTypeUser, dateFromDayKeyInZone(dayKey, zone), zone) === 'paye'
   const standardDayHours = orgDayHours(weekdayPaidHours(policy))
-  const rate = { payBasis: basisOf(input.payBasis), dayRate: input.dayRate ?? null, hourlyRate: input.hourlyRate ?? null }
+  const rate = isPayeDay
+    ? { payBasis: basisOf(input.payBasis), dayRate: 0, hourlyRate: 0 }
+    : { payBasis: basisOf(input.payBasis), dayRate: input.dayRate ?? null, hourlyRate: input.hourlyRate ?? null }
   const standardHours = Math.max(0, hours.standardHours)
-  const overtimeHours = Math.max(0, hours.outsideHours)
   const minOvertime = Math.max(0, Number(input.overtimeLineMinHours) || 0)
-  const overtimePaid = input.bookingHasOvertimeLine || overtimeHours > minOvertime + HOURS_EPSILON
+  // The collector's overtime-line cut-off, applied the same way with or without an overtime line (1.46.0 review).
+  const overtimeCounted = hours.outsideHours > minOvertime + HOURS_EPSILON
+  const overtimeHours = overtimeCounted ? Math.max(0, hours.outsideHours) : 0
+  const multiplied = overtimeCounted ? payrollMultipliedHours(hours) : null
+  const overtimeClockHours = overtimeCounted ? (multiplied ? multiplied.clockHours : overtimeHours) : 0
+  const multiplier = hours.outsideMultiplier
   const standardAmount = payForHours({ ...rate, paidHours: standardHours, standardDayHours })
-  const overtimeAmount = overtimePaid
-    ? payForHours({ ...rate, paidHours: overtimeHours, standardDayHours, otMultiplier: hours.outsideMultiplier })
-    : 0
-  const standardLineAmount = input.bookingHasOvertimeLine ? standardAmount : roundPennies(standardAmount + overtimeAmount)
-  const overtimeLineAmount = input.bookingHasOvertimeLine ? overtimeAmount : null
+  const overtimeAmount = overtimeCounted ? payForHours({ ...rate, paidHours: overtimeHours, standardDayHours, otMultiplier: multiplier }) : 0
+  const fingerprint = String(input.bookingFingerprint ?? '').trim()
+  const fields = (part: { std: boolean; ot: boolean }): PayrollLineEditReviewFields => {
+    const stdAmount = part.std ? standardAmount : 0
+    const otAmount = part.ot ? overtimeAmount : 0
+    const otHours = part.ot ? overtimeHours : 0
+    return {
+      revisedAmount: roundPennies(stdAmount + otAmount),
+      revisedStandardHours: part.std ? roundHours(standardHours) : 0,
+      revisedOvertimeHours: roundHours(otHours),
+      revisedOvertimeClockHours: part.ot ? roundHours(overtimeClockHours) : 0,
+      revisedOvertimeMultiplier: otHours > 0 ? multiplier : null,
+      revisedStandardAmount: stdAmount,
+      revisedOvertimeAmount: otAmount,
+      reviewedBookingFingerprint: fingerprint,
+    }
+  }
+  const standardFields = fields({ std: true, ot: !input.bookingHasOvertimeLine })
+  const overtimeFields = input.bookingHasOvertimeLine ? fields({ std: false, ot: true }) : null
   return {
     standardHours: roundHours(standardHours),
     overtimeHours: roundHours(overtimeHours),
-    overtimeMultiplier: hours.outsideMultiplier,
-    totalPaidHours: roundHours(hours.totalPaidHours),
+    overtimeClockHours: roundHours(overtimeClockHours),
+    overtimeMultiplier: multiplier,
+    totalPaidHours: roundHours(standardHours + overtimeHours * multiplier),
     standardDayHours,
+    isPayeDay,
     standardAmount,
     overtimeAmount,
-    standardLineAmount,
-    overtimeLineAmount,
-    total: roundPennies(standardLineAmount + (overtimeLineAmount ?? 0)),
+    standardLineAmount: standardFields.revisedAmount,
+    overtimeLineAmount: overtimeFields ? overtimeFields.revisedAmount : null,
+    reviewFields: { standard: standardFields, overtime: overtimeFields },
+    total: roundPennies(standardFields.revisedAmount + (overtimeFields ? overtimeFields.revisedAmount : 0)),
   }
+}
+
+/** One labour line of a signed snapshot (`weeklyReportOverride.lines`) built from a live line and its review. */
+export type PayrollLineSnapshotPart = {
+  id: string
+  isOvertime: boolean
+  paidHours: number
+  otMultiplier: number | null
+  amount: number
+}
+
+/**
+ * Rulebook 1.46.0 (§8): the signed-snapshot lines for one live payroll line with an Edit hours review. Each line keeps
+ * the hours and pay of its own part (`revisedStandardHours` / `revisedOvertimeHours`), never the live hours with the
+ * edited money; a standard line that carries overtime (the booking had no overtime line) becomes two snapshot lines —
+ * the standard line and `{booking}-ot` at the multiplier — so the weekly report reads 8.5h at the day rate and 3h × 2,
+ * not "1 day at £426.47". Returns null when the review carries no edited hours (older reviews; the caller keeps today's
+ * line). `review` is `payrollLineReview` of the line (stale reviews are already null).
+ */
+export function payrollLineReviewSnapshotParts(
+  line: { id: string; isOvertimeLine?: boolean | null },
+  review: PayrollLineReview | null | undefined
+): PayrollLineSnapshotPart[] | null {
+  if (!review || review.decision !== 'edited' || review.revisedStandardHours == null || review.revisedOvertimeHours == null) return null
+  const id = String(line.id || '')
+  const stdAmount = roundPennies(Number(review.revisedStandardAmount) || 0)
+  const otAmount = roundPennies(Number(review.revisedOvertimeAmount) || 0)
+  const otHours = Math.max(0, Number(review.revisedOvertimeHours) || 0)
+  const multiplier = review.revisedOvertimeMultiplier ?? null
+  if (line.isOvertimeLine === true) {
+    return [{ id, isOvertime: true, paidHours: otHours, otMultiplier: multiplier, amount: otAmount }]
+  }
+  const parts: PayrollLineSnapshotPart[] = [
+    { id, isOvertime: false, paidHours: Math.max(0, Number(review.revisedStandardHours) || 0), otMultiplier: null, amount: stdAmount },
+  ]
+  if (otHours > 0) {
+    parts.push({ id: `${id.replace(/-normal$/i, '')}-ot`, isOvertime: true, paidHours: otHours, otMultiplier: multiplier, amount: otAmount })
+  }
+  return parts
 }
 
 // MARK: - Weekly report: one booking's pay, summed per row (rulebook §7, 1.46.0)

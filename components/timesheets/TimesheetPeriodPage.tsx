@@ -735,15 +735,22 @@ export function TimesheetPeriodPage({
       otMultiplierOverride: typedOvertimeRate(row, hoursOt),
       policy: rowPolicy,
       timeZone,
+      employment: subjectUser,
     })
+    // 1.46.0: blank times or start equal to finish are never priced (the sheet's Save is off and says why).
+    if (edit.error || !edit.amounts) return
     const reviews = { ...draft.payrollLineReviews }
     for (const line of [edit.standardLine, edit.overtimeLine]) {
       if (!line) continue
-      const revised = edit.revisedByLineId[line.id]
-      if (revised == null) continue
-      const existing = draftPayrollLineReview(draft, line.id)
-      if (line.id !== row.id && amountsUnchanged(revised, line.amount) && existing?.decision !== 'edited') continue
-      reviews[line.id] = payrollReviewAfterSave(existing?.decision, line.amount, revised)
+      const fields = edit.reviewFieldsByLineId[line.id]
+      if (!fields) continue
+      const existing = draftPayrollLineReview(draft, line.id, line)
+      if (line.id !== row.id && amountsUnchanged(fields.revisedAmount, line.amount) && existing?.decision !== 'edited') continue
+      const review = payrollReviewAfterSave(existing?.decision, line.amount, fields.revisedAmount)
+      // 1.46.0: an edited review keeps the hours and parts it pays and the booking it was made against
+      // (`PayrollLineEditReviewFields`), so the totals, the signed snapshot and the weekly report read the same hours,
+      // and a later change to the booking makes it stale instead of paying twice.
+      reviews[line.id] = review.decision === 'edited' ? { ...review, ...fields } : review
     }
     void persistOrReport({ ...draft, payrollLineReviews: reviews })
     setEditingLineId(null)
@@ -1511,6 +1518,7 @@ export function TimesheetPeriodPage({
         <EditHoursSheet
           line={payroll.lineItems.find((item) => item.id === editingLineId) || null}
           lines={payroll.lineItems}
+          employment={subjectUser}
           start={hoursStart}
           end={hoursEnd}
           breakRemoved={hoursBreakRemoved}
@@ -1790,7 +1798,7 @@ function PayrollLine({
   const currency = useOrganizationCurrency()
   const removed = isPayrollLineRemoved(line, draft, managerHasSigned, canReview)
   const effective = effectivePayrollAmount(line, draft, managerHasSigned, canReview)
-  const decision = draftPayrollLineReview(draft, line.id)?.decision || 'approved'
+  const decision = draftPayrollLineReview(draft, line.id, line)?.decision || 'approved'
   const orange = line.isPayeDay || (line.dayRate <= 0 && !line.hourlyRate)
   // `overlappingBookingIds`: still paid, shown amber for the person and their line manager.
   const overlapping = line.isOverlapping === true
@@ -2324,6 +2332,7 @@ function typedOvertimeRate(line: TimesheetPayrollLineItem, text: string): number
 function EditHoursSheet({
   line,
   lines,
+  employment,
   start,
   end,
   breakRemoved,
@@ -2339,6 +2348,7 @@ function EditHoursSheet({
 }: {
   line: TimesheetPayrollLineItem | null
   lines: TimesheetPayrollLineItem[]
+  employment: User
   start: string
   end: string
   breakRemoved: boolean
@@ -2358,7 +2368,7 @@ function EditHoursSheet({
   const ot = overtimeHoursBeyondPaidStandard(line.date, 'customHours', start, end, policy, breakRemoved)
   const otHoursText = overtimeHoursText(line.date, 'customHours', start, end, policy, breakRemoved)
   // 1.46.0: the booking as edited, priced by the rulebook (`revisedPayrollLineAmounts`), standard and overtime together.
-  const amount = payrollLineEdit({
+  const edit = payrollLineEdit({
     row: line,
     lines,
     startTime: start,
@@ -2367,7 +2377,9 @@ function EditHoursSheet({
     otMultiplierOverride: typedOvertimeRate(line, otText),
     policy,
     timeZone,
-  }).amounts.total
+    employment,
+  })
+  const amount = edit.amounts?.total ?? null
   return (
     <Modal
       labelledBy="ts-edit-hours-title"
@@ -2379,7 +2391,7 @@ function EditHoursSheet({
         </PuButton>
       }
       footer={
-        <PuButton variant="primary" onClick={onSave}>
+        <PuButton variant="primary" onClick={onSave} disabled={edit.error != null}>
           Save
         </PuButton>
       }
@@ -2387,6 +2399,7 @@ function EditHoursSheet({
       <p className="pu-sub" style={{ textAlign: 'center' }}>
         {abbreviatedDate(line.date, timeZone)} · {line.jobNumber} {line.projectName}
       </p>
+      {edit.error ? <Note tone="red">{edit.error}</Note> : null}
       <div>
         <HoursTimelinePicker
           start={start}
@@ -2417,7 +2430,7 @@ function EditHoursSheet({
         </div>
         <div className="r big">
           <span>Revised amount (this booking)</span>
-          <span>{money(amount, currency)}</span>
+          <span>{amount == null ? '—' : money(amount, currency)}</span>
         </div>
       </div>
     </Modal>

@@ -33,6 +33,8 @@ export type TimesheetTotalsLine = InvoiceLineInput & {
    */
   bookingPaidHours?: number | null
   bookingOvertimeHours?: number | null
+  /** 1.46.0: the booking the line comes from (web `op-{id}` / `mgr-{id}`); groups a booking's lines. */
+  bookingId?: string | null
 }
 
 export type TimesheetTotalsInput<L extends TimesheetTotalsLine = TimesheetTotalsLine> = TimesheetInvoiceRowsInput<L>
@@ -96,6 +98,14 @@ export function timesheetTotals<L extends TimesheetTotalsLine>(input: TimesheetT
   for (const row of rows) {
     if (row.kind === 'labour') {
       labour += row.amount
+      // 1.46.0: an Edit hours review splits its money into the standard and overtime parts it pays.
+      const split = row.review && row.review.revisedStandardAmount != null && row.review.revisedStandardHours != null
+      if (split) {
+        const standardPart = roundPennies(Math.min(row.amount, Number(row.review?.revisedStandardAmount) || 0))
+        standardLabour += standardPart
+        overtimeLabour += row.amount - standardPart
+        continue
+      }
       const overtime = row.source === 'override' ? row.stored?.isOvertime === true : row.line?.isOvertimeLine === true
       if (overtime) overtimeLabour += row.amount
       else standardLabour += row.amount
@@ -119,10 +129,41 @@ export function timesheetTotals<L extends TimesheetTotalsLine>(input: TimesheetT
     }
   }
   const withBookingFigures = byBookingStandard.size > 0
+  // 1.46.0: a booking with an Edit hours review counts the hours that review pays (its standard and overtime hours),
+  // line by line, so the hours always match the money; its other lines count their live hours.
+  const reviewedLines = new Map<string, NonNullable<(typeof rows)[number]['review']>>()
+  for (const row of rows) {
+    if (row.kind === 'labour' && row.source === 'live' && row.review && row.review.revisedStandardHours != null && row.review.revisedOvertimeHours != null) {
+      reviewedLines.set(normalizeDocumentId(row.id), row.review)
+    }
+  }
+  const groupOf = (line: TimesheetTotalsLine) =>
+    normalizeDocumentId(line.bookingId ? String(line.bookingId) : String(line.id).replace(/-(?:normal|ot)$/i, ''))
+  const reviewedGroups = new Set<string>()
+  for (const line of input.payrollLines || []) {
+    if (line && reviewedLines.has(normalizeDocumentId(line.id))) reviewedGroups.add(groupOf(line))
+  }
   for (const line of input.payrollLines || []) {
     if (!line || isLeaveLine(line)) continue
     if (days && (days.size === 0 || (line.dayKey && !days.has(line.dayKey)))) continue
     const paid = finite(line.paidHours)
+    if (reviewedGroups.size > 0 && reviewedGroups.has(groupOf(line))) {
+      const review = reviewedLines.get(normalizeDocumentId(line.id))
+      if (review) {
+        const overtimeBase = finite(review.revisedOvertimeHours)
+        const multiplier = finite(review.revisedOvertimeMultiplier) > 0 ? finite(review.revisedOvertimeMultiplier) : 1
+        standardHours += finite(review.revisedStandardHours)
+        overtimeHours += review.revisedOvertimeClockHours != null ? finite(review.revisedOvertimeClockHours) : overtimeBase
+        hours += finite(review.revisedStandardHours) + overtimeBase * multiplier
+      } else if (line.isOvertimeLine === true) {
+        overtimeHours += line.otClockHours != null ? finite(line.otClockHours) : paid
+        hours += paid * (finite(line.otMultiplier) > 0 ? finite(line.otMultiplier) : 1)
+      } else {
+        standardHours += paid
+        hours += paid
+      }
+      continue
+    }
     if (line.isOvertimeLine === true) {
       if (!withBookingFigures) {
         overtimeHours += line.otClockHours != null ? finite(line.otClockHours) : paid

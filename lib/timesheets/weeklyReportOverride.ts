@@ -25,7 +25,7 @@ import {
 import { emptyDayRateHistory, type OperativeDayRateHistoryCollection } from '@/lib/timesheets/dayRateHistoryStorage'
 import { orgDayHours } from '@/lib/timesheets/payBasis'
 import type { PayrollTimePolicyState } from '@/lib/canonical'
-import { timesheetSnapshotNeedsRebuild, weekdayPaidHours } from '@/lib/canonical'
+import { payrollLineReviewSnapshotParts, timesheetSnapshotNeedsRebuild, weekdayPaidHours } from '@/lib/canonical'
 import type {
   TimesheetDraft,
   TimesheetManagerDecision,
@@ -174,7 +174,7 @@ function makeOverride(input: WeeklyReportOverrideInput, prepared?: ReturnType<ty
   const managerHasSigned = Boolean(input.draft.managerSignedAt)
   const lines: WeeklyReportLabourLine[] = []
   for (const line of summary.lineItems) {
-    const review = draftPayrollLineReview(input.draft, line.id)
+    const review = draftPayrollLineReview(input.draft, line.id, line)
     if (isPayrollLineRemoved(line, input.draft, managerHasSigned, true)) {
       lines.push(labourLine(line, 'declined', 0, 0, input.managerSiteBookings))
       continue
@@ -190,6 +190,23 @@ function makeOverride(input: WeeklyReportOverrideInput, prepared?: ReturnType<ty
       null,
       input.payrollPolicyState
     )
+    // Rulebook 1.46.0 (`payrollLineReviewSnapshotParts`): an Edit hours review signs the hours and money of each part
+    // it pays — a standard line carrying overtime becomes the standard line plus `{booking}-ot` at the multiplier.
+    const parts = payrollLineReviewSnapshotParts(line, review)
+    if (parts) {
+      const standard = orgDayHours(weekdayPaidHours(linePolicy))
+      for (const part of parts) {
+        lines.push({
+          ...labourLine(line, 'edited', part.amount, part.paidHours / standard, input.managerSiteBookings),
+          id: part.id,
+          paidHours: part.paidHours,
+          isOvertime: part.isOvertime,
+          otMultiplier: part.isOvertime ? part.otMultiplier : null,
+          ...(part.isOvertime && !line.isOvertimeLine ? { projectName: `${line.projectName} (Overtime)` } : {}),
+        })
+      }
+      continue
+    }
     const days = scaledDays(line, amount, weekdayPaidHours(linePolicy))
     lines.push(
       labourLine(line, agreedDecision(review?.decision), amount, days, input.managerSiteBookings)
@@ -216,18 +233,37 @@ function reapplyReviews(existing: WeeklyReportOverride, input: WeeklyReportOverr
   const managerHasSigned = Boolean(input.draft.managerSignedAt)
   const money = moneyLines(input.draft, managerHasSigned)
   const viewerName = personName(input.viewer)
-  const lines = existing.lines.map((line) => {
+  const existingIds = new Set(existing.lines.map((line) => line.id.toLowerCase()))
+  const lines = existing.lines.flatMap((line): WeeklyReportLabourLine[] => {
     const review = draftPayrollLineReview(input.draft, line.id)
     const decision = review?.decision ?? line.decision
     if (decision === 'declined') {
-      return { ...line, amount: 0, days: 0, decision: 'declined' as const }
+      return [{ ...line, amount: 0, days: 0, decision: 'declined' as const }]
+    }
+    // Rulebook 1.46.0: an Edit hours review keeps the hours and money of each part (`payrollLineReviewSnapshotParts`).
+    const parts = payrollLineReviewSnapshotParts({ id: line.id, isOvertimeLine: line.isOvertime }, review)
+    if (parts) {
+      const standardDay = line.days > 0.0001 && line.paidHours > 0 ? line.paidHours / line.days : null
+      const daysFor = (hours: number) => (standardDay ? hours / standardDay : line.days)
+      return parts
+        .filter((part) => part.id === line.id || !existingIds.has(part.id.toLowerCase()))
+        .map((part) => ({
+          ...line,
+          id: part.id,
+          paidHours: part.paidHours,
+          days: daysFor(part.paidHours),
+          amount: part.amount,
+          isOvertime: part.isOvertime,
+          otMultiplier: part.isOvertime ? part.otMultiplier : null,
+          decision: 'edited' as const,
+        }))
     }
     if (decision === 'edited' && typeof review?.revisedAmount === 'number') {
       const revised = review.revisedAmount
       const days = line.amount > 0.0001 ? line.days * (revised / line.amount) : line.days
-      return { ...line, days, amount: revised, decision: 'edited' as const }
+      return [{ ...line, days, amount: revised, decision: 'edited' as const }]
     }
-    return { ...line, decision: agreedDecision(decision) }
+    return [{ ...line, decision: agreedDecision(decision) }]
   })
   return {
     approvedAt: input.draft.managerSignedAt || input.draft.operativeSignedAt || existing.approvedAt,

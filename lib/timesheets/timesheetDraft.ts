@@ -8,6 +8,14 @@ export type TimesheetManagerDecision = 'pending' | 'approved' | 'declined' | 'ed
 export type TimesheetPayrollLineReview = {
   decision: TimesheetManagerDecision
   revisedAmount?: number | null
+  /** Rulebook 1.46.0 Edit hours (`PayrollLineEditReviewFields`), on an `edited` review only. */
+  revisedStandardHours?: number | null
+  revisedOvertimeHours?: number | null
+  revisedOvertimeClockHours?: number | null
+  revisedOvertimeMultiplier?: number | null
+  revisedStandardAmount?: number | null
+  revisedOvertimeAmount?: number | null
+  reviewedBookingFingerprint?: string | null
 }
 
 export type TimesheetExpenseEntry = {

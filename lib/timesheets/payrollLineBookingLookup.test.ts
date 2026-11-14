@@ -117,11 +117,12 @@ test('payrollLineEdit re-prices the booking: 07:00–16:00 edited to 07:00–19:
     policy: OWNER_POLICY,
     timeZone: 'Europe/London',
   })
-  assert.equal(edit.amounts.standardAmount, 250)
-  assert.equal(edit.amounts.overtimeAmount, 176.47)
+  assert.equal(edit.amounts!.standardAmount, 250)
+  assert.equal(edit.amounts!.overtimeAmount, 176.47)
   // No overtime line on the sheet: the standard line carries the overtime.
-  assert.deepEqual(edit.revisedByLineId, { 'op-b1-normal': 426.47 })
-  assert.equal(edit.amounts.total, 426.47)
+  assert.deepEqual(Object.fromEntries(Object.entries(edit.reviewFieldsByLineId).map(([id, fields]) => [id, fields.revisedAmount])), { 'op-b1-normal': 426.47 })
+  assert.equal(edit.reviewFieldsByLineId['op-b1-normal'].revisedOvertimeHours, 3)
+  assert.equal(edit.amounts!.total, 426.47)
 })
 
 test('payrollLineEdit writes each line of a booking that has an overtime line, at the standard line rate', () => {
@@ -145,7 +146,7 @@ test('payrollLineEdit writes each line of a booking that has an overtime line, a
     policy: OWNER_POLICY,
     timeZone: 'Europe/London',
   })
-  assert.deepEqual(edit.revisedByLineId, { 'op-b2-normal': 250, 'op-b2-ot': 176.47 })
+  assert.deepEqual(Object.fromEntries(Object.entries(edit.reviewFieldsByLineId).map(([id, fields]) => [id, fields.revisedAmount])), { 'op-b2-normal': 250, 'op-b2-ot': 176.47 })
 })
 
 test('payrollLineEdit shortens the day to a part day', () => {
@@ -159,7 +160,17 @@ test('payrollLineEdit shortens the day to a part day', () => {
     policy: DEFAULT_PAYROLL_POLICY,
     timeZone: 'Europe/London',
   })
-  assert.ok(edit.amounts.total < 200)
-  assert.ok(edit.amounts.total > 0)
-  assert.equal(edit.amounts.total, Math.round(edit.amounts.total * 100) / 100)
+  assert.ok(edit.amounts!.total < 200)
+  assert.ok(edit.amounts!.total > 0)
+  assert.equal(edit.amounts!.total, Math.round(edit.amounts!.total * 100) / 100)
+})
+
+test('payrollLineEdit refuses blank times or start equal to finish (1.46.0 review)', () => {
+  const row = line({ id: 'op-b1-normal', dayKey: '2026-09-21', paidHours: 8, amount: 200 })
+  for (const [startTime, endTime] of [['', '16:00'], ['07:30', '07:30']]) {
+    const edit = payrollLineEdit({ row, lines: [row], startTime, endTime, breakRemoved: false, policy: DEFAULT_PAYROLL_POLICY, timeZone: 'Europe/London' })
+    assert.equal(edit.amounts, null)
+    assert.ok(edit.error)
+    assert.deepEqual(edit.reviewFieldsByLineId, {})
+  }
 })

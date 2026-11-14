@@ -524,7 +524,22 @@ export type PayrollLineReview = {
   decision: TimesheetEntryDecision
   /** The amount an `edited` decision pays; null otherwise. */
   revisedAmount: number | null
+  /**
+   * 1.46.0 Edit hours (`revisedPayrollLineAmounts` → `PayrollLineEditReviewFields`), on an `edited` review only; null
+   * when the review was stored without them (older reviews, approve / decline). The hours and money of each part.
+   */
+  revisedStandardHours?: number | null
+  revisedOvertimeHours?: number | null
+  revisedOvertimeClockHours?: number | null
+  revisedOvertimeMultiplier?: number | null
+  revisedStandardAmount?: number | null
+  revisedOvertimeAmount?: number | null
+  /** The booking fingerprint the review was made against (`overtimeBookingFingerprint`); null when not stored. */
+  reviewedBookingFingerprint?: string | null
 }
+
+/** A live payroll line as the review is checked against it: the booking's fingerprint as it is now. */
+export type PayrollLineLiveBooking = { bookingFingerprint?: string | null }
 
 /**
  * The line manager's review of one payroll (labour) line, `sheet.payrollLineReviews[lineId]`. The line id is matched
@@ -533,7 +548,8 @@ export type PayrollLineReview = {
  */
 export function payrollLineReview(
   sheet: Record<string, unknown> | null | undefined,
-  lineId: string | null | undefined
+  lineId: string | null | undefined,
+  live?: PayrollLineLiveBooking | null
 ): PayrollLineReview | null {
   const raw = sheet && typeof sheet === 'object' ? (sheet as Record<string, unknown>).payrollLineReviews : null
   if (!raw || typeof raw !== 'object') return null
@@ -550,5 +566,25 @@ export function payrollLineReview(
   const row = value as Record<string, unknown>
   const decision = parseTimesheetEntryDecision(row.decision)
   const revised = typeof row.revisedAmount === 'number' && Number.isFinite(row.revisedAmount) ? row.revisedAmount : null
-  return { decision, revisedAmount: decision === 'edited' ? revised : null }
+  // 1.46.0: a review made against a booking that has changed since is stale — the line is pending at its live amount
+  // (as a stale price work / expense review). Only when both the review and the live line carry a fingerprint; older
+  // reviews and callers without one keep the review.
+  const storedFingerprint = typeof row.reviewedBookingFingerprint === 'string' ? row.reviewedBookingFingerprint.trim() : ''
+  const liveFingerprint = typeof live?.bookingFingerprint === 'string' ? live.bookingFingerprint.trim() : null
+  if (storedFingerprint && liveFingerprint != null && storedFingerprint !== liveFingerprint) return null
+  const num = (value: unknown): number | null => (typeof value === 'number' && Number.isFinite(value) ? value : null)
+  if (decision !== 'edited') return { decision, revisedAmount: null }
+  const review: PayrollLineReview = { decision, revisedAmount: revised }
+  const standardHours = num(row.revisedStandardHours)
+  const overtimeHours = num(row.revisedOvertimeHours)
+  if (standardHours != null && overtimeHours != null) {
+    review.revisedStandardHours = standardHours
+    review.revisedOvertimeHours = overtimeHours
+    review.revisedOvertimeClockHours = num(row.revisedOvertimeClockHours) ?? overtimeHours
+    review.revisedOvertimeMultiplier = num(row.revisedOvertimeMultiplier)
+    review.revisedStandardAmount = num(row.revisedStandardAmount) ?? 0
+    review.revisedOvertimeAmount = num(row.revisedOvertimeAmount) ?? 0
+  }
+  if (storedFingerprint) review.reviewedBookingFingerprint = storedFingerprint
+  return review
 }

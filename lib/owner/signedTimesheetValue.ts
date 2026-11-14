@@ -6,6 +6,7 @@ import { parseFirestoreDate } from '@/lib/firebase/firestoreUtils'
 import { isTimesheetFullyApproved } from '@/lib/timesheets/timesheetApprovalPolicy'
 import { emptyTimesheetDraft } from '@/lib/timesheets/timesheetDraft'
 import { timesheetTotals } from '@/lib/canonical/timesheetTotals'
+import { formatMoney, resolveOrganizationCurrency } from '@/lib/canonical/money'
 import { draftFromFirestoreMap } from '@/lib/timesheets/timesheetStorage'
 import type { User } from '@/types'
 
@@ -19,6 +20,11 @@ export type SignedTimesheetValueTotals = {
    * bookings, so their labour cannot be priced here and only their price work and expenses count.
    */
   labourNotCountedCount: number
+  /**
+   * Rulebook 1.46.0 (review): `valuePence`, `previousPence`, `sheetCount` and `hours` cover organisations whose money is
+   * GBP only (`resolveOrganizationCurrency`); money is never added across currencies. Other currencies are listed here.
+   */
+  otherCurrencies: { currency: string; pence: number; sheetCount: number }[]
   loaded: boolean
   error?: string
 }
@@ -38,10 +44,25 @@ export function userIdFromTimesheetDoc(docId: string, data: Record<string, unkno
  * signed amounts). With no snapshot only the price work and expenses count (`labourCounted` false). Before 1.46.0 this
  * screen had its own calculator (an 8-hour day, a 1.5 cap, GBP) fed no rates, so labour always read £0.
  */
-export function signedTimesheetValue(sheet: Record<string, unknown>): { pence: number; labourCounted: boolean } {
-  const totals = timesheetTotals({ sheet, payrollLines: [], extrasMode: 'decided' })
-  const labourCounted = Boolean(sheet.weeklyReportOverride) && typeof sheet.weeklyReportOverride === 'object'
-  return { pence: Math.round(totals.total * 100), labourCounted }
+export function signedTimesheetValue(sheet: Record<string, unknown>): { pence: number; hours: number; labourCounted: boolean } {
+  const override = sheet.weeklyReportOverride
+  const labourCounted = Boolean(override) && typeof override === 'object'
+  // Hours (1.46.0 review): `timesheetTotals` over the signed lines (declined left out), as the sheet showed them when
+  // signed — weighted paid hours, overtime at its multiplier. No snapshot: no labour lines, so 0 hours.
+  const snapshotLines = labourCounted && Array.isArray((override as Record<string, unknown>).lines)
+    ? ((override as Record<string, unknown>).lines as unknown[])
+        .filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === 'object')
+        .filter((row) => row.decision !== 'declined')
+        .map((row) => ({
+          id: String(row.id ?? ''),
+          amount: typeof row.amount === 'number' ? row.amount : 0,
+          paidHours: typeof row.paidHours === 'number' ? row.paidHours : 0,
+          isOvertimeLine: row.isOvertime === true,
+          otMultiplier: typeof row.otMultiplier === 'number' ? row.otMultiplier : null,
+        }))
+    : []
+  const totals = timesheetTotals({ sheet, payrollLines: snapshotLines, extrasMode: 'decided' })
+  return { pence: Math.round(totals.total * 100), hours: totals.hours, labourCounted }
 }
 
 function inRange(date: Date | null | undefined, start: Date, end: Date): boolean {
@@ -70,6 +91,7 @@ export async function loadSignedTimesheetValueTotals(input: {
     sheetCount: 0,
     hours: 0,
     labourNotCountedCount: 0,
+    otherCurrencies: [],
     loaded: true,
   }
   if (!db) return empty
@@ -85,6 +107,7 @@ export async function loadSignedTimesheetValueTotals(input: {
   let sheetCount = 0
   let hours = 0
   let labourNotCountedCount = 0
+  const otherCurrencies = new Map<string, { currency: string; pence: number; sheetCount: number }>()
 
   const ids = input.organizationIds.filter(Boolean)
   for (let i = 0; i < ids.length; i += 4) {
@@ -102,6 +125,7 @@ export async function loadSignedTimesheetValueTotals(input: {
           const orgDoc = await withTimeoutFallback(getDoc(doc(db!, 'organizations', organizationId)), 8000, null)
           const country = orgDoc?.exists() ? (orgDoc.data() as Record<string, unknown>).countryCode : null
           const timeZone = organizationTimeZone(typeof country === 'string' ? country : null)
+          const currency = resolveOrganizationCurrency(orgDoc?.exists() ? orgDoc.data() : null)
           const orgUsers = usersByOrg.get(organizationId) || []
           const { byId } = usersForSheet(orgUsers)
 
@@ -118,13 +142,20 @@ export async function loadSignedTimesheetValueTotals(input: {
             const previous = inRange(signedAt, input.previousStart, input.previousEnd)
             if (!current && !previous) continue
 
-            const storedHours =
-              typeof data.valueHours === 'number' && Number.isFinite(data.valueHours) ? data.valueHours : 0
             const valued = signedTimesheetValue(data)
+            if (currency !== 'GBP') {
+              if (current) {
+                const row = otherCurrencies.get(currency) ?? { currency, pence: 0, sheetCount: 0 }
+                row.pence += valued.pence
+                row.sheetCount += 1
+                otherCurrencies.set(currency, row)
+              }
+              continue
+            }
             if (current) {
               valuePence += valued.pence
               sheetCount += 1
-              hours += storedHours
+              hours += valued.hours
               if (!valued.labourCounted) labourNotCountedCount += 1
             }
             if (previous) previousPence += valued.pence
@@ -136,5 +167,21 @@ export async function loadSignedTimesheetValueTotals(input: {
     )
   }
 
-  return { valuePence, previousPence, sheetCount, hours, labourNotCountedCount, loaded: true }
+  return {
+    valuePence,
+    previousPence,
+    sheetCount,
+    hours: Math.round(hours * 100) / 100,
+    labourNotCountedCount,
+    otherCurrencies: Array.from(otherCurrencies.values()),
+    loaded: true,
+  }
+}
+
+/** Owner screen note for organisations in other currencies (never added to the £ figure). */
+export function otherCurrenciesNote(rows: SignedTimesheetValueTotals['otherCurrencies']): string {
+  if (!rows.length) return ''
+  return `Not in the £ figure (other currencies): ${rows
+    .map((row) => `${formatMoney(row.pence / 100, row.currency)} (${row.sheetCount} sheet${row.sheetCount === 1 ? '' : 's'})`)
+    .join(', ')}`
 }

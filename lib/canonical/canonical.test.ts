@@ -15168,3 +15168,124 @@ test('1.46.0: the packed iOS script gives the owner case 426.47 end to end (Edit
   assert.equal(typeof bundle.bookingPaySlices, 'function')
   assert.equal(typeof bundle.mergeBookingPaySlice, 'function')
 })
+
+// MARK: - 1.46.0 independent review fixes
+
+function rates146Edit(extra: Record<string, unknown> = {}) {
+  const fp = R112.overtimeBookingFingerprint({ id: 'b1', personId: '', dayKey: '2026-11-18', timeSlot: 'CUSTOM_HOURS', workStartTime: '07:00', workEndTime: '16:00', otMultiplierOverride: 2 })
+  const edit = R112.revisedPayrollLineAmounts({
+    dayKey: '2026-11-18',
+    timeZone: 'Europe/London',
+    policy: RATES146_POLICY,
+    startTime: '07:00',
+    endTime: '19:00',
+    otMultiplierOverride: 2,
+    payBasis: 'day',
+    dayRate: 250,
+    bookingHasOvertimeLine: false,
+    overtimeLineMinHours: 0.05,
+    bookingFingerprint: fp,
+    ...extra,
+  })!
+  return { fp, edit }
+}
+
+test('1.46.0 review: an Edit hours review is stale once the booking changes — never paid twice (602.94 → 426.47)', () => {
+  const { fp, edit } = rates146Edit()
+  const sheet = {
+    managerSignedAt: '2026-11-20T10:00:00Z',
+    payrollLineReviews: { 'op-b1-normal': { decision: 'edited', ...edit.reviewFields.standard } },
+  }
+  // Booking unchanged (07:00–16:00, no overtime line): the review pays 426.47.
+  const before = [{ id: 'op-b1-normal', bookingId: 'op-b1', amount: 250, paidHours: 8.5, dayKey: '2026-11-18', isOvertimeLine: false, bookingPaidHours: 8.5, bookingOvertimeHours: 0, bookingFingerprint: fp }]
+  assert.equal(R112.timesheetTotals({ sheet, payrollLines: before, extrasMode: 'decided' }).total, 426.47)
+  // The booking is then changed to 07:00–19:00: the collector adds an overtime line; the review is stale.
+  const fp2 = R112.overtimeBookingFingerprint({ id: 'b1', personId: '', dayKey: '2026-11-18', timeSlot: 'CUSTOM_HOURS', workStartTime: '07:00', workEndTime: '19:00', otMultiplierOverride: 2 })
+  const after = [
+    { id: 'op-b1-normal', bookingId: 'op-b1', amount: 250, paidHours: 8.5, dayKey: '2026-11-18', isOvertimeLine: false, bookingPaidHours: 14.5, bookingOvertimeHours: 3, bookingFingerprint: fp2 },
+    { id: 'op-b1-ot', bookingId: 'op-b1', amount: 176.47, paidHours: 3, otMultiplier: 2, dayKey: '2026-11-18', isOvertimeLine: true, bookingFingerprint: fp2 },
+  ]
+  const totals = R112.timesheetTotals({ sheet, payrollLines: after, extrasMode: 'decided' })
+  assert.equal(totals.total, 426.47)
+  assert.equal(R112.timesheetInvoiceRows({ sheet, payrollLines: after, extrasMode: 'decided' }).length, 2)
+  assert.equal(R112.payrollLineReview(sheet, 'op-b1-normal', after[0]), null)
+  // A review stored before 1.46.0 (no fingerprint) keeps today's behaviour.
+  assert.equal(R112.payrollLineReview({ payrollLineReviews: { x: { decision: 'edited', revisedAmount: 10 } } }, 'x', { bookingFingerprint: 'other' })?.revisedAmount, 10)
+})
+
+test('1.46.0 review: an edited line shows its own hours and money split — 8.5h + 3h × 2, £250 + £176.47', () => {
+  const { fp, edit } = rates146Edit()
+  const sheet = { payrollLineReviews: { 'op-b1-normal': { decision: 'edited', ...edit.reviewFields.standard } } }
+  assert.deepEqual(
+    { ...edit.reviewFields.standard },
+    {
+      revisedAmount: 426.47,
+      revisedStandardHours: 8.5,
+      revisedOvertimeHours: 3,
+      revisedOvertimeClockHours: 3,
+      revisedOvertimeMultiplier: 2,
+      revisedStandardAmount: 250,
+      revisedOvertimeAmount: 176.47,
+      reviewedBookingFingerprint: fp,
+    }
+  )
+  const lines = [{ id: 'op-b1-normal', bookingId: 'op-b1', amount: 250, paidHours: 8.5, dayKey: '2026-11-18', isOvertimeLine: false, bookingPaidHours: 8.5, bookingOvertimeHours: 0, bookingFingerprint: fp }]
+  const totals = R112.timesheetTotals({ sheet, payrollLines: lines, extrasMode: 'decided', applyLabourReviews: true })
+  assert.equal(totals.standardHours, 8.5)
+  assert.equal(totals.overtimeHours, 3)
+  assert.equal(totals.hours, 14.5)
+  assert.equal(totals.standardLabour, 250)
+  assert.equal(totals.overtimeLabour, 176.47)
+  // The signed snapshot gets two lines: the standard line and the booking's overtime line at ×2.
+  const parts = R112.payrollLineReviewSnapshotParts(lines[0], R112.payrollLineReview(sheet, 'op-b1-normal', lines[0]))
+  assert.equal(
+    JSON.stringify(parts),
+    JSON.stringify([
+      { id: 'op-b1-normal', isOvertime: false, paidHours: 8.5, otMultiplier: null, amount: 250 },
+      { id: 'op-b1-ot', isOvertime: true, paidHours: 3, otMultiplier: 2, amount: 176.47 },
+    ])
+  )
+  // An older review without hours: no parts (the caller keeps today's line).
+  assert.equal(R112.payrollLineReviewSnapshotParts(lines[0], { decision: 'edited', revisedAmount: 300 }), null)
+})
+
+test('1.46.0 review: blank times or a start equal to the finish are never priced', () => {
+  for (const [start, end] of [['', '19:00'], ['07:00', ''], ['07:00', '07:00'], ['7', '19:00'], ['25:00', '19:00']]) {
+    assert.equal(rates146Edit({ startTime: start, endTime: end }).edit, null)
+    assert.equal(R112.revisedPayrollLineTimesError(start, end), R112.PAYROLL_LINE_EDIT_TIMES_MESSAGE)
+  }
+  assert.equal(R112.revisedPayrollLineTimesError('22:00', '06:00'), null)
+  assert.ok(rates146Edit({ startTime: '22:00', endTime: '06:00' }).edit.total > 0)
+})
+
+test('1.46.0 review: the overtime-line cut-off applies with an overtime line too; a PAYE day pays 0', () => {
+  const tiny = rates146Edit({ endTime: '16:02', bookingHasOvertimeLine: true }).edit
+  assert.equal(tiny.overtimeHours, 0)
+  assert.equal(tiny.overtimeLineAmount, 0)
+  assert.equal(tiny.standardLineAmount, 250)
+  const paye = rates146Edit({ employment: { employmentType: 'paye' } }).edit
+  assert.equal(paye.isPayeDay, true)
+  assert.equal(paye.total, 0)
+  assert.equal(paye.standardHours, 8.5)
+  assert.equal(paye.overtimeHours, 3)
+  assert.equal(rates146Edit({ employment: { employmentType: 'self_employed' } }).edit.total, 426.47)
+})
+
+test('1.46.0 review: the packed iOS script makes a changed booking stale (426.47, never 602.94) and refuses blank times', () => {
+  const source = readFileSync(new URL('./dist/canonical-business.js', import.meta.url), 'utf8')
+  const sandbox: { ProjectPlannerCanonical?: Record<string, (...args: never[]) => unknown> } = {}
+  runInContext(source, createContext(sandbox))
+  const bundle = sandbox.ProjectPlannerCanonical as unknown as typeof R112
+  const fp = bundle.overtimeBookingFingerprint({ id: 'b1', personId: '', dayKey: '2026-11-18', timeSlot: 'CUSTOM_HOURS', workStartTime: '07:00', workEndTime: '16:00', otMultiplierOverride: 2 })
+  const fp2 = bundle.overtimeBookingFingerprint({ id: 'b1', personId: '', dayKey: '2026-11-18', timeSlot: 'CUSTOM_HOURS', workStartTime: '07:00', workEndTime: '19:00', otMultiplierOverride: 2 })
+  const base = { dayKey: '2026-11-18', timeZone: 'Europe/London', policy: RATES146_POLICY, otMultiplierOverride: 2, payBasis: 'day', dayRate: 250, bookingHasOvertimeLine: false, overtimeLineMinHours: 0.05, bookingFingerprint: fp }
+  const edit = bundle.revisedPayrollLineAmounts({ ...base, startTime: '07:00', endTime: '19:00' })!
+  const sheet = { managerSignedAt: '2026-11-20T10:00:00Z', payrollLineReviews: { 'op-b1-normal': { decision: 'edited', ...edit.reviewFields.standard } } }
+  const after = [
+    { id: 'op-b1-normal', bookingId: 'op-b1', amount: 250, paidHours: 8.5, dayKey: '2026-11-18', isOvertimeLine: false, bookingFingerprint: fp2 },
+    { id: 'op-b1-ot', bookingId: 'op-b1', amount: 176.47, paidHours: 3, otMultiplier: 2, dayKey: '2026-11-18', isOvertimeLine: true, bookingFingerprint: fp2 },
+  ]
+  assert.equal(bundle.timesheetTotals({ sheet, payrollLines: after, extrasMode: 'decided' }).total, 426.47)
+  assert.equal(bundle.revisedPayrollLineAmounts({ ...base, startTime: '07:00', endTime: '07:00' }), null)
+  assert.equal(bundle.revisedPayrollLineAmounts({ ...base, startTime: '', endTime: '19:00' }), null)
+})
