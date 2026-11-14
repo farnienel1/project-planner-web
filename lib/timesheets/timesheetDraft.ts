@@ -1,7 +1,7 @@
 /**
  * iOS parity: Models/TimesheetDraftModels.swift
  */
-import type { TimesheetEntryReview } from '@/lib/canonical'
+import type { PayeClaimEvidence, TimesheetEntryReview } from '@/lib/canonical'
 
 export type TimesheetManagerDecision = 'pending' | 'approved' | 'declined' | 'edited'
 
@@ -17,7 +17,12 @@ export type TimesheetExpenseEntry = {
   jobNumber: string
   date: Date
   amount: number
+  /** Older entries only: the receipt name both apps stored without uploading a file (read-only). */
   receiptName?: string | null
+  /** Rulebook 1.45.0 §8: files, photos and frozen site audit copies (the PAYE claim evidence shape). */
+  evidence?: PayeClaimEvidence[]
+  /** Rulebook 1.45.0: the stored row's fingerprint (`parseTimesheetEntries`); never written back. */
+  reviewFingerprint?: string
   managerDecision: TimesheetManagerDecision
   managerRevisedAmount?: number | null
 }
@@ -31,6 +36,10 @@ export type TimesheetPriceWorkEntry = {
   startDate: Date
   endDate?: Date | null
   amount: number
+  /** Rulebook 1.45.0 §8: optional evidence (the PAYE claim evidence shape). */
+  evidence?: PayeClaimEvidence[]
+  /** Rulebook 1.45.0: the stored row's fingerprint (`parseTimesheetEntries`); never written back. */
+  reviewFingerprint?: string
   managerDecision: TimesheetManagerDecision
   managerRevisedAmount?: number | null
 }

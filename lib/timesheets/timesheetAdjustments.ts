@@ -14,6 +14,7 @@ import {
   timesheetEntryEffectiveAmount,
   timesheetEntryReviewWriteFields,
   timesheetEntryReviewsAfterWrite,
+  timesheetEntryFingerprintMap,
   type PayrollLineReview,
 } from '@/lib/canonical/timesheetEntryReviews'
 import { timesheetTotals, type TimesheetTotals } from '@/lib/canonical/timesheetTotals'
@@ -128,6 +129,8 @@ export function draftTimesheetTotals(input: {
     applyLabourReviews: input.reviewing === true ? true : null,
     timesheetDays: input.timesheetDays ?? null,
     timeZone: input.timeZone ?? null,
+    // Rulebook 1.45.0: the draft is the loaded copy; its entries carry the reader's fingerprints.
+    entryFingerprints: timesheetEntryFingerprintMap([...input.draft.priceWorkEntries, ...input.draft.expenseEntries]),
   })
 }
 

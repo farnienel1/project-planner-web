@@ -53,7 +53,7 @@ export type TimesheetPayrollLineItem = {
   payrollBasis: PayrollRateBasis
   dayRate: number
   hourlyRate?: number | null
-  standardDayHours?: number
+  standardDayHours: number
   otMultiplier?: number | null
   /**
    * Rulebook 1.20.3 (display only, never stored): an overtime line's clock hours at the multiplier and the unpaid
@@ -140,7 +140,8 @@ export function timesheetRateAnnotation(line: TimesheetPayrollLineItem, currency
 }
 
 export function timesheetHoursRateLine(line: TimesheetPayrollLineItem, currencyCode?: string): string {
-  const standard = line.standardDayHours && line.standardDayHours > 0 ? line.standardDayHours : orgDayHours(8)
+  // 1.44.0: every line carries the paid day in effect on its own day (`weekdayPaidHours`, set by the collector).
+  const standard = orgDayHours(line.standardDayHours)
   if (line.isPayeDay) return `${quantityText(line.paidHours, 'hours')} = ${formatMoney(0, currencyCode)}`
   const hourly = line.payrollBasis === 'hourly'
   const rate = !line.hasRate ? null : hourly ? (line.hourlyRate ?? 0) : line.dayRate
@@ -303,7 +304,6 @@ export function collectTimesheetPayroll({
       operative: operative || linked || matched[0],
       day: date,
       history,
-      standardDayHours,
       timeZone,
       aliasUserIds,
       // 1.36.0 (FU-5): rate history filed under any of the person's `operatives` rows, not only one.

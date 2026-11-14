@@ -24,7 +24,7 @@ import type { OrganizationDetails } from '@/lib/settings/organizationSettings'
 import { DEFAULT_PAYROLL_POLICY, includesManagerScheduleLocation, orgPayrollPolicyForDay } from '@/lib/settings/organizationSettings'
 import { organizationTimeZone } from '@/lib/canonical'
 import { computeManagerBookingClashWarnings } from '@/lib/warnings/managerClashWarnings'
-import { employmentTypeOnDay, isAnonymisedDeletedProfile, priceWorkJobNumberText, reportPayCell, reportPayTotal, reportPersonPayCell, subcontractorDayValue } from '@/lib/canonical'
+import { claimEvidenceCountText, employmentTypeOnDay, isAnonymisedDeletedProfile, priceWorkJobNumberText, reportPayCell, reportPayTotal, reportPersonPayCell, subcontractorDayValue } from '@/lib/canonical'
 import { computeUnbookedLabourWarningsForDateRange } from '@/lib/warnings/unbookedLabourWarnings'
 import type { Booking, HolidayBooking, Operative, Project, User } from '@/types'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
@@ -628,7 +628,8 @@ export function buildWeeklyReportData({
       title: line.title,
       jobNumber: priceWorkJobNumberText(line.jobNumber),
       date: format(line.date, 'd MMM yyyy'),
-      details: line.details,
+      // Rulebook 1.45.0: the entry's evidence count (`claimEvidenceCountText`) beside its description.
+      details: [line.details, claimEvidenceCountText(week.evidenceCounts?.[normalizeDocumentId(line.id)])].filter(Boolean).join(' · '),
       amount: line.amount,
     }))
     .sort((a, b) => a.person.localeCompare(b.person) || a.date.localeCompare(b.date))
@@ -645,7 +646,7 @@ export function buildWeeklyReportData({
       title: line.title,
       jobNumber: line.jobNumber,
       date: format(line.date, 'd MMM yyyy'),
-      details: line.details,
+      details: [line.details, claimEvidenceCountText(week.evidenceCounts?.[normalizeDocumentId(line.id)])].filter(Boolean).join(' · '),
       amount: line.amount,
     }))
     .sort((a, b) => a.person.localeCompare(b.person) || a.date.localeCompare(b.date))

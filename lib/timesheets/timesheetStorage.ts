@@ -26,7 +26,9 @@ import {
   timesheetEntryReviewsAfterWrite,
   timesheetOwnerWriteFields,
   timesheetPeriodWriteFields,
-  timesheetPriceWorkJobNumberError,
+  timesheetEntryEvidenceWriteFields,
+  timesheetEvidenceOwnerIds,
+  timesheetOwnerEntriesError,
   timesheetStoredStartDayKey,
   type TimesheetEntryDecision,
   type TimesheetEntryReview,
@@ -116,9 +118,12 @@ function decisionOf(value: TimesheetEntryDecision): TimesheetManagerDecision {
 function mapEntries(
   data: Record<string, unknown>,
   sheetDocId: string,
-  timeZone: string
+  timeZone: string,
+  /** Rulebook 1.45.0: every id the sheet's person goes by (`personIdSet`), so evidence they uploaded under their
+   *  current id is kept on a sheet filed under an older one. */
+  ownerUserIds: ReadonlyArray<string> = []
 ): { expenseEntries: TimesheetExpenseEntry[]; priceWorkEntries: TimesheetPriceWorkEntry[] } {
-  const parsed = parseTimesheetEntries(sheetDocId, data, { timeZone })
+  const parsed = parseTimesheetEntries(sheetDocId, data, { timeZone, ownerUserIds })
   return {
     expenseEntries: parsed.expenseEntries.map((entry) => ({
       id: entry.id,
@@ -128,6 +133,8 @@ function mapEntries(
       date: entry.dateMs != null ? new Date(entry.dateMs) : new Date(),
       amount: entry.amount,
       receiptName: entry.receiptName,
+      evidence: entry.evidence,
+      reviewFingerprint: entry.reviewFingerprint,
       managerDecision: decisionOf(entry.managerDecision),
       managerRevisedAmount: entry.managerRevisedAmount,
     })),
@@ -140,6 +147,8 @@ function mapEntries(
       startDate: entry.startMs != null ? new Date(entry.startMs) : new Date(),
       endDate: entry.endMs != null ? new Date(entry.endMs) : null,
       amount: entry.amount,
+      evidence: entry.evidence,
+      reviewFingerprint: entry.reviewFingerprint,
       managerDecision: decisionOf(entry.managerDecision),
       managerRevisedAmount: entry.managerRevisedAmount,
     })),
@@ -263,11 +272,11 @@ function mapReviews(raw: unknown): Record<string, TimesheetPayrollLineReview> {
 
 export function draftFromFirestoreMap(
   data: Record<string, unknown>,
-  options?: { includeSignatures?: boolean; sheetDocId?: string | null; timeZone?: string | null }
+  options?: { includeSignatures?: boolean; sheetDocId?: string | null; timeZone?: string | null; ownerUserIds?: ReadonlyArray<string> | null }
 ): TimesheetDraft {
   const includeSignatures = options?.includeSignatures !== false
   const status = parseTimesheetStatusFields(data)
-  const entries = mapEntries(data, options?.sheetDocId?.trim() || '', organizationZoneOr(options?.timeZone))
+  const entries = mapEntries(data, options?.sheetDocId?.trim() || '', organizationZoneOr(options?.timeZone), options?.ownerUserIds ?? [])
 
   return {
     managerNote: typeof data.managerNote === 'string' ? data.managerNote : '',
@@ -308,6 +317,8 @@ export function draftToFirestoreMap(draft: TimesheetDraft): Record<string, unkno
       date: Timestamp.fromDate(entry.date),
       amount: entry.amount,
       receiptName: entry.receiptName || '',
+      // Rulebook 1.45.0 §8: written only when the entry has evidence, so an older entry's stored shape is unchanged.
+      ...(entry.evidence && entry.evidence.length > 0 ? { evidence: timesheetEntryEvidenceWriteFields(entry.evidence) } : {}),
       managerDecision: entry.managerDecision,
       managerRevisedAmount: entry.managerRevisedAmount ?? null,
     })),
@@ -320,6 +331,7 @@ export function draftToFirestoreMap(draft: TimesheetDraft): Record<string, unkno
       startDate: Timestamp.fromDate(entry.startDate),
       endDate: entry.endDate ? Timestamp.fromDate(entry.endDate) : null,
       amount: entry.amount,
+      ...(entry.evidence && entry.evidence.length > 0 ? { evidence: timesheetEntryEvidenceWriteFields(entry.evidence) } : {}),
       managerDecision: entry.managerDecision,
       managerRevisedAmount: entry.managerRevisedAmount ?? null,
     })),
@@ -446,13 +458,14 @@ async function loadTimesheetDraftByCandidates(
   userId: string,
   weekStart: Date,
   timeZone: string,
-  includeSignatures = true
+  includeSignatures = true,
+  ownerUserIds: ReadonlyArray<string> = [userId]
 ): Promise<{ draft: TimesheetDraft | null; allMissing: boolean }> {
   const unique = [...new Set(candidateTimesheetDocIds(userId, weekStart, timeZone))]
   const hits = await Promise.all(unique.map(async (id) => ({ id, data: await readDoc(organizationId, id) })))
   const hit = hits.find((row) => row.data)
   if (hit?.data) {
-    return { draft: rememberSource(draftFromFirestoreMap(hit.data, { includeSignatures, sheetDocId: hit.id, timeZone }), hit.id), allMissing: false }
+    return { draft: rememberSource(draftFromFirestoreMap(hit.data, { includeSignatures, sheetDocId: hit.id, timeZone, ownerUserIds }), hit.id), allMissing: false }
   }
   return { draft: null, allMissing: unique.length > 0 && hits.every((row) => row.data == null) }
 }
@@ -519,9 +532,11 @@ export async function loadTimesheetDraft(
   userId: string,
   weekStart: Date,
   timeZone: string = LONDON_TIME_ZONE,
-  periodEnd?: Date
+  periodEnd?: Date,
+  /** Rulebook 1.45.0: every id of the person (`personIdSet`); their own id when not given. */
+  ownerUserIds: ReadonlyArray<string> = [userId]
 ): Promise<TimesheetDraft> {
-  const direct = await loadTimesheetDraftByCandidates(organizationId, userId, weekStart, timeZone)
+  const direct = await loadTimesheetDraftByCandidates(organizationId, userId, weekStart, timeZone, true, ownerUserIds)
   if (direct.draft) return direct.draft
   try {
     const key = dayKey(weekStart, timeZone)
@@ -530,9 +545,9 @@ export async function loadTimesheetDraft(
     )
     for (const entry of snap.docs) {
       const data = entry.data() as Record<string, unknown>
-      if (data.userId === userId) return rememberSource(draftFromFirestoreMap(data, { sheetDocId: entry.id, timeZone }), entry.id)
+      if (data.userId === userId) return rememberSource(draftFromFirestoreMap(data, { sheetDocId: entry.id, timeZone, ownerUserIds }), entry.id)
       if (weekStartMatches(data, weekStart, timeZone) && entry.id.includes(userId)) {
-        return rememberSource(draftFromFirestoreMap(data, { sheetDocId: entry.id, timeZone }), entry.id)
+        return rememberSource(draftFromFirestoreMap(data, { sheetDocId: entry.id, timeZone, ownerUserIds }), entry.id)
       }
     }
   } catch {
@@ -753,17 +768,24 @@ export async function saveTimesheetDraft({
       weekEnd: Timestamp.fromDate(end),
     }) as Record<string, unknown>
   }
-  // Rulebook 1.30.1: the owner's new or edited price work entries need a job number
-  // (`timesheetPriceWorkJobNumberError`); entries they did not touch — older ones without one included — never block a
-  // save. Compared with the sheet as this editor loaded it, else as stored. A reviewer's save never asks.
+  // Rulebook 1.30.1 / 1.45.0 (`timesheetOwnerEntriesError`): the owner's new or edited entries are checked — price work
+  // needs a job number, an expense at least one piece of evidence, and evidence must be in the owner's own claim folder.
+  // Entries they did not touch — older ones without a job number or with only a receipt name — never block a save.
+  // Compared with the sheet as this editor loaded it, else as stored. A reviewer's save never asks.
   if (!reviewer) {
-    let previous: unknown = base ? draftToFirestoreMap(base).priceWorkEntries : undefined
-    if (!base) {
+    let previous: { priceWorkEntries?: unknown[]; expenseEntries?: unknown[] } | null = null
+    if (base) {
+      const loaded = draftToFirestoreMap(base)
+      previous = { priceWorkEntries: loaded.priceWorkEntries as unknown[], expenseEntries: loaded.expenseEntries as unknown[] }
+    } else {
       for (const id of ids) {
         try {
           const stored = await readDoc(organizationId, id)
           if (stored) {
-            previous = stored.priceWorkEntries
+            previous = {
+              priceWorkEntries: Array.isArray(stored.priceWorkEntries) ? stored.priceWorkEntries : [],
+              expenseEntries: Array.isArray(stored.expenseEntries) ? stored.expenseEntries : [],
+            }
             break
           }
         } catch {
@@ -771,11 +793,15 @@ export async function saveTimesheetDraft({
         }
       }
     }
-    const jobNumberError = timesheetPriceWorkJobNumberError(
-      Array.isArray(previous) ? previous : [],
-      draftToFirestoreMap(draft).priceWorkEntries as unknown[]
-    )
-    if (jobNumberError) throw new Error(jobNumberError)
+    const next = draftToFirestoreMap(draft)
+    const entriesError = timesheetOwnerEntriesError({
+      previous,
+      next: { priceWorkEntries: next.priceWorkEntries as unknown[], expenseEntries: next.expenseEntries as unknown[] },
+      organizationId,
+      // The uploader is the signed-in owner; the sheet's own ids count as theirs too.
+      ownerUserIds: timesheetEvidenceOwnerIds(canonicalId, { userId }, [writerId]),
+    })
+    if (entriesError) throw new Error(entriesError)
   }
   // Who and where (`writeMetadataFields`) plus the server time, on every timesheet save.
   const metadata = { ...(writeMetadataFields(writerId, 'web') ?? {}), updatedAt: serverTimestamp() }

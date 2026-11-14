@@ -348,6 +348,28 @@ export {
 } from './bookings'
 
 export { bookingIdsForAccount, bookingIdsForPerson, bookingPersonKey, resolveBookingPerson, rosterAliasIdsFor } from './bookingPerson'
+// 1.44.0 §21, §11: bookings whose person id names nobody — never hidden, linked from Data health.
+export {
+  LINK_BOOKING_PERSON_ACTION,
+  LINK_BOOKING_PERSON_ALREADY_MESSAGE,
+  LINK_BOOKING_PERSON_PAY_ACK_LABEL,
+  LINK_BOOKING_PERSON_PAY_WARNING,
+  LINK_BOOKING_PERSON_SELF_NOTE,
+  UNKNOWN_BOOKING_PERSON_LABEL,
+  UNRESOLVED_BOOKING_PERSON_CHIP,
+  UNRESOLVED_BOOKINGS_EMPTY,
+  UNRESOLVED_BOOKINGS_HEADING,
+  UNRESOLVED_BOOKINGS_HELP,
+  bookingPersonIdHint,
+  linkBookingPersonCandidates,
+  linkBookingPersonConfirmMessage,
+  linkBookingPersonDoneMessage,
+  linkBookingPersonImpact,
+  linkBookingPersonRefusal,
+  linkBookingPersonWriteFields,
+  scheduleRowPerson,
+  unresolvedBookingPeople,
+} from './unresolvedBookingPeople'
 export { LEGACY_PLACEHOLDER_DOCUMENT_ID, isLegacyPlaceholderDocumentId } from './bookings'
 
 export { legalPackAcceptanceWriteFields, legalPackNeedsAcceptance } from './legalPack'
@@ -529,6 +551,9 @@ export {
   timesheetEntryDecision,
   timesheetEntryEffectiveAmount,
   timesheetEntryReviewWriteFields,
+  timesheetEntryFingerprint,
+  timesheetEntryFingerprintMap,
+  timesheetTrustedFingerprint,
   timesheetEntryReviewsAfterWrite,
   timesheetOwnerWriteFields,
   timesheetWriterIsReviewer,
@@ -671,6 +696,7 @@ export {
   subcontractorBookingCreateFields,
   subcontractorBookingWriteFields,
   timesheetEntryId,
+  timesheetEvidenceOwnerIds,
 } from './workDocumentReaders'
 export {
   DEFAULT_JOB_TYPE_NAMES,
@@ -1032,6 +1058,8 @@ export {
   weekendBreakFor,
   derivedWeekdayPaidHours,
   weekdayPaidHours,
+  weekendCountsAsHours,
+  DEFAULT_WEEKEND_COUNTS_AS_HOURS,
   withDerivedWeekdayPaidHours,
   weekdayPaidDayPreview,
 } from './organizationSettings'
@@ -1247,6 +1275,8 @@ export * from './overtimeChoices'
 // Rulebook 1.30.0 (§26): PAYE price work and expenses (items, evidence, approver candidates, ranges, reports, who sees
 // them) and personal site audits (owner only; the frozen copy attached as evidence).
 export * from './payeClaims'
+export * from './claimEvidence'
+export * from './timesheetEntryEvidence'
 export * from './payeClaimReviews'
 export * from './priceWorkJobNumber'
 export * from './personalSiteAudits'

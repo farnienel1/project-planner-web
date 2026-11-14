@@ -179,3 +179,24 @@ for (const on of [false, true]) {
     }
   })
 }
+
+// Rulebook 1.45.0 (owner decision 14 Nov): timesheet entries may carry evidence[]; there is no rule on entries (§8, older
+// iOS builds), so the owner's save with evidence is accepted, the line manager's review save still works, and another
+// operative still cannot write the sheet.
+test('1.45.0 the owner saves price work and expense entries with evidence; the line manager still reviews; nobody else writes', async () => {
+  const id = `timesheet_${OP}_1763251200`
+  const evidence = [{ path: `organizations/${ORG}/payeClaims/${OP}/${OP}_1763300000000.jpg`, name: 'receipt.jpg', kind: 'photo', contentType: 'image/jpeg' }]
+  const op = await db(OP)
+  await assertSucceeds(
+    updateDoc(doc(op, 'organizations', ORG, 'settings', id), {
+      expenseEntries: [{ id: 'E1', title: 'Parking', details: '', jobNumber: 'J-1', date: Timestamp.fromMillis(Date.parse('2026-11-17T09:00:00Z')), amount: 12, receiptName: '', evidence, managerDecision: 'approved', managerRevisedAmount: null }],
+      priceWorkEntries: [{ id: 'P1', title: 'Tiling', details: '', jobNumber: 'J-2', agreedManagerName: 'Lena', startDate: Timestamp.fromMillis(Date.parse('2026-11-17T00:00:00Z')), endDate: null, amount: 100, evidence, managerDecision: 'approved', managerRevisedAmount: null }],
+    })
+  )
+  // Edit: the same entry with another file and amount; delete: the arrays without it.
+  await assertSucceeds(updateDoc(doc(op, 'organizations', ORG, 'settings', id), { priceWorkEntries: [] }))
+  const lm = await db(LM)
+  await assertSucceeds(updateDoc(doc(lm, 'organizations', ORG, 'settings', id), { 'extraEntryReviews.E1': { decision: 'approved', reviewedAmount: 12, reviewedByUserId: LM, reviewedAtMs: 1 } }))
+  const other = await db(OTHER)
+  await assertFails(updateDoc(doc(other, 'organizations', ORG, 'settings', id), { expenseEntries: [] }))
+})

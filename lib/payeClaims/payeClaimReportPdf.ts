@@ -14,6 +14,7 @@ import {
   payeClaimEvidencePages,
   payeClaimReportRows,
   personalSiteAuditPdfRows,
+  type PayeClaimEvidencePage,
   type PayeClaimReportSnapshot,
   type PersonalSiteAudit,
 } from '@/lib/canonical'
@@ -166,17 +167,42 @@ export async function buildPayeClaimReportPdf(
   ])
   w.totalBox(content.totalLabel, content.totalAmount)
 
+  const notDrawn = await drawClaimEvidencePages(w, payeClaimEvidencePages(snapshot), {
+    readFile: options.readFile,
+    logo,
+    approverLabel: priceWork ? 'Approved by' : null,
+  })
+  w.footers(content.footer)
+  return { bytes: await w.save(), notDrawn }
+}
+
+/**
+ * One page per piece of evidence (1.30.0 §26, 1.45.0 §8): headed by its item (name, date, job number, amount and, with
+ * `approverLabel`, who approved or agreed it — shown only when set) and the evidence's own title, then the description;
+ * a JPEG / PNG drawn as large as the page allows, a PDF's own pages appended after its heading page, anything else (or
+ * a file that cannot be read) listed with the rulebook's note. `startOnCurrentPage` draws the first one on the writer's
+ * current (empty) page. Returns how many could not be drawn.
+ */
+export async function drawClaimEvidencePages(
+  w: InvoiceFamilyPdf,
+  pages: ReadonlyArray<PayeClaimEvidencePage>,
+  options: { readFile: (path: string) => Promise<Uint8Array>; logo: PDFImage | null; approverLabel: string | null; approverOnlyWhenSet?: boolean; startOnCurrentPage?: boolean }
+): Promise<number> {
+  const pdf = w.pdf
   let notDrawn = 0
   const note = (text: string) => w.paragraph(text, { size: 10.5, bold: true, color: [0.6, 0.3, 0] })
-  for (const page of payeClaimEvidencePages(snapshot)) {
-    w.newPage()
+  let first = true
+  for (const page of pages) {
+    if (!(first && options.startOnCurrentPage)) w.newPage()
+    first = false
     const meta: Array<[string, string]> = [
       ['Date', page.date],
       ['Job number', page.jobNumber],
       ['Amount', page.amount],
     ]
-    if (priceWork) meta.push(['Approved by', page.approvedBy])
-    w.titleBlock({ eyebrow: page.evidenceTitle, title: page.itemName, titleSize: 22, brand: false, logo, meta, columns: meta.length })
+    // `approverOnlyWhenSet`: a timesheet entry shows who agreed it only when it names someone; PAYE price work always.
+    if (options.approverLabel && (page.approvedBy || !options.approverOnlyWhenSet)) meta.push([options.approverLabel, page.approvedBy])
+    w.titleBlock({ eyebrow: page.evidenceTitle, title: page.itemName, titleSize: 22, brand: false, logo: options.logo, meta, columns: meta.length })
     for (const line of page.notes) w.paragraph(line, { size: 10, color: [0.36, 0.42, 0.5] })
     w.y += 8
     if (page.drawAs === 'listed') {
@@ -211,8 +237,29 @@ export async function buildPayeClaimReportPdf(
       note(PAYE_CLAIM_EVIDENCE_UNREADABLE_NOTE)
     }
   }
-  w.footers(content.footer)
-  return { bytes: await w.save(), notDrawn }
+  return notDrawn
+}
+
+/**
+ * Rulebook 1.45.0 §8: the timesheet invoice with its evidence pages after it — `invoiceBytes` (the invoice PDF as built)
+ * followed by one page per piece of evidence (`timesheetEvidencePages`, drawn as the PAYE report draws them; price work
+ * shows who agreed it). With no pages the invoice is returned unchanged.
+ */
+export async function appendTimesheetEvidencePages(
+  invoiceBytes: Uint8Array,
+  pages: ReadonlyArray<PayeClaimEvidencePage>,
+  options: { readFile: (path: string) => Promise<Uint8Array>; currencyCode?: string | null; logoUrl?: string | null; footer: string }
+): Promise<{ bytes: Uint8Array; notDrawn: number }> {
+  if (pages.length === 0) return { bytes: invoiceBytes, notDrawn: 0 }
+  const w = await InvoiceFamilyPdf.create({ currencyCode: options.currencyCode })
+  const logo = await familyLogo(w.pdf, options.logoUrl)
+  const notDrawn = await drawClaimEvidencePages(w, pages, { readFile: options.readFile, logo, approverLabel: 'Agreed with', approverOnlyWhenSet: true, startOnCurrentPage: true })
+  w.footers(options.footer)
+  const evidence = await PDFDocument.load(await w.save())
+  const merged = await PDFDocument.load(invoiceBytes, { ignoreEncryption: true })
+  const copied = await merged.copyPages(evidence, evidence.getPageIndices())
+  for (const page of copied) merged.addPage(page)
+  return { bytes: await merged.save(), notDrawn }
 }
 
 /** The frozen PDF copy of a personal site audit (attached as evidence). `readFile` fetches each photo by path. */

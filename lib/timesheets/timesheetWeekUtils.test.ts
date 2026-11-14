@@ -2,10 +2,8 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   collectSubjectDayEntries,
-  estimatedAmount,
   extraFormJobSuggestions,
   subjectForUser,
-  timesheetReceiptStoredName,
   timesheetRosterGroups,
 } from './timesheetWeekUtils.ts'
 import type { Booking, Operative, User } from '../../types/index.ts'
@@ -122,21 +120,3 @@ test('extraFormJobSuggestions dedupes the same job number from projects and smal
   assert.equal(jobs[0]?.jobNumber, 'J-1')
 })
 
-test('estimatedAmount uses the basis and the organisation day length', () => {
-  assert.equal(
-    estimatedAmount({ key: 'a', kind: 'operative', name: 'Ada', payBasis: 'day', dayRate: 150 }, 7.5, 7.5),
-    150
-  )
-  assert.equal(
-    estimatedAmount({ key: 'b', kind: 'operative', name: 'Bea', payBasis: 'hourly', hourlyRate: 20 }, 7.5, 7.5),
-    150
-  )
-  assert.equal(estimatedAmount({ key: 'c', kind: 'operative', name: 'Cy', dayRate: 0, hourlyRate: 0 }, 8, 8), null)
-})
-
-test('timesheetReceiptStoredName matches iOS receipt.{ext}', () => {
-  assert.equal(timesheetReceiptStoredName('Parking.HEIC'), 'receipt.heic')
-  assert.equal(timesheetReceiptStoredName('photo.JPEG'), 'receipt.jpeg')
-  assert.equal(timesheetReceiptStoredName('no-extension'), 'receipt-uploaded')
-  assert.equal(timesheetReceiptStoredName(''), 'receipt-uploaded')
-})

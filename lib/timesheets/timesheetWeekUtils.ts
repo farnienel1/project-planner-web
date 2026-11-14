@@ -5,7 +5,6 @@ import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import { bookingPayrollHours } from '@/lib/scheduling/paidHours'
 import { dayKey, startOfLondonWeek } from '@/lib/ios-parity/londonTime'
 import { exportedTimesheetSubjectIds, userTimesheetSubjectIds } from '@/lib/permissions'
-import { orgDayHours, payForHours, readStoredRates } from '@/lib/timesheets/payBasis'
 import { normalizeDocumentId } from '@/lib/canonical'
 
 export type TimesheetSubjectKind = 'operative' | 'manager'
@@ -74,14 +73,6 @@ export function extraFormJobSuggestions(
     if (matches.length >= 6) break
   }
   return matches
-}
-
-/** iOS TimesheetMoneyEntrySheet receiptName = receipt.{ext} or receipt-uploaded. */
-export function timesheetReceiptStoredName(fileName?: string | null): string {
-  const trimmed = fileName?.trim() || ''
-  const dot = trimmed.lastIndexOf('.')
-  if (dot <= 0 || dot === trimmed.length - 1) return 'receipt-uploaded'
-  return `receipt.${trimmed.slice(dot + 1).toLowerCase()}`
 }
 
 export function userIdsSharingEmail(member: User, users: User[]): string[] {
@@ -261,23 +252,3 @@ export function totalHours(entries: TimesheetDayEntry[]): number {
   return Math.round(sum * 10000) / 10000
 }
 
-export function estimatedDays(entries: TimesheetDayEntry[], standardDayHours = 8): number {
-  const hours = totalHours(entries)
-  return Math.round((hours / standardDayHours) * 10) / 10
-}
-
-export function estimatedAmount(
-  subject: TimesheetSubject,
-  hours: number,
-  standardDayHours = 8
-): number | null {
-  const stored = readStoredRates(subject)
-  if (stored.payBasis == null) return null
-  return payForHours({
-    payBasis: stored.payBasis,
-    dayRate: stored.dayRate,
-    hourlyRate: stored.hourlyRate,
-    paidHours: hours,
-    standardDayHours: orgDayHours(standardDayHours),
-  })
-}
