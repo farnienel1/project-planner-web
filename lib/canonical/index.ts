@@ -548,6 +548,10 @@ export { bookingIdsForAccount, bookingIdsForPerson, bookingPersonKey, resolveBoo
 // 1.44.0 §21, §11: bookings whose person id names nobody — never hidden, linked from Data health.
 export {
   LINK_BOOKING_PERSON_ACTION,
+  LINK_BOOKING_PERSON_ALREADY_MESSAGE,
+  LINK_BOOKING_PERSON_PAY_ACK_LABEL,
+  LINK_BOOKING_PERSON_PAY_WARNING,
+  LINK_BOOKING_PERSON_SELF_NOTE,
   UNKNOWN_BOOKING_PERSON_LABEL,
   UNRESOLVED_BOOKING_PERSON_CHIP,
   UNRESOLVED_BOOKINGS_EMPTY,
@@ -557,11 +561,16 @@ export {
   linkBookingPersonCandidates,
   linkBookingPersonConfirmMessage,
   linkBookingPersonDoneMessage,
+  linkBookingPersonImpact,
+  linkBookingPersonRefusal,
   linkBookingPersonWriteFields,
   scheduleRowPerson,
   unresolvedBookingPeople,
 } from './unresolvedBookingPeople'
 export type {
+  LinkBookingPersonFiledUnder,
+  LinkBookingPersonImpact,
+  LinkBookingPersonRefusal,
   LinkCandidate,
   LinkCandidateProfile,
   ScheduleRowPerson,
@@ -1480,6 +1489,8 @@ export {
   weekendBreakFor,
   derivedWeekdayPaidHours,
   weekdayPaidHours,
+  weekendCountsAsHours,
+  DEFAULT_WEEKEND_COUNTS_AS_HOURS,
   withDerivedWeekdayPaidHours,
   weekdayPaidDayPreview,
 } from './organizationSettings'

@@ -21,7 +21,13 @@ import {
 import { db } from '@/lib/firebase/config'
 import { waitForAuthToken } from '@/lib/firebase/waitForAuthToken'
 import type { OrgCollectionDoc } from '@/lib/firebase/subscribeOrgCollection'
-import { isMetadataOnlySnapshot, mergeOrgCollectionSnapshot, orgPlanAuthoritative } from '@/lib/firebase/orgCollectionMerge'
+import {
+  isMetadataOnlySnapshot,
+  mergeOrgCollectionSnapshot,
+  documentSnapshotPublishes,
+  orgPlanAuthoritative,
+  republishHeldAsAuthoritative,
+} from '@/lib/firebase/orgCollectionMerge'
 
 /** One query of a plan: `constraints` on the collection, or one `documentId`. `id` names it stably. */
 export type OrgPlanPart = { id: string; constraints?: QueryConstraint[]; documentId?: string }
@@ -42,6 +48,13 @@ type PartState = {
   seeded?: boolean
   /** A snapshot of this part has been published (its first is never metadata-only). */
   delivered?: boolean
+  /**
+   * 1.43.0 (review r318): this part's rows as published now are the server's answer — set by each delivered snapshot
+   * (not from cache, no unconfirmed writes of this device) and by a server confirmation of unchanged rows; a cached
+   * change or a local write clears it (`serverSnapshot` above
+   * stays true once the server has ever answered, for the data check).
+   */
+  currentFromServer?: boolean
 }
 type PlanState = {
   organizationId: string
@@ -66,7 +79,8 @@ function emit(state: PlanState) {
   }
   // 1.43.0: the merged rows are complete only when every part has had a server answer (none refused). The first
   // publish, before any part answered, and a cache snapshot are not (a timesheet must not be signed on them).
-  state.onDocs([...byId.values()], { authoritative: orgPlanAuthoritative([...state.parts.values()]) })
+  const parts = [...state.parts.values()].map((part) => ({ settled: part.settled, failed: part.failed, serverSnapshot: part.currentFromServer === true }))
+  state.onDocs([...byId.values()], { authoritative: orgPlanAuthoritative(parts) })
 }
 
 function settle(state: PlanState) {
@@ -98,12 +112,30 @@ function startPart(key: string, state: PlanState, part: OrgPlanPart, seed?: read
     if (part.documentId) {
       partState.unsub = onSnapshot(
         doc(firestore, 'organizations', state.organizationId, state.collectionName, part.documentId),
+        // 1.43.0 (review r318): metadata changes too, so the server's confirmation of a local write (same data) reaches
+        // the part and it turns authoritative again (`documentSnapshotPublishes`).
+        { includeMetadataChanges: true },
         (snap) => {
           if (!live()) return
-          partState.docs = snap.exists() ? [{ id: snap.id, data: (snap.data() ?? {}) as Record<string, unknown> }] : []
-          partState.seeded = false
+          const docs = snap.exists() ? [{ id: snap.id, data: (snap.data() ?? {}) as Record<string, unknown> }] : []
+          const nowFromServer = !snap.metadata.fromCache && !snap.metadata.hasPendingWrites
+          const publish = documentSnapshotPublishes({
+            delivered: partState.delivered === true,
+            changed: JSON.stringify(docs) !== JSON.stringify(partState.docs),
+            wasFromServer: partState.currentFromServer === true,
+            nowFromServer,
+          })
           partState.serverSnapshot = partState.serverSnapshot || !snap.metadata.fromCache
           partState.pendingWrites = snap.metadata.hasPendingWrites
+          if (!publish) {
+            // Metadata only (no data change, no new server confirmation): flags only, as before.
+            partState.currentFromServer = nowFromServer
+            return
+          }
+          partState.delivered = true
+          partState.docs = docs
+          partState.seeded = false
+          partState.currentFromServer = nowFromServer
           partState.settled = true
           emit(state)
           settle(state)
@@ -124,11 +156,20 @@ function startPart(key: string, state: PlanState, part: OrgPlanPart, seed?: read
           !partState.seeded &&
           isMetadataOnlySnapshot({ documentChangeCount: snap.docChanges().length, deliveredBefore: partState.delivered === true })
         ) {
-          const firstServerAnswer = !partState.serverSnapshot && !snap.metadata.fromCache
+          const republish = republishHeldAsAuthoritative({
+            fromCache: snap.metadata.fromCache,
+            hasPendingWrites: snap.metadata.hasPendingWrites,
+            heldIsSnapshot: true,
+            lastPublishAuthoritative: partState.currentFromServer === true,
+          })
           partState.serverSnapshot = partState.serverSnapshot || !snap.metadata.fromCache
           partState.pendingWrites = snap.metadata.hasPendingWrites
-          // 1.43.0: the part's first server answer (same rows) is published once, so the plan can turn authoritative.
-          if (firstServerAnswer) emit(state)
+          // 1.43.0 (review r318): a server confirmation of this part's unchanged rows after its first answer or a
+          // cached change is published, so the plan can turn (back) authoritative.
+          if (republish) {
+            partState.currentFromServer = true
+            emit(state)
+          }
           return
         }
         partState.delivered = true
@@ -141,6 +182,7 @@ function startPart(key: string, state: PlanState, part: OrgPlanPart, seed?: read
           partState.seeded = false
         }
         partState.serverSnapshot = partState.serverSnapshot || !snap.metadata.fromCache
+        partState.currentFromServer = !snap.metadata.fromCache && !snap.metadata.hasPendingWrites
         partState.pendingWrites = snap.metadata.hasPendingWrites
         partState.settled = true
         emit(state)

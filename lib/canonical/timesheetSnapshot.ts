@@ -8,7 +8,7 @@
  *    snapshot) until the bookings and pay inputs have loaded.
  * 2. `timesheetSnapshotNeedsRebuild` finds a snapshot already frozen empty: it has no labour lines although the period
  *    has a live labour line whose booking already existed when the sheet was approved, and nobody has exported it.
- *    Such a snapshot is rebuilt (signatures untouched). A snapshot with labour lines, or a legitimately empty one, is
+ *    Such a snapshot is rebuilt (signatures untouched); a booking created or changed after approval never counts. A snapshot with labour lines, or a legitimately empty one, is
  *    never re-priced.
  * 3. `timesheetOwnerCanAddExtras`: once the line manager has signed (or the sheet was approved), the person cannot
  *    change price work or expenses (the security rules refuse it). Adding them used to clear only the person's own
@@ -69,16 +69,22 @@ export type TimesheetLiveLabourLine = {
   isPayeDay?: boolean | null
   /** When the line's booking was created (any stored instant shape). Missing = unknown: never counted. */
   bookingCreatedAt?: InstantLike
+  /**
+   * When the line's booking was last written (`updatedAt` write metadata, both apps). Review r318: a booking created
+   * before approval but moved into the period later is caught by this. Missing = unknown: never counted.
+   */
+  bookingUpdatedAt?: InstantLike
 }
 
 /**
  * Rulebook 1.43.0 §8 (review r318): true only for a signed snapshot frozen empty by the loading bug — it exists, holds
  * no labour lines, the sheet has not been exported, and the period has a live labour line (PAYE days left out) whose
- * booking was created on or before the sheet was approved (the snapshot's `approvedAt`, else `managerSignedAt` /
- * `approvedAt` on the sheet). Such a booking was there when the sheet was signed, so its absence is the bug. A
- * snapshot that is legitimately empty (price work or expenses only) is never rebuilt because of a booking added to the
- * period later, nor because of a booking whose creation time is unknown — a signed sheet is never re-priced. A
- * snapshot with any labour line is never rebuilt.
+ * booking was created AND last written on or before the sheet was approved (the later of `createdAt` and `updatedAt`
+ * ≤ the snapshot's `approvedAt`, else `managerSignedAt` / `approvedAt` on the sheet). Such a booking was there, as it
+ * is now, when the sheet was signed, so its absence is the bug. A snapshot that is legitimately empty (price work or
+ * expenses only) is never rebuilt because of a booking added to — or moved into, or changed in — the period later, nor
+ * because of a booking whose times are unknown: a signed sheet is never re-priced. A snapshot with any labour line is
+ * never rebuilt.
  */
 export function timesheetSnapshotNeedsRebuild(
   sheet: TimesheetSnapshotSheet | null | undefined,
@@ -95,7 +101,9 @@ export function timesheetSnapshotNeedsRebuild(
   return (liveLabourLines ?? []).some((line) => {
     if (!line || line.isPayeDay === true) return false
     const created = documentInstantMs(line.bookingCreatedAt)
-    return created != null && created <= approvedMs
+    const updated = documentInstantMs(line.bookingUpdatedAt)
+    if (created == null || updated == null) return false
+    return Math.max(created, updated) <= approvedMs
   })
 }
 

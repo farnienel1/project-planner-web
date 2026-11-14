@@ -990,7 +990,7 @@ Job types and other org settings (only jobTypes doc is used today). Org members 
 
 `timesheetOwnerKeepsSubject` (review r318): adding a missing `userId` needs `settingId` to start `timesheet_{that id}_` — before, an operative could claim another person's legacy sheet stored without `userId` by writing their own uid into it (privatePay on or off).
 
-Static compile cost 234,014 (main) → 234,098 (+84); emulator type check 0 issues. Under `RULES_STRICT_BUDGET=1` the suite's operative list denials are refused by the 1,000-expression limit — the same as on the 1.42 rules (measured), not a new refusal.
+Static compile cost 234,014 (main) → 234,098 (+84); emulator type check 0 issues. A failed history query on web now shows "Couldn't check older timesheets — try again." with Retry (no blank new sheet). Under `RULES_STRICT_BUDGET=1` the suite's operative list denials are refused by the 1,000-expression limit — the same as on the 1.42 rules (measured), not a new refusal.
 
 ### `isOwnTimesheetSettings`
 

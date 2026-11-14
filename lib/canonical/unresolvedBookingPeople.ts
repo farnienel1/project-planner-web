@@ -11,8 +11,8 @@
  */
 
 import { resolveBookingPerson, type BookingPersonInput } from './bookingPerson'
-import { personDedupeKey } from './ghostOperatives'
-import { isAnonymisedDeletedProfile } from './userRosterSegment'
+import { rosterPersonGroups, rosterPersonName, type LineManagerRosterPerson } from './lineManagers'
+import { rosterSegment } from './userRosterSegment'
 import { writeMetadataFields } from './writeMetadata'
 
 export const UNKNOWN_BOOKING_PERSON_LABEL = 'Unknown person'
@@ -22,7 +22,9 @@ export const UNRESOLVED_BOOKINGS_HELP =
   'These bookings are filed under an ID that does not match anyone in your company — usually an old account or ' +
   'invite of someone who was later added again. They still show on the job\'s schedule as "Unknown person". ' +
   'Choose who each ID belongs to and every booking under it will show as that person everywhere (schedule, ' +
-  'Daily Overview, warnings, timesheets and reports). Nothing else about the bookings changes.'
+  'Daily Overview, warnings, timesheets and reports). Anything else filed under the ID — pay-rate history, annual ' +
+  'leave, timesheets, overtime, price work and expenses — becomes theirs too; the confirm lists it, and if pay-rate ' +
+  'history is filed under the ID, pay for unsigned timesheets may change. Nothing on the records themselves changes.'
 export const UNRESOLVED_BOOKINGS_EMPTY = 'Every booking is linked to a person.'
 export const LINK_BOOKING_PERSON_ACTION = 'Link to a person…'
 
@@ -157,44 +159,42 @@ export function unresolvedBookingPeople(input: BookingPersonInput & {
   return [...groups.values()].sort((a, b) => b.count - a.count || a.personId.localeCompare(b.personId))
 }
 
-export type LinkCandidateProfile = {
-  id: string
-  name?: string | null
-  firstName?: string | null
-  surname?: string | null
-  email?: string | null
+export type LinkCandidateProfile = LineManagerRosterPerson & {
   organizationId?: string | null
-  isActive?: boolean | null
-  formerUserIds?: readonly string[] | null
+  ghost?: boolean | null
 }
 
 export type LinkCandidate = { id: string; name: string; email: string | null }
 
-function profileName(profile: LinkCandidateProfile): string {
-  const combined = [text(profile.firstName), text(profile.surname)].filter(Boolean).join(' ')
-  return combined || text(profile.name) || text(profile.email) || profile.id
-}
+/** Shown in place of the viewer in the picker: an admin never writes their own identity links (§16). */
+export const LINK_BOOKING_PERSON_SELF_NOTE = 'To link bookings to yourself, ask another admin.'
+export const LINK_BOOKING_PERSON_ALREADY_MESSAGE = 'Already linked.'
 
 /**
- * Rulebook 1.44.0 §11: who an unlinked id may be linked to — the active people whose users document belongs to this
- * organisation (the security rules let an admin write only those), never an anonymised deleted profile, one option per
- * person (`personDedupeKey`: the email, else the id; the first document in roster order speaks for them), by name.
+ * Rulebook 1.44.0 §11: who an unlinked id may be linked to. Built from every users document of the organisation
+ * (the unfolded roster), grouped into people (`rosterPersonGroups`: same id, `formerUserIds`, `sameEmailUserIds`,
+ * email); the group's live, signed-up, active document speaks for the person and is the document written. A person
+ * is offered only when that document belongs to this organisation (the security rules let an admin write only those)
+ * and is Active (`rosterSegment`: never a pending invite, an inactive person or an anonymised deleted profile; a ghost
+ * operative is Active by design). The viewer is never offered under any of their ids (`viewerIds`): nobody writes their
+ * own identity links, admins included (§16) — show `LINK_BOOKING_PERSON_SELF_NOTE`. One option per person, by name.
  */
-export function linkBookingPersonCandidates(roster: readonly LinkCandidateProfile[], organizationId: string): LinkCandidate[] {
+export function linkBookingPersonCandidates(
+  roster: readonly LinkCandidateProfile[],
+  organizationId: string,
+  options?: { viewerIds?: readonly string[] | null }
+): LinkCandidate[] {
   const org = idKey(organizationId)
-  const seen = new Set<string>()
+  const viewer = new Set((options?.viewerIds || []).map(idKey).filter(Boolean))
   const out: LinkCandidate[] = []
-  for (const profile of roster || []) {
-    if (!profile || !text(profile.id)) continue
-    if (idKey(profile.organizationId) !== org) continue
-    if (profile.isActive === false) continue
-    if (isAnonymisedDeletedProfile({ email: profile.email ?? '', firstName: profile.firstName ?? '', surname: profile.surname ?? '', name: profile.name ?? '' })) continue
-    const key = personDedupeKey(profile)
-    if (!key || seen.has(key)) continue
-    seen.add(key)
-    out.push({ id: profile.id, name: profileName(profile), email: text(profile.email) || null })
+  for (const group of rosterPersonGroups((roster || []).filter((row) => row && text(row.id)))) {
+    if ([...group.keys].some((key) => viewer.has(key))) continue
+    const primary = group.primary as LinkCandidateProfile
+    if (idKey(primary.organizationId) !== org) continue
+    if (rosterSegment(primary as never) !== 'active') continue
+    out.push({ id: text(primary.id), name: rosterPersonName(primary) || text(primary.email) || text(primary.id), email: text(primary.email) || null })
   }
-  return out.sort((a, b) => a.name.localeCompare(b.name))
+  return out.sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id))
 }
 
 /** "All 3 bookings under this ID will show as Farnie Nel." */
@@ -203,16 +203,62 @@ export function linkBookingPersonConfirmMessage(count: number, name: string): st
   return `All ${n} booking${n === 1 ? '' : 's'} under this ID will show as ${text(name) || 'this person'}.`
 }
 
-/** "Linked: 3 bookings now show as Farnie Nel." */
+/** "Linked: 3 bookings now show as Farnie Nel." Only after a write happened; otherwise `LINK_BOOKING_PERSON_ALREADY_MESSAGE`. */
 export function linkBookingPersonDoneMessage(count: number, name: string): string {
   const n = Math.max(0, Math.floor(Number(count) || 0))
   return `Linked: ${n} booking${n === 1 ? '' : 's'} now show${n === 1 ? 's' : ''} as ${text(name) || 'this person'}.`
 }
 
+export type LinkBookingPersonRefusal = {
+  reason: 'blank' | 'resolves' | 'already_linked' | 'not_candidate'
+  message: string
+}
+
+/**
+ * Rulebook 1.44.0 §11: the re-check made just before the link is written, on a fresh read of the organisation's users
+ * documents (and `operatives` rows): refused when the id is blank, now resolves to someone (`scheduleRowPerson` — e.g.
+ * linked from another device meanwhile), is already listed on any users document's `formerUserIds` /
+ * `sameEmailUserIds`, or the chosen person is no longer a `linkBookingPersonCandidates` row. Null when the link may go
+ * ahead.
+ */
+export function linkBookingPersonRefusal(input: {
+  personId: string
+  targetId: string
+  roster: readonly LinkCandidateProfile[]
+  operatives: readonly BookingPersonInput['operatives'][number][]
+  organizationId: string
+  viewerIds?: readonly string[] | null
+}): LinkBookingPersonRefusal | null {
+  const id = text(input.personId)
+  if (!id) return { reason: 'blank', message: 'This booking has no person ID to link.' }
+  const roster = (input.roster || []).filter((row) => row && text(row.id))
+  const holder = roster.find((row) =>
+    [...(row.formerUserIds || []), ...(row.sameEmailUserIds || [])].some((value) => idKey(value) === idKey(id))
+  )
+  if (holder) {
+    return { reason: 'already_linked', message: `This ID is already linked to ${rosterPersonName(holder) || text(holder.email) || text(holder.id)}. Check again to refresh the list.` }
+  }
+  const row = scheduleRowPerson(id, {
+    accounts: roster.map((r) => ({ id: r.id, email: r.email ?? null, formerIds: r.formerUserIds ?? [], aliasIds: r.sameEmailUserIds ?? [] })),
+    operatives: input.operatives || [],
+  })
+  if (!row.unresolved) {
+    return { reason: 'resolves', message: 'This ID now matches a person, so its bookings already show by name. Check again to refresh the list.' }
+  }
+  const candidates = linkBookingPersonCandidates(roster, input.organizationId, { viewerIds: input.viewerIds })
+  if (!candidates.some((candidate) => idKey(candidate.id) === idKey(input.targetId))) {
+    return { reason: 'not_candidate', message: 'That person can no longer be chosen (inactive, not signed up, or in another company). Pick someone else.' }
+  }
+  return null
+}
+
 /**
  * Rulebook 1.44.0 §11: the partial update of the chosen person's `users/{uid}` that links an unlinked booking id —
- * `formerUserIds` with the id appended (stored ids kept as stored, never reordered) and write metadata. Null when the
- * id is blank, is the person's own id, is already listed (without case), or the metadata is invalid. An admin write
+ * `arrayUnion` of the id onto `formerUserIds` (so a link written meanwhile by another admin is never lost, and stored
+ * ids are never rewritten) plus write metadata. Each app maps `arrayUnion` to its SDK's (web `arrayUnion`, iOS
+ * `FieldValue.arrayUnion`) and adds its server `updatedAt`. Null when the id is blank, is the person's own id, is
+ * already listed on them (without case; then show `LINK_BOOKING_PERSON_ALREADY_MESSAGE`), or the metadata is invalid.
+ * Run it on the person's document read inside the same transaction, after `linkBookingPersonRefusal`. An admin write
  * (§16 identity links: admins write `formerUserIds`, the person never does).
  */
 export function linkBookingPersonWriteFields(input: {
@@ -220,12 +266,64 @@ export function linkBookingPersonWriteFields(input: {
   personId: string
   actorUserId: string
   platform: 'web' | 'ios' | 'android'
-}): { set: Record<string, unknown> } | null {
+}): { arrayUnion: { formerUserIds: string[] }; set: { updatedBy: string; updatedFrom: string } } | null {
   const id = text(input.personId)
   if (!id || idKey(id) === idKey(input.person?.id)) return null
-  const stored = Array.isArray(input.person?.formerUserIds) ? input.person.formerUserIds.filter((v) => typeof v === 'string') : []
+  const stored = Array.isArray(input.person?.formerUserIds) ? input.person.formerUserIds : []
   if (stored.some((value) => idKey(value) === idKey(id))) return null
   const metadata = writeMetadataFields(input.actorUserId, input.platform)
   if (!metadata) return null
-  return { set: { formerUserIds: [...stored, id], ...metadata } }
+  return { arrayUnion: { formerUserIds: [id] }, set: { ...metadata } }
+}
+
+// MARK: - What else a link brings with it (1.44.0 review r319)
+
+export const LINK_BOOKING_PERSON_PAY_ACK_LABEL = 'I understand pay may change'
+export const LINK_BOOKING_PERSON_PAY_WARNING = 'Pay for unsigned timesheets may change.'
+
+export type LinkBookingPersonFiledUnder = {
+  /** `operativeDayRateHistory` rows whose `userId` or `operativeId` is the id. */
+  rateHistoryRows?: number
+  /** `holidayBookings` whose `userId` or `operativeId` is the id. */
+  leaveRecords?: number
+  /** `settings/timesheet_<id>_*` sheets, or sheets whose `userId` is the id. */
+  timesheets?: number
+  overtimeRequests?: number
+  priceWorkItems?: number
+  expenseItems?: number
+}
+
+export type LinkBookingPersonImpact = {
+  /** "2 pay-rate history rows", "1 leave record", … in that order; only kinds with at least one record. */
+  parts: string[]
+  /** "Also linked: 2 pay-rate history rows, 1 leave record. Pay for unsigned timesheets may change." or null. */
+  alsoText: string | null
+  /** A rate history row is filed under the id: pay may change, so the admin must tick `LINK_BOOKING_PERSON_PAY_ACK_LABEL`. */
+  requiresPayAck: boolean
+}
+
+function countText(n: number, one: string, many: string): string {
+  return `${n} ${n === 1 ? one : many}`
+}
+
+/**
+ * Rulebook 1.44.0 §11 (review r319): linking an id adds it to the person's `formerUserIds`, so everything filed under
+ * it becomes theirs through `personIdSet` — not only bookings: pay-rate history (`payRateOnDay` reads those rows, so the
+ * pay of unsigned timesheets may change), annual leave, timesheets, overtime requests, price work and expenses. The
+ * confirm lists them (`alsoText`) and, when any rate history row is filed under the id, the Link button waits for an
+ * explicit tick (`requiresPayAck`, `LINK_BOOKING_PERSON_PAY_ACK_LABEL`). Counts below 1 (or missing) are left out.
+ */
+export function linkBookingPersonImpact(filed: LinkBookingPersonFiledUnder | null | undefined): LinkBookingPersonImpact {
+  const n = (value: unknown) => Math.max(0, Math.floor(Number(value) || 0))
+  const f = filed || {}
+  const parts: string[] = []
+  if (n(f.rateHistoryRows)) parts.push(countText(n(f.rateHistoryRows), 'pay-rate history row', 'pay-rate history rows'))
+  if (n(f.leaveRecords)) parts.push(countText(n(f.leaveRecords), 'leave record', 'leave records'))
+  if (n(f.timesheets)) parts.push(countText(n(f.timesheets), 'timesheet', 'timesheets'))
+  if (n(f.overtimeRequests)) parts.push(countText(n(f.overtimeRequests), 'overtime request', 'overtime requests'))
+  if (n(f.priceWorkItems)) parts.push(countText(n(f.priceWorkItems), 'price work item', 'price work items'))
+  if (n(f.expenseItems)) parts.push(countText(n(f.expenseItems), 'expense', 'expenses'))
+  const requiresPayAck = n(f.rateHistoryRows) > 0
+  const alsoText = parts.length ? `Also linked: ${parts.join(', ')}.${requiresPayAck ? ` ${LINK_BOOKING_PERSON_PAY_WARNING}` : ''}` : null
+  return { parts, alsoText, requiresPayAck }
 }

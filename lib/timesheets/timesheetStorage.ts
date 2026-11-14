@@ -551,11 +551,11 @@ export async function loadTimesheetDraft(
     const picked = pickTimesheetDraftForPeriod(grouped.get(userId) || [], weekStart, end, timeZone)
     if (picked) return picked.draft
   } catch (error) {
-    // 1.43.0 (review r318): a refused or failed history query is not an error only when every direct read of this
-    // period's document ids answered "missing" — then the sheet opens as new and is saved at the expected id
-    // (`timesheetDocId`, one of those ids), never over an unknown one. Otherwise the error is shown.
-    if (!direct.allMissing) throw error
-    console.warn('[timesheets] history query failed after every expected id read as missing; opening a new sheet', error)
+    // 1.43.0 (review r318, 2nd round): a failed history query is shown as an error with Retry
+    // (`TIMESHEET_HISTORY_LOAD_FAILED_MESSAGE` on the period page) — never an empty new sheet, because a sheet may be
+    // stored under an id the direct reads did not try, and a save would then create a second one.
+    console.warn('[timesheets] history query failed', { allExpectedIdsMissing: direct.allMissing, error })
+    throw error
   }
   return emptyTimesheetDraft()
 }

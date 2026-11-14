@@ -14337,17 +14337,28 @@ test('1.43.0 timesheetSnapshotReady: sign-off waits for the period\'s bookings a
 
 test('1.43.0 timesheetSnapshotNeedsRebuild: only a snapshot frozen empty while its bookings already existed', () => {
   const approvedAt = new Date('2026-11-10T09:00:00Z')
-  const before = { isPayeDay: false, bookingCreatedAt: new Date('2026-11-03T08:00:00Z') }
-  const after = { isPayeDay: false, bookingCreatedAt: new Date('2026-11-12T08:00:00Z') }
+  const before = { isPayeDay: false, bookingCreatedAt: new Date('2026-11-03T08:00:00Z'), bookingUpdatedAt: new Date('2026-11-04T08:00:00Z') }
+  const after = { isPayeDay: false, bookingCreatedAt: new Date('2026-11-12T08:00:00Z'), bookingUpdatedAt: new Date('2026-11-12T08:00:00Z') }
+  // Review r318 (2nd): created before approval but moved into the period (written) after it.
+  const movedLater = { isPayeDay: false, bookingCreatedAt: new Date('2026-11-03T08:00:00Z'), bookingUpdatedAt: new Date('2026-11-11T08:00:00Z') }
   const empty = { weeklyReportOverride: { lines: [], approvedAt } }
   // A booking that existed when the sheet was signed but is missing from the snapshot: the loading bug.
   assert.equal(R112.timesheetSnapshotNeedsRebuild(empty, [before]), true)
   // Any stored instant shape; the approval instant may come from the sheet when the snapshot has none.
-  assert.equal(R112.timesheetSnapshotNeedsRebuild({ weeklyReportOverride: { lines: [] }, managerSignedAt: { seconds: 1762765200 } }, [{ bookingCreatedAt: 1762157000000 }]), true)
+  assert.equal(
+    R112.timesheetSnapshotNeedsRebuild({ weeklyReportOverride: { lines: [] }, managerSignedAt: { seconds: 1762765200 } }, [
+      { bookingCreatedAt: 1762157000000, bookingUpdatedAt: '2025-11-04T08:00:00Z' },
+    ]),
+    true
+  )
   // Review r318: a legitimately empty snapshot (price work / expenses only) is never re-priced by a booking added later,
   // nor by one whose creation time is unknown.
   assert.equal(R112.timesheetSnapshotNeedsRebuild(empty, [after]), false)
+  assert.equal(R112.timesheetSnapshotNeedsRebuild(empty, [movedLater]), false)
   assert.equal(R112.timesheetSnapshotNeedsRebuild(empty, [{ isPayeDay: false }]), false)
+  // Either time unknown: never.
+  assert.equal(R112.timesheetSnapshotNeedsRebuild(empty, [{ bookingCreatedAt: before.bookingCreatedAt }]), false)
+  assert.equal(R112.timesheetSnapshotNeedsRebuild(empty, [{ bookingUpdatedAt: before.bookingUpdatedAt }]), false)
   // PAYE days never count; no live labour: nothing to rebuild.
   assert.equal(R112.timesheetSnapshotNeedsRebuild(empty, [{ ...before, isPayeDay: true }]), false)
   assert.equal(R112.timesheetSnapshotNeedsRebuild(empty, []), false)
@@ -14470,10 +14481,16 @@ test('1.44.0: every policy in the history derives its own day; the stored standa
   const fields = R112.payrollTimePolicyCancelScheduleWriteFields({ orgDoc: org, todayKey: '2026-11-04', timeZone: zone })
   const history = fields.payrollTimePolicyHistory as Array<{ policy: Record<string, unknown> }> | undefined
   if (history) assert.equal(history[0].policy.standardPaidHours, 8)
-  // A weekend day with no "counts as" of its own falls back to the derived day, not the stored figure.
+  // A weekend day with no "counts as" of its own reads 8h (`weekendCountsAsHours`), in the reader and the pay rule
+  // alike — never the weekday paid day, stored or derived (weekend pay is unchanged by 1.44.0).
   const noCountsAs = r120Legacy({ standardDayStart: '07:00', saturday: { allHoursAtMultiplierMode: false, allHoursMultiplier: 2, definedWindowStart: '07:00', definedWindowEnd: '13:00', outsideWindowMultiplier: 2 } })
   const sat = R112.payrollHoursResult({ booking: r120Custom('07:00', '13:00'), dayKey: '2026-11-07', policy: noCountsAs, timeZone: R120_ZONE })
-  if (noCountsAs.saturday.countsAsStandardHours == null) assert.equal(sat.standardHours, 8.5)
+  assert.equal(noCountsAs.saturday.countsAsStandardHours, 8)
+  assert.equal(sat.standardHours, 8)
+  const raw = { ...noCountsAs, saturday: { ...noCountsAs.saturday, countsAsStandardHours: undefined } }
+  assert.equal(R112.payrollHoursResult({ booking: r120Custom('07:00', '13:00'), dayKey: '2026-11-07', policy: raw as never, timeZone: R120_ZONE }).standardHours, 8)
+  assert.equal(R112.weekendCountsAsHours({}), 8)
+  assert.equal(R112.weekendCountsAsHours({ countsAsStandardHours: 6 }), 6)
   // No policy: the default day, derived (07:30–16:00 − 30 min).
   assert.equal(R112.weekdayPaidHours(null), 8)
   // A clock that would derive outside 1–12 (only reachable from stored data the save check refuses) is clamped.
@@ -14528,30 +14545,46 @@ test('1.44.0 unresolvedBookingPeople: one entry per unknown id (without case) wi
   assert.deepEqual([rows[1].personId, rows[1].count, rows[1].jobs], ['zz-other', 1, []])
 })
 
-test('1.44.0 link an unknown id to a person: candidates, confirm text and the formerUserIds partial update', () => {
+test('1.44.0 link an unknown id to a person: candidates (one per person, live signed-up doc, not the viewer), re-check and the arrayUnion write', () => {
   const roster = [
-    { id: 'b', firstName: 'Bea', surname: 'Two', email: 'bea@example.com', organizationId: 'org1', isActive: true },
-    { id: 'b-copy', firstName: 'Bea', surname: 'Copy', email: 'BEA@example.com', organizationId: 'org1', isActive: true },
-    { id: 'a', firstName: 'Ann', surname: 'One', email: 'ann@example.com', organizationId: 'org1', isActive: true },
-    { id: 'gone', firstName: 'Old', surname: 'Hand', email: 'old@example.com', organizationId: 'org1', isActive: false },
-    { id: 'away', firstName: 'Other', surname: 'Co', email: 'oc@example.com', organizationId: 'org2', isActive: true },
-    { id: 'del', firstName: 'Deleted', surname: 'user', email: '', organizationId: 'org1', isActive: true },
-    { id: 'ghost1', firstName: 'Gus', surname: 'Ghost', email: '', organizationId: 'org1', isActive: true },
+    // Bea: a stale admin copy (pending invite) and her live document on the same email — the live one speaks.
+    { id: 'b-old', firstName: 'Bea', surname: 'Old', email: 'BEA@example.com', organizationId: 'org1', isActive: true, passwordSet: false },
+    { id: 'b', firstName: 'Bea', surname: 'Two', email: 'bea@example.com', organizationId: 'org1', isActive: true, passwordSet: true },
+    { id: 'a', firstName: 'Ann', surname: 'One', email: 'ann@example.com', organizationId: 'org1', isActive: true, passwordSet: true },
+    { id: 'me', firstName: 'Admin', surname: 'Me', email: 'me@example.com', organizationId: 'org1', isActive: true, passwordSet: true, formerUserIds: ['ME-OLD'] },
+    { id: 'pending', firstName: 'Pat', surname: 'Pending', email: 'pat@example.com', organizationId: 'org1', isActive: true, passwordSet: false },
+    { id: 'gone', firstName: 'Old', surname: 'Hand', email: 'old@example.com', organizationId: 'org1', isActive: false, passwordSet: true },
+    { id: 'away', firstName: 'Other', surname: 'Co', email: 'oc@example.com', organizationId: 'org2', isActive: true, passwordSet: true },
+    { id: 'del', firstName: 'Deleted', surname: 'user', email: '', organizationId: 'org1', isActive: true, passwordSet: true },
+    { id: 'ghost1', firstName: 'Gus', surname: 'Ghost', email: '', organizationId: 'org1', isActive: true, passwordSet: false, ghost: true },
   ]
-  assert.deepEqual(R112.linkBookingPersonCandidates(roster, 'org1').map((c: { id: string }) => c.id), ['a', 'b', 'ghost1'])
+  const ids = (rows: Array<{ id: string }>) => rows.map((c) => c.id)
+  assert.deepEqual(ids(R112.linkBookingPersonCandidates(roster, 'org1', { viewerIds: ['me-old'] })), ['a', 'b', 'ghost1'])
+  // Without a viewer every active person is offered, by name (Admin Me, Ann One, Bea Two, Gus Ghost).
+  assert.deepEqual(ids(R112.linkBookingPersonCandidates(roster, 'org1')), ['me', 'a', 'b', 'ghost1'])
+  assert.equal(R112.LINK_BOOKING_PERSON_SELF_NOTE, 'To link bookings to yourself, ask another admin.')
   assert.equal(R112.linkBookingPersonConfirmMessage(3, 'Farnie Nel'), 'All 3 bookings under this ID will show as Farnie Nel.')
   assert.equal(R112.linkBookingPersonConfirmMessage(1, 'Farnie Nel'), 'All 1 booking under this ID will show as Farnie Nel.')
   assert.equal(R112.linkBookingPersonDoneMessage(3, 'Farnie Nel'), 'Linked: 3 bookings now show as Farnie Nel.')
+  assert.equal(R112.LINK_BOOKING_PERSON_ALREADY_MESSAGE, 'Already linked.')
+  // Re-check on a fresh roster.
+  const base = { roster, operatives: [], organizationId: 'org1', viewerIds: ['me'] }
+  assert.equal(R112.linkBookingPersonRefusal({ ...base, personId: '6A9632BA-X', targetId: 'b' }), null)
+  assert.equal(R112.linkBookingPersonRefusal({ ...base, personId: 'me-old', targetId: 'b' })?.reason, 'already_linked')
+  assert.equal(R112.linkBookingPersonRefusal({ ...base, personId: 'A', targetId: 'b' })?.reason, 'resolves')
+  assert.equal(R112.linkBookingPersonRefusal({ ...base, personId: 'x', targetId: 'pending' })?.reason, 'not_candidate')
+  assert.equal(R112.linkBookingPersonRefusal({ ...base, personId: 'x', targetId: 'me' })?.reason, 'not_candidate')
+  assert.equal(R112.linkBookingPersonRefusal({ ...base, personId: ' ', targetId: 'b' })?.reason, 'blank')
+  // The write: arrayUnion + metadata; null when already there (case-insensitive), own id, blank, bad metadata.
   const person = { id: 'farnie', formerUserIds: ['OLD-1'] }
   assert.deepEqual(
     R112.linkBookingPersonWriteFields({ person, personId: '6A9632BA-X', actorUserId: 'admin', platform: 'web' }),
-    { set: { formerUserIds: ['OLD-1', '6A9632BA-X'], updatedBy: 'admin', updatedFrom: 'web' } }
+    { arrayUnion: { formerUserIds: ['6A9632BA-X'] }, set: { updatedBy: 'admin', updatedFrom: 'web' } }
   )
   assert.equal(R112.linkBookingPersonWriteFields({ person, personId: 'old-1', actorUserId: 'admin', platform: 'web' }), null)
   assert.equal(R112.linkBookingPersonWriteFields({ person, personId: 'FARNIE', actorUserId: 'admin', platform: 'web' }), null)
   assert.equal(R112.linkBookingPersonWriteFields({ person, personId: ' ', actorUserId: 'admin', platform: 'web' }), null)
   assert.equal(R112.linkBookingPersonWriteFields({ person, personId: 'x', actorUserId: '', platform: 'web' }), null)
-  // After linking, the id resolves to the person.
   const after = R112.scheduleRowPerson('6a9632ba-x', { accounts: [{ id: 'farnie', email: 'f@example.com', formerIds: ['OLD-1', '6A9632BA-X'] }], operatives: [] })
   assert.deepEqual([after.unresolved, after.accountId], [false, 'farnie'])
 })
@@ -14774,4 +14807,61 @@ test('1.45.0 packed script exports the claim evidence and timesheet evidence rul
   }
   assert.equal(packed.EXPENSE_AMOUNT_LABEL, 'Amount inc VAT')
   assert.equal(packed.CLAIM_EVIDENCE_ADD_SITE_AUDIT_LABEL, 'Add site audit')
+})
+
+// MARK: - 1.44.0: one level for every role shape (lineManagers `levelOf` = `permissionLevelOf`)
+
+test('1.44.0 levelOf: a flagless person is manager level whatever the role shape; operative and admin flags win', () => {
+  const base = { email: '', isActive: true, passwordSet: true, organizationId: 'org1' }
+  const noFlags = { isAdmin: false, isSuperAdmin: false, isManager: false, isOperativeMode: false }
+  const roster = [
+    { ...base, id: 'obj-flagless', firstName: 'Obj', surname: 'Flagless', email: 'obj@example.com', role: { ...noFlags } },
+    { ...base, id: 'member', firstName: 'Mem', surname: 'Ber', email: 'mem@example.com', role: 'member' },
+    { ...base, id: 'none', firstName: 'No', surname: 'Role', email: 'none@example.com' },
+    { ...base, id: 'obj-mgr', firstName: 'Obj', surname: 'Manager', email: 'objm@example.com', role: { ...noFlags, isManager: true } },
+    { ...base, id: 'obj-op', firstName: 'Obj', surname: 'Op', email: 'objop@example.com', role: { ...noFlags, isOperativeMode: true } },
+    { ...base, id: 'flag-op', firstName: 'Flag', surname: 'Op', email: 'flagop@example.com', operativeMode: true },
+    { ...base, id: 'str-op', firstName: 'Str', surname: 'Op', email: 'strop@example.com', role: 'operative' },
+    { ...base, id: 'obj-admin', firstName: 'Obj', surname: 'Admin', email: 'obja@example.com', role: { ...noFlags, isAdmin: true } },
+    { ...base, id: 'obj-super', firstName: 'Obj', surname: 'Super', email: 'objs@example.com', role: { ...noFlags, isSuperAdmin: true } },
+    { ...base, id: 'flag-admin', firstName: 'Flag', surname: 'Admin', email: 'flaga@example.com', adminAccess: true },
+  ]
+  const levels = Object.fromEntries(
+    R112.lineManagerCandidates(null, roster as never).map((c: { id: string; level: string }) => [c.id, c.level])
+  )
+  assert.deepEqual(levels, {
+    'obj-flagless': 'manager',
+    member: 'manager',
+    none: 'manager',
+    'obj-mgr': 'manager',
+    'obj-admin': 'admin',
+    'obj-super': 'admin',
+    'flag-admin': 'admin',
+  })
+  // The same people on the job manager picker.
+  assert.deepEqual(
+    R112.jobManagerCandidates(roster as never).map((c: { id: string }) => c.id).sort(),
+    Object.keys(levels).sort()
+  )
+  // The same line managers count for `lineManagerIds` (flagless object role was already a line manager there).
+  const report = { id: 'r1', email: 'r1@example.com', assignedManagerUserIds: ['obj-flagless'] }
+  assert.deepEqual(R112.lineManagerIds(report, roster as never), ['obj-flagless'])
+  // A ghost may be given a flagless legacy manager whichever roster shape the app passes (stored rows or resolved roles).
+  const draft = { firstName: 'Ghost', surname: 'Person', dayRate: 150, payBasis: 'day' as const, lineManagerIds: ['obj-flagless'] }
+  assert.equal(R112.ghostCreateError(draft, { roster: roster as never }), null)
+  assert.equal(R112.ghostCreateError({ ...draft, lineManagerIds: ['member'] }, { roster: roster as never }), null)
+  assert.equal(R112.ghostCreateError({ ...draft, lineManagerIds: ['obj-op'] }, { roster: roster as never }), R112.GHOST_LINE_MANAGER_INVALID_MESSAGE)
+})
+
+test('1.44.0 linkBookingPersonImpact: lists what else a link brings and asks for a tick when pay may change', () => {
+  assert.deepEqual(R112.linkBookingPersonImpact({}), { parts: [], alsoText: null, requiresPayAck: false })
+  assert.deepEqual(R112.linkBookingPersonImpact({ rateHistoryRows: 2, leaveRecords: 1 }), {
+    parts: ['2 pay-rate history rows', '1 leave record'],
+    alsoText: 'Also linked: 2 pay-rate history rows, 1 leave record. Pay for unsigned timesheets may change.',
+    requiresPayAck: true,
+  })
+  const noPay = R112.linkBookingPersonImpact({ timesheets: 1, overtimeRequests: 3, priceWorkItems: 1, expenseItems: 2, rateHistoryRows: 0 })
+  assert.equal(noPay.alsoText, 'Also linked: 1 timesheet, 3 overtime requests, 1 price work item, 2 expenses.')
+  assert.equal(noPay.requiresPayAck, false)
+  assert.equal(R112.LINK_BOOKING_PERSON_PAY_ACK_LABEL, 'I understand pay may change')
 })

@@ -72,3 +72,61 @@ export function bookingCoverageIsArchive(
 ): boolean {
   return Boolean(coverage && organizationId && coverage.organizationId === organizationId && coverage.fullHistory)
 }
+
+export type BookingCoverage = { organizationId: string; fullHistory: boolean; fromDayKey: string | null }
+
+/**
+ * 1.43.0 (review r318, second round): a booking store's `coverage` after one publish of its listener — the listener's
+ * own coverage when the publish is authoritative (a server answer of the whole query), else none. A cache replay, a
+ * plan that was re-planned or restarted by the data check, or a part that has not answered yet clears it until the new
+ * query answers, so a timesheet is never signed on rows from an earlier query.
+ */
+export function bookingCoverageAfterPublish(
+  listenerCoverage: BookingCoverage,
+  meta: { authoritative?: boolean } | null | undefined
+): BookingCoverage | null {
+  return meta?.authoritative === true ? listenerCoverage : null
+}
+
+/**
+ * 1.43.0: `coverage` when a listener is (re)started — kept only when the same live query keeps running; any new query
+ * (a wider bound, a new plan) starts with none.
+ */
+export function bookingCoverageOnSubscribe(
+  current: BookingCoverage | null,
+  sameLiveQuery: boolean
+): BookingCoverage | null {
+  return sameLiveQuery ? current : null
+}
+
+/**
+ * 1.43.0 (review r318, third round): whether a metadata-only snapshot (no document changed) re-publishes the held rows
+ * as authoritative. Yes when the server confirmed them (not from cache, no unconfirmed writes of this device), the
+ * held rows are this snapshot, and the last publish to the store was not authoritative — the query's first server
+ * answer, or the confirmation after a network blip published a cached change. Otherwise the store would keep its
+ * cleared `coverage` until a reload.
+ */
+export function republishHeldAsAuthoritative(input: {
+  fromCache: boolean
+  hasPendingWrites: boolean
+  heldIsSnapshot: boolean
+  lastPublishAuthoritative: boolean
+}): boolean {
+  return !input.fromCache && !input.hasPendingWrites && input.heldIsSnapshot && !input.lastPublishAuthoritative
+}
+
+/**
+ * 1.43.0 (review r318): whether one single-document snapshot of a read plan (now listened to with metadata changes) is
+ * published: the first one always; then when the data changed, or when it is a server confirmation (not from cache,
+ * no unconfirmed writes of this device) of data last published from cache or with a local write. A metadata-only
+ * snapshot that changes nothing for the store is not published.
+ */
+export function documentSnapshotPublishes(input: {
+  delivered: boolean
+  changed: boolean
+  wasFromServer: boolean
+  nowFromServer: boolean
+}): boolean {
+  if (!input.delivered || input.changed) return true
+  return input.nowFromServer && !input.wasFromServer
+}

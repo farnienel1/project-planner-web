@@ -1,5 +1,6 @@
 'use client'
 
+import { bookingCoverageAfterPublish, bookingCoverageOnSubscribe } from '@/lib/firebase/orgCollectionMerge'
 import { create } from 'zustand'
 import { doc, getDoc, setDoc, writeBatch } from 'firebase/firestore'
 import { addBookingDeleteWithTombstone, commitBookingMove, deleteBookingWithTombstone } from '@/lib/bookings/bookingTombstoneWrite'
@@ -155,6 +156,8 @@ export const useBookingStore = create<BookingState>((set, get) => ({
     if (foreign) set({ bookings: [], loading: true, ready: false, error: null, coverage: null })
     else if (already || current.length > 0) set({ loading: false })
     else set({ loading: true, error: null })
+    // Review r318: a new query (a wider bound, a re-plan) starts with no coverage until it answers.
+    set({ coverage: bookingCoverageOnSubscribe(get().coverage, already) })
     const coverage = { organizationId, fullHistory: bookingDownload.fullHistory, fromDayKey: bookingDownload.loadedFromDayKey }
     subscribeBookingsFor('bookings', organizationId, 'bookings', (docs, meta) => {
       const previous = get().bookings.filter(
@@ -163,7 +166,7 @@ export const useBookingStore = create<BookingState>((set, get) => ({
       const bookings = bookingsFromListenerDocs({ organizationId, docs, previous })
       // 1.43.0: `coverage` only from a server answer of this query (every part of a plan): cached or partial rows
       // (a widened bound replays the narrower rows first) never count as the period's bookings.
-      set(meta?.authoritative === true ? { bookings, loading: false, ready: true, coverage } : { bookings, loading: false, ready: true })
+      set({ bookings, loading: false, ready: true, coverage: bookingCoverageAfterPublish(coverage, meta) })
     }, (error) => {
       set({ error: error.message, loading: false })
     }, { queryId, constraints: bookingDownloadConstraints(bookingDownload) })

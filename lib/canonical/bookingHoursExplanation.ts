@@ -23,7 +23,7 @@
  */
 
 import { formatClockMinutes, parseClockMinutes, standardDayCoverage, windowCoverage } from './engine'
-import { weekdayPaidHours, type OrgPayrollTimePolicy } from './organizationSettings'
+import { weekdayPaidHours, weekendCountsAsHours, type OrgPayrollTimePolicy } from './organizationSettings'
 import {
   payrollBreakOnDay,
   payrollHoursResult,
@@ -139,7 +139,7 @@ function dayRule(
   if (weekend) {
     const window = weekend.allHoursAtMultiplierMode ? null : weekendFullDayWindow(policy, weekend)
     if (!window) return { kind: 'weekendAllHours', rule: `${label} every hour at ${times(rate)}×${brk}`, fullDayHours: null, windowHours: null }
-    const countsAs = Number(weekend.countsAsStandardHours ?? weekdayPaidHours(policy)) || 0
+    const countsAs = weekendCountsAsHours(weekend)
     return {
       kind: 'weekendWindow',
       rule: `${label} full day: ${formatClockMinutes(window.start)}–${formatClockMinutes(window.end)} counts as ${h(countsAs)}, hours outside it at ${times(rate)}×${brk}`,

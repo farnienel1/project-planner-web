@@ -10,32 +10,107 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { collection, doc, getDoc, getDocs, serverTimestamp, updateDoc } from 'firebase/firestore'
+import { arrayUnion, collection, doc, documentId, getDocs, query, runTransaction, serverTimestamp, where } from 'firebase/firestore'
 import { getFirebaseDb } from '@/lib/firebase/ensureFirebase'
 import { auth } from '@/lib/firebase/config'
 import {
   LINK_BOOKING_PERSON_ACTION,
+  LINK_BOOKING_PERSON_ALREADY_MESSAGE,
+  LINK_BOOKING_PERSON_PAY_ACK_LABEL,
+  LINK_BOOKING_PERSON_SELF_NOTE,
   UNRESOLVED_BOOKINGS_EMPTY,
   UNRESOLVED_BOOKINGS_HEADING,
   UNRESOLVED_BOOKINGS_HELP,
   linkBookingPersonCandidates,
   linkBookingPersonConfirmMessage,
   linkBookingPersonDoneMessage,
+  linkBookingPersonImpact,
+  linkBookingPersonRefusal,
   linkBookingPersonWriteFields,
   parseBookingDocument,
   parseManagerSiteBookingDocument,
   rosterAliasIdsFor,
   unresolvedBookingPeople,
+  type LinkBookingPersonFiledUnder,
+  type LinkBookingPersonImpact,
+  type LinkCandidateProfile,
   type UnresolvedBookingInput,
   type UnresolvedBookingPerson,
 } from '@/lib/canonical'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
+import { useAuthStore } from '@/lib/stores/authStore'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 import { dayKeyInZone } from '@/lib/orgTime/zoneTime'
 import { formatLongDayKey } from '@/lib/canonical/dayKeys'
 
 type Loaded = { bookings: UnresolvedBookingInput[] }
+
+/** A users document as the link rules read it (every document of the organisation, never the email fold). */
+function linkProfile(id: string, data: Record<string, unknown>): LinkCandidateProfile {
+  const list = (value: unknown) => (Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [])
+  const str = (value: unknown) => (typeof value === 'string' ? value : null)
+  return {
+    id,
+    firstName: str(data.firstName),
+    surname: str(data.surname) ?? str(data.lastName),
+    name: str(data.name),
+    displayName: str(data.displayName),
+    email: str(data.email),
+    organizationId: str(data.organizationId),
+    isActive: typeof data.isActive === 'boolean' ? data.isActive : null,
+    passwordSet: typeof data.passwordSet === 'boolean' ? data.passwordSet : null,
+    ghost: data.ghost === true,
+    formerUserIds: list(data.formerUserIds),
+    sameEmailUserIds: list(data.sameEmailUserIds),
+  }
+}
+
+/** Every users document of the organisation, read from the server (the picker and the re-check). */
+async function loadOrgRoster(organizationId: string): Promise<LinkCandidateProfile[]> {
+  const snap = await getDocs(query(collection(getFirebaseDb(), 'users'), where('organizationId', '==', organizationId)))
+  return snap.docs.map((row) => linkProfile(row.id, row.data()))
+}
+
+/**
+ * Rulebook 1.44.0 §11 (`linkBookingPersonImpact`): what else is filed under the id — counted once per document,
+ * whichever field names it. Admin reads; a collection the viewer may not read counts as 0 rather than blocking the link.
+ */
+async function loadFiledUnder(organizationId: string, personId: string): Promise<LinkBookingPersonFiledUnder> {
+  const db = getFirebaseDb()
+  const org = (name: string) => collection(db, 'organizations', organizationId, name)
+  const count = async (queries: Array<ReturnType<typeof query>>): Promise<number> => {
+    const ids = new Set<string>()
+    for (const q of queries) {
+      try {
+        const snap = await getDocs(q)
+        for (const d of snap.docs) ids.add(d.id)
+      } catch {
+        // Not readable for this viewer: leave it out of the count.
+      }
+    }
+    return ids.size
+  }
+  const prefix = `timesheet_${personId}_`
+  const [rateHistoryRows, leaveRecords, timesheets, overtimeRequests, priceWorkItems, expenseItems] = await Promise.all([
+    count([
+      query(org('operativeDayRateHistory'), where('userId', '==', personId)),
+      query(org('operativeDayRateHistory'), where('operativeId', '==', personId)),
+    ]),
+    count([
+      query(org('holidayBookings'), where('userId', '==', personId)),
+      query(org('holidayBookings'), where('operativeId', '==', personId)),
+    ]),
+    count([
+      query(org('settings'), where(documentId(), '>=', prefix), where(documentId(), '<', `${prefix}\uf8ff`)),
+      query(org('settings'), where('userId', '==', personId)),
+    ]),
+    count([query(org('overtimeRequests'), where('userId', '==', personId))]),
+    count([query(org('priceWorkItems'), where('userId', '==', personId))]),
+    count([query(org('expenseItems'), where('userId', '==', personId))]),
+  ])
+  return { rateHistoryRows, leaveRecords, timesheets, overtimeRequests, priceWorkItems, expenseItems }
+}
 
 function jobLabel(data: Record<string, unknown>): string {
   const number = typeof data.jobNumber === 'string' || typeof data.jobNumber === 'number' ? String(data.jobNumber).trim() : ''
@@ -51,8 +126,16 @@ export function BookingsNotLinkedToPerson({ organizationId }: { organizationId: 
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [picking, setPicking] = useState<string | null>(null)
+  const [impact, setImpact] = useState<LinkBookingPersonImpact | null>(null)
+  const [payAck, setPayAck] = useState(false)
   const [choice, setChoice] = useState<string>('')
   const [saving, setSaving] = useState(false)
+  const [roster, setRoster] = useState<LinkCandidateProfile[]>([])
+  const viewer = useAuthStore((state) => state.user)
+  const viewerIds = useMemo(
+    () => [viewer?.id, ...(viewer?.formerUserIds ?? [])].filter((id): id is string => typeof id === 'string' && id.trim() !== ''),
+    [viewer]
+  )
 
   useEffect(() => {
     void loadUsers(organizationId)
@@ -65,12 +148,14 @@ export function BookingsNotLinkedToPerson({ organizationId }: { organizationId: 
     try {
       const db = getFirebaseDb()
       const zone = organizationZoneOr()
-      const [bookingSnap, managerSnap, projectSnap, smallWorkSnap] = await Promise.all([
+      const [bookingSnap, managerSnap, projectSnap, smallWorkSnap, orgRoster] = await Promise.all([
         getDocs(collection(db, 'organizations', organizationId, 'bookings')),
         getDocs(collection(db, 'organizations', organizationId, 'managerSiteBookings')),
         getDocs(collection(db, 'organizations', organizationId, 'projects')),
         getDocs(collection(db, 'organizations', organizationId, 'smallWorks')),
+        loadOrgRoster(organizationId),
       ])
+      setRoster(orgRoster)
       const jobs = new Map<string, string>()
       for (const row of [...projectSnap.docs, ...smallWorkSnap.docs]) jobs.set(row.id.toLowerCase(), jobLabel(row.data()))
       const jobName = (id: string | undefined) => (id ? jobs.get(id.toLowerCase()) ?? '' : '')
@@ -133,47 +218,74 @@ export function BookingsNotLinkedToPerson({ organizationId }: { organizationId: 
     [loaded, people]
   )
 
+  // Rulebook 1.44.0 §11: every users document of the organisation (not the email fold), one option per person, never the
+  // viewer (nobody writes their own identity links — the rules refuse it, §16).
   const candidates = useMemo(
-    () =>
-      linkBookingPersonCandidates(
-        users.map((u) => ({
-          id: u.id,
-          firstName: u.firstName ?? null,
-          surname: u.surname ?? null,
-          name: (u as { name?: string | null }).name ?? null,
-          email: u.email ?? null,
-          organizationId: u.organizationId ?? null,
-          isActive: u.isActive ?? null,
-        })),
-        organizationId
-      ),
-    [users, organizationId]
+    () => linkBookingPersonCandidates(roster, organizationId, { viewerIds }),
+    [roster, organizationId, viewerIds]
   )
 
   const link = async (row: UnresolvedBookingPerson) => {
     const person = candidates.find((c) => c.id === choice)
     if (!person) return
-    if (!window.confirm(linkBookingPersonConfirmMessage(row.count, person.name))) return
+    if (!impact || (impact.requiresPayAck && !payAck)) return
+    const confirmText = [linkBookingPersonConfirmMessage(row.count, person.name), impact.alsoText].filter(Boolean).join('\n\n')
+    if (!window.confirm(confirmText)) return
     setSaving(true)
     setError(null)
     setNotice(null)
     try {
       const db = getFirebaseDb()
+      // A fresh read of the organisation's people and catalogue rows for the re-check (`linkBookingPersonRefusal`).
+      const [freshRoster, operativeSnap] = await Promise.all([
+        loadOrgRoster(organizationId),
+        getDocs(collection(db, 'organizations', organizationId, 'operatives')),
+      ])
+      const freshOperatives = operativeSnap.docs.map((d) => ({
+        id: d.id,
+        email: typeof d.data().email === 'string' ? (d.data().email as string) : null,
+      }))
       const ref = doc(db, 'users', person.id)
-      // Read the stored list now, so a link added elsewhere is kept (append only).
-      const stored = await getDoc(ref)
-      const formerUserIds = stored.data()?.formerUserIds
-      const write = linkBookingPersonWriteFields({
-        person: { id: person.id, formerUserIds: Array.isArray(formerUserIds) ? formerUserIds : [] },
-        personId: row.personId,
-        actorUserId: auth?.currentUser?.uid ?? '',
-        platform: 'web',
+      const outcome = await runTransaction(db, async (tx) => {
+        const snap = await tx.get(ref)
+        if (!snap.exists()) return { refused: 'That person no longer exists. Check again to refresh the list.' }
+        // The chosen person as stored right now, laid over the fresh roster.
+        const target = linkProfile(snap.id, snap.data())
+        const rosterNow = [...freshRoster.filter((r) => r.id !== snap.id), target]
+        const refusal = linkBookingPersonRefusal({
+          personId: row.personId,
+          targetId: person.id,
+          roster: rosterNow,
+          operatives: freshOperatives,
+          organizationId,
+          viewerIds,
+        })
+        if (refusal) return { refused: refusal.message }
+        const write = linkBookingPersonWriteFields({
+          person: { id: snap.id, formerUserIds: target.formerUserIds ?? [] },
+          personId: row.personId,
+          actorUserId: auth?.currentUser?.uid ?? '',
+          platform: 'web',
+        })
+        if (!write) return { wrote: false }
+        tx.update(ref, {
+          formerUserIds: arrayUnion(...write.arrayUnion.formerUserIds),
+          ...write.set,
+          updatedAt: serverTimestamp(),
+        })
+        return { wrote: true }
       })
-      if (write) await updateDoc(ref, { ...write.set, updatedAt: serverTimestamp() })
-      setNotice(linkBookingPersonDoneMessage(row.count, person.name))
-      setPicking(null)
-      setChoice('')
-      await loadUsers(organizationId, { force: true })
+      if ('refused' in outcome) {
+        setError(outcome.refused ?? null)
+      } else {
+        setNotice(outcome.wrote ? linkBookingPersonDoneMessage(row.count, person.name) : LINK_BOOKING_PERSON_ALREADY_MESSAGE)
+        setPicking(null)
+        setChoice('')
+        setImpact(null)
+        setPayAck(false)
+        await loadUsers(organizationId, { force: true })
+        await run()
+      }
     } catch (err) {
       setError(
         err instanceof Error && /permission/i.test(err.message)
@@ -243,15 +355,42 @@ export function BookingsNotLinkedToPerson({ organizationId }: { organizationId: 
                       </option>
                     ))}
                   </select>
-                  <button type="button" className="btn primary sm" disabled={!choice || saving} onClick={() => void link(row)}>
+                  <span className="w-full text-[12px] text-[var(--ink3)]">{LINK_BOOKING_PERSON_SELF_NOTE}</span>
+                  {!impact ? (
+                    <span className="w-full text-[12px] text-[var(--ink3)]">Checking what else is filed under this ID…</span>
+                  ) : impact.alsoText ? (
+                    <span className="w-full text-[12px] font-medium text-amber-800">{impact.alsoText}</span>
+                  ) : null}
+                  {impact?.requiresPayAck ? (
+                    <label className="flex w-full items-center gap-2 text-[12px]">
+                      <input type="checkbox" checked={payAck} onChange={(event) => setPayAck(event.target.checked)} />
+                      {LINK_BOOKING_PERSON_PAY_ACK_LABEL}
+                    </label>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="btn primary sm"
+                    disabled={!choice || saving || !impact || (impact.requiresPayAck && !payAck)}
+                    onClick={() => void link(row)}
+                  >
                     {saving ? 'Linking…' : 'Link'}
                   </button>
-                  <button type="button" className="btn sm ghost" disabled={saving} onClick={() => { setPicking(null); setChoice('') }}>
+                  <button type="button" className="btn sm ghost" disabled={saving} onClick={() => { setPicking(null); setChoice(''); setImpact(null); setPayAck(false) }}>
                     Cancel
                   </button>
                 </div>
               ) : (
-                <button type="button" className="btn sm mt-2" onClick={() => { setPicking(row.personId); setChoice('') }}>
+                <button
+                  type="button"
+                  className="btn sm mt-2"
+                  onClick={() => {
+                    setPicking(row.personId)
+                    setChoice('')
+                    setImpact(null)
+                    setPayAck(false)
+                    void loadFiledUnder(organizationId, row.personId).then((filed) => setImpact(linkBookingPersonImpact(filed)))
+                  }}
+                >
                   {LINK_BOOKING_PERSON_ACTION}
                 </button>
               )}
