@@ -14779,6 +14779,55 @@ test('1.45.0 PAYE item edit: the person only, validated as new, only changed fie
   assert.deepEqual(r145.expenseUpdateWriteFields({ item: expense, userId: UID145, draft: { ...exDraft, title: 'Diesel' }, organizationId: ORG145 }), { set: { title: 'Diesel' }, remove: [] })
 })
 
+test('1.45.0 review #322 F1: any owner change reopens a fingerprinted entry review; reviews stored before 1.45.0 stay amount-only', () => {
+  const ev = (ms: number) => ({ path: `organizations/${ORG145}/payeClaims/${UID145}/${UID145}_${ms}.jpg`, name: 'r.jpg', kind: 'photo' })
+  // The stored row (Timestamp-ish dates, blank agreed manager) and the app's draft entry (Date, "Manager") agree.
+  const stored = { id: 'P1', title: 'Tiling ', details: '', jobNumber: 4521, agreedManagerName: '', amount: '50', startDate: { seconds: 1762732800, nanoseconds: 0 }, endDate: null, evidence: [ev(1)] }
+  const draft = { id: 'P1', title: 'Tiling', details: '', jobNumber: '4521', agreedManagerName: 'Manager', amount: 50, startDate: new Date(1762732800000), endDate: null, evidence: [{ ...ev(1), contentType: 'image/jpeg', auditId: null }] }
+  assert.equal(r145.timesheetEntryFingerprint(stored), r145.timesheetEntryFingerprint(draft))
+
+  // The line manager declines: the review carries the fingerprint.
+  const written = r145.timesheetEntryReviewWriteFields({
+    stored: {},
+    entries: [{ ...draft, managerDecision: 'declined' as const }],
+    reviewedByUserId: 'lm',
+    reviewedAtMs: 1,
+  })
+  const review = written['extraEntryReviews.P1'] as Record<string, unknown>
+  assert.equal(review.reviewedFingerprint, r145.timesheetEntryFingerprint(draft))
+  const sheet = (entry: Record<string, unknown>, reviews: Record<string, unknown>) => ({ extraEntryReviews: reviews, priceWorkEntries: [entry] })
+  assert.equal(r145.timesheetEntryDecision(sheet(stored, { P1: review }), stored).decision, 'declined')
+  // The owner adds evidence, changes the date or the job number — same amount — and the review goes stale.
+  for (const changed of [
+    { ...stored, evidence: [ev(1), ev(2)] },
+    { ...stored, startDate: { seconds: 1762819200, nanoseconds: 0 } },
+    { ...stored, jobNumber: 'J-9' },
+    { ...stored, details: 'Hall too' },
+  ]) {
+    const result = r145.timesheetEntryDecision(sheet(changed, { P1: review }), changed)
+    assert.deepEqual([result.decision, result.source], ['pending', 'stale-review'])
+  }
+  // A review stored before 1.45.0 (no fingerprint): only an amount change reopens it.
+  const { reviewedFingerprint: _drop, ...oldReview } = review
+  void _drop
+  const evidenceOnly = { ...stored, evidence: [ev(1), ev(2)] }
+  assert.equal(r145.timesheetEntryDecision(sheet(evidenceOnly, { P1: oldReview }), evidenceOnly).decision, 'declined')
+  const amountChanged = { ...stored, amount: 60 }
+  assert.equal(r145.timesheetEntryDecision(sheet(amountChanged, { P1: oldReview }), amountChanged).decision, 'pending')
+  // An unchanged entry is not rewritten; an old review gets its fingerprint on the next review save.
+  const parsed = r145.parseTimesheetEntryReviews({ extraEntryReviews: { P1: review } })
+  assert.deepEqual(r145.timesheetEntryReviewWriteFields({ stored: parsed, entries: [{ ...draft, managerDecision: 'declined' as const }], reviewedByUserId: 'lm', reviewedAtMs: 2 }), {})
+  const parsedOld = r145.parseTimesheetEntryReviews({ extraEntryReviews: { P1: oldReview } })
+  assert.ok(r145.timesheetEntryReviewWriteFields({ stored: parsedOld, entries: [{ ...draft, managerDecision: 'declined' as const }], reviewedByUserId: 'lm', reviewedAtMs: 2 })['extraEntryReviews.P1'])
+  // An older caller passing only id and amount writes an amount-only review, as before.
+  const bare = r145.timesheetEntryReviewWriteFields({ stored: {}, entries: [{ id: 'X1', amount: 5, managerDecision: 'approved' as const }], reviewedByUserId: 'lm', reviewedAtMs: 1 })
+  assert.equal('reviewedFingerprint' in (bare['extraEntryReviews.X1'] as Record<string, unknown>), false)
+  // Totals follow the decision: the declined entry counts 0, the reopened one its own amount.
+  const lines: never[] = []
+  assert.equal(r145.timesheetTotals({ sheet: { ...sheet(stored, { P1: review }), managerSignedAt: null }, payrollLines: lines, extrasMode: 'decided' }).priceWork, 0)
+  assert.equal(r145.timesheetTotals({ sheet: { ...sheet({ ...stored, amount: 50, jobNumber: 'J-9' }, { P1: review }), managerSignedAt: null }, payrollLines: lines, extrasMode: 'decided' }).priceWork, 50)
+})
+
 test('1.45.0 packed script exports the claim evidence and timesheet evidence rules', () => {
   const source = readFileSync(new URL('./dist/canonical-business.js', import.meta.url), 'utf8')
   const sandbox: { ProjectPlannerCanonical?: Record<string, unknown> } = {}
@@ -14802,6 +14851,7 @@ test('1.45.0 packed script exports the claim evidence and timesheet evidence rul
     'priceWorkUpdateWriteFields',
     'expenseUpdateWriteFields',
     'payeClaimEditDraft',
+    'timesheetEntryFingerprint',
   ]) {
     assert.equal(typeof packed[name], 'function', name)
   }

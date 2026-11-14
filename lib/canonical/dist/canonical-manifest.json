@@ -1,7 +1,7 @@
 {
   "rulebookVersion": "1.45.0",
-  "rulebookSha256": "cfaeed0325e53c103ec2b5f61147e9e283b3de39d0d9fea48f8b02a928bd8ddc",
-  "bundleSha256": "45f87cedd94b6719717fb29d6395375f7b47e44864ae25d2f7c903406ea8cc93",
+  "rulebookSha256": "0123011ce205f66f138da2cfb4237880699d2ac9cc4d42197813d1233d8d46b9",
+  "bundleSha256": "a73da39e34bb63db71807290fd6351934899fb2b08c0ae569310afa9bf91532e",
   "crossPlatformContractSha256": "1e4c0f21055264d532ebc2040e480aaf3e2f594fa9c9f7e2dc809bf0255930ae",
   "dataParityFixtureSha256": "c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f",
   "exports": [
@@ -1472,6 +1472,7 @@
     "timesheetEntryEffectiveAmount",
     "timesheetEntryEvidenceToDelete",
     "timesheetEntryEvidenceWriteFields",
+    "timesheetEntryFingerprint",
     "timesheetEntryId",
     "timesheetEntryReviewWriteFields",
     "timesheetEntryReviewsAfterWrite",

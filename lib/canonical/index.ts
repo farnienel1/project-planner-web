@@ -840,6 +840,7 @@ export {
   timesheetEntryDecision,
   timesheetEntryEffectiveAmount,
   timesheetEntryReviewWriteFields,
+  timesheetEntryFingerprint,
   timesheetEntryReviewsAfterWrite,
   timesheetOwnerWriteFields,
   timesheetWriterIsReviewer,

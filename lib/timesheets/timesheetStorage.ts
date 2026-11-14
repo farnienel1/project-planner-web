@@ -118,9 +118,12 @@ function decisionOf(value: TimesheetEntryDecision): TimesheetManagerDecision {
 function mapEntries(
   data: Record<string, unknown>,
   sheetDocId: string,
-  timeZone: string
+  timeZone: string,
+  /** Rulebook 1.45.0: every id the sheet's person goes by (`personIdSet`), so evidence they uploaded under their
+   *  current id is kept on a sheet filed under an older one. */
+  ownerUserIds: ReadonlyArray<string> = []
 ): { expenseEntries: TimesheetExpenseEntry[]; priceWorkEntries: TimesheetPriceWorkEntry[] } {
-  const parsed = parseTimesheetEntries(sheetDocId, data, { timeZone })
+  const parsed = parseTimesheetEntries(sheetDocId, data, { timeZone, ownerUserIds })
   return {
     expenseEntries: parsed.expenseEntries.map((entry) => ({
       id: entry.id,
@@ -267,11 +270,11 @@ function mapReviews(raw: unknown): Record<string, TimesheetPayrollLineReview> {
 
 export function draftFromFirestoreMap(
   data: Record<string, unknown>,
-  options?: { includeSignatures?: boolean; sheetDocId?: string | null; timeZone?: string | null }
+  options?: { includeSignatures?: boolean; sheetDocId?: string | null; timeZone?: string | null; ownerUserIds?: ReadonlyArray<string> | null }
 ): TimesheetDraft {
   const includeSignatures = options?.includeSignatures !== false
   const status = parseTimesheetStatusFields(data)
-  const entries = mapEntries(data, options?.sheetDocId?.trim() || '', organizationZoneOr(options?.timeZone))
+  const entries = mapEntries(data, options?.sheetDocId?.trim() || '', organizationZoneOr(options?.timeZone), options?.ownerUserIds ?? [])
 
   return {
     managerNote: typeof data.managerNote === 'string' ? data.managerNote : '',
@@ -453,13 +456,14 @@ async function loadTimesheetDraftByCandidates(
   userId: string,
   weekStart: Date,
   timeZone: string,
-  includeSignatures = true
+  includeSignatures = true,
+  ownerUserIds: ReadonlyArray<string> = [userId]
 ): Promise<{ draft: TimesheetDraft | null; allMissing: boolean }> {
   const unique = [...new Set(candidateTimesheetDocIds(userId, weekStart, timeZone))]
   const hits = await Promise.all(unique.map(async (id) => ({ id, data: await readDoc(organizationId, id) })))
   const hit = hits.find((row) => row.data)
   if (hit?.data) {
-    return { draft: rememberSource(draftFromFirestoreMap(hit.data, { includeSignatures, sheetDocId: hit.id, timeZone }), hit.id), allMissing: false }
+    return { draft: rememberSource(draftFromFirestoreMap(hit.data, { includeSignatures, sheetDocId: hit.id, timeZone, ownerUserIds }), hit.id), allMissing: false }
   }
   return { draft: null, allMissing: unique.length > 0 && hits.every((row) => row.data == null) }
 }
@@ -526,9 +530,11 @@ export async function loadTimesheetDraft(
   userId: string,
   weekStart: Date,
   timeZone: string = LONDON_TIME_ZONE,
-  periodEnd?: Date
+  periodEnd?: Date,
+  /** Rulebook 1.45.0: every id of the person (`personIdSet`); their own id when not given. */
+  ownerUserIds: ReadonlyArray<string> = [userId]
 ): Promise<TimesheetDraft> {
-  const direct = await loadTimesheetDraftByCandidates(organizationId, userId, weekStart, timeZone)
+  const direct = await loadTimesheetDraftByCandidates(organizationId, userId, weekStart, timeZone, true, ownerUserIds)
   if (direct.draft) return direct.draft
   try {
     const key = dayKey(weekStart, timeZone)
@@ -537,9 +543,9 @@ export async function loadTimesheetDraft(
     )
     for (const entry of snap.docs) {
       const data = entry.data() as Record<string, unknown>
-      if (data.userId === userId) return rememberSource(draftFromFirestoreMap(data, { sheetDocId: entry.id, timeZone }), entry.id)
+      if (data.userId === userId) return rememberSource(draftFromFirestoreMap(data, { sheetDocId: entry.id, timeZone, ownerUserIds }), entry.id)
       if (weekStartMatches(data, weekStart, timeZone) && entry.id.includes(userId)) {
-        return rememberSource(draftFromFirestoreMap(data, { sheetDocId: entry.id, timeZone }), entry.id)
+        return rememberSource(draftFromFirestoreMap(data, { sheetDocId: entry.id, timeZone, ownerUserIds }), entry.id)
       }
     }
   } catch {

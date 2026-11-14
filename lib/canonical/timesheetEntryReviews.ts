@@ -14,7 +14,12 @@
  *   - The authoritative decision for an entry is `extraEntryReviews[entryId]`
  *     `{ decision, revisedAmount, reviewedAmount, reviewedByUserId, reviewedAtMs }`.
  *     A review made against a different amount than the entry now has is stale:
- *     the entry is `pending` again until the manager reviews it.
+ *     the entry is `pending` again until the manager reviews it. 1.45.0: a review
+ *     written from 1.45.0 also stores `reviewedFingerprint`
+ *     (`timesheetEntryFingerprint`: the entry's own fields and evidence), and is
+ *     stale when the entry's fingerprint differs — any owner change reopens it, as
+ *     PAYE does. A review stored before 1.45.0 (no fingerprint) keeps the
+ *     amount-only rule, so no older decision is reopened.
  *   - The inline `managerDecision` / `managerRevisedAmount` on each entry is
  *     still written (old builds read it) but the owner can write it too, so it
  *     is trusted only when it lowers the amount paid, or on a legacy sheet
@@ -29,7 +34,7 @@
 import { normalizeDocumentId } from './scheduleSources'
 import { personIdSet, type PersonRosterRow } from './personIds'
 import { parseTimesheetStatusFields } from './timesheetPeriod'
-import { documentWriteFields, type DocumentWriteFields } from './peopleDocuments'
+import { documentInstantMs, documentWriteFields, type DocumentWriteFields } from './peopleDocuments'
 
 export type TimesheetEntryDecision = 'pending' | 'approved' | 'declined' | 'edited'
 
@@ -74,6 +79,8 @@ export type TimesheetEntryReview = {
   reviewedAmount: number | null
   reviewedByUserId: string
   reviewedAtMs: number | null
+  /** 1.45.0: `timesheetEntryFingerprint` of the entry the decision was made against; null on older reviews. */
+  reviewedFingerprint: string | null
 }
 
 export type TimesheetEntryDecisionSource =
@@ -113,7 +120,46 @@ function parseReview(raw: unknown): TimesheetEntryReview | null {
     reviewedAmount: finite(row.reviewedAmount),
     reviewedByUserId: text(row.reviewedByUserId),
     reviewedAtMs: finite(row.reviewedAtMs),
+    reviewedFingerprint: text(row.reviewedFingerprint) || null,
   }
+}
+
+function fingerprintText(value: unknown): string {
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value)
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+/**
+ * Rulebook 1.45.0 §8: the fingerprint of a timesheet price work or expense entry's own fields — name, description,
+ * job number, the manager who agreed it (read as the reader does: blank is "Manager"), its dates (any stored shape,
+ * as instants), amount (to the penny) and evidence paths in order (`claimEvidenceSameList` style). Works on the stored
+ * row and on an app's draft entry alike. A line manager's review stores it (`reviewedFingerprint`); when the entry's
+ * fingerprint later differs, the review is stale and the entry is pending again (`timesheetEntryDecision`).
+ * Decisions and revised amounts are not part of it.
+ */
+export function timesheetEntryFingerprint(entry: Record<string, unknown> | null | undefined): string {
+  const row = entry || {}
+  const kind = row.startDate != null || row.agreedManagerName != null ? 'priceWork' : 'expense'
+  const when = (value: unknown) => {
+    const ms = documentInstantMs(value)
+    return ms == null ? '' : String(ms)
+  }
+  const amount = finite(row.amount)
+  const evidence = (Array.isArray(row.evidence) ? row.evidence : [])
+    .map((item) => (item && typeof item === 'object' ? fingerprintText((item as Record<string, unknown>).path) : ''))
+    .filter(Boolean)
+  return JSON.stringify([
+    kind,
+    fingerprintText(row.title),
+    fingerprintText(row.details),
+    fingerprintText(row.jobNumber),
+    kind === 'priceWork' ? fingerprintText(row.agreedManagerName) || 'Manager' : '',
+    when(row.date),
+    when(row.startDate),
+    when(row.endDate),
+    amount == null ? '' : (Math.round(amount * 100) / 100).toFixed(2),
+    evidence,
+  ])
 }
 
 /** The stored map, or null when the sheet has no `extraEntryReviews` field (a legacy sheet). */
@@ -187,6 +233,9 @@ export function timesheetEntryDecision(
     const review = id ? reviewFor(reviews, id) : undefined
     if (!review) {
       base = { decision: 'approved', revisedAmount: null, source: 'unreviewed' }
+    } else if (review.reviewedFingerprint != null && review.reviewedFingerprint !== timesheetEntryFingerprint(row)) {
+      // 1.45.0: any change to the entry's own fields or evidence since the review reopens it.
+      base = { decision: 'pending', revisedAmount: null, source: 'stale-review' }
     } else if (review.reviewedAmount != null && Math.abs(review.reviewedAmount - amount) >= AMOUNT_EPSILON) {
       base = { decision: 'pending', revisedAmount: null, source: 'stale-review' }
     } else {
@@ -206,6 +255,13 @@ export type TimesheetEntryReviewInput = {
   amount: number
   managerDecision: TimesheetEntryDecision
   managerRevisedAmount?: number | null
+  /**
+   * 1.45.0: the entry's own fields (`title`, `details`, `jobNumber`, `agreedManagerName`, dates, `evidence`). When
+   * `title` is given the review stores `reviewedFingerprint` (`timesheetEntryFingerprint`); without it (an older
+   * caller passing only id and amount) the review is written as before, amount-only.
+   */
+  title?: unknown
+  [field: string]: unknown
 }
 
 function sameNumber(a: number | null | undefined, b: number | null | undefined): boolean {
@@ -237,13 +293,15 @@ export function timesheetEntryReviewWriteFields(input: {
     const decision = parseTimesheetEntryDecision(entry.managerDecision)
     const revisedAmount = decision === 'edited' ? finite(entry.managerRevisedAmount) : null
     const amount = finite(entry.amount) ?? 0
+    const fingerprint = entry.title != null ? timesheetEntryFingerprint(entry as Record<string, unknown>) : null
     const prior = stored[id]
     if (
       input.stored &&
       prior &&
       prior.decision === decision &&
       sameNumber(prior.revisedAmount, revisedAmount) &&
-      sameNumber(prior.reviewedAmount, amount)
+      sameNumber(prior.reviewedAmount, amount) &&
+      (fingerprint == null || prior.reviewedFingerprint === fingerprint)
     ) {
       continue
     }
@@ -251,6 +309,7 @@ export function timesheetEntryReviewWriteFields(input: {
       decision,
       revisedAmount,
       reviewedAmount: amount,
+      ...(fingerprint != null ? { reviewedFingerprint: fingerprint } : {}),
       reviewedByUserId: reviewer,
       reviewedAtMs: Math.round(Number(input.reviewedAtMs) || 0),
     }

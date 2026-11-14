@@ -1488,6 +1488,7 @@ var ProjectPlannerCanonical = (() => {
     timesheetEntryEffectiveAmount: () => timesheetEntryEffectiveAmount,
     timesheetEntryEvidenceToDelete: () => timesheetEntryEvidenceToDelete,
     timesheetEntryEvidenceWriteFields: () => timesheetEntryEvidenceWriteFields,
+    timesheetEntryFingerprint: () => timesheetEntryFingerprint,
     timesheetEntryId: () => timesheetEntryId,
     timesheetEntryReviewWriteFields: () => timesheetEntryReviewWriteFields,
     timesheetEntryReviewsAfterWrite: () => timesheetEntryReviewsAfterWrite,
@@ -11032,8 +11033,35 @@ var ProjectPlannerCanonical = (() => {
       revisedAmount: decision === "edited" ? finite(row2.revisedAmount) : null,
       reviewedAmount: finite(row2.reviewedAmount),
       reviewedByUserId: text7(row2.reviewedByUserId),
-      reviewedAtMs: finite(row2.reviewedAtMs)
+      reviewedAtMs: finite(row2.reviewedAtMs),
+      reviewedFingerprint: text7(row2.reviewedFingerprint) || null
     };
+  }
+  function fingerprintText(value) {
+    if (typeof value === "number" && Number.isFinite(value)) return String(value);
+    return typeof value === "string" ? value.trim() : "";
+  }
+  function timesheetEntryFingerprint(entry) {
+    const row2 = entry || {};
+    const kind = row2.startDate != null || row2.agreedManagerName != null ? "priceWork" : "expense";
+    const when = (value) => {
+      const ms = documentInstantMs(value);
+      return ms == null ? "" : String(ms);
+    };
+    const amount = finite(row2.amount);
+    const evidence = (Array.isArray(row2.evidence) ? row2.evidence : []).map((item) => item && typeof item === "object" ? fingerprintText(item.path) : "").filter(Boolean);
+    return JSON.stringify([
+      kind,
+      fingerprintText(row2.title),
+      fingerprintText(row2.details),
+      fingerprintText(row2.jobNumber),
+      kind === "priceWork" ? fingerprintText(row2.agreedManagerName) || "Manager" : "",
+      when(row2.date),
+      when(row2.startDate),
+      when(row2.endDate),
+      amount == null ? "" : (Math.round(amount * 100) / 100).toFixed(2),
+      evidence
+    ]);
   }
   function parseTimesheetEntryReviews(sheet) {
     const raw = sheet ? sheet[TIMESHEET_ENTRY_REVIEWS_FIELD] : void 0;
@@ -11076,6 +11104,8 @@ var ProjectPlannerCanonical = (() => {
       const review = id2 ? reviewFor(reviews, id2) : void 0;
       if (!review) {
         base = { decision: "approved", revisedAmount: null, source: "unreviewed" };
+      } else if (review.reviewedFingerprint != null && review.reviewedFingerprint !== timesheetEntryFingerprint(row2)) {
+        base = { decision: "pending", revisedAmount: null, source: "stale-review" };
       } else if (review.reviewedAmount != null && Math.abs(review.reviewedAmount - amount) >= AMOUNT_EPSILON) {
         base = { decision: "pending", revisedAmount: null, source: "stale-review" };
       } else {
@@ -11103,14 +11133,16 @@ var ProjectPlannerCanonical = (() => {
       const decision = parseTimesheetEntryDecision(entry.managerDecision);
       const revisedAmount = decision === "edited" ? finite(entry.managerRevisedAmount) : null;
       const amount = finite(entry.amount) ?? 0;
+      const fingerprint = entry.title != null ? timesheetEntryFingerprint(entry) : null;
       const prior = stored[id2];
-      if (input.stored && prior && prior.decision === decision && sameNumber(prior.revisedAmount, revisedAmount) && sameNumber(prior.reviewedAmount, amount)) {
+      if (input.stored && prior && prior.decision === decision && sameNumber(prior.revisedAmount, revisedAmount) && sameNumber(prior.reviewedAmount, amount) && (fingerprint == null || prior.reviewedFingerprint === fingerprint)) {
         continue;
       }
       output[`${TIMESHEET_ENTRY_REVIEWS_FIELD}.${id2}`] = {
         decision,
         revisedAmount,
         reviewedAmount: amount,
+        ...fingerprint != null ? { reviewedFingerprint: fingerprint } : {},
         reviewedByUserId: reviewer,
         reviewedAtMs: Math.round(Number(input.reviewedAtMs) || 0)
       };
@@ -11613,7 +11645,7 @@ var ProjectPlannerCanonical = (() => {
   function rulebookStamp() {
     return {
       version: true ? "1.45.0" : "",
-      sha256: true ? "cfaeed0325e53c103ec2b5f61147e9e283b3de39d0d9fea48f8b02a928bd8ddc" : ""
+      sha256: true ? "0123011ce205f66f138da2cfb4237880699d2ac9cc4d42197813d1233d8d46b9" : ""
     };
   }
   function rulebookVersionLabel(version) {

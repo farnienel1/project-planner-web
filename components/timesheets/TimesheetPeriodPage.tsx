@@ -4,7 +4,7 @@
  */
 'use client'
 
-import { rulebookRoster } from '@/lib/staff/rulebookPeople'
+import { rulebookPerson, rulebookRoster } from '@/lib/staff/rulebookPeople'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { Booking, Operative, Project, User } from '@/types'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
@@ -127,6 +127,7 @@ import {
   parseTimesheetEntries,
   timesheetEvidenceOwnerIds,
   timesheetEvidencePages,
+  personIdSet,
   timesheetEntryEvidenceToDelete,
   type PayeClaimEvidence,
   OVERLAPPING_BOOKING_NOTE,
@@ -524,7 +525,8 @@ export function TimesheetPeriodPage({
     let cancelled = false
     setLoading(true)
     setLoadFailed(false)
-    loadTimesheetDraft(organization.id, subjectUser.id, periodStart, timeZone, periodEnd)
+    // Rulebook 1.45.0: every id the person goes by (`personIdSet`), so evidence on a sheet filed under an older id is kept.
+    loadTimesheetDraft(organization.id, subjectUser.id, periodStart, timeZone, periodEnd, subjectEvidenceOwnerIds(subjectRef.current, usersRef.current))
       .then((loaded) => {
         if (cancelled) return
         sourceDocumentId.current = timesheetSourceDocumentId(loaded)
@@ -558,7 +560,7 @@ export function TimesheetPeriodPage({
         data.updatedBy === viewer?.id && data.updatedFrom === 'web' && Date.now() - lastPersistAt.current < 10_000
       if (ownEcho) return
       sourceDocumentId.current = docId
-      const parsed = draftFromFirestoreMap(data, { sheetDocId: docId, timeZone })
+      const parsed = draftFromFirestoreMap(data, { sheetDocId: docId, timeZone, ownerUserIds: subjectEvidenceOwnerIds(subjectRef.current, usersRef.current) })
       // 1.43.0: the first snapshot is no longer skipped (a change saved between the load and the listener starting
       // was lost); a snapshot that equals the sheet as loaded or last saved is simply not news.
       if (baseDraft.current && JSON.stringify(parsed) === JSON.stringify(baseDraft.current)) return
@@ -916,7 +918,7 @@ export function TimesheetPeriodPage({
       entries: parseTimesheetEntries(sheetId, draftToFirestoreMap(draft), {
         timeZone,
         organizationId: organization.id,
-        ownerUserIds: timesheetEvidenceOwnerIds(sheetId, { userId: subjectUser.id }, subjectUser.formerUserIds ?? []),
+        ownerUserIds: timesheetEvidenceOwnerIds(sheetId, { userId: subjectUser.id }, subjectEvidenceOwnerIds(subjectUser, users)),
       }),
       currency,
     })
@@ -2692,4 +2694,12 @@ function ExtraForm({
       </form>
     </div>
   )
+}
+
+/**
+ * Rulebook 1.45.0 §8: whose claim folders count as the sheet owner's — every id the person goes by (`personIdSet`:
+ * their own id, `formerUserIds`, `sameEmailUserIds`, roster rows on their email).
+ */
+function subjectEvidenceOwnerIds(subject: User, users: ReadonlyArray<User>): string[] {
+  return personIdSet(rulebookPerson(subject, users) as never, rulebookRoster(users as User[]) as never)
 }
