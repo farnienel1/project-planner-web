@@ -18,13 +18,13 @@ import { Chip, IconTile } from '@/components/ui/page'
 import { ProfileBack, ProfileBand, ProfileIcon, ProfilePage, SaveState } from '@/components/users/profile-ui'
 import { GHOST_UPGRADE_HELP, GHOST_UPGRADE_LABEL, canUpgradeGhost, canViewPersonPay, ghostBadgeLabel, isGhostUser } from '@/lib/canonical'
 import { GhostAppAccessCard } from '@/components/users/GhostAppAccessCard'
-import { profileRateRow } from '@/lib/users/profileUi'
+import { profileRateRow, qualificationExpiryTone } from '@/lib/users/profileUi'
 import { loadPayProfile } from '@/lib/pay/payProfileService'
 import { personPayRecord, readsPersonPayProfile } from '@/lib/pay/payProfileOverlay'
 import { onSecuritySwitchChange } from '@/lib/access/securitySwitches'
 import { isPlatformOwnerEmail } from '@/lib/platform/owner'
 import type { PayProfileDocument } from '@/lib/canonical'
-import { useOrganizationCurrency } from '@/lib/stores/organizationDocumentStore'
+import { useOrganizationCurrency, useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
 import { normalizeEmploymentType } from '@/lib/ios-parity/enums'
 
 function employmentLabel(value?: string) {
@@ -43,6 +43,7 @@ export function UserProfileSummary({
   const { navigate, prefetch, pending: backPending } = usePendingNavigation()
   const { user: currentUser, organization } = useAuthStore()
   const currencyCode = useOrganizationCurrency()
+  const timeZone = useOrganizationTimeZone()
   const { users, loadUsers } = useOrgUserStore()
   const { operatives, loadOperatives } = useOperativeStore()
   const { getUser } = useUserStore()
@@ -136,6 +137,7 @@ export function UserProfileSummary({
   const name = `${target.firstName} ${target.surname}`.trim() || roleLabel(target)
   const status = rosterStatusLabel(target)
   const quals = linkedOperative?.qualifications || []
+  const nowIso = new Date().toISOString()
   const tradeText = displayTradeType(target.tradeTypePreset, target.tradeTypeCustom)
   const lineManagerText = lineManager ? `${lineManager.firstName} ${lineManager.surname}`.trim() : 'No line manager'
   const rate = payVisible ? profileRateRow(pay, currencyCode) : null
@@ -235,7 +237,7 @@ export function UserProfileSummary({
                 {quals.map((qual) => (
                   <div key={qual.id} className="up-qrow">
                     <b>{qual.name}</b>
-                    <Chip tone={qual.hasEndDate && qual.endDate ? 'amber' : 'slate'}>
+                    <Chip tone={qual.hasEndDate && qual.endDate ? qualificationExpiryTone(qual.endDate, nowIso, timeZone) : 'slate'}>
                       {qual.hasEndDate && qual.endDate ? `Expires ${format(qual.endDate, 'd MMM yyyy')}` : 'No expiry'}
                     </Chip>
                   </div>

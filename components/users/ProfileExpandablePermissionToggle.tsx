@@ -47,12 +47,12 @@ export function ProfileExpandablePermissionToggle({
           <span className="up-ptxt">
             <b>
               {def.title}
-              {lockedOn ? ' ' : null}
-              {lockedOn ? <span className="pu-chip pu-c-green">Locked on</span> : null}
             </b>
             {expanded ? <small>{def.description}</small> : null}
           </span>
         </button>
+        {/* Outside the expand button, so the button's name stays the permission's own title. */}
+        {lockedOn ? <span className="pu-chip pu-c-green up-perm-chip">Locked on</span> : null}
         <button
           type="button"
           role="switch"

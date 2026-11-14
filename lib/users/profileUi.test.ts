@@ -8,7 +8,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createElement, type ReactElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { profileRateRow, setupSectionIcon } from './profileUi'
+import { profileRateRow, qualificationExpiryTone, setupSectionIcon } from './profileUi'
 import { setupSectionTitle } from '@/lib/staff/userEditPermissions'
 import { PERMISSION_TOGGLE_CATALOGUE } from '@/lib/canonical/permissionLevels'
 import { permissionIconFor } from '@/components/users/profile-ui/icons'
@@ -113,6 +113,9 @@ test('permission row: the profile variant keeps the switch state, disabled rule 
         assert.equal(controls(styled, 'button').length, controls(plain, 'button').length)
         assert.ok(styled.includes('Materials'))
         assert.equal(styled.includes('Locked on'), Boolean(lockedMessage) && checked)
+        // The chip sits outside the expand button, so the button's name is the permission title only.
+        const expand = styled.match(/<button[^>]*aria-expanded[^>]*>([\s\S]*?)<\/button>/)
+        assert.ok(expand && !expand[1].includes('Locked on'))
       }
     }
   }
@@ -139,4 +142,15 @@ test('pay fields: the profile variant keeps the same input, switch and help text
       assert.deepEqual(text(styled), text(plain))
     }
   }
+})
+
+test('qualification expiry chip colour comes from the rulebook warning rows', () => {
+  const now = '2026-11-14T10:00:00.000Z'
+  const zone = 'Europe/London'
+  assert.equal(qualificationExpiryTone(new Date('2026-11-01T00:00:00Z'), now, zone), 'red')
+  assert.equal(qualificationExpiryTone(new Date('2026-11-14T12:00:00Z'), now, zone), 'amber')
+  assert.equal(qualificationExpiryTone(new Date('2026-12-14T12:00:00Z'), now, zone), 'amber')
+  assert.equal(qualificationExpiryTone(new Date('2026-12-15T12:00:00Z'), now, zone), 'slate')
+  assert.equal(qualificationExpiryTone(new Date('2028-01-01T00:00:00Z'), now, zone), 'slate')
+  assert.equal(qualificationExpiryTone(undefined, now, zone), 'slate')
 })

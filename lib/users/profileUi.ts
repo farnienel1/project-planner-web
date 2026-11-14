@@ -2,7 +2,7 @@
  * Display helpers for the User profile and Edit user pages (UI pack, docs/design/user-profile-ui/). Display only:
  * no rule, no read, no write. Moved out of the components so they can be tested.
  */
-import { formatMoney } from '@/lib/canonical'
+import { formatMoney, qualificationExpiryRows } from '@/lib/canonical'
 import type { User } from '@/types'
 import type { ProfileIconName } from '@/components/users/profile-ui/icons'
 
@@ -29,4 +29,31 @@ export function setupSectionIcon(user: Pick<User, 'isSuperAdmin' | 'role' | 'per
   if (user.permissions.operativeMode) return 'hat'
   if (user.permissions.manager) return 'brief'
   return 'user'
+}
+
+/**
+ * Colour of a qualification's expiry chip on the profile page (display only), from the rulebook's warning rows
+ * (`qualificationExpiryRows`: organisation-zone day, expiring on or before today plus one calendar month, already
+ * expired included): red when expired, amber when it is a warning row, else neutral. No date → neutral.
+ */
+export function qualificationExpiryTone(
+  expiry: Date | null | undefined,
+  nowIso: string,
+  timeZone: string
+): 'red' | 'amber' | 'slate' {
+  if (!expiry || Number.isNaN(expiry.getTime())) return 'slate'
+  const [row] = qualificationExpiryRows({
+    referenceIso: nowIso,
+    timeZone,
+    operatives: [
+      {
+        id: 'profile',
+        isActive: true,
+        name: 'profile',
+        expiries: [{ qualificationId: 'qualification', name: 'qualification', expiryIso: expiry.toISOString() }],
+      },
+    ],
+  })
+  if (!row) return 'slate'
+  return row.daysUntilExpiry < 0 ? 'red' : 'amber'
 }
