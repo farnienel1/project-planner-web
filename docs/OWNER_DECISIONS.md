@@ -473,6 +473,7 @@ UI only, web only (`docs/design/web-pages-ui/web-pages-ui-spec.md`; branch `w-ui
 | 14 Nov | Agreed-manager suggestions match the name only (the old web list also matched the email) and only people whose users document names this organisation (the approvers' rule). | done, owner to confirm |
 | 14 Nov | Subcontractor tiles are one plain blue (no overtime stripes); the day chooser shows the times with no hours. | done, owner to confirm |
 | 14 Nov | Exported list gets a "Download PDF" action on each row (rebuilt from the saved snapshot, never re-stamped), so a sheet whose email or backup failed during Export can always be fetched again (review r318). | done, owner to confirm |
+| 14 Nov | Download PDF of an older exported sheet with no saved snapshot rebuilds it from today's bookings, rates and working hours: a confirm says it may differ from the one sent, and the PDF carries "Rebuilt on {date} — may differ from the original export." Sheets with a saved snapshot are drawn from it unchanged (review r318). | done, owner to confirm |
 | 14 Nov | When the history query fails, the period shows "Couldn't check older timesheets — try again." with Retry and saves nothing until it loads (review r318, 2nd round; never a blank new sheet). | done, owner to confirm |
 
 ## Open questions for the owner

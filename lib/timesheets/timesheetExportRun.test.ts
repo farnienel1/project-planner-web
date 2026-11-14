@@ -74,3 +74,13 @@ test('review r318: after stamping, the message is a summary — never "Export fa
   assert.doesNotMatch(emailDown, /Export failed/)
   assert.match(exportSummaryMessage({ ...base, stamped: [], notSent: [], sentCount: 0, skipped: ['Bob'] }), /Already exported, left as it was: Bob/)
 })
+
+test('review r318: Download PDF warns only for an exported sheet with no saved snapshot', async () => {
+  const { exportedPdfIsRebuilt, exportRebuiltPdfNote, EXPORT_REBUILT_CONFIRM } = await import('./timesheetExportRun.ts')
+  assert.equal(exportedPdfIsRebuilt({ weeklyReportOverride: null }), true)
+  assert.equal(exportedPdfIsRebuilt({}), true)
+  assert.equal(exportedPdfIsRebuilt(null), true)
+  assert.equal(exportedPdfIsRebuilt({ weeklyReportOverride: { lines: [] } }), false)
+  assert.equal(exportRebuiltPdfNote('14 Nov 2026'), 'Rebuilt on 14 Nov 2026 — may differ from the original export.')
+  assert.match(EXPORT_REBUILT_CONFIRM, /rebuilt from today's bookings and rates/)
+})

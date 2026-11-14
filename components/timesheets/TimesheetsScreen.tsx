@@ -77,7 +77,14 @@ import {
   type DataColumn,
 } from '@/components/ui/page'
 import { EXPORT_STOPPED_MESSAGE, type TimesheetInputsState } from '@/lib/timesheets/timesheetInputs'
-import { EXPORT_RECOVER_HINT, exportSummaryMessage, runTimesheetExport } from '@/lib/timesheets/timesheetExportRun'
+import {
+  EXPORT_REBUILT_CONFIRM,
+  EXPORT_RECOVER_HINT,
+  exportRebuiltPdfNote,
+  exportSummaryMessage,
+  exportedPdfIsRebuilt,
+  runTimesheetExport,
+} from '@/lib/timesheets/timesheetExportRun'
 import type { PayrollTimePolicyState } from '@/lib/canonical'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 
@@ -352,7 +359,7 @@ export function TimesheetsScreen({
    * the Exported tab's Download (rulebook 1.43.0, review r318: an undelivered sheet is always recoverable; nothing is
    * re-stamped or re-priced).
    */
-  const buildExportPdf = async (member: User, agreed: TimesheetDraft, start: Date, end: Date) => {
+  const buildExportPdf = async (member: User, agreed: TimesheetDraft, start: Date, end: Date, extraNotes: string[] = []) => {
     const payroll = collectTimesheetPayroll({
       user: member,
       bookings,
@@ -408,7 +415,7 @@ export function TimesheetsScreen({
       utrNumber: taxIds?.utrNumber || undefined,
       timeZone,
       lines,
-      notes: signatureNotes(agreed, timeZone),
+      notes: [...signatureNotes(agreed, timeZone), ...extraNotes],
       documentTitle: 'Timesheet',
       periodMetaLabel: 'PAYMENT RUN',
       totalLabel: 'Total timesheet amount',
@@ -428,7 +435,12 @@ export function TimesheetsScreen({
     try {
       const full = await loadTimesheetDraft(organization.id, row.user.id, period.start, timeZone, period.end)
       const sheet = full.exportedAt ? full : row.draft
-      const { pdf, fileName } = await buildExportPdf(row.user, sheet, period.start, period.end)
+      // Review r318: a sheet exported before signed copies were kept has no snapshot — its PDF is rebuilt from today's
+      // bookings, rates and working hours, so say so before downloading and on the PDF.
+      const rebuilt = exportedPdfIsRebuilt(sheet)
+      if (rebuilt && typeof window !== 'undefined' && !window.confirm(EXPORT_REBUILT_CONFIRM)) return
+      const extraNotes = rebuilt ? [exportRebuiltPdfNote(formatStampInZone(new Date(), timeZone))] : []
+      const { pdf, fileName } = await buildExportPdf(row.user, sheet, period.start, period.end, extraNotes)
       await shareTimesheetPdf(pdf, fileName)
     } catch (error) {
       setExportMessage(`Couldn't build the PDF for ${displayName(row.user)}${error instanceof Error ? ` (${error.message})` : ''}.`)

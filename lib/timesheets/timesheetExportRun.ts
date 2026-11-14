@@ -104,3 +104,21 @@ export function exportSummaryMessage(input: {
   if (n > 0 && (input.notSent.length > 0 || input.emailProblem || input.stampError)) parts.push(EXPORT_RECOVER_HINT)
   return parts.join(' ')
 }
+
+/** Shown before Download PDF of an exported sheet that has no saved snapshot (review r318). */
+export const EXPORT_REBUILT_CONFIRM =
+  'This timesheet was exported before signed copies were kept, so this PDF is rebuilt from today\'s bookings and rates and may differ from the one sent at the time.'
+
+/** The line printed on such a rebuilt PDF. */
+export function exportRebuiltPdfNote(dateText: string): string {
+  return `Rebuilt on ${dateText} — may differ from the original export.`
+}
+
+/**
+ * Review r318: whether Download PDF of an exported sheet rebuilds it from today's bookings, rates and working hours —
+ * true only when the sheet has no saved snapshot (`weeklyReportOverride`, exported before signed copies were kept).
+ * A sheet with a saved snapshot is drawn from it, exactly as exported.
+ */
+export function exportedPdfIsRebuilt(sheet: { weeklyReportOverride?: unknown } | null | undefined): boolean {
+  return !sheet?.weeklyReportOverride
+}
