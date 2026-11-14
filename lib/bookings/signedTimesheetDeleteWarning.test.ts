@@ -6,6 +6,7 @@ import {
   bookedPersonTimesheetUserIds,
   signedTimesheetCandidatesFromDocs,
   signedTimesheetDeleteWarningFromDocs,
+  signedTimesheetWarningForBookings,
 } from './signedTimesheetDeleteWarning.ts'
 
 const user = (fields: Partial<User> & { id: string }) =>
@@ -77,4 +78,58 @@ test('signedTimesheetCandidatesFromDocs: a sheet stored without userId is read t
   assert.equal(signedTimesheetDeleteWarningFromDocs('2026-11-09', [noUserId], 'Europe/London'), BOOKING_DELETE_SIGNED_TIMESHEET_WARNING)
   // Not a timesheet document id: nothing.
   assert.equal(signedTimesheetCandidatesFromDocs([{ id: 'jobTypes', data: noUserId.data }], 'Europe/London').length, 0)
+})
+
+// Replace (rulebook 1.41.0 §5): the signed-timesheet warning reads the same people and sheets as the delete notice.
+test('signedTimesheetWarningForBookings: a booking under an operatives row finds the sheet filed under a former id', async () => {
+  const asked: string[][] = []
+  const filedUnderFormerId = { ...signedByPerson, id: 'timesheet_invite-sam_1793404800', data: { ...signedByPerson.data, userId: 'invite-sam' } }
+  const warning = await signedTimesheetWarningForBookings({
+    bookings: [{ personId: 'OP-ROW-1', dayKey: '2026-11-09' }],
+    users,
+    operatives: [{ id: 'OP-ROW-1', email: 'sam@example.com' }],
+    timeZone: 'Europe/London',
+    loadDocs: async (ids) => {
+      asked.push(ids)
+      return ids.includes('invite-sam') ? [filedUnderFormerId] : []
+    },
+  })
+  assert.equal(warning, BOOKING_DELETE_SIGNED_TIMESHEET_WARNING)
+  assert.ok(asked[0].includes('U-SAM') && asked[0].includes('invite-sam') && asked[0].includes('OP-ROW-1'))
+})
+
+test('signedTimesheetWarningForBookings: a sheet stored without userId (named in its document id) still warns', async () => {
+  const { userId: _unused, ...withoutUserId } = signedByPerson.data
+  const warning = await signedTimesheetWarningForBookings({
+    bookings: [{ personId: 'U-SAM', dayKey: '2026-11-09' }],
+    users,
+    operatives: [],
+    timeZone: 'Europe/London',
+    loadDocs: async () => [{ id: signedByPerson.id, data: withoutUserId }],
+  })
+  assert.equal(warning, BOOKING_DELETE_SIGNED_TIMESHEET_WARNING)
+})
+
+test('signedTimesheetWarningForBookings: unsigned or outside days, a failed read, or no day give no warning', async () => {
+  const base = { users, operatives: [], timeZone: 'Europe/London' }
+  assert.equal(await signedTimesheetWarningForBookings({ ...base, bookings: [{ personId: 'U-SAM', dayKey: '2026-11-20' }], loadDocs: async () => [signedByPerson, unsigned] }), null)
+  assert.equal(
+    await signedTimesheetWarningForBookings({ ...base, bookings: [{ personId: 'U-SAM', dayKey: '2026-11-09' }], loadDocs: async () => { throw new Error('permission-denied') } }),
+    null
+  )
+  assert.equal(await signedTimesheetWarningForBookings({ ...base, bookings: [{ personId: 'U-SAM', dayKey: null }], loadDocs: async () => [signedByPerson] }), null)
+})
+
+test('signedTimesheetWarningForBookings: any one replaced booking on a signed day warns', async () => {
+  const warning = await signedTimesheetWarningForBookings({
+    bookings: [
+      { personId: 'U-OTHER', dayKey: '2026-11-09' },
+      { personId: 'U-SAM', dayKey: '2026-11-09' },
+    ],
+    users,
+    operatives: [],
+    timeZone: 'Europe/London',
+    loadDocs: async (ids) => (ids.includes('U-SAM') ? [signedByPerson] : []),
+  })
+  assert.equal(warning, BOOKING_DELETE_SIGNED_TIMESHEET_WARNING)
 })

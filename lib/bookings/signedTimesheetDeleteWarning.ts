@@ -89,3 +89,38 @@ export function signedTimesheetDeleteWarningFromDocs(
 ): string | null {
   return bookingDeleteSignedTimesheetWarning(dayKey, signedTimesheetCandidatesFromDocs(docs, timeZone))
 }
+
+/** One booking about to be removed: its stored person id and its organisation-zone day. */
+export type SignedTimesheetBookingRef = { personId: string | null | undefined; dayKey: string | null | undefined }
+
+/**
+ * The warning for removing several bookings at once (Replace, rulebook 1.41.0 §5 with 1.33.0 §2), or null: for each
+ * booking, every users id the person goes by (`bookedPersonTimesheetUserIds`) and their timesheet documents
+ * (`loadDocs` — `personTimesheetDocs`, which also finds sheets stored without `userId`), then the rulebook's
+ * `bookingDeleteSignedTimesheetWarning`. The same inputs as the delete notice, so Replace and Delete never disagree.
+ * A load that fails gives no sheets for that booking (no warning), never an error.
+ */
+export async function signedTimesheetWarningForBookings(input: {
+  bookings: ReadonlyArray<SignedTimesheetBookingRef>
+  users: ReadonlyArray<User>
+  operatives: ReadonlyArray<Pick<Operative, 'id' | 'email'>>
+  userIdAliases?: Readonly<Record<string, string>> | null
+  timeZone: string
+  loadDocs: (userIds: string[]) => Promise<ReadonlyArray<{ id: string; data: Record<string, unknown> | null | undefined }>>
+}): Promise<string | null> {
+  for (const booking of input.bookings || []) {
+    const dayKey = String(booking.dayKey ?? '').trim()
+    if (!dayKey) continue
+    const ids = bookedPersonTimesheetUserIds(booking.personId, input.users, input.operatives, input.userIdAliases)
+    if (ids.length === 0) continue
+    let docs: ReadonlyArray<{ id: string; data: Record<string, unknown> | null | undefined }> = []
+    try {
+      docs = await input.loadDocs(ids)
+    } catch {
+      docs = []
+    }
+    const warning = signedTimesheetDeleteWarningFromDocs(dayKey, docs, input.timeZone)
+    if (warning) return warning
+  }
+  return null
+}
