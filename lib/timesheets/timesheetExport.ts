@@ -152,7 +152,7 @@ export function invoiceLinesForTimesheet({
   draft,
   timeZone,
   extrasMode,
-  standardDayHours = 8,
+  standardDayHours,
   standardDayHoursOn,
   currencyCode,
   timesheetDays,
@@ -161,7 +161,8 @@ export function invoiceLinesForTimesheet({
   draft: TimesheetDraft
   timeZone: string
   extrasMode: 'raw' | 'export'
-  standardDayHours?: number
+  /** 1.44.0: the organisation's paid day (`weekdayPaidHours`); required, no 8-hour default. */
+  standardDayHours: number
   /**
    * Rulebook 1.19.0: the standard paid day in effect on a line's own day (`effectivePayrollTimePolicy`), for the day
    * units shown on a signed line. Display only — a signed line's amount is never re-priced. Missing → `standardDayHours`.

@@ -348,6 +348,22 @@ export {
 } from './bookings'
 
 export { bookingIdsForAccount, bookingIdsForPerson, bookingPersonKey, resolveBookingPerson, rosterAliasIdsFor } from './bookingPerson'
+// 1.44.0 §21, §11: bookings whose person id names nobody — never hidden, linked from Data health.
+export {
+  LINK_BOOKING_PERSON_ACTION,
+  UNKNOWN_BOOKING_PERSON_LABEL,
+  UNRESOLVED_BOOKING_PERSON_CHIP,
+  UNRESOLVED_BOOKINGS_EMPTY,
+  UNRESOLVED_BOOKINGS_HEADING,
+  UNRESOLVED_BOOKINGS_HELP,
+  bookingPersonIdHint,
+  linkBookingPersonCandidates,
+  linkBookingPersonConfirmMessage,
+  linkBookingPersonDoneMessage,
+  linkBookingPersonWriteFields,
+  scheduleRowPerson,
+  unresolvedBookingPeople,
+} from './unresolvedBookingPeople'
 export { LEGACY_PLACEHOLDER_DOCUMENT_ID, isLegacyPlaceholderDocumentId } from './bookings'
 
 export { legalPackAcceptanceWriteFields, legalPackNeedsAcceptance } from './legalPack'

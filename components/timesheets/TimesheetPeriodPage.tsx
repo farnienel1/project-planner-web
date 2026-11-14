@@ -794,6 +794,7 @@ export function TimesheetPeriodPage({
       vatNumber: taxIds.vatNumber,
       utrNumber: taxIds.utrNumber,
       timeZone,
+      standardDayHours: weekdayPaidHours(payrollPolicy),
       lines,
       notes,
       currencyCode: currency,

@@ -14,7 +14,6 @@ import { payrollHoursResult, payrollLineClockRanges, payrollOutsideClockHours, w
 import { DEFAULT_PAYROLL_POLICY, type OrgPayrollTimePolicy } from '@/lib/canonical/organizationSettings'
 import { dayKey as londonDayKey, londonMinutesOfDay } from '@/lib/ios-parity/londonTime'
 
-const FALLBACK_STANDARD_PAID_HOURS = 8
 const FALLBACK_UNPAID_BREAK_MINUTES = 30
 const FALLBACK_DAY_START = '07:30'
 const FALLBACK_DAY_END = '16:00'
@@ -248,7 +247,7 @@ export type HoursBreakdown = {
 
 export function hoursBreakdown(input: BookingHoursInput): HoursBreakdown {
   const policy = policyFrom(input)
-  const standard = weekdayPaidHours(policy) || FALLBACK_STANDARD_PAID_HOURS
+  const standard = weekdayPaidHours(policy)
   const paid = bookingPayrollHours(input)
   const multiplier = paid.outsideMultiplier || policy.weekdayOutsideStandardMultiplier || FALLBACK_OT_MULTIPLIER
   const kind = namedSlotKind(input.timeSlot)

@@ -25,6 +25,7 @@ import {
   parseClockMinutes,
   payrollBreakTimeOnStep,
   weekdayPaidDayPreview,
+  weekdayPaidHours,
   weekendBreakFor,
   weekendLunchBreakCopy,
 } from '@/lib/canonical'
@@ -222,7 +223,7 @@ function WeekendSection({
                     effective.definedWindowStart ?? policy.standardDayStart,
                   definedWindowEnd: effective.definedWindowEnd ?? policy.standardDayEnd,
                   countsAsStandardHours:
-                    effective.countsAsStandardHours ?? policy.standardPaidHours,
+                    effective.countsAsStandardHours ?? weekdayPaidHours(policy),
                   outsideWindowMultiplier:
                     effective.outsideWindowMultiplier ?? policy.weekdayOutsideStandardMultiplier,
                 })

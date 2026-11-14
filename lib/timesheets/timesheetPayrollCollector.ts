@@ -301,7 +301,6 @@ export function collectTimesheetPayroll({
       operative: operative || linked || matched[0],
       day: date,
       history,
-      standardDayHours,
       timeZone,
       aliasUserIds,
       // 1.36.0 (FU-5): rate history filed under any of the person's `operatives` rows, not only one.

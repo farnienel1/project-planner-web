@@ -3818,12 +3818,13 @@ test('weekday paid hours: standard window less the break, outside hours at the m
   assert.equal(override.totalPaidHours, 12)
 })
 
-test('named slots: AM and PM pay half the standard day, FULL DAY the whole day, custom near a half pays the half', () => {
+test('named slots: AM and PM pay half the standard day, FULL DAY the whole day; custom weekday hours pay the clock (1.44.0)', () => {
   assert.equal(hoursOn(WED, { timeSlot: 'AM' }).totalPaidHours, 4)
   assert.equal(hoursOn(WED, { timeSlot: 'PM' }).totalPaidHours, 4)
   assert.equal(hoursOn(WED, { timeSlot: 'FULL DAY' }).totalPaidHours, 8)
   assert.equal(hoursOn(WED, { timeSlot: 'FULL_DAY' }).totalPaidHours, 8)
-  assert.equal(hoursOn(WED, { timeSlot: 'CUSTOM_HOURS', workStartTime: '07:40', workEndTime: '12:00' }).totalPaidHours, 4)
+  // 1.44.0 (owner decision 14 Nov, question A option 1): no half-day snap for any policy — 07:40–12:00 is 4h20m.
+  assert.equal(hoursOn(WED, { timeSlot: 'CUSTOM_HOURS', workStartTime: '07:40', workEndTime: '12:00' }).totalPaidHours, 13 / 3)
   assert.equal(hoursOn(WED, { timeSlot: 'AM' }).totalPaidHours + hoursOn(WED, { timeSlot: 'PM' }).totalPaidHours, 8)
 })
 
@@ -4882,7 +4883,10 @@ test('effective working hours: prior before effectiveFrom, scheduled from its da
 test('working-hours limits are one set: paid hours 1–12, break 0–120 minutes, multipliers 1–3', () => {
   const base = parsePolicy(undefined)
   assert.equal(payrollSchedule.validatePayrollTimePolicy(base), null)
-  assert.match(payrollSchedule.validatePayrollTimePolicy({ ...base, standardPaidHours: 12.5 }) ?? '', /between 1 and 12/)
+  // 1.44.0: the paid day is always derived — 07:30–20:30 less 30 min unpaid is 12.5h, over the limit; a stored
+  // `standardPaidHours` is no longer checked (never read for pay).
+  assert.match(payrollSchedule.validatePayrollTimePolicy({ ...base, standardDayEnd: '20:30' }) ?? '', /between 1 and 12/)
+  assert.equal(payrollSchedule.validatePayrollTimePolicy({ ...base, standardPaidHours: 12.5 }), null)
   assert.match(payrollSchedule.validatePayrollTimePolicy({ ...base, unpaidBreakMinutes: 121 }) ?? '', /0 and 120/)
   assert.match(payrollSchedule.validatePayrollTimePolicy({ ...base, weekdayOutsideStandardMultiplier: 0.5 }) ?? '', /×1 and ×3/)
   assert.match(
@@ -10195,25 +10199,26 @@ test('1.20.0 owner: weekday bookings — FULL DAY 7.25h, custom 06:30–12:00 4.
   assert.equal(r120Hours(r120PaidBreak(), { timeSlot: 'FULL DAY' }).totalPaidHours, 8)
 })
 
-test('1.20.0: a policy saved before 1.20.0 keeps pricing exactly as today (stored standardPaidHours, AM/PM, the half-day snap)', () => {
+test('1.44.0: a policy saved before 1.20.0 derives its paid day from its working hours (owner decision 14 Nov, A = 1)', () => {
   const legacy = r120Legacy()
   assert.equal(legacy.paidHoursDerived, undefined)
   assert.equal(R112.weekdayPaidHours(legacy), 8)
   assert.equal(r120Hours(legacy, { timeSlot: 'FULL DAY' }).totalPaidHours, 8)
-  // Stored AM / PM bookings: half the stored paid day, on the legacy booking split (`halfDayWindows`).
+  // Stored AM / PM bookings: half the paid day, on the legacy booking split (`halfDayWindows`).
   assert.equal(r120Hours(legacy, { timeSlot: 'AM' }).totalPaidHours, 4)
   assert.equal(r120Hours(legacy, { timeSlot: 'PM' }).totalPaidHours, 4)
   assert.deepEqual(R112.halfDayWindows(legacy).am, { start: 450, end: 720 })
   assert.deepEqual(R112.halfDayWindows(legacy).pm, { start: 750, end: 960 })
-  // The 20-minute snap stays for a legacy policy: custom 12:30–16:00 pays the half day.
-  assert.equal(r120Hours(legacy, r120Custom('12:30', '16:00')).totalPaidHours, 4)
-  // A stored paid day that does not match the clock is kept (07:00–16:00 − 30 min would be 8.5): day rate ÷ 8, AM 4h.
+  // 1.44.0: no 20-minute snap any more — custom 12:30–16:00 pays its clock, 3.5h (was the half day, 4h).
+  assert.equal(r120Hours(legacy, r120Custom('12:30', '16:00')).totalPaidHours, 3.5)
+  // A stored paid day that does not match the clock is no longer read: 07:00–16:00 − 30 min = 8.5h (stored 8).
   const mismatch = r120Legacy({ standardDayStart: '07:00' })
-  assert.equal(R112.weekdayPaidHours(mismatch), 8)
-  assert.equal(r120Hours(mismatch, { timeSlot: 'AM' }).totalPaidHours, 4)
+  assert.equal(mismatch.standardPaidHours, 8, 'the stored figure is kept on the parsed policy (written back as stored)')
+  assert.equal(R112.weekdayPaidHours(mismatch), 8.5)
+  assert.equal(r120Hours(mismatch, { timeSlot: 'AM' }).totalPaidHours, 4.25)
   assert.equal(r120Hours(mismatch, { timeSlot: 'FULL DAY' }).totalPaidHours, 8.5)
-  assert.equal(R112.reportDayValue({ totalPaidHours: 8.5, standardPaidHours: R112.weekdayPaidHours(mismatch) }), 1.0625)
-  // The same day saved from 1.20.0 divides by the derived 8.5h.
+  assert.equal(R112.reportDayValue({ totalPaidHours: 8.5, standardPaidHours: R112.weekdayPaidHours(mismatch) }), 1)
+  // Saved from 1.20.0 it gives the same figure.
   const derived = R112.withDerivedWeekdayPaidHours(mismatch)
   assert.deepEqual([derived.paidHoursDerived, derived.standardPaidHours, R112.weekdayPaidHours(derived)], [true, 8.5, 8.5])
   assert.equal(r120Hours(derived, { timeSlot: 'AM' }).totalPaidHours, 4.25)
@@ -14425,4 +14430,128 @@ test('1.43.0 agreedManagerSuggestions: the price work approvers, by any part of 
     id: `m${i}`, firstName: `Manager${i}`, surname: 'Smith', email: `m${i}@x.com`, role: 'manager', manager: true, isActive: true, passwordSet: true, organizationId: ORG,
   }))
   assert.equal(R112.agreedManagerSuggestions('smith', person, [person, ...many], { organizationId: ORG }).length, R112.AGREED_MANAGER_SUGGESTIONS_MAX)
+})
+
+
+// MARK: - 1.44.0: the Monday–Friday paid day is always derived (owner decision 14 Nov, question A option 1)
+
+test('1.44.0 owner example: 07:00–16:00, 30 min unpaid, booking 07:00–19:00 at its own ×2, £250 a day → £426.47', () => {
+  const policy = r120Legacy({ standardDayStart: '07:00', breakWindowStart: '12:00', breakWindowEnd: '12:30', weekdayOutsideStandardMultiplier: 1.5 })
+  assert.equal(policy.paidHoursDerived, undefined, 'saved before 1.20.0, stored standardPaidHours 8')
+  const day = R112.weekdayPaidHours(policy)
+  assert.equal(day, 8.5)
+  const hours = r120Hours(policy, { ...r120Custom('07:00', '19:00'), otMultiplierOverride: 2 })
+  assert.deepEqual([hours.standardHours, hours.outsideHours, hours.outsideMultiplier], [8.5, 3, 2])
+  const standard = R112.payForHours({ payBasis: 'day', dayRate: 250, paidHours: hours.standardHours, standardDayHours: day })
+  const overtime = R112.payForHours({ payBasis: 'day', dayRate: 250, paidHours: hours.outsideHours, standardDayHours: day, otMultiplier: 2 })
+  assert.equal(standard, 250)
+  assert.equal(overtime, 176.47)
+  assert.equal(Math.round((standard + overtime) * 100) / 100, 426.47)
+  assert.equal(R112.roundPennies((250 / 8.5) * 14.5), 426.47)
+})
+
+test('1.44.0: every policy in the history derives its own day; the stored standardPaidHours is never read for pay', () => {
+  const zone = 'Europe/London'
+  const old = policyToFirestore119(r120Legacy({ standardDayStart: '07:00' })) // stored 8, clock 8.5
+  const later = policyToFirestore119(r120Legacy({ standardDayStart: '08:00', standardPaidHours: 10 })) // stored 10, clock 7.5
+  const org = {
+    countryCode: 'GB',
+    payrollTimePolicy: later,
+    payrollTimePolicyEffectiveFrom: '2026-11-02',
+    payrollTimePolicyHistory: [
+      { effectiveFrom: '1970-01-01', policy: old },
+      { effectiveFrom: '2026-11-02', policy: later },
+    ],
+  }
+  const state = R112.parsePayrollTimePolicyState(org, zone)
+  assert.equal(R112.weekdayPaidHours(R112.payrollTimePolicyForDayFromState(state, '2026-10-28')), 8.5)
+  assert.equal(R112.weekdayPaidHours(R112.payrollTimePolicyForDayFromState(state, '2026-11-04')), 7.5)
+  // Written back as stored (older builds read it): the history entry keeps its 8.
+  const fields = R112.payrollTimePolicyCancelScheduleWriteFields({ orgDoc: org, todayKey: '2026-11-04', timeZone: zone })
+  const history = fields.payrollTimePolicyHistory as Array<{ policy: Record<string, unknown> }> | undefined
+  if (history) assert.equal(history[0].policy.standardPaidHours, 8)
+  // A weekend day with no "counts as" of its own falls back to the derived day, not the stored figure.
+  const noCountsAs = r120Legacy({ standardDayStart: '07:00', saturday: { allHoursAtMultiplierMode: false, allHoursMultiplier: 2, definedWindowStart: '07:00', definedWindowEnd: '13:00', outsideWindowMultiplier: 2 } })
+  const sat = R112.payrollHoursResult({ booking: r120Custom('07:00', '13:00'), dayKey: '2026-11-07', policy: noCountsAs, timeZone: R120_ZONE })
+  if (noCountsAs.saturday.countsAsStandardHours == null) assert.equal(sat.standardHours, 8.5)
+  // No policy: the default day, derived (07:30–16:00 − 30 min).
+  assert.equal(R112.weekdayPaidHours(null), 8)
+  // A clock that would derive outside 1–12 (only reachable from stored data the save check refuses) is clamped.
+  assert.equal(R112.weekdayPaidHours({ ...r120Legacy(), standardDayStart: '06:00', standardDayEnd: '22:00', unpaidBreakMinutes: 0 }), 12)
+})
+
+// MARK: - 1.44.0: a booking whose person can't be resolved is never hidden (owner decision 14 Nov, question H option 1)
+
+test('1.44.0 scheduleRowPerson: former ids, same-email ids and operatives rows resolve; an unknown id is an Unknown person row', () => {
+  const input = {
+    accounts: [{ id: 'farnie-uid', email: 'farnie@example.com', formerIds: ['OLD-INVITE'], aliasIds: ['second-doc'] }],
+    operatives: [{ id: 'op-row', email: 'farnie@example.com' }, { id: 'ghost-row', email: '' }],
+  }
+  for (const id of ['farnie-uid', 'old-invite', 'SECOND-DOC', 'op-row']) {
+    const row = R112.scheduleRowPerson(id, input)
+    assert.equal(row.unresolved, false, id)
+    assert.equal(row.key, 'account:farnie-uid', id)
+    assert.equal(row.label, null)
+  }
+  assert.deepEqual(
+    [R112.scheduleRowPerson('ghost-row', input).unresolved, R112.scheduleRowPerson('ghost-row', input).key],
+    [false, 'operative:ghost-row']
+  )
+  const unknown = R112.scheduleRowPerson('6a9632ba-1111-2222', input)
+  assert.deepEqual(
+    [unknown.unresolved, unknown.key, unknown.label, unknown.idHint, unknown.accountId, unknown.operativeId],
+    [true, 'id:6a9632ba-1111-2222', 'Unknown person · 6A9632BA', '6A9632BA', null, null]
+  )
+  assert.equal(R112.UNRESOLVED_BOOKING_PERSON_CHIP, 'Not linked to a person')
+})
+
+test('1.44.0 unresolvedBookingPeople: one entry per unknown id (without case) with count, days, jobs and bookers', () => {
+  const input = {
+    accounts: [{ id: 'u1', email: 'a@example.com', formerIds: [], aliasIds: [] }],
+    operatives: [],
+    bookings: [
+      { id: 'b1', personId: '6A9632BA-X', dayKey: '2026-11-10', jobId: 'J1', jobName: 'Kitchen', bookedBy: 'Sam', collection: 'bookings' as const },
+      { id: 'b2', personId: '6a9632ba-x', dayKey: '2026-11-03', jobId: 'j1', jobName: '', bookedBy: 'sam', collection: 'bookings' as const },
+      { id: 'b3', personId: '6A9632BA-X', dayKey: '2026-11-12', jobId: 'J2', jobName: 'Roof', bookedBy: 'Ann', collection: 'managerSiteBookings' as const },
+      { id: 'b4', personId: 'u1', dayKey: '2026-11-10', jobId: 'J1', collection: 'bookings' as const },
+      { id: 'b5', personId: 'zz-other', dayKey: '2026-11-11', jobId: '', collection: 'bookings' as const },
+      { id: 'b6', personId: '  ', dayKey: '2026-11-11', collection: 'bookings' as const },
+    ],
+  }
+  const rows = R112.unresolvedBookingPeople(input)
+  assert.equal(rows.length, 2)
+  assert.deepEqual(
+    [rows[0].personId, rows[0].idHint, rows[0].count, rows[0].firstDayKey, rows[0].lastDayKey, rows[0].bookedBy, rows[0].bookingIds, rows[0].collections],
+    ['6A9632BA-X', '6A9632BA', 3, '2026-11-03', '2026-11-12', ['Sam', 'Ann'], ['b1', 'b2', 'b3'], ['bookings', 'managerSiteBookings']]
+  )
+  assert.deepEqual(rows[0].jobs, [{ jobId: 'J1', jobName: 'Kitchen', count: 2 }, { jobId: 'J2', jobName: 'Roof', count: 1 }])
+  assert.deepEqual([rows[1].personId, rows[1].count, rows[1].jobs], ['zz-other', 1, []])
+})
+
+test('1.44.0 link an unknown id to a person: candidates, confirm text and the formerUserIds partial update', () => {
+  const roster = [
+    { id: 'b', firstName: 'Bea', surname: 'Two', email: 'bea@example.com', organizationId: 'org1', isActive: true },
+    { id: 'b-copy', firstName: 'Bea', surname: 'Copy', email: 'BEA@example.com', organizationId: 'org1', isActive: true },
+    { id: 'a', firstName: 'Ann', surname: 'One', email: 'ann@example.com', organizationId: 'org1', isActive: true },
+    { id: 'gone', firstName: 'Old', surname: 'Hand', email: 'old@example.com', organizationId: 'org1', isActive: false },
+    { id: 'away', firstName: 'Other', surname: 'Co', email: 'oc@example.com', organizationId: 'org2', isActive: true },
+    { id: 'del', firstName: 'Deleted', surname: 'user', email: '', organizationId: 'org1', isActive: true },
+    { id: 'ghost1', firstName: 'Gus', surname: 'Ghost', email: '', organizationId: 'org1', isActive: true },
+  ]
+  assert.deepEqual(R112.linkBookingPersonCandidates(roster, 'org1').map((c: { id: string }) => c.id), ['a', 'b', 'ghost1'])
+  assert.equal(R112.linkBookingPersonConfirmMessage(3, 'Farnie Nel'), 'All 3 bookings under this ID will show as Farnie Nel.')
+  assert.equal(R112.linkBookingPersonConfirmMessage(1, 'Farnie Nel'), 'All 1 booking under this ID will show as Farnie Nel.')
+  assert.equal(R112.linkBookingPersonDoneMessage(3, 'Farnie Nel'), 'Linked: 3 bookings now show as Farnie Nel.')
+  const person = { id: 'farnie', formerUserIds: ['OLD-1'] }
+  assert.deepEqual(
+    R112.linkBookingPersonWriteFields({ person, personId: '6A9632BA-X', actorUserId: 'admin', platform: 'web' }),
+    { set: { formerUserIds: ['OLD-1', '6A9632BA-X'], updatedBy: 'admin', updatedFrom: 'web' } }
+  )
+  assert.equal(R112.linkBookingPersonWriteFields({ person, personId: 'old-1', actorUserId: 'admin', platform: 'web' }), null)
+  assert.equal(R112.linkBookingPersonWriteFields({ person, personId: 'FARNIE', actorUserId: 'admin', platform: 'web' }), null)
+  assert.equal(R112.linkBookingPersonWriteFields({ person, personId: ' ', actorUserId: 'admin', platform: 'web' }), null)
+  assert.equal(R112.linkBookingPersonWriteFields({ person, personId: 'x', actorUserId: '', platform: 'web' }), null)
+  // After linking, the id resolves to the person.
+  const after = R112.scheduleRowPerson('6a9632ba-x', { accounts: [{ id: 'farnie', email: 'f@example.com', formerIds: ['OLD-1', '6A9632BA-X'] }], operatives: [] })
+  assert.deepEqual([after.unresolved, after.accountId], [false, 'farnie'])
 })

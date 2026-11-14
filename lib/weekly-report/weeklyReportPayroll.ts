@@ -235,7 +235,6 @@ export function labourPaySlices({
     operative,
     day: date,
     history,
-    standardDayHours: standard,
     timeZone,
     aliasUserIds,
     operativeIds,

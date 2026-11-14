@@ -62,8 +62,9 @@ export type OrgPayrollTimePolicy = {
   /**
    * Rulebook 1.20.0 §4.3: true on every policy saved from 1.20.0 on. The Monday–Friday paid day is then derived from
    * the day itself — finish − start − the unpaid break (`weekdayPaidHours`) — and `standardPaidHours` is written as that
-   * value so older builds agree. Missing (every policy saved before 1.20.0, history entries included) keeps the stored
-   * `standardPaidHours` exactly as before: nothing is re-priced.
+   * value so older builds agree. 1.44.0 (owner decision 14 Nov, question A option 1): the weekday paid day is derived
+   * for every policy, flag or not (`weekdayPaidHours`); the flag now only says which value was written to
+   * `standardPaidHours`, which is kept and written as stored for older builds and never read for pay.
    */
   paidHoursDerived?: boolean
 }
@@ -608,7 +609,9 @@ export function parsePayrollPolicy(data: Record<string, unknown> | undefined): O
     })(),
     breakPaid: data.breakPaid === true,
   }
-  // 1.20.0 §4.3: a policy saved from 1.20.0 on derives its weekday paid day from the day itself.
+  // 1.20.0 §4.3: a policy saved from 1.20.0 on derives its weekday paid day from the day itself. 1.44.0: pay reads
+  // `weekdayPaidHours` (derived for every policy); a policy without the flag keeps its stored `standardPaidHours` here
+  // only so a rewrite of the prior / history writes it back as stored for older builds.
   if (data.paidHoursDerived !== true) return parsed
   const derived: OrgPayrollTimePolicy = { ...parsed, paidHoursDerived: true }
   return { ...derived, standardPaidHours: weekdayPaidHours(derived) }
@@ -630,15 +633,17 @@ export function derivedWeekdayPaidHours(
 
 /**
  * Rulebook 1.20.0 §4.3: the paid hours of a Monday–Friday full day — what FULL DAY pays, what a day rate is divided by,
- * the unbooked-labour day, the weekly-report day unit, invoices and Home. A policy with `paidHoursDerived` uses
- * `derivedWeekdayPaidHours` (read into the 1–12 limits, as every stored number is since 1.12.0); a policy without it
- * (saved before 1.20.0) keeps its stored `standardPaidHours`, so nothing saved earlier is re-priced.
+ * the unbooked-labour day, the weekly-report day unit, invoices and Home. 1.44.0 (owner decision 14 Nov, question A
+ * option 1): always `derivedWeekdayPaidHours` of the working hours passed — finish − start − the unpaid break — for
+ * every policy, including the current, prior, scheduled and history policies saved before 1.20.0 without
+ * `paidHoursDerived`. The stored `standardPaidHours` is never read here. Read into the 1–12 limits as every stored
+ * number is since 1.12.0: a derived day outside them (only reachable from stored data the save check refuses) is
+ * clamped to 1 or 12, never 0 or NaN. No policy → the default policy's day.
  */
 export function weekdayPaidHours(
-  policy: Pick<OrgPayrollTimePolicy, 'standardDayStart' | 'standardDayEnd' | 'unpaidBreakMinutes' | 'breakPaid' | 'standardPaidHours' | 'paidHoursDerived'> | null | undefined
+  policy: Pick<OrgPayrollTimePolicy, 'standardDayStart' | 'standardDayEnd' | 'unpaidBreakMinutes' | 'breakPaid'> | null | undefined
 ): number {
-  if (!policy) return DEFAULT_PAYROLL_POLICY.standardPaidHours
-  if (policy.paidHoursDerived !== true) return Number(policy.standardPaidHours)
+  if (!policy) return derivedWeekdayPaidHours(DEFAULT_PAYROLL_POLICY)
   const { min, max } = PAYROLL_POLICY_LIMITS.paidHours
   return Math.min(Math.max(derivedWeekdayPaidHours(policy), min), max)
 }
