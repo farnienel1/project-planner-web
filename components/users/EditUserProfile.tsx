@@ -116,7 +116,7 @@ import {
 } from '@/lib/staff/userPermissionDescriptions'
 import { SUPER_ADMIN_SUCCESSOR_EMPTY, superAdminSuccessors } from '@/lib/staff/superAdminTransfer'
 import { displayedLineManagerId, userWithLineManagerChoice } from '@/lib/firebase/userPayload'
-import { Field, FieldGrid, FormSection, ProfileBack, ProfileBand, ProfileBanner, SaveState, type ProfileIconName } from '@/components/users/profile-ui'
+import { Field, FieldGrid, FormSection, SectionBlock, ProfileBack, ProfileBand, ProfileBanner, SaveState, type ProfileIconName } from '@/components/users/profile-ui'
 import {
   SectionLabel,
   SettingsCard,
@@ -1377,12 +1377,11 @@ export function EditUserProfile({
       )}
 
       {showQualifications ? (
-        <>
-          <SectionLabel label="Qualifications" />
-          <SettingsCard>
-            <div className="p-4">
-              {qualError ? <p className="mb-3 text-sm font-medium text-red-600">{qualError}</p> : null}
+        <FormSection title="Qualifications" icon="badge" tone="amber">
+          <SectionBlock>
+              {qualError ? <p className="up-err">{qualError}</p> : null}
               <OperativeQualificationsEditor
+                variant="profile"
                 linked={linkedOperative}
                 templates={qualificationTemplates}
                 saving={qualSaving}
@@ -1408,9 +1407,8 @@ export function EditUserProfile({
                   }
                 }}
               />
-            </div>
-          </SettingsCard>
-        </>
+          </SectionBlock>
+        </FormSection>
       ) : null}
 
       {/* Annual leave access */}
