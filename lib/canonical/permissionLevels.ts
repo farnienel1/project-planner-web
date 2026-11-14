@@ -320,6 +320,15 @@ export type PermissionToggleRow = {
   note: string | null
 }
 
+/** 1.42.0 §11: the Projects toggle's row text (`PERMISSION_TOGGLE_CATALOGUE`), shown by both apps. */
+export const PROJECTS_TOGGLE_LABEL = 'Projects — add & edit'
+export const PROJECTS_TOGGLE_HELP =
+  'Add new projects, edit any project and choose its managers. Without this, a manager still sees every project and can edit the projects they manage.'
+/** 1.42.0 §11: the Small works toggle's row text (`PERMISSION_TOGGLE_CATALOGUE`), shown by both apps. */
+export const SMALL_WORKS_TOGGLE_LABEL = 'Small Works — add & edit'
+export const SMALL_WORKS_TOGGLE_HELP =
+  'Add new small works, edit any small works job and choose its managers. Without this, a manager still sees every small works job and can edit the small works they manage.'
+
 type CatalogueRow = { field: UserPermissionField; label: string; help: string; levels: ReadonlyArray<PermissionLevel> }
 
 /**
@@ -328,20 +337,12 @@ type CatalogueRow = { field: UserPermissionField; label: string; help: string; l
  */
 export const PERMISSION_TOGGLE_CATALOGUE: ReadonlyArray<CatalogueRow> = [
   { field: 'adminAccess', label: 'Admin Access', help: 'Gives Manage Users and organisation settings. Change user type to give or remove it.', levels: ['admin'] },
-  {
-    field: 'projects',
-    label: 'Projects',
-    help:
-      'Sees, adds and edits every project. If off, they see only the projects they are assigned to as a manager — scheduling and other job tools stay available there, but they cannot add projects or change a project\'s managers.',
-    levels: ['admin', 'manager'],
-  },
-  {
-    field: 'smallWorks',
-    label: 'Small Works',
-    help:
-      'Sees, adds and edits every small works job. If off, they see only the small works they are assigned to as a manager — scheduling and other job tools stay available there, but they cannot add small works or change their managers.',
-    levels: ['admin', 'manager'],
-  },
+  // 1.42.0 (owner decision 13 Nov, option B): the Projects / Small works toggle is an add-and-edit permission, never a
+  // view permission — every manager sees every job (§17, 1.33.0). With it a manager adds jobs of that kind, edits any
+  // job of that kind and changes its managers (`canCreateJob`, `canChangeJobManagers`, `canEditJob`); without it they
+  // still edit the details of the jobs they manage. Bookings are `canWriteBooking` either way.
+  { field: 'projects', label: PROJECTS_TOGGLE_LABEL, help: PROJECTS_TOGGLE_HELP, levels: ['admin', 'manager'] },
+  { field: 'smallWorks', label: SMALL_WORKS_TOGGLE_LABEL, help: SMALL_WORKS_TOGGLE_HELP, levels: ['admin', 'manager'] },
   { field: 'weeklyReports', label: 'Weekly Report', help: 'Admins and super admins open the Weekly report; it is not offered to managers.', levels: ['admin'] },
   { field: 'dailyOverview', label: 'Daily Overview', help: 'Can open Daily Overview from Home. If off, that tile is hidden.', levels: ['admin', 'manager'] },
   {

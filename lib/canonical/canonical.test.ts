@@ -14176,3 +14176,62 @@ test('1.37.0 scheduleCellKind / scheduleCellHours: the iOS scheme; a 0h booking 
   assert.equal(cell.tone, 'split')
   assert.equal(Math.round((cell.standardHours + cell.overtimeHours) * 100), Math.round(result.totalPaidHours * 100))
 })
+
+// --- 1.42.0: the Projects / Small works toggle text (owner decision 13 Nov, option B) -------------------------------
+
+test('1.42.0 permissionToggleRows: the Projects and Small works rows read as add & edit, not as a view permission', () => {
+  const rows = R112.permissionToggleRows({ level: 'manager', mode: 'edit', user: { manager: true } })
+  const projects = rows.find((row) => row.field === 'projects')!
+  const smallWorks = rows.find((row) => row.field === 'smallWorks')!
+  assert.equal(projects.label, 'Projects — add & edit')
+  assert.equal(
+    projects.help,
+    'Add new projects, edit any project and choose its managers. Without this, a manager still sees every project and can edit the projects they manage.'
+  )
+  assert.equal(smallWorks.label, 'Small Works — add & edit')
+  assert.equal(
+    smallWorks.help,
+    'Add new small works, edit any small works job and choose its managers. Without this, a manager still sees every small works job and can edit the small works they manage.'
+  )
+  assert.equal(projects.label, R112.PROJECTS_TOGGLE_LABEL)
+  assert.equal(projects.help, R112.PROJECTS_TOGGLE_HELP)
+  assert.equal(smallWorks.label, R112.SMALL_WORKS_TOGGLE_LABEL)
+  assert.equal(smallWorks.help, R112.SMALL_WORKS_TOGGLE_HELP)
+  // The same text on every screen and level that shows the rows (Add User, its summary, Edit User; admin and manager).
+  for (const level of ['admin', 'manager'] as const) {
+    for (const mode of ['add', 'edit', 'summary'] as const) {
+      const set = R112.permissionToggleRows({ level, mode })
+      assert.equal(set.find((row) => row.field === 'projects')!.label, R112.PROJECTS_TOGGLE_LABEL)
+      assert.equal(set.find((row) => row.field === 'smallWorks')!.help, R112.SMALL_WORKS_TOGGLE_HELP)
+    }
+  }
+  // Never the pre-1.42 wording that read as a view permission.
+  for (const row of [projects, smallWorks]) {
+    assert.doesNotMatch(row.help, /see only|Sees, adds/i)
+  }
+  // The older call-site list carries the same text.
+  assert.equal(R112.MANAGER_PERMISSION_TOGGLES.find((row) => row.key === 'projects')!.title, R112.PROJECTS_TOGGLE_LABEL)
+})
+
+test('1.42.0 option B: the toggle text matches the rules — every manager sees every job; the toggle adds jobs, edits any job and changes managers', () => {
+  const role = { isSuperAdmin: false, isAdmin: false, isManager: true, isOperativeMode: false }
+  const withToggle = { role, toggles: { projects: true, smallWorks: false }, ids: ['mgr-on'] }
+  const without = { role, toggles: { projects: false, smallWorks: false }, ids: ['mgr-off'] }
+  const theirs = { managerIds: ['mgr-off'], managerUserIds: ['mgr-off'] }
+  const someoneElses = { managerIds: ['other'], managerUserIds: ['other'] }
+  // Sees every job whatever the toggle.
+  for (const viewer of [withToggle, without]) {
+    assert.equal(R112.canSeeJob(viewer, someoneElses, [], 'projects'), true)
+    assert.equal(R112.canSeeJob(viewer, someoneElses, [], 'smallWorks'), true)
+  }
+  // Toggle on: add, edit any job of that kind, change its managers — only for that kind.
+  assert.equal(R112.canCreateJob(withToggle, 'projects'), true)
+  assert.equal(R112.canChangeJobManagers(withToggle, 'projects'), true)
+  assert.equal(R112.canEditJob(withToggle, someoneElses, 'projects'), true)
+  assert.equal(R112.canCreateJob(withToggle, 'smallWorks'), false)
+  // Toggle off: edit the details of the jobs they manage only; never add or change managers.
+  assert.equal(R112.canCreateJob(without, 'projects'), false)
+  assert.equal(R112.canChangeJobManagers(without, 'projects'), false)
+  assert.equal(R112.canEditJob(without, theirs, 'projects'), true)
+  assert.equal(R112.canEditJob(without, someoneElses, 'projects'), false)
+})

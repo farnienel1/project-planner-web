@@ -5,6 +5,8 @@ import {
   choiceIdForRoster,
   projectManagerChoiceSelected,
   projectManagerChoices,
+  projectManagerIdsWith,
+  projectManagerIdsWithout,
   projectManagerSelectedEntries,
   projectManagerSelectionIds,
   stableManagerDocumentId,
@@ -166,4 +168,18 @@ test('assigned managers who are no longer candidates are shown with a note, then
   ])
   const adminChoice = projectManagerChoices(roster, users, org)[0]
   assert.equal(projectManagerChoiceSelected(adminChoice, entries, roster, users, org), true)
+})
+
+test('1.42.0 a job takes several managers: each pick is added, the same person twice is not, removing one keeps the rest', () => {
+  const [adminChoice, managerChoice] = projectManagerChoices(roster, users, org)
+  let ids: string[] = []
+  ids = projectManagerIdsWith(ids, adminChoice, roster, users, org)
+  ids = projectManagerIdsWith(ids, managerChoice, roster, users, org)
+  assert.deepEqual(ids, [adminChoice.id, managerChoice.id])
+  assert.deepEqual(projectManagerIdsWith(ids, adminChoice, roster, users, org), ids, 'the same person is never added twice')
+  assert.equal(projectManagerSelectedEntries(ids, roster, users, org).length, 2)
+  // Edit: an id stored for the same person in another form still counts as picked.
+  assert.deepEqual(projectManagerIdsWith(['user:mgr-auth'], managerChoice, roster, users, org), ['user:mgr-auth'])
+  assert.deepEqual(projectManagerIdsWithout(ids, adminChoice.id, roster, users, org), [managerChoice.id])
+  assert.deepEqual(projectManagerSelectionIds({ managerIds: ids }, roster, users, org), ids)
 })

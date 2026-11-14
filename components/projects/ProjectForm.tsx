@@ -26,6 +26,7 @@ import {
   managerIdsMatch,
   projectManagerChoiceSelected,
   projectManagerChoices,
+  projectManagerIdsWith,
   projectManagerIdsWithout,
   projectManagerSelectedEntries,
   projectManagerSelectionIds,
@@ -442,7 +443,11 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
             onAdd={(choice) => {
               setManagerFieldError(false)
               setManagersTouched(true)
-              setForm((current) => ({ ...current, managerIds: [...current.managerIds, choice.id] }))
+              // 1.42.0: several managers per job — each pick is added to the list (never replaces it).
+              setForm((current) => ({
+                ...current,
+                managerIds: projectManagerIdsWith(current.managerIds, choice, managers, users, organization?.id),
+              }))
             }}
             onRemove={(id) => {
               setManagersTouched(true)

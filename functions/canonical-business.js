@@ -418,6 +418,8 @@ var ProjectPlannerCanonical = (() => {
     PRICE_WORK_REPORT_COLUMNS: () => PRICE_WORK_REPORT_COLUMNS,
     PRICE_WORK_REPORT_TITLE: () => PRICE_WORK_REPORT_TITLE,
     PRICE_WORK_TOTAL_LABEL: () => PRICE_WORK_TOTAL_LABEL,
+    PROJECTS_TOGGLE_HELP: () => PROJECTS_TOGGLE_HELP,
+    PROJECTS_TOGGLE_LABEL: () => PROJECTS_TOGGLE_LABEL,
     PROJECT_TASK_PRIORITIES: () => PROJECT_TASK_PRIORITIES,
     PROJECT_TASK_STATUSES: () => PROJECT_TASK_STATUSES,
     PUSH_PAYLOAD_KEYS: () => PUSH_PAYLOAD_KEYS,
@@ -438,6 +440,8 @@ var ProjectPlannerCanonical = (() => {
     SENSITIVE_PROFILE_DOC_ID: () => SENSITIVE_PROFILE_DOC_ID,
     SENSITIVE_PROFILE_FIELDS: () => SENSITIVE_PROFILE_FIELDS,
     SENSITIVE_VALUE_MAX: () => SENSITIVE_VALUE_MAX,
+    SMALL_WORKS_TOGGLE_HELP: () => SMALL_WORKS_TOGGLE_HELP,
+    SMALL_WORKS_TOGGLE_LABEL: () => SMALL_WORKS_TOGGLE_LABEL,
     STORED_FILE_KINDS: () => STORED_FILE_KINDS,
     SUBCONTRACTOR_BOOKING_DOCUMENT_KEYS: () => SUBCONTRACTOR_BOOKING_DOCUMENT_KEYS,
     SUBCONTRACTOR_BOOKING_PEOPLE_WRITE_GROUP: () => SUBCONTRACTOR_BOOKING_PEOPLE_WRITE_GROUP,
@@ -2609,20 +2613,18 @@ var ProjectPlannerCanonical = (() => {
     }
     return out;
   }
+  var PROJECTS_TOGGLE_LABEL = "Projects \u2014 add & edit";
+  var PROJECTS_TOGGLE_HELP = "Add new projects, edit any project and choose its managers. Without this, a manager still sees every project and can edit the projects they manage.";
+  var SMALL_WORKS_TOGGLE_LABEL = "Small Works \u2014 add & edit";
+  var SMALL_WORKS_TOGGLE_HELP = "Add new small works, edit any small works job and choose its managers. Without this, a manager still sees every small works job and can edit the small works they manage.";
   var PERMISSION_TOGGLE_CATALOGUE = [
     { field: "adminAccess", label: "Admin Access", help: "Gives Manage Users and organisation settings. Change user type to give or remove it.", levels: ["admin"] },
-    {
-      field: "projects",
-      label: "Projects",
-      help: "Sees, adds and edits every project. If off, they see only the projects they are assigned to as a manager \u2014 scheduling and other job tools stay available there, but they cannot add projects or change a project's managers.",
-      levels: ["admin", "manager"]
-    },
-    {
-      field: "smallWorks",
-      label: "Small Works",
-      help: "Sees, adds and edits every small works job. If off, they see only the small works they are assigned to as a manager \u2014 scheduling and other job tools stay available there, but they cannot add small works or change their managers.",
-      levels: ["admin", "manager"]
-    },
+    // 1.42.0 (owner decision 13 Nov, option B): the Projects / Small works toggle is an add-and-edit permission, never a
+    // view permission — every manager sees every job (§17, 1.33.0). With it a manager adds jobs of that kind, edits any
+    // job of that kind and changes its managers (`canCreateJob`, `canChangeJobManagers`, `canEditJob`); without it they
+    // still edit the details of the jobs they manage. Bookings are `canWriteBooking` either way.
+    { field: "projects", label: PROJECTS_TOGGLE_LABEL, help: PROJECTS_TOGGLE_HELP, levels: ["admin", "manager"] },
+    { field: "smallWorks", label: SMALL_WORKS_TOGGLE_LABEL, help: SMALL_WORKS_TOGGLE_HELP, levels: ["admin", "manager"] },
     { field: "weeklyReports", label: "Weekly Report", help: "Admins and super admins open the Weekly report; it is not offered to managers.", levels: ["admin"] },
     { field: "dailyOverview", label: "Daily Overview", help: "Can open Daily Overview from Home. If off, that tile is hidden.", levels: ["admin", "manager"] },
     {
@@ -11205,8 +11207,8 @@ var ProjectPlannerCanonical = (() => {
   // lib/canonical/rulebookStamp.ts
   function rulebookStamp() {
     return {
-      version: true ? "1.41.0" : "",
-      sha256: true ? "68409547ea3e437b8675d46b86bd71962ae701a5cdb259871ad9264371670283" : ""
+      version: true ? "1.42.0" : "",
+      sha256: true ? "0792207fcecbd9a817e126213847ceb0713c2d2c5c0c49176f93cb02ba5006cd" : ""
     };
   }
   function rulebookVersionLabel(version) {
