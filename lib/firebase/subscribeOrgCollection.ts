@@ -179,8 +179,12 @@ export function subscribeOrgCollection(
       any: snap.metadata?.hasPendingWrites === true,
       ids: new Set(snap.docs.filter((entry) => entry.metadata?.hasPendingWrites === true).map((entry) => entry.id)),
     })
-    lastPublishAuthoritative.set(key, authoritative)
-    current.onDocs(kept, { authoritative })
+    // 1.43.0 (review r318): rows carrying this device's unconfirmed writes are not the server's answer for the store
+    // (the confirmation re-publishes them, `republishHeldAsAuthoritative`); the merge above still treats a server
+    // snapshot as the collection.
+    const serverAnswer = authoritative && snap.metadata?.hasPendingWrites !== true
+    lastPublishAuthoritative.set(key, serverAnswer)
+    current.onDocs(kept, { authoritative: serverAnswer })
   }
 
   if (isOrgCollectionSubscribed(key, organizationId, queryId)) {

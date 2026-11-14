@@ -49,7 +49,8 @@ type PartState = {
   delivered?: boolean
   /**
    * 1.43.0 (review r318): this part's rows as published now are the server's answer — set by each delivered snapshot
-   * (not from cache) and by a server confirmation of unchanged rows; a cached change clears it (`serverSnapshot` above
+   * (not from cache, no unconfirmed writes of this device) and by a server confirmation of unchanged rows; a cached
+   * change or a local write clears it (`serverSnapshot` above
    * stays true once the server has ever answered, for the data check).
    */
   currentFromServer?: boolean
@@ -115,7 +116,7 @@ function startPart(key: string, state: PlanState, part: OrgPlanPart, seed?: read
           partState.docs = snap.exists() ? [{ id: snap.id, data: (snap.data() ?? {}) as Record<string, unknown> }] : []
           partState.seeded = false
           partState.serverSnapshot = partState.serverSnapshot || !snap.metadata.fromCache
-          partState.currentFromServer = !snap.metadata.fromCache
+          partState.currentFromServer = !snap.metadata.fromCache && !snap.metadata.hasPendingWrites
           partState.pendingWrites = snap.metadata.hasPendingWrites
           partState.settled = true
           emit(state)
@@ -163,7 +164,7 @@ function startPart(key: string, state: PlanState, part: OrgPlanPart, seed?: read
           partState.seeded = false
         }
         partState.serverSnapshot = partState.serverSnapshot || !snap.metadata.fromCache
-        partState.currentFromServer = !snap.metadata.fromCache
+        partState.currentFromServer = !snap.metadata.fromCache && !snap.metadata.hasPendingWrites
         partState.pendingWrites = snap.metadata.hasPendingWrites
         partState.settled = true
         emit(state)

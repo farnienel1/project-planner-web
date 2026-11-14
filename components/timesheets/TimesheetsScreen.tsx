@@ -77,6 +77,7 @@ import {
   type DataColumn,
 } from '@/components/ui/page'
 import { EXPORT_STOPPED_MESSAGE, type TimesheetInputsState } from '@/lib/timesheets/timesheetInputs'
+import { runTimesheetExport } from '@/lib/timesheets/timesheetExportRun'
 import type { PayrollTimePolicyState } from '@/lib/canonical'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 
@@ -296,71 +297,54 @@ export function TimesheetsScreen({
   payInputsRef.current = payInputs
 
   /**
-   * Stamps each listed sheet exported and returns the stamped copies (by member id), so the invoice is built from the
-   * very snapshot that was saved. Review r318: each sheet is re-read fresh; one another device exported meanwhile is
-   * skipped (never rebuilt or re-stamped); the gate is re-checked before each person and the export stops with
-   * `EXPORT_STOPPED_MESSAGE` when the bookings are reloading.
+   * Rulebook 1.43.0 (review r318): one sheet of an export, prepared without writing anything — re-read fresh (the
+   * stamp and the invoice are built from this copy); a sheet already exported is left exactly as it is; a fresh copy
+   * the person has not signed is left out; the snapshot is built (rebuilt if frozen empty,
+   * `timesheetSnapshotNeedsRebuild`) BEFORE `exportedAt` is set, because an exported snapshot is never rebuilt.
    */
-  const persistExportedFlag = async (exportedAt: Date): Promise<{ exported: Map<string, TimesheetDraft>; skipped: string[] }> => {
-    const exported = new Map<string, TimesheetDraft>()
-    const skipped: string[] = []
-    if (!organization?.id || !user) return { exported, skipped }
-    for (const member of visible) {
-      const listed = drafts.get(member.id)
-      if (!listed) continue
-      if (!payInputsRef.current.ready) {
-        throw new Error(
-          exported.size > 0
-            ? `${EXPORT_STOPPED_MESSAGE} ${exported.size} timesheet${exported.size === 1 ? ' was' : 's were'} exported before it stopped.`
-            : EXPORT_STOPPED_MESSAGE
-        )
-      }
-      const full = await loadTimesheetDraft(organization.id, member.id, periodStart, timeZone, periodEnd)
-      // Another device exported this sheet meanwhile: leave it exactly as it is.
-      if (full.exportedAt) {
-        skipped.push(displayName(member))
-        continue
-      }
-      const documentId = timesheetSourceDocumentId(full)
-      // Review r318: always the fresh copy — the stamp and the invoice are built from the same sheet.
-      const source = full
-      if (!source.operativeSignedAt) continue
-      // Rulebook 1.43.0 (review r318): build (and, if it was frozen empty, rebuild — `timesheetSnapshotNeedsRebuild`)
-      // the snapshot BEFORE the sheet is stamped exported; an exported snapshot is never rebuilt afterwards.
-      const built = applyWeeklyReportOverride({
-        draft: { ...source, exportedAt: null },
-        user: member,
-        users,
-        viewer: user,
-        weekStart: periodStart,
-        weekEnd: periodEnd,
-        bookings,
-        managerSiteBookings,
-        operatives,
-        projects,
-        smallWorks,
-        history,
-        payrollPolicy,
-        payrollPolicyPrior,
-        payrollPolicyEffectiveFrom,
-        payrollPolicyState,
-        scheduleOptions,
-        timeZone,
-      })
-      const agreed = { ...built, exportedAt }
-      await saveTimesheetDraft({
-        organizationId: organization.id,
-        userId: member.id,
-        weekStart: periodStart,
-        weekEnd: periodEnd,
-        draft: agreed,
-        timeZone,
-        documentId,
-        access: { subjectHasLineManager: !userTimesheetSelfSigned(member, users) },
-      })
-      exported.set(member.id, agreed)
-    }
-    return { exported, skipped }
+  const prepareExport = async (
+    member: User,
+    exportedAt: Date
+  ): Promise<{ draft: TimesheetDraft; documentId: string | null; member: User } | { skip: 'exported' } | null> => {
+    if (!organization?.id || !user) return null
+    const full = await loadTimesheetDraft(organization.id, member.id, periodStart, timeZone, periodEnd)
+    if (full.exportedAt) return { skip: 'exported' }
+    if (!full.operativeSignedAt) return null
+    const built = applyWeeklyReportOverride({
+      draft: { ...full, exportedAt: null },
+      user: member,
+      users,
+      viewer: user,
+      weekStart: periodStart,
+      weekEnd: periodEnd,
+      bookings,
+      managerSiteBookings,
+      operatives,
+      projects,
+      smallWorks,
+      history,
+      payrollPolicy,
+      payrollPolicyPrior,
+      payrollPolicyEffectiveFrom,
+      payrollPolicyState,
+      scheduleOptions,
+      timeZone,
+    })
+    return { draft: { ...built, exportedAt }, documentId: timesheetSourceDocumentId(full), member }
+  }
+
+  const stampExport = async (sheet: { draft: TimesheetDraft; documentId: string | null; member: User }) => {
+    if (!organization?.id) return
+    await saveTimesheetDraft({
+      organizationId: organization.id,
+      userId: sheet.member.id,
+      weekStart: periodStart,
+      weekEnd: periodEnd,
+      draft: sheet.draft,
+      timeZone,
+      documentId: sheet.documentId,
+      access: { subjectHasLineManager: !userTimesheetSelfSigned(sheet.member, users) },
+    })
   }
 
   const exportSigned = async () => {
@@ -379,122 +363,145 @@ export function TimesheetsScreen({
     const pdfAttachments: Array<{ fileName: string; content: string }> = []
     const failed: string[] = []
     const exportedAt = new Date()
+    let stopMessage: string | null = null
     try {
-      const { exported, skipped } = await persistExportedFlag(exportedAt)
-      forgetExportedTimesheetHistory()
-      for (const member of visible) {
-        // Review r318: the invoice is the snapshot that was just saved (`exported`); a skipped sheet gets none.
-        const agreed = exported.get(member.id)
-        if (!agreed) continue
-        const name = displayName(member)
-        const payroll = collectTimesheetPayroll({
-          user: member,
-          bookings,
-          managerSiteBookings,
-          operatives,
-          projects,
-          smallWorks,
-          periodStart,
-          periodEnd,
-          payrollPolicy,
-          payrollPolicyPrior,
-          payrollPolicyEffectiveFrom,
-          payrollPolicyState,
-          timeZone,
-          history,
-          scheduleOptions,
-          aliasUserIds: userIdsSharingEmail(member, users),
-        })
-        const lines = invoiceLinesForTimesheet({
-          payroll,
-          draft: agreed,
-          timeZone,
-          extrasMode: 'export',
-          standardDayHours: weekdayPaidHours(payrollPolicy),
-          // Rulebook 1.19.0: a signed line's day units against the standard day in effect on its own day.
-          standardDayHoursOn: (date: Date) =>
-            weekdayPaidHours(
-              orgPayrollPolicyForDay(date, payrollPolicy, payrollPolicyPrior, payrollPolicyEffectiveFrom, timeZone, null, payrollPolicyState)
-            ),
-          currencyCode: currency,
-          // Rulebook 1.11.0: only the self-employed days of the period reach the invoice.
-          timesheetDays: timesheetDayKeysForPeriod(member, periodStart, periodEnd, timeZone),
-        })
-        const includeTaxIds = exportIncludesSensitiveFields({
-          requested: exportTaxIds,
-          canView: canViewSensitiveProfile({
-            viewerRole: staffAccountRole(user),
-            viewerUserId: user.id,
-            subjectUserId: member.id,
-          }),
-        })
-        const taxIds = includeTaxIds ? await loadTaxIds(member.id, member).catch(() => null) : null
-        const pdf = buildTimesheetInvoicePdf({
-          organizationName: organization.name || 'Organisation',
-          subject: subjectForUser(member, operatives),
-          weekStart: periodStart,
-          weekEnd: periodEnd,
-          amount: invoiceLinesTotal(lines),
-          vatNumber: taxIds?.vatNumber || undefined,
-          utrNumber: taxIds?.utrNumber || undefined,
-          timeZone,
-          lines,
-          notes: signatureNotes(agreed, timeZone),
-          documentTitle: 'Timesheet',
-          periodMetaLabel: 'PAYMENT RUN',
-          totalLabel: 'Total timesheet amount',
-          emptyStateMessage: 'No work entries were found for this timesheet period.',
-          currencyCode: currency,
-        })
-        const fileName = timesheetExportFileName(name, stamp)
-        pdfAttachments.push({ fileName, content: pdfBytesToBase64(pdf) })
-        try {
-          const url = await uploadFile(
-            timesheetExportPath(organization.id, fileName),
-            timesheetPdfBlob(pdf),
-            'application/pdf'
-          )
-          downloadLinks.push({ fileName, url })
-        } catch {
-          failed.push(name)
-        }
+      const run = await runTimesheetExport({
+        members: visible.filter((member) => drafts.has(member.id)),
+        memberId: (member) => member.id,
+        memberName: (member) => displayName(member),
+        // Rulebook 1.43.0 (review r318): every person is prepared (and the gate checked) before anyone is stamped.
+        gateReady: () => payInputsRef.current.ready,
+        prepare: (member) => prepareExport(member, exportedAt),
+        stamp: (row) => stampExport(row.sheet),
+        forgetHistory: forgetExportedTimesheetHistory,
+        // Every sheet that was stamped gets its PDF, backup and email — also when a later stamp failed.
+        deliver: async (rows) => {
+          const exported = new Map(rows.map((row) => [row.memberId, row.sheet.draft]))
+          for (const member of visible) {
+            // Review r318: the invoice is the snapshot that was just saved (`exported`); a skipped sheet gets none.
+            const agreed = exported.get(member.id)
+            if (!agreed) continue
+            const name = displayName(member)
+            const payroll = collectTimesheetPayroll({
+              user: member,
+              bookings,
+              managerSiteBookings,
+              operatives,
+              projects,
+              smallWorks,
+              periodStart,
+              periodEnd,
+              payrollPolicy,
+              payrollPolicyPrior,
+              payrollPolicyEffectiveFrom,
+              payrollPolicyState,
+              timeZone,
+              history,
+              scheduleOptions,
+              aliasUserIds: userIdsSharingEmail(member, users),
+            })
+            const lines = invoiceLinesForTimesheet({
+              payroll,
+              draft: agreed,
+              timeZone,
+              extrasMode: 'export',
+              standardDayHours: weekdayPaidHours(payrollPolicy),
+              // Rulebook 1.19.0: a signed line's day units against the standard day in effect on its own day.
+              standardDayHoursOn: (date: Date) =>
+                weekdayPaidHours(
+                  orgPayrollPolicyForDay(date, payrollPolicy, payrollPolicyPrior, payrollPolicyEffectiveFrom, timeZone, null, payrollPolicyState)
+                ),
+              currencyCode: currency,
+              // Rulebook 1.11.0: only the self-employed days of the period reach the invoice.
+              timesheetDays: timesheetDayKeysForPeriod(member, periodStart, periodEnd, timeZone),
+            })
+            const includeTaxIds = exportIncludesSensitiveFields({
+              requested: exportTaxIds,
+              canView: canViewSensitiveProfile({
+                viewerRole: staffAccountRole(user),
+                viewerUserId: user.id,
+                subjectUserId: member.id,
+              }),
+            })
+            const taxIds = includeTaxIds ? await loadTaxIds(member.id, member).catch(() => null) : null
+            const pdf = buildTimesheetInvoicePdf({
+              organizationName: organization.name || 'Organisation',
+              subject: subjectForUser(member, operatives),
+              weekStart: periodStart,
+              weekEnd: periodEnd,
+              amount: invoiceLinesTotal(lines),
+              vatNumber: taxIds?.vatNumber || undefined,
+              utrNumber: taxIds?.utrNumber || undefined,
+              timeZone,
+              lines,
+              notes: signatureNotes(agreed, timeZone),
+              documentTitle: 'Timesheet',
+              periodMetaLabel: 'PAYMENT RUN',
+              totalLabel: 'Total timesheet amount',
+              emptyStateMessage: 'No work entries were found for this timesheet period.',
+              currencyCode: currency,
+            })
+            const fileName = timesheetExportFileName(name, stamp)
+            pdfAttachments.push({ fileName, content: pdfBytesToBase64(pdf) })
+            try {
+              const url = await uploadFile(
+                timesheetExportPath(organization.id, fileName),
+                timesheetPdfBlob(pdf),
+                'application/pdf'
+              )
+              downloadLinks.push({ fileName, url })
+            } catch {
+              failed.push(name)
+            }
+          }
+          if (recipientEmail && pdfAttachments.length > 0) {
+            const response = await fetch('/api/timesheets/export-email', {
+              method: 'POST',
+              headers: await jsonAuthHeaders(),
+              body: JSON.stringify({
+                organizationId: organization.id,
+                recipientEmail,
+                recipientName: `${user.firstName} ${user.surname}`.trim() || user.email,
+                organizationName: organization.name || 'Organisation',
+                weekTitle: periodLine,
+                paymentRunStamp: stamp,
+                timesheetCount: pdfAttachments.length,
+                attachmentNames: pdfAttachments.map((row) => row.fileName),
+                downloadLinks,
+                pdfAttachments,
+              }),
+            })
+            const payload = (await response.json().catch(() => ({}))) as { error?: string }
+            if (!response.ok) {
+              setExportMessage(payload.error || 'Timesheets were exported. Email delivery failed.')
+              router.replace(timesheetsTeamHref({ tab: 'exported' }))
+              return
+            }
+            setExportMessage(
+              failed.length
+                ? `Emailed ${pdfAttachments.length} to ${recipientEmail}. Storage backup skipped: ${failed.join(', ')}.`
+                : `Emailed ${pdfAttachments.length} timesheet${pdfAttachments.length === 1 ? '' : 's'} to ${recipientEmail} for filing.`
+            )
+          } else if (!recipientEmail) {
+            setExportMessage('Timesheets were exported. Add an email address to receive the filing copy.')
+          } else {
+            setExportMessage(failed.length ? `Exported. Storage backup skipped: ${failed.join(', ')}.` : 'Timesheets exported.')
+          }
+        },
+      })
+      if (run.stopped?.reason === 'gate') {
+        setExportMessage(EXPORT_STOPPED_MESSAGE)
+        return
       }
-      if (recipientEmail && pdfAttachments.length > 0) {
-        const response = await fetch('/api/timesheets/export-email', {
-          method: 'POST',
-          headers: await jsonAuthHeaders(),
-          body: JSON.stringify({
-            organizationId: organization.id,
-            recipientEmail,
-            recipientName: `${user.firstName} ${user.surname}`.trim() || user.email,
-            organizationName: organization.name || 'Organisation',
-            weekTitle: periodLine,
-            paymentRunStamp: stamp,
-            timesheetCount: pdfAttachments.length,
-            attachmentNames: pdfAttachments.map((row) => row.fileName),
-            downloadLinks,
-            pdfAttachments,
-          }),
-        })
-        const payload = (await response.json().catch(() => ({}))) as { error?: string }
-        if (!response.ok) {
-          setExportMessage(payload.error || 'Timesheets were exported. Email delivery failed.')
-          router.replace(timesheetsTeamHref({ tab: 'exported' }))
-          return
-        }
-        setExportMessage(
-          failed.length
-            ? `Emailed ${pdfAttachments.length} to ${recipientEmail}. Storage backup skipped: ${failed.join(', ')}.`
-            : `Emailed ${pdfAttachments.length} timesheet${pdfAttachments.length === 1 ? '' : 's'} to ${recipientEmail} for filing.`
-        )
-      } else if (!recipientEmail) {
-        setExportMessage('Timesheets were exported. Add an email address to receive the filing copy.')
-      } else {
-        setExportMessage(failed.length ? `Exported. Storage backup skipped: ${failed.join(', ')}.` : 'Timesheets exported.')
+      if (run.stopped?.reason === 'stamp') {
+        const why = run.stopped.error instanceof Error ? ` (${run.stopped.error.message})` : ''
+        stopMessage = `Export stopped${why}: ${run.stamped.length} timesheet${run.stamped.length === 1 ? ' was' : 's were'} exported and sent; the rest were not. Try again for the rest.`
       }
+      const skipped = run.skipped
       if (skipped.length > 0) {
-        setExportMessage((message) => `${message ?? 'Timesheets exported.'} Already exported on another device, left as it was: ${skipped.join(', ')}.`)
+        setExportMessage((message) => `${message ?? 'Timesheets exported.'} Already exported, left as it was: ${skipped.join(', ')}.`)
       }
+      if (stopMessage) setExportMessage((message) => `${stopMessage}${message ? ` ${message}` : ''}`)
       router.replace(timesheetsTeamHref({ tab: 'exported' }))
     } catch (error) {
       setExportMessage(error instanceof Error ? error.message : 'Export failed.')
