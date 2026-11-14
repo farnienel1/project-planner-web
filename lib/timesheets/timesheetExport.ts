@@ -110,6 +110,9 @@ export type TimesheetInvoiceLine = {
   details: string
   description: string
   amount: number
+  /** Rulebook 1.45.0: the `timesheetInvoiceRows` row this line came from (kind and stored id), for the evidence pages. */
+  kind?: 'labour' | 'priceWork' | 'expense'
+  entryId?: string
 }
 
 function signedOverrideDetails(
@@ -206,6 +209,8 @@ export function invoiceLinesForTimesheet({
         details,
         description: `${row.source === 'override' ? jobNumber : live?.jobNumber} ${projectName} · ${details}`,
         amount: row.amount,
+        kind: 'labour',
+        entryId: row.id,
       })
       continue
     }
@@ -228,6 +233,8 @@ export function invoiceLinesForTimesheet({
       details,
       description: `${jobNumber} ${label} · ${details}`,
       amount: row.amount,
+      kind: row.kind === 'priceWork' ? 'priceWork' : 'expense',
+      entryId: row.id,
     })
   }
   return rows

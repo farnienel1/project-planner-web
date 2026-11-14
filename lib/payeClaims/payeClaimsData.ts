@@ -14,6 +14,7 @@ import {
   query,
   serverTimestamp,
   setDoc,
+  updateDoc,
   where,
   writeBatch,
   type Unsubscribe,
@@ -27,8 +28,11 @@ import {
   PAYE_CLAIM_REVIEWS_COLLECTION,
   parsePayeClaimReviewDocument,
   type PayeClaimReviewRecord,
+  claimEvidenceRemoved,
+  expenseUpdateWriteFields,
   expenseValidationError,
   expenseWriteFields,
+  priceWorkUpdateWriteFields,
   parseExpenseDocument,
   parsePayeClaimReportDocument,
   parsePersonalSiteAuditDocument,
@@ -291,9 +295,47 @@ export async function addExpense(input: { organizationId: string; draft: Expense
  * Deletes the person's own just-uploaded claim files that `payeClaimEvidenceToDelete` allows (inside the §24 undo
  * window); the rest are kept. Failures are ignored (the file is then kept, as §24 says).
  */
+/**
+ * Rulebook 1.45.0 §8: deletes claim files a timesheet save removed, as `timesheetEntryEvidenceToDelete` chose them (the
+ * viewer's own uploads within the §24 undo window). Failures are ignored (the file is then kept).
+ */
+export async function deleteOwnClaimFiles(paths: ReadonlyArray<string>): Promise<void> {
+  await Promise.all(paths.map((path) => deleteObject(ref(storage, path)).catch(() => undefined)))
+}
+
 export async function discardClaimEvidence(organizationId: string, evidence: ReadonlyArray<Pick<PayeClaimEvidence, 'path'>>): Promise<void> {
   const paths = payeClaimEvidenceToDelete(evidence, { organizationId, viewerUserId: uid(), nowMs: Date.now() })
   await Promise.all(paths.map((path) => deleteObject(ref(storage, path)).catch(() => undefined)))
+}
+
+/**
+ * Rulebook 1.45.0 §26: Save changes on one of the person's own items — the rulebook's partial update
+ * (`priceWorkUpdateWriteFields` / `expenseUpdateWriteFields`: validated as a new item, only changed fields, never
+ * `userId`, `createdBy`, `personUserId` or the currency). The security rules accept the person's update of an item filed
+ * under their own uid. Evidence the edit removed is deleted only inside the §24 undo window; the rest is kept.
+ */
+export async function updatePayeClaim(input: {
+  organizationId: string
+  item: PayeClaimItem
+  draft: PriceWorkDraft & ExpenseDraft
+  person?: LineManagerSubject
+  roster?: ReadonlyArray<LineManagerRosterPerson>
+}): Promise<void> {
+  const me = uid()
+  const write =
+    input.item.kind === 'priceWork'
+      ? priceWorkUpdateWriteFields({ item: input.item, userId: me, draft: input.draft, person: input.person, roster: input.roster, organizationId: input.organizationId })
+      : expenseUpdateWriteFields({ item: input.item, userId: me, draft: input.draft, organizationId: input.organizationId })
+  if (!write) {
+    const message =
+      input.item.kind === 'priceWork'
+        ? priceWorkValidationError(input.draft, { person: input.person, roster: input.roster, organizationId: input.organizationId })
+        : expenseValidationError(input.draft, { organizationId: input.organizationId, userId: me })
+    throw new Error(message || 'Only the person who added it can change it.')
+  }
+  if (Object.keys(write.set).length === 0) return
+  await updateDoc(doc(db, 'organizations', input.organizationId, COLLECTION[input.item.kind], input.item.id), { ...write.set, ...metadata() })
+  await discardClaimEvidence(input.organizationId, claimEvidenceRemoved(input.item.evidence, (input.draft.evidence || []) as PayeClaimEvidence[]))
 }
 
 /** The person removes one of their own items; evidence uploaded within the undo window goes too, the rest is kept (§24). */

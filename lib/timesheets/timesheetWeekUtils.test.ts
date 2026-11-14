@@ -4,7 +4,6 @@ import {
   collectSubjectDayEntries,
   extraFormJobSuggestions,
   subjectForUser,
-  timesheetReceiptStoredName,
   timesheetRosterGroups,
 } from './timesheetWeekUtils.ts'
 import type { Booking, Operative, User } from '../../types/index.ts'
@@ -121,9 +120,3 @@ test('extraFormJobSuggestions dedupes the same job number from projects and smal
   assert.equal(jobs[0]?.jobNumber, 'J-1')
 })
 
-test('timesheetReceiptStoredName matches iOS receipt.{ext}', () => {
-  assert.equal(timesheetReceiptStoredName('Parking.HEIC'), 'receipt.heic')
-  assert.equal(timesheetReceiptStoredName('photo.JPEG'), 'receipt.jpeg')
-  assert.equal(timesheetReceiptStoredName('no-extension'), 'receipt-uploaded')
-  assert.equal(timesheetReceiptStoredName(''), 'receipt-uploaded')
-})
