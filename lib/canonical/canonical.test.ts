@@ -14588,3 +14588,60 @@ test('1.44.0 link an unknown id to a person: candidates (one per person, live si
   const after = R112.scheduleRowPerson('6a9632ba-x', { accounts: [{ id: 'farnie', email: 'f@example.com', formerIds: ['OLD-1', '6A9632BA-X'] }], operatives: [] })
   assert.deepEqual([after.unresolved, after.accountId], [false, 'farnie'])
 })
+
+// MARK: - 1.44.0: one level for every role shape (lineManagers `levelOf` = `permissionLevelOf`)
+
+test('1.44.0 levelOf: a flagless person is manager level whatever the role shape; operative and admin flags win', () => {
+  const base = { email: '', isActive: true, passwordSet: true, organizationId: 'org1' }
+  const noFlags = { isAdmin: false, isSuperAdmin: false, isManager: false, isOperativeMode: false }
+  const roster = [
+    { ...base, id: 'obj-flagless', firstName: 'Obj', surname: 'Flagless', email: 'obj@example.com', role: { ...noFlags } },
+    { ...base, id: 'member', firstName: 'Mem', surname: 'Ber', email: 'mem@example.com', role: 'member' },
+    { ...base, id: 'none', firstName: 'No', surname: 'Role', email: 'none@example.com' },
+    { ...base, id: 'obj-mgr', firstName: 'Obj', surname: 'Manager', email: 'objm@example.com', role: { ...noFlags, isManager: true } },
+    { ...base, id: 'obj-op', firstName: 'Obj', surname: 'Op', email: 'objop@example.com', role: { ...noFlags, isOperativeMode: true } },
+    { ...base, id: 'flag-op', firstName: 'Flag', surname: 'Op', email: 'flagop@example.com', operativeMode: true },
+    { ...base, id: 'str-op', firstName: 'Str', surname: 'Op', email: 'strop@example.com', role: 'operative' },
+    { ...base, id: 'obj-admin', firstName: 'Obj', surname: 'Admin', email: 'obja@example.com', role: { ...noFlags, isAdmin: true } },
+    { ...base, id: 'obj-super', firstName: 'Obj', surname: 'Super', email: 'objs@example.com', role: { ...noFlags, isSuperAdmin: true } },
+    { ...base, id: 'flag-admin', firstName: 'Flag', surname: 'Admin', email: 'flaga@example.com', adminAccess: true },
+  ]
+  const levels = Object.fromEntries(
+    R112.lineManagerCandidates(null, roster as never).map((c: { id: string; level: string }) => [c.id, c.level])
+  )
+  assert.deepEqual(levels, {
+    'obj-flagless': 'manager',
+    member: 'manager',
+    none: 'manager',
+    'obj-mgr': 'manager',
+    'obj-admin': 'admin',
+    'obj-super': 'admin',
+    'flag-admin': 'admin',
+  })
+  // The same people on the job manager picker.
+  assert.deepEqual(
+    R112.jobManagerCandidates(roster as never).map((c: { id: string }) => c.id).sort(),
+    Object.keys(levels).sort()
+  )
+  // The same line managers count for `lineManagerIds` (flagless object role was already a line manager there).
+  const report = { id: 'r1', email: 'r1@example.com', assignedManagerUserIds: ['obj-flagless'] }
+  assert.deepEqual(R112.lineManagerIds(report, roster as never), ['obj-flagless'])
+  // A ghost may be given a flagless legacy manager whichever roster shape the app passes (stored rows or resolved roles).
+  const draft = { firstName: 'Ghost', surname: 'Person', dayRate: 150, payBasis: 'day' as const, lineManagerIds: ['obj-flagless'] }
+  assert.equal(R112.ghostCreateError(draft, { roster: roster as never }), null)
+  assert.equal(R112.ghostCreateError({ ...draft, lineManagerIds: ['member'] }, { roster: roster as never }), null)
+  assert.equal(R112.ghostCreateError({ ...draft, lineManagerIds: ['obj-op'] }, { roster: roster as never }), R112.GHOST_LINE_MANAGER_INVALID_MESSAGE)
+})
+
+test('1.44.0 linkBookingPersonImpact: lists what else a link brings and asks for a tick when pay may change', () => {
+  assert.deepEqual(R112.linkBookingPersonImpact({}), { parts: [], alsoText: null, requiresPayAck: false })
+  assert.deepEqual(R112.linkBookingPersonImpact({ rateHistoryRows: 2, leaveRecords: 1 }), {
+    parts: ['2 pay-rate history rows', '1 leave record'],
+    alsoText: 'Also linked: 2 pay-rate history rows, 1 leave record. Pay for unsigned timesheets may change.',
+    requiresPayAck: true,
+  })
+  const noPay = R112.linkBookingPersonImpact({ timesheets: 1, overtimeRequests: 3, priceWorkItems: 1, expenseItems: 2, rateHistoryRows: 0 })
+  assert.equal(noPay.alsoText, 'Also linked: 1 timesheet, 3 overtime requests, 1 price work item, 2 expenses.')
+  assert.equal(noPay.requiresPayAck, false)
+  assert.equal(R112.LINK_BOOKING_PERSON_PAY_ACK_LABEL, 'I understand pay may change')
+})

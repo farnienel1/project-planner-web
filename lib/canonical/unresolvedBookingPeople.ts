@@ -22,7 +22,9 @@ export const UNRESOLVED_BOOKINGS_HELP =
   'These bookings are filed under an ID that does not match anyone in your company — usually an old account or ' +
   'invite of someone who was later added again. They still show on the job\'s schedule as "Unknown person". ' +
   'Choose who each ID belongs to and every booking under it will show as that person everywhere (schedule, ' +
-  'Daily Overview, warnings, timesheets and reports). Nothing else about the bookings changes.'
+  'Daily Overview, warnings, timesheets and reports). Anything else filed under the ID — pay-rate history, annual ' +
+  'leave, timesheets, overtime, price work and expenses — becomes theirs too; the confirm lists it, and if pay-rate ' +
+  'history is filed under the ID, pay for unsigned timesheets may change. Nothing on the records themselves changes.'
 export const UNRESOLVED_BOOKINGS_EMPTY = 'Every booking is linked to a person.'
 export const LINK_BOOKING_PERSON_ACTION = 'Link to a person…'
 
@@ -272,4 +274,56 @@ export function linkBookingPersonWriteFields(input: {
   const metadata = writeMetadataFields(input.actorUserId, input.platform)
   if (!metadata) return null
   return { arrayUnion: { formerUserIds: [id] }, set: { ...metadata } }
+}
+
+// MARK: - What else a link brings with it (1.44.0 review r319)
+
+export const LINK_BOOKING_PERSON_PAY_ACK_LABEL = 'I understand pay may change'
+export const LINK_BOOKING_PERSON_PAY_WARNING = 'Pay for unsigned timesheets may change.'
+
+export type LinkBookingPersonFiledUnder = {
+  /** `operativeDayRateHistory` rows whose `userId` or `operativeId` is the id. */
+  rateHistoryRows?: number
+  /** `holidayBookings` whose `userId` or `operativeId` is the id. */
+  leaveRecords?: number
+  /** `settings/timesheet_<id>_*` sheets, or sheets whose `userId` is the id. */
+  timesheets?: number
+  overtimeRequests?: number
+  priceWorkItems?: number
+  expenseItems?: number
+}
+
+export type LinkBookingPersonImpact = {
+  /** "2 pay-rate history rows", "1 leave record", … in that order; only kinds with at least one record. */
+  parts: string[]
+  /** "Also linked: 2 pay-rate history rows, 1 leave record. Pay for unsigned timesheets may change." or null. */
+  alsoText: string | null
+  /** A rate history row is filed under the id: pay may change, so the admin must tick `LINK_BOOKING_PERSON_PAY_ACK_LABEL`. */
+  requiresPayAck: boolean
+}
+
+function countText(n: number, one: string, many: string): string {
+  return `${n} ${n === 1 ? one : many}`
+}
+
+/**
+ * Rulebook 1.44.0 §11 (review r319): linking an id adds it to the person's `formerUserIds`, so everything filed under
+ * it becomes theirs through `personIdSet` — not only bookings: pay-rate history (`payRateOnDay` reads those rows, so the
+ * pay of unsigned timesheets may change), annual leave, timesheets, overtime requests, price work and expenses. The
+ * confirm lists them (`alsoText`) and, when any rate history row is filed under the id, the Link button waits for an
+ * explicit tick (`requiresPayAck`, `LINK_BOOKING_PERSON_PAY_ACK_LABEL`). Counts below 1 (or missing) are left out.
+ */
+export function linkBookingPersonImpact(filed: LinkBookingPersonFiledUnder | null | undefined): LinkBookingPersonImpact {
+  const n = (value: unknown) => Math.max(0, Math.floor(Number(value) || 0))
+  const f = filed || {}
+  const parts: string[] = []
+  if (n(f.rateHistoryRows)) parts.push(countText(n(f.rateHistoryRows), 'pay-rate history row', 'pay-rate history rows'))
+  if (n(f.leaveRecords)) parts.push(countText(n(f.leaveRecords), 'leave record', 'leave records'))
+  if (n(f.timesheets)) parts.push(countText(n(f.timesheets), 'timesheet', 'timesheets'))
+  if (n(f.overtimeRequests)) parts.push(countText(n(f.overtimeRequests), 'overtime request', 'overtime requests'))
+  if (n(f.priceWorkItems)) parts.push(countText(n(f.priceWorkItems), 'price work item', 'price work items'))
+  if (n(f.expenseItems)) parts.push(countText(n(f.expenseItems), 'expense', 'expenses'))
+  const requiresPayAck = n(f.rateHistoryRows) > 0
+  const alsoText = parts.length ? `Also linked: ${parts.join(', ')}.${requiresPayAck ? ` ${LINK_BOOKING_PERSON_PAY_WARNING}` : ''}` : null
+  return { parts, alsoText, requiresPayAck }
 }

@@ -114,3 +114,19 @@ export function republishHeldAsAuthoritative(input: {
 }): boolean {
   return !input.fromCache && !input.hasPendingWrites && input.heldIsSnapshot && !input.lastPublishAuthoritative
 }
+
+/**
+ * 1.43.0 (review r318): whether one single-document snapshot of a read plan (now listened to with metadata changes) is
+ * published: the first one always; then when the data changed, or when it is a server confirmation (not from cache,
+ * no unconfirmed writes of this device) of data last published from cache or with a local write. A metadata-only
+ * snapshot that changes nothing for the store is not published.
+ */
+export function documentSnapshotPublishes(input: {
+  delivered: boolean
+  changed: boolean
+  wasFromServer: boolean
+  nowFromServer: boolean
+}): boolean {
+  if (!input.delivered || input.changed) return true
+  return input.nowFromServer && !input.wasFromServer
+}

@@ -10,12 +10,13 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { arrayUnion, collection, doc, getDocs, query, runTransaction, serverTimestamp, where } from 'firebase/firestore'
+import { arrayUnion, collection, doc, documentId, getDocs, query, runTransaction, serverTimestamp, where } from 'firebase/firestore'
 import { getFirebaseDb } from '@/lib/firebase/ensureFirebase'
 import { auth } from '@/lib/firebase/config'
 import {
   LINK_BOOKING_PERSON_ACTION,
   LINK_BOOKING_PERSON_ALREADY_MESSAGE,
+  LINK_BOOKING_PERSON_PAY_ACK_LABEL,
   LINK_BOOKING_PERSON_SELF_NOTE,
   UNRESOLVED_BOOKINGS_EMPTY,
   UNRESOLVED_BOOKINGS_HEADING,
@@ -23,12 +24,15 @@ import {
   linkBookingPersonCandidates,
   linkBookingPersonConfirmMessage,
   linkBookingPersonDoneMessage,
+  linkBookingPersonImpact,
   linkBookingPersonRefusal,
   linkBookingPersonWriteFields,
   parseBookingDocument,
   parseManagerSiteBookingDocument,
   rosterAliasIdsFor,
   unresolvedBookingPeople,
+  type LinkBookingPersonFiledUnder,
+  type LinkBookingPersonImpact,
   type LinkCandidateProfile,
   type UnresolvedBookingInput,
   type UnresolvedBookingPerson,
@@ -68,6 +72,46 @@ async function loadOrgRoster(organizationId: string): Promise<LinkCandidateProfi
   return snap.docs.map((row) => linkProfile(row.id, row.data()))
 }
 
+/**
+ * Rulebook 1.44.0 §11 (`linkBookingPersonImpact`): what else is filed under the id — counted once per document,
+ * whichever field names it. Admin reads; a collection the viewer may not read counts as 0 rather than blocking the link.
+ */
+async function loadFiledUnder(organizationId: string, personId: string): Promise<LinkBookingPersonFiledUnder> {
+  const db = getFirebaseDb()
+  const org = (name: string) => collection(db, 'organizations', organizationId, name)
+  const count = async (queries: Array<ReturnType<typeof query>>): Promise<number> => {
+    const ids = new Set<string>()
+    for (const q of queries) {
+      try {
+        const snap = await getDocs(q)
+        for (const d of snap.docs) ids.add(d.id)
+      } catch {
+        // Not readable for this viewer: leave it out of the count.
+      }
+    }
+    return ids.size
+  }
+  const prefix = `timesheet_${personId}_`
+  const [rateHistoryRows, leaveRecords, timesheets, overtimeRequests, priceWorkItems, expenseItems] = await Promise.all([
+    count([
+      query(org('operativeDayRateHistory'), where('userId', '==', personId)),
+      query(org('operativeDayRateHistory'), where('operativeId', '==', personId)),
+    ]),
+    count([
+      query(org('holidayBookings'), where('userId', '==', personId)),
+      query(org('holidayBookings'), where('operativeId', '==', personId)),
+    ]),
+    count([
+      query(org('settings'), where(documentId(), '>=', prefix), where(documentId(), '<', `${prefix}\uf8ff`)),
+      query(org('settings'), where('userId', '==', personId)),
+    ]),
+    count([query(org('overtimeRequests'), where('userId', '==', personId))]),
+    count([query(org('priceWorkItems'), where('userId', '==', personId))]),
+    count([query(org('expenseItems'), where('userId', '==', personId))]),
+  ])
+  return { rateHistoryRows, leaveRecords, timesheets, overtimeRequests, priceWorkItems, expenseItems }
+}
+
 function jobLabel(data: Record<string, unknown>): string {
   const number = typeof data.jobNumber === 'string' || typeof data.jobNumber === 'number' ? String(data.jobNumber).trim() : ''
   const name = typeof data.siteName === 'string' ? data.siteName.trim() : typeof data.name === 'string' ? data.name.trim() : ''
@@ -82,6 +126,8 @@ export function BookingsNotLinkedToPerson({ organizationId }: { organizationId: 
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [picking, setPicking] = useState<string | null>(null)
+  const [impact, setImpact] = useState<LinkBookingPersonImpact | null>(null)
+  const [payAck, setPayAck] = useState(false)
   const [choice, setChoice] = useState<string>('')
   const [saving, setSaving] = useState(false)
   const [roster, setRoster] = useState<LinkCandidateProfile[]>([])
@@ -182,7 +228,9 @@ export function BookingsNotLinkedToPerson({ organizationId }: { organizationId: 
   const link = async (row: UnresolvedBookingPerson) => {
     const person = candidates.find((c) => c.id === choice)
     if (!person) return
-    if (!window.confirm(linkBookingPersonConfirmMessage(row.count, person.name))) return
+    if (!impact || (impact.requiresPayAck && !payAck)) return
+    const confirmText = [linkBookingPersonConfirmMessage(row.count, person.name), impact.alsoText].filter(Boolean).join('\n\n')
+    if (!window.confirm(confirmText)) return
     setSaving(true)
     setError(null)
     setNotice(null)
@@ -233,6 +281,8 @@ export function BookingsNotLinkedToPerson({ organizationId }: { organizationId: 
         setNotice(outcome.wrote ? linkBookingPersonDoneMessage(row.count, person.name) : LINK_BOOKING_PERSON_ALREADY_MESSAGE)
         setPicking(null)
         setChoice('')
+        setImpact(null)
+        setPayAck(false)
         await loadUsers(organizationId, { force: true })
         await run()
       }
@@ -306,15 +356,41 @@ export function BookingsNotLinkedToPerson({ organizationId }: { organizationId: 
                     ))}
                   </select>
                   <span className="w-full text-[12px] text-[var(--ink3)]">{LINK_BOOKING_PERSON_SELF_NOTE}</span>
-                  <button type="button" className="btn primary sm" disabled={!choice || saving} onClick={() => void link(row)}>
+                  {!impact ? (
+                    <span className="w-full text-[12px] text-[var(--ink3)]">Checking what else is filed under this ID…</span>
+                  ) : impact.alsoText ? (
+                    <span className="w-full text-[12px] font-medium text-amber-800">{impact.alsoText}</span>
+                  ) : null}
+                  {impact?.requiresPayAck ? (
+                    <label className="flex w-full items-center gap-2 text-[12px]">
+                      <input type="checkbox" checked={payAck} onChange={(event) => setPayAck(event.target.checked)} />
+                      {LINK_BOOKING_PERSON_PAY_ACK_LABEL}
+                    </label>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="btn primary sm"
+                    disabled={!choice || saving || !impact || (impact.requiresPayAck && !payAck)}
+                    onClick={() => void link(row)}
+                  >
                     {saving ? 'Linking…' : 'Link'}
                   </button>
-                  <button type="button" className="btn sm ghost" disabled={saving} onClick={() => { setPicking(null); setChoice('') }}>
+                  <button type="button" className="btn sm ghost" disabled={saving} onClick={() => { setPicking(null); setChoice(''); setImpact(null); setPayAck(false) }}>
                     Cancel
                   </button>
                 </div>
               ) : (
-                <button type="button" className="btn sm mt-2" onClick={() => { setPicking(row.personId); setChoice('') }}>
+                <button
+                  type="button"
+                  className="btn sm mt-2"
+                  onClick={() => {
+                    setPicking(row.personId)
+                    setChoice('')
+                    setImpact(null)
+                    setPayAck(false)
+                    void loadFiledUnder(organizationId, row.personId).then((filed) => setImpact(linkBookingPersonImpact(filed)))
+                  }}
+                >
                   {LINK_BOOKING_PERSON_ACTION}
                 </button>
               )}

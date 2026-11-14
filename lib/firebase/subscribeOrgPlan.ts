@@ -24,6 +24,7 @@ import type { OrgCollectionDoc } from '@/lib/firebase/subscribeOrgCollection'
 import {
   isMetadataOnlySnapshot,
   mergeOrgCollectionSnapshot,
+  documentSnapshotPublishes,
   orgPlanAuthoritative,
   republishHeldAsAuthoritative,
 } from '@/lib/firebase/orgCollectionMerge'
@@ -111,13 +112,30 @@ function startPart(key: string, state: PlanState, part: OrgPlanPart, seed?: read
     if (part.documentId) {
       partState.unsub = onSnapshot(
         doc(firestore, 'organizations', state.organizationId, state.collectionName, part.documentId),
+        // 1.43.0 (review r318): metadata changes too, so the server's confirmation of a local write (same data) reaches
+        // the part and it turns authoritative again (`documentSnapshotPublishes`).
+        { includeMetadataChanges: true },
         (snap) => {
           if (!live()) return
-          partState.docs = snap.exists() ? [{ id: snap.id, data: (snap.data() ?? {}) as Record<string, unknown> }] : []
-          partState.seeded = false
+          const docs = snap.exists() ? [{ id: snap.id, data: (snap.data() ?? {}) as Record<string, unknown> }] : []
+          const nowFromServer = !snap.metadata.fromCache && !snap.metadata.hasPendingWrites
+          const publish = documentSnapshotPublishes({
+            delivered: partState.delivered === true,
+            changed: JSON.stringify(docs) !== JSON.stringify(partState.docs),
+            wasFromServer: partState.currentFromServer === true,
+            nowFromServer,
+          })
           partState.serverSnapshot = partState.serverSnapshot || !snap.metadata.fromCache
-          partState.currentFromServer = !snap.metadata.fromCache && !snap.metadata.hasPendingWrites
           partState.pendingWrites = snap.metadata.hasPendingWrites
+          if (!publish) {
+            // Metadata only (no data change, no new server confirmation): flags only, as before.
+            partState.currentFromServer = nowFromServer
+            return
+          }
+          partState.delivered = true
+          partState.docs = docs
+          partState.seeded = false
+          partState.currentFromServer = nowFromServer
           partState.settled = true
           emit(state)
           settle(state)

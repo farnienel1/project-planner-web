@@ -210,6 +210,8 @@ var ProjectPlannerCanonical = (() => {
     LINE_MANAGER_WRITE_GROUP: () => LINE_MANAGER_WRITE_GROUP,
     LINK_BOOKING_PERSON_ACTION: () => LINK_BOOKING_PERSON_ACTION,
     LINK_BOOKING_PERSON_ALREADY_MESSAGE: () => LINK_BOOKING_PERSON_ALREADY_MESSAGE,
+    LINK_BOOKING_PERSON_PAY_ACK_LABEL: () => LINK_BOOKING_PERSON_PAY_ACK_LABEL,
+    LINK_BOOKING_PERSON_PAY_WARNING: () => LINK_BOOKING_PERSON_PAY_WARNING,
     LINK_BOOKING_PERSON_SELF_NOTE: () => LINK_BOOKING_PERSON_SELF_NOTE,
     LIVE_COLLECTIONS: () => LIVE_COLLECTIONS,
     MANAGER_LOCATION_TYPES: () => MANAGER_LOCATION_TYPES,
@@ -936,6 +938,7 @@ var ProjectPlannerCanonical = (() => {
     linkBookingPersonCandidates: () => linkBookingPersonCandidates,
     linkBookingPersonConfirmMessage: () => linkBookingPersonConfirmMessage,
     linkBookingPersonDoneMessage: () => linkBookingPersonDoneMessage,
+    linkBookingPersonImpact: () => linkBookingPersonImpact,
     linkBookingPersonRefusal: () => linkBookingPersonRefusal,
     linkBookingPersonWriteFields: () => linkBookingPersonWriteFields,
     listedCurrentLabourPeople: () => listedCurrentLabourPeople,
@@ -9014,7 +9017,7 @@ var ProjectPlannerCanonical = (() => {
       const resolved = role;
       if (resolved.isAdmin === true || resolved.isSuperAdmin === true) return "admin";
       if (resolved.isOperativeMode === true) return "operative";
-      return resolved.isManager === true ? "manager" : "operative";
+      return "manager";
     }
     return permissionLevelOf(row2);
   }
@@ -9162,7 +9165,7 @@ var ProjectPlannerCanonical = (() => {
   var UNKNOWN_BOOKING_PERSON_LABEL = "Unknown person";
   var UNRESOLVED_BOOKING_PERSON_CHIP = "Not linked to a person";
   var UNRESOLVED_BOOKINGS_HEADING = "Bookings not linked to a person";
-  var UNRESOLVED_BOOKINGS_HELP = `These bookings are filed under an ID that does not match anyone in your company \u2014 usually an old account or invite of someone who was later added again. They still show on the job's schedule as "Unknown person". Choose who each ID belongs to and every booking under it will show as that person everywhere (schedule, Daily Overview, warnings, timesheets and reports). Nothing else about the bookings changes.`;
+  var UNRESOLVED_BOOKINGS_HELP = `These bookings are filed under an ID that does not match anyone in your company \u2014 usually an old account or invite of someone who was later added again. They still show on the job's schedule as "Unknown person". Choose who each ID belongs to and every booking under it will show as that person everywhere (schedule, Daily Overview, warnings, timesheets and reports). Anything else filed under the ID \u2014 pay-rate history, annual leave, timesheets, overtime, price work and expenses \u2014 becomes theirs too; the confirm lists it, and if pay-rate history is filed under the ID, pay for unsigned timesheets may change. Nothing on the records themselves changes.`;
   var UNRESOLVED_BOOKINGS_EMPTY = "Every booking is linked to a person.";
   var LINK_BOOKING_PERSON_ACTION = "Link to a person\u2026";
   function idKey5(value) {
@@ -9293,6 +9296,25 @@ var ProjectPlannerCanonical = (() => {
     const metadata = writeMetadataFields(input.actorUserId, input.platform);
     if (!metadata) return null;
     return { arrayUnion: { formerUserIds: [id2] }, set: { ...metadata } };
+  }
+  var LINK_BOOKING_PERSON_PAY_ACK_LABEL = "I understand pay may change";
+  var LINK_BOOKING_PERSON_PAY_WARNING = "Pay for unsigned timesheets may change.";
+  function countText(n, one, many) {
+    return `${n} ${n === 1 ? one : many}`;
+  }
+  function linkBookingPersonImpact(filed) {
+    const n = (value) => Math.max(0, Math.floor(Number(value) || 0));
+    const f = filed || {};
+    const parts2 = [];
+    if (n(f.rateHistoryRows)) parts2.push(countText(n(f.rateHistoryRows), "pay-rate history row", "pay-rate history rows"));
+    if (n(f.leaveRecords)) parts2.push(countText(n(f.leaveRecords), "leave record", "leave records"));
+    if (n(f.timesheets)) parts2.push(countText(n(f.timesheets), "timesheet", "timesheets"));
+    if (n(f.overtimeRequests)) parts2.push(countText(n(f.overtimeRequests), "overtime request", "overtime requests"));
+    if (n(f.priceWorkItems)) parts2.push(countText(n(f.priceWorkItems), "price work item", "price work items"));
+    if (n(f.expenseItems)) parts2.push(countText(n(f.expenseItems), "expense", "expenses"));
+    const requiresPayAck = n(f.rateHistoryRows) > 0;
+    const alsoText = parts2.length ? `Also linked: ${parts2.join(", ")}.${requiresPayAck ? ` ${LINK_BOOKING_PERSON_PAY_WARNING}` : ""}` : null;
+    return { parts: parts2, alsoText, requiresPayAck };
   }
 
   // lib/canonical/legalPack.ts
@@ -11552,7 +11574,7 @@ var ProjectPlannerCanonical = (() => {
   function rulebookStamp() {
     return {
       version: true ? "1.44.0" : "",
-      sha256: true ? "3f682eaf32c148b69b843237acbf04a1c82349b9ec008fe33193d0b5e1ee1171" : ""
+      sha256: true ? "769c548d8aea1f22a806550c9833813e8e4e56f8f6589ceb8b2f1e3ac219e182" : ""
     };
   }
   function rulebookVersionLabel(version) {
@@ -18390,7 +18412,7 @@ var ProjectPlannerCanonical = (() => {
     const kind = scheduleCellKind({ paidHours: paid, overtimeHours: overtime, timeSlot: single ? bookings[0].timeSlot ?? null : null });
     const totalHours = hundredths(paid);
     const hoursText3 = dayHoursText(totalHours);
-    const countText = single ? null : `${bookings.length} bookings`;
+    const countText2 = single ? null : `${bookings.length} bookings`;
     const caption = kind.tone === "halfDay" ? kind.halfLabel : kind.tone === "split" || onLeave ? null : kind.tone === "otOnly" ? "OT" : "Std";
     const standardText = kind.standardHours > 0 ? onLeave ? dayHoursText(kind.standardHours) : `${dayHoursText(kind.standardHours)} Std` : null;
     const overtimeText = kind.overtimeHours > 0 ? onLeave ? dayHoursText(kind.overtimeHours) : `${dayHoursText(kind.overtimeHours)} OT` : null;
@@ -18400,8 +18422,8 @@ var ProjectPlannerCanonical = (() => {
       totalHours,
       bookingCount: bookings.length,
       hoursText: hoursText3,
-      countText,
-      headline: countText ? `${hoursText3} \xB7 ${countText}` : hoursText3,
+      countText: countText2,
+      headline: countText2 ? `${hoursText3} \xB7 ${countText2}` : hoursText3,
       caption,
       standardText,
       overtimeText,
@@ -18421,7 +18443,7 @@ var ProjectPlannerCanonical = (() => {
     const times2 = [];
     for (const span of spans) if (!times2.includes(span.text)) times2.push(span.text);
     const timesText2 = times2.join(" + ");
-    const countText = bookings.length > 1 ? `${bookings.length} bookings` : null;
+    const countText2 = bookings.length > 1 ? `${bookings.length} bookings` : null;
     const label = timesText2 || "Booked";
     return {
       tone: "standard",
@@ -18431,8 +18453,8 @@ var ProjectPlannerCanonical = (() => {
       totalHours: 0,
       bookingCount: bookings.length,
       hoursText: "",
-      countText,
-      headline: countText ? `${label} \xB7 ${countText}` : label,
+      countText: countText2,
+      headline: countText2 ? `${label} \xB7 ${countText2}` : label,
       caption: null,
       standardText: null,
       overtimeText: null,

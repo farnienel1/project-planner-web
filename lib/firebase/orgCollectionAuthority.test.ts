@@ -9,6 +9,7 @@ import {
   bookingCoverageIsArchive,
   bookingCoverageOnSubscribe,
   cachedReplayAuthoritative,
+  documentSnapshotPublishes,
   orgPlanAuthoritative,
   republishHeldAsAuthoritative,
 } from './orgCollectionMerge.ts'
@@ -106,4 +107,22 @@ test('review r318 (3): a plan part that published a cached change is not authori
   const confirmed = republishHeldAsAuthoritative({ fromCache: false, hasPendingWrites: false, heldIsSnapshot: true, lastPublishAuthoritative: false })
   assert.equal(confirmed, true)
   assert.equal(orgPlanAuthoritative([{ settled: true, serverSnapshot: true }, { settled: true, serverSnapshot: confirmed }]), true)
+})
+
+test('review r318 (4): a single-document part turns authoritative again on the server confirmation of a local write', () => {
+  // First snapshot: always published.
+  assert.equal(documentSnapshotPublishes({ delivered: false, changed: false, wasFromServer: false, nowFromServer: false }), true)
+  // A local write (data changed, pending): published, not the server's answer yet.
+  let wasFromServer = true
+  assert.equal(documentSnapshotPublishes({ delivered: true, changed: true, wasFromServer, nowFromServer: false }), true)
+  wasFromServer = false
+  assert.equal(orgPlanAuthoritative([{ settled: true, serverSnapshot: wasFromServer }]), false)
+  // The server confirms it (same data, metadata only): published, and the part is authoritative again.
+  const confirm = documentSnapshotPublishes({ delivered: true, changed: false, wasFromServer, nowFromServer: true })
+  assert.equal(confirm, true)
+  wasFromServer = true
+  assert.equal(orgPlanAuthoritative([{ settled: true, serverSnapshot: wasFromServer }]), true)
+  // A further metadata-only snapshot changes nothing: not published.
+  assert.equal(documentSnapshotPublishes({ delivered: true, changed: false, wasFromServer, nowFromServer: true }), false)
+  assert.equal(documentSnapshotPublishes({ delivered: true, changed: false, wasFromServer: true, nowFromServer: false }), false)
 })

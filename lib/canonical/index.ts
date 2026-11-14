@@ -549,6 +549,8 @@ export { bookingIdsForAccount, bookingIdsForPerson, bookingPersonKey, resolveBoo
 export {
   LINK_BOOKING_PERSON_ACTION,
   LINK_BOOKING_PERSON_ALREADY_MESSAGE,
+  LINK_BOOKING_PERSON_PAY_ACK_LABEL,
+  LINK_BOOKING_PERSON_PAY_WARNING,
   LINK_BOOKING_PERSON_SELF_NOTE,
   UNKNOWN_BOOKING_PERSON_LABEL,
   UNRESOLVED_BOOKING_PERSON_CHIP,
@@ -559,12 +561,15 @@ export {
   linkBookingPersonCandidates,
   linkBookingPersonConfirmMessage,
   linkBookingPersonDoneMessage,
+  linkBookingPersonImpact,
   linkBookingPersonRefusal,
   linkBookingPersonWriteFields,
   scheduleRowPerson,
   unresolvedBookingPeople,
 } from './unresolvedBookingPeople'
 export type {
+  LinkBookingPersonFiledUnder,
+  LinkBookingPersonImpact,
   LinkBookingPersonRefusal,
   LinkCandidate,
   LinkCandidateProfile,
