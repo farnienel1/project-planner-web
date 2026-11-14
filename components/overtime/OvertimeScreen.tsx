@@ -95,6 +95,7 @@ import { BriefcaseIcon, ChevronRightIcon, ClockIcon, MagnifyingGlassIcon, Receip
 import { Card, Chip, DataTable, EmptyState, IconTile, Note, PageShell, SegmentedTabs, initialsOf } from '@/components/ui/page'
 import { PayeClaimsSection } from '@/components/overtime/PayeClaimsScreen'
 
+import { namedSlotLabel } from '@/lib/scheduling/paidHours'
 import { downloadPdf } from '@/lib/pdf/downloadPdf'
 import { PDF_LOAD_FAILED_MESSAGE, loadExportModule } from '@/lib/pdf/loadExportModule'
 
@@ -776,7 +777,7 @@ function OvertimeLines(props: {
               <div className="grow" style={{ minWidth: 0 }}>
                 <b style={{ textDecoration: line.state === 'cancelled' || line.state === 'deleted' ? 'line-through' : 'none' }}>{line.title}</b>
                 <div className="pu-sub">
-                  {line.dayLabel} · {line.start && line.end ? `${line.start}–${line.end}` : line.timeSlot}
+                  {line.dayLabel} · {line.start && line.end ? `${line.start}–${line.end}` : namedSlotLabel(line.timeSlot)}
                   {requested && requested.action === 'edit' && requested.proposedStart ? ` (asked ${requested.proposedStart}–${requested.proposedEnd})` : ''}
                   {line.figures?.dayWindow ? ` · day ${line.figures.dayWindow}` : ''}
                 </div>

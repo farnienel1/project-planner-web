@@ -29,7 +29,7 @@
 
 import { formatClockMinutes, parseClockMinutes } from './engine'
 import { normalizeBookingStatus, normalizeBookingTimeSlot } from './bookings'
-import { bookingFingerprintSlot, overtimeFingerprintsMatch } from './bookingFingerprint'
+import { overtimeFingerprintsMatch } from './bookingFingerprint'
 import { isoWeekdayOfDayKey, zoneOrLondon } from './dayKeys'
 import { hasActiveLineManager, isAdminOutsideOperativeMode, isSuperAdminAccount, lineManagerIds, type LeaveSelfBookUser } from './leaveRequests'
 import { bookingIdsForAccount } from './bookingPerson'
@@ -258,8 +258,10 @@ export function overtimeBookingFingerprint(booking: OvertimeBookingInput | null 
   const status = (normalizeBookingStatus(booking.status) ?? (text(booking.status) || 'Confirmed')).toLowerCase()
   return [
     text(booking.dayKey),
-    // 1.46.0: the canonical slot (`bookingFingerprintSlot`), so `CUSTOM` / `CUSTOM HOURS` / `CUSTOM_HOURS` are one booking.
-    bookingFingerprintSlot(booking.timeSlot),
+    // Written exactly as before 1.46.0 (upper case, `_` / `-` as spaces), so app builds on the 1.45 script write and
+    // compare the same strings. 1.46.0 apps compare with `overtimeFingerprintsMatch`, which reads the slot canonically,
+    // so `CUSTOM` (web) and `CUSTOM HOURS` (iOS `CUSTOM_HOURS`) are one booking.
+    slotKey(booking.timeSlot),
     clockOf(booking.workStartTime),
     clockOf(booking.workEndTime),
     rate == null ? '' : String(rate),

@@ -1,12 +1,13 @@
 /**
- * Rulebook 1.46.0: one slot spelling inside a booking fingerprint (`overtimeBookingFingerprint`), on every platform.
+ * Rulebook 1.46.0: booking fingerprints (`overtimeBookingFingerprint`) compared with the slot read canonically, on every
+ * platform.
  *
- * Web stores a custom-hours booking's slot as `CUSTOM` or `CUSTOM_HOURS`, iOS reads it as `CUSTOM_HOURS`, and older
- * fingerprints wrote the slot with spaces (`CUSTOM HOURS`), so the same booking fingerprinted differently on the two
- * apps and a review made on one read as stale on the other. The slot is now the rulebook's canonical slot
- * (`normalizeBookingTimeSlot`, the vocabulary `bookingDeleteFingerprint` uses, §2), and fingerprints are compared with
- * `overtimeFingerprintsMatch`, which reads the slot of both sides canonically — so a fingerprint stored before this
- * change (overtime reviews and requests since 1.29.0) still matches the same booking.
+ * Web stores a custom-hours booking's slot as `CUSTOM` or `CUSTOM_HOURS`, and iOS reads it as `CUSTOM_HOURS`, so the
+ * same booking fingerprinted `…|CUSTOM|…` on one app and `…|CUSTOM HOURS|…` on the other, and a review made on one read
+ * as stale on the other. The written fingerprint is unchanged (the pre-1.46.0 form, so app builds on the 1.45 script
+ * still write and compare the same strings); 1.46.0 compares fingerprints only with `overtimeFingerprintsMatch`, which
+ * reads the slot of both sides through the rulebook's slot normaliser (`normalizeBookingTimeSlot`, the vocabulary
+ * `bookingDeleteFingerprint` uses, §2).
  */
 
 import { normalizeBookingTimeSlot } from './bookings'

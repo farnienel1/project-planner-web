@@ -12034,7 +12034,7 @@ test('1.29.0 overtime lines: weekday outside the day, weekend window, every-hour
 test('1.29.0 / 1.33.0 line state: confirmed review, pending request, booking changed since request, reopened after a change', () => {
   const booking = r129Booking('B1', '2026-11-04', '06:30', '14:00')
   const fingerprint = r129.overtimeBookingFingerprint(booking)
-  assert.equal(fingerprint, '2026-11-04|CUSTOM_HOURS|06:30|14:00|||confirmed')
+  assert.equal(fingerprint, '2026-11-04|CUSTOM HOURS|06:30|14:00|||confirmed')
   const review = r129.parseOvertimeReviewDocument('sam_B1', { userId: 'sam', bookingId: 'B1', decision: 'approved', fingerprint })
   const range = { start: '2026-11-01', end: '2026-11-30' }
   const base = { personIds: ['sam'], organization: R129_ORG, timeZone: R129_TZ, range }
@@ -15399,22 +15399,42 @@ test('1.46.0 review 5: a signed sheet keeps its invoice and totals after a back-
   assert.equal(R112.timesheetTotals({ sheet: {}, payrollLines: livePaye, extrasMode: 'decided', timesheetDays: [] }).total, 0)
 })
 
-test('1.46.0 cross-platform: every stored spelling of a slot gives one booking fingerprint; stored 1.29 fingerprints still match', () => {
-  const base = { id: 'b1', personId: '', dayKey: '2026-11-18', workStartTime: '07:00', workEndTime: '19:00', otMultiplierOverride: 2 }
-  const custom = ['CUSTOM', 'CUSTOM_HOURS', 'CUSTOM HOURS', 'custom hours', 'Custom', 'custom-hours'].map((timeSlot) => R112.overtimeBookingFingerprint({ ...base, timeSlot }))
-  assert.equal(new Set(custom).size, 1)
-  assert.equal(custom[0], '2026-11-18|CUSTOM_HOURS|07:00|19:00|2||confirmed')
-  const full = ['FULL DAY', 'Full day', 'FULL_DAY', 'full-day'].map((timeSlot) => R112.overtimeBookingFingerprint({ ...base, timeSlot }))
-  assert.equal(new Set(full).size, 1)
-  assert.equal(R112.overtimeBookingFingerprint({ ...base, timeSlot: 'morning' }), R112.overtimeBookingFingerprint({ ...base, timeSlot: 'AM' }))
-  // Fingerprints stored before 1.46.0 (1.29.0 overtime reviews / requests) wrote the slot with spaces, or as stored.
-  for (const stored of ['2026-11-18|CUSTOM HOURS|07:00|19:00|2||confirmed', '2026-11-18|CUSTOM|07:00|19:00|2||confirmed']) {
-    assert.equal(R112.overtimeFingerprintsMatch(stored, custom[0]), true)
-    assert.equal(R112.overtimeLineIsStale(stored, { ...base, timeSlot: 'CUSTOM_HOURS' }), false)
-    assert.equal(R112.overtimeLineIsStale(stored, { ...base, timeSlot: 'CUSTOM', workEndTime: '18:00' }), true)
+test('1.46.0 cross-platform: the written fingerprint is the 1.45 one; every slot spelling matches through the matcher', () => {
+  const base = { id: 'b1', personId: '', dayKey: '2026-11-18', workStartTime: '07:00', workEndTime: '19:00', otMultiplierOverride: 2, isBreakRemoved: true }
+  // Generated from the 1.45.0 packed script (w145-claims-evidence 38a1be7) for the same bookings: the written string
+  // must stay identical, so iPhone builds on that script and 1.46.0 apps write the same fingerprint.
+  const written145: Record<string, string> = {
+    CUSTOM: '2026-11-18|CUSTOM|07:00|19:00|2|nb|confirmed',
+    CUSTOM_HOURS: '2026-11-18|CUSTOM HOURS|07:00|19:00|2|nb|confirmed',
+    'CUSTOM HOURS': '2026-11-18|CUSTOM HOURS|07:00|19:00|2|nb|confirmed',
+    'custom hours': '2026-11-18|CUSTOM HOURS|07:00|19:00|2|nb|confirmed',
+    Custom: '2026-11-18|CUSTOM|07:00|19:00|2|nb|confirmed',
+    'custom-hours': '2026-11-18|CUSTOM HOURS|07:00|19:00|2|nb|confirmed',
+    'FULL DAY': '2026-11-18|FULL DAY|07:00|19:00|2|nb|confirmed',
+    'Full day': '2026-11-18|FULL DAY|07:00|19:00|2|nb|confirmed',
+    FULL_DAY: '2026-11-18|FULL DAY|07:00|19:00|2|nb|confirmed',
+    AM: '2026-11-18|AM|07:00|19:00|2|nb|confirmed',
+    PM: '2026-11-18|PM|07:00|19:00|2|nb|confirmed',
+    morning: '2026-11-18|MORNING|07:00|19:00|2|nb|confirmed',
+    Evening: '2026-11-18|EVENING|07:00|19:00|2|nb|confirmed',
+    '': '2026-11-18||07:00|19:00|2|nb|confirmed',
   }
+  for (const [timeSlot, expected] of Object.entries(written145)) {
+    assert.equal(R112.overtimeBookingFingerprint({ ...base, timeSlot }), expected, timeSlot)
+  }
+  // Compared through the matcher, every spelling of one slot is one booking.
+  const keys = (slots: string[]) => new Set(slots.map((timeSlot) => R112.overtimeFingerprintKey(R112.overtimeBookingFingerprint({ ...base, timeSlot }))))
+  assert.equal(keys(['CUSTOM', 'CUSTOM_HOURS', 'CUSTOM HOURS', 'custom hours', 'Custom', 'custom-hours']).size, 1)
+  assert.equal(keys(['FULL DAY', 'Full day', 'FULL_DAY', 'full-day']).size, 1)
+  assert.equal(keys(['morning', 'AM']).size, 1)
+  const web = written145.CUSTOM
+  const ios = written145.CUSTOM_HOURS
+  assert.equal(R112.overtimeFingerprintsMatch(web, ios), true)
+  assert.equal(R112.overtimeLineIsStale(web, { ...base, timeSlot: 'CUSTOM_HOURS' }), false)
+  assert.equal(R112.overtimeLineIsStale(ios, { ...base, timeSlot: 'CUSTOM' }), false)
+  assert.equal(R112.overtimeLineIsStale(ios, { ...base, timeSlot: 'CUSTOM', workEndTime: '18:00' }), true)
   assert.equal(R112.overtimeFingerprintsMatch('', ''), false)
-  assert.equal(R112.overtimeFingerprintsMatch('2026-11-18|FULL DAY|||||confirmed', custom[0]), false)
+  assert.equal(R112.overtimeFingerprintsMatch(written145['FULL DAY'], ios), false)
 })
 
 test('1.46.0 cross-platform: an Edit hours review written on web (CUSTOM) is not stale on iOS (CUSTOM_HOURS), and the reverse', () => {

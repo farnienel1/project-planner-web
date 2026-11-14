@@ -20906,7 +20906,7 @@
           "otMultiplierOverride": 2
         }
       ],
-      "expected": "2026-11-05|CUSTOM_HOURS|07:30|18:00|2||confirmed"
+      "expected": "2026-11-05|CUSTOM HOURS|07:30|18:00|2||confirmed"
     },
     {
       "name": "1.29.0 overtime of a booking with its own rate",
@@ -21141,7 +21141,7 @@
           "start": "18:00",
           "end": "21:00",
           "timeSlot": "CUSTOM_HOURS",
-          "fingerprint": "2026-11-02|CUSTOM_HOURS|18:00|21:00|||confirmed",
+          "fingerprint": "2026-11-02|CUSTOM HOURS|18:00|21:00|||confirmed",
           "state": "changedSinceRequest",
           "stateLabel": "Changed since you sent it",
           "figures": {
@@ -21199,7 +21199,7 @@
           "start": "06:30",
           "end": "14:00",
           "timeSlot": "CUSTOM_HOURS",
-          "fingerprint": "2026-11-04|CUSTOM_HOURS|06:30|14:00|||confirmed",
+          "fingerprint": "2026-11-04|CUSTOM HOURS|06:30|14:00|||confirmed",
           "state": "confirmed",
           "stateLabel": "Confirmed",
           "figures": {
@@ -21241,7 +21241,7 @@
           "start": "07:30",
           "end": "18:00",
           "timeSlot": "CUSTOM_HOURS",
-          "fingerprint": "2026-11-05|CUSTOM_HOURS|07:30|18:00|2||confirmed",
+          "fingerprint": "2026-11-05|CUSTOM HOURS|07:30|18:00|2||confirmed",
           "state": "needsReview",
           "stateLabel": "Needs review",
           "figures": {
@@ -21273,7 +21273,7 @@
           "start": "07:30",
           "end": "14:00",
           "timeSlot": "CUSTOM_HOURS",
-          "fingerprint": "2026-11-08|CUSTOM_HOURS|07:30|14:00|||confirmed",
+          "fingerprint": "2026-11-08|CUSTOM HOURS|07:30|14:00|||confirmed",
           "state": "waiting",
           "stateLabel": "Waiting for line manager",
           "figures": {
@@ -21691,7 +21691,7 @@
               "bookingId": "B1",
               "collection": "bookings",
               "decision": "trimmed",
-              "fingerprint": "2026-11-04|CUSTOM_HOURS|07:30|14:00|||confirmed",
+              "fingerprint": "2026-11-04|CUSTOM HOURS|07:30|14:00|||confirmed",
               "reviewedBy": "lm",
               "requestId": "R1"
             }
@@ -21703,7 +21703,7 @@
               "bookingId": "B4",
               "collection": "bookings",
               "decision": "deleted",
-              "fingerprint": "2026-11-08|CUSTOM_HOURS|07:30|14:00|||confirmed",
+              "fingerprint": "2026-11-08|CUSTOM HOURS|07:30|14:00|||confirmed",
               "reviewedBy": "lm",
               "requestId": "R1"
             }
@@ -21715,7 +21715,7 @@
               "bookingId": "B7",
               "collection": "bookings",
               "decision": "changed",
-              "fingerprint": "2026-11-02|CUSTOM_HOURS|18:00|20:00|1.25||confirmed",
+              "fingerprint": "2026-11-02|CUSTOM HOURS|18:00|20:00|1.25||confirmed",
               "reviewedBy": "lm",
               "requestId": "R1"
             }
@@ -21937,7 +21937,7 @@
               "bookingId": "B4",
               "collection": "bookings",
               "decision": "deleted",
-              "fingerprint": "2026-11-08|CUSTOM_HOURS|07:30|14:00|||confirmed",
+              "fingerprint": "2026-11-08|CUSTOM HOURS|07:30|14:00|||confirmed",
               "reviewedBy": "lm",
               "requestId": "R1"
             }
@@ -21949,7 +21949,7 @@
               "bookingId": "B7",
               "collection": "bookings",
               "decision": "approved",
-              "fingerprint": "2026-11-02|CUSTOM_HOURS|18:00|21:00|||confirmed",
+              "fingerprint": "2026-11-02|CUSTOM HOURS|18:00|21:00|||confirmed",
               "reviewedBy": "lm",
               "requestId": "R1"
             }
@@ -22109,7 +22109,7 @@
               "bookingId": "BR",
               "collection": "bookings",
               "decision": "trimmed",
-              "fingerprint": "2026-11-04|CUSTOM_HOURS|07:30|14:00|||confirmed",
+              "fingerprint": "2026-11-04|CUSTOM HOURS|07:30|14:00|||confirmed",
               "reviewedBy": "lm",
               "requestId": "R3"
             }
@@ -22273,7 +22273,7 @@
               "bookingId": "B1",
               "collection": "bookings",
               "decision": "approved",
-              "fingerprint": "2026-11-04|CUSTOM_HOURS|06:30|14:00|||confirmed",
+              "fingerprint": "2026-11-04|CUSTOM HOURS|06:30|14:00|||confirmed",
               "reviewedBy": "admin",
               "requestId": "R4"
             }
