@@ -648,8 +648,9 @@ function entryBase(
   const id = timesheetEntryId(sheetDocId, kind, index, row)
   const amount = documentNumber(row.amount) ?? 0
   const fingerprintKind = kind === 'priceWork' ? 'priceWork' : 'expense'
+  // Always computed from the stored row; a `reviewFingerprint` field stored on the row is never read.
   const reviewFingerprint = timesheetEntryFingerprint(row, fingerprintKind)
-  const decision = timesheetEntryDecision(sheet, { ...row, id, amount, reviewFingerprint }, fingerprintKind)
+  const decision = timesheetEntryDecision(sheet, { ...row, id, amount }, fingerprintKind)
   return {
     id,
     idStored: Boolean(text(row.id)),

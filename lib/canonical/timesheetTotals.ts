@@ -14,7 +14,7 @@
 
 import { roundPennies } from './payRate'
 import { normalizeDocumentId } from './scheduleSources'
-import { timesheetEntryDecision } from './timesheetEntryReviews'
+import { timesheetEntryDecision, timesheetTrustedFingerprint } from './timesheetEntryReviews'
 import { timesheetInvoiceRows, type InvoiceLineInput, type TimesheetInvoiceRowsInput } from './reportPay'
 
 /** One payroll line as each app's collector builds it (web `TimesheetPayrollLineItem`, iOS `TimesheetPayrollLine`). */
@@ -149,7 +149,8 @@ export function timesheetTotals<L extends TimesheetTotalsLine>(input: TimesheetT
   ] as const) {
     for (const entry of rowsOf(sheet[key])) {
       add(finite(entry.amount))
-      if (timesheetEntryDecision(sheet, entry, key === 'priceWorkEntries' ? 'priceWork' : 'expense').decision === 'pending') pendingEntries += 1
+      const trusted = timesheetTrustedFingerprint(input.entryFingerprints, entry.id)
+      if (timesheetEntryDecision(sheet, entry, key === 'priceWorkEntries' ? 'priceWork' : 'expense', trusted).decision === 'pending') pendingEntries += 1
     }
   }
 

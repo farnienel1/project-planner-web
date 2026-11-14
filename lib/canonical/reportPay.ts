@@ -17,7 +17,7 @@ import { documentInstantMs } from './peopleDocuments'
 import { roundPennies } from './payRate'
 import { normalizeDocumentId } from './scheduleSources'
 import { parseTimesheetStatusFields } from './timesheetPeriod'
-import { payrollLineReview, timesheetEntryDecision, timesheetEntryEffectiveAmount } from './timesheetEntryReviews'
+import { payrollLineReview, timesheetEntryDecision, timesheetEntryEffectiveAmount, timesheetTrustedFingerprint } from './timesheetEntryReviews'
 
 /** Text in a PAYE person's pay cell, on screen and in every export. */
 export const PAYE_PAY_CELL_LABEL = 'PAYE'
@@ -153,6 +153,12 @@ export type TimesheetInvoiceRowsInput<L extends InvoiceLineInput & { id: string;
    * before they sign, so their on-screen total is the invoice their signature will produce (`timesheetTotals`).
    */
   applyLabourReviews?: boolean | null
+  /**
+   * 1.45.0 (review #322): when `sheet` is the app's loaded copy rather than the stored document, the fingerprints the
+   * reader computed for it (`timesheetEntryFingerprintMap` of `parseTimesheetEntries` entries). Without it each entry
+   * row is fingerprinted as stored. A `reviewFingerprint` on a row is never read.
+   */
+  entryFingerprints?: Record<string, string> | null
 }
 
 function rowsOf(value: unknown): Record<string, unknown>[] {
@@ -241,7 +247,7 @@ export function timesheetInvoiceRows<L extends InvoiceLineInput & { id: string; 
       const own = amountOf(entry.amount)
       let amount = own
       if (decided) {
-        const decision = timesheetEntryDecision(sheet, entry, kind)
+        const decision = timesheetEntryDecision(sheet, entry, kind, timesheetTrustedFingerprint(input.entryFingerprints, entry.id))
         if (decision.decision === 'declined') continue
         amount = timesheetEntryEffectiveAmount(decision.decision, decision.revisedAmount, own)
       }

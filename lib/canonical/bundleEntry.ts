@@ -552,6 +552,8 @@ export {
   timesheetEntryEffectiveAmount,
   timesheetEntryReviewWriteFields,
   timesheetEntryFingerprint,
+  timesheetEntryFingerprintMap,
+  timesheetTrustedFingerprint,
   timesheetEntryReviewsAfterWrite,
   timesheetOwnerWriteFields,
   timesheetWriterIsReviewer,

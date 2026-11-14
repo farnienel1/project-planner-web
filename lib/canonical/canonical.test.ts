@@ -14851,10 +14851,12 @@ test('1.45.0 review #322 F1a/F1b: one fingerprint input — reader, loaded copy 
     priceWorkEntries: [{ ...pw, startDate: new Date(), agreedManagerName: 'Manager', reviewFingerprint: loaded.priceWorkEntries[0].reviewFingerprint }],
     expenseEntries: [{ ...ex, date: new Date(), evidence: loaded.expenseEntries[0].evidence, reviewFingerprint: loaded.expenseEntries[0].reviewFingerprint }],
   }
-  assert.equal(r145.timesheetEntryDecision(displayCopy, displayCopy.priceWorkEntries[0]).decision, 'edited')
-  assert.equal(r145.timesheetEntryDecision(displayCopy, displayCopy.expenseEntries[0]).decision, 'approved')
+  // The loaded copy's fingerprints are passed in (never read from the rows).
+  const trusted = r145.timesheetEntryFingerprintMap([...loaded.priceWorkEntries, ...loaded.expenseEntries])
+  assert.equal(r145.timesheetEntryDecision(displayCopy, displayCopy.priceWorkEntries[0], 'priceWork', r145.timesheetTrustedFingerprint(trusted, 'P2')).decision, 'edited')
+  assert.equal(r145.timesheetEntryDecision(displayCopy, displayCopy.expenseEntries[0], 'expense', r145.timesheetTrustedFingerprint(trusted, 'e2')).decision, 'approved')
   const fromStored = r145.timesheetTotals({ sheet: stored, payrollLines: [], extrasMode: 'decided' })
-  const fromCopy = r145.timesheetTotals({ sheet: displayCopy, payrollLines: [], extrasMode: 'decided' })
+  const fromCopy = r145.timesheetTotals({ sheet: displayCopy, payrollLines: [], extrasMode: 'decided', entryFingerprints: trusted })
   assert.deepEqual([fromStored.priceWork, fromStored.expenses, fromStored.pendingEntries], [20, 7, 0])
   assert.deepEqual([fromCopy.priceWork, fromCopy.expenses, fromCopy.pendingEntries], [20, 7, 0])
 })
@@ -14891,6 +14893,30 @@ test('1.45.0 review #322 F2: a reviewer save writes only the reviews it changes'
   assert.equal((reapproved['extraEntryReviews.A1'] as Record<string, unknown>).reviewedAmount, 12)
 })
 
+test('1.45.0 review #322 hardening: a reviewFingerprint stored on an entry is never trusted; reviews keep their stored key', () => {
+  const sheetId = `timesheet_${UID145}_1762732800`
+  const entry = { id: 'F1', title: 'Fuel', amount: 10, date: '2026-11-10T00:00:00.000Z' }
+  const fingerprint = r145.timesheetEntryFingerprint(entry, 'expense')
+  const review = { decision: 'approved', revisedAmount: null, reviewedAmount: 10, reviewedFingerprint: fingerprint, reviewedByUserId: 'lm', reviewedAtMs: 1 }
+  // The owner edits the entry and writes the old fingerprint onto it, hoping to keep the approval.
+  const forged = { ...entry, title: 'Fuel and lunch', reviewFingerprint: fingerprint }
+  const doc = { userId: UID145, expenseEntries: [forged], extraEntryReviews: { F1: review }, managerSignedAt: null }
+  const parsed = r145.parseTimesheetEntries(sheetId, doc).expenseEntries[0]
+  assert.equal(parsed.managerDecision, 'pending')
+  assert.notEqual(parsed.reviewFingerprint, fingerprint)
+  assert.equal(r145.timesheetEntryDecision(doc, forged).decision, 'pending')
+  assert.equal(r145.timesheetTotals({ sheet: doc, payrollLines: [], extrasMode: 'decided' }).pendingEntries, 1)
+  assert.equal(r145.timesheetInvoiceRows({ sheet: doc, payrollLines: [], extrasMode: 'decided' })[0]?.amount, 10)
+  // The owner's own save never stores a fingerprint on an entry.
+  const ownerWrite = r145.timesheetOwnerWriteFields({ expenseEntries: [forged] }, { subjectHasLineManager: true, managerSigned: false })
+  assert.equal('reviewFingerprint' in (ownerWrite.expenseEntries as Array<Record<string, unknown>>)[0], false)
+  // A review stored under the id in another letter case is updated under that key, never a second one.
+  const lower = { f1: { ...review, reviewedFingerprint: null } }
+  const stored = r145.parseTimesheetEntryReviews({ extraEntryReviews: lower })
+  const out = r145.timesheetEntryReviewWriteFields({ stored, entries: [{ id: 'F1', amount: 10, managerDecision: 'declined' as const }], reviewedByUserId: 'lm', reviewedAtMs: 2 })
+  assert.deepEqual(Object.keys(out), ['extraEntryReviews.f1'])
+})
+
 test('1.45.0 packed script exports the claim evidence and timesheet evidence rules', () => {
   const source = readFileSync(new URL('./dist/canonical-business.js', import.meta.url), 'utf8')
   const sandbox: { ProjectPlannerCanonical?: Record<string, unknown> } = {}
@@ -14915,6 +14941,8 @@ test('1.45.0 packed script exports the claim evidence and timesheet evidence rul
     'expenseUpdateWriteFields',
     'payeClaimEditDraft',
     'timesheetEntryFingerprint',
+    'timesheetEntryFingerprintMap',
+    'timesheetTrustedFingerprint',
   ]) {
     assert.equal(typeof packed[name], 'function', name)
   }

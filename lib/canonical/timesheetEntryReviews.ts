@@ -182,11 +182,36 @@ function entryKindInSheet(sheet: Record<string, unknown> | null | undefined, id:
 }
 
 /**
- * The fingerprint a row stands for: the stored-row value it carries (`reviewFingerprint`, from the reader), else the
- * row's own fingerprint (it is the stored row).
+ * The fingerprint a row stands for (review #322 hardening): the value the app computed with the reader for its loaded
+ * copy (`trusted`, from `parseTimesheetEntries` → `reviewFingerprint`, passed as an argument), else the row's own
+ * fingerprint — it is then the stored row. A `reviewFingerprint` field on the row itself is never read: stored data
+ * could carry a forged one.
  */
-function rowFingerprint(row: Record<string, unknown>, kind: TimesheetFingerprintKind): string {
-  return text(row.reviewFingerprint) || timesheetEntryFingerprint(row, kind)
+function rowFingerprint(row: Record<string, unknown>, kind: TimesheetFingerprintKind, trusted?: string | null): string {
+  return text(trusted) || timesheetEntryFingerprint(row, kind)
+}
+
+/**
+ * Rulebook 1.45.0 (review #322): the fingerprints an app computed with `parseTimesheetEntries` for its loaded copy,
+ * by entry id, to pass as `entryFingerprints` to `timesheetInvoiceRows` / `timesheetTotals` when the sheet it passes
+ * is a display copy (dates filled in, evidence filtered). Never built from stored data.
+ */
+export function timesheetEntryFingerprintMap(
+  entries: ReadonlyArray<{ id?: unknown; reviewFingerprint?: unknown } | null | undefined> | null | undefined
+): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const entry of entries || []) {
+    const id = text(entry?.id)
+    const fingerprint = text(entry?.reviewFingerprint)
+    if (id && fingerprint) out[normalizeDocumentId(id)] = fingerprint
+  }
+  return out
+}
+
+/** The trusted fingerprint for an entry id from such a map (ids without case). */
+export function timesheetTrustedFingerprint(map: Record<string, string> | null | undefined, id: unknown): string | null {
+  if (!map) return null
+  return map[normalizeDocumentId(id)] ?? null
 }
 
 /** The stored map, or null when the sheet has no `extraEntryReviews` field (a legacy sheet). */
@@ -211,10 +236,15 @@ function reviewFor(
   reviews: Record<string, TimesheetEntryReview>,
   entryId: string
 ): TimesheetEntryReview | undefined {
-  if (Object.prototype.hasOwnProperty.call(reviews, entryId)) return reviews[entryId]
-  const needle = normalizeDocumentId(entryId)
-  const key = Object.keys(reviews).find((candidate) => normalizeDocumentId(candidate) === needle)
+  const key = reviewKeyFor(reviews, entryId)
   return key == null ? undefined : reviews[key]
+}
+
+/** The stored key of an entry's review: the exact id, else one that differs only by letter case. */
+function reviewKeyFor(reviews: Record<string, TimesheetEntryReview>, entryId: string): string | undefined {
+  if (Object.prototype.hasOwnProperty.call(reviews, entryId)) return entryId
+  const needle = normalizeDocumentId(entryId)
+  return Object.keys(reviews).find((candidate) => normalizeDocumentId(candidate) === needle)
 }
 
 /** Amount paid for an entry under a decision. */
@@ -238,7 +268,12 @@ export function timesheetEntryDecision(
   sheet: Record<string, unknown> | null | undefined,
   entry: Record<string, unknown> | null | undefined,
   /** 1.45.0: the array the entry is in; found in `sheet` by id when not given. */
-  kind?: TimesheetFingerprintKind | null
+  kind?: TimesheetFingerprintKind | null,
+  /**
+   * 1.45.0: the entry's fingerprint as the reader computed it for the app's loaded copy (`reviewFingerprint` of
+   * `parseTimesheetEntries`), when `entry` is that copy rather than the stored row. Never taken from the row.
+   */
+  trustedFingerprint?: string | null
 ): TimesheetEntryDecisionResult {
   const row = entry || {}
   const id = text(row.id)
@@ -264,7 +299,7 @@ export function timesheetEntryDecision(
       base = { decision: 'approved', revisedAmount: null, source: 'unreviewed' }
     } else if (
       review.reviewedFingerprint != null &&
-      review.reviewedFingerprint !== rowFingerprint(row, kind ?? entryKindInSheet(sheet, id, row.startDate != null ? 'priceWork' : 'expense'))
+      review.reviewedFingerprint !== rowFingerprint(row, kind ?? entryKindInSheet(sheet, id, row.startDate != null ? 'priceWork' : 'expense'), trustedFingerprint)
     ) {
       // 1.45.0: any change to the entry's own fields or evidence since the review reopens it.
       base = { decision: 'pending', revisedAmount: null, source: 'stale-review' }
@@ -326,7 +361,8 @@ export function timesheetEntryReviewWriteFields(input: {
     const revisedAmount = decision === 'edited' ? finite(entry.managerRevisedAmount) : null
     const amount = finite(entry.amount) ?? 0
     const fingerprint = text(entry.reviewFingerprint) || null
-    const prior = input.stored ? reviewFor(stored, id) : undefined
+    const storedKey = input.stored ? reviewKeyFor(stored, id) : undefined
+    const prior = storedKey != null ? stored[storedKey] : undefined
     // Whether the stored review still applies to the entry as stored (the reader's rule, `timesheetEntryDecision`).
     const priorCurrent =
       prior != null &&
@@ -339,7 +375,8 @@ export function timesheetEntryReviewWriteFields(input: {
     // record.
     if (input.stored && prior && priorCurrent && prior.decision === decision && sameNumber(prior.revisedAmount, revisedAmount)) continue
     if (input.stored && decision === 'pending' && !priorCurrent) continue
-    output[`${TIMESHEET_ENTRY_REVIEWS_FIELD}.${id}`] = {
+    // A review stored under the id in another letter case is updated under that key, never a second one.
+    output[`${TIMESHEET_ENTRY_REVIEWS_FIELD}.${storedKey ?? id}`] = {
       decision,
       revisedAmount,
       reviewedAmount: amount,
@@ -436,6 +473,17 @@ export function timesheetOwnerWriteFields<T extends Record<string, unknown>>(
   }
   if (input.managerSigned) {
     for (const key of TIMESHEET_ENTRY_ARRAY_FIELDS) drop(key)
+  }
+  // 1.45.0 (review #322): a fingerprint is never stored on an entry (the reader computes it; a stored one is ignored).
+  for (const key of TIMESHEET_ENTRY_ARRAY_FIELDS) {
+    if (Array.isArray(output[key])) {
+      output[key] = (output[key] as unknown[]).map((row) => {
+        if (!row || typeof row !== 'object' || !('reviewFingerprint' in (row as object))) return row
+        const { reviewFingerprint: _ignored, ...rest } = row as Record<string, unknown>
+        void _ignored
+        return rest
+      })
+    }
   }
   return output as Partial<T>
 }

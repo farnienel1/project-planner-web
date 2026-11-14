@@ -1,7 +1,7 @@
 {
   "rulebookVersion": "1.45.0",
-  "rulebookSha256": "57bd8f425a5de66e371b60f9cdaf2246882667e670fb02657ca5adbc4cdbde8a",
-  "bundleSha256": "e3a4722f97e56cbdd1f3c70f91b65a7d65fc7326df7fb570451fc20265cb17b6",
+  "rulebookSha256": "ee8d3d0e539f0a8db49f1c1e8d978004708d21c9c6e8178a9f2895f45886526b",
+  "bundleSha256": "5b80d57d599b44962eab0c4838ca5ce7521f931517c6fa815aa34a6e9a51d441",
   "crossPlatformContractSha256": "1e4c0f21055264d532ebc2040e480aaf3e2f594fa9c9f7e2dc809bf0255930ae",
   "dataParityFixtureSha256": "c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f",
   "exports": [
@@ -1473,6 +1473,7 @@
     "timesheetEntryEvidenceToDelete",
     "timesheetEntryEvidenceWriteFields",
     "timesheetEntryFingerprint",
+    "timesheetEntryFingerprintMap",
     "timesheetEntryId",
     "timesheetEntryReviewWriteFields",
     "timesheetEntryReviewsAfterWrite",
@@ -1518,6 +1519,7 @@
     "timesheetSubmittedRecipients",
     "timesheetTimestampMs",
     "timesheetTotals",
+    "timesheetTrustedFingerprint",
     "timesheetWriterIsReviewer",
     "tokenizeMaterialSearch",
     "tokenizeQualificationSearch",
