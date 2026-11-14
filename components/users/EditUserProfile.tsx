@@ -1557,30 +1557,28 @@ export function EditUserProfile({
 
       {/* Employment & timesheets */}
       {showPayrollFields && (
-        <>
-          <SectionLabel label="Employment & timesheets" />
-          <SettingsCard>
-            <div className="space-y-4 p-4">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <div className="text-sm font-semibold text-[var(--ink)]">Timesheets enabled</div>
-                  <p className="mt-0.5 text-xs text-[var(--ink3)]">Allow this person to log and submit timesheets.</p>
-                </div>
-                <Toggle
-                  checked={target.timesheetsEnabled === true}
-                  disabled={!canEdit}
-                  onChange={(checked) => setTarget({ ...target, timesheetsEnabled: checked })}
-                />
-              </div>
+        <FormSection title="Employment & timesheets" icon="sheet" tone="blue">
+              <ToggleRow
+                title="Timesheets enabled"
+                descriptions={['Allow this person to log and submit timesheets.']}
+                control={
+                  <Switch
+                    label="Timesheets enabled"
+                    checked={target.timesheetsEnabled === true}
+                    disabled={!canEdit}
+                    onChange={(checked) => setTarget({ ...target, timesheetsEnabled: checked })}
+                  />
+                }
+              />
               {canViewTaxIds ? (
-                <div className="space-y-2">
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <FieldGrid>
                     {(['vatNumber', 'utrNumber'] as const).map((field) => {
                       const saved = taxIds?.[field] ?? ''
                       const draft = taxDraft[field]
                       const shown = showTaxIds ? saved : maskSensitiveValue(saved)
                       return (
-                        <FormField
+                        <Field
                           key={field}
                           label={field === 'vatNumber' ? 'VAT number' : 'UTR number'}
                           hint={
@@ -1593,7 +1591,7 @@ export function EditUserProfile({
                                   : 'Optional.'
                           }
                         >
-                          <div className="flex gap-2">
+                          <div className="up-payrow">
                             <Input
                               value={draft ?? ''}
                               autoComplete="off"
@@ -1604,36 +1602,36 @@ export function EditUserProfile({
                             {saved && canEdit ? (
                               <button
                                 type="button"
-                                className="btn sm ghost"
+                                className="pu-btn"
                                 onClick={() => setTaxDraft((current) => ({ ...current, [field]: '' }))}
                               >
                                 Remove
                               </button>
                             ) : null}
                           </div>
-                        </FormField>
+                        </Field>
                       )
                     })}
-                  </div>
+                  </FieldGrid>
                   {taxIds && (taxIds.utrNumber || taxIds.vatNumber) ? (
-                    <button type="button" className="text-xs font-semibold text-[var(--blue)]" onClick={() => setShowTaxIds((v) => !v)}>
-                      {showTaxIds ? 'Hide' : 'Show'} saved numbers
-                    </button>
+                    <div className="up-block" style={{ paddingTop: 0 }}>
+                      <button type="button" className="up-lk" style={{ alignSelf: 'flex-start' }} onClick={() => setShowTaxIds((v) => !v)}>
+                        {showTaxIds ? 'Hide' : 'Show'} saved numbers
+                      </button>
+                    </div>
                   ) : null}
                 </div>
               ) : (
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <FormField label="VAT number">
+                <FieldGrid>
+                  <Field label="VAT number">
                     <Input value={SENSITIVE_HELD_BY_ADMIN_COPY} disabled readOnly />
-                  </FormField>
-                  <FormField label="UTR number">
+                  </Field>
+                  <Field label="UTR number">
                     <Input value={SENSITIVE_HELD_BY_ADMIN_COPY} disabled readOnly />
-                  </FormField>
-                </div>
+                  </Field>
+                </FieldGrid>
               )}
-            </div>
-          </SettingsCard>
-        </>
+        </FormSection>
       )}
 
       {/* Account status */}
