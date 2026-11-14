@@ -116,7 +116,7 @@ import {
 } from '@/lib/staff/userPermissionDescriptions'
 import { SUPER_ADMIN_SUCCESSOR_EMPTY, superAdminSuccessors } from '@/lib/staff/superAdminTransfer'
 import { displayedLineManagerId, userWithLineManagerChoice } from '@/lib/firebase/userPayload'
-import { Field, FieldGrid, FormSection, SectionBlock, ProfileBack, ProfileBand, ProfileBanner, SaveState, type ProfileIconName } from '@/components/users/profile-ui'
+import { Field, FieldGrid, FormSection, SectionBlock, Switch, ToggleRow, ProfileBack, ProfileBand, ProfileBanner, SaveState, type ProfileIconName } from '@/components/users/profile-ui'
 import {
   SectionLabel,
   SettingsCard,
@@ -1412,41 +1412,30 @@ export function EditUserProfile({
       ) : null}
 
       {/* Annual leave access */}
+      {/* Owner decision 9 (14 Nov): "Annual leave in app" and "Annual leave" are one section; content unchanged and
+          shown or hidden exactly as before (the allowance toggle with `showAnnualLeave`, the rest only while it is on). */}
       {showAnnualLeave && (
-        <>
-          <SectionLabel label="Annual leave in app" />
-          <SettingsCard>
-            <div className="p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="text-sm font-semibold text-[var(--ink)]">
-                    {ANNUAL_LEAVE_ALLOWANCE_COPY.toggleTitle}
-                  </div>
-                  <p className="mt-0.5 text-xs text-[var(--ink3)]">
-                    {ANNUAL_LEAVE_ALLOWANCE_COPY.toggleDescription}
-                  </p>
-                </div>
-                <Toggle
-                  checked={target.annualLeaveEnabled !== false}
-                  disabled={!canEdit}
-                  onChange={(checked) => {
-                    setTarget({ ...target, annualLeaveEnabled: checked })
-                  }}
-                />
-              </div>
-              <p className="mt-2 text-xs text-slate-400">{ANNUAL_LEAVE_ALLOWANCE_COPY.toggleNote}</p>
-            </div>
-          </SettingsCard>
-        </>
-      )}
+        <FormSection title="Annual leave" icon="sun" tone="amber">
+          <ToggleRow
+            title={ANNUAL_LEAVE_ALLOWANCE_COPY.toggleTitle}
+            descriptions={[ANNUAL_LEAVE_ALLOWANCE_COPY.toggleDescription, ANNUAL_LEAVE_ALLOWANCE_COPY.toggleNote]}
+            control={
+              <Switch
+                label={ANNUAL_LEAVE_ALLOWANCE_COPY.toggleTitle}
+                checked={target.annualLeaveEnabled !== false}
+                disabled={!canEdit}
+                onChange={(checked) => {
+                  setTarget({ ...target, annualLeaveEnabled: checked })
+                }}
+              />
+            }
+          />
 
       {/* Annual leave entitlement */}
-      {showAnnualLeave && target.annualLeaveEnabled !== false && (
+      {target.annualLeaveEnabled !== false && (
         <>
-          <SectionLabel label="Annual leave" />
-          <SettingsCard>
-            <div className="space-y-5 p-4">
-              <FormField label="Days per year">
+            <FieldGrid>
+              <Field label="Days per year">
                 <Input
                   type="number"
                   min="0"
@@ -1461,12 +1450,12 @@ export function EditUserProfile({
                     })
                   }
                 />
-              </FormField>
-              <FormField
+              </Field>
+              <Field
                 label="Company leave year"
                 hint="Runs from the first day of the start month through the last day of the end month (e.g. April → March)."
               >
-                <div className="flex items-center gap-3">
+                <div className="up-months">
                   <Select
                     value={String(target.annualLeaveYearStartMonth ?? 1)}
                     disabled={!canEdit}
@@ -1482,7 +1471,7 @@ export function EditUserProfile({
                       </option>
                     ))}
                   </Select>
-                  <span className="text-slate-400">→</span>
+                  <em aria-hidden="true">→</em>
                   <Select
                     value={String(target.annualLeaveYearEndMonth ?? 12)}
                     disabled={!canEdit}
@@ -1498,9 +1487,9 @@ export function EditUserProfile({
                     ))}
                   </Select>
                 </div>
-              </FormField>
+              </Field>
               {/* Rulebook 1.13.0 §4.4 (Q4, `proRataLeaveAllowance`): the leave year they joined is pro rata. */}
-              <FormField
+              <Field
                 label="Start date"
                 hint="The day this person started. Their allowance for that leave year is pro rata from it. Leave blank for a full allowance."
               >
@@ -1513,24 +1502,37 @@ export function EditUserProfile({
                   }
                   onChange={(e) => setTarget({ ...target, employmentStartDate: e.target.value || undefined })}
                 />
-              </FormField>
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="text-sm font-semibold text-[var(--ink)]">Carry unused days into next leave year</div>
-                  <p className="mt-0.5 text-xs text-[var(--ink3)]">
-                    Unused allowance from the previous leave year is added to this year&apos;s balance.
-                  </p>
-                </div>
-                <Toggle
-                  checked={target.annualLeaveCarriesOver === true}
-                  disabled={!canEdit}
-                  onChange={(checked) => setTarget({ ...target, annualLeaveCarriesOver: checked })}
-                />
-              </div>
+              </Field>
+            </FieldGrid>
+              <ToggleRow
+                title="Carry unused days into next leave year"
+                descriptions={["Unused allowance from the previous leave year is added to this year's balance."]}
+                control={
+                  <Switch
+                    label="Carry unused days into next leave year"
+                    checked={target.annualLeaveCarriesOver === true}
+                    disabled={!canEdit}
+                    onChange={(checked) => setTarget({ ...target, annualLeaveCarriesOver: checked })}
+                  />
+                }
+              />
               {/* Rulebook 1.40.0 (owner decision 11 Nov H35): the "set remaining" box is replaced by adjustments with a
                   reason, added on the person's annual leave page (Annual leave → Team); a stored override still counts
                   until its leave year ends. */}
-              <div className="rounded-xl bg-slate-50 px-3 py-2 text-sm text-[var(--ink2)]">
+              <div className="up-remain">
+                {/* The same remaining figure as the line beside it, large (display only). */}
+                {!leaveAdjustmentsRead.error &&
+                leaveBank.loaded &&
+                leaveEmployment.ready &&
+                leaveAdjustmentsRead.loaded &&
+                leaveBalance.hasAllowance ? (
+                  <div className="up-rnum" aria-hidden="true">
+                    <b>{leaveBalance.remaining}</b>
+                    <span>days remaining</span>
+                  </div>
+                ) : null}
+                <div className="up-remain-text">
+                <div>
                 {leaveAdjustmentsRead.error
                   ? leaveAdjustmentsRead.error
                   : !leaveBank.loaded || !leaveEmployment.ready || !leaveAdjustmentsRead.loaded
@@ -1538,17 +1540,19 @@ export function EditUserProfile({
                     : leaveBalance.hasAllowance
                       ? `Remaining this leave year: ${leaveBalance.remaining} (${leaveBalance.shownTaken} taken, ${leaveBalance.shownPending} awaiting approval${leaveBalance.adjustmentDays ? `, ${leaveBalance.adjustmentDays > 0 ? '+' : ''}${leaveBalance.adjustmentDays} adjusted` : ''}).${leaveNotes.notCounted ? ` ${leaveNotes.notCounted}` : ''}`
                       : `${leaveNotes.noAllowance ?? 'No paid allowance.'} ${leaveBalance.taken} days taken this leave year.`}
-                <p className="mt-1 text-xs text-[var(--ink3)]">
+                </div>
+                <p>
                   To add or take off days, open this person on{' '}
-                  <Link href={`/dashboard/annual-leave?tab=team&person=${encodeURIComponent(target.id)}`} className="font-semibold text-blue-600">
+                  <Link href={`/dashboard/annual-leave?tab=team&person=${encodeURIComponent(target.id)}`}>
                     Annual leave → Team
                   </Link>{' '}
                   and choose Adjust leave. Each change needs a reason and is kept as history.
                 </p>
+                </div>
               </div>
-            </div>
-          </SettingsCard>
         </>
+      )}
+        </FormSection>
       )}
 
       {/* Employment & timesheets */}
