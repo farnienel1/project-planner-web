@@ -198,7 +198,7 @@ export default function SetupSuccessClient() {
           : 'Finishing setup'
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[#f4f6f9] px-5">
+    <div className="dark pp-site-dark flex min-h-screen items-center justify-center bg-[var(--bg)] px-5">
       <div className="w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-[0_2px_30px_rgba(15,23,42,0.08)]">
         {status === 'loading' && (
           <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-b-2 border-blue-600" />

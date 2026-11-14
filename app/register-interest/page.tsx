@@ -56,7 +56,7 @@ const FAQ = [
 
 export default function RegisterInterestPage() {
   return (
-    <div className="min-h-screen bg-[var(--bg)] text-[var(--ink)]">
+    <div className="dark pp-site-dark min-h-screen bg-[var(--bg)] text-[var(--ink)]">
       <header className="sticky top-0 z-20 border-b border-[var(--line)] bg-[var(--bg)]/95 backdrop-blur-md">
         <div className="mx-auto flex max-w-[1180px] items-center gap-3 px-4 py-3 sm:px-6">
           <AppLogoMark size={36} radius={10} />

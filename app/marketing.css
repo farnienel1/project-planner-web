@@ -166,8 +166,8 @@ html:has(.mkt){scroll-behavior:smooth;scroll-padding-top:calc(84px + env(safe-ar
 /* ---------- 3. Demo snapshots: the app in light mode, on purpose ---------- */
 .mkt .ds-snap {
   --a-bg: #F2F5FA; --a-card: #FFFFFF; --a-soft: #F7F9FC; --a-soft2: #EEF2F8; --a-line: #E4E9F1;
-  --a-ink: #0F1B2D; --a-ink2: #46546A; --a-ink3: #8391A7; --a-blue: #1E5AA8; --a-blue-t: #E6EFFC;
-  --a-red: #D23636; --a-red-t: #FDE6E6; --a-warn: #B87700; --a-warn-t: #FFF1CF; --a-teal: #0FAE9E;
+  --a-ink: #0F1B2D; --a-ink2: #46546A; --a-ink3: #5F6D84; --a-blue: #1E5AA8; --a-blue-t: #E6EFFC;
+  --a-red: #B42323; --a-red-t: #FDE6E6; --a-warn: #8A5A00; --a-warn-t: #FFF1CF; --a-teal: #0B7F74;
   position: relative;
   background: var(--a-bg);
   color: var(--a-ink);
@@ -210,9 +210,9 @@ html:has(.mkt){scroll-behavior:smooth;scroll-padding-top:calc(84px + env(safe-ar
   background:
     linear-gradient(rgba(255, 255, 255, .06) 1px, transparent 1px) 0 0 / 22px 22px,
     linear-gradient(90deg, rgba(255, 255, 255, .06) 1px, transparent 1px) 0 0 / 22px 22px,
-    linear-gradient(135deg, #A61E24 0%, #D23636 100%);
+    linear-gradient(135deg, #A61E24 0%, #B42323 100%);
 }
-.mkt .ds-hero.blue { background: linear-gradient(135deg, #2F6BFF 0%, #1E4FD8 100%); }
+.mkt .ds-hero.blue { background: linear-gradient(135deg, #2A62F2 0%, #1E4FD8 100%); }
 .mkt .ds-hero.compact { padding: 12px 14px; }
 .mkt .ds-hero.compact .ds-big { font-size: 15px; }
 .mkt .ds-eb { font-size: 11px; font-weight: 600; opacity: .8; }
@@ -241,7 +241,7 @@ html:has(.mkt){scroll-behavior:smooth;scroll-padding-top:calc(84px + env(safe-ar
 .mkt .ds-pill { display: inline-flex; align-items: center; height: 20px; padding: 0 7px; border-radius: 6px; font-size: 10px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
 .mkt .ds-pill.high { background: var(--a-red-t); color: var(--a-red); }
 .mkt .ds-pill.low { background: var(--a-soft2); color: var(--a-ink2); }
-.mkt .ds-pill.draft { background: #FFF1CF; color: #B87700; text-transform: none; letter-spacing: 0; font-weight: 700; margin-left: auto; }
+.mkt .ds-pill.draft { background: #FFF1CF; color: #8A5A00; text-transform: none; letter-spacing: 0; font-weight: 700; margin-left: auto; }
 .mkt .ds-chips { display: flex; gap: 6px; flex-wrap: wrap; }
 .mkt .ds-chip { height: 26px; padding: 0 10px; border-radius: 999px; display: inline-flex; align-items: center; font-size: 11.5px; font-weight: 600; background: var(--a-card); box-shadow: 0 0 0 1px var(--a-line); color: var(--a-ink2); }
 .mkt .ds-chip.on { background: var(--a-warn); color: #fff; box-shadow: none; }
@@ -255,6 +255,7 @@ html:has(.mkt){scroll-behavior:smooth;scroll-padding-top:calc(84px + env(safe-ar
 .mkt .ds-person { display: flex; align-items: center; gap: 9px; padding: 8px 10px; border-radius: 10px; background: var(--a-card); box-shadow: inset 3px 0 0 var(--a-warn), 0 0 0 1px var(--a-line); }
 .mkt .ds-person b { display: block; font-size: 12.5px; }
 .mkt .ds-person span { font-size: 11px; color: var(--a-ink3); }
+.mkt .ds-person .ds-av { color: #fff; }
 .mkt .ds-hrs { margin-left: auto; background: var(--a-red); color: #fff !important; font-weight: 800; font-size: 11px !important; border-radius: 6px; padding: 2px 7px; }
 .mkt .ds-muted { color: var(--a-ink3); font-size: 12px; }
 .mkt .ds-muted b { color: var(--a-ink); }
@@ -277,14 +278,14 @@ html:has(.mkt){scroll-behavior:smooth;scroll-padding-top:calc(84px + env(safe-ar
 .mkt .ds-lib span { font-size: 10.5px; color: var(--a-ink3); }
 .mkt .ds-lib .acts { margin-left: auto; display: flex; gap: 5px; }
 .mkt .ds-lib .acts i { font-style: normal; height: 24px; padding: 0 9px; border-radius: 7px; display: inline-flex; align-items: center; font-size: 11px; font-weight: 700; box-shadow: 0 0 0 1px var(--a-line); }
-.mkt .ds-lib .acts i.b { background: #2F73F0; color: #fff; box-shadow: none; }
+.mkt .ds-lib .acts i.b { background: #1F5FD6; color: #fff; box-shadow: none; }
 .mkt .ds-stack { position: relative; padding: 0 0 40px 48px; }
 .mkt .ds-stack .back { position: absolute; left: 0; top: 0; width: 80%; opacity: .92; }
 .mkt .ds-stack .front { position: relative; margin-top: 70px; }
 .mkt .ds-heroshot { position: relative; }
 .mkt .ds-float { position: absolute; z-index: 3; display: flex; gap: 10px; align-items: center; background: #fff; color: #0F1B2D; border-radius: 14px; padding: 10px 13px; box-shadow: 0 0 0 1px rgba(15, 27, 45, .06), 0 18px 40px rgba(12, 35, 80, .18); font: 400 12px/1.35 var(--body); animation: mkt-ds-bob 5s ease-in-out infinite; }
 .mkt .ds-float b { display: block; font-size: 13px; }
-.mkt .ds-float span { color: #8391A7; }
+.mkt .ds-float span { color: #5F6D84; }
 .mkt .ds-float i { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; background: #F7F9FC; box-shadow: inset 0 0 0 1px #E4E9F1; }
 @keyframes mkt-ds-bob { 50% { transform: translateY(-7px); } }
 
@@ -297,10 +298,10 @@ html:has(.mkt){scroll-behavior:smooth;scroll-padding-top:calc(84px + env(safe-ar
 .mkt .ds-in { height: 34px; border-radius: 9px; border: 1.5px solid #D5DCE7; background: #fff; padding: 0 10px; display: flex; align-items: center; font-size: 12.5px; }
 .mkt .ds-in.focus { border-color: #1E5AA8; box-shadow: 0 0 0 3px #E6EFFC; }
 .mkt .ds-drop { background: #fff; border-radius: 10px; box-shadow: 0 0 0 1px #E4E9F1, 0 10px 24px rgba(15, 27, 45, .1); overflow: hidden; }
-.mkt .ds-drop small { display: block; padding: 6px 10px; font-size: 9.5px; font-weight: 700; color: #8391A7; letter-spacing: .06em; }
+.mkt .ds-drop small { display: block; padding: 6px 10px; font-size: 9.5px; font-weight: 700; color: #5F6D84; letter-spacing: .06em; }
 .mkt .ds-drop div { padding: 7px 10px; border-top: 1px solid #EEF2F8; font-size: 12px; }
 .mkt .ds-drop div.hl { background: #E6EFFC; }
-.mkt .ds-drop div span { display: block; color: #8391A7; font-size: 10.5px; }
+.mkt .ds-drop div span { display: block; color: #5F6D84; font-size: 10.5px; }
 .mkt .ds-two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .mkt .ds-fbtn { display: flex; gap: 8px; }
 .mkt .ds-fbtn span { flex: 1; text-align: center; padding: 9px; border-radius: 10px; font-weight: 700; font-size: 12.5px; }
@@ -311,23 +312,23 @@ html:has(.mkt){scroll-behavior:smooth;scroll-padding-top:calc(84px + env(safe-ar
 .mkt .ds-grp > div:first-child { border-top: 0; }
 .mkt .ds-grp > div.sub { padding-left: 50px; background: #FBFCFE; }
 .mkt .ds-grp b { display: block; font-size: 12.5px; }
-.mkt .ds-grp span { font-size: 10.5px; color: #8391A7; }
+.mkt .ds-grp span { font-size: 10.5px; color: #5F6D84; }
 .mkt .ds-grp .ds-job { color: #1E5AA8; font-size: inherit; }
 .mkt .ds-wl { width: 28px; height: 28px; border-radius: 8px; background: #2563EB; color: #fff !important; font: 700 10px var(--body) !important; display: grid; place-items: center; flex: none; }
 .mkt .ds-chk { margin-left: auto; width: 18px; height: 18px; border-radius: 5px; box-shadow: inset 0 0 0 1.5px #C5CDD9; display: grid; place-items: center; }
 .mkt .ds-chk.on { background: #1E5AA8; box-shadow: none; color: #fff !important; }
-.mkt .ds-lab { font-size: 10px; font-weight: 700; letter-spacing: .06em; color: #8391A7; text-transform: uppercase; }
+.mkt .ds-lab { font-size: 10px; font-weight: 700; letter-spacing: .06em; color: #5F6D84; text-transform: uppercase; }
 .mkt .ds-acts3 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .mkt .ds-acts3 span { text-align: center; padding: 9px; border-radius: 10px; font-weight: 700; font-size: 12.5px; }
 .mkt .ds-acts3 .q { background: #fff; box-shadow: inset 0 0 0 1.5px #1E5AA8; color: #1E5AA8; }
 .mkt .ds-acts3 .o { background: #116149; color: #fff; }
-.mkt .ds-acts3 .wa { grid-column: 1 / -1; background: #128C7E; color: #fff; }
-.mkt .ds-foot { font-size: 10.5px; color: #8391A7; text-align: center; }
+.mkt .ds-acts3 .wa { grid-column: 1 / -1; background: #0F7A6E; color: #fff; }
+.mkt .ds-foot { font-size: 10.5px; color: #5F6D84; text-align: center; }
 
 /* order email */
 .mkt .ds-mail { background: #fff; color: #0b1220; border-radius: 16px; overflow: hidden; font: 400 13px/1.45 -apple-system, 'Segoe UI', Roboto, Arial, sans-serif; text-align: left; box-shadow: 0 0 0 1px rgba(15, 27, 45, .08), 0 30px 70px rgba(12, 35, 80, .18); }
 .mkt .ds-mail .mh { background: #0b1220; padding: 14px 18px; }
-.mkt .ds-mail .job { display: inline-block; background: #f97316; color: #fff; font-size: 9.5px; font-weight: 800; letter-spacing: .08em; padding: 4px 9px; border-radius: 999px; }
+.mkt .ds-mail .job { display: inline-block; background: #C2410C; color: #fff; font-size: 9.5px; font-weight: 800; letter-spacing: .08em; padding: 4px 9px; border-radius: 999px; }
 .mkt .ds-mail .brand { display: flex; align-items: center; gap: 8px; margin-top: 10px; color: #fff; font-weight: 800; font-size: 12px; letter-spacing: .06em; }
 .mkt .ds-mail .brand em { font-style: normal; color: #0ea5e9; }
 .mkt .ds-mail .brand small { display: block; font-weight: 400; letter-spacing: .02em; color: #9fb0c9; font-size: 10px; }
@@ -337,14 +338,14 @@ html:has(.mkt){scroll-behavior:smooth;scroll-padding-top:calc(84px + env(safe-ar
 .mkt .ds-mail .meta { display: grid; grid-template-columns: 1fr 1fr; background: #f5f8fc; border: 1px solid #e3e8ef; border-radius: 10px; }
 .mkt .ds-mail .meta div { padding: 9px 11px; }
 .mkt .ds-mail .meta div + div { border-left: 1px solid #e3e8ef; }
-.mkt .ds-mail .meta small { display: block; font-size: 9px; font-weight: 700; letter-spacing: .08em; color: #7c8aa0; text-transform: uppercase; }
+.mkt .ds-mail .meta small { display: block; font-size: 9px; font-weight: 700; letter-spacing: .08em; color: #5F6D84; text-transform: uppercase; }
 .mkt .ds-mail .meta b { font-size: 12px; }
 .mkt .ds-mail table { width: 100%; border-collapse: collapse; border: 1px solid #e3e8ef; }
 .mkt .ds-mail th { background: #0b1220; color: #fff; font-size: 9.5px; letter-spacing: .08em; text-transform: uppercase; text-align: left; padding: 7px 10px; }
 .mkt .ds-mail th:last-child,
 .mkt .ds-mail td:last-child { text-align: right; }
 .mkt .ds-mail td { padding: 8px 10px; border-top: 1px solid #eef1f6; font-size: 12px; }
-.mkt .ds-mail td small { display: block; color: #7c8aa0; font-size: 10.5px; }
+.mkt .ds-mail td small { display: block; color: #5F6D84; font-size: 10.5px; }
 .mkt .ds-mail td span { background: #e6f0fc; color: #185fa5; font-weight: 800; font-size: 10.5px; padding: 3px 8px; border-radius: 999px; white-space: nowrap; }
 .mkt .ds-mail .mfoot { height: 3px; background: #0ea5e9; }
 
@@ -379,12 +380,12 @@ html:has(.mkt){scroll-behavior:smooth;scroll-padding-top:calc(84px + env(safe-ar
 .mkt .mf-chat .ch { display: flex; gap: 12px; align-items: center; padding: 13px 16px; background: #075E54; color: #fff; }
 .mkt .mf-chat .ch b { display: block; }
 .mkt .mf-chat .ch span { font-size: 12px; opacity: .8; }
-.mkt .mf-chat .av2 { width: 36px; height: 36px; border-radius: 50%; background: #128C7E; display: grid; place-items: center; font-weight: 800; font-size: 13px; opacity: 1 !important; }
+.mkt .mf-chat .av2 { width: 36px; height: 36px; border-radius: 50%; background: #0F7A6E; display: grid; place-items: center; font-weight: 800; font-size: 13px; opacity: 1 !important; }
 .mkt .mf-chat .cb { padding: 16px 12px; display: flex; flex-direction: column; gap: 10px; }
 .mkt .mf-chat .m { position: relative; align-self: flex-end; background: #D9FDD3; border-radius: 12px; padding: 9px 12px 18px; max-width: 92%; box-shadow: 0 1px 1px rgba(0, 0, 0, .08); }
 .mkt .mf-chat .m ul { margin: 6px 0; padding-left: 18px; }
 .mkt .mf-chat .r { position: relative; align-self: flex-start; background: #fff; border-radius: 12px; padding: 9px 12px 18px; box-shadow: 0 1px 1px rgba(0, 0, 0, .08); }
-.mkt .mf-chat em { position: absolute; right: 10px; bottom: 3px; font-style: normal; font-size: 10.5px; color: #667781; }
+.mkt .mf-chat em { position: absolute; right: 10px; bottom: 3px; font-style: normal; font-size: 10.5px; color: #54656F; }
 .mkt .mf-chat .cf { padding: 9px 14px; background: #F0F2F5; color: #54656F; font-size: 12px; text-align: center; }
 
 /* ---------- 5. Every-trade strip ---------- */
@@ -435,3 +436,100 @@ html:has(.mkt){scroll-behavior:smooth;scroll-padding-top:calc(84px + env(safe-ar
   .mkt .hero .wrap { grid-template-columns: .9fr 1.1fr; }
   .mkt .ds-heroshot { margin-right: -72px; }
 }
+
+/* ---------- Always dark (owner, 14 Nov) ----------
+   The public website (.mkt: MarketingShell pages, the setup wizard, check-email) and the other
+   always-dark surfaces (.pp-site-dark: register-interest, the wizard's logo crop dialog and the
+   setup loading screen, which also carry .dark) use the dark tokens whatever the visitor's theme.
+   The dark tokens and the slate/white remaps are pinned on .mkt and .dark in app/globals.css.
+   Nothing here sets <html data-theme>, so the signed-in app keeps its own light or dark mode. */
+html:has(.mkt),
+html:has(.pp-site-dark) { color-scheme: dark; background: #0b1220; } /* #0b1220 = the dark --bg */
+html:has(.mkt) body,
+html:has(.pp-site-dark) body { background: transparent; }
+
+/* White text on the dark --blue (#4c8be6) is 3.4:1, under AA. Filled controls with white text use
+   the light theme's --blue2 instead: 4.5:1 with white, 4.1:1 against the page. */
+:is(.mkt, .pp-site-dark) { --mkt-fill: #2F74DA; }
+.mkt .btn.primary,
+.mkt .links a.reg:hover,
+.mkt .links a.reg.on,
+.mkt .wz-rail .st.on .n,
+.mkt .chip.on:not([data-hue] *),
+:is(.mkt, .pp-site-dark) .bg-\[var\(--blue\)\] { background: var(--mkt-fill); }
+/* The Android announcement bar: white text across a navy → blue gradient. */
+.mkt .btn.primary:hover { background: color-mix(in srgb, var(--mkt-fill) 88%, #000); } /* was --blue-based: 4.3:1 on hover */
+.mkt .annc { background: linear-gradient(90deg, var(--navy), var(--mkt-fill)); }
+.mkt .annc button { background: rgba(0, 0, 0, .22); }
+/* White initials on the light dark-theme hues (2.0–3.9:1): dark initials instead (4.9–9.5:1). */
+.mkt .av { color: #0b1220; }
+.mkt .av.on-dark { color: #fff; } /* dark fills (ProductPanels marks them): white is 5.6:1 */
+/* PaymentRunsPanel's run chips use --card text (dark in dark mode); on the wizard's --mkt-fill
+   run 1 chip white reads better (4.5:1 vs 3.5:1). */
+:is(.mkt, .pp-site-dark) .bg-\[var\(--blue\)\].text-\[var\(--card\)\] { color: #fff; }
+/* --blue text on --blue-t is 4.1:1 in the dark theme; --blue2 is 5.5:1 (6.7:1 on cards). */
+.mkt .wz-rail .subs button.on,
+.pp-site-dark .text-\[var\(--blue\)\] { color: var(--blue2); }
+.pp-site-dark .border-\[var\(--blue\)\] { border-color: var(--mkt-fill); }
+
+/* Light Tailwind colour utilities in the always-dark surfaces (setup wizard steps, logo crop
+   dialog). globals.css already maps the slate/white text, surfaces and borders; these are the
+   tints, hues, hovers, rings and gradients that were still light. Same element, same class, the
+   dark token for that hue. */
+:is(.mkt, .pp-site-dark) :is(.hover\:bg-slate-50:hover, .hover\:bg-slate-100:hover) { background-color: var(--soft2) !important; }
+:is(.mkt, .pp-site-dark) .bg-slate-200 { background-color: var(--soft) !important; }
+/* Fields with no background class would get the browser's grey dark field (and its placeholder
+   grey, 3.3:1); they get the card and --ink3 placeholders (5.1:1) like the rest. Zero specificity, so
+   any background class still wins. */
+:where(.mkt, .pp-site-dark) :where(input:not([type=checkbox], [type=radio], [type=range], [type=file]), select, textarea) { background-color: var(--card); }
+:where(.mkt, .pp-site-dark) :where(input, textarea)::placeholder { color: var(--ink3); }
+/* The help-page search field has no border (inline border: 0): a 1.5px --ink3 ring marks it. */
+.mkt input.in[aria-label="Search questions"]:not(:focus) { box-shadow: var(--sh), inset 0 0 0 1.5px var(--ink3) !important; }
+.mkt input.in[aria-label="Search questions"]:focus { box-shadow: var(--sh), inset 0 0 0 2px var(--blue) !important; }
+/* Form fields: the dark --line border is 1.3–1.6:1 against the card; fields need 3:1 to be seen
+   (WCAG 1.4.11). --ink3 is 5.1:1. Focus and error borders keep their own colours. */
+:is(.mkt, .pp-site-dark) :is(input:not([type=checkbox], [type=radio], [type=range], [type=file], [type=hidden], [type=submit], [type=button]), select, textarea):not(:focus, [aria-invalid="true"], .bad, [class*="border-red"], [class*="--red"]) { border-color: var(--ink3) !important; }
+:is(.mkt, .pp-site-dark) .hover\:text-slate-700:hover { color: var(--ink) !important; }
+:is(.mkt, .pp-site-dark) .placeholder\:text-slate-400::placeholder { color: var(--ink3) !important; }
+:is(.mkt, .pp-site-dark) .bg-blue-50 { background-color: var(--blue-t) !important; }
+:is(.mkt, .pp-site-dark) .bg-sky-50 { background-color: var(--ts-t) !important; }
+:is(.mkt, .pp-site-dark) :is(.bg-red-50, .bg-red-100) { background-color: var(--red-t) !important; }
+:is(.mkt, .pp-site-dark) :is(.bg-emerald-50, .bg-emerald-100, .hover\:bg-emerald-100:hover) { background-color: var(--green-t) !important; }
+:is(.mkt, .pp-site-dark) .bg-amber-50 { background-color: var(--warn-t) !important; }
+:is(.mkt, .pp-site-dark) .bg-violet-50 { background-color: var(--daily-t) !important; }
+:is(.mkt, .pp-site-dark) .bg-teal-50 { background-color: var(--ops-t) !important; }
+:is(.mkt, .pp-site-dark) .bg-indigo-50 { background-color: var(--task-t) !important; }
+:is(.mkt, .pp-site-dark) :is(.text-blue-600, .text-blue-700, .text-blue-900) { color: var(--blue2) !important; }
+/* The wizard's blue → sky hero banners (Explore, Team & data summary): white text needs the sky end
+   at sky-700 (5.9:1, sky-500 was 2.8:1) and the pale blue lines at white. */
+:is(.mkt, .pp-site-dark) .to-sky-500 { --tw-gradient-to: #0369a1 !important; }
+:is(.mkt, .pp-site-dark) .text-blue-100 { color: #fff !important; }
+:is(.mkt, .pp-site-dark) .text-sky-600 { color: var(--ts) !important; }
+:is(.mkt, .pp-site-dark) .text-indigo-600 { color: var(--task) !important; }
+:is(.mkt, .pp-site-dark) :is(.text-red-500, .text-red-700, .text-red-800) { color: var(--red) !important; }
+:is(.mkt, .pp-site-dark) :is(.text-emerald-500, .text-emerald-600, .text-emerald-700, .text-emerald-800, .text-emerald-900) { color: var(--green) !important; }
+:is(.mkt, .pp-site-dark) :is(.text-amber-600, .text-amber-700, .text-amber-900) { color: var(--warn) !important; }
+:is(.mkt, .pp-site-dark) :is(.text-violet-500, .text-violet-600, .text-violet-700, .text-violet-900, .text-violet-950) { color: var(--daily) !important; }
+:is(.mkt, .pp-site-dark) .text-teal-600 { color: var(--ops) !important; }
+:is(.mkt, .pp-site-dark) .border-blue-100 { border-color: color-mix(in srgb, var(--blue) 35%, var(--line)) !important; }
+:is(.mkt, .pp-site-dark) .border-red-200 { border-color: color-mix(in srgb, var(--red) 40%, var(--line)) !important; }
+:is(.mkt, .pp-site-dark) :is(.border-emerald-100, .border-emerald-200) { border-color: color-mix(in srgb, var(--green) 40%, var(--line)) !important; }
+:is(.mkt, .pp-site-dark) :is(.border-amber-100, .border-amber-200) { border-color: color-mix(in srgb, var(--warn) 40%, var(--line)) !important; }
+:is(.mkt, .pp-site-dark) .border-violet-200 { border-color: color-mix(in srgb, var(--daily) 40%, var(--line)) !important; }
+:is(.mkt, .pp-site-dark) :is(.ring-slate-200, .ring-blue-100, .ring-sky-100, .ring-violet-100, .ring-teal-100, .ring-indigo-100, .ring-emerald-100, .ring-amber-100) { --tw-ring-color: var(--line2) !important; }
+:is(.mkt, .pp-site-dark) .focus\:ring-blue-100:focus { --tw-ring-color: color-mix(in srgb, var(--blue) 45%, transparent) !important; }
+:is(.mkt, .pp-site-dark) .from-violet-50 { --tw-gradient-from: var(--daily-t) !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to) !important; }
+:is(.mkt, .pp-site-dark) .to-purple-50 { --tw-gradient-to: var(--user-t) !important; }
+
+/* Legal pages (privacy, terms, processors): on a phone the single column was as wide as the longest
+   unbreakable word (an address or link), so the page scrolled sideways (31px at 390px). */
+.mkt .legalwrap > * { min-width: 0; }
+.mkt .legalwrap .prose { overflow-wrap: break-word; }
+/* Setup wizard on a phone: the rail and the step card took the width of their widest line, so the
+   page scrolled sideways (126px on Organisation, 11px on Schedule options at 390px). */
+.mkt .wz > * { min-width: 0; }
+.mkt .wz .btn.sm { white-space: normal; height: auto; min-height: 38px; padding-top: 8px; padding-bottom: 8px; text-align: center; }
+.mkt .wz-rail .st:not(.on, .done) .n { color: var(--ink2); } /* 4.4:1 → 7.6:1 on the step number tile */
+
+/* The email preview shows the email as a recipient sees it: a light page inside the dark screen. */
+.pp-email-frame { background: #fff !important; color: #0F1B2D; color-scheme: light; }

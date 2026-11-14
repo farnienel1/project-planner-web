@@ -1163,7 +1163,7 @@ export function TimesheetPeriodPage({
                     <Note tone="amber">{extrasAllowed.message}</Note>
                   </div>
                 ) : null}
-                <div className="pu-card-b" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div className="pu-card-b pu-tiles">
                   <button
                     type="button"
                     onClick={() => beginExtra('priceWork')}
@@ -1173,7 +1173,7 @@ export function TimesheetPeriodPage({
                     style={extrasAllowed.allowed ? undefined : { opacity: 0.5, cursor: 'not-allowed' }}
                   >
                     <IconTile tone="purple" size="sm"><BriefcaseIcon /></IconTile>
-                    <span style={{ minWidth: 0 }}>
+                    <span className="pu-tilebtn-t">
                       <b>Price Work</b>
                       <small>Agreed extras</small>
                     </span>
@@ -1187,7 +1187,7 @@ export function TimesheetPeriodPage({
                     style={extrasAllowed.allowed ? undefined : { opacity: 0.5, cursor: 'not-allowed' }}
                   >
                     <IconTile tone="green" size="sm"><ReceiptPercentIcon /></IconTile>
-                    <span style={{ minWidth: 0 }}>
+                    <span className="pu-tilebtn-t">
                       <b>Expenses</b>
                       <small>+ receipts</small>
                     </span>
