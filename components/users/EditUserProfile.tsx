@@ -116,7 +116,7 @@ import {
 } from '@/lib/staff/userPermissionDescriptions'
 import { SUPER_ADMIN_SUCCESSOR_EMPTY, superAdminSuccessors } from '@/lib/staff/superAdminTransfer'
 import { displayedLineManagerId, userWithLineManagerChoice } from '@/lib/firebase/userPayload'
-import { ProfileBack, ProfileBand, ProfileBanner, SaveState } from '@/components/users/profile-ui'
+import { Field, FieldGrid, FormSection, ProfileBack, ProfileBand, ProfileBanner, SaveState } from '@/components/users/profile-ui'
 import {
   SectionLabel,
   SettingsCard,
@@ -1185,60 +1185,59 @@ export function EditUserProfile({
       )}
 
       {/* Identity */}
-      <SectionLabel label="User details" />
-      <SettingsCard>
-        <div className="grid grid-cols-1 gap-4 p-4 sm:grid-cols-2">
-          <FormField label="First name">
+      <FormSection title="User details" icon="user" tone="blue">
+        <FieldGrid>
+          <Field label="First name">
             <Input
               value={target.firstName}
               disabled={!canEditIdentity}
               onChange={(e) => setTarget({ ...target, firstName: e.target.value })}
             />
-          </FormField>
-          <FormField label="Surname">
+          </Field>
+          <Field label="Surname">
             <Input
               value={target.surname}
               disabled={!canEditIdentity}
               onChange={(e) => setTarget({ ...target, surname: e.target.value })}
             />
-          </FormField>
+          </Field>
           {ghostTarget ? (
-            <FormField label="App login" hint={target.email ? `Invitation sent to ${target.email}.` : 'An admin can give app access from their profile.'}>
+            <Field label="App login" hint={target.email ? `Invitation sent to ${target.email}.` : 'An admin can give app access from their profile.'}>
               <Input value={ghostBadgeLabel(target)} disabled />
-            </FormField>
+            </Field>
           ) : (
           <>
-          <FormField label="Email">
+          <Field label="Email">
             <Input
               type="email"
               value={target.email}
               disabled={!canEditIdentity}
               onChange={(e) => setTarget({ ...target, email: e.target.value })}
             />
-          </FormField>
-          <FormField label="Mobile number">
+          </Field>
+          <Field label="Mobile number">
             <Input
               value={target.mobileNumber || ''}
               disabled={!canEditIdentity}
               onChange={(e) => setTarget({ ...target, mobileNumber: e.target.value })}
             />
-          </FormField>
-          <FormField label="Last active">
+          </Field>
+          <Field label="Last active">
             <Input
               value={target.lastSeenAt ? format(target.lastSeenAt, "d MMM yyyy 'at' HH:mm") : '—'}
               disabled
             />
-          </FormField>
+          </Field>
           </>
           )}
           {!canEdit && (
-            <FormField label="Trade type">
+            <Field label="Trade type">
               <Input value={displayTradeType(target.tradeTypePreset, target.tradeTypeCustom)} disabled />
-            </FormField>
+            </Field>
           )}
           {showEmploymentType && (
             <>
-              <FormField label="Employment type">
+              <Field label="Employment type">
                 <Select
                   value={normalizeEmploymentType(target.employmentType)}
                   disabled={!canEditMatrix}
@@ -1250,8 +1249,8 @@ export function EditUserProfile({
                   <option value="self_employed">Self-Employed</option>
                   <option value="paye">PAYE</option>
                 </Select>
-              </FormField>
-              <FormField
+              </Field>
+              <Field
                 label="Employment date"
                 hint="PAYE and self-employed take effect from the working day you choose when you save a change."
               >
@@ -1264,11 +1263,11 @@ export function EditUserProfile({
                   }
                   disabled
                 />
-              </FormField>
+              </Field>
             </>
           )}
-        </div>
-      </SettingsCard>
+        </FieldGrid>
+      </FormSection>
 
       {showSetupCard && (
         <>
