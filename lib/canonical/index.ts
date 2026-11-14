@@ -545,6 +545,38 @@ export {
 } from './bookings'
 
 export { bookingIdsForAccount, bookingIdsForPerson, bookingPersonKey, resolveBookingPerson, rosterAliasIdsFor } from './bookingPerson'
+// 1.44.0 §21, §11: bookings whose person id names nobody — never hidden, linked from Data health.
+export {
+  LINK_BOOKING_PERSON_ACTION,
+  LINK_BOOKING_PERSON_ALREADY_MESSAGE,
+  LINK_BOOKING_PERSON_PAY_ACK_LABEL,
+  LINK_BOOKING_PERSON_PAY_WARNING,
+  LINK_BOOKING_PERSON_SELF_NOTE,
+  UNKNOWN_BOOKING_PERSON_LABEL,
+  UNRESOLVED_BOOKING_PERSON_CHIP,
+  UNRESOLVED_BOOKINGS_EMPTY,
+  UNRESOLVED_BOOKINGS_HEADING,
+  UNRESOLVED_BOOKINGS_HELP,
+  bookingPersonIdHint,
+  linkBookingPersonCandidates,
+  linkBookingPersonConfirmMessage,
+  linkBookingPersonDoneMessage,
+  linkBookingPersonImpact,
+  linkBookingPersonRefusal,
+  linkBookingPersonWriteFields,
+  scheduleRowPerson,
+  unresolvedBookingPeople,
+} from './unresolvedBookingPeople'
+export type {
+  LinkBookingPersonFiledUnder,
+  LinkBookingPersonImpact,
+  LinkBookingPersonRefusal,
+  LinkCandidate,
+  LinkCandidateProfile,
+  ScheduleRowPerson,
+  UnresolvedBookingInput,
+  UnresolvedBookingPerson,
+} from './unresolvedBookingPeople'
 export { LEGACY_PLACEHOLDER_DOCUMENT_ID, isLegacyPlaceholderDocumentId } from './bookings'
 export type {
   BookingPersonAccount,
@@ -808,6 +840,9 @@ export {
   timesheetEntryDecision,
   timesheetEntryEffectiveAmount,
   timesheetEntryReviewWriteFields,
+  timesheetEntryFingerprint,
+  timesheetEntryFingerprintMap,
+  timesheetTrustedFingerprint,
   timesheetEntryReviewsAfterWrite,
   timesheetOwnerWriteFields,
   timesheetWriterIsReviewer,
@@ -995,6 +1030,7 @@ export {
   subcontractorBookingCreateFields,
   subcontractorBookingWriteFields,
   timesheetEntryId,
+  timesheetEvidenceOwnerIds,
 } from './workDocumentReaders'
 export type {
   DeadlineAssignmentWriteFields,
@@ -1289,7 +1325,8 @@ export { IDEMPOTENT_MIGRATION_WRITES } from './liveSources'
 
 // Rulebook 1.10.0 (hunt C): invoice rows, payroll line reviews, invite accept plan, timesheet participants, pay maths.
 export { timesheetInvoiceRows } from './reportPay'
-export { payrollLineReview } from './timesheetEntryReviews'
+export { payrollLineReview, payrollLineReviewKey } from './timesheetEntryReviews'
+export type { PayrollLineLiveBooking } from './timesheetEntryReviews'
 export { inviteAcceptWrites } from './inviteAccept'
 export { timesheetParticipant } from './peopleDocuments'
 export { orgDayHours, payForHours, roundPennies } from './payRate'
@@ -1456,6 +1493,8 @@ export {
   weekendBreakFor,
   derivedWeekdayPaidHours,
   weekdayPaidHours,
+  weekendCountsAsHours,
+  DEFAULT_WEEKEND_COUNTS_AS_HOURS,
   withDerivedWeekdayPaidHours,
   weekdayPaidDayPreview,
 } from './organizationSettings'
@@ -1692,6 +1731,8 @@ export * from './overtimeChoices'
 // Rulebook 1.30.0 (§26): PAYE price work and expenses (items, evidence, approver candidates, ranges, reports, who sees
 // them) and personal site audits (owner only; the frozen copy attached as evidence).
 export * from './payeClaims'
+export * from './claimEvidence'
+export * from './timesheetEntryEvidence'
 export * from './payeClaimReviews'
 export * from './priceWorkJobNumber'
 export * from './personalSiteAudits'
@@ -1907,3 +1948,22 @@ export {
 } from './timesheetSnapshot'
 export type { TimesheetExtrasSheet, TimesheetLiveLabourLine, TimesheetSnapshotReadyInput, TimesheetSnapshotSheet } from './timesheetSnapshot'
 export type { SubcontractorScheduleBooking, SubcontractorScheduleCell } from './jobScheduleLeave'
+// Rulebook 1.46.0 §7, §8: re-pricing a line manager's "Edit hours" and the weekly report's per-booking pay.
+export {
+  bookingPaySlices,
+  mergeBookingPaySlice,
+  PAYROLL_LINE_EDIT_TIMES_MESSAGE,
+  payrollLineReviewSnapshotParts,
+  revisedPayrollLineAmounts,
+  revisedPayrollLineTimesError,
+} from './timesheetLineEdit'
+export type {
+  BookingPaySlice,
+  PayrollLineEditReviewFields,
+  PayrollLineSnapshotPart,
+  RevisedPayrollLineAmounts,
+  RevisedPayrollLineInput,
+} from './timesheetLineEdit'
+export { payrollLineBookingKey } from './reportPay'
+// Rulebook 1.46.0: one slot spelling in booking fingerprints, compared canonically across apps.
+export { bookingFingerprintSlot, overtimeFingerprintKey, overtimeFingerprintsMatch } from './bookingFingerprint'

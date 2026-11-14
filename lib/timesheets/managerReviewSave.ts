@@ -2,6 +2,7 @@
  * iOS parity: Views/InvoicingView.swift applyPayrollReviewSave / applyExtraReviewSave
  */
 import type { TimesheetManagerDecision, TimesheetPayrollLineReview } from '@/lib/timesheets/timesheetDraft'
+import { roundPennies } from '@/lib/canonical/payRate'
 
 const AMOUNT_EPS = 0.01
 
@@ -19,7 +20,8 @@ export function payrollReviewAfterSave(
   if (prior === 'declined') decision = 'approved'
   else if (unchanged) decision = 'approved'
   else decision = 'edited'
-  return { decision, revisedAmount: unchanged ? null : revisedAmount }
+  // 1.46.0: a revised amount is stored in pennies (`roundPennies`).
+  return { decision, revisedAmount: unchanged ? null : roundPennies(revisedAmount) }
 }
 
 export function extraReviewAfterSave(
@@ -31,8 +33,8 @@ export function extraReviewAfterSave(
   if (prior === 'declined' || unchanged) {
     return {
       managerDecision: 'approved',
-      managerRevisedAmount: unchanged ? null : revisedAmount,
+      managerRevisedAmount: unchanged ? null : roundPennies(revisedAmount),
     }
   }
-  return { managerDecision: 'edited', managerRevisedAmount: revisedAmount }
+  return { managerDecision: 'edited', managerRevisedAmount: roundPennies(revisedAmount) }
 }

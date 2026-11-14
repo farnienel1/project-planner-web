@@ -16,6 +16,7 @@ import { DataParityCheck } from '@/components/dataHealth/DataParityCheck'
 import { dataCheckPanelVisible } from '@/lib/canonical'
 import { dataCheckPanelEnabledFor, onPlatformConfigChange } from '@/lib/access/securitySwitches'
 import { GhostsToCheck } from '@/components/dataHealth/GhostsToCheck'
+import { BookingsNotLinkedToPerson } from '@/components/dataHealth/BookingsNotLinkedToPerson'
 import { UsersMissingLevel } from '@/components/dataHealth/UsersMissingLevel'
 import { UsersMissingEmploymentType } from '@/components/dataHealth/UsersMissingEmploymentType'
 import { UsersMissingLineManager } from '@/components/dataHealth/UsersMissingLineManager'
@@ -129,6 +130,8 @@ export default function DataHealthPage() {
           <DataParityCheck organizationId={organization.id} />
         ) : null}
         {/* Rulebook 1.23.1 §11: people with no user level (`usersMissingLevel`). */}
+        {/* Rulebook 1.44.0 §11, §21: bookings whose person id matches nobody (`unresolvedBookingPeople`), first. */}
+        <BookingsNotLinkedToPerson organizationId={organization.id} />
         <UsersMissingLevel organizationId={organization.id} />
         <UsersMissingEmploymentType organizationId={organization.id} />
         {/* Rulebook 1.28.0 §8, §11: people who need a line manager (`usersMissingLineManager`). */}

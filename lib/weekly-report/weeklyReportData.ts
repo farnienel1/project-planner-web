@@ -24,7 +24,7 @@ import type { OrganizationDetails } from '@/lib/settings/organizationSettings'
 import { DEFAULT_PAYROLL_POLICY, includesManagerScheduleLocation, orgPayrollPolicyForDay } from '@/lib/settings/organizationSettings'
 import { organizationTimeZone } from '@/lib/canonical'
 import { computeManagerBookingClashWarnings } from '@/lib/warnings/managerClashWarnings'
-import { employmentTypeOnDay, isAnonymisedDeletedProfile, priceWorkJobNumberText, reportPayCell, reportPayTotal, reportPersonPayCell, subcontractorDayValue } from '@/lib/canonical'
+import { claimEvidenceCountText, employmentTypeOnDay, isAnonymisedDeletedProfile, priceWorkJobNumberText, reportPayCell, reportPayTotal, reportPersonPayCell, subcontractorDayValue } from '@/lib/canonical'
 import { computeUnbookedLabourWarningsForDateRange } from '@/lib/warnings/unbookedLabourWarnings'
 import type { Booking, HolidayBooking, Operative, Project, User } from '@/types'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
@@ -64,7 +64,7 @@ import {
   resolveSubcontractorBookingPeople,
 } from '@/lib/subcontractors/bookingPeople'
 import { bookingJobLabel, weekdayPaidHours, weeklyReportPayeDay, weeklyReportPayeOvertime, OVERTIME_RATE_CHANGED_MARK, overtimePersonIds, type OvertimeBookingInput, type PayrollTimePolicyState } from '@/lib/canonical'
-import { normalizeDocumentId } from '@/lib/canonical'
+import { mergeBookingPaySlice, normalizeDocumentId } from '@/lib/canonical'
 
 export type WeeklyReportWarningRow = {
   status: string
@@ -370,14 +370,9 @@ export function buildWeeklyReportData({
       payBuckets.set(key, { personKey, person, role, slice: { ...slice } })
       return
     }
-    // 1.20.3: overtime rows keep clock hours and the break separately once any merged day had a break (display only).
-    if (slice.isOvertime && (Number(slice.breakHours) > 0 || Number(existing.slice.breakHours) > 0)) {
-      const clockOf = (row: LabourPaySlice) => (Number(row.breakHours) > 0 ? Number(row.clockHours) || 0 : row.paidHours)
-      existing.slice.clockHours = clockOf(existing.slice) + clockOf(slice)
-      existing.slice.breakHours = (Number(existing.slice.breakHours) || 0) + (Number(slice.breakHours) || 0)
-    }
-    existing.slice.paidHours = roundPennies(existing.slice.paidHours + slice.paidHours)
-    existing.slice.pay = roundPennies(existing.slice.pay + slice.pay)
+    // Rulebook 1.46.0 §7 (`mergeBookingPaySlice`): the row's pay is the sum of each booking's rounded pay (never
+    // re-priced from summed hours); overtime rows keep clock hours and the break apart once any day had a break.
+    existing.slice = mergeBookingPaySlice(existing.slice, slice)
   }
 
   const addBookingPay = (
@@ -628,7 +623,8 @@ export function buildWeeklyReportData({
       title: line.title,
       jobNumber: priceWorkJobNumberText(line.jobNumber),
       date: format(line.date, 'd MMM yyyy'),
-      details: line.details,
+      // Rulebook 1.45.0: the entry's evidence count (`claimEvidenceCountText`) beside its description.
+      details: [line.details, claimEvidenceCountText(week.evidenceCounts?.[normalizeDocumentId(line.id)])].filter(Boolean).join(' · '),
       amount: line.amount,
     }))
     .sort((a, b) => a.person.localeCompare(b.person) || a.date.localeCompare(b.date))
@@ -645,7 +641,7 @@ export function buildWeeklyReportData({
       title: line.title,
       jobNumber: line.jobNumber,
       date: format(line.date, 'd MMM yyyy'),
-      details: line.details,
+      details: [line.details, claimEvidenceCountText(week.evidenceCounts?.[normalizeDocumentId(line.id)])].filter(Boolean).join(' · '),
       amount: line.amount,
     }))
     .sort((a, b) => a.person.localeCompare(b.person) || a.date.localeCompare(b.date))

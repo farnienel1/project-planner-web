@@ -20,6 +20,7 @@ import {
   bookingOccupiesDay,
   formatMoney,
   overlappingBookingIds,
+  overtimeBookingFingerprint,
   payrollLineClockRanges,
   payrollMultipliedHours,
   timesheetLineClockText,
@@ -53,7 +54,7 @@ export type TimesheetPayrollLineItem = {
   payrollBasis: PayrollRateBasis
   dayRate: number
   hourlyRate?: number | null
-  standardDayHours?: number
+  standardDayHours: number
   otMultiplier?: number | null
   /**
    * Rulebook 1.20.3 (display only, never stored): an overtime line's clock hours at the multiplier and the unpaid
@@ -82,6 +83,21 @@ export type TimesheetPayrollLineItem = {
   bookingStartTime?: string
   bookingEndTime?: string
   bookingBreakRemoved?: boolean
+  /**
+   * Rulebook 1.46.0 (never stored): the booking's own overtime rate (`otMultiplierOverride`), so Edit hours re-prices
+   * the booking at it (`revisedPayrollLineAmounts`). Missing = the organisation's rate.
+   */
+  bookingOtMultiplierOverride?: number | null
+  /**
+   * Rulebook 1.46.0 (never stored on the line): the booking as it is now (`overtimeBookingFingerprint`), on both lines
+   * of a booking. Edit hours stores it on its review (`reviewedBookingFingerprint`); once the booking changes the
+   * review is stale (`payrollLineReview`), so a changed booking is never paid twice.
+   */
+  bookingFingerprint?: string
+  /** Rulebook 1.46.0 (never stored): whether this line's booking has its own overtime line on the sheet. */
+  bookingHasOvertimeLine?: boolean
+  /** Rulebook 1.46.0 (never stored): the booking's collection, so a labour and a manager site booking never group. */
+  bookingCollection?: string
   /** Rulebook 1.43.0 (rebuild check only, never stored): when the line's booking was created and last written. */
   bookingCreatedAt?: Date
   bookingUpdatedAt?: Date
@@ -92,6 +108,12 @@ export type TimesheetPayrollLineItem = {
    */
   isOverlapping?: boolean
 }
+
+/**
+ * Overtime a booking needs before it gets its own overtime line (web and iOS collectors). Kept as it is in 1.46.0:
+ * whether to keep, drop or apply it everywhere is an owner question (the weekly report has no cut-off).
+ */
+export const TIMESHEET_OVERTIME_LINE_MIN_HOURS = 0.05
 
 export type TimesheetPayrollSummary = {
   totalHours: number
@@ -140,7 +162,8 @@ export function timesheetRateAnnotation(line: TimesheetPayrollLineItem, currency
 }
 
 export function timesheetHoursRateLine(line: TimesheetPayrollLineItem, currencyCode?: string): string {
-  const standard = line.standardDayHours && line.standardDayHours > 0 ? line.standardDayHours : orgDayHours(8)
+  // 1.44.0: every line carries the paid day in effect on its own day (`weekdayPaidHours`, set by the collector).
+  const standard = orgDayHours(line.standardDayHours)
   if (line.isPayeDay) return `${quantityText(line.paidHours, 'hours')} = ${formatMoney(0, currencyCode)}`
   const hourly = line.payrollBasis === 'hourly'
   const rate = !line.hasRate ? null : hourly ? (line.hourlyRate ?? 0) : line.dayRate
@@ -303,7 +326,6 @@ export function collectTimesheetPayroll({
       operative: operative || linked || matched[0],
       day: date,
       history,
-      standardDayHours,
       timeZone,
       aliasUserIds,
       // 1.36.0 (FU-5): rate history filed under any of the person's `operatives` rows, not only one.
@@ -333,6 +355,16 @@ export function collectTimesheetPayroll({
     const isPaye = employmentTypeOnDay(user, date, timeZone) === 'paye'
     const lineBookingId = `${idPrefix}-${bookingId}`
     const lineDayKey = dayKey(date, timeZone)
+    const bookingFingerprint = overtimeBookingFingerprint({
+      id: bookingId,
+      personId: '',
+      dayKey: lineDayKey,
+      timeSlot,
+      workStartTime,
+      workEndTime,
+      isBreakRemoved: isBreakRemoved === true,
+      otMultiplierOverride: otMultiplierOverride ?? null,
+    })
     paidBookings.push({ id: lineBookingId, dayKey: lineDayKey, timeSlot, workStartTime, workEndTime })
     const normalAmount = payForHours(resolved, normalHours, standardDayHours)
     baseAmount += normalAmount
@@ -355,11 +387,14 @@ export function collectTimesheetPayroll({
       hasRate,
       bookingId: lineBookingId,
       ...(workStartTime && workEndTime ? { bookingStartTime: workStartTime, bookingEndTime: workEndTime, bookingBreakRemoved: isBreakRemoved === true } : {}),
+      ...(otMultiplierOverride != null ? { bookingOtMultiplierOverride: otMultiplierOverride } : {}),
+        bookingFingerprint,
+        bookingCollection: idPrefix === 'mgr' ? 'managerSiteBookings' : 'bookings',
       ...(bookingCreatedAt instanceof Date && !Number.isNaN(bookingCreatedAt.getTime()) ? { bookingCreatedAt } : {}),
       ...(bookingUpdatedAt instanceof Date && !Number.isNaN(bookingUpdatedAt.getTime()) ? { bookingUpdatedAt } : {}),
       dayKey: lineDayKey,
     })
-    if (otHours > 0.05) {
+    if (otHours > TIMESHEET_OVERTIME_LINE_MIN_HOURS) {
       const otAmount = payForHours(resolved, otHours, standardDayHours, otMultiplier)
       overtimeAmount += otAmount
       const otRates = overtimeDisplayRates(resolved, otMultiplier)
@@ -382,6 +417,9 @@ export function collectTimesheetPayroll({
         hasRate,
         bookingId: lineBookingId,
         ...(workStartTime && workEndTime ? { bookingStartTime: workStartTime, bookingEndTime: workEndTime, bookingBreakRemoved: isBreakRemoved === true } : {}),
+        ...(otMultiplierOverride != null ? { bookingOtMultiplierOverride: otMultiplierOverride } : {}),
+        bookingFingerprint,
+        bookingCollection: idPrefix === 'mgr' ? 'managerSiteBookings' : 'bookings',
         ...(bookingCreatedAt instanceof Date && !Number.isNaN(bookingCreatedAt.getTime()) ? { bookingCreatedAt } : {}),
         ...(bookingUpdatedAt instanceof Date && !Number.isNaN(bookingUpdatedAt.getTime()) ? { bookingUpdatedAt } : {}),
         dayKey: lineDayKey,
@@ -440,6 +478,9 @@ export function collectTimesheetPayroll({
   }
   const overlapping = new Set(overlappingBookingIds(paidBookings, overlapState))
   for (const line of lineItems) line.isOverlapping = Boolean(line.bookingId && overlapping.has(line.bookingId))
+  // 1.46.0: a standard-line Edit hours review that carries overtime is stale once the booking has its own overtime line.
+  const bookingsWithOvertime = new Set(lineItems.filter((line) => line.isOvertimeLine && line.bookingId).map((line) => line.bookingId))
+  for (const line of lineItems) line.bookingHasOvertimeLine = Boolean(line.bookingId && bookingsWithOvertime.has(line.bookingId))
 
   lineItems.sort((a, b) => {
     if (a.date.getTime() !== b.date.getTime()) return a.date.getTime() - b.date.getTime()

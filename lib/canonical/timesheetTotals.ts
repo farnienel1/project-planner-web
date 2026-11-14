@@ -14,8 +14,8 @@
 
 import { roundPennies } from './payRate'
 import { normalizeDocumentId } from './scheduleSources'
-import { timesheetEntryDecision } from './timesheetEntryReviews'
-import { timesheetInvoiceRows, type InvoiceLineInput, type TimesheetInvoiceRowsInput } from './reportPay'
+import { payrollLineReview, timesheetEntryDecision, timesheetTrustedFingerprint } from './timesheetEntryReviews'
+import { payrollLineBookingKey, timesheetInvoiceRows, type InvoiceLineInput, type TimesheetInvoiceRowsInput } from './reportPay'
 
 /** One payroll line as each app's collector builds it (web `TimesheetPayrollLineItem`, iOS `TimesheetPayrollLine`). */
 export type TimesheetTotalsLine = InvoiceLineInput & {
@@ -96,6 +96,14 @@ export function timesheetTotals<L extends TimesheetTotalsLine>(input: TimesheetT
   for (const row of rows) {
     if (row.kind === 'labour') {
       labour += row.amount
+      // 1.46.0: an Edit hours review splits its money into the standard and overtime parts it pays.
+      const split = row.review && row.review.revisedStandardAmount != null && row.review.revisedStandardHours != null
+      if (split) {
+        const standardPart = roundPennies(Math.min(row.amount, Number(row.review?.revisedStandardAmount) || 0))
+        standardLabour += standardPart
+        overtimeLabour += row.amount - standardPart
+        continue
+      }
       const overtime = row.source === 'override' ? row.stored?.isOvertime === true : row.line?.isOvertimeLine === true
       if (overtime) overtimeLabour += row.amount
       else standardLabour += row.amount
@@ -119,10 +127,42 @@ export function timesheetTotals<L extends TimesheetTotalsLine>(input: TimesheetT
     }
   }
   const withBookingFigures = byBookingStandard.size > 0
+  // 1.46.0: a booking with an Edit hours review counts the hours that review pays (its standard and overtime hours),
+  // line by line, so the hours always match the money; its other lines count their live hours.
+  const reviewedLines = new Map<string, NonNullable<(typeof rows)[number]['review']>>()
+  for (const row of rows) {
+    if (row.kind === 'labour' && row.source === 'live' && row.review && row.review.revisedStandardHours != null && row.review.revisedOvertimeHours != null) {
+      reviewedLines.set(normalizeDocumentId(row.id), row.review)
+    }
+  }
+  const groupOf = (line: TimesheetTotalsLine) => payrollLineBookingKey(line)
+  const reviewedGroups = new Set<string>()
+  for (const line of input.payrollLines || []) {
+    if (line && reviewedLines.has(normalizeDocumentId(line.id))) reviewedGroups.add(groupOf(line))
+  }
   for (const line of input.payrollLines || []) {
     if (!line || isLeaveLine(line)) continue
     if (days && (days.size === 0 || (line.dayKey && !days.has(line.dayKey)))) continue
     const paid = finite(line.paidHours)
+    if (reviewedGroups.size > 0 && reviewedGroups.has(groupOf(line))) {
+      // A declined line of an edited booking counts no hours (its money is 0 too).
+      if (payrollLineReview(sheet, line.id, line)?.decision === 'declined') continue
+      const review = reviewedLines.get(normalizeDocumentId(line.id))
+      if (review) {
+        const overtimeBase = finite(review.revisedOvertimeHours)
+        const multiplier = finite(review.revisedOvertimeMultiplier) > 0 ? finite(review.revisedOvertimeMultiplier) : 1
+        standardHours += finite(review.revisedStandardHours)
+        overtimeHours += review.revisedOvertimeClockHours != null ? finite(review.revisedOvertimeClockHours) : overtimeBase
+        hours += finite(review.revisedStandardHours) + overtimeBase * multiplier
+      } else if (line.isOvertimeLine === true) {
+        overtimeHours += line.otClockHours != null ? finite(line.otClockHours) : paid
+        hours += paid * (finite(line.otMultiplier) > 0 ? finite(line.otMultiplier) : 1)
+      } else {
+        standardHours += paid
+        hours += paid
+      }
+      continue
+    }
     if (line.isOvertimeLine === true) {
       if (!withBookingFigures) {
         overtimeHours += line.otClockHours != null ? finite(line.otClockHours) : paid
@@ -149,7 +189,8 @@ export function timesheetTotals<L extends TimesheetTotalsLine>(input: TimesheetT
   ] as const) {
     for (const entry of rowsOf(sheet[key])) {
       add(finite(entry.amount))
-      if (timesheetEntryDecision(sheet, entry).decision === 'pending') pendingEntries += 1
+      const trusted = timesheetTrustedFingerprint(input.entryFingerprints, entry.id)
+      if (timesheetEntryDecision(sheet, entry, key === 'priceWorkEntries' ? 'priceWork' : 'expense', trusted).decision === 'pending') pendingEntries += 1
     }
   }
 

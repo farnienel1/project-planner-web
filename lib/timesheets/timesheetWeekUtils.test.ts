@@ -1,14 +1,11 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  collectSubjectDayEntries,
-  estimatedAmount,
   extraFormJobSuggestions,
   subjectForUser,
-  timesheetReceiptStoredName,
   timesheetRosterGroups,
 } from './timesheetWeekUtils.ts'
-import type { Booking, Operative, User } from '../../types/index.ts'
+import type { Operative, User } from '../../types/index.ts'
 
 function user(partial: Partial<User> & { id: string; email: string }): User {
   return {
@@ -54,31 +51,6 @@ test('subjectForUser is the signed-in person only, including their operative lin
   assert.equal(subject.operativeId, 'op1')
 })
 
-test('collectSubjectDayEntries includes a single booked day inside a half-month pay run', () => {
-  const subject = {
-    key: 'operative:op1',
-    kind: 'operative' as const,
-    name: 'Me Self',
-    userId: 'u1',
-    operativeId: 'op1',
-  }
-  const bookings = [
-    { id: 'b1', operativeId: 'op1', date: new Date(Date.UTC(2026, 8, 21, 12, 0, 0)), timeSlot: 'FULL' },
-  ] as Booking[]
-  const entries = collectSubjectDayEntries({
-    subject,
-    bookings,
-    managerSiteBookings: [],
-    weekRange: {
-      start: new Date(Date.UTC(2026, 8, 16, 12, 0, 0)),
-      end: new Date(Date.UTC(2026, 8, 30, 12, 0, 0)),
-    },
-    payrollPolicy: { standardPaidHours: 8, unpaidBreakMinutes: 30 } as never,
-  })
-  assert.equal(entries.length, 1)
-  assert.equal(entries[0].hours, 8)
-})
-
 test('timesheetRosterGroups keeps other people out: managers only see their reports', () => {
   const manager = user({
     id: 'mgr',
@@ -122,21 +94,3 @@ test('extraFormJobSuggestions dedupes the same job number from projects and smal
   assert.equal(jobs[0]?.jobNumber, 'J-1')
 })
 
-test('estimatedAmount uses the basis and the organisation day length', () => {
-  assert.equal(
-    estimatedAmount({ key: 'a', kind: 'operative', name: 'Ada', payBasis: 'day', dayRate: 150 }, 7.5, 7.5),
-    150
-  )
-  assert.equal(
-    estimatedAmount({ key: 'b', kind: 'operative', name: 'Bea', payBasis: 'hourly', hourlyRate: 20 }, 7.5, 7.5),
-    150
-  )
-  assert.equal(estimatedAmount({ key: 'c', kind: 'operative', name: 'Cy', dayRate: 0, hourlyRate: 0 }, 8, 8), null)
-})
-
-test('timesheetReceiptStoredName matches iOS receipt.{ext}', () => {
-  assert.equal(timesheetReceiptStoredName('Parking.HEIC'), 'receipt.heic')
-  assert.equal(timesheetReceiptStoredName('photo.JPEG'), 'receipt.jpeg')
-  assert.equal(timesheetReceiptStoredName('no-extension'), 'receipt-uploaded')
-  assert.equal(timesheetReceiptStoredName(''), 'receipt-uploaded')
-})

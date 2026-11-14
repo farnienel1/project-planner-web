@@ -30,6 +30,16 @@ import {
   type PayeClaimReviewDecision,
   type PayeClaimReviewRecord,
   canWritePayeClaim,
+  canEditPayeClaim,
+  claimEvidenceCountText,
+  EXPENSE_AMOUNT_LABEL,
+  PRICE_WORK_AMOUNT_LABEL,
+  PAYE_CLAIM_DELETE_CONFIRM_MESSAGE,
+  PAYE_CLAIM_DELETE_LABEL,
+  PAYE_CLAIM_EDIT_LABEL,
+  PAYE_CLAIM_EDIT_REVIEW_NOTE,
+  PAYE_CLAIM_SAVE_CHANGES_LABEL,
+  payeClaimEditDraft,
   expenseValidationError,
   formatMoney,
   formatPayePayrunDay,
@@ -42,8 +52,6 @@ import {
   payePastPayruns,
   payePayrunLabel,
   payePayrunPeriod,
-  personalSiteAuditTitle,
-  personalSiteAuditsFor,
   priceWorkApproverCandidates,
   priceWorkJobNumberText,
   PRICE_WORK_JOB_NUMBER_MAX,
@@ -53,7 +61,6 @@ import {
   type PayeClaimItem,
   type PayeClaimKind,
   type PayeClaimReportSnapshot,
-  type PersonalSiteAudit,
   type TimesheetClaimRow,
 } from '@/lib/canonical'
 import { useOrganizationCurrency } from '@/lib/stores/organizationDocumentStore'
@@ -62,21 +69,17 @@ import {
   addExpense,
   addPriceWork,
   discardClaimEvidence,
-  attachPersonalAuditCopy,
   listenPayeClaimReports,
   listenPayeClaimReviews,
   listenPersonPayeClaims,
   savePayeClaimReviews,
-  listenPersonalSiteAudits,
   loadTimesheetClaimSheets,
   removePayeClaim,
   savePayeClaimReport,
   storedFileBytes,
-  storedFileUrl,
-  uploadClaimEvidence,
+  updatePayeClaim,
 } from '@/lib/payeClaims/payeClaimsData'
-import { prepareAuditPhoto } from '@/lib/siteAudit/prepareAuditPhoto'
-import { uploadLimitError } from '@/lib/security/uploadLimits'
+import { ClaimEvidencePicker, EvidenceLinks, placeholderEvidence, resolveEvidenceSlots, slotsFromEvidence, type EvidenceSlot } from '@/components/claims/ClaimEvidencePicker'
 import { CustomRangeForm, ListTile, NavBar, Tile, isPaye, orgLogo, overtimeHref, personName } from '@/components/overtime/overtimeUi'
 import { Card, EmptyState, Note, PageShell } from '@/components/ui/page'
 import type { User } from '@/types'
@@ -87,8 +90,6 @@ import { loadExportModule } from '@/lib/pdf/loadExportModule'
 // The PDF builders (pdf-lib) load only when a PDF is made.
 const buildPayeClaimReportPdf: typeof import('@/lib/payeClaims/payeClaimReportPdf').buildPayeClaimReportPdf = (...args) =>
   loadExportModule(() => import('@/lib/payeClaims/payeClaimReportPdf')).then((module) => module.buildPayeClaimReportPdf(...args))
-const buildPersonalSiteAuditPdf: typeof import('@/lib/payeClaims/payeClaimReportPdf').buildPersonalSiteAuditPdf = (...args) =>
-  loadExportModule(() => import('@/lib/payeClaims/payeClaimReportPdf')).then((module) => module.buildPersonalSiteAuditPdf(...args))
 
 type Props = {
   kind: PayeClaimKind
@@ -201,7 +202,7 @@ export function PayeClaimsSection(props: Props) {
     return (
       <PageShell>
         <NavBar title={heading} back={back} />
-        <TimesheetClaims kind={kind} organizationId={props.organizationId} subject={subject} timeZone={props.timeZone} range={window} />
+        <TimesheetClaims kind={kind} organizationId={props.organizationId} subject={subject} users={props.users} timeZone={props.timeZone} range={window} />
       </PageShell>
     )
   }
@@ -214,19 +215,24 @@ export function PayeClaimsSection(props: Props) {
 }
 
 /** Read-only list of a self-employed person's timesheet entries in the range. */
-function TimesheetClaims({ kind, organizationId, subject, timeZone, range }: { kind: PayeClaimKind; organizationId: string; subject: User; timeZone: string; range: { start: string; end: string } }) {
+function TimesheetClaims({ kind, organizationId, subject, users, timeZone, range }: { kind: PayeClaimKind; organizationId: string; subject: User; users: User[]; timeZone: string; range: { start: string; end: string } }) {
   const currency = useOrganizationCurrency()
+  // Rulebook 1.45.0 (guardrail 1): every id the person goes by, so sheets filed under an older id — and their
+  // evidence — show here too (`overtimePersonIds`, the same ids the PAYE lists read).
+  const personIds = useMemo(() => overtimePersonIds({ person: rulebookPerson(subject, users), roster: rulebookRoster(users) }), [subject, users])
+  const idsKey = personIds.join('|')
   const [rows, setRows] = useState<TimesheetClaimRow[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   useEffect(() => {
     let live = true
-    loadTimesheetClaimSheets(organizationId, subject.id, timeZone)
+    loadTimesheetClaimSheets(organizationId, personIds.length > 0 ? personIds : [subject.id], timeZone)
       .then((sheets) => live && setRows(timesheetClaimRows(sheets, kind, range)))
       .catch((e: unknown) => live && setError(e instanceof Error ? e.message : 'Their timesheets could not be read.'))
     return () => {
       live = false
     }
-  }, [organizationId, subject.id, timeZone, kind, range])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [organizationId, idsKey, timeZone, kind, range])
   if (error) return <Note tone="red">{error}</Note>
   if (!rows) return <Note tone="info">Loading…</Note>
   if (rows.length === 0)
@@ -248,6 +254,7 @@ function TimesheetClaims({ kind, organizationId, subject, timeZone, range }: { k
               .join(' · ')}
           </span>
           {row.details ? <span className="pu-sub">{row.details}</span> : null}
+          <EvidenceLinks evidence={row.evidence} />
           </span>
           <b>{formatMoney(row.amount, currency)}</b>
         </div>
@@ -272,6 +279,7 @@ function ClaimList(props: Omit<Props, 'range'> & { range: { start: string; end: 
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
   const [adding, setAdding] = useState(false)
+  const [editing, setEditing] = useState<PayeClaimItem | null>(null)
   const [open, setOpen] = useState<PayeClaimItem | null>(null)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -371,7 +379,7 @@ function ClaimList(props: Omit<Props, 'range'> & { range: { start: string; end: 
             </div>
             <div className="pu-sub">
               {row.subtitle}
-              {item.evidence.length > 0 ? ` · ${item.evidence.length} evidence` : ''}
+              {item.evidence.length > 0 ? ` · ${claimEvidenceCountText(item.evidence.length)}` : ''}
             </div>
           </button>
           <div className="row" style={{ marginTop: 8, gap: 8, flexWrap: 'wrap' }}>
@@ -422,9 +430,11 @@ function ClaimList(props: Omit<Props, 'range'> & { range: { start: string; end: 
         ) : null}
         {notice ? <p className="pu-sub">{notice}</p> : null}
       </div>
-      {adding ? (
-        <AddClaimSheet
+      {adding || editing ? (
+        <ClaimSheet
           kind={kind}
+          editing={editing}
+          reviewed={editing ? payeClaimReviewState(editing, reviews).state !== 'needsReview' : false}
           organizationId={organizationId}
           subject={subject}
           users={props.users}
@@ -433,12 +443,25 @@ function ClaimList(props: Omit<Props, 'range'> & { range: { start: string; end: 
           currency={currency}
           onClose={() => {
             setAdding(false)
+            setEditing(null)
             const params = new URLSearchParams(window.location.search)
             if (params.get('add')) router.replace(overtimeHref({ ...here, range: params.get('range'), start: params.get('start'), end: params.get('end') }))
           }}
         />
       ) : null}
-      {open ? <ClaimDetail item={open} currency={currency} canRemove={writable} organizationId={organizationId} onClose={() => setOpen(null)} /> : null}
+      {open ? (
+        <ClaimDetail
+          item={open}
+          currency={currency}
+          canEdit={mine && canEditPayeClaim(props.viewerUser.id, open)}
+          organizationId={organizationId}
+          onEdit={() => {
+            setEditing(open)
+            setOpen(null)
+          }}
+          onClose={() => setOpen(null)}
+        />
+      ) : null}
     </div>
   )
 }
@@ -476,29 +499,24 @@ function SavedClaimReports({ kind, organizationId, subjectId, logoUrl }: { kind:
   )
 }
 
-function EvidenceLink({ entry }: { entry: PayeClaimEvidence }) {
-  const [error, setError] = useState(false)
-  return (
-    <button
-      type="button"
-      className="pu-link"
-      style={{ border: 0, background: 'none', padding: 0, textAlign: 'left' }}
-      onClick={() =>
-        void storedFileUrl(entry.path)
-          .then((url) => window.open(url, '_blank', 'noopener'))
-          .catch(() => setError(true))
-      }
-    >
-      {entry.name}
-      {entry.kind === 'personalSiteAudit' ? ' (personal site audit copy)' : ''}
-      {error ? ' — could not open' : ''}
-    </button>
-  )
-}
-
-function ClaimDetail({ item, currency, canRemove, organizationId, onClose }: { item: PayeClaimItem; currency: string; canRemove: boolean; organizationId: string; onClose: () => void }) {
+function ClaimDetail({
+  item,
+  currency,
+  canEdit,
+  organizationId,
+  onEdit,
+  onClose,
+}: {
+  item: PayeClaimItem
+  currency: string
+  canEdit: boolean
+  organizationId: string
+  onEdit: () => void
+  onClose: () => void
+}) {
   const row = payeClaimListRow(item, currency)
   const [error, setError] = useState<string | null>(null)
+  const [confirming, setConfirming] = useState(false)
   return (
     <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/40 p-4 sm:items-center" role="dialog" aria-label={row.title}>
       <div className="pu-card pu-pad stack w-full max-w-lg" style={{ gap: 10, maxHeight: '90vh', overflowY: 'auto' }}>
@@ -512,20 +530,39 @@ function ClaimDetail({ item, currency, canRemove, organizationId, onClose }: { i
         <div className="pu-sub">{row.subtitle}</div>
         {item.details ? <p className="small">{item.details}</p> : null}
         <p className="pu-label">Evidence</p>
-        {item.evidence.length === 0 ? <p className="pu-sub">None</p> : item.evidence.map((entry) => <EvidenceLink key={entry.path} entry={entry} />)}
-        {canRemove ? (
-          <button
-            type="button"
-            className="pu-btn sm"
-            style={{ color: 'var(--red)' }}
-            onClick={() =>
-              void removePayeClaim(organizationId, item)
-                .then(onClose)
-                .catch((e: unknown) => setError(e instanceof Error ? e.message : 'Could not remove it.'))
-            }
-          >
-            Remove
-          </button>
+        {item.evidence.length === 0 ? <p className="pu-sub">None</p> : <EvidenceLinks evidence={item.evidence} />}
+        {canEdit ? (
+          <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+            <button type="button" className="pu-btn sm" onClick={onEdit}>
+              {PAYE_CLAIM_EDIT_LABEL}
+            </button>
+            {confirming ? (
+              <>
+                <span className="pu-sub" style={{ flexBasis: '100%' }}>
+                  {PAYE_CLAIM_DELETE_CONFIRM_MESSAGE}
+                </span>
+                <button type="button" className="pu-btn sm" onClick={() => setConfirming(false)}>
+                  Keep it
+                </button>
+                <button
+                  type="button"
+                  className="pu-btn sm"
+                  style={{ color: 'var(--red)' }}
+                  onClick={() =>
+                    void removePayeClaim(organizationId, item)
+                      .then(onClose)
+                      .catch((e: unknown) => setError(e instanceof Error ? e.message : 'Could not delete it.'))
+                  }
+                >
+                  {PAYE_CLAIM_DELETE_LABEL}
+                </button>
+              </>
+            ) : (
+              <button type="button" className="pu-btn sm" style={{ color: 'var(--red)' }} onClick={() => setConfirming(true)}>
+                {PAYE_CLAIM_DELETE_LABEL}
+              </button>
+            )}
+          </div>
         ) : null}
         {error ? <p className="pu-sub">{error}</p> : null}
       </div>
@@ -533,11 +570,16 @@ function ClaimDetail({ item, currency, canRemove, organizationId, onClose }: { i
   )
 }
 
-type PendingEvidence = { key: string; label: string; upload: () => Promise<PayeClaimEvidence> }
-
-/** Add Price Work / Add Expense: Cancel at the top, the add button at the bottom. */
-function AddClaimSheet(props: {
+/**
+ * Add Price Work / Add Expense, and (1.45.0) the same sheet to edit a saved item: Cancel at the top, the add or Save
+ * changes button at the bottom. Evidence through the shared `ClaimEvidencePicker` (Add photo / Add site audit / Add
+ * file).
+ */
+function ClaimSheet(props: {
   kind: PayeClaimKind
+  editing: PayeClaimItem | null
+  /** The item being edited has a review: saving sends it back to Needs review. */
+  reviewed: boolean
   organizationId: string
   subject: User
   users: User[]
@@ -546,84 +588,28 @@ function AddClaimSheet(props: {
   currency: string
   onClose: () => void
 }) {
-  const { kind, organizationId, subject, users, currency } = props
+  const { kind, organizationId, subject, users, currency, editing } = props
   const priceWork = kind === 'priceWork'
-  const [title, setTitle] = useState('')
-  const [details, setDetails] = useState('')
-  const [jobNumber, setJobNumber] = useState('')
-  const [from, setFrom] = useState(props.defaultDay)
-  const [to, setTo] = useState(props.defaultDay)
-  const [approver, setApprover] = useState('')
-  const [amount, setAmount] = useState('')
-  const [evidence, setEvidence] = useState<PendingEvidence[]>([])
+  const start = editing ? payeClaimEditDraft(editing) : null
+  const [title, setTitle] = useState(String(start?.title ?? ''))
+  const [details, setDetails] = useState(String(start?.details ?? ''))
+  const [jobNumber, setJobNumber] = useState(String(start?.jobNumber ?? ''))
+  const [from, setFrom] = useState(String((priceWork ? start?.startDate : start?.date) ?? props.defaultDay))
+  const [to, setTo] = useState(String(start?.endDate ?? props.defaultDay))
+  const [approver, setApprover] = useState(String(start?.approvedByUserId ?? ''))
+  const [amount, setAmount] = useState(start?.amount != null ? String(start.amount) : '')
+  const [evidence, setEvidence] = useState<EvidenceSlot[]>(() => slotsFromEvidence(editing?.evidence))
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
-  const [pickAudit, setPickAudit] = useState(false)
   // The approver's users document must name this organisation (the rules check it): read each person's home company.
   const approverRoster = useMemo(() => users.map((row) => ({ ...row, organizationId: row.homeOrganizationId || row.organizationId })), [users])
   const approvers = useMemo(() => priceWorkApproverCandidates(subject as never, approverRoster as never, { organizationId }), [subject, approverRoster, organizationId])
 
   // Shape checks before upload: the rulebook validators with placeholder evidence (paths are checked again on save).
-  const placeholder = evidence.map(() => ({ path: '', name: '', kind: 'file' as const }))
+  const placeholder = placeholderEvidence(evidence)
   const draftError = priceWork
     ? priceWorkValidationError({ title, details, jobNumber, startDate: from, endDate: to, approvedByUserId: approver, amount }, { person: subject as never, roster: approverRoster as never, organizationId })
     : expenseValidationError({ title, details, jobNumber, date: from, amount, evidence: placeholder })
-
-  const addFiles = async (list: FileList | null, photo: boolean) => {
-    if (!list?.length) return
-    setError(null)
-    const next: PendingEvidence[] = []
-    for (const original of Array.from(list)) {
-      const isImage = original.type.startsWith('image/')
-      const isPdf = original.type === 'application/pdf' || /\.pdf$/i.test(original.name)
-      if (!isImage && !isPdf) {
-        setError('Evidence must be a photo or a PDF.')
-        return
-      }
-      const limit = uploadLimitError(original, isImage ? 'siteAudit' : 'work')
-      if (limit) {
-        setError(limit)
-        return
-      }
-      let file: File = original
-      if (isImage) {
-        try {
-          // Every photo becomes a JPEG so the report can draw it full size.
-          file = (await prepareAuditPhoto(original)).file
-        } catch {
-          file = original
-        }
-      }
-      next.push({
-        key: `${original.name}-${Date.now()}-${next.length}`,
-        label: original.name,
-        upload: () =>
-          uploadClaimEvidence({
-            organizationId,
-            file,
-            name: original.name,
-            contentType: isPdf ? 'application/pdf' : file.type || 'image/jpeg',
-            kind: photo || isImage ? 'photo' : 'file',
-          }),
-      })
-    }
-    setEvidence((current) => [...current, ...next].slice(0, 20))
-  }
-
-  const addAudit = (audit: PersonalSiteAudit) => {
-    setPickAudit(false)
-    setEvidence((current) => [
-      ...current,
-      {
-        key: `audit-${audit.id}-${Date.now()}`,
-        label: personalSiteAuditTitle(audit),
-        upload: async () => {
-          const bytes = await buildPersonalSiteAuditPdf(audit, { timeZone: props.timeZone, readFile: storedFileBytes })
-          return attachPersonalAuditCopy(organizationId, audit, bytes)
-        },
-      },
-    ])
-  }
 
   const submit = async () => {
     if (draftError || saving) return
@@ -631,31 +617,42 @@ function AddClaimSheet(props: {
     setError(null)
     const uploaded: PayeClaimEvidence[] = []
     try {
-      for (const entry of evidence) uploaded.push(await entry.upload())
-      if (priceWork) {
+      const list = await resolveEvidenceSlots(evidence, uploaded)
+      if (editing) {
+        await updatePayeClaim({
+          organizationId,
+          item: editing,
+          person: subject as never,
+          roster: approverRoster as never,
+          draft: priceWork
+            ? { title, details, jobNumber, startDate: from, endDate: to, approvedByUserId: approver, amount, evidence: list }
+            : { title, details, jobNumber, date: from, amount, evidence: list },
+        })
+      } else if (priceWork) {
         await addPriceWork({
           organizationId,
           person: subject as never,
           roster: approverRoster as never,
           currency,
-          draft: { title, details, jobNumber, startDate: from, endDate: to, approvedByUserId: approver, amount, evidence: uploaded },
+          draft: { title, details, jobNumber, startDate: from, endDate: to, approvedByUserId: approver, amount, evidence: list },
         })
       } else {
-        await addExpense({ organizationId, currency, draft: { title, details, jobNumber, date: from, amount, evidence: uploaded } })
+        await addExpense({ organizationId, currency, draft: { title, details, jobNumber, date: from, amount, evidence: list } })
       }
       props.onClose()
     } catch (e: unknown) {
-      // 1.30.0 review: a refused or failed add leaves no copy behind where line managers and admins could read it.
+      // 1.30.0 review: a refused or failed save leaves no new copy behind where line managers and admins could read it.
       await discardClaimEvidence(organizationId, uploaded)
-      setError(e instanceof Error ? e.message : 'It could not be added.')
+      setError(e instanceof Error ? e.message : 'It could not be saved.')
     } finally {
       setSaving(false)
     }
   }
 
-  const label = priceWork ? PRICE_WORK_ADD_LABEL : EXPENSE_ADD_LABEL
+  const label = editing ? PAYE_CLAIM_SAVE_CHANGES_LABEL : priceWork ? PRICE_WORK_ADD_LABEL : EXPENSE_ADD_LABEL
+  const heading = editing ? (priceWork ? 'Edit Price Work' : 'Edit Expense') : priceWork ? PRICE_WORK_ADD_LABEL : EXPENSE_ADD_LABEL
   return (
-    <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/40 p-4 sm:items-center" role="dialog" aria-label={label}>
+    <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/40 p-4 sm:items-center" role="dialog" aria-label={heading}>
       <form
         className="pu-card pu-pad stack w-full max-w-lg"
         style={{ gap: 12, maxHeight: '92vh', overflowY: 'auto' }}
@@ -668,7 +665,7 @@ function AddClaimSheet(props: {
           <button type="button" className="pu-btn sm" onClick={props.onClose}>
             Cancel
           </button>
-          <b>{label}</b>
+          <b>{heading}</b>
           <span style={{ width: 60 }} />
         </div>
         <label className="small">
@@ -718,62 +715,25 @@ function AddClaimSheet(props: {
           </label>
         ) : null}
         <label className="small">
-          Amount ({currency})
+          {priceWork ? PRICE_WORK_AMOUNT_LABEL : EXPENSE_AMOUNT_LABEL} ({currency})
           <input className="pu-inp" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder={formatMoney(0, currency)} />
         </label>
-        <div className="stack" style={{ gap: 6 }}>
-          <b className="small">Evidence {priceWork ? '(optional)' : '(at least one)'}</b>
-          {evidence.map((entry) => (
-            <div key={entry.key} className="small" style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-              <span>{entry.label}</span>
-              <button type="button" className="pu-link" style={{ border: 0, background: 'none' }} onClick={() => setEvidence((current) => current.filter((row) => row.key !== entry.key))}>
-                Remove
-              </button>
-            </div>
-          ))}
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <label className="pu-btn sm">
-              File
-              <input type="file" accept="application/pdf,image/*" className="sr-only" multiple onChange={(e) => { void addFiles(e.target.files, false); e.target.value = '' }} />
-            </label>
-            <label className="pu-btn sm">
-              Photo
-              <input type="file" accept="image/*" capture="environment" className="sr-only" onChange={(e) => { void addFiles(e.target.files, true); e.target.value = '' }} />
-            </label>
-            <button type="button" className="pu-btn sm" onClick={() => setPickAudit(true)}>
-              Personal site audit
-            </button>
-          </div>
-        </div>
-        {pickAudit ? <PersonalAuditPicker organizationId={organizationId} ownerId={subject.id} timeZone={props.timeZone} onPick={addAudit} onCancel={() => setPickAudit(false)} /> : null}
+        <ClaimEvidencePicker
+          organizationId={organizationId}
+          ownerId={subject.id}
+          timeZone={props.timeZone}
+          slots={evidence}
+          onChange={setEvidence}
+          required={!priceWork}
+          disabled={saving}
+          onError={setError}
+        />
         {error || (draftError && (title || amount)) ? <p className="small" style={{ color: 'var(--red)' }}>{error || draftError}</p> : null}
+        {editing && props.reviewed ? <p className="pu-sub">{PAYE_CLAIM_EDIT_REVIEW_NOTE}</p> : null}
         <button type="submit" className="pu-btn primary" disabled={Boolean(draftError) || saving}>
-          {saving ? 'Adding…' : label}
+          {saving ? 'Saving…' : label}
         </button>
       </form>
-    </div>
-  )
-}
-
-/** The person's own personal site audits (owner only), to attach a frozen copy. */
-function PersonalAuditPicker({ organizationId, ownerId, timeZone, onPick, onCancel }: { organizationId: string; ownerId: string; timeZone: string; onPick: (audit: PersonalSiteAudit) => void; onCancel: () => void }) {
-  const [audits, setAudits] = useState<PersonalSiteAudit[] | null>(null)
-  useEffect(() => listenPersonalSiteAudits(organizationId, ownerId, timeZone, setAudits, () => setAudits([])), [organizationId, ownerId, timeZone])
-  const rows = personalSiteAuditsFor(audits, ownerId)
-  return (
-    <div className="pu-card pu-pad stack" style={{ gap: 6 }}>
-      <b className="small">Choose a personal site audit</b>
-      {audits == null ? <p className="pu-sub">Loading…</p> : null}
-      {audits != null && rows.length === 0 ? <p className="pu-sub">You have no personal site audits. Create one in Site audits → Personal.</p> : null}
-      {rows.map((audit) => (
-        <button key={audit.id} type="button" className="pu-btn sm" style={{ textAlign: 'left' }} onClick={() => onPick(audit)}>
-          {personalSiteAuditTitle(audit)}
-        </button>
-      ))}
-      <p className="pu-sub">A frozen copy (PDF) is attached; your line managers and admins see the copy, never your list.</p>
-      <button type="button" className="pu-btn sm" onClick={onCancel}>
-        Close
-      </button>
     </div>
   )
 }

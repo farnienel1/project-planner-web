@@ -1,13 +1,21 @@
 /**
  * iOS parity: Models/TimesheetDraftModels.swift
  */
-import type { TimesheetEntryReview } from '@/lib/canonical'
+import type { PayeClaimEvidence, TimesheetEntryReview } from '@/lib/canonical'
 
 export type TimesheetManagerDecision = 'pending' | 'approved' | 'declined' | 'edited'
 
 export type TimesheetPayrollLineReview = {
   decision: TimesheetManagerDecision
   revisedAmount?: number | null
+  /** Rulebook 1.46.0 Edit hours (`PayrollLineEditReviewFields`), on an `edited` review only. */
+  revisedStandardHours?: number | null
+  revisedOvertimeHours?: number | null
+  revisedOvertimeClockHours?: number | null
+  revisedOvertimeMultiplier?: number | null
+  revisedStandardAmount?: number | null
+  revisedOvertimeAmount?: number | null
+  reviewedBookingFingerprint?: string | null
 }
 
 export type TimesheetExpenseEntry = {
@@ -17,7 +25,12 @@ export type TimesheetExpenseEntry = {
   jobNumber: string
   date: Date
   amount: number
+  /** Older entries only: the receipt name both apps stored without uploading a file (read-only). */
   receiptName?: string | null
+  /** Rulebook 1.45.0 §8: files, photos and frozen site audit copies (the PAYE claim evidence shape). */
+  evidence?: PayeClaimEvidence[]
+  /** Rulebook 1.45.0: the stored row's fingerprint (`parseTimesheetEntries`); never written back. */
+  reviewFingerprint?: string
   managerDecision: TimesheetManagerDecision
   managerRevisedAmount?: number | null
 }
@@ -31,6 +44,10 @@ export type TimesheetPriceWorkEntry = {
   startDate: Date
   endDate?: Date | null
   amount: number
+  /** Rulebook 1.45.0 §8: optional evidence (the PAYE claim evidence shape). */
+  evidence?: PayeClaimEvidence[]
+  /** Rulebook 1.45.0: the stored row's fingerprint (`parseTimesheetEntries`); never written back. */
+  reviewFingerprint?: string
   managerDecision: TimesheetManagerDecision
   managerRevisedAmount?: number | null
 }
@@ -48,11 +65,31 @@ export type WeeklyReportLabourLine = {
   amount: number
   /** Missing on older snapshots means day rate. */
   payBasis?: 'day' | 'hourly'
+  /**
+   * Rulebook 1.46.0: the signed line's own PAYE / leave flags (`isInvoiceLine` reads them; a signed row is never
+   * filtered by the live lines). Written on every snapshot line; missing on older snapshots means false.
+   */
+  isPayeDay?: boolean
+  isLeave?: boolean
   isOvertime: boolean
   /** Written on new overtime snapshots. Missing on older lines. */
   otMultiplier?: number | null
   decision: TimesheetManagerDecision
   bookingId: string
+  /**
+   * Rulebook 1.46.0: the booking as it was when the line was signed (`overtimeBookingFingerprint`). A later Edit hours
+   * review made against another version of the booking is never applied to the signed line.
+   */
+  bookingFingerprint?: string | null
+  /** Rulebook 1.46.0: whether the booking had its own overtime line on the sheet when signed (a review's added part is not). */
+  bookingHadOvertimeLine?: boolean
+  /** Rulebook 1.46.0: `payrollLineReviewKey` of the review applied when the line was signed ('' when none). */
+  appliedReviewKey?: string | null
+  /**
+   * Rulebook 1.46.0: on a `{booking}-ot` line an Edit hours review added for a standard line's overtime, that standard
+   * line's id — the line follows that line's current review (recomputed together, 0 when it no longer pays overtime).
+   */
+  reviewPartOf?: string | null
 }
 
 /** Shared with iOS `TimesheetWeeklyReportMoneyLine`. */

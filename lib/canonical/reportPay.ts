@@ -17,7 +17,7 @@ import { documentInstantMs } from './peopleDocuments'
 import { roundPennies } from './payRate'
 import { normalizeDocumentId } from './scheduleSources'
 import { parseTimesheetStatusFields } from './timesheetPeriod'
-import { payrollLineReview, timesheetEntryDecision, timesheetEntryEffectiveAmount } from './timesheetEntryReviews'
+import { payrollLineReview, timesheetEntryDecision, timesheetEntryEffectiveAmount, timesheetTrustedFingerprint, type PayrollLineReview } from './timesheetEntryReviews'
 
 /** Text in a PAYE person's pay cell, on screen and in every export. */
 export const PAYE_PAY_CELL_LABEL = 'PAYE'
@@ -82,6 +82,32 @@ export type InvoiceLineInput = ReportPayLineInput & {
   kind?: string | null
   /** The line's organisation-zone day key; with `timesheetDays` a line on another day is left out (1.11.0). */
   dayKey?: string | null
+  /**
+   * 1.46.0: the line's booking as it is now (`overtimeBookingFingerprint`), so an Edit hours review made against an
+   * older version of the booking is stale (`payrollLineReview`). Missing = not checked.
+   */
+  bookingFingerprint?: string | null
+  /** 1.46.0: an overtime line; the booking it comes from; whether that booking has its own overtime line now. */
+  isOvertimeLine?: boolean | null
+  bookingId?: string | null
+  /** The booking's collection (`bookings`, `managerSiteBookings`), so two collections sharing an id stay apart. */
+  bookingCollection?: string | null
+  bookingHasOvertimeLine?: boolean | null
+}
+
+/**
+ * Rulebook 1.46.0: the key of the booking a payroll line comes from — its collection (the line's `bookingCollection`, else
+ * `managerSiteBookings` for a `mgr-` id and `bookings` otherwise) and `bookingId`, else the line id without its
+ * `-normal` / `-ot` suffix; ids without case.
+ */
+export function payrollLineBookingKey(line: { id?: unknown; bookingId?: unknown; bookingCollection?: unknown } | null | undefined): string {
+  if (!line) return ''
+  const id = line.bookingId ? String(line.bookingId) : String(line.id ?? '').replace(/-(?:normal|ot)$/i, '')
+  // A line without its collection is a labour booking (`bookings`) unless its id says manager site (`mgr-`), so a pair
+  // where only one line carries the collection still groups together (fourth review of #324).
+  const stored = typeof line.bookingCollection === 'string' ? line.bookingCollection.trim() : ''
+  const collection = stored || (/^mgr-/i.test(id) || /^mgr-/i.test(String(line.id ?? '')) ? 'managerSiteBookings' : 'bookings')
+  return `${collection}|${normalizeDocumentId(id)}`
 }
 
 /**
@@ -125,6 +151,11 @@ export type TimesheetInvoiceRow<L> = {
    * (`priceWorkJobNumberText`); never rewritten.
    */
   jobNumber: string
+  /**
+   * 1.46.0: the line manager's review applied to a live labour row (`payrollLineReview` against the live line's
+   * `bookingFingerprint`), so totals can split an edited row into its standard and overtime parts. Null otherwise.
+   */
+  review?: PayrollLineReview | null
 }
 
 export type TimesheetInvoiceRowsInput<L extends InvoiceLineInput & { id: string; amount: number }> = {
@@ -153,6 +184,12 @@ export type TimesheetInvoiceRowsInput<L extends InvoiceLineInput & { id: string;
    * before they sign, so their on-screen total is the invoice their signature will produce (`timesheetTotals`).
    */
   applyLabourReviews?: boolean | null
+  /**
+   * 1.45.0 (review #322): when `sheet` is the app's loaded copy rather than the stored document, the fingerprints the
+   * reader computed for it (`timesheetEntryFingerprintMap` of `parseTimesheetEntries` entries). Without it each entry
+   * row is fingerprinted as stored. A `reviewFingerprint` on a row is never read.
+   */
+  entryFingerprints?: Record<string, string> | null
 }
 
 function rowsOf(value: unknown): Record<string, unknown>[] {
@@ -193,7 +230,6 @@ export function timesheetInvoiceRows<L extends InvoiceLineInput & { id: string; 
   const rows: TimesheetInvoiceRow<L>[] = []
   const days = input.timesheetDays ? new Set(input.timesheetDays.map((day) => String(day).trim())) : null
   const zone = zoneOrLondon(input.timeZone)
-  if (days && days.size === 0) return rows
   const onCountedDay = (dayKey: string | null | undefined): boolean => !days || !dayKey || days.has(dayKey)
   const entryDay = (entry: Record<string, unknown>): string | null => {
     const ms = documentInstantMs(entry.date) ?? documentInstantMs(entry.startDate)
@@ -203,37 +239,56 @@ export function timesheetInvoiceRows<L extends InvoiceLineInput & { id: string; 
   if (override && typeof override === 'object') {
     const snapshot = override as Record<string, unknown>
     for (const row of rowsOf(snapshot.lines)) {
-      const amount = amountOf(row.amount)
+      // 1.46.0: an edited snapshot row stored before 1.46.0 may hold an unrounded revised amount; it counts in pennies
+      // (rounding only — a signed line is never re-priced).
+      const stored = amountOf(row.amount)
+      const amount = row.decision === 'edited' ? roundPennies(stored) : stored
       if (row.decision === 'declined' || amount <= INVOICE_AMOUNT_EPSILON) continue
       const id = String(row.id ?? '').trim()
       const live = liveById.get(normalizeDocumentId(id)) ?? null
-      if (live && !isInvoiceLine(live)) continue
-      if (!onCountedDay(live?.dayKey ?? null)) continue
+      // 1.46.0 (fifth review): the signed copy is final — a row is left out only by its own stored data (a PAYE or
+      // leave flag on the signed row), never by the live line or today's employment, so a later back-dated change to
+      // PAYE never removes a signed row from the invoice or the totals.
+      if (!isInvoiceLine(row as InvoiceLineInput)) continue
       rows.push({ kind: 'labour', id, amount, source: 'override', line: live, stored: row, jobNumber: jobNumberOf(live && (live as unknown as Record<string, unknown>).jobNumber, row.jobNumber) })
     }
     for (const [kind, key] of [['priceWork', 'priceWork'], ['expense', 'expenses']] as const) {
       for (const row of rowsOf(snapshot[key])) {
         const amount = amountOf(row.amount)
         if (row.decision === 'declined' || amount <= INVOICE_AMOUNT_EPSILON) continue
-        if (!onCountedDay(entryDay(row))) continue
         rows.push({ kind, id: String(row.id ?? '').trim(), amount, source: 'override', line: null, stored: row, jobNumber: jobNumberOf(row.jobNumber) })
       }
     }
     return rows
   }
+  if (days && days.size === 0) return rows
 
   const decided = input.extrasMode === 'decided'
   const managerSigned = parseTimesheetStatusFields(sheet).managerSignedAtMs != null
   const labourReviews = input.applyLabourReviews == null ? managerSigned : input.applyLabourReviews === true
+  // 1.46.0 (review): which bookings have their own overtime line now (by `bookingId`, else the id without its
+  // `-normal` / `-ot` suffix), unless the line says so itself.
+  const groupOf = (line: L) => payrollLineBookingKey(line)
+  const groupsWithOvertime = new Set(lines.filter((line) => line && line.isOvertimeLine === true).map(groupOf))
   for (const line of invoiceLines(lines)) {
     if (!onCountedDay(line.dayKey)) continue
     let amount = line.amount
+    let applied: PayrollLineReview | null = null
     if (decided && labourReviews) {
-      const review = payrollLineReview(sheet, line.id)
+      // 1.46.0: a review made against a booking that has changed since is stale (null): the line at its live amount.
+      const review = payrollLineReview(sheet, line.id, {
+        bookingFingerprint: line.bookingFingerprint,
+        isOvertimeLine: line.isOvertimeLine,
+        bookingHasOvertimeLine: line.bookingHasOvertimeLine ?? groupsWithOvertime.has(groupOf(line)),
+      })
       if (review?.decision === 'declined') continue
-      if (review?.decision === 'edited' && review.revisedAmount != null) amount = review.revisedAmount
+      // 1.46.0: the revised amount in pennies (`roundPennies`), so the invoice rows add up to the invoice total.
+      if (review?.decision === 'edited' && review.revisedAmount != null) {
+        amount = roundPennies(review.revisedAmount)
+        applied = review
+      }
     }
-    rows.push({ kind: 'labour', id: line.id, amount, source: 'live', line, stored: null, jobNumber: jobNumberOf((line as unknown as Record<string, unknown>).jobNumber) })
+    rows.push({ kind: 'labour', id: line.id, amount, source: 'live', line, stored: null, jobNumber: jobNumberOf((line as unknown as Record<string, unknown>).jobNumber), review: applied })
   }
   for (const [kind, key] of [['priceWork', 'priceWorkEntries'], ['expense', 'expenseEntries']] as const) {
     for (const entry of rowsOf((sheet as Record<string, unknown>)[key])) {
@@ -241,7 +296,7 @@ export function timesheetInvoiceRows<L extends InvoiceLineInput & { id: string; 
       const own = amountOf(entry.amount)
       let amount = own
       if (decided) {
-        const decision = timesheetEntryDecision(sheet, entry)
+        const decision = timesheetEntryDecision(sheet, entry, kind, timesheetTrustedFingerprint(input.entryFingerprints, entry.id))
         if (decision.decision === 'declined') continue
         amount = timesheetEntryEffectiveAmount(decision.decision, decision.revisedAmount, own)
       }

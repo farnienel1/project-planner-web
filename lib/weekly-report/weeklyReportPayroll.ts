@@ -1,4 +1,4 @@
-import { formatMoney, parseMultipliedHoursText, payrollMultipliedHours, reportDayValue, resolveBookingPerson, rosterAliasIdsFor, weekdayPaidHours } from '@/lib/canonical'
+import { bookingPaySlices, formatMoney, parseMultipliedHoursText, reportDayValue, resolveBookingPerson, rosterAliasIdsFor, weekdayPaidHours } from '@/lib/canonical'
 import { currentOrganizationCurrency } from '@/lib/stores/organizationDocumentStore'
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import { DEFAULT_PAYROLL_POLICY } from '@/lib/settings/organizationSettings'
@@ -8,7 +8,7 @@ import { STAFF_TRADE_PRESETS } from '@/lib/staff/staffTradeTypes'
 import { employmentTypeOnDay } from '@/lib/ios-parity/employmentType'
 import { bookingHoursOnDay } from '@/lib/timesheets/timesheetHours'
 import { emptyDayRateHistory, type OperativeDayRateHistoryCollection } from '@/lib/timesheets/dayRateHistoryStorage'
-import { payForHours, resolvePayrollRate } from '@/lib/timesheets/payrollRateResolver'
+import { resolvePayrollRate } from '@/lib/timesheets/payrollRateResolver'
 import { orgDayHours, payLineDisplay, quantityText, roundPennies, type PayBasis } from '@/lib/timesheets/payBasis'
 import { normalizeDocumentId } from '@/lib/canonical'
 
@@ -123,44 +123,6 @@ export function findUserAndOperative(
   return { user, operative }
 }
 
-export type PayLine = {
-  rateType: string
-  days: number
-  rate: number
-  pay: number
-}
-
-/** Kept for older callers. A person is on one basis. Hourly pay stays in hours. */
-export function buildPayLinesForDays(
-  totalDays: number,
-  dayRate: number | undefined,
-  hourlyRate: number | undefined,
-  standardHours: number,
-  _otMultiplier: number
-): PayLine[] {
-  const standard = orgDayHours(standardHours)
-  if (!(dayRate != null && dayRate > 0) && hourlyRate != null && hourlyRate > 0) {
-    const hours = totalDays * standard
-    return [
-      {
-        rateType: 'Hourly',
-        days: hours,
-        rate: hourlyRate,
-        pay: roundPennies(hourlyRate * hours),
-      },
-    ]
-  }
-  if (!(dayRate != null && dayRate > 0) || !(totalDays > 0)) return []
-  return [
-    {
-      rateType: 'Day',
-      days: totalDays,
-      rate: dayRate,
-      pay: roundPennies(dayRate * totalDays),
-    },
-  ]
-}
-
 /** Organisation money (`formatMoney`). The open company's currency unless a code is passed. */
 export function formatCurrency(amount: number, currencyCode: string = currentOrganizationCurrency()): string {
   return formatMoney(amount, currencyCode)
@@ -226,51 +188,26 @@ export function labourPaySlices({
   const standard = orgDayHours(weekdayPaidHours(policy))
   // `payrollHoursResult`: the same normal hours, overtime hours and multiplier iOS uses.
   const hours = bookingHoursOnDay(date, timeSlot, workStartTime, workEndTime, policy, isBreakRemoved, otMultiplierOverride, timeZone)
-  const otHours = hours.outsideHours
-  // Unrounded, as the timesheet collector pays them; `payForHours` rounds the pay once.
-  const normalHours = Math.max(0, hours.standardHours)
-  const otMultiplier = hours.outsideMultiplier
   const resolved = resolvePayrollRate({
     user,
     operative,
     day: date,
     history,
-    standardDayHours: standard,
     timeZone,
     aliasUserIds,
     operativeIds,
   })
   const isPaye = Boolean(user && employmentTypeOnDay(user, date, timeZone) === 'paye')
-  const basis: PayBasis = resolved.basis === 'hourly' ? 'hourly' : 'day'
-  const rate = isPaye ? null : basis === 'hourly' ? resolved.hourlyRate : resolved.dayRate
-  const slices: LabourPaySlice[] = []
-  // 1.20.3: the overtime slice's clock hours and the break off them as plain hours (display only; pay unchanged).
-  const multiplied = payrollMultipliedHours(hours)
-  const push = (hours: number, overtime: boolean, multiplier: number) => {
-    if (!(hours > 0)) return
-    const pay = isPaye ? 0 : payForHours(
-      isPaye ? { basis: resolved.basis, dayRate: null, hourlyRate: null } : resolved,
-      hours,
-      standard,
-      overtime ? multiplier : 1
-    )
-    slices.push({
-      payBasis: basis,
-      isOvertime: overtime,
-      otMultiplier: overtime ? multiplier : null,
-      rate: isPaye || rate == null ? null : overtime ? roundPennies(rate * multiplier) : rate,
-      paidHours: hours,
-      pay,
-      isPaye,
-      standardDayHours: standard,
-      ...(overtime && multiplied && multiplied.breakHours > 0
-        ? { clockHours: multiplied.clockHours, breakHours: multiplied.breakHours }
-        : {}),
-    })
-  }
-  push(normalHours, false, 1)
-  push(otHours, true, otMultiplier)
-  return slices
+  // Rulebook 1.46.0 §7 (`bookingPaySlices`): each part of this one booking priced with `payForHours` and rounded, the
+  // same pennies as the timesheet collector; the report adds bookings with `mergeBookingPaySlice`.
+  return bookingPaySlices({
+    hours,
+    standardDayHours: standard,
+    payBasis: resolved.basis === 'hourly' ? 'hourly' : 'day',
+    dayRate: resolved.dayRate,
+    hourlyRate: resolved.hourlyRate,
+    isPaye,
+  })
 }
 
 /** `isPaye` is `employmentTypeOnDay` for the line's day; a PAYE line keeps its hours and shows no pay (`reportPayCell`). */
@@ -284,7 +221,13 @@ export function signedLabourSlice(line: {
   details?: string | null
 }, standardHours: number, otMultiplier: number | null, isPaye = false): LabourPaySlice {
   const payBasis: PayBasis = line.payBasis === 'hourly' ? 'hourly' : 'day'
-  const standard = orgDayHours(standardHours)
+  // Rulebook 1.44.0 §8: a signed line is never re-priced, and neither is how it reads. A day-rate line shows its stored
+  // days (`days`, worked out at signing on the paid day of that time) and the rate that gives its signed amount — its own
+  // paid day is `paidHours / days`, never today's (`standardHours`). Today's day is used only for a line that stored no
+  // days or hours (older data).
+  const signedDay =
+    payBasis === 'day' && Number(line.days) > 0.0001 && Number(line.paidHours) > 0 ? Number(line.paidHours) / Number(line.days) : null
+  const standard = signedDay ?? orgDayHours(standardHours)
   const paidHours = line.paidHours > 0 ? line.paidHours : payBasis === 'day' ? line.days * standard : 0
   const quantity = payBasis === 'hourly' ? paidHours : paidHours / standard
   const rate = quantity > 0.0001 ? roundPennies(line.amount / quantity) : 0
@@ -338,7 +281,7 @@ export function paySliceDisplay(slice: LabourPaySlice, standardHours: number, cu
     quantityText: display.quantityText,
     rateText: display.rateText,
     pay: display.pay,
-    days: slice.payBasis === 'hourly' ? hoursShown : hoursShown / orgDayHours(standardHours),
+    days: slice.payBasis === 'hourly' ? hoursShown : hoursShown / orgDayHours(slice.standardDayHours ?? standardHours),
     rate: withBreak ? (slice.rate ?? 0) / multiplier : slice.rate ?? 0,
   }
 }

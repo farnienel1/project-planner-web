@@ -6,7 +6,7 @@ import type { TimesheetDraft } from '@/lib/timesheets/timesheetDraft'
 import type { TimesheetPayrollSummary } from '@/lib/timesheets/timesheetPayrollCollector'
 import { timesheetLabourDetails } from '@/lib/timesheets/timesheetPayrollCollector'
 import { formatTimesheetHours } from '@/lib/timesheets/timesheetHours'
-import { isClockSpanLabel, orgDayHours, payLineDisplay } from '@/lib/timesheets/payBasis'
+import { isClockSpanLabel, orgDayHours, payLineDisplay, roundPennies } from '@/lib/timesheets/payBasis'
 import { signedLabourSlice } from '@/lib/weekly-report/weeklyReportPayroll'
 import { formatAbbreviatedDayInZone, formatStampInZone } from '@/lib/orgTime/zoneTime'
 import { londonDateParts, dayKey } from '@/lib/ios-parity/londonTime'
@@ -16,6 +16,7 @@ import type { OperativeDayRateHistoryCollection, OperativeDayRateHistoryEntry } 
 import { formatMoney } from '@/lib/canonical/money'
 import { parseMultipliedHoursText, timesheetLineClockText } from '@/lib/canonical/payrollHours'
 import { timesheetInvoiceRows } from '@/lib/canonical/reportPay'
+import { timesheetEntryFingerprintMap } from '@/lib/canonical/timesheetEntryReviews'
 import { priceWorkJobNumberText } from '@/lib/canonical/priceWorkJobNumber'
 import { emailDocument, emailHeading, emailLink, emailList, emailStrong, emailText } from '@/lib/email/emailTheme'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
@@ -110,6 +111,9 @@ export type TimesheetInvoiceLine = {
   details: string
   description: string
   amount: number
+  /** Rulebook 1.45.0: the `timesheetInvoiceRows` row this line came from (kind and stored id), for the evidence pages. */
+  kind?: 'labour' | 'priceWork' | 'expense'
+  entryId?: string
 }
 
 function signedOverrideDetails(
@@ -133,7 +137,8 @@ function signedOverrideDetails(
   const equation = payLineDisplay({
     payBasis: slice.payBasis,
     paidHours: slice.paidHours,
-    standardDayHours: standard,
+    // 1.44.0 §8: the signed line's own paid day (stored days), never today's.
+    standardDayHours: slice.standardDayHours ?? standard,
     rate: slice.rate,
     pay: slice.pay,
     currencyCode,
@@ -152,7 +157,7 @@ export function invoiceLinesForTimesheet({
   draft,
   timeZone,
   extrasMode,
-  standardDayHours = 8,
+  standardDayHours,
   standardDayHoursOn,
   currencyCode,
   timesheetDays,
@@ -161,7 +166,8 @@ export function invoiceLinesForTimesheet({
   draft: TimesheetDraft
   timeZone: string
   extrasMode: 'raw' | 'export'
-  standardDayHours?: number
+  /** 1.44.0: the organisation's paid day (`weekdayPaidHours`); required, no 8-hour default. */
+  standardDayHours: number
   /**
    * Rulebook 1.19.0: the standard paid day in effect on a line's own day (`effectivePayrollTimePolicy`), for the day
    * units shown on a signed line. Display only — a signed line's amount is never re-priced. Missing → `standardDayHours`.
@@ -181,6 +187,8 @@ export function invoiceLinesForTimesheet({
     extrasMode: extrasMode === 'export' ? 'decided' : 'raw',
     timesheetDays: timesheetDays ?? null,
     timeZone,
+    // Rulebook 1.45.0: the draft is the loaded copy; its entries carry the reader's fingerprints.
+    entryFingerprints: timesheetEntryFingerprintMap([...draft.priceWorkEntries, ...draft.expenseEntries]),
   })
   const rows: TimesheetInvoiceLine[] = []
   for (const row of decided) {
@@ -205,6 +213,8 @@ export function invoiceLinesForTimesheet({
         details,
         description: `${row.source === 'override' ? jobNumber : live?.jobNumber} ${projectName} · ${details}`,
         amount: row.amount,
+        kind: 'labour',
+        entryId: row.id,
       })
       continue
     }
@@ -227,6 +237,8 @@ export function invoiceLinesForTimesheet({
       details,
       description: `${jobNumber} ${label} · ${details}`,
       amount: row.amount,
+      kind: row.kind === 'priceWork' ? 'priceWork' : 'expense',
+      entryId: row.id,
     })
   }
   return rows
@@ -238,9 +250,12 @@ type SignedOverrideLine = Parameters<typeof signedOverrideDetails>[0] & {
   date?: Date
 }
 
-/** iOS TimesheetExportHelper grandTotal = sum of export line amounts. */
+/**
+ * iOS TimesheetExportHelper grandTotal = sum of export line amounts. 1.46.0: rounded to pennies (`roundPennies`), as
+ * `timesheetTotals` rounds the same rows, so the export PDF total equals the timesheet total.
+ */
 export function invoiceLinesTotal(lines: TimesheetInvoiceLine[]): number {
-  return lines.reduce((sum, line) => sum + line.amount, 0)
+  return roundPennies(lines.reduce((sum, line) => sum + line.amount, 0))
 }
 
 // Transactional: no marketing content

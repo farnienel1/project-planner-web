@@ -29,6 +29,7 @@
 
 import { formatClockMinutes, parseClockMinutes } from './engine'
 import { normalizeBookingStatus, normalizeBookingTimeSlot } from './bookings'
+import { overtimeFingerprintsMatch } from './bookingFingerprint'
 import { isoWeekdayOfDayKey, zoneOrLondon } from './dayKeys'
 import { hasActiveLineManager, isAdminOutsideOperativeMode, isSuperAdminAccount, lineManagerIds, type LeaveSelfBookUser } from './leaveRequests'
 import { bookingIdsForAccount } from './bookingPerson'
@@ -257,6 +258,9 @@ export function overtimeBookingFingerprint(booking: OvertimeBookingInput | null 
   const status = (normalizeBookingStatus(booking.status) ?? (text(booking.status) || 'Confirmed')).toLowerCase()
   return [
     text(booking.dayKey),
+    // Written exactly as before 1.46.0 (upper case, `_` / `-` as spaces), so app builds on the 1.45 script write and
+    // compare the same strings. 1.46.0 apps compare with `overtimeFingerprintsMatch`, which reads the slot canonically,
+    // so `CUSTOM` (web) and `CUSTOM HOURS` (iOS `CUSTOM_HOURS`) are one booking.
     slotKey(booking.timeSlot),
     clockOf(booking.workStartTime),
     clockOf(booking.workEndTime),
@@ -269,7 +273,8 @@ export function overtimeBookingFingerprint(booking: OvertimeBookingInput | null 
 /** True when a stored fingerprint no longer matches the booking (or the booking is gone). */
 export function overtimeLineIsStale(storedFingerprint: string | null | undefined, booking: OvertimeBookingInput | null | undefined): boolean {
   if (!booking) return true
-  return text(storedFingerprint) !== overtimeBookingFingerprint(booking)
+  // 1.46.0: compared with the slot read canonically, so a fingerprint stored before the slot was canonical still matches.
+  return !overtimeFingerprintsMatch(storedFingerprint, overtimeBookingFingerprint(booking))
 }
 
 export type OvertimeFigures = {
@@ -645,15 +650,15 @@ export function payeOvertimeLines(input: {
     let figures: OvertimeFigures | null = null
     let decidedBy: string | null = null
     if (isCancelled(booking)) {
-      if (!review || review.decision !== 'cancelled' || review.fingerprint !== fingerprint) continue
+      if (!review || review.decision !== 'cancelled' || !overtimeFingerprintsMatch(review.fingerprint, fingerprint)) continue
       state = 'cancelled'
     } else {
       figures = overtimeForBooking({ booking, organization: input.organization, timeZone: input.timeZone })
       if (!figures) continue
-      const reviewMatches = Boolean(review && review.fingerprint === fingerprint && review.decision !== 'deleted')
+      const reviewMatches = Boolean(review && overtimeFingerprintsMatch(review.fingerprint, fingerprint) && review.decision !== 'deleted')
       const reviewNewerThanReturn =
         review != null && returned != null && (review.reviewedAtMs ?? 0) > (returned.request.decidedAtMs ?? 0) && review.requestId !== returned.request.id
-      if (pending) state = pending.line.fingerprint === fingerprint ? 'waiting' : 'changedSinceRequest'
+      if (pending) state = overtimeFingerprintsMatch(pending.line.fingerprint, fingerprint) ? 'waiting' : 'changedSinceRequest'
       else if (reviewMatches && review) {
         if (!review.requestId) state = 'confirmed'
         else {
@@ -1424,7 +1429,7 @@ export function overtimeReturnWrites(input: {
       undecided.push(line.bookingId)
       continue
     }
-    if (overtimeBookingFingerprint(booking) !== line.fingerprint) {
+    if (!overtimeFingerprintsMatch(overtimeBookingFingerprint(booking), line.fingerprint)) {
       stale.push(line.bookingId)
       outcomes[line.bookingId] = 'stale'
       continue
@@ -1697,9 +1702,9 @@ export function overtimeLineReopened(input: {
       (input.after ? overtimeForBooking({ booking: input.after, organization: input.organization, timeZone: input.timeZone }) != null : false)
     return { reopened: had, returned: false }
   }
-  const review = input.reviews.find((row) => idKey(row.bookingId) === idKey(before.id) && row.fingerprint === oldPrint) ?? null
+  const review = input.reviews.find((row) => idKey(row.bookingId) === idKey(before.id) && overtimeFingerprintsMatch(row.fingerprint, oldPrint)) ?? null
   const pending = newestPending(input.requests, before.id)
-  const sent = pending != null && pending.line.fingerprint === oldPrint
+  const sent = pending != null && overtimeFingerprintsMatch(pending.line.fingerprint, oldPrint)
   const returned = Boolean(review && review.requestId && review.decision !== 'deleted')
   return { reopened: sent || Boolean(review), returned }
 }
@@ -1911,7 +1916,7 @@ export function overtimeReportOutOfDate(input: {
   for (const line of saved) {
     const now = current.get(idKey(line.bookingId))
     if (!now) return true
-    if (text(line.fingerprint) && text(line.fingerprint) !== text(now.fingerprint)) return true
+    if (text(line.fingerprint) && !overtimeFingerprintsMatch(line.fingerprint, now.fingerprint)) return true
     if (round2(line.overtimeHours) !== round2(now.overtimeHours)) return true
   }
   return false

@@ -20,7 +20,7 @@ import { DeveloperShell, DeveloperStatus, MetricCard, MiniBars } from '@/compone
 import { EmptyState, LoadingSpinner } from '@/components/dashboard/PageShell'
 import { CONSOLE_PERIODS, type ConsolePeriodId, deltaCopy, formatCount, formatGbpFromPence, resolveConsolePeriod } from '@/lib/analytics/consolePeriod'
 import { isTestRecord, useConsolePrefs } from '@/lib/analytics/consolePrefs'
-import { loadSignedTimesheetValueTotals, type SignedTimesheetValueTotals } from '@/lib/owner/signedTimesheetValue'
+import { loadSignedTimesheetValueTotals, otherCurrenciesNote, type SignedTimesheetValueTotals } from '@/lib/owner/signedTimesheetValue'
 import { billingLabel, billingStatusLabel } from '@/lib/stripe/billing'
 import { ANNUAL_PENCE, MONTHLY_PENCE } from '@/lib/stripe/plans'
 import { csvEscapeCell } from '@/lib/security/spreadsheetCell'
@@ -41,7 +41,8 @@ const emptyTimesheets: SignedTimesheetValueTotals = {
   previousPence: 0,
   sheetCount: 0,
   hours: 0,
-  missingRateCount: 0,
+  labourNotCountedCount: 0,
+  otherCurrencies: [],
   loaded: true,
 }
 
@@ -271,8 +272,8 @@ export function DeveloperOverviewScreen() {
   const kpis = [
     { label: 'Bookings made', value: formatCount(periodMetrics.bookings), hint: deltaCopy(periodMetrics.bookings, 0).text, definition: 'schedule_edited events in this period. Historic bookings are not invented.' },
     { label: 'Timesheets signed', value: formatCount(timesheetValue.loaded ? timesheetValue.sheetCount : periodMetrics.signed), hint: timesheetValue.loaded ? `${timesheetValue.sheetCount} fully signed sheets` : 'Reading sheets…', definition: METRIC_DEFINITIONS['Timesheets signed'] || 'Fully signed timesheets in the selected period.' },
-    { label: 'Timesheet value', value: timesheetValue.loaded ? formatGbpFromPence(timesheetValue.valuePence) : '…', hint: deltaCopy(timesheetValue.valuePence, timesheetValue.previousPence).text, definition: 'Sum of stored valuePence (and extras) on fully signed timesheets.' },
-    { label: 'Hours on timesheets', value: timesheetValue.loaded ? formatCount(hours) : '…', hint: hours ? `${formatGbpFromPence(avgPerHour)} / hour` : 'Hours stored on signed sheets', definition: 'Sum of valueHours on fully signed timesheets.' },
+    { label: 'Timesheet value', value: timesheetValue.loaded ? formatGbpFromPence(timesheetValue.valuePence) : '…', hint: deltaCopy(timesheetValue.valuePence, timesheetValue.previousPence).text, definition: 'Invoice total (timesheetTotals) of fully signed timesheets of GBP organisations: the signed snapshot when stored, else price work and expenses only. Other currencies are listed, never added.' },
+    { label: 'Hours on timesheets', value: timesheetValue.loaded ? formatCount(hours) : '…', hint: hours ? `${formatGbpFromPence(avgPerHour)} / hour` : 'Hours on signed sheets', definition: 'Paid hours (timesheetTotals) of the signed lines of fully signed timesheets of GBP organisations; sheets without a signed snapshot add none.' },
     { label: 'Projects created', value: formatCount(periodMetrics.projects), hint: deltaCopy(periodMetrics.projects, periodMetrics.prevProjects).text, definition: METRIC_DEFINITIONS['Projects / tasks created'] },
     { label: 'Logins', value: formatCount(periodMetrics.logins), hint: deltaCopy(periodMetrics.logins, periodMetrics.prevLogins).text, definition: 'login / user_logged_in events' },
     { label: 'New users', value: formatCount(periodMetrics.newUsers), hint: deltaCopy(periodMetrics.newUsers, periodMetrics.prevNewUsers).text, definition: METRIC_DEFINITIONS['New user'] },
@@ -315,7 +316,8 @@ export function DeveloperOverviewScreen() {
           <p className="mt-2 text-sm text-white/80">
             {timesheetValue.loaded
               ? `${timesheetValue.sheetCount} fully signed timesheet${timesheetValue.sheetCount === 1 ? '' : 's'} in this period${
-                  timesheetValue.missingRateCount ? ` · ${timesheetValue.missingRateCount} missing a rate` : ''
+                  timesheetValue.labourNotCountedCount ? ` · ${timesheetValue.labourNotCountedCount} without a signed snapshot (price work and expenses only)` : ''}${
+                  timesheetValue.otherCurrencies.length ? ` · ${otherCurrenciesNote(timesheetValue.otherCurrencies)}` : ''
                 }${timesheetValue.error ? ` · ${timesheetValue.error}` : ''}`
               : 'Reading signed timesheets across organisations…'}
           </p>

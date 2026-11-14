@@ -24,6 +24,11 @@ export type ApprovedTimesheetWeek = {
   weekStart: Date
   weekEnd: Date
   override: WeeklyReportOverride
+  /**
+   * Rulebook 1.45.0 §8: how many pieces of evidence each price work or expense entry carries, keyed by entry id
+   * (`normalizeDocumentId`), from the person's sheets. The signed snapshot's money lines keep the entry ids.
+   */
+  evidenceCounts?: Record<string, number>
 }
 
 type WeekPerson = {

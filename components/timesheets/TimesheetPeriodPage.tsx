@@ -4,7 +4,7 @@
  */
 'use client'
 
-import { rulebookRoster } from '@/lib/staff/rulebookPeople'
+import { rulebookPerson, rulebookRoster } from '@/lib/staff/rulebookPeople'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { Booking, Operative, Project, User } from '@/types'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
@@ -68,6 +68,7 @@ import {
 } from '@/lib/timesheets/timesheetPayrollCollector'
 import {
   draftFromFirestoreMap,
+  draftToFirestoreMap,
   loadTimesheetDraft,
   saveTimesheetDraft,
   timesheetDocId,
@@ -92,7 +93,6 @@ import {
 import {
   extraFormJobSuggestions,
   subjectForUser,
-  timesheetReceiptStoredName,
   userIdsSharingEmail,
 } from '@/lib/timesheets/timesheetWeekUtils'
 import { mergeProjectsAndSmallWorks } from '@/lib/projects/workStatus'
@@ -108,10 +108,28 @@ import { confirmCustomHoursBreak } from '@/lib/scheduling/bookingSlotRules'
 import {
   bookingIdFromLineId,
   initialHoursChoice,
-  revisedPayrollAmount,
+  payrollLineEdit,
 } from '@/lib/timesheets/payrollLineBookingLookup'
-import { extraReviewAfterSave, payrollReviewAfterSave } from '@/lib/timesheets/managerReviewSave'
+import { amountsUnchanged, extraReviewAfterSave, payrollReviewAfterSave } from '@/lib/timesheets/managerReviewSave'
 import {
+  CLAIM_EVIDENCE_LEGACY_RECEIPT_NOTE,
+  EXPENSE_AMOUNT_LABEL,
+  EXPENSE_EVIDENCE_REQUIRED_MESSAGE,
+  PRICE_WORK_AMOUNT_LABEL,
+  TIMESHEET_ENTRY_DELETE_CONFIRM_MESSAGE,
+  TIMESHEET_ENTRY_DELETE_LABEL,
+  TIMESHEET_ENTRY_EDIT_EXPENSE_TITLE,
+  TIMESHEET_ENTRY_EDIT_LABEL,
+  TIMESHEET_ENTRY_EDIT_PRICE_WORK_TITLE,
+  TIMESHEET_ENTRY_SAVE_CHANGES_LABEL,
+  canEditTimesheetEntry,
+  claimEvidenceCountText,
+  parseTimesheetEntries,
+  timesheetEvidenceOwnerIds,
+  timesheetEvidencePages,
+  personIdSet,
+  timesheetEntryEvidenceToDelete,
+  type PayeClaimEvidence,
   OVERLAPPING_BOOKING_NOTE,
   agreedManagerSuggestions,
   currencySymbol,
@@ -125,6 +143,13 @@ import {
 } from '@/lib/canonical'
 import { useOrganizationCurrency } from '@/lib/stores/organizationDocumentStore'
 import { useHolidayStore } from '@/lib/stores/holidayStore'
+import { ClaimEvidencePicker, EvidenceLinks, resolveEvidenceSlots, slotsFromEvidence, type EvidenceSlot } from '@/components/claims/ClaimEvidencePicker'
+import { deleteOwnClaimFiles, discardClaimEvidence, storedFileBytes } from '@/lib/payeClaims/payeClaimsData'
+import { loadExportModule } from '@/lib/pdf/loadExportModule'
+
+// Rulebook 1.45.0: the evidence pages after the invoice (pdf-lib loads only when an invoice has evidence).
+const appendTimesheetEvidencePages: typeof import('@/lib/payeClaims/payeClaimReportPdf').appendTimesheetEvidencePages = (...args) =>
+  loadExportModule(() => import('@/lib/payeClaims/payeClaimReportPdf')).then((module) => module.appendTimesheetEvidencePages(...args))
 import { timesheetLeaveLinesForAccount } from '@/lib/timesheets/timesheetLeave'
 import type { TimesheetLeaveLine } from '@/lib/canonical'
 import { useOrgBankHolidays } from '@/components/annual-leave/useOrgBankHolidays'
@@ -266,6 +291,8 @@ export function TimesheetPeriodPage({
   } | null>(null)
   const [editAmount, setEditAmount] = useState('')
   const [pendingExtraMode, setPendingExtraMode] = useState<'priceWork' | 'expense' | null>(null)
+  // Rulebook 1.45.0 §8: the entry the owner is editing (the add form opens with it).
+  const [editingEntryId, setEditingEntryId] = useState<string | null>(null)
   const [extrasReviewAlert, setExtrasReviewAlert] = useState(false)
   const [utrWarningOpen, setUtrWarningOpen] = useState(false)
   // Tax ids stay off the invoice unless the person or an admin ticks the box (rulebook).
@@ -273,6 +300,9 @@ export function TimesheetPeriodPage({
   const [invoiceTaxIds, setInvoiceTaxIds] = useState<{ utrNumber?: string; vatNumber?: string }>({})
   const [invoiceHtml, setInvoiceHtml] = useState<string | null>(null)
   const [invoicePdf, setInvoicePdf] = useState<Uint8Array | null>(null)
+  // Rulebook 1.45.0: while the evidence pages are added the invoice cannot be shared yet; the note says what happened.
+  const [invoiceEvidenceBusy, setInvoiceEvidenceBusy] = useState(false)
+  const [invoiceEvidenceNote, setInvoiceEvidenceNote] = useState<string | null>(null)
 
   const periodTitle = formatPaymentPeriodLine(periodStart, periodEnd, timeZone)
   const payroll = useMemo(
@@ -374,6 +404,8 @@ export function TimesheetPeriodPage({
   // Rulebook 1.43.0 §8: the person adds price work or expenses only until their line manager signs (a self-signed
   // sheet stays open; adding asks them to sign again).
   const extrasAllowed = timesheetOwnerCanAddExtras(draft, { selfSigned: userTimesheetSelfSigned(subjectUser, users) })
+  // Rulebook 1.45.0 §8 (`canEditTimesheetEntry`): the owner edits or deletes their own entries until the line manager signs.
+  const entryAccess = canEditTimesheetEntry(draft, { viewerIsOwner: mode === 'mine', selfSigned: userTimesheetSelfSigned(subjectUser, users) })
   // Rulebook 1.22.0 (§8): every figure below is `timesheetTotals` — the invoice rows summed — never an app sum.
   const sheetDays = subjectUser ? timesheetDayKeysForPeriod(subjectUser, periodStart, periodEnd, timeZone) : null
   const totals = draftTimesheetTotals({
@@ -493,7 +525,8 @@ export function TimesheetPeriodPage({
     let cancelled = false
     setLoading(true)
     setLoadFailed(false)
-    loadTimesheetDraft(organization.id, subjectUser.id, periodStart, timeZone, periodEnd)
+    // Rulebook 1.45.0: every id the person goes by (`personIdSet`), so evidence on a sheet filed under an older id is kept.
+    loadTimesheetDraft(organization.id, subjectUser.id, periodStart, timeZone, periodEnd, subjectEvidenceOwnerIds(subjectRef.current, usersRef.current))
       .then((loaded) => {
         if (cancelled) return
         sourceDocumentId.current = timesheetSourceDocumentId(loaded)
@@ -527,7 +560,7 @@ export function TimesheetPeriodPage({
         data.updatedBy === viewer?.id && data.updatedFrom === 'web' && Date.now() - lastPersistAt.current < 10_000
       if (ownEcho) return
       sourceDocumentId.current = docId
-      const parsed = draftFromFirestoreMap(data, { sheetDocId: docId, timeZone })
+      const parsed = draftFromFirestoreMap(data, { sheetDocId: docId, timeZone, ownerUserIds: subjectEvidenceOwnerIds(subjectRef.current, usersRef.current) })
       // 1.43.0: the first snapshot is no longer skipped (a change saved between the load and the listener starting
       // was lost); a snapshot that equals the sheet as loaded or last saved is simply not news.
       if (baseDraft.current && JSON.stringify(parsed) === JSON.stringify(baseDraft.current)) return
@@ -577,6 +610,54 @@ export function TimesheetPeriodPage({
     setExtraMode(kind)
   }
 
+  /**
+   * Rulebook 1.45.0 §8: save an owner's change to their entries (edit or delete). A self-signed sheet that is already
+   * signed asks to sign again, as adding does. Evidence the change removed is deleted only within the §24 undo window
+   * (`timesheetEntryEvidenceToDelete`); the rest is kept.
+   */
+  const saveEntryChange = async (next: TimesheetDraft): Promise<boolean> => {
+    const before = draft
+    const changed = fullyApproved ? clearSignatures(next) : next
+    try {
+      await persist(changed)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Could not save the timesheet')
+      return false
+    }
+    if (organization?.id && viewer?.id) {
+      await deleteOwnClaimFiles(
+        timesheetEntryEvidenceToDelete({ before, after: changed, organizationId: organization.id, viewerUserId: viewer.id, nowMs: Date.now() })
+      )
+    }
+    return true
+  }
+
+  const beginEditEntry = (kind: 'priceWork' | 'expense', id: string) => {
+    if (!entryAccess.allowed) {
+      setError(entryAccess.message)
+      return
+    }
+    if (fullyApproved && !window.confirm(postSignExtraWarningCopy(subjectUser, draft, users))) return
+    setEditingEntryId(id)
+    setExtraMode(kind)
+  }
+
+  const deleteEntry = (kind: 'priceWork' | 'expense', id: string) => {
+    if (!entryAccess.allowed) {
+      setError(entryAccess.message)
+      return
+    }
+    const prompt = fullyApproved
+      ? `${TIMESHEET_ENTRY_DELETE_CONFIRM_MESSAGE}\n\n${postSignExtraWarningCopy(subjectUser, draft, users)}`
+      : TIMESHEET_ENTRY_DELETE_CONFIRM_MESSAGE
+    if (!window.confirm(prompt)) return
+    const next =
+      kind === 'priceWork'
+        ? { ...draft, priceWorkEntries: draft.priceWorkEntries.filter((entry) => entry.id !== id) }
+        : { ...draft, expenseEntries: draft.expenseEntries.filter((entry) => entry.id !== id) }
+    void saveEntryChange(next)
+  }
+
   const acceptPostSignExtra = async () => {
     const kind = pendingExtraMode
     if (!kind) return
@@ -619,8 +700,9 @@ export function TimesheetPeriodPage({
     setHoursStart(choice.startTime)
     setHoursEnd(choice.endTime)
     setHoursBreakRemoved(choice.breakRemoved)
+    // 1.46.0: the line's own multiplier (the booking's overtime rate, else the organisation's for that day).
     setHoursOt(
-      line.isOvertimeLine ? String(weekdayOtMultiplier(line.date, linePolicy)) : ''
+      line.isOvertimeLine ? String(line.otMultiplier ?? weekdayOtMultiplier(line.date, linePolicy)) : ''
     )
     setEditingLineId(line.id)
   }
@@ -641,22 +723,36 @@ export function TimesheetPeriodPage({
     ) {
       return
     }
-    const amount = revisedPayrollAmount({
+    // Rulebook 1.46.0 (`revisedPayrollLineAmounts`): the booking is priced again at the edited times; each line of the
+    // booking stores its own revised amount (the standard line carries the overtime when the booking has no overtime
+    // line). Only the edited line and a line whose amount the edit changes are written.
+    const edit = payrollLineEdit({
       row,
+      lines: payroll.lineItems,
       startTime: hoursStart,
       endTime: hoursEnd,
       breakRemoved: hoursBreakRemoved,
+      otMultiplierOverride: typedOvertimeRate(row, hoursOt),
       policy: rowPolicy,
+      timeZone,
+      employment: subjectUser,
     })
-    const prior = draftPayrollLineReview(draft, editingLineId)?.decision
-    const review = payrollReviewAfterSave(prior, row.amount, amount)
-    void persistOrReport({
-      ...draft,
-      payrollLineReviews: {
-        ...draft.payrollLineReviews,
-        [editingLineId]: review,
-      },
-    })
+    // 1.46.0: blank times or start equal to finish are never priced (the sheet's Save is off and says why).
+    if (edit.error || !edit.amounts) return
+    const reviews = { ...draft.payrollLineReviews }
+    for (const line of [edit.standardLine, edit.overtimeLine]) {
+      if (!line) continue
+      const fields = edit.reviewFieldsByLineId[line.id]
+      if (!fields) continue
+      const existing = draftPayrollLineReview(draft, line.id, line)
+      if (line.id !== row.id && amountsUnchanged(fields.revisedAmount, line.amount) && existing?.decision !== 'edited') continue
+      const review = payrollReviewAfterSave(existing?.decision, line.amount, fields.revisedAmount)
+      // 1.46.0: an edited review keeps the hours and parts it pays and the booking it was made against
+      // (`PayrollLineEditReviewFields`), so the totals, the signed snapshot and the weekly report read the same hours,
+      // and a later change to the booking makes it stale instead of paying twice.
+      reviews[line.id] = review.decision === 'edited' ? { ...review, ...fields } : review
+    }
+    void persistOrReport({ ...draft, payrollLineReviews: reviews })
     setEditingLineId(null)
   }
 
@@ -806,6 +902,7 @@ export function TimesheetPeriodPage({
       vatNumber: taxIds.vatNumber,
       utrNumber: taxIds.utrNumber,
       timeZone,
+      standardDayHours: weekdayPaidHours(payrollPolicy),
       lines,
       notes,
       currencyCode: currency,
@@ -825,6 +922,37 @@ export function TimesheetPeriodPage({
     })
     setInvoiceHtml(html)
     setInvoicePdf(pdf)
+    setInvoiceEvidenceNote(null)
+    // Rulebook 1.45.0 §8 (`timesheetEvidencePages`): one page per piece of evidence on the invoice's price work and
+    // expense rows, after the invoice.
+    const sheetId = sourceDocumentId.current || timesheetDocId(subjectUser.id, periodStart, timeZone)
+    const pages = timesheetEvidencePages({
+      rows: lines
+        .filter((line) => (line.kind === 'priceWork' || line.kind === 'expense') && line.entryId)
+        .map((line) => ({ kind: line.kind as string, id: line.entryId as string, amount: line.amount })),
+      entries: parseTimesheetEntries(sheetId, draftToFirestoreMap(draft), {
+        timeZone,
+        organizationId: organization.id,
+        ownerUserIds: timesheetEvidenceOwnerIds(sheetId, { userId: subjectUser.id }, subjectEvidenceOwnerIds(subjectUser, users)),
+      }),
+      currency,
+    })
+    if (pages.length > 0) {
+      setInvoiceEvidenceBusy(true)
+      void appendTimesheetEvidencePages(pdf, pages, {
+        readFile: storedFileBytes,
+        currencyCode: currency,
+        footer: [organization.name || 'Organisation', 'Invoice', subject.name].filter(Boolean).join(' · '),
+      })
+        .then(({ bytes, notDrawn }) => {
+          setInvoicePdf(bytes)
+          setInvoiceEvidenceNote(
+            notDrawn > 0 ? `${notDrawn} piece(s) of evidence could not be shown in the PDF and are listed instead.` : `${pages.length} evidence page(s) added after the invoice.`
+          )
+        })
+        .catch(() => setInvoiceEvidenceNote('The evidence pages could not be added. The invoice is ready without them.'))
+        .finally(() => setInvoiceEvidenceBusy(false))
+    }
   }
 
   const canViewSubjectTaxIds = Boolean(
@@ -1118,8 +1246,13 @@ export function TimesheetPeriodPage({
                 original: item.amount,
                 decision: item.managerDecision,
                 removed: managerHasSigned && item.managerDecision === 'declined',
+                evidence: item.evidence ?? [],
+                legacyReceipt: null,
               }))}
               managerHasSigned={managerHasSigned}
+              canEdit={entryAccess.allowed}
+              onEdit={(id) => beginEditEntry('priceWork', id)}
+              onDelete={(id) => deleteEntry('priceWork', id)}
             />
           ) : null}
           {mode === 'mine' && draft.expenseEntries.length > 0 ? (
@@ -1134,8 +1267,13 @@ export function TimesheetPeriodPage({
                 original: item.amount,
                 decision: item.managerDecision,
                 removed: managerHasSigned && item.managerDecision === 'declined',
+                evidence: item.evidence ?? [],
+                legacyReceipt: item.receiptName || null,
               }))}
               managerHasSigned={managerHasSigned}
+              canEdit={entryAccess.allowed}
+              onEdit={(id) => beginEditEntry('expense', id)}
+              onDelete={(id) => deleteEntry('expense', id)}
             />
           ) : null}
           {mode === 'review' ? (
@@ -1323,7 +1461,17 @@ export function TimesheetPeriodPage({
 
       {extraMode ? (
         <ExtraForm
+          key={`${extraMode}-${editingEntryId ?? 'new'}`}
           mode={extraMode}
+          initial={
+            editingEntryId
+              ? extraMode === 'priceWork'
+                ? draft.priceWorkEntries.find((entry) => entry.id === editingEntryId) ?? null
+                : draft.expenseEntries.find((entry) => entry.id === editingEntryId) ?? null
+              : null
+          }
+          organizationId={organization?.id ?? ''}
+          ownerId={viewer?.id ?? ''}
           jobs={mergeProjectsAndSmallWorks(projects, smallWorks).filter((row) => row.jobNumber.trim())}
           // Rulebook 1.43.0 (`agreedManagerSuggestions`): the price work approvers' rule, never a role check here. The
           // approver's users document must name this organisation (as the rules check), so read each home company.
@@ -1336,19 +1484,32 @@ export function TimesheetPeriodPage({
             )
           }
           timeZone={timeZone}
-          onCancel={() => setExtraMode(null)}
+          onCancel={() => {
+            setExtraMode(null)
+            setEditingEntryId(null)
+          }}
           onSave={async (entry) => {
+            // Rulebook 1.45.0 §8: an edit replaces the entry (same id); an add appends it.
+            const replace = <T extends { id: string }>(list: T[], row: T) =>
+              editingEntryId ? list.map((existing) => (existing.id === editingEntryId ? row : existing)) : [...list, row]
             const next =
               extraMode === 'priceWork'
-                ? { ...draft, priceWorkEntries: [...draft.priceWorkEntries, entry.priceWork!] }
-                : { ...draft, expenseEntries: [...draft.expenseEntries, entry.expense!] }
-            try {
-              await persist(next)
-            } catch (err: unknown) {
-              setError(err instanceof Error ? err.message : 'Could not save the timesheet')
-              return
+                ? { ...draft, priceWorkEntries: replace(draft.priceWorkEntries, entry.priceWork!) }
+                : { ...draft, expenseEntries: replace(draft.expenseEntries, entry.expense!) }
+            if (editingEntryId) {
+              const ok = await saveEntryChange(next)
+              if (!ok) return false
+            } else {
+              try {
+                await persist(next)
+              } catch (err: unknown) {
+                setError(err instanceof Error ? err.message : 'Could not save the timesheet')
+                return false
+              }
             }
             setExtraMode(null)
+            setEditingEntryId(null)
+            return true
           }}
         />
       ) : null}
@@ -1356,6 +1517,8 @@ export function TimesheetPeriodPage({
       {editingLineId ? (
         <EditHoursSheet
           line={payroll.lineItems.find((item) => item.id === editingLineId) || null}
+          lines={payroll.lineItems}
+          employment={subjectUser}
           start={hoursStart}
           end={hoursEnd}
           breakRemoved={hoursBreakRemoved}
@@ -1471,6 +1634,7 @@ export function TimesheetPeriodPage({
             <PuButton
               variant="green"
               block
+              disabled={invoiceEvidenceBusy}
               onClick={() => {
                 if (invoicePdf) {
                   void shareTimesheetPdf(
@@ -1482,10 +1646,11 @@ export function TimesheetPeriodPage({
                 printTimesheetInvoice(invoiceHtml)
               }}
             >
-              Share invoice
+              {invoiceEvidenceBusy ? 'Adding evidence…' : 'Share invoice'}
             </PuButton>
           }
         >
+          {invoiceEvidenceNote ? <p className="pu-sub" style={{ fontSize: 13 }}>{invoiceEvidenceNote}</p> : null}
         </Modal>
       ) : null}
     </>
@@ -1633,7 +1798,7 @@ function PayrollLine({
   const currency = useOrganizationCurrency()
   const removed = isPayrollLineRemoved(line, draft, managerHasSigned, canReview)
   const effective = effectivePayrollAmount(line, draft, managerHasSigned, canReview)
-  const decision = draftPayrollLineReview(draft, line.id)?.decision || 'approved'
+  const decision = draftPayrollLineReview(draft, line.id, line)?.decision || 'approved'
   const orange = line.isPayeDay || (line.dayRate <= 0 && !line.hourlyRate)
   // `overlappingBookingIds`: still paid, shown amber for the person and their line manager.
   const overlapping = line.isOverlapping === true
@@ -1758,6 +1923,9 @@ function ExtraList({
   title,
   items,
   managerHasSigned,
+  canEdit,
+  onEdit,
+  onDelete,
 }: {
   title: string
   items: Array<{
@@ -1770,8 +1938,15 @@ function ExtraList({
     original: number
     decision: TimesheetManagerDecision
     removed: boolean
+    /** Rulebook 1.45.0: the entry's evidence, and an older entry's receipt name (no file was stored). */
+    evidence: PayeClaimEvidence[]
+    legacyReceipt: string | null
   }>
   managerHasSigned: boolean
+  /** Rulebook 1.45.0 (`canEditTimesheetEntry`): the owner may edit or delete until the line manager signs. */
+  canEdit: boolean
+  onEdit: (id: string) => void
+  onDelete: (id: string) => void
 }) {
   return (
     <Card title={title}>
@@ -1782,6 +1957,22 @@ function ExtraList({
               <b style={item.removed ? { textDecoration: 'line-through' } : undefined}>{item.title}</b>
               {item.jobNumber ? <span className="pu-sub">Job {item.jobNumber}</span> : null}
               <span className="pu-sub">{item.details}</span>
+              <EvidenceLinks evidence={item.evidence} />
+              {item.evidence.length === 0 && item.legacyReceipt ? (
+                <span className="pu-sub">
+                  {item.legacyReceipt} · {CLAIM_EVIDENCE_LEGACY_RECEIPT_NOTE}
+                </span>
+              ) : null}
+              {canEdit ? (
+                <span style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+                  <PuButton size="sm" onClick={() => onEdit(item.id)}>
+                    {TIMESHEET_ENTRY_EDIT_LABEL}
+                  </PuButton>
+                  <PuButton size="sm" onClick={() => onDelete(item.id)}>
+                    {TIMESHEET_ENTRY_DELETE_LABEL}
+                  </PuButton>
+                </span>
+              ) : null}
               {managerHasSigned && item.decision !== 'pending' ? (
                 <span style={{ display: 'inline-block', marginTop: 4 }}>
                   <Chip tone={decisionTone(item.decision)}>{decisionLabel(item.decision)}</Chip>
@@ -1835,7 +2026,14 @@ function ReviewExtras({
                     <b style={removed ? { textDecoration: 'line-through' } : undefined}>{entry.title}</b>
                     <span className="pu-sub" style={removed ? { textDecoration: 'line-through' } : undefined}>
                       {abbreviatedDate(entry.date, timeZone)} · {entry.jobNumber}
+                      {entry.evidence?.length ? ` · ${claimEvidenceCountText(entry.evidence.length)}` : ''}
                     </span>
+                    <EvidenceLinks evidence={entry.evidence} />
+                    {!entry.evidence?.length && entry.receiptName ? (
+                      <span className="pu-sub">
+                        {entry.receiptName} · {CLAIM_EVIDENCE_LEGACY_RECEIPT_NOTE}
+                      </span>
+                    ) : null}
                     {canReview ? (
                       <LiveReviewExtraAmount
                         amount={entry.amount}
@@ -1893,7 +2091,9 @@ function ReviewExtras({
                     <b style={removed ? { textDecoration: 'line-through' } : undefined}>{entry.title}</b>
                     <span className="pu-sub" style={removed ? { textDecoration: 'line-through' } : undefined}>
                       Agreed with: {entry.agreedManagerName} · {abbreviatedDate(entry.startDate, timeZone)} · {priceWorkJobNumberText(entry.jobNumber)}
+                      {entry.evidence?.length ? ` · ${claimEvidenceCountText(entry.evidence.length)}` : ''}
                     </span>
+                    <EvidenceLinks evidence={entry.evidence} />
                     {canReview ? (
                       <LiveReviewExtraAmount
                         amount={entry.amount}
@@ -2122,8 +2322,17 @@ function SignSheet({
   )
 }
 
+/** The overtime rate typed on an overtime line's Edit hours (1–3), else null (the booking's own rate). */
+function typedOvertimeRate(line: TimesheetPayrollLineItem, text: string): number | null {
+  if (!line.isOvertimeLine) return null
+  const value = Number(String(text).trim())
+  return Number.isFinite(value) && value >= 1 && value <= 3 ? value : null
+}
+
 function EditHoursSheet({
   line,
+  lines,
+  employment,
   start,
   end,
   breakRemoved,
@@ -2138,6 +2347,8 @@ function EditHoursSheet({
   onSave,
 }: {
   line: TimesheetPayrollLineItem | null
+  lines: TimesheetPayrollLineItem[]
+  employment: User
   start: string
   end: string
   breakRemoved: boolean
@@ -2156,13 +2367,19 @@ function EditHoursSheet({
   const paid = paidBookedHours('customHours', start, end, policy, breakRemoved, line.date)
   const ot = overtimeHoursBeyondPaidStandard(line.date, 'customHours', start, end, policy, breakRemoved)
   const otHoursText = overtimeHoursText(line.date, 'customHours', start, end, policy, breakRemoved)
-  const amount = revisedPayrollAmount({
+  // 1.46.0: the booking as edited, priced by the rulebook (`revisedPayrollLineAmounts`), standard and overtime together.
+  const edit = payrollLineEdit({
     row: line,
+    lines,
     startTime: start,
     endTime: end,
     breakRemoved,
+    otMultiplierOverride: typedOvertimeRate(line, otText),
     policy,
+    timeZone,
+    employment,
   })
+  const amount = edit.amounts?.total ?? null
   return (
     <Modal
       labelledBy="ts-edit-hours-title"
@@ -2174,7 +2391,7 @@ function EditHoursSheet({
         </PuButton>
       }
       footer={
-        <PuButton variant="primary" onClick={onSave}>
+        <PuButton variant="primary" onClick={onSave} disabled={edit.error != null}>
           Save
         </PuButton>
       }
@@ -2182,6 +2399,7 @@ function EditHoursSheet({
       <p className="pu-sub" style={{ textAlign: 'center' }}>
         {abbreviatedDate(line.date, timeZone)} · {line.jobNumber} {line.projectName}
       </p>
+      {edit.error ? <Note tone="red">{edit.error}</Note> : null}
       <div>
         <HoursTimelinePicker
           start={start}
@@ -2211,8 +2429,8 @@ function EditHoursSheet({
           <b>{otHoursText ?? `${formatTimesheetHours(ot)}h`}</b>
         </div>
         <div className="r big">
-          <span>Revised amount</span>
-          <span>{money(amount, currency)}</span>
+          <span>Revised amount (this booking)</span>
+          <span>{amount == null ? '—' : money(amount, currency)}</span>
         </div>
       </div>
     </Modal>
@@ -2266,41 +2484,119 @@ function AmountEditSheet({
 
 function ExtraForm({
   mode,
+  initial,
   jobs,
   suggestManagers,
   timeZone,
+  organizationId,
+  ownerId,
   onCancel,
   onSave,
 }: {
   mode: 'priceWork' | 'expense'
+  /** Rulebook 1.45.0: the entry being edited (Save changes), or null to add one. */
+  initial: TimesheetDraft['priceWorkEntries'][number] | TimesheetDraft['expenseEntries'][number] | null
   jobs: Array<{ jobNumber: string; siteName: string }>
   /** Names to offer for "Manager who agreed this" as the person types (`agreedManagerSuggestions`). */
   suggestManagers: (query: string) => string[]
   timeZone: string
+  organizationId: string
+  /** The signed-in owner: evidence goes to their own claim folder; their personal site audits are offered. */
+  ownerId: string
   onCancel: () => void
+  /** Resolves true once the sheet saved; false leaves the form open (its new uploads are then discarded). */
   onSave: (entry: {
     priceWork?: TimesheetDraft['priceWorkEntries'][number]
     expense?: TimesheetDraft['expenseEntries'][number]
-  }) => Promise<void>
+  }) => Promise<boolean>
 }) {
   const currency = useOrganizationCurrency()
-  const [title, setTitle] = useState('')
-  const [details, setDetails] = useState('')
-  const [jobNumber, setJobNumber] = useState('')
-  const [amount, setAmount] = useState('')
-  const [agreedManagerName, setAgreedManagerName] = useState('')
-  const [date, setDate] = useState(() => dayKey(new Date(), timeZone))
-  const [includeEndDate, setIncludeEndDate] = useState(false)
-  const [endDate, setEndDate] = useState('')
-  const [receiptName, setReceiptName] = useState<string | null>(null)
+  const priceWork = mode === 'priceWork'
+  const startPriceWork = priceWork ? (initial as TimesheetDraft['priceWorkEntries'][number] | null) : null
+  const startExpense = !priceWork ? (initial as TimesheetDraft['expenseEntries'][number] | null) : null
+  const [title, setTitle] = useState(initial?.title ?? '')
+  const [details, setDetails] = useState(initial?.details ?? '')
+  const [jobNumber, setJobNumber] = useState(initial?.jobNumber ?? '')
+  const [amount, setAmount] = useState(initial ? String(initial.amount) : '')
+  const [agreedManagerName, setAgreedManagerName] = useState(startPriceWork?.agreedManagerName ?? '')
+  const [date, setDate] = useState(() =>
+    dayKey(startPriceWork?.startDate ?? startExpense?.date ?? new Date(), timeZone)
+  )
+  const [includeEndDate, setIncludeEndDate] = useState(Boolean(startPriceWork?.endDate))
+  const [endDate, setEndDate] = useState(startPriceWork?.endDate ? dayKey(startPriceWork.endDate, timeZone) : '')
+  const [evidence, setEvidence] = useState<EvidenceSlot[]>(() => slotsFromEvidence(initial?.evidence))
+  const [error, setError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
   const value = parseTimesheetMoneyAmount(amount)
-  // Rulebook 1.30.1: a new price work entry needs a job number (`priceWorkJobNumberError`).
-  const jobNumberError = mode === 'priceWork' ? priceWorkJobNumberError(jobNumber) : null
-  const canSave = value != null && (mode === 'priceWork' ? !jobNumberError : Boolean(receiptName))
+  // Rulebook 1.30.1: price work needs a job number (`priceWorkJobNumberError`); 1.45.0: an expense at least one piece of
+  // evidence (`timesheetOwnerEntriesError` checks both again when the sheet is saved).
+  const jobNumberError = priceWork ? priceWorkJobNumberError(jobNumber) : null
+  const evidenceError = !priceWork && evidence.length === 0 ? EXPENSE_EVIDENCE_REQUIRED_MESSAGE : null
+  const canSave = value != null && !saving && (priceWork ? !jobNumberError : !evidenceError)
   const jobSuggestions = extraFormJobSuggestions(jobs, jobNumber)
   const managerSuggestions = suggestManagers(agreedManagerName)
+  const editing = Boolean(initial)
 
-  const priceWork = mode === 'priceWork'
+  const submit = async () => {
+    if (value == null || !canSave) return
+    setSaving(true)
+    setError(null)
+    const uploaded: PayeClaimEvidence[] = []
+    let saved = false
+    try {
+      const list = await resolveEvidenceSlots(evidence, uploaded)
+      const start = dateFromDayKey(date, timeZone)
+      if (priceWork) {
+        saved = await onSave({
+          priceWork: {
+            id: initial?.id ?? newUuid(),
+            title: title.trim() || 'Untitled price work',
+            details: details.trim(),
+            jobNumber: jobNumber.trim(),
+            agreedManagerName: agreedManagerName.trim() || 'Manager',
+            startDate: start,
+            endDate: includeEndDate && endDate ? dateFromDayKey(endDate, timeZone) : null,
+            amount: value,
+            evidence: list,
+            managerDecision: 'approved',
+            managerRevisedAmount: null,
+          },
+        })
+      } else {
+        saved = await onSave({
+          expense: {
+            id: initial?.id ?? newUuid(),
+            title: title.trim() || 'Untitled expense',
+            details: details.trim(),
+            jobNumber: jobNumber.trim(),
+            date: start,
+            amount: value,
+            // An older entry's receipt name stays as stored (read-only); new entries store none.
+            receiptName: startExpense?.receiptName ?? null,
+            evidence: list,
+            managerDecision: 'approved',
+            managerRevisedAmount: null,
+          },
+        })
+      }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'The evidence could not be uploaded.')
+    } finally {
+      if (!saved) {
+        // 1.30.0 review / §24: a refused or failed save leaves no new copy behind.
+        await discardClaimEvidence(organizationId, uploaded)
+        setSaving(false)
+      }
+    }
+  }
+
+  const heading = editing
+    ? priceWork
+      ? TIMESHEET_ENTRY_EDIT_PRICE_WORK_TITLE
+      : TIMESHEET_ENTRY_EDIT_EXPENSE_TITLE
+    : priceWork
+      ? 'Add Price Work'
+      : 'Add Expense'
   return (
     <div className="pu-modal-wrap">
       <form
@@ -2310,43 +2606,14 @@ function ExtraForm({
         aria-labelledby="ts-extra-form-title"
         onSubmit={(event) => {
           event.preventDefault()
-          if (value == null || !canSave) return
-          const start = dateFromDayKey(date, timeZone)
-          if (mode === 'priceWork') {
-            void onSave({
-              priceWork: {
-                id: newUuid(),
-                title: title.trim() || 'Untitled price work',
-                details: details.trim(),
-                jobNumber: jobNumber.trim(),
-                agreedManagerName: agreedManagerName.trim() || 'Manager',
-                startDate: start,
-                endDate: includeEndDate && endDate ? dateFromDayKey(endDate, timeZone) : null,
-                amount: value,
-                managerDecision: 'approved',
-              },
-            })
-          } else {
-            void onSave({
-              expense: {
-                id: newUuid(),
-                title: title.trim() || 'Untitled expense',
-                details: details.trim(),
-                jobNumber: jobNumber.trim(),
-                date: start,
-                amount: value,
-                receiptName,
-                managerDecision: 'approved',
-              },
-            })
-          }
+          void submit()
         }}
       >
         <div className="pu-modal-h">
           <IconTile tone={priceWork ? 'purple' : 'green'} size="sm">
             {priceWork ? <BriefcaseIcon /> : <ReceiptPercentIcon />}
           </IconTile>
-          <h2 id="ts-extra-form-title">{priceWork ? 'Add Price Work' : 'Add Expense'}</h2>
+          <h2 id="ts-extra-form-title">{heading}</h2>
           <PuButton size="sm" onClick={onCancel}>
             Cancel
           </PuButton>
@@ -2386,7 +2653,7 @@ function ExtraForm({
               ) : null}
             </div>
             <label className="pu-form-label">
-              Amount
+              {priceWork ? PRICE_WORK_AMOUNT_LABEL : EXPENSE_AMOUNT_LABEL}
               <input
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
@@ -2424,7 +2691,7 @@ function ExtraForm({
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               <label className="pu-form-label">
                 Manager who agreed this
-                <input value={agreedManagerName} onChange={(e) => setAgreedManagerName(e.target.value)} className="pu-inp" />
+                <input value={agreedManagerName} onChange={(e) => setAgreedManagerName(e.target.value)} className="pu-inp" autoComplete="off" />
               </label>
               {managerSuggestions.length > 0 ? (
                 <div className="pu-sugg">
@@ -2436,36 +2703,38 @@ function ExtraForm({
                 </div>
               ) : null}
             </div>
-          ) : (
-            <label className="pu-dashed">
-              <span aria-hidden="true">📎</span>
-              <span>Upload receipt</span>
-              <span style={{ marginLeft: 'auto' }}>
-                {receiptName ? <Chip tone="blue">{receiptName}</Chip> : <Chip tone="red">Required</Chip>}
-              </span>
-              <input
-                type="file"
-                accept="image/*"
-                className="sr-only"
-                onChange={(event) => {
-                  const file = event.target.files?.[0]
-                  if (!file || !file.type.startsWith('image/')) {
-                    setReceiptName(null)
-                    event.target.value = ''
-                    return
-                  }
-                  setReceiptName(timesheetReceiptStoredName(file.name))
-                }}
-              />
-            </label>
-          )}
+          ) : null}
+          {startExpense?.receiptName && (startExpense.evidence?.length ?? 0) === 0 ? (
+            <span className="pu-sub">
+              {startExpense.receiptName} · {CLAIM_EVIDENCE_LEGACY_RECEIPT_NOTE}
+            </span>
+          ) : null}
+          <ClaimEvidencePicker
+            organizationId={organizationId}
+            ownerId={ownerId}
+            timeZone={timeZone}
+            slots={evidence}
+            onChange={setEvidence}
+            required={!priceWork}
+            disabled={saving}
+            onError={setError}
+          />
+          {error ? <span className="pu-err">{error}</span> : null}
         </div>
         <div className="pu-modal-f">
           <PuButton type="submit" variant="primary" disabled={!canSave}>
-            {mode === 'expense' ? 'Add expense' : 'Add price work'}
+            {saving ? 'Saving…' : editing ? TIMESHEET_ENTRY_SAVE_CHANGES_LABEL : mode === 'expense' ? 'Add expense' : 'Add price work'}
           </PuButton>
         </div>
       </form>
     </div>
   )
+}
+
+/**
+ * Rulebook 1.45.0 §8: whose claim folders count as the sheet owner's — every id the person goes by (`personIdSet`:
+ * their own id, `formerUserIds`, `sameEmailUserIds`, roster rows on their email).
+ */
+function subjectEvidenceOwnerIds(subject: User, users: ReadonlyArray<User>): string[] {
+  return personIdSet(rulebookPerson(subject, users) as never, rulebookRoster(users as User[]) as never)
 }
