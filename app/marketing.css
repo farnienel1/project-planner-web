@@ -458,12 +458,15 @@ html:has(.pp-site-dark) body { background: transparent; }
 .mkt .chip.on:not([data-hue] *),
 :is(.mkt, .pp-site-dark) .bg-\[var\(--blue\)\] { background: var(--mkt-fill); }
 /* The Android announcement bar: white text across a navy → blue gradient. */
+.mkt .btn.primary:hover { background: color-mix(in srgb, var(--mkt-fill) 88%, #000); } /* was --blue-based: 4.3:1 on hover */
 .mkt .annc { background: linear-gradient(90deg, var(--navy), var(--mkt-fill)); }
 .mkt .annc button { background: rgba(0, 0, 0, .22); }
 /* White initials on the light dark-theme hues (2.0–3.9:1): dark initials instead (4.9–9.5:1). */
 .mkt .av { color: #0b1220; }
 .mkt .av[style*="#6A45E6"] { color: #fff; } /* the one dark hue: white is 5.6:1 */
-:is(.mkt, .pp-site-dark) .bg-\[var\(--ops\)\].text-white { color: #0b1220 !important; }
+/* PaymentRunsPanel's run chips use --card text (dark in dark mode); on the wizard's --mkt-fill
+   run 1 chip white reads better (4.5:1 vs 3.5:1). */
+:is(.mkt, .pp-site-dark) .bg-\[var\(--blue\)\].text-\[var\(--card\)\] { color: #fff; }
 /* --blue text on --blue-t is 4.1:1 in the dark theme; --blue2 is 5.5:1 (6.7:1 on cards). */
 .mkt .wz-rail .subs button.on,
 .pp-site-dark .text-\[var\(--blue\)\] { color: var(--blue2); }
@@ -527,3 +530,6 @@ html:has(.pp-site-dark) body { background: transparent; }
 .mkt .wz > * { min-width: 0; }
 .mkt .wz .btn.sm { white-space: normal; height: auto; min-height: 38px; padding-top: 8px; padding-bottom: 8px; text-align: center; }
 .mkt .wz-rail .st:not(.on, .done) .n { color: var(--ink2); } /* 4.4:1 → 7.6:1 on the step number tile */
+
+/* The email preview shows the email as a recipient sees it: a light page inside the dark screen. */
+.pp-email-frame { background: #fff !important; color: #0F1B2D; color-scheme: light; }

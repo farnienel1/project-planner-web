@@ -87,10 +87,10 @@
     --line2: #2e3d5c;
     --ink: #eaf0f8;
     --ink2: #b0bccf;
-    --ink3: #7f8da6;
+    --ink3: #8391a9; /* 4.6:1 on --soft2 (was #7f8da6, 4.37:1) */
     --blue: #4c8be6;
     --blue2: #6aa4f5;
-    --blue-t: #172c4d;
+    --blue-t: #122440; /* --blue text on it 4.5:1 (was #172c4d, 4.1:1) */
     --proj-t: #11322a;
     --sw-t: #3a2512;
     --sched-t: #3a1628;
@@ -142,10 +142,10 @@
   --line2: #2e3d5c;
   --ink: #eaf0f8;
   --ink2: #b0bccf;
-  --ink3: #7f8da6;
+  --ink3: #8391a9; /* 4.6:1 on --soft2 (was #7f8da6, 4.37:1) */
   --blue: #4c8be6;
   --blue2: #6aa4f5;
-  --blue-t: #172c4d;
+  --blue-t: #122440; /* --blue text on it 4.5:1 (was #172c4d, 4.1:1) */
   --proj-t: #11322a;
   --sw-t: #3a2512;
   --sched-t: #3a1628;

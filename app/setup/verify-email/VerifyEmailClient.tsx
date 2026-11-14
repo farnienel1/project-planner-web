@@ -59,7 +59,7 @@ export default function VerifyEmailClient() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[#f4f6f9] px-5 py-10">
+    <div className="dark pp-site-dark flex min-h-screen items-center justify-center bg-[var(--bg)] px-5 py-10">
       <div className="w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-8 shadow-[0_2px_30px_rgba(15,23,42,0.08)]">
         <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50 text-blue-600">
           <svg className="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>

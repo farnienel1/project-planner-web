@@ -65,3 +65,6 @@ docs/ui-touch-up/screenshots/
 cleanup-backups/
 __pycache__/
 /ghost-conversion/
+
+# scripts/ui-audit output (dev only)
+/ui-audit-out/
