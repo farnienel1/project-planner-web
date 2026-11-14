@@ -512,8 +512,8 @@ function parseWeekend(data: Record<string, unknown> | undefined, dayDefault: Wee
       firstPresent(data, ['customStandardEnd', 'definedWindowEnd'], fallback.definedWindowEnd ?? '16:00')
     ),
     countsAsStandardHours: policyNumber(
-      firstPresent(data, ['countsAsHours', 'countsAsStandardHours'], fallback.countsAsStandardHours ?? 8),
-      fallback.countsAsStandardHours ?? 8,
+      firstPresent(data, ['countsAsHours', 'countsAsStandardHours'], weekendCountsAsHours(fallback)),
+      weekendCountsAsHours(fallback),
       PAYROLL_POLICY_LIMITS.paidHours,
       { allowZero: true }
     ),
@@ -562,7 +562,7 @@ function weekendToFirestore(weekend: WeekendPayrollSettings): Record<string, unk
     useCustomStandardDayWindow: !weekend.allHoursAtMultiplierMode,
     customStandardStart: weekend.definedWindowStart ?? '07:30',
     customStandardEnd: weekend.definedWindowEnd ?? '16:00',
-    countsAsHours: weekend.countsAsStandardHours ?? 8,
+    countsAsHours: weekendCountsAsHours(weekend),
     outsideStandardWindowMultiplier: weekend.outsideWindowMultiplier ?? 1.5,
     breakPaid: weekend.breakPaid !== false,
     // 1.19.0: written only when the day has its own break; missing reads as the weekday break.
@@ -616,6 +616,20 @@ export function parsePayrollPolicy(data: Record<string, unknown> | undefined): O
   const derived: OrgPayrollTimePolicy = { ...parsed, paidHoursDerived: true }
   return { ...derived, standardPaidHours: weekdayPaidHours(derived) }
 }
+
+/**
+ * Rulebook 1.44.0 §4.3: a weekend day's "counts as" hours — its stored value, else 8h (the default weekend day,
+ * `DEFAULT_SATURDAY_PAYROLL.countsAsStandardHours`). The one fallback for the reader (`parsePayrollPolicy` fills a
+ * missing value with it) and the pay rule alike, so a parsed and an unparsed policy price a weekend day the same. It
+ * never follows the weekday paid day (stored or derived): weekend pay is unchanged by 1.44.0.
+ */
+export function weekendCountsAsHours(weekend: Pick<WeekendPayrollSettings, 'countsAsStandardHours'> | null | undefined): number {
+  const stored = Number(weekend?.countsAsStandardHours)
+  return weekend?.countsAsStandardHours != null && Number.isFinite(stored) ? stored : DEFAULT_WEEKEND_COUNTS_AS_HOURS
+}
+
+/** The default weekend "counts as" hours (8). */
+export const DEFAULT_WEEKEND_COUNTS_AS_HOURS = 8
 
 /**
  * Rulebook 1.20.0 §4.3: the Monday–Friday paid day worked out from the day itself — finish − start, less the break when

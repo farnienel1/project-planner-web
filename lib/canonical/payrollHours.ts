@@ -30,7 +30,7 @@
  */
 
 import { formatClockMinutes, halfDayWindows, namedSlotKind, parseClockMinutes, slotInterval, type MinuteInterval } from './engine'
-import { weekdayPaidHours, weekendBreakFor, type OrgPayrollTimePolicy, type WeekendPayrollSettings } from './organizationSettings'
+import { weekdayPaidHours, weekendBreakFor, weekendCountsAsHours, type OrgPayrollTimePolicy, type WeekendPayrollSettings } from './organizationSettings'
 import { dateFromDayKeyInZone, isoWeekdayInZone } from '../orgTime/zoneTime'
 import { zoneOrLondon } from './dayKeys'
 
@@ -100,9 +100,9 @@ function standardPaid(policy: OrgPayrollTimePolicy): number {
   return Math.max(Number(weekdayPaidHours(policy)) || 0, 0)
 }
 
-function countsAs(weekend: WeekendPayrollSettings, policy: OrgPayrollTimePolicy): number {
-  // 1.44.0: a weekend day with no "counts as" of its own falls back to the derived weekday day, never the stored figure.
-  return weekend.countsAsStandardHours ?? weekdayPaidHours(policy)
+function countsAs(weekend: WeekendPayrollSettings): number {
+  // 1.44.0: one fallback with the reader (`weekendCountsAsHours`: stored, else 8), never the weekday paid day.
+  return weekendCountsAsHours(weekend)
 }
 
 function dayInput(policy: OrgPayrollTimePolicy) {
@@ -369,7 +369,7 @@ function isHalfDayPaid(booking: PayrollHoursBooking, policy: OrgPayrollTimePolic
 }
 
 function halfDayPaid(booking: PayrollHoursBooking, policy: OrgPayrollTimePolicy, weekend: WeekendPayrollSettings | null, multiplier: number): PayrollHoursResult {
-  const paid = weekend && !weekend.allHoursAtMultiplierMode ? Math.max(countsAs(weekend, policy), 0) / 2 : standardPaid(policy) / 2
+  const paid = weekend && !weekend.allHoursAtMultiplierMode ? Math.max(countsAs(weekend), 0) / 2 : standardPaid(policy) / 2
   const span = interval(booking, policy)
   return result([segment('standardWindow', paid, 1, span?.start, span?.end)], multiplier)
 }
@@ -632,7 +632,7 @@ function weekendDay(booking: PayrollHoursBooking, policy: OrgPayrollTimePolicy, 
     return result([segment('allHoursMultiplier', wall, multiplier, booking.workStartTime ?? undefined, booking.workEndTime ?? undefined)], multiplier)
   }
   if (isHalfDayPaid(booking, policy, false)) return halfDayPaid(booking, policy, weekend, multiplier)
-  const credit = countsAs(weekend, policy)
+  const credit = countsAs(weekend)
   const rows: PayrollHoursSegment[] = []
   const overlapStart = Math.max(span.start, ws)
   const overlapEnd = Math.min(span.end, we)

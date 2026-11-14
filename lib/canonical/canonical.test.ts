@@ -14337,17 +14337,28 @@ test('1.43.0 timesheetSnapshotReady: sign-off waits for the period\'s bookings a
 
 test('1.43.0 timesheetSnapshotNeedsRebuild: only a snapshot frozen empty while its bookings already existed', () => {
   const approvedAt = new Date('2026-11-10T09:00:00Z')
-  const before = { isPayeDay: false, bookingCreatedAt: new Date('2026-11-03T08:00:00Z') }
-  const after = { isPayeDay: false, bookingCreatedAt: new Date('2026-11-12T08:00:00Z') }
+  const before = { isPayeDay: false, bookingCreatedAt: new Date('2026-11-03T08:00:00Z'), bookingUpdatedAt: new Date('2026-11-04T08:00:00Z') }
+  const after = { isPayeDay: false, bookingCreatedAt: new Date('2026-11-12T08:00:00Z'), bookingUpdatedAt: new Date('2026-11-12T08:00:00Z') }
+  // Review r318 (2nd): created before approval but moved into the period (written) after it.
+  const movedLater = { isPayeDay: false, bookingCreatedAt: new Date('2026-11-03T08:00:00Z'), bookingUpdatedAt: new Date('2026-11-11T08:00:00Z') }
   const empty = { weeklyReportOverride: { lines: [], approvedAt } }
   // A booking that existed when the sheet was signed but is missing from the snapshot: the loading bug.
   assert.equal(R112.timesheetSnapshotNeedsRebuild(empty, [before]), true)
   // Any stored instant shape; the approval instant may come from the sheet when the snapshot has none.
-  assert.equal(R112.timesheetSnapshotNeedsRebuild({ weeklyReportOverride: { lines: [] }, managerSignedAt: { seconds: 1762765200 } }, [{ bookingCreatedAt: 1762157000000 }]), true)
+  assert.equal(
+    R112.timesheetSnapshotNeedsRebuild({ weeklyReportOverride: { lines: [] }, managerSignedAt: { seconds: 1762765200 } }, [
+      { bookingCreatedAt: 1762157000000, bookingUpdatedAt: '2025-11-04T08:00:00Z' },
+    ]),
+    true
+  )
   // Review r318: a legitimately empty snapshot (price work / expenses only) is never re-priced by a booking added later,
   // nor by one whose creation time is unknown.
   assert.equal(R112.timesheetSnapshotNeedsRebuild(empty, [after]), false)
+  assert.equal(R112.timesheetSnapshotNeedsRebuild(empty, [movedLater]), false)
   assert.equal(R112.timesheetSnapshotNeedsRebuild(empty, [{ isPayeDay: false }]), false)
+  // Either time unknown: never.
+  assert.equal(R112.timesheetSnapshotNeedsRebuild(empty, [{ bookingCreatedAt: before.bookingCreatedAt }]), false)
+  assert.equal(R112.timesheetSnapshotNeedsRebuild(empty, [{ bookingUpdatedAt: before.bookingUpdatedAt }]), false)
   // PAYE days never count; no live labour: nothing to rebuild.
   assert.equal(R112.timesheetSnapshotNeedsRebuild(empty, [{ ...before, isPayeDay: true }]), false)
   assert.equal(R112.timesheetSnapshotNeedsRebuild(empty, []), false)
@@ -14470,10 +14481,16 @@ test('1.44.0: every policy in the history derives its own day; the stored standa
   const fields = R112.payrollTimePolicyCancelScheduleWriteFields({ orgDoc: org, todayKey: '2026-11-04', timeZone: zone })
   const history = fields.payrollTimePolicyHistory as Array<{ policy: Record<string, unknown> }> | undefined
   if (history) assert.equal(history[0].policy.standardPaidHours, 8)
-  // A weekend day with no "counts as" of its own falls back to the derived day, not the stored figure.
+  // A weekend day with no "counts as" of its own reads 8h (`weekendCountsAsHours`), in the reader and the pay rule
+  // alike — never the weekday paid day, stored or derived (weekend pay is unchanged by 1.44.0).
   const noCountsAs = r120Legacy({ standardDayStart: '07:00', saturday: { allHoursAtMultiplierMode: false, allHoursMultiplier: 2, definedWindowStart: '07:00', definedWindowEnd: '13:00', outsideWindowMultiplier: 2 } })
   const sat = R112.payrollHoursResult({ booking: r120Custom('07:00', '13:00'), dayKey: '2026-11-07', policy: noCountsAs, timeZone: R120_ZONE })
-  if (noCountsAs.saturday.countsAsStandardHours == null) assert.equal(sat.standardHours, 8.5)
+  assert.equal(noCountsAs.saturday.countsAsStandardHours, 8)
+  assert.equal(sat.standardHours, 8)
+  const raw = { ...noCountsAs, saturday: { ...noCountsAs.saturday, countsAsStandardHours: undefined } }
+  assert.equal(R112.payrollHoursResult({ booking: r120Custom('07:00', '13:00'), dayKey: '2026-11-07', policy: raw as never, timeZone: R120_ZONE }).standardHours, 8)
+  assert.equal(R112.weekendCountsAsHours({}), 8)
+  assert.equal(R112.weekendCountsAsHours({ countsAsStandardHours: 6 }), 6)
   // No policy: the default day, derived (07:30–16:00 − 30 min).
   assert.equal(R112.weekdayPaidHours(null), 8)
   // A clock that would derive outside 1–12 (only reachable from stored data the save check refuses) is clamped.
@@ -14528,30 +14545,46 @@ test('1.44.0 unresolvedBookingPeople: one entry per unknown id (without case) wi
   assert.deepEqual([rows[1].personId, rows[1].count, rows[1].jobs], ['zz-other', 1, []])
 })
 
-test('1.44.0 link an unknown id to a person: candidates, confirm text and the formerUserIds partial update', () => {
+test('1.44.0 link an unknown id to a person: candidates (one per person, live signed-up doc, not the viewer), re-check and the arrayUnion write', () => {
   const roster = [
-    { id: 'b', firstName: 'Bea', surname: 'Two', email: 'bea@example.com', organizationId: 'org1', isActive: true },
-    { id: 'b-copy', firstName: 'Bea', surname: 'Copy', email: 'BEA@example.com', organizationId: 'org1', isActive: true },
-    { id: 'a', firstName: 'Ann', surname: 'One', email: 'ann@example.com', organizationId: 'org1', isActive: true },
-    { id: 'gone', firstName: 'Old', surname: 'Hand', email: 'old@example.com', organizationId: 'org1', isActive: false },
-    { id: 'away', firstName: 'Other', surname: 'Co', email: 'oc@example.com', organizationId: 'org2', isActive: true },
-    { id: 'del', firstName: 'Deleted', surname: 'user', email: '', organizationId: 'org1', isActive: true },
-    { id: 'ghost1', firstName: 'Gus', surname: 'Ghost', email: '', organizationId: 'org1', isActive: true },
+    // Bea: a stale admin copy (pending invite) and her live document on the same email — the live one speaks.
+    { id: 'b-old', firstName: 'Bea', surname: 'Old', email: 'BEA@example.com', organizationId: 'org1', isActive: true, passwordSet: false },
+    { id: 'b', firstName: 'Bea', surname: 'Two', email: 'bea@example.com', organizationId: 'org1', isActive: true, passwordSet: true },
+    { id: 'a', firstName: 'Ann', surname: 'One', email: 'ann@example.com', organizationId: 'org1', isActive: true, passwordSet: true },
+    { id: 'me', firstName: 'Admin', surname: 'Me', email: 'me@example.com', organizationId: 'org1', isActive: true, passwordSet: true, formerUserIds: ['ME-OLD'] },
+    { id: 'pending', firstName: 'Pat', surname: 'Pending', email: 'pat@example.com', organizationId: 'org1', isActive: true, passwordSet: false },
+    { id: 'gone', firstName: 'Old', surname: 'Hand', email: 'old@example.com', organizationId: 'org1', isActive: false, passwordSet: true },
+    { id: 'away', firstName: 'Other', surname: 'Co', email: 'oc@example.com', organizationId: 'org2', isActive: true, passwordSet: true },
+    { id: 'del', firstName: 'Deleted', surname: 'user', email: '', organizationId: 'org1', isActive: true, passwordSet: true },
+    { id: 'ghost1', firstName: 'Gus', surname: 'Ghost', email: '', organizationId: 'org1', isActive: true, passwordSet: false, ghost: true },
   ]
-  assert.deepEqual(R112.linkBookingPersonCandidates(roster, 'org1').map((c: { id: string }) => c.id), ['a', 'b', 'ghost1'])
+  const ids = (rows: Array<{ id: string }>) => rows.map((c) => c.id)
+  assert.deepEqual(ids(R112.linkBookingPersonCandidates(roster, 'org1', { viewerIds: ['me-old'] })), ['a', 'b', 'ghost1'])
+  // Without a viewer every active person is offered, by name (Admin Me, Ann One, Bea Two, Gus Ghost).
+  assert.deepEqual(ids(R112.linkBookingPersonCandidates(roster, 'org1')), ['me', 'a', 'b', 'ghost1'])
+  assert.equal(R112.LINK_BOOKING_PERSON_SELF_NOTE, 'To link bookings to yourself, ask another admin.')
   assert.equal(R112.linkBookingPersonConfirmMessage(3, 'Farnie Nel'), 'All 3 bookings under this ID will show as Farnie Nel.')
   assert.equal(R112.linkBookingPersonConfirmMessage(1, 'Farnie Nel'), 'All 1 booking under this ID will show as Farnie Nel.')
   assert.equal(R112.linkBookingPersonDoneMessage(3, 'Farnie Nel'), 'Linked: 3 bookings now show as Farnie Nel.')
+  assert.equal(R112.LINK_BOOKING_PERSON_ALREADY_MESSAGE, 'Already linked.')
+  // Re-check on a fresh roster.
+  const base = { roster, operatives: [], organizationId: 'org1', viewerIds: ['me'] }
+  assert.equal(R112.linkBookingPersonRefusal({ ...base, personId: '6A9632BA-X', targetId: 'b' }), null)
+  assert.equal(R112.linkBookingPersonRefusal({ ...base, personId: 'me-old', targetId: 'b' })?.reason, 'already_linked')
+  assert.equal(R112.linkBookingPersonRefusal({ ...base, personId: 'A', targetId: 'b' })?.reason, 'resolves')
+  assert.equal(R112.linkBookingPersonRefusal({ ...base, personId: 'x', targetId: 'pending' })?.reason, 'not_candidate')
+  assert.equal(R112.linkBookingPersonRefusal({ ...base, personId: 'x', targetId: 'me' })?.reason, 'not_candidate')
+  assert.equal(R112.linkBookingPersonRefusal({ ...base, personId: ' ', targetId: 'b' })?.reason, 'blank')
+  // The write: arrayUnion + metadata; null when already there (case-insensitive), own id, blank, bad metadata.
   const person = { id: 'farnie', formerUserIds: ['OLD-1'] }
   assert.deepEqual(
     R112.linkBookingPersonWriteFields({ person, personId: '6A9632BA-X', actorUserId: 'admin', platform: 'web' }),
-    { set: { formerUserIds: ['OLD-1', '6A9632BA-X'], updatedBy: 'admin', updatedFrom: 'web' } }
+    { arrayUnion: { formerUserIds: ['6A9632BA-X'] }, set: { updatedBy: 'admin', updatedFrom: 'web' } }
   )
   assert.equal(R112.linkBookingPersonWriteFields({ person, personId: 'old-1', actorUserId: 'admin', platform: 'web' }), null)
   assert.equal(R112.linkBookingPersonWriteFields({ person, personId: 'FARNIE', actorUserId: 'admin', platform: 'web' }), null)
   assert.equal(R112.linkBookingPersonWriteFields({ person, personId: ' ', actorUserId: 'admin', platform: 'web' }), null)
   assert.equal(R112.linkBookingPersonWriteFields({ person, personId: 'x', actorUserId: '', platform: 'web' }), null)
-  // After linking, the id resolves to the person.
   const after = R112.scheduleRowPerson('6a9632ba-x', { accounts: [{ id: 'farnie', email: 'f@example.com', formerIds: ['OLD-1', '6A9632BA-X'] }], operatives: [] })
   assert.deepEqual([after.unresolved, after.accountId], [false, 'farnie'])
 })

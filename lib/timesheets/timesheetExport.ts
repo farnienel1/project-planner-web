@@ -133,7 +133,8 @@ function signedOverrideDetails(
   const equation = payLineDisplay({
     payBasis: slice.payBasis,
     paidHours: slice.paidHours,
-    standardDayHours: standard,
+    // 1.44.0 §8: the signed line's own paid day (stored days), never today's.
+    standardDayHours: slice.standardDayHours ?? standard,
     rate: slice.rate,
     pay: slice.pay,
     currencyCode,

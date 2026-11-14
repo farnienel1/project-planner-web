@@ -73,6 +73,7 @@ import {
 } from '@/lib/timesheets/dayRateHistoryStorage'
 import {
   timesheetInputsStatus,
+  withBookingsGate,
   type TimesheetInputLoad,
   type TimesheetInputsState,
 } from '@/lib/timesheets/timesheetInputs'
@@ -431,7 +432,9 @@ export function TimesheetsHub() {
               timeZone={timeZone}
               history={history}
               scheduleOptions={scheduleOptions}
-              payInputs={payInputs}
+              // Rulebook 1.43.0 (review r318): export stamps and freezes the signed snapshot, so it waits for the
+              // server-confirmed bookings as signing does (`withBookingsGate` → `timesheetSnapshotReady`).
+              payInputs={withBookingsGate(payInputs, { bookingsLoaded, bookingsFailed })}
             />
           </>
         )}

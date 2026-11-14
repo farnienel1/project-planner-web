@@ -10,32 +10,63 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { collection, doc, getDoc, getDocs, serverTimestamp, updateDoc } from 'firebase/firestore'
+import { arrayUnion, collection, doc, getDocs, query, runTransaction, serverTimestamp, where } from 'firebase/firestore'
 import { getFirebaseDb } from '@/lib/firebase/ensureFirebase'
 import { auth } from '@/lib/firebase/config'
 import {
   LINK_BOOKING_PERSON_ACTION,
+  LINK_BOOKING_PERSON_ALREADY_MESSAGE,
+  LINK_BOOKING_PERSON_SELF_NOTE,
   UNRESOLVED_BOOKINGS_EMPTY,
   UNRESOLVED_BOOKINGS_HEADING,
   UNRESOLVED_BOOKINGS_HELP,
   linkBookingPersonCandidates,
   linkBookingPersonConfirmMessage,
   linkBookingPersonDoneMessage,
+  linkBookingPersonRefusal,
   linkBookingPersonWriteFields,
   parseBookingDocument,
   parseManagerSiteBookingDocument,
   rosterAliasIdsFor,
   unresolvedBookingPeople,
+  type LinkCandidateProfile,
   type UnresolvedBookingInput,
   type UnresolvedBookingPerson,
 } from '@/lib/canonical'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
+import { useAuthStore } from '@/lib/stores/authStore'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 import { dayKeyInZone } from '@/lib/orgTime/zoneTime'
 import { formatLongDayKey } from '@/lib/canonical/dayKeys'
 
 type Loaded = { bookings: UnresolvedBookingInput[] }
+
+/** A users document as the link rules read it (every document of the organisation, never the email fold). */
+function linkProfile(id: string, data: Record<string, unknown>): LinkCandidateProfile {
+  const list = (value: unknown) => (Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [])
+  const str = (value: unknown) => (typeof value === 'string' ? value : null)
+  return {
+    id,
+    firstName: str(data.firstName),
+    surname: str(data.surname) ?? str(data.lastName),
+    name: str(data.name),
+    displayName: str(data.displayName),
+    email: str(data.email),
+    organizationId: str(data.organizationId),
+    isActive: typeof data.isActive === 'boolean' ? data.isActive : null,
+    passwordSet: typeof data.passwordSet === 'boolean' ? data.passwordSet : null,
+    ghost: data.ghost === true,
+    formerUserIds: list(data.formerUserIds),
+    sameEmailUserIds: list(data.sameEmailUserIds),
+  }
+}
+
+/** Every users document of the organisation, read from the server (the picker and the re-check). */
+async function loadOrgRoster(organizationId: string): Promise<LinkCandidateProfile[]> {
+  const snap = await getDocs(query(collection(getFirebaseDb(), 'users'), where('organizationId', '==', organizationId)))
+  return snap.docs.map((row) => linkProfile(row.id, row.data()))
+}
 
 function jobLabel(data: Record<string, unknown>): string {
   const number = typeof data.jobNumber === 'string' || typeof data.jobNumber === 'number' ? String(data.jobNumber).trim() : ''
@@ -53,6 +84,12 @@ export function BookingsNotLinkedToPerson({ organizationId }: { organizationId: 
   const [picking, setPicking] = useState<string | null>(null)
   const [choice, setChoice] = useState<string>('')
   const [saving, setSaving] = useState(false)
+  const [roster, setRoster] = useState<LinkCandidateProfile[]>([])
+  const viewer = useAuthStore((state) => state.user)
+  const viewerIds = useMemo(
+    () => [viewer?.id, ...(viewer?.formerUserIds ?? [])].filter((id): id is string => typeof id === 'string' && id.trim() !== ''),
+    [viewer]
+  )
 
   useEffect(() => {
     void loadUsers(organizationId)
@@ -65,12 +102,14 @@ export function BookingsNotLinkedToPerson({ organizationId }: { organizationId: 
     try {
       const db = getFirebaseDb()
       const zone = organizationZoneOr()
-      const [bookingSnap, managerSnap, projectSnap, smallWorkSnap] = await Promise.all([
+      const [bookingSnap, managerSnap, projectSnap, smallWorkSnap, orgRoster] = await Promise.all([
         getDocs(collection(db, 'organizations', organizationId, 'bookings')),
         getDocs(collection(db, 'organizations', organizationId, 'managerSiteBookings')),
         getDocs(collection(db, 'organizations', organizationId, 'projects')),
         getDocs(collection(db, 'organizations', organizationId, 'smallWorks')),
+        loadOrgRoster(organizationId),
       ])
+      setRoster(orgRoster)
       const jobs = new Map<string, string>()
       for (const row of [...projectSnap.docs, ...smallWorkSnap.docs]) jobs.set(row.id.toLowerCase(), jobLabel(row.data()))
       const jobName = (id: string | undefined) => (id ? jobs.get(id.toLowerCase()) ?? '' : '')
@@ -133,21 +172,11 @@ export function BookingsNotLinkedToPerson({ organizationId }: { organizationId: 
     [loaded, people]
   )
 
+  // Rulebook 1.44.0 §11: every users document of the organisation (not the email fold), one option per person, never the
+  // viewer (nobody writes their own identity links — the rules refuse it, §16).
   const candidates = useMemo(
-    () =>
-      linkBookingPersonCandidates(
-        users.map((u) => ({
-          id: u.id,
-          firstName: u.firstName ?? null,
-          surname: u.surname ?? null,
-          name: (u as { name?: string | null }).name ?? null,
-          email: u.email ?? null,
-          organizationId: u.organizationId ?? null,
-          isActive: u.isActive ?? null,
-        })),
-        organizationId
-      ),
-    [users, organizationId]
+    () => linkBookingPersonCandidates(roster, organizationId, { viewerIds }),
+    [roster, organizationId, viewerIds]
   )
 
   const link = async (row: UnresolvedBookingPerson) => {
@@ -159,21 +188,54 @@ export function BookingsNotLinkedToPerson({ organizationId }: { organizationId: 
     setNotice(null)
     try {
       const db = getFirebaseDb()
+      // A fresh read of the organisation's people and catalogue rows for the re-check (`linkBookingPersonRefusal`).
+      const [freshRoster, operativeSnap] = await Promise.all([
+        loadOrgRoster(organizationId),
+        getDocs(collection(db, 'organizations', organizationId, 'operatives')),
+      ])
+      const freshOperatives = operativeSnap.docs.map((d) => ({
+        id: d.id,
+        email: typeof d.data().email === 'string' ? (d.data().email as string) : null,
+      }))
       const ref = doc(db, 'users', person.id)
-      // Read the stored list now, so a link added elsewhere is kept (append only).
-      const stored = await getDoc(ref)
-      const formerUserIds = stored.data()?.formerUserIds
-      const write = linkBookingPersonWriteFields({
-        person: { id: person.id, formerUserIds: Array.isArray(formerUserIds) ? formerUserIds : [] },
-        personId: row.personId,
-        actorUserId: auth?.currentUser?.uid ?? '',
-        platform: 'web',
+      const outcome = await runTransaction(db, async (tx) => {
+        const snap = await tx.get(ref)
+        if (!snap.exists()) return { refused: 'That person no longer exists. Check again to refresh the list.' }
+        // The chosen person as stored right now, laid over the fresh roster.
+        const target = linkProfile(snap.id, snap.data())
+        const rosterNow = [...freshRoster.filter((r) => r.id !== snap.id), target]
+        const refusal = linkBookingPersonRefusal({
+          personId: row.personId,
+          targetId: person.id,
+          roster: rosterNow,
+          operatives: freshOperatives,
+          organizationId,
+          viewerIds,
+        })
+        if (refusal) return { refused: refusal.message }
+        const write = linkBookingPersonWriteFields({
+          person: { id: snap.id, formerUserIds: target.formerUserIds ?? [] },
+          personId: row.personId,
+          actorUserId: auth?.currentUser?.uid ?? '',
+          platform: 'web',
+        })
+        if (!write) return { wrote: false }
+        tx.update(ref, {
+          formerUserIds: arrayUnion(...write.arrayUnion.formerUserIds),
+          ...write.set,
+          updatedAt: serverTimestamp(),
+        })
+        return { wrote: true }
       })
-      if (write) await updateDoc(ref, { ...write.set, updatedAt: serverTimestamp() })
-      setNotice(linkBookingPersonDoneMessage(row.count, person.name))
-      setPicking(null)
-      setChoice('')
-      await loadUsers(organizationId, { force: true })
+      if ('refused' in outcome) {
+        setError(outcome.refused ?? null)
+      } else {
+        setNotice(outcome.wrote ? linkBookingPersonDoneMessage(row.count, person.name) : LINK_BOOKING_PERSON_ALREADY_MESSAGE)
+        setPicking(null)
+        setChoice('')
+        await loadUsers(organizationId, { force: true })
+        await run()
+      }
     } catch (err) {
       setError(
         err instanceof Error && /permission/i.test(err.message)
@@ -243,6 +305,7 @@ export function BookingsNotLinkedToPerson({ organizationId }: { organizationId: 
                       </option>
                     ))}
                   </select>
+                  <span className="w-full text-[12px] text-[var(--ink3)]">{LINK_BOOKING_PERSON_SELF_NOTE}</span>
                   <button type="button" className="btn primary sm" disabled={!choice || saving} onClick={() => void link(row)}>
                     {saving ? 'Linking…' : 'Link'}
                   </button>
