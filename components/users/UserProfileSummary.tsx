@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { usePendingNavigation } from '@/lib/navigation/usePendingNavigation'
 import { RouteLoading } from '@/components/shell/RouteLoading'
-import { PendingSpinner } from '@/components/shell/PendingSpinner'
 import { format } from 'date-fns'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
@@ -15,6 +14,8 @@ import { displayTradeType } from '@/lib/staff/staffTradeTypes'
 import { canShowAdminEditProfile, roleLabel } from '@/lib/staff/userEditPermissions'
 import { rosterStatusLabel } from '@/lib/staff/userRosterUtils'
 import { UserAvatar } from '@/components/users/UserAvatar'
+import { Chip, IconTile } from '@/components/ui/page'
+import { ProfileBack, ProfileBand, ProfileIcon, ProfilePage, SaveState } from '@/components/users/profile-ui'
 import { GHOST_UPGRADE_HELP, GHOST_UPGRADE_LABEL, canUpgradeGhost, canViewPersonPay, formatMoney, ghostBadgeLabel, isGhostUser } from '@/lib/canonical'
 import { GhostAppAccessCard } from '@/components/users/GhostAppAccessCard'
 import { loadPayProfile } from '@/lib/pay/payProfileService'
@@ -117,13 +118,15 @@ export function UserProfileSummary({
 
   if (!target) {
     return (
-      <div className="empty card pad mx-auto max-w-2xl">
-        <h3>User not found</h3>
-        <p>That profile is not in this organisation.</p>
-        <Link href={backHref} className="btn primary">
-          Go back
-        </Link>
-      </div>
+      <ProfilePage>
+        <div className="pu-card up-notfound">
+          <h3>User not found</h3>
+          <p>That profile is not in this organisation.</p>
+          <Link href={backHref} className="pu-btn primary">
+            Go back
+          </Link>
+        </div>
+      </ProfilePage>
     )
   }
 
@@ -132,133 +135,142 @@ export function UserProfileSummary({
   const name = `${target.firstName} ${target.surname}`.trim() || roleLabel(target)
   const status = rosterStatusLabel(target)
   const quals = linkedOperative?.qualifications || []
+  const tradeText = displayTradeType(target.tradeTypePreset, target.tradeTypeCustom)
+  const lineManagerText = lineManager ? `${lineManager.firstName} ${lineManager.surname}`.trim() : 'No line manager'
+  const rate = payVisible ? profileRateRow(pay, currencyCode) : null
 
   return (
-    <div className="stack" data-hue="user">
-      <button
-        type="button"
+    <ProfilePage>
+      <ProfileBack
         onClick={() => navigate(backHref)}
         onPointerEnter={() => prefetch(backHref)}
         onFocus={() => prefetch(backHref)}
-        disabled={backPending}
-        aria-busy={backPending || undefined}
-        className="btn sm ghost self-start"
-      >
-        {backPending ? <PendingSpinner /> : null}
-        Back
-      </button>
+        pending={backPending}
+      />
 
-      <section className="hero">
-        <div className="row wrap" style={{ position: 'relative', zIndex: 1, gap: 20 }}>
-          <UserAvatar user={target} size={72} />
-          <div className="grow">
-            <div className="big">{name}</div>
-            <div className="row wrap" style={{ marginTop: 8, gap: 8 }}>
-              <span className="pill" style={{ background: 'rgba(255,255,255,.18)', color: '#fff' }}>
-                {roleLabel(target)}
-              </span>
-              {isGhostUser(target) ? (
-                <span className="pill dot" style={{ background: 'rgba(255,255,255,.18)', color: '#fff' }}>
-                  {ghostBadgeLabel(target)}
-                </span>
-              ) : target.passwordSet ? (
-                <span className="pill dot" style={{ background: 'rgba(255,255,255,.18)', color: '#fff' }}>
-                  Verified
-                </span>
-              ) : (
-                <span className="pill dot" data-hue="warn">
-                  Pending
-                </span>
-              )}
-              <span className="pill dot" style={{ background: 'rgba(255,255,255,.18)', color: '#fff' }}>
-                {status}
-              </span>
-            </div>
-          </div>
-          {canEdit ? (
-            <Link href={editHref} className="btn hbtn solid">
+      <ProfileBand
+        avatar={<UserAvatar user={target} size={64} className="up-avatar-ring" />}
+        eyebrow="User profile"
+        name={name}
+        chips={[
+          { label: roleLabel(target), tone: target.isSuperAdmin ? 'super' : undefined },
+          // Rulebook 1.34.0: a ghost shows its "No app login" badge in place of Verified / Pending.
+          isGhostUser(target)
+            ? { label: ghostBadgeLabel(target), dot: 'slate' }
+            : target.passwordSet
+              ? { label: 'Verified', dot: 'green' }
+              : { label: 'Pending', dot: 'amber', tone: 'warn' },
+          { label: status, dot: status === 'Active' ? 'blue' : 'slate' },
+        ]}
+        aside={
+          canEdit ? (
+            <Link href={editHref} className="pu-btn white">
+              <ProfileIcon name="pencil" />
               Edit profile
             </Link>
           ) : (
-            <span className="pill" style={{ background: 'rgba(255,255,255,.18)', color: '#fff' }}>
-              View only
-            </span>
-          )}
-        </div>
-      </section>
+            <SaveState tone="view">View only</SaveState>
+          )
+        }
+        stats={[
+          // Display only (spec §1): the same values as the Details card, pay behind the same `canViewPersonPay` gate.
+          ...(payVisible ? [{ value: employmentLabel(pay?.employmentType), label: 'Employment' }] : []),
+          ...(rate ? [{ value: rate.value, label: rate.label }] : []),
+          { value: tradeText, label: 'Trade' },
+          { value: lineManagerText, label: 'Line manager' },
+        ]}
+      />
 
-      <section className="card pad">
-        <h2 className="h2" style={{ marginBottom: 16 }}>
-          Details
-        </h2>
-        <dl className="grid g2">
-          {/* Rulebook 1.34.0: a ghost has no email, phone or login (an invited ghost shows the invitation email). */}
-          {!isGhostUser(target) || target.email ? <SummaryRow label="Email" value={target.email} /> : null}
-          {!isGhostUser(target) ? <SummaryRow label="Mobile" value={target.mobileNumber || '—'} /> : null}
-          {!isGhostUser(target) ? (
-          <SummaryRow
-            label="Last active"
-            value={target.lastSeenAt ? format(target.lastSeenAt, "d MMM yyyy 'at' HH:mm") : '—'}
-          />
-          ) : null}
-          <SummaryRow label="Trade" value={displayTradeType(target.tradeTypePreset, target.tradeTypeCustom)} />
-          {payVisible ? <SummaryRow label="Employment" value={employmentLabel(pay?.employmentType)} /> : null}
-          <SummaryRow
-            label="Line manager"
-            value={lineManager ? `${lineManager.firstName} ${lineManager.surname}`.trim() : 'No line manager'}
-          />
-          {!payVisible ? null : pay?.payBasis === 'hourly' && pay.hourlyRate != null ? (
-            <SummaryRow label="Hourly rate" value={`${formatMoney(Number(pay.hourlyRate), currencyCode)}/hr`} />
-          ) : pay?.payBasis === 'day' && pay.dayRate != null ? (
-            <SummaryRow label="Day rate" value={`${formatMoney(Number(pay.dayRate), currencyCode)}/day`} />
-          ) : null}
-        </dl>
-      </section>
-
-      {organization?.id && canUpgradeGhost(currentUser as never, target as never) ? (
-        <GhostAppAccessCard
-          organizationId={organization.id}
-          organizationName={organization.name}
-          viewer={currentUser!}
-          ghost={target}
-          title={GHOST_UPGRADE_LABEL}
-          help={GHOST_UPGRADE_HELP}
-          onDone={() => getUser(userId).then(setTarget)}
-        />
-      ) : null}
-
-      {target.permissions.operativeMode ? (
-        <section className="card pad" data-hue="rep">
-          <div className="row" style={{ marginBottom: 14 }}>
-            <h2 className="h2">Qualifications</h2>
+      <div className="up-grid2">
+        <section className="pu-card">
+          <div className="up-card-h">
+            <IconTile tone="blue" size="sm">
+              <ProfileIcon name="user" />
+            </IconTile>
+            <h2>Details</h2>
           </div>
-          {quals.length === 0 ? (
-            <p className="muted small">No qualifications yet.</p>
-          ) : (
-            <div className="rows">
-              {quals.map((qual) => (
-                <div key={qual.id} className="ritem" style={{ cursor: 'default' }} data-hue="rep">
-                  <span className="grow">
-                    <span className="t">{qual.name}</span>
-                    <span className="s">
-                      {qual.hasEndDate && qual.endDate ? `Expires ${format(qual.endDate, 'd MMM yyyy')}` : 'No expiry'}
-                    </span>
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
+          <dl className="up-dl">
+            {/* Rulebook 1.34.0: a ghost has no email, phone or login (an invited ghost shows the invitation email). */}
+            {!isGhostUser(target) || target.email ? <SummaryRow label="Email" value={target.email} /> : null}
+            {!isGhostUser(target) ? <SummaryRow label="Mobile" value={target.mobileNumber || '—'} /> : null}
+            {!isGhostUser(target) ? (
+              <SummaryRow
+                label="Last active"
+                value={target.lastSeenAt ? format(target.lastSeenAt, "d MMM yyyy 'at' HH:mm") : '—'}
+              />
+            ) : null}
+            <SummaryRow label="Trade" value={tradeText} />
+            {payVisible ? <SummaryRow label="Employment" value={employmentLabel(pay?.employmentType)} /> : null}
+            <SummaryRow label="Line manager" value={lineManagerText} />
+            {rate ? <SummaryRow label={rate.label} value={rate.value} /> : null}
+          </dl>
         </section>
-      ) : null}
-    </div>
+
+        {organization?.id && canUpgradeGhost(currentUser as never, target as never) ? (
+          <GhostAppAccessCard
+            organizationId={organization.id}
+            organizationName={organization.name}
+            viewer={currentUser!}
+            ghost={target}
+            title={GHOST_UPGRADE_LABEL}
+            help={GHOST_UPGRADE_HELP}
+            onDone={() => getUser(userId).then(setTarget)}
+            variant="profile"
+          />
+        ) : null}
+
+        {target.permissions.operativeMode ? (
+          <section className="pu-card">
+            <div className="up-card-h">
+              <IconTile tone="amber" size="sm">
+                <ProfileIcon name="badge" />
+              </IconTile>
+              <h2>Qualifications</h2>
+            </div>
+            {quals.length === 0 ? (
+              <p className="up-empty-text">No qualifications yet.</p>
+            ) : (
+              <div>
+                {quals.map((qual) => (
+                  <div key={qual.id} className="up-qrow">
+                    <b>{qual.name}</b>
+                    <Chip tone={qual.hasEndDate && qual.endDate ? 'amber' : 'slate'}>
+                      {qual.hasEndDate && qual.endDate ? `Expires ${format(qual.endDate, 'd MMM yyyy')}` : 'No expiry'}
+                    </Chip>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        ) : null}
+      </div>
+
+    </ProfilePage>
   )
+}
+
+/**
+ * The rate line the profile shows (Details and the band): hourly when the stored basis is hourly with a rate, day when
+ * it is day with a rate, else none. Display only — the same test the page used before the restyle.
+ */
+export function profileRateRow(
+  pay: { payBasis?: string; dayRate?: number | null; hourlyRate?: number | null } | null | undefined,
+  currencyCode: string
+): { label: string; value: string } | null {
+  if (pay?.payBasis === 'hourly' && pay.hourlyRate != null) {
+    return { label: 'Hourly rate', value: `${formatMoney(Number(pay.hourlyRate), currencyCode)}/hr` }
+  }
+  if (pay?.payBasis === 'day' && pay.dayRate != null) {
+    return { label: 'Day rate', value: `${formatMoney(Number(pay.dayRate), currencyCode)}/day` }
+  }
+  return null
 }
 
 function SummaryRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="f">
-      <span className="eyebrow">{label}</span>
-      <span style={{ fontWeight: 600 }}>{value}</span>
+    <div>
+      <dt>{label}</dt>
+      <dd>{value}</dd>
     </div>
   )
 }
