@@ -127,8 +127,12 @@
   }
 }
 
+/* .mkt: the public marketing pages (MarketingShell, app/marketing.css) always use the dark look,
+   whatever the visitor's saved or system theme. Scoped to the .mkt element, so <html data-theme>
+   and the signed-in app's saved preference are never touched. */
 :root[data-theme='dark'],
-.dark {
+.dark,
+.mkt {
   color-scheme: dark;
   --bg: #0b1220;
   --card: #131c2e;
@@ -722,13 +726,21 @@ a.stat:hover {
 :root[data-theme='dark'] [data-hue='ops'] .chip.on,
 :root[data-theme='dark'] [data-hue='sched'] .chip.on,
 .dark [data-hue='warn'] .chip.on,
+.mkt [data-hue='warn'] .chip.on,
 .dark [data-hue='sw'] .chip.on,
+.mkt [data-hue='sw'] .chip.on,
 .dark [data-hue='leave'] .chip.on,
+.mkt [data-hue='leave'] .chip.on,
 .dark [data-hue='lib'] .chip.on,
+.mkt [data-hue='lib'] .chip.on,
 .dark [data-hue='proj'] .chip.on,
+.mkt [data-hue='proj'] .chip.on,
 .dark [data-hue='hs'] .chip.on,
+.mkt [data-hue='hs'] .chip.on,
 .dark [data-hue='ops'] .chip.on,
-.dark [data-hue='sched'] .chip.on {
+.mkt [data-hue='ops'] .chip.on,
+.dark [data-hue='sched'] .chip.on,
+.mkt [data-hue='sched'] .chip.on {
   color: #1a1408;
 }
 :root[data-theme='dark'] [data-hue='warn'] .chip.on .n,
@@ -740,13 +752,21 @@ a.stat:hover {
 :root[data-theme='dark'] [data-hue='ops'] .chip.on .n,
 :root[data-theme='dark'] [data-hue='sched'] .chip.on .n,
 .dark [data-hue='warn'] .chip.on .n,
+.mkt [data-hue='warn'] .chip.on .n,
 .dark [data-hue='sw'] .chip.on .n,
+.mkt [data-hue='sw'] .chip.on .n,
 .dark [data-hue='leave'] .chip.on .n,
+.mkt [data-hue='leave'] .chip.on .n,
 .dark [data-hue='lib'] .chip.on .n,
+.mkt [data-hue='lib'] .chip.on .n,
 .dark [data-hue='proj'] .chip.on .n,
+.mkt [data-hue='proj'] .chip.on .n,
 .dark [data-hue='hs'] .chip.on .n,
+.mkt [data-hue='hs'] .chip.on .n,
 .dark [data-hue='ops'] .chip.on .n,
-.dark [data-hue='sched'] .chip.on .n {
+.mkt [data-hue='ops'] .chip.on .n,
+.dark [data-hue='sched'] .chip.on .n,
+.mkt [data-hue='sched'] .chip.on .n {
   background: rgba(26, 20, 8, 0.14);
   color: #1a1408;
 }
@@ -1508,46 +1528,62 @@ html {
 /* Leftover Tailwind slate/white from pre-v2 screens — keep copy readable in dark mode. */
 :root[data-theme='dark'] .text-slate-900,
 .dark .text-slate-900,
+.mkt .text-slate-900,
 :root[data-theme='dark'] .text-slate-800,
 .dark .text-slate-800,
+.mkt .text-slate-800,
 :root[data-theme='dark'] .text-gray-900,
-.dark .text-gray-900 {
+.dark .text-gray-900,
+.mkt .text-gray-900 {
   color: var(--ink) !important;
 }
 :root[data-theme='dark'] .text-slate-700,
 .dark .text-slate-700,
+.mkt .text-slate-700,
 :root[data-theme='dark'] .text-slate-600,
-.dark .text-slate-600 {
+.dark .text-slate-600,
+.mkt .text-slate-600 {
   color: var(--ink2) !important;
 }
 :root[data-theme='dark'] .text-slate-500,
 .dark .text-slate-500,
+.mkt .text-slate-500,
 :root[data-theme='dark'] .text-slate-400,
-.dark .text-slate-400 {
+.dark .text-slate-400,
+.mkt .text-slate-400 {
   color: var(--ink3) !important;
 }
 :root[data-theme='dark'] .bg-white,
 .dark .bg-white,
+.mkt .bg-white,
 :root[data-theme='dark'] .bg-white\/95,
-.dark .bg-white\/95 {
+.dark .bg-white\/95,
+.mkt .bg-white\/95 {
   background-color: var(--card) !important;
 }
 :root[data-theme='dark'] .bg-slate-50,
 .dark .bg-slate-50,
+.mkt .bg-slate-50,
 :root[data-theme='dark'] .bg-slate-100,
-.dark .bg-slate-100 {
+.dark .bg-slate-100,
+.mkt .bg-slate-100 {
   background-color: var(--soft) !important;
 }
 :root[data-theme='dark'] .border-slate-100,
 .dark .border-slate-100,
+.mkt .border-slate-100,
 :root[data-theme='dark'] .border-slate-200,
 .dark .border-slate-200,
+.mkt .border-slate-200,
 :root[data-theme='dark'] .border-slate-300,
 .dark .border-slate-300,
+.mkt .border-slate-300,
 :root[data-theme='dark'] .divide-slate-100,
 .dark .divide-slate-100,
+.mkt .divide-slate-100,
 :root[data-theme='dark'] .divide-slate-200,
-.dark .divide-slate-200 {
+.dark .divide-slate-200,
+.mkt .divide-slate-200 {
   border-color: var(--line) !important;
 }
 

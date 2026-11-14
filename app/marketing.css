@@ -435,3 +435,20 @@ html:has(.mkt){scroll-behavior:smooth;scroll-padding-top:calc(84px + env(safe-ar
   .mkt .hero .wrap { grid-template-columns: .9fr 1.1fr; }
   .mkt .ds-heroshot { margin-right: -72px; }
 }
+
+/* ---------- Always dark (owner, 14 Nov) ----------
+   The dark tokens are pinned on .mkt in app/globals.css. This keeps the page canvas behind it
+   (overscroll, the scrollbar) dark too while a marketing page is open; #0b1220 is the dark --bg.
+   It never sets data-theme, so the signed-in app's saved theme is unchanged. */
+html:has(.mkt) { color-scheme: dark; background: #0b1220; }
+html:has(.mkt) body { background: transparent; }
+/* White text on the dark --blue (#4c8be6) is 3.4:1, under AA for button-size text. Filled controls
+   with white text use the light theme's --blue2 instead: 4.5:1 with white, 4.1:1 against the page. */
+.mkt { --mkt-fill: #2F74DA; }
+.mkt .btn.primary,
+.mkt .links a.reg:hover,
+.mkt .links a.reg.on,
+.mkt .wz-rail .st.on .n,
+.mkt .chip.on:not([data-hue] *) { background: var(--mkt-fill); }
+/* The "30-day free trial" badge: white 12.5px text, so the light theme's blue and violet (#6A45E6). */
+.mkt .plan .badge { background: linear-gradient(90deg, var(--mkt-fill), #6A45E6); }
