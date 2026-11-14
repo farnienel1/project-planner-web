@@ -41,7 +41,7 @@ const emptyTimesheets: SignedTimesheetValueTotals = {
   previousPence: 0,
   sheetCount: 0,
   hours: 0,
-  missingRateCount: 0,
+  labourNotCountedCount: 0,
   loaded: true,
 }
 
@@ -271,7 +271,7 @@ export function DeveloperOverviewScreen() {
   const kpis = [
     { label: 'Bookings made', value: formatCount(periodMetrics.bookings), hint: deltaCopy(periodMetrics.bookings, 0).text, definition: 'schedule_edited events in this period. Historic bookings are not invented.' },
     { label: 'Timesheets signed', value: formatCount(timesheetValue.loaded ? timesheetValue.sheetCount : periodMetrics.signed), hint: timesheetValue.loaded ? `${timesheetValue.sheetCount} fully signed sheets` : 'Reading sheets…', definition: METRIC_DEFINITIONS['Timesheets signed'] || 'Fully signed timesheets in the selected period.' },
-    { label: 'Timesheet value', value: timesheetValue.loaded ? formatGbpFromPence(timesheetValue.valuePence) : '…', hint: deltaCopy(timesheetValue.valuePence, timesheetValue.previousPence).text, definition: 'Sum of stored valuePence (and extras) on fully signed timesheets.' },
+    { label: 'Timesheet value', value: timesheetValue.loaded ? formatGbpFromPence(timesheetValue.valuePence) : '…', hint: deltaCopy(timesheetValue.valuePence, timesheetValue.previousPence).text, definition: 'Invoice total (timesheetTotals) of fully signed timesheets: the signed snapshot when stored, else price work and expenses only.' },
     { label: 'Hours on timesheets', value: timesheetValue.loaded ? formatCount(hours) : '…', hint: hours ? `${formatGbpFromPence(avgPerHour)} / hour` : 'Hours stored on signed sheets', definition: 'Sum of valueHours on fully signed timesheets.' },
     { label: 'Projects created', value: formatCount(periodMetrics.projects), hint: deltaCopy(periodMetrics.projects, periodMetrics.prevProjects).text, definition: METRIC_DEFINITIONS['Projects / tasks created'] },
     { label: 'Logins', value: formatCount(periodMetrics.logins), hint: deltaCopy(periodMetrics.logins, periodMetrics.prevLogins).text, definition: 'login / user_logged_in events' },
@@ -315,7 +315,7 @@ export function DeveloperOverviewScreen() {
           <p className="mt-2 text-sm text-white/80">
             {timesheetValue.loaded
               ? `${timesheetValue.sheetCount} fully signed timesheet${timesheetValue.sheetCount === 1 ? '' : 's'} in this period${
-                  timesheetValue.missingRateCount ? ` · ${timesheetValue.missingRateCount} missing a rate` : ''
+                  timesheetValue.labourNotCountedCount ? ` · ${timesheetValue.labourNotCountedCount} without a signed snapshot (price work and expenses only)` : ''
                 }${timesheetValue.error ? ` · ${timesheetValue.error}` : ''}`
               : 'Reading signed timesheets across organisations…'}
           </p>

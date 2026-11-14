@@ -35,6 +35,7 @@ import { normalizeDocumentId } from './scheduleSources'
 import { personIdSet, type PersonRosterRow } from './personIds'
 import { parseTimesheetStatusFields } from './timesheetPeriod'
 import { documentInstantMs, documentWriteFields, type DocumentWriteFields } from './peopleDocuments'
+import { roundPennies } from './payRate'
 
 export type TimesheetEntryDecision = 'pending' | 'approved' | 'declined' | 'edited'
 
@@ -254,7 +255,12 @@ export function timesheetEntryEffectiveAmount(
   amount: number
 ): number {
   if (decision === 'declined') return 0
-  if (decision === 'edited') return finite(revisedAmount) ?? amount
+  // 1.46.0: a revised amount is money and counts in pennies (`roundPennies`), whatever was stored (older saves kept
+  // the unrounded hours-ratio result, e.g. 176.47058823529).
+  if (decision === 'edited') {
+    const revised = finite(revisedAmount)
+    return revised == null ? amount : roundPennies(revised)
+  }
   return amount
 }
 

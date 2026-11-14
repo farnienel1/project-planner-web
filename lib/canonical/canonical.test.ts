@@ -15006,3 +15006,165 @@ test('1.44.0 linkBookingPersonImpact: lists what else a link brings and asks for
   assert.equal(noPay.requiresPayAck, false)
   assert.equal(R112.LINK_BOOKING_PERSON_PAY_ACK_LABEL, 'I understand pay may change')
 })
+
+// MARK: - Rulebook 1.46.0 (rates audit): Edit hours re-prices the booking; revised amounts in pennies; weekly report per booking
+
+const RATES146_POLICY = {
+  ...R112.DEFAULT_PAYROLL_POLICY,
+  standardDayStart: '07:00',
+  standardDayEnd: '16:00',
+  unpaidBreakMinutes: 30,
+  breakWindowStart: '12:00',
+  breakWindowEnd: '12:30',
+  breakPaid: false,
+  paidHoursDerived: true,
+  standardPaidHours: 8.5,
+}
+
+test('1.46.0: revisedPayrollLineAmounts — owner case 07:00–16:00 edited to 07:00–19:00, ×2, £250 a day = 426.47', () => {
+  const base = {
+    dayKey: '2026-11-18',
+    timeZone: 'Europe/London',
+    policy: RATES146_POLICY,
+    startTime: '07:00',
+    endTime: '19:00',
+    otMultiplierOverride: 2,
+    payBasis: 'day',
+    dayRate: 250,
+  }
+  // No overtime line on the sheet: the standard line carries the overtime.
+  const one = R112.revisedPayrollLineAmounts({ ...base, bookingHasOvertimeLine: false })
+  assert.equal(one.standardHours, 8.5)
+  assert.equal(one.overtimeHours, 3)
+  assert.equal(one.overtimeMultiplier, 2)
+  assert.equal(one.standardAmount, 250)
+  assert.equal(one.overtimeAmount, 176.47)
+  assert.equal(one.standardLineAmount, 426.47)
+  assert.equal(one.overtimeLineAmount, null)
+  assert.equal(one.total, 426.47)
+  // With its own overtime line: each line its own part.
+  const two = R112.revisedPayrollLineAmounts({ ...base, bookingHasOvertimeLine: true })
+  assert.equal(two.standardLineAmount, 250)
+  assert.equal(two.overtimeLineAmount, 176.47)
+  assert.equal(two.total, 426.47)
+  // Hourly £30: 8.5 × 30 + 3 × 2 × 30 = 435.
+  assert.equal(R112.revisedPayrollLineAmounts({ ...base, payBasis: 'hourly', dayRate: null, hourlyRate: 30, bookingHasOvertimeLine: false }).total, 435)
+  // The same as the collector's pricing of a booking with those times (payrollHoursResult + payForHours).
+  const hours = R112.payrollHoursResult({
+    booking: { timeSlot: 'CUSTOM_HOURS', workStartTime: '07:00', workEndTime: '19:00', otMultiplierOverride: 2 },
+    dayKey: '2026-11-18',
+    policy: RATES146_POLICY,
+    timeZone: 'Europe/London',
+  })
+  const std = R112.payForHours({ payBasis: 'day', dayRate: 250, paidHours: hours.standardHours, standardDayHours: 8.5 })
+  const ot = R112.payForHours({ payBasis: 'day', dayRate: 250, paidHours: hours.outsideHours, standardDayHours: 8.5, otMultiplier: hours.outsideMultiplier })
+  assert.equal(R112.roundPennies(std + ot), one.total)
+})
+
+test('1.46.0: revisedPayrollLineAmounts reads the policy in effect that day from the state, and keeps the overtime-line cut-off', () => {
+  const state = { current: RATES146_POLICY, prior: R112.DEFAULT_PAYROLL_POLICY, effectiveFrom: '2026-11-01', scheduled: null }
+  const before = R112.revisedPayrollLineAmounts({
+    dayKey: '2026-10-21',
+    timeZone: 'Europe/London',
+    policyState: state,
+    startTime: '07:30',
+    endTime: '16:00',
+    payBasis: 'day',
+    dayRate: 200,
+    bookingHasOvertimeLine: false,
+  })
+  // The default policy (07:30–16:00, 8 paid hours) was in effect then: a full day.
+  assert.equal(before.total, 200)
+  // 07:00–16:02 under the owner policy: 2 minutes of overtime is below the collector's 0.05h line cut-off.
+  const tiny = R112.revisedPayrollLineAmounts({
+    dayKey: '2026-11-18',
+    timeZone: 'Europe/London',
+    policy: RATES146_POLICY,
+    startTime: '07:00',
+    endTime: '16:02',
+    payBasis: 'day',
+    dayRate: 250,
+    bookingHasOvertimeLine: false,
+    overtimeLineMinHours: 0.05,
+  })
+  assert.equal(tiny.overtimeAmount, 0)
+  assert.equal(tiny.total, 250)
+})
+
+test('1.46.0: a revised amount counts in pennies on the invoice, in the totals and in the effective amount', () => {
+  const lines = [
+    { id: 'op-a-normal', amount: 100, dayKey: '2026-11-16', isOvertimeLine: false },
+    { id: 'op-b-normal', amount: 100, dayKey: '2026-11-17', isOvertimeLine: false },
+  ]
+  const sheet = {
+    managerSignedAt: '2026-11-20T10:00:00Z',
+    payrollLineReviews: {
+      'op-a-normal': { decision: 'edited', revisedAmount: 176.47058823529 },
+      'op-b-normal': { decision: 'edited', revisedAmount: 10.006 },
+    },
+  }
+  const rows = R112.timesheetInvoiceRows({ sheet, payrollLines: lines, extrasMode: 'decided' })
+  assert.deepEqual(rows.map((row) => row.amount), [176.47, 10.01])
+  const totals = R112.timesheetTotals({ sheet, payrollLines: lines, extrasMode: 'decided' })
+  assert.equal(totals.labour, R112.roundPennies(176.47 + 10.01))
+  assert.equal(R112.timesheetEntryEffectiveAmount('edited', 176.47058823529, 100), 176.47)
+  // A signed snapshot's edited row stored unrounded is read in pennies (never re-priced).
+  const signed = R112.timesheetInvoiceRows({
+    sheet: { weeklyReportOverride: { lines: [{ id: 'op-a-normal', amount: 176.47058823529, decision: 'edited' }, { id: 'op-b-normal', amount: 99.999, decision: 'agreed' }] } },
+    payrollLines: lines,
+    extrasMode: 'decided',
+  })
+  assert.deepEqual(signed.map((row) => row.amount), [176.47, 99.999])
+})
+
+test("1.46.0: bookingPaySlices + mergeBookingPaySlice sum each booking's pennies (never re-price summed hours)", () => {
+  // Three days of 1h overtime at ×1.5 on a £250 / 8.5h day: 44.12 each → 132.36 (one price of 3h would be 132.35).
+  const hours = R112.payrollHoursResult({
+    booking: { timeSlot: 'CUSTOM_HOURS', workStartTime: '07:00', workEndTime: '17:00', otMultiplierOverride: 1.5 },
+    dayKey: '2026-11-18',
+    policy: RATES146_POLICY,
+    timeZone: 'Europe/London',
+  })
+  const slices = R112.bookingPaySlices({ hours, standardDayHours: 8.5, payBasis: 'day', dayRate: 250 })
+  assert.equal(slices.length, 2)
+  const ot = slices.find((slice) => slice.isOvertime)!
+  assert.equal(ot.paidHours, 1)
+  assert.equal(ot.pay, 44.12)
+  assert.equal(ot.rate, 375)
+  let row = { ...ot }
+  row = R112.mergeBookingPaySlice(row, ot)
+  row = R112.mergeBookingPaySlice(row, ot)
+  assert.equal(row.paidHours, 3)
+  assert.equal(row.pay, 132.36)
+  assert.equal(R112.payForHours({ payBasis: 'day', dayRate: 250, paidHours: 3, standardDayHours: 8.5, otMultiplier: 1.5 }), 132.35)
+  // A PAYE day keeps its hours and pays 0.
+  const paye = R112.bookingPaySlices({ hours, standardDayHours: 8.5, payBasis: 'day', dayRate: 250, isPaye: true })
+  assert.deepEqual(paye.map((slice) => [slice.pay, slice.rate]), [[0, null], [0, null]])
+})
+
+test('1.46.0: the packed iOS script gives the owner case 426.47 end to end (Edit hours → review → invoice and totals)', () => {
+  const source = readFileSync(new URL('./dist/canonical-business.js', import.meta.url), 'utf8')
+  const sandbox: { ProjectPlannerCanonical?: Record<string, (...args: never[]) => unknown> } = {}
+  runInContext(source, createContext(sandbox))
+  const bundle = sandbox.ProjectPlannerCanonical as unknown as typeof R112
+  assert.ok(bundle)
+  const edit = bundle.revisedPayrollLineAmounts({
+    dayKey: '2026-11-18',
+    timeZone: 'Europe/London',
+    policy: RATES146_POLICY,
+    startTime: '07:00',
+    endTime: '19:00',
+    otMultiplierOverride: 2,
+    payBasis: 'day',
+    dayRate: 250,
+    bookingHasOvertimeLine: false,
+    overtimeLineMinHours: 0.05,
+  })
+  assert.equal(edit.standardLineAmount, 426.47)
+  const sheet = { managerSignedAt: '2026-11-20T10:00:00Z', payrollLineReviews: { 'op-b1-normal': { decision: 'edited', revisedAmount: edit.standardLineAmount } } }
+  const lines = [{ id: 'op-b1-normal', amount: 250, dayKey: '2026-11-18', isOvertimeLine: false }]
+  assert.equal(JSON.stringify(bundle.timesheetInvoiceRows({ sheet, payrollLines: lines, extrasMode: 'decided' }).map((row) => row.amount)), '[426.47]')
+  assert.equal(bundle.timesheetTotals({ sheet, payrollLines: lines, extrasMode: 'decided' }).total, 426.47)
+  assert.equal(typeof bundle.bookingPaySlices, 'function')
+  assert.equal(typeof bundle.mergeBookingPaySlice, 'function')
+})

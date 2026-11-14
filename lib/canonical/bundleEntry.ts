@@ -1476,3 +1476,6 @@ export {
   timesheetSnapshotNeedsRebuild,
   timesheetSnapshotReady,
 } from './timesheetSnapshot'
+// Rulebook 1.46.0 §7, §8: re-pricing a line manager's "Edit hours" and the weekly report's per-booking pay.
+export { bookingPaySlices, mergeBookingPaySlice, revisedPayrollLineAmounts } from './timesheetLineEdit'
+export type { BookingPaySlice, RevisedPayrollLineAmounts, RevisedPayrollLineInput } from './timesheetLineEdit'

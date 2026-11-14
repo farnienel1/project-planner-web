@@ -82,6 +82,11 @@ export type TimesheetPayrollLineItem = {
   bookingStartTime?: string
   bookingEndTime?: string
   bookingBreakRemoved?: boolean
+  /**
+   * Rulebook 1.46.0 (never stored): the booking's own overtime rate (`otMultiplierOverride`), so Edit hours re-prices
+   * the booking at it (`revisedPayrollLineAmounts`). Missing = the organisation's rate.
+   */
+  bookingOtMultiplierOverride?: number | null
   /** Rulebook 1.43.0 (rebuild check only, never stored): when the line's booking was created and last written. */
   bookingCreatedAt?: Date
   bookingUpdatedAt?: Date
@@ -92,6 +97,12 @@ export type TimesheetPayrollLineItem = {
    */
   isOverlapping?: boolean
 }
+
+/**
+ * Overtime a booking needs before it gets its own overtime line (web and iOS collectors). Kept as it is in 1.46.0:
+ * whether to keep, drop or apply it everywhere is an owner question (the weekly report has no cut-off).
+ */
+export const TIMESHEET_OVERTIME_LINE_MIN_HOURS = 0.05
 
 export type TimesheetPayrollSummary = {
   totalHours: number
@@ -355,11 +366,12 @@ export function collectTimesheetPayroll({
       hasRate,
       bookingId: lineBookingId,
       ...(workStartTime && workEndTime ? { bookingStartTime: workStartTime, bookingEndTime: workEndTime, bookingBreakRemoved: isBreakRemoved === true } : {}),
+      ...(otMultiplierOverride != null ? { bookingOtMultiplierOverride: otMultiplierOverride } : {}),
       ...(bookingCreatedAt instanceof Date && !Number.isNaN(bookingCreatedAt.getTime()) ? { bookingCreatedAt } : {}),
       ...(bookingUpdatedAt instanceof Date && !Number.isNaN(bookingUpdatedAt.getTime()) ? { bookingUpdatedAt } : {}),
       dayKey: lineDayKey,
     })
-    if (otHours > 0.05) {
+    if (otHours > TIMESHEET_OVERTIME_LINE_MIN_HOURS) {
       const otAmount = payForHours(resolved, otHours, standardDayHours, otMultiplier)
       overtimeAmount += otAmount
       const otRates = overtimeDisplayRates(resolved, otMultiplier)
@@ -382,6 +394,7 @@ export function collectTimesheetPayroll({
         hasRate,
         bookingId: lineBookingId,
         ...(workStartTime && workEndTime ? { bookingStartTime: workStartTime, bookingEndTime: workEndTime, bookingBreakRemoved: isBreakRemoved === true } : {}),
+        ...(otMultiplierOverride != null ? { bookingOtMultiplierOverride: otMultiplierOverride } : {}),
         ...(bookingCreatedAt instanceof Date && !Number.isNaN(bookingCreatedAt.getTime()) ? { bookingCreatedAt } : {}),
         ...(bookingUpdatedAt instanceof Date && !Number.isNaN(bookingUpdatedAt.getTime()) ? { bookingUpdatedAt } : {}),
         dayKey: lineDayKey,

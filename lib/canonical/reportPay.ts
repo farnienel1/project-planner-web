@@ -209,7 +209,10 @@ export function timesheetInvoiceRows<L extends InvoiceLineInput & { id: string; 
   if (override && typeof override === 'object') {
     const snapshot = override as Record<string, unknown>
     for (const row of rowsOf(snapshot.lines)) {
-      const amount = amountOf(row.amount)
+      // 1.46.0: an edited snapshot row stored before 1.46.0 may hold an unrounded revised amount; it counts in pennies
+      // (rounding only — a signed line is never re-priced).
+      const stored = amountOf(row.amount)
+      const amount = row.decision === 'edited' ? roundPennies(stored) : stored
       if (row.decision === 'declined' || amount <= INVOICE_AMOUNT_EPSILON) continue
       const id = String(row.id ?? '').trim()
       const live = liveById.get(normalizeDocumentId(id)) ?? null
@@ -237,7 +240,8 @@ export function timesheetInvoiceRows<L extends InvoiceLineInput & { id: string; 
     if (decided && labourReviews) {
       const review = payrollLineReview(sheet, line.id)
       if (review?.decision === 'declined') continue
-      if (review?.decision === 'edited' && review.revisedAmount != null) amount = review.revisedAmount
+      // 1.46.0: the revised amount in pennies (`roundPennies`), so the invoice rows add up to the invoice total.
+      if (review?.decision === 'edited' && review.revisedAmount != null) amount = roundPennies(review.revisedAmount)
     }
     rows.push({ kind: 'labour', id: line.id, amount, source: 'live', line, stored: null, jobNumber: jobNumberOf((line as unknown as Record<string, unknown>).jobNumber) })
   }

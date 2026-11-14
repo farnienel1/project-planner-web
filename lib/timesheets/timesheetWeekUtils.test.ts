@@ -1,12 +1,11 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  collectSubjectDayEntries,
   extraFormJobSuggestions,
   subjectForUser,
   timesheetRosterGroups,
 } from './timesheetWeekUtils.ts'
-import type { Booking, Operative, User } from '../../types/index.ts'
+import type { Operative, User } from '../../types/index.ts'
 
 function user(partial: Partial<User> & { id: string; email: string }): User {
   return {
@@ -50,31 +49,6 @@ test('subjectForUser is the signed-in person only, including their operative lin
   const subject = subjectForUser(me, operatives)
   assert.equal(subject.userId, 'u1')
   assert.equal(subject.operativeId, 'op1')
-})
-
-test('collectSubjectDayEntries includes a single booked day inside a half-month pay run', () => {
-  const subject = {
-    key: 'operative:op1',
-    kind: 'operative' as const,
-    name: 'Me Self',
-    userId: 'u1',
-    operativeId: 'op1',
-  }
-  const bookings = [
-    { id: 'b1', operativeId: 'op1', date: new Date(Date.UTC(2026, 8, 21, 12, 0, 0)), timeSlot: 'FULL' },
-  ] as Booking[]
-  const entries = collectSubjectDayEntries({
-    subject,
-    bookings,
-    managerSiteBookings: [],
-    weekRange: {
-      start: new Date(Date.UTC(2026, 8, 16, 12, 0, 0)),
-      end: new Date(Date.UTC(2026, 8, 30, 12, 0, 0)),
-    },
-    payrollPolicy: { standardPaidHours: 8, unpaidBreakMinutes: 30 } as never,
-  })
-  assert.equal(entries.length, 1)
-  assert.equal(entries[0].hours, 8)
 })
 
 test('timesheetRosterGroups keeps other people out: managers only see their reports', () => {

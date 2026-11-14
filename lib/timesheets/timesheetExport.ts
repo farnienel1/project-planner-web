@@ -6,7 +6,7 @@ import type { TimesheetDraft } from '@/lib/timesheets/timesheetDraft'
 import type { TimesheetPayrollSummary } from '@/lib/timesheets/timesheetPayrollCollector'
 import { timesheetLabourDetails } from '@/lib/timesheets/timesheetPayrollCollector'
 import { formatTimesheetHours } from '@/lib/timesheets/timesheetHours'
-import { isClockSpanLabel, orgDayHours, payLineDisplay } from '@/lib/timesheets/payBasis'
+import { isClockSpanLabel, orgDayHours, payLineDisplay, roundPennies } from '@/lib/timesheets/payBasis'
 import { signedLabourSlice } from '@/lib/weekly-report/weeklyReportPayroll'
 import { formatAbbreviatedDayInZone, formatStampInZone } from '@/lib/orgTime/zoneTime'
 import { londonDateParts, dayKey } from '@/lib/ios-parity/londonTime'
@@ -250,9 +250,12 @@ type SignedOverrideLine = Parameters<typeof signedOverrideDetails>[0] & {
   date?: Date
 }
 
-/** iOS TimesheetExportHelper grandTotal = sum of export line amounts. */
+/**
+ * iOS TimesheetExportHelper grandTotal = sum of export line amounts. 1.46.0: rounded to pennies (`roundPennies`), as
+ * `timesheetTotals` rounds the same rows, so the export PDF total equals the timesheet total.
+ */
 export function invoiceLinesTotal(lines: TimesheetInvoiceLine[]): number {
-  return lines.reduce((sum, line) => sum + line.amount, 0)
+  return roundPennies(lines.reduce((sum, line) => sum + line.amount, 0))
 }
 
 // Transactional: no marketing content

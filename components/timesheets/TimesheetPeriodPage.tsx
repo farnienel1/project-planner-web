@@ -108,9 +108,9 @@ import { confirmCustomHoursBreak } from '@/lib/scheduling/bookingSlotRules'
 import {
   bookingIdFromLineId,
   initialHoursChoice,
-  revisedPayrollAmount,
+  payrollLineEdit,
 } from '@/lib/timesheets/payrollLineBookingLookup'
-import { extraReviewAfterSave, payrollReviewAfterSave } from '@/lib/timesheets/managerReviewSave'
+import { amountsUnchanged, extraReviewAfterSave, payrollReviewAfterSave } from '@/lib/timesheets/managerReviewSave'
 import {
   CLAIM_EVIDENCE_LEGACY_RECEIPT_NOTE,
   EXPENSE_AMOUNT_LABEL,
@@ -700,8 +700,9 @@ export function TimesheetPeriodPage({
     setHoursStart(choice.startTime)
     setHoursEnd(choice.endTime)
     setHoursBreakRemoved(choice.breakRemoved)
+    // 1.46.0: the line's own multiplier (the booking's overtime rate, else the organisation's for that day).
     setHoursOt(
-      line.isOvertimeLine ? String(weekdayOtMultiplier(line.date, linePolicy)) : ''
+      line.isOvertimeLine ? String(line.otMultiplier ?? weekdayOtMultiplier(line.date, linePolicy)) : ''
     )
     setEditingLineId(line.id)
   }
@@ -722,22 +723,29 @@ export function TimesheetPeriodPage({
     ) {
       return
     }
-    const amount = revisedPayrollAmount({
+    // Rulebook 1.46.0 (`revisedPayrollLineAmounts`): the booking is priced again at the edited times; each line of the
+    // booking stores its own revised amount (the standard line carries the overtime when the booking has no overtime
+    // line). Only the edited line and a line whose amount the edit changes are written.
+    const edit = payrollLineEdit({
       row,
+      lines: payroll.lineItems,
       startTime: hoursStart,
       endTime: hoursEnd,
       breakRemoved: hoursBreakRemoved,
+      otMultiplierOverride: typedOvertimeRate(row, hoursOt),
       policy: rowPolicy,
+      timeZone,
     })
-    const prior = draftPayrollLineReview(draft, editingLineId)?.decision
-    const review = payrollReviewAfterSave(prior, row.amount, amount)
-    void persistOrReport({
-      ...draft,
-      payrollLineReviews: {
-        ...draft.payrollLineReviews,
-        [editingLineId]: review,
-      },
-    })
+    const reviews = { ...draft.payrollLineReviews }
+    for (const line of [edit.standardLine, edit.overtimeLine]) {
+      if (!line) continue
+      const revised = edit.revisedByLineId[line.id]
+      if (revised == null) continue
+      const existing = draftPayrollLineReview(draft, line.id)
+      if (line.id !== row.id && amountsUnchanged(revised, line.amount) && existing?.decision !== 'edited') continue
+      reviews[line.id] = payrollReviewAfterSave(existing?.decision, line.amount, revised)
+    }
+    void persistOrReport({ ...draft, payrollLineReviews: reviews })
     setEditingLineId(null)
   }
 
@@ -1502,6 +1510,7 @@ export function TimesheetPeriodPage({
       {editingLineId ? (
         <EditHoursSheet
           line={payroll.lineItems.find((item) => item.id === editingLineId) || null}
+          lines={payroll.lineItems}
           start={hoursStart}
           end={hoursEnd}
           breakRemoved={hoursBreakRemoved}
@@ -2305,8 +2314,16 @@ function SignSheet({
   )
 }
 
+/** The overtime rate typed on an overtime line's Edit hours (1–3), else null (the booking's own rate). */
+function typedOvertimeRate(line: TimesheetPayrollLineItem, text: string): number | null {
+  if (!line.isOvertimeLine) return null
+  const value = Number(String(text).trim())
+  return Number.isFinite(value) && value >= 1 && value <= 3 ? value : null
+}
+
 function EditHoursSheet({
   line,
+  lines,
   start,
   end,
   breakRemoved,
@@ -2321,6 +2338,7 @@ function EditHoursSheet({
   onSave,
 }: {
   line: TimesheetPayrollLineItem | null
+  lines: TimesheetPayrollLineItem[]
   start: string
   end: string
   breakRemoved: boolean
@@ -2339,13 +2357,17 @@ function EditHoursSheet({
   const paid = paidBookedHours('customHours', start, end, policy, breakRemoved, line.date)
   const ot = overtimeHoursBeyondPaidStandard(line.date, 'customHours', start, end, policy, breakRemoved)
   const otHoursText = overtimeHoursText(line.date, 'customHours', start, end, policy, breakRemoved)
-  const amount = revisedPayrollAmount({
+  // 1.46.0: the booking as edited, priced by the rulebook (`revisedPayrollLineAmounts`), standard and overtime together.
+  const amount = payrollLineEdit({
     row: line,
+    lines,
     startTime: start,
     endTime: end,
     breakRemoved,
+    otMultiplierOverride: typedOvertimeRate(line, otText),
     policy,
-  })
+    timeZone,
+  }).amounts.total
   return (
     <Modal
       labelledBy="ts-edit-hours-title"
@@ -2394,7 +2416,7 @@ function EditHoursSheet({
           <b>{otHoursText ?? `${formatTimesheetHours(ot)}h`}</b>
         </div>
         <div className="r big">
-          <span>Revised amount</span>
+          <span>Revised amount (this booking)</span>
           <span>{money(amount, currency)}</span>
         </div>
       </div>
