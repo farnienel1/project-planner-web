@@ -879,6 +879,26 @@ export function TimesheetPeriodPage({
       </>
     )
 
+  // 1.43.0 (review r318): the sheet could not be loaded. No blank sheet is shown to edit, sign or add to — only the
+  // message and Retry, until it loads.
+  if (loadFailed)
+    return (
+      <>
+        <PageBand back={back} title={heading} />
+        <Note tone="red" role="alert">
+          {TIMESHEET_HISTORY_LOAD_FAILED_MESSAGE}{' '}
+          <button
+            type="button"
+            className="pu-link"
+            style={{ fontWeight: 600, textDecoration: 'underline' }}
+            onClick={() => setLoadAttempt((value) => value + 1)}
+          >
+            Retry
+          </button>
+        </Note>
+      </>
+    )
+
   if (signOpen || managerSignOpen) {
     const signTotals = draftTimesheetTotals({
       lines: payroll.lineItems,
@@ -978,19 +998,6 @@ export function TimesheetPeriodPage({
         <StatRow items={bandStats} />
       </PageBand>
       <PayInputsBanner inputs={payInputs} />
-      {loadFailed ? (
-        <Note tone="red" role="alert">
-          {TIMESHEET_HISTORY_LOAD_FAILED_MESSAGE}{' '}
-          <button
-            type="button"
-            className="pu-link"
-            style={{ fontWeight: 600, textDecoration: 'underline' }}
-            onClick={() => setLoadAttempt((value) => value + 1)}
-          >
-            Retry
-          </button>
-        </Note>
-      ) : null}
       {error ? <Note tone="red" role="alert">{error}</Note> : null}
       {updatedElsewhere ? (
         <Note tone="amber" role="status">

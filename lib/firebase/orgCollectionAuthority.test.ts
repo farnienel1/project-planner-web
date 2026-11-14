@@ -10,6 +10,7 @@ import {
   bookingCoverageOnSubscribe,
   cachedReplayAuthoritative,
   orgPlanAuthoritative,
+  republishHeldAsAuthoritative,
 } from './orgCollectionMerge.ts'
 
 test('a plan is authoritative only when every part has a server snapshot and none was refused', () => {
@@ -68,4 +69,41 @@ test('review r318 (2): coverage is cleared by a non-authoritative publish and by
   assert.equal(bookingCoverageIsArchive(coverage, 'org-1'), false)
   coverage = bookingCoverageAfterPublish(full, { authoritative: orgPlanAuthoritative([{ settled: true, serverSnapshot: true }]) })
   assert.equal(bookingCoverageIsArchive(coverage, 'org-1'), true)
+})
+
+test('review r318 (3): answered → cached change → server confirms unchanged rows → coverage restored', () => {
+  const full = { organizationId: 'org-1', fullHistory: true, fromDayKey: null }
+  // Mirrors subscribeOrgCollection: each publish records whether it was authoritative; a metadata-only server
+  // confirmation re-publishes the held rows when the last publish was not.
+  let lastAuthoritative = false
+  let coverage: typeof full | null = null
+  const publish = (authoritative: boolean) => {
+    lastAuthoritative = authoritative
+    coverage = bookingCoverageAfterPublish(full, { authoritative })
+  }
+  const confirm = (input: { fromCache: boolean; hasPendingWrites: boolean }) => {
+    if (republishHeldAsAuthoritative({ ...input, heldIsSnapshot: true, lastPublishAuthoritative: lastAuthoritative })) publish(true)
+  }
+  publish(true) // the server's answer
+  assert.equal(bookingCoverageIsArchive(coverage, 'org-1'), true)
+  publish(false) // network blip: a cached snapshot with a change
+  assert.equal(bookingCoverageIsArchive(coverage, 'org-1'), false)
+  confirm({ fromCache: true, hasPendingWrites: false }) // still offline: nothing
+  assert.equal(bookingCoverageIsArchive(coverage, 'org-1'), false)
+  confirm({ fromCache: false, hasPendingWrites: true }) // the server answered but this device has an unconfirmed write
+  assert.equal(bookingCoverageIsArchive(coverage, 'org-1'), false)
+  confirm({ fromCache: false, hasPendingWrites: false }) // reconnected: the server confirms the same rows
+  assert.equal(bookingCoverageIsArchive(coverage, 'org-1'), true)
+  // Already authoritative: a further confirmation publishes nothing new.
+  assert.equal(republishHeldAsAuthoritative({ fromCache: false, hasPendingWrites: false, heldIsSnapshot: true, lastPublishAuthoritative: true }), false)
+  // Rows held from an older bound are not this snapshot: never re-published as its answer.
+  assert.equal(republishHeldAsAuthoritative({ fromCache: false, hasPendingWrites: false, heldIsSnapshot: false, lastPublishAuthoritative: false }), false)
+})
+
+test('review r318 (3): a plan part that published a cached change is not authoritative until the server confirms it', () => {
+  // Plan parts carry `currentFromServer` (not the sticky "ever answered"): a cached change makes the plan non-authoritative.
+  assert.equal(orgPlanAuthoritative([{ settled: true, serverSnapshot: true }, { settled: true, serverSnapshot: false }]), false)
+  const confirmed = republishHeldAsAuthoritative({ fromCache: false, hasPendingWrites: false, heldIsSnapshot: true, lastPublishAuthoritative: false })
+  assert.equal(confirmed, true)
+  assert.equal(orgPlanAuthoritative([{ settled: true, serverSnapshot: true }, { settled: true, serverSnapshot: confirmed }]), true)
 })

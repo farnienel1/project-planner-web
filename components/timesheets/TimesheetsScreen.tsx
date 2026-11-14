@@ -76,7 +76,7 @@ import {
   WarnIcon,
   type DataColumn,
 } from '@/components/ui/page'
-import type { TimesheetInputsState } from '@/lib/timesheets/timesheetInputs'
+import { EXPORT_STOPPED_MESSAGE, type TimesheetInputsState } from '@/lib/timesheets/timesheetInputs'
 import type { PayrollTimePolicyState } from '@/lib/canonical'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 
@@ -290,14 +290,40 @@ export function TimesheetsScreen({
     return { hours: totals.hours, overtimeHours: totals.overtimeHours, priceWork: totals.priceWork, expenses: totals.expenses }
   }
 
-  const persistExportedFlag = async (exportedAt: Date) => {
-    if (!organization?.id || !user) return
+  // Rulebook 1.43.0 (review r318): the bookings gate as it is NOW (not as it was when Export was pressed), re-checked
+  // before each person — `coverage` can drop mid-export (a re-plan, a network blip).
+  const payInputsRef = useRef(payInputs)
+  payInputsRef.current = payInputs
+
+  /**
+   * Stamps each listed sheet exported and returns the stamped copies (by member id), so the invoice is built from the
+   * very snapshot that was saved. Review r318: each sheet is re-read fresh; one another device exported meanwhile is
+   * skipped (never rebuilt or re-stamped); the gate is re-checked before each person and the export stops with
+   * `EXPORT_STOPPED_MESSAGE` when the bookings are reloading.
+   */
+  const persistExportedFlag = async (exportedAt: Date): Promise<{ exported: Map<string, TimesheetDraft>; skipped: string[] }> => {
+    const exported = new Map<string, TimesheetDraft>()
+    const skipped: string[] = []
+    if (!organization?.id || !user) return { exported, skipped }
     for (const member of visible) {
       const listed = drafts.get(member.id)
       if (!listed) continue
+      if (!payInputsRef.current.ready) {
+        throw new Error(
+          exported.size > 0
+            ? `${EXPORT_STOPPED_MESSAGE} ${exported.size} timesheet${exported.size === 1 ? ' was' : 's were'} exported before it stopped.`
+            : EXPORT_STOPPED_MESSAGE
+        )
+      }
       const full = await loadTimesheetDraft(organization.id, member.id, periodStart, timeZone, periodEnd)
+      // Another device exported this sheet meanwhile: leave it exactly as it is.
+      if (full.exportedAt) {
+        skipped.push(displayName(member))
+        continue
+      }
       const documentId = timesheetSourceDocumentId(full)
-      const source = full.operativeSignedAt ? full : listed
+      // Review r318: always the fresh copy — the stamp and the invoice are built from the same sheet.
+      const source = full
       if (!source.operativeSignedAt) continue
       // Rulebook 1.43.0 (review r318): build (and, if it was frozen empty, rebuild — `timesheetSnapshotNeedsRebuild`)
       // the snapshot BEFORE the sheet is stamped exported; an exported snapshot is never rebuilt afterwards.
@@ -332,7 +358,9 @@ export function TimesheetsScreen({
         documentId,
         access: { subjectHasLineManager: !userTimesheetSelfSigned(member, users) },
       })
+      exported.set(member.id, agreed)
     }
+    return { exported, skipped }
   }
 
   const exportSigned = async () => {
@@ -352,11 +380,12 @@ export function TimesheetsScreen({
     const failed: string[] = []
     const exportedAt = new Date()
     try {
-      await persistExportedFlag(exportedAt)
+      const { exported, skipped } = await persistExportedFlag(exportedAt)
       forgetExportedTimesheetHistory()
       for (const member of visible) {
-        const draft = drafts.get(member.id)
-        if (!draft) continue
+        // Review r318: the invoice is the snapshot that was just saved (`exported`); a skipped sheet gets none.
+        const agreed = exported.get(member.id)
+        if (!agreed) continue
         const name = displayName(member)
         const payroll = collectTimesheetPayroll({
           user: member,
@@ -376,28 +405,6 @@ export function TimesheetsScreen({
           scheduleOptions,
           aliasUserIds: userIdsSharingEmail(member, users),
         })
-        // 1.43.0: the same snapshot the stamp above saved (built before `exportedAt`, so an empty one is rebuilt).
-        const builtForInvoice = applyWeeklyReportOverride({
-          draft: { ...draft, exportedAt: null },
-          user: member,
-          users,
-          viewer: user,
-          weekStart: periodStart,
-          weekEnd: periodEnd,
-          bookings,
-          managerSiteBookings,
-          operatives,
-          projects,
-          smallWorks,
-          history,
-          payrollPolicy,
-          payrollPolicyPrior,
-          payrollPolicyEffectiveFrom,
-          payrollPolicyState,
-          scheduleOptions,
-          timeZone,
-        })
-        const agreed = { ...builtForInvoice, exportedAt }
         const lines = invoiceLinesForTimesheet({
           payroll,
           draft: agreed,
@@ -432,7 +439,7 @@ export function TimesheetsScreen({
           utrNumber: taxIds?.utrNumber || undefined,
           timeZone,
           lines,
-          notes: signatureNotes(draft, timeZone),
+          notes: signatureNotes(agreed, timeZone),
           documentTitle: 'Timesheet',
           periodMetaLabel: 'PAYMENT RUN',
           totalLabel: 'Total timesheet amount',
@@ -484,6 +491,9 @@ export function TimesheetsScreen({
         setExportMessage('Timesheets were exported. Add an email address to receive the filing copy.')
       } else {
         setExportMessage(failed.length ? `Exported. Storage backup skipped: ${failed.join(', ')}.` : 'Timesheets exported.')
+      }
+      if (skipped.length > 0) {
+        setExportMessage((message) => `${message ?? 'Timesheets exported.'} Already exported on another device, left as it was: ${skipped.join(', ')}.`)
       }
       router.replace(timesheetsTeamHref({ tab: 'exported' }))
     } catch (error) {

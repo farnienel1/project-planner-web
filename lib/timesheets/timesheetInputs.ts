@@ -63,3 +63,6 @@ export function withBookingsGate(
   })
   return snapshot.ready ? inputs : { ready: false, failed: snapshot.failed, message: snapshot.message, retry: inputs.retry }
 }
+
+/** 1.43.0 (review r318): Export stops before the next person when the bookings gate closes mid-export. */
+export const EXPORT_STOPPED_MESSAGE = 'Export stopped: the bookings are reloading. Try again in a moment.'

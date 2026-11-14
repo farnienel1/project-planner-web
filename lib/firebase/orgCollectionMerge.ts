@@ -98,3 +98,19 @@ export function bookingCoverageOnSubscribe(
 ): BookingCoverage | null {
   return sameLiveQuery ? current : null
 }
+
+/**
+ * 1.43.0 (review r318, third round): whether a metadata-only snapshot (no document changed) re-publishes the held rows
+ * as authoritative. Yes when the server confirmed them (not from cache, no unconfirmed writes of this device), the
+ * held rows are this snapshot, and the last publish to the store was not authoritative — the query's first server
+ * answer, or the confirmation after a network blip published a cached change. Otherwise the store would keep its
+ * cleared `coverage` until a reload.
+ */
+export function republishHeldAsAuthoritative(input: {
+  fromCache: boolean
+  hasPendingWrites: boolean
+  heldIsSnapshot: boolean
+  lastPublishAuthoritative: boolean
+}): boolean {
+  return !input.fromCache && !input.hasPendingWrites && input.heldIsSnapshot && !input.lastPublishAuthoritative
+}
