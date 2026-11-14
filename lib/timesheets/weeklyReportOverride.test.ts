@@ -501,8 +501,12 @@ test('1.43.0: an empty frozen snapshot is rebuilt from the live bookings; signat
   // Signed while no bookings had loaded: the snapshot has no labour lines.
   const frozen = applyWeeklyReportOverride({ ...base, bookings: [], draft: signed })
   assert.equal(frozen.weeklyReportOverride?.lines.length, 0)
-  // The bookings arrive: the next save rebuilds it.
-  const rebuilt = applyWeeklyReportOverride({ ...base, draft: frozen })
+  // Review r318: a booking created after the sheet was approved never rebuilds it (a signed sheet is never re-priced).
+  const addedLater = booking({ createdAt: new Date('2026-09-25T09:00:00Z') })
+  assert.equal(applyWeeklyReportOverride({ ...base, bookings: [addedLater], draft: frozen }).weeklyReportOverride?.lines.length, 0)
+  // The booking that already existed arrives: the next save rebuilds it.
+  const existed = booking({ createdAt: new Date('2026-09-10T09:00:00Z') })
+  const rebuilt = applyWeeklyReportOverride({ ...base, bookings: [existed], draft: frozen })
   assert.equal(rebuilt.weeklyReportOverride?.lines.length, 1)
   assert.equal(rebuilt.weeklyReportOverride?.lines[0].bookingId, 'b1')
   assert.equal(rebuilt.weeklyReportOverride?.approvedAt.getTime(), frozen.weeklyReportOverride?.approvedAt.getTime())
@@ -510,12 +514,12 @@ test('1.43.0: an empty frozen snapshot is rebuilt from the live bookings; signat
   assert.equal(rebuilt.managerSignedAt, signedAt)
   assert.equal(rebuilt.operativeSignedAt, day)
   // Exported: left as it is.
-  const exported = applyWeeklyReportOverride({ ...base, draft: { ...frozen, exportedAt: new Date('2026-09-20T09:00:00Z') } })
+  const exported = applyWeeklyReportOverride({ ...base, bookings: [existed], draft: { ...frozen, exportedAt: new Date('2026-09-20T09:00:00Z') } })
   assert.equal(exported.weeklyReportOverride?.lines.length, 0)
   // A snapshot with labour lines is never re-priced, even when the bookings later change.
   const later = applyWeeklyReportOverride({
     ...base,
-    bookings: [booking({ id: 'b1' }), booking({ id: 'b2', timeSlot: 'AM' })],
+    bookings: [existed, booking({ id: 'b2', timeSlot: 'AM', createdAt: new Date('2026-09-10T09:00:00Z') })],
     draft: rebuilt,
   })
   assert.deepEqual(later.weeklyReportOverride?.lines.map((line) => line.bookingId), ['b1'])

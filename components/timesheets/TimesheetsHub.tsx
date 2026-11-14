@@ -4,6 +4,7 @@
  */
 'use client'
 
+import { bookingCoverageIsArchive } from '@/lib/firebase/orgCollectionMerge'
 import { useEffect, useMemo, useState } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { CalendarDaysIcon, ClockIcon, UserGroupIcon } from '@heroicons/react/24/solid'
@@ -306,9 +307,9 @@ export function TimesheetsHub() {
 
   // Rulebook 1.43.0 (`timesheetSnapshotReady`): the whole booking archive this screen asked for has arrived for the
   // open organisation (labour and manager site bookings) — never just the rows an earlier, narrower listener held.
-  const coversArchive = (coverage: { organizationId: string; fullHistory: boolean } | null) =>
-    Boolean(coverage && organization?.id && coverage.organizationId === organization.id && coverage.fullHistory)
-  const bookingsLoaded = coversArchive(bookingCoverage) && coversArchive(managerCoverage)
+  // `coverage` is set only from a server answer of the query (every part of a plan), never cached or partial rows.
+  const bookingsLoaded =
+    bookingCoverageIsArchive(bookingCoverage, organization?.id) && bookingCoverageIsArchive(managerCoverage, organization?.id)
   const bookingsFailed = !bookingsLoaded && Boolean(bookingsError || managerBookingsError)
 
   const periodPageProps = {

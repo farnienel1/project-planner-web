@@ -50,7 +50,7 @@ function subscribeBookingsFor(
   key: string,
   organizationId: string,
   collectionName: 'managerSiteBookings',
-  onDocs: (docs: OrgCollectionDoc[]) => void,
+  onDocs: (docs: OrgCollectionDoc[], meta?: { authoritative: boolean }) => void,
   onError: (error: { message: string }) => void,
   options: { queryId: string; constraints: ReturnType<typeof bookingDownloadConstraints> }
 ): void {
@@ -163,7 +163,7 @@ export const useManagerScheduleStore = create<ManagerScheduleState>((set, get) =
       'managerSiteBookings',
       organizationId,
       'managerSiteBookings',
-      (docs) => {
+      (docs, meta) => {
         const managerSiteBookings: ManagerSiteBooking[] = []
         for (const entry of docs) {
           const parsed = parseManagerSiteBooking(entry.id, entry.data, organizationId)
@@ -173,11 +173,9 @@ export const useManagerScheduleStore = create<ManagerScheduleState>((set, get) =
         const previous = get().managerSiteBookings.filter(
           (row) => !row.organizationId || organizationIdsMatch(row.organizationId, organizationId)
         )
-        set({
-          managerSiteBookings: retainParsedRows(docs.length, previous, managerSiteBookings),
-          loading: false,
-          coverage,
-        })
+        const rows = retainParsedRows(docs.length, previous, managerSiteBookings)
+        // 1.43.0: `coverage` only from a server answer of this query (see `useBookingStore`).
+        set(meta?.authoritative === true ? { managerSiteBookings: rows, loading: false, coverage } : { managerSiteBookings: rows, loading: false })
       },
       (error) => set({ error: error.message, loading: false }),
       { queryId, constraints: bookingDownloadConstraints(managerDownload) }

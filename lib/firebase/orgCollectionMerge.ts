@@ -38,3 +38,37 @@ export function readerDroppedJobDocuments(docs: readonly OrgCollectionDoc[], isP
 export function isMetadataOnlySnapshot(input: { documentChangeCount: number; deliveredBefore: boolean }): boolean {
   return input.deliveredBefore && input.documentChangeCount === 0
 }
+
+/**
+ * 1.43.0: a plan's merged rows (`subscribeOrgPlan`) are authoritative — the complete answer to every query — only
+ * when every part has settled with a server (not cache) snapshot and none was refused. The publish made when the plan
+ * starts (before any part answered) and a cache snapshot are not. A plan with no parts reads nothing: complete.
+ */
+export function orgPlanAuthoritative(
+  parts: ReadonlyArray<{ settled: boolean; failed?: boolean; serverSnapshot?: boolean }>
+): boolean {
+  return parts.every((part) => part.settled && part.failed !== true && part.serverSnapshot === true)
+}
+
+/**
+ * 1.43.0: the remembered rows a listener replays on (re)subscribe are the server's copy of the requested query only
+ * when the live listener is that same query and has had a server snapshot. The memory is kept per listener key and
+ * organisation, not per query, so a widened bound (bookings → the whole archive) first replays the narrower rows.
+ */
+export function cachedReplayAuthoritative(input: {
+  liveQueryId: string | null
+  requestedQueryId: string
+  serverDeliveredQuery: string | null
+  organizationId: string
+}): boolean {
+  if (input.liveQueryId == null || input.liveQueryId !== input.requestedQueryId) return false
+  return input.serverDeliveredQuery === `${input.organizationId}|${input.requestedQueryId}`
+}
+
+/** 1.43.0: a booking store's `coverage` is the whole archive of the open organisation (the timesheet screens' need). */
+export function bookingCoverageIsArchive(
+  coverage: { organizationId: string; fullHistory: boolean } | null | undefined,
+  organizationId: string | null | undefined
+): boolean {
+  return Boolean(coverage && organizationId && coverage.organizationId === organizationId && coverage.fullHistory)
+}

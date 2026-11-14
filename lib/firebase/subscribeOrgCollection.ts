@@ -29,7 +29,7 @@ import { db } from '@/lib/firebase/config'
 import { isRetryableAuthLoadError, authLoadRetryDelayMs } from '@/lib/auth/authBoot'
 import { waitForAuthToken } from '@/lib/firebase/waitForAuthToken'
 import { unsubscribeOrgPlansOutside } from '@/lib/firebase/subscribeOrgPlan'
-import { isMetadataOnlySnapshot, mergeOrgCollectionSnapshot, type OrgCollectionDoc } from '@/lib/firebase/orgCollectionMerge'
+import { cachedReplayAuthoritative, isMetadataOnlySnapshot, mergeOrgCollectionSnapshot, type OrgCollectionDoc } from '@/lib/firebase/orgCollectionMerge'
 
 export type { OrgCollectionDoc } from '@/lib/firebase/orgCollectionMerge'
 
@@ -131,7 +131,16 @@ export function subscribeOrgCollection(
   const storedKey = cacheKey(key, organizationId)
   const cached = lastDocs.get(storedKey)
   if (cached) {
-    onDocs(cached, { authoritative: false })
+    // 1.43.0: the remembered list is the server's copy of THIS query only when the live listener is this query and
+    // has had a server snapshot (the cache is keyed by key + organisation, not by query: a widened bound replays the
+    // narrower rows first).
+    const serverCopyOfThisQuery = cachedReplayAuthoritative({
+      liveQueryId: orgs.get(key) === organizationId && unsubs.has(key) ? (queryIds.get(key) ?? '') : null,
+      requestedQueryId: queryId,
+      serverDeliveredQuery: serverDelivered.get(key) ?? null,
+      organizationId,
+    })
+    onDocs(cached, { authoritative: serverCopyOfThisQuery })
   }
 
   if (!db) return
@@ -219,12 +228,16 @@ export function subscribeOrgCollection(
           isMetadataOnlySnapshot({ documentChangeCount: snap.docChanges().length, deliveredBefore: delivered.get(key) === thisQuery })
         ) {
           // The server confirmed the cached copy or acknowledged a write; no document changed. Flags only — the
-          // store is not called, so it sees exactly the snapshots it saw before.
+          // store is not called, so it sees exactly the snapshots it saw before — except once, when this is the
+          // query's first server answer: 1.43.0 re-publishes the same rows as authoritative, so a screen waiting for
+          // the server (a timesheet's bookings, `timesheetSnapshotReady`) learns the held rows are complete.
+          const firstServerAnswer = !snap.metadata.fromCache && serverDelivered.get(key) !== thisQuery
           if (!snap.metadata.fromCache) serverDelivered.set(key, thisQuery)
           pendingWrites.set(key, {
             any: snap.metadata.hasPendingWrites,
             ids: new Set(snap.docs.filter((entry) => entry.metadata.hasPendingWrites).map((entry) => entry.id)),
           })
+          if (firstServerAnswer && heldIsSnapshot) activeCallback(key)?.onDocs(held, { authoritative: true })
           return
         }
         emit(snap)

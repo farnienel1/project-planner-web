@@ -984,9 +984,13 @@ Job types and other org settings (only jobTypes doc is used today). Org members 
 
 ## `/databases/{database}/documents/organizations/{organizationId}/settings/{settingId}`
 
-### `allow read` — own documents first (1.43.0)
+### `allow read` — own timesheet documents first (1.43.0, review r318)
 
-`resource.data.get('userId', null) == request.auth.uid || (…the 1.42 condition…)`. A query cannot prove that it never returns a `variations_*` / `variationItem_*` document, so before 1.43.0 the read's first clause (staff for variation documents) refused every operative's own-timesheet query (`userId ==` their uid, or `in [their uid]`). With the caller's own `userId` tried first, that query is provable; nothing else opens (a settings document carries a top-level `userId` only for a timesheet, which the person may already read). Static compile cost 234,014 → 234,033 (+19); emulator type check 0 issues. Suite `tests/timesheetSettings.rules.test.ts`. Under `RULES_STRICT_BUDGET=1` its two operative denials (another person's `userId` query, a whole-collection list) are refused by the 1,000-expression limit — the same as on the 1.42 rules (measured), not a new refusal.
+`(resource.data.get('userId', null) == request.auth.uid && (request.method == 'list' || settingId.matches('^timesheet_.*'))) || (…the 1.42 condition…)`. A query cannot prove that it never returns a `variations_*` / `variationItem_*` document, so before 1.43.0 the read's first clause (staff for variation documents) refused every operative's own-timesheet query (`userId ==` their uid, or `in [their uid]`). A list cannot test the document id either (measured: `settingId.matches(…)` in the clause refuses the query), hence the `request.method == 'list'` branch; a direct read still requires a `timesheet_` id. To keep the list branch safe, the write rule refuses a top-level `userId` on any non-timesheet settings document (create without one; an update keeps the stored value). Known limit: a legacy non-timesheet document already carrying `userId` = the caller is returned to them by their own query (seeded in the suite as `variations_J2`); both apps keep only `timesheet_` ids.
+
+`timesheetOwnerKeepsSubject` (review r318): adding a missing `userId` needs `settingId` to start `timesheet_{that id}_` — before, an operative could claim another person's legacy sheet stored without `userId` by writing their own uid into it (privatePay on or off).
+
+Static compile cost 234,014 (main) → 234,098 (+84); emulator type check 0 issues. Under `RULES_STRICT_BUDGET=1` the suite's operative list denials are refused by the 1,000-expression limit — the same as on the 1.42 rules (measured), not a new refusal.
 
 ### `isOwnTimesheetSettings`
 

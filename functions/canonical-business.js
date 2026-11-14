@@ -11243,7 +11243,7 @@ var ProjectPlannerCanonical = (() => {
   function rulebookStamp() {
     return {
       version: true ? "1.43.0" : "",
-      sha256: true ? "f51d24f45e29e8bccc7e1197bd49059387a1dffdd38a0cea6c41393c73c32c4f" : ""
+      sha256: true ? "b18befe6809eb188d813c62dbccae9cf918cc8620b647cb55cc9d22260fa8eae" : ""
     };
   }
   function rulebookVersionLabel(version) {
@@ -22954,8 +22954,13 @@ var ProjectPlannerCanonical = (() => {
     if (present(sheet?.exportedAt)) return false;
     const stored = Array.isArray(override.lines) ? override.lines.length : 0;
     if (stored > 0) return false;
-    const live = typeof liveLabourLines === "number" ? liveLabourLines : (liveLabourLines ?? []).filter((line) => line && line.isPayeDay !== true).length;
-    return live > 0;
+    const approvedMs = documentInstantMs(override.approvedAt) ?? documentInstantMs(sheet?.managerSignedAt) ?? documentInstantMs(sheet?.approvedAt);
+    if (approvedMs == null) return false;
+    return (liveLabourLines ?? []).some((line) => {
+      if (!line || line.isPayeDay === true) return false;
+      const created = documentInstantMs(line.bookingCreatedAt);
+      return created != null && created <= approvedMs;
+    });
   }
   function timesheetOwnerCanAddExtras(sheet, options = {}) {
     if (options.selfSigned === true) return { allowed: true, message: null };

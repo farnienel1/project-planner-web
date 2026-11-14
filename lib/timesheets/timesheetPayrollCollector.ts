@@ -82,6 +82,8 @@ export type TimesheetPayrollLineItem = {
   bookingStartTime?: string
   bookingEndTime?: string
   bookingBreakRemoved?: boolean
+  /** Rulebook 1.43.0 (display / rebuild check only, never stored): when the line's booking was created. */
+  bookingCreatedAt?: Date
   dayKey?: string
   /**
    * `overlappingBookingIds`: this booking overlaps another on the same day. Every booking is
@@ -162,6 +164,19 @@ export function timesheetLabourDetails(line: TimesheetPayrollLineItem, currencyC
   const clock = timesheetLineClockText(line.details)
   if (isClockSpanLabel(clock)) return `${clock} · ${equation}`
   return equation
+}
+
+function toDateOrNull(value: unknown): Date | null {
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value
+  if (typeof value === 'number' || typeof value === 'string') {
+    const date = new Date(value)
+    return Number.isNaN(date.getTime()) ? null : date
+  }
+  if (value && typeof value === 'object' && typeof (value as { toDate?: unknown }).toDate === 'function') {
+    const date = (value as { toDate: () => Date }).toDate()
+    return date instanceof Date && !Number.isNaN(date.getTime()) ? date : null
+  }
+  return null
 }
 
 export function collectTimesheetPayroll({
@@ -259,7 +274,8 @@ export function collectTimesheetPayroll({
     isBreakRemoved: boolean | undefined,
     labels: { jobNumber: string; siteName: string },
     operative?: Operative | null,
-    otMultiplierOverride?: number | null
+    otMultiplierOverride?: number | null,
+    bookingCreatedAt?: Date | null
   ) => {
     if (!isDateInPeriod(date, periodStart, periodEnd, timeZone)) return
     if (!countedDays.has(dayKey(date, zone))) return
@@ -337,6 +353,7 @@ export function collectTimesheetPayroll({
       hasRate,
       bookingId: lineBookingId,
       ...(workStartTime && workEndTime ? { bookingStartTime: workStartTime, bookingEndTime: workEndTime, bookingBreakRemoved: isBreakRemoved === true } : {}),
+      ...(bookingCreatedAt instanceof Date && !Number.isNaN(bookingCreatedAt.getTime()) ? { bookingCreatedAt } : {}),
       dayKey: lineDayKey,
     })
     if (otHours > 0.05) {
@@ -362,6 +379,7 @@ export function collectTimesheetPayroll({
         hasRate,
         bookingId: lineBookingId,
         ...(workStartTime && workEndTime ? { bookingStartTime: workStartTime, bookingEndTime: workEndTime, bookingBreakRemoved: isBreakRemoved === true } : {}),
+        ...(bookingCreatedAt instanceof Date && !Number.isNaN(bookingCreatedAt.getTime()) ? { bookingCreatedAt } : {}),
         dayKey: lineDayKey,
       })
     }
@@ -381,7 +399,8 @@ export function collectTimesheetPayroll({
       booking.isBreakRemoved,
       projectLabel(booking.projectId, projects, smallWorks),
       matchedOperative,
-      booking.otMultiplierOverride
+      booking.otMultiplierOverride,
+      toDateOrNull(booking.createdAt)
     )
   }
 
@@ -400,7 +419,8 @@ export function collectTimesheetPayroll({
       managerLabels(booking, projects, smallWorks),
       linked || matched[0],
       // Rulebook 1.29.0: a manager site booking's own overtime rate prices its overtime part too.
-      booking.otMultiplierOverride
+      booking.otMultiplierOverride,
+      toDateOrNull(booking.createdAt)
     )
   }
 

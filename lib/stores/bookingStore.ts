@@ -52,7 +52,7 @@ function subscribeBookingsFor(
   key: string,
   organizationId: string,
   collectionName: 'bookings',
-  onDocs: (docs: OrgCollectionDoc[]) => void,
+  onDocs: (docs: OrgCollectionDoc[], meta?: { authoritative: boolean }) => void,
   onError: (error: { message: string }) => void,
   options: { queryId: string; constraints: ReturnType<typeof bookingDownloadConstraints> }
 ): void {
@@ -156,11 +156,14 @@ export const useBookingStore = create<BookingState>((set, get) => ({
     else if (already || current.length > 0) set({ loading: false })
     else set({ loading: true, error: null })
     const coverage = { organizationId, fullHistory: bookingDownload.fullHistory, fromDayKey: bookingDownload.loadedFromDayKey }
-    subscribeBookingsFor('bookings', organizationId, 'bookings', (docs) => {
+    subscribeBookingsFor('bookings', organizationId, 'bookings', (docs, meta) => {
       const previous = get().bookings.filter(
         (row) => !row.organizationId || organizationIdsMatch(row.organizationId, organizationId)
       )
-      set({ bookings: bookingsFromListenerDocs({ organizationId, docs, previous }), loading: false, ready: true, coverage })
+      const bookings = bookingsFromListenerDocs({ organizationId, docs, previous })
+      // 1.43.0: `coverage` only from a server answer of this query (every part of a plan): cached or partial rows
+      // (a widened bound replays the narrower rows first) never count as the period's bookings.
+      set(meta?.authoritative === true ? { bookings, loading: false, ready: true, coverage } : { bookings, loading: false, ready: true })
     }, (error) => {
       set({ error: error.message, loading: false })
     }, { queryId, constraints: bookingDownloadConstraints(bookingDownload) })

@@ -16,7 +16,7 @@ import test from 'node:test'
 import { assertSucceeds, initializeTestEnvironment, type RulesTestEnvironment } from '@firebase/rules-unit-testing'
 import { assertFails } from './rulesAssert.ts'
 import { claimsContext } from './authClaimsContext.ts'
-import { collection, doc, getDoc, getDocs, query, setDoc, Timestamp, where } from 'firebase/firestore'
+import { collection, deleteDoc, doc, getDoc, getDocs, query, setDoc, Timestamp, updateDoc, where } from 'firebase/firestore'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const rules = readFileSync(path.join(root, 'firestore.rules'), 'utf8')
@@ -68,6 +68,13 @@ test.before(async () => {
     await setDoc(doc(fs, 'organizations', ORG, 'settings', `timesheet_${OP}_1763251200`), sheet(OP, '2026-11-16'))
     await setDoc(doc(fs, 'organizations', ORG, 'settings', `timesheet_${OTHER}_1761955200`), sheet(OTHER, '2026-11-01'))
     await setDoc(doc(fs, 'organizations', ORG, 'settings', 'variations_J1'), { trades: ['Plumbing'] })
+    // Review r318: a variation document that carries a top-level userId (seeded with the rules off; the rules no
+    // longer let anyone write one) is still never readable by that person through the own-document clause.
+    await setDoc(doc(fs, 'organizations', ORG, 'settings', 'variations_J2'), { trades: ['Roofing'], userId: OP })
+    // A legacy sheet of another person stored without userId.
+    await setDoc(doc(fs, 'organizations', ORG, 'settings', `timesheet_${OTHER}_1759276800`), { weekStartKey: '2026-10-01', weekStart: Timestamp.fromMillis(Date.parse('2026-10-01T00:00:00Z')) })
+    // The operative's own legacy sheet stored without userId.
+    await setDoc(doc(fs, 'organizations', ORG, 'settings', `timesheet_${OP}_1759276800`), { weekStartKey: '2026-10-01', weekStart: Timestamp.fromMillis(Date.parse('2026-10-01T00:00:00Z')) })
     await setDoc(doc(fs, 'organizations', ORG, 'settings', 'variationItem_V1'), { title: 'V1' })
   })
 })
@@ -76,11 +83,23 @@ test.after(async () => {
   await env?.cleanup()
 })
 
+async function setPrivatePay(on: boolean) {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'platformConfig', 'app'), { privatePay: on }, { merge: true })
+  })
+}
+
 test('an operative lists their own timesheets (userId == and userId in)', async () => {
   const fs = await db(OP)
   const settings = collection(fs, 'organizations', ORG, 'settings')
   const byEq = (await assertSucceeds(getDocs(query(settings, where('userId', '==', OP))))) as Awaited<ReturnType<typeof getDocs>>
-  if (byEq.size !== 2) throw new Error(`expected 2 own sheets, got ${byEq.size}`)
+  const sheets = byEq.docs.filter((entry) => entry.id.startsWith('timesheet_'))
+  if (sheets.length !== 2) throw new Error(`expected 2 own sheets, got ${sheets.length}`)
+  // Known limit (review r318, documented in docs/firestore-rules-notes.md): a query cannot test the document id, so a
+  // LEGACY non-timesheet settings document that already carries a top-level userId naming the caller is returned to
+  // them by this query (the seeded variations_J2). No app writes one, the rules now refuse writing one, a direct read
+  // of it is refused, and both apps keep only ids starting with timesheet_.
+  if (byEq.size !== 3) throw new Error(`expected the 2 sheets plus the seeded legacy document, got ${byEq.size}`)
   await assertSucceeds(getDocs(query(settings, where('userId', 'in', [OP]))))
   await assertSucceeds(getDoc(doc(fs, 'organizations', ORG, 'settings', `timesheet_${OP}_1761955200`)))
 })
@@ -108,3 +127,55 @@ test("a line manager and an admin still list a report's timesheets", async () =>
     await assertSucceeds(getDocs(query(settings, where('userId', 'in', [OP, OTHER]))))
   }
 })
+
+test('privatePay on: an operative still lists only their own timesheets', async () => {
+  await setPrivatePay(true)
+  try {
+    const fs = await db(OP)
+    const settings = collection(fs, 'organizations', ORG, 'settings')
+    await assertSucceeds(getDocs(query(settings, where('userId', '==', OP))))
+    await assertSucceeds(getDocs(query(settings, where('userId', 'in', [OP]))))
+    await assertFails(getDocs(query(settings, where('userId', '==', OTHER))))
+    await assertFails(getDoc(doc(fs, 'organizations', ORG, 'settings', `timesheet_${OTHER}_1761955200`)))
+  } finally {
+    await setPrivatePay(false)
+  }
+})
+
+test('review r318: the own-document read never opens a non-timesheet settings document', async () => {
+  const fs = await db(OP)
+  await assertFails(getDoc(doc(fs, 'organizations', ORG, 'settings', 'variations_J2')))
+})
+
+test('review r318: nobody writes a top-level userId onto a non-timesheet settings document', async () => {
+  const op = await db(OP)
+  await assertFails(setDoc(doc(op, 'organizations', ORG, 'settings', 'deadlines_J9'), { items: [], userId: OP }))
+  await assertSucceeds(setDoc(doc(op, 'organizations', ORG, 'settings', 'deadlines_J9'), { items: [] }))
+  await assertFails(updateDoc(doc(op, 'organizations', ORG, 'settings', 'deadlines_J9'), { userId: OP }))
+  const admin = await db(ADMIN)
+  await assertFails(updateDoc(doc(admin, 'organizations', ORG, 'settings', 'variations_J1'), { userId: OP }))
+  await assertSucceeds(updateDoc(doc(admin, 'organizations', ORG, 'settings', 'variations_J1'), { trades: ['Plumbing', 'Gas'] }))
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await deleteDoc(doc(ctx.firestore(), 'organizations', ORG, 'settings', 'deadlines_J9'))
+  })
+})
+
+for (const on of [false, true]) {
+  test(`review r318 (privatePay ${on ? 'on' : 'off'}): an operative cannot claim another person's legacy sheet by adding userId`, async () => {
+    await setPrivatePay(on)
+    try {
+      const fs = await db(OP)
+      await assertFails(updateDoc(doc(fs, 'organizations', ORG, 'settings', `timesheet_${OTHER}_1759276800`), { userId: OP }))
+      // Their own legacy sheet (its id names them) may gain its userId.
+      await assertSucceeds(updateDoc(doc(fs, 'organizations', ORG, 'settings', `timesheet_${OP}_1759276800`), { userId: OP }))
+    } finally {
+      await env.withSecurityRulesDisabled(async (ctx) => {
+        await setDoc(doc(ctx.firestore(), 'organizations', ORG, 'settings', `timesheet_${OP}_1759276800`), {
+          weekStartKey: '2026-10-01',
+          weekStart: Timestamp.fromMillis(Date.parse('2026-10-01T00:00:00Z')),
+        })
+      })
+      await setPrivatePay(false)
+    }
+  })
+}

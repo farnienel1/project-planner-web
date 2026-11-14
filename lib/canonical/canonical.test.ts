@@ -14330,20 +14330,31 @@ test('1.43.0 timesheetSnapshotReady: sign-off waits for the period\'s bookings a
   })
 })
 
-test('1.43.0 timesheetSnapshotNeedsRebuild: only an empty, unexported snapshot with live labour lines', () => {
-  const empty = { weeklyReportOverride: { lines: [] } }
-  assert.equal(R112.timesheetSnapshotNeedsRebuild(empty, [{ isPayeDay: false }]), true)
-  assert.equal(R112.timesheetSnapshotNeedsRebuild(empty, 2), true)
-  // No live labour (or only PAYE days): nothing to rebuild.
+test('1.43.0 timesheetSnapshotNeedsRebuild: only a snapshot frozen empty while its bookings already existed', () => {
+  const approvedAt = new Date('2026-11-10T09:00:00Z')
+  const before = { isPayeDay: false, bookingCreatedAt: new Date('2026-11-03T08:00:00Z') }
+  const after = { isPayeDay: false, bookingCreatedAt: new Date('2026-11-12T08:00:00Z') }
+  const empty = { weeklyReportOverride: { lines: [], approvedAt } }
+  // A booking that existed when the sheet was signed but is missing from the snapshot: the loading bug.
+  assert.equal(R112.timesheetSnapshotNeedsRebuild(empty, [before]), true)
+  // Any stored instant shape; the approval instant may come from the sheet when the snapshot has none.
+  assert.equal(R112.timesheetSnapshotNeedsRebuild({ weeklyReportOverride: { lines: [] }, managerSignedAt: { seconds: 1762765200 } }, [{ bookingCreatedAt: 1762157000000 }]), true)
+  // Review r318: a legitimately empty snapshot (price work / expenses only) is never re-priced by a booking added later,
+  // nor by one whose creation time is unknown.
+  assert.equal(R112.timesheetSnapshotNeedsRebuild(empty, [after]), false)
+  assert.equal(R112.timesheetSnapshotNeedsRebuild(empty, [{ isPayeDay: false }]), false)
+  // PAYE days never count; no live labour: nothing to rebuild.
+  assert.equal(R112.timesheetSnapshotNeedsRebuild(empty, [{ ...before, isPayeDay: true }]), false)
   assert.equal(R112.timesheetSnapshotNeedsRebuild(empty, []), false)
-  assert.equal(R112.timesheetSnapshotNeedsRebuild(empty, [{ isPayeDay: true }]), false)
+  // No approval instant at all: never.
+  assert.equal(R112.timesheetSnapshotNeedsRebuild({ weeklyReportOverride: { lines: [] } }, [before]), false)
   // A snapshot with labour lines is never re-priced.
-  assert.equal(R112.timesheetSnapshotNeedsRebuild({ weeklyReportOverride: { lines: [{}] } }, [{}, {}]), false)
+  assert.equal(R112.timesheetSnapshotNeedsRebuild({ weeklyReportOverride: { lines: [{}], approvedAt } }, [before]), false)
   // Exported: left as it is.
-  assert.equal(R112.timesheetSnapshotNeedsRebuild({ ...empty, exportedAt: new Date('2026-11-10T09:00:00Z') }, [{}]), false)
+  assert.equal(R112.timesheetSnapshotNeedsRebuild({ ...empty, exportedAt: new Date('2026-11-11T09:00:00Z') }, [before]), false)
   // No snapshot at all: not this rule (the snapshot is built on full approval).
-  assert.equal(R112.timesheetSnapshotNeedsRebuild({ weeklyReportOverride: null }, [{}]), false)
-  assert.equal(R112.timesheetSnapshotNeedsRebuild(null, [{}]), false)
+  assert.equal(R112.timesheetSnapshotNeedsRebuild({ weeklyReportOverride: null }, [before]), false)
+  assert.equal(R112.timesheetSnapshotNeedsRebuild(null, [before]), false)
 })
 
 test('1.43.0 timesheetOwnerCanAddExtras: no price work or expenses once the line manager has signed', () => {

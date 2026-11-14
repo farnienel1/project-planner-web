@@ -21,7 +21,7 @@ import {
 import { db } from '@/lib/firebase/config'
 import { waitForAuthToken } from '@/lib/firebase/waitForAuthToken'
 import type { OrgCollectionDoc } from '@/lib/firebase/subscribeOrgCollection'
-import { isMetadataOnlySnapshot, mergeOrgCollectionSnapshot } from '@/lib/firebase/orgCollectionMerge'
+import { isMetadataOnlySnapshot, mergeOrgCollectionSnapshot, orgPlanAuthoritative } from '@/lib/firebase/orgCollectionMerge'
 
 /** One query of a plan: `constraints` on the collection, or one `documentId`. `id` names it stably. */
 export type OrgPlanPart = { id: string; constraints?: QueryConstraint[]; documentId?: string }
@@ -47,7 +47,7 @@ type PlanState = {
   organizationId: string
   collectionName: string
   parts: Map<string, PartState>
-  onDocs: (docs: OrgCollectionDoc[]) => void
+  onDocs: (docs: OrgCollectionDoc[], meta?: { authoritative: boolean }) => void
   onError?: (error: FirestoreError) => void
   waiters: Array<() => void>
   removed: Set<string>
@@ -64,7 +64,9 @@ function emit(state: PlanState) {
       if (!state.removed.has(entry.id)) byId.set(entry.id, entry)
     }
   }
-  state.onDocs([...byId.values()])
+  // 1.43.0: the merged rows are complete only when every part has had a server answer (none refused). The first
+  // publish, before any part answered, and a cache snapshot are not (a timesheet must not be signed on them).
+  state.onDocs([...byId.values()], { authoritative: orgPlanAuthoritative([...state.parts.values()]) })
 }
 
 function settle(state: PlanState) {
@@ -122,8 +124,11 @@ function startPart(key: string, state: PlanState, part: OrgPlanPart, seed?: read
           !partState.seeded &&
           isMetadataOnlySnapshot({ documentChangeCount: snap.docChanges().length, deliveredBefore: partState.delivered === true })
         ) {
+          const firstServerAnswer = !partState.serverSnapshot && !snap.metadata.fromCache
           partState.serverSnapshot = partState.serverSnapshot || !snap.metadata.fromCache
           partState.pendingWrites = snap.metadata.hasPendingWrites
+          // 1.43.0: the part's first server answer (same rows) is published once, so the plan can turn authoritative.
+          if (firstServerAnswer) emit(state)
           return
         }
         partState.delivered = true
@@ -157,7 +162,7 @@ export function subscribeOrgPlan(
   organizationId: string,
   collectionName: string,
   parts: ReadonlyArray<OrgPlanPart>,
-  onDocs: (docs: OrgCollectionDoc[]) => void,
+  onDocs: (docs: OrgCollectionDoc[], meta?: { authoritative: boolean }) => void,
   onError?: (error: FirestoreError) => void
 ): Promise<void> {
   let state = plans.get(key)

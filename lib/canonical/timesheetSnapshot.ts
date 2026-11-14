@@ -7,12 +7,15 @@
  *    invoice then showed only price work. `timesheetSnapshotReady` holds sign-off (and every save that builds the
  *    snapshot) until the bookings and pay inputs have loaded.
  * 2. `timesheetSnapshotNeedsRebuild` finds a snapshot already frozen empty: it has no labour lines although the period
- *    has live labour lines and nobody has exported it. Such a snapshot is rebuilt (signatures untouched). A snapshot
- *    with labour lines is never re-priced.
+ *    has a live labour line whose booking already existed when the sheet was approved, and nobody has exported it.
+ *    Such a snapshot is rebuilt (signatures untouched). A snapshot with labour lines, or a legitimately empty one, is
+ *    never re-priced.
  * 3. `timesheetOwnerCanAddExtras`: once the line manager has signed (or the sheet was approved), the person cannot
  *    change price work or expenses (the security rules refuse it). Adding them used to clear only the person's own
  *    signature and leave the sheet half signed; the screens now say so and offer nothing.
  */
+
+import { documentInstantMs } from './peopleDocuments'
 
 export const TIMESHEET_SNAPSHOT_LOADING_MESSAGE = 'Loading bookings…'
 export const TIMESHEET_SNAPSHOT_FAILED_MESSAGE =
@@ -55,35 +58,45 @@ function present(value: InstantLike): boolean {
 }
 
 export type TimesheetSnapshotSheet = {
-  weeklyReportOverride?: { lines?: ReadonlyArray<unknown> | null } | null
+  weeklyReportOverride?: { lines?: ReadonlyArray<unknown> | null; approvedAt?: InstantLike } | null
   exportedAt?: InstantLike
+  managerSignedAt?: InstantLike
+  approvedAt?: InstantLike
 }
 
 export type TimesheetLiveLabourLine = {
   /** A PAYE day is never a timesheet line (§8). */
   isPayeDay?: boolean | null
+  /** When the line's booking was created (any stored instant shape). Missing = unknown: never counted. */
+  bookingCreatedAt?: InstantLike
 }
 
 /**
- * Rulebook 1.43.0 §8: true when the stored signed snapshot was frozen empty — it exists, holds no labour lines, the
- * period has at least one live labour line (PAYE days left out), and the sheet has not been exported. The snapshot is
- * then rebuilt from the live bookings with the signatures as they are. False for a snapshot with any labour line
- * (never re-priced), an exported sheet, or no snapshot.
+ * Rulebook 1.43.0 §8 (review r318): true only for a signed snapshot frozen empty by the loading bug — it exists, holds
+ * no labour lines, the sheet has not been exported, and the period has a live labour line (PAYE days left out) whose
+ * booking was created on or before the sheet was approved (the snapshot's `approvedAt`, else `managerSignedAt` /
+ * `approvedAt` on the sheet). Such a booking was there when the sheet was signed, so its absence is the bug. A
+ * snapshot that is legitimately empty (price work or expenses only) is never rebuilt because of a booking added to the
+ * period later, nor because of a booking whose creation time is unknown — a signed sheet is never re-priced. A
+ * snapshot with any labour line is never rebuilt.
  */
 export function timesheetSnapshotNeedsRebuild(
   sheet: TimesheetSnapshotSheet | null | undefined,
-  liveLabourLines: ReadonlyArray<TimesheetLiveLabourLine> | number | null | undefined
+  liveLabourLines: ReadonlyArray<TimesheetLiveLabourLine | null | undefined> | null | undefined
 ): boolean {
   const override = sheet?.weeklyReportOverride
   if (!override) return false
   if (present(sheet?.exportedAt)) return false
   const stored = Array.isArray(override.lines) ? override.lines.length : 0
   if (stored > 0) return false
-  const live =
-    typeof liveLabourLines === 'number'
-      ? liveLabourLines
-      : (liveLabourLines ?? []).filter((line) => line && line.isPayeDay !== true).length
-  return live > 0
+  const approvedMs =
+    documentInstantMs(override.approvedAt) ?? documentInstantMs(sheet?.managerSignedAt) ?? documentInstantMs(sheet?.approvedAt)
+  if (approvedMs == null) return false
+  return (liveLabourLines ?? []).some((line) => {
+    if (!line || line.isPayeDay === true) return false
+    const created = documentInstantMs(line.bookingCreatedAt)
+    return created != null && created <= approvedMs
+  })
 }
 
 export type TimesheetExtrasSheet = {

@@ -470,7 +470,13 @@ test('1.43.0: timesheet lines show the standard window and the overtime times (o
   // A named slot keeps its name.
   const full = run('', '', { timeSlot: 'FULL DAY', workStartTime: undefined, workEndTime: undefined })
   assert.equal(full.lineItems.find((line) => line.id === 'op-b1-normal')?.details, 'FULL DAY')
-  // Edit hours still opens on the whole booking when the live booking is not loaded.
+  // Edit hours still opens on the whole booking when the live booking is not loaded — from the line's stored booking
+  // times, never from its standard-window details (review r318).
+  assert.deepEqual(initialHoursChoice({ row: normal!, operativeBooking: null, managerBooking: null, policy }), {
+    startTime: '07:00',
+    endTime: '19:00',
+    breakRemoved: false,
+  })
   assert.deepEqual(initialHoursChoice({ row: ot!, operativeBooking: null, managerBooking: null, policy }), {
     startTime: '07:00',
     endTime: '19:00',
