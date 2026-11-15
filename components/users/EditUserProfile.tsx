@@ -5,7 +5,7 @@ import { reseedUntouchedPayFields, watchPayEditorPrivatePay, withPayFieldsFrom }
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { usePendingNavigation } from '@/lib/navigation/usePendingNavigation'
-import { RouteLoading } from '@/components/shell/RouteLoading'
+import { EditUserSkeleton } from '@/components/users/profile-ui/skeletons'
 import { format } from 'date-fns'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
@@ -27,6 +27,7 @@ import {
 import { rosterStatusLabel, samePersonIds } from '@/lib/staff/userRosterUtils'
 import { userLineManagerRequiredError, userMayHaveNoLineManager } from '@/lib/annualLeave/holidayApprovalUtils'
 import { UserAvatar } from '@/components/users/UserAvatar'
+import { setupSectionIcon } from '@/lib/users/profileUi'
 import { PayBasisFields, payChoiceFromProfile, payChoiceToRates } from '@/components/users/PayBasisFields'
 import { maySetPayOf, userPayRateRequiredError } from '@/lib/staff/payRateRequired'
 import { PreviousRatesList, usePaySaveGate } from '@/components/users/PayRateChangeDialogs'
@@ -116,17 +117,11 @@ import {
 } from '@/lib/staff/userPermissionDescriptions'
 import { SUPER_ADMIN_SUCCESSOR_EMPTY, superAdminSuccessors } from '@/lib/staff/superAdminTransfer'
 import { displayedLineManagerId, userWithLineManagerChoice } from '@/lib/firebase/userPayload'
+import { ActionPanel, ActionRow, Field, FieldGrid, FormSection, SectionBlock, Switch, ToggleRow, ProfileBack, ProfileBand, ProfileBanner, SaveState, ProfileIcon, type ProfileIconName } from '@/components/users/profile-ui'
 import {
-  PanelHeader,
-  SectionLabel,
-  SettingsCard,
-  Toggle,
   Input,
   Select,
-  FormField,
   SaveButton,
-  SuccessBanner,
-  ErrorBanner,
 } from '@/components/settings/primitives'
 
 const MONTHS = [
@@ -209,45 +204,44 @@ function initialsOf(user: User): string {
   return initials.trim() || user.email.slice(0, 2).toUpperCase()
 }
 
+/** An account action row (`ActionRow`): same title, subtitle, busy state and handler as before; colour by consequence. */
 function ActionButton({
   title,
   subtitle,
   tone = 'neutral',
+  icon,
   busy,
   onClick,
 }: {
   title: string
   subtitle?: string
   tone?: 'neutral' | 'amber' | 'red' | 'purple'
+  icon: ProfileIconName
   busy?: boolean
   onClick: () => void
 }) {
-  const toneCls = {
-    neutral: 'border-slate-200 text-slate-900 hover:bg-slate-50',
-    amber: 'border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100',
-    red: 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100',
-    purple: 'border-[#EEEDFE] bg-[#EEEDFE] text-[#534AB7] hover:brightness-95',
-  }[tone]
-
   return (
-    <button
-      type="button"
+    <ActionRow
+      title={title}
+      subtitle={subtitle}
+      tone={tone === 'neutral' ? 'blue' : tone}
+      icon={icon}
+      busy={busy}
       onClick={onClick}
-      disabled={busy}
-      className={`flex w-full items-center justify-between rounded-xl border px-4 py-3 text-left transition disabled:opacity-60 ${toneCls}`}
-    >
-      <span>
-        <span className="block text-sm font-semibold">{title}</span>
-        {subtitle && <span className="mt-0.5 block text-xs opacity-80">{subtitle}</span>}
-      </span>
-      {busy && (
-        <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
-          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8v4a4 4 0 0 0-4 4H4Z" />
-        </svg>
-      )}
-    </button>
+    />
   )
+}
+
+/** Change user type chooser: icon and tile colour per option (display only). */
+const ACCOUNT_TYPE_ICON: Record<'operative' | 'manager' | 'admin', ProfileIconName> = {
+  operative: 'hat',
+  manager: 'brief',
+  admin: 'shield',
+}
+const ACCOUNT_TYPE_TONE: Record<'operative' | 'manager' | 'admin', 'amber' | 'purple' | 'blue'> = {
+  operative: 'amber',
+  manager: 'purple',
+  admin: 'blue',
 }
 
 function profileSnapshot(
@@ -1101,7 +1095,7 @@ export function EditUserProfile({
     }
   }
 
-  if (loading) return <RouteLoading variant="form" />
+  if (loading) return <EditUserSkeleton />
 
   if (!target) {
     return (
@@ -1125,162 +1119,121 @@ export function EditUserProfile({
   const status = rosterStatusLabel(target)
 
   return (
-    <form onSubmit={handleSave} className="mx-auto max-w-2xl pb-16">
+    <form onSubmit={handleSave} className="pu-page up-page">
       {payDialogs}
       {employmentDialogs}
-      <PanelHeader
-        title={pageTitle}
-        onBack={() => {
+      <ProfileBack
+        onClick={() => {
           if (saving || typeSaving) return
           navigateBack(backHref)
         }}
-        backPending={backPending}
-        rightAction={
+        pending={backPending}
+      />
+
+      <ProfileBand
+        avatar={<UserAvatar user={target} size={64} className="up-avatar-ring" gradient="from-[#7F77DD] to-[#534AB7]" />}
+        eyebrow={pageTitle}
+        name={`${target.firstName} ${target.surname}`}
+        chips={[
+          { label: roleLabel(target), tone: target.isSuperAdmin ? 'super' : undefined },
+          target.passwordSet ? { label: 'Verified', dot: 'green' } : { label: 'Pending', dot: 'amber', tone: 'warn' },
+          { label: status, dot: status === 'Active' ? 'blue' : 'slate' },
+        ]}
+        aside={
           canEdit && dirty ? (
             <button
               type="button"
               disabled={saving || typeSaving || payReloading}
               onClick={() => handleSave()}
-              className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:opacity-50"
+              className="pu-btn primary"
             >
               {saving || typeSaving ? 'Saving…' : 'Save'}
             </button>
           ) : canEdit ? (
-            <span className="px-2 text-[11px] font-medium text-slate-400">No changes</span>
+            <SaveState>No changes</SaveState>
           ) : (
-            <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold text-slate-500">
-              View only
-            </span>
+            <SaveState tone="view">View only</SaveState>
           )
         }
       />
 
-      {error && (
-        <div className="mt-4">
-          <ErrorBanner message={error} />
-        </div>
-      )}
+      {error && <ProfileBanner tone="red">{error}</ProfileBanner>}
       {reportsBlock && reportsBlock.length > 0 ? (
-        <div className="mt-2 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          <ul className="list-disc pl-5">
+        <ProfileBanner tone="amber">
+          <ul>
             {reportsBlock.map((report) => (
               <li key={report.id}>
-                <Link href={`/dashboard/users/${encodeURIComponent(report.id)}`} className="underline">
-                  {report.name}
-                </Link>
+                <Link href={`/dashboard/users/${encodeURIComponent(report.id)}`}>{report.name}</Link>
               </li>
             ))}
           </ul>
-        </div>
+        </ProfileBanner>
       ) : null}
       {canEdit && accountTypeRepair && !draftAccountType ? (
-        <div className="mt-4 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          {ACCOUNT_TYPE_OUT_OF_SYNC_MESSAGE}
-        </div>
+        <ProfileBanner tone="amber">{ACCOUNT_TYPE_OUT_OF_SYNC_MESSAGE}</ProfileBanner>
       ) : null}
-      {success && !saved && (
-        <div className="mt-4">
-          <SuccessBanner message={success} />
-        </div>
-      )}
-      {typeSaving && (
-        <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
-          Saving account type…
-        </div>
-      )}
+      {success && !saved && <ProfileBanner tone="green">{success}</ProfileBanner>}
+      {typeSaving && <ProfileBanner tone="blue">Saving account type…</ProfileBanner>}
       {draftAccountType && (
-        <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+        <ProfileBanner tone="blue">
           Account type will change to <strong className="capitalize">{draftAccountType}</strong> when you press Save.
-        </div>
+        </ProfileBanner>
       )}
-
-      {/* Profile header */}
-      <div className="mt-4 flex items-center gap-4 card p-5 shadow-sm">
-        <UserAvatar user={target} size={64} className="rounded-2xl" gradient="from-[#7F77DD] to-[#534AB7]" />
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-lg font-bold text-[var(--ink)]">
-            {target.firstName} {target.surname}
-          </div>
-          <div className="text-sm text-slate-500">{roleLabel(target)}</div>
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            <span
-              className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ring-1 ${
-                target.passwordSet
-                  ? 'bg-emerald-50 text-emerald-700 ring-emerald-100'
-                  : 'bg-amber-50 text-amber-700 ring-amber-100'
-              }`}
-            >
-              {target.passwordSet ? 'Verified' : 'Pending'}
-            </span>
-            <span
-              className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ring-1 ${
-                status === 'Active'
-                  ? 'bg-blue-50 text-blue-700 ring-blue-100'
-                  : 'bg-slate-100 text-slate-600 ring-slate-200'
-              }`}
-            >
-              <span className={`h-1.5 w-1.5 rounded-full ${status === 'Active' ? 'bg-blue-500' : 'bg-slate-400'}`} />
-              {status}
-            </span>
-          </div>
-        </div>
-      </div>
 
       {/* Identity */}
-      <SectionLabel label="User details" />
-      <SettingsCard>
-        <div className="grid grid-cols-1 gap-4 p-4 sm:grid-cols-2">
-          <FormField label="First name">
+      <FormSection title="User details" icon="user" tone="blue">
+        <FieldGrid>
+          <Field label="First name">
             <Input
               value={target.firstName}
               disabled={!canEditIdentity}
               onChange={(e) => setTarget({ ...target, firstName: e.target.value })}
             />
-          </FormField>
-          <FormField label="Surname">
+          </Field>
+          <Field label="Surname">
             <Input
               value={target.surname}
               disabled={!canEditIdentity}
               onChange={(e) => setTarget({ ...target, surname: e.target.value })}
             />
-          </FormField>
+          </Field>
           {ghostTarget ? (
-            <FormField label="App login" hint={target.email ? `Invitation sent to ${target.email}.` : 'An admin can give app access from their profile.'}>
+            <Field label="App login" hint={target.email ? `Invitation sent to ${target.email}.` : 'An admin can give app access from their profile.'}>
               <Input value={ghostBadgeLabel(target)} disabled />
-            </FormField>
+            </Field>
           ) : (
           <>
-          <FormField label="Email">
+          <Field label="Email">
             <Input
               type="email"
               value={target.email}
               disabled={!canEditIdentity}
               onChange={(e) => setTarget({ ...target, email: e.target.value })}
             />
-          </FormField>
-          <FormField label="Mobile number">
+          </Field>
+          <Field label="Mobile number">
             <Input
               value={target.mobileNumber || ''}
               disabled={!canEditIdentity}
               onChange={(e) => setTarget({ ...target, mobileNumber: e.target.value })}
             />
-          </FormField>
-          <FormField label="Last active">
+          </Field>
+          <Field label="Last active">
             <Input
               value={target.lastSeenAt ? format(target.lastSeenAt, "d MMM yyyy 'at' HH:mm") : '—'}
               disabled
             />
-          </FormField>
+          </Field>
           </>
           )}
           {!canEdit && (
-            <FormField label="Trade type">
+            <Field label="Trade type">
               <Input value={displayTradeType(target.tradeTypePreset, target.tradeTypeCustom)} disabled />
-            </FormField>
+            </Field>
           )}
           {showEmploymentType && (
             <>
-              <FormField label="Employment type">
+              <Field label="Employment type">
                 <Select
                   value={normalizeEmploymentType(target.employmentType)}
                   disabled={!canEditMatrix}
@@ -1292,8 +1245,8 @@ export function EditUserProfile({
                   <option value="self_employed">Self-Employed</option>
                   <option value="paye">PAYE</option>
                 </Select>
-              </FormField>
-              <FormField
+              </Field>
+              <Field
                 label="Employment date"
                 hint="PAYE and self-employed take effect from the working day you choose when you save a change."
               >
@@ -1306,19 +1259,22 @@ export function EditUserProfile({
                   }
                   disabled
                 />
-              </FormField>
+              </Field>
             </>
           )}
-        </div>
-      </SettingsCard>
+        </FieldGrid>
+      </FormSection>
 
       {showSetupCard && (
-        <>
-          <SectionLabel label={setupSectionTitle(target)} />
-          <SettingsCard>
-            <div className="space-y-4 p-4">
+        <FormSection
+          title={setupSectionTitle(target)}
+          icon={setupSectionIcon(target)}
+          tone={target.isSuperAdmin ? 'blue' : 'purple'}
+        >
+          <FieldGrid>
               {(target.permissions.operativeMode || target.permissions.manager || target.permissions.adminAccess) && (
-                <FormField
+                <Field
+                  wide
                   label="Line manager(s)"
                   hint={
                     !mayChangeLineManager
@@ -1347,17 +1303,18 @@ export function EditUserProfile({
                     ))}
                   </Select>
                   {lineManagerError ? (
-                    <p role="alert" className="mt-1.5 text-sm font-medium text-[var(--red,#dc2626)]">
+                    <p role="alert" className="up-err">
                       {lineManagerError}
                     </p>
                   ) : null}
-                </FormField>
+                </Field>
               )}
 
               {/* Rulebook 1.32.0 §8: the rate and its history only for viewers `canViewPersonPay` allows (profile context). */}
               {canViewPersonPay(currentUser as never, target as never, users as never) ? (
-              <div className="grid gap-4 sm:grid-cols-2">
+              <>
                 <PayBasisFields
+                  variant="profile"
                   {...payChoiceFromProfile(target)}
                   placeholder="manage"
                   disabled={!canEdit}
@@ -1367,12 +1324,15 @@ export function EditUserProfile({
                     setTarget({ ...target, ...payChoiceToRates(next.payBasis, next.amount) })
                   }}
                 />
-                <PreviousRatesList entries={previousRateEntries} />
-              </div>
+                {previousRateEntries.length > 0 ? (
+                  <div className="up-f wide">
+                    <PreviousRatesList entries={previousRateEntries} />
+                  </div>
+                ) : null}
+              </>
               ) : null}
 
-              <div className="grid gap-4 sm:grid-cols-2">
-                <FormField label="Trade type">
+              <Field label="Trade type">
                   <Select
                     value={target.tradeTypePreset || ''}
                     disabled={!canEdit}
@@ -1385,36 +1345,31 @@ export function EditUserProfile({
                       </option>
                     ))}
                   </Select>
-                </FormField>
+                </Field>
                 {target.tradeTypePreset === 'Other' && (
-                  <FormField label="Custom trade">
+                  <Field label="Custom trade">
                     <Input
                       value={target.tradeTypeCustom || ''}
                       disabled={!canEdit}
                       onChange={(e) => setTarget({ ...target, tradeTypeCustom: e.target.value })}
                     />
-                  </FormField>
+                  </Field>
                 )}
-              </div>
 
-              <p className="text-sm text-[var(--ink2)]">
+              <p className="up-f-hint" style={{ gridColumn: '1 / -1' }}>
                 Current trade:{' '}
-                <span className="font-medium text-[var(--ink)]">
-                  {displayTradeType(target.tradeTypePreset, target.tradeTypeCustom)}
-                </span>
+                <b>{displayTradeType(target.tradeTypePreset, target.tradeTypeCustom)}</b>
               </p>
-            </div>
-          </SettingsCard>
-        </>
+          </FieldGrid>
+        </FormSection>
       )}
 
       {showQualifications ? (
-        <>
-          <SectionLabel label="Qualifications" />
-          <SettingsCard>
-            <div className="p-4">
-              {qualError ? <p className="mb-3 text-sm font-medium text-red-600">{qualError}</p> : null}
+        <FormSection title="Qualifications" icon="badge" tone="amber">
+          <SectionBlock>
+              {qualError ? <p className="up-err">{qualError}</p> : null}
               <OperativeQualificationsEditor
+                variant="profile"
                 linked={linkedOperative}
                 templates={qualificationTemplates}
                 saving={qualSaving}
@@ -1440,47 +1395,35 @@ export function EditUserProfile({
                   }
                 }}
               />
-            </div>
-          </SettingsCard>
-        </>
+          </SectionBlock>
+        </FormSection>
       ) : null}
 
       {/* Annual leave access */}
+      {/* Owner decision 9 (14 Nov): "Annual leave in app" and "Annual leave" are one section; content unchanged and
+          shown or hidden exactly as before (the allowance toggle with `showAnnualLeave`, the rest only while it is on). */}
       {showAnnualLeave && (
-        <>
-          <SectionLabel label="Annual leave in app" />
-          <SettingsCard>
-            <div className="p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="text-sm font-semibold text-[var(--ink)]">
-                    {ANNUAL_LEAVE_ALLOWANCE_COPY.toggleTitle}
-                  </div>
-                  <p className="mt-0.5 text-xs text-[var(--ink3)]">
-                    {ANNUAL_LEAVE_ALLOWANCE_COPY.toggleDescription}
-                  </p>
-                </div>
-                <Toggle
-                  checked={target.annualLeaveEnabled !== false}
-                  disabled={!canEdit}
-                  onChange={(checked) => {
-                    setTarget({ ...target, annualLeaveEnabled: checked })
-                  }}
-                />
-              </div>
-              <p className="mt-2 text-xs text-slate-400">{ANNUAL_LEAVE_ALLOWANCE_COPY.toggleNote}</p>
-            </div>
-          </SettingsCard>
-        </>
-      )}
+        <FormSection title="Annual leave" icon="sun" tone="amber">
+          <ToggleRow
+            title={ANNUAL_LEAVE_ALLOWANCE_COPY.toggleTitle}
+            descriptions={[ANNUAL_LEAVE_ALLOWANCE_COPY.toggleDescription, ANNUAL_LEAVE_ALLOWANCE_COPY.toggleNote]}
+            control={
+              <Switch
+                label={ANNUAL_LEAVE_ALLOWANCE_COPY.toggleTitle}
+                checked={target.annualLeaveEnabled !== false}
+                disabled={!canEdit}
+                onChange={(checked) => {
+                  setTarget({ ...target, annualLeaveEnabled: checked })
+                }}
+              />
+            }
+          />
 
       {/* Annual leave entitlement */}
-      {showAnnualLeave && target.annualLeaveEnabled !== false && (
+      {target.annualLeaveEnabled !== false && (
         <>
-          <SectionLabel label="Annual leave" />
-          <SettingsCard>
-            <div className="space-y-5 p-4">
-              <FormField label="Days per year">
+            <FieldGrid>
+              <Field label="Days per year">
                 <Input
                   type="number"
                   min="0"
@@ -1495,12 +1438,12 @@ export function EditUserProfile({
                     })
                   }
                 />
-              </FormField>
-              <FormField
+              </Field>
+              <Field
                 label="Company leave year"
                 hint="Runs from the first day of the start month through the last day of the end month (e.g. April → March)."
               >
-                <div className="flex items-center gap-3">
+                <div className="up-months">
                   <Select
                     value={String(target.annualLeaveYearStartMonth ?? 1)}
                     disabled={!canEdit}
@@ -1516,7 +1459,7 @@ export function EditUserProfile({
                       </option>
                     ))}
                   </Select>
-                  <span className="text-slate-400">→</span>
+                  <em aria-hidden="true">→</em>
                   <Select
                     value={String(target.annualLeaveYearEndMonth ?? 12)}
                     disabled={!canEdit}
@@ -1532,9 +1475,9 @@ export function EditUserProfile({
                     ))}
                   </Select>
                 </div>
-              </FormField>
+              </Field>
               {/* Rulebook 1.13.0 §4.4 (Q4, `proRataLeaveAllowance`): the leave year they joined is pro rata. */}
-              <FormField
+              <Field
                 label="Start date"
                 hint="The day this person started. Their allowance for that leave year is pro rata from it. Leave blank for a full allowance."
               >
@@ -1547,24 +1490,37 @@ export function EditUserProfile({
                   }
                   onChange={(e) => setTarget({ ...target, employmentStartDate: e.target.value || undefined })}
                 />
-              </FormField>
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="text-sm font-semibold text-[var(--ink)]">Carry unused days into next leave year</div>
-                  <p className="mt-0.5 text-xs text-[var(--ink3)]">
-                    Unused allowance from the previous leave year is added to this year&apos;s balance.
-                  </p>
-                </div>
-                <Toggle
-                  checked={target.annualLeaveCarriesOver === true}
-                  disabled={!canEdit}
-                  onChange={(checked) => setTarget({ ...target, annualLeaveCarriesOver: checked })}
-                />
-              </div>
+              </Field>
+            </FieldGrid>
+              <ToggleRow
+                title="Carry unused days into next leave year"
+                descriptions={["Unused allowance from the previous leave year is added to this year's balance."]}
+                control={
+                  <Switch
+                    label="Carry unused days into next leave year"
+                    checked={target.annualLeaveCarriesOver === true}
+                    disabled={!canEdit}
+                    onChange={(checked) => setTarget({ ...target, annualLeaveCarriesOver: checked })}
+                  />
+                }
+              />
               {/* Rulebook 1.40.0 (owner decision 11 Nov H35): the "set remaining" box is replaced by adjustments with a
                   reason, added on the person's annual leave page (Annual leave → Team); a stored override still counts
                   until its leave year ends. */}
-              <div className="rounded-xl bg-slate-50 px-3 py-2 text-sm text-[var(--ink2)]">
+              <div className="up-remain">
+                {/* The same remaining figure as the line beside it, large (display only). */}
+                {!leaveAdjustmentsRead.error &&
+                leaveBank.loaded &&
+                leaveEmployment.ready &&
+                leaveAdjustmentsRead.loaded &&
+                leaveBalance.hasAllowance ? (
+                  <div className="up-rnum" aria-hidden="true">
+                    <b>{leaveBalance.remaining}</b>
+                    <span>days remaining</span>
+                  </div>
+                ) : null}
+                <div className="up-remain-text">
+                <div>
                 {leaveAdjustmentsRead.error
                   ? leaveAdjustmentsRead.error
                   : !leaveBank.loaded || !leaveEmployment.ready || !leaveAdjustmentsRead.loaded
@@ -1572,45 +1528,45 @@ export function EditUserProfile({
                     : leaveBalance.hasAllowance
                       ? `Remaining this leave year: ${leaveBalance.remaining} (${leaveBalance.shownTaken} taken, ${leaveBalance.shownPending} awaiting approval${leaveBalance.adjustmentDays ? `, ${leaveBalance.adjustmentDays > 0 ? '+' : ''}${leaveBalance.adjustmentDays} adjusted` : ''}).${leaveNotes.notCounted ? ` ${leaveNotes.notCounted}` : ''}`
                       : `${leaveNotes.noAllowance ?? 'No paid allowance.'} ${leaveBalance.taken} days taken this leave year.`}
-                <p className="mt-1 text-xs text-[var(--ink3)]">
+                </div>
+                <p>
                   To add or take off days, open this person on{' '}
-                  <Link href={`/dashboard/annual-leave?tab=team&person=${encodeURIComponent(target.id)}`} className="font-semibold text-blue-600">
+                  <Link href={`/dashboard/annual-leave?tab=team&person=${encodeURIComponent(target.id)}`}>
                     Annual leave → Team
                   </Link>{' '}
                   and choose Adjust leave. Each change needs a reason and is kept as history.
                 </p>
+                </div>
               </div>
-            </div>
-          </SettingsCard>
         </>
+      )}
+        </FormSection>
       )}
 
       {/* Employment & timesheets */}
       {showPayrollFields && (
-        <>
-          <SectionLabel label="Employment & timesheets" />
-          <SettingsCard>
-            <div className="space-y-4 p-4">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <div className="text-sm font-semibold text-[var(--ink)]">Timesheets enabled</div>
-                  <p className="mt-0.5 text-xs text-[var(--ink3)]">Allow this person to log and submit timesheets.</p>
-                </div>
-                <Toggle
-                  checked={target.timesheetsEnabled === true}
-                  disabled={!canEdit}
-                  onChange={(checked) => setTarget({ ...target, timesheetsEnabled: checked })}
-                />
-              </div>
+        <FormSection title="Employment & timesheets" icon="sheet" tone="blue">
+              <ToggleRow
+                title="Timesheets enabled"
+                descriptions={['Allow this person to log and submit timesheets.']}
+                control={
+                  <Switch
+                    label="Timesheets enabled"
+                    checked={target.timesheetsEnabled === true}
+                    disabled={!canEdit}
+                    onChange={(checked) => setTarget({ ...target, timesheetsEnabled: checked })}
+                  />
+                }
+              />
               {canViewTaxIds ? (
-                <div className="space-y-2">
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <FieldGrid>
                     {(['vatNumber', 'utrNumber'] as const).map((field) => {
                       const saved = taxIds?.[field] ?? ''
                       const draft = taxDraft[field]
                       const shown = showTaxIds ? saved : maskSensitiveValue(saved)
                       return (
-                        <FormField
+                        <Field
                           key={field}
                           label={field === 'vatNumber' ? 'VAT number' : 'UTR number'}
                           hint={
@@ -1623,7 +1579,7 @@ export function EditUserProfile({
                                   : 'Optional.'
                           }
                         >
-                          <div className="flex gap-2">
+                          <div className="up-payrow">
                             <Input
                               value={draft ?? ''}
                               autoComplete="off"
@@ -1634,87 +1590,75 @@ export function EditUserProfile({
                             {saved && canEdit ? (
                               <button
                                 type="button"
-                                className="btn sm ghost"
+                                className="pu-btn"
                                 onClick={() => setTaxDraft((current) => ({ ...current, [field]: '' }))}
                               >
                                 Remove
                               </button>
                             ) : null}
                           </div>
-                        </FormField>
+                        </Field>
                       )
                     })}
-                  </div>
+                  </FieldGrid>
                   {taxIds && (taxIds.utrNumber || taxIds.vatNumber) ? (
-                    <button type="button" className="text-xs font-semibold text-[var(--blue)]" onClick={() => setShowTaxIds((v) => !v)}>
-                      {showTaxIds ? 'Hide' : 'Show'} saved numbers
-                    </button>
+                    <div className="up-block" style={{ paddingTop: 0 }}>
+                      <button type="button" className="up-lk" style={{ alignSelf: 'flex-start' }} onClick={() => setShowTaxIds((v) => !v)}>
+                        {showTaxIds ? 'Hide' : 'Show'} saved numbers
+                      </button>
+                    </div>
                   ) : null}
                 </div>
               ) : (
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <FormField label="VAT number">
+                <FieldGrid>
+                  <Field label="VAT number">
                     <Input value={SENSITIVE_HELD_BY_ADMIN_COPY} disabled readOnly />
-                  </FormField>
-                  <FormField label="UTR number">
+                  </Field>
+                  <Field label="UTR number">
                     <Input value={SENSITIVE_HELD_BY_ADMIN_COPY} disabled readOnly />
-                  </FormField>
-                </div>
+                  </Field>
+                </FieldGrid>
               )}
-            </div>
-          </SettingsCard>
-        </>
+        </FormSection>
       )}
 
       {/* Account status */}
       {canAdminTools && (
-        <>
-          <SectionLabel label="Account status" />
-          <SettingsCard>
-            <div className="p-4">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <div className="text-sm font-semibold text-[var(--ink)]">Active</div>
-                  <p className="mt-0.5 text-xs text-[var(--ink3)]">
-                    {ghostTarget ? 'Can be booked and shows in lists. A ghost has no app login.' : 'User can sign in and use the app.'}
-                  </p>
-                </div>
-                <Toggle
-                  checked={target.isActive}
-                  disabled={!canEdit || activeSaving}
-                  onChange={() => void handleToggleActive()}
-                />
-              </div>
-            </div>
-          </SettingsCard>
-        </>
+        <FormSection title="Account status" icon="check" tone="green">
+          <ToggleRow
+            title="Active"
+            descriptions={[ghostTarget ? 'Can be booked and shows in lists. A ghost has no app login.' : 'User can sign in and use the app.']}
+            control={
+              <Switch
+                label="Active"
+                checked={target.isActive}
+                disabled={!canEdit || activeSaving}
+                onChange={() => void handleToggleActive()}
+              />
+            }
+          />
+        </FormSection>
       )}
 
       {target.isSuperAdmin ? (
-        <>
-          <SectionLabel label="Permissions" />
-          <SettingsCard>
-            <div className="flex items-start gap-3 p-4">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-orange-50 text-orange-600">
-                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                  <path d="M12 2a5 5 0 0 0-5 5v3H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-1V7a5 5 0 0 0-5-5Zm-3 8V7a3 3 0 1 1 6 0v3H9Z" />
-                </svg>
-              </div>
-              <div>
-                <p className="text-[13px] font-semibold text-orange-600">Super Admin</p>
-                <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
-                  The Super Admin&apos;s permissions cannot be changed. Super Admin is passed on with Change Super Admin.
-                </p>
-              </div>
+        <FormSection title="Permissions" icon="shield" tone="blue">
+          <div className="up-lockcard">
+            <span className="up-atile amber" aria-hidden="true">
+              <ProfileIcon name="key" />
+            </span>
+            <div>
+              <b>Super Admin</b>
+              <small>
+                The Super Admin&apos;s permissions cannot be changed. Super Admin is passed on with Change Super Admin.
+              </small>
             </div>
-          </SettingsCard>
-        </>
+          </div>
+        </FormSection>
       ) : canEditMatrix && effectivePermissions ? (
-        <>
-          <SectionLabel label="Permissions" />
-          <SettingsCard>
-            <div className="divide-y divide-slate-100">
+        <FormSection title="Permissions" icon="shield" tone="blue">
+          <div>
               <PermissionRowsList
+                variant="profile"
                 rows={editUserPermissionRows(target, effectiveAccountType, effectivePermissions, currentUser?.id, users)}
                 onChange={updatePermissions}
                 disabled={!canEdit || target.isSuperAdmin}
@@ -1722,26 +1666,26 @@ export function EditUserProfile({
                 lockedMessage={lockedPermissionMessage(effectiveAccountType)}
                 onLocked={setLockedNotice}
               />
-              {lockedNotice ? <p className="px-5 py-3 text-sm text-slate-600">{lockedNotice}</p> : null}
-            </div>
-          </SettingsCard>
-        </>
+          </div>
+          {lockedNotice ? <p className="up-lock-note">{lockedNotice}</p> : null}
+        </FormSection>
       ) : null}
 
       {canEdit && dirty ? (
-        <div className="mt-6">
+        <div className="up-savebar">
           <SaveButton saving={saving} saved={saved} dirty={!payReloading} onClick={() => handleSave()} />
         </div>
       ) : null}
 
       {/* Account actions */}
-      {canEdit ? <SectionLabel label="Account actions" /> : null}
       {canEdit ? (
-      <div className="space-y-2">
+      <FormSection title="Account actions" icon="gear" tone="slate">
+      <div className="up-actions">
         {ghostTarget ? null : target.passwordSet ? (
           <ActionButton
             title="Send password reset"
             subtitle="Email a password reset link to this user"
+            icon="refresh"
             busy={busyAction === 'reset'}
             onClick={handlePasswordReset}
           />
@@ -1749,18 +1693,19 @@ export function EditUserProfile({
           <ActionButton
             title="Resend sign-up email with verification code"
             subtitle="They haven't finished setting a password yet."
+            icon="mail"
             busy={busyAction === 'invite'}
             onClick={handleResendInvite}
           />
         )}
         {canAdminTools ? (
-          <div className="rounded-xl border border-slate-200 bg-white p-4">
-            <p className="text-sm font-semibold text-slate-900">Wrong login email? Ask Project Planner to fix it</p>
-            <p className="mt-1 text-xs text-slate-500">
+          <ActionPanel icon="chat" tone="blue">
+            <b>Wrong login email? Ask Project Planner to fix it</b>
+            <small>
               Sends a support request to the platform owner. They will change the login email; you never see or set a password.
-            </p>
+            </small>
             {fixOpen ? (
-              <div className="mt-3 space-y-2">
+              <div className="up-fixform">
                 <input
                   className="pp-in"
                   placeholder="Correct email"
@@ -1775,7 +1720,8 @@ export function EditUserProfile({
                 />
                 <button
                   type="button"
-                  className="btn sm primary"
+                  className="pu-btn primary sm"
+                  style={{ alignSelf: 'flex-start' }}
                   disabled={busyAction === 'fix-email'}
                   onClick={async () => {
                     if (!organization?.id || !target) return
@@ -1811,22 +1757,22 @@ export function EditUserProfile({
                 </button>
               </div>
             ) : (
-              <button type="button" className="btn sm ghost mt-2" onClick={() => setFixOpen(true)}>
+              <button type="button" className="pu-btn sm" onClick={() => setFixOpen(true)}>
                 Ask Project Planner to fix it
               </button>
             )}
-          </div>
+          </ActionPanel>
         ) : null}
 
         {canAdminTools && (
           <>
             {showChangeType && (
-              <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-sm font-semibold text-slate-900">Change user type</p>
-                <p className="text-xs leading-relaxed text-slate-500">
-                  Choose how this account should behave. Changes apply when you press Save.
-                </p>
-                <div className="space-y-2">
+              <div className="up-cut">
+                <div className="up-cut-head">
+                  <b>Change user type</b>
+                  <small>Choose how this account should behave. Changes apply when you press Save.</small>
+                </div>
+                <div className="up-form" style={{ gap: 8 }}>
                   {ACCOUNT_TYPE_OPTIONS.map((option) => {
                     const selected = effectiveAccountType === option.id
                     return (
@@ -1834,21 +1780,26 @@ export function EditUserProfile({
                         key={option.id}
                         type="button"
                         onClick={() => selectDraftAccountType(option.id)}
-                        className={`w-full rounded-xl border px-4 py-3 text-left transition-colors ${
-                          selected
-                            ? 'border-blue-400 bg-blue-50'
-                            : 'border-slate-200 bg-white hover:border-slate-300'
-                        }`}
+                        className={selected ? 'up-opt on' : 'up-opt'}
                       >
-                        <p className="text-sm font-semibold text-slate-900">{option.title}</p>
-                        <p className="mt-1 text-xs leading-relaxed text-slate-500">{option.description}</p>
+                        <span className={`up-atile ${ACCOUNT_TYPE_TONE[option.id]}`} aria-hidden="true">
+                          <ProfileIcon name={ACCOUNT_TYPE_ICON[option.id]} />
+                        </span>
+                        <span className="up-opt-text">
+                          <b>{option.title}</b>
+                          <small>{option.description}</small>
+                        </span>
+                        <span className={selected ? 'up-radio on' : 'up-radio'} aria-hidden="true">
+                          {selected ? <ProfileIcon name="check" size={13} /> : null}
+                        </span>
                       </button>
                     )
                   })}
                 </div>
                 {draftTypePermissions && (
-                  <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                  <div className="up-cut-perms">
                     <PermissionRowsList
+                      variant="profile"
                       rows={editUserPermissionRows(target, effectiveAccountType, draftTypePermissions, currentUser?.id, users)}
                       onChange={(patch) => setDraftTypePermissions({ ...draftTypePermissions, ...patch })}
                       excludeFields={suppressAdminAccessToggle ? ['adminAccess'] : undefined}
@@ -1864,7 +1815,8 @@ export function EditUserProfile({
                     setDraftAccountType(null)
                     setDraftTypePermissions(null)
                   }}
-                  className="text-sm font-medium text-slate-500 hover:text-slate-700"
+                  className="pu-btn sm"
+                  style={{ alignSelf: 'flex-start' }}
                 >
                   Cancel type change
                 </button>
@@ -1876,6 +1828,7 @@ export function EditUserProfile({
                 title="Change Super Admin"
                 subtitle="Pass super admin to another administrator"
                 tone="purple"
+                icon="key"
                 onClick={() => setShowTransfer(true)}
               />
             ) : null}
@@ -1884,6 +1837,7 @@ export function EditUserProfile({
                 title="Change user type"
                 subtitle="Switch between operative, manager, or administrator"
                 tone="purple"
+                icon="users"
                 onClick={() => setShowChangeType(true)}
               />
             )}
@@ -1892,6 +1846,7 @@ export function EditUserProfile({
                 title={target.isActive ? 'Deactivate user' : 'Reactivate user'}
                 subtitle={target.isActive ? 'Suspend access, keep history' : 'Restore sign-in access'}
                 tone="amber"
+                icon="clock"
                 busy={activeSaving}
                 onClick={handleToggleActive}
               />
@@ -1901,6 +1856,7 @@ export function EditUserProfile({
                 title="Delete user"
                 subtitle="Permanently remove account"
                 tone="red"
+                icon="warn"
                 onClick={() => setConfirmDelete(true)}
               />
             )}
@@ -1912,6 +1868,7 @@ export function EditUserProfile({
               title={target.isActive ? 'Deactivate operative' : 'Reactivate operative'}
               subtitle={target.isActive ? 'Suspend access, keep history' : 'Restore sign-in access'}
               tone="amber"
+              icon="clock"
               busy={activeSaving}
               onClick={handleToggleActive}
             />
@@ -1920,29 +1877,31 @@ export function EditUserProfile({
                 title="Delete operative"
                 subtitle="Permanently remove this operative"
                 tone="red"
+                icon="warn"
                 onClick={() => setConfirmDelete(true)}
               />
             )}
           </>
         )}
       </div>
+      </FormSection>
       ) : null}
 
       {confirmDelete && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          className="up-dialog-wrap"
           onClick={() => setConfirmDelete(false)}
         >
-          <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <h2 className="text-lg font-bold text-slate-900">Delete user?</h2>
-            <p className="mt-2 text-sm text-slate-600">
+          <div className="up-dialog" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+            <h2>Delete user?</h2>
+            <p>
               Are you sure you want to delete {target.firstName} {target.surname}? This action cannot be undone.
             </p>
-            <div className="mt-5 flex justify-end gap-2">
+            <div className="up-dialog-f">
               <button
                 type="button"
                 onClick={() => setConfirmDelete(false)}
-                className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+                className="pu-btn"
               >
                 Cancel
               </button>
@@ -1950,7 +1909,7 @@ export function EditUserProfile({
                 type="button"
                 onClick={handleDelete}
                 disabled={busyAction === 'delete'}
-                className="rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+                className="pu-btn danger"
               >
                 Delete
               </button>
@@ -1961,37 +1920,36 @@ export function EditUserProfile({
 
       {showTransfer && target && currentUser?.isSuperAdmin && target.id === currentUser.id && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          className="up-dialog-wrap"
           onClick={() => setShowTransfer(false)}
         >
-          <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <h2 className="text-lg font-bold text-slate-900">Change Super Admin</h2>
+          <div className="up-dialog" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+            <h2>Change Super Admin</h2>
             {superAdminSuccessors(users, currentUser.id).length === 0 ? (
-              <p className="mt-2 text-sm text-slate-600">{SUPER_ADMIN_SUCCESSOR_EMPTY}</p>
+              <p>{SUPER_ADMIN_SUCCESSOR_EMPTY}</p>
             ) : (
-              <ul className="mt-3 max-h-64 space-y-2 overflow-y-auto">
+              <ul>
                 {superAdminSuccessors(users, currentUser.id).map((person) => (
                   <li key={person.id}>
                     <button
                       type="button"
                       disabled={transferring}
                       onClick={() => void handleTransfer(person.id)}
-                      className="w-full rounded-xl border border-slate-200 px-4 py-3 text-left hover:bg-slate-50 disabled:opacity-60"
                     >
-                      <span className="block text-sm font-semibold text-slate-900">
+                      <b>
                         {person.firstName} {person.surname}
-                      </span>
-                      <span className="mt-0.5 block text-xs text-slate-500">{person.email}</span>
+                      </b>
+                      <small>{person.email}</small>
                     </button>
                   </li>
                 ))}
               </ul>
             )}
-            <div className="mt-5 flex justify-end">
+            <div className="up-dialog-f">
               <button
                 type="button"
                 onClick={() => setShowTransfer(false)}
-                className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+                className="pu-btn"
               >
                 Cancel
               </button>
@@ -2002,20 +1960,20 @@ export function EditUserProfile({
 
       {confirmAdmin && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          className="up-dialog-wrap"
           onClick={() => setConfirmAdmin(false)}
         >
-          <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <h2 className="text-lg font-bold text-slate-900">Make this user an administrator?</h2>
-            <p className="mt-2 text-sm text-slate-600">
+          <div className="up-dialog" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+            <h2>Make this user an administrator?</h2>
+            <p>
               {target.firstName} {target.surname} will get full administrator access, including user management and
               organisation settings. Only another administrator can change this later.
             </p>
-            <div className="mt-5 flex justify-end gap-2">
+            <div className="up-dialog-f">
               <button
                 type="button"
                 onClick={() => setConfirmAdmin(false)}
-                className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+                className="pu-btn"
               >
                 Cancel
               </button>
@@ -2026,7 +1984,7 @@ export function EditUserProfile({
                   void persistAccountType('admin')
                 }}
                 disabled={typeSaving}
-                className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+                className="pu-btn primary"
               >
                 {typeSaving ? 'Saving…' : 'Yes, make administrator'}
               </button>

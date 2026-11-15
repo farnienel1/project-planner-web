@@ -25,12 +25,13 @@ export function SetupAuthGuard({ children }: { children: React.ReactNode }) {
     router.replace('/setup/check-email')
   }, [loading, sendToCheckEmail, router])
 
-  if (loading) {
-    return <LoadingSpinner label="Loading…" />
-  }
-
-  if (sendToCheckEmail) {
-    return <LoadingSpinner label="Redirecting…" />
+  // The wizard and check-email are always dark (owner, 14 Nov), so the wait is too.
+  if (loading || sendToCheckEmail) {
+    return (
+      <div className="dark pp-site-dark min-h-screen bg-[var(--bg)] pt-16">
+        <LoadingSpinner label={loading ? 'Loading…' : 'Redirecting…'} />
+      </div>
+    )
   }
 
   return <>{children}</>

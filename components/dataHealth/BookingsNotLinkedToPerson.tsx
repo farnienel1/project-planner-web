@@ -9,7 +9,7 @@
  * booking under the id then shows as that person everywhere, on both apps. Admin only. Reads whole collections.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { arrayUnion, collection, doc, documentId, getDocs, query, runTransaction, serverTimestamp, where } from 'firebase/firestore'
 import { getFirebaseDb } from '@/lib/firebase/ensureFirebase'
 import { auth } from '@/lib/firebase/config'
@@ -40,6 +40,7 @@ import {
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { useAuthStore } from '@/lib/stores/authStore'
+import { createLatestRequest } from '@/lib/dataHealth/latestRequest'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 import { dayKeyInZone } from '@/lib/orgTime/zoneTime'
 import { formatLongDayKey } from '@/lib/canonical/dayKeys'
@@ -128,6 +129,8 @@ export function BookingsNotLinkedToPerson({ organizationId }: { organizationId: 
   const [picking, setPicking] = useState<string | null>(null)
   const [impact, setImpact] = useState<LinkBookingPersonImpact | null>(null)
   const [payAck, setPayAck] = useState(false)
+  // Review r319: only the open row's latest count may land (row A's late answer never shows as row B's).
+  const impactRequest = useRef(createLatestRequest())
   const [choice, setChoice] = useState<string>('')
   const [saving, setSaving] = useState(false)
   const [roster, setRoster] = useState<LinkCandidateProfile[]>([])
@@ -283,6 +286,7 @@ export function BookingsNotLinkedToPerson({ organizationId }: { organizationId: 
         setChoice('')
         setImpact(null)
         setPayAck(false)
+        impactRequest.current.clear()
         await loadUsers(organizationId, { force: true })
         await run()
       }
@@ -375,7 +379,7 @@ export function BookingsNotLinkedToPerson({ organizationId }: { organizationId: 
                   >
                     {saving ? 'Linking…' : 'Link'}
                   </button>
-                  <button type="button" className="btn sm ghost" disabled={saving} onClick={() => { setPicking(null); setChoice(''); setImpact(null); setPayAck(false) }}>
+                  <button type="button" className="btn sm ghost" disabled={saving} onClick={() => { setPicking(null); setChoice(''); setImpact(null); setPayAck(false); impactRequest.current.clear() }}>
                     Cancel
                   </button>
                 </div>
@@ -388,7 +392,10 @@ export function BookingsNotLinkedToPerson({ organizationId }: { organizationId: 
                     setChoice('')
                     setImpact(null)
                     setPayAck(false)
-                    void loadFiledUnder(organizationId, row.personId).then((filed) => setImpact(linkBookingPersonImpact(filed)))
+                    const token = impactRequest.current.begin(row.personId)
+                    void loadFiledUnder(organizationId, row.personId).then((filed) => {
+                      if (impactRequest.current.isCurrent(token)) setImpact(linkBookingPersonImpact(filed))
+                    })
                   }}
                 >
                   {LINK_BOOKING_PERSON_ACTION}
