@@ -2027,3 +2027,25 @@ export {
   MATERIAL_CATALOGUE_QUANTITY_WRITE_GROUP,
   MATERIAL_LINE_QUANTITY_WRITE_GROUP,
 } from './operationsDocuments'
+// Rulebook 1.47.0 §8: a signed timesheet reopens when its bookings change (exported sheets stay frozen).
+export {
+  SIGNED_TIMESHEET_CHANGED_COUNTERSIGN_MESSAGE,
+  SIGNED_TIMESHEET_CHANGED_LABEL,
+  SIGNED_TIMESHEET_CHANGED_MESSAGE,
+  SIGNED_TIMESHEET_CHANGED_REVIEWER_MESSAGE,
+  SIGNED_TIMESHEET_CHANGED_STATUS,
+  SIGNED_TIMESHEET_EXPORT_SKIPPED_MESSAGE,
+  SIGNED_TIMESHEET_EXPORTED_CHANGED_MESSAGE,
+  signedTimesheetActions,
+  signedTimesheetBookingChanges,
+  signedTimesheetBookingRecord,
+  signedTimesheetLineBookingKey,
+} from './timesheetBookingChanges'
+export type {
+  SignedTimesheetBooking,
+  SignedTimesheetBookingChanges,
+  SignedTimesheetBookingDocument,
+  SignedTimesheetLine,
+  SignedTimesheetSheet,
+  SignedTimesheetWaitingFor,
+} from './timesheetBookingChanges'

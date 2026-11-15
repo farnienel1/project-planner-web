@@ -284,8 +284,21 @@ export function isTimesheetExported(fields: Pick<TimesheetStatusFields, 'exporte
   return fields.exportedAtMs != null && fields.exportedAtMs > TIMESHEET_SIGNED_AFTER_MS
 }
 
-export function timesheetListBucket(fields: TimesheetStatusFields, hasLineManager: boolean): TimesheetListBucket {
+/**
+ * Awaiting / Signed off / Exported. Rulebook 1.47.0 §8: pass the sheet's `signedTimesheetBookingChanges` as `change`
+ * — a reopened sheet waiting for the person reads `unsigned` (back with them to sign again), one waiting for the line
+ * manager `awaiting` (counter-sign again); an exported sheet stays `exported` whatever its bookings say. Without
+ * `change` the result is exactly as before 1.47.0.
+ */
+export function timesheetListBucket(
+  fields: TimesheetStatusFields,
+  hasLineManager: boolean,
+  change?: { reopened?: boolean | null; waitingFor?: 'person' | 'lineManager' | null } | null
+): TimesheetListBucket {
   if (isTimesheetExported(fields)) return 'exported'
+  if (change?.reopened === true && isTimesheetOperativeSigned(fields)) {
+    return change.waitingFor === 'lineManager' && hasLineManager ? 'awaiting' : 'unsigned'
+  }
   if (isTimesheetFullySigned(fields, hasLineManager)) return 'signed'
   if (isTimesheetAwaitingSignOff(fields, hasLineManager)) return 'awaiting'
   return 'unsigned'

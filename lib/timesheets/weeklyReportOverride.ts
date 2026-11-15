@@ -56,6 +56,12 @@ export type WeeklyReportOverrideInput = {
   payrollPolicyState?: PayrollTimePolicyState | null
   scheduleOptions?: MyScheduleOptions
   timeZone?: string
+  /**
+   * Rulebook 1.47.0 §8 (`signedTimesheetActions(...).rebuildSnapshot`): the sheet's bookings changed since it was signed
+   * and it is being signed (counter-signed) again — build the snapshot afresh from the live bookings, with the new
+   * signatures. Never for an exported sheet (it stays frozen). Any other save keeps the stored lines.
+   */
+  rebuildSnapshot?: boolean
 }
 
 function personName(user: User | null | undefined): string {
@@ -378,13 +384,16 @@ function reapplyReviews(existing: WeeklyReportOverride, input: WeeklyReportOverr
   }
 }
 
-/** Write or clear `weeklyReportOverride`. Existing labour lines are not rebuilt from bookings. */
+/** Write or clear `weeklyReportOverride`. Existing labour lines are not rebuilt from bookings (1.47.0: unless re-signed after a booking change, `rebuildSnapshot`). */
 export function applyWeeklyReportOverride(input: WeeklyReportOverrideInput): TimesheetDraft {
   if (!isTimesheetFullyApproved(input.draft, input.user, input.users ?? [])) {
     if (!input.draft.weeklyReportOverride) return input.draft
     return { ...input.draft, weeklyReportOverride: null }
   }
   const existing = input.draft.weeklyReportOverride
+  if (existing && input.rebuildSnapshot === true && !input.draft.exportedAt) {
+    return { ...input.draft, weeklyReportOverride: makeOverride(input) }
+  }
   if (existing) {
     // Rulebook 1.43.0 (`timesheetSnapshotNeedsRebuild`): a snapshot frozen with no labour lines (signed before the
     // period's bookings had loaded) is rebuilt from the live bookings when they hold labour lines and nobody has

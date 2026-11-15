@@ -36,7 +36,9 @@ const base = baseIndex >= 0 ? args[baseIndex + 1] : 'HEAD'
 
 function git(...argv) {
   try {
-    return execFileSync('git', argv, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
+    // maxBuffer: the packed script is over 1 MB (the default), so `git show` of it failed and every export was listed
+    // as "added" in the hand-off.
+    return execFileSync('git', argv, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 64 * 1024 * 1024 })
   } catch {
     return null
   }

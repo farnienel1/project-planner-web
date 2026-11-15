@@ -98,6 +98,8 @@ export function clearSignatures(draft: TimesheetDraft): TimesheetDraft {
     operativeSignedAt: null,
     operativeSignedByName: null,
     operativeSignatureImageBase64: null,
+    operativeSignedBookings: null,
+    operativeSignedBookingsAt: null,
     managerSignedAt: null,
     managerSignedByName: null,
     managerSignedByUserId: null,

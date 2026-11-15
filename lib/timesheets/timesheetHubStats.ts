@@ -43,29 +43,38 @@ export function currentPeriodTimesheetMembers(
   groups: User[][],
   drafts: ReadonlyMap<string, TimesheetDraft>,
   bucket: 'awaiting' | 'signed' | 'exported',
-  users: ReadonlyArray<User> = []
+  users: ReadonlyArray<User> = [],
+  /**
+   * Rulebook 1.47.0 §8: the sheet's `signedTimesheetBookingChanges` (when the caller has the live bookings) — a reopened
+   * sheet waiting for the person leaves Awaiting / Signed off; one the person signed again is Awaiting again.
+   */
+  bookingChange?: (member: User, draft: TimesheetDraft) => { reopened?: boolean | null; waitingFor?: 'person' | 'lineManager' | null } | null
 ): User[] {
   const rows: User[] = []
   for (const group of groups) {
     const picked = pickTimesheetGroupDraft(group, drafts)
     if (!picked) continue
     const counterSign = requiresLineManagerCounterSign(picked.member, users)
-    if (timesheetListBucket(timesheetStatusFieldsFromDraft(picked.draft), counterSign) === bucket) {
+    if (timesheetListBucket(timesheetStatusFieldsFromDraft(picked.draft), counterSign, bookingChange?.(picked.member, picked.draft) ?? null) === bucket) {
       rows.push(picked.member)
     }
   }
   return rows
 }
 
+type BookingChangeOf = Parameters<typeof currentPeriodTimesheetMembers>[4]
+
 export function currentPeriodTimesheetBucketCounts(
   groups: User[][],
   drafts: ReadonlyMap<string, TimesheetDraft>,
-  users: ReadonlyArray<User> = []
+  users: ReadonlyArray<User> = [],
+  /** Rulebook 1.47.0 §8: as `currentPeriodTimesheetMembers`. */
+  bookingChange?: BookingChangeOf
 ): { awaiting: number; signed: number; exported: number } {
   return {
-    awaiting: currentPeriodTimesheetMembers(groups, drafts, 'awaiting', users).length,
-    signed: currentPeriodTimesheetMembers(groups, drafts, 'signed', users).length,
-    exported: currentPeriodTimesheetMembers(groups, drafts, 'exported', users).length,
+    awaiting: currentPeriodTimesheetMembers(groups, drafts, 'awaiting', users, bookingChange).length,
+    signed: currentPeriodTimesheetMembers(groups, drafts, 'signed', users, bookingChange).length,
+    exported: currentPeriodTimesheetMembers(groups, drafts, 'exported', users, bookingChange).length,
   }
 }
 
@@ -79,8 +88,10 @@ export function timesheetReviewerHubStats(input: {
   exportedHistoryCount: number
   /** The organisation roster (`timesheetSelfSigned`). */
   users?: ReadonlyArray<User>
+  /** Rulebook 1.47.0 §8: the sheet's booking changes (`signedTimesheetBookingChanges`), when the live bookings loaded. */
+  bookingChange?: BookingChangeOf
 }): { awaiting: number; signed: number; exported: number } {
-  const current = currentPeriodTimesheetBucketCounts(input.groups, input.currentPeriodDrafts, input.users ?? [])
+  const current = currentPeriodTimesheetBucketCounts(input.groups, input.currentPeriodDrafts, input.users ?? [], input.bookingChange)
   return {
     awaiting: current.awaiting,
     signed: current.signed,

@@ -39,6 +39,9 @@ import type { ApprovedTimesheetWeek } from '@/lib/weekly-report/timesheetFeed'
 import { emptyDayRateHistory, loadOperativeDayRateHistory, type OperativeDayRateHistoryCollection } from '@/lib/timesheets/dayRateHistoryStorage'
 import type { Booking, HolidayBooking, Operative, Project, Subcontractor, User } from '@/types'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
+import { useBookingStore } from '@/lib/stores/bookingStore'
+import { useManagerScheduleStore } from '@/lib/stores/managerScheduleStore'
+import { bookingCoverageCoversDay } from '@/lib/timesheets/timesheetBookingChanges'
 
 
 // The PDF builders (pdf-lib) load only when a PDF is made.
@@ -142,6 +145,10 @@ export function WeeklyReportScreen({
   invoicingReadFinished?: boolean
   fallbackInvoicing?: OrgInvoicingSettings | null
 }) {
+  // Rulebook 1.47.0 (review #325 items 3, 6): what the booking listeners hold, so a signed sheet is read as changed only
+  // when its whole pay run is loaded.
+  const bookingCoverage = useBookingStore((state) => state.coverage)
+  const managerCoverage = useManagerScheduleStore((state) => state.coverage)
   const invoicing = orgDetails?.invoicing ?? fallbackInvoicing
   const timeZone = organizationTimeZone(orgDetails?.countryCode)
   const viewer = useAuthStore((state) => state.user)
@@ -314,6 +321,10 @@ export function WeeklyReportScreen({
           payrollPolicyState: orgDetails?.payrollTimePolicyState ?? null,
           scheduleOptions: orgDetails?.myScheduleOptions,
           timeZone,
+          // Rulebook 1.47.0 (review #325 item 6): a signed sheet is read as changed only when its pay run is loaded.
+          bookingsCoverFrom: (startDayKey) =>
+            bookingCoverageCoversDay(bookingCoverage, organizationId, startDayKey) &&
+            bookingCoverageCoversDay(managerCoverage, organizationId, startDayKey),
         })
         setTimesheetWeeks(weeks)
       } else {
@@ -411,6 +422,16 @@ export function WeeklyReportScreen({
           projects={projects}
           smallWorks={smallWorks}
           operatives={operatives}
+          // Rulebook 1.47.0 (review #325 item 3): Timesheet cells follow a sheet reopened by a booking change.
+          changeInputs={{
+            payrollPolicy: orgDetails?.payrollTimePolicy ?? null,
+            payrollPolicyState: orgDetails?.payrollTimePolicyState ?? null,
+            scheduleOptions: orgDetails?.myScheduleOptions ?? null,
+            history: rateHistory ?? null,
+            coversFrom: (startDayKey) =>
+              bookingCoverageCoversDay(bookingCoverage, organizationId, startDayKey) &&
+              bookingCoverageCoversDay(managerCoverage, organizationId, startDayKey),
+          }}
         />
       ) : null}
 

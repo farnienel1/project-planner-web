@@ -1,7 +1,7 @@
 /**
  * iOS parity: Models/TimesheetDraftModels.swift
  */
-import type { PayeClaimEvidence, TimesheetEntryReview } from '@/lib/canonical'
+import type { PayeClaimEvidence, SignedTimesheetBooking, TimesheetEntryReview } from '@/lib/canonical'
 
 export type TimesheetManagerDecision = 'pending' | 'approved' | 'declined' | 'edited'
 
@@ -125,6 +125,13 @@ export type TimesheetDraft = {
   operativeSignedAt?: Date | null
   operativeSignedByName?: string | null
   operativeSignatureImageBase64?: string | null
+  /**
+   * Rulebook 1.47.0 §8: the bookings the person signed (`signedTimesheetBookingRecord`), written with every operative
+   * signature. Missing on sheets signed before 1.47.0 (then the signed snapshot, if any, is what they signed).
+   */
+  operativeSignedBookings?: SignedTimesheetBooking[] | null
+  /** Rulebook 1.47.0: when `operativeSignedBookings` was written (with the signature); a record older than the latest signature is ignored. */
+  operativeSignedBookingsAt?: Date | null
   managerSignedAt?: Date | null
   managerSignedByName?: string | null
   managerSignedByUserId?: string | null
