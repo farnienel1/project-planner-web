@@ -252,7 +252,7 @@ export function VariationTrackerScreen({
                 <input
                   type="checkbox"
                   checked={orderLocked}
-                  disabled={busy || !tracker?.enabled}
+                  disabled={busy || (!tracker?.enabled && !orderLocked)}
                   onChange={async (event) => {
                     if (!organization?.id || !actor) return
                     setBusy(true)

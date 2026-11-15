@@ -251,10 +251,10 @@ service cloud.firestore {
   function orgBillingOpen(organizationId) {
     let path = /databases/(default)/documents/organizations/$(organizationId);
     let org = exists(path) ? get(path).data : {};
-    let b = org.get('billing', {});
-    return org.get('deletion', {}).get('status', '') != 'scheduled' && (b == null ||
-      b.get('accessOpen', true) != false &&
-      !(b.get('accessClosesAt', null) is timestamp && request.time >= b.accessClosesAt));
+    let c = org.get(['billing', 'accessClosesAt'], null);
+    return org.get(['deletion', 'status'], '') != 'scheduled' &&
+      org.get(['billing', 'accessOpen'], true) != false &&
+      !(c is timestamp && request.time >= c);
   }
 
   function canAccessOrganization(organizationId) {

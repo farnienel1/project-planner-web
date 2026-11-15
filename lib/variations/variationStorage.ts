@@ -6,6 +6,7 @@ import {
   collection,
   doc,
   getDoc,
+  getDocFromServer,
   getDocs,
   onSnapshot,
   query,
@@ -606,7 +607,8 @@ export async function addVariationEvidence(input: {
     // Both attempts threw. A fresh read decides which files are on the variation; only the others may be deleted.
     console.error('[variations] evidence could not be linked', failure)
     try {
-      const fresh = await getDoc(collectionRef)
+      // From the server, never the offline cache: a cached copy could miss a link that committed.
+      const fresh = await getDocFromServer(collectionRef)
       const onVariation = new Set(fresh.exists() ? variationEvidenceKeys(fresh.data() as Record<string, unknown>) : [])
       return { linked: keys.filter((key) => onVariation.has(key)), notLinked: keys.filter((key) => !onVariation.has(key)), copiesFailed: [], error: failure }
     } catch (readError) {
@@ -780,13 +782,23 @@ export async function setTrackerOrderLock(input: {
   else await setDoc(ref, write.set, { merge: true })
 }
 
-/** One-time. Writes sequence only. Does not change any VO number. */
+/**
+ * One-time. Writes sequence only. Does not change any VO number. Review of #330: turning the tracker off keeps a stored
+ * order lock (`orderLocked`); while it is set the sequence writes would be refused, so turning the tracker on is
+ * refused first with "Order is locked by X" — the Lock order switch unlocks it (it stays usable while the tracker is
+ * off and locked).
+ */
 export async function enableTracker(input: {
   organizationId: string
   parentId: string
   parentType: VariationParentType
   actorUid: string
 }): Promise<void> {
+  const current = await getDoc(trackerRef(input.organizationId, input.parentId))
+  const lock = trackerFromFirestore(input.parentId, current.exists() ? (current.data() as Record<string, unknown>) : undefined)
+  if (lock.orderLocked) {
+    throw new Error(`Order is locked by ${lock.orderLockedByName || 'someone'}. Unlock it (Lock order) before turning the tracker on.`)
+  }
   const rows = (await listParentVariations(input.organizationId, input.parentId)).filter((row) => !row.isDeleted)
   const ordered = orderForTrackerEnable(rows)
   const now = new Date()
