@@ -8,9 +8,9 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ║ FOLLOW-ON — paste into the iOS agent                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
-Rulebook version: 1.53.0 → 1.53.1
-Packed hash: 26b207de6e4ee0a61c439afc97a3cabb154f2ceddfe2d1929a17e16cb696113b
-Rulebook sha256: fc1c9c0107d4d94e5590cf179dfe537d96c2368919f04aae0876d6f02bc74c77
+Rulebook version: 1.53.1 → 1.53.1
+Packed hash: d58b40217f0d01f72155939207573c4f7f3d15dec083e2d7db1974e242f4402b
+Rulebook sha256: 03b2a324467a9b0e41fb6f04d115a953b2c65befe0816984ee69f1677c69e5f1
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -26,8 +26,8 @@ Exports added: none
 Exports removed: none
 Web files that changed the rules: docs/RULEBOOK.md, firestore.rules
 Done when:
-- [ ] Packed hash in iOS equals 26b207de6e4ee0a61c439afc97a3cabb154f2ceddfe2d1929a17e16cb696113b
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 fc1c9c0107d4d94e5590cf179dfe537d96c2368919f04aae0876d6f02bc74c77)
+- [ ] Packed hash in iOS equals d58b40217f0d01f72155939207573c4f7f3d15dec083e2d7db1974e242f4402b
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 03b2a324467a9b0e41fb6f04d115a953b2c65befe0816984ee69f1677c69e5f1)
 - [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.53.1)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
@@ -36,11 +36,8 @@ Done when:
 
 ## What changed in 1.53.1
 
-- **Security rules hardening, no app change** (§16; pre-launch follow-ups from 1.31.1). (1) An admin's update of another person's users document checks privilege values like every other users write path (`privilegeWriteTyped`: a written or changed privilege key, top level or `permissions`, is a bool or null; a written role is one the apps write); one check now serves the admin and the operatives-manager paths. (2) `members` on the organisation document: a written value is a role word; a legacy value stored on one entry can no longer be copied onto another (`membersValuesTyped` counts the non-role values). (3) Nobody switches their own Annual Leave Management or Timesheet self-sign off, non-admins included (admins since 1.31.1; the value in effect is compared, so a save writing it back passes). (4) A redundant platform-owner test in the settings read rule is removed (same decision). Static compile cost 229,614 → 229,563; emulator type check 0 issues; new suite `tests/rulesHardening.rules.test.ts`.
+- **Security rules hardening, no app change** (§16; pre-launch follow-ups from 1.31.1). (1) An admin's update of another person's users document checks privilege values like every other users write path (`privilegeWriteTyped`: a written or changed privilege key, top level or `permissions`, is a bool or null; a written role is one the apps write); one check now serves the admin and the operatives-manager paths. (2) `members` on the organisation document: a written value is a role word; a legacy value stored on one entry can no longer be copied onto another (`membersValuesTyped` counts the non-role values). (3) Nobody switches their own Annual Leave Management or Timesheet self-sign off, non-admins included (admins since 1.31.1; the value in effect is compared, so a save writing it back passes). (4) A redundant platform-owner test in the settings read rule is removed (same decision). The Super Admin's own document (the creator, or a stored `isSuperAdmin`) keeps its exemption, so a Super Admin transfer from a legacy founder document still saves. Static compile cost 229,614 → 230,031; emulator type check 0 issues; new suite `tests/rulesHardening.rules.test.ts`.
 
-## New rulebook sections
-
-- 1.53.1 — 2026-11-15
 
 ## Workflow for the iOS agent
 

@@ -136,3 +136,34 @@ test('1.53.1 self-manage toggles: nobody switches their own off; an admin still 
   const admin = await db(ADMIN)
   await assertSucceeds(updateDoc(doc(admin, 'users', MGR), { annualLeaveSelfBook: false, 'permissions.annualLeaveSelfBook': false }))
 })
+
+// Review of #334: the outgoing Super Admin's own demote write (`superAdminTransferWrites`, no line manager → both
+// self-manage toggles on) for a legacy founder document with no top-level admin flags. Allowed before 1.53.1; must stay.
+for (const [label, extra] of [
+  ['no permissions map', {}],
+  ['isSuperAdmin only in permissions', { permissions: { isSuperAdmin: true } }],
+] as const) {
+  test(`1.53.1 review of #334: Super Admin transfer, legacy founder (${label})`, async () => {
+    await env.clearFirestore()
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      const fs = ctx.firestore()
+      await setDoc(doc(fs, 'organizations', 'pz-org'), {
+        name: 'P', creatorUserId: 'pz-f', members: { 'pz-f': 'admin', 'pz-b': 'admin', 'pz-m': 'manager' },
+      })
+      await setDoc(doc(fs, 'users', 'pz-b'), {
+        email: 'pz-b@test.com', organizationId: 'pz-org', firstName: 'pz-b', surname: 'T', isActive: true, passwordSet: true,
+        role: 'admin', adminAccess: true, isSuperAdmin: false,
+      })
+      await setDoc(doc(fs, 'users', 'pz-f'), {
+        email: 'pz-f@test.com', organizationId: 'pz-org', firstName: 'pz-f', surname: 'T', isActive: true, passwordSet: true,
+        role: 'manager', manager: true, annualLeaveSelfBook: false, timesheetSelfSign: false, ...extra,
+      })
+    })
+    const f = (await claimsContext(env, 'pz-f', { email: 'pz-f@test.com' })).firestore()
+    await assertSucceeds(updateDoc(doc(f, 'users', 'pz-f'), {
+      isSuperAdmin: false, adminAccess: true, role: 'admin', 'permissions.adminAccess': true,
+      annualLeaveSelfBook: true, 'permissions.annualLeaveSelfBook': true,
+      timesheetSelfSign: true, 'permissions.timesheetSelfSign': true,
+    }))
+  })
+}

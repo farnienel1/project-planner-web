@@ -877,7 +877,7 @@ service cloud.firestore {
     ) : false)
             ) : false) ||
           (userUpdateCallerAdmin(targetAdmin) ? ((request.auth.uid != userId ? true : (
-            (targetAdmin ? toggles : selfManageFlagsEqual(request.resource.data, resource.data)) &&
+            (targetAdmin ? toggles : (orgCreatorIs(docOrganizationId(resource.data), request.auth.uid) ? true : (staffFlag(resource.data, 'isSuperAdmin') ? true : selfManageFlagsEqual(request.resource.data, resource.data)))) &&
             selfUpdateKeepsIdentityLinks())) ? (
           isAdminOfCompany(resource.data.organizationId) ? (
             adminUpdateKeepsTopAccount(userId) ? (
