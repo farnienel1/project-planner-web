@@ -21,6 +21,7 @@ import {
 } from '@/lib/weekly-report/invoicingPeriodUtils'
 import { invoicingQuickSelectLabel } from '@/lib/weekly-report/invoicingRead'
 import { buildWeeklyReportData } from '@/lib/weekly-report/weeklyReportData'
+import { useOrgBankHolidays } from '@/components/annual-leave/useOrgBankHolidays'
 import type {
   SubcontractorBookingRow,
   WeeklyReportApprovedClashRow,
@@ -229,9 +230,17 @@ export function WeeklyReportScreen({
     [periodMode, invoicing, effectiveInvoicingPeriodId, weekStart, customStart, customEnd, timeZone]
   )
 
+  // Rulebook 1.53.0 (B7): the region's bank holidays in the range; the report waits for them (as My Profile does), so
+  // a bank holiday inside a week of leave is never counted as a leave day.
+  const bankFallback = useMemo(() => new Date(), [])
+  const bankRangeStart = period?.start ?? bankFallback
+  const bankRangeEnd = period?.end ?? bankRangeStart
+  const bank = useOrgBankHolidays(bankRangeStart, bankRangeEnd)
+  const bankHolidayDayKeys = useMemo(() => bank.holidays.map((holiday) => holiday.date), [bank.holidays])
   const builtReport = useMemo(() => {
-    if (!period) return null
+    if (!period || !bank.loaded) return null
     return buildWeeklyReportData({
+      bankHolidayDayKeys,
       organizationName,
       companyLogoURL,
       period,
@@ -255,6 +264,8 @@ export function WeeklyReportScreen({
       viewer: viewer ? ({ ...viewer, isPlatformOwner: isPlatformOwnerEmail(viewer.email) } as never) : null,
     })
   }, [
+    bank.loaded,
+    bankHolidayDayKeys,
     timesheetSheets,
     viewer,
     period,

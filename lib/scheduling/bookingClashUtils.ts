@@ -2,11 +2,11 @@ import { jobKind } from '@/lib/canonical/staffAccess'
 import type { Booking, Operative, Project, User } from '@/types'
 import type { ScheduleDateSlot } from '@/lib/scheduling/scheduleUtils'
 import { slotToFirestore } from '@/lib/scheduling/scheduleUtils'
-import { dayKey, isSameLondonDay, londonMidnight } from '@/lib/ios-parity/londonTime'
+import { dayKey, londonMidnight } from '@/lib/ios-parity/londonTime'
 
-function formatLondonDay(date: Date): string {
+function formatLondonDay(date: Date, timeZone?: string): string {
   return new Intl.DateTimeFormat('en-GB', {
-    timeZone: organizationZoneOr(),
+    timeZone: organizationZoneOr(timeZone),
     day: 'numeric',
     month: 'short',
     year: 'numeric',
@@ -33,8 +33,10 @@ import {
   type BookingPersonInput,
   type PayrollTimePolicyState,
 } from '@/lib/canonical'
-import { normalizeDocumentId } from '@/lib/canonical'
+import { isSameBookingRequest, normalizeDocumentId } from '@/lib/canonical'
+import { operativeBookingIdentityInput } from '@/lib/scheduling/bookingRequestIdentity'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
+import { dateFromDayKeyInZone } from '@/lib/orgTime/zoneTime'
 import { samePersonBookingIds } from '@/lib/bookings/bookingPeople'
 
 export interface OperativeBookingClash {
@@ -209,22 +211,30 @@ export function groupClashesByOperative(clashes: OperativeBookingClash[]): Map<s
   return map
 }
 
+/**
+ * Rulebook 1.20.2 / 1.53.0: "already booked" is `isSameBookingRequest` — same person (ids without case), organisation
+ * day, canonical slot, place and, for custom hours, the same clock minutes and break toggle. Never a raw text compare.
+ */
 export function isExactDuplicateBooking(
   bookings: Booking[],
   projectId: string,
   operativeId: string,
-  slot: ScheduleDateSlot
+  slot: ScheduleDateSlot,
+  options: { isBreakRemoved?: boolean; timeZone?: string } = {}
 ): boolean {
   const firestoreSlot = slotToFirestore(slot)
+  const zone = organizationZoneOr(options.timeZone)
+  const wanted = {
+    personId: operativeId,
+    dayKey: dayKey(slot.date, zone),
+    timeSlot: firestoreSlot.timeSlot,
+    locationId: projectId,
+    workStartTime: firestoreSlot.workStartTime ?? null,
+    workEndTime: firestoreSlot.workEndTime ?? null,
+    isBreakRemoved: options.isBreakRemoved === true,
+  }
   return bookings.some(
-    (booking) =>
-      booking.projectId === projectId &&
-      normalizeDocumentId(booking.operativeId) === normalizeDocumentId(operativeId) &&
-      isSameLondonDay(new Date(booking.date), slot.date) &&
-      String(booking.timeSlot) === firestoreSlot.timeSlot &&
-      (booking.workStartTime || '') === (firestoreSlot.workStartTime || '') &&
-      (booking.workEndTime || '') === (firestoreSlot.workEndTime || '') &&
-      isActiveBooking(booking)
+    (booking) => isActiveBooking(booking) && isSameBookingRequest(operativeBookingIdentityInput(booking, zone), wanted)
   )
 }
 
@@ -255,8 +265,11 @@ export function computeOperativeBookingClashWarnings(
     payrollPolicyState?: PayrollTimePolicyState | null
     /** Folded same-email `users` id → the id the roster kept. */
     userIdAliases?: Readonly<Record<string, string>> | null
+    /** Rulebook 1.53.0: the organisation zone (days and the row's date); never London unless that is the zone. */
+    timeZone?: string
   }
 ): OperativeBookingClashWarning[] {
+  const zone = organizationZoneOr(options?.timeZone)
   const projectsById = new Map(projects.map((p) => [p.id, p]))
   const operativesById = new Map(operatives.map((o) => [o.id, o]))
   const payrollPolicy = options?.payrollPolicy ?? DEFAULT_PAYROLL_POLICY
@@ -275,7 +288,7 @@ export function computeOperativeBookingClashWarnings(
     operativeBookings: bookings.map((booking) => ({
       id: booking.id,
       operativeId: booking.operativeId,
-      dayKey: dayKey(booking.date),
+      dayKey: dayKey(booking.date, zone),
       timeSlot: String(booking.timeSlot ?? ''),
       workStartTime: clockText(booking.workStartTime),
       workEndTime: clockText(booking.workEndTime),
@@ -302,12 +315,15 @@ export function computeOperativeBookingClashWarnings(
     const a = sorted[0]
     const b = sorted[1]
     const place = sorted.length === 2 ? 'two' : String(sorted.length)
+    // Rulebook 1.53.0: the row is dated on the clash's own day (`group.dayKey`, organisation zone) — an overnight
+    // booking from the day before is listed on the later day, never on its own start day.
+    const clashDay = dateFromDayKeyInZone(group.dayKey, zone)
     return {
       id: group.pairKey,
       resolutionKey: group.resolutionKey,
       operativeId: group.operativeId,
       operativeName,
-      date: londonMidnight(a.date),
+      date: clashDay,
       bookingAId: group.bookingAId,
       bookingBId: group.bookingBId,
       pairs: group.pairs.map((pair) => ({ bookingAId: pair.bookingAId, bookingBId: pair.bookingBId })),
@@ -315,12 +331,12 @@ export function computeOperativeBookingClashWarnings(
       projectBId: b.projectId,
       projectALabel: projectLabel(a.projectId, projectsById),
       projectBLabel: projectLabel(b.projectId, projectsById),
-      message: `${operativeName} is booked in ${place} places on ${formatLondonDay(londonMidnight(a.date))}. Approve if it's intentional and it'll be noted on the weekly report.`,
+      message: `${operativeName} is booked in ${place} places on ${formatLondonDay(clashDay, zone)}. Approve if it's intentional and it'll be noted on the weekly report.`,
       entries: sorted.map((booking) =>
         clashEntryFromOperativeBooking(
           booking,
           projectsById.get(booking.projectId),
-          (standardDayOn(options?.payrollPolicyState ?? payrollPolicy, dayKey(booking.date)) as OrgPayrollTimePolicy | null) ?? payrollPolicy
+          (standardDayOn(options?.payrollPolicyState ?? payrollPolicy, dayKey(booking.date, zone)) as OrgPayrollTimePolicy | null) ?? payrollPolicy
         )
       ),
     }

@@ -77,6 +77,15 @@ export const PAYRUN_SNAPSHOT_LEVEL_LABELS: Readonly<Record<PermissionLevel, stri
   operative: 'Operative',
 }
 export const PAYRUN_SNAPSHOT_SUPER_ADMIN_LABEL = 'Admin (Super Admin)'
+
+/**
+ * Rulebook 1.53.0 §7: a person's user level as the Payrun Snapshot and the Weekly report Role column show it —
+ * `permissionLevelOf` (Admin / Manager / Operative), the Super Admin "Admin (Super Admin)".
+ */
+export function userLevelLabel(person: Parameters<typeof permissionLevelOf>[0]): string {
+  const level = permissionLevelOf(person)
+  return level === 'admin' && isSuperAdminAccount(person as never) ? PAYRUN_SNAPSHOT_SUPER_ADMIN_LABEL : PAYRUN_SNAPSHOT_LEVEL_LABELS[level]
+}
 export const PAYRUN_SNAPSHOT_EMPLOYMENT_LABELS = { paye: 'PAYE', selfEmployed: 'Self-employed' } as const
 export const PAYRUN_SNAPSHOT_PAYE_CELL = 'PAYE'
 export const PAYRUN_SNAPSHOT_SELF_EMPLOYED_CELL = 'Self Employed'
@@ -493,7 +502,7 @@ export function payrunSnapshotRows(input: PayrunSnapshotInput): PayrunSnapshotRo
     const paye = weeklyReportPayeDay(person as never, period.end, zone)
     const payeAtStart = weeklyReportPayeDay(person as never, period.start, zone)
     const level = permissionLevelOf(person)
-    const levelLabel = level === 'admin' && isSuperAdminAccount(person) ? PAYRUN_SNAPSHOT_SUPER_ADMIN_LABEL : PAYRUN_SNAPSHOT_LEVEL_LABELS[level]
+    const levelLabel = userLevelLabel(person)
     const theirSheets = sheets.filter((sheet) => ids.has(idKey(sheet.userId)))
     const blocked = (label: string): PayrunSnapshotCell => cell('notApplicable', label, 'blocked', null)
     const cells = paye

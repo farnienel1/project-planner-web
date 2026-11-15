@@ -1,8 +1,7 @@
-import { format } from 'date-fns'
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from 'pdf-lib'
 import { formatReportPeriodLabel } from '@/lib/weekly-report/invoicingPeriodUtils'
 import { currencySymbol } from '@/lib/canonical'
-import { weeklyReportSections } from '@/lib/weekly-report/weeklyReportSections'
+import { weeklyReportGeneratedLabel, weeklyReportSections } from '@/lib/weekly-report/weeklyReportSections'
 import type { WeeklyReportData } from '@/lib/weekly-report/weeklyReportData'
 
 const PAGE_W = 842
@@ -168,7 +167,7 @@ export async function buildWeeklyReportPdf(data: WeeklyReportData): Promise<Uint
   }
 
   const periodLabel = formatReportPeriodLabel(data.reportPeriod.start, data.reportPeriod.end)
-  const generatedLabel = format(data.generatedAt, "d MMM yyyy 'at' HH:mm")
+  const generatedLabel = weeklyReportGeneratedLabel(data)
   draw.page.drawRectangle({ x: 0, y: PAGE_H - 78, width: PAGE_W, height: 78, color: NAVY })
   draw.page.drawText('PROJECTPLANNER', { x: MARGIN, y: PAGE_H - 22, size: 8, font: bold, color: rgb(0.58, 0.77, 0.99) })
   draw.page.drawText(pdfText(data.organizationName || 'Weekly report'), {

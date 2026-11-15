@@ -21,6 +21,8 @@ export interface ScheduleDateSlot {
   slot: ScheduleSlotChoice
   workStartTime?: string
   workEndTime?: string
+  /** Rulebook 1.53.0 (B4): the booking's "No unpaid break" toggle (custom hours on a day whose break is unpaid). */
+  isBreakRemoved?: boolean
 }
 
 export function slotKey(date: Date): string {

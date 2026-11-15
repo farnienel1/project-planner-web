@@ -942,7 +942,9 @@ export function TimesheetPeriodPage({
       payroll,
       draft,
       timeZone,
-      extrasMode: 'raw',
+      // Rulebook 1.53.0 (B12): once the line manager has signed, the invoice applies their decisions (`decided`),
+      // even before a signed snapshot is written — the same invoice the summary shows.
+      extrasMode: draft.managerSignedAt ? 'export' : 'raw',
       standardDayHours: weekdayPaidHours(payrollPolicy),
       standardDayHoursOn: (date: Date) => weekdayPaidHours(policyOnDay(date)),
       currencyCode: currency,
@@ -1160,7 +1162,7 @@ export function TimesheetPeriodPage({
       ? [
           {
             value: money(hoursSubtotal, currency),
-            label: `Hours · ${payroll.shiftCount} shifts (${formatTimesheetHours(payroll.totalHours)}h)`,
+            label: `Hours · ${payroll.shiftCount} shifts (${formatTimesheetHours(totals.hours)}h)`,
           },
           { value: money(overtimeAmount, currency), label: 'Overtime', tone: 'amber' },
           { value: money(extrasTotal, currency), label: `Price work · ${draft.priceWorkEntries.length}` },
@@ -1257,7 +1259,7 @@ export function TimesheetPeriodPage({
               {mode === 'review' ? (
                 <>
                   <Row
-                    label={`Hours · ${payroll.shiftCount} shifts (${formatTimesheetHours(payroll.totalHours)}h)`}
+                    label={`Hours · ${payroll.shiftCount} shifts (${formatTimesheetHours(totals.hours)}h)`}
                     value={money(hoursSubtotal, currency)}
                   />
                   <Row label="Overtime" value={money(overtimeAmount, currency)} />

@@ -125,6 +125,8 @@ export function OperativeAnnualLeaveCalendar({
   const [month, setMonth] = useState(() => monthOfNextBooking(person, bookings))
   const bankYear = month.getFullYear()
   const bank = useOrgBankHolidays(new Date(bankYear, 0, 1), new Date(bankYear, 11, 31))
+  // Rulebook 1.53.0 (B7): the region's bank holidays — a bank holiday inside a multi-day record is not a leave day.
+  const bankDayKeys = bank.holidays.map((holiday) => holiday.date)
   const [holidayNote, setHolidayNote] = useState<string | null>(null)
   const [pendingDelete, setPendingDelete] = useState<HolidayBooking | null>(null)
   const [selectedDay, setSelectedDay] = useState<Date | null>(null)
@@ -142,14 +144,20 @@ export function OperativeAnnualLeaveCalendar({
   const timeZone = useOrganizationTimeZone()
   const subject = useMemo(() => (person.userId ? users.find((row) => row.id === person.userId) ?? null : null), [person.userId, users])
   const [orgLeaveDefaults, setOrgLeaveDefaults] = useState<OrgAnnualLeaveDefaults>(DEFAULT_ANNUAL_LEAVE)
+  // Rulebook 1.53.0 (B13): no balance until this organisation's leave-year settings are read (or the read failed) —
+  // never a figure on the default leave year first.
+  const [leaveDefaultsOrgId, setLeaveDefaultsOrgId] = useState<string | null>(null)
   useEffect(() => {
     if (!organization?.id) return
-    loadOrganizationDetails(organization.id)
+    const orgId = organization.id
+    loadOrganizationDetails(orgId)
       .then((details) => {
         if (details?.annualLeaveDefaults) setOrgLeaveDefaults(details.annualLeaveDefaults)
       })
       .catch(() => undefined)
+      .finally(() => setLeaveDefaultsOrgId(orgId))
   }, [organization?.id])
+  const leaveDefaultsLoaded = Boolean(organization?.id) && leaveDefaultsOrgId === organization?.id
   const viewerMayAdjust = Boolean(user && subject && canAdjustAnnualLeave(rulebookPerson(user, users), rulebookPerson(subject, users), rulebookRoster(users)))
   const viewerMaySeeAdjustments = Boolean(
     user && subject && canViewAnnualLeaveAdjustments(rulebookPerson(user, users), rulebookPerson(subject, users), rulebookRoster(users))
@@ -199,17 +207,17 @@ export function OperativeAnnualLeaveCalendar({
   )
 
   const selectedKind: AnnualLeaveDayKind | null = selectedDay
-    ? getDayKindForBookings(selectedDay, personBookings)
+    ? getDayKindForBookings(selectedDay, personBookings, bankDayKeys)
     : null
 
   const pendingBooking =
     selectedDay && (selectedKind === 'pendingFull' || selectedKind === 'pendingHalf')
-      ? getBookingForDay(selectedDay, personBookings, 'pending')
+      ? getBookingForDay(selectedDay, personBookings, 'pending', bankDayKeys)
       : null
 
   const approvedBooking =
     selectedDay && (selectedKind === 'approvedFull' || selectedKind === 'approvedHalf')
-      ? getBookingForDay(selectedDay, personBookings, 'approved')
+      ? getBookingForDay(selectedDay, personBookings, 'approved', bankDayKeys)
       : null
 
   const handleDayClick = (day: Date) => {
@@ -219,9 +227,9 @@ export function OperativeAnnualLeaveCalendar({
       return
     }
     setSelectedDay(sod)
-    const kind = getDayKindForBookings(sod, personBookings)
+    const kind = getDayKindForBookings(sod, personBookings, bankDayKeys)
     if (kind === 'approvedFull' || kind === 'approvedHalf') {
-      const b = getBookingForDay(sod, personBookings, 'approved')
+      const b = getBookingForDay(sod, personBookings, 'approved', bankDayKeys)
       if (b) setChangeSlot(b.timeSlot)
     } else {
       setBookSlot('FULL DAY')
@@ -410,7 +418,7 @@ export function OperativeAnnualLeaveCalendar({
             leaveYearStart={dayFromKey(balance.startDayKey)}
             leaveYearEnd={dayFromKey(balance.endDayKey)}
             loading={
-              !balanceBank.loaded || !leaveEmployment.ready || (viewerMaySeeAdjustments && !adjustmentsRead.loaded && !adjustmentsRead.error)
+              !leaveDefaultsLoaded || !balanceBank.loaded || !leaveEmployment.ready || (viewerMaySeeAdjustments && !adjustmentsRead.loaded && !adjustmentsRead.error)
             }
             error={viewerMaySeeAdjustments ? adjustmentsRead.error : null}
           />
@@ -448,7 +456,7 @@ export function OperativeAnnualLeaveCalendar({
         <LeaveDayCalendar
           month={month}
           onMonthChange={setMonth}
-          getDayKind={(day) => getDayKindForBookings(day, personBookings)}
+          getDayKind={(day) => getDayKindForBookings(day, personBookings, bankDayKeys)}
           bankHolidayName={bank.nameOn}
           onBankHoliday={(name) =>
             setHolidayNote(

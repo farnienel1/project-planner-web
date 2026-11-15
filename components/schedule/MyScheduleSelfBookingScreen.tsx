@@ -1,8 +1,9 @@
 'use client'
 
-import { enabledScheduleLocations, type MyScheduleClashMarker } from '@/lib/canonical'
+import { bookingRequestClashIds, enabledScheduleLocations, type MyScheduleClashMarker } from '@/lib/canonical'
+import { addDaysInZone } from '@/lib/orgTime/zoneTime'
+import { organizationDetailsFromData } from '@/lib/settings/organizationSettings'
 import { MyScheduleClashMarkerButton } from '@/components/schedule/MyScheduleClashMarker'
-import { intervalsOverlap, operativeClashInterval } from '@/lib/warnings/clashIntervals'
 import {
   useEffect,
   useMemo,
@@ -226,7 +227,14 @@ export function MyScheduleSelfBookingScreen({
   const leaveCheck = useLeaveConflictCheck(payrollPolicy)
   // Rulebook 1.17.0 §4.3: the live organisation document, so the weekend note, prefill and break check read the
   // working hours in effect on the booking day (`effectivePayrollTimePolicy` in bookingSlotRules).
-  useOrganizationDocument()
+  const liveOrganization = useOrganizationDocument()
+  const policyState = useMemo(
+    () =>
+      liveOrganization.organizationId === organizationId && liveOrganization.data
+        ? organizationDetailsFromData(organizationId, liveOrganization.data).payrollTimePolicyState
+        : null,
+    [liveOrganization.organizationId, liveOrganization.data, organizationId]
+  )
   const leaveGate = useBookingConflictGate()
 
   // Rulebook §1 (1.36.0, FU-4): the organisation's current week and today, not the browser's.
@@ -445,23 +453,31 @@ export function MyScheduleSelfBookingScreen({
     // list, the same rows as every booking flow — tick to book anyway, or ✕ to drop that day.
     const zone = organizationZoneOr()
     const clashRows: BookingConflictRow[] = days.flatMap((day) => {
-      // Owner decision (1.19.0): warn only when the times actually overlap (`slotInterval` via
-      // `operativeClashInterval`, `intervalsOverlap`), as every other booking flow does — touching times do not clash.
-      const dayPolicy = policyForBookingDate(day, payrollPolicy) ?? payrollPolicy
-      const probe = operativeClashInterval(
-        {
-          timeSlot: args.timeSlot,
-          workStartTime: args.timeSlot === 'CUSTOM_HOURS' ? customStart : undefined,
-          workEndTime: args.timeSlot === 'CUSTOM_HOURS' ? customEnd : undefined,
-        } as Parameters<typeof operativeClashInterval>[0],
-        dayPolicy ?? undefined
-      )
-      const existing = myBookingsOn(day).filter((booking) => {
-        const interval = operativeClashInterval(booking as Parameters<typeof operativeClashInterval>[0], dayPolicy ?? undefined)
-        return Boolean(probe && interval && intervalsOverlap(probe, interval))
-      })
-      if (existing.length === 0) return []
+      // Rulebook 1.23.1 / 1.53.0 §5: `bookingRequestClashIds` under the working hours in effect on the booked day
+      // (the whole policy state; a weekend Full day is that day's own window), with the day before included so an
+      // overnight booking ending this morning clashes too.
       const key = orgDayKey(day, zone)
+      const candidates = [...myBookingsOn(addDaysInZone(day, -1, zone)), ...myBookingsOn(day)]
+      const clashing = new Set(
+        bookingRequestClashIds({
+          request: {
+            dayKey: key,
+            timeSlot: args.timeSlot,
+            workStartTime: args.timeSlot === 'CUSTOM_HOURS' ? customStart : null,
+            workEndTime: args.timeSlot === 'CUSTOM_HOURS' ? customEnd : null,
+          },
+          existing: candidates.map((row) => ({
+            id: row.id,
+            dayKey: orgDayKey(row.date, zone),
+            timeSlot: String(row.timeSlot ?? ''),
+            workStartTime: row.workStartTime ?? null,
+            workEndTime: row.workEndTime ?? null,
+          })),
+          day: policyState ?? payrollPolicy,
+        })
+      )
+      const existing = candidates.filter((booking) => clashing.has(booking.id))
+      if (existing.length === 0) return []
       return [
         {
           key: conflictRowKey(userId, key, 'double_booking'),

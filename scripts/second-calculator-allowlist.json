@@ -144,12 +144,6 @@
     "reason": "FU-7: <input type=time> value from a Date in the browser zone; follow-up with FU-4 (organisation-zone form values)."
   },
   {
-    "path": "lib/home/upNext.ts",
-    "pattern": "londonMidnight",
-    "count": 3,
-    "reason": "FU-2: londonTime.ts helpers default to the open organisation's zone (organizationZoneOr, rulebook §1 since 1.9.0) despite the London name; rename to org-zone names is a follow-up, not a behaviour change."
-  },
-  {
     "path": "lib/ios-parity/londonTime.ts",
     "pattern": "london-zone-constant",
     "count": 2,
@@ -200,7 +194,7 @@
   {
     "path": "lib/scheduling/bookingClashUtils.ts",
     "pattern": "londonMidnight",
-    "count": 3,
+    "count": 1,
     "reason": "FU-2: londonTime.ts helpers default to the open organisation's zone (organizationZoneOr, rulebook §1 since 1.9.0) despite the London name; rename to org-zone names is a follow-up, not a behaviour change."
   },
   {
@@ -285,12 +279,6 @@
     "path": "lib/warnings/leaveCoverageWarnings.ts",
     "pattern": "londonMidnight",
     "count": 2,
-    "reason": "FU-2: londonTime.ts helpers default to the open organisation's zone (organizationZoneOr, rulebook §1 since 1.9.0) despite the London name; rename to org-zone names is a follow-up, not a behaviour change."
-  },
-  {
-    "path": "lib/warnings/managerClashWarnings.ts",
-    "pattern": "londonMidnight",
-    "count": 1,
     "reason": "FU-2: londonTime.ts helpers default to the open organisation's zone (organizationZoneOr, rulebook §1 since 1.9.0) despite the London name; rename to org-zone names is a follow-up, not a behaviour change."
   },
   {

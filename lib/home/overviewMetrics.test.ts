@@ -5,7 +5,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { computeHomeOverviewMetrics } from './overviewMetrics.ts'
-import { upcomingRows, sortDateOperativeBooking, DEFAULT_PAYROLL_TIME_POLICY } from './upNext.ts'
+import { upcomingDaySections } from './upNext.ts'
 import type { Booking, Operative, Project, ProjectTask, User, UserPermissions } from '../../types/index.ts'
 import { UserRole } from '../../types/index.ts'
 
@@ -95,7 +95,7 @@ test('computeHomeOverviewMetrics counts assigned due-today tasks and skips compl
   assert.equal(metrics.liveProjectCount, 3)
 })
 
-test('Up Next skips cancelled bookings and sorts by payroll start', () => {
+test('Up Next skips cancelled bookings and sorts by start (1.53.0: rulebook `homeUpNextRows`)', () => {
   const now = new Date('2026-09-16T06:00:00+01:00')
   const booking = (id: string, status: string, start: string): Booking => ({
     id,
@@ -109,10 +109,10 @@ test('Up Next skips cancelled bookings and sorts by payroll start', () => {
     createdAt: now,
     updatedAt: now,
   })
-  const rows = upcomingRows({
-    limit: 10,
+  const sections = upcomingDaySections({
     now,
-    currentUserEmail: 'sam@x.com',
+    timeZone: 'Europe/London',
+    viewer: { id: 'U-SAM', email: 'sam@x.com' },
     operatives: [
       {
         id: 'OP1',
@@ -166,11 +166,11 @@ test('Up Next skips cancelled bookings and sorts by payroll start', () => {
       } as User,
     ],
   })
+  const rows = sections.flatMap((section) => section.rows)
   assert.deepEqual(
     rows.map((r) => r.id),
     ['B', 'C']
   )
-  const early = sortDateOperativeBooking(booking('B', 'Confirmed', '08:00'), DEFAULT_PAYROLL_TIME_POLICY)
-  const late = sortDateOperativeBooking(booking('C', 'Tentative', '10:00'), DEFAULT_PAYROLL_TIME_POLICY)
-  assert.equal(early.getTime() < late.getTime(), true)
+  // A named AM slot starts at the standard day's start (`slotInterval`); a lone start time with no finish is not a range.
+  assert.match(rows[0].subtitle, /^07:30 · 100 · Bo Ss$/)
 })

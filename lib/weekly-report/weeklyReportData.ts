@@ -1,4 +1,3 @@
-import { format } from 'date-fns'
 import { personRateHistoryIds } from '@/lib/pay/personRateHistoryIds'
 import {
   bookingOccupiesDay,
@@ -20,7 +19,7 @@ import { managerSiteBookingDisplayTitle } from '@/lib/scheduling/managerSiteBook
 import { getActiveOperativesForScheduling } from '@/lib/operatives/operativeRosterUtils'
 import type { OrganizationDetails } from '@/lib/settings/organizationSettings'
 import { DEFAULT_PAYROLL_POLICY, includesManagerScheduleLocation, orgPayrollPolicyForDay } from '@/lib/settings/organizationSettings'
-import { organizationTimeZone } from '@/lib/canonical'
+import { ORPHAN_BOOKING_LABEL, organizationTimeZone } from '@/lib/canonical'
 import { computeManagerBookingClashWarnings } from '@/lib/warnings/managerClashWarnings'
 import {
   claimEvidenceCountText,
@@ -177,6 +176,8 @@ export type WeeklyReportData = {
   reportPeriod: ReportPeriod
   invoicingPeriodLabel: string
   generatedAt: Date
+  /** Rulebook 1.53.0 (B9): the organisation zone, so "Generated" is written in it. */
+  timeZone?: string
   /** Organisation currency code for every money figure (`formatMoney`). */
   currencyCode: string
   warnings: WeeklyReportWarningRow[]
@@ -251,6 +252,7 @@ export function buildWeeklyReportData({
   timesheetSheets = [],
   viewer = null,
   showAllPay = false,
+  bankHolidayDayKeys = [],
 }: {
   organizationName: string
   companyLogoURL?: string
@@ -280,9 +282,14 @@ export function buildWeeklyReportData({
   viewer?: Record<string, unknown> | null
   /** Show every rate and pay figure whoever views (tests only). Without it and with no viewer, pay is hidden. */
   showAllPay?: boolean
+  /** Rulebook 1.53.0 (B7): the region's bank holidays (day keys); a bank holiday inside a leave record is not leave. */
+  bankHolidayDayKeys?: readonly string[]
 }): WeeklyReportData {
   const payroll = orgDetails?.payrollTimePolicy
   const timeZone = organizationTimeZone(orgDetails?.countryCode)
+  // Rulebook 1.53.0 (B9): every date on the report is written in the organisation zone, never the browser's.
+  const zoneDayText = (date: Date) =>
+    new Intl.DateTimeFormat('en-GB', { timeZone, day: 'numeric', month: 'short', year: 'numeric' }).format(date)
   const mergedWorks = mergeProjectsAndSmallWorks(projects, smallWorks)
   const projectsById = new Map<string, Project>()
   mergedWorks.forEach((project) => projectsById.set(project.id, project))
@@ -417,9 +424,10 @@ export function buildWeeklyReportData({
   }
   for (const booking of periodManagerBookings) {
     const job = booking.locationType === 'project' || booking.locationType === 'small_work'
-    if (job && !booking.locationId) continue
+    // Rulebook 1.53.0 (B8): a job booking with no `locationId` (its job deleted) is still worked and paid, as on the
+    // timesheet; it reads "Deleted job" (`ORPHAN_BOOKING_LABEL`).
     claim(booking.userId, personForBooking({ userId: booking.userId }))
-    const project = job ? projectsById.get(String(booking.locationId)) : undefined
+    const project = job && booking.locationId ? projectsById.get(String(booking.locationId)) : undefined
     payBookings.push({
       id: booking.id,
       collection: 'managerSiteBookings',
@@ -430,9 +438,9 @@ export function buildWeeklyReportData({
       workEndTime: booking.workEndTime ?? null,
       isBreakRemoved: booking.isBreakRemoved === true,
       otMultiplierOverride: booking.otMultiplierOverride ?? null,
-      jobId: job ? String(booking.locationId) : null,
+      jobId: job && booking.locationId ? String(booking.locationId) : null,
       jobNumber: project?.jobNumber ?? '',
-      jobName: project?.siteName ?? '',
+      jobName: project?.siteName ?? (job ? ORPHAN_BOOKING_LABEL : ''),
       locationKind: booking.locationType,
     })
   }
@@ -457,6 +465,7 @@ export function buildWeeklyReportData({
   const bookingById = new Map<string, ManagerSiteBooking>(periodManagerBookings.map((booking) => [booking.id, booking]))
 
   const projectGroupsMap = new Map<string, WeeklyReportProjectGroup>()
+  const projectRowByPerson = new Map<string, WeeklyReportProjectGroup['rows'][number]>()
   const addProjectRow = (key: string, projectName: string, jobNumber: string, personId: string | null, bookingPersonId: string, hours: number, days: number) => {
     const owner = personId ? linked.get(personId) : undefined
     const fallback = owner ? undefined : findUserAndOperative(users, operatives, { operativeId: bookingPersonId, userId: bookingPersonId, aliases: userIdAliases })
@@ -468,13 +477,19 @@ export function buildWeeklyReportData({
     const group =
       projectGroupsMap.get(key) ||
       ({ projectName, jobNumber, rows: [], projectTotal: 0, projectHours: 0 } satisfies WeeklyReportProjectGroup)
-    const existing = group.rows.find((row) => row.person === person && row.role === role)
+    // Rulebook 1.53.0 (B14): one row per person (their id), never per name and role — two people with the same name
+    // are two rows, and one person under two ids (matched to the same person) is one.
+    const personKey = personId ? `person:${normalizeDocumentId(personId)}` : `booking:${normalizeDocumentId(bookingPersonId)}`
+    const rowKey = `${key}|${personKey}`
+    const existing = projectRowByPerson.get(rowKey)
     if (existing) {
       existing.days += days
       existing.hours += hours
       if (existing.trade === 'General' && trade !== 'General') existing.trade = trade
     } else {
-      group.rows.push({ person, trade, role, hours, days })
+      const row = { person, trade, role, hours, days }
+      projectRowByPerson.set(rowKey, row)
+      group.rows.push(row)
     }
     group.projectTotal += days
     group.projectHours += hours
@@ -539,16 +554,19 @@ export function buildWeeklyReportData({
     period.end,
     timeZone
   )
+    // Rulebook 1.53.0 (B9): sorted by the real organisation day, the date written in the organisation zone.
     .map(({ week, line }) => ({
+      sortKey: dayKeyInZone(line.date, timeZone),
       person: week.personName,
       title: line.title,
       jobNumber: priceWorkJobNumberText(line.jobNumber),
-      date: format(line.date, 'd MMM yyyy'),
+      date: zoneDayText(line.date),
       // Rulebook 1.45.0: the entry's evidence count (`claimEvidenceCountText`) beside its description.
       details: [line.details, claimEvidenceCountText(week.evidenceCounts?.[normalizeDocumentId(line.id)])].filter(Boolean).join(' · '),
       amount: line.amount,
     }))
-    .sort((a, b) => a.person.localeCompare(b.person) || a.date.localeCompare(b.date))
+    .sort((a, b) => a.person.localeCompare(b.person) || a.sortKey.localeCompare(b.sortKey))
+    .map(({ sortKey: _sortKey, ...row }) => row)
   const priceWorkTotal = Math.round(priceWorkRows.reduce((sum, row) => sum + row.amount, 0) * 100) / 100
   const expenseRows: WeeklyReportMoneyRow[] = timesheetMoneyLines(
     timesheetWeeks,
@@ -558,14 +576,16 @@ export function buildWeeklyReportData({
     timeZone
   )
     .map(({ week, line }) => ({
+      sortKey: dayKeyInZone(line.date, timeZone),
       person: week.personName,
       title: line.title,
       jobNumber: line.jobNumber,
-      date: format(line.date, 'd MMM yyyy'),
+      date: zoneDayText(line.date),
       details: [line.details, claimEvidenceCountText(week.evidenceCounts?.[normalizeDocumentId(line.id)])].filter(Boolean).join(' · '),
       amount: line.amount,
     }))
-    .sort((a, b) => a.person.localeCompare(b.person) || a.date.localeCompare(b.date))
+    .sort((a, b) => a.person.localeCompare(b.person) || a.sortKey.localeCompare(b.sortKey))
+    .map(({ sortKey: _sortKey, ...row }) => row)
   const expenseTotal = Math.round(expenseRows.reduce((sum, row) => sum + row.amount, 0) * 100) / 100
 
   const subContractorRows: WeeklyReportSubRow[] = periodSubBookings.map((booking) => {
@@ -620,6 +640,7 @@ export function buildWeeklyReportData({
     people: weeklyReportLeavePeople(users, operatives, userIdAliases),
     range,
     timeZone,
+    nonWorkingDayKeys: bankHolidayDayKeys,
   })
   const annualLeaveRows: WeeklyReportLeaveRow[] = leave.rows.map((row) => ({ person: row.person, role: row.role, days: row.days, type: row.type }))
   const annualLeaveTotal = leave.total
@@ -627,7 +648,7 @@ export function buildWeeklyReportData({
   // Rulebook 1.51.0 §7 (Q4d): a clash row states facts only (`weeklyReportClashDetail`), never an app instruction.
   const clashDetail = (clash: { date: Date; entries?: Array<{ locationLabel: string; timeLabel: string }> }) =>
     weeklyReportClashDetail({
-      dayText: format(clash.date, 'd MMM yyyy'),
+      dayText: zoneDayText(clash.date),
       places: (clash.entries ?? []).map((entry) => ({ label: entry.locationLabel, time: entry.timeLabel })),
     })
   const warningDetection = orgDetails?.warningDetection
@@ -696,6 +717,7 @@ export function buildWeeklyReportData({
         payrollPolicy: payroll,
         payrollPolicyState: orgDetails?.payrollTimePolicyState ?? null,
         userIdAliases,
+        timeZone,
       }),
       period
     )) {
@@ -710,7 +732,7 @@ export function buildWeeklyReportData({
         status: WEEKLY_REPORT_WARNING_OPEN,
         priority: 'High',
         type: 'Booking clash',
-        date: format(clash.date, 'd MMM yyyy'),
+        date: zoneDayText(clash.date),
         description: clash.operativeName,
         detail: clashDetail(clash),
         forPerson: clash.operativeName,
@@ -723,6 +745,7 @@ export function buildWeeklyReportData({
         payrollPolicy: payroll,
         payrollPolicyState: orgDetails?.payrollTimePolicyState ?? null,
         userIdAliases,
+        timeZone,
       }),
       period
     )) {
@@ -736,7 +759,7 @@ export function buildWeeklyReportData({
         status: WEEKLY_REPORT_WARNING_OPEN,
         priority: 'Medium',
         type: 'Manager overlap',
-        date: format(clash.date, 'd MMM yyyy'),
+        date: zoneDayText(clash.date),
         description: clash.personName,
         detail: clashDetail(clash),
         forPerson: clash.personName,
@@ -757,12 +780,16 @@ export function buildWeeklyReportData({
       periodStart: period.start,
       periodEnd: period.end,
       timeZone,
+      // Rulebook 1.53.0 (B6): every id a person goes by, as on the Warnings page.
+      userIdAliases,
     })) {
+      // Rulebook 1.53.0 (B6): a dismissed or approved unbooked row is not open (`isWarningActive`), as on Warnings.
+      if (decisions && !isWarningActive({ resolutionKey: warning.id }, decisions)) continue
       warnings.push({
         status: WEEKLY_REPORT_WARNING_OPEN,
         priority: 'High',
         type: 'Unbooked labour',
-        date: format(warning.date, 'd MMM yyyy'),
+        date: zoneDayText(warning.date),
         description: warning.operativeName,
         detail: warning.message,
         forPerson: warning.operativeName,
@@ -857,6 +884,7 @@ export function buildWeeklyReportData({
       ? formatReportPeriodLabel(invoicingPeriod.start, invoicingPeriod.end)
       : '—',
     generatedAt: new Date(),
+    timeZone,
     currencyCode: resolveOrganizationCurrency(orgDetails),
     warnings,
     approvedClashes: approvedClashes.sort(

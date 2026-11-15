@@ -50,6 +50,11 @@ export type LeavePerson = {
   userId?: string | null
   /** Every operative profile that belongs to this person (linked by email). */
   operativeIds?: readonly string[] | null
+  /**
+   * 1.53.0: every other users id this person goes by (`personIdSet`: `formerUserIds`, `sameEmailUserIds`, the roster
+   * fold's same-email ids). Leave and manager site bookings stored under any of them belong to this person.
+   */
+  aliasUserIds?: readonly string[] | null
 }
 
 export type LeaveRecord = {
@@ -172,6 +177,10 @@ export function leaveCoverageRows(input: LeaveCoverageInput): LeaveCoverageRow[]
     if (isAnonymisedDeletedProfile({ name: person.name })) continue
     const userId = idKey(person.userId)
     if (userId && !peopleByUserId.has(userId)) peopleByUserId.set(userId, person)
+    for (const alias of person.aliasUserIds || []) {
+      const key = idKey(alias)
+      if (key && !peopleByUserId.has(key)) peopleByUserId.set(key, person)
+    }
     for (const operativeId of person.operativeIds || []) {
       const key = idKey(operativeId)
       if (key && !peopleByOperativeId.has(key)) peopleByOperativeId.set(key, person)
@@ -191,7 +200,10 @@ export function leaveCoverageRows(input: LeaveCoverageInput): LeaveCoverageRow[]
     const personId = idKey(booking.personId)
     if (!personId || !booking.dayKey) continue
     const person =
-      booking.kind === 'manager' ? peopleByUserId.get(personId) : peopleByOperativeId.get(personId)
+      booking.kind === 'manager'
+        ? peopleByUserId.get(personId)
+        : // 1.53.0: a labour booking filed under the person's users id (or an alias of it) is theirs too (`bookingIdsForAccount`).
+          peopleByOperativeId.get(personId) ?? peopleByUserId.get(personId)
     if (!person) continue
     const key = `${person.personKey}|${booking.dayKey}`
     const list = bookingsByPersonDay.get(key) || []

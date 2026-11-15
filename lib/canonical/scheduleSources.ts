@@ -429,9 +429,28 @@ export function managerClashGroups(
 
 // MARK: - Approvals
 
-/** `acceptedBookingClashes` document id: the two booking ids in code-unit order, joined with `|`. */
+/**
+ * `acceptedBookingClashes` document id: the two booking ids, ordered by their lower-case form (1.53.0), joined with
+ * `|`. The ids keep their stored case. Before 1.53.0 they were ordered by code unit, so an upper-case iOS id and a
+ * lower-case web id could come out in a different order on each app; `legacyClashPairKey` is that older key, still
+ * read (`isClashApproved`, `isClashAccepted`, `isWarningActive`) and removed on undo (`clashApprovalDocumentIds`).
+ */
 export function clashPairKey(bookingAId: unknown, bookingBId: unknown): string {
+  return [idText(bookingAId), idText(bookingBId)]
+    .sort((a, b) => compareText(idKey(a), idKey(b)) || compareText(a, b))
+    .join('|')
+}
+
+/** The pair key as written before 1.53.0 (code-unit order of the stored ids). Read and cleaned up, never written. */
+export function legacyClashPairKey(bookingAId: unknown, bookingBId: unknown): string {
   return [idText(bookingAId), idText(bookingBId)].sort(compareText).join('|')
+}
+
+/** A key compared without case; a two-part pair key (`a|b`) also without order, so old and new pair keys match. */
+function comparableKey(key: unknown): string {
+  const text = normalizeDocumentId(key)
+  const parts = text.split('|')
+  return parts.length === 2 && parts[0] && parts[1] ? [...parts].sort(compareText).join('|') : text
 }
 
 export type AcceptedClashRecord = string | { id?: string | null; bookingAId?: string | null; bookingBId?: string | null }
@@ -572,8 +591,9 @@ export type WarningDecisions = {
 }
 
 function hasKey(keys: readonly string[] | null | undefined, key: string): boolean {
-  const needle = normalizeDocumentId(key)
-  return Boolean(needle) && (keys || []).some((candidate) => normalizeDocumentId(candidate) === needle)
+  // 1.53.0: a pair key matches in either order (`clashPairKey` / `legacyClashPairKey`).
+  const needle = comparableKey(key)
+  return Boolean(needle) && (keys || []).some((candidate) => comparableKey(candidate) === needle)
 }
 
 /**
@@ -622,6 +642,23 @@ export function clashResolutionKey(input: { bookingAId: unknown; bookingBId: unk
   const a = idText(input?.bookingAId)
   const b = idText(input?.bookingBId)
   return a && b ? clashPairKey(a, b) : ''
+}
+
+/**
+ * Every document id an approval of this clash may be stored under (1.53.0): the current ids first, then the pre-1.53.0
+ * pair key when it differs. Undo deletes each that exists, so an approval saved before 1.53.0 can still be removed.
+ */
+export function clashApprovalDocumentIds(input: { bookingAId: unknown; bookingBId: unknown; resolutionKey?: unknown }): {
+  acceptedClash: string[]
+  resolution: string[]
+} {
+  const a = idText(input?.bookingAId)
+  const b = idText(input?.bookingBId)
+  if (!a || !b) return { acceptedClash: [], resolution: [] }
+  const pair = [clashPairKey(a, b), legacyClashPairKey(a, b)]
+  const own = idText(input?.resolutionKey)
+  const unique = (ids: string[]) => [...new Set(ids.filter(Boolean))]
+  return { acceptedClash: unique(pair), resolution: unique(own ? [own] : pair) }
 }
 
 /**

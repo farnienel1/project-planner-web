@@ -1,4 +1,4 @@
-import { formatMoney, normalizeDocumentId, parseMultipliedHoursText, resolveBookingPerson, rosterAliasIdsFor } from '@/lib/canonical'
+import { formatMoney, normalizeDocumentId, parseMultipliedHoursText, resolveBookingPerson, rosterAliasIdsFor, userLevelLabel } from '@/lib/canonical'
 import { currentOrganizationCurrency } from '@/lib/stores/organizationDocumentStore'
 import type { Operative, User } from '@/types'
 import { findOperativeForUser } from '@/lib/operatives/operativeRosterUtils'
@@ -39,11 +39,14 @@ function preferLinkedUser(matches: User[]): User | undefined {
   )
 }
 
+/**
+ * The Weekly report Role column. Rulebook 1.53.0 §7: the person's user level (`userLevelLabel` over
+ * `permissionLevelOf`: Admin / Manager / Operative, the Super Admin "Admin (Super Admin)") — the Payrun Snapshot's
+ * words. A catalogue operative with no account is an Operative.
+ */
 export function resolvePersonRole(user: User | undefined, operative: Operative | undefined): string {
   if (!user) return operative ? 'Operative' : 'User'
-  if (user.permissions.adminAccess || user.isSuperAdmin || user.permissions.manager) return 'Admin User'
-  if (user.permissions.operativeMode || operative) return 'Operative'
-  return 'User'
+  return userLevelLabel(user as never)
 }
 
 export function resolveDisplayName(

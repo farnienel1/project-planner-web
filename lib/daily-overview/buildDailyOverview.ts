@@ -34,7 +34,7 @@ import {
 } from '@/lib/subcontractors/bookingPeople'
 import { holidayBookingDayKeys, holidayBookingLabourInput } from '@/lib/annualLeave/holidayDayKeys'
 import type { WeekendCoverage } from '@/lib/canonical'
-import { normalizeDocumentId } from '@/lib/canonical'
+import { dailyOverviewLeaveRows, normalizeDocumentId } from '@/lib/canonical'
 
 export type OverviewSubcontractorBooking = {
   id: string
@@ -89,13 +89,6 @@ export type OverviewPersonRow = {
 export const UNKNOWN_BOOKED_PERSON = 'Unknown person'
 
 export { overviewFormatHours, parseMinutes, estimatedPaidHours, estimatedWorkedHours }
-
-function holidayCovers(booking: HolidayBooking, day: Date): boolean {
-  if (booking.status !== 'approved') return false
-  const key = dayKey(day)
-  const { startDayKey, endDayKey } = holidayBookingDayKeys(booking)
-  return startDayKey <= key && key <= endDayKey
-}
 
 /** UI pack U1 / U2 display fields of one booking row: `scheduleCellHours` → `scheduleCellKind`, `bookingTimesParts`. */
 function cellFields(
@@ -271,6 +264,11 @@ export function buildDailyOverview(params: {
   viewer?: JobAccessViewer | null
   /** Rulebook 1.26.0: the `enforcedReads` switch for this organisation (`securitySwitchOn`); missing → off. */
   enforcedReads?: boolean
+  /**
+   * Rulebook 1.53.0 §6: the region's bank holidays (day keys). A multi-day leave record does not count a bank holiday
+   * inside it as leave (`dailyOverviewLeaveRows`). Missing → none.
+   */
+  bankHolidayDayKeys?: readonly string[] | null
 }): DailyOverviewModel {
   const day = params.day
   // Rulebook §1: the organisation zone (1.9.0: the open organisation's when none is passed, never always London).
@@ -346,7 +344,12 @@ export function buildDailyOverview(params: {
   const managerIdentity = (userId: string): string =>
     personIdentity(userById.get(userId)?.email, `mgr:${normalizeWorkId(userId)}`)
 
-  const holidays = params.holidays.filter((h) => holidayCovers(h, day) && personInScope(h.userId, h.operativeId))
+  // Rulebook 1.53.0 §6: the leave days of each record on this organisation day (`dailyOverviewLeaveRows`), never the
+  // whole start–end range on the London day.
+  const holidayRows = params.holidays.map((holiday) => ({ holiday, ...holidayBookingDayKeys(holiday, zone), status: holiday.status, timeSlot: holiday.timeSlot }))
+  const holidays = dailyOverviewLeaveRows(holidayRows, dayKey(day, zone), zone, params.bankHolidayDayKeys ?? [])
+    .map((row) => row.holiday)
+    .filter((h) => personInScope(h.userId, h.operativeId))
 
   const bookingsByProject = new Map<string, Booking[]>()
   for (const b of dayBookings) {

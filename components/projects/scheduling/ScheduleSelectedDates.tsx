@@ -69,7 +69,7 @@ export function ScheduleSelectedDates({
                             workStartTime: entry.workStartTime || prefill.start,
                             workEndTime: entry.workEndTime || prefill.end,
                           }
-                        : { slot, workStartTime: undefined, workEndTime: undefined }
+                        : { slot, workStartTime: undefined, workEndTime: undefined, isBreakRemoved: undefined }
                     )
                   }
                   className={`rounded-lg px-2 py-2 text-[11px] font-semibold transition ${
@@ -93,14 +93,15 @@ export function ScheduleSelectedDates({
                 <HoursTimelinePicker
                   start={entry.workStartTime || prefill.start}
                   end={entry.workEndTime || prefill.end}
-                  breakRemoved={false}
+                  breakRemoved={entry.isBreakRemoved === true}
                   policy={policy}
                   date={entry.date}
-                  showBreak={false}
+                  // Rulebook 1.53.0 (B4): the "No unpaid break" toggle where the day's break is unpaid, as Book labour.
+                  showBreak
                   otMultiplierOverride={otMultiplierOverride}
                   onStart={(value) => onSlotChange(entry.date, { workStartTime: value })}
                   onEnd={(value) => onSlotChange(entry.date, { workEndTime: value })}
-                  onBreak={() => {}}
+                  onBreak={(value: boolean) => onSlotChange(entry.date, { isBreakRemoved: value })}
                 />
               </div>
             )}

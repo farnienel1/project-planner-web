@@ -16549,3 +16549,183 @@ test('1.51.0 working hours history: a 1970 seed entry and a 3 Nov entry (the own
   const single = R112.payrollPolicyHistoryRows({ state: R112.parsePayrollTimePolicyState({ payrollTimePolicy: { ...wh151Day } }, 'Europe/London'), todayKey: '2026-11-15' })
   assert.deepEqual(single.map((row) => [row.dates, row.inEffectToday]), [['Since records began', true]])
 })
+
+// ---------------------------------------------------------------------------------------------------------------------
+// 1.53.0 — calculation sweep fixes
+// ---------------------------------------------------------------------------------------------------------------------
+
+test('1.53.0 A1 a signed run keeps its pay on the weekly report after a later switch to PAYE', () => {
+  const switched = {
+    ...wr151Admin,
+    user: {
+      id: 'u-admin',
+      payBasis: 'day',
+      dayRate: 250,
+      employmentType: 'paye',
+      employmentTypeTransitionFrom: 'self_employed',
+      employmentTypeEffectiveAt: new Date('2026-11-04T00:00:00Z'),
+    },
+  }
+  const override = {
+    lines: [
+      { id: 'op-b02-normal', bookingId: 'b02', date: '2026-11-02', paidHours: 8.5, days: 1, amount: 250, isOvertime: false, payBasis: 'day' },
+      { id: 'op-b03-normal', bookingId: 'b03', date: '2026-11-03', paidHours: 8.5, days: 1, amount: 250, isOvertime: false, payBasis: 'day' },
+      { id: 'op-b05-normal', bookingId: 'b05', date: '2026-11-05', paidHours: 4.5, days: 0.53, amount: 132.35, isOvertime: false, payBasis: 'day' },
+      { id: 'op-b06-paye', bookingId: 'b06', date: '2026-11-06', paidHours: 8.5, days: 1, amount: 0, isOvertime: false, isPayeDay: true },
+    ],
+    priceWork: [],
+    expenses: [],
+  }
+  const weeks = [{ userId: 'u-admin', weekStart: '2026-11-01', weekEnd: '2026-11-15', override }]
+  const sheet = { operativeSignedAt: new Date('2026-11-16T10:00:00Z'), operativeSignedByName: 'Test Admin', operativeSignatureImageBase64: 'x', weeklyReportOverride: override }
+  const invoice = R112.timesheetInvoiceRows({ sheet: sheet as never, payrollLines: [], extrasMode: 'decided' })
+  assert.equal(R112.roundPennies(invoice.reduce((sum, row) => sum + row.amount, 0)), 632.35)
+  const person = wr151Run({
+    people: [switched as never],
+    payRateHistory: [],
+    timesheetWeeks: weeks as never,
+    sheets: [{ personId: 'u-admin', startDayKey: '2026-11-01', endDayKey: '2026-11-15', sheet, payrollLines: [] }],
+  }).people[0]
+  // Before 1.53.0 the 5 Nov line was dropped (live PAYE): the report showed £500.00 against the £632.35 invoice.
+  assert.equal(person.personTotal, 632.35)
+  assert.equal(person.check?.label, 'Timesheet: Signed · Invoice £632.35 ✓')
+})
+
+test('1.53.0 A2 timesheetTotals.hours leaves out a declined labour line, edited booking or not', () => {
+  const payrollLines = [
+    { id: 'op-B1-normal', amount: 200, dayKey: '2026-10-20', paidHours: 8, bookingPaidHours: 9.5, bookingOvertimeHours: 1, isOvertimeLine: false },
+    { id: 'op-B1-ot', amount: 37.5, dayKey: '2026-10-20', paidHours: 1, otMultiplier: 1.5, isOvertimeLine: true },
+    { id: 'op-B2-normal', amount: 200, dayKey: '2026-10-21', paidHours: 8, bookingPaidHours: 8, isOvertimeLine: false },
+  ]
+  const signed = { managerSignedAt: '2026-10-25T10:00:00Z', payrollLineReviews: { 'op-B2-normal': { decision: 'declined' }, 'op-B1-ot': { decision: 'declined' } } }
+  const totals = R112.timesheetTotals({ sheet: signed, payrollLines, extrasMode: 'decided' })
+  // Money: only B1's standard line (£200). Hours: B1's 8h standard only (was 9.5 + 8 = 17.5 before 1.53.0).
+  assert.equal(totals.labour, 200)
+  assert.equal(totals.hours, 8)
+  assert.equal(totals.overtimeHours, 0)
+  // Before the line manager signs (owner draft) the review does not apply to money, nor to hours.
+  const draft = R112.timesheetTotals({ sheet: { payrollLineReviews: signed.payrollLineReviews }, payrollLines, extrasMode: 'decided' })
+  assert.deepEqual([draft.labour, draft.hours], [437.5, 17.5])
+})
+
+test('1.53.0 A3 leave cover finds leave stored under a same-email or former users id', () => {
+  const people = [{ personKey: 'U-SAM', name: 'Sam Site', userId: 'U-SAM', operativeIds: ['OP-SAM'], aliasUserIds: ['u-sam-old', 'U-SAM-2'] }]
+  const input = {
+    timeZone: 'Europe/London',
+    startDayKey: '2026-10-12',
+    endDayKey: '2026-10-16',
+    day: DEFAULT_DAY,
+    includeWeekends: false,
+    people,
+    bookings: [],
+  }
+  // AM leave stored under the same-email account (other letter case), nothing booked for the PM half → a cover row.
+  const rows = R112.leaveCoverageRows({
+    ...input,
+    leave: [{ id: 'L1', userId: 'u-sam-2', startDayKey: '2026-10-12', endDayKey: '2026-10-12', timeSlot: 'AM', approved: true }],
+  })
+  assert.equal(rows.length, 1)
+  assert.equal(rows[0].personKey, 'U-SAM')
+  // Without the alias ids the leave is nobody's (the bug: no row at all).
+  assert.equal(R112.leaveCoverageRows({ ...input, people: [{ ...people[0], aliasUserIds: [] }], leave: [{ id: 'L1', userId: 'u-sam-2', startDayKey: '2026-10-12', endDayKey: '2026-10-12', timeSlot: 'AM', approved: true }] }).length, 0)
+  // A labour booking filed under the former users id covers the PM half.
+  const covered = R112.leaveCoverageRows({
+    ...input,
+    leave: [{ id: 'L1', userId: 'u-sam-2', startDayKey: '2026-10-12', endDayKey: '2026-10-12', timeSlot: 'AM', approved: true }],
+    bookings: [{ id: 'B1', personId: 'U-SAM-OLD', kind: 'operative', dayKey: '2026-10-12', timeSlot: 'PM', label: 'J100' }],
+  })
+  assert.deepEqual(covered, [])
+})
+
+test('1.53.0 A4 clashPairKey is the same whatever the letter case; old keys in the other order still count', () => {
+  // Web lower case and iOS upper case: one order on both apps (stored case kept).
+  assert.equal(R112.clashPairKey('a-1', 'B-2'), 'a-1|B-2')
+  assert.equal(R112.clashPairKey('B-2', 'a-1'), 'a-1|B-2')
+  assert.equal(R112.clashPairKey('A-1', 'b-2'), 'A-1|b-2')
+  // Before 1.53.0 'B-2' sorted before 'a-1' (code units).
+  assert.equal(R112.legacyClashPairKey('a-1', 'B-2'), 'B-2|a-1')
+  const row = { bookingAId: 'a-1', bookingBId: 'B-2' }
+  // An approval saved under the old order (and another case) still approves and hides the clash.
+  assert.equal(R112.isClashApproved(row, { approvedKeys: ['b-2|A-1'] }), true)
+  assert.equal(R112.isWarningActive({ resolutionKey: 'a-1|B-2' }, { resolvedKeys: ['B-2|a-1'] }), false)
+  assert.equal(R112.isClashAccepted('a-1', 'B-2', ['B-2|a-1']), true)
+  assert.equal(R112.isClashGroupApproved({ pairs: [row] }, { approvedKeys: ['B-2|a-1'] }), true)
+  // Non-pair keys are unchanged (case only).
+  assert.equal(R112.isWarningActive({ resolutionKey: 'mgr-clash-U1-2026-11-02-0' }, { resolvedKeys: ['MGR-CLASH-u1-2026-11-02-0'] }), false)
+  // Undo removes both the new and the old document ids.
+  assert.deepEqual(R112.clashApprovalDocumentIds(row), { acceptedClash: ['a-1|B-2', 'B-2|a-1'], resolution: ['a-1|B-2', 'B-2|a-1'] })
+  assert.deepEqual(R112.clashApprovalDocumentIds({ ...row, resolutionKey: 'mgr-clash-x' }).resolution, ['mgr-clash-x'])
+  assert.deepEqual(R112.clashApprovalDocumentIds({ bookingAId: 'b1', bookingBId: 'b2' }).acceptedClash, ['b1|b2'])
+})
+
+test('1.53.0 A5 unverifiedOperativeRows skips an inactive operative row or account', () => {
+  const base = {
+    referenceIso: '2026-11-13T12:00:00Z',
+    timeZone: 'Europe/London',
+    operatives: [{ id: 'op1', email: 'a@x.com', name: 'Ann' }],
+    people: [{ email: 'a@x.com', passwordSet: false, createdAtIso: '2026-11-02T09:00:00Z', isOperativeMode: true }],
+  }
+  assert.equal(R112.unverifiedOperativeRows(base).length, 1)
+  assert.equal(R112.unverifiedOperativeRows({ ...base, operatives: [{ ...base.operatives[0], isActive: false }] }).length, 0)
+  assert.equal(R112.unverifiedOperativeRows({ ...base, people: [{ ...base.people[0], isActive: false }] }).length, 0)
+})
+
+test('1.53.0 A6 homeUpNextRows: every id the viewer goes by, today kept all day, Completed kept, organisation days', () => {
+  const zone = 'Europe/London'
+  const result = R112.homeUpNextRows({
+    nowMs: Date.parse('2026-11-16T12:00:00Z'), // Monday 16 Nov, 12:00 — after today's 07:30 start
+    timeZone: zone,
+    viewer: { id: 'U-SAM', email: 'sam@x.com' },
+    roster: [
+      { id: 'U-SAM', email: 'sam@x.com', formerUserIds: ['invite-1'] },
+      { id: 'u-sam-2', email: 'SAM@x.com' },
+      { id: 'u-other', email: 'o@x.com' },
+    ],
+    operatives: [{ id: 'op-sam', email: 'Sam@X.com' }],
+    bookings: [
+      { id: 'b-today', personId: 'OP-SAM', dayKey: '2026-11-16', status: 'Confirmed', timeSlot: 'CUSTOM_HOURS', workStartTime: '07:30', workEndTime: '16:00' },
+      { id: 'b-done', personId: 'u-sam-2', dayKey: '2026-11-17', status: 'Completed', timeSlot: 'FULL DAY' },
+      { id: 'b-invite', personId: 'INVITE-1', dayKey: '2026-11-18', status: 'Tentative', timeSlot: 'FULL DAY' },
+      { id: 'b-cancelled', personId: 'op-sam', dayKey: '2026-11-17', status: 'Cancelled', timeSlot: 'FULL DAY' },
+      { id: 'b-past', personId: 'op-sam', dayKey: '2026-11-15', status: 'Confirmed', timeSlot: 'FULL DAY' },
+      { id: 'b-other', personId: 'u-other', dayKey: '2026-11-16', status: 'Confirmed', timeSlot: 'FULL DAY' },
+    ],
+    managerSiteBookings: [{ id: 'm1', personId: 'U-SAM-2', dayKey: '2026-11-17', timeSlot: 'CUSTOM_HOURS', workStartTime: '06:00', workEndTime: '09:00' }],
+    policy: { standardDayStart: '07:30', standardDayEnd: '16:00' },
+  })
+  assert.deepEqual(result.rows.map((row) => [row.id, row.kind, row.dayKey, row.startText]), [
+    ['b-today', 'labour', '2026-11-16', '07:30'],
+    ['m1', 'manager', '2026-11-17', '06:00'],
+    ['b-done', 'labour', '2026-11-17', '07:30'],
+    ['b-invite', 'labour', '2026-11-18', '07:30'],
+  ])
+  assert.equal(result.rows[0].timeRange, '07:30–16:00')
+  assert.deepEqual(result.days.map((day) => day.dayKey), ['2026-11-16', '2026-11-17'])
+})
+
+test('1.53.0 A7 dailyOverviewLeaveRows: a bank holiday inside a week of leave is not a leave day', () => {
+  const records = [
+    { id: 'L1', startDayKey: '2026-12-21', endDayKey: '2026-12-29', timeSlot: 'FULL DAY', status: 'approved' },
+    { id: 'L2', startDayKey: '2026-12-28', endDayKey: '2026-12-28', timeSlot: 'AM', status: 'pending' },
+    { id: 'L3', startDayKey: '2026-12-24', endDayKey: '2026-12-24', timeSlot: 'PM', status: 'Accepted' },
+  ]
+  const bank = ['2026-12-25', '2026-12-28']
+  const ids = (day: string) => R112.dailyOverviewLeaveRows(records, day, 'Europe/London', bank).map((row) => row.id)
+  assert.deepEqual(ids('2026-12-24'), ['L1', 'L3'])
+  assert.deepEqual(ids('2026-12-25'), [])
+  assert.deepEqual(ids('2026-12-26'), []) // Saturday inside a multi-day record
+  assert.deepEqual(ids('2026-12-28'), [])
+  assert.deepEqual(ids('2026-12-29'), ['L1'])
+  // With no bank holidays given, 25 Dec is a leave day (the region's list decides).
+  assert.deepEqual(R112.dailyOverviewLeaveRows(records, '2026-12-25', 'Europe/London').map((row) => row.id), ['L1'])
+})
+
+test('1.53.0 A9 Pay Summary days: rounded for display with a note; Pay from the exact hours (owner confirmed 15 Nov)', () => {
+  const ot = wr151Run().people[0].lines[1]
+  assert.deepEqual([ot.days, ot.pay], [2.12, 529.41])
+  assert.ok(Math.abs((ot.daysExact ?? 0) - 18 / 8.5) < 1e-9)
+  assert.equal(R112.WEEKLY_REPORT_DAYS_DISPLAY, 'note')
+  assert.equal(R112.weeklyReportDaysText(ot.daysExact ?? ot.days, ot.kind), '2.12')
+  assert.equal(R112.weeklyReportPaySummaryNote([ot]), 'Days are rounded; Pay is worked out from the exact hours.')
+  assert.equal(R112.weeklyReportPaySummaryNote([{ source: 'claim' }]), '')
+})

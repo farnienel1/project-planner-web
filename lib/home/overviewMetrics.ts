@@ -88,6 +88,8 @@ export function computeHomeOverviewMetrics(params: {
    * only a manager's own team, like their Daily Overview; admins everyone. Missing → everyone.
    */
   scope?: DailyOverviewScope | null
+  /** Rulebook 1.53.0 (B7): the region's bank holidays (day keys); a bank holiday inside a leave record is not leave. */
+  bankHolidayDayKeys?: readonly string[] | null
 }): HomeOverviewMetrics {
   const now = params.now ?? new Date()
   const metrics = homeOverviewMetrics({
@@ -131,6 +133,7 @@ export function computeHomeOverviewMetrics(params: {
       return { userId: holiday.userId ?? null, operativeId: holiday.operativeId ?? null, startDayKey, endDayKey, status: holiday.status }
     }),
     scope: params.scope ?? null,
+    nonWorkingDayKeys: params.bankHolidayDayKeys ? [...params.bankHolidayDayKeys] : [],
   })
   return {
     liveProjectCount: params.liveProjectCount,

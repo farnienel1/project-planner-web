@@ -157,10 +157,13 @@ export function computeUnverifiedOperativeWarnings(
       id: operative.id,
       email: operative.email,
       name: `${operative.firstName} ${operative.lastName}`.trim() || operative.email,
+      // Rulebook 1.53.0: inactive people are never listed.
+      isActive: operative.isActive !== false,
     })),
     people: users.map((user) => ({
       email: user.email,
       passwordSet: user.passwordSet === true,
+      isActive: user.isActive !== false,
       createdAtIso: user.createdAt instanceof Date ? user.createdAt.toISOString() : '',
       isOperativeMode: Boolean(user.permissions?.operativeMode),
       // Rulebook 1.34.0: an invited ghost is never an unverified account.
@@ -245,6 +248,7 @@ export function generateOrgWarnings(input: {
         payrollPolicy,
         payrollPolicyState,
         userIdAliases: input.userIdAliases,
+        timeZone,
       }).filter(
         (warning) =>
           onClashDay(warning) &&
@@ -260,6 +264,7 @@ export function generateOrgWarnings(input: {
         payrollPolicy,
         payrollPolicyState,
         userIdAliases: input.userIdAliases,
+        timeZone,
       }).filter(
         (warning) =>
           onClashDay(warning) &&
@@ -300,6 +305,7 @@ export function generateOrgWarnings(input: {
     payrollPolicyState,
     referenceDate: now,
     timeZone,
+    userIdAliases: input.userIdAliases,
   }).filter(
     (warning) =>
       !isAnonymisedWarningSubject(warning.personName) &&

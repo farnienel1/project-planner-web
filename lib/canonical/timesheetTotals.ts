@@ -135,6 +135,12 @@ export function timesheetTotals<L extends TimesheetTotalsLine>(input: TimesheetT
       reviewedLines.set(normalizeDocumentId(row.id), row.review)
     }
   }
+  // 1.53.0 (A2): a labour line the invoice leaves out because it was declined counts no hours, whether or not its
+  // booking was edited. "Declined" is read exactly as the invoice reads it: the line has a declined review and is not
+  // an invoice row (so a review the invoice does not apply yet — owner draft before sign-off — changes nothing).
+  const liveRowIds = new Set(rows.filter((row) => row.kind === 'labour' && row.source === 'live').map((row) => normalizeDocumentId(row.id)))
+  const declinedByInvoice = (line: TimesheetTotalsLine) =>
+    !liveRowIds.has(normalizeDocumentId(line.id)) && payrollLineReview(sheet, line.id, line)?.decision === 'declined'
   const groupOf = (line: TimesheetTotalsLine) => payrollLineBookingKey(line)
   const reviewedGroups = new Set<string>()
   for (const line of input.payrollLines || []) {
@@ -160,6 +166,15 @@ export function timesheetTotals<L extends TimesheetTotalsLine>(input: TimesheetT
       } else {
         standardHours += paid
         hours += paid
+      }
+      continue
+    }
+    if (declinedByInvoice(line)) {
+      // With booking figures the standard line carries the whole booking's hours; a declined overtime line takes its
+      // own multiplied hours back off.
+      if (withBookingFigures && line.isOvertimeLine === true) {
+        hours -= paid * (finite(line.otMultiplier) > 0 ? finite(line.otMultiplier) : 1)
+        overtimeHours -= line.otClockHours != null ? finite(line.otClockHours) : paid
       }
       continue
     }

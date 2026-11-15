@@ -1,8 +1,9 @@
 import type { Unsubscribe } from 'firebase/firestore'
 import { watchOrgCollection } from '@/lib/firebase/watchOrgQuery'
-import { collection, doc, getDocs, serverTimestamp, writeBatch, type WriteBatch } from 'firebase/firestore'
+import { collection, doc, getDoc, getDocs, serverTimestamp, writeBatch, type WriteBatch } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
 import {
+  clashApprovalDocumentIds,
   clashApprovalWrites,
   clashPairKey,
   clashResolutionKey,
@@ -79,12 +80,25 @@ function addClashApproval(batch: WriteBatch, organizationId: string, clash: Clas
   })
 }
 
-function addClashUnapproval(batch: WriteBatch, organizationId: string, clash: ClashApproval): void {
+async function addClashUnapproval(batch: WriteBatch, organizationId: string, clash: ClashApproval): Promise<void> {
   const pairId = clashPairKey(clash.bookingAId, clash.bookingBId)
   const resolutionId = clashResolutionKey(clash)
   if (!clash.bookingAId || !clash.bookingBId || !resolutionId) throw new Error('This clash approval cannot be removed.')
   batch.delete(doc(db, 'organizations', organizationId, 'acceptedBookingClashes', pairId))
   batch.delete(doc(db, 'organizations', organizationId, 'warningResolutions', resolutionId))
+  // Rulebook 1.53.0: an approval saved before 1.53.0 may sit under the older pair key (`clashApprovalDocumentIds`).
+  // Delete it too, but only when it exists, so the batch never deletes a missing document.
+  const ids = clashApprovalDocumentIds(clash)
+  for (const [collection, list, current] of [
+    ['acceptedBookingClashes', ids.acceptedClash, pairId],
+    ['warningResolutions', ids.resolution, resolutionId],
+  ] as const) {
+    for (const id of list) {
+      if (id === current) continue
+      const ref = doc(db, 'organizations', organizationId, collection, id)
+      if ((await getDoc(ref)).exists()) batch.delete(ref)
+    }
+  }
 }
 
 /**
@@ -111,7 +125,7 @@ export async function approveBookingClash(
  */
 export async function unapproveBookingClash(organizationId: string, clash: ClashApproval): Promise<void> {
   const batch = writeBatch(db)
-  addClashUnapproval(batch, organizationId, clash)
+  await addClashUnapproval(batch, organizationId, clash)
   await batch.commit()
 }
 
@@ -139,7 +153,7 @@ export async function unapproveBookingClashPairs(
 ): Promise<void> {
   if (pairs.length === 0) throw new Error('This clash approval cannot be removed.')
   const batch = writeBatch(db)
-  for (const pair of pairs) addClashUnapproval(batch, organizationId, { bookingAId: pair.bookingAId, bookingBId: pair.bookingBId })
+  for (const pair of pairs) await addClashUnapproval(batch, organizationId, { bookingAId: pair.bookingAId, bookingBId: pair.bookingBId })
   await batch.commit()
 }
 

@@ -672,6 +672,23 @@ UI only, web only (`docs/design/user-profile-ui/user-profile-ui-spec.md`; branch
 | 15 Nov | Q4c: subcontractor custom hours are capped at 1.5 days, like staff day units. | done, owner to confirm |
 | 15 Nov | The weekly report's Excel file now has the People column on Sub Contractors and the Hours column on the Project Breakdown (it lacked People before), because every export shows the same rows. | done, owner to confirm |
 
+## 15 Nov decisions (for 1.53, calculation sweep)
+
+| Date | Decision | Status |
+|---|---|---|
+| 15 Nov | **A9: weekly report Days are rounded.** Days × Rate need not reproduce Pay (2.12 × £250 = £530.00 against £529.41); a note under the Pay Summary: "Days are rounded; Pay is worked out from the exact hours." (`WEEKLY_REPORT_DAYS_ROUNDED_NOTE`; the switch `WEEKLY_REPORT_DAYS_DISPLAY` can show three decimals instead). | **owner confirmed 15 Nov**; done web + rulebook (1.53.0); iOS open (hand-off v1.53.0) |
+| 15 Nov | **A10: Daily Overview counts switched-off schedule locations.** Office, Working from home, Site survey and custom-item bookings stay on Daily Overview (rows, hours, counts) when that option is switched off; the switch only hides the option for new bookings. | **owner confirmed 15 Nov**; web already; rulebook §6 (1.53.0); iOS open (stop filtering, hand-off v1.53.0) |
+| 15 Nov | **A1: a signed run keeps its pay after a later switch to PAYE** on the weekly report, as on the signed invoice (example: invoice £632.35, report was £500.00). | done web + rulebook (1.53.0); iOS open |
+
+## 1.53.0 judgement calls (owner to confirm)
+
+| Date | Choice | Status |
+|---|---|---|
+| 15 Nov | A4: new clash keys order the two booking ids by their lower-case form; keys written before 1.53.0 are still read in either order and either case, and undo deletes the old-order documents when they exist (web reads each first, so a batch never deletes a missing document). | done, owner to confirm |
+| 15 Nov | A6: Home "Up next" — a booking with a start time but no finish is placed by its slot (`slotInterval`), so an AM booking with only "08:00" reads 07:30. | done, owner to confirm |
+| 15 Nov | B7: the weekly report waits for the region's bank holidays before it can be generated (as My Profile); Daily Overview and Home use them as soon as they load (before that, the old count for at most a moment). | done, owner to confirm |
+| 15 Nov | Not changed: the timesheet collector and the weekly report still leave out switched-off schedule locations (`includesManagerScheduleLocation`), unlike Daily Overview after A10. Follow-up question: should timesheets and the weekly report follow A10 too (a pay change)? | question |
+
 ## Open questions for the owner
 
 | Date | Question |

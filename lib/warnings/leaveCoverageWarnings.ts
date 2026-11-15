@@ -25,7 +25,19 @@ function emailKey(value: string | null | undefined): string {
 }
 
 /** One person per account; operative profiles join the account that shares their email. */
-export function leavePeopleFrom(users: User[], operatives: Operative[]): LeavePerson[] {
+export function leavePeopleFrom(
+  users: User[],
+  operatives: Operative[],
+  userIdAliases: Readonly<Record<string, string>> | null = null
+): LeavePerson[] {
+  // Rulebook 1.53.0: every id a person goes by — stored former / same-email ids and the roster fold's aliases.
+  const aliasesByKept = new Map<string, string[]>()
+  for (const [alias, kept] of Object.entries(userIdAliases || {})) {
+    if (!alias || !kept || alias === kept) continue
+    const list = aliasesByKept.get(kept) || []
+    list.push(alias)
+    aliasesByKept.set(kept, list)
+  }
   const operativeIdsByEmail = new Map<string, string[]>()
   for (const operative of operatives) {
     if (isPlaceholderOperative(operative)) continue
@@ -46,6 +58,11 @@ export function leavePeopleFrom(users: User[], operatives: Operative[]): LeavePe
       name,
       userId: user.id,
       operativeIds: email ? operativeIdsByEmail.get(email) || [] : [],
+      aliasUserIds: [
+        ...((user as { formerUserIds?: string[] | null }).formerUserIds || []),
+        ...((user as { sameEmailUserIds?: string[] | null }).sameEmailUserIds || []),
+        ...(aliasesByKept.get(user.id) || []),
+      ].filter((id) => id && id !== user.id),
     })
     if (email) claimedEmails.add(email)
   }
@@ -77,6 +94,7 @@ export function computeLeaveCoverageWarnings({
   payrollPolicyState = null,
   referenceDate = new Date(),
   timeZone,
+  userIdAliases = null,
 }: {
   bookings: Booking[]
   managerSiteBookings?: ManagerSiteBooking[]
@@ -91,6 +109,8 @@ export function computeLeaveCoverageWarnings({
   payrollPolicyState?: import('@/lib/canonical').PayrollTimePolicyState | null
   referenceDate?: Date
   timeZone?: string
+  /** Folded same-email `users` id → the id the roster kept (rulebook 1.53.0: leave under either id counts). */
+  userIdAliases?: Readonly<Record<string, string>> | null
 }): LeaveCoverageWarning[] {
   const window = computeWarningCoverageWindow(referenceDate, warningDetection, invoicing, timeZone)
   const windowStart = londonMidnight(window.start, timeZone)
@@ -104,7 +124,7 @@ export function computeLeaveCoverageWarnings({
     day: payrollPolicyState ?? payrollPolicy,
     includeWeekends: warningDetection.includeWeekendsForUnbookedLabour,
     excludedUserIds: warningDetection.excludedUserIdsFromUnbookedWarnings,
-    people: leavePeopleFrom(users, operatives),
+    people: leavePeopleFrom(users, operatives, userIdAliases),
     // Parsed day keys from `parseHolidayDocument` (rulebook §9), never recomputed here.
     leave: holidays.map((holiday) => holidayBookingLabourInput(holiday, timeZone)),
     bookings: [

@@ -56,3 +56,21 @@ export function leaveDayKind(
   }
   return { kind: best, recordId, isLocked: best === 'approvedFull' || best === 'pendingFull' }
 }
+
+/**
+ * Rulebook 1.53.0 §6: the records Daily Overview lists under "On annual leave" for one organisation day (and the Home
+ * ring's "On annual leave", which is that list): approved records (`normalizeHolidayStatus`, a pending cancellation is
+ * still approved) for which `dayKey` is one of their leave days (`leaveRecordDayKeys` — a multi-day record skips
+ * weekends and the region's bank holidays given in `nonWorkingDayKeys`). Before 1.53.0 web listed everyone whose
+ * start–end range covered the day, so a bank holiday inside a week of leave showed them on leave. Input order kept.
+ */
+export function dailyOverviewLeaveRows<T extends LeaveCalendarRecord>(
+  records: ReadonlyArray<T> | null | undefined,
+  dayKey: string,
+  timeZone?: string | null,
+  nonWorkingDayKeys?: ReadonlyArray<string> | null
+): T[] {
+  return (records || []).filter(
+    (record) => Boolean(record) && normalizeHolidayStatus(record.status) === 'approved' && leaveRecordDayKeys(record, timeZone, nonWorkingDayKeys).includes(dayKey)
+  )
+}
