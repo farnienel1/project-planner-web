@@ -11491,7 +11491,9 @@
             "paidHours": 8,
             "workedHours": 6.5
           }
-        ]
+        ],
+        "standardPartDayHours": 8,
+        "overtimePartDayHours": 8
       }
     },
     {
@@ -11555,7 +11557,9 @@
             "workedHours": 6,
             "unpaidBreakHours": 0.5
           }
-        ]
+        ],
+        "standardPartDayHours": 8,
+        "overtimePartDayHours": 8
       }
     },
     {
@@ -11618,7 +11622,9 @@
             "paidHours": 4.3076923076923075,
             "workedHours": 3.5
           }
-        ]
+        ],
+        "standardPartDayHours": 8,
+        "overtimePartDayHours": 8
       }
     },
     {
@@ -11681,7 +11687,9 @@
             "paidHours": 13,
             "workedHours": 6.5
           }
-        ]
+        ],
+        "standardPartDayHours": 8,
+        "overtimePartDayHours": 8
       }
     },
     {
@@ -11745,7 +11753,9 @@
             "workedHours": 6,
             "unpaidBreakHours": 0.5
           }
-        ]
+        ],
+        "standardPartDayHours": 8,
+        "overtimePartDayHours": 8
       }
     },
     {
@@ -11809,7 +11819,9 @@
             "paidHours": 13,
             "workedHours": 6.5
           }
-        ]
+        ],
+        "standardPartDayHours": 8,
+        "overtimePartDayHours": 8
       }
     },
     {
@@ -12624,7 +12636,9 @@
             "workedHours": 5.75,
             "unpaidBreakHours": 0.75
           }
-        ]
+        ],
+        "standardPartDayHours": 8,
+        "overtimePartDayHours": 8
       }
     },
     {
@@ -12984,7 +12998,9 @@
             "workedHours": 7.25,
             "unpaidBreakHours": 0.75
           }
-        ]
+        ],
+        "standardPartDayHours": 7.25,
+        "overtimePartDayHours": 7.25
       }
     },
     {
@@ -13050,7 +13066,9 @@
             "workedHours": 4.75,
             "unpaidBreakHours": 0.75
           }
-        ]
+        ],
+        "standardPartDayHours": 7.25,
+        "overtimePartDayHours": 7.25
       }
     },
     {
@@ -13115,7 +13133,9 @@
             "paidHours": 3.5,
             "workedHours": 3.5
           }
-        ]
+        ],
+        "standardPartDayHours": 7.25,
+        "overtimePartDayHours": 7.25
       }
     },
     {
@@ -13190,7 +13210,9 @@
             "paidHours": 3,
             "workedHours": 2
           }
-        ]
+        ],
+        "standardPartDayHours": 7.25,
+        "overtimePartDayHours": 7.25
       }
     },
     {
@@ -13253,7 +13275,9 @@
             "workedHours": 8,
             "unpaidBreakHours": 0.5
           }
-        ]
+        ],
+        "standardPartDayHours": 8,
+        "overtimePartDayHours": 8
       }
     },
     {
@@ -13315,7 +13339,9 @@
             "paidHours": 4,
             "workedHours": 4
           }
-        ]
+        ],
+        "standardPartDayHours": 8,
+        "overtimePartDayHours": 8
       }
     },
     {

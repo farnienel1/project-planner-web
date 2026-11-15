@@ -25,7 +25,13 @@ export function bookingDayUnits(
 ): number {
   const policy = payrollPolicy || DEFAULT_PAYROLL_POLICY
   const hours = bookingHoursOnDay(date, timeSlot, workStartTime, workEndTime, policy, isBreakRemoved, otMultiplierOverride, timeZone)
-  return reportDayValue({ totalPaidHours: hours.totalPaidHours, standardPaidHours: weekdayPaidHours(policy) })
+  // 1.49.0 §7/§8: a set-window weekend day's standard part counts in days of that day's "counts as" hours.
+  return reportDayValue({
+    totalPaidHours: hours.totalPaidHours,
+    standardPaidHours: weekdayPaidHours(policy),
+    standardHours: hours.standardHours,
+    standardPartDayHours: hours.standardPartDayHours ?? null,
+  })
 }
 
 function readableTrade(value?: string): string | undefined {

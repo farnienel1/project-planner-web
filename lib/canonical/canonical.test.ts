@@ -15805,3 +15805,36 @@ test('1.47.0 (second review): an older iPhone re-signs (no new record) on a stal
   assert.equal(r.waitingFor, 'person')
 })
 
+
+// Rulebook 1.49.0 §8 (owner decision 15 Nov, option A): a full Saturday / Sunday set window is one day rate; outside
+// hours and every-hour weekend days keep dividing by the weekday paid day; hourly pay is unchanged.
+test('1.49.0: weekend set-window standard part divides by that day\'s "counts as"; overtime by the weekday paid day', () => {
+  const wk = { allHoursAtMultiplierMode: false, allHoursMultiplier: 2, definedWindowStart: '07:30', definedWindowEnd: '14:00', countsAsStandardHours: 8, outsideWindowMultiplier: 2, breakPaid: true }
+  const policy = { ...R112.DEFAULT_PAYROLL_POLICY, standardDayStart: '07:00', standardDayEnd: '16:00', unpaidBreakMinutes: 30, breakWindowStart: '12:00', breakWindowEnd: '12:30', standardPaidHours: 8.5, paidHoursDerived: true, saturday: { ...wk }, sunday: { ...wk, sameAsSaturday: true } } as never
+  const sat = (start: string, end: string) =>
+    R112.payrollHoursResult({ booking: { timeSlot: 'CUSTOM_HOURS', workStartTime: start, workEndTime: end }, dayKey: '2026-11-14', policy, timeZone: 'Europe/London' })
+  const day = (hours: ReturnType<typeof sat>, basis: 'day' | 'hourly' = 'day') =>
+    R112.bookingPaySlices({ hours, standardDayHours: 8.5, payBasis: basis, dayRate: 240, hourlyRate: 20 })
+  // Full window: exactly the day rate.
+  assert.deepEqual(day(sat('07:30', '14:00')).map((s) => [s.pay, s.standardDayHours]), [[240, 8]])
+  // Window plus 1h outside at ×2: the outside hour divides by the weekday 8.5h (240 × 1/8.5 × 2 = 56.47).
+  assert.deepEqual(day(sat('07:30', '15:00')).map((s) => s.pay), [240, 56.47])
+  // Partial window, pro rata: 3h of a 6.5h window counting 8h = 3.69h → 240 × 3.69/8.
+  assert.equal(day(sat('07:30', '10:30'))[0]!.pay, R112.roundPennies(240 * ((8 * 3) / 6.5) / 8))
+  // Hourly: rate × credited hours, unchanged.
+  assert.equal(day(sat('07:30', '14:00'), 'hourly')[0]!.pay, 160)
+  // Stored weekend FULL DAY with no clock times is the window: one day.
+  const full = R112.payrollHoursResult({ booking: { timeSlot: 'FULL DAY' }, dayKey: '2026-11-14', policy, timeZone: 'Europe/London' })
+  assert.equal(day(full)[0]!.pay, 240)
+  // Weekday unchanged: 07:00–16:00 is one 8.5h day.
+  const mon = R112.payrollHoursResult({ booking: { timeSlot: 'CUSTOM_HOURS', workStartTime: '07:00', workEndTime: '16:00' }, dayKey: '2026-11-09', policy, timeZone: 'Europe/London' })
+  assert.deepEqual(day(mon).map((s) => [s.pay, s.standardDayHours]), [[240, 8.5]])
+  // Weekly-report day units: a full window is 1 day.
+  const h = sat('07:30', '14:00')
+  assert.equal(R112.reportDayValue({ totalPaidHours: h.totalPaidHours, standardPaidHours: 8.5, standardHours: h.standardHours, standardPartDayHours: h.standardPartDayHours }), 1)
+  // Edit hours (revisedPayrollLineAmounts) prices the same way.
+  const edited = R112.revisedPayrollLineAmounts({ dayKey: '2026-11-14', startTime: '07:30', endTime: '14:00', policy, timeZone: 'Europe/London', payBasis: 'day', dayRate: 240 } as never)
+  assert.equal(edited?.standardAmount, 240)
+  assert.equal(edited?.standardPartDayHours, 8)
+  assert.equal(R112.weekendCountsAsCopy('saturday').help, 'A full Saturday window is paid as one day')
+})

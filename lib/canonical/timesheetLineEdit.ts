@@ -134,8 +134,13 @@ export type RevisedPayrollLineAmounts = {
   overtimeMultiplier: number
   /** Weighted paid hours: `standardHours + overtimeHours × overtimeMultiplier`. */
   totalPaidHours: number
-  /** The paid day a day rate is divided by (`weekdayPaidHours` of the policy in effect that day). */
+  /** The paid day a day rate is divided by (`weekdayPaidHours` of the policy in effect that day): the overtime part. */
   standardDayHours: number
+  /**
+   * Rulebook 1.49.0 §8: what the standard part is divided by (`payrollDayRateHours`) — that weekend day's "counts as"
+   * hours on a set-window Saturday or Sunday, else `standardDayHours`.
+   */
+  standardPartDayHours: number
   /** True on a PAYE day (`employmentTypeOnDay`): hours kept, every amount 0. */
   isPayeDay: boolean
   /** `payForHours` of the standard hours, rounded to pennies. */
@@ -182,6 +187,8 @@ export function revisedPayrollLineAmounts(input: RevisedPayrollLineInput): Revis
   const zone = zoneOrLondon(input.timeZone)
   const isPayeDay = Boolean(input.employment) && employmentTypeOnDay(input.employment as EmploymentTypeUser, dateFromDayKeyInZone(dayKey, zone), zone) === 'paye'
   const standardDayHours = orgDayHours(weekdayPaidHours(policy))
+  // 1.49.0 §8 (`payrollDayRateHours`): a set-window weekend day's standard part is divided by that day's "counts as".
+  const standardPartDayHours = orgDayHours(hours.standardPartDayHours ?? standardDayHours)
   const rate = isPayeDay
     ? { payBasis: basisOf(input.payBasis), dayRate: 0, hourlyRate: 0 }
     : { payBasis: basisOf(input.payBasis), dayRate: input.dayRate ?? null, hourlyRate: input.hourlyRate ?? null }
@@ -193,7 +200,7 @@ export function revisedPayrollLineAmounts(input: RevisedPayrollLineInput): Revis
   const multiplied = overtimeCounted ? payrollMultipliedHours(hours) : null
   const overtimeClockHours = overtimeCounted ? (multiplied ? multiplied.clockHours : overtimeHours) : 0
   const multiplier = hours.outsideMultiplier
-  const standardAmount = payForHours({ ...rate, paidHours: standardHours, standardDayHours })
+  const standardAmount = payForHours({ ...rate, paidHours: standardHours, standardDayHours: standardPartDayHours })
   const overtimeAmount = overtimeCounted ? payForHours({ ...rate, paidHours: overtimeHours, standardDayHours, otMultiplier: multiplier }) : 0
   const fingerprint = String(input.bookingFingerprint ?? '').trim()
   const fields = (part: { std: boolean; ot: boolean }): PayrollLineEditReviewFields => {
@@ -220,6 +227,7 @@ export function revisedPayrollLineAmounts(input: RevisedPayrollLineInput): Revis
     overtimeMultiplier: multiplier,
     totalPaidHours: roundHours(standardHours + overtimeHours * multiplier),
     standardDayHours,
+    standardPartDayHours,
     isPayeDay,
     standardAmount,
     overtimeAmount,
@@ -281,7 +289,10 @@ export type BookingPaySlice = {
   /** `payForHours` for this part of this one booking, rounded to pennies; 0 on a PAYE day. */
   pay: number
   isPaye: boolean
-  /** The paid day in effect on the booking's day. */
+  /**
+   * What a day rate is divided by for this part (rulebook 1.49.0, `payrollDayRateHours`): the weekday paid day in
+   * effect that day, or on a set-window Saturday or Sunday's standard part that day's "counts as" hours.
+   */
   standardDayHours: number
   /** Overtime only, display: clock hours at the multiplier and the unpaid break off them (`payrollMultipliedHours`). */
   clockHours?: number
@@ -305,6 +316,10 @@ export function bookingPaySlices(input: {
   const isPaye = input.isPaye === true
   const payBasis = basisOf(input.payBasis)
   const standard = orgDayHours(input.standardDayHours)
+  // 1.49.0 §8 (`payrollDayRateHours`, carried on the result): the standard part divides by its own day (a set-window
+  // Saturday or Sunday: that day's "counts as" hours); the overtime part by the weekday paid day.
+  const standardPart = orgDayHours(input.hours.standardPartDayHours ?? standard)
+  const overtimePart = orgDayHours(input.hours.overtimePartDayHours ?? standard)
   const rateValue = payBasis === 'hourly' ? input.hourlyRate : input.dayRate
   const rate = isPaye || rateValue == null || !Number.isFinite(Number(rateValue)) ? null : Number(rateValue)
   const multiplied = payrollMultipliedHours(input.hours)
@@ -313,7 +328,7 @@ export function bookingPaySlices(input: {
     if (!(paidHours > 0)) return
     const pay = isPaye
       ? 0
-      : payForHours({ payBasis, dayRate: input.dayRate ?? null, hourlyRate: input.hourlyRate ?? null, paidHours, standardDayHours: standard, otMultiplier: overtime ? multiplier : 1 })
+      : payForHours({ payBasis, dayRate: input.dayRate ?? null, hourlyRate: input.hourlyRate ?? null, paidHours, standardDayHours: overtime ? overtimePart : standardPart, otMultiplier: overtime ? multiplier : 1 })
     slices.push({
       payBasis,
       isOvertime: overtime,
@@ -322,7 +337,7 @@ export function bookingPaySlices(input: {
       paidHours,
       pay,
       isPaye,
-      standardDayHours: standard,
+      standardDayHours: overtime ? overtimePart : standardPart,
       ...(overtime && multiplied && multiplied.breakHours > 0 ? { clockHours: multiplied.clockHours, breakHours: multiplied.breakHours } : {}),
     })
   }

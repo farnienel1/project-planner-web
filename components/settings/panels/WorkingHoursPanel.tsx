@@ -19,6 +19,8 @@ import {
   formatClockMinutes,
   weekendBreakFor,
   weekendLunchBreakCopy,
+  weekendCountsAsCopy,
+  weekendCountsAsHours,
   weekdayPaidDayPreview,
   weekdayPaidHours,
   withDerivedWeekdayPaidHours,
@@ -439,6 +441,19 @@ export function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
                 />
               </FormField>
             </div>
+            {/* Rulebook 1.49.0 §4.3 / §8 (owner decision 15 Nov): the window's "counts as" hours (1–12). For a day-rate
+                person a full window is paid as one day (`payrollDayRateHours`); saved with the rest of the working
+                hours (apply from today / schedule, history, the two-admin check). */}
+            <Stepper
+              label={weekendCountsAsCopy(key).label}
+              hint={weekendCountsAsCopy(key).help}
+              value={weekendCountsAsHours(settings)}
+              onChange={(value) => patchWeekend(key, { countsAsStandardHours: value })}
+              min={PAYROLL_POLICY_LIMITS.paidHours.min}
+              max={PAYROLL_POLICY_LIMITS.paidHours.max}
+              step={0.5}
+              format={(value) => `${value}h`}
+            />
             <MultiplierInput
               label="Rate outside the window"
               hint="Hours inside the window count as standard hours."

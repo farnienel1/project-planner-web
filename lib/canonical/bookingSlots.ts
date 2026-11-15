@@ -477,6 +477,16 @@ export function weekendDayPreview(
 }
 
 /**
+ * Rulebook 1.49.0 §4.3 (owner decision 15 Nov): the Working hours copy for a set-window weekend day's "Counts as"
+ * hours (`countsAsStandardHours`, 1–12, `PAYROLL_POLICY_LIMITS.paidHours`). For a day-rate person a full window is paid
+ * as one day (`payrollDayRateHours`). Both apps show exactly this text.
+ */
+export function weekendCountsAsCopy(weekday: 'saturday' | 'sunday'): { label: string; help: string } {
+  const name = weekday === 'saturday' ? 'Saturday' : 'Sunday'
+  return { label: 'Counts as', help: `A full ${name} window is paid as one day` }
+}
+
+/**
  * Rulebook 1.19.0: the Working hours copy for a weekend day's lunch break, e.g.
  * `{ title: 'Lunch break on Saturday', detail: '12:00–12:30, 30 min — the same as your weekday lunch.' }`. Each weekend
  * day has its own Paid / Unpaid, length and window; a day that has not set them shows (and is prefilled with) the

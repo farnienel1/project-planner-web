@@ -221,10 +221,12 @@ function makeOverride(input: WeeklyReportOverrideInput, prepared?: ReturnType<ty
     const parts = payrollLineReviewSnapshotParts(line, review)
     if (parts) {
       const standard = orgDayHours(weekdayPaidHours(linePolicy))
+      // 1.49.0 §8: a standard part divides by the live standard line's own day (a set-window weekend day's "counts as").
+      const standardPart = !line.isOvertimeLine && Number(line.standardDayHours) >= 1 ? orgDayHours(line.standardDayHours) : standard
       for (const part of parts) {
         if (part.id !== line.id && liveIds.has(part.id.toLowerCase())) continue
         pushLine({
-          ...labourLine(line, 'edited', part.amount, part.paidHours / standard, input.managerSiteBookings),
+          ...labourLine(line, 'edited', part.amount, part.paidHours / (part.isOvertime ? standard : standardPart), input.managerSiteBookings),
           ...signedState,
           ...(part.id !== line.id ? { reviewPartOf: line.id } : {}),
           id: part.id,
@@ -236,7 +238,8 @@ function makeOverride(input: WeeklyReportOverrideInput, prepared?: ReturnType<ty
       }
       continue
     }
-    const days = scaledDays(line, amount, weekdayPaidHours(linePolicy))
+    // 1.49.0 §8: days against the line's own divisor (the collector sets it per part, `payrollDayRateHours`).
+    const days = scaledDays(line, amount, Number(line.standardDayHours) >= 1 ? line.standardDayHours : weekdayPaidHours(linePolicy))
     pushLine({ ...labourLine(line, agreedDecision(review?.decision), amount, days, input.managerSiteBookings), ...signedState })
   }
   const money = moneyLines(input.draft, managerHasSigned)

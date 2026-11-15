@@ -27,6 +27,7 @@ import {
   weekdayPaidDayPreview,
   weekendBreakFor,
   weekendCountsAsHours,
+  weekendCountsAsCopy,
   weekendLunchBreakCopy,
 } from '@/lib/canonical'
 
@@ -257,13 +258,14 @@ function WeekendSection({
                 <div className="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
                   <p className="text-sm font-semibold text-slate-900">Counts as</p>
                   <div className="mt-2 flex items-center justify-between">
-                    <span className="text-xs text-slate-500">Standard hours inside the defined window</span>
+                    {/* Rulebook 1.49.0 §4.3: the same copy and limits as Settings → Working hours. */}
+                    <span className="text-xs text-slate-500">{weekendCountsAsCopy(isSunday ? 'sunday' : 'saturday').help}</span>
                     <input
                       type="number"
                       step={0.5}
-                      min={0}
-                      max={24}
-                      value={effective.countsAsStandardHours ?? 8}
+                      min={PAYROLL_POLICY_LIMITS.paidHours.min}
+                      max={PAYROLL_POLICY_LIMITS.paidHours.max}
+                      value={weekendCountsAsHours(effective)}
                       onChange={(e) =>
                         patchWeekend({ countsAsStandardHours: parseFloat(e.target.value) || 0 })
                       }

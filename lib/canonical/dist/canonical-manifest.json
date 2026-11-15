@@ -1,7 +1,7 @@
 {
-  "rulebookVersion": "1.48.0",
-  "rulebookSha256": "d6be7623ed30a972f06cf71ea652dfde88d8d9baf717a2b91f5a84a277126d0e",
-  "bundleSha256": "a6e6df8b04534cf67997041ab689279e99726c557f04c71294062ee2b9a5a2c4",
+  "rulebookVersion": "1.49.0",
+  "rulebookSha256": "ba81b887b32606144ad6ee6c0cb1851338c5d955790f6d6728a4fa496871e2bf",
+  "bundleSha256": "52dc8a970294288c7609c0b32b91322079bae16feea2c8dedb841d987aeb7e7a",
   "crossPlatformContractSha256": "b89ca87595a18b7f0230fa13dcc81d65dcaea44e65912d499a31ce5df7670dd4",
   "dataParityFixtureSha256": "c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f",
   "exports": [
@@ -1360,6 +1360,7 @@
     "payrollBreakOnDay",
     "payrollBreakTimeOnStep",
     "payrollDayKeyFromValue",
+    "payrollDayRateHours",
     "payrollDayWindows",
     "payrollHoursResult",
     "payrollLineBookingKey",
@@ -1649,6 +1650,7 @@
     "weekendBookingNote",
     "weekendBookingNotes",
     "weekendBreakFor",
+    "weekendCountsAsCopy",
     "weekendCountsAsHours",
     "weekendCustomHoursDefault",
     "weekendDayPreview",
