@@ -1,4 +1,11 @@
-import { canManageVariationTracker as canManageVariationTrackerRole, canSeeVariations } from '@/lib/canonical'
+import {
+  canManageVariationTracker as canManageVariationTrackerRole,
+  canRenumberVariations,
+  canSeeVariationCosts,
+  canSeeVariations,
+  isJobManager,
+} from '@/lib/canonical'
+import { jobAccessViewer } from '@/lib/access/bookingAccess'
 import { staffAccountRole } from '@/lib/permissions'
 import type { User } from '@/types'
 
@@ -53,4 +60,24 @@ export function canManageVariationTracker(user: User | null | undefined): boolea
 
 export function canSeeAnyVariations(user: User | null | undefined): boolean {
   return canSeeJobVariations(user)
+}
+
+/**
+ * Rulebook 1.52.0 `canRenumberVariations`: the VO tracker (reorder, renumber, turn it on) is for admins and the job's
+ * managers (`isJobManager` over the job's stored manager ids, or a `managers` row on the viewer's email).
+ */
+export function canUseVariationTracker(
+  user: User | null | undefined,
+  parent: VariationParentAccess & { managerUserIds?: string[] | null },
+  managers: VariationManagerProfile[] = []
+): boolean {
+  if (!user) return false
+  const viewer = jobAccessViewer(user)
+  const managesJob = isJobManager(viewer, parent, managers.map((row) => ({ id: row.id, email: row.email ?? null })))
+  return canRenumberVariations(staffAccountRole(user), { managesJob })
+}
+
+/** Rulebook 1.52.0 `canSeeVariationCosts`: admins and managers (everyone who sees variations). */
+export function canSeeVariationCostsFor(user: User | null | undefined): boolean {
+  return user ? canSeeVariationCosts(staffAccountRole(user)) : false
 }

@@ -1,4 +1,4 @@
-import { ref, uploadBytes, uploadBytesResumable, getDownloadURL } from 'firebase/storage'
+import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage'
 import { qualificationCertificateStoragePath } from '@/lib/canonical/operativeQualifications'
 import { storage, auth } from '@/lib/firebase/config'
 import { withTimeout } from '@/lib/client/withTimeout'
@@ -99,31 +99,76 @@ export async function uploadFile(
   }
 }
 
+export type VariationEvidenceUpload = {
+  storagePath: string
+  downloadURL: string
+  /** The type the bytes were checked as and the object was written with (never the picked file's guess). */
+  contentType: string
+  sizeBytes: number
+}
+
+export const VARIATION_UPLOAD_STALL_MS = 60_000
+export const VARIATION_UPLOAD_MAX_MS = 5 * 60_000
+
 /**
- * Variation evidence: one request, no retry. A denied or hung resumable upload
- * used to sit on Save for minutes and then still lose the variation.
+ * Variation evidence (rulebook 1.52.0): a resumable upload that reports progress and IS cancelled when it stalls for
+ * 60 seconds or runs past 5 minutes, so a timed-out file never lands in Storage later, unlinked. Resolves with what
+ * was really uploaded (the checked content type and the size of the prepared file). Errors keep their Storage code.
  */
 export async function uploadVariationEvidenceFile(
   storagePath: string,
   file: Blob,
-  claimedContentType?: string | null
-): Promise<string> {
+  claimedContentType?: string | null,
+  options: { onProgress?: (fraction: number) => void; signal?: AbortSignal } = {}
+): Promise<VariationEvidenceUpload> {
   if (!storage) {
     throw new Error('File storage is not configured.')
   }
   const contentType = await assertUploadAllowed(storagePath, file, claimedContentType)
   await ensureStorageAuth()
   const storageRef = ref(storage, storagePath)
-  await withTimeout(
-    uploadBytes(storageRef, file, { contentType }),
-    60_000,
-    'The evidence file did not finish uploading. Check the connection and try again.'
-  )
-  return withTimeout(
-    getDownloadURL(storageRef),
-    15_000,
-    'The evidence file uploaded but its link could not be created. Try again.'
-  )
+  return new Promise<VariationEvidenceUpload>((resolve, reject) => {
+    let settled = false
+    const task = uploadBytesResumable(storageRef, file, { contentType })
+    let stall: ReturnType<typeof setTimeout> | null = null
+    const cancel = (message: string) => {
+      try {
+        task.cancel()
+      } catch {
+        /* already finished */
+      }
+      finish(() => reject(new Error(message)))
+    }
+    const armStall = () => {
+      if (stall) clearTimeout(stall)
+      stall = setTimeout(() => cancel('The evidence upload stopped for a minute and was cancelled. Check the connection and add the file again.'), VARIATION_UPLOAD_STALL_MS)
+    }
+    const overall = setTimeout(() => cancel('The evidence upload took too long and was cancelled. Add the file again.'), VARIATION_UPLOAD_MAX_MS)
+    const finish = (outcome: () => void) => {
+      if (settled) return
+      settled = true
+      if (stall) clearTimeout(stall)
+      clearTimeout(overall)
+      options.signal?.removeEventListener('abort', onAbort)
+      outcome()
+    }
+    const onAbort = () => cancel('The evidence upload was cancelled.')
+    options.signal?.addEventListener('abort', onAbort)
+    armStall()
+    task.on(
+      'state_changed',
+      (snapshot) => {
+        armStall()
+        if (snapshot.totalBytes > 0) options.onProgress?.(snapshot.bytesTransferred / snapshot.totalBytes)
+      },
+      (error) => finish(() => reject(error)),
+      () => {
+        withTimeout(getDownloadURL(storageRef), 15_000, 'The evidence file uploaded but its link could not be created. Try again.')
+          .then((downloadURL) => finish(() => resolve({ storagePath, downloadURL, contentType, sizeBytes: file.size })))
+          .catch((error) => finish(() => reject(error)))
+      }
+    )
+  })
 }
 
 export function sanitizeFileName(name: string): string {

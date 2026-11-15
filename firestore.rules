@@ -251,12 +251,10 @@ service cloud.firestore {
   function orgBillingOpen(organizationId) {
     let path = /databases/(default)/documents/organizations/$(organizationId);
     let org = exists(path) ? get(path).data : {};
-    let b = org.get('billing', {});
-    let d = org.get('deletion', {});
-    return !(d is map && d.get('status', '') == 'scheduled') && (!(b is map) || (
-      b.get('accessOpen', true) != false &&
-      !(b.get('accessClosesAt', null) is timestamp && request.time >= b.accessClosesAt)
-    ));
+    let c = org.get(['billing', 'accessClosesAt'], null);
+    return org.get(['deletion', 'status'], '') != 'scheduled' &&
+      org.get(['billing', 'accessOpen'], true) != false &&
+      !(c is timestamp && request.time >= c);
   }
 
   function canAccessOrganization(organizationId) {
@@ -398,9 +396,8 @@ service cloud.firestore {
   }
 
   function isPlatformOwner() {
-    // string(...) of a missing or non-text email is never the owner's address (one expression instead of two).
     return request.auth != null &&
-      string(request.auth.token.get('email', '')).lower() == 'info@projectplanner.us' &&
+      request.auth.token.get('email', '').lower() == 'info@projectplanner.us' &&
       request.auth.token.email_verified == true;
   }
 
@@ -518,7 +515,6 @@ service cloud.firestore {
   }
 
   function writeMetadataKeysValid(written) {
-    // A written key is read directly: one that was removed has no value and is refused, as before (null failed too).
     return (!('updatedBy' in written) || request.resource.data.updatedBy == request.auth.uid) &&
       (!('updatedFrom' in written) || request.resource.data.updatedFrom in ['web', 'ios', 'android']) &&
       (!('updatedAt' in written) || request.resource.data.updatedAt is timestamp);
@@ -1861,7 +1857,7 @@ service cloud.firestore {
           ) : timesheetReviewerOfOthers()))
             : ((settingId.matches('^deadlines_.*') ||
             settingId == 'deadlineAssignments' ||
-            settingId.matches('^healthSafety_.*')) || canAccessVariationsStaff(organizationId))
+            settingId.matches('^healthSafety_.*')) || (!settingId.matches('^variation(s|Item)_.*') && canAccessVariationsStaff(organizationId)))
         )));
       }
 
@@ -2023,9 +2019,6 @@ service cloud.firestore {
           return data.get('userId', null) == request.auth.uid ||
             data.get('operativeId', null) == request.auth.uid;
         }
-        // An admin, or the line manager listed on the users document the record's userId names. 1.40.0 (owner
-        // decision 13 Nov, item 17): never through an operatives row's email — an Operatives manager may change a
-        // row's email, so leave filed only under a row (no users document on userId) is decided by admins only.
         function hbCanDecide(data) {
           return (hbIsOwner(data) || hbCallerIsOperative()) ? false : (hbIsAdmin() ? true :
             (hbRequesterExists(data) && request.auth.uid in lineManagerIdList(hbRequester(data))));
@@ -2079,8 +2072,6 @@ service cloud.firestore {
           (hbIsRequestShape(request.resource.data) && (callerOrgRoleAnyBilling(organizationId) in ['admin', 'manager'] || hbIsAdmin()))
         )) : (request.method == 'update') ? ((
           hbIsOwner(resource.data) ? hbOwnerEditAllowed(request.resource.data.diff(resource.data).affectedKeys())
-          // Not the owner: an admin, or the line manager without moving the record to another person (userId /
-          // operativeId unchanged), decides through hbCanDecide on the stored record.
           : (!hbIsOwner(request.resource.data) && (hbIsAdmin() ||
             !request.resource.data.diff(resource.data).affectedKeys().hasAny(['userId', 'operativeId'])) && hbCanDecide(resource.data))
         )) : ((
@@ -2092,13 +2083,6 @@ service cloud.firestore {
         )));
       }
 
-      // 1.40.0 §4.4: manual annual-leave adjustments — create only (append-only history), by an admin or the person's
-      // line manager, never the person; read by the person, their line managers and admins.
-      // 1.40.0 review r306 #6: createdAt is the request time, the year a day key within a year either side of today
-      // (the app allows the current leave year only), a reason with a non-space character, and no free-text author
-      // name (screens show the writer's roster name by `createdBy`). Every required field is read below, so a missing
-      // one is refused without a hasAll. An admin never adjusts their own former, same-email or operatives-row id; a
-      // deactivated person reads none ('c': an active member, from the auth claims).
       match /annualLeaveAdjustments/{adjustmentId} {
         allow read: if overtimeViewer(resource.data.get('userId', ''));
         allow create: if request.resource.data.keys().hasOnly(['userId', 'days', 'reason', 'yearKey', 'createdBy', 'createdAt', 'updatedAt', 'updatedBy', 'updatedFrom']) &&
@@ -2379,6 +2363,14 @@ service cloud.firestore {
       }
 
       match /variations/{variationId} {
+        function variationNumberWrite() {
+          let tracker = /databases/(default)/documents/organizations/$(organizationId)/variationTrackers/$(resource.data.parentId);
+          return (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['voNumber']) ||
+              !(resource.data.get('status', '') in ['submitted', 'closed'] || resource.data.get('voNumberLocked', false) == true)) &&
+            (!exists(tracker) || get(tracker).data.get('orderLocked', false) != true) &&
+            (isOrgAdminOrOwner(organizationId) ||
+              callerManagesJobIn(resource.data.get('parentType', '') == 'smallWork' ? 'smallWorks' : 'projects', resource.data.parentId));
+        }
         allow read: if resource.data.parentId is string &&
           canAccessVariationsStaff(organizationId);
         allow create: if request.resource.data.parentId is string &&
@@ -2386,12 +2378,15 @@ service cloud.firestore {
           canAccessVariationsStaff(organizationId);
         allow update: if resource.data.parentId is string &&
           request.resource.data.parentId == resource.data.parentId &&
-          canAccessVariationsStaff(organizationId);
+          canAccessVariationsStaff(organizationId) &&
+          (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['voNumber', 'sequence']) || variationNumberWrite());
       }
 
       match /variationTrackers/{parentId} {
         allow read: if canAccessVariationsStaff(organizationId);
-        allow create, update: if isOrgAdminOrOwner(organizationId);
+        allow create, update: if isOrgAdminOrOwner(organizationId) ||
+          (canAccessVariationsStaff(organizationId) &&
+            callerManagesJobIn(request.resource.data.get('parentType', '') == 'smallWork' ? 'smallWorks' : 'projects', parentId));
       }
 
       match /{collection}/{document=**} {
