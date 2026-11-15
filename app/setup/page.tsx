@@ -12,7 +12,7 @@ export default function SetupPage() {
     <SetupAuthGuard>
       <Suspense
         fallback={
-          <div className="flex min-h-screen items-center justify-center bg-[var(--bg)]">
+          <div className="dark pp-site-dark flex min-h-screen items-center justify-center bg-[var(--bg)]">
             <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-[var(--blue)]" />
           </div>
         }

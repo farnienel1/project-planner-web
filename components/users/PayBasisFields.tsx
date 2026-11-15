@@ -7,6 +7,7 @@ import { MONEY_SAVE_MAX, parseBoundedNumber } from '@/lib/security/boundedValue'
 import { readStoredRates } from '@/lib/timesheets/payBasis'
 import { currencySymbol } from '@/lib/canonical'
 import { useOrganizationCurrency } from '@/lib/stores/organizationDocumentStore'
+import { ProfileIcon } from '@/components/users/profile-ui/icons'
 
 // Rulebook 1.11.0 §8: the pay copy is the rulebook's, so web and iOS say the same (one basis; saving one removes the other).
 const DAY_HELP = PAY_BASIS_DAY_HELP
@@ -19,6 +20,7 @@ export function PayBasisFields({
   disabled,
   placeholder = 'example',
   error,
+  variant,
 }: {
   payBasis: 'day' | 'hourly'
   amount: string
@@ -28,6 +30,11 @@ export function PayBasisFields({
   placeholder?: 'example' | 'manage'
   /** Field-level error under the amount (rulebook 1.14.0 `payRateRequiredError`). */
   error?: string | null
+  /**
+   * `profile`: the Edit user look (docs/design/user-profile-ui/): the same switch, input, units, error and help text,
+   * laid out as a pay row with the save note in a blue note. Every other form keeps the default look.
+   */
+  variant?: 'profile'
 }) {
   const hourly = payBasis === 'hourly'
   const symbol = currencySymbol(useOrganizationCurrency())
@@ -37,30 +44,56 @@ export function PayBasisFields({
       : hourly
         ? 'Hourly rate, e.g. 18.50'
         : 'Day rate, e.g. 250'
+  const basisOptions = [
+    { value: 'day', label: 'Day rate' },
+    { value: 'hourly', label: 'Hourly rate' },
+  ]
+  const onBasis = (value: string) => onChange({ payBasis: value === 'hourly' ? 'hourly' : 'day', amount })
+  const amountInput = (
+    <FormInput
+      type="number"
+      step="0.01"
+      min="0"
+      value={amount}
+      disabled={disabled}
+      placeholder={amountPlaceholder}
+      aria-label={hourly ? 'Hourly rate' : 'Day rate'}
+      aria-invalid={error ? true : undefined}
+      onChange={(event) => onChange({ payBasis, amount: event.target.value })}
+    />
+  )
+  if (variant === 'profile') {
+    return (
+      <div className="up-f wide">
+        <div className="up-payrow">
+          <div className="up-seg">
+            <SegmentedControl value={payBasis} disabled={disabled} options={basisOptions} onChange={onBasis} />
+          </div>
+          <div className="up-money">
+            <span>{symbol}</span>
+            {amountInput}
+            <em>{hourly ? '/hr' : '/day'}</em>
+          </div>
+        </div>
+        {error ? (
+          <p role="alert" className="up-err">
+            {error}
+          </p>
+        ) : null}
+        <p className="up-f-hint">{hourly ? HOURLY_HELP : DAY_HELP}</p>
+        <div className="pu-note info">
+          <ProfileIcon name="info" />
+          <div>{PAY_BASIS_SAVE_NOTE}</div>
+        </div>
+      </div>
+    )
+  }
   return (
     <div className="space-y-2 sm:col-span-2">
-      <SegmentedControl
-        value={payBasis}
-        disabled={disabled}
-        options={[
-          { value: 'day', label: 'Day rate' },
-          { value: 'hourly', label: 'Hourly rate' },
-        ]}
-        onChange={(value) => onChange({ payBasis: value === 'hourly' ? 'hourly' : 'day', amount })}
-      />
+      <SegmentedControl value={payBasis} disabled={disabled} options={basisOptions} onChange={onBasis} />
       <div className="flex items-center gap-2">
         <span className="text-sm font-semibold text-[var(--ink2)]">{symbol}</span>
-        <FormInput
-          type="number"
-          step="0.01"
-          min="0"
-          value={amount}
-          disabled={disabled}
-          placeholder={amountPlaceholder}
-          aria-label={hourly ? 'Hourly rate' : 'Day rate'}
-          aria-invalid={error ? true : undefined}
-          onChange={(event) => onChange({ payBasis, amount: event.target.value })}
-        />
+        {amountInput}
         <span className="text-sm font-semibold text-[var(--ink2)]">{hourly ? '/hr' : '/day'}</span>
       </div>
       {error ? (

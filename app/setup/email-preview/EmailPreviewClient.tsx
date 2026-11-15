@@ -34,7 +34,7 @@ export function EmailPreviewClient() {
   }, [kind])
 
   return (
-    <div className="min-h-screen bg-[#f4f6f9] px-5 py-10">
+    <div className="dark pp-site-dark min-h-screen bg-[var(--bg)] px-5 py-10">
       <div className="mx-auto max-w-3xl space-y-6">
         <header>
           <p className="text-xs font-bold uppercase tracking-widest text-blue-600">Project Planner</p>
@@ -68,7 +68,7 @@ export function EmailPreviewClient() {
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Subject</p>
           <p className="mt-1 font-medium text-slate-900">{preview.subject}</p>
         </div>
-        <div className="overflow-hidden card p-6">
+        <div className="pp-email-frame overflow-hidden card p-6">
           <div dangerouslySetInnerHTML={{ __html: preview.html }} />
         </div>
       </div>

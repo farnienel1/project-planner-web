@@ -236,7 +236,7 @@ function TimesheetRowFields({
         <div className="flex items-center gap-2.5">
           {runLabel ? (
             <span
-              className={`grid h-7 min-w-[52px] place-items-center rounded-md px-2 text-[12px] font-bold text-white ${
+              className={`grid h-7 min-w-[52px] place-items-center rounded-md px-2 text-[12px] font-bold text-[var(--card)] ${
                 runTone === 'ops' ? 'bg-[var(--ops)]' : 'bg-[var(--blue)]'
               }`}
             >

@@ -316,7 +316,7 @@ export function PaymentRunsPanel({ onBack }: { onBack: () => void }) {
             {ranges.map((range, index) => (
               <div key={index} className="[display:grid] grid-cols-[auto_1fr_1fr] items-end gap-3 p-5">
                 <span
-                  className={`mb-1.5 grid h-7 min-w-[52px] place-items-center rounded-md px-2 text-[12px] font-bold text-white ${
+                  className={`mb-1.5 grid h-7 min-w-[52px] place-items-center rounded-md px-2 text-[12px] font-bold text-[var(--card)] ${
                     index === 0 ? 'bg-[var(--blue)]' : 'bg-[var(--ops)]'
                   }`}
                 >

@@ -195,7 +195,7 @@ export function LogoCropModal({ file, onCancel, onConfirm }: LogoCropModalProps)
   if (!mounted) return null
 
   return createPortal(
-    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+    <div className="dark pp-site-dark fixed inset-0 z-[200] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
       <div className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl">
         <h3 className="text-lg font-bold text-slate-900">Adjust organisation logo</h3>
         <p className="mt-1 text-sm text-slate-500">
