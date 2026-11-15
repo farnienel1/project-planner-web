@@ -9754,10 +9754,10 @@ test('1.19.0: unpaidBreakAppliesOnDay, customHoursBreakWarning and payrollDayWin
   assert.equal(R112.unpaidBreakAppliesOnDay(unpaid, R119_SUN, R119_ZONE), false)
   assert.equal(R112.unpaidBreakAppliesOnDay({ ...unpaid, unpaidBreakMinutes: 0 }, R119_SAT, R119_ZONE), false)
   const booking = { timeSlot: 'CUSTOM_HOURS', workStartTime: '07:30', workEndTime: '14:00' }
-  // 1.49.0: a booking that covers the whole set window is paid the full counts-as either way — no warning; a part of
-  // the window that covers the break still warns (turning the break off changes the pay).
+  // 1.49.0 (review round 3): inside a set window the break toggle changes nothing — the break is allowed for in the
+  // counts-as — so no warning for the whole window or a part of it.
   assert.equal(R112.customHoursBreakWarning(unpaid, R119_SAT, booking, R119_ZONE), null)
-  assert.equal(R112.customHoursBreakWarning(unpaid, R119_SAT, { ...booking, workEndTime: '13:00' }, R119_ZONE), R112.CUSTOM_HOURS_BREAK_WARNING)
+  assert.equal(R112.customHoursBreakWarning(unpaid, R119_SAT, { ...booking, workEndTime: '13:00' }, R119_ZONE), null)
   assert.equal(R112.customHoursBreakWarning(unpaid, R119_SUN, booking, R119_ZONE), null)
   assert.equal(R112.customHoursBreakWarning(unpaid, R119_SAT, { ...booking, isBreakRemoved: true }, R119_ZONE), null)
   assert.equal(R112.customHoursBreakWarning(unpaid, R119_WED, booking, R119_ZONE), R112.CUSTOM_HOURS_BREAK_WARNING)
@@ -10000,10 +10000,10 @@ test('1.19.0 (owner, round 2): each weekend day has its own break — length and
   // Sunday "same as Saturday" copies Saturday's break.
   const same = r119Policy({ ...r119SatWindow(false), breakMinutes: 45, breakWindowStart: '11:30', breakWindowEnd: '12:15' }, { ...r119SunAllHours(true), sameAsSaturday: true })
   assert.equal(r119Hours(R119_SUN, same, '07:30', '14:00').totalPaidHours, 8)
-  // The lunch warning and the timeline use the day's own window. 1.49.0: the warning shows only when turning the break
-  // off changes the pay (07:30–11:45 is a half day on this window, paid the same either way), so 08:00–12:00.
+  // The lunch warning and the timeline use the day's own window. 1.49.0 (review round 3): inside a set window the
+  // break toggle changes nothing, so a booking over Saturday's own break inside the window does not warn.
   const booking = { timeSlot: 'CUSTOM_HOURS', workStartTime: '08:00', workEndTime: '12:00' }
-  assert.equal(R112.customHoursBreakWarning(ownSat, R119_SAT, booking, R119_ZONE), R112.CUSTOM_HOURS_BREAK_WARNING)
+  assert.equal(R112.customHoursBreakWarning(ownSat, R119_SAT, booking, R119_ZONE), null)
   assert.equal(R112.customHoursBreakWarning(fallback, R119_SAT, booking, R119_ZONE), null)
   assert.deepEqual(R112.payrollDayWindows(ownSat, R119_SAT, R119_ZONE).unpaidBreak, { start: 690, end: 735 })
   assert.deepEqual(R112.payrollBreakOnDay(ownSat, R119_SAT, R119_ZONE), { start: 690, end: 735, minutes: 45, paid: false })
@@ -15945,17 +15945,20 @@ test('1.49.0 round 2: no half-day snap on a set window; removing the break never
   )
   // A stored AM / PM is still half the counts-as.
   close(R112.payrollHoursResult({ booking: { timeSlot: 'AM' }, dayKey: '2026-11-14', policy: unpaid, timeZone: 'Europe/London' }).totalPaidHours, 4)
-  // 2. "No unpaid break" never lowers pay when the company break is unpaid.
+  // 2. Round 3, option (a): "No unpaid break" has no effect inside a set window when the company break is unpaid —
+  // the break is allowed for in counts-as — so it never lowers pay and cannot be gamed.
   close(sat(unpaid, '07:30', '14:00', true).totalPaidHours, 8)
   close(sat(unpaid, '07:30', '11:00', true).totalPaidHours, (8 * 3.5) / 6) // 4.67h, as with the break
   close(sat(unpaid, '07:30', '12:30').totalPaidHours, 6) // 8 × 270 ÷ 360
-  close(sat(unpaid, '07:30', '12:30', true).totalPaidHours, (8 * 300) / 360) // 6.67h
+  close(sat(unpaid, '07:30', '12:30', true).totalPaidHours, 6) // round 2 gave 6.67h
   // A paid company break: the clock share (07:30–11:00 = 4.31h; its full window is 6.5 paid hours).
   close(sat(paid, '07:30', '11:00').totalPaidHours, (8 * 3.5) / 6.5)
-  // The lunch warning follows: a part of the window covering the break warns (removing it pays 6.67h, not 6h);
-  // the whole window, and a part away from the break, do not.
+  // The lunch warning follows (round 3): inside the window the toggle changes nothing, so no warning; it shows only
+  // when the break falls in the outside hours (a 07:30–11:00 window, booked 07:30–14:00).
   const booking = (start: string, end: string) => ({ timeSlot: 'CUSTOM_HOURS', workStartTime: start, workEndTime: end })
-  assert.equal(R112.customHoursBreakWarning(unpaid, '2026-11-14', booking('07:30', '12:30'), 'Europe/London'), R112.CUSTOM_HOURS_BREAK_WARNING)
+  assert.equal(R112.customHoursBreakWarning(unpaid, '2026-11-14', booking('07:30', '12:30'), 'Europe/London'), null)
+  const earlyWindow = { ...unpaid, saturday: { ...wk, definedWindowEnd: '11:00', countsAsStandardHours: 4 } } as unknown as Policy
+  assert.equal(R112.customHoursBreakWarning(earlyWindow, '2026-11-14', booking('07:30', '14:00'), 'Europe/London'), R112.CUSTOM_HOURS_BREAK_WARNING)
   assert.equal(R112.customHoursBreakWarning(unpaid, '2026-11-14', booking('07:30', '14:00'), 'Europe/London'), null)
   assert.equal(R112.customHoursBreakWarning(unpaid, '2026-11-14', booking('07:30', '11:00'), 'Europe/London'), null)
   // 3. Stepper: half-hour grid within 1h and the cap (the weekday day rounded down).
@@ -15981,4 +15984,37 @@ test('1.49.0 round 2: no half-day snap on a set window; removing the break never
   assert.equal(R112.validatePayrollTimePolicy(followingShort, { ...unpaid, saturday: { ...wk, countsAsFollowsWeekday: true } } as unknown as Policy), null)
   // Read as stored: the 8h Saturday on the 7.25h day still credits 8h (no clamp).
   close(sat(day725, '07:30', '14:00').totalPaidHours, 8)
+})
+
+// Review of #327, round 3 (option (a)): "No unpaid break" has no effect inside a set weekend window.
+test('1.49.0 round 3: removing the break changes nothing inside a set window; short and split bookings never beat the window', () => {
+  type Policy = Parameters<typeof R112.payrollHoursResult>[0]['policy']
+  const wk = { allHoursAtMultiplierMode: false, allHoursMultiplier: 2, definedWindowStart: '07:30', definedWindowEnd: '14:00', countsAsStandardHours: 8, outsideWindowMultiplier: 1.5, breakPaid: false }
+  const unpaid = { ...R112.DEFAULT_PAYROLL_POLICY, standardDayStart: '07:30', standardDayEnd: '16:00', unpaidBreakMinutes: 30, breakWindowStart: '12:00', breakWindowEnd: '12:30', saturday: { ...wk }, sunday: { ...wk, sameAsSaturday: true } } as unknown as Policy
+  const sat = (policy: Policy, start: string, end: string, isBreakRemoved: boolean) =>
+    R112.payrollHoursResult({ booking: { timeSlot: 'CUSTOM_HOURS', workStartTime: start, workEndTime: end, isBreakRemoved }, dayKey: '2026-11-14', policy, timeZone: 'Europe/London' })
+  const close = (a: number, b: number) => assert.ok(Math.abs(a - b) < 1e-9, `${a} ≈ ${b}`)
+  for (const removed of [false, true]) {
+    // 07:30–13:30 ends early: 8 × 330 ÷ 360 = 7.33h, never a full day (round 2 gave 8h removed).
+    close(sat(unpaid, '07:30', '13:30', removed).totalPaidHours, (8 * 330) / 360)
+    // A split day adds up to the whole window: 6h + 2h = 8h (round 2 gave 8.67h removed).
+    close(sat(unpaid, '07:30', '12:30', removed).totalPaidHours + sat(unpaid, '12:30', '14:00', removed).totalPaidHours, 8)
+    // Only inside the unpaid break: 0h.
+    close(sat(unpaid, '12:00', '12:30', removed).totalPaidHours, 0)
+    // 07:30–11:00: 4.67h either way.
+    close(sat(unpaid, '07:30', '11:00', removed).totalPaidHours, (8 * 3.5) / 6)
+    // Overnight from inside the window: 13:00–01:00 = 1h of the window (8 × 60 ÷ 360) + 11h outside at ×1.5.
+    const night = sat(unpaid, '13:00', '01:00', removed)
+    close(night.standardHours, (8 * 60) / 360)
+    close(night.outsideHours, 11)
+  }
+  // A 12:00–13:00 break window: 07:30–13:00 = 8 × 270 ÷ 330 = 6.55h, removed or not (round 2 gave 8h removed).
+  const longBreak = { ...unpaid, saturday: { ...wk, breakMinutes: 60, breakWindowStart: '12:00', breakWindowEnd: '13:00' } } as unknown as Policy
+  close(sat(longBreak, '07:30', '13:00', true).totalPaidHours, (8 * 270) / 330)
+  close(sat(longBreak, '07:30', '13:00', false).totalPaidHours, (8 * 270) / 330)
+  // Outside the window the 1.20.3 rule stays: a 07:30–11:00 window counting 4h, booked 07:30–14:00, unpaid break in
+  // the outside hours → 4 + 3 × 1.5 − 0.5 = 8h; with "No unpaid break" 4 + 3 × 1.5 = 8.5h.
+  const early = { ...unpaid, saturday: { ...wk, definedWindowEnd: '11:00', countsAsStandardHours: 4 } } as unknown as Policy
+  close(sat(early, '07:30', '14:00', false).totalPaidHours, 8)
+  close(sat(early, '07:30', '14:00', true).totalPaidHours, 8.5)
 })

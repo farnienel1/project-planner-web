@@ -655,16 +655,19 @@ function weekendDay(booking: PayrollHoursBooking, policy: OrgPayrollTimePolicy, 
     // Rulebook 1.49.0 §4.3 / §8 (owner answer 15 Nov, 3): the unpaid break is already allowed for in "counts as". A
     // booking that covers the whole window credits exactly "counts as" — paid, unpaid or removed break alike. A part of
     // the window credits pro rata (so a booking only inside an unpaid break credits 0).
-    // Review of #327 (round 2): with the company break unpaid the share is always over the window minutes outside the
-    // break window, and "No unpaid break" on the booking only adds the covered break minutes as worked — it never lowers
-    // the credit. A company whose break is paid credits over the clock minutes (its full window is all paid time).
+    // Review of #327 (round 3, option (a)): with the company break unpaid the share is always over the window minutes
+    // outside the break window, and "No unpaid break" on the booking has NO effect inside the window — the break is
+    // already allowed for in "counts as", so removing it is the unpaid case: never lower, split bookings add up to the
+    // whole window, and a short booking cannot reach a full day. (Round 2 added the covered break minutes as worked,
+    // which let 07:30–13:30 credit 8h and a split day 8.67h.) Outside the window the 1.20.3 rule stays (`totalBreak`).
+    // A company whose break is paid credits over the clock minutes (its full window is all paid time).
     const covered = overlapEnd - overlapStart
     const windowMinutes = we - ws
     const breakUnpaid = weekendBreakUnpaid(policy, weekend) && !isNamedHalf(booking)
     const breakInWindow = breakUnpaid ? breakOverlapMinutes(dayBreak, { start: ws, end: we }) : 0
     const breakCovered = breakUnpaid ? breakOverlapMinutes(dayBreak, { start: overlapStart, end: overlapEnd }) : 0
     const fullCover = overlapStart <= ws && overlapEnd >= we
-    const workedShare = Math.max(0, covered - breakCovered) + (booking.isBreakRemoved === true ? breakCovered : 0)
+    const workedShare = Math.max(0, covered - breakCovered)
     const credited = fullCover
       ? credit
       : breakUnpaid && windowMinutes - breakInWindow > 0

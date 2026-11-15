@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import { FormInput, FormLabel } from '@/components/forms/FormShell'
 import {
   SetupCard,
@@ -188,6 +189,9 @@ function WeekendSection({
   // from the weekday break (`weekendBreakFor`), on 15-minute steps, as on Settings → Working hours.
   const dayBreak = weekendBreakFor(policy, effective)
   const lunch = weekendLunchBreakCopy(policy, dayKey)
+  // Review of #327 (round 3): the "Counts as" text as typed; it is snapped onto the half-hour grid on blur
+  // (`weekendCountsAsSnap`), never on each keystroke. Null = show the stored value.
+  const [countsAsText, setCountsAsText] = useState<string | null>(null)
 
   function patchWeekend(partial: Partial<WeekendPayrollSettings>) {
     const nextDay = { ...settings, ...partial }
@@ -288,9 +292,14 @@ function WeekendSection({
                         step={WEEKEND_COUNTS_AS_STEP_HOURS}
                         min={PAYROLL_POLICY_LIMITS.paidHours.min}
                         max={weekendCountsAsMax(policy)}
-                        value={weekendCountsAsHours(effective, policy)}
-                        // Review of #327 (round 2): a typed value lands on the half-hour grid within 1h and the cap.
-                        onChange={(e) => patchWeekend({ countsAsStandardHours: weekendCountsAsSnap(e.target.value, policy) })}
+                        value={countsAsText ?? String(weekendCountsAsHours(effective, policy))}
+                        // Review of #327 (rounds 2–3): the raw text while typing; on blur it lands on the half-hour
+                        // grid within 1h and the cap (`weekendCountsAsSnap`).
+                        onChange={(e) => setCountsAsText(e.target.value)}
+                        onBlur={() => {
+                          if (countsAsText != null) patchWeekend({ countsAsStandardHours: weekendCountsAsSnap(countsAsText, policy) })
+                          setCountsAsText(null)
+                        }}
                         className="w-16 rounded-xl border border-slate-200 bg-white px-2 py-1.5 text-center text-sm font-bold text-blue-600 outline-none"
                       />
                     </div>

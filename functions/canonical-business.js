@@ -5702,7 +5702,7 @@ var ProjectPlannerCanonical = (() => {
       const breakInWindow = breakUnpaid ? breakOverlapMinutes(dayBreak, { start: ws, end: we }) : 0;
       const breakCovered = breakUnpaid ? breakOverlapMinutes(dayBreak, { start: overlapStart, end: overlapEnd }) : 0;
       const fullCover = overlapStart <= ws && overlapEnd >= we;
-      const workedShare = Math.max(0, covered - breakCovered) + (booking.isBreakRemoved === true ? breakCovered : 0);
+      const workedShare = Math.max(0, covered - breakCovered);
       const credited = fullCover ? credit : breakUnpaid && windowMinutes - breakInWindow > 0 ? Math.min(credit, credit * (workedShare / (windowMinutes - breakInWindow))) : credit * (covered / windowMinutes);
       const inside = Math.min(breakLeft, breakOverlapMinutes(dayBreak, { start: overlapStart, end: overlapEnd }));
       breakLeft -= inside;
@@ -12251,7 +12251,7 @@ var ProjectPlannerCanonical = (() => {
   function rulebookStamp() {
     return {
       version: true ? "1.49.0" : "",
-      sha256: true ? "fa1526bbd66538250cb3fe2ade378d0109f79504508d791f3c6ddfcd76f326b9" : ""
+      sha256: true ? "daf1d2709f986811870e37980e4b48113c9921a25728573431bf3d93e68e7be7" : ""
     };
   }
   function rulebookVersionLabel(version) {
