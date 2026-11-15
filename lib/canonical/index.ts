@@ -2037,7 +2037,9 @@ export {
   SIGNED_TIMESHEET_EXPORT_SKIPPED_MESSAGE,
   SIGNED_TIMESHEET_EXPORTED_CHANGED_MESSAGE,
   signedTimesheetActions,
+  SIGNED_TIMESHEET_ADDITION_WINDOW_MS,
   signedTimesheetBookingChanges,
+  signedTimesheetBookingPlace,
   signedTimesheetBookingRecord,
   signedTimesheetLineBookingKey,
 } from './timesheetBookingChanges'

@@ -354,6 +354,9 @@ export function TimesheetsScreen({
     const full = await loadTimesheetDraft(organization.id, member.id, periodStart, timeZone, periodEnd)
     if (full.exportedAt) return { skip: 'exported' }
     if (!full.operativeSignedAt) return null
+    // Second review #325: never export when the booking change cannot be read (bookings or pay inputs not loaded —
+    // `periodBookingChanges` is then null, which must not count as "unchanged").
+    if (!payInputsRef.current.ready || !changeCatalogueRef.current.liveLoaded) return null
     // Rulebook 1.47.0 §8 (`signedTimesheetActions`): never export a sheet whose bookings changed since it was signed —
     // its snapshot is stale until the person signs again and the line manager counter-signs again.
     if (!signedTimesheetActions(periodBookingChanges(changeCatalogueRef.current, member, full, { start: periodStart, end: periodEnd })).mayExport) {

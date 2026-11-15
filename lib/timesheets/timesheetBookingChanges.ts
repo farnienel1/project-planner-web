@@ -4,6 +4,7 @@
  * happens here.
  */
 import {
+  bookingIdsForAccount,
   signedTimesheetBookingChanges,
   signedTimesheetBookingRecord,
   type SignedTimesheetBooking,
@@ -12,13 +13,14 @@ import {
   type SignedTimesheetLine,
   type SignedTimesheetSheet,
 } from '@/lib/canonical'
-import type { Booking, User } from '@/types'
+import type { Booking, Operative, User } from '@/types'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import type { TimesheetDraft } from '@/lib/timesheets/timesheetDraft'
 import { collectTimesheetPayroll, type TimesheetPayrollLineItem } from '@/lib/timesheets/timesheetPayrollCollector'
 import { userTimesheetSelfSigned } from '@/lib/timesheets/timesheetApprovalPolicy'
 import { userIdsSharingEmail } from '@/lib/timesheets/timesheetWeekUtils'
-import { dayKey } from '@/lib/ios-parity/londonTime'
+import { dayKeyInZone } from '@/lib/orgTime/zoneTime'
+import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 
 /** The draft in the rulebook's sheet shape (the stored fields the rule reads). */
 export function signedTimesheetSheetFromDraft(draft: TimesheetDraft): SignedTimesheetSheet {
@@ -26,6 +28,7 @@ export function signedTimesheetSheetFromDraft(draft: TimesheetDraft): SignedTime
     operativeSignedAt: draft.operativeSignedAt ?? null,
     operativeSignedBookings: draft.operativeSignedBookings ?? null,
     operativeSignedBookingsAt: draft.operativeSignedBookingsAt ?? null,
+    operativeSignedBookingsSignedAt: draft.operativeSignedBookingsSignedAt ?? null,
     managerSignedAt: draft.managerSignedAt ?? null,
     exportedAt: draft.exportedAt ?? null,
     weeklyReportOverride: draft.weeklyReportOverride
@@ -61,7 +64,7 @@ export function signedTimesheetBookingDocuments(
   managerSiteBookings: ReadonlyArray<ManagerSiteBooking>,
   timeZone: string | undefined
 ): SignedTimesheetBookingDocument[] {
-  const zone = timeZone ?? ''
+  const zone = timeZone ?? organizationZoneOr()
   const byManager = documentCache.get(bookings) ?? new WeakMap<object, Map<string, SignedTimesheetBookingDocument[]>>()
   documentCache.set(bookings, byManager)
   const byZone = byManager.get(managerSiteBookings) ?? new Map<string, SignedTimesheetBookingDocument[]>()
@@ -72,7 +75,7 @@ export function signedTimesheetBookingDocuments(
     ...bookings.map((booking) => ({
       bookingId: booking.id,
       collection: 'bookings',
-      dayKey: dayKey(booking.date, timeZone),
+      dayKey: dayKeyInZone(booking.date, zone),
       timeSlot: booking.timeSlot,
       workStartTime: booking.workStartTime,
       workEndTime: booking.workEndTime,
@@ -80,17 +83,21 @@ export function signedTimesheetBookingDocuments(
       otMultiplierOverride: booking.otMultiplierOverride ?? null,
       status: booking.status,
       personId: booking.operativeId,
+      projectId: booking.projectId,
     })),
     ...managerSiteBookings.map((booking) => ({
       bookingId: booking.id,
       collection: 'managerSiteBookings',
-      dayKey: dayKey(booking.date, timeZone),
+      dayKey: dayKeyInZone(booking.date, zone),
       timeSlot: booking.timeSlot,
       workStartTime: booking.workStartTime,
       workEndTime: booking.workEndTime,
       isBreakRemoved: booking.isBreakRemoved === true,
       otMultiplierOverride: booking.otMultiplierOverride ?? null,
       personId: booking.userId,
+      locationType: booking.locationType,
+      locationId: booking.locationId ?? '',
+      customLocationName: booking.customLocationName ?? '',
     })),
   ]
   byZone.set(zone, rows)
@@ -110,6 +117,17 @@ export function draftSignedBookingRecord(input: {
   )
 }
 
+/**
+ * Second review #325 item 1 (guardrail 1): every id the person's bookings may be stored under — their users id, former
+ * invite ids, same-email ids and `operatives` rows on their email (`bookingIdsForAccount`, the collector's own rule).
+ */
+export function timesheetPersonIds(user: User, users: ReadonlyArray<User>, operatives: ReadonlyArray<Operative>): string[] {
+  return bookingIdsForAccount(
+    { id: user.id, email: user.email, formerIds: user.formerUserIds ?? [], aliasIds: userIdsSharingEmail(user, [...users]) },
+    operatives.map((row) => ({ id: row.id, email: row.email ?? null }))
+  )
+}
+
 /** `signedTimesheetBookingChanges` for one web draft, the period's live payroll lines and the booking documents. */
 export function draftBookingChanges(input: {
   draft: TimesheetDraft
@@ -118,6 +136,8 @@ export function draftBookingChanges(input: {
   bookings?: ReadonlyArray<Booking> | null
   managerSiteBookings?: ReadonlyArray<ManagerSiteBooking> | null
   timeZone?: string
+  /** Every id the person goes by (`timesheetPersonIds`); none = a booking is never read as given to someone else. */
+  personIds?: ReadonlyArray<string> | null
   /** The period's bookings have arrived from the server (`timesheetSnapshotReady`); nothing reads as changed before. */
   liveLoaded: boolean
   selfSigned: boolean
@@ -129,6 +149,7 @@ export function draftBookingChanges(input: {
       input.bookings && input.managerSiteBookings
         ? signedTimesheetBookingDocuments(input.bookings, input.managerSiteBookings, input.timeZone)
         : null,
+    personIds: input.personIds ?? null,
     liveLoaded: input.liveLoaded,
     selfSigned: input.selfSigned,
   })
@@ -166,6 +187,18 @@ export function bookingCoverageCoversDay(
   return Boolean(coverage.fromDayKey && coverage.fromDayKey <= startDayKey)
 }
 
+const objectIds = new WeakMap<object, number>()
+let nextObjectId = 1
+/** A stable number per object (or 0 for none), so a cache key changes whenever an input object is replaced. */
+function objectId(value: unknown): number {
+  if (!value || typeof value !== 'object') return 0
+  const held = objectIds.get(value)
+  if (held) return held
+  const id = nextObjectId++
+  objectIds.set(value, id)
+  return id
+}
+
 const periodCache = new WeakMap<object, WeakMap<object, WeakMap<object, Map<string, SignedTimesheetBookingChanges | null>>>>()
 
 /**
@@ -183,7 +216,22 @@ export function periodBookingChanges(
   const { users, liveLoaded, coversPeriod, ...collector } = catalogue
   if (!liveLoaded || (coversPeriod && !coversPeriod(period))) return null
   // Memoised per loaded bookings, manager site bookings and draft (each a new object when it changes).
-  const key = `${user.id}|${period.start.getTime()}|${period.end.getTime()}|${collector.timeZone ?? ''}|${users.length}|${collector.operatives.length}`
+  // Second review nit: every input that decides the lines (schedule options, rate history, working hours, operatives,
+  // roster, projects) is part of the key by object identity.
+  const key = [
+    user.id,
+    period.start.getTime(),
+    period.end.getTime(),
+    collector.timeZone ?? '',
+    objectId(users),
+    objectId(collector.operatives),
+    objectId(collector.projects),
+    objectId(collector.smallWorks),
+    objectId(collector.scheduleOptions),
+    objectId(collector.history),
+    objectId(collector.payrollPolicy),
+    objectId(collector.payrollPolicyState),
+  ].join('|')
   const byManager = periodCache.get(collector.bookings) ?? new WeakMap<object, WeakMap<object, Map<string, SignedTimesheetBookingChanges | null>>>()
   periodCache.set(collector.bookings, byManager)
   const byDraft = byManager.get(collector.managerSiteBookings) ?? new WeakMap<object, Map<string, SignedTimesheetBookingChanges | null>>()
@@ -205,6 +253,7 @@ export function periodBookingChanges(
     bookings: collector.bookings,
     managerSiteBookings: collector.managerSiteBookings,
     timeZone: collector.timeZone,
+    personIds: timesheetPersonIds(user, users, collector.operatives),
     liveLoaded,
     selfSigned: userTimesheetSelfSigned(user, [...users]),
   })

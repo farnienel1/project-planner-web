@@ -9,8 +9,8 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
 Rulebook version: 1.47.0 → 1.48.0
-Packed hash: c5d6405bc809b6f765d37f3deb906c7e544aa5e169d8b96cfea596bf456bd586
-Rulebook sha256: dd89f4840e1f62f483800db3dca1cb216231a48c73e63bb4c958af295628ea4c
+Packed hash: a6e6df8b04534cf67997041ab689279e99726c557f04c71294062ee2b9a5a2c4
+Rulebook sha256: d6be7623ed30a972f06cf71ea652dfde88d8d9baf717a2b91f5a84a277126d0e
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -26,8 +26,8 @@ Exports added: MATERIAL_CATALOGUE_CSV_BINARY_MESSAGE, MATERIAL_CATALOGUE_CSV_COL
 Exports removed: none
 Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/cross-platform-contract.json, lib/canonical/crossPlatformContract.samples.ts, lib/canonical/index.ts, lib/canonical/materialCatalogueCsv.ts, lib/canonical/materialQuantity.test.ts, lib/canonical/materialQuantity.ts, lib/canonical/materialWhatsApp.ts, lib/canonical/operationsDocuments.ts
 Done when:
-- [ ] Packed hash in iOS equals c5d6405bc809b6f765d37f3deb906c7e544aa5e169d8b96cfea596bf456bd586
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 dd89f4840e1f62f483800db3dca1cb216231a48c73e63bb4c958af295628ea4c)
+- [ ] Packed hash in iOS equals a6e6df8b04534cf67997041ab689279e99726c557f04c71294062ee2b9a5a2c4
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 d6be7623ed30a972f06cf71ea652dfde88d8d9baf717a2b91f5a84a277126d0e)
 - [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.48.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web

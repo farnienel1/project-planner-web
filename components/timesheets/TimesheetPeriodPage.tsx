@@ -33,7 +33,7 @@ import {
   userTimesheetSelfSigned,
 } from '@/lib/timesheets/timesheetApprovalPolicy'
 import { applyWeeklyReportOverride } from '@/lib/timesheets/weeklyReportOverride'
-import { draftBookingChanges, draftForFigures, draftSignedBookingRecord } from '@/lib/timesheets/timesheetBookingChanges'
+import { draftBookingChanges, draftForFigures, draftSignedBookingRecord, timesheetPersonIds } from '@/lib/timesheets/timesheetBookingChanges'
 import { BookingsChangedWarning } from '@/components/timesheets/BookingsChangedWarning'
 import { signedTimesheetActions, SIGNED_TIMESHEET_CHANGED_MESSAGE } from '@/lib/canonical'
 import { staffAccountRole, userTimesheetSubjectIds } from '@/lib/permissions'
@@ -409,6 +409,7 @@ export function TimesheetPeriodPage({
     bookings,
     managerSiteBookings,
     timeZone,
+    personIds: timesheetPersonIds(subjectUser, users, operatives),
     liveLoaded: bookingsLoaded && !bookingsFailed,
     selfSigned: sheetSelfSigned,
   })
@@ -507,9 +508,11 @@ export function TimesheetPeriodPage({
         base: baseDraft.current,
         access: { reviewer, subjectHasLineManager: !userTimesheetSelfSigned(subjectUser, users) },
       })
-      baseDraft.current = withOverride
-      if (reviews !== (withOverride.extraEntryReviews ?? null)) {
-        setDraft((current) => (current === withOverride ? { ...withOverride, extraEntryReviews: reviews } : current))
+      // 1.47.0: the record's server time was written once with this save; later saves never re-stamp it.
+      const saved = withOverride.operativeSignedBookingsAtPending ? { ...withOverride, operativeSignedBookingsAtPending: false } : withOverride
+      baseDraft.current = saved
+      if (saved !== withOverride || reviews !== (withOverride.extraEntryReviews ?? null)) {
+        setDraft((current) => (current === withOverride ? { ...saved, extraEntryReviews: reviews } : current))
       }
     },
     [
@@ -835,7 +838,10 @@ export function TimesheetPeriodPage({
           operativeSignatureImageBase64: signature,
           // Rulebook 1.47.0 §8: what the person signed (and when), so a later booking change reopens the sheet.
           operativeSignedBookings: draftSignedBookingRecord({ lines: payroll.lineItems, bookings, managerSiteBookings, timeZone }),
-          operativeSignedBookingsAt: signedAt,
+          // The record's time is the server's (written as `serverTimestamp()`); it is tied to this signature by value.
+          operativeSignedBookingsAt: null,
+          operativeSignedBookingsAtPending: true,
+          operativeSignedBookingsSignedAt: signedAt,
         },
         subjectUser,
         users

@@ -130,8 +130,15 @@ export type TimesheetDraft = {
    * signature. Missing on sheets signed before 1.47.0 (then the signed snapshot, if any, is what they signed).
    */
   operativeSignedBookings?: SignedTimesheetBooking[] | null
-  /** Rulebook 1.47.0: when `operativeSignedBookings` was written (with the signature); a record older than the latest signature is ignored. */
+  /**
+   * Rulebook 1.47.0: when `operativeSignedBookings` was written — server time (written with `serverTimestamp()`;
+   * null while the write is pending or on a sheet signed before 1.47.0).
+   */
   operativeSignedBookingsAt?: Date | null
+  /** The `operativeSignedAt` the record belongs to (same value; ties the record to its signature). */
+  operativeSignedBookingsSignedAt?: Date | null
+  /** Local only: write `operativeSignedBookingsAt` as the server time on the next save. Never stored. */
+  operativeSignedBookingsAtPending?: boolean
   managerSignedAt?: Date | null
   managerSignedByName?: string | null
   managerSignedByUserId?: string | null
