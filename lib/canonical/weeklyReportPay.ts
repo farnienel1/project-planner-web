@@ -257,6 +257,9 @@ export type WeeklyReportPayResult = {
 export const WEEKLY_REPORT_PAY_COLUMNS: ReadonlyArray<string> = ['Person', 'Role', 'Dates', 'Line', 'Hours', 'Days', 'Rate', 'Pay']
 export const WEEKLY_REPORT_RATE_NOT_SET = 'Rate not set'
 
+/** The invoice's zero threshold (`timesheetInvoiceRows` drops a row of 0.0001 or less). */
+const WEEKLY_REPORT_SIGNED_AMOUNT_EPSILON = 0.0001
+
 /**
  * Rulebook 1.53.0 §7 (owner to confirm, A9): a Pay Summary row's Days × Rate need not reproduce its Pay exactly —
  * 18h of overtime on an 8.5h paid day is 2.1176… days, shown 2.12; £250 × 2.12 = £530.00, Pay £529.41. Pay is
@@ -588,6 +591,10 @@ export function weeklyReportPayRows(input: WeeklyReportPayInput): WeeklyReportPa
     // invoice does (`timesheetInvoiceRows`, 1.46.0). A run signed self-employed and then switched to PAYE keeps its pay.
     const period = periodsFor(person).byDay.get(dayKey)
     if (!period) continue
+    // Review of #331: a signed line with no `isPayeDay` flag (iOS sheets before 1.46.0) on a day the person is PAYE
+    // now is kept only when it carries money — exactly what the invoice keeps (it drops rows of 0, ≤ 0.0001). So a
+    // £0 legacy line never puts hours on a PAYE person's report, and a priced signed line (£632.35 case) still counts.
+    if (period.isPaye && !((Number(signed.amount) || 0) > WEEKLY_REPORT_SIGNED_AMOUNT_EPSILON)) continue
     addSignedDay(person.id, dayKey)
     const basis: 'day' | 'hourly' = signed.payBasis === 'hourly' ? 'hourly' : 'day'
     const overtime = signed.isOvertime === true

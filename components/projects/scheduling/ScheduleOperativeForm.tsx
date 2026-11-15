@@ -18,7 +18,7 @@ import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 import { bookableWorks } from '@/lib/access/workAccess'
 import { mergeProjectsAndSmallWorks } from '@/lib/projects/workStatus'
 import { isExactDuplicateBooking } from '@/lib/scheduling/bookingClashUtils'
-import { confirmCustomHoursBreak } from '@/lib/scheduling/bookingSlotRules'
+import { confirmCustomHoursBreakForDates } from '@/lib/scheduling/bookingSlotRules'
 import {
   allDraftPeopleResolved,
   buildDraftPersonDayStates,
@@ -258,18 +258,24 @@ export function ScheduleOperativeForm({
     if (!organization?.id || !user || !canConfirm) return
     // Rulebook 1.13.0 / 1.53.0 (B4): before saving custom hours that cover the unpaid lunch break with the break on,
     // the lunch warning (`customHoursBreakWarning`) — the same confirm step Book labour shows.
+    // One question for the whole request, listing the affected dates (review of #331), read under the screen's
+    // working hours when the live document is not loaded yet.
     const bookedSlots = slotsList.filter((slot) => draftPeople.some((person) => dayStateBooks(person.dayStates[slotKey(slot.date)])))
-    for (const slot of bookedSlots) {
-      if (slot.slot !== 'CUSTOM') continue
-      const firestoreSlot = slotToFirestore(slot)
-      const ok = confirmCustomHoursBreak(null, slot.date, {
-        timeSlot: 'CUSTOM_HOURS',
-        workStartTime: firestoreSlot.workStartTime,
-        workEndTime: firestoreSlot.workEndTime,
-        isBreakRemoved: slot.isBreakRemoved === true,
+    const breakEntries = bookedSlots
+      .filter((slot) => slot.slot === 'CUSTOM')
+      .map((slot) => {
+        const firestoreSlot = slotToFirestore(slot)
+        return {
+          date: slot.date,
+          booking: {
+            timeSlot: 'CUSTOM_HOURS',
+            workStartTime: firestoreSlot.workStartTime,
+            workEndTime: firestoreSlot.workEndTime,
+            isBreakRemoved: slot.isBreakRemoved === true,
+          },
+        }
       })
-      if (!ok) return
-    }
+    if (!confirmCustomHoursBreakForDates(payrollPolicy, breakEntries)) return
     const breakFieldsFor = (slot: (typeof slotsList)[number]) =>
       slot.slot === 'CUSTOM' && slot.isBreakRemoved === true ? { isBreakRemoved: true } : {}
 

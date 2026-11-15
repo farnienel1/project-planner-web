@@ -433,7 +433,7 @@ export function managerClashGroups(
  * `acceptedBookingClashes` document id: the two booking ids, ordered by their lower-case form (1.53.0), joined with
  * `|`. The ids keep their stored case. Before 1.53.0 they were ordered by code unit, so an upper-case iOS id and a
  * lower-case web id could come out in a different order on each app; `legacyClashPairKey` is that older key, still
- * read (`isClashApproved`, `isClashAccepted`, `isWarningActive`) and removed on undo (`clashApprovalDocumentIds`).
+ * read (`isClashApproved`, `isClashAccepted`, `isWarningActive`) and removed on undo (`clashDocumentsToRemove`, matched ignoring case and order).
  */
 export function clashPairKey(bookingAId: unknown, bookingBId: unknown): string {
   return [idText(bookingAId), idText(bookingBId)]
@@ -645,20 +645,45 @@ export function clashResolutionKey(input: { bookingAId: unknown; bookingBId: unk
 }
 
 /**
- * Every document id an approval of this clash may be stored under (1.53.0): the current ids first, then the pre-1.53.0
- * pair key when it differs. Undo deletes each that exists, so an approval saved before 1.53.0 can still be removed.
+ * 1.53.0 (review of #331): the documents an undo of this clash approval deletes. The two apps do not always write the
+ * same document id for one clash — iOS keys use the upper-case `UUID.uuidString`, web the id as stored, and before
+ * 1.53.0 the pair order followed letter case — so undo deletes every given document that names this clash **ignoring
+ * case and order**: an `acceptedBookingClashes` row whose id or booking pair is this pair (`isClashAccepted`), and a
+ * `warningResolutions` row whose key (`resolutionKey`, else its id) equals `clashResolutionKey` without case and, for a
+ * pair key, without order. The ids this app would write now are always included (deleting a missing document is
+ * allowed). `docs` are the documents the screen has read or listens to. Ids returned as stored, each once.
  */
-export function clashApprovalDocumentIds(input: { bookingAId: unknown; bookingBId: unknown; resolutionKey?: unknown }): {
-  acceptedClash: string[]
-  resolution: string[]
-} {
-  const a = idText(input?.bookingAId)
-  const b = idText(input?.bookingBId)
-  if (!a || !b) return { acceptedClash: [], resolution: [] }
-  const pair = [clashPairKey(a, b), legacyClashPairKey(a, b)]
-  const own = idText(input?.resolutionKey)
-  const unique = (ids: string[]) => [...new Set(ids.filter(Boolean))]
-  return { acceptedClash: unique(pair), resolution: unique(own ? [own] : pair) }
+export function clashDocumentsToRemove(
+  clash: { bookingAId: unknown; bookingBId: unknown; resolutionKey?: unknown },
+  docs: {
+    acceptedClashes?: ReadonlyArray<{ id: string; bookingAId?: string | null; bookingBId?: string | null }> | null
+    resolutions?: ReadonlyArray<{ id: string; resolutionKey?: string | null }> | null
+  } | null
+): { acceptedClash: string[]; resolution: string[] } {
+  const a = idText(clash?.bookingAId)
+  const b = idText(clash?.bookingBId)
+  const target = clashResolutionKey({ bookingAId: a, bookingBId: b, resolutionKey: clash?.resolutionKey })
+  const unique = (ids: string[]) => {
+    const seen = new Set<string>()
+    return ids.filter((id) => Boolean(id) && !seen.has(id) && Boolean(seen.add(id)))
+  }
+  const acceptedClash =
+    a && b
+      ? unique([
+          clashPairKey(a, b),
+          ...(docs?.acceptedClashes || []).filter((doc) => doc && isClashAccepted(a, b, [doc])).map((doc) => idText(doc.id)),
+        ])
+      : []
+  const wanted = comparableKey(target)
+  const resolution = target
+    ? unique([
+        target,
+        ...(docs?.resolutions || [])
+          .filter((doc) => doc && comparableKey(idText(doc.resolutionKey) || idText(doc.id)) === wanted)
+          .map((doc) => idText(doc.id)),
+      ])
+    : []
+  return { acceptedClash, resolution }
 }
 
 /**
@@ -741,6 +766,11 @@ export function bookingRequestClashIds(input: BookingRequestClashInput): string[
     else if (nextCalendarDayKey(day) === dayKey) {
       const own = slotInterval(clock, bookingStandardDayOn(input.day, day))
       interval = own && intervalCrossesMidnight(own) ? overnightCarryInterval(own) : null
+    } else if (nextCalendarDayKey(dayKey) === day && intervalCrossesMidnight(probe)) {
+      // 1.53.0 (review of #331): a new night shift reaches the next morning, so it clashes with that morning's early
+      // booking (the next day's booking, moved one day on: its minutes + 24h).
+      const own = slotInterval(clock, bookingStandardDayOn(input.day, day))
+      interval = own ? { start: own.start + 24 * 60, end: own.end + 24 * 60 } : null
     }
     if (!interval || !intervalsOverlap(probe, interval)) continue
     seen.add(id.toLowerCase())

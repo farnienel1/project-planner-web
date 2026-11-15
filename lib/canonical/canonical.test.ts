@@ -16652,10 +16652,22 @@ test('1.53.0 A4 clashPairKey is the same whatever the letter case; old keys in t
   assert.equal(R112.isClashGroupApproved({ pairs: [row] }, { approvedKeys: ['B-2|a-1'] }), true)
   // Non-pair keys are unchanged (case only).
   assert.equal(R112.isWarningActive({ resolutionKey: 'mgr-clash-U1-2026-11-02-0' }, { resolvedKeys: ['MGR-CLASH-u1-2026-11-02-0'] }), false)
-  // Undo removes both the new and the old document ids.
-  assert.deepEqual(R112.clashApprovalDocumentIds(row), { acceptedClash: ['a-1|B-2', 'B-2|a-1'], resolution: ['a-1|B-2', 'B-2|a-1'] })
-  assert.deepEqual(R112.clashApprovalDocumentIds({ ...row, resolutionKey: 'mgr-clash-x' }).resolution, ['mgr-clash-x'])
-  assert.deepEqual(R112.clashApprovalDocumentIds({ bookingAId: 'b1', bookingBId: 'b2' }).acceptedClash, ['b1|b2'])
+  // Undo (review of #331): every stored document of this clash, matched ignoring case and order — web lower-case ids,
+  // iOS upper-case `uuidString` ids and the pre-1.53 order — plus the id this app writes now.
+  const docs = {
+    acceptedClashes: [
+      { id: 'B-2|A-1' }, // iOS, upper case
+      { id: 'other', bookingAId: 'b-2', bookingBId: 'a-1' }, // matched by its pair fields
+      { id: 'x|y' }, // another clash
+    ],
+    resolutions: [{ id: 'B-2|A-1' }, { id: 'r2', resolutionKey: 'a-1|b-2' }, { id: 'mgr-clash-x' }],
+  }
+  assert.deepEqual(R112.clashDocumentsToRemove(row, docs), {
+    acceptedClash: ['a-1|B-2', 'B-2|A-1', 'other'],
+    resolution: ['a-1|B-2', 'B-2|A-1', 'r2'],
+  })
+  assert.deepEqual(R112.clashDocumentsToRemove({ ...row, resolutionKey: 'MGR-CLASH-X' }, docs).resolution, ['MGR-CLASH-X', 'mgr-clash-x'])
+  assert.deepEqual(R112.clashDocumentsToRemove({ bookingAId: 'b1', bookingBId: 'b2' }, null), { acceptedClash: ['b1|b2'], resolution: ['b1|b2'] })
 })
 
 test('1.53.0 A5 unverifiedOperativeRows skips an inactive operative row or account', () => {
@@ -16728,4 +16740,56 @@ test('1.53.0 A9 Pay Summary days: rounded for display with a note; Pay from the 
   assert.equal(R112.weeklyReportDaysText(ot.daysExact ?? ot.days, ot.kind), '2.12')
   assert.equal(R112.weeklyReportPaySummaryNote([ot]), 'Days are rounded; Pay is worked out from the exact hours.')
   assert.equal(R112.weeklyReportPaySummaryNote([{ source: 'claim' }]), '')
+})
+
+test('1.53.0 A2 review: declined parts of a booking come off its hours once and never below 0', () => {
+  const lines = [
+    { id: 'op-B1-normal', amount: 200, dayKey: '2026-10-20', paidHours: 8, bookingPaidHours: 9.5, bookingOvertimeHours: 1, isOvertimeLine: false },
+    { id: 'op-B1-ot', amount: 37.5, dayKey: '2026-10-20', paidHours: 1, otMultiplier: 1.5, isOvertimeLine: true },
+    { id: 'op-B9-normal', amount: 200, dayKey: '2026-10-21', paidHours: 8, bookingPaidHours: 8, isOvertimeLine: false },
+  ]
+  const signedWith = (reviews: Record<string, unknown>) => ({ managerSignedAt: '2026-10-25T10:00:00Z', payrollLineReviews: reviews })
+  const totals = (reviews: Record<string, unknown>, payrollLines: unknown[] = lines) =>
+    R112.timesheetTotals({ sheet: signedWith(reviews), payrollLines: payrollLines as never, extrasMode: 'decided' })
+  // Both lines of the 8h + 1h × 1.5 booking declined: B1 counts 0 (was −1.5 in the first cut); B9 keeps its 8h.
+  const both = totals({ 'op-B1-normal': { decision: 'declined' }, 'op-B1-ot': { decision: 'declined' } })
+  assert.deepEqual([both.hours, both.overtimeHours, both.labour], [8, 0, 200])
+  // Standard declined, overtime kept: B1 counts its 1h × 1.5 = 1.5h (was 0).
+  const standardOnly = totals({ 'op-B1-normal': { decision: 'declined' } })
+  assert.deepEqual([standardOnly.hours, standardOnly.overtimeHours, standardOnly.labour], [9.5, 1, 237.5])
+  // An overtime-only booking (no standard line) declined: 0, never negative (was −5).
+  const otOnly = [lines[2], { id: 'op-B5-ot', amount: 125, dayKey: '2026-10-22', paidHours: 2.5, otMultiplier: 2, isOvertimeLine: true }]
+  const declinedOt = totals({ 'op-B5-ot': { decision: 'declined' } }, otOnly)
+  assert.deepEqual([declinedOt.hours, declinedOt.labour], [8, 200])
+})
+
+test('1.53.0 A1 review: an unflagged £0 signed line on a PAYE day (iOS before 1.46) puts nothing on the report', () => {
+  const paye = { ...wr151Admin, user: { id: 'u-admin', payBasis: 'day', dayRate: 250, employmentType: 'paye' } }
+  const line = { id: 'op-b02-normal', bookingId: 'b02', date: '2026-11-02', paidHours: 8, days: 1, amount: 0, isOvertime: false, payBasis: 'day' }
+  const run = (lines: unknown[]) =>
+    wr151Run({ people: [paye as never], payRateHistory: [], bookings: [], timesheetWeeks: [{ userId: 'u-admin', weekStart: '2026-11-01', weekEnd: '2026-11-15', override: { lines, priceWork: [], expenses: [] } }] as never })
+  // Unflagged and £0: no row, no hours (the invoice drops it too).
+  const unflagged = run([line])
+  assert.deepEqual([unflagged.people.length, unflagged.paidDays.length], [0, 0])
+  // Flagged PAYE: never counted.
+  assert.equal(run([{ ...line, isPayeDay: true, amount: 250 }]).people.length, 0)
+  // Unflagged with money (a self-employed run, switched to PAYE later): counted, as A1.
+  assert.equal(run([{ ...line, amount: 250 }]).people[0]?.personTotal, 250)
+})
+
+test('1.53.0 review: a new night shift clashes with the next morning\'s early booking (bookingRequestClashIds)', () => {
+  const existing = [
+    { id: 'early', dayKey: '2026-11-03', timeSlot: 'CUSTOM_HOURS', workStartTime: '05:00', workEndTime: '09:00' },
+    { id: 'late', dayKey: '2026-11-03', timeSlot: 'CUSTOM_HOURS', workStartTime: '06:00', workEndTime: '10:00' },
+    { id: 'far', dayKey: '2026-11-04', timeSlot: 'CUSTOM_HOURS', workStartTime: '01:00', workEndTime: '03:00' },
+  ]
+  const ids = R112.bookingRequestClashIds({
+    request: { dayKey: '2026-11-02', timeSlot: 'CUSTOM_HOURS', workStartTime: '22:00', workEndTime: '06:00' },
+    existing,
+    day: { standardDayStart: '07:30', standardDayEnd: '16:00' },
+  })
+  // 05:00 starts before the night shift ends at 06:00; 06:00 only touches; two days later never.
+  assert.deepEqual(ids, ['early'])
+  // A day shift never reaches the next day.
+  assert.deepEqual(R112.bookingRequestClashIds({ request: { dayKey: '2026-11-02', timeSlot: 'FULL DAY' }, existing, day: { standardDayStart: '07:30', standardDayEnd: '16:00' } }), [])
 })

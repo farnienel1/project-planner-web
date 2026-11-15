@@ -415,7 +415,7 @@ export {
   bookingLoadStart,
   clashPairKey,
   legacyClashPairKey,
-  clashApprovalDocumentIds,
+  clashDocumentsToRemove,
   isClashAccepted,
   isWarningActive,
   isWorkLiveOn,

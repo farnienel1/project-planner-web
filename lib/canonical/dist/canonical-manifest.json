@@ -1,7 +1,7 @@
 {
   "rulebookVersion": "1.53.0",
-  "rulebookSha256": "cd9725ef29ce836c5702abe0c1dc13a36f4e5bf73d7c1be7383cdf82c191b8d5",
-  "bundleSha256": "3e646020c5372e26d47f3bf83af73894eb3482a8bdd9c05a2e01d392afde8dd3",
+  "rulebookSha256": "972f3985fb399062d471b995de2d5ad72a357c872116296c6d54199c179e4bf3",
+  "bundleSha256": "3f26c638f6a202058ae59924c4de4b9d3b082a20d6d88df1f863c68eb5ec8a0b",
   "crossPlatformContractSha256": "b89ca87595a18b7f0230fa13dcc81d65dcaea44e65912d499a31ce5df7670dd4",
   "dataParityFixtureSha256": "c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f",
   "exports": [
@@ -741,8 +741,8 @@
     "claimEvidenceRemoved",
     "claimEvidenceSameList",
     "clampMonthDayInZone",
-    "clashApprovalDocumentIds",
     "clashApprovalWrites",
+    "clashDocumentsToRemove",
     "clashManagerIds",
     "clashPairKey",
     "clashResolutionKey",

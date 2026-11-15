@@ -11,7 +11,7 @@ import { useAuthStore } from '@/lib/stores/authStore'
 import { isPlatformOwnerEmail } from '@/lib/platform/owner'
 import { hasAdminAccess } from '@/lib/permissions'
 import { loadAcceptedBookingClashes, unapproveBookingClash, unapproveBookingClashPairs } from '@/lib/warnings/acceptedClashStorage'
-import { loadWarningResolutionKeys } from '@/lib/warnings/warningResolutionStorage'
+import { loadWarningResolutionKeys, loadWarningResolutions } from '@/lib/warnings/warningResolutionStorage'
 import {
   formatInvoicingPeriodDescription,
   formatReportPeriodLabel,
@@ -302,15 +302,22 @@ export function WeeklyReportScreen({
     setUnapproveError('')
     setUnapprovingKey(row.resolutionKey)
     try {
+      // Rulebook 1.53.0 (review of #331): the approval documents as stored, so undo also removes the other app's
+      // copies (matched ignoring case and order, `clashDocumentsToRemove`).
+      const [acceptedClashes, resolutions] = await Promise.all([
+        loadAcceptedBookingClashes(organizationId).catch(() => []),
+        loadWarningResolutions(organizationId).catch(() => []),
+      ])
+      const docs = { acceptedClashes, resolutions }
       if (row.pairs && row.pairs.length > 0) {
         // Operative cluster: remove every pair's approval (`operativeClashGroups`).
-        await unapproveBookingClashPairs(organizationId, row.pairs)
+        await unapproveBookingClashPairs(organizationId, row.pairs, docs)
       } else {
-        await unapproveBookingClash(organizationId, {
-          bookingAId: row.bookingAId,
-          bookingBId: row.bookingBId,
-          resolutionKey: row.resolutionKey,
-        })
+        await unapproveBookingClash(
+          organizationId,
+          { bookingAId: row.bookingAId, bookingBId: row.bookingBId, resolutionKey: row.resolutionKey },
+          docs
+        )
       }
       setWarningDecisions(await loadWarningDecisions())
     } catch (error) {

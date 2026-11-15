@@ -8,9 +8,9 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ║ FOLLOW-ON — paste into the iOS agent                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
-Rulebook version: 1.51.0 → 1.53.0
-Packed hash: 3e646020c5372e26d47f3bf83af73894eb3482a8bdd9c05a2e01d392afde8dd3
-Rulebook sha256: cd9725ef29ce836c5702abe0c1dc13a36f4e5bf73d7c1be7383cdf82c191b8d5
+Rulebook version: 1.53.0 → 1.53.0
+Packed hash: 3f26c638f6a202058ae59924c4de4b9d3b082a20d6d88df1f863c68eb5ec8a0b
+Rulebook sha256: 972f3985fb399062d471b995de2d5ad72a357c872116296c6d54199c179e4bf3
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -22,12 +22,12 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
 Contract sha256: b89ca87595a18b7f0230fa13dcc81d65dcaea44e65912d499a31ce5df7670dd4
 Data-parity fixture sha256: c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: WEEKLY_REPORT_DAYS_DISPLAY, WEEKLY_REPORT_DAYS_ROUNDED_NOTE, clashApprovalDocumentIds, dailyOverviewLeaveRows, homeUpNextRows, legacyClashPairKey, userLevelLabel, weeklyReportDaysText, weeklyReportPaySummaryNote
-Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/homeUpNext.ts, lib/canonical/index.ts, lib/canonical/leaveCalendar.ts, lib/canonical/leaveCoverage.ts, lib/canonical/payrunSnapshot.ts, lib/canonical/scheduleSources.ts, lib/canonical/timesheetTotals.ts, lib/canonical/warningRows.ts, lib/canonical/weeklyReportPay.ts
+Exports added: clashDocumentsToRemove
+Exports removed: clashApprovalDocumentIds
+Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/scheduleSources.ts, lib/canonical/timesheetTotals.ts, lib/canonical/weeklyReportPay.ts
 Done when:
-- [ ] Packed hash in iOS equals 3e646020c5372e26d47f3bf83af73894eb3482a8bdd9c05a2e01d392afde8dd3
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 cd9725ef29ce836c5702abe0c1dc13a36f4e5bf73d7c1be7383cdf82c191b8d5)
+- [ ] Packed hash in iOS equals 3f26c638f6a202058ae59924c4de4b9d3b082a20d6d88df1f863c68eb5ec8a0b
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 972f3985fb399062d471b995de2d5ad72a357c872116296c6d54199c179e4bf3)
 - [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.53.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
@@ -36,7 +36,7 @@ Done when:
 
 ## What changed in 1.53.0
 
-- **Calculation sweep** (read-only sweeps 15 Nov; owner test 17 Nov). Rulebook: `weeklyReportPayRows` signed lines follow their own `isPayeDay` and the check line counts their days (A1); `timesheetTotals.hours` skips declined labour lines (A2); `LeavePerson.aliasUserIds` and labour bookings under a users id in `leaveCoverageRows` (A3); `clashPairKey` orders by lower-case id, new `legacyClashPairKey` and `clashApprovalDocumentIds`, pair keys compare in either order (A4); `unverifiedOperativeRows` skips inactive rows (A5); new `homeUpNextRows` (A6, §23); new `dailyOverviewLeaveRows` (A7, §6); `WEEKLY_REPORT_DAYS_DISPLAY`, `WEEKLY_REPORT_DAYS_ROUNDED_NOTE`, `weeklyReportDaysText`, `weeklyReportPaySummaryNote`, `WeeklyReportPayRow.daysExact` (A9, owner confirmed); Daily Overview counts switched-off schedule locations (A10, owner confirmed, §6 statement); new `userLevelLabel` (Payrun Snapshot and weekly report Role).
+- **Calculation sweep** (read-only sweeps 15 Nov; owner test 17 Nov). Rulebook: `weeklyReportPayRows` signed lines follow their own `isPayeDay` and the check line counts their days (A1); `timesheetTotals.hours` skips declined labour lines (A2); `LeavePerson.aliasUserIds` and labour bookings under a users id in `leaveCoverageRows` (A3); `clashPairKey` orders by lower-case id, new `legacyClashPairKey` and `clashDocumentsToRemove` (undo matches ignoring case and order), pair keys compare in either order (A4); `unverifiedOperativeRows` skips inactive rows (A5); new `homeUpNextRows` (A6, §23); new `dailyOverviewLeaveRows` (A7, §6); `WEEKLY_REPORT_DAYS_DISPLAY`, `WEEKLY_REPORT_DAYS_ROUNDED_NOTE`, `weeklyReportDaysText`, `weeklyReportPaySummaryNote`, `WeeklyReportPayRow.daysExact` (A9, owner confirmed); Daily Overview counts switched-off schedule locations (A10, owner confirmed, §6 statement); new `userLevelLabel` (Payrun Snapshot and weekly report Role). Review of #331: `timesheetTotals` per-booking declined parts, never below 0; a £0 unflagged signed line on a PAYE day is left out; `clashDocumentsToRemove` (undo by matching ignoring case and order); `bookingRequestClashIds` checks a new night shift against the next morning.
 - Web: Book labour and the Schedule wizard's "already booked" use `isSameBookingRequest` (A8); My Schedule self-booking clashes via `bookingRequestClashIds` with the day before and the policy state (B1); clash rows dated on the group day in the organisation zone (B2); My Schedule clock text from `slotInterval` / `bookingStandardDayOn` (B3); Schedule wizard "No unpaid break" toggle and lunch warning (B4); `managers` rows to `warningScopeFor` on Warnings and Home (B5); weekly report warnings with aliases and `isWarningActive` (B6); bank holidays on the weekly report, the leave calendars, Home and Daily Overview (B7); orphan manager site bookings priced (B8); organisation-zone dates and real-date sorting (B9); Role = `userLevelLabel` (B10); manager site bookings matched without case in the timesheet collector (B11); owner invoice `decided` once signed (B12); admin leave calendar waits for the leave-year settings (B13); Project Breakdown per person (B14); timesheet hours from `timesheetTotals.hours` (B15).
 - No security rules change.
 
@@ -46,7 +46,7 @@ Done when:
 - **Not changed:** no Firestore rules, index, Storage or Functions change; nothing migrated; `minimumIosBuild` not needed (the weekly report is built on the device; old clash keys are still read).
 - **Base:** web `origin/main` 1.51.0 + this PR (1.52 variations is a separate PR; its hand-off covers iOS variation maths: `VariationEditorSheet.swift:100,126,230`, `VariationModels.swift:144`, `VariationsListView.swift:171`). Line numbers below are from iOS `origin/main` at `1571142` (15 Nov); check them on your branch.
 - **Owner confirmed 15 Nov:** A9 (weekly report note "Days are rounded; Pay is worked out from the exact hours.") and A10 (Daily Overview still counts Office / WFH / Site survey / custom bookings when that option is switched off).
-- **Money change:** weekly report only, a run signed self-employed and later switched to PAYE: the report now shows the signed amounts (owner example £632.35, was £500.00).
+- **Figures that change** (web, and iOS once it follows): A1 weekly report — a priced signed line on a day the person is PAYE now is paid (owner example £500.00 → £632.35; a £0 line with no PAYE flag stays out); B8 weekly report — a manager site booking whose job was deleted is paid, "Deleted job"; B11 timesheet — a manager site booking whose `userId` differs only in letter case is on the live timesheet (live pay and the unsigned invoice rise); B12 owner's invoice — `decided` once the line manager signed; B14 Project Breakdown per person; A2 / B15 declined labour lines count no hours (per booking, never below 0); weekly report Role words.
 
 1. **Sync.** `WEB_REPO=<web worktree> bash scripts/sync-rulebook-from-web.sh`, then commit the mirrored files.
 2. **Overnight clashes when booking.** Copy the approach of `Core/ScheduleBookingConflictSupport.swift` (existing bookings of the booked day **and the day before**, `bookingRequestClashIds` under the policy state) in:
@@ -66,7 +66,7 @@ Done when:
    - Leave cover: each `LeavePerson` gets `aliasUserIds` (former + same-email ids) (A3).
    - Date clash rows from the group's `dayKey` (organisation zone) and include the previous day in the bookings scanned (`Core/WarningsService.swift:555`, `Core/WarningsComputation.swift:500-503,577,616`).
    - Pass the working-hours state, never `NSNull` (~1376).
-   - Clash keys (A4): `clashPairKey` now orders by lower-case id; approvals saved under the old order still count (`isClashApproved` / `isClashGroupApproved` / `isWarningActive`). Undo deletes every id of `clashApprovalDocumentIds` that exists. Old device-only legacy keys (`Core/WarningResolutionStore.swift:595`) must not override `isClashGroupApproved`.
+   - Clash keys (A4): `clashPairKey` now orders by lower-case id; approvals saved under the old order still count (`isClashApproved` / `isClashGroupApproved` / `isWarningActive`). Undo deletes by **matching ignoring case and order**: call `clashDocumentsToRemove(clash, { acceptedClashes, resolutions })` with the documents the store listens to and delete every id it returns, in both collections — `Core/WarningResolutionStore.swift:415-424` today deletes `warningResolutions` only on an exact key match. Old device-only legacy keys (`Core/WarningResolutionStore.swift:595`) must not override `isClashGroupApproved`.
    - Pass the `managers` rows to `warningScopeFor` wherever the scope is built.
 5. **Daily Overview (A10, owner confirmed).** Stop filtering by `scheduleOptions` in `Views/DailyOverviewView.swift:200-205,262-276` (`visibleOfficeBookings` etc.): every booking counts. "On annual leave" = `dailyOverviewLeaveRows(records, dayKey, timeZone, bankHolidayDayKeys)` (A7); the Home on-leave figures pass the same bank holidays to `homeOverviewMetrics` (`nonWorkingDayKeys`).
 6. **Weekly report.**
@@ -85,9 +85,6 @@ Done when:
 8. **Dead fallback.** Remove `Core/Rulebook+WeekdayPaidDay.swift:46-53`'s stale `?? policy.standardPaidHours` fallback (fail visibly when the script does not answer) and its tests.
 9. **Tests** (`ProjectPlannerTests`, through the engine): A1 (£632.35 run with a later PAYE switch), A4 (old-order key still approves), A6 (`homeUpNextRows` ids and today), A7 (bank holiday inside leave), an overnight booking clashing the next morning in Book labour.
 
-## New rulebook sections
-
-- 1.53.0 — 2026-11-15
 
 ## Workflow for the iOS agent
 

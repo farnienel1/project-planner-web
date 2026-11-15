@@ -1,9 +1,9 @@
 import type { Unsubscribe } from 'firebase/firestore'
 import { watchOrgCollection } from '@/lib/firebase/watchOrgQuery'
-import { collection, doc, getDoc, getDocs, serverTimestamp, writeBatch, type WriteBatch } from 'firebase/firestore'
+import { collection, doc, getDocs, serverTimestamp, writeBatch, type WriteBatch } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
 import {
-  clashApprovalDocumentIds,
+  clashDocumentsToRemove,
   clashApprovalWrites,
   clashPairKey,
   clashResolutionKey,
@@ -80,25 +80,23 @@ function addClashApproval(batch: WriteBatch, organizationId: string, clash: Clas
   })
 }
 
-async function addClashUnapproval(batch: WriteBatch, organizationId: string, clash: ClashApproval): Promise<void> {
-  const pairId = clashPairKey(clash.bookingAId, clash.bookingBId)
-  const resolutionId = clashResolutionKey(clash)
-  if (!clash.bookingAId || !clash.bookingBId || !resolutionId) throw new Error('This clash approval cannot be removed.')
-  batch.delete(doc(db, 'organizations', organizationId, 'acceptedBookingClashes', pairId))
-  batch.delete(doc(db, 'organizations', organizationId, 'warningResolutions', resolutionId))
-  // Rulebook 1.53.0: an approval saved before 1.53.0 may sit under the older pair key (`clashApprovalDocumentIds`).
-  // Delete it too, but only when it exists, so the batch never deletes a missing document.
-  const ids = clashApprovalDocumentIds(clash)
-  for (const [collection, list, current] of [
-    ['acceptedBookingClashes', ids.acceptedClash, pairId],
-    ['warningResolutions', ids.resolution, resolutionId],
-  ] as const) {
-    for (const id of list) {
-      if (id === current) continue
-      const ref = doc(db, 'organizations', organizationId, collection, id)
-      if ((await getDoc(ref)).exists()) batch.delete(ref)
-    }
+/** The approval documents the screen has read, so undo finds the other app's copies (`clashDocumentsToRemove`). */
+export type ClashApprovalDocs = Parameters<typeof clashDocumentsToRemove>[1]
+
+function addClashUnapprovals(batch: WriteBatch, organizationId: string, clashes: ReadonlyArray<ClashApproval>, docs: ClashApprovalDocs): void {
+  // Rulebook 1.53.0 (review of #331): every approval document of each clash, matched ignoring case and order — the
+  // ids web writes now and the other app's (iOS upper-case ids, pre-1.53 order). Deleting a missing one is allowed;
+  // each document is deleted once even when two pairs of a cluster name it.
+  const accepted = new Set<string>()
+  const resolutions = new Set<string>()
+  for (const clash of clashes) {
+    if (!clash.bookingAId || !clash.bookingBId || !clashResolutionKey(clash)) throw new Error('This clash approval cannot be removed.')
+    const ids = clashDocumentsToRemove(clash, docs)
+    for (const id of ids.acceptedClash) accepted.add(id)
+    for (const id of ids.resolution) resolutions.add(id)
   }
+  for (const id of accepted) batch.delete(doc(db, 'organizations', organizationId, 'acceptedBookingClashes', id))
+  for (const id of resolutions) batch.delete(doc(db, 'organizations', organizationId, 'warningResolutions', id))
 }
 
 /**
@@ -123,9 +121,9 @@ export async function approveBookingClash(
  * Undo a clash approval: delete both documents in one batch. Admins and managers (`canAccessVariationsStaff`) may
  * delete the `acceptedBookingClashes` row; the `warningResolutions` row may be deleted by an admin or its approver.
  */
-export async function unapproveBookingClash(organizationId: string, clash: ClashApproval): Promise<void> {
+export async function unapproveBookingClash(organizationId: string, clash: ClashApproval, docs: ClashApprovalDocs = null): Promise<void> {
   const batch = writeBatch(db)
-  await addClashUnapproval(batch, organizationId, clash)
+  addClashUnapprovals(batch, organizationId, [clash], docs)
   await batch.commit()
 }
 
@@ -149,11 +147,12 @@ export async function approveBookingClashPairs(
 /** Undo an operative clash group approval: every pair's two documents, in one batch. */
 export async function unapproveBookingClashPairs(
   organizationId: string,
-  pairs: ReadonlyArray<{ bookingAId: string; bookingBId: string }>
+  pairs: ReadonlyArray<{ bookingAId: string; bookingBId: string }>,
+  docs: ClashApprovalDocs = null
 ): Promise<void> {
   if (pairs.length === 0) throw new Error('This clash approval cannot be removed.')
   const batch = writeBatch(db)
-  for (const pair of pairs) await addClashUnapproval(batch, organizationId, { bookingAId: pair.bookingAId, bookingBId: pair.bookingBId })
+  addClashUnapprovals(batch, organizationId, pairs.map((pair) => ({ bookingAId: pair.bookingAId, bookingBId: pair.bookingBId })), docs)
   await batch.commit()
 }
 

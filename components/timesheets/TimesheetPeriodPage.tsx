@@ -951,6 +951,13 @@ export function TimesheetPeriodPage({
       // Rulebook 1.11.0: only the self-employed days of the period reach the invoice.
       timesheetDays: subjectUser ? timesheetDayKeysForPeriod(subjectUser, periodStart, periodEnd, timeZone) : [],
     })
+    const invoiceHours = draftTimesheetTotals({
+      lines: payroll.lineItems,
+      draft,
+      decided: Boolean(draft.managerSignedAt),
+      timesheetDays: subjectUser ? timesheetDayKeysForPeriod(subjectUser, periodStart, periodEnd, timeZone) : [],
+      timeZone,
+    }).hours
     const notes = invoiceRateChangeNotes({
       history,
       user: subjectUser,
@@ -965,8 +972,10 @@ export function TimesheetPeriodPage({
       subject,
       weekStart: periodStart,
       weekEnd: periodEnd,
-      totalHours: payroll.totalHours,
-      totalDays: payroll.totalHours / Math.max(weekdayPaidHours(payrollPolicy), 0.01),
+      // Rulebook 1.53.0 (B15, review of #331): the invoice's hours are the same `timesheetTotals.hours` as the screen,
+      // for the same rows (`decided` once the line manager has signed).
+      totalHours: invoiceHours,
+      totalDays: invoiceHours / Math.max(weekdayPaidHours(payrollPolicy), 0.01),
       amount: invoiceLinesTotal(lines),
       vatNumber: taxIds.vatNumber,
       utrNumber: taxIds.utrNumber,

@@ -757,8 +757,8 @@ var ProjectPlannerCanonical = (() => {
     claimEvidenceRemoved: () => claimEvidenceRemoved,
     claimEvidenceSameList: () => claimEvidenceSameList,
     clampMonthDayInZone: () => clampMonthDayInZone,
-    clashApprovalDocumentIds: () => clashApprovalDocumentIds,
     clashApprovalWrites: () => clashApprovalWrites,
+    clashDocumentsToRemove: () => clashDocumentsToRemove,
     clashManagerIds: () => clashManagerIds,
     clashPairKey: () => clashPairKey,
     clashResolutionKey: () => clashResolutionKey,
@@ -11400,14 +11400,24 @@ var ProjectPlannerCanonical = (() => {
     const b = idText2(input?.bookingBId);
     return a && b ? clashPairKey(a, b) : "";
   }
-  function clashApprovalDocumentIds(input) {
-    const a = idText2(input?.bookingAId);
-    const b = idText2(input?.bookingBId);
-    if (!a || !b) return { acceptedClash: [], resolution: [] };
-    const pair = [clashPairKey(a, b), legacyClashPairKey(a, b)];
-    const own = idText2(input?.resolutionKey);
-    const unique = (ids) => [...new Set(ids.filter(Boolean))];
-    return { acceptedClash: unique(pair), resolution: unique(own ? [own] : pair) };
+  function clashDocumentsToRemove(clash, docs) {
+    const a = idText2(clash?.bookingAId);
+    const b = idText2(clash?.bookingBId);
+    const target = clashResolutionKey({ bookingAId: a, bookingBId: b, resolutionKey: clash?.resolutionKey });
+    const unique = (ids) => {
+      const seen = /* @__PURE__ */ new Set();
+      return ids.filter((id2) => Boolean(id2) && !seen.has(id2) && Boolean(seen.add(id2)));
+    };
+    const acceptedClash = a && b ? unique([
+      clashPairKey(a, b),
+      ...(docs?.acceptedClashes || []).filter((doc) => doc && isClashAccepted(a, b, [doc])).map((doc) => idText2(doc.id))
+    ]) : [];
+    const wanted = comparableKey(target);
+    const resolution = target ? unique([
+      target,
+      ...(docs?.resolutions || []).filter((doc) => doc && comparableKey(idText2(doc.resolutionKey) || idText2(doc.id)) === wanted).map((doc) => idText2(doc.id))
+    ]) : [];
+    return { acceptedClash, resolution };
   }
   function clashApprovalWrites(input) {
     return {
@@ -11456,6 +11466,9 @@ var ProjectPlannerCanonical = (() => {
       else if (nextCalendarDayKey(day) === dayKey) {
         const own = slotInterval(clock4, bookingStandardDayOn(input.day, day));
         interval2 = own && intervalCrossesMidnight(own) ? overnightCarryInterval(own) : null;
+      } else if (nextCalendarDayKey(dayKey) === day && intervalCrossesMidnight(probe)) {
+        const own = slotInterval(clock4, bookingStandardDayOn(input.day, day));
+        interval2 = own ? { start: own.start + 24 * 60, end: own.end + 24 * 60 } : null;
       }
       if (!interval2 || !intervalsOverlap(probe, interval2)) continue;
       seen.add(id2.toLowerCase());
@@ -12331,7 +12344,7 @@ var ProjectPlannerCanonical = (() => {
   function rulebookStamp() {
     return {
       version: true ? "1.53.0" : "",
-      sha256: true ? "cd9725ef29ce836c5702abe0c1dc13a36f4e5bf73d7c1be7383cdf82c191b8d5" : ""
+      sha256: true ? "972f3985fb399062d471b995de2d5ad72a357c872116296c6d54199c179e4bf3" : ""
     };
   }
   function rulebookVersionLabel(version) {
@@ -18730,6 +18743,7 @@ var ProjectPlannerCanonical = (() => {
     const liveRowIds = new Set(rows3.filter((row2) => row2.kind === "labour" && row2.source === "live").map((row2) => normalizeDocumentId(row2.id)));
     const declinedByInvoice = (line) => !liveRowIds.has(normalizeDocumentId(line.id)) && payrollLineReview(sheet, line.id, line)?.decision === "declined";
     const groupOf = (line) => payrollLineBookingKey(line);
+    const bookingGroups = /* @__PURE__ */ new Map();
     const reviewedGroups = /* @__PURE__ */ new Set();
     for (const line of input.payrollLines || []) {
       if (line && reviewedLines.has(normalizeDocumentId(line.id))) reviewedGroups.add(groupOf(line));
@@ -18756,28 +18770,37 @@ var ProjectPlannerCanonical = (() => {
         }
         continue;
       }
-      if (declinedByInvoice(line)) {
-        if (withBookingFigures && line.isOvertimeLine === true) {
-          hours2 -= paid * (finite4(line.otMultiplier) > 0 ? finite4(line.otMultiplier) : 1);
-          overtimeHours -= line.otClockHours != null ? finite4(line.otClockHours) : paid;
+      const declined = declinedByInvoice(line);
+      if (withBookingFigures) {
+        const key5 = groupOf(line);
+        const group = bookingGroups.get(key5) ?? { hours: 0, overtime: 0, minusHours: 0, minusOvertime: 0 };
+        if (line.isOvertimeLine === true) {
+          if (declined) {
+            group.minusHours += paid * (finite4(line.otMultiplier) > 0 ? finite4(line.otMultiplier) : 1);
+            group.minusOvertime += line.otClockHours != null ? finite4(line.otClockHours) : paid;
+          }
+        } else {
+          group.hours += line.bookingPaidHours != null ? finite4(line.bookingPaidHours) : paid;
+          group.overtime += finite4(line.bookingOvertimeHours);
+          if (declined) group.minusHours += paid;
+          else standardHours += paid;
         }
+        bookingGroups.set(key5, group);
         continue;
       }
+      if (declined) continue;
       if (line.isOvertimeLine === true) {
-        if (!withBookingFigures) {
-          overtimeHours += line.otClockHours != null ? finite4(line.otClockHours) : paid;
-          const multiplier = finite4(line.otMultiplier) > 0 ? finite4(line.otMultiplier) : 1;
-          hours2 += paid * multiplier;
-        }
+        overtimeHours += line.otClockHours != null ? finite4(line.otClockHours) : paid;
+        const multiplier = finite4(line.otMultiplier) > 0 ? finite4(line.otMultiplier) : 1;
+        hours2 += paid * multiplier;
         continue;
       }
       standardHours += paid;
-      if (withBookingFigures) {
-        hours2 += line.bookingPaidHours != null ? finite4(line.bookingPaidHours) : paid;
-        overtimeHours += finite4(line.bookingOvertimeHours);
-      } else {
-        hours2 += paid;
-      }
+      hours2 += paid;
+    }
+    for (const group of bookingGroups.values()) {
+      hours2 += Math.max(0, group.hours - group.minusHours);
+      overtimeHours += Math.max(0, group.overtime - group.minusOvertime);
     }
     let submittedPriceWork = 0;
     let submittedExpenses = 0;
@@ -25416,6 +25439,7 @@ var ProjectPlannerCanonical = (() => {
   };
   var WEEKLY_REPORT_PAY_COLUMNS = ["Person", "Role", "Dates", "Line", "Hours", "Days", "Rate", "Pay"];
   var WEEKLY_REPORT_RATE_NOT_SET = "Rate not set";
+  var WEEKLY_REPORT_SIGNED_AMOUNT_EPSILON = 1e-4;
   var WEEKLY_REPORT_DAYS_DISPLAY = "note";
   var WEEKLY_REPORT_DAYS_ROUNDED_NOTE = "Days are rounded; Pay is worked out from the exact hours.";
   function weeklyReportDaysText(days, kind) {
@@ -25684,6 +25708,7 @@ var ProjectPlannerCanonical = (() => {
       if (!person || !inRange2(dayKey) || signed.isPayeDay === true || signed.isLeave === true) continue;
       const period = periodsFor(person).byDay.get(dayKey);
       if (!period) continue;
+      if (period.isPaye && !((Number(signed.amount) || 0) > WEEKLY_REPORT_SIGNED_AMOUNT_EPSILON)) continue;
       addSignedDay(person.id, dayKey);
       const basis = signed.payBasis === "hourly" ? "hourly" : "day";
       const overtime = signed.isOvertime === true;

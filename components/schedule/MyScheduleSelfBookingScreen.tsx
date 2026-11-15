@@ -457,7 +457,8 @@ export function MyScheduleSelfBookingScreen({
       // (the whole policy state; a weekend Full day is that day's own window), with the day before included so an
       // overnight booking ending this morning clashes too.
       const key = orgDayKey(day, zone)
-      const candidates = [...myBookingsOn(addDaysInZone(day, -1, zone)), ...myBookingsOn(day)]
+      // The day before (a night shift ending this morning) and the day after (a new night shift reaching it).
+      const candidates = [...myBookingsOn(addDaysInZone(day, -1, zone)), ...myBookingsOn(day), ...myBookingsOn(addDaysInZone(day, 1, zone))]
       const clashing = new Set(
         bookingRequestClashIds({
           request: {

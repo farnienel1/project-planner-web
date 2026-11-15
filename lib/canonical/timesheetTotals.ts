@@ -142,6 +142,7 @@ export function timesheetTotals<L extends TimesheetTotalsLine>(input: TimesheetT
   const declinedByInvoice = (line: TimesheetTotalsLine) =>
     !liveRowIds.has(normalizeDocumentId(line.id)) && payrollLineReview(sheet, line.id, line)?.decision === 'declined'
   const groupOf = (line: TimesheetTotalsLine) => payrollLineBookingKey(line)
+  const bookingGroups = new Map<string, { hours: number; overtime: number; minusHours: number; minusOvertime: number }>()
   const reviewedGroups = new Set<string>()
   for (const line of input.payrollLines || []) {
     if (line && reviewedLines.has(normalizeDocumentId(line.id))) reviewedGroups.add(groupOf(line))
@@ -169,30 +170,40 @@ export function timesheetTotals<L extends TimesheetTotalsLine>(input: TimesheetT
       }
       continue
     }
-    if (declinedByInvoice(line)) {
-      // With booking figures the standard line carries the whole booking's hours; a declined overtime line takes its
-      // own multiplied hours back off.
-      if (withBookingFigures && line.isOvertimeLine === true) {
-        hours -= paid * (finite(line.otMultiplier) > 0 ? finite(line.otMultiplier) : 1)
-        overtimeHours -= line.otClockHours != null ? finite(line.otClockHours) : paid
+    const declined = declinedByInvoice(line)
+    if (withBookingFigures) {
+      // 1.53.0 (A2, review of #331): per booking, the standard line carries the whole booking's hours
+      // (`bookingPaidHours`); each part the invoice drops as declined comes off it — a standard part its own paid hours,
+      // an overtime part its paid hours × multiplier — and the booking never goes below 0.
+      const key = groupOf(line)
+      const group = bookingGroups.get(key) ?? { hours: 0, overtime: 0, minusHours: 0, minusOvertime: 0 }
+      if (line.isOvertimeLine === true) {
+        if (declined) {
+          group.minusHours += paid * (finite(line.otMultiplier) > 0 ? finite(line.otMultiplier) : 1)
+          group.minusOvertime += line.otClockHours != null ? finite(line.otClockHours) : paid
+        }
+      } else {
+        group.hours += line.bookingPaidHours != null ? finite(line.bookingPaidHours) : paid
+        group.overtime += finite(line.bookingOvertimeHours)
+        if (declined) group.minusHours += paid
+        else standardHours += paid
       }
+      bookingGroups.set(key, group)
       continue
     }
+    if (declined) continue
     if (line.isOvertimeLine === true) {
-      if (!withBookingFigures) {
-        overtimeHours += line.otClockHours != null ? finite(line.otClockHours) : paid
-        const multiplier = finite(line.otMultiplier) > 0 ? finite(line.otMultiplier) : 1
-        hours += paid * multiplier
-      }
+      overtimeHours += line.otClockHours != null ? finite(line.otClockHours) : paid
+      const multiplier = finite(line.otMultiplier) > 0 ? finite(line.otMultiplier) : 1
+      hours += paid * multiplier
       continue
     }
     standardHours += paid
-    if (withBookingFigures) {
-      hours += line.bookingPaidHours != null ? finite(line.bookingPaidHours) : paid
-      overtimeHours += finite(line.bookingOvertimeHours)
-    } else {
-      hours += paid
-    }
+    hours += paid
+  }
+  for (const group of bookingGroups.values()) {
+    hours += Math.max(0, group.hours - group.minusHours)
+    overtimeHours += Math.max(0, group.overtime - group.minusOvertime)
   }
 
   let submittedPriceWork = 0
