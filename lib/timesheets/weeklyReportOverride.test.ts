@@ -341,17 +341,17 @@ test('weekly report replaces live days with the agreed snapshot and includes pri
   assert.equal(report.priceWorkTotal, 40)
   const pay = report.paySummary.find((row) => row.person === 'Ada Booked')
   assert.ok(pay)
+  // Rulebook 1.51.0: the signed line, never re-priced, in the Q1 layout.
   assert.ok(
     pay.lines.some(
       (line) =>
-        line.rateType === 'Day' &&
-        line.quantityText === '1.00 day' &&
+        line.line === 'Weekday standard · signed timesheet' &&
+        line.days === 1 &&
         line.rateText === '£150.00/day' &&
         line.pay === 150
     )
   )
-  assert.ok(pay.lines.some((line) => line.rateType === 'Price work' && line.pay === 40))
-  assert.equal(pay.lines.some((line) => line.rateType === 'Normal'), false)
+  assert.ok(pay.lines.some((line) => line.line === 'Price work' && line.pay === 40))
 })
 
 test('export PDF lines skip declined override rows', () => {

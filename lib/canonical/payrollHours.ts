@@ -772,7 +772,23 @@ export function reportDayValue(input: {
   return Math.min(1.5, total / standard)
 }
 
-/** Weekly-report day units for a subcontractor booking: a full day is 1, anything else 0.5. */
-export function subcontractorDayValue(timeSlot: string | null | undefined): number {
-  return namedSlotKind(timeSlot) === 'FULL_DAY' ? 1 : 0.5
+/**
+ * Weekly-report day units for a subcontractor booking: a full day is 1, an AM or PM 0.5. 1.51.0 §7 (Q4c): a booking
+ * with its own clock times (custom hours) is its hours worked (`payrollHoursResult.workedHours`: clock time less the
+ * unpaid break, never multiplied) ÷ that day's weekday paid day (`weekdayPaidHours`), capped at 1.5 like staff day
+ * units (`reportDayValue`) — 07:00–20:00 on a 07:00–16:00 day with a 30-minute break is 12.5h ÷ 8.5h = 1.47, never 0.5.
+ * Without `hours` (older callers) a custom booking stays 0.5 as before.
+ */
+export function subcontractorDayValue(
+  timeSlot: string | null | undefined,
+  options?: { hours?: Pick<PayrollHoursResult, 'workedHours'> | null; standardDayHours?: number | null } | null
+): number {
+  const kind = namedSlotKind(timeSlot)
+  if (kind === 'FULL_DAY') return 1
+  const worked = Number(options?.hours?.workedHours)
+  const day = Number(options?.standardDayHours)
+  if (kind !== 'AM' && kind !== 'PM' && Number.isFinite(worked) && worked > 0 && day >= 1) {
+    return Math.min(1.5, Math.round((worked / day) * 100) / 100)
+  }
+  return 0.5
 }

@@ -16210,3 +16210,237 @@ test('1.50.0 review L4: photo size from the header, refused over 40 MB or 50 meg
   assert.equal(R112.photoPrepareRefusal({ sizeBytes: 12 * MB, width: 8000, height: 6000 }), null)
   assert.equal(R112.photoPrepareRefusal({ sizeBytes: 12 * MB }), null)
 })
+
+// MARK: - 1.51.0 §7 weekly report Pay Summary (owner decisions 15 Nov, Q1–Q4)
+
+const wr151Zone = 'Europe/London'
+const wr151Weekend = {
+  allHoursAtMultiplierMode: false,
+  allHoursMultiplier: 2,
+  definedWindowStart: '07:30',
+  definedWindowEnd: '14:00',
+  countsAsStandardHours: 8,
+  outsideWindowMultiplier: 1.5,
+  breakPaid: true,
+}
+const wr151Policy = {
+  ...R112.DEFAULT_PAYROLL_POLICY,
+  standardDayStart: '07:00',
+  standardDayEnd: '16:00',
+  unpaidBreakMinutes: 30,
+  breakWindowStart: '12:00',
+  breakWindowEnd: '12:30',
+  standardPaidHours: 8.5,
+  paidHoursDerived: true,
+  weekdayOutsideStandardMultiplier: 1.5,
+  saturday: { ...wr151Weekend },
+  sunday: { ...wr151Weekend, sameAsSaturday: false },
+} as never
+const wr151Admin = {
+  id: 'u-admin',
+  name: 'Test Admin',
+  role: 'Admin User',
+  ids: ['u-admin', 'op-admin'],
+  user: { id: 'u-admin', payBasis: 'day', dayRate: 240, employmentType: 'self_employed' },
+  hasLineManager: false,
+  paySubject: { id: 'u-admin', email: 'admin@x.com', role: 'admin', adminAccess: true, isActive: true },
+}
+const wr151History = [
+  { id: 'h1', userId: 'u-admin', dayRate: 250, payBasis: 'day', effectiveAt: '2026-01-01T00:00:00Z' },
+  { id: 'h2', userId: 'u-admin', dayRate: 240, payBasis: 'day', effectiveAt: '2026-11-14T00:00:00Z' },
+]
+const wr151Booking = (id: string, dayKey: string, start: string, end: string, otMultiplierOverride?: number) => ({
+  id,
+  personId: 'u-admin',
+  dayKey,
+  timeSlot: 'CUSTOM_HOURS',
+  workStartTime: start,
+  workEndTime: end,
+  status: 'Confirmed',
+  jobId: 'proj1',
+  jobNumber: 'C646',
+  jobName: '1 Carnaby Street',
+  locationKind: 'project',
+  ...(otMultiplierOverride != null ? { otMultiplierOverride } : {}),
+})
+const wr151Bookings = [
+  wr151Booking('b02', '2026-11-02', '07:00', '16:00'),
+  wr151Booking('b03', '2026-11-03', '07:00', '16:00'),
+  wr151Booking('b04', '2026-11-04', '07:00', '16:00'),
+  wr151Booking('b05', '2026-11-05', '07:00', '21:00'),
+  wr151Booking('b06', '2026-11-06', '07:00', '23:00'),
+  wr151Booking('b09', '2026-11-09', '07:00', '22:30', 2),
+  wr151Booking('b10', '2026-11-10', '07:00', '16:00'),
+  wr151Booking('b14', '2026-11-14', '07:30', '14:00'),
+  wr151Booking('b15', '2026-11-15', '07:30', '14:00'),
+]
+const wr151Range = { start: '2026-11-01', end: '2026-11-15' }
+const wr151Run = (input: Partial<Parameters<typeof R112.weeklyReportPayRows>[0]> = {}) =>
+  R112.weeklyReportPayRows({
+    people: [wr151Admin],
+    bookings: wr151Bookings,
+    organization: wr151Policy,
+    payRateHistory: wr151History,
+    range: wr151Range,
+    timeZone: wr151Zone,
+    currency: 'GBP',
+    ...input,
+  } as never)
+
+test('1.51.0 owner fortnight: rows per rate period and kind of hours, £3,141.76 unchanged', () => {
+  const result = wr151Run()
+  assert.equal(result.grandTotal, 3141.76)
+  const person = result.people[0]
+  assert.equal(person.personTotal, 3141.76)
+  const view = person.lines.map((row) => [row.dates, row.line, row.hours, row.days, row.rateText, row.pay])
+  assert.deepEqual(view, [
+    ['1–13 Nov', 'Weekday standard', 59.5, 7, '£250.00/day', 1750],
+    ['1–13 Nov', 'Weekday overtime ×1.5 (12h × 1.5 = 18h)', 18, 2.12, '£250.00/day', 529.41],
+    ['1–13 Nov', 'Weekday overtime ×2 (6.5h × 2 = 13h)', 13, 1.53, '£250.00/day', 382.35],
+    ['14–15 Nov', 'Saturday 14 Nov window (counts as a full day)', 8, 1, '£240.00/day', 240],
+    ['14–15 Nov', 'Sunday 15 Nov window (counts as a full day)', 8, 1, '£240.00/day', 240],
+  ])
+  // Never a multiplied day rate ("£375/day").
+  assert.ok(person.lines.every((row) => row.rate === 250 || row.rate === 240))
+  // The Project Breakdown's paid days tie to the Pay Summary days.
+  const paidDays = result.paidDays.reduce((sum, row) => sum + row.days, 0)
+  assert.equal(Math.round(paidDays * 100) / 100, Math.round(person.lines.reduce((sum, row) => sum + row.days, 0) * 100) / 100)
+})
+
+test('1.51.0 a rate change mid-period splits the rows by rate period', () => {
+  const history = [...wr151History.slice(0, 1), { id: 'h3', userId: 'u-admin', dayRate: 260, payBasis: 'day', effectiveAt: '2026-11-04T00:00:00Z' }]
+  const rows = wr151Run({ payRateHistory: history as never, bookings: wr151Bookings.filter((b) => ['b02', 'b03', 'b04'].includes(b.id)) }).people[0].lines
+  assert.deepEqual(rows.map((row) => [row.dates, row.line, row.rate, row.pay]), [
+    ['1–3 Nov', 'Weekday standard', 250, 500],
+    ['4–15 Nov', 'Weekday standard', 260, 260],
+  ])
+})
+
+test('1.51.0 weekend days name the day and date; outside-window and every-hour lines', () => {
+  const everyHourSunday = { ...(wr151Policy as Record<string, unknown>), sunday: { ...wr151Weekend, allHoursAtMultiplierMode: true, sameAsSaturday: false } }
+  const rows = wr151Run({
+    organization: everyHourSunday as never,
+    bookings: [wr151Booking('s1', '2026-11-14', '07:30', '16:00'), wr151Booking('s2', '2026-11-15', '07:30', '14:00')],
+  }).people[0].lines
+  assert.deepEqual(rows.map((row) => row.line), [
+    'Saturday 14 Nov window (counts as a full day)',
+    'Saturday 14 Nov outside the window ×1.5 (2h × 1.5 = 3h)',
+    'Sunday 15 Nov every hour ×2 (6.5h × 2 = 13h)',
+  ])
+  // Outside / every-hour hours divide by the weekday paid day (8.5h); the window by its own "counts as" (8h).
+  assert.deepEqual(rows.map((row) => row.days), [1, 0.35, 1.53])
+})
+
+test('1.51.0 hourly people: Hourly / Hourly overtime lines at the hourly rate', () => {
+  const hourly = { ...wr151Admin, user: { id: 'u-admin', payBasis: 'hourly', hourlyRate: 30, employmentType: 'self_employed' } }
+  const rows = wr151Run({ people: [hourly], payRateHistory: [], bookings: [wr151Booking('h1', '2026-11-05', '07:00', '21:00')] }).people[0].lines
+  assert.deepEqual(rows.map((row) => [row.line, row.hours, row.rateText, row.pay]), [
+    ['Hourly', 8.5, '£30.00/h', 255],
+    ['Hourly overtime ×1.5 (5h × 1.5 = 7.5h)', 7.5, '£30.00/h', 225],
+  ])
+})
+
+test('1.51.0 check line: signed sheet whose invoice differs from the live bookings is amber with both figures', () => {
+  const sheet = {
+    operativeSignedAt: new Date('2026-11-16T10:00:00Z'),
+    operativeSignedByName: 'Test Admin',
+    operativeSignatureImageBase64: 'x',
+    weeklyReportOverride: {
+      lines: [{ id: 'op-b02-normal', date: '2026-11-02', amount: 200, paidHours: 8.5, days: 1, isOvertime: false }],
+      priceWork: [],
+      expenses: [],
+    },
+  }
+  const sheets = [{ personId: 'u-admin', startDayKey: '2026-11-01', endDayKey: '2026-11-15', sheet, payrollLines: [] }]
+  const live = wr151Run({ bookings: wr151Bookings.slice(0, 1), sheets }).people[0]
+  assert.equal(live.check?.state, 'signed')
+  assert.equal(live.check?.tone, 'warn')
+  assert.equal(live.check?.label, 'Timesheet: Signed · Invoice £200.00 · report £250.00')
+  const changed = wr151Run({ bookings: wr151Bookings.slice(0, 1), sheets: [{ ...sheets[0], change: { reopened: true, waitingFor: 'person' } }] }).people[0]
+  assert.match(String(changed.check?.label), /changed since signed/)
+  // Matching invoice: green tick.
+  const matching = { ...sheet, weeklyReportOverride: { ...sheet.weeklyReportOverride, lines: [{ ...sheet.weeklyReportOverride.lines[0], amount: 250 }] } }
+  const ok = wr151Run({ bookings: wr151Bookings.slice(0, 1), sheets: [{ ...sheets[0], sheet: matching }] }).people[0]
+  assert.equal(ok.check?.label, 'Timesheet: Signed · Invoice £250.00 ✓')
+  // A run only partly inside the range: only its rows dated in the range, and the line says so.
+  const partial = wr151Run({ range: { start: '2026-11-01', end: '2026-11-08' }, bookings: wr151Bookings.slice(0, 1), sheets: [{ ...sheets[0], sheet: matching }] }).people[0]
+  assert.equal(partial.check?.label, 'Timesheet: Signed · Invoice rows in this period £250.00 ✓')
+  // No sheet → Not started.
+  assert.equal(wr151Run({ bookings: wr151Bookings.slice(0, 1) }).people[0].check?.label, 'Timesheet: Not started · no invoice yet')
+})
+
+test('1.51.0 a PAYE person has no pay rows and no check line', () => {
+  const paye = { ...wr151Admin, user: { id: 'u-admin', payBasis: 'day', dayRate: 240, employmentType: 'paye' } }
+  const result = wr151Run({ people: [paye] })
+  assert.equal(result.people.length, 0)
+  assert.equal(result.grandTotal, 0)
+  assert.equal(result.paidDays.length, 0)
+})
+
+test('1.51.0 pay hidden from a non-admin viewer (reportPayForViewer); the check line keeps the state only', () => {
+  const viewer = { id: 'someone', email: 'm@x.com', role: 'manager', manager: true, isActive: true }
+  const result = wr151Run({ viewer: viewer as never, roster: [viewer, wr151Admin.paySubject] as never, sheets: [{ personId: 'u-admin', startDayKey: '2026-11-01', endDayKey: '2026-11-15', sheet: null, payrollLines: [] }] })
+  assert.equal(result.hiddenPeople, 1)
+  assert.equal(result.grandTotal, 0)
+  assert.ok(result.people[0].lines.every((row) => row.payLabel === R112.PAY_HIDDEN_CELL_LABEL && row.rateText === R112.PAY_HIDDEN_CELL_LABEL))
+  assert.equal(result.people[0].check?.label, 'Timesheet: Not started')
+})
+
+test('1.51.0 Q4b annual leave matches every id without case; nobody → "Person not found (id …)"', () => {
+  const result = R112.weeklyReportLeaveRows({
+    records: [
+      { id: 'l1', userId: 'U-ADMIN', startDayKey: '2026-11-02', endDayKey: '2026-11-03', timeSlot: 'FULL DAY', status: 'approved' },
+      { id: 'l2', userId: 'admin@x.com', startDayKey: '2026-11-04', endDayKey: '2026-11-04', timeSlot: 'AM', status: 'approved' },
+      { id: 'l3', userId: 'gone-123', startDayKey: '2026-11-05', endDayKey: '2026-11-05', timeSlot: 'FULL DAY', status: 'approved' },
+    ],
+    people: [{ id: 'u-admin', name: 'Test Admin', role: 'Admin User', ids: ['u-admin'], email: 'admin@x.com' }],
+    range: wr151Range,
+    timeZone: wr151Zone,
+  })
+  assert.deepEqual(result.rows.map((row) => [row.person, row.role, row.days]), [
+    ['Test Admin', 'Admin User', 2.5],
+    ['Person not found (id gone-123)', '—', 1],
+  ])
+  assert.deepEqual(result.unmatched.map((row) => row.recordId), ['l3'])
+})
+
+test('1.51.0 Q4c subcontractor custom hours are hours worked ÷ the paid day, not half a day', () => {
+  const hours = R112.payrollHoursResult({ booking: { timeSlot: 'CUSTOM_HOURS', workStartTime: '07:00', workEndTime: '20:00' }, dayKey: '2026-11-11', policy: wr151Policy, timeZone: wr151Zone })
+  assert.equal(R112.subcontractorDayValue('CUSTOM_HOURS', { hours, standardDayHours: 8.5 }), 1.47)
+  assert.equal(R112.subcontractorDayValue('FULL DAY', { hours, standardDayHours: 8.5 }), 1)
+  assert.equal(R112.subcontractorDayValue('AM'), 0.5)
+  assert.equal(R112.subcontractorDayValue('CUSTOM_HOURS'), 0.5)
+})
+
+test('1.51.0 Q4d clash detail states facts only', () => {
+  assert.equal(
+    R112.weeklyReportClashDetail({ dayText: '10 Nov 2026', places: [{ label: '1 Carnaby Street', time: '07:00–16:00' }, { label: 'Office', time: '09:00–17:00' }] }),
+    'Booked in two places on 10 Nov 2026: 1 Carnaby Street 07:00–16:00; Office 09:00–17:00.'
+  )
+  assert.equal(R112.WEEKLY_REPORT_WARNING_OPEN, 'Open')
+})
+
+test('1.51.0 days inside an approved timesheet week are the signed lines, never re-priced', () => {
+  const weeks = [
+    {
+      userId: 'u-admin',
+      weekStart: '2026-11-01',
+      weekEnd: '2026-11-15',
+      override: {
+        lines: [
+          { id: 'op-b02-normal', bookingId: 'b02', date: '2026-11-02', paidHours: 8.5, days: 1, amount: 245, isOvertime: false, payBasis: 'day', locationKind: 'project', jobNumber: 'C646', projectName: '1 Carnaby Street' },
+          { id: 'op-b05-ot', bookingId: 'b05', date: '2026-11-05', paidHours: 5, days: 0.59, amount: 220.59, isOvertime: true, otMultiplier: 1.5, payBasis: 'day', details: 'OT 5h × 1.5 = 7.5h' },
+        ],
+        priceWork: [{ id: 'pw1', date: '2026-11-14', amount: 195, title: 'Price work' }],
+        expenses: [],
+      },
+    },
+  ]
+  const person = wr151Run({ timesheetWeeks: weeks as never }).people[0]
+  assert.deepEqual(person.lines.map((row) => [row.line, row.hours, row.rate, row.pay]), [
+    ['Weekday standard · signed timesheet', 8.5, 245, 245],
+    ['Weekday overtime ×1.5 (5h × 1.5 = 7.5h) · signed timesheet', 7.5, 250, 220.59],
+    ['Price work', 0, 0, 195],
+  ])
+  assert.equal(person.personTotal, 660.59)
+})

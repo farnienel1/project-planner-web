@@ -3,12 +3,11 @@
 import { useMemo, useState } from 'react'
 import type { OrganizationDetails, OrgInvoicingSettings } from '@/lib/settings/organizationSettings'
 import { formatInvoicingSubtitle } from '@/lib/settings/organizationSettings'
-import { canOpenWeeklyReport, formatMoney, organizationTimeZone, PAYRUN_SNAPSHOT_LABEL, type AcceptedClashRecord } from '@/lib/canonical'
+import { canOpenWeeklyReport, organizationTimeZone, PAYRUN_SNAPSHOT_LABEL, type AcceptedClashRecord } from '@/lib/canonical'
 import { useOrganizationDocument } from '@/lib/stores/organizationDocumentStore'
 import { PayrunSnapshot } from '@/components/weekly-report/PayrunSnapshot'
 import { addLondonDays, dateFromDayKey, dayKey, startOfLondonWeek } from '@/lib/ios-parity/londonTime'
 import { useAuthStore } from '@/lib/stores/authStore'
-import { PAY_HIDDEN_NOTE, reportPayForViewer } from '@/lib/canonical'
 import { isPlatformOwnerEmail } from '@/lib/platform/owner'
 import { hasAdminAccess } from '@/lib/permissions'
 import { loadAcceptedBookingClashes, unapproveBookingClash, unapproveBookingClashPairs } from '@/lib/warnings/acceptedClashStorage'
@@ -33,7 +32,8 @@ import {
   downloadWeeklyReportWorkbook,
   printWeeklyReport,
 } from '@/lib/weekly-report/weeklyReportGenerator'
-import { formatDays } from '@/lib/weekly-report/weeklyReportPayroll'
+import { WEEKLY_REPORT_SECTION_ICONS, weeklyReportSections } from '@/lib/weekly-report/weeklyReportSections'
+import type { WeeklyReportPaySheet } from '@/lib/canonical'
 import { loadWeeklyReportTimesheetFeed } from '@/lib/weekly-report/loadTimesheetFeed'
 import type { ApprovedTimesheetWeek } from '@/lib/weekly-report/timesheetFeed'
 import { emptyDayRateHistory, loadOperativeDayRateHistory, type OperativeDayRateHistoryCollection } from '@/lib/timesheets/dayRateHistoryStorage'
@@ -52,11 +52,16 @@ function ReportTable({
   headers,
   rows,
   empty,
+  tones = [],
+  note,
 }: {
   title: string
   headers: string[]
   rows: string[][]
   empty: string
+  /** 1.51.0: `warn` (amber check line), `good`, `total`. */
+  tones?: ReadonlyArray<string | null>
+  note?: string
 }) {
   return (
     <section className="card overflow-hidden">
@@ -77,7 +82,16 @@ function ReportTable({
             </thead>
             <tbody>
               {rows.map((row, index) => (
-                <tr key={index}>
+                <tr
+                  key={index}
+                  style={
+                    tones[index] === 'warn'
+                      ? { background: 'var(--amber-bg, #fef3c7)', color: 'var(--amber-ink, #92400e)', fontWeight: 600 }
+                      : tones[index] === 'total'
+                        ? { fontWeight: 700 }
+                        : undefined
+                  }
+                >
                   {row.map((cell, cellIndex) => (
                     <td key={cellIndex}>{cell}</td>
                   ))}
@@ -87,6 +101,7 @@ function ReportTable({
           </table>
         </div>
       )}
+      {note ? <p className="card-b muted small">{note}</p> : null}
     </section>
   )
 }
@@ -188,6 +203,8 @@ export function WeeklyReportScreen({
   const [generated, setGenerated] = useState(false)
   const [downloadOpen, setDownloadOpen] = useState(false)
   const [timesheetWeeks, setTimesheetWeeks] = useState<ApprovedTimesheetWeek[]>([])
+  // Rulebook 1.51.0 (Q2): each self-employed person's payment runs in the range, for the invoice check line.
+  const [timesheetSheets, setTimesheetSheets] = useState<WeeklyReportPaySheet[]>([])
   const [rateHistory, setRateHistory] = useState<OperativeDayRateHistoryCollection>(emptyDayRateHistory())
   // Clash approvals from both collections, read on Generate. Reports are built live and never stored.
   const [warningDecisions, setWarningDecisions] = useState<WeeklyReportWarningDecisions | null>(null)
@@ -232,8 +249,14 @@ export function WeeklyReportScreen({
       history: rateHistory,
       userIdAliases,
       warningDecisions,
+      timesheetSheets,
+      // Rulebook 1.32.0 §7 / §8: rates and pay only for viewers `canViewPersonPay` allows (inside `weeklyReportPayRows`);
+      // the screen and every export use this one report, and the grand total covers visible rows only.
+      viewer: viewer ? ({ ...viewer, isPlatformOwner: isPlatformOwnerEmail(viewer.email) } as never) : null,
     })
   }, [
+    timesheetSheets,
+    viewer,
     period,
     organizationName,
     companyLogoURL,
@@ -252,16 +275,7 @@ export function WeeklyReportScreen({
     rateHistory,
     warningDecisions,
   ])
-  // Rulebook 1.32.0 §7 / §8 (owner 5 Nov): each person's rate and pay only for viewers `canViewPersonPay` allows; the
-  // screen and every export (PDF, HTML, XLSX) use this one redacted report, and the grand total covers visible rows only.
-  const report = useMemo(() => {
-    if (!builtReport) return null
-    const shown = reportPayForViewer(builtReport.paySummary, {
-      viewer: viewer ? ({ ...viewer, isPlatformOwner: isPlatformOwnerEmail(viewer.email) } as never) : null,
-      roster: users as never,
-    })
-    return { ...builtReport, paySummary: shown.rows, grandTotal: shown.grandTotal, payHiddenPeople: shown.hiddenPeople }
-  }, [builtReport, viewer, users])
+  const report = builtReport
 
   const loadWarningDecisions = async (): Promise<WeeklyReportWarningDecisions | null> => {
     if (!organizationId) return null
@@ -303,7 +317,7 @@ export function WeeklyReportScreen({
       if (organizationId && invoicing) {
         const history = await loadOperativeDayRateHistory(organizationId).catch(() => emptyDayRateHistory())
         setRateHistory(history)
-        const weeks = await loadWeeklyReportTimesheetFeed({
+        const load = await loadWeeklyReportTimesheetFeed({
           organizationId,
           users,
           operatives,
@@ -326,9 +340,11 @@ export function WeeklyReportScreen({
             bookingCoverageCoversDay(bookingCoverage, organizationId, startDayKey) &&
             bookingCoverageCoversDay(managerCoverage, organizationId, startDayKey),
         })
-        setTimesheetWeeks(weeks)
+        setTimesheetWeeks(load.weeks)
+        setTimesheetSheets(load.sheets)
       } else {
         setTimesheetWeeks([])
+        setTimesheetSheets([])
       }
       setGenerated(true)
       setDownloadOpen(true)
@@ -378,7 +394,6 @@ export function WeeklyReportScreen({
   const lastWeekRange = `${formatOrgDay(lastWeekStart, timeZone)} – ${formatOrgDay(addLondonDays(lastWeekStart, 6, timeZone), timeZone, true)}`
   const thisWeekSelected = periodMode === 'week' && weekStart === thisWeekKey
   const lastWeekSelected = periodMode === 'week' && weekStart === lastWeekKey
-  const money = (amount: number) => formatMoney(amount, report?.currencyCode)
 
   return (
     <div className="stack" data-hue="rep">
@@ -658,25 +673,10 @@ export function WeeklyReportScreen({
 
       {generated && report ? (
         <>
-          <ReportTable
-            title="⚠ Warnings Summary"
-            headers={['Status', 'Priority', 'Type', 'Date', 'Description', 'Detail', 'For']}
-            rows={
-              report.warnings.length === 0
-                ? [['No warnings in period', '', '', '', '', '', '']]
-                : report.warnings.map((warning) => [
-                    warning.status,
-                    warning.priority,
-                    warning.type,
-                    warning.date,
-                    warning.description,
-                    warning.detail,
-                    warning.forPerson,
-                  ])
-            }
-            empty="No warnings in period"
-          />
-
+          {/* Rulebook 1.51.0 (Q4f): the same sections and rows as the PDF, HTML and Excel exports. */}
+          {weeklyReportSections(report).map((section, index) =>
+            section.key === 'approvedClashes' ? (
+              <div key={`${section.key}-${index}`}>
           <section className="card overflow-hidden">
             <div className="card-h">
               <h2 className="h2">✅ Approved clashes</h2>
@@ -722,152 +722,19 @@ export function WeeklyReportScreen({
               </div>
             )}
           </section>
-
-          {report.projectGroups.map((group) => (
-            <ReportTable
-              key={group.jobNumber}
-              title={`🏗 Project Breakdown — ${group.projectName}`}
-              headers={['Project', 'Job No.', 'Person', 'Trade', 'Role', 'Days']}
-              rows={[
-                ...group.rows.map((row) => [
-                  group.projectName,
-                  group.jobNumber,
-                  row.person,
-                  row.trade,
-                  row.role,
-                  formatDays(row.days),
-                ]),
-                ['', '', '', '', 'Project Total', formatDays(group.projectTotal)],
-              ]}
-              empty="No project bookings"
-            />
-          ))}
-
-          <div className="card pad text-center">
-            <b>All project work: {formatDays(report.allProjectWorkTotal)}</b>
-          </div>
-
-          <ReportTable
-            title="🔧 Sub Contractors"
-            headers={['Project', 'Job No.', 'Sub Contractor', 'People', 'Type', 'Time', 'Days']}
-            rows={
-              report.subContractorRows.length === 0
-                ? [['—', '—', '—', '—', '—', '—', '—']]
-                : report.subContractorRows.map((row) => [
-                    row.projectName,
-                    row.jobNumber,
-                    row.subContractor,
-                    row.people || '—',
-                    row.type,
-                    row.time,
-                    formatDays(row.days),
-                  ])
-            }
-            empty="No sub contractor bookings"
-          />
-
-          <ReportTable
-            title="🌴 Annual Leave"
-            headers={['Person', 'Role', 'Days', 'Type']}
-            rows={[
-              ...report.annualLeaveRows.map((row) => [row.person, row.role, formatDays(row.days), row.type]),
-              ...(report.annualLeaveRows.length > 0
-                ? [['', '', formatDays(report.annualLeaveTotal), 'Annual Leave Total']]
-                : []),
-            ]}
-            empty="No annual leave in this period"
-          />
-
-          <ReportTable
-            title="📅 Manager / Admin Additional Schedule"
-            headers={['Person', 'Role', 'Location', 'Time', 'Days']}
-            rows={[
-              ...report.managerScheduleRows.map((row) => [
-                row.person,
-                row.role,
-                row.location,
-                row.time,
-                formatDays(row.days),
-              ]),
-              ...(report.managerScheduleRows.length > 0
-                ? [['', '', '', 'Total', formatDays(report.managerScheduleTotal)]]
-                : []),
-            ]}
-            empty="No additional manager schedule"
-          />
-
-          <ReportTable
-            title="⏱️ PAYE overtime"
-            headers={['Person', 'Job No.', 'Job', 'Overtime (hours × rate)']}
-            rows={[
-              ...(report.payeOvertimeRows ?? []).map((row) => [row.person, row.jobNumber, row.jobName, row.hoursCell ?? `${row.overtimeHours}h`]),
-              ...((report.payeOvertimeRows ?? []).length > 0 ? [['', '', 'Total', `${report.payeOvertimeTotal}h`]] : []),
-            ]}
-            empty="No PAYE overtime in this period"
-          />
-
-          <ReportTable
-            title="🧱 Price Work"
-            headers={['Person', 'Title', 'Job No.', 'Date', 'Details', 'Amount']}
-            rows={
-              report.priceWorkRows.length === 0
-                ? []
-                : [
-                    ...report.priceWorkRows.map((row) => [
-                      row.person,
-                      row.title,
-                      row.jobNumber,
-                      row.date,
-                      row.details,
-                      money(row.amount),
-                    ]),
-                    ['', '', '', '', 'Price Work Total', money(report.priceWorkTotal)],
-                  ]
-            }
-            empty="No price work in this period"
-          />
-
-          <ReportTable
-            title="🧾 Expenses"
-            headers={['Person', 'Title', 'Job No.', 'Date', 'Details', 'Amount']}
-            rows={
-              report.expenseRows.length === 0
-                ? []
-                : [
-                    ...report.expenseRows.map((row) => [
-                      row.person,
-                      row.title,
-                      row.jobNumber,
-                      row.date,
-                      row.details,
-                      money(row.amount),
-                    ]),
-                    ['', '', '', '', 'Expenses Total', money(report.expenseTotal)],
-                  ]
-            }
-            empty="No expenses in this period"
-          />
-
-          <ReportTable
-            title="💷 Pay Summary"
-            headers={['Person', 'Role', 'Rate Type', 'Hours / Days', 'Rate', 'Pay']}
-            rows={[
-              ...report.paySummary.flatMap((person) => [
-                ...person.lines.map((line) => [
-                  person.person,
-                  person.role,
-                  line.rateType,
-                  line.quantityText ?? formatDays(line.days),
-                  line.rateText ?? money(line.rate),
-                  line.payLabel ?? money(line.pay),
-                ]),
-                ['', '', `${person.person} total`, '', '', person.personTotalLabel ?? money(person.personTotal)],
-              ]),
-              ['', '', '', '', 'Grand Total', money(report.grandTotal)],
-            ]}
-            empty="No pay data for this period"
-          />
-          {report.payHiddenPeople ? <p className="muted small">{PAY_HIDDEN_NOTE}</p> : null}
+              </div>
+            ) : (
+              <ReportTable
+                key={`${section.key}-${index}`}
+                title={`${WEEKLY_REPORT_SECTION_ICONS[section.key]} ${section.title}`}
+                headers={section.headers}
+                rows={section.rows}
+                empty={section.empty}
+                tones={section.tones}
+                note={section.note}
+              />
+            )
+          )}
         </>
       ) : (
           <div className="empty card pad">

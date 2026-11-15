@@ -208,11 +208,15 @@ test('1.49.0 owner reference fortnight: weekly report, timesheet totals and invo
   const person = report.paySummary.find((row) => row.person === 'Test Admin')
   assert.ok(person)
   assert.equal(person!.personTotal, 3141.76)
-  const weekendRow = person!.lines.find((line) => line.rate === 240)
-  assert.ok(weekendRow)
-  assert.equal(weekendRow!.days.toFixed(2), '2.00')
-  assert.equal(weekendRow!.pay, 480)
-  assert.match(String(weekendRow!.quantityText), /2\.00 days?/)
+  // Rulebook 1.51.0 (Q1): each weekend day is its own row, naming the day and date; 1 day each at £240.
+  const weekendRows = person!.lines.filter((line) => line.rate === 240)
+  assert.deepEqual(
+    weekendRows.map((line) => [line.dates, line.line, line.days, line.pay]),
+    [
+      ['14–15 Nov', 'Saturday 14 Nov window (counts as a full day)', 1, 240],
+      ['14–15 Nov', 'Sunday 15 Nov window (counts as a full day)', 1, 240],
+    ]
+  )
   // Today's code divided the 16 weekend hours by the weekday 8.5h: 1.88 days, £451.76.
   assert.ok(!person!.lines.some((line) => Math.abs(line.pay - 451.76) < 0.005))
 })
