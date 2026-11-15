@@ -11,47 +11,19 @@ import {
   qualificationCertificateUrl,
 } from '@/lib/canonical/operativeQualifications'
 import { QUALIFICATION_CERT_MAX_BYTES, uploadLimitError } from '@/lib/security/uploadLimits'
+import { uploadAcceptAttribute, uploadAllowedHint } from '@/lib/canonical/uploadPolicy'
 
 export { QUALIFICATION_CERT_MAX_BYTES }
 
-/** Broad enough for OS file pickers; the file is still validated as PDF/JPEG. */
-export const QUALIFICATION_CERT_ACCEPT =
-  '.pdf,.jpg,.jpeg,application/pdf,image/jpeg,image/jpg,image/pjpeg,image/*'
+/** Rulebook 1.50.0 §24: a PDF or a photo (JPEG, PNG, HEIC, WebP); the file is still checked by `uploadAllowed`. */
+export const QUALIFICATION_CERT_ACCEPT = uploadAcceptAttribute('qualification_certificate')
 
-export const QUALIFICATION_CERT_HINT = 'PDF or JPEG only · max 10MB'
+export const QUALIFICATION_CERT_HINT = uploadAllowedHint('qualification_certificate')
 
 type NamedFile = { name: string; type?: string; size: number }
 
-function fileExtension(name: string): string {
-  const parts = name.toLowerCase().split('.')
-  return parts.length > 1 ? parts[parts.length - 1] : ''
-}
-
-export function isQualificationCertificateJpeg(file: NamedFile): boolean {
-  const type = (file.type || '').toLowerCase()
-  const ext = fileExtension(file.name)
-  return (
-    type === 'image/jpeg' ||
-    type === 'image/jpg' ||
-    type === 'image/pjpeg' ||
-    ext === 'jpg' ||
-    ext === 'jpeg'
-  )
-}
-
-export function isQualificationCertificatePdf(file: NamedFile): boolean {
-  const type = (file.type || '').toLowerCase()
-  const ext = fileExtension(file.name)
-  return type === 'application/pdf' || ext === 'pdf'
-}
-
 export function qualificationCertificateFileError(file: NamedFile): string | null {
   return uploadLimitError(file, 'certificate')
-}
-
-export function qualificationCertificateContentType(file: NamedFile): string {
-  if (isQualificationCertificatePdf(file)) return 'application/pdf'
-  return 'image/jpeg'
 }
 
 export function mergeCertificateUrls(
@@ -158,7 +130,7 @@ export function formatCertificateSaveError(err: unknown): string {
     text.includes('permission-denied') ||
     text.includes('storage/unauthorized')
   ) {
-    return 'Could not upload the certificate. Storage permissions blocked this file. Stay signed in and try a PDF or JPEG under 10MB.'
+    return 'Could not upload the certificate. Storage permissions blocked this file. Stay signed in and try a PDF or photo under 10 MB.'
   }
   if (text.includes('storage/retry-limit-exceeded') || text.includes('network-request-failed')) {
     return 'Could not upload the certificate. Check your connection and try again.'

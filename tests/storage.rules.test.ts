@@ -259,37 +259,94 @@ test('operative cannot read a timesheet export PDF', async () => {
   await assertFails(getBytes(ref(authStorage(OP_A, 'op-a@test.com'), objectPath)))
 })
 
-test('variation evidence allows 10MB+1 (20MB exception) and denies 20MB+1', async () => {
+test('1.50.0 variation evidence caps at 10MB (was 20MB)', async () => {
   await assertSucceeds(
-    put(
-      OP_A,
-      'op-a@test.com',
-      `organizations/${ORG_A}/healthSafety/job-1/variationEvidence/shot.jpg`,
-      10 * MB + 1,
-      'image/jpeg'
-    )
+    put(OP_A, 'op-a@test.com', `organizations/${ORG_A}/healthSafety/job-1/variationEvidence/${OP_A}_1.jpg`, 10 * MB, 'image/jpeg')
   )
+  for (const objectPath of [
+    `organizations/${ORG_A}/healthSafety/job-1/variationEvidence/${OP_A}_2.jpg`,
+    `organizations/${ORG_A}/healthSafety/job-1/variations/${OP_A}_2.pdf`,
+    `organizations/${ORG_A}/variations/v1/${OP_A}_2.pdf`,
+  ]) {
+    await assertFails(put(OP_A, 'op-a@test.com', objectPath, 10 * MB + 1, objectPath.endsWith('.pdf') ? 'application/pdf' : 'image/jpeg'))
+  }
+})
+
+test('1.50.0 a task file as application/octet-stream is refused', async () => {
   await assertFails(
-    put(
-      OP_A,
-      'op-a@test.com',
-      `organizations/${ORG_A}/healthSafety/job-1/variationEvidence/huge.jpg`,
-      20 * MB + 1,
-      'image/jpeg'
-    )
+    put(OP_A, 'op-a@test.com', `organizations/${ORG_A}/tasks/task-1/op_1_drawing.bin`, 128, 'application/octet-stream')
   )
 })
 
-test('member can write a task file as application/octet-stream', async () => {
-  await assertSucceeds(
-    put(
-      OP_A,
-      'op-a@test.com',
-      `organizations/${ORG_A}/tasks/task-1/op_1_drawing.bin`,
-      128,
-      'application/octet-stream'
-    )
-  )
+// Rulebook 1.50.0 §24 (owner decisions 15 Nov): photos (JPEG, PNG, HEIC/HEIF, WebP) and PDF only, per path.
+const PATHS_150 = {
+  profile: { path: `organizations/${ORG_A}/userProfiles/${OP_A}/profile.jpg`, max: 2 * MB, pdf: false },
+  certificate: { path: `organizations/${ORG_A}/operatives/o1/qualifications/q1/certificates/${OP_A}_150`, max: 10 * MB, pdf: true },
+  variationWeb: { path: `organizations/${ORG_A}/healthSafety/job-1/variations/${OP_A}_150`, max: 10 * MB, pdf: true },
+  variationIos: { path: `organizations/${ORG_A}/healthSafety/job-1/variationEvidence/${OP_A}_150`, max: 10 * MB, pdf: true },
+  variationFallback: { path: `organizations/${ORG_A}/variations/v1/${OP_A}_150`, max: 10 * MB, pdf: true },
+  siteAudit: { path: `organizations/${ORG_A}/siteAudits/a1/images/${OP_A}_150`, max: 10 * MB, pdf: false },
+  task: { path: `organizations/${ORG_A}/tasks/t1/${OP_A}_150`, max: 10 * MB, pdf: true },
+  healthSafety: { path: `organizations/${ORG_A}/healthSafety/job-1/rams/${OP_A}_150`, max: 10 * MB, pdf: true },
+  claim: { path: `organizations/${ORG_A}/payeClaims/${CLAIM_OP_A}/${CLAIM_OP_A}_150`, max: 10 * MB, pdf: true, uid: CLAIM_OP_A },
+  personalAudit: { path: `organizations/${ORG_A}/personalSiteAudits/${CLAIM_OP_A}/A1/${CLAIM_OP_A}_150`, max: 10 * MB, pdf: false, uid: CLAIM_OP_A },
+} as const
+
+const REFUSED_150 = [
+  ['svg', 'image/svg+xml'],
+  ['xlsm', 'application/vnd.ms-excel.sheet.macroEnabled.12'],
+  ['xlsm2', 'application/vnd.ms-excel.sheet.macroenabled.12'],
+  ['bin', 'application/octet-stream'],
+  ['gif', 'image/gif'],
+  ['docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+  ['xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+  ['zip', 'application/zip'],
+  ['csv', 'text/csv'],
+  ['html', 'text/html'],
+  ['xml', 'application/xml'],
+] as const
+
+test('1.50.0 every path: a valid JPEG (and PDF where allowed) is accepted; SVG, xlsm, octet-stream, Office, ZIP, CSV and oversize are refused', async () => {
+  let n = 0
+  for (const [name, spec] of Object.entries(PATHS_150)) {
+    const uid = 'uid' in spec ? spec.uid : OP_A
+    const email = EMAIL[uid]
+    const at = (suffix: string) => (name === 'profile' ? spec.path : `${spec.path}_${(n += 1)}.${suffix}`)
+    await assertSucceeds(put(uid, email, at('jpg'), 256, 'image/jpeg'))
+    for (const type of ['image/png', 'image/heic', 'image/heif', 'image/webp']) {
+      await assertSucceeds(put(uid, email, at('img'), 256, type))
+    }
+    if (spec.pdf) await assertSucceeds(put(uid, email, at('pdf'), 256, 'application/pdf'))
+    else await assertFails(put(uid, email, at('pdf'), 256, 'application/pdf'))
+    for (const [suffix, type] of REFUSED_150) {
+      await assertFails(put(uid, email, at(suffix), 256, type))
+    }
+    await assertFails(put(uid, email, at('jpg'), spec.max + 1, 'image/jpeg'))
+  }
+})
+
+test('1.50.0 text/html is refused on every path (no hosted web pages)', async () => {
+  for (const [name, spec] of Object.entries(PATHS_150)) {
+    const uid = 'uid' in spec ? spec.uid : OP_A
+    const objectPath = name === 'profile' ? spec.path : `${spec.path}_html.html`
+    await assertFails(put(uid, EMAIL[uid], objectPath, 64, 'text/html'))
+    await assertFails(put(uid, EMAIL[uid], objectPath, 64, 'text/html; charset=utf-8'))
+  }
+})
+
+test('1.50.0 company logo and timesheet exports', async () => {
+  const logo = (suffix: string) => `organizations/${ORG_A}/branding/company_logo/${ADMIN_A}_${Date.now()}_${suffix}`
+  await assertSucceeds(put(ADMIN_A, EMAIL[ADMIN_A], logo('a.png'), 256, 'image/png'))
+  await assertSucceeds(put(ADMIN_A, EMAIL[ADMIN_A], logo('b.pdf'), 256, 'application/pdf'))
+  await assertFails(put(ADMIN_A, EMAIL[ADMIN_A], logo('c.svg'), 256, 'image/svg+xml'))
+  await assertFails(put(ADMIN_A, EMAIL[ADMIN_A], logo('d.bin'), 256, 'application/octet-stream'))
+  await assertFails(put(ADMIN_A, EMAIL[ADMIN_A], logo('f.html'), 256, 'text/html'))
+  await assertFails(put(ADMIN_A, EMAIL[ADMIN_A], logo('e.png'), 5 * MB + 1, 'image/png'))
+  const exportPath = (suffix: string) => `organizations/${ORG_A}/timesheetExports/${Math.floor(Date.now() / 1000)}_${suffix}`
+  await assertSucceeds(put(ADMIN_A, EMAIL[ADMIN_A], exportPath('a.pdf'), 256, 'application/pdf'))
+  await assertFails(put(ADMIN_A, EMAIL[ADMIN_A], exportPath('b.jpg'), 256, 'image/jpeg'))
+  await assertFails(put(ADMIN_A, EMAIL[ADMIN_A], exportPath('d.html'), 256, 'text/html'))
+  await assertFails(put(ADMIN_A, EMAIL[ADMIN_A], exportPath('c.pdf'), 10 * MB + 1, 'application/pdf'))
 })
 
 test('unknown prefix is denied even for an org member', async () => {

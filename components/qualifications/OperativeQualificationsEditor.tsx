@@ -14,7 +14,6 @@ import {
   formatCertificateSaveError,
   localDateInputValue,
   persistQualificationsThenCertificates,
-  qualificationCertificateContentType,
   qualificationCertificateFileError,
 } from '@/lib/qualifications/certificateUpload'
 import { QualificationLibraryBrowser } from './QualificationLibraryBrowser'
@@ -22,6 +21,7 @@ import { ReportFileLink } from '@/components/fileReports/ReportFileLink'
 import { settingsDraftIsDirty } from '@/lib/settings/settingsDirty'
 import { Chip } from '@/components/ui/page'
 import { ProfileIcon } from '@/components/users/profile-ui'
+import { safeExternalUrl } from '@/lib/canonical/uploadPolicy'
 
 type LinkedOperative = Operative
 
@@ -230,7 +230,7 @@ export function OperativeQualificationsEditor({
           const prepared = await prepareClientUpload(file, 'certificate')
           if (prepared.error) throw new Error(prepared.error)
           const path = qualificationCertificatePath(organizationId, draft.id, qualificationId, prepared.file.name)
-          return uploadFile(path, prepared.file, qualificationCertificateContentType(prepared.file))
+          return uploadFile(path, prepared.file, prepared.file.type)
         },
         saveCertificateUrls: (urls) => onSave({ ...draft, qualificationCertificateURLs: urls }),
       })
@@ -335,7 +335,7 @@ export function OperativeQualificationsEditor({
                       <span aria-hidden="true">✓</span> Certificate uploaded
                     </Chip>
                   ) : null}
-                  <a href={cert} target="_blank" rel="noreferrer" className={pv ? 'up-lk' : 'font-semibold text-[var(--blue)]'}>
+                  <a href={safeExternalUrl(cert) ?? undefined} target="_blank" rel="noreferrer" className={pv ? 'up-lk' : 'font-semibold text-[var(--blue)]'}>
                     View certificate
                   </a>
                   {showReportLink && draft?.id ? (
@@ -372,7 +372,7 @@ export function OperativeQualificationsEditor({
               )}
               {pending && cert ? (
                 <div className={pv ? 'up-qlinks' : 'mt-2 flex flex-wrap gap-3 text-sm'}>
-                  <a href={cert} target="_blank" rel="noreferrer" className={pv ? 'up-lk' : 'font-semibold text-[var(--blue)]'}>
+                  <a href={safeExternalUrl(cert) ?? undefined} target="_blank" rel="noreferrer" className={pv ? 'up-lk' : 'font-semibold text-[var(--blue)]'}>
                     View current certificate
                   </a>
                   <button

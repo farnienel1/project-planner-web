@@ -7,9 +7,10 @@ import {
   VARIATION_EVIDENCE_MAX_BYTES,
   WORK_FILE_MAX_BYTES,
   generatedStorageFileName,
-  isWorkFileType,
   uploadLimitError,
 } from './uploadLimits.ts'
+
+const MB = 1024 * 1024
 
 test('generated object names keep only the extension', () => {
   assert.equal(generatedStorageFileName('Invoice (final)!!!.pdf', 'uid1', 1700000000000), 'uid1_1700000000000.pdf')
@@ -17,44 +18,60 @@ test('generated object names keep only the extension', () => {
   assert.equal(generatedStorageFileName('noext', 'web', 2), 'web_2')
 })
 
-test('profile and logo caps match storage.rules', () => {
+test('caps match storage.rules (rulebook 1.50.0 UPLOAD_ALLOWED_TYPES)', () => {
+  assert.equal(PROFILE_PHOTO_MAX_BYTES, 2 * MB)
+  assert.equal(COMPANY_LOGO_MAX_BYTES, 5 * MB)
+  assert.equal(WORK_FILE_MAX_BYTES, 10 * MB)
+  assert.equal(QUALIFICATION_CERT_MAX_BYTES, 10 * MB)
+  assert.equal(VARIATION_EVIDENCE_MAX_BYTES, 10 * MB)
+})
+
+test('profile and logo', () => {
   assert.equal(uploadLimitError({ name: 'me.jpg', type: 'image/jpeg', size: PROFILE_PHOTO_MAX_BYTES }, 'profile'), null)
-  assert.equal(uploadLimitError({ name: 'me.jpg', type: 'image/jpeg', size: PROFILE_PHOTO_MAX_BYTES + 1 }, 'profile'), 'Image only · max 2MB')
-  assert.equal(uploadLimitError({ name: 'me.pdf', type: 'application/pdf', size: 1024 }, 'profile'), 'Image only · max 2MB')
+  assert.match(uploadLimitError({ name: 'me.jpg', type: 'image/jpeg', size: PROFILE_PHOTO_MAX_BYTES + 1 }, 'profile') ?? '', /too large/)
+  assert.match(uploadLimitError({ name: 'me.pdf', type: 'application/pdf', size: 1024 }, 'profile') ?? '', /cannot be uploaded/)
   assert.equal(uploadLimitError({ name: 'mark.png', type: 'image/png', size: COMPANY_LOGO_MAX_BYTES }, 'logo'), null)
   assert.equal(uploadLimitError({ name: 'mark.pdf', type: 'application/pdf', size: 1024 }, 'logo'), null)
-  assert.equal(
-    uploadLimitError({ name: 'notes.txt', type: 'text/plain', size: 1024 }, 'logo'),
-    'Logo must be a JPEG, PNG or PDF file.'
-  )
+  assert.match(uploadLimitError({ name: 'mark.svg', type: 'image/svg+xml', size: 1024 }, 'logo') ?? '', /cannot be uploaded/)
 })
 
-test('certificates stay PDF or JPEG at 10MB', () => {
+test('certificates take photos and PDFs at 10MB', () => {
   assert.equal(uploadLimitError({ name: 'card.pdf', type: 'application/pdf', size: QUALIFICATION_CERT_MAX_BYTES }, 'certificate'), null)
-  assert.equal(uploadLimitError({ name: 'card.png', type: 'image/png', size: 1024 }, 'certificate'), 'PDF or JPEG only · max 10MB')
+  assert.equal(uploadLimitError({ name: 'card.png', type: 'image/png', size: 1024 }, 'certificate'), null)
+  assert.match(uploadLimitError({ name: 'card.docx', type: '', size: 1024 }, 'certificate') ?? '', /cannot be uploaded/)
 })
 
-test('work files match storage.rules types including Excel', () => {
-  assert.equal(isWorkFileType({ name: 'talk.xlsx', type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), true)
-  assert.equal(isWorkFileType({ name: 'talk.xlsx', type: 'application/octet-stream' }), true)
-  assert.equal(isWorkFileType({ name: 'notes.txt', type: 'text/plain' }), false)
-  assert.equal(isWorkFileType({ name: 'notes.txt', type: 'application/octet-stream' }), false)
-  assert.equal(uploadLimitError({ name: 'talk.xlsx', type: '', size: WORK_FILE_MAX_BYTES }, 'work'), null)
-  assert.equal(
-    uploadLimitError({ name: 'talk.xlsx', type: '', size: WORK_FILE_MAX_BYTES + 1 }, 'work'),
-    'Use an image, PDF, Word, Excel, CSV or ZIP file up to 10MB.'
-  )
+test('work files: photos and PDFs only — no Office, macro, ZIP or SVG', () => {
+  assert.equal(uploadLimitError({ name: 'rams.pdf', type: 'application/pdf', size: WORK_FILE_MAX_BYTES }, 'work'), null)
+  for (const name of ['talk.xlsx', 'talk.xlsm', 'notes.docx', 'pack.zip', 'list.csv', 'logo.svg', 'anim.gif']) {
+    assert.equal(
+      uploadLimitError({ name, type: '', size: 1024 }, 'work'),
+      'This type of file cannot be uploaded. Use a photo (JPEG, PNG, HEIC or WebP) or a PDF, up to 10 MB.',
+      name
+    )
+  }
+  assert.match(uploadLimitError({ name: 'rams.pdf', type: '', size: WORK_FILE_MAX_BYTES + 1 }, 'work') ?? '', /too large/)
 })
 
-test('variation evidence uses the 20MB work-file cap', () => {
+test('variation evidence and claims cap at 10MB', () => {
   assert.equal(uploadLimitError({ name: 'shot.jpg', type: 'image/jpeg', size: VARIATION_EVIDENCE_MAX_BYTES }, 'variation'), null)
-  assert.equal(
-    uploadLimitError({ name: 'shot.jpg', type: 'image/jpeg', size: VARIATION_EVIDENCE_MAX_BYTES + 1 }, 'variation'),
-    'Use an image, PDF, Word, Excel, CSV or ZIP file up to 20MB.'
-  )
+  assert.match(uploadLimitError({ name: 'shot.jpg', type: 'image/jpeg', size: VARIATION_EVIDENCE_MAX_BYTES + 1 }, 'variation') ?? '', /too large/)
+  assert.equal(uploadLimitError({ name: 'receipt.heic', type: '', size: 1024 }, 'claim'), null)
 })
 
 test('site audits refuse documents', () => {
   assert.equal(uploadLimitError({ name: 'photo.png', type: 'image/png', size: 1024 }, 'siteAudit'), null)
-  assert.equal(uploadLimitError({ name: 'doc.pdf', type: 'application/pdf', size: 1024 }, 'siteAudit'), 'Photos only · max 10MB')
+  assert.equal(
+    uploadLimitError({ name: 'doc.pdf', type: 'application/pdf', size: 1024 }, 'siteAudit'),
+    'This type of file cannot be uploaded. Use a photo (JPEG, PNG, HEIC or WebP), up to 10 MB.'
+  )
+})
+
+test('uploadPickError leaves a large photo to the redraw, never a large PDF', async () => {
+  const { uploadPickError } = await import('./uploadLimits.ts')
+  assert.equal(uploadPickError({ name: 'big.jpg', type: 'image/jpeg', size: 30 * MB }, 'siteAudit'), null)
+  assert.match(uploadPickError({ name: 'big.pdf', type: 'application/pdf', size: 30 * MB }, 'work') ?? '', /too large/)
+  // Review L4: a photo over 40 MB is refused before it is redrawn.
+  assert.match(uploadPickError({ name: 'huge.jpg', type: 'image/jpeg', size: 41 * MB }, 'siteAudit') ?? '', /over 40 MB/)
+  assert.match(uploadPickError({ name: 'big.svg', type: 'image/svg+xml', size: 1 }, 'work') ?? '', /cannot be uploaded/)
 })

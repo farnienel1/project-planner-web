@@ -1,4 +1,5 @@
 import { fileReportStoragePath } from '@/lib/canonical'
+import { safeExternalUrl } from '@/lib/canonical/uploadPolicy'
 
 /**
  * How to open a stored file reference (health & safety documents, uploaded toolbox talks, deadline attachments).
@@ -14,13 +15,15 @@ export type StoredFileTarget = { kind: 'url'; url: string } | { kind: 'storage';
 export function storedFileTarget(fileRef: string | null | undefined): StoredFileTarget | null {
   const raw = typeof fileRef === 'string' ? fileRef.trim() : ''
   if (!raw) return null
-  if (/^https?:\/\//i.test(raw)) {
+  // Rulebook 1.50.0 §24: only an http(s) URL is ever opened as a link (`safeExternalUrl`).
+  const safe = safeExternalUrl(raw)
+  if (safe) {
     const firebaseObject = /\/v0\/b\/[^/]+\/o\/[^?#]+/.test(raw)
     if (firebaseObject && !/[?&]token=/.test(raw)) {
       const path = fileReportStoragePath(raw)
       if (path) return { kind: 'storage', path }
     }
-    return { kind: 'url', url: raw }
+    return { kind: 'url', url: safe }
   }
   const path = fileReportStoragePath(raw)
   return path ? { kind: 'storage', path } : null

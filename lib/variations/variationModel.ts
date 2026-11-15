@@ -5,6 +5,7 @@
  */
 
 import { VARIATION_EVIDENCE_MAX_BYTES, uploadLimitError } from '@/lib/security/uploadLimits'
+import { UPLOAD_ALLOWED_TYPES } from '@/lib/canonical/uploadPolicy'
 
 export const VARIATION_STATUSES = ['open', 'submitted', 'closed'] as const
 export type VariationStatus = (typeof VARIATION_STATUSES)[number]
@@ -174,8 +175,9 @@ export function mergedVariationTradeOptions(custom: string[]): string[] {
 
 export const CUSTOM_TRADE_OPTION = 'Custom trade…'
 
-export const EVIDENCE_ACCEPT = ['image/jpeg', 'image/png', 'image/heic', 'image/heif', 'application/pdf']
-export const EVIDENCE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'heic', 'heif', 'pdf']
+// Rulebook 1.50.0 §24: the variation evidence kind (photos and PDF, 10 MB) — `UPLOAD_ALLOWED_TYPES.variation_evidence`.
+export const EVIDENCE_ACCEPT = [...UPLOAD_ALLOWED_TYPES.variation_evidence.contentTypes]
+export const EVIDENCE_EXTENSIONS = [...UPLOAD_ALLOWED_TYPES.variation_evidence.extensions]
 export const EVIDENCE_MAX_FILES = 10
 export const EVIDENCE_MAX_BYTES = VARIATION_EVIDENCE_MAX_BYTES
 export const TRACKER_LOCK_MS = 5 * 60 * 1000

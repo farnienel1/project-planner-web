@@ -21,7 +21,7 @@ import { useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
 import { dayKeyInZone } from '@/lib/orgTime/zoneTime'
 import { newUuid } from '@/lib/firebase/firestoreUtils'
 import { prepareAuditPhoto } from '@/lib/siteAudit/prepareAuditPhoto'
-import { uploadLimitError } from '@/lib/security/uploadLimits'
+import { uploadLimitError, uploadPickError } from '@/lib/security/uploadLimits'
 import { SITE_AUDIT_TYPES } from '@/components/projects/features/featureUi'
 import { discardPersonalAuditPhotos, listenPersonalSiteAudits, savePersonalSiteAudit, storedFileBytes, storedFileUrl, uploadPersonalAuditPhoto } from '@/lib/payeClaims/payeClaimsData'
 
@@ -176,12 +176,23 @@ export function PersonalSiteAuditCreateFlow({ onClose }: { onClose: () => void }
     setError(null)
     const next: DraftItem[] = []
     for (const file of Array.from(list)) {
-      const limit = uploadLimitError(file, 'siteAudit')
+      const limit = uploadPickError(file, 'siteAudit')
       if (limit) {
         setError(limit)
         return
       }
-      const prepared = await prepareAuditPhoto(file)
+      let prepared: Awaited<ReturnType<typeof prepareAuditPhoto>>
+      try {
+        prepared = await prepareAuditPhoto(file)
+      } catch (error) {
+        setError(error instanceof Error ? error.message : 'This photo could not be added.')
+        return
+      }
+      const afterLimit = uploadLimitError(prepared.file, 'siteAudit')
+      if (afterLimit) {
+        setError(afterLimit)
+        return
+      }
       next.push({ id: newUuid(), title: '', location: '', comments: '', photo: prepared.file, previewUrl: prepared.previewUrl, takenAt: prepared.takenAt })
     }
     setItems((current) => [...current, ...next])

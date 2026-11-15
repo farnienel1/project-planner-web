@@ -23,6 +23,7 @@ import {
   siteAuditTypeTone,
 } from '@/components/projects/features/featureUi'
 import { ReportFileLink } from '@/components/fileReports/ReportFileLink'
+import { safeExternalUrl } from '@/lib/canonical/uploadPolicy'
 
 function SiteAuditHero({
   auditCount,
@@ -245,7 +246,7 @@ export function ProjectSiteAuditSection({ project }: { project: Project }) {
                   {item.annotations ? <p className="mt-1 whitespace-pre-wrap text-xs text-slate-500">{item.annotations}</p> : null}
                   {item.imageURL && (
                     <>
-                      <a href={item.imageURL} target="_blank" rel="noreferrer" className="mt-2 block">
+                      <a href={safeExternalUrl(item.imageURL) ?? undefined} target="_blank" rel="noreferrer" className="mt-2 block">
                         <img src={item.imageURL} alt="" className="max-h-40 rounded-lg object-cover" />
                       </a>
                       <ReportFileLink fileRef={item.imageURL} surface="site_audit" parentId={selectedAudit.id} className="mt-1 text-[11.5px] font-medium text-slate-400 hover:text-slate-600 hover:underline" />

@@ -10,7 +10,6 @@ import {
   certificateUrlForQualification,
   mergeCertificateUrls,
   persistQualificationsThenCertificates,
-  qualificationCertificateContentType,
   qualificationCertificateFileError,
   uploadPendingCertificates,
 } from './certificateUpload.ts'
@@ -28,18 +27,15 @@ test('accepts PDF and JPEG even when the picker leaves type empty or uses aliase
   assert.equal(qualificationCertificateFileError(file({ name: 'scan.jpeg', type: 'image/pjpeg' })), null)
 })
 
-test('rejects png, heic and oversized files with the iOS size/type copy', () => {
-  assert.equal(qualificationCertificateFileError(file({ name: 'shot.png', type: 'image/png' })), QUALIFICATION_CERT_HINT)
-  assert.equal(qualificationCertificateFileError(file({ name: 'shot.heic', type: 'image/heic' })), QUALIFICATION_CERT_HINT)
-  assert.equal(
-    qualificationCertificateFileError(file({ name: 'big.pdf', type: 'application/pdf', size: QUALIFICATION_CERT_MAX_BYTES + 1 })),
-    QUALIFICATION_CERT_HINT
+test('1.50.0: photos and PDFs up to 10 MB; Office files and oversized files refused', () => {
+  assert.equal(QUALIFICATION_CERT_HINT, 'Photo (JPEG, PNG, HEIC or WebP) or PDF · up to 10 MB')
+  assert.equal(qualificationCertificateFileError(file({ name: 'shot.png', type: 'image/png' })), null)
+  assert.equal(qualificationCertificateFileError(file({ name: 'shot.heic', type: 'image/heic' })), null)
+  assert.match(qualificationCertificateFileError(file({ name: 'card.docx' })) ?? '', /cannot be uploaded/)
+  assert.match(
+    qualificationCertificateFileError(file({ name: 'big.pdf', type: 'application/pdf', size: QUALIFICATION_CERT_MAX_BYTES + 1 })) ?? '',
+    /too large/
   )
-})
-
-test('content type used for Storage is PDF or JPEG', () => {
-  assert.equal(qualificationCertificateContentType(file({ name: 'a.pdf' })), 'application/pdf')
-  assert.equal(qualificationCertificateContentType(file({ name: 'a.jpg' })), 'image/jpeg')
 })
 
 test('uploadPendingCertificates merges new URLs and does not call upload when nothing is pending', async () => {
@@ -138,10 +134,10 @@ test('uploadPendingCertificates does not mark a URL when the file is invalid', a
   await assert.rejects(
     () =>
       uploadPendingCertificates({
-        pending: { q1: file({ name: 'notes.png', type: 'image/png' }) },
+        pending: { q1: file({ name: 'notes.docx', type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }) },
         uploadOne: async () => 'https://example.com/should-not-save',
       }),
-    /PDF or JPEG only/
+    /cannot be uploaded/
   )
 })
 

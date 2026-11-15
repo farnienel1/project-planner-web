@@ -341,7 +341,7 @@ export function HsFileButton({
   onChange,
   accept = '.pdf,image/*',
   label = 'Choose PDF or photo',
-  hint = 'PDF or image · up to 10MB',
+  hint = 'PDF or photo (JPEG, PNG, HEIC or WebP) · up to 10 MB',
 }: {
   file: File | null
   onChange: (file: File | null) => void

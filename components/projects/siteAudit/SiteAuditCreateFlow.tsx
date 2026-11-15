@@ -11,7 +11,7 @@ import { newUuid } from '@/lib/firebase/firestoreUtils'
 import { prepareAuditPhoto } from '@/lib/siteAudit/prepareAuditPhoto'
 import type { Project } from '@/types'
 import { isPlausibleDayKey } from '@/lib/security/boundedValue'
-import { uploadLimitError } from '@/lib/security/uploadLimits'
+import { uploadLimitError, uploadPickError } from '@/lib/security/uploadLimits'
 
 type DraftItem = {
   id: string
@@ -69,7 +69,7 @@ export function SiteAuditCreateFlow({ project, onClose, onCreated }: Props) {
           setError('Choose a photo. PDF and other documents cannot be added as an audit image.')
           return
         }
-        const sizeError = uploadLimitError(file, 'siteAudit')
+        const sizeError = uploadPickError(file, 'siteAudit')
         if (sizeError) {
           setError(sizeError)
           return
@@ -168,7 +168,7 @@ export function SiteAuditCreateFlow({ project, onClose, onCreated }: Props) {
         const item = items[index]
         setUploadLabel(`Uploading photo ${index + 1} of ${items.length}`)
         const path = siteAuditImagePath(organization.id, auditId, item.photo.name)
-        const imageURL = await uploadFile(path, item.photo, item.photo.type || 'image/jpeg')
+        const imageURL = await uploadFile(path, item.photo, item.photo.type)
         expanded.push({
           title: item.title.trim(),
           location: item.location.trim(),

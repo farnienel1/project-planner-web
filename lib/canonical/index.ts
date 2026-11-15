@@ -1730,6 +1730,43 @@ export {
 } from './storedFiles'
 export type { FileDeleteInput, FileDeletePermission, FileDeleteReason, StoredFileKind, StoredFilePath } from './storedFiles'
 
+// Rulebook 1.50.0 (§24): what may be uploaded per kind (photos, PDF, catalogue CSV), checked against the first bytes;
+// which stored or typed URLs may be links.
+export {
+  PHOTO_TOO_LARGE_TO_PREPARE_MESSAGE,
+  PHOTO_TOO_MANY_PIXELS_MESSAGE,
+  UPLOAD_DIMENSION_HEAD_BYTES,
+  UPLOAD_PHOTO_MAX_PIXELS,
+  UPLOAD_PHOTO_PICK_MAX_BYTES,
+  imageDimensionsFromHeader,
+  photoPrepareRefusal,
+  UPLOAD_ALLOWED_TYPES,
+  UPLOAD_CSV_CONTENT_TYPE,
+  UPLOAD_DEFAULT_MAX_BYTES,
+  UPLOAD_HEAD_BYTES,
+  UPLOAD_KINDS,
+  UPLOAD_PDF_CONTENT_TYPE,
+  UPLOAD_PHOTO_CONTENT_TYPES,
+  detectUploadContentType,
+  isUploadKind,
+  normalizeUploadContentType,
+  safeExternalUrl,
+  uploadAcceptAttribute,
+  uploadAllowed,
+  uploadAllowedHint,
+  uploadFileExtension,
+  uploadKindForStoragePath,
+  uploadRefusalMessage,
+} from './uploadPolicy'
+export type {
+  UploadAllowedInput,
+  UploadContentType,
+  UploadDecision,
+  UploadKind,
+  UploadKindPolicy,
+  UploadRefusalReason,
+} from './uploadPolicy'
+
 // Rulebook 1.29.0 (§4.5, §25): PAYE payday and payruns, PAYE overtime (lines, the red X, the cog, requests, reviews,
 // reports, the weekly report PAYE section and the overtime notices).
 export * from './payePayrun'

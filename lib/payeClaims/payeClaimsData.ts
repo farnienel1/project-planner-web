@@ -248,10 +248,18 @@ export async function uploadClaimEvidence(input: {
   auditId?: string | null
 }): Promise<PayeClaimEvidence> {
   const me = uid()
-  const extension = input.contentType === 'application/pdf' ? 'pdf' : fileExtension(input.name) || (input.contentType === 'image/png' ? 'png' : 'jpg')
+  // The object name follows the uploaded bytes: a redrawn photo is a JPEG (rulebook §24 object names).
+  const extension =
+    input.contentType === 'application/pdf'
+      ? 'pdf'
+      : input.contentType === 'image/jpeg'
+        ? 'jpg'
+        : input.contentType === 'image/png'
+          ? 'png'
+          : fileExtension(input.name) || 'jpg'
   const path = payeClaimEvidencePath({ organizationId: input.organizationId, userId: me, unixMs: Date.now(), extension })
   if (!path) throw new Error('You must be signed in to upload evidence.')
-  await uploadFile(path, input.file, input.contentType || 'application/octet-stream')
+  await uploadFile(path, input.file, input.contentType)
   return { path, name: input.name, kind: input.kind, contentType: input.contentType, auditId: input.auditId ?? null }
 }
 
@@ -437,7 +445,7 @@ export async function uploadPersonalAuditPhoto(organizationId: string, auditId: 
     extension: fileExtension(name) || 'jpg',
   })
   if (!path) throw new Error('You must be signed in to upload photos.')
-  await uploadFile(path, file, file.type || 'image/jpeg')
+  await uploadFile(path, file, file.type)
   return path
 }
 

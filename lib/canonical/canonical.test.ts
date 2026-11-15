@@ -16018,3 +16018,195 @@ test('1.49.0 round 3: removing the break changes nothing inside a set window; sh
   close(sat(early, '07:30', '14:00', false).totalPaidHours, 8)
   close(sat(early, '07:30', '14:00', true).totalPaidHours, 8.5)
 })
+
+// Rulebook 1.50.0 (§24, owner decisions 15 Nov): photos, PDF and the catalogue CSV only; checked against the bytes.
+const u150 = {
+  jpeg: [0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46],
+  png: [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00],
+  webp: [...'RIFF'].map((c) => c.charCodeAt(0)).concat([0x10, 0, 0, 0], [...'WEBPVP8 '].map((c) => c.charCodeAt(0))),
+  heic: [0, 0, 0, 0x18, ...[...'ftypheic'].map((c) => c.charCodeAt(0)), 0, 0, 0, 0],
+  heif: [0, 0, 0, 0x18, ...[...'ftypmif1'].map((c) => c.charCodeAt(0)), 0, 0, 0, 0],
+  pdf: [...'%PDF-1.7\n'].map((c) => c.charCodeAt(0)),
+  svg: [...'<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'].map((c) => c.charCodeAt(0)),
+  zip: [0x50, 0x4b, 0x03, 0x04, 0x14, 0x00, 0x06, 0x00],
+  ole: [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1],
+  gif: [...'GIF89a'].map((c) => c.charCodeAt(0)),
+  csv: [...'Material,Unit,Price\nCement,bag,5.20\n'].map((c) => c.charCodeAt(0)),
+  junk: [0x00, 0x01, 0x02, 0x03, 0x04, 0x05],
+}
+
+test('1.50.0 detectUploadContentType reads magic numbers', () => {
+  assert.equal(R112.detectUploadContentType(u150.jpeg), 'image/jpeg')
+  assert.equal(R112.detectUploadContentType(new Uint8Array(u150.png)), 'image/png')
+  assert.equal(R112.detectUploadContentType(u150.webp), 'image/webp')
+  assert.equal(R112.detectUploadContentType(u150.heic), 'image/heic')
+  assert.equal(R112.detectUploadContentType(u150.heif), 'image/heif')
+  assert.equal(R112.detectUploadContentType(u150.pdf), 'application/pdf')
+  assert.equal(R112.detectUploadContentType([0x20, 0x0a, ...u150.pdf]), 'application/pdf')
+  assert.equal(R112.detectUploadContentType(u150.svg), 'image/svg+xml')
+  assert.equal(R112.detectUploadContentType(u150.zip), 'application/zip')
+  assert.equal(R112.detectUploadContentType(u150.ole), 'application/x-ole-storage')
+  assert.equal(R112.detectUploadContentType(u150.gif), 'image/gif')
+  assert.equal(R112.detectUploadContentType(u150.csv), null)
+  assert.equal(R112.detectUploadContentType(u150.csv, 'material_catalogue_import'), 'text/csv')
+  assert.equal(R112.detectUploadContentType(u150.junk), null)
+  assert.equal(R112.detectUploadContentType(null), null)
+  assert.equal(R112.detectUploadContentType([]), null)
+})
+
+test('1.50.0 uploadAllowed: per kind types, caps and the content check', () => {
+  const MB = 1024 * 1024
+  const ok = (input: Parameters<typeof R112.uploadAllowed>[0]) => R112.uploadAllowed(input)
+  // Photos and PDFs where the kind takes them, written with the detected type.
+  for (const kind of ['task_attachment', 'health_safety', 'variation_evidence', 'paye_claim_evidence', 'qualification_certificate'] as const) {
+    const pdf = ok({ kind, fileName: 'RAMS.pdf', contentType: 'application/pdf', sizeBytes: 2 * MB, headBytes: u150.pdf })
+    assert.equal(pdf.allowed, true, kind)
+    assert.equal(pdf.contentType, 'application/pdf')
+    const jpg = ok({ kind, fileName: 'site.JPG', contentType: 'image/jpg', sizeBytes: MB, headBytes: u150.jpeg })
+    assert.equal(jpg.allowed, true, kind)
+    assert.equal(jpg.contentType, 'image/jpeg')
+  }
+  // Octet-stream or blank claimed type: judged by the extension and the bytes, written with the real type.
+  const octet = ok({ kind: 'task_attachment', fileName: 'scan.pdf', contentType: 'application/octet-stream', sizeBytes: 100, headBytes: u150.pdf })
+  assert.equal(octet.allowed, true)
+  assert.equal(octet.contentType, 'application/pdf')
+  const heic = ok({ kind: 'site_audit_photo', fileName: 'IMG_0001.HEIC', contentType: '', sizeBytes: 3 * MB, headBytes: u150.heif })
+  assert.equal(heic.allowed, true)
+  assert.equal(heic.contentType, 'image/heif')
+  assert.equal(ok({ kind: 'site_audit_photo', fileName: 'photo', contentType: 'image/heic', sizeBytes: 100, headBytes: u150.heic }).contentType, 'image/heic')
+  assert.equal(ok({ kind: 'personal_site_audit', fileName: 'a.webp', contentType: 'image/webp', sizeBytes: 100, headBytes: u150.webp }).allowed, true)
+  // Never SVG, GIF, macro workbooks, Word, Excel, ZIP — by name, by claimed type, or by bytes.
+  const svg = ok({ kind: 'task_attachment', fileName: 'logo.svg', contentType: 'image/svg+xml', sizeBytes: 100, headBytes: u150.svg })
+  assert.equal(svg.allowed, false)
+  assert.equal(svg.reason, 'type_not_allowed')
+  assert.equal(svg.message, 'This type of file cannot be uploaded. Use a photo (JPEG, PNG, HEIC or WebP) or a PDF, up to 10 MB.')
+  assert.equal(ok({ kind: 'company_logo', fileName: 'mark.svg', contentType: 'image/svg+xml', sizeBytes: 100 }).reason, 'type_not_allowed')
+  assert.equal(
+    ok({ kind: 'health_safety', fileName: 'RAMS.xlsm', contentType: 'application/vnd.ms-excel.sheet.macroEnabled.12', sizeBytes: 100, headBytes: u150.zip }).reason,
+    'type_not_allowed'
+  )
+  assert.equal(ok({ kind: 'variation_evidence', fileName: 'notes.docx', contentType: '', sizeBytes: 100, headBytes: u150.zip }).reason, 'type_not_allowed')
+  assert.equal(ok({ kind: 'task_attachment', fileName: 'anim.gif', contentType: 'image/gif', sizeBytes: 100, headBytes: u150.gif }).reason, 'type_not_allowed')
+  // Disguised: an SVG or a workbook named .jpg / .pdf is refused on its bytes.
+  const disguised = ok({ kind: 'site_audit_photo', fileName: 'photo.jpg', contentType: 'image/jpeg', sizeBytes: 100, headBytes: u150.svg })
+  assert.equal(disguised.reason, 'content_mismatch')
+  assert.equal(ok({ kind: 'paye_claim_evidence', fileName: 'receipt.pdf', contentType: 'application/pdf', sizeBytes: 100, headBytes: u150.zip }).reason, 'content_mismatch')
+  assert.equal(ok({ kind: 'paye_claim_evidence', fileName: 'receipt.png', contentType: 'image/png', sizeBytes: 100, headBytes: u150.jpeg }).reason, 'content_mismatch')
+  // A nameless octet-stream upload of a workbook is a type refusal, unknown bytes are unrecognised.
+  assert.equal(ok({ kind: 'task_attachment', fileName: '', contentType: 'application/octet-stream', sizeBytes: 100, headBytes: u150.ole }).reason, 'type_not_allowed')
+  assert.equal(ok({ kind: 'task_attachment', fileName: '', contentType: 'application/octet-stream', sizeBytes: 100, headBytes: u150.junk }).reason, 'content_unknown')
+  // Photos-only kinds refuse a PDF.
+  assert.equal(ok({ kind: 'site_audit_photo', fileName: 'a.pdf', contentType: 'application/pdf', sizeBytes: 100, headBytes: u150.pdf }).reason, 'type_not_allowed')
+  assert.equal(ok({ kind: 'profile_photo', fileName: 'me.pdf', contentType: 'application/pdf', sizeBytes: 100 }).reason, 'type_not_allowed')
+  // Timesheet exports: PDF only.
+  assert.equal(ok({ kind: 'timesheet_export', fileName: '1700000000_sheet.pdf', contentType: 'application/pdf', sizeBytes: 100, headBytes: u150.pdf }).allowed, true)
+  assert.equal(ok({ kind: 'timesheet_export', fileName: 'sheet.jpg', contentType: 'image/jpeg', sizeBytes: 100, headBytes: u150.jpeg }).reason, 'type_not_allowed')
+  // Caps: 2 MB profile, 5 MB logo, 10 MB the rest (variations 10 MB from 1.50.0), 2 MB catalogue CSV (1.48.0).
+  assert.equal(ok({ kind: 'profile_photo', fileName: 'me.jpg', contentType: 'image/jpeg', sizeBytes: 2 * MB, headBytes: u150.jpeg }).allowed, true)
+  assert.equal(ok({ kind: 'profile_photo', fileName: 'me.jpg', contentType: 'image/jpeg', sizeBytes: 2 * MB + 1, headBytes: u150.jpeg }).reason, 'too_large')
+  assert.equal(ok({ kind: 'company_logo', fileName: 'm.png', contentType: 'image/png', sizeBytes: 5 * MB + 1 }).reason, 'too_large')
+  assert.equal(ok({ kind: 'variation_evidence', fileName: 'v.pdf', contentType: 'application/pdf', sizeBytes: 10 * MB + 1 }).reason, 'too_large')
+  assert.equal(
+    ok({ kind: 'variation_evidence', fileName: 'v.pdf', contentType: 'application/pdf', sizeBytes: 10 * MB + 1 }).message,
+    'This file is too large. Use a photo (JPEG, PNG, HEIC or WebP) or a PDF, up to 10 MB.'
+  )
+  assert.equal(ok({ kind: 'task_attachment', fileName: 'a.pdf', sizeBytes: 0 }).reason, 'empty')
+  assert.equal(ok({ kind: 'nope', fileName: 'a.pdf', sizeBytes: 10 }).reason, 'unknown_kind')
+  // Catalogue import: CSV only (Windows browsers report .csv as application/vnd.ms-excel).
+  assert.equal(ok({ kind: 'material_catalogue_import', fileName: 'cat.csv', contentType: 'application/vnd.ms-excel', sizeBytes: 100, headBytes: u150.csv }).contentType, 'text/csv')
+  assert.equal(ok({ kind: 'material_catalogue_import', fileName: 'cat.xlsx', contentType: '', sizeBytes: 100, headBytes: u150.zip }).reason, 'type_not_allowed')
+  assert.equal(ok({ kind: 'material_catalogue_import', fileName: 'cat.csv', contentType: 'text/csv', sizeBytes: 100, headBytes: u150.zip }).reason, 'content_mismatch')
+  assert.equal(ok({ kind: 'material_catalogue_import', fileName: 'cat.csv', contentType: 'text/csv', sizeBytes: 2 * 1024 * 1024 + 1 }).reason, 'too_large')
+  // Pick-time check without bytes: names and types only.
+  const pick = ok({ kind: 'task_attachment', fileName: 'RAMS.pdf', contentType: 'application/pdf', sizeBytes: 100 })
+  assert.equal(pick.allowed, true)
+  assert.equal(pick.contentChecked, false)
+  assert.equal(ok({ kind: 'task_attachment', fileName: 'RAMS.docx', sizeBytes: 100 }).reason, 'type_not_allowed')
+})
+
+test('1.50.0 upload policy table, hints and storage kinds', () => {
+  for (const kind of R112.UPLOAD_KINDS) {
+    const policy = R112.UPLOAD_ALLOWED_TYPES[kind]
+    assert.ok(policy, kind)
+    for (const type of policy.contentTypes) {
+      assert.ok(!['image/svg+xml', 'application/octet-stream', 'application/vnd.ms-excel.sheet.macroenabled.12', 'image/gif'].includes(type))
+    }
+  }
+  assert.equal(R112.uploadAllowedHint('task_attachment'), 'Photo (JPEG, PNG, HEIC or WebP) or PDF · up to 10 MB')
+  assert.equal(R112.uploadAllowedHint('profile_photo'), 'Photo (JPEG, PNG, HEIC or WebP) · up to 2 MB')
+  assert.ok(R112.uploadAcceptAttribute('site_audit_photo').includes('.heic'))
+  assert.ok(!R112.uploadAcceptAttribute('site_audit_photo').includes('pdf'))
+  assert.equal(R112.uploadKindForStoragePath('organizations/o1/tasks/t1/u1_1700000000000.pdf'), 'task_attachment')
+  assert.equal(R112.uploadKindForStoragePath('organizations/o1/healthSafety/p1/variations/u1_1.jpg'), 'variation_evidence')
+  assert.equal(R112.uploadKindForStoragePath('elsewhere/x.pdf'), null)
+  assert.equal(R112.normalizeUploadContentType('image/pjpeg'), 'image/jpeg')
+  assert.equal(R112.normalizeUploadContentType('application/octet-stream'), '')
+  assert.equal(R112.uploadFileExtension('folder/My.File.PDF'), 'pdf')
+  assert.equal(R112.uploadFileExtension('.hidden'), '')
+})
+
+test('1.50.0 safeExternalUrl: https links; http only to the emulator or a supplier website', () => {
+  const url = 'https://firebasestorage.googleapis.com/v0/b/x/o/a.pdf?alt=media&token=t'
+  assert.equal(R112.safeExternalUrl(url), url)
+  assert.equal(R112.safeExternalUrl('  http://localhost:9199/v0/b/x/o/a.jpg '), 'http://localhost:9199/v0/b/x/o/a.jpg')
+  assert.equal(R112.safeExternalUrl('http://127.0.0.1:9199/v0/b/x/o/a.jpg'), 'http://127.0.0.1:9199/v0/b/x/o/a.jpg')
+  assert.equal(R112.safeExternalUrl('http://[::1]:9199/x'), 'http://[::1]:9199/x')
+  assert.equal(R112.safeExternalUrl('HTTPS://Supplier.example/item'), 'HTTPS://Supplier.example/item')
+  // Plain http elsewhere: only for a material supplier website.
+  assert.equal(R112.safeExternalUrl('http://supplier.example/item'), null)
+  assert.equal(R112.safeExternalUrl('http://localhost.evil.example/x'), null)
+  assert.equal(R112.safeExternalUrl('http://user@localhost/x'), 'http://user@localhost/x')
+  assert.equal(R112.safeExternalUrl('http://supplier.example/item', { allowHttp: true }), 'http://supplier.example/item')
+  assert.equal(R112.safeExternalUrl('javascript:alert(1)', { allowHttp: true }), null)
+  for (const bad of [
+    'javascript:alert(1)',
+    ' JavaScript:alert(document.cookie)',
+    'java\nscript:alert(1)',
+    '\u0001javascript:alert(1)',
+    'data:text/html,<script>alert(1)</script>',
+    'vbscript:msgbox(1)',
+    'file:///etc/passwd',
+    'blob:https://app/x',
+    '//evil.example/x',
+    'www.example.com',
+    'https://',
+    'https:///path',
+    '',
+    null,
+    42,
+  ]) {
+    assert.equal(R112.safeExternalUrl(bad), null, String(bad))
+  }
+})
+
+test('1.50.0 review L2: an HTML / SVG file with %PDF- inside is markup, never a PDF', () => {
+  const enc = (t: string) => [...t].map((c) => c.charCodeAt(0))
+  assert.equal(R112.detectUploadContentType(enc('<html><script>alert(1)</script>%PDF-1.4\n')), 'text/html')
+  assert.equal(R112.detectUploadContentType(enc('  \n<svg xmlns="http://www.w3.org/2000/svg"/>%PDF-1.4')), 'image/svg+xml')
+  assert.equal(R112.detectUploadContentType(enc('junk<b>%PDF-1.4')), null)
+  assert.equal(R112.detectUploadContentType([0xef, 0xbb, 0xbf, ...enc('%PDF-1.7')]), 'application/pdf')
+  assert.equal(R112.detectUploadContentType([0x0a, 0x0d, 0x20, ...enc('%PDF-1.7\n<</Type/Catalog>>')]), 'application/pdf')
+  assert.equal(R112.detectUploadContentType([0x00, 0x01, 0x9c, ...enc('%PDF-1.7')]), 'application/pdf')
+  const polyglot = R112.uploadAllowed({ kind: 'task_attachment', fileName: 'a.pdf', contentType: 'application/pdf', sizeBytes: 100, headBytes: enc('<html>%PDF-1.4') })
+  assert.equal(polyglot.reason, 'content_mismatch')
+})
+
+test('1.50.0 review L4: photo size from the header, refused over 40 MB or 50 megapixels', () => {
+  const MB = 1024 * 1024
+  const png = (w: number, h: number) => [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, ...[...'IHDR'].map((c) => c.charCodeAt(0)), (w >>> 24) & 255, (w >>> 16) & 255, (w >>> 8) & 255, w & 255, (h >>> 24) & 255, (h >>> 16) & 255, (h >>> 8) & 255, h & 255]
+  assert.deepEqual(R112.imageDimensionsFromHeader(png(4032, 3024)), { width: 4032, height: 3024 })
+  // JPEG: SOI, an APP1 block, then SOF0 (height 3000, width 4000).
+  const jpeg = [0xff, 0xd8, 0xff, 0xe1, 0x00, 0x08, 1, 2, 3, 4, 5, 6, 0xff, 0xc0, 0x00, 0x11, 0x08, 0x0b, 0xb8, 0x0f, 0xa0, 3, 1, 0x22, 0]
+  assert.deepEqual(R112.imageDimensionsFromHeader(jpeg), { width: 4000, height: 3000 })
+  const vp8x = [...'RIFF'].map((c) => c.charCodeAt(0)).concat([0, 0, 0, 0], [...'WEBPVP8X'].map((c) => c.charCodeAt(0)), [10, 0, 0, 0], [0, 0, 0, 0], [0x9f, 0x0f, 0x00], [0xb7, 0x0b, 0x00])
+  assert.deepEqual(R112.imageDimensionsFromHeader(vp8x), { width: 4000, height: 3000 })
+  const heic = [0, 0, 0, 0x18, ...[...'ftypheic'].map((c) => c.charCodeAt(0)), 0, 0, 0, 0, 0, 0, 0, 0x14, ...[...'ispe'].map((c) => c.charCodeAt(0)), 0, 0, 0, 0, 0, 0, 0x0f, 0xc0, 0, 0, 0x0b, 0xd0]
+  assert.deepEqual(R112.imageDimensionsFromHeader(heic), { width: 4032, height: 3024 })
+  assert.equal(R112.imageDimensionsFromHeader([1, 2, 3]), null)
+  // A 10 MB PNG declaring 50,000 × 50,000 pixels is refused before it is decoded.
+  const bomb = R112.imageDimensionsFromHeader(png(50000, 50000))
+  assert.equal(R112.photoPrepareRefusal({ sizeBytes: 10 * MB, ...bomb })?.message, R112.PHOTO_TOO_MANY_PIXELS_MESSAGE)
+  assert.equal(R112.photoPrepareRefusal({ sizeBytes: 41 * MB })?.reason, 'photo_too_large')
+  assert.equal(R112.photoPrepareRefusal({ sizeBytes: 12 * MB, width: 8000, height: 6000 }), null)
+  assert.equal(R112.photoPrepareRefusal({ sizeBytes: 12 * MB }), null)
+})

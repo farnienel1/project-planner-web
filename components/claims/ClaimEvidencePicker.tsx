@@ -31,7 +31,7 @@ import {
   uploadClaimEvidence,
 } from '@/lib/payeClaims/payeClaimsData'
 import { prepareAuditPhoto } from '@/lib/siteAudit/prepareAuditPhoto'
-import { uploadLimitError } from '@/lib/security/uploadLimits'
+import { uploadLimitError, uploadPickError } from '@/lib/security/uploadLimits'
 import { loadExportModule } from '@/lib/pdf/loadExportModule'
 
 const buildPersonalSiteAuditPdf: typeof import('@/lib/payeClaims/payeClaimReportPdf').buildPersonalSiteAuditPdf = (...args) =>
@@ -161,7 +161,7 @@ export function ClaimEvidencePicker({
         onError(photosOnly ? 'Choose a photo.' : 'Evidence must be a photo or a PDF.')
         return
       }
-      const limit = uploadLimitError(original, isImage ? 'siteAudit' : 'work')
+      const limit = uploadPickError(original, 'claim')
       if (limit) {
         onError(limit)
         return
@@ -171,8 +171,18 @@ export function ClaimEvidencePicker({
         try {
           // Every photo becomes a JPEG so the report and invoice can draw it full size.
           file = (await prepareAuditPhoto(original)).file
-        } catch {
+        } catch (error) {
+          // Too large to prepare (over 40 MB or 50 megapixels): say so; anything else keeps the original.
+          if (error instanceof Error && error.name === 'UploadRefusedError') {
+            onError(error.message)
+            return
+          }
           file = original
+        }
+        const afterLimit = uploadLimitError(file, 'claim')
+        if (afterLimit) {
+          onError(afterLimit)
+          return
         }
       }
       const kind: PayeClaimEvidenceKind = isImage ? 'photo' : 'file'
@@ -186,7 +196,7 @@ export function ClaimEvidencePicker({
             organizationId,
             file,
             name: original.name,
-            contentType: isPdf ? 'application/pdf' : file.type || 'image/jpeg',
+            contentType: isPdf ? 'application/pdf' : file.type,
             kind,
           }),
       })

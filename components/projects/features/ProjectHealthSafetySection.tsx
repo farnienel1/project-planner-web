@@ -334,7 +334,7 @@ export function ProjectHealthSafetySection({
         fileURL = await uploadHsFile(
           path,
           prepared.file,
-          prepared.file.type || 'application/pdf'
+          prepared.file.type
         )
       }
       await addToolboxTalk(organization.id, project.id, isSmallWorks, {
@@ -403,7 +403,7 @@ export function ProjectHealthSafetySection({
         const prepared = await prepareClientUpload(ramsFile, 'work')
         if (prepared.error) throw new Error(prepared.error)
         const path = healthSafetyFilePath(organization.id, project.id, 'rams', prepared.file.name)
-        fileURL = await uploadHsFile(path, prepared.file, prepared.file.type || 'application/pdf')
+        fileURL = await uploadHsFile(path, prepared.file, prepared.file.type)
       }
       const version = nextRamsVersion(data.ramsDocuments, ramsTitle)
       await save(organization.id, project.id, isSmallWorks, {
@@ -444,7 +444,7 @@ export function ProjectHealthSafetySection({
         const prepared = await prepareClientUpload(otherFile, 'work')
         if (prepared.error) throw new Error(prepared.error)
         const path = healthSafetyFilePath(organization.id, project.id, 'other', prepared.file.name)
-        fileURL = await uploadHsFile(path, prepared.file, prepared.file.type || 'application/pdf')
+        fileURL = await uploadHsFile(path, prepared.file, prepared.file.type)
       }
       await save(organization.id, project.id, isSmallWorks, {
         ...data,
@@ -1190,7 +1190,11 @@ export function ProjectHealthSafetySection({
             <HsFileButton
               file={uploadTalkFile}
               onChange={(file) => {
-                setUploadTalkFile(file)
+                // Rulebook 1.50.0 §24 (owner decision 15 Nov): only photos and PDFs are stored. A filled-in blank talk
+                // Excel is read here to fill the fields above and is never uploaded; attach its PDF or a photo to store it.
+                const isWorkbook = !!file && /\.xlsx?$/i.test(file.name)
+                setUploadTalkFile(isWorkbook ? null : file)
+                setUploadError(isWorkbook ? 'The Excel file filled in the fields above. It is not stored — choose a PDF or photo of the talk to attach one.' : null)
                 if (!file) return
                 void readBlankTalkFile(file).then((parsed) => {
                   if (!parsed) return
@@ -1206,8 +1210,8 @@ export function ProjectHealthSafetySection({
                 })
               }}
               accept=".pdf,.xls,.xlsx,image/*"
-              label="Choose PDF, Excel or photo"
-              hint="PDF, Excel or image · up to 10MB"
+              label="Choose PDF, photo or the filled-in Excel"
+              hint="PDF or photo · up to 10 MB (an Excel only fills in the fields)"
             />
           </form>
         </HsSheet>

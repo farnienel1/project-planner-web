@@ -190,7 +190,7 @@ export function ProjectDeadlinesSection({ project, isSmallWorks }: { project: Pr
         const prepared = await prepareClientUpload(file, 'work')
         if (prepared.error) throw new Error(prepared.error)
         const path = healthSafetyFilePath(organization.id, project.id, 'deadlines', prepared.file.name)
-        const url = await uploadFile(path, prepared.file, prepared.file.type || 'application/octet-stream')
+        const url = await uploadFile(path, prepared.file, prepared.file.type)
         next = withFileAttached(next, file.name, url, authorName, new Date())
         setBanner(null)
       } catch (err: unknown) {

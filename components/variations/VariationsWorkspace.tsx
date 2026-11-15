@@ -53,6 +53,7 @@ import type { Project } from '@/types'
 import { ReportFileLink } from '@/components/fileReports/ReportFileLink'
 import { FILE_KEPT_ON_REMOVE_COPY, canViewRemovedEvidence, fileDeletePermission, removedEvidenceHeading } from '@/lib/canonical'
 import { staffAccountRole } from '@/lib/permissions'
+import { safeExternalUrl } from '@/lib/canonical/uploadPolicy'
 
 type Filter = VariationListFilter
 
@@ -436,7 +437,7 @@ async function uploadEvidenceFiles(
       const downloadURL = await uploadVariationEvidenceFile(
         storagePath,
         prepared.file,
-        prepared.file.type || 'application/octet-stream'
+        prepared.file.type
       )
       return {
         id: newUuid(),
@@ -639,7 +640,7 @@ function VariationDrawer({
         <div className="grid g2">
           {row.evidence.map((file) => (
             <div key={file.id} className="card pad">
-              <a href={file.downloadURL} target="_blank" rel="noreferrer">
+              <a href={safeExternalUrl(file.downloadURL) ?? undefined} target="_blank" rel="noreferrer">
                 {file.contentType.startsWith('image/') ? (
                   <img src={file.downloadURL} alt={file.fileName} style={{ width: '100%', borderRadius: 8 }} />
                 ) : null}

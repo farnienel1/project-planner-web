@@ -251,7 +251,7 @@ export function CompanyDetailsPanel({ onBack }: { onBack: () => void }) {
           return
         }
         const path = companyLogoPath(organization.id, prepared.file.name)
-        companyLogoURL = await uploadFile(path, prepared.file, prepared.file.type || 'image/png')
+        companyLogoURL = await uploadFile(path, prepared.file, prepared.file.type)
       }
       const point = await officeCoordinate()
 
