@@ -8,8 +8,8 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ║ FOLLOW-ON — paste into the iOS agent                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
-Rulebook version: 1.48.0 → 1.48.0
-Packed hash: 7dedabc900d04d8aa5e1ed3ad1597a2d0f2a2ae29259e4f86a506933d3ea3044
+Rulebook version: 1.47.0 → 1.48.0
+Packed hash: c5d6405bc809b6f765d37f3deb906c7e544aa5e169d8b96cfea596bf456bd586
 Rulebook sha256: dd89f4840e1f62f483800db3dca1cb216231a48c73e63bb4c958af295628ea4c
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
@@ -22,11 +22,11 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
 Contract sha256: b89ca87595a18b7f0230fa13dcc81d65dcaea44e65912d499a31ce5df7670dd4
 Data-parity fixture sha256: c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: SIGNED_TIMESHEET_CHANGED_COUNTERSIGN_MESSAGE, SIGNED_TIMESHEET_CHANGED_LABEL, SIGNED_TIMESHEET_CHANGED_MESSAGE, SIGNED_TIMESHEET_CHANGED_REVIEWER_MESSAGE, SIGNED_TIMESHEET_CHANGED_STATUS, SIGNED_TIMESHEET_EXPORTED_CHANGED_MESSAGE, SIGNED_TIMESHEET_EXPORT_SKIPPED_MESSAGE, signedTimesheetActions, signedTimesheetBookingChanges, signedTimesheetBookingRecord, signedTimesheetLineBookingKey
+Exports added: MATERIAL_CATALOGUE_CSV_BINARY_MESSAGE, MATERIAL_CATALOGUE_CSV_COLUMNS, MATERIAL_CATALOGUE_CSV_EMPTY_MESSAGE, MATERIAL_CATALOGUE_CSV_ENCODING_MESSAGE, MATERIAL_CATALOGUE_CSV_FIELD_MAX, MATERIAL_CATALOGUE_CSV_HEADER, MATERIAL_CATALOGUE_CSV_HEADER_MESSAGE, MATERIAL_CATALOGUE_CSV_LEGACY_HEADER, MATERIAL_CATALOGUE_CSV_MAX_BYTES, MATERIAL_CATALOGUE_CSV_MAX_ROWS, MATERIAL_CATALOGUE_CSV_NOT_CSV_MESSAGE, MATERIAL_CATALOGUE_CSV_TOO_BIG_MESSAGE, MATERIAL_CATALOGUE_CSV_TOO_MANY_ROWS_MESSAGE, MATERIAL_CATALOGUE_QUANTITY_WRITE_GROUP, MATERIAL_CONTENT_MEASURES, MATERIAL_CONTENT_MESSAGE, MATERIAL_LINE_QUANTITY_WRITE_GROUP, MATERIAL_ORDER_UNITS, MATERIAL_ORDER_UNIT_DETAILS, MATERIAL_QUANTITY_FIELDS, MATERIAL_QUANTITY_MAX, MATERIAL_QUANTITY_POSITIVE_MESSAGE, MATERIAL_QUANTITY_WHOLE_MESSAGE, formatMaterialAmount, materialCatalogueCsvCell, materialCatalogueCsvExport, materialCatalogueCsvFileError, materialCatalogueCsvTextError, materialContentError, materialContentText, materialLineText, materialQuantityError, materialQuantityModel, materialQuantityModelsEqual, materialQuantityWriteFields, materialSendLineText, materialSizeText, normalizeMaterialContentMeasure, normalizeMaterialOrderUnit, parseMaterialCatalogueCsv, parseMaterialMeasure, splitCsvRecords, tidyMaterialAmount
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bookingTombstones.ts, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/payrunSnapshot.ts, lib/canonical/timesheetBookingChanges.ts, lib/canonical/timesheetPeriod.ts
+Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/cross-platform-contract.json, lib/canonical/crossPlatformContract.samples.ts, lib/canonical/index.ts, lib/canonical/materialCatalogueCsv.ts, lib/canonical/materialQuantity.test.ts, lib/canonical/materialQuantity.ts, lib/canonical/materialWhatsApp.ts, lib/canonical/operationsDocuments.ts
 Done when:
-- [ ] Packed hash in iOS equals 7dedabc900d04d8aa5e1ed3ad1597a2d0f2a2ae29259e4f86a506933d3ea3044
+- [ ] Packed hash in iOS equals c5d6405bc809b6f765d37f3deb906c7e544aa5e169d8b96cfea596bf456bd586
 - [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 dd89f4840e1f62f483800db3dca1cb216231a48c73e63bb4c958af295628ea4c)
 - [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.48.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
@@ -62,7 +62,8 @@ Done when:
 
 ## New rulebook sections
 
-- 1.47.0 — 2026-11-15
+- 28. Materials: quantity and the starter catalogue (1.48.0)
+- 1.48.0 — 2026-11-15
 
 ## Workflow for the iOS agent
 

@@ -38,6 +38,8 @@ const JUNK_BRANDS = new Set(['new', 'new 2', 'n/a'])
 const TEST_PRODUCT_CODES = new Set(['123-456', '12567', '4576-34'])
 /** Owner-added rows that are real products (review of #326): kept, with the brand cleaned like every row. */
 const KEEP_NAMES = new Set(['GU10 3000K Dimmable', 'M6 Penny Washers', '6mm Penny Washers'])
+/** Kept rows filed under a better category (second review of #326: the starter's M8 / M10 penny washers are Fixings). */
+const CATEGORY_FIXES: Readonly<Record<string, string>> = { 'M6 Penny Washers': 'Fixings' }
 /**
  * A name ending "- 1m" is a fixed 1 m piece (threaded rod, DIN rail, channel drain, rigid duct, pipe insulation
  * section), not cut to length: stored as Length + 1 m, the old reader rule (owner decision 2) would read it as Metre,
@@ -96,6 +98,7 @@ function main() {
       ...row,
       id: previousIdByName.get(row.name) || uuidFromName(row.name),
       brand: /^(unknown|custom)$/i.test(row.brand.trim()) ? '' : row.brand,
+      category: CATEGORY_FIXES[row.name] ?? row.category,
       ...(onePiece ? { orderUnit: 'Length' as const, contentAmount: 1, contentMeasure: 'm' as const } : {}),
     })
   }

@@ -199,6 +199,9 @@ How to use it:
 | 15 Nov | A stored `orderUnit` is read only while the stored old fields agree with it; an older iPhone's edit of the old fields wins (review of #326). | done |
 | 15 Nov | The CSV export appends the old Default Type, Length, Length Unit columns (nearest old meaning) so older iPhones import it; on import a filled Order unit wins over them. | done, owner to confirm |
 | 15 Nov | Quantity 0 on an older line prints "0no" (not guarded; a new line cannot be saved with 0). | left as is, owner to confirm |
+| 15 Nov | The 35 fixed "- 1m" pieces store the same old fields as Metre (Length, 1, M). A job line an **older iPhone** creates from one has no `orderUnit`, so it reads back as Metre ("2m" for 2 pieces; the same material and total). Accepted (second review of #326): `minimumIosBuild` is raised before merge. | accepted, owner to confirm |
+| 15 Nov | "M6 Penny Washers" (owner-added, filed under Containment) is moved to Fixings, beside the starter's M8 / M10 penny washers; "6mm Penny Washers" (a near-duplicate) stays under Sundries as entered. Both kept. | done, owner to confirm |
+| 15 Nov | An older iPhone rounds a Metre quantity of 12.5 to 13 when it saves a line (another reason `minimumIosBuild` is raised before merge). | noted |
 | 15 Nov | Web's old "m / mm / kg" line units are gone from the picker; stored "m" reads as Metre, "mm" and "kg" as Each. | done, owner to confirm |
 | 15 Nov | A save of a pre-1.48.0 document that does not change its quantity meaning keeps its stored quantity fields (no `orderUnit` added), so a catalogue import never rewrites 4,000 items. | done |
 

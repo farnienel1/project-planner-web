@@ -253,12 +253,15 @@ function storedLegacyMatches(row: Record<string, unknown>, model: MaterialQuanti
   }
   const hasLength = 'length' in row || 'sizeOrLength' in row || 'lengthUnit' in row
   if (hasLength) {
-    const storedLength = parseMaterialMeasure(legacyLength(row), row.lengthUnit)
+    // A stored `packSize` is never compared: no writer since 1.8.0 writes it, so beside `orderUnit` and contents it is
+    // stale and must not make the new fields look stale (second review of #326).
+    const storedText = text(row.length) || text(row.sizeOrLength)
+    const storedLength = parseMaterialMeasure(storedText, row.lengthUnit)
     const expectedLength = parseMaterialMeasure(expected.length, expected.lengthUnit)
     if (!storedLength && !expectedLength) return true
     if (!storedLength || !expectedLength) {
       // A stored length that is not a number ("3m x 2") is kept as given by the writer; it never disagrees.
-      return !storedLength && Boolean(text(legacyLength(row)))
+      return !storedLength && Boolean(storedText)
     }
     return storedLength.amount === expectedLength.amount && storedLength.measure === expectedLength.measure
   }

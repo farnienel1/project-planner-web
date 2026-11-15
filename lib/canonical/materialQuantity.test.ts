@@ -252,3 +252,12 @@ test('1.48.0 review: a CSV row whose contents the unit does not offer is left ou
   const parsed = parseMaterialCatalogueCsv(`${MATERIAL_CATALOGUE_CSV_HEADER}\n,Pallet blocks,Bricks,,,Pallet,400,mm,\n`)
   assert.deepEqual(parsed.errors, ['Row 2: Choose pcs for Pallet.'])
 })
+
+test('1.48.0 second review: a stale packSize never overrides orderUnit and contents', () => {
+  const row = { orderUnit: 'Drum', contentAmount: 50, contentMeasure: 'm', unit: 'Drum', length: '50', lengthUnit: 'M', packSize: 100 }
+  assert.deepEqual(materialQuantityModel(row), { orderUnit: 'Drum', contentAmount: 50, contentMeasure: 'm', fromLegacy: false })
+  const noLength = { orderUnit: 'Box', contentAmount: 100, contentMeasure: 'pcs', unit: 'Box', length: null, lengthUnit: null, packSize: 25 }
+  assert.equal(materialQuantityModel(noLength).contentMeasure, 'pcs')
+  // Without orderUnit, packSize is still read as the old length.
+  assert.equal(materialQuantityModel({ unit: 'Drum', packSize: 25 }).contentAmount, 25)
+})
