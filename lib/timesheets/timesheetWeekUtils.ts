@@ -75,14 +75,6 @@ export function extraFormJobSuggestions(
   return matches
 }
 
-/** iOS TimesheetMoneyEntrySheet receiptName = receipt.{ext} or receipt-uploaded. */
-export function timesheetReceiptStoredName(fileName?: string | null): string {
-  const trimmed = fileName?.trim() || ''
-  const dot = trimmed.lastIndexOf('.')
-  if (dot <= 0 || dot === trimmed.length - 1) return 'receipt-uploaded'
-  return `receipt.${trimmed.slice(dot + 1).toLowerCase()}`
-}
-
 export function userIdsSharingEmail(member: User, users: User[]): string[] {
   const email = member.email.trim().toLowerCase()
   if (!email) return [member.id]

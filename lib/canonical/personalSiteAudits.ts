@@ -17,7 +17,7 @@ import { zoneOrLondon } from './dayKeys'
 import { formatPaymentRunDay } from './paymentRuns'
 import { documentInstantMs } from './peopleDocuments'
 import { storedFileKind, storedFileObjectName } from './storedFiles'
-import type { PayeClaimEvidence } from './payeClaims'
+import type { PayeClaimEvidence } from './claimEvidence'
 
 export const PERSONAL_SITE_AUDITS_COLLECTION = 'personalSiteAudits'
 export const PERSONAL_SITE_AUDIT_SECTION_LABEL = 'Personal'

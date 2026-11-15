@@ -35,7 +35,15 @@ import { formatMoney, normalizeCurrencyCode } from './money'
 import { formatPaymentRunDay } from './paymentRuns'
 import { documentInstantMs } from './peopleDocuments'
 import { idKey, idText, personIdSet, rosterMemberActive } from './personIds'
-import { fileDeletePermission, storedFileKind, storedFileObjectName } from './storedFiles'
+import {
+  claimEvidenceListError,
+  claimEvidenceSameList,
+  EXPENSE_EVIDENCE_REQUIRED_MESSAGE,
+  parsePayeClaimEvidence,
+  payeClaimEvidenceDrawAs,
+  payeClaimEvidenceWriteFields,
+  type PayeClaimEvidence,
+} from './claimEvidence'
 import type { NotificationRosterMember } from './notificationRecipients'
 import { priceWorkJobNumberError, priceWorkJobNumberText, PRICE_WORK_JOB_NUMBER_MAX } from './priceWorkJobNumber'
 import type { TimesheetEntriesDocument } from './workDocumentReaders'
@@ -46,9 +54,6 @@ import { reportGeneratedText } from './reportHeader'
 export const PRICE_WORK_ITEMS_COLLECTION = 'priceWorkItems'
 export const EXPENSE_ITEMS_COLLECTION = 'expenseItems'
 export const PAYE_CLAIM_REPORTS_COLLECTION = 'payeClaimReports'
-/** Storage folder of claim evidence: `organizations/{orgId}/payeClaims/{userId}/{uid}_{ms}.{ext}`. */
-export const PAYE_CLAIM_EVIDENCE_FOLDER = 'payeClaims'
-
 export type PayeClaimKind = 'priceWork' | 'expense'
 export const PAYE_CLAIM_KINDS: ReadonlyArray<PayeClaimKind> = ['priceWork', 'expense']
 
@@ -60,6 +65,19 @@ export const PRICE_WORK_REPORT_TITLE = 'Price work report'
 export const EXPENSES_REPORT_TITLE = 'Expenses report'
 export const PRICE_WORK_TOTAL_LABEL = 'Total price work'
 export const EXPENSES_TOTAL_LABEL = 'Total expenses'
+/**
+ * 1.45.0 (owner decision 14 Nov): the expense amount label on every expense form — PAYE Add Expense and the timesheet
+ * expense entry, web and iOS — and the expenses report's amount column. Price work keeps "Amount".
+ */
+export const EXPENSE_AMOUNT_LABEL = 'Amount inc VAT'
+export const PRICE_WORK_AMOUNT_LABEL = 'Amount'
+/** 1.45.0: editing a saved item or entry (the person only; online only). */
+export const PAYE_CLAIM_EDIT_LABEL = 'Edit'
+export const PAYE_CLAIM_DELETE_LABEL = 'Delete'
+export const PAYE_CLAIM_SAVE_CHANGES_LABEL = 'Save changes'
+export const PAYE_CLAIM_DELETE_CONFIRM_MESSAGE = 'Delete this item? Its evidence is kept for recovery unless you added it in the last few minutes.'
+/** An edited item needs review again (`payeClaimFingerprint` changes); said under Save changes on a reviewed item. */
+export const PAYE_CLAIM_EDIT_REVIEW_NOTE = 'Saving changes sends it back to Needs review.'
 export const PRICE_WORK_EMPTY_MESSAGE = 'No price work in this range.'
 export const EXPENSES_EMPTY_MESSAGE = 'No expenses in this range.'
 
@@ -69,33 +87,11 @@ export const PAYE_CLAIM_DATE_MESSAGE = 'Choose a date.'
 export const PRICE_WORK_DATES_MESSAGE = 'Choose the dates from and to (the same day is allowed).'
 export const PRICE_WORK_APPROVER_REQUIRED_MESSAGE = 'Choose who approved this price work.'
 export const PRICE_WORK_APPROVER_INVALID_MESSAGE = 'Choose an active admin or manager other than yourself.'
-export const EXPENSE_EVIDENCE_REQUIRED_MESSAGE = 'Add at least one piece of evidence (a file, photo or personal site audit).'
-export const PAYE_CLAIM_EVIDENCE_LIMIT_MESSAGE = 'Up to 20 pieces of evidence.'
-export const PAYE_CLAIM_EVIDENCE_INVALID_MESSAGE = 'Evidence must be uploaded to your own claim folder.'
 export const PAYE_CLAIM_APPROVER_NOT_NOTIFIED_NOTE = 'They are not notified; the report names them.'
-/** A piece of evidence the PDF cannot draw (not a JPEG, PNG or PDF), listed with this note instead. */
-export const PAYE_CLAIM_EVIDENCE_NOT_DRAWN_NOTE = 'This file type cannot be shown in the PDF. Open it in the app.'
-export const PAYE_CLAIM_EVIDENCE_UNREADABLE_NOTE = 'This file could not be read when the report was made. Open it in the app.'
-
-export const PAYE_CLAIM_EVIDENCE_MAX = 20
 export const PAYE_CLAIM_TITLE_MAX = 200
 export const PAYE_CLAIM_DETAILS_MAX = 4000
 /** The largest figure a claim may carry (sanity bound; rules hold the same). */
 export const PAYE_CLAIM_AMOUNT_MAX = 1_000_000
-
-export type PayeClaimEvidenceKind = 'file' | 'photo' | 'personalSiteAudit'
-export const PAYE_CLAIM_EVIDENCE_KINDS: ReadonlyArray<PayeClaimEvidenceKind> = ['file', 'photo', 'personalSiteAudit']
-
-/** One piece of evidence: the Storage path in the person's claim folder, a display name and its kind. */
-export type PayeClaimEvidence = {
-  path: string
-  name: string
-  kind: PayeClaimEvidenceKind
-  /** MIME type as uploaded (`image/jpeg`, `application/pdf`, …); empty when unknown. */
-  contentType: string
-  /** For a personal site audit copy: the audit it was frozen from (the copy never changes after). */
-  auditId: string | null
-}
 
 export type PayeClaimBase = {
   id: string
@@ -175,118 +171,6 @@ function jobNumberText(value: unknown): string {
 
 function sameText(a: unknown, b: unknown): boolean {
   return idKey(a) === idKey(b) && idKey(a) !== ''
-}
-
-// MARK: - Evidence
-
-/**
- * The Storage path of a new piece of claim evidence: `organizations/{orgId}/payeClaims/{userId}/{uid}_{ms}.{ext}`
- * (§24 object name, `storedFileObjectName`). Only the person uploads into their own folder (`userId` is their uid), so
- * the uploader in the name is the person. Null when an id is unusable.
- */
-export function payeClaimEvidencePath(input: {
-  organizationId: string
-  userId: string
-  unixMs: number
-  extension?: string | null
-}): string | null {
-  const org = text(input.organizationId)
-  const user = text(input.userId)
-  if (!org || !user || org.includes('/') || user.includes('/')) return null
-  const name = storedFileObjectName({ uid: user, unixMs: input.unixMs, extension: input.extension })
-  return name ? `organizations/${org}/${PAYE_CLAIM_EVIDENCE_FOLDER}/${user}/${name}` : null
-}
-
-/** True when `path` is a claim evidence file of `userId` in `organizationId` (case-sensitive uid, as Storage is). */
-export function payeClaimEvidencePathBelongsTo(path: unknown, organizationId: unknown, userId: unknown): boolean {
-  const parsed = storedFileKind(text(path))
-  if (!parsed || parsed.kind !== 'paye_claim_evidence') return false
-  return parsed.organizationId === text(organizationId) && parsed.ownerUserId === text(userId)
-}
-
-function evidenceKind(value: unknown): PayeClaimEvidenceKind {
-  const raw = text(value)
-  return raw === 'photo' || raw === 'personalSiteAudit' ? raw : 'file'
-}
-
-/**
- * Reads a stored `evidence` list; order is kept. Never throws. Given `userId` (1.30.0 review), only entries whose path
- * is a claim evidence file in that person's own folder are kept (`payeClaimEvidencePathBelongsTo`; also the
- * organisation when given) — another person's file, a personal site audit photo, a URL or junk is dropped, so a viewer
- * never opens it. Without `userId` (an older caller) entries without a path are dropped.
- */
-export function parsePayeClaimEvidence(value: unknown, owner?: { userId?: unknown; organizationId?: unknown } | null): PayeClaimEvidence[] {
-  const list = Array.isArray(value) ? value : []
-  const out: PayeClaimEvidence[] = []
-  const userId = text(owner?.userId)
-  const organizationId = text(owner?.organizationId)
-  for (const raw of list) {
-    const row = record(raw)
-    const path = text(row.path)
-    if (!path) continue
-    if (owner) {
-      const parsed = storedFileKind(path)
-      if (!userId || !parsed || parsed.kind !== 'paye_claim_evidence' || parsed.ownerUserId !== userId) continue
-      if (organizationId && parsed.organizationId !== organizationId) continue
-    }
-    out.push({
-      path,
-      name: text(row.name) || path.split('/').pop() || 'Evidence',
-      kind: evidenceKind(row.kind),
-      contentType: text(row.contentType),
-      auditId: text(row.auditId) || null,
-    })
-  }
-  return out
-}
-
-/** The stored shape of one evidence entry (no empty optional fields). */
-export function payeClaimEvidenceWriteFields(entry: Partial<PayeClaimEvidence>): Record<string, unknown> {
-  const out: Record<string, unknown> = {
-    path: text(entry.path),
-    name: text(entry.name).slice(0, PAYE_CLAIM_TITLE_MAX) || text(entry.path).split('/').pop() || 'Evidence',
-    kind: evidenceKind(entry.kind),
-  }
-  if (text(entry.contentType)) out.contentType = text(entry.contentType)
-  if (text(entry.auditId)) out.auditId = text(entry.auditId)
-  return out
-}
-
-/** Whether the report PDF can draw this evidence as a page: `image` (JPEG / PNG), `pdf` (pages appended) or `listed`. */
-export function payeClaimEvidenceDrawAs(entry: Pick<PayeClaimEvidence, 'contentType' | 'path' | 'name'>): 'image' | 'pdf' | 'listed' {
-  const type = text(entry.contentType).toLowerCase()
-  const name = `${text(entry.name)} ${text(entry.path)}`.toLowerCase()
-  if (type === 'application/pdf' || /\.pdf(\s|$)/.test(name)) return 'pdf'
-  if (type === 'image/jpeg' || type === 'image/jpg' || type === 'image/pjpeg' || type === 'image/png') return 'image'
-  if (!type && /\.(jpe?g|png)(\s|$)/.test(name)) return 'image'
-  return 'listed'
-}
-
-/**
- * Which of the person's own claim evidence files are deleted, not kept (§24, 1.30.0 review): only those the person
- * uploaded within the undo window (`fileDeletePermission` as the uploader — `uploader_undo`). Used when an add fails
- * after its uploads (so no orphaned copy is left where line managers and admins can read it) and when the person
- * removes an item; every other file is kept for recovery (`FILE_KEPT_ON_REMOVE_COPY`).
- */
-export function payeClaimEvidenceToDelete(
-  evidence: ReadonlyArray<Pick<PayeClaimEvidence, 'path'>> | null | undefined,
-  input: { organizationId: string; viewerUserId: string; nowMs: number; uploadedAtMs?: Record<string, number | null | undefined> | null }
-): string[] {
-  const out: string[] = []
-  for (const entry of evidence || []) {
-    const path = text(entry?.path)
-    if (!path || !payeClaimEvidencePathBelongsTo(path, input.organizationId, input.viewerUserId) || out.includes(path)) continue
-    const permission = fileDeletePermission({
-      storagePath: path,
-      organizationId: input.organizationId,
-      viewerUserId: input.viewerUserId,
-      viewerRole: null as never,
-      nowMs: input.nowMs,
-      uploadedAtMs: input.uploadedAtMs?.[path] ?? null,
-    })
-    if (permission.allowed && permission.reason === 'uploader_undo') out.push(path)
-  }
-  return out
 }
 
 // MARK: - Approver candidates
@@ -391,14 +275,10 @@ function evidenceError(
   evidence: ReadonlyArray<Partial<PayeClaimEvidence>> | null | undefined,
   context: { organizationId?: unknown; userId?: unknown }
 ): string | null {
-  const list = evidence || []
-  if (list.length > PAYE_CLAIM_EVIDENCE_MAX) return PAYE_CLAIM_EVIDENCE_LIMIT_MESSAGE
-  if (context.organizationId != null && context.userId != null) {
-    for (const entry of list) {
-      if (!payeClaimEvidencePathBelongsTo(entry?.path, context.organizationId, context.userId)) return PAYE_CLAIM_EVIDENCE_INVALID_MESSAGE
-    }
-  }
-  return null
+  return claimEvidenceListError(evidence, {
+    organizationId: context.organizationId,
+    ownerUserIds: context.organizationId != null && context.userId != null ? [context.userId] : null,
+  })
 }
 
 /**
@@ -544,6 +424,120 @@ export function expenseWriteFields(input: {
     evidence: (input.draft.evidence || []).map(payeClaimEvidenceWriteFields),
     createdBy: userId,
     ...payeClaimPersonFields(userId),
+  }
+}
+
+// MARK: - 1.45.0: editing an item (the person only)
+
+/** A partial update of an existing item: the fields to set (dotted keys never used) and none removed. */
+export type PayeClaimUpdateWrite = { set: Record<string, unknown>; remove: string[] }
+
+/** The owner's own fields of a saved item, compared to find what an edit changed (never `userId` or `createdBy`). */
+const PRICE_WORK_EDIT_FIELDS = ['title', 'details', 'jobNumber', 'startDate', 'endDate', 'approvedByUserId', 'approvedByName', 'amount', 'evidence'] as const
+const EXPENSE_EDIT_FIELDS = ['title', 'details', 'jobNumber', 'date', 'amount', 'evidence'] as const
+
+function changedClaimFields(
+  stored: PayeClaimItem,
+  next: Record<string, unknown>,
+  keys: ReadonlyArray<string>
+): PayeClaimUpdateWrite {
+  const set: Record<string, unknown> = {}
+  const current = stored as unknown as Record<string, unknown>
+  for (const key of keys) {
+    if (key === 'evidence') {
+      const nextEvidence = (Array.isArray(next.evidence) ? next.evidence : []) as PayeClaimEvidence[]
+      const same =
+        claimEvidenceSameList(stored.evidence, nextEvidence) &&
+        stored.evidence.every((entry, index) => entry.name === text(nextEvidence[index]?.name))
+      if (!same) set.evidence = next.evidence
+      continue
+    }
+    if (key === 'amount') {
+      if (round2(Number(current.amount)) !== round2(Number(next.amount))) set.amount = next.amount
+      continue
+    }
+    if (text(current[key]) !== text(next[key])) set[key] = next[key]
+  }
+  return { set, remove: [] }
+}
+
+/**
+ * Rulebook 1.45.0 §26 (owner decision 14 Nov): whether `viewerId` may edit or delete a saved item — the person only
+ * (`canWritePayeClaim`: the item's `userId` is the signed-in account; an item filed under a former id is read-only, as
+ * the security rules' update and delete hold). Online only. Line managers and admins never edit it.
+ */
+export function canEditPayeClaim(viewerId: unknown, item: Pick<PayeClaimBase, 'userId'> | null | undefined): boolean {
+  return canWritePayeClaim(viewerId, item)
+}
+
+/**
+ * Rulebook 1.45.0 §26: Save changes on the person's own price work. The draft is checked exactly as a new item
+ * (`priceWorkValidationError`: name, job number — an item stored before 1.30.1 without one asks for it once edited —
+ * dates, an approver who is still a candidate, amount, evidence in the person's own folder). Returns the fields that
+ * changed, as a partial update (`updateDoc`), or null when the draft is refused or the viewer is not the person.
+ * `userId`, `createdBy`, `createdAt`, `personUserId` and the currency are never rewritten. Nothing to write is
+ * `{ set: {}, remove: [] }`. Any change moves `payeClaimFingerprint`, so a reviewed item reads Needs review again.
+ * Evidence the edit removed is `claimEvidenceRemoved(item.evidence, draft.evidence)`; delete only
+ * `payeClaimEvidenceToDelete` of that (§24).
+ */
+export function priceWorkUpdateWriteFields(input: {
+  item: PriceWorkItem
+  userId: string
+  draft: PriceWorkDraft
+  person: LineManagerSubject | null | undefined
+  roster: ReadonlyArray<LineManagerRosterPerson> | null | undefined
+  organizationId?: string | null
+}): PayeClaimUpdateWrite | null {
+  if (!canEditPayeClaim(input.userId, input.item)) return null
+  const next = priceWorkWriteFields({
+    userId: input.userId,
+    draft: input.draft,
+    person: input.person,
+    roster: input.roster,
+    currency: input.item.currency || 'GBP',
+    organizationId: input.organizationId,
+  })
+  if (!next) return null
+  return changedClaimFields(input.item, next, PRICE_WORK_EDIT_FIELDS)
+}
+
+/**
+ * Rulebook 1.45.0 §26: Save changes on the person's own expense — checked as a new expense (`expenseValidationError`:
+ * at least one piece of evidence). The changed fields only, as `priceWorkUpdateWriteFields`.
+ */
+export function expenseUpdateWriteFields(input: {
+  item: ExpenseItem
+  userId: string
+  draft: ExpenseDraft
+  organizationId?: string | null
+}): PayeClaimUpdateWrite | null {
+  if (!canEditPayeClaim(input.userId, input.item)) return null
+  const next = expenseWriteFields({ userId: input.userId, draft: input.draft, currency: input.item.currency || 'GBP', organizationId: input.organizationId })
+  if (!next) return null
+  return changedClaimFields(input.item, next, EXPENSE_EDIT_FIELDS)
+}
+
+/** The draft a saved item opens with in the edit sheet (the same shape Add uses). */
+export function payeClaimEditDraft(item: PayeClaimItem): PriceWorkDraft & ExpenseDraft {
+  if (item.kind === 'priceWork') {
+    return {
+      title: item.title,
+      details: item.details,
+      jobNumber: item.jobNumber,
+      startDate: item.startDate,
+      endDate: item.endDate || item.startDate,
+      approvedByUserId: item.approvedByUserId,
+      amount: item.amount,
+      evidence: item.evidence.map((entry) => ({ ...entry })),
+    }
+  }
+  return {
+    title: item.title,
+    details: item.details,
+    jobNumber: item.jobNumber,
+    date: item.date,
+    amount: item.amount,
+    evidence: item.evidence.map((entry) => ({ ...entry })),
   }
 }
 
@@ -712,6 +706,8 @@ export type TimesheetClaimRow = {
   endDate: string
   approvedByName: string
   receiptName: string | null
+  /** 1.45.0: the entry's evidence (the sheet owner's own claim files only, `parseTimesheetEntries`). */
+  evidence: PayeClaimEvidence[]
   managerDecision: string
 }
 
@@ -746,6 +742,7 @@ export function timesheetClaimRows(
           endDate: day,
           approvedByName: '',
           receiptName: entry.receiptName,
+          evidence: entry.evidence ?? [],
           managerDecision: entry.managerDecision,
         })
       }
@@ -767,6 +764,7 @@ export function timesheetClaimRows(
           endDate: end,
           approvedByName: entry.agreedManagerName,
           receiptName: null,
+          evidence: entry.evidence ?? [],
           managerDecision: entry.managerDecision,
         })
       }
@@ -901,7 +899,8 @@ function dateText(start: string, end: string): string {
 
 /** 1.33.0: the summary table's columns, in drawing order (price work adds who approved it). */
 export const PRICE_WORK_REPORT_COLUMNS: ReadonlyArray<string> = ['From – To', 'Job number', 'Name', 'Approved by', 'Amount']
-export const EXPENSES_REPORT_COLUMNS: ReadonlyArray<string> = ['Date', 'Job number', 'Name', 'Amount']
+/** 1.45.0: the amount column reads `EXPENSE_AMOUNT_LABEL` ("Amount inc VAT"). */
+export const EXPENSES_REPORT_COLUMNS: ReadonlyArray<string> = ['Date', 'Job number', 'Name', EXPENSE_AMOUNT_LABEL]
 
 /** One summary row: the old joined text (`heading`, `figure`, `lines`) and, from 1.33.0, each column on its own. */
 export type PayeClaimReportRow = {

@@ -14589,6 +14589,367 @@ test('1.44.0 link an unknown id to a person: candidates (one per person, live si
   assert.deepEqual([after.unresolved, after.accountId], [false, 'farnie'])
 })
 
+// MARK: - 1.45.0: timesheet claim evidence, edit and delete, "Amount inc VAT" (owner decisions 14 Nov)
+
+import * as r145 from './index'
+
+const ORG145 = 'org-145'
+const UID145 = 'uidOwner145'
+const ev145 = (uid: string, ms: number, ext = 'jpg', extra: Record<string, unknown> = {}) => ({
+  path: `organizations/${ORG145}/payeClaims/${uid}/${uid}_${ms}.${ext}`,
+  name: `receipt-${ms}.${ext}`,
+  kind: 'photo' as const,
+  contentType: ext === 'pdf' ? 'application/pdf' : 'image/jpeg',
+  auditId: null,
+  ...extra,
+})
+
+test("1.45.0 parseTimesheetEntries reads evidence: the sheet owner's own claim files only, receiptName kept read-only", () => {
+  const sheetId = `timesheet_${UID145}_1793750400`
+  const sheet = {
+    userId: UID145,
+    expenseEntries: [
+      {
+        id: 'E1',
+        title: 'Parking',
+        amount: 12,
+        date: '2026-11-10T10:00:00.000Z',
+        receiptName: 'receipt.jpg',
+        evidence: [
+          ev145(UID145, 1),
+          ev145('someoneElse', 2),
+          { path: 'https://evil.example/x.jpg', name: 'x' },
+          { path: `organizations/other-org/payeClaims/${UID145}/${UID145}_3.jpg` },
+          { path: `organizations/${ORG145}/personalSiteAudits/${UID145}/a1/${UID145}_4.jpg` },
+          'junk',
+        ],
+      },
+      { id: 'E2', title: 'Old receipt only', amount: 5, date: '2026-11-11T10:00:00.000Z', receiptName: 'receipt-uploaded' },
+    ],
+    priceWorkEntries: [{ id: 'P1', title: 'Kitchen', amount: 300, jobNumber: 'J-1', startDate: '2026-11-10T00:00:00.000Z', evidence: [ev145(UID145, 5, 'pdf')] }],
+  }
+  const parsed = r145.parseTimesheetEntries(sheetId, sheet, { timeZone: 'Europe/London', organizationId: ORG145 })
+  assert.deepEqual(parsed.expenseEntries[0].evidence.map((e) => e.path), [ev145(UID145, 1).path])
+  assert.equal(parsed.expenseEntries[0].receiptName, 'receipt.jpg')
+  assert.deepEqual(parsed.expenseEntries[1].evidence, [])
+  assert.equal(parsed.expenseEntries[1].receiptName, 'receipt-uploaded')
+  assert.equal(parsed.priceWorkEntries[0].evidence[0].kind, 'photo')
+  // Filed under a former id: the document id names the subject, so their own folder still counts.
+  const filed = r145.parseTimesheetEntries(sheetId, { ...sheet, userId: 'FORMER-1' }, { organizationId: ORG145 })
+  assert.equal(filed.expenseEntries[0].evidence.length, 1)
+  assert.deepEqual(r145.timesheetEvidenceOwnerIds(sheetId, { userId: 'FORMER-1' }, ['alias']), ['FORMER-1', UID145, 'alias'])
+  // No owner id at all: nothing is kept.
+  assert.deepEqual(r145.parseTimesheetEntries('settings-x', { expenseEntries: sheet.expenseEntries }).expenseEntries[0].evidence, [])
+})
+
+test('1.45.0 timesheetOwnerEntriesError: new/edited expenses need evidence, price work evidence optional, untouched old entries never block', () => {
+  const owner = { organizationId: ORG145, ownerUserIds: [UID145] }
+  const oldExpense = { id: 'E-OLD', title: 'Fuel', amount: 40, date: '2026-11-01T00:00:00.000Z', receiptName: 'receipt.jpg' }
+  const oldPrice = { id: 'P-OLD', title: 'Old', amount: 10, startDate: '2026-11-01T00:00:00.000Z' }
+  const previous = { expenseEntries: [oldExpense], priceWorkEntries: [oldPrice] }
+  assert.equal(r145.timesheetOwnerEntriesError({ previous, next: previous, ...owner }), null)
+  // A reviewer decision is not an owner edit.
+  assert.equal(r145.timesheetOwnerEntriesError({ previous, next: { ...previous, expenseEntries: [{ ...oldExpense, managerDecision: 'declined' }] }, ...owner }), null)
+  const fresh = { id: 'E-NEW', title: 'Train', amount: 20, date: '2026-11-12T00:00:00.000Z' }
+  assert.equal(r145.timesheetOwnerEntriesError({ previous, next: { ...previous, expenseEntries: [oldExpense, fresh] }, ...owner }), r145.EXPENSE_EVIDENCE_REQUIRED_MESSAGE)
+  assert.equal(r145.timesheetOwnerEntriesError({ previous, next: { ...previous, expenseEntries: [oldExpense, { ...fresh, evidence: [ev145(UID145, 9)] }] }, ...owner }), null)
+  // Editing the old expense asks for evidence once.
+  assert.equal(r145.timesheetOwnerEntriesError({ previous, next: { ...previous, expenseEntries: [{ ...oldExpense, amount: 41 }] }, ...owner }), r145.EXPENSE_EVIDENCE_REQUIRED_MESSAGE)
+  assert.equal(
+    r145.timesheetOwnerEntriesError({ previous, next: { ...previous, expenseEntries: [oldExpense, { ...fresh, evidence: [ev145('other', 9)] }] }, ...owner }),
+    r145.PAYE_CLAIM_EVIDENCE_INVALID_MESSAGE
+  )
+  const many = Array.from({ length: 21 }, (_, i) => ev145(UID145, 100 + i))
+  assert.equal(r145.timesheetOwnerEntriesError({ previous, next: { ...previous, expenseEntries: [oldExpense, { ...fresh, evidence: many }] }, ...owner }), r145.PAYE_CLAIM_EVIDENCE_LIMIT_MESSAGE)
+  // New price work: job number required, evidence optional.
+  const pw = { id: 'P-NEW', title: 'Tiling', amount: 50, startDate: '2026-11-12T00:00:00.000Z' }
+  assert.equal(r145.timesheetOwnerEntriesError({ previous, next: { ...previous, priceWorkEntries: [oldPrice, pw] }, ...owner }), r145.PRICE_WORK_JOB_NUMBER_REQUIRED_MESSAGE)
+  assert.equal(r145.timesheetOwnerEntriesError({ previous, next: { ...previous, priceWorkEntries: [oldPrice, { ...pw, jobNumber: 'J-9' }] }, ...owner }), null)
+  // Adding evidence to an old price work entry is an edit (asks for its job number, as 1.30.1 does for any edit).
+  assert.equal(r145.timesheetPriceWorkJobNumberError([oldPrice], [{ ...oldPrice, evidence: [ev145(UID145, 7)] }]), r145.PRICE_WORK_JOB_NUMBER_REQUIRED_MESSAGE)
+  assert.equal(r145.timesheetPriceWorkJobNumberError([oldPrice], [oldPrice]), null)
+  assert.deepEqual(r145.timesheetOwnerTouchedEntries([oldExpense], [oldExpense, fresh], 'expense').map((row) => row.id), ['E-NEW'])
+})
+
+test('1.45.0 canEditTimesheetEntry: the owner only, until the line manager signs (a self-signed sheet stays open)', () => {
+  assert.deepEqual(r145.canEditTimesheetEntry({}, { viewerIsOwner: true }), { allowed: true, message: null })
+  assert.deepEqual(r145.canEditTimesheetEntry({}, { viewerIsOwner: false }), { allowed: false, message: null })
+  assert.deepEqual(r145.canEditTimesheetEntry({ managerSignedAt: '2026-11-12T10:00:00Z' }, { viewerIsOwner: true }), {
+    allowed: false,
+    message: r145.TIMESHEET_SIGNED_OFF_EXTRAS_MESSAGE,
+  })
+  assert.equal(r145.canEditTimesheetEntry({ approvedAt: 1 }, { viewerIsOwner: true }).allowed, false)
+  assert.equal(r145.canEditTimesheetEntry({ managerSignedAt: '2026-11-12T10:00:00Z' }, { viewerIsOwner: true, selfSigned: true }).allowed, true)
+})
+
+test('1.45.0 timesheetEntryEvidenceToDelete: only files gone from every entry and uploaded by the viewer within the undo window', () => {
+  const now = Date.parse('2026-11-14T12:00:00.000Z')
+  const recent = ev145(UID145, now - 60_000)
+  const old = ev145(UID145, now - 24 * 3600_000)
+  const kept = ev145(UID145, now - 30_000)
+  const before = { expenseEntries: [{ evidence: [recent, old, kept] }], priceWorkEntries: [] }
+  const after = { expenseEntries: [], priceWorkEntries: [{ evidence: [kept] }] }
+  assert.deepEqual(r145.timesheetEntryEvidenceToDelete({ before, after, organizationId: ORG145, viewerUserId: UID145, nowMs: now }), [recent.path])
+  assert.deepEqual(r145.timesheetEntryEvidenceToDelete({ before, after, organizationId: ORG145, viewerUserId: 'manager', nowMs: now }), [])
+})
+
+test("1.45.0 timesheetEvidencePages: one page per piece of evidence on the invoice's price work and expense rows", () => {
+  const sheetId = `timesheet_${UID145}_1793750400`
+  const entries = r145.parseTimesheetEntries(
+    sheetId,
+    {
+      userId: UID145,
+      expenseEntries: [
+        { id: 'e1', title: 'Parking', details: 'Car park', jobNumber: 'J-2', amount: 12, date: '2026-11-10T10:00:00.000Z', evidence: [ev145(UID145, 1), ev145(UID145, 2, 'pdf')] },
+        { id: 'e2', title: 'Declined', amount: 3, date: '2026-11-10T10:00:00.000Z', evidence: [ev145(UID145, 3)] },
+      ],
+      priceWorkEntries: [
+        { id: 'P1', title: 'Kitchen', agreedManagerName: 'Bea', amount: 300, jobNumber: '', startDate: '2026-11-10T00:00:00.000Z', evidence: [ev145(UID145, 5, 'heic', { contentType: 'image/heic' })] },
+      ],
+    },
+    { timeZone: 'Europe/London', organizationId: ORG145 }
+  )
+  const pages = r145.timesheetEvidencePages({
+    rows: [
+      { kind: 'labour', id: 'L1', amount: 100 },
+      { kind: 'expense', id: 'E1', amount: 12, jobNumber: 'J-2' },
+      { kind: 'priceWork', id: 'p1', amount: 250, jobNumber: '' },
+    ],
+    entries,
+    currency: 'GBP',
+  })
+  assert.equal(pages.length, 3)
+  assert.deepEqual(pages.map((p) => p.drawAs), ['image', 'pdf', 'listed'])
+  assert.equal(pages[0].evidenceTitle, 'Evidence 1 of 2: receipt-1.jpg')
+  assert.equal(pages[0].itemName, 'Parking')
+  assert.equal(pages[0].date, 'Tue 10 Nov')
+  assert.equal(pages[0].notes[0], 'Car park')
+  assert.equal(pages[2].jobNumber, '—')
+  assert.equal(pages[2].approvedBy, 'Bea')
+  assert.equal(pages[2].amount, '£250.00')
+})
+
+test('1.45.0 "Amount inc VAT" on expense forms and the expenses report; evidence count text; list helpers', () => {
+  assert.equal(r145.EXPENSE_AMOUNT_LABEL, 'Amount inc VAT')
+  assert.equal(r145.EXPENSES_REPORT_COLUMNS[r145.EXPENSES_REPORT_COLUMNS.length - 1], 'Amount inc VAT')
+  assert.equal(r145.PRICE_WORK_REPORT_COLUMNS[r145.PRICE_WORK_REPORT_COLUMNS.length - 1], 'Amount')
+  assert.equal(r145.claimEvidenceCountText(0), '')
+  assert.equal(r145.claimEvidenceCountText(1), '1 piece of evidence')
+  assert.equal(r145.claimEvidenceCountText(3), '3 pieces of evidence')
+  assert.deepEqual(r145.claimEvidenceRemoved([{ path: 'a' }, { path: 'b' }, { path: 'b' }], [{ path: 'a' }]), [{ path: 'b' }])
+  assert.equal(r145.claimEvidenceSameList([{ path: 'a' }], [{ path: 'a' }]), true)
+  assert.equal(r145.claimEvidenceSameList([{ path: 'a' }, { path: 'b' }], [{ path: 'b' }, { path: 'a' }]), false)
+  assert.deepEqual(r145.timesheetEntryEvidenceWriteFields([{ path: 'p', name: '', kind: 'photo', contentType: '', auditId: null }]), [{ path: 'p', name: 'p', kind: 'photo' }])
+})
+
+test('1.45.0 PAYE item edit: the person only, validated as new, only changed fields, back to Needs review', () => {
+  const roster = [
+    { id: UID145, firstName: 'Pat', surname: 'Paye', email: 'pat@example.com', organizationId: ORG145, isActive: true, role: 'operative', operativeMode: true, assignedManagerUserIds: ['mgr'], passwordSet: true },
+    { id: 'mgr', firstName: 'Mo', surname: 'Manager', email: 'mo@example.com', organizationId: ORG145, isActive: true, role: 'manager', manager: true, passwordSet: true },
+    { id: 'adm', firstName: 'Ada', surname: 'Admin', email: 'ada@example.com', organizationId: ORG145, isActive: true, role: 'admin', adminAccess: true, passwordSet: true },
+  ]
+  const person = roster[0]
+  const item = r145.parsePriceWorkDocument(
+    'pw1',
+    { userId: UID145, title: 'Tiling', details: '', jobNumber: 'J-1', startDate: '2026-11-10', endDate: '2026-11-10', approvedByUserId: 'mgr', approvedByName: 'Mo Manager', amount: 100, currency: 'GBP', evidence: [ev145(UID145, 1)] },
+    { organizationId: ORG145 }
+  )
+  assert.equal(r145.canEditPayeClaim(UID145, item), true)
+  assert.equal(r145.canEditPayeClaim('mgr', item), false)
+  const draft = r145.payeClaimEditDraft(item)
+  assert.deepEqual(r145.priceWorkUpdateWriteFields({ item, userId: UID145, draft, person: person as never, roster: roster as never, organizationId: ORG145 }), { set: {}, remove: [] })
+  const write = r145.priceWorkUpdateWriteFields({
+    item,
+    userId: UID145,
+    draft: { ...draft, amount: '120', evidence: [...item.evidence, ev145(UID145, 2)] },
+    person: person as never,
+    roster: roster as never,
+    organizationId: ORG145,
+  })
+  assert.deepEqual(Object.keys(write!.set).sort(), ['amount', 'evidence'])
+  assert.equal(write!.set.amount, 120)
+  assert.equal(r145.priceWorkUpdateWriteFields({ item, userId: 'mgr', draft, person: person as never, roster: roster as never, organizationId: ORG145 }), null)
+  assert.equal(r145.priceWorkUpdateWriteFields({ item, userId: UID145, draft: { ...draft, jobNumber: '' }, person: person as never, roster: roster as never, organizationId: ORG145 }), null)
+  // Editing moves the review fingerprint, so an approved item needs review again.
+  assert.notEqual(r145.payeClaimFingerprint(item), r145.payeClaimFingerprint({ ...item, amount: 120 }))
+  // Expense: evidence stays required on edit.
+  const expense = r145.parseExpenseDocument('ex1', { userId: UID145, title: 'Fuel', date: '2026-11-10', amount: 40, currency: 'GBP', evidence: [ev145(UID145, 3)] }, { organizationId: ORG145 })
+  const exDraft = r145.payeClaimEditDraft(expense)
+  assert.equal(r145.expenseUpdateWriteFields({ item: expense, userId: UID145, draft: { ...exDraft, evidence: [] }, organizationId: ORG145 }), null)
+  assert.deepEqual(r145.expenseUpdateWriteFields({ item: expense, userId: UID145, draft: { ...exDraft, title: 'Diesel' }, organizationId: ORG145 }), { set: { title: 'Diesel' }, remove: [] })
+})
+
+test('1.45.0 review #322 F1: any owner change reopens a fingerprinted entry review; reviews stored before 1.45.0 stay amount-only', () => {
+  const ev = (uid: string, ms: number) => ({ path: `organizations/${ORG145}/payeClaims/${uid}/${uid}_${ms}.jpg`, name: 'r.jpg', kind: 'photo' })
+  const sheetId = `timesheet_${UID145}_1762732800`
+  const stored = { id: 'P1', title: 'Tiling', details: '', jobNumber: 'J-1', agreedManagerName: '', amount: 50, startDate: { seconds: 1762732800, nanoseconds: 0 }, evidence: [ev(UID145, 1)] }
+  const parsed = r145.parseTimesheetEntries(sheetId, { userId: UID145, priceWorkEntries: [stored] }).priceWorkEntries[0]
+  assert.equal(parsed.reviewFingerprint, r145.timesheetEntryFingerprint(stored, 'priceWork'))
+
+  // The line manager declines from their loaded copy (it carries the stored row's fingerprint).
+  const written = r145.timesheetEntryReviewWriteFields({
+    stored: {},
+    entries: [{ id: 'P1', amount: 50, managerDecision: 'declined' as const, reviewFingerprint: parsed.reviewFingerprint }],
+    reviewedByUserId: 'lm',
+    reviewedAtMs: 1,
+  })
+  const review = written['extraEntryReviews.P1'] as Record<string, unknown>
+  assert.equal(review.reviewedFingerprint, parsed.reviewFingerprint)
+  const sheet = (entry: Record<string, unknown>, reviews: Record<string, unknown>) => ({ userId: UID145, extraEntryReviews: reviews, priceWorkEntries: [entry] })
+  assert.equal(r145.timesheetEntryDecision(sheet(stored, { P1: review }), stored).decision, 'declined')
+  // Any owner change to the stored row reopens it.
+  for (const changed of [
+    { ...stored, evidence: [ev(UID145, 1), ev(UID145, 2)] },
+    { ...stored, startDate: { seconds: 1762819200, nanoseconds: 0 } },
+    { ...stored, jobNumber: 'J-9' },
+    { ...stored, details: 'Hall too' },
+  ]) {
+    const result = r145.timesheetEntryDecision(sheet(changed, { P1: review }), changed)
+    assert.deepEqual([result.decision, result.source], ['pending', 'stale-review'])
+  }
+  // Evidence order is not a change.
+  const twoFiles = { ...stored, evidence: [ev(UID145, 1), ev(UID145, 2)] }
+  assert.equal(r145.timesheetEntryFingerprint(twoFiles, 'priceWork'), r145.timesheetEntryFingerprint({ ...twoFiles, evidence: [ev(UID145, 2), ev(UID145, 1)] }, 'priceWork'))
+
+  // A review stored before 1.45.0 (no fingerprint): only an amount change reopens it.
+  const { reviewedFingerprint: _drop, ...oldReview } = review
+  void _drop
+  assert.equal(r145.timesheetEntryDecision(sheet(twoFiles, { P1: oldReview }), twoFiles).decision, 'declined')
+  assert.equal(r145.timesheetEntryDecision(sheet({ ...stored, amount: 60 }, { P1: oldReview }), { ...stored, amount: 60 }).decision, 'pending')
+})
+
+test('1.45.0 review #322 F1a/F1b: one fingerprint input — reader, loaded copy and totals agree; dateless and foreign-file entries stay decided', () => {
+  const ev = (uid: string, ms: number) => ({ path: `organizations/${ORG145}/payeClaims/${uid}/${uid}_${ms}.jpg`, name: 'r.jpg', kind: 'photo' })
+  const sheetId = `timesheet_${UID145}_1762732800`
+  // A price work row with no start date and no agreed manager (kind comes from its array), and an expense with no
+  // date and a file from someone else's folder (the reader's display copy drops it).
+  const pw = { id: 'P2', title: 'Old price work', amount: 30 }
+  const ex = { id: 'E2', title: 'Old expense', amount: 7, evidence: [ev(UID145, 1), ev('someoneElse', 2)] }
+  const first = r145.parseTimesheetEntries(sheetId, { userId: UID145, priceWorkEntries: [pw], expenseEntries: [ex] })
+  assert.equal(first.expenseEntries[0].evidence.length, 1)
+  assert.notEqual(first.priceWorkEntries[0].reviewFingerprint, r145.timesheetEntryFingerprint(pw, 'expense'))
+  // The line manager approves both from the loaded copy.
+  const written = r145.timesheetEntryReviewWriteFields({
+    stored: {},
+    entries: [
+      { id: 'P2', amount: 30, managerDecision: 'edited' as const, managerRevisedAmount: 20, reviewFingerprint: first.priceWorkEntries[0].reviewFingerprint },
+      { id: 'E2', amount: 7, managerDecision: 'approved' as const, reviewFingerprint: first.expenseEntries[0].reviewFingerprint },
+    ],
+    reviewedByUserId: 'lm',
+    reviewedAtMs: 1,
+  })
+  const reviews = { P2: written['extraEntryReviews.P2'], E2: written['extraEntryReviews.E2'] }
+  const stored = { userId: UID145, priceWorkEntries: [pw], expenseEntries: [ex], extraEntryReviews: reviews, managerSignedAt: null }
+  // Reader, a second load later in the day (the app fills dates for display; the fingerprint does not), and totals.
+  for (let load = 0; load < 2; load += 1) {
+    const again = r145.parseTimesheetEntries(sheetId, stored)
+    assert.deepEqual([again.priceWorkEntries[0].managerDecision, again.expenseEntries[0].managerDecision], ['edited', 'approved'])
+  }
+  const loaded = r145.parseTimesheetEntries(sheetId, stored)
+  const displayCopy = {
+    ...stored,
+    priceWorkEntries: [{ ...pw, startDate: new Date(), agreedManagerName: 'Manager', reviewFingerprint: loaded.priceWorkEntries[0].reviewFingerprint }],
+    expenseEntries: [{ ...ex, date: new Date(), evidence: loaded.expenseEntries[0].evidence, reviewFingerprint: loaded.expenseEntries[0].reviewFingerprint }],
+  }
+  // The loaded copy's fingerprints are passed in (never read from the rows).
+  const trusted = r145.timesheetEntryFingerprintMap([...loaded.priceWorkEntries, ...loaded.expenseEntries])
+  assert.equal(r145.timesheetEntryDecision(displayCopy, displayCopy.priceWorkEntries[0], 'priceWork', r145.timesheetTrustedFingerprint(trusted, 'P2')).decision, 'edited')
+  assert.equal(r145.timesheetEntryDecision(displayCopy, displayCopy.expenseEntries[0], 'expense', r145.timesheetTrustedFingerprint(trusted, 'e2')).decision, 'approved')
+  const fromStored = r145.timesheetTotals({ sheet: stored, payrollLines: [], extrasMode: 'decided' })
+  const fromCopy = r145.timesheetTotals({ sheet: displayCopy, payrollLines: [], extrasMode: 'decided', entryFingerprints: trusted })
+  assert.deepEqual([fromStored.priceWork, fromStored.expenses, fromStored.pendingEntries], [20, 7, 0])
+  assert.deepEqual([fromCopy.priceWork, fromCopy.expenses, fromCopy.pendingEntries], [20, 7, 0])
+})
+
+test('1.45.0 review #322 F2: a reviewer save writes only the reviews it changes', () => {
+  const sheetId = `timesheet_${UID145}_1762732800`
+  const a = { id: 'A1', title: 'Fuel', amount: 10, date: '2026-11-10T00:00:00.000Z' }
+  const b = { id: 'B1', title: 'Parking', amount: 5, date: '2026-11-10T00:00:00.000Z' }
+  // Two reviews stored before 1.45.0 (no fingerprint).
+  const old = (decision: string) => ({ decision, revisedAmount: null, reviewedAmount: decision === 'approved' ? 10 : 5, reviewedByUserId: 'old-lm', reviewedAtMs: 1 })
+  const doc = { userId: UID145, expenseEntries: [a, b], extraEntryReviews: { A1: old('approved'), B1: old('declined') } }
+  const loaded = r145.parseTimesheetEntries(sheetId, doc).expenseEntries
+  const stored = r145.parseTimesheetEntryReviews(doc)
+  const asInput = (row: (typeof loaded)[number], decision = row.managerDecision) => ({
+    id: row.id,
+    amount: row.amount,
+    managerDecision: decision,
+    managerRevisedAmount: row.managerRevisedAmount,
+    reviewFingerprint: row.reviewFingerprint,
+  })
+  // Untouched: nothing written (no name, time or fingerprint stamped on old reviews).
+  assert.deepEqual(r145.timesheetEntryReviewWriteFields({ stored, entries: loaded.map((row) => asInput(row)), reviewedByUserId: 'lm', reviewedAtMs: 2 }), {})
+  // The reviewer changes one: only that review is written, with the stored row's fingerprint.
+  const out = r145.timesheetEntryReviewWriteFields({ stored, entries: [asInput(loaded[0], 'declined'), asInput(loaded[1])], reviewedByUserId: 'lm', reviewedAtMs: 2 })
+  assert.deepEqual(Object.keys(out), ['extraEntryReviews.A1'])
+  assert.equal((out['extraEntryReviews.A1'] as Record<string, unknown>).reviewedFingerprint, loaded[0].reviewFingerprint)
+  // A stale entry left pending is not recorded; re-approving it writes a fresh review.
+  const editedDoc = { ...doc, expenseEntries: [{ ...a, amount: 12 }, b] }
+  const reloaded = r145.parseTimesheetEntries(sheetId, editedDoc).expenseEntries
+  assert.equal(reloaded[0].managerDecision, 'pending')
+  const staleStored = r145.parseTimesheetEntryReviews(editedDoc)
+  assert.deepEqual(r145.timesheetEntryReviewWriteFields({ stored: staleStored, entries: reloaded.map((row) => asInput(row)), reviewedByUserId: 'lm', reviewedAtMs: 3 }), {})
+  const reapproved = r145.timesheetEntryReviewWriteFields({ stored: staleStored, entries: [asInput(reloaded[0], 'approved')], reviewedByUserId: 'lm', reviewedAtMs: 3 })
+  assert.equal((reapproved['extraEntryReviews.A1'] as Record<string, unknown>).reviewedAmount, 12)
+})
+
+test('1.45.0 review #322 hardening: a reviewFingerprint stored on an entry is never trusted; reviews keep their stored key', () => {
+  const sheetId = `timesheet_${UID145}_1762732800`
+  const entry = { id: 'F1', title: 'Fuel', amount: 10, date: '2026-11-10T00:00:00.000Z' }
+  const fingerprint = r145.timesheetEntryFingerprint(entry, 'expense')
+  const review = { decision: 'approved', revisedAmount: null, reviewedAmount: 10, reviewedFingerprint: fingerprint, reviewedByUserId: 'lm', reviewedAtMs: 1 }
+  // The owner edits the entry and writes the old fingerprint onto it, hoping to keep the approval.
+  const forged = { ...entry, title: 'Fuel and lunch', reviewFingerprint: fingerprint }
+  const doc = { userId: UID145, expenseEntries: [forged], extraEntryReviews: { F1: review }, managerSignedAt: null }
+  const parsed = r145.parseTimesheetEntries(sheetId, doc).expenseEntries[0]
+  assert.equal(parsed.managerDecision, 'pending')
+  assert.notEqual(parsed.reviewFingerprint, fingerprint)
+  assert.equal(r145.timesheetEntryDecision(doc, forged).decision, 'pending')
+  assert.equal(r145.timesheetTotals({ sheet: doc, payrollLines: [], extrasMode: 'decided' }).pendingEntries, 1)
+  assert.equal(r145.timesheetInvoiceRows({ sheet: doc, payrollLines: [], extrasMode: 'decided' })[0]?.amount, 10)
+  // The owner's own save never stores a fingerprint on an entry.
+  const ownerWrite = r145.timesheetOwnerWriteFields({ expenseEntries: [forged] }, { subjectHasLineManager: true, managerSigned: false })
+  assert.equal('reviewFingerprint' in (ownerWrite.expenseEntries as Array<Record<string, unknown>>)[0], false)
+  // A review stored under the id in another letter case is updated under that key, never a second one.
+  const lower = { f1: { ...review, reviewedFingerprint: null } }
+  const stored = r145.parseTimesheetEntryReviews({ extraEntryReviews: lower })
+  const out = r145.timesheetEntryReviewWriteFields({ stored, entries: [{ id: 'F1', amount: 10, managerDecision: 'declined' as const }], reviewedByUserId: 'lm', reviewedAtMs: 2 })
+  assert.deepEqual(Object.keys(out), ['extraEntryReviews.f1'])
+})
+
+test('1.45.0 packed script exports the claim evidence and timesheet evidence rules', () => {
+  const source = readFileSync(new URL('./dist/canonical-business.js', import.meta.url), 'utf8')
+  const sandbox: { ProjectPlannerCanonical?: Record<string, unknown> } = {}
+  runInContext(source, createContext(sandbox))
+  const packed = sandbox.ProjectPlannerCanonical
+  assert.ok(packed)
+  for (const name of [
+    'timesheetOwnerEntriesError',
+    'canEditTimesheetEntry',
+    'timesheetEntryEvidenceToDelete',
+    'timesheetEvidencePages',
+    'timesheetEntryEvidenceWriteFields',
+    'timesheetEvidenceOwnerIds',
+    'timesheetOwnerTouchedEntries',
+    'claimEvidenceCountText',
+    'claimEvidenceRemoved',
+    'claimEvidenceListError',
+    'parsePayeClaimEvidence',
+    'payeClaimEvidencePath',
+    'canEditPayeClaim',
+    'priceWorkUpdateWriteFields',
+    'expenseUpdateWriteFields',
+    'payeClaimEditDraft',
+    'timesheetEntryFingerprint',
+    'timesheetEntryFingerprintMap',
+    'timesheetTrustedFingerprint',
+  ]) {
+    assert.equal(typeof packed[name], 'function', name)
+  }
+  assert.equal(packed.EXPENSE_AMOUNT_LABEL, 'Amount inc VAT')
+  assert.equal(packed.CLAIM_EVIDENCE_ADD_SITE_AUDIT_LABEL, 'Add site audit')
+})
+
 // MARK: - 1.44.0: one level for every role shape (lineManagers `levelOf` = `permissionLevelOf`)
 
 test('1.44.0 levelOf: a flagless person is manager level whatever the role shape; operative and admin flags win', () => {

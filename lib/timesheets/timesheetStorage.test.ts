@@ -163,3 +163,23 @@ test('draftFromFirestoreMap keeps signatures when export stamps are absent', () 
   assert.equal(draft.exportedAt, null)
   assert.deepEqual(draft.expenseEntries, emptyTimesheetDraft().expenseEntries)
 })
+
+// Rulebook 1.45.0 (review #322 F2): a sheet filed under the person's former id keeps the evidence they uploaded under
+// their current id when the reader is given every id they go by.
+test('1.45.0 evidence on a sheet filed under a former id is kept with the person\'s ids, dropped without them', () => {
+  const evidence = [{ path: 'organizations/org1/payeClaims/NEWUID/NEWUID_1700000000000.jpg', name: 'receipt.jpg', kind: 'photo' }]
+  const data = {
+    userId: 'OLD-ID',
+    expenseEntries: [{ id: 'E1', title: 'Parking', amount: 12, date: stamp('2026-11-10T10:00:00.000Z'), evidence }],
+    priceWorkEntries: [{ id: 'P1', title: 'Tiling', amount: 50, jobNumber: 'J-1', startDate: stamp('2026-11-10T00:00:00.000Z'), evidence }],
+  }
+  const without = draftFromFirestoreMap(data, { sheetDocId: 'timesheet_OLD-ID_1762732800', timeZone: 'Europe/London' })
+  assert.equal(without.expenseEntries[0]?.evidence?.length, 0)
+  const withIds = draftFromFirestoreMap(data, {
+    sheetDocId: 'timesheet_OLD-ID_1762732800',
+    timeZone: 'Europe/London',
+    ownerUserIds: ['NEWUID', 'OLD-ID'],
+  })
+  assert.equal(withIds.expenseEntries[0]?.evidence?.[0]?.path, evidence[0].path)
+  assert.equal(withIds.priceWorkEntries[0]?.evidence?.length, 1)
+})

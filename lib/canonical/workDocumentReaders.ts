@@ -43,7 +43,9 @@ import {
 } from './peopleDocuments'
 import { derivedDocumentId, derivedRowId } from './derivedIds'
 import { normalizeDocumentId } from './scheduleSources'
-import { timesheetEntryDecision, type TimesheetEntryDecision, type TimesheetEntryDecisionSource } from './timesheetEntryReviews'
+import { timesheetEntryDecision, timesheetEntryFingerprint, type TimesheetEntryDecision, type TimesheetEntryDecisionSource } from './timesheetEntryReviews'
+import { parsePayeClaimEvidence, type PayeClaimEvidence } from './claimEvidence'
+import { timesheetDocumentSubjectId } from './timesheetPeriod'
 
 // MARK: - Value readers
 
@@ -582,11 +584,23 @@ type TimesheetEntryBase = {
   managerDecision: TimesheetEntryDecision
   managerRevisedAmount: number | null
   decisionSource: TimesheetEntryDecisionSource
+  /**
+   * 1.45.0 (review #322): `timesheetEntryFingerprint` of the stored row (its own fields, every stored evidence path).
+   * Apps keep it on their loaded copy so a review decision and a review write always use the stored row's value.
+   */
+  reviewFingerprint: string
+  /**
+   * 1.45.0 (owner decision 14 Nov): files, photos and frozen personal site audit copies the sheet's owner attached
+   * (`evidence[]`, the PAYE claim evidence shape, `parsePayeClaimEvidence`). Only the owner's own claim files are kept
+   * (`timesheetEvidenceOwnerIds`); an entry stored before 1.45.0 has none.
+   */
+  evidence: PayeClaimEvidence[]
 }
 
 export type TimesheetExpenseEntryDocument = TimesheetEntryBase & {
   dateMs: number | null
   dayKey: string | null
+  /** The receipt name an older entry stored (both apps wrote a placeholder and uploaded nothing); read-only. */
   receiptName: string | null
 }
 
@@ -603,18 +617,40 @@ export type TimesheetEntriesDocument = {
   priceWorkEntries: TimesheetPriceWorkEntryDocument[]
 }
 
+/**
+ * Rulebook 1.45.0 §8: whose claim folder a timesheet's evidence may come from — the sheet's stored `userId` and the id
+ * its document is filed under (`timesheetDocumentSubjectId`, `timesheet_{uid}_{period}`), plus any `extra` ids the app
+ * knows are the same person. Both name the sheet's subject; anyone else's file is never read back.
+ */
+export function timesheetEvidenceOwnerIds(
+  sheetDocId: string,
+  sheet: Record<string, unknown> | null | undefined,
+  extra?: ReadonlyArray<unknown> | null
+): string[] {
+  const out: string[] = []
+  for (const value of [record(sheet).userId, timesheetDocumentSubjectId(sheetDocId), ...(extra || [])]) {
+    const id = text(value)
+    if (id && !out.includes(id)) out.push(id)
+  }
+  return out
+}
+
 function entryBase(
   sheetDocId: string,
   sheet: Record<string, unknown>,
   kind: TimesheetEntryKind,
   index: number,
-  row: Record<string, unknown>
+  row: Record<string, unknown>,
+  owner: { userIds: string[]; organizationId?: string | null }
 ): TimesheetEntryBase | null {
   const title = text(row.title)
   if (!title) return null
   const id = timesheetEntryId(sheetDocId, kind, index, row)
   const amount = documentNumber(row.amount) ?? 0
-  const decision = timesheetEntryDecision(sheet, { ...row, id, amount })
+  const fingerprintKind = kind === 'priceWork' ? 'priceWork' : 'expense'
+  // Always computed from the stored row; a `reviewFingerprint` field stored on the row is never read.
+  const reviewFingerprint = timesheetEntryFingerprint(row, fingerprintKind)
+  const decision = timesheetEntryDecision(sheet, { ...row, id, amount }, fingerprintKind)
   return {
     id,
     idStored: Boolean(text(row.id)),
@@ -625,6 +661,8 @@ function entryBase(
     managerDecision: decision.decision,
     managerRevisedAmount: decision.revisedAmount,
     decisionSource: decision.source,
+    reviewFingerprint,
+    evidence: parsePayeClaimEvidence(row.evidence, { userIds: owner.userIds, organizationId: owner.organizationId }),
   }
 }
 
@@ -638,16 +676,23 @@ function entryBase(
 export function parseTimesheetEntries(
   sheetDocId: string,
   sheet: Record<string, unknown> | null | undefined,
-  options?: { timeZone?: string | null } | null
+  options?: {
+    timeZone?: string | null
+    /** 1.45.0: evidence outside this organisation is dropped (when given). */
+    organizationId?: string | null
+    /** 1.45.0: further ids of the sheet's subject whose claim files count as theirs (`timesheetEvidenceOwnerIds`). */
+    ownerUserIds?: ReadonlyArray<unknown> | null
+  } | null
 ): TimesheetEntriesDocument {
   const data = record(sheet)
   const zone = zoneOrLondon(options?.timeZone)
+  const owner = { userIds: timesheetEvidenceOwnerIds(sheetDocId, data, options?.ownerUserIds), organizationId: options?.organizationId ?? null }
   const expenseEntries: TimesheetExpenseEntryDocument[] = []
   const priceWorkEntries: TimesheetPriceWorkEntryDocument[] = []
   const expenses = Array.isArray(data.expenseEntries) ? data.expenseEntries : []
   expenses.forEach((raw, index) => {
     const row = record(raw)
-    const base = entryBase(sheetDocId, data, 'expense', index, row)
+    const base = entryBase(sheetDocId, data, 'expense', index, row, owner)
     if (!base) return
     const dateMs = documentInstantMs(row.date)
     expenseEntries.push({
@@ -660,7 +705,7 @@ export function parseTimesheetEntries(
   const priceWork = Array.isArray(data.priceWorkEntries) ? data.priceWorkEntries : []
   priceWork.forEach((raw, index) => {
     const row = record(raw)
-    const base = entryBase(sheetDocId, data, 'priceWork', index, row)
+    const base = entryBase(sheetDocId, data, 'priceWork', index, row, owner)
     if (!base) return
     const startMs = documentInstantMs(row.startDate) ?? documentInstantMs(row.date)
     const endMs = documentInstantMs(row.endDate)

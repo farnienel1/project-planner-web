@@ -7,6 +7,7 @@
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   assertSucceeds,
@@ -406,4 +407,49 @@ test('1.33.0 a line manager adds personUserId to a stored review that has none â
   // Once written it is fixed.
   await assertFails(updateDoc(await orgDoc(LM, 'payeClaimReviews', 'expense_EXOLD2'), { personUserId: PEER, decision: 'approved' }))
   await assertSucceeds(updateDoc(await orgDoc(LM, 'payeClaimReviews', 'expense_EXOLD2'), { decision: 'approved' }))
+})
+
+// Rulebook 1.45.0 (owner decision 14 Nov): the person edits and deletes their own items with the rulebook's partial
+// update; nobody else does. No rules change: these lock the existing update / delete rules against the app's writes.
+test('1.45.0 the person edits their own price work and expense (rulebook partial update, new evidence); nobody else; delete is theirs', async () => {
+  const canonical = await import('../lib/canonical/index.ts')
+  const roster = [
+    { id: SAM, firstName: 'Sam', surname: 'Paye', email: `${SAM}@test.com`, organizationId: ORG, role: 'operative', operativeMode: true, assignedManagerUserIds: [LM], isActive: true, passwordSet: true },
+    { id: LM, firstName: 'Lena', surname: 'Manager', email: `${LM}@test.com`, organizationId: ORG, role: 'manager', manager: true, isActive: true, passwordSet: true },
+  ]
+  const item = canonical.parsePriceWorkDocument('PW1', priceWork(SAM), { organizationId: ORG })
+  const draft = canonical.payeClaimEditDraft(item)
+  const newFile = { path: `organizations/${ORG}/payeClaims/${SAM}/${SAM}_1700000099000.jpg`, name: 'more.jpg', kind: 'photo' as const, contentType: 'image/jpeg', auditId: null }
+  const write = canonical.priceWorkUpdateWriteFields({
+    item,
+    userId: SAM,
+    draft: { ...draft, amount: 300, details: 'Bathroom and hall', evidence: [newFile] },
+    person: roster[0] as never,
+    roster: roster as never,
+    organizationId: ORG,
+  })
+  assert.ok(write)
+  // The stored approver name ("Lena") is refreshed from the roster ("Lena Manager"), as any re-validated draft is.
+  assert.deepEqual(Object.keys(write.set).sort(), ['amount', 'approvedByName', 'details', 'evidence'])
+  await assertSucceeds(updateDoc(await orgDoc(SAM, 'priceWorkItems', 'PW1'), { ...write.set, updatedBy: SAM, updatedFrom: 'web' }))
+  // The same write by the line manager or an admin is refused.
+  await assertFails(updateDoc(await orgDoc(LM, 'priceWorkItems', 'PW1'), write.set))
+  await assertFails(updateDoc(await orgDoc(ADMIN, 'priceWorkItems', 'PW1'), write.set))
+  // Evidence from another person's folder is refused on an edit too.
+  await assertFails(updateDoc(await orgDoc(SAM, 'priceWorkItems', 'PW1'), { evidence: [{ ...newFile, path: `organizations/${ORG}/payeClaims/${PEER}/${PEER}_1.jpg` }] }))
+  // Expense: the rulebook update keeps at least one piece of evidence.
+  const expenseItem = canonical.parseExpenseDocument('EX1', expense(SAM), { organizationId: ORG })
+  const exWrite = canonical.expenseUpdateWriteFields({
+    item: expenseItem,
+    userId: SAM,
+    draft: { ...canonical.payeClaimEditDraft(expenseItem), amount: 14, evidence: [...expenseItem.evidence, newFile] },
+    organizationId: ORG,
+  })
+  assert.ok(exWrite)
+  await assertSucceeds(updateDoc(await orgDoc(SAM, 'expenseItems', 'EX1'), exWrite.set))
+  // Delete: the person only.
+  await assertFails(deleteDoc(await orgDoc(LM, 'expenseItems', 'EX1')))
+  await assertFails(deleteDoc(await orgDoc(ADMIN, 'priceWorkItems', 'PW1')))
+  await assertSucceeds(deleteDoc(await orgDoc(SAM, 'expenseItems', 'EX1')))
+  await assertSucceeds(deleteDoc(await orgDoc(SAM, 'priceWorkItems', 'PW1')))
 })

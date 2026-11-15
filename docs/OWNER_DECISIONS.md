@@ -512,6 +512,26 @@ UI only, web only (`docs/design/user-profile-ui/user-profile-ui-spec.md`; branch
 | 14 Nov | Download PDF of an older exported sheet with no saved snapshot rebuilds it from today's bookings, rates and working hours: a confirm says it may differ from the one sent, and the PDF carries "Rebuilt on {date} — may differ from the original export." Sheets with a saved snapshot are drawn from it unchanged (review r318). | done, owner to confirm |
 | 14 Nov | When the history query fails, the period shows "Couldn't check older timesheets — try again." with Retry and saves nothing until it loads (review r318, 2nd round; never a blank new sheet). | done, owner to confirm |
 
+## 14 Nov decisions (for 1.45, claim evidence)
+
+| Date | Decision | Status |
+|---|---|---|
+| 14 Nov | **1. Timesheet price work and expense entries get real evidence** (both apps stored only a placeholder receipt name and uploaded nothing): `evidence[]` in the PAYE claim evidence shape, in the person's own claim folder (read by them, their active line managers and active admins — the sheet's reviewers). A new or edited expense needs at least one piece; price work evidence optional; older entries never rejected or rewritten (their receipt name shown read-only). Shown on the sheet, the review lists, Users' rows, the weekly report (count) and one page per piece after the invoice. No security rule (older iOS builds), no new Storage rule. | done web + rulebook (1.45.0, w145-claims-evidence: `parseTimesheetEntries` evidence, `timesheetOwnerEntriesError`, `timesheetEvidencePages`); iOS open (hand-off v1.45.0) |
+| 14 Nov | **2. One web attach control like Tasks**: Add photo, Add site audit (frozen PDF copy of a personal site audit), Add file — no camera on web — shared by timesheet entries and PAYE Add / Edit Price Work and Expense. | done web (`components/claims/ClaimEvidencePicker.tsx`, labels `CLAIM_EVIDENCE_*`); iOS open (Take photo / Choose photo / Add site audit / Add file, restyled sheet) |
+| 14 Nov | **3. Edit and delete added items**: timesheet entries by the owner until the line manager signs (`canEditTimesheetEntry`, as adding); PAYE items by the person (`canEditPayeClaim`, `priceWorkUpdateWriteFields`, `expenseUpdateWriteFields`); editing a reviewed PAYE item sends it back to Needs review; removed evidence is deleted only inside the 15-minute undo window, otherwise kept for recovery. | done web + rulebook (1.45.0); iOS open |
+| 14 Nov | **4. "Amount" → "Amount inc VAT"** on every expense form (timesheet and PAYE, web and iOS) and the expenses report's amount column (`EXPENSE_AMOUNT_LABEL`). | done web + rulebook (1.45.0); iOS open |
+| 14 Nov | **5. "Manager who agreed this" is predictive as you type** — confirmed on web: suggestions come from `agreedManagerSuggestions` (1.43.0) on every keystroke (any part of the name, up to 6). | confirmed (no change) |
+
+## 1.45.0 judgement calls (owner to confirm)
+
+| Date | Choice | Status |
+|---|---|---|
+| 14 Nov | Editing an older expense entry (stored with only a receipt name) asks for a piece of evidence before it saves; leaving it untouched never asks. Adding evidence to an older price work entry is an edit, so it asks for the job number too (the 1.30.1 rule for any edit). | done, owner to confirm |
+| 14 Nov | **Raise `minimumIosBuild` before people attach evidence to timesheet entries**: an older iPhone saves the entry arrays from its own model and drops every entry's evidence when it saves that sheet (the files stay in Storage, unlinked). | owner step (Deploy notes 1.45.0) |
+| 14 Nov | **Known inconsistency (review #322 F3, left as is):** replacing one piece of evidence with another on a PAYE item (same count, same figures) does not send an approved item back to Needs review — the PAYE review fingerprint counts evidence, it does not list it (changing it would reopen every PAYE review already given). Timesheet entries do reopen on any evidence change (F1). Any change of name, job number, dates, figure or number of files reopens a PAYE item. | done, owner to confirm |
+| 14 Nov | A timesheet owner who edits an entry resets the entry's inline decision (as a new entry). **Any owner change reopens the line manager's review, as PAYE does** (review #322 F1): reviews written from 1.45.0 store a fingerprint of the entry's own fields and evidence (`timesheetEntryFingerprint`); a change to any of them puts the entry back to pending. Reviews stored before 1.45.0 have no fingerprint and keep the amount-only rule, so no older decision is reopened. The fingerprint is of the entry as stored (no filled-in dates; evidence order ignored), and a reviewer's save writes only the reviews it changes. | done, owner to confirm |
+| 14 Nov | The manager export email ("Email and export") keeps one invoice PDF per person without evidence pages (attachment size); evidence pages are on Generate Invoice. | done, owner to confirm |
+
 ## Open questions for the owner
 
 | Date | Question |

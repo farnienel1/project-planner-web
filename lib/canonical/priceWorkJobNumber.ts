@@ -45,24 +45,71 @@ export function priceWorkJobNumberText(value: unknown): string {
   return text(value) || PRICE_WORK_JOB_NUMBER_MISSING_TEXT
 }
 
-/** The owner's own fields of a timesheet price work entry; a change to any of them is an edit. */
-const OWNER_ENTRY_FIELDS = ['title', 'details', 'jobNumber', 'agreedManagerName', 'amount'] as const
-const OWNER_ENTRY_DATE_FIELDS = ['startDate', 'endDate'] as const
+/**
+ * The owner's own fields of a timesheet entry; a change to any of them is an edit. Price work: name, description, job
+ * number, the manager who agreed it, amount, start and end; an expense: name, description, job number, amount, date.
+ * 1.45.0: the evidence list (by path, in order) is an owner field of both, so adding or removing evidence is an edit.
+ */
+const OWNER_ENTRY_FIELDS = {
+  priceWork: ['title', 'details', 'jobNumber', 'agreedManagerName', 'amount'],
+  expense: ['title', 'details', 'jobNumber', 'amount'],
+} as const
+const OWNER_ENTRY_DATE_FIELDS = { priceWork: ['startDate', 'endDate'], expense: ['date'] } as const
+
+export type TimesheetOwnerEntryKind = 'priceWork' | 'expense'
 
 function record(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {}
 }
 
-function sameOwnerFields(a: Record<string, unknown>, b: Record<string, unknown>): boolean {
-  for (const key of OWNER_ENTRY_FIELDS) {
+function evidencePaths(value: unknown): string[] {
+  return (Array.isArray(value) ? value : []).map((entry) => text(record(entry).path)).filter(Boolean)
+}
+
+function sameOwnerFields(a: Record<string, unknown>, b: Record<string, unknown>, kind: TimesheetOwnerEntryKind): boolean {
+  for (const key of OWNER_ENTRY_FIELDS[kind]) {
     if (key === 'amount') {
       if ((Number(a.amount) || 0) !== (Number(b.amount) || 0)) return false
     } else if (text(a[key]) !== text(b[key])) return false
   }
-  for (const key of OWNER_ENTRY_DATE_FIELDS) {
+  for (const key of OWNER_ENTRY_DATE_FIELDS[kind]) {
     if ((documentInstantMs(a[key]) ?? null) !== (documentInstantMs(b[key]) ?? null)) return false
   }
-  return true
+  const left = evidencePaths(a.evidence)
+  const right = evidencePaths(b.evidence)
+  return left.length === right.length && left.every((path, index) => path === right[index])
+}
+
+/**
+ * Rulebook 1.45.0 §8: the entries of `next` (stored shape) the owner added or whose own fields they changed, compared
+ * with `previous` (the sheet as the editor loaded it, else as stored). An entry is matched by id without case
+ * (`normalizeDocumentId`), and one stored without an id by its content (its id is derived on read, `timesheetEntryId`);
+ * one with no match is new. A reviewer's decision or revised amount is not an owner field, so it is never an edit.
+ * Entries the owner did not touch — older ones included — are left out, so they never block a save or a signature.
+ */
+export function timesheetOwnerTouchedEntries(
+  previous: ReadonlyArray<unknown> | null | undefined,
+  next: ReadonlyArray<unknown> | null | undefined,
+  kind: TimesheetOwnerEntryKind
+): Array<Record<string, unknown>> {
+  const before = new Map<string, Record<string, unknown>>()
+  const withoutId: Record<string, unknown>[] = []
+  for (const raw of previous || []) {
+    const row = record(raw)
+    const id = normalizeDocumentId(row.id)
+    if (!id) withoutId.push(row)
+    else if (!before.has(id)) before.set(id, row)
+  }
+  const out: Array<Record<string, unknown>> = []
+  for (const raw of next || []) {
+    const row = record(raw)
+    const id = normalizeDocumentId(row.id)
+    const stored = id ? before.get(id) : undefined
+    if (stored && sameOwnerFields(stored, row, kind)) continue
+    if (!stored && withoutId.some((old) => sameOwnerFields(old, row, kind))) continue
+    out.push(row)
+  }
+  return out
 }
 
 /**
@@ -79,21 +126,7 @@ export function timesheetPriceWorkJobNumberError(
   previous: ReadonlyArray<unknown> | null | undefined,
   next: ReadonlyArray<unknown> | null | undefined
 ): string | null {
-  const before = new Map<string, Record<string, unknown>>()
-  const withoutId: Record<string, unknown>[] = []
-  for (const raw of previous || []) {
-    const row = record(raw)
-    const id = normalizeDocumentId(row.id)
-    if (!id) withoutId.push(row)
-    else if (!before.has(id)) before.set(id, row)
-  }
-  for (const raw of next || []) {
-    const row = record(raw)
-    const id = normalizeDocumentId(row.id)
-    const stored = id ? before.get(id) : undefined
-    if (stored && sameOwnerFields(stored, row)) continue
-    // An entry stored without an id gets a derived id on read (`timesheetEntryId`); the same content is the same entry.
-    if (!stored && withoutId.some((old) => sameOwnerFields(old, row))) continue
+  for (const row of timesheetOwnerTouchedEntries(previous, next, 'priceWork')) {
     const error = priceWorkJobNumberError(row.jobNumber)
     if (error) return error
   }

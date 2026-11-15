@@ -10,7 +10,7 @@ import type { MyScheduleOptions, OrgInvoicingSettings, OrgPayrollTimePolicy } fr
 import { DEFAULT_MY_SCHEDULE, DEFAULT_PAYROLL_POLICY } from '@/lib/settings/organizationSettings'
 import { dayKey } from '@/lib/ios-parity/londonTime'
 import { isTimesheetFullyApproved } from '@/lib/timesheets/timesheetApprovalPolicy'
-import { timesheetParticipant } from '@/lib/canonical'
+import { normalizeDocumentId, timesheetParticipant } from '@/lib/canonical'
 import { payPeriodsOverlapping } from '@/lib/timesheets/timesheetPayrollPolicy'
 import { applyWeeklyReportOverride } from '@/lib/timesheets/weeklyReportOverride'
 import { listTimesheetStates } from '@/lib/timesheets/timesheetStorage'
@@ -73,6 +73,8 @@ export async function loadWeeklyReportTimesheetFeed({
 }): Promise<ApprovedTimesheetWeek[]> {
   const periods = payPeriodsOverlapping(rangeStart, rangeEnd, invoicing, timeZone)
   const weeks: ApprovedTimesheetWeek[] = []
+  // Rulebook 1.45.0: evidence per price work / expense entry (by id), shared by every week so a merged week keeps it.
+  const evidenceCounts: Record<string, number> = {}
 
   for (const user of users) {
     if (!periods.some((period) => participatesInPeriod(user, period, timeZone))) continue
@@ -109,6 +111,10 @@ export async function loadWeeklyReportTimesheetFeed({
         // Never written back (M7): the report only reads timesheets.
       }
       if (!working.weeklyReportOverride) continue
+      for (const entry of [...working.priceWorkEntries, ...working.expenseEntries]) {
+        const count = entry.evidence?.length ?? 0
+        if (count > 0) evidenceCounts[normalizeDocumentId(entry.id)] = count
+      }
       weeks.push({
         userId: user.id,
         personName: resolveDisplayName(user, operative),
@@ -117,6 +123,7 @@ export async function loadWeeklyReportTimesheetFeed({
         weekStart: period.start,
         weekEnd: period.end,
         override: working.weeklyReportOverride,
+        evidenceCounts,
       })
     }
   }
