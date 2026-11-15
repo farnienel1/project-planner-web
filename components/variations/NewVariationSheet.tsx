@@ -15,6 +15,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent }
 import {
   rankMaterialRecords,
   variationCustomLineError,
+  variationLineTotal,
   variationMaterialQuantityError,
   variationSubcontractorLineError,
 } from '@/lib/canonical';
@@ -487,7 +488,8 @@ export function NewVariationSheet({
     const n = Number(String(value).replace(',', '.'));
     return Number.isFinite(n) ? n : 0;
   };
-  const draftTotal = (line: { quantity: string; cost: string }) => Math.round(amount(line.quantity || '1') * amount(line.cost) * 100) / 100;
+  // Rulebook 1.52.0 `variationLineTotal`: the same line total the reader, the totals and the export use.
+  const draftTotal = (line: { quantity: string; cost: string }) => variationLineTotal(line);
   const costTotal = [...customLines, ...subLines].reduce((sum, line) => sum + draftTotal(line), 0);
 
   const handleSave = async () => {

@@ -19,10 +19,17 @@ import {
   variationMaterialQuantity,
   variationMaterialQuantityError,
   variationRenumberConflict,
+  variationRenumberMissingRefusal,
   variationRenumberPlan,
+  variationEvidenceKeys,
+  variationLineTotal,
+  VARIATION_ORDER_LOCKED_MESSAGE,
+  VARIATION_PINNED_MESSAGE,
   variationSubcontractorLineError,
   variationTotals,
   variationWriteFields,
+  variationTrackerWriteFields,
+  parseVariationTrackerDocument,
 } from './index'
 
 test('labour keeps the crew: 2 × 4h is stored with hours 8 and read back as 2 × 4', () => {
@@ -47,9 +54,13 @@ test('material quantity is a number with a unit; legacy text still reads', () =>
   // An older build rewrote the text: the text wins over a stale number.
   assert.deepEqual(variationMaterialQuantity({ quantity: '50m', quantityValue: 100, unit: 'm' }), { quantity: '50m', quantityValue: 50, unit: 'm' })
   assert.equal(parseVariationMaterialQuantity('abc'), null)
-  assert.equal(variationMaterialQuantityError('1-'), 'Enter the quantity as a number above 0.')
-  assert.equal(variationMaterialQuantityError('0'), 'Enter the quantity as a number above 0.')
+  assert.equal(variationMaterialQuantityError('1-'), 'Enter the quantity as a number of at least 0.001.')
+  assert.equal(variationMaterialQuantityError('0'), 'Enter the quantity as a number of at least 0.001.')
+  assert.equal(variationMaterialQuantityError('0.0004'), 'Enter the quantity as a number of at least 0.001.')
   assert.equal(variationMaterialQuantityError('2.5'), null)
+  // Three decimals are kept (0.001 never rounds to 0).
+  assert.deepEqual(variationMaterialLineFields({ id: 'm', name: 'Wire', quantity: '0.001', unit: 'kg' }), { id: 'm', name: 'Wire', quantity: '0.001kg', quantityValue: 0.001, unit: 'kg' })
+  assert.equal(variationMaterialLineFields({ id: 'm', name: 'Wire', quantity: '1.2345', unit: 'm' }).quantityValue, 1.235)
 })
 
 const stored = {
@@ -156,18 +167,43 @@ test('export rows: every variation (no lines too), organisation-zone dates, numb
   assert.equal(variationExportFileName('J 1042/A'), 'J-1042-A-variations.xlsx')
 })
 
-test('evidence add keeps stored files, skips duplicates and the 11th file', () => {
+test('evidence add keeps stored files, counts duplicates as linked and refuses the 11th file', () => {
   const storedDoc = { evidence: [{ id: 'a', storagePath: 'p/a.jpg', downloadURL: 'u' }] }
   const write = variationEvidenceAddWriteFields(storedDoc, [
     { id: 'b', storagePath: 'p/b.jpg', downloadURL: 'u2' },
     { id: 'a2', storagePath: 'p/a.jpg', downloadURL: 'u' },
-  ])!
-  assert.equal(write.set.evidenceCount, 2)
+  ])
+  assert.equal(write.set!.evidenceCount, 2)
   assert.deepEqual(write.added, ['p/b.jpg'])
-  assert.deepEqual(write.skipped, ['p/a.jpg'])
+  assert.deepEqual(write.alreadyLinked, ['p/a.jpg'])
+  assert.deepEqual(write.refused, [])
   const full = { evidence: Array.from({ length: 10 }, (_, i) => ({ id: `x${i}`, storagePath: `p/${i}` })) }
-  assert.equal(variationEvidenceAddWriteFields(full, [{ id: 'y', storagePath: 'p/y' }]), null)
-  assert.equal(variationEvidenceAddWriteFields(storedDoc, []), null)
+  const over = variationEvidenceAddWriteFields(full, [{ id: 'y', storagePath: 'p/y' }])
+  assert.equal(over.set, null)
+  assert.deepEqual(over.refused, ['p/y'])
+  assert.equal(variationEvidenceAddWriteFields(storedDoc, []).set, null)
+})
+
+test('review HIGH 1: a link that committed but reported an error is linked on the retry — nothing to delete', () => {
+  const entries = [{ id: 'n1', storagePath: 'p/n1.jpg', downloadURL: 'u1' }, { id: 'n2', storagePath: 'p/n2.pdf', downloadURL: 'u2' }]
+  const first = variationEvidenceAddWriteFields({ evidence: [] }, entries)
+  // The first transaction committed; the client saw an error and tried again against the stored list.
+  const afterCommit = { evidence: first.set!.evidence }
+  const retry = variationEvidenceAddWriteFields(afterCommit, entries)
+  assert.equal(retry.set, null)
+  assert.deepEqual(retry.added, [])
+  assert.deepEqual(retry.alreadyLinked, ['p/n1.jpg', 'p/n2.pdf'])
+  assert.deepEqual(retry.refused, [])
+  // A fresh read decides which uploaded files are not on the variation (the only ones that may be deleted).
+  const onVariation = new Set(variationEvidenceKeys(afterCommit))
+  assert.deepEqual(entries.filter((entry) => !onVariation.has(entry.storagePath)), [])
+})
+
+test('line totals: one rulebook function for the reader, the totals and the previews', () => {
+  assert.equal(variationLineTotal({ quantity: '2,5', cost: '10' }), 25)
+  assert.equal(variationLineTotal({ quantity: '', cost: 150.5 }), 150.5)
+  assert.equal(variationLineTotal({ quantity: 3, cost: -1 }), 0)
+  assert.equal(parseVariationDocument('v1', stored)!.customLines[0].lineTotal, variationLineTotal({ quantity: 2, cost: 150.5 }))
 })
 
 test('renumber plan: pinned keep their numbers, open share their own numbers, deleted numbers never reused', () => {
@@ -206,6 +242,29 @@ test('renumber plan: pinned keep their numbers, open share their own numbers, de
   assert.equal(variationIsPinned({ status: 'open' }), false)
 })
 
+test('renumber plan: a pinned row never moves, even when the order asks; a locked order refuses', () => {
+  const rows = [
+    { id: 'a', voNumber: 'VO-001', status: 'open', sequence: 1 },
+    { id: 'b', voNumber: 'VO-002', status: 'submitted', sequence: 2 },
+    { id: 'c', voNumber: 'VO-003', status: 'open', sequence: 3 },
+  ]
+  const moved = variationRenumberPlan({ rows, order: ['b', 'a', 'c'] })
+  assert.equal(moved.refused, VARIATION_PINNED_MESSAGE)
+  // The plan keeps the pinned row in its own place whatever the order says.
+  assert.deepEqual(moved.rows.map((row) => row.id), ['a', 'b', 'c'])
+  // Open rows only: the pinned row keeps its place, the open rows fill the others.
+  const open = variationRenumberPlan({ rows, order: ['c', 'a'] })
+  assert.equal(open.refused, null)
+  assert.deepEqual(open.rows.map((row) => [row.id, row.to]), [['c', 'VO-001'], ['b', 'VO-002'], ['a', 'VO-003']])
+  assert.equal(variationRenumberPlan({ rows, order: ['c', 'a'], orderLocked: true }).refused, VARIATION_ORDER_LOCKED_MESSAGE)
+})
+
+test('review MEDIUM 5: a renumbered row with no variations/{id} document refuses the save', () => {
+  const changes = [{ id: 'A', from: 'VO-001' }, { id: 'b', from: 'VO-002' }]
+  assert.equal(variationRenumberMissingRefusal(changes, ['a', 'B']), null)
+  assert.match(variationRenumberMissingRefusal(changes, ['a'])!, /^VO-002 was saved by an older iPhone/)
+})
+
 test('renumber conflict and who renumbers', () => {
   const base = [{ id: 'a', voNumber: 'VO-001', status: 'open', sequence: 1 }]
   assert.equal(variationRenumberConflict(base, [{ ...base[0] }]), false)
@@ -217,4 +276,16 @@ test('renumber conflict and who renumbers', () => {
   assert.equal(canRenumberVariations(manager, { managesJob: false }), false)
   assert.equal(canRenumberVariations({ isAdmin: true, isSuperAdmin: false, isManager: false, isOperativeMode: false }), true)
   assert.equal(canRenumberVariations({ isAdmin: true, isSuperAdmin: false, isManager: false, isOperativeMode: true }), false)
+})
+
+test('the stored order lock is set and cleared on the tracker document', () => {
+  const lock = variationTrackerWriteFields({ parentId: 'J', version: 2 }, { kind: 'lockOrder', parentId: 'J', parentType: 'project', actorUid: 'u1', actorName: 'Sam', at: 5 })!
+  assert.deepEqual(lock.set, { orderLocked: true, orderLockedByUid: 'u1', orderLockedByName: 'Sam', orderLockedAt: 5 })
+  const stored = { parentId: 'J', version: 2, ...lock.set }
+  assert.equal(parseVariationTrackerDocument('J', stored).orderLocked, true)
+  assert.equal(parseVariationTrackerDocument('J', stored).orderLockedByName, 'Sam')
+  const unlock = variationTrackerWriteFields(stored, { kind: 'unlockOrder' })!
+  assert.deepEqual(unlock.set, { orderLocked: false })
+  assert.deepEqual(unlock.remove.sort(), ['orderLockedAt', 'orderLockedByName', 'orderLockedByUid'])
+  assert.equal(parseVariationTrackerDocument('J', {}).orderLocked, false)
 })

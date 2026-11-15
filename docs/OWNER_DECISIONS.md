@@ -688,13 +688,13 @@ UI only, web only (`docs/design/user-profile-ui/user-profile-ui-spec.md`; branch
 
 | Date | Choice | Status |
 |---|---|---|
-| 15 Nov | The VO tracker is for **admins and the job's managers** (`canRenumberVariations` with `isJobManager`); before 1.52.0 admins only. The rules let the job's managers write the tracker document and renumber that job's variations. | done, owner to confirm |
+| 15 Nov | The VO tracker is for **admins and the job's managers** (`canRenumberVariations` with `isJobManager`); before 1.52.0 admins only. The rules let the job's managers write the tracker document and renumber that job's variations. | done, **owner confirmed 15 Nov** |
 | 15 Nov | **Pinned always**: Submitted / Closed (and any locked number) keep their numbers in every mode; the "Renumber everything" option (`resequenceAll`) is no longer offered, and the rules refuse a number change on a pinned VO even from an admin. A stored `resequenceAll` tracker reads as pinned. | done, owner to confirm |
 | 15 Nov | The Excel file is written by the app itself (Office Open XML zipped with `fflate`, already a dependency) instead of adding `exceljs` (last released 2023, older dependencies); the logo is a drawing part. Opened and checked with SheetJS in a test; not opened in Microsoft Excel or Numbers. | done, owner to confirm |
-| 15 Nov | The Excel lists every variation not removed; removed (soft-deleted) VOs are left out (their numbers stay retired). | done, owner to confirm |
-| 15 Nov | Labour and material lines carry no price on a variation; "Total cost" is custom + subcontractor lines only. | done, owner to confirm |
+| 15 Nov | The Excel lists every variation not removed; removed (soft-deleted) VOs are left out (their numbers stay retired). | done, **owner confirmed 15 Nov** |
+| 15 Nov | Labour and material lines carry no price on a variation; "Total cost" is custom + subcontractor lines only. | done, **owner confirmed 15 Nov** |
 | 15 Nov | Evidence uploads after the variation saves (the sheet closes at once; a progress bar shows on the list and leaving the page asks first). An upload is cancelled after 60 seconds without progress or 5 minutes in all; files that could not be linked are deleted again. | done, owner to confirm |
-| 15 Nov | The tracker's **Lock order** switch is a per-screen freeze (nothing stored); someone else's editing lock (5 minutes) still freezes dragging for everyone else. Dragging is off while a status filter is on. | done, owner to confirm |
+| 15 Nov | ~~The tracker's Lock order switch is a per-screen freeze.~~ **Review of #330 (the owner was told the Lock switch freezes ALL dragging):** the lock is stored on the tracker (`orderLocked`, who and when shown as "Order locked by …"), set by admins and the job's managers, and refused by `applyVariationOrder` and the security rules while set. The old 5-minute editing lock is retired on web. | done (review fix) |
 | 15 Nov | The settings copies' numbers (`settings/variationItem_*`, the settings log) are not checked by the rules (a log is an array the rules cannot walk); the apps write them with the same plan. | known limit |
 
 ## Open questions for the owner

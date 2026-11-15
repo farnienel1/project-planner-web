@@ -947,6 +947,11 @@ export type VariationTrackerDocument = {
   lockedByUid: string | null
   lockedByName: string | null
   lockedAtMs: number | null
+  /** 1.52.0: the order is locked — nobody moves or renumbers a variation of the job until it is unlocked. */
+  orderLocked: boolean
+  orderLockedByUid: string | null
+  orderLockedByName: string | null
+  orderLockedAtMs: number | null
 }
 
 /** Read `variationTrackers/{parentId}`. A missing document is a disabled tracker (`VO-`, padding 3, version 0). */
@@ -969,10 +974,16 @@ export function parseVariationTrackerDocument(
     lockedByUid: optionalText(row.lockedByUid),
     lockedByName: optionalText(row.lockedByName),
     lockedAtMs: documentInstantMs(row.lockedAt),
+    orderLocked: documentBool(row.orderLocked) === true,
+    orderLockedByUid: optionalText(row.orderLockedByUid),
+    orderLockedByName: optionalText(row.orderLockedByName),
+    orderLockedAtMs: documentInstantMs(row.orderLockedAt),
   }
 }
 
 export const VARIATION_TRACKER_LOCK_FIELDS = ['lockedByUid', 'lockedByName', 'lockedAt'] as const
+/** 1.52.0: the stored order lock (`lockOrder` / `unlockOrder`). */
+export const VARIATION_TRACKER_ORDER_LOCK_FIELDS = ['orderLocked', 'orderLockedByUid', 'orderLockedByName', 'orderLockedAt'] as const
 
 /** One change to `variationTrackers/{parentId}` (1.9.0). */
 export type VariationTrackerAction =
@@ -982,6 +993,8 @@ export type VariationTrackerAction =
   | { kind: 'unlock' }
   | { kind: 'mode'; numberingMode: unknown }
   | { kind: 'renumbered' }
+  | { kind: 'lockOrder'; parentId: unknown; parentType: unknown; actorUid: unknown; actorName: unknown; at: unknown }
+  | { kind: 'unlockOrder' }
 
 /**
  * Writes to `variationTrackers/{parentId}` (1.9.0): `{ set, remove }` of the fields that action changes, written as a
@@ -1047,6 +1060,20 @@ export function variationTrackerWriteFields(
       if (!row) return null
       set.version = Math.trunc(documentNumber(row.version) ?? 0) + 1
       removeLock()
+      break
+    case 'lockOrder':
+      // 1.52.0: the stored order lock — the tracker's Lock switch; the security rules refuse every number or
+      // sequence change while it is set.
+      parentFields(action.parentId, action.parentType)
+      set.orderLocked = true
+      set.orderLockedByUid = text(action.actorUid)
+      set.orderLockedByName = text(action.actorName)
+      set.orderLockedAt = action.at
+      break
+    case 'unlockOrder':
+      if (!row) return null
+      if (documentBool(row.orderLocked) === true) set.orderLocked = false
+      for (const key of VARIATION_TRACKER_ORDER_LOCK_FIELDS) if (key !== 'orderLocked' && row[key] != null) remove.push(key)
       break
     default:
       return null

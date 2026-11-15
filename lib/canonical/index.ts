@@ -1223,6 +1223,7 @@ export {
 export {
   NOTIFICATION_RELATED_ID,
   VARIATION_TRACKER_LOCK_FIELDS,
+  VARIATION_TRACKER_ORDER_LOCK_FIELDS,
   VARIATION_TRADES_DOCUMENT_ID,
   healthSafetySignatureRemovalWrites,
   notificationCreateFields,

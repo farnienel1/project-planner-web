@@ -140,6 +140,11 @@ export type VariationTracker = {
   lockedByUid?: string | null
   lockedByName?: string | null
   lockedAt?: Date | null
+  /** Rulebook 1.52.0: the stored order lock (nobody moves or renumbers while it is set). */
+  orderLocked?: boolean
+  orderLockedByUid?: string | null
+  orderLockedByName?: string | null
+  orderLockedAt?: Date | null
 }
 
 export const VARIATION_HEADER_COPY =
@@ -211,7 +216,6 @@ export const EVIDENCE_ACCEPT = [...UPLOAD_ALLOWED_TYPES.variation_evidence.conte
 export const EVIDENCE_EXTENSIONS = [...UPLOAD_ALLOWED_TYPES.variation_evidence.extensions]
 export const EVIDENCE_MAX_FILES = 10
 export const EVIDENCE_MAX_BYTES = VARIATION_EVIDENCE_MAX_BYTES
-export const TRACKER_LOCK_MS = 5 * 60 * 1000
 export const TRACKER_ADDED_DESCRIPTION = 'Added from the tracker. Site needs to confirm the scope and add hours and materials.'
 
 /** The stored counters, from the rulebook's `variationTotals` (the reader's evidence rule: a path or a URL). */

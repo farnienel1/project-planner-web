@@ -2833,7 +2833,11 @@
             "version": 0,
             "lockedByUid": null,
             "lockedByName": null,
-            "lockedAtMs": null
+            "lockedAtMs": null,
+            "orderLocked": false,
+            "orderLockedByUid": null,
+            "orderLockedByName": null,
+            "orderLockedAtMs": null
           }
         },
         {
@@ -2857,7 +2861,11 @@
             "version": 0,
             "lockedByUid": null,
             "lockedByName": null,
-            "lockedAtMs": null
+            "lockedAtMs": null,
+            "orderLocked": false,
+            "orderLockedByUid": null,
+            "orderLockedByName": null,
+            "orderLockedAtMs": null
           }
         }
       ]

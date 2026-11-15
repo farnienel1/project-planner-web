@@ -310,6 +310,15 @@ test('1.52.0 other health & safety files stay open to members (operatives still 
   await assertSucceeds(put(OP_A, 'op-a@test.com', other, 64, 'application/pdf'))
 })
 
+test('1.52.0 review LOW: a health & safety file one level under the job, and a deep one, still open to members', async () => {
+  const shallow = `organizations/${ORG_A}/healthSafety/job-1/${OP_A}_${Date.now()}.pdf`
+  await assertSucceeds(put(OP_A, 'op-a@test.com', shallow, 64, 'application/pdf'))
+  await assertSucceeds(getBytes(ref(authStorage(OP_A, 'op-a@test.com'), shallow)))
+  const deep = `organizations/${ORG_A}/healthSafety/job-1/deadlines/d1/${OP_A}_${Date.now()}.jpg`
+  await assertSucceeds(put(OP_A, 'op-a@test.com', deep, 64, 'image/jpeg'))
+  await assertSucceeds(getBytes(ref(authStorage(OP_A, 'op-a@test.com'), deep)))
+})
+
 test('1.52.0 another company\'s staff never read variation evidence', async () => {
   const file = `organizations/${ORG_A}/healthSafety/job-1/variations/${ADMIN_A}_${Date.now()}.jpg`
   await assertSucceeds(put(ADMIN_A, 'admin-a@test.com', file, 64, 'image/jpeg'))

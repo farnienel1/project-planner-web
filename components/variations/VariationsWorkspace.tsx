@@ -74,6 +74,7 @@ import {
   removedEvidenceHeading,
   variationDateText,
   variationLabourText,
+  variationLineTotal,
   variationListTotals,
   variationMaterialLineFields,
   variationMaterialQuantity,
@@ -309,29 +310,24 @@ export function VariationsWorkspace({
       return
     }
     patchJob(key, (job) => ({ ...job, status: 'linking' }))
-    try {
-      const linked = await addVariationEvidence({ organizationId: organization.id, variation, entries: uploaded, actorUid: user.id })
-      const unlinked = uploaded.filter((item) => !linked.added.includes(item.storagePath))
-      await Promise.all(unlinked.map((item) => removeEvidenceObject(item.storagePath)))
-      const failed = files.length - linked.added.length
-      patchJob(key, (job) => ({
-        ...job,
-        status: failed > 0 ? 'failed' : 'done',
-        message:
-          failed > 0
-            ? `${linked.added.length} of ${files.length} files added.${unlinked.length ? ' A variation holds 10 files.' : ''}`
-            : `${linked.added.length} evidence file${linked.added.length === 1 ? '' : 's'} added.`,
-      }))
-      if (linked.copiesFailed.length) toast(variationCopyWarning({ copiesFailed: linked.copiesFailed }) || '')
-    } catch (err) {
-      console.error('[variations] evidence could not be linked to the variation', err)
-      await Promise.all(uploaded.map((item) => removeEvidenceObject(item.storagePath)))
-      patchJob(key, (job) => ({
-        ...job,
-        status: 'failed',
-        message: `The files uploaded but could not be added to ${variation.voNumber}, so they were removed: ${err instanceof Error ? err.message : 'unknown error'}. Add them again.`,
-      }))
-    }
+    // Review of #330, HIGH 1: only files proven NOT on the variation (refused for the 10-file limit, or absent from a
+    // fresh read after a failed link) are deleted again; a file already on the stored list is linked and kept.
+    const linked = await addVariationEvidence({ organizationId: organization.id, variation, entries: uploaded, actorUid: user.id })
+    await Promise.all(linked.notLinked.map((path) => removeEvidenceObject(path)))
+    const missing = files.length - linked.linked.length
+    const kept = uploaded.length - linked.linked.length - linked.notLinked.length
+    if (linked.error) console.error('[variations] evidence could not be linked to the variation', linked.error)
+    patchJob(key, (job) => ({
+      ...job,
+      status: missing > 0 ? 'failed' : 'done',
+      message:
+        missing === 0
+          ? `${linked.linked.length} evidence file${linked.linked.length === 1 ? '' : 's'} added.`
+          : linked.error
+            ? `${linked.linked.length} of ${files.length} files added to ${variation.voNumber}: ${linked.error instanceof Error ? linked.error.message : 'the variation could not be updated'}.${kept > 0 ? ' Files whose link could not be checked are kept for an admin to restore.' : ' Add the others again.'}`
+            : `${linked.linked.length} of ${files.length} files added.${linked.notLinked.length ? ' A variation holds 10 files.' : ''}`,
+    }))
+    if (linked.copiesFailed.length) toast(variationCopyWarning({ copiesFailed: linked.copiesFailed }) || '')
   }
 
   return (
@@ -466,8 +462,12 @@ export function VariationsWorkspace({
                 saved = created
                 warning = variationCopyWarning(created.saveOutcome)
               } else {
+                // Review of #330, HIGH 2: `editing` is the copy the sheet opened with; only the fields the user changed
+                // from it are written, so a renumber, a status change or evidence linked meanwhile is never undone.
                 saved = { ...editing, ...draft }
-                warning = variationCopyWarning(await updateVariation({ organizationId: organization.id, actorUid: user.id, variation: saved }))
+                warning = variationCopyWarning(
+                  await updateVariation({ organizationId: organization.id, actorUid: user.id, variation: saved, base: editing })
+                )
               }
             } catch (err) {
               console.error('[variations] save failed', err)
@@ -961,7 +961,7 @@ function VariationDrawer({
           row.customLines.map((line) => (
             <p key={line.id}>
               <b>{line.name}</b> · {line.quantity} × {money ? money(line.cost) : '—'}
-              {money ? ` = ${money(Math.round(line.quantity * line.cost * 100) / 100)}` : ''}
+              {money ? ` = ${money(variationLineTotal(line))}` : ''}
               {line.description ? <span className="muted small" style={{ display: 'block' }}>{line.description}</span> : null}
             </p>
           ))
@@ -973,7 +973,7 @@ function VariationDrawer({
             <p key={line.id}>
               <b>{line.name}</b>
               {line.quoteNumber ? ` · Quote ${line.quoteNumber}` : ''} · {line.quantity} × {money ? money(line.cost) : '—'}
-              {money ? ` = ${money(Math.round(line.quantity * line.cost * 100) / 100)}` : ''}
+              {money ? ` = ${money(variationLineTotal(line))}` : ''}
             </p>
           ))
         )}

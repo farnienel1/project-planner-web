@@ -585,14 +585,17 @@ var ProjectPlannerCanonical = (() => {
     VARIATION_MATERIALS_WRITE_GROUP: () => VARIATION_MATERIALS_WRITE_GROUP,
     VARIATION_MATERIAL_UNITS: () => VARIATION_MATERIAL_UNITS,
     VARIATION_NUMBER_WRITE_GROUP: () => VARIATION_NUMBER_WRITE_GROUP,
+    VARIATION_ORDER_LOCKED_MESSAGE: () => VARIATION_ORDER_LOCKED_MESSAGE,
     VARIATION_PINNED_MESSAGE: () => VARIATION_PINNED_MESSAGE,
     VARIATION_QUANTITY_MAX: () => VARIATION_QUANTITY_MAX,
     VARIATION_QUANTITY_MESSAGE: () => VARIATION_QUANTITY_MESSAGE,
+    VARIATION_QUANTITY_MIN: () => VARIATION_QUANTITY_MIN,
     VARIATION_RENUMBER_STALE_MESSAGE: () => VARIATION_RENUMBER_STALE_MESSAGE,
     VARIATION_STATUS_LABELS: () => VARIATION_STATUS_LABELS,
     VARIATION_STATUS_TOKENS: () => VARIATION_STATUS_TOKENS,
     VARIATION_STATUS_WRITE_GROUP: () => VARIATION_STATUS_WRITE_GROUP,
     VARIATION_TRACKER_LOCK_FIELDS: () => VARIATION_TRACKER_LOCK_FIELDS,
+    VARIATION_TRACKER_ORDER_LOCK_FIELDS: () => VARIATION_TRACKER_ORDER_LOCK_FIELDS,
     VARIATION_TRADES_DOCUMENT_ID: () => VARIATION_TRADES_DOCUMENT_ID,
     WARNING_RESOLUTION_STATUSES: () => WARNING_RESOLUTION_STATUSES,
     WARNING_SCOPE_ALL: () => WARNING_SCOPE_ALL,
@@ -1695,6 +1698,7 @@ var ProjectPlannerCanonical = (() => {
     variationCustomLineFields: () => variationCustomLineFields,
     variationDateText: () => variationDateText,
     variationEvidenceAddWriteFields: () => variationEvidenceAddWriteFields,
+    variationEvidenceKeys: () => variationEvidenceKeys,
     variationEvidenceRemovalWriteFields: () => variationEvidenceRemovalWriteFields,
     variationExportFileName: () => variationExportFileName,
     variationExportRows: () => variationExportRows,
@@ -1704,6 +1708,7 @@ var ProjectPlannerCanonical = (() => {
     variationLabourLineFields: () => variationLabourLineFields,
     variationLabourText: () => variationLabourText,
     variationLineId: () => variationLineId,
+    variationLineTotal: () => variationLineTotal,
     variationListTotals: () => variationListTotals,
     variationLogItemId: () => variationLogItemId,
     variationLogItems: () => variationLogItems,
@@ -1716,6 +1721,7 @@ var ProjectPlannerCanonical = (() => {
     variationNumberValue: () => variationNumberValue,
     variationPreviousNumbers: () => variationPreviousNumbers,
     variationRenumberConflict: () => variationRenumberConflict,
+    variationRenumberMissingRefusal: () => variationRenumberMissingRefusal,
     variationRenumberPlan: () => variationRenumberPlan,
     variationRenumberWriteFields: () => variationRenumberWriteFields,
     variationSubcontractorLineError: () => variationSubcontractorLineError,
@@ -12338,7 +12344,7 @@ var ProjectPlannerCanonical = (() => {
   function rulebookStamp() {
     return {
       version: true ? "1.52.0" : "",
-      sha256: true ? "1c2187a83437105a7fbdac33dac8e5bedbec0e87114302d77eef8d84a3037020" : ""
+      sha256: true ? "1b511b8c38fa0df9f56b422651dcdef20d0cc26f9f6029f11b3f2d88452d0f06" : ""
     };
   }
   function rulebookVersionLabel(version) {
@@ -15198,6 +15204,9 @@ var ProjectPlannerCanonical = (() => {
   function round2(value) {
     return Math.round(value * 100) / 100;
   }
+  function round3(value) {
+    return Math.round(value * 1e3) / 1e3;
+  }
   function positive(value) {
     const n = documentNumber(value);
     return n != null && n > 0 ? n : null;
@@ -15230,13 +15239,14 @@ var ProjectPlannerCanonical = (() => {
   }
   var VARIATION_MATERIAL_UNITS = ["no", "m", "box", "kg"];
   var VARIATION_QUANTITY_MAX = 1e5;
-  var VARIATION_QUANTITY_MESSAGE = "Enter the quantity as a number above 0.";
+  var VARIATION_QUANTITY_MIN = 1e-3;
+  var VARIATION_QUANTITY_MESSAGE = "Enter the quantity as a number of at least 0.001.";
   function normalizeVariationMaterialUnit(raw) {
     const value = text20(raw).toLowerCase();
     return VARIATION_MATERIAL_UNITS.includes(value) ? value : null;
   }
   function variationMaterialQuantityText(value, unit) {
-    const amount = String(round2(value));
+    const amount = String(round3(value));
     const u = normalizeVariationMaterialUnit(unit) ?? "no";
     return u === "no" ? amount : `${amount}${u}`;
   }
@@ -15261,11 +15271,11 @@ var ProjectPlannerCanonical = (() => {
   }
   function variationMaterialQuantityError(value) {
     const n = documentNumber(typeof value === "string" ? value.replace(",", ".") : value);
-    if (n == null || n <= 0 || n > VARIATION_QUANTITY_MAX) return VARIATION_QUANTITY_MESSAGE;
+    if (n == null || round3(n) < VARIATION_QUANTITY_MIN || n > VARIATION_QUANTITY_MAX) return VARIATION_QUANTITY_MESSAGE;
     return null;
   }
   function variationMaterialLineFields(input) {
-    const value = round2(documentNumber(typeof input?.quantity === "string" ? input.quantity.replace(",", ".") : input?.quantity) ?? 0);
+    const value = round3(documentNumber(typeof input?.quantity === "string" ? input.quantity.replace(",", ".") : input?.quantity) ?? 0);
     const unit = normalizeVariationMaterialUnit(input?.unit) ?? "no";
     return { id: text20(input?.id), name: text20(input?.name), quantity: variationMaterialQuantityText(value, unit), quantityValue: value, unit };
   }
@@ -15291,7 +15301,7 @@ var ProjectPlannerCanonical = (() => {
         description: typeof line.description === "string" ? line.description : "",
         quantity,
         cost,
-        lineTotal: round2(quantity * cost)
+        lineTotal: variationLineTotal({ quantity, cost })
       });
     }
     return out;
@@ -15312,7 +15322,7 @@ var ProjectPlannerCanonical = (() => {
         quoteNumber: text20(line.quoteNumber),
         quantity,
         cost,
-        lineTotal: round2(quantity * cost)
+        lineTotal: variationLineTotal({ quantity, cost })
       });
     }
     return out;
@@ -15332,12 +15342,15 @@ var ProjectPlannerCanonical = (() => {
   function money(value) {
     return round2(documentNumber(typeof value === "string" ? value.replace(",", ".") : value) ?? 0);
   }
+  function amount3(value) {
+    return round3(documentNumber(typeof value === "string" ? value.replace(",", ".") : value) ?? 0);
+  }
   function variationCustomLineFields(input) {
     return {
       id: text20(input?.id),
       name: text20(input?.name),
       description: typeof input?.description === "string" ? input.description.trim() : "",
-      quantity: money(input?.quantity),
+      quantity: amount3(input?.quantity),
       cost: money(input?.cost)
     };
   }
@@ -15347,15 +15360,19 @@ var ProjectPlannerCanonical = (() => {
       subcontractorId: text20(input?.subcontractorId),
       name: text20(input?.name),
       quoteNumber: text20(input?.quoteNumber),
-      quantity: money(input?.quantity),
+      quantity: amount3(input?.quantity),
       cost: money(input?.cost)
     };
   }
-  function lineTotal(line) {
-    const quantity = positive(line?.quantity) ?? 1;
-    const cost = nonNegative(line?.cost) ?? 0;
+  function variationLineTotal(line) {
+    const read = (value) => documentNumber(typeof value === "string" ? value.replace(",", ".") : value);
+    const q = read(line?.quantity);
+    const c = read(line?.cost);
+    const quantity = q != null && q > 0 ? q : 1;
+    const cost = c != null && c >= 0 ? c : 0;
     return round2(quantity * cost);
   }
+  var lineTotal = variationLineTotal;
   function variationTotals(variation) {
     const v = variation || {};
     const labourHours = round2((v.labour || []).reduce((sum, line) => sum + (documentNumber(line?.hours) ?? 0), 0));
@@ -15398,6 +15415,15 @@ var ProjectPlannerCanonical = (() => {
     return role.isSuperAdmin === true || role.isAdmin === true || role.isManager === true;
   }
   var VARIATION_EVIDENCE_MAX_FILES = 10;
+  function variationEvidenceKeys(stored) {
+    const out = [];
+    for (const entry of Array.isArray(record7(stored).evidence) ? record7(stored).evidence : []) {
+      const line = record7(entry);
+      const key5 = text20(line.storagePath) || text20(line.id);
+      if (key5) out.push(key5);
+    }
+    return out;
+  }
   function variationEvidenceAddWriteFields(stored, entries) {
     const row2 = record7(stored);
     const evidence = Array.isArray(row2.evidence) ? [...row2.evidence] : [];
@@ -15408,27 +15434,33 @@ var ProjectPlannerCanonical = (() => {
     const paths = new Set(evidence.map((entry) => text20(record7(entry).storagePath)).filter(Boolean));
     const ids = new Set(evidence.map((entry) => normalizeDocumentId(record7(entry).id)).filter(Boolean));
     const added = [];
-    const skipped = [];
+    const alreadyLinked = [];
+    const refused = [];
     for (const entry of entries || []) {
       const line = record7(entry);
       const path = text20(line.storagePath);
       const id2 = text20(line.id);
+      const key5 = path || id2;
       if (!path && !text20(line.downloadURL)) continue;
       if (path && paths.has(path) || id2 && ids.has(normalizeDocumentId(id2))) {
-        skipped.push(path || id2);
+        alreadyLinked.push(key5);
         continue;
       }
       if (evidence.filter(hasFile).length >= VARIATION_EVIDENCE_MAX_FILES) {
-        skipped.push(path || id2);
+        refused.push(key5);
         continue;
       }
       evidence.push({ ...line });
       if (path) paths.add(path);
       if (id2) ids.add(normalizeDocumentId(id2));
-      added.push(path || id2);
+      added.push(key5);
     }
-    if (added.length === 0) return null;
-    return { set: { evidence, evidenceCount: evidence.filter(hasFile).length }, added, skipped };
+    return {
+      set: added.length > 0 ? { evidence, evidenceCount: evidence.filter(hasFile).length } : null,
+      added,
+      alreadyLinked,
+      refused
+    };
   }
   var VARIATION_STATUS_LABELS = { open: "Open", submitted: "Submitted", closed: "Closed" };
   function variationDateText(ms, timeZone) {
@@ -15541,7 +15573,7 @@ var ProjectPlannerCanonical = (() => {
         const quantity = positive(line?.quantity) ?? 1;
         const each = nonNegative(line?.cost) ?? 0;
         const description = [text20(line?.name), typeof line?.description === "string" ? line.description.trim() : ""].filter(Boolean).join(" \u2014 ");
-        lineRows.push({ voNumber, type: "Custom", description, quantity, unit: "", hours: null, cost: cost(each), lineTotal: cost(round2(quantity * each)), quoteNumber: "", subcontractor: "" });
+        lineRows.push({ voNumber, type: "Custom", description, quantity, unit: "", hours: null, cost: cost(each), lineTotal: cost(variationLineTotal({ quantity, cost: each })), quoteNumber: "", subcontractor: "" });
       }
       for (const line of row2.subcontractorLines || []) {
         const quantity = positive(line?.quantity) ?? 1;
@@ -15554,7 +15586,7 @@ var ProjectPlannerCanonical = (() => {
           unit: "",
           hours: null,
           cost: cost(each),
-          lineTotal: cost(round2(quantity * each)),
+          lineTotal: cost(variationLineTotal({ quantity, cost: each })),
           quoteNumber: text20(line?.quoteNumber),
           subcontractor: text20(line?.name)
         });
@@ -15592,18 +15624,35 @@ var ProjectPlannerCanonical = (() => {
     const padding = Number.isFinite(Number(input?.padding)) && Number(input?.padding) >= 1 ? Number(input?.padding) : DEFAULT_VARIATION_PADDING;
     const all = (input?.rows || []).filter((row2) => row2 && text20(row2.id));
     const live = all.filter((row2) => documentBool(row2.isDeleted) !== true);
+    const stored = [...live].sort(
+      (a, b) => (documentNumber(a.sequence) ?? 0) - (documentNumber(b.sequence) ?? 0) || variationNumberValue(a.voNumber) - variationNumberValue(b.voNumber)
+    );
     const byKey = new Map(live.map((row2) => [normalizeDocumentId(row2.id), row2]));
-    const ordered = [];
-    const seen = /* @__PURE__ */ new Set();
-    for (const id2 of input?.order || []) {
-      const key5 = normalizeDocumentId(id2);
+    const givenOrder = (input?.order || []).map((id2) => normalizeDocumentId(id2)).filter((key5) => byKey.has(key5));
+    let refused = null;
+    const fullOrderGiven = givenOrder.length === live.length;
+    stored.forEach((row2, index) => {
+      if (!variationIsPinned(row2)) return;
+      const at = givenOrder.indexOf(normalizeDocumentId(row2.id));
+      if (at >= 0 && fullOrderGiven && at !== index) refused = VARIATION_PINNED_MESSAGE;
+    });
+    const openSeen = /* @__PURE__ */ new Set();
+    const openOrder = [];
+    for (const key5 of givenOrder) {
       const row2 = byKey.get(key5);
-      if (!row2 || seen.has(key5)) continue;
-      seen.add(key5);
-      ordered.push(row2);
+      if (variationIsPinned(row2) || openSeen.has(key5)) continue;
+      openSeen.add(key5);
+      openOrder.push(row2);
     }
-    const rest = live.filter((row2) => !seen.has(normalizeDocumentId(row2.id))).sort((a, b) => (documentNumber(a.sequence) ?? 0) - (documentNumber(b.sequence) ?? 0) || variationNumberValue(a.voNumber) - variationNumberValue(b.voNumber));
-    ordered.push(...rest);
+    for (const row2 of stored) {
+      const key5 = normalizeDocumentId(row2.id);
+      if (!variationIsPinned(row2) && !openSeen.has(key5)) {
+        openSeen.add(key5);
+        openOrder.push(row2);
+      }
+    }
+    let next = 0;
+    const ordered = stored.map((row2) => variationIsPinned(row2) ? row2 : openOrder[next++]);
     const reserved = /* @__PURE__ */ new Set();
     for (const row2 of all) {
       if (documentBool(row2.isDeleted) === true || variationIsPinned(row2)) {
@@ -15616,10 +15665,9 @@ var ProjectPlannerCanonical = (() => {
       highest = Math.max(highest, variationNumberValue(row2.voNumber));
       for (const entry of row2.numberHistory || []) highest = Math.max(highest, variationNumberValue(entry?.from), variationNumberValue(entry?.to));
     }
-    const openRows = ordered.filter((row2) => !variationIsPinned(row2));
     const poolSeen = /* @__PURE__ */ new Set();
     const pool = [];
-    for (const row2 of openRows) {
+    for (const row2 of openOrder) {
       const n = text20(row2.voNumber);
       const key5 = n.toLowerCase();
       if (!n || reserved.has(key5) || poolSeen.has(key5)) continue;
@@ -15627,7 +15675,7 @@ var ProjectPlannerCanonical = (() => {
       pool.push(n);
     }
     pool.sort((a, b) => variationNumberValue(a) - variationNumberValue(b));
-    while (pool.length < openRows.length) {
+    while (pool.length < openOrder.length) {
       highest += 1;
       pool.push(formatVariationNumber(highest, prefix, padding));
     }
@@ -15647,7 +15695,15 @@ var ProjectPlannerCanonical = (() => {
         sequenceChanged: Math.trunc(documentNumber(row2.sequence) ?? NaN) !== sequence
       };
     });
-    return { rows: out, changes: out.filter((row2) => row2.changed || row2.sequenceChanged) };
+    if (documentBool(input?.orderLocked) === true) refused = VARIATION_ORDER_LOCKED_MESSAGE;
+    return { rows: out, changes: out.filter((row2) => row2.changed || row2.sequenceChanged), refused };
+  }
+  var VARIATION_ORDER_LOCKED_MESSAGE = "The order is locked. Unlock it in the tracker to move or renumber variations.";
+  function variationRenumberMissingRefusal(changes, storedIds) {
+    const have = new Set((storedIds || []).map((id2) => normalizeDocumentId(id2)));
+    const missing = (changes || []).filter((row2) => !have.has(normalizeDocumentId(row2.id))).map((row2) => row2.from || "a variation");
+    if (missing.length === 0) return null;
+    return `${missing.join(", ")} ${missing.length === 1 ? "was" : "were"} saved by an older iPhone and ${missing.length === 1 ? "has" : "have"} no main record yet. Open ${missing.length === 1 ? "it" : "each one"} on the Variations page and press Save, then reorder again. Nothing was renumbered.`;
   }
   var VARIATION_RENUMBER_STALE_MESSAGE = "Someone else changed the variations \u2014 reload";
   var VARIATION_PINNED_MESSAGE = "Submitted and closed variations keep their numbers. They cannot be moved.";
@@ -16167,10 +16223,15 @@ var ProjectPlannerCanonical = (() => {
       version: Math.trunc(documentNumber(row2.version) ?? 0),
       lockedByUid: optionalText4(row2.lockedByUid),
       lockedByName: optionalText4(row2.lockedByName),
-      lockedAtMs: documentInstantMs(row2.lockedAt)
+      lockedAtMs: documentInstantMs(row2.lockedAt),
+      orderLocked: documentBool(row2.orderLocked) === true,
+      orderLockedByUid: optionalText4(row2.orderLockedByUid),
+      orderLockedByName: optionalText4(row2.orderLockedByName),
+      orderLockedAtMs: documentInstantMs(row2.orderLockedAt)
     };
   }
   var VARIATION_TRACKER_LOCK_FIELDS = ["lockedByUid", "lockedByName", "lockedAt"];
+  var VARIATION_TRACKER_ORDER_LOCK_FIELDS = ["orderLocked", "orderLockedByUid", "orderLockedByName", "orderLockedAt"];
   function variationTrackerWriteFields(stored, action) {
     const row2 = stored ? record8(stored) : null;
     const set = {};
@@ -16222,6 +16283,18 @@ var ProjectPlannerCanonical = (() => {
         if (!row2) return null;
         set.version = Math.trunc(documentNumber(row2.version) ?? 0) + 1;
         removeLock();
+        break;
+      case "lockOrder":
+        parentFields(action.parentId, action.parentType);
+        set.orderLocked = true;
+        set.orderLockedByUid = text21(action.actorUid);
+        set.orderLockedByName = text21(action.actorName);
+        set.orderLockedAt = action.at;
+        break;
+      case "unlockOrder":
+        if (!row2) return null;
+        if (documentBool(row2.orderLocked) === true) set.orderLocked = false;
+        for (const key5 of VARIATION_TRACKER_ORDER_LOCK_FIELDS) if (key5 !== "orderLocked" && row2[key5] != null) remove.push(key5);
         break;
       default:
         return null;
@@ -18239,14 +18312,14 @@ var ProjectPlannerCanonical = (() => {
   }
 
   // lib/canonical/bookingHoursText.ts
-  function round3(hours2) {
+  function round4(hours2) {
     return Math.round((Number(hours2) || 0) * 100) / 100;
   }
   function num(hours2) {
-    return `${round3(hours2)}`;
+    return `${round4(hours2)}`;
   }
   function h2(hours2) {
-    return `${round3(hours2)}h`;
+    return `${round4(hours2)}h`;
   }
   function multiplierOf(value) {
     const n = Number(value);
@@ -18254,11 +18327,11 @@ var ProjectPlannerCanonical = (() => {
   }
   function overtimeTotalText(input) {
     const clock3 = Math.max(0, Number(input?.clockHours) || 0);
-    if (!(round3(clock3) > 0)) return "";
+    if (!(round4(clock3) > 0)) return "";
     const n = multiplierOf(input?.multiplier);
     const brk = Math.max(0, Number(input?.breakHours) || 0);
     const total = h2(Math.max(0, clock3 * n - brk));
-    return round3(brk) > 0 ? `${h2(clock3)} OT \xD7 ${round3(n)} \u2212 ${h2(brk)} break = ${total}` : `${h2(clock3)} OT \xD7 ${round3(n)} = ${total}`;
+    return round4(brk) > 0 ? `${h2(clock3)} OT \xD7 ${round4(n)} \u2212 ${h2(brk)} break = ${total}` : `${h2(clock3)} OT \xD7 ${round4(n)} = ${total}`;
   }
   function overtimeIncludedText(input) {
     const text43 = overtimeTotalText(input);
@@ -18267,12 +18340,12 @@ var ProjectPlannerCanonical = (() => {
   function bookedWithOvertimeText(input) {
     const booked = `${h2(Math.max(0, Number(input?.bookedHours) || 0))} booked`;
     const clock3 = Math.max(0, Number(input?.clockHours) || 0);
-    if (!(round3(clock3) > 0)) return booked;
+    if (!(round4(clock3) > 0)) return booked;
     if (input?.multiplier == null) return `${booked} (incl. ${h2(clock3)} OT)`;
-    return `${booked} (incl. ${h2(clock3)} OT \xD7 ${round3(multiplierOf(input.multiplier))})`;
+    return `${booked} (incl. ${h2(clock3)} OT \xD7 ${round4(multiplierOf(input.multiplier))})`;
   }
   function bookingHoursCountText(hours2) {
-    const value = round3(Math.max(0, Number(hours2) || 0));
+    const value = round4(Math.max(0, Number(hours2) || 0));
     return `${value} ${value === 1 ? "hour" : "hours"}`;
   }
   function onSiteHoursText(input) {
@@ -18334,20 +18407,20 @@ var ProjectPlannerCanonical = (() => {
     const standardBreak = Math.max(0, result2.unpaidBreakHours - outside.outsideBreakHours);
     const tiles = [];
     const standardBefore = result2.standardHours + standardBreak;
-    if (round3(standardBefore) > 0) {
+    if (round4(standardBefore) > 0) {
       tiles.push({
         kind: "standard",
         value: num(standardBefore),
-        label: round3(standardBreak) > 0 ? `Standard (\u2212${num(standardBreak)} break)` : "Standard",
-        paidHours: round3(result2.standardHours)
+        label: round4(standardBreak) > 0 ? `Standard (\u2212${num(standardBreak)} break)` : "Standard",
+        paidHours: round4(result2.standardHours)
       });
     }
-    if (round3(outside.outsideClockHours) > 0) {
+    if (round4(outside.outsideClockHours) > 0) {
       tiles.push({
         kind: "overtime",
         value: num(outside.outsideClockHours),
-        label: round3(outside.outsideBreakHours) > 0 ? `OT (\u2212${num(outside.outsideBreakHours)} break)` : "OT",
-        paidHours: round3(result2.outsideHours * result2.outsideMultiplier)
+        label: round4(outside.outsideBreakHours) > 0 ? `OT (\u2212${num(outside.outsideBreakHours)} break)` : "OT",
+        paidHours: round4(result2.outsideHours * result2.outsideMultiplier)
       });
     }
     return tiles;
@@ -19304,22 +19377,22 @@ var ProjectPlannerCanonical = (() => {
         if (timesheetEntryDecision(sheet, entry, key5 === "priceWorkEntries" ? "priceWork" : "expense", trusted).decision === "pending") pendingEntries += 1;
       }
     }
-    const round4 = (value) => roundPennies(value);
+    const round5 = (value) => roundPennies(value);
     const roundHours3 = (value) => Math.round(value * 100) / 100;
     return {
       hours: roundHours3(hours2),
       standardHours: roundHours3(standardHours),
       overtimeHours: roundHours3(overtimeHours),
-      labour: round4(labour),
-      standardLabour: round4(standardLabour),
-      overtimeLabour: round4(overtimeLabour),
-      priceWork: round4(priceWork),
-      expenses: round4(expenses),
-      extras: round4(priceWork + expenses),
-      total: round4(labour + priceWork + expenses),
-      submittedPriceWork: round4(submittedPriceWork),
-      submittedExpenses: round4(submittedExpenses),
-      submittedExtras: round4(submittedPriceWork + submittedExpenses),
+      labour: round5(labour),
+      standardLabour: round5(standardLabour),
+      overtimeLabour: round5(overtimeLabour),
+      priceWork: round5(priceWork),
+      expenses: round5(expenses),
+      extras: round5(priceWork + expenses),
+      total: round5(labour + priceWork + expenses),
+      submittedPriceWork: round5(submittedPriceWork),
+      submittedExpenses: round5(submittedExpenses),
+      submittedExtras: round5(submittedPriceWork + submittedExpenses),
       pendingEntries,
       source: rows3.some((row2) => row2.source === "override") || hasOverride(sheet) ? "override" : "live",
       invoiceRowCount: rows3.length

@@ -53,6 +53,11 @@ function round2(value: number): number {
   return Math.round(value * 100) / 100
 }
 
+/** Quantities keep three decimals (0.001 is the smallest quantity; review of #330). */
+function round3(value: number): number {
+  return Math.round(value * 1000) / 1000
+}
+
 function positive(value: unknown): number | null {
   const n = documentNumber(value)
   return n != null && n > 0 ? n : null
@@ -109,7 +114,9 @@ export function variationLabourText(crew: { operatives?: unknown; hoursEach?: un
 export const VARIATION_MATERIAL_UNITS = ['no', 'm', 'box', 'kg'] as const
 export type VariationMaterialUnit = (typeof VARIATION_MATERIAL_UNITS)[number]
 export const VARIATION_QUANTITY_MAX = 100000
-export const VARIATION_QUANTITY_MESSAGE = 'Enter the quantity as a number above 0.'
+/** The smallest quantity (three decimals are kept). */
+export const VARIATION_QUANTITY_MIN = 0.001
+export const VARIATION_QUANTITY_MESSAGE = 'Enter the quantity as a number of at least 0.001.'
 
 export function normalizeVariationMaterialUnit(raw: unknown): VariationMaterialUnit | null {
   const value = text(raw).toLowerCase()
@@ -118,7 +125,7 @@ export function normalizeVariationMaterialUnit(raw: unknown): VariationMaterialU
 
 /** "100m", "2.5kg", "4" (the text both apps have always stored in `quantity`; `no` prints no unit). */
 export function variationMaterialQuantityText(value: number, unit: unknown): string {
-  const amount = String(round2(value))
+  const amount = String(round3(value))
   const u = normalizeVariationMaterialUnit(unit) ?? 'no'
   return u === 'no' ? amount : `${amount}${u}`
 }
@@ -158,7 +165,7 @@ export function variationMaterialQuantity(row: Record<string, unknown> | null | 
 /** Refusal for a typed material quantity, or null. */
 export function variationMaterialQuantityError(value: unknown): string | null {
   const n = documentNumber(typeof value === 'string' ? value.replace(',', '.') : value)
-  if (n == null || n <= 0 || n > VARIATION_QUANTITY_MAX) return VARIATION_QUANTITY_MESSAGE
+  if (n == null || round3(n) < VARIATION_QUANTITY_MIN || n > VARIATION_QUANTITY_MAX) return VARIATION_QUANTITY_MESSAGE
   return null
 }
 
@@ -170,7 +177,7 @@ export function variationMaterialLineFields(input: { id: unknown; name: unknown;
   quantityValue: number
   unit: VariationMaterialUnit
 } {
-  const value = round2(documentNumber(typeof input?.quantity === 'string' ? input.quantity.replace(',', '.') : input?.quantity) ?? 0)
+  const value = round3(documentNumber(typeof input?.quantity === 'string' ? input.quantity.replace(',', '.') : input?.quantity) ?? 0)
   const unit = normalizeVariationMaterialUnit(input?.unit) ?? 'no'
   return { id: text(input?.id), name: text(input?.name), quantity: variationMaterialQuantityText(value, unit), quantityValue: value, unit }
 }
@@ -231,7 +238,7 @@ export function parseVariationCustomLines(variationId: unknown, value: unknown):
       description: typeof line.description === 'string' ? line.description : '',
       quantity,
       cost,
-      lineTotal: round2(quantity * cost),
+      lineTotal: variationLineTotal({ quantity, cost }),
     })
   }
   return out
@@ -254,7 +261,7 @@ export function parseVariationSubcontractorLines(variationId: unknown, value: un
       quoteNumber: text(line.quoteNumber),
       quantity,
       cost,
-      lineTotal: round2(quantity * cost),
+      lineTotal: variationLineTotal({ quantity, cost }),
     })
   }
   return out
@@ -281,13 +288,17 @@ function money(value: unknown): number {
   return round2(documentNumber(typeof value === 'string' ? value.replace(',', '.') : value) ?? 0)
 }
 
+function amount3(value: unknown): number {
+  return round3(documentNumber(typeof value === 'string' ? value.replace(',', '.') : value) ?? 0)
+}
+
 /** The stored custom line. */
 export function variationCustomLineFields(input: { id: unknown; name: unknown; description?: unknown; quantity: unknown; cost: unknown }): Record<string, unknown> {
   return {
     id: text(input?.id),
     name: text(input?.name),
     description: typeof input?.description === 'string' ? input.description.trim() : '',
-    quantity: money(input?.quantity),
+    quantity: amount3(input?.quantity),
     cost: money(input?.cost),
   }
 }
@@ -306,7 +317,7 @@ export function variationSubcontractorLineFields(input: {
     subcontractorId: text(input?.subcontractorId),
     name: text(input?.name),
     quoteNumber: text(input?.quoteNumber),
-    quantity: money(input?.quantity),
+    quantity: amount3(input?.quantity),
     cost: money(input?.cost),
   }
 }
@@ -335,11 +346,19 @@ export type VariationTotals = {
   evidenceCount: number
 }
 
-function lineTotal(line: { quantity?: unknown; cost?: unknown }): number {
-  const quantity = positive(line?.quantity) ?? 1
-  const cost = nonNegative(line?.cost) ?? 0
+/**
+ * One custom or subcontractor line's total: quantity (missing or 0 → 1) × cost (missing → 0), rounded to pennies.
+ * The reader's `lineTotal`, the totals and every preview use it (a typed text "2,5" reads as 2.5).
+ */
+export function variationLineTotal(line: { quantity?: unknown; cost?: unknown } | null | undefined): number {
+  const read = (value: unknown) => documentNumber(typeof value === 'string' ? value.replace(',', '.') : value)
+  const q = read(line?.quantity)
+  const c = read(line?.cost)
+  const quantity = q != null && q > 0 ? q : 1
+  const cost = c != null && c >= 0 ? c : 0
   return round2(quantity * cost)
 }
+const lineTotal = variationLineTotal
 
 /** One variation's figures. Every screen, export and badge takes them from here. */
 export function variationTotals(variation: VariationTotalsInput | null | undefined): VariationTotals {
@@ -392,17 +411,32 @@ export function canSeeVariationCosts(role: Partial<StaffAccountRole> | null | un
 
 export const VARIATION_EVIDENCE_MAX_FILES = 10
 
+/** The storage paths (else ids) of the evidence on a stored variation. */
+export function variationEvidenceKeys(stored: Record<string, unknown> | null | undefined): string[] {
+  const out: string[] = []
+  for (const entry of Array.isArray(record(stored).evidence) ? (record(stored).evidence as unknown[]) : []) {
+    const line = record(entry)
+    const key = text(line.storagePath) || text(line.id)
+    if (key) out.push(key)
+  }
+  return out
+}
+
 /**
- * Adding evidence to a variation (1.52.0): `{ set: { evidence, evidenceCount } }` — the stored list (exactly as stored)
- * plus each new entry whose storage path (and id) is not already on it, up to `VARIATION_EVIDENCE_MAX_FILES` files,
- * built from the stored document in a transaction so a file another person added meanwhile is kept. `evidenceCount`
- * is the reader's count (entries with a storage path or a URL). `skipped` lists entries not added (already there, or
- * over the limit). Null when nothing is added.
+ * Adding evidence to a variation (1.52.0): the stored list (exactly as stored) plus each new entry not already on it,
+ * up to `VARIATION_EVIDENCE_MAX_FILES` files, built from the stored document in a transaction so a file someone else
+ * added meanwhile is kept. `evidenceCount` is the reader's count (entries with a storage path or a URL).
+ *   - `added`: entries this write links;
+ *   - `alreadyLinked`: entries already on the variation (by storage path or id) — e.g. a first attempt that committed
+ *     although the client saw an error. They ARE linked: never delete their files;
+ *   - `refused`: entries left out for the 10-file limit. Only these (and files a fresh read shows are not on the
+ *     variation, `variationEvidenceKeys`) may be deleted again by their uploader.
+ * `set` is null when nothing is added. Keys are the storage path, else the id.
  */
 export function variationEvidenceAddWriteFields(
   stored: Record<string, unknown> | null | undefined,
   entries: ReadonlyArray<Record<string, unknown>> | null | undefined
-): { set: { evidence: unknown[]; evidenceCount: number }; added: string[]; skipped: string[] } | null {
+): { set: { evidence: unknown[]; evidenceCount: number } | null; added: string[]; alreadyLinked: string[]; refused: string[] } {
   const row = record(stored)
   const evidence: unknown[] = Array.isArray(row.evidence) ? [...row.evidence] : []
   const hasFile = (entry: unknown) => {
@@ -412,27 +446,33 @@ export function variationEvidenceAddWriteFields(
   const paths = new Set(evidence.map((entry) => text(record(entry).storagePath)).filter(Boolean))
   const ids = new Set(evidence.map((entry) => normalizeDocumentId(record(entry).id)).filter(Boolean))
   const added: string[] = []
-  const skipped: string[] = []
+  const alreadyLinked: string[] = []
+  const refused: string[] = []
   for (const entry of entries || []) {
     const line = record(entry)
     const path = text(line.storagePath)
     const id = text(line.id)
+    const key = path || id
     if (!path && !text(line.downloadURL)) continue
     if ((path && paths.has(path)) || (id && ids.has(normalizeDocumentId(id)))) {
-      skipped.push(path || id)
+      alreadyLinked.push(key)
       continue
     }
     if (evidence.filter(hasFile).length >= VARIATION_EVIDENCE_MAX_FILES) {
-      skipped.push(path || id)
+      refused.push(key)
       continue
     }
     evidence.push({ ...line })
     if (path) paths.add(path)
     if (id) ids.add(normalizeDocumentId(id))
-    added.push(path || id)
+    added.push(key)
   }
-  if (added.length === 0) return null
-  return { set: { evidence, evidenceCount: evidence.filter(hasFile).length }, added, skipped }
+  return {
+    set: added.length > 0 ? { evidence, evidenceCount: evidence.filter(hasFile).length } : null,
+    added,
+    alreadyLinked,
+    refused,
+  }
 }
 
 // MARK: - Dates and status words
@@ -622,7 +662,7 @@ export function variationExportRows(
       const quantity = positive(line?.quantity) ?? 1
       const each = nonNegative(line?.cost) ?? 0
       const description = [text(line?.name), typeof line?.description === 'string' ? line.description.trim() : ''].filter(Boolean).join(' — ')
-      lineRows.push({ voNumber, type: 'Custom', description, quantity, unit: '', hours: null, cost: cost(each), lineTotal: cost(round2(quantity * each)), quoteNumber: '', subcontractor: '' })
+      lineRows.push({ voNumber, type: 'Custom', description, quantity, unit: '', hours: null, cost: cost(each), lineTotal: cost(variationLineTotal({ quantity, cost: each })), quoteNumber: '', subcontractor: '' })
     }
     for (const line of row.subcontractorLines || []) {
       const quantity = positive(line?.quantity) ?? 1
@@ -635,7 +675,7 @@ export function variationExportRows(
         unit: '',
         hours: null,
         cost: cost(each),
-        lineTotal: cost(round2(quantity * each)),
+        lineTotal: cost(variationLineTotal({ quantity, cost: each })),
         quoteNumber: text(line?.quoteNumber),
         subcontractor: text(line?.name),
       })
@@ -698,37 +738,58 @@ export type VariationRenumberPlanRow = {
 
 /**
  * The new numbers for a tracker order (1.52.0; replaces web's `previewRenumber`). `rows` are the STORED variations of
- * the job (deleted included); `order` is the ids of the live ones top to bottom (ids missing from it keep their stored
- * place after the listed ones). Pinned variations (`variationIsPinned`) keep their numbers. The open variations, in
- * the new order, take the pool of their own current numbers sorted lowest first — leaving out any number a deleted or
- * pinned variation holds, and duplicates — and, when the pool runs short, new numbers above every number ever issued
- * on the job (current numbers of every variation and every `numberHistory` entry), so a number is never reused (§22).
- * `sequence` is the 1-based position. The live preview while dragging and the save use the same plan.
+ * the job (deleted included). The live ones keep their places in the stored order (by `sequence`, then number):
+ * a pinned variation (`variationIsPinned`) stays in its place and keeps its number — it never moves; the open
+ * variations fill the other places in the order given by `order` (ids; pinned ids in it are only checked, ids missing
+ * from it follow in their stored order). The open variations take the pool of their own current numbers sorted lowest
+ * first — leaving out any number a deleted or pinned variation holds, and duplicates — and, when the pool runs short,
+ * new numbers above every number ever issued on the job (current numbers and every `numberHistory` entry), so a number
+ * is never reused (§22). `sequence` is the 1-based place. `refused` is `VARIATION_PINNED_MESSAGE` when `order` puts a
+ * pinned variation in another place than its own (the plan then keeps it in its place; a save must refuse); `locked`
+ * is `VARIATION_ORDER_LOCKED_MESSAGE` when the tracker's order is locked (`orderLocked`) — nothing may be renumbered.
+ * The live preview while dragging and the save use the same plan.
  */
 export function variationRenumberPlan(input: {
   rows: ReadonlyArray<VariationRenumberInputRow> | null | undefined
   order?: ReadonlyArray<unknown> | null
   prefix?: string | null
   padding?: number | null
-}): { rows: VariationRenumberPlanRow[]; changes: VariationRenumberPlanRow[] } {
+  orderLocked?: unknown
+}): { rows: VariationRenumberPlanRow[]; changes: VariationRenumberPlanRow[]; refused: string | null } {
   const prefix = text(input?.prefix) || DEFAULT_VARIATION_PREFIX
   const padding = Number.isFinite(Number(input?.padding)) && Number(input?.padding) >= 1 ? Number(input?.padding) : DEFAULT_VARIATION_PADDING
   const all = (input?.rows || []).filter((row) => row && text(row.id))
   const live = all.filter((row) => documentBool(row.isDeleted) !== true)
+  const stored = [...live].sort(
+    (a, b) => (documentNumber(a.sequence) ?? 0) - (documentNumber(b.sequence) ?? 0) || variationNumberValue(a.voNumber) - variationNumberValue(b.voNumber)
+  )
   const byKey = new Map(live.map((row) => [normalizeDocumentId(row.id), row]))
-  const ordered: VariationRenumberInputRow[] = []
-  const seen = new Set<string>()
-  for (const id of input?.order || []) {
-    const key = normalizeDocumentId(id)
-    const row = byKey.get(key)
-    if (!row || seen.has(key)) continue
-    seen.add(key)
-    ordered.push(row)
+  const givenOrder = (input?.order || []).map((id) => normalizeDocumentId(id)).filter((key) => byKey.has(key))
+  let refused: string | null = null
+  // A pinned row may appear in `order` only at its own place.
+  const fullOrderGiven = givenOrder.length === live.length
+  stored.forEach((row, index) => {
+    if (!variationIsPinned(row)) return
+    const at = givenOrder.indexOf(normalizeDocumentId(row.id))
+    if (at >= 0 && fullOrderGiven && at !== index) refused = VARIATION_PINNED_MESSAGE
+  })
+  const openSeen = new Set<string>()
+  const openOrder: VariationRenumberInputRow[] = []
+  for (const key of givenOrder) {
+    const row = byKey.get(key)!
+    if (variationIsPinned(row) || openSeen.has(key)) continue
+    openSeen.add(key)
+    openOrder.push(row)
   }
-  const rest = live
-    .filter((row) => !seen.has(normalizeDocumentId(row.id)))
-    .sort((a, b) => (documentNumber(a.sequence) ?? 0) - (documentNumber(b.sequence) ?? 0) || variationNumberValue(a.voNumber) - variationNumberValue(b.voNumber))
-  ordered.push(...rest)
+  for (const row of stored) {
+    const key = normalizeDocumentId(row.id)
+    if (!variationIsPinned(row) && !openSeen.has(key)) {
+      openSeen.add(key)
+      openOrder.push(row)
+    }
+  }
+  let next = 0
+  const ordered = stored.map((row) => (variationIsPinned(row) ? row : openOrder[next++]))
 
   const reserved = new Set<string>()
   for (const row of all) {
@@ -742,10 +803,9 @@ export function variationRenumberPlan(input: {
     highest = Math.max(highest, variationNumberValue(row.voNumber))
     for (const entry of row.numberHistory || []) highest = Math.max(highest, variationNumberValue(entry?.from), variationNumberValue(entry?.to))
   }
-  const openRows = ordered.filter((row) => !variationIsPinned(row))
   const poolSeen = new Set<string>()
   const pool: string[] = []
-  for (const row of openRows) {
+  for (const row of openOrder) {
     const n = text(row.voNumber)
     const key = n.toLowerCase()
     if (!n || reserved.has(key) || poolSeen.has(key)) continue
@@ -753,7 +813,7 @@ export function variationRenumberPlan(input: {
     pool.push(n)
   }
   pool.sort((a, b) => variationNumberValue(a) - variationNumberValue(b))
-  while (pool.length < openRows.length) {
+  while (pool.length < openOrder.length) {
     highest += 1
     pool.push(formatVariationNumber(highest, prefix, padding))
   }
@@ -773,7 +833,26 @@ export function variationRenumberPlan(input: {
       sequenceChanged: Math.trunc(documentNumber(row.sequence) ?? NaN) !== sequence,
     }
   })
-  return { rows: out, changes: out.filter((row) => row.changed || row.sequenceChanged) }
+  if (documentBool(input?.orderLocked) === true) refused = VARIATION_ORDER_LOCKED_MESSAGE
+  return { rows: out, changes: out.filter((row) => row.changed || row.sequenceChanged), refused }
+}
+
+export const VARIATION_ORDER_LOCKED_MESSAGE = 'The order is locked. Unlock it in the tracker to move or renumber variations.'
+
+/**
+ * A save of a tracker order must not leave a renumbered row with only its settings copies: an older iPhone build can
+ * save a variation to `settings/variationItem_{id}` / the settings log without `variations/{id}`. When a changed row
+ * (`changes`) has no `variations/{id}` document (`storedIds`, without case), the save is refused with this message,
+ * naming the variations, so no duplicate number is left behind. Null when every changed row has its document.
+ */
+export function variationRenumberMissingRefusal(
+  changes: ReadonlyArray<{ id: string; from: string }> | null | undefined,
+  storedIds: ReadonlyArray<unknown> | null | undefined
+): string | null {
+  const have = new Set((storedIds || []).map((id) => normalizeDocumentId(id)))
+  const missing = (changes || []).filter((row) => !have.has(normalizeDocumentId(row.id))).map((row) => row.from || 'a variation')
+  if (missing.length === 0) return null
+  return `${missing.join(', ')} ${missing.length === 1 ? 'was' : 'were'} saved by an older iPhone and ${missing.length === 1 ? 'has' : 'have'} no main record yet. Open ${missing.length === 1 ? 'it' : 'each one'} on the Variations page and press Save, then reorder again. Nothing was renumbered.`
 }
 
 export const VARIATION_RENUMBER_STALE_MESSAGE = 'Someone else changed the variations — reload'

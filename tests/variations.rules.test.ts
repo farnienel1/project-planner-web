@@ -77,6 +77,12 @@ test.before(async () => {
     await setDoc(doc(fs, 'organizations', ORG, 'variations', 'sub-1'), variation('sub-1', { voNumber: 'VO-002', sequence: 2, status: 'submitted', voNumberLocked: true }))
     await setDoc(doc(fs, 'organizations', ORG, 'variations', 'closed-1'), variation('closed-1', { voNumber: 'VO-004', sequence: 4, status: 'closed' }))
     await setDoc(doc(fs, 'organizations', ORG, 'variations', 'sw-1'), variation('sw-1', { parentId: SW, parentType: 'smallWork' }))
+    // An older iOS build stored the job id in another letter case than the job document's.
+    await setDoc(doc(fs, 'organizations', ORG, 'variations', 'lower-1'), variation('lower-1', { parentId: JOB.toLowerCase() }))
+    // A job whose order is locked (review of #330, MEDIUM 4).
+    await setDoc(doc(fs, 'organizations', ORG, 'projects', 'JOB-L'), { jobNumber: 'JL', managerIds: [JOB_MGR], managerUserIds: [JOB_MGR] })
+    await setDoc(doc(fs, 'organizations', ORG, 'variations', 'locked-1'), variation('locked-1', { parentId: 'JOB-L' }))
+    await setDoc(doc(fs, 'organizations', ORG, 'variationTrackers', 'JOB-L'), { parentId: 'JOB-L', parentType: 'project', enabled: true, version: 1, orderLocked: true, orderLockedByUid: ADMIN })
     await setDoc(doc(fs, 'organizations', ORG, 'variationTrackers', JOB), { parentId: JOB, parentType: 'project', enabled: true, version: 1 })
     await setDoc(doc(fs, 'organizations', ORG, 'settings', `variations_${JOB}`), { recordType: 'variationLog', parentId: JOB, items: [] })
     await setDoc(doc(fs, 'organizations', ORG, 'settings', 'variationItem_open-1'), { recordType: 'variationItem', parentId: JOB, voNumber: 'VO-001' })
@@ -135,4 +141,25 @@ test('staff no longer hard-delete the variation settings copies; other settings 
   await assertSucceeds(updateDoc(await settings(OTHER_MGR, 'variationItem_open-1'), { heading: 'Copy' }))
   await assertSucceeds(setDoc(await settings(ADMIN, 'variationItem_new-1'), { recordType: 'variationItem', parentId: JOB }, { merge: true }))
   await assertSucceeds(deleteDoc(await settings(ADMIN, 'jobTypes')))
+})
+
+test('review LOW: the job manager check ignores the letter case of the stored job id', async () => {
+  await assertSucceeds(updateDoc(await ref(JOB_MGR, 'lower-1'), { voNumber: 'VO-011' }))
+  await assertFails(updateDoc(await ref(OTHER_MGR, 'lower-1'), { voNumber: 'VO-012' }))
+  const tracker = async (uid: string) => doc(await db(uid), 'organizations', ORG, 'variationTrackers', JOB.toLowerCase())
+  await assertSucceeds(setDoc(await tracker(JOB_MGR), { parentId: JOB.toLowerCase(), parentType: 'project', orderLocked: false }, { merge: true }))
+  await assertFails(setDoc(await tracker(OTHER_MGR), { parentId: JOB.toLowerCase(), parentType: 'project', orderLocked: true }, { merge: true }))
+})
+
+test('review MEDIUM 4: while the order is locked nobody renumbers or reorders; edits and removal still work', async () => {
+  await assertFails(updateDoc(await ref(ADMIN, 'locked-1'), { voNumber: 'VO-020' }))
+  await assertFails(updateDoc(await ref(JOB_MGR, 'locked-1'), { sequence: 4 }))
+  await assertSucceeds(updateDoc(await ref(OTHER_MGR, 'locked-1'), { heading: 'Edited while locked' }))
+  const lockDoc = async (uid: string) => doc(await db(uid), 'organizations', ORG, 'variationTrackers', 'JOB-L')
+  // The job's manager unlocks it; then the renumber passes.
+  await assertSucceeds(updateDoc(await lockDoc(JOB_MGR), { orderLocked: false }))
+  await assertSucceeds(updateDoc(await ref(JOB_MGR, 'locked-1'), { voNumber: 'VO-020', sequence: 4 }))
+  await assertFails(updateDoc(await lockDoc(OTHER_MGR), { orderLocked: true }))
+  await assertSucceeds(updateDoc(await lockDoc(ADMIN), { orderLocked: true, orderLockedByUid: ADMIN }))
+  await assertSucceeds(updateDoc(await ref(JOB_MGR, 'locked-1'), { isDeleted: true }))
 })

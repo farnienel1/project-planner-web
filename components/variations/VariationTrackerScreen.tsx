@@ -20,16 +20,14 @@ import { assignedManagerIds, canSeeVariationCostsFor, canUseVariationTracker } f
 import {
   VariationsChangedError,
   applyVariationOrder,
-  claimTrackerLock,
   createVariation,
   disableTracker,
   enableTracker,
-  releaseTrackerLock,
+  setTrackerOrderLock,
   setVariationStatus,
   softDeleteVariation,
   subscribeParentVariations,
   subscribeVariationTracker,
-  trackerLockActive,
   updateVariation,
   variationCopyWarning,
   variationRecipientIds,
@@ -86,7 +84,6 @@ export function VariationTrackerScreen({
   const [order, setOrder] = useState<string[] | null>(null)
   const [dragId, setDragId] = useState<string | null>(null)
   const [filter, setFilter] = useState<VariationListFilter>('all')
-  const [frozen, setFrozen] = useState(false)
   const [heading, setHeading] = useState('')
   const [message, setMessage] = useState<{ text: string; tone: 'ok' | 'warn' } | null>(null)
   const [busy, setBusy] = useState(false)
@@ -110,30 +107,29 @@ export function VariationTrackerScreen({
     return () => {
       unsubRows()
       unsubTracker()
-      if (user?.id) void releaseTrackerLock(organization.id, project.id, user.id)
     }
-  }, [allowed, organization?.id, project.id, user?.id])
+  }, [allowed, organization?.id, project.id])
 
   const live = useMemo(() => rows.filter((row) => !row.isDeleted), [rows])
   const storedOrder = useMemo(
     () => [...live].sort((a, b) => a.sequence - b.sequence || a.createdAt.getTime() - b.createdAt.getTime()).map((row) => row.id),
     [live]
   )
-  const ids = order || storedOrder
-  // Rulebook 1.52.0 `variationRenumberPlan`: every stored variation of the job (deleted included, so their numbers
-  // are never handed out again) and the order on screen.
-  const plan = useMemo(
-    () => variationRenumberPlan({ rows, order: ids, prefix: tracker?.prefix, padding: tracker?.padding }),
-    [rows, ids, tracker?.prefix, tracker?.padding]
-  )
   const byId = useMemo(() => new Map(live.map((row) => [row.id, row])), [live])
+  // The order on screen is the OPEN variations only: pinned ones keep their places (`variationRenumberPlan`).
+  const openIds = order || storedOrder.filter((id) => !variationIsPinned(byId.get(id) ?? {}))
+  // Rulebook 1.52.0 `variationRenumberPlan`: every stored variation of the job (deleted included, so their numbers
+  // are never handed out again) and the open order on screen.
+  const plan = useMemo(
+    () => variationRenumberPlan({ rows, order: openIds, prefix: tracker?.prefix, padding: tracker?.padding }),
+    [rows, openIds, tracker?.prefix, tracker?.padding]
+  )
   const planById = useMemo(() => new Map(plan.rows.map((row) => [row.id, row])), [plan])
   const ordered = plan.rows.map((row) => byId.get(row.id)).filter((row): row is Variation => Boolean(row))
   const visible = ordered.filter((row) => variationMatchesListFilter(row.status, filter))
   const totals = variationListTotals(visible)
-  const lockedByOther =
-    tracker && user && trackerLockActive(tracker) && tracker.lockedByUid && tracker.lockedByUid !== user.id ? tracker : null
-  const canDrag = Boolean(tracker?.enabled) && !lockedByOther && !frozen && filter === 'all' && !busy
+  const orderLocked = Boolean(tracker?.orderLocked)
+  const canDrag = Boolean(tracker?.enabled) && !orderLocked && filter === 'all' && !busy
 
   if (!allowed) {
     return (
@@ -145,9 +141,10 @@ export function VariationTrackerScreen({
     )
   }
 
+  // Moves an open variation to the place of another open one; a pinned row is never a target and never moves.
   const move = (fromId: string, toId: string) => {
     if (fromId === toId) return
-    const current = [...ids]
+    const current = [...openIds]
     const from = current.indexOf(fromId)
     const to = current.indexOf(toId)
     if (from < 0 || to < 0) return
@@ -161,7 +158,6 @@ export function VariationTrackerScreen({
     const snapshot = baseRows.current ?? rows
     setBusy(true)
     try {
-      await claimTrackerLock({ organizationId: organization.id, parentId: project.id, parentType, actor })
       const result = await applyVariationOrder({
         organizationId: organization.id,
         parentId: project.id,
@@ -193,12 +189,11 @@ export function VariationTrackerScreen({
     }
   }
 
+  // ↑ / ↓: swap with the next open variation (pinned rows keep their places).
   const moveBy = (id: string, delta: number) => {
-    const current = [...ids]
+    const current = [...openIds]
     const from = current.indexOf(id)
-    let to = from + delta
-    // Skip over pinned rows: they do not move, so the open row lands on the next open place.
-    while (to >= 0 && to < current.length && variationIsPinned(byId.get(current[to]) ?? {})) to += delta
+    const to = from + delta
     if (from < 0 || to < 0 || to >= current.length) return
     const [item] = current.splice(from, 1)
     current.splice(to, 0, item)
@@ -211,7 +206,8 @@ export function VariationTrackerScreen({
     const next = { ...row, ...changes }
     if (next.heading === row.heading && next.description === row.description) return
     try {
-      const outcome = await updateVariation({ organizationId: organization.id, variation: next, actorUid: user.id })
+      // Only the field edited here is written (`base` = the row as shown).
+      const outcome = await updateVariation({ organizationId: organization.id, variation: next, actorUid: user.id, base: row })
       const warning = variationCopyWarning(outcome)
       setMessage({ text: warning || `${row.voNumber} saved.`, tone: warning ? 'warn' : 'ok' })
     } catch (error) {
@@ -252,8 +248,23 @@ export function VariationTrackerScreen({
                 />
                 Tracker on
               </label>
-              <label className="row small" style={{ gap: 8, alignItems: 'center' }} title="Stops any dragging on this screen">
-                <input type="checkbox" checked={frozen} onChange={(event) => setFrozen(event.target.checked)} />
+              <label className="row small" style={{ gap: 8, alignItems: 'center' }} title="Stops every move and renumber on this job, for everyone, until unlocked">
+                <input
+                  type="checkbox"
+                  checked={orderLocked}
+                  disabled={busy || !tracker?.enabled}
+                  onChange={async (event) => {
+                    if (!organization?.id || !actor) return
+                    setBusy(true)
+                    try {
+                      await setTrackerOrderLock({ organizationId: organization.id, parentId: project.id, parentType, locked: event.target.checked, actor })
+                    } catch (error) {
+                      setMessage({ text: error instanceof Error ? error.message : 'The lock could not be changed.', tone: 'warn' })
+                    } finally {
+                      setBusy(false)
+                    }
+                  }}
+                />
                 Lock order
               </label>
             </div>
@@ -274,10 +285,12 @@ export function VariationTrackerScreen({
           </div>
         ) : null}
 
-        {lockedByOther ? (
+        {orderLocked ? (
           <div className="banner" data-hue="warn" role="status">
             <div className="grow small">
-              {lockedByOther.lockedByName || 'Someone'} is reordering this tracker. Dragging is frozen until they finish (at most five minutes).
+              Order locked by {tracker?.orderLockedByName || 'someone'}
+              {tracker?.orderLockedAt ? ` on ${variationDateText(tracker.orderLockedAt.getTime(), timeZone)}` : ''}. Nobody can move or renumber a
+              variation until it is unlocked. Editing, status changes and removal still work.
             </div>
           </div>
         ) : null}
@@ -295,7 +308,7 @@ export function VariationTrackerScreen({
               ? ''
               : filter !== 'all'
                 ? 'Show All to drag.'
-                : frozen
+                : orderLocked
                   ? 'Order locked.'
                   : busy
                     ? 'Saving…'
@@ -348,14 +361,14 @@ export function VariationTrackerScreen({
                     onDragOver={(event) => {
                       if (!dragId || !canDrag) return
                       event.preventDefault()
-                      move(dragId, row.id)
+                      if (!pinned) move(dragId, row.id)
                     }}
                     onDrop={(event) => {
                       event.preventDefault()
                       if (!dragging.current) return
                       dragging.current = null
                       setDragId(null)
-                      void save(ids)
+                      void save(openIds)
                     }}
                     onDragEnd={() => {
                       // Dropped outside a row: the order on screen is still saved (the numbers already showed it).
@@ -376,8 +389,8 @@ export function VariationTrackerScreen({
                       ) : (
                         <span className="row" style={{ gap: 2 }}>
                           <span aria-hidden style={{ cursor: draggable ? 'grab' : 'default', color: 'var(--ink3)', fontSize: 18 }}>⋮⋮</span>
-                          <button type="button" className="btn sm ghost" style={{ padding: '0 6px' }} disabled={!canDrag || index === 0} aria-label={`Move ${row.voNumber} up`} onClick={() => moveBy(row.id, -1)}>↑</button>
-                          <button type="button" className="btn sm ghost" style={{ padding: '0 6px' }} disabled={!canDrag || index === visible.length - 1} aria-label={`Move ${row.voNumber} down`} onClick={() => moveBy(row.id, 1)}>↓</button>
+                          <button type="button" className="btn sm ghost" style={{ padding: '0 6px' }} disabled={!canDrag || openIds.indexOf(row.id) <= 0} aria-label={`Move ${row.voNumber} up`} onClick={() => moveBy(row.id, -1)}>↑</button>
+                          <button type="button" className="btn sm ghost" style={{ padding: '0 6px' }} disabled={!canDrag || openIds.indexOf(row.id) === openIds.length - 1} aria-label={`Move ${row.voNumber} down`} onClick={() => moveBy(row.id, 1)}>↓</button>
                         </span>
                       )}
                     </td>
