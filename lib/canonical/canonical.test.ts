@@ -15570,9 +15570,16 @@ test('1.47.0 (review blocker 2): an email change / operatives row unlinked drops
   const sheet = { operativeSignedAt: R147_SIGNED, operativeSignedBookingsAt: R147_SIGNED, operativeSignedBookings: record }
   // The collector no longer matches the booking's person id: the booking is still the same person's document.
   assert.equal(R112.signedTimesheetBookingChanges({ sheet, liveLines: [], liveLoaded: true, liveBookings: [reopen147Doc()] }).changed, false)
-  // Given to someone else (the stored person id changed): removed.
-  const moved = R112.signedTimesheetBookingChanges({ sheet, liveLines: [], liveLoaded: true, liveBookings: [reopen147Doc('b1', { personId: 'op9' })] })
+  // Given to someone else (the stored person id is now outside every id the person goes by): removed.
+  const moved = R112.signedTimesheetBookingChanges({ sheet, liveLines: [], liveLoaded: true, liveBookings: [reopen147Doc('b1', { personId: 'op9' })], personIds: ['u1', 'op1'] })
   assert.deepEqual(moved.removedBookingIds, ['b1'])
+  // Without the person's ids nothing is read as given away.
+  assert.equal(R112.signedTimesheetBookingChanges({ sheet, liveLines: [], liveLoaded: true, liveBookings: [reopen147Doc('b1', { personId: 'op9' })] }).changed, false)
+  // Rewritten from their operatives row (op1) to their users id (u1): still theirs — not reopened (second review item 1).
+  assert.equal(
+    R112.signedTimesheetBookingChanges({ sheet, liveLines: [], liveLoaded: true, liveBookings: [reopen147Doc('b1', { personId: 'U1' })], personIds: ['u1', 'op1'] }).changed,
+    false
+  )
   // Moved to another day (no longer in the period's lines): changed, read from the document.
   const otherDay = R112.signedTimesheetBookingChanges({ sheet, liveLines: [], liveLoaded: true, liveBookings: [reopen147Doc('b1', { dayKey: '2026-11-30' })] })
   assert.deepEqual(otherDay.changedBookingIds, ['b1'])
@@ -15650,7 +15657,7 @@ test('1.47.0: the person signs again (record), then the line manager counter-sig
   const after = reopen147Fp({ workEndTime: '18:00' })
   const live = [reopen147Live(after)]
   const record = R112.signedTimesheetBookingRecord(live, [reopen147Doc('b1', { workEndTime: '18:00' })])
-  assert.deepEqual(record, [{ bookingId: 'b1', collection: 'bookings', fingerprint: after, personId: 'op1' }])
+  assert.deepEqual(record, [{ bookingId: 'b1', collection: 'bookings', fingerprint: after, personId: 'op1', place: '' }])
   const resigned = reopen147Signed([reopen147SnapshotLine(before)], { operativeSignedAt: '2026-11-22T09:00:00Z', operativeSignedBookingsAt: '2026-11-22T09:00:00Z', operativeSignedBookings: record })
   const r = reopen147(resigned, live)
   assert.equal(r.reopened, true)
@@ -15706,3 +15713,95 @@ test('1.47.0: buckets and payrun snapshot cells follow a reopened sheet', () => 
   assert.equal(R112.timesheetListBucket(status, true, { reopened: false, waitingFor: null }), 'signed')
   assert.equal(R112.timesheetListBucket(status, false, { reopened: true, waitingFor: 'lineManager' }), 'unsigned')
 })
+
+// MARK: - 1.47.0 second review of #325
+
+test('1.47.0 (second review 2): any status that no longer occupies the day is a removal; no status occupies it', () => {
+  const sheet = reopen147Signed([reopen147SnapshotLine(reopen147Fp())])
+  for (const status of ['Declined', 'Cancelled', 'whatever']) {
+    assert.deepEqual(reopen147(sheet, [], { liveBookings: [reopen147Doc('b1', { status })] }).removedBookingIds, ['b1'], status)
+  }
+  assert.equal(reopen147(sheet, [], { liveBookings: [reopen147Doc('b1', { status: '' })] }).changed, false)
+  assert.equal(reopen147(sheet, [], { liveBookings: [reopen147Doc('b1', { status: 'Tentative' })] }).changed, false)
+})
+
+test('1.47.0 (second review 3): additions use the record server time, conservatively while it is pending', () => {
+  const fp = reopen147Fp()
+  const record = R112.signedTimesheetBookingRecord([reopen147Live(fp)], [reopen147Doc()])
+  const signedAt = '2026-11-20T09:00:00Z'
+  const base = { operativeSignedAt: signedAt, operativeSignedBookingsSignedAt: signedAt, operativeSignedBookings: record }
+  // Signer's clock 8 minutes fast: a booking written (server time) 5 minutes before the device signature, after the
+  // screen loaded, is still an addition while the record's server time is pending.
+  const unseen = reopen147Live(reopen147Fp({ id: 'b2' }), 'b2', { bookingCreatedAt: '2026-11-20T08:55:00Z', bookingUpdatedAt: '2026-11-20T08:55:00Z' })
+  assert.deepEqual(reopen147(base, [reopen147Live(fp), unseen]).addedBookingIds, ['b2'])
+  // With the server time back (08:52 — the device was 8 minutes fast) the comparison is against it, less the window.
+  const withServer = { ...base, operativeSignedBookingsAt: '2026-11-20T08:52:00Z' }
+  assert.deepEqual(reopen147(withServer, [reopen147Live(fp), unseen]).addedBookingIds, ['b2'])
+  // A booking written well before (an hour earlier) and not on the record: a filter, not an addition.
+  const older = reopen147Live(reopen147Fp({ id: 'b3' }), 'b3', { bookingCreatedAt: '2026-11-20T07:30:00Z', bookingUpdatedAt: '2026-11-20T07:30:00Z' })
+  assert.equal(reopen147(withServer, [reopen147Live(fp), older]).changed, false)
+  // Bookings with no write time never count as added.
+  assert.equal(reopen147(withServer, [reopen147Live(fp), reopen147Live(reopen147Fp({ id: 'b4' }), 'b4', { bookingCreatedAt: null, bookingUpdatedAt: null })]).changed, false)
+})
+
+test('1.47.0 (second review 4): a job or place change on a signed booking reopens; a backfilled jobCollection does not', () => {
+  const fp = reopen147Fp()
+  const doc = reopen147Doc('b1', { projectId: 'P1' })
+  const record = R112.signedTimesheetBookingRecord([reopen147Live(fp)], [doc])
+  assert.equal(record[0].place, 'job|p1')
+  const sheet = { operativeSignedAt: R147_SIGNED, operativeSignedBookingsSignedAt: R147_SIGNED, operativeSignedBookings: record }
+  assert.equal(reopen147(sheet, [reopen147Live(fp)], { liveBookings: [doc] }).changed, false)
+  assert.equal(reopen147(sheet, [reopen147Live(fp)], { liveBookings: [{ ...doc, jobCollection: 'projects' }] }).changed, false)
+  const moved = reopen147(sheet, [reopen147Live(fp)], { liveBookings: [{ ...doc, projectId: 'P2' }] })
+  assert.deepEqual(moved.changedBookingIds, ['b1'])
+  // A manager site booking moved from Office to Working from home.
+  const office = { bookingId: 'm1', collection: 'managerSiteBookings', dayKey: '2026-11-18', timeSlot: 'CUSTOM', workStartTime: '07:00', workEndTime: '16:00', personId: 'u1', locationType: 'office' }
+  const mgrLine = { id: 'mgr-m1-normal', bookingCollection: 'managerSiteBookings', bookingFingerprint: reopen147Fp({ id: 'm1' }), bookingCreatedAt: R147_BEFORE, bookingUpdatedAt: R147_BEFORE }
+  const mgrRecord = R112.signedTimesheetBookingRecord([mgrLine], [office])
+  assert.equal(R112.signedTimesheetBookingPlace(office), 'office||')
+  const mgrSheet = { operativeSignedAt: R147_SIGNED, operativeSignedBookingsSignedAt: R147_SIGNED, operativeSignedBookings: mgrRecord }
+  assert.equal(reopen147(mgrSheet, [mgrLine], { liveBookings: [{ ...office, locationType: 'working_from_home' }] }).reopened, true)
+  // A sheet signed before 1.47.0 (no place on the snapshot) never reopens for a place change.
+  assert.equal(reopen147(reopen147Signed([reopen147SnapshotLine(fp)]), [reopen147Live(fp)], { liveBookings: [{ ...doc, projectId: 'P2' }] }).changed, false)
+})
+
+test('1.47.0 (second review): a labour booking moved to the manager schedule reopens (removed + added)', () => {
+  const fp = reopen147Fp()
+  const record = R112.signedTimesheetBookingRecord([reopen147Live(fp)], [reopen147Doc()])
+  const sheet = { operativeSignedAt: R147_SIGNED, operativeSignedBookingsSignedAt: R147_SIGNED, operativeSignedBookingsAt: R147_SIGNED, operativeSignedBookings: record }
+  const mgr = { id: 'mgr-m1-normal', bookingCollection: 'managerSiteBookings', bookingFingerprint: reopen147Fp({ id: 'm1' }), bookingCreatedAt: R147_AFTER, bookingUpdatedAt: R147_AFTER }
+  const r = reopen147(sheet, [mgr], { liveBookings: [{ bookingId: 'm1', collection: 'managerSiteBookings', dayKey: '2026-11-18', personId: 'u1', locationType: 'project', locationId: 'P1' }] })
+  assert.deepEqual(r.removedBookingIds, ['b1'])
+  assert.deepEqual(r.addedBookingIds, ['m1'])
+  assert.equal(r.waitingFor, 'person')
+})
+
+test('1.47.0 (second review): an Edit hours part (reviewPartOf) alone never reopens; overtime rate and break toggle do', () => {
+  const fp = reopen147Fp()
+  const withPart = reopen147Signed([
+    reopen147SnapshotLine(fp),
+    { id: 'op-b1-ot', bookingId: 'b1', reviewPartOf: 'op-b1-normal', bookingFingerprint: fp, isOvertime: true, isPayeDay: false, isLeave: false },
+  ])
+  assert.equal(reopen147(withPart, [reopen147Live(fp)]).changed, false)
+  const sheet = reopen147Signed([reopen147SnapshotLine(fp)])
+  assert.deepEqual(reopen147(sheet, [reopen147Live(reopen147Fp({ otMultiplierOverride: 2 }))]).changedBookingIds, ['b1'])
+  assert.deepEqual(reopen147(sheet, [reopen147Live(reopen147Fp({ isBreakRemoved: true }))]).changedBookingIds, ['b1'])
+})
+
+test('1.47.0 (second review): an older iPhone re-signs (no new record) on a stale snapshot — still back with the person', () => {
+  const before = reopen147Fp()
+  const after = reopen147Fp({ workEndTime: '18:00' })
+  const record = R112.signedTimesheetBookingRecord([reopen147Live(before)])
+  // Signed on 1.47 (record), counter-signed, booking changed, then signed again on an older iPhone: the record belongs
+  // to the first signature, so it is ignored; the snapshot is stale against the live booking.
+  const sheet = reopen147Signed([reopen147SnapshotLine(before)], {
+    operativeSignedAt: '2026-11-25T09:00:00Z',
+    operativeSignedBookingsSignedAt: '2026-11-19T09:00:00Z',
+    operativeSignedBookingsAt: '2026-11-19T09:00:05Z',
+    operativeSignedBookings: record,
+  })
+  const r = reopen147(sheet, [reopen147Live(after)])
+  assert.equal(r.reopened, true)
+  assert.equal(r.waitingFor, 'person')
+})
+

@@ -318,6 +318,8 @@ function parseOperativeSignedBookings(raw: unknown): TimesheetDraft['operativeSi
       collection: typeof row.collection === 'string' ? row.collection : 'bookings',
       fingerprint: typeof row.fingerprint === 'string' ? row.fingerprint : '',
       personId: typeof row.personId === 'string' ? row.personId : '',
+      // Second review #325 item 4: where the booking was when signed (missing on records written before it).
+      ...(typeof row.place === 'string' ? { place: row.place } : {}),
     }))
     .filter((row) => row.bookingId !== '')
 }
@@ -338,6 +340,7 @@ export function draftFromFirestoreMap(
     // Rulebook 1.47.0 §8: what the person signed (missing before 1.47.0).
     operativeSignedBookings: parseOperativeSignedBookings(data.operativeSignedBookings),
     operativeSignedBookingsAt: parseSharedFirestoreDate(data.operativeSignedBookingsAt) ?? null,
+    operativeSignedBookingsSignedAt: parseSharedFirestoreDate(data.operativeSignedBookingsSignedAt) ?? null,
     managerSignedAt: status.managerSignedAtMs ? new Date(status.managerSignedAtMs) : null,
     managerSignedByName: status.managerSignedByName || null,
     managerSignedByUserId: status.managerSignedByUserId || null,
@@ -363,10 +366,19 @@ export function draftToFirestoreMap(draft: TimesheetDraft): Record<string, unkno
       : draft.operativeSignedBookings === null
         ? { operativeSignedBookings: null }
         : {}),
-    ...(draft.operativeSignedBookingsAt instanceof Date
-      ? { operativeSignedBookingsAt: Timestamp.fromDate(draft.operativeSignedBookingsAt) }
-      : draft.operativeSignedBookingsAt === null
-        ? { operativeSignedBookingsAt: null }
+    // `operativeSignedBookingsAt` is server time: written by `saveTimesheetDraft` with `serverTimestamp()` when the
+    // draft marks it pending, never from this device's clock.
+    ...(draft.operativeSignedBookingsAtPending
+      ? {}
+      : draft.operativeSignedBookingsAt instanceof Date
+        ? { operativeSignedBookingsAt: Timestamp.fromDate(draft.operativeSignedBookingsAt) }
+        : draft.operativeSignedBookingsAt === null
+          ? { operativeSignedBookingsAt: null }
+          : {}),
+    ...(draft.operativeSignedBookingsSignedAt instanceof Date
+      ? { operativeSignedBookingsSignedAt: Timestamp.fromDate(draft.operativeSignedBookingsSignedAt) }
+      : draft.operativeSignedBookingsSignedAt === null
+        ? { operativeSignedBookingsSignedAt: null }
         : {}),
     managerSignedAt: draft.managerSignedAt ? Timestamp.fromDate(draft.managerSignedAt) : null,
     managerSignedByName: draft.managerSignedByName || '',
@@ -870,7 +882,12 @@ export async function saveTimesheetDraft({
     if (entriesError) throw new Error(entriesError)
   }
   // Who and where (`writeMetadataFields`) plus the server time, on every timesheet save.
-  const metadata = { ...(writeMetadataFields(writerId, 'web') ?? {}), updatedAt: serverTimestamp() }
+  const metadata = {
+    ...(writeMetadataFields(writerId, 'web') ?? {}),
+    updatedAt: serverTimestamp(),
+    // Rulebook 1.47.0 (second review #325 item 3): the record of what was signed carries the server time.
+    ...(draft.operativeSignedBookingsAtPending ? { operativeSignedBookingsAt: serverTimestamp() } : {}),
+  }
   // Partial writes (rulebook §1): an existing sheet gets only the fields that changed (`updateDoc`), so stored
   // manager values the owner may not send (`timesheetOwnerWriteFields`) are never resent. A new sheet is created.
   await Promise.all(

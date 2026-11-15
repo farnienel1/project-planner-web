@@ -466,6 +466,7 @@ var ProjectPlannerCanonical = (() => {
     SENSITIVE_PROFILE_DOC_ID: () => SENSITIVE_PROFILE_DOC_ID,
     SENSITIVE_PROFILE_FIELDS: () => SENSITIVE_PROFILE_FIELDS,
     SENSITIVE_VALUE_MAX: () => SENSITIVE_VALUE_MAX,
+    SIGNED_TIMESHEET_ADDITION_WINDOW_MS: () => SIGNED_TIMESHEET_ADDITION_WINDOW_MS,
     SIGNED_TIMESHEET_CHANGED_COUNTERSIGN_MESSAGE: () => SIGNED_TIMESHEET_CHANGED_COUNTERSIGN_MESSAGE,
     SIGNED_TIMESHEET_CHANGED_LABEL: () => SIGNED_TIMESHEET_CHANGED_LABEL,
     SIGNED_TIMESHEET_CHANGED_MESSAGE: () => SIGNED_TIMESHEET_CHANGED_MESSAGE,
@@ -1464,6 +1465,7 @@ var ProjectPlannerCanonical = (() => {
     signInEmailSyncWrites: () => signInEmailSyncWrites,
     signedTimesheetActions: () => signedTimesheetActions,
     signedTimesheetBookingChanges: () => signedTimesheetBookingChanges,
+    signedTimesheetBookingPlace: () => signedTimesheetBookingPlace,
     signedTimesheetBookingRecord: () => signedTimesheetBookingRecord,
     signedTimesheetLineBookingKey: () => signedTimesheetLineBookingKey,
     siteAuditWriteFields: () => siteAuditWriteFields,
@@ -11782,7 +11784,7 @@ var ProjectPlannerCanonical = (() => {
   function rulebookStamp() {
     return {
       version: true ? "1.47.0" : "",
-      sha256: true ? "3c1a213f85db8311bb346216321ff174a835160f26fed0f5f6d9a3bc402def32" : ""
+      sha256: true ? "46411f5eb6835fdefb061000aeac4e60565b419cd83ed5eb3d3629b981614b66" : ""
     };
   }
   function rulebookVersionLabel(version) {
@@ -23790,6 +23792,19 @@ var ProjectPlannerCanonical = (() => {
   var SIGNED_TIMESHEET_EXPORTED_CHANGED_MESSAGE = "Bookings have changed since this timesheet was exported. The exported timesheet stays as it was \u2014 correct anything on the next timesheet.";
   var SIGNED_TIMESHEET_EXPORT_SKIPPED_MESSAGE = "Not exported \u2014 bookings changed since it was signed; it is back with the person to sign again.";
   var RECORD_SIGNATURE_TOLERANCE_MS = 5 * 60 * 1e3;
+  var RECORD_SIGNED_AT_MATCH_MS = 1e3;
+  var SIGNED_TIMESHEET_ADDITION_WINDOW_MS = 10 * 60 * 1e3;
+  function signedTimesheetBookingPlace(doc) {
+    if (!doc) return "";
+    const collection = text40(doc.collection) || "bookings";
+    if (collection === "bookings") {
+      const job = normalizeDocumentId(text40(doc.projectId));
+      return job ? `job|${job}` : "";
+    }
+    const kind = text40(doc.locationType).toLowerCase();
+    if (!kind) return "";
+    return `${kind}|${normalizeDocumentId(text40(doc.locationId))}|${text40(doc.customLocationName).toLowerCase()}`;
+  }
   function text40(value) {
     return typeof value === "string" ? value.trim() : value == null ? "" : String(value).trim();
   }
@@ -23841,7 +23856,7 @@ var ProjectPlannerCanonical = (() => {
       const updated = documentInstantMs(line.bookingUpdatedAt);
       const writtenMs = created == null && updated == null ? null : Math.max(created ?? 0, updated ?? 0);
       const held = byKey.get(key5);
-      if (!held) byKey.set(key5, { bookingId: booking.bookingId, fingerprint, personId: "", writtenMs });
+      if (!held) byKey.set(key5, { bookingId: booking.bookingId, fingerprint, personId: "", place: "", writtenMs });
       else {
         if (!held.fingerprint && fingerprint) held.fingerprint = fingerprint;
         if (writtenMs != null) held.writtenMs = Math.max(held.writtenMs ?? 0, writtenMs);
@@ -23858,7 +23873,9 @@ var ProjectPlannerCanonical = (() => {
       const booking = lineBooking({ bookingId: r.bookingId, bookingCollection: r.collection });
       if (!booking) continue;
       const key5 = keyOf(booking.collection, booking.bookingId);
-      if (!side.has(key5)) side.set(key5, { bookingId: booking.bookingId, fingerprint: text40(r.fingerprint), personId: text40(r.personId), writtenMs: null });
+      if (!side.has(key5)) {
+        side.set(key5, { bookingId: booking.bookingId, fingerprint: text40(r.fingerprint), personId: text40(r.personId), place: text40(r.place), writtenMs: null });
+      }
     }
     return side;
   }
@@ -23874,19 +23891,21 @@ var ProjectPlannerCanonical = (() => {
       otMultiplierOverride: typeof doc.otMultiplierOverride === "number" ? doc.otMultiplierOverride : null
     });
   }
-  function isCancelled2(status) {
-    const value = text40(status).toLowerCase();
-    return value === "cancelled" || value === "canceled";
+  function statusTakesItOff(status) {
+    return text40(status) !== "" && !bookingOccupiesDay(status);
   }
-  function diffSides(signed, live, documents, signedAtMs) {
+  function diffSides(signed, live, documents, addedAfterMs) {
     const fingerprinted = Array.from(signed.values()).some((row2) => row2.fingerprint !== "");
     const changed = [];
     const added = [];
     const removed = [];
     for (const [key5, row2] of signed) {
       const now = live.get(key5);
+      const doc = documents?.byKey.get(key5);
+      const placeNow = signedTimesheetBookingPlace(doc);
+      const placeChanged = Boolean(row2.place && placeNow && row2.place !== placeNow);
       if (now) {
-        if (row2.fingerprint && now.fingerprint && !sameBooking(row2.fingerprint, now.fingerprint)) changed.push(row2.bookingId);
+        if (row2.fingerprint && now.fingerprint && !sameBooking(row2.fingerprint, now.fingerprint) || placeChanged) changed.push(row2.bookingId);
         continue;
       }
       if (!documents) continue;
@@ -23894,20 +23913,20 @@ var ProjectPlannerCanonical = (() => {
         removed.push(row2.bookingId);
         continue;
       }
-      const doc = documents.byKey.get(key5);
-      if (!doc || isCancelled2(doc.status)) {
+      if (!doc || statusTakesItOff(doc.status)) {
         removed.push(row2.bookingId);
         continue;
       }
-      if (row2.personId && text40(doc.personId) && normalizeDocumentId(row2.personId) !== normalizeDocumentId(text40(doc.personId))) {
+      const docPerson = normalizeDocumentId(text40(doc.personId));
+      if (row2.personId && docPerson && normalizeDocumentId(row2.personId) !== docPerson && documents.personIds && !documents.personIds.has(docPerson)) {
         removed.push(row2.bookingId);
         continue;
       }
-      if (row2.fingerprint && !sameBooking(row2.fingerprint, documentFingerprint(doc))) changed.push(row2.bookingId);
+      if (row2.fingerprint && !sameBooking(row2.fingerprint, documentFingerprint(doc)) || placeChanged) changed.push(row2.bookingId);
     }
     for (const [key5, row2] of live) {
       if (signed.has(key5)) continue;
-      if (signedAtMs == null || row2.writtenMs == null || row2.writtenMs <= signedAtMs) continue;
+      if (addedAfterMs == null || row2.writtenMs == null || row2.writtenMs <= addedAfterMs) continue;
       added.push(row2.bookingId);
     }
     return { changed, added, removed, basis: fingerprinted ? "fingerprint" : "bookingIds" };
@@ -23930,7 +23949,8 @@ var ProjectPlannerCanonical = (() => {
         if (!held.fingerprint && fingerprint) held.fingerprint = fingerprint;
         continue;
       }
-      out.set(key5, { bookingId: booking.bookingId, collection: booking.collection, fingerprint, personId: text40(docs.get(key5)?.personId) });
+      const doc = docs.get(key5);
+      out.set(key5, { bookingId: booking.bookingId, collection: booking.collection, fingerprint, personId: text40(doc?.personId), place: signedTimesheetBookingPlace(doc) });
     }
     return Array.from(out.entries()).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([, row2]) => row2);
   }
@@ -23961,7 +23981,8 @@ var ProjectPlannerCanonical = (() => {
       for (const doc of input.liveBookings) if (doc && text40(doc.bookingId)) byKey.set(keyOf(text40(doc.collection) || "bookings", text40(doc.bookingId)), doc);
       const tombstoned = /* @__PURE__ */ new Set();
       for (const row2 of input.tombstonedBookingIds ?? []) if (row2 && text40(row2.bookingId)) tombstoned.add(keyOf(text40(row2.collection) || "bookings", text40(row2.bookingId)));
-      documents = { byKey, tombstoned };
+      const personIds = Array.isArray(input.personIds) ? new Set(input.personIds.map((id2) => normalizeDocumentId(text40(id2))).filter(Boolean)) : null;
+      documents = { byKey, tombstoned, personIds };
     }
     let snapshotDiff = null;
     if (override) {
@@ -23976,12 +23997,16 @@ var ProjectPlannerCanonical = (() => {
         }))
       );
       const snapshotAtMs = realMs(override.approvedAt) ?? realMs(sheet.managerSignedAt) ?? realMs(sheet.approvedAt) ?? operativeSignedMs;
-      if (!repairable && !(grouped.byKey.size === 0 && grouped.keyless > 0)) snapshotDiff = diffSides(grouped.byKey, live, documents, snapshotAtMs);
+      const snapshotAddedAfter = snapshotAtMs == null ? null : snapshotAtMs - SIGNED_TIMESHEET_ADDITION_WINDOW_MS;
+      if (!repairable && !(grouped.byKey.size === 0 && grouped.keyless > 0)) snapshotDiff = diffSides(grouped.byKey, live, documents, snapshotAddedAfter);
     }
     const recordAtMs = realMs(sheet.operativeSignedBookingsAt);
-    const recordCurrent = operativeSignedMs != null && recordAtMs != null && operativeSignedMs <= recordAtMs + RECORD_SIGNATURE_TOLERANCE_MS;
+    const recordSignedAtMs = realMs(sheet.operativeSignedBookingsSignedAt);
+    const recordCurrent = operativeSignedMs != null && (recordSignedAtMs != null ? Math.abs(operativeSignedMs - recordSignedAtMs) <= RECORD_SIGNED_AT_MATCH_MS : recordAtMs != null && operativeSignedMs <= recordAtMs + RECORD_SIGNATURE_TOLERANCE_MS);
     const record15 = recordCurrent ? recordSide(sheet.operativeSignedBookings) : null;
-    const personDiff = record15 ? diffSides(record15, live, documents, operativeSignedMs) : snapshotDiff;
+    const recordReferenceMs = recordAtMs ?? operativeSignedMs;
+    const recordAddedAfter = recordReferenceMs == null ? null : recordReferenceMs - SIGNED_TIMESHEET_ADDITION_WINDOW_MS;
+    const personDiff = record15 ? diffSides(record15, live, documents, recordAddedAfter) : snapshotDiff;
     const personChanged = operativeSignedMs != null || override ? !isEmptyDiff(personDiff) : false;
     const snapshotChanged = !isEmptyDiff(snapshotDiff);
     if (!personChanged && !snapshotChanged) return base;

@@ -38,6 +38,7 @@ import { documentInstantMs } from './peopleDocuments'
 import { normalizeDocumentId } from './scheduleSources'
 import { resolveTimesheetExportedAtMs, timesheetTimestampMs, TIMESHEET_SIGNED_AFTER_MS } from './timesheetPeriod'
 import { timesheetSnapshotNeedsRebuild } from './timesheetSnapshot'
+import { bookingOccupiesDay } from './warningRows'
 
 /** The popup on My Timesheets (owner's words, 15 Nov). */
 export const SIGNED_TIMESHEET_CHANGED_MESSAGE =
@@ -60,6 +61,14 @@ export const SIGNED_TIMESHEET_EXPORT_SKIPPED_MESSAGE = 'Not exported — booking
 
 /** A record written within this long after the signature belongs to it (the two are written in one save). */
 const RECORD_SIGNATURE_TOLERANCE_MS = 5 * 60 * 1000
+/** `operativeSignedBookingsSignedAt` equal to `operativeSignedAt` (same value, written together) within this. */
+const RECORD_SIGNED_AT_MATCH_MS = 1000
+/**
+ * Second review #325 item 3: a booking not on the record counts as added when it was written after the signature
+ * less this window — conservative, so a fast signer's clock (device time) or a change the person's screen had not
+ * received yet is never missed.
+ */
+export const SIGNED_TIMESHEET_ADDITION_WINDOW_MS = 10 * 60 * 1000
 
 /** One booking as the person signed it (`operativeSignedBookings[]`). */
 export type SignedTimesheetBooking = {
@@ -70,6 +79,11 @@ export type SignedTimesheetBooking = {
   fingerprint: string
   /** The booking's person id as stored when signed (labour `operativeId`, manager site `userId`); '' when unknown. */
   personId: string
+  /**
+   * Second review #325 item 4: where the booking was when signed — `signedTimesheetBookingPlace` (job, or Office /
+   * Working from home / Site survey / custom place). '' when unknown. A change reopens the sheet.
+   */
+  place?: string
 }
 
 /** A live payroll line or a signed snapshot line — only the fields this rule reads. */
@@ -103,14 +117,41 @@ export type SignedTimesheetBookingDocument = {
   status?: unknown
   /** The booking's person id as stored (labour `operativeId`, manager site `userId`). */
   personId?: unknown
+  /** Labour: the job (`projectId`). Manager site: `locationType`, `locationId`, `customLocationName`. */
+  projectId?: unknown
+  locationType?: unknown
+  locationId?: unknown
+  customLocationName?: unknown
+}
+
+/**
+ * Second review #325 item 4: where a booking is — a labour booking's job (`job|{projectId}`), a manager site booking's
+ * place (`{locationType}|{locationId}|{customLocationName}`), ids and names without case; '' when unknown. The job's
+ * collection (`jobCollection`) is left out: older bookings gain it from a backfill, which must not reopen sheets.
+ */
+export function signedTimesheetBookingPlace(doc: SignedTimesheetBookingDocument | null | undefined): string {
+  if (!doc) return ''
+  const collection = text(doc.collection) || 'bookings'
+  if (collection === 'bookings') {
+    const job = normalizeDocumentId(text(doc.projectId))
+    return job ? `job|${job}` : ''
+  }
+  const kind = text(doc.locationType).toLowerCase()
+  if (!kind) return ''
+  return `${kind}|${normalizeDocumentId(text(doc.locationId))}|${text(doc.customLocationName).toLowerCase()}`
 }
 
 export type SignedTimesheetSheet = {
   operativeSignedAt?: unknown
   operativeSignedAtMs?: unknown
   operativeSignedBookings?: unknown
-  /** When `operativeSignedBookings` was written (with the signature). */
+  /**
+   * When `operativeSignedBookings` was written — server time (second review #325 item 3); missing while the write is
+   * pending (then the comparison is conservative).
+   */
   operativeSignedBookingsAt?: unknown
+  /** The `operativeSignedAt` the record belongs to (the same value, written together; ties the record to its signature). */
+  operativeSignedBookingsSignedAt?: unknown
   managerSignedAt?: unknown
   managerSignedAtMs?: unknown
   approvedAt?: unknown
@@ -188,7 +229,7 @@ export function signedTimesheetLineBookingKey(line: SignedTimesheetLine | null |
   return booking ? keyOf(booking.collection, booking.bookingId) : ''
 }
 
-type SideRow = { bookingId: string; fingerprint: string; personId: string; writtenMs: number | null }
+type SideRow = { bookingId: string; fingerprint: string; personId: string; place: string; writtenMs: number | null }
 type Side = Map<string, SideRow>
 
 /** Lines grouped by booking, leave and PAYE days left out on every side (a PAYE day is never a timesheet line, §8). */
@@ -208,7 +249,7 @@ function groupLines(lines: ReadonlyArray<SignedTimesheetLine | null | undefined>
     const updated = documentInstantMs(line.bookingUpdatedAt as never)
     const writtenMs = created == null && updated == null ? null : Math.max(created ?? 0, updated ?? 0)
     const held = byKey.get(key)
-    if (!held) byKey.set(key, { bookingId: booking.bookingId, fingerprint, personId: '', writtenMs })
+    if (!held) byKey.set(key, { bookingId: booking.bookingId, fingerprint, personId: '', place: '', writtenMs })
     else {
       if (!held.fingerprint && fingerprint) held.fingerprint = fingerprint
       if (writtenMs != null) held.writtenMs = Math.max(held.writtenMs ?? 0, writtenMs)
@@ -226,12 +267,19 @@ function recordSide(raw: unknown): Side | null {
     const booking = lineBooking({ bookingId: r.bookingId, bookingCollection: r.collection })
     if (!booking) continue
     const key = keyOf(booking.collection, booking.bookingId)
-    if (!side.has(key)) side.set(key, { bookingId: booking.bookingId, fingerprint: text(r.fingerprint), personId: text(r.personId), writtenMs: null })
+    if (!side.has(key)) {
+      side.set(key, { bookingId: booking.bookingId, fingerprint: text(r.fingerprint), personId: text(r.personId), place: text(r.place), writtenMs: null })
+    }
   }
   return side
 }
 
-type Documents = { byKey: Map<string, SignedTimesheetBookingDocument>; tombstoned: Set<string> } | null
+type Documents = {
+  byKey: Map<string, SignedTimesheetBookingDocument>
+  tombstoned: Set<string>
+  /** Every id the sheet's person goes by (`personIdSet` / `bookingIdsForAccount`), without case; null = unknown. */
+  personIds: Set<string> | null
+} | null
 
 function documentFingerprint(doc: SignedTimesheetBookingDocument): string {
   return overtimeBookingFingerprint({
@@ -246,23 +294,31 @@ function documentFingerprint(doc: SignedTimesheetBookingDocument): string {
   } as Parameters<typeof overtimeBookingFingerprint>[0])
 }
 
-function isCancelled(status: unknown): boolean {
-  const value = text(status).toLowerCase()
-  return value === 'cancelled' || value === 'canceled'
+/**
+ * Second review #325 item 2: a booking whose status no longer occupies the day (Cancelled, Declined, any unknown word —
+ * `bookingOccupiesDay`, the rule the collector drops it by) is off the sheet. A booking stored with no status (manager
+ * site bookings) occupies its day.
+ */
+function statusTakesItOff(status: unknown): boolean {
+  return text(status) !== '' && !bookingOccupiesDay(status)
 }
 
 type Diff = { changed: string[]; added: string[]; removed: string[]; basis: 'fingerprint' | 'bookingIds' }
 
-function diffSides(signed: Side, live: Side, documents: Documents, signedAtMs: number | null): Diff {
+function diffSides(signed: Side, live: Side, documents: Documents, addedAfterMs: number | null): Diff {
   const fingerprinted = Array.from(signed.values()).some((row) => row.fingerprint !== '')
   const changed: string[] = []
   const added: string[] = []
   const removed: string[] = []
   for (const [key, row] of signed) {
     const now = live.get(key)
+    const doc = documents?.byKey.get(key)
+    // Second review #325 item 4: a job or place change (the record holds it; the snapshot does not).
+    const placeNow = signedTimesheetBookingPlace(doc)
+    const placeChanged = Boolean(row.place && placeNow && row.place !== placeNow)
     if (now) {
       // Before 1.46.0 there is no fingerprint: only additions and removals count (hours are never compared).
-      if (row.fingerprint && now.fingerprint && !sameBooking(row.fingerprint, now.fingerprint)) changed.push(row.bookingId)
+      if ((row.fingerprint && now.fingerprint && !sameBooking(row.fingerprint, now.fingerprint)) || placeChanged) changed.push(row.bookingId)
       continue
     }
     // Not on the sheet now. Judge it from the booking itself, never from the filters that build the sheet.
@@ -271,23 +327,27 @@ function diffSides(signed: Side, live: Side, documents: Documents, signedAtMs: n
       removed.push(row.bookingId)
       continue
     }
-    const doc = documents.byKey.get(key)
-    if (!doc || isCancelled(doc.status)) {
+    if (!doc || statusTakesItOff(doc.status)) {
       removed.push(row.bookingId)
       continue
     }
-    if (row.personId && text(doc.personId) && normalizeDocumentId(row.personId) !== normalizeDocumentId(text(doc.personId))) {
+    // Given to someone else (second review #325 item 1): only when the booking's person is now outside every id the
+    // sheet's person goes by — a booking rewritten from their `operatives` row to their users id is still theirs.
+    // Without the person's ids nothing is read as given away.
+    const docPerson = normalizeDocumentId(text(doc.personId))
+    if (row.personId && docPerson && normalizeDocumentId(row.personId) !== docPerson && documents.personIds && !documents.personIds.has(docPerson)) {
       removed.push(row.bookingId)
       continue
     }
-    if (row.fingerprint && !sameBooking(row.fingerprint, documentFingerprint(doc))) changed.push(row.bookingId)
+    if ((row.fingerprint && !sameBooking(row.fingerprint, documentFingerprint(doc))) || placeChanged) changed.push(row.bookingId)
     // Otherwise the booking is as signed and only a filter left it off the lines: no change.
   }
   for (const [key, row] of live) {
     if (signed.has(key)) continue
-    // Added only when the booking was created or last written after the signature (a filter switched back on, or a
-    // person matched under another id, brings in bookings that were already there: no change).
-    if (signedAtMs == null || row.writtenMs == null || row.writtenMs <= signedAtMs) continue
+    // Added only when the booking was created or last written after the signature less the addition window (a filter
+    // switched back on, or a person matched under another id, brings in bookings that were already there: no change).
+    // A booking with no write time never counts.
+    if (addedAfterMs == null || row.writtenMs == null || row.writtenMs <= addedAfterMs) continue
     added.push(row.bookingId)
   }
   return { changed, added, removed, basis: fingerprinted ? 'fingerprint' : 'bookingIds' }
@@ -322,7 +382,8 @@ export function signedTimesheetBookingRecord(
       if (!held.fingerprint && fingerprint) held.fingerprint = fingerprint
       continue
     }
-    out.set(key, { bookingId: booking.bookingId, collection: booking.collection, fingerprint, personId: text(docs.get(key)?.personId) })
+    const doc = docs.get(key)
+    out.set(key, { bookingId: booking.bookingId, collection: booking.collection, fingerprint, personId: text(doc?.personId), place: signedTimesheetBookingPlace(doc) })
   }
   return Array.from(out.entries())
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
@@ -353,6 +414,12 @@ export function signedTimesheetBookingChanges(input: {
   selfSigned?: boolean | null
   liveBookings?: ReadonlyArray<SignedTimesheetBookingDocument | null | undefined> | null
   tombstonedBookingIds?: ReadonlyArray<{ collection?: unknown; bookingId?: unknown } | null | undefined> | null
+  /**
+   * Every id the sheet's person goes by (`personIdSet`, former and same-email ids, `operatives` rows on their email —
+   * web `bookingIdsForAccount`). A signed booking now stored under one of them is still theirs. Missing = a booking is
+   * never read as given to someone else.
+   */
+  personIds?: ReadonlyArray<string | null | undefined> | null
 }): SignedTimesheetBookingChanges {
   const none: SignedTimesheetBookingChanges = {
     changed: false,
@@ -381,7 +448,10 @@ export function signedTimesheetBookingChanges(input: {
     for (const doc of input.liveBookings) if (doc && text(doc.bookingId)) byKey.set(keyOf(text(doc.collection) || 'bookings', text(doc.bookingId)), doc)
     const tombstoned = new Set<string>()
     for (const row of input.tombstonedBookingIds ?? []) if (row && text(row.bookingId)) tombstoned.add(keyOf(text(row.collection) || 'bookings', text(row.bookingId)))
-    documents = { byKey, tombstoned }
+    const personIds = Array.isArray(input.personIds)
+      ? new Set(input.personIds.map((id) => normalizeDocumentId(text(id))).filter(Boolean))
+      : null
+    documents = { byKey, tombstoned, personIds }
   }
 
   let snapshotDiff: Diff | null = null
@@ -398,14 +468,25 @@ export function signedTimesheetBookingChanges(input: {
     )
     const snapshotAtMs = realMs(override.approvedAt) ?? realMs(sheet.managerSignedAt) ?? realMs(sheet.approvedAt) ?? operativeSignedMs
     // Signed lines that name no booking cannot be compared: never reopen on a guess.
-    if (!repairable && !(grouped.byKey.size === 0 && grouped.keyless > 0)) snapshotDiff = diffSides(grouped.byKey, live, documents, snapshotAtMs)
+    const snapshotAddedAfter = snapshotAtMs == null ? null : snapshotAtMs - SIGNED_TIMESHEET_ADDITION_WINDOW_MS
+    if (!repairable && !(grouped.byKey.size === 0 && grouped.keyless > 0)) snapshotDiff = diffSides(grouped.byKey, live, documents, snapshotAddedAfter)
   }
-  // The record belongs to the latest signature only (an older app may have signed again without writing one).
+  // The record belongs to the latest signature only (an older app may have signed again without writing one):
+  // `operativeSignedBookingsSignedAt` equals `operativeSignedAt`; a record without it is current when written (server
+  // time) no earlier than shortly before the signature.
   const recordAtMs = realMs(sheet.operativeSignedBookingsAt)
+  const recordSignedAtMs = realMs(sheet.operativeSignedBookingsSignedAt)
   const recordCurrent =
-    operativeSignedMs != null && recordAtMs != null && operativeSignedMs <= recordAtMs + RECORD_SIGNATURE_TOLERANCE_MS
+    operativeSignedMs != null &&
+    (recordSignedAtMs != null
+      ? Math.abs(operativeSignedMs - recordSignedAtMs) <= RECORD_SIGNED_AT_MATCH_MS
+      : recordAtMs != null && operativeSignedMs <= recordAtMs + RECORD_SIGNATURE_TOLERANCE_MS)
   const record = recordCurrent ? recordSide(sheet.operativeSignedBookings) : null
-  const personDiff = record ? diffSides(record, live, documents, operativeSignedMs) : snapshotDiff
+  // Additions against the server time of the record (else, while it is pending, the device time of the signature),
+  // less the addition window.
+  const recordReferenceMs = recordAtMs ?? operativeSignedMs
+  const recordAddedAfter = recordReferenceMs == null ? null : recordReferenceMs - SIGNED_TIMESHEET_ADDITION_WINDOW_MS
+  const personDiff = record ? diffSides(record, live, documents, recordAddedAfter) : snapshotDiff
 
   const personChanged = operativeSignedMs != null || override ? !isEmptyDiff(personDiff) : false
   const snapshotChanged = !isEmptyDiff(snapshotDiff)

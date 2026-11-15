@@ -5,7 +5,7 @@ import { DEFAULT_MY_SCHEDULE, DEFAULT_PAYROLL_POLICY } from '../settings/organiz
 import { emptyTimesheetDraft, type TimesheetDraft } from './timesheetDraft.ts'
 import { applyWeeklyReportOverride } from './weeklyReportOverride.ts'
 import { collectTimesheetPayroll } from './timesheetPayrollCollector.ts'
-import { draftBookingChanges, draftForFigures, draftSignedBookingRecord, periodBookingChanges } from './timesheetBookingChanges.ts'
+import { draftBookingChanges, draftForFigures, draftSignedBookingRecord, periodBookingChanges, timesheetPersonIds } from './timesheetBookingChanges.ts'
 import { draftFromFirestoreMap, draftToFirestoreMap } from './timesheetStorage.ts'
 import { signedTimesheetActions } from '../canonical/index.ts'
 import type { ManagerSiteBooking } from '../scheduling/managerSiteBookingUtils.ts'
@@ -93,7 +93,16 @@ function recordOf(bookings: Booking[], managerSiteBookings: ManagerSiteBooking[]
   return draftSignedBookingRecord({ lines: linesFor(bookings, managerSiteBookings), bookings, managerSiteBookings, timeZone: 'Europe/London' })
 }
 function changes(draft: TimesheetDraft, bookings: Booking[], managerSiteBookings: ManagerSiteBooking[] = [], lines = linesFor(bookings, managerSiteBookings)) {
-  return draftBookingChanges({ draft, lines, bookings, managerSiteBookings, timeZone: 'Europe/London', liveLoaded: true, selfSigned: false })
+  return draftBookingChanges({
+    draft,
+    lines,
+    bookings,
+    managerSiteBookings,
+    timeZone: 'Europe/London',
+    personIds: timesheetPersonIds(person, users, [operative]),
+    liveLoaded: true,
+    selfSigned: false,
+  })
 }
 function signedSheet(bookings: Booking[], managerSiteBookings: ManagerSiteBooking[] = []): TimesheetDraft {
   const signed: TimesheetDraft = {
@@ -102,6 +111,7 @@ function signedSheet(bookings: Booking[], managerSiteBookings: ManagerSiteBookin
     operativeSignedByName: 'Ada Booked',
     operativeSignedBookings: recordOf(bookings, managerSiteBookings),
     operativeSignedBookingsAt: new Date('2026-09-18T09:00:00Z'),
+    operativeSignedBookingsSignedAt: new Date('2026-09-18T09:00:00Z'),
     managerSignedAt: new Date('2026-09-18T10:00:00Z'),
     managerSignedByName: 'Morgan',
     managerSignedByUserId: 'mgr',
@@ -137,6 +147,7 @@ test('1.47.0 web: a changed booking reopens a signed sheet for the person; re-si
     operativeSignedAt: new Date('2026-09-19T09:00:00Z'),
     operativeSignedBookings: recordOf(moved),
     operativeSignedBookingsAt: new Date('2026-09-19T09:00:00Z'),
+    operativeSignedBookingsSignedAt: new Date('2026-09-19T09:00:00Z'),
   }
   const afterResign = changes(resigned, moved)
   assert.equal(afterResign.waitingFor, 'lineManager')
@@ -234,3 +245,29 @@ test('1.47.0 web (review #325 blocker 2): the person no longer matched to an old
   // The booking given to another operative: removed.
   assert.equal(changes(sheet, [booking({ operativeId: 'op2' })], [], unlinked).reopened, true)
 })
+
+test('1.47.0 web (second review 1): a booking rewritten from the operatives row to the users id is still theirs', () => {
+  const sheet = signedSheet([booking()])
+  assert.deepEqual(timesheetPersonIds(person, users, [operative]).sort(), ['op1', 'u1'])
+  // The booking now stored under the person's users id: the collector still finds it, or not — either way no change.
+  assert.equal(changes(sheet, [booking({ operativeId: 'u1' })], [], []).changed, false)
+  assert.equal(changes(sheet, [booking({ operativeId: 'u1' })]).changed, false)
+})
+
+test('1.47.0 web (second review 4): a job change on a signed booking reopens', () => {
+  const sheet = signedSheet([booking()])
+  assert.equal(sheet.operativeSignedBookings?.[0].place, 'job|proj1')
+  const moved = [booking({ projectId: 'proj2', updatedAt: new Date('2026-09-19T08:00:00Z') })]
+  assert.equal(changes(sheet, moved, [], linesFor([booking()])).reopened, true)
+})
+
+test('1.47.0 web (second review 3): the record time is written as the server time, never this device clock', () => {
+  const sheet = { ...signedSheet([booking()]), operativeSignedBookingsAt: null, operativeSignedBookingsAtPending: true }
+  const map = draftToFirestoreMap(sheet)
+  assert.equal('operativeSignedBookingsAt' in map, false)
+  assert.ok(map.operativeSignedBookingsSignedAt)
+  // While pending, the comparison falls back to the device signature less the window (conservative).
+  const fresh = [booking(), booking({ id: 'b2', date: new Date('2026-09-17T08:00:00Z'), createdAt: new Date('2026-09-18T08:55:00Z'), updatedAt: new Date('2026-09-18T08:55:00Z') })]
+  assert.deepEqual(changes(sheet, fresh).addedBookingIds, ['b2'])
+})
+
