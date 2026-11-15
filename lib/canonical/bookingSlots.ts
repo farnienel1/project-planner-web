@@ -16,7 +16,7 @@
  */
 
 import { formatClockMinutes, halfDayWindows, intervalsOverlap, namedSlotKind, parseClockMinutes, slotInterval } from './engine'
-import { weekendBreakFor, type OrgPayrollTimePolicy } from './organizationSettings'
+import { weekendBreakFor, weekendCountsAsHours, type OrgPayrollTimePolicy } from './organizationSettings'
 import { payrollBreakOnDay, payrollHoursResult, payrollOutsideClockHours, type PayrollHoursResult, unpaidBreakAppliesOnDay, weekendFullDayWindow, weekendRuleForIsoWeekday } from './payrollHours'
 import { isoWeekdayOfDayKey, zoneOrLondon } from './dayKeys'
 import { payrollTimePolicyForDayFromState, type PayrollTimePolicyState } from './payrollPolicySchedule'
@@ -129,7 +129,7 @@ function weekendNoteBody(policy: OrgPayrollTimePolicy | null | undefined, iso: n
   const window = weekendFullDayWindow(policy, weekend)
   if (!window) return null
   const range = `${formatClockMinutes(window.start)}–${formatClockMinutes(window.end)}`
-  const countsAs = Number(weekend.countsAsStandardHours ?? policy.standardPaidHours)
+  const countsAs = weekendCountsAsHours(weekend)
   const outside = Number(weekend.outsideWindowMultiplier ?? 1.5)
   return ` is paid on the hours you enter: ${range} counts as ${hoursText(Number.isFinite(countsAs) ? countsAs : 0)}, hours outside it at ${multiplierText(outside)}. Change it in Working hours.`
 }
@@ -355,7 +355,7 @@ export function weekendBookingBreakdown(
     const unpaidBreakHours = roundHours(paid.unpaidBreakHours)
     const breakOutside = roundHours(outside.outsideBreakHours)
     const breakInStandard = roundHours(Math.max(0, paid.unpaidBreakHours - outside.outsideBreakHours))
-    const credit = weekend ? Number(weekend.countsAsStandardHours ?? dayPolicy.standardPaidHours) : NaN
+    const credit = weekend ? weekendCountsAsHours(weekend) : NaN
     const fullDay = windowDay && standardHours > 0 && Math.abs(standardHours - roundHours(credit)) < 0.001
     const label = WEEKDAY_NAMES[iso] || dayKey
     let line = `${label} ${startText}–${endText} = `
@@ -466,7 +466,7 @@ export function weekendDayPreview(
   const dayBreak = payrollBreakOnDay(policy, dayKey, zone)
   const parts: string[] = []
   if (rule?.allHoursAtMultiplierMode) parts.push(`Every hour at ×${roundHours(rule.allHoursMultiplier)}`)
-  else parts.push(`${span.start}–${span.end} counts as ${hoursText(Number(rule?.countsAsStandardHours ?? policy.standardPaidHours))}`)
+  else parts.push(`${span.start}–${span.end} counts as ${hoursText(weekendCountsAsHours(rule))}`)
   if (dayBreak) {
     const window = `${formatClockMinutes(dayBreak.start)}–${formatClockMinutes(dayBreak.end)}, ${dayBreak.minutes} min`
     if (dayBreak.paid) parts.push(`Paid break ${window}`)

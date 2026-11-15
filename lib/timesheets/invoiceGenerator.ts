@@ -37,7 +37,7 @@ export function buildTimesheetInvoiceHtml({
   utrNumber,
   lines,
   timeZone = organizationZoneOr(),
-  standardDayHours = 8,
+  standardDayHours,
   generatedAt = new Date(),
   documentTitle = 'Invoice',
   periodMetaLabel = 'INVOICE PERIOD',
@@ -56,7 +56,8 @@ export function buildTimesheetInvoiceHtml({
   utrNumber?: string
   lines?: TimesheetInvoiceLine[]
   timeZone?: string
-  standardDayHours?: number
+  /** 1.44.0: the organisation's paid day (`weekdayPaidHours`); required, no 8-hour default. */
+  standardDayHours: number
   generatedAt?: Date
   documentTitle?: string
   periodMetaLabel?: string

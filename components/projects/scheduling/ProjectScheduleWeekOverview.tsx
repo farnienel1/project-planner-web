@@ -8,7 +8,13 @@ import { useBookingStore, type BookingReplaceOptions } from '@/lib/stores/bookin
 import { useManagerScheduleStore } from '@/lib/stores/managerScheduleStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { useSubcontractorStore } from '@/lib/stores/subcontractorStore'
-import { findUserByAnyId, rosterDisplayName } from '@/lib/staff/userRosterUtils'
+import { rosterDisplayName } from '@/lib/staff/userRosterUtils'
+import {
+  UNKNOWN_BOOKING_PERSON_LABEL,
+  UNRESOLVED_BOOKING_PERSON_CHIP,
+  rosterAliasIdsFor,
+  scheduleRowPerson,
+} from '@/lib/canonical'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { weekDaysFrom } from '@/lib/scheduling/scheduleUtils'
 import {
@@ -107,6 +113,11 @@ type DayRow = {
   roleLabel: string
   roleTone: 'operative' | 'manager' | 'subcontractor'
   quickAdd: QuickAddTarget | null
+  /**
+   * Rulebook 1.44.0 §21 (owner decision 14 Nov, H = 1): the booking's person id names nobody loaded
+   * (`scheduleRowPerson`). The row is shown — never hidden — marked "Not linked to a person", with no Quick Add.
+   */
+  unresolved?: boolean
   /** Every id this row's bookings are filed under (for the leave marks, `jobScheduleLeaveMarks`). */
   personIds: string[]
   email: string | null
@@ -139,13 +150,11 @@ type PersonWeek = {
   peopleLabel?: string
   firmName?: string
   quickAdd: QuickAddTarget | null
+  /** Rulebook 1.44.0 §21: an "Unknown person" row (see `DayRow.unresolved`). */
+  unresolved?: boolean
   personIds: string[]
   email: string | null
   cells: DayRow[][]
-}
-
-function emailKey(value: string | undefined | null): string {
-  return String(value || '').trim().toLowerCase()
 }
 
 /**
@@ -361,14 +370,23 @@ export function ProjectScheduleWeekOverview({
     [managerSiteBookings, project.id]
   )
 
-  const usersByEmail = useMemo(() => {
-    const map = new Map<string, User>()
-    for (const user of users) {
-      const key = emailKey(user.email)
-      if (key && !map.has(key)) map.set(key, user)
-    }
-    return map
-  }, [users])
+  // Rulebook 1.41.0 / 1.44.0 §21 (guardrail 1): who a row is comes from `resolveBookingPerson` through
+  // `scheduleRowPerson` — the person's own id, former ids, same-email documents and `operatives` rows on their email.
+  const bookingPeople = useMemo(
+    () => ({
+      accounts: users.map((u) => ({
+        id: u.id,
+        email: u.email ?? null,
+        formerIds: u.formerUserIds ?? [],
+        aliasIds: rosterAliasIdsFor(u.id, userIdAliases),
+      })),
+      operatives: operatives.map((o) => ({ id: o.id, email: o.email ?? null })),
+    }),
+    [users, userIdAliases, operatives]
+  )
+  // The rows `scheduleRowPerson` returned, by the id it returned (exactly as stored).
+  const userById = useMemo(() => new Map(users.map((u) => [u.id, u])), [users])
+  const operativeById = useMemo(() => new Map(operatives.map((o) => [o.id, o])), [operatives])
 
   // Rulebook 1.37.0 (review #299, 2): one day key per column, the cell's calendar date; bookings (organisation-zone
   // day of their stored instant) and leave marks are both bucketed by it.
@@ -379,26 +397,27 @@ export function ProjectScheduleWeekOverview({
       const dayKey = dayKeys[dayIndex]
       const opRows: DayRow[] = projectBookings
         .filter((b) => bookingOnScheduleDay(b.date, dayKey, zone))
-        .flatMap((b) => {
-          const op = operatives.find((o) => idsMatch(o.id, b.operativeId))
+        .map((b): DayRow => {
+          const who = scheduleRowPerson(b.operativeId, bookingPeople)
+          const op = who.operativeId ? operativeById.get(who.operativeId) : undefined
+          const linkedUser = who.accountId ? userById.get(who.accountId) : undefined
           // The account decides the colour: an admin or manager with an operative profile stays blue.
-          const linkedUser =
-            findUserByAnyId(users, b.operativeId, userIdAliases) ??
-            (op ? usersByEmail.get(emailKey(op.email)) : undefined)
           const role = roleForUser(linkedUser)
-          const name =
-            rosterDisplayName(
-              op ? { firstName: op.firstName, surname: op.lastName, email: op.email } : null
-            ) || rosterDisplayName(linkedUser)
-          if (!name) return []
-          const email = op?.email || linkedUser?.email
-          return [{
+          const name = who.unresolved
+            ? who.label || UNKNOWN_BOOKING_PERSON_LABEL
+            : rosterDisplayName(op ? { firstName: op.firstName, surname: op.lastName, email: op.email } : null) ||
+              rosterDisplayName(linkedUser) ||
+              UNKNOWN_BOOKING_PERSON_LABEL
+          const email = who.unresolved ? undefined : op?.email || linkedUser?.email
+          return {
             id: b.id,
-            personKey: email?.trim() ? `email:${email.trim().toLowerCase()}` : `op:${b.operativeId}`,
+            personKey: who.key,
             name,
             roleLabel: role.label,
             roleTone: role.tone,
-            quickAdd: { kind: 'operative' as const, operativeId: b.operativeId },
+            // 1.44.0: an unlinked id gets no Quick Add (it would book more under an id nobody can name).
+            quickAdd: who.unresolved ? null : { kind: 'operative' as const, operativeId: b.operativeId },
+            unresolved: who.unresolved,
             personIds: [b.operativeId, op?.id, linkedUser?.id].filter((id): id is string => Boolean(id)),
             email: email?.trim() || null,
             booking: b,
@@ -408,30 +427,40 @@ export function ProjectScheduleWeekOverview({
               policy: policyForBookingDayKey(dayKey, payroll) ?? payroll,
               dayKey,
             }),
-          }]
+          }
         })
 
       const managerRows: DayRow[] = projectManagerBookings
         .filter((b) => bookingOnScheduleDay(b.date, dayKey, zone))
-        .flatMap((b) => {
-          const manager = findUserByAnyId(users, b.userId, userIdAliases)
-          const name = rosterDisplayName(manager)
-          if (!name) return []
+        .map((b): DayRow => {
+          const who = scheduleRowPerson(b.userId, bookingPeople)
+          const manager = who.accountId ? userById.get(who.accountId) : undefined
+          const linkedOperative = who.operativeId ? operativeById.get(who.operativeId) : undefined
+          const name = who.unresolved
+            ? who.label || UNKNOWN_BOOKING_PERSON_LABEL
+            : rosterDisplayName(manager) ||
+              rosterDisplayName(
+                linkedOperative
+                  ? { firstName: linkedOperative.firstName, surname: linkedOperative.lastName, email: linkedOperative.email }
+                  : null
+              ) ||
+              UNKNOWN_BOOKING_PERSON_LABEL
           const role = manager ? roleForUser(manager) : { label: 'Mgr', tone: 'manager' as const }
-          const linkedOperative = manager
-            ? operatives.find((o) => emailKey(o.email) && emailKey(o.email) === emailKey(manager.email))
-            : undefined
-          const email = manager?.email
-          return [{
+          const email = who.unresolved ? undefined : manager?.email || linkedOperative?.email
+          return {
             id: b.id,
-            personKey: email?.trim() ? `email:${email.trim().toLowerCase()}` : `mgr:${b.userId}`,
+            personKey: who.key,
             name,
             roleLabel: role.label,
             roleTone: role.tone,
             // Booking flow books a roster operative through operative bookings; keep Quick Add on the same path.
-            quickAdd: linkedOperative
-              ? { kind: 'operative' as const, operativeId: linkedOperative.id }
-              : { kind: 'manager' as const, userId: b.userId },
+            // 1.44.0: an unlinked id gets no Quick Add.
+            quickAdd: who.unresolved
+              ? null
+              : linkedOperative
+                ? { kind: 'operative' as const, operativeId: linkedOperative.id }
+                : { kind: 'manager' as const, userId: b.userId },
+            unresolved: who.unresolved,
             personIds: [b.userId, manager?.id, linkedOperative?.id].filter((id): id is string => Boolean(id)),
             email: email?.trim() || null,
             managerBooking: b,
@@ -441,7 +470,7 @@ export function ProjectScheduleWeekOverview({
               policy: policyForBookingDayKey(dayKey, payroll) ?? payroll,
               dayKey,
             }),
-          }]
+          }
         })
 
       const subRows: DayRow[] = subBookings
@@ -476,10 +505,9 @@ export function ProjectScheduleWeekOverview({
     projectBookings,
     projectManagerBookings,
     subBookings,
-    operatives,
-    users,
-    userIdAliases,
-    usersByEmail,
+    bookingPeople,
+    userById,
+    operativeById,
     subcontractors,
     payroll,
   ])
@@ -499,6 +527,7 @@ export function ProjectScheduleWeekOverview({
             peopleLabel: row.peopleLabel,
             firmName: row.firmName,
             quickAdd: row.quickAdd,
+            unresolved: row.unresolved,
             personIds: [],
             email: null,
             cells: weekDays.map(() => []),
@@ -952,9 +981,19 @@ function PersonRow({
           {person.peopleLabel && person.firmName ? (
             <p className="text-[10px] leading-tight text-slate-500">{person.firmName}</p>
           ) : null}
-          <span className={`rounded-full px-1.5 py-px text-[9px] font-semibold ${toneClass(person.roleTone)}`}>
-            {person.roleLabel}
-          </span>
+          {person.unresolved ? (
+            // Rulebook 1.44.0 §21: never hidden; linked to a person from Settings → Data health.
+            <span
+              className="rounded-full bg-amber-100 px-1.5 py-px text-[9px] font-semibold text-amber-800"
+              title="This booking is filed under an ID that matches nobody. An admin can link it to a person in Settings → Data health."
+            >
+              {UNRESOLVED_BOOKING_PERSON_CHIP}
+            </span>
+          ) : (
+            <span className={`rounded-full px-1.5 py-px text-[9px] font-semibold ${toneClass(person.roleTone)}`}>
+              {person.roleLabel}
+            </span>
+          )}
         </div>
       </div>
       {weekDays.map((day, index) => {

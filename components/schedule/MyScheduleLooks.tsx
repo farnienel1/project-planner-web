@@ -165,7 +165,7 @@ export function MyScheduleTotalHoursCard({
     policy.weekdayOutsideStandardMultiplier ||
     1.5
   // 1.20.0: the weekday paid day (`weekdayPaidHours`) of the day shown.
-  const std = weekdayPaidHours(dayPolicy) || 8
+  const std = weekdayPaidHours(dayPolicy)
   const ticks = ['6:00', '9:00', '12:00', '15:00', '18:00']
 
   return (

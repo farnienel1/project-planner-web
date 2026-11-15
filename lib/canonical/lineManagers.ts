@@ -69,13 +69,23 @@ export function rosterPersonName(row: LineManagerRosterPerson | null | undefined
   return full || text(row.displayName) || text(row.name) || text(row.email)
 }
 
+/**
+ * A roster row's level (rulebook §11, `permissionLevelOf`) for every shape of `role`: the stored string or flags, or
+ * the resolved `StaffAccountRole` object (web `rulebookRoster` / `staffAccountRole`, iOS `RulebookPeople.person`).
+ * Admin for the admin or super admin flag; operative only for operative mode / the operative role; **everyone else is
+ * manager level**, a person with no level flag included (1.23.1, owner decisions 1A / 2A). 1.44.0: before, an object
+ * role without `isManager` read as operative while the same person's stored document read as manager, so the Add user
+ * picker (stored rows) offered a flagless legacy manager that the ghost save check (`rulebookRoster`) then refused,
+ * and the line-manager picker, `lineManagerRequiredError` / `lineManagerIds` (`rosterMemberIsOperativeLevel`, which
+ * already read them as manager) and the job manager picker disagreed on the same person.
+ */
 export function levelOf(row: LineManagerRosterPerson): 'admin' | 'manager' | 'operative' {
   const role = row.role
   if (role && typeof role === 'object') {
     const resolved = role as { isAdmin?: boolean; isSuperAdmin?: boolean; isManager?: boolean; isOperativeMode?: boolean }
     if (resolved.isAdmin === true || resolved.isSuperAdmin === true) return 'admin'
     if (resolved.isOperativeMode === true) return 'operative'
-    return resolved.isManager === true ? 'manager' : 'operative'
+    return 'manager'
   }
   return permissionLevelOf(row)
 }

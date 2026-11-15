@@ -164,3 +164,15 @@ test('1.20.3: weekly report overtime with a break shows "6.5h × 2 − 0.5h brea
   })
   assert.deepEqual([paidBreak[0].pay, paySliceDisplay(paidBreak[0], 8, 'GBP').quantityText], [260, '6.50 hours'])
 })
+
+test('1.44.0: a signed day-rate line shows its stored days and rate, never re-read on today\'s paid day', () => {
+  // Signed before 1.44.0 on a stored 8h day (07:00–16:00, 30 min unpaid): FULL DAY 8.5h = 1.0625 days × £250 = £265.63.
+  // Today's derived day is 8.5h; the line must still read 1.0625 days × £250/day, not "1 day × £265.63" / "0.94 days".
+  const line = { paidHours: 8.5, days: 1.0625, amount: 265.63, isOvertime: false, payBasis: 'day' }
+  const slice = signedLabourSlice(line, 8.5, null)
+  assert.deepEqual([slice.standardDayHours, slice.rate, slice.pay], [8, 250, 265.63])
+  const shown = paySliceDisplay(slice, 8.5, 'GBP')
+  assert.deepEqual([shown.days, shown.rateText, shown.pay], [1.0625, '£250.00/day', 265.63])
+  // Today's day changing again never moves it.
+  assert.deepEqual(paySliceDisplay(signedLabourSlice(line, 7.25, null), 7.25, 'GBP').days, 1.0625)
+})

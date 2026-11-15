@@ -30,7 +30,7 @@
  */
 
 import { formatClockMinutes, halfDayWindows, namedSlotKind, parseClockMinutes, slotInterval, type MinuteInterval } from './engine'
-import { weekdayPaidHours, weekendBreakFor, type OrgPayrollTimePolicy, type WeekendPayrollSettings } from './organizationSettings'
+import { weekdayPaidHours, weekendBreakFor, weekendCountsAsHours, type OrgPayrollTimePolicy, type WeekendPayrollSettings } from './organizationSettings'
 import { dateFromDayKeyInZone, isoWeekdayInZone } from '../orgTime/zoneTime'
 import { zoneOrLondon } from './dayKeys'
 
@@ -100,8 +100,9 @@ function standardPaid(policy: OrgPayrollTimePolicy): number {
   return Math.max(Number(weekdayPaidHours(policy)) || 0, 0)
 }
 
-function countsAs(weekend: WeekendPayrollSettings, policy: OrgPayrollTimePolicy): number {
-  return weekend.countsAsStandardHours ?? Number(policy.standardPaidHours)
+function countsAs(weekend: WeekendPayrollSettings): number {
+  // 1.44.0: one fallback with the reader (`weekendCountsAsHours`: stored, else 8), never the weekday paid day.
+  return weekendCountsAsHours(weekend)
 }
 
 function dayInput(policy: OrgPayrollTimePolicy) {
@@ -354,10 +355,11 @@ function isNamedHalf(booking: PayrollHoursBooking): boolean {
 function isHalfDayPaid(booking: PayrollHoursBooking, policy: OrgPayrollTimePolicy, allHoursDay: boolean, weekdayDay = false): boolean {
   if (isNamedHalf(booking)) return true
   if (namedSlotKind(booking.timeSlot) !== 'CUSTOM' || allHoursDay) return false
-  // 1.20.0 §4.3 / §8: Monday–Friday offers Full day or Custom only, so under a policy saved from 1.20.0 custom weekday
-  // hours are paid on the clock (inside the day less the unpaid-break overlap, outside at the multiplier) and are never
-  // snapped to a half day. A policy saved earlier keeps the 20-minute snap exactly as before.
-  if (weekdayDay && policy.paidHoursDerived === true) return false
+  // 1.20.0 §4.3 / §8: Monday–Friday offers Full day or Custom only, so custom weekday hours are paid on the clock (inside
+  // the day less the unpaid-break overlap, outside at the multiplier) and are never snapped to a half day. 1.44.0 (owner
+  // decision 14 Nov, question A option 1): for every policy — the 20-minute snap of policies saved before 1.20.0 is gone
+  // with the stored paid day it went with.
+  if (weekdayDay) return false
   const span = interval(booking, policy)
   if (!span) return false
   const windows = halfDayWindows(dayInput(policy))
@@ -367,7 +369,7 @@ function isHalfDayPaid(booking: PayrollHoursBooking, policy: OrgPayrollTimePolic
 }
 
 function halfDayPaid(booking: PayrollHoursBooking, policy: OrgPayrollTimePolicy, weekend: WeekendPayrollSettings | null, multiplier: number): PayrollHoursResult {
-  const paid = weekend && !weekend.allHoursAtMultiplierMode ? Math.max(countsAs(weekend, policy), 0) / 2 : standardPaid(policy) / 2
+  const paid = weekend && !weekend.allHoursAtMultiplierMode ? Math.max(countsAs(weekend), 0) / 2 : standardPaid(policy) / 2
   const span = interval(booking, policy)
   return result([segment('standardWindow', paid, 1, span?.start, span?.end)], multiplier)
 }
@@ -630,7 +632,7 @@ function weekendDay(booking: PayrollHoursBooking, policy: OrgPayrollTimePolicy, 
     return result([segment('allHoursMultiplier', wall, multiplier, booking.workStartTime ?? undefined, booking.workEndTime ?? undefined)], multiplier)
   }
   if (isHalfDayPaid(booking, policy, false)) return halfDayPaid(booking, policy, weekend, multiplier)
-  const credit = countsAs(weekend, policy)
+  const credit = countsAs(weekend)
   const rows: PayrollHoursSegment[] = []
   const overlapStart = Math.max(span.start, ws)
   const overlapEnd = Math.min(span.end, we)

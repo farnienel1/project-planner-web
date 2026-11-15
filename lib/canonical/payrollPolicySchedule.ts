@@ -583,14 +583,13 @@ function validatePayrollTimePolicyFields(policy: OrgPayrollTimePolicy): string |
   if (dayEnd <= dayStart) return 'Standard day end must be after the start time.'
   if (breakEnd <= breakStart) return 'Break window end must be after the break start.'
   if (breakStart < dayStart || breakEnd > dayEnd) return 'Break window must fall within the working day.'
-  if (policy.paidHoursDerived === true) {
-    // 1.20.0 §4.3: the weekday paid day is finish − start − the unpaid break; it must still be 1–12 hours.
+  {
+    // 1.20.0 §4.3: the weekday paid day is finish − start − the unpaid break; it must still be 1–12 hours. 1.44.0: for
+    // every policy (the day is always derived, `weekdayPaidHours`), never the stored `standardPaidHours`.
     const derived = derivedWeekdayPaidHours(policy)
     if (!(derived >= paidHours.min - 1e-9 && derived <= paidHours.max + 1e-9)) {
       return `The working day must give between ${paidHours.min} and ${paidHours.max} paid hours (finish − start − unpaid break).`
     }
-  } else if (!inRange(policy.standardPaidHours, paidHours)) {
-    return `Standard paid hours must be between ${paidHours.min} and ${paidHours.max}.`
   }
   if (!inRange(policy.unpaidBreakMinutes, breakMinutes)) {
     return `Break length must be between ${breakMinutes.min} and ${breakMinutes.max} minutes.`

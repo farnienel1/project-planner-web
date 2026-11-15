@@ -12887,7 +12887,7 @@
       "expected": 7.25
     },
     {
-      "name": "1.20.0: a policy saved before 1.20.0 keeps its stored paid day (8h)",
+      "name": "1.44.0: a policy saved before 1.20.0 (stored 8h) derives its paid day from 07:00–16:00 − 30 min = 8.5h",
       "function": "weekdayPaidHours",
       "args": [
         {
@@ -12921,7 +12921,7 @@
           "breakPaid": false
         }
       ],
-      "expected": 8
+      "expected": 8.5
     },
     {
       "name": "1.20.0 owner: FULL DAY = 7.25h",

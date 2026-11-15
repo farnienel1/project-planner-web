@@ -235,7 +235,6 @@ export function labourPaySlices({
     operative,
     day: date,
     history,
-    standardDayHours: standard,
     timeZone,
     aliasUserIds,
     operativeIds,
@@ -284,7 +283,13 @@ export function signedLabourSlice(line: {
   details?: string | null
 }, standardHours: number, otMultiplier: number | null, isPaye = false): LabourPaySlice {
   const payBasis: PayBasis = line.payBasis === 'hourly' ? 'hourly' : 'day'
-  const standard = orgDayHours(standardHours)
+  // Rulebook 1.44.0 §8: a signed line is never re-priced, and neither is how it reads. A day-rate line shows its stored
+  // days (`days`, worked out at signing on the paid day of that time) and the rate that gives its signed amount — its own
+  // paid day is `paidHours / days`, never today's (`standardHours`). Today's day is used only for a line that stored no
+  // days or hours (older data).
+  const signedDay =
+    payBasis === 'day' && Number(line.days) > 0.0001 && Number(line.paidHours) > 0 ? Number(line.paidHours) / Number(line.days) : null
+  const standard = signedDay ?? orgDayHours(standardHours)
   const paidHours = line.paidHours > 0 ? line.paidHours : payBasis === 'day' ? line.days * standard : 0
   const quantity = payBasis === 'hourly' ? paidHours : paidHours / standard
   const rate = quantity > 0.0001 ? roundPennies(line.amount / quantity) : 0
@@ -338,7 +343,7 @@ export function paySliceDisplay(slice: LabourPaySlice, standardHours: number, cu
     quantityText: display.quantityText,
     rateText: display.rateText,
     pay: display.pay,
-    days: slice.payBasis === 'hourly' ? hoursShown : hoursShown / orgDayHours(standardHours),
+    days: slice.payBasis === 'hourly' ? hoursShown : hoursShown / orgDayHours(slice.standardDayHours ?? standardHours),
     rate: withBreak ? (slice.rate ?? 0) / multiplier : slice.rate ?? 0,
   }
 }

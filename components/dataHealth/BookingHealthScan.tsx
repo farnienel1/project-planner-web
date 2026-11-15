@@ -52,7 +52,8 @@ const KIND_HELP: Record<BookingHealthKind, string> = {
     'Neither app can read this document, so it is hidden everywhere. An INITIAL-PLACEHOLDER row is an old setup placeholder, not a real booking, and can be removed.',
   repaired:
     'Both apps read it, but a field is stored in an old spelling (for example the status). Re-saving it in the current spelling removes the warning; nothing else changes.',
-  missing_operative: 'The booked person was removed. The booking still counts and shows the stored name.',
+  missing_operative:
+    'The booked person was removed or is filed under an old ID. The booking still counts and shows on the job as "Unknown person"; link the ID to a person under Bookings not linked to a person (above).',
   missing_job: 'The job was deleted. The booking stays and shows as “Deleted job”.',
   ios_cannot_read: 'An id that is not a UUID. iOS keeps it as stored; it is shown here so it can be checked.',
 }

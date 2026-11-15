@@ -14,6 +14,7 @@ test('invoice HTML matches iOS InvoicePDFBuilder title block and columns', () =>
     vatNumber: 'GB123',
     utrNumber: 'UTR9',
     timeZone: 'Europe/London',
+    standardDayHours: 8,
     generatedAt: new Date('2026-09-21T08:30:00Z'),
     lines: [
       {
