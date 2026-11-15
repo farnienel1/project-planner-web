@@ -43,6 +43,16 @@ import {
 } from './scheduleSources'
 import type { AccountKind } from './userProfile'
 import { deadlineProjectKey } from './workDocumentReaders'
+import {
+  variationExtraLineId,
+  parseVariationCustomLines,
+  parseVariationSubcontractorLines,
+  variationLabourCrew,
+  variationMaterialQuantity,
+  type VariationCustomLineDocument,
+  type VariationMaterialUnit,
+  type VariationSubcontractorLineDocument,
+} from './variations'
 
 // MARK: - Value readers
 
@@ -601,8 +611,17 @@ export function normalizeVariationStatus(raw: unknown): VariationStatusToken {
   return 'open'
 }
 
-export type VariationLabourLineDocument = { id: string; idStored: boolean; trade: string; hours: number }
-export type VariationMaterialLineDocument = { id: string; idStored: boolean; name: string; quantity: string }
+/** 1.52.0: `operatives` × `hoursEach` = `hours` (`variationLabourCrew`; one operative for rows from older builds). */
+export type VariationLabourLineDocument = { id: string; idStored: boolean; trade: string; hours: number; operatives: number; hoursEach: number }
+/** 1.52.0: `quantityValue` + `unit` beside the text `quantity` (`variationMaterialQuantity`; null / '' when the text is not a quantity). */
+export type VariationMaterialLineDocument = {
+  id: string
+  idStored: boolean
+  name: string
+  quantity: string
+  quantityValue: number | null
+  unit: VariationMaterialUnit | ''
+}
 export type VariationEvidenceDocument = {
   id: string
   idStored: boolean
@@ -642,6 +661,10 @@ export type VariationDocument = {
   status: VariationStatusToken
   labour: VariationLabourLineDocument[]
   materials: VariationMaterialLineDocument[]
+  /** 1.52.0: custom lines (name, description, quantity × cost). */
+  customLines: VariationCustomLineDocument[]
+  /** 1.52.0: subcontractor lines (firm, quote number, quantity × cost). */
+  subcontractorLines: VariationSubcontractorLineDocument[]
   evidence: VariationEvidenceDocument[]
   /** Recomputed from the lines (the stored counters are ignored when they disagree). */
   totalLabourHours: number
@@ -663,11 +686,12 @@ export type VariationDocument = {
 /** The id of a variation line stored without one: `derivedRowId(variation id, array, index, content)`. */
 export function variationLineId(
   variationId: unknown,
-  kind: 'labour' | 'materials' | 'evidence',
+  kind: 'labour' | 'materials' | 'evidence' | 'customLines' | 'subcontractorLines',
   index: number,
   row: Record<string, unknown> | null | undefined
 ): string {
   const line = record(row)
+  if (kind === 'customLines' || kind === 'subcontractorLines') return variationExtraLineId(variationId, kind, index, line)
   const content =
     kind === 'labour'
       ? [text(line.trade), String(documentNumber(line.hours) ?? 0)]
@@ -696,15 +720,16 @@ export function parseVariationDocument(
     const trade = text(line.trade)
     const hours = documentNumber(line.hours) ?? 0
     if (!trade && !hours) continue
-    labour.push({ id: text(line.id) || variationLineId(id, 'labour', index, line), idStored: Boolean(text(line.id)), trade, hours })
+    const crew = variationLabourCrew(line)
+    labour.push({ id: text(line.id) || variationLineId(id, 'labour', index, line), idStored: Boolean(text(line.id)), trade, hours, operatives: crew.operatives, hoursEach: crew.hoursEach })
   }
   const materials: VariationMaterialLineDocument[] = []
   for (const [index, entry] of (Array.isArray(row.materials) ? row.materials : []).entries()) {
     const line = record(entry)
     const name = text(line.name)
-    const quantity = typeof line.quantity === 'number' ? String(line.quantity) : text(line.quantity)
-    if (!name && !quantity) continue
-    materials.push({ id: text(line.id) || variationLineId(id, 'materials', index, line), idStored: Boolean(text(line.id)), name, quantity })
+    const q = variationMaterialQuantity(line)
+    if (!name && !q.quantity) continue
+    materials.push({ id: text(line.id) || variationLineId(id, 'materials', index, line), idStored: Boolean(text(line.id)), name, quantity: q.quantity, quantityValue: q.quantityValue, unit: q.unit })
   }
   const evidence: VariationEvidenceDocument[] = []
   for (const [index, entry] of (Array.isArray(row.evidence) ? row.evidence : []).entries()) {
@@ -746,6 +771,8 @@ export function parseVariationDocument(
     status: normalizeVariationStatus(row.status),
     labour,
     materials,
+    customLines: parseVariationCustomLines(id, row.customLines),
+    subcontractorLines: parseVariationSubcontractorLines(id, row.subcontractorLines),
     evidence,
     totalLabourHours,
     materialLineCount: materials.length,
@@ -847,6 +874,9 @@ export const VARIATION_MATERIALS_WRITE_GROUP = ['materials', 'materialLineCount'
 export const VARIATION_EVIDENCE_WRITE_GROUP = ['evidence', 'evidenceCount'] as const
 export const VARIATION_STATUS_WRITE_GROUP = ['status', 'statusHistory', 'voNumberLocked', 'submittedAt', 'closedAt'] as const
 export const VARIATION_NUMBER_WRITE_GROUP = ['voNumber', 'sequence', 'numberHistory'] as const
+/** 1.52.0: the two new line lists are written whole, each on its own (no stored counter). */
+export const VARIATION_CUSTOM_LINES_WRITE_GROUP = ['customLines'] as const
+export const VARIATION_SUBCONTRACTOR_LINES_WRITE_GROUP = ['subcontractorLines'] as const
 
 /**
  * Partial update of a variation (`variations/{id}` and its `settings/variationItem_{id}` copy) (§1): only changed
@@ -865,6 +895,8 @@ export function variationWriteFields(
       VARIATION_EVIDENCE_WRITE_GROUP,
       VARIATION_STATUS_WRITE_GROUP,
       VARIATION_NUMBER_WRITE_GROUP,
+      VARIATION_CUSTOM_LINES_WRITE_GROUP,
+      VARIATION_SUBCONTRACTOR_LINES_WRITE_GROUP,
     ],
     createOnly: ['id', 'orgId', 'organizationId', 'createdAt', 'createdByUid', 'createdByName', 'origin', 'parentId', 'parentType'],
   })

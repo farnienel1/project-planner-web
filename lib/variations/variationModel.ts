@@ -6,6 +6,7 @@
 
 import { VARIATION_EVIDENCE_MAX_BYTES, uploadLimitError } from '@/lib/security/uploadLimits'
 import { UPLOAD_ALLOWED_TYPES } from '@/lib/canonical/uploadPolicy'
+import { variationTotals } from '@/lib/canonical/variations'
 
 export const VARIATION_STATUSES = ['open', 'submitted', 'closed'] as const
 export type VariationStatus = (typeof VARIATION_STATUSES)[number]
@@ -29,16 +30,44 @@ export type VariationStatusChange = {
   at: Date
 }
 
+/** Rulebook 1.52.0: `hours` = `operatives` × `hoursEach` (`variationLabourLineFields`). */
 export type VariationLabourLine = {
   id: string
   trade: string
   hours: number
+  operatives?: number
+  hoursEach?: number
 }
 
+/**
+ * Rulebook 1.52.0: `quantity` is the text older builds read ("100m"); `quantityValue` and `unit` are the number and
+ * its unit (`variationMaterialLineFields`). A legacy text that is not a quantity ("1-") has no number.
+ */
 export type VariationMaterialLine = {
   id: string
   name: string
   quantity: string
+  quantityValue?: number | null
+  unit?: string
+}
+
+/** Rulebook 1.52.0: a custom line (quantity × cost, organisation currency). */
+export type VariationCustomLine = {
+  id: string
+  name: string
+  description: string
+  quantity: number
+  cost: number
+}
+
+/** Rulebook 1.52.0: a subcontractor line (firm, quote number, quantity × cost). */
+export type VariationSubcontractorLine = {
+  id: string
+  subcontractorId: string
+  name: string
+  quoteNumber: string
+  quantity: number
+  cost: number
 }
 
 export type VariationEvidence = {
@@ -76,6 +105,8 @@ export type Variation = {
   status: VariationStatus
   labour: VariationLabourLine[]
   materials: VariationMaterialLine[]
+  customLines: VariationCustomLine[]
+  subcontractorLines: VariationSubcontractorLine[]
   evidence: VariationEvidence[]
   totalLabourHours: number
   materialLineCount: number
@@ -183,16 +214,17 @@ export const EVIDENCE_MAX_BYTES = VARIATION_EVIDENCE_MAX_BYTES
 export const TRACKER_LOCK_MS = 5 * 60 * 1000
 export const TRACKER_ADDED_DESCRIPTION = 'Added from the tracker. Site needs to confirm the scope and add hours and materials.'
 
+/** The stored counters, from the rulebook's `variationTotals` (the reader's evidence rule: a path or a URL). */
 export function variationCounters(input: {
   labour: VariationLabourLine[]
   materials: VariationMaterialLine[]
   evidence: VariationEvidence[]
 }): { totalLabourHours: number; materialLineCount: number; evidenceCount: number } {
-  const totalLabourHours = input.labour.reduce((sum, line) => sum + (Number.isFinite(line.hours) ? line.hours : 0), 0)
+  const totals = variationTotals(input)
   return {
-    totalLabourHours: Math.round(totalLabourHours * 100) / 100,
-    materialLineCount: input.materials.length,
-    evidenceCount: input.evidence.length,
+    totalLabourHours: totals.labourHours,
+    materialLineCount: totals.materialsCount,
+    evidenceCount: totals.evidenceCount,
   }
 }
 

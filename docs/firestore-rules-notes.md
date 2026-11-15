@@ -258,6 +258,15 @@ Static cost 237,518 → 237,676 (merged onto 1.33.0 with its review fixes; befor
 
 **Emulator crash (1.22.0), seen while writing these tests:** an Operatives manager's `users` create that carries `isSuperAdmin: false`, or has no `email` key at all, crashes the emulator (`IllegalStateException: ternary operator predicate is always boolean`; the write never answers and the document stays locked). The same documents with `email: ''` and no `isSuperAdmin` key pass. Ghosts are written that way (`ghostCreateWrites`). Web Add user's invite placeholder writes `isSuperAdmin: false` (`invitePlaceholderUserWriteFields`); whether Google's production engine shares the crash is unknown — check after publishing that an Operatives manager can still add an operative with a login (follow-up).
 
+### 1.52.0 — variations (15 Nov)
+
+- `variations/{id}` update: a write that changes `voNumber` or `sequence` passes only for an admin (`isOrgAdminOrOwner`) or a manager of that job — `callerManagesJobInAt(kind, parentId)` on the stored `parentType` (`smallWork` → `smallWorks`, else `projects`) and the stored `parentId` (the job id exactly as stored, §1 job keys, so one lookup, no upper / lower retries). A change of `voNumber` is refused when the stored `status` is `submitted` / `closed` or `voNumberLocked` is true (pinned), whoever writes. `numberHistory` alone is not gated (a reader that rebuilds a history entry without `at` would otherwise refuse every ordinary edit); `isDeleted` (soft delete) is not gated.
+- `variationTrackers/{jobId}` create / update: admins, or staff who manage that job (`request.resource.data.parentType`, same lookup). A tracker stored without `parentType` reads as a project.
+- `settings/{id}` delete: `variations_*` / `variationItem_*` are no longer deleted by staff (`!settingId.matches('^variation(s|Item)_.*')`); every other settings delete is unchanged. No app path deleted them (the duplicate-job script uses the admin SDK).
+- Known limit: the numbers on the settings copies (`variationItem_*`, the settings log's `items` array) are not checked; the apps write them from the same plan.
+- Cost: static compile cost 234,098 (main, 1.50.0) → 235,456; 147,076 bytes (budget 147,456). Emulator type check 0 issues. `RULES_STRICT_BUDGET=1`: the same 6 refusals as main, none new; `tests/variations.rules.test.ts` 6/6 strict.
+- Storage (`storage.rules`): the three variation evidence matches require `staffLike(orgId)` (admin or manager, not operative mode); the member-wide health & safety match is now `healthSafety/{parentId}/{folder}/{rest=**}` with `!(folder in ['variations', 'variationEvidence'])` (Storage rules OR their matches, and a `{allPaths=**}` wildcard is a path, which has no `matches()`). `tests/storage.rules.test.ts` 35/35.
+
 ## Service-level functions
 
 ### `orgIdsMatch`

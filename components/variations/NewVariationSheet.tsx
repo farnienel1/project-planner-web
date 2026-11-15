@@ -12,7 +12,12 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
-import { rankMaterialRecords } from '@/lib/canonical';
+import {
+  rankMaterialRecords,
+  variationCustomLineError,
+  variationMaterialQuantityError,
+  variationSubcontractorLineError,
+} from '@/lib/canonical';
 import { evidenceFileAllowed } from '@/lib/variations/variationModel';
 
 /* ------------------------------------------------------------------ types */
@@ -31,6 +36,27 @@ export interface MaterialLine {
   name: string;
   quantity: string;
   unit: Unit;
+  /** Rulebook 1.52.0: a stored text that is not a quantity ("1-"). Shown as stored; editing it asks for a number. */
+  legacyText?: string;
+}
+
+/** Rulebook 1.52.0: a custom line (quantity × cost). */
+export interface CustomLineDraft {
+  id: string;
+  name: string;
+  description: string;
+  quantity: string;
+  cost: string;
+}
+
+/** Rulebook 1.52.0: a subcontractor line (firm from the Subcontractors list or typed, quote number, cost × quantity). */
+export interface SubcontractorLineDraft {
+  id: string;
+  subcontractorId: string;
+  name: string;
+  quoteNumber: string;
+  quantity: string;
+  cost: string;
 }
 
 /** One attachment. A variation holds up to MAX_EVIDENCE of these, not a single file. */
@@ -52,6 +78,8 @@ export interface VariationDraft {
   /** hours on the saved document = operatives × hoursEach, see toPayload() */
   labour: LabourLine[];
   materials: MaterialLine[];
+  customLines: CustomLineDraft[];
+  subcontractorLines: SubcontractorLineDraft[];
   /** zero or more attachments, up to MAX_EVIDENCE */
   evidence: EvidenceFile[];
 }
@@ -74,6 +102,13 @@ export interface NewVariationSheetProps {
   initialDescription?: string;
   initialLabour?: LabourLine[];
   initialMaterials?: MaterialLine[];
+  initialCustomLines?: CustomLineDraft[];
+  initialSubcontractorLines?: SubcontractorLineDraft[];
+  /** The organisation's Subcontractors list, for the subcontractor line picker. */
+  subcontractors?: { id: string; name: string }[];
+  /** Organisation currency symbol, and the money formatter (`formatMoney`). */
+  currencySymbol?: string;
+  formatCost?: (amount: number) => string;
   /** Files already stored on this variation. New picks share the same ten-file limit. */
   savedEvidenceCount?: number;
   title?: string;
@@ -142,6 +177,11 @@ export function NewVariationSheet({
   initialDescription = '',
   initialLabour = [],
   initialMaterials = [],
+  initialCustomLines = [],
+  initialSubcontractorLines = [],
+  subcontractors = [],
+  currencySymbol = '£',
+  formatCost = (amount: number) => `${currencySymbol}${amount.toFixed(2)}`,
   savedEvidenceCount = 0,
   title = 'New variation',
 }: NewVariationSheetProps) {
@@ -153,6 +193,12 @@ export function NewVariationSheet({
   const [labour, setLabour] = useState<LabourLine[]>(initialLabour);
   const [materials, setMaterials] = useState<MaterialLine[]>(initialMaterials);
   const [evidence, setEvidence] = useState<EvidenceFile[]>([]);
+  const [customLines, setCustomLines] = useState<CustomLineDraft[]>(initialCustomLines);
+  const [subLines, setSubLines] = useState<SubcontractorLineDraft[]>(initialSubcontractorLines);
+  const [customDraft, setCustomDraft] = useState<CustomLineDraft | null>(null);
+  const [subDraft, setSubDraft] = useState<SubcontractorLineDraft | null>(null);
+  const [lineError, setLineError] = useState<string | null>(null);
+  const [mError, setMError] = useState<string | null>(null);
 
   const [lc, setLc] = useState<LabourComposer>(emptyLabourComposer(false));
   const [tradeSheetOpen, setTradeSheetOpen] = useState(false);
@@ -307,10 +353,19 @@ export function NewVariationSheet({
   const commitMaterial = () => {
     const name = mName.trim();
     if (!name) return;
+    // Rulebook 1.52.0: the quantity is a number (`variationMaterialQuantityError`); the unit is its own field.
+    const qty = (mQty.trim() || '1').replace(',', '.');
+    const qtyError = variationMaterialQuantityError(qty);
+    if (qtyError) {
+      setMError(qtyError);
+      requestAnimationFrame(() => qtyRef.current?.focus());
+      return;
+    }
+    setMError(null);
     if (mEditId) {
       setMaterials((prev) =>
         prev.map((m) =>
-          m.id === mEditId ? { ...m, name, quantity: mQty.trim() || '1', unit: mUnit } : m,
+          m.id === mEditId ? { ...m, name, quantity: qty, unit: mUnit, legacyText: undefined } : m,
         ),
       );
       showUndo(`${name} updated`);
@@ -318,7 +373,7 @@ export function NewVariationSheet({
     } else {
       setMaterials((prev) => [
         ...prev,
-        { id: uid(), name, quantity: mQty.trim() || '1', unit: mUnit },
+        { id: uid(), name, quantity: qty, unit: mUnit },
       ]);
     }
     setMName('');
@@ -330,7 +385,7 @@ export function NewVariationSheet({
     const m = materials.find((x) => x.id === id);
     if (!m) return;
     setMName(m.name);
-    setMQty(m.quantity);
+    setMQty(m.legacyText ? '' : m.quantity);
     setMUnit(m.unit);
     setMEditId(m.id);
     requestAnimationFrame(() => qtyRef.current?.focus());
@@ -390,7 +445,50 @@ export function NewVariationSheet({
   };
 
   const evidenceTotal = savedEvidenceCount + evidence.length;
-  const canSave = heading.trim().length > 0 && !saving;
+  const canSave = heading.trim().length > 0 && !saving && !customDraft && !subDraft;
+
+  /* ------------------------------------------------ custom and subcontractor lines */
+
+  const commitCustom = () => {
+    if (!customDraft) return;
+    const problem = variationCustomLineError(customDraft);
+    if (problem) return setLineError(problem);
+    setLineError(null);
+    setCustomLines((prev) => (prev.some((l) => l.id === customDraft.id) ? prev.map((l) => (l.id === customDraft.id ? customDraft : l)) : [...prev, customDraft]));
+    setCustomDraft(null);
+  };
+
+  const commitSub = () => {
+    if (!subDraft) return;
+    const problem = variationSubcontractorLineError(subDraft);
+    if (problem) return setLineError(problem);
+    setLineError(null);
+    setSubLines((prev) => (prev.some((l) => l.id === subDraft.id) ? prev.map((l) => (l.id === subDraft.id ? subDraft : l)) : [...prev, subDraft]));
+    setSubDraft(null);
+  };
+
+  const removeCustom = (id: string) => {
+    const index = customLines.findIndex((l) => l.id === id);
+    if (index < 0) return;
+    const removed = customLines[index];
+    setCustomLines((prev) => prev.filter((l) => l.id !== id));
+    showUndo(`${removed.name} removed`, () => setCustomLines((prev) => { const next = [...prev]; next.splice(index, 0, removed); return next; }));
+  };
+
+  const removeSub = (id: string) => {
+    const index = subLines.findIndex((l) => l.id === id);
+    if (index < 0) return;
+    const removed = subLines[index];
+    setSubLines((prev) => prev.filter((l) => l.id !== id));
+    showUndo(`${removed.name} removed`, () => setSubLines((prev) => { const next = [...prev]; next.splice(index, 0, removed); return next; }));
+  };
+
+  const amount = (value: string) => {
+    const n = Number(String(value).replace(',', '.'));
+    return Number.isFinite(n) ? n : 0;
+  };
+  const draftTotal = (line: { quantity: string; cost: string }) => Math.round(amount(line.quantity || '1') * amount(line.cost) * 100) / 100;
+  const costTotal = [...customLines, ...subLines].reduce((sum, line) => sum + draftTotal(line), 0);
 
   const handleSave = async () => {
     if (!canSave) return;
@@ -403,6 +501,8 @@ export function NewVariationSheet({
         description: description.trim(),
         labour,
         materials,
+        customLines,
+        subcontractorLines: subLines,
         evidence,
       });
     } catch (err: unknown) {
@@ -635,7 +735,7 @@ export function NewVariationSheet({
               <div key={m.id} className={`flex items-center gap-2 border-b border-[var(--line)] py-3 last:border-b-0 ${mEditId === m.id ? '-mx-2.5 rounded-2xl border-b-0 bg-[var(--blue-t)] px-2.5' : ''}`}>
                 <span className="min-w-0 flex-1 truncate text-[15px] font-bold">{m.name}</span>
                 <span className="whitespace-nowrap rounded-lg bg-[var(--soft)] px-2.5 py-1 font-semibold text-[15px] font-extrabold tabular-nums">
-                  {m.quantity} {m.unit}
+                  {m.legacyText ?? `${m.quantity} ${m.unit}`}
                 </span>
                 <button type="button" className={cogBtn} aria-label={`Edit ${m.name}`} onClick={() => editMaterial(m.id)}><CogIcon /></button>
                 <button type="button" className={delBtn} aria-label={`Remove ${m.name}`} onClick={() => removeMaterial(m.id)}><XIcon /></button>
@@ -668,15 +768,121 @@ export function NewVariationSheet({
                 </ul>
               )}
 
+              {mError ? <p role="alert" className="mt-2 text-xs font-semibold text-[var(--red)]">{mError}</p> : null}
               <div className="mt-2.5 flex gap-2">
                 {mEditId && (
-                  <button type="button" onClick={() => { setMEditId(null); setMName(''); setMQty(''); }} className="flex-1 rounded-2xl bg-[var(--card)] py-3 text-sm font-bold text-[var(--ink2)] shadow-sm">Cancel</button>
+                  <button type="button" onClick={() => { setMEditId(null); setMName(''); setMQty(''); setMError(null); }} className="flex-1 rounded-2xl bg-[var(--card)] py-3 text-sm font-bold text-[var(--ink2)] shadow-sm">Cancel</button>
                 )}
                 <button type="button" onClick={commitMaterial} disabled={!mName.trim()} className="flex-1 rounded-2xl bg-[var(--blue)] py-3 text-sm font-bold text-white disabled:opacity-40">
                   {mEditId ? 'Update line item' : 'Add material'}
                 </button>
               </div>
             </div>
+          </div>
+        </section>
+
+        {/* custom lines (1.52.0) */}
+        <section className={card}>
+          <div className={headRow}>
+            <h3 className="font-semibold text-base font-extrabold">Custom items</h3>
+            <span className={pill(customLines.length > 0)}>{customLines.length} line{customLines.length === 1 ? '' : 's'}</span>
+          </div>
+          <div className="px-4 pb-4">
+            {customLines.length === 0 && !customDraft && <p className="pb-1 text-[13px] text-[var(--ink3)]">Anything else this variation costs: skip hire, access equipment, a fee.</p>}
+            {customLines.map((l) => (
+              <div key={l.id} className="flex items-center gap-2 border-b border-[var(--line)] py-3 last:border-b-0">
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[15px] font-bold">{l.name}</span>
+                  <span className="block truncate text-xs text-[var(--ink3)]">
+                    {l.quantity || '1'} × {formatCost(amount(l.cost))}{l.description ? ` · ${l.description}` : ''}
+                  </span>
+                </span>
+                <span className="whitespace-nowrap rounded-lg bg-[var(--soft)] px-2.5 py-1 font-semibold text-[15px] font-extrabold tabular-nums">{formatCost(draftTotal(l))}</span>
+                <button type="button" className={cogBtn} aria-label={`Edit ${l.name}`} onClick={() => setCustomDraft({ ...l })}><CogIcon /></button>
+                <button type="button" className={delBtn} aria-label={`Remove ${l.name}`} onClick={() => removeCustom(l.id)}><XIcon /></button>
+              </div>
+            ))}
+            {customDraft ? (
+              <div className="mt-2.5 rounded-2xl border border-[var(--line)] bg-[var(--soft)] p-3">
+                <span className={microLabel}>Custom item</span>
+                <input value={customDraft.name} onChange={(e) => setCustomDraft({ ...customDraft, name: e.target.value })} placeholder="Name" aria-label="Custom item name" className="w-full rounded-2xl bg-[var(--card)] p-3 text-base shadow-sm outline-none" />
+                <textarea value={customDraft.description} onChange={(e) => setCustomDraft({ ...customDraft, description: e.target.value })} placeholder="Description (optional)" aria-label="Custom item description" rows={2} className="mt-2 w-full resize-none rounded-2xl bg-[var(--card)] p-3 text-sm shadow-sm outline-none" />
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  <label className={fieldBox}><span className={microLabel}>Quantity</span><input value={customDraft.quantity} onChange={(e) => setCustomDraft({ ...customDraft, quantity: e.target.value })} inputMode="decimal" aria-label="Custom item quantity" className="w-full bg-transparent text-[17px] font-extrabold tabular-nums outline-none" /></label>
+                  <label className={fieldBox}><span className={microLabel}>Cost each ({currencySymbol})</span><input value={customDraft.cost} onChange={(e) => setCustomDraft({ ...customDraft, cost: e.target.value })} inputMode="decimal" placeholder="0.00" aria-label="Custom item cost each" className="w-full bg-transparent text-[17px] font-extrabold tabular-nums outline-none" /></label>
+                </div>
+                <p className="mt-2 text-xs text-[var(--ink2)]">Line total {formatCost(draftTotal(customDraft))}</p>
+                {lineError ? <p role="alert" className="mt-2 text-xs font-semibold text-[var(--red)]">{lineError}</p> : null}
+                <div className="mt-2.5 flex gap-2">
+                  <button type="button" onClick={() => { setCustomDraft(null); setLineError(null); }} className="flex-1 rounded-2xl bg-[var(--card)] py-3 text-sm font-bold text-[var(--ink2)] shadow-sm">Cancel</button>
+                  <button type="button" onClick={commitCustom} className="flex-1 rounded-2xl bg-[var(--blue)] py-3 text-sm font-bold text-white">{customLines.some((l) => l.id === customDraft.id) ? 'Update line item' : 'Add item'}</button>
+                </div>
+              </div>
+            ) : (
+              <button type="button" onClick={() => { setSubDraft(null); setCustomDraft({ id: uid(), name: '', description: '', quantity: '1', cost: '' }); }} className="mt-2.5 w-full rounded-2xl border-[1.5px] border-dashed border-[var(--line2)] bg-[var(--card)] py-3 text-sm font-bold text-[var(--blue)]">
+                + Add custom item
+              </button>
+            )}
+          </div>
+        </section>
+
+        {/* subcontractor lines (1.52.0) */}
+        <section className={card}>
+          <div className={headRow}>
+            <h3 className="font-semibold text-base font-extrabold">Subcontractors</h3>
+            <span className={pill(subLines.length > 0)}>{subLines.length} line{subLines.length === 1 ? '' : 's'}</span>
+          </div>
+          <div className="px-4 pb-4">
+            {subLines.length === 0 && !subDraft && <p className="pb-1 text-[13px] text-[var(--ink3)]">A subcontractor&rsquo;s quote for this variation.</p>}
+            {subLines.map((l) => (
+              <div key={l.id} className="flex items-center gap-2 border-b border-[var(--line)] py-3 last:border-b-0">
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[15px] font-bold">{l.name}</span>
+                  <span className="block truncate text-xs text-[var(--ink3)]">
+                    {l.quoteNumber ? `Quote ${l.quoteNumber} · ` : ''}{l.quantity || '1'} × {formatCost(amount(l.cost))}
+                  </span>
+                </span>
+                <span className="whitespace-nowrap rounded-lg bg-[var(--soft)] px-2.5 py-1 font-semibold text-[15px] font-extrabold tabular-nums">{formatCost(draftTotal(l))}</span>
+                <button type="button" className={cogBtn} aria-label={`Edit ${l.name}`} onClick={() => setSubDraft({ ...l })}><CogIcon /></button>
+                <button type="button" className={delBtn} aria-label={`Remove ${l.name}`} onClick={() => removeSub(l.id)}><XIcon /></button>
+              </div>
+            ))}
+            {subDraft ? (
+              <div className="mt-2.5 rounded-2xl border border-[var(--line)] bg-[var(--soft)] p-3">
+                <span className={microLabel}>Subcontractor</span>
+                <select
+                  value={subDraft.subcontractorId || (subDraft.name ? '__typed' : '')}
+                  onChange={(e) => {
+                    const pick = subcontractors.find((s) => s.id === e.target.value);
+                    setSubDraft({ ...subDraft, subcontractorId: pick ? pick.id : '', name: pick ? pick.name : e.target.value === '__typed' ? subDraft.name : '' });
+                  }}
+                  aria-label="Pick a subcontractor"
+                  className="w-full rounded-2xl bg-[var(--card)] p-3 text-base shadow-sm outline-none"
+                >
+                  <option value="">Choose from Subcontractors…</option>
+                  {subcontractors.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  <option value="__typed">Not listed — type the name</option>
+                </select>
+                {!subDraft.subcontractorId ? (
+                  <input value={subDraft.name} onChange={(e) => setSubDraft({ ...subDraft, name: e.target.value })} placeholder="Subcontractor name" aria-label="Subcontractor name" className="mt-2 w-full rounded-2xl bg-[var(--card)] p-3 text-base shadow-sm outline-none" />
+                ) : null}
+                <input value={subDraft.quoteNumber} onChange={(e) => setSubDraft({ ...subDraft, quoteNumber: e.target.value })} placeholder="Quote number" aria-label="Quote number" className="mt-2 w-full rounded-2xl bg-[var(--card)] p-3 text-base shadow-sm outline-none" />
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  <label className={fieldBox}><span className={microLabel}>Cost ({currencySymbol})</span><input value={subDraft.cost} onChange={(e) => setSubDraft({ ...subDraft, cost: e.target.value })} inputMode="decimal" placeholder="0.00" aria-label="Subcontractor cost" className="w-full bg-transparent text-[17px] font-extrabold tabular-nums outline-none" /></label>
+                  <label className={fieldBox}><span className={microLabel}>Quantity</span><input value={subDraft.quantity} onChange={(e) => setSubDraft({ ...subDraft, quantity: e.target.value })} inputMode="decimal" aria-label="Subcontractor quantity" className="w-full bg-transparent text-[17px] font-extrabold tabular-nums outline-none" /></label>
+                </div>
+                <p className="mt-2 text-xs text-[var(--ink2)]">Line total {formatCost(draftTotal(subDraft))}</p>
+                {lineError ? <p role="alert" className="mt-2 text-xs font-semibold text-[var(--red)]">{lineError}</p> : null}
+                <div className="mt-2.5 flex gap-2">
+                  <button type="button" onClick={() => { setSubDraft(null); setLineError(null); }} className="flex-1 rounded-2xl bg-[var(--card)] py-3 text-sm font-bold text-[var(--ink2)] shadow-sm">Cancel</button>
+                  <button type="button" onClick={commitSub} className="flex-1 rounded-2xl bg-[var(--blue)] py-3 text-sm font-bold text-white">{subLines.some((l) => l.id === subDraft.id) ? 'Update line item' : 'Add subcontractor'}</button>
+                </div>
+              </div>
+            ) : (
+              <button type="button" onClick={() => { setCustomDraft(null); setSubDraft({ id: uid(), subcontractorId: '', name: '', quoteNumber: '', quantity: '1', cost: '' }); }} className="mt-2.5 w-full rounded-2xl border-[1.5px] border-dashed border-[var(--line2)] bg-[var(--card)] py-3 text-sm font-bold text-[var(--blue)]">
+                + Add subcontractor
+              </button>
+            )}
           </div>
         </section>
 
@@ -749,13 +955,16 @@ export function NewVariationSheet({
         <div className="mb-2 flex flex-wrap justify-center gap-1.5 text-xs font-bold">
           <span className={`rounded-full border border-[var(--line)] px-3 py-1 ${totalHours ? 'bg-[var(--proj-t)] text-[var(--proj)]' : 'bg-[var(--card)] text-[var(--ink2)]'}`}>{fmt(totalHours)} hrs</span>
           <span className={`rounded-full border border-[var(--line)] px-3 py-1 ${materials.length ? 'bg-[var(--proj-t)] text-[var(--proj)]' : 'bg-[var(--card)] text-[var(--ink2)]'}`}>{materials.length} material{materials.length === 1 ? '' : 's'}</span>
+          {costTotal > 0 ? <span className="rounded-full border border-[var(--line)] bg-[var(--proj-t)] px-3 py-1 text-[var(--proj)]">{formatCost(costTotal)}</span> : null}
           <span className={`rounded-full border border-[var(--line)] px-3 py-1 ${evidenceTotal ? 'bg-[var(--proj-t)] text-[var(--proj)]' : 'bg-[var(--card)] text-[var(--ink2)]'}`}>{evidenceTotal} evidence file{evidenceTotal === 1 ? '' : 's'}</span>
         </div>
         {error ? <p className="mb-2 text-center text-sm font-semibold text-[var(--red)]">{error}</p> : null}
         <button type="button" onClick={handleSave} disabled={!canSave} className="w-full rounded-[17px] bg-[var(--blue)] py-4 text-base font-bold text-white shadow-lg disabled:opacity-40 disabled:shadow-none">
           {saving ? 'Saving…' : 'Save variation'}
         </button>
-        <p className="pt-2 text-center text-xs text-[var(--ink3)]">Saves as Open on {parentName} and notifies every admin</p>
+        <p className="pt-2 text-center text-xs text-[var(--ink3)]">
+          {customDraft || subDraft ? 'Add or cancel the open line first. ' : ''}Saves as Open on {parentName}. Evidence uploads after the variation is saved.
+        </p>
       </footer>
 
       {/* all trades */}

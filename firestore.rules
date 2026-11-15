@@ -1861,7 +1861,7 @@ service cloud.firestore {
           ) : timesheetReviewerOfOthers()))
             : ((settingId.matches('^deadlines_.*') ||
             settingId == 'deadlineAssignments' ||
-            settingId.matches('^healthSafety_.*')) || canAccessVariationsStaff(organizationId))
+            settingId.matches('^healthSafety_.*')) || (!settingId.matches('^variation(s|Item)_.*') && canAccessVariationsStaff(organizationId)))
         )));
       }
 
@@ -2386,12 +2386,19 @@ service cloud.firestore {
           canAccessVariationsStaff(organizationId);
         allow update: if resource.data.parentId is string &&
           request.resource.data.parentId == resource.data.parentId &&
-          canAccessVariationsStaff(organizationId);
+          canAccessVariationsStaff(organizationId) &&
+          (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['voNumber', 'sequence']) || (
+            (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['voNumber']) ||
+              !(resource.data.get('status', '') in ['submitted', 'closed'] || resource.data.get('voNumberLocked', false) == true)) &&
+            (isOrgAdminOrOwner(organizationId) ||
+              callerManagesJobInAt(resource.data.get('parentType', '') == 'smallWork' ? 'smallWorks' : 'projects', resource.data.parentId))));
       }
 
       match /variationTrackers/{parentId} {
         allow read: if canAccessVariationsStaff(organizationId);
-        allow create, update: if isOrgAdminOrOwner(organizationId);
+        allow create, update: if isOrgAdminOrOwner(organizationId) ||
+          (canAccessVariationsStaff(organizationId) &&
+            callerManagesJobInAt(request.resource.data.get('parentType', '') == 'smallWork' ? 'smallWorks' : 'projects', parentId));
       }
 
       match /{collection}/{document=**} {
