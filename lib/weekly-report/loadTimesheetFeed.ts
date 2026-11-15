@@ -52,7 +52,13 @@ export async function loadWeeklyReportTimesheetFeed({
   payrollPolicyState = null,
   scheduleOptions = DEFAULT_MY_SCHEDULE,
   timeZone = organizationZoneOr(),
+  bookingsCoverFrom = () => false,
 }: {
+  /**
+   * Rulebook 1.47.0 (review #325 item 6): whether the loaded labour and manager site bookings hold every booking from
+   * this organisation day on. A sheet whose whole pay run is not held is never read as changed. Missing = never.
+   */
+  bookingsCoverFrom?: (startDayKey: string) => boolean
   organizationId: string
   users: User[]
   operatives: Operative[]
@@ -90,8 +96,9 @@ export async function loadWeeklyReportTimesheetFeed({
       const change = periodBookingChanges(
         {
           users,
-          // The report is built from the bookings it was given (the caller loads the range first).
           liveLoaded: true,
+          // Only when the loaded window holds this pay run (a booking outside it is not deleted).
+          coversPeriod: (p) => bookingsCoverFrom(dayKey(p.start, timeZone)),
           bookings,
           managerSiteBookings,
           operatives,

@@ -317,6 +317,7 @@ function parseOperativeSignedBookings(raw: unknown): TimesheetDraft['operativeSi
       bookingId: typeof row.bookingId === 'string' ? row.bookingId : '',
       collection: typeof row.collection === 'string' ? row.collection : 'bookings',
       fingerprint: typeof row.fingerprint === 'string' ? row.fingerprint : '',
+      personId: typeof row.personId === 'string' ? row.personId : '',
     }))
     .filter((row) => row.bookingId !== '')
 }
@@ -336,6 +337,7 @@ export function draftFromFirestoreMap(
     operativeSignatureImageBase64: includeSignatures ? status.operativeSignatureImageBase64 || null : null,
     // Rulebook 1.47.0 §8: what the person signed (missing before 1.47.0).
     operativeSignedBookings: parseOperativeSignedBookings(data.operativeSignedBookings),
+    operativeSignedBookingsAt: parseSharedFirestoreDate(data.operativeSignedBookingsAt) ?? null,
     managerSignedAt: status.managerSignedAtMs ? new Date(status.managerSignedAtMs) : null,
     managerSignedByName: status.managerSignedByName || null,
     managerSignedByUserId: status.managerSignedByUserId || null,
@@ -360,6 +362,11 @@ export function draftToFirestoreMap(draft: TimesheetDraft): Record<string, unkno
       ? { operativeSignedBookings: draft.operativeSignedBookings.map((row) => ({ ...row })) }
       : draft.operativeSignedBookings === null
         ? { operativeSignedBookings: null }
+        : {}),
+    ...(draft.operativeSignedBookingsAt instanceof Date
+      ? { operativeSignedBookingsAt: Timestamp.fromDate(draft.operativeSignedBookingsAt) }
+      : draft.operativeSignedBookingsAt === null
+        ? { operativeSignedBookingsAt: null }
         : {}),
     managerSignedAt: draft.managerSignedAt ? Timestamp.fromDate(draft.managerSignedAt) : null,
     managerSignedByName: draft.managerSignedByName || '',

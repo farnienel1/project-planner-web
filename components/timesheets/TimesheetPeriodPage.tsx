@@ -18,6 +18,7 @@ import {
 } from '@/lib/settings/organizationSettings'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
+import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { newUuid } from '@/lib/firebase/firestoreUtils'
 import { formatPaymentPeriodLine, recurringRunDisplaySummary } from '@/lib/timesheets/paymentRunCopy'
 import {
@@ -32,9 +33,9 @@ import {
   userTimesheetSelfSigned,
 } from '@/lib/timesheets/timesheetApprovalPolicy'
 import { applyWeeklyReportOverride } from '@/lib/timesheets/weeklyReportOverride'
-import { draftBookingChanges, draftForFigures, signedTimesheetLiveLines } from '@/lib/timesheets/timesheetBookingChanges'
+import { draftBookingChanges, draftForFigures, draftSignedBookingRecord } from '@/lib/timesheets/timesheetBookingChanges'
 import { BookingsChangedWarning } from '@/components/timesheets/BookingsChangedWarning'
-import { signedTimesheetActions, signedTimesheetBookingRecord, SIGNED_TIMESHEET_CHANGED_MESSAGE } from '@/lib/canonical'
+import { signedTimesheetActions, SIGNED_TIMESHEET_CHANGED_MESSAGE } from '@/lib/canonical'
 import { staffAccountRole, userTimesheetSubjectIds } from '@/lib/permissions'
 import {
   SENSITIVE_EXPORT_OPTION_LABEL,
@@ -194,6 +195,9 @@ function signedStamp(date: Date | null | undefined, timeZone: string): string {
   return formatStampInZone(date, timeZone)
 }
 
+/** Review #325 item 8: shown when Sign is pressed before the roster or the operatives catalogue has loaded. */
+const TIMESHEET_SIGN_INPUTS_LOADING_MESSAGE = 'Still loading the people and bookings for this timesheet — try again in a moment.'
+
 export function TimesheetPeriodPage({
   subjectUser,
   mode,
@@ -252,6 +256,8 @@ export function TimesheetPeriodPage({
   const currency = useOrganizationCurrency()
   const { user: viewer, organization } = useAuthStore()
   const { users } = useOrgUserStore()
+  const operativesLoadedOrgId = useOperativeStore((state) => state.operativesLoadedOrgId)
+  const operativesLoaded = Boolean(organization?.id) && operativesLoadedOrgId === organization?.id
   // Rulebook 1.43.0 (`timesheetSnapshotReady`): the pay inputs AND the period's bookings. A counter-signature made before
   // the bookings arrived froze a snapshot with no labour lines (the invoice then showed only price work).
   const snapshotState = timesheetSnapshotReady({
@@ -399,10 +405,16 @@ export function TimesheetPeriodPage({
   const bookingChange = draftBookingChanges({
     draft,
     lines: payroll.lineItems,
+    // Review #325: removals are judged from the booking documents themselves, never from the collector's filters.
+    bookings,
+    managerSiteBookings,
+    timeZone,
     liveLoaded: bookingsLoaded && !bookingsFailed,
     selfSigned: sheetSelfSigned,
   })
   const changeActions = signedTimesheetActions(bookingChange)
+  // Review #325 item 8: everything the sheet (and the record of what is signed) is built from has loaded.
+  const signInputsLoaded = payInputs.ready && users.length > 0 && operativesLoaded
   const waitingForPerson = bookingChange.waitingFor === 'person'
   const canCounterSignAgain = bookingChange.waitingFor === 'lineManager'
   const canManagerReview = (() => {
@@ -803,18 +815,27 @@ export function TimesheetPeriodPage({
       setError(payInputs.message)
       return
     }
+    // Review #325 item 8: the record of what the person signs is built from every input the sheet is built from — the
+    // bookings and pay inputs (`payInputs.ready`: bookings gate, organisation details incl. schedule options, rate
+    // history), the operatives catalogue and the roster. Never store a record from a half-loaded screen.
+    if (!signInputsLoaded) {
+      setError(TIMESHEET_SIGN_INPUTS_LOADING_MESSAGE)
+      return
+    }
     setBusy(true)
     setError(null)
     try {
       const name = `${viewer.firstName} ${viewer.surname}`.trim() || viewer.email
+      const signedAt = new Date()
       const next = applySelfApprovalIfNoLineManager(
         {
           ...draft,
-          operativeSignedAt: new Date(),
+          operativeSignedAt: signedAt,
           operativeSignedByName: name,
           operativeSignatureImageBase64: signature,
-          // Rulebook 1.47.0 §8: what the person signed, so a later booking change reopens the sheet.
-          operativeSignedBookings: signedTimesheetBookingRecord(signedTimesheetLiveLines(payroll.lineItems)),
+          // Rulebook 1.47.0 §8: what the person signed (and when), so a later booking change reopens the sheet.
+          operativeSignedBookings: draftSignedBookingRecord({ lines: payroll.lineItems, bookings, managerSiteBookings, timeZone }),
+          operativeSignedBookingsAt: signedAt,
         },
         subjectUser,
         users

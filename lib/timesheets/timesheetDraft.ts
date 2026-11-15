@@ -130,6 +130,8 @@ export type TimesheetDraft = {
    * signature. Missing on sheets signed before 1.47.0 (then the signed snapshot, if any, is what they signed).
    */
   operativeSignedBookings?: SignedTimesheetBooking[] | null
+  /** Rulebook 1.47.0: when `operativeSignedBookings` was written (with the signature); a record older than the latest signature is ignored. */
+  operativeSignedBookingsAt?: Date | null
   managerSignedAt?: Date | null
   managerSignedByName?: string | null
   managerSignedByUserId?: string | null

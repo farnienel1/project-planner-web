@@ -36,6 +36,8 @@ import { rulebookPerson } from '@/lib/staff/rulebookPeople'
 import { overtimeHref } from '@/components/overtime/overtimeUi'
 import { timesheetsTeamHref } from '@/lib/timesheets/timesheetRoutes'
 import type { User } from '@/types'
+import type { TimesheetDraft } from '@/lib/timesheets/timesheetDraft'
+import { draftFromFirestoreMap } from '@/lib/timesheets/timesheetStorage'
 
 /** The web `User` as the Snapshot reads it: the rulebook person plus the name and effective-dated employment fields. */
 export function payrunSnapshotPerson(user: User, users: ReadonlyArray<User>): PayrunSnapshotPerson {
@@ -51,7 +53,10 @@ export function payrunSnapshotPerson(user: User, users: ReadonlyArray<User>): Pa
   } as PayrunSnapshotPerson
 }
 
-type Loaded = Omit<PayrunSnapshotInput, 'roster' | 'organization' | 'period' | 'timeZone' | 'bookings' | 'operatives'>
+type Loaded = Omit<PayrunSnapshotInput, 'roster' | 'organization' | 'period' | 'timeZone' | 'bookings' | 'operatives' | 'sheets'> & {
+  /** Rulebook 1.47.0: each sheet with its stored draft, so its booking changes can be read (`bookingsChange`). */
+  sheets: Array<PayrunSnapshotSheet & { draft?: TimesheetDraft }>
+}
 
 async function readAll<T>(organizationId: string, name: string, parse: (id: string, data: Record<string, unknown>) => T): Promise<T[]> {
   const snap = await getDocs(collection(db, 'organizations', organizationId, name))
@@ -62,7 +67,11 @@ async function readAll<T>(organizationId: string, name: string, parse: (id: stri
  * Timesheets of the given people: `settings` where `userId` is theirs — the same query User Timesheets and the weekly
  * report feed already make (`listTimesheetStates`), one per id. A failed read leaves that person's sheets out.
  */
-async function readSheets(organizationId: string, userIds: ReadonlyArray<string>, timeZone: string): Promise<PayrunSnapshotSheet[]> {
+async function readSheets(
+  organizationId: string,
+  userIds: ReadonlyArray<string>,
+  timeZone: string
+): Promise<Array<PayrunSnapshotSheet & { draft?: TimesheetDraft }>> {
   const unique = Array.from(new Set(userIds.map((id) => String(id ?? '').trim()).filter(Boolean)))
   const results = await Promise.all(
     unique.map((userId) =>
@@ -70,7 +79,13 @@ async function readSheets(organizationId: string, userIds: ReadonlyArray<string>
     )
   )
   return results.flatMap((snap) =>
-    snap ? snap.docs.map((row) => parsePayrunSnapshotSheet(row.id, row.data(), timeZone)).filter((row): row is PayrunSnapshotSheet => row != null) : []
+    snap
+      ? snap.docs.flatMap((row) => {
+          const sheet = parsePayrunSnapshotSheet(row.id, row.data(), timeZone)
+          // 1.47.0: the stored sheet as a draft (no signature images), for `signedTimesheetBookingChanges`.
+          return sheet ? [{ ...sheet, draft: draftFromFirestoreMap(row.data(), { includeSignatures: false, sheetDocId: row.id, timeZone }) }] : []
+        })
+      : []
   )
 }
 
@@ -107,10 +122,21 @@ export function payrunSnapshotRowsFor(input: {
   /** Every booking of the company as overtime inputs (`overtimeBookingInputs`), for the reports' out-of-date check. */
   bookings: ReadonlyArray<OvertimeBookingInput> | null
   operatives: ReadonlyArray<{ id: string; email?: string | null }>
+  /**
+   * Rulebook 1.47.0 (review #325 item 3): a sheet's `signedTimesheetBookingChanges` (null when it cannot be read —
+   * bookings not loaded for its pay run). Missing = as before 1.47.0.
+   */
+  bookingsChange?: (sheet: PayrunSnapshotSheet & { draft?: TimesheetDraft }) => { reopened: boolean; waitingFor: 'person' | 'lineManager' | null } | null
 }): PayrunSnapshotRow[] {
   const list = input.users.filter((user) => user && user.id)
+  const sheets = input.loaded.sheets.map((row): PayrunSnapshotSheet => {
+    const sheet: PayrunSnapshotSheet = { userId: row.userId, startDayKey: row.startDayKey, endDayKey: row.endDayKey, status: row.status }
+    const change = input.bookingsChange?.(row) ?? null
+    return change ? { ...sheet, bookingsChange: { reopened: change.reopened, waitingFor: change.waitingFor } } : sheet
+  })
   return payrunSnapshotRows({
     ...input.loaded,
+    sheets,
     roster: list.map((user) => payrunSnapshotPerson(user, list)),
     organization: input.organization,
     period: input.period,

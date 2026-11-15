@@ -1,13 +1,14 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { Booking, Operative, Project, User } from '../../types/index.ts'
-import { DEFAULT_PAYROLL_POLICY } from '../settings/organizationSettings.ts'
+import { DEFAULT_MY_SCHEDULE, DEFAULT_PAYROLL_POLICY } from '../settings/organizationSettings.ts'
 import { emptyTimesheetDraft, type TimesheetDraft } from './timesheetDraft.ts'
 import { applyWeeklyReportOverride } from './weeklyReportOverride.ts'
 import { collectTimesheetPayroll } from './timesheetPayrollCollector.ts'
-import { draftBookingChanges, draftForFigures, periodBookingChanges, signedTimesheetLiveLines } from './timesheetBookingChanges.ts'
+import { draftBookingChanges, draftForFigures, draftSignedBookingRecord, periodBookingChanges } from './timesheetBookingChanges.ts'
 import { draftFromFirestoreMap, draftToFirestoreMap } from './timesheetStorage.ts'
-import { signedTimesheetActions, signedTimesheetBookingRecord } from '../canonical/index.ts'
+import { signedTimesheetActions } from '../canonical/index.ts'
+import type { ManagerSiteBooking } from '../scheduling/managerSiteBookingUtils.ts'
 
 // Rulebook 1.47.0 §8: a signed timesheet reopens when its bookings change (web wiring over the rulebook).
 
@@ -85,16 +86,22 @@ const collectorBase = {
   payrollPolicy: DEFAULT_PAYROLL_POLICY,
   timeZone: 'Europe/London',
 }
-function linesFor(bookings: Booking[]) {
-  return collectTimesheetPayroll({ ...collectorBase, user: person, bookings, periodStart: period.start, periodEnd: period.end }).lineItems
+function linesFor(bookings: Booking[], managerSiteBookings: ManagerSiteBooking[] = [], options: Partial<Parameters<typeof collectTimesheetPayroll>[0]> = {}) {
+  return collectTimesheetPayroll({ ...collectorBase, managerSiteBookings, user: person, bookings, periodStart: period.start, periodEnd: period.end, ...options }).lineItems
 }
-function signedSheet(bookings: Booking[]): TimesheetDraft {
-  const lines = linesFor(bookings)
+function recordOf(bookings: Booking[], managerSiteBookings: ManagerSiteBooking[] = []) {
+  return draftSignedBookingRecord({ lines: linesFor(bookings, managerSiteBookings), bookings, managerSiteBookings, timeZone: 'Europe/London' })
+}
+function changes(draft: TimesheetDraft, bookings: Booking[], managerSiteBookings: ManagerSiteBooking[] = [], lines = linesFor(bookings, managerSiteBookings)) {
+  return draftBookingChanges({ draft, lines, bookings, managerSiteBookings, timeZone: 'Europe/London', liveLoaded: true, selfSigned: false })
+}
+function signedSheet(bookings: Booking[], managerSiteBookings: ManagerSiteBooking[] = []): TimesheetDraft {
   const signed: TimesheetDraft = {
     ...emptyTimesheetDraft(),
     operativeSignedAt: new Date('2026-09-18T09:00:00Z'),
     operativeSignedByName: 'Ada Booked',
-    operativeSignedBookings: signedTimesheetBookingRecord(signedTimesheetLiveLines(lines)),
+    operativeSignedBookings: recordOf(bookings, managerSiteBookings),
+    operativeSignedBookingsAt: new Date('2026-09-18T09:00:00Z'),
     managerSignedAt: new Date('2026-09-18T10:00:00Z'),
     managerSignedByName: 'Morgan',
     managerSignedByUserId: 'mgr',
@@ -107,17 +114,18 @@ function signedSheet(bookings: Booking[]): TimesheetDraft {
     weekStart: period.start,
     weekEnd: period.end,
     bookings,
+    managerSiteBookings,
   })
 }
 
 test('1.47.0 web: a changed booking reopens a signed sheet for the person; re-signing then counter-signing rebuilds it', () => {
   const sheet = signedSheet([booking()])
   assert.ok(sheet.weeklyReportOverride?.lines.length)
-  const unchanged = draftBookingChanges({ draft: sheet, lines: linesFor([booking()]), liveLoaded: true, selfSigned: false })
+  const unchanged = changes(sheet, [booking()])
   assert.equal(unchanged.changed, false)
 
-  const moved = [booking({ workEndTime: '18:00' })]
-  const change = draftBookingChanges({ draft: sheet, lines: linesFor(moved), liveLoaded: true, selfSigned: false })
+  const moved = [booking({ workEndTime: '18:00', updatedAt: new Date('2026-09-19T08:00:00Z') })]
+  const change = changes(sheet, moved)
   assert.equal(change.reopened, true)
   assert.equal(change.waitingFor, 'person')
   // Figures come from the live bookings while reopened.
@@ -127,9 +135,10 @@ test('1.47.0 web: a changed booking reopens a signed sheet for the person; re-si
   const resigned: TimesheetDraft = {
     ...sheet,
     operativeSignedAt: new Date('2026-09-19T09:00:00Z'),
-    operativeSignedBookings: signedTimesheetBookingRecord(signedTimesheetLiveLines(linesFor(moved))),
+    operativeSignedBookings: recordOf(moved),
+    operativeSignedBookingsAt: new Date('2026-09-19T09:00:00Z'),
   }
-  const afterResign = draftBookingChanges({ draft: resigned, lines: linesFor(moved), liveLoaded: true, selfSigned: false })
+  const afterResign = changes(resigned, moved)
   assert.equal(afterResign.waitingFor, 'lineManager')
   assert.equal(signedTimesheetActions(afterResign).mayExport, false)
 
@@ -144,7 +153,7 @@ test('1.47.0 web: a changed booking reopens a signed sheet for the person; re-si
     weekEnd: period.end,
     bookings: moved,
   })
-  const done = draftBookingChanges({ draft: countersigned, lines: linesFor(moved), liveLoaded: true, selfSigned: false })
+  const done = changes(countersigned, moved)
   assert.equal(done.changed, false)
   // Without rebuildSnapshot the stored lines stay (1.43.0 rule, unchanged).
   const kept = applyWeeklyReportOverride({
@@ -162,7 +171,7 @@ test('1.47.0 web: a changed booking reopens a signed sheet for the person; re-si
 test('1.47.0 web: an exported sheet is never rebuilt and reads as frozen', () => {
   const exported = { ...signedSheet([booking()]), exportedAt: new Date('2026-09-19T08:00:00Z') }
   const moved = [booking({ workEndTime: '18:00' })]
-  const change = draftBookingChanges({ draft: exported, lines: linesFor(moved), liveLoaded: true, selfSigned: false })
+  const change = changes(exported, moved)
   assert.equal(change.exported, true)
   assert.equal(change.reopened, false)
   const rebuilt = applyWeeklyReportOverride({
@@ -191,4 +200,37 @@ test('1.47.0 web: operativeSignedBookings round-trips through storage; an older 
   const back = draftFromFirestoreMap(draftToFirestoreMap(sheet))
   assert.deepEqual(back.operativeSignedBookings, sheet.operativeSignedBookings)
   assert.equal(draftFromFirestoreMap({ operativeSignedAt: new Date() }).operativeSignedBookings, null)
+})
+
+test('1.47.0 web (review #325 blocker 1): switching Office off in schedule options does not reopen; deleting it does', () => {
+  const office = {
+    id: 'm1',
+    userId: 'u1',
+    date: day,
+    timeSlot: 'CUSTOM',
+    locationType: 'office',
+    workStartTime: '07:00',
+    workEndTime: '16:00',
+    createdAt: new Date('2026-09-10T08:00:00Z'),
+    updatedAt: new Date('2026-09-10T08:00:00Z'),
+  } as ManagerSiteBooking
+  const sheet = signedSheet([booking()], [office])
+  assert.ok(sheet.operativeSignedBookings?.some((row) => row.collection === 'managerSiteBookings'))
+  const officeOff = linesFor([booking()], [office], { scheduleOptions: { ...DEFAULT_MY_SCHEDULE, showOffice: false } })
+  assert.equal(officeOff.some((line) => line.id.startsWith('mgr-')), false, 'the collector drops the office booking')
+  assert.equal(changes(sheet, [booking()], [office], officeOff).changed, false)
+  // A real delete (the document is gone) reopens.
+  const deleted = changes(sheet, [booking()], [], linesFor([booking()], []))
+  assert.equal(deleted.reopened, true)
+  assert.deepEqual(deleted.removedBookingIds, ['m1'])
+})
+
+test('1.47.0 web (review #325 blocker 2): the person no longer matched to an old booking (email change, row unlinked) does not reopen', () => {
+  const sheet = signedSheet([booking()])
+  // The collector no longer finds the booking for the person (no operatives row on their email any more).
+  const unlinked = linesFor([booking()], [], { operatives: [] })
+  assert.equal(unlinked.length, 0)
+  assert.equal(changes(sheet, [booking()], [], unlinked).changed, false)
+  // The booking given to another operative: removed.
+  assert.equal(changes(sheet, [booking({ operativeId: 'op2' })], [], unlinked).reopened, true)
 })

@@ -82,7 +82,7 @@ import { OVERTIME_HUB_LABEL, overtimeHubAccess } from '@/lib/canonical'
 import { rulebookPerson, rulebookRoster } from '@/lib/staff/rulebookPeople'
 import { OVERTIME_PATH } from '@/components/overtime/OvertimeScreen'
 import { BookingsChangedWarning } from '@/components/timesheets/BookingsChangedWarning'
-import { periodBookingChanges, type BookingChangeCatalogue } from '@/lib/timesheets/timesheetBookingChanges'
+import { bookingCoverageCoversDay, periodBookingChanges, type BookingChangeCatalogue } from '@/lib/timesheets/timesheetBookingChanges'
 import { SIGNED_TIMESHEET_CHANGED_STATUS } from '@/lib/canonical'
 import {
   ActionCard,
@@ -97,6 +97,9 @@ import {
   SegmentedTabs,
   StatRow,
 } from '@/components/ui/page'
+
+/** Review #325 item 7: how many pay runs (the current one included) the hub checks for changed signed sheets. */
+const HUB_CHANGE_SCAN_RUNS = 6
 
 const PAYE_DISABLED_BODY =
   'My Timesheets is for self-employed pay. PAYE accounts keep the current pay run until it is paid, then schedule hours no longer fill the next timesheet. Switch the person back to self-employed if they need timesheets again.'
@@ -218,12 +221,25 @@ export function TimesheetsHub() {
   // Rulebook 1.47.0 §8: the hub's "My timesheets" entry shows the yellow triangle when a signed sheet's bookings changed,
   // so the hub loads the bookings too when the person has My Timesheets.
   const needsNestedCatalogue = surface === 'mine' || surface === 'team' || (surface == null && (showMine || showTeam))
+  // Review #325 item 7: on the hub itself only the last HUB_CHANGE_SCAN_RUNS pay runs are checked, so the bookings are
+  // loaded from the earliest of their starts — never the whole archive.
+  const hubScanFromDayKey = useMemo(() => {
+    const current = computeInvoicingPeriod(new Date(), invoicing, timeZone)
+    const runs = [current, ...listSelectablePayPeriods(invoicing, new Date(), HUB_CHANGE_SCAN_RUNS + 1, timeZone)]
+      .sort((a, b) => b.start.getTime() - a.start.getTime())
+      .slice(0, HUB_CHANGE_SCAN_RUNS)
+    return runs.reduce((earliest, period) => {
+      const key = periodStartKey(period.start, timeZone)
+      return key < earliest ? key : earliest
+    }, periodStartKey(current.start, timeZone))
+  }, [invoicing, timeZone])
 
   useEffect(() => {
     if (!organization?.id || !needsNestedCatalogue) return
     let cancelled = false
-    loadBookings(organization.id, { fullHistory: true })
-    loadManagerSiteBookings(organization.id, { fullHistory: true })
+    const bookingWindow = surface == null ? { fromDayKey: hubScanFromDayKey } : { fullHistory: true }
+    loadBookings(organization.id, bookingWindow)
+    loadManagerSiteBookings(organization.id, bookingWindow)
     loadOperatives(organization.id)
     loadProjects(organization.id)
     loadSmallWorks(organization.id)
@@ -247,6 +263,8 @@ export function TimesheetsHub() {
   }, [
     organization?.id,
     needsNestedCatalogue,
+    surface,
+    hubScanFromDayKey,
     inputsAttempt,
     loadBookings,
     loadManagerSiteBookings,
@@ -342,7 +360,14 @@ export function TimesheetsHub() {
   // Rulebook 1.47.0 §8: what `signedTimesheetBookingChanges` needs to price a person's live lines for any period.
   const changeCatalogue: BookingChangeCatalogue = {
     users,
-    liveLoaded: bookingsLoaded && !bookingsFailed,
+    // On the hub the bookings are loaded from `hubScanFromDayKey` only (review #325 item 7); a pay run is checked only
+    // when that window holds it. Elsewhere the whole archive is loaded (`bookingsLoaded`).
+    liveLoaded:
+      surface == null
+        ? bookingCoverageCoversDay(bookingCoverage, organization?.id, hubScanFromDayKey) &&
+          bookingCoverageCoversDay(managerCoverage, organization?.id, hubScanFromDayKey)
+        : bookingsLoaded && !bookingsFailed,
+    coversPeriod: surface == null ? (period) => periodStartKey(period.start, timeZone) >= hubScanFromDayKey : undefined,
     bookings,
     managerSiteBookings,
     operatives,
@@ -849,6 +874,7 @@ function MineChangedIndicator({
       cancelled = true
     }
   }, [organizationId, subject.id, invoicing, timeZone])
+  // Only the pay runs the loaded window holds (`coversPeriod`, the last HUB_CHANGE_SCAN_RUNS); memoised per period.
   const show = rows.some((row) => periodBookingChanges(catalogue, subject, row.draft, row.period)?.waitingFor === 'person')
   return <WithChangedTriangle show={show}>{children}</WithChangedTriangle>
 }

@@ -1974,6 +1974,7 @@ export {
   SIGNED_TIMESHEET_CHANGED_MESSAGE,
   SIGNED_TIMESHEET_CHANGED_REVIEWER_MESSAGE,
   SIGNED_TIMESHEET_CHANGED_STATUS,
+  SIGNED_TIMESHEET_EXPORT_SKIPPED_MESSAGE,
   SIGNED_TIMESHEET_EXPORTED_CHANGED_MESSAGE,
   signedTimesheetActions,
   signedTimesheetBookingChanges,
@@ -1983,6 +1984,7 @@ export {
 export type {
   SignedTimesheetBooking,
   SignedTimesheetBookingChanges,
+  SignedTimesheetBookingDocument,
   SignedTimesheetLine,
   SignedTimesheetSheet,
   SignedTimesheetWaitingFor,

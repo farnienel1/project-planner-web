@@ -2,29 +2,39 @@
  * Rulebook 1.47.0 §8 (owner decision 15 Nov, answer 4.2 = (a)): a signed timesheet reopens when its bookings change.
  *
  * A self-employed person signs their timesheet, then (unless self-signed) their line manager counter-signs it and the
- * signed snapshot (`weeklyReportOverride`) is built. When a booking of that period changes afterwards — its day, slot,
- * times, overtime rate, break toggle or status (the `overtimeBookingFingerprint`), or a booking is added to or removed
- * from the sheet — and the sheet is NOT exported, the sheet goes back for signing: the person reviews the live
- * bookings and signs again, then the line manager counter-signs again. An exported sheet stays exactly as it was
- * (accounts have it); its reviewer only sees a warning.
+ * signed snapshot (`weeklyReportOverride`) is built. When one of its bookings changes afterwards and the sheet is NOT
+ * exported, the sheet goes back for signing: the person reviews the live bookings and signs again, then the line
+ * manager counter-signs again. An exported sheet stays exactly as it was (accounts have it); its reviewer only sees a
+ * warning.
+ *
+ * What counts as a booking change (and nothing else does):
+ *  - CHANGED: a signed booking's day, slot, start, finish, overtime rate or break toggle (`overtimeBookingFingerprint`
+ *    without its status part — Tentative ↔ Confirmed is not pay), read from the live line or, when the booking is no
+ *    longer on the sheet, from the booking document itself;
+ *  - REMOVED: a signed booking whose document is gone (deleted, or tombstoned), whose status is Cancelled, or which now
+ *    names another person than the one recorded at signing;
+ *  - ADDED: a booking on the sheet now that was not signed, created or last written after the signature.
+ * A booking that only drops out of (or into) the collector's lines because of a filter — schedule options switched off
+ * or on, the person's email or `operatives` rows changing who the collector matches, a PAYE day, a load window — is
+ * never a change: removals are judged from the booking documents, additions from their write times.
  *
  * The state is DERIVED, never written by the person who edits the booking (a job manager or admin may not write the
- * person's sign-off fields, §16): every app compares what was signed with the live payroll lines of the period —
- *  - what the person signed: `operativeSignedBookings` (new 1.47.0 owner field, written with the operative signature
- *    by `signedTimesheetBookingRecord`), else the signed snapshot's lines;
+ * person's sign-off fields, §16):
+ *  - what the person signed: `operativeSignedBookings` (1.47.0 owner field, written with the operative signature by
+ *    `signedTimesheetBookingRecord`, with `operativeSignedBookingsAt`), else the signed snapshot's lines;
  *  - what the line manager counter-signed: the signed snapshot's lines (`weeklyReportOverride.lines`).
- * Fingerprints are compared with `overtimeFingerprintsMatch` (slot spellings read canonically), never `===`.
+ * Fingerprints are compared with `overtimeFingerprintsMatch` semantics (slot spellings read canonically), never `===`.
  *
  * Guardrail 3 (never hide old data, no silent loss of signatures): a sheet signed before 1.46.0 has no booking
- * fingerprints. For it only a booking added to or removed from the sheet counts; hours are never compared (they move
- * with working-hours changes such as 1.44.0's derived paid day, which must never reopen a signed sheet). A sheet whose
- * signed lines name no booking at all, a person signature with neither a record nor a snapshot (before 1.47.0, waiting
- * for the line manager), and a period whose bookings have not loaded never read as changed. Nothing is written by this
- * rule: the stored signatures stay, and the sheet reads as signed again as soon as the bookings match (or it is signed
- * again).
+ * fingerprints, so only a deleted, cancelled or newly added booking can reopen it, never hours. Signed lines that name
+ * no booking, a person signature with neither a record nor a snapshot, bookings that have not loaded, a booking whose
+ * write times are unknown, and a record written before the latest signature (an older app re-signed without one) never
+ * read as changed. Nothing is written by this rule.
  */
 
-import { overtimeFingerprintsMatch } from './bookingFingerprint'
+import { overtimeFingerprintKey } from './bookingFingerprint'
+import { overtimeBookingFingerprint } from './payeOvertime'
+import { documentInstantMs } from './peopleDocuments'
 import { normalizeDocumentId } from './scheduleSources'
 import { resolveTimesheetExportedAtMs, timesheetTimestampMs, TIMESHEET_SIGNED_AFTER_MS } from './timesheetPeriod'
 import { timesheetSnapshotNeedsRebuild } from './timesheetSnapshot'
@@ -45,6 +55,11 @@ export const SIGNED_TIMESHEET_CHANGED_COUNTERSIGN_MESSAGE =
 /** An exported sheet whose bookings changed afterwards: frozen, warning only. */
 export const SIGNED_TIMESHEET_EXPORTED_CHANGED_MESSAGE =
   'Bookings have changed since this timesheet was exported. The exported timesheet stays as it was — correct anything on the next timesheet.'
+/** Why Export left a sheet out. */
+export const SIGNED_TIMESHEET_EXPORT_SKIPPED_MESSAGE = 'Not exported — bookings changed since it was signed; it is back with the person to sign again.'
+
+/** A record written within this long after the signature belongs to it (the two are written in one save). */
+const RECORD_SIGNATURE_TOLERANCE_MS = 5 * 60 * 1000
 
 /** One booking as the person signed it (`operativeSignedBookings[]`). */
 export type SignedTimesheetBooking = {
@@ -53,6 +68,8 @@ export type SignedTimesheetBooking = {
   collection: string
   /** `overtimeBookingFingerprint` of the booking when signed ('' when unknown). */
   fingerprint: string
+  /** The booking's person id as stored when signed (labour `operativeId`, manager site `userId`); '' when unknown. */
+  personId: string
 }
 
 /** A live payroll line or a signed snapshot line — only the fields this rule reads. */
@@ -69,10 +86,31 @@ export type SignedTimesheetLine = {
   bookingUpdatedAt?: unknown
 }
 
+/**
+ * A stored booking document (labour `bookings` or `managerSiteBookings`), any person — the source of truth for whether a
+ * signed booking that is no longer on the sheet was deleted, cancelled, changed or given to someone else.
+ */
+export type SignedTimesheetBookingDocument = {
+  bookingId: string
+  collection: string
+  /** Organisation-zone day of the booking. */
+  dayKey: string
+  timeSlot?: unknown
+  workStartTime?: unknown
+  workEndTime?: unknown
+  isBreakRemoved?: unknown
+  otMultiplierOverride?: unknown
+  status?: unknown
+  /** The booking's person id as stored (labour `operativeId`, manager site `userId`). */
+  personId?: unknown
+}
+
 export type SignedTimesheetSheet = {
   operativeSignedAt?: unknown
   operativeSignedAtMs?: unknown
   operativeSignedBookings?: unknown
+  /** When `operativeSignedBookings` was written (with the signature). */
+  operativeSignedBookingsAt?: unknown
   managerSignedAt?: unknown
   managerSignedAtMs?: unknown
   approvedAt?: unknown
@@ -113,80 +151,143 @@ function realMs(value: unknown): number | null {
   return ms != null && ms > TIMESHEET_SIGNED_AFTER_MS ? ms : null
 }
 
-/** The booking a line belongs to: `{collection}|{id}` (ids without case), or '' when the line names no booking. */
-export function signedTimesheetLineBookingKey(line: SignedTimesheetLine | null | undefined): string {
-  if (!line) return ''
+/** A fingerprint without its status part, slot read canonically: Tentative ↔ Confirmed is not a change. */
+function fingerprintCore(fingerprint: unknown): string {
+  const key = overtimeFingerprintKey(fingerprint)
+  if (!key) return ''
+  return key.split('|').slice(0, 6).join('|')
+}
+
+function sameBooking(a: unknown, b: unknown): boolean {
+  const left = fingerprintCore(a)
+  return left !== '' && left === fingerprintCore(b)
+}
+
+/** The booking a line names, `{ collection, bookingId }` (stored case), or null when it names none. */
+function lineBooking(line: SignedTimesheetLine | null | undefined): { collection: string; bookingId: string } | null {
+  if (!line) return null
   const rawId = text(line.id)
-  let bookingId = text(line.bookingId)
-  let prefix = ''
   const match = rawId.match(/^(op|mgr)-(.+)-(?:normal|ot)$/i)
-  if (match) prefix = match[1].toLowerCase()
+  const prefix = match ? match[1].toLowerCase() : ''
+  let bookingId = text(line.bookingId)
+  // Web's live lines carry `bookingId` as the line prefix plus the id (`op-<id>`); the snapshot stores the bare id.
+  if (bookingId && match && bookingId.toLowerCase() === `${prefix}-${match[2]}`.toLowerCase()) bookingId = match[2]
   if (!bookingId && match) bookingId = match[2]
-  if (!bookingId) return ''
+  if (!bookingId) return null
   const stored = text(line.bookingCollection)
-  const collection = stored || (prefix === 'mgr' ? 'managerSiteBookings' : 'bookings')
+  return { collection: stored || (prefix === 'mgr' ? 'managerSiteBookings' : 'bookings'), bookingId }
+}
+
+function keyOf(collection: string, bookingId: string): string {
   return `${collection}|${normalizeDocumentId(bookingId)}`
 }
 
-type BookingSide = Map<string, { bookingId: string; fingerprint: string; payeOnly: boolean }>
+/** The booking a line belongs to: `{collection}|{id}` (ids without case), or '' when the line names no booking. */
+export function signedTimesheetLineBookingKey(line: SignedTimesheetLine | null | undefined): string {
+  const booking = lineBooking(line)
+  return booking ? keyOf(booking.collection, booking.bookingId) : ''
+}
 
-function groupLines(lines: ReadonlyArray<SignedTimesheetLine | null | undefined>): { byKey: BookingSide; keyless: number } {
-  const byKey: BookingSide = new Map()
+type SideRow = { bookingId: string; fingerprint: string; personId: string; writtenMs: number | null }
+type Side = Map<string, SideRow>
+
+/** Lines grouped by booking, leave and PAYE days left out on every side (a PAYE day is never a timesheet line, §8). */
+function groupLines(lines: ReadonlyArray<SignedTimesheetLine | null | undefined>): { byKey: Side; keyless: number } {
+  const byKey: Side = new Map()
   let keyless = 0
   for (const line of lines) {
-    if (!line || line.isLeave === true) continue
-    const key = signedTimesheetLineBookingKey(line)
-    if (!key) {
+    if (!line || line.isLeave === true || line.isPayeDay === true) continue
+    const booking = lineBooking(line)
+    if (!booking) {
       keyless += 1
       continue
     }
+    const key = keyOf(booking.collection, booking.bookingId)
     const fingerprint = text(line.bookingFingerprint)
-    const paye = line.isPayeDay === true
+    const created = documentInstantMs(line.bookingCreatedAt as never)
+    const updated = documentInstantMs(line.bookingUpdatedAt as never)
+    const writtenMs = created == null && updated == null ? null : Math.max(created ?? 0, updated ?? 0)
     const held = byKey.get(key)
-    if (!held) {
-      byKey.set(key, { bookingId: key.split('|')[1] ?? '', fingerprint, payeOnly: paye })
-    } else {
+    if (!held) byKey.set(key, { bookingId: booking.bookingId, fingerprint, personId: '', writtenMs })
+    else {
       if (!held.fingerprint && fingerprint) held.fingerprint = fingerprint
-      if (!paye) held.payeOnly = false
+      if (writtenMs != null) held.writtenMs = Math.max(held.writtenMs ?? 0, writtenMs)
     }
   }
   return { byKey, keyless }
 }
 
-function recordSide(raw: unknown): BookingSide | null {
+function recordSide(raw: unknown): Side | null {
   if (!Array.isArray(raw)) return null
-  const side: BookingSide = new Map()
+  const side: Side = new Map()
   for (const row of raw) {
     if (!row || typeof row !== 'object') continue
     const r = row as Record<string, unknown>
-    const key = signedTimesheetLineBookingKey({ bookingId: r.bookingId, bookingCollection: r.collection })
-    if (!key) continue
-    const fingerprint = text(r.fingerprint)
-    const held = side.get(key)
-    if (!held) side.set(key, { bookingId: key.split('|')[1] ?? '', fingerprint, payeOnly: false })
-    else if (!held.fingerprint && fingerprint) held.fingerprint = fingerprint
+    const booking = lineBooking({ bookingId: r.bookingId, bookingCollection: r.collection })
+    if (!booking) continue
+    const key = keyOf(booking.collection, booking.bookingId)
+    if (!side.has(key)) side.set(key, { bookingId: booking.bookingId, fingerprint: text(r.fingerprint), personId: text(r.personId), writtenMs: null })
   }
   return side
 }
 
+type Documents = { byKey: Map<string, SignedTimesheetBookingDocument>; tombstoned: Set<string> } | null
+
+function documentFingerprint(doc: SignedTimesheetBookingDocument): string {
+  return overtimeBookingFingerprint({
+    id: doc.bookingId,
+    personId: '',
+    dayKey: text(doc.dayKey),
+    timeSlot: text(doc.timeSlot),
+    workStartTime: text(doc.workStartTime) || undefined,
+    workEndTime: text(doc.workEndTime) || undefined,
+    isBreakRemoved: doc.isBreakRemoved === true,
+    otMultiplierOverride: typeof doc.otMultiplierOverride === 'number' ? doc.otMultiplierOverride : null,
+  } as Parameters<typeof overtimeBookingFingerprint>[0])
+}
+
+function isCancelled(status: unknown): boolean {
+  const value = text(status).toLowerCase()
+  return value === 'cancelled' || value === 'canceled'
+}
+
 type Diff = { changed: string[]; added: string[]; removed: string[]; basis: 'fingerprint' | 'bookingIds' }
 
-function diffSides(signed: BookingSide, live: BookingSide): Diff {
+function diffSides(signed: Side, live: Side, documents: Documents, signedAtMs: number | null): Diff {
   const fingerprinted = Array.from(signed.values()).some((row) => row.fingerprint !== '')
   const changed: string[] = []
   const added: string[] = []
   const removed: string[] = []
   for (const [key, row] of signed) {
     const now = live.get(key)
-    if (!now) {
+    if (now) {
+      // Before 1.46.0 there is no fingerprint: only additions and removals count (hours are never compared).
+      if (row.fingerprint && now.fingerprint && !sameBooking(row.fingerprint, now.fingerprint)) changed.push(row.bookingId)
+      continue
+    }
+    // Not on the sheet now. Judge it from the booking itself, never from the filters that build the sheet.
+    if (!documents) continue
+    if (documents.tombstoned.has(key)) {
       removed.push(row.bookingId)
       continue
     }
-    // Before 1.46.0 there is no fingerprint: only additions and removals count (hours are never compared).
-    if (row.fingerprint && now.fingerprint && !overtimeFingerprintsMatch(row.fingerprint, now.fingerprint)) changed.push(row.bookingId)
+    const doc = documents.byKey.get(key)
+    if (!doc || isCancelled(doc.status)) {
+      removed.push(row.bookingId)
+      continue
+    }
+    if (row.personId && text(doc.personId) && normalizeDocumentId(row.personId) !== normalizeDocumentId(text(doc.personId))) {
+      removed.push(row.bookingId)
+      continue
+    }
+    if (row.fingerprint && !sameBooking(row.fingerprint, documentFingerprint(doc))) changed.push(row.bookingId)
+    // Otherwise the booking is as signed and only a filter left it off the lines: no change.
   }
   for (const [key, row] of live) {
-    if (signed.has(key) || row.payeOnly) continue
+    if (signed.has(key)) continue
+    // Added only when the booking was created or last written after the signature (a filter switched back on, or a
+    // person matched under another id, brings in bookings that were already there: no change).
+    if (signedAtMs == null || row.writtenMs == null || row.writtenMs <= signedAtMs) continue
     added.push(row.bookingId)
   }
   return { changed, added, removed, basis: fingerprinted ? 'fingerprint' : 'bookingIds' }
@@ -197,28 +298,31 @@ function isEmptyDiff(diff: Diff | null): boolean {
 }
 
 /**
- * Rulebook 1.47.0 §8: what the person signs — one row per booking of the live payroll lines (leave left out),
- * `{ bookingId, collection, fingerprint }`, stored as `operativeSignedBookings` with the operative signature (every
- * app, every signature, a re-signature included). Sorted by collection and id so the same bookings always write the
- * same list.
+ * Rulebook 1.47.0 §8: what the person signs — one row per booking of the live payroll lines (leave and PAYE days left
+ * out), `{ bookingId, collection, fingerprint, personId }`, stored as `operativeSignedBookings` with the operative
+ * signature (every app, every signature, a re-signature included) together with `operativeSignedBookingsAt` (the
+ * signature's instant). `personId` comes from the booking document (`liveBookings`) when given. Sorted by collection
+ * and id so the same bookings always write the same list.
  */
 export function signedTimesheetBookingRecord(
-  liveLines: ReadonlyArray<SignedTimesheetLine | null | undefined> | null | undefined
+  liveLines: ReadonlyArray<SignedTimesheetLine | null | undefined> | null | undefined,
+  liveBookings?: ReadonlyArray<SignedTimesheetBookingDocument | null | undefined> | null
 ): SignedTimesheetBooking[] {
+  const docs = new Map<string, SignedTimesheetBookingDocument>()
+  for (const doc of liveBookings ?? []) if (doc && text(doc.bookingId)) docs.set(keyOf(text(doc.collection) || 'bookings', text(doc.bookingId)), doc)
   const out = new Map<string, SignedTimesheetBooking>()
   for (const line of liveLines ?? []) {
-    if (!line || line.isLeave === true) continue
-    const key = signedTimesheetLineBookingKey(line)
-    if (!key) continue
+    if (!line || line.isLeave === true || line.isPayeDay === true) continue
+    const booking = lineBooking(line)
+    if (!booking) continue
+    const key = keyOf(booking.collection, booking.bookingId)
     const fingerprint = text(line.bookingFingerprint)
     const held = out.get(key)
     if (held) {
       if (!held.fingerprint && fingerprint) held.fingerprint = fingerprint
       continue
     }
-    const [collection] = key.split('|')
-    const rawId = text(line.bookingId) || (text(line.id).match(/^(?:op|mgr)-(.+)-(?:normal|ot)$/i)?.[1] ?? '')
-    out.set(key, { bookingId: rawId, collection, fingerprint })
+    out.set(key, { bookingId: booking.bookingId, collection: booking.collection, fingerprint, personId: text(docs.get(key)?.personId) })
   }
   return Array.from(out.entries())
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
@@ -228,24 +332,27 @@ export function signedTimesheetBookingRecord(
 /**
  * Rulebook 1.47.0 §8: whether a signed timesheet's bookings changed since it was signed, and who must act.
  *
- * `liveLines` are the period's live payroll lines for the person (the timesheet collector's lines, each with
- * `bookingFingerprint`, `bookingCollection` and its id); `liveLoaded` must be true (the whole booking archive has
- * arrived, `timesheetSnapshotReady`), else nothing reads as changed. `selfSigned` (`timesheetSelfSigned`): the person's
- * own signature completes the sheet, so a stale snapshot is theirs to sign again.
+ * - `liveLines`: the period's live payroll lines for the person (the timesheet collector's lines, each with
+ *   `bookingFingerprint`, `bookingCollection`, its id, and `bookingCreatedAt` / `bookingUpdatedAt`).
+ * - `liveBookings`: the booking documents (labour and manager site, anyone's) loaded for at least the whole period, and
+ *   `tombstonedBookingIds` (`{ collection, bookingId }`) when known. Without them a signed booking that is no longer on
+ *   the sheet is never read as removed (it may only have been filtered out).
+ * - `liveLoaded` must be true (the whole period's bookings arrived from the server, `timesheetSnapshotReady`), else
+ *   nothing reads as changed. `selfSigned` (`timesheetSelfSigned`): the person's own signature completes the sheet.
  *
- * - Exported: `exported` true, `reopened` false — the snapshot is frozen; `changed` and `reviewerMessage` warn only.
- * - The person's reference (`operativeSignedBookings`, else the snapshot) differs from the live bookings: reopened,
- *   `waitingFor: 'person'` (their triangle and `message`); the line manager cannot counter-sign or export.
- * - The person signed the live bookings again but the snapshot is stale: `waitingFor: 'lineManager'` (counter-sign
- *   again; a self-signed sheet: `'person'`). The stale snapshot is never exported or invoiced.
- * - A snapshot frozen empty by the 1.43.0 loading bug (`timesheetSnapshotNeedsRebuild`) is repaired by that rule, not
- *   reopened.
+ * Exported: `exported` true, `reopened` false — frozen; `changed` and `reviewerMessage` warn only. Otherwise the person's
+ * reference (`operativeSignedBookings` when it belongs to the latest signature, else the snapshot) differing from the
+ * live bookings is `waitingFor: 'person'`; the person signed again but the snapshot is stale is `'lineManager'`
+ * (self-signed: `'person'`). A snapshot frozen empty by the 1.43.0 loading bug is repaired by
+ * `timesheetSnapshotNeedsRebuild`, not reopened.
  */
 export function signedTimesheetBookingChanges(input: {
   sheet: SignedTimesheetSheet | null | undefined
   liveLines: ReadonlyArray<SignedTimesheetLine | null | undefined> | null | undefined
   liveLoaded: boolean
   selfSigned?: boolean | null
+  liveBookings?: ReadonlyArray<SignedTimesheetBookingDocument | null | undefined> | null
+  tombstonedBookingIds?: ReadonlyArray<{ collection?: unknown; bookingId?: unknown } | null | undefined> | null
 }): SignedTimesheetBookingChanges {
   const none: SignedTimesheetBookingChanges = {
     changed: false,
@@ -264,9 +371,18 @@ export function signedTimesheetBookingChanges(input: {
   const exported = resolveTimesheetExportedAtMs(sheet as Record<string, unknown>) != null || realMs(sheet.exportedAtMs) != null
   const base = { ...none, exported }
   if (input.liveLoaded !== true) return base
-  const operativeSigned = realMs(sheet.operativeSignedAt) != null || realMs(sheet.operativeSignedAtMs) != null
+  const operativeSignedMs = realMs(sheet.operativeSignedAt) ?? realMs(sheet.operativeSignedAtMs)
   const override = sheet.weeklyReportOverride && typeof sheet.weeklyReportOverride === 'object' ? sheet.weeklyReportOverride : null
   const live = groupLines(input.liveLines ?? []).byKey
+
+  let documents: Documents = null
+  if (Array.isArray(input.liveBookings)) {
+    const byKey = new Map<string, SignedTimesheetBookingDocument>()
+    for (const doc of input.liveBookings) if (doc && text(doc.bookingId)) byKey.set(keyOf(text(doc.collection) || 'bookings', text(doc.bookingId)), doc)
+    const tombstoned = new Set<string>()
+    for (const row of input.tombstonedBookingIds ?? []) if (row && text(row.bookingId)) tombstoned.add(keyOf(text(row.collection) || 'bookings', text(row.bookingId)))
+    documents = { byKey, tombstoned }
+  }
 
   let snapshotDiff: Diff | null = null
   if (override) {
@@ -280,13 +396,18 @@ export function signedTimesheetBookingChanges(input: {
         bookingUpdatedAt: line?.bookingUpdatedAt,
       }))
     )
+    const snapshotAtMs = realMs(override.approvedAt) ?? realMs(sheet.managerSignedAt) ?? realMs(sheet.approvedAt) ?? operativeSignedMs
     // Signed lines that name no booking cannot be compared: never reopen on a guess.
-    if (!repairable && !(grouped.byKey.size === 0 && grouped.keyless > 0)) snapshotDiff = diffSides(grouped.byKey, live)
+    if (!repairable && !(grouped.byKey.size === 0 && grouped.keyless > 0)) snapshotDiff = diffSides(grouped.byKey, live, documents, snapshotAtMs)
   }
-  const record = operativeSigned ? recordSide(sheet.operativeSignedBookings) : null
-  const personDiff = record ? diffSides(record, live) : snapshotDiff
+  // The record belongs to the latest signature only (an older app may have signed again without writing one).
+  const recordAtMs = realMs(sheet.operativeSignedBookingsAt)
+  const recordCurrent =
+    operativeSignedMs != null && recordAtMs != null && operativeSignedMs <= recordAtMs + RECORD_SIGNATURE_TOLERANCE_MS
+  const record = recordCurrent ? recordSide(sheet.operativeSignedBookings) : null
+  const personDiff = record ? diffSides(record, live, documents, operativeSignedMs) : snapshotDiff
 
-  const personChanged = operativeSigned || override ? !isEmptyDiff(personDiff) : false
+  const personChanged = operativeSignedMs != null || override ? !isEmptyDiff(personDiff) : false
   const snapshotChanged = !isEmptyDiff(snapshotDiff)
   if (!personChanged && !snapshotChanged) return base
 
