@@ -71,12 +71,11 @@ Folders: `~/Developer/project-planner-web` and `~/Developer/project-planner-ios`
 
 ## 3. Known follow-ups
 
-- Storage switch flip (above, after step 6).
+- Storage switch flip (above, after step 6): ready as web PR #333 (draft; merge only after the Storage rules publish).
 - Question C (switched-off locations on timesheets / weekly report).
 - iOS: re-record the `testVariationTracker` snapshot images on a Mac.
 - Rules follow-up before launch: admin-path privilege typing, `membersValuesTyped`, strict `permissionLevels`, tests still refused by the 1,000-expression limit (`RULES_STRICT_BUDGET=1 npm run test:rules`).
 - Pay privacy: `privatePay` on, then the pay-profile `--strip` step.
-- Web follow-up from 1.41: ordinary booking delete on web does not show the signed-timesheet warning (iOS does).
 - 1.48: blank brand still stored as "Custom" (tidy later).
 - 1.52: settings-copy numbers not checked by the rules (known limit).
 - Overtime cut-off constant duplicated (`TIMESHEET_OVERTIME_LINE_MIN_HOURS`) — tidy into the rulebook.
