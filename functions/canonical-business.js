@@ -449,6 +449,8 @@ var ProjectPlannerCanonical = (() => {
     PERSONAL_SITE_AUDIT_PRIVACY_NOTICE: () => PERSONAL_SITE_AUDIT_PRIVACY_NOTICE,
     PERSONAL_SITE_AUDIT_PRIVATE_NOTE: () => PERSONAL_SITE_AUDIT_PRIVATE_NOTE,
     PERSONAL_SITE_AUDIT_SECTION_LABEL: () => PERSONAL_SITE_AUDIT_SECTION_LABEL,
+    PHOTO_TOO_LARGE_TO_PREPARE_MESSAGE: () => PHOTO_TOO_LARGE_TO_PREPARE_MESSAGE,
+    PHOTO_TOO_MANY_PIXELS_MESSAGE: () => PHOTO_TOO_MANY_PIXELS_MESSAGE,
     PLATFORM_CONFIG_APP_PATH: () => PLATFORM_CONFIG_APP_PATH,
     PLATFORM_OWNER_EMAIL: () => PLATFORM_OWNER_EMAIL,
     PRICE_WORK_ADD_LABEL: () => PRICE_WORK_ADD_LABEL,
@@ -552,6 +554,16 @@ var ProjectPlannerCanonical = (() => {
     UNRESOLVED_BOOKINGS_HEADING: () => UNRESOLVED_BOOKINGS_HEADING,
     UNRESOLVED_BOOKINGS_HELP: () => UNRESOLVED_BOOKINGS_HELP,
     UNRESOLVED_BOOKING_PERSON_CHIP: () => UNRESOLVED_BOOKING_PERSON_CHIP,
+    UPLOAD_ALLOWED_TYPES: () => UPLOAD_ALLOWED_TYPES,
+    UPLOAD_CSV_CONTENT_TYPE: () => UPLOAD_CSV_CONTENT_TYPE,
+    UPLOAD_DEFAULT_MAX_BYTES: () => UPLOAD_DEFAULT_MAX_BYTES,
+    UPLOAD_DIMENSION_HEAD_BYTES: () => UPLOAD_DIMENSION_HEAD_BYTES,
+    UPLOAD_HEAD_BYTES: () => UPLOAD_HEAD_BYTES,
+    UPLOAD_KINDS: () => UPLOAD_KINDS,
+    UPLOAD_PDF_CONTENT_TYPE: () => UPLOAD_PDF_CONTENT_TYPE,
+    UPLOAD_PHOTO_CONTENT_TYPES: () => UPLOAD_PHOTO_CONTENT_TYPES,
+    UPLOAD_PHOTO_MAX_PIXELS: () => UPLOAD_PHOTO_MAX_PIXELS,
+    UPLOAD_PHOTO_PICK_MAX_BYTES: () => UPLOAD_PHOTO_PICK_MAX_BYTES,
     USER_ANNUAL_LEAVE_FIGURE_FIELDS: () => USER_ANNUAL_LEAVE_FIGURE_FIELDS,
     USER_DELETE_REFUSAL_MESSAGES: () => USER_DELETE_REFUSAL_MESSAGES,
     USER_DOCUMENT_FIELDS: () => USER_DOCUMENT_FIELDS,
@@ -789,6 +801,7 @@ var ProjectPlannerCanonical = (() => {
     derivedDocumentId: () => derivedDocumentId,
     derivedRowId: () => derivedRowId,
     derivedWeekdayPaidHours: () => derivedWeekdayPaidHours,
+    detectUploadContentType: () => detectUploadContentType,
     devicePushAllowed: () => devicePushAllowed,
     devicePushNotificationTypes: () => devicePushNotificationTypes,
     displayOrganizationName: () => displayOrganizationName,
@@ -872,6 +885,7 @@ var ProjectPlannerCanonical = (() => {
     homeBookingDayKey: () => homeBookingDayKey,
     homeOverviewMetrics: () => homeOverviewMetrics,
     ideaRecipients: () => ideaRecipients,
+    imageDimensionsFromHeader: () => imageDimensionsFromHeader,
     inboxNotificationVisibleToUser: () => inboxNotificationVisibleToUser,
     intervalCrossesMidnight: () => intervalCrossesMidnight,
     intervalsOverlap: () => intervalsOverlap,
@@ -934,6 +948,7 @@ var ProjectPlannerCanonical = (() => {
     isTimesheetManagerSigned: () => isTimesheetManagerSigned,
     isTimesheetOperativeSigned: () => isTimesheetOperativeSigned,
     isTombstonedBookingCollection: () => isTombstonedBookingCollection,
+    isUploadKind: () => isUploadKind,
     isVerifiedPlatformOwner: () => isVerifiedPlatformOwner,
     isWarningActive: () => isWarningActive,
     isWarningRowInScope: () => isWarningRowInScope,
@@ -1114,6 +1129,7 @@ var ProjectPlannerCanonical = (() => {
     normalizeProjectTaskPriority: () => normalizeProjectTaskPriority,
     normalizeProjectTaskStatus: () => normalizeProjectTaskStatus,
     normalizeTimesheetWeekday: () => normalizeTimesheetWeekday,
+    normalizeUploadContentType: () => normalizeUploadContentType,
     normalizeUserRoleToken: () => normalizeUserRoleToken,
     normalizeVariationStatus: () => normalizeVariationStatus,
     notificationCatalogRow: () => notificationCatalogRow,
@@ -1414,6 +1430,7 @@ var ProjectPlannerCanonical = (() => {
     personalSiteAuditValidationError: () => personalSiteAuditValidationError,
     personalSiteAuditWriteFields: () => personalSiteAuditWriteFields,
     personalSiteAuditsFor: () => personalSiteAuditsFor,
+    photoPrepareRefusal: () => photoPrepareRefusal,
     pickTimesheetRowForPeriod: () => pickTimesheetRowForPeriod,
     priceWorkApproverCandidates: () => priceWorkApproverCandidates,
     priceWorkJobNumberError: () => priceWorkJobNumberError,
@@ -1483,6 +1500,7 @@ var ProjectPlannerCanonical = (() => {
     roundPennies: () => roundPennies,
     rulebookStamp: () => rulebookStamp,
     rulebookVersionLabel: () => rulebookVersionLabel,
+    safeExternalUrl: () => safeExternalUrl,
     sameNamePersonContactLabel: () => sameNamePersonContactLabel,
     saveHoursLabel: () => saveHoursLabel,
     scheduleCellHours: () => scheduleCellHours,
@@ -1619,6 +1637,12 @@ var ProjectPlannerCanonical = (() => {
     unreadNotificationBadgeCount: () => unreadNotificationBadgeCount,
     unresolvedBookingPeople: () => unresolvedBookingPeople,
     unverifiedOperativeRows: () => unverifiedOperativeRows,
+    uploadAcceptAttribute: () => uploadAcceptAttribute,
+    uploadAllowed: () => uploadAllowed,
+    uploadAllowedHint: () => uploadAllowedHint,
+    uploadFileExtension: () => uploadFileExtension,
+    uploadKindForStoragePath: () => uploadKindForStoragePath,
+    uploadRefusalMessage: () => uploadRefusalMessage,
     userActiveWrites: () => userActiveWrites,
     userCreateRequiresAgeConfirmation: () => userCreateRequiresAgeConfirmation,
     userDeleteRefusal: () => userDeleteRefusal,
@@ -12250,8 +12274,8 @@ var ProjectPlannerCanonical = (() => {
   // lib/canonical/rulebookStamp.ts
   function rulebookStamp() {
     return {
-      version: true ? "1.49.0" : "",
-      sha256: true ? "daf1d2709f986811870e37980e4b48113c9921a25728573431bf3d93e68e7be7" : ""
+      version: true ? "1.50.0" : "",
+      sha256: true ? "fce2b099e2cb773cb6949b2ba7bdc6000bf61ab9cc823d2202e1b68ce22896b2" : ""
     };
   }
   function rulebookVersionLabel(version) {
@@ -19591,6 +19615,645 @@ var ProjectPlannerCanonical = (() => {
     return (rows3 || []).filter((row2) => row2 && row2.isDeleted !== true && idKey(row2.status) === "open").length;
   }
 
+  // lib/canonical/materialCatalogueCsv.ts
+  var MATERIAL_CATALOGUE_CSV_COLUMNS = [
+    "Catalogue ID",
+    "Name",
+    "Category",
+    "Manufacturer/Brand",
+    "Product Code",
+    "Order unit",
+    "Contents amount",
+    "Contents measure",
+    "Size",
+    // The pre-1.48.0 columns, filled with the nearest old meaning, so an older iPhone imports the file correctly.
+    // On import a filled Order unit wins over them.
+    "Default Type (Length Drum Box Pallet or Number)",
+    "Length",
+    "Length Unit (M or MM)"
+  ];
+  var MATERIAL_CATALOGUE_CSV_HEADER = MATERIAL_CATALOGUE_CSV_COLUMNS.join(",");
+  var MATERIAL_CATALOGUE_CSV_LEGACY_HEADER = "Catalogue ID,Name,Category,Manufacturer/Brand,Product Code,Default Type (Length Drum Box Pallet or Number),Size,Length,Length Unit (M or MM)";
+  var MATERIAL_CATALOGUE_CSV_MAX_BYTES = 2 * 1024 * 1024;
+  var MATERIAL_CATALOGUE_CSV_MAX_ROWS = 1e4;
+  var MATERIAL_CATALOGUE_CSV_FIELD_MAX = {
+    id: 64,
+    name: 200,
+    category: 80,
+    brand: 80,
+    productCode: 80,
+    orderUnit: 20,
+    contentAmount: 20,
+    contentMeasure: 20,
+    size: 80
+  };
+  var MATERIAL_CATALOGUE_CSV_NOT_CSV_MESSAGE = "Choose a .csv file. Excel (.xlsx) and Numbers files cannot be read \u2014 save as CSV first.";
+  var MATERIAL_CATALOGUE_CSV_TOO_BIG_MESSAGE = "That file is over 2 MB. Split it into smaller files and upload each one.";
+  var MATERIAL_CATALOGUE_CSV_EMPTY_MESSAGE = "That file is empty.";
+  var MATERIAL_CATALOGUE_CSV_BINARY_MESSAGE = "That file is not a plain-text CSV (it holds binary data). Open it in a spreadsheet and save it as CSV (UTF-8).";
+  var MATERIAL_CATALOGUE_CSV_ENCODING_MESSAGE = 'That file is not saved as UTF-8 text. In your spreadsheet choose "CSV UTF-8" when you save it.';
+  var MATERIAL_CATALOGUE_CSV_HEADER_MESSAGE = "That CSV does not have the catalogue columns. It needs at least Name and Category \u2014 download the template to start.";
+  var MATERIAL_CATALOGUE_CSV_TOO_MANY_ROWS_MESSAGE = `That CSV has more than ${MATERIAL_CATALOGUE_CSV_MAX_ROWS.toLocaleString("en-GB")} rows. Split it into smaller files.`;
+  function materialCatalogueCsvFileError(input) {
+    const name = typeof input?.fileName === "string" ? input.fileName.trim().toLowerCase() : "";
+    if (!name.endsWith(".csv")) return MATERIAL_CATALOGUE_CSV_NOT_CSV_MESSAGE;
+    const size = documentNumber(input?.byteLength);
+    if (size == null || size <= 0) return MATERIAL_CATALOGUE_CSV_EMPTY_MESSAGE;
+    if (size > MATERIAL_CATALOGUE_CSV_MAX_BYTES) return MATERIAL_CATALOGUE_CSV_TOO_BIG_MESSAGE;
+    return null;
+  }
+  var BINARY_CHARACTERS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/;
+  function materialCatalogueCsvTextError(textValue) {
+    const value = typeof textValue === "string" ? textValue : "";
+    if (!value.replace(/^﻿/, "").trim()) return MATERIAL_CATALOGUE_CSV_EMPTY_MESSAGE;
+    if (BINARY_CHARACTERS.test(value)) return MATERIAL_CATALOGUE_CSV_BINARY_MESSAGE;
+    if (value.includes("\uFFFD")) return MATERIAL_CATALOGUE_CSV_ENCODING_MESSAGE;
+    return null;
+  }
+  var FORMULA_PREFIX = /^[=+\-@\t\r]/;
+  function materialCatalogueCsvCell(value) {
+    const raw = value == null ? "" : typeof value === "number" ? String(value) : String(value);
+    const safe = FORMULA_PREFIX.test(raw) ? `'${raw}` : raw;
+    return /[",\n\r]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
+  }
+  function splitCsvRecords(textValue) {
+    const records = [];
+    let field = "";
+    let record15 = [];
+    let quoted = false;
+    const value = textValue.replace(/^﻿/, "");
+    for (let i = 0; i < value.length; i += 1) {
+      const char = value[i];
+      if (quoted) {
+        if (char === '"') {
+          if (value[i + 1] === '"') {
+            field += '"';
+            i += 1;
+          } else {
+            quoted = false;
+          }
+        } else {
+          field += char;
+        }
+        continue;
+      }
+      if (char === '"') {
+        quoted = true;
+      } else if (char === ",") {
+        record15.push(field);
+        field = "";
+      } else if (char === "\n" || char === "\r") {
+        if (char === "\r" && value[i + 1] === "\n") i += 1;
+        record15.push(field);
+        records.push(record15);
+        record15 = [];
+        field = "";
+      } else {
+        field += char;
+      }
+    }
+    if (field !== "" || record15.length > 0) {
+      record15.push(field);
+      records.push(record15);
+    }
+    return records;
+  }
+  function header(value) {
+    return value.toLowerCase().replace(/\s+/g, " ").trim();
+  }
+  var COLUMN_NAMES = {
+    id: ["catalogue id", "catalog id", "catalogueid", "id"],
+    name: ["name"],
+    category: ["category"],
+    brand: ["manufacturer/brand", "manufacturer", "brand"],
+    productCode: ["product code", "code"],
+    orderUnit: ["order unit"],
+    contentAmount: ["contents amount", "content amount", "what's in one"],
+    contentMeasure: ["contents measure", "content measure"],
+    legacyUnit: [
+      "default type (length drum box pallet or number)",
+      "default type (length drum box or number)",
+      "default unit (length, box or number)",
+      "default unit",
+      "unit",
+      "type"
+    ],
+    size: ["size", "size/length", "pack size", "packsize"],
+    length: ["length"],
+    lengthUnit: ["length unit (m or mm)", "length unit"]
+  };
+  function isNoteRecord(cells) {
+    const first = (cells[0] ?? "").trim();
+    if (first.startsWith("#") || first.startsWith("//")) return true;
+    const joined = cells.join(" ").toLowerCase();
+    return joined.includes("ignored on upload") || joined.includes("project planner category guide");
+  }
+  function plainCell(value) {
+    const raw = (value ?? "").replace(/^[ ]+/, "");
+    const unprefixed = /^'[=+\-@\t\r]/.test(raw) ? raw.slice(1) : raw;
+    return unprefixed.replace(/[\u0000-\u001F\u007F]/g, " ").trim();
+  }
+  function rowKey(name, code) {
+    const norm = (value) => value.trim().toLowerCase().replace(/\s+/g, " ");
+    return `${norm(name)}|${norm(code)}`;
+  }
+  function parseMaterialCatalogueCsv(textValue) {
+    const value = typeof textValue === "string" ? textValue : "";
+    const refused = materialCatalogueCsvTextError(value);
+    if (refused) return { rows: [], errors: [refused], duplicateRows: [] };
+    const records = splitCsvRecords(value);
+    let headerIndex = -1;
+    for (let i = 0; i < records.length; i += 1) {
+      const cells = records[i].map(header);
+      if (cells.every((cell2) => !cell2) || isNoteRecord(records[i])) continue;
+      if (cells.includes("name")) headerIndex = i;
+      break;
+    }
+    if (headerIndex < 0) return { rows: [], errors: [MATERIAL_CATALOGUE_CSV_HEADER_MESSAGE], duplicateRows: [] };
+    const headers = records[headerIndex].map(header);
+    const column = (key5) => {
+      for (const name of COLUMN_NAMES[key5]) {
+        const index2 = headers.indexOf(name);
+        if (index2 >= 0) return index2;
+      }
+      return -1;
+    };
+    const index = Object.fromEntries(Object.keys(COLUMN_NAMES).map((key5) => [key5, column(key5)]));
+    if (index.name < 0 || index.category < 0) {
+      return { rows: [], errors: [MATERIAL_CATALOGUE_CSV_HEADER_MESSAGE], duplicateRows: [] };
+    }
+    const body = records.slice(headerIndex + 1);
+    const meaningful = body.filter((cells) => cells.some((cell2) => cell2.trim()) && !isNoteRecord(cells));
+    if (meaningful.length > MATERIAL_CATALOGUE_CSV_MAX_ROWS) {
+      return { rows: [], errors: [MATERIAL_CATALOGUE_CSV_TOO_MANY_ROWS_MESSAGE], duplicateRows: [] };
+    }
+    const rows3 = [];
+    const errors = [];
+    const duplicateRows = [];
+    const seen = /* @__PURE__ */ new Set();
+    body.forEach((cells, offset) => {
+      const rowNumber = headerIndex + offset + 2;
+      if (!cells.some((cell3) => cell3.trim()) || isNoteRecord(cells)) return;
+      const cell2 = (key6) => index[key6] >= 0 ? plainCell(cells[index[key6]]) : "";
+      const name = cell2("name");
+      if (!name) return;
+      const fields = {
+        id: cell2("id"),
+        name,
+        category: cell2("category"),
+        brand: cell2("brand"),
+        productCode: cell2("productCode"),
+        orderUnit: cell2("orderUnit"),
+        contentAmount: cell2("contentAmount"),
+        contentMeasure: cell2("contentMeasure"),
+        size: cell2("size")
+      };
+      const tooLong = Object.keys(fields).find(
+        (key6) => fields[key6].length > MATERIAL_CATALOGUE_CSV_FIELD_MAX[key6]
+      );
+      if (tooLong) {
+        errors.push(`Row ${rowNumber}: ${tooLong === "productCode" ? "Product Code" : tooLong} is longer than ${MATERIAL_CATALOGUE_CSV_FIELD_MAX[tooLong]} characters.`);
+        return;
+      }
+      let orderUnit;
+      let contentAmount = null;
+      let contentMeasure = null;
+      if (fields.orderUnit) {
+        const unit = normalizeMaterialOrderUnit(fields.orderUnit);
+        if (!unit) {
+          errors.push(`Row ${rowNumber}: Order unit "${fields.orderUnit}" is not one of Each, Box, Pack, Drum, Reel, Coil, Pallet, Length, Metre.`);
+          return;
+        }
+        orderUnit = unit;
+        if (fields.contentAmount && unit !== "Metre") {
+          const amount = documentNumber(fields.contentAmount);
+          const measure = normalizeMaterialContentMeasure(fields.contentMeasure || "m");
+          if (amount == null || amount <= 0 || !measure) {
+            errors.push(`Row ${rowNumber}: Contents amount must be a number above 0 with a measure of m, mm or pcs.`);
+            return;
+          }
+          const contentError = materialContentError(amount, measure, unit);
+          if (contentError) {
+            errors.push(`Row ${rowNumber}: ${contentError}`);
+            return;
+          }
+          const model = materialQuantityModel({ orderUnit: unit, contentAmount: amount, contentMeasure: measure });
+          contentAmount = model.contentAmount;
+          contentMeasure = model.contentMeasure;
+        }
+      } else {
+        const model = materialQuantityModel({
+          defaultUnit: index.legacyUnit >= 0 ? plainCell(cells[index.legacyUnit]) : "",
+          length: index.length >= 0 ? plainCell(cells[index.length]) : "",
+          lengthUnit: index.lengthUnit >= 0 ? plainCell(cells[index.lengthUnit]) : ""
+        });
+        orderUnit = model.orderUnit;
+        contentAmount = model.contentAmount;
+        contentMeasure = model.contentMeasure;
+      }
+      const key5 = rowKey(name, fields.productCode);
+      if (seen.has(key5)) {
+        duplicateRows.push(rowNumber);
+        return;
+      }
+      seen.add(key5);
+      rows3.push({
+        id: fields.id,
+        name,
+        category: fields.category || "Other",
+        brand: fields.brand,
+        productCode: fields.productCode,
+        orderUnit,
+        contentAmount,
+        contentMeasure,
+        size: /^1(?:\.0+)?$/.test(fields.size) ? "" : fields.size,
+        rowNumber
+      });
+    });
+    return { rows: rows3, errors, duplicateRows };
+  }
+  function materialCatalogueCsvExport(items) {
+    const lines = [MATERIAL_CATALOGUE_CSV_HEADER];
+    for (const item of items || []) {
+      const model = materialQuantityModel(item);
+      const legacy = materialQuantityWriteFields(model, { unitField: "defaultUnit" });
+      const size = typeof item.size === "string" ? item.size.trim() : "";
+      lines.push(
+        [
+          item.id,
+          item.name,
+          (item.category || "").trim() || "Other",
+          item.brand || "",
+          item.productCode || "",
+          model.orderUnit,
+          model.contentAmount != null ? formatMaterialAmount(model.contentAmount) : "",
+          model.contentMeasure ?? "",
+          /^1(?:\.0+)?$/.test(size) ? "" : size,
+          legacy.defaultUnit,
+          legacy.length ?? "",
+          legacy.lengthUnit ?? ""
+        ].map(materialCatalogueCsvCell).join(",")
+      );
+    }
+    return `${lines.join("\n")}
+`;
+  }
+
+  // lib/canonical/uploadPolicy.ts
+  var UPLOAD_KINDS = [...STORED_FILE_KINDS, "material_catalogue_import"];
+  var UPLOAD_PHOTO_CONTENT_TYPES = ["image/jpeg", "image/png", "image/heic", "image/heif", "image/webp"];
+  var UPLOAD_PDF_CONTENT_TYPE = "application/pdf";
+  var UPLOAD_CSV_CONTENT_TYPE = "text/csv";
+  var PHOTO_EXTENSIONS = ["jpg", "jpeg", "jpe", "jfif", "png", "heic", "heif", "hif", "webp"];
+  var PDF_EXTENSIONS = ["pdf"];
+  var CSV_EXTENSIONS = ["csv"];
+  var UPLOAD_HEAD_BYTES = 1024;
+  var MB = 1024 * 1024;
+  var UPLOAD_DEFAULT_MAX_BYTES = 10 * MB;
+  var PHOTOS = UPLOAD_PHOTO_CONTENT_TYPES;
+  var PHOTO_ACCEPTS = "a photo (JPEG, PNG, HEIC or WebP)";
+  var PHOTO_OR_PDF_ACCEPTS = "a photo (JPEG, PNG, HEIC or WebP) or a PDF";
+  function photosAndPdf(maxBytes) {
+    return {
+      contentTypes: [...PHOTOS, UPLOAD_PDF_CONTENT_TYPE],
+      extensions: [...PHOTO_EXTENSIONS, ...PDF_EXTENSIONS],
+      maxBytes,
+      accepts: PHOTO_OR_PDF_ACCEPTS
+    };
+  }
+  function photosOnly(maxBytes) {
+    return { contentTypes: [...PHOTOS], extensions: [...PHOTO_EXTENSIONS], maxBytes, accepts: PHOTO_ACCEPTS };
+  }
+  var UPLOAD_ALLOWED_TYPES = {
+    profile_photo: photosOnly(2 * MB),
+    company_logo: photosAndPdf(5 * MB),
+    timesheet_export: {
+      contentTypes: [UPLOAD_PDF_CONTENT_TYPE],
+      extensions: [...PDF_EXTENSIONS],
+      maxBytes: 10 * MB,
+      accepts: "a PDF"
+    },
+    qualification_certificate: photosAndPdf(10 * MB),
+    variation_evidence: photosAndPdf(10 * MB),
+    site_audit_photo: photosOnly(10 * MB),
+    task_attachment: photosAndPdf(10 * MB),
+    health_safety: photosAndPdf(10 * MB),
+    paye_claim_evidence: photosAndPdf(10 * MB),
+    personal_site_audit: photosOnly(10 * MB),
+    // The 1.48.0 §28 catalogue import (`materialCatalogueCsvFileError` / `materialCatalogueCsvTextError` keep their own
+    // messages on the import screens); listed here so the one table names every upload.
+    material_catalogue_import: {
+      contentTypes: [UPLOAD_CSV_CONTENT_TYPE],
+      extensions: [...CSV_EXTENSIONS],
+      maxBytes: MATERIAL_CATALOGUE_CSV_MAX_BYTES,
+      accepts: "a CSV file"
+    }
+  };
+  function isUploadKind(value) {
+    return typeof value === "string" && UPLOAD_KINDS.includes(value);
+  }
+  function uploadKindForStoragePath(storagePath) {
+    return storedFileKind(storagePath)?.kind ?? null;
+  }
+  function megabytes(bytes) {
+    const value = bytes / MB;
+    return Number.isInteger(value) ? `${value} MB` : `${value.toFixed(1)} MB`;
+  }
+  function uploadAllowedHint(kind) {
+    const policy = UPLOAD_ALLOWED_TYPES[kind];
+    if (!policy) return "";
+    const what = policy.accepts.replace(/^an? /, "").replace(/ or an? /, " or ");
+    return `${what.charAt(0).toUpperCase()}${what.slice(1)} \xB7 up to ${megabytes(policy.maxBytes)}`;
+  }
+  function uploadAcceptAttribute(kind) {
+    const policy = UPLOAD_ALLOWED_TYPES[kind];
+    if (!policy) return "";
+    return [...policy.extensions.map((ext) => `.${ext}`), ...policy.contentTypes].join(",");
+  }
+  function uploadFileExtension(fileName) {
+    const name = typeof fileName === "string" ? fileName.trim() : "";
+    const slash = Math.max(name.lastIndexOf("/"), name.lastIndexOf("\\"));
+    const base = slash >= 0 ? name.slice(slash + 1) : name;
+    const dot = base.lastIndexOf(".");
+    if (dot <= 0 || dot === base.length - 1) return "";
+    return base.slice(dot + 1).toLowerCase();
+  }
+  var EXTENSION_TYPES = {
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    jpe: "image/jpeg",
+    jfif: "image/jpeg",
+    png: "image/png",
+    heic: "image/heic",
+    heif: "image/heif",
+    hif: "image/heif",
+    webp: "image/webp",
+    pdf: "application/pdf",
+    csv: "text/csv",
+    // Named only so the refusal can say what the file is; never allowed.
+    svg: "image/svg+xml",
+    svgz: "image/svg+xml",
+    gif: "image/gif",
+    bmp: "image/bmp",
+    tif: "image/tiff",
+    tiff: "image/tiff",
+    xls: "application/vnd.ms-excel",
+    xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    xlsm: "application/vnd.ms-excel.sheet.macroenabled.12",
+    doc: "application/msword",
+    docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    docm: "application/vnd.ms-word.document.macroenabled.12",
+    zip: "application/zip"
+  };
+  var UNINFORMATIVE_TYPES = /* @__PURE__ */ new Set(["", "application/octet-stream", "binary/octet-stream", "application/x-unknown", "application/unknown"]);
+  function normalizeUploadContentType(contentType, kind) {
+    const raw = (typeof contentType === "string" ? contentType : "").split(";")[0].trim().toLowerCase();
+    if (UNINFORMATIVE_TYPES.has(raw)) return "";
+    switch (raw) {
+      case "image/jpg":
+      case "image/pjpeg":
+        return "image/jpeg";
+      case "image/x-png":
+        return "image/png";
+      case "image/heic-sequence":
+        return "image/heic";
+      case "image/heif-sequence":
+        return "image/heif";
+      case "application/x-pdf":
+      case "application/acrobat":
+        return "application/pdf";
+      case "text/comma-separated-values":
+      case "application/csv":
+      case "text/x-csv":
+        return "text/csv";
+      case "application/vnd.ms-excel":
+      case "text/plain":
+        return kind === "material_catalogue_import" ? "text/csv" : raw;
+      default:
+        return raw;
+    }
+  }
+  function headArray(headBytes) {
+    if (headBytes == null) return null;
+    if (typeof ArrayBuffer !== "undefined" && headBytes instanceof ArrayBuffer) return Array.from(new Uint8Array(headBytes));
+    if (typeof headBytes === "object" && typeof headBytes.length === "number") {
+      const like = headBytes;
+      const out = [];
+      const n = Math.min(like.length, UPLOAD_HEAD_BYTES);
+      for (let i = 0; i < n; i += 1) out.push(Number(like[i]) & 255);
+      return out;
+    }
+    return null;
+  }
+  function ascii(bytes, start, length) {
+    let out = "";
+    for (let i = start; i < start + length && i < bytes.length; i += 1) out += String.fromCharCode(bytes[i]);
+    return out;
+  }
+  function startsWith(bytes, signature, offset = 0) {
+    if (bytes.length < offset + signature.length) return false;
+    return signature.every((value, index) => bytes[offset + index] === value);
+  }
+  var HEIC_BRANDS = /* @__PURE__ */ new Set(["heic", "heix", "heim", "heis", "hevc", "hevx", "hevm", "hevs"]);
+  var HEIF_BRANDS = /* @__PURE__ */ new Set(["mif1", "msf1", "heif"]);
+  function detectUploadContentType(headBytes, kind) {
+    const bytes = headArray(headBytes);
+    if (!bytes || bytes.length === 0) return null;
+    if (startsWith(bytes, [255, 216, 255])) return "image/jpeg";
+    if (startsWith(bytes, [137, 80, 78, 71, 13, 10, 26, 10])) return "image/png";
+    if (ascii(bytes, 0, 4) === "RIFF" && ascii(bytes, 8, 4) === "WEBP") return "image/webp";
+    if (ascii(bytes, 4, 4) === "ftyp") {
+      const brand = ascii(bytes, 8, 4).toLowerCase();
+      if (HEIC_BRANDS.has(brand)) return "image/heic";
+      if (HEIF_BRANDS.has(brand)) return "image/heif";
+      return "video/mp4";
+    }
+    if (ascii(bytes, 0, 6) === "GIF87a" || ascii(bytes, 0, 6) === "GIF89a") return "image/gif";
+    if (startsWith(bytes, [80, 75, 3, 4]) || startsWith(bytes, [80, 75, 5, 6])) return "application/zip";
+    if (startsWith(bytes, [208, 207, 17, 224, 161, 177, 26, 225])) return "application/x-ole-storage";
+    if (startsWith(bytes, [66, 77])) return "image/bmp";
+    if (startsWith(bytes, [73, 73, 42, 0]) || startsWith(bytes, [77, 77, 0, 42])) return "image/tiff";
+    const text42 = ascii(bytes, 0, bytes.length);
+    const lead = text42.replace(/^(\uFEFF|\xEF\xBB\xBF)/, "").trimStart().toLowerCase();
+    if (lead.startsWith("<")) {
+      return lead.includes("<svg") ? "image/svg+xml" : "text/html";
+    }
+    const pdfAt = text42.indexOf("%PDF-");
+    if (pdfAt >= 0 && !text42.slice(0, pdfAt).includes("<")) return "application/pdf";
+    if (!bytes.includes(0)) {
+      if (lead.includes("<svg")) return "image/svg+xml";
+      if (lead.includes("<html") || lead.includes("<script")) return "text/html";
+      if (kind === "material_catalogue_import") return "text/csv";
+    }
+    return null;
+  }
+  var SAME_FAMILY = {
+    "image/heic": "heif",
+    "image/heif": "heif"
+  };
+  function family(type) {
+    return SAME_FAMILY[type] ?? type;
+  }
+  function uploadRefusalMessage(kind, reason) {
+    const policy = UPLOAD_ALLOWED_TYPES[kind];
+    const tail = policy ? `Use ${policy.accepts}, up to ${megabytes(policy.maxBytes)}.` : "";
+    switch (reason) {
+      case "unknown_kind":
+        return "This file cannot be uploaded here.";
+      case "empty":
+        return `This file is empty. ${tail}`;
+      case "too_large":
+        return `This file is too large. ${tail}`;
+      case "type_not_allowed":
+        return `This type of file cannot be uploaded. ${tail}`;
+      case "content_unknown":
+        return `This file could not be recognised. ${tail}`;
+      case "content_mismatch":
+        return `This file is not the type its name says. ${tail}`;
+    }
+  }
+  function uploadAllowed(input) {
+    const checked = input.headBytes != null;
+    const refuse = (reason, kind2) => ({
+      allowed: false,
+      reason,
+      message: kind2 ? uploadRefusalMessage(kind2, reason) : uploadRefusalMessage("task_attachment", "unknown_kind"),
+      contentType: null,
+      contentChecked: checked
+    });
+    if (!isUploadKind(input.kind)) return refuse("unknown_kind", null);
+    const kind = input.kind;
+    const policy = UPLOAD_ALLOWED_TYPES[kind];
+    const size = Number(input.sizeBytes);
+    if (!Number.isFinite(size) || size <= 0) return refuse("empty", kind);
+    if (size > policy.maxBytes) return refuse("too_large", kind);
+    const allowedTypes = policy.contentTypes;
+    const claimed = normalizeUploadContentType(input.contentType, kind);
+    if (claimed && !allowedTypes.includes(claimed)) return refuse("type_not_allowed", kind);
+    const extension = uploadFileExtension(input.fileName);
+    const extensionType = extension ? EXTENSION_TYPES[extension] ?? null : null;
+    if (extension && (!policy.extensions.includes(extension) || !extensionType)) return refuse("type_not_allowed", kind);
+    if (!checked) {
+      return { allowed: true, reason: null, message: null, contentType: claimed || extensionType || null, contentChecked: false };
+    }
+    const detected = detectUploadContentType(input.headBytes, kind);
+    if (!detected) return refuse("content_unknown", kind);
+    if (!allowedTypes.includes(detected)) {
+      return refuse(claimed || extensionType ? "content_mismatch" : "type_not_allowed", kind);
+    }
+    if (claimed && family(claimed) !== family(detected)) return refuse("content_mismatch", kind);
+    if (extensionType && family(extensionType) !== family(detected)) return refuse("content_mismatch", kind);
+    const contentType = claimed && family(claimed) === family(detected) ? claimed : detected;
+    return { allowed: true, reason: null, message: null, contentType, contentChecked: true };
+  }
+  var LOOPBACK_HOSTS = /* @__PURE__ */ new Set(["localhost", "127.0.0.1", "[::1]"]);
+  function safeExternalUrl(url, options = {}) {
+    if (typeof url !== "string") return null;
+    const cleaned = url.replace(/[\t\n\r]/g, "").replace(/^[\u0000-\u0020]+/, "").trim();
+    if (!cleaned) return null;
+    const match = /^([a-z][a-z0-9+.-]*):\/\/([^/?#]*)/i.exec(cleaned);
+    if (!match) return null;
+    const scheme = match[1].toLowerCase();
+    const authority = match[2];
+    const hostPort = authority.includes("@") ? authority.slice(authority.lastIndexOf("@") + 1) : authority;
+    if (!hostPort || /[\s<>"\\]/.test(hostPort)) return null;
+    const host = (hostPort.startsWith("[") ? hostPort.slice(0, hostPort.indexOf("]") + 1) : hostPort.split(":")[0]).toLowerCase();
+    if (!host) return null;
+    if (scheme === "https") return cleaned;
+    if (scheme === "http" && (options.allowHttp === true || LOOPBACK_HOSTS.has(host))) return cleaned;
+    return null;
+  }
+  var UPLOAD_PHOTO_PICK_MAX_BYTES = 40 * MB;
+  var UPLOAD_PHOTO_MAX_PIXELS = 5e7;
+  var UPLOAD_DIMENSION_HEAD_BYTES = 512 * 1024;
+  var PHOTO_TOO_LARGE_TO_PREPARE_MESSAGE = "This photo is over 40 MB, too large to prepare. Use a smaller photo (JPEG, PNG, HEIC or WebP).";
+  var PHOTO_TOO_MANY_PIXELS_MESSAGE = "This photo is over 50 megapixels, too large to prepare. Use a smaller photo (JPEG, PNG, HEIC or WebP).";
+  function u16be(b, i) {
+    return (b[i] << 8 | b[i + 1]) >>> 0;
+  }
+  function u32be(b, i) {
+    return (b[i] << 24 | b[i + 1] << 16 | b[i + 2] << 8 | b[i + 3]) >>> 0;
+  }
+  function u16le(b, i) {
+    return (b[i] | b[i + 1] << 8) >>> 0;
+  }
+  function u24le(b, i) {
+    return (b[i] | b[i + 1] << 8 | b[i + 2] << 16) >>> 0;
+  }
+  function headArrayAll(headBytes, limit) {
+    if (headBytes == null) return null;
+    const view = typeof ArrayBuffer !== "undefined" && headBytes instanceof ArrayBuffer ? new Uint8Array(headBytes) : headBytes;
+    if (typeof view !== "object" || typeof view.length !== "number") return null;
+    const n = Math.min(view.length, limit);
+    const out = new Array(n);
+    for (let i = 0; i < n; i += 1) out[i] = Number(view[i]) & 255;
+    return out;
+  }
+  function imageDimensionsFromHeader(headBytes) {
+    const b = headArrayAll(headBytes, UPLOAD_DIMENSION_HEAD_BYTES);
+    if (!b || b.length < 12) return null;
+    const ok = (width, height) => width > 0 && height > 0 ? { width, height } : null;
+    if (startsWith(b, [137, 80, 78, 71]) && b.length >= 24 && ascii(b, 12, 4) === "IHDR") return ok(u32be(b, 16), u32be(b, 20));
+    if (startsWith(b, [255, 216])) {
+      let i = 2;
+      while (i + 9 < b.length) {
+        if (b[i] !== 255) {
+          i += 1;
+          continue;
+        }
+        const marker = b[i + 1];
+        if (marker === 255) {
+          i += 1;
+          continue;
+        }
+        if (marker === 216 || marker === 1 || marker >= 208 && marker <= 215) {
+          i += 2;
+          continue;
+        }
+        const length = u16be(b, i + 2);
+        const isSof = marker >= 192 && marker <= 207 && marker !== 196 && marker !== 200 && marker !== 204;
+        if (isSof) return ok(u16be(b, i + 7), u16be(b, i + 5));
+        if (length < 2) return null;
+        i += 2 + length;
+      }
+      return null;
+    }
+    if (ascii(b, 0, 4) === "RIFF" && ascii(b, 8, 4) === "WEBP" && b.length >= 30) {
+      const chunk2 = ascii(b, 12, 4);
+      if (chunk2 === "VP8X") return ok(u24le(b, 24) + 1, u24le(b, 27) + 1);
+      if (chunk2 === "VP8 ") return ok(u16le(b, 26) & 16383, u16le(b, 28) & 16383);
+      if (chunk2 === "VP8L") {
+        const bits = (b[21] | b[22] << 8 | b[23] << 16 | b[24] << 24) >>> 0;
+        return ok((bits & 16383) + 1, (bits >>> 14 & 16383) + 1);
+      }
+      return null;
+    }
+    if (ascii(b, 4, 4) === "ftyp") {
+      let best = null;
+      for (let i = 4; i + 16 <= b.length; i += 1) {
+        if (b[i] === 105 && b[i + 1] === 115 && b[i + 2] === 112 && b[i + 3] === 101) {
+          const width = u32be(b, i + 8);
+          const height = u32be(b, i + 12);
+          if (width > 0 && height > 0 && (!best || width * height > best.width * best.height)) best = { width, height };
+        }
+      }
+      return best;
+    }
+    return null;
+  }
+  function photoPrepareRefusal(input) {
+    const size = Number(input.sizeBytes);
+    if (Number.isFinite(size) && size > UPLOAD_PHOTO_PICK_MAX_BYTES) {
+      return { reason: "photo_too_large", message: PHOTO_TOO_LARGE_TO_PREPARE_MESSAGE };
+    }
+    const width = Number(input.width);
+    const height = Number(input.height);
+    if (Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0 && width * height > UPLOAD_PHOTO_MAX_PIXELS) {
+      return { reason: "photo_too_many_pixels", message: PHOTO_TOO_MANY_PIXELS_MESSAGE };
+    }
+    return null;
+  }
+
   // lib/canonical/payePayrun.ts
   var MONTH_SHORT2 = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   var DAY_KEY8 = /^\d{4}-\d{2}-\d{2}$/;
@@ -24337,290 +25000,6 @@ var ProjectPlannerCanonical = (() => {
     next.paidHours = roundPennies(row2.paidHours + slice.paidHours);
     next.pay = roundPennies(row2.pay + slice.pay);
     return next;
-  }
-
-  // lib/canonical/materialCatalogueCsv.ts
-  var MATERIAL_CATALOGUE_CSV_COLUMNS = [
-    "Catalogue ID",
-    "Name",
-    "Category",
-    "Manufacturer/Brand",
-    "Product Code",
-    "Order unit",
-    "Contents amount",
-    "Contents measure",
-    "Size",
-    // The pre-1.48.0 columns, filled with the nearest old meaning, so an older iPhone imports the file correctly.
-    // On import a filled Order unit wins over them.
-    "Default Type (Length Drum Box Pallet or Number)",
-    "Length",
-    "Length Unit (M or MM)"
-  ];
-  var MATERIAL_CATALOGUE_CSV_HEADER = MATERIAL_CATALOGUE_CSV_COLUMNS.join(",");
-  var MATERIAL_CATALOGUE_CSV_LEGACY_HEADER = "Catalogue ID,Name,Category,Manufacturer/Brand,Product Code,Default Type (Length Drum Box Pallet or Number),Size,Length,Length Unit (M or MM)";
-  var MATERIAL_CATALOGUE_CSV_MAX_BYTES = 2 * 1024 * 1024;
-  var MATERIAL_CATALOGUE_CSV_MAX_ROWS = 1e4;
-  var MATERIAL_CATALOGUE_CSV_FIELD_MAX = {
-    id: 64,
-    name: 200,
-    category: 80,
-    brand: 80,
-    productCode: 80,
-    orderUnit: 20,
-    contentAmount: 20,
-    contentMeasure: 20,
-    size: 80
-  };
-  var MATERIAL_CATALOGUE_CSV_NOT_CSV_MESSAGE = "Choose a .csv file. Excel (.xlsx) and Numbers files cannot be read \u2014 save as CSV first.";
-  var MATERIAL_CATALOGUE_CSV_TOO_BIG_MESSAGE = "That file is over 2 MB. Split it into smaller files and upload each one.";
-  var MATERIAL_CATALOGUE_CSV_EMPTY_MESSAGE = "That file is empty.";
-  var MATERIAL_CATALOGUE_CSV_BINARY_MESSAGE = "That file is not a plain-text CSV (it holds binary data). Open it in a spreadsheet and save it as CSV (UTF-8).";
-  var MATERIAL_CATALOGUE_CSV_ENCODING_MESSAGE = 'That file is not saved as UTF-8 text. In your spreadsheet choose "CSV UTF-8" when you save it.';
-  var MATERIAL_CATALOGUE_CSV_HEADER_MESSAGE = "That CSV does not have the catalogue columns. It needs at least Name and Category \u2014 download the template to start.";
-  var MATERIAL_CATALOGUE_CSV_TOO_MANY_ROWS_MESSAGE = `That CSV has more than ${MATERIAL_CATALOGUE_CSV_MAX_ROWS.toLocaleString("en-GB")} rows. Split it into smaller files.`;
-  function materialCatalogueCsvFileError(input) {
-    const name = typeof input?.fileName === "string" ? input.fileName.trim().toLowerCase() : "";
-    if (!name.endsWith(".csv")) return MATERIAL_CATALOGUE_CSV_NOT_CSV_MESSAGE;
-    const size = documentNumber(input?.byteLength);
-    if (size == null || size <= 0) return MATERIAL_CATALOGUE_CSV_EMPTY_MESSAGE;
-    if (size > MATERIAL_CATALOGUE_CSV_MAX_BYTES) return MATERIAL_CATALOGUE_CSV_TOO_BIG_MESSAGE;
-    return null;
-  }
-  var BINARY_CHARACTERS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/;
-  function materialCatalogueCsvTextError(textValue) {
-    const value = typeof textValue === "string" ? textValue : "";
-    if (!value.replace(/^﻿/, "").trim()) return MATERIAL_CATALOGUE_CSV_EMPTY_MESSAGE;
-    if (BINARY_CHARACTERS.test(value)) return MATERIAL_CATALOGUE_CSV_BINARY_MESSAGE;
-    if (value.includes("\uFFFD")) return MATERIAL_CATALOGUE_CSV_ENCODING_MESSAGE;
-    return null;
-  }
-  var FORMULA_PREFIX = /^[=+\-@\t\r]/;
-  function materialCatalogueCsvCell(value) {
-    const raw = value == null ? "" : typeof value === "number" ? String(value) : String(value);
-    const safe = FORMULA_PREFIX.test(raw) ? `'${raw}` : raw;
-    return /[",\n\r]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
-  }
-  function splitCsvRecords(textValue) {
-    const records = [];
-    let field = "";
-    let record15 = [];
-    let quoted = false;
-    const value = textValue.replace(/^﻿/, "");
-    for (let i = 0; i < value.length; i += 1) {
-      const char = value[i];
-      if (quoted) {
-        if (char === '"') {
-          if (value[i + 1] === '"') {
-            field += '"';
-            i += 1;
-          } else {
-            quoted = false;
-          }
-        } else {
-          field += char;
-        }
-        continue;
-      }
-      if (char === '"') {
-        quoted = true;
-      } else if (char === ",") {
-        record15.push(field);
-        field = "";
-      } else if (char === "\n" || char === "\r") {
-        if (char === "\r" && value[i + 1] === "\n") i += 1;
-        record15.push(field);
-        records.push(record15);
-        record15 = [];
-        field = "";
-      } else {
-        field += char;
-      }
-    }
-    if (field !== "" || record15.length > 0) {
-      record15.push(field);
-      records.push(record15);
-    }
-    return records;
-  }
-  function header(value) {
-    return value.toLowerCase().replace(/\s+/g, " ").trim();
-  }
-  var COLUMN_NAMES = {
-    id: ["catalogue id", "catalog id", "catalogueid", "id"],
-    name: ["name"],
-    category: ["category"],
-    brand: ["manufacturer/brand", "manufacturer", "brand"],
-    productCode: ["product code", "code"],
-    orderUnit: ["order unit"],
-    contentAmount: ["contents amount", "content amount", "what's in one"],
-    contentMeasure: ["contents measure", "content measure"],
-    legacyUnit: [
-      "default type (length drum box pallet or number)",
-      "default type (length drum box or number)",
-      "default unit (length, box or number)",
-      "default unit",
-      "unit",
-      "type"
-    ],
-    size: ["size", "size/length", "pack size", "packsize"],
-    length: ["length"],
-    lengthUnit: ["length unit (m or mm)", "length unit"]
-  };
-  function isNoteRecord(cells) {
-    const first = (cells[0] ?? "").trim();
-    if (first.startsWith("#") || first.startsWith("//")) return true;
-    const joined = cells.join(" ").toLowerCase();
-    return joined.includes("ignored on upload") || joined.includes("project planner category guide");
-  }
-  function plainCell(value) {
-    const raw = (value ?? "").replace(/^[ ]+/, "");
-    const unprefixed = /^'[=+\-@\t\r]/.test(raw) ? raw.slice(1) : raw;
-    return unprefixed.replace(/[\u0000-\u001F\u007F]/g, " ").trim();
-  }
-  function rowKey(name, code) {
-    const norm = (value) => value.trim().toLowerCase().replace(/\s+/g, " ");
-    return `${norm(name)}|${norm(code)}`;
-  }
-  function parseMaterialCatalogueCsv(textValue) {
-    const value = typeof textValue === "string" ? textValue : "";
-    const refused = materialCatalogueCsvTextError(value);
-    if (refused) return { rows: [], errors: [refused], duplicateRows: [] };
-    const records = splitCsvRecords(value);
-    let headerIndex = -1;
-    for (let i = 0; i < records.length; i += 1) {
-      const cells = records[i].map(header);
-      if (cells.every((cell2) => !cell2) || isNoteRecord(records[i])) continue;
-      if (cells.includes("name")) headerIndex = i;
-      break;
-    }
-    if (headerIndex < 0) return { rows: [], errors: [MATERIAL_CATALOGUE_CSV_HEADER_MESSAGE], duplicateRows: [] };
-    const headers = records[headerIndex].map(header);
-    const column = (key5) => {
-      for (const name of COLUMN_NAMES[key5]) {
-        const index2 = headers.indexOf(name);
-        if (index2 >= 0) return index2;
-      }
-      return -1;
-    };
-    const index = Object.fromEntries(Object.keys(COLUMN_NAMES).map((key5) => [key5, column(key5)]));
-    if (index.name < 0 || index.category < 0) {
-      return { rows: [], errors: [MATERIAL_CATALOGUE_CSV_HEADER_MESSAGE], duplicateRows: [] };
-    }
-    const body = records.slice(headerIndex + 1);
-    const meaningful = body.filter((cells) => cells.some((cell2) => cell2.trim()) && !isNoteRecord(cells));
-    if (meaningful.length > MATERIAL_CATALOGUE_CSV_MAX_ROWS) {
-      return { rows: [], errors: [MATERIAL_CATALOGUE_CSV_TOO_MANY_ROWS_MESSAGE], duplicateRows: [] };
-    }
-    const rows3 = [];
-    const errors = [];
-    const duplicateRows = [];
-    const seen = /* @__PURE__ */ new Set();
-    body.forEach((cells, offset) => {
-      const rowNumber = headerIndex + offset + 2;
-      if (!cells.some((cell3) => cell3.trim()) || isNoteRecord(cells)) return;
-      const cell2 = (key6) => index[key6] >= 0 ? plainCell(cells[index[key6]]) : "";
-      const name = cell2("name");
-      if (!name) return;
-      const fields = {
-        id: cell2("id"),
-        name,
-        category: cell2("category"),
-        brand: cell2("brand"),
-        productCode: cell2("productCode"),
-        orderUnit: cell2("orderUnit"),
-        contentAmount: cell2("contentAmount"),
-        contentMeasure: cell2("contentMeasure"),
-        size: cell2("size")
-      };
-      const tooLong = Object.keys(fields).find(
-        (key6) => fields[key6].length > MATERIAL_CATALOGUE_CSV_FIELD_MAX[key6]
-      );
-      if (tooLong) {
-        errors.push(`Row ${rowNumber}: ${tooLong === "productCode" ? "Product Code" : tooLong} is longer than ${MATERIAL_CATALOGUE_CSV_FIELD_MAX[tooLong]} characters.`);
-        return;
-      }
-      let orderUnit;
-      let contentAmount = null;
-      let contentMeasure = null;
-      if (fields.orderUnit) {
-        const unit = normalizeMaterialOrderUnit(fields.orderUnit);
-        if (!unit) {
-          errors.push(`Row ${rowNumber}: Order unit "${fields.orderUnit}" is not one of Each, Box, Pack, Drum, Reel, Coil, Pallet, Length, Metre.`);
-          return;
-        }
-        orderUnit = unit;
-        if (fields.contentAmount && unit !== "Metre") {
-          const amount = documentNumber(fields.contentAmount);
-          const measure = normalizeMaterialContentMeasure(fields.contentMeasure || "m");
-          if (amount == null || amount <= 0 || !measure) {
-            errors.push(`Row ${rowNumber}: Contents amount must be a number above 0 with a measure of m, mm or pcs.`);
-            return;
-          }
-          const contentError = materialContentError(amount, measure, unit);
-          if (contentError) {
-            errors.push(`Row ${rowNumber}: ${contentError}`);
-            return;
-          }
-          const model = materialQuantityModel({ orderUnit: unit, contentAmount: amount, contentMeasure: measure });
-          contentAmount = model.contentAmount;
-          contentMeasure = model.contentMeasure;
-        }
-      } else {
-        const model = materialQuantityModel({
-          defaultUnit: index.legacyUnit >= 0 ? plainCell(cells[index.legacyUnit]) : "",
-          length: index.length >= 0 ? plainCell(cells[index.length]) : "",
-          lengthUnit: index.lengthUnit >= 0 ? plainCell(cells[index.lengthUnit]) : ""
-        });
-        orderUnit = model.orderUnit;
-        contentAmount = model.contentAmount;
-        contentMeasure = model.contentMeasure;
-      }
-      const key5 = rowKey(name, fields.productCode);
-      if (seen.has(key5)) {
-        duplicateRows.push(rowNumber);
-        return;
-      }
-      seen.add(key5);
-      rows3.push({
-        id: fields.id,
-        name,
-        category: fields.category || "Other",
-        brand: fields.brand,
-        productCode: fields.productCode,
-        orderUnit,
-        contentAmount,
-        contentMeasure,
-        size: /^1(?:\.0+)?$/.test(fields.size) ? "" : fields.size,
-        rowNumber
-      });
-    });
-    return { rows: rows3, errors, duplicateRows };
-  }
-  function materialCatalogueCsvExport(items) {
-    const lines = [MATERIAL_CATALOGUE_CSV_HEADER];
-    for (const item of items || []) {
-      const model = materialQuantityModel(item);
-      const legacy = materialQuantityWriteFields(model, { unitField: "defaultUnit" });
-      const size = typeof item.size === "string" ? item.size.trim() : "";
-      lines.push(
-        [
-          item.id,
-          item.name,
-          (item.category || "").trim() || "Other",
-          item.brand || "",
-          item.productCode || "",
-          model.orderUnit,
-          model.contentAmount != null ? formatMaterialAmount(model.contentAmount) : "",
-          model.contentMeasure ?? "",
-          /^1(?:\.0+)?$/.test(size) ? "" : size,
-          legacy.defaultUnit,
-          legacy.length ?? "",
-          legacy.lengthUnit ?? ""
-        ].map(materialCatalogueCsvCell).join(",")
-      );
-    }
-    return `${lines.join("\n")}
-`;
   }
 
   // lib/canonical/timesheetBookingChanges.ts

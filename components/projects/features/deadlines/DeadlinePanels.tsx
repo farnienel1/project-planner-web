@@ -5,7 +5,7 @@ import type { FormEvent, ReactNode } from 'react'
 import { newUuid } from '@/lib/firebase/firestoreUtils'
 import { dateFromDayKey, dayKey } from '@/lib/ios-parity/londonTime'
 import { isPlausibleDayKey } from '@/lib/security/boundedValue'
-import { uploadLimitError } from '@/lib/security/uploadLimits'
+import { uploadPickError } from '@/lib/security/uploadLimits'
 import {
   applyCreatedHistory,
   applyEditHistory,
@@ -35,6 +35,7 @@ import type { SiteAudit } from '@/types'
 import { ReportFileLink } from '@/components/fileReports/ReportFileLink'
 import { StoredFileLink } from '@/components/projects/features/StoredFileLink'
 import { storedFileDirectHref } from '@/lib/healthSafety/storedFile'
+import { safeExternalUrl } from '@/lib/canonical/uploadPolicy'
 
 export type DeadlinePerson = { id: string; name: string; subtitle: string; isLive: boolean }
 
@@ -268,7 +269,7 @@ export function DetailSheet({
                           {entry.comments ? <p className="mt-1 text-sm">{entry.comments}</p> : null}
                           {entry.imageURL ? (
                             <>
-                              <a href={entry.imageURL} target="_blank" rel="noreferrer" className="mt-2 block">
+                              <a href={safeExternalUrl(entry.imageURL) ?? undefined} target="_blank" rel="noreferrer" className="mt-2 block">
                                 <img src={entry.imageURL} alt="" className="max-h-40 rounded-lg object-cover" />
                               </a>
                               <ReportFileLink fileRef={entry.imageURL} surface="site_audit" parentId={audit.id} />
@@ -428,7 +429,7 @@ export function EditorSheet({
       return
     }
     if (file) {
-      const blocked = uploadLimitError(file, 'work')
+      const blocked = uploadPickError(file, 'work')
       if (blocked) {
         setFormError(blocked)
         return

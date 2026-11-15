@@ -4,6 +4,7 @@
  * `toolboxTalkPdf.ts` re-exports them unchanged.
  */
 import type { HSToolboxTalk } from '@/types'
+import { safeExternalUrl } from '@/lib/canonical/uploadPolicy'
 
 /** WinAnsi-safe text for the standard PDF fonts. */
 export function pdfText(value: string): string {
@@ -71,6 +72,7 @@ export async function downloadRemoteFile(url: string, filename: string): Promise
     triggerDownload(objectUrl, filename)
     window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1500)
   } catch {
-    window.open(url, '_blank', 'noopener,noreferrer')
+    const safe = safeExternalUrl(url)
+    if (safe) window.open(safe, '_blank', 'noopener,noreferrer')
   }
 }

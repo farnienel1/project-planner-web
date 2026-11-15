@@ -1,4 +1,5 @@
 import { format } from 'date-fns'
+import { assertBitmapPreparable, assertPhotoPreparable } from '@/lib/security/uploadGuard'
 
 /** Fit the capture stamp inside the photo. A 13px line overflows a small image. */
 export function auditPhotoStampLayout(
@@ -29,8 +30,16 @@ export async function prepareAuditPhoto(
   takenAt = new Date()
 ): Promise<{ file: File; takenAt: Date; previewUrl: string }> {
   const stamp = format(takenAt, 'd MMM yyyy, HH:mm')
+  // 1.50.0 review L4: over 40 MB or 50 megapixels is refused before it is decoded (UploadRefusedError).
+  await assertPhotoPreparable(file)
   try {
     const bitmap = await createImageBitmap(file)
+    try {
+      assertBitmapPreparable(bitmap.width, bitmap.height)
+    } catch (refused) {
+      bitmap.close()
+      throw refused
+    }
     const maxEdge = 1280
     const scale = Math.min(1, maxEdge / Math.max(bitmap.width, bitmap.height))
     const width = Math.max(1, Math.round(bitmap.width * scale))
@@ -43,6 +52,9 @@ export async function prepareAuditPhoto(
       bitmap.close()
       return { file, takenAt, previewUrl: URL.createObjectURL(file) }
     }
+    // JPEG has no transparency: fill white first so a transparent PNG / WebP does not turn black (review L5).
+    context.fillStyle = '#ffffff'
+    context.fillRect(0, 0, width, height)
     context.drawImage(bitmap, 0, 0, width, height)
     bitmap.close()
     const layout = auditPhotoStampLayout(width, height, stamp)
@@ -59,7 +71,8 @@ export async function prepareAuditPhoto(
     const base = file.name.replace(/\.[^.]+$/, '') || 'photo'
     const stamped = new File([blob], `${base}.jpg`, { type: 'image/jpeg', lastModified: takenAt.getTime() })
     return { file: stamped, takenAt, previewUrl: URL.createObjectURL(stamped) }
-  } catch {
+  } catch (error) {
+    if (error instanceof Error && error.name === 'UploadRefusedError') throw error
     return { file, takenAt, previewUrl: URL.createObjectURL(file) }
   }
 }

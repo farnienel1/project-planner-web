@@ -10,7 +10,7 @@ import { Modal } from '@/components/ui'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { taskAttachmentPath, uploadFile } from '@/lib/firebase/storageUtils'
 import { prepareClientUpload } from '@/lib/security/stripPhotoLocation'
-import { uploadLimitError } from '@/lib/security/uploadLimits'
+import { uploadPickError } from '@/lib/security/uploadLimits'
 import {
   allAssignedManagerIds,
   allAssignedOperativeIds,
@@ -19,6 +19,7 @@ import {
 import { completionFileLabel } from '@/lib/tasks/completionFiles'
 import type { Manager, Operative, ProjectTask, ProjectTaskStatus } from '@/types'
 import { ReportFileLink } from '@/components/fileReports/ReportFileLink'
+import { safeExternalUrl } from '@/lib/canonical/uploadPolicy'
 
 export function ProjectTaskDetailSheet({
   task,
@@ -208,9 +209,9 @@ export function ProjectTaskDetailSheet({
                 ))}
               </div>
             ) : null}
-            {task.attachedFileName && task.attachedFileURL ? (
+            {task.attachedFileName && safeExternalUrl(task.attachedFileURL) ? (
               <>
-                <a href={task.attachedFileURL} target="_blank" rel="noreferrer" className="ritem" data-hue="lib">
+                <a href={safeExternalUrl(task.attachedFileURL) ?? undefined} target="_blank" rel="noreferrer" className="ritem" data-hue="lib">
                   <span className="grow">
                     <span className="t">{task.attachedFileName}</span>
                     <span className="s">File</span>
@@ -264,7 +265,7 @@ export function ProjectTaskDetailSheet({
               ) : null}
               {task.completionFiles?.map((url) => (
                 <div key={url} style={{ marginTop: 8 }}>
-                  <a href={url} target="_blank" rel="noreferrer" className="link" style={{ display: 'block' }}>
+                  <a href={safeExternalUrl(url) ?? undefined} target="_blank" rel="noreferrer" className="link" style={{ display: 'block' }}>
                     {completionFileLabel(url)}
                   </a>
                   <ReportFileLink fileRef={url} surface="task_attachment" parentId={task.id} fileName={completionFileLabel(url)} />
@@ -330,7 +331,7 @@ function CompleteTaskForm({
               const url = await uploadFile(
                 taskAttachmentPath(organizationId, task.id, prepared.file.name),
                 prepared.file,
-                prepared.file.type || 'image/jpeg'
+                prepared.file.type
               )
               completionImages.push(url)
             }
@@ -340,7 +341,7 @@ function CompleteTaskForm({
               const url = await uploadFile(
                 taskAttachmentPath(organizationId, task.id, prepared.file.name),
                 prepared.file,
-                prepared.file.type || 'application/octet-stream'
+                prepared.file.type
               )
               completionFiles.push(url)
             }
@@ -372,9 +373,9 @@ function CompleteTaskForm({
           onChange={(e) => {
             const picked = Array.from(e.target.files || [])
             e.target.value = ''
-            const rejected = picked.find((file) => !file.type.startsWith('image/') || uploadLimitError(file, 'work'))
+            const rejected = picked.find((file) => !file.type.startsWith('image/') || uploadPickError(file, 'work'))
             if (rejected) {
-              setError(uploadLimitError(rejected, 'work') || 'Choose a photo. That file is not an image, so it was not added.')
+              setError(uploadPickError(rejected, 'work') || 'Choose a photo. That file is not an image, so it was not added.')
               return
             }
             setError(null)
@@ -392,9 +393,9 @@ function CompleteTaskForm({
           onChange={(e) => {
             const picked = Array.from(e.target.files || [])
             e.target.value = ''
-            const blocked = picked.find((file) => uploadLimitError(file, 'work'))
+            const blocked = picked.find((file) => uploadPickError(file, 'work'))
             if (blocked) {
-              setError(uploadLimitError(blocked, 'work'))
+              setError(uploadPickError(blocked, 'work'))
               return
             }
             setError(null)

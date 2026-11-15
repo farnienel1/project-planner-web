@@ -222,7 +222,7 @@ export async function createPendingOrganization(
       if (prepared.error) throw new Error(prepared.error)
       const storagePath = companyLogoPath(organizationId, prepared.file.name)
       const companyLogoURL = await withTimeout(
-        uploadFile(storagePath, prepared.file, prepared.file.type || 'image/png'),
+        uploadFile(storagePath, prepared.file, prepared.file.type),
         8000,
         'Logo upload is taking too long.'
       )

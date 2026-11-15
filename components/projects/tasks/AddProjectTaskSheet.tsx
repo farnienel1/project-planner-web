@@ -31,7 +31,8 @@ import { compressTaskAttachment } from '@/lib/tasks/compressTaskAttachment'
 import { withTimeout } from '@/lib/client/withTimeout'
 import type { Manager, Operative, Project, ProjectTask, ProjectTaskItem, ProjectTaskPriority } from '@/types'
 import { isPlausibleDayKey } from '@/lib/security/boundedValue'
-import { uploadLimitError } from '@/lib/security/uploadLimits'
+import { uploadLimitError, uploadPickError } from '@/lib/security/uploadLimits'
+import { prepareClientUpload, uploadedPhotoName } from '@/lib/security/stripPhotoLocation'
 
 type PeopleRoute = 'managers' | 'operatives' | 'combined'
 
@@ -187,13 +188,14 @@ export function AddProjectTaskSheet({
       const attachedImageURLs = [...(existing?.attachedImageURLs || [])]
       const uploaded = await Promise.all(
         imageFiles.map(async (file) => {
-          const blocked = uploadLimitError(file, 'work')
+          const blocked = uploadPickError(file, 'work')
           if (blocked) throw new Error(blocked)
           const body = await compressTaskAttachment(file)
-          const blockedAfter = uploadLimitError({ name: file.name, type: body.type, size: body.size }, 'work')
+          const blockedAfter = uploadLimitError({ name: uploadedPhotoName(file, body), type: body.type, size: body.size }, 'work')
           if (blockedAfter) throw new Error(blockedAfter)
           return withTimeout(
-            uploadFile(taskAttachmentPath(organization.id, taskId, file.name), body, body.type || 'image/jpeg'),
+            // The object name follows the uploaded bytes (a redrawn photo is a JPEG or PNG), not the picked name.
+            uploadFile(taskAttachmentPath(organization.id, taskId, uploadedPhotoName(file, body)), body, body.type),
             45_000,
             'Photo upload timed out. Try a smaller image.'
           )
@@ -203,13 +205,14 @@ export function AddProjectTaskSheet({
       let attachedFileURL = existing?.attachedFileURL
       let attachedFileName = existing?.attachedFileName
       if (docFile) {
-        const blocked = uploadLimitError(docFile, 'work')
-        if (blocked) throw new Error(blocked)
+        // A photo picked as a file is redrawn too (GPS dropped, scaled down); a PDF is uploaded as it is.
+        const prepared = await prepareClientUpload(docFile, 'work')
+        if (prepared.error) throw new Error(prepared.error)
         attachedFileURL = await withTimeout(
           uploadFile(
-            taskAttachmentPath(organization.id, taskId, docFile.name),
-            docFile,
-            docFile.type || 'application/octet-stream'
+            taskAttachmentPath(organization.id, taskId, prepared.file.name),
+            prepared.file,
+            prepared.file.type
           ),
           45_000,
           'File upload timed out. Try a smaller file.'
@@ -432,9 +435,9 @@ export function AddProjectTaskSheet({
                 onChange={(e) => {
                   const picked = Array.from(e.target.files || [])
                   e.target.value = ''
-                  const rejected = picked.find((file) => !file.type.startsWith('image/') || uploadLimitError(file, 'work'))
+                  const rejected = picked.find((file) => !file.type.startsWith('image/') || uploadPickError(file, 'work'))
                   if (rejected) {
-                    setError(uploadLimitError(rejected, 'work') || 'Choose a photo. That file is not an image, so it was not added.')
+                    setError(uploadPickError(rejected, 'work') || 'Choose a photo. That file is not an image, so it was not added.')
                     return
                   }
                   setError(null)
@@ -453,9 +456,9 @@ export function AddProjectTaskSheet({
                 onChange={(e) => {
                   const picked = Array.from(e.target.files || [])
                   e.target.value = ''
-                  const rejected = picked.find((file) => !file.type.startsWith('image/') || uploadLimitError(file, 'work'))
+                  const rejected = picked.find((file) => !file.type.startsWith('image/') || uploadPickError(file, 'work'))
                   if (rejected) {
-                    setError(uploadLimitError(rejected, 'work') || 'Choose a photo. That file is not an image, so it was not added.')
+                    setError(uploadPickError(rejected, 'work') || 'Choose a photo. That file is not an image, so it was not added.')
                     return
                   }
                   setError(null)
@@ -476,7 +479,7 @@ export function AddProjectTaskSheet({
                     setDocFile(null)
                     return
                   }
-                  const blocked = uploadLimitError(next, 'work')
+                  const blocked = uploadPickError(next, 'work')
                   if (blocked) {
                     setError(blocked)
                     return
@@ -495,7 +498,7 @@ export function AddProjectTaskSheet({
               Site audit
             </button>
           </div>
-          <p className="text-center text-[10px] text-[#6B7280]">Files up to 10MB. Photos, PDFs, drawings supported.</p>
+          <p className="text-center text-[10px] text-[#6B7280]">Photos (JPEG, PNG, HEIC or WebP) or PDF · up to 10 MB.</p>
           {imageFiles.length > 0 && (
             <p className="text-xs text-slate-600">{imageFiles.length} photo{imageFiles.length === 1 ? '' : 's'} selected</p>
           )}

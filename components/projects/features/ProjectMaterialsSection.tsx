@@ -34,6 +34,7 @@ import {
   StatusPill,
   materialStatusTone,
 } from '@/components/projects/features/featureUi'
+import { safeExternalUrl } from '@/lib/canonical/uploadPolicy'
 
 /** Keep the selected day inside the week strip. iOS `MaterialsWeekNavigation.applyWeekDelta`. */
 function shiftMaterialsWeek(weekStart: Date, selectedDate: Date, weeks: number) {
@@ -77,9 +78,9 @@ function MaterialLineCard({
             {extras ? ` · ${extras}` : ''}
 
           </p>
-          {line.websiteURL ? (
+          {safeExternalUrl(line.websiteURL, { allowHttp: true }) ? (
             <a
-              href={line.websiteURL}
+              href={safeExternalUrl(line.websiteURL, { allowHttp: true }) ?? undefined}
               target="_blank"
               rel="noreferrer"
               onClick={(event) => event.stopPropagation()}

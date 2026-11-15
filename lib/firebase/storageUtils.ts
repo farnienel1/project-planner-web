@@ -3,6 +3,7 @@ import { qualificationCertificateStoragePath } from '@/lib/canonical/operativeQu
 import { storage, auth } from '@/lib/firebase/config'
 import { withTimeout } from '@/lib/client/withTimeout'
 import { generatedStorageFileName } from '@/lib/security/uploadLimits'
+import { assertUploadAllowed } from '@/lib/security/uploadGuard'
 
 const UPLOAD_TIMEOUT_MS = 180_000
 
@@ -70,14 +71,20 @@ function isStoragePermissionError(error: unknown): boolean {
   )
 }
 
+/**
+ * Rulebook 1.50.0 §24: every upload is checked first (`assertUploadAllowed` → `uploadAllowed`: the kind's types and
+ * cap, and the first bytes against the claimed type and the name) and written with the type read from the bytes —
+ * never `application/octet-stream`. A refused file throws the rulebook's message.
+ */
 export async function uploadFile(
   storagePath: string,
   file: Blob,
-  contentType = 'image/jpeg'
+  claimedContentType?: string | null
 ): Promise<string> {
   if (!storage) {
     throw new Error('File storage is not configured.')
   }
+  const contentType = await assertUploadAllowed(storagePath, file, claimedContentType)
   await ensureStorageAuth()
   try {
     return await uploadOnce(storagePath, file, contentType)
@@ -99,11 +106,12 @@ export async function uploadFile(
 export async function uploadVariationEvidenceFile(
   storagePath: string,
   file: Blob,
-  contentType = 'application/octet-stream'
+  claimedContentType?: string | null
 ): Promise<string> {
   if (!storage) {
     throw new Error('File storage is not configured.')
   }
+  const contentType = await assertUploadAllowed(storagePath, file, claimedContentType)
   await ensureStorageAuth()
   const storageRef = ref(storage, storagePath)
   await withTimeout(

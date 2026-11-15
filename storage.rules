@@ -94,39 +94,21 @@ service firebase.storage {
       return request.resource.contentType is string;
     }
 
-    function isImageContent() {
-      return contentTypeString() && request.resource.contentType.matches('image/.*');
+    // Rulebook 1.50.0 §24 (UPLOAD_ALLOWED_TYPES, owner decisions 15 Nov): photos (JPEG, PNG, HEIC/HEIF, WebP) and PDFs
+    // only. Never SVG, GIF, Word, Excel (macro or not), ZIP, CSV or application/octet-stream. The apps check the
+    // real bytes (uploadAllowed) and write the detected type; the rules can only read the declared type.
+    function isPhoto() {
+      return contentTypeString() && request.resource.contentType.lower() in [
+        'image/jpeg', 'image/jpg', 'image/pjpeg', 'image/png', 'image/heic', 'image/heif', 'image/webp'
+      ];
     }
 
     function isPdf() {
-      return contentTypeString() && request.resource.contentType == 'application/pdf';
+      return contentTypeString() && request.resource.contentType.lower() == 'application/pdf';
     }
 
-    function isCertificateType() {
-      return contentTypeString() && (
-        request.resource.contentType == 'application/pdf'
-        || request.resource.contentType == 'image/jpeg'
-        || request.resource.contentType == 'image/jpg'
-        || request.resource.contentType == 'image/pjpeg'
-      );
-    }
-
-    // Tasks / H&S / variation evidence: types the apps already send, including
-    // octet-stream (web fallback + iOS putFile with nil metadata).
-    function isWorkFileType() {
-      return contentTypeString() && (
-        request.resource.contentType.matches('image/.*')
-        || request.resource.contentType == 'application/pdf'
-        || request.resource.contentType == 'application/octet-stream'
-        || request.resource.contentType == 'application/vnd.ms-excel'
-        || request.resource.contentType == 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-        || request.resource.contentType == 'application/msword'
-        || request.resource.contentType == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-        || request.resource.contentType == 'application/vnd.ms-excel.sheet.macroenabled.12'
-        || request.resource.contentType == 'text/csv'
-        || request.resource.contentType == 'application/zip'
-        || request.resource.contentType == 'application/x-zip-compressed'
-      );
+    function isPhotoOrPdf() {
+      return isPhoto() || isPdf();
     }
 
     function memberSizedWrite(orgId, maxBytes, typed) {
@@ -195,7 +177,7 @@ service firebase.storage {
       allow create, update: if orgMember(orgId)
         && (request.auth.uid == userId || adminLike(orgId))
         && sized(2 * 1024 * 1024)
-        && isImageContent();
+        && isPhoto();
     }
 
     // Company logo. Web + iOS: .../branding/company_logo/{file}
@@ -207,11 +189,11 @@ service firebase.storage {
         && orgMember(orgId)
         && adminLike(orgId)
         && sized(5 * 1024 * 1024)
-        && (isImageContent() || isPdf());
+        && isPhotoOrPdf();
       allow update: if orgMember(orgId)
         && orgFileAdmin(orgId)
         && sized(5 * 1024 * 1024)
-        && (isImageContent() || isPdf());
+        && isPhotoOrPdf();
     }
 
     // Timesheet export PDFs. iOS operatives do not getDownloadURL these objects.
@@ -233,40 +215,40 @@ service firebase.storage {
     match /organizations/{orgId}/operatives/{operativeId}/qualifications/{qualificationId}/certificates/{fileName} {
       allow read: if orgMember(orgId);
       allow delete: if canDeleteStoredFile(orgId);
-      allow create: if newOrOwnRetry() && memberSizedWrite(orgId, 10 * 1024 * 1024, isCertificateType());
-      allow update: if canOverwriteStoredFile(orgId, 10 * 1024 * 1024, isCertificateType());
+      allow create: if newOrOwnRetry() && memberSizedWrite(orgId, 10 * 1024 * 1024, isPhotoOrPdf());
+      allow update: if canOverwriteStoredFile(orgId, 10 * 1024 * 1024, isPhotoOrPdf());
     }
 
-    // Variation evidence — web path (20MB; iOS client already allows 20MB).
+    // Variation evidence — web path. 1.50.0: 10MB (was 20MB), photos and PDFs.
     match /organizations/{orgId}/healthSafety/{parentId}/variations/{fileName} {
       allow read: if orgMember(orgId);
       allow delete: if canDeleteStoredFile(orgId);
-      allow create: if newOrOwnRetry() && memberSizedWrite(orgId, 20 * 1024 * 1024, isWorkFileType());
-      allow update: if canOverwriteStoredFile(orgId, 20 * 1024 * 1024, isWorkFileType());
+      allow create: if newOrOwnRetry() && memberSizedWrite(orgId, 10 * 1024 * 1024, isPhotoOrPdf());
+      allow update: if canOverwriteStoredFile(orgId, 10 * 1024 * 1024, isPhotoOrPdf());
     }
 
     // Variation evidence — iOS primary path.
     match /organizations/{orgId}/healthSafety/{parentId}/variationEvidence/{fileName} {
       allow read: if orgMember(orgId);
       allow delete: if canDeleteStoredFile(orgId);
-      allow create: if newOrOwnRetry() && memberSizedWrite(orgId, 20 * 1024 * 1024, isWorkFileType());
-      allow update: if canOverwriteStoredFile(orgId, 20 * 1024 * 1024, isWorkFileType());
+      allow create: if newOrOwnRetry() && memberSizedWrite(orgId, 10 * 1024 * 1024, isPhotoOrPdf());
+      allow update: if canOverwriteStoredFile(orgId, 10 * 1024 * 1024, isPhotoOrPdf());
     }
 
     // Variation evidence — iOS fallback path.
     match /organizations/{orgId}/variations/{variationId}/{fileName} {
       allow read: if orgMember(orgId);
       allow delete: if canDeleteStoredFile(orgId);
-      allow create: if newOrOwnRetry() && memberSizedWrite(orgId, 20 * 1024 * 1024, isWorkFileType());
-      allow update: if canOverwriteStoredFile(orgId, 20 * 1024 * 1024, isWorkFileType());
+      allow create: if newOrOwnRetry() && memberSizedWrite(orgId, 10 * 1024 * 1024, isPhotoOrPdf());
+      allow update: if canOverwriteStoredFile(orgId, 10 * 1024 * 1024, isPhotoOrPdf());
     }
 
     // Site audit images. Member + size/type only — do not staff-lock.
     match /organizations/{orgId}/siteAudits/{allPaths=**} {
       allow read: if orgMember(orgId);
       allow delete: if canDeleteStoredFile(orgId);
-      allow create: if newOrOwnRetry() && memberSizedWrite(orgId, 10 * 1024 * 1024, isImageContent());
-      allow update: if canOverwriteStoredFile(orgId, 10 * 1024 * 1024, isImageContent());
+      allow create: if newOrOwnRetry() && memberSizedWrite(orgId, 10 * 1024 * 1024, isPhoto());
+      allow update: if canOverwriteStoredFile(orgId, 10 * 1024 * 1024, isPhoto());
     }
 
     // Tasks: web flat .../tasks/{taskId}/{file}; iOS .../files/ and .../images/.
@@ -274,8 +256,8 @@ service firebase.storage {
     match /organizations/{orgId}/tasks/{allPaths=**} {
       allow read: if orgMember(orgId);
       allow delete: if canDeleteStoredFile(orgId);
-      allow create: if newOrOwnRetry() && memberSizedWrite(orgId, 10 * 1024 * 1024, isWorkFileType());
-      allow update: if canOverwriteStoredFile(orgId, 10 * 1024 * 1024, isWorkFileType());
+      allow create: if newOrOwnRetry() && memberSizedWrite(orgId, 10 * 1024 * 1024, isPhotoOrPdf());
+      allow update: if canOverwriteStoredFile(orgId, 10 * 1024 * 1024, isPhotoOrPdf());
     }
 
     // H&S talks/RAMS/other/deadlines. More-specific variation matches above win via OR.
@@ -283,8 +265,8 @@ service firebase.storage {
     match /organizations/{orgId}/healthSafety/{allPaths=**} {
       allow read: if orgMember(orgId);
       allow delete: if canDeleteStoredFile(orgId);
-      allow create: if newOrOwnRetry() && memberSizedWrite(orgId, 10 * 1024 * 1024, isWorkFileType());
-      allow update: if canOverwriteStoredFile(orgId, 10 * 1024 * 1024, isWorkFileType());
+      allow create: if newOrOwnRetry() && memberSizedWrite(orgId, 10 * 1024 * 1024, isPhotoOrPdf());
+      allow update: if canOverwriteStoredFile(orgId, 10 * 1024 * 1024, isPhotoOrPdf());
     }
 
     // Rulebook 1.30.0 §26: a person's line manager — listed on that person's users document, which names this
@@ -323,10 +305,6 @@ service firebase.storage {
       );
     }
 
-    function isClaimImageOrPdf() {
-      return (isImageContent() && request.resource.contentType != 'image/svg+xml') || isPdf();
-    }
-
     // Price work / expense evidence (and frozen personal site audit copies), in the person's own folder. The person
     // uploads (a new {uid}_{ms} object each time); the person, their line managers and admins of this organisation
     // read; delete as §24 (the uploader within the undo window, or an admin). Images and PDFs, 10MB.
@@ -334,8 +312,8 @@ service firebase.storage {
       allow read: if orgMember(orgId) && (request.auth.uid == userId || claimAdmin(orgId) || callerLineManagesUser(orgId, userId));
       allow delete: if canDeleteStoredFile(orgId);
       allow create: if request.auth.uid == userId && newOrOwnRetry()
-        && memberSizedWrite(orgId, 10 * 1024 * 1024, isClaimImageOrPdf());
-      allow update: if request.auth.uid == userId && canOverwriteStoredFile(orgId, 10 * 1024 * 1024, isClaimImageOrPdf());
+        && memberSizedWrite(orgId, 10 * 1024 * 1024, isPhotoOrPdf());
+      allow update: if request.auth.uid == userId && canOverwriteStoredFile(orgId, 10 * 1024 * 1024, isPhotoOrPdf());
     }
 
     // Personal site audit photos: the owner only — read, write and delete (within the undo window). No admin.
@@ -343,8 +321,8 @@ service firebase.storage {
       allow read: if orgMember(orgId) && request.auth.uid == ownerId;
       allow delete: if orgMember(orgId) && request.auth.uid == ownerId && uploaderWithinUndoWindow();
       allow create: if request.auth.uid == ownerId && newOrOwnRetry()
-        && memberSizedWrite(orgId, 10 * 1024 * 1024, isImageContent() && request.resource.contentType != 'image/svg+xml');
-      allow update: if request.auth.uid == ownerId && canOverwriteStoredFile(orgId, 10 * 1024 * 1024, isImageContent() && request.resource.contentType != 'image/svg+xml');
+        && memberSizedWrite(orgId, 10 * 1024 * 1024, isPhoto());
+      allow update: if request.auth.uid == ownerId && canOverwriteStoredFile(orgId, 10 * 1024 * 1024, isPhoto());
     }
 
     match /{allPaths=**} {

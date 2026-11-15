@@ -1,57 +1,46 @@
-/** Client checks that match storage.rules. Does not change Canonical or stored field names. */
+/**
+ * Web file-picker checks. The rule is the rulebook's (`uploadAllowed`, §24, 1.50.0): this file only maps the web's
+ * picker families to the rulebook's upload kinds. `storage.rules` enforces the same types and caps on the server, and
+ * every upload passes through `assertUploadAllowed` (`lib/security/uploadGuard.ts`), which also checks the bytes.
+ */
 import { storedFileObjectName } from '@/lib/canonical/storedFiles'
+import {
+  UPLOAD_ALLOWED_TYPES,
+  photoPrepareRefusal,
+  uploadAllowed,
+  uploadFileExtension,
+  type UploadKind,
+} from '@/lib/canonical/uploadPolicy'
 
-export const PROFILE_PHOTO_MAX_BYTES = 2 * 1024 * 1024
-export const COMPANY_LOGO_MAX_BYTES = 5 * 1024 * 1024
-export const WORK_FILE_MAX_BYTES = 10 * 1024 * 1024
-export const QUALIFICATION_CERT_MAX_BYTES = 10 * 1024 * 1024
-export const VARIATION_EVIDENCE_MAX_BYTES = 20 * 1024 * 1024
-export const TIMESHEET_EXPORT_MAX_BYTES = 10 * 1024 * 1024
+export const PROFILE_PHOTO_MAX_BYTES = UPLOAD_ALLOWED_TYPES.profile_photo.maxBytes
+export const COMPANY_LOGO_MAX_BYTES = UPLOAD_ALLOWED_TYPES.company_logo.maxBytes
+export const WORK_FILE_MAX_BYTES = UPLOAD_ALLOWED_TYPES.task_attachment.maxBytes
+export const QUALIFICATION_CERT_MAX_BYTES = UPLOAD_ALLOWED_TYPES.qualification_certificate.maxBytes
+/** 1.50.0: 10 MB (was 20 MB), like every other photo / PDF kind. */
+export const VARIATION_EVIDENCE_MAX_BYTES = UPLOAD_ALLOWED_TYPES.variation_evidence.maxBytes
+export const TIMESHEET_EXPORT_MAX_BYTES = UPLOAD_ALLOWED_TYPES.timesheet_export.maxBytes
 
-export type UploadFamily = 'profile' | 'logo' | 'certificate' | 'siteAudit' | 'work' | 'variation'
+/** Web picker families; each is one rulebook upload kind. */
+export type UploadFamily = 'profile' | 'logo' | 'certificate' | 'siteAudit' | 'work' | 'variation' | 'claim'
+
+const FAMILY_KIND: Record<UploadFamily, UploadKind> = {
+  profile: 'profile_photo',
+  logo: 'company_logo',
+  certificate: 'qualification_certificate',
+  siteAudit: 'site_audit_photo',
+  work: 'task_attachment',
+  variation: 'variation_evidence',
+  claim: 'paye_claim_evidence',
+}
+
+export function uploadKindForFamily(family: UploadFamily): UploadKind {
+  return FAMILY_KIND[family]
+}
 
 type NamedFile = { name: string; type?: string; size: number }
 
-const WORK_TYPES = new Set([
-  'application/pdf',
-  'application/vnd.ms-excel',
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  'application/msword',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  'application/vnd.ms-excel.sheet.macroenabled.12',
-  'text/csv',
-  'application/zip',
-  'application/x-zip-compressed',
-])
-
-const WORK_EXTENSIONS = new Set([
-  'jpg',
-  'jpeg',
-  'png',
-  'gif',
-  'webp',
-  'heic',
-  'heif',
-  'bmp',
-  'tif',
-  'tiff',
-  'pdf',
-  'xls',
-  'xlsx',
-  'xlsm',
-  'doc',
-  'docx',
-  'csv',
-  'zip',
-])
-
-const CERT_EXTENSIONS = new Set(['pdf', 'jpg', 'jpeg'])
-
 export function fileExtension(name: string): string {
-  const trimmed = name.trim()
-  const dot = trimmed.lastIndexOf('.')
-  if (dot <= 0 || dot === trimmed.length - 1) return ''
-  return trimmed.slice(dot + 1).toLowerCase()
+  return uploadFileExtension(name)
 }
 
 /**
@@ -66,65 +55,43 @@ export function generatedStorageFileName(originalName: string, uid: string, time
   return storedFileObjectName({ uid: safeUid, unixMs: timestamp, extension: ext }) ?? `web_${timestamp}`
 }
 
-export function isImageContent(file: NamedFile): boolean {
-  const type = (file.type || '').toLowerCase()
-  if (type.startsWith('image/')) return true
-  return ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif', 'bmp', 'tif', 'tiff'].includes(fileExtension(file.name))
-}
-
-export function isPdfContent(file: NamedFile): boolean {
-  return (file.type || '').toLowerCase() === 'application/pdf' || fileExtension(file.name) === 'pdf'
-}
-
-export function isCertificateType(file: NamedFile): boolean {
-  const type = (file.type || '').toLowerCase()
-  if (type === 'application/pdf' || type === 'image/jpeg' || type === 'image/jpg' || type === 'image/pjpeg') {
-    return true
-  }
-  return CERT_EXTENSIONS.has(fileExtension(file.name))
-}
-
-/** Rules allow octet-stream as a hatch. Client only uses it for known work extensions. */
-export function isWorkFileType(file: NamedFile): boolean {
-  const type = (file.type || '').toLowerCase()
-  if (type.startsWith('image/')) return true
-  if (WORK_TYPES.has(type)) return true
-  if (type === 'application/octet-stream' && WORK_EXTENSIONS.has(fileExtension(file.name))) return true
-  return WORK_EXTENSIONS.has(fileExtension(file.name))
-}
-
-export function uploadLimitError(file: NamedFile, family: UploadFamily): string | null {
-  switch (family) {
-    case 'profile':
-      if (!isImageContent(file) || file.size > PROFILE_PHOTO_MAX_BYTES) return 'Image only · max 2MB'
-      return null
-    case 'logo':
-      if (!isImageContent(file) && !isPdfContent(file)) return 'Logo must be a JPEG, PNG or PDF file.'
-      if (file.size > COMPANY_LOGO_MAX_BYTES) return 'Logo must be 5 MB or smaller.'
-      return null
-    case 'certificate':
-      if (file.size > QUALIFICATION_CERT_MAX_BYTES || !isCertificateType(file)) return 'PDF or JPEG only · max 10MB'
-      return null
-    case 'siteAudit':
-      if (!isImageContent(file) || file.size > WORK_FILE_MAX_BYTES) return 'Photos only · max 10MB'
-      return null
-    case 'work':
-      if (!isWorkFileType(file) || file.size > WORK_FILE_MAX_BYTES) {
-        return 'Use an image, PDF, Word, Excel, CSV or ZIP file up to 10MB.'
-      }
-      return null
-    case 'variation':
-      if (!isWorkFileType(file) || file.size > VARIATION_EVIDENCE_MAX_BYTES) {
-        return 'Use an image, PDF, Word, Excel, CSV or ZIP file up to 20MB.'
-      }
-      return null
-    default:
-      return 'That file cannot be uploaded.'
-  }
-}
-
-export function shouldStripPhotoLocation(file: NamedFile): boolean {
+/** A photo by its claimed type or name (the bytes are checked at upload). */
+export function isImageContent(file: { name: string; type?: string }): boolean {
   const type = (file.type || '').toLowerCase()
   if (type === 'image/svg+xml' || type === 'image/gif') return false
+  if (type.startsWith('image/')) return true
+  return ['jpg', 'jpeg', 'jpe', 'jfif', 'png', 'heic', 'heif', 'hif', 'webp'].includes(fileExtension(file.name))
+}
+
+/**
+ * The rulebook's pick-time decision (names, types and size; the bytes are checked by `assertUploadAllowed` when the
+ * file is uploaded). Null when allowed, else the rulebook's message.
+ */
+export function uploadLimitError(file: NamedFile, family: UploadFamily): string | null {
+  const decision = uploadAllowed({
+    kind: FAMILY_KIND[family],
+    fileName: file.name,
+    contentType: file.type ?? '',
+    sizeBytes: file.size,
+  })
+  return decision.allowed ? null : decision.message
+}
+
+/** Photos are redrawn (GPS / EXIF dropped, large ones scaled down) before upload. */
+export function shouldStripPhotoLocation(file: { name: string; type?: string }): boolean {
   return isImageContent(file)
+}
+
+/**
+ * The check when a file is picked, before photos are redrawn: a photo's size is not judged yet, because the redraw
+ * scales it down (`stripPhotoLocation`, `prepareAuditPhoto`); the redrawn file is checked with `uploadLimitError`.
+ */
+export function uploadPickError(file: NamedFile, family: UploadFamily): string | null {
+  // 1.50.0 review L4: a photo over 40 MB is refused before it is redrawn.
+  if (isImageContent(file)) {
+    const refusal = photoPrepareRefusal({ sizeBytes: file.size })
+    if (refusal) return refusal.message
+  }
+  const size = isImageContent(file) ? Math.min(file.size, 1) : file.size
+  return uploadLimitError({ name: file.name, type: file.type, size: file.size > 0 ? size : 0 }, family)
 }

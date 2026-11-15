@@ -247,7 +247,7 @@ function ProfilePanel({ onBack }: { onBack: () => void }) {
         uploadFile(
           profilePhotoPath(organization.id, user.id),
           prepared.file,
-          prepared.file.type || 'image/jpeg'
+          prepared.file.type
         ),
         45_000,
         'The photo did not finish uploading. Check the connection and try a smaller image.'

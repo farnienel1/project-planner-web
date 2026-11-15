@@ -12,11 +12,11 @@ test('logo cap matches storage.rules 5MB image-or-PDF write', () => {
   )
   assert.equal(
     validateLogoFile({ name: 'mark.png', type: 'image/png', size: LOGO_MAX_BYTES + 1 }),
-    'Logo must be 5 MB or smaller.'
+    'This file is too large. Use a photo (JPEG, PNG, HEIC or WebP) or a PDF, up to 5 MB.'
   )
   assert.equal(
     validateLogoFile({ name: 'notes.txt', type: 'text/plain', size: 1024 }),
-    'Logo must be a JPEG, PNG or PDF file.'
+    'This type of file cannot be uploaded. Use a photo (JPEG, PNG, HEIC or WebP) or a PDF, up to 5 MB.'
   )
 })
 

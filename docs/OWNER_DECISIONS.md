@@ -610,7 +610,7 @@ UI only, web only (`docs/design/user-profile-ui/user-profile-ui-spec.md`; branch
 | 15 Nov | **Confirmed: a stored weekend AM or PM on a set-window day is 0.5 day.** | done (1.49.0), owner confirmed 15 Nov |
 | 15 Nov | **Answered: weekend "Counts as" stays a per-day setting** (Saturday and Sunday each their own). | answered (no change) |
 | 15 Nov | **1.47 and 1.48 judgement calls confirmed** ("ok"): marked in the 1.47.0 and 1.48.0 judgement-call tables. | done |
-| 15 Nov | **Uploads: no SVG and no macro spreadsheets (.xlsm) anywhere.** Allowed types stay photos (JPEG / PNG / HEIC), PDF, and CSV for the catalogue import (read in the browser, never stored). Hardening of every upload path follows after 1.49. | decided; open (not built yet, after 1.49) |
+| 15 Nov | **Uploads: no SVG and no macro spreadsheets (.xlsm) anywhere.** Allowed types stay photos (JPEG / PNG / HEIC), PDF, and CSV for the catalogue import (read in the browser, never stored). Hardening of every upload path follows after 1.49. | done web + rulebook (1.50.0, w150-upload-hardening); storage.rules publish and iOS 1.50 open (see 15 Nov decisions for 1.50) |
 
 ## 1.49.0 judgement calls (owner to confirm)
 
@@ -623,6 +623,28 @@ UI only, web only (`docs/design/user-profile-ui/user-profile-ui-spec.md`; branch
 | 15 Nov | The Working hours preview says "Unpaid break 12:00–12:30, 30 min — allowed for in the counts as" on a set-window day (it said "30 min taken off"). | done, owner to confirm |
 | 15 Nov | A company whose saved policy has no Saturday / Sunday map at all still reads the plain defaults (8h stored, flag off); only new organisations get the flag. | done, owner to confirm |
 
+
+## 15 Nov decisions (for 1.50, upload hardening)
+
+| Date | Decision | Status |
+|---|---|---|
+| 15 Nov | **1: allowed upload types.** CSV for the material catalogue import (already CSV-only from 1.48), PDF, and photos (JPEG, PNG, HEIC/HEIF, WebP) for site audits, expense receipts and every other evidence and attachment upload. One rule per kind: `UPLOAD_ALLOWED_TYPES`, `uploadAllowed` (the claimed type, the name and the first bytes must agree), `storage.rules` per path. | done web + rulebook (1.50.0); storage.rules publish and iOS open |
+| 15 Nov | **2: no SVG and no .xlsm anywhere; no other office or macro formats** (Word, Excel, ZIP, GIF and `application/octet-stream` also refused). Files already stored are not touched and keep opening. | done web + rulebook (1.50.0); storage.rules publish and iOS open |
+| 15 Nov | **Exports and downloads are not uploads and stay as they are** (owner, 15 Nov): the weekly report's Excel (XLSX) download, its PDF and HTML exports, invoices, timesheet PDFs and the company data export keep their formats and Content-Type. The 1.50.0 upload rules apply only to files people upload to Storage. #328 changes no export or download code. | confirmed (1.50.0 changes none) |
+| 15 Nov | **3: keep the size limits, or tighten where sensible.** Kept: profile 2 MB, logo 5 MB, 10 MB for every other photo / PDF kind, catalogue CSV 2 MB (1.48.0). Tightened: variation evidence 20 MB → 10 MB (judgement call below). Photos are redrawn and scaled to 2560 px, about 2.5 MB, before upload. | done web + rulebook (1.50.0) |
+
+## 1.50.0 judgement calls (owner to confirm)
+
+| Date | Choice | Status |
+|---|---|---|
+| 15 Nov | Variation evidence goes from 20 MB to 10 MB, like every other photo / PDF upload (the audit's cost-abuse finding C1). A variation PDF over 10 MB now has to be split or compressed. | done, **owner confirmed 15 Nov** |
+| 15 Nov | Qualification certificates take every allowed photo type (PNG, HEIC, WebP as well as JPEG) and PDF; they took PDF and JPEG only. | done, owner to confirm |
+| 15 Nov | The toolbox talk "upload" still accepts the filled-in blank talk Excel, but only to fill in the fields; the Excel itself is no longer stored (attach a PDF or a photo of the talk to store one). | done, **owner confirmed 15 Nov** |
+| 15 Nov | ~~`safeExternalUrl` keeps `http:` links as well as `https:`.~~ **Resolved per the owner's brief (links are https only):** `https:` everywhere; `http:` only to localhost / 127.0.0.1 / [::1] (emulator) and, for a material supplier `websiteURL` alone, any host (`allowHttp`). | done (review L3), owner to confirm |
+| 15 Nov | A photo too large at pick time is no longer refused before it is redrawn (up to a 40 MB / 50 megapixel ceiling, review L4); the redrawn file is checked (so a 12 MB phone photo uploads at about 2.5 MB). A photo the browser cannot redraw (HEIC in Chrome) uploads as it is, under the 10 MB cap. | done, owner to confirm |
+| 15 Nov | The Storage rules do not yet require the generated `{uid}_{ms}` object name at create (§24 never did); kept as it is and listed as a follow-up. | follow-up |
+| 15 Nov | Review M1: until the 1.50.0 Storage rules are published, certificate photos are redrawn to JPEG and a photo that cannot be redrawn (HEIC in Chrome) is refused with a message, because the live rules take PDF and JPEG only for certificates. A web guard (`STORAGE_RULES_1_50_PUBLISHED = false`, `pre150RulesAccept`) keeps every upload inside what the old rules accept; flip it in the release after the publish. | done, owner to confirm |
+| 15 Nov | Review L4: a photo over 40 MB, or over 50 megapixels by its header, is refused before it is decoded. | done, owner to confirm |
 
 ## Open questions for the owner
 
