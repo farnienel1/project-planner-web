@@ -1654,3 +1654,7 @@ export type {
   WeeklyReportPayWeek,
   WeeklyReportTimesheetState,
 } from './weeklyReportPay'
+
+// Rulebook 1.51.0 §4.3: Settings → Working hours "Working hours history" (read-only, admins).
+export { payrollPolicyHistoryRows } from './payrollPolicyHistoryRows'
+export type { PayrollPolicyHistoryRow } from './payrollPolicyHistoryRows'

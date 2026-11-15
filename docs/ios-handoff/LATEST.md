@@ -9,8 +9,8 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
 Rulebook version: 1.51.0 → 1.51.0
-Packed hash: 5b1a20a09909efeaa80d348768e47e8cc0cbf0ae1a1aaa1ee8479f16f9dfc4f6
-Rulebook sha256: 7be3918e47edccb876139956999255bd968637a04ad710259028a026ed6a3d02
+Packed hash: 84d71b13fa5652d6dfbe91d7e7d7495cf53b7d49b0423be3e43ed84e62af6ef4
+Rulebook sha256: 1864e69ed1acf19ee7593f5562c7d98a10a692a8899b9c7c898a555c79dd7b46
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -22,12 +22,12 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
 Contract sha256: b89ca87595a18b7f0230fa13dcc81d65dcaea44e65912d499a31ce5df7670dd4
 Data-parity fixture sha256: c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: WEEKLY_REPORT_NO_TIMESHEET
+Exports added: payrollPolicyHistoryRows
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/weeklyReportPay.ts
+Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/payrollPolicyHistoryRows.ts
 Done when:
-- [ ] Packed hash in iOS equals 5b1a20a09909efeaa80d348768e47e8cc0cbf0ae1a1aaa1ee8479f16f9dfc4f6
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 7be3918e47edccb876139956999255bd968637a04ad710259028a026ed6a3d02)
+- [ ] Packed hash in iOS equals 84d71b13fa5652d6dfbe91d7e7d7495cf53b7d49b0423be3e43ed84e62af6ef4
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 1864e69ed1acf19ee7593f5562c7d98a10a692a8899b9c7c898a555c79dd7b46)
 - [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.51.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
@@ -41,7 +41,8 @@ Done when:
 - **Sub contractors** (Q4c): `subcontractorDayValue` takes `{ hours, standardDayHours }` — custom hours are hours worked ÷ the paid day (was always 0.5).
 - **Warnings** (Q4d): `WEEKLY_REPORT_WARNING_OPEN`, `weeklyReportClashDetail`.
 - **Project Breakdown** (Q4a): Hours and Paid days from `paidDays` (was booked-day units capped at 1.5).
-- **Money change** (review of #329, owner to confirm): a manager site booking off a job (Office, Working from home, Site survey, custom) is priced at its own `otMultiplierOverride`, as the timesheet and invoice already were — office 16:00–19:00 at ×2 on £250/day: £132.35 → £176.47 (+£44.12). Every other figure is unchanged.
+- **Money change** (review of #329, owner confirmed 15 Nov): a manager site booking off a job (Office, Working from home, Site survey, custom) is priced at its own `otMultiplierOverride`, as the timesheet and invoice already were — office 16:00–19:00 at ×2 on £250/day: £132.35 → £176.47 (+£44.12). Every other figure is unchanged.
+- **Working hours history** (§4.3, owner decision 15 Nov): `payrollPolicyHistoryRows` — Settings → Working hours, read-only, admins; the same rows on iOS.
 - **Check line, review of #329:** like with like, run by run (labour against labour; price work and expenses only for approved runs, otherwise "+ £… awaiting sign-off"); one run per person when two users documents share it; "no timesheet yet" (`WEEKLY_REPORT_NO_TIMESHEET`); with no viewer pay is hidden unless `showAllPay: true`.
 
 ## iOS work for 1.51.0
@@ -49,7 +50,7 @@ Done when:
 **Sync first.** 1.51.0 (owner decisions 15 Nov, Q1–Q4): **weekly report rework.** The Pay Summary, each person's invoice check line, the grand total and every booking's paid hours / days are one rule, `weeklyReportPayRows`; iOS renders it and keeps no weekly-report pricing of its own. Money is unchanged (pay rounded per booking line, 1.46.0).
 - **Not changed:** no Firestore rules, index, Storage or Functions change; nothing migrated; `minimumIosBuild` unchanged.
 - **Base:** web `origin/main` 1.50.0 + this PR. Line numbers below are from iOS `origin/main` at `1571142` (15 Nov); check them on your branch.
-- **Money change:** a manager site booking off a job (Office, WFH, Site survey, custom) is now priced at its own `otMultiplierOverride` on the weekly report, as on the timesheet and invoice (office 16:00–19:00 at ×2 on £250/day: +£44.12 against before).
+- **Money change (owner confirmed 15 Nov):** a manager site booking off a job (Office, WFH, Site survey, custom) is now priced at its own `otMultiplierOverride` on the weekly report, as on the timesheet and invoice (office 16:00–19:00 at ×2 on £250/day: +£44.12 against before).
 
 1. **Sync.** `WEB_REPO=<web worktree> bash scripts/sync-rulebook-from-web.sh`, then commit the mirrored files.
 2. **Pay Summary = `weeklyReportPayRows`.** In `Project Planner/Views/WeeklyReportView.swift` replace `payrollPersonSummaries()` (~1780), `payrollSummaryForViewer()` (~1659), `struct PayrollRateLine` (~2258) / `struct PayrollPersonSummary` (~2280) with one call, and **delete `enum WeeklyReportPayRows` (~2095) and both `formatDays` helpers (~2006, ~2111)** with their tests:
@@ -65,7 +66,8 @@ Done when:
 5. **Sub contractors (Q4c).** Change `CanonicalBusinessEngine.subcontractorDayValue(_:)` (`Canonical/CanonicalBusinessEngine.swift` ~1291) to take the hours too (`subcontractorDayValue(timeSlot, { hours, standardDayHours })`), and `subcontractorDayValue(from:)` in `WeeklyReportView.swift` (~1553) passes `{ hours: payrollHoursResult(...) for that booking and day, standardDayHours: weekdayPaidHours(policy that day) }` — custom hours become hours worked ÷ the paid day (07:00–20:00 = 1.47), not 0.5.
 6. **Warnings (Q4d).** Status `WEEKLY_REPORT_WARNING_OPEN` ("Open") everywhere — `clashExportCells(warning, status: "Active")` at ~948, ~954, ~1123, ~1129 and the unbooked rows. Clash Detail = `weeklyReportClashDetail({ dayText: "10 Nov 2026", places: [{ label, time }] })` from the clash's bookings, never the Warnings screen message with "Approve if it's intentional…".
 7. **Exports.** The share-sheet PDF / Excel and the screen show the same rows (web uses one table builder, `lib/weekly-report/weeklyReportSections.ts`); the Excel export stays.
-8. **Tests** (`ProjectPlannerTests`): through the engine, the owner fortnight (Test Admin 1–15 Nov, £250 → £240 on 14 Nov): five rows, "Weekday overtime ×1.5 (12h × 1.5 = 18h)", "Saturday 14 Nov window (counts as a full day)", total £3,141.76; a PAYE person has no rows; a non-admin viewer sees "—". Remove tests of the deleted Swift pricing.
+8. **Working hours history (owner decision 15 Nov).** In `Project Planner/Views/OrganisationWorkingHoursView.swift` (after the Scheduled change section, ~272), admins only, add a read-only "Working hours history" list from `payrollPolicyHistoryRows({ state, todayKey })` (the parsed working-hours state, today's organisation-zone day key): per row the `dates` heading with an "In effect today" badge when `inEffectToday` and "Scheduled" when `scheduled`, then "Monday–Friday: {weekday} · {overtime}", "Saturday: {saturday}", "Sunday: {sunday}". Display only; no writes; no text built in Swift.
+9. **Tests** (`ProjectPlannerTests`): through the engine, the owner fortnight (Test Admin 1–15 Nov, £250 → £240 on 14 Nov): five rows, "Weekday overtime ×1.5 (12h × 1.5 = 18h)", "Saturday 14 Nov window (counts as a full day)", total £3,141.76; a PAYE person has no rows; a non-admin viewer sees "—". Remove tests of the deleted Swift pricing.
 
 
 ## Workflow for the iOS agent

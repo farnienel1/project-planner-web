@@ -16491,3 +16491,61 @@ test('1.51.0 money change: a manager site booking off a job is priced at its own
   assert.equal(pay(office(2)), 176.47)
   assert.equal(Math.round((pay(office(2)) - pay(office())) * 100) / 100, 44.12)
 })
+
+// MARK: - 1.51.0 §4.3 Working hours history (owner decision 15 Nov)
+
+const wh151Win = { allHoursAtMultiplierMode: false, definedWindowStart: '07:30', definedWindowEnd: '14:00', countsAsHours: 8, outsideWindowMultiplier: 1.5, breakPaid: true }
+const wh151Day = { standardDayStart: '07:00', standardDayEnd: '16:00', unpaidBreakMinutes: 30, breakWindowStart: '12:00', breakWindowEnd: '12:30', weekdayOutsideStandardMultiplier: 1.5 }
+
+test('1.51.0 working hours history: prior and current only (no stored history), newest first, today marked', () => {
+  const state = R112.parsePayrollTimePolicyState(
+    {
+      payrollTimePolicy: { ...wh151Day, saturday: wh151Win, sunday: wh151Win },
+      payrollTimePolicyPrior: { ...wh151Day },
+      payrollTimePolicyEffectiveFrom: '2026-11-05',
+    },
+    'Europe/London'
+  )
+  const rows = R112.payrollPolicyHistoryRows({ state, todayKey: '2026-11-15' })
+  assert.deepEqual(
+    rows.map((row) => [row.dates, row.weekday, row.overtime, row.saturday, row.sunday, row.inEffectToday, row.scheduled]),
+    [
+      ['From 5 Nov 2026', '07:00–16:00 · 30 min unpaid break 12:00–12:30 · 8.5h paid day', 'Overtime ×1.5', '07:30–14:00 counts as 8h, outside ×1.5 · 30 min paid break 12:00–12:30', '07:30–14:00 counts as 8h, outside ×1.5 · 30 min paid break 12:00–12:30', true, false],
+      // The prior rules stored no weekend map: Sunday reads as the default every hour ×2 (what 1 Nov is priced on).
+      ['Before 5 Nov 2026', '07:00–16:00 · 30 min unpaid break 12:00–12:30 · 8.5h paid day', 'Overtime ×1.5', '07:30–13:00 counts as 8h, outside ×2 · 30 min paid break 12:00–12:30', 'Every hour ×2 · 30 min paid break 12:00–12:30', false, false],
+    ]
+  )
+})
+
+// The owner's organisation (Firestore, 15 Nov): history[0] 1970 with Sunday every hour ×2, history[1] 3 Nov with Sunday
+// "same as Saturday" — why Sunday 1 Nov is missing 8.5h (weekday day) and Sunday 8 Nov 6h (the Saturday window).
+test('1.51.0 working hours history: a 1970 seed entry and a 3 Nov entry (the owner\'s shape), plus a scheduled change', () => {
+  const state = R112.parsePayrollTimePolicyState(
+    {
+      payrollTimePolicy: { ...wh151Day, saturday: wh151Win, sunday: wh151Win, sundaySameAsSaturday: true },
+      payrollTimePolicyEffectiveFrom: '2026-11-03',
+      payrollTimePolicyHistory: [
+        { effectiveFrom: '1970-01-01', policy: { ...wh151Day, saturday: wh151Win, sunday: { ...wh151Win, allHoursAtMultiplierMode: true, allHoursMultiplier: 2 }, sundaySameAsSaturday: false } },
+        { effectiveFrom: '2026-11-03', policy: { ...wh151Day, saturday: wh151Win, sunday: wh151Win, sundaySameAsSaturday: true } },
+      ],
+      payrollTimePolicyScheduled: { effectiveFrom: '2026-12-01', policy: { ...wh151Day, weekdayOutsideStandardMultiplier: 2, saturday: wh151Win, sunday: wh151Win } },
+    },
+    'Europe/London'
+  )
+  const rows = R112.payrollPolicyHistoryRows({ state, todayKey: '2026-11-15' })
+  assert.deepEqual(rows.map((row) => [row.dates, row.overtime, row.sunday, row.inEffectToday, row.scheduled]), [
+    ['Scheduled from 1 Dec 2026', 'Overtime ×2', '07:30–14:00 counts as 8h, outside ×1.5 · 30 min paid break 12:00–12:30', false, true],
+    ['From 3 Nov 2026', 'Overtime ×1.5', 'Same as Saturday', true, false],
+    ['Before 3 Nov 2026', 'Overtime ×1.5', 'Every hour ×2 · 30 min paid break 12:00–12:30', false, false],
+  ])
+  assert.match(rows[2].saturday, /^07:30–14:00 counts as 8h/)
+  // Sunday 1 Nov is priced and scanned on the 1970 rules (no Sunday window), Sunday 8 Nov on the 3 Nov rules.
+  assert.equal(R112.payrollTimePolicyForDayFromState(state, '2026-11-01').sunday.allHoursAtMultiplierMode, true)
+  assert.equal(R112.payrollTimePolicyForDayFromState(state, '2026-11-08').sunday.sameAsSaturday, true)
+  // Once its day has come the scheduled change is the row in effect.
+  const later = R112.payrollPolicyHistoryRows({ state, todayKey: '2026-12-02' })
+  assert.deepEqual([later[0].dates, later[0].inEffectToday, later[0].scheduled, later[1].inEffectToday], ['From 1 Dec 2026', true, false, false])
+  // An organisation that never changed its working hours: one row, since records began.
+  const single = R112.payrollPolicyHistoryRows({ state: R112.parsePayrollTimePolicyState({ payrollTimePolicy: { ...wh151Day } }, 'Europe/London'), todayKey: '2026-11-15' })
+  assert.deepEqual(single.map((row) => [row.dates, row.inEffectToday]), [['Since records began', true]])
+})

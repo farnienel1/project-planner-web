@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useAuthStore } from '@/lib/stores/authStore'
+import { hasAdminAccess } from '@/lib/permissions'
 import {
   cancelScheduledPayrollPolicyChange,
   savePayrollPolicy,
@@ -28,6 +29,7 @@ import {
   weekendCountsAsStep,
   weekdayPaidDayPreview,
   weekdayPaidHours,
+  payrollPolicyHistoryRows,
   withDerivedWeekdayPaidHours,
   PAYROLL_POLICY_TIME_STEP_MINUTES,
   PAYROLL_BREAK_TIME_STEP_MINUTES,
@@ -689,6 +691,27 @@ export function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
           </p>
         )}
       </HoursSection>
+
+      {/* Rulebook 1.51.0 §4.3 (owner decision 15 Nov): read-only history, admins only (`payrollPolicyHistoryRows`). */}
+      {user && hasAdminAccess(user) && live.details?.payrollTimePolicyState ? (
+        <HoursSection
+          title="Working hours history"
+          description="Each set of working hours and the day it started, newest first. Every day is paid on the hours in effect that day."
+        >
+          {payrollPolicyHistoryRows({ state: live.details.payrollTimePolicyState, todayKey }).map((row) => (
+            <div key={`${row.effectiveFrom}|${row.scheduled}`} className="space-y-1 p-5" data-testid="working-hours-history-row">
+              <p className="text-[14px] font-semibold text-[var(--ink)]">
+                {row.dates}
+                {row.inEffectToday ? <span className="ml-2 rounded-full bg-[var(--soft)] px-2 py-0.5 text-[12px] font-semibold text-[var(--green)]">In effect today</span> : null}
+                {row.scheduled ? <span className="ml-2 rounded-full bg-[var(--soft)] px-2 py-0.5 text-[12px] font-semibold text-[var(--ink2)]">Scheduled</span> : null}
+              </p>
+              <p className="text-[13px] text-[var(--ink2)]">Monday–Friday: {row.weekday} · {row.overtime}</p>
+              <p className="text-[13px] text-[var(--ink2)]">Saturday: {row.saturday}</p>
+              <p className="text-[13px] text-[var(--ink2)]">Sunday: {row.sunday}</p>
+            </div>
+          ))}
+        </HoursSection>
+      ) : null}
       </SettingsFormBody>
 
       <SaveBar dirty={dirty} hint={settingsSaveBarHint(loadState)}>
