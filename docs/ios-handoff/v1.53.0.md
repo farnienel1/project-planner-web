@@ -9,8 +9,8 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
 Rulebook version: 1.53.0 → 1.53.0
-Packed hash: 3f26c638f6a202058ae59924c4de4b9d3b082a20d6d88df1f863c68eb5ec8a0b
-Rulebook sha256: 972f3985fb399062d471b995de2d5ad72a357c872116296c6d54199c179e4bf3
+Packed hash: 886912f48ae0df430399846731fb62d1262d120cda6804b4408a1c65984038b2
+Rulebook sha256: 5f2cf18d718bd5468675d24e129cb79589e33d65d1c24fa6a870112ad05c12a8
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -19,15 +19,15 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
   web lib/canonical/parity-fixture.json             → iOS ProjectPlannerTests/CanonicalParityFixture.json
   web lib/canonical/cross-platform-contract.json    → iOS ProjectPlannerTests/CrossPlatformContract.json
   web lib/canonical/data-parity-fixture.json        → iOS ProjectPlannerTests/DataParityFixture.json
-Contract sha256: b89ca87595a18b7f0230fa13dcc81d65dcaea44e65912d499a31ce5df7670dd4
+Contract sha256: 5a8a7e4e6f56b91cb18f71e79207782b8840fccf0b63b695826c47e18e59a32e
 Data-parity fixture sha256: c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: clashDocumentsToRemove
-Exports removed: clashApprovalDocumentIds
-Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/scheduleSources.ts, lib/canonical/timesheetTotals.ts, lib/canonical/weeklyReportPay.ts
+Exports added: VARIATION_COST_MAX, VARIATION_COST_MESSAGE, VARIATION_EVIDENCE_MAX_FILES, VARIATION_EXPORT_COST_KEYS, VARIATION_EXPORT_LINE_COLUMNS, VARIATION_EXPORT_SUMMARY_COLUMNS, VARIATION_LINE_NAME_MESSAGE, VARIATION_MATERIAL_UNITS, VARIATION_ORDER_LOCKED_MESSAGE, VARIATION_PINNED_MESSAGE, VARIATION_QUANTITY_MAX, VARIATION_QUANTITY_MESSAGE, VARIATION_QUANTITY_MIN, VARIATION_RENUMBER_STALE_MESSAGE, VARIATION_STATUS_LABELS, VARIATION_TRACKER_ORDER_LOCK_FIELDS, canRenumberVariations, canSeeVariationCosts, normalizeVariationMaterialUnit, parseVariationCustomLines, parseVariationMaterialQuantity, parseVariationSubcontractorLines, variationCustomLineError, variationCustomLineFields, variationDateText, variationEvidenceAddWriteFields, variationEvidenceKeys, variationExportFileName, variationExportRows, variationExtraLineId, variationIsPinned, variationLabourCrew, variationLabourLineFields, variationLabourText, variationLineTotal, variationListTotals, variationMaterialLineFields, variationMaterialQuantity, variationMaterialQuantityError, variationMaterialQuantityText, variationPreviousNumbers, variationRenumberConflict, variationRenumberMissingRefusal, variationRenumberPlan, variationSubcontractorLineError, variationSubcontractorLineFields, variationTotals
+Exports removed: none
+Web files that changed the rules: docs/RULEBOOK.md, firestore.rules, lib/canonical/bundleEntry.ts, lib/canonical/cross-platform-contract.json, lib/canonical/crossPlatformContract.samples.ts, lib/canonical/index.ts, lib/canonical/recordsDocuments.ts, lib/canonical/variations.test.ts, lib/canonical/variations.ts, storage.rules
 Done when:
-- [ ] Packed hash in iOS equals 3f26c638f6a202058ae59924c4de4b9d3b082a20d6d88df1f863c68eb5ec8a0b
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 972f3985fb399062d471b995de2d5ad72a357c872116296c6d54199c179e4bf3)
+- [ ] Packed hash in iOS equals 886912f48ae0df430399846731fb62d1262d120cda6804b4408a1c65984038b2
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 5f2cf18d718bd5468675d24e129cb79589e33d65d1c24fa6a870112ad05c12a8)
 - [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.53.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
@@ -44,7 +44,7 @@ Done when:
 
 **Sync first.** 1.53.0 (calculation sweep, 15 Nov; owner test 17 Nov): fixes from the read-only sweeps of both apps. iOS calls the rules below through `CanonicalBusinessEngine` and deletes its own copies.
 - **Not changed:** no Firestore rules, index, Storage or Functions change; nothing migrated; `minimumIosBuild` not needed (the weekly report is built on the device; old clash keys are still read).
-- **Base:** web `origin/main` 1.51.0 + this PR (1.52 variations is a separate PR; its hand-off covers iOS variation maths: `VariationEditorSheet.swift:100,126,230`, `VariationModels.swift:144`, `VariationsListView.swift:171`). Line numbers below are from iOS `origin/main` at `1571142` (15 Nov); check them on your branch.
+- **Base:** web `origin/main` 1.52.0 (#330, variations, merged) + this PR. **Do the 1.52.0 hand-off first** (`docs/ios-handoff/v1.52.0.md`); this file covers 1.52 → 1.53 only. The 1.52 hand-off covers iOS variation maths: `VariationEditorSheet.swift:100,126,230`, `VariationModels.swift:144`, `VariationsListView.swift:171`). Line numbers below are from iOS `origin/main` at `1571142` (15 Nov); check them on your branch.
 - **Owner confirmed 15 Nov:** A9 (weekly report note "Days are rounded; Pay is worked out from the exact hours.") and A10 (Daily Overview still counts Office / WFH / Site survey / custom bookings when that option is switched off).
 - **Figures that change** (web, and iOS once it follows): A1 weekly report — a priced signed line on a day the person is PAYE now is paid (owner example £500.00 → £632.35; a £0 line with no PAYE flag stays out); B8 weekly report — a manager site booking whose job was deleted is paid, "Deleted job"; B11 timesheet — a manager site booking whose `userId` differs only in letter case is on the live timesheet (live pay and the unsigned invoice rise); B12 owner's invoice — `decided` once the line manager signed; B14 Project Breakdown per person; A2 / B15 declined labour lines count no hours (per booking, never below 0); weekly report Role words.
 
@@ -85,6 +85,10 @@ Done when:
 8. **Dead fallback.** Remove `Core/Rulebook+WeekdayPaidDay.swift:46-53`'s stale `?? policy.standardPaidHours` fallback (fail visibly when the script does not answer) and its tests.
 9. **Tests** (`ProjectPlannerTests`, through the engine): A1 (£632.35 run with a later PAYE switch), A4 (old-order key still approves), A6 (`homeUpNextRows` ids and today), A7 (bank holiday inside leave), an overnight booking clashing the next morning in Book labour.
 
+## New rulebook sections
+
+- 22. Variations: numbers, line items, totals, export and the tracker (1.22.0, 1.52.0)
+- 1.52.0 — 2026-11-15
 
 ## Workflow for the iOS agent
 

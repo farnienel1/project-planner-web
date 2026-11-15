@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { nextFreeVoNumber, orderForTrackerEnable, previewRenumber, voNumberTaken } from './variationNumbering.ts'
+import { nextFreeVoNumber, orderForTrackerEnable, voNumberTaken } from './variationNumbering.ts'
+import { variationRenumberPlan } from '../canonical/variations.ts'
 
 test('next free number skips gaps and retired numbers', () => {
   assert.equal(nextFreeVoNumber([{ voNumber: 'VO-001' }, { voNumber: 'VO-004' }, { voNumber: 'VO-002' }]), 'VO-005')
@@ -24,34 +25,21 @@ test('turning the tracker on orders by number and does not invent a new sequence
   )
 })
 
-test('lock submitted keeps client numbers and slides open numbers around them', () => {
-  const preview = previewRenumber(
-    [
+test('the tracker preview is the rulebook plan: pinned numbers stay, open numbers slide around them', () => {
+  const plan = variationRenumberPlan({
+    rows: [
       { id: 'c', status: 'open', voNumber: 'VO-003' },
       { id: 'b', status: 'submitted', voNumber: 'VO-002' },
       { id: 'a', status: 'open', voNumber: 'VO-001' },
     ],
-    'lockSubmitted'
-  )
+    order: ['c', 'b', 'a'],
+  })
   assert.deepEqual(
-    preview.map((row) => [row.id, row.to, row.changed]),
+    plan.rows.map((row) => [row.id, row.to, row.changed]),
     [
       ['c', 'VO-001', true],
       ['b', 'VO-002', false],
       ['a', 'VO-003', true],
     ]
   )
-})
-
-test('renumber everything warns by changing submitted numbers', () => {
-  const preview = previewRenumber(
-    [
-      { id: 'b', status: 'submitted', voNumber: 'VO-009' },
-      { id: 'a', status: 'open', voNumber: 'VO-001' },
-    ],
-    'resequenceAll'
-  )
-  assert.equal(preview[0].to, 'VO-001')
-  assert.equal(preview[0].changed, true)
-  assert.equal(preview[1].to, 'VO-002')
 })

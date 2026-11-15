@@ -6,6 +6,7 @@ import {
   collection,
   doc,
   getDoc,
+  getDocFromServer,
   getDocs,
   onSnapshot,
   query,
@@ -19,11 +20,12 @@ import {
 import { deleteObject, ref } from 'firebase/storage'
 import { retainLoadedRows } from '@/lib/staff/rosterRetain'
 import { db, storage } from '@/lib/firebase/config'
-import { newUuid, parseFirestoreDate, sanitizeForFirestore } from '@/lib/firebase/firestoreUtils'
+import { newUuid, sanitizeForFirestore } from '@/lib/firebase/firestoreUtils'
+import { variationEditWriteFields, variationFromFirestore, variationLogEntry, variationToFirestore } from '@/lib/variations/variationCodec'
 import { saveInboxNotification } from '@/lib/firebase/notifyInbox'
 import {
   excludeActor,
-  parseVariationDocument,
+  parseVariationTrackerDocument,
   receivesJobNotification,
   parseVariationTrades,
   VARIATION_TRADES_DOCUMENT_ID,
@@ -33,6 +35,17 @@ import {
   variationTradesWriteFields,
   variationWriteFields,
   variationEvidenceRemovalWriteFields,
+  variationCustomLineFields,
+  variationLineId,
+  variationEvidenceAddWriteFields,
+  variationEvidenceKeys,
+  variationLabourLineFields,
+  variationMaterialLineFields,
+  variationRenumberConflict,
+  variationRenumberMissingRefusal,
+  variationRenumberPlan,
+  variationSubcontractorLineFields,
+  VARIATION_RENUMBER_STALE_MESSAGE,
   writeMetadataFields,
 } from '@/lib/canonical'
 import { firestoreUpdateFields, savePartialDocument } from '@/lib/firebase/partialWrite'
@@ -41,12 +54,13 @@ import { staffAccountRole } from '@/lib/permissions'
 import type { User } from '@/types'
 import {
   TRACKER_ADDED_DESCRIPTION,
-  TRACKER_LOCK_MS,
   variationCounters,
   type Variation,
   type VariationEvidence,
   type VariationLabourLine,
   type VariationMaterialLine,
+  type VariationCustomLine,
+  type VariationSubcontractorLine,
   type VariationOrigin,
   type VariationParentType,
   type VariationStatus,
@@ -60,115 +74,7 @@ import {
   variationsLogDocId,
 } from '@/lib/variations/variationFallback'
 
-/**
- * A variation through the rulebook reader `parseVariationDocument` (rulebook 1.8.0): lines with any content are kept,
- * a line stored without an id gets the same `variationLineId` on every read and platform, counters are recomputed.
- */
-export function variationFromFirestore(id: string, data: Record<string, unknown>): Variation {
-  const parsed = parseVariationDocument(id, data) ?? parseVariationDocument(newUuid(), data)!
-  const when = (ms: number | null | undefined) => (ms != null ? new Date(ms) : null)
-  return {
-    id: parsed.id,
-    orgId: parsed.orgId,
-    parentType: parsed.parentType,
-    parentId: parsed.parentId,
-    parentName: parsed.parentName,
-    origin: parsed.origin,
-    voNumber: parsed.voNumber,
-    sequence: parsed.sequence,
-    voNumberLocked: parsed.voNumberLocked,
-    numberHistory: parsed.numberHistory.map((item) => ({ from: item.from, to: item.to, at: when(item.atMs) || new Date(), byUid: item.byUid })),
-    heading: parsed.heading,
-    description: parsed.description,
-    status: parsed.status,
-    labour: parsed.labour.map((line) => ({ id: line.id, trade: line.trade, hours: line.hours })),
-    materials: parsed.materials.map((line) => ({ id: line.id, name: line.name, quantity: line.quantity })),
-    evidence: parsed.evidence.map(
-      (item): VariationEvidence => ({
-        id: item.id,
-        fileName: item.fileName,
-        contentType: item.contentType,
-        sizeBytes: item.sizeBytes,
-        storagePath: item.storagePath,
-        downloadURL: item.downloadURL,
-        uploadedByUid: item.uploadedByUid,
-        uploadedAt: when(item.uploadedAtMs) || new Date(),
-      })
-    ),
-    totalLabourHours: parsed.totalLabourHours,
-    materialLineCount: parsed.materialLineCount,
-    evidenceCount: parsed.evidenceCount,
-    createdByUid: parsed.createdByUid,
-    createdByName: parsed.createdByName,
-    createdAt: when(parsed.createdAtMs) || new Date(),
-    updatedByUid: parsed.updatedByUid,
-    updatedAt: when(parsed.updatedAtMs) || new Date(),
-    statusHistory: parsed.statusHistory.map((item) => ({ status: item.status, byUid: item.byUid, byName: item.byName, at: when(item.atMs) || new Date() })),
-    submittedAt: when(parsed.submittedAtMs),
-    closedAt: when(parsed.closedAtMs),
-    isDeleted: parsed.isDeleted,
-    removedEvidence: parsed.removedEvidence.map((item) => ({
-      path: item.path,
-      name: item.name,
-      removedBy: item.removedBy,
-      removedAt: when(item.removedAtMs),
-    })),
-  }
-}
-
-function stamp(value: unknown): Date | null {
-  return parseFirestoreDate(value) || null
-}
-
-function toTimestamp(date: Date | null | undefined): Timestamp | null {
-  return date ? Timestamp.fromDate(date) : null
-}
-
-export function variationToFirestore(row: Variation): Record<string, unknown> {
-  return sanitizeForFirestore({
-    id: row.id,
-    orgId: row.orgId,
-    parentType: row.parentType,
-    parentId: row.parentId,
-    parentName: row.parentName,
-    origin: row.origin,
-    voNumber: row.voNumber,
-    sequence: row.sequence,
-    voNumberLocked: row.voNumberLocked,
-    numberHistory: row.numberHistory.map((item) => ({
-      from: item.from,
-      to: item.to,
-      at: Timestamp.fromDate(item.at),
-      byUid: item.byUid,
-    })),
-    heading: row.heading,
-    description: row.description,
-    status: row.status,
-    labour: row.labour,
-    materials: row.materials,
-    evidence: row.evidence.map((item) => ({
-      ...item,
-      uploadedAt: Timestamp.fromDate(item.uploadedAt),
-    })),
-    totalLabourHours: row.totalLabourHours,
-    materialLineCount: row.materialLineCount,
-    evidenceCount: row.evidenceCount,
-    createdByUid: row.createdByUid,
-    createdByName: row.createdByName,
-    createdAt: Timestamp.fromDate(row.createdAt),
-    updatedByUid: row.updatedByUid,
-    updatedAt: Timestamp.fromDate(row.updatedAt),
-    statusHistory: row.statusHistory.map((item) => ({
-      status: item.status,
-      byUid: item.byUid,
-      byName: item.byName,
-      at: Timestamp.fromDate(item.at),
-    })),
-    submittedAt: toTimestamp(row.submittedAt),
-    closedAt: toTimestamp(row.closedAt),
-    isDeleted: row.isDeleted,
-  }) as Record<string, unknown>
-}
+export { variationFromFirestore, variationToFirestore } from '@/lib/variations/variationCodec'
 
 function variationsCollection(organizationId: string) {
   if (!db) throw new Error('Firestore is not configured.')
@@ -251,40 +157,59 @@ async function saveVariationSettingsLog(
   else await setDoc(ref, fields, { merge: true })
 }
 
+/** Thrown when the variation itself saved but one of its copies did not (rulebook 1.52.0: never silent). */
+export type VariationSaveOutcome = {
+  /** The copies that did not save: 'item' (`settings/variationItem_{id}`) and / or 'log' (`settings/variations_{jobId}`). */
+  copiesFailed: Array<'item' | 'log'>
+}
+
 /**
- * iOS writes the settings log and item doc first. The collection write is best-effort. Rulebook 1.8.0 §1: an edit of
- * an existing variation is a partial update of the changed fields (`variationWriteFields`) on the item document and
- * the collection document; the settings log entry is laid over its stored entry so fields another app wrote stay.
+ * Rulebook 1.52.0: the variation document (`variations/{id}`) is written first — it is the copy the security rules
+ * judge (a refused write leaves no copy behind) — then its two copies older iOS builds read
+ * (`settings/variationItem_{id}`, the settings log entry) in parallel. An edit is a partial update of the changed
+ * fields (`variationWriteFields`); the log entry is laid over its stored entry (`variationLogWriteFields`). A failed
+ * copy is logged and returned, never swallowed; a failed variation write throws.
  */
 async function persistVariationDocument(
   organizationId: string,
   variation: Variation,
-  mode: 'create' | 'update' = 'update'
-): Promise<void> {
+  mode: 'create' | 'update' = 'update',
+  base?: Variation | null
+): Promise<VariationSaveOutcome> {
   const map = variationToFirestore(variation)
-  const itemPayload = {
-    ...map,
-    recordType: 'variationItem',
-    parentId: variation.parentId,
-    parentType: variation.parentType,
-    organizationId,
-  }
+  const extras = { recordType: 'variationItem', parentId: variation.parentId, parentType: variation.parentType, organizationId }
+  const itemPayload = { ...map, ...extras }
   const itemRef = settingsDoc(organizationId, variationItemDocId(variation.id))
   const collectionRef = variationRef(organizationId, variation.id)
   const userId = variation.updatedByUid || undefined
-  const results = await Promise.allSettled([
-    saveVariationSettingsLog(organizationId, variation, map),
+  // Review of #330, HIGH 2: an edit is diffed against the copy the editor opened (`base`, serialised the same way),
+  // so a field changed elsewhere since (a tracker renumber, a status, evidence linked in the background) is not
+  // written back from the editor's stale copy.
+  const baseMap = base ? variationToFirestore(base) : null
+  if (mode === 'create') await setDoc(collectionRef, map, { merge: true })
+  else await savePartialDocument(collectionRef, map, variationWriteFields, { userId, base: baseMap })
+  const [item, log] = await Promise.allSettled([
     mode === 'create'
       ? setDoc(itemRef, itemPayload, { merge: true })
-      : savePartialDocument(itemRef, itemPayload, variationWriteFields, { userId }),
-    mode === 'create'
-      ? setDoc(collectionRef, map, { merge: true })
-      : savePartialDocument(collectionRef, map, variationWriteFields, { userId }),
+      : savePartialDocument(itemRef, itemPayload, variationWriteFields, { userId, base: baseMap ? { ...baseMap, ...extras } : null }),
+    saveVariationSettingsLog(organizationId, variation, mode === 'create' ? map : variationLogEntry(base, variation)),
   ])
-  if (results.every((result) => result.status === 'rejected')) {
-    const first = results[0].status === 'rejected' ? results[0].reason : null
-    throw first instanceof Error ? first : new Error('Could not save this variation.')
+  const copiesFailed: Array<'item' | 'log'> = []
+  if (item.status === 'rejected') {
+    copiesFailed.push('item')
+    console.error('[variations] the settings copy of the variation did not save', item.reason)
   }
+  if (log.status === 'rejected') {
+    copiesFailed.push('log')
+    console.error('[variations] the settings log entry of the variation did not save', log.reason)
+  }
+  return { copiesFailed }
+}
+
+/** The toast line for copies that did not save, or null. */
+export function variationCopyWarning(outcome: VariationSaveOutcome | null | undefined): string | null {
+  if (!outcome || outcome.copiesFailed.length === 0) return null
+  return 'Saved, but the copy older iPhone builds read did not update. Open the variation and save it again.'
 }
 
 export function emptyTracker(parentId: string, parentType: VariationParentType): VariationTracker {
@@ -299,21 +224,28 @@ export function emptyTracker(parentId: string, parentType: VariationParentType):
   }
 }
 
+/** `variationTrackers/{parentId}` through the rulebook reader `parseVariationTrackerDocument` (1.52.0: the order lock). */
 export function trackerFromFirestore(parentId: string, data: Record<string, unknown> | undefined): VariationTracker {
   if (!data) return emptyTracker(parentId, 'project')
+  const row = parseVariationTrackerDocument(parentId, data)
+  const when = (ms: number | null) => (ms != null ? new Date(ms) : null)
   return {
     parentId,
-    parentType: data.parentType === 'smallWork' ? 'smallWork' : 'project',
-    enabled: data.enabled === true,
-    enabledAt: stamp(data.enabledAt),
-    enabledByUid: typeof data.enabledByUid === 'string' ? data.enabledByUid : null,
-    numberingMode: data.numberingMode === 'resequenceAll' ? 'resequenceAll' : 'lockSubmitted',
-    prefix: typeof data.prefix === 'string' && data.prefix ? data.prefix : 'VO-',
-    padding: typeof data.padding === 'number' ? data.padding : 3,
-    version: typeof data.version === 'number' ? data.version : 0,
-    lockedByUid: typeof data.lockedByUid === 'string' ? data.lockedByUid : null,
-    lockedByName: typeof data.lockedByName === 'string' ? data.lockedByName : null,
-    lockedAt: stamp(data.lockedAt),
+    parentType: row.parentType,
+    enabled: row.enabled,
+    enabledAt: when(row.enabledAtMs),
+    enabledByUid: row.enabledByUid,
+    numberingMode: row.numberingMode,
+    prefix: row.prefix,
+    padding: row.padding,
+    version: row.version,
+    lockedByUid: row.lockedByUid,
+    lockedByName: row.lockedByName,
+    lockedAt: when(row.lockedAtMs),
+    orderLocked: row.orderLocked,
+    orderLockedByUid: row.orderLockedByUid,
+    orderLockedByName: row.orderLockedByName,
+    orderLockedAt: when(row.orderLockedAtMs),
   }
 }
 
@@ -552,15 +484,16 @@ export async function createVariation(input: {
   status?: VariationStatus
   labour: VariationLabourLine[]
   materials: VariationMaterialLine[]
+  customLines?: VariationCustomLine[]
+  subcontractorLines?: VariationSubcontractorLine[]
   evidence: VariationEvidence[]
   actor: { uid: string; name: string }
   users?: User[]
   managerIds?: string[]
   existingRows?: Variation[]
   tracker?: VariationTracker
-}): Promise<Variation> {
+}): Promise<Variation & { saveOutcome: VariationSaveOutcome }> {
   const allRows = input.existingRows ?? (await listParentVariations(input.organizationId, input.parentId))
-  const existing = allRows.filter((row) => !row.isDeleted)
   const tracker = input.tracker ?? (await loadVariationTracker(input.organizationId, input.parentId))
   const voNumber =
     input.origin === 'tracker' || tracker.enabled
@@ -579,7 +512,8 @@ export async function createVariation(input: {
     parentName: input.parentName,
     origin: input.origin,
     voNumber,
-    sequence: existing.length + 1,
+    // Rulebook 1.52.0: one past the highest position on the job (deleted included), never the live count + 1.
+    sequence: allRows.reduce((highest, row) => Math.max(highest, Number.isFinite(row.sequence) ? row.sequence : 0), 0) + 1,
     voNumberLocked: false,
     numberHistory: [],
     heading: input.heading.trim(),
@@ -598,8 +532,10 @@ export async function createVariation(input: {
     updatedAt: now,
     statusHistory: [{ status: input.status || 'open', byUid: input.actor.uid, byName: input.actor.name, at: now }],
     isDeleted: false,
+    customLines: input.customLines || [],
+    subcontractorLines: input.subcontractorLines || [],
   })
-  await persistVariationDocument(input.organizationId, draft, 'create')
+  const outcome = await persistVariationDocument(input.organizationId, draft, 'create')
   if (input.users) {
     void notifyCreated({
       organizationId: input.organizationId,
@@ -609,16 +545,101 @@ export async function createVariation(input: {
       managerIds: input.managerIds || [],
     }).catch(() => {})
   }
-  return draft
+  return { ...draft, saveOutcome: outcome }
 }
 
+/**
+ * Save an edit. `base` is the copy the editor opened (review of #330, HIGH 2): only the fields that differ from it
+ * are written (`variationEditWriteFields`). Every caller passes it; without it the stored copy is the base.
+ */
 export async function updateVariation(input: {
   organizationId: string
   variation: Variation
   actorUid: string
-}): Promise<void> {
+  base: Variation | null
+}): Promise<VariationSaveOutcome> {
   const next = withCounters({ ...input.variation, updatedByUid: input.actorUid, updatedAt: new Date() })
-  await persistVariationDocument(input.organizationId, next)
+  return persistVariationDocument(input.organizationId, next, 'update', input.base ? withCounters(input.base) : null)
+}
+
+/**
+ * Rulebook 1.52.0 (`variationEvidenceAddWriteFields`): links uploaded files to the variation in one transaction on
+ * `variations/{id}` built from the stored document (a file someone else added meanwhile is kept; at most 10), then the
+ * same on its `settings/variationItem_{id}` copy and the settings log. Tried twice. Review of #330, HIGH 1: a file
+ * already on the stored list counts as linked (a first attempt can commit while the client sees an error), so the
+ * caller deletes only `notLinked` — files refused for the 10-file limit, or (when both attempts throw) files a fresh
+ * read shows are not on the variation.
+ */
+export async function addVariationEvidence(input: {
+  organizationId: string
+  variation: Variation
+  entries: VariationEvidence[]
+  actorUid: string
+}): Promise<{ linked: string[]; notLinked: string[]; copiesFailed: Array<'item' | 'log'>; error: unknown | null }> {
+  if (!db) throw new Error('Firestore not configured')
+  const collectionRef = variationRef(input.organizationId, input.variation.id)
+  const itemRef = settingsDoc(input.organizationId, variationItemDocId(input.variation.id))
+  const now = Timestamp.now()
+  const entries = input.entries.map((item) => sanitizeForFirestore({ ...item, uploadedAt: Timestamp.fromDate(item.uploadedAt) }) as Record<string, unknown>)
+  const keys = entries.map((entry) => String(entry.storagePath || entry.id))
+  const stamp = { updatedByUid: input.actorUid, updatedAt: now, ...(writeMetadataFields(input.actorUid, 'web') ?? {}) }
+  const attempt = () =>
+    runTransaction(db!, async (transaction) => {
+      const snap = await transaction.get(collectionRef)
+      if (!snap.exists()) throw new Error('This variation was removed on another device.')
+      const write = variationEvidenceAddWriteFields(snap.data() as Record<string, unknown>, entries)
+      if (write.set) transaction.update(collectionRef, { ...write.set, ...stamp })
+      return { write, stored: snap.data() as Record<string, unknown> }
+    })
+  let result: Awaited<ReturnType<typeof attempt>> | null = null
+  let failure: unknown = null
+  try {
+    result = await attempt()
+  } catch (first) {
+    console.warn('[variations] linking evidence failed, trying once more', first)
+    try {
+      result = await attempt()
+    } catch (second) {
+      failure = second
+    }
+  }
+  if (!result) {
+    // Both attempts threw. A fresh read decides which files are on the variation; only the others may be deleted.
+    console.error('[variations] evidence could not be linked', failure)
+    try {
+      // From the server, never the offline cache: a cached copy could miss a link that committed.
+      const fresh = await getDocFromServer(collectionRef)
+      const onVariation = new Set(fresh.exists() ? variationEvidenceKeys(fresh.data() as Record<string, unknown>) : [])
+      return { linked: keys.filter((key) => onVariation.has(key)), notLinked: keys.filter((key) => !onVariation.has(key)), copiesFailed: [], error: failure }
+    } catch (readError) {
+      // Nothing can be proven unlinked: keep every file (an admin can remove an orphan; §24 recovery).
+      console.error('[variations] the variation could not be read after the failed link; the files are kept', readError)
+      return { linked: [], notLinked: [], copiesFailed: [], error: failure }
+    }
+  }
+  const linked = [...result.write.added, ...result.write.alreadyLinked]
+  const copiesFailed: Array<'item' | 'log'> = []
+  if (result.write.set) {
+    try {
+      await runTransaction(db!, async (transaction) => {
+        const snap = await transaction.get(itemRef)
+        if (!snap.exists()) return
+        const write = variationEvidenceAddWriteFields(snap.data() as Record<string, unknown>, entries)
+        if (write.set) transaction.update(itemRef, { ...write.set, ...stamp })
+      })
+    } catch (error) {
+      copiesFailed.push('item')
+      console.error('[variations] evidence did not reach the settings copy', error)
+    }
+    try {
+      const next = variationFromFirestore(input.variation.id, { ...result.stored, ...result.write.set })
+      await saveVariationSettingsLog(input.organizationId, next, { id: next.id, evidence: result.write.set.evidence, evidenceCount: result.write.set.evidenceCount })
+    } catch (error) {
+      copiesFailed.push('log')
+      console.error('[variations] evidence did not reach the settings log', error)
+    }
+  }
+  return { linked, notLinked: result.write.refused, copiesFailed, error: null }
 }
 
 /**
@@ -699,15 +720,16 @@ export async function setVariationStatus(input: {
     updatedByUid: input.actor.uid,
     updatedAt: now,
   })
-  await updateVariation({ organizationId: input.organizationId, variation: next, actorUid: input.actor.uid })
+  await updateVariation({ organizationId: input.organizationId, variation: next, actorUid: input.actor.uid, base: input.variation })
   return next
 }
 
-export async function softDeleteVariation(organizationId: string, variation: Variation, actorUid: string): Promise<void> {
-  await updateVariation({
+export async function softDeleteVariation(organizationId: string, variation: Variation, actorUid: string): Promise<VariationSaveOutcome> {
+  return updateVariation({
     organizationId,
     variation: { ...variation, isDeleted: true },
     actorUid,
+    base: variation,
   })
 }
 
@@ -732,79 +754,68 @@ export async function saveCustomTrade(organizationId: string, trade: string): Pr
   return write.set.customTrades
 }
 
-export function trackerLockActive(tracker: VariationTracker, now = new Date()): boolean {
-  if (!tracker.lockedByUid || !tracker.lockedAt) return false
-  return now.getTime() - tracker.lockedAt.getTime() < TRACKER_LOCK_MS
-}
-
-export async function claimTrackerLock(input: {
+/**
+ * The tracker's stored order lock (rulebook 1.52.0, `variationTrackerWriteFields` `lockOrder` / `unlockOrder`): while
+ * `orderLocked` is set nobody moves or renumbers a variation of the job (`applyVariationOrder` and the security rules
+ * refuse it). Admins and the job's managers set it. The older 5-minute editing lock (`lockedByUid` / `lockedAt`) is
+ * retired on web: a save is a transaction that refuses when the variations changed (`variationRenumberConflict`), and
+ * `renumbered` still clears any old lock fields.
+ */
+export async function setTrackerOrderLock(input: {
   organizationId: string
   parentId: string
   parentType: VariationParentType
+  locked: boolean
   actor: { uid: string; name: string }
-}): Promise<VariationTracker> {
+}): Promise<void> {
   const ref = trackerRef(input.organizationId, input.parentId)
-  return runTransaction(db!, async (transaction) => {
-    const snap = await transaction.get(ref)
-    const current = trackerFromFirestore(input.parentId, snap.exists() ? (snap.data() as Record<string, unknown>) : undefined)
-    const now = new Date()
-    if (trackerLockActive(current, now) && current.lockedByUid !== input.actor.uid) {
-      throw new Error(`${current.lockedByName || 'Someone else'} is editing the tracker.`)
-    }
-    const next: VariationTracker = {
-      ...current,
-      parentType: input.parentType,
-      lockedByUid: input.actor.uid,
-      lockedByName: input.actor.name,
-      lockedAt: now,
-    }
-    // Rulebook 1.9.0 `variationTrackerWriteFields` (lock): the three lock fields only, never the whole tracker.
-    const stored = snap.exists() ? (snap.data() as Record<string, unknown>) : null
-    const write = variationTrackerWriteFields(stored, {
-      kind: 'lock',
-      parentId: input.parentId,
-      parentType: input.parentType,
-      actorUid: input.actor.uid,
-      actorName: input.actor.name,
-      at: Timestamp.fromDate(now),
-    })
-    if (write) {
-      if (stored) transaction.update(ref, firestoreUpdateFields(write))
-      else transaction.set(ref, write.set, { merge: true })
-    }
-    return next
-  })
-}
-
-export async function releaseTrackerLock(organizationId: string, parentId: string, uid: string): Promise<void> {
-  const ref = trackerRef(organizationId, parentId)
   const snap = await getDoc(ref)
-  if (!snap.exists()) return
-  const current = trackerFromFirestore(parentId, snap.data() as Record<string, unknown>)
-  if (current.lockedByUid !== uid) return
-  const write = variationTrackerWriteFields(snap.data() as Record<string, unknown>, { kind: 'unlock' })
-  if (write) await updateDoc(ref, firestoreUpdateFields(write))
+  const stored = snap.exists() ? (snap.data() as Record<string, unknown>) : null
+  const write = variationTrackerWriteFields(
+    stored,
+    input.locked
+      ? { kind: 'lockOrder', parentId: input.parentId, parentType: input.parentType, actorUid: input.actor.uid, actorName: input.actor.name, at: Timestamp.now() }
+      : { kind: 'unlockOrder' }
+  )
+  if (!write) return
+  if (stored) await updateDoc(ref, firestoreUpdateFields(write))
+  else await setDoc(ref, write.set, { merge: true })
 }
 
-/** One-time. Writes sequence only. Does not change any VO number. */
+/**
+ * One-time. Writes sequence only. Does not change any VO number. Review of #330: turning the tracker off keeps a stored
+ * order lock (`orderLocked`); while it is set the sequence writes would be refused, so turning the tracker on is
+ * refused first with "Order is locked by X" — the Lock order switch unlocks it (it stays usable while the tracker is
+ * off and locked).
+ */
 export async function enableTracker(input: {
   organizationId: string
   parentId: string
   parentType: VariationParentType
   actorUid: string
 }): Promise<void> {
+  const current = await getDoc(trackerRef(input.organizationId, input.parentId))
+  const lock = trackerFromFirestore(input.parentId, current.exists() ? (current.data() as Record<string, unknown>) : undefined)
+  if (lock.orderLocked) {
+    throw new Error(`Order is locked by ${lock.orderLockedByName || 'someone'}. Unlock it (Lock order) before turning the tracker on.`)
+  }
   const rows = (await listParentVariations(input.organizationId, input.parentId)).filter((row) => !row.isDeleted)
   const ordered = orderForTrackerEnable(rows)
   const now = new Date()
   for (const [index, row] of ordered.entries()) {
     const locked = row.status === 'submitted' || row.status === 'closed'
-    await persistVariationDocument(input.organizationId, {
-      ...row,
-      sequence: index + 1,
-      voNumberLocked: locked || row.voNumberLocked,
-      updatedAt: now,
-      updatedByUid: input.actorUid,
-    })
+    await persistVariationDocument(
+      input.organizationId,
+      {
+        ...row,
+        sequence: index + 1,
+        voNumberLocked: locked || row.voNumberLocked,
+        updatedAt: now,
+        updatedByUid: input.actorUid,
+      },
+      'update',
+      row
+    )
   }
   // Rulebook 1.9.0 `variationTrackerWriteFields` (enable): an existing tracker keeps its mode, prefix, padding and
   // version; a new one is created with the defaults.
@@ -847,69 +858,134 @@ export async function disableTracker(organizationId: string, parentId: string): 
   if (write) await updateDoc(ref, firestoreUpdateFields(write))
 }
 
-export class TrackerVersionError extends Error {
+export class VariationsChangedError extends Error {
   constructor() {
-    super('Someone else renumbered this tracker. Reload the list and apply again.')
-    this.name = 'TrackerVersionError'
+    super(VARIATION_RENUMBER_STALE_MESSAGE)
+    this.name = 'VariationsChangedError'
   }
 }
 
-/** One batch. All numbers change together, or none do. */
-export async function applyNumbering(input: {
+function renumberRow(row: Variation) {
+  return {
+    id: row.id,
+    voNumber: row.voNumber,
+    status: row.status,
+    isDeleted: row.isDeleted,
+    voNumberLocked: row.voNumberLocked,
+    sequence: row.sequence,
+    numberHistory: row.numberHistory,
+  }
+}
+
+/**
+ * Rulebook 1.52.0 (`variationRenumberPlan`, `variationRenumberConflict`, `variationRenumberWriteFields`): saves a new
+ * tracker order. In one transaction it reads the tracker and every variation of the job as STORED, refuses with
+ * `VariationsChangedError` when they changed since the screen loaded them (`baseRows`), works out the numbers from the
+ * stored copies (pinned Submitted / Closed keep theirs; a number ever issued is never reused) and writes only each
+ * row's `sequence` and, when its number changes, `voNumber` with one appended `numberHistory` entry; the tracker
+ * version goes up. Then the `settings/variationItem_{id}` copies and the settings log get the same numbers; a copy
+ * that fails is returned, never swallowed. Returns the plan rows that changed.
+ */
+export async function applyVariationOrder(input: {
   organizationId: string
   parentId: string
-  expectedVersion: number
+  order: string[]
+  baseRows: Variation[]
+  tracker: VariationTracker
   actor: { uid: string; name: string }
-  changes: Array<{ id: string; to: string; sequence: number }>
-  rows: Variation[]
   notifyUserIds?: string[]
-}): Promise<void> {
-  const ref = trackerRef(input.organizationId, input.parentId)
-  await runTransaction(db!, async (transaction) => {
-    const snap = await transaction.get(ref)
-    const tracker = trackerFromFirestore(input.parentId, snap.exists() ? (snap.data() as Record<string, unknown>) : undefined)
-    if (tracker.version !== input.expectedVersion) throw new TrackerVersionError()
-    const now = new Date()
-    for (const change of input.changes) {
-      const row = input.rows.find((item) => item.id === change.id)
-      if (!row) continue
-      // Rulebook 1.8.0 `variationRenumberWriteFields`: only the sequence and, when the number changes, the number
-      // with one appended history entry. The tracker applies the new numbers whatever the lock (`resequenceAll`).
-      const write = variationRenumberWriteFields({
-        stored: variationToFirestore(row),
-        to: change.to,
-        sequence: change.sequence,
-        at: Timestamp.fromDate(now),
-        byUid: input.actor.uid,
-        numberingMode: 'resequenceAll',
-      })
+}): Promise<{ changed: Array<{ id: string; from: string; to: string }>; copiesFailed: string[] }> {
+  if (!db) throw new Error('Firestore not configured')
+  // A variation added since the screen loaded is not in `baseRows`: the job's ids are compared first.
+  const current = await readCollectionVariations(input.organizationId, input.parentId)
+  const baseIds = new Set(input.baseRows.filter((row) => row.id).map((row) => row.id.toLowerCase()))
+  if (current.some((row) => !baseIds.has(row.id.toLowerCase()))) throw new VariationsChangedError()
+  const trackerDoc = trackerRef(input.organizationId, input.parentId)
+  const now = Timestamp.now()
+  const stamp = { updatedAt: now, updatedByUid: input.actor.uid, ...(writeMetadataFields(input.actor.uid, 'web') ?? {}) }
+  const outcome = await runTransaction(db!, async (transaction) => {
+    const trackerSnap = await transaction.get(trackerDoc)
+    const snaps = await Promise.all(input.baseRows.map((row) => transaction.get(variationRef(input.organizationId, row.id))))
+    const stored = new Map<string, Record<string, unknown>>()
+    const live: Variation[] = input.baseRows.map((row, index) => {
+      const snap = snaps[index]
+      if (!snap.exists()) return row
+      const data = snap.data() as Record<string, unknown>
+      stored.set(row.id, data)
+      return variationFromFirestore(row.id, data)
+    })
+    if (variationRenumberConflict(input.baseRows.map(renumberRow), live.map(renumberRow))) throw new VariationsChangedError()
+    const trackerStored = trackerFromFirestore(input.parentId, trackerSnap.exists() ? (trackerSnap.data() as Record<string, unknown>) : undefined)
+    const plan = variationRenumberPlan({
+      rows: live.map(renumberRow),
+      order: input.order,
+      prefix: trackerStored.prefix,
+      padding: trackerStored.padding,
+      // Review of #330, MEDIUM 4: the stored order lock refuses every move (the rules refuse it too).
+      orderLocked: trackerStored.orderLocked,
+    })
+    // A pinned row never moves; a locked order never changes.
+    if (plan.refused) throw new Error(plan.refused)
+    // Review of #330, MEDIUM 5: a changed row with only its settings copies (older iPhone) refuses the whole save,
+    // so no duplicate number is left behind.
+    const missing = variationRenumberMissingRefusal(plan.changes, [...stored.keys()])
+    if (missing) throw new Error(missing)
+    const writes: Array<{ id: string; set: Record<string, unknown> }> = []
+    for (const change of plan.changes) {
+      const data = stored.get(change.id)
+      if (!data) continue
+      const write = variationRenumberWriteFields({ stored: data, to: change.to, sequence: change.sequence, at: now, byUid: input.actor.uid })
       if (!write) continue
-      transaction.update(variationRef(input.organizationId, row.id), {
-        ...write.set,
-        updatedAt: Timestamp.fromDate(now),
-        updatedByUid: input.actor.uid,
-      })
+      transaction.update(variationRef(input.organizationId, change.id), { ...write.set, ...stamp })
+      writes.push({ id: change.id, set: write.set })
     }
-    // Rulebook 1.9.0 `variationTrackerWriteFields` (renumbered): version + 1 and the lock removed.
-    const renumbered = snap.exists()
-      ? variationTrackerWriteFields(snap.data() as Record<string, unknown>, { kind: 'renumbered' })
+    const renumbered = trackerSnap.exists()
+      ? variationTrackerWriteFields(trackerSnap.data() as Record<string, unknown>, { kind: 'renumbered' })
       : null
-    if (renumbered) transaction.update(ref, firestoreUpdateFields(renumbered))
-    else transaction.set(ref, { version: tracker.version + 1 }, { merge: true })
+    if (renumbered) transaction.update(trackerDoc, firestoreUpdateFields(renumbered))
+    return { plan, writes, stored }
   })
-  const parentName = input.rows[0]?.parentName || 'this job'
+  const copiesFailed: string[] = []
   await Promise.all(
-    excludeActor(input.notifyUserIds || [], input.actor.uid).map((userId) =>
-      saveInboxNotification({
-        organizationId: input.organizationId,
-        type: 'variation_renumbered',
-        title: 'Variation numbers updated',
-        message: `Variation numbers updated on ${parentName} by ${input.actor.name}`,
-        userId,
-        relatedId: input.parentId,
-      })
-    )
-  ).catch(() => {})
+    outcome.writes.map(async (write) => {
+      const itemRef = settingsDoc(input.organizationId, variationItemDocId(write.id))
+      try {
+        const item = await getDoc(itemRef)
+        if (item.exists()) {
+          const itemWrite = variationRenumberWriteFields({ stored: item.data() as Record<string, unknown>, to: write.set.voNumber ?? (item.data() as Record<string, unknown>).voNumber, sequence: write.set.sequence ?? (item.data() as Record<string, unknown>).sequence, at: now, byUid: input.actor.uid })
+          if (itemWrite) await updateDoc(itemRef, { ...itemWrite.set, ...stamp })
+        }
+      } catch (error) {
+        copiesFailed.push(write.id)
+        console.error('[variations] a renumbered settings copy did not save', error)
+      }
+      try {
+        const next = variationFromFirestore(write.id, { ...(outcome.stored.get(write.id) || {}), ...write.set })
+        const parent = input.baseRows.find((row) => row.id === write.id)
+        await saveVariationSettingsLog(input.organizationId, { ...next, parentId: parent?.parentId || next.parentId, parentType: parent?.parentType || next.parentType }, variationToFirestore(next))
+      } catch (error) {
+        if (!copiesFailed.includes(write.id)) copiesFailed.push(write.id)
+        console.error('[variations] a renumbered settings log entry did not save', error)
+      }
+    })
+  )
+  const changed = outcome.plan.rows.filter((row) => row.changed).map((row) => ({ id: row.id, from: row.from, to: row.to }))
+  if (changed.length > 0) {
+    const parentName = input.baseRows[0]?.parentName || 'this job'
+    await Promise.all(
+      excludeActor(input.notifyUserIds || [], input.actor.uid).map((userId) =>
+        saveInboxNotification({
+          organizationId: input.organizationId,
+          type: 'variation_renumbered',
+          title: 'Variation numbers updated',
+          message: `Variation numbers updated on ${parentName} by ${input.actor.name}`,
+          userId,
+          relatedId: input.parentId,
+        })
+      )
+    ).catch(() => {})
+  }
+  return { changed, copiesFailed }
 }
 
 export async function removeEvidenceObject(storagePath: string): Promise<void> {

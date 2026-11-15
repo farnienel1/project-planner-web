@@ -108,12 +108,6 @@
     "reason": "Profile summary shows the linked catalogue row's details (display only)."
   },
   {
-    "path": "components/variations/VariationsWorkspace.tsx",
-    "pattern": "toLocaleDateString",
-    "count": 1,
-    "reason": "FU-6: variation date label in the browser zone; display only, should use the organisation zone."
-  },
-  {
     "path": "components/wholesalers/WholesalersScreen.tsx",
     "pattern": "toLocaleDateString",
     "count": 2,

@@ -2612,13 +2612,62 @@
           "docId": "V-1",
           "data": {
             "id": "V-1",
+            "orgId": "ORG-1",
             "parentId": "a1b2c3d4-0000-4000-8000-00000000000a",
-            "parentType": "projects",
-            "number": 1,
-            "title": "Extra socket",
-            "status": "draft",
+            "parentType": "project",
+            "parentName": "J-1 · Site",
+            "origin": "app",
+            "voNumber": "VO-001",
+            "sequence": 1,
+            "voNumberLocked": false,
+            "numberHistory": [],
+            "heading": "Extra socket",
+            "description": "Client asked for one more",
+            "status": "open",
+            "labour": [
+              {
+                "id": "L-1",
+                "trade": "Electrician",
+                "hours": 8,
+                "operatives": 2,
+                "hoursEach": 4
+              }
+            ],
+            "materials": [
+              {
+                "id": "M-1",
+                "name": "Double socket",
+                "quantity": "4",
+                "quantityValue": 4,
+                "unit": "no"
+              }
+            ],
+            "customLines": [
+              {
+                "id": "C-1",
+                "name": "Skip hire",
+                "description": "6 yard",
+                "quantity": 1,
+                "cost": 180
+              }
+            ],
+            "subcontractorLines": [
+              {
+                "id": "S-1",
+                "subcontractorId": "SUB-1",
+                "name": "Acme Scaffolding",
+                "quoteNumber": "Q-77",
+                "quantity": 1,
+                "cost": 1200
+              }
+            ],
+            "evidence": [],
+            "totalLabourHours": 8,
+            "materialLineCount": 1,
+            "evidenceCount": 0,
+            "createdByUid": "user-web-1",
+            "createdByName": "Ada Admin",
             "isDeleted": false,
-            "createdByUserId": "user-web-1",
             "createdAt": {
               "seconds": 1790845200,
               "nanoseconds": 0
@@ -2630,26 +2679,67 @@
           },
           "expected": {
             "id": "V-1",
-            "orgId": "",
+            "orgId": "ORG-1",
             "parentType": "project",
             "parentId": "a1b2c3d4-0000-4000-8000-00000000000a",
-            "parentName": "",
+            "parentName": "J-1 · Site",
             "origin": "app",
-            "voNumber": "",
-            "sequence": 0,
+            "voNumber": "VO-001",
+            "sequence": 1,
             "voNumberLocked": false,
             "numberHistory": [],
-            "heading": "",
-            "description": "",
+            "heading": "Extra socket",
+            "description": "Client asked for one more",
             "status": "open",
-            "labour": [],
-            "materials": [],
+            "labour": [
+              {
+                "id": "L-1",
+                "idStored": true,
+                "trade": "Electrician",
+                "hours": 8,
+                "operatives": 2,
+                "hoursEach": 4
+              }
+            ],
+            "materials": [
+              {
+                "id": "M-1",
+                "idStored": true,
+                "name": "Double socket",
+                "quantity": "4",
+                "quantityValue": 4,
+                "unit": "no"
+              }
+            ],
+            "customLines": [
+              {
+                "id": "C-1",
+                "idStored": true,
+                "name": "Skip hire",
+                "description": "6 yard",
+                "quantity": 1,
+                "cost": 180,
+                "lineTotal": 180
+              }
+            ],
+            "subcontractorLines": [
+              {
+                "id": "S-1",
+                "idStored": true,
+                "subcontractorId": "SUB-1",
+                "name": "Acme Scaffolding",
+                "quoteNumber": "Q-77",
+                "quantity": 1,
+                "cost": 1200,
+                "lineTotal": 1200
+              }
+            ],
             "evidence": [],
-            "totalLabourHours": 0,
-            "materialLineCount": 0,
+            "totalLabourHours": 8,
+            "materialLineCount": 1,
             "evidenceCount": 0,
-            "createdByUid": "",
-            "createdByName": "",
+            "createdByUid": "user-web-1",
+            "createdByName": "Ada Admin",
             "createdAtMs": 1790845200000,
             "updatedByUid": "",
             "updatedAtMs": 1790937000000,
@@ -2692,6 +2782,8 @@
             "status": "submitted",
             "labour": [],
             "materials": [],
+            "customLines": [],
+            "subcontractorLines": [],
             "evidence": [],
             "totalLabourHours": 0,
             "materialLineCount": 0,
@@ -2741,7 +2833,11 @@
             "version": 0,
             "lockedByUid": null,
             "lockedByName": null,
-            "lockedAtMs": null
+            "lockedAtMs": null,
+            "orderLocked": false,
+            "orderLockedByUid": null,
+            "orderLockedByName": null,
+            "orderLockedAtMs": null
           }
         },
         {
@@ -2765,7 +2861,11 @@
             "version": 0,
             "lockedByUid": null,
             "lockedByName": null,
-            "lockedAtMs": null
+            "lockedAtMs": null,
+            "orderLocked": false,
+            "orderLockedByUid": null,
+            "orderLockedByName": null,
+            "orderLockedAtMs": null
           }
         }
       ]

@@ -219,28 +219,29 @@ service firebase.storage {
       allow update: if canOverwriteStoredFile(orgId, 10 * 1024 * 1024, isPhotoOrPdf());
     }
 
-    // Variation evidence — web path. 1.50.0: 10MB (was 20MB), photos and PDFs.
+    // Variation evidence — web path. 1.50.0: 10MB (was 20MB), photos and PDFs. 1.52.0: staff only (admins and
+    // managers outside operative mode), never operatives; the three variation paths are left out of the H&S match.
     match /organizations/{orgId}/healthSafety/{parentId}/variations/{fileName} {
-      allow read: if orgMember(orgId);
-      allow delete: if canDeleteStoredFile(orgId);
-      allow create: if newOrOwnRetry() && memberSizedWrite(orgId, 10 * 1024 * 1024, isPhotoOrPdf());
-      allow update: if canOverwriteStoredFile(orgId, 10 * 1024 * 1024, isPhotoOrPdf());
+      allow read: if staffLike(orgId);
+      allow delete: if staffLike(orgId) && canDeleteStoredFile(orgId);
+      allow create: if newOrOwnRetry() && staffLike(orgId) && memberSizedWrite(orgId, 10 * 1024 * 1024, isPhotoOrPdf());
+      allow update: if staffLike(orgId) && canOverwriteStoredFile(orgId, 10 * 1024 * 1024, isPhotoOrPdf());
     }
 
     // Variation evidence — iOS primary path.
     match /organizations/{orgId}/healthSafety/{parentId}/variationEvidence/{fileName} {
-      allow read: if orgMember(orgId);
-      allow delete: if canDeleteStoredFile(orgId);
-      allow create: if newOrOwnRetry() && memberSizedWrite(orgId, 10 * 1024 * 1024, isPhotoOrPdf());
-      allow update: if canOverwriteStoredFile(orgId, 10 * 1024 * 1024, isPhotoOrPdf());
+      allow read: if staffLike(orgId);
+      allow delete: if staffLike(orgId) && canDeleteStoredFile(orgId);
+      allow create: if newOrOwnRetry() && staffLike(orgId) && memberSizedWrite(orgId, 10 * 1024 * 1024, isPhotoOrPdf());
+      allow update: if staffLike(orgId) && canOverwriteStoredFile(orgId, 10 * 1024 * 1024, isPhotoOrPdf());
     }
 
     // Variation evidence — iOS fallback path.
     match /organizations/{orgId}/variations/{variationId}/{fileName} {
-      allow read: if orgMember(orgId);
-      allow delete: if canDeleteStoredFile(orgId);
-      allow create: if newOrOwnRetry() && memberSizedWrite(orgId, 10 * 1024 * 1024, isPhotoOrPdf());
-      allow update: if canOverwriteStoredFile(orgId, 10 * 1024 * 1024, isPhotoOrPdf());
+      allow read: if staffLike(orgId);
+      allow delete: if staffLike(orgId) && canDeleteStoredFile(orgId);
+      allow create: if newOrOwnRetry() && staffLike(orgId) && memberSizedWrite(orgId, 10 * 1024 * 1024, isPhotoOrPdf());
+      allow update: if staffLike(orgId) && canOverwriteStoredFile(orgId, 10 * 1024 * 1024, isPhotoOrPdf());
     }
 
     // Site audit images. Member + size/type only — do not staff-lock.
@@ -260,13 +261,15 @@ service firebase.storage {
       allow update: if canOverwriteStoredFile(orgId, 10 * 1024 * 1024, isPhotoOrPdf());
     }
 
-    // H&S talks/RAMS/other/deadlines. More-specific variation matches above win via OR.
+    // H&S talks/RAMS/other/deadlines (never variation evidence, 1.52.0).
     // Member + size/type only — do not staff-lock.
-    match /organizations/{orgId}/healthSafety/{allPaths=**} {
-      allow read: if orgMember(orgId);
-      allow delete: if canDeleteStoredFile(orgId);
-      allow create: if newOrOwnRetry() && memberSizedWrite(orgId, 10 * 1024 * 1024, isPhotoOrPdf());
-      allow update: if canOverwriteStoredFile(orgId, 10 * 1024 * 1024, isPhotoOrPdf());
+    // 1.52.0: rules OR together, so variation evidence ({parentId}/variations/… and {parentId}/variationEvidence/…)
+    // is kept out of this member-wide match; only the staff-only variation matches above decide it.
+    match /organizations/{orgId}/healthSafety/{parentId}/{folder}/{rest=**} {
+      allow read: if !(folder in ['variations', 'variationEvidence']) && orgMember(orgId);
+      allow delete: if !(folder in ['variations', 'variationEvidence']) && canDeleteStoredFile(orgId);
+      allow create: if !(folder in ['variations', 'variationEvidence']) && newOrOwnRetry() && memberSizedWrite(orgId, 10 * 1024 * 1024, isPhotoOrPdf());
+      allow update: if !(folder in ['variations', 'variationEvidence']) && canOverwriteStoredFile(orgId, 10 * 1024 * 1024, isPhotoOrPdf());
     }
 
     // Rulebook 1.30.0 §26: a person's line manager — listed on that person's users document, which names this

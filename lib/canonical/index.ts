@@ -1225,6 +1225,7 @@ export {
 export {
   NOTIFICATION_RELATED_ID,
   VARIATION_TRACKER_LOCK_FIELDS,
+  VARIATION_TRACKER_ORDER_LOCK_FIELDS,
   VARIATION_TRADES_DOCUMENT_ID,
   healthSafetySignatureRemovalWrites,
   notificationCreateFields,
@@ -2101,6 +2102,7 @@ export type {
   SignedTimesheetSheet,
   SignedTimesheetWaitingFor,
 } from './timesheetBookingChanges'
+export * from './variations'
 
 // Rulebook 1.51.0 §7: the Weekly Report Pay Summary, check lines, paid days, leave rows and warning detail.
 export {
