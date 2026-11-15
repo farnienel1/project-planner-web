@@ -1,8 +1,8 @@
 import { format } from 'date-fns'
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from 'pdf-lib'
 import { formatReportPeriodLabel } from '@/lib/weekly-report/invoicingPeriodUtils'
-import { formatDays } from '@/lib/weekly-report/weeklyReportPayroll'
-import { currencySymbol, formatMoney, PAY_HIDDEN_NOTE } from '@/lib/canonical'
+import { currencySymbol } from '@/lib/canonical'
+import { weeklyReportSections } from '@/lib/weekly-report/weeklyReportSections'
 import type { WeeklyReportData } from '@/lib/weekly-report/weeklyReportData'
 
 const PAGE_W = 842
@@ -22,15 +22,8 @@ function pdfText(value: string): string {
     .replace(/\u201C|\u201D/g, '"')
     .replace(/\u2013|\u2014/g, '-')
     .replace(/\u2026/g, '...')
+    .replace(/\u2713/g, 'OK')
     .replace(/[^\x09\x0A\x0D\x20-\x7E\xA0-\xFF\u20AC]/g, '')
-}
-
-/** Organisation money for the PDF. Helvetica (WinAnsi) has £ € $; other symbols (kr is fine, zł / د.إ are not) use the code. */
-function pdfMoney(amount: number, currencyCode: string): string {
-  const shown = formatMoney(amount, currencyCode)
-  const symbol = currencySymbol(currencyCode)
-  if (/^[\x20-\x7E\xA0-\xFF\u20AC]+$/.test(symbol)) return shown
-  return shown.replace(symbol, `${String(currencyCode).toUpperCase()} `).replace(/\s{2,}/g, ' ')
 }
 
 type Draw = {
@@ -80,11 +73,17 @@ function fitText(text: string, font: PDFFont, size: number, maxWidth: number): s
   return clipped ? `${clipped}...` : ''
 }
 
-function table(draw: Draw, headers: string[], rows: string[][]): void {
+const AMBER = rgb(0.996, 0.953, 0.78)
+const AMBER_INK = rgb(0.57, 0.25, 0.05)
+
+function table(draw: Draw, headers: string[], rows: string[][], options: { weights?: number[]; tones?: ReadonlyArray<string | null> } = {}): void {
   const width = PAGE_W - MARGIN * 2
-  const col = width / Math.max(headers.length, 1)
+  const weights = options.weights && options.weights.length === headers.length ? options.weights : headers.map(() => 1)
+  const sum = weights.reduce((a, b) => a + b, 0) || 1
+  const widths = weights.map((weight) => (width * weight) / sum)
+  const xs = widths.map((_, index) => MARGIN + widths.slice(0, index).reduce((a, b) => a + b, 0))
   const rowHeight = 14
-  const textWidth = Math.max(col - 6, 8)
+  const textWidthOf = (index: number) => Math.max(widths[index] - 6, 8)
 
   const paintHeader = () => {
     ensure(draw, rowHeight + 4)
@@ -96,8 +95,8 @@ function table(draw: Draw, headers: string[], rows: string[][]): void {
       color: NAVY,
     })
     headers.forEach((header, index) => {
-      draw.page.drawText(fitText(header, draw.bold, 7, textWidth), {
-        x: MARGIN + index * col + 3,
+      draw.page.drawText(fitText(header, draw.bold, 7, textWidthOf(index)), {
+        x: xs[index] + 3,
         y: draw.y - 7,
         size: 7,
         font: draw.bold,
@@ -117,24 +116,29 @@ function table(draw: Draw, headers: string[], rows: string[][]): void {
       addPage(draw)
       paintHeader()
     }
-    const total = row.some((cell) => /total/i.test(cell))
-    if (rowIndex % 2 === 1 || total) {
+    const tone = options.tones?.[rowIndex] ?? null
+    const total = tone === 'total' || (!options.tones && row.some((cell) => /total/i.test(cell)))
+    const warn = tone === 'warn'
+    if (rowIndex % 2 === 1 || total || warn) {
       draw.page.drawRectangle({
         x: MARGIN,
         y: draw.y - rowHeight + 4,
         width,
         height: rowHeight,
-        color: total ? rgb(0.9, 0.97, 0.93) : ROW,
+        color: warn ? AMBER : total ? rgb(0.9, 0.97, 0.93) : ROW,
       })
     }
     row.forEach((cell, index) => {
-      const clipped = fitText(cell, total ? draw.bold : draw.font, 8, textWidth)
+      // A check line spans the row from its cell (it is the only text on the row).
+      const spans = warn || tone === 'good' ? row.slice(index + 1).every((rest) => rest === '') : false
+      const room = spans ? PAGE_W - MARGIN - xs[index] - 6 : textWidthOf(index)
+      const clipped = fitText(cell, total || warn ? draw.bold : draw.font, 8, room)
       draw.page.drawText(clipped, {
-        x: MARGIN + index * col + 3,
+        x: xs[index] + 3,
         y: draw.y - 7,
         size: 8,
-        font: total ? draw.bold : draw.font,
-        color: total ? GREEN : INK,
+        font: total || warn ? draw.bold : draw.font,
+        color: warn ? AMBER_INK : total || tone === 'good' ? GREEN : INK,
       })
     })
     draw.page.drawLine({
@@ -148,7 +152,10 @@ function table(draw: Draw, headers: string[], rows: string[][]): void {
 }
 
 export async function buildWeeklyReportPdf(data: WeeklyReportData): Promise<Uint8Array> {
-  const money = (amount: number) => pdfMoney(amount, data.currencyCode)
+  const symbol = currencySymbol(data.currencyCode)
+  const drawable = /^[\x20-\x7E\xA0-\xFF\u20AC]+$/.test(symbol)
+  // Organisation money (`formatMoney`) as Helvetica can draw it : an undrawable symbol becomes the code.
+  const pdfCell = (cell: string) => (drawable || !symbol ? cell : cell.split(symbol).join(`${String(data.currencyCode).toUpperCase()} `))
   const doc = await PDFDocument.create()
   const font = await doc.embedFont(StandardFonts.Helvetica)
   const bold = await doc.embedFont(StandardFonts.HelveticaBold)
@@ -189,170 +196,13 @@ export async function buildWeeklyReportPdf(data: WeeklyReportData): Promise<Uint
   })
   draw.y -= 8
 
-  section(draw, 'Warnings Summary')
-  table(
-    draw,
-    ['Status', 'Priority', 'Type', 'Date', 'Description', 'Detail', 'For'],
-    data.warnings.length === 0
-      ? [['No warnings in period', '', '', '', '', '', '']]
-      : data.warnings.map((warning) => [
-          warning.status,
-          warning.priority,
-          warning.type,
-          warning.date,
-          warning.description,
-          warning.detail,
-          warning.forPerson,
-        ])
-  )
-
-  section(draw, 'Approved clashes')
-  table(
-    draw,
-    ['Date', 'Priority', 'Type', 'Person', 'Detail'],
-    (data.approvedClashes ?? []).length === 0
-      ? [['No clashes approved in this period', '', '', '', '']]
-      : data.approvedClashes.map((row) => [row.date, row.priority, row.type, row.person, row.detail])
-  )
-
-  section(draw, 'Project Breakdown')
-  if (data.projectGroups.length === 0) {
-    table(draw, ['Project', 'Job No.', 'Person', 'Trade', 'Role', 'Days'], [['No project labour in this period', '', '', '', '', '']])
-  } else {
-    for (const group of data.projectGroups) {
-      const rows = group.rows.map((row) => [
-        group.projectName,
-        group.jobNumber,
-        row.person,
-        row.trade,
-        row.role,
-        formatDays(row.days),
-      ])
-      rows.push(['', '', '', '', 'Project Total', formatDays(group.projectTotal)])
-      table(draw, ['Project', 'Job No.', 'Person', 'Trade', 'Role', 'Days'], rows)
-    }
+  // Rulebook 1.51.0 (Q4f): the same sections and rows as the screen, the HTML and the Excel file.
+  for (const part of weeklyReportSections(data)) {
+    section(draw, part.title)
+    const rows = part.rows.length ? part.rows : [[part.empty, ...part.headers.slice(1).map(() => '')]]
+    table(draw, part.headers, rows.map((row) => row.map(pdfCell)), { weights: part.weights, tones: part.rows.length ? part.tones : undefined })
+    if (part.note) table(draw, [''], [[part.note]])
   }
-  table(draw, ['All Project Work', 'Days'], [['All Project Work', formatDays(data.allProjectWorkTotal)]])
-
-  section(draw, 'Sub Contractors')
-  const subRows =
-    data.subContractorRows.length === 0
-      ? [['No sub contractor labour in this period', '', '', '', '', '', '']]
-      : data.subContractorRows.map((row) => [
-          row.projectName,
-          row.jobNumber,
-          row.subContractor,
-          row.people || '-',
-          row.type,
-          row.time,
-          formatDays(row.days),
-        ])
-  subRows.push(['', '', '', '', '', 'Sub Contractor total', formatDays(data.subContractorTotal)])
-  table(draw, ['Project', 'Job No.', 'Sub Contractor', 'People', 'Type', 'Time', 'Days'], subRows)
-
-  section(draw, 'Annual Leave')
-  table(
-    draw,
-    ['Person', 'Role', 'Days', 'Type'],
-    data.annualLeaveRows.length === 0
-      ? [['No annual leave in this period', '', '', '']]
-      : [
-          ...data.annualLeaveRows.map((row) => [row.person, row.role, formatDays(row.days), row.type]),
-          ['', 'Annual Leave Total', formatDays(data.annualLeaveTotal), ''],
-        ]
-  )
-
-  section(draw, 'Manager / Admin Additional Schedule')
-  table(
-    draw,
-    ['Person', 'Role', 'Location', 'Time', 'Days'],
-    data.managerScheduleRows.length === 0
-      ? [['No additional manager schedule', '', '', '', '']]
-      : [
-          ...data.managerScheduleRows.map((row) => [
-            row.person,
-            row.role,
-            row.location,
-            row.time,
-            formatDays(row.days),
-          ]),
-          ['', '', '', 'Total', formatDays(data.managerScheduleTotal)],
-        ]
-  )
-
-  // Rulebook 1.29.0 §7: PAYE overtime per person per job (hours only).
-  section(draw, 'PAYE overtime')
-  table(
-    draw,
-    ['Person', 'Job Number', 'Job', 'Overtime (hours × rate)'],
-    data.payeOvertimeRows.length === 0
-      ? [['No PAYE overtime in this period', '', '', '']]
-      : [
-          ...data.payeOvertimeRows.map((row) => [row.person, row.jobNumber, row.jobName, row.hoursCell ?? `${row.overtimeHours}h`]),
-          ['', '', 'Total', `${data.payeOvertimeTotal}h`],
-        ]
-  )
-
-  section(draw, 'Price Work')
-  table(
-    draw,
-    ['Person', 'Title', 'Job Number', 'Date', 'Details', 'Amount'],
-    data.priceWorkRows.length === 0
-      ? [['No price work in this period', '', '', '', '', '']]
-      : [
-          ...data.priceWorkRows.map((row) => [
-            row.person,
-            row.title,
-            row.jobNumber,
-            row.date,
-            row.details,
-            money(row.amount),
-          ]),
-          ['', '', '', '', 'Price Work Total', money(data.priceWorkTotal)],
-        ]
-  )
-
-  section(draw, 'Expenses')
-  table(
-    draw,
-    ['Person', 'Title', 'Job Number', 'Date', 'Details', 'Amount'],
-    data.expenseRows.length === 0
-      ? [['No expenses in this period', '', '', '', '', '']]
-      : [
-          ...data.expenseRows.map((row) => [
-            row.person,
-            row.title,
-            row.jobNumber,
-            row.date,
-            row.details,
-            money(row.amount),
-          ]),
-          ['', '', '', '', 'Expenses Total', money(data.expenseTotal)],
-        ]
-  )
-
-  section(draw, 'Pay Summary')
-  const payRows: string[][] = []
-  for (const person of data.paySummary) {
-    for (const line of person.lines) {
-      payRows.push([
-        person.person,
-        person.role,
-        line.rateType,
-        line.quantityText ?? formatDays(line.days),
-        line.rateText ?? money(line.rate),
-        line.payLabel ?? money(line.pay),
-      ])
-    }
-    payRows.push([`${person.person} total`, '', '', '', '', person.personTotalLabel ?? money(person.personTotal)])
-    payRows.push(['', '', '', '', '', ''])
-  }
-  if (data.paySummary.length === 0) {
-    payRows.push(['No pay data for this period', '', '', '', '', ''])
-  }
-  payRows.push(['', '', '', '', 'Grand Total', money(data.grandTotal)])
-  if (data.payHiddenPeople) payRows.push([PAY_HIDDEN_NOTE, '', '', '', '', ''])
-  table(draw, ['Person', 'Role', 'Rate Type', 'Hours / Days', 'Rate', 'Pay'], payRows)
 
   return doc.save()
 }

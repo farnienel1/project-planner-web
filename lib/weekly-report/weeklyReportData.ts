@@ -12,9 +12,7 @@ import {
   type AcceptedClashRecord,
 } from '@/lib/canonical'
 import { holidayBookingDayKeys } from '@/lib/annualLeave/holidayDayKeys'
-import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 import { dayKeyInZone } from '@/lib/orgTime/zoneTime'
-import { leaveDaysInRange } from '@/lib/canonical/leaveRequests'
 import { findOperativeForUser } from '@/lib/operatives/operativeRosterUtils'
 import { mergeProjectsAndSmallWorks } from '@/lib/projects/workStatus'
 import { computeOperativeBookingClashWarnings } from '@/lib/scheduling/bookingClashUtils'
@@ -24,7 +22,23 @@ import type { OrganizationDetails } from '@/lib/settings/organizationSettings'
 import { DEFAULT_PAYROLL_POLICY, includesManagerScheduleLocation, orgPayrollPolicyForDay } from '@/lib/settings/organizationSettings'
 import { organizationTimeZone } from '@/lib/canonical'
 import { computeManagerBookingClashWarnings } from '@/lib/warnings/managerClashWarnings'
-import { claimEvidenceCountText, employmentTypeOnDay, isAnonymisedDeletedProfile, priceWorkJobNumberText, reportPayCell, reportPayTotal, reportPersonPayCell, subcontractorDayValue } from '@/lib/canonical'
+import {
+  claimEvidenceCountText,
+  hasActiveLineManager,
+  isAnonymisedDeletedProfile,
+  payrollHoursResult,
+  priceWorkJobNumberText,
+  subcontractorDayValue,
+  weeklyReportClashDetail,
+  weeklyReportLeaveRows,
+  weeklyReportPayRows,
+  WEEKLY_REPORT_WARNING_OPEN,
+  type WeeklyReportLeavePerson,
+  type WeeklyReportPayBooking,
+  type WeeklyReportPayPerson as CanonicalPayPerson,
+  type WeeklyReportPayPersonRow,
+  type WeeklyReportPaySheet,
+} from '@/lib/canonical'
 import { computeUnbookedLabourWarningsForDateRange } from '@/lib/warnings/unbookedLabourWarnings'
 import type { Booking, HolidayBooking, Operative, Project, User } from '@/types'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
@@ -38,24 +52,15 @@ import {
   type ReportPeriod,
 } from '@/lib/weekly-report/invoicingPeriodUtils'
 import {
-  bookingDayUnits,
   findUserAndOperative,
-  labourPaySlices,
-  paySliceDisplay,
   resolveDisplayName,
   resolvePersonRole,
   resolvePersonTrade,
-  signedLabourSlice,
-  type LabourPaySlice,
 } from '@/lib/weekly-report/weeklyReportPayroll'
 import { emptyDayRateHistory, type OperativeDayRateHistoryCollection } from '@/lib/timesheets/dayRateHistoryStorage'
-import { orgDayHours, roundPennies } from '@/lib/timesheets/payBasis'
 import {
-  additionalScheduleLocation,
   isAdditionalScheduleLocationKind,
   isProjectLocationKind,
-  timesheetFeedCovers,
-  timesheetLabourLines,
   timesheetMoneyLines,
   type ApprovedTimesheetWeek,
 } from '@/lib/weekly-report/timesheetFeed'
@@ -63,8 +68,8 @@ import {
   formatSubcontractorBookingLabel,
   resolveSubcontractorBookingPeople,
 } from '@/lib/subcontractors/bookingPeople'
-import { bookingJobLabel, weekdayPaidHours, weeklyReportPayeDay, weeklyReportPayeOvertime, OVERTIME_RATE_CHANGED_MARK, overtimePersonIds, type OvertimeBookingInput, type PayrollTimePolicyState } from '@/lib/canonical'
-import { mergeBookingPaySlice, normalizeDocumentId } from '@/lib/canonical'
+import { bookingJobLabel, weekdayPaidHours, weeklyReportPayeOvertime, OVERTIME_RATE_CHANGED_MARK, overtimePersonIds, type OvertimeBookingInput, type PayrollTimePolicyState } from '@/lib/canonical'
+import { normalizeDocumentId } from '@/lib/canonical'
 
 export type WeeklyReportWarningRow = {
   status: string
@@ -104,10 +109,15 @@ export type WeeklyReportWarningDecisions = {
   acceptedClashes: readonly AcceptedClashRecord[]
 }
 
+/**
+ * Rulebook 1.51.0 §7 (Q4a): a person's paid hours and paid days on a job (`weeklyReportPayRows` `paidDays`, the same
+ * pricing as the Pay Summary — paid hours ÷ the day-rate divisor, uncapped), so the Project Breakdown ties to it.
+ */
 export type WeeklyReportProjectRow = {
   person: string
   trade: string
   role: string
+  hours: number
   days: number
 }
 
@@ -116,6 +126,7 @@ export type WeeklyReportProjectGroup = {
   jobNumber: string
   rows: WeeklyReportProjectRow[]
   projectTotal: number
+  projectHours: number
 }
 
 export type WeeklyReportSubRow = {
@@ -140,33 +151,16 @@ export type WeeklyReportManagerScheduleRow = {
   role: string
   location: string
   time: string
+  /** 1.51.0 (Q4a): paid hours and paid days (`weeklyReportPayRows` `paidDays`). */
+  hours: number
   days: number
 }
 
-export type WeeklyReportPayPerson = {
-  person: string
-  role: string
-  lines: {
-    rateType: string
-    days: number
-    rate: number
-    pay: number
-    quantityText?: string
-    rateText?: string
-    /** True for a PAYE line: hours count, pay is not shown or totalled (`reportPayCell`). */
-    isPaye?: boolean
-    /** `PAYE` when the pay cell shows that instead of a figure. */
-    payLabel?: string | null
-  }[]
-  personTotal: number
-  /** `PAYE` when every line is PAYE (`reportPersonPayCell`). */
-  personTotalLabel?: string | null
-  /**
-   * Rulebook 1.32.0 §8: whose pay this is (the users document, or a catalogue `operatives` row), so the screen and the
-   * exports ask `canViewPersonPay` before showing a rate or pay (`weeklyReportPayForViewer`).
-   */
-  paySubject?: Record<string, unknown> | null
-}
+/**
+ * Rulebook 1.51.0 §7 (Q1–Q3): one person's Pay Summary rows, total and invoice check line — `weeklyReportPayRows`
+ * (rate and pay already shown per `reportPayForViewer`). Columns: `WEEKLY_REPORT_PAY_COLUMNS`.
+ */
+export type WeeklyReportPayPerson = WeeklyReportPayPersonRow
 
 export type WeeklyReportMoneyRow = {
   person: string
@@ -202,6 +196,9 @@ export type WeeklyReportData = {
   expenseTotal: number
   paySummary: WeeklyReportPayPerson[]
   grandTotal: number
+  allProjectHoursTotal?: number
+  /** Rulebook 1.51.0 (Q4b): approved leave records that match no person (also listed in Data health). */
+  unmatchedLeave?: Array<{ recordId: string; userId: string | null; operativeId: string | null }>
   /** Rulebook 1.32.0: people whose rate and pay were hidden for this viewer (`reportPayForViewer`); exports add the note. */
   payHiddenPeople?: number
   /**
@@ -229,21 +226,6 @@ export type SubcontractorBookingRow = {
   bookedOperativeNames?: string[]
 }
 
-/**
- * Rulebook 1.9.0 `leaveDaysInRange` (on `leaveRecordDayKeys`): the record's leave days inside the report period, in
- * the organisation zone — the same count on every platform.
- */
-function leaveDaysInPeriod(booking: HolidayBooking, period: ReportPeriod, _standardHours: number): number {
-  void _standardHours
-  const zone = organizationZoneOr()
-  const keys = holidayBookingDayKeys(booking, zone)
-  return leaveDaysInRange(
-    { ...keys, timeSlot: booking.timeSlot },
-    { startDayKey: dayKeyInZone(period.start, zone), endDayKey: dayKeyInZone(period.end, zone) },
-    zone
-  )
-}
-
 function filterWarningsToPeriod<T extends { date: Date }>(warnings: T[], period: ReportPeriod): T[] {
   return warnings.filter((warning) => isDateWithinReportPeriod(warning.date, period))
 }
@@ -266,6 +248,9 @@ export function buildWeeklyReportData({
   history = emptyDayRateHistory(),
   userIdAliases = {},
   warningDecisions = null,
+  timesheetSheets = [],
+  viewer = null,
+  showAllPay = false,
 }: {
   organizationName: string
   companyLogoURL?: string
@@ -286,13 +271,33 @@ export function buildWeeklyReportData({
   userIdAliases?: Readonly<Record<string, string>>
   /** Clash approvals. Without them every clash in the period is listed as open. */
   warningDecisions?: WeeklyReportWarningDecisions | null
+  /** Rulebook 1.51.0 (Q2): each self-employed person's payment runs in the range (`loadWeeklyReportTimesheetFeed`). */
+  timesheetSheets?: WeeklyReportPaySheet[]
+  /**
+   * Rulebook 1.32.0 / 1.51.0: the viewer; rates and pay are shown per `canViewPersonPay` (`reportPayForViewer`, applied
+   * inside `weeklyReportPayRows`). Null shows every figure (tests).
+   */
+  viewer?: Record<string, unknown> | null
+  /** Show every rate and pay figure whoever views (tests only). Without it and with no viewer, pay is hidden. */
+  showAllPay?: boolean
 }): WeeklyReportData {
   const payroll = orgDetails?.payrollTimePolicy
-  // Today's standard day: only the fallback for a slice that does not carry its own day's (1.19.0).
-  const standardHours = orgDayHours(payroll ? weekdayPaidHours(payroll) : 8)
   const timeZone = organizationTimeZone(orgDetails?.countryCode)
-  // Rulebook §4.3 / §8 (1.19.0): each booking is paid under the working hours in effect on its own day — the history
-  // first (`effectivePayrollTimePolicy` via `orgPayrollPolicyForDay` with the whole state), in the organisation zone.
+  const mergedWorks = mergeProjectsAndSmallWorks(projects, smallWorks)
+  const projectsById = new Map<string, Project>()
+  mergedWorks.forEach((project) => projectsById.set(project.id, project))
+
+  const invoicingPeriod = orgDetails?.invoicing
+    ? computeInvoicingPeriod(period.end, orgDetails.invoicing, timeZone)
+    : null
+  const range = { start: dayKeyInZone(period.start, timeZone), end: dayKeyInZone(period.end, timeZone) }
+  // Rulebook §4.3 / §8 (1.19.0): the whole working-hours state; each day is priced under the rules in effect on it.
+  const policyState: PayrollTimePolicyState = orgDetails?.payrollTimePolicyState ?? {
+    current: payroll ?? DEFAULT_PAYROLL_POLICY,
+    prior: orgDetails?.payrollTimePolicyPrior ?? null,
+    effectiveFrom: orgDetails?.payrollTimePolicyEffectiveFrom ?? null,
+    scheduled: orgDetails?.payrollTimePolicyScheduled ?? null,
+  }
   const policyOn = (date: Date) =>
     orgPayrollPolicyForDay(
       date,
@@ -303,18 +308,8 @@ export function buildWeeklyReportData({
       orgDetails?.payrollTimePolicyScheduled ?? null,
       orgDetails?.payrollTimePolicyState ?? null
     )
-  const mergedWorks = mergeProjectsAndSmallWorks(projects, smallWorks)
-  const projectsById = new Map<string, Project>()
-  mergedWorks.forEach((project) => projectsById.set(project.id, project))
 
-  const invoicingPeriod = orgDetails?.invoicing
-    ? computeInvoicingPeriod(period.end, orgDetails.invoicing, timeZone)
-    : null
-
-  // Cancelled bookings are not work: `bookingOccupiesDay`, the same rule iOS and the other screens use.
-  const periodOperativeBookings = bookings.filter(
-    (booking) => isDateWithinReportPeriod(booking.date, period) && bookingOccupiesDay(booking.status)
-  )
+  const periodOperativeBookings = bookings.filter((booking) => isDateWithinReportPeriod(booking.date, period))
   const periodManagerBookings = managerSiteBookings.filter((booking) => {
     if (!isDateWithinReportPeriod(booking.date, period)) return false
     const options = orgDetails?.myScheduleOptions
@@ -324,17 +319,6 @@ export function buildWeeklyReportData({
     isDateWithinReportPeriod(booking.date, period)
   )
 
-  const projectGroupsMap = new Map<string, WeeklyReportProjectGroup>()
-  const payBuckets = new Map<
-    string,
-    {
-      personKey: string
-      person: string
-      role: string
-      slice: LabourPaySlice
-    }
-  >()
-
   const aliasIdsFor = (userId?: string): string[] => {
     if (!userId) return []
     const person = users.find((entry) => entry.id === userId)
@@ -342,271 +326,208 @@ export function buildWeeklyReportData({
     const sameEmail = email ? users.filter((entry) => entry.email.trim().toLowerCase() === email).map((entry) => entry.id) : []
     return Array.from(new Set([userId, ...sameEmail, ...rosterAliasIdsFor(userId, userIdAliases)]))
   }
-
-  // Pay rows are grouped by the person's account (the roster's kept id), never by display name: two people
-  // with the same name stay apart, and one person's same-email ids are one row.
+  // The roster's kept id for a same-email profile (pay rows are per person, never per display name).
   const keptUserId = (id: string): string => {
     const lower = id.trim().toLowerCase()
     const hit = Object.entries(userIdAliases).find(([alias]) => alias.trim().toLowerCase() === lower)
-    return (hit ? hit[1] : id).trim().toLowerCase()
-  }
-  const payPersonKey = (user: User | undefined, operative: Operative | undefined, name: string): string => {
-    if (user?.id) return `user:${keptUserId(user.id)}`
-    if (operative?.id) return `operative:${operative.id.trim().toLowerCase()}`
-    return `name:${name}`
+    return hit ? hit[1] : id
   }
 
-  const paySubjects = new Map<string, Record<string, unknown> | null>()
-  const subjectFor = (user: User | undefined, operative: Operative | undefined): Record<string, unknown> | null =>
-    user ? (user as unknown as Record<string, unknown>) : operative ? { id: operative.id, email: operative.email ?? '', role: 'operative', operativeMode: true, catalogueOperative: true } : null
-  const addPaySlice = (personKey: string, person: string, role: string, slice: LabourPaySlice, subject?: Record<string, unknown> | null) => {
-    if (subject !== undefined && !paySubjects.has(personKey)) paySubjects.set(personKey, subject)
-    if (!(slice.paidHours > 0) && !(slice.pay > 0)) return
-    const rateKey = slice.rate == null ? 'none' : slice.rate.toFixed(2)
-    // 1.19.0: days under a different standard day or overtime rate are separate rows, never averaged.
-    const key = `${personKey}|${role}|${slice.payBasis}|${slice.isOvertime ? 'ot' : 'std'}|${rateKey}|${slice.isPaye ? 'paye' : ''}|${slice.standardDayHours ?? ''}|${slice.otMultiplier ?? ''}`
-    const existing = payBuckets.get(key)
-    if (!existing) {
-      payBuckets.set(key, { personKey, person, role, slice: { ...slice } })
-      return
+  // Rulebook 1.51.0 §7: the people of the report as `weeklyReportPayRows` reads them — every id each person goes by
+  // (`overtimePersonIds`: own, former and same-email ids, `operatives` rows on their email) plus the roster fold's ids.
+  const people: CanonicalPayPerson[] = []
+  const linked = new Map<string, { user?: User; operative?: Operative }>()
+  const personByKey = new Map<string, CanonicalPayPerson>()
+  const roster = users as unknown as Array<Record<string, unknown>>
+  for (const user of users) {
+    if (keptUserId(user.id).trim().toLowerCase() !== user.id.trim().toLowerCase()) continue
+    const operative = findOperativeForUser(user, operatives)
+    const aliases = aliasIdsFor(user.id)
+    const person: CanonicalPayPerson = {
+      id: user.id,
+      name: resolveDisplayName(user, operative),
+      role: resolvePersonRole(user, operative),
+      ids: Array.from(new Set([...overtimePersonIds({ person: user, roster: users as never, operatives }), ...aliases])),
+      operativeIds: personRateHistoryIds(user, operatives, { aliasUserIds: aliases, extraOperativeIds: [operative?.id] }).operativeIds,
+      user: user as never,
+      operative: operative ?? null,
+      ghost: (user as { ghost?: unknown }).ghost === true,
+      hasLineManager: hasActiveLineManager(user as never, roster as never),
+      paySubject: user as unknown as Record<string, unknown>,
     }
-    // Rulebook 1.46.0 §7 (`mergeBookingPaySlice`): the row's pay is the sum of each booking's rounded pay (never
-    // re-priced from summed hours); overtime rows keep clock hours and the break apart once any day had a break.
-    existing.slice = mergeBookingPaySlice(existing.slice, slice)
+    people.push(person)
+    personByKey.set(user.id, person)
+    linked.set(user.id, { user, operative })
+  }
+  const personForBooking = (input: { userId?: string; operativeId?: string }): CanonicalPayPerson | null => {
+    const { user, operative } = findUserAndOperative(users, operatives, { ...input, aliases: userIdAliases })
+    if (user) {
+      const found = personByKey.get(keptUserId(user.id)) ?? personByKey.get(user.id)
+      if (found) return found
+    }
+    if (!operative) return null
+    // A catalogue `operatives` row with no account is its own person.
+    let person = personByKey.get(`operative:${operative.id}`)
+    if (!person) {
+      person = {
+        id: operative.id,
+        name: resolveDisplayName(undefined, operative),
+        role: resolvePersonRole(undefined, operative),
+        ids: [operative.id],
+        operativeIds: [operative.id],
+        user: null,
+        operative,
+        paySubject: { id: operative.id, email: operative.email ?? '', role: 'operative', operativeMode: true, catalogueOperative: true },
+      }
+      people.push(person)
+      personByKey.set(`operative:${operative.id}`, person)
+      linked.set(operative.id, { operative })
+    }
+    return person
+  }
+  // Each booking's person exactly as before (`findUserAndOperative`): its stored id joins that person's ids.
+  const claim = (personId: string | undefined, person: CanonicalPayPerson | null) => {
+    if (!personId || !person) return
+    if (!(person.ids ?? []).some((id) => normalizeDocumentId(id) === normalizeDocumentId(personId))) {
+      person.ids = [...(person.ids ?? []), personId]
+    }
   }
 
-  const addBookingPay = (
-    date: Date,
-    timeSlot: string,
-    workStartTime: string | undefined,
-    workEndTime: string | undefined,
-    isBreakRemoved: boolean | undefined,
-    user: User | undefined,
-    operative: Operative | undefined,
-    otMultiplierOverride?: number | null
-  ) => {
-    const slices = labourPaySlices({
-      date,
-      timeSlot,
-      workStartTime,
-      workEndTime,
-      isBreakRemoved,
-      otMultiplierOverride,
-      user,
-      operative,
-      history,
-      aliasUserIds: user ? aliasIdsFor(user.id) : [],
-      // 1.36.0 (FU-5): the person's rate history under any of their `operatives` rows, not one row on the email.
-      operativeIds: personRateHistoryIds(user ?? null, operatives, {
-        aliasUserIds: user ? aliasIdsFor(user.id) : [],
-        extraOperativeIds: [operative?.id],
-      }).operativeIds,
-      payroll: policyOn(date),
-      timeZone,
+  const payBookings: WeeklyReportPayBooking[] = []
+  for (const booking of periodOperativeBookings) {
+    claim(booking.operativeId, personForBooking({ operativeId: booking.operativeId }))
+    const project = projectsById.get(booking.projectId)
+    payBookings.push({
+      id: booking.id,
+      collection: 'bookings',
+      personId: booking.operativeId,
+      dayKey: dayKeyInZone(new Date(booking.date), timeZone),
+      timeSlot: String(booking.timeSlot),
+      workStartTime: booking.workStartTime ?? null,
+      workEndTime: booking.workEndTime ?? null,
+      isBreakRemoved: booking.isBreakRemoved === true,
+      otMultiplierOverride: booking.otMultiplierOverride ?? null,
+      // Cancelled bookings are not work (`bookingOccupiesDay`, inside the rule).
+      status: String(booking.status ?? ''),
+      jobId: booking.projectId,
+      jobNumber: project?.jobNumber ?? '',
+      jobName: project?.siteName ?? '',
+      locationKind: project?.jobType === 'Small Works' ? 'small_work' : 'project',
     })
-    const person = resolveDisplayName(user, operative)
-    const role = resolvePersonRole(user, operative)
-    const personKey = payPersonKey(user, operative, person)
-    for (const slice of slices) addPaySlice(personKey, person, role, slice, subjectFor(user, operative))
   }
+  for (const booking of periodManagerBookings) {
+    const job = booking.locationType === 'project' || booking.locationType === 'small_work'
+    if (job && !booking.locationId) continue
+    claim(booking.userId, personForBooking({ userId: booking.userId }))
+    const project = job ? projectsById.get(String(booking.locationId)) : undefined
+    payBookings.push({
+      id: booking.id,
+      collection: 'managerSiteBookings',
+      personId: booking.userId,
+      dayKey: dayKeyInZone(new Date(booking.date), timeZone),
+      timeSlot: String(booking.timeSlot),
+      workStartTime: booking.workStartTime ?? null,
+      workEndTime: booking.workEndTime ?? null,
+      isBreakRemoved: booking.isBreakRemoved === true,
+      otMultiplierOverride: booking.otMultiplierOverride ?? null,
+      jobId: job ? String(booking.locationId) : null,
+      jobNumber: project?.jobNumber ?? '',
+      jobName: project?.siteName ?? '',
+      locationKind: booking.locationType,
+    })
+  }
+  for (const week of timesheetWeeks) claim(week.userId, personForBooking({ userId: week.userId }))
 
-  const addProjectRow = (
-    projectId: string,
-    userId: string | undefined,
-    operativeId: string | undefined,
-    days: number
-  ) => {
-    // A booking whose job was deleted still counts, under "Deleted job" (rulebook).
-    const project = projectsById.get(projectId)
-    const { user, operative } = findUserAndOperative(users, operatives, { userId, operativeId, aliases: userIdAliases })
-    const person = resolveDisplayName(user, operative)
-    const key = project?.id ?? `deleted:${projectId}`
-    const group =
-      projectGroupsMap.get(key) ||
-      ({
-        projectName: bookingJobLabel(project ? project.siteName || project.jobNumber : null),
-        jobNumber: project?.jobNumber || '—',
-        rows: [],
-        projectTotal: 0,
-      } satisfies WeeklyReportProjectGroup)
+  // Rulebook 1.51.0 §7 (Q1–Q3): the Pay Summary, check lines and every booking's paid hours and days.
+  const history2 = [...Object.values(history.byUserId).flat(), ...Object.values(history.byOperativeId).flat()]
+  const pay = weeklyReportPayRows({
+    people,
+    bookings: payBookings,
+    timesheetWeeks: timesheetWeeks as never,
+    sheets: timesheetSheets,
+    roster,
+    organization: policyState,
+    payRateHistory: history2 as never,
+    range,
+    timeZone,
+    viewer,
+    showAllPay,
+    currency: resolveOrganizationCurrency(orgDetails),
+  })
+  const bookingById = new Map<string, ManagerSiteBooking>(periodManagerBookings.map((booking) => [booking.id, booking]))
 
+  const projectGroupsMap = new Map<string, WeeklyReportProjectGroup>()
+  const addProjectRow = (key: string, projectName: string, jobNumber: string, personId: string | null, bookingPersonId: string, hours: number, days: number) => {
+    const owner = personId ? linked.get(personId) : undefined
+    const fallback = owner ? undefined : findUserAndOperative(users, operatives, { operativeId: bookingPersonId, userId: bookingPersonId, aliases: userIdAliases })
+    const user = owner?.user ?? fallback?.user
+    const operative = owner?.operative ?? fallback?.operative
+    const person = personId ? personByKey.get(personId)?.name ?? personByKey.get(`operative:${personId}`)?.name ?? resolveDisplayName(user, operative) : resolveDisplayName(user, operative)
     const role = resolvePersonRole(user, operative)
     const trade = resolvePersonTrade(user, operative)
-    const existing = group.rows.find((row) => row.person === person && row.role === role)
-    if (existing) {
-      existing.days = Math.round((existing.days + days) * 100) / 100
-      if (existing.trade === 'General' && trade !== 'General') existing.trade = trade
-    } else {
-      group.rows.push({ person, trade, role, days })
-    }
-    group.projectTotal = Math.round((group.projectTotal + days) * 100) / 100
-    projectGroupsMap.set(key, group)
-  }
-
-  const usersForOperative = (operativeId: string | undefined): string[] => {
-    if (!operativeId) return []
-    const operative = operatives.find((entry) => normalizeDocumentId(entry.id) === normalizeDocumentId(operativeId))
-    const linked = operative
-      ? users.filter((user) => findOperativeForUser(user, [operative])?.id === operative.id)
-      : []
-    // A booking under a users id or former invite id has no catalogue row; its timesheet must still cover it.
-    const { user } = findUserAndOperative(users, operatives, { operativeId, aliases: userIdAliases })
-    if (user && !linked.some((row) => row.id === user.id)) linked.push(user)
-    const ids = linked.flatMap((row) => aliasIdsFor(row.id))
-    return Array.from(new Set(ids))
-  }
-
-  for (const booking of periodOperativeBookings) {
-    if (timesheetFeedCovers(timesheetWeeks, usersForOperative(booking.operativeId), booking.date, timeZone)) {
-      continue
-    }
-    const { user, operative } = findUserAndOperative(users, operatives, { operativeId: booking.operativeId, aliases: userIdAliases })
-    // 1.29.0 §7: a PAYE person's day leaves the normal hours and pay rows (it is in the PAYE overtime section).
-    if (user && weeklyReportPayeDay(user, dayKeyInZone(new Date(booking.date), timeZone), timeZone)) continue
-    addBookingPay(
-      new Date(booking.date),
-      String(booking.timeSlot),
-      booking.workStartTime,
-      booking.workEndTime,
-      booking.isBreakRemoved,
-      user,
-      operative,
-      booking.otMultiplierOverride
-    )
-    const days = bookingDayUnits(
-      String(booking.timeSlot),
-      booking.workStartTime,
-      booking.workEndTime,
-      policyOn(new Date(booking.date)),
-      new Date(booking.date),
-      booking.isBreakRemoved,
-      booking.otMultiplierOverride,
-      timeZone
-    )
-    addProjectRow(booking.projectId, undefined, booking.operativeId, days)
-  }
-
-  for (const booking of periodManagerBookings) {
-    if (booking.locationType !== 'project' && booking.locationType !== 'small_work') continue
-    if (!booking.locationId) continue
-    if (timesheetFeedCovers(timesheetWeeks, aliasIdsFor(booking.userId), booking.date, timeZone)) continue
-    const { user, operative } = findUserAndOperative(users, operatives, { userId: booking.userId, aliases: userIdAliases })
-    if (user && weeklyReportPayeDay(user, dayKeyInZone(new Date(booking.date), timeZone), timeZone)) continue
-    addBookingPay(
-      new Date(booking.date),
-      String(booking.timeSlot),
-      booking.workStartTime,
-      booking.workEndTime,
-      booking.isBreakRemoved,
-      user,
-      operative,
-      booking.otMultiplierOverride
-    )
-    const days = bookingDayUnits(
-      String(booking.timeSlot),
-      booking.workStartTime,
-      booking.workEndTime,
-      policyOn(new Date(booking.date)),
-      new Date(booking.date),
-      booking.isBreakRemoved,
-      booking.otMultiplierOverride ?? null,
-      timeZone
-    )
-    addProjectRow(booking.locationId, booking.userId, undefined, days)
-  }
-
-  // Rulebook 1.29.0 §7: a PAYE person's day is in the PAYE overtime section only — never in the hours, pay or
-  // additional-schedule rows, whatever source (live booking or approved-timesheet feed) it comes from.
-  const payeOnDay = (userId: string | undefined, date: Date): boolean => {
-    const person = userId ? users.find((entry) => entry.id === userId) : undefined
-    return Boolean(person && weeklyReportPayeDay(person, dayKeyInZone(new Date(date), timeZone), timeZone))
-  }
-
-  for (const { week, line } of timesheetLabourLines(timesheetWeeks, period.start, period.end, timeZone)) {
-    if (line.isOvertime || !isProjectLocationKind(line.locationKind) || line.days <= 0.0001) continue
-    if (payeOnDay(week.userId, line.date)) continue
-    const projectName = line.projectName || 'Unknown'
-    const jobNumber = line.jobNumber || 'N/A'
-    const matched = mergedWorks.find(
-      (project) => project.jobNumber === line.jobNumber && (project.siteName || project.jobNumber) === projectName
-    )
-    const key = matched?.id || `timesheet|${projectName}|${jobNumber}`
     const group =
       projectGroupsMap.get(key) ||
-      ({
-        projectName: matched?.siteName || projectName,
-        jobNumber: matched?.jobNumber || jobNumber,
-        rows: [],
-        projectTotal: 0,
-      } satisfies WeeklyReportProjectGroup)
-    const existing = group.rows.find((row) => row.person === week.personName && row.role === week.role)
+      ({ projectName, jobNumber, rows: [], projectTotal: 0, projectHours: 0 } satisfies WeeklyReportProjectGroup)
+    const existing = group.rows.find((row) => row.person === person && row.role === role)
     if (existing) {
-      existing.days = Math.round((existing.days + line.days) * 100) / 100
+      existing.days += days
+      existing.hours += hours
+      if (existing.trade === 'General' && trade !== 'General') existing.trade = trade
     } else {
-      group.rows.push({
-        person: week.personName,
-        trade: week.trade,
-        role: week.role,
-        days: Math.round(line.days * 100) / 100,
-      })
+      group.rows.push({ person, trade, role, hours, days })
     }
-    group.projectTotal = Math.round((group.projectTotal + line.days) * 100) / 100
+    group.projectTotal += days
+    group.projectHours += hours
     projectGroupsMap.set(key, group)
   }
 
   const managerScheduleRows: WeeklyReportManagerScheduleRow[] = []
   let managerScheduleTotal = 0
-  for (const booking of periodManagerBookings) {
-    if (booking.locationType === 'project' || booking.locationType === 'small_work') continue
-    if (timesheetFeedCovers(timesheetWeeks, aliasIdsFor(booking.userId), booking.date, timeZone)) continue
-    const linked = findUserAndOperative(users, operatives, { userId: booking.userId, aliases: userIdAliases })
-    if (linked.user && weeklyReportPayeDay(linked.user, dayKeyInZone(new Date(booking.date), timeZone), timeZone)) continue
-    addBookingPay(
-      new Date(booking.date),
-      String(booking.timeSlot),
-      booking.workStartTime,
-      booking.workEndTime,
-      booking.isBreakRemoved,
-      linked.user,
-      linked.operative
-    )
-    const { user, operative } = findUserAndOperative(users, operatives, { userId: booking.userId, aliases: userIdAliases })
-    const days = bookingDayUnits(
-      String(booking.timeSlot),
-      booking.workStartTime,
-      booking.workEndTime,
-      policyOn(new Date(booking.date)),
-      new Date(booking.date),
-      booking.isBreakRemoved,
-      null,
-      timeZone
-    )
-    const location = managerSiteBookingDisplayTitle(
-      booking,
-      new Map(Array.from(projectsById.entries()).map(([id, p]) => [id, p.siteName || p.jobNumber]))
-    )
+  const projectNames = new Map(Array.from(projectsById.entries()).map(([id, p]) => [id, p.siteName || p.jobNumber]))
+  for (const row of pay.paidDays) {
+    if (isProjectLocationKind(row.locationKind)) {
+      if (row.source === 'live') {
+        const project = row.jobId ? projectsById.get(row.jobId) : undefined
+        // A booking whose job was deleted still counts, under "Deleted job" (rulebook).
+        addProjectRow(
+          project?.id ?? `deleted:${row.jobId}`,
+          bookingJobLabel(project ? project.siteName || project.jobNumber : null),
+          project?.jobNumber || '—',
+          row.personId,
+          row.bookingPersonId,
+          row.hours,
+          row.days
+        )
+      } else {
+        const projectName = row.jobName || 'Unknown'
+        const jobNumber = row.jobNumber || 'N/A'
+        const matched = mergedWorks.find((project) => project.jobNumber === row.jobNumber && (project.siteName || project.jobNumber) === projectName)
+        addProjectRow(matched?.id || `timesheet|${projectName}|${jobNumber}`, matched?.siteName || projectName, matched?.jobNumber || jobNumber, row.personId, row.bookingPersonId, row.hours, row.days)
+      }
+      continue
+    }
+    if (!isAdditionalScheduleLocationKind(row.locationKind)) continue
+    const owner = row.personId ? personByKey.get(row.personId) ?? null : null
+    const booking = bookingById.get(row.bookingId)
+    const location =
+      row.source === 'live' && booking
+        ? managerSiteBookingDisplayTitle(booking, projectNames)
+        : row.locationKind === 'custom'
+          ? row.jobName.trim() && row.jobName.trim() !== '—' ? row.jobName.trim() : 'Custom'
+          : row.locationKind === 'office'
+            ? 'Office'
+            : row.locationKind === 'working_from_home'
+              ? 'Working from home'
+              : 'Site survey'
     managerScheduleRows.push({
-      person: resolveDisplayName(user, operative),
-      role: resolvePersonRole(user, operative),
+      person: owner?.name ?? 'Unknown',
+      role: owner?.role ?? 'User',
       location,
-      time: booking.workStartTime && booking.workEndTime
-        ? `${booking.workStartTime} – ${booking.workEndTime}`
-        : String(booking.timeSlot || 'Full Day'),
-      days,
+      time: row.time,
+      hours: Math.round(row.hours * 100) / 100,
+      days: Math.round(row.days * 100) / 100,
     })
-    managerScheduleTotal += days
-  }
-  for (const { week, line } of timesheetLabourLines(timesheetWeeks, period.start, period.end, timeZone)) {
-    if (line.isOvertime || !isAdditionalScheduleLocationKind(line.locationKind) || line.days <= 0.0001) continue
-    if (payeOnDay(week.userId, line.date)) continue
-    managerScheduleRows.push({
-      person: week.personName,
-      role: week.role,
-      location: additionalScheduleLocation(line),
-      time: line.details || 'Timesheet',
-      days: Math.round(line.days * 100) / 100,
-    })
-    managerScheduleTotal += line.days
+    managerScheduleTotal += row.days
   }
   managerScheduleRows.sort((a, b) => a.person.localeCompare(b.person) || a.location.localeCompare(b.location))
   managerScheduleTotal = Math.round(managerScheduleTotal * 100) / 100
@@ -651,7 +572,21 @@ export function buildWeeklyReportData({
     const project = projectsById.get(booking.projectId)
     const sub = subcontractors.find((entry) => entry.id === booking.subcontractorId)
     const people = resolveSubcontractorBookingPeople(booking, sub)
-    const days = subcontractorDayValue(booking.timeSlot)
+    // Rulebook 1.51.0 §7 (Q4c): custom hours are hours worked ÷ that day's paid day (`subcontractorDayValue`).
+    const dayKey = dayKeyInZone(new Date(booking.date), timeZone)
+    const dayPolicy = policyOn(new Date(booking.date))
+    const hours = payrollHoursResult({
+      booking: {
+        timeSlot: booking.timeSlot,
+        workStartTime: booking.workStartTime,
+        workEndTime: booking.workEndTime,
+        isBreakRemoved: booking.isBreakRemoved === true,
+      } as never,
+      dayKey,
+      policy: dayPolicy,
+      timeZone,
+    })
+    const days = subcontractorDayValue(booking.timeSlot, { hours, standardDayHours: weekdayPaidHours(dayPolicy) })
     return {
       projectName: bookingJobLabel(project?.siteName || project?.jobNumber),
       jobNumber: project?.jobNumber || '—',
@@ -668,35 +603,33 @@ export function buildWeeklyReportData({
     subContractorRows.reduce((sum, row) => sum + row.days, 0) * 100
   ) / 100
 
-  const annualLeaveRows: WeeklyReportLeaveRow[] = []
-  const leavePeople = new Map<string, WeeklyReportLeaveRow>()
-  for (const holiday of holidays.filter((entry) => entry.status === 'approved')) {
-    const days = leaveDaysInPeriod(holiday, period, standardHours)
-    if (days <= 0) continue
-    const user = holiday.userId ? users.find((entry) => entry.id === holiday.userId) : undefined
-    const operative = holiday.operativeId
-      ? operatives.find((entry) => normalizeDocumentId(entry.id) === normalizeDocumentId(holiday.operativeId))
-      : user
-        ? findOperativeForUser(user, operatives)
-        : undefined
-    const displayName = resolveDisplayName(user, operative)
-    const existing = leavePeople.get(displayName)
-    if (existing) {
-      existing.days = Math.round((existing.days + days) * 100) / 100
-    } else {
-      leavePeople.set(displayName, {
-        person: displayName,
-        role: resolvePersonRole(user, operative),
-        days,
-        type: 'Approved',
-      })
-    }
-  }
-  annualLeaveRows.push(...Array.from(leavePeople.values()))
-  const annualLeaveTotal = Math.round(
-    annualLeaveRows.reduce((sum, row) => sum + row.days, 0) * 100
-  ) / 100
+  // Rulebook 1.51.0 §7 (Q4b): leave matched to a person under every id and email (`weeklyReportLeaveRows`).
+  const leave = weeklyReportLeaveRows({
+    records: holidays.map((holiday) => {
+      const keys = holidayBookingDayKeys(holiday, timeZone)
+      return {
+        id: holiday.id,
+        userId: holiday.userId ?? null,
+        operativeId: holiday.operativeId ?? null,
+        startDayKey: keys.startDayKey,
+        endDayKey: keys.endDayKey,
+        timeSlot: holiday.timeSlot,
+        status: holiday.status,
+      }
+    }),
+    people: weeklyReportLeavePeople(users, operatives, userIdAliases),
+    range,
+    timeZone,
+  })
+  const annualLeaveRows: WeeklyReportLeaveRow[] = leave.rows.map((row) => ({ person: row.person, role: row.role, days: row.days, type: row.type }))
+  const annualLeaveTotal = leave.total
 
+  // Rulebook 1.51.0 §7 (Q4d): a clash row states facts only (`weeklyReportClashDetail`), never an app instruction.
+  const clashDetail = (clash: { date: Date; entries?: Array<{ locationLabel: string; timeLabel: string }> }) =>
+    weeklyReportClashDetail({
+      dayText: format(clash.date, 'd MMM yyyy'),
+      places: (clash.entries ?? []).map((entry) => ({ label: entry.locationLabel, time: entry.timeLabel })),
+    })
   const warningDetection = orgDetails?.warningDetection
   const rosterOperatives = getActiveOperativesForScheduling(operatives)
   const warnings: WeeklyReportWarningRow[] = []
@@ -714,7 +647,7 @@ export function buildWeeklyReportData({
       date: Date
       bookingAId: string
       bookingBId: string
-      message: string
+      detail: string
       resolutionKey?: string
       pairs?: Array<{ bookingAId: string; bookingBId: string }>
     },
@@ -731,7 +664,7 @@ export function buildWeeklyReportData({
       priority: kind === 'operative' ? 'High' : 'Medium',
       type: kind === 'operative' ? 'Booking clash' : 'Manager overlap',
       person,
-      detail: clash.message,
+      detail: clash.detail,
       bookingAId: clash.bookingAId,
       bookingBId: clash.bookingBId,
       resolutionKey: clashResolutionKey(clash),
@@ -769,17 +702,17 @@ export function buildWeeklyReportData({
       if (isAnonymisedDeletedProfile({ name: clash.operativeName })) continue
       // A cluster is approved only when every overlapping pair is (`isClashGroupApproved`).
       if (decisions && isClashGroupApproved(clash, decisions)) {
-        approvedClashes.push(approvedRow(clash, clash.operativeName, 'operative'))
+        approvedClashes.push(approvedRow({ ...clash, detail: clashDetail(clash) }, clash.operativeName, 'operative'))
         continue
       }
       if (!clashStillOpen(clash)) continue
       warnings.push({
-        status: 'Open',
+        status: WEEKLY_REPORT_WARNING_OPEN,
         priority: 'High',
         type: 'Booking clash',
         date: format(clash.date, 'd MMM yyyy'),
         description: clash.operativeName,
-        detail: clash.message,
+        detail: clashDetail(clash),
         forPerson: clash.operativeName,
       })
     }
@@ -795,17 +728,17 @@ export function buildWeeklyReportData({
     )) {
       if (isAnonymisedDeletedProfile({ name: clash.personName })) continue
       if (decisions && isClashApproved(clash, decisions)) {
-        approvedClashes.push(approvedRow(clash, clash.personName, 'manager'))
+        approvedClashes.push(approvedRow({ ...clash, detail: clashDetail(clash) }, clash.personName, 'manager'))
         continue
       }
       if (!clashStillOpen(clash)) continue
       warnings.push({
-        status: 'Open',
+        status: WEEKLY_REPORT_WARNING_OPEN,
         priority: 'Medium',
         type: 'Manager overlap',
         date: format(clash.date, 'd MMM yyyy'),
         description: clash.personName,
-        detail: clash.message,
+        detail: clashDetail(clash),
         forPerson: clash.personName,
       })
     }
@@ -826,7 +759,7 @@ export function buildWeeklyReportData({
       timeZone,
     })) {
       warnings.push({
-        status: 'Active',
+        status: WEEKLY_REPORT_WARNING_OPEN,
         priority: 'High',
         type: 'Unbooked labour',
         date: format(warning.date, 'd MMM yyyy'),
@@ -837,102 +770,22 @@ export function buildWeeklyReportData({
     }
   }
 
-  for (const { week, line } of timesheetLabourLines(timesheetWeeks, period.start, period.end, timeZone)) {
-    const weekUser = users.find((entry) => entry.id === week.userId)
-    const isPaye = Boolean(weekUser && employmentTypeOnDay(weekUser, line.date, timeZone) === 'paye')
-    // 1.29.0 §7: PAYE days leave the pay rows (they are in the PAYE overtime section).
-    if (isPaye) continue
-    addPaySlice(
-      `user:${keptUserId(week.userId)}`,
-      week.personName,
-      week.role,
-      // 1.19.0: a signed line keeps its signed amount and multiplier (never re-priced); only its day units are read
-      // against the standard day in effect on the line's own day.
-      signedLabourSlice(line, orgDayHours(weekdayPaidHours(policyOn(line.date))), line.otMultiplier ?? null, isPaye),
-      subjectFor(weekUser, undefined)
-    )
-  }
-
-  const paySummary: WeeklyReportPayPerson[] = []
-  let grandTotal = 0
-  const grouped = new Map<string, WeeklyReportPayPerson>()
-  for (const bucket of payBuckets.values()) {
-    const shown = paySliceDisplay(bucket.slice, standardHours)
-    if (!bucket.slice.isPaye && bucket.slice.rate == null) continue
-    const personKey = `${bucket.personKey}|${bucket.role}`
-    let summary = grouped.get(personKey)
-    if (!summary) {
-      summary = { person: bucket.person, role: bucket.role, lines: [], personTotal: 0, paySubject: paySubjects.get(bucket.personKey) ?? null }
-      grouped.set(personKey, summary)
-    }
-    const cell = reportPayCell({ isPaye: bucket.slice.isPaye, pay: shown.pay })
-    summary.lines.push({
-      rateType: shown.rateType,
-      days: roundPennies(shown.days),
-      rate: shown.rate,
-      pay: cell.pay ?? 0,
-      quantityText: shown.quantityText,
-      rateText: shown.rateText,
-      isPaye: bucket.slice.isPaye,
-      payLabel: cell.label,
-    })
-  }
-  const settlePerson = (summary: WeeklyReportPayPerson) => {
-    const cell = reportPersonPayCell(summary.lines.map((line) => ({ isPaye: line.isPaye === true, pay: line.pay })))
-    summary.personTotal = cell.pay ?? 0
-    summary.personTotalLabel = cell.label
-  }
-  for (const summary of grouped.values()) {
-    settlePerson(summary)
-    paySummary.push(summary)
-  }
-
-  const addMoneyPay = (person: string, role: string, rateType: string, pay: number, userId?: string) => {
-    if (pay <= 0.0001) return
-    let summary = paySummary.find((row) => row.person === person && row.role === role)
-    if (!summary) {
-      const owner = userId ? users.find((entry) => entry.id === userId) : undefined
-      summary = { person, role, lines: [], personTotal: 0, paySubject: owner ? (owner as unknown as Record<string, unknown>) : null }
-      paySummary.push(summary)
-    }
-    summary.lines.push({
-      rateType,
-      days: 0,
-      rate: 0,
-      pay: roundPennies(pay),
-      quantityText: '',
-      rateText: '',
-    })
-    settlePerson(summary)
-  }
-  for (const { week, line } of timesheetMoneyLines(timesheetWeeks, 'priceWork', period.start, period.end, timeZone)) {
-    addMoneyPay(week.personName, week.role, 'Price work', line.amount, week.userId)
-  }
-  for (const { week, line } of timesheetMoneyLines(timesheetWeeks, 'expenses', period.start, period.end, timeZone)) {
-    addMoneyPay(week.personName, week.role, 'Expenses', line.amount, week.userId)
-  }
-
-  grandTotal = reportPayTotal(
-    paySummary.flatMap((summary) => summary.lines.map((line) => ({ isPaye: line.isPaye === true, pay: line.pay })))
-  )
-
-  const projectGroups = Array.from(projectGroupsMap.values()).sort((a, b) =>
-    a.projectName.localeCompare(b.projectName)
-  )
-  const allProjectWorkTotal = Math.round(
-    projectGroups.reduce((sum, group) => sum + group.projectTotal, 0) * 100
-  ) / 100
+  const round2 = (value: number) => Math.round(value * 100) / 100
+  const projectGroups = Array.from(projectGroupsMap.values())
+    .map((group) => ({
+      ...group,
+      rows: group.rows.map((row) => ({ ...row, hours: round2(row.hours), days: round2(row.days) })),
+      projectTotal: round2(group.projectTotal),
+      projectHours: round2(group.projectHours),
+    }))
+    .sort((a, b) => a.projectName.localeCompare(b.projectName))
+  const allProjectWorkTotal = round2(projectGroups.reduce((sum, group) => sum + group.projectTotal, 0))
+  const allProjectHoursTotal = round2(projectGroups.reduce((sum, group) => sum + group.projectHours, 0))
 
   // Rulebook 1.29.0 §7: the PAYE overtime section, live from the bookings (labour and job-linked manager site).
-  const policyState: PayrollTimePolicyState = orgDetails?.payrollTimePolicyState ?? {
-    current: payroll ?? DEFAULT_PAYROLL_POLICY,
-    prior: orgDetails?.payrollTimePolicyPrior ?? null,
-    effectiveFrom: orgDetails?.payrollTimePolicyEffectiveFrom ?? null,
-    scheduled: orgDetails?.payrollTimePolicyScheduled ?? null,
-  }
   const jobFor = (id: string | undefined) => (id ? projectsById.get(id) : undefined)
   const overtimeBookings: OvertimeBookingInput[] = [
-    ...periodOperativeBookings.map((booking) => ({
+    ...periodOperativeBookings.filter((booking) => bookingOccupiesDay(booking.status)).map((booking) => ({
       id: booking.id,
       collection: 'bookings',
       personId: booking.operativeId,
@@ -1021,7 +874,43 @@ export function buildWeeklyReportData({
     priceWorkTotal,
     expenseRows,
     expenseTotal,
-    paySummary: paySummary.sort((a, b) => a.person.localeCompare(b.person)),
-    grandTotal: Math.round(grandTotal * 100) / 100,
+    paySummary: pay.people,
+    grandTotal: pay.grandTotal,
+    payHiddenPeople: pay.hiddenPeople,
+    allProjectHoursTotal,
+    unmatchedLeave: leave.unmatched,
   }
+}
+
+/**
+ * Rulebook 1.51.0 (Q4b): the people annual leave is matched to — each kept users document with every id it goes by
+ * (`overtimePersonIds`, the roster fold's ids) and its email, and each `operatives` row with no account.
+ */
+export function weeklyReportLeavePeople(
+  users: User[],
+  operatives: Operative[],
+  userIdAliases: Readonly<Record<string, string>> = {}
+): WeeklyReportLeavePerson[] {
+  const out: WeeklyReportLeavePerson[] = []
+  const claimed = new Set<string>()
+  const aliasesOf = (id: string) => rosterAliasIdsFor(id, userIdAliases)
+  // Review of #329: only the kept users document of each person (`userIdAliases`), so a row is named from the live
+  // record, never a same-email duplicate; the duplicate's ids are in the kept person's ids.
+  const kept = (id: string) => {
+    const lower = id.trim().toLowerCase()
+    const hit = Object.entries(userIdAliases).find(([alias]) => alias.trim().toLowerCase() === lower)
+    return !hit || hit[1].trim().toLowerCase() === lower
+  }
+  for (const user of users) {
+    if (!kept(user.id)) continue
+    const operative = findOperativeForUser(user, operatives)
+    const ids = Array.from(new Set([...overtimePersonIds({ person: user, roster: users as never, operatives }), ...aliasesOf(user.id)]))
+    ids.forEach((id) => claimed.add(normalizeDocumentId(id)))
+    out.push({ id: user.id, name: resolveDisplayName(user, operative), role: resolvePersonRole(user, operative), ids, email: user.email || null })
+  }
+  for (const operative of operatives) {
+    if (claimed.has(normalizeDocumentId(operative.id))) continue
+    out.push({ id: operative.id, name: resolveDisplayName(undefined, operative), role: resolvePersonRole(undefined, operative), ids: [operative.id], email: operative.email || null })
+  }
+  return out
 }

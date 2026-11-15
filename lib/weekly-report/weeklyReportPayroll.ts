@@ -1,38 +1,9 @@
-import { bookingPaySlices, formatMoney, parseMultipliedHoursText, reportDayValue, resolveBookingPerson, rosterAliasIdsFor, weekdayPaidHours } from '@/lib/canonical'
+import { formatMoney, normalizeDocumentId, parseMultipliedHoursText, resolveBookingPerson, rosterAliasIdsFor } from '@/lib/canonical'
 import { currentOrganizationCurrency } from '@/lib/stores/organizationDocumentStore'
-import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
-import { DEFAULT_PAYROLL_POLICY } from '@/lib/settings/organizationSettings'
 import type { Operative, User } from '@/types'
 import { findOperativeForUser } from '@/lib/operatives/operativeRosterUtils'
 import { STAFF_TRADE_PRESETS } from '@/lib/staff/staffTradeTypes'
-import { employmentTypeOnDay } from '@/lib/ios-parity/employmentType'
-import { bookingHoursOnDay } from '@/lib/timesheets/timesheetHours'
-import { emptyDayRateHistory, type OperativeDayRateHistoryCollection } from '@/lib/timesheets/dayRateHistoryStorage'
-import { resolvePayrollRate } from '@/lib/timesheets/payrollRateResolver'
-import { orgDayHours, payLineDisplay, quantityText, roundPennies, type PayBasis } from '@/lib/timesheets/payBasis'
-import { normalizeDocumentId } from '@/lib/canonical'
-
-/** Day units for a staff booking (`reportDayValue` of `payrollHoursResult`), as on iOS. */
-export function bookingDayUnits(
-  timeSlot: string,
-  workStartTime?: string,
-  workEndTime?: string,
-  payrollPolicy?: OrgPayrollTimePolicy,
-  date?: Date,
-  isBreakRemoved?: boolean,
-  otMultiplierOverride?: number | null,
-  timeZone?: string
-): number {
-  const policy = payrollPolicy || DEFAULT_PAYROLL_POLICY
-  const hours = bookingHoursOnDay(date, timeSlot, workStartTime, workEndTime, policy, isBreakRemoved, otMultiplierOverride, timeZone)
-  // 1.49.0 §7/§8: a set-window weekend day's standard part counts in days of that day's "counts as" hours.
-  return reportDayValue({
-    totalPaidHours: hours.totalPaidHours,
-    standardPaidHours: weekdayPaidHours(policy),
-    standardHours: hours.standardHours,
-    standardPartDayHours: hours.standardPartDayHours ?? null,
-  })
-}
+import { orgDayHours, roundPennies, type PayBasis } from '@/lib/timesheets/payBasis'
 
 function readableTrade(value?: string): string | undefined {
   const trimmed = value?.trim() || ''
@@ -134,10 +105,6 @@ export function formatCurrency(amount: number, currencyCode: string = currentOrg
   return formatMoney(amount, currencyCode)
 }
 
-export function formatDays(days: number): string {
-  return days.toFixed(2)
-}
-
 export type LabourPaySlice = {
   payBasis: PayBasis
   isOvertime: boolean
@@ -157,63 +124,6 @@ export type LabourPaySlice = {
    */
   clockHours?: number
   breakHours?: number
-}
-
-export function labourPaySlices({
-  date,
-  timeSlot,
-  workStartTime,
-  workEndTime,
-  isBreakRemoved,
-  otMultiplierOverride,
-  user,
-  operative,
-  history = emptyDayRateHistory(),
-  aliasUserIds = [],
-  operativeIds = [],
-  payroll,
-  timeZone,
-}: {
-  date: Date
-  timeSlot: string
-  workStartTime?: string
-  workEndTime?: string
-  isBreakRemoved?: boolean
-  otMultiplierOverride?: number | null
-  user?: User
-  operative?: Operative
-  history?: OperativeDayRateHistoryCollection
-  aliasUserIds?: string[]
-  /** 1.36.0 (FU-5): every `operatives` row of the person (`personRateHistoryIds`), for their rate history. */
-  operativeIds?: string[]
-  payroll?: OrgPayrollTimePolicy
-  timeZone?: string
-}): LabourPaySlice[] {
-  // `payroll` is the policy in effect on `date` (`orgPayrollPolicyForDay`); the caller resolves it per day.
-  const policy = payroll || DEFAULT_PAYROLL_POLICY
-  const standard = orgDayHours(weekdayPaidHours(policy))
-  // `payrollHoursResult`: the same normal hours, overtime hours and multiplier iOS uses.
-  const hours = bookingHoursOnDay(date, timeSlot, workStartTime, workEndTime, policy, isBreakRemoved, otMultiplierOverride, timeZone)
-  const resolved = resolvePayrollRate({
-    user,
-    operative,
-    day: date,
-    history,
-    timeZone,
-    aliasUserIds,
-    operativeIds,
-  })
-  const isPaye = Boolean(user && employmentTypeOnDay(user, date, timeZone) === 'paye')
-  // Rulebook 1.46.0 §7 (`bookingPaySlices`): each part of this one booking priced with `payForHours` and rounded, the
-  // same pennies as the timesheet collector; the report adds bookings with `mergeBookingPaySlice`.
-  return bookingPaySlices({
-    hours,
-    standardDayHours: standard,
-    payBasis: resolved.basis === 'hourly' ? 'hourly' : 'day',
-    dayRate: resolved.dayRate,
-    hourlyRate: resolved.hourlyRate,
-    isPaye,
-  })
 }
 
 /** `isPaye` is `employmentTypeOnDay` for the line's day; a PAYE line keeps its hours and shows no pay (`reportPayCell`). */
@@ -251,43 +161,5 @@ export function signedLabourSlice(line: {
     standardDayHours: standard,
     // 1.20.3: a signed overtime line with a break keeps its clock hours and break for display (from its stored text).
     ...(line.isOvertime && signedBreak ? { clockHours: signedBreak.clockHours, breakHours: signedBreak.breakHours } : {}),
-  }
-}
-
-export function paySliceDisplay(slice: LabourPaySlice, standardHours: number, currencyCode: string = currentOrganizationCurrency()) {
-  if (slice.isPaye) {
-    return {
-      rateType: 'PAYE',
-      quantityText: quantityText(slice.paidHours, 'hours'),
-      rateText: '',
-      pay: 0,
-      days: slice.paidHours,
-      rate: 0,
-    }
-  }
-  const display = payLineDisplay({
-    payBasis: slice.payBasis,
-    paidHours: slice.paidHours,
-    standardDayHours: slice.standardDayHours ?? standardHours,
-    rate: slice.rate,
-    pay: slice.pay,
-    isOvertime: slice.isOvertime,
-    otMultiplier: slice.otMultiplier,
-    currencyCode,
-    clockHours: slice.clockHours ?? null,
-    breakHours: slice.breakHours ?? null,
-  })
-  // 1.20.3: with a break off hours at a multiplier the quantity is the hours that pay (clock × N − break) at the base
-  // rate, so quantity × rate still equals the pay; no back-calculated base hours are shown.
-  const multiplier = Number(slice.otMultiplier) > 0 ? Number(slice.otMultiplier) : 1
-  const withBreak = slice.isOvertime && Number(slice.breakHours) > 0 && Number(slice.clockHours) > 0
-  const hoursShown = withBreak ? Math.max(0, Number(slice.clockHours) * multiplier - Number(slice.breakHours)) : slice.paidHours
-  return {
-    rateType: display.rateType,
-    quantityText: display.quantityText,
-    rateText: display.rateText,
-    pay: display.pay,
-    days: slice.payBasis === 'hourly' ? hoursShown : hoursShown / orgDayHours(slice.standardDayHours ?? standardHours),
-    rate: withBreak ? (slice.rate ?? 0) / multiplier : slice.rate ?? 0,
   }
 }

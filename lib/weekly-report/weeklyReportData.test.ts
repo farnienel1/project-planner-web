@@ -89,7 +89,7 @@ function booking(id: string, date: Date): Booking {
 }
 
 test('a person with two bookings on one job is one project row', () => {
-  const report = buildWeeklyReportData({
+  const report = buildWeeklyReportData({ showAllPay: true,
     organizationName: 'Acme',
     period: { start: new Date('2026-10-05T00:00:00Z'), end: new Date('2026-10-11T00:00:00Z'), label: 'week' },
     bookings: [booking('b1', day), booking('b2', next)],
@@ -112,7 +112,7 @@ test('a person with two bookings on one job is one project row', () => {
 
 test('cancelled bookings are not counted, and bookings under a users id or former invite id are named', () => {
   const rehired: User = { ...person(), id: 'rehiredUid0001', email: 'rehired@x.com', firstName: 'Re', surname: 'Hired', formerUserIds: ['PLACEHOLDER-0001'] }
-  const report = buildWeeklyReportData({
+  const report = buildWeeklyReportData({ showAllPay: true,
     organizationName: 'Acme',
     period: { start: new Date('2026-10-05T00:00:00Z'), end: new Date('2026-10-11T00:00:00Z'), label: 'week' },
     bookings: [
@@ -157,7 +157,7 @@ test('1.29.0: a PAYE person leaves the hours and pay rows and their overtime is 
     holidays: [],
     orgDetails: null,
   }
-  const report = buildWeeklyReportData(input)
+  const report = buildWeeklyReportData({ ...input, showAllPay: true })
   assert.equal(report.paySummary.find((row) => row.person === 'Pat Paye'), undefined, 'PAYE person is not in the pay rows')
   const ada = report.paySummary.find((row) => row.person === 'Ada Booked')
   assert.equal(ada?.personTotal, 400)
@@ -188,8 +188,8 @@ test('a booking under the other same-email profile is named through the roster a
     holidays: [],
     orgDetails: null,
   }
-  assert.equal(buildWeeklyReportData(input).projectGroups[0]?.rows[0]?.person, 'Unknown')
-  const named = buildWeeklyReportData({
+  assert.equal(buildWeeklyReportData({ ...input, showAllPay: true }).projectGroups[0]?.rows[0]?.person, 'Unknown')
+  const named = buildWeeklyReportData({ showAllPay: true,
     ...input,
     userIdAliases: { keptManagerUid: 'keptManagerUid', 'duplicate-profile-id': 'keptManagerUid' },
   })
@@ -215,13 +215,13 @@ test('rulebook 1.10.0 §5: a dismissed clash is not open on the weekly report; a
     holidays: [],
     orgDetails: { countryCode: 'GB', warningDetection: { detectClashes: true } } as never,
   }
-  const open = buildWeeklyReportData({ ...base, warningDecisions: { resolvedKeys: [], approvedKeys: [], acceptedClashes: [] } })
+  const open = buildWeeklyReportData({ showAllPay: true, ...base, warningDecisions: { resolvedKeys: [], approvedKeys: [], acceptedClashes: [] } })
   assert.equal(open.warnings.filter((row) => row.type === 'Booking clash').length, 1)
   const key = clashPairKey('b1', 'b2')
-  const dismissed = buildWeeklyReportData({ ...base, warningDecisions: { resolvedKeys: [key], approvedKeys: [], acceptedClashes: [] } })
+  const dismissed = buildWeeklyReportData({ showAllPay: true, ...base, warningDecisions: { resolvedKeys: [key], approvedKeys: [], acceptedClashes: [] } })
   assert.equal(dismissed.warnings.filter((row) => row.type === 'Booking clash').length, 0)
   assert.equal(dismissed.approvedClashes.length, 0)
-  const approved = buildWeeklyReportData({ ...base, warningDecisions: { resolvedKeys: [key], approvedKeys: [key], acceptedClashes: [] } })
+  const approved = buildWeeklyReportData({ showAllPay: true, ...base, warningDecisions: { resolvedKeys: [key], approvedKeys: [key], acceptedClashes: [] } })
   assert.equal(approved.warnings.filter((row) => row.type === 'Booking clash').length, 0)
   assert.equal(approved.approvedClashes.length, 1)
 })
@@ -243,12 +243,12 @@ test('pay uses the working hours in effect on each booking day, not today\'s (or
     smallWorks: [],
     holidays: [],
   }
-  const before = buildWeeklyReportData({
+  const before = buildWeeklyReportData({ showAllPay: true,
     ...base,
     orgDetails: { countryCode: 'GB', payrollTimePolicy: DEFAULT_PAYROLL_POLICY } as never,
   })
   // The 9-hour day applies from 20 Oct; the 8 Oct booking keeps the prior 8-hour rules.
-  const changedLater = buildWeeklyReportData({
+  const changedLater = buildWeeklyReportData({ showAllPay: true,
     ...base,
     orgDetails: {
       countryCode: 'GB',
@@ -257,7 +257,7 @@ test('pay uses the working hours in effect on each booking day, not today\'s (or
       payrollTimePolicyEffectiveFrom: '2026-10-20',
     } as never,
   })
-  const appliedBefore = buildWeeklyReportData({
+  const appliedBefore = buildWeeklyReportData({ showAllPay: true,
     ...base,
     orgDetails: {
       countryCode: 'GB',
@@ -273,7 +273,7 @@ test('pay uses the working hours in effect on each booking day, not today\'s (or
 test('pay rows are grouped by person, not by display name', () => {
   const twin = { ...person(), id: 'u9', email: 'other.ada@x.com' } as User
   const twinOperative: Operative = { ...operative, id: 'op9', email: 'other.ada@x.com', dayRate: 100 }
-  const report = buildWeeklyReportData({
+  const report = buildWeeklyReportData({ showAllPay: true,
     organizationName: 'Acme',
     period: { start: new Date('2026-10-05T00:00:00Z'), end: new Date('2026-10-11T00:00:00Z'), label: 'week' },
     bookings: [booking('b1', day), { ...booking('b9', day), operativeId: 'op9' }],
@@ -350,8 +350,8 @@ test('1.29.0 review fix: PAYE days never reach hours, pay or additional-schedule
     holidays: [],
     orgDetails: null,
   }
-  const without = buildWeeklyReportData(base)
-  const withPaye = buildWeeklyReportData({
+  const without = buildWeeklyReportData({ ...base, showAllPay: true })
+  const withPaye = buildWeeklyReportData({ showAllPay: true,
     ...base,
     managerSiteBookings: [office],
     timesheetWeeks: [payeWeek] as never,

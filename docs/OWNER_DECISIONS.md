@@ -646,6 +646,32 @@ UI only, web only (`docs/design/user-profile-ui/user-profile-ui-spec.md`; branch
 | 15 Nov | Review M1: until the 1.50.0 Storage rules are published, certificate photos are redrawn to JPEG and a photo that cannot be redrawn (HEIC in Chrome) is refused with a message, because the live rules take PDF and JPEG only for certificates. A web guard (`STORAGE_RULES_1_50_PUBLISHED = false`, `pre150RulesAccept`) keeps every upload inside what the old rules accept; flip it in the release after the publish. | done, owner to confirm |
 | 15 Nov | Review L4: a photo over 40 MB, or over 50 megapixels by its header, is refused before it is decoded. | done, owner to confirm |
 
+## 15 Nov decisions (for 1.51, weekly report rework)
+
+| Date | Decision | Status |
+|---|---|---|
+| 15 Nov | **Q1: new Pay Summary layout.** One row per person, per rate period ("1–13 Nov" at £250, "14–15 Nov" at £240), per kind of hours; columns Person \| Role \| Dates \| Line \| Hours \| Days \| Rate \| Pay. Lines: Weekday standard, Weekday overtime ×N (12h × 1.5 = 18h), each Saturday / Sunday named with its date (window, outside the window, every hour), Hourly / Hourly overtime ×N; PAYE stays in its own section; price work and expenses keep their sections and show per person. Hours = paid hours; Days = paid hours ÷ the 1.49 divisors; Rate = the day or hourly rate in effect (never a multiplied day rate). Money unchanged (pay rounded per booking line; Test Admin £3,141.77 live, £3,141.76 fixture). | done web + rulebook (1.51.0, `weeklyReportPayRows`); iOS open (hand-off v1.51.0) |
+| 15 Nov | **Q2: invoice check line.** Each self-employed person ends with a total row and "Timesheet: Not started / Submitted / Signed / Exported · Invoice £… ✓" (`timesheetListBucket` with `signedTimesheetBookingChanges`; invoice from `timesheetInvoiceRows` for the same days, "Invoice rows in this period" when a run is cut by the range), like with like (review of #329: labour against labour; price work and expenses only for approved runs, otherwise a neutral "awaiting sign-off" note); amber with both figures when the invoice differs from the report or the sheet changed since signing; "no timesheet yet" with no stored sheet. PAYE has none. | done web + rulebook (1.51.0); iOS open |
+| 15 Nov | **Q3: one shared rule.** `weeklyReportPayRows` in `lib/canonical`, reusing the timesheet pricing; the web screen and every export only render it; web pay-row builders deleted; iOS replaces `WeeklyReportPayRows` / `WeeklyReportView` pricing (hand-off). | done web + rulebook (1.51.0); iOS open |
+| 15 Nov | **Q4a: Project Breakdown days tie to the Pay Summary.** Hours and Paid days (paid hours ÷ the same divisors, uncapped) instead of booked-day units capped at 1.5. | done web + rulebook (1.51.0) |
+| 15 Nov | **Q4b: "Unknown · User" leave.** Leave matched under every id and the email without case (`weeklyReportLeaveRows`); nobody → "Person not found (id …)", listed in Data health (`leaveRecordsWithoutPerson`). | done web + rulebook (1.51.0) |
+| 15 Nov | **Q4c: subcontractor custom hours.** Hours worked ÷ the paid day (07:00–20:00 = 1.47 days), not 0.5. | done web + rulebook (1.51.0) |
+| 15 Nov | **Q4d: warnings.** One status word "Open"; the Detail column states facts only (no "Approve if it's intentional…"). | done web + rulebook (1.51.0) |
+| 15 Nov | **Q4e: Sunday 1 Nov 8.5h vs Sunday 8 Nov 6h.** Resolved: correct per working-hours history (change on 3 Nov); no change. Firestore: `payrollTimePolicyHistory[0]` (1970) has Sunday every hour ×2 (`sundaySameAsSaturday: false`), so Sunday 1 Nov must cover the weekday day (07:00–16:00 less lunch = 8.5h); `[1]` (3 Nov) has Sunday same as Saturday, so Sunday 8 Nov covers 07:30–14:00 less lunch = 6h. Owner confirmed the old rule was intended. The new read-only Working hours history list (1.51.0) shows such changes. | **resolved, owner confirmed 15 Nov** |
+| 15 Nov | **Working hours history** (owner, 15 Nov): a read-only list in Settings → Working hours, admins only, one row per start date, newest first — weekday day (start–finish, break, paid day), weekday overtime, Saturday's rule, Sunday's rule (or "same as Saturday"), the row in effect today marked, a scheduled change shown "Scheduled from <date>". One rule for both apps: `payrollPolicyHistoryRows`. Display only. | done web + rulebook (1.51.0); iOS open (hand-off) |
+| 15 Nov | **Keep the Excel download.** The XLSX stays; the PDF, HTML and Excel exports and the screen show exactly the same rows (one table builder). | done web (1.51.0) |
+
+## 1.51.0 judgement calls (owner to confirm)
+
+| Date | Choice | Status |
+|---|---|---|
+| 15 Nov | Q4a: the Project Breakdown switched to **paid days** (with an Hours column), not "Days booked", so it ties to the Pay Summary (owner preference). The Additional Schedule uses the same Hours / Paid days. | done, owner to confirm |
+| 15 Nov | People with bookings but no rate set are now listed in the Pay Summary with "Rate not set" and £0 (before 1.51.0 their hours were left off silently). Totals unchanged. | done, **owner confirmed 15 Nov** |
+| 15 Nov | A signed timesheet's rows show "· signed timesheet" and the rate their signed amount works out at; they are separate rows from live bookings at the same rate. | done, **owner confirmed 15 Nov** |
+| 15 Nov | **Money change (review of #329, owner confirmed 15 Nov):** a manager site booking off a job (Office, Working from home, Site survey, custom) is priced at its own overtime rate (`otMultiplierOverride`), as the timesheet and invoice already were. Example: office 16:00–19:00 at ×2 on £250/day, 8.5h day: £132.35 before (organisation ×1.5) → £176.47 now, +£44.12, matching the invoice. | done, **owner confirmed 15 Nov** |
+| 15 Nov | Q4c: subcontractor custom hours are capped at 1.5 days, like staff day units. | done, owner to confirm |
+| 15 Nov | The weekly report's Excel file now has the People column on Sub Contractors and the Hours column on the Project Breakdown (it lacked People before), because every export shows the same rows. | done, owner to confirm |
+
 ## 15 Nov decisions (for 1.52, variations)
 
 | Date | Decision | Status |

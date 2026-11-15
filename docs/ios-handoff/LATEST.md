@@ -8,9 +8,9 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ║ FOLLOW-ON — paste into the iOS agent                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
-Rulebook version: 1.50.0 → 1.52.0
-Packed hash: ed27a8049e14fc7dae5a0c78bc924d74a23935936c3648bf4661084c93c67be2
-Rulebook sha256: 86778db9d1f568b74c340e02c836b353353d96c503b5ac5547bbe6870308c860
+Rulebook version: 1.52.0 → 1.52.0
+Packed hash: 89ed2e73e674eb68197717533ff4dacfc48131b58d68f96821c10ab0b59c1c3e
+Rulebook sha256: 1c2187a83437105a7fbdac33dac8e5bedbec0e87114302d77eef8d84a3037020
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -22,12 +22,12 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
 Contract sha256: 4db6dffac2e60a73653776cec1db4bcdd12cbb2a5f43ab57ff08efc8e8186fcb
 Data-parity fixture sha256: c2db4a64c22f36ddda48453c0d26da28fc802df9c8c93c0d876e8097a9eb176f
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: VARIATION_COST_MAX, VARIATION_COST_MESSAGE, VARIATION_EVIDENCE_MAX_FILES, VARIATION_EXPORT_COST_KEYS, VARIATION_EXPORT_LINE_COLUMNS, VARIATION_EXPORT_SUMMARY_COLUMNS, VARIATION_LINE_NAME_MESSAGE, VARIATION_MATERIAL_UNITS, VARIATION_PINNED_MESSAGE, VARIATION_QUANTITY_MAX, VARIATION_QUANTITY_MESSAGE, VARIATION_RENUMBER_STALE_MESSAGE, VARIATION_STATUS_LABELS, canRenumberVariations, canSeeVariationCosts, normalizeVariationMaterialUnit, parseVariationCustomLines, parseVariationMaterialQuantity, parseVariationSubcontractorLines, variationCustomLineError, variationCustomLineFields, variationDateText, variationEvidenceAddWriteFields, variationExportFileName, variationExportRows, variationExtraLineId, variationIsPinned, variationLabourCrew, variationLabourLineFields, variationLabourText, variationListTotals, variationMaterialLineFields, variationMaterialQuantity, variationMaterialQuantityError, variationMaterialQuantityText, variationPreviousNumbers, variationRenumberConflict, variationRenumberPlan, variationSubcontractorLineError, variationSubcontractorLineFields, variationTotals
+Exports added: WEEKLY_REPORT_NO_TIMESHEET, WEEKLY_REPORT_PAY_COLUMNS, WEEKLY_REPORT_PERSON_NOT_FOUND, WEEKLY_REPORT_RATE_NOT_SET, WEEKLY_REPORT_TIMESHEET_STATE_LABELS, WEEKLY_REPORT_WARNING_OPEN, bookingPaidDays, leaveRecordsWithoutPerson, payrollPolicyHistoryRows, weeklyReportClashDetail, weeklyReportDatesText, weeklyReportDayKey, weeklyReportDayText, weeklyReportLeaveRows, weeklyReportPayRows
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, firestore.rules, lib/canonical/bundleEntry.ts, lib/canonical/cross-platform-contract.json, lib/canonical/crossPlatformContract.samples.ts, lib/canonical/index.ts, lib/canonical/recordsDocuments.ts, lib/canonical/variations.test.ts, lib/canonical/variations.ts, storage.rules
+Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/payrollHours.ts, lib/canonical/payrollPolicyHistoryRows.ts, lib/canonical/weeklyReportPay.ts
 Done when:
-- [ ] Packed hash in iOS equals ed27a8049e14fc7dae5a0c78bc924d74a23935936c3648bf4661084c93c67be2
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 86778db9d1f568b74c340e02c836b353353d96c503b5ac5547bbe6870308c860)
+- [ ] Packed hash in iOS equals 89ed2e73e674eb68197717533ff4dacfc48131b58d68f96821c10ab0b59c1c3e
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 1c2187a83437105a7fbdac33dac8e5bedbec0e87114302d77eef8d84a3037020)
 - [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.52.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
@@ -78,8 +78,7 @@ Done when:
 
 ## New rulebook sections
 
-- 22. Variations: numbers, line items, totals, export and the tracker (1.22.0, 1.52.0)
-- 1.52.0 — 2026-11-15
+- 1.51.0 — 2026-11-15
 
 ## Workflow for the iOS agent
 
