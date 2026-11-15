@@ -35,9 +35,12 @@ test('exportCatalogueCsv writes the 1.48.0 columns and no category notes', () =>
   assert.equal(csv.split('\n')[0], CATALOGUE_CSV_HEADER)
   assert.equal(
     CATALOGUE_CSV_HEADER,
-    'Catalogue ID,Name,Category,Manufacturer/Brand,Product Code,Order unit,Contents amount,Contents measure,Size'
+    'Catalogue ID,Name,Category,Manufacturer/Brand,Product Code,Order unit,Contents amount,Contents measure,Size,Default Type (Length Drum Box Pallet or Number),Length,Length Unit (M or MM)'
   )
-  assert.match(csv, /ABC,T&E 2.5mm,Electrical,Prysmian,TE25,Drum,100,m,2.5mm/)
+  // The old columns follow, with the nearest old meaning, for older iPhones.
+  assert.match(csv, /ABC,T&E 2.5mm,Electrical,Prysmian,TE25,Drum,100,m,2.5mm,Drum,100,M\n/)
+  assert.match(exportCatalogueCsv([{ ...item, orderUnit: 'Reel' }]), /,Reel,100,m,2.5mm,Drum,100,M\n/)
+  assert.match(exportCatalogueCsv([{ ...item, defaultUnit: 'Length', orderUnit: 'Metre', contentAmount: undefined, contentMeasure: undefined }]), /,Metre,,,2.5mm,Length,1,M\n/)
   assert.equal(csv.includes('# Categories'), false)
 })
 
@@ -83,6 +86,9 @@ GHI,Socket,Electrical,,,Number,1.0,,
 test('a round trip keeps a formula-looking name as plain text', () => {
   const parsed = parseCatalogueCsv(exportCatalogueCsv([{ ...item, name: '=HYPERLINK("x")' }]))
   assert.equal(parsed.rows[0].name, '=HYPERLINK("x")')
+  // A tab-led cell: the apostrophe comes off before the tab becomes a space.
+  const tabbed = parseCatalogueCsv(exportCatalogueCsv([{ ...item, name: '\t=cmd' }]))
+  assert.equal(tabbed.rows[0].name, '=cmd')
 })
 
 test('the browser byte check refuses NUL bytes and bytes that are not UTF-8', () => {

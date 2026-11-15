@@ -9113,6 +9113,31 @@ var ProjectPlannerCanonical = (() => {
     if (!measure) return null;
     return { amount: tidyMaterialAmount(amount), measure };
   }
+  function withoutNewFields(row2) {
+    const out = { ...row2 };
+    delete out.orderUnit;
+    delete out.contentAmount;
+    delete out.contentMeasure;
+    return out;
+  }
+  function storedLegacyMatches(row2, model) {
+    const unitField = "unit" in row2 ? "unit" : "defaultUnit" in row2 ? "defaultUnit" : null;
+    const expected = materialQuantityWriteFields(model, { unitField: unitField ?? "unit" });
+    if (unitField && text3(row2[unitField])) {
+      if (text3(row2[unitField]).toLowerCase() !== String(expected[unitField]).toLowerCase()) return false;
+    }
+    const hasLength = "length" in row2 || "sizeOrLength" in row2 || "lengthUnit" in row2;
+    if (hasLength) {
+      const storedLength = parseMaterialMeasure(legacyLength(row2), row2.lengthUnit);
+      const expectedLength = parseMaterialMeasure(expected.length, expected.lengthUnit);
+      if (!storedLength && !expectedLength) return true;
+      if (!storedLength || !expectedLength) {
+        return !storedLength && Boolean(text3(legacyLength(row2)));
+      }
+      return storedLength.amount === expectedLength.amount && storedLength.measure === expectedLength.measure;
+    }
+    return true;
+  }
   function legacyLength(row2) {
     const length = text3(row2.length) || text3(row2.sizeOrLength);
     if (length) return length;
@@ -9123,16 +9148,17 @@ var ProjectPlannerCanonical = (() => {
     const row2 = data && typeof data === "object" ? data : {};
     const stored = normalizeMaterialOrderUnit(row2.orderUnit);
     if (stored) {
-      if (stored === "Metre") return { orderUnit: "Metre", contentAmount: null, contentMeasure: null, fromLegacy: false };
       const amount = documentNumber(row2.contentAmount);
       const measure = normalizeMaterialContentMeasure(row2.contentMeasure);
-      const valid = amount != null && amount > 0 && measure != null;
-      return {
+      const valid = stored !== "Metre" && amount != null && amount > 0 && measure != null;
+      const model = {
         orderUnit: stored,
         contentAmount: valid ? tidyMaterialAmount(amount) : null,
         contentMeasure: valid ? measure : null,
         fromLegacy: false
       };
+      if (!storedLegacyMatches(row2, model)) return materialQuantityModel(withoutNewFields(row2));
+      return model;
     }
     const legacyToken = text3(row2.unit) || text3(row2.defaultUnit);
     const legacy = ["number", "box", "length", "drum", "pallet"].find((u) => u === legacyToken.toLowerCase());
@@ -12115,7 +12141,7 @@ var ProjectPlannerCanonical = (() => {
   function rulebookStamp() {
     return {
       version: true ? "1.48.0" : "",
-      sha256: true ? "d1df2c7469d3cb4c3b425c823a173533e7a9f18128ba6c62c89b1f04c1e4437d" : ""
+      sha256: true ? "3585fc64387b10ca469bcf73b75e75520ee181e14ab7ed801a4c6c17cb1a51da" : ""
     };
   }
   function rulebookVersionLabel(version) {
@@ -24158,7 +24184,12 @@ var ProjectPlannerCanonical = (() => {
     "Order unit",
     "Contents amount",
     "Contents measure",
-    "Size"
+    "Size",
+    // The pre-1.48.0 columns, filled with the nearest old meaning, so an older iPhone imports the file correctly.
+    // On import a filled Order unit wins over them.
+    "Default Type (Length Drum Box Pallet or Number)",
+    "Length",
+    "Length Unit (M or MM)"
   ];
   var MATERIAL_CATALOGUE_CSV_HEADER = MATERIAL_CATALOGUE_CSV_COLUMNS.join(",");
   var MATERIAL_CATALOGUE_CSV_LEGACY_HEADER = "Catalogue ID,Name,Category,Manufacturer/Brand,Product Code,Default Type (Length Drum Box Pallet or Number),Size,Length,Length Unit (M or MM)";
@@ -24277,8 +24308,9 @@ var ProjectPlannerCanonical = (() => {
     return joined.includes("ignored on upload") || joined.includes("project planner category guide");
   }
   function plainCell(value) {
-    const cleaned = (value ?? "").replace(/[\u0000-\u001F\u007F]/g, " ").trim();
-    return /^'[=+\-@]/.test(cleaned) ? cleaned.slice(1) : cleaned;
+    const raw = (value ?? "").replace(/^[ ]+/, "");
+    const unprefixed = /^'[=+\-@\t\r]/.test(raw) ? raw.slice(1) : raw;
+    return unprefixed.replace(/[\u0000-\u001F\u007F]/g, " ").trim();
   }
   function rowKey(name, code) {
     const norm = (value) => value.trim().toLowerCase().replace(/\s+/g, " ");
@@ -24359,6 +24391,11 @@ var ProjectPlannerCanonical = (() => {
             errors.push(`Row ${rowNumber}: Contents amount must be a number above 0 with a measure of m, mm or pcs.`);
             return;
           }
+          const contentError = materialContentError(amount, measure, unit);
+          if (contentError) {
+            errors.push(`Row ${rowNumber}: ${contentError}`);
+            return;
+          }
           const model = materialQuantityModel({ orderUnit: unit, contentAmount: amount, contentMeasure: measure });
           contentAmount = model.contentAmount;
           contentMeasure = model.contentMeasure;
@@ -24398,6 +24435,7 @@ var ProjectPlannerCanonical = (() => {
     const lines = [MATERIAL_CATALOGUE_CSV_HEADER];
     for (const item of items || []) {
       const model = materialQuantityModel(item);
+      const legacy = materialQuantityWriteFields(model, { unitField: "defaultUnit" });
       const size = typeof item.size === "string" ? item.size.trim() : "";
       lines.push(
         [
@@ -24409,7 +24447,10 @@ var ProjectPlannerCanonical = (() => {
           model.orderUnit,
           model.contentAmount != null ? formatMaterialAmount(model.contentAmount) : "",
           model.contentMeasure ?? "",
-          /^1(?:\.0+)?$/.test(size) ? "" : size
+          /^1(?:\.0+)?$/.test(size) ? "" : size,
+          legacy.defaultUnit,
+          legacy.length ?? "",
+          legacy.lengthUnit ?? ""
         ].map(materialCatalogueCsvCell).join(",")
       );
     }

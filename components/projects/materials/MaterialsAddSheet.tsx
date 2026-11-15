@@ -8,7 +8,7 @@ import { useMaterialProjectStore } from '@/lib/stores/materialProjectStore'
 import { searchMaterialCatalogue, type MaterialSuggestion } from '@/lib/materials/materialCatalogSearch'
 import { FormInput, FormLabel, FormTextarea } from '@/components/forms/FormShell'
 import { ErrorBanner } from '@/components/dashboard/PageShell'
-import type { Project, ProjectMaterialLine } from '@/types'
+import type { MaterialContentMeasure, Project, ProjectMaterialLine } from '@/types'
 import { materialLineText, materialQuantityError, materialSizeText } from '@/lib/canonical'
 import {
   OrderUnitFields,
@@ -84,13 +84,27 @@ export function MaterialsAddSheet({ project, selectedDate, existing, onClose, on
       return
     }
     // Rulebook 1.48.0 (owner decision 3): whole numbers, except Metre, which may have decimals (12.5 m).
-    const parsedQuantity = Number(quantity.trim().replace(',', '.'))
-    const quantityError = materialQuantityError(quantity.trim() ? parsedQuantity : null, quantityDraft.orderUnit)
-    if (quantityError) {
-      setLocalError(quantityError)
-      return
+    // Checked only when the quantity, unit or contents changed, so an older line (2.5 boxes, a pallet in mm) can
+    // still be saved to change its notes; its stored values are kept as they are.
+    const original = existing ? orderUnitDraftFrom(existing) : null
+    const quantityChanged = !existing || quantity.trim() !== String(existing.quantity)
+    const unitChanged =
+      !original ||
+      original.orderUnit !== quantityDraft.orderUnit ||
+      original.contentAmount.trim() !== quantityDraft.contentAmount.trim() ||
+      (quantityDraft.contentAmount.trim() !== '' && original.contentMeasure !== quantityDraft.contentMeasure)
+    const parsedQuantity = quantityChanged ? Number(quantity.trim().replace(',', '.')) : (existing?.quantity ?? 1)
+    if (quantityChanged || unitChanged) {
+      const quantityError = materialQuantityError(quantity.trim() ? parsedQuantity : null, quantityDraft.orderUnit)
+      if (quantityError) {
+        setLocalError(quantityError)
+        return
+      }
     }
-    const content = orderUnitDraftValues(quantityDraft)
+    const content: { contentAmount: number | null; contentMeasure: MaterialContentMeasure | null } | { error: string } =
+      unitChanged
+        ? orderUnitDraftValues(quantityDraft)
+        : { contentAmount: existing?.contentAmount ?? null, contentMeasure: existing?.contentMeasure ?? null }
     if ('error' in content) {
       setLocalError(content.error)
       return

@@ -231,6 +231,41 @@ export type MaterialQuantityModel = {
   fromLegacy: boolean
 }
 
+function withoutNewFields(row: Record<string, unknown>): Record<string, unknown> {
+  const out = { ...row }
+  delete out.orderUnit
+  delete out.contentAmount
+  delete out.contentMeasure
+  return out
+}
+
+/**
+ * Whether a document's stored old fields are what `materialQuantityWriteFields(model)` writes for its new fields.
+ * Only the fields the document carries are compared: the old unit when `unit` / `defaultUnit` is stored, the length
+ * when `length` / `sizeOrLength` / `lengthUnit` is stored — so an email payload with `orderUnit` and no old length
+ * is trusted. Unit names compare without case; lengths by amount and measure.
+ */
+function storedLegacyMatches(row: Record<string, unknown>, model: MaterialQuantityModel): boolean {
+  const unitField = 'unit' in row ? 'unit' : 'defaultUnit' in row ? 'defaultUnit' : null
+  const expected = materialQuantityWriteFields(model, { unitField: unitField ?? 'unit' })
+  if (unitField && text(row[unitField])) {
+    if (text(row[unitField]).toLowerCase() !== String(expected[unitField]).toLowerCase()) return false
+  }
+  const hasLength = 'length' in row || 'sizeOrLength' in row || 'lengthUnit' in row
+  if (hasLength) {
+    const storedLength = parseMaterialMeasure(legacyLength(row), row.lengthUnit)
+    const expectedLength = parseMaterialMeasure(expected.length, expected.lengthUnit)
+    if (!storedLength && !expectedLength) return true
+    if (!storedLength || !expectedLength) {
+      // A stored length that is not a number ("3m x 2") is kept as given by the writer; it never disagrees.
+      return !storedLength && Boolean(text(legacyLength(row)))
+    }
+    return storedLength.amount === expectedLength.amount && storedLength.measure === expectedLength.measure
+  }
+  return true
+}
+
+/** The old length: `length`, else `sizeOrLength`, else `packSize` (a number, read as metres like a bare length). */
 function legacyLength(row: Record<string, unknown>): unknown {
   const length = text(row.length) || text(row.sizeOrLength)
   if (length) return length
@@ -240,7 +275,9 @@ function legacyLength(row: Record<string, unknown>): unknown {
 
 /**
  * The quantity model of a stored line or catalogue item (`materials/{id}`, `materialCatalogue/{id}`, a send line, an
- * email payload line). A valid stored `orderUnit` wins, with `contentAmount` / `contentMeasure`. Otherwise the old
+ * email payload line). A valid stored `orderUnit` wins, with `contentAmount` / `contentMeasure`, while the stored old
+ * fields agree with it (`storedLegacyMatches`); when they do not, an older build edited the old fields and left the new
+ * ones stale, so the old fields are read. Otherwise the old
  * fields are read (owner decisions 1–2):
  *   - Number → Each (its length, if any, is what is in one);
  *   - Box / Drum / Pallet → the same, the length what is in one;
@@ -253,16 +290,20 @@ export function materialQuantityModel(data: Record<string, unknown> | null | und
   const row = data && typeof data === 'object' ? data : {}
   const stored = normalizeMaterialOrderUnit(row.orderUnit)
   if (stored) {
-    if (stored === 'Metre') return { orderUnit: 'Metre', contentAmount: null, contentMeasure: null, fromLegacy: false }
     const amount = documentNumber(row.contentAmount)
     const measure = normalizeMaterialContentMeasure(row.contentMeasure)
-    const valid = amount != null && amount > 0 && measure != null
-    return {
+    const valid = stored !== 'Metre' && amount != null && amount > 0 && measure != null
+    const model: MaterialQuantityModel = {
       orderUnit: stored,
-      contentAmount: valid ? tidyMaterialAmount(amount) : null,
+      contentAmount: valid ? tidyMaterialAmount(amount as number) : null,
       contentMeasure: valid ? measure : null,
       fromLegacy: false,
     }
+    // An older build edits only the old fields it knows and leaves `orderUnit` / `contentAmount` stale (web Drum
+    // 50 m, then an older iPhone changes it to Box 100 M). When the stored old fields are not what this model would
+    // have written, the old fields are the newer edit: read them instead.
+    if (!storedLegacyMatches(row, model)) return materialQuantityModel(withoutNewFields(row))
+    return model
   }
   const legacyToken = text(row.unit) || text(row.defaultUnit)
   const legacy = (['number', 'box', 'length', 'drum', 'pallet'] as const).find((u) => u === legacyToken.toLowerCase())

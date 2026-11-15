@@ -71,8 +71,8 @@ test('1.48.0: old fields read as the new model without rewriting anything (owner
   }
 })
 
-test('1.48.0: a stored orderUnit wins over the old fields', () => {
-  const model = materialQuantityModel({ orderUnit: 'Reel', contentAmount: 50, contentMeasure: 'm', unit: 'Drum', length: '25' })
+test('1.48.0: a stored orderUnit wins when the old fields agree with it', () => {
+  const model = materialQuantityModel({ orderUnit: 'Reel', contentAmount: 50, contentMeasure: 'm', unit: 'Drum', length: '50', lengthUnit: 'M' })
   assert.deepEqual(model, { orderUnit: 'Reel', contentAmount: 50, contentMeasure: 'm', fromLegacy: false })
   assert.equal(materialQuantityModel({ orderUnit: 'Metre', contentAmount: 5, contentMeasure: 'm' }).contentAmount, null)
 })
@@ -218,4 +218,37 @@ test('1.48.0 CSV: the old layout imports and exports in the new layout', () => {
   const out = materialCatalogueCsvExport(parsed.rows)
   assert.equal(out.split('\n')[0], MATERIAL_CATALOGUE_CSV_HEADER)
   assert.match(out, /ID2,Arctic \(50m Drum\),Cable,,,Drum,50,m,/)
+})
+
+test('1.48.0 review: an edit by an older build of of the old fields wins over stale new fields', () => {
+  // Web saved Drum 50 m; an iPhone on 1.46 changed only the old fields to Box 100 M and left orderUnit alone.
+  const stale = { orderUnit: 'Drum', contentAmount: 50, contentMeasure: 'm', unit: 'Box', length: '100', sizeOrLength: '100', lengthUnit: 'M', quantity: 2 }
+  assert.deepEqual(materialQuantityModel(stale), { orderUnit: 'Box', contentAmount: 100, contentMeasure: 'm', fromLegacy: true })
+  assert.equal(materialLineText(stale), '2no 100m boxes')
+  // The iPhone removed the length: the stored drum content is stale too.
+  assert.equal(materialQuantityModel({ orderUnit: 'Drum', contentAmount: 50, contentMeasure: 'm', unit: 'Drum', length: null, lengthUnit: null }).contentAmount, null)
+  // A catalogue item uses defaultUnit.
+  assert.equal(materialQuantityModel({ orderUnit: 'Reel', contentAmount: 50, contentMeasure: 'm', defaultUnit: 'Pallet', length: null }).orderUnit, 'Pallet')
+  // Consistent documents keep the new fields: Reel ↔ Drum, Pack ↔ Box, Metre ↔ Length + 1 m, Length 1 m ↔ Length + 1 m.
+  for (const model of [
+    { orderUnit: 'Reel', contentAmount: 50, contentMeasure: 'm' },
+    { orderUnit: 'Pack', contentAmount: 10, contentMeasure: 'pcs' },
+    { orderUnit: 'Metre' },
+    { orderUnit: 'Length', contentAmount: 1, contentMeasure: 'm' },
+  ]) {
+    const fields = materialQuantityWriteFields(model)
+    assert.equal(materialQuantityModel(fields).orderUnit, model.orderUnit)
+    assert.equal(materialQuantityModel(fields).fromLegacy, false)
+    const catalogue = materialQuantityWriteFields(model, { unitField: 'defaultUnit' })
+    assert.equal(materialQuantityModel(catalogue).fromLegacy, false)
+  }
+  // An email payload with the new fields and no old length is trusted.
+  assert.equal(materialLineText({ quantity: 100, unit: 'Length', orderUnit: 'Metre' }), '100m')
+  // The writer's kept text length ("3m x 2") never counts as a disagreement.
+  assert.equal(materialQuantityModel({ orderUnit: 'Length', unit: 'Length', length: '3m x 2' }).fromLegacy, false)
+})
+
+test('1.48.0 review: a CSV row whose contents the unit does not offer is left out with a message', () => {
+  const parsed = parseMaterialCatalogueCsv(`${MATERIAL_CATALOGUE_CSV_HEADER}\n,Pallet blocks,Bricks,,,Pallet,400,mm,\n`)
+  assert.deepEqual(parsed.errors, ['Row 2: Choose pcs for Pallet.'])
 })

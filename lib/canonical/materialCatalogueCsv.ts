@@ -2,9 +2,10 @@
  * Material catalogue CSV: the one import and export rule for web and iOS (rulebook 1.48.0 §28).
  *
  * Columns (export): Catalogue ID, Name, Category, Manufacturer/Brand, Product Code, Order unit, Contents amount,
- * Contents measure, Size. Import finds columns by header name (case and spacing ignored), so files in the
- * pre-1.48.0 layout (Default Type, Length, Length Unit) still import: their rows are read with
- * `materialQuantityModel` exactly like stored documents.
+ * Contents measure, Size, then the pre-1.48.0 Default Type, Length, Length Unit filled with the nearest old meaning
+ * (`materialQuantityWriteFields`) so an older iPhone imports the file correctly. Import finds columns by header name
+ * (case and spacing ignored); a filled Order unit wins, else the old columns are read with `materialQuantityModel`
+ * exactly like stored documents, so files in the pre-1.48.0 layout still import.
  *
  * Upload safety (owner request 15 Nov): a file is accepted only when it is named `.csv`, is at most
  * `MATERIAL_CATALOGUE_CSV_MAX_BYTES`, decodes as UTF-8 and holds no NUL or other binary control characters
@@ -17,6 +18,8 @@
 
 import {
   formatMaterialAmount,
+  materialContentError,
+  materialQuantityWriteFields,
   materialQuantityModel,
   normalizeMaterialContentMeasure,
   normalizeMaterialOrderUnit,
@@ -35,6 +38,11 @@ export const MATERIAL_CATALOGUE_CSV_COLUMNS = [
   'Contents amount',
   'Contents measure',
   'Size',
+  // The pre-1.48.0 columns, filled with the nearest old meaning, so an older iPhone imports the file correctly.
+  // On import a filled Order unit wins over them.
+  'Default Type (Length Drum Box Pallet or Number)',
+  'Length',
+  'Length Unit (M or MM)',
 ] as const
 
 export const MATERIAL_CATALOGUE_CSV_HEADER = MATERIAL_CATALOGUE_CSV_COLUMNS.join(',')
@@ -184,9 +192,11 @@ function isNoteRecord(cells: string[]): boolean {
 
 /** A cell as plain text: control characters removed, the export's formula apostrophe taken off, trimmed. */
 function plainCell(value: string | undefined): string {
+  const raw = (value ?? '').replace(/^[ ]+/, '')
+  // The apostrophe comes off before control characters become spaces, so "'\t=cmd" round-trips to "\t=cmd" → "=cmd".
+  const unprefixed = /^'[=+\-@\t\r]/.test(raw) ? raw.slice(1) : raw
   // eslint-disable-next-line no-control-regex
-  const cleaned = (value ?? '').replace(/[\u0000-\u001F\u007F]/g, ' ').trim()
-  return /^'[=+\-@]/.test(cleaned) ? cleaned.slice(1) : cleaned
+  return unprefixed.replace(/[\u0000-\u001F\u007F]/g, ' ').trim()
 }
 
 export type MaterialCatalogueCsvRow = {
@@ -302,6 +312,11 @@ export function parseMaterialCatalogueCsv(textValue: unknown): MaterialCatalogue
           errors.push(`Row ${rowNumber}: Contents amount must be a number above 0 with a measure of m, mm or pcs.`)
           return
         }
+        const contentError = materialContentError(amount, measure, unit)
+        if (contentError) {
+          errors.push(`Row ${rowNumber}: ${contentError}`)
+          return
+        }
         const model = materialQuantityModel({ orderUnit: unit, contentAmount: amount, contentMeasure: measure })
         contentAmount = model.contentAmount
         contentMeasure = model.contentMeasure
@@ -358,7 +373,9 @@ export function materialCatalogueCsvExport(items: ReadonlyArray<MaterialCatalogu
   const lines: string[] = [MATERIAL_CATALOGUE_CSV_HEADER]
   for (const item of items || []) {
     const model = materialQuantityModel(item as Record<string, unknown>)
+    const legacy = materialQuantityWriteFields(model, { unitField: 'defaultUnit' })
     const size = typeof item.size === 'string' ? item.size.trim() : ''
+
     lines.push(
       [
         item.id,
@@ -370,6 +387,9 @@ export function materialCatalogueCsvExport(items: ReadonlyArray<MaterialCatalogu
         model.contentAmount != null ? formatMaterialAmount(model.contentAmount) : '',
         model.contentMeasure ?? '',
         /^1(?:\.0+)?$/.test(size) ? '' : size,
+        legacy.defaultUnit,
+        legacy.length ?? '',
+        legacy.lengthUnit ?? '',
       ]
         .map(materialCatalogueCsvCell)
         .join(',')

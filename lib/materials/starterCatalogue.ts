@@ -1,6 +1,11 @@
 import { collection, doc, getDocs, limit, query, Timestamp, writeBatch } from 'firebase/firestore'
 import { getFirebaseDb } from '@/lib/firebase/ensureFirebase'
-import { materialCatalogueItemFields, parseMaterialCatalogueCsv, starterCollectionShouldSeed } from '@/lib/canonical'
+import {
+  MATERIAL_ORDER_UNIT_DETAILS,
+  materialCatalogueItemFields,
+  parseMaterialCatalogueCsv,
+  starterCollectionShouldSeed,
+} from '@/lib/canonical'
 import { STARTER_MATERIAL_CATALOGUE_CSV } from '@/lib/materials/starter/starterCatalogueCsv'
 import type { MaterialCatalogItem, MaterialUnit } from '@/types'
 
@@ -25,8 +30,8 @@ export function starterCatalogueItems(
     name: row.name,
     brand: row.brand,
     productCode: row.productCode || undefined,
-    // The old unit is written by `materialCatalogueItemFields` from the order unit.
-    defaultUnit: 'Number' as MaterialUnit,
+    // The old unit with the nearest old meaning (the writer derives it again from the order unit).
+    defaultUnit: MATERIAL_ORDER_UNIT_DETAILS[row.orderUnit].legacyUnit as MaterialUnit,
     orderUnit: row.orderUnit,
     contentAmount: row.contentAmount ?? undefined,
     contentMeasure: row.contentMeasure ?? undefined,

@@ -39,13 +39,13 @@ test('a send carries the order unit, what is in one and the line text (rulebook 
   assert.deepEqual(fields, {
     quantity: 2,
     unit: 'Drum',
+    lengthDisplay: '50 m',
     orderUnit: 'Reel',
     contentAmount: 50,
     contentMeasure: 'm',
     quantityText: '2no 50m reels',
   })
 })
-
 
 test('orders cannot go to contacts at two wholesalers', () => {
   assert.equal(orderBlockedForMultipleWholesalers('order', wholesalers, ['c1', 'c3']), true)

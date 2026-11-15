@@ -67,7 +67,6 @@ function materialPayload(item: CatalogueItemInput): Record<string, unknown> {
   })
 }
 
-
 interface MaterialCatalogState {
   items: MaterialCatalogItem[]
   loading: boolean

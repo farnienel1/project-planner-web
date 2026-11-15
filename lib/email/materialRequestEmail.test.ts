@@ -84,7 +84,6 @@ test('rulebook 1.48.0: the email prints the trade-style quantity and no separate
   assert.doesNotMatch(html, /Length:/)
 })
 
-
 test('order emails include the required delivery; quotes never do', () => {
   const order = buildMaterialRequestEmail({
     context: { ...context, deliveryRequiredLabel: 'Monday 12 October at 08:00' },

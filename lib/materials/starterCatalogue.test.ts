@@ -12,7 +12,7 @@ test('the starter catalogue is a valid 1.48.0 CSV with the LSZH 2.5mm drum', () 
   const parsed = parseCatalogueCsv(STARTER_MATERIAL_CATALOGUE_CSV)
   assert.deepEqual(parsed.errors, [])
   assert.deepEqual(parsed.duplicateRows, [])
-  assert.equal(parsed.rows.length, 4034)
+  assert.equal(parsed.rows.length, 4037)
   const drum = parsed.rows.find((row) => row.name === '2.5mm2 Twin & Earth Cable 6242B LSZH (100m Drum)')
   assert.ok(drum)
   assert.equal(drum.category, 'Cable')
@@ -35,6 +35,15 @@ test('the starter list is clean: no float noise, no Size 1.0 placeholder, no Unk
   assert.equal(materialLineText({ quantity: 6, ...timber }), '6no 2.4m lengths')
   const flex = rows.find((row) => row.name === '0.75mm2 12 Core YY Control Cable')
   assert.equal(flex?.orderUnit, 'Metre')
+  // Fixed 1 m pieces are Length + 1 m, never cut to length (review of #326).
+  const rod = rows.find((row) => row.name === 'M10 Threaded Rod BZP - 1m')
+  assert.equal(materialLineText({ quantity: 5, ...rod }), '5no 1m lengths')
+  assert.equal(rows.some((row) => / - 1m$/.test(row.name) && row.orderUnit === 'Metre'), false)
+  // Three real owner-added products are kept, brand cleaned.
+  for (const name of ['GU10 3000K Dimmable', 'M6 Penny Washers', '6mm Penny Washers']) {
+    assert.equal(rows.find((row) => row.name === name)?.brand, '', name)
+  }
+  assert.equal(rows.some((row) => /^custom$/i.test(row.brand)), false)
 })
 
 test('a seeded item stores the new fields and the nearest old meaning for older builds', () => {

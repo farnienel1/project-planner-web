@@ -385,7 +385,7 @@ export function MaterialCatalogueScreen() {
                   name: row.name,
                   brand: row.brand,
                   productCode: row.productCode || undefined,
-                  defaultUnit: 'Number',
+                  defaultUnit: MATERIAL_ORDER_UNIT_DETAILS[row.orderUnit].legacyUnit,
                   orderUnit: row.orderUnit,
                   contentAmount: row.contentAmount ?? undefined,
                   contentMeasure: row.contentMeasure ?? undefined,
@@ -408,7 +408,7 @@ export function MaterialCatalogueScreen() {
                   name: row.name,
                   brand: row.brand,
                   productCode: row.productCode || undefined,
-                  defaultUnit: 'Number',
+                  defaultUnit: MATERIAL_ORDER_UNIT_DETAILS[row.orderUnit].legacyUnit,
                   orderUnit: row.orderUnit,
                   contentAmount: row.contentAmount ?? undefined,
                   contentMeasure: row.contentMeasure ?? undefined,
@@ -472,6 +472,7 @@ function MaterialEditor({
       await onSave({
         ...form,
         orderUnit: quantityDraft.orderUnit,
+        defaultUnit: MATERIAL_ORDER_UNIT_DETAILS[quantityDraft.orderUnit].legacyUnit,
         contentAmount: values.contentAmount ?? undefined,
         contentMeasure: values.contentMeasure ?? undefined,
       })

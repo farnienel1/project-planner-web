@@ -12,8 +12,10 @@
  *
  * Clean-up (owner request 15 Nov):
  *   - drop test / junk rows: brand NEW, NEW 2, N/A or Custom on a row added after the starter, product codes that look
- *     like tests (123-456, 12567, 4576-34), names with "test" on a row added after the starter — every dropped row is printed for the owner;
- *   - "Unknown" brand → blank;
+ *     like tests (123-456, 12567, 4576-34), names with "test" on a row added after the starter — every dropped row is
+ *     printed for the owner;
+ *   - "Unknown" and "Custom" brand → blank; three real owner-added products are kept (`KEEP_NAMES`);
+ *   - a name ending "- 1m" is a fixed 1 m piece → Length with 1 m in one, never Metre (`ONE_METRE_PIECE`);
  *   - float noise (2.4000000000000004 → 2.4) and glued units ("3m") — done by the reader;
  *   - Size "1" / "1.0" placeholder → blank — done by the reader.
  */
@@ -34,10 +36,19 @@ const starterTsPath = path.join(root, 'lib/materials/starter/starterCatalogueCsv
 
 const JUNK_BRANDS = new Set(['new', 'new 2', 'n/a'])
 const TEST_PRODUCT_CODES = new Set(['123-456', '12567', '4576-34'])
+/** Owner-added rows that are real products (review of #326): kept, with the brand cleaned like every row. */
+const KEEP_NAMES = new Set(['GU10 3000K Dimmable', 'M6 Penny Washers', '6mm Penny Washers'])
+/**
+ * A name ending "- 1m" is a fixed 1 m piece (threaded rod, DIN rail, channel drain, rigid duct, pipe insulation
+ * section), not cut to length: stored as Length + 1 m, the old reader rule (owner decision 2) would read it as Metre,
+ * so the starter writes it as Length with 1 m in one. Existing organisations' copies still read as Metre.
+ */
+const ONE_METRE_PIECE = / - 1m$/i
 
 export type DroppedRow = { row: MaterialCatalogueCsvRow; reason: string }
 
 export function dropReason(row: MaterialCatalogueCsvRow, inPreviousStarter: boolean): string | null {
+  if (KEEP_NAMES.has(row.name)) return null
   const brand = row.brand.trim().toLowerCase()
   if (JUNK_BRANDS.has(brand)) return `brand "${row.brand}"`
   if (TEST_PRODUCT_CODES.has(row.productCode.trim())) return `test product code "${row.productCode}"`
@@ -71,6 +82,7 @@ function main() {
 
   const kept: MaterialCatalogueCsvRow[] = []
   const dropped: DroppedRow[] = []
+  const onePieceNames: string[] = []
   for (const row of parsed.rows) {
     const inPrevious = previousIdByName.has(row.name)
     const reason = dropReason(row, inPrevious)
@@ -78,10 +90,13 @@ function main() {
       dropped.push({ row, reason })
       continue
     }
+    const onePiece = row.orderUnit === 'Metre' && ONE_METRE_PIECE.test(row.name)
+    if (onePiece) onePieceNames.push(row.name)
     kept.push({
       ...row,
       id: previousIdByName.get(row.name) || uuidFromName(row.name),
-      brand: /^unknown$/i.test(row.brand.trim()) ? '' : row.brand,
+      brand: /^(unknown|custom)$/i.test(row.brand.trim()) ? '' : row.brand,
+      ...(onePiece ? { orderUnit: 'Length' as const, contentAmount: 1, contentMeasure: 'm' as const } : {}),
     })
   }
 
@@ -104,6 +119,9 @@ function main() {
     ...dropped.map(
       ({ row, reason }) => `| ${row.name} | ${row.category} | ${row.brand || '—'} | ${row.productCode || '—'} | ${reason} |`
     ),
+    '',
+    `Fixed 1 m pieces written as Length + 1 m (not Metre): ${onePieceNames.length}`,
+    ...onePieceNames.map((name) => `- ${name}`),
     '',
     '| Kept row not in the previous starter | Reads as |',
     '|---|---|',
