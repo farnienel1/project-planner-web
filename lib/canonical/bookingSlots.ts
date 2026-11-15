@@ -129,7 +129,7 @@ function weekendNoteBody(policy: OrgPayrollTimePolicy | null | undefined, iso: n
   const window = weekendFullDayWindow(policy, weekend)
   if (!window) return null
   const range = `${formatClockMinutes(window.start)}–${formatClockMinutes(window.end)}`
-  const countsAs = weekendCountsAsHours(weekend)
+  const countsAs = weekendCountsAsHours(weekend, policy)
   const outside = Number(weekend.outsideWindowMultiplier ?? 1.5)
   return ` is paid on the hours you enter: ${range} counts as ${hoursText(Number.isFinite(countsAs) ? countsAs : 0)}, hours outside it at ${multiplierText(outside)}. Change it in Working hours.`
 }
@@ -355,7 +355,7 @@ export function weekendBookingBreakdown(
     const unpaidBreakHours = roundHours(paid.unpaidBreakHours)
     const breakOutside = roundHours(outside.outsideBreakHours)
     const breakInStandard = roundHours(Math.max(0, paid.unpaidBreakHours - outside.outsideBreakHours))
-    const credit = weekend ? weekendCountsAsHours(weekend) : NaN
+    const credit = weekend ? weekendCountsAsHours(weekend, dayPolicy) : NaN
     const fullDay = windowDay && standardHours > 0 && Math.abs(standardHours - roundHours(credit)) < 0.001
     const label = WEEKDAY_NAMES[iso] || dayKey
     let line = `${label} ${startText}–${endText} = `
@@ -466,10 +466,12 @@ export function weekendDayPreview(
   const dayBreak = payrollBreakOnDay(policy, dayKey, zone)
   const parts: string[] = []
   if (rule?.allHoursAtMultiplierMode) parts.push(`Every hour at ×${roundHours(rule.allHoursMultiplier)}`)
-  else parts.push(`${span.start}–${span.end} counts as ${hoursText(weekendCountsAsHours(rule))}`)
+  else parts.push(`${span.start}–${span.end} counts as ${hoursText(weekendCountsAsHours(rule, policy))}`)
   if (dayBreak) {
     const window = `${formatClockMinutes(dayBreak.start)}–${formatClockMinutes(dayBreak.end)}, ${dayBreak.minutes} min`
     if (dayBreak.paid) parts.push(`Paid break ${window}`)
+    // 1.49.0: on a set window the unpaid break is allowed for in "counts as" (a full window is paid "counts as").
+    else if (!rule?.allHoursAtMultiplierMode && !(row.unpaidBreakHours > 0)) parts.push(`Unpaid break ${window} — allowed for in the counts as`)
     else parts.push(`Unpaid break ${window} — ${Math.round(row.unpaidBreakHours * 60)} min taken off`)
   }
   parts.push(`${hoursText(row.paidHoursEquivalent)} paid`)
@@ -477,13 +479,44 @@ export function weekendDayPreview(
 }
 
 /**
- * Rulebook 1.49.0 §4.3 (owner decision 15 Nov): the Working hours copy for a set-window weekend day's "Counts as"
- * hours (`countsAsStandardHours`, 1–12, `PAYROLL_POLICY_LIMITS.paidHours`). For a day-rate person a full window is paid
- * as one day (`payrollDayRateHours`). Both apps show exactly this text.
+ * Rulebook 1.49.0 §4.3 (owner answers 15 Nov, 1b): the Working hours labels for a set-window weekend day's "Counts as"
+ * — the "Same as Monday–Friday" toggle (`countsAsFollowsWeekday`) and, beneath it, the number (`countsAsStandardHours`,
+ * half-hour steps, 1h up to the Monday–Friday paid day). Both apps show exactly this text; the explanation under the
+ * day is `weekendDayRateNote`.
  */
-export function weekendCountsAsCopy(weekday: 'saturday' | 'sunday'): { label: string; help: string } {
-  const name = weekday === 'saturday' ? 'Saturday' : 'Sunday'
-  return { label: 'Counts as', help: `A full ${name} window is paid as one day` }
+export function weekendCountsAsCopy(weekday: 'saturday' | 'sunday'): { label: string; sameAsWeekdayLabel: string; dayName: string } {
+  return { label: 'Counts as', sameAsWeekdayLabel: 'Same as Monday–Friday', dayName: weekday === 'saturday' ? 'Saturday' : 'Sunday' }
+}
+
+function noteNumber(value: number): string {
+  return String(Math.round(Number(value) * 100) / 100)
+}
+
+/**
+ * Rulebook 1.49.0 §4.3 (owner-approved wording, 15 Nov): the note under Monday–Friday on Working hours, with the
+ * policy's own weekday overtime rate. Both apps show exactly this text.
+ */
+export function weekdayDayRateNote(policy: OrgPayrollTimePolicy | null | undefined): string {
+  const rate = Number(policy?.weekdayOutsideStandardMultiplier ?? 1.5)
+  return `On a day rate, a booking that covers the working day from start to finish is paid one full day. Hours outside it are paid as overtime at ×${noteNumber(rate)}.`
+}
+
+/**
+ * Rulebook 1.49.0 §4.3 (owner-approved wording, 15 Nov): the note under a set-window Saturday or Sunday on Working hours,
+ * with that day's window, "counts as" (`weekendCountsAsHours`, so "Same as Monday–Friday" shows the weekday paid day)
+ * and outside rate. Sunday "same as Saturday" reads Saturday's rule. Null on a day paid every hour at one rate or with
+ * no valid window.
+ */
+export function weekendDayRateNote(policy: OrgPayrollTimePolicy | null | undefined, weekday: 'saturday' | 'sunday'): string | null {
+  if (!policy) return null
+  const rule = weekendRuleForIsoWeekday(weekday === 'saturday' ? 6 : 7, policy)
+  if (!rule || rule.allHoursAtMultiplierMode) return null
+  const window = weekendFullDayWindow(policy, rule)
+  if (!window) return null
+  const range = `${formatClockMinutes(window.start)}–${formatClockMinutes(window.end)}`
+  const countsAs = weekendCountsAsHours(rule, policy)
+  const rate = Number(rule.outsideWindowMultiplier ?? 1.5)
+  return `On a day rate, a booking that covers ${range} is paid one full day. On an hourly rate it is paid as ${noteNumber(countsAs)} hours. Hours outside the window are paid as overtime at ×${noteNumber(rate)}.`
 }
 
 /**
@@ -549,7 +582,24 @@ export function customHoursBreakWarning(
     policy
   )
   if (!span) return null
-  return intervalsOverlap(span, { start, end }) ? CUSTOM_HOURS_BREAK_WARNING : null
+  if (!intervalsOverlap(span, { start, end })) return null
+  // Rulebook 1.49.0 §4.3 (owner answer 15 Nov, 3): on a set-window Saturday or Sunday the unpaid break is already
+  // allowed for in "counts as" — a booking that covers the whole window is paid the full "counts as" either way — so
+  // the warning shows only when turning the break off would change what the booking pays (a part of the window that
+  // covers the break, or a break worked in the outside hours). Monday–Friday is unchanged.
+  const iso = isoWeekdayOfDayKey(day, zoneOrLondon(timeZone))
+  const weekend = iso === 6 || iso === 7 ? weekendRuleForIsoWeekday(iso, policy) : null
+  if (weekend && !weekend.allHoursAtMultiplierMode) {
+    const priced = (isBreakRemoved: boolean) =>
+      payrollHoursResult({
+        booking: { timeSlot: booking.timeSlot ?? 'CUSTOM_HOURS', workStartTime: booking.workStartTime, workEndTime: booking.workEndTime, isBreakRemoved },
+        dayKey: day,
+        policy,
+        timeZone,
+      }).totalPaidHours
+    return Math.abs(priced(false) - priced(true)) > 1e-6 ? CUSTOM_HOURS_BREAK_WARNING : null
+  }
+  return CUSTOM_HOURS_BREAK_WARNING
 }
 
 /**

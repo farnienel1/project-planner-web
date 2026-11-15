@@ -26,6 +26,13 @@ export type WeekendPayrollSettings = {
   definedWindowStart?: string
   definedWindowEnd?: string
   countsAsStandardHours?: number
+  /**
+   * Rulebook 1.49.0 §4.3 (owner answer 15 Nov, 1b): "Same as Monday–Friday" — the day's "counts as" is the weekday paid
+   * day of the policy in effect that day (`weekdayPaidHours`), so it follows the working day. Only `true` turns it on;
+   * a company with a stored number keeps it exactly. A save still writes `countsAsHours` = the derived value for older
+   * builds. Read only through `weekendCountsAsHours(weekend, policy)`.
+   */
+  countsAsFollowsWeekday?: boolean
   outsideWindowMultiplier?: number
   sameAsSaturday?: boolean
   /**
@@ -527,6 +534,8 @@ function parseWeekend(data: Record<string, unknown> | undefined, dayDefault: Wee
       PAYROLL_POLICY_LIMITS.multiplier
     ),
     sameAsSaturday: false,
+    // 1.49.0: "Same as Monday–Friday" only when stored exactly `true`.
+    ...(data.countsAsFollowsWeekday === true ? { countsAsFollowsWeekday: true } : {}),
     // 1.19.0: missing or anything but `false` = paid, so nothing changes for a company that never chose.
     breakPaid: data.breakPaid !== false,
     // 1.19.0: the day's own break; missing stays missing and reads as the weekday break.
@@ -555,14 +564,16 @@ export function weekendBreakFor(
   }
 }
 
-function weekendToFirestore(weekend: WeekendPayrollSettings): Record<string, unknown> {
+function weekendToFirestore(weekend: WeekendPayrollSettings, policy: OrgPayrollTimePolicy): Record<string, unknown> {
   return {
     allHoursAtMultiplierMode: weekend.allHoursAtMultiplierMode,
     allHoursMultiplier: weekend.allHoursMultiplier,
     useCustomStandardDayWindow: !weekend.allHoursAtMultiplierMode,
     customStandardStart: weekend.definedWindowStart ?? '07:30',
     customStandardEnd: weekend.definedWindowEnd ?? '16:00',
-    countsAsHours: weekendCountsAsHours(weekend),
+    // 1.49.0: with "Same as Monday–Friday" the derived value is written, so older builds read the right number.
+    countsAsHours: weekendCountsAsHours(weekend, policy),
+    ...(weekend.countsAsFollowsWeekday === true ? { countsAsFollowsWeekday: true } : {}),
     outsideStandardWindowMultiplier: weekend.outsideWindowMultiplier ?? 1.5,
     breakPaid: weekend.breakPaid !== false,
     // 1.19.0: written only when the day has its own break; missing reads as the weekday break.
@@ -618,12 +629,18 @@ export function parsePayrollPolicy(data: Record<string, unknown> | undefined): O
 }
 
 /**
- * Rulebook 1.44.0 §4.3: a weekend day's "counts as" hours — its stored value, else 8h (the default weekend day,
- * `DEFAULT_SATURDAY_PAYROLL.countsAsStandardHours`). The one fallback for the reader (`parsePayrollPolicy` fills a
- * missing value with it) and the pay rule alike, so a parsed and an unparsed policy price a weekend day the same. It
- * never follows the weekday paid day (stored or derived): weekend pay is unchanged by 1.44.0.
+ * Rulebook 1.44.0 / 1.49.0 §4.3: a weekend day's "counts as" hours — the one reader, on every platform and in every
+ * caller. 1.49.0 (owner answer 15 Nov, 1b): with `countsAsFollowsWeekday` ("Same as Monday–Friday") it is the weekday
+ * paid day of `policy` (`weekdayPaidHours`, the policy in effect that day — pass it); otherwise its stored value, else
+ * 8h (`DEFAULT_WEEKEND_COUNTS_AS_HOURS`) — the one missing-value fallback (`parsePayrollPolicy` fills a missing value
+ * with it); never `standardPaidHours`. Without `policy` a following day reads its stored value (which every save sets
+ * to the derived value).
  */
-export function weekendCountsAsHours(weekend: Pick<WeekendPayrollSettings, 'countsAsStandardHours'> | null | undefined): number {
+export function weekendCountsAsHours(
+  weekend: Pick<WeekendPayrollSettings, 'countsAsStandardHours' | 'countsAsFollowsWeekday'> | null | undefined,
+  policy?: Pick<OrgPayrollTimePolicy, 'standardDayStart' | 'standardDayEnd' | 'unpaidBreakMinutes' | 'breakPaid'> | null
+): number {
+  if (weekend?.countsAsFollowsWeekday === true && policy) return Math.round(weekdayPaidHours(policy) * 10000) / 10000
   const stored = Number(weekend?.countsAsStandardHours)
   return weekend?.countsAsStandardHours != null && Number.isFinite(stored) ? stored : DEFAULT_WEEKEND_COUNTS_AS_HOURS
 }
@@ -670,7 +687,24 @@ export function weekdayPaidHours(
  */
 export function withDerivedWeekdayPaidHours(policy: OrgPayrollTimePolicy): OrgPayrollTimePolicy {
   const marked: OrgPayrollTimePolicy = { ...policy, paidHoursDerived: true }
-  return { ...marked, standardPaidHours: Math.round(derivedWeekdayPaidHours(marked) * 10000) / 10000 }
+  const derived: OrgPayrollTimePolicy = { ...marked, standardPaidHours: Math.round(derivedWeekdayPaidHours(marked) * 10000) / 10000 }
+  // 1.49.0: a weekend day on "Same as Monday–Friday" stores the derived value too (the same pattern, for older builds).
+  const follow = (weekend: WeekendPayrollSettings): WeekendPayrollSettings =>
+    weekend?.countsAsFollowsWeekday === true ? { ...weekend, countsAsStandardHours: weekendCountsAsHours(weekend, derived) } : weekend
+  return { ...derived, saturday: follow(derived.saturday), sunday: follow(derived.sunday) }
+}
+
+/**
+ * Rulebook 1.49.0 §4.3 (owner answer 15 Nov, 1b): the working hours a new organisation starts with (setup wizard,
+ * organisation create) — `DEFAULT_PAYROLL_POLICY` with Saturday and Sunday on "Same as Monday–Friday". Reading a
+ * company that never saved a weekend map still uses the plain defaults (nothing existing changes).
+ */
+export function newOrganizationPayrollPolicy(): OrgPayrollTimePolicy {
+  return {
+    ...DEFAULT_PAYROLL_POLICY,
+    saturday: { ...DEFAULT_PAYROLL_POLICY.saturday, countsAsFollowsWeekday: true, countsAsStandardHours: weekdayPaidHours(DEFAULT_PAYROLL_POLICY) },
+    sunday: { ...DEFAULT_PAYROLL_POLICY.sunday, countsAsFollowsWeekday: true, countsAsStandardHours: weekdayPaidHours(DEFAULT_PAYROLL_POLICY) },
+  }
 }
 
 function hoursMinutesText(totalMinutes: number): string {
@@ -730,8 +764,8 @@ export function payrollPolicyToFirestore(policy: OrgPayrollTimePolicy): Record<s
     breakWindowStart: policy.breakWindowStart,
     breakWindowEnd: policy.breakWindowEnd,
     weekdayOutsideStandardMultiplier: policy.weekdayOutsideStandardMultiplier,
-    saturday: weekendToFirestore(policy.saturday),
-    sunday: weekendToFirestore({ ...policy.sunday, sameAsSaturday: false }),
+    saturday: weekendToFirestore(policy.saturday, policy),
+    sunday: weekendToFirestore({ ...policy.sunday, sameAsSaturday: false }, policy),
     sundaySameAsSaturday: policy.sunday.sameAsSaturday === true,
     breakPaid: policy.breakPaid === true,
   }

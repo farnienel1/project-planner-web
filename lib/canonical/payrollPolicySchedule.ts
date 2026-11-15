@@ -26,7 +26,9 @@ import {
   derivedWeekdayPaidHours,
   parsePayrollPolicy,
   payrollPolicyToFirestore,
+  weekdayPaidHours,
   weekendBreakFor,
+  weekendCountsAsHours,
   withDerivedWeekdayPaidHours,
   type OrgPayrollTimePolicy,
   type WeekendPayrollSettings,
@@ -562,7 +564,39 @@ function payrollPolicyTimeStepError(policy: OrgPayrollTimePolicy, previous?: Org
  */
 export function validatePayrollTimePolicy(policy: OrgPayrollTimePolicy, previous?: OrgPayrollTimePolicy | null): string | null {
   const error = validatePayrollTimePolicyFields(policy)
-  return error ?? payrollPolicyTimeStepError(policy, previous)
+  return error ?? payrollPolicyTimeStepError(policy, previous) ?? weekendCountsAsError(policy, previous)
+}
+
+/** Rulebook 1.49.0 §4.3: the step of a weekend "counts as" number (half an hour). */
+export const WEEKEND_COUNTS_AS_STEP_HOURS = 0.5
+
+/**
+ * Rulebook 1.49.0 §4.3 (owner answers 15 Nov, 2): a set-window weekend day's "counts as" number must be on a half-hour
+ * step and no more than the Monday–Friday paid day in effect (`weekdayPaidHours` of this policy). "Same as
+ * Monday–Friday" (`countsAsFollowsWeekday`) is the weekday day itself, so it always passes. A stored number that breaks
+ * either rule passes while it is unchanged (`previous`, as the step rules) and is read as stored — never re-priced.
+ */
+function weekendCountsAsError(policy: OrgPayrollTimePolicy, previous?: OrgPayrollTimePolicy | null): string | null {
+  const cap = weekdayPaidHours(policy)
+  const days: Array<[string, 'saturday' | 'sunday']> = [['Saturday', 'saturday']]
+  if (!policy.sunday?.sameAsSaturday) days.push(['Sunday', 'sunday'])
+  for (const [name, key] of days) {
+    const settings = policy[key]
+    if (!settings || settings.allHoursAtMultiplierMode || settings.countsAsFollowsWeekday === true) continue
+    const value = weekendCountsAsHours(settings)
+    const before = previous?.[key]
+    const unchanged =
+      before != null &&
+      before.countsAsFollowsWeekday !== true &&
+      Math.abs(weekendCountsAsHours(before) - value) < 1e-9
+    if (unchanged) continue
+    const steps = value / WEEKEND_COUNTS_AS_STEP_HOURS
+    if (Math.abs(steps - Math.round(steps)) > 1e-9) return `${name} counts-as hours use half-hour steps (e.g. 7.5).`
+    if (value > cap + 1e-9) {
+      return `${name} counts-as hours can't be more than the Monday–Friday paid day (${Math.round(cap * 100) / 100}h).`
+    }
+  }
+  return null
 }
 
 function validatePayrollTimePolicyFields(policy: OrgPayrollTimePolicy): string | null {

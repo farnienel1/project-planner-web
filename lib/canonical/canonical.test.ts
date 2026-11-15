@@ -9655,15 +9655,16 @@ test('1.19.0: weekend lunch break — owner examples (set window and every hour,
   // Sat window 07:30–14:00 counts as 8h. Paid (missing = paid): 07:30–14:00 = 8h.
   const paidSat = r119Policy(r119SatWindow(), r119SunAllHours())
   assert.equal(r119Hours(R119_SAT, paidSat, '07:30', '14:00').totalPaidHours, 8)
-  // Unpaid, break 12:00–12:30: 7.5h.
+  // Unpaid, break 12:00–12:30: 1.49.0 (owner answer 15 Nov, 3) the break is allowed for in "counts as" — a full window
+  // credits 8h (was 7.5h); the worked hours are still the clock less the break.
   const unpaid = r119Policy(r119SatWindow(false), r119SunAllHours(false))
   const sat = r119Hours(R119_SAT, unpaid, '07:30', '14:00')
-  assert.equal(sat.totalPaidHours, 7.5)
-  assert.equal(sat.unpaidBreakHours, 0.5)
+  assert.equal(sat.totalPaidHours, 8)
+  assert.equal(sat.unpaidBreakHours, 0)
   assert.equal(sat.workedHours, 6)
-  // Sat unpaid, booking 07:30–11:00 misses the break: pro-rated credit 8 × 3.5 / 6.5 = 4.3077h, no deduction.
+  // Sat unpaid, booking 07:30–11:00 misses the break: 1.49.0 worked-minutes share 8 × 3.5 / 6 = 4.67h (was 8 × 3.5 / 6.5 = 4.31h).
   const morning = r119Hours(R119_SAT, unpaid, '07:30', '11:00')
-  assert.ok(Math.abs(morning.totalPaidHours - (8 * 3.5) / 6.5) < 1e-9)
+  assert.ok(Math.abs(morning.totalPaidHours - (8 * 3.5) / 6) < 1e-9)
   assert.equal(morning.unpaidBreakHours, 0)
   // Sun every hour ×2, paid: 6.5 × 2 = 13h. 1.20.3: unpaid → 6.5 × 2 − 0.5 = 12.5h (the break is never multiplied;
   // 1.19.0 paid (6.5 − 0.5) × 2 = 12h). Unpaid + No unpaid break: 13h.
@@ -9675,9 +9676,11 @@ test('1.19.0: weekend lunch break — owner examples (set window and every hour,
   assert.deepEqual(R112.payrollOutsideClockHours(sun), { outsideClockHours: 6.5, outsideBreakHours: 0.5 })
   assert.equal(r119Hours(R119_SUN, unpaid, '07:30', '14:00', { isBreakRemoved: true }).totalPaidHours, 13)
   assert.equal(r119Hours(R119_SAT, unpaid, '07:30', '14:00', { isBreakRemoved: true }).totalPaidHours, 8)
-  // Partial cover: 08:00–12:25 covers 25 min of the break → 8 × 265/390 − 25/60 (the weekday rule's covered part).
+  // Partial cover: 08:00–12:25 covers 25 min of the break → 1.49.0: 8 × (265 − 25) / (390 − 30) (was 8 × 265/390 − 25/60).
   const partial = r119Hours(R119_SAT, unpaid, '08:00', '12:25')
-  assert.ok(Math.abs(partial.totalPaidHours - (8 * 265 / 390 - 25 / 60)) < 1e-9)
+  assert.ok(Math.abs(partial.totalPaidHours - (8 * 240) / 360) < 1e-9)
+  // Only inside the unpaid break: 0.
+  assert.equal(r119Hours(R119_SAT, unpaid, '12:00', '12:30').totalPaidHours, 0)
   // A weekday is unchanged (break taken off as before): 07:30–16:00 = 8h.
   assert.equal(r119Hours(R119_WED, unpaid, '07:30', '16:00').totalPaidHours, 8)
 })
@@ -9705,9 +9708,9 @@ test('1.20.3: weekend lunch break in the outside-window hours comes off as plain
 test('1.19.0: legacy stored weekend FULL DAY / AM / PM — paid as stored; break off only when that day was unpaid', () => {
   const unpaid = r119Policy(r119SatWindow(false), r119SunAllHours(false))
   const paid = r119Policy(r119SatWindow(true), r119SunAllHours(true))
-  // Saturday FULL DAY = the set window at its counts-as hours, less the break when unpaid.
+  // Saturday FULL DAY = the set window at its counts-as hours; 1.49.0: the unpaid break is allowed for (was 7.5h).
   assert.equal(r119Hours(R119_SAT, paid, null, null).totalPaidHours, 8)
-  assert.equal(r119Hours(R119_SAT, unpaid, null, null).totalPaidHours, 7.5)
+  assert.equal(r119Hours(R119_SAT, unpaid, null, null).totalPaidHours, 8)
   // Sunday every-hour FULL DAY = standard day 07:30–16:00 (8.5h) × 2; unpaid (1.20.3) 8.5 × 2 − 0.5 = 16.5.
   assert.equal(r119Hours(R119_SUN, paid, null, null).totalPaidHours, 17)
   assert.equal(r119Hours(R119_SUN, unpaid, null, null).totalPaidHours, 16.5)
@@ -9729,7 +9732,9 @@ test('1.19.0: weekend breakPaid — default paid, Sunday same as Saturday copies
   )
   // Sunday same as Saturday uses Saturday's break setting.
   const same = r119Policy(r119SatWindow(false), { ...r119SunAllHours(true), sameAsSaturday: true })
-  assert.equal(r119Hours(R119_SUN, same, '07:30', '14:00').totalPaidHours, 7.5)
+  // 1.49.0: the full window is the counts-as with the unpaid break allowed for (was 7.5h).
+  assert.equal(r119Hours(R119_SUN, same, '07:30', '14:00').totalPaidHours, 8)
+  assert.ok(Math.abs(r119Hours(R119_SUN, same, '07:30', '13:00').totalPaidHours - (8 * 5) / 6) < 1e-9)
   assert.equal(R112.unpaidBreakAppliesOnDay(same, R119_SUN, R119_ZONE), true)
   // Settings copy: the weekday lunch, set once.
   assert.deepEqual(R112.weekendLunchBreakCopy(same, 'saturday'), {
@@ -9749,7 +9754,10 @@ test('1.19.0: unpaidBreakAppliesOnDay, customHoursBreakWarning and payrollDayWin
   assert.equal(R112.unpaidBreakAppliesOnDay(unpaid, R119_SUN, R119_ZONE), false)
   assert.equal(R112.unpaidBreakAppliesOnDay({ ...unpaid, unpaidBreakMinutes: 0 }, R119_SAT, R119_ZONE), false)
   const booking = { timeSlot: 'CUSTOM_HOURS', workStartTime: '07:30', workEndTime: '14:00' }
-  assert.equal(R112.customHoursBreakWarning(unpaid, R119_SAT, booking, R119_ZONE), R112.CUSTOM_HOURS_BREAK_WARNING)
+  // 1.49.0: a booking that covers the whole set window is paid the full counts-as either way — no warning; a part of
+  // the window that covers the break still warns (turning the break off changes the pay).
+  assert.equal(R112.customHoursBreakWarning(unpaid, R119_SAT, booking, R119_ZONE), null)
+  assert.equal(R112.customHoursBreakWarning(unpaid, R119_SAT, { ...booking, workEndTime: '13:00' }, R119_ZONE), R112.CUSTOM_HOURS_BREAK_WARNING)
   assert.equal(R112.customHoursBreakWarning(unpaid, R119_SUN, booking, R119_ZONE), null)
   assert.equal(R112.customHoursBreakWarning(unpaid, R119_SAT, { ...booking, isBreakRemoved: true }, R119_ZONE), null)
   assert.equal(R112.customHoursBreakWarning(unpaid, R119_WED, booking, R119_ZONE), R112.CUSTOM_HOURS_BREAK_WARNING)
@@ -9766,21 +9774,21 @@ test('1.19.0: unpaidBreakAppliesOnDay, customHoursBreakWarning and payrollDayWin
 test('1.19.0: weekendBookingBreakdown shows the weekend break like Monday–Friday', () => {
   const unpaid = r119Policy(r119SatWindow(false), r119SunAllHours(false))
   const rows = R112.weekendBookingBreakdown(unpaid, [R119_SAT, R119_SUN], '07:30', '14:00', false, R119_ZONE)
+  // 1.49.0: Saturday's full window is the counts-as (the unpaid break allowed for); was "8h − 0.5h unpaid break = 7.5h".
   assert.deepEqual(rows.map((row) => row.line), [
-    'Saturday 07:30–14:00 = 8h − 0.5h unpaid break = 7.5h',
+    'Saturday 07:30–14:00 = 8h (counts as a full day)',
     'Sunday 07:30–14:00 = 6.5h × 2 = 13h − 0.5h unpaid break = 12.5h',
   ])
   assert.deepEqual(rows[0].lines, [
     { kind: 'standard', label: 'Set hours', value: '8h' },
-    { kind: 'break', label: 'Unpaid break', value: '−0.5h' },
-    { kind: 'total', label: 'Total paid hours', value: '7.5h' },
+    { kind: 'total', label: 'Total paid hours', value: '8h' },
   ])
   assert.deepEqual(rows[1].lines, [
     { kind: 'outside', label: 'Every hour', value: '6.5h × 2' },
     { kind: 'break', label: 'Unpaid break', value: '−0.5h' },
     { kind: 'total', label: 'Total paid hours', value: '12.5h' },
   ])
-  assert.deepEqual(rows.map((row) => [row.paidHoursEquivalent, row.unpaidBreakHours]), [[7.5, 0.5], [12.5, 0.5]])
+  assert.deepEqual(rows.map((row) => [row.paidHoursEquivalent, row.unpaidBreakHours]), [[8, 0], [12.5, 0.5]])
   // No unpaid break on the booking: the 1.18.0 lines, unchanged.
   assert.deepEqual(
     R112.weekendBookingBreakdown(unpaid, [R119_SAT, R119_SUN], '07:30', '14:00', true, R119_ZONE).map((row) => row.line),
@@ -9971,17 +9979,18 @@ test('1.19.0: a signed timesheet snapshot is never re-priced — its rows come f
 })
 
 test('1.19.0 (owner, round 2): each weekend day has its own break — length and window, weekday fallback', () => {
-  // Sat window 07:30–14:00 = 8h, break 12:00–12:30 unpaid (the weekday fallback) → 7.5h.
+  // Sat window 07:30–14:00 = 8h, break 12:00–12:30 unpaid (the weekday fallback) → 1.49.0: 8h, allowed for (was 7.5h).
   const fallback = r119Policy(r119SatWindow(false), r119SunAllHours(false))
-  assert.equal(r119Hours(R119_SAT, fallback, '07:30', '14:00').totalPaidHours, 7.5)
+  assert.equal(r119Hours(R119_SAT, fallback, '07:30', '14:00').totalPaidHours, 8)
   // Sun every hour ×2, break 30 min unpaid → 1.20.3: 6.5 × 2 − 0.5 = 12.5h; paid → 13h.
   assert.equal(r119Hours(R119_SUN, fallback, '07:30', '14:00').totalPaidHours, 12.5)
   assert.equal(r119Hours(R119_SUN, r119Policy(r119SatWindow(), r119SunAllHours(true)), '07:30', '14:00').totalPaidHours, 13)
-  // Sat break set to 45 min, 11:30–12:15 → 8 − 0.75 = 7.25h.
+  // Sat break set to 45 min, 11:30–12:15 → 1.49.0: the full window is 8h, the break allowed for (was 8 − 0.75 = 7.25h).
   const ownSat = r119Policy({ ...r119SatWindow(false), breakMinutes: 45, breakWindowStart: '11:30', breakWindowEnd: '12:15' }, r119SunAllHours())
   const own = r119Hours(R119_SAT, ownSat, '07:30', '14:00')
-  assert.equal(own.totalPaidHours, 7.25)
-  assert.equal(own.unpaidBreakHours, 0.75)
+  assert.equal(own.totalPaidHours, 8)
+  assert.equal(own.unpaidBreakHours, 0)
+  assert.equal(own.workedHours, 5.75)
   // The weekday break is untouched by a weekend day's own break.
   assert.equal(r119Hours(R119_WED, ownSat, '07:30', '16:00').totalPaidHours, 8)
   // Sunday with its own 60-minute break 12:00–13:00, every hour ×2: 1.20.3 6.5 × 2 − 1 = 12h; No unpaid break → 13h.
@@ -9990,9 +9999,10 @@ test('1.19.0 (owner, round 2): each weekend day has its own break — length and
   assert.equal(r119Hours(R119_SUN, ownSun, '07:30', '14:00', { isBreakRemoved: true }).totalPaidHours, 13)
   // Sunday "same as Saturday" copies Saturday's break.
   const same = r119Policy({ ...r119SatWindow(false), breakMinutes: 45, breakWindowStart: '11:30', breakWindowEnd: '12:15' }, { ...r119SunAllHours(true), sameAsSaturday: true })
-  assert.equal(r119Hours(R119_SUN, same, '07:30', '14:00').totalPaidHours, 7.25)
-  // The lunch warning and the timeline use the day's own window.
-  const booking = { timeSlot: 'CUSTOM_HOURS', workStartTime: '07:30', workEndTime: '11:45' }
+  assert.equal(r119Hours(R119_SUN, same, '07:30', '14:00').totalPaidHours, 8)
+  // The lunch warning and the timeline use the day's own window. 1.49.0: the warning shows only when turning the break
+  // off changes the pay (07:30–11:45 is a half day on this window, paid the same either way), so 08:00–12:00.
+  const booking = { timeSlot: 'CUSTOM_HOURS', workStartTime: '08:00', workEndTime: '12:00' }
   assert.equal(R112.customHoursBreakWarning(ownSat, R119_SAT, booking, R119_ZONE), R112.CUSTOM_HOURS_BREAK_WARNING)
   assert.equal(R112.customHoursBreakWarning(fallback, R119_SAT, booking, R119_ZONE), null)
   assert.deepEqual(R112.payrollDayWindows(ownSat, R119_SAT, R119_ZONE).unpaidBreak, { start: 690, end: 735 })
@@ -10461,7 +10471,8 @@ test('1.20.2 / 1.20.3: day times use 30-minute steps; break times and length 15;
   // 1.20.3: break times are on the 15-minute step (12:10 is not).
   assert.equal(R112.validatePayrollTimePolicy({ ...base, breakWindowStart: '12:10', breakWindowEnd: '12:40' }), R112.PAYROLL_BREAK_TIME_STEP_MESSAGE)
   // Break length 45 min is on the 15-minute step (owner example).
-  assert.equal(R112.validatePayrollTimePolicy({ ...base, unpaidBreakMinutes: 45 }), null)
+  // 1.49.0: the saved Saturday "counts as" (8h) is unchanged, so the cap (weekday now 7.75h) does not refuse it.
+  assert.equal(R112.validatePayrollTimePolicy({ ...base, unpaidBreakMinutes: 45 }, base), null)
   // A weekend window is on the 30-minute step too.
   const satWindow = { ...base.saturday, allHoursAtMultiplierMode: false, definedWindowStart: '07:30', definedWindowEnd: '13:15' }
   assert.equal(R112.validatePayrollTimePolicy({ ...base, saturday: satWindow }), R112.PAYROLL_POLICY_TIME_STEP_MESSAGE)
@@ -10479,7 +10490,7 @@ test('1.20.3 owner: lunch break start, end and length use 15-minute steps; day s
   assert.equal(R112.PAYROLL_BREAK_TIME_STEP_MESSAGE, 'Lunch break times and length use 15-minute steps (e.g. 10:45).')
   // Owner example: 10:00–10:45 unpaid, 45 min — valid, and 45 minutes come off a booking that covers it.
   const owner = { ...base, breakWindowStart: '10:00', breakWindowEnd: '10:45', unpaidBreakMinutes: 45 }
-  assert.equal(R112.validatePayrollTimePolicy(owner), null)
+  assert.equal(R112.validatePayrollTimePolicy(owner, base), null)
   const wed = R112.payrollHoursResult({
     booking: { timeSlot: 'CUSTOM_HOURS', workStartTime: '07:30', workEndTime: '16:00' },
     dayKey: R119_WED,
@@ -10491,7 +10502,8 @@ test('1.20.3 owner: lunch break start, end and length use 15-minute steps; day s
   assert.equal(R112.validatePayrollTimePolicy({ ...owner, breakWindowEnd: '10:40' }), R112.PAYROLL_BREAK_TIME_STEP_MESSAGE)
   assert.equal(R112.validatePayrollTimePolicy({ ...owner, unpaidBreakMinutes: 40 }), R112.PAYROLL_BREAK_TIME_STEP_MESSAGE)
   for (const minutes of [0, 15, 30, 45, 60, 75, 90, 105, 120]) {
-    assert.equal(R112.validatePayrollTimePolicy({ ...base, unpaidBreakMinutes: minutes }), null, `${minutes} min`)
+    // 1.49.0: base's Saturday "counts as" is unchanged (previous = base), so the cap does not refuse a longer break.
+    assert.equal(R112.validatePayrollTimePolicy({ ...base, unpaidBreakMinutes: minutes }, base), null, `${minutes} min`)
   }
   // Each weekend day's own break times and length too.
   const sat = { ...base.saturday, breakPaid: false, breakWindowStart: '11:15', breakWindowEnd: '12:00', breakMinutes: 45 }
@@ -10518,8 +10530,8 @@ test('1.20.3 owner: an unpaid break is plain hours, never multiplied (every hour
   assert.equal(sun.totalPaidHours, 12.5)
   assert.equal(R112.bookingHoursLabel(sun).label, '12.5h (6.5h × 2 − 0.5h break)')
   assert.equal(r119Hours(R119_SUN, unpaid, '07:30', '14:00', { isBreakRemoved: true }).totalPaidHours, 13)
-  // Set window: the break inside the window comes off the counts-as credit as plain hours — unchanged, 7.5h.
-  assert.equal(r119Hours(R119_SAT, unpaid, '07:30', '14:00').totalPaidHours, 7.5)
+  // Set window: 1.49.0 the break inside the window is allowed for in the counts-as — a full window is 8h (was 7.5h).
+  assert.equal(r119Hours(R119_SAT, unpaid, '07:30', '14:00').totalPaidHours, 8)
   // Weekday unchanged: 07:30–16:00 with 30 min unpaid = 8h.
   assert.equal(r119Hours(R119_WED, unpaid, '07:30', '16:00').totalPaidHours, 8)
   // Pay consumers use outsideHours × multiplier: it equals clock × N − break exactly.
@@ -10529,14 +10541,14 @@ test('1.20.3 owner: an unpaid break is plain hours, never multiplied (every hour
 test('1.20.3 owner bug: the Saturday / Sunday preview on Working hours changes with that day\'s Paid / Unpaid break', () => {
   const satPaid = { ...r119SatWindow(true) }
   const draft = (paid: boolean) => r119Policy({ ...satPaid, breakPaid: paid }, { ...r119SunAllHours(paid) })
-  // Saturday 07:30–14:00 counts as 8h, break 12:00–12:30: paid 8h → unpaid 7.5h.
+  // Saturday 07:30–14:00 counts as 8h, break 12:00–12:30: paid 8h; 1.49.0 unpaid 8h too (allowed for; was 7.5h).
   const satP = R112.weekendDayPreview(draft(true), 'saturday', R119_ZONE)
   const satU = R112.weekendDayPreview(draft(false), 'saturday', R119_ZONE)
   assert.ok(satP && satU)
   assert.deepEqual([satP.start, satP.end, satP.rows[0].paidHoursEquivalent], ['07:30', '14:00', 8])
-  assert.equal(satU.rows[0].paidHoursEquivalent, 7.5)
+  assert.equal(satU.rows[0].paidHoursEquivalent, 8)
   assert.equal(satP.summary, '07:30–14:00 counts as 8h · Paid break 12:00–12:30, 30 min · 8h paid')
-  assert.equal(satU.summary, '07:30–14:00 counts as 8h · Unpaid break 12:00–12:30, 30 min — 30 min taken off · 7.5h paid')
+  assert.equal(satU.summary, '07:30–14:00 counts as 8h · Unpaid break 12:00–12:30, 30 min — allowed for in the counts as · 8h paid')
   // Sunday every hour ×2 over 07:30–14:00 (the standard day here): paid 13h → unpaid 30 min 12.5h (1.20.3).
   const shortDay = (paid: boolean) => ({ ...draft(paid), standardDayStart: '07:30', standardDayEnd: '14:00' })
   const sunP = R112.weekendDayPreview(shortDay(true), 'sunday', R119_ZONE)
@@ -10545,23 +10557,22 @@ test('1.20.3 owner bug: the Saturday / Sunday preview on Working hours changes w
   assert.deepEqual([sunP.start, sunP.end, sunP.rows[0].paidHoursEquivalent, sunU.rows[0].paidHoursEquivalent], ['07:30', '14:00', 13, 12.5])
   assert.equal(sunU.rows[0].line, 'Sunday 07:30–14:00 = 6.5h × 2 = 13h − 0.5h unpaid break = 12.5h')
   assert.equal(sunU.summary, 'Every hour at ×2 · Unpaid break 12:00–12:30, 30 min — 30 min taken off · 12.5h paid')
-  // Length and times change it too: 45 min in 12:00–12:45 → 45 min off; a length beyond the window is capped by it,
-  // and the summary says how much was taken off.
+  // 1.49.0: the full window is the counts-as whatever the unpaid break's length or times (was 7.25h / 7.5h).
   const own = { ...draft(false), saturday: { ...draft(false).saturday, breakMinutes: 45, breakWindowEnd: '12:45' } }
-  assert.equal(R112.weekendDayPreview(own, 'saturday', R119_ZONE)?.rows[0].paidHoursEquivalent, 7.25)
+  assert.equal(R112.weekendDayPreview(own, 'saturday', R119_ZONE)?.rows[0].paidHoursEquivalent, 8)
   const capped = { ...draft(false), saturday: { ...draft(false).saturday, breakMinutes: 60 } }
   assert.equal(
     R112.weekendDayPreview(capped, 'saturday', R119_ZONE)?.summary,
-    '07:30–14:00 counts as 8h · Unpaid break 12:00–12:30, 60 min — 30 min taken off · 7.5h paid'
+    '07:30–14:00 counts as 8h · Unpaid break 12:00–12:30, 60 min — allowed for in the counts as · 8h paid'
   )
   // Sunday "same as Saturday" prices Saturday's rule from the same draft.
   const same = { ...draft(false), sunday: { ...draft(true).sunday, sameAsSaturday: true } }
-  assert.equal(R112.weekendDayPreview(same, 'sunday', R119_ZONE)?.rows[0].paidHoursEquivalent, 7.5)
+  assert.equal(R112.weekendDayPreview(same, 'sunday', R119_ZONE)?.rows[0].paidHoursEquivalent, 8)
   // A weekend day's own unpaid break applies even when the weekday length is 0 (1.20.3; it was gated on the weekday).
   const zeroWeekday = { ...draft(false), unpaidBreakMinutes: 0, saturday: { ...draft(false).saturday, breakMinutes: 30 } }
   assert.equal(R112.unpaidBreakAppliesOnDay(zeroWeekday, R119_SAT, R119_ZONE), true)
   assert.equal(R112.unpaidBreakAppliesOnDay(zeroWeekday, R119_WED, R119_ZONE), false)
-  assert.equal(R112.weekendDayPreview(zeroWeekday, 'saturday', R119_ZONE)?.rows[0].paidHoursEquivalent, 7.5)
+  assert.equal(R112.weekendDayPreview(zeroWeekday, 'saturday', R119_ZONE)?.rows[0].paidHoursEquivalent, 8)
 })
 
 test('1.20.3 owner: one text for hours at a multiplier — clock hours × N, then the break as plain hours', () => {
@@ -15836,5 +15847,71 @@ test('1.49.0: weekend set-window standard part divides by that day\'s "counts as
   const edited = R112.revisedPayrollLineAmounts({ dayKey: '2026-11-14', startTime: '07:30', endTime: '14:00', policy, timeZone: 'Europe/London', payBasis: 'day', dayRate: 240 } as never)
   assert.equal(edited?.standardAmount, 240)
   assert.equal(edited?.standardPartDayHours, 8)
-  assert.equal(R112.weekendCountsAsCopy('saturday').help, 'A full Saturday window is paid as one day')
+  assert.deepEqual(R112.weekendCountsAsCopy('saturday'), { label: 'Counts as', sameAsWeekdayLabel: 'Same as Monday–Friday', dayName: 'Saturday' })
+})
+
+// Rulebook 1.49.0 rework (owner answers 15 Nov): "Same as Monday–Friday", the cap and step, the unpaid break allowed for
+// in "counts as", hourly pay, nothing migrated, the approved notes.
+test('1.49.0: "Same as Monday–Friday", cap and step, hourly pay, writer and notes', () => {
+  const wk = { allHoursAtMultiplierMode: false, allHoursMultiplier: 2, definedWindowStart: '07:30', definedWindowEnd: '14:00', countsAsStandardHours: 8, outsideWindowMultiplier: 2, breakPaid: false }
+  type Policy = Parameters<typeof R112.payrollHoursResult>[0]['policy']
+  const base = { ...R112.DEFAULT_PAYROLL_POLICY, standardDayStart: '07:00', standardDayEnd: '16:00', unpaidBreakMinutes: 30, breakWindowStart: '12:00', breakWindowEnd: '12:30', standardPaidHours: 8.5, paidHoursDerived: true, saturday: { ...wk }, sunday: { ...wk, sameAsSaturday: true } } as unknown as Policy
+  const follow = { ...base, saturday: { ...wk, countsAsFollowsWeekday: true } } as unknown as Policy
+  const sat = (policy: Policy, start: string, end: string, isBreakRemoved = false) =>
+    R112.payrollHoursResult({ booking: { timeSlot: 'CUSTOM_HOURS', workStartTime: start, workEndTime: end, isBreakRemoved }, dayKey: '2026-11-14', policy, timeZone: 'Europe/London' })
+  const pay = (hours: ReturnType<typeof sat>, basis: 'day' | 'hourly') =>
+    R112.bookingPaySlices({ hours, standardDayHours: 8.5, payBasis: basis, dayRate: 240, hourlyRate: 20 }).map((s) => s.pay)
+  // The reader: stored 8; following → the weekday paid day 8.5; missing → 8 (one fallback on both apps).
+  assert.equal(R112.weekendCountsAsHours(base.saturday, base), 8)
+  assert.equal(R112.weekendCountsAsHours(follow.saturday, follow), 8.5)
+  assert.equal(R112.weekendCountsAsHours({}, base), 8)
+  // A full window (unpaid break allowed for): one day rate; hourly = counts-as hours × rate.
+  assert.deepEqual(pay(sat(base, '07:30', '14:00'), 'day'), [240])
+  assert.deepEqual(pay(sat(base, '07:30', '14:00'), 'hourly'), [160])
+  assert.deepEqual(pay(sat(follow, '07:30', '14:00'), 'day'), [240])
+  assert.deepEqual(pay(sat(follow, '07:30', '14:00'), 'hourly'), [170])
+  assert.equal(sat(follow, '07:30', '14:00').standardPartDayHours, 8.5)
+  // Removed break: still the full counts-as.
+  assert.equal(sat(base, '07:30', '14:00', true).totalPaidHours, 8)
+  // Outside the window: clock hours × multiplier × rate (07:30–15:00: 1h × 2 at £20 = £40; day rate ÷ 8.5).
+  assert.deepEqual(pay(sat(base, '07:30', '15:00'), 'hourly'), [160, 40])
+  assert.deepEqual(pay(sat(base, '07:30', '15:00'), 'day'), [240, 56.47])
+  // Partial window, unpaid break: worked-minutes share (07:30–11:00 → 8 × 3.5 / 6 = 4.67h); hourly £93.33, day £140.
+  assert.deepEqual(pay(sat(base, '07:30', '11:00'), 'hourly'), [R112.roundPennies(((8 * 3.5) / 6) * 20)])
+  assert.deepEqual(pay(sat(base, '07:30', '11:00'), 'day'), [R112.roundPennies((240 * 3.5) / 6)])
+  // Partial window, break removed: clock share 8 × 3.5 / 6.5.
+  assert.ok(Math.abs(sat(base, '07:30', '11:00', true).totalPaidHours - (8 * 3.5) / 6.5) < 1e-9)
+  // Cap and step (validatePayrollTimePolicy).
+  const withSat = (countsAsStandardHours: number) => ({ ...base, saturday: { ...wk, countsAsStandardHours } }) as unknown as Policy
+  assert.equal(R112.validatePayrollTimePolicy(withSat(8.5)), null)
+  assert.equal(R112.validatePayrollTimePolicy(withSat(9)), "Saturday counts-as hours can't be more than the Monday–Friday paid day (8.5h).")
+  assert.equal(R112.validatePayrollTimePolicy(withSat(7.3)), 'Saturday counts-as hours use half-hour steps (e.g. 7.5).')
+  assert.equal(R112.validatePayrollTimePolicy(withSat(9), withSat(9)), null)
+  assert.equal(R112.validatePayrollTimePolicy(withSat(7.3), withSat(7.3)), null)
+  assert.equal(R112.validatePayrollTimePolicy(follow), null)
+  assert.equal(R112.WEEKEND_COUNTS_AS_STEP_HOURS, 0.5)
+  // Writer: "Same as Monday–Friday" writes the flag and the derived value; a stored number is kept exactly.
+  const written = policyToFirestore119(follow).saturday as Record<string, unknown>
+  assert.deepEqual([written.countsAsFollowsWeekday, written.countsAsHours], [true, 8.5])
+  assert.equal((policyToFirestore119(base).saturday as Record<string, unknown>).countsAsFollowsWeekday, undefined)
+  assert.equal(parsePolicy112(policyToFirestore119(follow)).saturday.countsAsFollowsWeekday, true)
+  assert.equal(R112.withDerivedWeekdayPaidHours({ ...follow, standardDayEnd: '17:00' } as Policy).saturday.countsAsStandardHours, 9.5)
+  // Nothing migrated: an existing company without the flag reads its stored number; new organisations start following.
+  assert.equal(parsePolicy112({ saturday: { countsAsHours: 7 } }).saturday.countsAsFollowsWeekday, undefined)
+  assert.equal(parsePolicy112({ saturday: { countsAsHours: 7 } }).saturday.countsAsStandardHours, 7)
+  assert.equal(parsePolicy112(undefined).saturday.countsAsFollowsWeekday, undefined)
+  const fresh = R112.newOrganizationPayrollPolicy()
+  assert.deepEqual([fresh.saturday.countsAsFollowsWeekday, fresh.sunday.countsAsFollowsWeekday], [true, true])
+  // Approved wording.
+  assert.equal(
+    R112.weekdayDayRateNote(base),
+    'On a day rate, a booking that covers the working day from start to finish is paid one full day. Hours outside it are paid as overtime at ×1.5.'
+  )
+  assert.equal(
+    R112.weekendDayRateNote(follow, 'saturday'),
+    'On a day rate, a booking that covers 07:30–14:00 is paid one full day. On an hourly rate it is paid as 8.5 hours. Hours outside the window are paid as overtime at ×2.'
+  )
+  assert.equal(R112.weekendDayRateNote({ ...base, saturday: { ...wk, allHoursAtMultiplierMode: true } } as unknown as Policy, 'saturday'), null)
+  // reportDayValue: a weekday is unchanged by the split (review of #327, a).
+  assert.equal(R112.reportDayValue({ totalPaidHours: 8.5, standardPaidHours: 8.5, standardHours: 8.5, standardPartDayHours: 8.5 }), 1)
 })

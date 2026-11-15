@@ -216,3 +216,34 @@ test('1.49.0 owner reference fortnight: weekly report, timesheet totals and invo
   // Today's code divided the 16 weekend hours by the weekday 8.5h: 1.88 days, £451.76.
   assert.ok(!person!.lines.some((line) => Math.abs(line.pay - 451.76) < 0.005))
 })
+
+test('1.49.0 "Same as Monday–Friday" (8.5h): a full Saturday window pays £240 = 1 day; hourly pays 8.5h × the rate', () => {
+  const following = {
+    ...policy,
+    saturday: { ...policy.saturday, countsAsFollowsWeekday: true, breakPaid: false },
+    sunday: { ...policy.sunday, countsAsFollowsWeekday: true, breakPaid: false },
+  } as OrgPayrollTimePolicy
+  const collect = (user: User, rateHistory: OperativeDayRateHistoryCollection = history) =>
+    collectTimesheetPayroll({
+      user,
+      bookings: [custom('b14', '2026-11-14', '07:30', '14:00')],
+      managerSiteBookings: [],
+      operatives: [operative],
+      projects: [project],
+      smallWorks: [],
+      periodStart,
+      periodEnd,
+      payrollPolicy: following,
+      timeZone: zone,
+      history: rateHistory,
+    }).lineItems
+  const day = collect(admin)
+  assert.equal(day.length, 1)
+  assert.equal(day[0]!.amount, 240)
+  assert.equal(day[0]!.paidHours / day[0]!.standardDayHours, 1)
+  const hourlyUser = { ...admin, payBasis: 'hourly', hourlyRate: 30, dayRate: undefined } as unknown as User
+  // No rate history: the live hourly profile applies.
+  const hourly = collect(hourlyUser, { byUserId: {}, byOperativeId: {} })
+  assert.equal(hourly[0]!.paidHours, 8.5)
+  assert.equal(hourly[0]!.amount, 255)
+})

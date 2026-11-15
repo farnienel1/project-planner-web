@@ -82,11 +82,13 @@ test('1.39.0: a multiplier-only day says so; an unpaid break is its own deductio
   assert.deepEqual(explain(sundayEveryHour, SUN, '07:30', '14:00', true).steps, ['07:30–14:00 = 6.5h × 2 = 13h'])
 })
 
-test('1.39.0: an unpaid Saturday break inside the window comes off the credited hours', () => {
+// 1.49.0 (owner answer 15 Nov, 3): the unpaid break is allowed for in "counts as" — a full window is 8h (was 7.5h);
+// a part of it counts over the window minutes outside the break (was 6.27h).
+test('1.49.0: an unpaid Saturday break inside the window is allowed for in the counts as', () => {
   const unpaid = { ...owner, saturday: { ...(owner as any).saturday, breakPaid: false } } as unknown as OrgPayrollTimePolicy
-  assert.deepEqual(explain(unpaid, SAT, '07:30', '14:00').steps, ['07:30–14:00 = 7.5h (full day 8h, less 30 min unpaid break)'])
+  assert.deepEqual(explain(unpaid, SAT, '07:30', '14:00').steps, ['07:30–14:00 = 8h (full day, unpaid break allowed for)'])
   assert.deepEqual(explain(unpaid, SAT, '07:30', '13:00').steps, [
-    'Booked 07:30–13:00 = 5.5h of the 6.5h window → 8h × 5.5 ÷ 6.5 = 6.77h, less 30 min unpaid break = 6.27h',
+    'Booked 07:30–13:00 = 5h of the 6h window outside the unpaid break → 8h × 5 ÷ 6 = 6.67h',
   ])
 })
 

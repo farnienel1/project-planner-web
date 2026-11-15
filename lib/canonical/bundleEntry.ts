@@ -504,6 +504,7 @@ export {
   payrollTimePolicyScheduleWriteFields,
   payrollTimePolicyTimeline,
   validatePayrollTimePolicy,
+  WEEKEND_COUNTS_AS_STEP_HOURS,
   PAYROLL_POLICY_TIME_STEP_MINUTES,
   PAYROLL_POLICY_TIME_STEP_MESSAGE,
   payrollPolicyTimeOnStep,
@@ -1006,6 +1007,8 @@ export {
   customHoursBreakWarning,
   weekendLunchBreakCopy,
   weekendCountsAsCopy,
+  weekdayDayRateNote,
+  weekendDayRateNote,
   weekendDayPreview,
   WEEKEND_PREVIEW_DAY_KEYS,
   isWeekendDayKey,
@@ -1064,6 +1067,7 @@ export {
   weekendCountsAsHours,
   DEFAULT_WEEKEND_COUNTS_AS_HOURS,
   withDerivedWeekdayPaidHours,
+  newOrganizationPayrollPolicy,
   weekdayPaidDayPreview,
 } from './organizationSettings'
 export { leaveHalfDayWindows, leaveComparableInterval, leaveHalfDayLabel } from './engine'

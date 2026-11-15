@@ -139,7 +139,7 @@ function dayRule(
   if (weekend) {
     const window = weekend.allHoursAtMultiplierMode ? null : weekendFullDayWindow(policy, weekend)
     if (!window) return { kind: 'weekendAllHours', rule: `${label} every hour at ${times(rate)}×${brk}`, fullDayHours: null, windowHours: null }
-    const countsAs = weekendCountsAsHours(weekend)
+    const countsAs = weekendCountsAsHours(weekend, policy)
     return {
       kind: 'weekendWindow',
       rule: `${label} full day: ${formatClockMinutes(window.start)}–${formatClockMinutes(window.end)} counts as ${h(countsAs)}, hours outside it at ${times(rate)}×${brk}`,
@@ -243,10 +243,32 @@ export function bookingHoursExplanation(
       const clock = clockSpanHours(row) ?? row.workedHours + (row.unpaidBreakHours ?? 0)
       const note = breakNote(row, brk)
       if (kind === 'weekendWindow') {
-        // A set window credits its "counts as" hours, pro rata for the part of the window worked; the break comes off them.
+        // A set window credits its "counts as" hours, pro rata for the part of the window worked. 1.49.0 (owner answer
+        // 15 Nov, 3): the unpaid break is allowed for in "counts as" — a full window is "counts as", and a part of it
+        // counts over the window minutes outside the break window when the break is unpaid and not removed.
         const credited = row.baseHours + (row.unpaidBreakHours ?? 0)
         const full = fullDayHours != null && Math.abs(round(credited) - fullDayHours) < 0.001
-        if (full) {
+        const rowStart = parseClockMinutes(row.clockStart ?? null)
+        const rowEnd = parseClockMinutes(row.clockEnd ?? null)
+        const weekendRule = weekendRuleForIsoWeekday(iso, dayPolicy)
+        const setWindow = weekendRule ? weekendFullDayWindow(dayPolicy, weekendRule) : null
+        const lessBreak =
+          unpaidApplies && booking.isBreakRemoved !== true && dayBreak && setWindow && rowStart != null && rowEnd != null
+            ? {
+                window: Math.max(0, Math.min(setWindow.end, dayBreak.end) - Math.max(setWindow.start, dayBreak.start)),
+                covered: Math.max(0, Math.min(rowEnd, dayBreak.end) - Math.max(rowStart, dayBreak.start)),
+              }
+            : null
+        if (full && lessBreak && lessBreak.window > 0) {
+          steps.push(`${prefix}${range ?? label} = ${h(row.baseHours)} (full day, unpaid break allowed for)`)
+          summaryParts.push(`${h(row.baseHours)} (full day, unpaid break allowed for)`)
+        } else if (!full && lessBreak && lessBreak.window > 0 && windowHours && fullDayHours != null && range) {
+          const windowLess = round(windowHours - lessBreak.window / 60)
+          const coveredLess = round(Math.max(0, clock - lessBreak.covered / 60))
+          const proRata = `${h(fullDayHours)} × ${coveredLess} ÷ ${windowLess} = ${h(credited)}`
+          steps.push(`${prefix}Booked ${range} = ${h(coveredLess)} of the ${h(windowLess)} window outside the unpaid break → ${proRata}`)
+          summaryParts.push(`${proRata} (part of the window, unpaid break not counted)`)
+        } else if (full) {
           const why = brk > 0 ? `full day ${h(credited)}, ${note}` : note ? `full day, ${note}` : 'full day'
           steps.push(`${prefix}${range ?? label} = ${h(row.baseHours)} (${why})`)
           summaryParts.push(`${h(row.baseHours)} (${why})`)
