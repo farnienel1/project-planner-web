@@ -1671,6 +1671,9 @@ var ProjectPlannerCanonical = (() => {
     weekendBreakFor: () => weekendBreakFor,
     weekendCountsAsCopy: () => weekendCountsAsCopy,
     weekendCountsAsHours: () => weekendCountsAsHours,
+    weekendCountsAsMax: () => weekendCountsAsMax,
+    weekendCountsAsSnap: () => weekendCountsAsSnap,
+    weekendCountsAsStep: () => weekendCountsAsStep,
     weekendCustomHoursDefault: () => weekendCustomHoursDefault,
     weekendDayPreview: () => weekendDayPreview,
     weekendDayRateNote: () => weekendDayRateNote,
@@ -5686,7 +5689,7 @@ var ProjectPlannerCanonical = (() => {
       const wall = wallHours(booking, policy);
       return result([segment("allHoursMultiplier", wall, multiplier, booking.workStartTime ?? void 0, booking.workEndTime ?? void 0)], multiplier);
     }
-    if (isHalfDayPaid(booking, policy, false)) return halfDayPaid(booking, policy, weekend, multiplier);
+    if (isHalfDayPaid(booking, policy, false, true)) return halfDayPaid(booking, policy, weekend, multiplier);
     const credit = countsAs(weekend, policy);
     const rows3 = [];
     const overlapStart = Math.max(span.start, ws);
@@ -5695,10 +5698,12 @@ var ProjectPlannerCanonical = (() => {
     if (overlapEnd > overlapStart) {
       const covered = overlapEnd - overlapStart;
       const windowMinutes = we - ws;
-      const breakInWindow = deductBreak ? breakOverlapMinutes(dayBreak, { start: ws, end: we }) : 0;
-      const breakCovered = deductBreak ? breakOverlapMinutes(dayBreak, { start: overlapStart, end: overlapEnd }) : 0;
+      const breakUnpaid = weekendBreakUnpaid(policy, weekend) && !isNamedHalf(booking);
+      const breakInWindow = breakUnpaid ? breakOverlapMinutes(dayBreak, { start: ws, end: we }) : 0;
+      const breakCovered = breakUnpaid ? breakOverlapMinutes(dayBreak, { start: overlapStart, end: overlapEnd }) : 0;
       const fullCover = overlapStart <= ws && overlapEnd >= we;
-      const credited = fullCover ? credit : deductBreak && windowMinutes - breakInWindow > 0 ? credit * (Math.max(0, covered - breakCovered) / (windowMinutes - breakInWindow)) : credit * (covered / windowMinutes);
+      const workedShare = Math.max(0, covered - breakCovered) + (booking.isBreakRemoved === true ? breakCovered : 0);
+      const credited = fullCover ? credit : breakUnpaid && windowMinutes - breakInWindow > 0 ? Math.min(credit, credit * (workedShare / (windowMinutes - breakInWindow))) : credit * (covered / windowMinutes);
       const inside = Math.min(breakLeft, breakOverlapMinutes(dayBreak, { start: overlapStart, end: overlapEnd }));
       breakLeft -= inside;
       const insideHours = inside / 60;
@@ -6083,6 +6088,8 @@ var ProjectPlannerCanonical = (() => {
   var WEEKEND_COUNTS_AS_STEP_HOURS = 0.5;
   function weekendCountsAsError(policy, previous) {
     const cap = weekdayPaidHours(policy);
+    const capText = `${Math.round(cap * 100) / 100}h`;
+    const weekdayChanged = previous != null && Math.abs(weekdayPaidHours(previous) - cap) > 1e-9;
     const days = [["Saturday", "saturday"]];
     if (!policy.sunday?.sameAsSaturday) days.push(["Sunday", "sunday"]);
     for (const [name, key5] of days) {
@@ -6091,14 +6098,36 @@ var ProjectPlannerCanonical = (() => {
       const value = weekendCountsAsHours(settings);
       const before = previous?.[key5];
       const unchanged = before != null && before.countsAsFollowsWeekday !== true && Math.abs(weekendCountsAsHours(before) - value) < 1e-9;
-      if (unchanged) continue;
+      if (unchanged) {
+        if (weekdayChanged && value > cap + 1e-9) {
+          return `${name} counts as ${Math.round(value * 100) / 100}h, more than the new Monday\u2013Friday day of ${capText}. Lower ${name}'s Counts as or turn on Same as Monday\u2013Friday.`;
+        }
+        continue;
+      }
       const steps = value / WEEKEND_COUNTS_AS_STEP_HOURS;
       if (Math.abs(steps - Math.round(steps)) > 1e-9) return `${name} counts-as hours use half-hour steps (e.g. 7.5).`;
       if (value > cap + 1e-9) {
-        return `${name} counts-as hours can't be more than the Monday\u2013Friday paid day (${Math.round(cap * 100) / 100}h).`;
+        return `${name} counts-as hours can't be more than the Monday\u2013Friday paid day (${capText}).`;
       }
     }
     return null;
+  }
+  function weekendCountsAsMax(policy) {
+    const grid = Math.floor(weekdayPaidHours(policy) / WEEKEND_COUNTS_AS_STEP_HOURS + 1e-9) * WEEKEND_COUNTS_AS_STEP_HOURS;
+    return Math.max(PAYROLL_POLICY_LIMITS.paidHours.min, grid);
+  }
+  function weekendCountsAsStep(current, direction, policy) {
+    const step = WEEKEND_COUNTS_AS_STEP_HOURS;
+    const value = Number(current);
+    const base = Number.isFinite(value) ? value : weekendCountsAsMax(policy);
+    const next = direction > 0 ? Math.floor(base / step + 1e-9) * step + step : Math.ceil(base / step - 1e-9) * step - step;
+    return Math.min(weekendCountsAsMax(policy), Math.max(PAYROLL_POLICY_LIMITS.paidHours.min, next));
+  }
+  function weekendCountsAsSnap(value, policy) {
+    const n = Number(value);
+    if (!Number.isFinite(n) || typeof value === "string" && value.trim() === "") return weekendCountsAsMax(policy);
+    const snapped = Math.round(n / WEEKEND_COUNTS_AS_STEP_HOURS) * WEEKEND_COUNTS_AS_STEP_HOURS;
+    return Math.min(weekendCountsAsMax(policy), Math.max(PAYROLL_POLICY_LIMITS.paidHours.min, snapped));
   }
   function validatePayrollTimePolicyFields(policy) {
     const { paidHours, breakMinutes, multiplier } = PAYROLL_POLICY_LIMITS;
@@ -12222,7 +12251,7 @@ var ProjectPlannerCanonical = (() => {
   function rulebookStamp() {
     return {
       version: true ? "1.49.0" : "",
-      sha256: true ? "3b3073233784182d69dc19219411fd2f5afd060c1a5e568051e25cfee25995b0" : ""
+      sha256: true ? "fa1526bbd66538250cb3fe2ade378d0109f79504508d791f3c6ddfcd76f326b9" : ""
     };
   }
   function rulebookVersionLabel(version) {

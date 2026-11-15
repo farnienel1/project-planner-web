@@ -24,6 +24,8 @@ import {
   weekdayDayRateNote,
   weekendDayRateNote,
   WEEKEND_COUNTS_AS_STEP_HOURS,
+  weekendCountsAsMax,
+  weekendCountsAsStep,
   weekdayPaidDayPreview,
   weekdayPaidHours,
   withDerivedWeekdayPaidHours,
@@ -472,10 +474,7 @@ export function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
                     ? { countsAsFollowsWeekday: true, countsAsStandardHours: weekendCountsAsHours({ countsAsFollowsWeekday: true }, draft) }
                     : {
                         countsAsFollowsWeekday: false,
-                        countsAsStandardHours: Math.max(
-                          PAYROLL_POLICY_LIMITS.paidHours.min,
-                          Math.floor(weekendCountsAsHours(settings, draft) / WEEKEND_COUNTS_AS_STEP_HOURS) * WEEKEND_COUNTS_AS_STEP_HOURS
-                        ),
+                        countsAsStandardHours: weekendCountsAsMax(draft),
                       }
                 )
               }
@@ -484,9 +483,14 @@ export function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
               <Stepper
                 label={weekendCountsAsCopy(key).label}
                 value={weekendCountsAsHours(settings, draft)}
-                onChange={(value) => patchWeekend(key, { countsAsStandardHours: value })}
+                // Review of #327 (round 2): every press lands on the half-hour grid within 1h and the cap
+                // (`weekendCountsAsStep`); a stored off-grid or above-cap value steps to the nearest valid one.
+                onChange={(value) => {
+                  const current = weekendCountsAsHours(settings, draft)
+                  patchWeekend(key, { countsAsStandardHours: weekendCountsAsStep(current, value > current ? 1 : -1, draft) })
+                }}
                 min={PAYROLL_POLICY_LIMITS.paidHours.min}
-                max={Math.max(PAYROLL_POLICY_LIMITS.paidHours.min, weekdayPaidHours(draft))}
+                max={weekendCountsAsMax(draft)}
                 step={WEEKEND_COUNTS_AS_STEP_HOURS}
                 format={(value) => `${value}h`}
               />

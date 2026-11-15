@@ -641,7 +641,9 @@ function weekendDay(booking: PayrollHoursBooking, policy: OrgPayrollTimePolicy, 
     const wall = wallHours(booking, policy)
     return result([segment('allHoursMultiplier', wall, multiplier, booking.workStartTime ?? undefined, booking.workEndTime ?? undefined)], multiplier)
   }
-  if (isHalfDayPaid(booking, policy, false)) return halfDayPaid(booking, policy, weekend, multiplier)
+  // Review of #327 (round 2): only a stored AM / PM is a half day on a set-window weekend day — custom hours are never
+  // snapped to one (as Monday–Friday since 1.44.0); every part of the window is the worked-minutes share (decision 3).
+  if (isHalfDayPaid(booking, policy, false, true)) return halfDayPaid(booking, policy, weekend, multiplier)
   const credit = countsAs(weekend, policy)
   const rows: PayrollHoursSegment[] = []
   const overlapStart = Math.max(span.start, ws)
@@ -652,17 +654,21 @@ function weekendDay(booking: PayrollHoursBooking, policy: OrgPayrollTimePolicy, 
   if (overlapEnd > overlapStart) {
     // Rulebook 1.49.0 §4.3 / §8 (owner answer 15 Nov, 3): the unpaid break is already allowed for in "counts as". A
     // booking that covers the whole window credits exactly "counts as" — paid, unpaid or removed break alike. A part of
-    // the window credits pro rata: with an unpaid break (not removed) over the window minutes outside the break window
-    // (so a booking only inside the break credits 0); with a paid or removed break over the clock minutes.
+    // the window credits pro rata (so a booking only inside an unpaid break credits 0).
+    // Review of #327 (round 2): with the company break unpaid the share is always over the window minutes outside the
+    // break window, and "No unpaid break" on the booking only adds the covered break minutes as worked — it never lowers
+    // the credit. A company whose break is paid credits over the clock minutes (its full window is all paid time).
     const covered = overlapEnd - overlapStart
     const windowMinutes = we - ws
-    const breakInWindow = deductBreak ? breakOverlapMinutes(dayBreak, { start: ws, end: we }) : 0
-    const breakCovered = deductBreak ? breakOverlapMinutes(dayBreak, { start: overlapStart, end: overlapEnd }) : 0
+    const breakUnpaid = weekendBreakUnpaid(policy, weekend) && !isNamedHalf(booking)
+    const breakInWindow = breakUnpaid ? breakOverlapMinutes(dayBreak, { start: ws, end: we }) : 0
+    const breakCovered = breakUnpaid ? breakOverlapMinutes(dayBreak, { start: overlapStart, end: overlapEnd }) : 0
     const fullCover = overlapStart <= ws && overlapEnd >= we
+    const workedShare = Math.max(0, covered - breakCovered) + (booking.isBreakRemoved === true ? breakCovered : 0)
     const credited = fullCover
       ? credit
-      : deductBreak && windowMinutes - breakInWindow > 0
-        ? credit * (Math.max(0, covered - breakCovered) / (windowMinutes - breakInWindow))
+      : breakUnpaid && windowMinutes - breakInWindow > 0
+        ? Math.min(credit, credit * (workedShare / (windowMinutes - breakInWindow)))
         : credit * (covered / windowMinutes)
     const inside = Math.min(breakLeft, breakOverlapMinutes(dayBreak, { start: overlapStart, end: overlapEnd }))
     breakLeft -= inside

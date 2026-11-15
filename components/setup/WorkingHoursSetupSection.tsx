@@ -30,8 +30,9 @@ import {
   weekendCountsAsCopy,
   weekendDayRateNote,
   weekdayDayRateNote,
-  weekdayPaidHours,
   WEEKEND_COUNTS_AS_STEP_HOURS,
+  weekendCountsAsMax,
+  weekendCountsAsSnap,
   weekendLunchBreakCopy,
 } from '@/lib/canonical'
 
@@ -274,10 +275,7 @@ function WeekendSection({
                           ? { countsAsFollowsWeekday: true, countsAsStandardHours: weekendCountsAsHours({ countsAsFollowsWeekday: true }, policy) }
                           : {
                               countsAsFollowsWeekday: false,
-                              countsAsStandardHours: Math.max(
-                                PAYROLL_POLICY_LIMITS.paidHours.min,
-                                Math.floor(weekendCountsAsHours(effective, policy) / WEEKEND_COUNTS_AS_STEP_HOURS) * WEEKEND_COUNTS_AS_STEP_HOURS
-                              ),
+                              countsAsStandardHours: weekendCountsAsMax(policy),
                             }
                       )
                     }
@@ -289,11 +287,10 @@ function WeekendSection({
                         type="number"
                         step={WEEKEND_COUNTS_AS_STEP_HOURS}
                         min={PAYROLL_POLICY_LIMITS.paidHours.min}
-                        max={Math.max(PAYROLL_POLICY_LIMITS.paidHours.min, weekdayPaidHours(policy))}
+                        max={weekendCountsAsMax(policy)}
                         value={weekendCountsAsHours(effective, policy)}
-                        onChange={(e) =>
-                          patchWeekend({ countsAsStandardHours: parseFloat(e.target.value) || 0 })
-                        }
+                        // Review of #327 (round 2): a typed value lands on the half-hour grid within 1h and the cap.
+                        onChange={(e) => patchWeekend({ countsAsStandardHours: weekendCountsAsSnap(e.target.value, policy) })}
                         className="w-16 rounded-xl border border-slate-200 bg-white px-2 py-1.5 text-center text-sm font-bold text-blue-600 outline-none"
                       />
                     </div>

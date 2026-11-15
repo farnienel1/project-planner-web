@@ -13993,10 +13993,10 @@
         {
           "standardDayStart": "07:30",
           "standardDayEnd": "16:00",
-          "unpaidBreakMinutes": 30,
+          "unpaidBreakMinutes": 45,
           "standardPaidHours": 8,
           "breakWindowStart": "12:00",
-          "breakWindowEnd": "12:30",
+          "breakWindowEnd": "12:45",
           "weekdayOutsideStandardMultiplier": 1.5,
           "saturday": {
             "allHoursAtMultiplierMode": false,
