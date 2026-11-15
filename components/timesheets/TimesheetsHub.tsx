@@ -5,7 +5,7 @@
 'use client'
 
 import { bookingCoverageIsArchive } from '@/lib/firebase/orgCollectionMerge'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { CalendarDaysIcon, ClockIcon, UserGroupIcon } from '@heroicons/react/24/solid'
 import { withTimeoutFallback } from '@/lib/client/withTimeout'
@@ -81,6 +81,9 @@ import type { User } from '@/types'
 import { OVERTIME_HUB_LABEL, overtimeHubAccess } from '@/lib/canonical'
 import { rulebookPerson, rulebookRoster } from '@/lib/staff/rulebookPeople'
 import { OVERTIME_PATH } from '@/components/overtime/OvertimeScreen'
+import { BookingsChangedWarning } from '@/components/timesheets/BookingsChangedWarning'
+import { bookingCoverageCoversDay, periodBookingChanges, type BookingChangeCatalogue } from '@/lib/timesheets/timesheetBookingChanges'
+import { SIGNED_TIMESHEET_CHANGED_STATUS } from '@/lib/canonical'
 import {
   ActionCard,
   Card,
@@ -94,6 +97,9 @@ import {
   SegmentedTabs,
   StatRow,
 } from '@/components/ui/page'
+
+/** Review #325 item 7: how many pay runs (the current one included) the hub checks for changed signed sheets. */
+const HUB_CHANGE_SCAN_RUNS = 6
 
 const PAYE_DISABLED_BODY =
   'My Timesheets is for self-employed pay. PAYE accounts keep the current pay run until it is paid, then schedule hours no longer fill the next timesheet. Switch the person back to self-employed if they need timesheets again.'
@@ -212,13 +218,28 @@ export function TimesheetsHub() {
     }
   }, [organization?.id, loadUsers, inputsAttempt])
 
-  const needsNestedCatalogue = surface === 'mine' || surface === 'team'
+  // Rulebook 1.47.0 §8: the hub's "My timesheets" entry shows the yellow triangle when a signed sheet's bookings changed,
+  // so the hub loads the bookings too when the person has My Timesheets.
+  const needsNestedCatalogue = surface === 'mine' || surface === 'team' || (surface == null && (showMine || showTeam))
+  // Review #325 item 7: on the hub itself only the last HUB_CHANGE_SCAN_RUNS pay runs are checked, so the bookings are
+  // loaded from the earliest of their starts — never the whole archive.
+  const hubScanFromDayKey = useMemo(() => {
+    const current = computeInvoicingPeriod(new Date(), invoicing, timeZone)
+    const runs = [current, ...listSelectablePayPeriods(invoicing, new Date(), HUB_CHANGE_SCAN_RUNS + 1, timeZone)]
+      .sort((a, b) => b.start.getTime() - a.start.getTime())
+      .slice(0, HUB_CHANGE_SCAN_RUNS)
+    return runs.reduce((earliest, period) => {
+      const key = periodStartKey(period.start, timeZone)
+      return key < earliest ? key : earliest
+    }, periodStartKey(current.start, timeZone))
+  }, [invoicing, timeZone])
 
   useEffect(() => {
     if (!organization?.id || !needsNestedCatalogue) return
     let cancelled = false
-    loadBookings(organization.id, { fullHistory: true })
-    loadManagerSiteBookings(organization.id, { fullHistory: true })
+    const bookingWindow = surface == null ? { fromDayKey: hubScanFromDayKey } : { fullHistory: true }
+    loadBookings(organization.id, bookingWindow)
+    loadManagerSiteBookings(organization.id, bookingWindow)
     loadOperatives(organization.id)
     loadProjects(organization.id)
     loadSmallWorks(organization.id)
@@ -242,6 +263,8 @@ export function TimesheetsHub() {
   }, [
     organization?.id,
     needsNestedCatalogue,
+    surface,
+    hubScanFromDayKey,
     inputsAttempt,
     loadBookings,
     loadManagerSiteBookings,
@@ -334,6 +357,31 @@ export function TimesheetsHub() {
     scheduleOptions,
   }
 
+  // Rulebook 1.47.0 §8: what `signedTimesheetBookingChanges` needs to price a person's live lines for any period.
+  const changeCatalogue: BookingChangeCatalogue = {
+    users,
+    // On the hub the bookings are loaded from `hubScanFromDayKey` only (review #325 item 7); a pay run is checked only
+    // when that window holds it. Elsewhere the whole archive is loaded (`bookingsLoaded`).
+    liveLoaded:
+      surface == null
+        ? bookingCoverageCoversDay(bookingCoverage, organization?.id, hubScanFromDayKey) &&
+          bookingCoverageCoversDay(managerCoverage, organization?.id, hubScanFromDayKey)
+        : bookingsLoaded && !bookingsFailed,
+    coversPeriod: surface == null ? (period) => periodStartKey(period.start, timeZone) >= hubScanFromDayKey : undefined,
+    bookings,
+    managerSiteBookings,
+    operatives,
+    projects,
+    smallWorks,
+    payrollPolicy,
+    payrollPolicyPrior,
+    payrollPolicyEffectiveFrom,
+    payrollPolicyState,
+    timeZone,
+    history,
+    scheduleOptions,
+  }
+
   if (surface === 'mine') {
     const subject = users.find((row) => row.id === user.id) || user
     // Rulebook 1.11.0 `showsMyTimesheets`: no My Timesheets for a PAYE person; only periods with a self-employed day.
@@ -362,6 +410,7 @@ export function TimesheetsHub() {
             invoicing={invoicing}
             runCopyPeriodLine={runCopy.periodLine}
             timeZone={timeZone}
+            changeCatalogue={changeCatalogue}
           />
         )}
       </PageShell>
@@ -466,6 +515,13 @@ export function TimesheetsHub() {
       ) : (
         <div className="pu-gridAuto">
           {showMine ? (
+            <MineChangedIndicator
+              organizationId={organization?.id}
+              subject={users.find((row) => row.id === user.id) || user}
+              invoicing={invoicing}
+              timeZone={timeZone}
+              catalogue={changeCatalogue}
+            >
             <ActionCard
               tile={<IconTile tone="blue"><ClockIcon /></IconTile>}
               title="My timesheets"
@@ -481,6 +537,7 @@ export function TimesheetsHub() {
                 <Chip tone="slate">{runCopy.periodLine}</Chip>
               </span>
             </ActionCard>
+            </MineChangedIndicator>
           ) : null}
           {overtimeAccess.showButton ? (
             <ActionCard
@@ -505,6 +562,7 @@ export function TimesheetsHub() {
               periodEnd={currentPeriod.end}
               invoicing={invoicing}
               timeZone={timeZone}
+              changeCatalogue={changeCatalogue}
               onStats={setHubStats}
               onClick={() => router.push(timesheetsTeamHref({ tab: 'awaiting' }))}
             />
@@ -534,7 +592,10 @@ function MineTimesheetsList({
   invoicing,
   runCopyPeriodLine,
   timeZone,
+  changeCatalogue,
 }: {
+  /** Rulebook 1.47.0 §8: the live bookings, to show a changed signed sheet's yellow triangle. */
+  changeCatalogue: BookingChangeCatalogue
   organizationId?: string
   subject: User
   /** The organisation roster (`timesheetSelfSigned(user, roster)`). */
@@ -623,9 +684,17 @@ function MineTimesheetsList({
     }
   }, [organizationId, subject.id, currentPeriod, pastPeriods, invoicing, timeZone])
 
+  // Rulebook 1.47.0 §8: a signed, unexported sheet whose bookings changed is back with the person.
+  const changeOf = (period: { start: Date; end: Date }) =>
+    periodBookingChanges(changeCatalogue, subject, drafts.get(periodKey(period)), period)
+  const needsSigningAgain = (period: { start: Date; end: Date }) => changeOf(period)?.waitingFor === 'person'
+  const currentChanged = needsSigningAgain(currentPeriod)
   const pending = [currentPeriod, ...discoveredPast].filter((period) => {
     const draft = drafts.get(periodKey(period))
-    return draft ? awaitingManagerSignOff(draft, subject, users) : false
+    if (!draft) return false
+    if (needsSigningAgain(period)) return true
+    const change = changeOf(period)
+    return awaitingManagerSignOff(draft, subject, users) || change?.waitingFor === 'lineManager'
   })
   const pendingKeys = new Set(pending.map((period) => periodKey(period)))
   const pastVisible = discoveredPast.filter((period) => !pendingKeys.has(periodKey(period)))
@@ -638,20 +707,22 @@ function MineTimesheetsList({
   return (
     <>
       <PageBand title="My Timesheets" />
-      <ActionCard
-        tile={
-          <IconTile tone="blue">
-            <CalendarDaysIcon />
-          </IconTile>
-        }
-        title="Current pay run period"
-        description={runCopyPeriodLine}
-        onClick={openCurrent}
-      >
-        <span className="pu-sub">Review bookings, add extras, and sign your timesheet.</span>
-      </ActionCard>
+      <WithChangedTriangle show={currentChanged}>
+        <ActionCard
+          tile={
+            <IconTile tone="blue">
+              <CalendarDaysIcon />
+            </IconTile>
+          }
+          title="Current pay run period"
+          description={runCopyPeriodLine}
+          onClick={openCurrent}
+        >
+          <span className="pu-sub">Review bookings, add extras, and sign your timesheet.</span>
+        </ActionCard>
+      </WithChangedTriangle>
       {pending.length > 0 ? (
-        <Card title="Pending timesheets" subtitle="You signed — waiting for your line manager to counter-sign.">
+        <Card title="Pending timesheets" subtitle="You signed — waiting for your line manager to counter-sign, or bookings changed and it needs signing again.">
           <DataTable
             columns={[
               { key: 'period', label: 'Pay run period' },
@@ -664,7 +735,14 @@ function MineTimesheetsList({
                   <PeriodButton label={formatPaymentPeriodLine(period.start, period.end, timeZone)} onClick={() => openPeriod(period)} />
                 </td>
                 <td>
-                  <Chip tone="amber">Timesheet pending manager signature</Chip>
+                  {needsSigningAgain(period) ? (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                      <BookingsChangedWarning />
+                      <Chip tone="amber">{SIGNED_TIMESHEET_CHANGED_STATUS}</Chip>
+                    </span>
+                  ) : (
+                    <Chip tone="amber">Timesheet pending manager signature</Chip>
+                  )}
                 </td>
               </tr>
             ))}
@@ -722,6 +800,85 @@ function pastStatusTone(status: string): 'green' | 'amber' | 'slate' {
   return 'amber'
 }
 
+/**
+ * Rulebook 1.47.0 §8: the yellow triangle beside an entry card. The card itself is a button, so the triangle sits
+ * beside it (never inside it) and opens its own popup.
+ */
+function WithChangedTriangle({ show, children }: { show: boolean; children: ReactNode }) {
+  if (!show) return <>{children}</>
+  return (
+    <div style={{ position: 'relative', display: 'grid' }}>
+      {children}
+      <span style={{ position: 'absolute', top: 10, right: 10 }}>
+        <BookingsChangedWarning />
+      </span>
+    </div>
+  )
+}
+
+/**
+ * Rulebook 1.47.0 §8: the hub's "My timesheets" entry with the yellow triangle when any of the person's signed,
+ * unexported sheets has bookings that changed since they signed (`signedTimesheetBookingChanges`, waiting for them).
+ */
+function MineChangedIndicator({
+  organizationId,
+  subject,
+  invoicing,
+  timeZone,
+  catalogue,
+  children,
+}: {
+  organizationId?: string
+  subject: User
+  invoicing: OrgInvoicingSettings
+  timeZone: string
+  catalogue: BookingChangeCatalogue
+  children: ReactNode
+}) {
+  const [rows, setRows] = useState<Array<{ period: { start: Date; end: Date }; draft: TimesheetDraft }>>([])
+  useEffect(() => {
+    if (!organizationId) return
+    let cancelled = false
+    listTimesheetStates(organizationId, subject.id, 400)
+      .then((stored) => {
+        if (cancelled) return
+        const live = timesheetPeriodFromInvoicing({
+          paymentRunMode: invoicing.paymentRunMode,
+          ranges: invoicing.paymentRunDateRanges,
+          recurringRunStartDay: invoicing.recurringRunStartDay,
+          recurringRunEndDay: invoicing.recurringRunEndDay,
+          referenceDayKey: dayKey(new Date(), timeZone),
+          timeZone,
+        })
+        setRows(
+          stored
+            // Only signed sheets nobody has exported can reopen (an exported sheet stays frozen).
+            .filter((row) => Boolean(row.draft.operativeSignedAt) && !row.draft.exportedAt)
+            .map((row) => {
+              const resolved = resolveTimesheetPeriod({
+                storedStartDayKey: dayKey(row.weekStart, timeZone),
+                storedEndDayKey: row.endDayKey,
+                currentPeriod: live,
+              })
+              return {
+                period: { start: dateFromDayKey(resolved.startDayKey, timeZone), end: dateFromDayKey(resolved.endDayKey, timeZone) },
+                draft: row.draft,
+              }
+            })
+        )
+      })
+      .catch(() => {
+        if (!cancelled) setRows([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [organizationId, subject.id, invoicing, timeZone])
+  // Only the pay runs the loaded window holds (`coversPeriod`, the last HUB_CHANGE_SCAN_RUNS); memoised per period.
+  const show = rows.some((row) => periodBookingChanges(catalogue, subject, row.draft, row.period)?.waitingFor === 'person')
+  return <WithChangedTriangle show={show}>{children}</WithChangedTriangle>
+}
+
 function ManagerTimesheetsTile({
   user,
   users,
@@ -730,9 +887,12 @@ function ManagerTimesheetsTile({
   periodEnd,
   invoicing,
   timeZone,
+  changeCatalogue,
   onStats,
   onClick,
 }: {
+  /** Rulebook 1.47.0 §8: the live bookings, so a reopened sheet is counted where it now is. */
+  changeCatalogue: BookingChangeCatalogue
   user: User
   users: User[]
   organizationId?: string
@@ -744,7 +904,7 @@ function ManagerTimesheetsTile({
   onStats?: (stats: { awaiting: number; signed: number; exported: number } | null) => void
   onClick: () => void
 }) {
-  const [stats, setStats] = useState<{ awaiting: number; signed: number; exported: number } | null>(null)
+  const [loaded, setLoaded] = useState<{ drafts: Map<string, TimesheetDraft>; exportedCount: number } | 'empty' | null>(null)
   const reviewGroups = useMemo(() => timesheetRosterGroups(user, users), [user, users])
   const currentGroups = useMemo(
     () =>
@@ -763,11 +923,11 @@ function ManagerTimesheetsTile({
 
   useEffect(() => {
     if (!organizationId || users.length === 0) {
-      setStats(null)
+      setLoaded(null)
       return
     }
     if (currentRosterIds.length === 0 && exportedRoster.length === 0) {
-      setStats({ awaiting: 0, signed: 0, exported: 0 })
+      setLoaded('empty')
       return
     }
     let cancelled = false
@@ -781,22 +941,33 @@ function ManagerTimesheetsTile({
     ])
       .then(([drafts, exportedRows]) => {
         if (cancelled) return
-        setStats(
-          timesheetReviewerHubStats({
-            groups: currentGroups,
-            currentPeriodDrafts: drafts,
-            exportedHistoryCount: exportedRows.length,
-            users,
-          })
-        )
+        setLoaded({ drafts, exportedCount: exportedRows.length })
       })
       .catch(() => {
-        if (!cancelled) setStats({ awaiting: 0, signed: 0, exported: 0 })
+        if (!cancelled) setLoaded('empty')
       })
     return () => {
       cancelled = true
     }
   }, [organizationId, users.length, currentRosterIds, currentGroups, exportedRoster, periodStart, periodEnd, timeZone])
+
+  const catalogueRef = useRef(changeCatalogue)
+  catalogueRef.current = changeCatalogue
+  const stats = useMemo(() => {
+    if (loaded == null) return null
+    if (loaded === 'empty') return { awaiting: 0, signed: 0, exported: 0 }
+    return timesheetReviewerHubStats({
+      groups: currentGroups,
+      currentPeriodDrafts: loaded.drafts,
+      exportedHistoryCount: loaded.exportedCount,
+      users,
+      // Rulebook 1.47.0 §8: a reopened sheet counts where `timesheetListBucket` now puts it.
+      bookingChange: (member, draft) =>
+        periodBookingChanges(catalogueRef.current, member, draft, { start: periodStart, end: periodEnd }),
+    })
+    // The catalogue is read through a ref; re-run when its bookings or load state change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded, currentGroups, users, periodStart, periodEnd, changeCatalogue.bookings, changeCatalogue.managerSiteBookings, changeCatalogue.liveLoaded])
 
   useEffect(() => {
     onStats?.(stats)

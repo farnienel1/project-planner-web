@@ -35,6 +35,7 @@ import { applyWeeklyReportOverride } from '@/lib/timesheets/weeklyReportOverride
 import { exportedTimesheetRosterGroups, subjectForUser, timesheetRosterGroups, userIdsSharingEmail } from '@/lib/timesheets/timesheetWeekUtils'
 import { formatPaymentPeriodLine, listSelectablePayPeriods, periodStartKey } from '@/lib/timesheets/paymentRunCopy'
 import { collectTimesheetPayroll } from '@/lib/timesheets/timesheetPayrollCollector'
+import { periodBookingChanges, type BookingChangeCatalogue } from '@/lib/timesheets/timesheetBookingChanges'
 import {
   invoiceLinesForTimesheet,
   invoiceLinesTotal,
@@ -86,6 +87,10 @@ import {
   runTimesheetExport,
 } from '@/lib/timesheets/timesheetExportRun'
 import type { PayrollTimePolicyState } from '@/lib/canonical'
+import { SIGNED_TIMESHEET_EXPORT_SKIPPED_MESSAGE, signedTimesheetActions } from '@/lib/canonical'
+
+/** Third review #325: Export left a sheet out because the bookings or pay inputs were still loading. */
+const EXPORT_INPUTS_LOADING_SKIPPED_MESSAGE = 'Not exported — the bookings or pay settings were still loading; export again.'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 
 export type TeamTimesheetTab = 'awaiting' | 'signed' | 'exported'
@@ -246,7 +251,7 @@ export function TimesheetsScreen({
   }, [reload])
 
   // Rulebook 1.32.0 §8: the export never includes the exporter's own sheet; say so when theirs is signed and waiting.
-  const [ownSheet, setOwnSheet] = useState<{ signed: boolean; exported: boolean } | null>(null)
+  const [ownSheet, setOwnSheet] = useState<{ signed: boolean; exported: boolean; draft: TimesheetDraft } | null>(null)
   useEffect(() => {
     if (teamTab !== 'signed' || !organization?.id || !user?.id) {
       setOwnSheet(null)
@@ -254,18 +259,55 @@ export function TimesheetsScreen({
     }
     let live = true
     loadTimesheetDraft(organization.id, user.id, periodStart, timeZone, periodEnd)
-      .then((draft) => live && setOwnSheet({ signed: Boolean(draft.operativeSignedAt), exported: Boolean(draft.exportedAt) }))
+      .then((draft) => live && setOwnSheet({ signed: Boolean(draft.operativeSignedAt), exported: Boolean(draft.exportedAt), draft }))
       .catch(() => live && setOwnSheet(null))
     return () => {
       live = false
     }
   }, [teamTab, organization?.id, user?.id, periodStart, periodEnd, timeZone])
-  const ownSheetNotice = ownSheet ? timesheetExportOwnSheetNotice({ ownSheetSigned: ownSheet.signed, ownSheetExported: ownSheet.exported }) : null
 
+  // Rulebook 1.47.0 §8 (`signedTimesheetBookingChanges`): a signed, unexported sheet whose bookings changed is back
+  // with the person (not Awaiting or Signed off) until they sign again; then it is Awaiting the counter-signature again.
+  const bookingsReady = payInputs.ready
+  const changeCatalogue: BookingChangeCatalogue = {
+    users,
+    liveLoaded: bookingsReady,
+    bookings,
+    managerSiteBookings,
+    operatives,
+    projects,
+    smallWorks,
+    payrollPolicy,
+    payrollPolicyPrior,
+    payrollPolicyEffectiveFrom,
+    payrollPolicyState,
+    timeZone,
+    history,
+    scheduleOptions,
+  }
+  const changeCatalogueRef = useRef(changeCatalogue)
+  // Review #325 nit: the people Export left out because their bookings changed since they signed.
+  const changedSkippedRef = useRef<string[]>([])
+  // Third review #325: the people Export left out because the bookings or pay inputs were still loading.
+  const inputsSkippedRef = useRef<string[]>([])
+  changeCatalogueRef.current = changeCatalogue
   const visible = useMemo(
-    () => (teamTab === 'exported' ? [] : currentPeriodTimesheetMembers(groups, drafts, teamTab, users)),
-    [groups, drafts, teamTab, users]
+    () =>
+      teamTab === 'exported'
+        ? []
+        : currentPeriodTimesheetMembers(groups, drafts, teamTab, users, (member, draft) =>
+            periodBookingChanges(changeCatalogueRef.current, member, draft, { start: periodStart, end: periodEnd })
+          ),
+    // The catalogue is read through a ref; re-run when the bookings or pay inputs change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [groups, drafts, teamTab, users, bookings, managerSiteBookings, bookingsReady, periodStart, periodEnd]
   )
+
+  // Review #325 nit: the viewer's own sheet is not "signed" while its bookings changed since they signed (1.47.0).
+  const ownSheetChange = ownSheet && user ? periodBookingChanges(changeCatalogueRef.current, user, ownSheet.draft, { start: periodStart, end: periodEnd }) : null
+  const ownSheetNotice = ownSheet
+    ? timesheetExportOwnSheetNotice({ ownSheetSigned: ownSheet.signed && ownSheetChange?.waitingFor !== 'person', ownSheetExported: ownSheet.exported })
+    : null
 
   const summaryFor = (member: User, draft: TimesheetDraft | undefined, start: Date, end: Date) => {
     const payroll = collectTimesheetPayroll({
@@ -317,6 +359,19 @@ export function TimesheetsScreen({
     const full = await loadTimesheetDraft(organization.id, member.id, periodStart, timeZone, periodEnd)
     if (full.exportedAt) return { skip: 'exported' }
     if (!full.operativeSignedAt) return null
+    // Second review #325: never export when the booking change cannot be read (bookings or pay inputs not loaded —
+    // `periodBookingChanges` is then null, which must not count as "unchanged").
+    if (!payInputsRef.current.ready || !changeCatalogueRef.current.liveLoaded) {
+      // Third review #325: never silently — the summary names who was left out and why.
+      inputsSkippedRef.current.push(displayName(member))
+      return null
+    }
+    // Rulebook 1.47.0 §8 (`signedTimesheetActions`): never export a sheet whose bookings changed since it was signed —
+    // its snapshot is stale until the person signs again and the line manager counter-signs again.
+    if (!signedTimesheetActions(periodBookingChanges(changeCatalogueRef.current, member, full, { start: periodStart, end: periodEnd })).mayExport) {
+      changedSkippedRef.current.push(displayName(member))
+      return null
+    }
     const built = applyWeeklyReportOverride({
       draft: { ...full, exportedAt: null },
       user: member,
@@ -466,6 +521,8 @@ export function TimesheetsScreen({
     let emailProblem: string | null = null
     let stampedCount = 0
     const exportedAt = new Date()
+    changedSkippedRef.current = []
+    inputsSkippedRef.current = []
     const reasonOf = (error: unknown) => (error instanceof Error && error.message ? error.message : 'unknown error')
     try {
       const run = await runTimesheetExport({
@@ -530,8 +587,11 @@ export function TimesheetsScreen({
         setExportMessage(EXPORT_STOPPED_MESSAGE)
         return
       }
+      const changedSkipped = changedSkippedRef.current
+      const inputsSkipped = inputsSkippedRef.current
       setExportMessage(
-        exportSummaryMessage({
+        [
+          exportSummaryMessage({
           stamped: run.stamped.map((row) => row.name),
           notSent,
           emailProblem,
@@ -540,7 +600,12 @@ export function TimesheetsScreen({
           backupSkipped,
           skipped: run.skipped,
           stampError: run.stopped?.reason === 'stamp' ? reasonOf(run.stopped.error) : null,
-        })
+          }),
+          changedSkipped.length > 0 ? `${SIGNED_TIMESHEET_EXPORT_SKIPPED_MESSAGE} (${changedSkipped.join(', ')})` : '',
+          inputsSkipped.length > 0 ? `${EXPORT_INPUTS_LOADING_SKIPPED_MESSAGE} (${inputsSkipped.join(', ')})` : '',
+        ]
+          .filter(Boolean)
+          .join(' ')
       )
       if (run.stamped.length > 0) router.replace(timesheetsTeamHref({ tab: 'exported' }))
     } catch (error) {
