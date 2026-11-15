@@ -54,8 +54,7 @@ export function drawPhoto(bitmap: ImageBitmap, scale: number, opaque: boolean): 
 /**
  * How a redrawn photo is encoded.
  * - `auto`: a PNG stays a PNG unless it is still over the target, then JPEG; everything else JPEG.
- * - `jpeg`: always JPEG; a photo the browser cannot redraw is refused unless it already is a JPEG (certificates while
- *   the pre-1.50.0 Storage rules, which take PDF and JPEG only, are live — review M1).
+ * - `jpeg`: always JPEG; a photo the browser cannot redraw is refused unless it already is a JPEG.
  * - `logo`: never turned into a JPEG — a JPEG stays a JPEG, anything else becomes a PNG (transparency kept, L5).
  */
 export type PhotoOutput = 'auto' | 'jpeg' | 'logo'
@@ -119,7 +118,7 @@ export async function stripPhotoLocation(file: File, output: PhotoOutput = 'auto
   }
 }
 
-const FAMILY_OUTPUT: Partial<Record<UploadFamily, PhotoOutput>> = { certificate: 'jpeg', logo: 'logo' }
+const FAMILY_OUTPUT: Partial<Record<UploadFamily, PhotoOutput>> = { logo: 'logo' }
 
 export async function prepareClientUpload(
   file: File,
