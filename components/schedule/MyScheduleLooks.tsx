@@ -4,9 +4,9 @@
 
 'use client'
 
-import { overviewFormatHours, parseMinutes } from '@/lib/daily-overview/buildDailyOverview'
+import { overviewFormatHours } from '@/lib/daily-overview/buildDailyOverview'
 import { bookingPayrollHours } from '@/lib/scheduling/paidHours'
-import { overtimeIncludedText, payrollMultipliedHours, weekdayPaidHours, workedHoursSplit } from '@/lib/canonical'
+import { bookingStandardDayOn, overtimeIncludedText, payrollMultipliedHours, slotInterval, weekdayPaidHours, workedHoursSplit } from '@/lib/canonical'
 import { bookingRowHours } from '@/lib/scheduling/bookingRowHours'
 import { namedSlotKind } from '@/lib/scheduling/paidHours'
 import { bookingDayKey, policyForBookingDate } from '@/lib/scheduling/bookingSlotRules'
@@ -36,33 +36,33 @@ export function myScheduleStripeClass(type?: ManagerLocationType | string): stri
   }
 }
 
+/**
+ * A booking's clock range on its own day. Rulebook 1.53.0 (B3): `slotInterval` under the working hours in effect on
+ * that day (`bookingStandardDayOn`: a weekend Full day is that day's own window, a stored AM / PM the legacy split) —
+ * never a midpoint computed here.
+ */
 function slotClockRange(
   timeSlot?: string,
   workStartTime?: string,
   workEndTime?: string,
-  policy?: OrgPayrollTimePolicy
+  policy?: OrgPayrollTimePolicy,
+  date?: Date
 ): { start: number; end: number; label: string } {
-  const startMin = parseMinutes(workStartTime)
-  const endMin = parseMinutes(workEndTime)
-  const stdStart = parseMinutes(policy?.standardDayStart) ?? 7 * 60 + 30
-  const stdEnd = parseMinutes(policy?.standardDayEnd) ?? 16 * 60
-  const mid = Math.floor((stdStart + stdEnd) / 2)
-  if (startMin != null && endMin != null && endMin > startMin) {
-    return { start: startMin, end: endMin, label: `${workStartTime} – ${workEndTime}` }
+  const dayKey = date ? bookingDayKey(date) : null
+  const dayPolicy = date ? policyForBookingDate(date, policy) ?? policy : policy
+  const day = bookingStandardDayOn(dayPolicy ?? null, dayKey)
+  const interval =
+    slotInterval({ timeSlot, workStartTime, workEndTime }, day) ?? slotInterval({ timeSlot: 'FULL DAY' }, day) ?? { start: 7 * 60 + 30, end: 16 * 60 }
+  if (namedSlotKind(timeSlot) === 'custom' && workStartTime && workEndTime) {
+    return { start: interval.start, end: interval.end, label: `${workStartTime} – ${workEndTime}` }
   }
-  const slot = String(timeSlot || '').toUpperCase().replace(/_/g, ' ')
-  if (slot === 'AM' || slot.includes('MORNING')) {
-    return { start: stdStart, end: mid, label: `${minsToClock(stdStart)} – ${minsToClock(mid)}` }
-  }
-  if (slot === 'PM' || slot.includes('AFTERNOON')) {
-    return { start: mid, end: stdEnd, label: `${minsToClock(mid)} – ${minsToClock(stdEnd)}` }
-  }
-  return { start: stdStart, end: stdEnd, label: `${minsToClock(stdStart)} – ${minsToClock(stdEnd)}` }
+  return { start: interval.start, end: interval.end, label: `${minsToClock(interval.start)} – ${minsToClock(interval.end)}` }
 }
 
 function minsToClock(mins: number): string {
-  const h = Math.floor(mins / 60)
-  const m = mins % 60
+  const total = ((mins % 1440) + 1440) % 1440
+  const h = Math.floor(total / 60)
+  const m = total % 60
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
 }
 
@@ -70,7 +70,7 @@ export function myScheduleClockSubtitle(
   input: { timeSlot?: string; workStartTime?: string; workEndTime?: string; isBreakRemoved?: boolean; date?: Date },
   policy?: OrgPayrollTimePolicy
 ): string {
-  const range = slotClockRange(input.timeSlot, input.workStartTime, input.workEndTime, policy)
+  const range = slotClockRange(input.timeSlot, input.workStartTime, input.workEndTime, policy, input.date)
   const custom = namedSlotKind(input.timeSlot) === 'custom'
   // Rulebook 1.20.2 (`bookingHoursLabel`): the pay rule's hours for that day under the working hours in effect on it
   // (a Saturday window counting 8h shows 8h; a Sunday at every hour × 2 shows "13h (6.5h × 2)"), never clock hours.
@@ -199,7 +199,7 @@ export function MyScheduleTotalHoursCard({
           <div className="absolute inset-0 bg-gradient-to-r from-[#993556] to-[#C96B4A]" />
         ) : (
           bookings.map((b, index) => {
-            const range = slotClockRange(b.timeSlot, b.workStartTime, b.workEndTime, policy)
+            const range = slotClockRange(b.timeSlot, b.workStartTime, b.workEndTime, policy, date)
             const left = ((clampTrack(range.start) - TRACK_START) / TRACK_SPAN) * 100
             const width = Math.max(4, ((clampTrack(range.end) - clampTrack(range.start)) / TRACK_SPAN) * 100)
             return (

@@ -3,8 +3,9 @@
  * every export (PDF, HTML, Excel) render, so all four show exactly the same rows. The figures come from
  * `buildWeeklyReportData` (`weeklyReportPayRows`, `weeklyReportLeaveRows`); this file only formats them.
  */
-import { formatMoney, PAY_HIDDEN_NOTE, WEEKLY_REPORT_PAY_COLUMNS } from '@/lib/canonical'
+import { formatMoney, PAY_HIDDEN_NOTE, WEEKLY_REPORT_PAY_COLUMNS, weeklyReportDaysText, weeklyReportPaySummaryNote } from '@/lib/canonical'
 import type { WeeklyReportData } from '@/lib/weekly-report/weeklyReportData'
+import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 
 export type WeeklyReportSectionKey =
   | 'warnings'
@@ -52,6 +53,14 @@ export const WEEKLY_REPORT_SECTION_ICONS: Record<WeeklyReportSectionKey, string>
 }
 
 const fixed = (value: number) => value.toFixed(2)
+
+/** Rulebook 1.53.0 (B9): "Generated 16 Nov 2026 at 09:05" in the organisation zone (never the browser's). */
+export function weeklyReportGeneratedLabel(data: Pick<WeeklyReportData, 'generatedAt' | 'timeZone'>): string {
+  const zone = organizationZoneOr(data.timeZone)
+  const day = new Intl.DateTimeFormat('en-GB', { timeZone: zone, day: 'numeric', month: 'short', year: 'numeric' }).format(data.generatedAt)
+  const time = new Intl.DateTimeFormat('en-GB', { timeZone: zone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(data.generatedAt)
+  return `${day} at ${time}`
+}
 const hours = (value: number) => `${Math.round(value * 100) / 100}h`
 
 export function weeklyReportSections(data: WeeklyReportData): WeeklyReportSection[] {
@@ -184,7 +193,8 @@ export function weeklyReportSections(data: WeeklyReportData): WeeklyReportSectio
         row.dates,
         row.line,
         money_ ? '' : hours(row.hours),
-        money_ ? '' : fixed(row.days),
+        // Rulebook 1.53.0 (A9): Days are rounded for display (`weeklyReportDaysText`); Pay is the exact hours priced.
+        money_ ? '' : weeklyReportDaysText(row.daysExact ?? row.days, row.kind),
         row.rateText,
         row.payLabel ?? money(row.pay),
       ])
@@ -209,7 +219,10 @@ export function weeklyReportSections(data: WeeklyReportData): WeeklyReportSectio
     empty: 'No pay data for this period',
     weights: [1.2, 0.9, 0.8, 3.4, 0.6, 0.6, 1, 1],
     tones: payTones,
-    note: data.payHiddenPeople ? PAY_HIDDEN_NOTE : undefined,
+    note:
+      [data.payHiddenPeople ? PAY_HIDDEN_NOTE : '', weeklyReportPaySummaryNote(data.paySummary.flatMap((person) => person.lines))]
+        .filter(Boolean)
+        .join(' ') || undefined,
   })
   return sections
 }

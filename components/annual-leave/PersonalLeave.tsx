@@ -214,6 +214,8 @@ export function PersonalLeave({
   const bank = useOrgBankHolidays(dateFromDayKey(bankRange.startDayKey), dateFromDayKey(bankRange.endDayKey), {
     years: bankRange.years,
   })
+  // Rulebook 1.53.0 (B7): the region's bank holidays — a bank holiday inside a multi-day record is not a leave day.
+  const bankDayKeys = bank.holidays.map((holiday) => holiday.date)
   // Rulebook 1.40.0: the person's manual adjustments (shown below with their reason and date).
   const adjustmentsRead = useAnnualLeaveAdjustments(organization?.id, user?.id)
   const adjustments = adjustmentsRead.adjustments
@@ -239,7 +241,7 @@ export function PersonalLeave({
   const hasAllowance = balance.hasAllowance
   const selectedUnits = picks.reduce((sum, pick) => sum + leaveDayUnits(pick.slot), 0)
   const remainingAfter = remaining - selectedUnits
-  const editBooking = editDay ? getBookingForDay(editDay, myBookings, 'approved') : null
+  const editBooking = editDay ? getBookingForDay(editDay, myBookings, 'approved', bankDayKeys) : null
   const declined = useMemo(() => {
     const today = startOfDay(new Date())
     return myBookings
@@ -274,11 +276,11 @@ export function PersonalLeave({
       setNotice(`${holiday} is a bank holiday. It cannot be booked as annual leave, and it does not come out of your allowance.`)
       return
     }
-    const kind = getDayKindForBookings(day, myBookings)
+    const kind = getDayKindForBookings(day, myBookings, bankDayKeys)
     if (kind !== 'none') {
       if (mode === 'manager' && (kind === 'approvedFull' || kind === 'approvedHalf')) {
         setEditDay(day)
-        const approvedBooking = getBookingForDay(day, myBookings, 'approved')
+        const approvedBooking = getBookingForDay(day, myBookings, 'approved', bankDayKeys)
         if (approvedBooking) setChangeSlot(approvedBooking.timeSlot)
         setNotice(null)
         return
@@ -381,7 +383,7 @@ export function PersonalLeave({
           <LeaveDayCalendar
             month={month}
             onMonthChange={setMonth}
-            getDayKind={(day) => getDayKindForBookings(day, myBookings)}
+            getDayKind={(day) => getDayKindForBookings(day, myBookings, bankDayKeys)}
             selectedDays={picks.map((pick) => pick.day)}
             onDayClick={toggleDay}
             bankHolidayName={bank.nameOn}

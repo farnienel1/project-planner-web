@@ -86,10 +86,14 @@ export type UnverifiedOperativeInput = {
     id: string
     email: string
     name: string
+    /** 1.53.0: an inactive operatives row is never an unverified account (as unbooked labour skips it). */
+    isActive?: boolean | null
   }>
   people: ReadonlyArray<{
     email: string
     passwordSet: boolean
+    /** 1.53.0: an inactive account is never listed. */
+    isActive?: boolean | null
     createdAtIso?: string | null
     isOperativeMode: boolean
     /** 1.34.0: a ghost (an invited one too) is never an unverified account. */
@@ -330,9 +334,11 @@ function unverifiedOperativeRowsUnscoped(input: UnverifiedOperativeInput): Unver
 
   for (const operative of input.operatives) {
     if (isAnonymisedDeletedProfile({ email: operative.email, name: operative.name })) continue
+    // 1.53.0: inactive people are skipped, as for unbooked labour.
+    if (operative.isActive === false) continue
     const email = emailKey(operative.email)
     if (!email) continue
-    const person = input.people.find((candidate) => emailKey(candidate.email) === email && candidate.isOperativeMode)
+    const person = input.people.find((candidate) => emailKey(candidate.email) === email && candidate.isOperativeMode && candidate.isActive !== false)
     if (!person || person.passwordSet || isGhostUser(person)) continue
     const createdKey = dayKeyFromIso(person.createdAtIso, timeZone)
     if (!createdKey || workingDaysInclusive(createdKey, todayKey, timeZone) < 3) continue

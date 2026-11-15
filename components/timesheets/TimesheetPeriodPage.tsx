@@ -942,13 +942,22 @@ export function TimesheetPeriodPage({
       payroll,
       draft,
       timeZone,
-      extrasMode: 'raw',
+      // Rulebook 1.53.0 (B12): once the line manager has signed, the invoice applies their decisions (`decided`),
+      // even before a signed snapshot is written — the same invoice the summary shows.
+      extrasMode: draft.managerSignedAt ? 'export' : 'raw',
       standardDayHours: weekdayPaidHours(payrollPolicy),
       standardDayHoursOn: (date: Date) => weekdayPaidHours(policyOnDay(date)),
       currencyCode: currency,
       // Rulebook 1.11.0: only the self-employed days of the period reach the invoice.
       timesheetDays: subjectUser ? timesheetDayKeysForPeriod(subjectUser, periodStart, periodEnd, timeZone) : [],
     })
+    const invoiceHours = draftTimesheetTotals({
+      lines: payroll.lineItems,
+      draft,
+      decided: Boolean(draft.managerSignedAt),
+      timesheetDays: subjectUser ? timesheetDayKeysForPeriod(subjectUser, periodStart, periodEnd, timeZone) : [],
+      timeZone,
+    }).hours
     const notes = invoiceRateChangeNotes({
       history,
       user: subjectUser,
@@ -963,8 +972,10 @@ export function TimesheetPeriodPage({
       subject,
       weekStart: periodStart,
       weekEnd: periodEnd,
-      totalHours: payroll.totalHours,
-      totalDays: payroll.totalHours / Math.max(weekdayPaidHours(payrollPolicy), 0.01),
+      // Rulebook 1.53.0 (B15, review of #331): the invoice's hours are the same `timesheetTotals.hours` as the screen,
+      // for the same rows (`decided` once the line manager has signed).
+      totalHours: invoiceHours,
+      totalDays: invoiceHours / Math.max(weekdayPaidHours(payrollPolicy), 0.01),
       amount: invoiceLinesTotal(lines),
       vatNumber: taxIds.vatNumber,
       utrNumber: taxIds.utrNumber,
@@ -1160,7 +1171,7 @@ export function TimesheetPeriodPage({
       ? [
           {
             value: money(hoursSubtotal, currency),
-            label: `Hours · ${payroll.shiftCount} shifts (${formatTimesheetHours(payroll.totalHours)}h)`,
+            label: `Hours · ${payroll.shiftCount} shifts (${formatTimesheetHours(totals.hours)}h)`,
           },
           { value: money(overtimeAmount, currency), label: 'Overtime', tone: 'amber' },
           { value: money(extrasTotal, currency), label: `Price work · ${draft.priceWorkEntries.length}` },
@@ -1257,7 +1268,7 @@ export function TimesheetPeriodPage({
               {mode === 'review' ? (
                 <>
                   <Row
-                    label={`Hours · ${payroll.shiftCount} shifts (${formatTimesheetHours(payroll.totalHours)}h)`}
+                    label={`Hours · ${payroll.shiftCount} shifts (${formatTimesheetHours(totals.hours)}h)`}
                     value={money(hoursSubtotal, currency)}
                   />
                   <Row label="Overtime" value={money(overtimeAmount, currency)} />

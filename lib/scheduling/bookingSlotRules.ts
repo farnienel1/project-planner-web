@@ -7,6 +7,7 @@ import {
   allowedTimeSlotsOnDay,
   bookingDaysMixWeekdayAndWeekend,
   customHoursBreakWarning,
+  isPayrollTimePolicyState,
   isWeekendDayKey,
   organizationTimeZone,
   parsePayrollTimePolicyState,
@@ -28,7 +29,7 @@ import {
   payrollDayWindows,
   unpaidBreakAppliesOnDay,
 } from '@/lib/canonical'
-import { dayKeyInZone } from '@/lib/orgTime/zoneTime'
+import { dateFromDayKeyInZone, dayKeyInZone } from '@/lib/orgTime/zoneTime'
 import { useOrganizationDocumentStore } from '@/lib/stores/organizationDocumentStore'
 import { useAuthStore } from '@/lib/stores/authStore'
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
@@ -213,6 +214,30 @@ export function weekendWeekdayMixMessage(dates: ReadonlyArray<Date | string | nu
   const zone = openOrganizationZone()
   const keys = dates.map((date) => bookingDayKey(date))
   return bookingDaysMixWeekdayAndWeekend(keys, zone) ? WEEKEND_WEEKDAY_MIX_MESSAGE : null
+}
+
+/**
+ * Rulebook 1.53.0 (review of #331): the lunch warning for a request of several dates, asked **once**. Each date is read
+ * under the working hours in effect on it (the live state, else the screen's `policy` — one policy or the whole
+ * state); when any date's custom hours cover its unpaid break with the break on, one confirm lists those dates.
+ */
+export function confirmCustomHoursBreakForDates(
+  policy: OrgPayrollTimePolicy | PayrollTimePolicyState | null | undefined,
+  entries: ReadonlyArray<{ date: Date | string | number; booking: CustomHoursBreakBooking }>
+): boolean {
+  const zone = openOrganizationZone()
+  let message: string | null = null
+  const dates: string[] = []
+  for (const entry of entries) {
+    const key = bookingDayKey(entry.date)
+    const fallback = isPayrollTimePolicyState(policy) ? (effectivePayrollTimePolicy(policy, key, zone) as OrgPayrollTimePolicy) : (policy as OrgPayrollTimePolicy | null | undefined)
+    const warning = customHoursBreakWarning(policyOnBookingDay(key, fallback ?? null), key, entry.booking, zone)
+    if (!warning) continue
+    message = message ?? warning
+    dates.push(new Intl.DateTimeFormat('en-GB', { timeZone: zone, weekday: 'short', day: 'numeric', month: 'short' }).format(dateFromDayKeyInZone(key, zone)))
+  }
+  if (!message || typeof window === 'undefined') return true
+  return window.confirm(`${message}\n\n${dates.length === 1 ? 'Date' : 'Dates'}: ${dates.join(', ')}`)
 }
 
 /**

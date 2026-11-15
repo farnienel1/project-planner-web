@@ -1,27 +1,26 @@
 /**
- * iOS parity source: Views/HomeUpNextSupport.swift
- * Spec: docs/ios-parity/IOS_APP_BLUEPRINT.md §3.4
+ * Home "Up next": which bookings, in which order, on which day is the rulebook's `homeUpNextRows` (1.53.0, §23) —
+ * every id the viewer goes by, organisation-zone days, today's bookings kept all day, Completed kept. This file only
+ * adds the titles (job, place, booker) and the day headings.
  */
 
 import type { Booking, Operative, Project, User } from '@/types'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import { managerSiteBookingDisplayTitle } from '@/lib/scheduling/managerSiteBookingUtils'
+import { dayHeadingWithOrdinal } from '@/lib/ios-parity/londonTime'
+import { dateFromDayKeyInZone } from '@/lib/orgTime/zoneTime'
 import {
-  addMinutesToDay,
-  dayHeadingWithOrdinal,
-  formatShortTime,
-  londonMidnight,
-  parseHhMm,
-} from '@/lib/ios-parity/londonTime'
-import { normalizeBookingStatus, normalizeManagerTimeSlot } from '@/lib/ios-parity/enums'
-import { halfDayWindows } from '@/lib/canonical'
-import { bookingJobLabel } from '@/lib/canonical'
+  bookingJobLabel,
+  homeUpNextRows,
+  rosterAliasIdsFor,
+  type PayrollTimePolicyState,
+} from '@/lib/canonical'
 
 export interface HomeUpNextRow {
   id: string
   title: string
   subtitle: string
-  sortDate: Date
+  dayKey: string
   accent: 'blue' | 'purple'
 }
 
@@ -29,18 +28,6 @@ export interface HomeUpNextDaySection {
   id: string
   heading: string
   rows: HomeUpNextRow[]
-}
-
-export interface PayrollTimePolicy {
-  standardDayStart: string
-  standardDayEnd: string
-  breakWindowStart?: string
-  breakWindowEnd?: string
-}
-
-export const DEFAULT_PAYROLL_TIME_POLICY: PayrollTimePolicy = {
-  standardDayStart: '07:30',
-  standardDayEnd: '16:00',
 }
 
 function displayName(userId: string, users: User[]): string {
@@ -51,161 +38,89 @@ function displayName(userId: string, users: User[]): string {
   return u.email.split('@')[0] || ''
 }
 
-export function sortDateOperativeBooking(
-  booking: Booking,
-  policy: PayrollTimePolicy = DEFAULT_PAYROLL_TIME_POLICY
-): Date {
-  const day = londonMidnight(booking.date)
-  if (booking.workStartTime) {
-    const mins = parseHhMm(booking.workStartTime)
-    if (mins != null) return addMinutesToDay(day, mins)
-  }
-  const slot = String(booking.timeSlot)
-  const start = parseHhMm(policy.standardDayStart) ?? 8 * 60
-  if (slot === 'PM') return addMinutesToDay(day, halfDayWindows(policy).pm.start)
-  if (slot === 'Evening' || slot === 'Overtime') return addMinutesToDay(day, 17 * 60)
-  return addMinutesToDay(day, start)
-}
-
-export function sortDateManagerBooking(
-  booking: ManagerSiteBooking,
-  policy: PayrollTimePolicy = DEFAULT_PAYROLL_TIME_POLICY
-): Date {
-  const day = londonMidnight(booking.date)
-  if (booking.workStartTime) {
-    const mins = parseHhMm(booking.workStartTime)
-    if (mins != null) return addMinutesToDay(day, mins)
-  }
-  const ds = parseHhMm(policy.standardDayStart)
-  const de = parseHhMm(policy.standardDayEnd)
-  const slot = normalizeManagerTimeSlot(booking.timeSlot)
-  if (ds == null || de == null || de <= ds) {
-    if (slot === 'PM') return addMinutesToDay(day, 13 * 60)
-    return addMinutesToDay(day, 8 * 60)
-  }
-  if (slot === 'PM') return addMinutesToDay(day, halfDayWindows(policy).pm.start)
-  return addMinutesToDay(day, ds)
-}
-
-export function upcomingRows(params: {
-  limit: number
-  now: Date
-  authUserId?: string | null
-  currentUserEmail?: string | null
-  operatives: Operative[]
-  bookings: Booking[]
-  managerBookings: ManagerSiteBooking[]
-  allProjects: Project[]
-  organizationUsers: User[]
-  payrollTimePolicy?: PayrollTimePolicy
-  /**
-   * Rulebook 1.19.0: the working hours in effect on a booking's own day (canonical `effectivePayrollTimePolicy`,
-   * history first). When given it wins over `payrollTimePolicy` for every booking.
-   */
-  payrollPolicyForDay?: (day: Date) => PayrollTimePolicy
-}): HomeUpNextRow[] {
-  const fallback = params.payrollTimePolicy ?? DEFAULT_PAYROLL_TIME_POLICY
-  const policyOn = (date: Date | string): PayrollTimePolicy =>
-    params.payrollPolicyForDay ? params.payrollPolicyForDay(new Date(date)) : fallback
-  const rows: HomeUpNextRow[] = []
-  const emailKey = params.currentUserEmail?.toLowerCase().trim()
-  const projectsById = new Map(params.allProjects.map((p) => [p.id, p.siteName]))
-
-  if (emailKey) {
-    const operativeIds = new Set(
-      params.operatives
-        .filter((o) => o.email.toLowerCase().trim() === emailKey && o.id)
-        .map((o) => o.id)
-    )
-    if (operativeIds.size > 0) {
-      const mine = params.bookings.filter((b) => {
-        if (!operativeIds.has(b.operativeId)) return false
-        const status = normalizeBookingStatus(b.status)
-        return status !== 'Cancelled' && status !== 'Completed'
-      })
-      for (const b of mine) {
-        const start = sortDateOperativeBooking(b, policyOn(b.date))
-        if (start < params.now) continue
-        const proj = params.allProjects.find((p) => p.id === b.projectId)
-        const site = bookingJobLabel(proj ? proj.siteName || 'Scheduled work' : null)
-        const timeStr = formatShortTime(start)
-        const booker = displayName(b.bookedBy, params.organizationUsers)
-        const job = proj?.jobNumber
-        let subtitle = timeStr
-        if (job && booker) subtitle = `${timeStr} · ${job} · ${booker}`
-        else if (job) subtitle = `${timeStr} · ${job}`
-        else if (booker) subtitle = `${timeStr} · ${booker}`
-        rows.push({
-          id: b.id,
-          title: site,
-          subtitle,
-          sortDate: start,
-          accent: 'blue',
-        })
-      }
-    }
-  }
-
-  if (params.authUserId) {
-    const mine = params.managerBookings.filter((b) => b.userId === params.authUserId)
-    for (const b of mine) {
-      const start = sortDateManagerBooking(b, policyOn(b.date))
-      if (start < params.now) continue
-      const loc = managerSiteBookingDisplayTitle(b, projectsById)
-      const timeStr = formatShortTime(start)
-      const slot = b.workStartTime
-        ? `${b.workStartTime}${b.workEndTime ? `–${b.workEndTime}` : ''}`
-        : String(b.timeSlot)
-      rows.push({
-        id: b.id,
-        title: loc,
-        subtitle: `${timeStr} · ${slot}`,
-        sortDate: start,
-        accent: 'purple',
-      })
-    }
-  }
-
-  rows.sort((a, b) => a.sortDate.getTime() - b.sortDate.getTime())
-  return rows.slice(0, params.limit)
-}
-
 export function upcomingDaySections(params: {
   minDistinctDays?: number
   mergeRowLimit?: number
   now: Date
-  authUserId?: string | null
-  currentUserEmail?: string | null
+  timeZone: string
+  viewer: Pick<User, 'id' | 'email' | 'formerUserIds'> | null | undefined
+  /** Folded same-email `users` id → the id the roster kept. */
+  userIdAliases?: Readonly<Record<string, string>> | null
   operatives: Operative[]
   bookings: Booking[]
   managerBookings: ManagerSiteBooking[]
   allProjects: Project[]
   organizationUsers: User[]
-  payrollTimePolicy?: PayrollTimePolicy
-  payrollPolicyForDay?: (day: Date) => PayrollTimePolicy
+  /** The organisation's working-hours state (each booking's own day is read under the rules in effect then). */
+  policyState?: PayrollTimePolicyState | null
 }): HomeUpNextDaySection[] {
-  const merged = upcomingRows({
-    ...params,
+  const viewer = params.viewer
+  if (!viewer?.id) return []
+  const result = homeUpNextRows({
+    nowMs: params.now.getTime(),
+    timeZone: params.timeZone,
+    viewer: {
+      id: viewer.id,
+      email: viewer.email,
+      formerUserIds: viewer.formerUserIds ?? [],
+      sameEmailUserIds: rosterAliasIdsFor(viewer.id, params.userIdAliases ?? null),
+    },
+    roster: params.organizationUsers.map((user) => ({
+      id: user.id,
+      email: user.email,
+      formerUserIds: user.formerUserIds ?? [],
+    })),
+    operatives: params.operatives.map((operative) => ({ id: operative.id, email: operative.email })),
+    bookings: params.bookings.map((booking) => ({
+      id: booking.id,
+      personId: booking.operativeId,
+      date: booking.date,
+      status: booking.status,
+      timeSlot: booking.timeSlot,
+      workStartTime: booking.workStartTime,
+      workEndTime: booking.workEndTime,
+    })),
+    managerSiteBookings: params.managerBookings.map((booking) => ({
+      id: booking.id,
+      personId: booking.userId,
+      date: booking.date,
+      timeSlot: booking.timeSlot,
+      workStartTime: booking.workStartTime,
+      workEndTime: booking.workEndTime,
+    })),
+    policy: params.policyState ?? null,
     limit: params.mergeRowLimit ?? 48,
+    minDistinctDays: params.minDistinctDays ?? 2,
   })
-  if (merged.length === 0) return []
-
-  const byDay = new Map<string, HomeUpNextRow[]>()
-  for (const row of merged) {
-    const key = londonMidnight(row.sortDate).toISOString()
-    const list = byDay.get(key) ?? []
-    list.push(row)
-    byDay.set(key, list)
-  }
-  const sortedDays = [...byDay.keys()].sort()
-  const chosen = sortedDays.slice(0, params.minDistinctDays ?? 2)
-  return chosen.map((key) => {
-    const rows = (byDay.get(key) ?? []).sort((a, b) => a.sortDate.getTime() - b.sortDate.getTime())
-    const day = new Date(key)
-    return {
-      id: key,
-      heading: dayHeadingWithOrdinal(day),
-      rows,
-    }
-  })
+  const labourById = new Map(params.bookings.map((booking) => [booking.id, booking]))
+  const managerById = new Map(params.managerBookings.map((booking) => [booking.id, booking]))
+  const projectsById = new Map(params.allProjects.map((project) => [project.id, project]))
+  const siteNames = new Map(params.allProjects.map((project) => [project.id, project.siteName]))
+  return result.days.map((day) => ({
+    id: day.dayKey,
+    heading: dayHeadingWithOrdinal(dateFromDayKeyInZone(day.dayKey, params.timeZone), params.timeZone),
+    rows: day.rows.map((row): HomeUpNextRow => {
+      if (row.kind === 'manager') {
+        const booking = managerById.get(row.id)!
+        return {
+          id: row.id,
+          title: managerSiteBookingDisplayTitle(booking, siteNames),
+          subtitle: `${row.startText} · ${row.timeRange || String(booking.timeSlot)}`,
+          dayKey: row.dayKey,
+          accent: 'purple',
+        }
+      }
+      const booking = labourById.get(row.id)!
+      const project = projectsById.get(booking.projectId)
+      const booker = displayName(booking.bookedBy, params.organizationUsers)
+      const subtitle = [row.startText, project?.jobNumber, booker].filter(Boolean).join(' · ')
+      return {
+        id: row.id,
+        title: bookingJobLabel(project ? project.siteName || 'Scheduled work' : null),
+        subtitle,
+        dayKey: row.dayKey,
+        accent: 'blue',
+      }
+    }),
+  }))
 }

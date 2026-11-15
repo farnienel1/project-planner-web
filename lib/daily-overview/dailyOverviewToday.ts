@@ -76,6 +76,8 @@ export function dailyOverviewInput(input: {
   subcontractors: { id: string; name: string; contacts?: { id: string; name: string }[] }[]
   settings: DailyOverviewSettings
   timeZone: string
+  /** Rulebook 1.53.0 §6: the region's bank holidays (day keys), so leave on a bank holiday is not listed. */
+  bankHolidayDayKeys?: readonly string[] | null
 }): Parameters<typeof buildDailyOverview>[0] {
   return {
     // Rulebook 1.10.0 §17: restricted managers see only their jobs and people (`warningScopeFor`).
@@ -99,6 +101,7 @@ export function dailyOverviewInput(input: {
     excludedUserIdsFromUnbookedWarnings: input.settings.excludedUserIdsFromUnbookedWarnings,
     weekendCoverage: input.settings.weekendCoverage,
     timeZone: input.timeZone,
+    bankHolidayDayKeys: input.bankHolidayDayKeys ?? [],
   }
 }
 

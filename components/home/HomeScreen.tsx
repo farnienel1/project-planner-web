@@ -67,9 +67,8 @@ import {
   saveOverviewMetrics,
   type HomeOverviewMetricID,
 } from '@/lib/home/overviewMetrics'
-import { DEFAULT_PAYROLL_TIME_POLICY, upcomingDaySections } from '@/lib/home/upNext'
-import { organizationTimeZone, payrollTimePolicyForDayFromState } from '@/lib/canonical'
-import { dayKeyInZone } from '@/lib/orgTime/zoneTime'
+import { upcomingDaySections } from '@/lib/home/upNext'
+import { useOrgBankHolidays } from '@/components/annual-leave/useOrgBankHolidays'
 import {
   allEligibleQuickActionIds,
   loadSavedQuickActionOrder,
@@ -329,6 +328,10 @@ export function HomeScreen() {
   const admin = hasAdminAccess(displayUser)
   const seeWarnings = canViewWarnings(displayUser)
 
+  // Rulebook 1.53.0 (B7): today's bank holidays, so "on annual leave" never counts a bank holiday inside a leave record.
+  const homeDay = useMemo(() => dateFromDayKey(homeDayKey, homeTimeZone), [homeDayKey, homeTimeZone])
+  const homeBank = useOrgBankHolidays(homeDay, homeDay)
+  const homeBankDayKeys = useMemo(() => homeBank.holidays.map((holiday) => holiday.date), [homeBank.holidays])
   const metrics = useMemo(
     () =>
       computeHomeOverviewMetrics({
@@ -352,8 +355,9 @@ export function HomeScreen() {
           operatives,
           enforcedReads: enforcedReadsFor(),
         }),
+        bankHolidayDayKeys: homeBankDayKeys,
       }),
-    [tasks, displayUser, operatives, managers, bookings, managerSiteBookings, holidays, users, userIdAliases, liveCount, homeTimeZone, now]
+    [tasks, displayUser, operatives, managers, bookings, managerSiteBookings, holidays, users, userIdAliases, liveCount, homeTimeZone, now, homeBankDayKeys]
   )
 
   const orgId = organization?.id || ''
@@ -386,6 +390,8 @@ export function HomeScreen() {
         bookings,
         managerSiteBookings,
         operatives,
+        // Rulebook 1.53.0 (B5): `managers` rows, so the Home badge counts the same warnings as the Warnings page.
+        managers: managers ?? [],
         users,
         userIdAliases,
         projects: merged,
@@ -408,6 +414,7 @@ export function HomeScreen() {
     bookings,
     managerSiteBookings,
     operatives,
+    managers,
     users,
     merged,
     holidays,
@@ -457,26 +464,21 @@ export function HomeScreen() {
   }
   const upNext = useMemo(
     () =>
+      // Rulebook 1.53.0 §23: which bookings and in which order is `homeUpNextRows` (every id the viewer goes by,
+      // organisation-zone days, today's bookings kept all day); each start is read under that day's working hours.
       upcomingDaySections({
         now,
-        authUserId: displayUser?.id,
-        currentUserEmail: displayUser?.email,
+        timeZone: homeTimeZone,
+        viewer: displayUser,
+        userIdAliases,
         operatives,
         bookings,
         managerBookings: managerSiteBookings,
         allProjects: merged,
         organizationUsers: users,
-        // Rulebook 1.19.0: each booking's start is read under the working hours in effect on its own day
-        // (canonical `payrollTimePolicyForDayFromState` over the whole state), never today's rules for every day.
-        payrollPolicyForDay: (day: Date) =>
-          orgDetails?.id === orgId
-            ? payrollTimePolicyForDayFromState(
-                orgDetails.payrollTimePolicyState,
-                dayKeyInZone(day, organizationTimeZone(orgDetails.countryCode))
-              )
-            : DEFAULT_PAYROLL_TIME_POLICY,
+        policyState: orgDetails?.id === orgId ? orgDetails.payrollTimePolicyState : null,
       }),
-    [now, displayUser?.id, displayUser?.email, operatives, bookings, managerSiteBookings, merged, users, orgDetails, orgId]
+    [now, homeTimeZone, displayUser, userIdAliases, operatives, bookings, managerSiteBookings, merged, users, orgDetails, orgId]
   )
 
   const taskLimitProjects = useMemo(() => {

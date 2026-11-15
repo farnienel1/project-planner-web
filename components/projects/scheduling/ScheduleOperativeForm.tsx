@@ -18,6 +18,7 @@ import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 import { bookableWorks } from '@/lib/access/workAccess'
 import { mergeProjectsAndSmallWorks } from '@/lib/projects/workStatus'
 import { isExactDuplicateBooking } from '@/lib/scheduling/bookingClashUtils'
+import { confirmCustomHoursBreakForDates } from '@/lib/scheduling/bookingSlotRules'
 import {
   allDraftPeopleResolved,
   buildDraftPersonDayStates,
@@ -255,6 +256,28 @@ export function ScheduleOperativeForm({
 
   const confirmBooking = async () => {
     if (!organization?.id || !user || !canConfirm) return
+    // Rulebook 1.13.0 / 1.53.0 (B4): before saving custom hours that cover the unpaid lunch break with the break on,
+    // the lunch warning (`customHoursBreakWarning`) — the same confirm step Book labour shows.
+    // One question for the whole request, listing the affected dates (review of #331), read under the screen's
+    // working hours when the live document is not loaded yet.
+    const bookedSlots = slotsList.filter((slot) => draftPeople.some((person) => dayStateBooks(person.dayStates[slotKey(slot.date)])))
+    const breakEntries = bookedSlots
+      .filter((slot) => slot.slot === 'CUSTOM')
+      .map((slot) => {
+        const firestoreSlot = slotToFirestore(slot)
+        return {
+          date: slot.date,
+          booking: {
+            timeSlot: 'CUSTOM_HOURS',
+            workStartTime: firestoreSlot.workStartTime,
+            workEndTime: firestoreSlot.workEndTime,
+            isBreakRemoved: slot.isBreakRemoved === true,
+          },
+        }
+      })
+    if (!confirmCustomHoursBreakForDates(payrollPolicy, breakEntries)) return
+    const breakFieldsFor = (slot: (typeof slotsList)[number]) =>
+      slot.slot === 'CUSTOM' && slot.isBreakRemoved === true ? { isBreakRemoved: true } : {}
 
     setSaving(true)
     setError(null)
@@ -275,7 +298,7 @@ export function ScheduleOperativeForm({
           // Rulebook 1.41.0 §5: Replace — the overlapping bookings go in the same batch as this create.
           const replaces = replacesNotYetTaken(person.replaceByDay?.[slotKey(slot.date)], alreadyReplaced)
           if (person.kind === 'operative') {
-            if (isExactDuplicateBooking(bookings, project.id, person.personId, slot)) continue
+            if (isExactDuplicateBooking(bookings, project.id, person.personId, slot, { isBreakRemoved: slot.slot === 'CUSTOM' && slot.isBreakRemoved === true, timeZone })) continue
             await createBooking({
               operativeId: person.personId,
               projectId: project.id,
@@ -284,6 +307,7 @@ export function ScheduleOperativeForm({
               workStartTime: firestoreSlot.workStartTime,
               workEndTime: firestoreSlot.workEndTime,
               ...rateFieldsFor(slot),
+              ...breakFieldsFor(slot),
               bookedBy: user.email,
               status: 'confirmed',
               organizationId: organization.id,
@@ -296,7 +320,8 @@ export function ScheduleOperativeForm({
                 managerSiteBookings,
                 project.id,
                 person.personId,
-                slot
+                slot,
+                { isBreakRemoved: slot.slot === 'CUSTOM' && slot.isBreakRemoved === true, timeZone }
               )
             ) {
               continue
@@ -310,6 +335,7 @@ export function ScheduleOperativeForm({
               workStartTime: firestoreSlot.workStartTime,
               workEndTime: firestoreSlot.workEndTime,
               ...rateFieldsFor(slot),
+              ...breakFieldsFor(slot),
             }, { replaces })
             markReplaced(replaces, alreadyReplaced)
             savedDays.push(`${person.name} — ${dayLabel(slot.date)}`)

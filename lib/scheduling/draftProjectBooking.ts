@@ -1,13 +1,14 @@
 import { format, startOfDay } from 'date-fns'
-import { coversCalendarDay } from '@/lib/ios-parity/londonTime'
 import type { Booking, Operative, Project, User } from '@/types'
 import { detectOperativeClashes, type OperativeBookingClash } from '@/lib/scheduling/bookingClashUtils'
 import { clockText } from '@/lib/warnings/clashIntervals'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import { slotKey, slotToFirestore, type ScheduleDateSlot } from '@/lib/scheduling/scheduleUtils'
 import type { SchedulablePerson, SchedulablePersonKind } from '@/lib/scheduling/scheduleRosterUtils'
-import { ORPHAN_BOOKING_LABEL, bookingRequestClashIds, normalizeDocumentId, type BookingLeaveConflict, type BookingReplaceRef, type PayrollTimePolicyState } from '@/lib/canonical'
+import { ORPHAN_BOOKING_LABEL, bookingRequestClashIds, isSameBookingRequest, normalizeDocumentId, type BookingLeaveConflict, type BookingReplaceRef, type PayrollTimePolicyState } from '@/lib/canonical'
 import { dayKey as orgDayKey } from '@/lib/ios-parity/londonTime'
+import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
+import { managerBookingIdentityInput } from '@/lib/scheduling/bookingRequestIdentity'
 import { leaveConflictsForBooking } from '@/lib/scheduling/leaveConflicts'
 import { samePersonBookingIds } from '@/lib/bookings/bookingPeople'
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
@@ -249,17 +250,24 @@ export function isExactDuplicateManagerBooking(
   managerSiteBookings: ManagerSiteBooking[],
   locationId: string,
   userId: string,
-  slot: ScheduleDateSlot
+  slot: ScheduleDateSlot,
+  options: { isBreakRemoved?: boolean; timeZone?: string } = {}
 ): boolean {
+  // Rulebook 1.20.2 / 1.53.0: the same booking is `isSameBookingRequest` (ids without case, canonical slot, clock minutes).
   const firestoreSlot = slotToFirestore(slot)
-  return managerSiteBookings.some(
-    (booking) =>
-      booking.locationId === locationId &&
-      booking.userId === userId &&
-      coversCalendarDay(booking.date, slot.date) &&
-      String(booking.timeSlot) === firestoreSlot.timeSlot &&
-      (booking.workStartTime || '') === (firestoreSlot.workStartTime || '') &&
-      (booking.workEndTime || '') === (firestoreSlot.workEndTime || '')
+  const zone = organizationZoneOr(options.timeZone)
+  return managerSiteBookings.some((booking) =>
+    isSameBookingRequest(managerBookingIdentityInput(booking, zone), {
+      personId: userId,
+      dayKey: orgDayKey(slot.date, zone),
+      timeSlot: firestoreSlot.timeSlot,
+      locationType: booking.locationType,
+      locationId,
+      customLocationName: booking.customLocationName ?? null,
+      workStartTime: firestoreSlot.workStartTime ?? null,
+      workEndTime: firestoreSlot.workEndTime ?? null,
+      isBreakRemoved: options.isBreakRemoved === true,
+    })
   )
 }
 

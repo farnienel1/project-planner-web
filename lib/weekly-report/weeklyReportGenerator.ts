@@ -1,7 +1,6 @@
-import { format } from 'date-fns'
 import { formatReportPeriodLabel } from '@/lib/weekly-report/invoicingPeriodUtils'
 import type { WeeklyReportData } from '@/lib/weekly-report/weeklyReportData'
-import { APPROVED_CLASH_HEADERS, WEEKLY_REPORT_SECTION_ICONS, weeklyReportSections } from '@/lib/weekly-report/weeklyReportSections'
+import { APPROVED_CLASH_HEADERS, WEEKLY_REPORT_SECTION_ICONS, weeklyReportGeneratedLabel, weeklyReportSections } from '@/lib/weekly-report/weeklyReportSections'
 import { escapeHtml } from '@/lib/security/htmlEscape'
 import { neutralizeSpreadsheetFormula } from '@/lib/security/spreadsheetCell'
 
@@ -34,7 +33,7 @@ export function approvedClashCells(data: WeeklyReportData): string[][] {
 
 export function buildWeeklyReportHtml(data: WeeklyReportData): string {
   const periodLabel = formatReportPeriodLabel(data.reportPeriod.start, data.reportPeriod.end)
-  const generatedLabel = format(data.generatedAt, "d MMM yyyy 'at' HH:mm")
+  const generatedLabel = weeklyReportGeneratedLabel(data)
   // Rulebook 1.51.0 (Q4f): the same sections and rows as the screen, the PDF and the Excel file.
   const sectionsHtml = weeklyReportSections(data)
     .map(
@@ -175,7 +174,7 @@ function spreadsheetTable(headers: string[], rows: string[][]): string {
 /** Excel SpreadsheetML matching the iOS weekly report sections and columns. */
 export function buildWeeklyReportSpreadsheetXml(data: WeeklyReportData): string {
   const periodLabel = formatReportPeriodLabel(data.reportPeriod.start, data.reportPeriod.end)
-  const generatedLabel = format(data.generatedAt, "d MMM yyyy 'at' HH:mm")
+  const generatedLabel = weeklyReportGeneratedLabel(data)
   // Rulebook 1.51.0 (Q4f): the Excel download is kept (owner decision) and shows the same rows as the screen and PDF.
   const body = weeklyReportSections(data)
     .map((section) =>

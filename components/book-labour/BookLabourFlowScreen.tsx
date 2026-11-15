@@ -28,7 +28,6 @@ import {
   type OrgPayrollTimePolicy,
   type ScheduleLocationPick,
 } from '@/lib/settings/organizationSettings'
-import { normalizeBookingStatus } from '@/lib/ios-parity/enums'
 import {
   conflictRowKey,
   useBookingConflictGate,
@@ -37,8 +36,9 @@ import {
 import { useLeaveConflictCheck } from '@/components/scheduling/useLeaveConflictCheck'
 import { dayKey as orgDayKey } from '@/lib/ios-parity/londonTime'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
-import { bookingRequestIdentity } from '@/lib/canonical/bookingSlots'
-import { managerBookingIdentity } from '@/lib/scheduling/bookingRequestIdentity'
+import { bookingRequestIdentity, isSameBookingRequest } from '@/lib/canonical/bookingSlots'
+import { managerBookingIdentity, operativeBookingIdentityInput } from '@/lib/scheduling/bookingRequestIdentity'
+import { bookingOccupiesDay } from '@/lib/canonical'
 import { bookingRequestClashIds, type BookingReplaceRef, type PayrollTimePolicyState } from '@/lib/canonical'
 import { rowReplaceOffer } from '@/lib/scheduling/bookingReplaceOffer'
 
@@ -480,18 +480,24 @@ export function BookLabourFlowScreen({
     workEnd?: string,
     breakOff?: boolean
   ) {
-    // A booking under any id this person has had counts (`bookingIdsForPerson`).
+    // A booking under any id this person has had counts (`bookingIdsForPerson`). Rulebook 1.53.0: "the same booking"
+    // is `isSameBookingRequest` (organisation day, canonical slot, clock minutes), never a raw text compare.
     const personIds = samePersonBookingIds(operativeId, users, operatives)
+    const zone = organizationZoneOr()
+    const wanted = {
+      personId: operativeId,
+      dayKey: orgDayKey(day, zone),
+      timeSlot: slot,
+      locationId: projectId,
+      workStartTime: workStart ?? null,
+      workEndTime: workEnd ?? null,
+      isBreakRemoved: breakOff === true,
+    }
     return bookings.some(
       (existing) =>
         personIds.has(String(existing.operativeId || '').toLowerCase()) &&
-        dayKey(existing.date) === dayKey(day) &&
-        existing.projectId === projectId &&
-        existing.timeSlot === slot &&
-        (existing.workStartTime || '') === (workStart || '') &&
-        (existing.workEndTime || '') === (workEnd || '') &&
-        existing.isBreakRemoved === Boolean(breakOff) &&
-        normalizeBookingStatus(existing.status) !== 'Cancelled'
+        bookingOccupiesDay(existing.status) &&
+        isSameBookingRequest({ ...operativeBookingIdentityInput(existing, zone), personId: operativeId }, wanted)
     )
   }
 

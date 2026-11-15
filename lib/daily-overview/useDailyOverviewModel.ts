@@ -9,6 +9,7 @@
 import { useMemo, useRef } from 'react'
 import { webJobAccessViewer } from '@/lib/access/readPlan'
 import { enforcedReadsFor } from '@/lib/access/securitySwitches'
+import { useOrgBankHolidays } from '@/components/annual-leave/useOrgBankHolidays'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useBookingStore } from '@/lib/stores/bookingStore'
 import { useHolidayStore } from '@/lib/stores/holidayStore'
@@ -43,6 +44,9 @@ export function useDailyOverviewModel(input: {
   const { bookings: holidays } = useHolidayStore()
   const liveOrganization = useOrganizationDocument()
   const { day, today, timeZone, subcontractorBookings, subcontractors, enabled = true } = input
+  // Rulebook 1.53.0 §6: the region's bank holidays, so a bank holiday inside a week of leave is not listed as leave.
+  const bank = useOrgBankHolidays(day, day)
+  const bankHolidayDayKeys = useMemo(() => bank.holidays.map((holiday) => holiday.date), [bank.holidays])
 
   // Rulebook 1.10.0: settings come from the one live organisations/{orgId} listener, so a working-hours or
   // warning-settings save on another device re-draws the day without a reload. Until this organisation's document
@@ -82,6 +86,7 @@ export function useDailyOverviewModel(input: {
               subcontractors,
               settings,
               timeZone,
+              bankHolidayDayKeys,
             })
           )
         : null,
@@ -101,6 +106,7 @@ export function useDailyOverviewModel(input: {
       subcontractorBookings,
       subcontractors,
       timeZone,
+      bankHolidayDayKeys,
     ]
   )
 

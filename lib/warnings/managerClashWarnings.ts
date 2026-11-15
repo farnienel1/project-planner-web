@@ -1,7 +1,8 @@
 import { jobKind } from '@/lib/canonical/staffAccess'
-import { format } from 'date-fns'
 import type { Booking, Operative, Project, User } from '@/types'
-import { dayKey, londonMidnight } from '@/lib/ios-parity/londonTime'
+import { dayKey } from '@/lib/ios-parity/londonTime'
+import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
+import { dateFromDayKeyInZone } from '@/lib/orgTime/zoneTime'
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import { DEFAULT_PAYROLL_POLICY } from '@/lib/settings/organizationSettings'
 import {
@@ -114,8 +115,11 @@ export function computeManagerBookingClashWarnings(
     payrollPolicyState?: PayrollTimePolicyState | null
     /** Folded same-email `users` id → the id the roster kept. */
     userIdAliases?: Readonly<Record<string, string>> | null
+    /** Rulebook 1.53.0: the organisation zone (days and the row's date). */
+    timeZone?: string
   }
 ): ManagerBookingClashWarning[] {
+  const zone = organizationZoneOr(options?.timeZone)
   const usersById = new Map(users.map((u) => [u.id, u]))
   const projectsById = new Map(projects.map((p) => [p.id, p]))
   const projectTitles = new Map(projects.map((p) => [p.id, projectLabel(p)]))
@@ -123,7 +127,7 @@ export function computeManagerBookingClashWarnings(
   const operativeBookings = options?.operativeBookings || []
   const dayInput = options?.payrollPolicyState ?? payrollPolicy
   const policyOn = (date: Date): OrgPayrollTimePolicy =>
-    (standardDayOn(dayInput, dayKey(date)) as OrgPayrollTimePolicy | null) ?? payrollPolicy
+    (standardDayOn(dayInput, dayKey(date, zone)) as OrgPayrollTimePolicy | null) ?? payrollPolicy
 
   const groups = managerClashGroups({
     managerIds: clashManagerIdsForUsers(users),
@@ -133,7 +137,7 @@ export function computeManagerBookingClashWarnings(
     managerBookings: managerSiteBookings.map((booking) => ({
       id: booking.id,
       userId: booking.userId,
-      dayKey: dayKey(booking.date),
+      dayKey: dayKey(booking.date, zone),
       timeSlot: String(booking.timeSlot ?? ''),
       workStartTime: clockText(booking.workStartTime),
       workEndTime: clockText(booking.workEndTime),
@@ -141,7 +145,7 @@ export function computeManagerBookingClashWarnings(
     operativeBookings: operativeBookings.map((booking) => ({
       id: booking.id,
       operativeId: booking.operativeId,
-      dayKey: dayKey(booking.date),
+      dayKey: dayKey(booking.date, zone),
       timeSlot: String(booking.timeSlot ?? ''),
       workStartTime: clockText(booking.workStartTime),
       workEndTime: clockText(booking.workEndTime),
@@ -172,7 +176,8 @@ export function computeManagerBookingClashWarnings(
       })
       const name = personName(group.userId, usersById)
       const place = rows.length === 2 ? 'two' : String(rows.length)
-      const day = londonMidnight(rows[0].date)
+      // Rulebook 1.53.0: dated on the clash's own organisation day (an overnight booking clashes on the later day).
+      const day = dateFromDayKeyInZone(group.dayKey, zone)
       return {
         id: group.pairKey,
         resolutionKey: group.resolutionKey,
@@ -183,7 +188,7 @@ export function computeManagerBookingClashWarnings(
         bookingBId: group.bookingBId,
         locationALabel: rows[0].locationLabel,
         locationBLabel: rows[1].locationLabel,
-        message: `${name} is booked in ${place} places on ${format(day, 'd MMM yyyy')}. Approve if it's intentional and it'll be noted on the weekly report.`,
+        message: `${name} is booked in ${place} places on ${new Intl.DateTimeFormat('en-GB', { timeZone: zone, day: 'numeric', month: 'short', year: 'numeric' }).format(day)}. Approve if it's intentional and it'll be noted on the weekly report.`,
         entries: rows.map((row) => row.entry),
       }
     })

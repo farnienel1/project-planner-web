@@ -169,6 +169,8 @@ export type WeeklyReportPayRow = {
   hours: number
   /** Paid hours ÷ the day-rate divisor (0 on price work and expenses). */
   days: number
+  /** 1.53.0: the unrounded days (`weeklyReportDaysText` with 'threeDecimals'). */
+  daysExact?: number
   /** The rate in effect (per day or per hour); 0 when not set or on money rows. */
   rate: number
   rateText: string
@@ -254,6 +256,32 @@ export type WeeklyReportPayResult = {
 
 export const WEEKLY_REPORT_PAY_COLUMNS: ReadonlyArray<string> = ['Person', 'Role', 'Dates', 'Line', 'Hours', 'Days', 'Rate', 'Pay']
 export const WEEKLY_REPORT_RATE_NOT_SET = 'Rate not set'
+
+/** The invoice's zero threshold (`timesheetInvoiceRows` drops a row of 0.0001 or less). */
+const WEEKLY_REPORT_SIGNED_AMOUNT_EPSILON = 0.0001
+
+/**
+ * Rulebook 1.53.0 §7 (owner to confirm, A9): a Pay Summary row's Days × Rate need not reproduce its Pay exactly —
+ * 18h of overtime on an 8.5h paid day is 2.1176… days, shown 2.12; £250 × 2.12 = £530.00, Pay £529.41. Pay is
+ * always the exact hours priced (`bookingPaySlices`); the Days column is rounded for display. Owner choice pending
+ * between a note under the Pay Summary ('note', the default) and three decimals on overtime and weekend rows
+ * ('threeDecimals'). One switch, so either app changes by flipping it.
+ */
+export const WEEKLY_REPORT_DAYS_DISPLAY: 'note' | 'threeDecimals' = 'note'
+export const WEEKLY_REPORT_DAYS_ROUNDED_NOTE = 'Days are rounded; Pay is worked out from the exact hours.'
+
+/** The Days cell of a Pay Summary row (1.53.0, `WEEKLY_REPORT_DAYS_DISPLAY`). */
+export function weeklyReportDaysText(days: number, kind: WeeklyReportPayRowKind | string): string {
+  const value = Number(days) || 0
+  const threeDecimals = WEEKLY_REPORT_DAYS_DISPLAY === 'threeDecimals' && kind !== 'weekdayStandard' && kind !== 'priceWork' && kind !== 'expenses'
+  return threeDecimals ? value.toFixed(3) : value.toFixed(2)
+}
+
+/** The note under the Pay Summary (1.53.0): the rounding note while any labour row is shown, '' otherwise. */
+export function weeklyReportPaySummaryNote(rows: ReadonlyArray<{ source?: string | null }>): string {
+  if (WEEKLY_REPORT_DAYS_DISPLAY !== 'note') return ''
+  return rows.some((row) => row && row.source !== 'claim') ? WEEKLY_REPORT_DAYS_ROUNDED_NOTE : ''
+}
 
 // MARK: - Helpers
 
@@ -433,6 +461,14 @@ export function weeklyReportPayRows(input: WeeklyReportPayInput): WeeklyReportPa
   }
   const paidDays: WeeklyReportPaidDay[] = []
   const unmatched: string[] = []
+  // 1.53.0 (A1): the days each person has a signed, non-PAYE labour line — they count on the check line even when the
+  // person is PAYE on that day now.
+  const signedDays = new Map<string, Set<string>>()
+  const addSignedDay = (personId: string, dayKey: string) => {
+    const set = signedDays.get(personId) ?? new Set<string>()
+    set.add(dayKey)
+    signedDays.set(personId, set)
+  }
 
   const addRow = (person: WeeklyReportPayPerson, key: string, seed: () => RowAcc, slice: Pick<BookingPaySlice, 'isOvertime' | 'paidHours' | 'pay' | 'clockHours' | 'breakHours'>, hours: number, daysValue: number, dayKey: string) => {
     let list = rows.get(person.id)
@@ -551,8 +587,15 @@ export function weeklyReportPayRows(input: WeeklyReportPayInput): WeeklyReportPa
     const signed = line as WeeklyReportPaySignedLine
     const dayKey = lineDayKey(signed.date, zone)
     if (!person || !inRange(dayKey) || signed.isPayeDay === true || signed.isLeave === true) continue
+    // 1.53.0 (A1): a signed line follows its own `isPayeDay` flag, never the live employment type — as the signed
+    // invoice does (`timesheetInvoiceRows`, 1.46.0). A run signed self-employed and then switched to PAYE keeps its pay.
     const period = periodsFor(person).byDay.get(dayKey)
-    if (!period || period.isPaye) continue
+    if (!period) continue
+    // Review of #331: a signed line with no `isPayeDay` flag (iOS sheets before 1.46.0) on a day the person is PAYE
+    // now is kept only when it carries money — exactly what the invoice keeps (it drops rows of 0, ≤ 0.0001). So a
+    // £0 legacy line never puts hours on a PAYE person's report, and a priced signed line (£632.35 case) still counts.
+    if (period.isPaye && !((Number(signed.amount) || 0) > WEEKLY_REPORT_SIGNED_AMOUNT_EPSILON)) continue
+    addSignedDay(person.id, dayKey)
     const basis: 'day' | 'hourly' = signed.payBasis === 'hourly' ? 'hourly' : 'day'
     const overtime = signed.isOvertime === true
     const multiplier = overtime ? (Number(signed.otMultiplier) > 0 ? Number(signed.otMultiplier) : 1) : null
@@ -667,6 +710,7 @@ export function weeklyReportPayRows(input: WeeklyReportPayInput): WeeklyReportPa
         line: row.source === 'claim' ? row.line : labelFor(row),
         hours: round2(row.hours),
         days: round2(row.days),
+        daysExact: row.days,
         rate: row.rate,
         rateText: row.rateText,
         pay: roundPennies(row.pay),
@@ -692,6 +736,7 @@ export function weeklyReportPayRows(input: WeeklyReportPayInput): WeeklyReportPa
         currency,
         labourByDay: labourByDay.get(person.id) ?? new Map(),
         claimsByDay: claimsByDay.get(person.id) ?? new Map(),
+        signedDays: signedDays.get(person.id) ?? new Set(),
         approvedRun: (run) => timesheetFeedCovers(weeks as never, idsOf(person), run.startDayKey, zone) && timesheetFeedCovers(weeks as never, idsOf(person), run.endDayKey, zone),
       }),
     })
@@ -744,6 +789,8 @@ function checkLine(
     currency: string
     labourByDay: Map<string, number>
     claimsByDay: Map<string, number>
+    /** 1.53.0 (A1): days with a signed, non-PAYE labour line (counted even when the person is PAYE that day now). */
+    signedDays?: ReadonlySet<string>
     approvedRun: (run: { startDayKey: string; endDayKey: string }) => boolean
   }
 ): WeeklyReportCheckLine | null {
@@ -751,7 +798,9 @@ function checkLine(
   if (!person.user || person.ghost === true) return null
   const start = input.range.start
   const end = input.range.end
-  const selfEmployedDays = eachDayKey(start, end, zone).filter((day) => !rateOn(person, input, zone, day).isPaye)
+  // 1.53.0 (A1): both sides count the same days — the self-employed days and the days of signed non-PAYE lines.
+  const signedDays = ctx.signedDays ?? new Set<string>()
+  const selfEmployedDays = eachDayKey(start, end, zone).filter((day) => signedDays.has(day) || !rateOn(person, input, zone, day).isPaye)
   if (selfEmployedDays.length === 0) return null
   const counted = new Set(selfEmployedDays)
   const ownId = idKey(person.id)

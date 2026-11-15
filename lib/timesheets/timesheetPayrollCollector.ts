@@ -455,9 +455,10 @@ export function collectTimesheetPayroll({
     )
   }
 
-  const managerUserIds = new Set([user.id, ...aliasUserIds, ...(user.formerUserIds ?? [])])
+  // Rulebook 1.53.0 (B11): ids compare without case (`normalizeDocumentId`), as for labour bookings above.
+  const managerUserIds = new Set([user.id, ...aliasUserIds, ...(user.formerUserIds ?? [])].map((id) => normalizeDocumentId(id)).filter(Boolean))
   for (const booking of managerSiteBookings) {
-    if (!managerUserIds.has(booking.userId)) continue
+    if (!managerUserIds.has(normalizeDocumentId(booking.userId))) continue
     if (!includesManagerScheduleLocation(scheduleOptions, booking)) continue
     pushBooking(
       'mgr',

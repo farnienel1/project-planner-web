@@ -70,7 +70,7 @@ export default function WarningsPage() {
     if (user && !canViewWarnings(user)) router.replace('/dashboard')
   }, [user, router])
   const { projects, smallWorks, loadProjects, loadSmallWorks } = useProjectStore()
-  const { operatives, managers, loadOperatives } = useOperativeStore()
+  const { operatives, managers, loadOperatives, loadManagers } = useOperativeStore()
   const { users, userIdAliases, loadUsers, rosterLoadedOrgId } = useOrgUserStore()
   const { bookings, loadBookings, deleteBooking, loading: bookingsLoading, ready: bookingsReady } = useBookingStore()
   const { managerSiteBookings, loadManagerSiteBookings, deleteManagerSiteBooking, loading: managerLoading } =
@@ -128,7 +128,8 @@ export default function WarningsPage() {
       void loadUsers(orgId).finally(() => {
         if (!cancelled) setRosterReady(true)
       })
-      void loadOperatives(orgId).finally(() => {
+      // Rulebook 1.53.0 (B5): the `managers` rows too — a job may name one, and `warningScopeFor` reads them.
+      void Promise.all([loadOperatives(orgId), loadManagers(orgId)]).finally(() => {
         if (!cancelled) setOperativesReady(true)
       })
       void Promise.all([loadProjects(orgId), loadSmallWorks(orgId)]).finally(() => {
@@ -193,6 +194,7 @@ export default function WarningsPage() {
     loadProjects,
     loadSmallWorks,
     loadOperatives,
+    loadManagers,
     loadUsers,
     loadBookings,
     loadManagerSiteBookings,
@@ -405,6 +407,7 @@ export default function WarningsPage() {
         bookings: bookingScope.foreign ? [] : bookingScope.rows,
         managerSiteBookings: managerScope.foreign ? [] : managerScope.rows,
         operatives: operativeScope.foreign ? [] : operativeScope.rows,
+        managers: operativeScope.foreign ? [] : managers,
         users: userScope.foreign ? [] : userScope.rows,
         userIdAliases: userScope.foreign ? {} : userIdAliases,
         projects: projectScope.foreign ? [] : projectScope.rows,
@@ -429,6 +432,7 @@ export default function WarningsPage() {
       materials,
       sendRecords,
       detailsForScan,
+      managers,
     ]
   )
 

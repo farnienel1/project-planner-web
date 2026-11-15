@@ -170,6 +170,8 @@ export function OperativeAnnualLeaveManagement({
   // The bank holidays of the year the calendar shows (the month being viewed), not the browser's current year.
   const bankYear = awayMonth.getFullYear()
   const bank = useOrgBankHolidays(new Date(bankYear, 0, 1), new Date(bankYear, 11, 31))
+  // Rulebook 1.53.0 (B7): the region's bank holidays — a bank holiday inside a multi-day record is not a leave day.
+  const bankDayKeys = bank.holidays.map((holiday) => holiday.date)
 
   const awayCaption = (day: Date) => {
     const names = people
@@ -177,7 +179,7 @@ export function OperativeAnnualLeaveManagement({
         const rows = teamBookings.filter(
           (booking) => bookingMatchesPerson(booking, person) && booking.status !== 'rejected'
         )
-        return getDayKindForBookings(day, rows) !== 'none'
+        return getDayKindForBookings(day, rows, bankDayKeys) !== 'none'
       })
       .map((person) => initials(person.displayName))
     if (names.length === 0) return null

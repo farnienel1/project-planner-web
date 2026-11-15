@@ -414,6 +414,8 @@ export {
   acceptedClashWriteFields,
   bookingLoadStart,
   clashPairKey,
+  legacyClashPairKey,
+  clashDocumentsToRemove,
   isClashAccepted,
   isWarningActive,
   isWorkLiveOn,
@@ -1243,8 +1245,10 @@ export {
 } from './dueDates'
 export type { DeadlineUrgency, DueTask } from './dueDates'
 export { homeBookingDayKey, homeOverviewMetrics, isSiteLocationType, qualificationExpiryCount, tasksAssignedToViewer } from './homeOverview'
+export { homeUpNextRows } from './homeUpNext'
+export type { HomeUpNextBooking, HomeUpNextInput, HomeUpNextResult, HomeUpNextRow } from './homeUpNext'
 export type { FoldPersonRow, HomeOverviewInput, HomeOverviewMetrics, HomeOverviewTask, QualificationExpiryCountInput } from './homeOverview'
-export { leaveDayKind } from './leaveCalendar'
+export { dailyOverviewLeaveRows, leaveDayKind } from './leaveCalendar'
 export {
   jobScheduleLeaveMarks,
   scheduleCellHours,
@@ -1635,6 +1639,10 @@ export {
   WEEKLY_REPORT_PAY_COLUMNS,
   WEEKLY_REPORT_PERSON_NOT_FOUND,
   WEEKLY_REPORT_RATE_NOT_SET,
+  WEEKLY_REPORT_DAYS_DISPLAY,
+  WEEKLY_REPORT_DAYS_ROUNDED_NOTE,
+  weeklyReportDaysText,
+  weeklyReportPaySummaryNote,
   WEEKLY_REPORT_TIMESHEET_STATE_LABELS,
   WEEKLY_REPORT_WARNING_OPEN,
 } from './weeklyReportPay'
