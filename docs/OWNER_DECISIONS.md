@@ -174,6 +174,37 @@ How to use it:
 | 7 Nov | **Q4 = after**: leave left is `annualLeaveBalance.remaining`, which already takes pending requests off. | done (1.35.0) |
 | 7 Nov | **Q5 = all**: every line manager is listed by name, not "First +N more". | done (1.35.0) |
 
+## Materials quantity and the starter catalogue (1.48)
+
+| Date | Decision | Status |
+|---|---|---|
+| 15 Nov | **1 = yes**: order units Each, Box, Pack, Drum, Reel, Coil, Pallet, Length (a fixed bar or stick), Metre (cut to length), with optional "What's in one" (m, mm or pcs). | done web + rulebook (1.48.0, w148-materials, `MATERIAL_ORDER_UNITS`); iOS open (hand-off v1.48.0) |
+| 15 Nov | **2 = yes**: old "Length + 1 m" reads as Metre (worked out on read, nothing stored is changed). | done (1.48.0, `materialQuantityModel`) |
+| 15 Nov | **3 = yes**: whole numbers only, except Metre, which allows decimals (12.5 m). | done web (1.48.0, `materialQuantityError`); iOS open (quantity becomes decimal) |
+| 15 Nov | **4 = yes**: hide Size "1.0" on display and fix the broken starter rows; display only, no organisation's stored data rewritten. | done (1.48.0, `materialSizeText`; starter list rebuilt) |
+| 15 Nov | **5 = no pack totals**, but the wholesaler sees UK trade wording: "2no 50m drums", "1no 50m drum", "10no 3m lengths", "2no 100m boxes", "4no", "100m" / "12.5m". The same wording on every screen, email, WhatsApp text and new send record; past send records keep their stored text. | done web + email function + rulebook (1.48.0, `materialLineText`, `materialSendLineText`); iOS open; Functions deploy pending |
+| 15 Nov | **Catalogue (a–d)**: (a) the catalogue reads in the new model; (b) CSV columns Order unit, Contents amount, Contents measure (old columns still import); (c) the cleaned catalogue is the built-in starter list every new organisation gets (seeded only into an empty catalogue, never overwriting) and can be downloaded; (d) CSV upload security: .csv only (name and content), 2 MB / 10,000 rows, UTF-8 with no binary, field caps, parsed in the browser and never uploaded, plain text only, formula neutralising on export. No organisation's stored catalogue is touched. | done web + rulebook (1.48.0, `materialCatalogueCsv.ts`, `scripts/materials/build-starter-catalogue.ts`); iOS open (CSV import uses the rulebook) |
+
+## 1.48.0 judgement calls (owner to confirm)
+
+| Date | Choice | Status |
+|---|---|---|
+| 15 Nov | Each prints no noun ("4no"); with a length "4no 3m". Singular noun for exactly 1 ("1no 50m drum"), plural otherwise. | done, owner to confirm |
+| 15 Nov | Pieces print as "2no boxes of 100" (not "2no 100pcs boxes"). | done, owner to confirm |
+| 15 Nov | WhatsApp line order: "• Pipe — 2no 3m lengths · Code P1" (name first, then the quantity text). | done, owner to confirm |
+| 15 Nov | Measures each unit offers: Each m/mm; Box and Pack pcs/m; Drum, Reel, Coil m; Pallet pcs; Length m/mm; Metre none. | done, owner to confirm |
+| 15 Nov | A blank brand is still stored as "Custom" by the catalogue writer (as before), so seeded starter items show "Custom" in the app; the CSV download shows it blank. Showing a blank brand needs a reader/writer change (follow-up). | owner to confirm |
+| 15 Nov | Starter clean-up: "test" names and "Custom" brand are dropped only for rows added in one organisation (real starter items such as "RCD Quarterly Test Label" stay). Five owner-added rows are kept: "225mm Medium Gauge Tray" (Swift), "6x2 C24 Treated Timber" and, recommended by the review, "GU10 3000K Dimmable", "M6 Penny Washers", "6mm Penny Washers" (brand cleaned to blank). 16 rows dropped (list in the PR). | owner to confirm the dropped and kept rows |
+| 15 Nov | Fixed 1 m pieces: the 35 starter items named "… - 1m" (threaded rod, DIN rail, channel drain, rigid duct, pipe insulation sections) are written as Length with 1 m in one, not Metre (review of #326; the review named 6, the same rule covers all 35). Existing organisations' copies stored as Length + 1 m still read as Metre (owner decision 2). | done, owner to confirm |
+| 15 Nov | A stored `orderUnit` is read only while the stored old fields agree with it; an older iPhone's edit of the old fields wins (review of #326). | done |
+| 15 Nov | The CSV export appends the old Default Type, Length, Length Unit columns (nearest old meaning) so older iPhones import it; on import a filled Order unit wins over them. | done, owner to confirm |
+| 15 Nov | Quantity 0 on an older line prints "0no" (not guarded; a new line cannot be saved with 0). | left as is, owner to confirm |
+| 15 Nov | The 35 fixed "- 1m" pieces store the same old fields as Metre (Length, 1, M). A job line an **older iPhone** creates from one has no `orderUnit`, so it reads back as Metre ("2m" for 2 pieces; the same material and total). Accepted (second review of #326): `minimumIosBuild` is raised before merge. | accepted, owner to confirm |
+| 15 Nov | "M6 Penny Washers" (owner-added, filed under Containment) is moved to Fixings, beside the starter's M8 / M10 penny washers; "6mm Penny Washers" (a near-duplicate) stays under Sundries as entered. Both kept. | done, owner to confirm |
+| 15 Nov | An older iPhone rounds a Metre quantity of 12.5 to 13 when it saves a line (another reason `minimumIosBuild` is raised before merge). | noted |
+| 15 Nov | Web's old "m / mm / kg" line units are gone from the picker; stored "m" reads as Metre, "mm" and "kg" as Each. | done, owner to confirm |
+| 15 Nov | A save of a pre-1.48.0 document that does not change its quantity meaning keeps its stored quantity fields (no `orderUnit` added), so a catalogue import never rewrites 4,000 items. | done |
+
 ## Known rulebook bugs (fix in the next rulebook release)
 
 | Date | Bug | Status |

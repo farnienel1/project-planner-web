@@ -6,12 +6,16 @@ import { notifyMaterialOrderPlaced } from '@/lib/materials/materialOrderNotifica
 import { useMaterialCatalogStore } from '@/lib/stores/materialCatalogStore'
 import { useMaterialProjectStore } from '@/lib/stores/materialProjectStore'
 import { searchMaterialCatalogue, type MaterialSuggestion } from '@/lib/materials/materialCatalogSearch'
-import { FormInput, FormLabel, FormSelect, FormTextarea } from '@/components/forms/FormShell'
+import { FormInput, FormLabel, FormTextarea } from '@/components/forms/FormShell'
 import { ErrorBanner } from '@/components/dashboard/PageShell'
-import type { Project, ProjectMaterialLine } from '@/types'
-import { QUANTITY_SAVE_MAX, parseBoundedNumber } from '@/lib/security/boundedValue'
-
-const UNITS = ['Number', 'Box', 'Length', 'Drum', 'Pallet', 'm', 'mm', 'kg']
+import type { MaterialContentMeasure, Project, ProjectMaterialLine } from '@/types'
+import { materialLineText, materialQuantityError, materialSizeText } from '@/lib/canonical'
+import {
+  OrderUnitFields,
+  orderUnitDraftFrom,
+  orderUnitDraftValues,
+  type OrderUnitDraft,
+} from '@/components/materials/OrderUnitFields'
 
 type Props = {
   project: Project
@@ -29,13 +33,14 @@ export function MaterialsAddSheet({ project, selectedDate, existing, onClose, on
   const [name, setName] = useState(existing?.material || '')
   const [search, setSearch] = useState('')
   const [quantity, setQuantity] = useState(existing ? String(existing.quantity) : '1')
-  const [unit, setUnit] = useState(existing?.unit || 'Number')
+  // Rulebook 1.48.0 §28: the order unit and what is in one (read from the old unit and length for older lines).
+  const [quantityDraft, setQuantityDraft] = useState<OrderUnitDraft>(() =>
+    orderUnitDraftFrom(existing ?? { orderUnit: 'Each' })
+  )
   const [brand, setBrand] = useState(existing?.brand || '')
   const [productCode, setProductCode] = useState(existing?.productCode || '')
   const [notes, setNotes] = useState(existing?.notes || '')
-  const [size, setSize] = useState(existing?.size || '')
-  const [length, setLength] = useState(existing?.length || '')
-  const [lengthUnit, setLengthUnit] = useState(existing?.lengthUnit || 'M')
+  const [size, setSize] = useState(materialSizeText(existing?.size))
   const [category, setCategory] = useState(existing?.category || '')
   const [websiteURL, setWebsiteURL] = useState(existing?.websiteURL || '')
   const [catalogueItemId, setCatalogueItemId] = useState<string | undefined>(existing?.catalogueItemId)
@@ -63,12 +68,10 @@ export function MaterialsAddSheet({ project, selectedDate, existing, onClose, on
     setSearch('')
     setBrand(s.brand)
     setProductCode(s.productCode || '')
-    setUnit(s.unit || 'Number')
+    setQuantityDraft(orderUnitDraftFrom(s))
     setCatalogueItemId(s.catalogueItem?.id)
     setCategory(s.category || s.catalogueItem?.category || '')
-    setSize(s.catalogueItem?.size || '')
-    setLength(s.catalogueItem?.length || '')
-    setLengthUnit(s.catalogueItem?.lengthUnit || 'M')
+    setSize(materialSizeText(s.catalogueItem?.size))
     setShowSuggestions(false)
   }
 
@@ -80,9 +83,30 @@ export function MaterialsAddSheet({ project, selectedDate, existing, onClose, on
       setLocalError('Enter a material name')
       return
     }
-    const parsedQuantity = parseBoundedNumber(quantity, { min: -Infinity, max: QUANTITY_SAVE_MAX })
-    if (quantity.trim() && parsedQuantity == null) {
-      setLocalError('Enter a quantity up to 1,000,000.')
+    // Rulebook 1.48.0 (owner decision 3): whole numbers, except Metre, which may have decimals (12.5 m).
+    // Checked only when the quantity, unit or contents changed, so an older line (2.5 boxes, a pallet in mm) can
+    // still be saved to change its notes; its stored values are kept as they are.
+    const original = existing ? orderUnitDraftFrom(existing) : null
+    const quantityChanged = !existing || quantity.trim() !== String(existing.quantity)
+    const unitChanged =
+      !original ||
+      original.orderUnit !== quantityDraft.orderUnit ||
+      original.contentAmount.trim() !== quantityDraft.contentAmount.trim() ||
+      (quantityDraft.contentAmount.trim() !== '' && original.contentMeasure !== quantityDraft.contentMeasure)
+    const parsedQuantity = quantityChanged ? Number(quantity.trim().replace(',', '.')) : (existing?.quantity ?? 1)
+    if (quantityChanged || unitChanged) {
+      const quantityError = materialQuantityError(quantity.trim() ? parsedQuantity : null, quantityDraft.orderUnit)
+      if (quantityError) {
+        setLocalError(quantityError)
+        return
+      }
+    }
+    const content: { contentAmount: number | null; contentMeasure: MaterialContentMeasure | null } | { error: string } =
+      unitChanged
+        ? orderUnitDraftValues(quantityDraft)
+        : { contentAmount: existing?.contentAmount ?? null, contentMeasure: existing?.contentMeasure ?? null }
+    if ('error' in content) {
+      setLocalError(content.error)
       return
     }
     setSaving(true)
@@ -94,8 +118,10 @@ export function MaterialsAddSheet({ project, selectedDate, existing, onClose, on
         user.email.split('@')[0]
       await saveMaterialLine(organization.id, {
         id: existing?.id,
-        quantity: parsedQuantity && parsedQuantity > 0 ? parsedQuantity : 1,
-        unit,
+        quantity: parsedQuantity,
+        orderUnit: quantityDraft.orderUnit,
+        contentAmount: content.contentAmount,
+        contentMeasure: content.contentMeasure,
         material: materialName,
         addedBy: displayName,
         addedByUserId: user.id,
@@ -108,8 +134,6 @@ export function MaterialsAddSheet({ project, selectedDate, existing, onClose, on
         catalogueItemId,
         notes: notes.trim() || undefined,
         size: size.trim() || undefined,
-        length: length.trim() || undefined,
-        lengthUnit: length.trim() ? lengthUnit : undefined,
         category: category.trim() || undefined,
         websiteURL: websiteURL.trim() || undefined,
       })
@@ -213,28 +237,29 @@ export function MaterialsAddSheet({ project, selectedDate, existing, onClose, on
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <FormLabel>Quantity</FormLabel>
-              <FormInput
-                type="number"
-                min={0}
-                step="any"
-                value={quantity}
-                onChange={(e) => setQuantity(e.target.value)}
-              />
-            </div>
-            <div>
-              <FormLabel>Unit</FormLabel>
-              <FormSelect value={unit} onChange={(e) => setUnit(e.target.value)}>
-                {UNITS.map((u) => (
-                  <option key={u} value={u}>
-                    {u}
-                  </option>
-                ))}
-              </FormSelect>
-            </div>
+          <div>
+            <FormLabel>{quantityDraft.orderUnit === 'Metre' ? 'Metres' : 'Quantity'}</FormLabel>
+            <FormInput
+              type="number"
+              min={0}
+              step={quantityDraft.orderUnit === 'Metre' ? 'any' : 1}
+              inputMode={quantityDraft.orderUnit === 'Metre' ? 'decimal' : 'numeric'}
+              value={quantity}
+              onChange={(e) => setQuantity(e.target.value)}
+            />
           </div>
+          <OrderUnitFields draft={quantityDraft} onChange={setQuantityDraft} />
+          <p className="text-xs text-slate-500">
+            Sent as:{' '}
+            <span className="font-semibold text-slate-700">
+              {materialLineText({
+                quantity: Number(quantity.replace(',', '.')) || 0,
+                orderUnit: quantityDraft.orderUnit,
+                contentAmount: Number(quantityDraft.contentAmount.replace(',', '.')) || null,
+                contentMeasure: quantityDraft.contentMeasure || null,
+              })}
+            </span>
+          </p>
 
           <FormInput
             value={brand}
@@ -251,16 +276,8 @@ export function MaterialsAddSheet({ project, selectedDate, existing, onClose, on
             onChange={(e) => setCategory(e.target.value)}
             placeholder="Category (optional)"
           />
-          <div className="grid grid-cols-2 gap-2">
-            <FormInput value={size} onChange={(e) => setSize(e.target.value)} placeholder="Size (optional)" />
-            <FormInput value={length} onChange={(e) => setLength(e.target.value)} placeholder="Length (optional)" />
-          </div>
-          {length.trim() ? (
-            <FormSelect value={lengthUnit} onChange={(e) => setLengthUnit(e.target.value)}>
-              <option value="M">Length unit: M</option>
-              <option value="MM">Length unit: MM</option>
-            </FormSelect>
-          ) : null}
+          <FormInput value={size} onChange={(e) => setSize(e.target.value)} placeholder="Size (optional)" />
+
           <FormInput
             value={websiteURL}
             onChange={(e) => setWebsiteURL(e.target.value)}

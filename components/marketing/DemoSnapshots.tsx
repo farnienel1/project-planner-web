@@ -475,9 +475,9 @@ export function SendListSnap() {
 }
 
 const EMAIL_ROWS: ReadonlyArray<[string, string, string]> = [
-  ['600mm Cable Tray', 'Legrand · Part 123-456', '10 Lengths'],
-  ['2.5mm² Twin & Earth 6242B', 'Prysmian · 100m drum', '2 Drums'],
-  ['20mm Galvanised Conduit', 'Univolt · 3.75m', '30 Lengths'],
+  ['600mm Cable Tray', 'Legrand · Part 123-456', '10no 3m lengths'],
+  ['2.5mm² Twin & Earth 6242B', 'Prysmian', '2no 100m drums'],
+  ['20mm Galvanised Conduit', 'Univolt', '30no 3.75m lengths'],
 ]
 
 /** Step 3: the material order request email the wholesaler receives. */

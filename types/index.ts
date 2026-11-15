@@ -249,6 +249,8 @@ export interface UserPermissions {
 }
 
 export type MaterialUnit = 'Number' | 'Box' | 'Length' | 'Drum' | 'Pallet';
+export type MaterialOrderUnit = 'Each' | 'Box' | 'Pack' | 'Drum' | 'Reel' | 'Coil' | 'Pallet' | 'Length' | 'Metre';
+export type MaterialContentMeasure = 'm' | 'mm' | 'pcs';
 export type MaterialLengthUnit = 'M' | 'MM';
 
 export interface MaterialCatalogItem {
@@ -256,7 +258,12 @@ export interface MaterialCatalogItem {
   name: string;
   brand: string;
   productCode?: string;
+  /** Pre-1.48.0 unit (older builds read it). */
   defaultUnit: MaterialUnit;
+  /** Rulebook 1.48.0 §28: the default order unit and what is in one (`materialQuantityModel`). */
+  orderUnit: MaterialOrderUnit;
+  contentAmount?: number;
+  contentMeasure?: MaterialContentMeasure;
   size?: string;
   length?: string;
   lengthUnit?: MaterialLengthUnit;
@@ -449,16 +456,30 @@ export interface MaterialSendRecord {
     brand?: string
     productCode?: string
     lengthDisplay?: string
+    /** Rulebook 1.48.0: the order unit and what is in one at the time of sending. */
+    orderUnit?: MaterialOrderUnit
+    contentAmount?: number
+    contentMeasure?: MaterialContentMeasure
+    /** The text it was sent with (`materialLineText`); missing on records sent before 1.48.0. */
+    quantityText?: string
   }[]
 }
 
 export interface ProjectMaterialLine {
   id: string
   quantity: number
+  /** Pre-1.48.0 unit (older builds read it). */
   unit: string
+  /** Rulebook 1.48.0 §28: the order unit and what is in one (`materialQuantityModel`). */
+  orderUnit: MaterialOrderUnit
+  contentAmount?: number
+  contentMeasure?: MaterialContentMeasure
+  /** `materialLineText`, e.g. "2no 50m drums". */
+  quantityText: string
   material: string
   addedBy: string
   projectId: string
+
   date: Date
   /** The materials day in the organisation zone (`parseMaterialLineDocument`, rulebook 1.8.0). */
   dayKey?: string

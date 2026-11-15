@@ -43,7 +43,8 @@ test('plain-text quote includes site, custom notes, and greeting name', () => {
   assert.match(body, /Can I get a quote for the items below\?/)
   assert.match(body, /Site: City Hall/)
   assert.match(body, /Site address: 1 High Street, London/)
-  assert.match(body, /2\.5mm T&E — qty 2 Drums/)
+  // Rulebook 1.48.0 §28 `materialLineText`: an older line with only the old unit reads "2no drums".
+  assert.match(body, /2\.5mm T&E — qty 2no drums/)
   assert.match(body, /Brand: Prysmian; Code: TE25; Details: Blue sheath/)
   assert.match(body, /this is only a quote request/)
   assert.match(body, /My number is 07700 900123/)
@@ -61,7 +62,26 @@ test('HTML email greets the first name and lists manufacturer', () => {
   assert.match(html, /Manufacturer: <span[^>]*>Prysmian/)
   assert.match(html, /Part: <span[^>]*>TE25/)
   assert.match(html, /Blue sheath/)
-  assert.match(html, /2 Drums/)
+  assert.match(html, />2no drums</)
+})
+
+test('rulebook 1.48.0: the email prints the trade-style quantity and no separate Length detail', () => {
+  const materials = [
+    { material: 'Arctic Flex', quantity: 2, unit: 'Drum', orderUnit: 'Drum', contentAmount: 50, contentMeasure: 'm' },
+    { material: 'Flex', quantity: 100, unit: 'Length', lengthDisplay: '1 m' },
+    { material: 'Trunking', quantity: 10, unit: 'Length', orderUnit: 'Length', contentAmount: 3, contentMeasure: 'm' },
+    { material: 'Socket', quantity: 4, unit: 'Number' },
+  ]
+  const plain = buildPlainTextEmail({ ...context, materials }, false)
+  assert.match(plain, /1\. Arctic Flex — qty 2no 50m drums/)
+  assert.match(plain, /2\. Flex — qty 100m/)
+  assert.match(plain, /3\. Trunking — qty 10no 3m lengths/)
+  assert.match(plain, /4\. Socket — qty 4no/)
+  assert.doesNotMatch(plain, /Length:/)
+  const { html } = buildMaterialRequestEmail({ context: { ...context, materials }, isQuote: true, sendAsPlainText: false, contactName: 'A' })
+  assert.match(html, />2no 50m drums</)
+  assert.match(html, />100m</)
+  assert.doesNotMatch(html, /Length:/)
 })
 
 test('order emails include the required delivery; quotes never do', () => {

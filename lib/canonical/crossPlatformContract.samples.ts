@@ -235,12 +235,12 @@ const WEB_STORE_SAMPLES: Record<string, { docId: string; data: Doc; webWriter: s
   materials: {
     docId: 'M-1',
     webWriter: 'materialProjectStore add → materialLineWriteFields',
-    data: { id: 'M-1', projectId: WEB_JOB, material: 'Plasterboard', quantity: 10, unit: 'Number', status: 'not_ordered', date: ts(DAY), addedBy: 'Ada Admin', addedByUserId: 'user-web-1', addedAt: ts(CREATED), organizationId: ORG, createdAt: ts(CREATED), updatedAt: ts(UPDATED) },
+    data: { id: 'M-1', projectId: WEB_JOB, material: 'Plasterboard', quantity: 10, unit: 'Number', orderUnit: 'Each', contentAmount: null, contentMeasure: null, status: 'not_ordered', date: ts(DAY), addedBy: 'Ada Admin', addedByUserId: 'user-web-1', addedAt: ts(CREATED), organizationId: ORG, createdAt: ts(CREATED), updatedAt: ts(UPDATED) },
   },
   materialCatalogue: {
     docId: 'CAT-1',
     webWriter: 'materialCatalogStore save → materialCatalogueItemWriteFields',
-    data: { id: 'CAT-1', name: 'Plasterboard 12.5mm', defaultUnit: 'Number', brand: 'Gyproc', productCode: 'PB125', organizationId: ORG, createdByUserId: 'user-web-1', createdAt: ts(CREATED), updatedAt: ts(UPDATED) },
+    data: { id: 'CAT-1', name: 'Plasterboard 12.5mm', defaultUnit: 'Box', orderUnit: 'Pack', contentAmount: 10, contentMeasure: 'pcs', brand: 'Gyproc', productCode: 'PB125', organizationId: ORG, createdByUserId: 'user-web-1', createdAt: ts(CREATED), updatedAt: ts(UPDATED) },
   },
   wholesalers: {
     docId: 'W-1',

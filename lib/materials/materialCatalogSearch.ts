@@ -3,7 +3,7 @@ import {
   materialSearchScore,
   rankMaterialRecords,
 } from '@/lib/canonical'
-import type { MaterialCatalogItem, ProjectMaterialLine } from '@/types'
+import type { MaterialCatalogItem, MaterialContentMeasure, MaterialOrderUnit, ProjectMaterialLine } from '@/types'
 
 export function normalizeMaterialText(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, ' ')
@@ -24,6 +24,10 @@ export type MaterialSuggestion = {
   brand: string
   productCode?: string
   unit: string
+  /** Rulebook 1.48.0: the order unit and what is in one to copy onto the line. */
+  orderUnit: MaterialOrderUnit
+  contentAmount?: number
+  contentMeasure?: MaterialContentMeasure
   category?: string
   catalogueItem?: MaterialCatalogItem
   score: number
@@ -57,6 +61,9 @@ export function searchMaterialCatalogue(
         brand: line.brand || 'Custom',
         productCode: line.productCode,
         unit: line.unit,
+        orderUnit: line.orderUnit,
+        contentAmount: line.contentAmount,
+        contentMeasure: line.contentMeasure,
         category: line.category,
         score: 1,
       })
@@ -69,6 +76,9 @@ export function searchMaterialCatalogue(
         brand: item.brand,
         productCode: item.productCode,
         unit: item.defaultUnit,
+        orderUnit: item.orderUnit,
+        contentAmount: item.contentAmount,
+        contentMeasure: item.contentMeasure,
         category: item.category,
         catalogueItem: item,
         score: 1,
@@ -101,6 +111,9 @@ export function searchMaterialCatalogue(
       brand: item.brand,
       productCode: item.productCode,
       unit: item.defaultUnit,
+      orderUnit: item.orderUnit,
+      contentAmount: item.contentAmount,
+      contentMeasure: item.contentMeasure,
       category: item.category,
       catalogueItem: item,
       score: hit.score,
@@ -115,6 +128,9 @@ export function searchMaterialCatalogue(
       brand: line.brand || 'Custom',
       productCode: line.productCode,
       unit: line.unit,
+      orderUnit: line.orderUnit,
+      contentAmount: line.contentAmount,
+      contentMeasure: line.contentMeasure,
       category: line.category,
       score: hit.score,
     })

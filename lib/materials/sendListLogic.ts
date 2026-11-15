@@ -3,8 +3,8 @@
  * Spec: docs/ios-parity/sections/16-job-tiles.md
  */
 
+import { materialQuantityWriteFields } from '@/lib/canonical'
 import type { ProjectMaterialLine, Wholesaler } from '@/types'
-import { materialQuantityLabel } from '@/lib/canonical'
 
 export type MaterialSendRequestType = 'quote' | 'order'
 
@@ -36,11 +36,6 @@ export function isOrderedStatus(status: string): boolean {
 
 export function isDraftStatus(status: string): boolean {
   return status.trim().toLowerCase().includes('draft') || (!isQuotedStatus(status) && !isOrderedStatus(status))
-}
-
-/** Unit name the email prints, from the rulebook (`materialQuantityLabel`, also used by `materialWhatsAppRows`). */
-export function quantityLabel(unit: string, quantity: number): string {
-  return materialQuantityLabel(unit, quantity)
 }
 
 export function wholesalerIdsForSelectedContacts(
@@ -145,3 +140,27 @@ export function supplierGreeting(contactName: string, sendAsPlainText: boolean):
 }
 
 export const MULTIPLE_WHOLESALER_ORDER_MESSAGE = 'Orders can only go to one wholesaler at a time.'
+
+/**
+ * Rulebook 1.48.0 §28: the quantity fields a send carries for one line — the order unit and what is in one (for
+ * `materialLineText` in the email, WhatsApp and the send record), plus the old unit and length text for older
+ * readers of the payload.
+ */
+export function materialSendQuantityFields(
+  item: Pick<ProjectMaterialLine, 'quantity' | 'unit' | 'orderUnit' | 'contentAmount' | 'contentMeasure' | 'quantityText'>
+) {
+  // The old unit and length text with the nearest old meaning (`materialQuantityWriteFields`), so an older iPhone's
+  // history still shows "100 Lengths · 1 m" for a Metre line and an older email function still prints the length.
+  const legacy = materialQuantityWriteFields(item)
+  const length = typeof legacy.length === 'string' ? legacy.length : ''
+  const lengthUnit = typeof legacy.lengthUnit === 'string' ? legacy.lengthUnit.toLowerCase() : 'm'
+  return {
+    quantity: item.quantity,
+    unit: String(legacy.unit ?? item.unit),
+    lengthDisplay: length ? `${length} ${lengthUnit}` : undefined,
+    orderUnit: item.orderUnit,
+    contentAmount: item.contentAmount,
+    contentMeasure: item.contentMeasure,
+    quantityText: item.quantityText,
+  }
+}

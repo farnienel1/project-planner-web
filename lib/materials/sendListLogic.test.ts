@@ -5,8 +5,8 @@ import {
   buildRecipientSnapshots,
   orderBlockedForMultipleWholesalers,
   parseOneOffRecipient,
+  materialSendQuantityFields,
   partitionMaterialsForResend,
-  quantityLabel,
   resendHeadline,
   supplierGreeting,
 } from './sendListLogic.ts'
@@ -27,12 +27,24 @@ const wholesalers = [
   },
 ]
 
-test('quantityLabel matches iOS MaterialUnit labels', () => {
-  assert.equal(quantityLabel('Number', 1), 'Number')
-  assert.equal(quantityLabel('Number', 2), 'Numbers')
-  assert.equal(quantityLabel('Box', 1), 'Box')
-  assert.equal(quantityLabel('box', 4), 'Boxes')
-  assert.equal(quantityLabel('m', 3), 'm')
+test('a send carries the order unit, what is in one and the line text (rulebook 1.48.0)', () => {
+  const fields = materialSendQuantityFields({
+    quantity: 2,
+    unit: 'Drum',
+    orderUnit: 'Reel',
+    contentAmount: 50,
+    contentMeasure: 'm',
+    quantityText: '2no 50m reels',
+  })
+  assert.deepEqual(fields, {
+    quantity: 2,
+    unit: 'Drum',
+    lengthDisplay: '50 m',
+    orderUnit: 'Reel',
+    contentAmount: 50,
+    contentMeasure: 'm',
+    quantityText: '2no 50m reels',
+  })
 })
 
 test('orders cannot go to contacts at two wholesalers', () => {

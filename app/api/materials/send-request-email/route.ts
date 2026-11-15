@@ -40,6 +40,10 @@ type MaterialBody = {
   productCode?: string
   notes?: string
   lengthDisplay?: string
+  /** Rulebook 1.48.0 §28: the order unit and what is in one (`materialLineText`). */
+  orderUnit?: string
+  contentAmount?: number
+  contentMeasure?: string
 }
 
 type SendBody = {
@@ -85,7 +89,14 @@ function parseMaterials(rows: MaterialBody[] | undefined) {
       productCode: clampString(row.productCode, 80) || undefined,
       notes: clampString(row.notes, 500) || undefined,
       lengthDisplay: clampString(row.lengthDisplay, 80) || undefined,
+      orderUnit: clampString(row.orderUnit, 20) || undefined,
+      contentAmount:
+        typeof row.contentAmount === 'number' && Number.isFinite(row.contentAmount) && row.contentAmount > 0
+          ? row.contentAmount
+          : undefined,
+      contentMeasure: clampString(row.contentMeasure, 10) || undefined,
     })
+
   }
   return materials
 }

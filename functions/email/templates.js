@@ -237,7 +237,15 @@ function parseMaterialLines(rows) {
       productCode: clamp(row.productCode, 80) || undefined,
       notes: clamp(row.notes, 500) || undefined,
       lengthDisplay: clamp(row.lengthDisplay, 80) || undefined,
+      // Rulebook 1.48.0 §28: the order unit and what is in one, read by `materialLineText` (older apps send neither).
+      orderUnit: clamp(row.orderUnit, 20) || undefined,
+      contentAmount:
+        typeof row.contentAmount === 'number' && Number.isFinite(row.contentAmount) && row.contentAmount > 0
+          ? row.contentAmount
+          : undefined,
+      contentMeasure: clamp(row.contentMeasure, 10) || undefined,
     }
+
   })
 }
 
