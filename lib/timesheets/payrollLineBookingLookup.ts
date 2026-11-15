@@ -9,8 +9,16 @@
 import type { Booking } from '@/types'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
-import { bookingHoursOnDay } from '@/lib/timesheets/timesheetHours'
-import type { TimesheetPayrollLineItem } from '@/lib/timesheets/timesheetPayrollCollector'
+import {
+  PAYROLL_LINE_EDIT_TIMES_MESSAGE,
+  revisedPayrollLineAmounts,
+  revisedPayrollLineTimesError,
+  type PayrollLineEditReviewFields,
+  type RevisedPayrollLineAmounts,
+} from '@/lib/canonical/timesheetLineEdit'
+import type { EmploymentTypeUser } from '@/lib/canonical/userProfile'
+import { dayKeyInZone } from '@/lib/orgTime/zoneTime'
+import { TIMESHEET_OVERTIME_LINE_MIN_HOURS, type TimesheetPayrollLineItem } from '@/lib/timesheets/timesheetPayrollCollector'
 
 export type PayrollHoursChoice = {
   startTime: string
@@ -74,16 +82,74 @@ export function initialHoursChoice(input: {
   return null
 }
 
-export function revisedPayrollAmount(input: {
+/**
+ * Rulebook 1.46.0 (§8): the line manager's "Edit hours" re-prices the whole booking (`revisedPayrollLineAmounts`:
+ * `payrollHoursResult` under the policy in effect that day, the booking's own overtime rate, `payForHours`, pennies),
+ * never the old hours ratio. Returns the revised amount for each line of that booking on the sheet: its standard line
+ * and, when it has one, its overtime line; with no overtime line the standard line carries the overtime too, so a
+ * longer day is paid in full on the invoice and in the totals. The rate is the standard line's (an overtime line
+ * stores the rate x multiplier for display).
+ */
+export function payrollLineEdit(input: {
   row: TimesheetPayrollLineItem
+  /** Every payroll line of the sheet (to find the booking's other line). */
+  lines: ReadonlyArray<TimesheetPayrollLineItem>
   startTime: string
   endTime: string
   breakRemoved: boolean
+  /** The overtime rate to price at; missing = the booking's own (`bookingOtMultiplierOverride`), else the organisation's. */
+  otMultiplierOverride?: number | null
+  /** The policy in effect on the line's day. */
   policy: OrgPayrollTimePolicy
-}): number {
-  const { row, startTime, endTime, breakRemoved, policy } = input
-  const hours = bookingHoursOnDay(row.date, 'customHours', startTime, endTime, policy, breakRemoved)
-  const relevantHours = row.isOvertimeLine ? hours.outsideHours : Math.max(0, hours.standardHours)
-  if (row.paidHours <= 0.01) return row.amount
-  return row.amount * (relevantHours / row.paidHours)
+  /** The organisation zone (`organizationTimeZone`). */
+  timeZone: string
+  /** The person's employment fields: a PAYE day pays 0 (`employmentTypeOnDay`). */
+  employment?: EmploymentTypeUser | null
+}): {
+  /** `revisedPayrollLineTimesError` when the times cannot be priced (Save stays off); else null. */
+  error: string | null
+  amounts: RevisedPayrollLineAmounts | null
+  /** The review fields to store on each line of the booking (`PayrollLineEditReviewFields`), by line id. */
+  reviewFieldsByLineId: Record<string, PayrollLineEditReviewFields>
+  standardLine: TimesheetPayrollLineItem | null
+  overtimeLine: TimesheetPayrollLineItem | null
+} {
+  const { row, lines } = input
+  const base = row.id.replace(/-(?:normal|ot)$/, '')
+  const sameBooking = (line: TimesheetPayrollLineItem) => line.id.replace(/-(?:normal|ot)$/, '') === base
+  const standardLine = row.isOvertimeLine ? lines.find((line) => !line.isOvertimeLine && sameBooking(line)) ?? null : row
+  const overtimeLine = row.isOvertimeLine ? row : lines.find((line) => line.isOvertimeLine && sameBooking(line)) ?? null
+  const rateLine = standardLine ?? row
+  const multiplier = row.isOvertimeLine && row.otMultiplier && row.otMultiplier > 0 ? row.otMultiplier : 1
+  const dayRate = standardLine ? standardLine.dayRate : (row.dayRate ?? 0) / multiplier
+  const hourlyRate = standardLine ? standardLine.hourlyRate : row.hourlyRate == null ? null : row.hourlyRate / multiplier
+  const timesError = revisedPayrollLineTimesError(input.startTime, input.endTime)
+  const amounts = timesError
+    ? null
+    : revisedPayrollLineAmounts({
+        dayKey: row.dayKey ?? dayKeyInZone(row.date, input.timeZone),
+        timeZone: input.timeZone,
+        policy: input.policy,
+        startTime: input.startTime,
+        endTime: input.endTime,
+        isBreakRemoved: input.breakRemoved,
+        otMultiplierOverride: input.otMultiplierOverride ?? rateLine.bookingOtMultiplierOverride ?? null,
+        payBasis: rateLine.payrollBasis === 'hourly' ? 'hourly' : 'day',
+        dayRate: rateLine.hasRate === false ? null : dayRate,
+        hourlyRate: rateLine.hasRate === false ? null : hourlyRate ?? null,
+        employment: input.employment ?? null,
+        bookingHasOvertimeLine: overtimeLine != null,
+        overtimeLineMinHours: TIMESHEET_OVERTIME_LINE_MIN_HOURS,
+        bookingFingerprint: rateLine.bookingFingerprint ?? row.bookingFingerprint ?? null,
+      })
+  const reviewFieldsByLineId: Record<string, PayrollLineEditReviewFields> = {}
+  if (amounts && standardLine) reviewFieldsByLineId[standardLine.id] = amounts.reviewFields.standard
+  if (amounts && overtimeLine && amounts.reviewFields.overtime) reviewFieldsByLineId[overtimeLine.id] = amounts.reviewFields.overtime
+  return {
+    error: amounts ? null : timesError ?? PAYROLL_LINE_EDIT_TIMES_MESSAGE,
+    amounts,
+    reviewFieldsByLineId,
+    standardLine,
+    overtimeLine,
+  }
 }

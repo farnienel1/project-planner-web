@@ -618,7 +618,7 @@ export function buildDailyOverview(params: {
     ...dayBookings,
     ...dayManager.filter((b) => b.locationType === 'project' || b.locationType === 'small_work'),
     ...daySubs,
-  ].map((b) => bookingPayrollHours({ ...b, policy, date: params.day }))
+  ].map((b) => bookingPayrollHours({ ...b, policy, date: params.day, timeZone: zone }))
   // Rulebook 1.20.2: the day's hours are the pay rule's (`totalPaidHours`): standard hours, plus hours at the
   // multiplier shown beside it — the same figures as each row.
   const labourHours = labourResults.reduce((sum, r) => sum + r.totalPaidHours, 0)

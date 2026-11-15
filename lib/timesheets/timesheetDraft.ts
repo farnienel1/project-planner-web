@@ -8,6 +8,14 @@ export type TimesheetManagerDecision = 'pending' | 'approved' | 'declined' | 'ed
 export type TimesheetPayrollLineReview = {
   decision: TimesheetManagerDecision
   revisedAmount?: number | null
+  /** Rulebook 1.46.0 Edit hours (`PayrollLineEditReviewFields`), on an `edited` review only. */
+  revisedStandardHours?: number | null
+  revisedOvertimeHours?: number | null
+  revisedOvertimeClockHours?: number | null
+  revisedOvertimeMultiplier?: number | null
+  revisedStandardAmount?: number | null
+  revisedOvertimeAmount?: number | null
+  reviewedBookingFingerprint?: string | null
 }
 
 export type TimesheetExpenseEntry = {
@@ -57,11 +65,31 @@ export type WeeklyReportLabourLine = {
   amount: number
   /** Missing on older snapshots means day rate. */
   payBasis?: 'day' | 'hourly'
+  /**
+   * Rulebook 1.46.0: the signed line's own PAYE / leave flags (`isInvoiceLine` reads them; a signed row is never
+   * filtered by the live lines). Written on every snapshot line; missing on older snapshots means false.
+   */
+  isPayeDay?: boolean
+  isLeave?: boolean
   isOvertime: boolean
   /** Written on new overtime snapshots. Missing on older lines. */
   otMultiplier?: number | null
   decision: TimesheetManagerDecision
   bookingId: string
+  /**
+   * Rulebook 1.46.0: the booking as it was when the line was signed (`overtimeBookingFingerprint`). A later Edit hours
+   * review made against another version of the booking is never applied to the signed line.
+   */
+  bookingFingerprint?: string | null
+  /** Rulebook 1.46.0: whether the booking had its own overtime line on the sheet when signed (a review's added part is not). */
+  bookingHadOvertimeLine?: boolean
+  /** Rulebook 1.46.0: `payrollLineReviewKey` of the review applied when the line was signed ('' when none). */
+  appliedReviewKey?: string | null
+  /**
+   * Rulebook 1.46.0: on a `{booking}-ot` line an Edit hours review added for a standard line's overtime, that standard
+   * line's id — the line follows that line's current review (recomputed together, 0 when it no longer pays overtime).
+   */
+  reviewPartOf?: string | null
 }
 
 /** Shared with iOS `TimesheetWeeklyReportMoneyLine`. */

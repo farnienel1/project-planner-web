@@ -35,6 +35,8 @@ import { normalizeDocumentId } from './scheduleSources'
 import { personIdSet, type PersonRosterRow } from './personIds'
 import { parseTimesheetStatusFields } from './timesheetPeriod'
 import { documentInstantMs, documentWriteFields, type DocumentWriteFields } from './peopleDocuments'
+import { roundPennies } from './payRate'
+import { overtimeFingerprintKey, overtimeFingerprintsMatch } from './bookingFingerprint'
 
 export type TimesheetEntryDecision = 'pending' | 'approved' | 'declined' | 'edited'
 
@@ -254,7 +256,12 @@ export function timesheetEntryEffectiveAmount(
   amount: number
 ): number {
   if (decision === 'declined') return 0
-  if (decision === 'edited') return finite(revisedAmount) ?? amount
+  // 1.46.0: a revised amount is money and counts in pennies (`roundPennies`), whatever was stored (older saves kept
+  // the unrounded hours-ratio result, e.g. 176.47058823529).
+  if (decision === 'edited') {
+    const revised = finite(revisedAmount)
+    return revised == null ? amount : roundPennies(revised)
+  }
   return amount
 }
 
@@ -518,6 +525,50 @@ export type PayrollLineReview = {
   decision: TimesheetEntryDecision
   /** The amount an `edited` decision pays; null otherwise. */
   revisedAmount: number | null
+  /**
+   * 1.46.0 Edit hours (`revisedPayrollLineAmounts` → `PayrollLineEditReviewFields`), on an `edited` review only; null
+   * when the review was stored without them (older reviews, approve / decline). The hours and money of each part.
+   */
+  revisedStandardHours?: number | null
+  revisedOvertimeHours?: number | null
+  revisedOvertimeClockHours?: number | null
+  revisedOvertimeMultiplier?: number | null
+  revisedStandardAmount?: number | null
+  revisedOvertimeAmount?: number | null
+  /** The booking fingerprint the review was made against (`overtimeBookingFingerprint`); null when not stored. */
+  reviewedBookingFingerprint?: string | null
+}
+
+/**
+ * Rulebook 1.46.0: the identity of a review as it applies to a line — its decision, amount, the Edit hours fields and
+ * the booking fingerprint — so a signed snapshot line can record which review was applied when it was signed
+ * (`appliedReviewKey`) and a later save re-applies a review only when it is a different one. '' for no review.
+ */
+export function payrollLineReviewKey(review: PayrollLineReview | null | undefined): string {
+  if (!review) return ''
+  const n = (value: number | null | undefined) => (typeof value === 'number' && Number.isFinite(value) ? String(value) : '')
+  return [
+    review.decision,
+    n(review.revisedAmount),
+    n(review.revisedStandardHours),
+    n(review.revisedOvertimeHours),
+    n(review.revisedOvertimeClockHours),
+    n(review.revisedOvertimeMultiplier),
+    n(review.revisedStandardAmount),
+    n(review.revisedOvertimeAmount),
+    overtimeFingerprintKey(review.reviewedBookingFingerprint ?? ''),
+  ].join('|')
+}
+
+/**
+ * A live payroll line as the review is checked against it: the booking's fingerprint as it is now, whether the line is
+ * an overtime line, and whether the booking now has its own overtime line on the sheet. A signed snapshot line is
+ * checked the same way with the values it was signed with (`bookingFingerprint`, `bookingHadOvertimeLine`).
+ */
+export type PayrollLineLiveBooking = {
+  bookingFingerprint?: string | null
+  isOvertimeLine?: boolean | null
+  bookingHasOvertimeLine?: boolean | null
 }
 
 /**
@@ -527,7 +578,8 @@ export type PayrollLineReview = {
  */
 export function payrollLineReview(
   sheet: Record<string, unknown> | null | undefined,
-  lineId: string | null | undefined
+  lineId: string | null | undefined,
+  live?: PayrollLineLiveBooking | null
 ): PayrollLineReview | null {
   const raw = sheet && typeof sheet === 'object' ? (sheet as Record<string, unknown>).payrollLineReviews : null
   if (!raw || typeof raw !== 'object') return null
@@ -544,5 +596,38 @@ export function payrollLineReview(
   const row = value as Record<string, unknown>
   const decision = parseTimesheetEntryDecision(row.decision)
   const revised = typeof row.revisedAmount === 'number' && Number.isFinite(row.revisedAmount) ? row.revisedAmount : null
-  return { decision, revisedAmount: decision === 'edited' ? revised : null }
+  // 1.46.0: a review made against a booking that has changed since is stale — the line is pending at its live amount
+  // (as a stale price work / expense review). Only when both the review and the live line carry a fingerprint; older
+  // reviews and callers without one keep the review.
+  const storedFingerprint = typeof row.reviewedBookingFingerprint === 'string' ? row.reviewedBookingFingerprint.trim() : ''
+  const liveFingerprint = typeof live?.bookingFingerprint === 'string' ? live.bookingFingerprint.trim() : null
+  // Slot spellings compared canonically (`overtimeFingerprintsMatch`): a review written on one app matches the booking
+  // read on the other (`CUSTOM` on web, `CUSTOM_HOURS` on iOS).
+  if (storedFingerprint && liveFingerprint != null && !overtimeFingerprintsMatch(storedFingerprint, liveFingerprint)) return null
+  const num = (value: unknown): number | null => (typeof value === 'number' && Number.isFinite(value) ? value : null)
+  // 1.46.0 (review): a standard-line review that carries overtime money was made when the booking had no overtime
+  // line. The fingerprint does not cover the working hours, so if a working-hours change has since given the booking
+  // its own overtime line, the review is stale too — the overtime is never paid on both lines.
+  if (
+    decision === 'edited' &&
+    live?.isOvertimeLine !== true &&
+    live?.bookingHasOvertimeLine === true &&
+    ((num(row.revisedOvertimeAmount) ?? 0) > 0 || (num(row.revisedOvertimeHours) ?? 0) > 0)
+  ) {
+    return null
+  }
+  if (decision !== 'edited') return { decision, revisedAmount: null }
+  const review: PayrollLineReview = { decision, revisedAmount: revised }
+  const standardHours = num(row.revisedStandardHours)
+  const overtimeHours = num(row.revisedOvertimeHours)
+  if (standardHours != null && overtimeHours != null) {
+    review.revisedStandardHours = standardHours
+    review.revisedOvertimeHours = overtimeHours
+    review.revisedOvertimeClockHours = num(row.revisedOvertimeClockHours) ?? overtimeHours
+    review.revisedOvertimeMultiplier = num(row.revisedOvertimeMultiplier)
+    review.revisedStandardAmount = num(row.revisedStandardAmount) ?? 0
+    review.revisedOvertimeAmount = num(row.revisedOvertimeAmount) ?? 0
+  }
+  if (storedFingerprint) review.reviewedBookingFingerprint = storedFingerprint
+  return review
 }

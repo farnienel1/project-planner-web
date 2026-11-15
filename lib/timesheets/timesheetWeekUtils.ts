@@ -1,11 +1,7 @@
-import type { Booking, Operative, User } from '@/types'
+import type { Operative, User } from '@/types'
 import { findOperativeForUser } from '@/lib/operatives/operativeRosterUtils'
-import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
-import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
-import { bookingPayrollHours } from '@/lib/scheduling/paidHours'
 import { dayKey, startOfLondonWeek } from '@/lib/ios-parity/londonTime'
 import { exportedTimesheetSubjectIds, userTimesheetSubjectIds } from '@/lib/permissions'
-import { normalizeDocumentId } from '@/lib/canonical'
 
 export type TimesheetSubjectKind = 'operative' | 'manager'
 
@@ -21,21 +17,9 @@ export type TimesheetSubject = {
   employmentType?: string
 }
 
-export type TimesheetDayEntry = {
-  date: Date
-  label: string
-  hours: number
-  source: 'operative' | 'manager'
-}
-
 /** Monday of the week containing `date`, as an organisation-zone day key (never the browser zone). */
 export function weekStartKey(date: Date, timeZone?: string): string {
   return dayKey(startOfLondonWeek(date, timeZone), timeZone)
-}
-
-function isDateInPeriod(date: Date, range: { start: Date; end: Date }): boolean {
-  const key = dayKey(date)
-  return key >= dayKey(range.start) && key <= dayKey(range.end)
 }
 
 export function subjectForUser(user: User, operatives: Operative[]): TimesheetSubject {
@@ -128,18 +112,6 @@ export function exportedTimesheetRosterGroups(viewer: User, users: User[]): User
   return groups
 }
 
-/** Paid hours for a booking on its day (`payrollHoursResult.totalPaidHours`). */
-export function hoursFromSlot(
-  timeSlot: string,
-  workStartTime?: string,
-  workEndTime?: string,
-  payrollPolicy?: OrgPayrollTimePolicy,
-  date?: Date,
-  isBreakRemoved?: boolean
-): number {
-  return bookingPayrollHours({ timeSlot, workStartTime, workEndTime, isBreakRemoved, policy: payrollPolicy, date }).totalPaidHours
-}
-
 export function buildTimesheetSubjects(users: User[], operatives: Operative[]): TimesheetSubject[] {
   const subjects = new Map<string, TimesheetSubject>()
 
@@ -187,68 +159,4 @@ export function buildTimesheetSubjects(users: User[], operatives: Operative[]): 
   return Array.from(subjects.values()).sort((a, b) => a.name.localeCompare(b.name))
 }
 
-export function collectSubjectDayEntries({
-  subject,
-  bookings,
-  managerSiteBookings,
-  weekRange,
-  payrollPolicy,
-}: {
-  subject: TimesheetSubject
-  bookings: Booking[]
-  managerSiteBookings: ManagerSiteBooking[]
-  weekRange: { start: Date; end: Date }
-  payrollPolicy?: OrgPayrollTimePolicy
-}): TimesheetDayEntry[] {
-  const entries: TimesheetDayEntry[] = []
-
-  if (subject.operativeId) {
-    for (const booking of bookings) {
-      if (normalizeDocumentId(booking.operativeId) !== normalizeDocumentId(subject.operativeId)) continue
-      const date = new Date(booking.date)
-      if (!isDateInPeriod(date, weekRange)) continue
-      entries.push({
-        date,
-        label: String(booking.timeSlot),
-        hours: hoursFromSlot(
-          String(booking.timeSlot),
-          booking.workStartTime,
-          booking.workEndTime,
-          payrollPolicy,
-          date,
-          booking.isBreakRemoved
-        ),
-        source: 'operative',
-      })
-    }
-  }
-
-  if (subject.userId) {
-    for (const booking of managerSiteBookings) {
-      if (booking.userId !== subject.userId) continue
-      const date = new Date(booking.date)
-      if (!isDateInPeriod(date, weekRange)) continue
-      entries.push({
-        date,
-        label: String(booking.timeSlot),
-        hours: hoursFromSlot(
-          String(booking.timeSlot),
-          booking.workStartTime,
-          booking.workEndTime,
-          payrollPolicy,
-          date,
-          booking.isBreakRemoved
-        ),
-        source: 'manager',
-      })
-    }
-  }
-
-  return entries.sort((a, b) => a.date.getTime() - b.date.getTime())
-}
-
-export function totalHours(entries: TimesheetDayEntry[]): number {
-  const sum = entries.reduce((total, entry) => total + entry.hours, 0)
-  return Math.round(sum * 10000) / 10000
-}
 

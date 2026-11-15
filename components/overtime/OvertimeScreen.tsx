@@ -19,6 +19,7 @@ import {
   isAdminOutsideOperativeMode,
   hasActiveLineManager,
   overtimeBookingFingerprint,
+  overtimeFingerprintsMatch,
   overtimeBookingIsTheirs,
   overtimeChoiceAfter,
   overtimeChoiceDecision,
@@ -94,6 +95,7 @@ import { BriefcaseIcon, ChevronRightIcon, ClockIcon, MagnifyingGlassIcon, Receip
 import { Card, Chip, DataTable, EmptyState, IconTile, Note, PageShell, SegmentedTabs, initialsOf } from '@/components/ui/page'
 import { PayeClaimsSection } from '@/components/overtime/PayeClaimsScreen'
 
+import { namedSlotLabel } from '@/lib/scheduling/paidHours'
 import { downloadPdf } from '@/lib/pdf/downloadPdf'
 import { PDF_LOAD_FAILED_MESSAGE, loadExportModule } from '@/lib/pdf/loadExportModule'
 
@@ -775,7 +777,7 @@ function OvertimeLines(props: {
               <div className="grow" style={{ minWidth: 0 }}>
                 <b style={{ textDecoration: line.state === 'cancelled' || line.state === 'deleted' ? 'line-through' : 'none' }}>{line.title}</b>
                 <div className="pu-sub">
-                  {line.dayLabel} · {line.start && line.end ? `${line.start}–${line.end}` : line.timeSlot}
+                  {line.dayLabel} · {line.start && line.end ? `${line.start}–${line.end}` : namedSlotLabel(line.timeSlot)}
                   {requested && requested.action === 'edit' && requested.proposedStart ? ` (asked ${requested.proposedStart}–${requested.proposedEnd})` : ''}
                   {line.figures?.dayWindow ? ` · day ${line.figures.dayWindow}` : ''}
                 </div>
@@ -1025,7 +1027,7 @@ function RequestReview(props: {
         const booking = props.bookingById.get(line.bookingId.toLowerCase())
         const theirs = booking ? overtimeBookingIsTheirs(booking, props.requesterIds) : false
         const view = booking ? overtimeChoiceView({ choice: choices[line.bookingId], booking, organization: props.organization, timeZone: props.timeZone, role: 'decider' }) : null
-        const stale = booking ? overtimeBookingFingerprint(booking) !== line.fingerprint : false
+        const stale = booking ? !overtimeFingerprintsMatch(overtimeBookingFingerprint(booking), line.fingerprint) : false
         return (
           <div key={line.bookingId} className="row" style={{ gap: 8, flexWrap: 'wrap', justifyContent: 'space-between' }}>
             <div className="grow small" style={{ minWidth: 0 }}>

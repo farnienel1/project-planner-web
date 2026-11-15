@@ -1325,7 +1325,8 @@ export { IDEMPOTENT_MIGRATION_WRITES } from './liveSources'
 
 // Rulebook 1.10.0 (hunt C): invoice rows, payroll line reviews, invite accept plan, timesheet participants, pay maths.
 export { timesheetInvoiceRows } from './reportPay'
-export { payrollLineReview } from './timesheetEntryReviews'
+export { payrollLineReview, payrollLineReviewKey } from './timesheetEntryReviews'
+export type { PayrollLineLiveBooking } from './timesheetEntryReviews'
 export { inviteAcceptWrites } from './inviteAccept'
 export { timesheetParticipant } from './peopleDocuments'
 export { orgDayHours, payForHours, roundPennies } from './payRate'
@@ -1947,3 +1948,22 @@ export {
 } from './timesheetSnapshot'
 export type { TimesheetExtrasSheet, TimesheetLiveLabourLine, TimesheetSnapshotReadyInput, TimesheetSnapshotSheet } from './timesheetSnapshot'
 export type { SubcontractorScheduleBooking, SubcontractorScheduleCell } from './jobScheduleLeave'
+// Rulebook 1.46.0 §7, §8: re-pricing a line manager's "Edit hours" and the weekly report's per-booking pay.
+export {
+  bookingPaySlices,
+  mergeBookingPaySlice,
+  PAYROLL_LINE_EDIT_TIMES_MESSAGE,
+  payrollLineReviewSnapshotParts,
+  revisedPayrollLineAmounts,
+  revisedPayrollLineTimesError,
+} from './timesheetLineEdit'
+export type {
+  BookingPaySlice,
+  PayrollLineEditReviewFields,
+  PayrollLineSnapshotPart,
+  RevisedPayrollLineAmounts,
+  RevisedPayrollLineInput,
+} from './timesheetLineEdit'
+export { payrollLineBookingKey } from './reportPay'
+// Rulebook 1.46.0: one slot spelling in booking fingerprints, compared canonically across apps.
+export { bookingFingerprintSlot, overtimeFingerprintKey, overtimeFingerprintsMatch } from './bookingFingerprint'

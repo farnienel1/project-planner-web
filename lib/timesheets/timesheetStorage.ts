@@ -189,10 +189,17 @@ function mapLabourLine(row: Record<string, unknown>): WeeklyReportLabourLine | n
     days: finiteNumber(row.days),
     amount: finiteNumber(row.amount),
     payBasis: row.payBasis === 'hourly' ? 'hourly' : row.payBasis === 'day' ? 'day' : undefined,
+    isPayeDay: row.isPayeDay === true,
+    isLeave: row.isLeave === true,
     isOvertime: row.isOvertime === true,
     otMultiplier: typeof row.otMultiplier === 'number' ? row.otMultiplier : null,
     decision: asDecision(row.decision),
     bookingId,
+    // 1.46.0: the booking as signed, so a later Edit hours review of another version never re-prices the line.
+    ...(typeof row.bookingFingerprint === 'string' && row.bookingFingerprint ? { bookingFingerprint: row.bookingFingerprint } : {}),
+    ...(typeof row.bookingHadOvertimeLine === 'boolean' ? { bookingHadOvertimeLine: row.bookingHadOvertimeLine } : {}),
+    ...(typeof row.appliedReviewKey === 'string' ? { appliedReviewKey: row.appliedReviewKey } : {}),
+    ...(typeof row.reviewPartOf === 'string' && row.reviewPartOf ? { reviewPartOf: row.reviewPartOf } : {}),
   }
 }
 
@@ -247,14 +254,43 @@ export function weeklyReportOverrideToFirestore(override: WeeklyReportOverride):
       days: line.days,
       amount: line.amount,
       ...(line.payBasis === 'hourly' || line.payBasis === 'day' ? { payBasis: line.payBasis } : {}),
+      // 1.46.0: the signed row's own PAYE / leave flags, on every line written.
+      isPayeDay: line.isPayeDay === true,
+      isLeave: line.isLeave === true,
       isOvertime: line.isOvertime,
       ...(line.isOvertime && line.otMultiplier != null ? { otMultiplier: line.otMultiplier } : {}),
       decision: line.decision,
       bookingId: line.bookingId || '',
+      ...(line.bookingFingerprint ? { bookingFingerprint: line.bookingFingerprint } : {}),
+      ...(line.bookingHadOvertimeLine != null ? { bookingHadOvertimeLine: line.bookingHadOvertimeLine } : {}),
+      ...(line.appliedReviewKey != null ? { appliedReviewKey: line.appliedReviewKey } : {}),
+      ...(line.reviewPartOf ? { reviewPartOf: line.reviewPartOf } : {}),
     })),
     priceWork: override.priceWork.map(money),
     expenses: override.expenses.map(money),
   }
+}
+
+const PAYROLL_LINE_EDIT_NUMBER_FIELDS = [
+  'revisedStandardHours',
+  'revisedOvertimeHours',
+  'revisedOvertimeClockHours',
+  'revisedOvertimeMultiplier',
+  'revisedStandardAmount',
+  'revisedOvertimeAmount',
+] as const
+
+/** Rulebook 1.46.0: the Edit hours fields of a review, only those stored (an older review gets none). */
+function payrollLineEditFieldsOf(row: Record<string, unknown> | TimesheetPayrollLineReview): Partial<TimesheetPayrollLineReview> {
+  const source = row as Record<string, unknown>
+  const out: Record<string, unknown> = {}
+  for (const key of PAYROLL_LINE_EDIT_NUMBER_FIELDS) {
+    const value = source[key]
+    if (typeof value === 'number' && Number.isFinite(value)) out[key] = value
+    else if (value === null && key === 'revisedOvertimeMultiplier' && typeof source.revisedStandardHours === 'number') out[key] = null
+  }
+  if (typeof source.reviewedBookingFingerprint === 'string') out.reviewedBookingFingerprint = source.reviewedBookingFingerprint
+  return out as Partial<TimesheetPayrollLineReview>
 }
 
 function mapReviews(raw: unknown): Record<string, TimesheetPayrollLineReview> {
@@ -265,6 +301,8 @@ function mapReviews(raw: unknown): Record<string, TimesheetPayrollLineReview> {
     output[key] = {
       decision: asDecision(row.decision),
       revisedAmount: typeof row.revisedAmount === 'number' ? row.revisedAmount : null,
+      // 1.46.0: Edit hours keeps its hours, parts and booking fingerprint (`PayrollLineEditReviewFields`).
+      ...payrollLineEditFieldsOf(row),
     }
   }
   return output
@@ -338,7 +376,7 @@ export function draftToFirestoreMap(draft: TimesheetDraft): Record<string, unkno
     payrollLineReviews: Object.fromEntries(
       Object.entries(draft.payrollLineReviews).map(([key, review]) => [
         key,
-        { decision: review.decision, revisedAmount: review.revisedAmount ?? null },
+        { decision: review.decision, revisedAmount: review.revisedAmount ?? null, ...payrollLineEditFieldsOf(review) },
       ])
     ),
     weeklyReportOverride: draft.weeklyReportOverride
