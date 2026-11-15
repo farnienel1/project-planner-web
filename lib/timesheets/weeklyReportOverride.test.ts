@@ -320,7 +320,7 @@ test('weekly report replaces live days with the agreed snapshot and includes pri
     weekEnd: base.weekEnd,
     override: approved.weeklyReportOverride!,
   }
-  const report = buildWeeklyReportData({
+  const report = buildWeeklyReportData({ showAllPay: true,
     organizationName: 'Acme',
     period: { start: base.weekStart, end: base.weekEnd, label: 'week' },
     bookings: [booking()],

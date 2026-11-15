@@ -16284,6 +16284,7 @@ const wr151Run = (input: Partial<Parameters<typeof R112.weeklyReportPayRows>[0]>
     range: wr151Range,
     timeZone: wr151Zone,
     currency: 'GBP',
+    showAllPay: true,
     ...input,
   } as never)
 
@@ -16365,8 +16366,11 @@ test('1.51.0 check line: signed sheet whose invoice differs from the live bookin
   // A run only partly inside the range: only its rows dated in the range, and the line says so.
   const partial = wr151Run({ range: { start: '2026-11-01', end: '2026-11-08' }, bookings: wr151Bookings.slice(0, 1), sheets: [{ ...sheets[0], sheet: matching }] }).people[0]
   assert.equal(partial.check?.label, 'Timesheet: Signed · Invoice rows in this period £250.00 ✓')
-  // No sheet → Not started.
-  assert.equal(wr151Run({ bookings: wr151Bookings.slice(0, 1) }).people[0].check?.label, 'Timesheet: Not started · no invoice yet')
+  assert.equal(changed.check?.tone, 'warn')
+  // No sheet → Not started, no timesheet yet (neutral).
+  const none = wr151Run({ bookings: wr151Bookings.slice(0, 1), sheets: [{ ...sheets[0], sheet: null }] }).people[0].check
+  assert.deepEqual([none?.label, none?.tone], ['Timesheet: Not started · no timesheet yet', 'neutral'])
+  assert.equal(wr151Run({ bookings: wr151Bookings.slice(0, 1) }).people[0].check?.label, 'Timesheet: Not started · no timesheet yet')
 })
 
 test('1.51.0 a PAYE person has no pay rows and no check line', () => {
@@ -16379,7 +16383,10 @@ test('1.51.0 a PAYE person has no pay rows and no check line', () => {
 
 test('1.51.0 pay hidden from a non-admin viewer (reportPayForViewer); the check line keeps the state only', () => {
   const viewer = { id: 'someone', email: 'm@x.com', role: 'manager', manager: true, isActive: true }
-  const result = wr151Run({ viewer: viewer as never, roster: [viewer, wr151Admin.paySubject] as never, sheets: [{ personId: 'u-admin', startDayKey: '2026-11-01', endDayKey: '2026-11-15', sheet: null, payrollLines: [] }] })
+  // Review of #329: no viewer hides every figure (never shown by default).
+  const noViewer = wr151Run({ showAllPay: false })
+  assert.deepEqual([noViewer.hiddenPeople, noViewer.grandTotal], [1, 0])
+  const result = wr151Run({ showAllPay: false, viewer: viewer as never, roster: [viewer, wr151Admin.paySubject] as never, sheets: [{ personId: 'u-admin', startDayKey: '2026-11-01', endDayKey: '2026-11-15', sheet: null, payrollLines: [] }] })
   assert.equal(result.hiddenPeople, 1)
   assert.equal(result.grandTotal, 0)
   assert.ok(result.people[0].lines.every((row) => row.payLabel === R112.PAY_HIDDEN_CELL_LABEL && row.rateText === R112.PAY_HIDDEN_CELL_LABEL))
@@ -16443,4 +16450,44 @@ test('1.51.0 days inside an approved timesheet week are the signed lines, never 
     ['Price work', 0, 0, 195],
   ])
   assert.equal(person.personTotal, 660.59)
+  // An approved run compares price work and expenses too: the signed snapshot is the invoice.
+  const sheet = { operativeSignedAt: new Date('2026-11-16T10:00:00Z'), operativeSignedByName: 'Test Admin', operativeSignatureImageBase64: 'x', weeklyReportOverride: weeks[0].override }
+  const checked = wr151Run({ timesheetWeeks: weeks as never, sheets: [{ personId: 'u-admin', startDayKey: '2026-11-01', endDayKey: '2026-11-15', sheet, payrollLines: [] }] }).people[0]
+  assert.equal(checked.check?.label, 'Timesheet: Signed · Invoice £660.59 ✓')
+})
+
+test('1.51.0 check line compares like with like: an unsigned sheet\'s expense is a neutral note, never a mismatch', () => {
+  const sheet = { expenseEntries: [{ id: 'e1', title: 'Parking', amount: 40, date: '2026-11-03' }], priceWorkEntries: [] }
+  const payrollLines = [{ id: 'op-b02-normal', amount: 250, dayKey: '2026-11-02' }]
+  const check = wr151Run({
+    bookings: wr151Bookings.slice(0, 1),
+    sheets: [{ personId: 'u-admin', startDayKey: '2026-11-01', endDayKey: '2026-11-15', sheet, payrollLines }],
+  }).people[0].check
+  assert.equal(check?.label, 'Timesheet: Not started · Invoice £250.00 ✓ · + £40.00 expenses awaiting sign-off')
+  assert.equal(check?.tone, 'good')
+  assert.equal(check?.awaitingClaims, 40)
+})
+
+test('1.51.0 check line: two users records of one person on one run are one invoice, not two', () => {
+  const person = { ...wr151Admin, ids: ['u-admin', 'op-admin', 'u-dup'] }
+  const payrollLines = [{ id: 'op-b02-normal', amount: 250, dayKey: '2026-11-02' }]
+  const run = { startDayKey: '2026-11-01', endDayKey: '2026-11-15', sheet: {}, payrollLines }
+  const check = wr151Run({
+    people: [person],
+    bookings: wr151Bookings.slice(0, 1),
+    sheets: [{ ...run, personId: 'u-dup' }, { ...run, personId: 'u-admin' }],
+  }).people[0].check
+  assert.equal(check?.label, 'Timesheet: Not started · Invoice £250.00 ✓')
+  assert.equal(check?.invoiceTotal, 250)
+})
+
+test('1.51.0 money change: a manager site booking off a job is priced at its own overtime rate, as on the invoice', () => {
+  const office = (otMultiplierOverride?: number) => ({
+    id: 'm1', collection: 'managerSiteBookings', personId: 'u-admin', dayKey: '2026-11-11', timeSlot: 'CUSTOM_HOURS',
+    workStartTime: '16:00', workEndTime: '19:00', locationKind: 'office', ...(otMultiplierOverride ? { otMultiplierOverride } : {}),
+  })
+  const pay = (booking: ReturnType<typeof office>) => wr151Run({ bookings: [booking] }).people[0].personTotal
+  assert.equal(pay(office()), 132.35)
+  assert.equal(pay(office(2)), 176.47)
+  assert.equal(Math.round((pay(office(2)) - pay(office())) * 100) / 100, 44.12)
 })

@@ -23,12 +23,12 @@ import { eachDayKey, isoWeekdayOfDayKey, zoneOrLondon } from './dayKeys'
 import { documentInstantMs } from './peopleDocuments'
 import { formatMoney } from './money'
 import { payRateOnDay, roundPennies, type PayRateHistoryRow, type PayRateProfile, type PayRateUser } from './payRate'
-import { payrollHoursResult, multipliedHoursText, parseMultipliedHoursText, type PayrollHoursResult } from './payrollHours'
+import { payrollHoursResult, multipliedHoursText, parseMultipliedHoursText, weekendRuleForIsoWeekday, type PayrollHoursResult } from './payrollHours'
 import { payrollTimePolicyForDayFromState, type PayrollTimePolicyState } from './payrollPolicySchedule'
 import { weekdayPaidHours, type OrgPayrollTimePolicy } from './organizationSettings'
 import { bookingPaySlices, mergeBookingPaySlice, type BookingPaySlice } from './timesheetLineEdit'
 import { timesheetFeedCovers, timesheetFeedLabourLines, timesheetFeedMoneyLines, type FeedWeek } from './weeklyReportTimesheetFeed'
-import { reportPayForViewer, timesheetInvoiceRows, type InvoiceLineInput } from './reportPay'
+import { PAY_HIDDEN_CELL_LABEL, reportPayForViewer, timesheetInvoiceRows, type InvoiceLineInput } from './reportPay'
 import { parseTimesheetStatusFields, timesheetListBucket, type TimesheetStatusFields } from './timesheetPeriod'
 import { normalizeDocumentId } from './scheduleSources'
 import { bookingOccupiesDay } from './warningRows'
@@ -136,8 +136,12 @@ export type WeeklyReportPayInput = {
   payRateHistory?: ReadonlyArray<PayRateHistoryRow> | null
   range: { start: string; end: string }
   timeZone?: string | null
-  /** The viewer; null shows every pay figure (tests, server). */
+  /**
+   * The viewer: each person's rate and pay are shown only when `canViewPersonPay` allows (`reportPayForViewer`). With no
+   * viewer every figure is hidden, as `reportPayForViewer` does; pass `showAllPay: true` (tests, the server) to show all.
+   */
   viewer?: Record<string, unknown> | null
+  showAllPay?: boolean | null
   currency?: string | null
 }
 
@@ -190,13 +194,17 @@ export const WEEKLY_REPORT_TIMESHEET_STATE_LABELS: Record<WeeklyReportTimesheetS
 
 export type WeeklyReportCheckLine = {
   state: WeeklyReportTimesheetState
+  /** "Timesheet: Signed" (with "· 1 of 2 signed" when several runs). */
+  stateLabel: string
   /** "Timesheet: Signed · Invoice £3,141.77 ✓". */
   label: string
   tone: 'good' | 'warn' | 'neutral'
   /** Invoice rows dated in the range (null when pay is hidden or there is no sheet to invoice). */
   invoiceTotal: number | null
-  /** The person's Pay Summary total. */
+  /** The report's figures for the same days (labour; price work and expenses only for approved runs). */
   reportTotal: number | null
+  /** Price work and expenses on sheets not yet approved (a neutral note, never a mismatch). */
+  awaitingClaims: number | null
   matches: boolean
   changedSinceSigned: boolean
   /** True when a payment run is only partly inside the range (only its rows dated in the range count). */
@@ -308,12 +316,6 @@ function lineDayKey(raw: unknown, zone: string): string {
   return ms == null ? '' : dayKeyInZone(new Date(ms), zone)
 }
 
-function weekendRule(policy: OrgPayrollTimePolicy, iso: number) {
-  if (iso === 6) return policy.saturday
-  if (iso === 7) return policy.sunday?.sameAsSaturday ? policy.saturday : policy.sunday
-  return null
-}
-
 /**
  * Rulebook 1.51.0 §7 (Q4a): a booking's paid days — the standard part ÷ its divisor (a set-window weekend day's
  * "counts as", else the weekday paid day) plus the hours at the multiplier (clock × N − break) ÷ the weekday paid day
@@ -420,6 +422,15 @@ export function weeklyReportPayRows(input: WeeklyReportPayInput): WeeklyReportPa
     return found
   }
   const rows = new Map<string, Map<string, RowAcc>>()
+  // Q2: each person's report pay by day — labour rows, and price work / expenses from approved weeks — so the check line
+  // compares like with like, run by run.
+  const labourByDay = new Map<string, Map<string, number>>()
+  const claimsByDay = new Map<string, Map<string, number>>()
+  const addByDay = (target: Map<string, Map<string, number>>, personId: string, dayKey: string, amount: number) => {
+    const days = target.get(personId) ?? new Map<string, number>()
+    days.set(dayKey, (days.get(dayKey) ?? 0) + amount)
+    target.set(personId, days)
+  }
   const paidDays: WeeklyReportPaidDay[] = []
   const unmatched: string[] = []
 
@@ -437,7 +448,7 @@ export function weeklyReportPayRows(input: WeeklyReportPayInput): WeeklyReportPa
     row.pay = merged.pay
     row.hours += hours
     row.days += daysValue
-    void dayKey
+    addByDay(labourByDay, person.id, dayKey, slice.pay)
     list.set(key, row)
   }
 
@@ -515,7 +526,7 @@ export function weeklyReportPayRows(input: WeeklyReportPayInput): WeeklyReportPa
       continue
     }
     const iso = isoWeekdayOfDayKey(dayKey, zone)
-    const everyHour = Boolean(weekendRule(policy, iso)?.allHoursAtMultiplierMode)
+    const everyHour = Boolean(weekendRuleForIsoWeekday(iso, policy)?.allHoursAtMultiplierMode)
     const slices = bookingPaySlices({
       hours,
       standardDayHours: weekday,
@@ -559,7 +570,7 @@ export function weeklyReportPayRows(input: WeeklyReportPayInput): WeeklyReportPa
     const quantity = basis === 'hourly' ? paidHours : daysValue
     const rate = quantity > 0.0001 ? roundPennies(amount / quantity) : 0
     const iso = isoWeekdayOfDayKey(dayKey, zone)
-    const everyHour = Boolean(weekendRule(policy, iso)?.allHoursAtMultiplierMode)
+    const everyHour = Boolean(weekendRuleForIsoWeekday(iso, policy)?.allHoursAtMultiplierMode)
     const kind = kindOf(iso, overtime, everyHour)
     paidDays.push({
       personId: person.id,
@@ -619,7 +630,9 @@ export function weeklyReportPayRows(input: WeeklyReportPayInput): WeeklyReportPa
         weekendIso: null,
         creditHours: 0,
       }
-      row.pay = roundPennies(row.pay + roundPennies(Number((line as WeeklyReportPayMoneyLine).amount) || 0))
+      const amount = roundPennies(Number((line as WeeklyReportPayMoneyLine).amount) || 0)
+      row.pay = roundPennies(row.pay + amount)
+      addByDay(claimsByDay, person.id, dayKey, amount)
       if (dayKey && dayKey < row.startDayKey) row.startDayKey = dayKey
       if (dayKey && dayKey > row.endDayKey) row.endDayKey = dayKey
       row.dates = weeklyReportDatesText(row.startDayKey, row.endDayKey)
@@ -673,89 +686,161 @@ export function weeklyReportPayRows(input: WeeklyReportPayInput): WeeklyReportPa
       personTotal,
       personTotalLabel: null,
       paySubject: person.paySubject ?? null,
-      check: checkLine(person, personTotal, input, zone, currency),
+      check: checkLine(person, {
+        input,
+        zone,
+        currency,
+        labourByDay: labourByDay.get(person.id) ?? new Map(),
+        claimsByDay: claimsByDay.get(person.id) ?? new Map(),
+        approvedRun: (run) => timesheetFeedCovers(weeks as never, idsOf(person), run.startDayKey, zone) && timesheetFeedCovers(weeks as never, idsOf(person), run.endDayKey, zone),
+      }),
     })
   }
   built.sort((a, b) => a.person.localeCompare(b.person) || a.personId.localeCompare(b.personId))
 
-  const shown = reportPayForViewer(built, { viewer: input.viewer === undefined ? null : input.viewer, roster: input.roster ?? [] })
-  const viewerGiven = input.viewer != null
-  const out = viewerGiven ? shown.rows : built
-  const hiddenIds = new Set(viewerGiven ? out.filter((row) => row.personTotalLabel === '—').map((row) => row.personId) : [])
-  const people2 = out.map((row) => (hiddenIds.has(row.personId) && row.check ? { ...row, check: hideCheckAmounts(row.check) } : row))
+  // 1.32.0: pay per `canViewPersonPay`; with no viewer everything is hidden unless the caller asks for all (`showAllPay`).
+  if (input.showAllPay === true) {
+    return { people: built, grandTotal: roundPennies(built.reduce((sum, row) => sum + row.personTotal, 0)), hiddenPeople: 0, paidDays, unmatchedBookingIds: unmatched }
+  }
+  const shown = reportPayForViewer(built, { viewer: input.viewer ?? null, roster: input.roster ?? [] })
   return {
-    people: people2,
-    grandTotal: viewerGiven ? shown.grandTotal : roundPennies(built.reduce((sum, row) => sum + row.personTotal, 0)),
-    hiddenPeople: viewerGiven ? shown.hiddenPeople : 0,
+    people: shown.rows.map((row) => (row.personTotalLabel === PAY_HIDDEN_CELL_LABEL && row.check ? { ...row, check: hideCheckAmounts(row.check) } : row)),
+    grandTotal: shown.grandTotal,
+    hiddenPeople: shown.hiddenPeople,
     paidDays,
     unmatchedBookingIds: unmatched,
   }
 }
 
 function hideCheckAmounts(check: WeeklyReportCheckLine): WeeklyReportCheckLine {
-  return { ...check, invoiceTotal: null, reportTotal: null, label: `Timesheet: ${WEEKLY_REPORT_TIMESHEET_STATE_LABELS[check.state]}`, tone: 'neutral' }
+  return { ...check, invoiceTotal: null, reportTotal: null, awaitingClaims: null, label: check.stateLabel, tone: 'neutral' }
 }
 
 const STATE_ORDER: Record<WeeklyReportTimesheetState, number> = { notStarted: 0, submitted: 1, signed: 2, exported: 3 }
 
+/** The text of a person with no stored timesheet in the range. */
+export const WEEKLY_REPORT_NO_TIMESHEET = 'no timesheet yet'
+
 /**
- * Rulebook 1.51.0 §7 (Q2): a self-employed person's check line — the timesheet state of the payment runs in the range
- * (`timesheetListBucket`; the least advanced, with a count when there are several) and the invoice rows dated in the
- * range (`timesheetInvoiceRows` in `decided` mode, `timesheetDays` = the run's days in the range; a signed snapshot's
- * rows by their stored date), compared with the person's Pay Summary total. Amber when they differ or a signed sheet's
- * bookings changed since it was signed (1.47.0). Null for PAYE-only people, ghosts and people with no account.
+ * Rulebook 1.51.0 §7 (Q2, review of #329): a self-employed person's check line, run by run, like with like.
+ * - **Runs.** The payment runs in `sheets` that overlap the range, one per run: two users documents of one person on
+ *   the same run are one run (the person's own id first, else one with a stored sheet), never added twice.
+ * - **State.** `timesheetListBucket` (with the 1.47.0 `signedTimesheetBookingChanges`) per run: Not started / Submitted /
+ *   Signed / Exported; several runs: the least advanced, "Submitted · 1 of 2 signed". A run with no stored sheet is Not
+ *   started; with none at all the line reads "Timesheet: Not started · no timesheet yet".
+ * - **Invoice.** For each run with a stored sheet: `timesheetInvoiceRows` (`decided`) on the run's self-employed days in
+ *   the range (a signed snapshot's rows by their stored date). Its labour rows are compared with the report's labour
+ *   rows on the same days. Price work and expenses are compared only for a run in the approved feed (the report counts
+ *   them only there); for any other run they are a neutral note, "+ £40.00 expenses awaiting sign-off", never a
+ *   mismatch.
+ * - **Tone.** ✓ (good) when the figures agree; amber with both figures when they differ or a signed sheet's bookings
+ *   changed since it was signed. Null for PAYE-only people, ghosts and people with no account.
  */
-function checkLine(person: WeeklyReportPayPerson, reportTotal: number, input: WeeklyReportPayInput, zone: string, currency: string): WeeklyReportCheckLine | null {
+function checkLine(
+  person: WeeklyReportPayPerson,
+  ctx: {
+    input: WeeklyReportPayInput
+    zone: string
+    currency: string
+    labourByDay: Map<string, number>
+    claimsByDay: Map<string, number>
+    approvedRun: (run: { startDayKey: string; endDayKey: string }) => boolean
+  }
+): WeeklyReportCheckLine | null {
+  const { input, zone, currency } = ctx
   if (!person.user || person.ghost === true) return null
   const start = input.range.start
   const end = input.range.end
-  const ids = new Set([person.id, ...(person.ids ?? [])].map(idKey).filter(Boolean))
-  const sheets = (input.sheets || []).filter((row) => row && ids.has(idKey(row.personId)) && row.endDayKey >= start && row.startDayKey <= end)
   const selfEmployedDays = eachDayKey(start, end, zone).filter((day) => !rateOn(person, input, zone, day).isPaye)
   if (selfEmployedDays.length === 0) return null
   const counted = new Set(selfEmployedDays)
+  const ownId = idKey(person.id)
+  const ids = new Set([person.id, ...(person.ids ?? [])].map(idKey).filter(Boolean))
+  // One entry per run (review finding 2): the person's own id first, else one with a stored sheet.
+  const runs = new Map<string, WeeklyReportPaySheet>()
+  const stored = (row: WeeklyReportPaySheet) => Boolean(row.sheet || row.status)
+  const rank = (row: WeeklyReportPaySheet) => (stored(row) ? 0 : 2) + (idKey(row.personId) === ownId ? 0 : 1)
+  for (const row of input.sheets || []) {
+    if (!row || !ids.has(idKey(row.personId)) || row.endDayKey < start || row.startDayKey > end) continue
+    const key = `${row.startDayKey}|${row.endDayKey}`
+    const held = runs.get(key)
+    if (!held || rank(row) < rank(held)) runs.set(key, row)
+  }
+  const money = (value: number) => formatMoney(value, currency)
+  const sum = (byDay: Map<string, number>, days: string[]) => days.reduce((total, day) => total + (byDay.get(day) ?? 0), 0)
   let invoice = 0
+  let report = 0
+  let awaitingPriceWork = 0
+  let awaitingExpenses = 0
   let partialRun = false
   let changedSinceSigned = false
-  let invoiced = false
+  let compared = false
   const states: WeeklyReportTimesheetState[] = []
-  for (const row of sheets) {
+  for (const row of [...runs.values()].sort((a, b) => a.startDayKey.localeCompare(b.startDayKey))) {
+    if (!stored(row)) {
+      states.push('notStarted')
+      continue
+    }
     if (row.startDayKey < start || row.endDayKey > end) partialRun = true
     const fields = row.status ?? parseTimesheetStatusFields(row.sheet ?? null)
-    const bucket = row.sheet || row.status ? timesheetListBucket(fields, person.hasLineManager === true, row.change ?? null) : 'unsigned'
+    const bucket = timesheetListBucket(fields, person.hasLineManager === true, row.change ?? null)
     states.push(bucket === 'exported' ? 'exported' : bucket === 'signed' ? 'signed' : bucket === 'awaiting' ? 'submitted' : 'notStarted')
     if (row.change?.reopened === true || (row.change?.changed === true && fields.operativeSignedAtMs != null && bucket !== 'exported')) changedSinceSigned = true
     const days = eachDayKey(row.startDayKey, row.endDayKey, zone).filter((day) => counted.has(day))
+    const approved = ctx.approvedRun(row)
     const invoiceRows = timesheetInvoiceRows({ sheet: row.sheet ?? null, payrollLines: row.payrollLines ?? [], extrasMode: 'decided', timesheetDays: days, timeZone: zone, entryFingerprints: row.entryFingerprints ?? null })
     for (const invoiceRow of invoiceRows) {
       if (invoiceRow.source === 'override') {
-        const stored = invoiceRow.stored ?? {}
-        const day = lineDayKey(stored.date ?? stored.startDate, zone)
+        const storedRow = invoiceRow.stored ?? {}
+        const day = lineDayKey(storedRow.date ?? storedRow.startDate, zone)
         if (day && !counted.has(day)) continue
       }
-      invoice += invoiceRow.amount
-      invoiced = true
+      if (invoiceRow.kind === 'labour' || approved) invoice += invoiceRow.amount
+      else if (invoiceRow.kind === 'priceWork') awaitingPriceWork += invoiceRow.amount
+      else awaitingExpenses += invoiceRow.amount
     }
+    report += sum(ctx.labourByDay, days) + (approved ? sum(ctx.claimsByDay, days) : 0)
+    compared = true
   }
   if (states.length === 0) states.push('notStarted')
   const least = states.reduce((a, b) => (STATE_ORDER[b] < STATE_ORDER[a] ? b : a))
   const signedCount = states.filter((state) => state === 'signed' || state === 'exported').length
-  const stateText = `${WEEKLY_REPORT_TIMESHEET_STATE_LABELS[least]}${states.length > 1 ? ` · ${signedCount} of ${states.length} signed` : ''}`
-  const invoiceTotal = invoiced || sheets.some((row) => row.sheet || row.status) ? roundPennies(invoice) : null
-  const money = (value: number) => formatMoney(value, currency)
+  const stateLabel = `Timesheet: ${WEEKLY_REPORT_TIMESHEET_STATE_LABELS[least]}${states.length > 1 ? ` · ${signedCount} of ${states.length} signed` : ''}`
+  const awaiting = [
+    awaitingPriceWork > 0.0001 ? `+ ${money(roundPennies(awaitingPriceWork))} price work awaiting sign-off` : '',
+    awaitingExpenses > 0.0001 ? `+ ${money(roundPennies(awaitingExpenses))} expenses awaiting sign-off` : '',
+  ].filter(Boolean)
+  if (!compared) {
+    return {
+      state: least,
+      stateLabel,
+      label: `${stateLabel} · ${WEEKLY_REPORT_NO_TIMESHEET}`,
+      tone: 'neutral',
+      invoiceTotal: null,
+      reportTotal: null,
+      awaitingClaims: null,
+      matches: false,
+      changedSinceSigned: false,
+      partialRun: false,
+    }
+  }
+  const invoiceTotal = roundPennies(invoice)
+  const reportTotal = roundPennies(report)
   const invoiceWord = partialRun ? 'Invoice rows in this period' : 'Invoice'
-  const matches = invoiceTotal != null && Math.abs(invoiceTotal - reportTotal) < 0.005 && !changedSinceSigned
-  let label = `Timesheet: ${stateText}`
-  if (invoiceTotal == null) label += ' · no invoice yet'
-  else if (matches) label += ` · ${invoiceWord} ${money(invoiceTotal)} ✓`
-  else label += ` · ${invoiceWord} ${money(invoiceTotal)} · report ${money(reportTotal)}`
+  const matches = Math.abs(invoiceTotal - reportTotal) < 0.005 && !changedSinceSigned
+  let label = matches
+    ? `${stateLabel} · ${invoiceWord} ${money(invoiceTotal)} ✓`
+    : `${stateLabel} · ${invoiceWord} ${money(invoiceTotal)} · report ${money(reportTotal)}`
   if (changedSinceSigned) label += ' · changed since signed'
+  if (awaiting.length) label += ` · ${awaiting.join(' · ')}`
   return {
     state: least,
+    stateLabel,
     label,
-    tone: invoiceTotal == null ? 'neutral' : matches ? 'good' : 'warn',
+    tone: matches ? 'good' : 'warn',
     invoiceTotal,
     reportTotal,
+    awaitingClaims: awaiting.length ? roundPennies(awaitingPriceWork + awaitingExpenses) : null,
     matches,
     changedSinceSigned,
     partialRun,

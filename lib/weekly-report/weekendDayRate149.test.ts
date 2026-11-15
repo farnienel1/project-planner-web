@@ -189,7 +189,7 @@ test('1.49.0 owner reference fortnight: weekly report, timesheet totals and invo
   assert.equal(invoiceTotal, 3141.76)
   assert.equal(timesheetTotals({ sheet: {}, payrollLines: summary.lineItems, extrasMode: 'raw', timeZone: zone }).total, 3141.76)
 
-  const report = buildWeeklyReportData({
+  const report = buildWeeklyReportData({ showAllPay: true,
     organizationName: 'Raccord MEP',
     period: { start: periodStart, end: periodEnd, label: '1 – 15 November 2026' },
     bookings,

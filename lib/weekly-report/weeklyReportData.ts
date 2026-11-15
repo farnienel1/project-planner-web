@@ -250,6 +250,7 @@ export function buildWeeklyReportData({
   warningDecisions = null,
   timesheetSheets = [],
   viewer = null,
+  showAllPay = false,
 }: {
   organizationName: string
   companyLogoURL?: string
@@ -277,6 +278,8 @@ export function buildWeeklyReportData({
    * inside `weeklyReportPayRows`). Null shows every figure (tests).
    */
   viewer?: Record<string, unknown> | null
+  /** Show every rate and pay figure whoever views (tests only). Without it and with no viewer, pay is hidden. */
+  showAllPay?: boolean
 }): WeeklyReportData {
   const payroll = orgDetails?.payrollTimePolicy
   const timeZone = organizationTimeZone(orgDetails?.countryCode)
@@ -448,6 +451,7 @@ export function buildWeeklyReportData({
     range,
     timeZone,
     viewer,
+    showAllPay,
     currency: resolveOrganizationCurrency(orgDetails),
   })
   const bookingById = new Map<string, ManagerSiteBooking>(periodManagerBookings.map((booking) => [booking.id, booking]))
@@ -890,7 +894,15 @@ export function weeklyReportLeavePeople(
   const out: WeeklyReportLeavePerson[] = []
   const claimed = new Set<string>()
   const aliasesOf = (id: string) => rosterAliasIdsFor(id, userIdAliases)
+  // Review of #329: only the kept users document of each person (`userIdAliases`), so a row is named from the live
+  // record, never a same-email duplicate; the duplicate's ids are in the kept person's ids.
+  const kept = (id: string) => {
+    const lower = id.trim().toLowerCase()
+    const hit = Object.entries(userIdAliases).find(([alias]) => alias.trim().toLowerCase() === lower)
+    return !hit || hit[1].trim().toLowerCase() === lower
+  }
   for (const user of users) {
+    if (!kept(user.id)) continue
     const operative = findOperativeForUser(user, operatives)
     const ids = Array.from(new Set([...overtimePersonIds({ person: user, roster: users as never, operatives }), ...aliasesOf(user.id)]))
     ids.forEach((id) => claimed.add(normalizeDocumentId(id)))

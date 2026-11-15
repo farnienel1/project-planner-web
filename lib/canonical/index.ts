@@ -2108,6 +2108,7 @@ export {
   weeklyReportDayText,
   weeklyReportLeaveRows,
   weeklyReportPayRows,
+  WEEKLY_REPORT_NO_TIMESHEET,
   WEEKLY_REPORT_PAY_COLUMNS,
   WEEKLY_REPORT_PERSON_NOT_FOUND,
   WEEKLY_REPORT_RATE_NOT_SET,
